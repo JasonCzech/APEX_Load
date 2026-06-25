@@ -55,6 +55,7 @@ type Store interface {
 	GetScenarioScheduleOccurrenceByScheduleAndPlannedAt(scheduleID string, plannedAt time.Time) (*ScenarioScheduleOccurrence, error)
 	ListScenarioScheduleOccurrences(scheduleID string) ([]*ScenarioScheduleOccurrence, error)
 	ListAllScenarioScheduleOccurrences() ([]*ScenarioScheduleOccurrence, error)
+	DeleteScenarioScheduleOccurrence(id string) error
 	SaveScenarioScheduleApproval(approval *ScenarioScheduleApproval) error
 	GetScenarioScheduleApproval(id string) (*ScenarioScheduleApproval, error)
 	ListScenarioScheduleApprovals(scheduleID string) ([]*ScenarioScheduleApproval, error)
@@ -649,9 +650,15 @@ type ScenarioSchedule struct {
 	LastRunTestID       string                      `json:"last_run_test_id,omitempty"`
 	LastRunAt           *time.Time                  `json:"last_run_at,omitempty"`
 	NextRunAt           *time.Time                  `json:"next_run_at,omitempty"`
-	LastError           string                      `json:"last_error,omitempty"`
-	CreatedAt           time.Time                   `json:"created_at"`
-	UpdatedAt           time.Time                   `json:"updated_at"`
+	// DisabledFrom/DisabledUntil define an optional date-range pause: while a
+	// candidate run time falls within [DisabledFrom, DisabledUntil) the schedule
+	// is suppressed without disabling it outright. Either bound may be nil
+	// (open-ended pause start/end).
+	DisabledFrom  *time.Time `json:"disabled_from,omitempty"`
+	DisabledUntil *time.Time `json:"disabled_until,omitempty"`
+	LastError     string     `json:"last_error,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
 type ScenarioScheduleGovernance struct {

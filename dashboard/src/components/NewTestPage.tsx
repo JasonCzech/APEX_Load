@@ -97,6 +97,10 @@ type ScheduleDraft = {
   blackout_windows: ScheduleWindowDraft[]
   maintenance_windows: ScheduleWindowDraft[]
   availability_windows: ScheduleWindowDraft[]
+  // Optional date-range pause, held as <input type="datetime-local"> values
+  // (local wall-clock) and converted to RFC3339 UTC when submitted.
+  disabled_from: string
+  disabled_until: string
 }
 
 const DEFAULT_SCHEDULE_DEFAULTS: Required<DashboardScheduleDefaultsSettings> = {
@@ -227,6 +231,8 @@ function buildDefaultScheduleDraft(
     blackout_windows: blackoutWindows,
     maintenance_windows: [],
     availability_windows: availabilityWindows,
+    disabled_from: '',
+    disabled_until: '',
   }
 }
 
@@ -1306,6 +1312,8 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
 	  blackout_windows: scheduleWindowsToPayload(scheduleDraft.blackout_windows, scheduleDraft.timezone),
 	  maintenance_windows: scheduleWindowsToPayload(scheduleDraft.maintenance_windows, scheduleDraft.timezone),
 	  availability_windows: scheduleWindowsToPayload(scheduleDraft.availability_windows, scheduleDraft.timezone),
+	  disabled_from: datetimeLocalToISO(scheduleDraft.disabled_from) || undefined,
+	  disabled_until: datetimeLocalToISO(scheduleDraft.disabled_until) || undefined,
 	}
 	try {
 	  if (editingScheduleId) {
@@ -1338,6 +1346,8 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
 	  blackout_windows: scheduleWindowsToDraft(schedule.blackout_windows),
 	  maintenance_windows: scheduleWindowsToDraft(schedule.maintenance_windows),
 	  availability_windows: scheduleWindowsToDraft(schedule.availability_windows),
+	  disabled_from: schedule.disabled_from ? formatDatetimeLocalValue(new Date(schedule.disabled_from)) : '',
+	  disabled_until: schedule.disabled_until ? formatDatetimeLocalValue(new Date(schedule.disabled_until)) : '',
 	})
   }
 
@@ -1362,6 +1372,8 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
 	    blackout_windows: schedule.blackout_windows,
 	    maintenance_windows: schedule.maintenance_windows,
 	    availability_windows: schedule.availability_windows,
+	    disabled_from: schedule.disabled_from || undefined,
+	    disabled_until: schedule.disabled_until || undefined,
 	  })
 	  await refreshSchedules(scenario.id)
 	} catch (err: unknown) {
@@ -1589,6 +1601,30 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                   disabled={!canManageTests}
                   onChange={next => setScheduleDraft(prev => ({ ...prev, availability_windows: next }))}
                 />
+                <div className="setting-row">
+                  <div className="setting-info">
+                    <span className="setting-label">Pause window (optional)</span>
+                    <span className="setting-desc">Suppress runs over an absolute date range without disabling the schedule. Leave a bound empty for an open-ended pause; clear both to resume normally.</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <input
+                      type="datetime-local"
+                      className="settings-input"
+                      aria-label="Pause from"
+                      value={scheduleDraft.disabled_from}
+                      disabled={!canManageTests}
+                      onChange={(event) => setScheduleDraft(prev => ({ ...prev, disabled_from: event.target.value }))}
+                    />
+                    <input
+                      type="datetime-local"
+                      className="settings-input"
+                      aria-label="Pause until"
+                      value={scheduleDraft.disabled_until}
+                      disabled={!canManageTests}
+                      onChange={(event) => setScheduleDraft(prev => ({ ...prev, disabled_until: event.target.value }))}
+                    />
+                  </div>
+                </div>
                 <label className="setting-row" style={{ alignItems: 'center', gap: 12 }}>
                   <input type="checkbox" checked={scheduleDraft.enabled} onChange={(event) => setScheduleDraft(prev => ({ ...prev, enabled: event.target.checked }))} />
                   <div className="setting-info">

@@ -53,34 +53,34 @@ type Server struct {
 	// replay and script debug managers fire completion hooks into the shared
 	// persistSelfHealToRepository, whose read-modify-write of the whole objects
 	// blob would otherwise lose a concurrently appended candidate.
-	selfHealMu         sync.Mutex
-	collectorMetrics   *collectorMetricStore
-	fleetScaler        fleetPoolScaler
-	leadership         *executionLeadership
-	mux                *http.ServeMux
-	usageCancel        context.CancelFunc
+	selfHealMu           sync.Mutex
+	collectorMetrics     *collectorMetricStore
+	fleetScaler          fleetPoolScaler
+	leadership           *executionLeadership
+	mux                  *http.ServeMux
+	usageCancel          context.CancelFunc
 	auditRetentionCancel context.CancelFunc
-	authAudit          auditThrottle
-	fanoutCancel       context.CancelFunc
-	fanoutSub          FanoutSubscription
-	generatorDiscovery *generatorDiscovery
-	discoveryCancel    context.CancelFunc
-	k8sRestart         K8sRestartSettings
-	kubeRestarter      KubeRestarter
-	restartMu          sync.Mutex
-	restartInFlight    map[string]struct{}
-	metricsAddr        string
-	metricsServer      *http.Server
-	metricsBoundAddr   string
-	desktopMode        bool
-	bridgeMode         bool
-	recordingBridge    *BrowserRecordingBridge
-	desktopAppData     string
-	desktopLogPath     string
-	importAssetDir     string
-	bindScope          string
-	boundAddr          string
-	boundAddrMu        sync.RWMutex
+	authAudit            auditThrottle
+	fanoutCancel         context.CancelFunc
+	fanoutSub            FanoutSubscription
+	generatorDiscovery   *generatorDiscovery
+	discoveryCancel      context.CancelFunc
+	k8sRestart           K8sRestartSettings
+	kubeRestarter        KubeRestarter
+	restartMu            sync.Mutex
+	restartInFlight      map[string]struct{}
+	metricsAddr          string
+	metricsServer        *http.Server
+	metricsBoundAddr     string
+	desktopMode          bool
+	bridgeMode           bool
+	recordingBridge      *BrowserRecordingBridge
+	desktopAppData       string
+	desktopLogPath       string
+	importAssetDir       string
+	bindScope            string
+	boundAddr            string
+	boundAddrMu          sync.RWMutex
 	// staticFS is the dashboard asset filesystem probed by readiness checks.
 	// It defaults to the compile-time embedded StaticFS; tests override it so
 	// the readiness suite does not depend on a prior `npm run build`.
@@ -433,6 +433,8 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("PUT /api/v1/scenarios/{id}/schedules/{schedule_id}", cors(log(auth(http.HandlerFunc(s.handleUpdateScenarioSchedule)))))
 	s.mux.Handle("DELETE /api/v1/scenarios/{id}/schedules/{schedule_id}", cors(log(auth(http.HandlerFunc(s.handleDeleteScenarioSchedule)))))
 	s.mux.Handle("GET /api/v1/scenarios/{id}/schedules/{schedule_id}/occurrences", cors(log(auth(http.HandlerFunc(s.handleListScenarioScheduleOccurrences)))))
+	s.mux.Handle("DELETE /api/v1/scenarios/{id}/schedules/{schedule_id}/occurrences/{occurrence_id}", cors(log(auth(http.HandlerFunc(s.handleDeleteScenarioScheduleOccurrence)))))
+	s.mux.Handle("GET /api/v1/scenarios/{id}/schedules/{schedule_id}/approvals", cors(log(auth(http.HandlerFunc(s.handleListScenarioScheduleApprovals)))))
 	s.mux.Handle("POST /api/v1/scenarios/{id}/schedules/{schedule_id}/approvals/{approval_id}/approve", cors(log(auth(http.HandlerFunc(s.handleApproveScenarioScheduleApproval)))))
 	s.mux.Handle("POST /api/v1/scenarios/{id}/schedules/{schedule_id}/approvals/{approval_id}/reject", cors(log(auth(http.HandlerFunc(s.handleRejectScenarioScheduleApproval)))))
 	s.mux.Handle("GET /api/v1/schedules/health", cors(log(auth(http.HandlerFunc(s.handleScenarioScheduleHealth)))))

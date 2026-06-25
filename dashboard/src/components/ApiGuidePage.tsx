@@ -223,6 +223,8 @@ const endpointGroups = [
       { method: 'PUT', path: '/api/v1/scenarios/{id}/schedules/{schedule_id}', operations: ['manage_tests'] },
       { method: 'DELETE', path: '/api/v1/scenarios/{id}/schedules/{schedule_id}', operations: ['manage_tests'] },
       { method: 'GET', path: '/api/v1/scenarios/{id}/schedules/{schedule_id}/occurrences', operations: ['view_tests'] },
+      { method: 'DELETE', path: '/api/v1/scenarios/{id}/schedules/{schedule_id}/occurrences/{occurrence_id}', operations: ['manage_tests'] },
+      { method: 'GET', path: '/api/v1/scenarios/{id}/schedules/{schedule_id}/approvals', operations: ['view_tests'] },
       { method: 'POST', path: '/api/v1/scenarios/{id}/schedules/{schedule_id}/approvals/{approval_id}/approve', operations: ['manage_tests'] },
       { method: 'POST', path: '/api/v1/scenarios/{id}/schedules/{schedule_id}/approvals/{approval_id}/reject', operations: ['manage_tests'] },
       { method: 'GET', path: '/api/v1/schedules/health', operations: ['view_tests'] },

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -118,10 +119,16 @@ func (s *Server) handleGetRunCalendar(w http.ResponseWriter, r *http.Request) {
 	if projectID != "" {
 		projectID = normalizeProjectID(projectID)
 	}
+	limit := 0
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+			limit = n
+		}
+	}
 	settings := s.runner.GetSystemSettings().ArchiveRetention
 	from, to, calendarRange := clampRunCalendarRange(requestedFrom, requestedTo, now, settings)
 	inventory := s.systemInventory(r.Context())
-	response := s.runner.BuildRunCalendar(from, to, projectID, now, inventory, calendarRange)
+	response := s.runner.BuildRunCalendar(from, to, projectID, now, inventory, calendarRange, limit)
 	writeJSON(w, http.StatusOK, response)
 }
 
@@ -198,7 +205,11 @@ func maxArchiveRetentionDays(settings ArchiveRetentionSettings) int {
 	return maxDays
 }
 
-func (tr *TestRunner) BuildRunCalendar(from time.Time, to time.Time, projectID string, now time.Time, inventory SystemInventoryResponse, calendarRange RunCalendarRange) RunCalendarResponse {
+func (tr *TestRunner) BuildRunCalendar(from time.Time, to time.Time, projectID string, now time.Time, inventory SystemInventoryResponse, calendarRange RunCalendarRange, limit int) RunCalendarResponse {
+	maxEvents := runCalendarMaxEvents
+	if limit > 0 && limit < maxEvents {
+		maxEvents = limit
+	}
 	snapshot := tr.runCalendarSnapshot(projectID)
 	testsByID := map[string]*ManagedTest{}
 	for _, test := range snapshot.Tests {
@@ -221,7 +232,7 @@ func (tr *TestRunner) BuildRunCalendar(from time.Time, to time.Time, projectID s
 		if !runCalendarEventOverlaps(event.StartAt, event.EndAt, from, to) {
 			return
 		}
-		if len(events) >= runCalendarMaxEvents {
+		if len(events) >= maxEvents {
 			truncated = true
 			return
 		}

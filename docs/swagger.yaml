@@ -4596,6 +4596,31 @@ paths:
             type: string
       tags:
         - Scenarios
+  /api/v1/scenarios/{id}/schedules/{schedule_id}/approvals:
+    get:
+      summary: List Scenario Schedule Approvals
+      description: |-
+        **Handler:** `handleListScenarioScheduleApprovals`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleListScenarioScheduleApprovals
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: schedule_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Scenarios
   /api/v1/scenarios/{id}/schedules/{schedule_id}/approvals/{approval_id}/approve:
     post:
       summary: Approve Scenario Schedule Approval
@@ -4675,6 +4700,36 @@ paths:
           schema:
             type: string
         - name: schedule_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Scenarios
+  /api/v1/scenarios/{id}/schedules/{schedule_id}/occurrences/{occurrence_id}:
+    delete:
+      summary: Delete Scenario Schedule Occurrence
+      description: |-
+        **Handler:** `handleDeleteScenarioScheduleOccurrence`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleDeleteScenarioScheduleOccurrence
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: schedule_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: occurrence_id
           in: path
           required: true
           schema:

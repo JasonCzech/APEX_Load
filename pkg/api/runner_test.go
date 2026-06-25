@@ -278,6 +278,10 @@ func (s *metricsStoreSpy) ListAllScenarioScheduleOccurrences() ([]*storage.Scena
 	}
 	return out, nil
 }
+func (s *metricsStoreSpy) DeleteScenarioScheduleOccurrence(id string) error {
+	delete(s.occurrencesByID, id)
+	return nil
+}
 func (s *metricsStoreSpy) SaveScenarioScheduleApproval(approval *storage.ScenarioScheduleApproval) error {
 	if s.approvalsByID == nil {
 		s.approvalsByID = make(map[string]*storage.ScenarioScheduleApproval)
@@ -557,7 +561,7 @@ func (s *metricsStoreSpy) BumpUserSessionEpoch(id string, updatedAt time.Time) (
 	return 0, nil
 }
 func (s *metricsStoreSpy) CountUsers(filter storage.UserFilter) (int, error) { return 0, nil }
-func (s *metricsStoreSpy) DeleteUser(id string) error { return nil }
+func (s *metricsStoreSpy) DeleteUser(id string) error                        { return nil }
 func (s *metricsStoreSpy) SaveUserRoleBinding(binding *storage.UserRoleBinding) error {
 	return nil
 }
@@ -565,7 +569,7 @@ func (s *metricsStoreSpy) DeleteUserRoleBinding(id string) error { return nil }
 func (s *metricsStoreSpy) ListUserRoleBindings(userID string) ([]*storage.UserRoleBinding, error) {
 	return nil, nil
 }
-func (s *metricsStoreSpy) CountActiveGlobalRoleHolders(role string) (int, error) { return 0, nil }
+func (s *metricsStoreSpy) CountActiveGlobalRoleHolders(role string) (int, error)   { return 0, nil }
 func (s *metricsStoreSpy) DeleteAuditEventsBefore(cutoff time.Time) (int64, error) { return 0, nil }
 func (s *metricsStoreSpy) SaveAuditEvent(event *storage.AuditEvent) error {
 	if event != nil {
@@ -5427,6 +5431,102 @@ func TestScenarioSchedulerRunDueSchedulesCreatesAndStartsRun(t *testing.T) {
 	}
 	if len(auditEvents) != 1 || auditEvents[0].ResourceID != occurrences[0].ID || auditEvents[0].Details["reason_code"] != "started" {
 		t.Fatalf("audit events = %#v, want materialized occurrence audit", auditEvents)
+	}
+}
+
+func TestValidateCronExpr(t *testing.T) {
+	for _, expr := range []string{"*/15 * * * *", "0 9 * * 1-5", "0 9 15 * 1", "0 9 1,15 * *", "0 9 ? * *", "0 9 * * ?"} {
+		if err := validateCronExpr(expr); err != nil {
+			t.Errorf("validateCronExpr(%q) = %v, want nil", expr, err)
+		}
+	}
+	for _, tc := range []struct {
+		expr   string
+		substr string
+	}{
+		{"0 9 L * *", "unsupported cron token"},
+		{"0 9 15W * *", "unsupported cron token"},
+		{"0 9 * * 2#1", "unsupported cron token"},
+		{"0 9 * *", "5 space-separated fields"},
+		{"0 99 * * *", "invalid value"},
+		{"0 9 5-1 * *", "after end"},
+		{"*/0 * * * *", "invalid step"},
+		{"", "required"},
+	} {
+		err := validateCronExpr(tc.expr)
+		if err == nil {
+			t.Errorf("validateCronExpr(%q) = nil, want error containing %q", tc.expr, tc.substr)
+			continue
+		}
+		if !strings.Contains(err.Error(), tc.substr) {
+			t.Errorf("validateCronExpr(%q) = %q, want error containing %q", tc.expr, err.Error(), tc.substr)
+		}
+	}
+}
+
+func TestNextScenarioScheduleRunTreatsQuestionMarkAsWildcard(t *testing.T) {
+	from := time.Date(2026, time.May, 16, 0, 0, 0, 0, time.UTC)
+	qn, err := nextScenarioScheduleRun(&storage.ScenarioSchedule{CronExpr: "0 9 ? * *", Timezone: "UTC"}, from)
+	if err != nil || qn == nil {
+		t.Fatalf("?-cron next run error: %v", err)
+	}
+	sn, err := nextScenarioScheduleRun(&storage.ScenarioSchedule{CronExpr: "0 9 * * *", Timezone: "UTC"}, from)
+	if err != nil || sn == nil {
+		t.Fatalf("*-cron next run error: %v", err)
+	}
+	if !qn.Equal(*sn) {
+		t.Fatalf("? cron next = %v, * cron next = %v; want equal", qn, sn)
+	}
+}
+
+func TestScheduleDisabledAtDateRangePause(t *testing.T) {
+	from := time.Date(2026, time.June, 1, 0, 0, 0, 0, time.UTC)
+	until := time.Date(2026, time.June, 10, 0, 0, 0, 0, time.UTC)
+	cases := []struct {
+		name      string
+		dFrom     *time.Time
+		dUntil    *time.Time
+		candidate time.Time
+		want      bool
+	}{
+		{"no bounds never pauses", nil, nil, from, false},
+		{"before range allowed", &from, &until, from.Add(-time.Hour), false},
+		{"start of range paused", &from, &until, from, true},
+		{"inside range paused", &from, &until, from.Add(72 * time.Hour), true},
+		{"end of range allowed (exclusive)", &from, &until, until, false},
+		{"after range allowed", &from, &until, until.Add(time.Hour), false},
+		{"open-ended start paused forever after", &from, nil, until.Add(365 * 24 * time.Hour), true},
+		{"open-ended start allowed before", &from, nil, from.Add(-time.Minute), false},
+		{"open-ended until paused before", nil, &until, from, true},
+		{"open-ended until allowed after", nil, &until, until, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			schedule := &storage.ScenarioSchedule{DisabledFrom: tc.dFrom, DisabledUntil: tc.dUntil}
+			if got := scheduleDisabledAt(schedule, tc.candidate); got != tc.want {
+				t.Fatalf("scheduleDisabledAt = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestNextScenarioScheduleRunSkipsDateRangePause(t *testing.T) {
+	// Daily 9:00 UTC schedule paused for the first half of June; the next run
+	// must land after the pause ends, not inside it.
+	from := time.Date(2026, time.June, 1, 0, 0, 0, 0, time.UTC)
+	pauseUntil := time.Date(2026, time.June, 5, 0, 0, 0, 0, time.UTC)
+	schedule := &storage.ScenarioSchedule{
+		CronExpr:      "0 9 * * *",
+		Timezone:      "UTC",
+		DisabledUntil: &pauseUntil,
+	}
+	next, err := nextScenarioScheduleRun(schedule, from)
+	if err != nil || next == nil {
+		t.Fatalf("nextScenarioScheduleRun error: %v", err)
+	}
+	want := time.Date(2026, time.June, 5, 9, 0, 0, 0, time.UTC)
+	if !next.Equal(want) {
+		t.Fatalf("next run = %v, want %v (first 9:00 UTC after the pause)", next, want)
 	}
 }
 

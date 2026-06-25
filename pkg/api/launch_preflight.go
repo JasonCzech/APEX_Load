@@ -67,6 +67,10 @@ type LaunchPreflightResponse struct {
 	CapacityAdvisory  *CapacityAdvisory `json:"capacity_advisory,omitempty"`
 	BlockingConflicts []LaunchConflict  `json:"blocking_conflicts,omitempty"`
 	Warnings          []LaunchConflict  `json:"warnings,omitempty"`
+	// RecommendedAssignment is populated when the launch is blocked so operators
+	// get a concrete recovery path (recommended generator count/targets) rather
+	// than just a wall. Mirrors the recommendation returned by the estimate API.
+	RecommendedAssignment *AssignmentRecommendation `json:"recommended_assignment,omitempty"`
 }
 
 type launchCapacityEvent struct {
@@ -129,6 +133,11 @@ func (tr *TestRunner) PreflightLaunch(req LaunchPreflightRequest) (*LaunchPrefli
 		blocking = append(blocking, conflicts...)
 	}
 
+	if poolBlocking, poolWarnings := tr.poolReadinessLaunchConflictsLocked(preview); len(poolBlocking) > 0 || len(poolWarnings) > 0 {
+		blocking = append(blocking, poolBlocking...)
+		warnings = append(warnings, poolWarnings...)
+	}
+
 	if conflicts := tr.launchWindowConflictsLocked(preview, window, now, "", ""); len(conflicts) > 0 {
 		blocking = append(blocking, conflicts...)
 	}
@@ -146,6 +155,13 @@ func (tr *TestRunner) PreflightLaunch(req LaunchPreflightRequest) (*LaunchPrefli
 				Message:  reason,
 			})
 		}
+	}
+	// When blocked, surface a recommended assignment (same helper the estimate API
+	// uses) so the operator sees how much capacity the run needs. Computed under
+	// the read lock before release.
+	var recommendation *AssignmentRecommendation
+	if len(blocking) > 0 {
+		recommendation = tr.buildAssignmentRecommendation(preview)
 	}
 	tr.mu.RUnlock()
 
@@ -170,9 +186,10 @@ func (tr *TestRunner) PreflightLaunch(req LaunchPreflightRequest) (*LaunchPrefli
 		QueueAllowed:      queueAllowed,
 		QueueReason:       currentReason,
 		CandidateWindow:   window,
-		CapacityAdvisory:  cloneCapacityAdvisory(preview.CapacityAdvisory),
-		BlockingConflicts: blocking,
-		Warnings:          warnings,
+		CapacityAdvisory:      cloneCapacityAdvisory(preview.CapacityAdvisory),
+		BlockingConflicts:     blocking,
+		Warnings:              warnings,
+		RecommendedAssignment: recommendation,
 	}, nil
 }
 
@@ -280,6 +297,56 @@ func generatorPlacementLaunchConflict(message string) LaunchConflict {
 		Severity: "blocking",
 		Source:   "generator_assignment",
 		Message:  message,
+	}
+}
+
+// poolReadinessLaunchConflictsLocked makes fleet-pool state visible to preflight:
+// a pool-scoped assignment whose pool is missing, suspended, or empty blocks the
+// launch (rather than failing lazily at Run time), and a pool with fewer live
+// members than the run is sized for yields a non-blocking shortfall warning.
+// Tests without a pool-scoped assignment are unaffected. Per-pool quotas remain
+// out of scope (a separate schema-level feature).
+func (tr *TestRunner) poolReadinessLaunchConflictsLocked(test *ManagedTest) (blocking, warnings []LaunchConflict) {
+	if test == nil || test.Assignment == nil || tr.fleetStore == nil {
+		return nil, nil
+	}
+	poolID := strings.TrimSpace(test.Assignment.PoolID)
+	if poolID == "" {
+		return nil, nil
+	}
+	pool, err := tr.fleetStore.GetFleetPool(poolID)
+	if err != nil || pool == nil {
+		return []LaunchConflict{poolReadinessConflict(poolID, fmt.Sprintf("Assigned generator pool %q was not found.", poolID))}, nil
+	}
+	poolLabel := firstNonEmpty(pool.Name, poolID)
+	if status := strings.ToLower(strings.TrimSpace(pool.Status)); status != "" && status != "active" {
+		return []LaunchConflict{poolReadinessConflict(poolID, fmt.Sprintf("Generator pool %q is %s; activate it or pick another pool before launching.", poolLabel, status))}, nil
+	}
+	members := tr.poolMemberTargets(poolID)
+	if len(members) == 0 {
+		return []LaunchConflict{poolReadinessConflict(poolID, fmt.Sprintf("Generator pool %q has no available members.", poolLabel))}, nil
+	}
+	if recommended := recommendedGeneratorCountForTest(test); recommended > len(members) {
+		warnings = append(warnings, LaunchConflict{
+			Code:                "generator_pool_shortfall",
+			Severity:            "warning",
+			Source:              "generator_pool",
+			ResourceID:          poolID,
+			Message:             fmt.Sprintf("Generator pool %q has %d member%s but the run is sized for %d generators; it will run on the available members.", poolLabel, len(members), pluralSuffix(len(members)), recommended),
+			RequiredGenerators:  recommended,
+			AvailableGenerators: len(members),
+		})
+	}
+	return nil, warnings
+}
+
+func poolReadinessConflict(poolID, message string) LaunchConflict {
+	return LaunchConflict{
+		Code:       "generator_pool_unavailable",
+		Severity:   "blocking",
+		Source:     "generator_pool",
+		ResourceID: poolID,
+		Message:    message,
 	}
 }
 

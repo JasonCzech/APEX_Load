@@ -26,6 +26,7 @@ import {
   RuntimeSettingsOverride,
   ScenarioSchedule,
   ScenarioScheduleOccurrence,
+  ScenarioScheduleApproval,
   ScenarioScheduleHealth,
   ScenarioDataPoolBinding,
   ScenarioMode,
@@ -159,6 +160,8 @@ type ScenarioScheduleRequest = {
   blackout_windows?: Array<{ name?: string, days_of_week?: number[], start_time: string, end_time: string, timezone?: string }>
   maintenance_windows?: Array<{ name?: string, days_of_week?: number[], start_time: string, end_time: string, timezone?: string }>
   availability_windows?: Array<{ name?: string, days_of_week?: number[], start_time: string, end_time: string, timezone?: string }>
+  disabled_from?: string
+  disabled_until?: string
 }
 
 type ScenarioScheduleListResponse = {
@@ -174,6 +177,11 @@ type ScenarioScheduleOccurrencesResponse = {
 type ScenarioScheduleApprovalResponse = {
   approval: unknown
   schedule: ScenarioSchedule
+}
+
+type ScenarioScheduleApprovalsListResponse = {
+  approvals: ScenarioScheduleApproval[]
+  count: number
 }
 
 type RunCalendarParams = {
@@ -403,6 +411,16 @@ export function useTestApi() {
 
   const listScenarioScheduleOccurrences = useCallback(
     (scenarioId: string, scheduleId: string) => request<ScenarioScheduleOccurrencesResponse>(`/scenarios/${scenarioId}/schedules/${scheduleId}/occurrences`),
+    [],
+  )
+
+  const listScenarioScheduleApprovals = useCallback(
+    (scenarioId: string, scheduleId: string) => request<ScenarioScheduleApprovalsListResponse>(`/scenarios/${scenarioId}/schedules/${scheduleId}/approvals`),
+    [],
+  )
+
+  const deleteScenarioScheduleOccurrence = useCallback(
+    (scenarioId: string, scheduleId: string, occurrenceId: string) => request<{ deleted: string }>(`/scenarios/${scenarioId}/schedules/${scheduleId}/occurrences/${occurrenceId}`, { method: 'DELETE' }),
     [],
   )
 
@@ -676,6 +694,8 @@ export function useTestApi() {
       updateScenarioSchedule,
       deleteScenarioSchedule,
       listScenarioScheduleOccurrences,
+      listScenarioScheduleApprovals,
+      deleteScenarioScheduleOccurrence,
       getScheduleHealth,
       getRunCalendar,
       approveScenarioScheduleApproval,
@@ -707,6 +727,8 @@ export function useTestApi() {
       updateScenarioSchedule,
       deleteScenarioSchedule,
       listScenarioScheduleOccurrences,
+      listScenarioScheduleApprovals,
+      deleteScenarioScheduleOccurrence,
       getScheduleHealth,
       getRunCalendar,
       approveScenarioScheduleApproval,

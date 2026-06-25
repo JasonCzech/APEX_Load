@@ -18,6 +18,8 @@ func TestSQLiteStorePersistsScenarioSchedules(t *testing.T) {
 		t.Fatalf("SaveScenario returned error: %v", err)
 	}
 	nextRun := time.Date(2026, time.May, 17, 1, 0, 0, 0, time.UTC)
+	disabledFrom := time.Date(2026, time.May, 20, 0, 0, 0, 0, time.UTC)
+	disabledUntil := time.Date(2026, time.May, 27, 0, 0, 0, 0, time.UTC)
 	schedule := &ScenarioSchedule{
 		ID:               "schedule-1",
 		ScenarioID:       scenario.ID,
@@ -26,6 +28,8 @@ func TestSQLiteStorePersistsScenarioSchedules(t *testing.T) {
 		CronExpr:         "0 1 * * *",
 		Timezone:         "UTC",
 		TimeslotID:       "timeslot-42",
+		DisabledFrom:     &disabledFrom,
+		DisabledUntil:    &disabledUntil,
 		RunNameTemplate:  "Nightly Checkout",
 		Enabled:          true,
 		OwnerSubject:     "user:qa-lead",
@@ -81,6 +85,9 @@ func TestSQLiteStorePersistsScenarioSchedules(t *testing.T) {
 	}
 	if roundTrip.TimeslotID != "timeslot-42" {
 		t.Fatalf("round trip timeslot_id = %q, want timeslot-42", roundTrip.TimeslotID)
+	}
+	if roundTrip.DisabledFrom == nil || !roundTrip.DisabledFrom.Equal(disabledFrom) || roundTrip.DisabledUntil == nil || !roundTrip.DisabledUntil.Equal(disabledUntil) {
+		t.Fatalf("round trip pause window = from %v until %v, want %v / %v", roundTrip.DisabledFrom, roundTrip.DisabledUntil, disabledFrom, disabledUntil)
 	}
 	if roundTrip.ProjectID != "checkout" || roundTrip.OwnerSubject != "user:qa-lead" || roundTrip.Governance == nil || roundTrip.Governance.QuotaReview.ProjectMaxVUsers != 500 {
 		t.Fatalf("round trip governance = %#v, want owner/project/quota metadata", roundTrip)

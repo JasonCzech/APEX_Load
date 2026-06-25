@@ -50,9 +50,13 @@ type CreateScenarioScheduleRequest struct {
 	BlackoutWindows     []storage.ScenarioScheduleWindow `json:"blackout_windows,omitempty"`
 	MaintenanceWindows  []storage.ScenarioScheduleWindow `json:"maintenance_windows,omitempty"`
 	AvailabilityWindows []storage.ScenarioScheduleWindow `json:"availability_windows,omitempty"`
-	OwnerSubject        string                           `json:"-"`
-	OwnerDisplayName    string                           `json:"-"`
-	RBACReviewSource    string                           `json:"-"`
+	// DisabledFrom/DisabledUntil pause the schedule over an absolute date range
+	// without disabling it; either bound may be nil for an open-ended pause.
+	DisabledFrom     *time.Time `json:"disabled_from,omitempty"`
+	DisabledUntil    *time.Time `json:"disabled_until,omitempty"`
+	OwnerSubject     string     `json:"-"`
+	OwnerDisplayName string     `json:"-"`
+	RBACReviewSource string     `json:"-"`
 }
 
 type ScenarioScheduleHealth struct {
@@ -220,6 +224,74 @@ func nextScenarioScheduleRun(schedule *storage.ScenarioSchedule, from time.Time)
 	return nil, fmt.Errorf("could not find next run within one year")
 }
 
+var cronFieldNames = [5]string{"minute", "hour", "day-of-month", "month", "day-of-week"}
+var cronFieldBounds = [5][2]int{{0, 59}, {0, 23}, {1, 31}, {1, 12}, {0, 6}}
+
+// validateCronExpr checks a 5-field cron expression and returns a specific error
+// naming the offending field/token, so a rejected expression (e.g. an imported
+// LoadRunner schedule using L/W/#) fails with an actionable message instead of
+// the generic "could not find next run within one year".
+func validateCronExpr(expr string) error {
+	expr = strings.TrimSpace(expr)
+	if expr == "" {
+		return fmt.Errorf("cron expression is required")
+	}
+	fields := strings.Fields(expr)
+	if len(fields) != 5 {
+		return fmt.Errorf("cron expression must have 5 space-separated fields (minute hour day-of-month month day-of-week), got %d", len(fields))
+	}
+	for i, field := range fields {
+		min, max := cronFieldBounds[i][0], cronFieldBounds[i][1]
+		for _, part := range strings.Split(field, ",") {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				return fmt.Errorf("empty term in cron %s field %q", cronFieldNames[i], field)
+			}
+			if err := validateCronPart(part, min, max, cronFieldNames[i]); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func validateCronPart(part string, min, max int, fieldName string) error {
+	base := part
+	if slash := strings.Index(part, "/"); slash >= 0 {
+		base = part[:slash]
+		if base == "" {
+			base = "*"
+		}
+		if _, ok := parseCronNumber(part[slash+1:], 1, max-min+1); !ok {
+			return fmt.Errorf("invalid step in cron %s field %q: step must be a positive number", fieldName, part)
+		}
+	}
+	if base == "*" || base == "?" {
+		return nil
+	}
+	if strings.ContainsAny(base, "LW#lw") {
+		return fmt.Errorf("unsupported cron token in %s field %q: L (last), W (nearest weekday), and # (nth) are not supported — use *, ranges (1-5), steps (*/5), or lists (1,3,5)", fieldName, part)
+	}
+	if dash := strings.Index(base, "-"); dash >= 0 {
+		start, ok := parseCronNumber(base[:dash], min, max)
+		if !ok {
+			return fmt.Errorf("invalid range start in cron %s field %q (allowed %d-%d)", fieldName, part, min, max)
+		}
+		end, ok := parseCronNumber(base[dash+1:], min, max)
+		if !ok {
+			return fmt.Errorf("invalid range end in cron %s field %q (allowed %d-%d)", fieldName, part, min, max)
+		}
+		if end < start {
+			return fmt.Errorf("range start %d is after end %d in cron %s field %q", start, end, fieldName, part)
+		}
+		return nil
+	}
+	if _, ok := parseCronNumber(base, min, max); !ok {
+		return fmt.Errorf("invalid value in cron %s field %q (allowed %d-%d, or *, ?, ranges, steps, lists)", fieldName, part, min, max)
+	}
+	return nil
+}
+
 func cronFieldMatches(expr string, value int, min int, max int) bool {
 	for _, part := range strings.Split(expr, ",") {
 		part = strings.TrimSpace(part)
@@ -246,6 +318,11 @@ func cronPartMatches(part string, value int, min int, max int) bool {
 			return false
 		}
 		step = parsedStep
+	}
+	if base == "?" {
+		// "?" ("no specific value", used in day-of-month/day-of-week) is treated
+		// as a wildcard, matching the standard Quartz convention.
+		base = "*"
 	}
 	if base == "*" {
 		return (value-min)%step == 0
@@ -322,6 +399,9 @@ func cronMatchesDayOfMonthAndWeek(domField, dowField string, t time.Time) bool {
 }
 
 func scheduleAllowsCandidate(schedule *storage.ScenarioSchedule, candidate time.Time) (bool, error) {
+	if scheduleDisabledAt(schedule, candidate) {
+		return false, nil
+	}
 	for _, window := range schedule.BlackoutWindows {
 		matches, err := scheduleWindowContains(window, schedule.Timezone, candidate)
 		if err != nil {
@@ -353,6 +433,35 @@ func scheduleAllowsCandidate(schedule *storage.ScenarioSchedule, candidate time.
 		}
 	}
 	return false, nil
+}
+
+// normalizeSchedulePauseBound drops zero-value pause bounds to nil and stores the
+// rest in UTC so date-range comparisons in scheduleDisabledAt are unambiguous.
+func normalizeSchedulePauseBound(t *time.Time) *time.Time {
+	if t == nil || t.IsZero() {
+		return nil
+	}
+	u := t.UTC()
+	return &u
+}
+
+// scheduleDisabledAt reports whether candidate falls inside the schedule's
+// optional date-range pause [DisabledFrom, DisabledUntil). Either bound may be
+// nil for an open-ended pause; with both nil the schedule is never paused.
+func scheduleDisabledAt(schedule *storage.ScenarioSchedule, candidate time.Time) bool {
+	if schedule == nil {
+		return false
+	}
+	if schedule.DisabledFrom == nil && schedule.DisabledUntil == nil {
+		return false
+	}
+	if schedule.DisabledFrom != nil && candidate.Before(*schedule.DisabledFrom) {
+		return false
+	}
+	if schedule.DisabledUntil != nil && !candidate.Before(*schedule.DisabledUntil) {
+		return false
+	}
+	return true
 }
 
 func scheduleWindowContains(window storage.ScenarioScheduleWindow, fallbackTimezone string, candidate time.Time) (bool, error) {
@@ -769,6 +878,9 @@ func (tr *TestRunner) upsertScenarioScheduleLocked(scenarioID string, scheduleID
 	if cronExpr == "" {
 		return nil, fmt.Errorf("schedule cron_expr is required")
 	}
+	if err := validateCronExpr(cronExpr); err != nil {
+		return nil, err
+	}
 	now := time.Now().UTC()
 	enabled := true
 	if existing != nil {
@@ -807,6 +919,11 @@ func (tr *TestRunner) upsertScenarioScheduleLocked(scenarioID string, scheduleID
 	schedule.BlackoutWindows = append([]storage.ScenarioScheduleWindow(nil), req.BlackoutWindows...)
 	schedule.MaintenanceWindows = append([]storage.ScenarioScheduleWindow(nil), req.MaintenanceWindows...)
 	schedule.AvailabilityWindows = append([]storage.ScenarioScheduleWindow(nil), req.AvailabilityWindows...)
+	schedule.DisabledFrom = normalizeSchedulePauseBound(req.DisabledFrom)
+	schedule.DisabledUntil = normalizeSchedulePauseBound(req.DisabledUntil)
+	if schedule.DisabledFrom != nil && schedule.DisabledUntil != nil && !schedule.DisabledFrom.Before(*schedule.DisabledUntil) {
+		return nil, fmt.Errorf("disabled_from must be before disabled_until")
+	}
 	if strings.TrimSpace(schedule.OwnerSubject) == "" {
 		schedule.OwnerSubject = strings.TrimSpace(req.OwnerSubject)
 	}

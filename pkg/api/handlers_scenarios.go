@@ -217,6 +217,28 @@ func (s *Server) handleListScenarioScheduleOccurrences(w http.ResponseWriter, r 
 	writeJSON(w, http.StatusOK, map[string]any{"occurrences": occurrences, "count": len(occurrences)})
 }
 
+func (s *Server) handleListScenarioScheduleApprovals(w http.ResponseWriter, r *http.Request) {
+	approvals, ok := s.runner.ListScenarioScheduleApprovals(r.PathValue("id"), r.PathValue("schedule_id"))
+	if !ok {
+		writeError(w, http.StatusNotFound, "scenario schedule not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"approvals": approvals, "count": len(approvals)})
+}
+
+func (s *Server) handleDeleteScenarioScheduleOccurrence(w http.ResponseWriter, r *http.Request) {
+	projectID := ""
+	if scenario, ok := s.runner.GetScenario(r.PathValue("id")); ok {
+		projectID = scenario.ProjectID
+	}
+	if !s.runner.DeleteScenarioScheduleOccurrence(r.PathValue("id"), r.PathValue("schedule_id"), r.PathValue("occurrence_id")) {
+		writeError(w, http.StatusNotFound, "scenario schedule occurrence not found")
+		return
+	}
+	s.recordAuditEvent(r, "scenario.schedule.occurrence.delete", "success", "scenario_schedule_occurrence", r.PathValue("occurrence_id"), projectID, map[string]any{"scenario_id": r.PathValue("id"), "schedule_id": r.PathValue("schedule_id")})
+	writeJSON(w, http.StatusOK, map[string]string{"deleted": r.PathValue("occurrence_id")})
+}
+
 func (s *Server) handleScenarioScheduleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.runner.ScenarioScheduleHealth(time.Now().UTC()))
 }

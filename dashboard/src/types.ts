@@ -1451,6 +1451,10 @@ export interface ScenarioSchedule {
   blackout_windows?: ScenarioScheduleWindow[]
   maintenance_windows?: ScenarioScheduleWindow[]
   availability_windows?: ScenarioScheduleWindow[]
+  // Optional absolute date-range pause; either bound may be omitted for an
+  // open-ended pause. Stored/served as RFC3339 UTC instants.
+  disabled_from?: string
+  disabled_until?: string
   last_run_test_id?: string
   last_run_at?: string
   next_run_at?: string
@@ -3467,6 +3471,7 @@ export interface LaunchPreflightResponse {
   capacity_advisory?: CapacityAdvisory
   blocking_conflicts?: LaunchConflict[]
   warnings?: LaunchConflict[]
+  recommended_assignment?: AssignmentRecommendation
 }
 
 export interface ProtocolDensityEnvelope {

@@ -134,6 +134,30 @@ func TestHandleScenarioScheduleCRUD(t *testing.T) {
 		t.Fatalf("occurrence payload = %#v, want one materialized occurrence", occurrencePayload)
 	}
 
+	approvalsReq := httptest.NewRequest(http.MethodGet, "/api/v1/scenarios/"+scenario.ID+"/schedules/"+created.ID+"/approvals", nil)
+	approvalsResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(approvalsResp, approvalsReq)
+	if approvalsResp.Code != http.StatusOK {
+		t.Fatalf("approvals status = %d, want %d body=%s", approvalsResp.Code, http.StatusOK, approvalsResp.Body.String())
+	}
+	var approvalsPayload struct {
+		Approvals []*storage.ScenarioScheduleApproval `json:"approvals"`
+		Count     int                                 `json:"count"`
+	}
+	if err := json.Unmarshal(approvalsResp.Body.Bytes(), &approvalsPayload); err != nil {
+		t.Fatalf("json.Unmarshal approvals returned error: %v", err)
+	}
+	if approvalsPayload.Count != 1 || approvalsPayload.Approvals[0].ID != created.PendingApprovalID || approvalsPayload.Approvals[0].Status != "approved" {
+		t.Fatalf("approvals payload = %#v, want one approved approval %q", approvalsPayload, created.PendingApprovalID)
+	}
+
+	approvalsMissingReq := httptest.NewRequest(http.MethodGet, "/api/v1/scenarios/"+scenario.ID+"/schedules/does-not-exist/approvals", nil)
+	approvalsMissingResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(approvalsMissingResp, approvalsMissingReq)
+	if approvalsMissingResp.Code != http.StatusNotFound {
+		t.Fatalf("approvals (missing schedule) status = %d, want 404", approvalsMissingResp.Code)
+	}
+
 	healthReq := httptest.NewRequest(http.MethodGet, "/api/v1/schedules/health", nil)
 	healthResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(healthResp, healthReq)
@@ -146,6 +170,20 @@ func TestHandleScenarioScheduleCRUD(t *testing.T) {
 	}
 	if health.Total != 1 || health.StatusCounts["materialized"] != 1 || health.Materialized != 1 {
 		t.Fatalf("health = %#v, want one schedule and one materialized occurrence", health)
+	}
+
+	deleteOccID := occurrencePayload.Occurrences[0].ID
+	delOccReq := httptest.NewRequest(http.MethodDelete, "/api/v1/scenarios/"+scenario.ID+"/schedules/"+created.ID+"/occurrences/"+deleteOccID, nil)
+	delOccResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(delOccResp, delOccReq)
+	if delOccResp.Code != http.StatusOK {
+		t.Fatalf("delete occurrence status = %d body=%s, want 200", delOccResp.Code, delOccResp.Body.String())
+	}
+	delOccAgain := httptest.NewRequest(http.MethodDelete, "/api/v1/scenarios/"+scenario.ID+"/schedules/"+created.ID+"/occurrences/"+deleteOccID, nil)
+	delOccAgainResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(delOccAgainResp, delOccAgain)
+	if delOccAgainResp.Code != http.StatusNotFound {
+		t.Fatalf("re-delete occurrence status = %d, want 404", delOccAgainResp.Code)
 	}
 
 	updateBody := bytes.NewBufferString(`{"name":"Nightly Smoke","cron_expr":"0 * * * *","run_name_template":"Hourly Checkout","enabled":false}`)
@@ -178,14 +216,14 @@ func TestHandleScenarioScheduleCRUD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListAuditEvents returned error: %v", err)
 	}
-	if len(events) != 4 {
-		t.Fatalf("audit event count = %d, want 4", len(events))
+	if len(events) != 5 {
+		t.Fatalf("audit event count = %d, want 5", len(events))
 	}
-	if events[0].Action != "scenario.schedule.delete" || events[1].Action != "scenario.schedule.update" || events[2].Action != "scenario.schedule.approval.approve" || events[3].Action != "scenario.schedule.create" {
-		t.Fatalf("audit actions = [%s %s %s %s], want delete/update/approve/create", events[0].Action, events[1].Action, events[2].Action, events[3].Action)
+	if events[0].Action != "scenario.schedule.delete" || events[1].Action != "scenario.schedule.update" || events[2].Action != "scenario.schedule.occurrence.delete" || events[3].Action != "scenario.schedule.approval.approve" || events[4].Action != "scenario.schedule.create" {
+		t.Fatalf("audit actions = [%s %s %s %s %s], want delete/update/occurrence.delete/approve/create", events[0].Action, events[1].Action, events[2].Action, events[3].Action, events[4].Action)
 	}
-	if events[3].Details["governance"] == nil || events[3].Details["owner"] == nil || events[3].Details["blackout_windows"] == nil || events[3].Details["maintenance_windows"] == nil || events[3].Details["availability_windows"] == nil {
-		t.Fatalf("create audit details = %#v, want governance and owner metadata", events[3].Details)
+	if events[4].Details["governance"] == nil || events[4].Details["owner"] == nil || events[4].Details["blackout_windows"] == nil || events[4].Details["maintenance_windows"] == nil || events[4].Details["availability_windows"] == nil {
+		t.Fatalf("create audit details = %#v, want governance and owner metadata", events[4].Details)
 	}
 }
 

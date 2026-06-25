@@ -370,6 +370,77 @@ func (tr *TestRunner) ListScenarioScheduleOccurrences(scenarioID string, schedul
 	return out, true
 }
 
+// ListScenarioScheduleApprovals returns the approval history (pending + resolved)
+// for a schedule, scoped to its scenario. ok=false when the scenario or schedule
+// is unknown. Mirrors ListScenarioScheduleOccurrences. The approvals come straight
+// from a store query (not shared in-memory state), so they are returned as-is.
+func (tr *TestRunner) ListScenarioScheduleApprovals(scenarioID string, scheduleID string) ([]*storage.ScenarioScheduleApproval, bool) {
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	scenario, ok := tr.scenarios[scenarioID]
+	if !ok {
+		return nil, false
+	}
+	found := false
+	for _, schedule := range scenario.Schedules {
+		if schedule != nil && schedule.ID == scheduleID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil, false
+	}
+	if tr.scenarioStore == nil {
+		return []*storage.ScenarioScheduleApproval{}, true
+	}
+	approvals, err := tr.scenarioStore.ListScenarioScheduleApprovals(scheduleID)
+	if err != nil {
+		return []*storage.ScenarioScheduleApproval{}, true
+	}
+	if approvals == nil {
+		approvals = []*storage.ScenarioScheduleApproval{}
+	}
+	return approvals, true
+}
+
+// DeleteScenarioScheduleOccurrence removes a single occurrence record for a
+// schedule, scoped to its scenario. Returns false (→ 404) when the scenario,
+// schedule, or occurrence is unknown or the occurrence belongs to a different
+// schedule. Removing a non-terminal (blocked/failed) occurrence lets the
+// scheduler re-attempt that slot on the next sweep; removing a terminal one
+// prunes history. The schedule's cached LastOccurrence is cleared if it pointed
+// at the deleted record.
+func (tr *TestRunner) DeleteScenarioScheduleOccurrence(scenarioID string, scheduleID string, occurrenceID string) bool {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	scenario, ok := tr.scenarios[scenarioID]
+	if !ok {
+		return false
+	}
+	var target *storage.ScenarioSchedule
+	for _, schedule := range scenario.Schedules {
+		if schedule != nil && schedule.ID == scheduleID {
+			target = schedule
+			break
+		}
+	}
+	if target == nil || tr.scenarioStore == nil {
+		return false
+	}
+	occurrence, err := tr.scenarioStore.GetScenarioScheduleOccurrence(occurrenceID)
+	if err != nil || occurrence == nil || occurrence.ScheduleID != scheduleID {
+		return false
+	}
+	if err := tr.scenarioStore.DeleteScenarioScheduleOccurrence(occurrenceID); err != nil {
+		return false
+	}
+	if target.LastOccurrence != nil && target.LastOccurrence.ID == occurrenceID {
+		target.LastOccurrence = nil
+	}
+	return true
+}
+
 func (tr *TestRunner) ScenarioScheduleHealth(now time.Time) ScenarioScheduleHealth {
 	tr.mu.RLock()
 	defer tr.mu.RUnlock()

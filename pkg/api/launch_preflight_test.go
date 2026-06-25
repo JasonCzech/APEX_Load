@@ -97,6 +97,47 @@ func TestPreflightLaunchAllowsImmediateStartWhenCapacityAvailable(t *testing.T) 
 	}
 }
 
+func TestPreflightLaunchBlocksOnSuspendedPool(t *testing.T) {
+	server, store := newTimeslotServer(t)
+	server.runner.StoreScript(&dsl.Script{
+		ID:       "script-pool-preflight",
+		Name:     "Pool Preflight",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.com"},
+		Actions:  []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+	if err := store.SaveFleetPool(&storage.FleetPool{ID: "pool-suspended", Name: "Edge", Status: "suspended"}); err != nil {
+		t.Fatalf("save pool: %v", err)
+	}
+	if err := store.SaveFleetPoolMembers("pool-suspended", []*storage.FleetPoolMember{
+		{ID: "m1", PoolID: "pool-suspended", GeneratorID: "gen-a", Target: "gen-a:9090"},
+	}); err != nil {
+		t.Fatalf("save members: %v", err)
+	}
+	preflight, err := server.runner.PreflightLaunch(LaunchPreflightRequest{
+		CreateTestRequest: CreateTestRequest{
+			Name:       "Pool run",
+			Duration:   "5m",
+			ScriptID:   "script-pool-preflight",
+			VUsers:     1,
+			Assignment: &GeneratorAssignmentSettings{PoolID: "pool-suspended"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("PreflightLaunch returned error: %v", err)
+	}
+	found := false
+	for _, c := range preflight.BlockingConflicts {
+		if c.Code == "generator_pool_unavailable" {
+			found = true
+		}
+	}
+	if !found || preflight.StartNowAllowed {
+		t.Fatalf("preflight = %#v, want blocked with generator_pool_unavailable", preflight)
+	}
+}
+
 func TestPreflightLaunchBlocksJavaVuserWithoutRunnerCapability(t *testing.T) {
 	// Enablement is operator-owned: with the runner env unset the gate blocks,
 	// regardless of any config.java_vuser.enabled flag in the uploaded script.
@@ -123,6 +164,9 @@ func TestPreflightLaunchBlocksJavaVuserWithoutRunnerCapability(t *testing.T) {
 	}
 	if !strings.Contains(preflight.BlockingConflicts[0].Message, config.EnvJavaVuserRunnerEnabled) {
 		t.Fatalf("conflict message = %q, want operator-enablement guidance referencing %s", preflight.BlockingConflicts[0].Message, config.EnvJavaVuserRunnerEnabled)
+	}
+	if preflight.RecommendedAssignment == nil {
+		t.Fatalf("blocked preflight should surface a recommended assignment for recovery, got nil")
 	}
 }
 
