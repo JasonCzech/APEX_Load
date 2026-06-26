@@ -6,7 +6,7 @@ export type AppView =
   | { page: 'docs'; guidePage?: ApiGuideContentPageID }
   | { page: 'command-center'; testId?: string }
   | { page: 'tests'; scenarioView?: 'library' | 'builder' | 'plans' }
-  | { page: 'new-test'; scenarioId?: string }
+  | { page: 'new-test'; scenarioId?: string; prefillStartLocal?: string }
   | { page: 'scripts'; mode?: 'list' | 'create' | 'edit' | 'import'; scriptId?: string }
   | { page: 'swagger' }
   | { page: 'repository-guide' }
@@ -77,7 +77,12 @@ export function parseAppViewFromHash(hash: string): AppView {
 
   if (page === 'new-test') {
     const scenarioId = params.get('scenarioId') || params.get('scenario') || undefined
-    return scenarioId ? { page: 'new-test', scenarioId } : { page: 'new-test' }
+    const prefillStartLocal = params.get('prefillStartLocal') || undefined
+    return {
+      page: 'new-test',
+      ...(scenarioId ? { scenarioId } : {}),
+      ...(prefillStartLocal ? { prefillStartLocal } : {}),
+    }
   }
 
   if (page === 'tests') {
@@ -138,6 +143,7 @@ export function viewToLocationHash(view: AppView): string {
   if (view.page === 'new-test') {
     const params = new URLSearchParams()
     if (view.scenarioId) params.set('scenarioId', view.scenarioId)
+    if (view.prefillStartLocal) params.set('prefillStartLocal', view.prefillStartLocal)
     const query = params.toString()
     return query ? `#/new-test?${query}` : '#/new-test'
   }

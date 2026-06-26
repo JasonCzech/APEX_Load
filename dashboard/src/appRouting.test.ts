@@ -40,6 +40,10 @@ describe('appRouting', () => {
       page: 'new-test',
       scenarioId: 'scenario-1',
     })
+    expect(parseAppViewFromHash(viewToLocationHash({ page: 'new-test', prefillStartLocal: '2026-08-15T09:00' }))).toEqual({
+      page: 'new-test',
+      prefillStartLocal: '2026-08-15T09:00',
+    })
     expect(parseAppViewFromHash(viewToLocationHash({ page: 'tests', scenarioView: 'builder' }))).toEqual({
       page: 'tests',
       scenarioView: 'builder',

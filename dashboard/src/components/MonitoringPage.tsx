@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useMemo, type ReactNode } from 'react'
+import { useState, useEffect, useCallback, useMemo, type ReactNode, type MouseEvent as ReactMouseEvent } from 'react'
+import { formatDatetimeLocalValue } from './newTestScheduleFormat'
 import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
@@ -20,6 +21,7 @@ interface Props {
   onSelectTest?: (id: string) => void
   canManageSystem?: boolean
   initialCategoryId?: MonitorCategoryId
+  onScheduleForDate?: (prefillStartLocal: string) => void
 }
 
 const EMPTY_GENERATORS: SystemInventoryResponse['generators'] = []
@@ -217,7 +219,7 @@ function restartErrorMessage(error: unknown): string {
   return 'Restart request failed.'
 }
 
-export default function MonitoringPage({ connectionState, telemetryDiagnostics = [], onSelectTest, canManageSystem = false, initialCategoryId = 'overview' }: Props) {
+export default function MonitoringPage({ connectionState, telemetryDiagnostics = [], onSelectTest, canManageSystem = false, initialCategoryId = 'overview', onScheduleForDate }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
   const [health, setHealth] = useState<HealthResponse | null>(null)
@@ -1057,6 +1059,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
           onSelectEvent={selectCalendarEvent}
           onCloseDetails={() => setSelectedCalendarEventId(null)}
           onOpenSelectedTest={openSelectedTest}
+          onScheduleForDate={onScheduleForDate}
         />
       ),
     },
@@ -1611,6 +1614,7 @@ function RunCalendarPanel({
   onSelectEvent,
   onCloseDetails,
   onOpenSelectedTest,
+  onScheduleForDate,
 }: {
   calendar: RunCalendarResponse | null
   events: RunCalendarEvent[]
@@ -1628,6 +1632,7 @@ function RunCalendarPanel({
   onSelectEvent: (event: RunCalendarEvent) => void
   onCloseDetails: () => void
   onOpenSelectedTest: () => void
+  onScheduleForDate?: (prefillStartLocal: string) => void
 }) {
   const [detailCollapsed, setDetailCollapsed] = useState(false)
   const cronCount = events.filter(event => event.source === 'cron').length
@@ -1719,8 +1724,22 @@ function RunCalendarPanel({
                 const visibleEvents = day.events.slice(0, view === 'month' ? 4 : 7)
                 const hiddenCount = day.events.length - visibleEvents.length
                 const capacityDay = capacityByDate.get(day.key)
+                const scheduleForThisDay = onScheduleForDate
+                  ? (event: ReactMouseEvent<HTMLDivElement>) => {
+                      // Only the empty cell area schedules — clicks on event
+                      // buttons / "+more" keep their own behavior.
+                      if ((event.target as HTMLElement).closest('button')) return
+                      const slot = new Date(day.date.getFullYear(), day.date.getMonth(), day.date.getDate(), 9, 0, 0, 0)
+                      onScheduleForDate(formatDatetimeLocalValue(slot))
+                    }
+                  : undefined
                 return (
-                  <div key={day.key} className={`run-calendar-day ${day.isOutsidePeriod ? 'outside' : ''} ${day.isToday ? 'today' : ''}`}>
+                  <div
+                    key={day.key}
+                    className={`run-calendar-day ${day.isOutsidePeriod ? 'outside' : ''} ${day.isToday ? 'today' : ''} ${scheduleForThisDay ? 'schedulable' : ''}`}
+                    onClick={scheduleForThisDay}
+                    title={scheduleForThisDay ? 'Schedule a run on this day' : undefined}
+                  >
                     <div className="run-calendar-day-header">
                       <span>{formatCalendarDayNumber(day.date, view)}</span>
                       <span className="run-calendar-day-header-meta">

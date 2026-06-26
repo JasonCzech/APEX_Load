@@ -73,6 +73,7 @@ interface Props {
   activeRelease: Release | null
   releases: Release[]
   initialScenarioId?: string
+  initialPrefillStartLocal?: string
   onSelectTest: (id: string) => void
   onOpenCommandCenter?: (id: string) => void
   onCreateRelease: (name: string) => Promise<Release | null>
@@ -410,7 +411,7 @@ function buildGroupEditChanges(draft: GroupEditDraft, baseline: GroupEditDraft):
   }
 }
 
-export default function NewTestPage({ activeApplication, activeRelease, releases, initialScenarioId, onSelectTest, onOpenCommandCenter, onCreateRelease, onOpenScenarioBuilder }: Props) {
+export default function NewTestPage({ activeApplication, activeRelease, releases, initialScenarioId, initialPrefillStartLocal, onSelectTest, onOpenCommandCenter, onCreateRelease, onOpenScenarioBuilder }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
   const [pageMode, setPageMode] = useState<'launch' | 'schedules'>('launch')
@@ -456,7 +457,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
   const [immediatePreflightLoading, setImmediatePreflightLoading] = useState(false)
   const [scheduledPreflight, setScheduledPreflight] = useState<LaunchPreflightResponse | null>(null)
   const [scheduledPreflightLoading, setScheduledPreflightLoading] = useState(false)
-  const [scheduledStartLocal, setScheduledStartLocal] = useState('')
+  const [scheduledStartLocal, setScheduledStartLocal] = useState(initialPrefillStartLocal || '')
   const [effectiveAuthAccessResources, setEffectiveAuthAccessResources] = useState<DashboardAuthEffectiveAccessResource[]>([])
   const [generatorInventory, setGeneratorInventory] = useState<SystemInventoryGenerator[]>([])
   const [generatorInventoryLoading, setGeneratorInventoryLoading] = useState(false)

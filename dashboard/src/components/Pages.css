@@ -5169,6 +5169,14 @@
   min-width: 0;
 }
 
+.run-calendar-day.schedulable {
+  cursor: pointer;
+}
+
+.run-calendar-day.schedulable:hover {
+  background: color-mix(in srgb, var(--accent, #4a9eff) 8%, var(--bg-primary));
+}
+
 .run-calendar-grid.week .run-calendar-day {
   min-height: 260px;
 }

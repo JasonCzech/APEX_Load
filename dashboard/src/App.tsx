@@ -254,6 +254,8 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
     setView({ page: 'new-test', scenarioId })
   }
 
+  const navigateToScheduleForDate = (prefillStartLocal: string) => setGuardedView({ page: 'new-test', prefillStartLocal })
+
   const performNavigate = useCallback((page: NavPage) => {
     if (page === 'scripts') {
       setScriptsNavigationVersion(version => version + 1)
@@ -785,6 +787,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
               activeRelease={activeRelease}
               releases={releases}
               initialScenarioId={'scenarioId' in view ? view.scenarioId : undefined}
+              initialPrefillStartLocal={'prefillStartLocal' in view ? view.prefillStartLocal : undefined}
               onSelectTest={navigateToTest}
               onOpenCommandCenter={navigateToCommandCenter}
               onCreateRelease={createAndSelectRelease}
@@ -823,8 +826,8 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
               activeRelease={activeRelease}
             />
           )}
-          {view.page === 'monitoring' && <MonitoringPage connectionState={connectionState} telemetryDiagnostics={telemetryDiagnostics} onSelectTest={navigateToTest} canManageSystem={canManageSystem} />}
-          {view.page === 'schedules' && <MonitoringPage connectionState={connectionState} telemetryDiagnostics={telemetryDiagnostics} onSelectTest={navigateToTest} canManageSystem={canManageSystem} initialCategoryId="schedules" />}
+          {view.page === 'monitoring' && <MonitoringPage connectionState={connectionState} telemetryDiagnostics={telemetryDiagnostics} onSelectTest={navigateToTest} canManageSystem={canManageSystem} onScheduleForDate={navigateToScheduleForDate} />}
+          {view.page === 'schedules' && <MonitoringPage connectionState={connectionState} telemetryDiagnostics={telemetryDiagnostics} onSelectTest={navigateToTest} canManageSystem={canManageSystem} onScheduleForDate={navigateToScheduleForDate} initialCategoryId="schedules" />}
           {view.page === 'docs' && <ApiGuidePage activePage={view.guidePage} onNavigate={handleNavigate} effectiveAccessResources={effectiveAccessResources} />}
           {view.page === 'swagger' && <SwaggerDocsPage />}
           {view.page === 'repository-guide' && <RepositoryGuidePage />}
