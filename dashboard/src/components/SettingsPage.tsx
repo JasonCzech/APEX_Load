@@ -75,6 +75,7 @@ import {
   GENERATOR_PRESETS,
   normalizeDashboardSystemSettings,
   OIDC_PROVIDER_PRESETS,
+  projectGitHubDraftFromPolicy,
   splitListDraft,
   usesDefaultGeneratorCapacity,
   validateOptionalPositiveInteger,
@@ -592,7 +593,8 @@ export default function SettingsPage({
         selectedProject.settings?.max_vusers !== undefined ? String(selectedProject.settings.max_vusers) : '',
         selectedProject.settings?.max_vusers_per_test !== undefined ? String(selectedProject.settings.max_vusers_per_test) : '',
         selectedProject.settings?.max_test_duration_minutes !== undefined ? String(selectedProject.settings.max_test_duration_minutes) : '',
-        selectedProject.settings?.github,
+        projectGitHubDraftFromPolicy(selectedProject.settings?.github),
+        selectedProject.settings?.pool_quotas,
       ),
     }
     const draft = {

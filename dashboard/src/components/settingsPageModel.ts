@@ -224,6 +224,32 @@ export function splitListDraft(value: string): string[] {
   return value.split(',').map(item => item.trim()).filter(Boolean)
 }
 
+// projectGitHubDraftFromPolicy is the normalized GitHub policy the project form
+// holds for a given saved policy — it must mirror loadProjectGitHubDraft +
+// buildProjectGitHubDraft in SettingsPage. The unsaved-changes baseline uses it so
+// the comparison is symmetric with the live draft (which always builds a full
+// object); otherwise a project with no/partial GitHub policy reads as permanently
+// dirty, leaving the governance Save button stuck enabled.
+export function projectGitHubDraftFromPolicy(policy?: GitHubProjectPolicy): GitHubProjectPolicy {
+  return {
+    enabled: Boolean(policy?.enabled),
+    allowed_repos: splitListDraft((policy?.allowed_repos || []).join(', ')),
+    allowed_branches: splitListDraft((policy?.allowed_branches || []).join(', ')),
+    path_template: (policy?.path_template || '').trim(),
+    require_pull_request: policy?.require_pull_request ?? true,
+    allow_direct_commit: Boolean(policy?.allow_direct_commit),
+    allow_import: policy?.allow_import ?? true,
+    allow_push: policy?.allow_push ?? true,
+    bulk_sync_enabled: Boolean(policy?.bulk_sync_enabled),
+    auto_sync_enabled: Boolean(policy?.auto_sync_enabled),
+    checks_enabled: Boolean(policy?.checks_enabled),
+    app_installation_id: policy?.app_installation_id ? Number(policy.app_installation_id) : undefined,
+    default_repo: (policy?.default_repo || '').trim(),
+    default_branch: (policy?.default_branch || '').trim(),
+    default_sync_directory: (policy?.default_sync_directory || '').trim(),
+  }
+}
+
 export function validateProjectQuotaField(label: string, value: string): string {
   const trimmed = value.trim()
   if (!trimmed) return ''

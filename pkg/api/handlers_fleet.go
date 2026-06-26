@@ -487,6 +487,13 @@ func loadZoneName(region string) string {
 func buildFleetProjectSlotAccounting(settings SystemSettings, tests []*ManagedTest) []FleetProjectSlotAccounting {
 	byProject := map[string]*FleetProjectSlotAccounting{}
 	for _, reservation := range settings.CapacityPlanning.Reservations {
+		// Pool-scoped reservations draw from a fleet pool's member envelope, not the
+		// global fleet, and are excluded from the global reservation math everywhere
+		// else (capacityReservationTotalsAt, validateSystemSettings); excluding them
+		// here keeps this per-project view consistent with that envelope split.
+		if strings.TrimSpace(reservation.PoolID) != "" {
+			continue
+		}
 		projectID := normalizeProjectID(reservation.ProjectID)
 		if projectID == "" {
 			continue

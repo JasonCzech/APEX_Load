@@ -1692,6 +1692,69 @@ describe('SettingsPage', () => {
     expect(projectApiMock.updateProject).not.toHaveBeenCalled()
   })
 
+  it('does not report unsaved changes for a project that has per-pool quotas (no edits)', async () => {
+    projectApiMock.listProjects.mockResolvedValue({
+      projects: [
+        {
+          id: 'project-pool',
+          name: 'Pooled Project',
+          settings: {
+            max_concurrent_tests: 2,
+            max_vusers: 250,
+            redaction_rules: [
+              {
+                name: 'customer id',
+                pattern: 'customer-[0-9]+',
+              },
+            ],
+            // A drift-revealing GitHub policy: whitespace in trimmed fields and OMITTED
+            // `?? true` fields (require_pull_request/allow_import/allow_push). For the
+            // baseline to read clean post-fix, projectGitHubDraftFromPolicy must trim
+            // those fields and apply the same defaults as loadProjectGitHubDraft +
+            // buildProjectGitHubDraft — so this pins the normalizer, not just pool_quotas.
+            github: {
+              enabled: true,
+              allowed_repos: ['org/repo-a', 'org/repo-b'],
+              allowed_branches: ['main'],
+              path_template: '  scripts/{name}.json  ',
+              allow_direct_commit: true,
+              bulk_sync_enabled: true,
+              checks_enabled: true,
+              app_installation_id: 12345,
+              default_repo: '  org/repo-a  ',
+              default_branch: 'main',
+              default_sync_directory: '  scripts  ',
+            },
+            pool_quotas: { 'pool-east': { max_vusers: 500, max_concurrent_tests: 3 } },
+          },
+          created_at: '2026-05-15T00:00:00Z',
+          updated_at: '2026-05-15T00:00:00Z',
+        },
+      ],
+      count: 1,
+    })
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+    await flushPromises()
+
+    await selectTopLevelSettingsTab('Projects & Compliance')
+    const projectSection = container.querySelector('#settings-section-projects')
+    expect(projectSection).toBeTruthy()
+    if (!projectSection) return
+
+    await selectSettingsSubnav(projectSection, 'Limits')
+
+    // The dirty-check baseline must include pool_quotas symmetrically with the draft;
+    // otherwise the governance Save button is permanently enabled (always "dirty")
+    // for any project that has per-pool quotas, even with no edits.
+    const saveButton = findButton('Save Project Governance')
+    expect(saveButton?.disabled).toBe(true)
+    expect(projectApiMock.updateProject).not.toHaveBeenCalled()
+  })
+
   it('blocks saving project compliance when a rule is missing its regex pattern', async () => {
     await act(async () => {
       renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)

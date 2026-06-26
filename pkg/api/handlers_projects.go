@@ -173,6 +173,20 @@ func validateProjectSettings(settings storage.ProjectSettings) error {
 	if settings.MaxTestDurationMinutes < 0 {
 		return errProjectSettings("max_test_duration_minutes must be greater than or equal to 0")
 	}
+	// Per-pool quotas mirror the project-wide caps: reject negatives (which would
+	// otherwise fall through the >0 admission guards and silently disable the cap —
+	// fail-open, the opposite of the operator's intent) and blank pool keys.
+	for poolID, quota := range settings.PoolQuotas {
+		if strings.TrimSpace(poolID) == "" {
+			return errProjectSettings("pool_quotas keys must be a non-empty fleet pool id")
+		}
+		if quota.MaxConcurrentTests < 0 {
+			return errProjectSettings("pool_quotas.max_concurrent_tests must be greater than or equal to 0")
+		}
+		if quota.MaxVUsers < 0 {
+			return errProjectSettings("pool_quotas.max_vusers must be greater than or equal to 0")
+		}
+	}
 	if settings.GitHub.Enabled {
 		for _, repo := range settings.GitHub.AllowedRepos {
 			if strings.TrimSpace(repo) == "" {

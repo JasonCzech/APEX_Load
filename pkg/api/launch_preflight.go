@@ -304,8 +304,12 @@ func generatorPlacementLaunchConflict(message string) LaunchConflict {
 // a pool-scoped assignment whose pool is missing, suspended, or empty blocks the
 // launch (rather than failing lazily at Run time), and a pool with fewer live
 // members than the run is sized for yields a non-blocking shortfall warning.
-// Tests without a pool-scoped assignment are unaffected. Per-pool quotas remain
-// out of scope (a separate schema-level feature).
+// Tests without a pool-scoped assignment are unaffected. Per-pool project quotas
+// are not enforced here — for an immediate launch they are checked by
+// evaluateQuotaBlockLocked below; the windowed scheduled-run projection does not
+// re-evaluate them (matching its pre-existing blindness to pool-scoped
+// reservations), so a scheduled pool run over its pool quota is caught and queued
+// by the authoritative start-time gate rather than blocked in preflight.
 func (tr *TestRunner) poolReadinessLaunchConflictsLocked(test *ManagedTest) (blocking, warnings []LaunchConflict) {
 	if test == nil || test.Assignment == nil || tr.fleetStore == nil {
 		return nil, nil

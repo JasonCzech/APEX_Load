@@ -390,6 +390,12 @@ func (tr *TestRunner) buildRunCalendarCapacity(from, to time.Time, projectID str
 		instants := []time.Time{dayStart}
 		reservationCount := 0
 		for _, res := range reservations {
+			// Pool-scoped reservations are accounted against a separate pool envelope
+			// and are excluded from this global overlay's reserved-generator/pressure
+			// figures; skip them here too so reservationCount can't disagree with them.
+			if strings.TrimSpace(res.PoolID) != "" {
+				continue
+			}
 			if projectID != "" && normalizeProjectID(res.ProjectID) != projectID {
 				continue
 			}
@@ -406,6 +412,11 @@ func (tr *TestRunner) buildRunCalendarCapacity(from, to time.Time, projectID str
 		}
 		dayBoundSlots := make([]*storage.CapacityReservation, 0, len(boundSlots))
 		for _, ts := range boundSlots {
+			// Pool-scoped bound timeslots likewise sit in a pool envelope, not the
+			// global one this overlay renders; exclude them from the count too.
+			if timeslotPoolID(ts) != "" {
+				continue
+			}
 			if timeslotReservedGenerators(settings, ts) <= 0 {
 				continue
 			}

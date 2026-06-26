@@ -48,13 +48,17 @@ func validateReservationWindow(start, end time.Time) error {
 }
 
 // reservationCapacityEqual reports whether two requested-capacity envelopes
-// reserve the same generators/VUsers (the admission-relevant terms). Protocol
-// and load-zone labels do not affect reserved capacity and are ignored.
+// reserve the same generators/VUsers from the same pool (the admission-relevant
+// terms). The PoolID is included because it selects which capacity envelope the
+// reservation draws from, so repointing the pool changes what is protected and
+// must re-trigger approval. Protocol and load-zone labels do not affect reserved
+// capacity and are ignored.
 func reservationCapacityEqual(a, b *storage.CapacityReservationRequest) bool {
 	if a == nil || b == nil {
 		return a == b
 	}
-	return intPtrEqual(a.Generators, b.Generators) && intPtrEqual(a.VUsers, b.VUsers)
+	return intPtrEqual(a.Generators, b.Generators) && intPtrEqual(a.VUsers, b.VUsers) &&
+		strings.TrimSpace(a.PoolID) == strings.TrimSpace(b.PoolID)
 }
 
 func intPtrEqual(a, b *int) bool {
@@ -111,6 +115,15 @@ func (s *Server) handleCreateCapacityReservation(w http.ResponseWriter, r *http.
 	if err := validateReservationTimezone(req.Timezone); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
+	}
+	// A pool-scoped reservation must reference a real fleet pool, otherwise it is
+	// silently inert: excluded from the global reservation math yet bounded by an
+	// empty/unknown pool envelope at admission, so it protects no capacity.
+	if req.RequestedCapacity != nil {
+		if poolID := strings.TrimSpace(req.RequestedCapacity.PoolID); poolID != "" && !s.runner.FleetPoolExists(poolID) {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("requested_capacity.pool_id references unknown fleet pool %q", poolID))
+			return
+		}
 	}
 	// Reservations always start pending; approval is a project-admin action via the
 	// dedicated approve endpoint, so approved state cannot be self-granted at create.
@@ -215,6 +228,14 @@ func (s *Server) handleUpdateCapacityReservation(w http.ResponseWriter, r *http.
 	if err := validateReservationTimezone(req.Timezone); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
+	}
+	// Same guard as create: an edit must not repoint the reservation at a
+	// non-existent fleet pool (which would silently protect no capacity).
+	if req.RequestedCapacity != nil {
+		if poolID := strings.TrimSpace(req.RequestedCapacity.PoolID); poolID != "" && !s.runner.FleetPoolExists(poolID) {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("requested_capacity.pool_id references unknown fleet pool %q", poolID))
+			return
+		}
 	}
 	// The window and reserved capacity are the load-bearing, admin-approved
 	// terms: an approved reservation's generators block other tenants. If an
@@ -360,9 +381,21 @@ func (s *Server) reservationOverbookingConflict(reservation *storage.CapacityRes
 	if required <= 0 {
 		return ""
 	}
-	pool := resolveCapacityAvailabilityAt(settings, reservation.StartAt.UTC()).EffectiveAvailableGenerators
+	// A pool-scoped reservation draws from (and is compared only against) its fleet
+	// pool's member envelope; a global reservation draws from the configured global
+	// pool and ignores pool-scoped overlaps entirely. This mirrors the admission
+	// accounting, which keeps the two envelopes separate — without it a pool slot is
+	// checked against the wrong pool and cross-counts unrelated envelopes.
+	poolID := timeslotPoolID(reservation)
+	var pool int
+	if poolID != "" {
+		pool = s.runner.PoolGeneratorEnvelope(poolID)
+	} else {
+		pool = resolveCapacityAvailabilityAt(settings, reservation.StartAt.UTC()).EffectiveAvailableGenerators
+	}
 	if pool <= 0 {
-		// No configured generator pool to enforce against.
+		// No envelope to enforce against: no configured global pool, or an empty/
+		// unknown fleet pool (the run-time admission gate re-validates either way).
 		return ""
 	}
 	overlaps, err := s.store.ListCapacityReservationsByTimeRange("", reservation.StartAt, reservation.EndAt)
@@ -374,9 +407,15 @@ func (s *Server) reservationOverbookingConflict(reservation *storage.CapacityRes
 		if o == nil || o.ID == reservation.ID || o.ApprovalState != "approved" {
 			continue
 		}
+		if timeslotPoolID(o) != poolID {
+			continue // different capacity envelope — don't cross-count
+		}
 		total += timeslotReservedGenerators(settings, o)
 	}
 	if total > pool {
+		if poolID != "" {
+			return fmt.Sprintf("approving this timeslot would reserve %d generators in fleet pool %q during an overlapping window but the pool has only %d", total, poolID, pool)
+		}
 		return fmt.Sprintf("approving this timeslot would reserve %d generators in an overlapping window but only %d are available", total, pool)
 	}
 	return ""
