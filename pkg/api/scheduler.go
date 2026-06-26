@@ -2,6 +2,8 @@ package api
 
 import (
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -195,12 +197,19 @@ func nextScenarioScheduleRun(schedule *storage.ScenarioSchedule, from time.Time)
 	if strings.TrimSpace(schedule.CronExpr) == "" {
 		return nil, fmt.Errorf("cron expression is required")
 	}
-	fields := strings.Fields(schedule.CronExpr)
+	fields := strings.Fields(expandCronMacro(schedule.CronExpr))
 	if len(fields) != 5 {
 		return nil, fmt.Errorf("cron expression must have 5 fields")
 	}
+	// Resolve 3-letter month/day-of-week aliases (and dow 7=Sunday) to numbers up
+	// front so the rest of the matcher stays purely numeric.
+	fields[3] = applyCronAliases(fields[3], cronMonthAliases)
+	fields[4] = applyCronAliases(fields[4], cronDowAliases)
 	location := scheduleEvalLocation(schedule.Timezone)
-	limit := from.Add(366 * 24 * time.Hour)
+	// Search far enough ahead to find a Feb-29 occurrence, whose gap between valid
+	// dates is up to ~4 years (a leap-day schedule like "0 0 29 2 *"). A 1-year
+	// window wrongly rejected those; this covers a full leap cycle plus margin.
+	limit := from.Add(maxCronSearchHorizon)
 	for candidate := from.Truncate(time.Minute).Add(time.Minute); !candidate.After(limit); candidate = candidate.Add(time.Minute) {
 		// Match cron fields in the schedule's declared timezone so a schedule
 		// fires at its local wall-clock time; iteration and the returned
@@ -221,11 +230,66 @@ func nextScenarioScheduleRun(schedule *storage.ScenarioSchedule, from time.Time)
 			return &next, nil
 		}
 	}
-	return nil, fmt.Errorf("could not find next run within one year")
+	return nil, fmt.Errorf("could not find a matching run within %d years — check for an impossible day/month combination (e.g. Feb 30, or Feb 29 outside a leap year)", maxCronSearchHorizonYears)
 }
 
+const (
+	// maxCronSearchHorizonYears bounds the minute-by-minute next-run search. It
+	// must exceed the longest gap between valid occurrences of any legal cron — a
+	// Feb-29 schedule recurs only every ~4 years — so legitimate leap-day
+	// schedules are not wrongly rejected.
+	maxCronSearchHorizonYears = 5
+	maxCronSearchHorizon      = maxCronSearchHorizonYears * 366 * 24 * time.Hour
+)
+
 var cronFieldNames = [5]string{"minute", "hour", "day-of-month", "month", "day-of-week"}
-var cronFieldBounds = [5][2]int{{0, 59}, {0, 23}, {1, 31}, {1, 12}, {0, 6}}
+
+// day-of-week upper bound is 7 because both 0 and 7 denote Sunday (POSIX/Quartz).
+var cronFieldBounds = [5][2]int{{0, 59}, {0, 23}, {1, 31}, {1, 12}, {0, 7}}
+
+var cronMonthAliases = map[string]int{
+	"jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
+	"jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
+}
+
+var cronDowAliases = map[string]int{
+	"sun": 0, "mon": 1, "tue": 2, "wed": 3, "thu": 4, "fri": 5, "sat": 6,
+}
+
+var cronAlphaToken = regexp.MustCompile(`[A-Za-z]+`)
+
+// applyCronAliases replaces 3-letter month/day-of-week alias tokens (case
+// insensitive) with their numeric equivalents, leaving every other token —
+// including the single-letter L/W specifiers — untouched. Run before the numeric
+// matcher so ranges/lists/steps over aliases (MON-FRI, JAN,MAR) work for free.
+func applyCronAliases(field string, aliases map[string]int) string {
+	return cronAlphaToken.ReplaceAllStringFunc(field, func(token string) string {
+		if n, ok := aliases[strings.ToLower(token)]; ok {
+			return strconv.Itoa(n)
+		}
+		return token
+	})
+}
+
+// expandCronMacro rewrites a named macro (@daily, @weekly, …) into its 5-field
+// equivalent. Non-macro expressions pass through unchanged; the raw form is what
+// is persisted, so a schedule keeps showing the macro the operator entered.
+func expandCronMacro(expr string) string {
+	switch strings.ToLower(strings.TrimSpace(expr)) {
+	case "@yearly", "@annually":
+		return "0 0 1 1 *"
+	case "@monthly":
+		return "0 0 1 * *"
+	case "@weekly":
+		return "0 0 * * 0"
+	case "@daily", "@midnight":
+		return "0 0 * * *"
+	case "@hourly":
+		return "0 * * * *"
+	default:
+		return expr
+	}
+}
 
 // validateCronExpr checks a 5-field cron expression and returns a specific error
 // naming the offending field/token, so a rejected expression (e.g. an imported
@@ -236,10 +300,12 @@ func validateCronExpr(expr string) error {
 	if expr == "" {
 		return fmt.Errorf("cron expression is required")
 	}
-	fields := strings.Fields(expr)
+	fields := strings.Fields(expandCronMacro(expr))
 	if len(fields) != 5 {
 		return fmt.Errorf("cron expression must have 5 space-separated fields (minute hour day-of-month month day-of-week), got %d", len(fields))
 	}
+	fields[3] = applyCronAliases(fields[3], cronMonthAliases)
+	fields[4] = applyCronAliases(fields[4], cronDowAliases)
 	for i, field := range fields {
 		min, max := cronFieldBounds[i][0], cronFieldBounds[i][1]
 		for _, part := range strings.Split(field, ",") {
@@ -251,6 +317,39 @@ func validateCronExpr(expr string) error {
 				return err
 			}
 		}
+	}
+	if err := validateCronDayMonthFeasible(fields[2], fields[3]); err != nil {
+		return err
+	}
+	return nil
+}
+
+// singleCronNumber returns the value of a field that is a single fixed integer
+// (no list/range/step/wildcard/specifier), else ok=false.
+func singleCronNumber(field string) (int, bool) {
+	field = strings.TrimSpace(field)
+	if field == "" || strings.ContainsAny(field, ",-/*?") || strings.ContainsAny(strings.ToUpper(field), "LW#") {
+		return 0, false
+	}
+	return parseCronNumber(field, 0, 9999)
+}
+
+// validateCronDayMonthFeasible rejects the common hand-typed impossible date
+// (e.g. "31 2" → Feb 31, "31 4" → Apr 31) when both day-of-month and month are
+// fixed singletons. February allows day 29 so leap-day schedules stay valid.
+// Anything more complex (lists/ranges/steps/specifiers) defers to the search.
+func validateCronDayMonthFeasible(domField, monthField string) error {
+	day, ok := singleCronNumber(domField)
+	if !ok {
+		return nil
+	}
+	month, ok := singleCronNumber(monthField)
+	if !ok || month < 1 || month > 12 {
+		return nil
+	}
+	maxDays := [12]int{31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31}
+	if day > maxDays[month-1] {
+		return fmt.Errorf("impossible date in cron: day %d does not occur in month %d", day, month)
 	}
 	return nil
 }
@@ -269,8 +368,18 @@ func validateCronPart(part string, min, max int, fieldName string) error {
 	if base == "*" || base == "?" {
 		return nil
 	}
+	if fieldName == "day-of-month" {
+		if handled, err := validateDomSpecialToken(base, part, fieldName); handled {
+			return err
+		}
+	}
+	if fieldName == "day-of-week" {
+		if handled, err := validateDowSpecialToken(base, part, fieldName); handled {
+			return err
+		}
+	}
 	if strings.ContainsAny(base, "LW#lw") {
-		return fmt.Errorf("unsupported cron token in %s field %q: L (last), W (nearest weekday), and # (nth) are not supported — use *, ranges (1-5), steps (*/5), or lists (1,3,5)", fieldName, part)
+		return fmt.Errorf("unsupported cron token in %s field %q: L/W/# are only valid in the day-of-month (L, LW, L-3, 15W) and day-of-week (5L, 5#3) fields", fieldName, part)
 	}
 	if dash := strings.Index(base, "-"); dash >= 0 {
 		start, ok := parseCronNumber(base[:dash], min, max)
@@ -290,6 +399,50 @@ func validateCronPart(part string, min, max int, fieldName string) error {
 		return fmt.Errorf("invalid value in cron %s field %q (allowed %d-%d, or *, ?, ranges, steps, lists)", fieldName, part, min, max)
 	}
 	return nil
+}
+
+// validateDomSpecialToken validates a day-of-month special token (L, LW, L-n,
+// dW). It returns handled=false for non-special tokens so normal numeric
+// validation proceeds.
+func validateDomSpecialToken(base, part, fieldName string) (bool, error) {
+	upper := strings.ToUpper(base)
+	switch {
+	case upper == "L" || upper == "LW":
+		return true, nil
+	case strings.HasPrefix(upper, "L-"):
+		if _, ok := parseCronNumber(upper[2:], 1, 30); !ok {
+			return true, fmt.Errorf("invalid offset in cron %s field %q: use L-1 .. L-30", fieldName, part)
+		}
+		return true, nil
+	case strings.HasSuffix(upper, "W"):
+		if _, ok := parseCronNumber(upper[:len(upper)-1], 1, 31); !ok {
+			return true, fmt.Errorf("invalid nearest-weekday day in cron %s field %q: use 1W .. 31W", fieldName, part)
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
+// validateDowSpecialToken validates a day-of-week special token (dL last weekday,
+// d#k nth weekday). Weekday accepts 0..7 (0 and 7 both Sunday).
+func validateDowSpecialToken(base, part, fieldName string) (bool, error) {
+	upper := strings.ToUpper(base)
+	if hash := strings.Index(upper, "#"); hash >= 0 {
+		if _, ok := parseCronNumber(upper[:hash], 0, 7); !ok {
+			return true, fmt.Errorf("invalid weekday in cron %s field %q: use 0#n .. 7#n (0 or 7 = Sunday)", fieldName, part)
+		}
+		if _, ok := parseCronNumber(upper[hash+1:], 1, 5); !ok {
+			return true, fmt.Errorf("invalid occurrence in cron %s field %q: use d#1 .. d#5", fieldName, part)
+		}
+		return true, nil
+	}
+	if strings.HasSuffix(upper, "L") {
+		if _, ok := parseCronNumber(upper[:len(upper)-1], 0, 7); !ok {
+			return true, fmt.Errorf("invalid weekday in cron %s field %q: use 0L .. 7L (last weekday of month)", fieldName, part)
+		}
+		return true, nil
+	}
+	return false, nil
 }
 
 func cronFieldMatches(expr string, value int, min int, max int) bool {
@@ -383,19 +536,154 @@ func scheduleEvalLocation(timezone string) *time.Location {
 
 // cronMatchesDayOfMonthAndWeek applies POSIX cron semantics for the
 // day-of-month (field 3) and day-of-week (field 5) fields: when BOTH are
-// restricted (neither is "*"), a candidate matches if EITHER field matches;
-// otherwise both must match (and a "*" field always matches, so this reduces to
-// the single restricted field). This fixes the prior AND-only behavior where
-// "0 9 15 * 1" only fired on a Monday that was also the 15th.
+// restricted (neither is "*" nor "?"), a candidate matches if EITHER field
+// matches; otherwise both must match (and an unrestricted field always matches,
+// so this reduces to the single restricted field). This fixes the prior AND-only
+// behavior where "0 9 15 * 1" only fired on a Monday that was also the 15th.
+// Both fields additionally honor the Quartz day specifiers (L/LW/L-n/dW in
+// day-of-month; dL/d#k in day-of-week).
 func cronMatchesDayOfMonthAndWeek(domField, dowField string, t time.Time) bool {
-	domRestricted := strings.TrimSpace(domField) != "*"
-	dowRestricted := strings.TrimSpace(dowField) != "*"
-	domMatch := cronFieldMatches(domField, t.Day(), 1, 31)
-	dowMatch := cronFieldMatches(dowField, int(t.Weekday()), 0, 6)
+	domField = strings.TrimSpace(domField)
+	dowField = strings.TrimSpace(dowField)
+	domRestricted := domField != "*" && domField != "?" && domField != ""
+	dowRestricted := dowField != "*" && dowField != "?" && dowField != ""
+	domMatch := cronDomMatches(domField, t)
+	dowMatch := cronDowMatches(dowField, t)
 	if domRestricted && dowRestricted {
 		return domMatch || dowMatch
 	}
 	return domMatch && dowMatch
+}
+
+func cronDomMatches(field string, t time.Time) bool {
+	field = strings.TrimSpace(field)
+	if field == "*" || field == "?" || field == "" {
+		return true
+	}
+	for _, part := range strings.Split(field, ",") {
+		if cronDomPartMatches(strings.TrimSpace(part), t) {
+			return true
+		}
+	}
+	return false
+}
+
+func cronDomPartMatches(part string, t time.Time) bool {
+	if part == "" {
+		return false
+	}
+	upper := strings.ToUpper(part)
+	last := daysInMonth(t.Year(), t.Month(), t.Location())
+	switch {
+	case upper == "L":
+		return t.Day() == last
+	case upper == "LW":
+		return t.Day() == nearestWeekday(t.Year(), t.Month(), last, t.Location())
+	case strings.HasPrefix(upper, "L-"):
+		n, ok := parseCronNumber(upper[2:], 1, 30)
+		if !ok {
+			return false
+		}
+		return t.Day() == last-n
+	case strings.HasSuffix(upper, "W"):
+		d, ok := parseCronNumber(upper[:len(upper)-1], 1, 31)
+		if !ok {
+			return false
+		}
+		return t.Day() == nearestWeekday(t.Year(), t.Month(), d, t.Location())
+	default:
+		return cronPartMatches(part, t.Day(), 1, 31)
+	}
+}
+
+func cronDowMatches(field string, t time.Time) bool {
+	field = strings.TrimSpace(field)
+	if field == "*" || field == "?" || field == "" {
+		return true
+	}
+	for _, part := range strings.Split(field, ",") {
+		if cronDowPartMatches(strings.TrimSpace(part), t) {
+			return true
+		}
+	}
+	return false
+}
+
+func cronDowPartMatches(part string, t time.Time) bool {
+	if part == "" {
+		return false
+	}
+	weekday := int(t.Weekday()) // 0=Sunday .. 6=Saturday
+	upper := strings.ToUpper(part)
+	if hash := strings.Index(upper, "#"); hash >= 0 {
+		d, ok := parseCronNumber(upper[:hash], 0, 7)
+		if !ok {
+			return false
+		}
+		k, ok := parseCronNumber(upper[hash+1:], 1, 5)
+		if !ok {
+			return false
+		}
+		if normalizeCronDow(d) != weekday {
+			return false
+		}
+		return (t.Day()-1)/7+1 == k
+	}
+	if strings.HasSuffix(upper, "L") {
+		d, ok := parseCronNumber(upper[:len(upper)-1], 0, 7)
+		if !ok {
+			return false
+		}
+		if normalizeCronDow(d) != weekday {
+			return false
+		}
+		return t.Day()+7 > daysInMonth(t.Year(), t.Month(), t.Location())
+	}
+	if cronPartMatches(part, weekday, 0, 7) {
+		return true
+	}
+	// Sunday (weekday 0) also matches a literal 7, e.g. "7" or a range like "5-7".
+	return weekday == 0 && cronPartMatches(part, 7, 0, 7)
+}
+
+func normalizeCronDow(d int) int {
+	if d == 7 {
+		return 0
+	}
+	return d
+}
+
+func daysInMonth(year int, month time.Month, loc *time.Location) int {
+	firstOfNext := time.Date(year, month, 1, 0, 0, 0, 0, loc).AddDate(0, 1, 0)
+	return firstOfNext.AddDate(0, 0, -1).Day()
+}
+
+// nearestWeekday returns the day-of-month of the weekday (Mon-Fri) nearest to
+// `day`, never crossing the month boundary (Quartz "W" semantics: a Saturday
+// shifts to the prior Friday unless that leaves the month, in which case it
+// shifts to the following Monday, and vice versa for Sunday).
+func nearestWeekday(year int, month time.Month, day int, loc *time.Location) int {
+	last := daysInMonth(year, month, loc)
+	if day > last {
+		day = last
+	}
+	if day < 1 {
+		day = 1
+	}
+	switch time.Date(year, month, day, 0, 0, 0, 0, loc).Weekday() {
+	case time.Saturday:
+		if day-1 >= 1 {
+			return day - 1
+		}
+		return day + 2
+	case time.Sunday:
+		if day+1 <= last {
+			return day + 1
+		}
+		return day - 2
+	default:
+		return day
+	}
 }
 
 func scheduleAllowsCandidate(schedule *storage.ScenarioSchedule, candidate time.Time) (bool, error) {
@@ -794,6 +1082,67 @@ func (tr *TestRunner) CreateScenarioSchedule(scenarioID string, req CreateScenar
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	return tr.upsertScenarioScheduleLocked(scenarioID, uuid.New().String(), nil, req)
+}
+
+// ScenarioSchedulePreview is the result of a (non-persisting) schedule preview:
+// the next N UTC fire times for a candidate cron/timezone/window configuration.
+type ScenarioSchedulePreview struct {
+	CronExpr    string      `json:"cron_expr"`
+	Timezone    string      `json:"timezone"`
+	Occurrences []time.Time `json:"occurrences"`
+	Count       int         `json:"count"`
+}
+
+// PreviewScenarioScheduleRuns computes the next `count` fire times for a candidate
+// schedule WITHOUT persisting anything. It reuses the production evaluator
+// (nextScenarioScheduleRun + scheduleAllowsCandidate), so the preview honors the
+// declared timezone, DST, POSIX day-of-month/day-of-week OR semantics, the
+// Quartz day specifiers, blackout/maintenance/availability windows, and the
+// date-range pause exactly as the scheduler will at runtime — the preview cannot
+// drift from real behavior.
+func (tr *TestRunner) PreviewScenarioScheduleRuns(scenarioID string, req CreateScenarioScheduleRequest, count int) (*ScenarioSchedulePreview, error) {
+	if _, ok := tr.GetScenario(scenarioID); !ok {
+		return nil, fmt.Errorf("scenario not found: %s", scenarioID)
+	}
+	cronExpr := strings.TrimSpace(req.CronExpr)
+	if err := validateCronExpr(cronExpr); err != nil {
+		return nil, err
+	}
+	tz := strings.TrimSpace(req.Timezone)
+	if tz == "" {
+		tz = "UTC"
+	}
+	if count <= 0 {
+		count = 5
+	}
+	if count > 50 {
+		count = 50
+	}
+	disabledFrom := normalizeSchedulePauseBound(req.DisabledFrom)
+	disabledUntil := normalizeSchedulePauseBound(req.DisabledUntil)
+	if disabledFrom != nil && disabledUntil != nil && !disabledFrom.Before(*disabledUntil) {
+		return nil, fmt.Errorf("disabled_from must be before disabled_until")
+	}
+	schedule := &storage.ScenarioSchedule{
+		CronExpr:            cronExpr,
+		Timezone:            tz,
+		BlackoutWindows:     req.BlackoutWindows,
+		MaintenanceWindows:  req.MaintenanceWindows,
+		AvailabilityWindows: req.AvailabilityWindows,
+		DisabledFrom:        disabledFrom,
+		DisabledUntil:       disabledUntil,
+	}
+	occurrences := make([]time.Time, 0, count)
+	cursor := time.Now().UTC()
+	for i := 0; i < count; i++ {
+		next, err := nextScenarioScheduleRun(schedule, cursor)
+		if err != nil || next == nil {
+			break
+		}
+		occurrences = append(occurrences, *next)
+		cursor = next.Add(time.Minute)
+	}
+	return &ScenarioSchedulePreview{CronExpr: cronExpr, Timezone: tz, Occurrences: occurrences, Count: len(occurrences)}, nil
 }
 
 func (tr *TestRunner) UpdateScenarioSchedule(scenarioID string, scheduleID string, req CreateScenarioScheduleRequest) (*storage.ScenarioSchedule, bool, error) {

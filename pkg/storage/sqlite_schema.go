@@ -288,7 +288,8 @@ func schemaCreateTableStatements() []string {
 			started_by_subject TEXT,
 			started_by_display_name TEXT,
 			groups_json TEXT,
-			goal_config_json TEXT
+			goal_config_json TEXT,
+			timeslot_id TEXT
 		)`,
 		`CREATE TABLE IF NOT EXISTS test_history (
 			test_id TEXT,
@@ -688,6 +689,7 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "tests.runtime_settings_json", query: `ALTER TABLE tests ADD COLUMN runtime_settings_json TEXT`},
 		{name: "tests.scenario_mode", query: `ALTER TABLE tests ADD COLUMN scenario_mode TEXT`},
 		{name: "tests.goal_config_json", query: `ALTER TABLE tests ADD COLUMN goal_config_json TEXT`},
+		{name: "tests.timeslot_id", query: `ALTER TABLE tests ADD COLUMN timeslot_id TEXT`},
 		{name: "tests.shakeout_enabled", query: `ALTER TABLE tests ADD COLUMN shakeout_enabled INTEGER DEFAULT 0`},
 		{name: "tests.resource_baseline_enabled", query: `ALTER TABLE tests ADD COLUMN resource_baseline_enabled INTEGER DEFAULT 0`},
 		{name: "scenarios.assignment_json", query: `ALTER TABLE scenarios ADD COLUMN assignment_json TEXT`},

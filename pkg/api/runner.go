@@ -1202,6 +1202,14 @@ func cloneTimePtr(value *time.Time) *time.Time {
 	return &cloned
 }
 
+func cloneStringPtr(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
+}
+
 func normalizeProjectID(projectID string) string {
 	if projectID == "" {
 		return storage.DefaultProjectID

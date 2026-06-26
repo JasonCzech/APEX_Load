@@ -37,6 +37,111 @@ func timeslotRequest(t *testing.T, server *Server, method, path string, body any
 	return rec
 }
 
+func TestCapacityReservationApprovalIsAtomic(t *testing.T) {
+	server, _ := newTimeslotServer(t)
+	start := time.Date(2026, 8, 1, 9, 0, 0, 0, time.UTC)
+	rec := timeslotRequest(t, server, http.MethodPost, "/api/v1/capacity/timeslots", map[string]any{
+		"project_id": "proj-a", "start_at": start, "end_at": start.Add(time.Hour), "timezone": "UTC",
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var created storage.CapacityReservation
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	approve := func() *httptest.ResponseRecorder {
+		return timeslotRequest(t, server, http.MethodPost, "/api/v1/capacity/timeslots/"+created.ID+"/approve", nil)
+	}
+	if r := approve(); r.Code != http.StatusOK {
+		t.Fatalf("first approve = %d body=%s, want 200", r.Code, r.Body.String())
+	}
+	// A second approve of an already-approved (no-longer-pending) slot is a 409.
+	if r := approve(); r.Code != http.StatusConflict {
+		t.Fatalf("second approve = %d body=%s, want 409", r.Code, r.Body.String())
+	}
+	// Reject can still revoke an approved slot.
+	if r := timeslotRequest(t, server, http.MethodPost, "/api/v1/capacity/timeslots/"+created.ID+"/reject", nil); r.Code != http.StatusOK {
+		t.Fatalf("reject after approve = %d body=%s, want 200", r.Code, r.Body.String())
+	}
+}
+
+func TestLaunchTimeslotRevalidation(t *testing.T) {
+	server, store := newTimeslotServer(t)
+	start := time.Date(2026, 9, 1, 9, 0, 0, 0, time.UTC)
+	end := start.Add(2 * time.Hour)
+	vus := 50
+	testID := "test-1"
+	sched := start.Add(30 * time.Minute)
+	mkReservation := func(id, state string, boundTo *string) {
+		if err := store.SaveCapacityReservation(&storage.CapacityReservation{
+			ID: id, ProjectID: "p", StartAt: start, EndAt: end,
+			ApprovalState: state, BoundTestID: boundTo,
+			RequestedCapacity: &storage.CapacityReservationRequest{VUsers: &vus},
+		}); err != nil {
+			t.Fatalf("save reservation %s: %v", id, err)
+		}
+	}
+	mkTest := func(slotID string) *ManagedTest {
+		var tid *string
+		if slotID != "" {
+			tid = &slotID
+		}
+		return &ManagedTest{ID: testID, TimeslotID: tid, ScheduledStartAt: &sched, Duration: time.Hour, TotalVUsers: 10}
+	}
+	now := start
+	other := "other-test"
+	mkReservation("ok", "approved", &testID)
+	mkReservation("rej", "rejected", &testID)
+	mkReservation("other", "approved", &other)
+	mkReservation("toobig", "approved", &testID)
+
+	cases := []struct {
+		name    string
+		test    *ManagedTest
+		wantErr bool
+	}{
+		{"no timeslot", mkTest(""), false},
+		{"approved bound fits", mkTest("ok"), false},
+		{"rejected after bind", mkTest("rej"), true},
+		{"bound to another run", mkTest("other"), true},
+		{"missing slot", mkTest("ghost"), true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := server.runner.launchTimeslotRevalidationErrorLocked(tc.test, now)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("err = %v, wantErr = %v", err, tc.wantErr)
+			}
+		})
+	}
+	// Approved + bound but the run now exceeds the reserved capacity -> blocked.
+	big := mkTest("toobig")
+	big.TotalVUsers = 9999
+	if err := server.runner.launchTimeslotRevalidationErrorLocked(big, now); err == nil {
+		t.Fatal("over-capacity run should block launch")
+	}
+}
+
+func TestPruneTimeslotRetention(t *testing.T) {
+	server, store := newTimeslotServer(t)
+	t.Setenv("APEXLOAD_TIMESLOT_RETENTION_DAYS", "7")
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
+	if err := store.SaveCapacityReservation(&storage.CapacityReservation{ID: "old", ProjectID: "p", StartAt: now.Add(-30 * 24 * time.Hour), EndAt: now.Add(-29 * 24 * time.Hour), ApprovalState: "approved", UpdatedAt: now.Add(-29 * 24 * time.Hour)}); err != nil {
+		t.Fatalf("save old: %v", err)
+	}
+	if err := store.SaveCapacityReservation(&storage.CapacityReservation{ID: "future", ProjectID: "p", StartAt: now.Add(24 * time.Hour), EndAt: now.Add(25 * time.Hour), ApprovalState: "approved", UpdatedAt: now}); err != nil {
+		t.Fatalf("save future: %v", err)
+	}
+	server.pruneTimeslotRetention(now)
+	if got, _ := store.GetCapacityReservation("old"); got != nil {
+		t.Fatal("elapsed reservation should be pruned")
+	}
+	if got, _ := store.GetCapacityReservation("future"); got == nil {
+		t.Fatal("future reservation should survive retention")
+	}
+}
+
 func TestCapacityReservationCreateValidation(t *testing.T) {
 	server, _ := newTimeslotServer(t)
 	start := time.Date(2026, 7, 1, 9, 0, 0, 0, time.UTC)

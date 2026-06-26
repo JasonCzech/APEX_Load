@@ -3,7 +3,7 @@ import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
 import { useHasTopbarContributionProvider, useTopbarContribution, type TopbarMetaTone } from '../hooks/TopbarContributionProvider'
-import { APMIntegrationProfilesResponse, FleetAlert, FleetCapacityResponse, HealthResponse, InfrastructureMonitorPacksResponse, ProvisionerInfo, RunCalendarEvent, RunCalendarResponse, ScenarioScheduleHealth, SystemInventoryGenerator, SystemInventoryResponse, SystemReadinessResponse, SystemRestartCapabilities, SystemRestartRequest, SystemServicesResponse, TelemetryDiagnosticEntry } from '../types'
+import { APMIntegrationProfilesResponse, FleetAlert, FleetCapacityResponse, HealthResponse, InfrastructureMonitorPacksResponse, ProvisionerInfo, RunCalendarCapacityDay, RunCalendarEvent, RunCalendarResponse, ScenarioScheduleHealth, SystemInventoryGenerator, SystemInventoryResponse, SystemReadinessResponse, SystemRestartCapabilities, SystemRestartRequest, SystemServicesResponse, TelemetryDiagnosticEntry } from '../types'
 import { readStoredStringArray, writeStoredJSON } from '../utils/browserStorage'
 import { formatTelemetryDiagnosticTime, telemetryDiagnosticSeverityClass } from './monitoringTelemetryDiagnostics'
 import ConfirmDestructiveModal, { type DestructiveConfirmation } from './ConfirmDestructiveModal'
@@ -385,6 +385,8 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
           from: calendarRange.from.toISOString(),
           to: calendarRange.to.toISOString(),
           project_id: activeProject?.id,
+          capacity: true,
+          tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
         }).catch(() => null),
         safeApiCall(() => api.getAPMIntegrationProfiles(), null),
         safeApiCall(() => api.getInfrastructureMonitorPacks(), null),
@@ -1634,6 +1636,13 @@ function RunCalendarPanel({
   const projectedCount = events.filter(event => event.projected).length
   const rangeNotice = formatRunCalendarNotice(calendar)
   const selectedRunId = selectedEvent?.id
+  const capacityByDate = useMemo(() => {
+    const map = new Map<string, RunCalendarCapacityDay>()
+    for (const day of calendar?.capacity?.days ?? []) {
+      map.set(day.date, day)
+    }
+    return map
+  }, [calendar])
 
   useEffect(() => {
     if (selectedRunId) setDetailCollapsed(false)
@@ -1709,11 +1718,21 @@ function RunCalendarPanel({
               {model.days.map(day => {
                 const visibleEvents = day.events.slice(0, view === 'month' ? 4 : 7)
                 const hiddenCount = day.events.length - visibleEvents.length
+                const capacityDay = capacityByDate.get(day.key)
                 return (
                   <div key={day.key} className={`run-calendar-day ${day.isOutsidePeriod ? 'outside' : ''} ${day.isToday ? 'today' : ''}`}>
                     <div className="run-calendar-day-header">
                       <span>{formatCalendarDayNumber(day.date, view)}</span>
-                      {day.events.length > 0 && <span>{day.events.length}</span>}
+                      <span className="run-calendar-day-header-meta">
+                        {capacityDay && capacityDay.reservation_count > 0 && (
+                          <span
+                            className={`run-calendar-pressure-pip ${capacityDay.pressure}`}
+                            title={`Capacity: ${capacityDay.peak_reserved_generators}/${capacityDay.configured_generators} generators reserved (${Math.round(capacityDay.pressure_pct * 100)}%) · ${capacityDay.reservation_count} reservation${capacityDay.reservation_count === 1 ? '' : 's'}`}
+                            aria-label={`Capacity pressure ${capacityDay.pressure}`}
+                          />
+                        )}
+                        {day.events.length > 0 && <span>{day.events.length}</span>}
+                      </span>
                     </div>
                     <div className="run-calendar-day-events">
                       {visibleEvents.map(event => (

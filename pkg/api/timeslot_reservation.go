@@ -53,6 +53,42 @@ func (tr *TestRunner) validateAndBindTimeslotLocked(timeslotID string, test *Man
 	return nil
 }
 
+// launchTimeslotRevalidationErrorLocked re-checks a run's bound capacity timeslot
+// at the actual launch instant. A timeslot is validated and bound at create time,
+// but between then and launch it can be rejected, re-bound, resized, or the run's
+// effective window can drift — so trusting the bind-time fit lets a run launch
+// into capacity it no longer holds. Returns a non-nil error (blocking the start)
+// when the bound slot is gone, no longer approved, no longer bound to this run, or
+// no longer fits. Runs without a bound timeslot are unaffected.
+func (tr *TestRunner) launchTimeslotRevalidationErrorLocked(test *ManagedTest, now time.Time) error {
+	if test == nil || test.TimeslotID == nil || tr.reservationStore == nil {
+		return nil
+	}
+	slotID := strings.TrimSpace(*test.TimeslotID)
+	if slotID == "" {
+		return nil
+	}
+	reservation, err := tr.reservationStore.GetCapacityReservation(slotID)
+	if err != nil || reservation == nil {
+		return fmt.Errorf("bound capacity timeslot %q is no longer available", slotID)
+	}
+	if reservation.ApprovalState != "approved" {
+		return fmt.Errorf("bound capacity timeslot %q is no longer approved (state %q)", slotID, reservation.ApprovalState)
+	}
+	if reservation.BoundTestID == nil || *reservation.BoundTestID != test.ID {
+		return fmt.Errorf("bound capacity timeslot %q is no longer bound to this run", slotID)
+	}
+	launchStart := now.UTC()
+	if test.ScheduledStartAt != nil {
+		launchStart = test.ScheduledStartAt.UTC()
+	}
+	launchEnd := launchStart.Add(test.Duration)
+	if err := reservationFitError(reservation, launchStart, launchEnd, test.TotalVUsers); err != nil {
+		return fmt.Errorf("bound capacity timeslot %q no longer fits this run: %w", slotID, err)
+	}
+	return nil
+}
+
 // reservationFitError reports why a run with the given window and VUser count does
 // not fit a reservation (nil if it fits). Both bind paths — create-time
 // (validateAndBindTimeslotLocked) and the standalone bind endpoint — call it so

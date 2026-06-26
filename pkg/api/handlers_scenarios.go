@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -132,6 +133,29 @@ func (s *Server) handleScenarioResults(w http.ResponseWriter, r *http.Request) {
 	scenarioID := r.PathValue("id")
 	tests := s.runner.ListTestsByContext(r.URL.Query().Get("application_id"), r.URL.Query().Get("release_id"), scenarioID)
 	writeJSON(w, http.StatusOK, map[string]any{"tests": tests, "count": len(tests)})
+}
+
+func (s *Server) handleScenarioSchedulePreview(w http.ResponseWriter, r *http.Request) {
+	var req CreateScenarioScheduleRequest
+	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	count := 5
+	if raw := strings.TrimSpace(r.URL.Query().Get("count")); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+			count = n
+		}
+	}
+	preview, err := s.runner.PreviewScenarioScheduleRuns(r.PathValue("id"), req, count)
+	if err != nil {
+		status := http.StatusBadRequest
+		if err.Error() == "scenario not found: "+r.PathValue("id") {
+			status = http.StatusNotFound
+		}
+		writeError(w, status, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, preview)
 }
 
 func (s *Server) handleCreateScenarioSchedule(w http.ResponseWriter, r *http.Request) {

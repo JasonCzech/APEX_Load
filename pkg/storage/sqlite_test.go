@@ -680,6 +680,37 @@ func TestSQLiteStorePersistsScheduledStartAt(t *testing.T) {
 	}
 }
 
+func TestSQLiteStorePersistsTimeslotID(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	slot := "timeslot-77"
+	record := &TestRecord{
+		ID:          "test-bound",
+		Name:        "Bound Checkout",
+		Status:      "PENDING",
+		ProjectID:   DefaultProjectID,
+		TotalVUsers: 25,
+		Duration:    int64(30 * time.Second),
+		StartTime:   time.Now().UTC(),
+		TimeslotID:  &slot,
+		Groups:      []map[string]any{{"name": "Checkout"}},
+	}
+	if err := store.SaveTest(record); err != nil {
+		t.Fatalf("SaveTest returned error: %v", err)
+	}
+	roundTrip, err := store.GetTest(record.ID)
+	if err != nil {
+		t.Fatalf("GetTest returned error: %v", err)
+	}
+	if roundTrip.TimeslotID == nil || *roundTrip.TimeslotID != slot {
+		t.Fatalf("timeslot_id = %v, want %q", roundTrip.TimeslotID, slot)
+	}
+}
+
 func TestSQLiteStorePersistsBaselinePin(t *testing.T) {
 	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {

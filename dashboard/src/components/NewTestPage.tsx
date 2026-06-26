@@ -20,6 +20,7 @@ import {
   formatNextBlockingEvent,
   formatReservationWindow,
   formatScheduleTimestamp,
+  formatScheduleTimestampInZone,
   formatScheduleToken,
   formatScheduleWindow,
   formatTimeslotLabel,
@@ -31,6 +32,7 @@ import {
 import ErrorDiagnostic from './ErrorDiagnostic'
 import PageViewToggle from './PageViewToggle'
 import GroupPlacementEditor from './GroupPlacementEditor'
+import { CronBuilder } from './ScheduleCronBuilder'
 import { normalizeRequiredLabels } from './assignmentLabels'
 import {
   buildEffectiveScenarioGroups,
@@ -427,6 +429,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
   const [scheduleOccurrences, setScheduleOccurrences] = useState<Record<string, ScenarioScheduleOccurrence[]>>({})
   const [scheduleDefaults, setScheduleDefaults] = useState<DashboardScheduleDefaultsSettings>(DEFAULT_SCHEDULE_DEFAULTS)
   const [scheduleDraft, setScheduleDraft] = useState<ScheduleDraft>(buildDefaultScheduleDraft())
+  const [schedulePreview, setSchedulePreview] = useState<{ occurrences: string[]; error: string } | null>(null)
   const [runName, setRunName] = useState('')
   const [newReleaseName, setNewReleaseName] = useState('')
   const [scenarioQuery, setScenarioQuery] = useState('')
@@ -585,6 +588,38 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
   }, [api])
 
   const scenario = useMemo(() => scenarios.find(item => item.id === scenarioId), [scenarios, scenarioId])
+
+  // Live "next runs" preview: re-fetch (debounced) from the backend so the
+  // shown fire times use the exact production cron evaluator (tz/DST/windows/
+  // pause/Quartz specifiers) and cannot diverge from what the scheduler will do.
+  useEffect(() => {
+    const cron = scheduleDraft.cron_expr.trim()
+    if (!scenarioId || !cron || typeof api.previewScenarioSchedule !== 'function') {
+      setSchedulePreview(null)
+      return
+    }
+    let cancelled = false
+    const handle = window.setTimeout(() => {
+      // `name` is required by the request type but ignored by the preview, so a
+      // constant keeps the form name out of the dependency/refetch loop.
+      api.previewScenarioSchedule(scenarioId, {
+        name: 'schedule-preview',
+        cron_expr: cron,
+        timezone: scheduleDraft.timezone.trim() || 'UTC',
+        blackout_windows: scheduleWindowsToPayload(scheduleDraft.blackout_windows, scheduleDraft.timezone),
+        maintenance_windows: scheduleWindowsToPayload(scheduleDraft.maintenance_windows, scheduleDraft.timezone),
+        availability_windows: scheduleWindowsToPayload(scheduleDraft.availability_windows, scheduleDraft.timezone),
+        disabled_from: datetimeLocalToISO(scheduleDraft.disabled_from) || undefined,
+        disabled_until: datetimeLocalToISO(scheduleDraft.disabled_until) || undefined,
+      }, 5).then(result => {
+        if (!cancelled) setSchedulePreview({ occurrences: result.occurrences || [], error: '' })
+      }).catch(err => {
+        if (!cancelled) setSchedulePreview({ occurrences: [], error: getErrorMessage(err, 'Invalid schedule') })
+      })
+    }, 400)
+    return () => { cancelled = true; window.clearTimeout(handle) }
+  }, [api, scenarioId, scheduleDraft.cron_expr, scheduleDraft.timezone, scheduleDraft.blackout_windows, scheduleDraft.maintenance_windows, scheduleDraft.availability_windows, scheduleDraft.disabled_from, scheduleDraft.disabled_until])
+
   const release = useMemo(() => releases.find(item => item.id === releaseId), [releases, releaseId])
   const effectiveRunDuration = useMemo(() => getEffectiveRunDuration(scenario, runDefaultOverrides), [scenario, runDefaultOverrides])
   const effectiveResourceBaseline = useMemo(() => getEffectiveResourceBaseline(scenario, runDefaultOverrides), [scenario, runDefaultOverrides])
@@ -1536,12 +1571,31 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                 <div className="setting-row">
                   <div className="setting-info">
                     <span className="setting-label">Cron Expression</span>
-                    <span className="setting-desc">Five-field cron format, for example `0 9 * * 1-5`</span>
+                    <span className="setting-desc">Build a schedule below, or type a five-field cron (supports `MON-FRI`, `@daily`, `L`, `15W`, `5#3`).</span>
                     {scheduleDraft.cron_expr.trim() && describeCron(scheduleDraft.cron_expr) && (
                       <span className="setting-desc cron-preview">{describeCron(scheduleDraft.cron_expr)}{scheduleDraft.timezone ? ` (${scheduleDraft.timezone})` : ''}</span>
                     )}
                   </div>
-                  <input className="settings-input" value={scheduleDraft.cron_expr} onChange={(event) => setScheduleDraft(prev => ({ ...prev, cron_expr: event.target.value }))} placeholder="0 9 * * 1-5" />
+                  <div className="cron-field-stack">
+                    <CronBuilder value={scheduleDraft.cron_expr} disabled={!canManageTests} onChange={(expr) => setScheduleDraft(prev => ({ ...prev, cron_expr: expr }))} />
+                    <input className="settings-input cron-raw-input" value={scheduleDraft.cron_expr} disabled={!canManageTests} onChange={(event) => setScheduleDraft(prev => ({ ...prev, cron_expr: event.target.value }))} placeholder="0 9 * * 1-5" aria-label="Raw cron expression" />
+                    {schedulePreview && (
+                      schedulePreview.error ? (
+                        <span className="setting-desc cron-preview-error">{schedulePreview.error}</span>
+                      ) : schedulePreview.occurrences.length > 0 ? (
+                        <div className="cron-next-runs">
+                          <span className="setting-desc">Next runs ({scheduleDraft.timezone || 'UTC'}):</span>
+                          <ul>
+                            {schedulePreview.occurrences.map((iso, idx) => (
+                              <li key={idx}>{formatScheduleTimestampInZone(iso, scheduleDraft.timezone)}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : (
+                        <span className="setting-desc">No upcoming runs match this schedule within the next year.</span>
+                      )
+                    )}
+                  </div>
                 </div>
                 <div className="setting-row">
                   <div className="setting-info">

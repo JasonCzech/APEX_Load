@@ -212,6 +212,70 @@ func TestHandleRunCalendarProjectsBlockedScheduleAsBlocked(t *testing.T) {
 	}
 }
 
+func TestBuildRunCalendarCapacityOverlay(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	settings := server.runner.GetSystemSettings()
+	settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators = 10
+	day := time.Date(2026, 8, 10, 0, 0, 0, 0, time.UTC)
+	resStart := day.Add(9 * time.Hour)
+	resEnd := day.Add(17 * time.Hour)
+	settings.CapacityPlanning.Reservations = []CapacityReservation{
+		{ProjectID: "proj-a", ReservedGenerators: 9, StartsAt: &resStart, EndsAt: &resEnd},
+	}
+	if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatalf("UpdateSystemSettings returned error: %v", err)
+	}
+
+	capacity := server.runner.buildRunCalendarCapacity(day.Add(-24*time.Hour), day.Add(48*time.Hour), "proj-a", "UTC")
+	if capacity == nil || len(capacity.Days) == 0 {
+		t.Fatal("expected capacity days")
+	}
+	byDate := map[string]RunCalendarCapacityDay{}
+	for _, d := range capacity.Days {
+		byDate[d.Date] = d
+	}
+	target, ok := byDate["2026-08-10"]
+	if !ok {
+		t.Fatalf("missing 2026-08-10 day in %+v", capacity.Days)
+	}
+	if target.PeakReservedGenerators != 9 {
+		t.Fatalf("peak reserved = %d, want 9", target.PeakReservedGenerators)
+	}
+	if target.Pressure != "tight" {
+		t.Fatalf("pressure = %q (pct %.2f), want tight", target.Pressure, target.PressurePct)
+	}
+	if clearDay, ok := byDate["2026-08-09"]; !ok || clearDay.Pressure != "clear" || clearDay.PeakReservedGenerators != 0 {
+		t.Fatalf("2026-08-09 = %+v, want clear with 0 reserved", clearDay)
+	}
+
+	// The overlay is opt-in: absent without ?capacity=true, present with it.
+	base := httptest.NewRequest(http.MethodGet, "/api/v1/run-calendar", nil)
+	baseResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(baseResp, base)
+	var without RunCalendarResponse
+	if err := json.Unmarshal(baseResp.Body.Bytes(), &without); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if without.Capacity != nil {
+		t.Fatal("capacity should be omitted without ?capacity=true")
+	}
+	withReq := httptest.NewRequest(http.MethodGet, "/api/v1/run-calendar?capacity=true", nil)
+	withResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(withResp, withReq)
+	var with RunCalendarResponse
+	if err := json.Unmarshal(withResp.Body.Bytes(), &with); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if with.Capacity == nil {
+		t.Fatal("capacity should be present with ?capacity=true")
+	}
+}
+
 func TestHandleRunCalendarClampsRetentionAndFutureRange(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {

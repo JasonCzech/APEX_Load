@@ -7,6 +7,7 @@ package storage
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -113,6 +114,49 @@ func (s *SQLiteStore) UpdateCapacityReservationBinding(id string, testID *string
 		return false, err
 	}
 	return affected > 0, nil
+}
+
+func (s *SQLiteStore) UpdateCapacityReservationApprovalState(id string, fromStates []string, toState string, updatedAt time.Time) (bool, error) {
+	// Atomic compare-and-set on approval_state: flip to toState only when the row
+	// is still in one of fromStates. This closes the read-modify-write TOCTOU in
+	// the approve/reject handler so a stale decision cannot clobber a concurrent
+	// one (e.g. an approve landing after a reject, or a double-approve).
+	if len(fromStates) == 0 {
+		return false, fmt.Errorf("fromStates is required")
+	}
+	placeholders := make([]string, len(fromStates))
+	args := make([]any, 0, len(fromStates)+3)
+	args = append(args, toState, updatedAt.UTC(), id)
+	for i, st := range fromStates {
+		placeholders[i] = "?"
+		args = append(args, st)
+	}
+	query := `UPDATE capacity_reservations SET approval_state = ?, updated_at = ? WHERE id = ? AND approval_state IN (` + strings.Join(placeholders, ", ") + `)`
+	result, err := s.db.Exec(query, args...)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return affected > 0, nil
+}
+
+func (s *SQLiteStore) DeleteCapacityReservationsEndedBefore(cutoff time.Time) (int64, error) {
+	result, err := s.db.Exec(`DELETE FROM capacity_reservations WHERE end_at < ?`, cutoff.UTC())
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+func (s *SQLiteStore) DeleteRejectedCapacityReservationsBefore(cutoff time.Time) (int64, error) {
+	result, err := s.db.Exec(`DELETE FROM capacity_reservations WHERE approval_state = 'rejected' AND updated_at < ?`, cutoff.UTC())
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 func (s *SQLiteStore) DeleteCapacityReservation(id string) error {

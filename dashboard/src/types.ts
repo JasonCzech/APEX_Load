@@ -1605,6 +1605,21 @@ export interface RunCalendarEvent {
   topology: RunCalendarTopology
 }
 
+export interface RunCalendarCapacityDay {
+  date: string
+  configured_generators: number
+  available_generators: number
+  peak_reserved_generators: number
+  reservation_count: number
+  pressure_pct: number
+  pressure: 'clear' | 'tight' | 'over' | string
+}
+
+export interface RunCalendarCapacity {
+  project_id?: string
+  days: RunCalendarCapacityDay[]
+}
+
 export interface RunCalendarResponse {
   generated_at: string
   range: RunCalendarRange
@@ -1613,6 +1628,7 @@ export interface RunCalendarResponse {
   status_counts?: Record<string, number>
   source_counts?: Record<string, number>
   truncated?: boolean
+  capacity?: RunCalendarCapacity
 }
 
 export type TestStatus =

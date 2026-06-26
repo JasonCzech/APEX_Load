@@ -345,6 +345,13 @@ func (s *metricsStoreSpy) ListCapacityReservationsByTimeRange(string, time.Time,
 func (s *metricsStoreSpy) UpdateCapacityReservationBinding(string, *string, *string, time.Time) (bool, error) {
 	return false, nil
 }
+func (s *metricsStoreSpy) UpdateCapacityReservationApprovalState(string, []string, string, time.Time) (bool, error) {
+	return true, nil
+}
+func (s *metricsStoreSpy) DeleteCapacityReservationsEndedBefore(time.Time) (int64, error) { return 0, nil }
+func (s *metricsStoreSpy) DeleteRejectedCapacityReservationsBefore(time.Time) (int64, error) {
+	return 0, nil
+}
 func (s *metricsStoreSpy) DeleteCapacityReservation(string) error { return nil }
 func (s *metricsStoreSpy) SaveFleetPool(*storage.FleetPool) error { return nil }
 func (s *metricsStoreSpy) GetFleetPool(string) (*storage.FleetPool, error) {
@@ -5444,9 +5451,9 @@ func TestValidateCronExpr(t *testing.T) {
 		expr   string
 		substr string
 	}{
-		{"0 9 L * *", "unsupported cron token"},
-		{"0 9 15W * *", "unsupported cron token"},
-		{"0 9 * * 2#1", "unsupported cron token"},
+		// L/W/# are valid in day-of-month/day-of-week but not elsewhere.
+		{"0 L * * *", "only valid in"},
+		{"0 9 * W *", "only valid in"},
 		{"0 9 * *", "5 space-separated fields"},
 		{"0 99 * * *", "invalid value"},
 		{"0 9 5-1 * *", "after end"},
@@ -5476,6 +5483,159 @@ func TestNextScenarioScheduleRunTreatsQuestionMarkAsWildcard(t *testing.T) {
 	}
 	if !qn.Equal(*sn) {
 		t.Fatalf("? cron next = %v, * cron next = %v; want equal", qn, sn)
+	}
+}
+
+func TestPreviewScenarioScheduleRuns(t *testing.T) {
+	store := &metricsStoreSpy{}
+	runner := NewTestRunner(2, NewHub(), store)
+	runner.StoreScript(&dsl.Script{
+		ID: "s", Name: "S", Protocol: "http", Version: "1.0.0",
+		Config:  dsl.ScriptConfig{BaseURL: "https://example.com"},
+		Actions: []dsl.Action{{Name: "a", Type: "request", Target: "/"}},
+	})
+	scenario, err := runner.StoreScenario(CreateScenarioRequest{
+		Name: "Preview", Duration: "5m",
+		Groups: []CreateGroupEntry{{ScriptID: "s", VUsers: 1}},
+	})
+	if err != nil {
+		t.Fatalf("StoreScenario: %v", err)
+	}
+
+	preview, err := runner.PreviewScenarioScheduleRuns(scenario.ID, CreateScenarioScheduleRequest{CronExpr: "0 9 * * *", Timezone: "UTC"}, 5)
+	if err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+	if preview.Count != 5 || len(preview.Occurrences) != 5 {
+		t.Fatalf("preview count = %d, want 5", preview.Count)
+	}
+	for i := 1; i < len(preview.Occurrences); i++ {
+		if !preview.Occurrences[i].After(preview.Occurrences[i-1]) {
+			t.Fatalf("occurrences not strictly ascending: %v", preview.Occurrences)
+		}
+		if preview.Occurrences[i].Hour() != 9 {
+			t.Fatalf("occurrence hour = %d, want 9", preview.Occurrences[i].Hour())
+		}
+	}
+	if _, err := runner.PreviewScenarioScheduleRuns(scenario.ID, CreateScenarioScheduleRequest{CronExpr: "bogus"}, 5); err == nil {
+		t.Fatal("invalid cron should error")
+	}
+	if _, err := runner.PreviewScenarioScheduleRuns("nope", CreateScenarioScheduleRequest{CronExpr: "0 9 * * *"}, 5); err == nil {
+		t.Fatal("unknown scenario should error")
+	}
+	macro, err := runner.PreviewScenarioScheduleRuns(scenario.ID, CreateScenarioScheduleRequest{CronExpr: "@daily"}, 3)
+	if err != nil || macro.Count != 3 {
+		t.Fatalf("macro preview = %+v err=%v", macro, err)
+	}
+}
+
+func TestNextScenarioScheduleRunAliasesAndMacros(t *testing.T) {
+	from := time.Date(2026, time.June, 15, 12, 0, 0, 0, time.UTC)
+	next := func(expr string) time.Time {
+		n, err := nextScenarioScheduleRun(&storage.ScenarioSchedule{CronExpr: expr, Timezone: "UTC"}, from)
+		if err != nil || n == nil {
+			t.Fatalf("next(%q) error: %v", expr, err)
+		}
+		return *n
+	}
+	// New syntax must be exactly equivalent to its canonical numeric form.
+	equiv := []struct{ a, b string }{
+		{"@daily", "0 0 * * *"},
+		{"@midnight", "0 0 * * *"},
+		{"@hourly", "0 * * * *"},
+		{"@weekly", "0 0 * * 0"},
+		{"@monthly", "0 0 1 * *"},
+		{"@yearly", "0 0 1 1 *"},
+		{"@annually", "0 0 1 1 *"},
+		{"30 9 * * MON", "30 9 * * 1"},
+		{"30 9 * * mon", "30 9 * * 1"},
+		{"0 0 * MAR *", "0 0 * 3 *"},
+		{"0 9 * * MON-FRI", "0 9 * * 1-5"},
+		{"0 9 * * 7", "0 9 * * 0"},
+		{"0 9 * * SUN", "0 9 * * 0"},
+		{"0 9 * * 5,6,7", "0 9 * * 5,6,0"},
+		{"0 0 * JAN,JUL *", "0 0 * 1,7 *"},
+	}
+	for _, tc := range equiv {
+		if got, want := next(tc.a), next(tc.b); !got.Equal(want) {
+			t.Errorf("next(%q)=%v, next(%q)=%v; want equal", tc.a, got, tc.b, want)
+		}
+	}
+}
+
+func TestNextScenarioScheduleRunQuartzDaySpecifiers(t *testing.T) {
+	next := func(expr string, from time.Time) time.Time {
+		n, err := nextScenarioScheduleRun(&storage.ScenarioSchedule{CronExpr: expr, Timezone: "UTC"}, from)
+		if err != nil || n == nil {
+			t.Fatalf("next(%q) error: %v", expr, err)
+		}
+		return *n
+	}
+	from := time.Date(2026, time.June, 1, 0, 0, 0, 0, time.UTC)
+	dim := func(tm time.Time) int { return daysInMonth(tm.Year(), tm.Month(), time.UTC) }
+
+	if got := next("0 9 L * *", from); got.Day() != dim(got) || got.Hour() != 9 {
+		t.Errorf("L -> %v, want last day of month at 09:00", got)
+	}
+	if got := next("0 9 L-2 * *", from); got.Day() != dim(got)-2 {
+		t.Errorf("L-2 -> %v, want (last-2)", got)
+	}
+	if got := next("0 9 LW * *", from); got.Weekday() == time.Saturday || got.Weekday() == time.Sunday {
+		t.Errorf("LW -> %v landed on a weekend", got)
+	}
+	if got := next("0 9 15W * *", from); got.Weekday() == time.Saturday || got.Weekday() == time.Sunday || got.Day() < 13 || got.Day() > 17 {
+		t.Errorf("15W -> %v, want a weekday within 2 days of the 15th", got)
+	}
+	if got := next("0 9 * * 5L", from); got.Weekday() != time.Friday || got.Day()+7 <= dim(got) {
+		t.Errorf("5L -> %v, want the last Friday of the month", got)
+	}
+	if got := next("0 9 * * 5#3", from); got.Weekday() != time.Friday || (got.Day()-1)/7+1 != 3 {
+		t.Errorf("5#3 -> %v, want the 3rd Friday of the month", got)
+	}
+	if got := next("0 9 * * FRI#3", from); got.Weekday() != time.Friday || (got.Day()-1)/7+1 != 3 {
+		t.Errorf("FRI#3 -> %v, want the 3rd Friday of the month", got)
+	}
+}
+
+func TestNextScenarioScheduleRunFindsLeapDay(t *testing.T) {
+	// From mid-2026 the next Feb 29 is 2028-02-29 — more than a year out, so the
+	// old 366-day horizon wrongly rejected this. The widened horizon must find it.
+	from := time.Date(2026, time.July, 1, 0, 0, 0, 0, time.UTC)
+	next, err := nextScenarioScheduleRun(&storage.ScenarioSchedule{CronExpr: "0 0 29 2 *", Timezone: "UTC"}, from)
+	if err != nil || next == nil {
+		t.Fatalf("leap-day next run error: %v", err)
+	}
+	want := time.Date(2028, time.February, 29, 0, 0, 0, 0, time.UTC)
+	if !next.Equal(want) {
+		t.Fatalf("leap-day next run = %v, want %v", next, want)
+	}
+}
+
+func TestValidateCronExprExtended(t *testing.T) {
+	valid := []string{
+		"@daily", "@weekly", "@hourly", "@monthly", "@yearly",
+		"0 9 * * MON-FRI", "0 9 L * *", "0 9 LW * *", "0 9 L-3 * *",
+		"0 9 15W * *", "0 9 * * 5L", "0 9 * * 5#3", "0 9 * * 7",
+		"0 0 * JAN,MAR,DEC *", "0 9 * * FRI#2",
+		"0 0 29 2 *", // leap day is a legal (if sparse) schedule
+		"0 0 31 1 *", // Jan 31 exists
+	}
+	for _, e := range valid {
+		if err := validateCronExpr(e); err != nil {
+			t.Errorf("validateCronExpr(%q) = %v, want nil", e, err)
+		}
+	}
+	invalid := []string{
+		"0 9 32W * *", "0 9 * * 8#2", "0 9 * * 5#6", "L 9 * * *",
+		"0 9 FOOBAR * *", "0 9 * 13 *", "0 9 L-40 * *",
+		"0 0 31 2 *", // Feb 31 is impossible
+		"0 0 30 2 *", // Feb 30 is impossible
+		"0 0 31 4 *", // April has 30 days
+	}
+	for _, e := range invalid {
+		if err := validateCronExpr(e); err == nil {
+			t.Errorf("validateCronExpr(%q) = nil, want error", e)
+		}
 	}
 }
 

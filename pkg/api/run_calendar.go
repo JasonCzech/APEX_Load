@@ -19,13 +19,32 @@ const (
 )
 
 type RunCalendarResponse struct {
-	GeneratedAt  time.Time          `json:"generated_at"`
-	Range        RunCalendarRange   `json:"range"`
-	Events       []RunCalendarEvent `json:"events"`
-	Count        int                `json:"count"`
-	StatusCounts map[string]int     `json:"status_counts,omitempty"`
-	SourceCounts map[string]int     `json:"source_counts,omitempty"`
-	Truncated    bool               `json:"truncated,omitempty"`
+	GeneratedAt  time.Time            `json:"generated_at"`
+	Range        RunCalendarRange     `json:"range"`
+	Events       []RunCalendarEvent   `json:"events"`
+	Count        int                  `json:"count"`
+	StatusCounts map[string]int       `json:"status_counts,omitempty"`
+	SourceCounts map[string]int       `json:"source_counts,omitempty"`
+	Truncated    bool                 `json:"truncated,omitempty"`
+	Capacity     *RunCalendarCapacity `json:"capacity,omitempty"`
+}
+
+// RunCalendarCapacity is an optional per-day capacity overlay (requested with
+// ?capacity=true) so operators can see reservation pressure behind scheduled
+// runs without a second request.
+type RunCalendarCapacity struct {
+	ProjectID string                   `json:"project_id,omitempty"`
+	Days      []RunCalendarCapacityDay `json:"days"`
+}
+
+type RunCalendarCapacityDay struct {
+	Date                   string  `json:"date"` // YYYY-MM-DD (UTC)
+	ConfiguredGenerators   int     `json:"configured_generators"`
+	AvailableGenerators    int     `json:"available_generators"`
+	PeakReservedGenerators int     `json:"peak_reserved_generators"`
+	ReservationCount       int     `json:"reservation_count"`
+	PressurePct            float64 `json:"pressure_pct"`
+	Pressure               string  `json:"pressure"` // clear | tight | over
 }
 
 type RunCalendarRange struct {
@@ -129,6 +148,9 @@ func (s *Server) handleGetRunCalendar(w http.ResponseWriter, r *http.Request) {
 	from, to, calendarRange := clampRunCalendarRange(requestedFrom, requestedTo, now, settings)
 	inventory := s.systemInventory(r.Context())
 	response := s.runner.BuildRunCalendar(from, to, projectID, now, inventory, calendarRange, limit)
+	if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("capacity")), "true") {
+		response.Capacity = s.runner.buildRunCalendarCapacity(from, to, projectID, strings.TrimSpace(r.URL.Query().Get("tz")))
+	}
 	writeJSON(w, http.StatusOK, response)
 }
 
@@ -301,6 +323,122 @@ func (tr *TestRunner) BuildRunCalendar(from time.Time, to time.Time, projectID s
 		SourceCounts: sourceCounts,
 		Truncated:    truncated,
 	}
+}
+
+// buildRunCalendarCapacity computes a per-day capacity overlay across [from,to):
+// peak reserved generators (settings reservations + approved bound timeslots),
+// configured/available pool size, and a clear/tight/over pressure classification.
+// Days are bucketed in `tz` (the viewer's timezone, defaulting to UTC) so the
+// returned date keys line up with the dashboard's local-day calendar cells.
+// Read-only; reuses the same reservation math as admission.
+func (tr *TestRunner) buildRunCalendarCapacity(from, to time.Time, projectID string, tz string) *RunCalendarCapacity {
+	settings := tr.GetSystemSettings()
+	location := scheduleEvalLocation(tz)
+	var boundSlots []*storage.CapacityReservation
+	if tr.reservationStore != nil {
+		if slots, err := tr.reservationStore.ListCapacityReservationsByTimeRange(projectID, from, to); err == nil {
+			for _, slot := range slots {
+				if slot != nil && slot.ApprovalState == "approved" && slot.BoundTestID != nil {
+					boundSlots = append(boundSlots, slot)
+				}
+			}
+		}
+	}
+	reservations := normalizeCapacityReservations(settings.CapacityPlanning.Reservations)
+	days := make([]RunCalendarCapacityDay, 0)
+	const maxDays = 400
+	localFrom := from.In(location)
+	dayStart := time.Date(localFrom.Year(), localFrom.Month(), localFrom.Day(), 0, 0, 0, 0, location)
+	for d := 0; dayStart.Before(to) && d < maxDays; d++ {
+		dayEnd := dayStart.AddDate(0, 0, 1)
+		// Evaluate reserved capacity at the day start plus every reservation/timeslot
+		// edge inside the day, so a reservation that opens mid-day is not missed.
+		instants := []time.Time{dayStart}
+		reservationCount := 0
+		for _, res := range reservations {
+			if projectID != "" && normalizeProjectID(res.ProjectID) != projectID {
+				continue
+			}
+			if res.ReservedGenerators <= 0 {
+				continue
+			}
+			if !reservationWindowOverlapsDay(res.StartsAt, res.EndsAt, dayStart, dayEnd) {
+				continue
+			}
+			reservationCount++
+			if res.StartsAt != nil && !res.StartsAt.Before(dayStart) && res.StartsAt.Before(dayEnd) {
+				instants = append(instants, res.StartsAt.UTC())
+			}
+		}
+		dayBoundSlots := make([]*storage.CapacityReservation, 0, len(boundSlots))
+		for _, ts := range boundSlots {
+			if timeslotReservedGenerators(settings, ts) <= 0 {
+				continue
+			}
+			if ts.StartAt.Before(dayEnd) && ts.EndAt.After(dayStart) {
+				dayBoundSlots = append(dayBoundSlots, ts)
+				reservationCount++
+				if !ts.StartAt.Before(dayStart) && ts.StartAt.Before(dayEnd) {
+					instants = append(instants, ts.StartAt.UTC())
+				}
+			}
+		}
+		peakReserved := 0
+		for _, at := range instants {
+			active := make([]*storage.CapacityReservation, 0, len(dayBoundSlots))
+			for _, ts := range dayBoundSlots {
+				if !at.Before(ts.StartAt) && at.Before(ts.EndAt) {
+					active = append(active, ts)
+				}
+			}
+			total, proj := reservationTotalsWithTimeslots(settings, projectID, at, active)
+			reserved := total
+			if projectID != "" {
+				reserved = proj
+			}
+			if reserved > peakReserved {
+				peakReserved = reserved
+			}
+		}
+		snapshot := resolveCapacityAvailabilityForProjectAt(settings, projectID, dayStart)
+		denom := snapshot.ConfiguredAvailableGenerators
+		if denom <= 0 {
+			denom = snapshot.EffectiveAvailableGenerators
+		}
+		pressurePct := 0.0
+		if denom > 0 {
+			pressurePct = float64(peakReserved) / float64(denom)
+		}
+		pressure := "clear"
+		if pressurePct > 1.0 {
+			pressure = "over"
+		} else if pressurePct >= 0.85 {
+			pressure = "tight"
+		}
+		days = append(days, RunCalendarCapacityDay{
+			Date:                   dayStart.Format("2006-01-02"),
+			ConfiguredGenerators:   snapshot.ConfiguredAvailableGenerators,
+			AvailableGenerators:    snapshot.EffectiveAvailableGenerators,
+			PeakReservedGenerators: peakReserved,
+			ReservationCount:       reservationCount,
+			PressurePct:            pressurePct,
+			Pressure:               pressure,
+		})
+		dayStart = dayEnd
+	}
+	return &RunCalendarCapacity{ProjectID: projectID, Days: days}
+}
+
+// reservationWindowOverlapsDay reports whether a reservation window (nil bound =
+// open-ended) intersects [dayStart, dayEnd).
+func reservationWindowOverlapsDay(start, end *time.Time, dayStart, dayEnd time.Time) bool {
+	if start != nil && !start.Before(dayEnd) {
+		return false
+	}
+	if end != nil && !end.After(dayStart) {
+		return false
+	}
+	return true
 }
 
 func (tr *TestRunner) runCalendarSnapshot(projectID string) runCalendarSnapshot {

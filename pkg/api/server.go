@@ -53,34 +53,35 @@ type Server struct {
 	// replay and script debug managers fire completion hooks into the shared
 	// persistSelfHealToRepository, whose read-modify-write of the whole objects
 	// blob would otherwise lose a concurrently appended candidate.
-	selfHealMu           sync.Mutex
-	collectorMetrics     *collectorMetricStore
-	fleetScaler          fleetPoolScaler
-	leadership           *executionLeadership
-	mux                  *http.ServeMux
-	usageCancel          context.CancelFunc
-	auditRetentionCancel context.CancelFunc
-	authAudit            auditThrottle
-	fanoutCancel         context.CancelFunc
-	fanoutSub            FanoutSubscription
-	generatorDiscovery   *generatorDiscovery
-	discoveryCancel      context.CancelFunc
-	k8sRestart           K8sRestartSettings
-	kubeRestarter        KubeRestarter
-	restartMu            sync.Mutex
-	restartInFlight      map[string]struct{}
-	metricsAddr          string
-	metricsServer        *http.Server
-	metricsBoundAddr     string
-	desktopMode          bool
-	bridgeMode           bool
-	recordingBridge      *BrowserRecordingBridge
-	desktopAppData       string
-	desktopLogPath       string
-	importAssetDir       string
-	bindScope            string
-	boundAddr            string
-	boundAddrMu          sync.RWMutex
+	selfHealMu              sync.Mutex
+	collectorMetrics        *collectorMetricStore
+	fleetScaler             fleetPoolScaler
+	leadership              *executionLeadership
+	mux                     *http.ServeMux
+	usageCancel             context.CancelFunc
+	auditRetentionCancel    context.CancelFunc
+	timeslotRetentionCancel context.CancelFunc
+	authAudit               auditThrottle
+	fanoutCancel            context.CancelFunc
+	fanoutSub               FanoutSubscription
+	generatorDiscovery      *generatorDiscovery
+	discoveryCancel         context.CancelFunc
+	k8sRestart              K8sRestartSettings
+	kubeRestarter           KubeRestarter
+	restartMu               sync.Mutex
+	restartInFlight         map[string]struct{}
+	metricsAddr             string
+	metricsServer           *http.Server
+	metricsBoundAddr        string
+	desktopMode             bool
+	bridgeMode              bool
+	recordingBridge         *BrowserRecordingBridge
+	desktopAppData          string
+	desktopLogPath          string
+	importAssetDir          string
+	bindScope               string
+	boundAddr               string
+	boundAddrMu             sync.RWMutex
 	// staticFS is the dashboard asset filesystem probed by readiness checks.
 	// It defaults to the compile-time embedded StaticFS; tests override it so
 	// the readiness suite does not depend on a prior `npm run build`.
@@ -428,6 +429,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("DELETE /api/v1/scenarios/{id}", cors(log(auth(http.HandlerFunc(s.handleDeleteScenario)))))
 	s.mux.Handle("GET /api/v1/scenarios/load-models/support-matrix", cors(log(auth(http.HandlerFunc(s.handleLoadModelSupportMatrix)))))
 	s.mux.Handle("GET /api/v1/scenarios/load-models/templates", cors(log(auth(http.HandlerFunc(s.handleLoadModelTemplates)))))
+	s.mux.Handle("POST /api/v1/scenarios/{id}/schedules/preview", cors(log(auth(http.HandlerFunc(s.handleScenarioSchedulePreview)))))
 	s.mux.Handle("POST /api/v1/scenarios/{id}/schedules", cors(log(auth(http.HandlerFunc(s.handleCreateScenarioSchedule)))))
 	s.mux.Handle("GET /api/v1/scenarios/{id}/schedules", cors(log(auth(http.HandlerFunc(s.handleListScenarioSchedules)))))
 	s.mux.Handle("PUT /api/v1/scenarios/{id}/schedules/{schedule_id}", cors(log(auth(http.HandlerFunc(s.handleUpdateScenarioSchedule)))))
@@ -936,6 +938,7 @@ func (s *Server) Start() error {
 	}
 	s.startUsageAccountingSnapshotCadence()
 	s.startAuditRetentionCadence()
+	s.startTimeslotRetentionCadence()
 
 	if err := s.startMetricsListener(); err != nil {
 		return err
@@ -1064,6 +1067,10 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if s.auditRetentionCancel != nil {
 		s.auditRetentionCancel()
 		s.auditRetentionCancel = nil
+	}
+	if s.timeslotRetentionCancel != nil {
+		s.timeslotRetentionCancel()
+		s.timeslotRetentionCancel = nil
 	}
 	if s.fanoutCancel != nil {
 		s.fanoutCancel()

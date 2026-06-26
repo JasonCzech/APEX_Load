@@ -17,6 +17,64 @@ func openTimeslotStore(t *testing.T) *SQLiteStore {
 	return store
 }
 
+func TestCapacityReservationApprovalCASAndRetention(t *testing.T) {
+	store := openTimeslotStore(t)
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
+	cutoff := now.Add(-7 * 24 * time.Hour)
+
+	// Three reservations: a fully-elapsed one, a long-rejected one, and a live one.
+	ended := &CapacityReservation{ID: "ended", ProjectID: "p", StartAt: now.Add(-30 * 24 * time.Hour), EndAt: now.Add(-29 * 24 * time.Hour), ApprovalState: "approved", UpdatedAt: now.Add(-29 * 24 * time.Hour)}
+	rejected := &CapacityReservation{ID: "rejected", ProjectID: "p", StartAt: now.Add(24 * time.Hour), EndAt: now.Add(25 * time.Hour), ApprovalState: "rejected", UpdatedAt: now.Add(-30 * 24 * time.Hour)}
+	live := &CapacityReservation{ID: "live", ProjectID: "p", StartAt: now.Add(24 * time.Hour), EndAt: now.Add(25 * time.Hour), ApprovalState: "pending", UpdatedAt: now}
+	for _, r := range []*CapacityReservation{ended, rejected, live} {
+		if err := store.SaveCapacityReservation(r); err != nil {
+			t.Fatalf("save %s: %v", r.ID, err)
+		}
+	}
+	// SaveCapacityReservation overwrites updated_at with the real wall clock, so
+	// drive the rejected row's updated_at through the CAS (which honors the passed
+	// timestamp) to pin it to the test's logical past — otherwise the
+	// rejected-prune assertion below depends on the real date.
+	if _, err := store.UpdateCapacityReservationApprovalState("rejected", []string{"rejected"}, "rejected", now.Add(-30*24*time.Hour)); err != nil {
+		t.Fatalf("seed rejected updated_at: %v", err)
+	}
+
+	// Approval CAS: pending -> approved succeeds; a second flip from pending fails.
+	ok, err := store.UpdateCapacityReservationApprovalState("live", []string{"pending"}, "approved", now)
+	if err != nil || !ok {
+		t.Fatalf("CAS pending->approved = (%v, %v), want (true, nil)", ok, err)
+	}
+	ok, err = store.UpdateCapacityReservationApprovalState("live", []string{"pending"}, "approved", now)
+	if err != nil || ok {
+		t.Fatalf("CAS approved-not-pending = (%v, %v), want (false, nil)", ok, err)
+	}
+	// Reject can still revoke an approved slot.
+	ok, err = store.UpdateCapacityReservationApprovalState("live", []string{"pending", "approved"}, "rejected", now)
+	if err != nil || !ok {
+		t.Fatalf("CAS approved->rejected = (%v, %v), want (true, nil)", ok, err)
+	}
+
+	// Retention sweeps: ended-before removes the elapsed slot; rejected-before
+	// removes the long-rejected one (but NOT 'live', just rejected at `now`).
+	endedPruned, err := store.DeleteCapacityReservationsEndedBefore(cutoff)
+	if err != nil || endedPruned != 1 {
+		t.Fatalf("DeleteCapacityReservationsEndedBefore = (%d, %v), want (1, nil)", endedPruned, err)
+	}
+	rejectedPruned, err := store.DeleteRejectedCapacityReservationsBefore(cutoff)
+	if err != nil || rejectedPruned != 1 {
+		t.Fatalf("DeleteRejectedCapacityReservationsBefore = (%d, %v), want (1, nil)", rejectedPruned, err)
+	}
+	if got, _ := store.GetCapacityReservation("ended"); got != nil {
+		t.Fatalf("ended reservation should have been pruned, got %+v", got)
+	}
+	if got, _ := store.GetCapacityReservation("rejected"); got != nil {
+		t.Fatalf("rejected reservation should have been pruned, got %+v", got)
+	}
+	if got, _ := store.GetCapacityReservation("live"); got == nil {
+		t.Fatal("live reservation should have survived retention")
+	}
+}
+
 func TestCapacityReservationRoundTrip(t *testing.T) {
 	store := openTimeslotStore(t)
 	gens, vus := 4, 500

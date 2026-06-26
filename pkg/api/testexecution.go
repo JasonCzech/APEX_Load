@@ -109,6 +109,13 @@ func (tr *TestRunner) evaluateStartGatesLocked(id string, test *ManagedTest, opt
 			return false, err
 		}
 	}
+	// Re-validate a bound capacity timeslot at the actual launch instant even when
+	// the launch-window preflight is skipped: the binding can be invalidated
+	// (rejected/re-bound/resized) between create and start, and a scheduled run's
+	// window can drift, so the bind-time fit can no longer hold.
+	if err := tr.launchTimeslotRevalidationErrorLocked(test, time.Now().UTC()); err != nil {
+		return false, err
+	}
 	if blocked, reason := tr.evaluateQuotaBlockLocked(test, ""); blocked {
 		tr.markTestPendingLocked(test, reason)
 		return true, nil

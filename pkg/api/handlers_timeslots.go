@@ -322,10 +322,29 @@ func (s *Server) transitionReservationApproval(w http.ResponseWriter, r *http.Re
 			return
 		}
 	}
-	reservation.ApprovalState = state
-	if err := s.store.SaveCapacityReservation(reservation); err != nil {
+	// Atomic compare-and-set instead of read-modify-write so two concurrent
+	// approve/reject calls (or an approve landing after a reject) cannot clobber
+	// each other. Approve only fires on a still-pending slot; reject can also
+	// revoke an already-approved slot.
+	fromStates := []string{"pending", "approved"}
+	if state == "approved" {
+		fromStates = []string{"pending"}
+	}
+	now := time.Now().UTC()
+	updated, err := s.store.UpdateCapacityReservationApprovalState(reservation.ID, fromStates, state, now)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
+	}
+	if !updated {
+		writeError(w, http.StatusConflict, "timeslot approval state changed concurrently; reload and retry")
+		return
+	}
+	if fresh, err := s.store.GetCapacityReservation(reservation.ID); err == nil && fresh != nil {
+		reservation = fresh
+	} else {
+		reservation.ApprovalState = state
+		reservation.UpdatedAt = now
 	}
 	s.recordAuditEvent(r, action, "success", "timeslot", reservation.ID, reservation.ProjectID, details)
 	writeJSON(w, http.StatusOK, reservation)

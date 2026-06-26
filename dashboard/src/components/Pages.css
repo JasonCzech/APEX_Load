@@ -5197,6 +5197,32 @@
   font-variant-numeric: tabular-nums;
 }
 
+.run-calendar-day-header-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.run-calendar-pressure-pip {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent, #4a9eff);
+}
+
+.run-calendar-pressure-pip.clear {
+  background: var(--success, #34d399);
+}
+
+.run-calendar-pressure-pip.tight {
+  background: var(--warning, #fbbf24);
+}
+
+.run-calendar-pressure-pip.over {
+  background: var(--danger, #f87171);
+}
+
 .run-calendar-day-events,
 .run-calendar-agenda {
   display: flex;
@@ -7807,6 +7833,96 @@ col.results-actions-col {
 .setting-desc.cron-preview {
   color: var(--text-secondary, #4a9eff);
   font-style: italic;
+}
+
+.cron-field-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cron-builder {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.cron-builder-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--text-secondary, #94a3b8);
+}
+
+.cron-builder-num {
+  width: 64px;
+}
+
+.cron-builder-time {
+  width: 110px;
+}
+
+.cron-builder-freq {
+  width: auto;
+  min-width: 150px;
+}
+
+.cron-builder-days {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.cron-day-chip {
+  border: 1px solid var(--border, #2b3648);
+  background: transparent;
+  color: var(--text-secondary, #94a3b8);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.cron-day-chip.active {
+  background: var(--accent, #4a9eff);
+  border-color: var(--accent, #4a9eff);
+  color: #fff;
+}
+
+.cron-day-chip:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cron-builder-link {
+  border: none;
+  background: none;
+  color: var(--accent, #4a9eff);
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+  text-decoration: underline;
+}
+
+.cron-raw-input {
+  font-family: var(--font-mono, monospace);
+}
+
+.cron-next-runs ul {
+  margin: 4px 0 0;
+  padding-left: 16px;
+  color: var(--text-secondary, #94a3b8);
+  font-size: 0.85rem;
+}
+
+.cron-next-runs li {
+  list-style: disc;
+}
+
+.setting-desc.cron-preview-error {
+  color: var(--danger, #f87171);
 }
 
 .setting-desc.schedule-current-utc {

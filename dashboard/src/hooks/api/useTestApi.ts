@@ -169,6 +169,13 @@ type ScenarioScheduleListResponse = {
   count: number
 }
 
+type ScenarioSchedulePreview = {
+  cron_expr: string
+  timezone: string
+  occurrences: string[]
+  count: number
+}
+
 type ScenarioScheduleOccurrencesResponse = {
   occurrences: ScenarioScheduleOccurrence[]
   count: number
@@ -188,6 +195,8 @@ type RunCalendarParams = {
   from: string
   to: string
   project_id?: string
+  capacity?: boolean
+  tz?: string
 }
 
 type DeleteTestResponse = {
@@ -406,6 +415,11 @@ export function useTestApi() {
 
   const deleteScenarioSchedule = useCallback(
     (scenarioId: string, scheduleId: string) => request<{ deleted: string }>(`/scenarios/${scenarioId}/schedules/${scheduleId}`, { method: 'DELETE' }),
+    [],
+  )
+
+  const previewScenarioSchedule = useCallback(
+    (scenarioId: string, data: ScenarioScheduleRequest, count = 5) => request<ScenarioSchedulePreview>(`/scenarios/${scenarioId}/schedules/preview?count=${count}`, { method: 'POST', body: JSON.stringify(data) }),
     [],
   )
 
@@ -693,6 +707,7 @@ export function useTestApi() {
       createScenarioSchedule,
       updateScenarioSchedule,
       deleteScenarioSchedule,
+      previewScenarioSchedule,
       listScenarioScheduleOccurrences,
       listScenarioScheduleApprovals,
       deleteScenarioScheduleOccurrence,
@@ -726,6 +741,7 @@ export function useTestApi() {
       createScenarioSchedule,
       updateScenarioSchedule,
       deleteScenarioSchedule,
+      previewScenarioSchedule,
       listScenarioScheduleOccurrences,
       listScenarioScheduleApprovals,
       deleteScenarioScheduleOccurrence,

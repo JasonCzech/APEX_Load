@@ -73,6 +73,16 @@ type Store interface {
 	// UpdateCapacityReservationBinding atomically binds a reservation to a test
 	// only if it is not already bound; the bool reports whether the bind happened.
 	UpdateCapacityReservationBinding(id string, testID *string, testStatus *string, updatedAt time.Time) (bool, error)
+	// UpdateCapacityReservationApprovalState atomically flips approval_state only
+	// when the row is currently in one of fromStates, closing the read-modify-write
+	// TOCTOU in the approve/reject handler. Returns false if no row matched.
+	UpdateCapacityReservationApprovalState(id string, fromStates []string, toState string, updatedAt time.Time) (bool, error)
+	// DeleteCapacityReservationsEndedBefore prunes reservations whose window has
+	// fully elapsed (end_at < cutoff). Returns the number of rows removed.
+	DeleteCapacityReservationsEndedBefore(cutoff time.Time) (int64, error)
+	// DeleteRejectedCapacityReservationsBefore prunes rejected reservations last
+	// touched before cutoff. Returns the number of rows removed.
+	DeleteRejectedCapacityReservationsBefore(cutoff time.Time) (int64, error)
 	DeleteCapacityReservation(id string) error
 
 	// Fleet pools, generator metadata, and cloud provisioning.
@@ -912,4 +922,8 @@ type TestRecord struct {
 	Groups               any        `json:"groups"`                     // JSON blob
 	RuntimeSettings      any        `json:"runtime_settings,omitempty"` // JSON blob
 	GoalConfig           any        `json:"goal_config,omitempty"`      // JSON blob
+	// TimeslotID persists the capacity reservation a run is bound to, so the
+	// binding survives a controller restart / HA failover and can be re-validated
+	// at launch time.
+	TimeslotID *string `json:"timeslot_id,omitempty"`
 }

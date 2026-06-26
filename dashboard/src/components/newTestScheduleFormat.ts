@@ -10,6 +10,14 @@ export function formatScheduleTimestamp(value?: string) {
   return value ? new Date(value).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Not scheduled'
 }
 
+export function formatScheduleTimestampInZone(value: string, timeZone?: string) {
+  try {
+    return new Date(value).toLocaleString(undefined, { timeZone: timeZone || 'UTC', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
+  } catch {
+    return formatScheduleTimestamp(value)
+  }
+}
+
 export function formatLaunchTimestamp(value?: string) {
   return value ? new Date(value).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Pending'
 }
@@ -203,8 +211,20 @@ export const COMMON_TIMEZONES = [
   'Pacific/Auckland',
 ]
 
+const CRON_MACROS: Record<string, string> = {
+  '@yearly': '0 0 1 1 *',
+  '@annually': '0 0 1 1 *',
+  '@monthly': '0 0 1 * *',
+  '@weekly': '0 0 * * 0',
+  '@daily': '0 0 * * *',
+  '@midnight': '0 0 * * *',
+  '@hourly': '0 * * * *',
+}
+
 export function describeCron(expr: string): string {
-  const parts = expr.trim().split(/\s+/)
+  const trimmed = expr.trim()
+  const expanded = CRON_MACROS[trimmed.toLowerCase()] ?? trimmed
+  const parts = expanded.split(/\s+/)
   if (parts.length !== 5) return ''
   const [minute, hour, dom, month, dow] = parts
 

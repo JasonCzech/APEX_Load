@@ -4736,6 +4736,26 @@ paths:
             type: string
       tags:
         - Scenarios
+  /api/v1/scenarios/{id}/schedules/preview:
+    post:
+      summary: Scenario Schedule Preview
+      description: |-
+        **Handler:** `handleScenarioSchedulePreview`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleScenarioSchedulePreview
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Scenarios
   /api/v1/scenarios/load-models/support-matrix:
     get:
       summary: Load Model Support Matrix
