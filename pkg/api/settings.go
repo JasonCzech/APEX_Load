@@ -344,6 +344,11 @@ type AvailabilitySettings struct {
 type CapacityReservation struct {
 	ProjectID          string `json:"project_id"`
 	ReservedGenerators int    `json:"reserved_generators"`
+	// PoolID scopes a reservation to one fleet pool's capacity envelope instead of
+	// the global pool. Empty (the default) means a global reservation, unchanged.
+	// Pool-scoped reservations are excluded from the global reservation math and
+	// enforced separately against the pool's member capacity.
+	PoolID string `json:"pool_id,omitempty"`
 	// StartsAt/EndsAt make a reservation a timeslot: it is only active within the
 	// window. Either bound may be nil for an open-ended window; both nil means the
 	// reservation is always active (backward compatible).
@@ -742,6 +747,12 @@ func validateSystemSettings(settings SystemSettings) error {
 		if reservation.StartsAt != nil && reservation.EndsAt != nil && reservation.EndsAt.Before(*reservation.StartsAt) {
 			return fmt.Errorf("capacity_planning.reservations.ends_at must not be before starts_at")
 		}
+		// Pool-scoped reservations are bounded by their fleet pool's member envelope
+		// (enforced at admission), not the global configured pool, so they are
+		// excluded from this global capacity sum.
+		if strings.TrimSpace(reservation.PoolID) != "" {
+			continue
+		}
 		if strings.TrimSpace(reservation.ProjectID) == "" || reservation.ReservedGenerators == 0 {
 			continue
 		}
@@ -942,6 +953,7 @@ func normalizeCapacityReservations(reservations []CapacityReservation) []Capacit
 		out = append(out, CapacityReservation{
 			ProjectID:          normalizeProjectID(rawProjectID),
 			ReservedGenerators: reservation.ReservedGenerators,
+			PoolID:             strings.TrimSpace(reservation.PoolID),
 			StartsAt:           reservation.StartsAt,
 			EndsAt:             reservation.EndsAt,
 		})

@@ -161,6 +161,39 @@ func (tr *TestRunner) boundTimeslotBoundariesInWindowLocked(window LaunchWindow)
 func reservationTotalsWithTimeslots(settings SystemSettings, projectID string, at time.Time, activeSlots []*storage.CapacityReservation) (int, int) {
 	totalReserved, projectReserved := capacityReservationTotalsAt(settings, projectID, at)
 	for _, ts := range activeSlots {
+		// Pool-scoped timeslots draw from a pool envelope, not the global pool.
+		if timeslotPoolID(ts) != "" {
+			continue
+		}
+		g := timeslotReservedGenerators(settings, ts)
+		if g <= 0 {
+			continue
+		}
+		totalReserved += g
+		if normalizeProjectID(ts.ProjectID) == normalizeProjectID(projectID) {
+			projectReserved += g
+		}
+	}
+	return totalReserved, projectReserved
+}
+
+// timeslotPoolID returns the fleet pool a bound timeslot is scoped to, or "".
+func timeslotPoolID(ts *storage.CapacityReservation) string {
+	if ts == nil || ts.RequestedCapacity == nil {
+		return ""
+	}
+	return strings.TrimSpace(ts.RequestedCapacity.PoolID)
+}
+
+// poolReservationTotalsWithTimeslots returns (totalReserved, projectReserved)
+// generators reserved on a specific fleet pool at `at`: settings reservations
+// scoped to the pool plus bound timeslots scoped to the pool.
+func poolReservationTotalsWithTimeslots(settings SystemSettings, projectID, poolID string, at time.Time, activeSlots []*storage.CapacityReservation) (int, int) {
+	totalReserved, projectReserved := poolCapacityReservationTotalsAt(settings, projectID, poolID, at)
+	for _, ts := range activeSlots {
+		if timeslotPoolID(ts) != poolID || poolID == "" {
+			continue
+		}
 		g := timeslotReservedGenerators(settings, ts)
 		if g <= 0 {
 			continue

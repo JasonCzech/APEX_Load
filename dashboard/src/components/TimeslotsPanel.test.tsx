@@ -25,6 +25,14 @@ vi.mock('../hooks/api/useCapacityApi', () => ({
   useCapacityApi: () => capacityApiMock,
 }))
 
+const fleetApiMock = {
+  listFleetPools: vi.fn().mockResolvedValue({ fleet_pools: [{ id: 'pool-1', name: 'East Pool', status: 'active' }], count: 1 }),
+}
+
+vi.mock('../hooks/api/useFleetApi', () => ({
+  useFleetApi: () => fleetApiMock,
+}))
+
 let container: HTMLElement
 let root: Root
 
@@ -118,6 +126,47 @@ describe('TimeslotsPanel', () => {
     await flush()
     expect(capacityApiMock.approveTimeslot).toHaveBeenCalledWith('slot-1')
     expect(capacityApiMock.listTimeslots).toHaveBeenCalledTimes(2)
+  })
+
+  it('scopes a created reservation to the selected fleet pool', async () => {
+    capacityApiMock.listTimeslots.mockResolvedValue({ timeslots: [], count: 0 })
+    capacityApiMock.createTimeslot.mockResolvedValue(slot({}))
+    await act(async () => {
+      root.render(<TimeslotsPanel projectId="proj-a" canManage />)
+    })
+    await flush()
+    const newButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(b => b.textContent === 'New Reservation')
+    await act(async () => {
+      newButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flush()
+    const setInput = (el: Element | null, value: string) => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+      setter?.call(el, value)
+      el?.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    const dt = container.querySelectorAll<HTMLInputElement>('input[type="datetime-local"]')
+    await act(async () => {
+      setInput(dt[0], '2026-07-01T10:00')
+      setInput(dt[1], '2026-07-01T12:00')
+    })
+    await flush()
+    const poolSelect = container.querySelector<HTMLSelectElement>('select')
+    expect(poolSelect?.textContent).toContain('East Pool')
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')?.set
+      setter?.call(poolSelect, 'pool-1')
+      poolSelect?.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await flush()
+    const reserveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(b => b.textContent === 'Reserve')
+    await act(async () => {
+      reserveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flush()
+    expect(capacityApiMock.createTimeslot).toHaveBeenCalledTimes(1)
+    const payload = capacityApiMock.createTimeslot.mock.calls[0][0] as { requested_capacity?: { pool_id?: string } }
+    expect(payload.requested_capacity?.pool_id).toBe('pool-1')
   })
 
   it('hides management actions without permission', async () => {

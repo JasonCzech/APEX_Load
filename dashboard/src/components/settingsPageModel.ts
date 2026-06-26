@@ -5,6 +5,7 @@
 import type {
   DashboardSystemSettings,
   GitHubProjectPolicy,
+  PoolProjectQuota,
   RedactionRule,
   SystemInventoryResponse,
 } from '../types'
@@ -178,6 +179,10 @@ export function buildProjectSettingsDraft(
   maxVUsersPerTest: string,
   maxTestDurationMinutes: string,
   github?: GitHubProjectPolicy,
+  // Per-pool quotas are edited via a dedicated card, not this governance form;
+  // they are passed through here so saving the governance defaults never drops
+  // quotas that were set elsewhere.
+  poolQuotas?: Record<string, PoolProjectQuota>,
 ) {
   const settings: {
     redaction_rules?: RedactionRule[]
@@ -186,8 +191,12 @@ export function buildProjectSettingsDraft(
     max_vusers_per_test?: number
     max_test_duration_minutes?: number
     github?: GitHubProjectPolicy
+    pool_quotas?: Record<string, PoolProjectQuota>
   } = {
     redaction_rules: normalizeProjectRedactionRules(rules),
+  }
+  if (poolQuotas && Object.keys(poolQuotas).length > 0) {
+    settings.pool_quotas = poolQuotas
   }
   const parsedConcurrent = parseOptionalWholeNumber(maxConcurrentTests)
   if (parsedConcurrent !== undefined) {
