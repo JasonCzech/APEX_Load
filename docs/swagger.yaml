@@ -421,12 +421,12 @@ paths:
       description: |-
         **Handler:** `handleGetAuthEffectiveAccessForPrincipal`
 
-        **Access Control:** Requires Authentication
+        **Access Control:** Roles: SystemAdmin
       operationId: handleGetAuthEffectiveAccessForPrincipal
       responses:
         "200":
           description: Successful operation
-      x-roles: Requires Authentication
+      x-roles: 'Roles: SystemAdmin'
       tags:
         - Auth
   /api/v1/auth/login:
@@ -467,6 +467,21 @@ paths:
 
         **Access Control:** Public (no authentication required)
       operationId: handleGetAuthStatus
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Public (no authentication required)
+      security: []
+      tags:
+        - Auth
+  /api/v1/auth/policy:
+    get:
+      summary: Get Auth Policy
+      description: |-
+        **Handler:** `handleGetAuthPolicy`
+
+        **Access Control:** Public (no authentication required)
+      operationId: handleGetAuthPolicy
       responses:
         "200":
           description: Successful operation

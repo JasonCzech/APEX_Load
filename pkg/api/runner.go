@@ -163,6 +163,19 @@ type TestRunner struct {
 	refScenarioSeq int
 	refRunSeqByDay map[string]int
 	refKeyIndex    map[string]string
+
+	// capacityAdvisoryCache memoizes estimateCapacityAdvisoryForAssignment. Its
+	// inputs are settings (generation-invalidated), the live-availability env var
+	// (folded into the key) and reservation-window time (bounded by a short TTL);
+	// see capacity_advisory_cache.go. The generation is guarded by tr.mu (same
+	// contract as tr.settings); the cache map has its own mutex because it is
+	// written even when callers hold only tr.mu.RLock (estimate/preflight); the
+	// hit/miss counters are atomic.
+	capacityAdvisoryCache   map[string]cachedCapacityAdvisory
+	capacityAdvisoryCacheMu sync.Mutex
+	capacityAdvisoryGen     uint64
+	capacityAdvisoryHits    uint64
+	capacityAdvisoryMisses  uint64
 }
 
 type ManagedTest struct {

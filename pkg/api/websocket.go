@@ -134,8 +134,12 @@ func (h *Hub) Run() {
 				BroadcastAll bool `json:"broadcast_all"`
 			}
 			_ = json.Unmarshal(msg, &envelope)
+			// Honor the bypass only for a genuinely global, scope-free message. If a payload
+			// sets broadcast_all but ALSO carries a test_id/project_id (a misuse that would
+			// otherwise leak scoped data to every client), fall back to normal filtering.
+			broadcastAll := envelope.BroadcastAll && envelope.TestID == "" && envelope.ProjectID == ""
 			for client := range h.clients {
-				if !envelope.BroadcastAll {
+				if !broadcastAll {
 					if client.testID != "" && envelope.TestID != client.testID {
 						continue
 					}

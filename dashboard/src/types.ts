@@ -3184,6 +3184,15 @@ export interface DashboardAuthAccessMatrix {
   resources: DashboardAuthAccessResource[]
 }
 
+// DashboardAuthPolicy is the union of the role catalog and the access matrix, served by
+// GET /auth/policy so the dashboard fetches the static RBAC policy in one request.
+export interface DashboardAuthPolicy {
+  provider_model: string
+  version: string
+  roles: DashboardAuthRoleDefinition[]
+  resources: DashboardAuthAccessResource[]
+}
+
 export interface DashboardAuthEffectiveAccessOperation {
   id: string
   label: string

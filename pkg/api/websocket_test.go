@@ -6,6 +6,39 @@ import (
 	"time"
 )
 
+func TestHubBroadcastAllReachesScopedClientsButGuardsScopedPayloads(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+	defer hub.Stop()
+
+	projectClient := &Client{hub: hub, send: make(chan []byte, 2), projectID: "project-1"}
+	hub.register <- projectClient
+
+	// A content-free broadcast_all ping must reach the project-scoped client despite its filter.
+	hub.BroadcastJSON(map[string]any{"type": "access_review_changed", "broadcast_all": true})
+	select {
+	case msg := <-projectClient.send:
+		var payload map[string]any
+		if err := json.Unmarshal(msg, &payload); err != nil {
+			t.Fatalf("json.Unmarshal returned error: %v", err)
+		}
+		if payload["type"] != "access_review_changed" {
+			t.Fatalf("type = %#v, want access_review_changed", payload["type"])
+		}
+	case <-time.After(time.Second):
+		t.Fatal("broadcast_all ping did not reach the project-scoped client")
+	}
+
+	// A misused broadcast_all on a message carrying a foreign project_id must NOT bypass the
+	// filter (the scoped client must not receive cross-project data).
+	hub.BroadcastJSON(map[string]any{"type": "test_started", "project_id": "project-2", "broadcast_all": true})
+	select {
+	case msg := <-projectClient.send:
+		t.Fatalf("broadcast_all leaked a project-scoped message across tenants: %s", string(msg))
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
 func TestHubStatsTracksDroppedBroadcastsAndClientMessages(t *testing.T) {
 	hub := NewHub()
 	hub.broadcast = make(chan []byte, 1)

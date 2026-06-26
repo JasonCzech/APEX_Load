@@ -24,6 +24,7 @@ var intentionallyPublicAPIRoutes = map[string]bool{
 	"GET /api/v1/auth/diagnostics":                      true,
 	"GET /api/v1/auth/roles":                            true,
 	"GET /api/v1/auth/access-matrix":                    true,
+	"GET /api/v1/auth/policy":                           true,
 	"GET /api/v1/auth/effective-access":                 true,
 	"GET /api/v1/system/health":                         true,
 	"GET /api/v1/system/version":                        true,

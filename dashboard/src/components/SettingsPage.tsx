@@ -373,42 +373,24 @@ export default function SettingsPage({
   }, [api])
 
   useEffect(() => {
-  let cancelled = false
-  const loadAuthAccessMatrix = async () => {
-    try {
-      const response = await api.getAuthAccessMatrix()
-      if (!cancelled) {
-        setAuthAccessResources(response.resources || [])
-      }
-    } catch {
-      if (!cancelled) {
-        setAuthAccessResources([])
-      }
-    }
-  }
-
-  loadAuthAccessMatrix()
-  return () => {
-    cancelled = true
-  }
-  }, [api])
-
-  useEffect(() => {
     let cancelled = false
-    const loadAuthRoleCatalog = async () => {
+    // Single fetch for the static RBAC policy (role catalog + access matrix) via /auth/policy.
+    const loadAuthPolicy = async () => {
       try {
-        const response = await api.getAuthRoleCatalog()
+        const response = await api.getAuthPolicy()
         if (!cancelled) {
+          setAuthAccessResources(response.resources || [])
           setAuthRoles(response.roles || [])
         }
       } catch {
         if (!cancelled) {
+          setAuthAccessResources([])
           setAuthRoles([])
         }
       }
     }
 
-    loadAuthRoleCatalog()
+    loadAuthPolicy()
     return () => {
       cancelled = true
     }

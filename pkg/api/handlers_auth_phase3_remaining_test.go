@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -303,5 +304,73 @@ func TestNotifyAccessReviewChange(t *testing.T) {
 	}
 	if drainPing() {
 		t.Fatalf("did not expect a ping when the posture is unchanged")
+	}
+}
+
+// C11 — the simulator narrows by scope: a project-scoped role grants operations only when
+// the query names that project, and nowhere else.
+func TestEffectiveAccessSimulatorScopedRoles(t *testing.T) {
+	store := phase1Store(t)
+	now := time.Now().UTC()
+	user := &storage.User{ID: "u-proj", Subject: "proj-editor", Active: true, CreatedAt: now, UpdatedAt: now,
+		Bindings: []*storage.UserRoleBinding{{ID: "b-proj", UserID: "u-proj", ScopeType: "project", ScopeID: "project-1", Role: RoleEditor, CreatedAt: now, UpdatedAt: now}}}
+	if err := store.SaveUser(user); err != nil {
+		t.Fatalf("SaveUser: %v", err)
+	}
+	if err := store.SaveUserRoleBinding(user.Bindings[0]); err != nil {
+		t.Fatalf("SaveUserRoleBinding: %v", err)
+	}
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+
+	simulate := func(query string) AuthEffectiveAccessResponse {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/effective-access/principal?principal_type=user&principal_id=u-proj"+query, nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+		if resp.Code != http.StatusOK {
+			t.Fatalf("simulate %q status = %d, want 200 body=%s", query, resp.Code, resp.Body.String())
+		}
+		var payload AuthEffectiveAccessResponse
+		if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		return payload
+	}
+
+	if got := countAllowedOps(simulate("&project_id=project-1")); got == 0 {
+		t.Fatalf("project-scoped editor should have allowed operations in its own project, got 0")
+	}
+	if got := countAllowedOps(simulate("&project_id=project-2")); got != 0 {
+		t.Fatalf("editor in project-1 must have no access in project-2, got %d allowed", got)
+	}
+	if got := countAllowedOps(simulate("")); got != 0 {
+		t.Fatalf("a project-scoped role must not grant global access, got %d allowed", got)
+	}
+}
+
+// C12 — owner/contact metadata is length-bounded on both create and update.
+func TestServiceAccountOwnerMetadataLengthCapped(t *testing.T) {
+	store := phase1Store(t)
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	long := strings.Repeat("x", maxServiceAccountMetadataLen+1)
+
+	// Create with an oversized owner_id → 400.
+	createBody := `{"name":"Too Long","owner_id":"` + long + `","global_roles":["viewer"],"scopes":["results:read"]}`
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/service-accounts", bytes.NewReader([]byte(createBody)))
+	createResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(createResp, createReq)
+	if createResp.Code != http.StatusBadRequest {
+		t.Fatalf("oversized owner_id create = %d, want 400 body=%s", createResp.Code, createResp.Body.String())
+	}
+
+	// A valid account, then a PATCH with an oversized contact_email → 400.
+	now := time.Now().UTC()
+	if err := store.SaveServiceAccount(&storage.ServiceAccount{ID: "sa-meta", Name: "Meta", KeyHash: "meta-hash", Active: true, GlobalRoles: []string{RoleViewer}, Scopes: []string{"results:read"}, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveServiceAccount: %v", err)
+	}
+	patchReq := httptest.NewRequest(http.MethodPatch, "/api/v1/auth/service-accounts/sa-meta", bytes.NewReader([]byte(`{"contact_email":"`+long+`"}`)))
+	patchResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(patchResp, patchReq)
+	if patchResp.Code != http.StatusBadRequest {
+		t.Fatalf("oversized contact_email patch = %d, want 400 body=%s", patchResp.Code, patchResp.Body.String())
 	}
 }

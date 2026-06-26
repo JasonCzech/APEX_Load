@@ -1299,6 +1299,9 @@ func (tr *TestRunner) UpdateSystemSettings(settings SystemSettings) (SystemSetti
 	tr.mu.Lock()
 	tr.settings = normalized
 	tr.maxTests = normalized.General.MaxConcurrentTests
+	// Capacity advisories are derived from settings (generator specs, headroom,
+	// configured reservations), so a settings change must invalidate the cache.
+	tr.invalidateCapacityAdvisoryCacheLocked()
 	tr.mu.Unlock()
 	tr.setNotificationSettings(normalized.Notifications)
 

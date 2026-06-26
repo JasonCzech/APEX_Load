@@ -548,6 +548,31 @@ func (s *Server) handleGetAuthAccessMatrix(w http.ResponseWriter, _ *http.Reques
 	})
 }
 
+// AuthPolicyResponse is the union of the role catalog and the access matrix. It lets the
+// dashboard fetch the static RBAC policy in one request instead of two; the split
+// /auth/roles and /auth/access-matrix endpoints are kept for API parity.
+type AuthPolicyResponse struct {
+	ProviderModel string               `json:"provider_model"`
+	Version       string               `json:"version"`
+	Roles         []AuthRoleDefinition `json:"roles"`
+	Resources     []AuthAccessResource `json:"resources"`
+}
+
+func (s *Server) handleGetAuthPolicy(w http.ResponseWriter, _ *http.Request) {
+	providerModel := "upstream_gateway"
+	version := "trusted_headers_v1"
+	if normalizeAuthSettings(s.runner.GetSystemSettings().Auth).Mode == authModeOIDC {
+		providerModel = "native_oidc"
+		version = "rbac_v1"
+	}
+	writeJSON(w, http.StatusOK, AuthPolicyResponse{
+		ProviderModel: providerModel,
+		Version:       version,
+		Roles:         authRoleCatalog,
+		Resources:     authAccessMatrix,
+	})
+}
+
 func (s *Server) handleGetAuthEffectiveAccess(w http.ResponseWriter, r *http.Request) {
 	settings := normalizeAuthSettings(s.runner.GetSystemSettings().Auth)
 	projectID := normalizeProjectID(strings.TrimSpace(r.URL.Query().Get("project_id")))
@@ -1463,10 +1488,20 @@ func applyServiceAccountUpdate(w http.ResponseWriter, account *storage.ServiceAc
 		account.Description = strings.TrimSpace(*req.Description)
 	}
 	if req.OwnerID != nil {
-		account.OwnerID = strings.TrimSpace(*req.OwnerID)
+		owner := strings.TrimSpace(*req.OwnerID)
+		if err := validateServiceAccountMetadata(owner, ""); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return false
+		}
+		account.OwnerID = owner
 	}
 	if req.ContactEmail != nil {
-		account.ContactEmail = strings.TrimSpace(*req.ContactEmail)
+		contact := strings.TrimSpace(*req.ContactEmail)
+		if err := validateServiceAccountMetadata("", contact); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return false
+		}
+		account.ContactEmail = contact
 	}
 	if req.Active != nil {
 		account.Active = *req.Active
@@ -1724,10 +1759,29 @@ func parseOptionalQueryTime(value string) *time.Time {
 	return &parsed
 }
 
+// maxServiceAccountMetadataLen bounds the free-form owner/contact fields so a caller
+// cannot bloat storage or audit logs with an oversized value.
+const maxServiceAccountMetadataLen = 256
+
+func validateServiceAccountMetadata(ownerID, contactEmail string) error {
+	if len(ownerID) > maxServiceAccountMetadataLen {
+		return fmt.Errorf("service account owner_id must be at most %d characters", maxServiceAccountMetadataLen)
+	}
+	if len(contactEmail) > maxServiceAccountMetadataLen {
+		return fmt.Errorf("service account contact_email must be at most %d characters", maxServiceAccountMetadataLen)
+	}
+	return nil
+}
+
 func buildServiceAccount(req AuthServiceAccountRequest) (*storage.ServiceAccount, string, error) {
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
 		return nil, "", fmt.Errorf("service account name is required")
+	}
+	ownerID := strings.TrimSpace(req.OwnerID)
+	contactEmail := strings.TrimSpace(req.ContactEmail)
+	if err := validateServiceAccountMetadata(ownerID, contactEmail); err != nil {
+		return nil, "", err
 	}
 	globalRoles, projectRoles, domainRoles, repositoryRoles, err := normalizeServiceAccountRoles(req.GlobalRoles, req.ProjectRoles, req.DomainRoles, req.RepositoryRoles)
 	if err != nil {
@@ -1765,8 +1819,8 @@ func buildServiceAccount(req AuthServiceAccountRequest) (*storage.ServiceAccount
 		ID:                   uuid.New().String(),
 		Name:                 name,
 		Description:          strings.TrimSpace(req.Description),
-		OwnerID:              strings.TrimSpace(req.OwnerID),
-		ContactEmail:         strings.TrimSpace(req.ContactEmail),
+		OwnerID:              ownerID,
+		ContactEmail:         contactEmail,
 		KeyHash:              hashAPIKey(apiKey),
 		Active:               true,
 		GlobalRoles:          globalRoles,

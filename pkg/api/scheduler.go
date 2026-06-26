@@ -1108,12 +1108,17 @@ func (tr *TestRunner) CreateScenarioSchedule(scenarioID string, req CreateScenar
 }
 
 // ScenarioSchedulePreview is the result of a (non-persisting) schedule preview:
-// the next N UTC fire times for a candidate cron/timezone/window configuration.
+// the next N UTC fire times for a candidate cron/timezone/window configuration,
+// plus a pre-save conflict summary (empty when the schedule would materialize
+// cleanly) computed with the same evaluator the materialization sweep uses, so
+// operators can fix a quota/capacity/release conflict before saving instead of
+// discovering blocked occurrences on the calendar afterward.
 type ScenarioSchedulePreview struct {
-	CronExpr    string      `json:"cron_expr"`
-	Timezone    string      `json:"timezone"`
-	Occurrences []time.Time `json:"occurrences"`
-	Count       int         `json:"count"`
+	CronExpr        string      `json:"cron_expr"`
+	Timezone        string      `json:"timezone"`
+	Occurrences     []time.Time `json:"occurrences"`
+	Count           int         `json:"count"`
+	ConflictSummary string      `json:"conflict_summary,omitempty"`
 }
 
 // PreviewScenarioScheduleRuns computes the next `count` fire times for a candidate
@@ -1147,6 +1152,9 @@ func (tr *TestRunner) PreviewScenarioScheduleRuns(scenarioID string, req CreateS
 		return nil, fmt.Errorf("disabled_from must be before disabled_until")
 	}
 	schedule := &storage.ScenarioSchedule{
+		ScenarioID:          scenarioID,
+		Name:                strings.TrimSpace(req.Name),
+		ReleaseID:           req.ReleaseID,
 		CronExpr:            cronExpr,
 		Timezone:            tz,
 		BlackoutWindows:     req.BlackoutWindows,
@@ -1165,7 +1173,21 @@ func (tr *TestRunner) PreviewScenarioScheduleRuns(scenarioID string, req CreateS
 		occurrences = append(occurrences, *next)
 		cursor = next.Add(time.Minute)
 	}
-	return &ScenarioSchedulePreview{CronExpr: cronExpr, Timezone: tz, Occurrences: occurrences, Count: len(occurrences)}, nil
+	// Pre-save conflict check: surface the same quota/capacity/release conflict the
+	// materialization sweep would record, so it can be fixed before saving. Uses
+	// the production evaluator under a read lock (it builds a non-registered preview
+	// test, exactly like the estimate/preflight paths).
+	conflictSummary := ""
+	func() {
+		tr.mu.RLock()
+		defer tr.mu.RUnlock()
+		scenario, ok := tr.scenarios[tr.resolveRefKeyLocked(scenarioID)]
+		if !ok {
+			return
+		}
+		conflictSummary = tr.previewScheduleConflictSummaryLocked(schedule, scenario)
+	}()
+	return &ScenarioSchedulePreview{CronExpr: cronExpr, Timezone: tz, Occurrences: occurrences, Count: len(occurrences), ConflictSummary: conflictSummary}, nil
 }
 
 func (tr *TestRunner) UpdateScenarioSchedule(scenarioID string, scheduleID string, req CreateScenarioScheduleRequest) (*storage.ScenarioSchedule, bool, error) {
@@ -1447,21 +1469,43 @@ func (tr *TestRunner) scenarioScheduleConflictSummaryLocked(schedule *storage.Sc
 		findings = append(findings, strings.Join(schedule.Governance.QuotaReview.Findings, " "))
 	}
 	findings = append(findings, tr.scenarioScheduleReleaseConflictFindingsLocked(schedule)...)
-	if scenario != nil {
-		preview, err := tr.buildManagedTestLocked(CreateTestRequest{
-			Name:       schedule.Name,
-			ScenarioID: scenario.ID,
-			ReleaseID:  schedule.ReleaseID,
-		}, "schedule-conflict-preview", "DRAFT")
-		if err == nil && preview != nil {
-			if blocked, reason := tr.evaluateQuotaBlockLocked(preview, ""); blocked {
-				findings = append(findings, "Quota conflict: "+reason+".")
-			}
-			if preview.CapacityAdvisory != nil && preview.CapacityAdvisory.RequiresOverride {
-				findings = append(findings, fmt.Sprintf("Capacity pool conflict: recommended %d generator%s but only %d available.", preview.CapacityAdvisory.RecommendedGenerators, pluralSuffix(preview.CapacityAdvisory.RecommendedGenerators), preview.CapacityAdvisory.AvailableGenerators))
-			}
-		}
+	findings = append(findings, tr.scenarioScheduleCapacityConflictFindingsLocked(schedule, scenario)...)
+	return strings.Join(compactScheduleConflictFindings(findings), " ")
+}
+
+// scenarioScheduleCapacityConflictFindingsLocked computes the standing
+// quota/capacity findings for a candidate schedule's scenario footprint by
+// building a non-registered preview test — independent of governance state, so it
+// is reusable by both the governance-time summary and the pre-save preview.
+func (tr *TestRunner) scenarioScheduleCapacityConflictFindingsLocked(schedule *storage.ScenarioSchedule, scenario *StoredScenario) []string {
+	if schedule == nil || scenario == nil {
+		return nil
 	}
+	preview, err := tr.buildManagedTestLocked(CreateTestRequest{
+		Name:       schedule.Name,
+		ScenarioID: scenario.ID,
+		ReleaseID:  schedule.ReleaseID,
+	}, "schedule-conflict-preview", "DRAFT")
+	if err != nil || preview == nil {
+		return nil
+	}
+	findings := make([]string, 0, 2)
+	if blocked, reason := tr.evaluateQuotaBlockLocked(preview, ""); blocked {
+		findings = append(findings, "Quota conflict: "+reason+".")
+	}
+	if preview.CapacityAdvisory != nil && preview.CapacityAdvisory.RequiresOverride {
+		findings = append(findings, fmt.Sprintf("Capacity pool conflict: recommended %d generator%s but only %d available.", preview.CapacityAdvisory.RecommendedGenerators, pluralSuffix(preview.CapacityAdvisory.RecommendedGenerators), preview.CapacityAdvisory.AvailableGenerators))
+	}
+	return findings
+}
+
+// previewScheduleConflictSummaryLocked is the pre-save equivalent of
+// scenarioScheduleConflictSummaryLocked for a not-yet-persisted candidate (no
+// governance record yet): it reports the release + quota/capacity conflicts the
+// schedule would hit, so the form can warn before the schedule is saved.
+func (tr *TestRunner) previewScheduleConflictSummaryLocked(schedule *storage.ScenarioSchedule, scenario *StoredScenario) string {
+	findings := tr.scenarioScheduleReleaseConflictFindingsLocked(schedule)
+	findings = append(findings, tr.scenarioScheduleCapacityConflictFindingsLocked(schedule, scenario)...)
 	return strings.Join(compactScheduleConflictFindings(findings), " ")
 }
 

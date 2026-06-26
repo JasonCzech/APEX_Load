@@ -17,6 +17,7 @@ const { downloadBlobMock } = vi.hoisted(() => ({
 const apiMock = {
   getAuthEffectiveAccess: vi.fn(),
   getAuthAccessMatrix: vi.fn(),
+  getAuthPolicy: vi.fn(),
   getAuthDiagnostics: vi.fn(),
   getAuthRoleCatalog: vi.fn(),
   listAuthServiceAccounts: vi.fn(),
@@ -340,6 +341,11 @@ describe('SettingsPage', () => {
           ],
         },
       ],
+    })
+    // /auth/policy folds the role catalog + access matrix; SettingsPage now uses it.
+    apiMock.getAuthPolicy.mockImplementation(async () => {
+      const [roles, matrix] = await Promise.all([apiMock.getAuthRoleCatalog(), apiMock.getAuthAccessMatrix()])
+      return { provider_model: roles.provider_model, version: matrix.version, roles: roles.roles, resources: matrix.resources }
     })
     apiMock.getAuthDiagnostics.mockResolvedValue({
       enabled: false,

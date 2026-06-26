@@ -430,7 +430,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
   const [scheduleOccurrences, setScheduleOccurrences] = useState<Record<string, ScenarioScheduleOccurrence[]>>({})
   const [scheduleDefaults, setScheduleDefaults] = useState<DashboardScheduleDefaultsSettings>(DEFAULT_SCHEDULE_DEFAULTS)
   const [scheduleDraft, setScheduleDraft] = useState<ScheduleDraft>(buildDefaultScheduleDraft())
-  const [schedulePreview, setSchedulePreview] = useState<{ occurrences: string[]; error: string } | null>(null)
+  const [schedulePreview, setSchedulePreview] = useState<{ occurrences: string[]; error: string; conflictSummary?: string } | null>(null)
   const [runName, setRunName] = useState('')
   const [newReleaseName, setNewReleaseName] = useState('')
   const [scenarioQuery, setScenarioQuery] = useState('')
@@ -613,7 +613,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
         disabled_from: datetimeLocalToISO(scheduleDraft.disabled_from) || undefined,
         disabled_until: datetimeLocalToISO(scheduleDraft.disabled_until) || undefined,
       }, 5).then(result => {
-        if (!cancelled) setSchedulePreview({ occurrences: result.occurrences || [], error: '' })
+        if (!cancelled) setSchedulePreview({ occurrences: result.occurrences || [], error: '', conflictSummary: result.conflict_summary || '' })
       }).catch(err => {
         if (!cancelled) setSchedulePreview({ occurrences: [], error: getErrorMessage(err, 'Invalid schedule') })
       })
@@ -1595,6 +1595,11 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                       ) : (
                         <span className="setting-desc">No upcoming runs match this schedule within the next year.</span>
                       )
+                    )}
+                    {schedulePreview && !schedulePreview.error && schedulePreview.conflictSummary && (
+                      <span className="setting-desc cron-preview-error" role="alert">
+                        ⚠ This schedule will be blocked until resolved: {schedulePreview.conflictSummary}
+                      </span>
                     )}
                   </div>
                 </div>

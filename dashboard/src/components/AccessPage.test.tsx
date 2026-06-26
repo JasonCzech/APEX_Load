@@ -402,6 +402,15 @@ describe('AccessPage', () => {
     if (!nameInput) return
     changeInput(nameInput, 'Nightly CI v2')
 
+    // Add a domain-scoped role in the edit form (the Domain Roles section lists "Payments").
+    const domainCheckbox = Array.from(container.querySelectorAll('.access-inspector input[type="checkbox"]')).find(input => {
+      const row = input.closest('.access-project-role-row')
+      return row?.textContent?.includes('Payments')
+    }) as HTMLInputElement | undefined
+    expect(domainCheckbox).toBeDefined()
+    if (!domainCheckbox) return
+    await act(async () => { domainCheckbox.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+
     await clickButton(container, 'Save Changes')
     await flushPromises()
 
@@ -410,6 +419,33 @@ describe('AccessPage', () => {
       owner_id: 'team-platform',
       global_roles: ['viewer'],
       scopes: ['tests:run', 'results:read'],
+      domain_roles: { 'domain-1': ['viewer'] },
+    }))
+  })
+
+  it('preserves multi-role-per-scope on edit save instead of dropping extra roles (A6 fidelity)', async () => {
+    apiMock.listAuthServiceAccounts.mockResolvedValueOnce({
+      service_accounts: [{
+        id: 'svc-multi', name: 'Multi Role', active: true,
+        global_roles: ['viewer'],
+        project_roles: { 'project-1': ['editor', 'project_admin'] },
+        scopes: ['results:read'],
+        created_at: '2026-05-16T00:00:00Z', updated_at: '2026-05-18T00:00:00Z',
+      }],
+      count: 1,
+    })
+    await act(async () => {
+      root.render(<AccessPage projects={projects} domains={domains} activeDomain={domains[0]} activeProject={projects[0]} canManageUserLifecycle={false} canManageUserBindings={false} canViewUserActivity={false} canManageServiceAccounts />)
+    })
+    await flushPromises()
+    await clickButton(container, 'Edit')
+    // Save without touching the project role; the form shows only the first role but the
+    // full stored array must be preserved on the PATCH.
+    await clickButton(container, 'Save Changes')
+    await flushPromises()
+
+    expect(apiMock.updateAuthServiceAccount).toHaveBeenCalledWith('svc-multi', expect.objectContaining({
+      project_roles: { 'project-1': ['editor', 'project_admin'] },
     }))
   })
 
@@ -457,6 +493,7 @@ describe('AccessPage', () => {
     expect(apiMock.getAuthEffectiveAccessForPrincipal).toHaveBeenCalledWith(expect.objectContaining({
       principal_type: 'service_account',
       principal_id: 'svc-1',
+      domain_id: 'domain-1',
     }))
     // The result grid shows allowed operations and the scope-narrowing caveat.
     expect(container.textContent).toContain('Run tests')

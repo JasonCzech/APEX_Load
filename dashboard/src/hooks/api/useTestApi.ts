@@ -174,6 +174,7 @@ type ScenarioSchedulePreview = {
   timezone: string
   occurrences: string[]
   count: number
+  conflict_summary?: string
 }
 
 type ScenarioScheduleOccurrencesResponse = {

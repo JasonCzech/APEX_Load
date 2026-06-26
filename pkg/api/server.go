@@ -681,6 +681,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/auth/diagnostics", cors(log(http.HandlerFunc(s.handleGetAuthDiagnostics))))
 	s.mux.Handle("GET /api/v1/auth/roles", cors(log(http.HandlerFunc(s.handleGetAuthRoleCatalog))))
 	s.mux.Handle("GET /api/v1/auth/access-matrix", cors(log(http.HandlerFunc(s.handleGetAuthAccessMatrix))))
+	s.mux.Handle("GET /api/v1/auth/policy", cors(log(http.HandlerFunc(s.handleGetAuthPolicy))))
 	s.mux.Handle("GET /api/v1/auth/effective-access", cors(log(http.HandlerFunc(s.handleGetAuthEffectiveAccess))))
 	s.mux.Handle("GET /api/v1/auth/effective-access/principal", cors(log(auth(http.HandlerFunc(s.handleGetAuthEffectiveAccessForPrincipal)))))
 	s.mux.Handle("GET /api/v1/auth/users", cors(log(auth(http.HandlerFunc(s.handleListUsers)))))
