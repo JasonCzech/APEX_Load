@@ -786,6 +786,10 @@ type CapacityReservationRequest struct {
 	VUsers     *int   `json:"vusers,omitempty"`
 	Protocol   string `json:"protocol,omitempty"`
 	LoadZone   string `json:"load_zone,omitempty"`
+	// PoolID scopes a forward-booked timeslot to a specific fleet pool's capacity
+	// envelope. Empty means a global timeslot (unchanged). Stored in the
+	// requested_capacity_json blob, so no schema migration is required.
+	PoolID string `json:"pool_id,omitempty"`
 }
 
 type SchedulerLease struct {
@@ -849,6 +853,19 @@ type ProjectSettings struct {
 	// duration. Zero means no limit.
 	MaxVUsersPerTest       int `json:"max_vusers_per_test,omitempty"`
 	MaxTestDurationMinutes int `json:"max_test_duration_minutes,omitempty"`
+	// PoolQuotas caps this project's footprint on a specific fleet pool, keyed by
+	// fleet-pool ID. It is an ADDITIVE admission gate: a pool-assigned run must pass
+	// both the project-wide limits above and the matching pool quota here. Zero
+	// fields mean no limit; an absent key means no pool-specific cap.
+	PoolQuotas map[string]PoolProjectQuota `json:"pool_quotas,omitempty"`
+}
+
+// PoolProjectQuota bounds a single project's concurrent footprint on one fleet
+// pool (admission-time, queue-on-exceed — same semantics as the project-wide
+// concurrency/VUser limits).
+type PoolProjectQuota struct {
+	MaxVUsers          int `json:"max_vusers,omitempty"`
+	MaxConcurrentTests int `json:"max_concurrent_tests,omitempty"`
 }
 
 type Folder struct {

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { useCapacityApi } from '../hooks/api/useCapacityApi'
+import { useFleetApi } from '../hooks/api/useFleetApi'
 import { ApiError } from '../hooks/apiClient'
-import { CapacityTimeslot } from '../types'
+import { CapacityTimeslot, FleetPool } from '../types'
 import ConfirmDestructiveModal from './ConfirmDestructiveModal'
 import './parityPanels.css'
 
@@ -42,6 +43,7 @@ type Draft = {
   timezone: string
   generators: string
   vusers: string
+  pool_id: string
 }
 
 function emptyDraft(): Draft {
@@ -51,12 +53,14 @@ function emptyDraft(): Draft {
   } catch {
     tz = 'UTC'
   }
-  return { scenario_id: '', start_local: '', end_local: '', timezone: tz, generators: '', vusers: '' }
+  return { scenario_id: '', start_local: '', end_local: '', timezone: tz, generators: '', vusers: '', pool_id: '' }
 }
 
 export default function TimeslotsPanel({ projectId, canManage = false }: Props) {
   const api = useCapacityApi()
+  const fleetApi = useFleetApi()
   const [timeslots, setTimeslots] = useState<CapacityTimeslot[]>([])
+  const [pools, setPools] = useState<FleetPool[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
@@ -87,6 +91,23 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
     void load()
   }, [load])
 
+  // Fleet pools power the optional pool-scoping selector (reserve within one pool's
+  // capacity envelope instead of the global pool).
+  useEffect(() => {
+    let cancelled = false
+    fleetApi.listFleetPools().then(res => {
+      if (!cancelled) setPools(res.fleet_pools || [])
+    }).catch(() => {
+      if (!cancelled) setPools([])
+    })
+    return () => { cancelled = true }
+  }, [fleetApi])
+
+  const poolName = useCallback((id?: string) => {
+    if (!id) return ''
+    return pools.find(p => p.id === id)?.name || id
+  }, [pools])
+
   const draftValid = useMemo(
     () => Boolean(draft && draft.start_local && draft.end_local && new Date(draft.start_local) < new Date(draft.end_local)),
     [draft],
@@ -111,8 +132,12 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
     setBusy(true)
     setError(null)
     const requested =
-      draft.generators || draft.vusers
-        ? { generators: draft.generators ? Number(draft.generators) : undefined, vusers: draft.vusers ? Number(draft.vusers) : undefined }
+      draft.generators || draft.vusers || draft.pool_id
+        ? {
+            generators: draft.generators ? Number(draft.generators) : undefined,
+            vusers: draft.vusers ? Number(draft.vusers) : undefined,
+            pool_id: draft.pool_id || undefined,
+          }
         : undefined
     try {
       await api.createTimeslot({
@@ -190,6 +215,7 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
                   {slot.timezone ? <span>{slot.timezone}</span> : null}
                   {slot.scenario_id ? <span>scenario: {slot.scenario_id}</span> : null}
                   {slot.requested_capacity?.generators ? <span>{slot.requested_capacity.generators} gen</span> : null}
+                  {slot.requested_capacity?.pool_id ? <span className="pp-pill pp-pill-muted">pool: {poolName(slot.requested_capacity.pool_id)}</span> : null}
                   {slot.conflict_summary ? <span>{slot.conflict_summary}</span> : null}
                 </div>
               </div>
@@ -258,6 +284,17 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
                   <input type="number" min={0} value={draft.vusers} onChange={e => setDraft(d => (d ? { ...d, vusers: e.target.value } : d))} />
                 </label>
               </div>
+              <label className="pp-field">
+                <span>Fleet pool (optional)</span>
+                <select value={draft.pool_id} onChange={e => setDraft(d => (d ? { ...d, pool_id: e.target.value } : d))}>
+                  <option value="">Global capacity (any pool)</option>
+                  {pools.map(pool => (
+                    <option key={pool.id} value={pool.id}>
+                      {pool.name}{pool.status && pool.status !== 'active' ? ` (${pool.status})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <div className="pp-toolbar">
                 <button type="button" className="btn btn-ghost btn-sm" disabled={!draftValid || busy} onClick={() => void checkAvailability()}>
                   Check availability

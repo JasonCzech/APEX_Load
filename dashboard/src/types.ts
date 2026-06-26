@@ -107,6 +107,14 @@ export interface ProjectSettings {
   max_vusers_per_test?: number
   max_test_duration_minutes?: number
   github?: GitHubProjectPolicy
+  // pool_quotas caps this project's footprint on a specific fleet pool (keyed by
+  // fleet-pool id). Additive to the project-wide limits above.
+  pool_quotas?: Record<string, PoolProjectQuota>
+}
+
+export interface PoolProjectQuota {
+  max_vusers?: number
+  max_concurrent_tests?: number
 }
 
 export interface GitHubProjectPolicy {
@@ -441,6 +449,8 @@ export interface LoadComparisonRequestOptions {
 export interface CapacityReservation {
   project_id: string
   reserved_generators: number
+  // pool_id scopes the reservation to one fleet pool's envelope (empty = global).
+  pool_id?: string
   // Optional timeslot window (RFC3339). Omit both for an always-active reservation.
   starts_at?: string
   ends_at?: string
@@ -3917,6 +3927,9 @@ export interface CapacityTimeslotRequest {
   vusers?: number
   protocol?: string
   load_zone?: string
+  // pool_id scopes the reservation to a specific fleet pool's capacity envelope
+  // (empty = global).
+  pool_id?: string
 }
 export interface CapacityTimeslot {
   id: string

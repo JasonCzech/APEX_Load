@@ -441,6 +441,34 @@ func capacityReservationTotalsAt(settings SystemSettings, projectID string, now 
 	totalReserved := 0
 	projectReserved := 0
 	for _, reservation := range normalizeCapacityReservations(settings.CapacityPlanning.Reservations) {
+		// Pool-scoped reservations draw from a pool envelope, not the global pool;
+		// they are accounted separately (poolCapacityReservationTotalsAt).
+		if strings.TrimSpace(reservation.PoolID) != "" {
+			continue
+		}
+		if reservation.ReservedGenerators < 0 || !reservationActiveAt(reservation, now) {
+			continue
+		}
+		totalReserved += reservation.ReservedGenerators
+		if normalizedProjectID != "" && reservation.ProjectID == normalizedProjectID {
+			projectReserved += reservation.ReservedGenerators
+		}
+	}
+	return totalReserved, projectReserved
+}
+
+// poolCapacityReservationTotalsAt mirrors capacityReservationTotalsAt but only for
+// settings reservations scoped to a specific fleet pool — returning the total
+// reserved on that pool and the slice reserved for the given project.
+func poolCapacityReservationTotalsAt(settings SystemSettings, projectID, poolID string, now time.Time) (int, int) {
+	normalizedProjectID := normalizeProjectID(strings.TrimSpace(projectID))
+	poolID = strings.TrimSpace(poolID)
+	totalReserved := 0
+	projectReserved := 0
+	for _, reservation := range normalizeCapacityReservations(settings.CapacityPlanning.Reservations) {
+		if strings.TrimSpace(reservation.PoolID) != poolID || poolID == "" {
+			continue
+		}
 		if reservation.ReservedGenerators < 0 || !reservationActiveAt(reservation, now) {
 			continue
 		}

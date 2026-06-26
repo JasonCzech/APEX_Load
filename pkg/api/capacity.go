@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -65,6 +66,91 @@ func (tr *TestRunner) countActiveVUsersForProjectLocked(projectID string) int {
 	return total
 }
 
+// testAssignedPoolID returns the fleet pool a test is pinned to (via its
+// resolved assignment), or "" when the run is not pool-scoped.
+func testAssignedPoolID(test *ManagedTest) string {
+	if test == nil || test.Assignment == nil {
+		return ""
+	}
+	return strings.TrimSpace(test.Assignment.PoolID)
+}
+
+// countActiveTestsOnPoolForProjectLocked / ...VUsers... count a project's live
+// footprint on one fleet pool (matching the project-wide quota counters'
+// RUNNING/INITIALIZING predicate, scoped by the test's assigned pool).
+func (tr *TestRunner) countActiveTestsOnPoolForProjectLocked(poolID, projectID string) int {
+	projectID = normalizeProjectID(projectID)
+	count := 0
+	for _, test := range tr.tests {
+		if test == nil || testAssignedPoolID(test) != poolID || normalizeProjectID(test.ProjectID) != projectID {
+			continue
+		}
+		if test.Status == "RUNNING" || test.Status == "INITIALIZING" {
+			count++
+		}
+	}
+	return count
+}
+
+func (tr *TestRunner) countActiveVUsersOnPoolForProjectLocked(poolID, projectID string) int {
+	projectID = normalizeProjectID(projectID)
+	total := 0
+	for _, test := range tr.tests {
+		if test == nil || testAssignedPoolID(test) != poolID || normalizeProjectID(test.ProjectID) != projectID {
+			continue
+		}
+		if test.Status == "RUNNING" || test.Status == "INITIALIZING" {
+			total += test.TotalVUsers
+		}
+	}
+	return total
+}
+
+// poolProjectQuota returns the project's quota for a specific fleet pool, if one
+// is configured.
+func (tr *TestRunner) poolProjectQuota(projectID, poolID string) (storage.PoolProjectQuota, bool) {
+	if tr.projectStore == nil || poolID == "" {
+		return storage.PoolProjectQuota{}, false
+	}
+	project, err := tr.projectStore.GetProject(normalizeProjectID(projectID))
+	if err != nil || project == nil {
+		return storage.PoolProjectQuota{}, false
+	}
+	quota, ok := project.Settings.PoolQuotas[poolID]
+	return quota, ok
+}
+
+// evaluatePoolQuotaBlockLocked enforces a project's per-pool quota when a run is
+// pinned to a fleet pool. Additive to the project-wide checks: a pool-assigned
+// run must pass both. Excludes excludeTestID so re-evaluating a running test
+// doesn't count it against itself.
+func (tr *TestRunner) evaluatePoolQuotaBlockLocked(test *ManagedTest, excludeTestID string) (bool, string) {
+	poolID := testAssignedPoolID(test)
+	if poolID == "" {
+		return false, ""
+	}
+	quota, ok := tr.poolProjectQuota(test.ProjectID, poolID)
+	if !ok || (quota.MaxConcurrentTests <= 0 && quota.MaxVUsers <= 0) {
+		return false, ""
+	}
+	activeTests := tr.countActiveTestsOnPoolForProjectLocked(poolID, test.ProjectID)
+	activeVUsers := tr.countActiveVUsersOnPoolForProjectLocked(poolID, test.ProjectID)
+	if excludeTestID != "" {
+		if existing, ok := tr.tests[excludeTestID]; ok && (existing.Status == "RUNNING" || existing.Status == "INITIALIZING") &&
+			testAssignedPoolID(existing) == poolID && normalizeProjectID(existing.ProjectID) == normalizeProjectID(test.ProjectID) {
+			activeTests--
+			activeVUsers -= existing.TotalVUsers
+		}
+	}
+	if quota.MaxConcurrentTests > 0 && activeTests >= quota.MaxConcurrentTests {
+		return true, fmt.Sprintf("waiting for a pool test slot on %q (%d max concurrent tests)", poolID, quota.MaxConcurrentTests)
+	}
+	if quota.MaxVUsers > 0 && activeVUsers+test.TotalVUsers > quota.MaxVUsers {
+		return true, fmt.Sprintf("waiting for pool VUser capacity on %q (%d max vusers)", poolID, quota.MaxVUsers)
+	}
+	return false, ""
+}
+
 func (tr *TestRunner) validateConcurrencyLimitsLocked(projectID string) error {
 	maxConcurrent := tr.settings.General.MaxConcurrentTests
 	if tr.countActiveTestsLocked() >= maxConcurrent {
@@ -105,7 +191,13 @@ func (tr *TestRunner) evaluateQuotaBlockLocked(test *ManagedTest, excludeTestID 
 	if projectMaxVUsers > 0 && projectActiveVUsers+test.TotalVUsers > projectMaxVUsers {
 		return true, fmt.Sprintf("waiting for project VUser capacity (%d max vusers)", projectMaxVUsers)
 	}
+	if blocked, reason := tr.evaluatePoolQuotaBlockLocked(test, excludeTestID); blocked {
+		return true, reason
+	}
 	if blocked, reason := tr.evaluateReservedCapacityBlockLocked(test, excludeTestID); blocked {
+		return true, reason
+	}
+	if blocked, reason := tr.evaluatePoolReservedCapacityBlockLocked(test, excludeTestID); blocked {
 		return true, reason
 	}
 	return false, ""
