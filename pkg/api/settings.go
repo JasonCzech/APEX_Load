@@ -1295,6 +1295,12 @@ func (tr *TestRunner) UpdateSystemSettings(settings SystemSettings) (SystemSetti
 	if err := validateSystemSettings(normalized); err != nil {
 		return SystemSettings{}, err
 	}
+	// Reject a pool-scoped reservation that points at a fleet pool which does not
+	// exist (write-time only — load-time validation must tolerate a pool deleted
+	// after the reservation was created).
+	if err := tr.validateReservationPools(normalized); err != nil {
+		return SystemSettings{}, err
+	}
 
 	normalized = cloneSystemSettings(normalized)
 	encoded, err := json.Marshal(normalized)

@@ -8,11 +8,62 @@ package api
 // and this one.
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/storage"
 )
+
+// PoolGeneratorEnvelope returns a fleet pool's capacity envelope (its member
+// generator count). Safe to call without holding tr.mu; takes the read lock
+// internally so callers outside the admission path (e.g. the timeslot approval
+// guard) can size a pool-scoped reservation against the same envelope admission
+// uses.
+func (tr *TestRunner) PoolGeneratorEnvelope(poolID string) int {
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	return tr.poolCapacityGeneratorsLocked(poolID)
+}
+
+// FleetPoolExists reports whether a fleet pool with the given id is known. A
+// blank id or an unconfigured fleet store reports "exists" (nothing to validate
+// against). A definitive not-found reports false; any other (transient) store
+// error reports true so a write isn't rejected on a momentary lookup failure.
+func (tr *TestRunner) FleetPoolExists(poolID string) bool {
+	poolID = strings.TrimSpace(poolID)
+	if poolID == "" || tr.fleetStore == nil {
+		return true
+	}
+	pool, err := tr.fleetStore.GetFleetPool(poolID)
+	if err != nil {
+		return !errors.Is(err, sql.ErrNoRows)
+	}
+	return pool != nil
+}
+
+// validateReservationPools rejects a settings update that references a fleet pool
+// which does not exist. Without this a pool-scoped reservation with a typo'd or
+// stale PoolID is silently inert — excluded from the global reservation math yet
+// bounded by an empty/unknown pool envelope at admission, so it protects nothing.
+// Skipped when no fleet store is configured.
+func (tr *TestRunner) validateReservationPools(settings SystemSettings) error {
+	if tr.fleetStore == nil {
+		return nil
+	}
+	for _, reservation := range settings.CapacityPlanning.Reservations {
+		poolID := strings.TrimSpace(reservation.PoolID)
+		if poolID == "" {
+			continue
+		}
+		if !tr.FleetPoolExists(poolID) {
+			return fmt.Errorf("capacity_planning.reservations references unknown fleet pool %q", poolID)
+		}
+	}
+	return nil
+}
 
 // poolCapacityGeneratorsLocked is a fleet pool's capacity envelope: the number of
 // member generator targets it can place runs on.
