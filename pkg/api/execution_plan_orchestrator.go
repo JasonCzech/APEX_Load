@@ -40,6 +40,9 @@ type executionPlanSchedulePersistence interface {
 	SaveExecutionPlanScheduleOccurrence(occurrence *storage.ExecutionPlanScheduleOccurrence) error
 	GetExecutionPlanScheduleOccurrenceByScheduleAndPlannedAt(scheduleID string, plannedAt time.Time) (*storage.ExecutionPlanScheduleOccurrence, error)
 	ListExecutionPlanScheduleOccurrences(scheduleID string) ([]*storage.ExecutionPlanScheduleOccurrence, error)
+	SaveExecutionPlanApproval(approval *storage.ExecutionPlanApproval) error
+	GetExecutionPlanApproval(id string) (*storage.ExecutionPlanApproval, error)
+	ListExecutionPlanApprovals(planID string) ([]*storage.ExecutionPlanApproval, error)
 }
 
 // seqPlanRunState is the in-memory orchestration state for one sequential plan

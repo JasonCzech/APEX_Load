@@ -657,6 +657,23 @@ func schemaCreateTableStatements() []string {
 			updated_at DATETIME NOT NULL,
 			FOREIGN KEY(plan_id) REFERENCES execution_plans(id)
 		)`,
+		`CREATE TABLE IF NOT EXISTS execution_plan_approvals (
+			id TEXT PRIMARY KEY,
+			plan_id TEXT NOT NULL,
+			project_id TEXT,
+			policy TEXT NOT NULL,
+			status TEXT NOT NULL,
+			requested_by TEXT,
+			requested_at DATETIME NOT NULL,
+			resolved_by TEXT,
+			resolved_at DATETIME,
+			decision_reason TEXT,
+			required_role TEXT,
+			run_id TEXT,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			FOREIGN KEY(plan_id) REFERENCES execution_plans(id)
+		)`,
 		`CREATE TABLE IF NOT EXISTS execution_plan_schedule_occurrences (
 			id TEXT PRIMARY KEY,
 			schedule_id TEXT NOT NULL,

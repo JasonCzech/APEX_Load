@@ -126,6 +126,11 @@ type Store interface {
 	ListExecutionPlanScheduleOccurrences(scheduleID string) ([]*ExecutionPlanScheduleOccurrence, error)
 	ListAllExecutionPlanScheduleOccurrences() ([]*ExecutionPlanScheduleOccurrence, error)
 
+	// Execution plan run approvals (governance gate).
+	SaveExecutionPlanApproval(approval *ExecutionPlanApproval) error
+	GetExecutionPlanApproval(id string) (*ExecutionPlanApproval, error)
+	ListExecutionPlanApprovals(planID string) ([]*ExecutionPlanApproval, error)
+
 	// Object repositories (project-scoped reusable element-descriptor catalogs).
 	SaveObjectRepository(repo *ObjectRepository) error
 	GetObjectRepository(id string) (*ObjectRepository, error)

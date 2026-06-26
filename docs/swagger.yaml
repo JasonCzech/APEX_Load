@@ -2178,6 +2178,76 @@ paths:
             type: string
       tags:
         - Execution Plans
+  /api/v1/execution-plans/{id}/approvals:
+    get:
+      summary: List Execution Plan Approvals
+      description: |-
+        **Handler:** `handleListExecutionPlanApprovals`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleListExecutionPlanApprovals
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Execution Plans
+  /api/v1/execution-plans/{id}/approvals/{approval_id}/approve:
+    post:
+      summary: Approve Execution Plan Approval
+      description: |-
+        **Handler:** `handleApproveExecutionPlanApproval`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleApproveExecutionPlanApproval
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: approval_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Execution Plans
+  /api/v1/execution-plans/{id}/approvals/{approval_id}/reject:
+    post:
+      summary: Reject Execution Plan Approval
+      description: |-
+        **Handler:** `handleRejectExecutionPlanApproval`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleRejectExecutionPlanApproval
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: approval_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Execution Plans
   /api/v1/execution-plans/{id}/runs:
     get:
       summary: List Execution Plan Runs

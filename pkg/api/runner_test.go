@@ -422,6 +422,13 @@ func (s *metricsStoreSpy) ListExecutionPlanScheduleOccurrences(string) ([]*stora
 func (s *metricsStoreSpy) ListAllExecutionPlanScheduleOccurrences() ([]*storage.ExecutionPlanScheduleOccurrence, error) {
 	return nil, nil
 }
+func (s *metricsStoreSpy) SaveExecutionPlanApproval(*storage.ExecutionPlanApproval) error { return nil }
+func (s *metricsStoreSpy) GetExecutionPlanApproval(string) (*storage.ExecutionPlanApproval, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) ListExecutionPlanApprovals(string) ([]*storage.ExecutionPlanApproval, error) {
+	return nil, nil
+}
 func (s *metricsStoreSpy) SaveObjectRepository(*storage.ObjectRepository) error { return nil }
 func (s *metricsStoreSpy) GetObjectRepository(string) (*storage.ObjectRepository, error) {
 	return nil, nil

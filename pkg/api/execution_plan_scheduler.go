@@ -226,5 +226,9 @@ func (tr *TestRunner) runDueExecutionPlanScheduleOnce(schedule *storage.Executio
 		advance("failed", "materialize_failed", "", err.Error())
 		return
 	}
+	if result.Blocked {
+		advance("blocked", "approval_required", "", "plan run requires approval (exceeds project quota)")
+		return
+	}
 	advance("materialized", "started", result.RunID, "")
 }

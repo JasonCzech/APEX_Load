@@ -7,8 +7,71 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
+
+func TestExecutionPlanRunGovernanceGate(t *testing.T) {
+	server, store := newTimeslotServer(t)
+	if err := store.SaveProject(&storage.Project{ID: "proj-a", Name: "A", Settings: storage.ProjectSettings{MaxVUsers: 10}, CreatedAt: time.Now(), UpdatedAt: time.Now()}); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+	server.runner.StoreScript(&dsl.Script{
+		ID: "s", Name: "S", Protocol: "http", Version: "1.0.0",
+		Config:  dsl.ScriptConfig{BaseURL: "https://example.com"},
+		Actions: []dsl.Action{{Name: "a", Type: "request", Target: "/"}},
+	})
+	scenario, err := server.runner.StoreScenario(CreateScenarioRequest{
+		Name: "Big", Duration: "5m",
+		Groups: []CreateGroupEntry{{ScriptID: "s", VUsers: 100}},
+	})
+	if err != nil {
+		t.Fatalf("StoreScenario: %v", err)
+	}
+	now := time.Now().UTC()
+	plan := &storage.ExecutionPlan{
+		ID: "plan-gov-1", ProjectID: "proj-a", Name: "Gov Plan", RunMode: "parallel",
+		Entries:   []storage.ExecutionPlanEntry{{Order: 0, ScenarioID: scenario.ID}},
+		CreatedAt: now, UpdatedAt: now,
+	}
+	if err := store.SaveExecutionPlan(plan); err != nil {
+		t.Fatalf("SaveExecutionPlan: %v", err)
+	}
+
+	// Peak 100 VUsers > project quota 10 → first run is blocked + pending approval.
+	res1, err := server.runner.MaterializeAndRunExecutionPlan(plan, "user:alice", "Alice")
+	if err != nil {
+		t.Fatalf("materialize 1: %v", err)
+	}
+	if !res1.Blocked || res1.Approval == nil || res1.Approval.Status != "pending" {
+		t.Fatalf("first run = %+v, want blocked + pending approval", res1)
+	}
+	// Approve it.
+	approved, ok, err := server.runner.ResolveExecutionPlanApproval(plan.ID, res1.Approval.ID, true, "user:admin", "ok")
+	if err != nil || !ok || approved.Status != "approved" {
+		t.Fatalf("resolve = (%+v, ok=%v, err=%v), want approved", approved, ok, err)
+	}
+	// Re-resolving a non-pending approval is a conflict.
+	if _, found, err := server.runner.ResolveExecutionPlanApproval(plan.ID, res1.Approval.ID, true, "user:admin", "again"); err == nil || !found {
+		t.Fatalf("double-resolve = (found=%v, err=%v), want found + error", found, err)
+	}
+	// Second run consumes the approval and proceeds.
+	res2, err := server.runner.MaterializeAndRunExecutionPlan(plan, "user:alice", "Alice")
+	if err != nil {
+		t.Fatalf("materialize 2: %v", err)
+	}
+	if res2.Blocked || res2.RunID == "" {
+		t.Fatalf("second run = %+v, want allowed with a run id", res2)
+	}
+	// Third run is blocked again — the approval was single-use.
+	res3, err := server.runner.MaterializeAndRunExecutionPlan(plan, "user:alice", "Alice")
+	if err != nil {
+		t.Fatalf("materialize 3: %v", err)
+	}
+	if !res3.Blocked {
+		t.Fatalf("third run = %+v, want blocked again", res3)
+	}
+}
 
 func TestExecutionPlanScheduleSweep(t *testing.T) {
 	server, store := newTimeslotServer(t)

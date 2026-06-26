@@ -182,12 +182,14 @@ type executionPlanRunResult struct {
 // ExecutionPlanMaterializeResult is the outcome of materializing+running a plan,
 // shared by the HTTP handler and the schedule sweep.
 type ExecutionPlanMaterializeResult struct {
-	RunID   string
-	Status  string
-	RunMode string
-	Created int
-	Failed  int
-	Results []executionPlanRunResult
+	RunID    string
+	Status   string
+	RunMode  string
+	Created  int
+	Failed   int
+	Results  []executionPlanRunResult
+	Blocked  bool
+	Approval *storage.ExecutionPlanApproval
 }
 
 // MaterializeAndRunExecutionPlan runs a plan once: sequential plans kick off the
@@ -201,6 +203,17 @@ func (tr *TestRunner) MaterializeAndRunExecutionPlan(plan *storage.ExecutionPlan
 	if plan == nil {
 		return nil, errors.New("execution plan is required")
 	}
+	// Governance gate: a plan whose aggregate peak exceeds the project VUser quota
+	// requires a project-admin approval before it can run.
+	gateApproval, blocked, err := tr.executionPlanRunGate(plan, attribSubject)
+	if err != nil {
+		return nil, err
+	}
+	if blocked {
+		return &ExecutionPlanMaterializeResult{Status: "blocked", RunMode: plan.RunMode, Blocked: true, Approval: gateApproval}, nil
+	}
+
+	var result *ExecutionPlanMaterializeResult
 	if plan.RunMode == "sequential" {
 		run, err := tr.StartExecutionPlanRun(plan, attribSubject, attribDisplayName)
 		if err != nil {
@@ -210,7 +223,9 @@ func (tr *TestRunner) MaterializeAndRunExecutionPlan(plan *storage.ExecutionPlan
 		for _, e := range run.Entries {
 			results = append(results, executionPlanRunResult{Order: e.Order, ScenarioID: e.ScenarioID, TestID: e.TestID, Status: e.Status, Detail: e.Detail})
 		}
-		return &ExecutionPlanMaterializeResult{RunID: run.ID, Status: run.Status, RunMode: "sequential", Results: results}, nil
+		result = &ExecutionPlanMaterializeResult{RunID: run.ID, Status: run.Status, RunMode: "sequential", Results: results}
+		tr.consumeExecutionPlanApproval(gateApproval, result.RunID)
+		return result, nil
 	}
 
 	entries := make([]storage.ExecutionPlanEntry, len(plan.Entries))
@@ -264,7 +279,27 @@ func (tr *TestRunner) MaterializeAndRunExecutionPlan(plan *storage.ExecutionPlan
 		UpdatedAt:   now,
 		CompletedAt: &now,
 	})
-	return &ExecutionPlanMaterializeResult{RunID: runID, Status: runStatus, RunMode: "parallel", Created: created, Failed: failed, Results: results}, nil
+	result = &ExecutionPlanMaterializeResult{RunID: runID, Status: runStatus, RunMode: "parallel", Created: created, Failed: failed, Results: results}
+	tr.consumeExecutionPlanApproval(gateApproval, result.RunID)
+	return result, nil
+}
+
+func approvalID(a *storage.ExecutionPlanApproval) string {
+	if a == nil {
+		return ""
+	}
+	return a.ID
+}
+
+// consumeExecutionPlanApproval stamps an approved, unconsumed approval with the
+// run id it authorized, so it cannot authorize a second run.
+func (tr *TestRunner) consumeExecutionPlanApproval(approval *storage.ExecutionPlanApproval, runID string) {
+	if approval == nil || runID == "" || tr.execPlanScheduleStore == nil {
+		return
+	}
+	approval.RunID = runID
+	approval.UpdatedAt = time.Now().UTC()
+	_ = tr.execPlanScheduleStore.SaveExecutionPlanApproval(approval)
 }
 
 func (s *Server) handleMaterializeAndRunExecutionPlan(w http.ResponseWriter, r *http.Request) {
@@ -292,6 +327,18 @@ func (s *Server) handleMaterializeAndRunExecutionPlan(w http.ResponseWriter, r *
 	result, err := s.runner.MaterializeAndRunExecutionPlan(plan, attribSubject, actorDisplayName)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if result.Blocked {
+		s.recordAuditEvent(r, "execution_plan.run", "blocked", "execution_plan", plan.ID, plan.ProjectID, map[string]any{
+			"reason": "approval_required", "approval_id": approvalID(result.Approval), "actor": actorDisplayName,
+		})
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"execution_plan_id": plan.ID,
+			"status":            "blocked",
+			"reason":            "approval_required",
+			"approval":          result.Approval,
+		})
 		return
 	}
 	s.recordAuditEvent(r, "execution_plan.run", "success", "execution_plan", plan.ID, plan.ProjectID, map[string]any{
