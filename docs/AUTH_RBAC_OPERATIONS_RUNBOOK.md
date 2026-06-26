@@ -71,6 +71,28 @@ as "not onboarded", so provision users and bindings in Access & API Keys before 
 gateway. APEX Load also owns service-account principals for automation. Provide at least one role
 header so first-admin bootstrap can succeed.
 
+## First-Administrator Bootstrap
+
+When the user table is empty there is no admin to onboard anyone, so the first authenticated subject
+must be granted access to break the chicken-and-egg. How that works depends on the environment:
+
+- **Non-production** (`APEXLOAD_ENV` unset/not `production`): the first authenticated subject on an
+  empty store is admitted with the roles the gateway/IdP asserts (convenient for local/staging
+  first-run).
+- **Production** (`APEXLOAD_ENV=production`): empty-store bootstrap is **disabled by default** — a
+  subject with no local user record is rejected as "not onboarded". This prevents anyone who can reach
+  the controller directly (e.g. a header-spoofing client if the gateway is misconfigured) from
+  asserting `system_admin` against a fresh store. To bootstrap the first admin in production:
+  - Set `APEXLOAD_ALLOW_BOOTSTRAP_ADMIN=true` to enable it.
+  - Optionally set `APEXLOAD_BOOTSTRAP_SUBJECT=<exact subject>` to pin who may bootstrap (strongly
+    recommended — only that subject is admitted).
+  - The grant is **deterministic** (a fixed global `system_admin`, *not* the asserted roles),
+    **persisted** (the user + binding are written so the window closes after the first request), and
+    **audited** (`auth.bootstrap.admin_granted`).
+  - Once the first admin exists, **unset `APEXLOAD_ALLOW_BOOTSTRAP_ADMIN`** and manage all further
+    users/roles in Access & API Keys. (Alternatively, seed the first admin directly in the database
+    and never enable bootstrap.)
+
 ## Local Dev Admin/User Preview
 
 When the controller reports `auth.mode = dev`, the dashboard sidebar shows a dev-only Admin/User segmented control:

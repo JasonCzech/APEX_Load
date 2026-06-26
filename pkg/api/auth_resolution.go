@@ -11,12 +11,14 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -164,7 +166,7 @@ func applyLocalUserBindings(upstream *AuthenticatedUser, store storage.Store) (*
 		if errors.Is(err, sql.ErrNoRows) {
 			users, listErr := store.ListUsers(storage.UserFilter{Limit: 1})
 			if listErr == nil && len(users) == 0 {
-				return upstream, nil
+				return bootstrapFirstAdmin(upstream, store)
 			}
 			return nil, fmt.Errorf("user is not onboarded")
 		}
@@ -225,6 +227,71 @@ func addScopedUserRole(scoped map[string]map[string]struct{}, scopeID string, ro
 		scoped[scopeID] = map[string]struct{}{}
 	}
 	scoped[scopeID][role] = struct{}{}
+}
+
+// bootstrapFirstAdmin handles the empty-user-store path (no local users exist yet).
+//
+// Non-production: preserve the historical behavior of honoring the upstream-asserted
+// identity/roles, so local first-run and the existing auth test suite keep working.
+// (Pure dev mode bypasses auth entirely; this path is only reached in trusted_headers
+// or OIDC mode, i.e. a local/staging gateway setup.)
+//
+// Production: the empty-store window is an attack surface — if the controller is
+// reachable directly and the gateway is not perfectly stripping client headers, an
+// unauthenticated client could assert system_admin. So it is OFF by default and must be
+// explicitly enabled (APEXLOAD_ALLOW_BOOTSTRAP_ADMIN); when enabled it grants a fixed
+// system_admin (NOT the asserted roles), may be pinned to a single subject
+// (APEXLOAD_BOOTSTRAP_SUBJECT), and persists + audits the grant so the window closes
+// after the first request and the event is recorded exactly once.
+func bootstrapFirstAdmin(upstream *AuthenticatedUser, store storage.Store) (*AuthenticatedUser, error) {
+	if !productionMode() {
+		return upstream, nil
+	}
+	if !bootstrapAdminEnabled() {
+		return nil, fmt.Errorf("user is not onboarded")
+	}
+	subject := strings.TrimSpace(upstream.Subject)
+	if subject == "" {
+		return nil, fmt.Errorf("user is not onboarded")
+	}
+	if pinned := strings.TrimSpace(os.Getenv("APEXLOAD_BOOTSTRAP_SUBJECT")); pinned != "" && !strings.EqualFold(pinned, subject) {
+		return nil, fmt.Errorf("user is not onboarded")
+	}
+	now := time.Now().UTC()
+	user := &storage.User{
+		ID: uuid.New().String(), Subject: subject, Email: upstream.Email, DisplayName: upstream.DisplayName,
+		Active: true, CreatedAt: now, UpdatedAt: now, LastSeenAt: &now,
+	}
+	if err := store.SaveUser(user); err != nil {
+		return nil, fmt.Errorf("bootstrap administrator provisioning failed")
+	}
+	if err := store.SaveUserRoleBinding(&storage.UserRoleBinding{
+		ID: uuid.New().String(), UserID: user.ID, ScopeType: "global", Role: RoleSystemAdmin, CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		return nil, fmt.Errorf("bootstrap administrator provisioning failed")
+	}
+	_ = store.SaveAuditEvent(&storage.AuditEvent{
+		ID: uuid.New().String(), Action: "auth.bootstrap.admin_granted", ActorType: "system",
+		ActorSubject: subject, ActorDisplayName: upstream.DisplayName, ResourceType: "user", ResourceID: user.ID,
+		Status: "success", Details: map[string]any{"role": RoleSystemAdmin, "reason": "empty user store bootstrap"}, CreatedAt: now,
+	})
+	slog.Warn("granted bootstrap system administrator on empty user store", "subject", subject)
+	return &AuthenticatedUser{
+		ID: user.ID, Subject: subject, DisplayName: upstream.DisplayName, Email: upstream.Email,
+		GlobalRoles:     map[string]struct{}{RoleSystemAdmin: {}},
+		ProjectRoles:    map[string]map[string]struct{}{},
+		DomainRoles:     map[string]map[string]struct{}{},
+		RepositoryRoles: map[string]map[string]struct{}{},
+	}, nil
+}
+
+func bootstrapAdminEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("APEXLOAD_ALLOW_BOOTSTRAP_ADMIN"))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func authenticatedUserFromAPIKey(r *http.Request, store storage.Store) (*AuthenticatedServiceAccount, *AuthenticatedUser, bool, error) {
