@@ -348,7 +348,9 @@ func (s *metricsStoreSpy) UpdateCapacityReservationBinding(string, *string, *str
 func (s *metricsStoreSpy) UpdateCapacityReservationApprovalState(string, []string, string, time.Time) (bool, error) {
 	return true, nil
 }
-func (s *metricsStoreSpy) DeleteCapacityReservationsEndedBefore(time.Time) (int64, error) { return 0, nil }
+func (s *metricsStoreSpy) DeleteCapacityReservationsEndedBefore(time.Time) (int64, error) {
+	return 0, nil
+}
 func (s *metricsStoreSpy) DeleteRejectedCapacityReservationsBefore(time.Time) (int64, error) {
 	return 0, nil
 }
@@ -428,6 +430,12 @@ func (s *metricsStoreSpy) GetExecutionPlanApproval(string) (*storage.ExecutionPl
 }
 func (s *metricsStoreSpy) ListExecutionPlanApprovals(string) ([]*storage.ExecutionPlanApproval, error) {
 	return nil, nil
+}
+func (s *metricsStoreSpy) ClaimExecutionPlanApproval(string, string, time.Time) (bool, error) {
+	return true, nil
+}
+func (s *metricsStoreSpy) UpdateExecutionPlanApprovalResolution(string, string, string, string, time.Time) (bool, error) {
+	return true, nil
 }
 func (s *metricsStoreSpy) SaveObjectRepository(*storage.ObjectRepository) error { return nil }
 func (s *metricsStoreSpy) GetObjectRepository(string) (*storage.ObjectRepository, error) {

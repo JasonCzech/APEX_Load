@@ -43,6 +43,8 @@ type executionPlanSchedulePersistence interface {
 	SaveExecutionPlanApproval(approval *storage.ExecutionPlanApproval) error
 	GetExecutionPlanApproval(id string) (*storage.ExecutionPlanApproval, error)
 	ListExecutionPlanApprovals(planID string) ([]*storage.ExecutionPlanApproval, error)
+	ClaimExecutionPlanApproval(id, runID string, updatedAt time.Time) (bool, error)
+	UpdateExecutionPlanApprovalResolution(id, toStatus, resolvedBy, reason string, resolvedAt time.Time) (bool, error)
 }
 
 // seqPlanRunState is the in-memory orchestration state for one sequential plan

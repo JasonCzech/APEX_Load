@@ -212,6 +212,18 @@ func (tr *TestRunner) MaterializeAndRunExecutionPlan(plan *storage.ExecutionPlan
 	if blocked {
 		return &ExecutionPlanMaterializeResult{Status: "blocked", RunMode: plan.RunMode, Blocked: true, Approval: gateApproval}, nil
 	}
+	// Atomically CLAIM the authorizing approval BEFORE any side effects, so two
+	// concurrent runs (e.g. a manual run racing the scheduler sweep) cannot both
+	// consume one approval and a run can never proceed on an unclaimed approval.
+	if gateApproval != nil {
+		claimed, err := tr.execPlanScheduleStore.ClaimExecutionPlanApproval(gateApproval.ID, "claim-"+uuid.New().String(), time.Now().UTC())
+		if err != nil {
+			return nil, err
+		}
+		if !claimed {
+			return &ExecutionPlanMaterializeResult{Status: "blocked", RunMode: plan.RunMode, Blocked: true, Approval: gateApproval}, nil
+		}
+	}
 
 	var result *ExecutionPlanMaterializeResult
 	if plan.RunMode == "sequential" {
@@ -291,8 +303,9 @@ func approvalID(a *storage.ExecutionPlanApproval) string {
 	return a.ID
 }
 
-// consumeExecutionPlanApproval stamps an approved, unconsumed approval with the
-// run id it authorized, so it cannot authorize a second run.
+// consumeExecutionPlanApproval records the real run id on an approval that was
+// already atomically claimed before the run (see ClaimExecutionPlanApproval),
+// replacing the claim token for audit accuracy.
 func (tr *TestRunner) consumeExecutionPlanApproval(approval *storage.ExecutionPlanApproval, runID string) {
 	if approval == nil || runID == "" || tr.execPlanScheduleStore == nil {
 		return

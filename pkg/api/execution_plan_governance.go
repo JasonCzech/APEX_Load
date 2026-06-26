@@ -52,7 +52,12 @@ func (tr *TestRunner) executionPlanRunGate(plan *storage.ExecutionPlan, actorSub
 		return nil, false, nil
 	}
 	projectID := normalizeProjectID(plan.ProjectID)
-	maxVUsers := tr.projectMaxVUsers(projectID)
+	maxVUsers, err := tr.projectMaxVUsersStrict(projectID)
+	if err != nil {
+		// Fail closed: a transient project-quota lookup error must not silently
+		// disable the governance gate.
+		return nil, false, fmt.Errorf("could not resolve project quota for governance: %w", err)
+	}
 	if maxVUsers <= 0 {
 		return nil, false, nil
 	}
@@ -113,19 +118,28 @@ func (tr *TestRunner) ResolveExecutionPlanApproval(planID, approvalID string, ap
 		return approval, true, fmt.Errorf("approval is already %s", approval.Status)
 	}
 	now := time.Now().UTC()
+	toStatus := "rejected"
 	if approve {
-		approval.Status = "approved"
-	} else {
-		approval.Status = "rejected"
+		toStatus = "approved"
 	}
-	approval.ResolvedBy = resolvedBy
-	approval.ResolvedAt = &now
-	approval.DecisionReason = reason
-	approval.UpdatedAt = now
-	if err := tr.execPlanScheduleStore.SaveExecutionPlanApproval(approval); err != nil {
+	// Atomic compare-and-set so two concurrent resolutions cannot both win.
+	won, err := tr.execPlanScheduleStore.UpdateExecutionPlanApprovalResolution(approval.ID, toStatus, resolvedBy, reason, now)
+	if err != nil {
 		return nil, true, err
 	}
-	return approval, true, nil
+	if !won {
+		return approval, true, fmt.Errorf("approval was already resolved concurrently")
+	}
+	fresh, err := tr.execPlanScheduleStore.GetExecutionPlanApproval(approval.ID)
+	if err != nil || fresh == nil {
+		approval.Status = toStatus
+		approval.ResolvedBy = resolvedBy
+		approval.ResolvedAt = &now
+		approval.DecisionReason = reason
+		approval.UpdatedAt = now
+		return approval, true, nil
+	}
+	return fresh, true, nil
 }
 
 func (tr *TestRunner) ListExecutionPlanApprovals(planID string) ([]*storage.ExecutionPlanApproval, error) {

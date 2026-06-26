@@ -130,6 +130,11 @@ type Store interface {
 	SaveExecutionPlanApproval(approval *ExecutionPlanApproval) error
 	GetExecutionPlanApproval(id string) (*ExecutionPlanApproval, error)
 	ListExecutionPlanApprovals(planID string) ([]*ExecutionPlanApproval, error)
+	// ClaimExecutionPlanApproval atomically consumes an approved, unconsumed
+	// approval (single-use); UpdateExecutionPlanApprovalResolution atomically
+	// resolves a still-pending approval. Both report whether they won the race.
+	ClaimExecutionPlanApproval(id, runID string, updatedAt time.Time) (bool, error)
+	UpdateExecutionPlanApprovalResolution(id, toStatus, resolvedBy, reason string, resolvedAt time.Time) (bool, error)
 
 	// Object repositories (project-scoped reusable element-descriptor catalogs).
 	SaveObjectRepository(repo *ObjectRepository) error

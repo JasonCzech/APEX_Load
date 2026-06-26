@@ -3,7 +3,41 @@ package storage
 import (
 	"encoding/json"
 	"testing"
+	"time"
 )
+
+func TestExecutionPlanApprovalAtomicCAS(t *testing.T) {
+	store := openTimeslotStore(t)
+	now := time.Now().UTC()
+	approval := &ExecutionPlanApproval{ID: "appr-1", PlanID: "plan-1", ProjectID: "p", Policy: "quota_burst", Status: "pending", RequestedAt: now, CreatedAt: now, UpdatedAt: now}
+	if err := store.SaveExecutionPlanApproval(approval); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	// Resolve CAS: first pending->approved wins; a second resolution loses.
+	won, err := store.UpdateExecutionPlanApprovalResolution("appr-1", "approved", "user:admin", "ok", now)
+	if err != nil || !won {
+		t.Fatalf("first resolve = (%v, %v), want won", won, err)
+	}
+	won, err = store.UpdateExecutionPlanApprovalResolution("appr-1", "rejected", "user:other", "no", now)
+	if err != nil || won {
+		t.Fatalf("second resolve = (%v, %v), want lost (already resolved)", won, err)
+	}
+
+	// Claim CAS: an approved, unconsumed approval can be claimed exactly once.
+	claimed, err := store.ClaimExecutionPlanApproval("appr-1", "run-A", now)
+	if err != nil || !claimed {
+		t.Fatalf("first claim = (%v, %v), want claimed", claimed, err)
+	}
+	claimed, err = store.ClaimExecutionPlanApproval("appr-1", "run-B", now)
+	if err != nil || claimed {
+		t.Fatalf("second claim = (%v, %v), want lost (single-use)", claimed, err)
+	}
+	got, _ := store.GetExecutionPlanApproval("appr-1")
+	if got == nil || got.RunID != "run-A" || got.Status != "approved" {
+		t.Fatalf("approval after claim = %+v, want run-A / approved", got)
+	}
+}
 
 func TestExecutionPlanRoundTrip(t *testing.T) {
 	store := openTimeslotStore(t)

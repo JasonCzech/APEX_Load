@@ -176,24 +176,7 @@ func (tr *TestRunner) runDueExecutionPlanScheduleOnce(schedule *storage.Executio
 	store := tr.execPlanScheduleStore
 	plannedAt := schedule.NextRunAt.UTC()
 
-	advance := func(status, reasonCode, runID, lastErr string) {
-		occurrence := &storage.ExecutionPlanScheduleOccurrence{
-			ID:               uuid.New().String(),
-			ScheduleID:       schedule.ID,
-			PlanID:           schedule.PlanID,
-			ProjectID:        schedule.ProjectID,
-			ScheduleRevision: schedule.Revision,
-			PlannedAt:        plannedAt,
-			Status:           status,
-			ReasonCode:       reasonCode,
-			RunID:            runID,
-			CreatedAt:        now,
-			UpdatedAt:        now,
-		}
-		if status == "materialized" {
-			occurrence.MaterializedAt = &now
-		}
-		_ = store.SaveExecutionPlanScheduleOccurrence(occurrence)
+	advanceNextRun := func(lastErr string) {
 		next, err := nextCronRun(schedule.CronExpr, schedule.Timezone, plannedAt, executionPlanScheduleAllows(schedule.DisabledFrom, schedule.DisabledUntil))
 		if err != nil {
 			schedule.NextRunAt = nil
@@ -202,33 +185,70 @@ func (tr *TestRunner) runDueExecutionPlanScheduleOnce(schedule *storage.Executio
 			schedule.NextRunAt = next
 			schedule.LastError = lastErr
 		}
-		if runID != "" {
-			schedule.LastRunRunID = runID
-			schedule.LastRunAt = &now
-		}
 		schedule.UpdatedAt = now
 		_ = store.SaveExecutionPlanSchedule(schedule)
 	}
 
 	// Idempotency: if this planned time already has an occurrence, do not
-	// re-materialize — just advance next_run_at past it.
+	// re-materialize — only advance next_run_at (without re-stamping last-run,
+	// which belongs to the original materialization).
 	if existing, err := store.GetExecutionPlanScheduleOccurrenceByScheduleAndPlannedAt(schedule.ID, plannedAt); err == nil && existing != nil {
-		advance(existing.Status, existing.ReasonCode, existing.RunID, schedule.LastError)
+		advanceNextRun(schedule.LastError)
 		return
 	}
+
+	// Crash-safe pre-claim: write the occurrence anchor BEFORE any side effects so
+	// a crash/leadership-loss mid-materialization cannot double-run the plan (the
+	// next sweep sees the occurrence and dedups). If the claim cannot be persisted,
+	// do not materialize or advance — retry on the next sweep.
+	occurrence := &storage.ExecutionPlanScheduleOccurrence{
+		ID:               uuid.New().String(),
+		ScheduleID:       schedule.ID,
+		PlanID:           schedule.PlanID,
+		ProjectID:        schedule.ProjectID,
+		ScheduleRevision: schedule.Revision,
+		PlannedAt:        plannedAt,
+		Status:           "materializing",
+		ReasonCode:       "due",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}
+	if err := store.SaveExecutionPlanScheduleOccurrence(occurrence); err != nil {
+		schedule.LastError = err.Error()
+		schedule.UpdatedAt = now
+		_ = store.SaveExecutionPlanSchedule(schedule)
+		return
+	}
+
+	finalize := func(status, reasonCode, runID, lastErr string) {
+		occurrence.Status = status
+		occurrence.ReasonCode = reasonCode
+		occurrence.RunID = runID
+		occurrence.UpdatedAt = now
+		if status == "materialized" {
+			occurrence.MaterializedAt = &now
+		}
+		_ = store.SaveExecutionPlanScheduleOccurrence(occurrence)
+		if runID != "" {
+			schedule.LastRunRunID = runID
+			schedule.LastRunAt = &now
+		}
+		advanceNextRun(lastErr)
+	}
+
 	plan, err := store.GetExecutionPlan(schedule.PlanID)
 	if err != nil || plan == nil {
-		advance("blocked", "plan_not_found", "", "execution plan not found")
+		finalize("blocked", "plan_not_found", "", "execution plan not found")
 		return
 	}
 	result, err := tr.MaterializeAndRunExecutionPlan(plan, "", "")
 	if err != nil {
-		advance("failed", "materialize_failed", "", err.Error())
+		finalize("failed", "materialize_failed", "", err.Error())
 		return
 	}
 	if result.Blocked {
-		advance("blocked", "approval_required", "", "plan run requires approval (exceeds project quota)")
+		finalize("blocked", "approval_required", "", "plan run requires approval (exceeds project quota)")
 		return
 	}
-	advance("materialized", "started", result.RunID, "")
+	finalize("materialized", "started", result.RunID, "")
 }

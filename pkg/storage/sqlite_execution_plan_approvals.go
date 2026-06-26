@@ -76,6 +76,41 @@ func (s *SQLiteStore) ListExecutionPlanApprovals(planID string) ([]*ExecutionPla
 	return approvals, rows.Err()
 }
 
+// ClaimExecutionPlanApproval atomically marks an approved, unconsumed approval as
+// consumed by stamping run_id, but only if it is still approved AND unconsumed.
+// Returns false when another run already claimed it — the single-use guarantee.
+func (s *SQLiteStore) ClaimExecutionPlanApproval(id, runID string, updatedAt time.Time) (bool, error) {
+	if strings.TrimSpace(runID) == "" {
+		return false, errors.New("run id is required to claim an approval")
+	}
+	result, err := s.db.Exec(`UPDATE execution_plan_approvals SET run_id = ?, updated_at = ? WHERE id = ? AND status = 'approved' AND (run_id IS NULL OR run_id = '')`,
+		runID, updatedAt.UTC(), id)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return affected > 0, nil
+}
+
+// UpdateExecutionPlanApprovalResolution atomically resolves a still-pending
+// approval, closing the read-modify-write TOCTOU. Returns false if the row is no
+// longer pending (already approved/rejected concurrently).
+func (s *SQLiteStore) UpdateExecutionPlanApprovalResolution(id, toStatus, resolvedBy, reason string, resolvedAt time.Time) (bool, error) {
+	result, err := s.db.Exec(`UPDATE execution_plan_approvals SET status = ?, resolved_by = ?, resolved_at = ?, decision_reason = ?, updated_at = ? WHERE id = ? AND status = 'pending'`,
+		toStatus, resolvedBy, resolvedAt.UTC(), reason, resolvedAt.UTC(), id)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return affected > 0, nil
+}
+
 func scanExecutionPlanApproval(row scanner) (*ExecutionPlanApproval, error) {
 	var approval ExecutionPlanApproval
 	err := row.Scan(

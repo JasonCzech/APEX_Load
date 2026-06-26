@@ -7,6 +7,8 @@ package api
 // contract.
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
@@ -207,6 +209,28 @@ func (tr *TestRunner) projectMaxVUsers(projectID string) int {
 		return 0
 	}
 	return project.Settings.MaxVUsers
+}
+
+// projectMaxVUsersStrict is the fail-closed variant for governance gates: a real
+// store error is surfaced (so the caller can block) instead of silently
+// degrading to "no quota". A missing project or unset limit is a legitimate 0.
+func (tr *TestRunner) projectMaxVUsersStrict(projectID string) (int, error) {
+	if tr.projectStore == nil {
+		return 0, nil
+	}
+	project, err := tr.projectStore.GetProject(normalizeProjectID(projectID))
+	if err != nil {
+		// A missing project is a legitimate "no quota"; only a real store failure
+		// fails closed.
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	if project == nil || project.Settings.MaxVUsers < 1 {
+		return 0, nil
+	}
+	return project.Settings.MaxVUsers, nil
 }
 
 func (tr *TestRunner) projectSettings(projectID string) (storage.ProjectSettings, bool) {
