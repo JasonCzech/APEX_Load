@@ -105,6 +105,68 @@ func TestGenericAuthAPIRoutesDeclareAccessRequirement(t *testing.T) {
 	}
 }
 
+func TestRouteCatalogDeclaresServiceAccountScopeGate(t *testing.T) {
+	for _, rule := range routeCatalogAuthRules {
+		req := rule.Requirement
+		if req.ServiceAccountScope == "" && req.ServiceAccountScopeLookup == nil {
+			t.Errorf("%s %s has no service-account scope gate", rule.Method, rule.Path)
+			continue
+		}
+		if req.ServiceAccountScope != "" {
+			if _, err := normalizeServiceAccountScopes([]string{req.ServiceAccountScope}); err != nil {
+				t.Errorf("%s %s declares unsupported service-account scope %q: %v", rule.Method, rule.Path, req.ServiceAccountScope, err)
+			}
+		}
+	}
+}
+
+func TestGenericAuthAPIRoutesResolveServiceAccountScope(t *testing.T) {
+	routes := registeredServerRoutes(t)
+	for _, route := range routes {
+		if !strings.HasPrefix(route.Path, "/api/v1/") || !route.GenericAuth {
+			continue
+		}
+		req := httptest.NewRequest(route.Method, route.SamplePath, nil)
+		for name, value := range route.PathValues {
+			req.SetPathValue(name, value)
+		}
+		scope := requiredServiceAccountScope(req)
+		if scope == "" {
+			t.Errorf("%s %s resolved empty service-account scope", route.Method, route.Path)
+			continue
+		}
+		if _, err := normalizeServiceAccountScopes([]string{scope}); err != nil {
+			t.Errorf("%s %s resolved unsupported service-account scope %q: %v", route.Method, route.Path, scope, err)
+		}
+	}
+}
+
+func TestRequiredServiceAccountScopeComesFromRouteCatalog(t *testing.T) {
+	tests := []struct {
+		name   string
+		method string
+		path   string
+		want   string
+	}{
+		{name: "system read", method: http.MethodGet, path: "/api/v1/system/settings", want: "system:read"},
+		{name: "system manage", method: http.MethodPut, path: "/api/v1/system/settings", want: "settings:manage"},
+		{name: "auth user management", method: http.MethodPost, path: "/api/v1/auth/users/onboard", want: "service_accounts:manage"},
+		{name: "audit read", method: http.MethodGet, path: "/api/v1/auth/audit-events", want: "audit:read"},
+		{name: "access review", method: http.MethodGet, path: "/api/v1/auth/access-review", want: "audit:read"},
+		{name: "test read", method: http.MethodGet, path: "/api/v1/tests/t1", want: "results:read"},
+		{name: "test control", method: http.MethodPost, path: "/api/v1/tests/t1/start", want: "tests:run"},
+		{name: "script write", method: http.MethodPost, path: "/api/v1/scripts/import/sample", want: "scripts:write"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(tc.method, tc.path, nil)
+			if got := requiredServiceAccountScope(req); got != tc.want {
+				t.Fatalf("requiredServiceAccountScope(%s %s) = %q, want %q", tc.method, tc.path, got, tc.want)
+			}
+		})
+	}
+}
+
 type registeredRoute struct {
 	Method      string
 	Path        string

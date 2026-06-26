@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import { useApi } from '../hooks/useApi'
 import {
@@ -13,6 +13,7 @@ import {
 import { downloadBlob } from '../utils/fileUtils'
 import { getErrorMessage } from '../utils/errorUtils'
 import { useHasTopbarContributionProvider, useTopbarContribution } from '../hooks/TopbarContributionProvider'
+import { AccessIssuedKeyModal } from './AccessIssuedKeyModal'
 import { SortHeader } from './SortHeader'
 import type {
   AccessTab, UserSubTab, ServiceAccountSubTab, ActivitySubTab, UserSortField, AccountSortField,
@@ -2108,7 +2109,7 @@ export default function AccessPage({
       )}
 
       {issuedKey && (
-        <IssuedKeyModal
+        <AccessIssuedKeyModal
           issuedKey={issuedKey}
           copyMessage={copyMessage}
           onCopy={async () => {
@@ -2128,86 +2129,6 @@ export default function AccessPage({
           }}
         />
       )}
-    </div>
-  )
-}
-
-function IssuedKeyModal({
-  issuedKey,
-  copyMessage,
-  onCopy,
-  onClose,
-}: {
-  issuedKey: IssuedKeyState
-  copyMessage: string
-  onCopy: () => Promise<void>
-  onClose: () => void
-}) {
-  const curlExample = `curl -H "Authorization: Bearer ${issuedKey.key}" http://localhost:8080/api/v1/projects`
-  const mcpExample = `APEXLOAD_URL=http://localhost:8080/api/v1\nAPEXLOAD_API_KEY=${issuedKey.key}\npython3 mcp/server.py`
-  const dialogRef = useRef<HTMLDivElement>(null)
-  const closeButtonRef = useRef<HTMLButtonElement>(null)
-
-  // A11y for the one screen that shows a plaintext key: move focus in on open, trap Tab
-  // inside the dialog, close on Escape, and return focus to the trigger on close.
-  useEffect(() => {
-    const previouslyFocused = document.activeElement as HTMLElement | null
-    closeButtonRef.current?.focus()
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault()
-        onClose()
-        return
-      }
-      if (event.key !== 'Tab') return
-      const focusables = dialogRef.current?.querySelectorAll<HTMLElement>(
-        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-      )
-      if (!focusables || focusables.length === 0) return
-      const first = focusables[0]
-      const last = focusables[focusables.length - 1]
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault()
-        last.focus()
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault()
-        first.focus()
-      }
-    }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown)
-      previouslyFocused?.focus?.()
-    }
-  }, [onClose])
-
-  return (
-    <div className="access-modal-overlay" role="presentation">
-      <div className="access-issued-modal" role="dialog" aria-modal="true" aria-label="Issued API key" ref={dialogRef}>
-        <div className="access-modal-header">
-          <div>
-            <h3>{issuedKey.mode === 'created' ? 'API Key Created' : 'API Key Rotated'}</h3>
-            <p>Copy this key now. APEX Load stores only a hash after this dialog closes.</p>
-          </div>
-          <button ref={closeButtonRef} className="btn btn-ghost btn-sm" type="button" onClick={onClose}>Close</button>
-        </div>
-        <div className="access-issued-key-box">
-          <span>{issuedKey.accountName}</span>
-          <code>{issuedKey.key}</code>
-          <button className="btn btn-secondary btn-sm" type="button" onClick={onCopy}>{copyMessage || 'Copy Key'}</button>
-          <span className="access-copy-status" role="status" aria-live="polite">{copyMessage}</span>
-        </div>
-        <div className="access-issued-examples">
-          <div>
-            <h4>cURL</h4>
-            <pre><code>{curlExample}</code></pre>
-          </div>
-          <div>
-            <h4>MCP Server</h4>
-            <pre><code>{mcpExample}</code></pre>
-          </div>
-        </div>
-      </div>
     </div>
   )
 }

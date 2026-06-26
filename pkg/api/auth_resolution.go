@@ -252,6 +252,10 @@ func addScopedUserRole(scoped map[string]map[string]struct{}, scopeID string, ro
 // system_admin (NOT the asserted roles), may be pinned to a single subject
 // (APEXLOAD_BOOTSTRAP_SUBJECT), and persists + audits the grant so the window closes
 // after the first request and the event is recorded exactly once.
+type bootstrapFirstAdminStore interface {
+	BootstrapFirstAdmin(user *storage.User, binding *storage.UserRoleBinding, event *storage.AuditEvent) (bool, error)
+}
+
 func bootstrapFirstAdmin(upstream *AuthenticatedUser, store storage.Store) (*AuthenticatedUser, error) {
 	if !productionMode() {
 		return upstream, nil
@@ -271,19 +275,31 @@ func bootstrapFirstAdmin(upstream *AuthenticatedUser, store storage.Store) (*Aut
 		ID: uuid.New().String(), Subject: subject, Email: upstream.Email, DisplayName: upstream.DisplayName,
 		Active: true, CreatedAt: now, UpdatedAt: now, LastSeenAt: &now,
 	}
-	if err := store.SaveUser(user); err != nil {
-		return nil, fmt.Errorf("bootstrap administrator provisioning failed")
-	}
-	if err := store.SaveUserRoleBinding(&storage.UserRoleBinding{
+	binding := &storage.UserRoleBinding{
 		ID: uuid.New().String(), UserID: user.ID, ScopeType: "global", Role: RoleSystemAdmin, CreatedAt: now, UpdatedAt: now,
-	}); err != nil {
-		return nil, fmt.Errorf("bootstrap administrator provisioning failed")
 	}
-	_ = store.SaveAuditEvent(&storage.AuditEvent{
+	event := &storage.AuditEvent{
 		ID: uuid.New().String(), Action: "auth.bootstrap.admin_granted", ActorType: "system",
 		ActorSubject: subject, ActorDisplayName: upstream.DisplayName, ResourceType: "user", ResourceID: user.ID,
 		Status: "success", Details: map[string]any{"role": RoleSystemAdmin, "reason": "empty user store bootstrap"}, CreatedAt: now,
-	})
+	}
+	if bootstrapStore, ok := store.(bootstrapFirstAdminStore); ok {
+		granted, err := bootstrapStore.BootstrapFirstAdmin(user, binding, event)
+		if err != nil {
+			return nil, fmt.Errorf("bootstrap administrator provisioning failed")
+		}
+		if !granted {
+			return nil, fmt.Errorf("user is not onboarded")
+		}
+	} else {
+		if err := store.SaveUser(user); err != nil {
+			return nil, fmt.Errorf("bootstrap administrator provisioning failed")
+		}
+		if err := store.SaveUserRoleBinding(binding); err != nil {
+			return nil, fmt.Errorf("bootstrap administrator provisioning failed")
+		}
+		_ = store.SaveAuditEvent(event)
+	}
 	slog.Warn("granted bootstrap system administrator on empty user store", "subject", subject)
 	return &AuthenticatedUser{
 		ID: user.ID, Subject: subject, DisplayName: upstream.DisplayName, Email: upstream.Email,
@@ -400,6 +416,8 @@ var serviceAccountScopeRules = []serviceAccountScopeRule{
 	{prefix: "/api/v1/auth/service-accounts", scope: "service_accounts:manage"},
 	{prefix: "/api/v1/auth/users", scope: "service_accounts:manage"},
 	{prefix: "/api/v1/auth/user-activity", scope: "audit:read"},
+	{prefix: "/api/v1/auth/access-review", scope: "audit:read"},
+	{prefix: "/api/v1/auth/effective-access/principal", scope: "audit:read"},
 	{prefix: "/api/v1/auth/audit-events", scope: "audit:read"},
 	{method: http.MethodPost, exact: "/api/v1/system/settings", scope: "settings:manage"},
 	{method: http.MethodPut, exact: "/api/v1/system/settings", scope: "settings:manage"},
@@ -428,9 +446,23 @@ var serviceAccountScopeRules = []serviceAccountScopeRule{
 func requiredServiceAccountScope(r *http.Request) string {
 	path := r.URL.Path
 	method := r.Method
+	if requirement, ok := accessRequirementForRequest(r); ok {
+		if requirement.ServiceAccountScopeLookup != nil {
+			if scope := strings.TrimSpace(requirement.ServiceAccountScopeLookup(r)); scope != "" {
+				return scope
+			}
+		}
+		if scope := strings.TrimSpace(requirement.ServiceAccountScope); scope != "" {
+			return scope
+		}
+	}
 	if strings.HasPrefix(path, "/api/v1/library") {
 		return requiredLibraryServiceAccountScope(r)
 	}
+	return staticServiceAccountScopeForRoute(method, path)
+}
+
+func staticServiceAccountScopeForRoute(method string, path string) string {
 	for _, rule := range serviceAccountScopeRules {
 		if rule.matches(method, path) {
 			return rule.scope

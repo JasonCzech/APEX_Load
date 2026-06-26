@@ -325,7 +325,20 @@ var routeCatalogAuthRules = []apiRouteAuthRule{
 }
 
 func routeAuth(method string, path string, requirement accessRequirement) apiRouteAuthRule {
+	requirement = withRouteServiceAccountScope(method, path, requirement)
 	return apiRouteAuthRule{Method: method, Path: path, Requirement: requirement}
+}
+
+func withRouteServiceAccountScope(method string, path string, requirement accessRequirement) accessRequirement {
+	if requirement.ServiceAccountScope != "" || requirement.ServiceAccountScopeLookup != nil {
+		return requirement
+	}
+	if strings.HasPrefix(path, "/api/v1/library") {
+		requirement.ServiceAccountScopeLookup = requiredLibraryServiceAccountScope
+		return requirement
+	}
+	requirement.ServiceAccountScope = staticServiceAccountScopeForRoute(method, path)
+	return requirement
 }
 
 func viewerGlobalAccess() accessRequirement {

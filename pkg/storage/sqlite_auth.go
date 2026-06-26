@@ -3,6 +3,7 @@ package storage
 // SQLite store — auth. Split from sqlite.go (same package, behavior-preserving).
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -350,6 +351,176 @@ func (s *SQLiteStore) SaveUserWithRoleBindings(user *User, bindings []*UserRoleB
 		}
 	}
 	return tx.Commit()
+}
+
+// BootstrapFirstAdmin atomically inserts the first user, its system-admin binding,
+// and the bootstrap audit event only when the user table is still empty. The
+// BEGIN IMMEDIATE lock closes the first-request race for SQLite/shared-DB
+// controller deployments.
+func (s *SQLiteStore) BootstrapFirstAdmin(user *User, binding *UserRoleBinding, event *AuditEvent) (bool, error) {
+	if user == nil {
+		return false, fmt.Errorf("user is required")
+	}
+	if binding == nil {
+		return false, fmt.Errorf("user role binding is required")
+	}
+	if event == nil {
+		return false, fmt.Errorf("audit event is required")
+	}
+	user.Subject = strings.TrimSpace(user.Subject)
+	if user.Subject == "" {
+		return false, fmt.Errorf("user subject is required")
+	}
+	detailsJSON, err := json.Marshal(event.Details)
+	if err != nil {
+		return false, err
+	}
+	if s.db.dialect != storeDialectSQLite {
+		return s.bootstrapFirstAdminTx(user, binding, event, string(detailsJSON))
+	}
+	ctx := context.Background()
+	conn, err := s.db.db.Conn(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer conn.Close()
+	if _, err := conn.ExecContext(ctx, `BEGIN IMMEDIATE`); err != nil {
+		return false, err
+	}
+	done := false
+	defer func() {
+		if !done {
+			_, _ = conn.ExecContext(ctx, `ROLLBACK`)
+		}
+	}()
+	var count int
+	if err := conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM users`).Scan(&count); err != nil {
+		return false, err
+	}
+	if count != 0 {
+		if _, err := conn.ExecContext(ctx, `ROLLBACK`); err != nil {
+			return false, err
+		}
+		done = true
+		return false, nil
+	}
+	if _, err := conn.ExecContext(ctx, `INSERT INTO users (id, subject, email, display_name, active, created_at, updated_at, last_seen_at, disabled_at, session_epoch)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		user.ID,
+		user.Subject,
+		user.Email,
+		user.DisplayName,
+		s.boolValue(user.Active),
+		user.CreatedAt,
+		user.UpdatedAt,
+		user.LastSeenAt,
+		user.DisabledAt,
+		user.SessionEpoch,
+	); err != nil {
+		return false, err
+	}
+	if _, err := conn.ExecContext(ctx, `INSERT INTO user_role_bindings (id, user_id, scope_type, scope_id, role, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		binding.ID,
+		binding.UserID,
+		binding.ScopeType,
+		binding.ScopeID,
+		binding.Role,
+		binding.CreatedAt,
+		binding.UpdatedAt,
+	); err != nil {
+		return false, err
+	}
+	if _, err := conn.ExecContext(ctx, `INSERT INTO audit_events (id, action, actor_type, actor_subject, actor_display_name, project_id, domain_id, resource_type, resource_id, status, details_json, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		event.ID,
+		event.Action,
+		event.ActorType,
+		event.ActorSubject,
+		event.ActorDisplayName,
+		event.ProjectID,
+		event.DomainID,
+		event.ResourceType,
+		event.ResourceID,
+		event.Status,
+		string(detailsJSON),
+		event.CreatedAt,
+	); err != nil {
+		return false, err
+	}
+	if _, err := conn.ExecContext(ctx, `COMMIT`); err != nil {
+		return false, err
+	}
+	done = true
+	return true, nil
+}
+
+func (s *SQLiteStore) bootstrapFirstAdminTx(user *User, binding *UserRoleBinding, event *AuditEvent, detailsJSON string) (bool, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	if s.db.dialect == storeDialectPostgres {
+		if _, err := tx.Exec(`LOCK TABLE users IN EXCLUSIVE MODE`); err != nil {
+			return false, err
+		}
+	}
+	var count int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&count); err != nil {
+		return false, err
+	}
+	if count != 0 {
+		return false, nil
+	}
+	if _, err := tx.Exec(`INSERT INTO users (id, subject, email, display_name, active, created_at, updated_at, last_seen_at, disabled_at, session_epoch)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		user.ID,
+		user.Subject,
+		user.Email,
+		user.DisplayName,
+		s.boolValue(user.Active),
+		user.CreatedAt,
+		user.UpdatedAt,
+		user.LastSeenAt,
+		user.DisabledAt,
+		user.SessionEpoch,
+	); err != nil {
+		return false, err
+	}
+	if _, err := tx.Exec(`INSERT INTO user_role_bindings (id, user_id, scope_type, scope_id, role, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		binding.ID,
+		binding.UserID,
+		binding.ScopeType,
+		binding.ScopeID,
+		binding.Role,
+		binding.CreatedAt,
+		binding.UpdatedAt,
+	); err != nil {
+		return false, err
+	}
+	if _, err := tx.Exec(`INSERT INTO audit_events (id, action, actor_type, actor_subject, actor_display_name, project_id, domain_id, resource_type, resource_id, status, details_json, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		event.ID,
+		event.Action,
+		event.ActorType,
+		event.ActorSubject,
+		event.ActorDisplayName,
+		event.ProjectID,
+		event.DomainID,
+		event.ResourceType,
+		event.ResourceID,
+		event.Status,
+		detailsJSON,
+		event.CreatedAt,
+	); err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (s *SQLiteStore) GetUser(id string) (*User, error) {

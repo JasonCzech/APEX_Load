@@ -266,6 +266,10 @@ func (b *distributedExecutionBackend) recordGeneratorIdentity(target string, gen
 	b.idTargets[generatorID] = target
 	b.identityMu.Unlock()
 
+	if target == generatorID {
+		return
+	}
+
 	b.drainMu.Lock()
 	if state := b.drainStates[target]; state != "" {
 		if b.drainStates[generatorID] == "" {

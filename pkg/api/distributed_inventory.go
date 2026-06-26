@@ -42,6 +42,7 @@ func (b *distributedExecutionBackend) SystemInventory(ctx context.Context) []Gen
 
 		if snapshot.GeneratorID != "" {
 			entry.GeneratorID = snapshot.GeneratorID
+			b.recordGeneratorIdentity(target.Address, snapshot.GeneratorID)
 		}
 		entry.DrainState = b.generatorDrainState(target.Address)
 		if snapshot.HeartbeatOK {

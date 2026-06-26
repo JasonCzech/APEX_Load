@@ -63,7 +63,11 @@ type accessRequirement struct {
 	DomainLookup      func(*http.Request, storage.Store) (string, int, string)
 	RepositoryRoles   []string
 	RepositoryLookup  func(*http.Request, storage.Store) (string, int, string)
-	MaxBodyBytes      int64
+	// ServiceAccountScope is the second-gate token scope required after RBAC grants
+	// the route. Some routes compute this dynamically from the request body.
+	ServiceAccountScope       string
+	ServiceAccountScopeLookup func(*http.Request) string
+	MaxBodyBytes              int64
 }
 
 type requestProjectLookup func(*http.Request) (string, int, string)

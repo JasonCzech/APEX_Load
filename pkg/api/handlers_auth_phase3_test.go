@@ -111,6 +111,36 @@ func TestCreateUserBindingRejectsUnknownScopes(t *testing.T) {
 	}
 }
 
+func TestOnboardUserRejectsUnknownInitialScopes(t *testing.T) {
+	store := phase1Store(t)
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"}) // dev bypass
+
+	cases := map[string]string{
+		"missing project":    `{"subject":"missing-project-subject","bindings":[{"scope_type":"project","scope_id":"missing-project","role":"viewer"}]}`,
+		"missing domain":     `{"subject":"missing-domain-subject","bindings":[{"scope_type":"domain","scope_id":"missing-domain","role":"viewer"}]}`,
+		"missing repository": `{"subject":"missing-repository-subject","bindings":[{"scope_type":"application_repository","scope_id":"missing-repository","role":"viewer"}]}`,
+	}
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/users/onboard", bytes.NewReader([]byte(body)))
+			resp := httptest.NewRecorder()
+			server.mux.ServeHTTP(resp, req)
+			if resp.Code != http.StatusBadRequest {
+				t.Fatalf("onboard status = %d, want 400 body=%s", resp.Code, resp.Body.String())
+			}
+			var payload struct {
+				Subject string `json:"subject"`
+			}
+			if err := json.Unmarshal([]byte(body), &payload); err != nil {
+				t.Fatalf("unmarshal test body: %v", err)
+			}
+			if _, err := store.GetUserBySubject(payload.Subject); err == nil {
+				t.Fatalf("invalid onboarding persisted user %q", payload.Subject)
+			}
+		})
+	}
+}
+
 // A8 — a user can be hard-deleted; the last system admin cannot.
 func TestDeleteUserEndpoint(t *testing.T) {
 	store := phase1Store(t)

@@ -67,6 +67,45 @@ func TestCountActiveGlobalRoleHolders(t *testing.T) {
 	}
 }
 
+func TestBootstrapFirstAdminOnlyWinsOnEmptyUserTable(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	now := time.Now().UTC()
+	bootstrap := func(subject string) (bool, error) {
+		user := &User{ID: uuid.New().String(), Subject: subject, Active: true, CreatedAt: now, UpdatedAt: now}
+		binding := &UserRoleBinding{ID: uuid.New().String(), UserID: user.ID, ScopeType: "global", Role: "system_admin", CreatedAt: now, UpdatedAt: now}
+		event := &AuditEvent{ID: uuid.New().String(), Action: "auth.bootstrap.admin_granted", ActorType: "system", ActorSubject: subject, ResourceType: "user", ResourceID: user.ID, Status: "success", CreatedAt: now}
+		return store.BootstrapFirstAdmin(user, binding, event)
+	}
+
+	granted, err := bootstrap("first-admin")
+	if err != nil || !granted {
+		t.Fatalf("first bootstrap granted=%v err=%v, want granted", granted, err)
+	}
+	granted, err = bootstrap("second-admin")
+	if err != nil {
+		t.Fatalf("second bootstrap returned error: %v", err)
+	}
+	if granted {
+		t.Fatalf("second bootstrap granted access despite non-empty user table")
+	}
+	users, err := store.ListUsers(UserFilter{Limit: 10})
+	if err != nil {
+		t.Fatalf("ListUsers: %v", err)
+	}
+	if len(users) != 1 || users[0].Subject != "first-admin" {
+		t.Fatalf("users = %#v, want only first-admin", users)
+	}
+	count, err := store.CountAuditEvents(AuditEventFilter{Action: "auth.bootstrap.admin_granted"})
+	if err != nil || count != 1 {
+		t.Fatalf("bootstrap audit count = %d (err=%v), want 1", count, err)
+	}
+}
+
 func TestDeleteAuditAndUsageBefore(t *testing.T) {
 	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
