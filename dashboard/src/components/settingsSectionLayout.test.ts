@@ -5,9 +5,11 @@ import { describe, expect, it } from 'vitest'
 import {
   CAPACITY_SETTINGS_SUBSECTIONS,
   GENERAL_SETTINGS_SUBSECTIONS,
+  GOVERNANCE_SETTINGS_SUBSECTIONS,
   INTEGRATION_SETTINGS_SUBSECTIONS,
   isGeneralSettingsSubsectionId,
   isCapacitySettingsSubsectionId,
+  isGovernanceSettingsSubsectionId,
   isIntegrationSettingsSubsectionId,
   isProjectSettingsSubsectionId,
   mergeSettingsOrder,
@@ -83,6 +85,11 @@ describe('settingsSectionLayout', () => {
   })
 
   it('validates subsection ids for dense settings tabs', () => {
+    expect(GOVERNANCE_SETTINGS_SUBSECTIONS.map(section => section.id)).toEqual([
+      'schedule-defaults',
+      'service-account-apis',
+      'recent-audit-events',
+    ])
     expect(CAPACITY_SETTINGS_SUBSECTIONS.map(section => section.id)).toEqual([
       'availability',
       'generator',
@@ -101,9 +108,11 @@ describe('settingsSectionLayout', () => {
       'prometheus',
       'notifications',
     ])
+    expect(isGovernanceSettingsSubsectionId('service-account-apis')).toBe(true)
     expect(isCapacitySettingsSubsectionId('generator')).toBe(true)
     expect(isProjectSettingsSubsectionId('redaction')).toBe(true)
     expect(isIntegrationSettingsSubsectionId('notifications')).toBe(true)
+    expect(isGovernanceSettingsSubsectionId('bogus')).toBe(false)
     expect(isCapacitySettingsSubsectionId('bogus')).toBe(false)
     expect(isProjectSettingsSubsectionId('bogus')).toBe(false)
     expect(isIntegrationSettingsSubsectionId('bogus')).toBe(false)
@@ -111,14 +120,18 @@ describe('settingsSectionLayout', () => {
 
   it('reads persisted subsections using the requested tab validator', () => {
     window.localStorage.setItem('settings.capacitySubsection', JSON.stringify('retention'))
+    window.localStorage.setItem('settings.governanceSubsection', JSON.stringify('recent-audit-events'))
     window.localStorage.setItem('settings.projectSubsection', JSON.stringify('github'))
     window.localStorage.setItem('settings.integrationSubsection', JSON.stringify('notifications'))
 
     expect(readSettingsSubsectionId('settings.capacitySubsection', 'availability', isCapacitySettingsSubsectionId)).toBe('retention')
+    expect(readSettingsSubsectionId('settings.governanceSubsection', 'schedule-defaults', isGovernanceSettingsSubsectionId)).toBe('recent-audit-events')
     expect(readSettingsSubsectionId('settings.projectSubsection', 'catalog', isProjectSettingsSubsectionId)).toBe('github')
     expect(readSettingsSubsectionId('settings.integrationSubsection', 'library', isIntegrationSettingsSubsectionId)).toBe('notifications')
 
     window.localStorage.setItem('settings.capacitySubsection', JSON.stringify('not-real'))
     expect(readSettingsSubsectionId('settings.capacitySubsection', 'generator', isCapacitySettingsSubsectionId)).toBe('generator')
+    window.localStorage.setItem('settings.governanceSubsection', JSON.stringify('not-real'))
+    expect(readSettingsSubsectionId('settings.governanceSubsection', 'service-account-apis', isGovernanceSettingsSubsectionId)).toBe('service-account-apis')
   })
 })

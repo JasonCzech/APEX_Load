@@ -217,6 +217,7 @@ describe('SettingsPage', () => {
     document.body.appendChild(container)
     root = createRoot(container)
     window.localStorage.removeItem('apexload.settings.generalSubsection')
+    window.localStorage.removeItem('apexload.settings.governanceSubsection')
     window.localStorage.removeItem('apexload.settings.capacitySubsection')
     window.localStorage.removeItem('apexload.settings.projectSubsection')
     window.localStorage.removeItem('apexload.settings.integrationSubsection')
@@ -689,6 +690,7 @@ describe('SettingsPage', () => {
     downloadBlobMock.mockReset()
     window.localStorage.removeItem('apexload.settings.focusSection')
     window.localStorage.removeItem('apexload.settings.generalSubsection')
+    window.localStorage.removeItem('apexload.settings.governanceSubsection')
     window.localStorage.removeItem('apexload.settings.capacitySubsection')
     window.localStorage.removeItem('apexload.settings.projectSubsection')
     window.localStorage.removeItem('apexload.settings.integrationSubsection')
@@ -779,6 +781,16 @@ describe('SettingsPage', () => {
     if (!generalSection) return
 
     await selectGeneralSubnav(generalSection, 'Governance')
+
+    const governancePanel = generalSection.querySelector('#settings-general-panel-governance')
+    expect(governancePanel).toBeTruthy()
+    const governanceTabs = Array.from(governancePanel?.querySelectorAll(':scope > .settings-subsection-layout > .settings-subnav .settings-subnav-label') || [])
+      .map(tab => tab.textContent)
+    expect(governanceTabs).toEqual(['Schedule Defaults', 'Service Account APIs', 'Recent Audit Events'])
+    expect(findSettingsSubnavButton(governancePanel || generalSection, 'Schedule Defaults')?.getAttribute('aria-selected')).toBe('true')
+    expect(governancePanel?.querySelector('#settings-governance-panel-schedule-defaults')?.hasAttribute('hidden')).toBe(false)
+    expect(governancePanel?.querySelector('#settings-governance-panel-service-account-apis')?.hasAttribute('hidden')).toBe(true)
+    expect(governancePanel?.querySelector('#settings-governance-panel-recent-audit-events')?.hasAttribute('hidden')).toBe(true)
 
     expect(generalSection.textContent).toContain('Scenario Schedule Defaults')
     const approvalSelect = findSettingSelect(generalSection, 'Approval Policy')
@@ -1816,10 +1828,16 @@ describe('SettingsPage', () => {
     expect(container.textContent).toContain('Current session can view settings but cannot save global configuration changes.')
 
     await selectGeneralSubnav(generalSection, 'Governance')
+    expect(findSettingsSubnavButton(generalSection, 'Schedule Defaults')?.getAttribute('aria-selected')).toBe('true')
+    expect(generalSection.textContent).toContain('Global Settings Permission Required')
 
+    await selectSettingsSubnav(generalSection, 'Service Account APIs')
     expect(generalSection.textContent).toContain('Access & API Keys')
     expect(generalSection.textContent).toContain('Current session can view auth settings but cannot manage service-account API keys.')
     expect(findButton('Open Access & API Keys')?.disabled).toBe(true)
+
+    await selectSettingsSubnav(generalSection, 'Recent Audit Events')
+    expect(generalSection.textContent).toContain('Recent Audit Events')
     expect(findButton('Export CSV')?.disabled).toBe(true)
   })
 
@@ -2030,10 +2048,12 @@ describe('SettingsPage', () => {
     expect(generalSection.textContent).toContain('Development Bypass')
 
     await selectGeneralSubnav(generalSection, 'Governance')
+    expect(findSettingsSubnavButton(generalSection, 'Schedule Defaults')?.getAttribute('aria-selected')).toBe('true')
+
+    await selectSettingsSubnav(generalSection, 'Service Account APIs')
     expect(generalSection.textContent).toContain('Service Account API Keys')
     expect(generalSection.textContent).toContain('Generate, rotate, disable, and delete scoped API keys from Access & API Keys.')
-    expect(generalSection.textContent).toContain('Recent Audit Events')
-    expect(generalSection.textContent).toContain('system.settings.update')
+    expect(generalSection.querySelector('#settings-governance-panel-service-account-apis')?.hasAttribute('hidden')).toBe(false)
 
     const openAccessButton = findButton('Open Access & API Keys')
     expect(openAccessButton).toBeDefined()
@@ -2047,7 +2067,13 @@ describe('SettingsPage', () => {
     expect(apiMock.createAuthServiceAccount).not.toHaveBeenCalled()
     expect(apiMock.rotateAuthServiceAccount).not.toHaveBeenCalled()
 
-    const auditFilterInputs = Array.from(generalSection.querySelectorAll('input')).filter(input => {
+    await selectSettingsSubnav(generalSection, 'Recent Audit Events')
+    const auditPanel = generalSection.querySelector('#settings-governance-panel-recent-audit-events')
+    expect(auditPanel?.hasAttribute('hidden')).toBe(false)
+    expect(auditPanel?.textContent).toContain('Recent Audit Events')
+    expect(auditPanel?.textContent).toContain('system.settings.update')
+
+    const auditFilterInputs = Array.from(auditPanel?.querySelectorAll('input') || []).filter(input => {
       const element = input as HTMLInputElement
       return element.placeholder === 'action' || element.placeholder === 'actor_type' || element.placeholder === 'status'
     }) as HTMLInputElement[]
@@ -2064,7 +2090,7 @@ describe('SettingsPage', () => {
       status: 'success',
     }))
 
-    const exportAuditButton = Array.from(generalSection.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Export CSV') as HTMLButtonElement | undefined
+    const exportAuditButton = Array.from(auditPanel?.querySelectorAll('button') || []).find(button => button.textContent?.trim() === 'Export CSV') as HTMLButtonElement | undefined
     expect(exportAuditButton).toBeDefined()
     if (!exportAuditButton) return
     await act(async () => {
@@ -2188,6 +2214,8 @@ describe('SettingsPage', () => {
     expect(generalSection.textContent).toContain('Pass | alice-admin')
 
     await selectGeneralSubnav(generalSection, 'Governance')
+    await selectSettingsSubnav(generalSection, 'Service Account APIs')
+    expect(generalSection.querySelector('#settings-governance-panel-service-account-apis')?.hasAttribute('hidden')).toBe(false)
     expect(generalSection.textContent).toContain('Built-In Role Reference')
     expect(generalSection.textContent).toContain('Manage global settings')
     expect(generalSection.textContent).toContain('Global only')

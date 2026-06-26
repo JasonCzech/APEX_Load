@@ -26,6 +26,16 @@ export type GeneralSettingsSubsectionId = typeof GENERAL_SETTINGS_SUBSECTIONS[nu
 
 const GENERAL_SETTINGS_SUBSECTION_IDS = GENERAL_SETTINGS_SUBSECTIONS.map(section => section.id)
 
+export const GOVERNANCE_SETTINGS_SUBSECTIONS = [
+  { id: 'schedule-defaults', title: 'Schedule Defaults' },
+  { id: 'service-account-apis', title: 'Service Account APIs' },
+  { id: 'recent-audit-events', title: 'Recent Audit Events' },
+] as const
+
+export type GovernanceSettingsSubsectionId = typeof GOVERNANCE_SETTINGS_SUBSECTIONS[number]['id']
+
+const GOVERNANCE_SETTINGS_SUBSECTION_IDS = GOVERNANCE_SETTINGS_SUBSECTIONS.map(section => section.id)
+
 export const CAPACITY_SETTINGS_SUBSECTIONS = [
   { id: 'availability', title: 'Availability' },
   { id: 'generator', title: 'Generator Profile' },
@@ -65,6 +75,10 @@ export function isSettingsSectionId(value: unknown): value is SettingsSectionId 
 
 export function isGeneralSettingsSubsectionId(value: unknown): value is GeneralSettingsSubsectionId {
   return typeof value === 'string' && GENERAL_SETTINGS_SUBSECTION_IDS.includes(value as GeneralSettingsSubsectionId)
+}
+
+export function isGovernanceSettingsSubsectionId(value: unknown): value is GovernanceSettingsSubsectionId {
+  return typeof value === 'string' && GOVERNANCE_SETTINGS_SUBSECTION_IDS.includes(value as GovernanceSettingsSubsectionId)
 }
 
 export function isCapacitySettingsSubsectionId(value: unknown): value is CapacitySettingsSubsectionId {

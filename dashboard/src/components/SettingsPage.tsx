@@ -13,8 +13,10 @@ import { getErrorMessage } from '../utils/errorUtils'
 import {
   CAPACITY_SETTINGS_SUBSECTIONS,
   GENERAL_SETTINGS_SUBSECTIONS,
+  GOVERNANCE_SETTINGS_SUBSECTIONS,
   INTEGRATION_SETTINGS_SUBSECTIONS,
   isCapacitySettingsSubsectionId,
+  isGovernanceSettingsSubsectionId,
   isIntegrationSettingsSubsectionId,
   isProjectSettingsSubsectionId,
   mergeSettingsOrder,
@@ -25,6 +27,7 @@ import {
   SETTINGS_SECTIONS,
   type CapacitySettingsSubsectionId,
   type GeneralSettingsSubsectionId,
+  type GovernanceSettingsSubsectionId,
   type IntegrationSettingsSubsectionId,
   type ProjectSettingsSubsectionId,
   type SettingsSectionId,
@@ -171,6 +174,7 @@ export default function SettingsPage({
   const [requestError, setRequestError] = useState('')
   const [activeSection, setActiveSection] = useState<SettingsSectionId>('general')
   const [activeGeneralSubsection, setActiveGeneralSubsection] = useState<GeneralSettingsSubsectionId>(() => readSettingsSubsectionId('apexload.settings.generalSubsection'))
+  const [activeGovernanceSubsection, setActiveGovernanceSubsection] = useState<GovernanceSettingsSubsectionId>(() => readSettingsSubsectionId('apexload.settings.governanceSubsection', 'schedule-defaults', isGovernanceSettingsSubsectionId))
   const [activeCapacitySubsection, setActiveCapacitySubsection] = useState<CapacitySettingsSubsectionId>(() => readSettingsSubsectionId('apexload.settings.capacitySubsection', 'availability', isCapacitySettingsSubsectionId))
   const [activeProjectSubsection, setActiveProjectSubsection] = useState<ProjectSettingsSubsectionId>(() => readSettingsSubsectionId('apexload.settings.projectSubsection', 'catalog', isProjectSettingsSubsectionId))
   const [activeIntegrationSubsection, setActiveIntegrationSubsection] = useState<IntegrationSettingsSubsectionId>(() => readSettingsSubsectionId('apexload.settings.integrationSubsection', 'library', isIntegrationSettingsSubsectionId))
@@ -625,6 +629,11 @@ export default function SettingsPage({
     authentication: formatAuthMode(settings.auth.mode),
     governance: `${auditEvents.length} audit event${auditEvents.length === 1 ? '' : 's'}`,
   }), [auditEvents.length, settings.auth.mode, settings.general.max_concurrent_tests, systemReadiness?.status, usageAccounting])
+  const governanceSubsectionSummaries = useMemo<Record<GovernanceSettingsSubsectionId, string>>(() => ({
+    'schedule-defaults': formatSchedulePolicyLabel(settings.schedule_defaults.approval_policy || 'auto'),
+    'service-account-apis': `${serviceAccounts.length} account${serviceAccounts.length === 1 ? '' : 's'}`,
+    'recent-audit-events': `${auditEvents.length} event${auditEvents.length === 1 ? '' : 's'}`,
+  }), [auditEvents.length, serviceAccounts.length, settings.schedule_defaults.approval_policy])
   const capacitySubsectionSummaries = useMemo<Record<CapacitySettingsSubsectionId, string>>(() => ({
     availability: `${availabilitySnapshot?.effective_available_generators ?? settings.capacity_planning.availability.configured_available_generators} available`,
     generator: `${settings.capacity_planning.generator.cpu_cores} CPU / ${settings.capacity_planning.generator.memory_mb} MB`,
@@ -749,6 +758,10 @@ export default function SettingsPage({
   useEffect(() => {
     writeStoredJSON('apexload.settings.generalSubsection', activeGeneralSubsection)
   }, [activeGeneralSubsection])
+
+  useEffect(() => {
+    writeStoredJSON('apexload.settings.governanceSubsection', activeGovernanceSubsection)
+  }, [activeGovernanceSubsection])
 
   useEffect(() => {
     writeStoredJSON('apexload.settings.capacitySubsection', activeCapacitySubsection)
@@ -2535,228 +2548,284 @@ export default function SettingsPage({
               aria-labelledby="settings-general-tab-governance"
               hidden={activeGeneralSubsection !== 'governance'}
             >
-              <div className="settings-group">
-              {canManageSystem && (
-                <div className="settings-subsection">
-                  <div className="settings-manager-summary">
-                    <div>
-                      <span className="setting-label">Scenario Schedule Defaults</span>
-                      <span className="setting-desc">Administrator-owned governance and calendar-window defaults applied when new recurring schedules are created.</span>
-                    </div>
-                    <strong>{formatSchedulePolicyLabel(settings.schedule_defaults.approval_policy || 'auto')}</strong>
-                  </div>
-                  <div className="setting-row">
-                    <div className="setting-info">
-                      <span className="setting-label">Approval Policy</span>
-                      <span className="setting-desc">Default review policy used by New Test schedules before each recurring run materializes.</span>
-                    </div>
-                    <select
-                      className="settings-input"
-                      value={settings.schedule_defaults.approval_policy || 'auto'}
-                      onChange={(e) => updateScheduleDefaults('approval_policy', e.target.value)}
-                    >
-                      <option value="auto">Auto approve</option>
-                      <option value="manual_review">Manual review</option>
-                      <option value="high_cost">High cost</option>
-                      <option value="off_hours">Off hours</option>
-                      <option value="production">Production</option>
-                      <option value="quota_burst">Quota burst</option>
-                    </select>
-                  </div>
-                  <div className="setting-row">
-                    <div className="setting-info">
-                      <span className="setting-label">Missed Run Policy</span>
-                      <span className="setting-desc">Default reconciliation behavior when the scheduler starts after one or more cron windows were missed.</span>
-                    </div>
-                    <select
-                      className="settings-input"
-                      value={settings.schedule_defaults.missed_run_policy || 'skip'}
-                      onChange={(e) => updateScheduleDefaults('missed_run_policy', e.target.value)}
-                    >
-                      <option value="skip">Skip missed runs</option>
-                      <option value="catch_up_once">Catch up once</option>
-                      <option value="catch_up_all">Catch up all</option>
-                      <option value="require_operator_decision">Require operator decision</option>
-                    </select>
-                  </div>
-                  <div className="setting-row">
-                    <div className="setting-info">
-                      <span className="setting-label">Blackout Window</span>
-                      <span className="setting-desc">Optional default daily no-run range. Schedules apply it in their selected timezone.</span>
-                    </div>
-                    <div className="inline-create-row">
-                      <input
-                        className="settings-input"
-                        value={settings.schedule_defaults.blackout_start_time || ''}
-                        onChange={(e) => updateScheduleDefaults('blackout_start_time', e.target.value)}
-                        placeholder="00:00"
-                      />
-                      <input
-                        className="settings-input"
-                        value={settings.schedule_defaults.blackout_end_time || ''}
-                        onChange={(e) => updateScheduleDefaults('blackout_end_time', e.target.value)}
-                        placeholder="06:00"
-                      />
-                    </div>
-                  </div>
-                  <div className="setting-row">
-                    <div className="setting-info">
-                      <span className="setting-label">Availability Window</span>
-                      <span className="setting-desc">Optional default weekday allowed-run range. Leave blank to allow all weekdays.</span>
-                    </div>
-                    <div className="inline-create-row">
-                      <input
-                        className="settings-input"
-                        value={settings.schedule_defaults.availability_start_time || ''}
-                        onChange={(e) => updateScheduleDefaults('availability_start_time', e.target.value)}
-                        placeholder="09:00"
-                      />
-                      <input
-                        className="settings-input"
-                        value={settings.schedule_defaults.availability_end_time || ''}
-                        onChange={(e) => updateScheduleDefaults('availability_end_time', e.target.value)}
-                        placeholder="17:00"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-              <div className="settings-subsection">
-                <div className="settings-manager-summary">
-                  <div>
-                    <span className="setting-label">Service Account API Keys</span>
-                    <span className="setting-desc">Generate, rotate, disable, and delete scoped API keys from Access & API Keys. Settings keeps the auth mode, role contract, and audit evidence here.</span>
-                  </div>
-                  <strong>{serviceAccounts.length}</strong>
-                </div>
-                <div className="setting-row">
-                  <div className="setting-info">
-                    <span className="setting-label">Provisioning Workspace</span>
-                    <span className="setting-desc">Use the dedicated Access page for CI, MCP, reporting, script import, and system automation key generation.</span>
-                  </div>
-                  <div className="settings-inline-actions">
-                    <button className="btn btn-secondary btn-accent-action" type="button" onClick={() => onNavigate?.('access')} disabled={!canManageServiceAccounts || !onNavigate}>
-                      Open Access & API Keys
-                    </button>
-                  </div>
-                </div>
-                {!canManageServiceAccounts && (
-                  <p className="settings-notice">Current session can view auth settings but cannot manage service-account API keys.</p>
+              <div className="settings-subsection-layout">
+                {renderSettingsSubnav(
+                  'Governance settings categories',
+                  'settings-governance',
+                  GOVERNANCE_SETTINGS_SUBSECTIONS,
+                  activeGovernanceSubsection,
+                  setActiveGovernanceSubsection,
+                  governanceSubsectionSummaries,
                 )}
-              </div>
-                  <div className="settings-subsection">
-                    <div className="settings-manager-summary">
-                      <div>
-                        <span className="setting-label">Recent Audit Events</span>
-                        <span className="setting-desc">Backend-recorded governance history for settings changes, project administration, service-account provisioning, and core test control actions.</span>
-                      </div>
-                      <strong>{auditEvents.length}</strong>
-                    </div>
-                    <div className="setting-row">
-                      <div className="setting-info">
-                        <span className="setting-label">Audit Filters</span>
-                        <span className="setting-desc">Narrow the recent audit feed and CSV export by action, actor type, or status.</span>
-                      </div>
-                      <div className="settings-inline-actions">
-                        <input className="settings-input cell-mono" value={auditActionFilter} onChange={(e) => setAuditActionFilter(e.target.value)} placeholder="action" />
-                        <input className="settings-input cell-mono" value={auditActorTypeFilter} onChange={(e) => setAuditActorTypeFilter(e.target.value)} placeholder="actor_type" />
-                        <input className="settings-input cell-mono" value={auditStatusFilter} onChange={(e) => setAuditStatusFilter(e.target.value)} placeholder="status" />
-                        <button className="btn btn-secondary" type="button" onClick={exportAuditEvents} disabled={!canViewAudit}>
-                          Export CSV
-                        </button>
-                      </div>
-                    </div>
-                    {(auditActionMessage || auditActionError) && (
-                      <div className={`settings-alert ${auditActionError ? 'error' : 'success'}`}>
-                        {auditActionError || auditActionMessage}
-                      </div>
-                    )}
-                    {auditEvents.length > 0 ? auditEvents.map((event) => (
-                      <div className="setting-row" key={event.id}>
-                        <div className="setting-info">
-                          <span className="setting-label">{event.action}</span>
-                          <span className="setting-desc">{formatAuditActor(event)} · {event.actor_type} · {event.status}</span>
-                          <span className="setting-desc">Resource: {event.resource_type}{event.resource_id ? `/${event.resource_id}` : ''}{event.project_id ? ` | Project: ${event.project_id}` : ''}</span>
-                          <span className="setting-desc">Recorded: {formatAuditTimestamp(event.created_at)}</span>
+                <section
+                  id="settings-governance-panel-schedule-defaults"
+                  className="settings-subpanel"
+                  role="tabpanel"
+                  aria-labelledby="settings-governance-tab-schedule-defaults"
+                  hidden={activeGovernanceSubsection !== 'schedule-defaults'}
+                >
+                  <div className="settings-group">
+                    {canManageSystem ? (
+                      <div className="settings-subsection">
+                        <div className="settings-manager-summary">
+                          <div className="setting-info">
+                            <span className="setting-label">Scenario Schedule Defaults</span>
+                            <span className="setting-desc">Administrator-owned governance and calendar-window defaults applied when new recurring schedules are created.</span>
+                          </div>
+                          <strong>{formatSchedulePolicyLabel(settings.schedule_defaults.approval_policy || 'auto')}</strong>
+                        </div>
+                        <div className="setting-row">
+                          <div className="setting-info">
+                            <span className="setting-label">Approval Policy</span>
+                            <span className="setting-desc">Default review policy used by New Test schedules before each recurring run materializes.</span>
+                          </div>
+                          <select
+                            className="settings-input"
+                            value={settings.schedule_defaults.approval_policy || 'auto'}
+                            onChange={(e) => updateScheduleDefaults('approval_policy', e.target.value)}
+                          >
+                            <option value="auto">Auto approve</option>
+                            <option value="manual_review">Manual review</option>
+                            <option value="high_cost">High cost</option>
+                            <option value="off_hours">Off hours</option>
+                            <option value="production">Production</option>
+                            <option value="quota_burst">Quota burst</option>
+                          </select>
+                        </div>
+                        <div className="setting-row">
+                          <div className="setting-info">
+                            <span className="setting-label">Missed Run Policy</span>
+                            <span className="setting-desc">Default reconciliation behavior when the scheduler starts after one or more cron windows were missed.</span>
+                          </div>
+                          <select
+                            className="settings-input"
+                            value={settings.schedule_defaults.missed_run_policy || 'skip'}
+                            onChange={(e) => updateScheduleDefaults('missed_run_policy', e.target.value)}
+                          >
+                            <option value="skip">Skip missed runs</option>
+                            <option value="catch_up_once">Catch up once</option>
+                            <option value="catch_up_all">Catch up all</option>
+                            <option value="require_operator_decision">Require operator decision</option>
+                          </select>
+                        </div>
+                        <div className="setting-row">
+                          <div className="setting-info">
+                            <span className="setting-label">Blackout Window</span>
+                            <span className="setting-desc">Optional default daily no-run range. Schedules apply it in their selected timezone.</span>
+                          </div>
+                          <div className="inline-create-row">
+                            <input
+                              className="settings-input"
+                              value={settings.schedule_defaults.blackout_start_time || ''}
+                              onChange={(e) => updateScheduleDefaults('blackout_start_time', e.target.value)}
+                              placeholder="00:00"
+                            />
+                            <input
+                              className="settings-input"
+                              value={settings.schedule_defaults.blackout_end_time || ''}
+                              onChange={(e) => updateScheduleDefaults('blackout_end_time', e.target.value)}
+                              placeholder="06:00"
+                            />
+                          </div>
+                        </div>
+                        <div className="setting-row">
+                          <div className="setting-info">
+                            <span className="setting-label">Availability Window</span>
+                            <span className="setting-desc">Optional default weekday allowed-run range. Leave blank to allow all weekdays.</span>
+                          </div>
+                          <div className="inline-create-row">
+                            <input
+                              className="settings-input"
+                              value={settings.schedule_defaults.availability_start_time || ''}
+                              onChange={(e) => updateScheduleDefaults('availability_start_time', e.target.value)}
+                              placeholder="09:00"
+                            />
+                            <input
+                              className="settings-input"
+                              value={settings.schedule_defaults.availability_end_time || ''}
+                              onChange={(e) => updateScheduleDefaults('availability_end_time', e.target.value)}
+                              placeholder="17:00"
+                            />
+                          </div>
                         </div>
                       </div>
-                    )) : (
+                    ) : (
+                      <div className="settings-subsection">
+                        <div className="settings-manager-summary">
+                          <div className="setting-info">
+                            <span className="setting-label">Scenario Schedule Defaults</span>
+                            <span className="setting-desc">Administrator-owned governance and calendar-window defaults applied when new recurring schedules are created.</span>
+                          </div>
+                          <strong>View only</strong>
+                        </div>
+                        <div className="setting-row">
+                          <div className="setting-info">
+                            <span className="setting-label">Global Settings Permission Required</span>
+                            <span className="setting-desc">Current session can view settings but cannot save schedule governance defaults.</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </section>
+
+                <section
+                  id="settings-governance-panel-service-account-apis"
+                  className="settings-subpanel"
+                  role="tabpanel"
+                  aria-labelledby="settings-governance-tab-service-account-apis"
+                  hidden={activeGovernanceSubsection !== 'service-account-apis'}
+                >
+                  <div className="settings-group">
+                    <div className="settings-subsection">
+                      <div className="settings-manager-summary">
+                        <div className="setting-info">
+                          <span className="setting-label">Service Account API Keys</span>
+                          <span className="setting-desc">Generate, rotate, disable, and delete scoped API keys from Access & API Keys. Settings keeps the auth mode, role contract, and audit evidence here.</span>
+                        </div>
+                        <strong>{serviceAccounts.length}</strong>
+                      </div>
                       <div className="setting-row">
                         <div className="setting-info">
-                          <span className="setting-label">No audit events yet</span>
-                          <span className="setting-desc">Audit history appears here after configuration, project, or execution lifecycle changes.</span>
+                          <span className="setting-label">Provisioning Workspace</span>
+                          <span className="setting-desc">Use the dedicated Access page for CI, MCP, reporting, script import, and system automation key generation.</span>
+                        </div>
+                        <div className="settings-inline-actions">
+                          <button className="btn btn-secondary btn-accent-action" type="button" onClick={() => onNavigate?.('access')} disabled={!canManageServiceAccounts || !onNavigate}>
+                            Open Access & API Keys
+                          </button>
                         </div>
                       </div>
+                      {!canManageServiceAccounts && (
+                        <p className="settings-notice">Current session can view auth settings but cannot manage service-account API keys.</p>
+                      )}
+                    </div>
+                    {settings.auth.mode !== 'dev' && (
+                      <>
+                        {authRoles.length > 0 && (
+                          <div className="settings-subsection">
+                            <div className="settings-manager-summary">
+                              <div className="setting-info">
+                                <span className="setting-label">Built-In Role Reference</span>
+                                <span className="setting-desc">APEX Load applies these roles through the request RBAC matrix regardless of whether identity arrives from trusted headers or a native OIDC session.</span>
+                              </div>
+                              <strong>{authRoles.length} roles</strong>
+                            </div>
+                            {authRoles.map((role) => (
+                              <div className="setting-row" key={role.id}>
+                                <div className="setting-info">
+                                  <span className="setting-label">{role.name}</span>
+                                  <span className="setting-desc">{role.description}</span>
+                                </div>
+                                <span className="settings-value-display">{formatRoleScope(role.scope)}{role.capabilities && role.capabilities.length > 0 ? ` | ${role.capabilities.join(', ')}` : ''}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {authAccessResources.length > 0 && (
+                          <div className="settings-subsection">
+                            <div className="settings-manager-summary">
+                              <div className="setting-info">
+                                <span className="setting-label">Route Access Matrix</span>
+                                <span className="setting-desc">Backend-owned summary of which roles can read or mutate each major platform surface.</span>
+                              </div>
+                              <strong>{authAccessResources.length} resources</strong>
+                            </div>
+                            {authAccessResources.map((resource) => (
+                              <div className="setting-row" key={resource.id}>
+                                <div className="setting-info">
+                                  <span className="setting-label">{resource.name}</span>
+                                  <span className="setting-desc">{resource.description}</span>
+                                  {resource.operations.map((operation) => (
+                                    <span className="setting-desc" key={operation.id}>{operation.label}: {formatAccessOperation(operation)}</span>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {effectiveAuthAccessResources.length > 0 && (
+                          <div className="settings-subsection">
+                            <div className="settings-manager-summary">
+                              <div className="setting-info">
+                                <span className="setting-label">Effective Access For Current Session</span>
+                                <span className="setting-desc">Evaluates the current interactive identity against the active project selection and the backend RBAC policy.</span>
+                              </div>
+                              <strong>{activeProject?.name || 'Global'}</strong>
+                            </div>
+                            {effectiveAuthAccessResources.map((resource) => (
+                              <div className="setting-row" key={resource.id}>
+                                <div className="setting-info">
+                                  <span className="setting-label">{resource.name}</span>
+                                  <span className="setting-desc">{resource.description}</span>
+                                  {resource.operations.map((operation) => (
+                                    <span className="setting-desc" key={operation.id}>{operation.label}: {formatGrantSource(operation.grant_source)}</span>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
-              {settings.auth.mode !== 'dev' && (
-                <>
-                  {authRoles.length > 0 && (
+                </section>
+
+                <section
+                  id="settings-governance-panel-recent-audit-events"
+                  className="settings-subpanel"
+                  role="tabpanel"
+                  aria-labelledby="settings-governance-tab-recent-audit-events"
+                  hidden={activeGovernanceSubsection !== 'recent-audit-events'}
+                >
+                  <div className="settings-group">
                     <div className="settings-subsection">
                       <div className="settings-manager-summary">
-                        <div>
-                          <span className="setting-label">Built-In Role Reference</span>
-                          <span className="setting-desc">APEX Load applies these roles through the request RBAC matrix regardless of whether identity arrives from trusted headers or a native OIDC session.</span>
+                        <div className="setting-info">
+                          <span className="setting-label">Recent Audit Events</span>
+                          <span className="setting-desc">Backend-recorded governance history for settings changes, project administration, service-account provisioning, and core test control actions.</span>
                         </div>
-                        <strong>{authRoles.length} roles</strong>
+                        <strong>{auditEvents.length}</strong>
                       </div>
-                      {authRoles.map((role) => (
-                        <div className="setting-row" key={role.id}>
-                          <div className="setting-info">
-                            <span className="setting-label">{role.name}</span>
-                            <span className="setting-desc">{role.description}</span>
-                          </div>
-                          <span className="settings-value-display">{formatRoleScope(role.scope)}{role.capabilities && role.capabilities.length > 0 ? ` | ${role.capabilities.join(', ')}` : ''}</span>
+                      <div className="setting-row">
+                        <div className="setting-info">
+                          <span className="setting-label">Audit Filters</span>
+                          <span className="setting-desc">Narrow the recent audit feed and CSV export by action, actor type, or status.</span>
                         </div>
-                      ))}
-                    </div>
-                  )}
-                  {authAccessResources.length > 0 && (
-                    <div className="settings-subsection">
-                      <div className="settings-manager-summary">
-                        <div>
-                          <span className="setting-label">Route Access Matrix</span>
-                          <span className="setting-desc">Backend-owned summary of which roles can read or mutate each major platform surface.</span>
+                        <div className="settings-inline-actions">
+                          <input className="settings-input cell-mono" value={auditActionFilter} onChange={(e) => setAuditActionFilter(e.target.value)} placeholder="action" />
+                          <input className="settings-input cell-mono" value={auditActorTypeFilter} onChange={(e) => setAuditActorTypeFilter(e.target.value)} placeholder="actor_type" />
+                          <input className="settings-input cell-mono" value={auditStatusFilter} onChange={(e) => setAuditStatusFilter(e.target.value)} placeholder="status" />
+                          <button className="btn btn-secondary" type="button" onClick={exportAuditEvents} disabled={!canViewAudit}>
+                            Export CSV
+                          </button>
                         </div>
-                        <strong>{authAccessResources.length} resources</strong>
                       </div>
-                      {authAccessResources.map((resource) => (
-                        <div className="setting-row" key={resource.id}>
+                      {(auditActionMessage || auditActionError) && (
+                        <div className={`settings-alert ${auditActionError ? 'error' : 'success'}`}>
+                          {auditActionError || auditActionMessage}
+                        </div>
+                      )}
+                      {auditEvents.length > 0 ? auditEvents.map((event) => (
+                        <div className="setting-row" key={event.id}>
                           <div className="setting-info">
-                            <span className="setting-label">{resource.name}</span>
-                            <span className="setting-desc">{resource.description}</span>
-                            {resource.operations.map((operation) => (
-                              <span className="setting-desc" key={operation.id}>{operation.label}: {formatAccessOperation(operation)}</span>
-                            ))}
+                            <span className="setting-label">{event.action}</span>
+                            <span className="setting-desc">{formatAuditActor(event)} · {event.actor_type} · {event.status}</span>
+                            <span className="setting-desc">Resource: {event.resource_type}{event.resource_id ? `/${event.resource_id}` : ''}{event.project_id ? ` | Project: ${event.project_id}` : ''}</span>
+                            <span className="setting-desc">Recorded: {formatAuditTimestamp(event.created_at)}</span>
                           </div>
                         </div>
-                      ))}
-                    </div>
-                  )}
-                  {effectiveAuthAccessResources.length > 0 && (
-                    <div className="settings-subsection">
-                      <div className="settings-manager-summary">
-                        <div>
-                          <span className="setting-label">Effective Access For Current Session</span>
-                          <span className="setting-desc">Evaluates the current interactive identity against the active project selection and the backend RBAC policy.</span>
-                        </div>
-                        <strong>{activeProject?.name || 'Global'}</strong>
-                      </div>
-                      {effectiveAuthAccessResources.map((resource) => (
-                        <div className="setting-row" key={resource.id}>
+                      )) : (
+                        <div className="setting-row">
                           <div className="setting-info">
-                            <span className="setting-label">{resource.name}</span>
-                            <span className="setting-desc">{resource.description}</span>
-                            {resource.operations.map((operation) => (
-                              <span className="setting-desc" key={operation.id}>{operation.label}: {formatGrantSource(operation.grant_source)}</span>
-                            ))}
+                            <span className="setting-label">No audit events yet</span>
+                            <span className="setting-desc">Audit history appears here after configuration, project, or execution lifecycle changes.</span>
                           </div>
                         </div>
-                      ))}
+                      )}
                     </div>
-                  )}
-                </>
-              )}
+                  </div>
+                </section>
               </div>
             </section>
           </div>
