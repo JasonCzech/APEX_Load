@@ -34,6 +34,7 @@ import {
 } from './settingsSectionLayout'
 import EntitlementsPanel from './EntitlementsPanel'
 import EntitlementHeadroom from './EntitlementHeadroom'
+import ProjectPoolQuotasCard from './ProjectPoolQuotasCard'
 import {
   formatAccessOperation,
   formatAuditActor,
@@ -596,7 +597,7 @@ export default function SettingsPage({
     }
     const draft = {
       name: projectDraftName.trim(),
-      settings: buildProjectSettingsDraft(projectDraftRules, projectDraftMaxConcurrentTests, projectDraftMaxVUsers, projectDraftMaxVUsersPerTest, projectDraftMaxTestDurationMinutes, buildProjectGitHubDraft()),
+      settings: buildProjectSettingsDraft(projectDraftRules, projectDraftMaxConcurrentTests, projectDraftMaxVUsers, projectDraftMaxVUsersPerTest, projectDraftMaxTestDurationMinutes, buildProjectGitHubDraft(), selectedProject?.settings?.pool_quotas),
     }
 
     return JSON.stringify(current) !== JSON.stringify(draft)
@@ -1395,7 +1396,7 @@ export default function SettingsPage({
     try {
       const updated = await projectApi.updateProject(selectedProject.id, {
         name: projectDraftName.trim(),
-        settings: buildProjectSettingsDraft(projectDraftRules, projectDraftMaxConcurrentTests, projectDraftMaxVUsers, projectDraftMaxVUsersPerTest, projectDraftMaxTestDurationMinutes, buildProjectGitHubDraft()),
+        settings: buildProjectSettingsDraft(projectDraftRules, projectDraftMaxConcurrentTests, projectDraftMaxVUsers, projectDraftMaxVUsersPerTest, projectDraftMaxTestDurationMinutes, buildProjectGitHubDraft(), selectedProject?.settings?.pool_quotas),
       })
       const nextProjects = sortProjects(projects.map(project => (project.id === updated.id ? updated : project)))
       setProjects(nextProjects)
@@ -3798,6 +3799,17 @@ export default function SettingsPage({
                       placeholder="Unlimited"
                     />
                   </div>
+
+                  {selectedProject && (
+                    <ProjectPoolQuotasCard
+                      project={selectedProject}
+                      canManage={canManageProjects}
+                      onUpdated={updated => {
+                        setProjects(sortProjects(projects.map(project => (project.id === updated.id ? updated : project))))
+                        selectProject(updated)
+                      }}
+                    />
+                  )}
                 </div>
                   </div>
                 </section>
