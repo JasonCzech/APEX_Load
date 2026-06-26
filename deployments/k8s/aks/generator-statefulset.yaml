@@ -57,10 +57,6 @@ spec:
             capabilities:
               drop:
                 - ALL
-          lifecycle:
-            preStop:
-              exec:
-                command: ["sh", "-c", "sleep 15"]
           env:
             # Fail closed: with APEXLOAD_ENV=production the generator refuses to
             # start on a plaintext, tokenless gRPC channel (see cmd/generator).
@@ -68,6 +64,8 @@ spec:
             # pod instead of silently serving insecure RPCs.
             - name: APEXLOAD_ENV
               value: production
+            - name: APEXLOAD_GENERATOR_MAX_VUSERS
+              value: "10000"
             # Server certificate + client-CA: requires mTLS from controllers.
             # Mirrors deployments/k8s/onprem. The grpc-tls Secret is mounted
             # below; provision it via cert-manager or workload-identity tooling.
@@ -109,13 +107,13 @@ spec:
             - name: grpc
               containerPort: 9090
           readinessProbe:
-            tcpSocket:
-              port: grpc
+            grpc:
+              port: 9090
             initialDelaySeconds: 5
             periodSeconds: 10
           livenessProbe:
-            tcpSocket:
-              port: grpc
+            grpc:
+              port: 9090
             initialDelaySeconds: 15
             periodSeconds: 20
           resources:

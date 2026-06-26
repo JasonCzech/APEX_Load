@@ -50,9 +50,9 @@ func TestCountActiveGlobalRoleHolders(t *testing.T) {
 		}
 	}
 
-	addAdmin("active-global", true, "global")     // counts
-	addAdmin("disabled-global", false, "global")  // excluded: inactive
-	addAdmin("project-admin", true, "project")    // excluded: not global scope
+	addAdmin("active-global", true, "global")    // counts
+	addAdmin("disabled-global", false, "global") // excluded: inactive
+	addAdmin("project-admin", true, "project")   // excluded: not global scope
 
 	count, err := store.CountActiveGlobalRoleHolders("system_admin")
 	if err != nil {
@@ -99,5 +99,68 @@ func TestDeleteAuditAndUsageBefore(t *testing.T) {
 	events, err := store.ListAuditEvents(AuditEventFilter{Limit: 10})
 	if err != nil || len(events) != 1 {
 		t.Fatalf("remaining audit events = %d (err=%v), want 1", len(events), err)
+	}
+}
+
+func TestListAuditEventsEmptyProjectAllowListMatchesNothing(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	now := time.Now().UTC()
+	for _, event := range []*AuditEvent{
+		{ID: "audit-proj-a", Action: "a", ActorType: "user", ActorSubject: "alice", ProjectID: "proj-a", ResourceType: "test", ResourceID: "a", Status: "success", CreatedAt: now},
+		{ID: "audit-proj-b", Action: "b", ActorType: "user", ActorSubject: "bob", ProjectID: "proj-b", ResourceType: "test", ResourceID: "b", Status: "success", CreatedAt: now.Add(time.Second)},
+	} {
+		if err := store.SaveAuditEvent(event); err != nil {
+			t.Fatalf("SaveAuditEvent(%s): %v", event.ID, err)
+		}
+	}
+
+	unrestricted, err := store.ListAuditEvents(AuditEventFilter{Limit: 10})
+	if err != nil {
+		t.Fatalf("ListAuditEvents unrestricted returned error: %v", err)
+	}
+	if len(unrestricted) != 2 {
+		t.Fatalf("unrestricted events = %d, want 2", len(unrestricted))
+	}
+
+	none, err := store.ListAuditEvents(AuditEventFilter{Limit: 10, ProjectIDs: []string{}})
+	if err != nil {
+		t.Fatalf("ListAuditEvents empty allow-list returned error: %v", err)
+	}
+	if len(none) != 0 {
+		t.Fatalf("empty allow-list events = %#v, want none", none)
+	}
+
+	allowed, err := store.ListAuditEvents(AuditEventFilter{Limit: 10, ProjectIDs: []string{"proj-a"}})
+	if err != nil {
+		t.Fatalf("ListAuditEvents project allow-list returned error: %v", err)
+	}
+	if len(allowed) != 1 || allowed[0].ProjectID != "proj-a" {
+		t.Fatalf("project allow-list events = %#v, want only proj-a", allowed)
+	}
+}
+
+func TestSaveUserWithRoleBindingsRollsBackOnBindingFailure(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	now := time.Now().UTC()
+	user := &User{ID: "user-rollback", Subject: "rollback", Active: true, CreatedAt: now, UpdatedAt: now}
+	bindings := []*UserRoleBinding{
+		{ID: "duplicate-binding-id", UserID: user.ID, ScopeType: "global", Role: "viewer", CreatedAt: now, UpdatedAt: now},
+		{ID: "duplicate-binding-id", UserID: user.ID, ScopeType: "project", ScopeID: "proj-a", Role: "viewer", CreatedAt: now, UpdatedAt: now},
+	}
+	if err := store.SaveUserWithRoleBindings(user, bindings); err == nil {
+		t.Fatalf("SaveUserWithRoleBindings should fail on duplicate binding id")
+	}
+	if _, err := store.GetUserBySubject("rollback"); err == nil {
+		t.Fatalf("failed onboarding transaction should not persist the user")
 	}
 }

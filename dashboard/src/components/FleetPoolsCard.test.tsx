@@ -18,7 +18,10 @@ const fleetApiMock = {
   listGeneratorMetadata: vi.fn(),
   patchGeneratorMetadata: vi.fn(),
   createProvisionRequest: vi.fn(),
+  listProvisionRequests: vi.fn(),
   getProvisionRequest: vi.fn(),
+  cancelProvisionRequest: vi.fn(),
+  retryProvisionRequest: vi.fn(),
   getProvisioner: vi.fn().mockResolvedValue(null),
 }
 
@@ -33,6 +36,8 @@ beforeEach(() => {
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
+  fleetApiMock.listProvisionRequests.mockResolvedValue({ provisioning_requests: [], count: 0 })
+  fleetApiMock.getProvisioner.mockResolvedValue(null)
 })
 
 afterEach(() => {
@@ -91,6 +96,7 @@ describe('FleetPoolsCard', () => {
     expect(container.textContent).toContain('kubernetes')
     expect(container.textContent).toContain('size 4 (1–10)')
     expect(container.textContent).toContain('1 member')
+    expect(container.textContent).toContain('Recent Provisioning')
   })
 
   it('surfaces the active on-demand provisioner status', async () => {
@@ -121,12 +127,24 @@ describe('FleetPoolsCard', () => {
     })
     await flush()
     expect(container.textContent).not.toContain('New Pool')
-    expect(container.textContent).not.toContain('Provision')
+    expect(Array.from(container.querySelectorAll('button')).some(button => button.textContent === 'Provision')).toBe(false)
     expect(container.textContent).not.toContain('Delete')
   })
 
   it('surfaces a provisioning request result with its status', async () => {
     fleetApiMock.listFleetPools.mockResolvedValue({ fleet_pools: [pool({})], count: 1 })
+    fleetApiMock.listProvisionRequests.mockResolvedValueOnce({ provisioning_requests: [], count: 0 }).mockResolvedValue({
+      provisioning_requests: [{
+        id: 'req-1',
+        fleet_pool_id: 'pool-1',
+        status: 'not_configured',
+        desired_count: 4,
+        events: [{ id: 'e1', request_id: 'req-1', event_type: 'provider_unconfigured', message: 'no provider wired', timestamp: '' }],
+        created_at: '',
+        updated_at: '',
+      }],
+      count: 1,
+    })
     fleetApiMock.createProvisionRequest.mockResolvedValue({
       id: 'req-1',
       fleet_pool_id: 'pool-1',
@@ -154,5 +172,81 @@ describe('FleetPoolsCard', () => {
     expect(fleetApiMock.createProvisionRequest).toHaveBeenCalledWith({ fleet_pool_id: 'pool-1', desired_count: 4 })
     expect(container.textContent).toContain('not_configured')
     expect(container.textContent).toContain('provider_unconfigured')
+  })
+
+  it('renders provisioning history and retries eligible requests', async () => {
+    const failedRequest = {
+      id: 'req-failed',
+      fleet_pool_id: 'pool-1',
+      status: 'failed',
+      desired_count: 6,
+      events: [{ id: 'e1', request_id: 'req-failed', event_type: 'failure', message: 'api server unreachable', timestamp: '' }],
+      created_at: '',
+      updated_at: '',
+    }
+    const successRequest = {
+      ...failedRequest,
+      status: 'success',
+      events: [...failedRequest.events, { id: 'e2', request_id: 'req-failed', event_type: 'success', message: 'scaled apexload-generator to 6 replicas', timestamp: '' }],
+    }
+    fleetApiMock.listFleetPools.mockResolvedValue({ fleet_pools: [pool({})], count: 1 })
+    fleetApiMock.listProvisionRequests
+      .mockResolvedValueOnce({ provisioning_requests: [failedRequest], count: 1 })
+      .mockResolvedValue({ provisioning_requests: [successRequest], count: 1 })
+    fleetApiMock.retryProvisionRequest.mockResolvedValue(successRequest)
+
+    await act(async () => {
+      root.render(<FleetPoolsCard canManage />)
+    })
+    await flush()
+
+    expect(fleetApiMock.listProvisionRequests).toHaveBeenCalledWith({ limit: 10 })
+    expect(container.textContent).toContain('req-failed')
+    expect(container.textContent).toContain('api server unreachable')
+
+    const retryButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(b => b.textContent === 'Retry')
+    await act(async () => {
+      retryButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flush()
+
+    expect(fleetApiMock.retryProvisionRequest).toHaveBeenCalledWith('req-failed')
+    expect(container.textContent).toContain('scaled apexload-generator to 6 replicas')
+  })
+
+  it('cancels active provisioning requests from history', async () => {
+    const activeRequest = {
+      id: 'req-active',
+      fleet_pool_id: 'pool-1',
+      status: 'provisioning',
+      desired_count: 3,
+      events: [{ id: 'e1', request_id: 'req-active', event_type: 'provisioning', message: 'scaling pool', timestamp: '' }],
+      created_at: '',
+      updated_at: '',
+    }
+    const cancelledRequest = {
+      ...activeRequest,
+      status: 'cancelled',
+      events: [...activeRequest.events, { id: 'e2', request_id: 'req-active', event_type: 'cancelled', message: 'operator cancelled', timestamp: '' }],
+    }
+    fleetApiMock.listFleetPools.mockResolvedValue({ fleet_pools: [pool({})], count: 1 })
+    fleetApiMock.listProvisionRequests
+      .mockResolvedValueOnce({ provisioning_requests: [activeRequest], count: 1 })
+      .mockResolvedValue({ provisioning_requests: [cancelledRequest], count: 1 })
+    fleetApiMock.cancelProvisionRequest.mockResolvedValue(cancelledRequest)
+
+    await act(async () => {
+      root.render(<FleetPoolsCard canManage />)
+    })
+    await flush()
+
+    const cancelButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(b => b.textContent === 'Cancel')
+    await act(async () => {
+      cancelButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flush()
+
+    expect(fleetApiMock.cancelProvisionRequest).toHaveBeenCalledWith('req-active')
+    expect(container.textContent).toContain('operator cancelled')
   })
 })

@@ -258,6 +258,40 @@ describe('scenarioPayloadUtils', () => {
     })
   })
 
+  it('preserves root-level generator loss tolerance while keeping group placement strict', () => {
+    const payload = buildScenarioUpsertPayload({
+      name: 'Loss Tolerant',
+      duration: '5m',
+      startDelay: '',
+      scenarioMode: 'vuser_driven',
+      scriptShakeout: false,
+      resourceBaseline: false,
+      assignment: { mode: 'auto', tolerate_generator_loss: true },
+      groups: [{
+        name: 'Checkout',
+        scriptId: 'script-a',
+        vusers: 10,
+        rampUp: '',
+        rampDown: '',
+        initialization: 'at_runtime',
+        assignment: { mode: 'auto', tolerate_generator_loss: true },
+      }],
+      goalConfig: {},
+      runtimeSettings: {
+        iterations: undefined,
+        pacing: undefined,
+        think_time: undefined,
+        log_level: '',
+        auto_transactions: '',
+        continue_on_error: false,
+        snapshot_on_error: false,
+      },
+    })
+
+    expect(payload.assignment).toEqual({ mode: 'auto', tolerate_generator_loss: true })
+    expect(payload.groups[0].assignment).toEqual({ mode: 'auto' })
+  })
+
   it('keeps a single unnamed group in the groups array when it has an iterations override', () => {
     const payload = buildCreateTestPayload({
       name: '',

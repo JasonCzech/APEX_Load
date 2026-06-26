@@ -173,16 +173,13 @@ func (s *Server) enrichGeneratorInventoryWithPools(entries []GeneratorInventoryE
 			}
 			entries[i].PoolName = name
 		}
-		entries[i].Cordoned = m.Cordoned
 		if entries[i].Region == "" && strings.TrimSpace(m.Region) != "" {
 			entries[i].Region = m.Region
 		}
 		if len(m.Tags) > 0 {
 			entries[i].Labels = cloneStringMap(m.Tags)
 		}
-		if m.Cordoned && entries[i].DrainState == "active" {
-			entries[i].DrainState = "cordoned"
-		}
+		entries[i].Cordoned = strings.EqualFold(entries[i].DrainState, "cordoned")
 	}
 }
 

@@ -261,6 +261,9 @@ func (b *distributedExecutionBackend) consumeMetrics(ctx context.Context, tr *Te
 }
 
 func (b *distributedExecutionBackend) failDistributedTestOnStreamError(tr *TestRunner, test *ManagedTest, target string, err error) {
+	if b.tolerateMetricsStreamLoss(tr, test, target, err) {
+		return
+	}
 	finalError := fmt.Sprintf("remote target %s metrics stream stopped: %v", target, err)
 
 	tr.mu.Lock()
@@ -459,6 +462,7 @@ func (b *distributedExecutionBackend) probeGeneratorLoad(ctx context.Context, ta
 	if snapshot.GeneratorID == "" {
 		snapshot.GeneratorID = target
 	}
+	b.recordGeneratorIdentity(target, snapshot.GeneratorID)
 	snapshot.AvailableCapacity = response.AvailableCapacity
 	snapshot.Stats = response.Stats
 	snapshot.CPULimitCores = response.CPULimitCores

@@ -26,6 +26,10 @@ const (
 	auditActionAccessDenied              = "auth.access.denied"
 )
 
+type auditEventCounter interface {
+	CountAuditEvents(filter storage.AuditEventFilter) (int, error)
+}
+
 type AccessReviewUser struct {
 	ID          string     `json:"id"`
 	Subject     string     `json:"subject"`
@@ -93,14 +97,21 @@ func (s *Server) computeAccessReview(now time.Time) (AccessReviewResponse, error
 	review.RecentDenialWindowHours = windowHours
 	if windowHours > 0 {
 		since := now.Add(-time.Duration(windowHours) * time.Hour)
-		denials, derr := s.store.ListAuditEvents(storage.AuditEventFilter{
+		filter := storage.AuditEventFilter{
 			Action:       auditActionAccessDenied,
 			Status:       "failure",
 			CreatedAfter: &since,
-			Limit:        accessReviewDenialScanCap,
-		})
-		if derr == nil {
-			review.RecentDenials = len(denials)
+		}
+		if counter, ok := s.store.(auditEventCounter); ok {
+			if count, derr := counter.CountAuditEvents(filter); derr == nil {
+				review.RecentDenials = count
+			}
+		} else {
+			filter.Limit = accessReviewDenialScanCap
+			denials, derr := s.store.ListAuditEvents(filter)
+			if derr == nil {
+				review.RecentDenials = len(denials)
+			}
 		}
 	}
 	return review, nil

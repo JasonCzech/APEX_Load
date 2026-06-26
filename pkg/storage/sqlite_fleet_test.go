@@ -129,3 +129,52 @@ func TestProvisioningRequestRoundTrip(t *testing.T) {
 		t.Fatalf("pool filter leaked: %d", len(other))
 	}
 }
+
+func TestFleetAlertAckRoundTrip(t *testing.T) {
+	store := openTimeslotStore(t)
+	ack := &FleetAlertAck{
+		ID:                    "alert-1",
+		AlertType:             "saturation",
+		Target:                "apexload-generator-0",
+		Region:                "eastus",
+		Severity:              "danger",
+		Summary:               "generator is saturated",
+		Note:                  "paging platform team",
+		AcknowledgedBySubject: "ops@example.com",
+		AcknowledgedAt:        time.Now().UTC().Add(-time.Minute),
+	}
+	if err := store.SaveFleetAlertAck(ack); err != nil {
+		t.Fatalf("SaveFleetAlertAck returned error: %v", err)
+	}
+	acks, err := store.ListFleetAlertAcks()
+	if err != nil {
+		t.Fatalf("ListFleetAlertAcks returned error: %v", err)
+	}
+	if len(acks) != 1 {
+		t.Fatalf("acks = %d, want 1", len(acks))
+	}
+	if acks[0].ID != "alert-1" || acks[0].Note != "paging platform team" || acks[0].AcknowledgedBySubject != "ops@example.com" {
+		t.Fatalf("ack not preserved: %+v", acks[0])
+	}
+	ack.Note = "handled"
+	if err := store.SaveFleetAlertAck(ack); err != nil {
+		t.Fatalf("update SaveFleetAlertAck returned error: %v", err)
+	}
+	acks, err = store.ListFleetAlertAcks()
+	if err != nil {
+		t.Fatalf("ListFleetAlertAcks after update returned error: %v", err)
+	}
+	if len(acks) != 1 || acks[0].Note != "handled" {
+		t.Fatalf("updated acks = %+v, want one handled ack", acks)
+	}
+	if err := store.DeleteFleetAlertAck("alert-1"); err != nil {
+		t.Fatalf("DeleteFleetAlertAck returned error: %v", err)
+	}
+	acks, err = store.ListFleetAlertAcks()
+	if err != nil {
+		t.Fatalf("ListFleetAlertAcks after delete returned error: %v", err)
+	}
+	if len(acks) != 0 {
+		t.Fatalf("acks after delete = %d, want 0", len(acks))
+	}
+}

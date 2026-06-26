@@ -8,6 +8,7 @@ package api
 // succeeding — tracked under the fleet_management parity dimension.
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -25,6 +26,9 @@ const defaultFleetListLimit = 100
 // ---- fleet pools ---------------------------------------------------------
 
 func (s *Server) handleCreateFleetPool(w http.ResponseWriter, r *http.Request) {
+	if !s.requireExecutionLeader(w) {
+		return
+	}
 	if s.store == nil {
 		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
 		return
@@ -64,6 +68,7 @@ func (s *Server) handleCreateFleetPool(w http.ResponseWriter, r *http.Request) {
 	s.recordAuditEvent(r, "fleet.pool.create", "success", "fleet_pool", req.ID, "", map[string]any{
 		"name": req.Name, "cloud_provider": req.CloudProvider,
 	})
+	s.broadcastFleetEvent("pool_created", map[string]any{"pool_id": req.ID, "name": req.Name})
 	pool, err := s.store.GetFleetPool(req.ID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -104,6 +109,9 @@ func (s *Server) handleGetFleetPool(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUpdateFleetPool(w http.ResponseWriter, r *http.Request) {
+	if !s.requireExecutionLeader(w) {
+		return
+	}
 	if s.store == nil {
 		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
 		return
@@ -146,6 +154,7 @@ func (s *Server) handleUpdateFleetPool(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.recordAuditEvent(r, "fleet.pool.update", "success", "fleet_pool", existing.ID, "", map[string]any{"name": existing.Name})
+	s.broadcastFleetEvent("pool_updated", map[string]any{"pool_id": existing.ID, "name": existing.Name, "status": existing.Status})
 	pool, err := s.store.GetFleetPool(existing.ID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -155,6 +164,9 @@ func (s *Server) handleUpdateFleetPool(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteFleetPool(w http.ResponseWriter, r *http.Request) {
+	if !s.requireExecutionLeader(w) {
+		return
+	}
 	if s.store == nil {
 		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
 		return
@@ -165,6 +177,7 @@ func (s *Server) handleDeleteFleetPool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.recordAuditEvent(r, "fleet.pool.delete", "success", "fleet_pool", id, "", nil)
+	s.broadcastFleetEvent("pool_deleted", map[string]any{"pool_id": id})
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
 }
 
@@ -219,6 +232,9 @@ func (s *Server) handleListGeneratorMetadata(w http.ResponseWriter, r *http.Requ
 // metadata, creating the record if it does not yet exist. Patch semantics: an
 // omitted field is unchanged; for fleet_pool_id an empty string clears membership.
 func (s *Server) handlePatchGeneratorMetadata(w http.ResponseWriter, r *http.Request) {
+	if !s.requireExecutionLeader(w) {
+		return
+	}
 	if s.store == nil {
 		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
 		return
@@ -251,7 +267,15 @@ func (s *Server) handlePatchGeneratorMetadata(w http.ResponseWriter, r *http.Req
 		if strings.TrimSpace(*patch.FleetPoolID) == "" {
 			metadata.FleetPoolID = nil
 		} else {
-			poolID := *patch.FleetPoolID
+			poolID := strings.TrimSpace(*patch.FleetPoolID)
+			if _, err := s.store.GetFleetPool(poolID); err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					writeError(w, http.StatusNotFound, "fleet pool not found")
+					return
+				}
+				writeError(w, http.StatusInternalServerError, "failed to load fleet pool")
+				return
+			}
 			metadata.FleetPoolID = &poolID
 		}
 	}
@@ -274,15 +298,51 @@ func (s *Server) handlePatchGeneratorMetadata(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if patch.Cordoned != nil {
+		if err := s.reconcileMetadataCordonState(generatorID, *patch.Cordoned); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
 	s.recordAuditEvent(r, "generator.metadata.patch", "success", "generator", generatorID, "", map[string]any{
 		"cordoned": metadata.Cordoned,
 	})
+	s.broadcastFleetEvent("generator_metadata_updated", map[string]any{"generator_id": generatorID, "cordoned": metadata.Cordoned, "fleet_pool_id": metadata.FleetPoolID})
 	writeJSON(w, http.StatusOK, metadata)
+}
+
+func (s *Server) reconcileMetadataCordonState(generatorID string, cordoned bool) error {
+	generatorID = strings.TrimSpace(generatorID)
+	if generatorID == "" || s == nil || s.runner == nil {
+		return nil
+	}
+	backend, ok := s.runner.getExecutionBackend().(drainableExecutionBackend)
+	if !ok {
+		return nil
+	}
+	state := "active"
+	if cordoned {
+		state = "cordoned"
+	}
+	if identityBackend, ok := backend.(identityDrainableExecutionBackend); ok {
+		if _, err := identityBackend.SetGeneratorDrainStateByID(generatorID, state); err != nil {
+			return err
+		}
+	} else if err := backend.SetGeneratorDrainState(generatorID, state); err != nil {
+		return err
+	}
+	if persistent, ok := backend.(persistentDrainBackend); ok {
+		return s.saveGeneratorDrainStates(persistent.GeneratorDrainStates())
+	}
+	return nil
 }
 
 // ---- provisioning requests -----------------------------------------------
 
 func (s *Server) handleCreateProvisioningRequest(w http.ResponseWriter, r *http.Request) {
+	if !s.requireExecutionLeader(w) {
+		return
+	}
 	if s.store == nil {
 		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
 		return
@@ -307,6 +367,10 @@ func (s *Server) handleCreateProvisioningRequest(w http.ResponseWriter, r *http.
 			return
 		}
 		writeError(w, http.StatusInternalServerError, "failed to load fleet pool")
+		return
+	}
+	if status := strings.ToLower(strings.TrimSpace(pool.Status)); status != "" && status != "active" {
+		writeError(w, http.StatusConflict, fmt.Sprintf("fleet pool %q is %s", firstNonEmpty(pool.Name, pool.ID), status))
 		return
 	}
 	req.ID = uuid.New().String()
@@ -344,6 +408,7 @@ func (s *Server) handleCreateProvisioningRequest(w http.ResponseWriter, r *http.
 		s.recordAuditEvent(r, "provisioning.request.create", "success", "provisioning_request", req.ID, req.ProjectID, map[string]any{
 			"fleet_pool_id": req.FleetPoolID, "desired_count": req.DesiredCount, "status": req.Status, "workload": workload,
 		})
+		s.broadcastFleetEvent("provisioning_request_updated", map[string]any{"request_id": req.ID, "fleet_pool_id": req.FleetPoolID, "status": req.Status, "desired_count": req.DesiredCount})
 		s.writeProvisioningRequest(w, req.ID)
 		return
 	}
@@ -368,6 +433,7 @@ func (s *Server) handleCreateProvisioningRequest(w http.ResponseWriter, r *http.
 	s.recordAuditEvent(r, "provisioning.request.create", "success", "provisioning_request", req.ID, req.ProjectID, map[string]any{
 		"fleet_pool_id": req.FleetPoolID, "desired_count": req.DesiredCount, "status": req.Status,
 	})
+	s.broadcastFleetEvent("provisioning_request_updated", map[string]any{"request_id": req.ID, "fleet_pool_id": req.FleetPoolID, "status": req.Status, "desired_count": req.DesiredCount})
 	s.writeProvisioningRequest(w, req.ID)
 }
 
@@ -380,12 +446,34 @@ func (s *Server) saveProvisioningEvent(requestID, eventType, message string, ts 
 }
 
 func (s *Server) writeProvisioningRequest(w http.ResponseWriter, id string) {
+	s.writeProvisioningRequestStatus(w, id, http.StatusCreated)
+}
+
+func (s *Server) writeProvisioningRequestStatus(w http.ResponseWriter, id string, status int) {
 	created, err := s.store.GetProvisioningRequest(id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusCreated, created)
+	writeJSON(w, status, created)
+}
+
+func (s *Server) handleListProvisioningRequests(w http.ResponseWriter, r *http.Request) {
+	limit, offset := parseLimitOffsetQuery(r, defaultFleetListLimit)
+	fleetPoolID := strings.TrimSpace(r.URL.Query().Get("fleet_pool_id"))
+	if s.store == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"provisioning_requests": []*storage.ProvisioningRequest{}, "count": 0, "limit": limit, "offset": offset})
+		return
+	}
+	items, err := s.store.ListProvisioningRequests(fleetPoolID, limit, offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list provisioning requests")
+		return
+	}
+	if items == nil {
+		items = []*storage.ProvisioningRequest{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"provisioning_requests": items, "count": len(items), "limit": limit, "offset": offset})
 }
 
 func (s *Server) handleGetProvisioningRequest(w http.ResponseWriter, r *http.Request) {
@@ -403,4 +491,149 @@ func (s *Server) handleGetProvisioningRequest(w http.ResponseWriter, r *http.Req
 		return
 	}
 	writeJSON(w, http.StatusOK, req)
+}
+
+func (s *Server) handleCancelProvisioningRequest(w http.ResponseWriter, r *http.Request) {
+	if !s.requireExecutionLeader(w) {
+		return
+	}
+	if s.store == nil {
+		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
+		return
+	}
+	req, err := s.store.GetProvisioningRequest(r.PathValue("id"))
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "provisioning request not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to load provisioning request")
+		return
+	}
+	if strings.EqualFold(req.Status, "cancelled") {
+		s.writeProvisioningRequestStatus(w, req.ID, http.StatusOK)
+		return
+	}
+	if !canCancelProvisioningStatus(req.Status) {
+		writeError(w, http.StatusConflict, fmt.Sprintf("provisioning request is %s and cannot be cancelled", req.Status))
+		return
+	}
+	now := time.Now()
+	req.Status = "cancelled"
+	req.CompletedAt = &now
+	if err := s.store.SaveProvisioningRequest(req); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to cancel provisioning request")
+		return
+	}
+	s.saveProvisioningEvent(req.ID, "cancelled", "provisioning request cancelled by operator", now)
+	s.recordAuditEvent(r, "provisioning.request.cancel", "success", "provisioning_request", req.ID, req.ProjectID, map[string]any{
+		"fleet_pool_id": req.FleetPoolID, "desired_count": req.DesiredCount,
+	})
+	s.broadcastFleetEvent("provisioning_request_cancelled", map[string]any{"request_id": req.ID, "fleet_pool_id": req.FleetPoolID, "status": req.Status})
+	s.writeProvisioningRequestStatus(w, req.ID, http.StatusOK)
+}
+
+func (s *Server) handleRetryProvisioningRequest(w http.ResponseWriter, r *http.Request) {
+	if !s.requireExecutionLeader(w) {
+		return
+	}
+	if s.store == nil {
+		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
+		return
+	}
+	req, err := s.store.GetProvisioningRequest(r.PathValue("id"))
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "provisioning request not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to load provisioning request")
+		return
+	}
+	if !canRetryProvisioningStatus(req.Status) {
+		writeError(w, http.StatusConflict, fmt.Sprintf("provisioning request is %s and cannot be retried", req.Status))
+		return
+	}
+	pool, err := s.store.GetFleetPool(req.FleetPoolID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "fleet pool not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to load fleet pool")
+		return
+	}
+	if status := strings.ToLower(strings.TrimSpace(pool.Status)); status != "" && status != "active" {
+		writeError(w, http.StatusConflict, fmt.Sprintf("fleet pool %q is %s", firstNonEmpty(pool.Name, pool.ID), status))
+		return
+	}
+
+	now := time.Now()
+	req.CompletedAt = nil
+	req.Status = "provisioning"
+	if err := s.store.SaveProvisioningRequest(req); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to retry provisioning request")
+		return
+	}
+	s.saveProvisioningEvent(req.ID, "retry", "provisioning retry requested", now)
+
+	status, workload, scaledTo, message := s.executeProvisioningScale(r.Context(), req, pool)
+	done := time.Now()
+	req.Status = status
+	req.CompletedAt = &done
+	if err := s.store.SaveProvisioningRequest(req); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to persist provisioning retry result")
+		return
+	}
+	eventType := status
+	if status == "failed" {
+		eventType = "failure"
+	}
+	s.saveProvisioningEvent(req.ID, eventType, message, done)
+	if status == "success" {
+		pool.DesiredSize = scaledTo
+		if err := s.store.SaveFleetPool(pool); err != nil {
+			slog.Warn("failed to persist pool desired size after provisioning retry", "pool_id", pool.ID, "err", err)
+		}
+	}
+	s.recordAuditEvent(r, "provisioning.request.retry", "success", "provisioning_request", req.ID, req.ProjectID, map[string]any{
+		"fleet_pool_id": req.FleetPoolID, "desired_count": req.DesiredCount, "status": req.Status, "workload": workload,
+	})
+	s.broadcastFleetEvent("provisioning_request_updated", map[string]any{"request_id": req.ID, "fleet_pool_id": req.FleetPoolID, "status": req.Status, "desired_count": req.DesiredCount})
+	s.writeProvisioningRequestStatus(w, req.ID, http.StatusOK)
+}
+
+func (s *Server) executeProvisioningScale(ctx context.Context, req *storage.ProvisioningRequest, pool *storage.FleetPool) (status string, workload string, scaledTo int, message string) {
+	if s.fleetScaler != nil && s.fleetScaler.CanProvision() {
+		workload, scaledTo, err := s.fleetScaler.ScalePool(ctx, pool, req.DesiredCount)
+		if err != nil {
+			return "failed", workload, scaledTo, "provisioning failed: " + err.Error()
+		}
+		return "success", workload, scaledTo, fmt.Sprintf("scaled %s to %d replicas", workload, scaledTo)
+	}
+	notConfiguredMessage := "no cloud or Kubernetes provisioner is configured for this controller"
+	if s.fleetScaler != nil {
+		if description := strings.TrimSpace(s.fleetScaler.Describe().Description); description != "" {
+			notConfiguredMessage = description
+		}
+	}
+	return "not_configured", "", 0, notConfiguredMessage
+}
+
+func canCancelProvisioningStatus(status string) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "", "pending", "accepted", "scaling", "waiting_ready", "provisioning":
+		return true
+	default:
+		return false
+	}
+}
+
+func canRetryProvisioningStatus(status string) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "failed", "not_configured", "cancelled", "timed_out":
+		return true
+	default:
+		return false
+	}
 }

@@ -83,6 +83,34 @@ func TestCreateUserBindingRejectsUnknownRole(t *testing.T) {
 	}
 }
 
+// A7 — scoped bindings must target existing project/domain/repository scopes.
+func TestCreateUserBindingRejectsUnknownScopes(t *testing.T) {
+	store := phase1Store(t)
+	now := time.Now().UTC()
+	user := &storage.User{ID: uuid.New().String(), Subject: "binding-scope-target", Active: true, CreatedAt: now, UpdatedAt: now}
+	if err := store.SaveUser(user); err != nil {
+		t.Fatalf("SaveUser: %v", err)
+	}
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"}) // dev bypass
+
+	cases := map[string]string{
+		"missing project":    `{"scope_type":"project","scope_id":"missing-project","role":"viewer"}`,
+		"blank project":      `{"scope_type":"project","role":"viewer"}`,
+		"missing domain":     `{"scope_type":"domain","scope_id":"missing-domain","role":"viewer"}`,
+		"missing repository": `{"scope_type":"application_repository","scope_id":"missing-repository","role":"viewer"}`,
+	}
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/users/"+user.ID+"/bindings", bytes.NewReader([]byte(body)))
+			resp := httptest.NewRecorder()
+			server.mux.ServeHTTP(resp, req)
+			if resp.Code != http.StatusBadRequest {
+				t.Fatalf("binding status = %d, want 400 body=%s", resp.Code, resp.Body.String())
+			}
+		})
+	}
+}
+
 // A8 — a user can be hard-deleted; the last system admin cannot.
 func TestDeleteUserEndpoint(t *testing.T) {
 	store := phase1Store(t)

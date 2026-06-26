@@ -13,16 +13,18 @@ import (
 )
 
 type recordArgs struct {
-	url        string
-	out        string
-	harOut     string
-	name       string
-	api        string
-	project    string
-	upload     bool
-	headless   bool
-	noHAR      bool
-	maxThinkMs int
+	url         string
+	out         string
+	harOut      string
+	name        string
+	api         string
+	apiKey      string
+	bearerToken string
+	project     string
+	upload      bool
+	headless    bool
+	noHAR       bool
+	maxThinkMs  int
 }
 
 func parseRecordArgs(args []string) recordArgs {
@@ -49,6 +51,10 @@ func parseRecordArgs(args []string) recordArgs {
 			r.name = next()
 		case "--api":
 			r.api = next()
+		case "--api-key":
+			r.apiKey = next()
+		case "--bearer-token":
+			r.bearerToken = next()
 		case "--project":
 			r.project = next()
 		case "--upload":
@@ -87,6 +93,8 @@ Options:
   --max-think-ms   Cap recorded think time per action
   --upload         Upload the finished script to the controller
   --api            Controller base URL (default APEXLOAD_API or http://localhost:8080)
+  --api-key        API key for secured upload (or APEXLOAD_API_KEY)
+  --bearer-token   Bearer token for secured upload (or APEXLOAD_BEARER_TOKEN)
   --project        Project ID for --upload`)
 }
 
@@ -161,7 +169,7 @@ func recordCmd() {
 	}
 
 	if args.upload {
-		client := NewApiClient(args.api)
+		client := NewApiClientWithAuth(args.api, args.apiKey, args.bearerToken)
 		scriptID, err := client.UploadScriptWithProject(args.out, scriptJSON, args.project)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: upload script: %v\n", err)

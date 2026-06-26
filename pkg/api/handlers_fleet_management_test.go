@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -186,7 +187,10 @@ func TestFleetPoolCRUD(t *testing.T) {
 }
 
 func TestGeneratorMetadataPatchLifecycle(t *testing.T) {
-	server, _ := newTimeslotServer(t)
+	server, store := newTimeslotServer(t)
+	if err := store.SaveFleetPool(&storage.FleetPool{ID: "pool-1", Name: "pool", CloudProvider: "kubernetes", Status: "active", CreatedAt: time.Now(), UpdatedAt: time.Now()}); err != nil {
+		t.Fatalf("SaveFleetPool: %v", err)
+	}
 	path := "/api/v1/fleet/generators/gen-1"
 
 	// PATCH on an untracked generator creates the record.
@@ -226,6 +230,160 @@ func TestGeneratorMetadataPatchLifecycle(t *testing.T) {
 	}
 }
 
+func TestGeneratorMetadataPatchRejectsDanglingPool(t *testing.T) {
+	server, _ := newTimeslotServer(t)
+	rec := timeslotRequest(t, server, http.MethodPatch, "/api/v1/fleet/generators/gen-1", map[string]any{"fleet_pool_id": "missing"})
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("patch status = %d, want 404 body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestGeneratorMetadataCordonUpdatesEnforcedDrainState(t *testing.T) {
+	server, _ := newTimeslotServer(t)
+	backend := newDistributedExecutionBackend([]string{"gen-a:9090", "gen-b:9090"}, time.Second, nil)
+	backend.recordGeneratorIdentity("gen-a:9090", "gen-a")
+	server.runner.setExecutionBackend(backend)
+
+	rec := timeslotRequest(t, server, http.MethodPatch, "/api/v1/fleet/generators/gen-a", map[string]any{"cordoned": true})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("patch status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := backend.generatorDrainState("gen-a:9090"); got != "cordoned" {
+		t.Fatalf("enforced drain_state = %q, want cordoned", got)
+	}
+	allowed, err := backend.allowedTargetsForTest(&ManagedTest{})
+	if err != nil {
+		t.Fatalf("allowedTargetsForTest: %v", err)
+	}
+	if len(allowed) != 1 || allowed[0] != "gen-b:9090" {
+		t.Fatalf("allowed targets = %#v, want only gen-b", allowed)
+	}
+}
+
+func TestGeneratorLifecycleEndpointsUpdateEnforcedStateAndMetadata(t *testing.T) {
+	server, store := newTimeslotServer(t)
+	backend := newDistributedExecutionBackend([]string{"gen-a:9090", "gen-b:9090"}, time.Second, nil)
+	backend.recordGeneratorIdentity("gen-a:9090", "gen-a")
+	server.runner.setExecutionBackend(backend)
+
+	rec := timeslotRequest(t, server, http.MethodPost, "/api/v1/fleet/generators/gen-a/cordon", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("cordon status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var cordon GeneratorLifecycleResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &cordon); err != nil {
+		t.Fatalf("decode cordon: %v", err)
+	}
+	if cordon.GeneratorID != "gen-a" || cordon.Target != "gen-a:9090" || cordon.DrainState != "cordoned" || !cordon.Cordoned {
+		t.Fatalf("cordon response = %+v", cordon)
+	}
+	if got := backend.generatorDrainState("gen-a:9090"); got != "cordoned" {
+		t.Fatalf("drain_state after cordon = %q, want cordoned", got)
+	}
+	allowed, err := backend.allowedTargetsForTest(&ManagedTest{})
+	if err != nil {
+		t.Fatalf("allowedTargetsForTest after cordon: %v", err)
+	}
+	if len(allowed) != 1 || allowed[0] != "gen-b:9090" {
+		t.Fatalf("allowed targets after cordon = %#v, want gen-b only", allowed)
+	}
+	meta, err := store.GetGeneratorMetadata("gen-a")
+	if err != nil {
+		t.Fatalf("metadata after cordon: %v", err)
+	}
+	if !meta.Cordoned || meta.Target != "gen-a:9090" {
+		t.Fatalf("metadata after cordon = %+v", meta)
+	}
+
+	rec = timeslotRequest(t, server, http.MethodPost, "/api/v1/fleet/generators/gen-a/uncordon", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("uncordon status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var uncordon GeneratorLifecycleResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &uncordon); err != nil {
+		t.Fatalf("decode uncordon: %v", err)
+	}
+	if uncordon.DrainState != "active" || uncordon.Cordoned {
+		t.Fatalf("uncordon response = %+v", uncordon)
+	}
+	if got := backend.generatorDrainState("gen-a:9090"); got != "active" {
+		t.Fatalf("drain_state after uncordon = %q, want active", got)
+	}
+	meta, err = store.GetGeneratorMetadata("gen-a")
+	if err != nil {
+		t.Fatalf("metadata after uncordon: %v", err)
+	}
+	if meta.Cordoned {
+		t.Fatalf("metadata after uncordon = %+v, want not cordoned", meta)
+	}
+}
+
+func TestGeneratorDrainEndpointUsesStableGeneratorID(t *testing.T) {
+	server, _ := newTimeslotServer(t)
+	backend := newDistributedExecutionBackend([]string{"10.0.0.1:9090", "10.0.0.2:9090"}, time.Second, nil)
+	backend.recordGeneratorIdentity("10.0.0.1:9090", "apexload-generator-0")
+	server.runner.setExecutionBackend(backend)
+
+	rec := timeslotRequest(t, server, http.MethodPost, "/api/v1/fleet/generators/apexload-generator-0/drain", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("drain status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := backend.generatorDrainState("10.0.0.1:9090"); got != "draining" {
+		t.Fatalf("initial target drain_state = %q, want draining", got)
+	}
+	backend.SetTargets([]string{"10.0.0.9:9090", "10.0.0.2:9090"})
+	backend.recordGeneratorIdentity("10.0.0.9:9090", "apexload-generator-0")
+	if got := backend.generatorDrainState("10.0.0.9:9090"); got != "draining" {
+		t.Fatalf("replacement target drain_state = %q, want draining", got)
+	}
+}
+
+func TestEvacuateGeneratorEndpointDryRunListsImpactedShards(t *testing.T) {
+	server, _ := newTimeslotServer(t)
+	backend := newDistributedExecutionBackend([]string{"gen-a:9090", "gen-b:9090"}, time.Second, nil)
+	backend.recordGeneratorIdentity("gen-a:9090", "gen-a")
+	server.runner.setExecutionBackend(backend)
+	test := &ManagedTest{
+		ID:         "run-evac",
+		Name:       "Checkout Evac",
+		Status:     "RUNNING",
+		Assignment: &GeneratorAssignmentSettings{TolerateGeneratorLoss: true},
+		Groups:     []TestGroup{{Name: "buyers", Protocol: "http", VUsers: 4}},
+		remoteGroupShards: map[string][]GeneratorShardSummary{
+			"buyers": {
+				{Group: "buyers", Target: "gen-a:9090", VUsers: 2},
+				{Group: "buyers", Target: "gen-b:9090", VUsers: 2},
+			},
+		},
+		remoteClientsByTarget: map[string]generatorClient{
+			"gen-a:9090": newEvacuationFakeGeneratorClient("gen-a:9090"),
+			"gen-b:9090": newEvacuationFakeGeneratorClient("gen-b:9090"),
+		},
+		remoteTargetStates: map[string]string{"gen-a:9090": "RUNNING", "gen-b:9090": "RUNNING"},
+	}
+	server.runner.mu.Lock()
+	server.runner.tests[test.ID] = test
+	server.runner.mu.Unlock()
+
+	rec := timeslotRequest(t, server, http.MethodPost, "/api/v1/fleet/generators/gen-a/evacuate", map[string]any{"dry_run": true})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("evacuate dry-run status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var payload GeneratorEvacuationResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !payload.DryRun || payload.Applied || payload.GeneratorID != "gen-a" || payload.Target != "gen-a:9090" {
+		t.Fatalf("response = %+v, want dry-run gen-a/gen-a:9090 without apply", payload)
+	}
+	if payload.ImpactedTests != 1 || len(payload.Impacts) != 1 || payload.Impacts[0].Group != "buyers" {
+		t.Fatalf("impacts = %+v, want buyers impact", payload.Impacts)
+	}
+	if got := backend.generatorDrainState("gen-a:9090"); got != "active" {
+		t.Fatalf("dry-run drain state = %q, want active", got)
+	}
+}
+
 func TestProvisioningRequestNotConfigured(t *testing.T) {
 	server, _ := newTimeslotServer(t)
 	create := timeslotRequest(t, server, http.MethodPost, "/api/v1/fleet/pools",
@@ -262,6 +420,93 @@ func TestProvisioningRequestNotConfigured(t *testing.T) {
 	if get.Code != http.StatusOK {
 		t.Fatalf("get status = %d", get.Code)
 	}
+
+	list := timeslotRequest(t, server, http.MethodGet, "/api/v1/fleet/provision-requests?fleet_pool_id="+pool.ID, nil)
+	if list.Code != http.StatusOK {
+		t.Fatalf("list status = %d body=%s", list.Code, list.Body.String())
+	}
+	var listPayload struct {
+		ProvisioningRequests []storage.ProvisioningRequest `json:"provisioning_requests"`
+		Count                int                           `json:"count"`
+	}
+	_ = json.Unmarshal(list.Body.Bytes(), &listPayload)
+	if listPayload.Count != 1 || len(listPayload.ProvisioningRequests) != 1 || listPayload.ProvisioningRequests[0].ID != req.ID {
+		t.Fatalf("list payload = %+v, want created request", listPayload)
+	}
+}
+
+func TestProvisioningRequestCancelAndRetryLifecycle(t *testing.T) {
+	server, store := newTimeslotServer(t)
+	pool := &storage.FleetPool{ID: "pool-1", Name: "pool", CloudProvider: "kubernetes", Status: "active", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := store.SaveFleetPool(pool); err != nil {
+		t.Fatalf("SaveFleetPool: %v", err)
+	}
+	req := &storage.ProvisioningRequest{ID: "req-1", FleetPoolID: pool.ID, Status: "provisioning", DesiredCount: 4, ProjectID: "checkout"}
+	if err := store.SaveProvisioningRequest(req); err != nil {
+		t.Fatalf("SaveProvisioningRequest: %v", err)
+	}
+
+	cancel := timeslotRequest(t, server, http.MethodPost, "/api/v1/fleet/provision-requests/req-1/cancel", nil)
+	if cancel.Code != http.StatusOK {
+		t.Fatalf("cancel status = %d body=%s", cancel.Code, cancel.Body.String())
+	}
+	var cancelled storage.ProvisioningRequest
+	_ = json.Unmarshal(cancel.Body.Bytes(), &cancelled)
+	if cancelled.Status != "cancelled" || cancelled.CompletedAt == nil {
+		t.Fatalf("cancelled request = %+v, want cancelled with CompletedAt", cancelled)
+	}
+	events := map[string]bool{}
+	for _, event := range cancelled.Events {
+		events[event.EventType] = true
+	}
+	if !events["cancelled"] {
+		t.Fatalf("cancel events = %+v, want cancelled event", cancelled.Events)
+	}
+
+	scaler := &fakeFleetScaler{can: true, workload: "apexload-generator"}
+	server.fleetScaler = scaler
+	retry := timeslotRequest(t, server, http.MethodPost, "/api/v1/fleet/provision-requests/req-1/retry", nil)
+	if retry.Code != http.StatusOK {
+		t.Fatalf("retry status = %d body=%s", retry.Code, retry.Body.String())
+	}
+	var retried storage.ProvisioningRequest
+	_ = json.Unmarshal(retry.Body.Bytes(), &retried)
+	if retried.Status != "success" || scaler.calls != 1 || scaler.lastN != 4 {
+		t.Fatalf("retried request = %+v scaler=%+v, want success scale to 4", retried, scaler)
+	}
+	events = map[string]bool{}
+	for _, event := range retried.Events {
+		events[event.EventType] = true
+	}
+	if !events["retry"] || !events["success"] {
+		t.Fatalf("retry events = %+v, want retry+success", retried.Events)
+	}
+	updatedPool, err := store.GetFleetPool(pool.ID)
+	if err != nil {
+		t.Fatalf("GetFleetPool: %v", err)
+	}
+	if updatedPool.DesiredSize != 4 {
+		t.Fatalf("pool desired_size = %d, want 4 after retry", updatedPool.DesiredSize)
+	}
+
+	cancelSucceeded := timeslotRequest(t, server, http.MethodPost, "/api/v1/fleet/provision-requests/req-1/cancel", nil)
+	if cancelSucceeded.Code != http.StatusConflict {
+		t.Fatalf("cancel succeeded request status = %d, want 409", cancelSucceeded.Code)
+	}
+}
+
+func TestProvisioningRequestRejectsInactivePool(t *testing.T) {
+	server, _ := newTimeslotServer(t)
+	create := timeslotRequest(t, server, http.MethodPost, "/api/v1/fleet/pools",
+		map[string]any{"name": "p", "cloud_provider": "kubernetes", "status": "suspended"})
+	var pool storage.FleetPool
+	_ = json.Unmarshal(create.Body.Bytes(), &pool)
+
+	rec := timeslotRequest(t, server, http.MethodPost, "/api/v1/fleet/provision-requests",
+		map[string]any{"fleet_pool_id": pool.ID, "desired_count": 3})
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("provision status = %d, want 409 body=%s", rec.Code, rec.Body.String())
+	}
 }
 
 func TestGeneratorInventoryPoolEnrichment(t *testing.T) {
@@ -290,14 +535,14 @@ func TestGeneratorInventoryPoolEnrichment(t *testing.T) {
 		byID[g.GeneratorID] = g
 	}
 	a := byID["gen-a"]
-	if a.FleetPoolID != poolID || a.PoolName != "EU edge" || !a.Cordoned {
+	if a.FleetPoolID != poolID || a.PoolName != "EU edge" || a.Cordoned {
 		t.Fatalf("gen-a not pool-enriched: %+v", a)
 	}
 	if a.Region != "eu-west" {
 		t.Fatalf("gen-a region not folded from metadata: %q", a.Region)
 	}
-	if a.DrainState != "cordoned" {
-		t.Fatalf("gen-a drain_state = %q, want cordoned", a.DrainState)
+	if a.DrainState != "active" {
+		t.Fatalf("gen-a drain_state = %q, want active when only metadata is cordoned", a.DrainState)
 	}
 	if b := byID["gen-b"]; b.FleetPoolID != "" || b.Cordoned {
 		t.Fatalf("gen-b (no metadata) should be untouched: %+v", b)
@@ -359,6 +604,7 @@ func TestFleetManagementRouteAccessRequirements(t *testing.T) {
 		{http.MethodGet, "/api/v1/fleet/generators"},
 		{http.MethodPatch, "/api/v1/fleet/generators/g1"},
 		{http.MethodPost, "/api/v1/fleet/provision-requests"},
+		{http.MethodGet, "/api/v1/fleet/provision-requests"},
 		{http.MethodGet, "/api/v1/fleet/provision-requests/r1"},
 	} {
 		t.Run(tc.method+" "+tc.path, func(t *testing.T) {

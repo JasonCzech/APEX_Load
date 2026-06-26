@@ -40,7 +40,7 @@ variable "system_node_count" {
 }
 
 variable "generator_node_vm_size" {
-  description = "VM size for the generator node pool. 4 vCPU / 8 GB matches the 10k-VUser-per-pod design target."
+  description = "VM size for the generator node pool. Standard_D4s_v5 is 4 vCPU / 16 GiB; validate KEDA max replicas against pod requests and node reservations."
   type        = string
   default     = "Standard_D4s_v5"
 }
@@ -52,9 +52,53 @@ variable "generator_node_min_count" {
 }
 
 variable "generator_node_max_count" {
-  description = "Maximum nodes in the autoscaling generator pool. Size for max generator pods (KEDA scales pods 2-50)."
+  description = "Maximum nodes in the autoscaling generator pool. Default fits the 50-pod KEDA ceiling on Standard_D4s_v5 with the default pod requests and reservation factor."
   type        = number
-  default     = 13
+  default     = 17
+}
+
+variable "generator_keda_max_replicas" {
+  description = "KEDA maxReplicaCount from deployments/k8s/aks/generator-keda-scaledobject.yaml. Used to validate generator node-pool capacity."
+  type        = number
+  default     = 50
+
+  validation {
+    condition     = var.generator_keda_max_replicas > 0
+    error_message = "generator_keda_max_replicas must be greater than zero."
+  }
+}
+
+variable "generator_pod_cpu_millicores" {
+  description = "CPU request per generator pod in millicores. Keep in sync with deployments/k8s/aks/generator-statefulset.yaml."
+  type        = number
+  default     = 1000
+
+  validation {
+    condition     = var.generator_pod_cpu_millicores > 0
+    error_message = "generator_pod_cpu_millicores must be greater than zero."
+  }
+}
+
+variable "generator_pod_memory_mib" {
+  description = "Memory request per generator pod in MiB. Keep in sync with deployments/k8s/aks/generator-statefulset.yaml."
+  type        = number
+  default     = 2048
+
+  validation {
+    condition     = var.generator_pod_memory_mib > 0
+    error_message = "generator_pod_memory_mib must be greater than zero."
+  }
+}
+
+variable "generator_node_reserved_fraction" {
+  description = "Conservative fraction of each generator node reserved for kubelet/system overhead and scheduling headroom."
+  type        = number
+  default     = 0.25
+
+  validation {
+    condition     = var.generator_node_reserved_fraction >= 0 && var.generator_node_reserved_fraction < 1
+    error_message = "generator_node_reserved_fraction must be >= 0 and < 1."
+  }
 }
 
 variable "availability_zones" {

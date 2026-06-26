@@ -5,11 +5,12 @@ This document records the Workstream 4 Auth/RBAC follow-up decisions made after 
 - `dev` bypass mode
 - `trusted_headers` mode
 - `oidc` mode with local login, callback, logout, signed session cookies, and RBAC claim mapping
+- APEX Load-owned local users and persisted role bindings for human RBAC enforcement
 - service-account API keys
 - audit coverage for service-account lifecycle changes plus OIDC login, logout, and representative callback failure events
 - filtered audit CSV export for operator evidence packs and incident review
 
-The original follow-up backlog has been resolved for the planned parity phase. The durable product decisions are: trusted headers remain the recommended default when an upstream gateway owns sign-in, native OIDC is the direct-auth option, human identity lifecycle stays upstream-owned, native SAML is handled through trusted-header gateways, and APEX Load owns service-account principals for automation.
+The original follow-up backlog has been resolved for the planned parity phase. The durable product decisions are: trusted headers remain the recommended default when an upstream gateway owns sign-in, native OIDC is the direct-auth option, APEX Load owns local role bindings for human authorization, native SAML is handled through trusted-header gateways, and APEX Load owns service-account principals for automation.
 
 ## Audit Snapshot
 
@@ -55,7 +56,7 @@ The original follow-up backlog has been resolved for the planned parity phase. T
 ## Ticket 3: Decide and Implement Long-Term Role-Binding Ownership
 
 - Priority: High
-- Problem: APEX Load now supports role claims from trusted headers, service accounts, and OIDC tokens, but it still does not own a first-class user/group binding model. That keeps RBAC dependent on upstream claim shaping.
+- Problem: APEX Load originally supported role claims from trusted headers, service accounts, and OIDC tokens, but did not own a first-class user binding model. That kept RBAC dependent on upstream claim shaping.
 - Decision Required:
   - Option A: Keep user and group lifecycle upstream-owned and document claim contracts as the intended final architecture.
   - Option B: Add APEX Load-owned user/group-to-role bindings with persistence and admin workflows.
@@ -71,8 +72,8 @@ The original follow-up backlog has been resolved for the planned parity phase. T
   - The product has an explicit, documented ownership model for RBAC identity data.
   - If local bindings are implemented, they are persisted, auditable, and test-covered.
   - If upstream ownership is retained, the supported claim contract is documented and validated.
-- Decision: Option A. APEX Load remains a policy consumer for human users. User and group lifecycle stays upstream-owned through trusted-header gateways or native OIDC claim shaping, while APEX Load owns service-account principals for automation. The supported claim contract is `roles` for global roles and `project_roles` for project-scoped role mappings unless configured otherwise in system settings.
-- Status: Implemented as an explicit product decision. Native user/group binding tables and admin workflows are intentionally deferred until there is a concrete enterprise requirement that upstream IdP claim shaping cannot satisfy.
+- Decision: Option B for users, not groups. APEX Load owns persisted local users and direct role bindings for human authorization. Trusted headers and OIDC authenticate the subject; after first-admin bootstrap, upstream role claims/headers do not grant access. Group/team mappings, SCIM provisioning, bulk import, and custom roles remain explicit roadmap items.
+- Status: Implemented. Local users and direct role bindings are persisted, auditable, enforced on protected routes, reflected by effective-access simulation, and administered through Access. User onboarding uses the atomic `POST /api/v1/auth/users/onboard` path for user-plus-binding creation.
 
 ## Ticket 4: Add OIDC Session Refresh and Expiry UX
 

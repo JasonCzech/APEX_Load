@@ -7,6 +7,7 @@ package api
 // contract.
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -225,7 +226,7 @@ func (tr *TestRunner) evaluateReservedCapacityBlockLocked(test *ManagedTest, exc
 	if totalReserved <= 0 {
 		return false, "" // no reservations configured -> nothing to protect
 	}
-	effective := resolveCapacityAvailability(tr.settings).EffectiveAvailableGenerators
+	effective := tr.resolveCapacityAvailabilityAt(now).EffectiveAvailableGenerators
 	if effective <= 0 {
 		return false, "" // no capacity model -> don't gate on reservations
 	}
@@ -249,6 +250,49 @@ func (tr *TestRunner) evaluateReservedCapacityBlockLocked(test *ManagedTest, exc
 		return true, fmt.Sprintf("waiting for shared generator capacity (%d of %d generators reserved for other projects)", totalReserved, effective)
 	}
 	return false, ""
+}
+
+func (tr *TestRunner) resolveCapacityAvailabilityAt(now time.Time) CapacityAvailabilitySnapshot {
+	if tr == nil {
+		return resolveCapacityAvailabilityAt(SystemSettings{}, now)
+	}
+	return resolveCapacityAvailabilityWithLiveAt(tr.settings, tr.liveAvailableGeneratorCount(context.Background()), now)
+}
+
+func (tr *TestRunner) resolveCapacityAvailabilityForProjectAt(projectID string, now time.Time) CapacityAvailabilitySnapshot {
+	if tr == nil {
+		return resolveCapacityAvailabilityForProjectAt(SystemSettings{}, projectID, now)
+	}
+	return resolveCapacityAvailabilityForProjectWithLiveAt(tr.settings, projectID, tr.liveAvailableGeneratorCount(context.Background()), now)
+}
+
+func (tr *TestRunner) liveAvailableGeneratorCount(ctx context.Context) *int {
+	if tr == nil || tr.settings.CapacityPlanning.Availability.Source != capacityAvailabilityConfiguredPlusLive {
+		return nil
+	}
+	backend, ok := tr.execution.(inventoryExecutionBackend)
+	if !ok {
+		return nil
+	}
+	entries := backend.SystemInventory(ctx)
+	count := 0
+	for _, entry := range entries {
+		status := strings.ToLower(strings.TrimSpace(entry.Status))
+		drainState := strings.ToLower(strings.TrimSpace(entry.DrainState))
+		if drainState == "" {
+			drainState = "active"
+		}
+		if drainState != "active" {
+			continue
+		}
+		switch status {
+		case "connected", "healthy", "ready":
+			if entry.AvailableCapacity > 0 || entry.MaxVUsers == 0 {
+				count++
+			}
+		}
+	}
+	return &count
 }
 
 // sharedGeneratorUsageLocked sums each project's draw on the shared generator

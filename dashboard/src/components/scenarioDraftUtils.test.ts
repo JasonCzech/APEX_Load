@@ -125,7 +125,7 @@ describe('scenarioDraftUtils', () => {
 	    total_vusers: 10,
 	    duration: '5m',
 	    created_at: '2026-05-12T20:00:00Z',
-	    assignment: { mode: 'load_zone_weighted', load_zone_weights: { zone_a: 100 }, required_labels: { arch: 'amd64' } },
+	    assignment: { mode: 'load_zone_weighted', load_zone_weights: { zone_a: 100 }, required_labels: { arch: 'amd64' }, tolerate_generator_loss: true },
 	    groups: [{
 	      name: 'Java',
 	      script_id: 'script-1',
@@ -141,6 +141,7 @@ describe('scenarioDraftUtils', () => {
 	    selected_targets: [],
 	    load_zone_weights: { zone_a: 100 },
 	    required_labels: { arch: 'amd64' },
+	    tolerate_generator_loss: true,
 	  })
 	  expect(draft.groups[0].assignment).toEqual({
 	    mode: 'auto',

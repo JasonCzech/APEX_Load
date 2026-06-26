@@ -177,6 +177,36 @@ func TestClientPodByIP(t *testing.T) {
 	}
 }
 
+func TestClientListPodsIncludesTerminationAndReadiness(t *testing.T) {
+	client, cleanup := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requireBearer(t, r, "token-a")
+		if r.URL.Path != "/api/v1/namespaces/apex/pods" {
+			t.Fatalf("path = %q", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"items": []map[string]any{
+				podItem("apexload-generator-0", "10.0.0.10"),
+				terminatingPodItem("apexload-generator-1", "10.0.0.11"),
+			},
+		})
+	}))
+	defer cleanup()
+
+	pods, err := client.ListPods(context.Background(), "apex", "app=generator")
+	if err != nil {
+		t.Fatalf("ListPods() error = %v", err)
+	}
+	if len(pods) != 2 {
+		t.Fatalf("ListPods() returned %d pods, want 2", len(pods))
+	}
+	if !pods[0].Ready || pods[0].Terminating {
+		t.Fatalf("first pod readiness/termination = ready %v terminating %v, want ready true terminating false", pods[0].Ready, pods[0].Terminating)
+	}
+	if pods[1].Ready || !pods[1].Terminating {
+		t.Fatalf("second pod readiness/termination = ready %v terminating %v, want ready false terminating true", pods[1].Ready, pods[1].Terminating)
+	}
+}
+
 func TestClientRereadsTokenAndRetriesAfterAuthFailure(t *testing.T) {
 	dir := t.TempDir()
 	tokenFile := dir + "/token"
@@ -336,8 +366,22 @@ func podItem(name string, ip string) map[string]any {
 		"status": map[string]any{
 			"podIP": ip,
 			"phase": "Running",
+			"conditions": []map[string]any{
+				{"type": "Ready", "status": "True"},
+			},
 		},
 	}
+}
+
+func terminatingPodItem(name string, ip string) map[string]any {
+	item := podItem(name, ip)
+	metadata := item["metadata"].(map[string]any)
+	metadata["deletionTimestamp"] = "2026-06-26T17:30:00Z"
+	status := item["status"].(map[string]any)
+	status["conditions"] = []map[string]any{
+		{"type": "Ready", "status": "False"},
+	}
+	return item
 }
 
 func nestedString(value map[string]any, keys ...string) string {

@@ -402,3 +402,58 @@ func (s *SQLiteStore) ListProvisioningEvents(requestID string) ([]*ProvisioningE
 	}
 	return events, rows.Err()
 }
+
+// ---- fleet alert acknowledgements ----------------------------------------
+
+func (s *SQLiteStore) SaveFleetAlertAck(ack *FleetAlertAck) error {
+	if ack == nil {
+		return fmt.Errorf("fleet alert acknowledgement is required")
+	}
+	if ack.ID == "" {
+		return fmt.Errorf("fleet alert acknowledgement id is required")
+	}
+	now := time.Now()
+	if ack.AcknowledgedAt.IsZero() {
+		ack.AcknowledgedAt = now
+	}
+	ack.UpdatedAt = now
+	_, err := s.db.Exec(`INSERT INTO fleet_alert_acks (
+			id, alert_type, target, region, severity, summary, note,
+			acknowledged_by_subject, acknowledged_by_display_name, acknowledged_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			alert_type=excluded.alert_type, target=excluded.target, region=excluded.region,
+			severity=excluded.severity, summary=excluded.summary, note=excluded.note,
+			acknowledged_by_subject=excluded.acknowledged_by_subject,
+			acknowledged_by_display_name=excluded.acknowledged_by_display_name,
+			acknowledged_at=excluded.acknowledged_at, updated_at=excluded.updated_at`,
+		ack.ID, ack.AlertType, ack.Target, ack.Region, ack.Severity, ack.Summary, ack.Note,
+		ack.AcknowledgedBySubject, ack.AcknowledgedByDisplayName, ack.AcknowledgedAt, ack.UpdatedAt)
+	return err
+}
+
+func (s *SQLiteStore) DeleteFleetAlertAck(id string) error {
+	_, err := s.db.Exec(`DELETE FROM fleet_alert_acks WHERE id = ?`, id)
+	return err
+}
+
+func (s *SQLiteStore) ListFleetAlertAcks() ([]*FleetAlertAck, error) {
+	rows, err := s.db.Query(`SELECT id, alert_type, target, COALESCE(region, ''), COALESCE(severity, ''),
+			COALESCE(summary, ''), COALESCE(note, ''), COALESCE(acknowledged_by_subject, ''),
+			COALESCE(acknowledged_by_display_name, ''), acknowledged_at, updated_at
+		FROM fleet_alert_acks ORDER BY acknowledged_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	acks := make([]*FleetAlertAck, 0)
+	for rows.Next() {
+		var ack FleetAlertAck
+		if err := rows.Scan(&ack.ID, &ack.AlertType, &ack.Target, &ack.Region, &ack.Severity, &ack.Summary, &ack.Note,
+			&ack.AcknowledgedBySubject, &ack.AcknowledgedByDisplayName, &ack.AcknowledgedAt, &ack.UpdatedAt); err != nil {
+			return nil, err
+		}
+		acks = append(acks, &ack)
+	}
+	return acks, rows.Err()
+}

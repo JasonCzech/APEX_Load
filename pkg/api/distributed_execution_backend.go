@@ -56,6 +56,9 @@ type distributedExecutionBackend struct {
 	dial        generatorDial
 	drainMu     sync.RWMutex
 	drainStates map[string]string
+	identityMu  sync.RWMutex
+	targetIDs   map[string]string
+	idTargets   map[string]string
 }
 
 func newDistributedExecutionBackend(targets []string, timeout time.Duration, dial generatorDial) *distributedExecutionBackend {
@@ -81,6 +84,8 @@ func newDistributedExecutionBackend(targets []string, timeout time.Duration, dia
 		timeout:     timeout,
 		dial:        dial,
 		drainStates: make(map[string]string),
+		targetIDs:   make(map[string]string),
+		idTargets:   make(map[string]string),
 	}
 }
 
@@ -108,27 +113,36 @@ func (b *distributedExecutionBackend) configuredTargetSpecs() []generatorTargetS
 // pods. Drain states keyed by address are preserved across updates.
 func (b *distributedExecutionBackend) SetTargets(targets []string) {
 	specs := make([]generatorTargetSpec, 0, len(targets))
+	configured := make(map[string]struct{}, len(targets))
 	for _, target := range targets {
 		spec := parseGeneratorTargetSpec(target)
 		if spec.Address == "" {
 			continue
 		}
 		specs = append(specs, spec)
+		configured[spec.Address] = struct{}{}
 	}
 	b.targetsMu.Lock()
 	b.targets = specs
 	b.targetsMu.Unlock()
+
+	b.identityMu.Lock()
+	for target, id := range b.targetIDs {
+		if _, ok := configured[target]; !ok {
+			delete(b.targetIDs, target)
+			if b.idTargets[id] == target {
+				delete(b.idTargets, id)
+			}
+		}
+	}
+	b.identityMu.Unlock()
 }
 
 func (b *distributedExecutionBackend) SetGeneratorDrainState(target string, state string) error {
 	target = strings.TrimSpace(target)
-	state = strings.TrimSpace(state)
-	switch state {
-	case "", "active":
-		state = "active"
-	case "cordoned", "draining":
-	default:
-		return fmt.Errorf("unsupported drain_state %q", state)
+	state, err := normalizeGeneratorDrainState(state)
+	if err != nil {
+		return err
 	}
 	found := false
 	for _, configured := range b.configuredTargetSpecs() {
@@ -141,29 +155,64 @@ func (b *distributedExecutionBackend) SetGeneratorDrainState(target string, stat
 		return fmt.Errorf("generator target %q is not configured on this controller", target)
 	}
 
+	id := b.GeneratorIDForTarget(target)
 	b.drainMu.Lock()
 	defer b.drainMu.Unlock()
 	if state == "active" {
 		delete(b.drainStates, target)
+		if id != "" {
+			delete(b.drainStates, id)
+		}
 		return nil
 	}
-	b.drainStates[target] = state
+	key := target
+	if id != "" {
+		key = id
+		delete(b.drainStates, target)
+	}
+	b.drainStates[key] = state
 	return nil
+}
+
+func (b *distributedExecutionBackend) SetGeneratorDrainStateByID(generatorID string, state string) (string, error) {
+	generatorID = strings.TrimSpace(generatorID)
+	if generatorID == "" {
+		return "", fmt.Errorf("generator_id is required")
+	}
+	state, err := normalizeGeneratorDrainState(state)
+	if err != nil {
+		return "", err
+	}
+	target := b.GeneratorTargetForID(generatorID)
+	b.drainMu.Lock()
+	defer b.drainMu.Unlock()
+	if state == "active" {
+		delete(b.drainStates, generatorID)
+		if target != "" {
+			delete(b.drainStates, target)
+		}
+		return target, nil
+	}
+	if target != "" {
+		delete(b.drainStates, target)
+	}
+	b.drainStates[generatorID] = state
+	return target, nil
 }
 
 func (b *distributedExecutionBackend) ApplyGeneratorDrainStates(states map[string]string) {
 	b.drainMu.Lock()
 	defer b.drainMu.Unlock()
 	b.drainStates = make(map[string]string)
-	for target, state := range states {
-		target = strings.TrimSpace(target)
+	for key, state := range states {
+		key = strings.TrimSpace(key)
 		state = strings.ToLower(strings.TrimSpace(state))
-		if target == "" || state == "" || state == "active" {
+		if key == "" || state == "" || state == "active" {
 			continue
 		}
 		switch state {
 		case "cordoned", "draining":
-			b.drainStates[target] = state
+			b.drainStates[key] = state
 		}
 	}
 }
@@ -179,12 +228,72 @@ func (b *distributedExecutionBackend) GeneratorDrainStates() map[string]string {
 }
 
 func (b *distributedExecutionBackend) generatorDrainState(target string) string {
+	target = strings.TrimSpace(target)
+	id := b.GeneratorIDForTarget(target)
 	b.drainMu.RLock()
 	defer b.drainMu.RUnlock()
+	if id != "" {
+		if state := b.drainStates[id]; state != "" {
+			return state
+		}
+	}
 	if state := b.drainStates[target]; state != "" {
 		return state
 	}
 	return "active"
+}
+
+func normalizeGeneratorDrainState(state string) (string, error) {
+	state = strings.ToLower(strings.TrimSpace(state))
+	switch state {
+	case "", "active":
+		return "active", nil
+	case "cordoned", "draining":
+		return state, nil
+	default:
+		return "", fmt.Errorf("unsupported drain_state %q", state)
+	}
+}
+
+func (b *distributedExecutionBackend) recordGeneratorIdentity(target string, generatorID string) {
+	target = strings.TrimSpace(target)
+	generatorID = strings.TrimSpace(generatorID)
+	if target == "" || generatorID == "" {
+		return
+	}
+	b.identityMu.Lock()
+	b.targetIDs[target] = generatorID
+	b.idTargets[generatorID] = target
+	b.identityMu.Unlock()
+
+	b.drainMu.Lock()
+	if state := b.drainStates[target]; state != "" {
+		if b.drainStates[generatorID] == "" {
+			b.drainStates[generatorID] = state
+		}
+		delete(b.drainStates, target)
+	}
+	b.drainMu.Unlock()
+}
+
+func (b *distributedExecutionBackend) GeneratorIDForTarget(target string) string {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return ""
+	}
+	b.identityMu.RLock()
+	defer b.identityMu.RUnlock()
+	return b.targetIDs[target]
+}
+
+func (b *distributedExecutionBackend) GeneratorTargetForID(generatorID string) string {
+	generatorID = strings.TrimSpace(generatorID)
+	if generatorID == "" {
+		return ""
+	}
+	b.identityMu.RLock()
+	defer b.identityMu.RUnlock()
+	return b.idTargets[generatorID]
 }
 
 func (b *distributedExecutionBackend) allowedTargetsForTest(test *ManagedTest) ([]string, error) {

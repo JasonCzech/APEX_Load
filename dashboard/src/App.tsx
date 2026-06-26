@@ -168,12 +168,14 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const [scriptsNavigationVersion, setScriptsNavigationVersion] = useState(0)
   const [scriptsTopbarState, setScriptsTopbarState] = useState<{ subView: ScriptsAuthoringSubView; editingId: string | null } | null>(null)
   const [effectiveAccessResources, setEffectiveAccessResources] = useState<import('./types').DashboardAuthEffectiveAccessResource[]>([])
+  const [effectiveAccessLoaded, setEffectiveAccessLoaded] = useState(false)
   const [domains, setDomains] = useState<import('./types').Domain[]>([])
   const [activeDomain, setActiveDomainState] = useState<import('./types').Domain | null>(null)
   const [applicationRepository, setApplicationRepository] = useState<import('./types').ApplicationRepository | null>(null)
   const [repositoryCategories, setRepositoryCategories] = useState<import('./types').RepositoryCategory[]>([])
   const [desktopStatus, setDesktopStatus] = useState<DesktopStatusResponse | null>(null)
   const [activeTopbarRuns, setActiveTopbarRuns] = useState<TopbarRunSummary[]>([])
+  const [fleetEventSignal, setFleetEventSignal] = useState(0)
   // Bumped by the content-free `access_review_changed` WebSocket ping so the Access page
   // refetches its (admin-gated) review when the posture changes server-side.
   const [accessReviewSignal, setAccessReviewSignal] = useState(0)
@@ -184,6 +186,11 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const handleWSMessage = useCallback((msg: WSMessage) => {
     if (msg.type === 'access_review_changed') {
       setAccessReviewSignal((n) => n + 1)
+      return
+    }
+
+    if (msg.type === 'fleet_event') {
+      setFleetEventSignal((n) => n + 1)
       return
     }
 
@@ -483,6 +490,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   useEffect(() => {
     let cancelled = false
     const loadEffectiveAccess = async () => {
+      setEffectiveAccessLoaded(false)
       try {
         const response = await getAuthEffectiveAccess(activeProject?.id, {
           domain_id: activeDomain?.id,
@@ -494,6 +502,10 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
       } catch {
         if (!cancelled) {
           setEffectiveAccessResources([])
+        }
+      } finally {
+        if (!cancelled) {
+          setEffectiveAccessLoaded(true)
         }
       }
     }
@@ -517,10 +529,10 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   }, [isDevUserPreview])
 
   useEffect(() => {
-    if (view.page === 'access' && !canUseAccessWorkspace) {
+    if (effectiveAccessLoaded && view.page === 'access' && !canUseAccessWorkspace) {
       setView({ page: 'dashboard' })
     }
-  }, [canUseAccessWorkspace, view.page])
+  }, [canUseAccessWorkspace, effectiveAccessLoaded, view.page])
 
   useEffect(() => {
     let cancelled = false
@@ -780,6 +792,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
           )}
           {view.page === 'tests' && (
             <TestHub
+              applicationRepository={applicationRepository}
               initialView={view.scenarioView}
               testStatuses={testStatuses}
               onSelectTest={navigateToTest}
@@ -792,6 +805,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
           {view.page === 'new-test' && (
             <NewTestPage
               activeApplication={activeApplication}
+              applicationRepository={applicationRepository}
               activeRelease={activeRelease}
               releases={releases}
               initialScenarioId={'scenarioId' in view ? view.scenarioId : undefined}
@@ -816,6 +830,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
           {view.page === 'scripts' && (
             <ScriptsPage
               key={`scripts-${scriptsNavigationVersion}-${scriptMode || 'list'}-${scriptEditId || ''}`}
+              applicationRepository={applicationRepository}
               initialMode={scriptMode}
               initialEditId={scriptEditId}
               onSelectScenario={navigateToTest}
@@ -834,8 +849,9 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
               activeRelease={activeRelease}
             />
           )}
-          {view.page === 'monitoring' && <MonitoringPage connectionState={connectionState} telemetryDiagnostics={telemetryDiagnostics} onSelectTest={navigateToTest} canManageSystem={canManageSystem} onScheduleForDate={navigateToScheduleForDate} />}
-          {view.page === 'schedules' && <MonitoringPage connectionState={connectionState} telemetryDiagnostics={telemetryDiagnostics} onSelectTest={navigateToTest} canManageSystem={canManageSystem} onScheduleForDate={navigateToScheduleForDate} initialCategoryId="schedules" />}
+          {view.page === 'monitoring' && <MonitoringPage connectionState={connectionState} telemetryDiagnostics={telemetryDiagnostics} onSelectTest={navigateToTest} canManageSystem={canManageSystem} onScheduleForDate={navigateToScheduleForDate} fleetEventSignal={fleetEventSignal} />}
+          {view.page === 'fleet' && <MonitoringPage connectionState={connectionState} telemetryDiagnostics={telemetryDiagnostics} onSelectTest={navigateToTest} canManageSystem={canManageSystem} onScheduleForDate={navigateToScheduleForDate} initialCategoryId="fleet" fleetEventSignal={fleetEventSignal} />}
+          {view.page === 'schedules' && <MonitoringPage connectionState={connectionState} telemetryDiagnostics={telemetryDiagnostics} onSelectTest={navigateToTest} canManageSystem={canManageSystem} onScheduleForDate={navigateToScheduleForDate} initialCategoryId="schedules" fleetEventSignal={fleetEventSignal} />}
           {view.page === 'docs' && <ApiGuidePage activePage={view.guidePage} onNavigate={handleNavigate} effectiveAccessResources={effectiveAccessResources} />}
           {view.page === 'swagger' && <SwaggerDocsPage />}
           {view.page === 'repository-guide' && <RepositoryGuidePage />}
@@ -882,6 +898,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
               onNavigate={handleNavigate}
               domains={domains}
               activeDomain={activeDomain}
+              applicationRepository={applicationRepository}
               onDomainChange={setActiveDomain}
               onDomainsRefresh={refreshDomains}
             />

@@ -19,6 +19,8 @@ describe('app keyboard shortcuts', () => {
 
     shortcuts.find(shortcut => shortcut.id === 'navigation.scripts')?.onTrigger()
     expect(onNavigate).toHaveBeenCalledWith('scripts')
+    shortcuts.find(shortcut => shortcut.id === 'navigation.fleet')?.onTrigger()
+    expect(onNavigate).toHaveBeenCalledWith('fleet')
   })
 
   it('focuses and selects the first visible search or filter field', () => {

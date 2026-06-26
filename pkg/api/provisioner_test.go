@@ -133,6 +133,23 @@ func TestKubernetesFleetScalerDisabledWhenKEDAOwnsReplicas(t *testing.T) {
 	}
 }
 
+func TestKubernetesFleetScalerRequiresExplicitControllerOwnership(t *testing.T) {
+	t.Setenv(provisionerEnvVar, kubernetesProvisionerName)
+
+	scaler := newFleetPoolScaler(noopKubeRestarter{}, K8sRestartSettings{
+		Enabled:              true,
+		Namespace:            "apexload",
+		GeneratorStatefulSet: "apexload-generator",
+	})
+	if scaler.CanProvision() {
+		t.Fatalf("unspecified generator replica ownership must disable controller-side provisioning")
+	}
+	info := scaler.Describe()
+	if info.Name != "unspecified" || !strings.Contains(info.Description, generatorAutoscalingOwnerEnvVar+"=unspecified") {
+		t.Fatalf("conflict description = %#v, want unspecified ownership explanation", info)
+	}
+}
+
 type noopKubeRestarter struct{}
 
 func (noopKubeRestarter) DeletePod(context.Context, string, string) error { return nil }

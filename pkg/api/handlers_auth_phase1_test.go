@@ -3,11 +3,13 @@ package api
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -114,6 +116,76 @@ func TestUserActivityScopedToAdministeredProjects(t *testing.T) {
 	}
 }
 
+// A1 — a stale scoped-admin grant must not degrade to an unrestricted activity read.
+func TestUserActivityEmptyScopedAdminScopeDoesNotLeak(t *testing.T) {
+	store := phase1Store(t)
+	now := time.Now().UTC()
+	for _, id := range []string{"proj-a", "proj-b"} {
+		if err := store.SaveProject(&storage.Project{ID: id, Name: id, CreatedAt: now, UpdatedAt: now}); err != nil {
+			t.Fatalf("SaveProject(%s) returned error: %v", id, err)
+		}
+		if err := store.SaveAuditEvent(&storage.AuditEvent{ID: uuid.New().String(), Action: "auth.test", ActorType: "user", ActorSubject: "actor", ProjectID: id, ResourceType: "test", ResourceID: id, Status: "success", CreatedAt: now}); err != nil {
+			t.Fatalf("SaveAuditEvent(%s) returned error: %v", id, err)
+		}
+	}
+
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+
+	for _, tc := range []struct {
+		name   string
+		header string
+		value  string
+	}{
+		{name: "stale project", header: "X-APEXLoad-Project-Roles", value: "deleted-project=" + RoleProjectAdmin},
+		{name: "stale domain", header: "X-APEXLoad-Domain-Roles", value: "deleted-domain=" + RoleProjectAdmin},
+		{name: "stale repository", header: "X-APEXLoad-Application-Repository-Roles", value: "deleted-repo=" + RoleProjectAdmin},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/user-activity", nil)
+			req.Header.Set("X-Auth-Request-User", "stale-admin")
+			req.Header.Set(tc.header, tc.value)
+			resp := httptest.NewRecorder()
+			server.mux.ServeHTTP(resp, req)
+			if resp.Code != http.StatusOK {
+				t.Fatalf("stale scoped activity status = %d, want 200 body=%s", resp.Code, resp.Body.String())
+			}
+			var payload AuthUserActivityResponse
+			if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+				t.Fatalf("unmarshal stale scoped activity: %v", err)
+			}
+			if payload.Count != 0 || len(payload.Events) != 0 {
+				t.Fatalf("stale scoped activity leaked events: count=%d events=%#v", payload.Count, payload.Events)
+			}
+
+			exportReq := httptest.NewRequest(http.MethodGet, "/api/v1/auth/user-activity/export", nil)
+			exportReq.Header.Set("X-Auth-Request-User", "stale-admin")
+			exportReq.Header.Set(tc.header, tc.value)
+			exportResp := httptest.NewRecorder()
+			server.mux.ServeHTTP(exportResp, exportReq)
+			if exportResp.Code != http.StatusOK {
+				t.Fatalf("stale scoped export status = %d, want 200 body=%s", exportResp.Code, exportResp.Body.String())
+			}
+			rows, err := csv.NewReader(strings.NewReader(exportResp.Body.String())).ReadAll()
+			if err != nil {
+				t.Fatalf("read stale scoped export csv: %v", err)
+			}
+			if len(rows) != 1 {
+				t.Fatalf("stale scoped export rows = %#v, want header only", rows)
+			}
+
+			req = httptest.NewRequest(http.MethodGet, "/api/v1/auth/user-activity?project_id=proj-a", nil)
+			req.Header.Set("X-Auth-Request-User", "stale-admin")
+			req.Header.Set(tc.header, tc.value)
+			resp = httptest.NewRecorder()
+			server.mux.ServeHTTP(resp, req)
+			if resp.Code != http.StatusForbidden {
+				t.Fatalf("stale scoped explicit project status = %d, want 403 body=%s", resp.Code, resp.Body.String())
+			}
+		})
+	}
+}
+
 // A3 — an administrator cannot disable their own account.
 func TestSystemAdminCannotSelfDisable(t *testing.T) {
 	store := phase1Store(t)
@@ -177,6 +249,9 @@ func TestDuplicateBindingReturnsCanonicalID(t *testing.T) {
 	if err := store.SaveUser(user); err != nil {
 		t.Fatalf("SaveUser returned error: %v", err)
 	}
+	if err := store.SaveProject(&storage.Project{ID: "proj-x", Name: "proj-x", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveProject returned error: %v", err)
+	}
 
 	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"}) // dev bypass — no auth headers needed
 
@@ -204,6 +279,54 @@ func TestDuplicateBindingReturnsCanonicalID(t *testing.T) {
 	}
 	if duplicate.ID != created.ID {
 		t.Fatalf("duplicate binding id = %q, want canonical %q", duplicate.ID, created.ID)
+	}
+}
+
+func TestOnboardUserCreatesUserAndInitialBindings(t *testing.T) {
+	store := phase1Store(t)
+	now := time.Now().UTC()
+	if err := store.SaveProject(&storage.Project{ID: "proj-onboard", Name: "Onboard", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveProject returned error: %v", err)
+	}
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"}) // dev bypass
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/users/onboard", bytes.NewReader([]byte(`{
+		"subject":"oidc|new-user",
+		"email":"new@example.com",
+		"display_name":"New User",
+		"bindings":[{"scope_type":"project","scope_id":"proj-onboard","role":"viewer"}]
+	}`)))
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("onboard status = %d, want 201 body=%s", resp.Code, resp.Body.String())
+	}
+	var user storage.User
+	if err := json.Unmarshal(resp.Body.Bytes(), &user); err != nil {
+		t.Fatalf("unmarshal onboard user: %v", err)
+	}
+	if user.ID == "" || user.Subject != "oidc|new-user" || len(user.Bindings) != 1 || user.Bindings[0].ScopeID != "proj-onboard" {
+		t.Fatalf("onboard user = %#v, want user with project binding", user)
+	}
+	if reloaded, err := store.GetUserBySubject("oidc|new-user"); err != nil || len(reloaded.Bindings) != 1 {
+		t.Fatalf("persisted onboard user = %#v err=%v, want one binding", reloaded, err)
+	}
+
+	duplicateReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/users/onboard", bytes.NewReader([]byte(`{"subject":"oidc|new-user","bindings":[{"scope_type":"project","scope_id":"proj-onboard","role":"viewer"}]}`)))
+	duplicateResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(duplicateResp, duplicateReq)
+	if duplicateResp.Code != http.StatusConflict {
+		t.Fatalf("duplicate onboard status = %d, want 409 body=%s", duplicateResp.Code, duplicateResp.Body.String())
+	}
+
+	invalidReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/users/onboard", bytes.NewReader([]byte(`{"subject":"oidc|bad-scope","bindings":[{"scope_type":"project","scope_id":"missing-project","role":"viewer"}]}`)))
+	invalidResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(invalidResp, invalidReq)
+	if invalidResp.Code != http.StatusBadRequest {
+		t.Fatalf("invalid onboard status = %d, want 400 body=%s", invalidResp.Code, invalidResp.Body.String())
+	}
+	if _, err := store.GetUserBySubject("oidc|bad-scope"); err == nil {
+		t.Fatalf("invalid onboard should not create the user")
 	}
 }
 

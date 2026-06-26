@@ -169,13 +169,15 @@ describe('TimeslotsPanel', () => {
     expect(payload.requested_capacity?.pool_id).toBe('pool-1')
   })
 
-  it('hides management actions without permission', async () => {
+  it('disables reservation creation and hides row management actions without permission', async () => {
     capacityApiMock.listTimeslots.mockResolvedValue({ timeslots: [slot({ approval_state: 'pending' })], count: 1 })
     await act(async () => {
       root.render(<TimeslotsPanel projectId="proj-a" canManage={false} />)
     })
     await flush()
-    expect(container.textContent).not.toContain('New Reservation')
+    const newButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(b => b.textContent === 'New Reservation')
+    expect(newButton).toBeTruthy()
+    expect(newButton?.disabled).toBe(true)
     expect(container.textContent).not.toContain('Approve')
     expect(container.textContent).not.toContain('Delete')
   })

@@ -36,10 +36,9 @@ spec:
             capabilities:
               drop:
                 - ALL
-          lifecycle:
-            preStop:
-              exec:
-                command: ["sh", "-c", "sleep 15"]
+          env:
+            - name: APEXLOAD_GENERATOR_MAX_VUSERS
+              value: "1000"
           volumeMounts:
             - name: tmp
               mountPath: /tmp
@@ -47,13 +46,13 @@ spec:
             - name: grpc
               containerPort: 9090
           readinessProbe:
-            tcpSocket:
-              port: grpc
+            grpc:
+              port: 9090
             initialDelaySeconds: 5
             periodSeconds: 10
           livenessProbe:
-            tcpSocket:
-              port: grpc
+            grpc:
+              port: 9090
             initialDelaySeconds: 15
             periodSeconds: 20
           resources:

@@ -21,11 +21,11 @@ func TestParseRecordArgs(t *testing.T) {
 		{
 			name: "full flags",
 			args: []string{"--url", "https://shop.example", "--out", "login.json", "--har", "net.har",
-				"--name", "Login Flow", "--api", "http://ctl:8080", "--project", "proj-1",
+				"--name", "Login Flow", "--api", "http://ctl:8080", "--api-key", "key-123", "--bearer-token", "token-456", "--project", "proj-1",
 				"--upload", "--headless", "--max-think-ms", "4000"},
 			want: recordArgs{
 				url: "https://shop.example", out: "login.json", harOut: "net.har",
-				name: "Login Flow", api: "http://ctl:8080", project: "proj-1",
+				name: "Login Flow", api: "http://ctl:8080", apiKey: "key-123", bearerToken: "token-456", project: "proj-1",
 				upload: true, headless: true, maxThinkMs: 4000,
 			},
 		},

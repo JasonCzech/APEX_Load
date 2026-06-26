@@ -1698,6 +1698,12 @@ describe('SettingsPage', () => {
     ) as HTMLInputElement | undefined
     expect(identityInput).toBeDefined()
 
+    await selectSettingsSubnav(projectSection, 'Limits')
+    const quotaInputs = Array.from(projectSection.querySelectorAll('input')).filter(input => input.placeholder === 'Unlimited') as HTMLInputElement[]
+    expect(quotaInputs).toHaveLength(4)
+    if (quotaInputs.length !== 4) return
+    await setFieldValue(quotaInputs[1], '300')
+
     const saveButton = findButton('Save Project Governance')
     expect(saveButton).toBeDefined()
     if (!saveButton) return
@@ -1709,6 +1715,7 @@ describe('SettingsPage', () => {
     await flushPromises()
 
     expect(projectApiMock.updateProject).toHaveBeenCalledTimes(1)
+    expect(projectApiMock.updateProject.mock.calls[0][1].settings?.max_vusers).toBe(300)
     const savedPolicy = projectApiMock.updateProject.mock.calls[0][1].settings?.github
     expect(savedPolicy?.automation_identity).toBe('apexload-bot')
   })

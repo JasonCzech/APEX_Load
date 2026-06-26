@@ -562,12 +562,13 @@ func TestEstimateDraftCapacityIncludesRegionWeightedRecommendation(t *testing.T)
 }
 
 func TestEstimateCapacityAdvisoryUsesLiveAvailabilitySnapshot(t *testing.T) {
-	t.Setenv("APEXLOAD_LIVE_AVAILABLE_GENERATORS", "3")
 	settings := defaultSystemSettings(4)
 	settings.CapacityPlanning.Availability.Source = capacityAvailabilityConfiguredPlusLive
 	settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators = 5
+	live := 3
+	availability := resolveCapacityAvailabilityWithLiveAt(settings, &live, time.Now())
 
-	advisory := estimateCapacityAdvisory(settings, []TestGroup{{
+	advisory := estimateCapacityAdvisoryWithAvailability(settings, availability, []TestGroup{{
 		Name:     "buyers",
 		Protocol: "http",
 		VUsers:   18000,

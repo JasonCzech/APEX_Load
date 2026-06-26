@@ -64,3 +64,43 @@ func TestCreateTestIncludesGoalConfig(t *testing.T) {
 		t.Fatalf("goal_config = %#v, want max error pct 2.5", captured.GoalConfig)
 	}
 }
+
+func TestApiClientInjectsExplicitAuthHeaders(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-APEXLoad-API-Key"); got != "key-123" {
+			t.Fatalf("api key header = %q, want key-123", got)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer token-456" {
+			t.Fatalf("authorization header = %q, want bearer token", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"test-1","status":"COMPLETE"}`))
+	}))
+	defer server.Close()
+
+	client := NewApiClientWithAuth(server.URL, "key-123", "token-456")
+	if _, err := client.GetTestStatus("test-1"); err != nil {
+		t.Fatalf("GetTestStatus returned error: %v", err)
+	}
+}
+
+func TestApiClientReadsAuthHeadersFromEnvironment(t *testing.T) {
+	t.Setenv("APEXLOAD_API_KEY", "env-key")
+	t.Setenv("APEXLOAD_BEARER_TOKEN", "env-token")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-APEXLoad-API-Key"); got != "env-key" {
+			t.Fatalf("api key header = %q, want env-key", got)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer env-token" {
+			t.Fatalf("authorization header = %q, want bearer env-token", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"test-1","status":"COMPLETE"}`))
+	}))
+	defer server.Close()
+
+	client := NewApiClient(server.URL)
+	if _, err := client.GetTestStatus("test-1"); err != nil {
+		t.Fatalf("GetTestStatus returned error: %v", err)
+	}
+}

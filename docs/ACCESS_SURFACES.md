@@ -38,8 +38,55 @@ make desktop-release
 ```
 
 Windows desktop distribution should likewise use an Authenticode-signed
-installer or executable from CI. Raw local debug archives are acceptable for
-developer machines only, not for broad user distribution.
+installer or executable from CI. The desktop release script can sign Windows
+executables with either `signtool` on Windows CI or `osslsigncode` on macOS/Linux
+CI:
+
+```bash
+APEXLOAD_WINDOWS_CODESIGN=1 \
+APEXLOAD_WINDOWS_CODESIGN_TOOL=signtool \
+APEXLOAD_WINDOWS_CODESIGN_CERT_PATH="$WINDOWS_PFX_PATH" \
+APEXLOAD_WINDOWS_CODESIGN_PASSWORD="$WINDOWS_PFX_PASSWORD" \
+make desktop-release WAILS_PLATFORM=windows/amd64
+```
+
+`WAILS_PLATFORM` is passed to both `wails build -platform` and the desktop
+package script so the archive name matches the built app. When packaging an
+already-built desktop artifact directly, set
+`APEXLOAD_DESKTOP_PACKAGE_PLATFORM=windows/amd64` or the matching target.
+
+Release CI can also sign the generated `SHA256SUMS.txt` manifest:
+
+```bash
+APEXLOAD_CHECKSUM_SIGN=1 \
+APEXLOAD_CHECKSUM_SIGN_KEY="$GPG_SIGNING_KEY" \
+make desktop-release
+```
+
+Raw local debug archives are acceptable for developer machines only, not for
+broad user distribution.
+
+The GitHub Actions client-package workflow (`.github/workflows/desktop.yml`)
+uses the same package scripts for desktop and Recording Agent release artifacts.
+Tag-triggered runs fail closed with `APEXLOAD_REQUIRE_TRUSTED_PACKAGES=1`, so
+missing signing or checksum material blocks the release instead of publishing
+unsigned downloads. Manual workflow runs can opt into the same behavior with the
+repository variable `APEXLOAD_REQUIRE_TRUSTED_PACKAGES=1`.
+
+Configure these repository secrets/variables to produce trusted downloads:
+
+| Name | Purpose |
+| --- | --- |
+| `APEXLOAD_MACOS_CERTIFICATE_P12_BASE64` | Base64-encoded Developer ID Application `.p12` certificate for macOS signing. |
+| `APEXLOAD_MACOS_CERTIFICATE_PASSWORD` | Password for the `.p12` certificate. |
+| `APEXLOAD_MACOS_CODESIGN_IDENTITY` | Developer ID identity name passed to `codesign`. |
+| `APEXLOAD_MACOS_NOTARIZE` | Repository variable; set to `1` to require notarization. |
+| `APEXLOAD_MACOS_NOTARY_PROFILE` | Optional notarytool keychain profile name. |
+| `APEXLOAD_MACOS_NOTARY_APPLE_ID`, `APEXLOAD_MACOS_NOTARY_PASSWORD`, `APEXLOAD_MACOS_NOTARY_TEAM_ID` | Notarization credentials when not using a stored profile. |
+| `APEXLOAD_WINDOWS_CODESIGN_PFX_BASE64` | Base64-encoded Authenticode `.pfx`/`.p12` certificate. |
+| `APEXLOAD_WINDOWS_CODESIGN_PASSWORD` | Password for the Windows signing certificate. |
+| `APEXLOAD_GPG_PRIVATE_KEY` | Optional ASCII-armored private key for detached checksum signatures. |
+| `APEXLOAD_GPG_SIGNING_KEY` | Optional GPG key ID or fingerprint used as the signing key selector. |
 
 ## 3. CLI
 

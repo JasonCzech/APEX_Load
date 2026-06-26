@@ -43,6 +43,7 @@ func (b *distributedExecutionBackend) SystemInventory(ctx context.Context) []Gen
 		if snapshot.GeneratorID != "" {
 			entry.GeneratorID = snapshot.GeneratorID
 		}
+		entry.DrainState = b.generatorDrainState(target.Address)
 		if snapshot.HeartbeatOK {
 			effectiveSpec := generatorEffectiveSpec(target, snapshot)
 			entry.Version = generatorSpecVersion(effectiveSpec)

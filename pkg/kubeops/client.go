@@ -41,10 +41,12 @@ type Config struct {
 }
 
 type PodRef struct {
-	Name      string
-	Namespace string
-	IP        string
-	Phase     string
+	Name        string
+	Namespace   string
+	IP          string
+	Phase       string
+	Ready       bool
+	Terminating bool
 }
 
 type Client struct {
@@ -184,10 +186,12 @@ func (c *Client) ListPods(ctx context.Context, namespace, selector string) ([]Po
 	out := make([]PodRef, 0, len(list.Items))
 	for _, item := range list.Items {
 		out = append(out, PodRef{
-			Name:      strings.TrimSpace(item.Metadata.Name),
-			Namespace: firstNonEmpty(strings.TrimSpace(item.Metadata.Namespace), strings.TrimSpace(namespace)),
-			IP:        strings.TrimSpace(item.Status.PodIP),
-			Phase:     strings.TrimSpace(item.Status.Phase),
+			Name:        strings.TrimSpace(item.Metadata.Name),
+			Namespace:   firstNonEmpty(strings.TrimSpace(item.Metadata.Namespace), strings.TrimSpace(namespace)),
+			IP:          strings.TrimSpace(item.Status.PodIP),
+			Phase:       strings.TrimSpace(item.Status.Phase),
+			Ready:       podReady(item.Status.Conditions),
+			Terminating: strings.TrimSpace(item.Metadata.DeletionTimestamp) != "",
 		})
 	}
 	return out, nil
@@ -320,12 +324,28 @@ func firstNonEmpty(values ...string) string {
 type podList struct {
 	Items []struct {
 		Metadata struct {
-			Name      string `json:"name"`
-			Namespace string `json:"namespace"`
+			Name              string `json:"name"`
+			Namespace         string `json:"namespace"`
+			DeletionTimestamp string `json:"deletionTimestamp"`
 		} `json:"metadata"`
 		Status struct {
-			PodIP string `json:"podIP"`
-			Phase string `json:"phase"`
+			PodIP      string         `json:"podIP"`
+			Phase      string         `json:"phase"`
+			Conditions []podCondition `json:"conditions"`
 		} `json:"status"`
 	} `json:"items"`
+}
+
+type podCondition struct {
+	Type   string `json:"type"`
+	Status string `json:"status"`
+}
+
+func podReady(conditions []podCondition) bool {
+	for _, condition := range conditions {
+		if strings.EqualFold(strings.TrimSpace(condition.Type), "Ready") {
+			return strings.EqualFold(strings.TrimSpace(condition.Status), "True")
+		}
+	}
+	return false
 }

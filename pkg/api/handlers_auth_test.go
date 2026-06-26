@@ -776,6 +776,10 @@ func TestAuthUserAdminLifecycleAndActivity(t *testing.T) {
 	if created.ID == "" || created.Subject != "oidc|alice" || !created.Active {
 		t.Fatalf("created user = %#v, want active alice", created)
 	}
+	now := time.Now().UTC()
+	if err := store.SaveProject(&storage.Project{ID: "project-a", Name: "project-a", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveProject(project-a) returned error: %v", err)
+	}
 
 	bindingReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/users/"+created.ID+"/bindings", bytes.NewBufferString(`{"scope_type":"project","scope_id":"project-a","role":"project_admin"}`))
 	bindingResp := httptest.NewRecorder()
@@ -849,6 +853,11 @@ func TestScopedProjectAdminCanOnlyManageScopedUserBindings(t *testing.T) {
 	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
 	enableTrustedHeaderAuth(t, server)
 	now := time.Now().UTC()
+	for _, id := range []string{"project-a", "project-b"} {
+		if err := store.SaveProject(&storage.Project{ID: id, Name: id, CreatedAt: now, UpdatedAt: now}); err != nil {
+			t.Fatalf("SaveProject(%s) returned error: %v", id, err)
+		}
+	}
 	for _, user := range []*storage.User{
 		{ID: "admin-user-id", Subject: "admin-user", Email: "admin@example.com", Active: true, CreatedAt: now, UpdatedAt: now},
 		{ID: "delegated-user-id", Subject: "delegated-user", Email: "delegated@example.com", Active: true, CreatedAt: now, UpdatedAt: now},
@@ -903,6 +912,48 @@ func TestScopedProjectAdminCanOnlyManageScopedUserBindings(t *testing.T) {
 	}
 	if users.Count != 1 || len(users.Users) != 1 || len(users.Users[0].Bindings) != 1 || users.Users[0].Bindings[0].ScopeID != "project-a" {
 		t.Fatalf("delegated visible bindings = %#v, want only project-a binding", users.Users)
+	}
+
+	allUsersReq := trustedHeaderJSONRequest(http.MethodGet, "/api/v1/auth/users?limit=10", ``, "delegated-user")
+	allUsersResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(allUsersResp, allUsersReq)
+	if allUsersResp.Code != http.StatusOK {
+		t.Fatalf("delegated list all users status = %d, want %d body=%s", allUsersResp.Code, http.StatusOK, allUsersResp.Body.String())
+	}
+	var allUsers AuthUserListResponse
+	if err := json.Unmarshal(allUsersResp.Body.Bytes(), &allUsers); err != nil {
+		t.Fatalf("unmarshal delegated all users: %v", err)
+	}
+	if allUsers.Count != 2 || allUsers.Total != 2 || allUsers.HasMore {
+		t.Fatalf("delegated all users counts = count:%d total:%d has_more:%v users=%#v, want only scoped users", allUsers.Count, allUsers.Total, allUsers.HasMore, allUsers.Users)
+	}
+	visibleUserIDs := map[string]bool{}
+	for _, user := range allUsers.Users {
+		visibleUserIDs[user.ID] = true
+		if len(user.Bindings) == 0 {
+			t.Fatalf("delegated user %s has no visible bindings", user.ID)
+		}
+		for _, binding := range user.Bindings {
+			if binding.ScopeType != "project" || binding.ScopeID != "project-a" {
+				t.Fatalf("delegated all users leaked binding %#v", binding)
+			}
+		}
+	}
+	if !visibleUserIDs["delegated-user-id"] || !visibleUserIDs["target-user-id"] || visibleUserIDs["admin-user-id"] {
+		t.Fatalf("delegated all visible ids = %#v, want delegated + target only", visibleUserIDs)
+	}
+
+	targetGetReq := trustedHeaderJSONRequest(http.MethodGet, "/api/v1/auth/users/target-user-id", ``, "delegated-user")
+	targetGetResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(targetGetResp, targetGetReq)
+	if targetGetResp.Code != http.StatusOK {
+		t.Fatalf("delegated get scoped user status = %d, want %d body=%s", targetGetResp.Code, http.StatusOK, targetGetResp.Body.String())
+	}
+	adminGetReq := trustedHeaderJSONRequest(http.MethodGet, "/api/v1/auth/users/admin-user-id", ``, "delegated-user")
+	adminGetResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(adminGetResp, adminGetReq)
+	if adminGetResp.Code != http.StatusForbidden {
+		t.Fatalf("delegated get unscoped user status = %d, want %d body=%s", adminGetResp.Code, http.StatusForbidden, adminGetResp.Body.String())
 	}
 
 	allowedBindingReq := trustedHeaderJSONRequest(http.MethodPost, "/api/v1/auth/users/target-user-id/bindings", `{"scope_type":"project","scope_id":"project-a","role":"editor"}`, "delegated-user")

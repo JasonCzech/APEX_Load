@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	pb "github.com/jasonczech/apexload/api/proto"
 	"github.com/jasonczech/apexload/pkg/config"
@@ -14,6 +15,8 @@ import (
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	_ "github.com/jasonczech/apexload/pkg/protocol/builtin"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
 func main() {
@@ -26,8 +29,7 @@ func main() {
 		defer pprofSrv.Close()
 	}
 
-	cfg := config.DefaultGeneratorConfig()
-	_ = cfg
+	cfg := config.LoadGeneratorConfigFromEnv(os.Getenv)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -63,7 +65,11 @@ func main() {
 	}
 
 	grpcServer := grpc.NewServer(serverOptions...)
-	pb.RegisterGeneratorControlServer(grpcServer, generatorrpc.NewService(generatorID, cfg.MaxVUsers, generatorrpc.WithExecution()))
+	healthServer := health.NewServer()
+	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
+	healthpb.RegisterHealthServer(grpcServer, healthServer)
+	controlService := generatorrpc.NewService(generatorID, cfg.MaxVUsers, generatorrpc.WithExecution())
+	pb.RegisterGeneratorControlServer(grpcServer, controlService)
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -75,6 +81,20 @@ func main() {
 	select {
 	case <-ctx.Done():
 		slog.Info("generator shutting down")
+		controlService.SetDraining(true)
+		healthServer.SetServingStatus("", healthpb.HealthCheckResponse_NOT_SERVING)
+		deadline := time.After(110 * time.Second)
+		ticker := time.NewTicker(500 * time.Millisecond)
+		defer ticker.Stop()
+		for controlService.ActiveVUsers() > 0 {
+			select {
+			case <-deadline:
+				slog.Warn("generator drain deadline reached", "active_vusers", controlService.ActiveVUsers())
+				goto stop
+			case <-ticker.C:
+			}
+		}
+	stop:
 		grpcServer.GracefulStop()
 	case err := <-errCh:
 		slog.Error("generator server error", "err", err)

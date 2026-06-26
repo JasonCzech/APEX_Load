@@ -762,7 +762,7 @@ func (s *Server) handleSystemVersion(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 	settings := s.runner.GetSystemSettings()
-	availability := resolveCapacityAvailability(settings)
+	availability := resolveCapacityAvailabilityWithLiveAt(settings, s.runner.liveAvailableGeneratorCount(r.Context()), time.Now())
 	build := buildinfo.Get()
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":          "healthy",

@@ -3,9 +3,11 @@ package api
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -190,6 +192,14 @@ type AuthUserBindingRequest struct {
 	ScopeType string `json:"scope_type"`
 	ScopeID   string `json:"scope_id,omitempty"`
 	Role      string `json:"role"`
+}
+
+type AuthUserOnboardRequest struct {
+	Subject     string                   `json:"subject"`
+	Email       string                   `json:"email,omitempty"`
+	DisplayName string                   `json:"display_name,omitempty"`
+	Active      *bool                    `json:"active,omitempty"`
+	Bindings    []AuthUserBindingRequest `json:"bindings"`
 }
 
 type AuthUserListResponse struct {
@@ -387,9 +397,18 @@ func (s *Server) handleGetAuthStatus(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, response)
 			return
 		}
+		localUser, err := applyLocalUserBindings(sessionResolution.User, s.store)
+		if err != nil {
+			response.SessionStatus = oidcLocalAuthStatus(err)
+			if csrfToken, csrfErr := issueOIDCLogoutCSRFToken(sessionResolution.User, settings); csrfErr == nil {
+				response.LogoutCSRF = csrfToken
+			}
+			writeJSON(w, http.StatusOK, response)
+			return
+		}
 		response.Authenticated = true
-		response.User = authUserSummary(sessionResolution.User)
-		if csrfToken, err := issueOIDCLogoutCSRFToken(sessionResolution.User, settings); err == nil {
+		response.User = authUserSummary(localUser)
+		if csrfToken, err := issueOIDCLogoutCSRFToken(localUser, settings); err == nil {
 			response.LogoutCSRF = csrfToken
 		}
 		writeJSON(w, http.StatusOK, response)
@@ -405,6 +424,23 @@ func (s *Server) handleGetAuthStatus(w http.ResponseWriter, r *http.Request) {
 	response.Authenticated = true
 	response.User = authUserSummary(resolution.User)
 	writeJSON(w, http.StatusOK, response)
+}
+
+func oidcLocalAuthStatus(err error) string {
+	if err == nil {
+		return "active"
+	}
+	message := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(message, "not onboarded"):
+		return "not_onboarded"
+	case strings.Contains(message, "disabled"):
+		return "disabled"
+	case strings.Contains(message, "revoked"):
+		return "revoked"
+	default:
+		return "blocked"
+	}
 }
 
 func (s *Server) handleGetAuthDiagnostics(w http.ResponseWriter, r *http.Request) {
@@ -691,14 +727,10 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 		active := raw == "true" || raw == "1"
 		filter.Active = &active
 	}
-	users, err := s.store.ListUsers(filter)
+	users, total, err := s.listVisibleUsersForRequest(r, filter)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
-	}
-	total, err := s.store.CountUsers(filter)
-	if err != nil {
-		total = len(users)
 	}
 	if filter.Limit <= 0 {
 		filter.Limit = 100
@@ -707,7 +739,7 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 		filter.Offset = 0
 	}
 	writeJSON(w, http.StatusOK, AuthUserListResponse{
-		Users:   s.visibleUsersForRequest(r, users),
+		Users:   users,
 		Count:   len(users),
 		Total:   total,
 		Limit:   filter.Limit,
@@ -755,6 +787,86 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, user)
 }
 
+type userOnboardingStore interface {
+	SaveUserWithRoleBindings(user *storage.User, bindings []*storage.UserRoleBinding) error
+}
+
+func (s *Server) handleOnboardUser(w http.ResponseWriter, r *http.Request) {
+	if !s.currentRequestCanManageUserLifecycle(r) {
+		writeError(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	if s.store == nil {
+		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
+		return
+	}
+	onboardingStore, ok := s.store.(userOnboardingStore)
+	if !ok {
+		writeError(w, http.StatusServiceUnavailable, "transactional user onboarding is not supported by this storage backend")
+		return
+	}
+	var req AuthUserOnboardRequest
+	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	subject := strings.TrimSpace(req.Subject)
+	if subject == "" {
+		writeError(w, http.StatusBadRequest, "subject is required")
+		return
+	}
+	if len(req.Bindings) == 0 {
+		writeError(w, http.StatusBadRequest, "at least one initial binding is required")
+		return
+	}
+	if existing, err := s.store.GetUserBySubject(subject); err == nil && existing != nil {
+		writeError(w, http.StatusConflict, "a user with this subject already exists")
+		return
+	}
+	now := time.Now().UTC()
+	active := true
+	if req.Active != nil {
+		active = *req.Active
+	}
+	user := &storage.User{ID: uuid.New().String(), Subject: subject, Email: strings.TrimSpace(req.Email), DisplayName: strings.TrimSpace(req.DisplayName), Active: active, CreatedAt: now, UpdatedAt: now}
+	if !active {
+		user.DisabledAt = &now
+	}
+	bindings := make([]*storage.UserRoleBinding, 0, len(req.Bindings))
+	for _, bindingReq := range req.Bindings {
+		binding := normalizeUserBindingRequest(user.ID, bindingReq)
+		if binding.Role == "" || binding.ScopeType == "" {
+			writeError(w, http.StatusBadRequest, "scope_type and role are required")
+			return
+		}
+		if !isCanonicalRole(binding.Role) {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("unsupported role %q (expected one of viewer, editor, project_admin, system_admin)", binding.Role))
+			return
+		}
+		if status, message := validateUserBindingScope(s.store, bindingReq, binding); status != 0 {
+			writeError(w, status, message)
+			return
+		}
+		if !s.canManageUserBinding(r, binding) {
+			writeError(w, http.StatusForbidden, "forbidden")
+			return
+		}
+		binding.ID = uuid.New().String()
+		binding.CreatedAt = now
+		binding.UpdatedAt = now
+		bindings = append(bindings, binding)
+	}
+	if err := onboardingStore.SaveUserWithRoleBindings(user, bindings); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	user.Bindings = bindings
+	if reloaded, err := s.store.GetUser(user.ID); err == nil && reloaded != nil {
+		user = reloaded
+	}
+	s.recordAuditEvent(r, "auth.user.onboard", "success", "user", user.ID, "", map[string]any{"subject": user.Subject, "binding_count": len(bindings)})
+	writeJSON(w, http.StatusCreated, user)
+}
+
 func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request) {
 	if !s.currentRequestCanReadUsers(r) {
 		writeError(w, http.StatusForbidden, "forbidden")
@@ -762,6 +874,10 @@ func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request) {
 	}
 	user, ok := s.loadUserForRequest(w, r)
 	if !ok {
+		return
+	}
+	if !s.userVisibleToRequest(r, user) {
+		writeError(w, http.StatusForbidden, "forbidden")
 		return
 	}
 	writeJSON(w, http.StatusOK, s.visibleUserForRequest(r, user))
@@ -822,6 +938,10 @@ func (s *Server) handleCreateUserBinding(w http.ResponseWriter, r *http.Request)
 	}
 	if !isCanonicalRole(binding.Role) {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("unsupported role %q (expected one of viewer, editor, project_admin, system_admin)", binding.Role))
+		return
+	}
+	if status, message := validateUserBindingScope(s.store, req, binding); status != 0 {
+		writeError(w, status, message)
 		return
 	}
 	if !s.canManageUserBinding(r, binding) {
@@ -1114,6 +1234,84 @@ func normalizeUserBindingRequest(userID string, req AuthUserBindingRequest) *sto
 	return &storage.UserRoleBinding{UserID: userID, ScopeType: scopeType, ScopeID: scopeID, Role: role}
 }
 
+func validateUserBindingScope(store storage.Store, req AuthUserBindingRequest, binding *storage.UserRoleBinding) (int, string) {
+	if binding == nil || binding.ScopeType == "" {
+		return http.StatusBadRequest, "scope_type and role are required"
+	}
+	rawScopeID := strings.TrimSpace(req.ScopeID)
+	switch binding.ScopeType {
+	case "global":
+		return 0, ""
+	case "project":
+		if rawScopeID == "" {
+			return http.StatusBadRequest, "project scope_id is required"
+		}
+		if store == nil {
+			return http.StatusServiceUnavailable, "storage is not configured"
+		}
+		if _, err := store.GetProject(binding.ScopeID); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return http.StatusBadRequest, "project scope_id does not exist"
+			}
+			return http.StatusInternalServerError, err.Error()
+		}
+	case "domain":
+		if rawScopeID == "" {
+			return http.StatusBadRequest, "domain scope_id is required"
+		}
+		if store == nil {
+			return http.StatusServiceUnavailable, "storage is not configured"
+		}
+		if _, err := store.GetDomain(binding.ScopeID); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return http.StatusBadRequest, "domain scope_id does not exist"
+			}
+			return http.StatusInternalServerError, err.Error()
+		}
+	case "application_repository":
+		if rawScopeID == "" {
+			return http.StatusBadRequest, "application_repository scope_id is required"
+		}
+		if store == nil {
+			return http.StatusServiceUnavailable, "storage is not configured"
+		}
+		found, status, message := applicationRepositoryScopeExists(store, binding.ScopeID)
+		if status != 0 {
+			return status, message
+		}
+		if !found {
+			return http.StatusBadRequest, "application_repository scope_id does not exist"
+		}
+	default:
+		return http.StatusBadRequest, "scope_type and role are required"
+	}
+	return 0, ""
+}
+
+func applicationRepositoryScopeExists(store storage.Store, repositoryID string) (bool, int, string) {
+	repositoryID = strings.TrimSpace(repositoryID)
+	domains, err := store.ListDomains()
+	if err != nil {
+		return false, http.StatusInternalServerError, err.Error()
+	}
+	for _, domain := range domains {
+		if domain == nil {
+			continue
+		}
+		repository, err := store.GetApplicationRepository(domain.ID)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				continue
+			}
+			return false, http.StatusInternalServerError, err.Error()
+		}
+		if repository != nil && strings.TrimSpace(repository.ID) == repositoryID {
+			return true, 0, ""
+		}
+	}
+	return false, 0, ""
+}
+
 func (s *Server) currentRequestCanManageUserLifecycle(r *http.Request) bool {
 	if isAuthBypassMode(normalizeAuthSettings(s.runner.GetSystemSettings().Auth).Mode) {
 		return true
@@ -1300,6 +1498,86 @@ func (s *Server) visibleUsersForRequest(r *http.Request, users []*storage.User) 
 		out = append(out, s.visibleUserForRequest(r, user))
 	}
 	return out
+}
+
+func (s *Server) listVisibleUsersForRequest(r *http.Request, filter storage.UserFilter) ([]*storage.User, int, error) {
+	if s.requestHasUnrestrictedUserVisibility(r) {
+		users, err := s.store.ListUsers(filter)
+		if err != nil {
+			return nil, 0, err
+		}
+		total, err := s.store.CountUsers(filter)
+		if err != nil {
+			total = len(users)
+		}
+		return s.visibleUsersForRequest(r, users), total, nil
+	}
+
+	limit := filter.Limit
+	if limit <= 0 {
+		limit = 100
+	}
+	offset := filter.Offset
+	if offset < 0 {
+		offset = 0
+	}
+
+	pageFilter := filter
+	pageFilter.Limit = 200
+	pageFilter.Offset = 0
+
+	total := 0
+	visible := make([]*storage.User, 0, limit)
+	for {
+		page, err := s.store.ListUsers(pageFilter)
+		if err != nil {
+			return nil, 0, err
+		}
+		if len(page) == 0 {
+			break
+		}
+		for _, user := range page {
+			if !s.userVisibleToRequest(r, user) {
+				continue
+			}
+			total++
+			if total <= offset || len(visible) >= limit {
+				continue
+			}
+			visible = append(visible, s.visibleUserForRequest(r, user))
+		}
+		if len(page) < pageFilter.Limit {
+			break
+		}
+		pageFilter.Offset += len(page)
+	}
+	return visible, total, nil
+}
+
+func (s *Server) requestHasUnrestrictedUserVisibility(r *http.Request) bool {
+	if isAuthBypassMode(normalizeAuthSettings(s.runner.GetSystemSettings().Auth).Mode) {
+		return true
+	}
+	user, ok := AuthenticatedUserFromContext(r.Context())
+	if !ok || user == nil {
+		return false
+	}
+	return user.hasGlobalRole(RoleSystemAdmin, RoleProjectAdmin)
+}
+
+func (s *Server) userVisibleToRequest(r *http.Request, user *storage.User) bool {
+	if user == nil {
+		return false
+	}
+	if s.requestHasUnrestrictedUserVisibility(r) {
+		return true
+	}
+	for _, binding := range user.Bindings {
+		if s.canManageUserBinding(r, binding) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) visibleUserForRequest(r *http.Request, user *storage.User) *storage.User {

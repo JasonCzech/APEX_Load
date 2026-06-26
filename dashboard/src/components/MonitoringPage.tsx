@@ -4,7 +4,7 @@ import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
 import { useHasTopbarContributionProvider, useTopbarContribution, type TopbarMetaTone } from '../hooks/TopbarContributionProvider'
-import { APMIntegrationProfilesResponse, FleetAlert, FleetCapacityResponse, HealthResponse, InfrastructureMonitorPacksResponse, ProvisionerInfo, RunCalendarCapacityDay, RunCalendarEvent, RunCalendarResponse, ScenarioScheduleHealth, SystemInventoryGenerator, SystemInventoryResponse, SystemReadinessResponse, SystemRestartCapabilities, SystemRestartRequest, SystemServicesResponse, TelemetryDiagnosticEntry } from '../types'
+import { APMIntegrationProfilesResponse, DashboardAuditEvent, FleetAlert, FleetCapacityResponse, HealthResponse, InfrastructureMonitorPacksResponse, ProvisionerInfo, RunCalendarCapacityDay, RunCalendarEvent, RunCalendarResponse, ScenarioScheduleHealth, SystemInventoryGenerator, SystemInventoryResponse, SystemReadinessResponse, SystemRestartCapabilities, SystemRestartRequest, SystemServicesResponse, TelemetryDiagnosticEntry } from '../types'
 import { readStoredStringArray, writeStoredJSON } from '../utils/browserStorage'
 import { formatTelemetryDiagnosticTime, telemetryDiagnosticSeverityClass } from './monitoringTelemetryDiagnostics'
 import ConfirmDestructiveModal, { type DestructiveConfirmation } from './ConfirmDestructiveModal'
@@ -22,6 +22,7 @@ interface Props {
   canManageSystem?: boolean
   initialCategoryId?: MonitorCategoryId
   onScheduleForDate?: (prefillStartLocal: string) => void
+  fleetEventSignal?: number
 }
 
 const EMPTY_GENERATORS: SystemInventoryResponse['generators'] = []
@@ -29,15 +30,30 @@ const EMPTY_SERVICES: SystemServicesResponse['services'] = []
 
 const MONITOR_CATEGORIES = [
   { id: 'overview', label: 'Overview', cardIds: ['system-health', 'production-readiness'] },
-  { id: 'fleet', label: 'Fleet', cardIds: ['capacity', 'generators', 'fleet-alerts', 'fleet-pools', 'generator-metadata'] },
+  { id: 'fleet', label: 'Fleet', cardIds: ['capacity', 'generators', 'fleet-alerts', 'fleet-audit', 'fleet-pools', 'generator-metadata'] },
   { id: 'telemetry', label: 'Telemetry', cardIds: ['telemetry-diagnostics', 'apm-integrations', 'monitor-packs', 'collectors'] },
-  { id: 'schedules', label: 'Schedules', cardIds: ['run-calendar', 'timeslots'] },
+  { id: 'schedules', label: 'Schedules', cardIds: ['run-calendar'] },
 ] as const
 
 type MonitorCategoryId = typeof MONITOR_CATEGORIES[number]['id']
 type RunCalendarView = 'month' | 'week' | 'day'
 type RunCalendarFilter = 'all' | 'cron' | 'ad_hoc' | 'execution_plan' | 'current'
 type MonitorSeverity = 'healthy' | 'unknown' | 'warning' | 'danger'
+
+const FLEET_AUDIT_ACTION_PREFIXES = ['fleet.', 'generator.', 'provisioning.']
+const FLEET_AUDIT_RESOURCE_TYPES = new Set(['fleet_alert', 'fleet_pool', 'generator', 'provisioning_request'])
+
+function isFleetAuditEvent(event: DashboardAuditEvent): boolean {
+  const action = (event.action || '').toLowerCase()
+  const resourceType = (event.resource_type || '').toLowerCase()
+  return FLEET_AUDIT_ACTION_PREFIXES.some(prefix => action.startsWith(prefix)) || FLEET_AUDIT_RESOURCE_TYPES.has(resourceType)
+}
+
+function formatAuditEventTime(value?: string): string {
+  if (!value) return 'unknown'
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString()
+}
 
 type RestartAction = {
   targetType: SystemRestartRequest['target_type']
@@ -219,7 +235,7 @@ function restartErrorMessage(error: unknown): string {
   return 'Restart request failed.'
 }
 
-export default function MonitoringPage({ connectionState, telemetryDiagnostics = [], onSelectTest, canManageSystem = false, initialCategoryId = 'overview', onScheduleForDate }: Props) {
+export default function MonitoringPage({ connectionState, telemetryDiagnostics = [], onSelectTest, canManageSystem = false, initialCategoryId = 'overview', onScheduleForDate, fleetEventSignal = 0 }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
   const [health, setHealth] = useState<HealthResponse | null>(null)
@@ -235,6 +251,9 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const [apmProfiles, setApmProfiles] = useState<APMIntegrationProfilesResponse | null>(null)
   const [monitorPacks, setMonitorPacks] = useState<InfrastructureMonitorPacksResponse | null>(null)
   const [fleetAlerts, setFleetAlerts] = useState<FleetAlert[]>([])
+  const [fleetAlertActionError, setFleetAlertActionError] = useState<string | null>(null)
+  const [fleetAlertActionBusy, setFleetAlertActionBusy] = useState<string | null>(null)
+  const [fleetAuditEvents, setFleetAuditEvents] = useState<DashboardAuditEvent[]>([])
   const [fleetCapacity, setFleetCapacity] = useState<FleetCapacityResponse | null>(null)
   const [provisioner, setProvisioner] = useState<ProvisionerInfo | null>(null)
   const [restartCapabilities, setRestartCapabilities] = useState<SystemRestartCapabilities | null>(null)
@@ -287,6 +306,10 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const fleetAlertWarningCount = fleetAlerts.filter(alert => alert.severity === 'warning').length
   const fleetAlertHeaderSeverity: MonitorSeverity = fleetAlertDangerCount > 0 ? 'danger' : fleetAlertWarningCount > 0 ? 'warning' : generators.length > 0 ? 'healthy' : 'unknown'
   const fleetAlertHeaderLabel = fleetAlerts.length > 0 ? `${fleetAlerts.length} alert${fleetAlerts.length === 1 ? '' : 's'}` : generators.length > 0 ? 'clear' : 'no inventory'
+  const fleetAuditHeaderSeverity: MonitorSeverity = !canManageSystem ? 'unknown' : fleetAuditEvents.length > 0 ? 'healthy' : 'unknown'
+  const fleetAuditHeaderLabel = canManageSystem
+    ? fleetAuditEvents.length > 0 ? `${fleetAuditEvents.length} event${fleetAuditEvents.length === 1 ? '' : 's'}` : 'quiet'
+    : 'admin only'
   const scheduleHeaderSeverity: MonitorSeverity = !scheduleHealth
     ? 'unknown'
     : scheduleHealth.failed > 0 || scheduleHealth.blocked > 0
@@ -376,7 +399,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       return
     }
     try {
-      const [healthRes, inventoryRes, restartCapsRes, readinessRes, servicesRes, scheduleHealthRes, runCalendarRes, apmProfilesRes, monitorPacksRes, fleetAlertsRes, fleetCapacityRes, provisionerRes] = await Promise.all([
+      const [healthRes, inventoryRes, restartCapsRes, readinessRes, servicesRes, scheduleHealthRes, runCalendarRes, apmProfilesRes, monitorPacksRes, fleetAlertsRes, fleetAuditRes, fleetCapacityRes, provisionerRes] = await Promise.all([
         api.getHealth(),
         api.getSystemInventory().catch(() => null),
         canManageSystem ? api.getRestartCapabilities().catch(() => disabledRestartCapabilities('Restart capability status is unavailable.')) : Promise.resolve(null),
@@ -392,7 +415,8 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
         }).catch(() => null),
         safeApiCall(() => api.getAPMIntegrationProfiles(), null),
         safeApiCall(() => api.getInfrastructureMonitorPacks(), null),
-        api.getFleetAlerts().catch(() => ({ alerts: [] })),
+        api.getFleetAlerts().catch(() => ({ alerts: [], count: 0, unacknowledged_count: 0 })),
+        canManageSystem ? api.listAuthAuditEvents({ limit: 20 }).catch(() => ({ events: [], count: 0 })) : Promise.resolve(null),
         api.getFleetCapacity(activeProject?.id ? { project_id: activeProject.id } : undefined).catch(() => null),
         api.getFleetProvisioner().catch(() => null),
       ])
@@ -406,6 +430,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       setApmProfiles(apmProfilesRes)
       setMonitorPacks(monitorPacksRes)
       setFleetAlerts(fleetAlertsRes.alerts || [])
+      setFleetAuditEvents(canManageSystem ? (fleetAuditRes?.events || []).filter(isFleetAuditEvent).slice(0, 8) : [])
       setFleetCapacity(fleetCapacityRes)
       setProvisioner(provisionerRes)
       setLastRefreshed(new Date())
@@ -413,6 +438,20 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       // API not available
     }
   }, [activeProject?.id, api, calendarRange.from, calendarRange.to, canManageSystem])
+
+  const toggleFleetAlertAck = useCallback(async (alert: FleetAlert) => {
+    if (!alert.id) return
+    setFleetAlertActionError(null)
+    setFleetAlertActionBusy(alert.id)
+    try {
+      await api.ackFleetAlert(alert.id, { acknowledged: !alert.acknowledged })
+      await refresh()
+    } catch (err) {
+      setFleetAlertActionError(err instanceof Error ? err.message : 'Failed to update fleet alert.')
+    } finally {
+      setFleetAlertActionBusy(null)
+    }
+  }, [api, refresh])
 
   useEffect(() => {
     refresh()
@@ -435,6 +474,11 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       }
     }
   }, [refresh])
+
+  useEffect(() => {
+    if (fleetEventSignal <= 0) return
+    void refresh()
+  }, [fleetEventSignal, refresh])
 
   useEffect(() => {
     if (!selectedCalendarEventId) return
@@ -1008,11 +1052,71 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
             </p>
           ) : (
             <div className="monitor-scroll-area">
+              {fleetAlertActionError && <p className="monitor-action-message text-danger">{fleetAlertActionError}</p>}
               <div className="monitor-warning-list">
                 {fleetAlerts.map(alert => (
-                  <p key={`${alert.type}:${alert.target}`} className={alert.severity === 'danger' ? 'text-danger' : ''}>
-                    {alert.summary}
-                  </p>
+                  <div key={alert.id || `${alert.type}:${alert.target}`} className="monitor-warning-row">
+                    <p className={alert.severity === 'danger' ? 'text-danger' : ''}>
+                      {alert.summary}
+                      {alert.acknowledged ? <span className="monitor-alert-ack">acknowledged</span> : null}
+                    </p>
+                    {canManageSystem && alert.id ? (
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        disabled={fleetAlertActionBusy === alert.id}
+                        onClick={() => void toggleFleetAlertAck(alert)}
+                      >
+                        {fleetAlertActionBusy === alert.id ? 'Saving...' : alert.acknowledged ? 'Clear' : 'Ack'}
+                      </button>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      ),
+    },
+    {
+      id: 'fleet-audit',
+      title: 'Fleet Audit',
+      headerBadge: (
+        <span className={`monitor-header-badge ${fleetAuditHeaderSeverity}`}>
+          {fleetAuditHeaderLabel}
+        </span>
+      ),
+      icon: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" />
+          <path d="M14 2v6h6" />
+          <path d="M8 13h8" />
+          <path d="M8 17h5" />
+          <path d="M8 9h1" />
+        </svg>
+      ),
+      content: (
+        <div className="monitor-body">
+          {!canManageSystem ? (
+            <p className="monitor-hint">System admin access is required to view fleet audit activity.</p>
+          ) : fleetAuditEvents.length === 0 ? (
+            <p className="monitor-hint">No recent fleet audit activity was returned.</p>
+          ) : (
+            <div className="monitor-scroll-area">
+              <div className="monitor-warning-list">
+                {fleetAuditEvents.map(event => (
+                  <div key={event.id} className="monitor-warning-row">
+                    <div>
+                      <p>
+                        {event.action}
+                        <span className="monitor-alert-ack">{event.status}</span>
+                      </p>
+                      <div className="telemetry-diagnostic-summary">
+                        {event.resource_type || 'resource'} {event.resource_id || '-'} by {event.actor_display_name || event.actor_subject || event.actor_type || 'unknown'}
+                      </div>
+                    </div>
+                    <span className="telemetry-diagnostic-time">{formatAuditEventTime(event.created_at)}</span>
+                  </div>
                 ))}
               </div>
             </div>
@@ -1049,6 +1153,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
           view={calendarView}
           anchor={calendarAnchor}
           filter={calendarFilter}
+          capacityReservations={<TimeslotsPanel projectId={activeProject?.id} canManage={canManageSystem} />}
           selectedEvent={selectedCalendarEvent}
           canOpenSelectedTest={Boolean(selectedCalendarEvent?.test_id && onSelectTest)}
           onPrevious={() => shiftCalendar(-1)}
@@ -1100,19 +1205,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       ),
       content: <FleetGeneratorsCard canManage={canManageSystem} />,
     },
-    {
-      id: 'timeslots',
-      title: 'Capacity Reservations',
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="3" y="4" width="18" height="18" rx="2" />
-          <path d="M16 2v4M8 2v4M3 10h18" />
-          <path d="M9 16l2 2 4-4" />
-        </svg>
-      ),
-      content: <TimeslotsPanel projectId={activeProject?.id} canManage={canManageSystem} />,
-    },
-  ], [activeProject?.id, apiHealthSeverity, apmHeaderLabel, apmHeaderSeverity, apmProfiles, backendServices, calendarAnchor, calendarEvents, calendarFilter, calendarHeaderLabel, calendarHeaderSeverity, calendarModel, calendarView, canManageSystem, canRestart, componentBuildRows, controlPlaneHeaderLabel, controlPlaneHeaderSeverity, controllerGeneratorInventoryLabel, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlerts, fleetCapacity, frontendServices, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, monitorPackContractCount, monitorPackCount, monitorPackHeaderLabel, monitorPackHeaderSeverity, monitorPackSupportedCount, monitorPacks, onSelectTest, openControllerRestart, openSelectedTest, provisioner, readinessBlockedCount, readinessDegradedCount, readinessReadyCount, readinessServicesHeaderLabel, readinessServicesHeaderSeverity, restartCapabilities?.supports.controller_workload, runCalendar, selectCalendarEvent, selectedCalendarEvent, servicesHeaderLabel, servicesHeaderSeverity, shiftCalendar, systemReadiness, systemServices, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, websocketLabel, websocketValueClass])
+  ], [activeProject?.id, apiHealthSeverity, apmHeaderLabel, apmHeaderSeverity, apmProfiles, backendServices, calendarAnchor, calendarEvents, calendarFilter, calendarHeaderLabel, calendarHeaderSeverity, calendarModel, calendarView, canManageSystem, canRestart, componentBuildRows, controlPlaneHeaderLabel, controlPlaneHeaderSeverity, controllerGeneratorInventoryLabel, fleetAlertActionBusy, fleetAlertActionError, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlerts, fleetAuditEvents, fleetAuditHeaderLabel, fleetAuditHeaderSeverity, fleetCapacity, frontendServices, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, monitorPackContractCount, monitorPackCount, monitorPackHeaderLabel, monitorPackHeaderSeverity, monitorPackSupportedCount, monitorPacks, onSelectTest, openControllerRestart, openSelectedTest, provisioner, readinessBlockedCount, readinessDegradedCount, readinessReadyCount, readinessServicesHeaderLabel, readinessServicesHeaderSeverity, restartCapabilities?.supports.controller_workload, runCalendar, selectCalendarEvent, selectedCalendarEvent, servicesHeaderLabel, servicesHeaderSeverity, shiftCalendar, systemReadiness, systemServices, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, toggleFleetAlertAck, websocketLabel, websocketValueClass])
 
   useEffect(() => {
     setCardOrder(prev => mergeOrder(prev, cards.map(card => card.id)))
@@ -1604,6 +1697,7 @@ function RunCalendarPanel({
   view,
   anchor,
   filter,
+  capacityReservations,
   selectedEvent,
   canOpenSelectedTest,
   onPrevious,
@@ -1622,6 +1716,7 @@ function RunCalendarPanel({
   view: RunCalendarView
   anchor: Date
   filter: RunCalendarFilter
+  capacityReservations?: ReactNode
   selectedEvent: RunCalendarEvent | null
   canOpenSelectedTest: boolean
   onPrevious: () => void
@@ -1656,54 +1751,66 @@ function RunCalendarPanel({
 
   return (
     <div className="monitor-body run-calendar-panel">
-      <div className="run-calendar-toolbar">
-        <div className="run-calendar-title-block">
-          <span className="run-calendar-title">{model.label}</span>
-          <span className="run-calendar-range">{model.rangeLabel}</span>
-        </div>
-        <div className="run-calendar-controls">
-          <div className="run-calendar-nav" role="group" aria-label="Calendar range">
-            <button type="button" className="btn-icon run-calendar-nav-btn" aria-label="Previous range" onClick={onPrevious}>
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="m10 12-4-4 4-4" />
-              </svg>
-            </button>
-            <button type="button" className="btn btn-secondary btn-sm" onClick={onToday}>Today</button>
-            <button type="button" className="btn-icon run-calendar-nav-btn" aria-label="Next range" onClick={onNext}>
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="m6 4 4 4-4 4" />
-              </svg>
-            </button>
+      <div className="run-calendar-top-row">
+        <div className="run-calendar-primary">
+          <div className="run-calendar-toolbar">
+            <div className="run-calendar-controls">
+              <div className="run-calendar-nav" role="group" aria-label="Calendar range">
+                <button type="button" className="btn-icon run-calendar-nav-btn" aria-label="Previous range" onClick={onPrevious}>
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="m10 12-4-4 4-4" />
+                  </svg>
+                </button>
+                <div className="run-calendar-period-readout" aria-live="polite">
+                  <span className="run-calendar-period-label">{model.label}</span>
+                  <span className="run-calendar-period-range">{model.rangeLabel}</span>
+                </div>
+                <button type="button" className="btn-icon run-calendar-nav-btn" aria-label="Next range" onClick={onNext}>
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="m6 4 4 4-4 4" />
+                  </svg>
+                </button>
+              </div>
+              <button type="button" className="btn btn-secondary btn-sm run-calendar-today-btn" onClick={onToday}>Today</button>
+              <div className="run-calendar-segments" role="group" aria-label="Calendar view">
+                {(['month', 'week', 'day'] as const).map(option => (
+                  <button key={option} type="button" className={view === option ? 'active' : ''} onClick={() => onViewChange(option)}>
+                    {option.charAt(0).toUpperCase() + option.slice(1)}
+                  </button>
+                ))}
+              </div>
+              <div className="run-calendar-segments" role="group" aria-label="Run filter">
+                {([
+                  ['all', 'All'],
+                  ['cron', 'Cron'],
+                  ['ad_hoc', 'Ad-hoc'],
+                  ['execution_plan', 'Plans'],
+                  ['current', 'Current'],
+                ] as const).map(([value, label]) => (
+                  <button key={value} type="button" className={filter === value ? 'active' : ''} onClick={() => onFilterChange(value)}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
-          <div className="run-calendar-segments" role="group" aria-label="Calendar view">
-            {(['month', 'week', 'day'] as const).map(option => (
-              <button key={option} type="button" className={view === option ? 'active' : ''} onClick={() => onViewChange(option)}>
-                {option.charAt(0).toUpperCase() + option.slice(1)}
-              </button>
-            ))}
-          </div>
-          <div className="run-calendar-segments" role="group" aria-label="Run filter">
-            {([
-              ['all', 'All'],
-              ['cron', 'Cron'],
-              ['ad_hoc', 'Ad-hoc'],
-              ['execution_plan', 'Plans'],
-              ['current', 'Current'],
-            ] as const).map(([value, label]) => (
-              <button key={value} type="button" className={filter === value ? 'active' : ''} onClick={() => onFilterChange(value)}>
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
 
-      <div className="run-calendar-summary" aria-label="Run calendar summary">
-        <RunCalendarMetric label="Cron" value={cronCount} />
-        <RunCalendarMetric label="Ad-hoc" value={adHocCount} />
-        <RunCalendarMetric label="Plans" value={planCount} />
-        <RunCalendarMetric label="Current" value={currentCount} />
-        <RunCalendarMetric label="Projected" value={projectedCount} />
+          <div className="run-calendar-summary" aria-label="Run calendar summary">
+            <RunCalendarMetric label="Cron" value={cronCount} />
+            <RunCalendarMetric label="Ad-hoc" value={adHocCount} />
+            <RunCalendarMetric label="Plans" value={planCount} />
+            <RunCalendarMetric label="Current" value={currentCount} />
+            <RunCalendarMetric label="Projected" value={projectedCount} />
+          </div>
+        </div>
+        {capacityReservations && (
+          <aside className="run-calendar-reservations-panel" aria-label="Capacity Reservations">
+            <div className="run-calendar-reservations-header">
+              <span>Capacity Reservations</span>
+            </div>
+            {capacityReservations}
+          </aside>
+        )}
       </div>
 
       {rangeNotice && <div className="run-calendar-notice">{rangeNotice}</div>}

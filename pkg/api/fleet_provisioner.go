@@ -139,7 +139,13 @@ func clampPoolDesired(pool *storage.FleetPool, desired int) int {
 // not_configured behavior.
 func newFleetPoolScaler(kube KubeRestarter, k8s K8sRestartSettings) fleetPoolScaler {
 	if strings.TrimSpace(os.Getenv(provisionerEnvVar)) == kubernetesProvisionerName && kube != nil && k8s.Enabled {
-		if owner := strings.ToLower(strings.TrimSpace(os.Getenv(generatorAutoscalingOwnerEnvVar))); owner != "" && owner != "controller" {
+		owner := strings.ToLower(strings.TrimSpace(os.Getenv(generatorAutoscalingOwnerEnvVar)))
+		if owner == "" {
+			slog.Warn("disabling Kubernetes fleet scaler because generator replica ownership is not explicit",
+				"provisioner_env", provisionerEnvVar, "owner_env", generatorAutoscalingOwnerEnvVar)
+			return ownerConflictFleetScaler{owner: "unspecified"}
+		}
+		if owner != "controller" {
 			slog.Warn("disabling Kubernetes fleet scaler because another autoscaler owns generator replicas",
 				"owner", owner, "provisioner_env", provisionerEnvVar, "owner_env", generatorAutoscalingOwnerEnvVar)
 			return ownerConflictFleetScaler{owner: owner}

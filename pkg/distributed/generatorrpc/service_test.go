@@ -41,6 +41,31 @@ func TestServiceAssignWorkRejectsMissingCachedScript(t *testing.T) {
 	}
 }
 
+func TestServiceAssignWorkRejectsWhileDraining(t *testing.T) {
+	service := NewService("generator-1", 50)
+	if _, err := service.DistributeScript(context.Background(), &pb.ScriptPayload{ScriptId: "script-1", Content: []byte(`{"name":"demo"}`)}); err != nil {
+		t.Fatalf("DistributeScript returned error: %v", err)
+	}
+	service.SetDraining(true)
+
+	ack, err := service.AssignWork(context.Background(), &pb.WorkAssignment{
+		TestId:        "test-1",
+		GroupName:     "Group A",
+		ScriptId:      "script-1",
+		VuserCount:    5,
+		ScriptContent: []byte(`{"name":"demo"}`),
+	})
+	if err != nil {
+		t.Fatalf("AssignWork returned error: %v", err)
+	}
+	if ack.GetAccepted() {
+		t.Fatal("expected assignment to be rejected while draining")
+	}
+	if !strings.Contains(ack.GetErrorMessage(), "draining") {
+		t.Fatalf("error = %q, want draining", ack.GetErrorMessage())
+	}
+}
+
 func TestClientRoundTripDistributeAssignAndHeartbeat(t *testing.T) {
 	const bufSize = 1024 * 1024
 

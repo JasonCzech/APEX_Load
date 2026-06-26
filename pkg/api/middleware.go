@@ -12,6 +12,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -23,6 +24,8 @@ const (
 	RoleEditor       = "editor"
 	RoleViewer       = "viewer"
 )
+
+var apiKeyRateLimitUnsetWarningLogged atomic.Bool
 
 type authUserContextKey struct{}
 type authServiceAccountContextKey struct{}
@@ -164,7 +167,16 @@ func authMiddleware(settings func() AuthSettings, store storage.Store, coordinat
 	}
 }
 
-func projectScopedAuthMiddleware(settings func() AuthSettings, store storage.Store, coordination requestCoordinationStore, globalRoles []string, projectRoles []string, projectLookup requestProjectLookup) func(http.Handler) http.Handler {
+func projectScopedAuthMiddleware(settings func() AuthSettings, store storage.Store, coordination requestCoordinationStore, globalRoles []string, projectRoles []string, projectLookup requestProjectLookup, opts ...authMiddlewareOption) func(http.Handler) http.Handler {
+	options := authMiddlewareOptions{}
+	for _, opt := range opts {
+		opt(&options)
+	}
+	recordDenial := func(r *http.Request, resolution authResolution, status int, reason string) {
+		if options.recorder != nil {
+			options.recorder.recordAuthDenial(r, resolution, status, reason)
+		}
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			current := normalizeAuthSettings(settings())
@@ -180,6 +192,8 @@ func projectScopedAuthMiddleware(settings func() AuthSettings, store storage.Sto
 			if resolution, _, ok := devPreviewResolutionForRequest(current, r); ok {
 				if authorizeAccessRequirement(w, r, store, resolution, requirement) {
 					next.ServeHTTP(w, withAuthenticatedContext(r, resolution))
+				} else {
+					recordDenial(r, resolution, http.StatusForbidden, "authorization_denied")
 				}
 				return
 			}
@@ -190,6 +204,7 @@ func projectScopedAuthMiddleware(settings func() AuthSettings, store storage.Sto
 
 			resolution, err := resolveRequestAuth(r, current, store)
 			if err != nil {
+				recordDenial(r, authResolution{}, http.StatusUnauthorized, err.Error())
 				writeError(w, http.StatusUnauthorized, err.Error())
 				return
 			}
@@ -201,6 +216,12 @@ func projectScopedAuthMiddleware(settings func() AuthSettings, store storage.Sto
 					return
 				}
 				next.ServeHTTP(w, withAuthenticatedContext(r, resolution))
+			} else {
+				deniedStatus := http.StatusForbidden
+				if resolution.User == nil {
+					deniedStatus = http.StatusUnauthorized
+				}
+				recordDenial(r, resolution, deniedStatus, "authorization_denied")
 			}
 		})
 	}
@@ -273,6 +294,9 @@ func configuredIdempotencyKeyTTL() time.Duration {
 func configuredAPIKeyRateLimitPerMinute() int {
 	raw := strings.TrimSpace(os.Getenv("APEXLOAD_API_KEY_RATE_LIMIT_PER_MINUTE"))
 	if raw == "" {
+		if productionMode() && apiKeyRateLimitUnsetWarningLogged.CompareAndSwap(false, true) {
+			slog.Warn("APEXLOAD_API_KEY_RATE_LIMIT_PER_MINUTE is unset in production; service-account API keys are not rate limited")
+		}
 		return 0
 	}
 	limit, err := strconv.Atoi(raw)
@@ -300,6 +324,7 @@ func authorizeAccessRequirement(w http.ResponseWriter, r *http.Request, store st
 	if requirement.ProjectLookup != nil {
 		projectID, status, msg := requirement.ProjectLookup(r, store)
 		if status != 0 {
+			status, msg = scopedLookupFailureResponse(status, msg)
 			writeError(w, status, msg)
 			return false
 		}
@@ -311,6 +336,7 @@ func authorizeAccessRequirement(w http.ResponseWriter, r *http.Request, store st
 	if requirement.DomainLookup != nil {
 		domainID, status, msg := requirement.DomainLookup(r, store)
 		if status != 0 {
+			status, msg = scopedLookupFailureResponse(status, msg)
 			writeError(w, status, msg)
 			return false
 		}
@@ -322,6 +348,7 @@ func authorizeAccessRequirement(w http.ResponseWriter, r *http.Request, store st
 	if requirement.RepositoryLookup != nil {
 		repositoryID, status, msg := requirement.RepositoryLookup(r, store)
 		if status != 0 {
+			status, msg = scopedLookupFailureResponse(status, msg)
 			writeError(w, status, msg)
 			return false
 		}
@@ -332,6 +359,13 @@ func authorizeAccessRequirement(w http.ResponseWriter, r *http.Request, store st
 
 	writeError(w, http.StatusForbidden, "forbidden")
 	return false
+}
+
+func scopedLookupFailureResponse(status int, msg string) (int, string) {
+	if status == http.StatusNotFound {
+		return http.StatusForbidden, "forbidden"
+	}
+	return status, msg
 }
 
 // grantIfScopeAllows authorizes a request whose RBAC role check has already
@@ -371,7 +405,7 @@ func corsMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
 			}
 
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID, X-APEXLoad-API-Key, X-APEXLoad-Dev-View, X-APEXLoad-Dev-Project-ID")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID, X-APEXLoad-API-Key, X-APEXLoad-CSRF-Token, X-APEXLoad-Dev-View, X-APEXLoad-Dev-Project-ID")
 			w.Header().Set("Access-Control-Max-Age", "86400")
 
 			if r.Method == http.MethodOptions {

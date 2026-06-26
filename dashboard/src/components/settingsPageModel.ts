@@ -34,6 +34,8 @@ export const DEFAULT_SETTINGS: DashboardSystemSettings = {
     max_telemetry_transport_lag_ms: 500,
     max_telemetry_controller_fanout_ms: 500,
     max_telemetry_browser_render_lag_ms: 500,
+    fleet_constrained_available_slots: undefined,
+    fleet_saturated_available_slots: undefined,
   },
   capacity_planning: {
     headroom_pct: 20,
@@ -247,6 +249,7 @@ export function projectGitHubDraftFromPolicy(policy?: GitHubProjectPolicy): GitH
     default_repo: (policy?.default_repo || '').trim(),
     default_branch: (policy?.default_branch || '').trim(),
     default_sync_directory: (policy?.default_sync_directory || '').trim(),
+    automation_identity: (policy?.automation_identity || '').trim(),
   }
 }
 
@@ -329,6 +332,12 @@ export function validateSettings(settings: DashboardSystemSettings): string[] {
   }
   if (settings.thresholds.max_telemetry_browser_render_lag_ms !== undefined && settings.thresholds.max_telemetry_browser_render_lag_ms <= 0) {
     errors.push('Max telemetry browser render lag must be greater than 0 ms.')
+  }
+  if (settings.thresholds.fleet_constrained_available_slots !== undefined && (!Number.isInteger(settings.thresholds.fleet_constrained_available_slots) || settings.thresholds.fleet_constrained_available_slots < 0)) {
+    errors.push('Fleet constrained free slots must be an integer >= 0.')
+  }
+  if (settings.thresholds.fleet_saturated_available_slots !== undefined && (!Number.isInteger(settings.thresholds.fleet_saturated_available_slots) || settings.thresholds.fleet_saturated_available_slots < 0)) {
+    errors.push('Fleet saturated free slots must be an integer >= 0.')
   }
   if (settings.capacity_planning.headroom_pct < 0 || settings.capacity_planning.headroom_pct >= 100) {
     errors.push('Capacity planning headroom must be between 0 and 100%.')

@@ -112,6 +112,56 @@ make package-recording-agent
 The package script signs Darwin binaries with hardened runtime before archiving
 and submits a temporary ZIP to `notarytool` when notarization is enabled.
 
+For Windows release builds, configure Authenticode signing. On Windows CI with
+the Windows SDK installed, the script uses `signtool`:
+
+```bash
+APEXLOAD_WINDOWS_CODESIGN=1 \
+APEXLOAD_WINDOWS_CODESIGN_TOOL=signtool \
+APEXLOAD_WINDOWS_CODESIGN_CERT_PATH="$WINDOWS_PFX_PATH" \
+APEXLOAD_WINDOWS_CODESIGN_PASSWORD="$WINDOWS_PFX_PASSWORD" \
+make package-recording-agent
+```
+
+For cross-signing from macOS or Linux CI, install `osslsigncode` and use the
+same PFX/P12 certificate file:
+
+```bash
+APEXLOAD_WINDOWS_CODESIGN=1 \
+APEXLOAD_WINDOWS_CODESIGN_TOOL=osslsigncode \
+APEXLOAD_WINDOWS_CODESIGN_CERT_PATH="$WINDOWS_PFX_PATH" \
+APEXLOAD_WINDOWS_CODESIGN_PASSWORD="$WINDOWS_PFX_PASSWORD" \
+make package-recording-agent
+```
+
+Unsigned Windows development packages can run, but SmartScreen or enterprise
+application-control policies may warn or block them. Broad user distribution
+should use a signed, timestamped executable or an enterprise-managed installer.
+
+For Linux and archive-level integrity, publish the generated `SHA256SUMS.txt`.
+Release CI can also create a detached ASCII-armored GPG signature:
+
+```bash
+APEXLOAD_CHECKSUM_SIGN=1 \
+APEXLOAD_CHECKSUM_SIGN_KEY="$GPG_SIGNING_KEY" \
+make package-recording-agent
+```
+
+That writes `SHA256SUMS.txt.asc` next to the archives so downstream users can
+verify both the checksum manifest and the downloaded package.
+
+Release CI can fail closed instead of emitting warning-only unsigned packages:
+
+```bash
+APEXLOAD_REQUIRE_TRUSTED_PACKAGES=1 \
+APEXLOAD_MACOS_NOTARIZE=1 \
+make package-recording-agent
+```
+
+With that switch enabled, Darwin packages require Developer ID signing and
+notarization, Windows packages require Authenticode signing, and the checksum
+manifest requires a detached GPG signature.
+
 ## Dashboard Download Link
 
 Set this at dashboard build time to show a direct download link in Recording

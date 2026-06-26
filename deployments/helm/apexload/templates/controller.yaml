@@ -1,5 +1,11 @@
 apiVersion: v1
 kind: Service
+{{- if and .Values.controller.ha.enabled (ne .Values.dataPlatform.store "postgres") }}
+{{- fail "controller.ha.enabled requires dataPlatform.store=postgres" }}
+{{- end }}
+{{- if and .Values.controller.ha.enabled (ne .Values.dataPlatform.cacheBackend "redis") }}
+{{- fail "controller.ha.enabled requires dataPlatform.cacheBackend=redis" }}
+{{- end }}
 metadata:
   name: apexload-controller
   namespace: {{ include "apexload.namespace" . }}
@@ -28,7 +34,7 @@ metadata:
     app.kubernetes.io/component: controller
 {{ include "apexload.labels" . | indent 4 }}
 spec:
-  replicas: {{ .Values.controller.replicas }}
+  replicas: {{ ternary 2 .Values.controller.replicas .Values.controller.ha.enabled }}
   selector:
     matchLabels:
       app.kubernetes.io/name: apexload-controller
@@ -84,6 +90,10 @@ spec:
               value: /var/lib/apexload/archives
             - name: APEXLOAD_EXPORT_DIR
               value: /var/lib/apexload/exports
+{{- if .Values.controller.ha.enabled }}
+            - name: APEXLOAD_CONTROLLER_HA
+              value: "true"
+{{- end }}
           envFrom:
             - configMapRef:
                 name: {{ .Values.dataPlatform.configMapName }}

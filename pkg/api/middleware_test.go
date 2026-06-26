@@ -354,6 +354,80 @@ func TestTrustedHeaderAuthRejectsUnknownServiceAccountAPIKey(t *testing.T) {
 	}
 }
 
+func TestTrustedHeaderAuthReportsMatchedDisabledOrExpiredServiceAccountAPIKey(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	now := time.Now().UTC()
+	expiredAt := now.Add(-time.Minute)
+	accounts := []struct {
+		name     string
+		key      string
+		account  *storage.ServiceAccount
+		wantBody string
+	}{
+		{
+			name: "disabled",
+			key:  "disabled-key",
+			account: &storage.ServiceAccount{
+				ID:          "svc-disabled",
+				Name:        "Disabled automation",
+				KeyHash:     hashAPIKey("disabled-key"),
+				Active:      false,
+				GlobalRoles: []string{RoleViewer},
+				Scopes:      []string{"system:read"},
+				CreatedAt:   now,
+				UpdatedAt:   now,
+			},
+			wantBody: "service account is disabled",
+		},
+		{
+			name: "expired",
+			key:  "expired-key",
+			account: &storage.ServiceAccount{
+				ID:          "svc-expired",
+				Name:        "Expired automation",
+				KeyHash:     hashAPIKey("expired-key"),
+				Active:      true,
+				GlobalRoles: []string{RoleViewer},
+				Scopes:      []string{"system:read"},
+				CreatedAt:   now,
+				UpdatedAt:   now,
+				ExpiresAt:   &expiredAt,
+			},
+			wantBody: "service account key is expired",
+		},
+	}
+	for _, tc := range accounts {
+		if err := store.SaveServiceAccount(tc.account); err != nil {
+			t.Fatalf("SaveServiceAccount %s returned error: %v", tc.name, err)
+		}
+	}
+
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+
+	for _, tc := range accounts {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/system/settings", nil)
+			req.Header.Set("X-APEXLoad-API-Key", tc.key)
+			resp := httptest.NewRecorder()
+
+			server.mux.ServeHTTP(resp, req)
+
+			if resp.Code != http.StatusUnauthorized {
+				t.Fatalf("%s service account status = %d, want %d body=%s", tc.name, resp.Code, http.StatusUnauthorized, resp.Body.String())
+			}
+			if !strings.Contains(resp.Body.String(), tc.wantBody) {
+				t.Fatalf("%s service account body = %q, want %q", tc.name, resp.Body.String(), tc.wantBody)
+			}
+		})
+	}
+}
+
 func TestTrustedHeaderHumanUsersRequireActiveLocalRecordAndLocalRoles(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
@@ -2219,6 +2293,79 @@ func TestTrustedHeaderAuthRejectsCrossProjectTestMoves(t *testing.T) {
 	server.mux.ServeHTTP(resp, req)
 	if resp.Code != http.StatusBadRequest {
 		t.Fatalf("cross-project test move status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+	}
+}
+
+func TestScopedResolverNotFoundHidesResourceExistence(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+
+	scopedReq := httptest.NewRequest(http.MethodGet, "/api/v1/tests/missing-test-id", nil)
+	scopedReq.Header.Set("X-Auth-Request-User", "scoped-viewer")
+	scopedReq.Header.Set("X-APEXLoad-Project-Roles", "project-a="+RoleViewer)
+	scopedResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(scopedResp, scopedReq)
+	if scopedResp.Code != http.StatusForbidden {
+		t.Fatalf("scoped missing test status = %d, want %d body=%s", scopedResp.Code, http.StatusForbidden, scopedResp.Body.String())
+	}
+	if strings.Contains(strings.ToLower(scopedResp.Body.String()), "not found") {
+		t.Fatalf("scoped missing test body leaked not-found detail: %s", scopedResp.Body.String())
+	}
+
+	globalReq := httptest.NewRequest(http.MethodGet, "/api/v1/tests/missing-test-id", nil)
+	globalReq.Header.Set("X-Auth-Request-User", "global-viewer")
+	globalReq.Header.Set("X-APEXLoad-Roles", RoleViewer)
+	globalResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(globalResp, globalReq)
+	if globalResp.Code != http.StatusNotFound {
+		t.Fatalf("global missing test status = %d, want %d body=%s", globalResp.Code, http.StatusNotFound, globalResp.Body.String())
+	}
+}
+
+func TestProjectScopedMiddlewareAuditsDenials(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	now := time.Now().UTC()
+	if err := store.SaveUser(&storage.User{
+		ID:        "user-limited",
+		Subject:   "limited-user",
+		Active:    true,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("SaveUser returned error: %v", err)
+	}
+
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/recorder?project_id=project-a", nil)
+	req.Header.Set("X-Auth-Request-User", "limited-user")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusForbidden {
+		t.Fatalf("recorder scoped denial status = %d, want %d body=%s", resp.Code, http.StatusForbidden, resp.Body.String())
+	}
+
+	events, err := store.ListAuditEvents(storage.AuditEventFilter{Action: auditActionAccessDenied, Status: "failure", Limit: 10})
+	if err != nil {
+		t.Fatalf("ListAuditEvents returned error: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("audit denial events = %#v, want one", events)
+	}
+	if events[0].ActorSubject != "limited-user" || events[0].ResourceID != "GET /api/v1/recorder" {
+		t.Fatalf("audit denial event = %#v, want limited user and recorder route", events[0])
 	}
 }
 

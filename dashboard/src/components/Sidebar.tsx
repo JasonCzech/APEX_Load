@@ -8,7 +8,7 @@ import Logo from './Logo'
 import ProjectModal from './ProjectModal'
 import './Sidebar.css'
 
-export type NavPage = 'dashboard' | 'command-center' | 'repository' | 'tests' | 'new-test' | 'scripts' | 'results' | 'monitoring' | 'schedules' | 'docs' | 'access' | 'settings'
+export type NavPage = 'dashboard' | 'command-center' | 'repository' | 'tests' | 'new-test' | 'scripts' | 'results' | 'monitoring' | 'fleet' | 'schedules' | 'docs' | 'access' | 'settings'
 
 interface Props {
   active: NavPage
@@ -117,6 +117,20 @@ const NAV_ITEMS: { id: NavPage; label: string; icon: JSX.Element; requiresAccess
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+      </svg>
+    ),
+  },
+  {
+    id: 'fleet',
+    label: 'Fleet',
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+        <rect x="3" y="4" width="18" height="5" rx="1" />
+        <rect x="3" y="15" width="18" height="5" rx="1" />
+        <path d="M7 9v6" />
+        <path d="M17 9v6" />
+        <circle cx="7" cy="6.5" r=".5" fill="currentColor" stroke="none" />
+        <circle cx="17" cy="17.5" r=".5" fill="currentColor" stroke="none" />
       </svg>
     ),
   },

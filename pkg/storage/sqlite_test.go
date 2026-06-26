@@ -390,8 +390,12 @@ func TestSQLiteStoreServiceAccountsAndAuditEvents(t *testing.T) {
 	if err := store.UpdateServiceAccountActive(account.ID, false, now.Add(2*time.Minute)); err != nil {
 		t.Fatalf("UpdateServiceAccountActive returned error: %v", err)
 	}
-	if _, err := store.GetServiceAccountByKeyHash(fmt.Sprintf("%x", rotatedSum[:])); err != sql.ErrNoRows {
-		t.Fatalf("expected inactive service account lookup to miss, got %v", err)
+	inactiveAccount, err := store.GetServiceAccountByKeyHash(fmt.Sprintf("%x", rotatedSum[:]))
+	if err != nil {
+		t.Fatalf("GetServiceAccountByKeyHash inactive returned error: %v", err)
+	}
+	if inactiveAccount.Active {
+		t.Fatalf("expected inactive service account lookup to preserve active=false, got %#v", inactiveAccount)
 	}
 	if err := store.UpdateServiceAccountActive(account.ID, true, now.Add(3*time.Minute)); err != nil {
 		t.Fatalf("UpdateServiceAccountActive returned error: %v", err)
@@ -430,8 +434,12 @@ func TestSQLiteStoreServiceAccountsAndAuditEvents(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SaveServiceAccount expired returned error: %v", err)
 	}
-	if _, err := store.GetServiceAccountByKeyHash(fmt.Sprintf("%x", expiredHash[:])); err != sql.ErrNoRows {
-		t.Fatalf("expected expired service account lookup to miss, got %v", err)
+	expiredAccount, err := store.GetServiceAccountByKeyHash(fmt.Sprintf("%x", expiredHash[:]))
+	if err != nil {
+		t.Fatalf("GetServiceAccountByKeyHash expired returned error: %v", err)
+	}
+	if expiredAccount.ExpiresAt == nil || !expiredAccount.ExpiresAt.Equal(expiredAt) {
+		t.Fatalf("expected expired service account lookup to preserve expires_at, got %#v", expiredAccount)
 	}
 
 	event := &AuditEvent{
@@ -483,6 +491,42 @@ func TestSQLiteStoreServiceAccountsAndAuditEvents(t *testing.T) {
 	}
 }
 
+func TestSQLiteSchemaIncludesAuditFilterIndexes(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	rows, err := store.db.Query(`PRAGMA index_list('audit_events')`)
+	if err != nil {
+		t.Fatalf("PRAGMA index_list returned error: %v", err)
+	}
+	defer rows.Close()
+
+	found := map[string]bool{}
+	for rows.Next() {
+		var seq int
+		var name string
+		var unique int
+		var origin string
+		var partial int
+		if err := rows.Scan(&seq, &name, &unique, &origin, &partial); err != nil {
+			t.Fatalf("scan index row: %v", err)
+		}
+		found[name] = true
+	}
+	for _, name := range []string{
+		"idx_audit_events_action_status_created",
+		"idx_audit_events_status_created",
+		"idx_audit_events_resource_created",
+	} {
+		if !found[name] {
+			t.Fatalf("missing audit index %s in %#v", name, found)
+		}
+	}
+}
+
 func TestSQLiteStoreUsersRoleBindingsAndAuditFilters(t *testing.T) {
 	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
@@ -502,6 +546,17 @@ func TestSQLiteStoreUsersRoleBindingsAndAuditFilters(t *testing.T) {
 	}
 	if err := store.SaveUser(user); err != nil {
 		t.Fatalf("SaveUser returned error: %v", err)
+	}
+	user.SessionEpoch = 3
+	if err := store.SaveUser(user); err != nil {
+		t.Fatalf("SaveUser with session epoch returned error: %v", err)
+	}
+	epochUser, err := store.GetUser(user.ID)
+	if err != nil {
+		t.Fatalf("GetUser after session epoch save returned error: %v", err)
+	}
+	if epochUser.SessionEpoch != 3 {
+		t.Fatalf("session epoch = %d, want 3", epochUser.SessionEpoch)
 	}
 	if err := store.SaveUserRoleBinding(&UserRoleBinding{
 		ID:        "binding-1",

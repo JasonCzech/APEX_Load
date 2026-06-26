@@ -17,6 +17,7 @@ const apiMock = {
   deleteAuthServiceAccount: vi.fn(),
   listAuthUsers: vi.fn(),
   createAuthUser: vi.fn(),
+  onboardAuthUser: vi.fn(),
   updateAuthUser: vi.fn(),
   enableAuthUser: vi.fn(),
   disableAuthUser: vi.fn(),
@@ -217,6 +218,18 @@ describe('AccessPage', () => {
       display_name: 'Cara QA',
       active: true,
       bindings: [],
+      created_at: '2026-05-16T04:00:00Z',
+      updated_at: '2026-05-16T04:00:00Z',
+    })
+    apiMock.onboardAuthUser.mockResolvedValue({
+      id: 'user-3',
+      subject: 'cara',
+      email: 'cara@example.com',
+      display_name: 'Cara QA',
+      active: true,
+      bindings: [
+        { id: 'binding-3', user_id: 'user-3', scope_type: 'project', scope_id: 'project-1', role: 'viewer', created_at: '2026-05-16T04:00:00Z', updated_at: '2026-05-16T04:00:00Z' },
+      ],
       created_at: '2026-05-16T04:00:00Z',
       updated_at: '2026-05-16T04:00:00Z',
     })
@@ -634,17 +647,17 @@ describe('AccessPage', () => {
     })
     await clickButton(container, 'Create User')
     await flushPromises()
-    expect(apiMock.createAuthUser).toHaveBeenCalledWith({
+    expect(apiMock.onboardAuthUser).toHaveBeenCalledWith({
       subject: 'cara',
       email: 'cara@example.com',
       display_name: 'Cara QA',
+      bindings: [
+        { scope_type: 'project', scope_id: 'project-1', role: 'viewer' },
+        { scope_type: 'domain', scope_id: 'domain-1', role: 'viewer' },
+        { scope_type: 'project', scope_id: 'project-2', role: 'viewer' },
+      ],
     })
-    const onboardBindingCalls = apiMock.createAuthUserBinding.mock.calls.filter(call => call[0] === 'user-3')
-    expect(onboardBindingCalls).toEqual([
-      ['user-3', { scope_type: 'project', scope_id: 'project-1', role: 'viewer' }],
-      ['user-3', { scope_type: 'domain', scope_id: 'domain-1', role: 'viewer' }],
-      ['user-3', { scope_type: 'project', scope_id: 'project-2', role: 'viewer' }],
-    ])
+    expect(apiMock.createAuthUserBinding.mock.calls.filter(call => call[0] === 'user-3')).toEqual([])
 
     await clickButton(container, 'Existing Users')
     const aliceButton = findButton(container, 'Alice Admin')
@@ -716,7 +729,7 @@ describe('AccessPage', () => {
     })
     await flushPromises()
 
-    expect(apiMock.listAuthUsers).toHaveBeenCalledWith({ limit: 100 })
+    expect(apiMock.listAuthUsers).toHaveBeenCalledWith({ limit: 50, offset: 0 })
     expect(container.textContent).toContain('Existing Users')
     expect(container.textContent).toContain('Alice Admin')
     expect(container.textContent).not.toContain('Onboard Users')

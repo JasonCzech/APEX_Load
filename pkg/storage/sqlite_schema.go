@@ -613,6 +613,19 @@ func schemaCreateTableStatements() []string {
 			message TEXT,
 			timestamp DATETIME NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS fleet_alert_acks (
+			id TEXT PRIMARY KEY,
+			alert_type TEXT NOT NULL,
+			target TEXT NOT NULL,
+			region TEXT,
+			severity TEXT,
+			summary TEXT,
+			note TEXT,
+			acknowledged_by_subject TEXT,
+			acknowledged_by_display_name TEXT,
+			acknowledged_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL
+		)`,
 		`CREATE TABLE IF NOT EXISTS execution_plans (
 			id TEXT PRIMARY KEY,
 			project_id TEXT,
@@ -851,6 +864,7 @@ var schemaIndexes = []schemaIndex{
 	{`CREATE INDEX IF NOT EXISTS idx_generator_metadata_pool ON generator_metadata(fleet_pool_id)`, "idx_generator_metadata_pool"},
 	{`CREATE INDEX IF NOT EXISTS idx_provisioning_requests_pool ON provisioning_requests(fleet_pool_id)`, "idx_provisioning_requests_pool"},
 	{`CREATE INDEX IF NOT EXISTS idx_provisioning_events_request ON provisioning_events(request_id)`, "idx_provisioning_events_request"},
+	{`CREATE INDEX IF NOT EXISTS idx_fleet_alert_acks_acknowledged_at ON fleet_alert_acks(acknowledged_at)`, "idx_fleet_alert_acks_acknowledged_at"},
 	{`CREATE INDEX IF NOT EXISTS idx_execution_plans_project ON execution_plans(project_id)`, "idx_execution_plans_project"},
 	{`CREATE INDEX IF NOT EXISTS idx_execution_plan_runs_plan ON execution_plan_runs(plan_id)`, "idx_execution_plan_runs_plan"},
 	{`CREATE INDEX IF NOT EXISTS idx_object_repositories_project ON object_repositories(project_id)`, "idx_object_repositories_project"},
@@ -863,6 +877,9 @@ var schemaIndexes = []schemaIndex{
 	{`CREATE INDEX IF NOT EXISTS idx_audit_events_created ON audit_events(created_at)`, "idx_audit_events_created"},
 	{`CREATE INDEX IF NOT EXISTS idx_audit_events_project_created ON audit_events(project_id, created_at)`, "idx_audit_events_project_created"},
 	{`CREATE INDEX IF NOT EXISTS idx_audit_events_actor_created ON audit_events(actor_subject, created_at)`, "idx_audit_events_actor_created"},
+	{`CREATE INDEX IF NOT EXISTS idx_audit_events_action_status_created ON audit_events(action, status, created_at)`, "idx_audit_events_action_status_created"},
+	{`CREATE INDEX IF NOT EXISTS idx_audit_events_status_created ON audit_events(status, created_at)`, "idx_audit_events_status_created"},
+	{`CREATE INDEX IF NOT EXISTS idx_audit_events_resource_created ON audit_events(resource_type, resource_id, created_at)`, "idx_audit_events_resource_created"},
 	{`CREATE INDEX IF NOT EXISTS idx_usage_snapshots_created ON usage_accounting_snapshots(created_at)`, "idx_usage_snapshots_created"},
 	{`CREATE INDEX IF NOT EXISTS idx_usage_snapshots_project_created ON usage_accounting_snapshots(project_id, created_at)`, "idx_usage_snapshots_project_created"},
 }

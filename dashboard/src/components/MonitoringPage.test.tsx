@@ -12,8 +12,10 @@ const apiMock = {
   getHealth: vi.fn(),
   getInfrastructureMonitorPacks: vi.fn(),
   getFleetAlerts: vi.fn(),
+  ackFleetAlert: vi.fn(),
   getFleetCapacity: vi.fn(),
   getFleetProvisioner: vi.fn(),
+  listAuthAuditEvents: vi.fn(),
   getRestartCapabilities: vi.fn(),
   getRunCalendar: vi.fn(),
   getScheduleHealth: vi.fn(),
@@ -24,8 +26,37 @@ const apiMock = {
   listTests: vi.fn(),
 }
 
+const capacityApiMock = {
+  listTimeslots: vi.fn(),
+  getTimeslot: vi.fn(),
+  createTimeslot: vi.fn(),
+  updateTimeslot: vi.fn(),
+  deleteTimeslot: vi.fn(),
+  checkTimeslotAvailability: vi.fn(),
+  approveTimeslot: vi.fn(),
+  rejectTimeslot: vi.fn(),
+  bindTimeslot: vi.fn(),
+}
+
+const fleetApiMock = {
+  listFleetPools: vi.fn(),
+  getProvisioner: vi.fn(),
+  listProvisionRequests: vi.fn(),
+  createProvisionRequest: vi.fn(),
+  cancelProvisionRequest: vi.fn(),
+  retryProvisionRequest: vi.fn(),
+}
+
 vi.mock('../hooks/useApi', () => ({
   useApi: () => apiMock,
+}))
+
+vi.mock('../hooks/api/useCapacityApi', () => ({
+  useCapacityApi: () => capacityApiMock,
+}))
+
+vi.mock('../hooks/api/useFleetApi', () => ({
+  useFleetApi: () => fleetApiMock,
 }))
 
 vi.mock('../hooks/useProject', () => ({
@@ -194,7 +225,12 @@ describe('MonitoringPage', () => {
       status_counts: {},
       source_counts: {},
     })
-    apiMock.getFleetAlerts.mockResolvedValue({ alerts: [], count: 0 })
+    apiMock.getFleetAlerts.mockResolvedValue({ alerts: [], count: 0, unacknowledged_count: 0 })
+    apiMock.listAuthAuditEvents.mockResolvedValue({ events: [], count: 0 })
+    capacityApiMock.listTimeslots.mockResolvedValue({ timeslots: [], count: 0 })
+    fleetApiMock.listFleetPools.mockResolvedValue({ fleet_pools: [], count: 0 })
+    fleetApiMock.getProvisioner.mockResolvedValue(null)
+    fleetApiMock.listProvisionRequests.mockResolvedValue({ provisioning_requests: [], count: 0 })
     apiMock.getFleetCapacity.mockResolvedValue({
       project_id: 'project-1',
       total_generators: 0,
@@ -596,7 +632,7 @@ describe('MonitoringPage', () => {
 
     await clickMonitorTab('Fleet')
 
-    expect(visibleMonitorCardIds()).toEqual(['capacity', 'generators', 'fleet-alerts', 'fleet-pools', 'generator-metadata'])
+    expect(visibleMonitorCardIds()).toEqual(['capacity', 'generators', 'fleet-alerts', 'fleet-audit', 'fleet-pools', 'generator-metadata'])
     expect(container.textContent).toContain('Generators')
     expect(container.textContent).toContain('Fleet Alerts')
     expect(container.textContent).toContain('No generator inventory was returned by the controller.')
@@ -915,12 +951,13 @@ describe('MonitoringPage', () => {
     apiMock.getHealth.mockResolvedValue({ status: 'ok', version: '0.1.0', ws_clients: 2, test_count: 1 })
     apiMock.getFleetAlerts.mockResolvedValue({
       count: 5,
+      unacknowledged_count: 5,
       alerts: [
-        { type: 'drain_state', target: 'gen-a', severity: 'warning', summary: 'gen-a is cordoned; new placements are excluded.' },
-        { type: 'unreachable', target: 'gen-b', severity: 'danger', summary: 'gen-b is unreachable; placement cannot use this generator.' },
-        { type: 'saturation', target: 'gen-b', severity: 'danger', summary: 'gen-b is saturated with 2,000 active VUsers.' },
-        { type: 'compatibility', target: 'gen-b', severity: 'danger', summary: 'gen-b is not placement-compatible: missing grpc runtime.' },
-        { type: 'version_mismatch', target: '1.0.0', severity: 'warning', summary: '1 generator report version 1.0.0, which differs from controller 0.1.0.' },
+        { id: 'alert-drain', type: 'drain_state', target: 'gen-a', severity: 'warning', summary: 'gen-a is cordoned; new placements are excluded.' },
+        { id: 'alert-unreachable', type: 'unreachable', target: 'gen-b', severity: 'danger', summary: 'gen-b is unreachable; placement cannot use this generator.' },
+        { id: 'alert-saturation', type: 'saturation', target: 'gen-b', severity: 'danger', summary: 'gen-b is saturated with 2,000 active VUsers.' },
+        { id: 'alert-compat', type: 'compatibility', target: 'gen-b', severity: 'danger', summary: 'gen-b is not placement-compatible: missing grpc runtime.' },
+        { id: 'alert-version', type: 'version_mismatch', target: '1.0.0', severity: 'warning', summary: '1 generator report version 1.0.0, which differs from controller 0.1.0.' },
       ],
     })
     apiMock.getSystemInventory.mockResolvedValue({
@@ -986,6 +1023,101 @@ describe('MonitoringPage', () => {
     expect(container.textContent).toContain('version 1.0.0')
   })
 
+  it('lets system admins acknowledge fleet alerts', async () => {
+    const initialAlert = { id: 'alert-unreachable', type: 'unreachable', target: 'gen-b', severity: 'danger', summary: 'gen-b is unreachable; placement cannot use this generator.' }
+    const acknowledgedAlert = { ...initialAlert, acknowledged: true, acknowledged_at: new Date().toISOString() }
+    apiMock.getFleetAlerts
+      .mockResolvedValueOnce({ count: 1, unacknowledged_count: 1, alerts: [initialAlert] })
+      .mockResolvedValueOnce({ count: 1, unacknowledged_count: 0, alerts: [acknowledgedAlert] })
+      .mockResolvedValue({ count: 1, unacknowledged_count: 0, alerts: [acknowledgedAlert] })
+    apiMock.ackFleetAlert.mockResolvedValue(acknowledgedAlert)
+
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} canManageSystem />)
+    })
+
+    await clickMonitorTab('Fleet')
+
+    const ackButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent === 'Ack')
+    expect(ackButton).toBeDefined()
+    await act(async () => {
+      ackButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(apiMock.ackFleetAlert).toHaveBeenCalledWith('alert-unreachable', { acknowledged: true })
+    expect(container.textContent).toContain('acknowledged')
+  })
+
+  it('renders recent fleet audit activity for system admins', async () => {
+    apiMock.listAuthAuditEvents.mockResolvedValue({
+      count: 2,
+      events: [
+        {
+          id: 'audit-fleet-1',
+          action: 'generator.drain_state.update',
+          actor_type: 'user',
+          actor_subject: 'admin@example.test',
+          actor_display_name: 'Platform Admin',
+          resource_type: 'generator',
+          resource_id: 'apexload-generator-0',
+          status: 'success',
+          created_at: '2026-06-26T12:00:00Z',
+        },
+        {
+          id: 'audit-other',
+          action: 'auth.user.login',
+          actor_type: 'user',
+          actor_subject: 'user@example.test',
+          resource_type: 'auth_user',
+          resource_id: 'user-1',
+          status: 'success',
+          created_at: '2026-06-26T12:01:00Z',
+        },
+      ],
+    })
+
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} canManageSystem />)
+    })
+
+    await clickMonitorTab('Fleet')
+
+    expect(apiMock.listAuthAuditEvents).toHaveBeenCalledWith({ limit: 20 })
+    expect(container.textContent).toContain('Fleet Audit')
+    expect(container.textContent).toContain('generator.drain_state.update')
+    expect(container.textContent).toContain('apexload-generator-0 by Platform Admin')
+    expect(container.textContent).not.toContain('auth.user.login')
+  })
+
+  it('refreshes fleet state when a fleet websocket event is observed', async () => {
+    apiMock.getFleetAlerts
+      .mockResolvedValueOnce({ count: 0, unacknowledged_count: 0, alerts: [] })
+      .mockResolvedValueOnce({
+        count: 1,
+        unacknowledged_count: 1,
+        alerts: [{ id: 'alert-drain', type: 'drain_state', target: 'gen-a', severity: 'warning', summary: 'gen-a is draining; new placements are excluded.' }],
+      })
+    apiMock.getSystemInventory.mockResolvedValue({
+      execution_mode: 'distributed',
+      controller: { id: 'apexload-controller-0', status: 'healthy', address: ':8080', version: '0.1.0', execution_mode: 'distributed' },
+      generators: [],
+    })
+
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} fleetEventSignal={0} />)
+    })
+    expect(apiMock.getFleetAlerts).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} fleetEventSignal={1} />)
+    })
+
+    expect(apiMock.getFleetAlerts).toHaveBeenCalledTimes(2)
+    await clickMonitorTab('Fleet')
+    expect(container.textContent).toContain('gen-a is draining')
+  })
+
   it('renders schedule health counts for operator triage', async () => {
     apiMock.getScheduleHealth.mockResolvedValue({
       total: 6,
@@ -1015,8 +1147,8 @@ describe('MonitoringPage', () => {
     expect(advisoryBadge?.textContent).toContain('2 issues need attention')
     expect(container.querySelector('.monitor-schedule-health-card')).toBeNull()
     expect(container.querySelector('[data-card-id="schedule-health"]')).toBeNull()
-    expect(visibleMonitorCardIds()).toEqual(['run-calendar', 'timeslots'])
-    expect(container.textContent).toContain('Schedules2/2')
+    expect(visibleMonitorCardIds()).toEqual(['run-calendar'])
+    expect(container.textContent).toContain('Schedules1/1')
     expect(container.textContent).not.toContain('Advisory Panel')
     expect(container.textContent).not.toContain('Enabled Schedules')
     expect(apiMock.getScheduleHealth).toHaveBeenCalled()
@@ -1116,6 +1248,15 @@ describe('MonitoringPage', () => {
     await clickMonitorTab('Schedules')
 
     expect(container.textContent).toContain('Run Calendar')
+    expect(container.querySelector('[data-card-id="timeslots"]')).toBeNull()
+    const reservationsPanel = container.querySelector('.run-calendar-reservations-panel')
+    expect(reservationsPanel).toBeTruthy()
+    expect(container.querySelector('.run-calendar-top-row')?.contains(reservationsPanel)).toBe(true)
+    expect(reservationsPanel?.textContent).toContain('Capacity Reservations')
+    expect(capacityApiMock.listTimeslots).toHaveBeenCalledWith({ project_id: 'project-1' })
+    const periodLabel = container.querySelector('.run-calendar-period-label')
+    expect(periodLabel?.textContent).toBe(new Date().toLocaleDateString([], { month: 'long', year: 'numeric' }))
+    expect(container.querySelector('.run-calendar-nav')?.textContent).not.toBe('Today')
     expect(container.textContent).toContain('Checkout Spike Investigation')
     expect(container.textContent).toContain('Nightly Checkout')
     expect(container.textContent).toContain('Cron')

@@ -6,7 +6,7 @@ import { useRepositoryApi } from '../hooks/api/useRepositoryApi'
 import { useApplication } from '../hooks/useApplication'
 import { useProject } from '../hooks/useProject'
 import { useApi } from '../hooks/useApi'
-import { ArchiveRetentionPlanResponse, CapacityReservation, DashboardAuditEvent, DashboardAuthAccessResource, DashboardAuthDiagnostics, DashboardAuthDiagnosticsCheck, DashboardAuthEffectiveAccessResource, DashboardAuthRoleDefinition, DashboardAuthStatus, DashboardServiceAccount, DashboardSystemSettings, Domain, GitHubProjectPolicy, HealthResponse, Project, SharedDataPool, SharedDataPoolRow, SystemReadinessResponse, UsageAccountingResponse, UsageAccountingSnapshot } from '../types'
+import { ApplicationRepository, ArchiveRetentionPlanResponse, CapacityReservation, DashboardAuditEvent, DashboardAuthAccessResource, DashboardAuthDiagnostics, DashboardAuthDiagnosticsCheck, DashboardAuthEffectiveAccessResource, DashboardAuthRoleDefinition, DashboardAuthStatus, DashboardServiceAccount, DashboardSystemSettings, Domain, GitHubProjectPolicy, HealthResponse, Project, SharedDataPool, SharedDataPoolRow, SystemReadinessResponse, UsageAccountingResponse, UsageAccountingSnapshot } from '../types'
 import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
 import { readStoredString, removeStoredItem, writeStoredJSON } from '../utils/browserStorage'
 import { getErrorMessage } from '../utils/errorUtils'
@@ -122,6 +122,7 @@ interface SettingsPageProps {
   onNavigate?: (page: 'access') => void
   domains?: Domain[]
   activeDomain?: Domain | null
+  applicationRepository?: ApplicationRepository | null
   onDomainChange?: (domain: Domain) => void
   onDomainsRefresh?: (preferredId?: string) => Promise<Domain[]>
 }
@@ -138,6 +139,7 @@ export default function SettingsPage({
   onNavigate,
   domains = [],
   activeDomain,
+  applicationRepository,
   onDomainChange,
   onDomainsRefresh,
 }: SettingsPageProps) {
@@ -344,7 +346,10 @@ export default function SettingsPage({
     let cancelled = false
     const loadEffectiveAccess = async () => {
       try {
-        const response = await api.getAuthEffectiveAccess(activeProject?.id, { domain_id: activeProject?.domain_id })
+        const response = await api.getAuthEffectiveAccess(activeProject?.id, {
+          domain_id: activeProject?.domain_id,
+          application_repository_id: applicationRepository?.id,
+        })
         if (!cancelled) {
           setEffectiveAuthAccessResources(response.resources || [])
         }
@@ -359,7 +364,7 @@ export default function SettingsPage({
     return () => {
       cancelled = true
     }
-  }, [activeProject?.id, activeProject?.domain_id, api])
+  }, [activeProject?.id, activeProject?.domain_id, api, applicationRepository?.id])
 
   useEffect(() => {
   let cancelled = false
@@ -2913,6 +2918,40 @@ export default function SettingsPage({
                 value={settings.thresholds.max_avg_transfer_ms ?? ''}
                 onChange={(e) => updateThreshold('max_avg_transfer_ms', e.target.value)}
                 placeholder="Not configured"
+              />
+            </div>
+            <div className="settings-subgroup-header">
+              <span className="settings-subgroup-title">Fleet Alerts</span>
+              <span className="settings-subgroup-desc">Free-slot thresholds for generator capacity warnings and routed fleet alerts</span>
+            </div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-label">Fleet Constrained Free Slots</span>
+                <span className="setting-desc">Optional: warn when a generator has this many or fewer free VUser slots</span>
+              </div>
+              <input
+                className="settings-input settings-input-number"
+                type="number"
+                min={0}
+                step={1}
+                value={settings.thresholds.fleet_constrained_available_slots ?? ''}
+                onChange={(e) => updateThreshold('fleet_constrained_available_slots', e.target.value)}
+                placeholder="Inventory default"
+              />
+            </div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-label">Fleet Saturated Free Slots</span>
+                <span className="setting-desc">Optional: mark danger when a generator has this many or fewer free VUser slots</span>
+              </div>
+              <input
+                className="settings-input settings-input-number"
+                type="number"
+                min={0}
+                step={1}
+                value={settings.thresholds.fleet_saturated_available_slots ?? ''}
+                onChange={(e) => updateThreshold('fleet_saturated_available_slots', e.target.value)}
+                placeholder="0"
               />
             </div>
             <div className="settings-subgroup-header">

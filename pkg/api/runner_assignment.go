@@ -71,9 +71,10 @@ func normalizeGeneratorAssignmentSettings(in *GeneratorAssignmentSettings) (*Gen
 		return nil, nil
 	}
 	out := &GeneratorAssignmentSettings{
-		Mode:           strings.TrimSpace(in.Mode),
-		PoolID:         strings.TrimSpace(in.PoolID),
-		RequiredLabels: normalizeRequiredLabels(in.RequiredLabels),
+		Mode:                  strings.TrimSpace(in.Mode),
+		PoolID:                strings.TrimSpace(in.PoolID),
+		RequiredLabels:        normalizeRequiredLabels(in.RequiredLabels),
+		TolerateGeneratorLoss: in.TolerateGeneratorLoss,
 	}
 	if out.Mode == "" {
 		out.Mode = generatorAssignmentModeAuto

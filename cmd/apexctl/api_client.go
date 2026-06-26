@@ -15,15 +15,52 @@ import (
 )
 
 type ApiClient struct {
-	BaseURL string
-	Client  *http.Client
+	BaseURL     string
+	Client      *http.Client
+	APIKey      string
+	BearerToken string
 }
 
 func NewApiClient(baseURL string) *ApiClient {
+	return NewApiClientWithAuth(baseURL, os.Getenv("APEXLOAD_API_KEY"), os.Getenv("APEXLOAD_BEARER_TOKEN"))
+}
+
+func NewApiClientWithAuth(baseURL string, apiKey string, bearerToken string) *ApiClient {
 	return &ApiClient{
-		BaseURL: baseURL,
-		Client:  &http.Client{Timeout: 30 * time.Second},
+		BaseURL:     strings.TrimRight(baseURL, "/"),
+		Client:      &http.Client{Timeout: 30 * time.Second},
+		APIKey:      strings.TrimSpace(apiKey),
+		BearerToken: strings.TrimSpace(bearerToken),
 	}
+}
+
+func (c *ApiClient) newRequest(method string, path string, body io.Reader, contentType string) (*http.Request, error) {
+	req, err := http.NewRequest(method, c.BaseURL+path, body)
+	if err != nil {
+		return nil, err
+	}
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+	if strings.TrimSpace(c.APIKey) != "" {
+		req.Header.Set("X-APEXLoad-API-Key", strings.TrimSpace(c.APIKey))
+	}
+	if strings.TrimSpace(c.BearerToken) != "" {
+		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(c.BearerToken))
+	}
+	return req, nil
+}
+
+func (c *ApiClient) do(method string, path string, body io.Reader, contentType string) (*http.Response, error) {
+	req, err := c.newRequest(method, path, body, contentType)
+	if err != nil {
+		return nil, err
+	}
+	client := c.Client
+	if client == nil {
+		client = &http.Client{Timeout: 30 * time.Second}
+	}
+	return client.Do(req)
 }
 
 // Result mimics engine.TestResult for formatting
@@ -96,7 +133,7 @@ func (c *ApiClient) UploadScriptWithProject(scriptName string, scriptBody []byte
 		return "", err
 	}
 
-	resp, err := c.Client.Post(c.BaseURL+"/api/v1/scripts", "application/json", bytes.NewReader(b))
+	resp, err := c.do(http.MethodPost, "/api/v1/scripts", bytes.NewReader(b), "application/json")
 	if err != nil {
 		return "", err
 	}
@@ -132,7 +169,7 @@ func (c *ApiClient) createTest(scriptID string, vusers int, duration, rampUp str
 	}
 
 	b, _ := json.Marshal(reqBody)
-	resp, err := c.Client.Post(c.BaseURL+"/api/v1/tests", "application/json", bytes.NewReader(b))
+	resp, err := c.do(http.MethodPost, "/api/v1/tests", bytes.NewReader(b), "application/json")
 	if err != nil {
 		return "", err
 	}
@@ -149,7 +186,7 @@ func (c *ApiClient) createTest(scriptID string, vusers int, duration, rampUp str
 }
 
 func (c *ApiClient) startTest(testID string) error {
-	resp, err := c.Client.Post(c.BaseURL+"/api/v1/tests/"+testID+"/start", "application/json", nil)
+	resp, err := c.do(http.MethodPost, "/api/v1/tests/"+testID+"/start", nil, "application/json")
 	if err != nil {
 		return err
 	}
@@ -232,7 +269,7 @@ func (c *ApiClient) pollTest(testID string, format string, expectSLA bool) (*Api
 
 // GetTestStatus fetches the current managed-test record (status + live metrics).
 func (c *ApiClient) GetTestStatus(testID string) (*api.ManagedTest, error) {
-	resp, err := c.Client.Get(c.BaseURL + "/api/v1/tests/" + testID)
+	resp, err := c.do(http.MethodGet, "/api/v1/tests/"+testID, nil, "")
 	if err != nil {
 		return nil, err
 	}
@@ -312,7 +349,7 @@ func isTerminalStatus(status string) bool {
 }
 
 func (c *ApiClient) GetSLAStatus(testID string) (*api.SLABreachReport, error) {
-	resp, err := c.Client.Get(c.BaseURL + "/api/v1/tests/" + testID + "/sla-status")
+	resp, err := c.do(http.MethodGet, "/api/v1/tests/"+testID+"/sla-status", nil, "")
 	if err != nil {
 		return nil, err
 	}

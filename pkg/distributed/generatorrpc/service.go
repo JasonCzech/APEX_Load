@@ -187,10 +187,23 @@ type Service struct {
 	resCollector     *engine.ResourceCollector
 	resCollectorMu   sync.Mutex // serializes resCollector.Collect (mutates delta state)
 	executionEnabled bool
+	draining         bool
 	publishInterval  time.Duration
 	completionTimers map[string]*time.Timer
 	subscribers      map[int]chan *pb.MetricsBatch
 	nextSubID        int
+}
+
+func (s *Service) SetDraining(draining bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.draining = draining
+}
+
+func (s *Service) ActiveVUsers() int32 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.activeVUsersLocked()
 }
 
 func WithExecution() ServiceOption {
@@ -257,6 +270,14 @@ func (s *Service) AssignWork(_ context.Context, assignment *pb.WorkAssignment) (
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if s.draining {
+		return &pb.AssignmentAck{
+			Accepted:          false,
+			ErrorMessage:      "generator is draining",
+			AvailableCapacity: s.availableCapacityLocked(),
+		}, nil
+	}
 
 	if len(assignment.GetScriptContent()) > 0 {
 		s.scripts[assignment.GetScriptId()] = cachedScript{content: assignment.GetScriptContent()}
@@ -457,6 +478,19 @@ func (s *Service) StopTest(_ context.Context, request *pb.StopRequest) (*pb.Stop
 	s.mu.Lock()
 
 	assignment, ok := s.assignments[request.GetTestId()]
+	if request.GetGraceful() && ok {
+		execs := s.executions[request.GetTestId()]
+		if len(execs) > 0 {
+			s.mu.Unlock()
+			for _, exec := range execs {
+				exec.engine.GracefulStop()
+			}
+			return &pb.StopAck{
+				Acknowledged:  true,
+				PendingVusers: assignment.vuserCount,
+			}, nil
+		}
+	}
 	if ok {
 		delete(s.assignments, request.GetTestId())
 		s.stopCompletionTimerLocked(request.GetTestId())

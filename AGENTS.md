@@ -7,7 +7,7 @@ assisted-authoring engine (external LLM integration is policy-gated and not wire
 default), a React dashboard, and a Prometheus/Dynatrace telemetry pipeline.
 
 ## Architecture Overview
-- **Load Generators** (Go): VUsers are goroutines. Pods scale 1–50 via HPA. Target: 10k VUsers/pod for HTTP (design target, not yet benchmarked).
+- **Load Generators** (Go): VUsers are goroutines. Autoscaled Kubernetes targets use KEDA (typically min 2, configurable max); non-autoscaled local targets are static. Target: 10k VUsers/pod for HTTP (design target, not yet benchmarked).
 - **Test Controller** (Go): Orchestrates tests, distributes VUsers across generators, aggregates metrics via gRPC streams.
 - **Assisted-Authoring Engine** (Go): Produces and repairs JSON DSL drafts from OpenAPI specs, HAR files, and recordings using a deterministic-local provider. The MCP server exposes these as agent tools; external LLM providers are governed by policy and not enabled by default.
 - **Dashboard** (React 18 + TypeScript + Recharts): Real-time WebSocket-fed monitoring.
@@ -22,7 +22,7 @@ default), a React dashboard, and a Prometheus/Dynatrace telemetry pipeline.
 ```
 cmd/
   generator/     — Load generator binary (deployed as StatefulSet pods)
-  controller/    — Test controller + API server binary (Deployment, 2 replicas)
+  controller/    — Test controller + API server binary (Deployment; HA replicas are opt-in with APEXLOAD_CONTROLLER_HA + shared storage)
   apexctl/       — CLI tool for running/managing tests
   apexload-record-agent/ — Local browser-recording bridge agent (run on operator workstations)
   dslschema/     — Code generator for docs/dsl.schema.json + DSL_ACTION_REFERENCE.md

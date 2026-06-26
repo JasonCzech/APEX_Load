@@ -808,6 +808,20 @@ paths:
             type: string
       tags:
         - Auth
+  /api/v1/auth/users/onboard:
+    post:
+      summary: Onboard User
+      description: |-
+        **Handler:** `handleOnboardUser`
+
+        **Access Control:** Requires Authentication
+      operationId: handleOnboardUser
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication
+      tags:
+        - Auth
   /api/v1/browser-recorder/devices:
     get:
       summary: List Browser Recorder Devices
@@ -2468,6 +2482,26 @@ paths:
       x-roles: 'Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
       tags:
         - Fleet
+  /api/v1/fleet/alerts/{id}/ack:
+    patch:
+      summary: Ack Fleet Alert
+      description: |-
+        **Handler:** `handleAckFleetAlert`
+
+        **Access Control:** Roles: SystemAdmin
+      operationId: handleAckFleetAlert
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: 'Roles: SystemAdmin'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Fleet
   /api/v1/fleet/capacity:
     get:
       summary: Get Fleet Capacity
@@ -2504,6 +2538,86 @@ paths:
 
         **Access Control:** Roles: SystemAdmin
       operationId: handlePatchGeneratorMetadata
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: 'Roles: SystemAdmin'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Fleet
+  /api/v1/fleet/generators/{id}/cordon:
+    post:
+      summary: Cordon Generator
+      description: |-
+        **Handler:** `handleCordonGenerator`
+
+        **Access Control:** Roles: SystemAdmin
+      operationId: handleCordonGenerator
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: 'Roles: SystemAdmin'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Fleet
+  /api/v1/fleet/generators/{id}/drain:
+    post:
+      summary: Drain Generator
+      description: |-
+        **Handler:** `handleDrainGenerator`
+
+        **Access Control:** Roles: SystemAdmin
+      operationId: handleDrainGenerator
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: 'Roles: SystemAdmin'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Fleet
+  /api/v1/fleet/generators/{id}/evacuate:
+    post:
+      summary: Evacuate Generator
+      description: |-
+        **Handler:** `handleEvacuateGenerator`
+
+        **Access Control:** Roles: SystemAdmin
+      operationId: handleEvacuateGenerator
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: 'Roles: SystemAdmin'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Fleet
+  /api/v1/fleet/generators/{id}/uncordon:
+    post:
+      summary: Uncordon Generator
+      description: |-
+        **Handler:** `handleUncordonGenerator`
+
+        **Access Control:** Roles: SystemAdmin
+      operationId: handleUncordonGenerator
       responses:
         "200":
           description: Successful operation
@@ -2616,6 +2730,19 @@ paths:
       tags:
         - Fleet
   /api/v1/fleet/provision-requests:
+    get:
+      summary: List Provisioning Requests
+      description: |-
+        **Handler:** `handleListProvisioningRequests`
+
+        **Access Control:** Roles: SystemAdmin
+      operationId: handleListProvisioningRequests
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: 'Roles: SystemAdmin'
+      tags:
+        - Fleet
     post:
       summary: Create Provisioning Request
       description: |-
@@ -2637,6 +2764,46 @@ paths:
 
         **Access Control:** Roles: SystemAdmin
       operationId: handleGetProvisioningRequest
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: 'Roles: SystemAdmin'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Fleet
+  /api/v1/fleet/provision-requests/{id}/cancel:
+    post:
+      summary: Cancel Provisioning Request
+      description: |-
+        **Handler:** `handleCancelProvisioningRequest`
+
+        **Access Control:** Roles: SystemAdmin
+      operationId: handleCancelProvisioningRequest
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: 'Roles: SystemAdmin'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Fleet
+  /api/v1/fleet/provision-requests/{id}/retry:
+    post:
+      summary: Retry Provisioning Request
+      description: |-
+        **Handler:** `handleRetryProvisioningRequest`
+
+        **Access Control:** Roles: SystemAdmin
+      operationId: handleRetryProvisioningRequest
       responses:
         "200":
           description: Successful operation

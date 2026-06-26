@@ -2,7 +2,9 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -110,6 +112,100 @@ func TestDistributedBackendSkipsCordonedTargetsForPlacement(t *testing.T) {
 	}})
 	if err == nil || !strings.Contains(err.Error(), "cordoned") {
 		t.Fatalf("specific cordoned target error = %v, want cordoned rejection", err)
+	}
+}
+
+func TestDistributedBackendDrainStateFollowsStableGeneratorIDAcrossTargetChange(t *testing.T) {
+	backend := newDistributedExecutionBackend([]string{"10.0.0.1:9090", "10.0.0.2:9090"}, time.Second, nil)
+	if err := backend.SetGeneratorDrainState("10.0.0.1:9090", "cordoned"); err != nil {
+		t.Fatalf("SetGeneratorDrainState returned error: %v", err)
+	}
+	backend.recordGeneratorIdentity("10.0.0.1:9090", "apexload-generator-0")
+	if got := backend.generatorDrainState("10.0.0.1:9090"); got != "cordoned" {
+		t.Fatalf("old target drain_state = %q, want cordoned", got)
+	}
+
+	backend.SetTargets([]string{"10.0.0.9:9090", "10.0.0.2:9090"})
+	backend.recordGeneratorIdentity("10.0.0.9:9090", "apexload-generator-0")
+	if got := backend.generatorDrainState("10.0.0.9:9090"); got != "cordoned" {
+		t.Fatalf("new target drain_state = %q, want cordoned", got)
+	}
+	allowed, err := backend.allowedTargetsForTest(&ManagedTest{})
+	if err != nil {
+		t.Fatalf("allowedTargetsForTest returned error: %v", err)
+	}
+	if len(allowed) != 1 || allowed[0] != "10.0.0.2:9090" {
+		t.Fatalf("allowed targets = %#v, want only 10.0.0.2:9090", allowed)
+	}
+}
+
+func TestHandleSetGeneratorDrainStateAcceptsGeneratorID(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	backend := newDistributedExecutionBackend([]string{"gen-a:9090", "gen-b:9090"}, time.Second, nil)
+	backend.recordGeneratorIdentity("gen-a:9090", "apexload-generator-0")
+	server.runner.setExecutionBackend(backend)
+
+	body := bytes.NewBufferString(`{"generator_id":"apexload-generator-0","drain_state":"cordoned"}`)
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/system/generators/drain", body)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	if got := backend.generatorDrainState("gen-a:9090"); got != "cordoned" {
+		t.Fatalf("gen-a drain_state = %q, want cordoned", got)
+	}
+	var payload map[string]string
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload["target"] != "gen-a:9090" || payload["generator_id"] != "apexload-generator-0" {
+		t.Fatalf("response = %#v, want target and generator_id", payload)
+	}
+}
+
+func TestTerminatingGeneratorPodWatcherMarksStableIDDraining(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	fakeKube := &fakeKubeRestarter{}
+	fakeKube.setPods([]KubePodRef{
+		{Name: "apexload-generator-0", Namespace: "apex", IP: "10.0.0.10", Phase: "Running", Ready: false, Terminating: true},
+	})
+	server := NewServer(ServerConfig{
+		Store:            store,
+		MaxConcurrent:    2,
+		Addr:             ":8080",
+		GeneratorTargets: []string{"10.0.0.10:9090"},
+		GeneratorTimeout: time.Millisecond,
+		K8sRestart: K8sRestartSettings{
+			Enabled:           true,
+			Namespace:         "apex",
+			GeneratorSelector: "app=generator",
+		},
+		KubeRestarter: fakeKube,
+	})
+	backend, ok := server.runner.getExecutionBackend().(*distributedExecutionBackend)
+	if !ok {
+		t.Fatalf("backend = %T, want *distributedExecutionBackend", server.runner.getExecutionBackend())
+	}
+	backend.recordGeneratorIdentity("10.0.0.10:9090", "apexload-generator-0")
+
+	server.reconcileTerminatingGeneratorPods(context.Background())
+
+	if got := backend.generatorDrainState("10.0.0.10:9090"); got != "draining" {
+		t.Fatalf("terminating pod drain_state = %q, want draining", got)
+	}
+	raw, err := store.GetSetting(generatorDrainStatesStoreKey)
+	if err != nil {
+		t.Fatalf("GetSetting returned error: %v", err)
+	}
+	if !strings.Contains(raw, "apexload-generator-0") || !strings.Contains(raw, "draining") {
+		t.Fatalf("stored drain states = %q, want stable generator id draining", raw)
 	}
 }
 
@@ -294,6 +390,247 @@ func TestHandleGetFleetAlertsSummarizesInventoryRisks(t *testing.T) {
 	}
 	if !strings.Contains(byType["version_mismatch"].Summary, "1.0.0") {
 		t.Fatalf("version alert = %#v, want generator version", byType["version_mismatch"])
+	}
+}
+
+func TestHandleGetFleetAlertsUsesConfiguredFleetThresholds(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	constrained := 250
+	saturated := 10
+	settings := server.runner.GetSystemSettings()
+	settings.Thresholds.FleetConstrainedAvailableSlots = &constrained
+	settings.Thresholds.FleetSaturatedAvailableSlots = &saturated
+	if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatalf("UpdateSystemSettings returned error: %v", err)
+	}
+	server.runner.setExecutionBackend(stubInventoryBackend{entries: []GeneratorInventoryEntry{
+		{
+			Target:             "gen-constrained:9090",
+			GeneratorID:        "gen-constrained",
+			Status:             "connected",
+			Version:            "0.1.0",
+			CapacityState:      "available",
+			AvailableCapacity:  200,
+			MaxVUsers:          1000,
+			CompatibilityState: "compatible",
+		},
+		{
+			Target:             "gen-saturated:9090",
+			GeneratorID:        "gen-saturated",
+			Status:             "connected",
+			Version:            "0.1.0",
+			CapacityState:      "available",
+			AvailableCapacity:  10,
+			MaxVUsers:          1000,
+			CompatibilityState: "compatible",
+		},
+	}})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/fleet/alerts", nil)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	var payload FleetAlertsResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	byTarget := map[string]FleetAlert{}
+	for _, alert := range payload.Alerts {
+		byTarget[alert.Target] = alert
+	}
+	if byTarget["gen-constrained"].Severity != "warning" || !strings.Contains(byTarget["gen-constrained"].Summary, "200 slots remain") {
+		t.Fatalf("constrained alert = %+v, want threshold warning", byTarget["gen-constrained"])
+	}
+	if byTarget["gen-saturated"].Severity != "danger" {
+		t.Fatalf("saturated alert = %+v, want threshold danger", byTarget["gen-saturated"])
+	}
+}
+
+type mutableInventoryBackend struct {
+	entries []GeneratorInventoryEntry
+}
+
+func (m *mutableInventoryBackend) Run(tr *TestRunner, test *ManagedTest) {}
+
+func (m *mutableInventoryBackend) SystemInventory(ctx context.Context) []GeneratorInventoryEntry {
+	return append([]GeneratorInventoryEntry(nil), m.entries...)
+}
+
+func TestFleetAlertNotificationsRouteOnceAndResetWhenResolved(t *testing.T) {
+	t.Setenv("APEXLOAD_ALLOW_PRIVATE_WEBHOOKS", "true")
+
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	received := make(chan map[string]any, 3)
+	hook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Errorf("decode webhook payload: %v", err)
+			return
+		}
+		received <- payload
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer hook.Close()
+
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	server.runner.notifier = newNotificationDispatcher(hook.Client())
+	settings := server.runner.GetSystemSettings()
+	settings.Notifications = NotificationsSettings{Webhooks: []NotificationWebhookSettings{{
+		Enabled: true,
+		URL:     hook.URL,
+		Format:  notificationFormatSlack,
+		Events:  []string{"fleet_alert"},
+	}}}
+	if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatalf("UpdateSystemSettings returned error: %v", err)
+	}
+	backend := &mutableInventoryBackend{entries: []GeneratorInventoryEntry{{
+		Target:             "gen-a:9090",
+		GeneratorID:        "gen-a",
+		Status:             "unreachable",
+		Version:            "0.1.0",
+		CapacityState:      "available",
+		AvailableCapacity:  100,
+		MaxVUsers:          1000,
+		CompatibilityState: "compatible",
+	}}}
+	server.runner.setExecutionBackend(backend)
+
+	get := func() {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/fleet/alerts", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+		if resp.Code != http.StatusOK {
+			t.Fatalf("get alerts status = %d body=%s", resp.Code, resp.Body.String())
+		}
+	}
+
+	get()
+	first := waitForFleetWebhook(t, received)
+	if !strings.Contains(fmt.Sprint(first["text"]), "gen-a") {
+		t.Fatalf("first webhook = %#v, want generator summary", first)
+	}
+	get()
+	assertNoFleetWebhook(t, received)
+
+	backend.entries = nil
+	get()
+	assertNoFleetWebhook(t, received)
+
+	backend.entries = []GeneratorInventoryEntry{{
+		Target:             "gen-a:9090",
+		GeneratorID:        "gen-a",
+		Status:             "unreachable",
+		Version:            "0.1.0",
+		CapacityState:      "available",
+		AvailableCapacity:  100,
+		MaxVUsers:          1000,
+		CompatibilityState: "compatible",
+	}}
+	get()
+	_ = waitForFleetWebhook(t, received)
+}
+
+func waitForFleetWebhook(t *testing.T, received <-chan map[string]any) map[string]any {
+	t.Helper()
+	select {
+	case payload := <-received:
+		return payload
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for fleet webhook")
+	}
+	return nil
+}
+
+func assertNoFleetWebhook(t *testing.T, received <-chan map[string]any) {
+	t.Helper()
+	select {
+	case payload := <-received:
+		t.Fatalf("unexpected fleet webhook payload: %#v", payload)
+	case <-time.After(150 * time.Millisecond):
+	}
+}
+
+func TestFleetAlertAcknowledgementLifecycle(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	server.runner.setExecutionBackend(stubInventoryBackend{entries: []GeneratorInventoryEntry{{
+		Target:             "gen-a:9090",
+		GeneratorID:        "gen-a",
+		Region:             "us-east",
+		Status:             "unreachable",
+		Version:            "0.1.0",
+		DrainState:         "active",
+		CapacityState:      "available",
+		AvailableCapacity:  100,
+		MaxVUsers:          1000,
+		CompatibilityState: "compatible",
+	}}})
+
+	getAlerts := func(t *testing.T) FleetAlertsResponse {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/fleet/alerts", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+		if resp.Code != http.StatusOK {
+			t.Fatalf("get alerts status = %d body=%s", resp.Code, resp.Body.String())
+		}
+		var payload FleetAlertsResponse
+		if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+			t.Fatalf("decode alerts: %v", err)
+		}
+		return payload
+	}
+
+	initial := getAlerts(t)
+	if initial.Count != 1 || initial.UnacknowledgedCount != 1 || initial.Alerts[0].ID == "" {
+		t.Fatalf("initial alerts = %+v, want one unacknowledged alert with stable id", initial)
+	}
+	alertID := initial.Alerts[0].ID
+
+	ackReq := httptest.NewRequest(http.MethodPatch, "/api/v1/fleet/alerts/"+alertID+"/ack", strings.NewReader(`{"note":"paged platform"}`))
+	ackReq.SetPathValue("id", alertID)
+	ackResp := httptest.NewRecorder()
+	server.handleAckFleetAlert(ackResp, ackReq)
+	if ackResp.Code != http.StatusOK {
+		t.Fatalf("ack status = %d body=%s", ackResp.Code, ackResp.Body.String())
+	}
+	var acked FleetAlert
+	if err := json.Unmarshal(ackResp.Body.Bytes(), &acked); err != nil {
+		t.Fatalf("decode ack: %v", err)
+	}
+	if !acked.Acknowledged || acked.AcknowledgementNote != "paged platform" || acked.AcknowledgedAt == nil {
+		t.Fatalf("acked alert = %+v, want acknowledgement metadata", acked)
+	}
+
+	afterAck := getAlerts(t)
+	if afterAck.UnacknowledgedCount != 0 || !afterAck.Alerts[0].Acknowledged {
+		t.Fatalf("after ack = %+v, want acknowledged alert persisted", afterAck)
+	}
+
+	clearReq := httptest.NewRequest(http.MethodPatch, "/api/v1/fleet/alerts/"+alertID+"/ack", strings.NewReader(`{"acknowledged":false}`))
+	clearReq.SetPathValue("id", alertID)
+	clearResp := httptest.NewRecorder()
+	server.handleAckFleetAlert(clearResp, clearReq)
+	if clearResp.Code != http.StatusOK {
+		t.Fatalf("unack status = %d body=%s", clearResp.Code, clearResp.Body.String())
+	}
+	afterClear := getAlerts(t)
+	if afterClear.UnacknowledgedCount != 1 || afterClear.Alerts[0].Acknowledged {
+		t.Fatalf("after clear = %+v, want unacknowledged alert", afterClear)
 	}
 }
 

@@ -28,10 +28,15 @@ location    = "eastus2"
 #   office = "203.0.113.0/24"
 # }
 
-# Generator capacity: ~4 generator pods per Standard_D4s_v5 node at the
-# default pod requests (1 vCPU / 2 Gi). 13 nodes ≈ headroom for 50 pods.
-# generator_node_vm_size   = "Standard_D4s_v5"
-# generator_node_max_count = 13
+# Generator capacity: terraform plan validates KEDA max replicas against pod
+# requests, VM size, node count, and kube/system reservations. The defaults fit
+# the 50-pod KEDA ceiling on Standard_D4s_v5 after a conservative 25% reservation.
+# generator_node_vm_size           = "Standard_D4s_v5"
+# generator_node_max_count         = 17
+# generator_keda_max_replicas      = 50
+# generator_pod_cpu_millicores     = 1000
+# generator_pod_memory_mib         = 2048
+# generator_node_reserved_fraction = 0.25
 
 tags = {
   owner = "performance-engineering"

@@ -1,16 +1,22 @@
 package api
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
-const generatorDrainStatesStoreKey = "generator_drain_states"
+const (
+	generatorDrainStatesStoreKey        = "generator_drain_states"
+	fleetAlertNotificationStateStoreKey = "fleet_alert_notification_state"
+)
 
 type persistentDrainBackend interface {
 	drainableExecutionBackend
@@ -19,8 +25,9 @@ type persistentDrainBackend interface {
 }
 
 type FleetAlertsResponse struct {
-	Alerts []FleetAlert `json:"alerts"`
-	Count  int          `json:"count"`
+	Alerts              []FleetAlert `json:"alerts"`
+	Count               int          `json:"count"`
+	UnacknowledgedCount int          `json:"unacknowledged_count"`
 }
 
 type FleetCapacityResponse struct {
@@ -82,21 +89,105 @@ type FleetProjectSlotAccounting struct {
 }
 
 type FleetAlert struct {
-	Type     string `json:"type"`
-	Target   string `json:"target"`
-	Region   string `json:"region,omitempty"`
-	Severity string `json:"severity"`
-	Summary  string `json:"summary"`
+	ID                        string     `json:"id"`
+	Type                      string     `json:"type"`
+	Target                    string     `json:"target"`
+	Region                    string     `json:"region,omitempty"`
+	Severity                  string     `json:"severity"`
+	Summary                   string     `json:"summary"`
+	Acknowledged              bool       `json:"acknowledged,omitempty"`
+	AcknowledgedAt            *time.Time `json:"acknowledged_at,omitempty"`
+	AcknowledgedBySubject     string     `json:"acknowledged_by_subject,omitempty"`
+	AcknowledgedByDisplayName string     `json:"acknowledged_by_display_name,omitempty"`
+	AcknowledgementNote       string     `json:"acknowledgement_note,omitempty"`
 }
 
 type GeneratorDrainRequest struct {
-	Target     string `json:"target"`
-	DrainState string `json:"drain_state"`
+	Target      string `json:"target"`
+	GeneratorID string `json:"generator_id,omitempty"`
+	DrainState  string `json:"drain_state"`
 }
 
 func (s *Server) handleGetFleetAlerts(w http.ResponseWriter, r *http.Request) {
-	alerts := buildFleetAlerts(s.systemInventory(r.Context()))
-	writeJSON(w, http.StatusOK, FleetAlertsResponse{Alerts: alerts, Count: len(alerts)})
+	alerts := buildFleetAlerts(s.systemInventory(r.Context()), s.runner.GetSystemSettings().Thresholds)
+	s.applyFleetAlertAcknowledgements(alerts)
+	s.routeFleetAlertNotifications(alerts)
+	writeJSON(w, http.StatusOK, FleetAlertsResponse{Alerts: alerts, Count: len(alerts), UnacknowledgedCount: countUnacknowledgedFleetAlerts(alerts)})
+}
+
+type fleetAlertAckRequest struct {
+	Acknowledged *bool  `json:"acknowledged,omitempty"`
+	Note         string `json:"note,omitempty"`
+}
+
+func (s *Server) handleAckFleetAlert(w http.ResponseWriter, r *http.Request) {
+	if !s.requireExecutionLeader(w) {
+		return
+	}
+	if s.store == nil {
+		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
+		return
+	}
+	alertID := strings.TrimSpace(r.PathValue("id"))
+	if alertID == "" {
+		writeError(w, http.StatusBadRequest, "alert id is required")
+		return
+	}
+	var req fleetAlertAckRequest
+	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	acknowledged := true
+	if req.Acknowledged != nil {
+		acknowledged = *req.Acknowledged
+	}
+	alerts := buildFleetAlerts(s.systemInventory(r.Context()), s.runner.GetSystemSettings().Thresholds)
+	var current *FleetAlert
+	for i := range alerts {
+		if alerts[i].ID == alertID {
+			current = &alerts[i]
+			break
+		}
+	}
+	if current == nil {
+		writeError(w, http.StatusNotFound, "fleet alert not found")
+		return
+	}
+	if !acknowledged {
+		if err := s.store.DeleteFleetAlertAck(alertID); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to clear fleet alert acknowledgement")
+			return
+		}
+		s.recordAuditEvent(r, "fleet.alert.unack", "success", "fleet_alert", alertID, "", map[string]any{"alert_type": current.Type, "target": current.Target})
+		s.broadcastFleetEvent("fleet_alert_unacknowledged", map[string]any{"alert_id": alertID, "alert_type": current.Type, "target": current.Target})
+		s.dispatchFleetAlertNotification("fleet_alert_unacknowledged", *current)
+		current.Acknowledged = false
+		writeJSON(w, http.StatusOK, current)
+		return
+	}
+	actorName, actorSubject, _ := s.resolveAuditActor(r)
+	now := time.Now().UTC()
+	ack := &storage.FleetAlertAck{
+		ID:                        alertID,
+		AlertType:                 current.Type,
+		Target:                    current.Target,
+		Region:                    current.Region,
+		Severity:                  current.Severity,
+		Summary:                   current.Summary,
+		Note:                      strings.TrimSpace(req.Note),
+		AcknowledgedBySubject:     actorSubject,
+		AcknowledgedByDisplayName: actorName,
+		AcknowledgedAt:            now,
+	}
+	if err := s.store.SaveFleetAlertAck(ack); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to acknowledge fleet alert")
+		return
+	}
+	applyFleetAlertAck(current, ack)
+	s.recordAuditEvent(r, "fleet.alert.ack", "success", "fleet_alert", alertID, "", map[string]any{"alert_type": current.Type, "target": current.Target})
+	s.broadcastFleetEvent("fleet_alert_acknowledged", map[string]any{"alert_id": alertID, "alert_type": current.Type, "target": current.Target, "severity": current.Severity})
+	s.dispatchFleetAlertNotification("fleet_alert_acknowledged", *current)
+	writeJSON(w, http.StatusOK, current)
 }
 
 // handleGetFleetProvisioner reports the active generator provisioner — whether
@@ -131,40 +222,41 @@ func (s *Server) handleGetFleetLoadZones(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) handleSetGeneratorDrainState(w http.ResponseWriter, r *http.Request) {
+	if !s.requireExecutionLeader(w) {
+		return
+	}
 	var req GeneratorDrainRequest
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	req.Target = strings.TrimSpace(req.Target)
+	req.GeneratorID = strings.TrimSpace(req.GeneratorID)
 	req.DrainState = strings.TrimSpace(req.DrainState)
-	if req.Target == "" {
-		writeError(w, http.StatusBadRequest, "target is required")
+	if req.Target == "" && req.GeneratorID == "" {
+		writeError(w, http.StatusBadRequest, "target or generator_id is required")
 		return
 	}
 	if req.DrainState == "" {
 		req.DrainState = "active"
 	}
 
-	backend, ok := s.runner.getExecutionBackend().(drainableExecutionBackend)
-	if !ok {
-		writeError(w, http.StatusBadRequest, "generator drain control requires distributed execution")
-		return
-	}
-	if err := backend.SetGeneratorDrainState(req.Target, req.DrainState); err != nil {
+	generatorID, target, err := s.setGeneratorLifecycleState(req.GeneratorID, req.Target, req.DrainState)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if persistent, ok := backend.(persistentDrainBackend); ok {
-		if err := s.saveGeneratorDrainStates(persistent.GeneratorDrainStates()); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to persist generator drain state: "+err.Error())
-			return
-		}
+	if err := s.syncGeneratorMetadataCordon(generatorID, target, req.DrainState != "active"); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to persist generator cordon metadata: "+err.Error())
+		return
 	}
 
-	s.recordAuditEvent(r, "generator.drain_state.update", "success", "generator", req.Target, "", map[string]any{"drain_state": req.DrainState})
+	auditTarget := firstNonEmpty(generatorID, target, req.Target)
+	s.recordAuditEvent(r, "generator.drain_state.update", "success", "generator", auditTarget, "", map[string]any{"drain_state": req.DrainState, "target": target, "generator_id": generatorID})
+	s.broadcastFleetEvent("generator_drain_state_updated", map[string]any{"target": target, "generator_id": generatorID, "drain_state": req.DrainState})
 	writeJSON(w, http.StatusOK, map[string]string{
-		"target":      req.Target,
-		"drain_state": req.DrainState,
+		"target":       target,
+		"generator_id": generatorID,
+		"drain_state":  req.DrainState,
 	})
 }
 
@@ -194,7 +286,7 @@ func loadGeneratorDrainStates(store settingsPersistence) map[string]string {
 	return states
 }
 
-func buildFleetAlerts(inventory SystemInventoryResponse) []FleetAlert {
+func buildFleetAlerts(inventory SystemInventoryResponse, thresholds ThresholdSettings) []FleetAlert {
 	alerts := make([]FleetAlert, 0)
 	versionCounts := map[string]int{}
 	for _, generator := range inventory.Generators {
@@ -228,7 +320,7 @@ func buildFleetAlerts(inventory SystemInventoryResponse) []FleetAlert {
 				Summary:  fmt.Sprintf("%s is %s; new placements are excluded.", target, drainState),
 			})
 		}
-		if capacityState == "saturated" || generator.AvailableCapacity <= 0 {
+		if fleetGeneratorSaturated(generator, capacityState, thresholds) {
 			alerts = append(alerts, FleetAlert{
 				Type:     "saturation",
 				Target:   target,
@@ -236,7 +328,7 @@ func buildFleetAlerts(inventory SystemInventoryResponse) []FleetAlert {
 				Severity: "danger",
 				Summary:  fmt.Sprintf("%s is saturated with %d active VUsers.", target, generator.ActiveVUsers),
 			})
-		} else if capacityState == "constrained" {
+		} else if fleetGeneratorConstrained(generator, capacityState, thresholds) {
 			alerts = append(alerts, FleetAlert{
 				Type:     "saturation",
 				Target:   target,
@@ -271,7 +363,170 @@ func buildFleetAlerts(inventory SystemInventoryResponse) []FleetAlert {
 			Summary:  fmt.Sprintf("%d generator%s report version %s, which differs from controller %s.", count, pluralSuffix(count), version, inventory.Controller.Version),
 		})
 	}
+	for i := range alerts {
+		alerts[i].ID = stableFleetAlertID(alerts[i])
+	}
 	return alerts
+}
+
+func fleetGeneratorSaturated(generator GeneratorInventoryEntry, capacityState string, thresholds ThresholdSettings) bool {
+	if thresholds.FleetSaturatedAvailableSlots != nil && int(generator.AvailableCapacity) <= *thresholds.FleetSaturatedAvailableSlots {
+		return true
+	}
+	return capacityState == "saturated" || generator.AvailableCapacity <= 0
+}
+
+func fleetGeneratorConstrained(generator GeneratorInventoryEntry, capacityState string, thresholds ThresholdSettings) bool {
+	if thresholds.FleetConstrainedAvailableSlots != nil && int(generator.AvailableCapacity) <= *thresholds.FleetConstrainedAvailableSlots {
+		return true
+	}
+	return capacityState == "constrained"
+}
+
+func stableFleetAlertID(alert FleetAlert) string {
+	sum := sha1.Sum([]byte(strings.Join([]string{
+		strings.ToLower(strings.TrimSpace(alert.Type)),
+		strings.ToLower(strings.TrimSpace(alert.Target)),
+		strings.ToLower(strings.TrimSpace(alert.Region)),
+	}, "\x00")))
+	return hex.EncodeToString(sum[:])
+}
+
+func (s *Server) applyFleetAlertAcknowledgements(alerts []FleetAlert) {
+	if s == nil || s.store == nil || len(alerts) == 0 {
+		return
+	}
+	acks, err := s.store.ListFleetAlertAcks()
+	if err != nil {
+		return
+	}
+	byID := make(map[string]*storage.FleetAlertAck, len(acks))
+	for _, ack := range acks {
+		if ack != nil && strings.TrimSpace(ack.ID) != "" {
+			byID[ack.ID] = ack
+		}
+	}
+	for i := range alerts {
+		if ack := byID[alerts[i].ID]; ack != nil {
+			applyFleetAlertAck(&alerts[i], ack)
+		}
+	}
+}
+
+func applyFleetAlertAck(alert *FleetAlert, ack *storage.FleetAlertAck) {
+	if alert == nil || ack == nil {
+		return
+	}
+	alert.Acknowledged = true
+	ackedAt := ack.AcknowledgedAt
+	alert.AcknowledgedAt = &ackedAt
+	alert.AcknowledgedBySubject = ack.AcknowledgedBySubject
+	alert.AcknowledgedByDisplayName = ack.AcknowledgedByDisplayName
+	alert.AcknowledgementNote = ack.Note
+}
+
+func countUnacknowledgedFleetAlerts(alerts []FleetAlert) int {
+	count := 0
+	for _, alert := range alerts {
+		if !alert.Acknowledged {
+			count++
+		}
+	}
+	return count
+}
+
+type fleetAlertNotificationState struct {
+	Routed map[string]string `json:"routed,omitempty"`
+}
+
+func (s *Server) routeFleetAlertNotifications(alerts []FleetAlert) {
+	if s == nil || s.store == nil || s.runner == nil {
+		return
+	}
+	state := loadFleetAlertNotificationState(s.store)
+	if state.Routed == nil {
+		state.Routed = map[string]string{}
+	}
+	activeIDs := make(map[string]struct{}, len(alerts))
+	changed := false
+	for _, alert := range alerts {
+		if strings.TrimSpace(alert.ID) == "" {
+			continue
+		}
+		activeIDs[alert.ID] = struct{}{}
+	}
+	for id := range state.Routed {
+		if _, ok := activeIDs[id]; !ok {
+			delete(state.Routed, id)
+			changed = true
+		}
+	}
+	settings := s.runner.currentNotificationSettings()
+	if !fleetNotificationConfigured(settings, "fleet_alert") {
+		if changed {
+			if encoded, err := json.Marshal(state); err == nil {
+				_ = s.store.SaveSetting(fleetAlertNotificationStateStoreKey, string(encoded))
+			}
+		}
+		return
+	}
+	now := time.Now().UTC()
+	for _, alert := range alerts {
+		if strings.TrimSpace(alert.ID) == "" || alert.Acknowledged {
+			continue
+		}
+		if _, alreadyRouted := state.Routed[alert.ID]; alreadyRouted {
+			continue
+		}
+		s.dispatchFleetAlertNotification("fleet_alert", alert)
+		state.Routed[alert.ID] = now.Format(time.RFC3339Nano)
+		changed = true
+	}
+	if changed {
+		if encoded, err := json.Marshal(state); err == nil {
+			_ = s.store.SaveSetting(fleetAlertNotificationStateStoreKey, string(encoded))
+		}
+	}
+}
+
+func loadFleetAlertNotificationState(store settingsPersistence) fleetAlertNotificationState {
+	if store == nil {
+		return fleetAlertNotificationState{}
+	}
+	raw, err := store.GetSetting(fleetAlertNotificationStateStoreKey)
+	if err != nil || strings.TrimSpace(raw) == "" {
+		return fleetAlertNotificationState{}
+	}
+	var state fleetAlertNotificationState
+	if err := json.Unmarshal([]byte(raw), &state); err != nil {
+		return fleetAlertNotificationState{}
+	}
+	return state
+}
+
+func fleetNotificationConfigured(settings NotificationsSettings, eventType string) bool {
+	for _, webhook := range settings.Webhooks {
+		if webhook.Enabled && notificationWebhookMatchesEvent(webhook, eventType) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) dispatchFleetAlertNotification(eventType string, alert FleetAlert) {
+	if s == nil || s.runner == nil || s.runner.notifier == nil {
+		return
+	}
+	s.runner.notifier.Dispatch(s.runner.currentNotificationSettings(), NotificationEvent{
+		Type:       eventType,
+		TestID:     alert.ID,
+		TestName:   firstNonEmpty(alert.Target, "Fleet"),
+		Status:     firstNonEmpty(alert.Type, "fleet_alert"),
+		Severity:   alert.Severity,
+		Summary:    alert.Summary,
+		Conditions: []string{firstNonEmpty(alert.Region, "unscoped")},
+		Timestamp:  time.Now().UTC(),
+	})
 }
 
 func buildFleetCapacity(inventory SystemInventoryResponse, settings SystemSettings, tests []*ManagedTest, projectID string, region string, protocolName string) FleetCapacityResponse {

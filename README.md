@@ -273,6 +273,8 @@ go run ./cmd/apexctl run \
 - `--duration, -d` (default: 1m) — Total test duration
 - `--ramp-up, -r` (default: 0s) — VUser ramp-up period
 - `--format` (`text`, `json`) — Human or machine-readable result output
+- `--api-key` / `APEXLOAD_API_KEY` — Service-account API key for secured controller-backed commands
+- `--bearer-token` / `APEXLOAD_BEARER_TOKEN` — Alternate bearer-token auth when an API key is not used
 - `--api` — Execute through the controller API instead of locally
 - `--env, -env` — Runtime environment substitution for `{{env.KEY}}` placeholders
 - `--base-url` — Override the script base URL at run time

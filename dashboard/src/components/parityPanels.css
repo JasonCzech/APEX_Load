@@ -27,6 +27,23 @@
   gap: 8px;
 }
 
+.pp-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.pp-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .pp-row {
   display: flex;
   align-items: center;
@@ -122,6 +139,11 @@
   font-size: 13px;
   border: 1px dashed var(--border);
   border-radius: var(--radius, 8px);
+}
+
+.pp-empty-compact {
+  padding: 10px 12px;
+  text-align: left;
 }
 
 .pp-error {

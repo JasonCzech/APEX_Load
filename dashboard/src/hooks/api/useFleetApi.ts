@@ -6,6 +6,7 @@ import {
   FleetPool,
   FleetPoolListResponse,
   FleetProvisioningRequest,
+  FleetProvisioningRequestListResponse,
   ProvisionerInfo,
 } from '../../types'
 import { request } from '../apiClient'
@@ -29,6 +30,13 @@ export type GeneratorMetadataPatch = {
   provider_status?: string
   cordoned?: boolean
   tags?: Record<string, string>
+}
+
+export type GeneratorLifecycleResponse = {
+  generator_id?: string
+  target?: string
+  drain_state: string
+  cordoned: boolean
 }
 
 export function useFleetApi() {
@@ -72,6 +80,24 @@ export function useFleetApi() {
     [],
   )
 
+  const cordonGenerator = useCallback(
+    (generatorId: string) =>
+      request<GeneratorLifecycleResponse>(`/fleet/generators/${generatorId}/cordon`, { method: 'POST' }),
+    [],
+  )
+
+  const uncordonGenerator = useCallback(
+    (generatorId: string) =>
+      request<GeneratorLifecycleResponse>(`/fleet/generators/${generatorId}/uncordon`, { method: 'POST' }),
+    [],
+  )
+
+  const drainGenerator = useCallback(
+    (generatorId: string) =>
+      request<GeneratorLifecycleResponse>(`/fleet/generators/${generatorId}/drain`, { method: 'POST' }),
+    [],
+  )
+
   const createProvisionRequest = useCallback(
     (body: { fleet_pool_id: string; desired_count: number; reason?: string; project_id?: string }) =>
       request<FleetProvisioningRequest>('/fleet/provision-requests', {
@@ -81,8 +107,26 @@ export function useFleetApi() {
     [],
   )
 
+  const listProvisionRequests = useCallback(
+    (params?: { fleet_pool_id?: string; limit?: number; offset?: number }) =>
+      request<FleetProvisioningRequestListResponse>(`/fleet/provision-requests${buildQuery({ ...params })}`),
+    [],
+  )
+
   const getProvisionRequest = useCallback(
     (id: string) => request<FleetProvisioningRequest>(`/fleet/provision-requests/${id}`),
+    [],
+  )
+
+  const cancelProvisionRequest = useCallback(
+    (id: string) =>
+      request<FleetProvisioningRequest>(`/fleet/provision-requests/${id}/cancel`, { method: 'POST' }),
+    [],
+  )
+
+  const retryProvisionRequest = useCallback(
+    (id: string) =>
+      request<FleetProvisioningRequest>(`/fleet/provision-requests/${id}/retry`, { method: 'POST' }),
     [],
   )
 
@@ -97,10 +141,16 @@ export function useFleetApi() {
       deleteFleetPool,
       listGeneratorMetadata,
       patchGeneratorMetadata,
+      cordonGenerator,
+      uncordonGenerator,
+      drainGenerator,
       createProvisionRequest,
+      listProvisionRequests,
       getProvisionRequest,
+      cancelProvisionRequest,
+      retryProvisionRequest,
       getProvisioner,
     }),
-    [listFleetPools, getFleetPool, createFleetPool, updateFleetPool, deleteFleetPool, listGeneratorMetadata, patchGeneratorMetadata, createProvisionRequest, getProvisionRequest, getProvisioner],
+    [listFleetPools, getFleetPool, createFleetPool, updateFleetPool, deleteFleetPool, listGeneratorMetadata, patchGeneratorMetadata, cordonGenerator, uncordonGenerator, drainGenerator, createProvisionRequest, listProvisionRequests, getProvisionRequest, cancelProvisionRequest, retryProvisionRequest, getProvisioner],
   )
 }

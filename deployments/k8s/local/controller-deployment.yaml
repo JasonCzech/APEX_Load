@@ -60,7 +60,7 @@ spec:
             - name: APEXLOAD_GENERATOR_TIMEOUT
               value: 10s
             - name: APEXLOAD_GENERATORS
-              value: apexload-generator-0.apexload-generator:9090,apexload-generator-1.apexload-generator:9090
+              value: dns://apexload-generator.apexload-local.svc.cluster.local:9090
             - name: OPENAI_API_KEY
               valueFrom:
                 secretKeyRef:

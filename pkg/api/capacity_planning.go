@@ -3,7 +3,6 @@ package api
 import (
 	"fmt"
 	"math"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -345,6 +344,10 @@ func resolveCapacityAvailability(settings SystemSettings) CapacityAvailabilitySn
 }
 
 func resolveCapacityAvailabilityAt(settings SystemSettings, now time.Time) CapacityAvailabilitySnapshot {
+	return resolveCapacityAvailabilityWithLiveAt(settings, nil, now)
+}
+
+func resolveCapacityAvailabilityWithLiveAt(settings SystemSettings, liveAvailable *int, now time.Time) CapacityAvailabilitySnapshot {
 	configured := settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators
 	snapshot := CapacityAvailabilitySnapshot{
 		Source:                        settings.CapacityPlanning.Availability.Source,
@@ -356,14 +359,13 @@ func resolveCapacityAvailabilityAt(settings SystemSettings, now time.Time) Capac
 		return applyGlobalCapacityReservationSummaryAt(settings, snapshot, now)
 	}
 
-	rawLive := strings.TrimSpace(os.Getenv("APEXLOAD_LIVE_AVAILABLE_GENERATORS"))
-	if rawLive == "" {
+	if liveAvailable == nil {
 		snapshot.Warnings = append(snapshot.Warnings, "Live generator availability is enabled but no runtime snapshot was provided; using configured generator inventory.")
 		return applyGlobalCapacityReservationSummaryAt(settings, snapshot, now)
 	}
 
-	live, err := strconv.Atoi(rawLive)
-	if err != nil || live < 0 {
+	live := *liveAvailable
+	if live < 0 {
 		snapshot.Warnings = append(snapshot.Warnings, "Live generator availability snapshot is invalid; using configured generator inventory.")
 		return applyGlobalCapacityReservationSummaryAt(settings, snapshot, now)
 	}
@@ -398,7 +400,11 @@ func resolveCapacityAvailabilityForProject(settings SystemSettings, projectID st
 }
 
 func resolveCapacityAvailabilityForProjectAt(settings SystemSettings, projectID string, now time.Time) CapacityAvailabilitySnapshot {
-	snapshot := resolveCapacityAvailabilityAt(settings, now)
+	return resolveCapacityAvailabilityForProjectWithLiveAt(settings, projectID, nil, now)
+}
+
+func resolveCapacityAvailabilityForProjectWithLiveAt(settings SystemSettings, projectID string, liveAvailable *int, now time.Time) CapacityAvailabilitySnapshot {
+	snapshot := resolveCapacityAvailabilityWithLiveAt(settings, liveAvailable, now)
 	normalizedProjectID := normalizeProjectID(strings.TrimSpace(projectID))
 	totalReserved, projectReserved := capacityReservationTotalsAt(settings, normalizedProjectID, now)
 	if totalReserved == 0 {

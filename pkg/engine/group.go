@@ -66,6 +66,7 @@ type MultiGroupEngine struct {
 	stopVUsers     context.CancelFunc
 	baseCtx        context.Context
 	loopCtx        context.Context
+	softStop       context.CancelFunc
 }
 
 type GroupResult struct {
@@ -163,6 +164,7 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 	mge.baseCtx = baseCtx
 	mge.loopCtx = loopCtx
 	mge.cancel = baseCancel
+	mge.softStop = loopCancel
 	// Publish mge.wg under the lock alongside baseCtx so any ScaleVUsers caller
 	// that observes a running baseCtx also sees a non-nil wg (avoids a nil-deref
 	// in spawnVUser's wg.Add and a data race on the field).
@@ -178,6 +180,11 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 
 	defer baseCancel()
 	defer loopCancel()
+	defer func() {
+		mge.mu.Lock()
+		mge.softStop = nil
+		mge.mu.Unlock()
+	}()
 
 	start := time.Now()
 	groupResults := make([]GroupResult, len(mge.groups))
@@ -740,6 +747,17 @@ func (mge *MultiGroupEngine) Stop() {
 	if cancel != nil {
 		cancel()
 	}
+}
+
+func (mge *MultiGroupEngine) GracefulStop() {
+	mge.mu.Lock()
+	cancel := mge.softStop
+	mge.mu.Unlock()
+	if cancel != nil {
+		cancel()
+		return
+	}
+	mge.Stop()
 }
 
 func (mge *MultiGroupEngine) LatestSnapshot() (MetricsSnapshot, bool) {

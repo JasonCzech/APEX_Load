@@ -1,6 +1,6 @@
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { DashboardAuthEffectiveAccessResource, DraftCapacityEstimate, GeneratorAssignmentSettings, GoalConfig, GoalSizingReport, LoadModelSupportEntry, LoadModelTemplate, LoadModelValidationReport, LoadStageDraft, RunArchiveActionStats, RunArchiveReport, RuntimeSettingsOverride, ScenarioDataPoolBinding, ScenarioMode, ScenarioRuntimeSettingsDraft, SharedDataPool, StoredScenario, StoredScript, SystemInventoryGenerator, TestSummary } from '../types'
+import { ApplicationRepository, DashboardAuthEffectiveAccessResource, DraftCapacityEstimate, GeneratorAssignmentSettings, GoalConfig, GoalSizingReport, LoadModelSupportEntry, LoadModelTemplate, LoadModelValidationReport, LoadStageDraft, RunArchiveActionStats, RunArchiveReport, RuntimeSettingsOverride, ScenarioDataPoolBinding, ScenarioMode, ScenarioRuntimeSettingsDraft, SharedDataPool, StoredScenario, StoredScript, SystemInventoryGenerator, TestSummary } from '../types'
 import { type ScriptConfig } from '../types/scripts'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
@@ -30,6 +30,7 @@ import { clearScenarioBuilderDraft, hasScenarioBuilderProgress } from './scenari
 import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 
 interface Props {
+  applicationRepository?: ApplicationRepository | null
   testStatuses: Record<string, string>
   onSelectTest: (id: string) => void
   onOpenCommandCenter?: (id: string) => void
@@ -989,7 +990,7 @@ function ScenarioModelPreviewPanel({
   )
 }
 
-function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, onNavigate, onScenarioViewChange, initialView = 'library' }: Props) {
+function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, onNavigate, onScenarioViewChange, initialView = 'library' }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
   const [engineDefaults, setEngineDefaults] = useState<ScriptConfig | undefined>(undefined)
@@ -1230,7 +1231,10 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     let cancelled = false
     const loadEffectiveAccess = async () => {
       try {
-        const response = await api.getAuthEffectiveAccess(activeProject?.id, { domain_id: activeProject?.domain_id })
+        const response = await api.getAuthEffectiveAccess(activeProject?.id, {
+          domain_id: activeProject?.domain_id,
+          application_repository_id: applicationRepository?.id,
+        })
         if (!cancelled) {
           setEffectiveAuthAccessResources(response.resources || [])
         }
@@ -1248,7 +1252,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     return () => {
       cancelled = true
     }
-  }, [activeProject?.id, activeProject?.domain_id, api])
+  }, [activeProject?.id, activeProject?.domain_id, api, applicationRepository?.id])
   useEffect(() => {
     // Only tear down manage-only views once access has loaded; the brief
     // default-DENY window before the access fetch resolves must not reset a

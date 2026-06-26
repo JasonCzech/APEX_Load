@@ -112,6 +112,10 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
     () => Boolean(draft && draft.start_local && draft.end_local && new Date(draft.start_local) < new Date(draft.end_local)),
     [draft],
   )
+  const reservationActionDisabled = !canManage || !projectId
+  const reservationActionTitle = !canManage
+    ? 'Admin access required to create reservations'
+    : projectId ? undefined : 'Select a project'
 
   const checkAvailability = useCallback(async () => {
     if (!draft || !projectId || !draftValid) return
@@ -186,11 +190,15 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
         <span className="pp-toolbar-title">
           {timeslots.length} reservation{timeslots.length === 1 ? '' : 's'} — forward-booked capacity windows with approval.
         </span>
-        {canManage && (
-          <button type="button" className="btn btn-primary btn-sm" disabled={!projectId} title={projectId ? undefined : 'Select a project'} onClick={() => { setDraft(emptyDraft()); setAvailability(null) }}>
-            New Reservation
-          </button>
-        )}
+        <button
+          type="button"
+          className="btn btn-primary btn-sm"
+          disabled={reservationActionDisabled}
+          title={reservationActionTitle}
+          onClick={() => { setDraft(emptyDraft()); setAvailability(null) }}
+        >
+          New Reservation
+        </button>
       </div>
 
       {error && <div className="pp-error">{error}</div>}

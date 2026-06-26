@@ -5,8 +5,6 @@ package api
 //   - system settings (generator specs, headroom, configured reservations) — the
 //     generation is folded into every key and bumped on each settings change, so
 //     settings edits invalidate exactly;
-//   - the APEXLOAD_LIVE_AVAILABLE_GENERATORS env var (the runtime live-capacity
-//     snapshot) — read and folded into the key, so a changed snapshot misses;
 //   - wall-clock time, only via configured reservation windows opening/closing —
 //     bounded by a short TTL (the advisory is a pre-launch hint that is always
 //     re-validated by fresh admission checks at launch, so ≤TTL reservation lag is
@@ -23,7 +21,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"os"
 	"sync/atomic"
 	"time"
 )
@@ -45,9 +42,11 @@ type cachedCapacityAdvisory struct {
 // tr.settings read in estimateCapacityAdvisoryForAssignment. Returns "" if the
 // inputs cannot be marshaled, signaling the caller to bypass the cache.
 func (tr *TestRunner) capacityAdvisoryCacheKey(projectID string, groups []TestGroup, totalVUsers int, duration time.Duration, resourceBaseline bool, runtimeSettings *RuntimeSettingsOverride, assignment *GeneratorAssignmentSettings) string {
+	if tr.settings.CapacityPlanning.Availability.Source == capacityAvailabilityConfiguredPlusLive {
+		return ""
+	}
 	payload := struct {
 		Gen              uint64                       `json:"g"`
-		Live             string                       `json:"l"`
 		ProjectID        string                       `json:"p"`
 		Groups           []TestGroup                  `json:"gr"`
 		TotalVUsers      int                          `json:"v"`
@@ -56,10 +55,7 @@ func (tr *TestRunner) capacityAdvisoryCacheKey(projectID string, groups []TestGr
 		Runtime          *RuntimeSettingsOverride     `json:"rt"`
 		Assignment       *GeneratorAssignmentSettings `json:"a"`
 	}{
-		Gen: tr.capacityAdvisoryGen,
-		// The live-availability snapshot is supplied out-of-band via env, so a
-		// change to it must produce a fresh key (see resolveCapacityAvailabilityAt).
-		Live:             os.Getenv("APEXLOAD_LIVE_AVAILABLE_GENERATORS"),
+		Gen:              tr.capacityAdvisoryGen,
 		ProjectID:        projectID,
 		Groups:           groups,
 		TotalVUsers:      totalVUsers,

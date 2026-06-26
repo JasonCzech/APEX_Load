@@ -5,26 +5,29 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"strings"
 )
 
 type githubCLIArgs struct {
-	command    string
-	api        string
-	projectID  string
-	kind       string
-	owner      string
-	repo       string
-	branch     string
-	path       string
-	strategy   string
-	scriptID   string
-	testID     string
-	commitSHA  string
-	detailsURL string
-	refresh    bool
-	format     string
+	command     string
+	api         string
+	apiKey      string
+	bearerToken string
+	projectID   string
+	kind        string
+	owner       string
+	repo        string
+	branch      string
+	path        string
+	strategy    string
+	scriptID    string
+	testID      string
+	commitSHA   string
+	detailsURL  string
+	refresh     bool
+	format      string
 }
 
 func parseGithubArgs(args []string) githubCLIArgs {
@@ -43,6 +46,16 @@ func parseGithubArgs(args []string) githubCLIArgs {
 			if i+1 < len(args) {
 				i++
 				parsed.api = args[i]
+			}
+		case "--api-key":
+			if i+1 < len(args) {
+				i++
+				parsed.apiKey = args[i]
+			}
+		case "--bearer-token":
+			if i+1 < len(args) {
+				i++
+				parsed.bearerToken = args[i]
 			}
 		case "--project", "--project-id":
 			if i+1 < len(args) {
@@ -126,7 +139,7 @@ func githubCmd() {
 		printGithubUsage()
 		return
 	}
-	client := NewApiClient(strings.TrimRight(args.api, "/"))
+	client := NewApiClientWithAuth(strings.TrimRight(args.api, "/"), args.apiKey, args.bearerToken)
 	var (
 		out map[string]any
 		err error
@@ -193,7 +206,7 @@ func printGithubUsage() {
 	fmt.Println(`apexctl github - GitHub Enterprise integration commands
 
 Usage:
-  apexctl github diagnostics [--api URL]
+  apexctl github diagnostics [--api URL] [--api-key KEY|--bearer-token TOKEN]
   apexctl github installations [--api URL] [--refresh]
   apexctl github policy --project <id> [--api URL]
   apexctl github sync --project <id> [--kind import|push] [--owner org --repo name --branch main --path apexload/scripts]
@@ -201,7 +214,8 @@ Usage:
   apexctl github check-run --test <id> [--script <id>] [--owner org --repo name --commit-sha SHA] [--details-url URL]
 
 Defaults:
-  --api defaults to APEXLOAD_API or http://localhost:8080.`)
+  --api defaults to APEXLOAD_API or http://localhost:8080.
+  --api-key and --bearer-token default to APEXLOAD_API_KEY and APEXLOAD_BEARER_TOKEN.`)
 }
 
 func printGithubResult(args githubCLIArgs, out map[string]any) {
@@ -234,7 +248,7 @@ func printGithubResult(args githubCLIArgs, out map[string]any) {
 }
 
 func (c *ApiClient) getJSON(path string) (map[string]any, error) {
-	resp, err := c.Client.Get(c.BaseURL + path)
+	resp, err := c.do(http.MethodGet, path, nil, "")
 	if err != nil {
 		return nil, err
 	}
@@ -255,7 +269,7 @@ func (c *ApiClient) postJSON(path string, payload map[string]any) (map[string]an
 	if err != nil {
 		return nil, err
 	}
-	resp, err := c.Client.Post(c.BaseURL+path, "application/json", bytes.NewReader(data))
+	resp, err := c.do(http.MethodPost, path, bytes.NewReader(data), "application/json")
 	if err != nil {
 		return nil, err
 	}

@@ -32,6 +32,41 @@ import {
   bucketLabel, formatNumber, usageSummary, usageForUser, eventScopeLabel, eventResourceLabel, detailsSummary,
 } from './accessUtils'
 
+const USER_PAGE_SIZE_OPTIONS = [25, 50, 100]
+
+function isValidOptionalEmail(value: string): boolean {
+  const trimmed = value.trim()
+  if (!trimmed) return true
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)
+}
+
+function confirmBroadAutomationScope(scopes: string[], subject: string): boolean {
+  if (!scopes.includes('automation:*')) return true
+  if (typeof window === 'undefined') return true
+  return window.confirm(`${subject} includes automation:*, which allows any service-account token scope after RBAC also permits the route. Continue?`)
+}
+
+function additionalScopedRoleEntries(
+  account: DashboardServiceAccount,
+  projects: { id: string; name: string }[],
+  domains: { id: string; name: string }[],
+  applicationRepository?: { id: string; name: string } | null,
+): Array<{ key: string; label: string; roles: string[] }> {
+  const entries: Array<{ key: string; label: string; roles: string[] }> = []
+  const collect = (scopeLabel: string, rolesByID: Record<string, string[]> | undefined, labelForID: (id: string) => string) => {
+    Object.entries(rolesByID || {}).forEach(([id, roles]) => {
+      const additionalRoles = (roles || []).slice(1)
+      if (additionalRoles.length > 0) {
+        entries.push({ key: `${scopeLabel}:${id}`, label: `${scopeLabel}: ${labelForID(id)}`, roles: additionalRoles })
+      }
+    })
+  }
+  collect('Domain', account.domain_roles, id => domains.find(domain => domain.id === id)?.name || id)
+  collect('Project', account.project_roles, id => projects.find(project => project.id === id)?.name || id)
+  collect('Repository', account.application_repository_roles, id => (applicationRepository?.id === id ? applicationRepository.name : id))
+  return entries
+}
+
 export default function AccessPage({
   projects,
   domains = [],
@@ -53,6 +88,8 @@ export default function AccessPage({
   const [accounts, setAccounts] = useState<DashboardServiceAccount[]>([])
   const [users, setUsers] = useState<DashboardUser[]>([])
   const [usersTotal, setUsersTotal] = useState(0)
+  const [userPage, setUserPage] = useState(0)
+  const [userPageSize, setUserPageSize] = useState(50)
   const [selectedUserID, setSelectedUserID] = useState('')
   const [selectedAccountID, setSelectedAccountID] = useState('')
   const [selectedActivityID, setSelectedActivityID] = useState('')
@@ -90,6 +127,7 @@ export default function AccessPage({
   const [loading, setLoading] = useState(true)
   const [usersLoading, setUsersLoading] = useState(true)
   const [activityLoading, setActivityLoading] = useState(true)
+  const [activityExporting, setActivityExporting] = useState(false)
   const [actionError, setActionError] = useState('')
   const [actionMessage, setActionMessage] = useState('')
   const [userActionError, setUserActionError] = useState('')
@@ -111,6 +149,13 @@ export default function AccessPage({
   const selectedActivity = useMemo(() => activityEvents.find(event => event.id === selectedActivityID) || null, [activityEvents, selectedActivityID])
   const userBuckets = useMemo(() => activityUsage?.by_user || [], [activityUsage?.by_user])
   const accessWorkspaceAvailable = canUseUsers || canManageServiceAccounts || canViewUserActivity
+  const userPageCount = Math.max(1, Math.ceil(usersTotal / userPageSize))
+  const userRangeStart = usersTotal === 0 ? 0 : userPage * userPageSize + 1
+  const userRangeEnd = Math.min(userPage * userPageSize + users.length, usersTotal)
+  const onboardEmailInvalid = !isValidOptionalEmail(userForm.email)
+  const editUserEmailInvalid = !isValidOptionalEmail(editUserForm.email)
+  const accountContactInvalid = !isValidOptionalEmail(form.contact)
+  const editAccountContactInvalid = !isValidOptionalEmail(editAccountForm.contact)
   // Attention summary for the access-review badge: flagged principals + recent denials.
   const accessReviewAttention = useMemo(() => {
     if (!accessReview) return null
@@ -335,9 +380,14 @@ export default function AccessPage({
     }
     setUsersLoading(true)
     try {
-      const response = await api.listAuthUsers({ limit: 100 })
+      const offset = userPage * userPageSize
+      const response = await api.listAuthUsers({ limit: userPageSize, offset })
       setUsers(response.users || [])
-      setUsersTotal(typeof response.total === 'number' ? response.total : (response.users || []).length)
+      const total = typeof response.total === 'number' ? response.total : (response.users || []).length
+      setUsersTotal(total)
+      if (offset >= total && total > 0) {
+        setUserPage(Math.max(0, Math.ceil(total / userPageSize) - 1))
+      }
       setUserActionError('')
     } catch (error: unknown) {
       setUserActionError(getErrorMessage(error, 'Unable to load users'))
@@ -346,7 +396,7 @@ export default function AccessPage({
     } finally {
       setUsersLoading(false)
     }
-  }, [api, canUseUsers])
+  }, [api, canUseUsers, userPage, userPageSize])
 
   const loadActivity = useCallback(async () => {
     if (!canViewUserActivity) {
@@ -498,6 +548,11 @@ export default function AccessPage({
       setUserActionMessage('')
       return
     }
+    if (onboardEmailInvalid) {
+      setUserActionError('Enter a valid email address before creating the user.')
+      setUserActionMessage('')
+      return
+    }
     const initialBindings = normalizedUserBindingDrafts(onboardBindingDrafts)
     if (initialBindings.length === 0) {
       setUserActionError('Choose at least one initial role binding.')
@@ -505,18 +560,16 @@ export default function AccessPage({
       return
     }
     try {
-      const user = await api.createAuthUser({
+      const user = await api.onboardAuthUser({
         subject: userForm.subject.trim(),
         email: userForm.email.trim() || undefined,
         display_name: userForm.displayName.trim() || undefined,
-      })
-      for (const binding of initialBindings) {
-        await api.createAuthUserBinding(user.id, {
+        bindings: initialBindings.map(binding => ({
           scope_type: binding.scopeType,
           scope_id: binding.scopeType === 'global' ? undefined : binding.scopeID,
           role: binding.role,
-        })
-      }
+        })),
+      })
       setSelectedUserID(user.id)
       setUserInspectorCollapsed(false)
       setUserSubTab('existing')
@@ -536,6 +589,11 @@ export default function AccessPage({
     if (!selectedUser || !canManageUserBindings) return
     if (canManageUserLifecycle && !editUserForm.subject.trim()) {
       setUserActionError('Subject is required.')
+      setUserActionMessage('')
+      return
+    }
+    if (canManageUserLifecycle && editUserEmailInvalid) {
+      setUserActionError('Enter a valid email address before saving the user.')
       setUserActionMessage('')
       return
     }
@@ -647,6 +705,14 @@ export default function AccessPage({
       setActionMessage('')
       return
     }
+    if (accountContactInvalid) {
+      setActionError('Enter a valid contact email before creating the service account.')
+      setActionMessage('')
+      return
+    }
+    if (!confirmBroadAutomationScope(form.scopes, 'This service account')) {
+      return
+    }
 
     try {
       const response = await api.createAuthServiceAccount({
@@ -755,6 +821,13 @@ export default function AccessPage({
       setActionError('Keep at least one token scope (use Disable to deactivate the key).')
       return
     }
+    if (editAccountContactInvalid) {
+      setActionError('Enter a valid contact email before saving the service account.')
+      return
+    }
+    if (!confirmBroadAutomationScope(editAccountForm.scopes, account.name)) {
+      return
+    }
     try {
       await api.updateAuthServiceAccount(account.id, {
         name: editAccountForm.name.trim(),
@@ -807,6 +880,7 @@ export default function AccessPage({
 
   const exportActivity = async () => {
     if (!canViewUserActivity) return
+    setActivityExporting(true)
     try {
       const blob = await api.downloadAuthUserActivity(buildActivityFilter(activityFilter))
       const date = new Date().toISOString().slice(0, 10)
@@ -816,6 +890,8 @@ export default function AccessPage({
     } catch (error: unknown) {
       setActivityError(getErrorMessage(error, 'Unable to export activity'))
       setActivityMessage('')
+    } finally {
+      setActivityExporting(false)
     }
   }
 
@@ -830,7 +906,7 @@ export default function AccessPage({
         return {
           ...draft,
           ...updates,
-          scopeID: defaultScopeID(updates.scopeType, projects, domains, activeProject, activeDomain),
+          scopeID: defaultScopeID(updates.scopeType, projects, domains, activeProject, activeDomain, applicationRepository),
           role: roleOptionsForScope(updates.scopeType)[0]?.id || draft.role,
         }
       }
@@ -995,7 +1071,8 @@ export default function AccessPage({
             </label>
             <label>
               <span>Email</span>
-              <input value={editUserForm.email} onChange={event => setEditUserForm(prev => ({ ...prev, email: event.target.value }))} disabled={!canManageUserLifecycle} />
+              <input value={editUserForm.email} onChange={event => setEditUserForm(prev => ({ ...prev, email: event.target.value }))} disabled={!canManageUserLifecycle} aria-invalid={editUserEmailInvalid || undefined} />
+              {editUserEmailInvalid && <span className="access-field-error">Enter a valid email address.</span>}
             </label>
             <label>
               <span>Display Name</span>
@@ -1003,7 +1080,7 @@ export default function AccessPage({
             </label>
           </div>
           <div className="access-account-actions">
-            <button className="btn btn-primary btn-sm" type="button" onClick={updateSelectedUser} disabled={!canManageUserBindings}>Save Changes</button>
+            <button className="btn btn-primary btn-sm" type="button" onClick={updateSelectedUser} disabled={!canManageUserBindings || (canManageUserLifecycle && editUserEmailInvalid)}>Save Changes</button>
             <button className="btn btn-secondary btn-sm" type="button" onClick={() => { resetSelectedUserEditDrafts(); setSelectedUserEditMode(false) }}>Cancel</button>
             <button className="btn btn-secondary btn-sm" type="button" onClick={() => setUserActive(selectedUser, !selectedUser.active)} disabled={!canManageUserLifecycle}>
               {selectedUser.active ? 'Remove Access' : 'Restore Access'}
@@ -1165,6 +1242,11 @@ export default function AccessPage({
             </button>
           ))}
         </div>
+        {current.scopes.includes('automation:*') && (
+          <div className="access-alert warning" role="status">
+            automation:* is a broad token scope. RBAC still applies, but the key will not be narrowed by per-feature token scopes.
+          </div>
+        )}
       </div>
 
       {renderScopedRoleList('Project Roles', 'Project-scoped role assignments.', projects.map(project => ({ id: project.id, name: project.name })), 'Create or select a project to assign project-scoped roles.', 'projectRoles', projectDefaultRole, current, setter)}
@@ -1173,7 +1255,9 @@ export default function AccessPage({
     </>
   )
 
-  const renderAccountEditForm = (account: DashboardServiceAccount) => (
+  const renderAccountEditForm = (account: DashboardServiceAccount) => {
+    const additionalEntries = additionalScopedRoleEntries(account, projects, domains, applicationRepository)
+    return (
     <aside className="access-inspector access-panel" aria-label="Edit service account">
       <div className="access-panel-header">
         <div>
@@ -1197,7 +1281,8 @@ export default function AccessPage({
         </label>
         <label>
           <span>Contact Email</span>
-          <input value={editAccountForm.contact} onChange={event => setEditAccountForm(prev => ({ ...prev, contact: event.target.value }))} placeholder="oncall@example.com" />
+          <input value={editAccountForm.contact} onChange={event => setEditAccountForm(prev => ({ ...prev, contact: event.target.value }))} placeholder="oncall@example.com" aria-invalid={editAccountContactInvalid || undefined} />
+          {editAccountContactInvalid && <span className="access-field-error">Enter a valid email address.</span>}
         </label>
         <label>
           <span>Expires At</span>
@@ -1209,15 +1294,32 @@ export default function AccessPage({
         </label>
       </div>
       {renderServiceAccountRoleControls(editAccountForm, setEditAccountForm)}
+      {additionalEntries.length > 0 && (
+        <div className="access-control-section access-readonly-section">
+          <h4>Additional Roles</h4>
+          <p>These roles are retained unless that scope is removed or replaced.</p>
+          <div className="access-binding-list readonly">
+            {additionalEntries.map(entry => (
+              <div className="access-binding-row" key={entry.key}>
+                <div>
+                  <strong>{entry.label}</strong>
+                  <span>{entry.roles.map(role => ROLE_LABELS[role] || role).join(', ')}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {(actionError || actionMessage) && (
         <div className={`access-alert ${actionError ? 'error' : 'success'}`}>{actionError || actionMessage}</div>
       )}
       <div className="access-account-actions">
-        <button className="btn btn-primary btn-sm" type="button" onClick={() => updateAccount(account)} disabled={!canManageServiceAccounts}>Save Changes</button>
+        <button className="btn btn-primary btn-sm" type="button" onClick={() => updateAccount(account)} disabled={!canManageServiceAccounts || editAccountContactInvalid}>Save Changes</button>
         <button className="btn btn-ghost btn-sm" type="button" onClick={cancelEditAccount}>Cancel</button>
       </div>
     </aside>
-  )
+    )
+  }
 
   const renderAccountInspector = () => {
     if (!selectedAccount || accountInspectorCollapsed) return null
@@ -1555,6 +1657,20 @@ export default function AccessPage({
                     </div>
                   )}
                 </div>
+                <div className="access-pagination-toolbar" aria-label="User pagination">
+                  <span>{usersLoading ? 'Loading users...' : `Showing ${userRangeStart}-${userRangeEnd} of ${usersTotal}`}</span>
+                  <label>
+                    <span>Rows</span>
+                    <select value={userPageSize} onChange={event => { setUserPageSize(Number(event.target.value)); setUserPage(0) }}>
+                      {USER_PAGE_SIZE_OPTIONS.map(size => <option key={size} value={size}>{size}</option>)}
+                    </select>
+                  </label>
+                  <div className="access-pagination-actions">
+                    <button className="btn btn-secondary btn-sm" type="button" onClick={() => setUserPage(page => Math.max(0, page - 1))} disabled={userPage <= 0 || usersLoading}>Previous</button>
+                    <span>Page {Math.min(userPage + 1, userPageCount)} of {userPageCount}</span>
+                    <button className="btn btn-secondary btn-sm" type="button" onClick={() => setUserPage(page => Math.min(userPageCount - 1, page + 1))} disabled={userPage >= userPageCount - 1 || usersLoading}>Next</button>
+                  </div>
+                </div>
                 {renderUserManagementPanel()}
               </>
             )}
@@ -1568,7 +1684,8 @@ export default function AccessPage({
                   </label>
                   <label>
                     <span>Email</span>
-                    <input value={userForm.email} onChange={event => setUserForm(prev => ({ ...prev, email: event.target.value }))} placeholder="person@example.com" />
+                    <input value={userForm.email} onChange={event => setUserForm(prev => ({ ...prev, email: event.target.value }))} placeholder="person@example.com" aria-invalid={onboardEmailInvalid || undefined} />
+                    {onboardEmailInvalid && <span className="access-field-error">Enter a valid email address.</span>}
                   </label>
                   <label>
                     <span>Display Name</span>
@@ -1586,7 +1703,7 @@ export default function AccessPage({
                   </div>
                 )}
                 <div className="access-form-actions">
-                  <button className="btn btn-primary" type="button" onClick={createUser} disabled={!canManageUserLifecycle || !userForm.subject.trim()}>
+                  <button className="btn btn-primary" type="button" onClick={createUser} disabled={!canManageUserLifecycle || !userForm.subject.trim() || onboardEmailInvalid}>
                     Create User
                   </button>
                 </div>
@@ -1778,7 +1895,8 @@ export default function AccessPage({
                   </label>
                   <label>
                     <span>Contact Email</span>
-                    <input value={form.contact} onChange={event => setForm(prev => ({ ...prev, contact: event.target.value }))} placeholder="oncall@example.com" />
+                    <input value={form.contact} onChange={event => setForm(prev => ({ ...prev, contact: event.target.value }))} placeholder="oncall@example.com" aria-invalid={accountContactInvalid || undefined} />
+                    {accountContactInvalid && <span className="access-field-error">Enter a valid email address.</span>}
                   </label>
                   <label>
                     <span>Expires At</span>
@@ -1799,7 +1917,7 @@ export default function AccessPage({
                 )}
 
                 <div className="access-form-actions">
-                  <button className="btn btn-primary" type="button" onClick={createAccount} disabled={!canManageServiceAccounts || !form.name.trim()}>
+                  <button className="btn btn-primary" type="button" onClick={createAccount} disabled={!canManageServiceAccounts || !form.name.trim() || accountContactInvalid}>
                     Create Service Account
                   </button>
                 </div>
@@ -1822,7 +1940,9 @@ export default function AccessPage({
                 {selectedActivity && activityInspectorCollapsed && (
                   <button className="btn btn-secondary btn-sm" type="button" onClick={() => setActivityInspectorCollapsed(false)}>Show Details</button>
                 )}
-                <button className="btn btn-secondary btn-sm" type="button" onClick={exportActivity} disabled={!canViewUserActivity}>Export CSV</button>
+                <button className="btn btn-secondary btn-sm" type="button" onClick={exportActivity} disabled={!canViewUserActivity || activityExporting}>
+                  {activityExporting ? 'Exporting...' : 'Export CSV'}
+                </button>
               </div>
             </div>
             <div className="access-subtab-row" role="tablist" aria-label="Activity workspace views">
@@ -1879,7 +1999,9 @@ export default function AccessPage({
                     <span>Created Before</span>
                     <input type="datetime-local" value={activityFilter.createdBefore} onChange={event => setActivityFilter(prev => ({ ...prev, createdBefore: event.target.value }))} />
                   </label>
-                  <button className="btn btn-primary btn-sm" type="button" onClick={loadActivity} disabled={!canViewUserActivity}>Apply Filters</button>
+                  <button className="btn btn-primary btn-sm" type="button" onClick={loadActivity} disabled={!canViewUserActivity || activityLoading}>
+                    {activityLoading ? 'Applying...' : 'Apply Filters'}
+                  </button>
                 </div>
 
                 <div className="access-table-toolbar compact">
@@ -1890,7 +2012,7 @@ export default function AccessPage({
                 </div>
 
                 {(activityError || activityMessage) && (
-                  <div className={`access-alert ${activityError ? 'error' : 'success'}`}>
+                  <div className={`access-alert ${activityError ? 'error' : 'success'}`} role="status" aria-live="polite">
                     {activityError || activityMessage}
                   </div>
                 )}
@@ -2073,6 +2195,7 @@ function IssuedKeyModal({
           <span>{issuedKey.accountName}</span>
           <code>{issuedKey.key}</code>
           <button className="btn btn-secondary btn-sm" type="button" onClick={onCopy}>{copyMessage || 'Copy Key'}</button>
+          <span className="access-copy-status" role="status" aria-live="polite">{copyMessage}</span>
         </div>
         <div className="access-issued-examples">
           <div>

@@ -11,11 +11,13 @@ import (
 // ctlArgs holds the flags shared by the status/wait subcommands, which operate
 // on an already-created test by ID against a running controller.
 type ctlArgs struct {
-	api     string
-	test    string
-	format  string
-	junit   string
-	timeout time.Duration
+	api         string
+	apiKey      string
+	bearerToken string
+	test        string
+	format      string
+	junit       string
+	timeout     time.Duration
 }
 
 func parseCtlArgs(args []string) ctlArgs {
@@ -26,6 +28,16 @@ func parseCtlArgs(args []string) ctlArgs {
 			if i+1 < len(args) {
 				i++
 				c.api = args[i]
+			}
+		case "--api-key":
+			if i+1 < len(args) {
+				i++
+				c.apiKey = args[i]
+			}
+		case "--bearer-token":
+			if i+1 < len(args) {
+				i++
+				c.bearerToken = args[i]
 			}
 		case "--test", "--test-id", "-t":
 			if i+1 < len(args) {
@@ -71,7 +83,7 @@ func statusCmd() {
 	c := parseCtlArgs(os.Args[2:])
 	requireCtlTarget(c)
 
-	client := NewApiClient(c.api)
+	client := NewApiClientWithAuth(c.api, c.apiKey, c.bearerToken)
 	report, err := client.GetSLAStatus(c.test)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error fetching status: %v\n", err)
@@ -117,7 +129,7 @@ func waitCmd() {
 	c := parseCtlArgs(os.Args[2:])
 	requireCtlTarget(c)
 
-	client := NewApiClient(c.api)
+	client := NewApiClientWithAuth(c.api, c.apiKey, c.bearerToken)
 	result, runErr := client.WaitForTest(c.test, c.format, c.timeout)
 
 	var sla *SLASummary
@@ -203,11 +215,15 @@ func ctlUsage() string {
 	return strings.TrimSpace(`
 Status Flags (apexctl status):
   --api     Controller base URL (e.g. http://localhost:8080)   [required]
+  --api-key API key for secured controllers (or APEXLOAD_API_KEY)
+  --bearer-token Bearer token for secured controllers (or APEXLOAD_BEARER_TOKEN)
   --test    Test ID to inspect                                  [required]
   --format  Output format (text, json)                          [default: text]
 
 Wait Flags (apexctl wait):
   --api     Controller base URL (e.g. http://localhost:8080)   [required]
+  --api-key API key for secured controllers (or APEXLOAD_API_KEY)
+  --bearer-token Bearer token for secured controllers (or APEXLOAD_BEARER_TOKEN)
   --test    Test ID to wait on                                  [required]
   --timeout Max time to wait for terminal state                 [default: 30m]
   --format  Output format (text, json)                          [default: text]

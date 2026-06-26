@@ -229,14 +229,15 @@ func adjustCapacityAdvisoryForAssignment(advisory *CapacityAdvisory, assignment 
 }
 
 func (tr *TestRunner) estimateCapacityAdvisoryForAssignment(projectID string, groups []TestGroup, totalVUsers int, duration time.Duration, resourceBaseline bool, runtimeSettings *RuntimeSettingsOverride, assignment *GeneratorAssignmentSettings) *CapacityAdvisory {
-	// Memoized: keyed by the settings generation + live-availability env + these
-	// params, with a short TTL for reservation-window drift. See
-	// capacity_advisory_cache.go.
+	// Memoized: keyed by the settings generation + these params, with a short TTL
+	// for reservation-window drift. Live-inventory availability bypasses the cache
+	// so a scaled-down fleet is visible immediately.
 	key := tr.capacityAdvisoryCacheKey(projectID, groups, totalVUsers, duration, resourceBaseline, runtimeSettings, assignment)
 	if cached, ok := tr.lookupCapacityAdvisory(key); ok {
 		return cached
 	}
-	advisory := estimateCapacityAdvisoryForProject(tr.settings, projectID, groups, totalVUsers, duration, resourceBaseline, runtimeSettings)
+	availability := tr.resolveCapacityAvailabilityForProjectAt(projectID, time.Now())
+	advisory := estimateCapacityAdvisoryWithAvailability(tr.settings, availability, groups, totalVUsers, duration, resourceBaseline, runtimeSettings)
 	advisory = adjustCapacityAdvisoryForAssignment(advisory, assignment, tr.assignmentTargetSpecs())
 	tr.storeCapacityAdvisory(key, advisory)
 	return advisory

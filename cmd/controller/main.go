@@ -94,6 +94,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	go server.RunExecutionLeadership(ctx)
+	go server.RunGeneratorPodTerminationWatcher(ctx, 5*time.Second)
 	go func() {
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
@@ -181,7 +182,7 @@ func (a kubeRestarterAdapter) ScaleStatefulSet(ctx context.Context, namespace st
 
 func (a kubeRestarterAdapter) PodByIP(ctx context.Context, namespace string, selector string, ip string) (api.KubePodRef, error) {
 	pod, err := a.client.PodByIP(ctx, namespace, selector, ip)
-	return api.KubePodRef{Name: pod.Name, Namespace: pod.Namespace, IP: pod.IP, Phase: pod.Phase}, err
+	return api.KubePodRef{Name: pod.Name, Namespace: pod.Namespace, IP: pod.IP, Phase: pod.Phase, Ready: pod.Ready, Terminating: pod.Terminating}, err
 }
 
 func (a kubeRestarterAdapter) ListPods(ctx context.Context, namespace string, selector string) ([]api.KubePodRef, error) {
@@ -191,7 +192,7 @@ func (a kubeRestarterAdapter) ListPods(ctx context.Context, namespace string, se
 	}
 	out := make([]api.KubePodRef, 0, len(pods))
 	for _, pod := range pods {
-		out = append(out, api.KubePodRef{Name: pod.Name, Namespace: pod.Namespace, IP: pod.IP, Phase: pod.Phase})
+		out = append(out, api.KubePodRef{Name: pod.Name, Namespace: pod.Namespace, IP: pod.IP, Phase: pod.Phase, Ready: pod.Ready, Terminating: pod.Terminating})
 	}
 	return out, nil
 }

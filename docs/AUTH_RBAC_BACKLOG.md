@@ -23,7 +23,7 @@
 |----|------|--------|--------|-----------|
 | **A16b** | Split `AccessPage.tsx` into workspace components | L | TODO | — (utils already extracted) |
 | **A14** | Move service-account scope into the route catalog | M | TODO (low value) | — |
-| **A18** | Atomic user onboarding (user + bindings) | M | TODO | — |
+| **A18** | Atomic user onboarding (user + bindings) | M | DONE | — |
 | **A20** | Usage-accounting ramp/abort accuracy + archive-bytes cache | M | TODO | ManagedTest schema |
 | **A19** | Unify audit views (Settings vs Access) | — | WONT-DO | — |
 | **A21** | Move logout CSRF token out of status body | — | WONT-DO | — |
@@ -102,16 +102,13 @@ and audit which routes break. **Acceptance:** scope requirements are catalog-der
 no SA regressions. **Anchors:** `pkg/api/auth_resolution.go` (`serviceAccountAllowsRequest`,
 `normalizeAuthenticatedServiceAccountScopes`), `pkg/api/middleware.go` (`grantIfScopeAllows`).
 
-### A18 — Atomic user onboarding (M, TODO)
+### A18 — Atomic user onboarding (M, DONE)
 
-**Why deferred:** `createUser` creates the user then loops `createAuthUserBinding` per role
-client-side; a mid-loop failure leaves a user with partial bindings. Low real risk (onboarding is
-rare, idempotent, admin-gated; re-running fixes state).
+**Status:** Implemented. `POST /api/v1/auth/users/onboard` creates the user and initial bindings in
+one storage transaction, and the Access page uses that endpoint instead of a client-side binding loop.
 
-**Approach:** add `POST /api/v1/auth/users/onboard` that creates the user + bindings in one storage
-transaction (per-row result), OR client-side rollback (delete the user on binding failure).
-**Acceptance:** a failed binding mid-onboard leaves no orphaned half-configured user; test the
-failure path. **Anchors:** `dashboard/src/components/AccessPage.tsx` (`createUser`),
+**Acceptance:** a failed binding mid-onboard leaves no orphaned half-configured user; invalid
+binding scopes return 400; duplicate subjects return 409. **Anchors:** `dashboard/src/components/AccessPage.tsx` (`createUser`),
 `pkg/api/handlers_auth.go` (user + binding handlers), `pkg/storage` (transaction support).
 
 ### A20 — Usage-accounting accuracy + archive-bytes cache (M, TODO)

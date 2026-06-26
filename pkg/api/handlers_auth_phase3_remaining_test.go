@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -201,8 +202,9 @@ func TestEffectiveAccessSimulatorRequiresAdmin(t *testing.T) {
 func TestComputeAccessReviewDenialCount(t *testing.T) {
 	store := phase1Store(t)
 	now := time.Now().UTC()
-	for i := 0; i < 3; i++ {
-		if err := store.SaveAuditEvent(&storage.AuditEvent{ID: "denial-" + string(rune('a'+i)), Action: auditActionAccessDenied, Status: "failure", ActorType: "anonymous", ActorSubject: "anon", ResourceType: "api_route", ResourceID: "GET /x", CreatedAt: now.Add(-time.Duration(i) * time.Minute)}); err != nil {
+	wantDenials := accessReviewDenialScanCap + 3
+	for i := 0; i < wantDenials; i++ {
+		if err := store.SaveAuditEvent(&storage.AuditEvent{ID: "denial-" + strconv.Itoa(i), Action: auditActionAccessDenied, Status: "failure", ActorType: "anonymous", ActorSubject: "anon", ResourceType: "api_route", ResourceID: "GET /x", CreatedAt: now.Add(-time.Duration(i%60) * time.Minute)}); err != nil {
 			t.Fatalf("SaveAuditEvent: %v", err)
 		}
 	}
@@ -220,8 +222,8 @@ func TestComputeAccessReviewDenialCount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("computeAccessReview: %v", err)
 	}
-	if review.RecentDenials != 3 {
-		t.Fatalf("recent denials = %d, want 3", review.RecentDenials)
+	if review.RecentDenials != wantDenials {
+		t.Fatalf("recent denials = %d, want %d", review.RecentDenials, wantDenials)
 	}
 	if review.RecentDenialWindowHours != defaultAccessReviewDenialWindowHours {
 		t.Fatalf("window hours = %d, want %d", review.RecentDenialWindowHours, defaultAccessReviewDenialWindowHours)

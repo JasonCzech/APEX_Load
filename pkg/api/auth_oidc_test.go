@@ -271,6 +271,107 @@ func TestHandleGetAuthStatusReportsExpiredOIDCSession(t *testing.T) {
 	}
 }
 
+func TestHandleGetAuthStatusAppliesLocalOIDCAccess(t *testing.T) {
+	provider := newFakeOIDCProvider(t)
+	defer provider.Close()
+	t.Setenv("APEXLOAD_OIDC_CLIENT_SECRET", "test-client-secret")
+	t.Setenv("APEXLOAD_AUTH_SESSION_SECRET", "test-session-secret")
+
+	cases := []struct {
+		name       string
+		subject    string
+		seed       func(*storage.SQLiteStore, time.Time)
+		session    oidcSessionToken
+		wantStatus string
+	}{
+		{
+			name:    "not onboarded",
+			subject: "alice",
+			seed: func(store *storage.SQLiteStore, now time.Time) {
+				if err := store.SaveUser(&storage.User{ID: "seed-user", Subject: "seed", Active: true, CreatedAt: now, UpdatedAt: now}); err != nil {
+					t.Fatalf("SaveUser seed: %v", err)
+				}
+			},
+			wantStatus: "not_onboarded",
+		},
+		{
+			name:    "disabled",
+			subject: "alice",
+			seed: func(store *storage.SQLiteStore, now time.Time) {
+				disabledAt := now
+				if err := store.SaveUser(&storage.User{ID: "user-alice", Subject: "alice", Active: false, DisabledAt: &disabledAt, CreatedAt: now, UpdatedAt: now}); err != nil {
+					t.Fatalf("SaveUser disabled alice: %v", err)
+				}
+			},
+			wantStatus: "disabled",
+		},
+		{
+			name:    "revoked",
+			subject: "alice",
+			seed: func(store *storage.SQLiteStore, now time.Time) {
+				if err := store.SaveUser(&storage.User{ID: "user-alice", Subject: "alice", Active: true, SessionEpoch: 2, CreatedAt: now, UpdatedAt: now}); err != nil {
+					t.Fatalf("SaveUser revoked alice: %v", err)
+				}
+				if err := store.SaveUserRoleBinding(&storage.UserRoleBinding{ID: "alice-admin", UserID: "user-alice", ScopeType: "global", Role: RoleSystemAdmin, CreatedAt: now, UpdatedAt: now}); err != nil {
+					t.Fatalf("SaveUserRoleBinding alice: %v", err)
+				}
+			},
+			session:    oidcSessionToken{SessionEpoch: 1},
+			wantStatus: "revoked",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+			if err != nil {
+				t.Fatalf("NewSQLiteStore returned error: %v", err)
+			}
+			defer store.Close()
+			now := time.Now().UTC()
+			tc.seed(store, now)
+
+			server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+			enableOIDCAuth(t, server, provider.Issuer)
+			session := tc.session
+			session.Subject = tc.subject
+			session.GlobalRoles = []string{RoleSystemAdmin}
+			session.IssuedAt = now
+			session.ExpiresAt = now.Add(time.Hour)
+			cookie := issueOIDCTestSessionCookieForToken(t, server, session)
+
+			statusReq := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
+			statusReq.AddCookie(cookie)
+			statusResp := httptest.NewRecorder()
+			server.mux.ServeHTTP(statusResp, statusReq)
+			if statusResp.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200 body=%s", statusResp.Code, statusResp.Body.String())
+			}
+			var payload AuthStatusResponse
+			if err := json.Unmarshal(statusResp.Body.Bytes(), &payload); err != nil {
+				t.Fatalf("unmarshal auth status: %v", err)
+			}
+			if payload.Authenticated {
+				t.Fatalf("authenticated = true, want false payload=%#v", payload)
+			}
+			if payload.SessionStatus != tc.wantStatus {
+				t.Fatalf("session status = %q, want %q", payload.SessionStatus, tc.wantStatus)
+			}
+			if strings.TrimSpace(payload.LogoutCSRF) == "" {
+				t.Fatalf("blocked oidc status should keep logout csrf available: %#v", payload)
+			}
+
+			protectedReq := httptest.NewRequest(http.MethodGet, "/api/v1/system/settings", nil)
+			protectedReq.AddCookie(cookie)
+			protectedResp := httptest.NewRecorder()
+			server.mux.ServeHTTP(protectedResp, protectedReq)
+			if protectedResp.Code == http.StatusOK {
+				t.Fatalf("protected route status = 200, want denied for %s", tc.wantStatus)
+			}
+		})
+	}
+}
+
 func TestOIDCCallbackFailureIsAuditedWithoutSensitiveMaterial(t *testing.T) {
 	provider := newFakeOIDCProvider(t)
 	defer provider.Close()
@@ -367,12 +468,17 @@ func issueOIDCTestSessionCookie(t *testing.T, server *Server, subject string) *h
 
 func issueOIDCTestSessionCookieWithExpiry(t *testing.T, server *Server, subject string, expiresAt time.Time) *http.Cookie {
 	t.Helper()
-	settings := normalizeAuthSettings(server.runner.GetSystemSettings().Auth)
-	encodedSession, err := encodeSignedCookieValue(oidcSessionToken{
+	return issueOIDCTestSessionCookieForToken(t, server, oidcSessionToken{
 		Subject:   subject,
 		IssuedAt:  time.Now().UTC(),
 		ExpiresAt: expiresAt,
-	}, strings.TrimSpace(getenvOrFatal(t, settings.SessionSecretEnvVar)))
+	})
+}
+
+func issueOIDCTestSessionCookieForToken(t *testing.T, server *Server, session oidcSessionToken) *http.Cookie {
+	t.Helper()
+	settings := normalizeAuthSettings(server.runner.GetSystemSettings().Auth)
+	encodedSession, err := encodeSignedCookieValue(session, strings.TrimSpace(getenvOrFatal(t, settings.SessionSecretEnvVar)))
 	if err != nil {
 		t.Fatalf("encodeSignedCookieValue returned error: %v", err)
 	}

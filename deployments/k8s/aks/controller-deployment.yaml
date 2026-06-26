@@ -6,9 +6,9 @@ metadata:
     app.kubernetes.io/name: apexload-controller
     app.kubernetes.io/component: controller
 spec:
-  # Keep one active controller until scheduler/reconciler singleton loops are
-  # PostgreSQL-lease guarded. Add API-only replicas only with an explicit HA
-  # runbook.
+  # Keep one controller in the base overlay. HA is supported only through the
+  # aks-ha overlay, which sets APEXLOAD_CONTROLLER_HA=true and uses the shared
+  # PostgreSQL/Redis data platform.
   replicas: 1
   selector:
     matchLabels:

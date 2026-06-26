@@ -14,6 +14,7 @@ const NAVIGATION_SHORTCUTS: Array<{ id: string; label: string; keys: string; pag
   { id: 'scripts', label: 'Go to Scripts', keys: 'g s', page: 'scripts' },
   { id: 'results', label: 'Go to Results', keys: 'g r', page: 'results' },
   { id: 'monitoring', label: 'Go to Monitoring', keys: 'g m', page: 'monitoring' },
+  { id: 'fleet', label: 'Go to Fleet', keys: 'g f', page: 'fleet' },
   { id: 'docs', label: 'Go to API Guide', keys: 'g h', page: 'docs' },
   { id: 'settings', label: 'Go to Settings', keys: 'g ,', page: 'settings', hidden: options => options.isDevUserPreview },
   { id: 'access', label: 'Go to Access', keys: 'g a', page: 'access', hidden: options => !options.canUseAccessWorkspace },

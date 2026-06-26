@@ -27,6 +27,7 @@ export interface GeneratorAssignmentSettings {
   load_zone_weights?: Record<string, number>
   shard_strategy?: 'capacity_weighted'
   required_labels?: Record<string, string>
+  tolerate_generator_loss?: boolean
 }
 
 export interface GeneratorShardSummary {
@@ -329,6 +330,8 @@ export interface RunArchiveExecutionSettingsSnapshot {
     max_telemetry_transport_lag_ms?: number
     max_telemetry_controller_fanout_ms?: number
     max_telemetry_browser_render_lag_ms?: number
+    fleet_constrained_available_slots?: number
+    fleet_saturated_available_slots?: number
   }
   capacity_planning: {
     headroom_pct: number
@@ -2717,16 +2720,23 @@ export interface SystemServicesResponse {
 }
 
 export interface FleetAlert {
+  id: string
   type: string
   target: string
   region?: string
   severity: 'warning' | 'danger' | string
   summary: string
+  acknowledged?: boolean
+  acknowledged_at?: string
+  acknowledged_by_subject?: string
+  acknowledged_by_display_name?: string
+  acknowledgement_note?: string
 }
 
 export interface FleetAlertsResponse {
   alerts: FleetAlert[]
   count: number
+  unacknowledged_count: number
 }
 
 export interface FleetCapacityResponse {
@@ -2970,6 +2980,8 @@ export interface DashboardThresholdSettings {
   max_telemetry_transport_lag_ms?: number
   max_telemetry_controller_fanout_ms?: number
   max_telemetry_browser_render_lag_ms?: number
+  fleet_constrained_available_slots?: number
+  fleet_saturated_available_slots?: number
 }
 
 export interface DashboardGeneralSettings {
@@ -3343,6 +3355,10 @@ export interface DashboardCreateUserBindingRequest {
   scope_type: DashboardUserRoleScopeType
   scope_id?: string
   role: string
+}
+
+export interface DashboardOnboardUserRequest extends DashboardCreateUserRequest {
+  bindings: DashboardCreateUserBindingRequest[]
 }
 
 export type DashboardUserUsageBucket = UsageAccountingBucket
@@ -4018,7 +4034,7 @@ export interface FleetProvisioningRequest {
   id: string
   fleet_pool_id: string
   project_id?: string
-  status: string // pending | provisioning | success | failed | not_configured
+  status: string // pending | accepted | scaling | waiting_ready | provisioning | success | failed | not_configured | cancelled | timed_out
   desired_count: number
   reason?: string
   requested_by_subject?: string
@@ -4026,6 +4042,12 @@ export interface FleetProvisioningRequest {
   created_at: string
   updated_at: string
   completed_at?: string
+}
+export interface FleetProvisioningRequestListResponse {
+  provisioning_requests: FleetProvisioningRequest[]
+  count: number
+  limit?: number
+  offset?: number
 }
 
 export interface ExecutionPlanEntry {

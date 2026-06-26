@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AuthoringCorrelationPreviewRequest, AuthoringCorrelationPreviewResponse, AuthoringSession, DashboardAuthEffectiveAccessResource, GitHubConfigResponse, GitHubPushResponse, GitHubScriptStatus, StoredScript } from '../types'
+import { ApplicationRepository, AuthoringCorrelationPreviewRequest, AuthoringCorrelationPreviewResponse, AuthoringSession, DashboardAuthEffectiveAccessResource, GitHubConfigResponse, GitHubPushResponse, GitHubScriptStatus, StoredScript } from '../types'
 import { useApi } from '../hooks/useApi'
 import { useGitHubApi } from '../hooks/api/useGitHubApi'
 import GitHubSyncModal from './GitHubSyncModal'
@@ -21,6 +21,7 @@ import { getErrorMessage } from '../utils/errorUtils'
 import { useHasTopbarContributionProvider, useTopbarContribution } from '../hooks/TopbarContributionProvider'
 
 interface Props {
+  applicationRepository?: ApplicationRepository | null
   initialMode?: ScriptsAuthoringSubView
   initialEditId?: string
   onSelectScenario?: (id: string) => void
@@ -110,7 +111,7 @@ function cloneScriptDraft(source: ScriptDefinition, fallbackName: string, projec
   return cloned
 }
 
-export default function ScriptsPage({ initialMode = 'list', initialEditId, onSelectScenario, onNavigate, onAuthoringStateChange }: Props) {
+export default function ScriptsPage({ applicationRepository, initialMode = 'list', initialEditId, onSelectScenario, onNavigate, onAuthoringStateChange }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
   const hasTopbarContributionProvider = useHasTopbarContributionProvider()
@@ -382,7 +383,10 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
     let cancelled = false
     const loadEffectiveAccess = async () => {
       try {
-        const response = await api.getAuthEffectiveAccess(activeProject?.id, { domain_id: activeProject?.domain_id })
+        const response = await api.getAuthEffectiveAccess(activeProject?.id, {
+          domain_id: activeProject?.domain_id,
+          application_repository_id: applicationRepository?.id,
+        })
         if (!cancelled) {
           setEffectiveAuthAccessResources(response.resources || [])
         }
@@ -400,7 +404,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
     return () => {
       cancelled = true
     }
-  }, [activeProject?.id, activeProject?.domain_id, api])
+  }, [activeProject?.id, activeProject?.domain_id, api, applicationRepository?.id])
   useEffect(() => {
     // Only redirect away from a manage-only sub-view once effective access has
     // loaded; otherwise the brief default-DENY window before the access fetch

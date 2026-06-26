@@ -14,6 +14,7 @@ func TestDesktopPackageScriptDocumentsMacOSTrustPath(t *testing.T) {
 	script := string(content)
 	checks := []string{
 		"APEXLOAD_MACOS_CODESIGN_IDENTITY",
+		"APEXLOAD_DESKTOP_PACKAGE_PLATFORM",
 		"APEXLOAD_MACOS_NOTARIZE",
 		"APEXLOAD_MACOS_NOTARY_PROFILE",
 		"codesign --force --deep --options runtime --timestamp",
@@ -22,6 +23,16 @@ func TestDesktopPackageScriptDocumentsMacOSTrustPath(t *testing.T) {
 		"spctl -a -vvv -t open",
 		"Apple could not verify",
 		"xattr -dr com.apple.quarantine",
+		"APEXLOAD_WINDOWS_CODESIGN",
+		"APEXLOAD_WINDOWS_CODESIGN_CERT_PATH",
+		"signtool",
+		"osslsigncode",
+		"Windows SmartScreen",
+		"validate_desktop_artifacts",
+		"APEXLOAD_CHECKSUM_SIGN",
+		"APEXLOAD_REQUIRE_TRUSTED_PACKAGES",
+		"--armor --detach-sign",
+		"sha256sum",
 	}
 	for _, check := range checks {
 		if !strings.Contains(script, check) {

@@ -7,6 +7,8 @@ BI := github.com/jasonczech/apexload/pkg/buildinfo
 LDFLAGS := -ldflags "-s -w -X $(BI).Version=$(VERSION) -X $(BI).Commit=$(COMMIT) -X $(BI).BuildTime=$(BUILD_TIME)"
 GOFLAGS := -trimpath
 WAILS ?= $(shell command -v wails 2>/dev/null || echo $(HOME)/go/bin/wails)
+WAILS_PLATFORM ?=
+WAILS_PLATFORM_FLAG := $(if $(strip $(WAILS_PLATFORM)),-platform $(WAILS_PLATFORM),)
 AKS_RENDERED_MANIFEST ?= /tmp/apexload-aks.yaml
 
 all: build
@@ -32,10 +34,10 @@ package-recording-agent:
 	./scripts/package-recording-agent.sh
 
 desktop:
-	cd desktop && COPYFILE_DISABLE=1 $(WAILS) build -clean -ldflags "-s -w -X $(BI).Version=$(VERSION) -X $(BI).Commit=$(COMMIT) -X $(BI).BuildTime=$(BUILD_TIME)"
+	cd desktop && COPYFILE_DISABLE=1 $(WAILS) build -clean $(WAILS_PLATFORM_FLAG) -ldflags "-s -w -X $(BI).Version=$(VERSION) -X $(BI).Commit=$(COMMIT) -X $(BI).BuildTime=$(BUILD_TIME)"
 
 desktop-release: desktop
-	./scripts/package-desktop.sh
+	APEXLOAD_DESKTOP_PACKAGE_PLATFORM="$(WAILS_PLATFORM)" ./scripts/package-desktop.sh
 
 java-vuser-runner:
 	mkdir -p bin/java_vuser

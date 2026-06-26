@@ -147,6 +147,15 @@ kubectl -n apexload-local logs statefulset/apexload-generator
 ```
 
 In the controller logs, look for distributed execution being enabled with two generator targets.
+The controller discovers generators through the headless Service
+(`APEXLOAD_GENERATORS=dns://apexload-generator.apexload-local.svc.cluster.local:9090`),
+so manually scaling the StatefulSet updates the fleet without editing controller
+configuration:
+
+```bash
+kubectl -n apexload-local scale statefulset/apexload-generator --replicas=3
+kubectl -n apexload-local rollout status statefulset/apexload-generator
+```
 
 ## 5. Open the dashboard locally
 
@@ -206,7 +215,7 @@ kubectl -n apexload-local delete pvc apexload-controller-data
 
 - The controller is a Deployment because you only want one controller pod for now.
 - The generators use a StatefulSet so they get stable names: `apexload-generator-0` and `apexload-generator-1`.
-- The controller connects to those two generator pods directly over gRPC on port `9090`.
+- The controller discovers generator pod IPs by re-resolving the headless Service DNS; it no longer hard-codes StatefulSet ordinals.
 - The controller keeps its SQLite database and archives on the PVC so a controller pod restart does not wipe everything.
 - `port-forward` is the simplest way to access the dashboard locally. You do not need ingress for this first setup.
 - If Docker Desktop is currently in `kind` mode, switch the cluster to `kubeadm` in the Docker Desktop Kubernetes settings before using this guide. This repo's current local-image workflow is designed around that simpler mode.

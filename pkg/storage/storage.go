@@ -103,6 +103,9 @@ type Store interface {
 	ListProvisioningRequests(fleetPoolID string, limit int, offset int) ([]*ProvisioningRequest, error)
 	SaveProvisioningEvent(event *ProvisioningEvent) error
 	ListProvisioningEvents(requestID string) ([]*ProvisioningEvent, error)
+	SaveFleetAlertAck(ack *FleetAlertAck) error
+	DeleteFleetAlertAck(id string) error
+	ListFleetAlertAcks() ([]*FleetAlertAck, error)
 
 	// Execution plans (ordered cross-run orchestration).
 	SaveExecutionPlan(plan *ExecutionPlan) error
@@ -477,10 +480,10 @@ type AuditEventFilter struct {
 	ActorType    string
 	ActorSubject string
 	ProjectID    string
-	// ProjectIDs, when non-empty, restricts results to events whose project_id is in
+	// ProjectIDs, when non-nil, restricts results to events whose project_id is in
 	// the set — an authorization allow-list applied on top of the other filters. It is
-	// the load-bearing scope guard for non-global admins reading user activity; an
-	// empty slice means "no project allow-list" (global/unscoped read).
+	// the load-bearing scope guard for non-global admins reading user activity; nil
+	// means unrestricted/global visibility, while an empty slice means authorized-none.
 	ProjectIDs    []string
 	DomainID      string
 	ResourceType  string

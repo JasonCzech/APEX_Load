@@ -80,7 +80,7 @@ func (s *SQLiteStore) GetServiceAccount(id string) (*ServiceAccount, error) {
 }
 
 func (s *SQLiteStore) GetServiceAccountByKeyHash(keyHash string) (*ServiceAccount, error) {
-	return s.getServiceAccountByQuery(serviceAccountSelectColumns()+` FROM service_accounts WHERE key_hash = ? AND active = 1 AND (expires_at IS NULL OR expires_at > ?)`, keyHash, time.Now().UTC())
+	return s.getServiceAccountByQuery(serviceAccountSelectColumns()+` FROM service_accounts WHERE key_hash = ?`, keyHash)
 }
 
 func serviceAccountSelectColumns() string {
@@ -268,8 +268,8 @@ func (s *SQLiteStore) SaveUser(user *User) error {
 	if user.Subject == "" {
 		return fmt.Errorf("user subject is required")
 	}
-	_, err := s.db.Exec(`INSERT INTO users (id, subject, email, display_name, active, created_at, updated_at, last_seen_at, disabled_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	_, err := s.db.Exec(`INSERT INTO users (id, subject, email, display_name, active, created_at, updated_at, last_seen_at, disabled_at, session_epoch)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			subject=excluded.subject,
 			email=excluded.email,
@@ -277,7 +277,8 @@ func (s *SQLiteStore) SaveUser(user *User) error {
 			active=excluded.active,
 			updated_at=excluded.updated_at,
 			last_seen_at=excluded.last_seen_at,
-			disabled_at=excluded.disabled_at`,
+			disabled_at=excluded.disabled_at,
+			session_epoch=excluded.session_epoch`,
 		user.ID,
 		user.Subject,
 		user.Email,
@@ -287,8 +288,68 @@ func (s *SQLiteStore) SaveUser(user *User) error {
 		user.UpdatedAt,
 		user.LastSeenAt,
 		user.DisabledAt,
+		user.SessionEpoch,
 	)
 	return err
+}
+
+func (s *SQLiteStore) SaveUserWithRoleBindings(user *User, bindings []*UserRoleBinding) error {
+	if user == nil {
+		return fmt.Errorf("user is required")
+	}
+	user.Subject = strings.TrimSpace(user.Subject)
+	if user.Subject == "" {
+		return fmt.Errorf("user subject is required")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`INSERT INTO users (id, subject, email, display_name, active, created_at, updated_at, last_seen_at, disabled_at, session_epoch)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			subject=excluded.subject,
+			email=excluded.email,
+			display_name=excluded.display_name,
+			active=excluded.active,
+			updated_at=excluded.updated_at,
+			last_seen_at=excluded.last_seen_at,
+			disabled_at=excluded.disabled_at,
+			session_epoch=excluded.session_epoch`,
+		user.ID,
+		user.Subject,
+		user.Email,
+		user.DisplayName,
+		s.boolValue(user.Active),
+		user.CreatedAt,
+		user.UpdatedAt,
+		user.LastSeenAt,
+		user.DisabledAt,
+		user.SessionEpoch,
+	); err != nil {
+		return err
+	}
+	for _, binding := range bindings {
+		if binding == nil {
+			return fmt.Errorf("user role binding is required")
+		}
+		if _, err := tx.Exec(`INSERT INTO user_role_bindings (id, user_id, scope_type, scope_id, role, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(user_id, scope_type, scope_id, role) DO UPDATE SET
+				updated_at=excluded.updated_at`,
+			binding.ID,
+			binding.UserID,
+			binding.ScopeType,
+			binding.ScopeID,
+			binding.Role,
+			binding.CreatedAt,
+			binding.UpdatedAt,
+		); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func (s *SQLiteStore) GetUser(id string) (*User, error) {
@@ -540,8 +601,45 @@ func (s *SQLiteStore) ListAuditEvents(filter AuditEventFilter) ([]*AuditEvent, e
 	if filter.Offset < 0 {
 		filter.Offset = 0
 	}
+	where, args := buildAuditEventFilterWhere(filter)
 	query := strings.Builder{}
-	query.WriteString(`SELECT id, action, actor_type, actor_subject, actor_display_name, COALESCE(project_id, ''), COALESCE(domain_id, ''), resource_type, resource_id, status, details_json, created_at FROM audit_events WHERE 1 = 1`)
+	query.WriteString(`SELECT id, action, actor_type, actor_subject, actor_display_name, COALESCE(project_id, ''), COALESCE(domain_id, ''), resource_type, resource_id, status, details_json, created_at FROM audit_events`)
+	query.WriteString(where)
+	query.WriteString(` ORDER BY created_at DESC LIMIT ? OFFSET ?`)
+	args = append(args, filter.Limit, filter.Offset)
+	rows, err := s.db.Query(query.String(), args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	events := []*AuditEvent{}
+	for rows.Next() {
+		var event AuditEvent
+		var detailsJSON string
+		if err := rows.Scan(&event.ID, &event.Action, &event.ActorType, &event.ActorSubject, &event.ActorDisplayName, &event.ProjectID, &event.DomainID, &event.ResourceType, &event.ResourceID, &event.Status, &detailsJSON, &event.CreatedAt); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(detailsJSON), &event.Details); err != nil && strings.TrimSpace(detailsJSON) != "" {
+			return nil, err
+		}
+		events = append(events, &event)
+	}
+	return events, rows.Err()
+}
+
+func (s *SQLiteStore) CountAuditEvents(filter AuditEventFilter) (int, error) {
+	where, args := buildAuditEventFilterWhere(filter)
+	query := `SELECT COUNT(*) FROM audit_events` + where
+	var count int
+	if err := s.db.QueryRow(query, args...).Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func buildAuditEventFilterWhere(filter AuditEventFilter) (string, []any) {
+	query := strings.Builder{}
+	query.WriteString(` WHERE 1 = 1`)
 	args := make([]any, 0, 8)
 	appendFilter := func(column string, value string) {
 		trimmed := strings.TrimSpace(value)
@@ -559,7 +657,7 @@ func (s *SQLiteStore) ListAuditEvents(filter AuditEventFilter) ([]*AuditEvent, e
 	appendFilter("resource_type", filter.ResourceType)
 	appendFilter("resource_id", filter.ResourceID)
 	appendFilter("status", filter.Status)
-	if len(filter.ProjectIDs) > 0 {
+	if filter.ProjectIDs != nil {
 		placeholders := make([]string, 0, len(filter.ProjectIDs))
 		for _, id := range filter.ProjectIDs {
 			trimmed := strings.TrimSpace(id)
@@ -585,24 +683,5 @@ func (s *SQLiteStore) ListAuditEvents(filter AuditEventFilter) ([]*AuditEvent, e
 		query.WriteString(` AND created_at <= ?`)
 		args = append(args, *filter.CreatedBefore)
 	}
-	query.WriteString(` ORDER BY created_at DESC LIMIT ? OFFSET ?`)
-	args = append(args, filter.Limit, filter.Offset)
-	rows, err := s.db.Query(query.String(), args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	events := []*AuditEvent{}
-	for rows.Next() {
-		var event AuditEvent
-		var detailsJSON string
-		if err := rows.Scan(&event.ID, &event.Action, &event.ActorType, &event.ActorSubject, &event.ActorDisplayName, &event.ProjectID, &event.DomainID, &event.ResourceType, &event.ResourceID, &event.Status, &detailsJSON, &event.CreatedAt); err != nil {
-			return nil, err
-		}
-		if err := json.Unmarshal([]byte(detailsJSON), &event.Details); err != nil && strings.TrimSpace(detailsJSON) != "" {
-			return nil, err
-		}
-		events = append(events, &event)
-	}
-	return events, rows.Err()
+	return query.String(), args
 }

@@ -6,11 +6,12 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 )
 
 func (s *Server) handlePrometheusMetrics(w http.ResponseWriter, r *http.Request) {
 	settings := s.runner.GetSystemSettings()
-	availability := resolveCapacityAvailability(settings)
+	availability := resolveCapacityAvailabilityWithLiveAt(settings, s.runner.liveAvailableGeneratorCount(r.Context()), time.Now())
 	tests := s.runner.ListTests()
 	regionStats := s.generatorRegionStats(r.Context())
 	scalingStats := scalingSignalStats(tests)

@@ -251,6 +251,7 @@ func (s *Server) routes(allowedOrigins []string) {
 		[]string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
 		[]string{RoleViewer, RoleEditor, RoleProjectAdmin},
 		resolveRecorderListProjectID,
+		withAuthAuditRecorder(s),
 	)
 	recorderCreateAuth := projectScopedAuthMiddleware(
 		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
@@ -259,6 +260,7 @@ func (s *Server) routes(allowedOrigins []string) {
 		[]string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
 		[]string{RoleEditor, RoleProjectAdmin},
 		resolveRecorderCreateProjectID,
+		withAuthAuditRecorder(s),
 	)
 	recorderSessionViewAuth := projectScopedAuthMiddleware(
 		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
@@ -267,6 +269,7 @@ func (s *Server) routes(allowedOrigins []string) {
 		[]string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
 		[]string{RoleViewer, RoleEditor, RoleProjectAdmin},
 		resolveRecorderSessionProjectID(s.recorder),
+		withAuthAuditRecorder(s),
 	)
 	recorderSessionEditAuth := projectScopedAuthMiddleware(
 		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
@@ -275,6 +278,7 @@ func (s *Server) routes(allowedOrigins []string) {
 		[]string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
 		[]string{RoleEditor, RoleProjectAdmin},
 		resolveRecorderSessionProjectID(s.recorder),
+		withAuthAuditRecorder(s),
 	)
 	browserReplaySessionViewAuth := projectScopedAuthMiddleware(
 		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
@@ -283,6 +287,7 @@ func (s *Server) routes(allowedOrigins []string) {
 		[]string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
 		[]string{RoleViewer, RoleEditor, RoleProjectAdmin},
 		resolveBrowserReplaySessionProjectID(s.browserReplay),
+		withAuthAuditRecorder(s),
 	)
 	browserReplaySessionEditAuth := projectScopedAuthMiddleware(
 		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
@@ -291,6 +296,7 @@ func (s *Server) routes(allowedOrigins []string) {
 		[]string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
 		[]string{RoleEditor, RoleProjectAdmin},
 		resolveBrowserReplaySessionProjectID(s.browserReplay),
+		withAuthAuditRecorder(s),
 	)
 	scriptDebugSessionViewAuth := projectScopedAuthMiddleware(
 		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
@@ -299,6 +305,7 @@ func (s *Server) routes(allowedOrigins []string) {
 		[]string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
 		[]string{RoleViewer, RoleEditor, RoleProjectAdmin},
 		resolveScriptDebugSessionProjectID(s.scriptDebug),
+		withAuthAuditRecorder(s),
 	)
 	scriptDebugSessionEditAuth := projectScopedAuthMiddleware(
 		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
@@ -307,6 +314,7 @@ func (s *Server) routes(allowedOrigins []string) {
 		[]string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
 		[]string{RoleEditor, RoleProjectAdmin},
 		resolveScriptDebugSessionProjectID(s.scriptDebug),
+		withAuthAuditRecorder(s),
 	)
 	browserRecordingCreateAuth := projectScopedAuthMiddleware(
 		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
@@ -315,6 +323,7 @@ func (s *Server) routes(allowedOrigins []string) {
 		[]string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
 		[]string{RoleEditor, RoleProjectAdmin},
 		resolveRecorderCreateProjectID,
+		withAuthAuditRecorder(s),
 	)
 	browserRecordingSessionViewAuth := projectScopedAuthMiddleware(
 		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
@@ -323,6 +332,7 @@ func (s *Server) routes(allowedOrigins []string) {
 		[]string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
 		[]string{RoleViewer, RoleEditor, RoleProjectAdmin},
 		resolveBrowserRecordingSessionProjectID(s.browserRecording),
+		withAuthAuditRecorder(s),
 	)
 	browserRecordingSessionEditAuth := projectScopedAuthMiddleware(
 		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
@@ -331,6 +341,7 @@ func (s *Server) routes(allowedOrigins []string) {
 		[]string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
 		[]string{RoleEditor, RoleProjectAdmin},
 		resolveBrowserRecordingSessionProjectID(s.browserRecording),
+		withAuthAuditRecorder(s),
 	)
 
 	// Test lifecycle and archive endpoints.
@@ -686,6 +697,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/auth/effective-access/principal", cors(log(auth(http.HandlerFunc(s.handleGetAuthEffectiveAccessForPrincipal)))))
 	s.mux.Handle("GET /api/v1/auth/users", cors(log(auth(http.HandlerFunc(s.handleListUsers)))))
 	s.mux.Handle("POST /api/v1/auth/users", cors(log(auth(http.HandlerFunc(s.handleCreateUser)))))
+	s.mux.Handle("POST /api/v1/auth/users/onboard", cors(log(auth(http.HandlerFunc(s.handleOnboardUser)))))
 	s.mux.Handle("GET /api/v1/auth/users/{id}", cors(log(auth(http.HandlerFunc(s.handleGetUser)))))
 	s.mux.Handle("PATCH /api/v1/auth/users/{id}", cors(log(auth(http.HandlerFunc(s.handleUpdateUser)))))
 	s.mux.Handle("DELETE /api/v1/auth/users/{id}", cors(log(auth(http.HandlerFunc(s.handleDeleteUser)))))
@@ -779,6 +791,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("POST /api/v1/results/import", cors(log(auth(http.HandlerFunc(s.handleImportExternalResults)))))
 	s.mux.Handle("GET /api/v1/results/imports", cors(log(auth(http.HandlerFunc(s.handleListExternalResultImports)))))
 	s.mux.Handle("GET /api/v1/fleet/alerts", cors(log(auth(http.HandlerFunc(s.handleGetFleetAlerts)))))
+	s.mux.Handle("PATCH /api/v1/fleet/alerts/{id}/ack", cors(log(auth(http.HandlerFunc(s.handleAckFleetAlert)))))
 	s.mux.Handle("GET /api/v1/fleet/capacity", cors(log(auth(http.HandlerFunc(s.handleGetFleetCapacity)))))
 	s.mux.Handle("GET /api/v1/fleet/load-zones", cors(log(auth(http.HandlerFunc(s.handleGetFleetLoadZones)))))
 	s.mux.Handle("GET /api/v1/fleet/provisioner", cors(log(auth(http.HandlerFunc(s.handleGetFleetProvisioner)))))
@@ -790,8 +803,15 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("DELETE /api/v1/fleet/pools/{id}", cors(log(auth(http.HandlerFunc(s.handleDeleteFleetPool)))))
 	s.mux.Handle("GET /api/v1/fleet/generators", cors(log(auth(http.HandlerFunc(s.handleListGeneratorMetadata)))))
 	s.mux.Handle("PATCH /api/v1/fleet/generators/{id}", cors(log(auth(http.HandlerFunc(s.handlePatchGeneratorMetadata)))))
+	s.mux.Handle("POST /api/v1/fleet/generators/{id}/cordon", cors(log(auth(http.HandlerFunc(s.handleCordonGenerator)))))
+	s.mux.Handle("POST /api/v1/fleet/generators/{id}/uncordon", cors(log(auth(http.HandlerFunc(s.handleUncordonGenerator)))))
+	s.mux.Handle("POST /api/v1/fleet/generators/{id}/drain", cors(log(auth(http.HandlerFunc(s.handleDrainGenerator)))))
+	s.mux.Handle("POST /api/v1/fleet/generators/{id}/evacuate", cors(log(auth(http.HandlerFunc(s.handleEvacuateGenerator)))))
 	s.mux.Handle("POST /api/v1/fleet/provision-requests", cors(log(auth(http.HandlerFunc(s.handleCreateProvisioningRequest)))))
+	s.mux.Handle("GET /api/v1/fleet/provision-requests", cors(log(auth(http.HandlerFunc(s.handleListProvisioningRequests)))))
 	s.mux.Handle("GET /api/v1/fleet/provision-requests/{id}", cors(log(auth(http.HandlerFunc(s.handleGetProvisioningRequest)))))
+	s.mux.Handle("POST /api/v1/fleet/provision-requests/{id}/cancel", cors(log(auth(http.HandlerFunc(s.handleCancelProvisioningRequest)))))
+	s.mux.Handle("POST /api/v1/fleet/provision-requests/{id}/retry", cors(log(auth(http.HandlerFunc(s.handleRetryProvisioningRequest)))))
 	s.mux.Handle("PATCH /api/v1/system/generators/drain", cors(log(auth(http.HandlerFunc(s.handleSetGeneratorDrainState)))))
 	s.mux.Handle("GET /api/v1/system/restarts/capabilities", cors(log(auth(http.HandlerFunc(s.handleGetSystemRestartCapabilities)))))
 	s.mux.Handle("POST /api/v1/system/restarts", cors(log(auth(http.HandlerFunc(s.handleSystemRestart)))))

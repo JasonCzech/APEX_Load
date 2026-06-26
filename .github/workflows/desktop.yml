@@ -1,4 +1,4 @@
-name: Build Wails Desktop App
+name: Build Client Packages
 
 on:
   push:
@@ -6,27 +6,40 @@ on:
       - 'v*'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
-  build:
-    name: Build on ${{ matrix.os }}
+  desktop:
+    name: Desktop package (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - name: Linux
+            os: ubuntu-latest
+            artifact: apexload-desktop-linux
+          - name: macOS
+            os: macos-latest
+            artifact: apexload-desktop-macos
+          - name: Windows
+            os: windows-latest
+            artifact: apexload-desktop-windows
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Setup Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
-          go-version: '1.26.4'
+          go-version-file: go.mod
 
       - name: Setup Node
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: 18
 
@@ -36,9 +49,6 @@ jobs:
       - name: Install Linux Dependencies
         if: matrix.os == 'ubuntu-latest'
         run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev
-
-      - name: Build Dashboard
-        run: cd dashboard && npm install && npm run build
 
       - name: Resolve friendly build version
         id: version
@@ -50,30 +60,248 @@ jobs:
           echo "version=${BUILD_VERSION}" >> "$GITHUB_OUTPUT"
           echo "build_time=${BUILD_TIME}" >> "$GITHUB_OUTPUT"
 
+      - name: Import macOS Developer ID certificate
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        env:
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.APEXLOAD_MACOS_CERTIFICATE_P12_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.APEXLOAD_MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_KEYCHAIN_PASSWORD: ${{ secrets.APEXLOAD_MACOS_KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${MACOS_CERTIFICATE_P12_BASE64}" ]]; then
+            echo "No macOS signing certificate configured; desktop package will be unsigned."
+            exit 0
+          fi
+          keychain_password="${MACOS_KEYCHAIN_PASSWORD:-apexload-ci-keychain}"
+          cert_path="${RUNNER_TEMP}/apexload-developer-id.p12"
+          keychain_path="${RUNNER_TEMP}/apexload-signing.keychain-db"
+          printf '%s' "${MACOS_CERTIFICATE_P12_BASE64}" | base64 --decode > "${cert_path}"
+          security create-keychain -p "${keychain_password}" "${keychain_path}"
+          security set-keychain-settings -lut 21600 "${keychain_path}"
+          security unlock-keychain -p "${keychain_password}" "${keychain_path}"
+          security import "${cert_path}" -P "${MACOS_CERTIFICATE_PASSWORD}" -A -t cert -f pkcs12 -k "${keychain_path}"
+          security list-keychains -d user -s "${keychain_path}"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "${keychain_password}" "${keychain_path}"
+
+      - name: Configure macOS notarization profile
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        env:
+          MACOS_NOTARY_PROFILE: ${{ secrets.APEXLOAD_MACOS_NOTARY_PROFILE }}
+          MACOS_NOTARY_APPLE_ID: ${{ secrets.APEXLOAD_MACOS_NOTARY_APPLE_ID }}
+          MACOS_NOTARY_PASSWORD: ${{ secrets.APEXLOAD_MACOS_NOTARY_PASSWORD }}
+          MACOS_NOTARY_TEAM_ID: ${{ secrets.APEXLOAD_MACOS_NOTARY_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${MACOS_NOTARY_PROFILE}" ]]; then
+            echo "No notarytool profile configured; package script can still use direct Apple ID credentials if provided."
+            exit 0
+          fi
+          if [[ -z "${MACOS_NOTARY_APPLE_ID}" || -z "${MACOS_NOTARY_PASSWORD}" || -z "${MACOS_NOTARY_TEAM_ID}" ]]; then
+            echo "APEXLOAD_MACOS_NOTARY_PROFILE requires APEXLOAD_MACOS_NOTARY_APPLE_ID, APEXLOAD_MACOS_NOTARY_PASSWORD, and APEXLOAD_MACOS_NOTARY_TEAM_ID." >&2
+            exit 1
+          fi
+          xcrun notarytool store-credentials "${MACOS_NOTARY_PROFILE}" \
+            --apple-id "${MACOS_NOTARY_APPLE_ID}" \
+            --team-id "${MACOS_NOTARY_TEAM_ID}" \
+            --password "${MACOS_NOTARY_PASSWORD}"
+
+      - name: Prepare Windows Authenticode certificate
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        env:
+          WINDOWS_CODESIGN_PFX_BASE64: ${{ secrets.APEXLOAD_WINDOWS_CODESIGN_PFX_BASE64 }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CODESIGN_PFX_BASE64)) {
+            Write-Host "No Windows signing certificate configured; desktop package will be unsigned."
+            exit 0
+          }
+          $certPath = Join-Path $env:RUNNER_TEMP "apexload-windows-codesign.pfx"
+          [IO.File]::WriteAllBytes($certPath, [Convert]::FromBase64String($env:WINDOWS_CODESIGN_PFX_BASE64))
+          "APEXLOAD_WINDOWS_CODESIGN=1" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "APEXLOAD_WINDOWS_CODESIGN_TOOL=signtool" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "APEXLOAD_WINDOWS_CODESIGN_CERT_PATH=$certPath" | Out-File -FilePath $env:GITHUB_ENV -Append
+          $kitRoot = Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\bin"
+          $signtool = Get-ChildItem $kitRoot -Filter signtool.exe -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+          if ($signtool) {
+            $drive = $signtool.FullName.Substring(0, 1).ToLowerInvariant()
+            $rest = $signtool.FullName.Substring(2).Replace('\', '/')
+            "APEXLOAD_WINDOWS_SIGNTOOL=/$drive$rest" | Out-File -FilePath $env:GITHUB_ENV -Append
+          }
+
+      - name: Import GPG checksum signing key
+        shell: bash
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.APEXLOAD_GPG_PRIVATE_KEY }}
+          GPG_SIGNING_KEY: ${{ secrets.APEXLOAD_GPG_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${GPG_PRIVATE_KEY}" ]]; then
+            echo "No GPG signing key configured; checksum manifest will not be detached-signed."
+            exit 0
+          fi
+          printf '%s' "${GPG_PRIVATE_KEY}" | gpg --batch --import
+          echo "APEXLOAD_CHECKSUM_SIGN=1" >> "$GITHUB_ENV"
+          if [[ -n "${GPG_SIGNING_KEY}" ]]; then
+            echo "APEXLOAD_CHECKSUM_SIGN_KEY=${GPG_SIGNING_KEY}" >> "$GITHUB_ENV"
+          fi
+
       - name: Build Wails App
         shell: bash
         run: |
+          set -euo pipefail
           BI=github.com/jasonczech/apexload/pkg/buildinfo
           cd desktop
           wails build -clean -ldflags "-s -w -X ${BI}.Version=${{ steps.version.outputs.version }} -X ${BI}.Commit=${GITHUB_SHA} -X ${BI}.BuildTime=${{ steps.version.outputs.build_time }}"
-        
-      - name: Upload Artifacts (Windows)
-        if: matrix.os == 'windows-latest'
-        uses: actions/upload-artifact@v3
-        with:
-          name: APEXLoad-Windows
-          path: desktop/build/bin/apexload.exe
 
-      - name: Upload Artifacts (macOS)
-        if: matrix.os == 'macos-latest'
-        uses: actions/upload-artifact@v3
-        with:
-          name: APEXLoad-macOS
-          path: desktop/build/bin/apexload.app
+      - name: Package Desktop App
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          COMMIT: ${{ github.sha }}
+          BUILD_TIME: ${{ steps.version.outputs.build_time }}
+          APEXLOAD_MACOS_CODESIGN_IDENTITY: ${{ secrets.APEXLOAD_MACOS_CODESIGN_IDENTITY }}
+          APEXLOAD_MACOS_NOTARIZE: ${{ startsWith(github.ref, 'refs/tags/') && '1' || vars.APEXLOAD_MACOS_NOTARIZE }}
+          APEXLOAD_REQUIRE_TRUSTED_PACKAGES: ${{ startsWith(github.ref, 'refs/tags/') && '1' || vars.APEXLOAD_REQUIRE_TRUSTED_PACKAGES }}
+          APEXLOAD_MACOS_NOTARY_PROFILE: ${{ secrets.APEXLOAD_MACOS_NOTARY_PROFILE }}
+          APEXLOAD_MACOS_NOTARY_APPLE_ID: ${{ secrets.APEXLOAD_MACOS_NOTARY_APPLE_ID }}
+          APEXLOAD_MACOS_NOTARY_PASSWORD: ${{ secrets.APEXLOAD_MACOS_NOTARY_PASSWORD }}
+          APEXLOAD_MACOS_NOTARY_TEAM_ID: ${{ secrets.APEXLOAD_MACOS_NOTARY_TEAM_ID }}
+          APEXLOAD_WINDOWS_CODESIGN_PASSWORD: ${{ secrets.APEXLOAD_WINDOWS_CODESIGN_PASSWORD }}
+        run: ./scripts/package-desktop.sh
 
-      - name: Upload Artifacts (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        uses: actions/upload-artifact@v3
+      - name: Upload Desktop Package
+        uses: actions/upload-artifact@v4
         with:
-          name: APEXLoad-Linux
-          path: desktop/build/bin/apexload
+          name: ${{ matrix.artifact }}
+          path: dist/desktop/*
+
+  recording-agent:
+    name: Recording Agent packages
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Resolve friendly build version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          BUILD_VERSION=$(COMMIT="${GITHUB_SHA}" BUILD_TIME="${BUILD_TIME}" ./scripts/resolve-version.sh)
+          echo "version=${BUILD_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "build_time=${BUILD_TIME}" >> "$GITHUB_OUTPUT"
+
+      - name: Import macOS Developer ID certificate
+        shell: bash
+        env:
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.APEXLOAD_MACOS_CERTIFICATE_P12_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.APEXLOAD_MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_KEYCHAIN_PASSWORD: ${{ secrets.APEXLOAD_MACOS_KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${MACOS_CERTIFICATE_P12_BASE64}" ]]; then
+            echo "No macOS signing certificate configured; Darwin agent packages will be unsigned."
+            exit 0
+          fi
+          keychain_password="${MACOS_KEYCHAIN_PASSWORD:-apexload-ci-keychain}"
+          cert_path="${RUNNER_TEMP}/apexload-developer-id.p12"
+          keychain_path="${RUNNER_TEMP}/apexload-signing.keychain-db"
+          printf '%s' "${MACOS_CERTIFICATE_P12_BASE64}" | base64 --decode > "${cert_path}"
+          security create-keychain -p "${keychain_password}" "${keychain_path}"
+          security set-keychain-settings -lut 21600 "${keychain_path}"
+          security unlock-keychain -p "${keychain_password}" "${keychain_path}"
+          security import "${cert_path}" -P "${MACOS_CERTIFICATE_PASSWORD}" -A -t cert -f pkcs12 -k "${keychain_path}"
+          security list-keychains -d user -s "${keychain_path}"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "${keychain_password}" "${keychain_path}"
+
+      - name: Configure macOS notarization profile
+        shell: bash
+        env:
+          MACOS_NOTARY_PROFILE: ${{ secrets.APEXLOAD_MACOS_NOTARY_PROFILE }}
+          MACOS_NOTARY_APPLE_ID: ${{ secrets.APEXLOAD_MACOS_NOTARY_APPLE_ID }}
+          MACOS_NOTARY_PASSWORD: ${{ secrets.APEXLOAD_MACOS_NOTARY_PASSWORD }}
+          MACOS_NOTARY_TEAM_ID: ${{ secrets.APEXLOAD_MACOS_NOTARY_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${MACOS_NOTARY_PROFILE}" ]]; then
+            echo "No notarytool profile configured; package script can still use direct Apple ID credentials if provided."
+            exit 0
+          fi
+          if [[ -z "${MACOS_NOTARY_APPLE_ID}" || -z "${MACOS_NOTARY_PASSWORD}" || -z "${MACOS_NOTARY_TEAM_ID}" ]]; then
+            echo "APEXLOAD_MACOS_NOTARY_PROFILE requires APEXLOAD_MACOS_NOTARY_APPLE_ID, APEXLOAD_MACOS_NOTARY_PASSWORD, and APEXLOAD_MACOS_NOTARY_TEAM_ID." >&2
+            exit 1
+          fi
+          xcrun notarytool store-credentials "${MACOS_NOTARY_PROFILE}" \
+            --apple-id "${MACOS_NOTARY_APPLE_ID}" \
+            --team-id "${MACOS_NOTARY_TEAM_ID}" \
+            --password "${MACOS_NOTARY_PASSWORD}"
+
+      - name: Prepare Windows Authenticode certificate
+        shell: bash
+        env:
+          WINDOWS_CODESIGN_PFX_BASE64: ${{ secrets.APEXLOAD_WINDOWS_CODESIGN_PFX_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${WINDOWS_CODESIGN_PFX_BASE64}" ]]; then
+            echo "No Windows signing certificate configured; Windows agent package will be unsigned."
+            exit 0
+          fi
+          brew install osslsigncode
+          cert_path="${RUNNER_TEMP}/apexload-windows-codesign.pfx"
+          printf '%s' "${WINDOWS_CODESIGN_PFX_BASE64}" | base64 --decode > "${cert_path}"
+          echo "APEXLOAD_WINDOWS_CODESIGN=1" >> "$GITHUB_ENV"
+          echo "APEXLOAD_WINDOWS_CODESIGN_TOOL=osslsigncode" >> "$GITHUB_ENV"
+          echo "APEXLOAD_WINDOWS_CODESIGN_CERT_PATH=${cert_path}" >> "$GITHUB_ENV"
+
+      - name: Import GPG checksum signing key
+        shell: bash
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.APEXLOAD_GPG_PRIVATE_KEY }}
+          GPG_SIGNING_KEY: ${{ secrets.APEXLOAD_GPG_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${GPG_PRIVATE_KEY}" ]]; then
+            echo "No GPG signing key configured; checksum manifest will not be detached-signed."
+            exit 0
+          fi
+          printf '%s' "${GPG_PRIVATE_KEY}" | gpg --batch --import
+          echo "APEXLOAD_CHECKSUM_SIGN=1" >> "$GITHUB_ENV"
+          if [[ -n "${GPG_SIGNING_KEY}" ]]; then
+            echo "APEXLOAD_CHECKSUM_SIGN_KEY=${GPG_SIGNING_KEY}" >> "$GITHUB_ENV"
+          fi
+
+      - name: Package Recording Agent
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          COMMIT: ${{ github.sha }}
+          BUILD_TIME: ${{ steps.version.outputs.build_time }}
+          APEXLOAD_MACOS_CODESIGN_IDENTITY: ${{ secrets.APEXLOAD_MACOS_CODESIGN_IDENTITY }}
+          APEXLOAD_MACOS_NOTARIZE: ${{ startsWith(github.ref, 'refs/tags/') && '1' || vars.APEXLOAD_MACOS_NOTARIZE }}
+          APEXLOAD_REQUIRE_TRUSTED_PACKAGES: ${{ startsWith(github.ref, 'refs/tags/') && '1' || vars.APEXLOAD_REQUIRE_TRUSTED_PACKAGES }}
+          APEXLOAD_MACOS_NOTARY_PROFILE: ${{ secrets.APEXLOAD_MACOS_NOTARY_PROFILE }}
+          APEXLOAD_MACOS_NOTARY_APPLE_ID: ${{ secrets.APEXLOAD_MACOS_NOTARY_APPLE_ID }}
+          APEXLOAD_MACOS_NOTARY_PASSWORD: ${{ secrets.APEXLOAD_MACOS_NOTARY_PASSWORD }}
+          APEXLOAD_MACOS_NOTARY_TEAM_ID: ${{ secrets.APEXLOAD_MACOS_NOTARY_TEAM_ID }}
+          APEXLOAD_WINDOWS_CODESIGN_PASSWORD: ${{ secrets.APEXLOAD_WINDOWS_CODESIGN_PASSWORD }}
+        run: ./scripts/package-recording-agent.sh
+
+      - name: Upload Recording Agent Packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: apexload-recording-agent-packages
+          path: dist/recording-agent/*

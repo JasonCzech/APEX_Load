@@ -56,6 +56,7 @@ type Engine struct {
 	metrics  *MetricsCollector
 	mu       sync.Mutex // guards cancel
 	cancel   context.CancelFunc
+	softStop context.CancelFunc
 }
 
 // Config contains configuration for Engine creation.
@@ -127,20 +128,36 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 		defer iterationRateLimiter.Stop()
 	}
 	if isOpenWorkload(e.script) {
-		return e.runOpenWorkload(ctx, protoConfig)
+		loopCtx, loopCancel := context.WithCancel(ctx)
+		e.mu.Lock()
+		e.softStop = loopCancel
+		e.mu.Unlock()
+		defer func() {
+			loopCancel()
+			e.mu.Lock()
+			e.softStop = nil
+			e.mu.Unlock()
+		}()
+		return e.runOpenWorkload(loopCtx, protoConfig)
 	}
 
 	// Execution goals cancel only loopCtx so VUsers stop claiming new
 	// iterations; iterations already holding a reservation finish under ctx
 	// (hard stop: duration timeout or Stop) and record their transactions.
-	loopCtx := ctx
+	loopCtx, loopCancel := context.WithCancel(ctx)
+	defer loopCancel()
 	var executionGoals *ExecutionGoalLimiter
 	if hasExecutionGoals(e.script.Config.RunLogic) {
-		var goalCancel context.CancelFunc
-		loopCtx, goalCancel = context.WithCancel(ctx)
-		defer goalCancel()
-		executionGoals = NewExecutionGoalLimiter(e.script.Config.RunLogic, goalCancel)
+		executionGoals = NewExecutionGoalLimiter(e.script.Config.RunLogic, loopCancel)
 	}
+	e.mu.Lock()
+	e.softStop = loopCancel
+	e.mu.Unlock()
+	defer func() {
+		e.mu.Lock()
+		e.softStop = nil
+		e.mu.Unlock()
+	}()
 
 	start := time.Now()
 	var wg sync.WaitGroup
@@ -215,6 +232,17 @@ func (e *Engine) Stop() {
 	if cancel != nil {
 		cancel()
 	}
+}
+
+func (e *Engine) GracefulStop() {
+	e.mu.Lock()
+	cancel := e.softStop
+	e.mu.Unlock()
+	if cancel != nil {
+		cancel()
+		return
+	}
+	e.Stop()
 }
 
 func (e *Engine) LatestSnapshot() (MetricsSnapshot, bool) {

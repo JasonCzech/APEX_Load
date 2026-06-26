@@ -25,6 +25,9 @@ services:
       APEXLOAD_RECORDING_AGENT_DIST_DIR: /packages/recording-agent
       APEXLOAD_DESKTOP_DIST_DIR: /packages/desktop
       APEXLOAD_PROMETHEUS_URL: http://prometheus:9090
+      APEXLOAD_GENERATORS: dns://generator:9090
+      APEXLOAD_GENERATOR_DISCOVERY_INTERVAL: 10s
+      APEXLOAD_GENERATOR_TIMEOUT: 5s
       APEXLOAD_ENV: local
     ports:
       - "127.0.0.1:8080:8080"
@@ -41,6 +44,35 @@ services:
       timeout: 3s
       retries: 5
       start_period: 20s
+    depends_on:
+      - generator
+
+  generator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BINARY: generator
+        VERSION: ${APEXLOAD_VERSION:-local}
+        COMMIT: ${APEXLOAD_COMMIT:-}
+        BUILD_TIME: ${APEXLOAD_BUILD_TIME:-}
+    image: apexload-generator:local
+    init: true
+    user: "65532:65532"
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      APEXLOAD_ENV: local
+      APEXLOAD_GENERATOR_LISTEN_ADDR: ":9090"
+      APEXLOAD_GENERATOR_MAX_VUSERS: "1000"
+    expose:
+      - "9090"
+    tmpfs:
+      - /tmp
 
   prometheus:
     image: prom/prometheus:v3.12.0

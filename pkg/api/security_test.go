@@ -127,6 +127,9 @@ func TestCORSPreflightAllowsAllowListedWailsOrigin(t *testing.T) {
 	if got := allowed.Header().Get("Access-Control-Allow-Origin"); got != wailsOrigin {
 		t.Fatalf("Access-Control-Allow-Origin = %q, want %q", got, wailsOrigin)
 	}
+	if got := allowed.Header().Get("Access-Control-Allow-Headers"); !strings.Contains(got, "X-APEXLoad-CSRF-Token") {
+		t.Fatalf("Access-Control-Allow-Headers = %q, want CSRF token header", got)
+	}
 }
 
 func TestBoundAddrReady(t *testing.T) {

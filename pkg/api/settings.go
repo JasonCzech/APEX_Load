@@ -320,6 +320,8 @@ type ThresholdSettings struct {
 	MaxTelemetryTransportLagMs     *float64 `json:"max_telemetry_transport_lag_ms,omitempty"`
 	MaxTelemetryControllerFanoutMs *float64 `json:"max_telemetry_controller_fanout_ms,omitempty"`
 	MaxTelemetryBrowserRenderLagMs *float64 `json:"max_telemetry_browser_render_lag_ms,omitempty"`
+	FleetConstrainedAvailableSlots *int     `json:"fleet_constrained_available_slots,omitempty"`
+	FleetSaturatedAvailableSlots   *int     `json:"fleet_saturated_available_slots,omitempty"`
 }
 
 type CapacityPlanningSettings struct {
@@ -597,6 +599,14 @@ func cloneSystemSettings(in SystemSettings) SystemSettings {
 		v := *in.Thresholds.MaxTelemetryBrowserRenderLagMs
 		out.Thresholds.MaxTelemetryBrowserRenderLagMs = &v
 	}
+	if in.Thresholds.FleetConstrainedAvailableSlots != nil {
+		v := *in.Thresholds.FleetConstrainedAvailableSlots
+		out.Thresholds.FleetConstrainedAvailableSlots = &v
+	}
+	if in.Thresholds.FleetSaturatedAvailableSlots != nil {
+		v := *in.Thresholds.FleetSaturatedAvailableSlots
+		out.Thresholds.FleetSaturatedAvailableSlots = &v
+	}
 	out.Notifications = cloneNotificationsSettings(in.Notifications)
 	if in.CapacityPlanning.Reservations != nil {
 		out.CapacityPlanning.Reservations = append([]CapacityReservation(nil), in.CapacityPlanning.Reservations...)
@@ -714,6 +724,12 @@ func validateSystemSettings(settings SystemSettings) error {
 		return err
 	}
 	if err := validateOptionalPositiveThreshold("thresholds.max_telemetry_browser_render_lag_ms", settings.Thresholds.MaxTelemetryBrowserRenderLagMs); err != nil {
+		return err
+	}
+	if err := validateOptionalNonNegativeIntThreshold("thresholds.fleet_constrained_available_slots", settings.Thresholds.FleetConstrainedAvailableSlots); err != nil {
+		return err
+	}
+	if err := validateOptionalNonNegativeIntThreshold("thresholds.fleet_saturated_available_slots", settings.Thresholds.FleetSaturatedAvailableSlots); err != nil {
 		return err
 	}
 	if settings.CapacityPlanning.HeadroomPct < 0 || settings.CapacityPlanning.HeadroomPct >= 100 {
@@ -923,6 +939,14 @@ func cloneThresholdSettings(in ThresholdSettings) ThresholdSettings {
 		v := *in.MaxTelemetryBrowserRenderLagMs
 		out.MaxTelemetryBrowserRenderLagMs = &v
 	}
+	if in.FleetConstrainedAvailableSlots != nil {
+		v := *in.FleetConstrainedAvailableSlots
+		out.FleetConstrainedAvailableSlots = &v
+	}
+	if in.FleetSaturatedAvailableSlots != nil {
+		v := *in.FleetSaturatedAvailableSlots
+		out.FleetSaturatedAvailableSlots = &v
+	}
 	return out
 }
 
@@ -934,6 +958,13 @@ func float64Setting(value float64) *float64 {
 func validateOptionalPositiveThreshold(field string, value *float64) error {
 	if value != nil && *value <= 0 {
 		return fmt.Errorf("%s must be > 0", field)
+	}
+	return nil
+}
+
+func validateOptionalNonNegativeIntThreshold(field string, value *int) error {
+	if value != nil && *value < 0 {
+		return fmt.Errorf("%s must be >= 0", field)
 	}
 	return nil
 }

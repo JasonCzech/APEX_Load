@@ -22,7 +22,7 @@ describe('app shell layout', () => {
     const cwd = (globalThis as typeof globalThis & { process: { cwd: () => string } }).process.cwd()
     const appCss = readFileSync(`${cwd}/src/App.css`, 'utf8') as string
 
-    expect(cssRule(appCss, '.main-content.page-dashboard > .main-topbar,\n.main-content.page-new-test > .main-topbar,\n.main-content.page-command-center > .main-topbar,\n.main-content.page-monitoring > .main-topbar,\n.main-content.page-docs > .main-topbar,\n.main-content.page-access > .main-topbar,\n.main-content.page-settings > .main-topbar')).toContain('margin-bottom: 30px;')
+    expect(cssRule(appCss, '.main-content.page-dashboard > .main-topbar,\n.main-content.page-new-test > .main-topbar,\n.main-content.page-command-center > .main-topbar,\n.main-content.page-monitoring > .main-topbar,\n.main-content.page-fleet > .main-topbar,\n.main-content.page-docs > .main-topbar,\n.main-content.page-access > .main-topbar,\n.main-content.page-settings > .main-topbar')).toContain('margin-bottom: 30px;')
   })
 })
 

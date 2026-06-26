@@ -386,6 +386,11 @@ func (s *metricsStoreSpy) SaveProvisioningEvent(*storage.ProvisioningEvent) erro
 func (s *metricsStoreSpy) ListProvisioningEvents(string) ([]*storage.ProvisioningEvent, error) {
 	return nil, nil
 }
+func (s *metricsStoreSpy) SaveFleetAlertAck(*storage.FleetAlertAck) error { return nil }
+func (s *metricsStoreSpy) DeleteFleetAlertAck(string) error               { return nil }
+func (s *metricsStoreSpy) ListFleetAlertAcks() ([]*storage.FleetAlertAck, error) {
+	return nil, nil
+}
 func (s *metricsStoreSpy) SaveExecutionPlan(*storage.ExecutionPlan) error { return nil }
 func (s *metricsStoreSpy) GetExecutionPlan(string) (*storage.ExecutionPlan, error) {
 	return nil, nil
@@ -5022,7 +5027,13 @@ func TestGetTestRefreshesCapacityAdvisoryUsingLiveAvailability(t *testing.T) {
 		t.Fatalf("UpdateSystemSettings returned error: %v", err)
 	}
 
-	t.Setenv("APEXLOAD_LIVE_AVAILABLE_GENERATORS", "5")
+	runner.setExecutionBackend(stubInventoryBackend{entries: []GeneratorInventoryEntry{
+		{Target: "gen-a:9090", GeneratorID: "gen-a", Status: "connected", DrainState: "active", AvailableCapacity: 100, MaxVUsers: 1000},
+		{Target: "gen-b:9090", GeneratorID: "gen-b", Status: "connected", DrainState: "active", AvailableCapacity: 100, MaxVUsers: 1000},
+		{Target: "gen-c:9090", GeneratorID: "gen-c", Status: "connected", DrainState: "active", AvailableCapacity: 100, MaxVUsers: 1000},
+		{Target: "gen-d:9090", GeneratorID: "gen-d", Status: "connected", DrainState: "active", AvailableCapacity: 100, MaxVUsers: 1000},
+		{Target: "gen-e:9090", GeneratorID: "gen-e", Status: "connected", DrainState: "active", AvailableCapacity: 100, MaxVUsers: 1000},
+	}})
 	test, err := runner.CreateTest(CreateTestRequest{
 		Name:     "Refresh Advisory Scenario",
 		Duration: "30s",
@@ -5036,7 +5047,9 @@ func TestGetTestRefreshesCapacityAdvisoryUsingLiveAvailability(t *testing.T) {
 		t.Fatalf("initial available generators = %#v, want 5", test.CapacityAdvisory)
 	}
 
-	t.Setenv("APEXLOAD_LIVE_AVAILABLE_GENERATORS", "1")
+	runner.setExecutionBackend(stubInventoryBackend{entries: []GeneratorInventoryEntry{
+		{Target: "gen-a:9090", GeneratorID: "gen-a", Status: "connected", DrainState: "active", AvailableCapacity: 100, MaxVUsers: 1000},
+	}})
 	refreshed, ok := runner.GetTest(test.ID)
 	if !ok {
 		t.Fatalf("expected test %s", test.ID)

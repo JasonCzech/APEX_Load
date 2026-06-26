@@ -105,6 +105,9 @@ func (s *Server) systemRestartCapabilities(r *http.Request) SystemRestartCapabil
 }
 
 func (s *Server) handleSystemRestart(w http.ResponseWriter, r *http.Request) {
+	if !s.requireExecutionLeader(w) {
+		return
+	}
 	caps := s.systemRestartCapabilities(r)
 	if !caps.Enabled {
 		writeJSON(w, http.StatusConflict, SystemRestartResult{
@@ -291,7 +294,7 @@ func (s *Server) restartGeneratorPod(r *http.Request, req SystemRestartRequest) 
 	result.Status = "success"
 	result.Message = "generator pod restart requested"
 	result.Forced = req.Force
-	result.Warnings = []string{"Generator drain state is keyed to the pre-restart target and does not persist across pod recreation in v1."}
+	result.Warnings = []string{"Generator drain intent is recorded by stable generator ID when the controller has observed a heartbeat for this pod."}
 	s.auditSystemRestart(r, req, "success", result, nil)
 	return result, nil
 }

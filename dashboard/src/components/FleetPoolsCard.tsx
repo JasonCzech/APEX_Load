@@ -28,12 +28,31 @@ function provisionStatusPill(status: string): string {
     case 'success':
       return 'pp-pill pp-pill-success'
     case 'failed':
+    case 'timed_out':
       return 'pp-pill pp-pill-danger'
+    case 'cancelled':
+      return 'pp-pill pp-pill-warning'
+    case 'accepted':
+    case 'scaling':
+    case 'waiting_ready':
     case 'provisioning':
       return 'pp-pill pp-pill-info'
     default:
       return 'pp-pill pp-pill-muted'
   }
+}
+
+function canCancelProvisionRequest(status: string): boolean {
+  return ['', 'pending', 'accepted', 'scaling', 'waiting_ready', 'provisioning'].includes(status.trim().toLowerCase())
+}
+
+function canRetryProvisionRequest(status: string): boolean {
+  return ['failed', 'not_configured', 'cancelled', 'timed_out'].includes(status.trim().toLowerCase())
+}
+
+function latestProvisionEvent(request: FleetProvisioningRequest) {
+  const events = request.events || []
+  return events.length > 0 ? events[events.length - 1] : null
 }
 
 type PoolDraft = {
@@ -60,6 +79,7 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
   const [deleteTarget, setDeleteTarget] = useState<FleetPool | null>(null)
   const [provisionFor, setProvisionFor] = useState<{ pool: FleetPool; count: number } | null>(null)
   const [provisionResult, setProvisionResult] = useState<FleetProvisioningRequest | null>(null)
+  const [provisionRequests, setProvisionRequests] = useState<FleetProvisioningRequest[]>([])
   const [provisioner, setProvisioner] = useState<ProvisionerInfo | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -67,12 +87,18 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
     setLoading(true)
     setError(null)
     try {
-      const [res, prov] = await Promise.all([api.listFleetPools(), api.getProvisioner().catch(() => null)])
+      const [res, prov, requests] = await Promise.all([
+        api.listFleetPools(),
+        api.getProvisioner().catch(() => null),
+        api.listProvisionRequests({ limit: 10 }).catch(() => ({ provisioning_requests: [], count: 0 })),
+      ])
       setPools(res.fleet_pools || [])
       setProvisioner(prov)
+      setProvisionRequests(requests.provisioning_requests || [])
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load fleet pools.')
       setPools([])
+      setProvisionRequests([])
     } finally {
       setLoading(false)
     }
@@ -138,6 +164,22 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
     }
   }, [api, provisionFor, load])
 
+  const runProvisionOperation = useCallback(async (request: FleetProvisioningRequest, action: 'cancel' | 'retry') => {
+    setBusy(true)
+    setError(null)
+    try {
+      const result = action === 'cancel'
+        ? await api.cancelProvisionRequest(request.id)
+        : await api.retryProvisionRequest(request.id)
+      setProvisionResult(result)
+      await load()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : `Failed to ${action} provisioning request.`)
+    } finally {
+      setBusy(false)
+    }
+  }, [api, load])
+
   const draftValid = useMemo(
     () => Boolean(draft && draft.name.trim() && draft.cloud_provider.trim() && (draft.max_size === 0 || draft.min_size <= draft.max_size)),
     [draft],
@@ -201,6 +243,52 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
           ))}
         </div>
       )}
+
+      <div className="pp-section">
+        <div className="pp-section-header">
+          <span>Recent Provisioning</span>
+          <span className="pp-muted">{provisionRequests.length} request{provisionRequests.length === 1 ? '' : 's'}</span>
+        </div>
+        {provisionRequests.length === 0 ? (
+          <div className="pp-empty pp-empty-compact">No provisioning requests recorded yet.</div>
+        ) : (
+          <div className="pp-list">
+            {provisionRequests.map(request => {
+              const latest = latestProvisionEvent(request)
+              return (
+                <div className="pp-row" key={request.id}>
+                  <div className="pp-row-main">
+                    <div className="pp-row-title">
+                      <span className="cell-mono">{request.id}</span>
+                      <span className={provisionStatusPill(request.status)}>{request.status}</span>
+                    </div>
+                    <div className="pp-row-meta">
+                      <span>pool {request.fleet_pool_id}</span>
+                      <span>desired {request.desired_count}</span>
+                      {request.project_id ? <span>project {request.project_id}</span> : null}
+                      {latest ? <span>{latest.event_type}{latest.message ? `: ${latest.message}` : ''}</span> : null}
+                    </div>
+                  </div>
+                  {canManage && (
+                    <div className="pp-row-actions">
+                      {canCancelProvisionRequest(request.status) && (
+                        <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => void runProvisionOperation(request, 'cancel')}>
+                          Cancel
+                        </button>
+                      )}
+                      {canRetryProvisionRequest(request.status) && (
+                        <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => void runProvisionOperation(request, 'retry')}>
+                          Retry
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
 
       {draft && (
         <div className="pp-modal-overlay" onClick={() => setDraft(null)}>

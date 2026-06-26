@@ -5,6 +5,11 @@ restart one generator pod, roll the generator StatefulSet, or roll the
 controller Deployment from the admin console. The controller uses narrow
 in-cluster Kubernetes REST calls and does not depend on `client-go`.
 
+When enabled, the same audited pod-list permission also powers the generator
+termination watcher: the active controller leader marks a generator pod as
+`draining` as soon as Kubernetes reports a `deletionTimestamp`, so scale-in does
+not place new VUsers onto a terminating pod.
+
 ## Opt In
 
 1. Add the appropriate example manifest to your overlay:
@@ -46,8 +51,12 @@ APEXLOAD_K8S_RESTART_ALLOW_FORCE=true
 - Generator pod restart resolves the pod from Kubernetes by pod name, pod IP, or
   StatefulSet DNS ordinal, then best-effort marks the old target as `draining`
   before deleting the pod.
-- Drain state is keyed to the old target/IP and does not persist across pod
-  recreation in v1.
+- Drain state is canonicalized by stable `generator_id` when the controller has
+  observed generator identity, with a one-release dual-read fallback for legacy
+  target/IP keys.
+- The generator termination watcher polls pod inventory through the same RBAC
+  path and marks terminating generator pods as `draining`; it is a safety net for
+  KEDA or manual scale-in, not a replacement for graceful generator shutdown.
 - Generator workload restart is blocked when generators have active VUsers or a
   run is active unless `force` is set.
 - Controller restart is blocked while runs are `INITIALIZING`, `RUNNING`,

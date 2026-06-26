@@ -165,8 +165,8 @@ type TestRunner struct {
 	refKeyIndex    map[string]string
 
 	// capacityAdvisoryCache memoizes estimateCapacityAdvisoryForAssignment. Its
-	// inputs are settings (generation-invalidated), the live-availability env var
-	// (folded into the key) and reservation-window time (bounded by a short TTL);
+	// inputs are settings (generation-invalidated) and reservation-window time
+	// (bounded by a short TTL); live-inventory availability bypasses the cache,
 	// see capacity_advisory_cache.go. The generation is guarded by tr.mu (same
 	// contract as tr.settings); the cache map has its own mutex because it is
 	// written even when callers hold only tr.mu.RLock (estimate/preflight); the
@@ -824,6 +824,10 @@ type GeneratorAssignmentSettings struct {
 	LoadZoneWeights map[string]int    `json:"load_zone_weights,omitempty"`
 	ShardStrategy   string            `json:"shard_strategy,omitempty"`
 	RequiredLabels  map[string]string `json:"required_labels,omitempty"`
+	// TolerateGeneratorLoss allows the controller to keep a distributed run alive
+	// when one generator disappears by resharding safe stateless groups onto
+	// surviving generators. Strict failure remains the default.
+	TolerateGeneratorLoss bool `json:"tolerate_generator_loss,omitempty"`
 	// PoolID restricts a run to the generators in a managed fleet pool. It is
 	// resolved to the pool's member targets at create time (as specific_hosts),
 	// then enforced leniently at placement (offline members are skipped).

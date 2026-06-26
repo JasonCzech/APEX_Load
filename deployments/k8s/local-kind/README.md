@@ -136,6 +136,14 @@ make k8s-smoke-test
 ```
 
 The smoke helper uploads `examples/k8s-distributed-smoke.json`, creates a two-group test, starts it, and polls until the run reaches a terminal state.
+The controller inherits the local base's DNS discovery configuration
+(`APEXLOAD_GENERATORS=dns://apexload-generator.apexload-local.svc.cluster.local:9090`),
+so this overlay can exercise generator discovery by scaling the StatefulSet:
+
+```bash
+kubectl -n apexload-local scale statefulset/apexload-generator --replicas=3
+kubectl -n apexload-local rollout status statefulset/apexload-generator
+```
 
 ## 8. Rebuild after code changes
 
@@ -162,6 +170,6 @@ kubectl -n apexload-local delete pvc apexload-controller-data
 ## Notes for beginners
 
 - `localhost:5001` in the Kubernetes image names does not mean the pod pulls from itself. The node containerd runtime is configured to reroute that address to the local registry container.
-- The controller still connects to `apexload-generator-0` and `apexload-generator-1` over the headless Service on port `9090`.
+- The controller discovers generator pod IPs by re-resolving the headless Service DNS; it does not hard-code StatefulSet ordinals.
 - The controller PVC keeps the SQLite database and archives across controller pod restarts.
 - If you later switch Docker Desktop Kubernetes to `kubeadm` mode, use `deployments/k8s/local` instead of this guide.

@@ -30,6 +30,11 @@ var supportedNotificationEvents = map[string]struct{}{
 	"telemetry_degraded":  {},
 	"telemetry_breached":  {},
 	"telemetry_recovered": {},
+
+	"fleet_alert":                {},
+	"fleet_alert_acknowledged":   {},
+	"fleet_alert_unacknowledged": {},
+	"fleet_degraded":             {},
 }
 
 type NotificationsSettings struct {
@@ -254,9 +259,9 @@ func notificationTeamsFacts(event NotificationEvent) []map[string]any {
 
 func buildDynatraceNotificationPayload(webhook NotificationWebhookSettings, event NotificationEvent) map[string]any {
 	eventType := "CUSTOM_INFO"
-	if event.Type == "test_failed" || event.Type == "telemetry_breached" {
+	if event.Type == "test_failed" || event.Type == "telemetry_breached" || (event.Type == "fleet_alert" && strings.EqualFold(event.Severity, "danger")) {
 		eventType = "ERROR_EVENT"
-	} else if event.Type == "telemetry_degraded" {
+	} else if event.Type == "telemetry_degraded" || event.Type == "fleet_alert" || event.Type == "fleet_degraded" {
 		eventType = "CUSTOM_ALERT"
 	}
 	payload := map[string]any{

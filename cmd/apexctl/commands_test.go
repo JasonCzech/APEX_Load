@@ -34,6 +34,13 @@ func TestGetTestStatusNotFound(t *testing.T) {
 	}
 }
 
+func TestParseCtlArgsAuthFlags(t *testing.T) {
+	args := parseCtlArgs([]string{"--api", "http://localhost:8080", "--api-key", "key-123", "--bearer-token", "token-456", "--test", "t1"})
+	if args.api != "http://localhost:8080" || args.apiKey != "key-123" || args.bearerToken != "token-456" || args.test != "t1" {
+		t.Fatalf("ctl args = %#v", args)
+	}
+}
+
 // testController returns a handler that reports the given status and SLA report.
 func testController(t *testing.T, status string, slaBreached bool, details []string) http.Handler {
 	t.Helper()

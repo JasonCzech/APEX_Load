@@ -53,9 +53,11 @@ workloadIdentity:
   generatorClientId: ""
 
 controller:
-  # Keep one active controller until scheduler/reconciler singleton loops are
-  # PostgreSQL-lease guarded.
+  # Keep one active controller unless HA is explicitly enabled below. Replicas
+  # above one require APEXLOAD_CONTROLLER_HA plus shared PostgreSQL/Redis.
   replicas: 1
+  ha:
+    enabled: false
   serviceAccountName: apexload-controller
   grpcTlsSecretName: apexload-controller-grpc-tls
   resources:
@@ -75,6 +77,7 @@ generator:
   replicas: 2
   serviceAccountName: apexload-generator
   grpcTlsSecretName: apexload-generator-grpc-tls
+  maxVUsers: 10000
   nodeSelector:
     apexload.io/node-pool: generators
   tolerations:

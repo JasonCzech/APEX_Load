@@ -404,6 +404,56 @@ func TestExecutionMutationHandlersReturn503OnFollower(t *testing.T) {
 	}
 }
 
+func TestFleetMutationHandlersReturn503OnFollower(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+
+	s := NewServer(ServerConfig{Store: store, HAExecutionLeadership: true})
+	if s.isExecutionLeader() {
+		t.Fatal("server should be a follower until it acquires the lease")
+	}
+
+	cases := []struct {
+		name    string
+		method  string
+		path    string
+		body    string
+		id      string
+		handler http.HandlerFunc
+	}{
+		{"pool create", http.MethodPost, "/api/v1/fleet/pools", `{"name":"pool","cloud_provider":"kubernetes"}`, "", s.handleCreateFleetPool},
+		{"pool update", http.MethodPut, "/api/v1/fleet/pools/pool-1", `{"name":"pool","cloud_provider":"kubernetes"}`, "pool-1", s.handleUpdateFleetPool},
+		{"pool delete", http.MethodDelete, "/api/v1/fleet/pools/pool-1", ``, "pool-1", s.handleDeleteFleetPool},
+		{"metadata patch", http.MethodPatch, "/api/v1/fleet/generators/gen-1", `{"cordoned":true}`, "gen-1", s.handlePatchGeneratorMetadata},
+		{"provision create", http.MethodPost, "/api/v1/fleet/provision-requests", `{"fleet_pool_id":"pool-1","desired_count":2}`, "", s.handleCreateProvisioningRequest},
+		{"provision cancel", http.MethodPost, "/api/v1/fleet/provision-requests/req-1/cancel", ``, "req-1", s.handleCancelProvisioningRequest},
+		{"provision retry", http.MethodPost, "/api/v1/fleet/provision-requests/req-1/retry", ``, "req-1", s.handleRetryProvisioningRequest},
+		{"alert ack", http.MethodPatch, "/api/v1/fleet/alerts/alert-1/ack", `{"note":"seen"}`, "alert-1", s.handleAckFleetAlert},
+		{"generator cordon", http.MethodPost, "/api/v1/fleet/generators/gen-1/cordon", ``, "gen-1", s.handleCordonGenerator},
+		{"generator uncordon", http.MethodPost, "/api/v1/fleet/generators/gen-1/uncordon", ``, "gen-1", s.handleUncordonGenerator},
+		{"generator drain", http.MethodPost, "/api/v1/fleet/generators/gen-1/drain", ``, "gen-1", s.handleDrainGenerator},
+		{"generator evacuate", http.MethodPost, "/api/v1/fleet/generators/gen-1/evacuate", `{"dry_run":true}`, "gen-1", s.handleEvacuateGenerator},
+		{"drain", http.MethodPatch, "/api/v1/system/generators/drain", `{"target":"gen-a:9090","drain_state":"cordoned"}`, "", s.handleSetGeneratorDrainState},
+		{"restart", http.MethodPost, "/api/v1/system/restarts", `{}`, "", s.handleSystemRestart},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
+			if tc.id != "" {
+				req.SetPathValue("id", tc.id)
+			}
+			tc.handler(rec, req)
+			if rec.Code != http.StatusServiceUnavailable {
+				t.Fatalf("%s status = %d, want 503", tc.name, rec.Code)
+			}
+		})
+	}
+}
+
 func TestMaterializeAndRunExecutionPlanReturns503OnFollower(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {

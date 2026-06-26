@@ -17,6 +17,9 @@ const fleetApiMock = {
   deleteFleetPool: vi.fn(),
   listGeneratorMetadata: vi.fn(),
   patchGeneratorMetadata: vi.fn(),
+  cordonGenerator: vi.fn(),
+  uncordonGenerator: vi.fn(),
+  drainGenerator: vi.fn(),
   createProvisionRequest: vi.fn(),
   getProvisionRequest: vi.fn(),
 }
@@ -88,9 +91,9 @@ describe('FleetGeneratorsCard', () => {
     expect(container.querySelector('.pp-pill-warning')).toBeTruthy()
   })
 
-  it('toggles cordon state with a metadata PATCH', async () => {
+  it('toggles cordon state with the lifecycle endpoint', async () => {
     fleetApiMock.listGeneratorMetadata.mockResolvedValue({ generators: [meta({ cordoned: false })], count: 1 })
-    fleetApiMock.patchGeneratorMetadata.mockResolvedValue(meta({ cordoned: true }))
+    fleetApiMock.cordonGenerator.mockResolvedValue({ generator_id: 'gen-1', target: 'gen-1:9090', drain_state: 'cordoned', cordoned: true })
     await act(async () => {
       root.render(<FleetGeneratorsCard canManage />)
     })
@@ -100,7 +103,8 @@ describe('FleetGeneratorsCard', () => {
       cordonButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     await flush()
-    expect(fleetApiMock.patchGeneratorMetadata).toHaveBeenCalledWith('gen-1', { cordoned: true })
+    expect(fleetApiMock.cordonGenerator).toHaveBeenCalledWith('gen-1')
+    expect(fleetApiMock.patchGeneratorMetadata).not.toHaveBeenCalled()
   })
 
   it('edits capability labels through generator metadata tags', async () => {

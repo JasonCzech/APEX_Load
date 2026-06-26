@@ -37,6 +37,8 @@ export function pageTitleForView(view: AppView, options: TopbarPageTitleOptions 
       return 'Results Library'
     case 'monitoring':
       return 'Monitoring'
+    case 'fleet':
+      return 'Fleet'
     case 'schedules':
       return 'Schedules'
     case 'docs':

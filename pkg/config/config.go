@@ -1,6 +1,10 @@
 package config
 
-import "time"
+import (
+	"strconv"
+	"strings"
+	"time"
+)
 
 type GeneratorConfig struct {
 	ListenAddr        string        `json:"listen_addr"`
@@ -26,6 +30,32 @@ func DefaultGeneratorConfig() GeneratorConfig {
 		ControllerAddr:    "controller:9091",
 		HeartbeatInterval: 5 * time.Second,
 	}
+}
+
+func LoadGeneratorConfigFromEnv(getenv func(string) string) GeneratorConfig {
+	if getenv == nil {
+		getenv = func(string) string { return "" }
+	}
+	cfg := DefaultGeneratorConfig()
+	if value := strings.TrimSpace(getenv("APEXLOAD_GENERATOR_LISTEN_ADDR")); value != "" {
+		cfg.ListenAddr = value
+	} else if value := strings.TrimSpace(getenv("APEXLOAD_GENERATOR_ADDR")); value != "" {
+		cfg.ListenAddr = value
+	}
+	if value := strings.TrimSpace(getenv("APEXLOAD_GENERATOR_MAX_VUSERS")); value != "" {
+		if parsed, err := strconv.Atoi(value); err == nil && parsed > 0 {
+			cfg.MaxVUsers = parsed
+		}
+	}
+	if value := strings.TrimSpace(getenv("APEXLOAD_GENERATOR_HEARTBEAT_INTERVAL")); value != "" {
+		if parsed, err := time.ParseDuration(value); err == nil && parsed > 0 {
+			cfg.HeartbeatInterval = parsed
+		}
+	}
+	if value := strings.TrimSpace(getenv("APEXLOAD_CONTROLLER_ADDR")); value != "" {
+		cfg.ControllerAddr = value
+	}
+	return cfg
 }
 
 func DefaultControllerConfig() ControllerConfig {

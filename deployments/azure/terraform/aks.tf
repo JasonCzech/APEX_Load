@@ -86,6 +86,17 @@ resource "azurerm_kubernetes_cluster_node_pool" "generators" {
   node_taints = [
     "apexload.io/dedicated=generators:NoSchedule",
   ]
+
+  lifecycle {
+    precondition {
+      condition     = local.generator_vm_capacity != null
+      error_message = "generator_node_vm_size must be one of the VM sizes in local.generator_vm_capacity_by_size so KEDA/node capacity can be validated."
+    }
+    precondition {
+      condition     = local.generator_schedulable_pods >= var.generator_keda_max_replicas
+      error_message = "generator node pool capacity is below the KEDA ceiling. Increase generator_node_max_count or VM size, lower generator_keda_max_replicas, or adjust generator pod request/reservation inputs."
+    }
+  }
 }
 
 resource "azurerm_role_assignment" "current_user_aks_cluster_admin" {

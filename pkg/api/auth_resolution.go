@@ -318,6 +318,15 @@ func authenticatedUserFromAPIKey(r *http.Request, store storage.Store) (*Authent
 		}
 		return nil, nil, false, fmt.Errorf("authentication required")
 	}
+	if account == nil {
+		return nil, nil, false, fmt.Errorf("authentication required")
+	}
+	if !account.Active {
+		return nil, nil, false, fmt.Errorf("service account is disabled")
+	}
+	if account.ExpiresAt != nil && !account.ExpiresAt.After(time.Now().UTC()) {
+		return nil, nil, false, fmt.Errorf("service account key is expired")
+	}
 	usedAt := time.Now().UTC()
 	if err := store.UpdateServiceAccountLastUsed(account.ID, usedAt); err == nil {
 		account.LastUsedAt = &usedAt
@@ -370,80 +379,86 @@ func serviceAccountAllowsRequest(account *AuthenticatedServiceAccount, r *http.R
 	return false
 }
 
+type serviceAccountScopeRule struct {
+	method string
+	exact  string
+	prefix string
+	scope  string
+}
+
+func (r serviceAccountScopeRule) matches(method string, path string) bool {
+	if r.method != "" && r.method != method {
+		return false
+	}
+	if r.exact != "" {
+		return path == r.exact
+	}
+	return r.prefix != "" && strings.HasPrefix(path, r.prefix)
+}
+
+var serviceAccountScopeRules = []serviceAccountScopeRule{
+	{prefix: "/api/v1/auth/service-accounts", scope: "service_accounts:manage"},
+	{prefix: "/api/v1/auth/users", scope: "service_accounts:manage"},
+	{prefix: "/api/v1/auth/user-activity", scope: "audit:read"},
+	{prefix: "/api/v1/auth/audit-events", scope: "audit:read"},
+	{method: http.MethodPost, exact: "/api/v1/system/settings", scope: "settings:manage"},
+	{method: http.MethodPut, exact: "/api/v1/system/settings", scope: "settings:manage"},
+	{method: http.MethodPatch, exact: "/api/v1/system/settings", scope: "settings:manage"},
+	{method: http.MethodDelete, exact: "/api/v1/system/settings", scope: "settings:manage"},
+	{method: http.MethodPatch, exact: "/api/v1/system/generators/drain", scope: "settings:manage"},
+	{prefix: "/api/v1/system/restarts", scope: "settings:manage"},
+	{prefix: "/api/v1/system/", scope: "system:read"},
+	{method: http.MethodGet, prefix: "/api/v1/results", scope: "results:read"},
+	{method: http.MethodHead, prefix: "/api/v1/results", scope: "results:read"},
+	{prefix: "/api/v1/results", scope: "results:write"},
+	{method: http.MethodGet, prefix: "/api/v1/remotes/", scope: "results:read"},
+	{method: http.MethodHead, prefix: "/api/v1/remotes/", scope: "results:read"},
+	{prefix: "/api/v1/remotes/", scope: "tests:run"},
+	{method: http.MethodGet, prefix: "/api/v1/scripts", scope: "read"},
+	{method: http.MethodHead, prefix: "/api/v1/scripts", scope: "read"},
+	{prefix: "/api/v1/scripts", scope: "scripts:write"},
+	{method: http.MethodGet, prefix: "/api/v1/tests", scope: "results:read"},
+	{method: http.MethodHead, prefix: "/api/v1/tests", scope: "results:read"},
+	{prefix: "/api/v1/tests", scope: "tests:run"},
+	{method: http.MethodGet, prefix: "/api/v1/scenarios", scope: "results:read"},
+	{method: http.MethodHead, prefix: "/api/v1/scenarios", scope: "results:read"},
+	{prefix: "/api/v1/scenarios", scope: "tests:run"},
+}
+
 func requiredServiceAccountScope(r *http.Request) string {
 	path := r.URL.Path
 	method := r.Method
-	if strings.HasPrefix(path, "/api/v1/auth/service-accounts") {
-		return "service_accounts:manage"
-	}
-	if strings.HasPrefix(path, "/api/v1/auth/users") {
-		return "service_accounts:manage"
-	}
-	if strings.HasPrefix(path, "/api/v1/auth/user-activity") {
-		return "audit:read"
-	}
-	if strings.HasPrefix(path, "/api/v1/auth/audit-events") {
-		return "audit:read"
-	}
-	if path == "/api/v1/system/settings" && method != http.MethodGet {
-		return "settings:manage"
-	}
-	if path == "/api/v1/system/generators/drain" && method == http.MethodPatch {
-		return "settings:manage"
-	}
-	if strings.HasPrefix(path, "/api/v1/system/restarts") {
-		if method == http.MethodGet {
-			return "settings:manage"
-		}
-		return "settings:manage"
-	}
-	if strings.HasPrefix(path, "/api/v1/system/") {
-		return "system:read"
-	}
-	if strings.HasPrefix(path, "/api/v1/results") {
-		if method == http.MethodGet || method == http.MethodHead {
-			return "results:read"
-		}
-		return "results:write"
-	}
 	if strings.HasPrefix(path, "/api/v1/library") {
-		if method == http.MethodGet || method == http.MethodHead || path == "/api/v1/library/export" || strings.HasSuffix(path, "/diff") {
-			return "read"
-		}
-		if path == "/api/v1/library/import/archive" {
-			return "results:write"
-		}
-		if path == "/api/v1/library/import" {
-			return requiredLibraryImportServiceAccountScope(r)
-		}
-		if path == "/api/v1/library/remotes" || strings.HasSuffix(path, "/probe") || method == http.MethodPut || method == http.MethodDelete {
-			return "settings:manage"
-		}
-		if strings.HasSuffix(path, "/pull") || strings.HasSuffix(path, "/push") {
-			return requiredLibraryTransferServiceAccountScope(r)
-		}
-		return "write"
+		return requiredLibraryServiceAccountScope(r)
 	}
-	if strings.HasPrefix(path, "/api/v1/remotes/") {
-		if method == http.MethodGet || method == http.MethodHead {
-			return "results:read"
+	for _, rule := range serviceAccountScopeRules {
+		if rule.matches(method, path) {
+			return rule.scope
 		}
-		return "tests:run"
-	}
-	if strings.HasPrefix(path, "/api/v1/scripts") {
-		if method == http.MethodGet || method == http.MethodHead {
-			return "read"
-		}
-		return "scripts:write"
-	}
-	if strings.HasPrefix(path, "/api/v1/tests") || strings.HasPrefix(path, "/api/v1/scenarios") {
-		if method == http.MethodGet || method == http.MethodHead {
-			return "results:read"
-		}
-		return "tests:run"
 	}
 	if method == http.MethodGet || method == http.MethodHead {
 		return "read"
+	}
+	return "write"
+}
+
+func requiredLibraryServiceAccountScope(r *http.Request) string {
+	path := r.URL.Path
+	method := r.Method
+	if method == http.MethodGet || method == http.MethodHead || path == "/api/v1/library/export" || strings.HasSuffix(path, "/diff") {
+		return "read"
+	}
+	if path == "/api/v1/library/import/archive" {
+		return "results:write"
+	}
+	if path == "/api/v1/library/import" {
+		return requiredLibraryImportServiceAccountScope(r)
+	}
+	if path == "/api/v1/library/remotes" || strings.HasSuffix(path, "/probe") || method == http.MethodPut || method == http.MethodDelete {
+		return "settings:manage"
+	}
+	if strings.HasSuffix(path, "/pull") || strings.HasSuffix(path, "/push") {
+		return requiredLibraryTransferServiceAccountScope(r)
 	}
 	return "write"
 }

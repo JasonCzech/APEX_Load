@@ -62,6 +62,17 @@ scripts/render-aks-manifests.sh --output /tmp/apexload-aks.yaml --image-tag "$(g
 kubectl apply -f /tmp/apexload-aks.yaml
 ```
 
+## Generator Capacity Guard
+
+`terraform plan` validates that the autoscaling `loadgen` node pool can schedule
+the configured KEDA generator ceiling. The check is intentionally parametric:
+`generator_keda_max_replicas`, `generator_node_vm_size`,
+`generator_node_max_count`, `generator_pod_cpu_millicores`,
+`generator_pod_memory_mib`, and `generator_node_reserved_fraction` all feed the
+precondition on the generator node pool. If you change the AKS generator manifest
+requests or the KEDA `maxReplicaCount`, update the matching Terraform variables
+in the same change.
+
 ## Wiring the outputs into App Service
 
 If deploying the controller to Azure App Service instead of AKS, wire the same Terraform outputs as app settings:

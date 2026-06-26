@@ -10,6 +10,7 @@ describe('appRouting', () => {
 
   it('parses refreshable top-level app pages', () => {
     expect(parseAppViewFromHash('#/results')).toEqual({ page: 'results' })
+    expect(parseAppViewFromHash('#/fleet')).toEqual({ page: 'fleet' })
     expect(parseAppViewFromHash('#/test/run-1?tab=archive')).toEqual({ page: 'test', testId: 'run-1', tab: 'archive' })
     expect(parseAppViewFromHash('#/test/run-1?tab=not-real')).toEqual({ page: 'test', testId: 'run-1' })
     expect(parseAppViewFromHash('#/command-center')).toEqual({ page: 'command-center' })
@@ -57,6 +58,7 @@ describe('appRouting', () => {
     expect(viewToLocationHash({ page: 'docs' })).toBe('#/docs')
     expect(viewToLocationHash({ page: 'docs', guidePage: 'general' })).toBe('#/docs')
     expect(viewToLocationHash({ page: 'docs', guidePage: 'mcp' })).toBe('#/docs?guide=mcp')
+    expect(viewToLocationHash({ page: 'fleet' })).toBe('#/fleet')
     expect(viewToLocationHash({ page: 'command-center' })).toBe('#/command-center')
     expect(viewToLocationHash({ page: 'test', testId: 'run/123', tab: 'archive' })).toBe('#/test/run%2F123?tab=archive')
     expect(viewToLocationHash({ page: 'command-center', testId: 'run/123' })).toBe('#/command-center/run%2F123')

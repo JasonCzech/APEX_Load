@@ -55,7 +55,7 @@ type ProvisioningRequest struct {
 	ID                 string               `json:"id"`
 	FleetPoolID        string               `json:"fleet_pool_id"`
 	ProjectID          string               `json:"project_id,omitempty"`
-	Status             string               `json:"status"` // pending, provisioning, success, failed, not_configured
+	Status             string               `json:"status"` // pending, accepted, scaling, waiting_ready, provisioning, success, failed, not_configured, cancelled, timed_out
 	DesiredCount       int                  `json:"desired_count"`
 	Reason             string               `json:"reason,omitempty"`
 	RequestedBySubject string               `json:"requested_by_subject,omitempty"`
@@ -69,7 +69,24 @@ type ProvisioningRequest struct {
 type ProvisioningEvent struct {
 	ID        string    `json:"id"`
 	RequestID string    `json:"request_id"`
-	EventType string    `json:"event_type"` // requested, not_configured, provisioning, success, failure
+	EventType string    `json:"event_type"` // requested, retry, not_configured, provisioning, success, failure, cancelled
 	Message   string    `json:"message,omitempty"`
 	Timestamp time.Time `json:"timestamp"`
+}
+
+// FleetAlertAck persists an operator acknowledgement for a currently-derived
+// fleet alert. Alerts themselves are still derived from live inventory; this row
+// records that an admin has seen and accepted/routed the condition.
+type FleetAlertAck struct {
+	ID                        string    `json:"id"`
+	AlertType                 string    `json:"alert_type"`
+	Target                    string    `json:"target"`
+	Region                    string    `json:"region,omitempty"`
+	Severity                  string    `json:"severity"`
+	Summary                   string    `json:"summary"`
+	Note                      string    `json:"note,omitempty"`
+	AcknowledgedBySubject     string    `json:"acknowledged_by_subject,omitempty"`
+	AcknowledgedByDisplayName string    `json:"acknowledged_by_display_name,omitempty"`
+	AcknowledgedAt            time.Time `json:"acknowledged_at"`
+	UpdatedAt                 time.Time `json:"updated_at"`
 }

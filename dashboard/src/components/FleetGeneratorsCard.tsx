@@ -86,6 +86,26 @@ export default function FleetGeneratorsCard({ canManage = false }: Props) {
     [api, load],
   )
 
+  const toggleCordon = useCallback(
+    async (generatorId: string, cordoned: boolean) => {
+      setBusy(true)
+      setError(null)
+      try {
+        if (cordoned) {
+          await api.uncordonGenerator(generatorId)
+        } else {
+          await api.cordonGenerator(generatorId)
+        }
+        await load()
+      } catch (err) {
+        setError(err instanceof ApiError ? err.message : 'Failed to update generator lifecycle.')
+      } finally {
+        setBusy(false)
+      }
+    },
+    [api, load],
+  )
+
   const submitDraft = useCallback(async () => {
     if (!draft || !draft.generator_id.trim()) return
     await patch(draft.generator_id.trim(), {
@@ -139,7 +159,7 @@ export default function FleetGeneratorsCard({ canManage = false }: Props) {
               </div>
               {canManage && (
                 <div className="pp-row-actions">
-                  <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => void patch(gen.generator_id, { cordoned: !gen.cordoned })}>
+                  <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => void toggleCordon(gen.generator_id, Boolean(gen.cordoned))}>
                     {gen.cordoned ? 'Uncordon' : 'Cordon'}
                   </button>
                   <button

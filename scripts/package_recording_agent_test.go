@@ -20,6 +20,15 @@ func TestRecordingAgentPackageScriptDocumentsMacOSTrustPath(t *testing.T) {
 		"notarytool submit",
 		"Apple could not verify",
 		"xattr -dr com.apple.quarantine",
+		"APEXLOAD_WINDOWS_CODESIGN",
+		"APEXLOAD_WINDOWS_CODESIGN_CERT_PATH",
+		"signtool",
+		"osslsigncode",
+		"Windows SmartScreen",
+		"APEXLOAD_CHECKSUM_SIGN",
+		"APEXLOAD_REQUIRE_TRUSTED_PACKAGES",
+		"--armor --detach-sign",
+		"sha256sum",
 	}
 	for _, check := range checks {
 		if !strings.Contains(script, check) {

@@ -75,7 +75,7 @@ func runTest() {
 			fmt.Fprintf(os.Stderr, "error preparing upload script: %v\n", err)
 			os.Exit(1)
 		}
-		client := NewApiClient(args.api)
+		client := NewApiClientWithAuth(args.api, args.apiKey, args.bearerToken)
 		apiResult, runErr = client.RunPreparedTest(args.script, scriptBody, args.vusers, args.duration.String(), args.rampUp.String(), args.format, goalConfig)
 		if apiResult != nil {
 			slaSummary = apiResult.SLASummary
@@ -213,6 +213,8 @@ func runTest() {
 type runArgs struct {
 	script                   string
 	api                      string
+	apiKey                   string
+	bearerToken              string
 	baseURL                  string
 	format                   string
 	junit                    string
@@ -245,6 +247,16 @@ func parseRunArgs(args []string) runArgs {
 			if i+1 < len(args) {
 				i++
 				r.api = args[i]
+			}
+		case "--api-key":
+			if i+1 < len(args) {
+				i++
+				r.apiKey = args[i]
+			}
+		case "--bearer-token":
+			if i+1 < len(args) {
+				i++
+				r.bearerToken = args[i]
 			}
 		case "--base-url":
 			if i+1 < len(args) {
@@ -348,6 +360,8 @@ Run Flags:
 	--env, -env     Runtime variable override (k=v)     [repeatable]
 	--base-url      Override scenario base URL at run time
   --api           Run via API instead of locally (e.g. http://localhost:8080)
+  --api-key       API key for secured controller calls (or APEXLOAD_API_KEY)
+  --bearer-token  Bearer token for secured controller calls (or APEXLOAD_BEARER_TOKEN)
   --format        Output format (text, json)          [default: text]
   --junit         Write a JUnit XML report to this path (for CI test reporting)
 	--p95-latency-ms Maximum allowed P95 latency in ms

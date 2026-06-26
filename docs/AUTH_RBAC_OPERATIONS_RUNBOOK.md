@@ -52,8 +52,8 @@ Auth Diagnostics shows a `Trusted Proxy Gate` check (pass / warn / fail).
 Default required headers:
 
 - `X-Auth-Request-User`: stable subject identifier.
-- `X-APEXLoad-Roles`: comma or pipe separated global roles.
-- `X-APEXLoad-Project-Roles`: semicolon separated project assignments, for example `checkout=viewer|editor;governance=project_admin`.
+- `X-APEXLoad-Roles`: comma or pipe separated global roles. Used only for first-admin bootstrap while the local user table is empty.
+- `X-APEXLoad-Project-Roles`: semicolon separated project assignments, for example `checkout=viewer|editor;governance=project_admin`. Used only for first-admin bootstrap while the local user table is empty.
 
 Optional identity headers:
 
@@ -70,6 +70,20 @@ Load decides *what* they may do. A subject with no local user record (after boot
 as "not onboarded", so provision users and bindings in Access & API Keys before relying on the
 gateway. APEX Load also owns service-account principals for automation. Provide at least one role
 header so first-admin bootstrap can succeed.
+
+## Local User And Role Binding Model
+
+After bootstrap, APEX Load's local users and role bindings are the authorization source of truth for human users in both `trusted_headers` and `oidc` modes. The identity provider or gateway authenticates the subject; APEX Load decides access from persisted local bindings.
+
+Operational rules:
+
+- Onboard users from the Access page or `POST /api/v1/auth/users/onboard`, which creates the user and initial bindings atomically.
+- A user that authenticates successfully but has no local user record is blocked as not onboarded.
+- Disabled users and revoked OIDC session epochs are rejected by `/api/v1/auth/me` and protected routes.
+- Scoped admins can only see and manage users whose bindings fall inside their manageable scopes.
+- Binding scopes must already exist; nonexistent project, domain, or application-repository scopes are rejected.
+
+Groups, SCIM provisioning, time-bound grants, custom roles, and short-lived client-credentials tokens are roadmap items, not part of the current RBAC ownership model.
 
 ## First-Administrator Bootstrap
 
@@ -137,6 +151,14 @@ Operational guidance:
 
 API-key requests must satisfy both RBAC roles and token scope. For example, a key with `system_admin` but only `results:read` is still rejected from system settings APIs because the token scope does not cover `system:read` or `settings:manage`.
 
+`apexctl` can authenticate to secured controllers with either explicit flags or environment variables:
+
+- `--api-key <key>` or `APEXLOAD_API_KEY=<key>` sends `X-APEXLoad-API-Key`.
+- `--bearer-token <token>` or `APEXLOAD_BEARER_TOKEN=<token>` sends `Authorization: Bearer <token>`.
+- `--api-key` takes precedence over bearer-token auth when both are set.
+
+These flags are supported by `run`, `status`, `wait`, `record browser`, and `github` controller-backed commands.
+
 ## Audit Evidence
 
 APEX Load records governance events for settings changes, project administration, service-account lifecycle actions, auth session lifecycle events, and core test control actions.
@@ -168,4 +190,4 @@ Keep exported audit CSV files with the external incident, change, or release rec
 - Invalid session secret: rotate `APEXLOAD_AUTH_SESSION_SECRET` only during a planned session invalidation window.
 - Issuer discovery failure: confirm controller egress to the issuer and that `issuer_url` points at the provider metadata root.
 - Missing trusted-header identity: open the dashboard through the protected ingress, not the raw controller origin.
-- Missing RBAC roles: verify the IdP or gateway emits `roles` or `project_roles`, or the configured claim/header alternatives.
+- Missing RBAC roles: verify the subject has local APEX Load role bindings in Access. Upstream role claims/headers do not grant access after first-admin bootstrap.

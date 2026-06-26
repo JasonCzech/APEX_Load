@@ -24,6 +24,10 @@ type scalableExecutionBackend interface {
 	ScaleVUsers(tr *TestRunner, test *ManagedTest, groupName string, targetVUsers int) error
 }
 
+type evacuatingExecutionBackend interface {
+	EvacuateGenerator(tr *TestRunner, test *ManagedTest, target string, dryRun bool, reason string) ([]GeneratorEvacuationImpact, error)
+}
+
 type durationAdjustableExecutionBackend interface {
 	AdjustDuration(tr *TestRunner, test *ManagedTest, newDuration time.Duration) error
 }
@@ -36,11 +40,19 @@ type drainableExecutionBackend interface {
 	SetGeneratorDrainState(target string, state string) error
 }
 
+type identityDrainableExecutionBackend interface {
+	SetGeneratorDrainStateByID(generatorID string, state string) (string, error)
+	GeneratorTargetForID(generatorID string) string
+	GeneratorIDForTarget(target string) string
+}
+
 type KubePodRef struct {
-	Name      string `json:"name"`
-	Namespace string `json:"namespace"`
-	IP        string `json:"ip,omitempty"`
-	Phase     string `json:"phase,omitempty"`
+	Name        string `json:"name"`
+	Namespace   string `json:"namespace"`
+	IP          string `json:"ip,omitempty"`
+	Phase       string `json:"phase,omitempty"`
+	Ready       bool   `json:"ready"`
+	Terminating bool   `json:"terminating"`
 }
 
 type KubeRestarter interface {

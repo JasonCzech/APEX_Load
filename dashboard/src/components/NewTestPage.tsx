@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Area, AreaChart, CartesianGrid, Line, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { Application, CapacityTimeslot, DashboardAuthEffectiveAccessResource, DashboardScheduleDefaultsSettings, DraftCapacityEstimate, GeneratorAssignmentSettings, LaunchPreflightResponse, Release, RuntimeSettingsOverride, ScenarioSchedule, ScenarioScheduleOccurrence, ScenarioScheduleWindow, StoredScenario, SystemInventoryGenerator } from '../types'
+import { Application, ApplicationRepository, CapacityTimeslot, DashboardAuthEffectiveAccessResource, DashboardScheduleDefaultsSettings, DraftCapacityEstimate, GeneratorAssignmentSettings, LaunchPreflightResponse, Release, RuntimeSettingsOverride, ScenarioSchedule, ScenarioScheduleOccurrence, ScenarioScheduleWindow, StoredScenario, SystemInventoryGenerator } from '../types'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
 import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
@@ -70,6 +70,7 @@ import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } fr
 
 interface Props {
   activeApplication: Application | null
+  applicationRepository?: ApplicationRepository | null
   activeRelease: Release | null
   releases: Release[]
   initialScenarioId?: string
@@ -411,7 +412,7 @@ function buildGroupEditChanges(draft: GroupEditDraft, baseline: GroupEditDraft):
   }
 }
 
-export default function NewTestPage({ activeApplication, activeRelease, releases, initialScenarioId, initialPrefillStartLocal, onSelectTest, onOpenCommandCenter, onCreateRelease, onOpenScenarioBuilder }: Props) {
+export default function NewTestPage({ activeApplication, applicationRepository, activeRelease, releases, initialScenarioId, initialPrefillStartLocal, onSelectTest, onOpenCommandCenter, onCreateRelease, onOpenScenarioBuilder }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
   const [pageMode, setPageMode] = useState<'launch' | 'schedules'>('launch')
@@ -529,7 +530,10 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
     let cancelled = false
     const loadEffectiveAccess = async () => {
       try {
-        const response = await api.getAuthEffectiveAccess(activeProject?.id)
+        const response = await api.getAuthEffectiveAccess(activeProject?.id, {
+          domain_id: activeProject?.domain_id,
+          application_repository_id: applicationRepository?.id,
+        })
         if (!cancelled) {
           setEffectiveAuthAccessResources(response.resources || [])
         }
@@ -543,7 +547,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
     return () => {
       cancelled = true
     }
-  }, [activeProject?.id, api])
+  }, [activeProject?.id, activeProject?.domain_id, api, applicationRepository?.id])
   useEffect(() => {
     let cancelled = false
     const loadScheduleDefaults = async () => {

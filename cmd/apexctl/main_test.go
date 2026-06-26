@@ -46,6 +46,9 @@ func TestApexctlBundlesExecutableProtocols(t *testing.T) {
 func TestParseRunArgs_RuntimeOverrides(t *testing.T) {
 	args := parseRunArgs([]string{
 		"--script", "example.json",
+		"--api", "http://localhost:8080",
+		"--api-key", "key-123",
+		"--bearer-token", "token-456",
 		"-env", "target_namespace=pr-123",
 		"--env", "api_host=preview.example.com",
 		"--base-url", "https://preview.example.com",
@@ -56,6 +59,9 @@ func TestParseRunArgs_RuntimeOverrides(t *testing.T) {
 	}
 	if args.baseURL != "https://preview.example.com" {
 		t.Fatalf("baseURL = %q, want https://preview.example.com", args.baseURL)
+	}
+	if args.api != "http://localhost:8080" || args.apiKey != "key-123" || args.bearerToken != "token-456" {
+		t.Fatalf("api auth args = %#v", args)
 	}
 	if args.env["target_namespace"] != "pr-123" {
 		t.Fatalf("target_namespace = %q, want pr-123", args.env["target_namespace"])
@@ -83,6 +89,8 @@ func TestParseGithubArgs(t *testing.T) {
 		"--branch", "main",
 		"--path", "apexload/scripts",
 		"--strategy", "pr",
+		"--api-key", "gh-key",
+		"--bearer-token", "gh-token",
 	})
 
 	if args.command != "sync" || args.api != "http://controller.local" || args.projectID != "project-a" {
@@ -90,6 +98,9 @@ func TestParseGithubArgs(t *testing.T) {
 	}
 	if args.kind != "push" || args.owner != "octo" || args.repo != "scripts" || args.strategy != "pr" {
 		t.Fatalf("github target args = %#v", args)
+	}
+	if args.apiKey != "gh-key" || args.bearerToken != "gh-token" {
+		t.Fatalf("github auth args = %#v", args)
 	}
 }
 
