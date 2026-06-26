@@ -1579,8 +1579,8 @@ export interface RunCalendarTopology {
 
 export interface RunCalendarEvent {
   id: string
-  source: 'cron' | 'ad_hoc' | string
-  run_type: 'scheduled' | 'ad_hoc' | string
+  source: 'cron' | 'ad_hoc' | 'execution_plan' | string
+  run_type: 'scheduled' | 'ad_hoc' | 'execution_plan' | string
   title: string
   status: string
   start_at: string
@@ -1597,6 +1597,7 @@ export interface RunCalendarEvent {
   timezone?: string
   scenario_id?: string
   scenario_name?: string
+  plan_id?: string
   application_id?: string
   release_id?: string
   project_id?: string
@@ -3206,12 +3207,19 @@ export interface DashboardAuthEffectiveAccess {
   resources: DashboardAuthEffectiveAccessResource[]
   dev_view_mode?: 'admin' | 'user'
   simulated?: boolean
+  // Simulator-only fields (admin "what can principal X do in scope Y" view).
+  principal_type?: 'user' | 'service_account'
+  principal_id?: string
+  principal_name?: string
+  scopes_narrow_api_access?: boolean
 }
 
 export interface DashboardServiceAccount {
   id: string
   name: string
   description?: string
+  owner_id?: string
+  contact_email?: string
   active: boolean
   global_roles?: string[]
   project_roles?: Record<string, string[]>
@@ -3294,6 +3302,8 @@ export interface DashboardAccessReviewResponse {
   users: DashboardAccessReviewUser[]
   service_accounts: DashboardAccessReviewServiceAccount[]
   summary: Record<string, number>
+  recent_denials?: number
+  recent_denial_window_hours?: number
 }
 
 export interface DashboardCreateUserRequest {
@@ -3329,6 +3339,8 @@ export interface DashboardUserActivityResponse {
 export interface DashboardCreateServiceAccountRequest {
   name: string
   description?: string
+  owner_id?: string
+  contact_email?: string
   global_roles?: string[]
   project_roles?: Record<string, string[]>
   domain_roles?: Record<string, string[]>
@@ -3343,8 +3355,22 @@ export interface DashboardCreateServiceAccountResponse {
   api_key: string
 }
 
+// A partial update: every field is optional, and a present field replaces the stored value.
+// The backend rejects empty role/scope arrays (use active:false to disable a key), and the
+// API key material is never touched by this PATCH.
 export interface DashboardUpdateServiceAccountRequest {
-  active: boolean
+  name?: string
+  description?: string
+  owner_id?: string
+  contact_email?: string
+  active?: boolean
+  global_roles?: string[]
+  project_roles?: Record<string, string[]>
+  domain_roles?: Record<string, string[]>
+  application_repository_roles?: Record<string, string[]>
+  scopes?: string[]
+  expires_at?: string
+  rotation_interval_days?: number
 }
 
 export interface DashboardAuditEvent {
@@ -4050,6 +4076,84 @@ export interface ExecutionPlanRunListResponse {
   count: number
   limit?: number
   offset?: number
+}
+
+// Recurring schedule that materializes execution-plan runs on a cron cadence.
+export interface ExecutionPlanSchedule {
+  id: string
+  plan_id: string
+  project_id?: string
+  revision?: number
+  name: string
+  cron_expr: string
+  timezone?: string
+  run_name_template?: string
+  enabled: boolean
+  missed_run_policy?: string // skip | catch_up_once | catch_up_all
+  conflict_summary?: string
+  next_required_action?: string
+  last_run_run_id?: string
+  last_run_at?: string
+  next_run_at?: string
+  disabled_from?: string
+  disabled_until?: string
+  last_error?: string
+  created_at: string
+  updated_at: string
+}
+export interface ExecutionPlanScheduleRequest {
+  name: string
+  cron_expr: string
+  timezone?: string
+  run_name_template?: string
+  enabled?: boolean
+  missed_run_policy?: string
+  disabled_from?: string
+  disabled_until?: string
+}
+export interface ExecutionPlanScheduleListResponse {
+  schedules: ExecutionPlanSchedule[]
+  count: number
+}
+export interface ExecutionPlanScheduleOccurrence {
+  id: string
+  schedule_id: string
+  plan_id: string
+  project_id?: string
+  schedule_revision?: number
+  planned_at: string
+  materialized_at?: string
+  status: string // materializing | materialized | blocked | failed
+  reason_code?: string
+  run_id?: string
+  conflict_summary?: string
+  created_at: string
+  updated_at: string
+}
+export interface ExecutionPlanScheduleOccurrenceListResponse {
+  occurrences: ExecutionPlanScheduleOccurrence[]
+  count: number
+}
+// Quota/governance gate on an execution-plan run (project-admin approval).
+export interface ExecutionPlanApproval {
+  id: string
+  plan_id: string
+  project_id?: string
+  policy: string // quota_burst
+  status: string // pending | approved | rejected
+  requested_by?: string
+  requested_at: string
+  resolved_by?: string
+  resolved_at?: string
+  decision_reason?: string
+  required_role?: string
+  run_id?: string // set once the approval is consumed by a run
+  created_at: string
+  updated_at: string
+}
+export interface ExecutionPlanApprovalListResponse {
+  approvals: ExecutionPlanApproval[]
+  count: number
 }
 
 export interface RepositoryObjectCandidate {

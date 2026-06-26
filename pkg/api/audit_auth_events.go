@@ -77,7 +77,7 @@ func (s *Server) recordAuthDenial(r *http.Request, resolution authResolution, st
 	}
 	_ = s.store.SaveAuditEvent(&storage.AuditEvent{
 		ID:               uuid.New().String(),
-		Action:           "auth.access.denied",
+		Action:           auditActionAccessDenied,
 		ActorType:        actorType,
 		ActorSubject:     actorSubject,
 		ActorDisplayName: actorDisplayName,

@@ -4,6 +4,7 @@ import { useApi } from '../hooks/useApi'
 import { SortIndicator as SortIcon } from './SortIndicator'
 import {
   DashboardAccessReviewResponse,
+  DashboardAuthEffectiveAccess,
   DashboardAuditEvent,
   DashboardAuditEventFilter,
   DashboardServiceAccount,
@@ -44,6 +45,8 @@ type AccessPageProps = {
   canManageUserBindings: boolean
   canViewUserActivity: boolean
   canManageServiceAccounts: boolean
+  // Bumped by App when an `access_review_changed` WebSocket ping arrives, prompting a refetch.
+  accessReviewRefreshSignal?: number
 }
 
 type PurposePreset = {
@@ -60,8 +63,12 @@ type ServiceAccountForm = {
   purpose: string
   name: string
   description: string
+  owner: string
+  contact: string
   globalRoles: string[]
   projectRoles: Record<string, string>
+  domainRoles: Record<string, string>
+  applicationRepositoryRoles: Record<string, string>
   scopes: string[]
   expiresAt: string
   rotationDays: string
@@ -261,11 +268,50 @@ function buildPresetForm(preset: PurposePreset, activeProjectID?: string): Servi
     purpose: preset.id,
     name: preset.defaultName,
     description: preset.description,
+    owner: '',
+    contact: '',
     globalRoles: preset.globalRoles,
     projectRoles,
+    domainRoles: {},
+    applicationRepositoryRoles: {},
     scopes: preset.scopes,
     expiresAt: '',
     rotationDays: '90',
+  }
+}
+
+// formFromServiceAccount seeds the edit form from a stored account. Role maps are
+// flattened from API shape (id -> roles[]) to the form's single-role-per-scope shape,
+// keeping the first role for each scope.
+function formFromServiceAccount(account: DashboardServiceAccount): ServiceAccountForm {
+  const firstRole = (roles?: Record<string, string[]>): Record<string, string> => {
+    const out: Record<string, string> = {}
+    Object.entries(roles || {}).forEach(([id, list]) => {
+      if (id && list && list.length > 0) out[id] = list[0]
+    })
+    return out
+  }
+  const toLocalDateTime = (value?: string): string => {
+    if (!value) return ''
+    const parsed = new Date(value)
+    if (Number.isNaN(parsed.getTime())) return ''
+    // datetime-local needs YYYY-MM-DDTHH:mm in local time.
+    const tzOffset = parsed.getTimezoneOffset() * 60000
+    return new Date(parsed.getTime() - tzOffset).toISOString().slice(0, 16)
+  }
+  return {
+    purpose: 'custom',
+    name: account.name,
+    description: account.description || '',
+    owner: account.owner_id || '',
+    contact: account.contact_email || '',
+    globalRoles: account.global_roles || [],
+    projectRoles: firstRole(account.project_roles),
+    domainRoles: firstRole(account.domain_roles),
+    applicationRepositoryRoles: firstRole(account.application_repository_roles),
+    scopes: account.scopes || [],
+    expiresAt: toLocalDateTime(account.expires_at),
+    rotationDays: account.rotation_interval_days ? String(account.rotation_interval_days) : '90',
   }
 }
 
@@ -633,6 +679,7 @@ export default function AccessPage({
   canManageUserBindings,
   canViewUserActivity,
   canManageServiceAccounts,
+  accessReviewRefreshSignal = 0,
 }: AccessPageProps) {
   const api = useApi()
   const canUseUsers = canManageUserLifecycle || canManageUserBindings
@@ -688,14 +735,28 @@ export default function AccessPage({
   const [activityMessage, setActivityMessage] = useState('')
   const [issuedKey, setIssuedKey] = useState<IssuedKeyState | null>(null)
   const [copyMessage, setCopyMessage] = useState('')
+  const [accountEditMode, setAccountEditMode] = useState(false)
+  const [editAccountForm, setEditAccountForm] = useState<ServiceAccountForm>(() => buildPresetForm(presetByID('ci')))
+  const [simulatorPrincipal, setSimulatorPrincipal] = useState<{ type: 'user' | 'service_account'; id: string }>({ type: 'user', id: '' })
+  const [simulatorResult, setSimulatorResult] = useState<DashboardAuthEffectiveAccess | null>(null)
+  const [simulatorError, setSimulatorError] = useState('')
+  const [simulatorLoading, setSimulatorLoading] = useState(false)
   const hasTopbarContributionProvider = useHasTopbarContributionProvider()
 
-  const activePreset = useMemo(() => presetByID(form.purpose), [form.purpose])
   const selectedUser = useMemo(() => users.find(user => user.id === selectedUserID) || null, [selectedUserID, users])
   const selectedAccount = useMemo(() => accounts.find(account => account.id === selectedAccountID) || null, [accounts, selectedAccountID])
   const selectedActivity = useMemo(() => activityEvents.find(event => event.id === selectedActivityID) || null, [activityEvents, selectedActivityID])
   const userBuckets = useMemo(() => activityUsage?.by_user || [], [activityUsage?.by_user])
   const accessWorkspaceAvailable = canUseUsers || canManageServiceAccounts || canViewUserActivity
+  // Attention summary for the access-review badge: flagged principals + recent denials.
+  const accessReviewAttention = useMemo(() => {
+    if (!accessReview) return null
+    const accountsFlagged = accessReview.service_accounts.length
+    const usersFlagged = accessReview.users.length
+    const denials = accessReview.recent_denials || 0
+    const total = accountsFlagged + usersFlagged + denials
+    return total > 0 ? { accountsFlagged, usersFlagged, denials, total } : null
+  }, [accessReview])
 
   const accessTabControls = useMemo(() => (
     accessWorkspaceAvailable ? (
@@ -713,11 +774,14 @@ export default function AccessPage({
         {canViewUserActivity && (
           <button type="button" role="tab" aria-selected={activeTab === 'activity'} className={`access-tab ${activeTab === 'activity' ? 'active' : ''}`} onClick={() => setActiveTab('activity')}>
             Activity <strong>{activityEvents.length}</strong>
+            {accessReviewAttention && (
+              <span className="access-attention-badge" title={`${accessReviewAttention.total} item(s) need review`}>{accessReviewAttention.total}</span>
+            )}
           </button>
         )}
       </div>
     ) : null
-  ), [accessWorkspaceAvailable, accounts.length, activeTab, activityEvents.length, canManageServiceAccounts, canUseUsers, canViewUserActivity, users.length, usersTotal])
+  ), [accessReviewAttention, accessWorkspaceAvailable, accounts.length, activeTab, activityEvents.length, canManageServiceAccounts, canUseUsers, canViewUserActivity, users.length, usersTotal])
 
   const accessTopbarContribution = useMemo(() => ({
     id: 'access-page',
@@ -939,7 +1003,8 @@ export default function AccessPage({
   }, [activityFilter, api, canViewUserActivity])
 
   const loadAccessReview = useCallback(async () => {
-    if (!canViewUserActivity) return
+    // The report endpoint is gated by user-lifecycle admin; the activity tab surfaces it too.
+    if (!canViewUserActivity && !canManageUserLifecycle) return
     setAccessReviewLoading(true)
     try {
       const response = await api.getAccessReview()
@@ -951,13 +1016,21 @@ export default function AccessPage({
     } finally {
       setAccessReviewLoading(false)
     }
-  }, [api, canViewUserActivity])
+  }, [api, canViewUserActivity, canManageUserLifecycle])
 
   useEffect(() => {
     if (activeTab === 'activity' && activitySubTab === 'review' && !accessReview && !accessReviewLoading) {
       void loadAccessReview()
     }
   }, [activeTab, activitySubTab, accessReview, accessReviewLoading, loadAccessReview])
+
+  // Admins get the access-review posture eagerly (for the attention badge) and refetched on
+  // each `access_review_changed` ping, regardless of which tab is open.
+  useEffect(() => {
+    if (canManageUserLifecycle) {
+      void loadAccessReview()
+    }
+  }, [canManageUserLifecycle, accessReviewRefreshSignal, loadAccessReview])
 
   useEffect(() => {
     setActiveTab(current => {
@@ -1005,6 +1078,12 @@ export default function AccessPage({
       setSelectedAccountID(accounts[0].id)
     }
   }, [accounts, selectedAccountID])
+
+  // Leave edit mode whenever the selected account changes, so a stale edit draft can't
+  // be saved against a different account.
+  useEffect(() => {
+    setAccountEditMode(false)
+  }, [selectedAccountID])
 
   useEffect(() => {
     if (activityEvents.length === 0) {
@@ -1205,8 +1284,12 @@ export default function AccessPage({
       const response = await api.createAuthServiceAccount({
         name: form.name.trim(),
         description: form.description.trim() || undefined,
+        owner_id: form.owner.trim() || undefined,
+        contact_email: form.contact.trim() || undefined,
         global_roles: form.globalRoles,
         project_roles: toProjectRolesPayload(form.projectRoles),
+        domain_roles: toProjectRolesPayload(form.domainRoles),
+        application_repository_roles: toProjectRolesPayload(form.applicationRepositoryRoles),
         scopes: form.scopes,
         expires_at: parseOptionalDateTime(form.expiresAt),
         rotation_interval_days: parseRotationDays(form.rotationDays),
@@ -1273,6 +1356,84 @@ export default function AccessPage({
     } catch (error: unknown) {
       setActionError(getErrorMessage(error, 'Unable to delete service account'))
       setActionMessage('')
+    }
+  }
+
+  const beginEditAccount = (account: DashboardServiceAccount) => {
+    setEditAccountForm(formFromServiceAccount(account))
+    setAccountEditMode(true)
+    setActionError('')
+    setActionMessage('')
+  }
+
+  const cancelEditAccount = () => {
+    setAccountEditMode(false)
+    setActionError('')
+  }
+
+  const updateAccount = async (account: DashboardServiceAccount) => {
+    if (!canManageServiceAccounts) return
+    if (!editAccountForm.name.trim()) {
+      setActionError('Service account name is required.')
+      return
+    }
+    // The backend rejects empty role/scope sets on a PATCH (disable a key with the
+    // Disable action instead of stripping its permissions).
+    if (editAccountForm.globalRoles.length === 0) {
+      setActionError('Keep at least one global role (use Disable to deactivate the key).')
+      return
+    }
+    if (editAccountForm.scopes.length === 0) {
+      setActionError('Keep at least one token scope (use Disable to deactivate the key).')
+      return
+    }
+    try {
+      await api.updateAuthServiceAccount(account.id, {
+        name: editAccountForm.name.trim(),
+        description: editAccountForm.description.trim(),
+        owner_id: editAccountForm.owner.trim(),
+        contact_email: editAccountForm.contact.trim(),
+        global_roles: editAccountForm.globalRoles,
+        project_roles: toProjectRolesPayload(editAccountForm.projectRoles),
+        domain_roles: toProjectRolesPayload(editAccountForm.domainRoles),
+        application_repository_roles: toProjectRolesPayload(editAccountForm.applicationRepositoryRoles),
+        scopes: editAccountForm.scopes,
+        expires_at: parseOptionalDateTime(editAccountForm.expiresAt) ?? '',
+        rotation_interval_days: parseRotationDays(editAccountForm.rotationDays),
+      })
+      setAccountEditMode(false)
+      setActionMessage(`Updated ${editAccountForm.name.trim()}.`)
+      setActionError('')
+      await loadAccounts()
+    } catch (error: unknown) {
+      setActionError(getErrorMessage(error, 'Unable to update service account'))
+      setActionMessage('')
+    }
+  }
+
+  const runSimulator = async () => {
+    const principalID = simulatorPrincipal.id.trim()
+    if (!principalID) {
+      setSimulatorError('Choose a principal to simulate.')
+      setSimulatorResult(null)
+      return
+    }
+    setSimulatorLoading(true)
+    setSimulatorError('')
+    try {
+      const result = await api.getAuthEffectiveAccessForPrincipal({
+        principal_type: simulatorPrincipal.type,
+        principal_id: principalID,
+        project_id: activeProject?.id,
+        domain_id: activeProject?.domain_id || activeDomain?.id,
+        application_repository_id: applicationRepository?.id,
+      })
+      setSimulatorResult(result)
+    } catch (error: unknown) {
+      setSimulatorError(getErrorMessage(error, 'Unable to simulate effective access'))
+      setSimulatorResult(null)
+    } finally {
+      setSimulatorLoading(false)
     }
   }
 
@@ -1540,8 +1701,159 @@ export default function AccessPage({
     )
   }
 
+  // A scoped role list (one role per scope id) shared by every service-account scope tier.
+  const renderScopedRoleList = (
+    label: string,
+    description: string,
+    items: { id: string; name: string }[],
+    emptyHint: string,
+    rolesKey: 'projectRoles' | 'domainRoles' | 'applicationRepositoryRoles',
+    defaultRole: string,
+    current: ServiceAccountForm,
+    setter: Dispatch<SetStateAction<ServiceAccountForm>>,
+  ) => (
+    <div className="access-control-section">
+      <div>
+        <h4>{label}</h4>
+        <p>{description}</p>
+      </div>
+      <div className="access-project-role-list">
+        {items.length > 0 ? items.map(item => {
+          const selectedRole = current[rolesKey][item.id]
+          return (
+            <div className="access-project-role-row" key={item.id}>
+              <label className="access-project-checkbox">
+                <input
+                  type="checkbox"
+                  checked={Boolean(selectedRole)}
+                  onChange={event => setter(prev => {
+                    const next = { ...prev[rolesKey] }
+                    if (event.target.checked) {
+                      next[item.id] = selectedRole || defaultRole
+                    } else {
+                      delete next[item.id]
+                    }
+                    return { ...prev, [rolesKey]: next }
+                  })}
+                />
+                <span>{item.name}</span>
+              </label>
+              <select
+                value={selectedRole || defaultRole}
+                disabled={!selectedRole}
+                onChange={event => setter(prev => ({ ...prev, [rolesKey]: { ...prev[rolesKey], [item.id]: event.target.value } }))}
+              >
+                {SCOPED_ROLE_OPTIONS.map(option => (
+                  <option key={option.id} value={option.id}>{option.label}</option>
+                ))}
+              </select>
+            </div>
+          )
+        }) : (
+          <p className="access-muted">{emptyHint}</p>
+        )}
+      </div>
+    </div>
+  )
+
+  // Global roles, token scopes, and the project/domain/repository role pickers — shared by
+  // the create form and the inline edit form so both can grant all four scope tiers. The
+  // create form passes the active preset's project role as the default; edit defaults to viewer.
+  const renderServiceAccountRoleControls = (current: ServiceAccountForm, setter: Dispatch<SetStateAction<ServiceAccountForm>>, projectDefaultRole = 'viewer') => (
+    <>
+      <div className="access-control-section">
+        <div>
+          <h4>Global Roles</h4>
+          <p>System-wide RBAC roles granted to this key.</p>
+        </div>
+        <div className="access-chip-row">
+          {GLOBAL_ROLE_OPTIONS.map(option => (
+            <button
+              key={option.id}
+              type="button"
+              className={`access-chip ${current.globalRoles.includes(option.id) ? 'active' : ''}`}
+              onClick={() => setter(prev => ({ ...prev, globalRoles: toggleValue(prev.globalRoles, option.id) }))}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="access-control-section">
+        <div>
+          <h4>Token Scopes</h4>
+          <p>Scopes are enforced in addition to RBAC roles.</p>
+        </div>
+        <div className="access-chip-row">
+          {SCOPE_OPTIONS.map(option => (
+            <button
+              key={option.id}
+              type="button"
+              className={`access-chip ${current.scopes.includes(option.id) ? 'active' : ''}`}
+              onClick={() => setter(prev => ({ ...prev, scopes: toggleValue(prev.scopes, option.id) }))}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {renderScopedRoleList('Project Roles', 'Project-scoped role assignments.', projects.map(project => ({ id: project.id, name: project.name })), 'Create or select a project to assign project-scoped roles.', 'projectRoles', projectDefaultRole, current, setter)}
+      {renderScopedRoleList('Domain Roles', 'Domain-scoped role assignments.', (domains || []).map(domain => ({ id: domain.id, name: domain.name })), 'No domains available to assign domain-scoped roles.', 'domainRoles', 'viewer', current, setter)}
+      {applicationRepository ? renderScopedRoleList('Repository Roles', 'Application-repository-scoped role assignments.', [{ id: applicationRepository.id, name: applicationRepository.name }], '', 'applicationRepositoryRoles', 'viewer', current, setter) : null}
+    </>
+  )
+
+  const renderAccountEditForm = (account: DashboardServiceAccount) => (
+    <aside className="access-inspector access-panel" aria-label="Edit service account">
+      <div className="access-panel-header">
+        <div>
+          <h3>Edit Account</h3>
+          <p>{account.name}</p>
+        </div>
+        <button className="btn btn-ghost btn-sm" type="button" onClick={cancelEditAccount}>Cancel</button>
+      </div>
+      <div className="access-form-grid">
+        <label>
+          <span>Service Account Name</span>
+          <input value={editAccountForm.name} onChange={event => setEditAccountForm(prev => ({ ...prev, name: event.target.value }))} />
+        </label>
+        <label>
+          <span>Description</span>
+          <input value={editAccountForm.description} onChange={event => setEditAccountForm(prev => ({ ...prev, description: event.target.value }))} />
+        </label>
+        <label>
+          <span>Owner</span>
+          <input value={editAccountForm.owner} onChange={event => setEditAccountForm(prev => ({ ...prev, owner: event.target.value }))} placeholder="team or person responsible" />
+        </label>
+        <label>
+          <span>Contact Email</span>
+          <input value={editAccountForm.contact} onChange={event => setEditAccountForm(prev => ({ ...prev, contact: event.target.value }))} placeholder="oncall@example.com" />
+        </label>
+        <label>
+          <span>Expires At</span>
+          <input type="datetime-local" value={editAccountForm.expiresAt} onChange={event => setEditAccountForm(prev => ({ ...prev, expiresAt: event.target.value }))} />
+        </label>
+        <label>
+          <span>Rotation Interval</span>
+          <input type="number" min={0} step={1} value={editAccountForm.rotationDays} onChange={event => setEditAccountForm(prev => ({ ...prev, rotationDays: event.target.value }))} />
+        </label>
+      </div>
+      {renderServiceAccountRoleControls(editAccountForm, setEditAccountForm)}
+      {(actionError || actionMessage) && (
+        <div className={`access-alert ${actionError ? 'error' : 'success'}`}>{actionError || actionMessage}</div>
+      )}
+      <div className="access-account-actions">
+        <button className="btn btn-primary btn-sm" type="button" onClick={() => updateAccount(account)} disabled={!canManageServiceAccounts}>Save Changes</button>
+        <button className="btn btn-ghost btn-sm" type="button" onClick={cancelEditAccount}>Cancel</button>
+      </div>
+    </aside>
+  )
+
   const renderAccountInspector = () => {
     if (!selectedAccount || accountInspectorCollapsed) return null
+    if (accountEditMode) return renderAccountEditForm(selectedAccount)
     const roles = accountRoleList(selectedAccount)
     const accessLabels = accountAccessLabels(selectedAccount, projects, domains)
     return (
@@ -1560,6 +1872,8 @@ export default function AccessPage({
         </div>
         <dl className="access-detail-grid">
           <div><dt>Description</dt><dd>{selectedAccount.description || 'None'}</dd></div>
+          <div><dt>Owner</dt><dd>{selectedAccount.owner_id || 'Unassigned'}</dd></div>
+          <div><dt>Contact</dt><dd>{selectedAccount.contact_email || 'None'}</dd></div>
           <div><dt>Roles</dt><dd>{formatRoleList(roles)}</dd></div>
           <div><dt>Scopes</dt><dd>{(selectedAccount.scopes || ['automation:*']).join(', ')}</dd></div>
           <div><dt>Access</dt><dd>{accessLabels.join(' | ') || 'Global only'}</dd></div>
@@ -1571,6 +1885,7 @@ export default function AccessPage({
           <div><dt>Updated</dt><dd>{formatTimestamp(selectedAccount.updated_at)}</dd></div>
         </dl>
         <div className="access-account-actions">
+          <button className="btn btn-primary btn-sm" type="button" onClick={() => beginEditAccount(selectedAccount)} disabled={!canManageServiceAccounts}>Edit</button>
           <button className="btn btn-secondary btn-sm" type="button" onClick={() => rotateAccount(selectedAccount)} disabled={!canManageServiceAccounts}>Rotate Key</button>
           <button className="btn btn-secondary btn-sm" type="button" onClick={() => setAccountActive(selectedAccount, !selectedAccount.active)} disabled={!canManageServiceAccounts}>
             {selectedAccount.active ? 'Disable' : 'Enable'}
@@ -1633,6 +1948,69 @@ export default function AccessPage({
           </section>
         )}
       </div>
+    )
+  }
+
+  const renderSimulator = () => {
+    const principalOptions = simulatorPrincipal.type === 'user'
+      ? users.map(user => ({ id: user.id, label: user.display_name || user.subject }))
+      : accounts.map(account => ({ id: account.id, label: account.name }))
+    return (
+      <section className="access-simulator">
+        <h4>Effective-Access Simulator</h4>
+        <p className="setting-desc">
+          Resolve what a user or service account can do in the active scope (project {activeProject?.id || '—'}, domain {activeProject?.domain_id || activeDomain?.id || '—'}). Role-based; a service account&apos;s token scopes narrow its API access further.
+        </p>
+        <div className="access-form-grid">
+          <label>
+            <span>Principal Type</span>
+            <select
+              value={simulatorPrincipal.type}
+              onChange={event => { setSimulatorPrincipal({ type: event.target.value as 'user' | 'service_account', id: '' }); setSimulatorResult(null) }}
+            >
+              <option value="user">User</option>
+              <option value="service_account">Service Account</option>
+            </select>
+          </label>
+          <label>
+            <span>Principal</span>
+            <select value={simulatorPrincipal.id} onChange={event => setSimulatorPrincipal(prev => ({ ...prev, id: event.target.value }))}>
+              <option value="">Select…</option>
+              {principalOptions.map(option => (
+                <option key={option.id} value={option.id}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="access-form-actions">
+          <button className="btn btn-secondary btn-sm" type="button" onClick={runSimulator} disabled={simulatorLoading || !simulatorPrincipal.id}>
+            {simulatorLoading ? 'Simulating…' : 'Simulate'}
+          </button>
+        </div>
+        {simulatorError && <div className="access-alert error">{simulatorError}</div>}
+        {simulatorResult && (
+          <div className="access-simulator-result">
+            <p className="setting-desc">
+              <strong>{simulatorResult.principal_name || 'Principal'}</strong>
+              {simulatorResult.scopes_narrow_api_access ? ' — token scopes further narrow this key’s API access.' : ''}
+            </p>
+            <table className="access-table">
+              <thead><tr><th>Resource</th><th>Allowed operations</th></tr></thead>
+              <tbody>
+                {simulatorResult.resources.map(resource => {
+                  const allowed = resource.operations.filter(op => op.allowed)
+                  return (
+                    <tr key={resource.id}>
+                      <td>{resource.name}</td>
+                      <td className={allowed.length === 0 ? 'access-muted' : ''}>{allowed.length === 0 ? 'None' : allowed.map(op => op.label).join(', ')}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
     )
   }
 
@@ -1861,6 +2239,17 @@ export default function AccessPage({
                 <button className="btn btn-secondary btn-sm" type="button" onClick={() => setAccountInspectorCollapsed(false)}>Show Details</button>
               )}
             </div>
+            {accessReviewAttention && (accessReviewAttention.accountsFlagged > 0 || accessReviewAttention.denials > 0) && (
+              <div className="access-alert access-attention-banner">
+                {accessReviewAttention.accountsFlagged > 0 && (
+                  <span>{accessReviewAttention.accountsFlagged} service account(s) need attention (rotation, expiry, or broad scope). </span>
+                )}
+                {accessReviewAttention.denials > 0 && (
+                  <span>{accessReviewAttention.denials} recent access denial(s). </span>
+                )}
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setActiveTab('activity'); setActivitySubTab('review') }}>Open access review</button>
+              </div>
+            )}
             <div className="access-subtab-row" role="tablist" aria-label="Service account workspace views">
               <button type="button" role="tab" aria-selected={serviceAccountSubTab === 'existing'} className={`access-subtab ${serviceAccountSubTab === 'existing' ? 'active' : ''}`} onClick={() => setServiceAccountSubTab('existing')}>Existing Accounts</button>
               <button type="button" role="tab" aria-selected={serviceAccountSubTab === 'generate'} className={`access-subtab ${serviceAccountSubTab === 'generate' ? 'active' : ''}`} onClick={() => setServiceAccountSubTab('generate')}>Generate Key</button>
@@ -2014,6 +2403,14 @@ export default function AccessPage({
                     <input value={form.description} onChange={event => setForm(prev => ({ ...prev, description: event.target.value }))} placeholder="Runs nightly smoke coverage" />
                   </label>
                   <label>
+                    <span>Owner</span>
+                    <input value={form.owner} onChange={event => setForm(prev => ({ ...prev, owner: event.target.value }))} placeholder="team or person responsible" />
+                  </label>
+                  <label>
+                    <span>Contact Email</span>
+                    <input value={form.contact} onChange={event => setForm(prev => ({ ...prev, contact: event.target.value }))} placeholder="oncall@example.com" />
+                  </label>
+                  <label>
                     <span>Expires At</span>
                     <input type="datetime-local" value={form.expiresAt} onChange={event => setForm(prev => ({ ...prev, expiresAt: event.target.value }))} />
                   </label>
@@ -2023,86 +2420,7 @@ export default function AccessPage({
                   </label>
                 </div>
 
-                <div className="access-control-section">
-                  <div>
-                    <h4>Global Roles</h4>
-                    <p>{activePreset.label} starts with {formatRoleList(activePreset.globalRoles)}.</p>
-                  </div>
-                  <div className="access-chip-row">
-                    {GLOBAL_ROLE_OPTIONS.map(option => (
-                      <button
-                        key={option.id}
-                        type="button"
-                        className={`access-chip ${form.globalRoles.includes(option.id) ? 'active' : ''}`}
-                        onClick={() => setForm(prev => ({ ...prev, globalRoles: toggleValue(prev.globalRoles, option.id) }))}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="access-control-section">
-                  <div>
-                    <h4>Token Scopes</h4>
-                    <p>Scopes are enforced in addition to RBAC roles.</p>
-                  </div>
-                  <div className="access-chip-row">
-                    {SCOPE_OPTIONS.map(option => (
-                      <button
-                        key={option.id}
-                        type="button"
-                        className={`access-chip ${form.scopes.includes(option.id) ? 'active' : ''}`}
-                        onClick={() => setForm(prev => ({ ...prev, scopes: toggleValue(prev.scopes, option.id) }))}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="access-control-section">
-                  <div>
-                    <h4>Project Roles</h4>
-                    <p>Select project assignments instead of typing raw role mappings.</p>
-                  </div>
-                  <div className="access-project-role-list">
-                    {projects.length > 0 ? projects.map(project => {
-                      const selectedRole = form.projectRoles[project.id]
-                      return (
-                        <div className="access-project-role-row" key={project.id}>
-                          <label className="access-project-checkbox">
-                            <input
-                              type="checkbox"
-                              checked={Boolean(selectedRole)}
-                              onChange={event => setForm(prev => {
-                                const next = { ...prev.projectRoles }
-                                if (event.target.checked) {
-                                  next[project.id] = selectedRole || activePreset.projectRole || 'viewer'
-                                } else {
-                                  delete next[project.id]
-                                }
-                                return { ...prev, projectRoles: next }
-                              })}
-                            />
-                            <span>{project.name}</span>
-                          </label>
-                          <select
-                            value={selectedRole || activePreset.projectRole || 'viewer'}
-                            disabled={!selectedRole}
-                            onChange={event => setForm(prev => ({ ...prev, projectRoles: { ...prev.projectRoles, [project.id]: event.target.value } }))}
-                          >
-                            {SCOPED_ROLE_OPTIONS.map(option => (
-                              <option key={option.id} value={option.id}>{option.label}</option>
-                            ))}
-                          </select>
-                        </div>
-                      )
-                    }) : (
-                      <p className="access-muted">Create or select a project to assign project-scoped roles.</p>
-                    )}
-                  </div>
-                </div>
+                {renderServiceAccountRoleControls(form, setForm, presetByID(form.purpose).projectRole || 'viewer')}
 
                 {(actionError || actionMessage) && (
                   <div className={`access-alert ${actionError ? 'error' : 'success'}`}>
@@ -2143,7 +2461,12 @@ export default function AccessPage({
               <button type="button" role="tab" aria-selected={activitySubTab === 'review'} className={`access-subtab ${activitySubTab === 'review' ? 'active' : ''}`} onClick={() => setActivitySubTab('review')}>Access Review</button>
             </div>
 
-            {activitySubTab === 'review' && renderAccessReview()}
+            {activitySubTab === 'review' && (
+              <>
+                {renderAccessReview()}
+                {canManageUserLifecycle && renderSimulator()}
+              </>
+            )}
 
             {activitySubTab === 'events' && (
               <>

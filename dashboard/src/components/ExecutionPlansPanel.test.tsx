@@ -5,6 +5,7 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import ExecutionPlansPanel from './ExecutionPlansPanel'
+import { ApiError } from '../hooks/apiClient'
 import { ExecutionPlan } from '../types'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -18,6 +19,14 @@ const plansApiMock = {
   runExecutionPlan: vi.fn(),
   listExecutionPlanRuns: vi.fn(),
   getExecutionPlanRun: vi.fn(),
+  listExecutionPlanSchedules: vi.fn(),
+  createExecutionPlanSchedule: vi.fn(),
+  updateExecutionPlanSchedule: vi.fn(),
+  deleteExecutionPlanSchedule: vi.fn(),
+  listExecutionPlanScheduleOccurrences: vi.fn(),
+  listExecutionPlanApprovals: vi.fn(),
+  approveExecutionPlanApproval: vi.fn(),
+  rejectExecutionPlanApproval: vi.fn(),
 }
 
 vi.mock('../hooks/api/useExecutionPlansApi', () => ({
@@ -197,6 +206,120 @@ describe('ExecutionPlansPanel', () => {
     }
     expect(payload.entries[0].timeslot_id).toBe('slot-1')
     expect(payload.entries[0].data_pools?.[0]).toMatchObject({ pool_id: 'pool-1', alias: 'users' })
+  })
+
+  it('opens the schedules modal for a plan', async () => {
+    plansApiMock.listExecutionPlans.mockResolvedValue({ execution_plans: [plan({})], count: 1 })
+    plansApiMock.listExecutionPlanSchedules.mockResolvedValue({ schedules: [], count: 0 })
+    await act(async () => {
+      root.render(<ExecutionPlansPanel projectId="proj-a" canManage />)
+    })
+    await flush()
+    const schedBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'Schedules')
+    await act(async () => {
+      ;(schedBtn as HTMLElement).click()
+    })
+    await flush()
+    expect(plansApiMock.listExecutionPlanSchedules).toHaveBeenCalledWith('p1')
+    expect(container.textContent).toContain('Schedules — “nightly”')
+    expect(container.textContent).toContain('No schedules yet')
+  })
+
+  it('creates a plan schedule with the authored cron + policy payload', async () => {
+    plansApiMock.listExecutionPlans.mockResolvedValue({ execution_plans: [plan({})], count: 1 })
+    plansApiMock.listExecutionPlanSchedules.mockResolvedValue({ schedules: [], count: 0 })
+    plansApiMock.createExecutionPlanSchedule.mockResolvedValue({ id: 'sch-1' })
+    await act(async () => {
+      root.render(<ExecutionPlansPanel projectId="proj-a" canManage />)
+    })
+    await flush()
+    await act(async () => {
+      ;([...container.querySelectorAll('button')].find(b => b.textContent === 'Schedules') as HTMLElement).click()
+    })
+    await flush()
+    await act(async () => {
+      ;([...container.querySelectorAll('button')].find(b => b.textContent === 'New schedule') as HTMLElement).click()
+    })
+    await flush()
+    await act(async () => {
+      setValue(container.querySelector('input[placeholder="e.g. nightly"]'), 'nightly run')
+      setValue(container.querySelector('input[aria-label="Raw cron expression"]'), '0 3 * * 1-5')
+    })
+    await flush()
+    await act(async () => {
+      ;([...container.querySelectorAll('button')].find(b => b.textContent === 'Create') as HTMLElement).click()
+    })
+    await flush()
+    expect(plansApiMock.createExecutionPlanSchedule).toHaveBeenCalledTimes(1)
+    const [planId, payload] = plansApiMock.createExecutionPlanSchedule.mock.calls[0] as [string, { name: string; cron_expr: string; enabled?: boolean; missed_run_policy?: string }]
+    expect(planId).toBe('p1')
+    expect(payload.name).toBe('nightly run')
+    expect(payload.cron_expr).toBe('0 3 * * 1-5')
+    expect(payload.enabled).toBe(true)
+    expect(payload.missed_run_policy).toBe('skip')
+  })
+
+  it('surfaces a quota-blocked run by opening the approvals modal', async () => {
+    plansApiMock.listExecutionPlans.mockResolvedValue({ execution_plans: [plan({})], count: 1 })
+    plansApiMock.runExecutionPlan.mockRejectedValue(
+      new ApiError('blocked', 409, {
+        execution_plan_id: 'p1',
+        status: 'blocked',
+        reason: 'approval_required',
+        approval: { id: 'appr-1', plan_id: 'p1', policy: 'quota_burst', status: 'pending', requested_at: '' },
+      }),
+    )
+    plansApiMock.listExecutionPlanApprovals.mockResolvedValue({
+      approvals: [
+        { id: 'appr-1', plan_id: 'p1', policy: 'quota_burst', status: 'pending', required_role: 'ProjectAdmin', requested_at: '', created_at: '', updated_at: '' },
+      ],
+      count: 1,
+    })
+    await act(async () => {
+      root.render(<ExecutionPlansPanel projectId="proj-a" canManage />)
+    })
+    await flush()
+    const runBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'Run')
+    await act(async () => {
+      ;(runBtn as HTMLElement).click()
+    })
+    await flush()
+    expect(plansApiMock.runExecutionPlan).toHaveBeenCalledWith('p1')
+    expect(plansApiMock.listExecutionPlanApprovals).toHaveBeenCalledWith('p1')
+    expect(container.textContent).toContain('needs project-admin approval')
+    expect(container.textContent).toContain('Approvals — “nightly”')
+    // The pending request is actionable.
+    expect([...container.querySelectorAll('button')].some(b => b.textContent === 'Approve')).toBe(true)
+  })
+
+  it('approves a pending plan approval with the entered reason', async () => {
+    plansApiMock.listExecutionPlans.mockResolvedValue({ execution_plans: [plan({})], count: 1 })
+    plansApiMock.listExecutionPlanApprovals.mockResolvedValue({
+      approvals: [
+        { id: 'appr-1', plan_id: 'p1', policy: 'quota_burst', status: 'pending', required_role: 'ProjectAdmin', requested_at: '', created_at: '', updated_at: '' },
+      ],
+      count: 1,
+    })
+    plansApiMock.approveExecutionPlanApproval.mockResolvedValue({ id: 'appr-1', plan_id: 'p1', policy: 'quota_burst', status: 'approved', requested_at: '', created_at: '', updated_at: '' })
+    await act(async () => {
+      root.render(<ExecutionPlansPanel projectId="proj-a" canManage />)
+    })
+    await flush()
+    const apprBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'Approvals')
+    await act(async () => {
+      ;(apprBtn as HTMLElement).click()
+    })
+    await flush()
+    await act(async () => {
+      setValue(container.querySelector('.pp-approval-reason'), 'capacity confirmed')
+    })
+    await flush()
+    const approveBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'Approve')
+    await act(async () => {
+      ;(approveBtn as HTMLElement).click()
+    })
+    await flush()
+    expect(plansApiMock.approveExecutionPlanApproval).toHaveBeenCalledWith('p1', 'appr-1', 'capacity confirmed')
   })
 
   it('opens a pre-seeded draft from a handed-in scenario and consumes the seed', async () => {

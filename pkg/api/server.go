@@ -53,35 +53,36 @@ type Server struct {
 	// replay and script debug managers fire completion hooks into the shared
 	// persistSelfHealToRepository, whose read-modify-write of the whole objects
 	// blob would otherwise lose a concurrently appended candidate.
-	selfHealMu              sync.Mutex
-	collectorMetrics        *collectorMetricStore
-	fleetScaler             fleetPoolScaler
-	leadership              *executionLeadership
-	mux                     *http.ServeMux
-	usageCancel             context.CancelFunc
-	auditRetentionCancel    context.CancelFunc
-	timeslotRetentionCancel context.CancelFunc
-	authAudit               auditThrottle
-	fanoutCancel            context.CancelFunc
-	fanoutSub               FanoutSubscription
-	generatorDiscovery      *generatorDiscovery
-	discoveryCancel         context.CancelFunc
-	k8sRestart              K8sRestartSettings
-	kubeRestarter           KubeRestarter
-	restartMu               sync.Mutex
-	restartInFlight         map[string]struct{}
-	metricsAddr             string
-	metricsServer           *http.Server
-	metricsBoundAddr        string
-	desktopMode             bool
-	bridgeMode              bool
-	recordingBridge         *BrowserRecordingBridge
-	desktopAppData          string
-	desktopLogPath          string
-	importAssetDir          string
-	bindScope               string
-	boundAddr               string
-	boundAddrMu             sync.RWMutex
+	selfHealMu               sync.Mutex
+	collectorMetrics         *collectorMetricStore
+	fleetScaler              fleetPoolScaler
+	leadership               *executionLeadership
+	mux                      *http.ServeMux
+	usageCancel              context.CancelFunc
+	auditRetentionCancel     context.CancelFunc
+	timeslotRetentionCancel  context.CancelFunc
+	accessReviewNotifyCancel context.CancelFunc
+	authAudit                auditThrottle
+	fanoutCancel             context.CancelFunc
+	fanoutSub                FanoutSubscription
+	generatorDiscovery       *generatorDiscovery
+	discoveryCancel          context.CancelFunc
+	k8sRestart               K8sRestartSettings
+	kubeRestarter            KubeRestarter
+	restartMu                sync.Mutex
+	restartInFlight          map[string]struct{}
+	metricsAddr              string
+	metricsServer            *http.Server
+	metricsBoundAddr         string
+	desktopMode              bool
+	bridgeMode               bool
+	recordingBridge          *BrowserRecordingBridge
+	desktopAppData           string
+	desktopLogPath           string
+	importAssetDir           string
+	bindScope                string
+	boundAddr                string
+	boundAddrMu              sync.RWMutex
 	// staticFS is the dashboard asset filesystem probed by readiness checks.
 	// It defaults to the compile-time embedded StaticFS; tests override it so
 	// the readiness suite does not depend on a prior `npm run build`.
@@ -681,6 +682,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/auth/roles", cors(log(http.HandlerFunc(s.handleGetAuthRoleCatalog))))
 	s.mux.Handle("GET /api/v1/auth/access-matrix", cors(log(http.HandlerFunc(s.handleGetAuthAccessMatrix))))
 	s.mux.Handle("GET /api/v1/auth/effective-access", cors(log(http.HandlerFunc(s.handleGetAuthEffectiveAccess))))
+	s.mux.Handle("GET /api/v1/auth/effective-access/principal", cors(log(auth(http.HandlerFunc(s.handleGetAuthEffectiveAccessForPrincipal)))))
 	s.mux.Handle("GET /api/v1/auth/users", cors(log(auth(http.HandlerFunc(s.handleListUsers)))))
 	s.mux.Handle("POST /api/v1/auth/users", cors(log(auth(http.HandlerFunc(s.handleCreateUser)))))
 	s.mux.Handle("GET /api/v1/auth/users/{id}", cors(log(auth(http.HandlerFunc(s.handleGetUser)))))
@@ -947,6 +949,7 @@ func (s *Server) Start() error {
 	s.startUsageAccountingSnapshotCadence()
 	s.startAuditRetentionCadence()
 	s.startTimeslotRetentionCadence()
+	s.startAccessReviewNotifierCadence()
 
 	if err := s.startMetricsListener(); err != nil {
 		return err
@@ -1079,6 +1082,10 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if s.timeslotRetentionCancel != nil {
 		s.timeslotRetentionCancel()
 		s.timeslotRetentionCancel = nil
+	}
+	if s.accessReviewNotifyCancel != nil {
+		s.accessReviewNotifyCancel()
+		s.accessReviewNotifyCancel = nil
 	}
 	if s.fanoutCancel != nil {
 		s.fanoutCancel()

@@ -24,6 +24,8 @@ const apiMock = {
   deleteAuthUserBinding: vi.fn(),
   getAuthUserActivity: vi.fn(),
   downloadAuthUserActivity: vi.fn(),
+  getAccessReview: vi.fn(),
+  getAuthEffectiveAccessForPrincipal: vi.fn(),
 }
 
 vi.mock('../hooks/useApi', () => ({
@@ -123,6 +125,8 @@ describe('AccessPage', () => {
           id: 'svc-1',
           name: 'Nightly CI',
           description: 'Runs nightly smoke coverage',
+          owner_id: 'team-platform',
+          contact_email: 'oncall@example.com',
           active: true,
           global_roles: ['viewer'],
           project_roles: { 'project-1': ['editor'] },
@@ -273,6 +277,28 @@ describe('AccessPage', () => {
       offset: 0,
     })
     apiMock.downloadAuthUserActivity.mockResolvedValue(new Blob(['activity csv'], { type: 'text/csv' }))
+    apiMock.getAccessReview.mockResolvedValue({
+      generated_at: '2026-06-26T00:00:00Z',
+      stale_after_days: 90,
+      expiring_within_days: 14,
+      users: [],
+      service_accounts: [],
+      summary: {},
+      recent_denials: 0,
+      recent_denial_window_hours: 24,
+    })
+    apiMock.getAuthEffectiveAccessForPrincipal.mockResolvedValue({
+      enabled: true,
+      authenticated: true,
+      simulated: true,
+      principal_type: 'service_account',
+      principal_id: 'svc-1',
+      principal_name: 'Nightly CI',
+      scopes_narrow_api_access: true,
+      resources: [
+        { id: 'tests', name: 'Tests', description: '', operations: [{ id: 'run_tests', label: 'Run tests', allowed: true }, { id: 'manage_tests', label: 'Manage tests', allowed: false }] },
+      ],
+    })
   })
 
   afterEach(async () => {
@@ -323,6 +349,145 @@ describe('AccessPage', () => {
     }))
     expect(container.textContent).toContain('API Key Created')
     expect(container.textContent).toContain('srk_created_key')
+  })
+
+  it('sends owner/contact and domain roles when creating a service account (A11/C12)', async () => {
+    await act(async () => {
+      root.render(<AccessPage projects={projects} domains={domains} activeDomain={domains[0]} activeProject={projects[0]} canManageUserLifecycle={false} canManageUserBindings={false} canViewUserActivity={false} canManageServiceAccounts />)
+    })
+    await flushPromises()
+    await clickButton(container, 'Generate Key')
+
+    const ownerInput = inputByPlaceholder(container, 'team or person responsible')
+    const contactInput = inputByPlaceholder(container, 'oncall@example.com')
+    expect(ownerInput).toBeDefined()
+    expect(contactInput).toBeDefined()
+    if (!ownerInput || !contactInput) return
+    changeInput(ownerInput, 'team-sre')
+    changeInput(contactInput, 'sre@example.com')
+
+    // Check the Domain Roles row for domain-1 ("Payments").
+    const domainCheckbox = Array.from(container.querySelectorAll('input[type="checkbox"]')).find(input => {
+      const row = input.closest('.access-project-role-row')
+      return row?.textContent?.includes('Payments')
+    }) as HTMLInputElement | undefined
+    expect(domainCheckbox).toBeDefined()
+    if (!domainCheckbox) return
+    await act(async () => {
+      domainCheckbox.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await clickButton(container, 'Create Service Account')
+    await flushPromises()
+
+    expect(apiMock.createAuthServiceAccount).toHaveBeenCalledWith(expect.objectContaining({
+      owner_id: 'team-sre',
+      contact_email: 'sre@example.com',
+      domain_roles: { 'domain-1': ['viewer'] },
+    }))
+  })
+
+  it('edits a service account in place via PATCH (A6)', async () => {
+    await act(async () => {
+      root.render(<AccessPage projects={projects} domains={domains} activeDomain={domains[0]} activeProject={projects[0]} canManageUserLifecycle={false} canManageUserBindings={false} canViewUserActivity={false} canManageServiceAccounts />)
+    })
+    await flushPromises()
+
+    // svc-1 is auto-selected; its inspector shows the owner metadata (C12) and an Edit button.
+    expect(container.textContent).toContain('team-platform')
+    await clickButton(container, 'Edit')
+
+    const nameInput = Array.from(container.querySelectorAll('label')).find(l => l.textContent?.includes('Service Account Name'))?.querySelector('input') as HTMLInputElement | undefined
+    expect(nameInput).toBeDefined()
+    if (!nameInput) return
+    changeInput(nameInput, 'Nightly CI v2')
+
+    await clickButton(container, 'Save Changes')
+    await flushPromises()
+
+    expect(apiMock.updateAuthServiceAccount).toHaveBeenCalledWith('svc-1', expect.objectContaining({
+      name: 'Nightly CI v2',
+      owner_id: 'team-platform',
+      global_roles: ['viewer'],
+      scopes: ['tests:run', 'results:read'],
+    }))
+  })
+
+  it('blocks an edit that strips all roles or scopes (A6 validation)', async () => {
+    await act(async () => {
+      root.render(<AccessPage projects={projects} domains={domains} activeDomain={domains[0]} activeProject={projects[0]} canManageUserLifecycle={false} canManageUserBindings={false} canViewUserActivity={false} canManageServiceAccounts />)
+    })
+    await flushPromises()
+    await clickButton(container, 'Edit')
+
+    // Deselect the only global role (viewer) by clicking its active chip.
+    const viewerChip = Array.from(container.querySelectorAll('button.access-chip')).find(b => b.textContent?.trim() === 'Viewer' && b.className.includes('active')) as HTMLButtonElement | undefined
+    expect(viewerChip).toBeDefined()
+    if (!viewerChip) return
+    await act(async () => { viewerChip.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+
+    await clickButton(container, 'Save Changes')
+    await flushPromises()
+
+    expect(apiMock.updateAuthServiceAccount).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('at least one global role')
+  })
+
+  it('runs the effective-access simulator for a selected principal (C11)', async () => {
+    await act(async () => {
+      root.render(<AccessPage projects={projects} domains={domains} activeDomain={domains[0]} activeProject={projects[0]} canManageUserLifecycle canManageUserBindings={false} canViewUserActivity canManageServiceAccounts />)
+    })
+    await flushPromises()
+
+    await clickButton(container, 'Activity', true)
+    await clickButton(container, 'Access Review')
+    await flushPromises()
+    expect(container.textContent).toContain('Effective-Access Simulator')
+
+    const simSelects = () => Array.from(container.querySelectorAll('.access-simulator select')) as HTMLSelectElement[]
+    expect(simSelects().length).toBeGreaterThanOrEqual(2)
+    changeSelect(simSelects()[0], 'service_account')
+    await flushPromises()
+    changeSelect(simSelects()[1], 'svc-1')
+    await flushPromises()
+
+    await clickButton(container, 'Simulate')
+    await flushPromises()
+
+    expect(apiMock.getAuthEffectiveAccessForPrincipal).toHaveBeenCalledWith(expect.objectContaining({
+      principal_type: 'service_account',
+      principal_id: 'svc-1',
+    }))
+    // The result grid shows allowed operations and the scope-narrowing caveat.
+    expect(container.textContent).toContain('Run tests')
+    expect(container.textContent).toContain('narrow')
+  })
+
+  it('surfaces an attention badge when the access review flags principals (notifications)', async () => {
+    apiMock.getAccessReview.mockResolvedValue({
+      generated_at: '2026-06-26T00:00:00Z',
+      stale_after_days: 90,
+      expiring_within_days: 14,
+      users: [],
+      service_accounts: [{ id: 'svc-2', name: 'API Reporter', active: true, flags: ['overdue_rotation'] }],
+      summary: { overdue_rotation: 1 },
+      recent_denials: 2,
+      recent_denial_window_hours: 24,
+    })
+    await act(async () => {
+      root.render(<AccessPage projects={projects} domains={domains} activeDomain={domains[0]} activeProject={projects[0]} canManageUserLifecycle canManageUserBindings={false} canViewUserActivity canManageServiceAccounts />)
+    })
+    await flushPromises()
+
+    const badge = container.querySelector('.access-attention-badge')
+    expect(badge).not.toBeNull()
+    expect(badge?.textContent).toBe('3')
+
+    // The banner lives in the service-accounts workspace.
+    await clickButton(container, 'Service Accounts', true)
+    await flushPromises()
+    expect(container.textContent).toContain('need attention')
+    expect(container.textContent).toContain('recent access denial')
   })
 
   it('sorts, filters, selects, and performs service-account lifecycle actions', async () => {

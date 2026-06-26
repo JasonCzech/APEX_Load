@@ -10,6 +10,8 @@ import {
   ScenarioDataPoolBinding,
 } from '../types'
 import ConfirmDestructiveModal from './ConfirmDestructiveModal'
+import ExecutionPlanApprovalsModal from './ExecutionPlanApprovalsModal'
+import ExecutionPlanSchedulesModal from './ExecutionPlanSchedulesModal'
 import './parityPanels.css'
 
 interface Props {
@@ -103,6 +105,8 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, scen
   const [deleteTarget, setDeleteTarget] = useState<ExecutionPlan | null>(null)
   const [runResult, setRunResult] = useState<{ plan: string; res: ExecutionPlanRunResponse } | null>(null)
   const [planRun, setPlanRun] = useState<{ planId: string; planName: string; run: ExecutionPlanRun } | null>(null)
+  const [schedulesTarget, setSchedulesTarget] = useState<ExecutionPlan | null>(null)
+  const [approvalsTarget, setApprovalsTarget] = useState<ExecutionPlan | null>(null)
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(async () => {
@@ -232,7 +236,15 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, scen
         }
         await load()
       } catch (err) {
-        setError(err instanceof ApiError ? err.message : 'Failed to run execution plan.')
+        // A run that exceeds the project VUser quota is blocked (HTTP 409) until
+        // a project admin approves it. Open the approvals surface instead of
+        // showing a bare error so the gate is actionable.
+        if (err instanceof ApiError && err.status === 409 && (err.payload as { status?: string } | undefined)?.status === 'blocked') {
+          setError('This run exceeds the project VUser quota and needs project-admin approval. Review the pending request below.')
+          setApprovalsTarget(plan)
+        } else {
+          setError(err instanceof ApiError ? err.message : 'Failed to run execution plan.')
+        }
       } finally {
         setBusy(false)
       }
@@ -367,6 +379,12 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, scen
                 <div className="pp-row-actions">
                   <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={() => void runPlan(plan)}>
                     Run
+                  </button>
+                  <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setSchedulesTarget(plan)}>
+                    Schedules
+                  </button>
+                  <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setApprovalsTarget(plan)}>
+                    Approvals
                   </button>
                   <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => startEdit(plan)}>
                     Edit
@@ -593,6 +611,23 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, scen
             </div>
           </div>
         </div>
+      )}
+
+      {schedulesTarget && (
+        <ExecutionPlanSchedulesModal
+          plan={schedulesTarget}
+          canManage={canManage}
+          onClose={() => setSchedulesTarget(null)}
+        />
+      )}
+
+      {approvalsTarget && (
+        <ExecutionPlanApprovalsModal
+          plan={approvalsTarget}
+          canManage={canManage}
+          onClose={() => setApprovalsTarget(null)}
+          onResolved={() => void load()}
+        />
       )}
 
       {deleteTarget && (

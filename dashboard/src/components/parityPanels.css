@@ -484,3 +484,30 @@
   padding-left: 8px;
   border-left: 2px solid var(--border);
 }
+
+/* Execution-plan schedules: each item stacks its row above an optional
+   occurrence (run-history) sub-list. */
+.pp-schedule-item {
+  display: grid;
+  gap: 6px;
+}
+.pp-occurrences {
+  display: grid;
+  gap: 4px;
+  margin-left: 12px;
+  padding-left: 10px;
+  border-left: 2px solid var(--border);
+}
+.pp-occurrence-row {
+  flex-wrap: wrap;
+  align-items: center;
+}
+/* Inline approve/reject controls with an optional decision reason. */
+.pp-approval-actions {
+  flex-wrap: wrap;
+  align-items: center;
+}
+.pp-approval-reason {
+  min-width: 160px;
+  flex: 1 1 160px;
+}

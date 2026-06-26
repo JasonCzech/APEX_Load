@@ -34,11 +34,13 @@ func (s *SQLiteStore) SaveServiceAccount(account *ServiceAccount) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec(`INSERT INTO service_accounts (id, name, description, key_hash, active, global_roles_json, project_roles_json, domain_roles_json, repository_roles_json, scopes_json, created_at, updated_at, last_used_at, expires_at, key_rotated_at, rotation_interval_days)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	_, err = s.db.Exec(`INSERT INTO service_accounts (id, name, description, owner_id, contact_email, key_hash, active, global_roles_json, project_roles_json, domain_roles_json, repository_roles_json, scopes_json, created_at, updated_at, last_used_at, expires_at, key_rotated_at, rotation_interval_days)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			name=excluded.name,
 			description=excluded.description,
+			owner_id=excluded.owner_id,
+			contact_email=excluded.contact_email,
 			key_hash=excluded.key_hash,
 			active=excluded.active,
 			global_roles_json=excluded.global_roles_json,
@@ -54,6 +56,8 @@ func (s *SQLiteStore) SaveServiceAccount(account *ServiceAccount) error {
 		account.ID,
 		account.Name,
 		account.Description,
+		account.OwnerID,
+		account.ContactEmail,
 		account.KeyHash,
 		s.boolValue(account.Active),
 		string(globalRolesJSON),
@@ -80,7 +84,7 @@ func (s *SQLiteStore) GetServiceAccountByKeyHash(keyHash string) (*ServiceAccoun
 }
 
 func serviceAccountSelectColumns() string {
-	return `SELECT id, name, description, key_hash, active, global_roles_json, project_roles_json, COALESCE(domain_roles_json, ''), COALESCE(repository_roles_json, ''), COALESCE(scopes_json, ''), created_at, updated_at, last_used_at, expires_at, key_rotated_at, rotation_interval_days`
+	return `SELECT id, name, description, COALESCE(owner_id, ''), COALESCE(contact_email, ''), key_hash, active, global_roles_json, project_roles_json, COALESCE(domain_roles_json, ''), COALESCE(repository_roles_json, ''), COALESCE(scopes_json, ''), created_at, updated_at, last_used_at, expires_at, key_rotated_at, rotation_interval_days`
 }
 
 func (s *SQLiteStore) getServiceAccountByQuery(query string, args ...any) (*ServiceAccount, error) {
@@ -99,6 +103,8 @@ func (s *SQLiteStore) getServiceAccountByQuery(query string, args ...any) (*Serv
 		&account.ID,
 		&account.Name,
 		&account.Description,
+		&account.OwnerID,
+		&account.ContactEmail,
 		&account.KeyHash,
 		&active,
 		&globalRolesJSON,
@@ -176,7 +182,7 @@ func (s *SQLiteStore) ListServiceAccounts() ([]*ServiceAccount, error) {
 		var expiresAt sql.NullTime
 		var keyRotatedAt sql.NullTime
 		var rotationIntervalDays sql.NullInt64
-		if err := rows.Scan(&account.ID, &account.Name, &account.Description, &account.KeyHash, &active, &globalRolesJSON, &projectRolesJSON, &domainRolesJSON, &repositoryRolesJSON, &scopesJSON, &account.CreatedAt, &account.UpdatedAt, &lastUsedAt, &expiresAt, &keyRotatedAt, &rotationIntervalDays); err != nil {
+		if err := rows.Scan(&account.ID, &account.Name, &account.Description, &account.OwnerID, &account.ContactEmail, &account.KeyHash, &active, &globalRolesJSON, &projectRolesJSON, &domainRolesJSON, &repositoryRolesJSON, &scopesJSON, &account.CreatedAt, &account.UpdatedAt, &lastUsedAt, &expiresAt, &keyRotatedAt, &rotationIntervalDays); err != nil {
 			return nil, err
 		}
 		account.Active = sqlBool(active)

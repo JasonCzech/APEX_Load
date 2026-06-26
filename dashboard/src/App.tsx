@@ -174,11 +174,19 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const [repositoryCategories, setRepositoryCategories] = useState<import('./types').RepositoryCategory[]>([])
   const [desktopStatus, setDesktopStatus] = useState<DesktopStatusResponse | null>(null)
   const [activeTopbarRuns, setActiveTopbarRuns] = useState<TopbarRunSummary[]>([])
+  // Bumped by the content-free `access_review_changed` WebSocket ping so the Access page
+  // refetches its (admin-gated) review when the posture changes server-side.
+  const [accessReviewSignal, setAccessReviewSignal] = useState(0)
   const testApi = useTestApi()
   const activeTopbarContribution = useActiveTopbarContribution()
   const { runGuarded } = useNavigationGuardRunner()
 
   const handleWSMessage = useCallback((msg: WSMessage) => {
+    if (msg.type === 'access_review_changed') {
+      setAccessReviewSignal((n) => n + 1)
+      return
+    }
+
     if (msg.type === 'metrics_update' && msg.data && msg.test_id && msg.timestamp) {
       const testId = msg.test_id
       const point = mapExecutionMetricToHistoryPoint({ ...msg.data, timestamp: String(msg.timestamp) })
@@ -863,6 +871,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
               canManageUserBindings={canManageUserBindings}
               canViewUserActivity={canViewUserActivity}
               canManageServiceAccounts={canManageServiceAccounts}
+              accessReviewRefreshSignal={accessReviewSignal}
             />
           )}
           {view.page === 'settings' && (

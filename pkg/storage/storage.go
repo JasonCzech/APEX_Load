@@ -301,6 +301,8 @@ type ServiceAccount struct {
 	ID                   string              `json:"id"`
 	Name                 string              `json:"name"`
 	Description          string              `json:"description,omitempty"`
+	OwnerID              string              `json:"owner_id,omitempty"`
+	ContactEmail         string              `json:"contact_email,omitempty"`
 	KeyHash              string              `json:"-"`
 	Active               bool                `json:"active"`
 	GlobalRoles          []string            `json:"global_roles,omitempty"`

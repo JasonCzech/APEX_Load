@@ -36,7 +36,7 @@ const MONITOR_CATEGORIES = [
 
 type MonitorCategoryId = typeof MONITOR_CATEGORIES[number]['id']
 type RunCalendarView = 'month' | 'week' | 'day'
-type RunCalendarFilter = 'all' | 'cron' | 'ad_hoc' | 'current'
+type RunCalendarFilter = 'all' | 'cron' | 'ad_hoc' | 'execution_plan' | 'current'
 type MonitorSeverity = 'healthy' | 'unknown' | 'warning' | 'danger'
 
 type RestartAction = {
@@ -1637,6 +1637,7 @@ function RunCalendarPanel({
   const [detailCollapsed, setDetailCollapsed] = useState(false)
   const cronCount = events.filter(event => event.source === 'cron').length
   const adHocCount = events.filter(event => event.source === 'ad_hoc').length
+  const planCount = events.filter(event => event.source === 'execution_plan').length
   const currentCount = events.filter(event => isRunCalendarActiveStatus(event.status)).length
   const projectedCount = events.filter(event => event.projected).length
   const rangeNotice = formatRunCalendarNotice(calendar)
@@ -1686,6 +1687,7 @@ function RunCalendarPanel({
               ['all', 'All'],
               ['cron', 'Cron'],
               ['ad_hoc', 'Ad-hoc'],
+              ['execution_plan', 'Plans'],
               ['current', 'Current'],
             ] as const).map(([value, label]) => (
               <button key={value} type="button" className={filter === value ? 'active' : ''} onClick={() => onFilterChange(value)}>
@@ -1699,6 +1701,7 @@ function RunCalendarPanel({
       <div className="run-calendar-summary" aria-label="Run calendar summary">
         <RunCalendarMetric label="Cron" value={cronCount} />
         <RunCalendarMetric label="Ad-hoc" value={adHocCount} />
+        <RunCalendarMetric label="Plans" value={planCount} />
         <RunCalendarMetric label="Current" value={currentCount} />
         <RunCalendarMetric label="Projected" value={projectedCount} />
       </div>
@@ -1811,7 +1814,10 @@ function RunCalendarPanel({
                   <RunCalendarDetailRow label="When" value={`${formatCalendarDateTime(selectedEvent.start_at, selectedEvent.timezone)} - ${selectedEvent.end_at ? formatCalendarTime(selectedEvent.end_at, selectedEvent.timezone) : 'open'}`} />
                   <RunCalendarDetailRow label="User" value={runCalendarUserLabel(selectedEvent)} />
                   <RunCalendarDetailRow label="Workload" value={`${(selectedEvent.workload.total_vusers ?? 0).toLocaleString()} VUsers / ${selectedEvent.workload.duration || 'duration pending'}`} />
-                  <RunCalendarDetailRow label="Scenario" value={selectedEvent.scenario_name || selectedEvent.scenario_id || '-'} />
+                  {(selectedEvent.scenario_name || selectedEvent.scenario_id) && (
+                    <RunCalendarDetailRow label="Scenario" value={selectedEvent.scenario_name || selectedEvent.scenario_id || '-'} />
+                  )}
+                  {selectedEvent.plan_id && <RunCalendarDetailRow label="Plan" value={selectedEvent.plan_id} />}
                   <RunCalendarDetailRow label="Schedule" value={selectedEvent.schedule_name || selectedEvent.cron_expr || (selectedEvent.source === 'ad_hoc' ? 'Ad-hoc' : '-')} />
                   {selectedEvent.cron_expr && <RunCalendarDetailRow label="Cron" value={`${selectedEvent.cron_expr}${selectedEvent.timezone ? ` / ${selectedEvent.timezone}` : ''}`} />}
                   {selectedEvent.test_ref_key || selectedEvent.test_id ? <RunCalendarDetailRow label="Test" value={selectedEvent.test_ref_key || selectedEvent.test_id || '-'} /> : null}
@@ -2044,6 +2050,7 @@ function formatRunCalendarStatus(status: string) {
 function runCalendarSourceLabel(event: RunCalendarEvent) {
   if (event.source === 'cron') return event.projected ? 'Projected Cron' : 'Cron'
   if (event.source === 'ad_hoc') return 'Ad-hoc'
+  if (event.source === 'execution_plan') return event.projected ? 'Projected Plan' : 'Execution Plan'
   return event.source || 'Run'
 }
 
@@ -2052,7 +2059,7 @@ function runCalendarUserLabel(event: RunCalendarEvent) {
 }
 
 function runCalendarEventClass(event: RunCalendarEvent) {
-  const source = event.source === 'cron' ? 'cron' : event.source === 'ad_hoc' ? 'ad-hoc' : 'other'
+  const source = event.source === 'cron' ? 'cron' : event.source === 'ad_hoc' ? 'ad-hoc' : event.source === 'execution_plan' ? 'execution-plan' : 'other'
   const status = event.status.toLowerCase().replace(/[^a-z0-9]+/g, '-')
   return `${source} ${status} ${event.projected ? 'projected' : ''}`
 }

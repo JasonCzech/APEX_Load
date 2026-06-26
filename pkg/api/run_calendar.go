@@ -79,6 +79,7 @@ type RunCalendarEvent struct {
 	Timezone         string              `json:"timezone,omitempty"`
 	ScenarioID       string              `json:"scenario_id,omitempty"`
 	ScenarioName     string              `json:"scenario_name,omitempty"`
+	PlanID           string              `json:"plan_id,omitempty"`
 	ApplicationID    string              `json:"application_id,omitempty"`
 	ReleaseID        string              `json:"release_id,omitempty"`
 	ProjectID        string              `json:"project_id,omitempty"`
@@ -122,10 +123,13 @@ type runCalendarScenarioSummary struct {
 }
 
 type runCalendarSnapshot struct {
-	Tests       []*ManagedTest
-	Schedules   []*storage.ScenarioSchedule
-	Occurrences []*storage.ScenarioScheduleOccurrence
-	Scenarios   map[string]runCalendarScenarioSummary
+	Tests           []*ManagedTest
+	Schedules       []*storage.ScenarioSchedule
+	Occurrences     []*storage.ScenarioScheduleOccurrence
+	Scenarios       map[string]runCalendarScenarioSummary
+	PlanSchedules   []*storage.ExecutionPlanSchedule
+	PlanOccurrences []*storage.ExecutionPlanScheduleOccurrence
+	Plans           map[string]*storage.ExecutionPlan
 }
 
 func (s *Server) handleGetRunCalendar(w http.ResponseWriter, r *http.Request) {
@@ -294,6 +298,36 @@ func (tr *TestRunner) BuildRunCalendar(from time.Time, to time.Time, projectID s
 		// will not fire as-is and act early, instead of the run silently
 		// disappearing from the calendar.
 		projected := projectRunCalendarSchedule(schedule, from, to, now, occurrenceByScheduleAt, snapshot.Scenarios)
+		for _, event := range projected {
+			appendEvent(event)
+		}
+		if len(projected) >= runCalendarMaxProjectedPerCron {
+			truncated = true
+		}
+	}
+
+	// Execution-plan schedules: materialized occurrences first, then projected
+	// future cron runs (deduped against those occurrences), mirroring the
+	// scenario-schedule path above.
+	planSchedulesByID := map[string]*storage.ExecutionPlanSchedule{}
+	for _, schedule := range snapshot.PlanSchedules {
+		if schedule != nil {
+			planSchedulesByID[schedule.ID] = schedule
+		}
+	}
+	planOccurrenceByScheduleAt := map[string]struct{}{}
+	for _, occurrence := range snapshot.PlanOccurrences {
+		if occurrence == nil {
+			continue
+		}
+		planOccurrenceByScheduleAt[runCalendarOccurrenceKey(occurrence.ScheduleID, occurrence.PlannedAt)] = struct{}{}
+		appendEvent(runCalendarEventFromPlanOccurrence(occurrence, planSchedulesByID[occurrence.ScheduleID], snapshot.Plans[occurrence.PlanID], snapshot.Scenarios))
+	}
+	for _, schedule := range snapshot.PlanSchedules {
+		if schedule == nil || !schedule.Enabled {
+			continue
+		}
+		projected := projectRunCalendarPlanSchedule(schedule, snapshot.Plans[schedule.PlanID], from, to, now, planOccurrenceByScheduleAt, snapshot.Scenarios)
 		for _, event := range projected {
 			appendEvent(event)
 		}
@@ -512,11 +546,46 @@ func (tr *TestRunner) runCalendarSnapshot(projectID string) runCalendarSnapshot 
 			}
 		}
 	}
+	// Recurring execution-plan schedules + their materialized occurrences are read
+	// directly from the plan-schedule store (fresh per-query objects — no clone
+	// needed), filtered to the requested project.
+	planSchedules := make([]*storage.ExecutionPlanSchedule, 0)
+	planOccurrences := make([]*storage.ExecutionPlanScheduleOccurrence, 0)
+	plans := map[string]*storage.ExecutionPlan{}
+	if planStore := tr.execPlanScheduleStore; planStore != nil {
+		if allSchedules, err := planStore.ListAllExecutionPlanSchedules(); err == nil {
+			for _, schedule := range allSchedules {
+				if schedule == nil {
+					continue
+				}
+				if projectID != "" && normalizeProjectID(schedule.ProjectID) != projectID {
+					continue
+				}
+				planSchedules = append(planSchedules, schedule)
+				if _, ok := plans[schedule.PlanID]; !ok {
+					if plan, err := planStore.GetExecutionPlan(schedule.PlanID); err == nil && plan != nil {
+						plans[schedule.PlanID] = plan
+					}
+				}
+				if occ, err := planStore.ListExecutionPlanScheduleOccurrences(schedule.ID); err == nil {
+					for _, o := range occ {
+						if o != nil {
+							planOccurrences = append(planOccurrences, o)
+						}
+					}
+				}
+			}
+		}
+	}
+
 	return runCalendarSnapshot{
-		Tests:       filteredTests,
-		Schedules:   schedules,
-		Occurrences: occurrences,
-		Scenarios:   scenarios,
+		Tests:           filteredTests,
+		Schedules:       schedules,
+		Occurrences:     occurrences,
+		Scenarios:       scenarios,
+		PlanSchedules:   planSchedules,
+		PlanOccurrences: planOccurrences,
+		Plans:           plans,
 	}
 }
 
@@ -682,6 +751,146 @@ func projectRunCalendarSchedule(schedule *storage.ScenarioSchedule, from time.Ti
 			Topology: RunCalendarTopology{
 				Source:  "planned",
 				Summary: "Generator assignment will be resolved when the run materializes.",
+			},
+		})
+	}
+	return events
+}
+
+// executionPlanCalendarWorkload approximates a plan run's workload for the
+// calendar from the per-scenario summaries: aggregate peak VUsers (parallel = sum
+// of enabled entries, sequential = max) and duration (parallel = longest scenario,
+// sequential = sum). Mirrors executionPlanAggregatePeak's parallel/sequential split.
+func executionPlanCalendarWorkload(plan *storage.ExecutionPlan, scenarios map[string]runCalendarScenarioSummary) (int, time.Duration) {
+	if plan == nil {
+		return 0, time.Hour
+	}
+	parallel := !strings.EqualFold(strings.TrimSpace(plan.RunMode), "sequential")
+	totalVUsers := 0
+	var seqDuration, maxDuration time.Duration
+	counted := false
+	for _, entry := range plan.Entries {
+		if !entry.IsEnabled() {
+			continue
+		}
+		scenario, ok := scenarios[entry.ScenarioID]
+		if !ok {
+			continue
+		}
+		counted = true
+		if parallel {
+			totalVUsers += scenario.TotalVUsers
+		} else if scenario.TotalVUsers > totalVUsers {
+			totalVUsers = scenario.TotalVUsers
+		}
+		d := time.Hour
+		if parsed, err := time.ParseDuration(scenario.Duration); err == nil && parsed > 0 {
+			d = parsed
+		}
+		seqDuration += d
+		if d > maxDuration {
+			maxDuration = d
+		}
+	}
+	if !counted {
+		return 0, time.Hour
+	}
+	if parallel {
+		return totalVUsers, maxDuration
+	}
+	return totalVUsers, seqDuration
+}
+
+func executionPlanCalendarTitle(schedule *storage.ExecutionPlanSchedule, plan *storage.ExecutionPlan) string {
+	candidates := make([]string, 0, 4)
+	if schedule != nil {
+		candidates = append(candidates, schedule.RunNameTemplate, schedule.Name)
+	}
+	if plan != nil {
+		candidates = append(candidates, plan.Name)
+	}
+	candidates = append(candidates, "Execution Plan Run")
+	return calendarTitle(firstPresentString(candidates...))
+}
+
+func runCalendarEventFromPlanOccurrence(occurrence *storage.ExecutionPlanScheduleOccurrence, schedule *storage.ExecutionPlanSchedule, plan *storage.ExecutionPlan, scenarios map[string]runCalendarScenarioSummary) RunCalendarEvent {
+	totalVUsers, duration := executionPlanCalendarWorkload(plan, scenarios)
+	start := occurrence.PlannedAt.UTC()
+	if occurrence.MaterializedAt != nil && !occurrence.MaterializedAt.IsZero() {
+		start = occurrence.MaterializedAt.UTC()
+	}
+	endAt := start.Add(duration).UTC()
+	status := strings.TrimSpace(occurrence.Status)
+	if status == "" {
+		status = "scheduled"
+	}
+	event := RunCalendarEvent{
+		ID:               "plan-occurrence:" + occurrence.ID,
+		Source:           "execution_plan",
+		RunType:          "execution_plan",
+		Title:            executionPlanCalendarTitle(schedule, plan),
+		Status:           status,
+		StartAt:          start,
+		EndAt:            &endAt,
+		OccurrenceStatus: occurrence.Status,
+		ReasonCode:       occurrence.ReasonCode,
+		ConflictSummary:  occurrence.ConflictSummary,
+		ScheduleID:       occurrence.ScheduleID,
+		PlanID:           occurrence.PlanID,
+		ProjectID:        normalizeProjectID(occurrence.ProjectID),
+		Workload:         RunCalendarWorkload{TotalVUsers: totalVUsers, Duration: duration.String()},
+		Topology: RunCalendarTopology{
+			Source:  "planned",
+			Summary: "Execution plan run — generator assignment resolves per scenario at materialization.",
+		},
+	}
+	if schedule != nil {
+		event.ScheduleName = schedule.Name
+		event.CronExpr = schedule.CronExpr
+		event.Timezone = schedule.Timezone
+	}
+	return event
+}
+
+func projectRunCalendarPlanSchedule(schedule *storage.ExecutionPlanSchedule, plan *storage.ExecutionPlan, from time.Time, to time.Time, now time.Time, planOccurrenceByScheduleAt map[string]struct{}, scenarios map[string]runCalendarScenarioSummary) []RunCalendarEvent {
+	startFrom := from
+	if startFrom.Before(now) {
+		startFrom = now
+	}
+	totalVUsers, duration := executionPlanCalendarWorkload(plan, scenarios)
+	allows := executionPlanScheduleAllows(schedule.DisabledFrom, schedule.DisabledUntil)
+	cursor := startFrom.Add(-time.Minute)
+	events := make([]RunCalendarEvent, 0)
+	for len(events) < runCalendarMaxProjectedPerCron {
+		next, err := nextCronRun(schedule.CronExpr, schedule.Timezone, cursor, allows)
+		if err != nil || next == nil || !next.Before(to) {
+			break
+		}
+		plannedAt := next.UTC()
+		cursor = plannedAt
+		if _, exists := planOccurrenceByScheduleAt[runCalendarOccurrenceKey(schedule.ID, plannedAt)]; exists {
+			continue
+		}
+		endAt := plannedAt.Add(duration).UTC()
+		events = append(events, RunCalendarEvent{
+			ID:           fmt.Sprintf("plan-projected:%s:%d", schedule.ID, plannedAt.Unix()),
+			Source:       "execution_plan",
+			RunType:      "execution_plan",
+			Title:        executionPlanCalendarTitle(schedule, plan),
+			Status:       "scheduled",
+			StartAt:      plannedAt,
+			EndAt:        &endAt,
+			Projected:    true,
+			ScheduleID:   schedule.ID,
+			ScheduleName: schedule.Name,
+			CronExpr:     schedule.CronExpr,
+			Timezone:     schedule.Timezone,
+			PlanID:       schedule.PlanID,
+			ProjectID:    normalizeProjectID(schedule.ProjectID),
+			Workload:     RunCalendarWorkload{TotalVUsers: totalVUsers, Duration: duration.String()},
+			Topology: RunCalendarTopology{
+				Source:  "planned",
+				Summary: "Execution plan run — generator assignment resolves per scenario at materialization.",
 			},
 		})
 	}

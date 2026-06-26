@@ -187,11 +187,20 @@ func applyLocalUserBindings(upstream *AuthenticatedUser, store storage.Store) (*
 	local.Email = firstNonEmpty(upstream.Email, local.Email)
 	local.UpdatedAt = now
 	_ = store.SaveUser(local)
+	return authenticatedUserFromStoredUser(local), nil
+}
+
+// authenticatedUserFromStoredUser folds a stored user's local role bindings into an
+// AuthenticatedUser (global/project/domain/application_repository role sets). It is the
+// shared resolution used both by the per-request auth path (applyLocalUserBindings, which
+// pre-merges DisplayName/Email from the upstream identity onto local before calling this)
+// and by the admin effective-access simulator, so both compute access identically.
+func authenticatedUserFromStoredUser(local *storage.User) *AuthenticatedUser {
 	user := &AuthenticatedUser{
 		ID:              local.ID,
 		Subject:         local.Subject,
-		DisplayName:     firstNonEmpty(local.DisplayName, upstream.DisplayName),
-		Email:           firstNonEmpty(local.Email, upstream.Email),
+		DisplayName:     local.DisplayName,
+		Email:           local.Email,
 		GlobalRoles:     make(map[string]struct{}),
 		ProjectRoles:    make(map[string]map[string]struct{}),
 		DomainRoles:     make(map[string]map[string]struct{}),
@@ -216,7 +225,7 @@ func applyLocalUserBindings(upstream *AuthenticatedUser, store storage.Store) (*
 			addScopedUserRole(user.RepositoryRoles, strings.TrimSpace(binding.ScopeID), role)
 		}
 	}
-	return user, nil
+	return user
 }
 
 func addScopedUserRole(scoped map[string]map[string]struct{}, scopeID string, role string) {

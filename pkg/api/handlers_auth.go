@@ -123,11 +123,18 @@ type AuthEffectiveAccessResponse struct {
 	Resources     []AuthEffectiveAccessResource `json:"resources"`
 	DevViewMode   string                        `json:"dev_view_mode,omitempty"`
 	Simulated     bool                          `json:"simulated,omitempty"`
+	// Simulator-only fields (admin "what can principal X do in scope Y" view).
+	PrincipalType         string `json:"principal_type,omitempty"`
+	PrincipalID           string `json:"principal_id,omitempty"`
+	PrincipalName         string `json:"principal_name,omitempty"`
+	ScopesNarrowApiAccess bool   `json:"scopes_narrow_api_access,omitempty"`
 }
 
 type AuthServiceAccountRequest struct {
 	Name                 string              `json:"name"`
 	Description          string              `json:"description,omitempty"`
+	OwnerID              string              `json:"owner_id,omitempty"`
+	ContactEmail         string              `json:"contact_email,omitempty"`
 	GlobalRoles          []string            `json:"global_roles,omitempty"`
 	ProjectRoles         map[string][]string `json:"project_roles,omitempty"`
 	DomainRoles          map[string][]string `json:"domain_roles,omitempty"`
@@ -143,6 +150,8 @@ type AuthServiceAccountRequest struct {
 type AuthServiceAccountUpdateRequest struct {
 	Name                 *string              `json:"name,omitempty"`
 	Description          *string              `json:"description,omitempty"`
+	OwnerID              *string              `json:"owner_id,omitempty"`
+	ContactEmail         *string              `json:"contact_email,omitempty"`
 	Active               *bool                `json:"active,omitempty"`
 	GlobalRoles          *[]string            `json:"global_roles,omitempty"`
 	ProjectRoles         *map[string][]string `json:"project_roles,omitempty"`
@@ -576,6 +585,70 @@ func (s *Server) handleGetAuthEffectiveAccess(w http.ResponseWriter, r *http.Req
 
 	response.Authenticated = true
 	response.Resources = buildUserEffectiveAccess(authAccessMatrix, resolution.User, projectID, domainID, repositoryID)
+	writeJSON(w, http.StatusOK, response)
+}
+
+// handleGetAuthEffectiveAccessForPrincipal answers "what can principal X do in scope Y?"
+// for an arbitrary user or service account — the admin effective-access simulator. Unlike
+// GET /auth/effective-access, which only ever reports for the caller, this is gated to
+// user-lifecycle admins. It reports role-derived access only; a service account's API
+// scopes are a separate second gate (serviceAccountAllowsRequest) that further narrows
+// what its key can actually call, surfaced to the UI via ScopesNarrowApiAccess.
+func (s *Server) handleGetAuthEffectiveAccessForPrincipal(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
+		return
+	}
+	if !s.currentRequestCanManageUserLifecycle(r) {
+		writeError(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	principalType := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("principal_type")))
+	principalID := strings.TrimSpace(r.URL.Query().Get("principal_id"))
+	if principalID == "" {
+		writeError(w, http.StatusBadRequest, "principal_id is required")
+		return
+	}
+	projectID := normalizeProjectID(strings.TrimSpace(r.URL.Query().Get("project_id")))
+	domainID := normalizeDomainID(strings.TrimSpace(r.URL.Query().Get("domain_id")))
+	repositoryID := strings.TrimSpace(r.URL.Query().Get("application_repository_id"))
+
+	response := AuthEffectiveAccessResponse{
+		Enabled:       true,
+		Authenticated: true,
+		Simulated:     true,
+		ProjectID:     projectID,
+		DomainID:      domainID,
+		RepositoryID:  repositoryID,
+		PrincipalType: principalType,
+		PrincipalID:   principalID,
+	}
+
+	var principal *AuthenticatedUser
+	switch principalType {
+	case "user":
+		user, err := s.store.GetUser(principalID)
+		if err != nil || user == nil {
+			writeError(w, http.StatusNotFound, "user not found")
+			return
+		}
+		principal = authenticatedUserFromStoredUser(user)
+		response.PrincipalName = firstNonEmpty(user.DisplayName, user.Subject)
+	case "service_account":
+		account, err := s.store.GetServiceAccount(principalID)
+		if err != nil || account == nil {
+			writeError(w, http.StatusNotFound, "service account not found")
+			return
+		}
+		principal = authenticatedUserFromServiceAccount(account)
+		response.PrincipalName = account.Name
+		response.ScopesNarrowApiAccess = len(account.Scopes) > 0
+	default:
+		writeError(w, http.StatusBadRequest, "principal_type must be 'user' or 'service_account'")
+		return
+	}
+
+	response.Resources = buildUserEffectiveAccess(authAccessMatrix, principal, projectID, domainID, repositoryID)
 	writeJSON(w, http.StatusOK, response)
 }
 
@@ -1389,6 +1462,12 @@ func applyServiceAccountUpdate(w http.ResponseWriter, account *storage.ServiceAc
 	if req.Description != nil {
 		account.Description = strings.TrimSpace(*req.Description)
 	}
+	if req.OwnerID != nil {
+		account.OwnerID = strings.TrimSpace(*req.OwnerID)
+	}
+	if req.ContactEmail != nil {
+		account.ContactEmail = strings.TrimSpace(*req.ContactEmail)
+	}
 	if req.Active != nil {
 		account.Active = *req.Active
 	}
@@ -1461,6 +1540,12 @@ func serviceAccountAuditSummary(account *storage.ServiceAccount) map[string]any 
 		"active":       account.Active,
 		"global_roles": account.GlobalRoles,
 		"scopes":       account.Scopes,
+	}
+	if account.OwnerID != "" {
+		summary["owner_id"] = account.OwnerID
+	}
+	if account.ContactEmail != "" {
+		summary["contact_email"] = account.ContactEmail
 	}
 	if account.ExpiresAt != nil {
 		summary["expires_at"] = account.ExpiresAt.UTC().Format(time.RFC3339)
@@ -1680,6 +1765,8 @@ func buildServiceAccount(req AuthServiceAccountRequest) (*storage.ServiceAccount
 		ID:                   uuid.New().String(),
 		Name:                 name,
 		Description:          strings.TrimSpace(req.Description),
+		OwnerID:              strings.TrimSpace(req.OwnerID),
+		ContactEmail:         strings.TrimSpace(req.ContactEmail),
 		KeyHash:              hashAPIKey(apiKey),
 		Active:               true,
 		GlobalRoles:          globalRoles,

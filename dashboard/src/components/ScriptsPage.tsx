@@ -382,7 +382,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
     let cancelled = false
     const loadEffectiveAccess = async () => {
       try {
-        const response = await api.getAuthEffectiveAccess(activeProject?.id)
+        const response = await api.getAuthEffectiveAccess(activeProject?.id, { domain_id: activeProject?.domain_id })
         if (!cancelled) {
           setEffectiveAuthAccessResources(response.resources || [])
         }
@@ -400,7 +400,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
     return () => {
       cancelled = true
     }
-  }, [activeProject?.id, api])
+  }, [activeProject?.id, activeProject?.domain_id, api])
   useEffect(() => {
     // Only redirect away from a manage-only sub-view once effective access has
     // loaded; otherwise the brief default-DENY window before the access fetch

@@ -334,7 +334,7 @@ export default function SettingsPage({
     let cancelled = false
     const loadEffectiveAccess = async () => {
       try {
-        const response = await api.getAuthEffectiveAccess(activeProject?.id)
+        const response = await api.getAuthEffectiveAccess(activeProject?.id, { domain_id: activeProject?.domain_id })
         if (!cancelled) {
           setEffectiveAuthAccessResources(response.resources || [])
         }
@@ -349,7 +349,7 @@ export default function SettingsPage({
     return () => {
       cancelled = true
     }
-  }, [activeProject?.id, api])
+  }, [activeProject?.id, activeProject?.domain_id, api])
 
   useEffect(() => {
   let cancelled = false

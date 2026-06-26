@@ -18,9 +18,12 @@ import (
 )
 
 const (
-	defaultAccessReviewStaleDays    = 90
-	defaultAccessReviewExpiringDays = 14
-	accessReviewMaxUsers            = 10000
+	defaultAccessReviewStaleDays         = 90
+	defaultAccessReviewExpiringDays      = 14
+	accessReviewMaxUsers                 = 10000
+	defaultAccessReviewDenialWindowHours = 24
+	accessReviewDenialScanCap            = 5000
+	auditActionAccessDenied              = "auth.access.denied"
 )
 
 type AccessReviewUser struct {
@@ -45,12 +48,14 @@ type AccessReviewServiceAccount struct {
 }
 
 type AccessReviewResponse struct {
-	GeneratedAt     time.Time                    `json:"generated_at"`
-	StaleAfterDays  int                          `json:"stale_after_days"`
-	ExpiringDays    int                          `json:"expiring_within_days"`
-	Users           []AccessReviewUser           `json:"users"`
-	ServiceAccounts []AccessReviewServiceAccount `json:"service_accounts"`
-	Summary         map[string]int               `json:"summary"`
+	GeneratedAt             time.Time                    `json:"generated_at"`
+	StaleAfterDays          int                          `json:"stale_after_days"`
+	ExpiringDays            int                          `json:"expiring_within_days"`
+	Users                   []AccessReviewUser           `json:"users"`
+	ServiceAccounts         []AccessReviewServiceAccount `json:"service_accounts"`
+	Summary                 map[string]int               `json:"summary"`
+	RecentDenials           int                          `json:"recent_denials"`
+	RecentDenialWindowHours int                          `json:"recent_denial_window_hours"`
 }
 
 func (s *Server) handleGetAccessReview(w http.ResponseWriter, r *http.Request) {
@@ -62,17 +67,43 @@ func (s *Server) handleGetAccessReview(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "forbidden")
 		return
 	}
-	users, err := s.store.ListUsers(storage.UserFilter{Limit: accessReviewMaxUsers})
+	review, err := s.computeAccessReview(time.Now().UTC())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	writeJSON(w, http.StatusOK, review)
+}
+
+// computeAccessReview gathers users + service accounts, builds the flagged review, and
+// folds in a recent auth-denial count. Shared by the on-demand admin endpoint and the
+// background notifier so both report the same posture. The denial count is best-effort:
+// a query failure leaves it at zero rather than failing the whole report.
+func (s *Server) computeAccessReview(now time.Time) (AccessReviewResponse, error) {
+	users, err := s.store.ListUsers(storage.UserFilter{Limit: accessReviewMaxUsers})
+	if err != nil {
+		return AccessReviewResponse{}, err
 	}
 	accounts, err := s.store.ListServiceAccounts()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+		return AccessReviewResponse{}, err
 	}
-	writeJSON(w, http.StatusOK, buildAccessReview(users, accounts, time.Now().UTC()))
+	review := buildAccessReview(users, accounts, now)
+	windowHours := accessReviewIntEnv("APEXLOAD_ACCESS_REVIEW_DENIAL_WINDOW_HOURS", defaultAccessReviewDenialWindowHours)
+	review.RecentDenialWindowHours = windowHours
+	if windowHours > 0 {
+		since := now.Add(-time.Duration(windowHours) * time.Hour)
+		denials, derr := s.store.ListAuditEvents(storage.AuditEventFilter{
+			Action:       auditActionAccessDenied,
+			Status:       "failure",
+			CreatedAfter: &since,
+			Limit:        accessReviewDenialScanCap,
+		})
+		if derr == nil {
+			review.RecentDenials = len(denials)
+		}
+	}
+	return review, nil
 }
 
 func buildAccessReview(users []*storage.User, accounts []*storage.ServiceAccount, now time.Time) AccessReviewResponse {

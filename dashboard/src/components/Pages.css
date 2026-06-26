@@ -1806,6 +1806,48 @@
   color: var(--danger-text);
 }
 
+/* Access-review attention surfacing (notifications): a count pill on the Activity tab and
+   a banner in the service-accounts workspace. */
+.access-attention-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
+  color: var(--danger-text);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.access-attention-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  border-color: var(--warning-border, var(--danger-border));
+  background: var(--warning-bg, var(--danger-bg));
+  color: var(--warning-text, var(--danger-text));
+}
+
+.access-simulator {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-subtle, var(--border));
+  display: grid;
+  gap: 10px;
+}
+
+.access-simulator-result {
+  display: grid;
+  gap: 8px;
+}
+
 .access-form-actions {
   display: flex;
   justify-content: flex-end;
@@ -5284,6 +5326,14 @@
   box-shadow: inset 3px 0 0 var(--run-calendar-ad-hoc-text);
 }
 
+/* Execution-plan runs use a distinct violet rail so they read apart from
+   cron (teal) and ad-hoc (magenta) runs across all themes. */
+.run-calendar-event.execution-plan {
+  border-color: color-mix(in srgb, #8b5cf6 45%, var(--border));
+  background: color-mix(in srgb, #8b5cf6 14%, var(--bg-secondary));
+  box-shadow: inset 3px 0 0 #8b5cf6;
+}
+
 .run-calendar-event.failed,
 .run-calendar-event.aborted,
 .run-calendar-event.blocked {
@@ -5378,6 +5428,10 @@
 
 .run-calendar-source.ad_hoc {
   color: var(--run-calendar-ad-hoc-text);
+}
+
+.run-calendar-source.execution_plan {
+  color: #8b5cf6;
 }
 
 .run-calendar-detail-grid {

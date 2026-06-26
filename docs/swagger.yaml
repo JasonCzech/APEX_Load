@@ -415,6 +415,20 @@ paths:
       security: []
       tags:
         - Auth
+  /api/v1/auth/effective-access/principal:
+    get:
+      summary: Get Auth Effective Access For Principal
+      description: |-
+        **Handler:** `handleGetAuthEffectiveAccessForPrincipal`
+
+        **Access Control:** Requires Authentication
+      operationId: handleGetAuthEffectiveAccessForPrincipal
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication
+      tags:
+        - Auth
   /api/v1/auth/login:
     get:
       summary: O I D C Login

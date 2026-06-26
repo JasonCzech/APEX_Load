@@ -254,6 +254,7 @@ var accessRequirementGolden = map[string]string{
 	"GET /api/v1/auth/service-accounts":                               "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
 	"GET /api/v1/auth/user-activity":                                  "auth=true global= project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
 	"GET /api/v1/auth/access-review":                                  "auth=true global= project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/auth/effective-access/principal":                     "auth=true global= project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
 	"GET /api/v1/auth/user-activity/export":                           "auth=true global= project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
 	"GET /api/v1/auth/users":                                          "auth=true global= project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
 	"GET /api/v1/auth/users/sample-id":                                "auth=true global= project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",

@@ -2,10 +2,16 @@ import { useCallback, useMemo } from 'react'
 
 import {
   ExecutionPlan,
+  ExecutionPlanApproval,
+  ExecutionPlanApprovalListResponse,
   ExecutionPlanListResponse,
   ExecutionPlanRun,
   ExecutionPlanRunListResponse,
   ExecutionPlanRunResponse,
+  ExecutionPlanSchedule,
+  ExecutionPlanScheduleListResponse,
+  ExecutionPlanScheduleOccurrenceListResponse,
+  ExecutionPlanScheduleRequest,
 } from '../../types'
 import { request } from '../apiClient'
 
@@ -66,6 +72,72 @@ export function useExecutionPlansApi() {
     [],
   )
 
+  // Recurring plan schedules (cron-materialized plan runs).
+  const listExecutionPlanSchedules = useCallback(
+    (planId: string) =>
+      request<ExecutionPlanScheduleListResponse>(`/execution-plans/${planId}/schedules`),
+    [],
+  )
+
+  const createExecutionPlanSchedule = useCallback(
+    (planId: string, body: ExecutionPlanScheduleRequest) =>
+      request<ExecutionPlanSchedule>(`/execution-plans/${planId}/schedules`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    [],
+  )
+
+  const updateExecutionPlanSchedule = useCallback(
+    (planId: string, scheduleId: string, body: ExecutionPlanScheduleRequest) =>
+      request<ExecutionPlanSchedule>(`/execution-plans/${planId}/schedules/${scheduleId}`, {
+        method: 'PUT',
+        body: JSON.stringify(body),
+      }),
+    [],
+  )
+
+  const deleteExecutionPlanSchedule = useCallback(
+    (planId: string, scheduleId: string) =>
+      request<{ deleted: string }>(`/execution-plans/${planId}/schedules/${scheduleId}`, {
+        method: 'DELETE',
+      }),
+    [],
+  )
+
+  const listExecutionPlanScheduleOccurrences = useCallback(
+    (planId: string, scheduleId: string) =>
+      request<ExecutionPlanScheduleOccurrenceListResponse>(
+        `/execution-plans/${planId}/schedules/${scheduleId}/occurrences`,
+      ),
+    [],
+  )
+
+  // Governance approvals (quota-gated plan runs).
+  const listExecutionPlanApprovals = useCallback(
+    (planId: string) =>
+      request<ExecutionPlanApprovalListResponse>(`/execution-plans/${planId}/approvals`),
+    [],
+  )
+
+  const approveExecutionPlanApproval = useCallback(
+    (planId: string, approvalId: string, reason?: string) =>
+      request<ExecutionPlanApproval>(
+        `/execution-plans/${planId}/approvals/${approvalId}/approve`,
+        { method: 'POST', body: JSON.stringify({ reason: reason || '' }) },
+      ),
+    [],
+  )
+
+  const rejectExecutionPlanApproval = useCallback(
+    (planId: string, approvalId: string, reason?: string) =>
+      request<ExecutionPlanApproval>(
+        `/execution-plans/${planId}/approvals/${approvalId}/reject`,
+        { method: 'POST', body: JSON.stringify({ reason: reason || '' }) },
+      ),
+    [],
+  )
+
   return useMemo(
     () => ({
       listExecutionPlans,
@@ -76,6 +148,14 @@ export function useExecutionPlansApi() {
       runExecutionPlan,
       listExecutionPlanRuns,
       getExecutionPlanRun,
+      listExecutionPlanSchedules,
+      createExecutionPlanSchedule,
+      updateExecutionPlanSchedule,
+      deleteExecutionPlanSchedule,
+      listExecutionPlanScheduleOccurrences,
+      listExecutionPlanApprovals,
+      approveExecutionPlanApproval,
+      rejectExecutionPlanApproval,
     }),
     [
       listExecutionPlans,
@@ -86,6 +166,14 @@ export function useExecutionPlansApi() {
       runExecutionPlan,
       listExecutionPlanRuns,
       getExecutionPlanRun,
+      listExecutionPlanSchedules,
+      createExecutionPlanSchedule,
+      updateExecutionPlanSchedule,
+      deleteExecutionPlanSchedule,
+      listExecutionPlanScheduleOccurrences,
+      listExecutionPlanApprovals,
+      approveExecutionPlanApproval,
+      rejectExecutionPlanApproval,
     ],
   )
 }

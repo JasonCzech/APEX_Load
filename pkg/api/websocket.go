@@ -127,14 +127,21 @@ func (h *Hub) Run() {
 			var envelope struct {
 				TestID    string `json:"test_id"`
 				ProjectID string `json:"project_id"`
+				// BroadcastAll bypasses the test/project filters so a message reaches every
+				// connected client regardless of its subscription. Reserved for content-free
+				// global signals (e.g. access_review_changed) where fanning out leaks nothing;
+				// never set it on a message carrying test- or project-scoped data.
+				BroadcastAll bool `json:"broadcast_all"`
 			}
 			_ = json.Unmarshal(msg, &envelope)
 			for client := range h.clients {
-				if client.testID != "" && envelope.TestID != client.testID {
-					continue
-				}
-				if client.projectID != "" && envelope.ProjectID != client.projectID {
-					continue
+				if !envelope.BroadcastAll {
+					if client.testID != "" && envelope.TestID != client.testID {
+						continue
+					}
+					if client.projectID != "" && envelope.ProjectID != client.projectID {
+						continue
+					}
 				}
 				select {
 				case client.send <- msg:

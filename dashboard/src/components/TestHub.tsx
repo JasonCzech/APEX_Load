@@ -1230,7 +1230,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     let cancelled = false
     const loadEffectiveAccess = async () => {
       try {
-        const response = await api.getAuthEffectiveAccess(activeProject?.id)
+        const response = await api.getAuthEffectiveAccess(activeProject?.id, { domain_id: activeProject?.domain_id })
         if (!cancelled) {
           setEffectiveAuthAccessResources(response.resources || [])
         }
@@ -1248,7 +1248,7 @@ function TestHub({ onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, 
     return () => {
       cancelled = true
     }
-  }, [activeProject?.id, api])
+  }, [activeProject?.id, activeProject?.domain_id, api])
   useEffect(() => {
     // Only tear down manage-only views once access has loaded; the brief
     // default-DENY window before the access fetch resolves must not reset a

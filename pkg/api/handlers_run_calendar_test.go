@@ -149,6 +149,109 @@ func TestHandleRunCalendarReturnsAdHocScheduledAndProjectedRuns(t *testing.T) {
 	}
 }
 
+func TestHandleRunCalendarProjectsExecutionPlanSchedules(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	server.runner.StoreScript(&dsl.Script{
+		ID:        "script-plan-calendar",
+		Name:      "Plan Checkout",
+		ProjectID: "project-calendar",
+		Protocol:  "http",
+		Version:   "1.0.0",
+		Config:    dsl.ScriptConfig{BaseURL: "https://checkout.example.test"},
+		Actions:   []dsl.Action{{Name: "step", Type: "request", Target: "/checkout"}},
+	})
+	scenario, err := server.runner.StoreScenario(CreateScenarioRequest{
+		Name:     "Plan Scenario",
+		Duration: "20m",
+		Groups:   []CreateGroupEntry{{Name: "buyers", ScriptID: "script-plan-calendar", VUsers: 12}},
+	})
+	if err != nil {
+		t.Fatalf("StoreScenario returned error: %v", err)
+	}
+
+	plan := &storage.ExecutionPlan{
+		ID:        "exec-plan-calendar",
+		ProjectID: "project-calendar",
+		Name:      "Nightly Plan",
+		RunMode:   "parallel",
+		Entries:   []storage.ExecutionPlanEntry{{Order: 0, ScenarioID: scenario.ID}},
+	}
+	if err := store.SaveExecutionPlan(plan); err != nil {
+		t.Fatalf("SaveExecutionPlan returned error: %v", err)
+	}
+	schedule, err := server.runner.CreateExecutionPlanSchedule(plan.ID, CreateExecutionPlanScheduleRequest{
+		Name:     "Nightly Plan Schedule",
+		CronExpr: "0 * * * *",
+	})
+	if err != nil {
+		t.Fatalf("CreateExecutionPlanSchedule returned error: %v", err)
+	}
+
+	now := time.Now().UTC()
+	// A materialized occurrence in the recent past (top of a prior hour, within range).
+	plannedAt := now.Truncate(time.Hour).Add(-2 * time.Hour)
+	materializedAt := plannedAt.Add(time.Minute)
+	if err := store.SaveExecutionPlanScheduleOccurrence(&storage.ExecutionPlanScheduleOccurrence{
+		ID:             "plan-occ-calendar",
+		ScheduleID:     schedule.ID,
+		PlanID:         plan.ID,
+		ProjectID:      "project-calendar",
+		PlannedAt:      plannedAt,
+		MaterializedAt: &materializedAt,
+		Status:         "materialized",
+		ReasonCode:     "started",
+		RunID:          "epr-calendar",
+		CreatedAt:      plannedAt,
+		UpdatedAt:      materializedAt,
+	}); err != nil {
+		t.Fatalf("SaveExecutionPlanScheduleOccurrence returned error: %v", err)
+	}
+
+	values := url.Values{}
+	values.Set("from", now.Add(-3*time.Hour).Format(time.RFC3339))
+	values.Set("to", now.Add(6*time.Hour).Format(time.RFC3339))
+	values.Set("project_id", "project-calendar")
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/run-calendar?"+values.Encode(), nil)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var payload RunCalendarResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if payload.SourceCounts["execution_plan"] < 2 {
+		t.Fatalf("source counts = %#v, want >=2 execution_plan events (materialized + projected)", payload.SourceCounts)
+	}
+
+	occurrence := findRunCalendarEvent(payload.Events, func(event RunCalendarEvent) bool {
+		return event.PlanID == plan.ID && !event.Projected
+	})
+	if occurrence == nil {
+		t.Fatalf("events = %#v, want materialized plan occurrence", payload.Events)
+	}
+	if occurrence.Source != "execution_plan" || occurrence.Status != "materialized" || occurrence.ScheduleID != schedule.ID {
+		t.Fatalf("plan occurrence event = %#v, want materialized execution_plan event", occurrence)
+	}
+
+	projected := findRunCalendarEvent(payload.Events, func(event RunCalendarEvent) bool {
+		return event.PlanID == plan.ID && event.Projected
+	})
+	if projected == nil {
+		t.Fatalf("events = %#v, want projected plan run", payload.Events)
+	}
+	if projected.Source != "execution_plan" || projected.Status != "scheduled" || projected.CronExpr != "0 * * * *" || projected.Workload.TotalVUsers != 12 || projected.Topology.Source != "planned" {
+		t.Fatalf("projected plan event = %#v, want scheduled projection with aggregate workload", projected)
+	}
+}
+
 func TestHandleRunCalendarProjectsBlockedScheduleAsBlocked(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
