@@ -399,6 +399,29 @@ func (s *metricsStoreSpy) GetExecutionPlanRun(string) (*storage.ExecutionPlanRun
 func (s *metricsStoreSpy) ListExecutionPlanRuns(string, int, int) ([]*storage.ExecutionPlanRun, error) {
 	return nil, nil
 }
+func (s *metricsStoreSpy) SaveExecutionPlanSchedule(*storage.ExecutionPlanSchedule) error { return nil }
+func (s *metricsStoreSpy) GetExecutionPlanSchedule(string) (*storage.ExecutionPlanSchedule, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) ListExecutionPlanSchedules(string) ([]*storage.ExecutionPlanSchedule, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) ListAllExecutionPlanSchedules() ([]*storage.ExecutionPlanSchedule, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) DeleteExecutionPlanSchedule(string) error { return nil }
+func (s *metricsStoreSpy) SaveExecutionPlanScheduleOccurrence(*storage.ExecutionPlanScheduleOccurrence) error {
+	return nil
+}
+func (s *metricsStoreSpy) GetExecutionPlanScheduleOccurrenceByScheduleAndPlannedAt(string, time.Time) (*storage.ExecutionPlanScheduleOccurrence, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) ListExecutionPlanScheduleOccurrences(string) ([]*storage.ExecutionPlanScheduleOccurrence, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) ListAllExecutionPlanScheduleOccurrences() ([]*storage.ExecutionPlanScheduleOccurrence, error) {
+	return nil, nil
+}
 func (s *metricsStoreSpy) SaveObjectRepository(*storage.ObjectRepository) error { return nil }
 func (s *metricsStoreSpy) GetObjectRepository(string) (*storage.ObjectRepository, error) {
 	return nil, nil

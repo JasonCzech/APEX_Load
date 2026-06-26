@@ -27,6 +27,21 @@ type executionPlanRunPersistence interface {
 	ListExecutionPlanRuns(planID string, limit int, offset int) ([]*storage.ExecutionPlanRun, error)
 }
 
+// executionPlanSchedulePersistence is the slice of storage.Store the
+// execution-plan scheduler + CRUD use: load plans to materialize, persist
+// schedules and their occurrences.
+type executionPlanSchedulePersistence interface {
+	GetExecutionPlan(id string) (*storage.ExecutionPlan, error)
+	SaveExecutionPlanSchedule(schedule *storage.ExecutionPlanSchedule) error
+	GetExecutionPlanSchedule(id string) (*storage.ExecutionPlanSchedule, error)
+	ListExecutionPlanSchedules(planID string) ([]*storage.ExecutionPlanSchedule, error)
+	ListAllExecutionPlanSchedules() ([]*storage.ExecutionPlanSchedule, error)
+	DeleteExecutionPlanSchedule(id string) error
+	SaveExecutionPlanScheduleOccurrence(occurrence *storage.ExecutionPlanScheduleOccurrence) error
+	GetExecutionPlanScheduleOccurrenceByScheduleAndPlannedAt(scheduleID string, plannedAt time.Time) (*storage.ExecutionPlanScheduleOccurrence, error)
+	ListExecutionPlanScheduleOccurrences(scheduleID string) ([]*storage.ExecutionPlanScheduleOccurrence, error)
+}
+
 // seqPlanRunState is the in-memory orchestration state for one sequential plan
 // run. Guarded by TestRunner.seqMu — never tr.mu, because advancing calls
 // CreateTest/StartTest which take tr.mu, so seqMu is always released first.

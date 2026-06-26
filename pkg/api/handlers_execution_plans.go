@@ -179,6 +179,94 @@ type executionPlanRunResult struct {
 	Detail     string `json:"detail,omitempty"`
 }
 
+// ExecutionPlanMaterializeResult is the outcome of materializing+running a plan,
+// shared by the HTTP handler and the schedule sweep.
+type ExecutionPlanMaterializeResult struct {
+	RunID   string
+	Status  string
+	RunMode string
+	Created int
+	Failed  int
+	Results []executionPlanRunResult
+}
+
+// MaterializeAndRunExecutionPlan runs a plan once: sequential plans kick off the
+// dependency-gated orchestrator; parallel plans stage one queued test per enabled
+// entry and persist an eager run snapshot. Attribution is applied when
+// attribSubject is non-empty. This is the single entrypoint reused by the manual
+// HTTP handler and the recurring execution-plan scheduler; callers are
+// responsible for the execution-leader gate (the HTTP handler and the leader-only
+// scheduler sweep both satisfy it).
+func (tr *TestRunner) MaterializeAndRunExecutionPlan(plan *storage.ExecutionPlan, attribSubject, attribDisplayName string) (*ExecutionPlanMaterializeResult, error) {
+	if plan == nil {
+		return nil, errors.New("execution plan is required")
+	}
+	if plan.RunMode == "sequential" {
+		run, err := tr.StartExecutionPlanRun(plan, attribSubject, attribDisplayName)
+		if err != nil {
+			return nil, err
+		}
+		results := make([]executionPlanRunResult, 0, len(run.Entries))
+		for _, e := range run.Entries {
+			results = append(results, executionPlanRunResult{Order: e.Order, ScenarioID: e.ScenarioID, TestID: e.TestID, Status: e.Status, Detail: e.Detail})
+		}
+		return &ExecutionPlanMaterializeResult{RunID: run.ID, Status: run.Status, RunMode: "sequential", Results: results}, nil
+	}
+
+	entries := make([]storage.ExecutionPlanEntry, len(plan.Entries))
+	copy(entries, plan.Entries)
+	sort.SliceStable(entries, func(i, j int) bool { return entries[i].Order < entries[j].Order })
+
+	now := time.Now().UTC()
+	results := make([]executionPlanRunResult, 0, len(entries))
+	runEntries := make([]storage.ExecutionPlanRunEntry, 0, len(entries))
+	created, failed := 0, 0
+	for _, entry := range entries {
+		res := executionPlanRunResult{Order: entry.Order, ScenarioID: entry.ScenarioID}
+		runEntry := storage.ExecutionPlanRunEntry{Order: entry.Order, ScenarioID: entry.ScenarioID, ScenarioName: entry.ScenarioName}
+		if !entry.IsEnabled() {
+			res.Status, res.Detail = "skipped", "entry disabled"
+			runEntry.Status, runEntry.Detail = "skipped", "entry disabled"
+			results = append(results, res)
+			runEntries = append(runEntries, runEntry)
+			continue
+		}
+		test, err := tr.CreateTest(buildPlanEntryCreateRequest(plan.Name, plan.ProjectID, plan.TimeslotID, entry))
+		if err != nil {
+			failed++
+			res.Status, res.Detail = "failed", err.Error()
+			runEntry.Status, runEntry.Detail = "failed", err.Error()
+		} else {
+			created++
+			res.Status, res.TestID = "created", test.ID
+			runEntry.Status, runEntry.TestID = "created", test.ID
+			if strings.TrimSpace(attribSubject) != "" {
+				tr.AttributeTestCreated(test.ID, attribSubject, attribDisplayName)
+			}
+		}
+		results = append(results, res)
+		runEntries = append(runEntries, runEntry)
+	}
+
+	runID := "exec-plan-run-" + uuid.New().String()
+	runStatus := "completed"
+	if failed > 0 {
+		runStatus = "failed"
+	}
+	tr.persistExecutionPlanRun(&storage.ExecutionPlanRun{
+		ID:          runID,
+		PlanID:      plan.ID,
+		ProjectID:   normalizeProjectID(plan.ProjectID),
+		RunMode:     "parallel",
+		Status:      runStatus,
+		Entries:     runEntries,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+		CompletedAt: &now,
+	})
+	return &ExecutionPlanMaterializeResult{RunID: runID, Status: runStatus, RunMode: "parallel", Created: created, Failed: failed, Results: results}, nil
+}
+
 func (s *Server) handleMaterializeAndRunExecutionPlan(w http.ResponseWriter, r *http.Request) {
 	// Running an execution plan mutates execution state (persists plan-run
 	// records, creates/starts tests, broadcasts lifecycle events). On an HA
@@ -196,122 +284,32 @@ func (s *Server) handleMaterializeAndRunExecutionPlan(w http.ResponseWriter, r *
 		return
 	}
 	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
-	attributable := actorType == "user" || actorType == "service_account"
+	attribSubject := ""
+	if actorType == "user" || actorType == "service_account" {
+		attribSubject = actorSubject
+	}
 
-	// Sequential plans are dependency-gated: the first enabled entry is
-	// created+started, and each subsequent entry starts only after the prior run
-	// reaches a terminal state. The orchestrator owns the lifecycle; here we just
-	// kick it off and surface the initial run snapshot.
-	if plan.RunMode == "sequential" {
-		attribSubject := ""
-		if attributable {
-			attribSubject = actorSubject
-		}
-		run, err := s.runner.StartExecutionPlanRun(plan, attribSubject, actorDisplayName)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		results := make([]executionPlanRunResult, 0, len(run.Entries))
-		for _, e := range run.Entries {
-			results = append(results, executionPlanRunResult{
-				Order: e.Order, ScenarioID: e.ScenarioID, TestID: e.TestID, Status: e.Status, Detail: e.Detail,
-			})
-		}
-		s.recordAuditEvent(r, "execution_plan.run", "success", "execution_plan", plan.ID, plan.ProjectID, map[string]any{
-			"run_mode": plan.RunMode, "run_id": run.ID, "status": run.Status, "actor": actorDisplayName,
-		})
-		writeJSON(w, http.StatusOK, map[string]any{
-			"execution_plan_id": plan.ID,
-			"run_mode":          plan.RunMode,
-			"run_id":            run.ID,
-			"status":            run.Status,
-			"results":           results,
-			"materialized_at":   time.Now().UTC(),
-		})
+	result, err := s.runner.MaterializeAndRunExecutionPlan(plan, attribSubject, actorDisplayName)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-
-	// Parallel: stage one queued test per enabled entry (created, not started —
-	// the operator/scheduler starts them), now with per-entry data-pool and
-	// timeslot binding.
-	entries := make([]storage.ExecutionPlanEntry, len(plan.Entries))
-	copy(entries, plan.Entries)
-	sort.SliceStable(entries, func(i, j int) bool { return entries[i].Order < entries[j].Order })
-
-	now := time.Now().UTC()
-	results := make([]executionPlanRunResult, 0, len(entries))
-	runEntries := make([]storage.ExecutionPlanRunEntry, 0, len(entries))
-	created, failed := 0, 0
-	for _, entry := range entries {
-		res := executionPlanRunResult{Order: entry.Order, ScenarioID: entry.ScenarioID}
-		runEntry := storage.ExecutionPlanRunEntry{Order: entry.Order, ScenarioID: entry.ScenarioID, ScenarioName: entry.ScenarioName}
-		if !entry.IsEnabled() {
-			res.Status = "skipped"
-			res.Detail = "entry disabled"
-			runEntry.Status = "skipped"
-			runEntry.Detail = "entry disabled"
-			results = append(results, res)
-			runEntries = append(runEntries, runEntry)
-			continue
-		}
-		test, err := s.runner.CreateTest(buildPlanEntryCreateRequest(plan.Name, plan.ProjectID, plan.TimeslotID, entry))
-		if err != nil {
-			failed++
-			res.Status = "failed"
-			res.Detail = err.Error()
-			runEntry.Status = "failed"
-			runEntry.Detail = err.Error()
-		} else {
-			created++
-			res.Status = "created"
-			res.TestID = test.ID
-			runEntry.Status = "created"
-			runEntry.TestID = test.ID
-			if attributable {
-				s.runner.AttributeTestCreated(test.ID, actorSubject, actorDisplayName)
-			}
-		}
-		results = append(results, res)
-		runEntries = append(runEntries, runEntry)
-	}
-
-	// Persist the parallel run so its history (run_id + per-entry status) survives
-	// a reload, mirroring the sequential path. Parallel entries are created (not
-	// started), so this is an eager snapshot: the run is "completed" once all
-	// enabled entries were created, or "failed" if any failed to create. Live
-	// aggregation from child test statuses is a follow-up.
-	runID := "exec-plan-run-" + uuid.New().String()
-	runStatus := "completed"
-	if failed > 0 {
-		runStatus = "failed"
-	}
-	run := &storage.ExecutionPlanRun{
-		ID:          runID,
-		PlanID:      plan.ID,
-		ProjectID:   normalizeProjectID(plan.ProjectID),
-		RunMode:     "parallel",
-		Status:      runStatus,
-		Entries:     runEntries,
-		CreatedAt:   now,
-		UpdatedAt:   now,
-		CompletedAt: &now,
-	}
-	s.runner.persistExecutionPlanRun(run)
-
 	s.recordAuditEvent(r, "execution_plan.run", "success", "execution_plan", plan.ID, plan.ProjectID, map[string]any{
-		"run_mode": plan.RunMode, "run_id": runID, "status": runStatus, "created": created, "failed": failed, "actor": actorDisplayName,
+		"run_mode": result.RunMode, "run_id": result.RunID, "status": result.Status, "created": result.Created, "failed": result.Failed, "actor": actorDisplayName,
 	})
-	writeJSON(w, http.StatusOK, map[string]any{
+	response := map[string]any{
 		"execution_plan_id": plan.ID,
-		"run_mode":          plan.RunMode,
-		"run_id":            runID,
-		"status":            runStatus,
-		"created_count":     created,
-		"failed_count":      failed,
-		"results":           results,
-		"materialized_at":   now,
-	})
+		"run_mode":          result.RunMode,
+		"run_id":            result.RunID,
+		"status":            result.Status,
+		"results":           result.Results,
+		"materialized_at":   time.Now().UTC(),
+	}
+	if result.RunMode == "parallel" {
+		response["created_count"] = result.Created
+		response["failed_count"] = result.Failed
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (s *Server) handleListExecutionPlanRuns(w http.ResponseWriter, r *http.Request) {

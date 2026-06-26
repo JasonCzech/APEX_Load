@@ -115,6 +115,17 @@ type Store interface {
 	GetExecutionPlanRun(id string) (*ExecutionPlanRun, error)
 	ListExecutionPlanRuns(planID string, limit int, offset int) ([]*ExecutionPlanRun, error)
 
+	// Execution plan schedules (recurring plan triggers) + their occurrences.
+	SaveExecutionPlanSchedule(schedule *ExecutionPlanSchedule) error
+	GetExecutionPlanSchedule(id string) (*ExecutionPlanSchedule, error)
+	ListExecutionPlanSchedules(planID string) ([]*ExecutionPlanSchedule, error)
+	ListAllExecutionPlanSchedules() ([]*ExecutionPlanSchedule, error)
+	DeleteExecutionPlanSchedule(id string) error
+	SaveExecutionPlanScheduleOccurrence(occurrence *ExecutionPlanScheduleOccurrence) error
+	GetExecutionPlanScheduleOccurrenceByScheduleAndPlannedAt(scheduleID string, plannedAt time.Time) (*ExecutionPlanScheduleOccurrence, error)
+	ListExecutionPlanScheduleOccurrences(scheduleID string) ([]*ExecutionPlanScheduleOccurrence, error)
+	ListAllExecutionPlanScheduleOccurrences() ([]*ExecutionPlanScheduleOccurrence, error)
+
 	// Object repositories (project-scoped reusable element-descriptor catalogs).
 	SaveObjectRepository(repo *ObjectRepository) error
 	GetObjectRepository(id string) (*ObjectRepository, error)

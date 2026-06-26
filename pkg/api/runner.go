@@ -139,6 +139,9 @@ type TestRunner struct {
 	seqMu            sync.Mutex
 	seqPlanRuns      map[string]*seqPlanRunState
 	seqPlanByTest    map[string]string
+	// execPlanScheduleStore persists recurring execution-plan schedules and their
+	// occurrences; the leader-gated sweep materializes due plan schedules.
+	execPlanScheduleStore executionPlanSchedulePersistence
 	// fleetStore resolves fleet-pool membership for pool-aware generator assignment.
 	fleetStore fleetMembershipReader
 	// leadership gates live test-execution mutations to a single replica when
@@ -886,33 +889,34 @@ func WithExecutionLeadership(leadership *executionLeadership) TestRunnerOption {
 
 func NewTestRunner(maxTests int, hub *Hub, store storage.Store, opts ...TestRunnerOption) *TestRunner {
 	tr := &TestRunner{
-		tests:            make(map[string]*ManagedTest),
-		scripts:          make(map[string]*StoredScript),
-		scenarios:        make(map[string]*StoredScenario),
-		archives:         make(map[string]*storage.RunArchiveRecord),
-		hub:              hub,
-		maxTests:         maxTests,
-		scriptStore:      store,
-		testStore:        store,
-		scenarioStore:    store,
-		dataPoolStore:    store,
-		projectStore:     store,
-		releaseStore:     store,
-		historyStore:     store,
-		archiveStore:     store,
-		testNotesStore:   store,
-		auditStore:       store,
-		settingsStore:    store,
-		usageStore:       store,
-		objectRepoStore:  store,
-		reservationStore: store,
-		execPlanRunStore: store,
-		seqPlanRuns:      make(map[string]*seqPlanRunState),
-		seqPlanByTest:    make(map[string]string),
-		fleetStore:       store,
-		execution:        localExecutionBackend{},
-		notifier:         newNotificationDispatcher(nil),
-		routeCache:       make(map[string]latencyRouteCacheEntry),
+		tests:                 make(map[string]*ManagedTest),
+		scripts:               make(map[string]*StoredScript),
+		scenarios:             make(map[string]*StoredScenario),
+		archives:              make(map[string]*storage.RunArchiveRecord),
+		hub:                   hub,
+		maxTests:              maxTests,
+		scriptStore:           store,
+		testStore:             store,
+		scenarioStore:         store,
+		dataPoolStore:         store,
+		projectStore:          store,
+		releaseStore:          store,
+		historyStore:          store,
+		archiveStore:          store,
+		testNotesStore:        store,
+		auditStore:            store,
+		settingsStore:         store,
+		usageStore:            store,
+		objectRepoStore:       store,
+		reservationStore:      store,
+		execPlanRunStore:      store,
+		execPlanScheduleStore: store,
+		seqPlanRuns:           make(map[string]*seqPlanRunState),
+		seqPlanByTest:         make(map[string]string),
+		fleetStore:            store,
+		execution:             localExecutionBackend{},
+		notifier:              newNotificationDispatcher(nil),
+		routeCache:            make(map[string]latencyRouteCacheEntry),
 	}
 	for _, opt := range opts {
 		if opt != nil {

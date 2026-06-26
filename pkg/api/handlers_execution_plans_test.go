@@ -5,9 +5,97 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/storage"
 )
+
+func TestExecutionPlanScheduleSweep(t *testing.T) {
+	server, store := newTimeslotServer(t)
+	now := time.Now().UTC()
+	plan := &storage.ExecutionPlan{
+		ID:        "plan-sched-1",
+		ProjectID: "proj-a",
+		Name:      "Nightly Plan",
+		RunMode:   "parallel",
+		Entries:   []storage.ExecutionPlanEntry{{Order: 0, ScenarioID: "missing-x"}},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := store.SaveExecutionPlan(plan); err != nil {
+		t.Fatalf("SaveExecutionPlan: %v", err)
+	}
+
+	schedule, err := server.runner.CreateExecutionPlanSchedule(plan.ID, CreateExecutionPlanScheduleRequest{Name: "Nightly", CronExpr: "0 9 * * *", Timezone: "UTC"})
+	if err != nil {
+		t.Fatalf("CreateExecutionPlanSchedule: %v", err)
+	}
+	if schedule.NextRunAt == nil {
+		t.Fatal("expected next_run_at on a new enabled schedule")
+	}
+
+	// Force the schedule due and sweep.
+	past := now.Add(-time.Minute)
+	schedule.NextRunAt = &past
+	if err := store.SaveExecutionPlanSchedule(schedule); err != nil {
+		t.Fatalf("SaveExecutionPlanSchedule: %v", err)
+	}
+	server.runner.sweepDueExecutionPlanSchedules(now)
+
+	occurrences, err := store.ListExecutionPlanScheduleOccurrences(schedule.ID)
+	if err != nil || len(occurrences) != 1 {
+		t.Fatalf("occurrences = %d (err %v), want 1", len(occurrences), err)
+	}
+	if occurrences[0].Status != "materialized" || occurrences[0].RunID == "" {
+		t.Fatalf("occurrence = %+v, want materialized with a run id", occurrences[0])
+	}
+	updated, err := store.GetExecutionPlanSchedule(schedule.ID)
+	if err != nil || updated == nil {
+		t.Fatalf("GetExecutionPlanSchedule: %v", err)
+	}
+	if updated.NextRunAt == nil || !updated.NextRunAt.After(past) {
+		t.Fatalf("next_run_at = %v, want advanced past %v", updated.NextRunAt, past)
+	}
+	if updated.LastRunRunID == "" {
+		t.Fatal("expected last_run_run_id to be set after materialization")
+	}
+
+	// Idempotent: a second sweep (schedule no longer due) creates no duplicate.
+	server.runner.sweepDueExecutionPlanSchedules(now)
+	if again, _ := store.ListExecutionPlanScheduleOccurrences(schedule.ID); len(again) != 1 {
+		t.Fatalf("after second sweep occurrences = %d, want 1 (no duplicate)", len(again))
+	}
+}
+
+func TestExecutionPlanScheduleCRUD(t *testing.T) {
+	server, store := newTimeslotServer(t)
+	now := time.Now().UTC()
+	if err := store.SaveExecutionPlan(&storage.ExecutionPlan{ID: "plan-crud-1", ProjectID: "proj-a", Name: "Plan", RunMode: "parallel", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveExecutionPlan: %v", err)
+	}
+	create := timeslotRequest(t, server, http.MethodPost, "/api/v1/execution-plans/plan-crud-1/schedules", map[string]any{"name": "Daily", "cron_expr": "0 9 * * *", "timezone": "UTC"})
+	if create.Code != http.StatusCreated {
+		t.Fatalf("create schedule = %d body=%s", create.Code, create.Body.String())
+	}
+	var created storage.ExecutionPlanSchedule
+	_ = json.Unmarshal(create.Body.Bytes(), &created)
+	if created.ID == "" || created.PlanID != "plan-crud-1" {
+		t.Fatalf("created schedule = %+v", created)
+	}
+	list := timeslotRequest(t, server, http.MethodGet, "/api/v1/execution-plans/plan-crud-1/schedules", nil)
+	if list.Code != http.StatusOK {
+		t.Fatalf("list = %d body=%s", list.Code, list.Body.String())
+	}
+	del := timeslotRequest(t, server, http.MethodDelete, "/api/v1/execution-plans/plan-crud-1/schedules/"+created.ID, nil)
+	if del.Code != http.StatusOK {
+		t.Fatalf("delete = %d body=%s", del.Code, del.Body.String())
+	}
+	// Creating a schedule for an unknown plan is a 404.
+	missing := timeslotRequest(t, server, http.MethodPost, "/api/v1/execution-plans/nope/schedules", map[string]any{"name": "X", "cron_expr": "0 9 * * *"})
+	if missing.Code != http.StatusNotFound {
+		t.Fatalf("create on missing plan = %d, want 404", missing.Code)
+	}
+}
 
 func TestExecutionPlanCRUD(t *testing.T) {
 	server, _ := newTimeslotServer(t)

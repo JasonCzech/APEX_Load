@@ -2242,6 +2242,119 @@ paths:
             type: string
       tags:
         - Execution Plans
+  /api/v1/execution-plans/{id}/schedules:
+    get:
+      summary: List Execution Plan Schedules
+      description: |-
+        **Handler:** `handleListExecutionPlanSchedules`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleListExecutionPlanSchedules
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Execution Plans
+    post:
+      summary: Create Execution Plan Schedule
+      description: |-
+        **Handler:** `handleCreateExecutionPlanSchedule`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleCreateExecutionPlanSchedule
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Execution Plans
+  /api/v1/execution-plans/{id}/schedules/{schedule_id}:
+    delete:
+      summary: Delete Execution Plan Schedule
+      description: |-
+        **Handler:** `handleDeleteExecutionPlanSchedule`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleDeleteExecutionPlanSchedule
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: schedule_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Execution Plans
+    put:
+      summary: Update Execution Plan Schedule
+      description: |-
+        **Handler:** `handleUpdateExecutionPlanSchedule`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleUpdateExecutionPlanSchedule
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: schedule_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Execution Plans
+  /api/v1/execution-plans/{id}/schedules/{schedule_id}/occurrences:
+    get:
+      summary: List Execution Plan Schedule Occurrences
+      description: |-
+        **Handler:** `handleListExecutionPlanScheduleOccurrences`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleListExecutionPlanScheduleOccurrences
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: schedule_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Execution Plans
   /api/v1/fleet/alerts:
     get:
       summary: Get Fleet Alerts

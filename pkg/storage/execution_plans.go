@@ -5,6 +5,54 @@ import (
 	"time"
 )
 
+// ExecutionPlanSchedule is a recurring trigger for an execution plan — the
+// plan-level analog of ScenarioSchedule. It reuses the same cron grammar,
+// timezone evaluation, missed-run policy, and date-range pause; materialization
+// starts an ExecutionPlanRun (recorded as LastRunRunID) rather than a single test.
+type ExecutionPlanSchedule struct {
+	ID                 string     `json:"id"`
+	PlanID             string     `json:"plan_id"`
+	ProjectID          string     `json:"project_id,omitempty"`
+	Revision           int        `json:"revision,omitempty"`
+	Name               string     `json:"name"`
+	CronExpr           string     `json:"cron_expr"`
+	Timezone           string     `json:"timezone,omitempty"`
+	RunNameTemplate    string     `json:"run_name_template,omitempty"`
+	Enabled            bool       `json:"enabled"`
+	MissedRunPolicy    string     `json:"missed_run_policy,omitempty"`
+	ConflictSummary    string     `json:"conflict_summary,omitempty"`
+	NextRequiredAction string     `json:"next_required_action,omitempty"`
+	LastRunRunID       string     `json:"last_run_run_id,omitempty"`
+	LastRunAt          *time.Time `json:"last_run_at,omitempty"`
+	NextRunAt          *time.Time `json:"next_run_at,omitempty"`
+	// DisabledFrom/DisabledUntil pause the schedule over an absolute date range
+	// without disabling it; either bound may be nil for an open-ended pause.
+	DisabledFrom  *time.Time `json:"disabled_from,omitempty"`
+	DisabledUntil *time.Time `json:"disabled_until,omitempty"`
+	LastError     string     `json:"last_error,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+}
+
+// ExecutionPlanScheduleOccurrence records one materialization (or skip/block) of
+// an execution-plan schedule. UNIQUE(schedule_id, planned_at) makes the sweep
+// idempotent. RunID points at the ExecutionPlanRun that was started.
+type ExecutionPlanScheduleOccurrence struct {
+	ID               string     `json:"id"`
+	ScheduleID       string     `json:"schedule_id"`
+	PlanID           string     `json:"plan_id"`
+	ProjectID        string     `json:"project_id,omitempty"`
+	ScheduleRevision int        `json:"schedule_revision,omitempty"`
+	PlannedAt        time.Time  `json:"planned_at"`
+	MaterializedAt   *time.Time `json:"materialized_at,omitempty"`
+	Status           string     `json:"status"`
+	ReasonCode       string     `json:"reason_code,omitempty"`
+	RunID            string     `json:"run_id,omitempty"`
+	ConflictSummary  string     `json:"conflict_summary,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
+}
+
 // ExecutionPlan is an ordered collection of scenario runs — the LoadRunner
 // Enterprise "test set / test instance" analog. Unlike a scenario (whose groups
 // run within a single test), an execution plan orchestrates multiple test runs,

@@ -145,6 +145,9 @@ func (s *scenarioScheduler) RunDueSchedules() error {
 			s.runner.markScheduledStartError(testID, err.Error())
 		}
 	}
+	// Recurring execution-plan schedules share this leader-gated sweep + lease.
+	// Run lock-free (materialize takes tr.mu internally).
+	s.runner.sweepDueExecutionPlanSchedules(now)
 	return nil
 }
 
@@ -193,11 +196,21 @@ func nextScenarioScheduleRun(schedule *storage.ScenarioSchedule, from time.Time)
 	if schedule == nil {
 		return nil, fmt.Errorf("schedule is required")
 	}
+	return nextCronRun(schedule.CronExpr, schedule.Timezone, from, func(candidate time.Time) (bool, error) {
+		return scheduleAllowsCandidate(schedule, candidate)
+	})
+}
+
+// nextCronRun is the shared cron evaluator behind both scenario schedules and
+// execution-plan schedules. It finds the first UTC instant strictly after `from`
+// whose cron fields match in the declared timezone and that `allows` accepts
+// (window/blackout/pause gating). `allows` may be nil (no extra gating).
+func nextCronRun(cronExpr, timezone string, from time.Time, allows func(candidate time.Time) (bool, error)) (*time.Time, error) {
 	from = from.UTC()
-	if strings.TrimSpace(schedule.CronExpr) == "" {
+	if strings.TrimSpace(cronExpr) == "" {
 		return nil, fmt.Errorf("cron expression is required")
 	}
-	fields := strings.Fields(expandCronMacro(schedule.CronExpr))
+	fields := strings.Fields(expandCronMacro(cronExpr))
 	if len(fields) != 5 {
 		return nil, fmt.Errorf("cron expression must have 5 fields")
 	}
@@ -205,7 +218,7 @@ func nextScenarioScheduleRun(schedule *storage.ScenarioSchedule, from time.Time)
 	// front so the rest of the matcher stays purely numeric.
 	fields[3] = applyCronAliases(fields[3], cronMonthAliases)
 	fields[4] = applyCronAliases(fields[4], cronDowAliases)
-	location := scheduleEvalLocation(schedule.Timezone)
+	location := scheduleEvalLocation(timezone)
 	// Search far enough ahead to find a Feb-29 occurrence, whose gap between valid
 	// dates is up to ~4 years (a leap-day schedule like "0 0 29 2 *"). A 1-year
 	// window wrongly rejected those; this covers a full leap cycle plus margin.
@@ -221,10 +234,12 @@ func nextScenarioScheduleRun(schedule *storage.ScenarioSchedule, from time.Time)
 			cronFieldMatches(fields[1], int(local.Hour()), 0, 23) &&
 			cronFieldMatches(fields[3], int(local.Month()), 1, 12) &&
 			cronMatchesDayOfMonthAndWeek(fields[2], fields[4], local) {
-			if allowed, err := scheduleAllowsCandidate(schedule, candidate); err != nil {
-				return nil, err
-			} else if !allowed {
-				continue
+			if allows != nil {
+				if allowed, err := allows(candidate); err != nil {
+					return nil, err
+				} else if !allowed {
+					continue
+				}
 			}
 			next := candidate.UTC()
 			return &next, nil
@@ -740,13 +755,21 @@ func scheduleDisabledAt(schedule *storage.ScenarioSchedule, candidate time.Time)
 	if schedule == nil {
 		return false
 	}
-	if schedule.DisabledFrom == nil && schedule.DisabledUntil == nil {
+	return dateRangePauseActive(schedule.DisabledFrom, schedule.DisabledUntil, candidate)
+}
+
+// dateRangePauseActive reports whether candidate falls inside the optional pause
+// window [disabledFrom, disabledUntil) — either bound may be nil for an
+// open-ended pause; both nil means never paused. Shared by scenario and
+// execution-plan schedules.
+func dateRangePauseActive(disabledFrom, disabledUntil *time.Time, candidate time.Time) bool {
+	if disabledFrom == nil && disabledUntil == nil {
 		return false
 	}
-	if schedule.DisabledFrom != nil && candidate.Before(*schedule.DisabledFrom) {
+	if disabledFrom != nil && candidate.Before(*disabledFrom) {
 		return false
 	}
-	if schedule.DisabledUntil != nil && !candidate.Before(*schedule.DisabledUntil) {
+	if disabledUntil != nil && !candidate.Before(*disabledUntil) {
 		return false
 	}
 	return true
