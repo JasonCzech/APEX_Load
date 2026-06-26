@@ -5,7 +5,7 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import SettingsPage from './SettingsPage'
-import type { DashboardAuthEffectiveAccessResource, Domain } from '../types'
+import type { DashboardAuthEffectiveAccessResource, Domain, ProjectSettings } from '../types'
 import { TopbarContributionProvider, useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -1635,10 +1635,82 @@ describe('SettingsPage', () => {
           default_repo: '',
           default_branch: '',
           default_sync_directory: '',
+          automation_identity: '',
         },
       },
     })
     expect(container.textContent).toContain('Saved project governance defaults for Customer Portal.')
+  })
+
+  it('preserves an existing GitHub automation_identity when saving project governance defaults', async () => {
+    projectApiMock.listProjects.mockResolvedValue({
+      projects: [
+        {
+          id: 'project-1',
+          name: 'Customer Portal',
+          settings: {
+            max_concurrent_tests: 2,
+            max_vusers: 250,
+            redaction_rules: [
+              {
+                name: 'customer id',
+                pattern: 'customer-[0-9]+',
+              },
+            ],
+            github: {
+              enabled: true,
+              automation_identity: 'apexload-bot',
+              default_repo: 'org/perf-scripts',
+            },
+          },
+          created_at: '2026-05-15T00:00:00Z',
+          updated_at: '2026-05-15T00:00:00Z',
+        },
+      ],
+      count: 1,
+    })
+    projectApiMock.updateProject.mockImplementation(async (id: string, data: { name: string; settings?: ProjectSettings }) => ({
+      id,
+      name: data.name,
+      settings: data.settings,
+      created_at: '2026-05-15T00:00:00Z',
+      updated_at: '2026-05-15T12:00:00Z',
+    }))
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+
+    await flushPromises()
+    await flushPromises()
+
+    await selectTopLevelSettingsTab('Projects & Compliance')
+
+    const projectSection = container.querySelector('#settings-section-projects')
+    expect(projectSection).toBeTruthy()
+    if (!projectSection) return
+
+    // The automation identity loaded from the project policy is shown in the form
+    // and round-trips back out on save (regression: it used to be dropped).
+    await selectSettingsSubnav(projectSection, 'GitHub Policy')
+    const identityInput = Array.from(projectSection.querySelectorAll('input')).find(
+      input => input.value === 'apexload-bot',
+    ) as HTMLInputElement | undefined
+    expect(identityInput).toBeDefined()
+
+    const saveButton = findButton('Save Project Governance')
+    expect(saveButton).toBeDefined()
+    if (!saveButton) return
+
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    expect(projectApiMock.updateProject).toHaveBeenCalledTimes(1)
+    const savedPolicy = projectApiMock.updateProject.mock.calls[0][1].settings?.github
+    expect(savedPolicy?.automation_identity).toBe('apexload-bot')
   })
 
   it('disables project governance actions when effective RBAC denies project management', async () => {

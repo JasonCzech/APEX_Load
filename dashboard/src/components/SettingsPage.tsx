@@ -228,6 +228,7 @@ export default function SettingsPage({
   const [projectDraftGitHubDefaultRepo, setProjectDraftGitHubDefaultRepo] = useState('')
   const [projectDraftGitHubDefaultBranch, setProjectDraftGitHubDefaultBranch] = useState('')
   const [projectDraftGitHubSyncDirectory, setProjectDraftGitHubSyncDirectory] = useState('')
+  const [projectDraftGitHubAutomationIdentity, setProjectDraftGitHubAutomationIdentity] = useState('')
   const [projectActionError, setProjectActionError] = useState('')
   const [projectActionMessage, setProjectActionMessage] = useState('')
   const [archiveRetentionPlan, setArchiveRetentionPlan] = useState<ArchiveRetentionPlanResponse | null>(null)
@@ -265,6 +266,7 @@ export default function SettingsPage({
     setProjectDraftGitHubDefaultRepo(policy?.default_repo || '')
     setProjectDraftGitHubDefaultBranch(policy?.default_branch || '')
     setProjectDraftGitHubSyncDirectory(policy?.default_sync_directory || '')
+    setProjectDraftGitHubAutomationIdentity(policy?.automation_identity || '')
   }, [])
 
   const buildProjectGitHubDraft = useCallback((): GitHubProjectPolicy => ({
@@ -283,6 +285,7 @@ export default function SettingsPage({
     default_repo: projectDraftGitHubDefaultRepo.trim(),
     default_branch: projectDraftGitHubDefaultBranch.trim(),
     default_sync_directory: projectDraftGitHubSyncDirectory.trim(),
+    automation_identity: projectDraftGitHubAutomationIdentity.trim(),
   }), [
     projectDraftGitHubAllowDirect,
     projectDraftGitHubAllowImport,
@@ -291,6 +294,7 @@ export default function SettingsPage({
     projectDraftGitHubAllowedRepos,
     projectDraftGitHubAppInstallation,
     projectDraftGitHubAutoSync,
+    projectDraftGitHubAutomationIdentity,
     projectDraftGitHubBulkSync,
     projectDraftGitHubChecks,
     projectDraftGitHubDefaultBranch,
@@ -3930,6 +3934,20 @@ export default function SettingsPage({
                           setProjectActionMessage('')
                         }}
                         placeholder="apexload/scripts"
+                      />
+                    </label>
+                    <label className="project-redaction-rule-field">
+                      <span>Automation Identity</span>
+                      <input
+                        className="settings-input"
+                        value={projectDraftGitHubAutomationIdentity}
+                        disabled={!canManageProjects}
+                        onChange={event => {
+                          setProjectDraftGitHubAutomationIdentity(event.target.value)
+                          setProjectActionError('')
+                          setProjectActionMessage('')
+                        }}
+                        placeholder="apexload-bot"
                       />
                     </label>
                     <label className="project-redaction-rule-field">
