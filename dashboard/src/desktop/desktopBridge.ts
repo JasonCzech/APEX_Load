@@ -33,6 +33,8 @@ export type WailsDesktopBridge = {
   // Notifications.
   Notify?: (title: string, body: string) => Promise<void>
   NotificationsAvailable?: () => Promise<boolean>
+  // Keep the machine awake while load tests run.
+  SetKeepAwake?: (active: boolean) => Promise<void>
   // Recent items.
   GetRecentItems?: () => Promise<string>
   AddRecentItem?: (itemJson: string) => Promise<void>

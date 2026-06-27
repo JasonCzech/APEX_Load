@@ -57,6 +57,9 @@ type App struct {
 	// data dir) so webview JS can't read or write arbitrary files. Guarded by pathMu.
 	pathMu      sync.Mutex
 	dialogPaths map[string]bool
+	// keepAwake inhibits OS sleep while load tests are running (driven by the
+	// dashboard's active-run count via SetKeepAwake).
+	keepAwake keepAwake
 }
 
 // NewApp creates a new App application struct
@@ -248,6 +251,7 @@ func (a *App) shutdown(ctx context.Context) {
 			slog.Warn("failed to persist window state", "err", err)
 		}
 	}
+	a.keepAwake.set(false) // release any sleep inhibitor
 	a.cleanupNotifications()
 	if a.server != nil {
 		a.server.Shutdown(context.Background())

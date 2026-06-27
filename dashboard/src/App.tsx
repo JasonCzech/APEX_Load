@@ -34,6 +34,7 @@ import { DesktopStatusResponse } from './types/library'
 import { getDesktopBridge, isDesktopSurface, isMacDesktop } from './desktop/desktopBridge'
 import { useDesktopNotifications } from './hooks/useDesktopNotifications'
 import { useDesktopShellEvents } from './desktop/useDesktopShellEvents'
+import { useKeepAwakeDuringRuns } from './desktop/useKeepAwake'
 import AboutDialog from './components/AboutDialog'
 import DesktopHome, { type DesktopQuickAction } from './components/DesktopHome'
 import { addRecent, clearRecents, getRecents, type RecentItem } from './desktop/desktopRecents'
@@ -356,6 +357,9 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
       if (route) setGuardedView(parseAppViewFromHash(route))
     }, [setGuardedView]),
   })
+  // Keep the machine awake while runs are active so long tests aren't corrupted
+  // by the host sleeping (desktop shell only; no-op in the browser).
+  useKeepAwakeDuringRuns(activeTopbarRuns.length)
 
   const handleScriptsAuthoringStateChange = useCallback((state: { subView: ScriptsAuthoringSubView; editingId: string | null }) => {
     setScriptsTopbarState(state)
