@@ -96,10 +96,18 @@ func (a *App) AddRecentItem(itemJSON string) error {
 		return nil
 	}
 	merged := mergeRecent(loadRecents(a.appDataPath), item, maxRecentItems)
-	return saveRecents(a.appDataPath, merged)
+	if err := saveRecents(a.appDataPath, merged); err != nil {
+		return err
+	}
+	a.rebuildMenu() // refresh the native "Open Recent" submenu
+	return nil
 }
 
 // ClearRecentItems removes all recent items.
 func (a *App) ClearRecentItems() error {
-	return saveRecents(a.appDataPath, []recentItem{})
+	if err := saveRecents(a.appDataPath, []recentItem{}); err != nil {
+		return err
+	}
+	a.rebuildMenu()
+	return nil
 }

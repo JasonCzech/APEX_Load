@@ -16,9 +16,10 @@ import (
 // About panel is an in-app dialog so it can show live build info on every
 // platform, and File actions translate to dashboard navigation.
 const (
-	menuEventZoom   = "menu:zoom"   // payload: "in" | "out" | "reset"
-	menuEventAbout  = "menu:about"  // open the in-app About dialog
-	menuEventAction = "menu:action" // payload: action id ("new-test" | "open-script" | "import")
+	menuEventZoom   = "menu:zoom"           // payload: "in" | "out" | "reset"
+	menuEventAbout  = "menu:about"          // open the in-app About dialog
+	menuEventAction = "menu:action"         // payload: action id ("new-test" | "open-script" | "import")
+	eventOpenRecent = "desktop:open-recent" // payload: the recent item's dashboard route
 )
 
 // buildAppMenu constructs the native application menu for the host OS.
@@ -53,6 +54,7 @@ func buildAppMenuForOS(app *App, goos string) *menu.Menu {
 	fileMenu.AddText("New Test", keys.CmdOrCtrl("n"), app.menuAction("new-test"))
 	fileMenu.AddText("Open Script…", keys.CmdOrCtrl("o"), app.menuAction("open-script"))
 	fileMenu.AddText("Import…", keys.Combo("i", keys.CmdOrCtrlKey, keys.ShiftKey), app.menuAction("import"))
+	app.appendOpenRecentSubmenu(fileMenu)
 	fileMenu.AddSeparator()
 	fileMenu.AddText("Reveal Logs Folder", nil, func(_ *menu.CallbackData) { _ = app.OpenLogsFolder() })
 	fileMenu.AddText("Reveal App Data Folder", nil, func(_ *menu.CallbackData) { _ = app.OpenAppDataFolder() })
@@ -109,6 +111,44 @@ func (a *App) menuZoom(action string) menu.Callback {
 			wailsruntime.EventsEmit(a.ctx, menuEventZoom, action)
 		}
 	}
+}
+
+// appendOpenRecentSubmenu adds a native "Open Recent" submenu populated from the
+// persisted recents. The menu is static once applied, so rebuildMenu re-applies
+// the whole menu whenever recents change (see AddRecentItem/ClearRecentItems).
+func (a *App) appendOpenRecentSubmenu(parent *menu.Menu) {
+	recent := parent.AddSubmenu("Open Recent")
+	items := loadRecents(a.appDataPath)
+	if len(items) == 0 {
+		recent.AddText("No Recent Items", nil, nil).Disable()
+		return
+	}
+	for _, item := range items {
+		route := item.Route // capture per iteration
+		label := item.Name
+		if label == "" {
+			label = item.ID
+		}
+		recent.AddText(label, nil, func(_ *menu.CallbackData) {
+			if a.ctx != nil && route != "" {
+				wailsruntime.EventsEmit(a.ctx, eventOpenRecent, route)
+			}
+		})
+	}
+	recent.AddSeparator()
+	recent.AddText("Clear Menu", nil, func(_ *menu.CallbackData) {
+		_ = a.ClearRecentItems()
+	})
+}
+
+// rebuildMenu re-applies the application menu so a changed "Open Recent" submenu
+// is reflected. No-op before the runtime context is available.
+func (a *App) rebuildMenu() {
+	if a.ctx == nil {
+		return
+	}
+	wailsruntime.MenuSetApplicationMenu(a.ctx, buildAppMenu(a))
+	wailsruntime.MenuUpdateApplicationMenu(a.ctx)
 }
 
 func (a *App) reload(_ *menu.CallbackData) {

@@ -119,6 +119,10 @@ func (a *App) startup(ctx context.Context) {
 
 	// Prepare native notifications (best-effort; stays unavailable on failure).
 	a.initNotifications()
+
+	// Populate the native "Open Recent" submenu now that the app data path is
+	// resolved (the menu built in main.go was created before recents loaded).
+	a.rebuildMenu()
 }
 
 // restoreWindowState applies persisted window geometry. Runs on the Wails

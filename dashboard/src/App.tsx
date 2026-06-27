@@ -351,6 +351,10 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
       const idx = url.indexOf('#')
       if (idx >= 0) setGuardedView(parseAppViewFromHash(url.slice(idx)))
     }, [setGuardedView]),
+    onOpenRecent: useCallback((route: string) => {
+      // Native File > Open Recent click → navigate to the recent's route.
+      if (route) setGuardedView(parseAppViewFromHash(route))
+    }, [setGuardedView]),
   })
 
   const handleScriptsAuthoringStateChange = useCallback((state: { subView: ScriptsAuthoringSubView; editingId: string | null }) => {

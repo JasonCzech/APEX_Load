@@ -102,6 +102,45 @@ func TestBuildAppMenuViewZoom(t *testing.T) {
 	}
 }
 
+// TestBuildAppMenuOpenRecent verifies the File menu carries an "Open Recent"
+// submenu that lists persisted recents (and shows a disabled placeholder when
+// empty).
+func TestBuildAppMenuOpenRecent(t *testing.T) {
+	// Empty recents → disabled placeholder.
+	app := NewApp()
+	file := submenu(buildAppMenuForOS(app, "darwin"), "File")
+	if file == nil {
+		t.Fatal("missing File menu")
+	}
+	recent := submenu(file, "Open Recent")
+	if recent == nil {
+		t.Fatal("File menu missing Open Recent submenu")
+	}
+	placeholder := labeledItem(recent, "No Recent Items")
+	if placeholder == nil || !placeholder.Disabled {
+		t.Error("empty recents should show a disabled 'No Recent Items' item")
+	}
+
+	// With persisted recents → they appear as items.
+	app2 := NewApp()
+	app2.appDataPath = t.TempDir()
+	if err := saveRecents(app2.appDataPath, []recentItem{
+		{Kind: "script", ID: "s1", Name: "Order flow", Route: "#/scripts/s1"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	recent2 := submenu(submenu(buildAppMenuForOS(app2, "windows"), "File"), "Open Recent")
+	if recent2 == nil {
+		t.Fatal("missing Open Recent submenu (windows)")
+	}
+	if labeledItem(recent2, "Order flow") == nil {
+		t.Error("Open Recent should list the persisted recent 'Order flow'")
+	}
+	if labeledItem(recent2, "Clear Menu") == nil {
+		t.Error("Open Recent should offer 'Clear Menu' when items exist")
+	}
+}
+
 // TestBuildAppMenuHelpHasAbout verifies the Help menu can open the in-app About
 // dialog on all platforms.
 func TestBuildAppMenuHelpHasAbout(t *testing.T) {
