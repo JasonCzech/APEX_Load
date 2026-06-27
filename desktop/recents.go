@@ -24,10 +24,11 @@ type recentItem struct {
 	Name     string `json:"name"`               // display label
 	Route    string `json:"route"`              // dashboard hash route to reopen
 	OpenedAt string `json:"openedAt,omitempty"` // RFC3339 timestamp, stamped server-side on add
+	Pinned   bool   `json:"pinned,omitempty"`   // user-pinned: sorts first, exempt from the cap
 }
 
 // mergeRecent prepends next, de-duplicates by kind+id (keeping the newest
-// position), and caps the list. Pure + unit-testable.
+// position), and caps the list — but never evicts pinned items. Pure + testable.
 func mergeRecent(existing []recentItem, next recentItem, limit int) []recentItem {
 	out := make([]recentItem, 0, len(existing)+1)
 	out = append(out, next)
@@ -37,10 +38,34 @@ func mergeRecent(existing []recentItem, next recentItem, limit int) []recentItem
 		}
 		out = append(out, item)
 	}
-	if limit > 0 && len(out) > limit {
-		out = out[:limit]
+	if limit <= 0 || len(out) <= limit {
+		return out
 	}
-	return out
+	// Cap while preserving order: keep all pinned items plus the most-recent
+	// unpinned ones up to the remaining budget.
+	pinned := 0
+	for _, it := range out {
+		if it.Pinned {
+			pinned++
+		}
+	}
+	unpinnedBudget := limit - pinned
+	if unpinnedBudget < 0 {
+		unpinnedBudget = 0
+	}
+	kept := make([]recentItem, 0, len(out))
+	usedUnpinned := 0
+	for _, it := range out {
+		if it.Pinned {
+			kept = append(kept, it)
+			continue
+		}
+		if usedUnpinned < unpinnedBudget {
+			kept = append(kept, it)
+			usedUnpinned++
+		}
+	}
+	return kept
 }
 
 func recentsPath(appDataPath string) string {
@@ -101,11 +126,40 @@ func (a *App) AddRecentItem(itemJSON string) error {
 		return nil
 	}
 	item.OpenedAt = nowRFC3339() // stamp server-side so ordering/age is trustworthy
-	merged := mergeRecent(loadRecents(a.appDataPath), item, maxRecentItems)
+	existing := loadRecents(a.appDataPath)
+	// Carry a prior pin across the re-add so opening a pinned item keeps it pinned.
+	for _, prev := range existing {
+		if prev.Kind == item.Kind && prev.ID == item.ID && prev.Pinned {
+			item.Pinned = true
+			break
+		}
+	}
+	merged := mergeRecent(existing, item, maxRecentItems)
 	if err := saveRecents(a.appDataPath, merged); err != nil {
 		return err
 	}
 	a.rebuildMenu() // refresh the native "Open Recent" submenu
+	return nil
+}
+
+// ToggleRecentPin flips the pinned state of a recent item (no-op if not found).
+func (a *App) ToggleRecentPin(kind, id string) error {
+	items := loadRecents(a.appDataPath)
+	changed := false
+	for i := range items {
+		if items[i].Kind == kind && items[i].ID == id {
+			items[i].Pinned = !items[i].Pinned
+			changed = true
+			break
+		}
+	}
+	if !changed {
+		return nil
+	}
+	if err := saveRecents(a.appDataPath, items); err != nil {
+		return err
+	}
+	a.rebuildMenu()
 	return nil
 }
 

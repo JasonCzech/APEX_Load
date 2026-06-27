@@ -132,6 +132,36 @@
   border-color: var(--border);
 }
 
+.desktop-home-recent-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.desktop-home-recent-row .desktop-home-recent {
+  flex: 1;
+}
+
+.desktop-home-pin {
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  padding: 6px;
+  border-radius: var(--radius);
+}
+
+.desktop-home-pin:hover {
+  background: var(--bg-elevated, rgba(127, 127, 127, 0.08));
+}
+
+.desktop-home-pin.is-pinned {
+  color: var(--accent, #3b82f6);
+}
+
 .desktop-home-recent-meta {
   display: inline-flex;
   align-items: center;

@@ -38,7 +38,7 @@ import { useKeepAwakeDuringRuns } from './desktop/useKeepAwake'
 import { useDockBadge } from './desktop/useDockBadge'
 import AboutDialog from './components/AboutDialog'
 import DesktopHome, { type DesktopQuickAction } from './components/DesktopHome'
-import { addRecent, clearRecents, getRecents, type RecentItem } from './desktop/desktopRecents'
+import { addRecent, clearRecents, getRecents, toggleRecentPin, type RecentItem } from './desktop/desktopRecents'
 import ThemeToggle from './components/ThemeToggle'
 import DeploymentBanner from './components/DeploymentBanner'
 import ClientDownloadsMenu from './components/ClientDownloadsMenu'
@@ -331,6 +331,10 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
 
   const handleClearRecents = useCallback(() => {
     void clearRecents().then(reloadRecents)
+  }, [reloadRecents])
+
+  const handleTogglePin = useCallback((item: RecentItem) => {
+    void toggleRecentPin(item.kind, item.id).then(reloadRecents)
   }, [reloadRecents])
 
   const handleRevealFolder = useCallback((which: 'logs' | 'appdata') => {
@@ -880,6 +884,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
               onQuickAction={handleDesktopQuickAction}
               onOpenRecent={handleOpenRecent}
               onOpenRun={navigateToTest}
+              onTogglePin={handleTogglePin}
               onClearRecents={handleClearRecents}
               onReveal={handleRevealFolder}
               onDropFiles={() => handleNavigate('scripts')}

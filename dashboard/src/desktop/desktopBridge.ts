@@ -41,6 +41,7 @@ export type WailsDesktopBridge = {
   GetRecentItems?: () => Promise<string>
   AddRecentItem?: (itemJson: string) => Promise<void>
   ClearRecentItems?: () => Promise<void>
+  ToggleRecentPin?: (kind: string, id: string) => Promise<void>
   // Diagnostics.
   ExportDiagnostics?: () => Promise<string>
   CopyDiagnostics?: () => Promise<string>

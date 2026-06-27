@@ -90,6 +90,10 @@ export function SetLastRoute(arg1) {
   return window['go']['main']['App']['SetLastRoute'](arg1);
 }
 
+export function ToggleRecentPin(arg1, arg2) {
+  return window['go']['main']['App']['ToggleRecentPin'](arg1, arg2);
+}
+
 export function WriteFileBase64(arg1, arg2) {
   return window['go']['main']['App']['WriteFileBase64'](arg1, arg2);
 }

@@ -19,6 +19,7 @@ interface DesktopHomeProps {
   onQuickAction: (action: DesktopQuickAction) => void
   onOpenRecent: (item: RecentItem) => void
   onOpenRun?: (id: string) => void
+  onTogglePin?: (item: RecentItem) => void
   onClearRecents: () => void
   onReveal?: (which: 'logs' | 'appdata') => void
   // Called when script/import files are dropped onto the home hub.
@@ -56,10 +57,13 @@ export default function DesktopHome({
   onQuickAction,
   onOpenRecent,
   onOpenRun,
+  onTogglePin,
   onClearRecents,
   onReveal,
   onDropFiles,
 }: DesktopHomeProps) {
+  // Pinned items first, preserving recency within each group.
+  const orderedRecents = [...recents].sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)))
   const dropRef = useRef<HTMLElement>(null)
   const desktop = isDesktopSurface()
 
@@ -150,12 +154,12 @@ export default function DesktopHome({
               <button type="button" className="btn btn-sm btn-ghost" onClick={onClearRecents}>Clear</button>
             )}
           </div>
-          {recents.length === 0 ? (
+          {orderedRecents.length === 0 ? (
             <p className="desktop-home-empty">Scripts, imports, and runs you open will appear here.</p>
           ) : (
             <ul className="desktop-home-recents">
-              {recents.map(item => (
-                <li key={`${item.kind}:${item.id}`}>
+              {orderedRecents.map(item => (
+                <li key={`${item.kind}:${item.id}`} className="desktop-home-recent-row">
                   <button type="button" className="desktop-home-recent" onClick={() => onOpenRecent(item)}>
                     <span className="desktop-home-recent-name">{item.name || item.id}</span>
                     <span className="desktop-home-recent-meta">
@@ -165,6 +169,18 @@ export default function DesktopHome({
                       <span className="desktop-home-recent-kind">{item.kind}</span>
                     </span>
                   </button>
+                  {onTogglePin && (
+                    <button
+                      type="button"
+                      className={`desktop-home-pin ${item.pinned ? 'is-pinned' : ''}`}
+                      aria-label={item.pinned ? `Unpin ${item.name || item.id}` : `Pin ${item.name || item.id}`}
+                      aria-pressed={Boolean(item.pinned)}
+                      title={item.pinned ? 'Unpin' : 'Pin'}
+                      onClick={() => onTogglePin(item)}
+                    >
+                      {item.pinned ? '★' : '☆'}
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>

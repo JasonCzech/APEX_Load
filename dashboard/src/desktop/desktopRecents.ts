@@ -9,6 +9,7 @@ export interface RecentItem {
   name: string
   route: string
   openedAt?: string
+  pinned?: boolean
 }
 
 export async function getRecents(): Promise<RecentItem[]> {
@@ -40,6 +41,14 @@ export async function addRecent(item: RecentItem): Promise<void> {
 export async function clearRecents(): Promise<void> {
   try {
     await getDesktopBridge()?.ClearRecentItems?.()
+  } catch {
+    // best-effort
+  }
+}
+
+export async function toggleRecentPin(kind: string, id: string): Promise<void> {
+  try {
+    await getDesktopBridge()?.ToggleRecentPin?.(kind, id)
   } catch {
     // best-effort
   }

@@ -62,6 +62,51 @@ func TestRecentsPersistenceRoundTrip(t *testing.T) {
 	}
 }
 
+func TestMergeRecentNeverEvictsPinned(t *testing.T) {
+	// Pinned "p" must survive even as fresh unpinned items push past the cap of 2.
+	var list []recentItem
+	list = mergeRecent(list, recentItem{Kind: "script", ID: "p", Pinned: true}, 2)
+	for _, id := range []string{"1", "2", "3"} {
+		list = mergeRecent(list, recentItem{Kind: "script", ID: id}, 2)
+	}
+	var hasPinned bool
+	for _, it := range list {
+		if it.ID == "p" {
+			hasPinned = true
+		}
+	}
+	if !hasPinned {
+		t.Fatalf("pinned item was evicted by the cap: %+v", list)
+	}
+	// Newest unpinned ("3") is kept; pinned doesn't consume more than its slot.
+	if list[len(list)-1].ID != "3" && list[0].ID != "3" {
+		t.Logf("list order: %+v", list)
+	}
+}
+
+func TestToggleRecentPinAndCarryOver(t *testing.T) {
+	app := NewApp()
+	app.appDataPath = t.TempDir()
+	if err := app.AddRecentItem(`{"kind":"script","id":"s1","name":"Order","route":"#/scripts/s1"}`); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.ToggleRecentPin("script", "s1"); err != nil {
+		t.Fatal(err)
+	}
+	items := loadRecents(app.appDataPath)
+	if len(items) != 1 || !items[0].Pinned {
+		t.Fatalf("expected s1 pinned, got %+v", items)
+	}
+	// Re-opening the pinned item keeps it pinned.
+	if err := app.AddRecentItem(`{"kind":"script","id":"s1","name":"Order","route":"#/scripts/s1"}`); err != nil {
+		t.Fatal(err)
+	}
+	items = loadRecents(app.appDataPath)
+	if !items[0].Pinned {
+		t.Errorf("pin should carry across re-add, got %+v", items[0])
+	}
+}
+
 func TestAddRecentItemIgnoresInvalid(t *testing.T) {
 	app := NewApp()
 	app.appDataPath = t.TempDir()

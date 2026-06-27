@@ -45,4 +45,6 @@ export function SetKeepAwake(arg1:boolean):Promise<void>;
 
 export function SetLastRoute(arg1:string):Promise<void>;
 
+export function ToggleRecentPin(arg1:string,arg2:string):Promise<void>;
+
 export function WriteFileBase64(arg1:string,arg2:string):Promise<void>;

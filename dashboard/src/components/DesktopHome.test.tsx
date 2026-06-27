@@ -100,6 +100,24 @@ describe('DesktopHome', () => {
     expect(container.textContent).toContain('5m ago')
   })
 
+  it('sorts pinned recents first and toggles pin', async () => {
+    const onTogglePin = vi.fn()
+    const recents: RecentItem[] = [
+      { kind: 'script', id: 'a', name: 'Alpha', route: '#/scripts/a' },
+      { kind: 'script', id: 'b', name: 'Bravo', route: '#/scripts/b', pinned: true },
+    ]
+    await act(async () => {
+      root.render(<DesktopHome status={status} recents={recents} onQuickAction={() => {}} onOpenRecent={() => {}} onClearRecents={() => {}} onTogglePin={onTogglePin} />)
+    })
+    // Pinned "Bravo" renders before "Alpha".
+    const names = Array.from(container.querySelectorAll('.desktop-home-recent-name')).map(n => n.textContent)
+    expect(names).toEqual(['Bravo', 'Alpha'])
+
+    const pinBtn = Array.from(container.querySelectorAll('button')).find(b => b.getAttribute('aria-label')?.startsWith('Pin Alpha'))
+    await act(async () => { pinBtn?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    expect(onTogglePin).toHaveBeenCalledWith(recents[0])
+  })
+
   it('surfaces a startup error', async () => {
     await act(async () => {
       root.render(
