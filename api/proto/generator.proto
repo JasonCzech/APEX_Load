@@ -43,6 +43,13 @@ message WorkAssignment {
   int32 ramp_up_seconds = 5;
   map<string, string> environment = 6;
   repeated DataFile data_files = 7;
+  repeated RedactionRule redaction_rules = 10;
+}
+
+message RedactionRule {
+  string name = 1;
+  string pattern = 2;
+  string replacement = 3;
 }
 
 message DataFile {
@@ -103,6 +110,13 @@ message MetricsBatch {
   // per-batch success counts by this window to compute a true per-second rate
   // (TPS). 0 means "unknown" (e.g. an older generator) and is treated as 1000ms.
   int64 window_ms = 10;
+  repeated MetricAggregate transaction_metrics = 11;
+  repeated MetricAggregate dependency_metrics = 12;
+  repeated MetricAggregate soap_metrics = 13;
+  repeated MetricAggregate network_profile_metrics = 14;
+  MetricAggregate fleet_metrics = 15;
+  BrowserMetrics browser_metrics = 16;
+  repeated BrowserDeviceMetrics browser_device_metrics = 17;
 }
 
 message MetricsBatchTelemetry {
@@ -114,11 +128,72 @@ message MetricsBatchTelemetry {
   // in-flight worker cap was saturated (the system under test could not keep up
   // with the offered TPS). Cumulative over the run, per generator.
   int64 shedded_arrivals = 5;
+  double generator_processing_lag_ms = 6;
+  double transport_lag_ms = 7;
+  int64 dropped_subscriber_batches = 8;
 }
 
 message GroupMetric {
   string name = 1;
   int32 active_vusers = 2;
+  MetricAggregate metrics = 3;
+}
+
+message TDigestCentroid {
+  double mean = 1;
+  double weight = 2;
+}
+
+message TDigestSnapshot {
+  double compression = 1;
+  double total_weight = 2;
+  double min = 3;
+  double max = 4;
+  int64 count = 5;
+  repeated TDigestCentroid centroids = 6;
+}
+
+message MetricAggregate {
+  string name = 1;
+  string dependency_type = 2;
+  string dependency_target = 3;
+  int64 count = 4;
+  int64 errors = 5;
+  double avg_ms = 6;
+  double p50_ms = 7;
+  double p90_ms = 8;
+  double p95_ms = 9;
+  double p99_ms = 10;
+  double avg_dns_ms = 11;
+  double avg_connect_ms = 12;
+  double avg_tls_ms = 13;
+  double avg_ttfb_ms = 14;
+  int64 bytes_sent = 15;
+  int64 bytes_received = 16;
+  double tps = 17;
+  TDigestSnapshot duration_digest = 18;
+}
+
+message BrowserMetrics {
+  int64 samples = 1;
+  double avg_fcp_ms = 2;
+  double avg_lcp_ms = 3;
+  double avg_cls_score = 4;
+  double avg_inp_ms = 5;
+  double avg_ttfb_ms = 6;
+  double avg_blocking_resources = 7;
+  double avg_long_task_count = 8;
+  double avg_js_heap_used_mb = 9;
+  double avg_browser_process_cpu_pct = 10;
+  double avg_browser_process_mem_mb = 11;
+}
+
+message BrowserDeviceMetrics {
+  string device_profile = 1;
+  string device_platform = 2;
+  string device_tier = 3;
+  string browser_engine = 4;
+  BrowserMetrics metrics = 5;
 }
 
 message ServerTelemetry {

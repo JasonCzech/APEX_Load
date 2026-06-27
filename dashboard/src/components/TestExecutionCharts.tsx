@@ -15,6 +15,7 @@ import {
 } from 'recharts'
 
 import { LatencyTarget, LiveMetrics, MetricsHistoryPoint, NetworkLatency, PrometheusGraph } from '../types'
+import { copyTextToClipboard } from '../utils/clipboardUtils'
 import { downloadTextFile } from '../utils/fileUtils'
 import { buildGeneratorImpactView, type GeneratorImpactVerdict } from './generatorImpact'
 import LoadImpactHeatmap from './LoadImpactHeatmap'
@@ -149,6 +150,7 @@ interface Props {
   onActiveGraphGroupTabChange?: (tab: GraphGroupTabId) => void
   underLoadDisplayMode?: UnderLoadDisplayMode
   externalControlsTarget?: HTMLElement | null
+  terminalStatus?: string
 }
 
 type ChartDropPosition = 'before' | 'after'
@@ -425,6 +427,7 @@ export default function TestExecutionCharts({
   onActiveGraphGroupTabChange,
   underLoadDisplayMode,
   externalControlsTarget = null,
+  terminalStatus,
 }: Props) {
   const densityFallback = defaultDensity ?? (surface === 'command-center' ? 'command_center' : 'standard')
   const storageKeyFor = (name: string) => `${storageScope}.${name}`
@@ -826,7 +829,11 @@ export default function TestExecutionCharts({
   }, [displayedChartIdSignature])
 
   if (filteredData.length <= 1 && loadImpactCharts.length === 0 && prometheusGraphCharts.length === 0 && !loadImpactLoading && !loadImpactError && !prometheusLoading && !prometheusError) {
-    return null
+    return (
+      <section className="charts-section">
+        <div className="chart-empty-state" role="status" aria-live="polite">Awaiting metrics</div>
+      </section>
+    )
   }
 
   const contextChart = chartMenu ? displayModeCharts.find(chart => chart.id === chartMenu.chartId) : undefined
@@ -1160,10 +1167,16 @@ export default function TestExecutionCharts({
 
   const downloadChartSvgSnapshot = (chart: ChartConfig) => {
     const card = chartCardRefs.current[chart.id]
-    if (!card) return
+    if (!card) {
+      downloadTextFile(latestGraphValuesText({ ...chart, title: displayTitleForChart(chart) }, latest, groupNames, latencyKeys, latencyLatestValues, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey), `${safeFileName(displayTitleForChart(chart))}-values.txt`, 'text/plain;charset=utf-8')
+      return
+    }
     const displayTitle = displayTitleForChart(chart)
     const snapshot = chartSnapshotSvg(card, { ...chart, title: displayTitle })
-    if (!snapshot) return
+    if (!snapshot) {
+      downloadTextFile(latestGraphValuesText({ ...chart, title: displayTitle }, latest, groupNames, latencyKeys, latencyLatestValues, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey), `${safeFileName(displayTitle)}-values.txt`, 'text/plain;charset=utf-8')
+      return
+    }
     downloadTextFile(snapshot, `${safeFileName(displayTitle)}-snapshot.svg`, 'image/svg+xml;charset=utf-8')
   }
 
@@ -1171,7 +1184,7 @@ export default function TestExecutionCharts({
     downloadTextFile(graphCsvForChart(chart, chartDataFor(chart), groupNames, latencyKeys, false, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey), `${safeFileName(displayTitleForChart(chart))}-data.csv`, 'text/csv;charset=utf-8')
   }
 
-  const copyLatestValues = (chart: ChartConfig) => {
+  const copyLatestValues = async (chart: ChartConfig) => {
     const chartData = chartDataFor(chart)
     const chartLatest = chartData[chartData.length - 1] || latest
     const visibleKeys = chartMetricKeys(chart, groupNames, latencyKeys, false, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey)
@@ -1179,9 +1192,16 @@ export default function TestExecutionCharts({
       ? latestRouteLatencyValues(chartData, visibleKeys)
       : latencyLatestValues
     const text = latestGraphValuesText({ ...chart, title: displayTitleForChart(chart) }, chartLatest, groupNames, latencyKeys, routeLatestValues, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey)
-    if (navigator.clipboard?.writeText) {
-      void navigator.clipboard.writeText(text)
+    if (!await copyTextToClipboard(text)) {
+      downloadTextFile(text, `${safeFileName(displayTitleForChart(chart))}-latest-values.txt`, 'text/plain;charset=utf-8')
     }
+  }
+
+  const chartDomIdFor = (chartId: string, suffix: string) => `${storageScope.replace(/[^a-zA-Z0-9_-]/g, '-')}-${chartId}-${suffix}`
+
+  const chartAccessibleLabel = (chartTitle: string, visibleRows: ChartMetricRow[], sampleCount: number) => {
+    const series = visibleRows.map(row => row.label).join(', ')
+    return `${chartTitle} chart. ${sampleCount} samples.${series ? ` Visible series: ${series}.` : ''}`
   }
 
   const reorderChart = (sourceChartId: string, targetChartId: string, position: ChartDropPosition) => {
@@ -1715,7 +1735,7 @@ export default function TestExecutionCharts({
     const renderLegendItems = (items: ChartMetricRow[]) => items.map(row => {
       const presentation = chartMetricLinePresentation(row)
       return (
-        <span key={row.key} className={`chart-series-legend-item ${presentation.role}`}>
+        <span key={row.key} className={`chart-series-legend-item ${presentation.role}${presentation.strokeDasharray ? ' dashed' : ''}`}>
           <span
             className="chart-series-swatch"
             style={{
@@ -1866,6 +1886,45 @@ export default function TestExecutionCharts({
           </tbody>
         </table>
       </div>
+    )
+  }
+
+  const renderAccessibleMetricsTable = (
+    rows: ChartMetricRow[],
+    visibleMetricKeys: string[],
+    chartData: MetricsHistoryPoint[],
+    chartTitle: string,
+    tableId: string,
+  ) => {
+    const visibleRows = rows.filter(row => visibleMetricKeys.includes(row.key))
+    if (visibleRows.length === 0) return null
+    return (
+      <table id={tableId} className="chart-a11y-table">
+        <caption>{chartTitle} measurements</caption>
+        <thead>
+          <tr>
+            <th>Metric</th>
+            <th>Latest</th>
+            <th>Average</th>
+            <th>Minimum</th>
+            <th>Maximum</th>
+          </tr>
+        </thead>
+        <tbody>
+          {visibleRows.map(row => {
+            const summary = chartMetricSummary(chartData, row.key)
+            return (
+              <tr key={row.key}>
+                <th>{row.label}</th>
+                <td>{formatMetricValue(summary.latest, row.unit)}</td>
+                <td>{formatMetricValue(summary.average, row.unit)}</td>
+                <td>{formatMetricValue(summary.min, row.unit)}</td>
+                <td>{formatMetricValue(summary.max, row.unit)}</td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
     )
   }
 
@@ -2079,6 +2138,11 @@ export default function TestExecutionCharts({
 
       {loadImpactError && <p className="scenario-script-status error">{loadImpactError}</p>}
       {prometheusError && <p className="scenario-script-status error">{prometheusError}</p>}
+      {terminalStatus && (
+        <p className="chart-terminal-status" role="status">
+          Run ended with {terminalStatus}. Charts show the final available telemetry.
+        </p>
+      )}
 
       {(latestMetrics?.telemetry?.dropped_results ?? 0) > 0 && (
         <p className="scenario-script-status error" role="alert">
@@ -2219,6 +2283,9 @@ export default function TestExecutionCharts({
             const metricAxisIdForChart = metricYAxisId(chart, visibleMetricKeys)
             const showMetric = (key: string) => visibleMetricKeys.includes(key)
             const showDetails = expandedChart === chart.id || (commandCenterSurface ? showGraphTableRows : chartDensity === 'standard')
+            const accessibleTableId = chartDomIdFor(chart.id, 'data-table')
+            const visibleRowsForA11y = metricRows.filter(row => visibleMetricKeys.includes(row.key))
+            const chartAriaLabel = chartAccessibleLabel(chartTitle, visibleRowsForA11y, displayChartData.length)
             return (
               <div
                 key={chart.id}
@@ -2308,13 +2375,15 @@ export default function TestExecutionCharts({
                     <button
                       className="btn-icon btn-expand"
                       type="button"
+                      aria-label={expandedChart === chart.id ? `Collapse ${chartTitle}` : `Expand ${chartTitle}`}
                       onClick={() => onExpandedChartChange(expandedChart === chart.id ? null : chart.id)}
                     >
                       {expandedChart === chart.id ? '↙' : '↗'}
                     </button>
                   </div>
                 </div>
-                <ResponsiveContainer width="100%" height={chartHeight}>
+                <div className="chart-visual" role="img" aria-label={chartAriaLabel} aria-describedby={visibleRowsForA11y.length > 0 ? accessibleTableId : undefined}>
+                  <ResponsiveContainer width="100%" height={chartHeight}>
             {chart.type === 'area' ? (
               <ComposedChart
                 data={displayChartData}
@@ -2386,7 +2455,7 @@ export default function TestExecutionCharts({
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderLoadImpactTooltip(chart)}
                 {renderSharedCursor(displayChartData, metricAxisIdForChart)}
-                <Legend verticalAlign="bottom" height={36} />
+                <Legend verticalAlign="bottom" />
                 {metricRows
                   .filter(row => !overlayMetricKeysForChart(chart).includes(row.key as OverlayMetricKey))
                   .map(row => {
@@ -2422,7 +2491,7 @@ export default function TestExecutionCharts({
                 {renderMetricAxis(chart, visibleMetricKeys, metricAxisDomain)}
                 {renderTooltip(chart.id)}
                 {renderSharedCursor(displayChartData, metricAxisIdForChart)}
-                {metricRows.length > 1 && <Legend verticalAlign="bottom" height={36} />}
+                {metricRows.length > 1 && <Legend verticalAlign="bottom" />}
                 {renderChartGradientDefs(chart, metricRows, visibleMetricKeys)}
                 {showGradientUnderlays && renderGradientUnderlays(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
                 {metricRows.map(row => showMetric(row.key) && (
@@ -2455,7 +2524,7 @@ export default function TestExecutionCharts({
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
                 {renderSharedCursor(displayChartData, metricAxisIdForChart)}
-                {isMultiGroup && <Legend verticalAlign="bottom" height={36} />}
+                {isMultiGroup && <Legend verticalAlign="bottom" />}
                 {renderChartGradientDefs(chart, metricRows, visibleMetricKeys)}
                 {showGradientUnderlays && renderGradientUnderlays(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
                 {chart.totalKey && showMetric(chart.totalKey) && (
@@ -2464,9 +2533,25 @@ export default function TestExecutionCharts({
                 {surface === 'command-center' && chartData.some(point => typeof point.targetTps === 'number') && (
                   <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="targetTps" name="Target" stroke="var(--warning)" dot={false} strokeWidth={1.75} strokeDasharray="5 3" isAnimationActive={false} />
                 )}
-                {isMultiGroup && groupNames.map((name, index) => showMetric(`${name}_tps`) && (
-                  <Line key={name} yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey(`${name}_tps`)} name={name} stroke={groupColors[index % groupColors.length]} dot={false} isAnimationActive={false} />
-                ))}
+                {isMultiGroup && groupNames.map((name, index) => {
+                  const row = metricRows.find(candidate => candidate.key === `${name}_tps`)
+                  const presentation = row ? chartMetricLinePresentation(row) : undefined
+                  return showMetric(`${name}_tps`) && (
+                    <Line
+                      key={name}
+                      yAxisId={metricAxisIdForChart}
+                      type="monotone"
+                      dataKey={displayMetricKey(`${name}_tps`)}
+                      name={name}
+                      stroke={row?.color ?? groupColors[index % groupColors.length]}
+                      dot={false}
+                      strokeWidth={presentation?.strokeWidth}
+                      strokeDasharray={presentation?.strokeDasharray}
+                      strokeOpacity={presentation?.strokeOpacity}
+                      isAnimationActive={false}
+                    />
+                  )
+                })}
                 {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
                 {renderSelectedSeriesEmphasis(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
                 {showRefArea && (
@@ -2552,7 +2637,7 @@ export default function TestExecutionCharts({
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
                 {renderSharedCursor(displayChartData, metricAxisIdForChart)}
-                <Legend verticalAlign="bottom" height={36} />
+                <Legend verticalAlign="bottom" />
                 {renderChartGradientDefs(chart, metricRows, visibleMetricKeys)}
                 {chart.keys!.filter(key => showMetric(key.k)).map((key) => (
                   <Area key={key.k} yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey(key.k)} name={key.n} stroke={key.c} fill={chartGradientFill(chart, key.k)} fillOpacity={1} isAnimationActive={false} connectNulls={false} stackId={chart.type === 'area-stacked' ? (chart.stackId ?? 'stack') : undefined} />
@@ -2615,7 +2700,7 @@ export default function TestExecutionCharts({
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
                 {renderSharedCursor(displayChartData, metricAxisIdForChart)}
-                <Legend verticalAlign="bottom" height={36} />
+                <Legend verticalAlign="bottom" />
                 {renderChartGradientDefs(chart, metricRows, visibleMetricKeys)}
                 {showGradientUnderlays && renderGradientUnderlays(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
                 {metricRows.map((row) => showMetric(row.key) && (
@@ -2666,7 +2751,9 @@ export default function TestExecutionCharts({
                 )}
               </ComposedChart>
             )}
-          </ResponsiveContainer>
+                  </ResponsiveContainer>
+                </div>
+                {renderAccessibleMetricsTable(metricRows, visibleMetricKeys, displayChartData, chartTitle, accessibleTableId)}
 
           {chart.id === 'latency' && renderLatencySeriesLegend(metricRows, visibleMetricKeys, includeArtStdDevBand)}
           {chart.id === 'network_latency' && showDetails && renderRouteLatencyDetails()}

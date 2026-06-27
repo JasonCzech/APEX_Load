@@ -7702,12 +7702,12 @@ paths:
         - Ws
   /metrics:
     get:
-      summary: Prometheus Metrics
+      summary: Prometheus Metrics With Auth
       description: |-
-        **Handler:** `handlePrometheusMetrics`
+        **Handler:** `handlePrometheusMetricsWithAuth`
 
         **Access Control:** Public (no authentication required)
-      operationId: handlePrometheusMetrics_2
+      operationId: handlePrometheusMetricsWithAuth_2
       responses:
         "200":
           description: Successful operation

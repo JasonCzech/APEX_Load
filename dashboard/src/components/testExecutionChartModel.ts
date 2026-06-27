@@ -34,6 +34,7 @@ export interface ChartMetricRow {
   color: string
   unit?: string
   kind?: ChartMetricRowKind
+  strokeDasharray?: string
 }
 
 export interface ChartMetricLinePresentation {
@@ -49,6 +50,14 @@ export interface ChartMetricSummary {
   min?: number
   max?: number
   samples: number
+}
+
+const GROUP_LINE_DASH_PATTERNS = [undefined, '5 3', '2 3', '8 3 2 3', '1 3', '6 2 1 2'] as const
+
+export function groupSeriesDasharray(index: number, paletteSize: number): string | undefined {
+  if (paletteSize <= 0 || index < paletteSize) return undefined
+  const repeatedPaletteCycle = Math.floor(index / paletteSize)
+  return GROUP_LINE_DASH_PATTERNS[repeatedPaletteCycle % GROUP_LINE_DASH_PATTERNS.length]
 }
 
 export type MetricTableSortKey = 'metric' | 'latest' | 'average' | 'min' | 'max'
@@ -1147,13 +1156,25 @@ export function chartMetricRows(
     case 'tps':
       rows = [
         { key: chart.totalKey ?? 'tps', label: 'Total', color: 'var(--text-muted)' },
-        ...groupNames.map((name, index) => ({ key: `${name}_tps`, label: name, color: groupColors[index % groupColors.length] })),
+        ...groupNames.map((name, index) => ({
+          key: `${name}_tps`,
+          label: name,
+          color: groupColors[index % groupColors.length],
+          strokeDasharray: groupSeriesDasharray(index, groupColors.length),
+        })),
       ]
       break
     case 'latency':
       rows = [
         { key: 'avgMs', label: 'Total', color: 'var(--text-muted)', unit: 'ms', kind: 'transaction' },
-        ...groupNames.map((name, index) => ({ key: `${name}_avgMs`, label: name, color: groupColors[index % groupColors.length], unit: 'ms', kind: 'transaction' as const })),
+        ...groupNames.map((name, index) => ({
+          key: `${name}_avgMs`,
+          label: name,
+          color: groupColors[index % groupColors.length],
+          unit: 'ms',
+          kind: 'transaction' as const,
+          strokeDasharray: groupSeriesDasharray(index, groupColors.length),
+        })),
         { key: 'p50', label: 'P50', color: 'var(--chart-5)', unit: 'ms', kind: 'percentile' },
         { key: 'p90', label: 'P90', color: 'var(--chart-3)', unit: 'ms', kind: 'percentile' },
         { key: 'p95', label: 'P95', color: 'var(--chart-2)', unit: 'ms', kind: 'percentile' },
@@ -1204,6 +1225,7 @@ export function chartMetricLinePresentation(row: ChartMetricRow): ChartMetricLin
     return {
       role: 'transaction',
       strokeWidth: row.key === 'avgMs' ? 2.5 : 2.2,
+      strokeDasharray: row.strokeDasharray,
       strokeOpacity: 1,
     }
   }
@@ -1218,6 +1240,7 @@ export function chartMetricLinePresentation(row: ChartMetricRow): ChartMetricLin
   return {
     role: 'default',
     strokeWidth: 2,
+    strokeDasharray: row.strokeDasharray,
     strokeOpacity: 1,
   }
 }

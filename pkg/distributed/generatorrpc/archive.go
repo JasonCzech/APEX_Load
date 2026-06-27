@@ -41,23 +41,25 @@ type archiveManifest struct {
 }
 
 type archiveTransactionEvent struct {
-	Timestamp     time.Time               `json:"timestamp"`
-	TestID        string                  `json:"test_id"`
-	TestName      string                  `json:"test_name"`
-	Group         string                  `json:"group,omitempty"`
-	ActionName    string                  `json:"action_name,omitempty"`
-	DurationMs    float64                 `json:"duration_ms"`
-	DNSMs         float64                 `json:"dns_ms,omitempty"`
-	ConnectMs     float64                 `json:"connect_ms,omitempty"`
-	TLSMs         float64                 `json:"tls_ms,omitempty"`
-	TTFBMs        float64                 `json:"ttfb_ms,omitempty"`
-	BytesSent     int64                   `json:"bytes_sent,omitempty"`
-	BytesReceived int64                   `json:"bytes_received,omitempty"`
-	StatusCode    int                     `json:"status_code,omitempty"`
-	Success       bool                    `json:"success"`
-	ErrorMessage  string                  `json:"error_message,omitempty"`
-	Extractions   map[string]string       `json:"extractions,omitempty"`
-	Snapshot      *protocol.ErrorSnapshot `json:"snapshot,omitempty"`
+	Timestamp      time.Time               `json:"timestamp"`
+	TestID         string                  `json:"test_id"`
+	TestName       string                  `json:"test_name"`
+	Group          string                  `json:"group,omitempty"`
+	ActionName     string                  `json:"action_name,omitempty"`
+	DurationMs     float64                 `json:"duration_ms"`
+	DNSMs          float64                 `json:"dns_ms,omitempty"`
+	ConnectMs      float64                 `json:"connect_ms,omitempty"`
+	TLSMs          float64                 `json:"tls_ms,omitempty"`
+	TTFBMs         float64                 `json:"ttfb_ms,omitempty"`
+	BytesSent      int64                   `json:"bytes_sent,omitempty"`
+	BytesReceived  int64                   `json:"bytes_received,omitempty"`
+	StatusCode     int                     `json:"status_code,omitempty"`
+	Success        bool                    `json:"success"`
+	ErrorMessage   string                  `json:"error_message,omitempty"`
+	NetworkProfile string                  `json:"network_profile,omitempty"`
+	ClientMetrics  *protocol.ClientMetrics `json:"client_metrics,omitempty"`
+	Extractions    map[string]string       `json:"extractions,omitempty"`
+	Snapshot       *protocol.ErrorSnapshot `json:"snapshot,omitempty"`
 }
 
 type archiveResourceSample struct {
@@ -133,24 +135,26 @@ type archiveRecorder struct {
 }
 
 type parquetTransactionEvent struct {
-	TimestampUnixMs  int64   `parquet:"name=timestamp_unix_ms, type=INT64"`
-	TimestampRFC3339 string  `parquet:"name=timestamp_rfc3339, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	TestID           string  `parquet:"name=test_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	TestName         string  `parquet:"name=test_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	Group            string  `parquet:"name=group_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	ActionName       string  `parquet:"name=action_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	DurationMs       float64 `parquet:"name=duration_ms, type=DOUBLE"`
-	DNSMs            float64 `parquet:"name=dns_ms, type=DOUBLE"`
-	ConnectMs        float64 `parquet:"name=connect_ms, type=DOUBLE"`
-	TLSMs            float64 `parquet:"name=tls_ms, type=DOUBLE"`
-	TTFBMs           float64 `parquet:"name=ttfb_ms, type=DOUBLE"`
-	BytesSent        int64   `parquet:"name=bytes_sent, type=INT64"`
-	BytesReceived    int64   `parquet:"name=bytes_received, type=INT64"`
-	StatusCode       int64   `parquet:"name=status_code, type=INT64"`
-	Success          bool    `parquet:"name=success, type=BOOLEAN"`
-	ErrorMessage     string  `parquet:"name=error_message, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	ExtractionsJSON  string  `parquet:"name=extractions_json, type=BYTE_ARRAY, convertedtype=UTF8"`
-	SnapshotJSON     string  `parquet:"name=snapshot_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	TimestampUnixMs   int64   `parquet:"name=timestamp_unix_ms, type=INT64"`
+	TimestampRFC3339  string  `parquet:"name=timestamp_rfc3339, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	TestID            string  `parquet:"name=test_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	TestName          string  `parquet:"name=test_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	Group             string  `parquet:"name=group_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	ActionName        string  `parquet:"name=action_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	DurationMs        float64 `parquet:"name=duration_ms, type=DOUBLE"`
+	DNSMs             float64 `parquet:"name=dns_ms, type=DOUBLE"`
+	ConnectMs         float64 `parquet:"name=connect_ms, type=DOUBLE"`
+	TLSMs             float64 `parquet:"name=tls_ms, type=DOUBLE"`
+	TTFBMs            float64 `parquet:"name=ttfb_ms, type=DOUBLE"`
+	BytesSent         int64   `parquet:"name=bytes_sent, type=INT64"`
+	BytesReceived     int64   `parquet:"name=bytes_received, type=INT64"`
+	StatusCode        int64   `parquet:"name=status_code, type=INT64"`
+	Success           bool    `parquet:"name=success, type=BOOLEAN"`
+	ErrorMessage      string  `parquet:"name=error_message, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	NetworkProfile    string  `parquet:"name=network_profile, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	ClientMetricsJSON string  `parquet:"name=client_metrics_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	ExtractionsJSON   string  `parquet:"name=extractions_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	SnapshotJSON      string  `parquet:"name=snapshot_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 }
 
 type parquetResourceSample struct {
@@ -279,23 +283,25 @@ func (w *archiveRecorder) RecordResult(result *protocol.Result) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	event := archiveTransactionEvent{
-		Timestamp:     result.StartTime,
-		TestID:        w.manifest.TestID,
-		TestName:      w.manifest.TestName,
-		Group:         result.Group,
-		ActionName:    result.ActionName,
-		DurationMs:    durationMillis(result.Duration),
-		DNSMs:         durationMillis(result.DNSTime),
-		ConnectMs:     durationMillis(result.ConnectTime),
-		TLSMs:         durationMillis(result.TLSTime),
-		TTFBMs:        durationMillis(result.TTFB),
-		BytesSent:     result.BytesSent,
-		BytesReceived: result.BytesReceived,
-		StatusCode:    result.StatusCode,
-		Success:       result.Success,
-		ErrorMessage:  result.ErrorMessage,
-		Extractions:   result.Extractions,
-		Snapshot:      result.Snapshot,
+		Timestamp:      result.StartTime,
+		TestID:         w.manifest.TestID,
+		TestName:       w.manifest.TestName,
+		Group:          result.Group,
+		ActionName:     result.ActionName,
+		DurationMs:     durationMillis(result.Duration),
+		DNSMs:          durationMillis(result.DNSTime),
+		ConnectMs:      durationMillis(result.ConnectTime),
+		TLSMs:          durationMillis(result.TLSTime),
+		TTFBMs:         durationMillis(result.TTFB),
+		BytesSent:      result.BytesSent,
+		BytesReceived:  result.BytesReceived,
+		StatusCode:     result.StatusCode,
+		Success:        result.Success,
+		ErrorMessage:   result.ErrorMessage,
+		NetworkProfile: result.NetworkProfile,
+		ClientMetrics:  result.ClientMetrics,
+		Extractions:    result.Extractions,
+		Snapshot:       result.Snapshot,
 	}
 	if err := w.txEncoder.Encode(event); err != nil {
 		return err
@@ -533,24 +539,26 @@ func toParquetTransactions(items []archiveTransactionEvent) []parquetTransaction
 	rows := make([]parquetTransactionEvent, 0, len(items))
 	for _, item := range items {
 		rows = append(rows, parquetTransactionEvent{
-			TimestampUnixMs:  item.Timestamp.UnixMilli(),
-			TimestampRFC3339: item.Timestamp.Format(time.RFC3339Nano),
-			TestID:           item.TestID,
-			TestName:         item.TestName,
-			Group:            item.Group,
-			ActionName:       item.ActionName,
-			DurationMs:       item.DurationMs,
-			DNSMs:            item.DNSMs,
-			ConnectMs:        item.ConnectMs,
-			TLSMs:            item.TLSMs,
-			TTFBMs:           item.TTFBMs,
-			BytesSent:        item.BytesSent,
-			BytesReceived:    item.BytesReceived,
-			StatusCode:       int64(item.StatusCode),
-			Success:          item.Success,
-			ErrorMessage:     item.ErrorMessage,
-			ExtractionsJSON:  mustJSON(item.Extractions),
-			SnapshotJSON:     mustJSON(item.Snapshot),
+			TimestampUnixMs:   item.Timestamp.UnixMilli(),
+			TimestampRFC3339:  item.Timestamp.Format(time.RFC3339Nano),
+			TestID:            item.TestID,
+			TestName:          item.TestName,
+			Group:             item.Group,
+			ActionName:        item.ActionName,
+			DurationMs:        item.DurationMs,
+			DNSMs:             item.DNSMs,
+			ConnectMs:         item.ConnectMs,
+			TLSMs:             item.TLSMs,
+			TTFBMs:            item.TTFBMs,
+			BytesSent:         item.BytesSent,
+			BytesReceived:     item.BytesReceived,
+			StatusCode:        int64(item.StatusCode),
+			Success:           item.Success,
+			ErrorMessage:      item.ErrorMessage,
+			NetworkProfile:    item.NetworkProfile,
+			ClientMetricsJSON: mustJSON(item.ClientMetrics),
+			ExtractionsJSON:   mustJSON(item.Extractions),
+			SnapshotJSON:      mustJSON(item.Snapshot),
 		})
 	}
 	return rows

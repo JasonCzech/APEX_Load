@@ -14,6 +14,7 @@ import (
 	pb "github.com/jasonczech/apexload/api/proto"
 	"github.com/jasonczech/apexload/pkg/buildinfo"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	_ "github.com/jasonczech/apexload/pkg/protocol/http"
 	"google.golang.org/grpc"
@@ -38,6 +39,35 @@ func TestServiceAssignWorkRejectsMissingCachedScript(t *testing.T) {
 	}
 	if !strings.Contains(ack.GetErrorMessage(), "not cached") {
 		t.Fatalf("expected missing script error, got %q", ack.GetErrorMessage())
+	}
+}
+
+func TestAssignmentProtoCarriesRedactionRules(t *testing.T) {
+	assignment := toProtoAssignment(Assignment{
+		TestID:         "test-1",
+		GroupName:      "Group A",
+		RedactionRules: []engine.RedactionRule{{Name: "customer", Pattern: `customer-[0-9]+`, Replacement: "[CUSTOMER]"}},
+	})
+	if len(assignment.GetRedactionRules()) != 1 {
+		t.Fatalf("redaction rules = %#v, want one", assignment.GetRedactionRules())
+	}
+	rule := assignment.GetRedactionRules()[0]
+	if rule.GetName() != "customer" || rule.GetPattern() != `customer-[0-9]+` || rule.GetReplacement() != "[CUSTOMER]" {
+		t.Fatalf("redaction rule = %#v", rule)
+	}
+}
+
+func TestBroadcastMetricsCountsSubscriberDrops(t *testing.T) {
+	service := NewService("generator-1", 50)
+	_, ch, _ := service.registerSubscriber()
+	for i := 0; i < cap(ch); i++ {
+		ch <- &pb.MetricsBatch{TestId: "queued"}
+	}
+
+	service.broadcastMetrics(&pb.MetricsBatch{TestId: "dropped"})
+
+	if got := service.droppedBatches.Load(); got != 1 {
+		t.Fatalf("dropped batches = %d, want 1", got)
 	}
 }
 

@@ -5,6 +5,7 @@ resources:
   - ../onprem
   - generator-keda-scaledobject.yaml
   - servicemonitor.yaml
+  - ../monitoring/prometheusrule.yaml
 patches:
   - target:
       kind: ConfigMap

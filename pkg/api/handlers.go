@@ -788,7 +788,7 @@ func (s *Server) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGetSystemSettings(w http.ResponseWriter, r *http.Request) {
 	settings := s.runner.GetSystemSettings()
-	writeJSON(w, http.StatusOK, settings)
+	writeJSON(w, http.StatusOK, redactedSystemSettingsResponse(settings))
 }
 
 func (s *Server) handleUpdateSystemSettings(w http.ResponseWriter, r *http.Request) {
@@ -816,6 +816,7 @@ func (s *Server) handleUpdateSystemSettings(w http.ResponseWriter, r *http.Reque
 		settings.ClientDownloads = s.runner.GetSystemSettings().ClientDownloads
 	}
 
+	settings = preserveWriteOnlySystemSettingsSecrets(settings, s.runner.GetSystemSettings())
 	updated, err := s.runner.UpdateSystemSettings(settings)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -823,7 +824,7 @@ func (s *Server) handleUpdateSystemSettings(w http.ResponseWriter, r *http.Reque
 	}
 	s.recordAuditEvent(r, "system.settings.update", "success", "system_settings", "global", "", map[string]any{"auth_mode": updated.Auth.Mode})
 
-	writeJSON(w, http.StatusOK, updated)
+	writeJSON(w, http.StatusOK, redactedSystemSettingsResponse(updated))
 }
 
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {

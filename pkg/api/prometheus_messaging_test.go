@@ -76,3 +76,66 @@ func TestPrometheusMessagingMetricsAbsentWhenNoMessaging(t *testing.T) {
 		t.Fatal("messaging metrics emitted with no messaging telemetry present")
 	}
 }
+
+func TestPrometheusMessagingMetricsSkipTerminalTests(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	server.runner.tests["done"] = &ManagedTest{
+		ID:     "done",
+		Status: "COMPLETE",
+		LiveMetrics: &LiveMetrics{DependencyHealth: map[string]*TxMetrics{
+			"queue": {
+				Name:             "queue",
+				DependencyType:   "kafka",
+				DependencyTarget: "orders",
+				ServerTelemetry:  &ServerTelemetrySummary{Samples: 1, AvgConsumerLagMs: 99},
+			},
+		}},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if strings.Contains(resp.Body.String(), `test_id="done"`) {
+		t.Fatalf("terminal test emitted messaging metrics:\n%s", resp.Body.String())
+	}
+}
+
+func TestPrometheusTelemetryPipelineMetrics(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	server.runner.tests["run"] = &ManagedTest{
+		ID:     "run",
+		Status: "RUNNING",
+		LiveMetrics: &LiveMetrics{Telemetry: &TelemetryHealth{
+			DroppedResults:           2,
+			SheddedArrivals:          3,
+			DroppedSubscriberBatches: 4,
+			WebsocketDroppedMessages: 5,
+			WebsocketDroppedEvents:   6,
+			SampleAgeMs:              1200,
+			GeneratorProcessingLagMs: 100,
+			TransportLagMs:           80,
+			ControllerFanoutLagMs:    40,
+		}},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	out := resp.Body.String()
+	wants := []string{
+		`apexload_telemetry_dropped_results_total{test_id="run"} 2`,
+		`apexload_telemetry_shedded_arrivals_total{test_id="run"} 3`,
+		`apexload_telemetry_dropped_subscriber_batches_total{test_id="run"} 4`,
+		`apexload_websocket_dropped_messages_total{test_id="run"} 5`,
+		`apexload_websocket_dropped_events_total{test_id="run"} 6`,
+		`apexload_telemetry_sample_age_ms{test_id="run"} 1200`,
+		`apexload_telemetry_generator_processing_lag_ms{test_id="run"} 100`,
+		`apexload_telemetry_transport_lag_ms{test_id="run"} 80`,
+		`apexload_telemetry_controller_fanout_lag_ms{test_id="run"} 40`,
+	}
+	for _, want := range wants {
+		if !strings.Contains(out, want) {
+			t.Fatalf("metrics output missing %q\n---\n%s", want, out)
+		}
+	}
+}

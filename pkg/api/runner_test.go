@@ -1467,7 +1467,7 @@ func TestCompileManagedTestGroupLockedBuildsCustomRedactionConfig(t *testing.T) 
 		Actions:  []dsl.Action{{Name: "runtime-step", Type: "GET", Target: "/orders"}},
 	})
 
-	_, engineGroup, err := runner.compileManagedTestGroupLocked(0, 1, CreateGroupEntry{
+	testGroup, engineGroup, err := runner.compileManagedTestGroupLocked(0, 1, CreateGroupEntry{
 		ScriptID: "script-redaction-rules",
 		VUsers:   2,
 	}, &RuntimeSettingsOverride{
@@ -1481,6 +1481,9 @@ func TestCompileManagedTestGroupLockedBuildsCustomRedactionConfig(t *testing.T) 
 	}
 	if got := engineGroup.RedactionConfig.ScrubText(`customer-1234 ok`); got != `[REDACTED] ok` {
 		t.Fatalf("scrubbed text = %q, want custom rule applied", got)
+	}
+	if len(testGroup.redactionRules) != 1 || testGroup.redactionRules[0].Pattern != `customer-[0-9]+` {
+		t.Fatalf("distributed redaction rules = %#v, want effective custom rule", testGroup.redactionRules)
 	}
 }
 

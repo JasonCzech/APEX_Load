@@ -576,6 +576,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 				ScriptID:              group.ScriptID,
 				VUserCount:            int32(shard.VUsers),
 				RampUpSeconds:         int32(group.rampUpDur / time.Second),
+				RedactionRules:        cloneRedactionRules(group.redactionRules),
 			})
 			if err != nil {
 				cleanup()

@@ -65,11 +65,30 @@ func TestHandlePrometheusMetricsExportsControllerState(t *testing.T) {
 		"apexload_capacity_available_generators{scope=\"live\"} 3",
 		"apexload_max_concurrent_tests 7",
 		"apexload_metrics_interval_seconds 3",
+		"apexload_notification_delivery_failures_total",
 	}
 	for _, check := range checks {
 		if !strings.Contains(body, check) {
 			t.Fatalf("expected metrics body to contain %q, got %q", check, body)
 		}
+	}
+}
+
+func TestPrometheusMetricsTokenGate(t *testing.T) {
+	server := NewServer(ServerConfig{MetricsToken: "secret"})
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("status without token = %d, want 401", resp.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	resp = httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status with token = %d, want 200 body=%s", resp.Code, resp.Body.String())
 	}
 }
 

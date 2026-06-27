@@ -687,6 +687,7 @@ export default function TestExecution({ testId, history, initialWorkspaceTabId, 
           enableGraphGroupTabs={prometheusGraphs.length > 0 || prometheusLoading || Boolean(prometheusError)}
           latestLatency={latestMetrics?.latency ?? test?.live_metrics?.latency}
           latestMetrics={latestMetrics ?? test?.live_metrics}
+          terminalStatus={test?.status === 'FAILED' || test?.status === 'ABORTED' ? test.status : undefined}
         />
       ),
     },

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/subtle"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -72,6 +73,7 @@ type Server struct {
 	restartMu                sync.Mutex
 	restartInFlight          map[string]struct{}
 	metricsAddr              string
+	metricsToken             string
 	metricsServer            *http.Server
 	metricsBoundAddr         string
 	desktopMode              bool
@@ -98,6 +100,7 @@ type ServerConfig struct {
 	// MetricsAddr, when set (e.g. ":9091"), serves GET /metrics on its own
 	// listener instead of the API port.
 	MetricsAddr        string
+	MetricsToken       string
 	ProxyAddr          string
 	MaxConcurrent      int
 	AllowedOrigins     []string
@@ -211,6 +214,7 @@ func NewServer(cfg ServerConfig) *Server {
 		kubeRestarter:      cfg.KubeRestarter,
 		restartInFlight:    make(map[string]struct{}),
 		metricsAddr:        strings.TrimSpace(cfg.MetricsAddr),
+		metricsToken:       strings.TrimSpace(cfg.MetricsToken),
 		staticFS:           StaticFS,
 	}
 	if err := fileasset.RegisterRoot(s.importAssetDir); err != nil {
@@ -727,7 +731,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	// endpoint moves off the API port entirely, so NetworkPolicy can grant the
 	// monitoring namespace metrics access without exposing the API surface.
 	if s.metricsAddr == "" {
-		s.mux.Handle("GET /metrics", log(http.HandlerFunc(s.handlePrometheusMetrics)))
+		s.mux.Handle("GET /metrics", log(http.HandlerFunc(s.handlePrometheusMetricsWithAuth)))
 	}
 	s.mux.Handle("GET /api/v1/system/inventory", cors(log(auth(http.HandlerFunc(s.handleGetSystemInventory)))))
 	s.mux.Handle("GET /api/v1/system/services", cors(log(auth(http.HandlerFunc(s.handleGetSystemServices)))))
@@ -1009,7 +1013,7 @@ func (s *Server) startMetricsListener() error {
 		return nil
 	}
 	metricsMux := http.NewServeMux()
-	metricsMux.Handle("GET /metrics", loggingMiddleware(http.HandlerFunc(s.handlePrometheusMetrics)))
+	metricsMux.Handle("GET /metrics", loggingMiddleware(http.HandlerFunc(s.handlePrometheusMetricsWithAuth)))
 	s.metricsServer = &http.Server{
 		Addr:         s.metricsAddr,
 		Handler:      metricsMux,
@@ -1031,6 +1035,18 @@ func (s *Server) startMetricsListener() error {
 		}
 	}()
 	return nil
+}
+
+func (s *Server) handlePrometheusMetricsWithAuth(w http.ResponseWriter, r *http.Request) {
+	if s.metricsToken != "" {
+		got := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+		if subtle.ConstantTimeCompare([]byte(got), []byte(s.metricsToken)) != 1 {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="apexload-metrics"`)
+			writeError(w, http.StatusUnauthorized, "metrics token required")
+			return
+		}
+	}
+	s.handlePrometheusMetrics(w, r)
 }
 
 // MetricsBoundAddr reports the dedicated metrics listener address, if any.

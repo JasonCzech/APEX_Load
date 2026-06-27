@@ -464,10 +464,10 @@ export function validateSettings(settings: DashboardSystemSettings): string[] {
     if (webhook.format !== 'slack' && webhook.format !== 'teams' && webhook.format !== 'dynatrace') {
       errors.push(`${label} format must be Slack, Microsoft Teams, or Dynatrace.`)
     }
-    if (webhook.format === 'dynatrace') {
-      if (!webhook.api_token?.trim()) {
-        errors.push(`${label} requires a Dynatrace API token.`)
-      }
+	    if (webhook.format === 'dynatrace') {
+	      if (!webhook.api_token?.trim() && !webhook.has_api_token) {
+	        errors.push(`${label} requires a Dynatrace API token.`)
+	      }
       if (webhook.timeout_minutes !== undefined && (!Number.isFinite(webhook.timeout_minutes) || webhook.timeout_minutes < 0 || webhook.timeout_minutes > 360)) {
         errors.push(`${label} Dynatrace timeout must be between 0 and 360 minutes.`)
       }
@@ -509,11 +509,12 @@ export function normalizeDashboardSystemSettings(settings: DashboardSystemSettin
       ...settings.schedule_defaults,
     },
     notifications: {
-      webhooks: (settings.notifications?.webhooks || []).map(webhook => ({
-        ...webhook,
-        events: webhook.events ? [...webhook.events] : [],
-      })),
-    },
+	      webhooks: (settings.notifications?.webhooks || []).map(webhook => ({
+	        ...webhook,
+	        events: webhook.events ? [...webhook.events] : [],
+	        has_api_token: Boolean(webhook.has_api_token),
+	      })),
+	    },
     auth: {
       ...DEFAULT_SETTINGS.auth,
       ...settings.auth,

@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	pb "github.com/jasonczech/apexload/api/proto"
+	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"google.golang.org/grpc"
 )
@@ -25,6 +26,7 @@ type Assignment struct {
 	RampUpSeconds         int32
 	Environment           map[string]string
 	DataFiles             []DataFile
+	RedactionRules        []engine.RedactionRule
 }
 
 type AssignmentResult struct {
@@ -61,16 +63,23 @@ type PauseControl struct {
 }
 
 type MetricsBatch struct {
-	TestID          string
-	GeneratorID     string
-	TimestampUnixMs int64
-	WindowMs        int64
-	Stats           GeneratorStats
-	Transactions    []TransactionMetric
-	Groups          []GroupMetric
-	LifecycleState  string
-	LifecycleError  string
-	Telemetry       *MetricsTelemetry
+	TestID                string
+	GeneratorID           string
+	TimestampUnixMs       int64
+	WindowMs              int64
+	Stats                 GeneratorStats
+	Transactions          []TransactionMetric
+	FleetMetrics          *MetricAggregate
+	TransactionMetrics    []MetricAggregate
+	DependencyMetrics     []MetricAggregate
+	SOAPMetrics           []MetricAggregate
+	NetworkProfileMetrics []MetricAggregate
+	Browser               *BrowserMetrics
+	BrowserByDevice       []BrowserDeviceMetrics
+	Groups                []GroupMetric
+	LifecycleState        string
+	LifecycleError        string
+	Telemetry             *MetricsTelemetry
 }
 
 type MetricsTelemetry struct {
@@ -80,6 +89,9 @@ type MetricsTelemetry struct {
 	PublishedAtUnixMs          int64
 	ControllerReceivedAtUnixMs int64
 	SampleAgeMs                float64
+	GeneratorProcessingLagMs   float64
+	TransportLagMs             float64
+	DroppedSubscriberBatches   int64
 	// WindowMs is the elapsed wall-clock duration this group's drained
 	// transactions cover. It is generator-internal (merged to the batch's
 	// window_ms) and is not transmitted on the telemetry proto message.
@@ -89,6 +101,50 @@ type MetricsTelemetry struct {
 type GroupMetric struct {
 	Name         string
 	ActiveVUsers int32
+	Metrics      *MetricAggregate
+}
+
+type MetricAggregate struct {
+	Name             string
+	DependencyType   string
+	DependencyTarget string
+	Count            int64
+	Errors           int64
+	AvgMs            float64
+	P50Ms            float64
+	P90Ms            float64
+	P95Ms            float64
+	P99Ms            float64
+	AvgDNSMs         float64
+	AvgConnectMs     float64
+	AvgTLSMs         float64
+	AvgTTFBMs        float64
+	BytesSent        int64
+	BytesReceived    int64
+	TPS              float64
+	DurationDigest   *engine.TDigestSnapshot
+}
+
+type BrowserMetrics struct {
+	Samples              int64
+	AvgFCPMs             float64
+	AvgLCPMs             float64
+	AvgCLSScore          float64
+	AvgINPMs             float64
+	AvgTTFBMs            float64
+	AvgBlockingResources float64
+	AvgLongTaskCount     float64
+	AvgJSHeapUsedMB      float64
+	AvgBrowserProcessCPU float64
+	AvgBrowserProcessMem float64
+}
+
+type BrowserDeviceMetrics struct {
+	DeviceProfile  string
+	DevicePlatform string
+	DeviceTier     string
+	BrowserEngine  string
+	Metrics        BrowserMetrics
 }
 
 type ServerTelemetry struct {
@@ -503,6 +559,7 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 		groups = append(groups, GroupMetric{
 			Name:         group.GetName(),
 			ActiveVUsers: group.GetActiveVusers(),
+			Metrics:      metricAggregateFromProto(group.GetMetrics()),
 		})
 	}
 
@@ -510,25 +567,35 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 	var telemetry *MetricsTelemetry
 	if batch.GetTelemetry() != nil {
 		telemetry = &MetricsTelemetry{
-			DroppedResults:    batch.GetTelemetry().GetDroppedResults(),
-			SheddedArrivals:   batch.GetTelemetry().GetSheddedArrivals(),
-			CollectedAtUnixMs: batch.GetTelemetry().GetCollectedAtUnixMs(),
-			PublishedAtUnixMs: batch.GetTelemetry().GetPublishedAtUnixMs(),
-			SampleAgeMs:       batch.GetTelemetry().GetSampleAgeMs(),
+			DroppedResults:           batch.GetTelemetry().GetDroppedResults(),
+			SheddedArrivals:          batch.GetTelemetry().GetSheddedArrivals(),
+			CollectedAtUnixMs:        batch.GetTelemetry().GetCollectedAtUnixMs(),
+			PublishedAtUnixMs:        batch.GetTelemetry().GetPublishedAtUnixMs(),
+			SampleAgeMs:              batch.GetTelemetry().GetSampleAgeMs(),
+			GeneratorProcessingLagMs: batch.GetTelemetry().GetGeneratorProcessingLagMs(),
+			TransportLagMs:           batch.GetTelemetry().GetTransportLagMs(),
+			DroppedSubscriberBatches: batch.GetTelemetry().GetDroppedSubscriberBatches(),
 		}
 	}
 
 	return MetricsBatch{
-		TestID:          batch.GetTestId(),
-		GeneratorID:     batch.GetGeneratorId(),
-		TimestampUnixMs: batch.GetTimestampUnixMs(),
-		WindowMs:        batch.GetWindowMs(),
-		Stats:           stats,
-		Transactions:    transactions,
-		Groups:          groups,
-		LifecycleState:  batch.GetLifecycleState(),
-		LifecycleError:  batch.GetLifecycleError(),
-		Telemetry:       telemetry,
+		TestID:                batch.GetTestId(),
+		GeneratorID:           batch.GetGeneratorId(),
+		TimestampUnixMs:       batch.GetTimestampUnixMs(),
+		WindowMs:              batch.GetWindowMs(),
+		Stats:                 stats,
+		Transactions:          transactions,
+		FleetMetrics:          metricAggregateFromProto(batch.GetFleetMetrics()),
+		TransactionMetrics:    metricAggregatesFromProto(batch.GetTransactionMetrics()),
+		DependencyMetrics:     metricAggregatesFromProto(batch.GetDependencyMetrics()),
+		SOAPMetrics:           metricAggregatesFromProto(batch.GetSoapMetrics()),
+		NetworkProfileMetrics: metricAggregatesFromProto(batch.GetNetworkProfileMetrics()),
+		Browser:               browserMetricsFromProto(batch.GetBrowserMetrics()),
+		BrowserByDevice:       browserDeviceMetricsFromProto(batch.GetBrowserDeviceMetrics()),
+		Groups:                groups,
+		LifecycleState:        batch.GetLifecycleState(),
+		LifecycleError:        batch.GetLifecycleError(),
+		Telemetry:             telemetry,
 	}, nil
 }
 
@@ -553,7 +620,221 @@ func toProtoAssignment(assignment Assignment) *pb.WorkAssignment {
 		RampUpSeconds:         assignment.RampUpSeconds,
 		Environment:           environment,
 		DataFiles:             dataFiles,
+		RedactionRules:        redactionRulesToProto(assignment.RedactionRules),
 	}
+}
+
+func redactionRulesToProto(rules []engine.RedactionRule) []*pb.RedactionRule {
+	if len(rules) == 0 {
+		return nil
+	}
+	out := make([]*pb.RedactionRule, 0, len(rules))
+	for _, rule := range rules {
+		out = append(out, &pb.RedactionRule{
+			Name:        rule.Name,
+			Pattern:     rule.Pattern,
+			Replacement: rule.Replacement,
+		})
+	}
+	return out
+}
+
+func metricAggregatesFromProto(values []*pb.MetricAggregate) []MetricAggregate {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]MetricAggregate, 0, len(values))
+	for _, value := range values {
+		if aggregate := metricAggregateFromProto(value); aggregate != nil {
+			out = append(out, *aggregate)
+		}
+	}
+	return out
+}
+
+func metricAggregatesToProto(values []MetricAggregate) []*pb.MetricAggregate {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]*pb.MetricAggregate, 0, len(values))
+	for index := range values {
+		out = append(out, metricAggregateToProto(&values[index]))
+	}
+	return out
+}
+
+func metricAggregateFromProto(value *pb.MetricAggregate) *MetricAggregate {
+	if value == nil {
+		return nil
+	}
+	return &MetricAggregate{
+		Name:             value.GetName(),
+		DependencyType:   value.GetDependencyType(),
+		DependencyTarget: value.GetDependencyTarget(),
+		Count:            value.GetCount(),
+		Errors:           value.GetErrors(),
+		AvgMs:            value.GetAvgMs(),
+		P50Ms:            value.GetP50Ms(),
+		P90Ms:            value.GetP90Ms(),
+		P95Ms:            value.GetP95Ms(),
+		P99Ms:            value.GetP99Ms(),
+		AvgDNSMs:         value.GetAvgDnsMs(),
+		AvgConnectMs:     value.GetAvgConnectMs(),
+		AvgTLSMs:         value.GetAvgTlsMs(),
+		AvgTTFBMs:        value.GetAvgTtfbMs(),
+		BytesSent:        value.GetBytesSent(),
+		BytesReceived:    value.GetBytesReceived(),
+		TPS:              value.GetTps(),
+		DurationDigest:   tdigestSnapshotFromProto(value.GetDurationDigest()),
+	}
+}
+
+func metricAggregateToProto(value *MetricAggregate) *pb.MetricAggregate {
+	if value == nil {
+		return nil
+	}
+	return &pb.MetricAggregate{
+		Name:             value.Name,
+		DependencyType:   value.DependencyType,
+		DependencyTarget: value.DependencyTarget,
+		Count:            value.Count,
+		Errors:           value.Errors,
+		AvgMs:            value.AvgMs,
+		P50Ms:            value.P50Ms,
+		P90Ms:            value.P90Ms,
+		P95Ms:            value.P95Ms,
+		P99Ms:            value.P99Ms,
+		AvgDnsMs:         value.AvgDNSMs,
+		AvgConnectMs:     value.AvgConnectMs,
+		AvgTlsMs:         value.AvgTLSMs,
+		AvgTtfbMs:        value.AvgTTFBMs,
+		BytesSent:        value.BytesSent,
+		BytesReceived:    value.BytesReceived,
+		Tps:              value.TPS,
+		DurationDigest:   tdigestSnapshotToProto(value.DurationDigest),
+	}
+}
+
+func tdigestSnapshotFromProto(value *pb.TDigestSnapshot) *engine.TDigestSnapshot {
+	if value == nil || value.GetCount() == 0 {
+		return nil
+	}
+	centroids := make([]engine.TDigestCentroidSnapshot, 0, len(value.GetCentroids()))
+	for _, centroid := range value.GetCentroids() {
+		centroids = append(centroids, engine.TDigestCentroidSnapshot{
+			Mean:   centroid.GetMean(),
+			Weight: centroid.GetWeight(),
+		})
+	}
+	return &engine.TDigestSnapshot{
+		Compression: value.GetCompression(),
+		TotalWeight: value.GetTotalWeight(),
+		Min:         value.GetMin(),
+		Max:         value.GetMax(),
+		Count:       value.GetCount(),
+		Centroids:   centroids,
+	}
+}
+
+func tdigestSnapshotToProto(value *engine.TDigestSnapshot) *pb.TDigestSnapshot {
+	if value == nil || value.Count == 0 {
+		return nil
+	}
+	centroids := make([]*pb.TDigestCentroid, 0, len(value.Centroids))
+	for _, centroid := range value.Centroids {
+		centroids = append(centroids, &pb.TDigestCentroid{
+			Mean:   centroid.Mean,
+			Weight: centroid.Weight,
+		})
+	}
+	return &pb.TDigestSnapshot{
+		Compression: value.Compression,
+		TotalWeight: value.TotalWeight,
+		Min:         value.Min,
+		Max:         value.Max,
+		Count:       value.Count,
+		Centroids:   centroids,
+	}
+}
+
+func browserMetricsFromProto(value *pb.BrowserMetrics) *BrowserMetrics {
+	if value == nil || value.GetSamples() == 0 {
+		return nil
+	}
+	return &BrowserMetrics{
+		Samples:              value.GetSamples(),
+		AvgFCPMs:             value.GetAvgFcpMs(),
+		AvgLCPMs:             value.GetAvgLcpMs(),
+		AvgCLSScore:          value.GetAvgClsScore(),
+		AvgINPMs:             value.GetAvgInpMs(),
+		AvgTTFBMs:            value.GetAvgTtfbMs(),
+		AvgBlockingResources: value.GetAvgBlockingResources(),
+		AvgLongTaskCount:     value.GetAvgLongTaskCount(),
+		AvgJSHeapUsedMB:      value.GetAvgJsHeapUsedMb(),
+		AvgBrowserProcessCPU: value.GetAvgBrowserProcessCpuPct(),
+		AvgBrowserProcessMem: value.GetAvgBrowserProcessMemMb(),
+	}
+}
+
+func browserMetricsToProto(value *BrowserMetrics) *pb.BrowserMetrics {
+	if value == nil || value.Samples == 0 {
+		return nil
+	}
+	return &pb.BrowserMetrics{
+		Samples:                 value.Samples,
+		AvgFcpMs:                value.AvgFCPMs,
+		AvgLcpMs:                value.AvgLCPMs,
+		AvgClsScore:             value.AvgCLSScore,
+		AvgInpMs:                value.AvgINPMs,
+		AvgTtfbMs:               value.AvgTTFBMs,
+		AvgBlockingResources:    value.AvgBlockingResources,
+		AvgLongTaskCount:        value.AvgLongTaskCount,
+		AvgJsHeapUsedMb:         value.AvgJSHeapUsedMB,
+		AvgBrowserProcessCpuPct: value.AvgBrowserProcessCPU,
+		AvgBrowserProcessMemMb:  value.AvgBrowserProcessMem,
+	}
+}
+
+func browserDeviceMetricsFromProto(values []*pb.BrowserDeviceMetrics) []BrowserDeviceMetrics {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]BrowserDeviceMetrics, 0, len(values))
+	for _, value := range values {
+		metrics := browserMetricsFromProto(value.GetMetrics())
+		if metrics == nil {
+			continue
+		}
+		out = append(out, BrowserDeviceMetrics{
+			DeviceProfile:  value.GetDeviceProfile(),
+			DevicePlatform: value.GetDevicePlatform(),
+			DeviceTier:     value.GetDeviceTier(),
+			BrowserEngine:  value.GetBrowserEngine(),
+			Metrics:        *metrics,
+		})
+	}
+	return out
+}
+
+func browserDeviceMetricsToProto(values []BrowserDeviceMetrics) []*pb.BrowserDeviceMetrics {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]*pb.BrowserDeviceMetrics, 0, len(values))
+	for _, value := range values {
+		metrics := browserMetricsToProto(&value.Metrics)
+		if metrics == nil {
+			continue
+		}
+		out = append(out, &pb.BrowserDeviceMetrics{
+			DeviceProfile:  value.DeviceProfile,
+			DevicePlatform: value.DevicePlatform,
+			DeviceTier:     value.DeviceTier,
+			BrowserEngine:  value.BrowserEngine,
+			Metrics:        metrics,
+		})
+	}
+	return out
 }
 
 func toProtoStats(stats GeneratorStats) *pb.GeneratorStats {

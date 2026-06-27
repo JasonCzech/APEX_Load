@@ -35,7 +35,7 @@ func TestTransactionBufferDrainWindow(t *testing.T) {
 
 	// First drain on a zero lastDrainAt reports a zero window but must advance
 	// lastDrainAt so the NEXT window is measured.
-	out, window := b.DrainWindow()
+	out, _, window := b.DrainWindow()
 	if out != nil {
 		t.Fatalf("empty first drain returned %d transactions, want nil", len(out))
 	}
@@ -48,13 +48,13 @@ func TestTransactionBufferDrainWindow(t *testing.T) {
 
 	// A subsequent drain measures the elapsed window from the prior drain.
 	b.lastDrainAt = time.Now().Add(-120 * time.Millisecond)
-	if _, window = b.DrainWindow(); window < 100*time.Millisecond {
+	if _, _, window = b.DrainWindow(); window < 100*time.Millisecond {
 		t.Fatalf("subsequent drain window = %v, want >= ~120ms (measured from lastDrainAt)", window)
 	}
 
 	// Buffered transactions are returned and the buffer is cleared.
 	b.transactions = []TransactionMetric{{Name: "a"}, {Name: "b"}}
-	out, _ = b.DrainWindow()
+	out, _, _ = b.DrainWindow()
 	if len(out) != 2 {
 		t.Fatalf("drain returned %d transactions, want 2", len(out))
 	}
@@ -68,18 +68,14 @@ func TestTransactionBufferDrainWindow(t *testing.T) {
 // group windows differ; the effective window makes totalSuccess/window equal the
 // additive sum-of-(groupSuccess/groupWindow) rate.
 func TestEffectiveBatchWindowMsAdditive(t *testing.T) {
-	successN := func(n int) []TransactionMetric {
-		out := make([]TransactionMetric, n)
-		for i := range out {
-			out[i] = TransactionMetric{Success: true}
-		}
-		return out
+	successN := func(n int64) metricsAggregateSet {
+		return metricsAggregateSet{Fleet: &MetricAggregate{Count: n}}
 	}
 	// group a: 100 tx / 1000ms = 100 TPS; group b: 200 tx / 2000ms = 100 TPS.
 	// Additive = 200 TPS. Naive (300 success / 2000ms max) = 150 TPS (wrong).
 	a := assignedTest{
-		groupTransactions: map[string][]TransactionMetric{"a": successN(100), "b": successN(200)},
-		groupTelemetry:    map[string]MetricsTelemetry{"a": {WindowMs: 1000}, "b": {WindowMs: 2000}},
+		groupAggregates: map[string]metricsAggregateSet{"a": successN(100), "b": successN(200)},
+		groupTelemetry:  map[string]MetricsTelemetry{"a": {WindowMs: 1000}, "b": {WindowMs: 2000}},
 	}
 	windowMs := effectiveBatchWindowMs(a, 2000)
 	tps := float64(300) / windowSecondsFromMs(windowMs)
@@ -89,15 +85,15 @@ func TestEffectiveBatchWindowMsAdditive(t *testing.T) {
 
 	// Steady state (equal windows) must be unchanged: effective == that window.
 	steady := assignedTest{
-		groupTransactions: map[string][]TransactionMetric{"a": successN(6), "b": successN(4)},
-		groupTelemetry:    map[string]MetricsTelemetry{"a": {WindowMs: 1000}, "b": {WindowMs: 1000}},
+		groupAggregates: map[string]metricsAggregateSet{"a": successN(6), "b": successN(4)},
+		groupTelemetry:  map[string]MetricsTelemetry{"a": {WindowMs: 1000}, "b": {WindowMs: 1000}},
 	}
 	if got := effectiveBatchWindowMs(steady, 1000); got != 1000 {
 		t.Fatalf("steady-state effective window = %d, want 1000 (unchanged)", got)
 	}
 
 	// No successes -> fall back to the provided window.
-	if got := effectiveBatchWindowMs(assignedTest{groupTransactions: map[string][]TransactionMetric{}}, 1234); got != 1234 {
+	if got := effectiveBatchWindowMs(assignedTest{groupAggregates: map[string]metricsAggregateSet{}}, 1234); got != 1234 {
 		t.Fatalf("no-success effective window = %d, want fallback 1234", got)
 	}
 }

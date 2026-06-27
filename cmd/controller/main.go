@@ -81,6 +81,7 @@ func main() {
 		Addr:                  addr,
 		BindScope:             bindScope,
 		MetricsAddr:           strings.TrimSpace(os.Getenv("APEXLOAD_METRICS_ADDR")),
+		MetricsToken:          strings.TrimSpace(os.Getenv("APEXLOAD_METRICS_TOKEN")),
 		ProxyAddr:             recorderProxyAddr,
 		MaxConcurrent:         10,
 		Store:                 store,

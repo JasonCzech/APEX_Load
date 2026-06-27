@@ -4,3 +4,4 @@ namespace: apexload
 resources:
   - ../aks
   - servicemonitor.yaml
+  - ../monitoring/prometheusrule.yaml

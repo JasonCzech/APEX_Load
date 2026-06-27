@@ -1478,6 +1478,29 @@
   box-shadow: var(--shadow-md);
 }
 
+.chart-visual {
+  min-width: 0;
+}
+
+.chart-card .recharts-legend-wrapper {
+  max-height: 88px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.chart-a11y-table {
+  display: block !important;
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0 0 0 0);
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
 .chart-card-header {
   display: flex;
   justify-content: space-between;
@@ -1669,6 +1692,12 @@
 }
 
 .chart-series-legend-item.percentile .chart-series-swatch {
+  height: 0;
+  border-top: 2px dashed currentColor;
+  background: transparent;
+}
+
+.chart-series-legend-item.dashed .chart-series-swatch {
   height: 0;
   border-top: 2px dashed currentColor;
   background: transparent;
@@ -2056,14 +2085,14 @@
   padding: 8px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: rgba(33, 36, 47, 0.96);
+  background: color-mix(in srgb, var(--bg-card) 96%, transparent);
   box-shadow: var(--shadow-md);
   backdrop-filter: blur(12px);
 }
 
 .chart-context-menu-title {
   padding: 6px 8px 8px;
-  color: #aeb7c8;
+  color: var(--text-muted);
   font-size: 11px;
   font-weight: 700;
   line-height: 1.2;
@@ -2079,7 +2108,7 @@
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: #f3f6fb;
+  color: var(--text-primary);
   font: inherit;
   font-size: 13px;
   line-height: 1.25;
@@ -2090,8 +2119,31 @@
 .chart-context-menu button:hover,
 .chart-context-menu button:focus-visible {
   outline: none;
-  background: rgba(255, 255, 255, 0.12);
-  color: #ffffff;
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.chart-empty-state {
+  display: grid;
+  min-height: 180px;
+  place-items: center;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--bg-card) 68%, transparent);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.chart-terminal-status {
+  margin: 0 0 0.75rem;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid color-mix(in srgb, var(--danger) 42%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--danger) 9%, var(--bg-card));
+  color: var(--text-primary);
+  font-size: 0.82rem;
+  font-weight: 700;
 }
 
 .chart-y-axis-click-target {
@@ -2253,7 +2305,7 @@
   padding: 0.35rem 0.3rem;
   text-align: right;
   font-variant-numeric: tabular-nums;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--border);
 }
 
 .chart-metrics-table th:first-child,
@@ -2308,11 +2360,11 @@
 }
 
 .chart-metrics-table tbody tr.metric-row:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--bg-hover);
 }
 
 .chart-metrics-table tbody tr.metric-row.selected {
-  background: rgba(255, 255, 255, 0.08);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
   box-shadow: inset 2px 0 0 var(--accent);
 }
 

@@ -3118,6 +3118,7 @@ export interface DashboardNotificationWebhook {
   format: 'slack' | 'teams' | 'dynatrace'
   events?: string[]
   api_token?: string
+  has_api_token?: boolean
   entity_selector?: string
   timeout_minutes?: number
 }

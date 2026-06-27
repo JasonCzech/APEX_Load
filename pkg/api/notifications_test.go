@@ -301,3 +301,52 @@ func TestBroadcastEventDispatchesDynatraceWebhookWithAPIToken(t *testing.T) {
 		t.Fatal("expected webhook delivery")
 	}
 }
+
+func TestNotificationDispatcherRetriesRetryableStatus(t *testing.T) {
+	notificationDeliveryFailuresTotal.Store(0)
+	attempts := 0
+	var dedupeHeader string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		dedupeHeader = r.Header.Get("X-APEXLoad-Notification-Key")
+		if attempts == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	dispatcher := newNotificationDispatcher(server.Client())
+	dispatcher.postJSON(NotificationWebhookSettings{URL: server.URL, Format: notificationFormatSlack}, map[string]any{"ok": true}, "dedupe-key")
+
+	if attempts != 2 {
+		t.Fatalf("attempts = %d, want retry then success", attempts)
+	}
+	if dedupeHeader != "dedupe-key" {
+		t.Fatalf("dedupe header = %q, want dedupe-key", dedupeHeader)
+	}
+	if got := notificationDeliveryFailures(); got != 0 {
+		t.Fatalf("delivery failures = %d, want 0 after retry success", got)
+	}
+}
+
+func TestNotificationDispatcherCountsFinalFailure(t *testing.T) {
+	notificationDeliveryFailuresTotal.Store(0)
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer server.Close()
+
+	dispatcher := newNotificationDispatcher(server.Client())
+	dispatcher.postJSON(NotificationWebhookSettings{URL: server.URL, Format: notificationFormatSlack}, map[string]any{"ok": true}, "dedupe-key")
+
+	if attempts != 3 {
+		t.Fatalf("attempts = %d, want bounded 3 retries", attempts)
+	}
+	if got := notificationDeliveryFailures(); got != 1 {
+		t.Fatalf("delivery failures = %d, want 1", got)
+	}
+}

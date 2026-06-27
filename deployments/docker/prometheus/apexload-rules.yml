@@ -1,0 +1,35 @@
+groups:
+  - name: apexload.telemetry
+    rules:
+      - alert: ApexLoadControllerMetricsMissing
+        expr: absent(apexload_up)
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: APEX Load controller metrics are missing
+          description: Prometheus has not scraped apexload_up for at least 2 minutes.
+      - alert: ApexLoadTelemetrySampleStale
+        expr: apexload_telemetry_sample_age_ms > 5000
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: APEX Load telemetry samples are stale
+          description: Test {{ $labels.test_id }} has telemetry sample age above 5 seconds.
+      - alert: ApexLoadTelemetryDrops
+        expr: increase(apexload_telemetry_dropped_results_total[5m]) > 0 or increase(apexload_telemetry_dropped_subscriber_batches_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: APEX Load telemetry is dropping data
+          description: Test {{ $labels.test_id }} reported dropped collector samples or generator stream batches.
+      - alert: ApexLoadWebSocketDrops
+        expr: increase(apexload_websocket_dropped_messages_total[5m]) > 0 or increase(apexload_websocket_dropped_events_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: APEX Load WebSocket fan-out is dropping messages
+          description: Test {{ $labels.test_id }} reported dropped WebSocket messages or broadcast events.

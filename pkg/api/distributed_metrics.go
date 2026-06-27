@@ -24,9 +24,17 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 	hasPublishedAt := false
 	hasControllerReceivedAt := false
 	groupsByName := make(map[string]int32)
+	groupMetricsByName := make(map[string][]generatorrpc.MetricAggregate)
 	fleetTPS := 0.0
 	groupTPS := make(map[string]float64)
 	statsList := make([]generatorrpc.GeneratorStats, 0, len(batches))
+	fleetMetrics := make([]generatorrpc.MetricAggregate, 0, len(batches))
+	transactionMetrics := make([]generatorrpc.MetricAggregate, 0)
+	dependencyMetrics := make([]generatorrpc.MetricAggregate, 0)
+	soapMetrics := make([]generatorrpc.MetricAggregate, 0)
+	networkProfileMetrics := make([]generatorrpc.MetricAggregate, 0)
+	browserMetrics := make([]*generatorrpc.BrowserMetrics, 0)
+	browserDeviceMetrics := make([]generatorrpc.BrowserDeviceMetrics, 0)
 	for target := range batches {
 		targets = append(targets, target)
 	}
@@ -41,16 +49,36 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 		}
 		statsList = append(statsList, batch.Stats)
 		combined.Transactions = append(combined.Transactions, batch.Transactions...)
+		if batch.FleetMetrics != nil {
+			fleetMetrics = append(fleetMetrics, *batch.FleetMetrics)
+		}
+		transactionMetrics = append(transactionMetrics, batch.TransactionMetrics...)
+		dependencyMetrics = append(dependencyMetrics, batch.DependencyMetrics...)
+		soapMetrics = append(soapMetrics, batch.SOAPMetrics...)
+		networkProfileMetrics = append(networkProfileMetrics, batch.NetworkProfileMetrics...)
+		if batch.Browser != nil {
+			browserMetrics = append(browserMetrics, batch.Browser)
+		}
+		browserDeviceMetrics = append(browserDeviceMetrics, batch.BrowserByDevice...)
 		windowSec := batchWindowSeconds(batch.WindowMs)
 		batchSuccess := 0.0
 		batchGroupSuccess := make(map[string]float64)
-		for _, tx := range batch.Transactions {
-			if tx.Success {
-				batchSuccess++
-				batchGroupSuccess[strings.TrimSpace(tx.Group)]++
+		if batch.FleetMetrics != nil && batch.FleetMetrics.Count > 0 {
+			batchSuccess = float64(batch.FleetMetrics.Count - batch.FleetMetrics.Errors)
+			if batch.FleetMetrics.TPS > 0 {
+				fleetTPS += batch.FleetMetrics.TPS
+			} else {
+				fleetTPS += batchSuccess / windowSec
 			}
+		} else {
+			for _, tx := range batch.Transactions {
+				if tx.Success {
+					batchSuccess++
+					batchGroupSuccess[strings.TrimSpace(tx.Group)]++
+				}
+			}
+			fleetTPS += batchSuccess / windowSec
 		}
-		fleetTPS += batchSuccess / windowSec
 		for groupName, success := range batchGroupSuccess {
 			groupTPS[groupName] += success / windowSec
 		}
@@ -59,6 +87,14 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 				continue
 			}
 			groupsByName[group.Name] += group.ActiveVUsers
+			if group.Metrics != nil && group.Metrics.Count > 0 {
+				groupMetricsByName[group.Name] = append(groupMetricsByName[group.Name], *group.Metrics)
+				if group.Metrics.TPS > 0 {
+					groupTPS[group.Name] += group.Metrics.TPS
+				} else {
+					groupTPS[group.Name] += float64(group.Metrics.Count-group.Metrics.Errors) / windowSec
+				}
+			}
 		}
 		if batch.Telemetry != nil {
 			if combined.Telemetry == nil {
@@ -81,15 +117,35 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 			if batch.Telemetry.SampleAgeMs > combined.Telemetry.SampleAgeMs {
 				combined.Telemetry.SampleAgeMs = batch.Telemetry.SampleAgeMs
 			}
+			if batch.Telemetry.GeneratorProcessingLagMs > combined.Telemetry.GeneratorProcessingLagMs {
+				combined.Telemetry.GeneratorProcessingLagMs = batch.Telemetry.GeneratorProcessingLagMs
+			}
+			if batch.Telemetry.TransportLagMs > combined.Telemetry.TransportLagMs {
+				combined.Telemetry.TransportLagMs = batch.Telemetry.TransportLagMs
+			}
+			if batch.Telemetry.DroppedSubscriberBatches > combined.Telemetry.DroppedSubscriberBatches {
+				combined.Telemetry.DroppedSubscriberBatches = batch.Telemetry.DroppedSubscriberBatches
+			}
 		}
 	}
+	combined.FleetMetrics = mergeGeneratorMetricAggregates(fleetMetrics)
+	combined.TransactionMetrics = mergeGeneratorMetricAggregateSeries(transactionMetrics)
+	combined.DependencyMetrics = mergeGeneratorMetricAggregateSeries(dependencyMetrics)
+	combined.SOAPMetrics = mergeGeneratorMetricAggregateSeries(soapMetrics)
+	combined.NetworkProfileMetrics = mergeGeneratorMetricAggregateSeries(networkProfileMetrics)
+	combined.Browser = mergeGeneratorBrowserMetrics(browserMetrics)
+	combined.BrowserByDevice = mergeGeneratorBrowserDeviceMetrics(browserDeviceMetrics)
 	groupNames := make([]string, 0, len(groupsByName))
 	for name := range groupsByName {
 		groupNames = append(groupNames, name)
 	}
 	sort.Strings(groupNames)
 	for _, name := range groupNames {
-		combined.Groups = append(combined.Groups, generatorrpc.GroupMetric{Name: name, ActiveVUsers: groupsByName[name]})
+		combined.Groups = append(combined.Groups, generatorrpc.GroupMetric{
+			Name:         name,
+			ActiveVUsers: groupsByName[name],
+			Metrics:      mergeGeneratorMetricAggregates(groupMetricsByName[name]),
+		})
 	}
 	combined.Stats = aggregateDistributedGeneratorStats(statsList)
 	return combined, fleetTPS, groupTPS
@@ -138,6 +194,7 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 		Transactions:     make(map[string]*TxMetrics),
 		DependencyHealth: make(map[string]*TxMetrics),
 		SOAPOperations:   make(map[string]*TxMetrics),
+		NetworkProfiles:  make(map[string]*TxMetrics),
 		GroupMetrics:     make(map[string]*GroupLiveMetrics),
 		Telemetry:        &TelemetryHealth{},
 		Resources: &engine.SystemResources{
@@ -149,6 +206,7 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 	if batch.Telemetry != nil {
 		live.Telemetry.DroppedResults = batch.Telemetry.DroppedResults
 		live.Telemetry.SheddedArrivals = batch.Telemetry.SheddedArrivals
+		live.Telemetry.DroppedSubscriberBatches = batch.Telemetry.DroppedSubscriberBatches
 		if batch.Telemetry.CollectedAtUnixMs > 0 {
 			live.Telemetry.CollectedAt = time.UnixMilli(batch.Telemetry.CollectedAtUnixMs)
 		}
@@ -158,16 +216,23 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 		if batch.Telemetry.ControllerReceivedAtUnixMs > 0 {
 			live.Telemetry.ControllerReceivedAt = time.UnixMilli(batch.Telemetry.ControllerReceivedAtUnixMs)
 		}
-		if !live.Telemetry.CollectedAt.IsZero() && !live.Telemetry.GeneratorPublishedAt.IsZero() {
+		if batch.Telemetry.GeneratorProcessingLagMs > 0 {
+			live.Telemetry.GeneratorProcessingLagMs = batch.Telemetry.GeneratorProcessingLagMs
+		} else if !live.Telemetry.CollectedAt.IsZero() && !live.Telemetry.GeneratorPublishedAt.IsZero() {
 			live.Telemetry.GeneratorProcessingLagMs = float64(live.Telemetry.GeneratorPublishedAt.Sub(live.Telemetry.CollectedAt).Microseconds()) / 1000.0
 		}
-		if !live.Telemetry.GeneratorPublishedAt.IsZero() && !live.Telemetry.ControllerReceivedAt.IsZero() {
+		if batch.Telemetry.TransportLagMs > 0 {
+			live.Telemetry.TransportLagMs = batch.Telemetry.TransportLagMs
+		} else if !live.Telemetry.GeneratorPublishedAt.IsZero() && !live.Telemetry.ControllerReceivedAt.IsZero() {
 			live.Telemetry.TransportLagMs = float64(live.Telemetry.ControllerReceivedAt.Sub(live.Telemetry.GeneratorPublishedAt).Microseconds()) / 1000.0
 		}
 		live.Telemetry.SampleAgeMs = batch.Telemetry.SampleAgeMs
 	}
 	if live.Telemetry.CollectedAt.IsZero() {
 		live.Telemetry.CollectedAt = timestamp
+	}
+	if applyDistributedAggregateMetrics(test, live, batch, fleetTPS, groupTPS) {
+		return live
 	}
 
 	durationsByName := make(map[string][]float64)
@@ -357,6 +422,196 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 	}
 
 	return live
+}
+
+func applyDistributedAggregateMetrics(test *ManagedTest, live *LiveMetrics, batch generatorrpc.MetricsBatch, fleetTPS float64, groupTPS map[string]float64) bool {
+	if batch.FleetMetrics == nil || batch.FleetMetrics.Count == 0 {
+		return false
+	}
+	fleet := batch.FleetMetrics
+	live.TotalErrors = fleet.Errors
+	live.TotalTx = fleet.Count - fleet.Errors
+	if fleet.Count > 0 {
+		live.ErrorPct = float64(fleet.Errors) / float64(fleet.Count) * 100
+	}
+	live.TPS = fleetTPS
+	if live.TPS == 0 {
+		live.TPS = fleet.TPS
+	}
+	live.AvgResponseMs = fleet.AvgMs
+	live.P50Ms = fleet.P50Ms
+	live.P90Ms = fleet.P90Ms
+	live.P95Ms = fleet.P95Ms
+	live.P99Ms = fleet.P99Ms
+	live.AvgDNSMs = fleet.AvgDNSMs
+	live.AvgConnectMs = fleet.AvgConnectMs
+	live.AvgTLSMs = fleet.AvgTLSMs
+	live.AvgTTFBMs = fleet.AvgTTFBMs
+	if wait := fleet.AvgMs - fleet.AvgTTFBMs; wait > 0 {
+		live.AvgWaitMs = wait
+	}
+
+	for _, aggregate := range batch.TransactionMetrics {
+		metrics := txMetricsFromAggregate(aggregate)
+		if metrics != nil {
+			live.Transactions[metrics.Name] = metrics
+		}
+	}
+	for _, aggregate := range batch.DependencyMetrics {
+		metrics := txMetricsFromAggregate(aggregate)
+		if metrics != nil {
+			live.DependencyHealth[metrics.Name] = metrics
+		}
+	}
+	live.DependencyMap = buildLiveDependencyMap(live.DependencyHealth)
+	for _, aggregate := range batch.SOAPMetrics {
+		metrics := txMetricsFromAggregate(aggregate)
+		if metrics != nil {
+			live.SOAPOperations[metrics.Name] = metrics
+		}
+	}
+	for _, aggregate := range batch.NetworkProfileMetrics {
+		metrics := txMetricsFromAggregate(aggregate)
+		if metrics != nil {
+			live.NetworkProfiles[metrics.Name] = metrics
+		}
+	}
+	if batch.Browser != nil {
+		live.Browser = browserLiveMetricsFromGenerator(*batch.Browser)
+	}
+	if len(batch.BrowserByDevice) > 0 {
+		live.BrowserByDevice = make(map[string]*BrowserDeviceLiveMetrics, len(batch.BrowserByDevice))
+		for _, metrics := range batch.BrowserByDevice {
+			live.BrowserByDevice[metrics.DeviceProfile] = browserDeviceLiveMetricsFromGenerator(metrics)
+		}
+	}
+
+	resolvedGroupTPS := make(map[string]float64, len(groupTPS))
+	for rawGroup, tps := range groupTPS {
+		name := strings.TrimSpace(rawGroup)
+		if name == "" && len(test.Groups) == 1 {
+			name = test.Groups[0].Name
+		}
+		if name != "" {
+			resolvedGroupTPS[name] += tps
+		}
+	}
+	for _, group := range batch.Groups {
+		groupLive := &GroupLiveMetrics{Name: group.Name, VUsers: int(group.ActiveVUsers)}
+		if group.Metrics != nil && group.Metrics.Count > 0 {
+			groupLive.Transactions = group.Metrics.Count - group.Metrics.Errors
+			groupLive.Errors = group.Metrics.Errors
+			groupLive.TPS = resolvedGroupTPS[group.Name]
+			if groupLive.TPS == 0 {
+				groupLive.TPS = group.Metrics.TPS
+			}
+			groupLive.AvgResponseMs = group.Metrics.AvgMs
+			groupLive.P50Ms = group.Metrics.P50Ms
+			groupLive.P90Ms = group.Metrics.P90Ms
+			groupLive.P95Ms = group.Metrics.P95Ms
+			groupLive.P99Ms = group.Metrics.P99Ms
+			groupLive.DurationDigest = group.Metrics.DurationDigest
+		}
+		live.GroupMetrics[group.Name] = groupLive
+	}
+	if len(live.GroupMetrics) == 0 && len(test.Groups) == 1 {
+		groupName := test.Groups[0].Name
+		live.GroupMetrics[groupName] = &GroupLiveMetrics{
+			Name:           groupName,
+			VUsers:         int(batch.Stats.ActiveVUsers),
+			Transactions:   live.TotalTx,
+			Errors:         live.TotalErrors,
+			TPS:            live.TPS,
+			AvgResponseMs:  live.AvgResponseMs,
+			P50Ms:          live.P50Ms,
+			P90Ms:          live.P90Ms,
+			P95Ms:          live.P95Ms,
+			P99Ms:          live.P99Ms,
+			DurationDigest: fleet.DurationDigest,
+		}
+	}
+
+	errorBreakdown := make(map[string]int64)
+	for _, tx := range batch.Transactions {
+		if tx.Success {
+			continue
+		}
+		if class := engine.ClassifyError(int(tx.StatusCode), tx.ErrorMessage, false); class != "" {
+			errorBreakdown[class]++
+		}
+		if tx.Snapshot != nil {
+			evidence := liveErrorEvidenceFromTransaction(tx)
+			if evidence.Signature != "" {
+				live.ErrorEvidence = append(live.ErrorEvidence, evidence)
+			}
+		}
+	}
+	live.ErrorBreakdown = copyErrorClassCounts(errorBreakdown)
+	return true
+}
+
+func txMetricsFromAggregate(aggregate generatorrpc.MetricAggregate) *TxMetrics {
+	if strings.TrimSpace(aggregate.Name) == "" || aggregate.Count == 0 {
+		return nil
+	}
+	return &TxMetrics{
+		Name:             aggregate.Name,
+		DependencyType:   aggregate.DependencyType,
+		DependencyTarget: aggregate.DependencyTarget,
+		AvgDNSMs:         aggregate.AvgDNSMs,
+		AvgConnectMs:     aggregate.AvgConnectMs,
+		AvgTLSMs:         aggregate.AvgTLSMs,
+		AvgTTFBMs:        aggregate.AvgTTFBMs,
+		Count:            aggregate.Count,
+		Errors:           aggregate.Errors,
+		AvgMs:            aggregate.AvgMs,
+		P50Ms:            aggregate.P50Ms,
+		P90Ms:            aggregate.P90Ms,
+		P95Ms:            aggregate.P95Ms,
+		P99Ms:            aggregate.P99Ms,
+	}
+}
+
+func browserLiveMetricsFromGenerator(metrics generatorrpc.BrowserMetrics) *BrowserLiveMetrics {
+	if metrics.Samples == 0 {
+		return nil
+	}
+	return &BrowserLiveMetrics{
+		Samples:              metrics.Samples,
+		AvgFCPMs:             metrics.AvgFCPMs,
+		AvgLCPMs:             metrics.AvgLCPMs,
+		AvgCLSScore:          metrics.AvgCLSScore,
+		AvgINPMs:             metrics.AvgINPMs,
+		AvgTTFBMs:            metrics.AvgTTFBMs,
+		AvgBlockingResources: metrics.AvgBlockingResources,
+		AvgLongTaskCount:     metrics.AvgLongTaskCount,
+		AvgJSHeapUsedMB:      metrics.AvgJSHeapUsedMB,
+		AvgBrowserProcessCPU: metrics.AvgBrowserProcessCPU,
+		AvgBrowserProcessMem: metrics.AvgBrowserProcessMem,
+	}
+}
+
+func browserDeviceLiveMetricsFromGenerator(metrics generatorrpc.BrowserDeviceMetrics) *BrowserDeviceLiveMetrics {
+	if metrics.Metrics.Samples == 0 {
+		return nil
+	}
+	return &BrowserDeviceLiveMetrics{
+		DeviceProfile:        metrics.DeviceProfile,
+		DevicePlatform:       metrics.DevicePlatform,
+		DeviceTier:           metrics.DeviceTier,
+		BrowserEngine:        metrics.BrowserEngine,
+		Samples:              metrics.Metrics.Samples,
+		AvgFCPMs:             metrics.Metrics.AvgFCPMs,
+		AvgLCPMs:             metrics.Metrics.AvgLCPMs,
+		AvgCLSScore:          metrics.Metrics.AvgCLSScore,
+		AvgINPMs:             metrics.Metrics.AvgINPMs,
+		AvgTTFBMs:            metrics.Metrics.AvgTTFBMs,
+		AvgBlockingResources: metrics.Metrics.AvgBlockingResources,
+		AvgLongTaskCount:     metrics.Metrics.AvgLongTaskCount,
+		AvgJSHeapUsedMB:      metrics.Metrics.AvgJSHeapUsedMB,
+		AvgBrowserProcessCPU: metrics.Metrics.AvgBrowserProcessCPU,
+		AvgBrowserProcessMem: metrics.Metrics.AvgBrowserProcessMem,
+	}
 }
 
 func mergeDistributedTransactionMetrics(metrics *TxMetrics, tx generatorrpc.TransactionMetric) {
@@ -625,7 +880,7 @@ func incrementTelemetryHistogramCount(values *map[string]int64, payloadKB float6
 func payloadHistogramBucket(payloadKB float64) string {
 	switch {
 	case payloadKB <= 0:
-		return ""
+		return "0 KB"
 	case payloadKB < 1:
 		return "0-1 KB"
 	case payloadKB < 4:
@@ -671,4 +926,205 @@ func finalizeDistributedTxMetrics(metrics *TxMetrics, sortedDurations []float64)
 	metrics.AvgMs /= float64(metrics.Count)
 	finalizeAPIServerTelemetrySummary(metrics.ServerTelemetry)
 	metrics.P50Ms, metrics.P90Ms, metrics.P95Ms, metrics.P99Ms = percentilesFromSorted(sortedDurations)
+}
+
+func mergeGeneratorMetricAggregateSeries(values []generatorrpc.MetricAggregate) []generatorrpc.MetricAggregate {
+	if len(values) == 0 {
+		return nil
+	}
+	byName := make(map[string][]generatorrpc.MetricAggregate)
+	for _, value := range values {
+		name := strings.TrimSpace(value.Name)
+		if name == "" {
+			continue
+		}
+		byName[name] = append(byName[name], value)
+	}
+	names := make([]string, 0, len(byName))
+	for name := range byName {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	out := make([]generatorrpc.MetricAggregate, 0, len(names))
+	for _, name := range names {
+		if aggregate := mergeGeneratorMetricAggregates(byName[name]); aggregate != nil {
+			out = append(out, *aggregate)
+		}
+	}
+	return out
+}
+
+func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *generatorrpc.MetricAggregate {
+	if len(values) == 0 {
+		return nil
+	}
+	out := generatorrpc.MetricAggregate{}
+	var durationDigest *engine.TDigest
+	var avgMsSum, dnsSum, connectSum, tlsSum, ttfbSum float64
+	for _, value := range values {
+		if value.Count == 0 {
+			continue
+		}
+		if out.Name == "" {
+			out.Name = value.Name
+		}
+		mergeStableTxMetadata(&out.DependencyType, value.DependencyType)
+		mergeStableTxMetadata(&out.DependencyTarget, value.DependencyTarget)
+		count := float64(value.Count)
+		out.Count += value.Count
+		out.Errors += value.Errors
+		avgMsSum += value.AvgMs * count
+		dnsSum += value.AvgDNSMs * count
+		connectSum += value.AvgConnectMs * count
+		tlsSum += value.AvgTLSMs * count
+		ttfbSum += value.AvgTTFBMs * count
+		out.BytesSent += value.BytesSent
+		out.BytesReceived += value.BytesReceived
+		out.TPS += value.TPS
+		if value.DurationDigest != nil && value.DurationDigest.Count > 0 {
+			if durationDigest == nil {
+				durationDigest = engine.NewTDigest(value.DurationDigest.Compression)
+			}
+			durationDigest.Merge(engine.NewTDigestFromSnapshot(*value.DurationDigest))
+		}
+	}
+	if out.Count == 0 {
+		return nil
+	}
+	divisor := float64(out.Count)
+	out.AvgMs = avgMsSum / divisor
+	out.AvgDNSMs = dnsSum / divisor
+	out.AvgConnectMs = connectSum / divisor
+	out.AvgTLSMs = tlsSum / divisor
+	out.AvgTTFBMs = ttfbSum / divisor
+	if durationDigest != nil && durationDigest.Count() > 0 {
+		out.P50Ms = durationDigest.Quantile(0.50) / float64(time.Millisecond)
+		out.P90Ms = durationDigest.Quantile(0.90) / float64(time.Millisecond)
+		out.P95Ms = durationDigest.Quantile(0.95) / float64(time.Millisecond)
+		out.P99Ms = durationDigest.Quantile(0.99) / float64(time.Millisecond)
+		snapshot := durationDigest.Snapshot()
+		out.DurationDigest = &snapshot
+	} else {
+		out.P50Ms, out.P90Ms, out.P95Ms, out.P99Ms = weightedAggregatePercentiles(values)
+	}
+	return &out
+}
+
+func weightedAggregatePercentiles(values []generatorrpc.MetricAggregate) (float64, float64, float64, float64) {
+	total := int64(0)
+	for _, value := range values {
+		total += value.Count
+	}
+	if total == 0 {
+		return 0, 0, 0, 0
+	}
+	weighted := func(pick func(generatorrpc.MetricAggregate) float64) float64 {
+		sum := 0.0
+		for _, value := range values {
+			sum += pick(value) * float64(value.Count)
+		}
+		return sum / float64(total)
+	}
+	return weighted(func(v generatorrpc.MetricAggregate) float64 { return v.P50Ms }),
+		weighted(func(v generatorrpc.MetricAggregate) float64 { return v.P90Ms }),
+		weighted(func(v generatorrpc.MetricAggregate) float64 { return v.P95Ms }),
+		weighted(func(v generatorrpc.MetricAggregate) float64 { return v.P99Ms })
+}
+
+func mergeGeneratorBrowserMetrics(values []*generatorrpc.BrowserMetrics) *generatorrpc.BrowserMetrics {
+	if len(values) == 0 {
+		return nil
+	}
+	out := &generatorrpc.BrowserMetrics{}
+	for _, value := range values {
+		if value == nil || value.Samples == 0 {
+			continue
+		}
+		addGeneratorBrowserMetrics(out, *value)
+	}
+	finalizeGeneratorBrowserMetrics(out)
+	if out.Samples == 0 {
+		return nil
+	}
+	return out
+}
+
+func mergeGeneratorBrowserDeviceMetrics(values []generatorrpc.BrowserDeviceMetrics) []generatorrpc.BrowserDeviceMetrics {
+	if len(values) == 0 {
+		return nil
+	}
+	byProfile := make(map[string]*generatorrpc.BrowserDeviceMetrics)
+	for _, value := range values {
+		profile := strings.TrimSpace(value.DeviceProfile)
+		if profile == "" || value.Metrics.Samples == 0 {
+			continue
+		}
+		out := byProfile[profile]
+		if out == nil {
+			out = &generatorrpc.BrowserDeviceMetrics{
+				DeviceProfile:  profile,
+				DevicePlatform: value.DevicePlatform,
+				DeviceTier:     value.DeviceTier,
+				BrowserEngine:  value.BrowserEngine,
+			}
+			byProfile[profile] = out
+		}
+		if out.DevicePlatform == "" {
+			out.DevicePlatform = value.DevicePlatform
+		}
+		if out.DeviceTier == "" {
+			out.DeviceTier = value.DeviceTier
+		}
+		if out.BrowserEngine == "" {
+			out.BrowserEngine = value.BrowserEngine
+		}
+		addGeneratorBrowserMetrics(&out.Metrics, value.Metrics)
+	}
+	profiles := make([]string, 0, len(byProfile))
+	for profile := range byProfile {
+		profiles = append(profiles, profile)
+	}
+	sort.Strings(profiles)
+	out := make([]generatorrpc.BrowserDeviceMetrics, 0, len(profiles))
+	for _, profile := range profiles {
+		metrics := byProfile[profile]
+		finalizeGeneratorBrowserMetrics(&metrics.Metrics)
+		out = append(out, *metrics)
+	}
+	return out
+}
+
+func addGeneratorBrowserMetrics(out *generatorrpc.BrowserMetrics, value generatorrpc.BrowserMetrics) {
+	if out == nil || value.Samples == 0 {
+		return
+	}
+	samples := float64(value.Samples)
+	out.Samples += value.Samples
+	out.AvgFCPMs += value.AvgFCPMs * samples
+	out.AvgLCPMs += value.AvgLCPMs * samples
+	out.AvgCLSScore += value.AvgCLSScore * samples
+	out.AvgINPMs += value.AvgINPMs * samples
+	out.AvgTTFBMs += value.AvgTTFBMs * samples
+	out.AvgBlockingResources += value.AvgBlockingResources * samples
+	out.AvgLongTaskCount += value.AvgLongTaskCount * samples
+	out.AvgJSHeapUsedMB += value.AvgJSHeapUsedMB * samples
+	out.AvgBrowserProcessCPU += value.AvgBrowserProcessCPU * samples
+	out.AvgBrowserProcessMem += value.AvgBrowserProcessMem * samples
+}
+
+func finalizeGeneratorBrowserMetrics(out *generatorrpc.BrowserMetrics) {
+	if out == nil || out.Samples == 0 {
+		return
+	}
+	divisor := float64(out.Samples)
+	out.AvgFCPMs /= divisor
+	out.AvgLCPMs /= divisor
+	out.AvgCLSScore /= divisor
+	out.AvgINPMs /= divisor
+	out.AvgTTFBMs /= divisor
+	out.AvgBlockingResources /= divisor
+	out.AvgLongTaskCount /= divisor
+	out.AvgJSHeapUsedMB /= divisor
+	out.AvgBrowserProcessCPU /= divisor
+	out.AvgBrowserProcessMem /= divisor
 }

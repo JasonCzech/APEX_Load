@@ -289,6 +289,60 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 	}
 }
 
+func TestSystemSettingsRedactsAndPreservesNotificationSecrets(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 10, Addr: ":8080"})
+	settings := server.runner.GetSystemSettings()
+	settings.Notifications = NotificationsSettings{Webhooks: []NotificationWebhookSettings{{
+		Name:           "Dynatrace",
+		Enabled:        true,
+		URL:            "https://dynatrace.example.test/api/v2/events/ingest",
+		Format:         notificationFormatDynatrace,
+		Events:         []string{"telemetry_breached"},
+		APIToken:       "dt-secret-token",
+		EntitySelector: "type(SERVICE)",
+		TimeoutMinutes: 5,
+	}}}
+	if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatalf("UpdateSystemSettings: %v", err)
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/system/settings", nil)
+	getResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(getResp, getReq)
+	if getResp.Code != http.StatusOK {
+		t.Fatalf("GET status = %d body=%s", getResp.Code, getResp.Body.String())
+	}
+	if bytes.Contains(getResp.Body.Bytes(), []byte("dt-secret-token")) {
+		t.Fatalf("GET response leaked api token: %s", getResp.Body.String())
+	}
+	var redacted map[string]any
+	if err := json.Unmarshal(getResp.Body.Bytes(), &redacted); err != nil {
+		t.Fatalf("unmarshal redacted settings: %v", err)
+	}
+	webhooks := redacted["notifications"].(map[string]any)["webhooks"].([]any)
+	webhook := webhooks[0].(map[string]any)
+	if got := webhook["api_token"]; got != "" {
+		t.Fatalf("redacted api_token = %#v, want empty string", got)
+	}
+	if got := webhook["has_api_token"]; got != true {
+		t.Fatalf("has_api_token = %#v, want true", got)
+	}
+
+	putResp := httptest.NewRecorder()
+	putReq := httptest.NewRequest(http.MethodPut, "/api/v1/system/settings", bytes.NewReader(getResp.Body.Bytes()))
+	server.mux.ServeHTTP(putResp, putReq)
+	if putResp.Code != http.StatusOK {
+		t.Fatalf("PUT redacted settings status = %d body=%s", putResp.Code, putResp.Body.String())
+	}
+	if bytes.Contains(putResp.Body.Bytes(), []byte("dt-secret-token")) {
+		t.Fatalf("PUT response leaked api token: %s", putResp.Body.String())
+	}
+	persisted := server.runner.GetSystemSettings()
+	if got := persisted.Notifications.Webhooks[0].APIToken; got != "dt-secret-token" {
+		t.Fatalf("persisted token = %q, want preserved token", got)
+	}
+}
+
 func TestNormalizeLoadedSystemSettingsBackfillsTelemetryThresholds(t *testing.T) {
 	normalized := normalizeLoadedSystemSettings(SystemSettings{
 		General: GeneralSettings{

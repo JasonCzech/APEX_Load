@@ -569,8 +569,8 @@
 
       <div class="node" id="otel" data-layer="storage" style="left:860px;top:385px;min-width:100px">
         <div class="node-icon">&#128225;</div>
-        <div class="node-title">OpenTelemetry</div>
-        <div class="node-sub">Prometheus / Dynatrace</div>
+        <div class="node-title">Telemetry Export</div>
+        <div class="node-sub">Prometheus scrape / webhooks</div>
         <div class="node-badge" style="background:rgba(45,212,191,0.15);color:#2dd4bf">Export</div>
       </div>
 
@@ -799,7 +799,7 @@ const COMPONENTS = {
     body: `<p>Collects execution results from all VUsers via buffered channels (capacity 10,000). The zero-lock design ensures the metrics pipeline never blocks the hot execution path.</p>
     <p>Aggregation: per-action metrics (TPS, latency, errors), per-group metrics, per-dependency-target breakdown, SOAP operation breakdown, network profile breakdown. Browser protocol adds device-level and Web Vitals metrics.</p>
     <p>Live counters use <code>atomic.Int64</code> for lock-free increments. Periodic snapshots (1s) are pushed to the WebSocket Hub for real-time dashboard updates.</p>`,
-    connections: ['VUser Engine &mdash; result channel input', 'T-Digest &mdash; percentile computation', 'WebSocket Hub &mdash; snapshot broadcast', 'OpenTelemetry &mdash; metric export'],
+    connections: ['VUser Engine &mdash; result channel input', 'T-Digest &mdash; percentile computation', 'WebSocket Hub &mdash; snapshot broadcast', 'Telemetry Export &mdash; scrape endpoint'],
     files: ['pkg/engine/metrics.go', 'pkg/engine/sys_metrics.go']
   },
   tdigest: {
@@ -823,16 +823,15 @@ const COMPONENTS = {
     files: ['pkg/storage/storage.go', 'pkg/storage/sqlite.go', 'pkg/storage/factory.go']
   },
   otel: {
-    title: 'OpenTelemetry',
+    title: 'Telemetry Export',
     subtitle: 'Vendor-neutral Telemetry',
     layer: 'storage',
-    body: `<p>OpenTelemetry-native metrics export pipeline. Supports multiple backends simultaneously:</p>
+    body: `<p>Controller telemetry is exposed through a Prometheus scrape endpoint and event webhooks:</p>
     <p>&bull; Prometheus (pull-based scraping)<br/>
-    &bull; Dynatrace (push via OTLP)<br/>
-    &bull; ELK Stack (log correlation)<br/>
-    &bull; Custom OTLP endpoints</p>
+    &bull; Dynatrace Events API webhooks<br/>
+    &bull; W3C traceparent propagation on load traffic</p>
     <p>External metrics ingestion: scripts can configure <code>observability.external_metrics</code> to pull server-side metrics (CPU, memory, custom counters) from Prometheus endpoints and overlay them on the dashboard charts.</p>`,
-    connections: ['Metrics Collector &mdash; metric snapshots', 'Prometheus &mdash; scrape endpoint', 'Dynatrace &mdash; OTLP push'],
+    connections: ['Metrics Collector &mdash; metric snapshots', 'Prometheus &mdash; scrape endpoint', 'Dynatrace &mdash; Events webhook'],
     files: ['pkg/engine/metrics.go', 'pkg/api/external_metrics.go']
   },
   'proto-http': {

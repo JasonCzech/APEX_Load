@@ -1007,7 +1007,7 @@ func incrementTelemetryHistogramCount(values *map[string]int64, payloadKB float6
 func payloadHistogramBucket(payloadKB float64) string {
 	switch {
 	case payloadKB <= 0:
-		return ""
+		return "0 KB"
 	case payloadKB < 1:
 		return "0-1 KB"
 	case payloadKB < 4:

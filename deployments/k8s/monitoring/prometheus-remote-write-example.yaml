@@ -23,7 +23,7 @@ data:
             regex: apexload-controller
             action: keep
           - source_labels: [__meta_kubernetes_endpoint_port_name]
-            regex: http
+            regex: metrics
             action: keep
 
     remote_write:

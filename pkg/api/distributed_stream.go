@@ -246,7 +246,11 @@ func (b *distributedExecutionBackend) consumeMetrics(ctx context.Context, tr *Te
 		if batch.Telemetry == nil {
 			batch.Telemetry = &generatorrpc.MetricsTelemetry{}
 		}
-		batch.Telemetry.ControllerReceivedAtUnixMs = time.Now().UnixMilli()
+		receivedAtUnixMs := time.Now().UnixMilli()
+		batch.Telemetry.ControllerReceivedAtUnixMs = receivedAtUnixMs
+		if batch.Telemetry.PublishedAtUnixMs > 0 {
+			batch.Telemetry.TransportLagMs = float64(receivedAtUnixMs - batch.Telemetry.PublishedAtUnixMs)
+		}
 		live, finalStatus, finalError := b.applyRemoteMetricsBatch(tr, test, target, batch)
 		tr.publishLiveMetrics(test, live, nil)
 		switch finalStatus {
@@ -302,12 +306,37 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatch(tr *TestRunner, te
 			if len(batch.Transactions) == 0 {
 				batch.Transactions = prior.Transactions
 			}
+			if batch.FleetMetrics == nil {
+				batch.FleetMetrics = prior.FleetMetrics
+			}
+			if len(batch.TransactionMetrics) == 0 {
+				batch.TransactionMetrics = prior.TransactionMetrics
+			}
+			if len(batch.DependencyMetrics) == 0 {
+				batch.DependencyMetrics = prior.DependencyMetrics
+			}
+			if len(batch.SOAPMetrics) == 0 {
+				batch.SOAPMetrics = prior.SOAPMetrics
+			}
+			if len(batch.NetworkProfileMetrics) == 0 {
+				batch.NetworkProfileMetrics = prior.NetworkProfileMetrics
+			}
+			if batch.Browser == nil {
+				batch.Browser = prior.Browser
+			}
+			if len(batch.BrowserByDevice) == 0 {
+				batch.BrowserByDevice = prior.BrowserByDevice
+			}
 			if len(batch.Groups) == 0 {
 				batch.Groups = prior.Groups
 			}
 		}
 	}
-	test.remoteMetricsBatchesByTarget[target] = batch
+	if prior, ok := test.remoteMetricsBatchesByTarget[target]; ok && batch.LifecycleState != "COMPLETE" && batch.LifecycleState != "FAILED" && batch.TimestampUnixMs > 0 && prior.TimestampUnixMs > 0 && batch.TimestampUnixMs <= prior.TimestampUnixMs {
+		batch = prior
+	} else {
+		test.remoteMetricsBatchesByTarget[target] = batch
+	}
 	batches := make(map[string]generatorrpc.MetricsBatch, len(test.remoteMetricsBatchesByTarget))
 	for key, value := range test.remoteMetricsBatchesByTarget {
 		batches[key] = value

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -36,6 +37,8 @@ var supportedNotificationEvents = map[string]struct{}{
 	"fleet_alert_unacknowledged": {},
 	"fleet_degraded":             {},
 }
+
+var notificationDeliveryFailuresTotal atomic.Int64
 
 type NotificationsSettings struct {
 	Webhooks []NotificationWebhookSettings `json:"webhooks,omitempty"`
@@ -135,7 +138,7 @@ func (d *notificationDispatcher) Dispatch(settings NotificationsSettings, event 
 			slog.Warn("notification payload build failed", "event", event.Type, "format", webhook.Format, "err", err)
 			continue
 		}
-		go d.postJSON(webhook, payload)
+		go d.postJSON(webhook, payload, notificationDedupeKey(webhook, event))
 	}
 }
 
@@ -278,6 +281,7 @@ func buildDynatraceNotificationPayload(webhook NotificationWebhookSettings, even
 		},
 	}
 	properties := payload["properties"].(map[string]string)
+	properties["apexload.idempotency_key"] = notificationDedupeKey(webhook, event)
 	if strings.TrimSpace(event.Severity) != "" {
 		properties["apexload.severity"] = event.Severity
 	}
@@ -294,6 +298,17 @@ func buildDynatraceNotificationPayload(webhook NotificationWebhookSettings, even
 		payload["timeout"] = webhook.TimeoutMinutes
 	}
 	return payload
+}
+
+func notificationDedupeKey(webhook NotificationWebhookSettings, event NotificationEvent) string {
+	parts := []string{
+		strings.TrimSpace(webhook.Name),
+		strings.TrimSpace(webhook.URL),
+		strings.TrimSpace(event.Type),
+		strings.TrimSpace(event.TestID),
+		event.Timestamp.UTC().Format(time.RFC3339Nano),
+	}
+	return strings.Join(parts, "|")
 }
 
 func humanizeNotificationEvent(eventType string) string {
@@ -314,28 +329,84 @@ func fallbackNotificationValue(value string) string {
 	return value
 }
 
-func (d *notificationDispatcher) postJSON(webhook NotificationWebhookSettings, payload any) {
+func (d *notificationDispatcher) postJSON(webhook NotificationWebhookSettings, payload any, dedupeKey string) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		slog.Warn("notification marshal failed", "format", webhook.Format, "url", redactURL(webhook.URL), "err", err)
+		notificationDeliveryFailuresTotal.Add(1)
 		return
 	}
-	req, err := http.NewRequest(http.MethodPost, webhook.URL, bytes.NewReader(body))
-	if err != nil {
-		slog.Warn("notification request build failed", "format", webhook.Format, "url", redactURL(webhook.URL), "err", err)
-		return
+	const maxAttempts = 3
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		req, err := http.NewRequest(http.MethodPost, webhook.URL, bytes.NewReader(body))
+		if err != nil {
+			slog.Warn("notification request build failed", "format", webhook.Format, "url", redactURL(webhook.URL), "err", err)
+			notificationDeliveryFailuresTotal.Add(1)
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if dedupeKey != "" {
+			req.Header.Set("X-APEXLoad-Notification-Key", dedupeKey)
+		}
+		if webhook.Format == notificationFormatDynatrace && strings.TrimSpace(webhook.APIToken) != "" {
+			req.Header.Set("Authorization", "Api-Token "+strings.TrimSpace(webhook.APIToken))
+		}
+		resp, err := d.client.Do(req)
+		if err == nil && resp != nil && resp.StatusCode < http.StatusBadRequest {
+			_ = resp.Body.Close()
+			return
+		}
+		retryable := err != nil || (resp != nil && retryableNotificationStatus(resp.StatusCode))
+		if !retryable || attempt == maxAttempts {
+			if err != nil {
+				slog.Warn("notification delivery failed", "format", webhook.Format, "url", redactURL(webhook.URL), "attempt", attempt, "err", err)
+			} else if resp != nil {
+				slog.Warn("notification delivery returned error status", "format", webhook.Format, "url", redactURL(webhook.URL), "attempt", attempt, "status", resp.StatusCode)
+			}
+			notificationDeliveryFailuresTotal.Add(1)
+			if resp != nil {
+				_ = resp.Body.Close()
+			}
+			return
+		}
+		delay := notificationRetryDelay(resp, attempt)
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+		time.Sleep(delay)
 	}
-	req.Header.Set("Content-Type", "application/json")
-	if webhook.Format == notificationFormatDynatrace && strings.TrimSpace(webhook.APIToken) != "" {
-		req.Header.Set("Authorization", "Api-Token "+strings.TrimSpace(webhook.APIToken))
+}
+
+func retryableNotificationStatus(status int) bool {
+	return status == http.StatusRequestTimeout || status == http.StatusTooManyRequests || status >= http.StatusInternalServerError
+}
+
+func notificationRetryDelay(resp *http.Response, attempt int) time.Duration {
+	if resp != nil {
+		if retryAfter := strings.TrimSpace(resp.Header.Get("Retry-After")); retryAfter != "" {
+			if seconds, err := time.ParseDuration(retryAfter + "s"); err == nil && seconds > 0 {
+				return minDuration(seconds, 2*time.Second)
+			}
+			if when, err := http.ParseTime(retryAfter); err == nil {
+				delay := time.Until(when)
+				if delay > 0 {
+					return minDuration(delay, 2*time.Second)
+				}
+			}
+		}
 	}
-	resp, err := d.client.Do(req)
-	if err != nil {
-		slog.Warn("notification delivery failed", "format", webhook.Format, "url", redactURL(webhook.URL), "err", err)
-		return
+	base := time.Duration(100*(1<<(attempt-1))) * time.Millisecond
+	jitter := time.Duration(time.Now().UnixNano()%50) * time.Millisecond
+	return base + jitter
+}
+
+func notificationDeliveryFailures() int64 {
+	return notificationDeliveryFailuresTotal.Load()
+}
+
+func minDuration(left, right time.Duration) time.Duration {
+	if left < right {
+		return left
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= http.StatusBadRequest {
-		slog.Warn("notification delivery returned error status", "format", webhook.Format, "url", redactURL(webhook.URL), "status", resp.StatusCode)
-	}
+	return right
 }

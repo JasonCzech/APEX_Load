@@ -4447,14 +4447,24 @@ export default function SettingsPage({
                         <div className="project-redaction-rule-grid">
                           <label className="project-redaction-rule-field">
                             <span>Dynatrace API Token</span>
-                            <input
-                              className="settings-input"
-                              type="password"
-                              value={webhook.api_token || ''}
-                              onChange={event => updateNotificationWebhook(index, { api_token: event.target.value })}
-                              placeholder="dt0c01..."
-                            />
-                          </label>
+	                            <input
+	                              className="settings-input"
+	                              type="password"
+	                              value={webhook.api_token || ''}
+	                              onChange={event => updateNotificationWebhook(index, { api_token: event.target.value, has_api_token: webhook.has_api_token })}
+	                              placeholder={webhook.has_api_token ? 'Configured; enter a new token to rotate' : 'dt0c01...'}
+	                            />
+	                            <span>{webhook.has_api_token ? 'A token is configured and hidden. Enter a new value only when rotating it.' : 'Token is write-only and will not be shown after saving.'}</span>
+	                            {webhook.api_token && (
+	                              <button
+	                                className="btn btn-sm btn-ghost"
+	                                type="button"
+	                                onClick={() => updateNotificationWebhook(index, { api_token: '' })}
+	                              >
+	                                Clear Entry
+	                              </button>
+	                            )}
+	                          </label>
                           <label className="project-redaction-rule-field">
                             <span>Event Timeout (minutes)</span>
                             <input

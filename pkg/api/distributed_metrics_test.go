@@ -2,8 +2,10 @@ package api
 
 import (
 	"testing"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
+	"github.com/jasonczech/apexload/pkg/engine"
 )
 
 func successTransactions(group string, n int) []generatorrpc.TransactionMetric {
@@ -95,6 +97,105 @@ func TestBuildLiveMetricsFromDistributedBatchTPSIsRate(t *testing.T) {
 	group := live.GroupMetrics["A"]
 	if group == nil || group.TPS != 10 {
 		t.Fatalf("group A TPS = %#v, want 10", group)
+	}
+}
+
+func TestBuildLiveMetricsFromDistributedBatchUsesUncappedAggregateCounts(t *testing.T) {
+	test := &ManagedTest{Groups: []TestGroup{{Name: "A", VUsers: 20}}}
+	digest := engine.NewTDigest(200)
+	for i := 0; i < 2000; i++ {
+		digest.Add(100 * float64(time.Millisecond))
+	}
+	digestSnapshot := digest.Snapshot()
+	batches := map[string]generatorrpc.MetricsBatch{
+		"gen": {
+			TestID:   "t",
+			WindowMs: 1000,
+			Stats:    generatorrpc.GeneratorStats{ActiveVUsers: 20},
+			// Raw transactions stay bounded exemplars; aggregate counts are authoritative.
+			Transactions: successTransactions("A", 1024),
+			FleetMetrics: &generatorrpc.MetricAggregate{
+				Name:           "fleet",
+				Count:          2000,
+				AvgMs:          100,
+				P95Ms:          100,
+				P99Ms:          100,
+				TPS:            2000,
+				DurationDigest: &digestSnapshot,
+			},
+			Groups: []generatorrpc.GroupMetric{{
+				Name:         "A",
+				ActiveVUsers: 20,
+				Metrics: &generatorrpc.MetricAggregate{
+					Name:           "A",
+					Count:          2000,
+					AvgMs:          100,
+					P95Ms:          100,
+					P99Ms:          100,
+					TPS:            2000,
+					DurationDigest: &digestSnapshot,
+				},
+			}},
+		},
+	}
+	combined, fleetTPS, groupTPS := aggregateDistributedMetricsBatches("t", batches)
+	live := buildLiveMetricsFromDistributedBatch(test, combined, fleetTPS, groupTPS)
+
+	if live.TotalTx != 2000 {
+		t.Fatalf("live TotalTx = %d, want uncapped 2000", live.TotalTx)
+	}
+	if live.TPS != 2000 {
+		t.Fatalf("live TPS = %v, want uncapped 2000", live.TPS)
+	}
+	if live.P95Ms != 100 || live.P99Ms != 100 {
+		t.Fatalf("percentiles = p95 %v p99 %v, want digest values 100/100", live.P95Ms, live.P99Ms)
+	}
+	if group := live.GroupMetrics["A"]; group == nil || group.Transactions != 2000 || group.TPS != 2000 {
+		t.Fatalf("group metrics = %#v, want uncapped tx/tps", group)
+	}
+}
+
+func TestBuildLiveMetricsFromDistributedBatchCarriesNetworkAndBrowserAggregates(t *testing.T) {
+	test := &ManagedTest{Groups: []TestGroup{{Name: "A", VUsers: 1}}}
+	batch := generatorrpc.MetricsBatch{
+		TestID:   "t",
+		WindowMs: 1000,
+		Stats:    generatorrpc.GeneratorStats{ActiveVUsers: 1},
+		FleetMetrics: &generatorrpc.MetricAggregate{
+			Name:  "fleet",
+			Count: 1,
+			AvgMs: 120,
+			TPS:   1,
+		},
+		NetworkProfileMetrics: []generatorrpc.MetricAggregate{{
+			Name:  "preset:dsl",
+			Count: 1,
+			AvgMs: 120,
+			P95Ms: 120,
+		}},
+		Browser: &generatorrpc.BrowserMetrics{
+			Samples:  1,
+			AvgLCPMs: 240,
+		},
+		BrowserByDevice: []generatorrpc.BrowserDeviceMetrics{{
+			DeviceProfile:  "iphone_se",
+			DevicePlatform: "ios",
+			DeviceTier:     "low",
+			BrowserEngine:  "webkit",
+			Metrics:        generatorrpc.BrowserMetrics{Samples: 1, AvgLCPMs: 240},
+		}},
+	}
+	combined, fleetTPS, groupTPS := aggregateDistributedMetricsBatches("t", map[string]generatorrpc.MetricsBatch{"gen": batch})
+	live := buildLiveMetricsFromDistributedBatch(test, combined, fleetTPS, groupTPS)
+
+	if live.NetworkProfiles["preset:dsl"] == nil || live.NetworkProfiles["preset:dsl"].AvgMs != 120 {
+		t.Fatalf("network profiles = %#v, want preset:dsl aggregate", live.NetworkProfiles)
+	}
+	if live.Browser == nil || live.Browser.AvgLCPMs != 240 {
+		t.Fatalf("browser metrics = %#v, want LCP 240", live.Browser)
+	}
+	if live.BrowserByDevice["iphone_se"] == nil || live.BrowserByDevice["iphone_se"].BrowserEngine != "webkit" {
+		t.Fatalf("browser by device = %#v, want iphone_se webkit", live.BrowserByDevice)
 	}
 }
 

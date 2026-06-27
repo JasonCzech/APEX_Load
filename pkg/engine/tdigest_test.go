@@ -136,6 +136,33 @@ func TestTDigest_Merge_Empty(t *testing.T) {
 	}
 }
 
+func TestTDigest_SnapshotRoundTripAndMerge(t *testing.T) {
+	left := NewTDigest(200)
+	right := NewTDigest(200)
+	for i := 1; i <= 1000; i++ {
+		left.Add(float64(i))
+	}
+	for i := 1001; i <= 2000; i++ {
+		right.Add(float64(i))
+	}
+
+	roundTrip := NewTDigestFromSnapshot(left.Snapshot())
+	if roundTrip.Count() != left.Count() {
+		t.Fatalf("roundtrip count = %d, want %d", roundTrip.Count(), left.Count())
+	}
+	if math.Abs(roundTrip.Quantile(0.95)-left.Quantile(0.95)) > 0.001 {
+		t.Fatalf("roundtrip p95 = %v, want %v", roundTrip.Quantile(0.95), left.Quantile(0.95))
+	}
+
+	roundTrip.Merge(NewTDigestFromSnapshot(right.Snapshot()))
+	if roundTrip.Count() != 2000 {
+		t.Fatalf("merged snapshot count = %d, want 2000", roundTrip.Count())
+	}
+	if p99 := roundTrip.Quantile(0.99); math.Abs(p99-1980) > 60 {
+		t.Fatalf("merged snapshot p99 = %.1f, want about 1980", p99)
+	}
+}
+
 func TestTDigest_Reset(t *testing.T) {
 	td := NewTDigest(100)
 	for i := 0; i < 100; i++ {

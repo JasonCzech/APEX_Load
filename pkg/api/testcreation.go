@@ -552,6 +552,7 @@ func (tr *TestRunner) compileManagedTestGroupForModeLocked(index int, totalGroup
 		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: build redaction config: %w", index, err)
 	}
 	testGroup.script = &scriptCopy
+	testGroup.redactionRules = cloneRedactionRules(nilIfNoRules(effectiveRuntimeSettings))
 
 	engineGroup := engine.GroupConfig{
 		Name:            name,

@@ -116,7 +116,12 @@ func (s *Server) handlePrometheusMetrics(w http.ResponseWriter, r *http.Request)
 			}
 		}
 	}
-	writeMessagingMetrics(&body, s.runner.liveMetricsSnapshot())
+	body.WriteString("# HELP apexload_notification_delivery_failures_total Notification webhook deliveries that failed after retry.\n")
+	body.WriteString("# TYPE apexload_notification_delivery_failures_total counter\n")
+	fmt.Fprintf(&body, "apexload_notification_delivery_failures_total %d\n", notificationDeliveryFailures())
+	liveSnapshot := s.runner.liveMetricsSnapshot()
+	writeTelemetryPipelineMetrics(&body, liveSnapshot)
+	writeMessagingMetrics(&body, liveSnapshot)
 	_, _ = w.Write([]byte(body.String()))
 }
 
@@ -131,6 +136,7 @@ func (s *Server) handlePrometheusMetrics(w http.ResponseWriter, r *http.Request)
 // so once captured it can be read without further locking.
 type testLiveMetrics struct {
 	testID  string
+	status  string
 	metrics *LiveMetrics
 }
 
@@ -142,9 +148,48 @@ func (tr *TestRunner) liveMetricsSnapshot() []testLiveMetrics {
 		if t == nil {
 			continue
 		}
-		out = append(out, testLiveMetrics{testID: t.ID, metrics: t.LiveMetrics})
+		out = append(out, testLiveMetrics{testID: t.ID, status: t.Status, metrics: t.LiveMetrics})
 	}
 	return out
+}
+
+func writeTelemetryPipelineMetrics(body *strings.Builder, snapshot []testLiveMetrics) {
+	type row struct {
+		testID    string
+		telemetry *TelemetryHealth
+	}
+	rows := make([]row, 0, len(snapshot))
+	for _, snap := range snapshot {
+		if snap.metrics == nil || snap.metrics.Telemetry == nil || prometheusTerminalTestStatus(snap.status) {
+			continue
+		}
+		rows = append(rows, row{testID: snap.testID, telemetry: snap.metrics.Telemetry})
+	}
+	if len(rows) == 0 {
+		return
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].testID < rows[j].testID })
+	writeGauge := func(name, help string, pick func(*TelemetryHealth) float64) {
+		fmt.Fprintf(body, "# HELP %s %s\n# TYPE %s gauge\n", name, help, name)
+		for _, r := range rows {
+			fmt.Fprintf(body, "%s{test_id=%q} %g\n", name, r.testID, pick(r.telemetry))
+		}
+	}
+	writeCounter := func(name, help string, pick func(*TelemetryHealth) float64) {
+		fmt.Fprintf(body, "# HELP %s %s\n# TYPE %s counter\n", name, help, name)
+		for _, r := range rows {
+			fmt.Fprintf(body, "%s{test_id=%q} %g\n", name, r.testID, pick(r.telemetry))
+		}
+	}
+	writeCounter("apexload_telemetry_dropped_results_total", "Collector metric samples dropped by test.", func(t *TelemetryHealth) float64 { return float64(t.DroppedResults) })
+	writeCounter("apexload_telemetry_shedded_arrivals_total", "Open-workload arrivals shed by test.", func(t *TelemetryHealth) float64 { return float64(t.SheddedArrivals) })
+	writeCounter("apexload_telemetry_dropped_subscriber_batches_total", "Generator metrics batches dropped because stream subscribers were full.", func(t *TelemetryHealth) float64 { return float64(t.DroppedSubscriberBatches) })
+	writeCounter("apexload_websocket_dropped_messages_total", "WebSocket messages dropped by test.", func(t *TelemetryHealth) float64 { return float64(t.WebsocketDroppedMessages) })
+	writeCounter("apexload_websocket_dropped_events_total", "WebSocket broadcast events dropped by test.", func(t *TelemetryHealth) float64 { return float64(t.WebsocketDroppedEvents) })
+	writeGauge("apexload_telemetry_sample_age_ms", "Age of the latest telemetry sample in milliseconds.", func(t *TelemetryHealth) float64 { return t.SampleAgeMs })
+	writeGauge("apexload_telemetry_generator_processing_lag_ms", "Generator-side telemetry processing lag in milliseconds.", func(t *TelemetryHealth) float64 { return t.GeneratorProcessingLagMs })
+	writeGauge("apexload_telemetry_transport_lag_ms", "Generator to controller telemetry transport lag in milliseconds.", func(t *TelemetryHealth) float64 { return t.TransportLagMs })
+	writeGauge("apexload_telemetry_controller_fanout_lag_ms", "Controller to dashboard fan-out lag in milliseconds.", func(t *TelemetryHealth) float64 { return t.ControllerFanoutLagMs })
 }
 
 func writeMessagingMetrics(body *strings.Builder, snapshot []testLiveMetrics) {
@@ -156,7 +201,7 @@ func writeMessagingMetrics(body *strings.Builder, snapshot []testLiveMetrics) {
 	}
 	var rows []row
 	for _, snap := range snapshot {
-		if snap.metrics == nil {
+		if snap.metrics == nil || prometheusTerminalTestStatus(snap.status) {
 			continue
 		}
 		for _, dep := range snap.metrics.DependencyHealth {
@@ -199,6 +244,15 @@ func writeMessagingMetrics(body *strings.Builder, snapshot []testLiveMetrics) {
 	writeGauge("apexload_messaging_dead_lettered_total", "Dead-lettered messages (run total) by test, protocol, and target.", func(st *ServerTelemetrySummary) float64 { return float64(st.DeadLetteredCount) })
 	writeGauge("apexload_messaging_messages_sent_per_sec", "Average messages sent per second by test, protocol, and target.", func(st *ServerTelemetrySummary) float64 { return st.AvgMessagesSentPerSec })
 	writeGauge("apexload_messaging_messages_received_per_sec", "Average messages received per second by test, protocol, and target.", func(st *ServerTelemetrySummary) float64 { return st.AvgMessagesReceivedPerSec })
+}
+
+func prometheusTerminalTestStatus(status string) bool {
+	switch strings.ToUpper(strings.TrimSpace(status)) {
+	case "COMPLETE", "FAILED", "ABORTED":
+		return true
+	default:
+		return false
+	}
 }
 
 // messagingProtocolLabel maps a dependency type to a coarse messaging protocol

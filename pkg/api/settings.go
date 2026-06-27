@@ -10,6 +10,8 @@ import (
 
 const systemSettingsStoreKey = "system_settings"
 
+const redactedSecretConfiguredField = "has_api_token"
+
 const (
 	defaultTelemetrySampleAgeBudgetMs           = 2000.0
 	defaultTelemetryGeneratorProcessingBudgetMs = 500.0
@@ -1291,6 +1293,48 @@ func (tr *TestRunner) GetSystemSettings() SystemSettings {
 	tr.mu.RLock()
 	defer tr.mu.RUnlock()
 	return cloneSystemSettings(tr.settings)
+}
+
+func redactedSystemSettingsResponse(settings SystemSettings) map[string]any {
+	encoded, err := json.Marshal(settings)
+	if err != nil {
+		return map[string]any{}
+	}
+	var response map[string]any
+	if err := json.Unmarshal(encoded, &response); err != nil {
+		return map[string]any{}
+	}
+	notifications, _ := response["notifications"].(map[string]any)
+	webhooks, _ := notifications["webhooks"].([]any)
+	for _, item := range webhooks {
+		webhook, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		apiToken, _ := webhook["api_token"].(string)
+		if strings.TrimSpace(apiToken) != "" {
+			webhook[redactedSecretConfiguredField] = true
+		}
+		webhook["api_token"] = ""
+	}
+	return response
+}
+
+func preserveWriteOnlySystemSettingsSecrets(next SystemSettings, current SystemSettings) SystemSettings {
+	out := cloneSystemSettings(next)
+	for index := range out.Notifications.Webhooks {
+		webhook := &out.Notifications.Webhooks[index]
+		if webhook.Format != notificationFormatDynatrace || strings.TrimSpace(webhook.APIToken) != "" {
+			continue
+		}
+		if index < len(current.Notifications.Webhooks) {
+			currentWebhook := current.Notifications.Webhooks[index]
+			if currentWebhook.Format == notificationFormatDynatrace && strings.TrimSpace(currentWebhook.APIToken) != "" {
+				webhook.APIToken = currentWebhook.APIToken
+			}
+		}
+	}
+	return out
 }
 
 func (tr *TestRunner) setNotificationSettings(settings NotificationsSettings) {

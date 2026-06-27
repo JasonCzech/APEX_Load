@@ -411,6 +411,109 @@ describe('TestExecutionCharts context menu', () => {
     expect(window.localStorage.getItem('apexload.execution.chartMetricFilters')).toContain('"tps":["tps","Search_tps"]')
   })
 
+  it('exposes chart labels, hidden measurement tables, and terminal status cues', async () => {
+    await act(async () => {
+      root.render(
+        <TestExecutionCharts
+          filteredData={[
+            { time: '10:00:00', vusers: 2, tps: 3, avgMs: 100, errorPct: 0, p50: 80, p90: 100, p99: 130 },
+            { time: '10:00:01', vusers: 4, tps: 6, avgMs: 110, errorPct: 0, p50: 85, p90: 105, p99: 135 },
+          ]}
+          expandedChart={null}
+          onExpandedChartChange={vi.fn()}
+          onChartMouseDown={vi.fn()}
+          onChartMouseMove={vi.fn()}
+          onZoom={vi.fn()}
+          onResetZoom={vi.fn()}
+          showRefArea={false}
+          refAreaLeft=""
+          refAreaEnd=""
+          timeRange="3m"
+          onTimeRangeChange={vi.fn()}
+          isMultiGroup={false}
+          groupNames={[]}
+          groupColors={['#00a3ff']}
+          terminalStatus="FAILED"
+        />,
+      )
+    })
+
+    expect(container.querySelector('.chart-terminal-status')?.textContent).toContain('Run ended with FAILED')
+    const tpsChart = Array.from(container.querySelectorAll('.chart-card')).find(chart => chart.textContent?.includes('Transactions Per Second'))
+    const chartVisual = tpsChart?.querySelector('.chart-visual')
+    const tableId = chartVisual?.getAttribute('aria-describedby')
+    expect(chartVisual?.getAttribute('role')).toBe('img')
+    expect(chartVisual?.getAttribute('aria-label')).toContain('Transactions Per Second chart. 2 samples.')
+    expect(tableId).toBeTruthy()
+    expect(tpsChart?.querySelector(`#${tableId}`)?.textContent).toContain('Transactions Per Second measurements')
+    expect(tpsChart?.querySelector(`#${tableId}`)?.textContent).toContain('Latest')
+    expect(tpsChart?.querySelector('button[aria-label="Expand Transactions Per Second"]')).not.toBeNull()
+  })
+
+  it('adds dash patterns when group colors repeat', async () => {
+    await act(async () => {
+      root.render(
+        <TestExecutionCharts
+          filteredData={[
+            {
+              time: '10:00:00',
+              vusers: 2,
+              tps: 6,
+              avgMs: 100,
+              errorPct: 0,
+              p50: 80,
+              p90: 100,
+              p99: 130,
+              Checkout_tps: 2,
+              Search_tps: 1,
+              Browse_tps: 3,
+              Checkout_avgMs: 90,
+              Search_avgMs: 120,
+              Browse_avgMs: 105,
+            },
+            {
+              time: '10:00:01',
+              vusers: 4,
+              tps: 9,
+              avgMs: 110,
+              errorPct: 0,
+              p50: 85,
+              p90: 105,
+              p99: 135,
+              Checkout_tps: 4,
+              Search_tps: 2,
+              Browse_tps: 3,
+              Checkout_avgMs: 95,
+              Search_avgMs: 125,
+              Browse_avgMs: 112,
+            },
+          ]}
+          expandedChart={null}
+          onExpandedChartChange={vi.fn()}
+          onChartMouseDown={vi.fn()}
+          onChartMouseMove={vi.fn()}
+          onZoom={vi.fn()}
+          onResetZoom={vi.fn()}
+          showRefArea={false}
+          refAreaLeft=""
+          refAreaEnd=""
+          timeRange="3m"
+          onTimeRangeChange={vi.fn()}
+          isMultiGroup
+          groupNames={['Checkout', 'Search', 'Browse']}
+          groupColors={['#00a3ff', '#ffaa00']}
+        />,
+      )
+    })
+
+    const tpsChart = Array.from(container.querySelectorAll('.chart-card')).find(chart => chart.textContent?.includes('Transactions Per Second'))
+    expect(tpsChart?.querySelector('path[data-testid="mock-line"][data-key="Checkout_tps"]')?.getAttribute('data-stroke-dasharray')).toBe('')
+    expect(tpsChart?.querySelector('path[data-testid="mock-line"][data-key="Browse_tps"]')?.getAttribute('data-stroke-dasharray')).toBe('5 3')
+    const responseChart = Array.from(container.querySelectorAll('.chart-card')).find(chart => chart.textContent?.includes('Response Time (ms)'))
+    expect(responseChart?.querySelector('path[data-testid="mock-line"][data-key="Browse_avgMs"]')?.getAttribute('data-stroke-dasharray')).toBe('5 3')
+    expect(responseChart?.querySelector('.chart-series-legend-item.dashed')?.textContent).toContain('Browse')
+  })
+
   it('rescales the graph axis when a dominant visible metric is hidden', async () => {
     await act(async () => {
       root.render(

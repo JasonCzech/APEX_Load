@@ -202,6 +202,9 @@ Controller runtime configuration:
 - `APEXLOAD_GRPC_TLS_CERT`/`APEXLOAD_GRPC_TLS_KEY`/`APEXLOAD_GRPC_TLS_CA`: TLS/mTLS for the controller↔generator gRPC channel (symmetric contract: cert/key = this process's identity, CA = trust for the peer; setting the CA on the generator requires verified client certs). `APEXLOAD_GRPC_TLS_SERVER_NAME` overrides certificate verification when targets are pod IPs from `dns://` discovery
 - `APEXLOAD_GRPC_AUTH_TOKEN`: shared bearer token required on every generator RPC — application-layer auth that holds even when the CNI does not enforce NetworkPolicies
 - `APEXLOAD_METRICS_ADDR`: when set (e.g. `:9091`), serves `GET /metrics` on a dedicated listener instead of the API port, so network policy can scope Prometheus access separately from API access
+- `APEXLOAD_METRICS_TOKEN`: optional bearer token required for `GET /metrics` on either the API port or the dedicated metrics listener
+- `APEXLOAD_PPROF_ADDR`: optional Go pprof bind address for controller runtime debugging
+- `APEXLOAD_PROMETHEUS_URL`: Prometheus base URL used by dashboard graph overlays; independent from the controller `/metrics` scrape endpoint
 - `APEXLOAD_BROWSER_EXECUTABLE`: path to a system Chromium/Chrome for browser-protocol runs (set to `/usr/bin/google-chrome` in the generator image, where Playwright's managed glibc Chromium cannot run on musl)
 - `APEXLOAD_BROWSER_SANDBOX`: set `true` to drop `--no-sandbox` and use Chromium's own sandbox where the environment supports it (unprivileged user namespaces); default keeps `--no-sandbox` because hardened pod securityContexts cannot start the sandbox
 - `APEXLOAD_AZURE_KEY_VAULT_URL`: Azure Key Vault for `{{secret.*}}` resolution; `APEXLOAD_AZURE_KEY_VAULT_AUTH` selects `token` (static `APEXLOAD_AZURE_KEY_VAULT_TOKEN`), `azure_identity` (workload/managed identity via DefaultAzureCredential), or `auto` (default); `APEXLOAD_AZURE_KEY_VAULT_SCOPE` overrides the token audience for sovereign clouds
@@ -604,6 +607,8 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for coding conventions, testing policy, and
 - **DSL types**: `pkg/dsl/types.go` — Script structures
 - **API handlers**: `pkg/api/handlers.go` — Endpoint implementations
 - **Runtime telemetry SLA plan**: `docs/RUNTIME_TELEMETRY_SLA_PLAN.md` — Telemetry capture, streaming, and storage hardening roadmap
+- **Prometheus metrics catalog**: `docs/PROMETHEUS_METRICS.md` — Controller scrape series, labels, and telemetry troubleshooting
+- **Dynatrace webhook setup**: `docs/DYNATRACE_WEBHOOKS.md` — Events API webhook configuration and retry behavior
 - **Future browser client metrics plan**: `docs/BROWSER_CLIENT_METRICS_PLAN.md` — Browser-side client metrics roadmap and tradeoffs
 
 ## License

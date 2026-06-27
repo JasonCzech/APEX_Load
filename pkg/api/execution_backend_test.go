@@ -3311,3 +3311,45 @@ func TestApplyRemoteMetricsBatchTerminalBatchPreservesTransactions(t *testing.T)
 		t.Fatalf("terminal batch must preserve group metrics, got %#v", liveDone.GroupMetrics)
 	}
 }
+
+func TestApplyRemoteMetricsBatchIgnoresStaleWindow(t *testing.T) {
+	tr := NewTestRunner(1, NewHub(), nil)
+	b := &distributedExecutionBackend{}
+	target := "gen-a"
+	test := &ManagedTest{
+		ID:                    "t-stale-window",
+		Groups:                []TestGroup{{Name: "buyers", VUsers: 1}},
+		remoteClientsByTarget: map[string]generatorClient{target: nil},
+	}
+
+	newer := generatorrpc.MetricsBatch{
+		TestID:          test.ID,
+		LifecycleState:  "RUNNING",
+		TimestampUnixMs: 2000,
+		WindowMs:        1000,
+		Stats:           generatorrpc.GeneratorStats{ActiveVUsers: 1},
+		Groups:          []generatorrpc.GroupMetric{{Name: "buyers", ActiveVUsers: 1}},
+		Transactions:    []generatorrpc.TransactionMetric{{Name: "Checkout", Group: "buyers", DurationMs: 10, Success: true}},
+	}
+	live, _, _ := b.applyRemoteMetricsBatch(tr, test, target, newer)
+	if live.TotalTx != 1 {
+		t.Fatalf("newer live TotalTx = %d, want 1", live.TotalTx)
+	}
+
+	stale := generatorrpc.MetricsBatch{
+		TestID:          test.ID,
+		LifecycleState:  "RUNNING",
+		TimestampUnixMs: 1000,
+		WindowMs:        1000,
+		Stats:           generatorrpc.GeneratorStats{ActiveVUsers: 1},
+		Groups:          []generatorrpc.GroupMetric{{Name: "buyers", ActiveVUsers: 1}},
+		Transactions: []generatorrpc.TransactionMetric{
+			{Name: "Stale", Group: "buyers", DurationMs: 10, Success: true},
+			{Name: "Stale", Group: "buyers", DurationMs: 10, Success: true},
+		},
+	}
+	live, _, _ = b.applyRemoteMetricsBatch(tr, test, target, stale)
+	if live.TotalTx != 1 || live.Transactions["Checkout"] == nil || live.Transactions["Stale"] != nil {
+		t.Fatalf("stale batch overwrote live metrics: total=%d tx=%#v", live.TotalTx, live.Transactions)
+	}
+}
