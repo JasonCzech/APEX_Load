@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 
@@ -38,8 +39,10 @@ type BrowserReplaySession struct {
 	FinalReport       *engine.ReplayReport        `json:"report,omitempty"`
 	Error             string                      `json:"error,omitempty"`
 
-	mu     sync.RWMutex
-	cancel context.CancelFunc
+	mu             sync.RWMutex
+	cancel         context.CancelFunc
+	lastActivityAt time.Time
+	terminalAt     *time.Time
 }
 
 // replayCompletionHook is invoked once a replay session reaches a terminal
@@ -48,16 +51,19 @@ type BrowserReplaySession struct {
 type replayCompletionHook func(projectID string, script *dsl.Script, report *engine.ReplayReport)
 
 type BrowserReplayManager struct {
-	hub        *Hub
-	sessions   map[string]*BrowserReplaySession
-	mu         sync.RWMutex
-	onComplete replayCompletionHook
+	hub           *Hub
+	sessions      map[string]*BrowserReplaySession
+	mu            sync.RWMutex
+	onComplete    replayCompletionHook
+	retention     replaySessionRetentionConfig
+	janitorCancel context.CancelFunc
 }
 
 func NewBrowserReplayManager(hub *Hub) *BrowserReplayManager {
 	return &BrowserReplayManager{
-		hub:      hub,
-		sessions: make(map[string]*BrowserReplaySession),
+		hub:       hub,
+		sessions:  make(map[string]*BrowserReplaySession),
+		retention: defaultReplaySessionRetentionConfig(),
 	}
 }
 
@@ -65,8 +71,49 @@ func (m *BrowserReplayManager) setCompletionHook(hook replayCompletionHook) {
 	m.onComplete = hook
 }
 
+func (m *BrowserReplayManager) StartJanitor(ctx context.Context) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	if m.janitorCancel != nil {
+		m.mu.Unlock()
+		return
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	m.janitorCancel = cancel
+	interval := replaySessionJanitorInterval(m.retention)
+	m.mu.Unlock()
+
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				m.PruneExpired()
+			}
+		}
+	}()
+}
+
+func (m *BrowserReplayManager) Close() {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	cancel := m.janitorCancel
+	m.janitorCancel = nil
+	m.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
 func (m *BrowserReplayManager) Start(scriptID string, script *dsl.Script, req BrowserReplayStartRequest) *BrowserReplaySession {
-	sessionID := req.ReplaySessionID
+	sessionID := strings.TrimSpace(req.ReplaySessionID)
 	if sessionID == "" {
 		sessionID = uuid.New().String()
 	}
@@ -93,10 +140,19 @@ func (m *BrowserReplayManager) Start(scriptID string, script *dsl.Script, req Br
 		StartedAt:         &now,
 		CurrentEventIndex: -1,
 		cancel:            cancel,
+		lastActivityAt:    now,
 	}
 
 	m.mu.Lock()
+	m.pruneExpiredLocked(now)
+	if existing := m.sessions[sessionID]; existing != nil {
+		existing.mu.Lock()
+		m.cancelSessionLocked(existing, now)
+		existing.mu.Unlock()
+		delete(m.sessions, sessionID)
+	}
 	m.sessions[sessionID] = session
+	m.enforceMaxSessionsLocked(now, sessionID)
 	m.mu.Unlock()
 
 	m.broadcast("browser_replay_started", session, -1, nil, nil)
@@ -112,6 +168,9 @@ func (m *BrowserReplayManager) Start(scriptID string, script *dsl.Script, req Br
 			completedAt := time.Now()
 			session.mu.Lock()
 			session.CompletedAt = &completedAt
+			if replaySessionStatusTerminal(session.Status) && session.terminalAt == nil {
+				session.terminalAt = &completedAt
+			}
 			eventIndex := session.CurrentEventIndex
 			session.mu.Unlock()
 			m.broadcast("browser_replay_stopped", session, eventIndex, nil, nil)
@@ -168,6 +227,9 @@ func (m *BrowserReplayManager) Start(scriptID string, script *dsl.Script, req Br
 		} else {
 			session.Status = BrowserReplayCompleted
 		}
+		if replaySessionStatusTerminal(session.Status) && session.terminalAt == nil {
+			session.terminalAt = &completedAt
+		}
 		eventIndex := session.CurrentEventIndex
 		session.mu.Unlock()
 
@@ -181,25 +243,155 @@ func (m *BrowserReplayManager) Start(scriptID string, script *dsl.Script, req Br
 	return session.snapshot()
 }
 
+func (m *BrowserReplayManager) PruneExpired() int {
+	if m == nil {
+		return 0
+	}
+	now := m.retention.clock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.pruneExpiredLocked(now)
+}
+
+func (m *BrowserReplayManager) pruneExpiredLocked(now time.Time) int {
+	removed := 0
+	for id, session := range m.sessions {
+		session.mu.Lock()
+		m.cancelIdleRunningSessionLocked(session, now)
+		if m.shouldPruneSessionLocked(session, now) {
+			m.cancelSessionLocked(session, now)
+			delete(m.sessions, id)
+			removed++
+		}
+		session.mu.Unlock()
+	}
+	return removed + m.enforceMaxSessionsLocked(now, "")
+}
+
+func (m *BrowserReplayManager) enforceMaxSessionsLocked(now time.Time, protectedID string) int {
+	if m.retention.maxSessions <= 0 {
+		return 0
+	}
+	removed := 0
+	for len(m.sessions) > m.retention.maxSessions {
+		id, session := m.oldestPrunableSessionLocked(protectedID, true)
+		if session == nil {
+			id, session = m.oldestPrunableSessionLocked(protectedID, false)
+		}
+		if session == nil {
+			return removed
+		}
+		session.mu.Lock()
+		m.cancelSessionLocked(session, now)
+		session.mu.Unlock()
+		delete(m.sessions, id)
+		removed++
+	}
+	return removed
+}
+
+func (m *BrowserReplayManager) oldestPrunableSessionLocked(protectedID string, terminalOnly bool) (string, *BrowserReplaySession) {
+	var selectedID string
+	var selected *BrowserReplaySession
+	var selectedAt time.Time
+	for id, session := range m.sessions {
+		if id == protectedID {
+			continue
+		}
+		session.mu.RLock()
+		terminal := replaySessionStatusTerminal(session.Status)
+		if terminalOnly && !terminal {
+			session.mu.RUnlock()
+			continue
+		}
+		at := sessionRetentionSortTime(session.StartedAt, session.terminalAt, session.lastActivityAt)
+		session.mu.RUnlock()
+		if selected == nil || at.Before(selectedAt) {
+			selectedID = id
+			selected = session
+			selectedAt = at
+		}
+	}
+	return selectedID, selected
+}
+
+func (m *BrowserReplayManager) cancelIdleRunningSessionLocked(session *BrowserReplaySession, now time.Time) {
+	if session == nil || m.retention.idleCancel <= 0 || session.Status != BrowserReplayRunning {
+		return
+	}
+	lastActivity := session.lastActivityAt
+	if lastActivity.IsZero() {
+		lastActivity = now
+		session.lastActivityAt = now
+	}
+	if now.Sub(lastActivity) <= m.retention.idleCancel {
+		return
+	}
+	m.cancelSessionLocked(session, now)
+}
+
+func (m *BrowserReplayManager) shouldPruneSessionLocked(session *BrowserReplaySession, now time.Time) bool {
+	if session == nil || m.retention.terminalTTL <= 0 || !replaySessionStatusTerminal(session.Status) {
+		return false
+	}
+	terminalAt := session.terminalAt
+	if terminalAt == nil {
+		if session.CompletedAt != nil {
+			completedAt := *session.CompletedAt
+			session.terminalAt = &completedAt
+		} else {
+			terminal := now
+			session.terminalAt = &terminal
+		}
+		terminalAt = session.terminalAt
+	}
+	return terminalAt != nil && now.Sub(*terminalAt) > m.retention.terminalTTL
+}
+
+func (m *BrowserReplayManager) cancelSessionLocked(session *BrowserReplaySession, now time.Time) {
+	if session == nil {
+		return
+	}
+	if session.Status == BrowserReplayRunning || session.Status == BrowserReplayPaused {
+		session.Status = BrowserReplayStopped
+		if session.cancel != nil {
+			session.cancel()
+		}
+	}
+	if replaySessionStatusTerminal(session.Status) && session.terminalAt == nil {
+		terminalAt := now
+		session.terminalAt = &terminalAt
+	}
+}
+
 func (m *BrowserReplayManager) Get(sessionID string) (*BrowserReplaySession, bool) {
-	m.mu.RLock()
+	now := m.retention.clock()
+	m.mu.Lock()
+	m.pruneExpiredLocked(now)
 	session, ok := m.sessions[sessionID]
-	m.mu.RUnlock()
+	m.mu.Unlock()
 	if !ok {
 		return nil, false
 	}
-	return session.snapshot(), true
+	session.mu.Lock()
+	session.lastActivityAt = now
+	snapshot := session.snapshotLocked()
+	session.mu.Unlock()
+	return snapshot, true
 }
 
 func (m *BrowserReplayManager) Pause(sessionID string) (*BrowserReplaySession, bool, bool) {
-	m.mu.RLock()
+	now := m.retention.clock()
+	m.mu.Lock()
+	m.pruneExpiredLocked(now)
 	session, ok := m.sessions[sessionID]
-	m.mu.RUnlock()
+	m.mu.Unlock()
 	if !ok {
 		return nil, false, false
 	}
 
 	session.mu.Lock()
+	session.lastActivityAt = now
 	changed := false
 	if session.Status == BrowserReplayRunning {
 		session.Status = BrowserReplayPaused
@@ -215,14 +407,17 @@ func (m *BrowserReplayManager) Pause(sessionID string) (*BrowserReplaySession, b
 }
 
 func (m *BrowserReplayManager) Resume(sessionID string) (*BrowserReplaySession, bool, bool) {
-	m.mu.RLock()
+	now := m.retention.clock()
+	m.mu.Lock()
+	m.pruneExpiredLocked(now)
 	session, ok := m.sessions[sessionID]
-	m.mu.RUnlock()
+	m.mu.Unlock()
 	if !ok {
 		return nil, false, false
 	}
 
 	session.mu.Lock()
+	session.lastActivityAt = now
 	changed := false
 	if session.Status == BrowserReplayPaused {
 		session.Status = BrowserReplayRunning
@@ -238,17 +433,24 @@ func (m *BrowserReplayManager) Resume(sessionID string) (*BrowserReplaySession, 
 }
 
 func (m *BrowserReplayManager) Stop(sessionID string) (*BrowserReplaySession, bool) {
-	m.mu.RLock()
+	now := m.retention.clock()
+	m.mu.Lock()
+	m.pruneExpiredLocked(now)
 	session, ok := m.sessions[sessionID]
-	m.mu.RUnlock()
+	m.mu.Unlock()
 	if !ok {
 		return nil, false
 	}
 
 	session.mu.Lock()
+	session.lastActivityAt = now
 	if (session.Status == BrowserReplayRunning || session.Status == BrowserReplayPaused) && session.cancel != nil {
 		session.Status = BrowserReplayStopped
 		session.cancel()
+	}
+	if replaySessionStatusTerminal(session.Status) && session.terminalAt == nil {
+		terminalAt := now
+		session.terminalAt = &terminalAt
 	}
 	snapshot := session.snapshotLocked()
 	session.mu.Unlock()

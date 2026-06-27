@@ -730,6 +730,12 @@
   justify-content: flex-start;
 }
 
+.api-guide-section-navigation {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
 .api-guide-section-toggle {
   width: fit-content;
   max-width: 100%;
@@ -739,6 +745,28 @@
 .api-guide-section-toggle .mode-chip {
   min-width: 0;
   padding-inline: 11px;
+}
+
+.api-guide-section-select-label {
+  display: none;
+}
+
+.api-guide-section-select-label span {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.api-guide-section-select {
+  min-height: 38px;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  padding: 8px 10px;
 }
 
 .api-guide-hero,
@@ -1085,7 +1113,7 @@
 
 .swagger-docs-controls {
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) minmax(220px, 320px);
+  grid-template-columns: minmax(260px, 1fr) minmax(220px, 320px) minmax(180px, 220px);
   gap: 12px;
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -1099,6 +1127,38 @@
   gap: 6px;
 }
 
+.swagger-docs-access-filter {
+  justify-content: end;
+}
+
+.swagger-docs-checkbox {
+  min-height: 38px;
+  display: flex;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  padding: 8px 10px;
+}
+
+.swagger-docs-checkbox input {
+  min-height: auto;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+
+.swagger-docs-checkbox span {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
 .swagger-docs-controls input,
 .swagger-docs-controls select {
   min-height: 38px;
@@ -1107,6 +1167,14 @@
   background: var(--bg-primary);
   color: var(--text-primary);
   padding: 8px 10px;
+}
+
+.swagger-docs-controls .swagger-docs-checkbox input {
+  min-height: auto;
+  width: 16px;
+  height: 16px;
+  border: 0;
+  padding: 0;
 }
 
 .swagger-docs-results {
@@ -1142,7 +1210,7 @@
 
 .swagger-operation-card summary {
   display: grid;
-  grid-template-columns: 78px minmax(220px, 0.9fr) minmax(220px, 1fr);
+  grid-template-columns: 78px minmax(220px, 0.9fr) minmax(220px, 1fr) max-content;
   align-items: center;
   gap: 12px;
   padding: 12px 14px;
@@ -1162,6 +1230,40 @@
 .swagger-operation-card summary strong {
   color: var(--text-primary);
   font-size: 14px;
+}
+
+.swagger-access-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  padding: 3px 9px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.swagger-access-public {
+  background: color-mix(in srgb, #14b8a6 12%, var(--bg-card));
+  border-color: color-mix(in srgb, #14b8a6 40%, var(--border));
+}
+
+.swagger-access-available {
+  background: color-mix(in srgb, var(--success, #16a34a) 12%, var(--bg-card));
+  border-color: color-mix(in srgb, var(--success, #16a34a) 38%, var(--border));
+}
+
+.swagger-access-restricted {
+  background: color-mix(in srgb, #dc2626 10%, var(--bg-card));
+  border-color: color-mix(in srgb, #dc2626 32%, var(--border));
+}
+
+.swagger-access-muted {
+  background: var(--bg-surface);
+  color: var(--text-muted);
 }
 
 .swagger-method {
@@ -8252,6 +8354,11 @@ col.results-actions-col {
   .swagger-operation-card summary strong {
     grid-column: 2;
   }
+
+  .swagger-access-badge {
+    grid-column: 2;
+    justify-self: flex-start;
+  }
 }
 
 @media (max-width: 640px) {
@@ -8288,6 +8395,25 @@ col.results-actions-col {
 
   .swagger-operation-card summary strong {
     grid-column: auto;
+  }
+
+  .swagger-access-badge {
+    grid-column: auto;
+  }
+
+  .api-guide-section-navigation,
+  .api-guide-section-select-label {
+    width: 100%;
+  }
+
+  .api-guide-section-toggle {
+    display: none;
+  }
+
+  .api-guide-section-select-label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
   }
 
   .access-form-grid,

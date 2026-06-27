@@ -1,5 +1,8 @@
 import { useMemo, useState } from 'react'
 import swaggerYaml from '../../../docs/swagger.yaml?raw'
+import { apiEndpointCatalogByKey, endpointCatalogKey, type ApiEndpointCatalogRoute } from '../apiEndpointCatalog'
+import { buildAllowedOperationSet, canShowEndpointForDocs, docsVisibilityOperationsForEndpoint } from '../apiGuideAccess'
+import type { DashboardAuthEffectiveAccessResource } from '../types'
 import { useApiGuideTopbarContribution } from './ApiGuideTopbarToggle'
 import { parseSwaggerDocument, type SwaggerOperation } from './swaggerDocsParser'
 
@@ -28,10 +31,11 @@ function operationMatches(operation: SwaggerOperation, query: string, category: 
   ].join(' ').toLowerCase().includes(normalizedQuery)
 }
 
-function groupByCategory(operations: SwaggerOperation[]) {
-  return operations.reduce<Record<string, SwaggerOperation[]>>((groups, operation) => {
-    groups[operation.category] = groups[operation.category] || []
-    groups[operation.category].push(operation)
+function groupByCategory(operations: OperationCatalogJoin[]) {
+  return operations.reduce<Record<string, OperationCatalogJoin[]>>((groups, operationJoin) => {
+    const category = operationJoin.operation.category
+    groups[category] = groups[category] || []
+    groups[category].push(operationJoin)
     return groups
   }, {})
 }
@@ -43,14 +47,39 @@ function descriptionLines(description: string) {
     .filter(Boolean)
 }
 
-export default function SwaggerDocsPage() {
+type SwaggerDocsPageProps = {
+  effectiveAccessResources?: DashboardAuthEffectiveAccessResource[]
+  effectiveAccessLoaded?: boolean
+  effectiveAccessError?: boolean
+}
+
+type OperationCatalogJoin = {
+  operation: SwaggerOperation
+  catalogRoute?: ApiEndpointCatalogRoute
+}
+
+export default function SwaggerDocsPage({
+  effectiveAccessResources = [],
+  effectiveAccessLoaded = true,
+  effectiveAccessError = false,
+}: SwaggerDocsPageProps) {
   const document = useMemo(() => parseSwaggerDocument(swaggerYaml), [])
   const categories = useMemo(() => Array.from(new Set(document.operations.map(operation => operation.category))).sort(), [document.operations])
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('all')
+  const [myAccessOnly, setMyAccessOnly] = useState(false)
+  const allowedOperations = useMemo(() => buildAllowedOperationSet(effectiveAccessResources), [effectiveAccessResources])
+  const operationsWithCatalog = useMemo<OperationCatalogJoin[]>(() => (
+    document.operations.map(operation => ({
+      operation,
+      catalogRoute: apiEndpointCatalogByKey.get(endpointCatalogKey(operation.method, operation.path)),
+    }))
+  ), [document.operations])
   const filteredOperations = useMemo(
-    () => document.operations.filter(operation => operationMatches(operation, query, category)),
-    [document.operations, query, category],
+    () => operationsWithCatalog
+      .filter(({ operation }) => operationMatches(operation, query, category))
+      .filter(({ catalogRoute }) => !myAccessOnly || (catalogRoute ? canShowEndpointForDocs(catalogRoute, allowedOperations) : false)),
+    [allowedOperations, category, myAccessOnly, operationsWithCatalog, query],
   )
   const groupedOperations = useMemo(() => groupByCategory(filteredOperations), [filteredOperations])
   useApiGuideTopbarContribution('swagger', 'Swagger Docs')
@@ -89,12 +118,24 @@ export default function SwaggerDocsPage() {
             {categories.map(nextCategory => <option key={nextCategory} value={nextCategory}>{nextCategory}</option>)}
           </select>
         </label>
+        <label className="swagger-docs-access-filter">
+          <span>Access</span>
+          <label className="swagger-docs-checkbox">
+            <input
+              type="checkbox"
+              checked={myAccessOnly}
+              disabled={!effectiveAccessLoaded || effectiveAccessError}
+              onChange={event => setMyAccessOnly(event.target.checked)}
+            />
+            <span>My access only</span>
+          </label>
+        </label>
       </section>
 
       <section className="swagger-docs-results" aria-live="polite">
         <div className="api-guide-section-header">
           <h3>API Reference</h3>
-          <p>{filteredOperations.length} endpoint{filteredOperations.length === 1 ? '' : 's'} shown.</p>
+          <p>{filteredOperations.length} endpoint{filteredOperations.length === 1 ? '' : 's'} shown. Swagger is complete by default; access badges reflect the current dashboard context.</p>
         </div>
         {filteredOperations.length === 0 ? (
           <div className="api-guide-callout">
@@ -105,71 +146,15 @@ export default function SwaggerDocsPage() {
           <div className="swagger-docs-tag-group" key={group}>
             <h4>{group}</h4>
             <div className="swagger-docs-operation-list">
-              {operations.map(operation => (
-                <details className="swagger-operation-card" key={`${operation.method}-${operation.path}-${operation.operationId}`}>
-                  <summary>
-                    <span className={`swagger-method swagger-method-${operation.method.toLowerCase()}`}>{operation.method}</span>
-                    <code>{operation.path}</code>
-                    <strong>{operation.summary}</strong>
-                  </summary>
-                  <div className="swagger-operation-detail">
-                    {descriptionLines(operation.description).map(line => <p key={line}>{line}</p>)}
-                    <dl>
-                      <div>
-                        <dt>Operation ID</dt>
-                        <dd><code>{operation.operationId || 'n/a'}</code></dd>
-                      </div>
-                      <div>
-                        <dt>Access Control</dt>
-                        <dd>{operation.roles || 'Public or inherited'}</dd>
-                      </div>
-                      <div>
-                        <dt>Category</dt>
-                        <dd>{operation.category}</dd>
-                      </div>
-                      <div>
-                        <dt>OpenAPI Tags</dt>
-                        <dd>{operation.tags.length ? operation.tags.join(', ') : 'None'}</dd>
-                      </div>
-                    </dl>
-                    <div className="swagger-detail-grid">
-                      <div>
-                        <h5>Parameters</h5>
-                        {operation.parameters.length > 0 ? (
-                          <table>
-                            <thead><tr><th>Name</th><th>In</th><th>Required</th><th>Type</th></tr></thead>
-                            <tbody>
-                              {operation.parameters.map(parameter => (
-                                <tr key={`${operation.operationId}-${parameter.location}-${parameter.name}`}>
-                                  <td><code>{parameter.name}</code></td>
-                                  <td>{parameter.location || 'n/a'}</td>
-                                  <td>{parameter.required ? 'Yes' : 'No'}</td>
-                                  <td>{parameter.type || 'string'}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        ) : <p>No parameters.</p>}
-                      </div>
-                      <div>
-                        <h5>Responses</h5>
-                        {operation.responses.length > 0 ? (
-                          <table>
-                            <thead><tr><th>Status</th><th>Description</th></tr></thead>
-                            <tbody>
-                              {operation.responses.map(response => (
-                                <tr key={`${operation.operationId}-${response.status}`}>
-                                  <td><code>{response.status}</code></td>
-                                  <td>{response.description || 'Response'}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        ) : <p>No documented responses.</p>}
-                      </div>
-                    </div>
-                  </div>
-                </details>
+              {operations.map(({ operation, catalogRoute }) => (
+                <SwaggerOperationCard
+                  key={`${operation.method}-${operation.path}-${operation.operationId}`}
+                  operation={operation}
+                  catalogRoute={catalogRoute}
+                  allowedOperations={allowedOperations}
+                  effectiveAccessLoaded={effectiveAccessLoaded}
+                  effectiveAccessError={effectiveAccessError}
+                />
               ))}
             </div>
           </div>
@@ -177,4 +162,106 @@ export default function SwaggerDocsPage() {
       </section>
     </div>
   )
+}
+
+function SwaggerOperationCard({
+  operation,
+  catalogRoute,
+  allowedOperations,
+  effectiveAccessLoaded,
+  effectiveAccessError,
+}: {
+  operation: SwaggerOperation
+  catalogRoute?: ApiEndpointCatalogRoute
+  allowedOperations: Set<string>
+  effectiveAccessLoaded: boolean
+  effectiveAccessError: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <details className="swagger-operation-card" open={open} onToggle={event => setOpen(event.currentTarget.open)}>
+      <summary>
+        <span className={`swagger-method swagger-method-${operation.method.toLowerCase()}`}>{operation.method}</span>
+        <code>{operation.path}</code>
+        <strong>{operation.summary}</strong>
+        {renderAccessBadge(catalogRoute, allowedOperations, effectiveAccessLoaded, effectiveAccessError)}
+      </summary>
+      {open && (
+        <div className="swagger-operation-detail">
+          {descriptionLines(operation.description).map(line => <p key={line}>{line}</p>)}
+          <dl>
+            <div>
+              <dt>Operation ID</dt>
+              <dd><code>{operation.operationId || 'n/a'}</code></dd>
+            </div>
+            <div>
+              <dt>Access Control</dt>
+              <dd>{operation.roles || 'Public or inherited'}</dd>
+            </div>
+            <div>
+              <dt>Category</dt>
+              <dd>{catalogRoute?.category || operation.category}</dd>
+            </div>
+            <div>
+              <dt>OpenAPI Tags</dt>
+              <dd>{operation.tags.length ? operation.tags.join(', ') : 'None'}</dd>
+            </div>
+          </dl>
+          <div className="swagger-detail-grid">
+            <div>
+              <h5>Parameters</h5>
+              {operation.parameters.length > 0 ? (
+                <table>
+                  <thead><tr><th>Name</th><th>In</th><th>Required</th><th>Type</th></tr></thead>
+                  <tbody>
+                    {operation.parameters.map(parameter => (
+                      <tr key={`${operation.operationId}-${parameter.location}-${parameter.name}`}>
+                        <td><code>{parameter.name}</code></td>
+                        <td>{parameter.location || 'n/a'}</td>
+                        <td>{parameter.required ? 'Yes' : 'No'}</td>
+                        <td>{parameter.type || 'string'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : <p>No parameters.</p>}
+            </div>
+            <div>
+              <h5>Responses</h5>
+              {operation.responses.length > 0 ? (
+                <table>
+                  <thead><tr><th>Status</th><th>Description</th></tr></thead>
+                  <tbody>
+                    {operation.responses.map(response => (
+                      <tr key={`${operation.operationId}-${response.status}`}>
+                        <td><code>{response.status}</code></td>
+                        <td>{response.description || 'Response'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : <p>No documented responses.</p>}
+            </div>
+          </div>
+        </div>
+      )}
+    </details>
+  )
+}
+
+function renderAccessBadge(
+  catalogRoute: ApiEndpointCatalogRoute | undefined,
+  allowedOperations: Set<string>,
+  effectiveAccessLoaded: boolean,
+  effectiveAccessError: boolean,
+) {
+  if (!catalogRoute) return <span className="swagger-access-badge swagger-access-muted">Unmatched</span>
+  const visibilityOperations = docsVisibilityOperationsForEndpoint(catalogRoute)
+  if (visibilityOperations.length === 0) return <span className="swagger-access-badge swagger-access-public">Public</span>
+  if (!effectiveAccessLoaded) return <span className="swagger-access-badge swagger-access-muted">Checking access</span>
+  if (effectiveAccessError) return <span className="swagger-access-badge swagger-access-muted">Access unavailable</span>
+  const visible = visibilityOperations.some(operation => allowedOperations.has(operation))
+  return visible
+    ? <span className="swagger-access-badge swagger-access-available">My access</span>
+    : <span className="swagger-access-badge swagger-access-restricted">Not in my access</span>
 }

@@ -6,10 +6,11 @@ package api
 // go/ast; the required roles are resolved by reusing the real runtime authorization
 // logic (accessRequirementForRequest), so the spec cannot drift from enforcement.
 //
-//go:generate go run ../../cmd/swaggergen -server server.go -out ../../docs/swagger.yaml
+//go:generate go run ../../cmd/swaggergen -server server.go -out ../../docs/swagger.yaml -catalog-out ../../docs/api-endpoint-catalog.json
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -61,6 +62,7 @@ type oasServer struct {
 
 type oasComponents struct {
 	SecuritySchemes map[string]oasSecurityScheme `yaml:"securitySchemes"`
+	Schemas         map[string]oasSchema         `yaml:"schemas,omitempty"`
 }
 
 type oasSecurityScheme struct {
@@ -73,6 +75,7 @@ type oasOperation struct {
 	Summary     string                 `yaml:"summary"`
 	Description string                 `yaml:"description"`
 	OperationID string                 `yaml:"operationId"`
+	RequestBody *oasRequestBody        `yaml:"requestBody,omitempty"`
 	Responses   map[string]oasResponse `yaml:"responses"`
 	XRoles      string                 `yaml:"x-roles"`
 	Security    *[]map[string][]string `yaml:"security,omitempty"`
@@ -101,6 +104,24 @@ type oasParamSchema struct {
 	Type string `yaml:"type"`
 }
 
+type oasRequestBody struct {
+	Required bool                    `yaml:"required,omitempty"`
+	Content  map[string]oasMediaType `yaml:"content"`
+}
+
+type oasMediaType struct {
+	Schema oasSchema `yaml:"schema"`
+}
+
+type oasSchema struct {
+	Ref        string               `yaml:"$ref,omitempty"`
+	Type       string               `yaml:"type,omitempty"`
+	Properties map[string]oasSchema `yaml:"properties,omitempty"`
+	Items      *oasSchema           `yaml:"items,omitempty"`
+	Enum       []string             `yaml:"enum,omitempty"`
+	Required   []string             `yaml:"required,omitempty"`
+}
+
 // discoveredRoute is one controller route extracted from the routing source.
 type discoveredRoute struct {
 	Method        string
@@ -108,6 +129,35 @@ type discoveredRoute struct {
 	Handler       string // e.g. "handleGetTest" ("" if not a plain s.handleXxx handler)
 	ActionArg     string // first string literal arg when the handler is a factory call
 	Authenticated bool   // the registration chain includes an auth middleware
+}
+
+type routeDoc struct {
+	Method        string
+	Path          string
+	HandlerLabel  string
+	OperationID   string
+	Summary       string
+	Access        string
+	Category      string
+	Authenticated bool
+	Parameters    []oasParameter
+}
+
+type endpointCatalog struct {
+	Version int                    `json:"version"`
+	Source  string                 `json:"source"`
+	Routes  []endpointCatalogRoute `json:"routes"`
+}
+
+type endpointCatalogRoute struct {
+	Method        string `json:"method"`
+	Path          string `json:"path"`
+	OperationID   string `json:"operationId"`
+	Summary       string `json:"summary"`
+	Category      string `json:"category"`
+	Public        bool   `json:"public"`
+	Authenticated bool   `json:"authenticated"`
+	Access        string `json:"access"`
 }
 
 // GenerateOpenAPIYAML parses the controller routing source (serverGoPath, typically
@@ -129,9 +179,12 @@ func GenerateOpenAPIYAML(serverGoPath string) ([]byte, error) {
 			Version:     "1.0.0",
 		},
 		Servers: []oasServer{{URL: "http://localhost:8080", Description: "Local development server"}},
-		Components: oasComponents{SecuritySchemes: map[string]oasSecurityScheme{
-			"bearerAuth": {Type: "http", Scheme: "bearer", BearerFormat: "JWT"},
-		}},
+		Components: oasComponents{
+			SecuritySchemes: map[string]oasSecurityScheme{
+				"bearerAuth": {Type: "http", Scheme: "bearer", BearerFormat: "JWT"},
+			},
+			Schemas: openAPIComponentSchemas(),
+		},
 		Security: []map[string][]string{{"bearerAuth": {}}},
 		Paths:    buildPaths(routes),
 	}
@@ -146,6 +199,45 @@ func GenerateOpenAPIYAML(serverGoPath string) ([]byte, error) {
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+// GenerateEndpointCatalogJSON parses the controller routing source and returns the
+// stable dashboard documentation catalog consumed by the API Guide. It is generated
+// from the same route metadata as the OpenAPI spec, but intentionally carries only
+// documentation/UI metadata; it must not be used as an authorization source.
+func GenerateEndpointCatalogJSON(serverGoPath string) ([]byte, error) {
+	routes, err := discoverControllerRoutes(serverGoPath)
+	if err != nil {
+		return nil, err
+	}
+	if len(routes) == 0 {
+		return nil, fmt.Errorf("no routes discovered in %s", serverGoPath)
+	}
+
+	docs := buildRouteDocs(routes)
+	catalog := endpointCatalog{
+		Version: 1,
+		Source:  serverGoPath,
+		Routes:  make([]endpointCatalogRoute, 0, len(docs)),
+	}
+	for _, doc := range docs {
+		catalog.Routes = append(catalog.Routes, endpointCatalogRoute{
+			Method:        doc.Method,
+			Path:          doc.Path,
+			OperationID:   doc.OperationID,
+			Summary:       doc.Summary,
+			Category:      doc.Category,
+			Public:        !doc.Authenticated,
+			Authenticated: doc.Authenticated,
+			Access:        doc.Access,
+		})
+	}
+
+	data, err := json.MarshalIndent(catalog, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(data, '\n'), nil
 }
 
 // discoverControllerRoutes walks every `<x>.Handle("METHOD /path", handler)`
@@ -188,6 +280,97 @@ func discoverControllerRoutes(serverGoPath string) ([]discoveredRoute, error) {
 // buildPaths renders the discovered routes into the OpenAPI paths object, keeping
 // operationIds unique and deterministic.
 func buildPaths(routes []discoveredRoute) map[string]map[string]oasOperation {
+	docs := buildRouteDocs(routes)
+	paths := map[string]map[string]oasOperation{}
+	for _, doc := range docs {
+		op := oasOperation{
+			Summary:     doc.Summary,
+			Description: fmt.Sprintf("**Handler:** `%s`\n\n**Access Control:** %s", doc.HandlerLabel, doc.Access),
+			OperationID: doc.OperationID,
+			Responses:   map[string]oasResponse{"200": {Description: "Successful operation"}},
+			XRoles:      doc.Access,
+			Tags:        []string{tagForPath(doc.Path)},
+			Parameters:  doc.Parameters,
+		}
+		if requestBody := requestBodyForRoute(doc.Method, doc.Path); requestBody != nil {
+			op.RequestBody = requestBody
+		}
+		if !doc.Authenticated {
+			op.Security = &noSecurity
+		}
+		if paths[doc.Path] == nil {
+			paths[doc.Path] = map[string]oasOperation{}
+		}
+		paths[doc.Path][strings.ToLower(doc.Method)] = op
+	}
+	return paths
+}
+
+func openAPIComponentSchemas() map[string]oasSchema {
+	return map[string]oasSchema{
+		"ScriptDebugBreakpoint": {
+			Type: "object",
+			Properties: map[string]oasSchema{
+				"phase":         {Type: "string", Enum: []string{"init", "action", "teardown"}},
+				"action_index":  {Type: "integer"},
+				"request_index": {Type: "integer"},
+				"step_path":     {Type: "array", Items: &oasSchema{Type: "string"}},
+			},
+			Required: []string{"phase", "action_index"},
+		},
+		"ScriptDebugStepRequest": {
+			Type: "object",
+			Properties: map[string]oasSchema{
+				"mode": {Type: "string", Enum: []string{"into", "over", "loop_end"}},
+			},
+		},
+		"ScriptDebugBreakpointsRequest": {
+			Type: "object",
+			Properties: map[string]oasSchema{
+				"breakpoints": {
+					Type:  "array",
+					Items: &oasSchema{Ref: "#/components/schemas/ScriptDebugBreakpoint"},
+				},
+			},
+			Required: []string{"breakpoints"},
+		},
+		"ScriptDebugOptionsRequest": {
+			Type: "object",
+			Properties: map[string]oasSchema{
+				"break_on_failure": {Type: "boolean"},
+			},
+			Required: []string{"break_on_failure"},
+		},
+	}
+}
+
+func requestBodyForRoute(method, path string) *oasRequestBody {
+	if method == http.MethodPost && strings.HasSuffix(path, "/step") && replaySessionControlPath(path) {
+		return jsonRequestBody("ScriptDebugStepRequest", false)
+	}
+	if method == http.MethodPatch && strings.HasSuffix(path, "/breakpoints") && replaySessionControlPath(path) {
+		return jsonRequestBody("ScriptDebugBreakpointsRequest", true)
+	}
+	if method == http.MethodPatch && strings.HasSuffix(path, "/options") && replaySessionControlPath(path) {
+		return jsonRequestBody("ScriptDebugOptionsRequest", true)
+	}
+	return nil
+}
+
+func replaySessionControlPath(path string) bool {
+	return strings.HasPrefix(path, "/api/v1/replay/sessions/") || strings.HasPrefix(path, "/api/v1/script-debug/sessions/")
+}
+
+func jsonRequestBody(schemaName string, required bool) *oasRequestBody {
+	return &oasRequestBody{
+		Required: required,
+		Content: map[string]oasMediaType{
+			"application/json": {Schema: oasSchema{Ref: "#/components/schemas/" + schemaName}},
+		},
+	}
+}
+
+func buildRouteDocs(routes []discoveredRoute) []routeDoc {
 	sort.Slice(routes, func(i, j int) bool {
 		if routes[i].Path != routes[j].Path {
 			return routes[i].Path < routes[j].Path
@@ -196,8 +379,15 @@ func buildPaths(routes []discoveredRoute) map[string]map[string]oasOperation {
 	})
 
 	usedOpID := map[string]int{}
-	paths := map[string]map[string]oasOperation{}
+	seenRoutes := map[string]bool{}
+	docs := make([]routeDoc, 0, len(routes))
 	for _, r := range routes {
+		routeKey := r.Method + " " + r.Path
+		if seenRoutes[routeKey] {
+			continue
+		}
+		seenRoutes[routeKey] = true
+
 		roles := publicRoleText
 		if r.Authenticated {
 			roles = routeRolesText(r.Method, r.Path)
@@ -229,29 +419,26 @@ func buildPaths(routes []discoveredRoute) map[string]map[string]oasOperation {
 			summary = fmt.Sprintf("%s (%s)", summary, r.ActionArg)
 		}
 
-		op := oasOperation{
-			Summary:     summary,
-			Description: fmt.Sprintf("**Handler:** `%s`\n\n**Access Control:** %s", handlerLabel, roles),
-			OperationID: opID,
-			Responses:   map[string]oasResponse{"200": {Description: "Successful operation"}},
-			XRoles:      roles,
-			Tags:        []string{tagForPath(r.Path)},
-		}
-		if !r.Authenticated {
-			op.Security = &noSecurity
-		}
+		parameters := []oasParameter{}
 		for _, m := range pathParamRe.FindAllStringSubmatch(r.Path, -1) {
-			op.Parameters = append(op.Parameters, oasParameter{
+			parameters = append(parameters, oasParameter{
 				Name: m[1], In: "path", Required: true, Schema: oasParamSchema{Type: "string"},
 			})
 		}
 
-		if paths[r.Path] == nil {
-			paths[r.Path] = map[string]oasOperation{}
-		}
-		paths[r.Path][strings.ToLower(r.Method)] = op
+		docs = append(docs, routeDoc{
+			Method:        r.Method,
+			Path:          r.Path,
+			HandlerLabel:  handlerLabel,
+			OperationID:   opID,
+			Summary:       summary,
+			Access:        roles,
+			Category:      docsCategoryForPath(r.Path),
+			Authenticated: r.Authenticated,
+			Parameters:    parameters,
+		})
 	}
-	return paths
+	return docs
 }
 
 // routeRolesText resolves the access requirement using the real runtime authorization
@@ -449,6 +636,53 @@ func tagForPath(path string) string {
 		words[i] = titleWord(w)
 	}
 	return strings.Join(words, " ")
+}
+
+func docsCategoryForPath(path string) string {
+	if path == "/metrics" {
+		return "Operations & Observability"
+	}
+	trimmed := strings.TrimPrefix(strings.TrimPrefix(path, "/"), "api/v1/")
+	segment := trimmed
+	if i := strings.IndexByte(trimmed, '/'); i >= 0 {
+		segment = trimmed[:i]
+	}
+	switch segment {
+	case "":
+		return "General"
+	case "ai":
+		return "AI Assistance"
+	case "application-repository", "applications", "domains", "folders", "projects":
+		return "Workspace & Assets"
+	case "archives", "releases", "reports", "results":
+		return "Results & Reporting"
+	case "auth":
+		return "Identity & Access"
+	case "browser-recorder", "browser-replay", "recorder", "replay", "script-debug":
+		return "Recording & Replay"
+	case "capacity", "run-calendar", "schedules":
+		return "Scheduling"
+	case "correlation-rulesets", "correlations", "dsl", "object-repositories", "scripts", "selectors":
+		return "Script Authoring"
+	case "data-pools":
+		return "Data & Parameters"
+	case "desktop", "downloads", "system":
+		return "System & Distribution"
+	case "fleet", "metrics", "monitoring", "ws":
+		return "Operations & Observability"
+	case "integrations", "protocol-bundles", "protocols":
+		return "Integrations & Protocols"
+	case "library":
+		return "Script Library"
+	case "remotes":
+		return "Remote Execution"
+	case "runtime-settings":
+		return "Execution Configuration"
+	case "execution-plans", "scenarios", "tests":
+		return "Test Execution"
+	default:
+		return tagForPath(path)
+	}
 }
 
 func synthOperationID(method, path string) string {

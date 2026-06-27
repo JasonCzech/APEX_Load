@@ -5,6 +5,7 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ScriptDefinition } from '../types/scripts'
+import { ApiError } from '../hooks/apiClient'
 import { formatSnapshotRequestSection, formatSnapshotResponseSection } from '../utils/snapshotFormatUtils'
 import { NavigationGuardProvider } from '../hooks/NavigationGuardProvider'
 import { TopbarContributionProvider, useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
@@ -35,6 +36,7 @@ const apiMock = {
   startDraftScriptDebugSession: vi.fn(),
   startScriptDebugSession: vi.fn(),
   previewBrowserToHTTP: vi.fn(),
+  getScriptRecordingStatus: vi.fn(),
   pauseBrowserReplaySession: vi.fn(),
   resumeBrowserReplaySession: vi.fn(),
   stopBrowserReplaySession: vi.fn(),
@@ -42,6 +44,7 @@ const apiMock = {
   resumeScriptDebugSession: vi.fn(),
   stepScriptDebugSession: vi.fn(),
   stopScriptDebugSession: vi.fn(),
+  getScriptDebugSession: vi.fn(),
   updateScriptDebugBreakpoints: vi.fn(),
   listAuthoringComponents: vi.fn(),
   createAuthoringComponent: vi.fn(),
@@ -417,7 +420,9 @@ describe('ScriptEditor', () => {
   }
 
   beforeEach(() => {
+    vi.resetAllMocks()
     window.localStorage.clear()
+    window.sessionStorage.clear()
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -539,6 +544,7 @@ describe('ScriptEditor', () => {
         ],
       },
     })
+    apiMock.getScriptRecordingStatus.mockResolvedValue({ exists: false })
     apiMock.pauseBrowserReplaySession.mockResolvedValue({ session: { status: 'paused' } })
     apiMock.resumeBrowserReplaySession.mockResolvedValue({ session: { status: 'running' } })
     apiMock.stopBrowserReplaySession.mockResolvedValue(undefined)
@@ -546,6 +552,7 @@ describe('ScriptEditor', () => {
     apiMock.resumeScriptDebugSession.mockResolvedValue({ session: { status: 'running' } })
     apiMock.stepScriptDebugSession.mockResolvedValue({ session: { status: 'paused' } })
     apiMock.stopScriptDebugSession.mockResolvedValue({ session: { status: 'stopped' } })
+    apiMock.getScriptDebugSession.mockResolvedValue({ session: { id: 'debug-session-1', status: 'running', events: [] } })
     apiMock.updateScriptDebugBreakpoints.mockResolvedValue({ session: { breakpoints: [] } })
     apiMock.listAuthoringComponents.mockResolvedValue({ components: [], count: 0 })
     apiMock.createAuthoringComponent.mockResolvedValue({ component: { id: 'block-1' } })
@@ -609,8 +616,16 @@ describe('ScriptEditor', () => {
     expect(topbar?.textContent).not.toContain('Close')
     expect(Array.from(topbar?.querySelectorAll('button') || []).map(button => button.textContent?.trim())).not.toContain('Settings')
     expect(Array.from(topbar?.querySelectorAll('button') || []).map(button => button.textContent?.trim())).not.toContain('Breakpoint')
-    const debugActionButtons = Array.from(topbar?.querySelectorAll<HTMLButtonElement>('.topbar-debug-action') || [])
-    expect(debugActionButtons.map(button => button.textContent?.trim())).toEqual([
+    const debugActionLabels = () => Array.from(topbar?.querySelectorAll<HTMLButtonElement>('.topbar-debug-action') || []).map(button => button.textContent?.trim())
+    const topbarWorkspaceButton = (label: string) => Array.from(topbar?.querySelectorAll<HTMLButtonElement>('.mode-chip') || [])
+      .find(button => button.textContent?.trim() === label)
+    expect(debugActionLabels()).toEqual(['Run'])
+    expect(Array.from(topbar?.querySelectorAll<HTMLButtonElement>('.topbar-debug-action') || []).every(button => button.querySelector('.topbar-action-icon svg'))).toBe(true)
+    await act(async () => {
+      topbarWorkspaceButton('Debug')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+    expect(debugActionLabels()).toEqual([
       'Run',
       'Pause',
       'Step',
@@ -619,7 +634,11 @@ describe('ScriptEditor', () => {
       'Stop',
       'Break on failure',
     ])
-    expect(debugActionButtons.every(button => button.querySelector('.topbar-action-icon svg'))).toBe(true)
+    await act(async () => {
+      topbarWorkspaceButton('Author')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+    expect(debugActionLabels()).toEqual(['Run'])
     const metaLabels = Array.from(topbar?.querySelectorAll('.topbar-meta-chip') || []).map(chip => chip.textContent?.trim())
     expect(metaLabels).not.toContain('Create Script')
     expect(metaLabels).not.toContain('Edit Script')
@@ -628,9 +647,11 @@ describe('ScriptEditor', () => {
     expect(metaLabels).not.toContain('JSON Draft')
     expect(container.querySelector('.script-editor-local-action-proxy')).toBeNull()
 
-    if (!nameInput) return
+    const activeNameInput = container.querySelector<HTMLInputElement>('.side-panel-script-name input[placeholder="My_Test_Script"]')
+    expect(activeNameInput?.value).toBe('Checkout Flow')
+    if (!activeNameInput) return
     await act(async () => {
-      changeInputValue(nameInput, 'Side Panel Checkout Flow')
+      changeInputValue(activeNameInput, 'Side Panel Checkout Flow')
       await Promise.resolve()
     })
 
@@ -695,11 +716,14 @@ describe('ScriptEditor', () => {
     const metadataJsonLink = Array.from(container.querySelector('.actions-sidebar')?.querySelectorAll('button') || [])
       .find(button => button.textContent === 'Imported Metadata JSON')
     expect(metadataJsonLink).toBeDefined()
+    metadataJsonLink?.focus()
     await act(async () => {
       metadataJsonLink?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
+    await flushReact()
     const metadataJsonEditor = container.querySelector('.metadata-json-dialog .metadata-json-viewer textarea') as HTMLTextAreaElement | null
     expect(metadataJsonEditor).not.toBeNull()
+    expect(container.querySelector('.metadata-json-dialog')?.contains(document.activeElement)).toBe(true)
     expect(metadataJsonEditor?.value).toContain('checkout.usr')
     expect(metadataJsonEditor?.dataset.lineNumbers).toBe('true')
     expect(metadataJsonEditor?.dataset.foldGutter).toBe('true')
@@ -707,11 +731,12 @@ describe('ScriptEditor', () => {
     expect(metadataJsonEditor?.dataset.highlightActiveLineGutter).toBe('true')
     expect(metadataJsonEditor?.dataset.readOnly).toBe('true')
     expect(metadataJsonEditor?.dataset.editable).toBe('false')
-    const closeMetadataJsonButton = Array.from(container.querySelectorAll('.metadata-json-dialog button')).find(button => button.textContent === 'Close')
     await act(async () => {
-      closeMetadataJsonButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     })
+    await flushReact()
     expect(container.querySelector('.metadata-json-dialog')).toBeNull()
+    expect(document.activeElement).toBe(metadataJsonLink)
     expect(actionDetail).toBeNull()
     expect(container.querySelector('.author-code-center')?.contains(metadataSection)).toBe(true)
     expect(container.querySelector('.actions-sidebar .editor-outline-nav')?.textContent).not.toContain('Outline')
@@ -1008,12 +1033,7 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.editor-utility-sidebar')?.textContent).not.toContain('Address_Search_Aura')
     expect(container.querySelector('.editor-utility-sidebar')?.textContent).not.toContain('Checkout_Aura')
 
-    expect(Array.from(container.querySelectorAll('.script-json-sidebar-tab')).map(button => button.textContent?.trim())).toEqual([
-      'Insights',
-      'Parameters',
-      'Details',
-    ])
-    expect(container.querySelector('.script-json-sidebar-tab')?.textContent?.trim()).not.toBe('Map')
+    expect(Array.from(container.querySelectorAll('.script-json-sidebar-tab')).map(button => button.textContent?.trim())).toEqual([])
     expect(container.querySelector('.json-source-map')).toBeNull()
     expect(container.querySelector('.action-list')?.textContent).toContain('2 req')
     expect(container.querySelector('.action-list')?.textContent).toContain('1 ext')
@@ -1228,7 +1248,7 @@ describe('ScriptEditor', () => {
     })
 
     expect(parameterButton?.classList.contains('selected')).toBe(true)
-    expect(findCenterTab(container, 'Script JSON')?.getAttribute('aria-selected')).toBe('true')
+    expect(findCenterTab(container, 'Source')?.getAttribute('aria-selected')).toBe('true')
     expect(container.querySelector('.script-code-title')?.textContent).toContain('Parameter: session_id (2 occurrences)')
     // Selecting a parameter opens the Parameter companion page showing its details + references.
     expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Parameter')
@@ -1244,6 +1264,185 @@ describe('ScriptEditor', () => {
       firstRef.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     expect(codeMirrorDispatchMock).toHaveBeenCalled()
+  })
+
+  it('shows authoring issue badges on init and teardown rows', async () => {
+    const lifecycleScript: ScriptDefinition = {
+      ...initialScript,
+      init: [{ name: 'Warmup', type: 'GET', method: 'GET', target: '' }],
+      actions: [{ ...initialScript.actions[0], name: 'Business_Login' }],
+      teardown: [{ name: 'Cleanup', type: 'GET', method: 'GET', target: '' }],
+    } as ScriptDefinition
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={lifecycleScript} />)
+    })
+
+    const rows = Array.from(container.querySelectorAll<HTMLElement>('.action-item'))
+    const initRow = rows.find(row => row.textContent?.includes('Init 1') && row.textContent?.includes('Warmup'))
+    const teardownRow = rows.find(row => row.textContent?.includes('Teardown 1') && row.textContent?.includes('Cleanup'))
+
+    expect(initRow?.querySelector('.action-signal-pill.error')?.textContent).toBe('1')
+    expect(teardownRow?.querySelector('.action-signal-pill.error')?.textContent).toBe('1')
+  })
+
+  it('focuses init and teardown rows from Debug Problems', async () => {
+    const lifecycleScript: ScriptDefinition = {
+      ...initialScript,
+      init: [{ name: 'Warmup', type: 'GET', method: 'GET', target: '' }],
+      actions: [{ ...initialScript.actions[0], name: 'Business_Login' }],
+      teardown: [{ name: 'Cleanup', type: 'GET', method: 'GET', target: '' }],
+    } as ScriptDefinition
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={lifecycleScript} />)
+    })
+
+    await act(async () => {
+      findOpenDebuggerButton(container)?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+    const problemsTab = Array.from(container.querySelectorAll<HTMLButtonElement>('.debugger-bottom-tabs [role="tab"]'))
+      .find(button => button.textContent?.startsWith('Problems'))
+    await act(async () => {
+      problemsTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const problemRows = Array.from(container.querySelectorAll<HTMLButtonElement>('.debugger-problem-row.action-problem'))
+    expect(problemRows.some(row => row.textContent?.includes('Init 1') && row.textContent?.includes('Warmup'))).toBe(true)
+    const teardownProblem = problemRows.find(row => row.textContent?.includes('Teardown 1') && row.textContent?.includes('Cleanup'))
+    expect(teardownProblem).toBeDefined()
+
+    await act(async () => {
+      teardownProblem?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(findWorkspaceTab(container, 'Author')?.getAttribute('aria-selected')).toBe('true')
+    expect(container.querySelector('.action-item.lifecycle-action.active')?.textContent).toContain('Cleanup')
+    expect(container.querySelector('.script-json-scope-bar')?.textContent).toContain('Selected Action')
+    expect((container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null)?.value).toContain('"name": "Cleanup"')
+  })
+
+  it('edits init and teardown actions from the structured details inspector', async () => {
+    const lifecycleScript: ScriptDefinition = {
+      ...initialScript,
+      init: [{ name: 'Warmup', type: 'GET', method: 'GET', target: '/warmup' }],
+      actions: [{ ...initialScript.actions[0], name: 'Business_Login' }],
+      teardown: [{ name: 'Cleanup', type: 'GET', method: 'GET', target: '/logout' }],
+    } as ScriptDefinition
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={lifecycleScript} />)
+    })
+
+    const warmupRow = Array.from(container.querySelectorAll<HTMLElement>('.action-item'))
+      .find(row => row.textContent?.includes('Init 1') && row.textContent?.includes('Warmup'))
+    await act(async () => {
+      warmupRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Action Details')
+    const warmupName = Array.from(container.querySelectorAll<HTMLInputElement>('.action-editor-panel input'))
+      .find(input => input.value === 'Warmup')
+    const warmupTarget = Array.from(container.querySelectorAll<HTMLInputElement>('.action-editor-panel input'))
+      .find(input => input.value === '/warmup')
+    expect(warmupName).toBeDefined()
+    expect(warmupTarget).toBeDefined()
+
+    await act(async () => {
+      changeInputValue(warmupName!, 'Warmup_Edited')
+      changeInputValue(warmupTarget!, '/healthz')
+    })
+    expect((container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null)?.value).toContain('"name": "Warmup_Edited"')
+    expect((container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null)?.value).toContain('"target": "/healthz"')
+
+    const cleanupRow = Array.from(container.querySelectorAll<HTMLElement>('.action-item'))
+      .find(row => row.textContent?.includes('Teardown 1') && row.textContent?.includes('Cleanup'))
+    await act(async () => {
+      cleanupRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const cleanupTarget = Array.from(container.querySelectorAll<HTMLInputElement>('.action-editor-panel input'))
+      .find(input => input.value === '/logout')
+    expect(cleanupTarget).toBeDefined()
+    await act(async () => {
+      changeInputValue(cleanupTarget!, '/signed-out')
+    })
+    expect((container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null)?.value).toContain('"target": "/signed-out"')
+  })
+
+  it('moves, duplicates, and deletes lifecycle actions from the author list', async () => {
+    const lifecycleScript: ScriptDefinition = {
+      ...initialScript,
+      init: [
+        { name: 'Warmup_A', type: 'GET', method: 'GET', target: '/a' },
+        { name: 'Warmup_B', type: 'GET', method: 'GET', target: '/b' },
+      ],
+      actions: [{ ...initialScript.actions[0], name: 'Business_Login' }],
+      teardown: [
+        { name: 'Cleanup_A', type: 'GET', method: 'GET', target: '/logout-a' },
+        { name: 'Cleanup_B', type: 'GET', method: 'GET', target: '/logout-b' },
+      ],
+    } as ScriptDefinition
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={lifecycleScript} />)
+    })
+
+    const lifecycleRows = () => Array.from(container.querySelectorAll<HTMLElement>('.action-item.lifecycle-action'))
+    const initA = () => lifecycleRows().find(row => row.textContent?.includes('Init 1') && row.textContent?.includes('Warmup_A')) as HTMLElement | undefined
+    const initCopy = () => lifecycleRows().find(row => row.textContent?.includes('Warmup_A (copy)')) as HTMLElement | undefined
+    const cleanupA = () => lifecycleRows().find(row => row.textContent?.includes('Cleanup_A')) as HTMLElement | undefined
+
+    await act(async () => {
+      initA()?.querySelector<HTMLButtonElement>('[aria-label="Duplicate init action"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(initCopy()).toBeDefined()
+
+    await act(async () => {
+      initCopy()?.querySelector<HTMLButtonElement>('[aria-label="Move init action up"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(lifecycleRows().find(row => row.textContent?.includes('Init 1'))?.textContent).toContain('Warmup_A (copy)')
+
+    await act(async () => {
+      cleanupA()?.querySelector<HTMLButtonElement>('[aria-label="Delete teardown action"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(lifecycleRows().some(row => row.textContent?.includes('Cleanup_A'))).toBe(false)
+    expect(lifecycleRows().some(row => row.textContent?.includes('Cleanup_B'))).toBe(true)
+  })
+
+  it('remaps lifecycle breakpoints when lifecycle actions move and delete', async () => {
+    const lifecycleScript: ScriptDefinition = {
+      ...initialScript,
+      init: [{ name: 'Warmup', type: 'GET', method: 'GET', target: '/warmup' }],
+      actions: [{ ...initialScript.actions[0], name: 'Business_Login' }],
+      teardown: [
+        { name: 'Cleanup_A', type: 'GET', method: 'GET', target: '/logout-a' },
+        { name: 'Cleanup_B', type: 'GET', method: 'GET', target: '/logout-b' },
+      ],
+    } as ScriptDefinition
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={lifecycleScript} />)
+    })
+
+    const lifecycleRows = () => Array.from(container.querySelectorAll<HTMLElement>('.action-item.lifecycle-action'))
+    const cleanupB = () => lifecycleRows().find(row => row.textContent?.includes('Cleanup_B')) as HTMLElement | undefined
+
+    await act(async () => {
+      cleanupB()?.querySelector<HTMLButtonElement>('[aria-label="Set breakpoint on Teardown 2"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(cleanupB()?.querySelector('.action-breakpoint-button')?.className).toContain('active')
+
+    await act(async () => {
+      cleanupB()?.querySelector<HTMLButtonElement>('[aria-label="Move teardown action up"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const movedCleanup = lifecycleRows().find(row => row.textContent?.includes('Teardown 1') && row.textContent?.includes('Cleanup_B'))
+    expect(movedCleanup?.querySelector('.action-breakpoint-button')?.className).toContain('active')
+
+    await act(async () => {
+      movedCleanup?.querySelector<HTMLButtonElement>('[aria-label="Delete teardown action"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(lifecycleRows().some(row => row.querySelector('.action-breakpoint-button.active'))).toBe(false)
   })
 
   it('expands an http_sequence row in the debug rail to reveal sub-requests', async () => {
@@ -1406,21 +1605,26 @@ describe('ScriptEditor', () => {
     })
 
     expect(parameterButton?.classList.contains('selected')).toBe(true)
-    expect(findCenterTab(container, 'Script JSON')?.getAttribute('aria-selected')).toBe('true')
+    expect(findCenterTab(container, 'Source')?.getAttribute('aria-selected')).toBe('true')
     expect(container.querySelector('.script-code-title')?.textContent).toContain('Parameter: session_id (2 occurrences)')
   })
 
-  it('keeps the script JSON pane visible in Author and Debug workbench modes', async () => {
+  it('keeps Action List first while preserving the Source pane in Author and Debug workbench modes', async () => {
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} />)
     })
 
     expect(findWorkspaceTab(container, '{ } JSON')).toBeUndefined()
     expect(findWorkspaceTab(container, 'JSON')).toBeUndefined()
-    expect(findCenterTab(container, 'Script JSON')?.getAttribute('aria-selected')).toBe('true')
-    expect(container.querySelector('button[aria-label="Close Script JSON"]')).toBeNull()
-    expect(container.querySelector('[aria-label="Script JSON"]')).not.toBeNull()
-    expect(container.querySelector('[aria-label="Script JSON"]')?.textContent).toContain('Synced')
+    expect(findCenterTab(container, 'Action List')?.getAttribute('aria-selected')).toBe('true')
+    expect(findCenterTab(container, 'Source')).not.toBeUndefined()
+    await act(async () => {
+      findCenterTab(container, 'Source')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(findCenterTab(container, 'Source')?.getAttribute('aria-selected')).toBe('true')
+    expect(container.querySelector('button[aria-label="Close Source"]')).toBeNull()
+    expect(container.querySelector('[aria-label="Source"]')).not.toBeNull()
+    expect(container.querySelector('[aria-label="Source"]')?.textContent).toContain('Synced')
     expect((container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null)?.value).toContain('"Checkout Flow"')
 
     const debugTab = findOpenDebuggerButton(container)
@@ -1433,8 +1637,8 @@ describe('ScriptEditor', () => {
     })
 
     expect(container.querySelector('[aria-label="Script Debugger"]')).not.toBeNull()
-    expect(container.querySelector('[aria-label="Script JSON"]')).not.toBeNull()
-    expect(findCenterTab(container, 'Script JSON')).not.toBeUndefined()
+    expect(container.querySelector('[aria-label="Source"]')).not.toBeNull()
+    expect(findCenterTab(container, 'Source')).not.toBeUndefined()
     expect(findCenterTab(container, 'Browser Replay')).toBeUndefined()
     expect((container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null)?.value).toContain('"Checkout Flow"')
   })
@@ -1503,7 +1707,7 @@ describe('ScriptEditor', () => {
 
     const debugCenter = container.querySelector('.debugger-code-center')
     expect(debugCenter).not.toBeNull()
-    expect(findCenterTab(debugCenter || container, 'Script JSON')?.getAttribute('aria-selected')).toBe('true')
+    expect(findCenterTab(container, 'Action List')?.getAttribute('aria-selected')).toBe('true')
     expect(findCenterTab(debugCenter || container, 'Source Mapping')).toBeUndefined()
     expect(findCenterTab(debugCenter || container, 'Metadata JSON')).toBeUndefined()
     expect(findCenterTab(debugCenter || container, 'Conversion Mapping')).toBeUndefined()
@@ -1755,7 +1959,8 @@ describe('ScriptEditor', () => {
     await act(async () => {
       initRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    expect(container.querySelector('[aria-label="Script JSON"]')?.textContent).toContain('init[0]')
+    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Action Details')
+    expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')?.textContent).toContain('Init Login')
 
     const debugTab = findOpenDebuggerButton(container)
     await act(async () => {
@@ -1866,7 +2071,7 @@ describe('ScriptEditor', () => {
     })
     expect(container.querySelector('.debugger-center')).toBeNull()
     expect(container.querySelector('.debugger-shell')?.classList.contains('debugger-detail-collapsed')).toBe(true)
-    expect(container.querySelector('[aria-label="Script JSON"]')).not.toBeNull()
+    expect(container.querySelector('[aria-label="Action List"]')).not.toBeNull()
 
     const showDetails = findButtonByTitle(container, 'Show detail panel (request/response + variables)')
     expect(showDetails).toBeDefined()
@@ -1947,30 +2152,22 @@ describe('ScriptEditor', () => {
       firstAction?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(findCenterTab(container, 'Script JSON')?.getAttribute('aria-selected')).toBe('true')
+    expect(findCenterTab(container, 'Action List')?.getAttribute('aria-selected')).toBe('true')
     expect(container.querySelector('.editor-utility-sidebar')?.classList.contains('collapsed')).toBe(false)
     expect(container.querySelector('.editor-utility-sidebar')?.classList.contains('context-inspector')).toBe(true)
     expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Action Details')
     expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')).not.toBeNull()
     expect(container.querySelector('.script-code-inline-inspector .action-editor-panel')).toBeNull()
-    expect(Array.from(container.querySelectorAll('.script-json-sidebar-tab')).map(button => button.textContent?.trim())).toEqual([
-      'Insights',
-      'Parameters',
-      'Details',
-    ])
-
-    const insightsTab = Array.from(container.querySelectorAll('.script-json-sidebar-tab')).find(button => button.textContent?.trim() === 'Insights')
-    await act(async () => {
-      insightsTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-    expect(container.querySelector('.editor-utility-sidebar')?.classList.contains('context-signals')).toBe(true)
-    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Insights')
+    expect(Array.from(container.querySelectorAll('.script-json-sidebar-tab')).map(button => button.textContent?.trim())).toEqual([])
     expect(container.querySelector('.json-source-map')).toBeNull()
   })
 
   it('keeps the Script JSON minimap hidden from the dashboard UI', async () => {
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} />)
+    })
+    await act(async () => {
+      findCenterTab(container, 'Source')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     await flushReact()
 
@@ -1997,7 +2194,8 @@ describe('ScriptEditor', () => {
 
     expect(findCenterTab(container, 'Parameter Data')?.getAttribute('aria-selected')).toBe('true')
     expect(Array.from(container.querySelectorAll('.center-tab-button')).map(button => button.textContent?.trim())).toEqual([
-      'Script JSON',
+      'Action List',
+      'Source',
       'Parameter Data',
       'Runtime Settings',
     ])
@@ -2020,12 +2218,15 @@ describe('ScriptEditor', () => {
 
     expect(findCenterTab(container, 'Source Mapping')).toBeUndefined()
     expect(findCenterTab(container, 'Metadata JSON')).toBeUndefined()
-    expect(findCenterTab(container, 'Script JSON')?.getAttribute('aria-selected')).toBe('true')
+    expect(findCenterTab(container, 'Action List')?.getAttribute('aria-selected')).toBe('true')
   })
 
   it('applies valid manual JSON edits into the structured authoring tools and save payload', async () => {
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} projectId="project-1" />)
+    })
+    await act(async () => {
+      findCenterTab(container, 'Source')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
     // The raw JSON pane is a read-only mirror by default; enable direct editing
@@ -2117,7 +2318,7 @@ describe('ScriptEditor', () => {
       configTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     expect(container.querySelector('.center-document-blocked')?.textContent).toContain('Script JSON is invalid')
-    expect(container.querySelector('.center-document-blocked')?.textContent).toContain('Fix or reset the Script JSON draft')
+    expect(container.querySelector('.center-document-blocked')?.textContent).toContain('Structured editing is paused until the Source JSON parses again.')
 
     const saveButton = container.querySelector<HTMLButtonElement>('.actions-sidebar button[aria-label="Save script"]')
     expect(saveButton).toBeDefined()
@@ -2525,8 +2726,11 @@ describe('ScriptEditor', () => {
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} />)
     })
+    await act(async () => {
+      findCenterTab(container, 'Source')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
 
-    expect(findCenterTab(container, 'Script JSON')?.getAttribute('aria-selected')).toBe('true')
+    expect(findCenterTab(container, 'Source')?.getAttribute('aria-selected')).toBe('true')
 
     const parameterSection = Array.from(container.querySelectorAll('.outline-section'))
       .find(section => section.textContent?.includes('Parameter List'))
@@ -2546,7 +2750,7 @@ describe('ScriptEditor', () => {
     })
 
     const utilitySidebar = container.querySelector('.editor-utility-sidebar') as HTMLDivElement | null
-    expect(findCenterTab(container, 'Script JSON')?.getAttribute('aria-selected')).toBe('true')
+    expect(findCenterTab(container, 'Source')?.getAttribute('aria-selected')).toBe('true')
     expect(utilitySidebar?.classList.contains('context-auto-parameterization')).toBe(true)
     expect(utilitySidebar?.querySelector('.side-pane-header')?.textContent).toContain('Parameters')
     expect(activePanel?.textContent).not.toContain('Review Candidates')
@@ -2632,7 +2836,7 @@ describe('ScriptEditor', () => {
     })
 
     const utilitySidebar = container.querySelector('.editor-utility-sidebar') as HTMLDivElement | null
-    expect(findCenterTab(container, 'Script JSON')?.getAttribute('aria-selected')).toBe('true')
+    expect(findCenterTab(container, 'Source')?.getAttribute('aria-selected')).toBe('true')
     expect(utilitySidebar?.querySelector('.auto-parameter-location')?.textContent).toContain('1 / 2')
     expect(utilitySidebar?.querySelector('.auto-parameter-location')?.textContent).toContain('Action 1 / target')
 
@@ -2818,7 +3022,7 @@ describe('ScriptEditor', () => {
 
     expect(connectTimeoutInput.value).toBe('60.001')
 
-    const scriptJsonTab = findCenterTab(container, 'Script JSON')
+    const scriptJsonTab = findCenterTab(container, 'Source')
     expect(scriptJsonTab).toBeDefined()
     if (!scriptJsonTab) return
     await act(async () => {
@@ -3163,14 +3367,14 @@ describe('ScriptEditor', () => {
     await act(async () => {
       sidebarActions[1]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    const scriptJsonTab = findCenterTab(container, 'Script JSON')
+    const scriptJsonTab = findCenterTab(container, 'Source')
     expect(scriptJsonTab).toBeDefined()
     await act(async () => {
       scriptJsonTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(findCenterTab(container, 'Script JSON')?.getAttribute('aria-selected')).toBe('true')
-    expect(container.querySelector('[aria-label="Script JSON"]')?.textContent).toContain('actions[1]')
+    expect(findCenterTab(container, 'Source')?.getAttribute('aria-selected')).toBe('true')
+    expect(container.querySelector('.script-code-pane')?.textContent).toContain('actions[1]')
     expect(container.querySelector('#imported-metadata-section')).not.toBeNull()
     expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Insights')
     expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')).toBeNull()
@@ -4134,6 +4338,9 @@ describe('ScriptEditor', () => {
 
     expect(container.querySelector('[aria-label="Script Debugger"]')).toBeNull()
     expect(apiMock.startDraftScriptDebugSession).not.toHaveBeenCalled()
+    expect(findButtonByTitle(container, 'Step to next action')).toBeUndefined()
+    expect(findButtonByTitle(container, 'Stop debugger')).toBeUndefined()
+    expect(findButtonByTitle(container, 'Session overrides')).toBeUndefined()
 
     const runReplayButton = findDebuggerRunButton(container)
     expect(runReplayButton).toBeDefined()
@@ -4309,6 +4516,62 @@ describe('ScriptEditor', () => {
     expect(apiMock.startDraftScriptDebugSession).toHaveBeenCalledWith(expect.objectContaining({
       breakpoints: [{ phase: 'action', action_index: 0 }],
     }))
+  })
+
+  it('restores saved-script debug breakpoints from local storage', async () => {
+    window.localStorage.setItem('apexload.debug.breakpoints.script-1', JSON.stringify([
+      { phase: 'action', action_index: 0 },
+    ]))
+
+    await act(async () => {
+      root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} projectId="project-1" />)
+    })
+    await flushReact()
+
+    const runReplayButton = findDebuggerRunButton(container)
+    expect(runReplayButton).toBeDefined()
+    if (!runReplayButton) {
+      return
+    }
+
+    await act(async () => {
+      runReplayButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(apiMock.startScriptDebugSession).toHaveBeenCalledWith('script-1', expect.objectContaining({
+      breakpoints: [{ phase: 'action', action_index: 0 }],
+    }))
+  })
+
+  it('surfaces an expired debugger session when polling returns not found', async () => {
+    apiMock.startDraftScriptDebugSession.mockResolvedValueOnce(debugSessionResponse({
+      group: 'Checkout Flow-debug',
+      protocol: 'http',
+      started_at: '2026-05-14T20:00:00Z',
+      success: true,
+      events: [],
+    }))
+    apiMock.getScriptDebugSession.mockRejectedValueOnce(new ApiError('not found', 404))
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} projectId="project-1" />)
+    })
+
+    const runReplayButton = findDebuggerRunButton(container)
+    expect(runReplayButton).toBeDefined()
+    if (!runReplayButton) {
+      return
+    }
+
+    await act(async () => {
+      runReplayButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+    await flushReact()
+
+    expect(container.textContent).toContain('Debugger session expired. Start a new debug run to continue.')
+    expect(container.textContent).toContain('Debugger session expired')
   })
 
   it('resizes debugger panels with accessible splitters without the shell header controls', async () => {
@@ -5033,7 +5296,7 @@ describe('ScriptEditor', () => {
     expect(Array.from(engineSelect?.options || []).find(option => option.value === 'webkit')?.textContent).toBe('WebKit')
     expect(container.textContent).toContain('WebKit execution requires Playwright WebKit assets installed on the controller host. Run go run github.com/playwright-community/playwright-go/cmd/playwright@v0.5700.1 install webkit before running browser tests or replay sessions.')
 
-    const scriptJsonTab = findCenterTab(container, 'Script JSON')
+    const scriptJsonTab = findCenterTab(container, 'Source')
     expect(scriptJsonTab).toBeDefined()
     await act(async () => {
       scriptJsonTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -5332,7 +5595,7 @@ describe('ScriptEditor', () => {
     })
 
     expect(container.textContent).toContain('Updated selector for Submit Search.')
-    const scriptJsonTab = findCenterTab(container, 'Script JSON')
+    const scriptJsonTab = findCenterTab(container, 'Source')
     expect(scriptJsonTab).toBeDefined()
     if (!scriptJsonTab) {
       return
@@ -5609,6 +5872,16 @@ describe('ScriptEditor', () => {
     expect(readinessCard?.textContent).toContain('Preflight')
     expect(readinessCard?.textContent).toContain('Missing variable: account_id')
 
+    const debugTab = findOpenDebuggerButton(container)
+    expect(debugTab).toBeDefined()
+    if (!debugTab) {
+      return
+    }
+    await act(async () => {
+      debugTab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
     const settingsButton = findButtonByTitle(container, 'Session overrides')
     expect(settingsButton).toBeDefined()
     if (!settingsButton) {
@@ -5651,6 +5924,16 @@ describe('ScriptEditor', () => {
   it('exports the current browser replay session as JSON', async () => {
     apiMock.startDraftScriptDebugSession.mockResolvedValueOnce({
       replay_session_id: 'browser-replay-1',
+      session: {
+        id: 'browser-replay-1',
+        group: 'Checkout Flow-browser-replay',
+        protocol: 'browser',
+        status: 'running',
+        started_at: '2026-05-14T20:00:00Z',
+        events: [],
+      },
+    })
+    apiMock.getScriptDebugSession.mockResolvedValueOnce({
       session: {
         id: 'browser-replay-1',
         group: 'Checkout Flow-browser-replay',
@@ -6002,12 +6285,7 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')).not.toBeNull()
     expect(container.querySelector('.script-code-inline-inspector .action-editor-panel')).toBeNull()
 
-    const insightsTab = Array.from(container.querySelectorAll('.script-json-sidebar-tab')).find(button => button.textContent?.trim() === 'Insights')
-    await act(async () => {
-      insightsTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-    expect(container.querySelector('.editor-utility-sidebar')?.classList.contains('context-signals')).toBe(true)
-    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Insights')
+    expect(Array.from(container.querySelectorAll('.script-json-sidebar-tab')).map(button => button.textContent?.trim())).toEqual([])
     expect(container.querySelector('.json-source-map')).toBeNull()
   })
 
@@ -6127,13 +6405,11 @@ describe('ScriptEditor', () => {
       saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    const scriptJsonTab = findCenterTab(container, 'Script JSON')
-    expect(scriptJsonTab).toBeDefined()
     await act(async () => {
-      scriptJsonTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      findCenterTab(container, 'Source')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    const updatedTextarea = container.querySelector('textarea.body-textarea') as HTMLTextAreaElement | null
+    const updatedTextarea = container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null
     expect(updatedTextarea?.value).toContain('{{param.demo}}')
     expect(container.textContent).toContain('demo')
   })
@@ -6258,7 +6534,7 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('login')
 
     // Switching back to the Script JSON tab confirms the value became a template reference.
-    const jsonTab = findCenterTab(container, 'Script JSON')
+    const jsonTab = findCenterTab(container, 'Source')
     expect(jsonTab).toBeDefined()
     await act(async () => {
       jsonTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -6336,7 +6612,7 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Random Number')
 
     // Switching back to Script JSON confirms the token and the typed parameter definition.
-    const jsonTab = findCenterTab(container, 'Script JSON')
+    const jsonTab = findCenterTab(container, 'Source')
     expect(jsonTab).toBeDefined()
     await act(async () => {
       jsonTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -6384,7 +6660,7 @@ describe('ScriptEditor', () => {
       existingParameterButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    const jsonTab = findCenterTab(container, 'Script JSON')
+    const jsonTab = findCenterTab(container, 'Source')
     await act(async () => {
       jsonTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -6460,7 +6736,7 @@ describe('ScriptEditor', () => {
       useExistingButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    const jsonTab = findCenterTab(container, 'Script JSON')
+    const jsonTab = findCenterTab(container, 'Source')
     await act(async () => {
       jsonTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -6581,7 +6857,7 @@ describe('ScriptEditor', () => {
       createButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    const jsonTab = findCenterTab(container, 'Script JSON')
+    const jsonTab = findCenterTab(container, 'Source')
     await act(async () => {
       jsonTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -6665,13 +6941,11 @@ describe('ScriptEditor', () => {
     })
 
     expect(container.querySelector('.parameterize-dialog')).toBeNull()
-    const scriptJsonTab = findCenterTab(container, 'Script JSON')
-    expect(scriptJsonTab).toBeDefined()
     await act(async () => {
-      scriptJsonTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      findCenterTab(container, 'Source')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    const updatedTextarea = container.querySelector('textarea.body-textarea') as HTMLTextAreaElement | null
+    const updatedTextarea = container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null
     expect(updatedTextarea?.value).toContain('{{param.seed}}')
     expect(container.textContent).toContain('Current Iteration')
   })

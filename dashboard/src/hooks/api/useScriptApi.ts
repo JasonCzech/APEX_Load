@@ -420,46 +420,46 @@ export function useScriptApi() {
   )
 
   const getScriptDebugSession = useCallback(
-    (sessionId: string) => request<ScriptDebugSessionResponse>(`/script-debug/sessions/${sessionId}`),
+    (sessionId: string) => request<ScriptDebugSessionResponse>(`/replay/sessions/${sessionId}`),
     [],
   )
 
   const stopScriptDebugSession = useCallback(
-    (sessionId: string) => request<ScriptDebugSessionResponse>(`/script-debug/sessions/${sessionId}/stop`, { method: 'POST' }),
+    (sessionId: string) => request<ScriptDebugSessionResponse>(`/replay/sessions/${sessionId}/stop`, { method: 'POST' }),
     [],
   )
 
   const pauseScriptDebugSession = useCallback(
-    (sessionId: string) => request<ScriptDebugSessionResponse>(`/script-debug/sessions/${sessionId}/pause`, { method: 'POST' }),
+    (sessionId: string) => request<ScriptDebugSessionResponse>(`/replay/sessions/${sessionId}/pause`, { method: 'POST' }),
     [],
   )
 
   const resumeScriptDebugSession = useCallback(
-    (sessionId: string) => request<ScriptDebugSessionResponse>(`/script-debug/sessions/${sessionId}/resume`, { method: 'POST' }),
+    (sessionId: string) => request<ScriptDebugSessionResponse>(`/replay/sessions/${sessionId}/resume`, { method: 'POST' }),
     [],
   )
 
   const stepScriptDebugSession = useCallback(
     (sessionId: string, mode: ScriptDebugStepMode = 'into') =>
-      request<ScriptDebugSessionResponse>(`/script-debug/sessions/${sessionId}/step`, { method: 'POST', body: JSON.stringify({ mode }) }),
+      request<ScriptDebugSessionResponse>(`/replay/sessions/${sessionId}/step`, { method: 'POST', body: JSON.stringify({ mode }) }),
     [],
   )
 
   const updateScriptDebugBreakpoints = useCallback(
     (sessionId: string, breakpoints: ScriptDebugBreakpoint[]) =>
-      request<ScriptDebugSessionResponse>(`/script-debug/sessions/${sessionId}/breakpoints`, { method: 'PATCH', body: JSON.stringify({ breakpoints }) }),
+      request<ScriptDebugSessionResponse>(`/replay/sessions/${sessionId}/breakpoints`, { method: 'PATCH', body: JSON.stringify({ breakpoints }) }),
     [],
   )
 
   const updateScriptDebugOptions = useCallback(
     (sessionId: string, options: { break_on_failure?: boolean }) =>
-      request<ScriptDebugSessionResponse>(`/script-debug/sessions/${sessionId}/options`, { method: 'PATCH', body: JSON.stringify(options) }),
+      request<ScriptDebugSessionResponse>(`/replay/sessions/${sessionId}/options`, { method: 'PATCH', body: JSON.stringify(options) }),
     [],
   )
 
   const exportScriptDebugSession = useCallback(
     async (sessionId: string, format: 'json' | 'log' = 'json') => {
-      const res = await apiFetch(`/script-debug/sessions/${sessionId}/export?format=${encodeURIComponent(format)}`)
+      const res = await apiFetch(`/replay/sessions/${sessionId}/export?format=${encodeURIComponent(format)}`)
       if (!res.ok) {
         throw new Error(res.statusText || 'Failed to export script debugger session')
       }

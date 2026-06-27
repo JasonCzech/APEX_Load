@@ -227,6 +227,24 @@ describe('useScriptsAuthoringState', () => {
     expect(readTestId('subview')).toBe('jmeter-import')
   })
 
+  it('surfaces edit-load failures as an authoring notice', async () => {
+    const api = {
+      getScript: vi.fn().mockRejectedValue(new Error('script lookup failed')),
+    }
+
+    await act(async () => {
+      root.render(<AuthoringStateHarness api={api} initialMode="list" />)
+    })
+
+    await click('load-edit')
+    await flushPromises()
+
+    expect(api.getScript).toHaveBeenCalledWith('script-1')
+    expect(readTestId('subview')).toBe('list')
+    expect(readTestId('editing-id')).toBe('none')
+    expect(readTestId('authoring-notice')).toBe('script lookup failed')
+  })
+
   it('prefers the persisted script payload when save returns one', async () => {
     const api = {
       getScript: vi.fn(),
@@ -318,7 +336,7 @@ describe('useScriptsAuthoringState', () => {
     expect(readTestId('draft-action-count')).toBe('1')
   })
 
-  it('keeps the current edit shell when the script fetch fails', async () => {
+  it('returns to the library with a notice when an initial edit fetch fails', async () => {
     const api = {
       getScript: vi.fn().mockRejectedValue(new Error('network down')),
     }
@@ -330,9 +348,10 @@ describe('useScriptsAuthoringState', () => {
     await flushPromises()
 
     expect(api.getScript).toHaveBeenCalledWith('script-404')
-    expect(readTestId('subview')).toBe('edit')
-    expect(readTestId('editing-id')).toBe('script-404')
+    expect(readTestId('subview')).toBe('list')
+    expect(readTestId('editing-id')).toBe('none')
     expect(readTestId('editing-name')).toBe('none')
+    expect(readTestId('authoring-notice')).toBe('network down')
   })
 
   async function click(testId: string) {

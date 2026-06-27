@@ -306,12 +306,12 @@ func TestScriptDebugManagerPausesAtChildBreakpoint(t *testing.T) {
 func TestNormalizeDebugBreakpointsSubRequest(t *testing.T) {
 	ri0, ri1, neg := 0, 1, -1
 	out := normalizeDebugBreakpoints([]ScriptDebugBreakpoint{
-		{Phase: "action", ActionIndex: 0},                            // whole-action
-		{Phase: "action", ActionIndex: 0},                            // dup whole-action
-		{Phase: "action", ActionIndex: 0, RequestIndex: &ri0},        // child 0 (distinct from whole)
-		{Phase: "action", ActionIndex: 0, RequestIndex: &ri1},        // child 1
-		{Phase: "action", ActionIndex: 0, RequestIndex: &ri1},        // dup child 1
-		{Phase: "action", ActionIndex: 0, RequestIndex: &neg},        // rejected (negative)
+		{Phase: "action", ActionIndex: 0},                                // whole-action
+		{Phase: "action", ActionIndex: 0},                                // dup whole-action
+		{Phase: "action", ActionIndex: 0, RequestIndex: &ri0},            // child 0 (distinct from whole)
+		{Phase: "action", ActionIndex: 0, RequestIndex: &ri1},            // child 1
+		{Phase: "action", ActionIndex: 0, RequestIndex: &ri1},            // dup child 1
+		{Phase: "action", ActionIndex: 0, RequestIndex: &neg},            // rejected (negative)
 		{Phase: "action", ActionIndex: 0, StepPath: []string{"then[0]"}}, // control-flow leaf
 	})
 	if len(out) != 4 {
@@ -345,6 +345,141 @@ func TestHasBreakpointLockedSubRequest(t *testing.T) {
 	if step.hasBreakpointLocked(engine.ReplayDebugAction{Phase: "action", ActionIndex: 0, StepPath: []string{"loop[1]"}}) {
 		t.Fatalf("step-path breakpoint must NOT match a different step")
 	}
+}
+
+func TestScriptDebugManagerPrunesTerminalSessions(t *testing.T) {
+	now := time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC)
+	terminalAt := now.Add(-2 * time.Hour)
+	manager := NewScriptDebugManager(nil)
+	manager.retention = replaySessionRetentionConfig{
+		terminalTTL: time.Hour,
+		idleCancel:  time.Hour,
+		maxSessions: 250,
+		now:         func() time.Time { return now },
+	}
+	manager.sessions["old"] = &ScriptDebugSession{
+		ID:             "old",
+		Status:         ScriptDebugCompleted,
+		StartedAt:      &terminalAt,
+		CompletedAt:    &terminalAt,
+		lastActivityAt: terminalAt,
+		terminalAt:     &terminalAt,
+	}
+
+	if removed := manager.PruneExpired(); removed != 1 {
+		t.Fatalf("removed = %d, want 1", removed)
+	}
+	if _, ok := manager.Get("old"); ok {
+		t.Fatal("expected old terminal session to be pruned")
+	}
+}
+
+func TestScriptDebugManagerSessionCapEvictsOldestTerminal(t *testing.T) {
+	now := time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC)
+	manager := NewScriptDebugManager(nil)
+	manager.retention = replaySessionRetentionConfig{
+		terminalTTL: time.Hour,
+		idleCancel:  time.Hour,
+		maxSessions: 2,
+		now:         func() time.Time { return now },
+	}
+	for i, id := range []string{"oldest", "middle", "newest"} {
+		terminalAt := now.Add(-time.Duration(3-i) * time.Minute)
+		manager.sessions[id] = &ScriptDebugSession{
+			ID:             id,
+			Status:         ScriptDebugCompleted,
+			StartedAt:      &terminalAt,
+			CompletedAt:    &terminalAt,
+			lastActivityAt: terminalAt,
+			terminalAt:     &terminalAt,
+		}
+	}
+
+	if removed := manager.PruneExpired(); removed != 1 {
+		t.Fatalf("removed = %d, want 1", removed)
+	}
+	if _, ok := manager.sessions["oldest"]; ok {
+		t.Fatal("expected oldest terminal session to be evicted")
+	}
+	if len(manager.sessions) != 2 {
+		t.Fatalf("session count = %d, want 2", len(manager.sessions))
+	}
+}
+
+func TestScriptDebugManagerCancelsIdleRunningSession(t *testing.T) {
+	now := time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC)
+	lastActivity := now.Add(-2 * time.Minute)
+	cancelled := make(chan struct{})
+	manager := NewScriptDebugManager(nil)
+	manager.retention = replaySessionRetentionConfig{
+		terminalTTL: time.Hour,
+		idleCancel:  time.Minute,
+		maxSessions: 250,
+		now:         func() time.Time { return now },
+	}
+	manager.sessions["idle"] = &ScriptDebugSession{
+		ID:             "idle",
+		Status:         ScriptDebugRunning,
+		StartedAt:      &lastActivity,
+		lastActivityAt: lastActivity,
+		cancel:         func() { close(cancelled) },
+	}
+
+	if removed := manager.PruneExpired(); removed != 0 {
+		t.Fatalf("removed = %d, want 0", removed)
+	}
+	select {
+	case <-cancelled:
+	default:
+		t.Fatal("expected idle session cancel function to be called")
+	}
+	session, ok := manager.Get("idle")
+	if !ok {
+		t.Fatal("idle session should remain fetchable until terminal TTL expires")
+	}
+	if session.Status != ScriptDebugStopped {
+		t.Fatalf("status = %q, want stopped", session.Status)
+	}
+}
+
+func TestScriptDebugManagerStartReusedIDCancelsPriorSession(t *testing.T) {
+	now := time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC)
+	cancelled := make(chan struct{})
+	manager := NewScriptDebugManager(nil)
+	manager.retention = replaySessionRetentionConfig{
+		terminalTTL: time.Hour,
+		idleCancel:  time.Hour,
+		maxSessions: 250,
+		now:         func() time.Time { return now },
+	}
+	manager.sessions["reuse"] = &ScriptDebugSession{
+		ID:             "reuse",
+		Status:         ScriptDebugRunning,
+		StartedAt:      &now,
+		lastActivityAt: now,
+		cancel:         func() { close(cancelled) },
+	}
+
+	started := manager.Start("", &dsl.Script{Name: "Replacement", Version: "1.0.0", Protocol: "http"}, ScriptDebugStartRequest{
+		ReplaySessionID: "reuse",
+		StartPaused:     true,
+	})
+	if started.ID != "reuse" {
+		t.Fatalf("started id = %q, want reuse", started.ID)
+	}
+	select {
+	case <-cancelled:
+	default:
+		t.Fatal("expected prior session cancel function to be called")
+	}
+	session, ok := manager.Get("reuse")
+	if !ok {
+		t.Fatal("replacement session not found")
+	}
+	if session.Group != "Replacement-debug" {
+		t.Fatalf("replacement group = %q, want Replacement-debug", session.Group)
+	}
+	_, _ = manager.Stop("reuse")
 }
 
 func TestHandleStartScriptDebugDraftScriptReturnsSession(t *testing.T) {
@@ -513,6 +648,110 @@ func TestHandleUpdateScriptDebugBreakpoints(t *testing.T) {
 		t.Fatalf("breakpoints = %#v, want single normalized action breakpoint", payload.Session.Breakpoints)
 	}
 	_, _ = server.scriptDebug.Stop("debug-breakpoints")
+}
+
+func TestScriptDebugManagerLogLevelFiltersLowerSeverity(t *testing.T) {
+	protocolName := registerReplayAPIProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		return &protocol.Result{ActionName: action.Name, Success: true, StatusCode: 200}, nil
+	})
+	manager := NewScriptDebugManager(NewHub())
+	session := manager.Start("", &dsl.Script{
+		Name:     "Log Filter",
+		Protocol: protocolName,
+		Version:  "1.0.0",
+		Actions:  []dsl.Action{{Name: "first", Type: "GET", Target: "/first"}},
+	}, ScriptDebugStartRequest{ReplaySessionID: "debug-log-filter", StartPaused: true, LogLevel: "warn"})
+	if len(session.Logs) != 0 || len(session.RawOutput) != 0 {
+		t.Fatalf("start logs = %#v raw=%#v, want info/debug filtered at warn level", session.Logs, session.RawOutput)
+	}
+	stopped, ok := manager.Stop("debug-log-filter")
+	if !ok {
+		t.Fatal("Stop returned ok=false")
+	}
+	if len(stopped.Logs) != 1 || stopped.Logs[0].Level != "warn" || !strings.Contains(stopped.Logs[0].Message, "Stop requested") {
+		t.Fatalf("logs after stop = %#v, want only warn stop log", stopped.Logs)
+	}
+}
+
+func TestHandleScriptDebugMalformedBodiesAndConflicts(t *testing.T) {
+	protocolName := registerReplayAPIProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		return &protocol.Result{ActionName: action.Name, Success: true, StatusCode: 200}, nil
+	})
+	server := NewServer(ServerConfig{})
+	server.scriptDebug.Start("", &dsl.Script{
+		Name:     "Conflicts",
+		Protocol: protocolName,
+		Version:  "1.0.0",
+		Actions:  []dsl.Action{{Name: "first", Type: "GET", Target: "/first"}},
+	}, ScriptDebugStartRequest{ReplaySessionID: "debug-conflict", StartPaused: true})
+	t.Cleanup(func() { _, _ = server.scriptDebug.Stop("debug-conflict") })
+
+	for _, tc := range []struct {
+		name   string
+		method string
+		path   string
+		body   string
+		want   int
+	}{
+		{name: "pause paused session", method: http.MethodPost, path: "/api/v1/replay/sessions/debug-conflict/pause", want: http.StatusConflict},
+		{name: "malformed step body", method: http.MethodPost, path: "/api/v1/replay/sessions/debug-conflict/step", body: `{`, want: http.StatusBadRequest},
+		{name: "malformed breakpoints body", method: http.MethodPatch, path: "/api/v1/replay/sessions/debug-conflict/breakpoints", body: `{`, want: http.StatusBadRequest},
+		{name: "malformed options body", method: http.MethodPatch, path: "/api/v1/replay/sessions/debug-conflict/options", body: `{`, want: http.StatusBadRequest},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", "application/json")
+			resp := httptest.NewRecorder()
+			server.mux.ServeHTTP(resp, req)
+			if resp.Code != tc.want {
+				t.Fatalf("status = %d, want %d body=%s", resp.Code, tc.want, resp.Body.String())
+			}
+		})
+	}
+
+	resumeReq := httptest.NewRequest(http.MethodPost, "/api/v1/replay/sessions/debug-conflict/resume", nil)
+	resumeResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resumeResp, resumeReq)
+	if resumeResp.Code != http.StatusOK {
+		t.Fatalf("resume status = %d, want %d body=%s", resumeResp.Code, http.StatusOK, resumeResp.Body.String())
+	}
+	stepReq := httptest.NewRequest(http.MethodPost, "/api/v1/replay/sessions/debug-conflict/step", nil)
+	stepResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(stepResp, stepReq)
+	if stepResp.Code != http.StatusConflict {
+		t.Fatalf("step-running status = %d, want %d body=%s", stepResp.Code, http.StatusConflict, stepResp.Body.String())
+	}
+}
+
+func TestHandleStopScriptDebugSessionIsIdempotent(t *testing.T) {
+	protocolName := registerReplayAPIProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		return &protocol.Result{ActionName: action.Name, Success: true, StatusCode: 200}, nil
+	})
+	server := NewServer(ServerConfig{})
+	server.scriptDebug.Start("", &dsl.Script{
+		Name:     "Stop Twice",
+		Protocol: protocolName,
+		Version:  "1.0.0",
+		Actions:  []dsl.Action{{Name: "first", Type: "GET", Target: "/first"}},
+	}, ScriptDebugStartRequest{ReplaySessionID: "debug-stop-twice", StartPaused: true})
+
+	for attempt := 1; attempt <= 2; attempt++ {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/replay/sessions/debug-stop-twice/stop", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+		if resp.Code != http.StatusOK {
+			t.Fatalf("attempt %d status = %d, want %d body=%s", attempt, resp.Code, http.StatusOK, resp.Body.String())
+		}
+		var payload struct {
+			Session ScriptDebugSession `json:"session"`
+		}
+		if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+			t.Fatalf("attempt %d json.Unmarshal returned error: %v", attempt, err)
+		}
+		if payload.Session.Status != ScriptDebugStopped {
+			t.Fatalf("attempt %d status = %q, want %q", attempt, payload.Session.Status, ScriptDebugStopped)
+		}
+	}
 }
 
 func waitForScriptDebugStatus(t *testing.T, manager *ScriptDebugManager, sessionID string, status string) *ScriptDebugSession {

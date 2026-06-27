@@ -155,7 +155,6 @@ func (s *Server) handleGetBrowserReplaySession(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusNotFound, "browser replay session not found")
 		return
 	}
-	s.recordAuditEvent(r, "browser_replay.session.stop", "success", "browser_replay_session", session.ID, session.ProjectID, map[string]any{"script_id": session.ScriptID, "status": session.Status})
 	writeJSON(w, http.StatusOK, map[string]any{"session": session})
 }
 

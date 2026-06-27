@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { useCorrelationRulesetApi } from '../hooks/api/useCorrelationRulesetApi'
 import { ApiError } from '../hooks/apiClient'
@@ -21,6 +21,7 @@ function formatTimestamp(value?: string): string {
 // from a script's recorded baseline, then apply them to other scripts.
 export default function CorrelationRulesetPanel({ projectId, canManage = false }: Props) {
   const api = useCorrelationRulesetApi()
+  const mountedRef = useRef(false)
   const [rulesets, setRulesets] = useState<CorrelationRuleset[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -31,37 +32,50 @@ export default function CorrelationRulesetPanel({ projectId, canManage = false }
   const [deleteTarget, setDeleteTarget] = useState<CorrelationRuleset | null>(null)
   const [busy, setBusy] = useState(false)
 
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
+
   const load = useCallback(async () => {
     if (!projectId) {
-      setRulesets([])
+      if (mountedRef.current) setRulesets([])
       return
     }
+    if (!mountedRef.current) return
     setLoading(true)
     setError(null)
     try {
       const res = await api.listCorrelationRulesets({ project_id: projectId })
+      if (!mountedRef.current) return
       setRulesets(res.correlation_rulesets || [])
     } catch (err) {
+      if (!mountedRef.current) return
       setError(err instanceof ApiError ? err.message : 'Failed to load correlation rulesets.')
       setRulesets([])
     } finally {
-      setLoading(false)
+      if (mountedRef.current) setLoading(false)
     }
   }, [api, projectId])
 
   useEffect(() => { void load() }, [load])
 
   const runAction = async (action: () => Promise<unknown>, onDone?: () => void) => {
+    if (!mountedRef.current) return
     setBusy(true)
     setError(null)
     try {
       await action()
+      if (!mountedRef.current) return
       onDone?.()
       await load()
     } catch (err) {
+      if (!mountedRef.current) return
       setError(err instanceof ApiError ? err.message : 'Action failed.')
     } finally {
-      setBusy(false)
+      if (mountedRef.current) setBusy(false)
     }
   }
 
@@ -79,12 +93,14 @@ export default function CorrelationRulesetPanel({ projectId, canManage = false }
     setError(null)
     try {
       const res = await api.applyCorrelationRulesetToScript(rulesetId, { script_id: applyForm.scriptId.trim(), apply: commit })
+      if (!mountedRef.current) return
       setApplyResult(res)
       if (commit) await load()
     } catch (err) {
+      if (!mountedRef.current) return
       setError(err instanceof ApiError ? err.message : 'Apply failed.')
     } finally {
-      setBusy(false)
+      if (mountedRef.current) setBusy(false)
     }
   }
 

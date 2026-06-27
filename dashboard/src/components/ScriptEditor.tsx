@@ -1,10 +1,12 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { useApi } from '../hooks/useApi'
+import { ApiError } from '../hooks/apiClient'
 import type { BrowserToHTTPPreviewResponse } from '../hooks/api/useScriptApi'
 import { useKeyboardShortcuts } from '../hooks/KeyboardShortcutProvider'
 import { useHasTopbarContributionProvider, useTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
+import { useModalDialog } from '../hooks/useModalDialog'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useVirtualizer, type VirtualItem } from '@tanstack/react-virtual'
 import CodeMirror from '@uiw/react-codemirror'
@@ -70,7 +72,7 @@ import {
   buildProtocolStarterTemplates,
   buildScriptRepairSuggestions,
   collectAuthoringIssues,
-  groupIssuesByAction,
+  groupIssuesByPhaseAction,
   summarizeDataSources,
   summarizeParameters,
   type MigrationAssistantSuggestion,
@@ -142,6 +144,7 @@ import {
   type JsonStringOccurrence,
 } from './scriptEditorUtils'
 import {
+  ACTION_LIST_TAB_ID,
   BROWSER_DEVICE_PROFILES,
   CENTER_TABS_STORAGE_PREFIX,
   DEBUGGER_LAYOUT_DEFAULTS,
@@ -507,12 +510,9 @@ type ReplayReport = BrowserReplayReport
 type WorkbenchMode = 'author' | 'debug'
 type DebuggerTab = 'request' | 'browser' | 'variables'
 type DebuggerBottomTab = 'console' | 'timeline' | 'problems' | 'output'
-type ScriptJsonSidebarTab = 'insights' | 'map' | 'auto-params' | 'details'
+type ScriptJsonSidebarTab = 'insights' | 'auto-params' | 'details'
 
-// The Script JSON minimap is intentionally retained but disabled in the dashboard UI.
-// Do not purge JsonSourceMinimap, its helpers, or CSS: the implementation may be useful later.
-const SCRIPT_JSON_MINIMAP_ENABLED = false
-const SCRIPT_JSON_DEFAULT_COMPANION_TAB: ScriptJsonSidebarTab = SCRIPT_JSON_MINIMAP_ENABLED ? 'map' : 'insights'
+const SCRIPT_JSON_DEFAULT_COMPANION_TAB: ScriptJsonSidebarTab = 'insights'
 
 interface CenterWorkbenchTabDescriptor {
   id: CenterWorkbenchTabId
@@ -782,6 +782,7 @@ interface ScriptCodePaneProps {
   assistExtensions?: Extension[]
   className?: string
   title?: string
+  ariaLabel?: string
   subtitle?: string
   allowDirectEdit?: boolean
   jumpToLineRequest?: ScriptCodeLineJumpRequest | null
@@ -812,6 +813,7 @@ function ScriptCodePane({
   assistExtensions,
   className = '',
   title = 'Script JSON',
+  ariaLabel = title,
   subtitle,
   allowDirectEdit = true,
   jumpToLineRequest,
@@ -1071,7 +1073,7 @@ function ScriptCodePane({
   }, [onRequestParameterize])
 
   return (
-    <section className={`script-code-pane ${className}`} aria-label="Script JSON">
+    <section className={`script-code-pane ${className}`} aria-label={ariaLabel}>
       <div className="script-code-toolbar">
         <div className="script-code-title">
           <strong>{'{ }'} {title}</strong>
@@ -1188,9 +1190,11 @@ function MetadataJsonViewer({ metadata }: { metadata: ScriptImportMetadata }) {
  * preserved import metadata never builds on script open.
  */
 function MetadataJsonDialog({ metadata, onClose }: { metadata: ScriptImportMetadata; onClose: () => void }) {
+  const dialogRef = useEditorDialogRef(onClose)
   return (
     <div className="editor-dialog-backdrop" onClick={onClose}>
       <div
+        ref={dialogRef}
         className="editor-dialog metadata-json-dialog"
         role="dialog"
         aria-modal="true"
@@ -2651,6 +2655,12 @@ function normalizeStoredBreakpoints(raw: unknown): ScriptDebugBreakpoint[] {
   return out
 }
 
+function useEditorDialogRef(onClose: () => void) {
+  const dialogRef = useRef<HTMLDivElement | null>(null)
+  useModalDialog({ dialogRef, onClose })
+  return dialogRef
+}
+
 // formatDebugLeafSuffix renders the sub-request / sub-step position of a paused
 // leaf (e.g. " · request 43/78", " · loop iter 2"). Empty for a plain action.
 function formatDebugLeafSuffix(leaf: { request_index?: number; request_count?: number; iteration?: number; iteration_path?: number[] } | null | undefined): string {
@@ -2806,6 +2816,7 @@ type ParameterDraftSource = 'action' | 'json'
 
 export interface ActionEditorParameterDraft {
   source: ParameterDraftSource
+  phase?: ScriptActionPhase
   actionIndex: number
   start: number
   end: number
@@ -3473,7 +3484,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const [centerTabPanelElements, setCenterTabPanelElements] = useState<Partial<Record<CenterWorkbenchTabId, HTMLDivElement | null>>>({})
   const centerTabDescriptors = useMemo<CenterWorkbenchTabDescriptor[]>(() => {
     const descriptors: CenterWorkbenchTabDescriptor[] = [
-      { id: 'script-json', label: 'Script JSON', title: 'Script JSON', closeable: false },
+      { id: ACTION_LIST_TAB_ID, label: 'Action List', title: 'Action List', closeable: false },
+      { id: SCRIPT_JSON_TAB_ID, label: 'Source', title: 'Source JSON', closeable: false },
       { id: 'runtime-settings', label: 'Runtime Settings', title: 'Runtime Settings', closeable: true },
       { id: 'parameter-data', label: 'Parameter Data', title: 'Parameter Data', closeable: true },
     ]
@@ -3489,11 +3501,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       descriptors.push({ id: 'object-descriptors', label: 'Object Descriptors', title: 'Object Descriptors', closeable: true })
     }
     if (isBrowserScript) {
-      descriptors.splice(1, 0, { id: BROWSER_REPLAY_TAB_ID, label: 'Browser Replay', title: 'Browser Replay Cockpit', closeable: false })
+      descriptors.splice(2, 0, { id: BROWSER_REPLAY_TAB_ID, label: 'Browser Replay', title: 'Browser Replay Cockpit', closeable: false })
       descriptors.push({ id: 'http-conversion', label: 'HTTP Conversion', title: 'Browser To HTTP Conversion Review', closeable: true })
     }
     return descriptors
-  }, [importMetadata, isBrowserScript, objectDescriptorReview.rows.length, sourceReview])
+  }, [importMetadata, isBrowserScript, objectDescriptorReview.rows.length])
   const centerTabDescriptorById = useMemo(() => {
     return new Map(centerTabDescriptors.map(tab => [tab.id, tab]))
   }, [centerTabDescriptors])
@@ -3523,13 +3535,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     openCenterTab(SCRIPT_JSON_TAB_ID)
   }, [openCenterTab])
   const closeCenterTab = useCallback((tabId: CenterWorkbenchTabId) => {
-    if (tabId === SCRIPT_JSON_TAB_ID || tabId === BROWSER_REPLAY_TAB_ID) return
+    if (tabId === ACTION_LIST_TAB_ID || tabId === SCRIPT_JSON_TAB_ID || tabId === BROWSER_REPLAY_TAB_ID) return
     setCenterTabPanelElements(prev => prev[tabId] ? { ...prev, [tabId]: null } : prev)
     setCenterTabsState(prev => {
       if (!prev.tabs.includes(tabId)) return prev
       const nextTabs = prev.tabs.filter(candidate => candidate !== tabId)
-      const activeTabId = prev.activeTabId === tabId ? SCRIPT_JSON_TAB_ID : prev.activeTabId
-      return { tabs: nextTabs.length > 0 ? nextTabs : [SCRIPT_JSON_TAB_ID], activeTabId }
+      const activeTabId = prev.activeTabId === tabId ? ACTION_LIST_TAB_ID : prev.activeTabId
+      return { tabs: nextTabs.length > 0 ? nextTabs : [ACTION_LIST_TAB_ID, SCRIPT_JSON_TAB_ID], activeTabId }
     })
   }, [])
   const setCenterTabPanelElement = useCallback((tabId: CenterWorkbenchTabId, element: HTMLDivElement | null) => {
@@ -3612,8 +3624,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   }, [centerTabsStorageKey])
   useEffect(() => {
     setCenterTabsState(prev => {
-      const nextTabs = [SCRIPT_JSON_TAB_ID, ...prev.tabs.filter(tabId => tabId !== SCRIPT_JSON_TAB_ID && availableCenterTabIds.has(tabId))]
-      const activeTabId = nextTabs.includes(prev.activeTabId) ? prev.activeTabId : SCRIPT_JSON_TAB_ID
+      const nextTabs = [
+        ACTION_LIST_TAB_ID,
+        SCRIPT_JSON_TAB_ID,
+        ...prev.tabs.filter(tabId => tabId !== ACTION_LIST_TAB_ID && tabId !== SCRIPT_JSON_TAB_ID && availableCenterTabIds.has(tabId)),
+      ]
+      const activeTabId = nextTabs.includes(prev.activeTabId) ? prev.activeTabId : ACTION_LIST_TAB_ID
       if (activeTabId === prev.activeTabId && nextTabs.length === prev.tabs.length && nextTabs.every((tabId, index) => tabId === prev.tabs[index])) {
         return prev
       }
@@ -3795,14 +3811,17 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   // against the baseline). On a multi-thousand-action import they are expensive, so
   // they must be memoized — otherwise every render (including scroll-snapshot driven
   // re-renders) re-scans the whole script and the editor stalls.
-  // dslCatalogReady is a dependency so the lint passes recompute once the DSL
-  // action catalog resolves: collectAuthoringIssues reads the module-global
+  // dslCatalogReady is intentionally referenced so this memo recomputes once the
+  // DSL action catalog resolves: collectAuthoringIssues reads the module-global
   // cachedCatalog, and the first pass after an import runs before it loads.
   // Without this, a catalog-null pass (legacy heuristic) freezes stale issues.
-  const authoringIssues = useMemo(() => collectAuthoringIssues(script), [script, dslCatalogReady])
+  const authoringIssues = useMemo(() => {
+    void dslCatalogReady
+    return collectAuthoringIssues(script)
+  }, [script, dslCatalogReady])
   const actionIssueBuckets = useMemo(
-    () => groupIssuesByAction(authoringIssues, script.actions.length),
-    [authoringIssues, script.actions.length],
+    () => groupIssuesByPhaseAction(authoringIssues, script),
+    [authoringIssues, script],
   )
   const scriptLevelIssues = useMemo(
     () => authoringIssues.filter((issue) => typeof issue.actionIndex !== 'number'),
@@ -4127,14 +4146,20 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     }
   }, [hydrateEditorState, initialFocusedActionName, initialFocusedDataSourceName, initialFocusedRuntimeArea, initialFocusedSection, initialScript, openCenterTab, scriptId, selectRuntimeSettingsSection, setActiveAction, setOpenDataEditor, setOpenSections])
 
-  const selectAuthorAction = (index: number | null) => {
-    setActiveAction(index)
-    setAuthorCodeFocus(index === null ? null : { phase: 'action', actionIndex: index })
+  const selectAuthorPhaseIndex = (phase: ScriptActionPhase, index: number | null) => {
+    setActiveAction(phase === 'action' ? index : null)
+    setAuthorCodeFocus(index === null ? null : { phase, actionIndex: index })
     setShowFullScriptJson(false)
-    if (index !== null && centerTabsState.activeTabId === SCRIPT_JSON_TAB_ID) {
-      setScriptJsonSidebarTab('details')
+    if (index !== null) {
       setAuthorRightSidebarCollapsed(false)
     }
+    if (index !== null && centerTabsState.activeTabId === SCRIPT_JSON_TAB_ID) {
+      setScriptJsonSidebarTab('details')
+    }
+  }
+
+  const selectAuthorAction = (index: number | null) => {
+    selectAuthorPhaseIndex('action', index)
   }
 
   const selectParameterData = useCallback((index: number | null) => {
@@ -4176,9 +4201,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       selectSidebarAction(row.actionIndex)
       return
     }
-    setActiveAction(null)
-    setAuthorCodeFocus({ phase: row.phase, actionIndex: row.actionIndex })
-    setShowFullScriptJson(false)
+    selectAuthorPhaseIndex(row.phase, row.actionIndex)
   }
 
   const selectAuthorNestedItem = (item: Extract<DebugRailRenderRow, { kind: 'container' | 'leaf' }>) => {
@@ -4576,7 +4599,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       setActiveReplaySessionId(null)
       setReplaying(false)
     }
-  }, [activeReplaySessionId, setActiveReplaySessionId, setBrowserReplaySession, setDebugDetailCollapsed, setExpandedReplayBrowserArtifacts, setExpandedReplayEvent, setReplayActivity, setReplayReport, setReplaying])
+  }, [activeReplaySessionId, setActiveReplaySessionId, setBrowserReplaySession, setDebugDetailCollapsed, setExpandedReplayBrowserArtifacts, setExpandedReplayEvent, setReplayActivity, setReplayOptions, setReplayReport, setReplaying])
 
   useWebSocket({ onMessage: handleReplaySocketMessage, projectId })
 
@@ -4740,7 +4763,57 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     if (shouldSelectFirstAction) selectAuthorAction(0)
   }
 
-  const addAction = () => {
+  const phaseActionsForScript = (source: ScriptData, phase: ScriptActionPhase): Action[] => (
+    scriptActionsForPhase(source, phase) as Action[]
+  )
+
+  const updatePhaseActionList = (phase: ScriptActionPhase, updater: (actions: Action[]) => Action[]) => {
+    setScript(prev => {
+      const nextActions = updater([...phaseActionsForScript(prev, phase)])
+      if (phase === 'init') return { ...prev, init: nextActions }
+      if (phase === 'teardown') return { ...prev, teardown: nextActions }
+      return { ...prev, actions: nextActions }
+    })
+  }
+
+  const remapPhaseBreakpointsAfterRemove = (phase: ScriptActionPhase, removedIndex: number) => {
+    setDebugBreakpoints(prev => prev
+      .filter(bp => bp.phase !== phase || bp.action_index !== removedIndex)
+      .map(bp => bp.phase === phase && bp.action_index > removedIndex ? { ...bp, action_index: bp.action_index - 1 } : bp))
+  }
+
+  const remapPhaseBreakpointsAfterMove = (phase: ScriptActionPhase, fromIndex: number, toIndex: number) => {
+    setDebugBreakpoints(prev => prev.map(bp => {
+      if (bp.phase !== phase) return bp
+      if (bp.action_index === fromIndex) return { ...bp, action_index: toIndex }
+      if (bp.action_index === toIndex) return { ...bp, action_index: fromIndex }
+      return bp
+    }))
+  }
+
+  const remapPhaseBreakpointsAfterDuplicate = (phase: ScriptActionPhase, sourceIndex: number) => {
+    setDebugBreakpoints(prev => prev.map(bp =>
+      bp.phase === phase && bp.action_index > sourceIndex ? { ...bp, action_index: bp.action_index + 1 } : bp))
+  }
+
+  const remapSelectionAfterRemove = (phase: ScriptActionPhase, removedIndex: number) => {
+    if (phase === 'action') {
+      if (activeAction === removedIndex) selectAuthorAction(null)
+      else if (activeAction !== null && activeAction > removedIndex) selectAuthorAction(activeAction - 1)
+    }
+    setAuthorCodeFocus(prev => {
+      if (!prev || prev.phase !== phase) return prev
+      if (prev.actionIndex === removedIndex) return null
+      if (prev.actionIndex > removedIndex) return { ...prev, actionIndex: prev.actionIndex - 1 }
+      return prev
+    })
+  }
+
+  const phaseActionNamePrefix = (phase: ScriptActionPhase) => (
+    phase === 'init' ? 'Init' : phase === 'teardown' ? 'Teardown' : 'Action'
+  )
+
+  const addAction = (phase: ScriptActionPhase = 'action') => {
     const template = isBrowserScript
       ? EMPTY_BROWSER_ACTION
       : isJmsScript
@@ -4756,14 +4829,15 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 : isNetworkScript
                   ? EMPTY_NETWORK_ACTION
                   : EMPTY_ACTION
+    const currentActions = phaseActionsForScript(script, phase)
     const a = JSON.parse(JSON.stringify({
       ...template,
-      name: `Action_${script.actions.length + 1}`,
+      name: `${phaseActionNamePrefix(phase)}_${currentActions.length + 1}`,
       extractors: template.extractors || [],
       assertions: template.assertions || [],
     })) as Action
-    setScript(prev => ({ ...prev, actions: [...prev.actions, a] }))
-    selectAuthorAction(script.actions.length)
+    updatePhaseActionList(phase, actions => [...actions, a])
+    selectAuthorPhaseIndex(phase, currentActions.length)
   }
 
   const addActionTemplate = (templateKey: string) => {
@@ -4777,60 +4851,59 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     setError('')
   }
 
-  const removeAction = (idx: number) => {
-    setScript(prev => ({ ...prev, actions: prev.actions.filter((_, i) => i !== idx) }))
-    setDebugBreakpoints(prev => prev
-      .filter(bp => bp.phase !== 'action' || bp.action_index !== idx)
-      .map(bp => bp.phase === 'action' && bp.action_index > idx ? { ...bp, action_index: bp.action_index - 1 } : bp))
-    if (activeAction === idx) selectAuthorAction(null)
-    else if (activeAction !== null && activeAction > idx) selectAuthorAction(activeAction - 1)
+  const removePhaseAction = (phase: ScriptActionPhase, idx: number) => {
+    updatePhaseActionList(phase, actions => actions.filter((_, i) => i !== idx))
+    remapPhaseBreakpointsAfterRemove(phase, idx)
+    remapSelectionAfterRemove(phase, idx)
   }
 
-  const moveAction = (idx: number, dir: -1 | 1) => {
+  const movePhaseAction = (phase: ScriptActionPhase, idx: number, dir: -1 | 1) => {
     const newIdx = idx + dir
-    if (newIdx < 0 || newIdx >= script.actions.length) return
-    setScript(prev => {
-      const actions = [...prev.actions]
+    const phaseActions = phaseActionsForScript(script, phase)
+    if (newIdx < 0 || newIdx >= phaseActions.length) return
+    updatePhaseActionList(phase, actions => {
       ;[actions[idx], actions[newIdx]] = [actions[newIdx], actions[idx]]
-      return { ...prev, actions }
+      return actions
     })
-    setDebugBreakpoints(prev => prev.map(bp => {
-      if (bp.phase !== 'action') return bp
-      if (bp.action_index === idx) return { ...bp, action_index: newIdx }
-      if (bp.action_index === newIdx) return { ...bp, action_index: idx }
-      return bp
-    }))
-    selectAuthorAction(newIdx)
+    remapPhaseBreakpointsAfterMove(phase, idx, newIdx)
+    selectAuthorPhaseIndex(phase, newIdx)
   }
 
-  const duplicateAction = (idx: number) => {
-    setScript(prev => ({ ...prev, actions: duplicateActionInList(prev.actions, idx) }))
+  const duplicatePhaseAction = (phase: ScriptActionPhase, idx: number) => {
+    updatePhaseActionList(phase, actions => duplicateActionInList(actions, idx))
     // A copy is inserted at idx+1, so every index after it shifts down by one.
     // Bump breakpoints AND the active selection / JSON focus so they keep pointing
     // at the same action — otherwise the outline highlight and the read-only
     // Selected Action JSON pane would show, and a structured-form edit would
     // target, the wrong action. Spread preserves any nested stepPath on the focus.
-    setDebugBreakpoints(prev => prev.map(bp =>
-      bp.phase === 'action' && bp.action_index > idx ? { ...bp, action_index: bp.action_index + 1 } : bp))
-    setActiveAction(prev => (prev !== null && prev > idx ? prev + 1 : prev))
-    setAuthorCodeFocus(prev => (prev && prev.phase === 'action' && prev.actionIndex > idx ? { ...prev, actionIndex: prev.actionIndex + 1 } : prev))
+    remapPhaseBreakpointsAfterDuplicate(phase, idx)
+    if (phase === 'action') {
+      setActiveAction(prev => (prev !== null && prev > idx ? prev + 1 : prev))
+    }
+    setAuthorCodeFocus(prev => (prev && prev.phase === phase && prev.actionIndex > idx ? { ...prev, actionIndex: prev.actionIndex + 1 } : prev))
+    selectAuthorPhaseIndex(phase, idx + 1)
   }
 
-  const updateAction = (idx: number, field: keyof Action, value: unknown) => {
-    setScript(prev => {
-      const actions = [...prev.actions]
-      actions[idx] = { ...actions[idx], [field]: value }
-      return { ...prev, actions }
+  const updatePhaseActionObject = (phase: ScriptActionPhase, idx: number, updater: (action: Action) => Action) => {
+    updatePhaseActionList(phase, actions => {
+      if (idx < 0 || idx >= actions.length) return actions
+      actions[idx] = updater(actions[idx])
+      return actions
     })
   }
 
-  const addExtractor = (actionIdx: number) => {
-    setScript(prev => {
-      const actions = [...prev.actions]
-      const ext = [...(actions[actionIdx].extractors || [])]
-      ext.push(defaultExtractorForProtocol(prev.protocol))
-      actions[actionIdx] = { ...actions[actionIdx], extractors: ext }
-      return { ...prev, actions }
+  const updatePhaseAction = (phase: ScriptActionPhase, idx: number, field: keyof Action, value: unknown) => {
+    updatePhaseActionObject(phase, idx, action => ({ ...action, [field]: value }))
+  }
+
+  const updateAction = (idx: number, field: keyof Action, value: unknown) => {
+    updatePhaseAction('action', idx, field, value)
+  }
+
+  const addPhaseExtractor = (phase: ScriptActionPhase, actionIdx: number) => {
+    updatePhaseActionObject(phase, actionIdx, action => {
+      const ext = [...(action.extractors || []), defaultExtractorForProtocol(script.protocol)]
+      return { ...action, extractors: ext }
     })
   }
 
@@ -4845,115 +4918,92 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     setSuccess(`Added extractor "${extractor.name}" to ${script.actions[actionIdx]?.name || `action ${actionIdx + 1}`}.`)
   }
 
-  const updateExtractor = (actionIdx: number, extIdx: number, field: string, value: string) => {
-    setScript(prev => {
-      const actions = [...prev.actions]
-      const ext = [...(actions[actionIdx].extractors || [])]
+  const updatePhaseExtractor = (phase: ScriptActionPhase, actionIdx: number, extIdx: number, field: string, value: string) => {
+    updatePhaseActionObject(phase, actionIdx, action => {
+      const ext = [...(action.extractors || [])]
       ext[extIdx] = { ...ext[extIdx], [field]: value }
-      actions[actionIdx] = { ...actions[actionIdx], extractors: ext }
-      return { ...prev, actions }
+      return { ...action, extractors: ext }
     })
   }
 
-  const removeExtractor = (actionIdx: number, extIdx: number) => {
-    setScript(prev => {
-      const actions = [...prev.actions]
-      const ext = (actions[actionIdx].extractors || []).filter((_, i) => i !== extIdx)
-      actions[actionIdx] = { ...actions[actionIdx], extractors: ext }
-      return { ...prev, actions }
+  const removePhaseExtractor = (phase: ScriptActionPhase, actionIdx: number, extIdx: number) => {
+    updatePhaseActionObject(phase, actionIdx, action => ({
+      ...action,
+      extractors: (action.extractors || []).filter((_, i) => i !== extIdx),
+    }))
+  }
+
+  const addPhaseAssertion = (phase: ScriptActionPhase, actionIdx: number) => {
+    updatePhaseActionObject(phase, actionIdx, action => {
+      const assertions = [...(action.assertions || []), defaultAssertionForProtocol(script.protocol)]
+      return { ...action, assertions }
     })
   }
 
-  const addAssertion = (actionIdx: number) => {
-    setScript(prev => {
-      const actions = [...prev.actions]
-      const assertions = [...(actions[actionIdx].assertions || [])]
-      assertions.push(defaultAssertionForProtocol(prev.protocol))
-      actions[actionIdx] = { ...actions[actionIdx], assertions }
-      return { ...prev, actions }
-    })
-  }
-
-  const updateAssertion = (actionIdx: number, aIdx: number, field: keyof Assertion, value: unknown) => {
-    setScript(prev => {
-      const actions = [...prev.actions]
-      const assertions = [...(actions[actionIdx].assertions || [])]
+  const updatePhaseAssertion = (phase: ScriptActionPhase, actionIdx: number, aIdx: number, field: keyof Assertion, value: unknown) => {
+    updatePhaseActionObject(phase, actionIdx, action => {
+      const assertions = [...(action.assertions || [])]
       assertions[aIdx] = { ...assertions[aIdx], [field]: value }
-      actions[actionIdx] = { ...actions[actionIdx], assertions }
-      return { ...prev, actions }
+      return { ...action, assertions }
     })
   }
 
-  const removeAssertion = (actionIdx: number, aIdx: number) => {
-    setScript(prev => {
-      const actions = [...prev.actions]
-      const assertions = (actions[actionIdx].assertions || []).filter((_, i) => i !== aIdx)
-      actions[actionIdx] = { ...actions[actionIdx], assertions }
-      return { ...prev, actions }
-    })
+  const removePhaseAssertion = (phase: ScriptActionPhase, actionIdx: number, aIdx: number) => {
+    updatePhaseActionObject(phase, actionIdx, action => ({
+      ...action,
+      assertions: (action.assertions || []).filter((_, i) => i !== aIdx),
+    }))
   }
 
-  const addHeader = (actionIdx: number) => {
+  const addPhaseHeader = (phase: ScriptActionPhase, actionIdx: number) => {
     const key = prompt('Header name:')
     if (!key) return
-    setScript(prev => {
-      const actions = [...prev.actions]
-      const headers = { ...(actions[actionIdx].headers || {}), [key]: '' }
-      actions[actionIdx] = { ...actions[actionIdx], headers }
-      return { ...prev, actions }
+    updatePhaseActionObject(phase, actionIdx, action => {
+      const headers = { ...(action.headers || {}), [key]: '' }
+      return { ...action, headers }
     })
   }
 
-  const updateHeader = (actionIdx: number, oldKey: string, newKey: string, value: string) => {
-    setScript(prev => {
-      const actions = [...prev.actions]
-      const headers = { ...(actions[actionIdx].headers || {}) }
+  const updatePhaseHeader = (phase: ScriptActionPhase, actionIdx: number, oldKey: string, newKey: string, value: string) => {
+    updatePhaseActionObject(phase, actionIdx, action => {
+      const headers = { ...(action.headers || {}) }
       if (oldKey !== newKey) delete headers[oldKey]
       headers[newKey] = value
-      actions[actionIdx] = { ...actions[actionIdx], headers }
-      return { ...prev, actions }
+      return { ...action, headers }
     })
   }
 
-  const removeHeader = (actionIdx: number, key: string) => {
-    setScript(prev => {
-      const actions = [...prev.actions]
-      const headers = { ...(actions[actionIdx].headers || {}) }
+  const removePhaseHeader = (phase: ScriptActionPhase, actionIdx: number, key: string) => {
+    updatePhaseActionObject(phase, actionIdx, action => {
+      const headers = { ...(action.headers || {}) }
       delete headers[key]
-      actions[actionIdx] = { ...actions[actionIdx], headers }
-      return { ...prev, actions }
+      return { ...action, headers }
     })
   }
 
-  const addMetadata = (actionIdx: number) => {
+  const addPhaseMetadata = (phase: ScriptActionPhase, actionIdx: number) => {
     const key = prompt('Property name:')
     if (!key) return
-    setScript(prev => {
-      const actions = [...prev.actions]
-      const metadata = { ...(actions[actionIdx].metadata || {}), [key]: '' }
-      actions[actionIdx] = { ...actions[actionIdx], metadata }
-      return { ...prev, actions }
+    updatePhaseActionObject(phase, actionIdx, action => {
+      const metadata = { ...(action.metadata || {}), [key]: '' }
+      return { ...action, metadata }
     })
   }
 
-  const updateMetadata = (actionIdx: number, oldKey: string, newKey: string, value: string) => {
-    setScript(prev => {
-      const actions = [...prev.actions]
-      const metadata = { ...(actions[actionIdx].metadata || {}) }
+  const updatePhaseMetadata = (phase: ScriptActionPhase, actionIdx: number, oldKey: string, newKey: string, value: string) => {
+    updatePhaseActionObject(phase, actionIdx, action => {
+      const metadata = { ...(action.metadata || {}) }
       if (oldKey !== newKey) delete metadata[oldKey]
       metadata[newKey] = value
-      actions[actionIdx] = { ...actions[actionIdx], metadata }
-      return { ...prev, actions }
+      return { ...action, metadata }
     })
   }
 
-  const removeMetadata = (actionIdx: number, key: string) => {
-    setScript(prev => {
-      const actions = [...prev.actions]
-      const metadata = { ...(actions[actionIdx].metadata || {}) }
+  const removePhaseMetadata = (phase: ScriptActionPhase, actionIdx: number, key: string) => {
+    updatePhaseActionObject(phase, actionIdx, action => {
+      const metadata = { ...(action.metadata || {}) }
       delete metadata[key]
-      actions[actionIdx] = { ...actions[actionIdx], metadata }
-      return { ...prev, actions }
+      return { ...action, metadata }
     })
   }
 
@@ -6117,12 +6167,30 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
             ...(done && session.report ? session.report : {}),
           }
         })
-      } catch { /* transient; next tick retries */ }
+      } catch (e: unknown) {
+        if (cancelled) return
+        if (e instanceof ApiError && e.status === 404) {
+          setActiveReplaySessionId(null)
+          setBrowserReplaySession(prev => prev ? { ...prev, status: 'stopped' } : null)
+          setReplaying(false)
+          setError('Debugger session expired. Start a new debug run to continue.')
+          setReplayActivity(prev => upsertReplayActivity(prev, {
+            id: 'expired',
+            kind: 'error',
+            title: 'Debugger session expired',
+            detail: 'The backend no longer has this debug session. Start a new run to continue.',
+            timestamp: new Date().toISOString(),
+            success: false,
+          }))
+          return
+        }
+        // Transient network/API errors retry on the next tick.
+      }
     }
     void reconcile()
     const timer = window.setInterval(reconcile, 1200)
     return () => { cancelled = true; window.clearInterval(timer) }
-  }, [activeReplaySessionId, replaying, api, setBrowserReplaySession, setReplayReport])
+  }, [activeReplaySessionId, replaying, api, setActiveReplaySessionId, setBrowserReplaySession, setError, setReplayActivity, setReplayReport, setReplaying])
 
   const addDataSource = () => {
     const nextIndex = (script.data_sources?.length || 0) + 1
@@ -6359,6 +6427,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     }
 
     pushEditorHistory(script)
+    const phase = draft.phase || 'action'
     const name = upsertParameterFromActionEditor({
       selectedText: draft.seedValue,
       requestedName: draft.requestedName,
@@ -6367,12 +6436,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       typeConfig: draft.typeConfig,
       reuseExisting: draft.reuseExisting,
     })
-    const action = script.actions[draft.actionIndex]
+    const action = phaseActionsForScript(script, phase)[draft.actionIndex]
     if (action) {
       const body = action.body || ''
       const replacement = `{{param.${name}}}`
       const nextBody = `${body.slice(0, draft.start)}${replacement}${body.slice(draft.end)}`
-      updateAction(draft.actionIndex, 'body', nextBody)
+      updatePhaseAction(phase, draft.actionIndex, 'body', nextBody)
     }
     setPendingParameterDraft(null)
   }
@@ -6915,7 +6984,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const openEditorSection = (section: 'config' | 'replay' | 'runtime' | 'import' | 'parameter-data' | 'object-descriptors' | 'http-conversion') => {
     const tabBySection: Record<typeof section, CenterWorkbenchTabId> = {
       config: 'runtime-settings',
-      replay: 'script-json',
+      replay: SCRIPT_JSON_TAB_ID,
       runtime: 'runtime-settings',
       import: 'imported-metadata',
       'parameter-data': 'parameter-data',
@@ -7078,7 +7147,16 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     }
   }
 
-  const activeInspectorAction = activeAction !== null ? script.actions[activeAction] || null : null
+  const activeInspectorScope = useMemo(() => {
+    const focus = authorCodeFocus && !authorCodeFocus.stepPath?.length
+      ? authorCodeFocus
+      : activeAction !== null
+        ? { phase: 'action' as const, actionIndex: activeAction }
+        : null
+    if (!focus) return null
+    const action = phaseActionsForScript(script, focus.phase)[focus.actionIndex] || null
+    return action ? { phase: focus.phase, actionIndex: focus.actionIndex, action } : null
+  }, [activeAction, authorCodeFocus, script])
   const selectedAuthorJsonScope = useMemo(
     () => resolveAuthorJsonScope(script, authorCodeFocus),
     [authorCodeFocus, script],
@@ -7094,12 +7172,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     !showFullScriptJson &&
     !selectedJsonUnavailable,
   )
-  const hasScriptJsonDetailsTab = activeInspectorAction !== null && activeAction !== null
+  const hasScriptJsonDetailsTab = activeInspectorScope !== null
   const activeScriptJsonSidebarTab = scriptJsonSidebarTab === 'details' && !hasScriptJsonDetailsTab
     ? SCRIPT_JSON_DEFAULT_COMPANION_TAB
-    : scriptJsonSidebarTab === 'map' && !SCRIPT_JSON_MINIMAP_ENABLED
-      ? SCRIPT_JSON_DEFAULT_COMPANION_TAB
-      : scriptJsonSidebarTab
+    : scriptJsonSidebarTab
   const debugEvidenceStatus = replayReport?.completed_at
     ? (replayReport.success ? 'passed' : 'failed')
     : activeReplaySessionId || browserReplaySession
@@ -7113,14 +7189,23 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         ? 'Active'
         : ''
   const problemCount = errorCount + warningCount + warnings.length + (error ? 1 : 0) + (jsonParseMessage ? 1 : 0)
-  const actionProblemRows = actionIssueBuckets.flatMap((issues, actionIndex) =>
-    issues.map(issue => ({ issue, actionIndex })),
+  const actionProblemRows = scriptPhaseActionRows.flatMap((row) =>
+    (actionIssueBuckets[row.phase]?.[row.actionIndex] || []).map(issue => ({ issue, row })),
   )
   const toggleSelectedBreakpoint = () => {
+    const authorSelectedAction = authorCodeFocus && !authorCodeFocus.stepPath?.length
+      ? {
+        phase: authorCodeFocus.phase,
+        actionIndex: authorCodeFocus.actionIndex,
+        action: phaseActionsForScript(script, authorCodeFocus.phase)[authorCodeFocus.actionIndex],
+      }
+      : activeAction !== null
+        ? { phase: 'action' as const, actionIndex: activeAction, action: script.actions[activeAction] }
+        : null
     const selectedRow = workspaceTab === 'debug'
       ? (selectedReplayEvent ? selectedDebugRow : debugActionRows[0])
-      : activeAction !== null
-        ? { phase: 'action', actionIndex: activeAction, action: script.actions[activeAction] }
+      : authorSelectedAction?.action
+        ? authorSelectedAction
         : debugActionRows[0]
     if (selectedRow) void toggleDebugBreakpoint(selectedRow.phase, selectedRow.actionIndex)
   }
@@ -7191,6 +7276,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         compactLabel: isReplayPaused ? 'Go' : 'Pause',
         icon: <DebugTopbarIcon kind="pause" />,
         className: 'topbar-debug-action topbar-debug-action-pause',
+        hidden: workspaceTab !== 'debug',
         title: isReplayPaused ? 'Continue debugger' : 'Pause debugger',
         tone: 'secondary',
         disabled: !activeReplaySessionId || !replaying || !browserReplaySession || browserReplaySession.status === 'completed' || browserReplaySession.status === 'failed' || browserReplaySession.status === 'stopped',
@@ -7202,6 +7288,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         compactLabel: 'Step',
         icon: <DebugTopbarIcon kind="step" />,
         className: 'topbar-debug-action topbar-debug-action-step',
+        hidden: workspaceTab !== 'debug',
         title: 'Step to next action',
         tone: 'secondary',
         disabled: stepReplayDisabled,
@@ -7213,6 +7300,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         compactLabel: 'Over',
         icon: <DebugTopbarIcon kind="stepOver" />,
         className: 'topbar-debug-action topbar-debug-action-step-over',
+        hidden: workspaceTab !== 'debug',
         title: 'Step over the current block (run the rest of it, pause after)',
         tone: 'secondary',
         disabled: stepReplayDisabled,
@@ -7224,6 +7312,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         compactLabel: 'Loop',
         icon: <DebugTopbarIcon kind="loop" />,
         className: 'topbar-debug-action topbar-debug-action-loop',
+        hidden: workspaceTab !== 'debug',
         title: 'Run to the end of the enclosing loop',
         tone: 'secondary',
         disabled: stepReplayDisabled,
@@ -7235,6 +7324,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         compactLabel: 'Stop',
         icon: <DebugTopbarIcon kind="stop" />,
         className: 'topbar-debug-action topbar-debug-action-stop',
+        hidden: workspaceTab !== 'debug',
         title: 'Stop debugger',
         tone: 'danger',
         disabled: !activeReplaySessionId || !replaying,
@@ -7246,6 +7336,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         compactLabel: 'BoF',
         icon: <DebugTopbarIcon kind="break" />,
         className: 'topbar-debug-action topbar-debug-action-break',
+        hidden: workspaceTab !== 'debug',
         title: replayOptions.breakOnFailure
           ? 'Break on failure is on — the debugger pauses on the first failing action'
           : 'Break on failure: pause automatically when an action fails',
@@ -7261,14 +7352,14 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       <div className="center-document-header">
         <div>
           <h3 className="panel-title">{title}</h3>
-          <p>Fix or reset the Script JSON draft before editing structured script tools.</p>
+          <p>Structured editing is paused until the Source JSON parses again.</p>
         </div>
         <button type="button" className="btn btn-sm btn-secondary" onClick={() => selectCenterTab(SCRIPT_JSON_TAB_ID)}>
-          Open Script JSON
+          Open Source
         </button>
       </div>
       <div className="center-document-blocked-body">
-        <strong>Script JSON is invalid</strong>
+        <strong>Source JSON is invalid</strong>
         <span>{jsonParseMessage || 'The current JSON draft could not be parsed.'}</span>
       </div>
     </section>
@@ -7277,32 +7368,32 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     return jsonParseMessage ? renderBlockedCenterDocument(title) : content
   }
   const renderActionInspectorContent = (): ReactNode => (
-    activeInspectorAction && activeAction !== null ? (
+    activeInspectorScope ? (
       <>
         <ActionEditor
-          action={activeInspectorAction}
-          index={activeAction}
+          action={activeInspectorScope.action}
+          index={activeInspectorScope.actionIndex}
           parameters={script.parameters || []}
-          onUpdate={updateAction}
-          onAddExtractor={addExtractor}
-          onUpdateExtractor={updateExtractor}
-          onRemoveExtractor={removeExtractor}
-          onAddAssertion={addAssertion}
-          onUpdateAssertion={updateAssertion}
-          onRemoveAssertion={removeAssertion}
-          onAddHeader={addHeader}
-          onUpdateHeader={updateHeader}
-          onRemoveHeader={removeHeader}
-          onAddMetadata={addMetadata}
-          onUpdateMetadata={updateMetadata}
-          onRemoveMetadata={removeMetadata}
-          onBeginParameterEdit={openParameterizeChoice}
+          onUpdate={(idx, field, value) => updatePhaseAction(activeInspectorScope.phase, idx, field, value)}
+          onAddExtractor={(idx) => addPhaseExtractor(activeInspectorScope.phase, idx)}
+          onUpdateExtractor={(actionIdx, extIdx, field, value) => updatePhaseExtractor(activeInspectorScope.phase, actionIdx, extIdx, field, value)}
+          onRemoveExtractor={(actionIdx, extIdx) => removePhaseExtractor(activeInspectorScope.phase, actionIdx, extIdx)}
+          onAddAssertion={(idx) => addPhaseAssertion(activeInspectorScope.phase, idx)}
+          onUpdateAssertion={(actionIdx, assertionIdx, field, value) => updatePhaseAssertion(activeInspectorScope.phase, actionIdx, assertionIdx, field, value)}
+          onRemoveAssertion={(actionIdx, assertionIdx) => removePhaseAssertion(activeInspectorScope.phase, actionIdx, assertionIdx)}
+          onAddHeader={(idx) => addPhaseHeader(activeInspectorScope.phase, idx)}
+          onUpdateHeader={(actionIdx, oldKey, newKey, value) => updatePhaseHeader(activeInspectorScope.phase, actionIdx, oldKey, newKey, value)}
+          onRemoveHeader={(actionIdx, key) => removePhaseHeader(activeInspectorScope.phase, actionIdx, key)}
+          onAddMetadata={(idx) => addPhaseMetadata(activeInspectorScope.phase, idx)}
+          onUpdateMetadata={(actionIdx, oldKey, newKey, value) => updatePhaseMetadata(activeInspectorScope.phase, actionIdx, oldKey, newKey, value)}
+          onRemoveMetadata={(actionIdx, key) => removePhaseMetadata(activeInspectorScope.phase, actionIdx, key)}
+          onBeginParameterEdit={(draft) => openParameterizeChoice({ ...draft, phase: activeInspectorScope.phase })}
           methodColor={methodColor}
           protocol={script.protocol}
           isBrowserScript={isBrowserScript}
           isJmsScript={isJmsScript}
           isSoapScript={isSoapScript}
-          issues={actionIssueBuckets[activeAction] || []}
+          issues={actionIssueBuckets[activeInspectorScope.phase]?.[activeInspectorScope.actionIndex] || []}
         />
       </>
     ) : null
@@ -7339,6 +7430,85 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       </div>
     )
   }
+  const renderActionListCenterDocument = () => renderStructuredCenterDocument('Action List', (
+    <section className="center-document action-list-center-document" aria-label="Action List">
+      <div className="center-document-header">
+        <div>
+          <h3 className="panel-title">Action List</h3>
+          <p>{scriptPhaseActionRows.length} executable{scriptPhaseActionRows.length === 1 ? '' : 's'} across init, action, and teardown phases.</p>
+        </div>
+        <button type="button" className="btn btn-sm btn-accent" onClick={() => addAction('action')}>
+          + Add Action
+        </button>
+      </div>
+      <div className="action-list-center-summary" aria-label="Lifecycle action counts">
+        <span><strong>{script.init?.length || 0}</strong> init</span>
+        <span><strong>{script.actions?.length || 0}</strong> actions</span>
+        <span><strong>{script.teardown?.length || 0}</strong> teardown</span>
+      </div>
+      {scriptPhaseActionRows.length === 0 ? (
+        <div className="action-list-center-empty">No actions yet.</div>
+      ) : (
+        <div className="action-list-center-table" role="table" aria-label="Structured action list">
+          <div className="action-list-center-head" role="row">
+            <span role="columnheader">Phase</span>
+            <span role="columnheader">Type</span>
+            <span role="columnheader">Name</span>
+            <span role="columnheader">Signals</span>
+            <span role="columnheader">Actions</span>
+          </div>
+          {scriptPhaseActionRows.map(row => {
+            const { action, phase, actionIndex, phaseLabel } = row
+            const actionBreakpointActive = debugBreakpointKeys.has(debugBreakpointKey(phase, actionIndex))
+            const issueBucket = actionIssueBuckets[phase]?.[actionIndex] || []
+            const phaseActionCount = scriptActionsForPhase(script, phase).length
+            const rowActionKind = phase === 'action' ? 'action' : `${phaseLabel.toLowerCase()} action`
+            const active = authorCodeFocus
+              ? authorCodeFocus.phase === phase && authorCodeFocus.actionIndex === actionIndex && !authorCodeFocus.stepPath?.length
+              : phase === 'action' && activeAction === actionIndex
+            return (
+              <div key={`center-${phase}-${actionIndex}`} className={`action-list-center-row ${active ? 'active' : ''}`} role="row">
+                <div className="action-list-center-phase" role="cell">
+                  <button
+                    type="button"
+                    className={`action-breakpoint-button ${actionBreakpointActive ? 'active' : ''}`}
+                    aria-label={`${actionBreakpointActive ? 'Remove' : 'Set'} breakpoint on ${phaseLabel} ${actionIndex + 1}`}
+                    title={`${actionBreakpointActive ? 'Remove' : 'Set'} breakpoint on ${phaseLabel} ${actionIndex + 1}`}
+                    onClick={() => void toggleDebugBreakpoint(phase, actionIndex)}
+                  >
+                    <span aria-hidden="true" />
+                  </button>
+                  <button type="button" className="action-list-center-select" onClick={() => selectAuthorPhaseAction(row)}>
+                    {phaseLabel} {actionIndex + 1}
+                  </button>
+                </div>
+                <span role="cell" className="action-list-center-type" style={{ color: methodColor(action.type) }}>{action.type}</span>
+                <button type="button" role="cell" className="action-list-center-name" title={actionRowLabel(action)} onClick={() => selectAuthorPhaseAction(row)}>
+                  {actionRowLabel(action)}
+                </button>
+                <span role="cell" className="action-list-center-signals">
+                  {issueBucket.length > 0 && (
+                    <span className={`action-signal-pill ${issueBucket.some(issue => issue.severity === 'error') ? 'error' : 'warning'}`}>
+                      {issueBucket.length}
+                    </span>
+                  )}
+                  {actionRequestCount(action) > 0 && <span className="metric-badge">{actionRequestCount(action)} req</span>}
+                  {actionExtractorCount(action) > 0 && <span className="metric-badge">{actionExtractorCount(action)} ext</span>}
+                  {isControlAction(action) && <span className="metric-badge">ctrl</span>}
+                </span>
+                <span role="cell" className="action-list-center-actions">
+                  <button className="btn-icon" onClick={() => movePhaseAction(phase, actionIndex, -1)} disabled={actionIndex === 0} aria-label={`Move ${rowActionKind} up`} title="Move up">↑</button>
+                  <button className="btn-icon" onClick={() => movePhaseAction(phase, actionIndex, 1)} disabled={actionIndex === phaseActionCount - 1} aria-label={`Move ${rowActionKind} down`} title="Move down">↓</button>
+                  <button className="btn-icon" onClick={() => duplicatePhaseAction(phase, actionIndex)} aria-label={`Duplicate ${rowActionKind}`} title="Duplicate">⧉</button>
+                  <button className="btn-icon danger" onClick={() => removePhaseAction(phase, actionIndex)} aria-label={`Delete ${rowActionKind}`} title="Delete">✕</button>
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </section>
+  ))
   const renderCenterTabPanel = (tabId: CenterWorkbenchTabId) => {
     if (tabId === BROWSER_REPLAY_TAB_ID && isBrowserScript) {
       return (
@@ -7354,6 +7524,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         />
       )
     }
+    if (tabId === ACTION_LIST_TAB_ID) return renderActionListCenterDocument()
     if (tabId !== SCRIPT_JSON_TAB_ID) return null
     if (showSelectedActionJson && selectedAuthorJsonScope) {
       const selectedTitle = selectedAuthorJsonScope.subAction ? 'Selected Sub-action JSON' : 'Selected Action JSON'
@@ -7368,6 +7539,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
             activeRange={null}
             actionCount={1}
             allowDirectEdit={false}
+            ariaLabel={selectedTitle}
             title={selectedTitle}
             subtitle={selectedAuthorJsonScope.path.replace(/^script\./, '')}
             onApply={() => undefined}
@@ -7397,6 +7569,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           jumpToLineRequest={jsonLineJumpRequest}
           parameterMatchRanges={parameterMatchRanges}
           resolvedValues={workspaceTab === 'debug' && hasReplayVariableInspectorData ? replayVariableInspector : null}
+          ariaLabel="Source"
+          title="Source"
           onApply={handleApplyJsonDraft}
           onChange={handleCodePaneChange}
           onCopy={() => void navigator.clipboard?.writeText(jsonText)}
@@ -7437,17 +7611,19 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   }
   const authorRightSidebarContext: AuthorRightSidebarContext = (() => {
     switch (centerTabsState.activeTabId) {
+      case ACTION_LIST_TAB_ID:
+        if (activeInspectorScope) {
+          return { kind: 'inspector', title: 'Action Details', railLabel: 'Details', wide: true }
+        }
+        return { kind: 'signals', title: 'Insights', railLabel: 'Insights' }
       case 'parameter-data':
         return { kind: 'parameters', title: 'Parameters', railLabel: 'Parameters' }
       case SCRIPT_JSON_TAB_ID:
         if (activeScriptJsonSidebarTab === 'auto-params') {
           return { kind: 'auto-parameterization', title: selectedOutlineParameterExists && !parameterPaneShowAuto ? 'Parameter' : 'Parameters', railLabel: 'Parameters', wide: true }
         }
-        if (activeScriptJsonSidebarTab === 'details' && activeInspectorAction && activeAction !== null) {
+        if (activeScriptJsonSidebarTab === 'details' && activeInspectorScope) {
           return { kind: 'inspector', title: 'Action Details', railLabel: 'Details', wide: true }
-        }
-        if (activeScriptJsonSidebarTab === 'map' && SCRIPT_JSON_MINIMAP_ENABLED) {
-          return { kind: 'source-map', title: 'Source Map', railLabel: 'Map' }
         }
         return { kind: 'signals', title: 'Insights', railLabel: 'Insights' }
       case 'imported-metadata':
@@ -8015,63 +8191,65 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 <span className="debugger-icon" aria-hidden="true">&#9654;</span>
                 <span>{replaying ? 'Running...' : replayReport ? 'Restart' : 'Run'}</span>
               </button>
-              <button type="button" className="debugger-icon-btn" title={isReplayPaused ? 'Continue' : 'Pause'} onClick={handlePauseResumeReplay} disabled={!activeReplaySessionId || !replaying || !browserReplaySession || browserReplaySession.status === 'completed' || browserReplaySession.status === 'failed' || browserReplaySession.status === 'stopped'}>
-                <span className="debugger-icon" aria-hidden="true">{isReplayPaused ? '▶' : '⏸'}</span>
-                <span>{isReplayPaused ? 'Continue' : 'Pause'}</span>
-              </button>
-              <button type="button" className="debugger-icon-btn" title="Step to next action" onClick={() => void handleStepReplay('into')} disabled={stepReplayDisabled}>
-                <span className="debugger-icon" aria-hidden="true">&#10551;</span>
-                <span>Step</span>
-              </button>
-              <button type="button" className="debugger-icon-btn" title="Step over the current block (run the rest of it, pause after)" onClick={() => void handleStepReplay('over')} disabled={stepReplayDisabled}>
-                <span className="debugger-icon" aria-hidden="true">&#10550;</span>
-                <span>Step Over</span>
-              </button>
-              <button type="button" className="debugger-icon-btn" title="Run to the end of the enclosing loop" onClick={() => void handleStepReplay('loop_end')} disabled={stepReplayDisabled}>
-                <span className="debugger-icon" aria-hidden="true">&#8635;</span>
-                <span>Finish Loop</span>
-              </button>
-              <button type="button" className="debugger-icon-btn" title="Stop debugger" onClick={handleStopReplay} disabled={!activeReplaySessionId || !replaying}>
-                <span className="debugger-icon" aria-hidden="true">&#9209;</span>
-                <span>Stop</span>
-              </button>
-              <button type="button" className="debugger-icon-btn" title="Toggle breakpoint on selected action" onClick={toggleSelectedBreakpoint} disabled={debugActionRows.length === 0}>
-                <span className="debugger-icon" aria-hidden="true">●</span>
-                <span>Breakpoint</span>
-              </button>
-              <button
-                ref={debuggerSettingsBtnRef}
-                type="button"
-                className={`debugger-icon-btn ${centerTabsState.activeTabId === 'runtime-settings' ? 'active' : ''}`}
-                title="Session overrides"
-                aria-pressed={centerTabsState.activeTabId === 'runtime-settings'}
-                onClick={() => {
-                  activateWorkspaceTab('debug')
-                  setDebuggerTab('request')
-                  setDebuggerSettingsOpen(false)
-                  openCenterTab('runtime-settings')
-                }}
-              >
-                <span className="debugger-icon" aria-hidden="true">&#9881;</span>
-                <span>Settings</span>
-              </button>
               {workspaceTab === 'debug' && (
-                <button
-                  type="button"
-                  className={`debugger-icon-btn ${!debugDetailCollapsed ? 'active' : ''}`}
-                  title={debugDetailCollapsed ? 'Show detail panel (request/response + variables)' : 'Hide detail panel'}
-                  aria-pressed={!debugDetailCollapsed}
-                  onClick={() => setDebugDetailCollapsed(value => !value)}
-                >
-                  <span className="debugger-icon" aria-hidden="true">▣</span>
-                  <span>Panel</span>
-                </button>
-              )}
-              {replayReport && (
-                <button type="button" className="debugger-icon-btn" title="Download Debug JSON" onClick={handleDownloadBrowserReplayExport}>
-                  <span className="debugger-icon" aria-hidden="true">&#8675;</span>
-                  <span>Export</span>
-                </button>
+                <>
+                  <button type="button" className="debugger-icon-btn" title={isReplayPaused ? 'Continue' : 'Pause'} onClick={handlePauseResumeReplay} disabled={!activeReplaySessionId || !replaying || !browserReplaySession || browserReplaySession.status === 'completed' || browserReplaySession.status === 'failed' || browserReplaySession.status === 'stopped'}>
+                    <span className="debugger-icon" aria-hidden="true">{isReplayPaused ? '▶' : '⏸'}</span>
+                    <span>{isReplayPaused ? 'Continue' : 'Pause'}</span>
+                  </button>
+                  <button type="button" className="debugger-icon-btn" title="Step to next action" onClick={() => void handleStepReplay('into')} disabled={stepReplayDisabled}>
+                    <span className="debugger-icon" aria-hidden="true">&#10551;</span>
+                    <span>Step</span>
+                  </button>
+                  <button type="button" className="debugger-icon-btn" title="Step over the current block (run the rest of it, pause after)" onClick={() => void handleStepReplay('over')} disabled={stepReplayDisabled}>
+                    <span className="debugger-icon" aria-hidden="true">&#10550;</span>
+                    <span>Step Over</span>
+                  </button>
+                  <button type="button" className="debugger-icon-btn" title="Run to the end of the enclosing loop" onClick={() => void handleStepReplay('loop_end')} disabled={stepReplayDisabled}>
+                    <span className="debugger-icon" aria-hidden="true">&#8635;</span>
+                    <span>Finish Loop</span>
+                  </button>
+                  <button type="button" className="debugger-icon-btn" title="Stop debugger" onClick={handleStopReplay} disabled={!activeReplaySessionId || !replaying}>
+                    <span className="debugger-icon" aria-hidden="true">&#9209;</span>
+                    <span>Stop</span>
+                  </button>
+                  <button type="button" className="debugger-icon-btn" title="Toggle breakpoint on selected action" onClick={toggleSelectedBreakpoint} disabled={debugActionRows.length === 0}>
+                    <span className="debugger-icon" aria-hidden="true">●</span>
+                    <span>Breakpoint</span>
+                  </button>
+                  <button
+                    ref={debuggerSettingsBtnRef}
+                    type="button"
+                    className={`debugger-icon-btn ${centerTabsState.activeTabId === 'runtime-settings' ? 'active' : ''}`}
+                    title="Session overrides"
+                    aria-pressed={centerTabsState.activeTabId === 'runtime-settings'}
+                    onClick={() => {
+                      activateWorkspaceTab('debug')
+                      setDebuggerTab('request')
+                      setDebuggerSettingsOpen(false)
+                      openCenterTab('runtime-settings')
+                    }}
+                  >
+                    <span className="debugger-icon" aria-hidden="true">&#9881;</span>
+                    <span>Settings</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`debugger-icon-btn ${!debugDetailCollapsed ? 'active' : ''}`}
+                    title={debugDetailCollapsed ? 'Show detail panel (request/response + variables)' : 'Hide detail panel'}
+                    aria-pressed={!debugDetailCollapsed}
+                    onClick={() => setDebugDetailCollapsed(value => !value)}
+                  >
+                    <span className="debugger-icon" aria-hidden="true">▣</span>
+                    <span>Panel</span>
+                  </button>
+                  {replayReport && (
+                    <button type="button" className="debugger-icon-btn" title="Download Debug JSON" onClick={handleDownloadBrowserReplayExport}>
+                      <span className="debugger-icon" aria-hidden="true">&#8675;</span>
+                      <span>Export</span>
+                    </button>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -9168,19 +9346,19 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                               <strong>{issue.message}</strong>
                             </div>
                           ))}
-                          {actionProblemRows.map(({ issue, actionIndex }) => (
+                          {actionProblemRows.map(({ issue, row }) => (
                             <button
                               key={issue.id}
                               type="button"
                               className={`debugger-problem-row ${issue.severity} action-problem`}
                               onClick={() => {
-                                selectAuthorAction(actionIndex)
+                                selectAuthorPhaseAction(row)
                                 activateWorkspaceTab('author')
                               }}
                             >
-                              <span>Action {actionIndex + 1}</span>
-                              <strong>{script.actions[actionIndex]?.name || issue.message}</strong>
-                              <small>{script.actions[actionIndex]?.name ? issue.message : ''}</small>
+                              <span>{row.phaseLabel} {row.actionIndex + 1}</span>
+                              <strong>{row.action.name || issue.message}</strong>
+                              <small>{row.action.name ? issue.message : ''}</small>
                             </button>
                           ))}
                         </div>
@@ -11228,7 +11406,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                         </span>
                         )
                       })()}
-                      <button className="btn btn-sm btn-accent" onClick={addAction}>+ Add</button>
+                      <button className="btn btn-sm btn-accent" onClick={() => addAction('action')}>+ Add</button>
                     </div>
                   </div>
                   {!outlineActionListCollapsed && (
@@ -11382,8 +11560,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                         const txnBand = txnBandCell && !(txnBandCell.first && txnBandCell.last) ? txnBandCell : undefined
                         const reviewGated = actionRequiresReview(a)
                         const controlAction = isControlAction(a)
-                        const rowIssues = phase === 'action' ? actionIssueBuckets[i] || [] : []
+                        const rowIssues = actionIssueBuckets[phase]?.[i] || []
                         const rowBlockKey = debugSequenceKey(phase, i)
+                        const phaseActionCount = scriptActionsForPhase(script, phase).length
+                        const rowActionKind = phase === 'action' ? 'action' : `${phaseLabel.toLowerCase()} action`
                         const rowActive = authorCodeFocus
                           ? authorCodeFocus.phase === phase && authorCodeFocus.actionIndex === i && !authorCodeFocus.stepPath?.length
                           : phase === 'action' && activeAction === i
@@ -11486,14 +11666,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                                 </span>
                               )}
                             </div>
-                            {phase === 'action' && (
-                              <div className="action-item-actions">
-                                <button className="btn-icon" onClick={e => { e.stopPropagation(); moveAction(i, -1) }} disabled={i === 0} aria-label="Move action up" title="Move up">↑</button>
-                                <button className="btn-icon" onClick={e => { e.stopPropagation(); moveAction(i, 1) }} disabled={i === script.actions.length - 1} aria-label="Move action down" title="Move down">↓</button>
-                                <button className="btn-icon" onClick={e => { e.stopPropagation(); duplicateAction(i) }} aria-label="Duplicate action" title="Duplicate">⧉</button>
-                                <button className="btn-icon danger" onClick={e => { e.stopPropagation(); removeAction(i) }} aria-label="Delete action" title="Delete">✕</button>
-                              </div>
-                            )}
+                            <div className="action-item-actions">
+                              <button className="btn-icon" onClick={e => { e.stopPropagation(); movePhaseAction(phase, i, -1) }} disabled={i === 0} aria-label={`Move ${rowActionKind} up`} title="Move up">↑</button>
+                              <button className="btn-icon" onClick={e => { e.stopPropagation(); movePhaseAction(phase, i, 1) }} disabled={i === phaseActionCount - 1} aria-label={`Move ${rowActionKind} down`} title="Move down">↓</button>
+                              <button className="btn-icon" onClick={e => { e.stopPropagation(); duplicatePhaseAction(phase, i) }} aria-label={`Duplicate ${rowActionKind}`} title="Duplicate">⧉</button>
+                              <button className="btn-icon danger" onClick={e => { e.stopPropagation(); removePhaseAction(phase, i) }} aria-label={`Delete ${rowActionKind}`} title="Delete">✕</button>
+                            </div>
                           </div>
                         )
                       })}
@@ -11926,17 +12104,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                         >
                           Insights
                         </button>
-                        {SCRIPT_JSON_MINIMAP_ENABLED && (
-                          <button
-                            type="button"
-                            role="tab"
-                            aria-selected={activeScriptJsonSidebarTab === 'map'}
-                            className={`script-json-sidebar-tab ${activeScriptJsonSidebarTab === 'map' ? 'active' : ''}`}
-                            onClick={() => setScriptJsonSidebarTab('map')}
-                          >
-                            Map
-                          </button>
-                        )}
                         <button
                           type="button"
                           role="tab"
@@ -11979,10 +12146,23 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     <strong>Problems</strong>
                     <span>{errorCount} error{errorCount === 1 ? '' : 's'} • {warningCount} warning{warningCount === 1 ? '' : 's'}</span>
                   </div>
-                  {scriptLevelIssues.length > 0 ? (
+                  {scriptLevelIssues.length > 0 || actionProblemRows.length > 0 ? (
                     <ul className="utility-list">
                       {scriptLevelIssues.map((issue) => (
                         <li key={issue.id} className={`utility-list-item ${issue.severity}`}>{issue.message}</li>
+                      ))}
+                      {actionProblemRows.map(({ issue, row }) => (
+                        <li key={issue.id} className={`utility-list-item ${issue.severity}`}>
+                          <button
+                            type="button"
+                            className="utility-list-button"
+                            onClick={() => selectAuthorPhaseAction(row)}
+                          >
+                            <span>{row.phaseLabel} {row.actionIndex + 1}</span>
+                            <strong>{row.action.name || issue.message}</strong>
+                            {row.action.name && <small>{issue.message}</small>}
+                          </button>
+                        </li>
                       ))}
                     </ul>
                   ) : (
@@ -12178,7 +12358,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                                 else {
                                   setActiveAction(null)
                                   setAuthorCodeFocus({ phase: item.phase, actionIndex: item.actionIndex })
-                                  openCenterTab('script-json')
+                                  openCenterTab(SCRIPT_JSON_TAB_ID)
                                 }
                               }}
                             >
@@ -12338,9 +12518,11 @@ function ImportedParameterMappingsDialog({
   onClose,
   onOpenMappedDataSource,
 }: ImportedParameterMappingsDialogProps) {
+  const dialogRef = useEditorDialogRef(onClose)
   return (
     <div className="editor-dialog-backdrop" onClick={onClose}>
       <div
+        ref={dialogRef}
         className="editor-dialog imported-parameter-mappings-dialog"
         role="dialog"
         aria-modal="true"
@@ -12394,9 +12576,11 @@ interface ReplayScreenshotDialogProps {
 }
 
 function ReplayScreenshotDialog({ alt, onClose, src }: ReplayScreenshotDialogProps) {
+  const dialogRef = useEditorDialogRef(onClose)
   return (
     <div className="editor-dialog-backdrop" onClick={onClose}>
       <div
+        ref={dialogRef}
         className="editor-dialog replay-screenshot-dialog"
         role="dialog"
         aria-modal="true"
@@ -14367,6 +14551,7 @@ function ExistingParameterDialog({
   onSelect,
   parameters,
 }: ExistingParameterDialogProps) {
+  const dialogRef = useEditorDialogRef(onClose)
   const [query, setQuery] = useState('')
   const normalizedQuery = query.trim().toLowerCase()
   const filteredParameters = useMemo(() => parameters.filter(parameter => {
@@ -14380,6 +14565,7 @@ function ExistingParameterDialog({
   return (
     <div className="editor-dialog-backdrop parameter-choice-backdrop" onClick={onClose}>
       <div
+        ref={dialogRef}
         className="editor-dialog parameter-choice-dialog parameter-existing-dialog"
         role="dialog"
         aria-modal="true"
@@ -14448,6 +14634,7 @@ function JsonOccurrenceReviewDialog({
   parameters,
   review,
 }: JsonOccurrenceReviewDialogProps) {
+  const dialogRef = useEditorDialogRef(onClose)
   const optionalOccurrences = useMemo(
     () => review.occurrences.filter(occurrence => !occurrence.isOriginal),
     [review.occurrences],
@@ -14482,6 +14669,7 @@ function JsonOccurrenceReviewDialog({
   return (
     <div className="editor-dialog-backdrop parameter-choice-backdrop" onClick={onClose}>
       <div
+        ref={dialogRef}
         className="editor-dialog parameter-choice-dialog parameter-occurrence-dialog"
         role="dialog"
         aria-modal="true"
@@ -14561,6 +14749,7 @@ interface ParameterizeDialogProps {
 // continues to the existing Parameter Data editor) or a Built-in Function, which expands in place
 // to a type picker plus that type's key configuration fields.
 function ParameterizeDialog({ draft, onClose, onChooseFile, onConfirmBuiltin }: ParameterizeDialogProps) {
+  const dialogRef = useEditorDialogRef(onClose)
   const [mode, setMode] = useState<'choose' | 'builtin'>('choose')
   const [name, setName] = useState(() => sanitizeVarName(draft.requestedName || draft.seedValue))
   const [typeParam, setTypeParam] = useState<ParameterConfig | null>(null)
@@ -14580,6 +14769,7 @@ function ParameterizeDialog({ draft, onClose, onChooseFile, onConfirmBuiltin }: 
   return (
     <div className="editor-dialog-backdrop parameter-choice-backdrop" onClick={onClose}>
       <div
+        ref={dialogRef}
         className="editor-dialog parameter-choice-dialog parameterize-dialog"
         role="dialog"
         aria-modal="true"
@@ -14657,9 +14847,11 @@ function ParameterChoiceDialog({
   onSelect,
   selectedValue,
 }: ParameterChoiceDialogProps) {
+  const dialogRef = useEditorDialogRef(onClose)
   return (
     <div className="editor-dialog-backdrop parameter-choice-backdrop" onClick={onClose}>
       <div
+        ref={dialogRef}
         className="editor-dialog parameter-choice-dialog"
         role="dialog"
         aria-modal="true"
@@ -14892,6 +15084,7 @@ function ParameterSettingsDialog({
   onUpdate,
   parameter,
 }: ParameterSettingsDialogProps) {
+  const dialogRef = useEditorDialogRef(onClose)
   const parameterName = parameter.name || 'Parameter'
   const parameterType = parameter.type || 'list'
   const hasDataMappingSettings = parameterType === 'file' || parameterType === 'list' || parameterType === 'host'
@@ -14902,6 +15095,7 @@ function ParameterSettingsDialog({
   return (
     <div className="editor-dialog-backdrop parameter-choice-backdrop" onClick={onClose}>
       <div
+        ref={dialogRef}
         className="editor-dialog parameter-choice-dialog parameter-settings-dialog"
         role="dialog"
         aria-modal="true"
@@ -15099,6 +15293,7 @@ function ParameterSelectionSettingsDialog({
   parameter,
   sameLineOptions,
 }: ParameterSelectionSettingsDialogProps) {
+  const dialogRef = useEditorDialogRef(onClose)
   const parameterName = parameter.name || 'Parameter'
   const selectionValue = getParameterSelectionControlValue(parameter)
   const exhaustionValue = getParameterChoiceValue(parameter, 'on_exhaustion')
@@ -15117,6 +15312,7 @@ function ParameterSelectionSettingsDialog({
   return (
     <div className="editor-dialog-backdrop parameter-choice-backdrop" onClick={onClose}>
       <div
+        ref={dialogRef}
         className="editor-dialog parameter-choice-dialog parameter-selection-settings-dialog"
         role="dialog"
         aria-modal="true"

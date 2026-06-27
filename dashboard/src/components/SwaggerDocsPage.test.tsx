@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act } from 'react'
+import { act, type ComponentProps } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
@@ -14,6 +14,15 @@ function setInputValue(input: HTMLInputElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
   setter?.call(input, value)
   input.dispatchEvent(new Event('input', { bubbles: true }))
+}
+
+function accessResources(operationIDs: string[]) {
+  return [{
+    id: 'test',
+    name: 'Test',
+    description: 'Test operations',
+    operations: operationIDs.map(id => ({ id, label: id, allowed: true })),
+  }]
 }
 
 function TopbarContributionHarness() {
@@ -44,12 +53,12 @@ describe('SwaggerDocsPage', () => {
     container.remove()
   })
 
-  async function renderSwaggerDocsPage() {
+  async function renderSwaggerDocsPage(props: ComponentProps<typeof SwaggerDocsPage> = {}) {
     await act(async () => {
       root.render(
         <TopbarContributionProvider>
           <TopbarContributionHarness />
-          <SwaggerDocsPage />
+          <SwaggerDocsPage {...props} />
         </TopbarContributionProvider>,
       )
     })
@@ -182,11 +191,21 @@ paths:
     expect(container.textContent).toContain('System & Distribution')
     expect(container.textContent).toContain('Create Domain')
     expect(container.textContent).toContain('/api/v1/domains')
+    expect(container.textContent).toContain('Not in my access')
+    expect(container.textContent).toContain('Public')
+
+    const firstDetails = container.querySelector('details') as HTMLDetailsElement | null
+    expect(firstDetails).not.toBeNull()
+    await act(async () => {
+      if (!firstDetails) return
+      firstDetails.open = true
+      firstDetails.dispatchEvent(new Event('toggle', { bubbles: true }))
+    })
     expect(container.textContent).toContain('Operation ID')
     expect(container.textContent).toContain('Access Control')
     expect(container.textContent).toContain('OpenAPI Tags')
 
-    const categorySelect = container.querySelector('select') as HTMLSelectElement | null
+    const categorySelect = container.querySelector('.swagger-docs-controls select') as HTMLSelectElement | null
     expect(categorySelect).not.toBeNull()
     expect(Array.from(categorySelect?.options || []).map(option => option.textContent)).toContain('Script Authoring')
     expect(Array.from(container.querySelectorAll('.swagger-docs-tag-group h4')).map(heading => heading.textContent)).not.toContain('Other')
@@ -217,5 +236,27 @@ paths:
       authButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     expect(window.location.hash).toBe('#/docs?guide=authentication')
+  }, 10_000)
+
+  it('shows catalog-backed access badges and filters to current access on demand', async () => {
+    await renderSwaggerDocsPage({ effectiveAccessResources: accessResources(['view_scripts']) })
+
+    expect(container.textContent).toContain('My access')
+    expect(container.textContent).toContain('Not in my access')
+
+    const accessCheckbox = container.querySelector('.swagger-docs-access-filter input[type="checkbox"]') as HTMLInputElement | null
+    expect(accessCheckbox).not.toBeNull()
+    await act(async () => {
+      if (!accessCheckbox) return
+      accessCheckbox.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const codeValues = Array.from(container.querySelectorAll('.swagger-operation-card summary code')).map(code => code.textContent || '')
+    expect(codeValues).toContain('/api/v1/scripts')
+    expect(codeValues).toContain('/api/v1/system/health')
+    expect(codeValues).not.toContain('/api/v1/projects')
+    const scriptRows = Array.from(container.querySelectorAll('.swagger-operation-card summary')).map(summary => summary.textContent || '')
+    expect(scriptRows.some(row => row.includes('GET') && row.includes('/api/v1/scripts'))).toBe(true)
+    expect(scriptRows.some(row => row.includes('POST') && row.includes('/api/v1/scripts') && row.includes('Create Script'))).toBe(false)
   }, 10_000)
 })

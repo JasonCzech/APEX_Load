@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import type { ScriptActionDefinition, ScriptDefinition } from '../types/scripts'
 import type { ProtocolEvidence } from '../types'
 import {
+  ACTION_LIST_TAB_ID,
   BROWSER_DEVICE_PROFILES,
   SCRIPT_JSON_TAB_ID,
   appendActionStep,
@@ -111,7 +112,9 @@ describe('center tabs state', () => {
   beforeEach(() => window.localStorage.clear())
 
   it('isCenterWorkbenchTabId validates known ids', () => {
-    expect(isCenterWorkbenchTabId('script-json')).toBe(true)
+    expect(isCenterWorkbenchTabId('action-list')).toBe(true)
+    expect(isCenterWorkbenchTabId('source')).toBe(true)
+    expect(isCenterWorkbenchTabId('script-json')).toBe(false)
     expect(isCenterWorkbenchTabId('metadata-json')).toBe(true)
     expect(isCenterWorkbenchTabId('conversion-mapping')).toBe(false)
     expect(isCenterWorkbenchTabId('nope')).toBe(false)
@@ -122,25 +125,27 @@ describe('center tabs state', () => {
     expect(readCenterTabsState('k')).toEqual(defaultCenterTabsState())
   })
 
-  it('always keeps script-json first and dedups it', () => {
+  it('always keeps action-list and source first while migrating legacy script-json storage', () => {
     window.localStorage.setItem('k', JSON.stringify({ tabs: ['configuration', 'script-json'], activeTabId: 'configuration' }))
     const state = readCenterTabsState('k')
-    expect(state.tabs[0]).toBe(SCRIPT_JSON_TAB_ID)
+    expect(state.tabs[0]).toBe(ACTION_LIST_TAB_ID)
+    expect(state.tabs[1]).toBe(SCRIPT_JSON_TAB_ID)
+    expect(state.tabs.filter(t => t === ACTION_LIST_TAB_ID)).toHaveLength(1)
     expect(state.tabs.filter(t => t === SCRIPT_JSON_TAB_ID)).toHaveLength(1)
-    expect(state.tabs).toEqual([SCRIPT_JSON_TAB_ID, 'runtime-settings'])
+    expect(state.tabs).toEqual([ACTION_LIST_TAB_ID, SCRIPT_JSON_TAB_ID, 'runtime-settings'])
     expect(state.activeTabId).toBe('runtime-settings')
   })
 
-  it('falls back to script-json for an unknown active tab', () => {
+  it('falls back to action-list for an unknown active tab', () => {
     window.localStorage.setItem('k', JSON.stringify({ tabs: ['configuration'], activeTabId: 'bogus' }))
-    expect(readCenterTabsState('k').activeTabId).toBe(SCRIPT_JSON_TAB_ID)
+    expect(readCenterTabsState('k').activeTabId).toBe(ACTION_LIST_TAB_ID)
   })
 
   it('drops stale standalone conversion mapping tabs from storage', () => {
     window.localStorage.setItem('k', JSON.stringify({ tabs: ['conversion-mapping', 'imported-metadata'], activeTabId: 'conversion-mapping' }))
     expect(readCenterTabsState('k')).toEqual({
-      tabs: [SCRIPT_JSON_TAB_ID, 'imported-metadata'],
-      activeTabId: SCRIPT_JSON_TAB_ID,
+      tabs: [ACTION_LIST_TAB_ID, SCRIPT_JSON_TAB_ID, 'imported-metadata'],
+      activeTabId: ACTION_LIST_TAB_ID,
     })
   })
 

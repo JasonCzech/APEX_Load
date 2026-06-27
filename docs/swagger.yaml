@@ -15,6 +15,52 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+  schemas:
+    ScriptDebugBreakpoint:
+      type: object
+      properties:
+        action_index:
+          type: integer
+        phase:
+          type: string
+          enum:
+            - init
+            - action
+            - teardown
+        request_index:
+          type: integer
+        step_path:
+          type: array
+          items:
+            type: string
+      required:
+        - phase
+        - action_index
+    ScriptDebugBreakpointsRequest:
+      type: object
+      properties:
+        breakpoints:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScriptDebugBreakpoint'
+      required:
+        - breakpoints
+    ScriptDebugOptionsRequest:
+      type: object
+      properties:
+        break_on_failure:
+          type: boolean
+      required:
+        - break_on_failure
+    ScriptDebugStepRequest:
+      type: object
+      properties:
+        mode:
+          type: string
+          enum:
+            - into
+            - over
+            - loop_end
 security:
   - bearerAuth: []
 paths:
@@ -4501,6 +4547,12 @@ paths:
 
         **Access Control:** Requires Authentication
       operationId: handleUpdateScriptDebugBreakpoints
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScriptDebugBreakpointsRequest'
       responses:
         "200":
           description: Successful operation
@@ -4541,6 +4593,12 @@ paths:
 
         **Access Control:** Requires Authentication
       operationId: handleUpdateScriptDebugOptions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScriptDebugOptionsRequest'
       responses:
         "200":
           description: Successful operation
@@ -4601,6 +4659,11 @@ paths:
 
         **Access Control:** Requires Authentication
       operationId: handleStepScriptDebugSession
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScriptDebugStepRequest'
       responses:
         "200":
           description: Successful operation
@@ -5233,6 +5296,12 @@ paths:
 
         **Access Control:** Requires Authentication
       operationId: handleUpdateScriptDebugBreakpoints_2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScriptDebugBreakpointsRequest'
       responses:
         "200":
           description: Successful operation
@@ -5273,6 +5342,12 @@ paths:
 
         **Access Control:** Requires Authentication
       operationId: handleUpdateScriptDebugOptions_2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScriptDebugOptionsRequest'
       responses:
         "200":
           description: Successful operation
@@ -5333,6 +5408,11 @@ paths:
 
         **Access Control:** Requires Authentication
       operationId: handleStepScriptDebugSession_2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScriptDebugStepRequest'
       responses:
         "200":
           description: Successful operation
@@ -7707,7 +7787,7 @@ paths:
         **Handler:** `handlePrometheusMetricsWithAuth`
 
         **Access Control:** Public (no authentication required)
-      operationId: handlePrometheusMetricsWithAuth_2
+      operationId: handlePrometheusMetricsWithAuth
       responses:
         "200":
           description: Successful operation

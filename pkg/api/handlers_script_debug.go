@@ -30,6 +30,18 @@ type ScriptDebugStartRequest struct {
 	Preflight       *ReplayPreflight             `json:"-"`
 }
 
+type ScriptDebugStepRequest struct {
+	Mode string `json:"mode,omitempty"`
+}
+
+type ScriptDebugBreakpointsRequest struct {
+	Breakpoints []ScriptDebugBreakpoint `json:"breakpoints"`
+}
+
+type ScriptDebugOptionsRequest struct {
+	BreakOnFailure *bool `json:"break_on_failure"`
+}
+
 func (s *Server) handleStartScriptDebugDraftScript(w http.ResponseWriter, r *http.Request) {
 	var req ScriptDebugStartRequest
 	if r.Body == nil || r.ContentLength == 0 {
@@ -207,9 +219,7 @@ func (s *Server) handleStepScriptDebugSession(w http.ResponseWriter, r *http.Req
 	// {"mode":"into"|"over"|"loop_end"} body selects the step mode.
 	mode := ""
 	if r.Body != nil {
-		var req struct {
-			Mode string `json:"mode"`
-		}
+		var req ScriptDebugStepRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
 			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 			return
@@ -242,9 +252,7 @@ func (s *Server) handleStopScriptDebugSession(w http.ResponseWriter, r *http.Req
 
 func (s *Server) handleUpdateScriptDebugBreakpoints(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.PathValue("session_id")
-	var req struct {
-		Breakpoints []ScriptDebugBreakpoint `json:"breakpoints"`
-	}
+	var req ScriptDebugBreakpointsRequest
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
@@ -259,9 +267,7 @@ func (s *Server) handleUpdateScriptDebugBreakpoints(w http.ResponseWriter, r *ht
 
 func (s *Server) handleUpdateScriptDebugOptions(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.PathValue("session_id")
-	var req struct {
-		BreakOnFailure *bool `json:"break_on_failure"`
-	}
+	var req ScriptDebugOptionsRequest
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}

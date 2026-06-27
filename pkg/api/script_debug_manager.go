@@ -76,29 +76,76 @@ type ScriptDebugSession struct {
 	// debugger can show why a branch was taken or a loop pass ran.
 	ConditionEvidence map[string]engine.ConditionEvidence `json:"condition_evidence,omitempty"`
 
-	mu           sync.RWMutex
-	cancel       context.CancelFunc
-	stepOnce     bool
-	stepMode     string        // "" | over | loop_end while a step-through is in flight
-	stepBoundary *stepBoundary // resume-through subtree for stepMode
+	mu             sync.RWMutex
+	cancel         context.CancelFunc
+	stepOnce       bool
+	stepMode       string        // "" | over | loop_end while a step-through is in flight
+	stepBoundary   *stepBoundary // resume-through subtree for stepMode
+	lastActivityAt time.Time
+	terminalAt     *time.Time
+	stateChanged   chan struct{}
 }
 
 type ScriptDebugManager struct {
-	hub        *Hub
-	sessions   map[string]*ScriptDebugSession
-	mu         sync.RWMutex
-	onComplete replayCompletionHook
+	hub           *Hub
+	sessions      map[string]*ScriptDebugSession
+	mu            sync.RWMutex
+	onComplete    replayCompletionHook
+	retention     replaySessionRetentionConfig
+	janitorCancel context.CancelFunc
 }
 
 func NewScriptDebugManager(hub *Hub) *ScriptDebugManager {
 	return &ScriptDebugManager{
-		hub:      hub,
-		sessions: make(map[string]*ScriptDebugSession),
+		hub:       hub,
+		sessions:  make(map[string]*ScriptDebugSession),
+		retention: defaultReplaySessionRetentionConfig(),
 	}
 }
 
 func (m *ScriptDebugManager) setCompletionHook(hook replayCompletionHook) {
 	m.onComplete = hook
+}
+
+func (m *ScriptDebugManager) StartJanitor(ctx context.Context) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	if m.janitorCancel != nil {
+		m.mu.Unlock()
+		return
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	m.janitorCancel = cancel
+	interval := replaySessionJanitorInterval(m.retention)
+	m.mu.Unlock()
+
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				m.PruneExpired()
+			}
+		}
+	}()
+}
+
+func (m *ScriptDebugManager) Close() {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	cancel := m.janitorCancel
+	m.janitorCancel = nil
+	m.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
 }
 
 func (m *ScriptDebugManager) Start(scriptID string, script *dsl.Script, req ScriptDebugStartRequest) *ScriptDebugSession {
@@ -135,6 +182,8 @@ func (m *ScriptDebugManager) Start(scriptID string, script *dsl.Script, req Scri
 		Breakpoints:       normalizeDebugBreakpoints(req.Breakpoints),
 		BreakOnFailure:    req.BreakOnFailure,
 		cancel:            cancel,
+		lastActivityAt:    now,
+		stateChanged:      make(chan struct{}),
 	}
 	if req.StartPaused {
 		session.Status = ScriptDebugPaused
@@ -145,7 +194,15 @@ func (m *ScriptDebugManager) Start(scriptID string, script *dsl.Script, req Scri
 	}
 
 	m.mu.Lock()
+	m.pruneExpiredLocked(now)
+	if existing := m.sessions[sessionID]; existing != nil {
+		existing.mu.Lock()
+		m.cancelSessionLocked(existing, now, "Debugger session replaced by a newer session with the same id")
+		existing.mu.Unlock()
+		delete(m.sessions, sessionID)
+	}
 	m.sessions[sessionID] = session
+	m.enforceMaxSessionsLocked(now, sessionID)
 	m.mu.Unlock()
 
 	m.broadcast("script_debug_started", session, -1, nil, nil, nil)
@@ -193,6 +250,10 @@ func (m *ScriptDebugManager) Start(scriptID string, script *dsl.Script, req Scri
 			session.Status = ScriptDebugCompleted
 			session.appendLogLocked("info", "session", "Debugger session completed", "", nil)
 		}
+		if replaySessionStatusTerminal(session.Status) && session.terminalAt == nil {
+			session.terminalAt = &completedAt
+		}
+		session.signalStateChangedLocked()
 		eventIndex := session.CurrentEventIndex
 		session.mu.Unlock()
 
@@ -204,6 +265,146 @@ func (m *ScriptDebugManager) Start(scriptID string, script *dsl.Script, req Scri
 	}()
 
 	return session.snapshot()
+}
+
+func (m *ScriptDebugManager) PruneExpired() int {
+	if m == nil {
+		return 0
+	}
+	now := m.retention.clock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.pruneExpiredLocked(now)
+}
+
+func (m *ScriptDebugManager) pruneExpiredLocked(now time.Time) int {
+	removed := 0
+	for id, session := range m.sessions {
+		session.mu.Lock()
+		m.cancelIdleRunningSessionLocked(session, now)
+		if m.shouldPruneSessionLocked(session, now) {
+			m.cancelSessionLocked(session, now, "Debugger session pruned after retention window")
+			delete(m.sessions, id)
+			removed++
+		}
+		session.mu.Unlock()
+	}
+	return removed + m.enforceMaxSessionsLocked(now, "")
+}
+
+func (m *ScriptDebugManager) enforceMaxSessionsLocked(now time.Time, protectedID string) int {
+	if m.retention.maxSessions <= 0 {
+		return 0
+	}
+	removed := 0
+	for len(m.sessions) > m.retention.maxSessions {
+		id, session := m.oldestPrunableSessionLocked(protectedID, true)
+		if session == nil {
+			id, session = m.oldestPrunableSessionLocked(protectedID, false)
+		}
+		if session == nil {
+			return removed
+		}
+		session.mu.Lock()
+		m.cancelSessionLocked(session, now, "Debugger session pruned to enforce session cap")
+		session.mu.Unlock()
+		delete(m.sessions, id)
+		removed++
+	}
+	return removed
+}
+
+func (m *ScriptDebugManager) oldestPrunableSessionLocked(protectedID string, terminalOnly bool) (string, *ScriptDebugSession) {
+	var selectedID string
+	var selected *ScriptDebugSession
+	var selectedAt time.Time
+	for id, session := range m.sessions {
+		if id == protectedID {
+			continue
+		}
+		session.mu.RLock()
+		terminal := replaySessionStatusTerminal(session.Status)
+		if terminalOnly && !terminal {
+			session.mu.RUnlock()
+			continue
+		}
+		at := sessionRetentionSortTime(session.StartedAt, session.terminalAt, session.lastActivityAt)
+		session.mu.RUnlock()
+		if selected == nil || at.Before(selectedAt) {
+			selectedID = id
+			selected = session
+			selectedAt = at
+		}
+	}
+	return selectedID, selected
+}
+
+func (m *ScriptDebugManager) cancelIdleRunningSessionLocked(session *ScriptDebugSession, now time.Time) {
+	if session == nil || m.retention.idleCancel <= 0 || session.Status != ScriptDebugRunning {
+		return
+	}
+	lastActivity := session.lastActivityAt
+	if lastActivity.IsZero() {
+		lastActivity = now
+		session.lastActivityAt = now
+	}
+	if now.Sub(lastActivity) <= m.retention.idleCancel {
+		return
+	}
+	m.cancelSessionLocked(session, now, "Debugger session stopped after running idle timeout")
+}
+
+func (m *ScriptDebugManager) shouldPruneSessionLocked(session *ScriptDebugSession, now time.Time) bool {
+	if session == nil || m.retention.terminalTTL <= 0 || !replaySessionStatusTerminal(session.Status) {
+		return false
+	}
+	terminalAt := session.terminalAt
+	if terminalAt == nil {
+		if session.CompletedAt != nil {
+			completedAt := *session.CompletedAt
+			session.terminalAt = &completedAt
+		} else {
+			terminal := now
+			session.terminalAt = &terminal
+		}
+		terminalAt = session.terminalAt
+	}
+	return terminalAt != nil && now.Sub(*terminalAt) > m.retention.terminalTTL
+}
+
+func (m *ScriptDebugManager) cancelSessionLocked(session *ScriptDebugSession, now time.Time, reason string) {
+	if session == nil {
+		return
+	}
+	if session.Status == ScriptDebugRunning || session.Status == ScriptDebugPaused {
+		session.Status = ScriptDebugStopped
+		session.stepOnce = false
+		session.clearStepLocked()
+		if reason != "" {
+			session.appendLogLocked("warn", "control", reason, "", nil)
+		}
+		if session.cancel != nil {
+			session.cancel()
+		}
+	}
+	if replaySessionStatusTerminal(session.Status) && session.terminalAt == nil {
+		terminalAt := now
+		session.terminalAt = &terminalAt
+	}
+	session.signalStateChangedLocked()
+}
+
+func sessionRetentionSortTime(startedAt *time.Time, terminalAt *time.Time, lastActivityAt time.Time) time.Time {
+	if terminalAt != nil {
+		return *terminalAt
+	}
+	if !lastActivityAt.IsZero() {
+		return lastActivityAt
+	}
+	if startedAt != nil {
+		return *startedAt
+	}
+	return time.Time{}
 }
 
 func (m *ScriptDebugManager) handleReplayProgress(session *ScriptDebugSession, event engine.ReplayProgressEvent) {
@@ -286,13 +487,19 @@ func (m *ScriptDebugManager) handleReplayProgress(session *ScriptDebugSession, e
 }
 
 func (m *ScriptDebugManager) Get(sessionID string) (*ScriptDebugSession, bool) {
-	m.mu.RLock()
+	now := m.retention.clock()
+	m.mu.Lock()
+	m.pruneExpiredLocked(now)
 	session, ok := m.sessions[sessionID]
-	m.mu.RUnlock()
+	m.mu.Unlock()
 	if !ok {
 		return nil, false
 	}
-	return session.snapshot(), true
+	session.mu.Lock()
+	session.lastActivityAt = now
+	snapshot := session.snapshotLocked()
+	session.mu.Unlock()
+	return snapshot, true
 }
 
 func (m *ScriptDebugManager) Pause(sessionID string) (*ScriptDebugSession, bool, bool) {
@@ -317,14 +524,17 @@ func (m *ScriptDebugManager) StepMode(sessionID string, mode string) (*ScriptDeb
 	if mode != scriptStepOver && mode != scriptStepLoopEnd {
 		return m.Step(sessionID)
 	}
-	m.mu.RLock()
+	now := m.retention.clock()
+	m.mu.Lock()
+	m.pruneExpiredLocked(now)
 	session, ok := m.sessions[sessionID]
-	m.mu.RUnlock()
+	m.mu.Unlock()
 	if !ok {
 		return nil, false, false
 	}
 
 	session.mu.Lock()
+	session.lastActivityAt = now
 	changed := false
 	if session.Status == ScriptDebugPaused {
 		boundary := computeStepBoundary(session.CurrentAction, mode)
@@ -342,6 +552,9 @@ func (m *ScriptDebugManager) StepMode(sessionID string, mode string) (*ScriptDeb
 			session.appendLogLocked("info", "control", stepModeLogMessage(mode), "", nil)
 		}
 		changed = true
+	}
+	if changed {
+		session.signalStateChangedLocked()
 	}
 	snapshot := session.snapshotLocked()
 	session.mu.Unlock()
@@ -364,14 +577,17 @@ func stepModeLogMessage(mode string) string {
 }
 
 func (m *ScriptDebugManager) updateStatus(sessionID string, nextStatus string, stepOnce bool, messageType string, logMessage string) (*ScriptDebugSession, bool, bool) {
-	m.mu.RLock()
+	now := m.retention.clock()
+	m.mu.Lock()
+	m.pruneExpiredLocked(now)
 	session, ok := m.sessions[sessionID]
-	m.mu.RUnlock()
+	m.mu.Unlock()
 	if !ok {
 		return nil, false, false
 	}
 
 	session.mu.Lock()
+	session.lastActivityAt = now
 	changed := false
 	switch nextStatus {
 	case ScriptDebugPaused:
@@ -391,6 +607,7 @@ func (m *ScriptDebugManager) updateStatus(sessionID string, nextStatus string, s
 	}
 	if changed {
 		session.appendLogLocked("info", "control", logMessage, "", nil)
+		session.signalStateChangedLocked()
 	}
 	snapshot := session.snapshotLocked()
 	session.mu.Unlock()
@@ -402,19 +619,27 @@ func (m *ScriptDebugManager) updateStatus(sessionID string, nextStatus string, s
 }
 
 func (m *ScriptDebugManager) Stop(sessionID string) (*ScriptDebugSession, bool) {
-	m.mu.RLock()
+	now := m.retention.clock()
+	m.mu.Lock()
+	m.pruneExpiredLocked(now)
 	session, ok := m.sessions[sessionID]
-	m.mu.RUnlock()
+	m.mu.Unlock()
 	if !ok {
 		return nil, false
 	}
 
 	session.mu.Lock()
+	session.lastActivityAt = now
 	if (session.Status == ScriptDebugRunning || session.Status == ScriptDebugPaused) && session.cancel != nil {
 		session.Status = ScriptDebugStopped
 		session.stepOnce = false
 		session.appendLogLocked("warn", "control", "Stop requested", "", nil)
 		session.cancel()
+		session.signalStateChangedLocked()
+	}
+	if replaySessionStatusTerminal(session.Status) && session.terminalAt == nil {
+		terminalAt := now
+		session.terminalAt = &terminalAt
 	}
 	snapshot := session.snapshotLocked()
 	session.mu.Unlock()
@@ -423,14 +648,17 @@ func (m *ScriptDebugManager) Stop(sessionID string) (*ScriptDebugSession, bool) 
 }
 
 func (m *ScriptDebugManager) UpdateBreakpoints(sessionID string, breakpoints []ScriptDebugBreakpoint) (*ScriptDebugSession, bool) {
-	m.mu.RLock()
+	now := m.retention.clock()
+	m.mu.Lock()
+	m.pruneExpiredLocked(now)
 	session, ok := m.sessions[sessionID]
-	m.mu.RUnlock()
+	m.mu.Unlock()
 	if !ok {
 		return nil, false
 	}
 
 	session.mu.Lock()
+	session.lastActivityAt = now
 	session.Breakpoints = normalizeDebugBreakpoints(breakpoints)
 	session.appendLogLocked("info", "breakpoint", fmt.Sprintf("Updated %d breakpoint(s)", len(session.Breakpoints)), "", nil)
 	snapshot := session.snapshotLocked()
@@ -440,14 +668,17 @@ func (m *ScriptDebugManager) UpdateBreakpoints(sessionID string, breakpoints []S
 }
 
 func (m *ScriptDebugManager) SetBreakOnFailure(sessionID string, enabled bool) (*ScriptDebugSession, bool) {
-	m.mu.RLock()
+	now := m.retention.clock()
+	m.mu.Lock()
+	m.pruneExpiredLocked(now)
 	session, ok := m.sessions[sessionID]
-	m.mu.RUnlock()
+	m.mu.Unlock()
 	if !ok {
 		return nil, false
 	}
 
 	session.mu.Lock()
+	session.lastActivityAt = now
 	session.BreakOnFailure = enabled
 	state := "disabled"
 	if enabled {
@@ -604,6 +835,23 @@ func (s *ScriptDebugSession) appendLogLocked(level string, category string, mess
 	s.RawOutput = append(s.RawOutput, line)
 }
 
+func (s *ScriptDebugSession) stateChangedChanLocked() <-chan struct{} {
+	if s.stateChanged == nil {
+		s.stateChanged = make(chan struct{})
+	}
+	return s.stateChanged
+}
+
+func (s *ScriptDebugSession) signalStateChangedLocked() {
+	ch := s.stateChanged
+	if ch == nil {
+		s.stateChanged = make(chan struct{})
+		return
+	}
+	close(ch)
+	s.stateChanged = make(chan struct{})
+}
+
 func (s *ScriptDebugSession) CurrentActionIndexForEvent(event *engine.ReplayActionEvent) int {
 	if s.CurrentAction != nil && s.CurrentAction.Phase == event.Phase && s.CurrentAction.ActionName == event.ActionName {
 		return s.CurrentAction.ActionIndex
@@ -651,6 +899,7 @@ func (c scriptDebugController) BeforeAction(ctx context.Context, action engine.R
 			}
 		}
 		status := c.session.Status
+		stateChanged := c.session.stateChangedChanLocked()
 		c.session.mu.Unlock()
 
 		if !actionBroadcasted {
@@ -667,7 +916,7 @@ func (c scriptDebugController) BeforeAction(ctx context.Context, action engine.R
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(50 * time.Millisecond):
+		case <-stateChanged:
 		}
 	}
 }
@@ -702,6 +951,7 @@ func (c scriptDebugController) AfterAction(ctx context.Context, action engine.Re
 	for {
 		c.session.mu.Lock()
 		status := c.session.Status
+		stateChanged := c.session.stateChangedChanLocked()
 		c.session.mu.Unlock()
 		if status == ScriptDebugStopped {
 			return context.Canceled
@@ -712,7 +962,7 @@ func (c scriptDebugController) AfterAction(ctx context.Context, action engine.Re
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(50 * time.Millisecond):
+		case <-stateChanged:
 		}
 	}
 }

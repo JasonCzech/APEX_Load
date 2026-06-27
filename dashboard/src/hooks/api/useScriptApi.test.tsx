@@ -89,4 +89,40 @@ describe('useScriptApi import wrappers', () => {
     await api.listAuthoringCapabilities()
     expect(request).toHaveBeenCalledWith('/scripts/authoring/capabilities')
   })
+
+  it('uses canonical replay session routes for script debugger controls', async () => {
+    await api.getScriptDebugSession('debug-1')
+    await api.pauseScriptDebugSession('debug-1')
+    await api.resumeScriptDebugSession('debug-1')
+    await api.stepScriptDebugSession('debug-1', 'over')
+    await api.updateScriptDebugBreakpoints('debug-1', [{ phase: 'action', action_index: 2 }])
+    await api.updateScriptDebugOptions('debug-1', { break_on_failure: true })
+    await api.stopScriptDebugSession('debug-1')
+
+    expect(request).toHaveBeenCalledWith('/replay/sessions/debug-1')
+    expect(request).toHaveBeenCalledWith('/replay/sessions/debug-1/pause', expect.objectContaining({ method: 'POST' }))
+    expect(request).toHaveBeenCalledWith('/replay/sessions/debug-1/resume', expect.objectContaining({ method: 'POST' }))
+    expect(request).toHaveBeenCalledWith('/replay/sessions/debug-1/step', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ mode: 'over' }),
+    }))
+    expect(request).toHaveBeenCalledWith('/replay/sessions/debug-1/breakpoints', expect.objectContaining({
+      method: 'PATCH',
+      body: JSON.stringify({ breakpoints: [{ phase: 'action', action_index: 2 }] }),
+    }))
+    expect(request).toHaveBeenCalledWith('/replay/sessions/debug-1/options', expect.objectContaining({
+      method: 'PATCH',
+      body: JSON.stringify({ break_on_failure: true }),
+    }))
+    expect(request).toHaveBeenCalledWith('/replay/sessions/debug-1/stop', expect.objectContaining({ method: 'POST' }))
+  })
+
+  it('exports script debugger sessions from canonical replay routes', async () => {
+    const text = vi.fn().mockResolvedValue('debug log')
+    ;(apiFetch as Mock).mockResolvedValueOnce({ ok: true, text })
+
+    await expect(api.exportScriptDebugSession('debug-1', 'log')).resolves.toBe('debug log')
+
+    expect(apiFetch).toHaveBeenCalledWith('/replay/sessions/debug-1/export?format=log')
+  })
 })

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { useObjectRepositoryApi } from '../hooks/api/useObjectRepositoryApi'
 import { ApiError } from '../hooks/apiClient'
@@ -22,6 +22,7 @@ function formatTimestamp(value?: string): string {
 // script's captured selectors.
 export default function ObjectRepositoryPanel({ projectId, canManage = false }: Props) {
   const api = useObjectRepositoryApi()
+  const mountedRef = useRef(false)
   const [repositories, setRepositories] = useState<ObjectRepository[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -32,37 +33,50 @@ export default function ObjectRepositoryPanel({ projectId, canManage = false }: 
   const [deleteTarget, setDeleteTarget] = useState<ObjectRepository | null>(null)
   const [busy, setBusy] = useState(false)
 
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
+
   const load = useCallback(async () => {
     if (!projectId) {
-      setRepositories([])
+      if (mountedRef.current) setRepositories([])
       return
     }
+    if (!mountedRef.current) return
     setLoading(true)
     setError(null)
     try {
       const res = await api.listObjectRepositories({ project_id: projectId })
+      if (!mountedRef.current) return
       setRepositories(res.object_repositories || [])
     } catch (err) {
+      if (!mountedRef.current) return
       setError(err instanceof ApiError ? err.message : 'Failed to load object repositories.')
       setRepositories([])
     } finally {
-      setLoading(false)
+      if (mountedRef.current) setLoading(false)
     }
   }, [api, projectId])
 
   useEffect(() => { void load() }, [load])
 
   const runAction = async (action: () => Promise<unknown>, onDone?: () => void) => {
+    if (!mountedRef.current) return
     setBusy(true)
     setError(null)
     try {
       await action()
+      if (!mountedRef.current) return
       onDone?.()
       await load()
     } catch (err) {
+      if (!mountedRef.current) return
       setError(err instanceof ApiError ? err.message : 'Action failed.')
     } finally {
-      setBusy(false)
+      if (mountedRef.current) setBusy(false)
     }
   }
 

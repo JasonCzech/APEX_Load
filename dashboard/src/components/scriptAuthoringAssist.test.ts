@@ -12,6 +12,7 @@ import {
   buildScriptRepairSuggestions,
   collectAuthoringIssues,
   groupIssuesByAction,
+  groupIssuesByPhaseAction,
   normalizeImportedActionNames,
 } from './scriptAuthoringAssist'
 
@@ -70,6 +71,72 @@ describe('scriptAuthoringAssist', () => {
     expect(issues.some((issue) => issue.message.includes('missing a name or expression'))).toBe(true)
     expect(grouped[1].some((issue) => issue.message.includes('target is required'))).toBe(true)
     expect(grouped[1].some((issue) => issue.message.includes('duplicated'))).toBe(true)
+  })
+
+  it('collects init and teardown lint issues with phase metadata', () => {
+    const script: ScriptDefinition = {
+      ...importedScript,
+      init: [
+        {
+          name: '',
+          type: 'GET',
+          method: 'GET',
+          target: '',
+          headers: {},
+          body: '{"token":"{{param.setup_token}}"}',
+          extractors: [],
+          assertions: [],
+        },
+      ],
+      actions: [
+        {
+          name: 'Browse',
+          type: 'GET',
+          method: 'GET',
+          target: '/browse',
+          headers: {},
+          body: '',
+          extractors: [],
+          assertions: [],
+        },
+      ],
+      teardown: [
+        {
+          name: 'Cleanup',
+          type: 'GET',
+          method: 'GET',
+          target: '/sessions/{{data.cleanup.id}}',
+          headers: {},
+          body: '',
+          extractors: [],
+          assertions: [],
+        },
+      ],
+      parameters: [],
+      data_sources: [],
+    }
+
+    const issues = collectAuthoringIssues(script)
+    const grouped = groupIssuesByPhaseAction(issues, script)
+
+    expect(grouped.init[0].some((issue) => issue.phase === 'init' && issue.message === 'Action name is required.')).toBe(true)
+    expect(grouped.init[0].some((issue) => issue.phase === 'init' && issue.message.includes('target is required'))).toBe(true)
+    expect(grouped.init[0].some((issue) => issue.phase === 'init' && issue.message.includes('parameter "setup_token"'))).toBe(true)
+    expect(grouped.teardown[0].some((issue) => issue.phase === 'teardown' && issue.message.includes('data source "cleanup"'))).toBe(true)
+    expect(groupIssuesByAction(issues, script.actions.length)[0].some((issue) => issue.phase === 'init' || issue.phase === 'teardown')).toBe(false)
+  })
+
+  it('flags duplicate action names across lifecycle phases', () => {
+    const script: ScriptDefinition = {
+      ...importedScript,
+      init: [{ name: 'Login', type: 'GET', method: 'GET', target: '/init' }],
+      actions: [{ name: 'login', type: 'GET', method: 'GET', target: '/main' }],
+      teardown: [{ name: 'LOGIN', type: 'GET', method: 'GET', target: '/teardown' }],
+    } as ScriptDefinition
+
+    const issues = collectAuthoringIssues(script).filter((issue) => issue.message.includes('duplicated'))
+
+    expect(issues.map((issue) => issue.phase).sort()).toEqual(['action', 'init', 'teardown'])
   })
 
   it('does not flag backend-deduped action names as duplicates', () => {

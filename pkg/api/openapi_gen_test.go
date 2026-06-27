@@ -2,13 +2,17 @@ package api
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"testing"
 
 	yaml "gopkg.in/yaml.v3"
 )
 
-const swaggerOutputPath = "../../docs/swagger.yaml"
+const (
+	swaggerOutputPath = "../../docs/swagger.yaml"
+	catalogOutputPath = "../../docs/api-endpoint-catalog.json"
+)
 
 // TestSwaggerYAMLIsFresh enforces that docs/swagger.yaml is the exact output of the
 // generator over the current routing layer. If routes change, run:
@@ -25,6 +29,22 @@ func TestSwaggerYAMLIsFresh(t *testing.T) {
 	}
 	if !bytes.Equal(got, want) {
 		t.Fatalf("%s is stale; run `go generate ./pkg/api` to regenerate it", swaggerOutputPath)
+	}
+}
+
+// TestEndpointCatalogJSONIsFresh enforces that docs/api-endpoint-catalog.json is
+// regenerated with the OpenAPI spec after route changes.
+func TestEndpointCatalogJSONIsFresh(t *testing.T) {
+	got, err := GenerateEndpointCatalogJSON("server.go")
+	if err != nil {
+		t.Fatalf("GenerateEndpointCatalogJSON: %v", err)
+	}
+	want, err := os.ReadFile(catalogOutputPath)
+	if err != nil {
+		t.Fatalf("read %s: %v", catalogOutputPath, err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("%s is stale; run `go generate ./pkg/api` to regenerate it", catalogOutputPath)
 	}
 }
 
@@ -67,6 +87,69 @@ func TestGeneratedSwaggerIsValid(t *testing.T) {
 				t.Errorf("duplicate operationId %q on %s %s and %s", op.OperationID, method, path, prev)
 			}
 			seenOpIDs[op.OperationID] = method + " " + path
+		}
+	}
+}
+
+func TestGeneratedEndpointCatalogIsValid(t *testing.T) {
+	data, err := GenerateEndpointCatalogJSON("server.go")
+	if err != nil {
+		t.Fatalf("GenerateEndpointCatalogJSON: %v", err)
+	}
+
+	var catalog endpointCatalog
+	if err := json.Unmarshal(data, &catalog); err != nil {
+		t.Fatalf("generated endpoint catalog is not valid JSON: %v", err)
+	}
+	if catalog.Version != 1 {
+		t.Fatalf("catalog version = %d, want 1", catalog.Version)
+	}
+	if catalog.Source != "server.go" {
+		t.Fatalf("catalog source = %q, want server.go", catalog.Source)
+	}
+	if len(catalog.Routes) == 0 {
+		t.Fatal("generated endpoint catalog has no routes")
+	}
+
+	seen := map[string]bool{}
+	for _, route := range catalog.Routes {
+		key := route.Method + " " + route.Path
+		if route.Method == "" {
+			t.Errorf("%s: missing method", key)
+		}
+		if route.Path == "" {
+			t.Errorf("%s: missing path", key)
+		}
+		if route.OperationID == "" {
+			t.Errorf("%s: missing operationId", key)
+		}
+		if route.Summary == "" {
+			t.Errorf("%s: missing summary", key)
+		}
+		if route.Category == "" {
+			t.Errorf("%s: missing category", key)
+		}
+		if route.Access == "" {
+			t.Errorf("%s: missing access text", key)
+		}
+		if route.Public == route.Authenticated {
+			t.Errorf("%s: public/authenticated flags should be inverse, got public=%t authenticated=%t", key, route.Public, route.Authenticated)
+		}
+		if seen[key] {
+			t.Errorf("duplicate catalog route %s", key)
+		}
+		seen[key] = true
+	}
+
+	for _, required := range []string{
+		"GET /api/v1/execution-plans",
+		"GET /api/v1/capacity/timeslots",
+		"POST /api/v1/auth/users/onboard",
+		"POST /api/v1/auth/users/{id}/revoke-sessions",
+		"GET /api/v1/downloads/recording-agent/latest",
+	} {
+		if !seen[required] {
+			t.Errorf("catalog missing required route %s", required)
 		}
 	}
 }

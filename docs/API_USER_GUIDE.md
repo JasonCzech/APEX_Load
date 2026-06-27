@@ -1,6 +1,8 @@
 # APEX Load API User Guide
 
-This guide is for engineers and operators who want to automate APEX Load from CI/CD, external release systems, or integration scripts. It focuses on the public REST and WebSocket API served by the controller.
+This guide is for engineers and operators who want to automate APEX Load from CI/CD, external release systems, or integration scripts. It focuses on workflow guidance for the public REST and WebSocket API served by the controller.
+
+For the exhaustive, current route list, use the dashboard **Swagger** page or **API Guide → Endpoint Map**. Those views are generated from the controller route catalog; this repository guide is hand-maintained prose for common automation flows and operational context.
 
 Last reviewed against `pkg/api/server.go` on June 8, 2026 (updated for multi-comparison, goal-oriented controls, and live error evidence).
 

@@ -4,6 +4,7 @@ import { type AuthoringComponent, type StoredScenario, type StoredScript } from 
 import { type ScriptDefinition } from '../types/scripts'
 import { useApi } from '../hooks/useApi'
 import { composeComponentDraft, createApiDraft, createDatabaseDraft, createGrpcDraft, createJavaHttpDraft, createJmsDraft, createKafkaDraft, createNetworkDraft, createSoapDraft, createWebDraft, createWebSocketDraft } from './scriptDraftFactories'
+import { getErrorMessage } from '../utils/errorUtils'
 
 export type ScriptsAuthoringSubView = 'list' | 'create-options' | 'create' | 'edit' | 'import' | 'jmeter-import' | 'recorder' | 'sample' | 'protocol-import' | 'oracle-review' | 'recorder-import' | 'java-http-import' | 'devweb-import' | 'har-import' | 'salesforce-import' | 'openapi-import' | 'raml-import' | 'postman-import' | 'wsdl-import' | 'asyncapi-import'
 
@@ -325,8 +326,18 @@ export function useScriptsAuthoringState({
         importLauncher: null,
         importMode: null,
       })
-    } catch {
-      // Ignore edit-load failures to preserve existing page behavior.
+    } catch (error) {
+      setAuthoringState({
+        subView: 'list',
+        editingId: null,
+        editingScript: null,
+        draftScript: null,
+        draftEditorFocus: null,
+        draftReturnTarget: null,
+        authoringNotice: getErrorMessage(error, 'Unable to load script for editing.'),
+        importLauncher: null,
+        importMode: null,
+      })
     }
   }, [api])
 

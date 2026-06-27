@@ -12,11 +12,13 @@ import {
 import { dslActionNeedsExplicitTarget } from './dslActionCatalog'
 
 export type AuthoringIssueSeverity = 'error' | 'warning'
+export type AuthoringIssuePhase = 'init' | 'action' | 'teardown'
 
 export interface AuthoringIssue {
   id: string
   severity: AuthoringIssueSeverity
   message: string
+  phase?: AuthoringIssuePhase
   actionIndex?: number
 }
 
@@ -87,6 +89,24 @@ function normalizeTokenName(value: string): string {
 
 function pushIssue(issues: AuthoringIssue[], issue: AuthoringIssue) {
   issues.push(issue)
+}
+
+function actionIssuePhasePrefix(phase: AuthoringIssuePhase): string {
+  return phase === 'action' ? 'action' : phase
+}
+
+function scriptActionEntries(script: ScriptDefinition): Array<{ phase: AuthoringIssuePhase; actionIndex: number; action: ScriptActionDefinition }> {
+  const entries: Array<{ phase: AuthoringIssuePhase; actionIndex: number; action: ScriptActionDefinition }> = []
+  ;([
+    ['init', script.init || []],
+    ['action', script.actions || []],
+    ['teardown', script.teardown || []],
+  ] as Array<[AuthoringIssuePhase, ScriptActionDefinition[]]>).forEach(([phase, actions]) => {
+    actions.forEach((action, actionIndex) => {
+      entries.push({ phase, actionIndex, action })
+    })
+  })
+  return entries
 }
 
 function collectActionStrings(action: ScriptActionDefinition): string[] {
@@ -169,7 +189,7 @@ function legacyActionNeedsExplicitTarget(actionType: string): boolean {
 }
 
 function actionNeedsExplicitTarget(action: ScriptActionDefinition): boolean {
-  return dslActionNeedsExplicitTarget(action.type, legacyActionNeedsExplicitTarget)
+  return dslActionNeedsExplicitTarget(action.type || '', legacyActionNeedsExplicitTarget)
 }
 
 function deepMerge(base: Record<string, unknown>, patch?: Record<string, unknown>): Record<string, unknown> {
@@ -209,7 +229,7 @@ function collectMissingDataReferences(script: ScriptDefinition): Map<string, Set
   const knownSources = normalizedNames(script.data_sources || [])
   const missing = new Map<string, Set<string>>()
 
-  script.actions.forEach(action => {
+  scriptActionEntries(script).forEach(({ action }) => {
     collectActionStrings(action).forEach(value => {
       for (const match of value.matchAll(DATA_TOKEN)) {
         const sourceName = match[1] || ''
@@ -274,9 +294,10 @@ function ensureListParameter(parameters: ScriptParameterDefinition[], name: stri
 // a control_loop needs a positive count, a condition, or a for_each source; a
 // control_if needs then-steps or else-steps. Nested control blocks are checked
 // recursively and reported against the enclosing top-level action.
-function collectControlFlowIssues(action: ScriptActionDefinition, actionIndex: number, issues: AuthoringIssue[]): void {
+function collectControlFlowIssues(action: ScriptActionDefinition, phase: AuthoringIssuePhase, actionIndex: number, issues: AuthoringIssue[]): void {
   const conditionPresent = (condition?: ScriptCondition): boolean =>
     !!condition && (!!(condition.expr || '').trim() || !!(condition.left || '').trim())
+  const phasePrefix = actionIssuePhasePrefix(phase)
 
   const recurse = (node: ScriptActionDefinition, pathKey: string, pathLabel: string): void => {
     const control = node.control || {}
@@ -285,16 +306,18 @@ function collectControlFlowIssues(action: ScriptActionDefinition, actionIndex: n
       const hasCount = (control.count ?? 0) > 0
       if (!hasForEachSource && !hasCount && !conditionPresent(control.condition)) {
         pushIssue(issues, {
-          id: `action:${actionIndex}:control:${pathKey}:loop-mode`,
+          id: `${phasePrefix}:${actionIndex}:control:${pathKey}:loop-mode`,
           severity: 'error',
+          phase,
           actionIndex,
           message: `${pathLabel}control_loop needs a count, a condition, or a for-each data source.`,
         })
       }
       if (control.for_each && !(control.for_each.source || '').trim()) {
         pushIssue(issues, {
-          id: `action:${actionIndex}:control:${pathKey}:foreach-source`,
+          id: `${phasePrefix}:${actionIndex}:control:${pathKey}:foreach-source`,
           severity: 'error',
+          phase,
           actionIndex,
           message: `${pathLabel}for-each loop requires a data source.`,
         })
@@ -304,8 +327,9 @@ function collectControlFlowIssues(action: ScriptActionDefinition, actionIndex: n
       const elseCount = (control.else || []).length
       if (stepCount === 0 && elseCount === 0) {
         pushIssue(issues, {
-          id: `action:${actionIndex}:control:${pathKey}:if-empty`,
+          id: `${phasePrefix}:${actionIndex}:control:${pathKey}:if-empty`,
           severity: 'error',
+          phase,
           actionIndex,
           message: `${pathLabel}control_if needs then-steps or else-steps.`,
         })
@@ -328,6 +352,7 @@ export function collectAuthoringIssues(script: ScriptDefinition): AuthoringIssue
   const issues: AuthoringIssue[] = []
   const parameterNames = new Set((script.parameters || []).map((parameter) => normalizeTokenName(parameter.name || '')).filter(Boolean))
   const dataSources = new Set((script.data_sources || []).map((source) => normalizeTokenName(source.name || '')).filter(Boolean))
+  const actionEntries = scriptActionEntries(script)
 
   if (!script.name.trim()) {
     pushIssue(issues, {
@@ -353,72 +378,82 @@ export function collectAuthoringIssues(script: ScriptDefinition): AuthoringIssue
     })
   }
 
-  const seenActionNames = new Map<string, number[]>()
-  script.actions.forEach((action, actionIndex) => {
+  const seenActionNames = new Map<string, Array<{ phase: AuthoringIssuePhase; actionIndex: number; action: ScriptActionDefinition }>>()
+  actionEntries.forEach(({ phase, actionIndex, action }) => {
     const normalizedName = normalizeTokenName(action.name || '')
     if (normalizedName) {
-      seenActionNames.set(normalizedName, [...(seenActionNames.get(normalizedName) || []), actionIndex])
+      seenActionNames.set(normalizedName, [...(seenActionNames.get(normalizedName) || []), { phase, actionIndex, action }])
     }
   })
 
-  script.actions.forEach((action, actionIndex) => {
-    if (!action.name.trim()) {
+  actionEntries.forEach(({ phase, actionIndex, action }) => {
+    const phasePrefix = actionIssuePhasePrefix(phase)
+    const actionName = action.name || ''
+    const actionTarget = action.target || ''
+    const actionType = action.type || ''
+    if (!actionName.trim()) {
       pushIssue(issues, {
-        id: `action:${actionIndex}:name`,
+        id: `${phasePrefix}:${actionIndex}:name`,
         severity: 'error',
+        phase,
         actionIndex,
         message: 'Action name is required.',
       })
     }
 
-    if (actionNeedsExplicitTarget(action) && !action.target.trim()) {
+    if (actionNeedsExplicitTarget(action) && !actionTarget.trim()) {
       pushIssue(issues, {
-        id: `action:${actionIndex}:target`,
+        id: `${phasePrefix}:${actionIndex}:target`,
         severity: 'error',
+        phase,
         actionIndex,
         message: 'Action target is required for this protocol step.',
       })
     }
 
-    if (action.type === 'browser_fill' || action.type === 'browser_select') {
+    if (actionType === 'browser_fill' || actionType === 'browser_select') {
       if (!String(action.value || '').trim()) {
         pushIssue(issues, {
-          id: `action:${actionIndex}:value`,
+          id: `${phasePrefix}:${actionIndex}:value`,
           severity: 'warning',
+          phase,
           actionIndex,
-          message: `${action.type} is missing a value.`,
+          message: `${actionType} is missing a value.`,
         })
       }
     }
 
-    if (action.type.startsWith('browser_') && action.type !== 'browser_navigate' && action.type !== 'browser_screenshot' && !action.selector?.trim() && !action.target.trim()) {
+    if (actionType.startsWith('browser_') && actionType !== 'browser_navigate' && actionType !== 'browser_screenshot' && !action.selector?.trim() && !actionTarget.trim()) {
       pushIssue(issues, {
-        id: `action:${actionIndex}:selector`,
+        id: `${phasePrefix}:${actionIndex}:selector`,
         severity: 'error',
+        phase,
         actionIndex,
-        message: `${action.type} needs a selector or target.`,
+        message: `${actionType} needs a selector or target.`,
       })
     }
 
     ;(action.extractors || []).forEach((extractor, extractorIndex) => {
       if (!extractor.name.trim() || !extractor.expression.trim()) {
         pushIssue(issues, {
-          id: `action:${actionIndex}:extractor:${extractorIndex}`,
+          id: `${phasePrefix}:${actionIndex}:extractor:${extractorIndex}`,
           severity: 'warning',
+          phase,
           actionIndex,
           message: `Extractor ${extractorIndex + 1} is missing a name or expression.`,
         })
       }
     })
 
-    collectControlFlowIssues(action, actionIndex, issues)
+    collectControlFlowIssues(action, phase, actionIndex, issues)
 
     for (const value of collectActionStrings(action)) {
       for (const match of value.matchAll(PARAM_TOKEN)) {
         if (!parameterNames.has(normalizeTokenName(match[1] || ''))) {
           pushIssue(issues, {
-            id: `action:${actionIndex}:param:${match[1]}`,
+            id: `${phasePrefix}:${actionIndex}:param:${match[1]}`,
             severity: 'error',
+            phase,
             actionIndex,
             message: `Referenced parameter "${match[1]}" is not defined.`,
           })
@@ -428,8 +463,9 @@ export function collectAuthoringIssues(script: ScriptDefinition): AuthoringIssue
       for (const match of value.matchAll(DATA_TOKEN)) {
         if (!dataSources.has(normalizeTokenName(match[1] || ''))) {
           pushIssue(issues, {
-            id: `action:${actionIndex}:data:${match[1]}`,
+            id: `${phasePrefix}:${actionIndex}:data:${match[1]}`,
             severity: 'warning',
+            phase,
             actionIndex,
             message: `Referenced data source "${match[1]}" is not defined.`,
           })
@@ -438,14 +474,16 @@ export function collectAuthoringIssues(script: ScriptDefinition): AuthoringIssue
     }
   })
 
-  for (const [name, actionIndexes] of seenActionNames.entries()) {
-    if (actionIndexes.length <= 1) continue
-    actionIndexes.forEach((actionIndex) => {
+  for (const [name, entries] of seenActionNames.entries()) {
+    if (entries.length <= 1) continue
+    entries.forEach(({ phase, actionIndex, action }) => {
+      const phasePrefix = actionIssuePhasePrefix(phase)
       pushIssue(issues, {
-        id: `action:${actionIndex}:duplicate-name:${name}`,
+        id: `${phasePrefix}:${actionIndex}:duplicate-name:${name}`,
         severity: 'warning',
+        phase,
         actionIndex,
-        message: `Action name "${script.actions[actionIndex]?.name || name}" is duplicated.`,
+        message: `Action name "${action.name || name}" is duplicated.`,
       })
     })
   }
@@ -539,9 +577,26 @@ export function applyAuthoringComponentToScript(
 export function groupIssuesByAction(issues: AuthoringIssue[], actionCount: number): AuthoringIssue[][] {
   const grouped = Array.from({ length: actionCount }, () => [] as AuthoringIssue[])
   issues.forEach((issue) => {
-    if (typeof issue.actionIndex === 'number' && issue.actionIndex >= 0 && issue.actionIndex < grouped.length) {
+    const phase = issue.phase || 'action'
+    if (phase === 'action' && typeof issue.actionIndex === 'number' && issue.actionIndex >= 0 && issue.actionIndex < grouped.length) {
       grouped[issue.actionIndex].push(issue)
     }
+  })
+  return grouped
+}
+
+export type AuthoringIssueBucketsByPhase = Record<AuthoringIssuePhase, AuthoringIssue[][]>
+
+export function groupIssuesByPhaseAction(issues: AuthoringIssue[], script: Pick<ScriptDefinition, 'init' | 'actions' | 'teardown'>): AuthoringIssueBucketsByPhase {
+  const grouped: AuthoringIssueBucketsByPhase = {
+    init: Array.from({ length: script.init?.length || 0 }, () => [] as AuthoringIssue[]),
+    action: Array.from({ length: script.actions?.length || 0 }, () => [] as AuthoringIssue[]),
+    teardown: Array.from({ length: script.teardown?.length || 0 }, () => [] as AuthoringIssue[]),
+  }
+  issues.forEach((issue) => {
+    const phase = issue.phase || 'action'
+    if (typeof issue.actionIndex !== 'number' || issue.actionIndex < 0) return
+    grouped[phase]?.[issue.actionIndex]?.push(issue)
   })
   return grouped
 }

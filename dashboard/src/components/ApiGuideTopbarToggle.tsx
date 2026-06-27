@@ -26,13 +26,28 @@ export function ApiGuideTopbarToggle({ active, onContentPageChange }: ApiGuideTo
   }, [onContentPageChange])
 
   return (
-    <PageViewToggle
-      value={active}
-      ariaLabel="API guide sections"
-      className="api-guide-section-toggle new-test-view-toggle topbar-page-section-toggle"
-      options={API_GUIDE_TOGGLE_OPTIONS}
-      onChange={handleChange}
-    />
+    <div className="api-guide-section-navigation">
+      <PageViewToggle
+        value={active}
+        ariaLabel="API guide sections"
+        className="api-guide-section-toggle new-test-view-toggle topbar-page-section-toggle"
+        options={API_GUIDE_TOGGLE_OPTIONS}
+        onChange={handleChange}
+      />
+      <label className="api-guide-section-select-label">
+        <span>API guide section</span>
+        <select
+          className="api-guide-section-select"
+          value={active}
+          aria-label="API guide section"
+          onChange={event => handleChange(event.target.value as ApiGuideToggleID)}
+        >
+          {API_GUIDE_TOGGLE_OPTIONS.map(option => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
+        </select>
+      </label>
+    </div>
   )
 }
 

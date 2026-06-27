@@ -965,6 +965,7 @@ func (s *Server) Start() error {
 	}
 	// Start websocket broadcast loop before serving HTTP requests.
 	go s.hub.Run()
+	s.startReplayRetentionJanitors()
 	s.startCacheFanout()
 	s.startGeneratorDiscovery()
 
@@ -994,6 +995,7 @@ func (s *Server) Start() error {
 
 func (s *Server) startBridge() error {
 	go s.hub.Run()
+	s.startReplayRetentionJanitors()
 	listener, err := net.Listen("tcp", s.httpServer.Addr)
 	if err != nil {
 		return err
@@ -1004,6 +1006,18 @@ func (s *Server) startBridge() error {
 		return err
 	}
 	return nil
+}
+
+func (s *Server) startReplayRetentionJanitors() {
+	if s == nil {
+		return
+	}
+	if s.browserReplay != nil {
+		s.browserReplay.StartJanitor(context.Background())
+	}
+	if s.scriptDebug != nil {
+		s.scriptDebug.StartJanitor(context.Background())
+	}
 }
 
 // startMetricsListener serves GET /metrics on its own listener when
@@ -1138,6 +1152,12 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	}
 	if s.hub != nil {
 		s.hub.Stop()
+	}
+	if s.browserReplay != nil {
+		s.browserReplay.Close()
+	}
+	if s.scriptDebug != nil {
+		s.scriptDebug.Close()
 	}
 	if s.recorder != nil {
 		s.recorder.StopProxy()

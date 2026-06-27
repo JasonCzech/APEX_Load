@@ -169,6 +169,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const [scriptsTopbarState, setScriptsTopbarState] = useState<{ subView: ScriptsAuthoringSubView; editingId: string | null } | null>(null)
   const [effectiveAccessResources, setEffectiveAccessResources] = useState<import('./types').DashboardAuthEffectiveAccessResource[]>([])
   const [effectiveAccessLoaded, setEffectiveAccessLoaded] = useState(false)
+  const [effectiveAccessError, setEffectiveAccessError] = useState(false)
   const [domains, setDomains] = useState<import('./types').Domain[]>([])
   const [activeDomain, setActiveDomainState] = useState<import('./types').Domain | null>(null)
   const [applicationRepository, setApplicationRepository] = useState<import('./types').ApplicationRepository | null>(null)
@@ -491,6 +492,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
     let cancelled = false
     const loadEffectiveAccess = async () => {
       setEffectiveAccessLoaded(false)
+      setEffectiveAccessError(false)
       try {
         const response = await getAuthEffectiveAccess(activeProject?.id, {
           domain_id: activeDomain?.id,
@@ -502,6 +504,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
       } catch {
         if (!cancelled) {
           setEffectiveAccessResources([])
+          setEffectiveAccessError(true)
         }
       } finally {
         if (!cancelled) {
@@ -852,8 +855,22 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
           {view.page === 'monitoring' && <MonitoringPage connectionState={connectionState} telemetryDiagnostics={telemetryDiagnostics} onSelectTest={navigateToTest} canManageSystem={canManageSystem} onScheduleForDate={navigateToScheduleForDate} fleetEventSignal={fleetEventSignal} />}
           {view.page === 'fleet' && <MonitoringPage connectionState={connectionState} telemetryDiagnostics={telemetryDiagnostics} onSelectTest={navigateToTest} canManageSystem={canManageSystem} onScheduleForDate={navigateToScheduleForDate} initialCategoryId="fleet" fleetEventSignal={fleetEventSignal} />}
           {view.page === 'schedules' && <MonitoringPage connectionState={connectionState} telemetryDiagnostics={telemetryDiagnostics} onSelectTest={navigateToTest} canManageSystem={canManageSystem} onScheduleForDate={navigateToScheduleForDate} initialCategoryId="schedules" fleetEventSignal={fleetEventSignal} />}
-          {view.page === 'docs' && <ApiGuidePage activePage={view.guidePage} onNavigate={handleNavigate} effectiveAccessResources={effectiveAccessResources} />}
-          {view.page === 'swagger' && <SwaggerDocsPage />}
+          {view.page === 'docs' && (
+            <ApiGuidePage
+              activePage={view.guidePage}
+              onNavigate={handleNavigate}
+              effectiveAccessResources={effectiveAccessResources}
+              effectiveAccessLoaded={effectiveAccessLoaded}
+              effectiveAccessError={effectiveAccessError}
+            />
+          )}
+          {view.page === 'swagger' && (
+            <SwaggerDocsPage
+              effectiveAccessResources={effectiveAccessResources}
+              effectiveAccessLoaded={effectiveAccessLoaded}
+              effectiveAccessError={effectiveAccessError}
+            />
+          )}
           {view.page === 'repository-guide' && <RepositoryGuidePage />}
           {view.page === 'repository' && (
             <ApplicationRepositoryPage

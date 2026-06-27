@@ -82,6 +82,43 @@ func TestHandleGetBrowserReplaySessionNotFound(t *testing.T) {
 	}
 }
 
+func TestHandleGetBrowserReplaySessionDoesNotRecordStopAudit(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+	server := NewServer(ServerConfig{Store: store, Addr: ":8080"})
+	script := &dsl.Script{
+		Name:      "Browser Draft",
+		ProjectID: "project-browser-audit",
+		Version:   "1.0.0",
+		Protocol:  "browser",
+		Config:    dsl.ScriptConfig{Browser: dsl.BrowserConfig{Engine: "chromium"}},
+		Actions:   []dsl.Action{{Name: "Capture", Type: "browser_screenshot"}},
+	}
+	session := server.browserReplay.Start("", script, BrowserReplayStartRequest{
+		ReplaySessionID: "browser-get-audit",
+		StartPaused:     true,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/browser-replay/sessions/"+session.ID, nil)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	events, err := store.ListAuditEvents(storage.AuditEventFilter{Action: "browser_replay.session.stop", Limit: 10})
+	if err != nil {
+		t.Fatalf("ListAuditEvents returned error: %v", err)
+	}
+	if len(events) != 0 {
+		t.Fatalf("stop audit event count = %d, want 0", len(events))
+	}
+	_, _ = server.browserReplay.Stop(session.ID)
+}
+
 func TestHandleStartBrowserReplayRejectsNonBrowserScript(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	stored := server.runner.StoreScript(&dsl.Script{
@@ -216,6 +253,141 @@ func TestBrowserReplaySessionSnapshotReturnsDetachedCopy(t *testing.T) {
 	if snapshot.FinalReport.Events[0].ClientMetrics == nil || snapshot.FinalReport.Events[0].ClientMetrics.LCPMs != 240 {
 		t.Fatalf("snapshot report client metrics = %#v, want detached LCP 240", snapshot.FinalReport.Events[0].ClientMetrics)
 	}
+}
+
+func TestBrowserReplayManagerPrunesTerminalSessions(t *testing.T) {
+	now := time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC)
+	terminalAt := now.Add(-2 * time.Hour)
+	manager := NewBrowserReplayManager(nil)
+	manager.retention = replaySessionRetentionConfig{
+		terminalTTL: time.Hour,
+		idleCancel:  time.Hour,
+		maxSessions: 250,
+		now:         func() time.Time { return now },
+	}
+	manager.sessions["old"] = &BrowserReplaySession{
+		ID:             "old",
+		Status:         BrowserReplayCompleted,
+		StartedAt:      &terminalAt,
+		CompletedAt:    &terminalAt,
+		lastActivityAt: terminalAt,
+		terminalAt:     &terminalAt,
+	}
+
+	if removed := manager.PruneExpired(); removed != 1 {
+		t.Fatalf("removed = %d, want 1", removed)
+	}
+	if _, ok := manager.Get("old"); ok {
+		t.Fatal("expected old terminal session to be pruned")
+	}
+}
+
+func TestBrowserReplayManagerSessionCapEvictsOldestTerminal(t *testing.T) {
+	now := time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC)
+	manager := NewBrowserReplayManager(nil)
+	manager.retention = replaySessionRetentionConfig{
+		terminalTTL: time.Hour,
+		idleCancel:  time.Hour,
+		maxSessions: 2,
+		now:         func() time.Time { return now },
+	}
+	for i, id := range []string{"oldest", "middle", "newest"} {
+		terminalAt := now.Add(-time.Duration(3-i) * time.Minute)
+		manager.sessions[id] = &BrowserReplaySession{
+			ID:             id,
+			Status:         BrowserReplayCompleted,
+			StartedAt:      &terminalAt,
+			CompletedAt:    &terminalAt,
+			lastActivityAt: terminalAt,
+			terminalAt:     &terminalAt,
+		}
+	}
+
+	if removed := manager.PruneExpired(); removed != 1 {
+		t.Fatalf("removed = %d, want 1", removed)
+	}
+	if _, ok := manager.sessions["oldest"]; ok {
+		t.Fatal("expected oldest terminal session to be evicted")
+	}
+	if len(manager.sessions) != 2 {
+		t.Fatalf("session count = %d, want 2", len(manager.sessions))
+	}
+}
+
+func TestBrowserReplayManagerCancelsIdleRunningSession(t *testing.T) {
+	now := time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC)
+	lastActivity := now.Add(-2 * time.Minute)
+	cancelled := make(chan struct{})
+	manager := NewBrowserReplayManager(nil)
+	manager.retention = replaySessionRetentionConfig{
+		terminalTTL: time.Hour,
+		idleCancel:  time.Minute,
+		maxSessions: 250,
+		now:         func() time.Time { return now },
+	}
+	manager.sessions["idle"] = &BrowserReplaySession{
+		ID:             "idle",
+		Status:         BrowserReplayRunning,
+		StartedAt:      &lastActivity,
+		lastActivityAt: lastActivity,
+		cancel:         func() { close(cancelled) },
+	}
+
+	if removed := manager.PruneExpired(); removed != 0 {
+		t.Fatalf("removed = %d, want 0", removed)
+	}
+	select {
+	case <-cancelled:
+	default:
+		t.Fatal("expected idle session cancel function to be called")
+	}
+	session, ok := manager.Get("idle")
+	if !ok {
+		t.Fatal("idle session should remain fetchable until terminal TTL expires")
+	}
+	if session.Status != BrowserReplayStopped {
+		t.Fatalf("status = %q, want stopped", session.Status)
+	}
+}
+
+func TestBrowserReplayManagerStartReusedIDCancelsPriorSession(t *testing.T) {
+	now := time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC)
+	cancelled := make(chan struct{})
+	manager := NewBrowserReplayManager(nil)
+	manager.retention = replaySessionRetentionConfig{
+		terminalTTL: time.Hour,
+		idleCancel:  time.Hour,
+		maxSessions: 250,
+		now:         func() time.Time { return now },
+	}
+	manager.sessions["reuse"] = &BrowserReplaySession{
+		ID:             "reuse",
+		Status:         BrowserReplayRunning,
+		StartedAt:      &now,
+		lastActivityAt: now,
+		cancel:         func() { close(cancelled) },
+	}
+
+	started := manager.Start("", &dsl.Script{Name: "Replacement", Version: "1.0.0", Protocol: "browser"}, BrowserReplayStartRequest{
+		ReplaySessionID: "reuse",
+		StartPaused:     true,
+	})
+	if started.ID != "reuse" {
+		t.Fatalf("started id = %q, want reuse", started.ID)
+	}
+	select {
+	case <-cancelled:
+	default:
+		t.Fatal("expected prior session cancel function to be called")
+	}
+	session, ok := manager.Get("reuse")
+	if !ok {
+		t.Fatal("replacement session not found")
+	}
+	if session.Group != "Replacement-browser-replay" {
+		t.Fatalf("replacement group = %q, want Replacement-browser-replay", session.Group)
+	}
+	_, _ = manager.Stop("reuse")
 }
 
 func TestBrowserReplayManagerStopCancelsPausedSession(t *testing.T) {

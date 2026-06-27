@@ -173,6 +173,12 @@ describe('ApiGuidePage', () => {
     expect(container.textContent).toContain('/api/v1/integrations/github/check-links')
     expect(container.textContent).toContain('/api/v1/library/remotes/{id}/pull')
     expect(container.textContent).toContain('/api/v1/fleet/provisioner')
+    expect(container.textContent).toContain('/api/v1/fleet/load-zones')
+    expect(container.textContent).toContain('/api/v1/execution-plans')
+    expect(container.textContent).toContain('/api/v1/capacity/timeslots')
+    expect(container.textContent).toContain('/api/v1/object-repositories')
+    expect(container.textContent).toContain('/api/v1/correlation-rulesets')
+    expect(container.textContent).toContain('/api/v1/downloads/recording-agent/latest')
     expect(container.textContent).toContain('/api/v1/system/settings')
     expect(container.textContent).toContain('/api/v1/protocols/native-support-matrix')
     expect(container.textContent).toContain('/api/v1/ai/review-queue')
@@ -183,7 +189,9 @@ describe('ApiGuidePage', () => {
     expect(container.textContent).toContain('/api/v1/auth/diagnostics')
     expect(container.textContent).toContain('/api/v1/auth/service-accounts')
     expect(container.textContent).toContain('/api/v1/auth/users')
+    expect(container.textContent).toContain('/api/v1/auth/users/onboard')
     expect(container.textContent).toContain('/api/v1/auth/users/{id}/bindings')
+    expect(container.textContent).toContain('/api/v1/auth/users/{id}/revoke-sessions')
     expect(container.textContent).toContain('/api/v1/auth/user-activity')
     expect(container.textContent).toContain('/api/v1/auth/user-activity/export')
     expect(container.textContent).toContain('active local APEX Load user record')
@@ -268,5 +276,26 @@ describe('ApiGuidePage', () => {
     expect(authEndpointRows).not.toContain('POST /api/v1/auth/users/{id}/enable')
     expect(container.textContent).toContain('Access Workspace')
     expect(container.textContent).toContain('Open Access')
+  })
+
+  it('renders distinct access loading and error states for filtered guide sections', async () => {
+    await renderApiGuidePage({
+      activePage: 'endpoint-map',
+      effectiveAccessResources: [],
+      effectiveAccessLoaded: false,
+    })
+
+    expect(container.textContent).toContain('Checking Access')
+    expect(container.querySelector('.api-guide-endpoint-grid')).toBeNull()
+
+    await renderApiGuidePage({
+      activePage: 'endpoint-map',
+      effectiveAccessResources: [],
+      effectiveAccessLoaded: true,
+      effectiveAccessError: true,
+    })
+
+    expect(container.textContent).toContain('Unable To Filter Access')
+    expect(container.textContent).toContain('/api/v1/system/health')
   })
 })

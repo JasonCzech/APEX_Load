@@ -124,6 +124,7 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
   const [releaseFilter, setReleaseFilter] = useState('all')
   const [effectiveAuthAccessResources, setEffectiveAuthAccessResources] = useState<DashboardAuthEffectiveAccessResource[]>([])
   const [effectiveAccessLoaded, setEffectiveAccessLoaded] = useState(false)
+  const [libraryNotice, setLibraryNotice] = useState('')
 
   const openRemoteSettings = useCallback(() => {
     try { window.localStorage.setItem('apexload.settings.focusSection', 'integrations') } catch { /* storage unavailable */ }
@@ -134,14 +135,18 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
     try {
       const res = await api.listScripts(activeProject?.id)
       setScripts(res.scripts || [])
-    } catch { /* API not available */ }
+    } catch (error) {
+      setLibraryNotice(getErrorMessage(error, 'Unable to load scripts.'))
+    }
   }, [api, activeProject?.id])
 
   const refreshAuthoringSessions = useCallback(async () => {
     try {
       const res = await api.listAuthoringSessions(activeProject?.id)
       setAuthoringSessions(res.sessions || [])
-    } catch { /* API not available */ }
+    } catch (error) {
+      setLibraryNotice(getErrorMessage(error, 'Unable to load authoring sessions.'))
+    }
   }, [api, activeProject?.id])
 
   const {
@@ -424,7 +429,12 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
   const handleDelete = async (id: string) => {
     if (!canManageScripts) return
     if (!confirm('Delete this script?')) return
-    try { await api.deleteScript(id); refresh() } catch { /* ignore */ }
+    try {
+      await api.deleteScript(id)
+      void refresh()
+    } catch (error) {
+      setLibraryNotice(getErrorMessage(error, 'Unable to delete script.'))
+    }
   }
 
   const handleSaved = useCallback((script: StoredScript) => {
@@ -455,11 +465,15 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
       try {
         const response = await api.getScript(script.id)
         source = response.script ?? undefined
-      } catch {
-        source = undefined
+      } catch (error) {
+        setLibraryNotice(getErrorMessage(error, 'Unable to load script before cloning.'))
+        return
       }
     }
-    if (!source) return
+    if (!source) {
+      setLibraryNotice(`Unable to clone "${script.name}": the script body is unavailable.`)
+      return
+    }
     handleDraftEdit(cloneScriptDraft(source, script.name, activeProject?.id))
   }, [activeProject?.id, api, handleDraftEdit])
 
@@ -469,14 +483,18 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
       void refresh()
       void refreshAuthoringSessions()
       handleSavedScript(res.script, `Approved authoring session "${res.session.name}". Reviewing the promoted script.`)
-    } catch { /* approval errors are surfaced by backend validation in a future detail panel */ }
+    } catch (error) {
+      setLibraryNotice(getErrorMessage(error, 'Unable to approve authoring session.'))
+    }
   }, [api, handleSavedScript, refresh, refreshAuthoringSessions])
 
   const handleDiscardAuthoringSession = useCallback(async (session: AuthoringSession) => {
     try {
       await api.deleteAuthoringSession(session.id)
       await refreshAuthoringSessions()
-    } catch { /* ignore */ }
+    } catch (error) {
+      setLibraryNotice(getErrorMessage(error, 'Unable to discard authoring session.'))
+    }
   }, [api, refreshAuthoringSessions])
 
   const handlePreviewAuthoringCorrelation = useCallback(async (session: AuthoringSession, payload: AuthoringCorrelationPreviewRequest) => {
@@ -501,21 +519,33 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
   }, [api, refreshAuthoringSessions])
 
   return (
-    <ScriptsAuthoringShell
-      authoringState={authoringState}
-      projectId={activeProject?.id}
-      activeProject={activeProject}
-      scripts={scripts}
-      createOptionActions={createOptionActions}
-      onSaved={handleSaved}
-      onOpenLibrary={openLibrary}
-      onOpenCreateOptions={openCreateOptions}
-      onImported={handleImported}
-      onEditDraft={handleDraftEdit}
-      onReturnToDraftSource={returnToDraftSource}
-      onStartExistingScript={handleStartExistingScript}
-      canManageScripts={canManageScripts}
-    >
+    <>
+      {libraryNotice && (
+        <p className="settings-notice form-error" role="alert">
+          {libraryNotice}{' '}
+          <button className="btn btn-ghost btn-sm" type="button" onClick={() => setLibraryNotice('')}>Dismiss</button>
+        </p>
+      )}
+      {authoringState.subView === 'list' && authoringState.authoringNotice && (
+        <p className="settings-notice form-error" role="alert">
+          {authoringState.authoringNotice}
+        </p>
+      )}
+      <ScriptsAuthoringShell
+        authoringState={authoringState}
+        projectId={activeProject?.id}
+        activeProject={activeProject}
+        scripts={scripts}
+        createOptionActions={createOptionActions}
+        onSaved={handleSaved}
+        onOpenLibrary={openLibrary}
+        onOpenCreateOptions={openCreateOptions}
+        onImported={handleImported}
+        onEditDraft={handleDraftEdit}
+        onReturnToDraftSource={returnToDraftSource}
+        onStartExistingScript={handleStartExistingScript}
+        canManageScripts={canManageScripts}
+      >
       <div className="page">
         <div className="page-header">
           <div>
@@ -653,6 +683,7 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
           onImported={handleGithubImported}
         />
       )}
-    </ScriptsAuthoringShell>
+      </ScriptsAuthoringShell>
+    </>
   )
 }

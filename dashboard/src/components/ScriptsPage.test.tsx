@@ -622,6 +622,68 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('script-id:none')
   })
 
+  it('surfaces a recoverable error when an existing script cannot be cloned', async () => {
+    apiMock.getScript.mockRejectedValueOnce(new Error('clone source unavailable'))
+
+    await act(async () => {
+      root.render(<ScriptsPage initialMode="create-options" />)
+    })
+
+    await flushPromises()
+
+    expect(container.textContent).toContain('Model From Existing Script')
+    await clickButton('Existing Script')
+    await flushPromises()
+
+    expect(apiMock.getScript).toHaveBeenCalledWith('script-1')
+    expect(container.querySelector('[data-testid="script-editor"]')).toBeNull()
+    expect(container.textContent).toContain('clone source unavailable')
+  })
+
+  it('surfaces script library load failures', async () => {
+    apiMock.listScripts.mockRejectedValueOnce(new Error('script list unavailable'))
+
+    await act(async () => {
+      root.render(<ScriptsPage />)
+    })
+
+    await flushPromises()
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('script list unavailable')
+    expect(container.textContent).toContain('No scripts yet.')
+  })
+
+  it('surfaces authoring-session load failures', async () => {
+    apiMock.listAuthoringSessions.mockRejectedValueOnce(new Error('session list unavailable'))
+
+    await act(async () => {
+      root.render(<ScriptsPage />)
+    })
+
+    await flushPromises()
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('session list unavailable')
+    expect(container.textContent).toContain('Existing Script')
+  })
+
+  it('surfaces script deletion failures without removing the row', async () => {
+    apiMock.deleteScript.mockRejectedValueOnce(new Error('delete denied'))
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValueOnce(true)
+
+    await act(async () => {
+      root.render(<ScriptsPage />)
+    })
+
+    await flushPromises()
+    await clickButton('Delete')
+    await flushPromises()
+
+    expect(confirmSpy).toHaveBeenCalled()
+    expect(apiMock.deleteScript).toHaveBeenCalledWith('script-1')
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('delete denied')
+    expect(container.textContent).toContain('Existing Script')
+  })
+
   it('filters the script library by visible script metadata', async () => {
     await act(async () => {
       root.render(<ScriptsPage />)
@@ -1352,6 +1414,88 @@ describe('ScriptsPage', () => {
     expect(container.querySelector('[data-testid="script-editor"]')).not.toBeNull()
     expect(container.textContent).toContain('script-id:approved-script-1')
     expect(container.textContent).toContain('Approved authoring session "Migrated checkout review". Reviewing the promoted script.')
+  })
+
+  it('surfaces authoring-session approval failures', async () => {
+    apiMock.listAuthoringSessions.mockResolvedValue({
+      sessions: [{
+        id: 'session-1',
+        project_id: 'project-1',
+        source: 'enterprise_script_archive',
+        name: 'Migrated checkout review',
+        status: 'ready',
+        draft: {
+          name: 'Migrated checkout review',
+          version: '1.0.0',
+          protocol: 'http',
+          config: { base_url: 'https://checkout.example.com' },
+          actions: [],
+        },
+        approval_ready: true,
+        blocking_health_inputs: [],
+        created_at: '2026-05-18T13:00:00Z',
+        updated_at: '2026-05-18T13:05:00Z',
+      }],
+      count: 1,
+    })
+    apiMock.approveAuthoringSession.mockRejectedValueOnce(new Error('approval gate failed'))
+
+    await act(async () => {
+      root.render(<ScriptsPage />)
+    })
+
+    await flushPromises()
+
+    const approveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Approve'))
+    expect(approveButton).toBeDefined()
+    if (!approveButton) {
+      return
+    }
+
+    await act(async () => {
+      approveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    expect(apiMock.approveAuthoringSession).toHaveBeenCalledWith('session-1')
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('approval gate failed')
+    expect(container.querySelector('[data-testid="script-editor"]')).toBeNull()
+  })
+
+  it('surfaces authoring-session discard failures', async () => {
+    apiMock.listAuthoringSessions.mockResolvedValue({
+      sessions: [{
+        id: 'session-1',
+        project_id: 'project-1',
+        source: 'enterprise_script_archive',
+        name: 'Migrated checkout review',
+        status: 'draft',
+        draft: {
+          name: 'Migrated checkout review',
+          version: '1.0.0',
+          protocol: 'http',
+          config: { base_url: 'https://checkout.example.com' },
+          actions: [],
+        },
+        created_at: '2026-05-18T13:00:00Z',
+        updated_at: '2026-05-18T13:05:00Z',
+      }],
+      count: 1,
+    })
+    apiMock.deleteAuthoringSession.mockRejectedValueOnce(new Error('discard failed'))
+
+    await act(async () => {
+      root.render(<ScriptsPage />)
+    })
+
+    await flushPromises()
+    await clickButton('Discard')
+    await flushPromises()
+
+    expect(apiMock.deleteAuthoringSession).toHaveBeenCalledWith('session-1')
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('discard failed')
+    expect(container.textContent).toContain('Migrated checkout review')
   })
 
   it('disables authoring-session approval when backend health inputs block promotion', async () => {
