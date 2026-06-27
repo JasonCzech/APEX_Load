@@ -4,6 +4,10 @@ import { getDesktopBridge } from '../desktop/desktopBridge'
 
 export const DESKTOP_NOTIFICATIONS_PREF_KEY = 'apexload.desktopNotifications'
 
+// Upper bound on the dedup set so a long session observing many test ids does
+// not leak memory.
+const MAX_SEEN_NOTIFICATIONS = 500
+
 // Long-running test outcomes worth a native notification. Live metric updates
 // and intermediate lifecycle events (started/stopping) are intentionally
 // excluded to avoid noise.
@@ -84,6 +88,12 @@ export function useDesktopNotifications() {
 
     const key = `${testId || ''}:${status}`
     if (seen.current.has(key)) return
+    // Bound the dedup set over a long-running session: evict the oldest key
+    // (Set preserves insertion order) once we exceed the cap.
+    if (seen.current.size >= MAX_SEEN_NOTIFICATIONS) {
+      const oldest = seen.current.values().next().value
+      if (oldest !== undefined) seen.current.delete(oldest)
+    }
     seen.current.add(key)
 
     const bridge = getDesktopBridge()

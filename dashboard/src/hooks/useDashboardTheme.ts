@@ -65,8 +65,18 @@ export function useDashboardTheme() {
     }
     const media = window.matchMedia(SYSTEM_DARK_QUERY)
     const handler = () => applyTheme(resolveTheme('system'))
-    media.addEventListener?.('change', handler)
-    return () => media.removeEventListener?.('change', handler)
+    // Prefer the modern API; fall back to the deprecated addListener for older
+    // Safari/WebKit (and the macOS WKWebView) which lack addEventListener on MQL.
+    if (typeof media.addEventListener === 'function') {
+      media.addEventListener('change', handler)
+      return () => media.removeEventListener('change', handler)
+    }
+    const legacy = media as MediaQueryList & {
+      addListener?: (cb: (e: MediaQueryListEvent) => void) => void
+      removeListener?: (cb: (e: MediaQueryListEvent) => void) => void
+    }
+    legacy.addListener?.(handler)
+    return () => legacy.removeListener?.(handler)
   }, [theme])
 
   return { theme, setTheme }

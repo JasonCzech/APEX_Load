@@ -39,11 +39,21 @@ function ensureGlobalListener() {
       return
     }
     const target = typeof document !== 'undefined' ? document.elementFromPoint(x, y) : null
-    for (const zone of zones) {
-      if (target && zone.element.contains(target)) {
-        zone.handler(paths)
-        return
+    if (!target) {
+      return
+    }
+    // Innermost-wins: walk up from the drop target and dispatch to the first
+    // ancestor that is a registered zone, so nested/overlapping zones resolve to
+    // the most specific one rather than insertion order.
+    let node: Element | null = target
+    while (node) {
+      for (const zone of zones) {
+        if (zone.element === node) {
+          zone.handler(paths)
+          return
+        }
       }
+      node = node.parentElement
     }
   }, true)
 }

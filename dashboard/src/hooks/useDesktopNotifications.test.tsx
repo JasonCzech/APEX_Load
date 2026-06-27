@@ -70,6 +70,10 @@ describe('useDesktopNotifications', () => {
     // Different status for same test → fires.
     act(() => { notify('test_failed', 'order-flow', 't1') })
     expect(notifySpy).toHaveBeenCalledTimes(2)
+
+    // Same status for a DIFFERENT test id → fires (dedup key includes test id).
+    act(() => { notify('test_complete', 'checkout', 't2') })
+    expect(notifySpy).toHaveBeenCalledTimes(3)
   })
 
   it('ignores non-notifiable statuses', () => {

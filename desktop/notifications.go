@@ -4,12 +4,19 @@ import (
 	"fmt"
 	"strconv"
 	"sync/atomic"
+	"time"
 
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-// notifyCounter generates stable-enough notification IDs without time/random.
-var notifyCounter atomic.Uint64
+// notifyCounter sequences notification IDs within a launch; notifyLaunchToken
+// makes them unique ACROSS launches so a new session's notification can't
+// coalesce-replace a still-visible one from a prior session (macOS replaces a
+// delivered notification sharing the same identifier).
+var (
+	notifyCounter     atomic.Uint64
+	notifyLaunchToken = strconv.FormatInt(time.Now().UnixNano(), 36)
+)
 
 // initNotifications prepares the OS notification channel. On macOS this opens the
 // notification center connection; on Linux it sets up D-Bus. It best-effort
@@ -55,7 +62,7 @@ func (a *App) Notify(title, body string) error {
 	if a.ctx == nil {
 		return fmt.Errorf("desktop runtime is not ready")
 	}
-	id := strconv.FormatUint(notifyCounter.Add(1), 10)
+	id := notifyLaunchToken + "-" + strconv.FormatUint(notifyCounter.Add(1), 10)
 	return wailsruntime.SendNotification(a.ctx, wailsruntime.NotificationOptions{
 		ID:    "apexload-" + id,
 		Title: title,

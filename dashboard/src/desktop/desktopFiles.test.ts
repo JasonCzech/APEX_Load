@@ -7,6 +7,7 @@ import {
   canUseNativeDialogs,
   fileFromBase64,
   fileNameFromPath,
+  filesFromDroppedPaths,
   pickFilesViaBridge,
 } from './desktopFiles'
 import type { WailsDesktopBridge } from './desktopBridge'
@@ -88,5 +89,22 @@ describe('pickFilesViaBridge', () => {
       ReadFileBase64: vi.fn(),
     })
     expect(await pickFilesViaBridge('.json')).toEqual([])
+  })
+})
+
+describe('filesFromDroppedPaths', () => {
+  it('only reads importable extensions (.json/.zip/.har), ignoring others', async () => {
+    const read = vi.fn().mockResolvedValue(btoa('x'))
+    setBridge({ ReadFileBase64: read })
+    const files = await filesFromDroppedPaths([
+      '/tmp/order.json',
+      '/etc/passwd',
+      '/tmp/secrets.env',
+      '/tmp/archive.ZIP',
+    ])
+    // order.json + archive.ZIP (case-insensitive) are importable; the rest ignored.
+    expect(files.map(f => f.name).sort()).toEqual(['archive.ZIP', 'order.json'])
+    expect(read).toHaveBeenCalledTimes(2)
+    expect(read).not.toHaveBeenCalledWith('/etc/passwd')
   })
 })

@@ -132,6 +132,30 @@ describe('useDashboardTheme', () => {
     expect(window.localStorage.getItem('apexload.theme')).toBe('system')
   })
 
+  it('uses the legacy addListener API when addEventListener is unavailable', async () => {
+    // Simulate older Safari/WebKit MediaQueryList (no addEventListener).
+    let legacyHandler: (() => void) | undefined
+    const mql = {
+      matches: true,
+      media: '(prefers-color-scheme: dark)',
+      addListener: (cb: () => void) => { legacyHandler = cb },
+      removeListener: () => { legacyHandler = undefined },
+    }
+    ;(window as unknown as { matchMedia: () => typeof mql }).matchMedia = () => mql
+    window.localStorage.setItem('apexload.theme', 'system')
+
+    await act(async () => { root.render(<ThemeHarness />) })
+    expect(document.documentElement.dataset.theme).toBe('dark')
+    expect(legacyHandler).toBeTypeOf('function')
+
+    // OS flips to light → legacy handler updates the applied theme.
+    await act(async () => {
+      mql.matches = false
+      legacyHandler?.()
+    })
+    expect(document.documentElement.dataset.theme).toBe('light')
+  })
+
   it('switching to system resolves to light when the OS prefers light', async () => {
     installMatchMedia(false)
     await act(async () => {

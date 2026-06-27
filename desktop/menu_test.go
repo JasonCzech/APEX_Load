@@ -74,6 +74,9 @@ func TestBuildAppMenuNonMacHasFunctionalQuit(t *testing.T) {
 		if file == nil {
 			t.Fatalf("%s: missing File menu", goos)
 		}
+		if labeledItem(file, "Print…") == nil {
+			t.Errorf("%s: File menu missing Print…", goos)
+		}
 		quit := labeledItem(file, "Quit")
 		if quit == nil {
 			t.Fatalf("%s: missing File>Quit", goos)

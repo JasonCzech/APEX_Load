@@ -58,6 +58,8 @@ func buildAppMenuForOS(app *App, goos string) *menu.Menu {
 	fileMenu.AddSeparator()
 	fileMenu.AddText("Reveal Logs Folder", nil, func(_ *menu.CallbackData) { _ = app.OpenLogsFolder() })
 	fileMenu.AddText("Reveal App Data Folder", nil, func(_ *menu.CallbackData) { _ = app.OpenAppDataFolder() })
+	fileMenu.AddSeparator()
+	fileMenu.AddText("Print…", keys.CmdOrCtrl("p"), app.printWindow)
 	if !isMac {
 		// macOS exposes Quit through the role-based App menu; elsewhere File owns it.
 		fileMenu.AddSeparator()
@@ -154,6 +156,14 @@ func (a *App) rebuildMenu() {
 func (a *App) reload(_ *menu.CallbackData) {
 	if a.ctx != nil {
 		wailsruntime.WindowReloadApp(a.ctx)
+	}
+}
+
+// printWindow opens the native print dialog for the current view (run reports,
+// dashboards). Wails exposes WindowPrint directly.
+func (a *App) printWindow(_ *menu.CallbackData) {
+	if a.ctx != nil {
+		wailsruntime.WindowPrint(a.ctx)
 	}
 }
 

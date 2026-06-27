@@ -23,7 +23,10 @@ func TestBuildDesktopLocalScript(t *testing.T) {
 		"command -v wails",
 		"command -v node",
 		"command -v npm",
-		"pkg-config --exists gtk+-3.0 webkit2gtk-4.0",
+		"pkg-config --exists gtk+-3.0",
+		"webkit2gtk-4.0",
+		"webkit2gtk-4.1",
+		"differs from the pinned",
 		"go install github.com/wailsapp/wails/v2/cmd/wails@",
 		"scripts/resolve-version.sh",
 	}

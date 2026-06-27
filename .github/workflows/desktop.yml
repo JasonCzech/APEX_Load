@@ -63,7 +63,11 @@ jobs:
 
       - name: Install Linux Dependencies
         if: matrix.os == 'ubuntu-latest'
-        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev
+        # Newer Ubuntu images ship webkit2gtk-4.1; fall back to 4.0 on older ones.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev \
+            || sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev
 
       - name: Resolve friendly build version
         id: version
@@ -222,6 +226,7 @@ jobs:
           echo "build_time=${BUILD_TIME}" >> "$GITHUB_OUTPUT"
 
       - name: Import macOS Developer ID certificate
+        if: startsWith(github.ref, 'refs/tags/')
         shell: bash
         env:
           MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.APEXLOAD_MACOS_CERTIFICATE_P12_BASE64 }}
@@ -245,6 +250,7 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -s -k "${keychain_password}" "${keychain_path}"
 
       - name: Configure macOS notarization profile
+        if: startsWith(github.ref, 'refs/tags/')
         shell: bash
         env:
           MACOS_NOTARY_PROFILE: ${{ secrets.APEXLOAD_MACOS_NOTARY_PROFILE }}
@@ -267,6 +273,7 @@ jobs:
             --password "${MACOS_NOTARY_PASSWORD}"
 
       - name: Prepare Windows Authenticode certificate
+        if: startsWith(github.ref, 'refs/tags/')
         shell: bash
         env:
           WINDOWS_CODESIGN_PFX_BASE64: ${{ secrets.APEXLOAD_WINDOWS_CODESIGN_PFX_BASE64 }}

@@ -51,6 +51,40 @@ describe('registerDropZone', () => {
     zone.remove()
   })
 
+  it('routes to the innermost zone when zones are nested and ignores empty paths', () => {
+    let captured: DropCb | undefined
+    ;(window as RuntimeWindow).runtime = { OnFileDrop: cb => { captured = cb }, OnFileDropOff: vi.fn() }
+
+    const outer = document.createElement('div')
+    const inner = document.createElement('div')
+    const leaf = document.createElement('span')
+    outer.appendChild(inner)
+    inner.appendChild(leaf)
+    document.body.appendChild(outer)
+
+    const elementFromPoint = vi.fn<(x: number, y: number) => Element | null>().mockReturnValue(leaf)
+    ;(document as unknown as { elementFromPoint: typeof elementFromPoint }).elementFromPoint = elementFromPoint
+
+    const outerHandler = vi.fn()
+    const innerHandler = vi.fn()
+    const offOuter = registerDropZone(outer, outerHandler)
+    const offInner = registerDropZone(inner, innerHandler)
+
+    // Drop over the leaf → innermost registered ancestor (inner) wins.
+    captured?.(5, 5, ['/tmp/a.zip'])
+    expect(innerHandler).toHaveBeenCalledWith(['/tmp/a.zip'])
+    expect(outerHandler).not.toHaveBeenCalled()
+
+    // Empty path array is ignored.
+    innerHandler.mockClear()
+    captured?.(5, 5, [])
+    expect(innerHandler).not.toHaveBeenCalled()
+
+    offInner()
+    offOuter()
+    outer.remove()
+  })
+
   it('is inert when the Wails runtime is absent', () => {
     const zone = document.createElement('div')
     const handler = vi.fn()

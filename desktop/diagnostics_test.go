@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -31,6 +32,23 @@ func TestOpenURLRejectsNonExternalSchemes(t *testing.T) {
 	}
 }
 
+// TestValidateOpenURL exercises the scheme allow-list directly (the OpenURL
+// path otherwise short-circuits on nil ctx in tests).
+func TestValidateOpenURL(t *testing.T) {
+	ok := []string{"https://example.com/a", "http://localhost:8080", "mailto:ops@example.com"}
+	for _, u := range ok {
+		if _, err := validateOpenURL(u); err != nil {
+			t.Errorf("validateOpenURL(%q) unexpected error: %v", u, err)
+		}
+	}
+	rejected := []string{"file:///etc/passwd", "javascript:alert(1)", "data:text/html,x", "apexload://run/1", "vbscript:x"}
+	for _, u := range rejected {
+		if _, err := validateOpenURL(u); err == nil {
+			t.Errorf("validateOpenURL(%q) should be rejected", u)
+		}
+	}
+}
+
 func TestExportDiagnosticsIsValidJSONWithoutSecrets(t *testing.T) {
 	app := NewApp()
 	app.appDataPath = "/tmp/apex"
@@ -54,6 +72,33 @@ func TestExportDiagnosticsIsValidJSONWithoutSecrets(t *testing.T) {
 		if _, ok := payload[banned]; ok {
 			t.Errorf("diagnostics must not contain %q", banned)
 		}
+	}
+}
+
+// TestExportDiagnosticsScrubsStartupError verifies a startup error carrying a
+// connection string with embedded credentials is redacted in the bundle.
+func TestExportDiagnosticsScrubsStartupError(t *testing.T) {
+	app := NewApp()
+	app.startupErr = "failed to initialize local storage: dial postgres://apex:s3cr3t@db.internal:5432/apex: timeout"
+	out, err := app.ExportDiagnostics()
+	if err != nil {
+		t.Fatalf("ExportDiagnostics: %v", err)
+	}
+	if strings.Contains(out, "s3cr3t") {
+		t.Errorf("startup_error must not leak the embedded password:\n%s", out)
+	}
+	if !strings.Contains(out, "***@") {
+		t.Errorf("expected userinfo to be redacted to ***@:\n%s", out)
+	}
+}
+
+func TestScrubTextAndHomeRelativize(t *testing.T) {
+	if got := scrubText("connect to mysql://u:p@h/db failed"); strings.Contains(got, "u:p@") {
+		t.Errorf("scrubText left credentials: %q", got)
+	}
+	// homeRelativize collapses the home prefix to ~ and leaves outside paths intact.
+	if got := homeRelativize("/var/log/apex"); got != "/var/log/apex" {
+		t.Errorf("non-home path should be unchanged, got %q", got)
 	}
 }
 

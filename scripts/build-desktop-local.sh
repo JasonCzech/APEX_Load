@@ -57,6 +57,13 @@ if [[ -z "${WAILS}" ]]; then
   err "    go install github.com/wailsapp/wails/v2/cmd/wails@${WAILS_VERSION}"
   err "  (or re-run with --install-wails)"
   missing=1
+else
+  # Warn (don't fail) if the installed CLI drifts from the pinned version that CI
+  # uses, so local builds stay reproducible.
+  installed_wails="$("${WAILS}" version 2>/dev/null | tr -d '[:space:]')"
+  if [[ -n "${installed_wails}" && "${installed_wails}" != *"${WAILS_VERSION#v}"* ]]; then
+    log "warning: installed wails CLI (${installed_wails}) differs from the pinned ${WAILS_VERSION} used by CI."
+  fi
 fi
 
 # Node / npm (the dashboard frontend build)
@@ -69,17 +76,23 @@ if ! command -v npm >/dev/null 2>&1; then
   missing=1
 fi
 
-# Linux native webview headers
+# Linux native webview headers. Newer Debian/Ubuntu ship webkit2gtk-4.1 instead
+# of 4.0 (Wails builds against either), so accept whichever is present.
 if [[ "$(uname -s)" == "Linux" ]]; then
   if command -v pkg-config >/dev/null 2>&1; then
-    if ! pkg-config --exists gtk+-3.0 webkit2gtk-4.0 2>/dev/null; then
-      err "Linux desktop build needs GTK3 + WebKit2GTK dev headers. Install with:"
-      err "    sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev"
+    if ! pkg-config --exists gtk+-3.0 2>/dev/null; then
+      err "Linux desktop build needs the GTK3 dev headers. Install with:"
+      err "    sudo apt-get install -y libgtk-3-dev"
+      missing=1
+    fi
+    if ! pkg-config --exists webkit2gtk-4.0 2>/dev/null && ! pkg-config --exists webkit2gtk-4.1 2>/dev/null; then
+      err "Linux desktop build needs the WebKit2GTK dev headers (4.0 or 4.1). Install with:"
+      err "    sudo apt-get install -y libwebkit2gtk-4.1-dev   # or libwebkit2gtk-4.0-dev on older releases"
       missing=1
     fi
   else
-    err "pkg-config not found; cannot verify gtk+-3.0 / webkit2gtk-4.0 dev headers."
-    err "    sudo apt-get install -y pkg-config libgtk-3-dev libwebkit2gtk-4.0-dev"
+    err "pkg-config not found; cannot verify gtk+-3.0 / webkit2gtk dev headers."
+    err "    sudo apt-get install -y pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev"
     missing=1
   fi
 fi

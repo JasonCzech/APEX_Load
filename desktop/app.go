@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/api"
@@ -50,6 +51,12 @@ type App struct {
 	// failure can be shown in-app — the HTTP /desktop/status endpoint can't carry
 	// it because a failed server isn't listening.
 	startupErr string
+	// dialogPaths is the set of absolute paths the OS file picker returned for
+	// this session. The base64 file bridge (ReadFileBase64/WriteFileBase64) is
+	// confined to these user-chosen paths (plus importable extensions / the app
+	// data dir) so webview JS can't read or write arbitrary files. Guarded by pathMu.
+	pathMu      sync.Mutex
+	dialogPaths map[string]bool
 }
 
 // NewApp creates a new App application struct
@@ -104,15 +111,14 @@ func (a *App) startup(ctx context.Context) {
 		DesktopLogPath:     logPath,
 	})
 
-	// Start the API server in the background
+	// Start the API server in the background. Nothing below depends on the server
+	// being up — the dashboard discovers the bound port via GetAPIOrigin(), which
+	// polls BoundAddrReady() — so there is no readiness wait here.
 	go func() {
 		if err := a.server.Start(); err != nil {
 			slog.Error("server error", "err", err)
 		}
 	}()
-
-	// Wait briefly for the server to be ready
-	time.Sleep(200 * time.Millisecond)
 
 	// Restore window size/position/maximized state from the previous session.
 	a.restoreWindowState()
@@ -136,20 +142,22 @@ func (a *App) restoreWindowState() {
 		return
 	}
 	a.lastRoute = st.LastRoute
-	if st.Maximised {
-		runtime.WindowMaximise(a.ctx)
-		return
-	}
+
+	// Apply the (preserved, non-maximized) geometry first so that un-maximizing a
+	// window that was closed while maximized restores the user's previous size.
 	deskW, deskH := a.desktopBounds()
 	g := sanitizeWindowGeometry(st, deskW, deskH)
 	if g.ApplySize {
 		runtime.WindowSetSize(a.ctx, g.Width, g.Height)
+		if g.ApplyPosition {
+			runtime.WindowSetPosition(a.ctx, g.X, g.Y)
+		} else {
+			// Valid size but untrusted position → center on the usable desktop.
+			runtime.WindowCenter(a.ctx)
+		}
 	}
-	if g.ApplyPosition {
-		runtime.WindowSetPosition(a.ctx, g.X, g.Y)
-	} else if g.ApplySize {
-		// Valid size but untrusted position → center on the usable desktop.
-		runtime.WindowCenter(a.ctx)
+	if st.Maximised {
+		runtime.WindowMaximise(a.ctx)
 	}
 }
 
@@ -188,6 +196,12 @@ func (a *App) captureWindowState() windowState {
 	}
 	if runtime.WindowIsMaximised(a.ctx) {
 		st.Maximised = true
+		// Wails has no "restore bounds" getter, and a maximized WindowGetSize
+		// reports the maximized frame. Preserve the last persisted non-maximized
+		// geometry so an un-maximize after restore lands on the user's prior size.
+		if prev, ok := loadWindowState(a.appDataPath); ok {
+			st.Width, st.Height, st.X, st.Y = prev.Width, prev.Height, prev.X, prev.Y
+		}
 		return st
 	}
 	st.Width, st.Height = runtime.WindowGetSize(a.ctx)

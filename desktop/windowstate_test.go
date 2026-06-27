@@ -75,6 +75,21 @@ func TestSanitizeWindowGeometry(t *testing.T) {
 			want: sanitizedGeometry{ApplySize: true, Width: 1000, Height: 700},
 		},
 		{
+			name: "off-screen below re-centers",
+			st:   windowState{Width: 1000, Height: 700, X: 100, Y: 5000},
+			want: sanitizedGeometry{ApplySize: true, Width: 1000, Height: 700},
+		},
+		{
+			name: "off-screen far left re-centers",
+			st:   windowState{Width: 1000, Height: 700, X: -2000, Y: 100},
+			want: sanitizedGeometry{ApplySize: true, Width: 1000, Height: 700},
+		},
+		{
+			name: "width/height exceeding the desktop is clamped down",
+			st:   windowState{Width: 5000, Height: 3000, X: 0, Y: 0},
+			want: sanitizedGeometry{ApplySize: true, Width: deskW, Height: deskH, ApplyPosition: true, X: 0, Y: 0},
+		},
+		{
 			name: "zero size keeps defaults entirely",
 			st:   windowState{Width: 0, Height: 0, X: 0, Y: 0},
 			want: sanitizedGeometry{},

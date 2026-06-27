@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -35,13 +36,14 @@ func TestParseFileFiltersEmptyAndMalformed(t *testing.T) {
 func TestReadWriteFileBase64RoundTrip(t *testing.T) {
 	app := NewApp()
 	dir := t.TempDir()
+	app.appDataPath = dir // writes are confined to the app data dir or dialog paths
 	src := filepath.Join(dir, "script.json")
 	content := []byte(`{"name":"order-flow"}`)
 	if err := os.WriteFile(src, content, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	b64, err := app.ReadFileBase64(src)
+	b64, err := app.ReadFileBase64(src) // .json is an importable extension → allowed
 	if err != nil {
 		t.Fatalf("ReadFileBase64: %v", err)
 	}
@@ -49,7 +51,7 @@ func TestReadWriteFileBase64RoundTrip(t *testing.T) {
 		t.Errorf("encoded mismatch")
 	}
 
-	dst := filepath.Join(dir, "export.json")
+	dst := filepath.Join(dir, "export.json") // under appData → allowed
 	if err := app.WriteFileBase64(dst, b64); err != nil {
 		t.Fatalf("WriteFileBase64: %v", err)
 	}
@@ -72,11 +74,57 @@ func TestReadFileBase64Errors(t *testing.T) {
 	}
 }
 
+// TestFileBridgeConfinement verifies the bridge refuses arbitrary paths and only
+// operates on dialog-vended / importable / app-data paths.
+func TestFileBridgeConfinement(t *testing.T) {
+	app := NewApp()
+	dir := t.TempDir()
+	app.appDataPath = filepath.Join(dir, "appdata")
+	if err := os.MkdirAll(app.appDataPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Arbitrary, non-importable, non-dialog path → read refused before any IO.
+	secret := filepath.Join(dir, "secret.env")
+	if err := os.WriteFile(secret, []byte("TOKEN=abc"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.ReadFileBase64(secret); err == nil {
+		t.Error("expected ReadFileBase64 to refuse an arbitrary non-importable path")
+	}
+
+	// Once vended by a dialog, the same arbitrary path is permitted.
+	app.rememberDialogPath(secret)
+	if _, err := app.ReadFileBase64(secret); err != nil {
+		t.Errorf("dialog-vended path should be readable: %v", err)
+	}
+
+	// Writes: arbitrary path refused; under-appData and dialog paths allowed.
+	if err := app.WriteFileBase64(filepath.Join(dir, "evil.bin"), ""); err == nil {
+		t.Error("expected WriteFileBase64 to refuse a path outside appData / not vended")
+	}
+	if err := app.WriteFileBase64(filepath.Join(app.appDataPath, "ok.json"), ""); err != nil {
+		t.Errorf("under-appData write should be allowed: %v", err)
+	}
+}
+
 func TestWriteFileBase64RejectsBadBase64(t *testing.T) {
 	app := NewApp()
-	dst := filepath.Join(t.TempDir(), "out.bin")
+	dir := t.TempDir()
+	app.appDataPath = dir
+	dst := filepath.Join(dir, "out.bin") // under appData → passes confinement, reaches decode
 	if err := app.WriteFileBase64(dst, "@@not base64@@"); err == nil {
 		t.Error("expected error for invalid base64")
+	}
+}
+
+func TestWriteFileBase64RejectsOversizedEncoded(t *testing.T) {
+	app := NewApp()
+	dir := t.TempDir()
+	app.appDataPath = dir
+	huge := strings.Repeat("A", base64.StdEncoding.EncodedLen(maxBridgeFileBytes)+4)
+	if err := app.WriteFileBase64(filepath.Join(dir, "big.bin"), huge); err == nil {
+		t.Error("expected oversized encoded payload to be rejected before decode")
 	}
 }
 

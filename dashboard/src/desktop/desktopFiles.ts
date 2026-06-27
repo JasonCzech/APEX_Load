@@ -83,10 +83,24 @@ export async function pickFilesViaBridge(accept: string, multiple = false): Prom
   return files
 }
 
-// filesFromDroppedPaths reconstructs File objects from native drop paths.
+// Importable file types accepted from a native drop. Kept in sync with the Go
+// bridge's openableFileExtensions (instance.go), which is the security boundary;
+// this client-side gate avoids attempting to read unrelated dropped files.
+const IMPORTABLE_DROP_EXTENSIONS = ['.json', '.zip', '.har']
+
+function isImportableDropPath(path: string): boolean {
+  const lower = path.toLowerCase()
+  return IMPORTABLE_DROP_EXTENSIONS.some(ext => lower.endsWith(ext))
+}
+
+// filesFromDroppedPaths reconstructs File objects from native drop paths,
+// ignoring non-importable types.
 export async function filesFromDroppedPaths(paths: string[]): Promise<File[]> {
   const files: File[] = []
   for (const path of paths) {
+    if (!isImportableDropPath(path)) {
+      continue
+    }
     const file = await readFileFromBridge(path)
     if (file) {
       files.push(file)
