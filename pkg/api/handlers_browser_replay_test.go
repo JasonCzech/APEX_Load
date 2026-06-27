@@ -20,6 +20,7 @@ func TestHandleStartBrowserReplayDraftScriptReturnsSession(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	body, _ := json.Marshal(map[string]any{
 		"group_name": "browser-editor",
+		"project_id": "project-browser-draft",
 		"script": map[string]any{
 			"name":     "Browser Draft",
 			"version":  "1.0.0",
@@ -48,9 +49,10 @@ func TestHandleStartBrowserReplayDraftScriptReturnsSession(t *testing.T) {
 	var payload struct {
 		ReplaySessionID string `json:"replay_session_id"`
 		Session         struct {
-			Group    string `json:"group"`
-			Protocol string `json:"protocol"`
-			Status   string `json:"status"`
+			Group     string `json:"group"`
+			ProjectID string `json:"project_id"`
+			Protocol  string `json:"protocol"`
+			Status    string `json:"status"`
 		} `json:"session"`
 	}
 	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
@@ -62,11 +64,46 @@ func TestHandleStartBrowserReplayDraftScriptReturnsSession(t *testing.T) {
 	if payload.Session.Group != "browser-editor" {
 		t.Fatalf("group = %q, want browser-editor", payload.Session.Group)
 	}
+	if payload.Session.ProjectID != "project-browser-draft" {
+		t.Fatalf("project_id = %q, want project-browser-draft", payload.Session.ProjectID)
+	}
 	if payload.Session.Protocol != "browser" {
 		t.Fatalf("protocol = %q, want browser", payload.Session.Protocol)
 	}
 	if payload.Session.Status == "" {
 		t.Fatal("status is empty")
+	}
+}
+
+func TestHandleStartBrowserReplayDraftScriptRejectsProjectMismatch(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	body, _ := json.Marshal(map[string]any{
+		"project_id": "project-request",
+		"script": map[string]any{
+			"name":       "Browser Draft",
+			"version":    "1.0.0",
+			"protocol":   "browser",
+			"project_id": "project-script",
+			"config": map[string]any{
+				"browser": map[string]any{"engine": "chromium"},
+			},
+			"actions": []map[string]any{{
+				"name": "Capture current page",
+				"type": "browser_screenshot",
+			}},
+		},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/browser-replay/sessions", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+	}
+	if !strings.Contains(resp.Body.String(), "project_id does not match script.project_id") {
+		t.Fatalf("body = %q, want project mismatch", resp.Body.String())
 	}
 }
 
@@ -137,6 +174,34 @@ func TestHandleStartBrowserReplayRejectsNonBrowserScript(t *testing.T) {
 
 	if resp.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+	}
+}
+
+func TestHandleStartBrowserReplayScriptRejectsStoredProjectMismatch(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	stored := server.runner.StoreScript(&dsl.Script{
+		Name:      "Browser Script",
+		ProjectID: "project-browser-stored",
+		Protocol:  "browser",
+		Version:   "1.0.0",
+		Config:    dsl.ScriptConfig{Browser: dsl.BrowserConfig{Engine: "chromium"}},
+		Actions:   []dsl.Action{{Name: "Capture current page", Type: "browser_screenshot"}},
+	})
+
+	body, _ := json.Marshal(map[string]any{
+		"project_id": "project-other",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/"+stored.ID+"/browser-replay/sessions", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+	}
+	if !strings.Contains(resp.Body.String(), "project_id does not match stored script project") {
+		t.Fatalf("body = %q, want stored project mismatch", resp.Body.String())
 	}
 }
 
@@ -314,6 +379,45 @@ func TestBrowserReplayManagerSessionCapEvictsOldestTerminal(t *testing.T) {
 	}
 }
 
+func TestBrowserReplayManagerSessionCapEvictsOldestNonTerminalWhenNoTerminalExists(t *testing.T) {
+	now := time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC)
+	cancelled := make(chan string, 1)
+	manager := NewBrowserReplayManager(nil)
+	manager.retention = replaySessionRetentionConfig{
+		terminalTTL: time.Hour,
+		idleCancel:  time.Hour,
+		maxSessions: 2,
+		now:         func() time.Time { return now },
+	}
+	for i, id := range []string{"oldest", "middle", "newest"} {
+		lastActivity := now.Add(-time.Duration(3-i) * time.Minute)
+		sessionID := id
+		manager.sessions[id] = &BrowserReplaySession{
+			ID:             id,
+			Status:         BrowserReplayRunning,
+			StartedAt:      &lastActivity,
+			lastActivityAt: lastActivity,
+			cancel:         func() { cancelled <- sessionID },
+			stateChanged:   make(chan struct{}),
+		}
+	}
+
+	if removed := manager.PruneExpired(); removed != 1 {
+		t.Fatalf("removed = %d, want 1", removed)
+	}
+	if _, ok := manager.sessions["oldest"]; ok {
+		t.Fatal("expected oldest non-terminal session to be evicted")
+	}
+	select {
+	case id := <-cancelled:
+		if id != "oldest" {
+			t.Fatalf("cancelled session = %q, want oldest", id)
+		}
+	default:
+		t.Fatal("expected oldest non-terminal session cancel function to be called")
+	}
+}
+
 func TestBrowserReplayManagerCancelsIdleRunningSession(t *testing.T) {
 	now := time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC)
 	lastActivity := now.Add(-2 * time.Minute)
@@ -347,6 +451,80 @@ func TestBrowserReplayManagerCancelsIdleRunningSession(t *testing.T) {
 	}
 	if session.Status != BrowserReplayStopped {
 		t.Fatalf("status = %q, want stopped", session.Status)
+	}
+}
+
+func TestBrowserReplayManagerCancelsIdlePausedSession(t *testing.T) {
+	now := time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC)
+	lastActivity := now.Add(-2 * time.Minute)
+	cancelled := make(chan struct{})
+	manager := NewBrowserReplayManager(nil)
+	manager.retention = replaySessionRetentionConfig{
+		terminalTTL: time.Hour,
+		idleCancel:  time.Minute,
+		maxSessions: 250,
+		now:         func() time.Time { return now },
+	}
+	manager.sessions["paused-idle"] = &BrowserReplaySession{
+		ID:             "paused-idle",
+		Status:         BrowserReplayPaused,
+		StartedAt:      &lastActivity,
+		lastActivityAt: lastActivity,
+		cancel:         func() { close(cancelled) },
+		stateChanged:   make(chan struct{}),
+	}
+
+	if removed := manager.PruneExpired(); removed != 0 {
+		t.Fatalf("removed = %d, want 0", removed)
+	}
+	select {
+	case <-cancelled:
+	default:
+		t.Fatal("expected paused idle session cancel function to be called")
+	}
+	session, ok := manager.Get("paused-idle")
+	if !ok {
+		t.Fatal("paused idle session should remain fetchable until terminal TTL expires")
+	}
+	if session.Status != BrowserReplayStopped {
+		t.Fatalf("status = %q, want stopped", session.Status)
+	}
+}
+
+func TestBrowserReplayManagerDoesNotCancelRecentlyActivePausedSession(t *testing.T) {
+	now := time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC)
+	lastActivity := now.Add(-30 * time.Second)
+	cancelled := make(chan struct{})
+	manager := NewBrowserReplayManager(nil)
+	manager.retention = replaySessionRetentionConfig{
+		terminalTTL: time.Hour,
+		idleCancel:  time.Minute,
+		maxSessions: 250,
+		now:         func() time.Time { return now },
+	}
+	manager.sessions["paused-active"] = &BrowserReplaySession{
+		ID:             "paused-active",
+		Status:         BrowserReplayPaused,
+		StartedAt:      &lastActivity,
+		lastActivityAt: lastActivity,
+		cancel:         func() { close(cancelled) },
+		stateChanged:   make(chan struct{}),
+	}
+
+	if removed := manager.PruneExpired(); removed != 0 {
+		t.Fatalf("removed = %d, want 0", removed)
+	}
+	select {
+	case <-cancelled:
+		t.Fatal("recently active paused session should not be cancelled")
+	default:
+	}
+	session, ok := manager.Get("paused-active")
+	if !ok {
+		t.Fatal("paused active session should remain fetchable")
+	}
+	if session.Status != BrowserReplayPaused {
+		t.Fatalf("status = %q, want paused", session.Status)
 	}
 }
 

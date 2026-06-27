@@ -523,7 +523,7 @@ Useful library endpoints:
 
 ### 9. Record, Replay, And Debug
 
-Unified replay sessions use `/api/v1/replay/sessions/...` for draft and stored script replay. The older `/api/v1/script-debug/sessions/...` and `/api/v1/browser-replay/sessions/...` routes remain as compatibility/debug surfaces. The recorder routes manage proxy-captured HTTP traffic and conversion previews.
+Unified replay sessions use `/api/v1/replay/sessions/...` for draft and stored script replay. The older `/api/v1/script-debug/sessions/...` routes are deprecated compatibility aliases. Browser replay canary sessions still use `/api/v1/browser-replay/sessions/...`. The recorder routes manage proxy-captured HTTP traffic and conversion previews.
 
 Useful recorder and replay endpoints:
 

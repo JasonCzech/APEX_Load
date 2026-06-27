@@ -1074,6 +1074,26 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/docs/endpoint-catalog",
+      "operationId": "handleGetAPIDocsEndpointCatalog",
+      "summary": "Get A P I Docs Endpoint Catalog",
+      "category": "Docs",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/docs/swagger.yaml",
+      "operationId": "handleGetAPIDocsSwagger",
+      "summary": "Get A P I Docs Swagger",
+      "category": "Docs",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/domains",
       "operationId": "handleListDomains",
       "summary": "List Domains",

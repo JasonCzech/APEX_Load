@@ -1,5 +1,3 @@
-import endpointCatalogRaw from '../../docs/api-endpoint-catalog.json?raw'
-
 export type ApiEndpointCatalogRoute = {
   method: string
   path: string
@@ -17,7 +15,7 @@ export type ApiEndpointCatalog = {
   routes: ApiEndpointCatalogRoute[]
 }
 
-function parseEndpointCatalog(source: string): ApiEndpointCatalog {
+export function parseEndpointCatalog(source: string): ApiEndpointCatalog {
   try {
     const parsed = JSON.parse(source) as Partial<ApiEndpointCatalog>
     return {
@@ -49,10 +47,6 @@ export function endpointCatalogKey(method: string, path: string) {
   return `${method.toUpperCase()} ${path}`
 }
 
-export const apiEndpointCatalog = parseEndpointCatalog(endpointCatalogRaw)
-
-export const apiEndpointRoutes = apiEndpointCatalog.routes
-
-export const apiEndpointCatalogByKey = new Map(
-  apiEndpointRoutes.map(route => [endpointCatalogKey(route.method, route.path), route]),
-)
+export function buildEndpointCatalogMap(routes: ApiEndpointCatalogRoute[]) {
+  return new Map(routes.map(route => [endpointCatalogKey(route.method, route.path), route]))
+}

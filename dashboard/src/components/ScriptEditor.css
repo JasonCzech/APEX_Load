@@ -363,202 +363,6 @@
   background: rgba(251, 191, 36, 0.36);
   box-shadow: inset 0 -1px 0 rgba(245, 158, 11, 0.95), 0 0 0 1px rgba(245, 158, 11, 0.42);
 }
-.json-source-map-panel {
-  min-height: 0;
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 10px;
-  overflow: hidden;
-}
-.json-source-map-summary {
-  display: grid;
-  gap: 3px;
-  padding: 10px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-primary);
-}
-.json-source-map-summary strong {
-  color: var(--text-primary);
-  font-size: 12px;
-}
-.json-source-map-summary span {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--text-muted);
-  font-family: 'SF Mono', 'Fira Code', monospace;
-  font-size: 10px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.json-source-map-empty {
-  margin: 0;
-}
-.json-source-map {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr);
-  gap: 5px;
-  overflow: hidden;
-  overscroll-behavior: contain;
-  padding: 4px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--code-bg, #090d16);
-}
-.json-source-map.scroll-linked {
-  grid-template-columns: minmax(0, 1fr) 12px;
-}
-.json-source-map-lines {
-  position: relative;
-  min-width: 0;
-  min-height: 0;
-  height: 100%;
-  display: grid;
-  align-self: stretch;
-  overflow: hidden;
-  overscroll-behavior: contain;
-}
-/* Windowed (virtualized) large-document minimap: a block scroll container whose single child
-   spacer establishes the full scroll height, with only the visible rows absolutely positioned. */
-.json-source-map-lines.virtualized {
-  display: block;
-}
-.json-source-map-virtual {
-  position: relative;
-  width: 100%;
-  min-width: 0;
-}
-.json-source-map-viewport-highlight {
-  position: absolute;
-  left: 0;
-  right: 0;
-  min-height: 6.5px;
-  border: 1px solid rgba(203, 213, 225, 0.46);
-  border-radius: 2px;
-  background: rgba(148, 163, 184, 0.16);
-  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.28);
-  pointer-events: none;
-  z-index: 3;
-}
-.json-source-map-line {
-  position: relative;
-  display: grid;
-  grid-template-columns: 20px minmax(0, 1fr);
-  gap: 3px;
-  align-items: start;
-  width: 100%;
-  min-height: 0;
-  height: 100%;
-  padding: 0 1px 0 0;
-  border: 0;
-  border-left: 1px solid transparent;
-  background: transparent;
-  cursor: pointer;
-  text-align: left;
-  z-index: 1;
-}
-.json-source-map-line:hover,
-.json-source-map-line:focus-visible {
-  background: rgba(148, 163, 184, 0.08);
-  outline: none;
-}
-.json-source-map-line.active-block {
-  border-left-color: rgba(99, 102, 241, 0.85);
-  background: rgba(99, 102, 241, 0.16);
-}
-.json-source-map-line.parameter-match {
-  background: rgba(20, 184, 166, 0.16);
-}
-.json-source-map-line.first-parameter-match {
-  border-left-color: rgba(245, 158, 11, 0.95);
-  background: rgba(245, 158, 11, 0.22);
-}
-.json-source-map-line.selected-line {
-  border-left-color: var(--source-map-selected-border, rgba(56, 189, 248, 0.98));
-  background: var(--source-map-selected-bg, rgba(56, 189, 248, 0.34));
-  box-shadow: var(
-    --source-map-selected-shadow,
-    inset 0 0 0 1px rgba(125, 211, 252, 0.78),
-    0 0 0 1px rgba(56, 189, 248, 0.28)
-  );
-  z-index: 4;
-}
-.json-source-map-line-number {
-  position: sticky;
-  top: 0;
-  align-self: start;
-  overflow: hidden;
-  color: var(--source-map-line-number, rgba(148, 163, 184, 0.72));
-  font-family: 'SF Mono', 'Fira Code', monospace;
-  font-size: 4.33px;
-  line-height: 6.5px;
-  text-align: right;
-  user-select: none;
-}
-.json-source-map-line-code {
-  position: sticky;
-  top: 0;
-  align-self: start;
-  display: block;
-  min-width: 6px;
-  height: auto;
-  margin-top: 0;
-  overflow: hidden;
-  color: var(--source-map-line-code, rgba(217, 231, 255, 0.72));
-  font-family: 'SF Mono', 'Fira Code', monospace;
-  font-size: 4.33px;
-  line-height: 6.5px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.json-source-map-line.active-block .json-source-map-line-code {
-  color: var(--source-map-line-code-active, rgba(224, 231, 255, 0.92));
-}
-.json-source-map-line.parameter-match .json-source-map-line-code {
-  color: var(--source-map-line-code-parameter, rgba(153, 246, 228, 0.92));
-}
-.json-source-map-line.first-parameter-match .json-source-map-line-code {
-  color: var(--source-map-line-code-first-parameter, rgba(253, 230, 138, 0.96));
-}
-.json-source-map-line.selected-line .json-source-map-line-number,
-.json-source-map-line.selected-line .json-source-map-line-code {
-  color: var(--source-map-line-code-selected, rgba(240, 249, 255, 0.98));
-}
-.json-source-map-scroll-track {
-  position: relative;
-  min-height: 0;
-  width: 12px;
-  border-radius: 999px;
-  background: rgba(15, 23, 42, 0.48);
-  cursor: pointer;
-}
-.json-source-map-scroll-track:hover {
-  background: rgba(30, 41, 59, 0.68);
-}
-.json-source-map-scroll-thumb {
-  position: absolute;
-  left: 2px;
-  width: 8px;
-  min-height: 24px;
-  padding: 0;
-  border: 1px solid rgba(148, 163, 184, 0.38);
-  border-radius: 999px;
-  background: rgba(148, 163, 184, 0.58);
-  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.24);
-  cursor: grab;
-}
-.json-source-map-scroll-thumb:hover,
-.json-source-map-scroll-thumb:focus-visible {
-  background: rgba(203, 213, 225, 0.78);
-  outline: none;
-}
-.json-source-map-scroll-thumb:active {
-  cursor: grabbing;
-}
 .center-tabbed-pane {
   min-width: 0;
   min-height: 0;
@@ -5197,15 +5001,6 @@
 .editor-utility-sidebar.context-inspector .contextual-history-card {
   margin: 0 16px 16px;
 }
-.editor-utility-sidebar.context-source-map {
-  padding: 10px;
-  gap: 10px;
-  background: var(--bg-card);
-  min-height: 0;
-  height: max(320px, calc(100vh - 255px));
-  max-height: max(320px, calc(100vh - 255px));
-  overflow: hidden;
-}
 .editor-utility-sidebar.collapsed {
   padding: 8px;
   overflow: hidden;
@@ -6417,11 +6212,10 @@
     max-height: none;
   }
   .editor-body.workspace-author .actions-sidebar,
-  .editor-body.workspace-author .editor-utility-sidebar:not(.context-source-map) {
+  .editor-body.workspace-author .editor-utility-sidebar {
     overflow-y: auto;
   }
-  .editor-body.workspace-author .editor-utility-sidebar,
-  .editor-body.workspace-author .editor-utility-sidebar.context-source-map {
+  .editor-body.workspace-author .editor-utility-sidebar {
     height: auto;
     max-height: none;
   }

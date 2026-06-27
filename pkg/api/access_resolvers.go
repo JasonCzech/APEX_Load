@@ -459,7 +459,8 @@ func resolveProjectIDFromScenarioScripts(scripts []storage.ScenarioScript, store
 
 func resolveDraftScriptProjectID(r *http.Request, _ storage.Store) (string, int, string) {
 	var req struct {
-		Script *struct {
+		ProjectID string `json:"project_id,omitempty"`
+		Script    *struct {
 			ProjectID string `json:"project_id,omitempty"`
 		} `json:"script,omitempty"`
 	}
@@ -469,7 +470,15 @@ func resolveDraftScriptProjectID(r *http.Request, _ storage.Store) (string, int,
 	if req.Script == nil {
 		return "", http.StatusBadRequest, "script is required"
 	}
-	return normalizeProjectID(req.Script.ProjectID), 0, ""
+	requestProjectID := strings.TrimSpace(req.ProjectID)
+	scriptProjectID := strings.TrimSpace(req.Script.ProjectID)
+	if requestProjectID != "" && scriptProjectID != "" && normalizeProjectID(requestProjectID) != normalizeProjectID(scriptProjectID) {
+		return "", http.StatusBadRequest, "project_id does not match script.project_id"
+	}
+	if requestProjectID != "" {
+		return normalizeProjectID(requestProjectID), 0, ""
+	}
+	return normalizeProjectID(scriptProjectID), 0, ""
 }
 
 func resolveBrowserToHTTPPreviewProjectID(r *http.Request, _ storage.Store) (string, int, string) {

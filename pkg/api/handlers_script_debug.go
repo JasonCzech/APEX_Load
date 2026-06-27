@@ -14,6 +14,7 @@ import (
 
 type ScriptDebugStartRequest struct {
 	GroupName       string                       `json:"group_name,omitempty"`
+	ProjectID       string                       `json:"project_id,omitempty"`
 	ReplaySessionID string                       `json:"replay_session_id,omitempty"`
 	ReplayProfile   string                       `json:"replay_profile,omitempty"`
 	RuntimeProfile  *engine.ReplayRuntimeProfile `json:"runtime_profile,omitempty"`
@@ -55,6 +56,10 @@ func (s *Server) handleStartScriptDebugDraftScript(w http.ResponseWriter, r *htt
 		writeError(w, http.StatusBadRequest, "script is required")
 		return
 	}
+	if err := bindDraftScriptProject(req.Script, req.ProjectID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	s.handleStartScriptDebugRequest(w, r, "", req.Script, req)
 }
 
@@ -83,6 +88,10 @@ func (s *Server) handleStartScriptDebugScript(w http.ResponseWriter, r *http.Req
 			script.Name = stored.Name
 		}
 	}
+	if err := bindStoredScriptProject(script, stored.Script.ProjectID, req.ProjectID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	s.handleStartScriptDebugRequest(w, r, id, script, req)
 }
@@ -98,6 +107,10 @@ func (s *Server) handleStartReplaySessionDraftScript(w http.ResponseWriter, r *h
 	}
 	if req.Script == nil {
 		writeError(w, http.StatusBadRequest, "script is required")
+		return
+	}
+	if err := bindDraftScriptProject(req.Script, req.ProjectID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	req.Mode = "replay"
@@ -128,6 +141,10 @@ func (s *Server) handleStartReplaySessionScript(w http.ResponseWriter, r *http.R
 		if script.Name == "" {
 			script.Name = stored.Name
 		}
+	}
+	if err := bindStoredScriptProject(script, stored.Script.ProjectID, req.ProjectID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
 	}
 	req.Mode = "replay"
 	s.handleStartScriptDebugRequest(w, r, id, script, req)

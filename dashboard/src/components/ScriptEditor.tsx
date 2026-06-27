@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useApi } from '../hooks/useApi'
 import { ApiError } from '../hooks/apiClient'
@@ -528,7 +528,6 @@ type AuthorRightSidebarKind =
   | 'signals'
   | 'parameters'
   | 'inspector'
-  | 'source-map'
   | 'imported-metadata'
   | 'object-descriptors'
   | 'http-conversion'
@@ -588,47 +587,9 @@ interface JsonPaneSelectionRequest {
   y: number
 }
 
-interface ScriptCodeLineLayout {
-  top: number
-  height: number
-}
-
-interface ScriptCodeScrollSnapshot {
-  scrollTop: number
-  scrollHeight: number
-  clientHeight: number
-  lineCount: number
-  topLine: number
-  bottomLine: number
-  selectedStartLine: number
-  selectedEndLine: number
-  lineLayouts: ScriptCodeLineLayout[]
-  baseLineHeight: number
-}
-
-interface ScriptCodeScrollController {
-  refresh: () => void
-  scrollToScrollTop: (scrollTop: number) => void
-  scrollToLine: (line: number) => void
-  scrollToRatio: (ratio: number) => void
-}
-
-const JSON_SOURCE_MAP_LINE_HEIGHT_PX = 6.5
-
-/**
- * Above this line count we stop measuring per-line layout for the source-map snapshot.
- * Measuring every line (view.lineBlockAt per line) is a forced synchronous layout pass
- * that, on a tens-of-thousands-of-line imported script, blocks the main thread and — since
- * the snapshot is stored in component state — can re-fire on every render. Consumers fall
- * back to baseLineHeight when lineLayouts is empty.
- */
-const SCRIPT_CODE_LINE_LAYOUT_MAX_LINES = 4000
-
 /**
  * Above this document size the inline review-baseline/current-draft JSON diff preview is replaced
  * by a "too large to preview" placeholder (serializing multi-MB JSON inline would jank the panel).
- * The dormant source-map minimap is NOT gated by this — when re-enabled it windows its rows
- * (see virtualizeSourceMap) and renders at any size.
  */
 const JSON_SOURCE_MAP_MAX_DOC_CHARS = 250_000
 
@@ -648,127 +609,6 @@ const SCRIPT_CODE_LINE_WRAP_MAX_CHARS = 250_000
  * actions/mappings) switch to windowed rendering so only visible rows hit the DOM.
  */
 const LIST_VIRTUALIZE_THRESHOLD = 100
-
-const SCRIPT_CODE_SCROLL_EMPTY: ScriptCodeScrollSnapshot = {
-  scrollTop: 0,
-  scrollHeight: 0,
-  clientHeight: 0,
-  lineCount: 1,
-  topLine: 1,
-  bottomLine: 1,
-  selectedStartLine: 1,
-  selectedEndLine: 1,
-  lineLayouts: [],
-  baseLineHeight: JSON_SOURCE_MAP_LINE_HEIGHT_PX,
-}
-
-function clampNumber(value: number, min: number, max: number) {
-  if (!Number.isFinite(value)) return min
-  return Math.max(min, Math.min(max, value))
-}
-
-function approximateLinePosition(scrollTop: number, scrollHeight: number, lineCount: number) {
-  const lineHeight = lineCount > 0 ? Math.max(1, scrollHeight / lineCount) : scrollHeight
-  return clampNumber(scrollTop / lineHeight + 1, 1, Math.max(1, lineCount))
-}
-
-function readLinePositionAtScrollTop(view: EditorView, scrollTop: number, scrollHeight: number, lineCount: number) {
-  try {
-    const block = view.lineBlockAtHeight(scrollTop)
-    const line = view.state.doc.lineAt(block.from)
-    const blockHeight = Math.max(1, block.bottom - block.top)
-    const fraction = clampNumber((scrollTop - block.top) / blockHeight, 0, 1)
-    return clampNumber(line.number + fraction, 1, lineCount)
-  } catch {
-    return approximateLinePosition(scrollTop, scrollHeight, lineCount)
-  }
-}
-
-function readScriptCodeLineLayouts(view: EditorView, scrollHeight: number, lineCount: number) {
-  if (lineCount > SCRIPT_CODE_LINE_LAYOUT_MAX_LINES) {
-    const base = view.defaultLineHeight || Math.max(1, scrollHeight / Math.max(1, lineCount))
-    return { lineLayouts: [] as ScriptCodeLineLayout[], baseLineHeight: Math.max(1, base) }
-  }
-  try {
-    const lineLayouts: ScriptCodeLineLayout[] = []
-    let minHeight = Number.POSITIVE_INFINITY
-    for (let lineNo = 1; lineNo <= lineCount; lineNo += 1) {
-      const line = view.state.doc.line(lineNo)
-      const block = view.lineBlockAt(line.from)
-      const height = Math.max(1, block.bottom - block.top)
-      lineLayouts.push({ top: Math.max(0, block.top), height })
-      minHeight = Math.min(minHeight, height)
-    }
-    return {
-      lineLayouts,
-      baseLineHeight: Number.isFinite(minHeight) ? minHeight : JSON_SOURCE_MAP_LINE_HEIGHT_PX,
-    }
-  } catch {
-    const fallbackHeight = Math.max(1, scrollHeight / Math.max(1, lineCount))
-    return {
-      lineLayouts: Array.from({ length: lineCount }, (_, index) => ({ top: index * fallbackHeight, height: fallbackHeight })),
-      baseLineHeight: fallbackHeight,
-    }
-  }
-}
-
-function readScriptCodeSelectionLines(view: EditorView, lineCount: number) {
-  const selection = view.state.selection.main
-  const from = clampNumber(selection.from, 0, view.state.doc.length)
-  const inclusiveTo = selection.to === selection.from
-    ? from
-    : clampNumber(selection.to - 1, 0, view.state.doc.length)
-  const startLine = view.state.doc.lineAt(Math.min(from, inclusiveTo)).number
-  const endLine = view.state.doc.lineAt(Math.max(from, inclusiveTo)).number
-  return {
-    selectedStartLine: Math.max(1, Math.min(lineCount, startLine)),
-    selectedEndLine: Math.max(1, Math.min(lineCount, endLine)),
-  }
-}
-
-function readScriptCodeScrollSnapshot(view: EditorView | null): ScriptCodeScrollSnapshot {
-  const scrollDOM = view?.scrollDOM
-  if (!scrollDOM) return SCRIPT_CODE_SCROLL_EMPTY
-  const lineCount = Math.max(1, view?.state.doc.lines || 1)
-  const clientHeight = Math.max(0, scrollDOM.clientHeight || 0)
-  const scrollHeight = Math.max(clientHeight, scrollDOM.scrollHeight || 0)
-  const maxScrollTop = Math.max(0, scrollHeight - clientHeight)
-  const scrollTop = clampNumber(scrollDOM.scrollTop || 0, 0, maxScrollTop)
-  const { lineLayouts, baseLineHeight } = readScriptCodeLineLayouts(view, scrollHeight, lineCount)
-  const topLine = view
-    ? readLinePositionAtScrollTop(view, scrollTop, scrollHeight, lineCount)
-    : approximateLinePosition(scrollTop, scrollHeight, lineCount)
-  const bottomLine = view
-    ? readLinePositionAtScrollTop(view, scrollTop + clientHeight, scrollHeight, lineCount)
-    : approximateLinePosition(scrollTop + clientHeight, scrollHeight, lineCount)
-  const selectionLines = readScriptCodeSelectionLines(view, lineCount)
-  return { scrollTop, scrollHeight, clientHeight, lineCount, topLine, bottomLine, ...selectionLines, lineLayouts, baseLineHeight }
-}
-
-function sameScriptCodeLineLayouts(a: ScriptCodeLineLayout[], b: ScriptCodeLineLayout[]) {
-  if (a.length !== b.length) return false
-  for (let index = 0; index < a.length; index += 1) {
-    if (a[index].top !== b[index].top || a[index].height !== b[index].height) {
-      return false
-    }
-  }
-  return true
-}
-
-function sameScriptCodeScrollSnapshot(a: ScriptCodeScrollSnapshot, b: ScriptCodeScrollSnapshot) {
-  return (
-    a.scrollTop === b.scrollTop &&
-    a.scrollHeight === b.scrollHeight &&
-    a.clientHeight === b.clientHeight &&
-    a.lineCount === b.lineCount &&
-    a.topLine === b.topLine &&
-    a.bottomLine === b.bottomLine &&
-    a.selectedStartLine === b.selectedStartLine &&
-    a.selectedEndLine === b.selectedEndLine &&
-    a.baseLineHeight === b.baseLineHeight &&
-    sameScriptCodeLineLayouts(a.lineLayouts, b.lineLayouts)
-  )
-}
 
 interface ScriptCodePaneProps {
   value: string
@@ -797,8 +637,6 @@ interface ScriptCodePaneProps {
   onFormat: () => void
   onReset: () => void
   onRequestParameterize?: (selection: JsonPaneSelectionRequest) => void
-  onScrollControllerChange?: (controller: ScriptCodeScrollController | null) => void
-  onScrollSnapshotChange?: (snapshot: ScriptCodeScrollSnapshot) => void
 }
 
 function ScriptCodePane({
@@ -827,11 +665,8 @@ function ScriptCodePane({
   onFormat,
   onReset,
   onRequestParameterize,
-  onScrollControllerChange,
-  onScrollSnapshotChange,
 }: ScriptCodePaneProps) {
   const viewRef = useRef<EditorView | null>(null)
-  const lastScrollSnapshotRef = useRef<ScriptCodeScrollSnapshot>(SCRIPT_CODE_SCROLL_EMPTY)
   // The action list / forms are the primary edit surface; the raw JSON is a
   // read-only projection of structured state by default. Editing it directly is
   // an explicit opt-in (the escape hatch for power users / fields the forms
@@ -860,12 +695,6 @@ function ScriptCodePane({
     if (!allowDirectEdit && jsonEditEnabled) setJsonEditEnabled(false)
   }, [allowDirectEdit, jsonEditEnabled])
 
-  const emitScrollSnapshot = useCallback(() => {
-    const snapshot = readScriptCodeScrollSnapshot(viewRef.current)
-    if (sameScriptCodeScrollSnapshot(snapshot, lastScrollSnapshotRef.current)) return
-    lastScrollSnapshotRef.current = snapshot
-    onScrollSnapshotChange?.(snapshot)
-  }, [onScrollSnapshotChange])
   const wrapLines = value.length <= SCRIPT_CODE_LINE_WRAP_MAX_CHARS
   const extensions = useMemo(() => [
     json(),
@@ -876,98 +705,8 @@ function ScriptCodePane({
     scriptCodeCandidateMatchField,
     scriptCodeResolvedValueField,
     ...(wrapLines ? [EditorView.lineWrapping] : []),
-    EditorView.updateListener.of(update => {
-      if (update.selectionSet || update.docChanged || update.viewportChanged || update.geometryChanged) {
-        emitScrollSnapshot()
-      }
-    }),
     ...(assistExtensions ?? []),
-  ], [assistExtensions, emitScrollSnapshot, wrapLines])
-
-  const scrollToScrollTop = useCallback((scrollTop: number) => {
-    const scrollDOM = viewRef.current?.scrollDOM
-    if (!scrollDOM) return
-    const maxScrollTop = Math.max(0, (scrollDOM.scrollHeight || 0) - (scrollDOM.clientHeight || 0))
-    scrollDOM.scrollTop = clampNumber(scrollTop, 0, maxScrollTop)
-    scrollDOM.dispatchEvent(new Event('scroll', { bubbles: true }))
-    emitScrollSnapshot()
-  }, [emitScrollSnapshot])
-
-  const scrollToRatio = useCallback((ratio: number) => {
-    const scrollDOM = viewRef.current?.scrollDOM
-    if (!scrollDOM) return
-    const maxScrollTop = Math.max(0, (scrollDOM.scrollHeight || 0) - (scrollDOM.clientHeight || 0))
-    scrollToScrollTop(maxScrollTop * clampNumber(ratio, 0, 1))
-  }, [scrollToScrollTop])
-
-  const scrollToLine = useCallback((line: number) => {
-    const view = viewRef.current
-    const scrollDOM = view?.scrollDOM
-    if (!view || !scrollDOM) return
-    const lineCount = Math.max(1, view.state.doc.lines)
-    const linePosition = clampNumber(line, 1, lineCount)
-    const lineNo = Math.max(1, Math.min(lineCount, Math.floor(linePosition)))
-    const maxScrollTop = Math.max(0, (scrollDOM.scrollHeight || 0) - (scrollDOM.clientHeight || 0))
-    let targetScrollTop = maxScrollTop * ((linePosition - 1) / Math.max(1, lineCount - 1))
-    try {
-      const currentLine = view.state.doc.line(lineNo)
-      const currentBlock = view.lineBlockAt(currentLine.from)
-      if (lineNo < lineCount) {
-        const nextLine = view.state.doc.line(lineNo + 1)
-        const nextBlock = view.lineBlockAt(nextLine.from)
-        targetScrollTop = currentBlock.top + (nextBlock.top - currentBlock.top) * (linePosition - lineNo)
-      } else {
-        targetScrollTop = currentBlock.top
-      }
-    } catch {
-      targetScrollTop = maxScrollTop * ((linePosition - 1) / Math.max(1, lineCount - 1))
-    }
-    scrollDOM.scrollTop = clampNumber(targetScrollTop, 0, maxScrollTop)
-    scrollDOM.dispatchEvent(new Event('scroll', { bubbles: true }))
-    emitScrollSnapshot()
-  }, [emitScrollSnapshot])
-
-  useEffect(() => {
-    if (!onScrollControllerChange || !viewRef.current) return undefined
-    const controller: ScriptCodeScrollController = {
-      refresh: emitScrollSnapshot,
-      scrollToScrollTop,
-      scrollToLine,
-      scrollToRatio,
-    }
-    onScrollControllerChange(controller)
-    return () => onScrollControllerChange(null)
-  }, [editorReadyVersion, emitScrollSnapshot, onScrollControllerChange, scrollToLine, scrollToRatio, scrollToScrollTop])
-
-  useEffect(() => {
-    const scrollDOM = viewRef.current?.scrollDOM
-    if (!scrollDOM) return undefined
-    const handleScroll = () => emitScrollSnapshot()
-    const handleSelectionChange = () => emitScrollSnapshot()
-    scrollDOM.addEventListener('scroll', handleScroll, { passive: true })
-    scrollDOM.addEventListener('keyup', handleSelectionChange)
-    scrollDOM.addEventListener('mouseup', handleSelectionChange)
-    scrollDOM.addEventListener('select', handleSelectionChange)
-    scrollDOM.addEventListener('input', handleSelectionChange)
-    emitScrollSnapshot()
-
-    let resizeObserver: ResizeObserver | null = null
-    if (typeof ResizeObserver !== 'undefined') {
-      resizeObserver = new ResizeObserver(() => emitScrollSnapshot())
-      resizeObserver.observe(scrollDOM)
-    }
-    window.addEventListener('resize', emitScrollSnapshot)
-
-    return () => {
-      scrollDOM.removeEventListener('scroll', handleScroll)
-      scrollDOM.removeEventListener('keyup', handleSelectionChange)
-      scrollDOM.removeEventListener('mouseup', handleSelectionChange)
-      scrollDOM.removeEventListener('select', handleSelectionChange)
-      scrollDOM.removeEventListener('input', handleSelectionChange)
-      resizeObserver?.disconnect()
-      window.removeEventListener('resize', emitScrollSnapshot)
-    }
-  }, [editorReadyVersion, emitScrollSnapshot, value])
+  ], [assistExtensions, wrapLines])
 
   useEffect(() => {
     const view = viewRef.current
@@ -979,8 +718,7 @@ function ScriptCodePane({
       effects.push(EditorView.scrollIntoView(line.from, { y: 'center' }))
     }
     view.dispatch({ effects })
-    emitScrollSnapshot()
-  }, [activeStartLine, activeEndLine, editorReadyVersion, emitScrollSnapshot, value])
+  }, [activeStartLine, activeEndLine, editorReadyVersion, value])
 
   useEffect(() => {
     const view = viewRef.current
@@ -993,12 +731,10 @@ function ScriptCodePane({
         selection: EditorSelection.range(firstMatch.from, firstMatch.to),
         effects,
       })
-      emitScrollSnapshot()
       return
     }
     view.dispatch({ effects })
-    emitScrollSnapshot()
-  }, [editorReadyVersion, emitScrollSnapshot, parameterMatchKey, parameterMatchRanges, value])
+  }, [editorReadyVersion, parameterMatchKey, parameterMatchRanges, value])
 
   useEffect(() => {
     const view = viewRef.current
@@ -1011,12 +747,10 @@ function ScriptCodePane({
         selection: EditorSelection.range(firstMatch.from, firstMatch.to),
         effects,
       })
-      emitScrollSnapshot()
       return
     }
     view.dispatch({ effects })
-    emitScrollSnapshot()
-  }, [candidateMatchKey, candidateMatchRanges, editorReadyVersion, emitScrollSnapshot, value])
+  }, [candidateMatchKey, candidateMatchRanges, editorReadyVersion, value])
 
   const resolvedValuesKey = resolvedValues ? JSON.stringify(resolvedValues) : ''
   useEffect(() => {
@@ -1036,8 +770,7 @@ function ScriptCodePane({
       selection: EditorSelection.cursor(line.from),
       effects: EditorView.scrollIntoView(line.from, { y: 'center' }),
     })
-    emitScrollSnapshot()
-  }, [editorReadyVersion, emitScrollSnapshot, jumpToLineRequest, value])
+  }, [editorReadyVersion, jumpToLineRequest, value])
 
   const handleOpenSearch = useCallback(() => {
     const view = viewRef.current
@@ -1135,7 +868,6 @@ function ScriptCodePane({
           }}
           onCreateEditor={view => {
             viewRef.current = view
-            emitScrollSnapshot()
             setEditorReadyVersion(version => version + 1)
           }}
         />
@@ -1214,503 +946,6 @@ function MetadataJsonDialog({ metadata, onClose }: { metadata: ScriptImportMetad
           <MetadataJsonViewer metadata={metadata} />
         </div>
       </div>
-    </div>
-  )
-}
-
-interface JsonMinimapBaseLine {
-  lineNo: number
-  textPreview: string
-  widthPct: number
-}
-
-interface JsonMinimapParameterLines {
-  parameterLines: Set<number>
-  firstParameterLine: number | null
-}
-
-interface JsonSourceMinimapProps {
-  activePath: string
-  activeRange: LineRange | null
-  candidateMatchRanges?: ScriptCodeMatchRange[]
-  jsonText: string
-  parameterMatchRanges: ScriptCodeMatchRange[]
-  scrollSnapshot: ScriptCodeScrollSnapshot
-  selectedParameterName?: string | null
-  status: 'synced' | 'dirty' | 'invalid'
-  onJumpToLine: (line: number) => void
-  onScrollTopChange: (scrollTop: number) => void
-}
-
-function lineNumberForOffset(lineStarts: number[], offset: number): number {
-  let low = 0
-  let high = lineStarts.length - 1
-  let result = 0
-  while (low <= high) {
-    const mid = Math.floor((low + high) / 2)
-    if (lineStarts[mid] <= offset) {
-      result = mid
-      low = mid + 1
-    } else {
-      high = mid - 1
-    }
-  }
-  return result + 1
-}
-
-/**
- * Build the source-map line data in two passes so a large import stays cheap:
- *  - {@link buildJsonMinimapBaseLines} is the only heavy (one-entry-per-line) pass; it is
- *    memoized on `jsonText` alone, so cursor moves and parameter selection do NOT rebuild it.
- *  - The active/selected/parameter flags are computed per *rendered* row instead of being baked
- *    into every line up front, which is what previously forced a full ~98k-entry rebuild on
- *    every selection change and motivated disabling the minimap on big docs entirely.
- */
-function buildJsonMinimapBaseLines(jsonText: string): { baseLines: JsonMinimapBaseLine[]; lineStarts: number[] } {
-  const lines = jsonText.split('\n')
-  const lineStarts: number[] = []
-  let offset = 0
-  const baseLines = lines.map((line, index) => {
-    lineStarts.push(offset)
-    offset += line.length + 1
-    const trimmed = line.trim()
-    const widthPct = Math.max(12, Math.min(100, Math.round((trimmed.length / 90) * 100)))
-    return { lineNo: index + 1, textPreview: trimmed || ' ', widthPct }
-  })
-  return { baseLines, lineStarts }
-}
-
-function buildJsonMinimapParameterLines(
-  lineStarts: number[],
-  parameterMatchRanges: ScriptCodeMatchRange[],
-  candidateMatchRanges: ScriptCodeMatchRange[] = [],
-): JsonMinimapParameterLines {
-  const parameterLines = new Set<number>()
-  let firstParameterLine: number | null = null
-  const highlightedRanges = [...candidateMatchRanges, ...parameterMatchRanges]
-  highlightedRanges.forEach((range, index) => {
-    const startLine = lineNumberForOffset(lineStarts, range.from)
-    const endLine = lineNumberForOffset(lineStarts, Math.max(range.from, range.to - 1))
-    for (let lineNo = startLine; lineNo <= endLine; lineNo += 1) {
-      parameterLines.add(lineNo)
-    }
-    if (index === 0) firstParameterLine = startLine
-  })
-  return { parameterLines, firstParameterLine }
-}
-
-function buildMinimapLineOffsets(lineHeights: number[]): number[] {
-  return lineHeights.reduce<number[]>((offsets, height) => {
-    offsets.push(offsets[offsets.length - 1] + height)
-    return offsets
-  }, [0])
-}
-
-function minimapOffsetForLinePosition(linePosition: number, lineOffsets: number[], lineHeights: number[]): number {
-  if (lineHeights.length === 0) return 0
-  const boundedPosition = clampNumber(linePosition, 1, lineHeights.length + 1)
-  const rawIndex = boundedPosition - 1
-  const lineIndex = Math.floor(rawIndex)
-  if (lineIndex >= lineHeights.length) return lineOffsets[lineHeights.length] || 0
-  const lineFraction = rawIndex - lineIndex
-  return (lineOffsets[lineIndex] || 0) + lineFraction * lineHeights[lineIndex]
-}
-
-/**
- * Pixel offset of a (fractional) line in the minimap. When per-row heights are measured
- * (small/wrapped docs) it defers to {@link minimapOffsetForLinePosition}; otherwise rows are a
- * uniform {@link JSON_SOURCE_MAP_LINE_HEIGHT_PX} tall, so the offset is computed analytically —
- * this avoids materializing a one-entry-per-line height array for a ~98k-line import. The
- * uniform branch matches the cumulative offsets the row virtualizer derives from the same
- * constant row height, so the viewport highlight stays aligned with the rendered rows.
- */
-function minimapOffsetForLine(
-  linePosition: number,
-  lineCount: number,
-  lineOffsets: number[],
-  lineHeights: number[],
-): number {
-  if (lineHeights.length > 0) return minimapOffsetForLinePosition(linePosition, lineOffsets, lineHeights)
-  const boundedPosition = clampNumber(linePosition, 1, lineCount + 1)
-  return (boundedPosition - 1) * JSON_SOURCE_MAP_LINE_HEIGHT_PX
-}
-
-function JsonSourceMinimap({
-  activePath,
-  activeRange,
-  candidateMatchRanges = [],
-  jsonText,
-  parameterMatchRanges,
-  scrollSnapshot,
-  selectedParameterName,
-  status,
-  onJumpToLine,
-  onScrollTopChange,
-}: JsonSourceMinimapProps) {
-  const scrollTrackRef = useRef<HTMLDivElement | null>(null)
-  const sourceMapLinesRef = useRef<HTMLDivElement | null>(null)
-  const dragStateRef = useRef<{ pointerId: number | null; startY: number; startRatio: number; trackHeight: number } | null>(null)
-  const selectedLineRange = useMemo(() => ({
-    startLine: Math.min(scrollSnapshot.selectedStartLine, scrollSnapshot.selectedEndLine),
-    endLine: Math.max(scrollSnapshot.selectedStartLine, scrollSnapshot.selectedEndLine),
-  }), [scrollSnapshot.selectedEndLine, scrollSnapshot.selectedStartLine])
-  // The minimap data is split: the heavy one-entry-per-line pass is memoized on jsonText alone,
-  // while the active/selected/parameter flags are derived per rendered row (see renderSourceMapLine).
-  const { baseLines, lineStarts } = useMemo(() => buildJsonMinimapBaseLines(jsonText), [jsonText])
-  const parameterLineInfo = useMemo(
-    () => buildJsonMinimapParameterLines(lineStarts, parameterMatchRanges, candidateMatchRanges),
-    [lineStarts, parameterMatchRanges, candidateMatchRanges],
-  )
-  // Window the per-line minimap (only visible rows hit the DOM) once the doc is large enough that
-  // the editor stops measuring per-line layouts — at that point rows are a uniform height, which
-  // keeps the windowed path simple. Below it, the plain grid render handles ordinary scripts and
-  // test fixtures with their measured (wrapped) row heights, identical to before.
-  const virtualizeSourceMap = baseLines.length > SCRIPT_CODE_LINE_LAYOUT_MAX_LINES
-  const activeLabel = selectedParameterName
-    ? `${selectedParameterName}: ${parameterMatchRanges.length} occurrence${parameterMatchRanges.length === 1 ? '' : 's'}`
-    : activePath || (activeRange ? `Lines ${activeRange.startLine}-${activeRange.endLine}` : 'No selection')
-  const invalid = status === 'invalid' || !jsonText.trim()
-  const scrollRange = Math.max(0, scrollSnapshot.scrollHeight - scrollSnapshot.clientHeight)
-  const hasScrollableEditor = scrollRange > 0 && scrollSnapshot.clientHeight > 0
-  const minimapScale = JSON_SOURCE_MAP_LINE_HEIGHT_PX / Math.max(1, scrollSnapshot.baseLineHeight || JSON_SOURCE_MAP_LINE_HEIGHT_PX)
-  // Per-row heights are only materialized when the editor measured per-line layouts (small docs).
-  // Above SCRIPT_CODE_LINE_LAYOUT_MAX_LINES lineLayouts is empty and every row is a uniform
-  // JSON_SOURCE_MAP_LINE_HEIGHT_PX tall, so we skip building a ~98k-entry array entirely.
-  const hasMeasuredRowHeights = scrollSnapshot.lineLayouts.length > 0
-  const minimapLineHeights = useMemo(
-    () => hasMeasuredRowHeights
-      ? baseLines.map((_, index) => {
-          const editorHeight = scrollSnapshot.lineLayouts[index]?.height || scrollSnapshot.baseLineHeight || JSON_SOURCE_MAP_LINE_HEIGHT_PX
-          return Math.max(JSON_SOURCE_MAP_LINE_HEIGHT_PX, editorHeight * minimapScale)
-        })
-      : [],
-    [hasMeasuredRowHeights, baseLines, minimapScale, scrollSnapshot.baseLineHeight, scrollSnapshot.lineLayouts],
-  )
-  const minimapLineOffsets = useMemo(() => buildMinimapLineOffsets(minimapLineHeights), [minimapLineHeights])
-  const sourceMapVirtualizer = useVirtualizer({
-    count: baseLines.length,
-    getScrollElement: () => sourceMapLinesRef.current,
-    estimateSize: index => minimapLineHeights[index] ?? JSON_SOURCE_MAP_LINE_HEIGHT_PX,
-    overscan: 24,
-  })
-  const sourceMapGridTemplateRows = useMemo(() => {
-    const fallbackCount = Math.max(baseLines.length, 1)
-    if (minimapLineHeights.length === 0) return `repeat(${fallbackCount}, ${JSON_SOURCE_MAP_LINE_HEIGHT_PX}px)`
-    const hasWrappedRows = minimapLineHeights.some(height => Math.abs(height - JSON_SOURCE_MAP_LINE_HEIGHT_PX) > 0.01)
-    if (!hasWrappedRows) return `repeat(${fallbackCount}, ${JSON_SOURCE_MAP_LINE_HEIGHT_PX}px)`
-    return minimapLineHeights.map(height => `${height.toFixed(2)}px`).join(' ')
-  }, [baseLines.length, minimapLineHeights])
-  const visibleRatio = hasScrollableEditor
-    ? clampNumber(scrollSnapshot.clientHeight / scrollSnapshot.scrollHeight, 0.04, 1)
-    : 1
-  const scrollRatio = hasScrollableEditor
-    ? clampNumber(scrollSnapshot.scrollTop / scrollRange, 0, 1)
-    : 0
-  const scrollPercent = Math.round(scrollRatio * 100)
-  const thumbHeightPct = visibleRatio * 100
-  const thumbTopPct = scrollRatio * 100
-  const viewportHighlightTop = minimapOffsetForLine(scrollSnapshot.topLine, baseLines.length, minimapLineOffsets, minimapLineHeights)
-  const viewportHighlightBottom = minimapOffsetForLine(
-    Math.max(scrollSnapshot.topLine, scrollSnapshot.bottomLine),
-    baseLines.length,
-    minimapLineOffsets,
-    minimapLineHeights,
-  )
-  const viewportHighlightHeight = Math.max(JSON_SOURCE_MAP_LINE_HEIGHT_PX, viewportHighlightBottom - viewportHighlightTop)
-
-  useEffect(() => {
-    const linesElement = sourceMapLinesRef.current
-    if (!linesElement) return
-    const maxScrollTop = Math.max(0, linesElement.scrollHeight - linesElement.clientHeight)
-    linesElement.scrollTop = clampNumber(viewportHighlightTop, 0, maxScrollTop)
-  }, [baseLines.length, viewportHighlightTop])
-
-  const scrollFromTrackPosition = (clientY: number) => {
-    const track = scrollTrackRef.current
-    if (!track) return
-    const rect = track.getBoundingClientRect()
-    if (rect.height <= 0) return
-    const thumbHeight = rect.height * visibleRatio
-    const draggableHeight = Math.max(1, rect.height - thumbHeight)
-    const nextRatio = clampNumber((clientY - rect.top - thumbHeight / 2) / draggableHeight, 0, 1)
-    onScrollTopChange(nextRatio * scrollRange)
-  }
-
-  const handleSourceMapWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
-    if (!hasScrollableEditor) return
-    const rawDelta = Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX
-    if (rawDelta === 0) return
-    const deltaPixels = event.deltaMode === 1
-      ? rawDelta * JSON_SOURCE_MAP_LINE_HEIGHT_PX
-      : event.deltaMode === 2
-        ? rawDelta * scrollSnapshot.clientHeight
-        : rawDelta
-    const nextScrollTop = clampNumber(
-      scrollSnapshot.scrollTop + deltaPixels / minimapScale,
-      0,
-      scrollRange,
-    )
-    const linesElement = sourceMapLinesRef.current
-    if (linesElement) {
-      const maxScrollTop = Math.max(0, linesElement.scrollHeight - linesElement.clientHeight)
-      linesElement.scrollTop = clampNumber(nextScrollTop * minimapScale, 0, maxScrollTop)
-    }
-    event.preventDefault()
-    event.stopPropagation()
-    onScrollTopChange(nextScrollTop)
-  }
-
-  const handleTrackPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!hasScrollableEditor) return
-    event.preventDefault()
-    scrollFromTrackPosition(event.clientY)
-  }
-
-  const handleTrackMouseDown = (event: ReactMouseEvent<HTMLDivElement>) => {
-    if (!hasScrollableEditor || event.button !== 0) return
-    event.preventDefault()
-    scrollFromTrackPosition(event.clientY)
-  }
-
-  const beginThumbDrag = (clientY: number, pointerId: number | null) => {
-    if (!hasScrollableEditor) return
-    const track = scrollTrackRef.current
-    const trackHeight = track?.getBoundingClientRect().height || 0
-    if (trackHeight <= 0) return
-    dragStateRef.current = {
-      pointerId,
-      startY: clientY,
-      startRatio: scrollRatio,
-      trackHeight,
-    }
-  }
-
-  const applyThumbDrag = (clientY: number) => {
-    const dragState = dragStateRef.current
-    if (!dragState) return
-    const draggableHeight = Math.max(1, dragState.trackHeight * (1 - visibleRatio))
-    const nextRatio = clampNumber(dragState.startRatio + (clientY - dragState.startY) / draggableHeight, 0, 1)
-    onScrollTopChange(nextRatio * scrollRange)
-  }
-
-  const handleThumbPointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
-    if (!hasScrollableEditor) return
-    event.preventDefault()
-    event.stopPropagation()
-    const pointerId = typeof event.pointerId === 'number' ? event.pointerId : null
-    beginThumbDrag(event.clientY, pointerId)
-    if (pointerId !== null) {
-      event.currentTarget.setPointerCapture?.(pointerId)
-    }
-  }
-
-  const handleThumbPointerMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
-    const dragState = dragStateRef.current
-    if (!dragState) return
-    if (dragState.pointerId !== null && dragState.pointerId !== event.pointerId) return
-    event.preventDefault()
-    applyThumbDrag(event.clientY)
-  }
-
-  const handleThumbPointerUp = (event: ReactPointerEvent<HTMLButtonElement>) => {
-    const dragState = dragStateRef.current
-    if (!dragState) return
-    if (dragState.pointerId !== null && dragState.pointerId !== event.pointerId) return
-    dragStateRef.current = null
-    if (dragState.pointerId !== null) {
-      event.currentTarget.releasePointerCapture?.(dragState.pointerId)
-    }
-  }
-
-  const handleThumbMouseDown = (event: ReactMouseEvent<HTMLButtonElement>) => {
-    if (!hasScrollableEditor || event.button !== 0 || dragStateRef.current) return
-    event.preventDefault()
-    event.stopPropagation()
-    beginThumbDrag(event.clientY, null)
-  }
-
-  useEffect(() => {
-    const handleDocumentPointerMove = (event: PointerEvent) => {
-      const dragState = dragStateRef.current
-      if (!dragState || dragState.pointerId === null || dragState.pointerId !== event.pointerId) return
-      event.preventDefault()
-      applyThumbDrag(event.clientY)
-    }
-    const handleDocumentPointerUp = (event: PointerEvent) => {
-      const dragState = dragStateRef.current
-      if (!dragState || dragState.pointerId === null || dragState.pointerId !== event.pointerId) return
-      dragStateRef.current = null
-    }
-    const handleDocumentMouseMove = (event: MouseEvent) => {
-      const dragState = dragStateRef.current
-      if (!dragState || dragState.pointerId !== null) return
-      if (event.buttons === 0) {
-        dragStateRef.current = null
-        return
-      }
-      event.preventDefault()
-      applyThumbDrag(event.clientY)
-    }
-    const handleDocumentMouseUp = () => {
-      const dragState = dragStateRef.current
-      if (!dragState || dragState.pointerId !== null) return
-      dragStateRef.current = null
-    }
-
-    document.addEventListener('pointermove', handleDocumentPointerMove)
-    document.addEventListener('pointerup', handleDocumentPointerUp)
-    document.addEventListener('pointercancel', handleDocumentPointerUp)
-    document.addEventListener('mousemove', handleDocumentMouseMove)
-    document.addEventListener('mouseup', handleDocumentMouseUp)
-    return () => {
-      document.removeEventListener('pointermove', handleDocumentPointerMove)
-      document.removeEventListener('pointerup', handleDocumentPointerUp)
-      document.removeEventListener('pointercancel', handleDocumentPointerUp)
-      document.removeEventListener('mousemove', handleDocumentMouseMove)
-      document.removeEventListener('mouseup', handleDocumentMouseUp)
-    }
-  }, [applyThumbDrag])
-
-  const handleThumbKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
-    if (!hasScrollableEditor) return
-    const smallStep = Math.max(0.015, visibleRatio / 4)
-    const pageStep = Math.max(0.08, visibleRatio * 0.9)
-    let nextRatio: number | null = null
-    if (event.key === 'ArrowDown') {
-      nextRatio = scrollRatio + smallStep
-    } else if (event.key === 'ArrowUp') {
-      nextRatio = scrollRatio - smallStep
-    } else if (event.key === 'PageDown') {
-      nextRatio = scrollRatio + pageStep
-    } else if (event.key === 'PageUp') {
-      nextRatio = scrollRatio - pageStep
-    } else if (event.key === 'Home') {
-      nextRatio = 0
-    } else if (event.key === 'End') {
-      nextRatio = 1
-    }
-    if (nextRatio == null) return
-    event.preventDefault()
-    onScrollTopChange(clampNumber(nextRatio, 0, 1) * scrollRange)
-  }
-
-  // Renders one minimap row. The active/selected/parameter flags are derived here (per visible
-  // row) rather than baked into the line data, so they stay cheap for windowed large docs.
-  const renderSourceMapLine = (base: JsonMinimapBaseLine, virtualStyle?: React.CSSProperties) => {
-    const { lineNo } = base
-    const isActiveBlock = Boolean(activeRange && lineNo >= activeRange.startLine && lineNo <= activeRange.endLine)
-    const isSelectedLine = Boolean(selectedLineRange && lineNo >= selectedLineRange.startLine && lineNo <= selectedLineRange.endLine)
-    const hasParameterMatch = parameterLineInfo.parameterLines.has(lineNo)
-    const hasFirstParameterMatch = parameterLineInfo.firstParameterLine === lineNo
-    return (
-      <button
-        key={`json-map-line-${lineNo}`}
-        type="button"
-        className={`json-source-map-line ${isActiveBlock ? 'active-block' : ''} ${hasParameterMatch ? 'parameter-match' : ''} ${hasFirstParameterMatch ? 'first-parameter-match' : ''} ${isSelectedLine ? 'selected-line' : ''}`}
-        style={virtualStyle}
-        onClick={() => onJumpToLine(lineNo)}
-        title={`Line ${lineNo}: ${base.textPreview}`}
-        aria-label={`Jump to JSON line ${lineNo}`}
-      >
-        <span className="json-source-map-line-number">{lineNo}</span>
-        <span className="json-source-map-line-code" style={{ width: `${base.widthPct}%` }}>{base.textPreview}</span>
-      </button>
-    )
-  }
-
-  return (
-    <div className="json-source-map-panel">
-      <div className="json-source-map-summary">
-        <strong>Script JSON</strong>
-        <span>{activeLabel}</span>
-      </div>
-      {invalid ? (
-        <div className="utility-empty-state json-source-map-empty">
-          {jsonText.trim() ? 'Fix the JSON draft to rebuild the source map.' : 'No JSON source to map yet.'}
-        </div>
-      ) : (
-        <div className={`json-source-map ${hasScrollableEditor ? 'scroll-linked' : ''}`} aria-label="JSON source map" onWheel={handleSourceMapWheel}>
-          <div
-            ref={sourceMapLinesRef}
-            className={`json-source-map-lines ${virtualizeSourceMap ? 'virtualized' : ''}`}
-            style={virtualizeSourceMap ? undefined : { gridTemplateRows: sourceMapGridTemplateRows }}
-          >
-            {virtualizeSourceMap ? (
-              <div
-                className="json-source-map-virtual"
-                style={{ position: 'relative', height: `${sourceMapVirtualizer.getTotalSize()}px` }}
-              >
-                {hasScrollableEditor && (
-                  <div
-                    aria-hidden="true"
-                    className="json-source-map-viewport-highlight"
-                    style={{
-                      top: `${viewportHighlightTop}px`,
-                      height: `${viewportHighlightHeight}px`,
-                    }}
-                  />
-                )}
-                {sourceMapVirtualizer.getVirtualItems().map(virtualItem => {
-                  const base = baseLines[virtualItem.index]
-                  if (!base) return null
-                  return renderSourceMapLine(base, {
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    height: `${virtualItem.size}px`,
-                    transform: `translateY(${virtualItem.start}px)`,
-                  })
-                })}
-              </div>
-            ) : (
-              <>
-                {hasScrollableEditor && (
-                  <div
-                    aria-hidden="true"
-                    className="json-source-map-viewport-highlight"
-                    style={{
-                      top: `${viewportHighlightTop}px`,
-                      height: `${viewportHighlightHeight}px`,
-                    }}
-                  />
-                )}
-                {baseLines.map(base => renderSourceMapLine(base))}
-              </>
-            )}
-          </div>
-          {hasScrollableEditor && (
-            <div
-              ref={scrollTrackRef}
-              className="json-source-map-scroll-track"
-              onMouseDown={handleTrackMouseDown}
-              onPointerDown={handleTrackPointerDown}
-            >
-              <button
-                type="button"
-                className="json-source-map-scroll-thumb"
-                style={{
-                  height: `${thumbHeightPct}%`,
-                  top: `${thumbTopPct}%`,
-                  transform: `translateY(-${thumbTopPct}%)`,
-                }}
-                role="scrollbar"
-                aria-label="Scroll Script JSON source"
-                aria-orientation="vertical"
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={scrollPercent}
-                onKeyDown={handleThumbKeyDown}
-                onMouseDown={handleThumbMouseDown}
-                onPointerDown={handleThumbPointerDown}
-                onPointerMove={handleThumbPointerMove}
-                onPointerUp={handleThumbPointerUp}
-                onPointerCancel={handleThumbPointerUp}
-              />
-            </div>
-          )}
-        </div>
-      )}
     </div>
   )
 }
@@ -3285,8 +2520,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const [activeAutoParameterCandidateId, setActiveAutoParameterCandidateId] = useState<string | null>(null)
   const [activeAutoParameterOccurrenceIndex, setActiveAutoParameterOccurrenceIndex] = useState(0)
   const [jsonLineJumpRequest, setJsonLineJumpRequest] = useState<ScriptCodeLineJumpRequest | null>(null)
-  const [scriptCodeScrollSnapshot, setScriptCodeScrollSnapshot] = useState<ScriptCodeScrollSnapshot>(SCRIPT_CODE_SCROLL_EMPTY)
-  const [scriptCodeScrollController, setScriptCodeScrollController] = useState<ScriptCodeScrollController | null>(null)
   const isBrowserScript = script.protocol === 'browser'
   const isHttpScript = script.protocol === 'http'
   const isJmsScript = script.protocol.startsWith('jms')
@@ -3565,6 +2798,22 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const [showImportedParameterMappingsDialog, setShowImportedParameterMappingsDialog] = useState(false)
   // "Deep scan (server)" runs the backend parameterization engine over the saved script.
   const [serverParameterization, setServerParameterization] = useState<(Parameterization & { note?: string }) | null>(null)
+  const serverParameterizationDialogRef = useRef<HTMLDivElement | null>(null)
+  const saveBlockDialogRef = useRef<HTMLDivElement | null>(null)
+  const closeServerParameterizationDialog = useCallback(() => setServerParameterization(null), [])
+  const closeSaveBlockDialog = useCallback(() => {
+    if (!savingBlock) setShowSaveBlockModal(false)
+  }, [savingBlock])
+  useModalDialog({
+    dialogRef: serverParameterizationDialogRef,
+    enabled: Boolean(serverParameterization),
+    onClose: closeServerParameterizationDialog,
+  })
+  useModalDialog({
+    dialogRef: saveBlockDialogRef,
+    enabled: showSaveBlockModal,
+    onClose: closeSaveBlockDialog,
+  })
   const [deepScanning, setDeepScanning] = useState(false)
   const [showMetadataJsonDialog, setShowMetadataJsonDialog] = useState(false)
   const [sourceMappingFocus, setSourceMappingFocus] = useState<{ mappingId: string; requestId: number }>({ mappingId: '', requestId: 0 })
@@ -4799,7 +4048,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const remapSelectionAfterRemove = (phase: ScriptActionPhase, removedIndex: number) => {
     if (phase === 'action') {
       if (activeAction === removedIndex) selectAuthorAction(null)
-      else if (activeAction !== null && activeAction > removedIndex) selectAuthorAction(activeAction - 1)
+      else if (activeAction !== null && activeAction > removedIndex) setActiveAction(activeAction - 1)
     }
     setAuthorCodeFocus(prev => {
       if (!prev || prev.phase !== phase) return prev
@@ -5140,20 +4389,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const scriptEditorDirtyRef = useRef(scriptEditorDirty)
   const handleSaveRef = useRef<() => Promise<boolean>>(async () => false)
   scriptEditorDirtyRef.current = scriptEditorDirty
-
-  const handleScriptCodeScrollSnapshotChange = useCallback((snapshot: ScriptCodeScrollSnapshot) => {
-    setScriptCodeScrollSnapshot(current => (
-      sameScriptCodeScrollSnapshot(current, snapshot) ? current : snapshot
-    ))
-  }, [])
-
-  const handleScriptCodeScrollControllerChange = useCallback((controller: ScriptCodeScrollController | null) => {
-    setScriptCodeScrollController(controller)
-  }, [])
-
-  const handleJsonSourceMapScrollTopChange = useCallback((scrollTop: number) => {
-    scriptCodeScrollController?.scrollToScrollTop(scrollTop)
-  }, [scriptCodeScrollController])
 
   const resolveCurrentScript = useCallback((): ScriptData => {
     const parsed = parseScriptJsonDraft(jsonText)
@@ -7578,8 +6813,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           onFormat={handleFormatJsonDraft}
           onReset={handleResetJsonDraft}
           onRequestParameterize={openJsonParameterSelectionMenu}
-          onScrollControllerChange={handleScriptCodeScrollControllerChange}
-          onScrollSnapshotChange={handleScriptCodeScrollSnapshotChange}
         />
         <ActionParameterMenu
           selectionState={jsonParameterSelection}
@@ -7781,21 +7014,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           </div>
         )
       }
-      case 'source-map':
-        return (
-          <JsonSourceMinimap
-            activePath={scriptCodeStatusPath}
-            activeRange={scriptCodeActiveRange}
-            candidateMatchRanges={autoParameterCandidateMatchRanges}
-            jsonText={jsonText}
-            onJumpToLine={line => setJsonLineJumpRequest({ line, nonce: Date.now() })}
-            onScrollTopChange={handleJsonSourceMapScrollTopChange}
-            parameterMatchRanges={parameterMatchRanges}
-            scrollSnapshot={scriptCodeScrollSnapshot}
-            selectedParameterName={selectedOutlineParameterExists ? selectedOutlineParameterName : null}
-            status={jsonStatus}
-          />
-        )
       case 'parameters':
         return (
           <ParameterSidebar
@@ -8046,8 +7264,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         />
       )}
       {serverParameterization && (
-        <div className="editor-dialog-backdrop" onClick={() => setServerParameterization(null)}>
+        <div className="editor-dialog-backdrop" onClick={closeServerParameterizationDialog}>
           <div
+            ref={serverParameterizationDialogRef}
             className="editor-dialog server-parameterization-dialog"
             role="dialog"
             aria-modal="true"
@@ -8061,7 +7280,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   {serverParameterization.note || 'Review and apply the detected data parameters and secrets.'}
                 </p>
               </div>
-              <button type="button" className="btn btn-sm btn-ghost" onClick={() => setServerParameterization(null)}>Close</button>
+              <button type="button" className="btn btn-sm btn-ghost" onClick={closeServerParameterizationDialog}>Close</button>
             </div>
             <div className="editor-dialog-body">
               <ParameterizationReview
@@ -8080,8 +7299,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         </div>
       )}
       {showSaveBlockModal && (
-        <div className="editor-dialog-backdrop" onClick={() => !savingBlock && setShowSaveBlockModal(false)}>
+        <div className="editor-dialog-backdrop" onClick={closeSaveBlockDialog}>
           <div
+            ref={saveBlockDialogRef}
             className="editor-dialog save-block-dialog"
             role="dialog"
             aria-modal="true"
@@ -8095,7 +7315,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   {selectedBlockScopes.length} action{selectedBlockScopes.length === 1 ? '' : 's'} will be saved to this project's block library.
                 </p>
               </div>
-              <button type="button" className="btn btn-sm btn-ghost" disabled={savingBlock} onClick={() => setShowSaveBlockModal(false)}>Close</button>
+              <button type="button" className="btn btn-sm btn-ghost" disabled={savingBlock} onClick={closeSaveBlockDialog}>Close</button>
             </div>
             <div className="editor-dialog-body save-block-dialog-body">
               <label className="save-block-field">
@@ -8120,7 +7340,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 <p className="save-block-warning">This script isn't associated with a project, so the block can't be saved.</p>
               )}
               <div className="save-block-actions">
-                <button type="button" className="btn btn-sm btn-ghost" disabled={savingBlock} onClick={() => setShowSaveBlockModal(false)}>Cancel</button>
+                <button type="button" className="btn btn-sm btn-ghost" disabled={savingBlock} onClick={closeSaveBlockDialog}>Cancel</button>
                 <button type="button" className="btn btn-sm btn-accent" disabled={savingBlock || !saveBlockName.trim() || !projectId} onClick={saveSelectedAsBlock}>
                   {savingBlock ? 'Saving…' : 'Save block'}
                 </button>
@@ -12672,6 +11892,12 @@ function ParameterDataDialog({
   script,
   variant = 'modal',
 }: ParameterDataDialogProps) {
+  const dialogRef = useRef<HTMLDivElement | null>(null)
+  useModalDialog({
+    dialogRef,
+    enabled: variant !== 'document',
+    onClose,
+  })
   const selectedParameter = selectedParameterIdx !== null ? script.parameters?.[selectedParameterIdx] || null : null
   const headerDetails = useMemo(
     () => getSelectedParameterHeaderDetails(script, selectedParameter, selectedParameterIdx),
@@ -12701,6 +11927,7 @@ function ParameterDataDialog({
 
   const dialog = (
       <div
+        ref={dialogRef}
         className={`editor-dialog parameter-data-dialog ${variant === 'document' ? 'parameter-data-document' : ''}`}
         role={variant === 'document' ? 'region' : 'dialog'}
         aria-modal={variant === 'document' ? undefined : true}

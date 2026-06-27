@@ -160,7 +160,7 @@ func (m *ScriptDebugManager) Start(scriptID string, script *dsl.Script, req Scri
 			groupName = "script-debug"
 		}
 	}
-	now := time.Now()
+	now := m.retention.clock()
 	ctx, cancel := context.WithCancel(context.Background())
 	ignoreThinkTime := true
 	if req.IgnoreThinkTime != nil {
@@ -224,7 +224,7 @@ func (m *ScriptDebugManager) Start(scriptID string, script *dsl.Script, req Scri
 			},
 		})
 
-		completedAt := time.Now()
+		completedAt := m.retention.clock()
 		messageType := "script_debug_completed"
 		session.mu.Lock()
 		session.CompletedAt = &completedAt
@@ -340,7 +340,7 @@ func (m *ScriptDebugManager) oldestPrunableSessionLocked(protectedID string, ter
 }
 
 func (m *ScriptDebugManager) cancelIdleRunningSessionLocked(session *ScriptDebugSession, now time.Time) {
-	if session == nil || m.retention.idleCancel <= 0 || session.Status != ScriptDebugRunning {
+	if session == nil || m.retention.idleCancel <= 0 || (session.Status != ScriptDebugRunning && session.Status != ScriptDebugPaused) {
 		return
 	}
 	lastActivity := session.lastActivityAt
@@ -351,7 +351,7 @@ func (m *ScriptDebugManager) cancelIdleRunningSessionLocked(session *ScriptDebug
 	if now.Sub(lastActivity) <= m.retention.idleCancel {
 		return
 	}
-	m.cancelSessionLocked(session, now, "Debugger session stopped after running idle timeout")
+	m.cancelSessionLocked(session, now, "Debugger session stopped after idle timeout")
 }
 
 func (m *ScriptDebugManager) shouldPruneSessionLocked(session *ScriptDebugSession, now time.Time) bool {

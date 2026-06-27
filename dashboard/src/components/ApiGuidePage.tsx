@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
-import { apiEndpointCatalogByKey, apiEndpointRoutes, endpointCatalogKey, type ApiEndpointCatalogRoute } from '../apiEndpointCatalog'
+import { loadApiEndpointCatalog } from '../apiDocsClient'
+import { buildEndpointCatalogMap, endpointCatalogKey, type ApiEndpointCatalog, type ApiEndpointCatalogRoute } from '../apiEndpointCatalog'
 import { API_GUIDE_DEFAULT_PAGE, type ApiGuideContentPageID } from '../apiGuideNavigation'
 import { buildAllowedOperationSet, canShowEndpointForDocs, docsVisibilityOperationsForEndpoint } from '../apiGuideAccess'
 import { useHasTopbarContributionProvider } from '../hooks/TopbarContributionProvider'
@@ -64,20 +65,24 @@ export default function ApiGuidePage({
   effectiveAccessError = false,
 }: ApiGuidePageProps) {
   const [activeGuideSection, setActiveGuideSection] = useState<ApiGuideContentPageID>(activePage)
+  const [endpointCatalog, setEndpointCatalog] = useState<ApiEndpointCatalog | null>(null)
+  const [endpointCatalogError, setEndpointCatalogError] = useState('')
   const hasTopbarContributionProvider = useHasTopbarContributionProvider()
   const allowedOperations = useMemo(() => buildAllowedOperationSet(effectiveAccessResources), [effectiveAccessResources])
-  const catalogEndpointDocs = useMemo(() => apiEndpointRoutes.map(route => ({
+  const endpointCatalogRoutes = endpointCatalog?.routes ?? []
+  const endpointCatalogByKey = useMemo(() => buildEndpointCatalogMap(endpointCatalogRoutes), [endpointCatalogRoutes])
+  const catalogEndpointDocs = useMemo(() => endpointCatalogRoutes.map(route => ({
     ...route,
     operations: docsVisibilityOperationsForEndpoint(route),
-  })), [])
+  })), [endpointCatalogRoutes])
   const authRows = useMemo(
     () => catalogEndpointDocs.filter(route => route.path.startsWith('/api/v1/auth/')),
     [catalogEndpointDocs],
   )
   const endpointGroups = useMemo(() => groupEndpointDocs(catalogEndpointDocs), [catalogEndpointDocs])
   const visibleQuickStartCommands = quickStartCommands.filter(command => {
-    const route = apiEndpointCatalogByKey.get(endpointCatalogKey(command.method, command.path))
-    return route ? canShowEndpointForDocs(route, allowedOperations) : true
+    const route = endpointCatalogByKey.get(endpointCatalogKey(command.method, command.path))
+    return route ? canShowEndpointForDocs(route, allowedOperations) : false
   })
   const visibleAuthRows = authRows.filter(row => canShowEndpointForDocs(row, allowedOperations))
   const visibleEndpointGroups = endpointGroups
@@ -96,7 +101,26 @@ export default function ApiGuidePage({
     setActiveGuideSection(activePage)
   }, [activePage])
 
+  useEffect(() => {
+    let cancelled = false
+    setEndpointCatalogError('')
+    loadApiEndpointCatalog()
+      .then(catalog => {
+        if (cancelled) return
+        setEndpointCatalog(catalog)
+      })
+      .catch(error => {
+        if (cancelled) return
+        setEndpointCatalog(null)
+        setEndpointCatalogError(error instanceof Error ? error.message : 'API endpoint catalog could not be loaded.')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   const activeContentPage = activeGuideSection
+  const endpointCatalogLoaded = endpointCatalog !== null
 
   return (
     <div className="page api-guide-page">
@@ -189,8 +213,9 @@ export default function ApiGuidePage({
             <h3>Quick Start</h3>
             <p>Use a service account key for automation and keep project/application/release ids in your pipeline context.</p>
           </div>
-          {renderAccessState(effectiveAccessLoaded, effectiveAccessError, visibleQuickStartCommands.length === 0, 'No quick-start calls are available for the current access context.')}
-          {effectiveAccessLoaded && (
+          {renderCatalogState(endpointCatalogLoaded, endpointCatalogError)}
+          {endpointCatalogLoaded && renderAccessState(effectiveAccessLoaded, effectiveAccessError, visibleQuickStartCommands.length === 0, 'No quick-start calls are available for the current access context.')}
+          {endpointCatalogLoaded && effectiveAccessLoaded && (
             <div className="api-guide-code-stack">
               {visibleQuickStartCommands.map(({ command }) => (
                 <pre key={command}><code>{command}</code></pre>
@@ -207,8 +232,9 @@ export default function ApiGuidePage({
               <h3>Authentication</h3>
               <p>OIDC or trusted headers prove human identity, but an active local APEX Load user record is required after bootstrap. Human roles come from local bindings; service accounts can use <code>Authorization: Bearer &lt;api-key&gt;</code> or <code>X-APEXLoad-API-Key</code>, with RBAC roles and token scopes both enforced.</p>
             </div>
-            {renderAccessState(effectiveAccessLoaded, effectiveAccessError, visibleAuthRows.length === 0, 'No authentication endpoints are visible for the current access context.')}
-            {effectiveAccessLoaded && visibleAuthRows.length > 0 && (
+            {renderCatalogState(endpointCatalogLoaded, endpointCatalogError)}
+            {endpointCatalogLoaded && renderAccessState(effectiveAccessLoaded, effectiveAccessError, visibleAuthRows.length === 0, 'No authentication endpoints are visible for the current access context.')}
+            {endpointCatalogLoaded && effectiveAccessLoaded && visibleAuthRows.length > 0 && (
               <div className="api-guide-table-card">
                 <table>
                   <thead>
@@ -228,7 +254,7 @@ export default function ApiGuidePage({
             )}
           </section>
 
-          {effectiveAccessLoaded && canUseAccessWorkspace && (
+          {endpointCatalogLoaded && effectiveAccessLoaded && canUseAccessWorkspace && (
             <section className="api-guide-callout api-guide-key-callout">
               <div>
                 <h3>Access Workspace</h3>
@@ -250,8 +276,9 @@ export default function ApiGuidePage({
             <h3>Endpoint Map</h3>
             <p>Generated from the controller route catalog and filtered to your current domain, project, and role access. Use Swagger for the complete API contract.</p>
           </div>
-          {renderAccessState(effectiveAccessLoaded, effectiveAccessError, visibleEndpointGroups.length === 0, 'No endpoints are visible for the current access context.')}
-          {effectiveAccessLoaded && visibleEndpointGroups.length > 0 && (
+          {renderCatalogState(endpointCatalogLoaded, endpointCatalogError)}
+          {endpointCatalogLoaded && renderAccessState(effectiveAccessLoaded, effectiveAccessError, visibleEndpointGroups.length === 0, 'No endpoints are visible for the current access context.')}
+          {endpointCatalogLoaded && effectiveAccessLoaded && visibleEndpointGroups.length > 0 && (
             <div className="api-guide-endpoint-grid">
               {visibleEndpointGroups.map(group => (
                 <article className="api-guide-card" key={group.title}>
@@ -307,6 +334,24 @@ function renderAccessState(loaded: boolean, error: boolean, empty: boolean, empt
     )
   }
   return null
+}
+
+function renderCatalogState(loaded: boolean, error: string) {
+  if (loaded) return null
+  if (error) {
+    return (
+      <div className="api-guide-callout">
+        <h3>API Docs Unavailable</h3>
+        <p>{error}</p>
+      </div>
+    )
+  }
+  return (
+    <div className="api-guide-callout">
+      <h3>Loading API Docs</h3>
+      <p>Loading the controller-backed endpoint catalog.</p>
+    </div>
+  )
 }
 
 function formatEndpoint(endpoint: EndpointDoc): string {

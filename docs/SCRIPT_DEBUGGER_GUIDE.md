@@ -4,7 +4,7 @@ The Script Editor debugger runs a DSL script through the controller replay engin
 
 ## Routes
 
-Use `/api/v1/replay/sessions/{session_id}` for session reads and transport controls. The older `/api/v1/script-debug/sessions/{session_id}` and `/api/v1/browser-replay/sessions/{session_id}` routes remain compatibility/debug surfaces.
+Use `/api/v1/replay/sessions/{session_id}` for session reads and transport controls. The older `/api/v1/script-debug/sessions/{session_id}` routes are deprecated compatibility aliases. Browser replay canary sessions still use `/api/v1/browser-replay/sessions/{session_id}`.
 
 Start routes:
 

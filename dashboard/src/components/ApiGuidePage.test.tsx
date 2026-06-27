@@ -3,11 +3,21 @@
 import { act, type ComponentProps } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import endpointCatalogRaw from '../../../docs/api-endpoint-catalog.json?raw'
 
+import { loadApiEndpointCatalog } from '../apiDocsClient'
+import { parseEndpointCatalog } from '../apiEndpointCatalog'
 import { TopbarContributionProvider, useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
 import ApiGuidePage from './ApiGuidePage'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+
+vi.mock('../apiDocsClient', () => ({
+  loadApiEndpointCatalog: vi.fn(),
+}))
+
+const endpointCatalogFixture = parseEndpointCatalog(endpointCatalogRaw)
+const loadApiEndpointCatalogMock = vi.mocked(loadApiEndpointCatalog)
 
 function accessResources(operationIDs: string[]) {
   return [{
@@ -63,6 +73,8 @@ describe('ApiGuidePage', () => {
 
   beforeEach(() => {
     window.history.replaceState(null, '', '/')
+    loadApiEndpointCatalogMock.mockReset()
+    loadApiEndpointCatalogMock.mockResolvedValue(endpointCatalogFixture)
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -84,6 +96,7 @@ describe('ApiGuidePage', () => {
         </TopbarContributionProvider>,
       )
     })
+    await act(async () => {})
   }
 
   function topbarText() {
@@ -297,5 +310,18 @@ describe('ApiGuidePage', () => {
 
     expect(container.textContent).toContain('Unable To Filter Access')
     expect(container.textContent).toContain('/api/v1/system/health')
+  })
+
+  it('shows a controller docs error when the endpoint catalog cannot be loaded', async () => {
+    loadApiEndpointCatalogMock.mockRejectedValueOnce(new Error('catalog route unavailable'))
+
+    await renderApiGuidePage({
+      activePage: 'endpoint-map',
+      effectiveAccessResources: allGuideOperations,
+    })
+
+    expect(container.textContent).toContain('API Docs Unavailable')
+    expect(container.textContent).toContain('catalog route unavailable')
+    expect(container.querySelector('.api-guide-endpoint-grid')).toBeNull()
   })
 })

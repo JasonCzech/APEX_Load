@@ -6,7 +6,7 @@ package api
 // go/ast; the required roles are resolved by reusing the real runtime authorization
 // logic (accessRequirementForRequest), so the spec cannot drift from enforcement.
 //
-//go:generate go run ../../cmd/swaggergen -server server.go -out ../../docs/swagger.yaml -catalog-out ../../docs/api-endpoint-catalog.json
+//go:generate go run ../../cmd/swaggergen -server server.go -out ../../docs/swagger.yaml -catalog-out ../../docs/api-endpoint-catalog.json -embed-out apidocs/swagger.yaml -catalog-embed-out apidocs/api-endpoint-catalog.json
 
 import (
 	"bytes"
@@ -75,6 +75,7 @@ type oasOperation struct {
 	Summary     string                 `yaml:"summary"`
 	Description string                 `yaml:"description"`
 	OperationID string                 `yaml:"operationId"`
+	Deprecated  bool                   `yaml:"deprecated,omitempty"`
 	RequestBody *oasRequestBody        `yaml:"requestBody,omitempty"`
 	Responses   map[string]oasResponse `yaml:"responses"`
 	XRoles      string                 `yaml:"x-roles"`
@@ -287,6 +288,7 @@ func buildPaths(routes []discoveredRoute) map[string]map[string]oasOperation {
 			Summary:     doc.Summary,
 			Description: fmt.Sprintf("**Handler:** `%s`\n\n**Access Control:** %s", doc.HandlerLabel, doc.Access),
 			OperationID: doc.OperationID,
+			Deprecated:  deprecatedRoute(doc.Path),
 			Responses:   map[string]oasResponse{"200": {Description: "Successful operation"}},
 			XRoles:      doc.Access,
 			Tags:        []string{tagForPath(doc.Path)},
@@ -304,6 +306,10 @@ func buildPaths(routes []discoveredRoute) map[string]map[string]oasOperation {
 		paths[doc.Path][strings.ToLower(doc.Method)] = op
 	}
 	return paths
+}
+
+func deprecatedRoute(path string) bool {
+	return strings.HasPrefix(path, "/api/v1/script-debug/sessions/")
 }
 
 func openAPIComponentSchemas() map[string]oasSchema {

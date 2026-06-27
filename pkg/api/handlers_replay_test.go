@@ -197,6 +197,34 @@ func TestHandleReplayScriptUsesDraftOverride(t *testing.T) {
 	}
 }
 
+func TestHandleReplayScriptRejectsStoredProjectMismatch(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	stored := server.runner.StoreScript(&dsl.Script{
+		Name:      "Replayable Project",
+		ProjectID: "project-stored",
+		Protocol:  "http",
+		Version:   "1.0.0",
+		Config:    dsl.ScriptConfig{BaseURL: "https://example.com"},
+		Actions:   []dsl.Action{{Name: "saved", Type: "GET", Target: "/saved"}},
+	})
+
+	body, _ := json.Marshal(map[string]any{
+		"project_id": "project-other",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/"+stored.ID+"/replay", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+	}
+	if !strings.Contains(resp.Body.String(), "project_id does not match stored script project") {
+		t.Fatalf("body = %q, want stored project mismatch", resp.Body.String())
+	}
+}
+
 func TestHandleReplayScriptAppliesCustomRedactionRules(t *testing.T) {
 	protocolName := registerReplayAPIProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
 		return &protocol.Result{
@@ -370,6 +398,7 @@ func TestHandleReplayDraftScriptRunsUnsavedDefinition(t *testing.T) {
 	body, _ := json.Marshal(map[string]any{
 		"group_name":        "draft-run",
 		"ignore_think_time": true,
+		"project_id":        "project-replay-draft",
 		"script": map[string]any{
 			"name":     "Unsaved Draft",
 			"version":  "1.0.0",
@@ -418,6 +447,36 @@ func TestHandleReplayDraftScriptRunsUnsavedDefinition(t *testing.T) {
 	}
 }
 
+func TestHandleReplayDraftScriptRejectsProjectMismatch(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	body, _ := json.Marshal(map[string]any{
+		"project_id": "project-request",
+		"script": map[string]any{
+			"name":       "Mismatched Draft",
+			"version":    "1.0.0",
+			"protocol":   "http",
+			"project_id": "project-script",
+			"actions": []map[string]any{{
+				"name":   "draft-step",
+				"type":   "GET",
+				"target": "/",
+			}},
+		},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/replay", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+	}
+	if !strings.Contains(resp.Body.String(), "project_id does not match script.project_id") {
+		t.Fatalf("body = %q, want project mismatch", resp.Body.String())
+	}
+}
+
 func TestHandleReplayDraftScriptBroadcastsProgress(t *testing.T) {
 	protocolName := registerReplayAPIProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
 		return &protocol.Result{Success: true, StatusCode: 200}, nil
@@ -426,6 +485,7 @@ func TestHandleReplayDraftScriptBroadcastsProgress(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	body, _ := json.Marshal(map[string]any{
 		"replay_session_id": "session-123",
+		"project_id":        "project-progress",
 		"script": map[string]any{
 			"name":     "Unsaved Draft",
 			"version":  "1.0.0",
@@ -468,6 +528,7 @@ func TestHandleReplayDraftScriptBroadcastsProgress(t *testing.T) {
 			EventID         string `json:"event_id"`
 			ReplaySessionID string `json:"replay_session_id"`
 			ScriptID        string `json:"script_id"`
+			ProjectID       string `json:"project_id"`
 			EventIndex      *int   `json:"event_index,omitempty"`
 		}
 		if err := json.Unmarshal(msg, &decoded); err != nil {
@@ -478,6 +539,9 @@ func TestHandleReplayDraftScriptBroadcastsProgress(t *testing.T) {
 		}
 		if decoded.ScriptID != "" {
 			t.Fatalf("broadcast script_id = %q, want empty", decoded.ScriptID)
+		}
+		if decoded.ProjectID != "project-progress" {
+			t.Fatalf("broadcast project_id = %q, want project-progress", decoded.ProjectID)
 		}
 		types = append(types, decoded.Type)
 		if decoded.Type == engine.ReplayProgressEventRun || decoded.Type == engine.ReplayProgressActionStarted || decoded.Type == engine.ReplayProgressActionCompleted {

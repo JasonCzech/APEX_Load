@@ -10,8 +10,10 @@ import (
 )
 
 const (
-	swaggerOutputPath = "../../docs/swagger.yaml"
-	catalogOutputPath = "../../docs/api-endpoint-catalog.json"
+	swaggerOutputPath      = "../../docs/swagger.yaml"
+	swaggerEmbedOutputPath = "apidocs/swagger.yaml"
+	catalogOutputPath      = "../../docs/api-endpoint-catalog.json"
+	catalogEmbedOutputPath = "apidocs/api-endpoint-catalog.json"
 )
 
 // TestSwaggerYAMLIsFresh enforces that docs/swagger.yaml is the exact output of the
@@ -23,12 +25,14 @@ func TestSwaggerYAMLIsFresh(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateOpenAPIYAML: %v", err)
 	}
-	want, err := os.ReadFile(swaggerOutputPath)
-	if err != nil {
-		t.Fatalf("read %s: %v", swaggerOutputPath, err)
-	}
-	if !bytes.Equal(got, want) {
-		t.Fatalf("%s is stale; run `go generate ./pkg/api` to regenerate it", swaggerOutputPath)
+	for _, path := range []string{swaggerOutputPath, swaggerEmbedOutputPath} {
+		want, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		if !bytes.Equal(got, want) {
+			t.Fatalf("%s is stale; run `go generate ./pkg/api` to regenerate it", path)
+		}
 	}
 }
 
@@ -39,12 +43,14 @@ func TestEndpointCatalogJSONIsFresh(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateEndpointCatalogJSON: %v", err)
 	}
-	want, err := os.ReadFile(catalogOutputPath)
-	if err != nil {
-		t.Fatalf("read %s: %v", catalogOutputPath, err)
-	}
-	if !bytes.Equal(got, want) {
-		t.Fatalf("%s is stale; run `go generate ./pkg/api` to regenerate it", catalogOutputPath)
+	for _, path := range []string{catalogOutputPath, catalogEmbedOutputPath} {
+		want, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		if !bytes.Equal(got, want) {
+			t.Fatalf("%s is stale; run `go generate ./pkg/api` to regenerate it", path)
+		}
 	}
 }
 
@@ -88,6 +94,32 @@ func TestGeneratedSwaggerIsValid(t *testing.T) {
 			}
 			seenOpIDs[op.OperationID] = method + " " + path
 		}
+	}
+}
+
+func TestGeneratedSwaggerMarksScriptDebugAliasesDeprecated(t *testing.T) {
+	data, err := GenerateOpenAPIYAML("server.go")
+	if err != nil {
+		t.Fatalf("GenerateOpenAPIYAML: %v", err)
+	}
+
+	var spec struct {
+		Paths map[string]map[string]struct {
+			Deprecated bool `yaml:"deprecated"`
+		} `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(data, &spec); err != nil {
+		t.Fatalf("generated spec is not valid YAML: %v", err)
+	}
+
+	if !spec.Paths["/api/v1/script-debug/sessions/{session_id}"]["get"].Deprecated {
+		t.Fatal("script-debug session alias is not marked deprecated")
+	}
+	if !spec.Paths["/api/v1/script-debug/sessions/{session_id}/step"]["post"].Deprecated {
+		t.Fatal("script-debug step alias is not marked deprecated")
+	}
+	if spec.Paths["/api/v1/replay/sessions/{session_id}"]["get"].Deprecated {
+		t.Fatal("canonical replay session route should not be deprecated")
 	}
 }
 

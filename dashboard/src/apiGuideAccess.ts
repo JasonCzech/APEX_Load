@@ -215,6 +215,7 @@ export function classifyEndpointForDocs(route: ApiEndpointCatalogRoute): DocsVis
     case 'data-pools':
       return readWrite(route.method, ['view_data_pools'], ['manage_data_pools'])
     case 'desktop':
+    case 'docs':
     case 'downloads':
     case 'protocol-bundles':
     case 'protocols':
@@ -257,7 +258,8 @@ export function buildAllowedOperationSet(resources: DashboardAuthEffectiveAccess
 }
 
 export function canShowEndpointForDocs(route: ApiEndpointCatalogRoute, allowedOperations: Set<string>): boolean {
-  const operations = docsVisibilityOperationsForEndpoint(route)
-  if (operations.length === 0) return true
-  return operations.some(operation => allowedOperations.has(operation))
+  const classification = classifyEndpointForDocs(route)
+  if (!classification.classified) return false
+  if (classification.operations.length === 0) return true
+  return classification.operations.some(operation => allowedOperations.has(operation))
 }

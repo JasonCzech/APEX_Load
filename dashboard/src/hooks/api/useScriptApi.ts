@@ -358,13 +358,13 @@ export function useScriptApi() {
   )
 
   const replayScript = useCallback(
-    (id: string, payload?: { group_name?: string; replay_session_id?: string; variables?: Record<string, string>; ignore_think_time?: boolean; script?: ScriptDefinition }) =>
+    (id: string, payload?: { group_name?: string; project_id?: string; replay_session_id?: string; variables?: Record<string, string>; ignore_think_time?: boolean; script?: ScriptDefinition }) =>
       request<ScriptReplayResponse>(`/scripts/${id}/replay`, { method: 'POST', body: JSON.stringify(payload || {}) }),
     [],
   )
 
   const replayDraftScript = useCallback(
-    (payload: { script: ScriptDefinition; group_name?: string; replay_session_id?: string; variables?: Record<string, string>; ignore_think_time?: boolean }) =>
+    (payload: { script: ScriptDefinition; group_name?: string; project_id?: string; replay_session_id?: string; variables?: Record<string, string>; ignore_think_time?: boolean }) =>
       request<ScriptReplayResponse>('/scripts/replay', { method: 'POST', body: JSON.stringify(payload) }),
     [],
   )

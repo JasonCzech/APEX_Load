@@ -1117,48 +1117,6 @@ describe('ScriptEditor', () => {
     expect(sourceMapPanelsRule).toContain('max-height: none;')
   })
 
-  it('keeps the compact JSON source map code visually subordinate to the primary code panes', async () => {
-    // @ts-expect-error Vitest runs in Node, but the dashboard app tsconfig intentionally omits Node types.
-    const { readFileSync } = await import('node:fs')
-    const cwd = (globalThis as typeof globalThis & { process: { cwd: () => string } }).process.cwd()
-    const editorCss = readFileSync(`${cwd}/src/components/ScriptEditor.css`, 'utf8') as string
-    const indexCss = readFileSync(`${cwd}/src/index.css`, 'utf8') as string
-    const sourceMapRule = cssRule(editorCss, '.json-source-map')
-    const sourceMapHighlightRule = cssRule(editorCss, '.json-source-map-viewport-highlight')
-    const sourceMapLineRule = cssRule(editorCss, '.json-source-map-line')
-    const sourceMapSelectedLineRule = cssRule(editorCss, '.json-source-map-line.selected-line')
-    const sourceMapLineNumberRule = cssRule(editorCss, '.json-source-map-line-number')
-    const sourceMapLineCodeRule = cssRule(editorCss, '.json-source-map-line-code')
-    const lightThemeRule = cssRule(indexCss, ":root[data-theme='light']")
-    const solarizedLightThemeRule = cssRule(indexCss, ":root[data-theme='solarized-light']")
-
-    expect(sourceMapRule).toContain('gap: 5px;')
-    expect(sourceMapRule).toContain('padding: 4px;')
-    expect(sourceMapHighlightRule).toContain('min-height: 6.5px;')
-    expect(sourceMapLineRule).toContain('grid-template-columns: 20px minmax(0, 1fr);')
-    expect(sourceMapLineRule).toContain('gap: 3px;')
-    expect(sourceMapLineRule).toContain('border-left: 1px solid transparent;')
-    expect(sourceMapSelectedLineRule).toContain('border-left-color: var(--source-map-selected-border, rgba(56, 189, 248, 0.98));')
-    expect(sourceMapSelectedLineRule).toContain('background: var(--source-map-selected-bg, rgba(56, 189, 248, 0.34));')
-    expect(sourceMapSelectedLineRule).toContain('--source-map-selected-shadow')
-    expect(sourceMapLineNumberRule).toContain('color: var(--source-map-line-number, rgba(148, 163, 184, 0.72));')
-    expect(sourceMapLineNumberRule).toContain('font-size: 4.33px;')
-    expect(sourceMapLineNumberRule).toContain('line-height: 6.5px;')
-    expect(sourceMapLineCodeRule).toContain('color: var(--source-map-line-code, rgba(217, 231, 255, 0.72));')
-    expect(sourceMapLineCodeRule).toContain('font-size: 4.33px;')
-    expect(sourceMapLineCodeRule).toContain('line-height: 6.5px;')
-    expect(editorCss).toContain('color: var(--source-map-line-code-active, rgba(224, 231, 255, 0.92));')
-    expect(editorCss).toContain('color: var(--source-map-line-code-parameter, rgba(153, 246, 228, 0.92));')
-    expect(editorCss).toContain('color: var(--source-map-line-code-first-parameter, rgba(253, 230, 138, 0.96));')
-    expect(editorCss).toContain('color: var(--source-map-line-code-selected, rgba(240, 249, 255, 0.98));')
-    expect(lightThemeRule).toContain('--source-map-line-number: rgba(30, 41, 59, 0.78);')
-    expect(lightThemeRule).toContain('--source-map-line-code: rgba(15, 23, 42, 0.86);')
-    expect(lightThemeRule).toContain('--source-map-line-code-selected: rgba(8, 47, 73, 0.98);')
-    expect(solarizedLightThemeRule).toContain('--source-map-line-number: rgba(7, 54, 66, 0.76);')
-    expect(solarizedLightThemeRule).toContain('--source-map-line-code: rgba(0, 43, 54, 0.86);')
-    expect(solarizedLightThemeRule).toContain('--source-map-line-code-selected: #002b36;')
-  })
-
   it('keeps the landing editor focused on script name while support tools live in the outline', async () => {
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} />)
@@ -1368,6 +1326,40 @@ describe('ScriptEditor', () => {
       changeInputValue(cleanupTarget!, '/signed-out')
     })
     expect((container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null)?.value).toContain('"target": "/signed-out"')
+  })
+
+  it('keeps the same action selected after deleting an earlier action', async () => {
+    const multiActionScript: ScriptDefinition = {
+      ...initialScript,
+      actions: [
+        { ...initialScript.actions[0], name: 'Open Cart', target: '/cart' },
+        { ...initialScript.actions[0], name: 'Apply Coupon', target: '/coupon' },
+        { ...initialScript.actions[0], name: 'Submit Order', target: '/submit' },
+        { ...initialScript.actions[0], name: 'Complete Checkout', target: '/done' },
+      ],
+    } as ScriptDefinition
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={multiActionScript} />)
+    })
+
+    const actionRows = () => Array.from(container.querySelectorAll<HTMLElement>('.action-item'))
+    const completeCheckout = () => actionRows().find(row => row.textContent?.includes('Complete Checkout'))
+    await act(async () => {
+      completeCheckout()?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.querySelector('.action-item.active')?.textContent).toContain('Complete Checkout')
+
+    const openCart = actionRows().find(row => row.textContent?.includes('Open Cart'))
+    await act(async () => {
+      openCart?.querySelector<HTMLButtonElement>('[aria-label="Delete action"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(actionRows().some(row => row.textContent?.includes('Open Cart'))).toBe(false)
+    expect(container.querySelector('.action-item.active')?.textContent).toContain('Complete Checkout')
+    expect(Array.from(container.querySelectorAll<HTMLInputElement>('.editor-utility-sidebar .action-editor-panel input'))
+      .some(input => input.value === 'Complete Checkout')).toBe(true)
+    expect((container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null)?.value).toContain('"name": "Complete Checkout"')
   })
 
   it('moves, duplicates, and deletes lifecycle actions from the author list', async () => {

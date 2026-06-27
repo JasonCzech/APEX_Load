@@ -2361,6 +2361,7 @@ export interface BrowserReplaySession {
 
 export interface BrowserReplayStartRequest {
   group_name?: string
+  project_id?: string
   replay_session_id?: string
   variables?: Record<string, string>
   start_paused?: boolean
@@ -2471,6 +2472,7 @@ export interface ScriptDebugSession {
 
 export interface ScriptDebugStartRequest {
   group_name?: string
+  project_id?: string
   replay_session_id?: string
   replay_profile?: string
   runtime_profile?: ReplayRuntimeProfile

@@ -666,6 +666,21 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('Existing Script')
   })
 
+  it('keeps simultaneous library load failures in one notice', async () => {
+    apiMock.listScripts.mockRejectedValueOnce(new Error('script list unavailable'))
+    apiMock.listAuthoringSessions.mockRejectedValueOnce(new Error('session list unavailable'))
+
+    await act(async () => {
+      root.render(<ScriptsPage />)
+    })
+
+    await flushPromises()
+
+    const alertText = container.querySelector('[role="alert"]')?.textContent || ''
+    expect(alertText).toContain('script list unavailable')
+    expect(alertText).toContain('session list unavailable')
+  })
+
   it('surfaces script deletion failures without removing the row', async () => {
     apiMock.deleteScript.mockRejectedValueOnce(new Error('delete denied'))
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValueOnce(true)

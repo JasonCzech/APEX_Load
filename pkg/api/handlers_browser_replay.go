@@ -9,6 +9,7 @@ import (
 
 type BrowserReplayStartRequest struct {
 	GroupName       string                 `json:"group_name,omitempty"`
+	ProjectID       string                 `json:"project_id,omitempty"`
 	ReplaySessionID string                 `json:"replay_session_id,omitempty"`
 	Variables       map[string]string      `json:"variables,omitempty"`
 	RedactionRules  []engine.RedactionRule `json:"redaction_rules,omitempty"`
@@ -31,6 +32,10 @@ func (s *Server) handleStartBrowserReplayDraftScript(w http.ResponseWriter, r *h
 	}
 	if req.Script == nil {
 		writeError(w, http.StatusBadRequest, "script is required")
+		return
+	}
+	if err := bindDraftScriptProject(req.Script, req.ProjectID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	s.handleStartBrowserReplayRequest(w, r, "", req.Script, req)
@@ -60,6 +65,10 @@ func (s *Server) handleStartBrowserReplayScript(w http.ResponseWriter, r *http.R
 		if script.Name == "" {
 			script.Name = stored.Name
 		}
+	}
+	if err := bindStoredScriptProject(script, stored.Script.ProjectID, req.ProjectID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
 	}
 
 	s.handleStartBrowserReplayRequest(w, r, id, script, req)

@@ -46,6 +46,7 @@ const CATEGORY_BY_PATH_SEGMENT: Record<string, string> = {
   correlations: 'Script Authoring',
   'data-pools': 'Data & Parameters',
   desktop: 'System & Distribution',
+  docs: 'System & Distribution',
   domains: 'Workspace & Assets',
   downloads: 'System & Distribution',
   dsl: 'Script Authoring',

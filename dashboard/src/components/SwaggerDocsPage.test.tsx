@@ -2,13 +2,26 @@
 
 import { act, type ComponentProps } from 'react'
 import { createRoot, Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import endpointCatalogRaw from '../../../docs/api-endpoint-catalog.json?raw'
+import swaggerYamlFixture from '../../../docs/swagger.yaml?raw'
 
+import { loadApiEndpointCatalog, loadSwaggerYaml } from '../apiDocsClient'
+import { parseEndpointCatalog } from '../apiEndpointCatalog'
 import { TopbarContributionProvider, useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
 import SwaggerDocsPage from './SwaggerDocsPage'
 import { parseSwaggerDocument } from './swaggerDocsParser'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+
+vi.mock('../apiDocsClient', () => ({
+  loadApiEndpointCatalog: vi.fn(),
+  loadSwaggerYaml: vi.fn(),
+}))
+
+const endpointCatalogFixture = parseEndpointCatalog(endpointCatalogRaw)
+const loadApiEndpointCatalogMock = vi.mocked(loadApiEndpointCatalog)
+const loadSwaggerYamlMock = vi.mocked(loadSwaggerYaml)
 
 function setInputValue(input: HTMLInputElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
@@ -41,6 +54,10 @@ describe('SwaggerDocsPage', () => {
 
   beforeEach(() => {
     window.history.replaceState(null, '', '/')
+    loadApiEndpointCatalogMock.mockReset()
+    loadSwaggerYamlMock.mockReset()
+    loadApiEndpointCatalogMock.mockResolvedValue(endpointCatalogFixture)
+    loadSwaggerYamlMock.mockResolvedValue(swaggerYamlFixture)
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -62,6 +79,7 @@ describe('SwaggerDocsPage', () => {
         </TopbarContributionProvider>,
       )
     })
+    await act(async () => {})
   }
 
   function topbarText() {
@@ -259,4 +277,15 @@ paths:
     expect(scriptRows.some(row => row.includes('GET') && row.includes('/api/v1/scripts'))).toBe(true)
     expect(scriptRows.some(row => row.includes('POST') && row.includes('/api/v1/scripts') && row.includes('Create Script'))).toBe(false)
   }, 10_000)
+
+  it('shows a controller docs error when the OpenAPI document cannot be loaded', async () => {
+    loadSwaggerYamlMock.mockRejectedValueOnce(new Error('swagger route unavailable'))
+
+    await renderSwaggerDocsPage()
+
+    expect(container.textContent).toContain('API Docs Unavailable')
+    expect(container.textContent).toContain('swagger route unavailable')
+    expect(container.textContent).not.toContain('API Reference')
+    expect(container.querySelector('.swagger-docs-controls')).toBeNull()
+  })
 })

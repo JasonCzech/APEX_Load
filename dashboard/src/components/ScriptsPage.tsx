@@ -125,6 +125,13 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
   const [effectiveAuthAccessResources, setEffectiveAuthAccessResources] = useState<DashboardAuthEffectiveAccessResource[]>([])
   const [effectiveAccessLoaded, setEffectiveAccessLoaded] = useState(false)
   const [libraryNotice, setLibraryNotice] = useState('')
+  const appendLibraryNotice = useCallback((message: string) => {
+    setLibraryNotice(prev => {
+      if (!prev) return message
+      if (prev.split('\n').includes(message)) return prev
+      return `${prev}\n${message}`
+    })
+  }, [])
 
   const openRemoteSettings = useCallback(() => {
     try { window.localStorage.setItem('apexload.settings.focusSection', 'integrations') } catch { /* storage unavailable */ }
@@ -136,18 +143,18 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
       const res = await api.listScripts(activeProject?.id)
       setScripts(res.scripts || [])
     } catch (error) {
-      setLibraryNotice(getErrorMessage(error, 'Unable to load scripts.'))
+      appendLibraryNotice(getErrorMessage(error, 'Unable to load scripts.'))
     }
-  }, [api, activeProject?.id])
+  }, [api, activeProject?.id, appendLibraryNotice])
 
   const refreshAuthoringSessions = useCallback(async () => {
     try {
       const res = await api.listAuthoringSessions(activeProject?.id)
       setAuthoringSessions(res.sessions || [])
     } catch (error) {
-      setLibraryNotice(getErrorMessage(error, 'Unable to load authoring sessions.'))
+      appendLibraryNotice(getErrorMessage(error, 'Unable to load authoring sessions.'))
     }
-  }, [api, activeProject?.id])
+  }, [api, activeProject?.id, appendLibraryNotice])
 
   const {
     authoringState,
@@ -433,7 +440,7 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
       await api.deleteScript(id)
       void refresh()
     } catch (error) {
-      setLibraryNotice(getErrorMessage(error, 'Unable to delete script.'))
+      appendLibraryNotice(getErrorMessage(error, 'Unable to delete script.'))
     }
   }
 
@@ -466,16 +473,16 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
         const response = await api.getScript(script.id)
         source = response.script ?? undefined
       } catch (error) {
-        setLibraryNotice(getErrorMessage(error, 'Unable to load script before cloning.'))
+        appendLibraryNotice(getErrorMessage(error, 'Unable to load script before cloning.'))
         return
       }
     }
     if (!source) {
-      setLibraryNotice(`Unable to clone "${script.name}": the script body is unavailable.`)
+      appendLibraryNotice(`Unable to clone "${script.name}": the script body is unavailable.`)
       return
     }
     handleDraftEdit(cloneScriptDraft(source, script.name, activeProject?.id))
-  }, [activeProject?.id, api, handleDraftEdit])
+  }, [activeProject?.id, api, appendLibraryNotice, handleDraftEdit])
 
   const handleApproveAuthoringSession = useCallback(async (session: AuthoringSession) => {
     try {
@@ -484,18 +491,18 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
       void refreshAuthoringSessions()
       handleSavedScript(res.script, `Approved authoring session "${res.session.name}". Reviewing the promoted script.`)
     } catch (error) {
-      setLibraryNotice(getErrorMessage(error, 'Unable to approve authoring session.'))
+      appendLibraryNotice(getErrorMessage(error, 'Unable to approve authoring session.'))
     }
-  }, [api, handleSavedScript, refresh, refreshAuthoringSessions])
+  }, [api, appendLibraryNotice, handleSavedScript, refresh, refreshAuthoringSessions])
 
   const handleDiscardAuthoringSession = useCallback(async (session: AuthoringSession) => {
     try {
       await api.deleteAuthoringSession(session.id)
       await refreshAuthoringSessions()
     } catch (error) {
-      setLibraryNotice(getErrorMessage(error, 'Unable to discard authoring session.'))
+      appendLibraryNotice(getErrorMessage(error, 'Unable to discard authoring session.'))
     }
-  }, [api, refreshAuthoringSessions])
+  }, [api, appendLibraryNotice, refreshAuthoringSessions])
 
   const handlePreviewAuthoringCorrelation = useCallback(async (session: AuthoringSession, payload: AuthoringCorrelationPreviewRequest) => {
     try {

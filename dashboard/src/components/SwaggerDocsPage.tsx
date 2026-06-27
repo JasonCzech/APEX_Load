@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react'
-import swaggerYaml from '../../../docs/swagger.yaml?raw'
-import { apiEndpointCatalogByKey, endpointCatalogKey, type ApiEndpointCatalogRoute } from '../apiEndpointCatalog'
-import { buildAllowedOperationSet, canShowEndpointForDocs, docsVisibilityOperationsForEndpoint } from '../apiGuideAccess'
+import { useEffect, useMemo, useState } from 'react'
+import { loadApiEndpointCatalog, loadSwaggerYaml } from '../apiDocsClient'
+import { buildEndpointCatalogMap, endpointCatalogKey, type ApiEndpointCatalog, type ApiEndpointCatalogRoute } from '../apiEndpointCatalog'
+import { buildAllowedOperationSet, canShowEndpointForDocs, classifyEndpointForDocs } from '../apiGuideAccess'
 import type { DashboardAuthEffectiveAccessResource } from '../types'
 import { useApiGuideTopbarContribution } from './ApiGuideTopbarToggle'
 import { parseSwaggerDocument, type SwaggerOperation } from './swaggerDocsParser'
@@ -58,23 +58,34 @@ type OperationCatalogJoin = {
   catalogRoute?: ApiEndpointCatalogRoute
 }
 
+type SwaggerDocsState = {
+  swaggerYaml: string
+  catalog: ApiEndpointCatalog
+}
+
 export default function SwaggerDocsPage({
   effectiveAccessResources = [],
   effectiveAccessLoaded = true,
   effectiveAccessError = false,
 }: SwaggerDocsPageProps) {
-  const document = useMemo(() => parseSwaggerDocument(swaggerYaml), [])
+  const [docsState, setDocsState] = useState<SwaggerDocsState | null>(null)
+  const [loadError, setLoadError] = useState('')
+  const document = useMemo(() => parseSwaggerDocument(docsState?.swaggerYaml || ''), [docsState?.swaggerYaml])
   const categories = useMemo(() => Array.from(new Set(document.operations.map(operation => operation.category))).sort(), [document.operations])
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('all')
   const [myAccessOnly, setMyAccessOnly] = useState(false)
   const allowedOperations = useMemo(() => buildAllowedOperationSet(effectiveAccessResources), [effectiveAccessResources])
+  const endpointCatalogByKey = useMemo(
+    () => buildEndpointCatalogMap(docsState?.catalog.routes ?? []),
+    [docsState?.catalog.routes],
+  )
   const operationsWithCatalog = useMemo<OperationCatalogJoin[]>(() => (
     document.operations.map(operation => ({
       operation,
-      catalogRoute: apiEndpointCatalogByKey.get(endpointCatalogKey(operation.method, operation.path)),
+      catalogRoute: endpointCatalogByKey.get(endpointCatalogKey(operation.method, operation.path)),
     }))
-  ), [document.operations])
+  ), [document.operations, endpointCatalogByKey])
   const filteredOperations = useMemo(
     () => operationsWithCatalog
       .filter(({ operation }) => operationMatches(operation, query, category))
@@ -83,6 +94,24 @@ export default function SwaggerDocsPage({
   )
   const groupedOperations = useMemo(() => groupByCategory(filteredOperations), [filteredOperations])
   useApiGuideTopbarContribution('swagger', 'Swagger Docs')
+
+  useEffect(() => {
+    let cancelled = false
+    setLoadError('')
+    Promise.all([loadSwaggerYaml(), loadApiEndpointCatalog()])
+      .then(([swaggerYaml, catalog]) => {
+        if (cancelled) return
+        setDocsState({ swaggerYaml, catalog })
+      })
+      .catch(error => {
+        if (cancelled) return
+        setDocsState(null)
+        setLoadError(error instanceof Error ? error.message : 'API documentation could not be loaded.')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   return (
     <div className="page swagger-docs-page">
@@ -93,6 +122,15 @@ export default function SwaggerDocsPage({
         </div>
       </div>
 
+      {!docsState && (
+        <section className="api-guide-callout">
+          <h3>{loadError ? 'API Docs Unavailable' : 'Loading API Docs'}</h3>
+          <p>{loadError || 'Loading the controller-backed OpenAPI document and endpoint catalog.'}</p>
+        </section>
+      )}
+
+      {docsState && (
+        <>
       <section className="swagger-docs-hero" aria-labelledby="swagger-docs-title">
         <div>
           <span className="api-guide-kicker">OpenAPI</span>
@@ -160,6 +198,8 @@ export default function SwaggerDocsPage({
           </div>
         ))}
       </section>
+        </>
+      )}
     </div>
   )
 }
@@ -256,11 +296,12 @@ function renderAccessBadge(
   effectiveAccessError: boolean,
 ) {
   if (!catalogRoute) return <span className="swagger-access-badge swagger-access-muted">Unmatched</span>
-  const visibilityOperations = docsVisibilityOperationsForEndpoint(catalogRoute)
-  if (visibilityOperations.length === 0) return <span className="swagger-access-badge swagger-access-public">Public</span>
+  const visibility = classifyEndpointForDocs(catalogRoute)
+  if (!visibility.classified) return <span className="swagger-access-badge swagger-access-muted">Unclassified</span>
+  if (visibility.operations.length === 0) return <span className="swagger-access-badge swagger-access-public">Public</span>
   if (!effectiveAccessLoaded) return <span className="swagger-access-badge swagger-access-muted">Checking access</span>
   if (effectiveAccessError) return <span className="swagger-access-badge swagger-access-muted">Access unavailable</span>
-  const visible = visibilityOperations.some(operation => allowedOperations.has(operation))
+  const visible = visibility.operations.some(operation => allowedOperations.has(operation))
   return visible
     ? <span className="swagger-access-badge swagger-access-available">My access</span>
     : <span className="swagger-access-badge swagger-access-restricted">Not in my access</span>

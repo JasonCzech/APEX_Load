@@ -1,0 +1,4416 @@
+{
+  "version": 1,
+  "source": "server.go",
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/api/v1/ai/authoring/contract",
+      "operationId": "handleAIAuthoringContract",
+      "summary": "A I Authoring Contract",
+      "category": "AI Assistance",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/ai/drafts",
+      "operationId": "handleAIDraftGeneration",
+      "summary": "A I Draft Generation",
+      "category": "AI Assistance",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/ai/explain",
+      "operationId": "handleAIExplain",
+      "summary": "A I Explain",
+      "category": "AI Assistance",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/ai/policy",
+      "operationId": "handleAIPolicy",
+      "summary": "A I Policy",
+      "category": "AI Assistance",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/ai/repairs",
+      "operationId": "handleAIRepairSuggestions",
+      "summary": "A I Repair Suggestions",
+      "category": "AI Assistance",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/ai/review-queue",
+      "operationId": "handleAIReviewQueue",
+      "summary": "A I Review Queue",
+      "category": "AI Assistance",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/application-repository/categories/{id}",
+      "operationId": "handleDeleteRepositoryCategory",
+      "summary": "Delete Repository Category",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/application-repository/categories/{id}",
+      "operationId": "handleUpdateRepositoryCategory",
+      "summary": "Update Repository Category",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/applications",
+      "operationId": "handleListApplications",
+      "summary": "List Applications",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/applications",
+      "operationId": "handleCreateApplication",
+      "summary": "Create Application",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/applications/{id}",
+      "operationId": "handleDeleteApplication",
+      "summary": "Delete Application",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/applications/{id}",
+      "operationId": "handleGetApplication",
+      "summary": "Get Application",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/applications/{id}",
+      "operationId": "handleUpdateApplication",
+      "summary": "Update Application",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/applications/{id}/load-comparison",
+      "operationId": "handleGetApplicationLoadComparison",
+      "summary": "Get Application Load Comparison",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/applications/{id}/releases",
+      "operationId": "handleListReleases",
+      "summary": "List Releases",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/applications/{id}/releases",
+      "operationId": "handleCreateRelease",
+      "summary": "Create Release",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/archives/retention/apply",
+      "operationId": "handleApplyArchiveRetention",
+      "summary": "Apply Archive Retention",
+      "category": "Results \u0026 Reporting",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/archives/retention/plan",
+      "operationId": "handlePlanArchiveRetention",
+      "summary": "Plan Archive Retention",
+      "category": "Results \u0026 Reporting",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/auth/access-matrix",
+      "operationId": "handleGetAuthAccessMatrix",
+      "summary": "Get Auth Access Matrix",
+      "category": "Identity \u0026 Access",
+      "public": true,
+      "authenticated": false,
+      "access": "Public (no authentication required)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/auth/access-review",
+      "operationId": "handleGetAccessReview",
+      "summary": "Get Access Review",
+      "category": "Identity \u0026 Access",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/auth/audit-events",
+      "operationId": "handleListAuditEvents",
+      "summary": "List Audit Events",
+      "category": "Identity \u0026 Access",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/auth/audit-events/export",
+      "operationId": "handleExportAuditEvents",
+      "summary": "Export Audit Events",
+      "category": "Identity \u0026 Access",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/auth/callback",
+      "operationId": "handleOIDCCallback",
+      "summary": "O I D C Callback",
+      "category": "Identity \u0026 Access",
+      "public": true,
+      "authenticated": false,
+      "access": "Public (no authentication required)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/auth/diagnostics",
+      "operationId": "handleGetAuthDiagnostics",
+      "summary": "Get Auth Diagnostics",
+      "category": "Identity \u0026 Access",
+      "public": true,
+      "authenticated": false,
+      "access": "Public (no authentication required)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/auth/effective-access",
+      "operationId": "handleGetAuthEffectiveAccess",
+      "summary": "Get Auth Effective Access",
+      "category": "Identity \u0026 Access",
+      "public": true,
+      "authenticated": false,
+      "access": "Public (no authentication required)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/auth/effective-access/principal",
+      "operationId": "handleGetAuthEffectiveAccessForPrincipal",
+      "summary": "Get Auth Effective Access For Principal",
+      "category": "Identity \u0026 Access",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/auth/login",
+      "operationId": "handleOIDCLogin",
+      "summary": "O I D C Login",
+      "category": "Identity \u0026 Access",
+      "public": true,
+      "authenticated": false,
+      "access": "Public (no authentication required)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/logout",
+      "operationId": "handleOIDCLogout",
+      "summary": "O I D C Logout",
+      "category": "Identity \u0026 Access",
+      "public": true,
+      "authenticated": false,
+      "access": "Public (no authentication required)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/auth/me",
+      "operationId": "handleGetAuthStatus",
+      "summary": "Get Auth Status",
+      "category": "Identity \u0026 Access",
+      "public": true,
+      "authenticated": false,
+      "access": "Public (no authentication required)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/auth/policy",
+      "operationId": "handleGetAuthPolicy",
+      "summary": "Get Auth Policy",
+      "category": "Identity \u0026 Access",
+      "public": true,
+      "authenticated": false,
+      "access": "Public (no authentication required)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/auth/roles",
+      "operationId": "handleGetAuthRoleCatalog",
+      "summary": "Get Auth Role Catalog",
+      "category": "Identity \u0026 Access",
+      "public": true,
+      "authenticated": false,
+      "access": "Public (no authentication required)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/auth/service-accounts",
+      "operationId": "handleListServiceAccounts",
+      "summary": "List Service Accounts",
+      "category": "Identity \u0026 Access",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/service-accounts",
+      "operationId": "handleCreateServiceAccount",
+      "summary": "Create Service Account",
+      "category": "Identity \u0026 Access",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/auth/service-accounts/{id}",
+      "operationId": "handleDeleteServiceAccount",
+      "summary": "Delete Service Account",
+      "category": "Identity \u0026 Access",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/auth/service-accounts/{id}",
+      "operationId": "handleUpdateServiceAccount",
+      "summary": "Update Service Account",
+      "category": "Identity \u0026 Access",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/service-accounts/{id}/rotate",
+      "operationId": "handleRotateServiceAccount",
+      "summary": "Rotate Service Account",
+      "category": "Identity \u0026 Access",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/auth/user-activity",
+      "operationId": "handleGetUserActivity",
+      "summary": "Get User Activity",
+      "category": "Identity \u0026 Access",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/auth/user-activity/export",
+      "operationId": "handleExportUserActivity",
+      "summary": "Export User Activity",
+      "category": "Identity \u0026 Access",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/auth/users",
+      "operationId": "handleListUsers",
+      "summary": "List Users",
+      "category": "Identity \u0026 Access",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/users",
+      "operationId": "handleCreateUser",
+      "summary": "Create User",
+      "category": "Identity \u0026 Access",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/users/onboard",
+      "operationId": "handleOnboardUser",
+      "summary": "Onboard User",
+      "category": "Identity \u0026 Access",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/auth/users/{id}",
+      "operationId": "handleDeleteUser",
+      "summary": "Delete User",
+      "category": "Identity \u0026 Access",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/auth/users/{id}",
+      "operationId": "handleGetUser",
+      "summary": "Get User",
+      "category": "Identity \u0026 Access",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/auth/users/{id}",
+      "operationId": "handleUpdateUser",
+      "summary": "Update User",
+      "category": "Identity \u0026 Access",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/users/{id}/bindings",
+      "operationId": "handleCreateUserBinding",
+      "summary": "Create User Binding",
+      "category": "Identity \u0026 Access",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/auth/users/{id}/bindings/{binding_id}",
+      "operationId": "handleDeleteUserBinding",
+      "summary": "Delete User Binding",
+      "category": "Identity \u0026 Access",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/users/{id}/disable",
+      "operationId": "handleDisableUser",
+      "summary": "Disable User",
+      "category": "Identity \u0026 Access",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/users/{id}/enable",
+      "operationId": "handleEnableUser",
+      "summary": "Enable User",
+      "category": "Identity \u0026 Access",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/users/{id}/revoke-sessions",
+      "operationId": "handleRevokeUserSessions",
+      "summary": "Revoke User Sessions",
+      "category": "Identity \u0026 Access",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/browser-recorder/devices",
+      "operationId": "handleListBrowserRecorderDevices",
+      "summary": "List Browser Recorder Devices",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/browser-recorder/install",
+      "operationId": "handleGetBrowserRecorderInstall",
+      "summary": "Get Browser Recorder Install",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/browser-recorder/install",
+      "operationId": "handleBrowserRecorderInstall",
+      "summary": "Browser Recorder Install",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/browser-recorder/sessions",
+      "operationId": "handleStartBrowserRecording",
+      "summary": "Start Browser Recording",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/browser-recorder/sessions/{id}",
+      "operationId": "handleGetBrowserRecording",
+      "summary": "Get Browser Recording",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/browser-recorder/sessions/{id}/control-panel",
+      "operationId": "handleOpenBrowserRecordingControlPanel",
+      "summary": "Open Browser Recording Control Panel",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/browser-recorder/sessions/{id}/convert",
+      "operationId": "handleConvertBrowserRecording",
+      "summary": "Convert Browser Recording",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/browser-recorder/sessions/{id}/convert/preview",
+      "operationId": "handlePreviewBrowserRecordingConversion",
+      "summary": "Preview Browser Recording Conversion",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/browser-recorder/sessions/{id}/export",
+      "operationId": "handleExportBrowserRecording",
+      "summary": "Export Browser Recording",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/browser-recorder/sessions/{id}/focus",
+      "operationId": "handleFocusBrowserRecording",
+      "summary": "Focus Browser Recording",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/browser-recorder/sessions/{id}/force-stop",
+      "operationId": "handleForceStopBrowserRecording",
+      "summary": "Force Stop Browser Recording",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/browser-recorder/sessions/{id}/navigate",
+      "operationId": "handleNavigateBrowserRecording",
+      "summary": "Navigate Browser Recording",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/browser-recorder/sessions/{id}/notes",
+      "operationId": "handleAddBrowserRecordingNote",
+      "summary": "Add Browser Recording Note",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/browser-recorder/sessions/{id}/pause",
+      "operationId": "handlePauseBrowserRecording",
+      "summary": "Pause Browser Recording",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/browser-recorder/sessions/{id}/pick-mode",
+      "operationId": "handleSetBrowserRecordingPickMode",
+      "summary": "Set Browser Recording Pick Mode",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/browser-recorder/sessions/{id}/resume",
+      "operationId": "handleResumeBrowserRecording",
+      "summary": "Resume Browser Recording",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/browser-recorder/sessions/{id}/section",
+      "operationId": "handleSetBrowserRecordingSection",
+      "summary": "Set Browser Recording Section",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/browser-recorder/sessions/{id}/steps/last",
+      "operationId": "handleDeleteLastBrowserRecordingStep",
+      "summary": "Delete Last Browser Recording Step",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/browser-recorder/sessions/{id}/steps/{seq}",
+      "operationId": "handleUpdateBrowserRecordingStep",
+      "summary": "Update Browser Recording Step",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/browser-recorder/sessions/{id}/stop",
+      "operationId": "handleStopBrowserRecording",
+      "summary": "Stop Browser Recording",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/browser-recorder/sessions/{id}/storage-state",
+      "operationId": "handleExportBrowserRecordingStorageState",
+      "summary": "Export Browser Recording Storage State",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/browser-recorder/sessions/{id}/transactions/end",
+      "operationId": "handleEndBrowserRecordingTransaction",
+      "summary": "End Browser Recording Transaction",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/browser-recorder/sessions/{id}/transactions/start",
+      "operationId": "handleStartBrowserRecordingTransaction",
+      "summary": "Start Browser Recording Transaction",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/browser-recorder/sessions/{id}/transactions/suggestions",
+      "operationId": "handleSuggestBrowserRecordingTransactions",
+      "summary": "Suggest Browser Recording Transactions",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/browser-recorder/sessions/{id}/verify",
+      "operationId": "handleVerifyBrowserRecording",
+      "summary": "Verify Browser Recording",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/browser-replay/sessions/{session_id}",
+      "operationId": "handleGetBrowserReplaySession",
+      "summary": "Get Browser Replay Session",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/browser-replay/sessions/{session_id}/pause",
+      "operationId": "handlePauseBrowserReplaySession",
+      "summary": "Pause Browser Replay Session",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/browser-replay/sessions/{session_id}/resume",
+      "operationId": "handleResumeBrowserReplaySession",
+      "summary": "Resume Browser Replay Session",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/browser-replay/sessions/{session_id}/stop",
+      "operationId": "handleStopBrowserReplaySession",
+      "summary": "Stop Browser Replay Session",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/capacity/timeslots",
+      "operationId": "handleListCapacityReservations",
+      "summary": "List Capacity Reservations",
+      "category": "Scheduling",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/capacity/timeslots",
+      "operationId": "handleCreateCapacityReservation",
+      "summary": "Create Capacity Reservation",
+      "category": "Scheduling",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/capacity/timeslots/availability",
+      "operationId": "handleCheckCapacityAvailability",
+      "summary": "Check Capacity Availability",
+      "category": "Scheduling",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/capacity/timeslots/{id}",
+      "operationId": "handleDeleteCapacityReservation",
+      "summary": "Delete Capacity Reservation",
+      "category": "Scheduling",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/capacity/timeslots/{id}",
+      "operationId": "handleGetCapacityReservation",
+      "summary": "Get Capacity Reservation",
+      "category": "Scheduling",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/capacity/timeslots/{id}",
+      "operationId": "handleUpdateCapacityReservation",
+      "summary": "Update Capacity Reservation",
+      "category": "Scheduling",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/capacity/timeslots/{id}/approve",
+      "operationId": "handleApproveCapacityReservation",
+      "summary": "Approve Capacity Reservation",
+      "category": "Scheduling",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/capacity/timeslots/{id}/bind",
+      "operationId": "handleBindCapacityTimeslot",
+      "summary": "Bind Capacity Timeslot",
+      "category": "Scheduling",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/capacity/timeslots/{id}/reject",
+      "operationId": "handleRejectCapacityReservation",
+      "summary": "Reject Capacity Reservation",
+      "category": "Scheduling",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/correlation-rulesets",
+      "operationId": "handleListCorrelationRulesets",
+      "summary": "List Correlation Rulesets",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/correlation-rulesets",
+      "operationId": "handleCreateCorrelationRuleset",
+      "summary": "Create Correlation Ruleset",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/correlation-rulesets/discover-from-script",
+      "operationId": "handleDiscoverCorrelationRulesetFromScript",
+      "summary": "Discover Correlation Ruleset From Script",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/correlation-rulesets/{id}",
+      "operationId": "handleDeleteCorrelationRuleset",
+      "summary": "Delete Correlation Ruleset",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/correlation-rulesets/{id}",
+      "operationId": "handleGetCorrelationRuleset",
+      "summary": "Get Correlation Ruleset",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/correlation-rulesets/{id}",
+      "operationId": "handleUpdateCorrelationRuleset",
+      "summary": "Update Correlation Ruleset",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/correlation-rulesets/{id}/apply-to-script",
+      "operationId": "handleApplyCorrelationRulesetToScript",
+      "summary": "Apply Correlation Ruleset To Script",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/correlations/diagnose",
+      "operationId": "handleDiagnoseCorrelations",
+      "summary": "Diagnose Correlations",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/correlations/diff",
+      "operationId": "handleDiffCorrelations",
+      "summary": "Diff Correlations",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/correlations/rules",
+      "operationId": "handleListCorrelationRules",
+      "summary": "List Correlation Rules",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/data-pools",
+      "operationId": "handleListDataPools",
+      "summary": "List Data Pools",
+      "category": "Data \u0026 Parameters",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/data-pools",
+      "operationId": "handleCreateDataPool",
+      "summary": "Create Data Pool",
+      "category": "Data \u0026 Parameters",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/data-pools/{id}",
+      "operationId": "handleDeleteDataPool",
+      "summary": "Delete Data Pool",
+      "category": "Data \u0026 Parameters",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/data-pools/{id}",
+      "operationId": "handleGetDataPool",
+      "summary": "Get Data Pool",
+      "category": "Data \u0026 Parameters",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/data-pools/{id}",
+      "operationId": "handleUpdateDataPool",
+      "summary": "Update Data Pool",
+      "category": "Data \u0026 Parameters",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/data-pools/{id}/rows",
+      "operationId": "handleListDataPoolRows",
+      "summary": "List Data Pool Rows",
+      "category": "Data \u0026 Parameters",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/data-pools/{id}/rows",
+      "operationId": "handleCreateDataPoolRow",
+      "summary": "Create Data Pool Row",
+      "category": "Data \u0026 Parameters",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/data-pools/{id}/rows/{row_id}",
+      "operationId": "handleDeleteDataPoolRow",
+      "summary": "Delete Data Pool Row",
+      "category": "Data \u0026 Parameters",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/data-pools/{id}/rows/{row_id}",
+      "operationId": "handleUpdateDataPoolRow",
+      "summary": "Update Data Pool Row",
+      "category": "Data \u0026 Parameters",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/desktop/status",
+      "operationId": "handleDesktopStatus",
+      "summary": "Desktop Status",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/docs/endpoint-catalog",
+      "operationId": "handleGetAPIDocsEndpointCatalog",
+      "summary": "Get A P I Docs Endpoint Catalog",
+      "category": "Docs",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/docs/swagger.yaml",
+      "operationId": "handleGetAPIDocsSwagger",
+      "summary": "Get A P I Docs Swagger",
+      "category": "Docs",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/domains",
+      "operationId": "handleListDomains",
+      "summary": "List Domains",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/domains",
+      "operationId": "handleCreateDomain",
+      "summary": "Create Domain",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/domains/{id}",
+      "operationId": "handleDeleteDomain",
+      "summary": "Delete Domain",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/domains/{id}",
+      "operationId": "handleGetDomain",
+      "summary": "Get Domain",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/domains/{id}",
+      "operationId": "handleUpdateDomain",
+      "summary": "Update Domain",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/domains/{id}/application-repository",
+      "operationId": "handleGetApplicationRepository",
+      "summary": "Get Application Repository",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/domains/{id}/application-repository",
+      "operationId": "handleUpdateApplicationRepository",
+      "summary": "Update Application Repository",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/domains/{id}/application-repository/categories",
+      "operationId": "handleListRepositoryCategories",
+      "summary": "List Repository Categories",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/domains/{id}/application-repository/categories",
+      "operationId": "handleCreateRepositoryCategory",
+      "summary": "Create Repository Category",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/downloads/desktop/latest",
+      "operationId": "handleDownloadDesktopApp",
+      "summary": "Download Desktop App",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/downloads/desktop/latest/checksum",
+      "operationId": "handleDesktopAppChecksum",
+      "summary": "Desktop App Checksum",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/downloads/recording-agent/latest",
+      "operationId": "handleDownloadRecordingAgent",
+      "summary": "Download Recording Agent",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/downloads/recording-agent/latest/checksum",
+      "operationId": "handleRecordingAgentChecksum",
+      "summary": "Recording Agent Checksum",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/dsl/actions",
+      "operationId": "handleListDSLActions",
+      "summary": "List D S L Actions",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/dsl/config-defaults",
+      "operationId": "handleConfigDefaults",
+      "summary": "Config Defaults",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/execution-plans",
+      "operationId": "handleListExecutionPlans",
+      "summary": "List Execution Plans",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/execution-plans",
+      "operationId": "handleCreateExecutionPlan",
+      "summary": "Create Execution Plan",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/execution-plans/{id}",
+      "operationId": "handleDeleteExecutionPlan",
+      "summary": "Delete Execution Plan",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/execution-plans/{id}",
+      "operationId": "handleGetExecutionPlan",
+      "summary": "Get Execution Plan",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/execution-plans/{id}",
+      "operationId": "handleUpdateExecutionPlan",
+      "summary": "Update Execution Plan",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/execution-plans/{id}/approvals",
+      "operationId": "handleListExecutionPlanApprovals",
+      "summary": "List Execution Plan Approvals",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/execution-plans/{id}/approvals/{approval_id}/approve",
+      "operationId": "handleApproveExecutionPlanApproval",
+      "summary": "Approve Execution Plan Approval",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/execution-plans/{id}/approvals/{approval_id}/reject",
+      "operationId": "handleRejectExecutionPlanApproval",
+      "summary": "Reject Execution Plan Approval",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/execution-plans/{id}/runs",
+      "operationId": "handleListExecutionPlanRuns",
+      "summary": "List Execution Plan Runs",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/execution-plans/{id}/runs",
+      "operationId": "handleMaterializeAndRunExecutionPlan",
+      "summary": "Materialize And Run Execution Plan",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/execution-plans/{id}/runs/{runId}",
+      "operationId": "handleGetExecutionPlanRun",
+      "summary": "Get Execution Plan Run",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/execution-plans/{id}/schedules",
+      "operationId": "handleListExecutionPlanSchedules",
+      "summary": "List Execution Plan Schedules",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/execution-plans/{id}/schedules",
+      "operationId": "handleCreateExecutionPlanSchedule",
+      "summary": "Create Execution Plan Schedule",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/execution-plans/{id}/schedules/{schedule_id}",
+      "operationId": "handleDeleteExecutionPlanSchedule",
+      "summary": "Delete Execution Plan Schedule",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/execution-plans/{id}/schedules/{schedule_id}",
+      "operationId": "handleUpdateExecutionPlanSchedule",
+      "summary": "Update Execution Plan Schedule",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/execution-plans/{id}/schedules/{schedule_id}/occurrences",
+      "operationId": "handleListExecutionPlanScheduleOccurrences",
+      "summary": "List Execution Plan Schedule Occurrences",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/fleet/alerts",
+      "operationId": "handleGetFleetAlerts",
+      "summary": "Get Fleet Alerts",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/fleet/alerts/{id}/ack",
+      "operationId": "handleAckFleetAlert",
+      "summary": "Ack Fleet Alert",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/fleet/capacity",
+      "operationId": "handleGetFleetCapacity",
+      "summary": "Get Fleet Capacity",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/fleet/generators",
+      "operationId": "handleListGeneratorMetadata",
+      "summary": "List Generator Metadata",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/fleet/generators/{id}",
+      "operationId": "handlePatchGeneratorMetadata",
+      "summary": "Patch Generator Metadata",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/fleet/generators/{id}/cordon",
+      "operationId": "handleCordonGenerator",
+      "summary": "Cordon Generator",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/fleet/generators/{id}/drain",
+      "operationId": "handleDrainGenerator",
+      "summary": "Drain Generator",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/fleet/generators/{id}/evacuate",
+      "operationId": "handleEvacuateGenerator",
+      "summary": "Evacuate Generator",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/fleet/generators/{id}/uncordon",
+      "operationId": "handleUncordonGenerator",
+      "summary": "Uncordon Generator",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/fleet/load-zones",
+      "operationId": "handleGetFleetLoadZones",
+      "summary": "Get Fleet Load Zones",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/fleet/pools",
+      "operationId": "handleListFleetPools",
+      "summary": "List Fleet Pools",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/fleet/pools",
+      "operationId": "handleCreateFleetPool",
+      "summary": "Create Fleet Pool",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/fleet/pools/{id}",
+      "operationId": "handleDeleteFleetPool",
+      "summary": "Delete Fleet Pool",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/fleet/pools/{id}",
+      "operationId": "handleGetFleetPool",
+      "summary": "Get Fleet Pool",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/fleet/pools/{id}",
+      "operationId": "handleUpdateFleetPool",
+      "summary": "Update Fleet Pool",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/fleet/provision-requests",
+      "operationId": "handleListProvisioningRequests",
+      "summary": "List Provisioning Requests",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/fleet/provision-requests",
+      "operationId": "handleCreateProvisioningRequest",
+      "summary": "Create Provisioning Request",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/fleet/provision-requests/{id}",
+      "operationId": "handleGetProvisioningRequest",
+      "summary": "Get Provisioning Request",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/fleet/provision-requests/{id}/cancel",
+      "operationId": "handleCancelProvisioningRequest",
+      "summary": "Cancel Provisioning Request",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/fleet/provision-requests/{id}/retry",
+      "operationId": "handleRetryProvisioningRequest",
+      "summary": "Retry Provisioning Request",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/fleet/provisioner",
+      "operationId": "handleGetFleetProvisioner",
+      "summary": "Get Fleet Provisioner",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/folders/{id}",
+      "operationId": "handleDeleteFolder",
+      "summary": "Delete Folder",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/folders/{id}",
+      "operationId": "handleUpdateFolder",
+      "summary": "Update Folder",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/integrations/apm/profiles",
+      "operationId": "handleListAPMIntegrationProfiles",
+      "summary": "List A P M Integration Profiles",
+      "category": "Integrations \u0026 Protocols",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/integrations/dynatrace/dry-run",
+      "operationId": "handleDynatraceDryRun",
+      "summary": "Dynatrace Dry Run",
+      "category": "Integrations \u0026 Protocols",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/integrations/github/branches",
+      "operationId": "handleGitHubBranches",
+      "summary": "Git Hub Branches",
+      "category": "Integrations \u0026 Protocols",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/integrations/github/callback",
+      "operationId": "handleGitHubCallback",
+      "summary": "Git Hub Callback",
+      "category": "Integrations \u0026 Protocols",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/integrations/github/check-links",
+      "operationId": "handleListGitHubCheckLinks",
+      "summary": "List Git Hub Check Links",
+      "category": "Integrations \u0026 Protocols",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/integrations/github/config",
+      "operationId": "handleGitHubConfig",
+      "summary": "Git Hub Config",
+      "category": "Integrations \u0026 Protocols",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/integrations/github/connection",
+      "operationId": "handleGitHubDisconnect",
+      "summary": "Git Hub Disconnect",
+      "category": "Integrations \u0026 Protocols",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/integrations/github/connection",
+      "operationId": "handleGitHubConnection",
+      "summary": "Git Hub Connection",
+      "category": "Integrations \u0026 Protocols",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/integrations/github/contents",
+      "operationId": "handleGitHubContents",
+      "summary": "Git Hub Contents",
+      "category": "Integrations \u0026 Protocols",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/integrations/github/diagnostics",
+      "operationId": "handleGitHubDiagnostics",
+      "summary": "Git Hub Diagnostics",
+      "category": "Integrations \u0026 Protocols",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/integrations/github/installations",
+      "operationId": "handleGitHubInstallations",
+      "summary": "Git Hub Installations",
+      "category": "Integrations \u0026 Protocols",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/integrations/github/login",
+      "operationId": "handleGitHubLogin",
+      "summary": "Git Hub Login",
+      "category": "Integrations \u0026 Protocols",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/integrations/github/repos",
+      "operationId": "handleGitHubRepos",
+      "summary": "Git Hub Repos",
+      "category": "Integrations \u0026 Protocols",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/integrations/github/sync-jobs",
+      "operationId": "handleListGitHubSyncJobs",
+      "summary": "List Git Hub Sync Jobs",
+      "category": "Integrations \u0026 Protocols",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/integrations/github/sync-jobs",
+      "operationId": "handleCreateGitHubSyncJob",
+      "summary": "Create Git Hub Sync Job",
+      "category": "Integrations \u0026 Protocols",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/integrations/github/sync-jobs/{id}",
+      "operationId": "handleGetGitHubSyncJob",
+      "summary": "Get Git Hub Sync Job",
+      "category": "Integrations \u0026 Protocols",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/integrations/github/webhook",
+      "operationId": "handleGitHubWebhook",
+      "summary": "Git Hub Webhook",
+      "category": "Integrations \u0026 Protocols",
+      "public": true,
+      "authenticated": false,
+      "access": "Public (no authentication required)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/integrations/github/webhooks",
+      "operationId": "handleListGitHubWebhookDeliveries",
+      "summary": "List Git Hub Webhook Deliveries",
+      "category": "Integrations \u0026 Protocols",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/library/capabilities",
+      "operationId": "handleLibraryCapabilities",
+      "summary": "Library Capabilities",
+      "category": "Script Library",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/library/catalog",
+      "operationId": "handleLibraryCatalog",
+      "summary": "Library Catalog",
+      "category": "Script Library",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/library/export",
+      "operationId": "handleLibraryExport",
+      "summary": "Library Export",
+      "category": "Script Library",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/library/import",
+      "operationId": "handleLibraryImport",
+      "summary": "Library Import",
+      "category": "Script Library",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/library/import/archive",
+      "operationId": "handleLibraryImportArchive",
+      "summary": "Library Import Archive",
+      "category": "Script Library",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/library/remotes",
+      "operationId": "handleLibraryListRemotes",
+      "summary": "Library List Remotes",
+      "category": "Script Library",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/library/remotes",
+      "operationId": "handleLibraryCreateRemote",
+      "summary": "Library Create Remote",
+      "category": "Script Library",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/library/remotes/{id}",
+      "operationId": "handleLibraryDeleteRemote",
+      "summary": "Library Delete Remote",
+      "category": "Script Library",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/library/remotes/{id}",
+      "operationId": "handleLibraryUpdateRemote",
+      "summary": "Library Update Remote",
+      "category": "Script Library",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/library/remotes/{id}/catalog",
+      "operationId": "handleLibraryRemoteCatalog",
+      "summary": "Library Remote Catalog",
+      "category": "Script Library",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/library/remotes/{id}/diff",
+      "operationId": "handleLibraryRemoteDiff",
+      "summary": "Library Remote Diff",
+      "category": "Script Library",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/library/remotes/{id}/probe",
+      "operationId": "handleLibraryProbeRemote",
+      "summary": "Library Probe Remote",
+      "category": "Script Library",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/library/remotes/{id}/pull",
+      "operationId": "handleLibraryRemotePull",
+      "summary": "Library Remote Pull",
+      "category": "Script Library",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/library/remotes/{id}/push",
+      "operationId": "handleLibraryRemotePush",
+      "summary": "Library Remote Push",
+      "category": "Script Library",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/library/results/{id}/archive",
+      "operationId": "handleLibraryResultArchive",
+      "summary": "Library Result Archive",
+      "category": "Script Library",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/monitoring/collectors",
+      "operationId": "handleListMonitoringCollectors",
+      "summary": "List Monitoring Collectors",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/monitoring/collectors",
+      "operationId": "handleCreateMonitoringCollector",
+      "summary": "Create Monitoring Collector",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/monitoring/collectors/{id}",
+      "operationId": "handleDeleteMonitoringCollector",
+      "summary": "Delete Monitoring Collector",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/monitoring/collectors/{id}",
+      "operationId": "handleGetMonitoringCollector",
+      "summary": "Get Monitoring Collector",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/monitoring/collectors/{id}",
+      "operationId": "handlePatchMonitoringCollector",
+      "summary": "Patch Monitoring Collector",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/monitoring/collectors/{id}/heartbeat",
+      "operationId": "handleCollectorHeartbeat",
+      "summary": "Collector Heartbeat",
+      "category": "Operations \u0026 Observability",
+      "public": true,
+      "authenticated": false,
+      "access": "Public (no authentication required)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/monitoring/collectors/{id}/metrics",
+      "operationId": "handleGetCollectorMetrics",
+      "summary": "Get Collector Metrics",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/monitoring/collectors/{id}/rotate-token",
+      "operationId": "handleRotateMonitoringCollectorToken",
+      "summary": "Rotate Monitoring Collector Token",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/monitoring/packs",
+      "operationId": "handleListInfrastructureMonitorPacks",
+      "summary": "List Infrastructure Monitor Packs",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/monitoring/prometheus/graphs",
+      "operationId": "handlePrometheusGraphs",
+      "summary": "Prometheus Graphs",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/object-repositories",
+      "operationId": "handleListObjectRepositories",
+      "summary": "List Object Repositories",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/object-repositories",
+      "operationId": "handleCreateObjectRepository",
+      "summary": "Create Object Repository",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/object-repositories/from-script",
+      "operationId": "handleObjectRepositoryFromScript",
+      "summary": "Object Repository From Script",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/object-repositories/{id}",
+      "operationId": "handleDeleteObjectRepository",
+      "summary": "Delete Object Repository",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/object-repositories/{id}",
+      "operationId": "handleGetObjectRepository",
+      "summary": "Get Object Repository",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/object-repositories/{id}",
+      "operationId": "handleUpdateObjectRepository",
+      "summary": "Update Object Repository",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects",
+      "operationId": "handleListProjects",
+      "summary": "List Projects",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects",
+      "operationId": "handleCreateProject",
+      "summary": "Create Project",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/projects/{id}",
+      "operationId": "handleDeleteProject",
+      "summary": "Delete Project",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{id}",
+      "operationId": "handleGetProject",
+      "summary": "Get Project",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/projects/{id}",
+      "operationId": "handleUpdateProject",
+      "summary": "Update Project",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{id}/entitlements/usage",
+      "operationId": "handleGetProjectEntitlementsUsage",
+      "summary": "Get Project Entitlements Usage",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{id}/github/policy",
+      "operationId": "handleGetProjectGitHubPolicy",
+      "summary": "Get Project Git Hub Policy",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/projects/{id}/github/policy",
+      "operationId": "handleUpdateProjectGitHubPolicy",
+      "summary": "Update Project Git Hub Policy",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{id}/releases",
+      "operationId": "handleListProjectReleases",
+      "summary": "List Project Releases",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{id}/releases",
+      "operationId": "handleCreateProjectRelease",
+      "summary": "Create Project Release",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{pid}/folders",
+      "operationId": "handleListFolders",
+      "summary": "List Folders",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{pid}/folders",
+      "operationId": "handleCreateFolder",
+      "summary": "Create Folder",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/protocol-bundles/support-matrix",
+      "operationId": "handleProtocolBundleSupportMatrix",
+      "summary": "Protocol Bundle Support Matrix",
+      "category": "Integrations \u0026 Protocols",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/protocols/native-support-matrix",
+      "operationId": "handleNativeProtocolSupportMatrix",
+      "summary": "Native Protocol Support Matrix",
+      "category": "Integrations \u0026 Protocols",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/recorder",
+      "operationId": "handleListRecordings",
+      "summary": "List Recordings",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/recorder/ca.pem",
+      "operationId": "handleRecorderCACert",
+      "summary": "Recorder C A Cert",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/recorder/start",
+      "operationId": "handleStartRecording",
+      "summary": "Start Recording",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/recorder/status",
+      "operationId": "handleRecorderStatus",
+      "summary": "Recorder Status",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/recorder/{id}",
+      "operationId": "handleDeleteRecording",
+      "summary": "Delete Recording",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/recorder/{id}",
+      "operationId": "handleGetRecording",
+      "summary": "Get Recording",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/recorder/{id}/convert",
+      "operationId": "handleConvertRecording",
+      "summary": "Convert Recording",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/recorder/{id}/convert/preview",
+      "operationId": "handlePreviewRecordingConversion",
+      "summary": "Preview Recording Conversion",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/recorder/{id}/export",
+      "operationId": "handleExportRecording",
+      "summary": "Export Recording",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/recorder/{id}/pause",
+      "operationId": "handlePauseRecording",
+      "summary": "Pause Recording",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/recorder/{id}/requests/{seq}",
+      "operationId": "handleUpdateRecordedRequest",
+      "summary": "Update Recorded Request",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/recorder/{id}/resume",
+      "operationId": "handleResumeRecording",
+      "summary": "Resume Recording",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/recorder/{id}/stop",
+      "operationId": "handleStopRecording",
+      "summary": "Stop Recording",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/releases/{id}",
+      "operationId": "handleDeleteRelease",
+      "summary": "Delete Release",
+      "category": "Results \u0026 Reporting",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/releases/{id}",
+      "operationId": "handleGetRelease",
+      "summary": "Get Release",
+      "category": "Results \u0026 Reporting",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/releases/{id}",
+      "operationId": "handleUpdateRelease",
+      "summary": "Update Release",
+      "category": "Results \u0026 Reporting",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/releases/{id}/archive",
+      "operationId": "handleArchiveRelease",
+      "summary": "Archive Release",
+      "category": "Results \u0026 Reporting",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/releases/{id}/sla-governance",
+      "operationId": "handleGetReleaseSLAGovernance",
+      "summary": "Get Release S L A Governance",
+      "category": "Results \u0026 Reporting",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/releases/{id}/sla-governance/waivers",
+      "operationId": "handleCreateReleaseSLAWaiver",
+      "summary": "Create Release S L A Waiver",
+      "category": "Results \u0026 Reporting",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/releases/{id}/trend",
+      "operationId": "handleGetReleaseTrend",
+      "summary": "Get Release Trend",
+      "category": "Results \u0026 Reporting",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/releases/{id}/trend/export",
+      "operationId": "handleGetReleaseTrendExport",
+      "summary": "Get Release Trend Export",
+      "category": "Results \u0026 Reporting",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/remotes/{id}/runs",
+      "operationId": "handleCreateRemoteRun",
+      "summary": "Create Remote Run",
+      "category": "Remote Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/remotes/{id}/runs/{remote_test_id}",
+      "operationId": "handleGetRemoteRun",
+      "summary": "Get Remote Run",
+      "category": "Remote Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/remotes/{id}/runs/{remote_test_id}/abort",
+      "operationId": "handleRemoteRunActionAbort",
+      "summary": "Remote Run Action (abort)",
+      "category": "Remote Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/remotes/{id}/runs/{remote_test_id}/pause",
+      "operationId": "handleRemoteRunActionPause",
+      "summary": "Remote Run Action (pause)",
+      "category": "Remote Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/remotes/{id}/runs/{remote_test_id}/resume",
+      "operationId": "handleRemoteRunActionResume",
+      "summary": "Remote Run Action (resume)",
+      "category": "Remote Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/remotes/{id}/runs/{remote_test_id}/start",
+      "operationId": "handleRemoteRunActionStart",
+      "summary": "Remote Run Action (start)",
+      "category": "Remote Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/remotes/{id}/runs/{remote_test_id}/stop",
+      "operationId": "handleRemoteRunActionStop",
+      "summary": "Remote Run Action (stop)",
+      "category": "Remote Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/replay/sessions/{session_id}",
+      "operationId": "handleGetScriptDebugSession",
+      "summary": "Get Script Debug Session",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/replay/sessions/{session_id}/breakpoints",
+      "operationId": "handleUpdateScriptDebugBreakpoints",
+      "summary": "Update Script Debug Breakpoints",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/replay/sessions/{session_id}/export",
+      "operationId": "handleExportScriptDebugSession",
+      "summary": "Export Script Debug Session",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/replay/sessions/{session_id}/options",
+      "operationId": "handleUpdateScriptDebugOptions",
+      "summary": "Update Script Debug Options",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/replay/sessions/{session_id}/pause",
+      "operationId": "handlePauseScriptDebugSession",
+      "summary": "Pause Script Debug Session",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/replay/sessions/{session_id}/resume",
+      "operationId": "handleResumeScriptDebugSession",
+      "summary": "Resume Script Debug Session",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/replay/sessions/{session_id}/step",
+      "operationId": "handleStepScriptDebugSession",
+      "summary": "Step Script Debug Session",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/replay/sessions/{session_id}/stop",
+      "operationId": "handleStopScriptDebugSession",
+      "summary": "Stop Script Debug Session",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/reports/profiles",
+      "operationId": "handleListReportProfiles",
+      "summary": "List Report Profiles",
+      "category": "Results \u0026 Reporting",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/results/import",
+      "operationId": "handleImportExternalResults",
+      "summary": "Import External Results",
+      "category": "Results \u0026 Reporting",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/results/imports",
+      "operationId": "handleListExternalResultImports",
+      "summary": "List External Result Imports",
+      "category": "Results \u0026 Reporting",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/run-calendar",
+      "operationId": "handleGetRunCalendar",
+      "summary": "Get Run Calendar",
+      "category": "Scheduling",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/runtime-settings/support-matrix",
+      "operationId": "handleRuntimeSettingsSupportMatrix",
+      "summary": "Runtime Settings Support Matrix",
+      "category": "Execution Configuration",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/scenarios",
+      "operationId": "handleListScenarios",
+      "summary": "List Scenarios",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scenarios",
+      "operationId": "handleCreateScenario",
+      "summary": "Create Scenario",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/scenarios/load-models/support-matrix",
+      "operationId": "handleLoadModelSupportMatrix",
+      "summary": "Load Model Support Matrix",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/scenarios/load-models/templates",
+      "operationId": "handleLoadModelTemplates",
+      "summary": "Load Model Templates",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scenarios/size-from-goal",
+      "operationId": "handleSizeScenarioFromGoal",
+      "summary": "Size Scenario From Goal",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scenarios/validate-load-model",
+      "operationId": "handleValidateScenarioLoadModel",
+      "summary": "Validate Scenario Load Model",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/scenarios/{id}",
+      "operationId": "handleDeleteScenario",
+      "summary": "Delete Scenario",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/scenarios/{id}",
+      "operationId": "handleGetScenario",
+      "summary": "Get Scenario",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/scenarios/{id}",
+      "operationId": "handleUpdateScenario",
+      "summary": "Update Scenario",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/scenarios/{id}/data-pools",
+      "operationId": "handleListScenarioDataPools",
+      "summary": "List Scenario Data Pools",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/scenarios/{id}/data-pools",
+      "operationId": "handleUpdateScenarioDataPools",
+      "summary": "Update Scenario Data Pools",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/scenarios/{id}/results",
+      "operationId": "handleScenarioResults",
+      "summary": "Scenario Results",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/scenarios/{id}/runtime-settings/report",
+      "operationId": "handleGetScenarioRuntimeSettingsReport",
+      "summary": "Get Scenario Runtime Settings Report",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scenarios/{id}/runtime/apply-to-groups",
+      "operationId": "handleApplyScenarioRuntimeToGroups",
+      "summary": "Apply Scenario Runtime To Groups",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/scenarios/{id}/schedules",
+      "operationId": "handleListScenarioSchedules",
+      "summary": "List Scenario Schedules",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scenarios/{id}/schedules",
+      "operationId": "handleCreateScenarioSchedule",
+      "summary": "Create Scenario Schedule",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scenarios/{id}/schedules/preview",
+      "operationId": "handleScenarioSchedulePreview",
+      "summary": "Scenario Schedule Preview",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/scenarios/{id}/schedules/{schedule_id}",
+      "operationId": "handleDeleteScenarioSchedule",
+      "summary": "Delete Scenario Schedule",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/scenarios/{id}/schedules/{schedule_id}",
+      "operationId": "handleUpdateScenarioSchedule",
+      "summary": "Update Scenario Schedule",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/scenarios/{id}/schedules/{schedule_id}/approvals",
+      "operationId": "handleListScenarioScheduleApprovals",
+      "summary": "List Scenario Schedule Approvals",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scenarios/{id}/schedules/{schedule_id}/approvals/{approval_id}/approve",
+      "operationId": "handleApproveScenarioScheduleApproval",
+      "summary": "Approve Scenario Schedule Approval",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scenarios/{id}/schedules/{schedule_id}/approvals/{approval_id}/reject",
+      "operationId": "handleRejectScenarioScheduleApproval",
+      "summary": "Reject Scenario Schedule Approval",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/scenarios/{id}/schedules/{schedule_id}/occurrences",
+      "operationId": "handleListScenarioScheduleOccurrences",
+      "summary": "List Scenario Schedule Occurrences",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/scenarios/{id}/schedules/{schedule_id}/occurrences/{occurrence_id}",
+      "operationId": "handleDeleteScenarioScheduleOccurrence",
+      "summary": "Delete Scenario Schedule Occurrence",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/schedules/health",
+      "operationId": "handleScenarioScheduleHealth",
+      "summary": "Scenario Schedule Health",
+      "category": "Scheduling",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/script-debug/sessions/{session_id}",
+      "operationId": "handleGetScriptDebugSession_2",
+      "summary": "Get Script Debug Session",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/script-debug/sessions/{session_id}/breakpoints",
+      "operationId": "handleUpdateScriptDebugBreakpoints_2",
+      "summary": "Update Script Debug Breakpoints",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/script-debug/sessions/{session_id}/export",
+      "operationId": "handleExportScriptDebugSession_2",
+      "summary": "Export Script Debug Session",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/script-debug/sessions/{session_id}/options",
+      "operationId": "handleUpdateScriptDebugOptions_2",
+      "summary": "Update Script Debug Options",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/script-debug/sessions/{session_id}/pause",
+      "operationId": "handlePauseScriptDebugSession_2",
+      "summary": "Pause Script Debug Session",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/script-debug/sessions/{session_id}/resume",
+      "operationId": "handleResumeScriptDebugSession_2",
+      "summary": "Resume Script Debug Session",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/script-debug/sessions/{session_id}/step",
+      "operationId": "handleStepScriptDebugSession_2",
+      "summary": "Step Script Debug Session",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/script-debug/sessions/{session_id}/stop",
+      "operationId": "handleStopScriptDebugSession_2",
+      "summary": "Stop Script Debug Session",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/scripts",
+      "operationId": "handleListScripts",
+      "summary": "List Scripts",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts",
+      "operationId": "handleCreateScript",
+      "summary": "Create Script",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/scripts/authoring/capabilities",
+      "operationId": "handleAuthoringCapabilities",
+      "summary": "Authoring Capabilities",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/scripts/authoring/components",
+      "operationId": "handleAuthoringComponents",
+      "summary": "Authoring Components",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/authoring/components",
+      "operationId": "handleCreateReusableBlock",
+      "summary": "Create Reusable Block",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/scripts/authoring/components/{id}",
+      "operationId": "handleDeleteReusableBlock",
+      "summary": "Delete Reusable Block",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/scripts/authoring/sessions",
+      "operationId": "handleListAuthoringSessions",
+      "summary": "List Authoring Sessions",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/authoring/sessions",
+      "operationId": "handleCreateAuthoringSession",
+      "summary": "Create Authoring Session",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/scripts/authoring/sessions/{id}",
+      "operationId": "handleDeleteAuthoringSession",
+      "summary": "Delete Authoring Session",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/scripts/authoring/sessions/{id}",
+      "operationId": "handleGetAuthoringSession",
+      "summary": "Get Authoring Session",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/scripts/authoring/sessions/{id}",
+      "operationId": "handleUpdateAuthoringSession",
+      "summary": "Update Authoring Session",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/authoring/sessions/{id}/approve",
+      "operationId": "handleApproveAuthoringSession",
+      "summary": "Approve Authoring Session",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/authoring/sessions/{id}/correlations/preview",
+      "operationId": "handlePreviewAuthoringCorrelation",
+      "summary": "Preview Authoring Correlation",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/scripts/authoring/templates",
+      "operationId": "handleAuthoringTemplates",
+      "summary": "Authoring Templates",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/browser-replay/sessions",
+      "operationId": "handleStartBrowserReplayDraftScript",
+      "summary": "Start Browser Replay Draft Script",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/browser-to-http/preview",
+      "operationId": "handlePreviewBrowserToHTTP",
+      "summary": "Preview Browser To H T T P",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/debug/sessions",
+      "operationId": "handleStartScriptDebugDraftScript",
+      "summary": "Start Script Debug Draft Script",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/export/k6",
+      "operationId": "handleExportK6",
+      "summary": "Export K6",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/import/asyncapi",
+      "operationId": "handleImportAsyncAPI",
+      "summary": "Import Async A P I",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/import/asyncapi/commit",
+      "operationId": "handleCommitAsyncAPIImport",
+      "summary": "Commit Async A P I Import",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/scripts/import/asyncapi/support-matrix",
+      "operationId": "handleAsyncAPISupportMatrix",
+      "summary": "Async A P I Support Matrix",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/import/broker-config",
+      "operationId": "handleImportBrokerConfig",
+      "summary": "Import Broker Config",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/scripts/import/broker-config/support-matrix",
+      "operationId": "handleBrokerConfigSupportMatrix",
+      "summary": "Broker Config Support Matrix",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/import/devweb",
+      "operationId": "handleImportDevWeb",
+      "summary": "Import Dev Web",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/scripts/import/devweb/support-matrix",
+      "operationId": "handleDevWebSupportMatrix",
+      "summary": "Dev Web Support Matrix",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/import/enterprise-script-archive",
+      "operationId": "handleImportEnterpriseArchive",
+      "summary": "Import Enterprise Archive",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/scripts/import/enterprise-script-archive/support-matrix",
+      "operationId": "handleEnterpriseArchiveSupportMatrix",
+      "summary": "Enterprise Archive Support Matrix",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/import/enterprise-script-archive/validate",
+      "operationId": "handleValidateEnterpriseArchiveImport",
+      "summary": "Validate Enterprise Archive Import",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/import/eventhubs-capture",
+      "operationId": "handleImportEventHubsCapture",
+      "summary": "Import Event Hubs Capture",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/scripts/import/eventhubs-capture/support-matrix",
+      "operationId": "handleEventHubsCaptureSupportMatrix",
+      "summary": "Event Hubs Capture Support Matrix",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/import/github",
+      "operationId": "handleImportGitHub",
+      "summary": "Import Git Hub",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/import/har",
+      "operationId": "handleImportHAR",
+      "summary": "Import H A R",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/import/jmeter",
+      "operationId": "handleImportJMeter",
+      "summary": "Import J Meter",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/import/jmeter/save",
+      "operationId": "handleSaveJMeterImport",
+      "summary": "Save J Meter Import",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/scripts/import/jmeter/support-matrix",
+      "operationId": "handleJMeterSupportMatrix",
+      "summary": "J Meter Support Matrix",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/import/jmeter/validate",
+      "operationId": "handleValidateJMeterImport",
+      "summary": "Validate J Meter Import",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/import/k6",
+      "operationId": "handleImportK6",
+      "summary": "Import K6",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/scripts/import/k6/support-matrix",
+      "operationId": "handleK6SupportMatrix",
+      "summary": "K6 Support Matrix",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/import/openapi",
+      "operationId": "handleImportOpenAPI",
+      "summary": "Import Open A P I",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/import/openapi/commit",
+      "operationId": "handleCommitOpenAPIImport",
+      "summary": "Commit Open A P I Import",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/scripts/import/openapi/support-matrix",
+      "operationId": "handleOpenAPISupportMatrix",
+      "summary": "Open A P I Support Matrix",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/import/oracle-ebusiness/review",
+      "operationId": "handleReviewOracleEBusinessImport",
+      "summary": "Review Oracle E Business Import",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/scripts/import/oracle-ebusiness/support-matrix",
+      "operationId": "handleOracleEBusinessSupportMatrix",
+      "summary": "Oracle E Business Support Matrix",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/import/parameterize/apply",
+      "operationId": "handleApplyImportParameterization",
+      "summary": "Apply Import Parameterization",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/import/postman",
+      "operationId": "handleImportPostman",
+      "summary": "Import Postman",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/import/postman/save",
+      "operationId": "handleSavePostmanImport",
+      "summary": "Save Postman Import",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/scripts/import/postman/support-matrix",
+      "operationId": "handlePostmanSupportMatrix",
+      "summary": "Postman Support Matrix",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/import/postman/validate",
+      "operationId": "handleValidatePostmanImport",
+      "summary": "Validate Postman Import",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/import/raml",
+      "operationId": "handleImportRAML",
+      "summary": "Import R A M L",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/scripts/import/raml/support-matrix",
+      "operationId": "handleRAMLSupportMatrix",
+      "summary": "R A M L Support Matrix",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/import/recorder",
+      "operationId": "handleImportRecorder",
+      "summary": "Import Recorder",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/import/recorder/replay",
+      "operationId": "handleReplayRecorderImport",
+      "summary": "Replay Recorder Import",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/import/recorder/validate",
+      "operationId": "handleValidateRecorderImport",
+      "summary": "Validate Recorder Import",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/import/salesforce",
+      "operationId": "handleImportSalesforce",
+      "summary": "Import Salesforce",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/import/sample",
+      "operationId": "handleImportSample",
+      "summary": "Import Sample",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/import/wsdl",
+      "operationId": "handleImportWSDL",
+      "summary": "Import W S D L",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/import/{id}/assets/upload",
+      "operationId": "handleUploadImportAsset",
+      "summary": "Upload Import Asset",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/replay",
+      "operationId": "handleReplayDraftScript",
+      "summary": "Replay Draft Script",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/replay/sessions",
+      "operationId": "handleStartReplaySessionDraftScript",
+      "summary": "Start Replay Session Draft Script",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/validate",
+      "operationId": "handleValidateDraftScript",
+      "summary": "Validate Draft Script",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/scripts/web-api/support-matrix",
+      "operationId": "handleWebAPIExecutionSupportMatrix",
+      "summary": "Web A P I Execution Support Matrix",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/scripts/{id}",
+      "operationId": "handleDeleteScript",
+      "summary": "Delete Script",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/scripts/{id}",
+      "operationId": "handleGetScript",
+      "summary": "Get Script",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/scripts/{id}",
+      "operationId": "handleUpdateScript",
+      "summary": "Update Script",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/{id}/browser-replay/sessions",
+      "operationId": "handleStartBrowserReplayScript",
+      "summary": "Start Browser Replay Script",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/{id}/debug/sessions",
+      "operationId": "handleStartScriptDebugScript",
+      "summary": "Start Script Debug Script",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/{id}/diagnose-replay",
+      "operationId": "handleDiagnoseScriptReplay",
+      "summary": "Diagnose Script Replay",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/scripts/{id}/download",
+      "operationId": "handleDownloadScript",
+      "summary": "Download Script",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/{id}/export",
+      "operationId": "handleExportScript",
+      "summary": "Export Script",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/{id}/github/push",
+      "operationId": "handlePushScriptGitHub",
+      "summary": "Push Script Git Hub",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/scripts/{id}/github/status",
+      "operationId": "handleScriptGitHubStatus",
+      "summary": "Script Git Hub Status",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/scripts/{id}/move",
+      "operationId": "handleMoveScript",
+      "summary": "Move Script",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/{id}/parameterize/suggest",
+      "operationId": "handleSuggestScriptParameterization",
+      "summary": "Suggest Script Parameterization",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/scripts/{id}/recording/status",
+      "operationId": "handleGetScriptRecordingStatus",
+      "summary": "Get Script Recording Status",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/{id}/replay",
+      "operationId": "handleReplayScript",
+      "summary": "Replay Script",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/{id}/replay/sessions",
+      "operationId": "handleStartReplaySessionScript",
+      "summary": "Start Replay Session Script",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/scripts/{id}/runtime-settings/report",
+      "operationId": "handleGetScriptRuntimeSettingsReport",
+      "summary": "Get Script Runtime Settings Report",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/{id}/validate",
+      "operationId": "handleValidateScript",
+      "summary": "Validate Script",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/selectors/diagnose",
+      "operationId": "handleDiagnoseSelectors",
+      "summary": "Diagnose Selectors",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/system/browser-benchmarks",
+      "operationId": "handleGetBrowserBenchmarkEvidence",
+      "summary": "Get Browser Benchmark Evidence",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/system/entitlements",
+      "operationId": "handleGetEntitlements",
+      "summary": "Get Entitlements",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/system/entitlements/usage",
+      "operationId": "handleGetEntitlementsUsage",
+      "summary": "Get Entitlements Usage",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/system/generators/drain",
+      "operationId": "handleSetGeneratorDrainState",
+      "summary": "Set Generator Drain State",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/system/health",
+      "operationId": "handleHealthCheck",
+      "summary": "Health Check",
+      "category": "System \u0026 Distribution",
+      "public": true,
+      "authenticated": false,
+      "access": "Public (no authentication required)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/system/inventory",
+      "operationId": "handleGetSystemInventory",
+      "summary": "Get System Inventory",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/system/parity-status",
+      "operationId": "handleGetParityStatus",
+      "summary": "Get Parity Status",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/system/readiness",
+      "operationId": "handleSystemReadiness",
+      "summary": "System Readiness",
+      "category": "System \u0026 Distribution",
+      "public": true,
+      "authenticated": false,
+      "access": "Public (no authentication required)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/system/restarts",
+      "operationId": "handleSystemRestart",
+      "summary": "System Restart",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/system/restarts/capabilities",
+      "operationId": "handleGetSystemRestartCapabilities",
+      "summary": "Get System Restart Capabilities",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/system/services",
+      "operationId": "handleGetSystemServices",
+      "summary": "Get System Services",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/system/settings",
+      "operationId": "handleGetSystemSettings",
+      "summary": "Get System Settings",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/system/settings",
+      "operationId": "handleUpdateSystemSettings",
+      "summary": "Update System Settings",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/system/usage",
+      "operationId": "handleGetUsageAccounting",
+      "summary": "Get Usage Accounting",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/system/usage/export",
+      "operationId": "handleExportUsageAccounting",
+      "summary": "Export Usage Accounting",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/system/usage/snapshots",
+      "operationId": "handleListUsageAccountingSnapshots",
+      "summary": "List Usage Accounting Snapshots",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/system/usage/snapshots",
+      "operationId": "handleCreateUsageAccountingSnapshot",
+      "summary": "Create Usage Accounting Snapshot",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/system/version",
+      "operationId": "handleSystemVersion",
+      "summary": "System Version",
+      "category": "System \u0026 Distribution",
+      "public": true,
+      "authenticated": false,
+      "access": "Public (no authentication required)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests",
+      "operationId": "handleListTests",
+      "summary": "List Tests",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tests",
+      "operationId": "handleCreateTest",
+      "summary": "Create Test",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tests/estimate",
+      "operationId": "handleEstimateTest",
+      "summary": "Estimate Test",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tests/preflight",
+      "operationId": "handlePreflightTest",
+      "summary": "Preflight Test",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/tests/{id}",
+      "operationId": "handleDeleteTest",
+      "summary": "Delete Test",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}",
+      "operationId": "handleGetTest",
+      "summary": "Get Test",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tests/{id}/abort",
+      "operationId": "handleAbortTest",
+      "summary": "Abort Test",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/archive",
+      "operationId": "handleDownloadRunArchive",
+      "summary": "Download Run Archive",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/archive/ai-root-cause",
+      "operationId": "handleGetRunArchiveAIRootCause",
+      "summary": "Get Run Archive A I Root Cause",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/archive/analysis",
+      "operationId": "handleGetRunArchiveAnalysis",
+      "summary": "Get Run Archive Analysis",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/archive/browser-diagnostics",
+      "operationId": "handleDownloadRunArchiveBrowserDiagnostics",
+      "summary": "Download Run Archive Browser Diagnostics",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/archive/comparison",
+      "operationId": "handleGetRunArchiveComparison",
+      "summary": "Get Run Archive Comparison",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/archive/files/{name}",
+      "operationId": "handleDownloadRunArchiveArtifact",
+      "summary": "Download Run Archive Artifact",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/archive/manifest",
+      "operationId": "handleGetRunArchiveManifest",
+      "summary": "Get Run Archive Manifest",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/archive/report",
+      "operationId": "handleGetRunArchiveReport",
+      "summary": "Get Run Archive Report",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/archive/resources",
+      "operationId": "handleGetRunArchiveResources",
+      "summary": "Get Run Archive Resources",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/archive/root-cause",
+      "operationId": "handleGetRunArchiveRootCause",
+      "summary": "Get Run Archive Root Cause",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/archive/summaries",
+      "operationId": "handleGetRunArchiveSummaries",
+      "summary": "Get Run Archive Summaries",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/archive/transactions",
+      "operationId": "handleGetRunArchiveTransactions",
+      "summary": "Get Run Archive Transactions",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/tests/{id}/comparison-baseline/pin",
+      "operationId": "handleUnpinComparisonBaseline",
+      "summary": "Unpin Comparison Baseline",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tests/{id}/comparison-baseline/pin",
+      "operationId": "handlePinComparisonBaseline",
+      "summary": "Pin Comparison Baseline",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/tests/{id}/duration",
+      "operationId": "handleAdjustDuration",
+      "summary": "Adjust Duration",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/errors/evidence",
+      "operationId": "handleGetLiveErrorEvidence",
+      "summary": "Get Live Error Evidence",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tests/{id}/github/check-run",
+      "operationId": "handlePublishGitHubCheckRun",
+      "summary": "Publish Git Hub Check Run",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/tests/{id}/goal-targets",
+      "operationId": "handleUpdateGoalTarget",
+      "summary": "Update Goal Target",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/manifest",
+      "operationId": "handleGetTestManifest",
+      "summary": "Get Test Manifest",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/metrics",
+      "operationId": "handleGetMetrics",
+      "summary": "Get Metrics",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/tests/{id}/move",
+      "operationId": "handleMoveTest",
+      "summary": "Move Test",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/notes",
+      "operationId": "handleListTestNotes",
+      "summary": "List Test Notes",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tests/{id}/notes",
+      "operationId": "handleCreateTestNote",
+      "summary": "Create Test Note",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/tests/{id}/notes/{note_id}",
+      "operationId": "handleDeleteTestNote",
+      "summary": "Delete Test Note",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/tests/{id}/notes/{note_id}",
+      "operationId": "handleUpdateTestNote",
+      "summary": "Update Test Note",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tests/{id}/pause",
+      "operationId": "handlePauseTest",
+      "summary": "Pause Test",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/report",
+      "operationId": "handleGetTestHTMLReport",
+      "summary": "Get Test H T M L Report",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/report/annotations",
+      "operationId": "handleGetReportAnnotations",
+      "summary": "Get Report Annotations",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/tests/{id}/report/annotations",
+      "operationId": "handleSaveReportAnnotations",
+      "summary": "Save Report Annotations",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tests/{id}/resume",
+      "operationId": "handleResumeTest",
+      "summary": "Resume Test",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/sla-status",
+      "operationId": "handleGetTestSLAStatus",
+      "summary": "Get Test S L A Status",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tests/{id}/start",
+      "operationId": "handleStartTest",
+      "summary": "Start Test",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tests/{id}/stop",
+      "operationId": "handleStopTest",
+      "summary": "Stop Test",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/stream",
+      "operationId": "handleTestStream",
+      "summary": "Test Stream",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/tests/{id}/vusers",
+      "operationId": "handleScaleVUsers",
+      "summary": "Scale V Users",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/ws",
+      "operationId": "handleWebSocket",
+      "summary": "Web Socket",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/metrics",
+      "operationId": "handlePrometheusMetricsWithAuth",
+      "summary": "Prometheus Metrics With Auth",
+      "category": "Operations \u0026 Observability",
+      "public": true,
+      "authenticated": false,
+      "access": "Public (no authentication required)"
+    }
+  ]
+}

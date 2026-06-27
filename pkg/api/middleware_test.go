@@ -1251,6 +1251,28 @@ func TestTrustedHeaderAuthProjectRoleGuardsDraftScriptExecution(t *testing.T) {
 	if editorBrowserResp.Code == http.StatusForbidden || editorBrowserResp.Code == http.StatusUnauthorized {
 		t.Fatalf("draft browser replay editor status = %d, want auth to pass body=%s", editorBrowserResp.Code, editorBrowserResp.Body.String())
 	}
+
+	debugBody := []byte(`{"project_id":"` + projectID + `","replay_session_id":"debug-project-binding","start_paused":true,"script":{"name":"Draft Debug","version":"1.0.0","protocol":"http","config":{"base_url":"https://example.com"},"actions":[{"name":"Open","type":"http","method":"GET","target":"/"}]}}`)
+	viewerDebugReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/debug/sessions", bytes.NewReader(debugBody))
+	viewerDebugReq.Header.Set("Content-Type", "application/json")
+	viewerDebugReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	viewerDebugReq.Header.Set("X-APEXLoad-Project-Roles", projectID+"="+RoleViewer)
+	viewerDebugResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(viewerDebugResp, viewerDebugReq)
+	if viewerDebugResp.Code != http.StatusForbidden {
+		t.Fatalf("draft debug viewer status = %d, want %d body=%s", viewerDebugResp.Code, http.StatusForbidden, viewerDebugResp.Body.String())
+	}
+
+	editorDebugReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/debug/sessions", bytes.NewReader(debugBody))
+	editorDebugReq.Header.Set("Content-Type", "application/json")
+	editorDebugReq.Header.Set("X-Auth-Request-User", "editor-user")
+	editorDebugReq.Header.Set("X-APEXLoad-Project-Roles", projectID+"="+RoleEditor)
+	editorDebugResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(editorDebugResp, editorDebugReq)
+	if editorDebugResp.Code != http.StatusOK {
+		t.Fatalf("draft debug editor status = %d, want %d body=%s", editorDebugResp.Code, http.StatusOK, editorDebugResp.Body.String())
+	}
+	_, _ = server.scriptDebug.Stop("debug-project-binding")
 }
 
 func TestTrustedHeaderAuthProjectRoleGuardsJMeterImportSave(t *testing.T) {

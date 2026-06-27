@@ -10,6 +10,7 @@ import (
 
 type ReplayScriptRequest struct {
 	GroupName       string                 `json:"group_name,omitempty"`
+	ProjectID       string                 `json:"project_id,omitempty"`
 	ReplaySessionID string                 `json:"replay_session_id,omitempty"`
 	Variables       map[string]string      `json:"variables,omitempty"`
 	RedactionRules  []engine.RedactionRule `json:"redaction_rules,omitempty"`
@@ -28,6 +29,10 @@ func (s *Server) handleReplayDraftScript(w http.ResponseWriter, r *http.Request)
 	}
 	if req.Script == nil {
 		writeError(w, http.StatusBadRequest, "script is required")
+		return
+	}
+	if err := bindDraftScriptProject(req.Script, req.ProjectID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	s.handleReplayRequest(w, "", req.Script, req)
@@ -57,6 +62,10 @@ func (s *Server) handleReplayScript(w http.ResponseWriter, r *http.Request) {
 		if script.Name == "" {
 			script.Name = stored.Name
 		}
+	}
+	if err := bindStoredScriptProject(script, stored.Script.ProjectID, req.ProjectID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
 	}
 
 	issues := validateScriptForReplay(script)

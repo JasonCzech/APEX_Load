@@ -917,12 +917,13 @@ export function buildReplayStartPayload(
   } = {},
 ): ReplayStartPayload {
   const groupName = options.groupName?.trim() || `${script.name || 'script'}-replay`
-  const replayScript = options.projectId && !script.project_id
+  const replayScript = options.projectId
     ? { ...script, project_id: options.projectId }
     : script
 
   return {
     group_name: groupName,
+    project_id: options.projectId,
     replay_session_id: options.replaySessionId,
     ignore_think_time: options.ignoreThinkTime,
     start_paused: script.protocol === 'browser' ? options.startPaused : undefined,

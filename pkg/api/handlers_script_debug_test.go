@@ -406,6 +406,44 @@ func TestScriptDebugManagerSessionCapEvictsOldestTerminal(t *testing.T) {
 	}
 }
 
+func TestScriptDebugManagerSessionCapEvictsOldestNonTerminalWhenNoTerminalExists(t *testing.T) {
+	now := time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC)
+	cancelled := make(chan string, 1)
+	manager := NewScriptDebugManager(nil)
+	manager.retention = replaySessionRetentionConfig{
+		terminalTTL: time.Hour,
+		idleCancel:  time.Hour,
+		maxSessions: 2,
+		now:         func() time.Time { return now },
+	}
+	for i, id := range []string{"oldest", "middle", "newest"} {
+		lastActivity := now.Add(-time.Duration(3-i) * time.Minute)
+		sessionID := id
+		manager.sessions[id] = &ScriptDebugSession{
+			ID:             id,
+			Status:         ScriptDebugRunning,
+			StartedAt:      &lastActivity,
+			lastActivityAt: lastActivity,
+			cancel:         func() { cancelled <- sessionID },
+		}
+	}
+
+	if removed := manager.PruneExpired(); removed != 1 {
+		t.Fatalf("removed = %d, want 1", removed)
+	}
+	if _, ok := manager.sessions["oldest"]; ok {
+		t.Fatal("expected oldest non-terminal session to be evicted")
+	}
+	select {
+	case id := <-cancelled:
+		if id != "oldest" {
+			t.Fatalf("cancelled session = %q, want oldest", id)
+		}
+	default:
+		t.Fatal("expected oldest non-terminal session cancel function to be called")
+	}
+}
+
 func TestScriptDebugManagerCancelsIdleRunningSession(t *testing.T) {
 	now := time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC)
 	lastActivity := now.Add(-2 * time.Minute)
@@ -439,6 +477,80 @@ func TestScriptDebugManagerCancelsIdleRunningSession(t *testing.T) {
 	}
 	if session.Status != ScriptDebugStopped {
 		t.Fatalf("status = %q, want stopped", session.Status)
+	}
+}
+
+func TestScriptDebugManagerCancelsIdlePausedSession(t *testing.T) {
+	now := time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC)
+	lastActivity := now.Add(-2 * time.Minute)
+	cancelled := make(chan struct{})
+	manager := NewScriptDebugManager(nil)
+	manager.retention = replaySessionRetentionConfig{
+		terminalTTL: time.Hour,
+		idleCancel:  time.Minute,
+		maxSessions: 250,
+		now:         func() time.Time { return now },
+	}
+	manager.sessions["paused-idle"] = &ScriptDebugSession{
+		ID:             "paused-idle",
+		Status:         ScriptDebugPaused,
+		StartedAt:      &lastActivity,
+		lastActivityAt: lastActivity,
+		cancel:         func() { close(cancelled) },
+		stateChanged:   make(chan struct{}),
+	}
+
+	if removed := manager.PruneExpired(); removed != 0 {
+		t.Fatalf("removed = %d, want 0", removed)
+	}
+	select {
+	case <-cancelled:
+	default:
+		t.Fatal("expected paused idle session cancel function to be called")
+	}
+	session, ok := manager.Get("paused-idle")
+	if !ok {
+		t.Fatal("paused idle session should remain fetchable until terminal TTL expires")
+	}
+	if session.Status != ScriptDebugStopped {
+		t.Fatalf("status = %q, want stopped", session.Status)
+	}
+}
+
+func TestScriptDebugManagerDoesNotCancelRecentlyActivePausedSession(t *testing.T) {
+	now := time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC)
+	lastActivity := now.Add(-30 * time.Second)
+	cancelled := make(chan struct{})
+	manager := NewScriptDebugManager(nil)
+	manager.retention = replaySessionRetentionConfig{
+		terminalTTL: time.Hour,
+		idleCancel:  time.Minute,
+		maxSessions: 250,
+		now:         func() time.Time { return now },
+	}
+	manager.sessions["paused-active"] = &ScriptDebugSession{
+		ID:             "paused-active",
+		Status:         ScriptDebugPaused,
+		StartedAt:      &lastActivity,
+		lastActivityAt: lastActivity,
+		cancel:         func() { close(cancelled) },
+		stateChanged:   make(chan struct{}),
+	}
+
+	if removed := manager.PruneExpired(); removed != 0 {
+		t.Fatalf("removed = %d, want 0", removed)
+	}
+	select {
+	case <-cancelled:
+		t.Fatal("recently active paused session should not be cancelled")
+	default:
+	}
+	session, ok := manager.Get("paused-active")
+	if !ok {
+		t.Fatal("paused active session should remain fetchable")
+	}
+	if session.Status != ScriptDebugPaused {
+		t.Fatalf("status = %q, want paused", session.Status)
 	}
 }
 
@@ -489,6 +601,7 @@ func TestHandleStartScriptDebugDraftScriptReturnsSession(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	body, _ := json.Marshal(map[string]any{
 		"group_name":        "debug-editor",
+		"project_id":        "project-debug-draft",
 		"replay_session_id": "debug-api",
 		"start_paused":      true,
 		"log_level":         "trace",
@@ -531,6 +644,9 @@ func TestHandleStartScriptDebugDraftScriptReturnsSession(t *testing.T) {
 	if payload.DebugSessionID != "debug-api" || payload.Session.Status != ScriptDebugPaused || payload.Session.LogLevel != "trace" {
 		t.Fatalf("payload id/status/log_level = %q/%q/%q, want debug-api/%q/trace", payload.DebugSessionID, payload.Session.Status, payload.Session.LogLevel, ScriptDebugPaused)
 	}
+	if payload.Session.ProjectID != "project-debug-draft" {
+		t.Fatalf("project_id = %q, want project-debug-draft", payload.Session.ProjectID)
+	}
 	if payload.Preflight.ActionCount != 1 || payload.Session.Preflight == nil || payload.Session.RuntimeProfile.LogLevel != "trace" {
 		t.Fatalf("preflight/runtime = %#v/%#v, want preflight and trace runtime profile", payload.Preflight, payload.Session.RuntimeProfile)
 	}
@@ -550,6 +666,32 @@ func TestHandleStartScriptDebugDraftScriptReturnsSession(t *testing.T) {
 	server.mux.ServeHTTP(stopResp, stopReq)
 	if stopResp.Code != http.StatusOK {
 		t.Fatalf("stop status = %d, want %d body=%s", stopResp.Code, http.StatusOK, stopResp.Body.String())
+	}
+}
+
+func TestHandleStartScriptDebugDraftScriptRejectsProjectMismatch(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	body := []byte(`{"project_id":"project-a","script":{"name":"HTTP Draft","version":"1.0.0","protocol":"http","project_id":"project-b","config":{"base_url":"https://example.com"},"actions":[{"name":"Get home","type":"GET","method":"GET","target":"/"}]}}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/debug/sessions", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+	}
+}
+
+func TestHandleGetScriptDebugSessionNotFound(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/script-debug/sessions/missing", nil)
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusNotFound, resp.Body.String())
 	}
 }
 
@@ -721,6 +863,42 @@ func TestHandleScriptDebugMalformedBodiesAndConflicts(t *testing.T) {
 	if stepResp.Code != http.StatusConflict {
 		t.Fatalf("step-running status = %d, want %d body=%s", stepResp.Code, http.StatusConflict, stepResp.Body.String())
 	}
+}
+
+func TestScriptDebugManagerConcurrentPauseResumeAndStep(t *testing.T) {
+	protocolName := registerReplayAPIProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		return &protocol.Result{ActionName: action.Name, Success: true, StatusCode: 200}, nil
+	})
+	manager := NewScriptDebugManager(NewHub())
+	manager.Start("", &dsl.Script{
+		Name:     "Concurrent Controls",
+		Protocol: protocolName,
+		Version:  "1.0.0",
+		Actions: []dsl.Action{
+			{Name: "first", Type: "GET", Method: "GET", Target: "/first"},
+			{Name: "second", Type: "GET", Method: "GET", Target: "/second"},
+		},
+	}, ScriptDebugStartRequest{ReplaySessionID: "debug-controls-race", StartPaused: true})
+	waitForScriptDebugStatus(t, manager, "debug-controls-race", ScriptDebugPaused)
+
+	var wg sync.WaitGroup
+	for i := 0; i < 24; i++ {
+		wg.Add(3)
+		go func() {
+			defer wg.Done()
+			_, _, _ = manager.Pause("debug-controls-race")
+		}()
+		go func() {
+			defer wg.Done()
+			_, _, _ = manager.Resume("debug-controls-race")
+		}()
+		go func() {
+			defer wg.Done()
+			_, _, _ = manager.StepMode("debug-controls-race", "over")
+		}()
+	}
+	wg.Wait()
+	_, _ = manager.Stop("debug-controls-race")
 }
 
 func TestHandleStopScriptDebugSessionIsIdempotent(t *testing.T) {

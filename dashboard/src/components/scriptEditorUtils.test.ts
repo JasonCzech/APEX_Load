@@ -185,6 +185,7 @@ describe('scriptEditorUtils replay handoff helpers', () => {
       startPaused: true,
     })).toEqual({
       group_name: 'Mobile Checkout-replay',
+      project_id: 'project-1',
       replay_session_id: 'replay-1',
       ignore_think_time: true,
       start_paused: true,
@@ -225,11 +226,12 @@ describe('scriptEditorUtils replay handoff helpers', () => {
       startPaused: true,
     })).toEqual({
       group_name: 'api-group',
+      project_id: 'project-1',
       replay_session_id: undefined,
       ignore_think_time: false,
       start_paused: undefined,
       variables: undefined,
-      script,
+      script: { ...script, project_id: 'project-1' },
       browser: undefined,
     })
   })
