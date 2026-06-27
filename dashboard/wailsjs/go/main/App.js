@@ -78,6 +78,10 @@ export function SelectFile(arg1) {
   return window['go']['main']['App']['SelectFile'](arg1);
 }
 
+export function SetDockBadge(arg1) {
+  return window['go']['main']['App']['SetDockBadge'](arg1);
+}
+
 export function SetKeepAwake(arg1) {
   return window['go']['main']['App']['SetKeepAwake'](arg1);
 }

@@ -71,6 +71,35 @@ describe('DesktopHome', () => {
     expect(onOpenRecent).toHaveBeenCalledWith(recents[0])
   })
 
+  it('renders running-test cards and opens them', async () => {
+    const onOpenRun = vi.fn()
+    await act(async () => {
+      root.render(
+        <DesktopHome
+          status={status}
+          recents={[]}
+          runningTests={[{ id: 'run-1', name: 'Checkout ramp', status: 'RUNNING' }]}
+          onQuickAction={() => {}}
+          onOpenRecent={() => {}}
+          onOpenRun={onOpenRun}
+          onClearRecents={() => {}}
+        />,
+      )
+    })
+    expect(container.textContent).toContain('Running now')
+    const card = Array.from(container.querySelectorAll('button')).find(b => b.textContent?.includes('Checkout ramp'))
+    await act(async () => { card?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    expect(onOpenRun).toHaveBeenCalledWith('run-1')
+  })
+
+  it('shows a relative timestamp on recent items', async () => {
+    const recents: RecentItem[] = [{ kind: 'script', id: 's1', name: 'Order flow', route: '#/scripts/s1', openedAt: new Date(Date.now() - 5 * 60_000).toISOString() }]
+    await act(async () => {
+      root.render(<DesktopHome status={status} recents={recents} onQuickAction={() => {}} onOpenRecent={() => {}} onClearRecents={() => {}} />)
+    })
+    expect(container.textContent).toContain('5m ago')
+  })
+
   it('surfaces a startup error', async () => {
     await act(async () => {
       root.render(

@@ -39,6 +39,8 @@ export function SaveFileDialogNative(arg1:string,arg2:string,arg3:string):Promis
 
 export function SelectFile(arg1:string):Promise<string>;
 
+export function SetDockBadge(arg1:string):Promise<void>;
+
 export function SetKeepAwake(arg1:boolean):Promise<void>;
 
 export function SetLastRoute(arg1:string):Promise<void>;

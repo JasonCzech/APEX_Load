@@ -48,6 +48,10 @@ func TestRecentsPersistenceRoundTrip(t *testing.T) {
 	if len(items) != 2 || items[0].ID != "i1" {
 		t.Fatalf("recents = %+v, want newest (i1) first", items)
 	}
+	// OpenedAt is stamped server-side even though the JS payload omitted it.
+	if items[0].OpenedAt == "" {
+		t.Error("expected AddRecentItem to stamp OpenedAt")
+	}
 
 	if err := app.ClearRecentItems(); err != nil {
 		t.Fatalf("ClearRecentItems: %v", err)

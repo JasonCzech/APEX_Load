@@ -132,8 +132,58 @@
   border-color: var(--border);
 }
 
+.desktop-home-recent-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.desktop-home-recent-when {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
 .desktop-home-recent-kind {
   font-size: 11px;
   text-transform: uppercase;
   color: var(--text-muted);
+}
+
+.desktop-home-running h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.desktop-home-running-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+.desktop-home-run-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--accent, #3b82f6);
+  background: color-mix(in srgb, var(--accent, #3b82f6) 8%, var(--bg-surface));
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.desktop-home-run-card:disabled {
+  cursor: default;
+  opacity: 0.85;
+}
+
+.desktop-home-run-name {
+  font-weight: 600;
+}
+
+.desktop-home-run-status {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: capitalize;
 }

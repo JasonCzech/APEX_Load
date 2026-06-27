@@ -109,6 +109,56 @@ export async function filesFromDroppedPaths(paths: string[]): Promise<File[]> {
   return files
 }
 
+// Native save is capped below the Go bridge's 64 MiB limit; larger exports fall
+// back to the streaming browser download (JS base64 of huge blobs is costly).
+export const MAX_NATIVE_SAVE_BYTES = 16 * 1024 * 1024
+
+function filtersForFilename(filename: string): string {
+  const dot = filename.lastIndexOf('.')
+  if (dot < 0 || dot === filename.length - 1) {
+    return ''
+  }
+  const ext = filename.slice(dot + 1).toLowerCase()
+  return JSON.stringify([{ displayName: `${ext.toUpperCase()} file`, pattern: `*.${ext}` }])
+}
+
+async function blobToBase64(blob: Blob): Promise<string> {
+  const bytes = new Uint8Array(await blob.arrayBuffer())
+  let binary = ''
+  const chunk = 0x8000
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk))
+  }
+  return btoa(binary)
+}
+
+// canSaveBlobViaBridge is a synchronous check so callers (e.g. downloadBlob) can
+// keep the browser path fully synchronous within the user gesture.
+export function canSaveBlobViaBridge(blob: Blob): boolean {
+  const bridge = getDesktopBridge()
+  return (
+    typeof bridge?.SaveFileDialogNative === 'function' &&
+    typeof bridge?.WriteFileBase64 === 'function' &&
+    blob.size <= MAX_NATIVE_SAVE_BYTES
+  )
+}
+
+// saveBlobViaBridge shows the native Save dialog and writes the blob. Returns
+// true when the desktop path handled it (including a user cancel) so the caller
+// should NOT also trigger a browser download; false when unavailable.
+export async function saveBlobViaBridge(blob: Blob, filename: string): Promise<boolean> {
+  const bridge = getDesktopBridge()
+  if (!canSaveBlobViaBridge(blob) || !bridge?.SaveFileDialogNative || !bridge?.WriteFileBase64) {
+    return false
+  }
+  const path = await bridge.SaveFileDialogNative('Save', filename, filtersForFilename(filename))
+  if (!path) {
+    return true // user cancelled — handled, don't fall back to a browser download
+  }
+  await bridge.WriteFileBase64(path, await blobToBase64(blob))
+  return true
+}
+
 // revealPath shows a file in the OS file manager. No-op in the browser.
 export async function revealPath(path: string): Promise<void> {
   const bridge = getDesktopBridge()

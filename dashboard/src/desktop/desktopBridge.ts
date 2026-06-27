@@ -35,6 +35,8 @@ export type WailsDesktopBridge = {
   NotificationsAvailable?: () => Promise<boolean>
   // Keep the machine awake while load tests run.
   SetKeepAwake?: (active: boolean) => Promise<void>
+  // Dock/taskbar badge (e.g. active-run count); "" clears it.
+  SetDockBadge?: (label: string) => Promise<void>
   // Recent items.
   GetRecentItems?: () => Promise<string>
   AddRecentItem?: (itemJson: string) => Promise<void>

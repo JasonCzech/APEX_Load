@@ -252,6 +252,7 @@ func (a *App) shutdown(ctx context.Context) {
 		}
 	}
 	a.keepAwake.set(false) // release any sleep inhibitor
+	a.SetDockBadge("")     // clear the dock/taskbar badge
 	a.cleanupNotifications()
 	if a.server != nil {
 		a.server.Shutdown(context.Background())

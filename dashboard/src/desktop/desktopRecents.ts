@@ -8,6 +8,7 @@ export interface RecentItem {
   id: string
   name: string
   route: string
+  openedAt?: string
 }
 
 export async function getRecents(): Promise<RecentItem[]> {

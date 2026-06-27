@@ -35,6 +35,7 @@ import { getDesktopBridge, isDesktopSurface, isMacDesktop } from './desktop/desk
 import { useDesktopNotifications } from './hooks/useDesktopNotifications'
 import { useDesktopShellEvents } from './desktop/useDesktopShellEvents'
 import { useKeepAwakeDuringRuns } from './desktop/useKeepAwake'
+import { useDockBadge } from './desktop/useDockBadge'
 import AboutDialog from './components/AboutDialog'
 import DesktopHome, { type DesktopQuickAction } from './components/DesktopHome'
 import { addRecent, clearRecents, getRecents, type RecentItem } from './desktop/desktopRecents'
@@ -360,6 +361,8 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   // Keep the machine awake while runs are active so long tests aren't corrupted
   // by the host sleeping (desktop shell only; no-op in the browser).
   useKeepAwakeDuringRuns(activeTopbarRuns.length)
+  // Reflect the active-run count on the dock/taskbar badge.
+  useDockBadge(activeTopbarRuns.length)
 
   const handleScriptsAuthoringStateChange = useCallback((state: { subView: ScriptsAuthoringSubView; editingId: string | null }) => {
     setScriptsTopbarState(state)
@@ -873,10 +876,13 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
               status={desktopStatus}
               startupError={desktopStartupError}
               recents={recents}
+              runningTests={activeTopbarRuns}
               onQuickAction={handleDesktopQuickAction}
               onOpenRecent={handleOpenRecent}
+              onOpenRun={navigateToTest}
               onClearRecents={handleClearRecents}
               onReveal={handleRevealFolder}
+              onDropFiles={() => handleNavigate('scripts')}
             />
           )}
           {view.page === 'dashboard' && (

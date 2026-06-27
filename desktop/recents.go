@@ -6,7 +6,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
+
+// nowRFC3339 returns the current UTC time as RFC3339. A var so tests can stub it.
+var nowRFC3339 = func() string { return time.Now().UTC().Format(time.RFC3339) }
 
 const (
 	recentsFileName = "recent.json"
@@ -15,10 +19,11 @@ const (
 
 // recentItem is a recently-opened workspace entry shown on the desktop home.
 type recentItem struct {
-	Kind  string `json:"kind"`  // "script" | "import" | "test" | ...
-	ID    string `json:"id"`    // stable identifier within the kind
-	Name  string `json:"name"`  // display label
-	Route string `json:"route"` // dashboard hash route to reopen
+	Kind     string `json:"kind"`               // "script" | "import" | "test" | ...
+	ID       string `json:"id"`                 // stable identifier within the kind
+	Name     string `json:"name"`               // display label
+	Route    string `json:"route"`              // dashboard hash route to reopen
+	OpenedAt string `json:"openedAt,omitempty"` // RFC3339 timestamp, stamped server-side on add
 }
 
 // mergeRecent prepends next, de-duplicates by kind+id (keeping the newest
@@ -95,6 +100,7 @@ func (a *App) AddRecentItem(itemJSON string) error {
 	if strings.TrimSpace(item.ID) == "" || strings.TrimSpace(item.Kind) == "" {
 		return nil
 	}
+	item.OpenedAt = nowRFC3339() // stamp server-side so ordering/age is trustworthy
 	merged := mergeRecent(loadRecents(a.appDataPath), item, maxRecentItems)
 	if err := saveRecents(a.appDataPath, merged); err != nil {
 		return err

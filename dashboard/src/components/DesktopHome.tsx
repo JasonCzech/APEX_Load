@@ -1,5 +1,12 @@
+import { useRef } from 'react'
+
 import type { DesktopStatusResponse } from '../types/library'
 import type { RecentItem } from '../desktop/desktopRecents'
+import type { TopbarRunSummary } from '../appTopbar'
+import { isDesktopSurface } from '../desktop/desktopBridge'
+import { filesFromDroppedPaths } from '../desktop/desktopFiles'
+import { useDesktopFileDrop } from '../desktop/useDesktopFileDrop'
+import { formatRelativeTime } from '../utils/relativeTime'
 import './DesktopHome.css'
 
 export type DesktopQuickAction = 'new-test' | 'import' | 'record' | 'scripts' | 'results'
@@ -8,10 +15,14 @@ interface DesktopHomeProps {
   status: DesktopStatusResponse | null
   startupError?: string
   recents: RecentItem[]
+  runningTests?: TopbarRunSummary[]
   onQuickAction: (action: DesktopQuickAction) => void
   onOpenRecent: (item: RecentItem) => void
+  onOpenRun?: (id: string) => void
   onClearRecents: () => void
   onReveal?: (which: 'logs' | 'appdata') => void
+  // Called when script/import files are dropped onto the home hub.
+  onDropFiles?: (files: File[]) => void
 }
 
 function storageLabel(status: DesktopStatusResponse | null): string {
@@ -41,16 +52,56 @@ export default function DesktopHome({
   status,
   startupError,
   recents,
+  runningTests = [],
   onQuickAction,
   onOpenRecent,
+  onOpenRun,
   onClearRecents,
   onReveal,
+  onDropFiles,
 }: DesktopHomeProps) {
+  const dropRef = useRef<HTMLElement>(null)
+  const desktop = isDesktopSurface()
+
+  // Drop script/import files onto the hub → hand to the host (e.g. open import).
+  useDesktopFileDrop(dropRef, paths => {
+    if (!onDropFiles) return
+    void filesFromDroppedPaths(paths).then(files => {
+      if (files.length > 0) onDropFiles(files)
+    })
+  }, desktop && typeof onDropFiles === 'function')
+
   return (
-    <section className="desktop-home" aria-label="Desktop workspace">
+    <section
+      ref={dropRef}
+      className="desktop-home"
+      aria-label="Desktop workspace"
+      style={desktop && onDropFiles ? ({ '--wails-drop-target': 'drop' } as React.CSSProperties) : undefined}
+    >
       {startupError && (
         <div className="desktop-home-error" role="alert">
           <strong>Local engine failed to start.</strong> {startupError}
+        </div>
+      )}
+
+      {runningTests.length > 0 && (
+        <div className="desktop-home-running" aria-label="Running tests">
+          <h3>Running now</h3>
+          <div className="desktop-home-running-cards">
+            {runningTests.map(run => (
+              <button
+                key={run.id}
+                type="button"
+                className="desktop-home-run-card"
+                onClick={() => onOpenRun?.(run.id)}
+                disabled={!onOpenRun}
+                title={`Open ${run.name || run.id}`}
+              >
+                <span className="desktop-home-run-name">{run.name || run.id}</span>
+                <span className="desktop-home-run-status">{(run.status || '').replace(/_/g, ' ') || 'active'}</span>
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
@@ -107,7 +158,12 @@ export default function DesktopHome({
                 <li key={`${item.kind}:${item.id}`}>
                   <button type="button" className="desktop-home-recent" onClick={() => onOpenRecent(item)}>
                     <span className="desktop-home-recent-name">{item.name || item.id}</span>
-                    <span className="desktop-home-recent-kind">{item.kind}</span>
+                    <span className="desktop-home-recent-meta">
+                      {formatRelativeTime(item.openedAt) && (
+                        <span className="desktop-home-recent-when">{formatRelativeTime(item.openedAt)}</span>
+                      )}
+                      <span className="desktop-home-recent-kind">{item.kind}</span>
+                    </span>
                   </button>
                 </li>
               ))}

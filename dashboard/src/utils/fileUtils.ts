@@ -1,4 +1,6 @@
-export function downloadBlob(blob: Blob, filename: string): void {
+import { canSaveBlobViaBridge, saveBlobViaBridge } from '../desktop/desktopFiles'
+
+function browserDownloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
@@ -7,6 +9,20 @@ export function downloadBlob(blob: Blob, filename: string): void {
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
+}
+
+// downloadBlob saves a blob to disk. In the Wails desktop shell it uses the
+// native Save dialog (where <a download> is unreliable anyway); in the browser
+// it triggers the standard synchronous download. The bridge check is synchronous
+// so the browser path stays inside the originating user gesture.
+export function downloadBlob(blob: Blob, filename: string): void {
+  if (canSaveBlobViaBridge(blob)) {
+    void saveBlobViaBridge(blob, filename)
+      .then(handled => { if (!handled) browserDownloadBlob(blob, filename) })
+      .catch(() => browserDownloadBlob(blob, filename));
+    return;
+  }
+  browserDownloadBlob(blob, filename);
 }
 
 // downloadTextFile triggers a download of in-memory text content as a file.
