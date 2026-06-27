@@ -1,5 +1,8 @@
-import { useEffect, useMemo, useState, useRef, type CSSProperties } from 'react'
+import { useCallback, useEffect, useMemo, useState, useRef, type CSSProperties } from 'react'
 import { useApi } from '../hooks/useApi'
+import { isDesktopSurface } from '../desktop/desktopBridge'
+import { canUseNativeDialogs, filesFromDroppedPaths, pickFilesViaBridge } from '../desktop/desktopFiles'
+import { useDesktopFileDrop } from '../desktop/useDesktopFileDrop'
 import { type DetectedSourceProtocol, type ImportRepairSuggestion, type EnterpriseArchiveImportResult, type EnterpriseArchiveImportSummary, type EnterpriseArchiveMigrationReadiness, type EnterpriseArchiveProtocolSupportEntry, type EnterpriseArchiveReviewArtifact, type EnterpriseArchiveSupportMatrixEntry, type EnterpriseArchiveSupportMatrixExample, type EnterpriseArchiveSupportMatrixResponse, type SalesforceReview, type TrueClient2CompatReport } from '../types/scriptImports'
 import { type BrowserReplayEvent, type BrowserReplaySession, type StoredScript } from '../types'
 import { type SourceArchiveReview, type ScriptActionDefinition, type ScriptDefinition } from '../types/scripts'
@@ -558,7 +561,10 @@ export default function EnterpriseArchiveImport({ projectId, onImported, onEdit,
   const api = useApi()
   const fileRef = useRef<HTMLInputElement>(null)
   const harFileRef = useRef<HTMLInputElement>(null)
+  const dropzoneRef = useRef<HTMLDivElement>(null)
   const itemCounterRef = useRef(0)
+  const desktop = isDesktopSurface()
+  const nativeDialogs = desktop && canUseNativeDialogs()
   const [importItems, setImportItems] = useState<EnterpriseArchiveImportQueueItem[]>([])
   const [selectedItemId, setSelectedItemId] = useState('')
   const [dragOver, setDragOver] = useState(false)
@@ -1016,7 +1022,7 @@ export default function EnterpriseArchiveImport({ projectId, onImported, onEdit,
     }
   }, [api, browserReplayInProgress, replayValidationError, replayValidationLoading, replayValidationSession?.id, replayValidationWarnings, selectedItem?.id])
 
-  const addFilesToQueue = (fileList?: FileList | File[] | null) => {
+  const addFilesToQueue = useCallback((fileList?: FileList | File[] | null) => {
     const incomingFiles = Array.from(fileList || [])
     if (incomingFiles.length === 0) return
 
@@ -1034,7 +1040,30 @@ export default function EnterpriseArchiveImport({ projectId, onImported, onEdit,
     setSelectedItemId(nextItems[0].id)
     setError(zipFiles.length === incomingFiles.length ? '' : `${incomingFiles.length - zipFiles.length} non-ZIP file${incomingFiles.length - zipFiles.length === 1 ? '' : 's'} skipped.`)
     setNotice('')
-  }
+  }, [])
+
+  // Desktop shell: prefer the native multi-file dialog and accept native file
+  // drops (absolute paths via Wails OnFileDrop), reconstructing File objects for
+  // the existing queue. Browser keeps the <input type=file> + HTML5 drop path.
+  const handleNativeArchivePaths = useCallback((paths: string[]) => {
+    void filesFromDroppedPaths(paths).then(files => {
+      setDragOver(false)
+      addFilesToQueue(files)
+    })
+  }, [addFilesToQueue])
+  useDesktopFileDrop(dropzoneRef, handleNativeArchivePaths, desktop)
+
+  const handleBrowseArchives = useCallback(() => {
+    if (nativeDialogs) {
+      void pickFilesViaBridge('.zip', true).then(files => {
+        if (files.length > 0) {
+          addFilesToQueue(files)
+        }
+      })
+      return
+    }
+    fileRef.current?.click()
+  }, [nativeDialogs, addFilesToQueue])
 
   const removeQueuedFile = (itemId: string) => {
     const removingSelectedItem = selectedItemId === itemId
@@ -1065,6 +1094,9 @@ export default function EnterpriseArchiveImport({ projectId, onImported, onEdit,
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
     setDragOver(false)
+    // Desktop file drops arrive via the native OnFileDrop router with real
+    // paths; the webview's dataTransfer has none, so ignore HTML5 drop there.
+    if (desktop) return
     addFilesToQueue(e.dataTransfer.files)
   }
 
@@ -1415,11 +1447,12 @@ export default function EnterpriseArchiveImport({ projectId, onImported, onEdit,
       </div>
 
       {/* Drop zone */}
-      <div className={`lr-dropzone ${dragOver ? 'drag-over' : ''} ${queuedFileCount > 0 ? 'has-file' : ''}`}
+      <div ref={dropzoneRef} className={`lr-dropzone ${dragOver ? 'drag-over' : ''} ${queuedFileCount > 0 ? 'has-file' : ''}`}
+        style={desktop ? ({ '--wails-drop-target': 'drop' } as CSSProperties) : undefined}
         onDragOver={e => { e.preventDefault(); setDragOver(true) }}
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
-        onClick={() => fileRef.current?.click()}>
+        onClick={handleBrowseArchives}>
         <input ref={fileRef} type="file" accept=".zip" multiple onChange={handleFileSelect} hidden />
         {queuedFileCount > 0 ? (
           <div className="lr-file-queue">

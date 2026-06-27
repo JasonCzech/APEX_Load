@@ -1169,7 +1169,7 @@ describe('SettingsPage', () => {
     if (!generalSection) return
 
     const themeSelect = findSettingSelect(generalSection, 'Dashboard Theme')
-    expect(Array.from(themeSelect?.options || []).map(option => option.value)).toEqual(['dark', 'light', 'solarized-dark', 'solarized-light', 'monokai-dimmed'])
+    expect(Array.from(themeSelect?.options || []).map(option => option.value)).toEqual(['system', 'dark', 'light', 'solarized-dark', 'solarized-light', 'monokai-dimmed'])
 
     if (!themeSelect) return
     await setFieldValue(themeSelect, 'solarized-dark')

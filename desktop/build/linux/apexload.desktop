@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=APEX Load
+GenericName=Performance Testing Platform
+Comment=Enterprise performance testing platform
+Exec=apexload %U
+Icon=apexload
+Terminal=false
+Categories=Development;Network;
+StartupNotify=true
+StartupWMClass=apexload
+# Register the apexload:// deep-link scheme. We intentionally do NOT claim
+# application/json here — that would hijack every JSON file on the system.
+MimeType=x-scheme-handler/apexload;

@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 
+import { getWailsEventRuntime } from '../desktop/wailsRuntime'
+
 export const DASHBOARD_ZOOM_STORAGE_KEY = 'apexload.dashboardZoom'
 
 const DEFAULT_DASHBOARD_ZOOM = 1
@@ -96,6 +98,27 @@ export function useDashboardZoomShortcuts() {
     window.addEventListener('keydown', handleKeyDown, { capture: true })
     return () => {
       window.removeEventListener('keydown', handleKeyDown, { capture: true })
+    }
+  }, [])
+
+  // In the Wails desktop shell the View > Zoom menu items emit a `menu:zoom`
+  // event (the OS webview has no stable zoom API, so zoom is the in-app
+  // --dashboard-zoom variable). Bridge those native menu actions to the same
+  // zoom state. No-op in the browser, where `window.runtime` is undefined.
+  useEffect(() => {
+    const runtime = getWailsEventRuntime()
+    if (!runtime?.EventsOn) {
+      return undefined
+    }
+    const cancel = runtime.EventsOn('menu:zoom', (action?: unknown) => {
+      if (action === 'in' || action === 'out' || action === 'reset') {
+        setZoom(current => nextDashboardZoom(current, action))
+      }
+    })
+    return () => {
+      if (typeof cancel === 'function') {
+        cancel()
+      }
     }
   }, [])
 

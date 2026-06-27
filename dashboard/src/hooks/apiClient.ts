@@ -1,3 +1,5 @@
+import { isWailsLocation } from '../desktop/desktopBridge'
+
 const DEFAULT_LOCAL_API_ORIGIN = 'http://127.0.0.1:8080'
 export const DEV_VIEW_STORAGE_KEY = 'apexload.devViewMode'
 export const DEV_VIEW_MODE_CHANGED_EVENT = 'apexload:dev-view-mode-changed'
@@ -47,10 +49,6 @@ function getLocalStorage(): Storage | undefined {
 
 function isApiErrorPayload(value: unknown): value is ApiErrorPayload {
   return typeof value === 'object' && value !== null
-}
-
-function isWailsLocation(location: ApiLocation | undefined): boolean {
-  return location?.protocol === 'wails:' || location?.hostname === 'wails.localhost'
 }
 
 function getStoredApiOrigin(): string {

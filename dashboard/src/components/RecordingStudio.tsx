@@ -3,6 +3,7 @@ import { downloadBlob, downloadFilenameFromDisposition } from '../utils/fileUtil
 import { useAsyncTask } from '../hooks/useAsyncTask'
 import { useApi } from '../hooks/useApi'
 import { API_ORIGIN, apiFetch, trimTrailingSlash } from '../hooks/apiClient'
+import { isWailsLocation } from '../desktop/desktopBridge'
 import { Project } from '../types'
 import { type RecorderImportResult, type SalesforceImportResult } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
@@ -297,10 +298,11 @@ async function writeClipboardText(text: string): Promise<void> {
 }
 
 // The desktop shell embeds the dashboard in a Wails WebView where window.open
-// escapes to the system browser, so the popup panel is web-only there.
+// escapes to the system browser, so the popup panel is web-only there. This is
+// deliberately origin-based (not bridge-based): it gates webview popup
+// behavior, not the presence of bound methods.
 function isWailsShell(): boolean {
-  return typeof window !== 'undefined' &&
-    (window.location.protocol === 'wails:' || window.location.hostname === 'wails.localhost')
+  return typeof window !== 'undefined' && isWailsLocation(window.location)
 }
 
 function browserRecorderPanelURL(sessionId: string): string {

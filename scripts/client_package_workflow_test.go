@@ -36,3 +36,30 @@ func TestClientPackageWorkflowUsesSignedPackageScripts(t *testing.T) {
 		}
 	}
 }
+
+// TestClientPackageWorkflowValidatesOnPullRequests guards the CI broadening:
+// desktop builds must run on PRs/main (not just tags) so they stop rotting
+// between releases, with npm + Go caching and a pinned Wails CLI, while signing
+// stays tag-gated.
+func TestClientPackageWorkflowValidatesOnPullRequests(t *testing.T) {
+	content, err := os.ReadFile("../.github/workflows/desktop.yml")
+	if err != nil {
+		t.Fatalf("read desktop workflow: %v", err)
+	}
+	workflow := string(content)
+	checks := []string{
+		"pull_request:",
+		"branches: [main]",
+		"cache: npm",
+		"cache-dependency-path: dashboard/package-lock.json",
+		"wails/v2/cmd/wails@v2.12.0", // pinned, not @latest
+	}
+	for _, check := range checks {
+		if !strings.Contains(workflow, check) {
+			t.Fatalf("desktop workflow missing %q", check)
+		}
+	}
+	if strings.Contains(workflow, "cmd/wails@latest") {
+		t.Fatal("desktop workflow should pin the Wails CLI version, not use @latest")
+	}
+}

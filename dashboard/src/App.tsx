@@ -31,6 +31,12 @@ import {
 import { NavigationGuardProvider, useNavigationGuardRunner } from './hooks/NavigationGuardProvider'
 import { isEffectiveOperationAllowed } from './utils/authAccessUtils'
 import { DesktopStatusResponse } from './types/library'
+import { getDesktopBridge, isDesktopSurface, isMacDesktop } from './desktop/desktopBridge'
+import { useDesktopNotifications } from './hooks/useDesktopNotifications'
+import { useDesktopShellEvents } from './desktop/useDesktopShellEvents'
+import AboutDialog from './components/AboutDialog'
+import DesktopHome, { type DesktopQuickAction } from './components/DesktopHome'
+import { addRecent, clearRecents, getRecents, type RecentItem } from './desktop/desktopRecents'
 import ThemeToggle from './components/ThemeToggle'
 import DeploymentBanner from './components/DeploymentBanner'
 import ClientDownloadsMenu from './components/ClientDownloadsMenu'
@@ -64,16 +70,7 @@ const AccessPage = lazy(() => import('./components/AccessPage'))
 const SettingsPage = lazy(() => import('./components/SettingsPage'))
 const BrowserRecorderControlPanel = lazy(() => import('./components/BrowserRecorderControlPanel'))
 
-type WailsDesktopBridge = {
-  OpenInBrowser?: () => Promise<void>
-  OpenLogsFolder?: () => Promise<void>
-  OpenAppDataFolder?: () => Promise<void>
-}
-
-function getWailsDesktopBridge(): WailsDesktopBridge | undefined {
-  if (typeof window === 'undefined') return undefined
-  return (window as unknown as { go?: { main?: { App?: WailsDesktopBridge } } }).go?.main?.App
-}
+const getWailsDesktopBridge = getDesktopBridge
 
 function formatDesktopRemoteHealth(status?: DesktopStatusResponse) {
   const count = status?.remote_libraries?.count || 0
@@ -154,6 +151,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
     typeof window === 'undefined' ? { page: 'dashboard' } : parseAppViewFromHash(window.location.hash)
   ))
   const routeSyncInitialized = useRef(false)
+  const lastRouteRestored = useRef(false)
   const [metricsHistory, setMetricsHistory] = useState<Record<string, MetricsHistoryPoint[]>>({})
   const [testStatuses, setTestStatuses] = useState<Record<string, string>>({})
   const [telemetryDiagnostics, setTelemetryDiagnostics] = useState<TelemetryDiagnosticEntry[]>([])
@@ -183,6 +181,23 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const testApi = useTestApi()
   const activeTopbarContribution = useActiveTopbarContribution()
   const { runGuarded } = useNavigationGuardRunner()
+  const { notifyTestStatus } = useDesktopNotifications()
+  const [aboutOpen, setAboutOpen] = useState(false)
+  const openAbout = useCallback(() => setAboutOpen(true), [])
+  const desktopSurface = isDesktopSurface()
+  const [recents, setRecents] = useState<RecentItem[]>([])
+  const [desktopStartupError, setDesktopStartupError] = useState('')
+  const reloadRecents = useCallback(() => { void getRecents().then(setRecents) }, [])
+  useEffect(() => {
+    if (!desktopSurface) {
+      return
+    }
+    reloadRecents()
+    const bridge = getDesktopBridge()
+    if (bridge?.GetStartupError) {
+      void bridge.GetStartupError().then(setDesktopStartupError).catch(() => undefined)
+    }
+  }, [desktopSurface, reloadRecents])
 
   const handleWSMessage = useCallback((msg: WSMessage) => {
     if (msg.type === 'access_review_changed') {
@@ -228,8 +243,9 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
         status: msg.status,
         timestamp: msg.timestamp,
       }))
+      notifyTestStatus(msg.status, msg.test_name, testId)
     }
-  }, [])
+  }, [notifyTestStatus])
 
   const { projects, activeProject, setActiveProject, createAndSelectProject, refreshProjects } = useProject()
   const domainProjects = useMemo(() => {
@@ -257,6 +273,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
 
   const navigateToTest = useCallback((id: string, tab?: TestWorkspaceTabID) => {
     setGuardedView(tab ? { page: 'test', testId: id, tab } : { page: 'test', testId: id })
+    void addRecent({ kind: 'test', id, name: id, route: viewToLocationHash({ page: 'test', testId: id }) })
   }, [setGuardedView])
   const navigateToTestArchive = useCallback((id: string) => navigateToTest(id, 'archive'), [navigateToTest])
   const navigateToCommandCenter = useCallback((id?: string) => {
@@ -264,7 +281,10 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   }, [setGuardedView])
   const activePage: NavPage = view.page === 'test' ? 'tests' : view.page === 'swagger' || view.page === 'repository-guide' ? 'docs' : view.page === 'recorder-panel' ? 'scripts' : view.page
 
-  const navigateToScriptEdit = (scriptId: string) => setGuardedView({ page: 'scripts', mode: 'edit', scriptId })
+  const navigateToScriptEdit = (scriptId: string) => {
+    setGuardedView({ page: 'scripts', mode: 'edit', scriptId })
+    void addRecent({ kind: 'script', id: scriptId, name: scriptId, route: viewToLocationHash({ page: 'scripts', mode: 'edit', scriptId }) })
+  }
   const navigateToScenarioBuilder = () => setGuardedView({ page: 'tests', scenarioView: 'builder' })
   const navigateToNewTestForScenario = (scenarioId: string) => {
     setView({ page: 'new-test', scenarioId })
@@ -283,6 +303,55 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const handleNavigate = useCallback((page: NavPage) => {
     runGuarded(() => performNavigate(page))
   }, [performNavigate, runGuarded])
+
+  // Desktop workspace hub wiring.
+  const handleDesktopQuickAction = useCallback((action: DesktopQuickAction) => {
+    switch (action) {
+      case 'new-test':
+        setGuardedView({ page: 'new-test' })
+        break
+      case 'import':
+      case 'record':
+      case 'scripts':
+        handleNavigate('scripts')
+        break
+      case 'results':
+        handleNavigate('results')
+        break
+    }
+  }, [setGuardedView, handleNavigate])
+
+  const handleOpenRecent = useCallback((item: RecentItem) => {
+    if (item.route) {
+      setGuardedView(parseAppViewFromHash(item.route))
+    }
+  }, [setGuardedView])
+
+  const handleClearRecents = useCallback(() => {
+    void clearRecents().then(reloadRecents)
+  }, [reloadRecents])
+
+  const handleRevealFolder = useCallback((which: 'logs' | 'appdata') => {
+    const bridge = getDesktopBridge()
+    if (which === 'logs') void bridge?.OpenLogsFolder?.()
+    else void bridge?.OpenAppDataFolder?.()
+  }, [])
+
+  // Native menu actions + OS open-with handoff routed into navigation, plus
+  // external-link routing and the menu "About" dialog.
+  useDesktopShellEvents({
+    onMenuAbout: openAbout,
+    onMenuAction: useCallback((action: string) => {
+      if (action === 'new-test') setGuardedView({ page: 'new-test' })
+      else handleNavigate('scripts')
+    }, [setGuardedView, handleNavigate]),
+    onOpenFile: useCallback(() => handleNavigate('scripts'), [handleNavigate]),
+    onOpenURL: useCallback((url: string) => {
+      // apexload://<hash> deep links map to a dashboard route.
+      const idx = url.indexOf('#')
+      if (idx >= 0) setGuardedView(parseAppViewFromHash(url.slice(idx)))
+    }, [setGuardedView]),
+  })
 
   const handleScriptsAuthoringStateChange = useCallback((state: { subView: ScriptsAuthoringSubView; editingId: string | null }) => {
     setScriptsTopbarState(state)
@@ -408,6 +477,27 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
       window.history.pushState(null, '', nextHash)
     }
   }, [view])
+
+  // Desktop: persist the current route so the next launch reopens it. The app
+  // updates the hash via replaceState/pushState (which don't fire hashchange),
+  // so we persist on view change directly.
+  useEffect(() => {
+    if (!desktopSurface) return
+    void getDesktopBridge()?.SetLastRoute?.(viewToLocationHash(view))
+  }, [view, desktopSurface])
+
+  // Desktop: restore the previous session's route once on launch, unless the
+  // window opened with an explicit deep link (hash already set).
+  useEffect(() => {
+    if (!desktopSurface || lastRouteRestored.current) return
+    lastRouteRestored.current = true
+    if (typeof window !== 'undefined' && window.location.hash) return
+    const bridge = getDesktopBridge()
+    if (!bridge?.GetLastRoute) return
+    void bridge.GetLastRoute().then(route => {
+      if (route) setGuardedView(parseAppViewFromHash(route))
+    }).catch(() => undefined)
+  }, [desktopSurface, setGuardedView])
 
   const setActiveDomain = useCallback((domain: import('./types').Domain) => {
     setActiveDomainState(domain)
@@ -763,12 +853,24 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
             <ThemeToggle theme={theme} onThemeChange={setTheme} />
           </div>
         </div>
+        <AboutDialog open={aboutOpen} onClose={() => setAboutOpen(false)} />
         {activeTopbarContribution?.feedback && (
           <div className="main-topbar-feedback">
             {activeTopbarContribution.feedback}
           </div>
         )}
         <Suspense fallback={<div className="page">Loading page...</div>}>
+          {view.page === 'dashboard' && desktopSurface && (
+            <DesktopHome
+              status={desktopStatus}
+              startupError={desktopStartupError}
+              recents={recents}
+              onQuickAction={handleDesktopQuickAction}
+              onOpenRecent={handleOpenRecent}
+              onClearRecents={handleClearRecents}
+              onReveal={handleRevealFolder}
+            />
+          )}
           {view.page === 'dashboard' && (
             <DashboardPage
               testStatuses={testStatuses}
@@ -929,11 +1031,9 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
 export default function App() {
   useEffect(() => {
     if (typeof window === 'undefined') return
-    const isWails = window.location.protocol === 'wails:' || window.location.hostname === 'wails.localhost'
-    const isMac = navigator.userAgent.toLowerCase().includes('mac')
-    if (isWails) {
+    if (isDesktopSurface()) {
       document.body.classList.add('is-desktop')
-      if (isMac) {
+      if (isMacDesktop()) {
         document.body.classList.add('is-mac')
       }
     }

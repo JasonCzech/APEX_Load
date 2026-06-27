@@ -41,6 +41,15 @@ type App struct {
 	store       storage.Store
 	appDataPath string
 	logPath     string
+	// lastRoute is the dashboard hash route to restore on next launch. It is
+	// updated live via SetLastRoute and persisted with the window geometry on
+	// shutdown.
+	lastRoute string
+	// startupErr records a fatal startup failure (storage/server init). It is
+	// surfaced to the dashboard via GetStartupError so the embedded controller's
+	// failure can be shown in-app — the HTTP /desktop/status endpoint can't carry
+	// it because a failed server isn't listening.
+	startupErr string
 }
 
 // NewApp creates a new App application struct
@@ -55,17 +64,17 @@ func (a *App) startup(ctx context.Context) {
 
 	appDataPath, err := desktopAppDataPath()
 	if err != nil {
-		slog.Error("failed to resolve app data path", "err", err)
+		a.failStartup("failed to resolve app data path", err)
 		return
 	}
 	a.appDataPath = appDataPath
 	if err := os.MkdirAll(appDataPath, 0o755); err != nil {
-		slog.Error("failed to create app data path", "path", appDataPath, "err", err)
+		a.failStartup("failed to create app data folder", err)
 		return
 	}
 	logPath := filepath.Join(appDataPath, "logs")
 	if err := os.MkdirAll(logPath, 0o755); err != nil {
-		slog.Error("failed to create log path", "path", logPath, "err", err)
+		a.failStartup("failed to create log folder", err)
 		return
 	}
 	a.logPath = logPath
@@ -78,7 +87,7 @@ func (a *App) startup(ctx context.Context) {
 	}
 	store, err := storage.NewConfiguredStore(storeConfig)
 	if err != nil {
-		slog.Error("failed to initialize storage", "err", err)
+		a.failStartup("failed to initialize local storage", err)
 		return
 	}
 	a.store = store
@@ -104,10 +113,124 @@ func (a *App) startup(ctx context.Context) {
 
 	// Wait briefly for the server to be ready
 	time.Sleep(200 * time.Millisecond)
+
+	// Restore window size/position/maximized state from the previous session.
+	a.restoreWindowState()
+
+	// Prepare native notifications (best-effort; stays unavailable on failure).
+	a.initNotifications()
+}
+
+// restoreWindowState applies persisted window geometry. Runs on the Wails
+// runtime thread (after ctx is set), never the server goroutine.
+func (a *App) restoreWindowState() {
+	if a.ctx == nil || a.appDataPath == "" {
+		return
+	}
+	st, ok := loadWindowState(a.appDataPath)
+	if !ok {
+		return
+	}
+	a.lastRoute = st.LastRoute
+	if st.Maximised {
+		runtime.WindowMaximise(a.ctx)
+		return
+	}
+	deskW, deskH := a.desktopBounds()
+	g := sanitizeWindowGeometry(st, deskW, deskH)
+	if g.ApplySize {
+		runtime.WindowSetSize(a.ctx, g.Width, g.Height)
+	}
+	if g.ApplyPosition {
+		runtime.WindowSetPosition(a.ctx, g.X, g.Y)
+	} else if g.ApplySize {
+		// Valid size but untrusted position → center on the usable desktop.
+		runtime.WindowCenter(a.ctx)
+	}
+}
+
+// desktopBounds returns a conservative usable-desktop size (origin 0,0) modeled
+// as the sum of screen widths × the tallest screen height. Wails' Screen type
+// exposes logical size but not per-monitor offset, so this is a heuristic used
+// only to detect a fully off-screen restore; it returns 0,0 when unknown.
+func (a *App) desktopBounds() (int, int) {
+	screens, err := runtime.ScreenGetAll(a.ctx)
+	if err != nil || len(screens) == 0 {
+		return 0, 0
+	}
+	totalW, maxH := 0, 0
+	for _, s := range screens {
+		w := s.Size.Width
+		if w == 0 {
+			w = s.Width
+		}
+		h := s.Size.Height
+		if h == 0 {
+			h = s.Height
+		}
+		totalW += w
+		if h > maxH {
+			maxH = h
+		}
+	}
+	return totalW, maxH
+}
+
+// captureWindowState reads the current geometry for persistence.
+func (a *App) captureWindowState() windowState {
+	st := windowState{LastRoute: a.lastRoute}
+	if a.ctx == nil {
+		return st
+	}
+	if runtime.WindowIsMaximised(a.ctx) {
+		st.Maximised = true
+		return st
+	}
+	st.Width, st.Height = runtime.WindowGetSize(a.ctx)
+	st.X, st.Y = runtime.WindowGetPosition(a.ctx)
+	return st
+}
+
+// failStartup logs a fatal startup failure and records a user-facing message
+// the dashboard can show via GetStartupError.
+func (a *App) failStartup(msg string, err error) {
+	slog.Error(msg, "err", err)
+	if err != nil {
+		a.startupErr = fmt.Sprintf("%s: %v", msg, err)
+	} else {
+		a.startupErr = msg
+	}
+}
+
+// GetStartupError returns a non-empty message when the embedded controller
+// failed to start (storage/server init). Surfaced in the dashboard so the user
+// sees why local features are unavailable instead of a silent failure.
+func (a *App) GetStartupError() string {
+	return a.startupErr
+}
+
+// SetLastRoute records the dashboard's current hash route so it can be restored
+// next launch. Called from the dashboard on navigation in desktop mode.
+func (a *App) SetLastRoute(route string) {
+	a.lastRoute = strings.TrimSpace(route)
+}
+
+// GetLastRoute returns the route restored from the previous session (empty on
+// first launch). The dashboard reads this once on mount to restore navigation.
+func (a *App) GetLastRoute() string {
+	return a.lastRoute
 }
 
 // shutdown is called at application termination
 func (a *App) shutdown(ctx context.Context) {
+	// Persist window geometry + last route before tearing down. A hard kill
+	// won't reach this, which is acceptable.
+	if a.appDataPath != "" {
+		if err := saveWindowState(a.appDataPath, a.captureWindowState()); err != nil {
+			slog.Warn("failed to persist window state", "err", err)
+		}
+	}
+	a.cleanupNotifications()
 	if a.server != nil {
 		a.server.Shutdown(context.Background())
 	}

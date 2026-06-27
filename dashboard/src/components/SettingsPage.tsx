@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type Dispatch, type DragEvent, type SetStateAction } from 'react'
-import { type DashboardTheme } from '../hooks/useDashboardTheme'
+import { type DashboardThemePreference } from '../hooks/useDashboardTheme'
 import { useApplicationApi } from '../hooks/api/useApplicationApi'
 import { useProjectApi } from '../hooks/api/useProjectApi'
 import { useRepositoryApi } from '../hooks/api/useRepositoryApi'
@@ -88,6 +88,8 @@ import { downloadBlob } from '../utils/fileUtils'
 import LibraryFederationPanel from './LibraryFederationPanel'
 import GitHubIntegrationPanel from './GitHubIntegrationPanel'
 import PageViewToggle from './PageViewToggle'
+import DesktopNotificationsToggle from './DesktopNotificationsToggle'
+import { isDesktopSurface } from '../desktop/desktopBridge'
 import { useTopbarContribution } from '../hooks/TopbarContributionProvider'
 
 const SETTINGS_SECTION_TOPBAR_LABELS: Record<SettingsSectionId, string> = {
@@ -116,8 +118,8 @@ const NOTIFICATION_FORMAT_OPTIONS = [
 
 
 interface SettingsPageProps {
-  theme: DashboardTheme
-  onThemeChange: (theme: DashboardTheme) => void
+  theme: DashboardThemePreference
+  onThemeChange: (theme: DashboardThemePreference) => void
   authStatus?: DashboardAuthStatus
   onNavigate?: (page: 'access') => void
   domains?: Domain[]
@@ -1887,8 +1889,9 @@ export default function SettingsPage({
               <select
                 className="settings-input"
                 value={theme}
-                onChange={(e) => onThemeChange(e.target.value as DashboardTheme)}
+                onChange={(e) => onThemeChange(e.target.value as DashboardThemePreference)}
               >
+                <option value="system">System (Auto)</option>
                 <option value="dark">Dark</option>
                 <option value="light">Light</option>
                 <option value="solarized-dark">Solarized Dark</option>
@@ -1896,6 +1899,7 @@ export default function SettingsPage({
                 <option value="monokai-dimmed">Monokai Dimmed</option>
               </select>
             </div>
+            {isDesktopSurface() && <DesktopNotificationsToggle />}
             <div className="setting-row">
               <div className="setting-info">
                 <span className="setting-label">Desktop Client Promotion</span>

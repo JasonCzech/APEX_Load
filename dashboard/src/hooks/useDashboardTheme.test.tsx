@@ -17,8 +17,30 @@ function ThemeHarness() {
       <button type="button" onClick={() => setTheme('light')}>light</button>
       <button type="button" onClick={() => setTheme('solarized-dark')}>solarized-dark</button>
       <button type="button" onClick={() => setTheme('dark')}>dark</button>
+      <button type="button" onClick={() => setTheme('system')}>system</button>
     </div>
   )
+}
+
+type FakeMediaQueryList = {
+  matches: boolean
+  media: string
+  addEventListener: (type: string, cb: () => void) => void
+  removeEventListener: (type: string, cb: () => void) => void
+  emit: (next: boolean) => void
+}
+
+function installMatchMedia(initialDark: boolean): FakeMediaQueryList {
+  const listeners = new Set<() => void>()
+  const mql: FakeMediaQueryList = {
+    matches: initialDark,
+    media: '(prefers-color-scheme: dark)',
+    addEventListener: (_type, cb) => { listeners.add(cb) },
+    removeEventListener: (_type, cb) => { listeners.delete(cb) },
+    emit: next => { mql.matches = next; listeners.forEach(cb => cb()) },
+  }
+  ;(window as unknown as { matchMedia: (q: string) => FakeMediaQueryList }).matchMedia = () => mql
+  return mql
 }
 
 describe('useDashboardTheme', () => {
@@ -39,6 +61,7 @@ describe('useDashboardTheme', () => {
       root.unmount()
     })
     container.remove()
+    delete (window as unknown as { matchMedia?: unknown }).matchMedia
   })
 
   it('defaults to dark mode and applies it to the document root', async () => {
@@ -84,6 +107,42 @@ describe('useDashboardTheme', () => {
     expect(document.documentElement.dataset.theme).toBe('solarized-dark')
     expect(document.documentElement.style.colorScheme).toBe('dark')
     expect(window.localStorage.getItem('apexload.theme')).toBe('solarized-dark')
+  })
+
+  it('resolves the system preference from prefers-color-scheme and persists "system"', async () => {
+    const media = installMatchMedia(true)
+    window.localStorage.setItem('apexload.theme', 'system')
+
+    await act(async () => {
+      root.render(<ThemeHarness />)
+    })
+
+    // Preference is "system"; applied theme resolves to dark.
+    expect(container.querySelector('[data-testid="theme"]')?.textContent).toBe('system')
+    expect(document.documentElement.dataset.theme).toBe('dark')
+    expect(document.documentElement.style.colorScheme).toBe('dark')
+    expect(window.localStorage.getItem('apexload.theme')).toBe('system')
+
+    // OS flips to light → applied theme updates live, preference stays "system".
+    await act(async () => {
+      media.emit(false)
+    })
+    expect(document.documentElement.dataset.theme).toBe('light')
+    expect(document.documentElement.style.colorScheme).toBe('light')
+    expect(window.localStorage.getItem('apexload.theme')).toBe('system')
+  })
+
+  it('switching to system resolves to light when the OS prefers light', async () => {
+    installMatchMedia(false)
+    await act(async () => {
+      root.render(<ThemeHarness />)
+    })
+    await act(async () => {
+      const systemButton = Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'system')
+      systemButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.querySelector('[data-testid="theme"]')?.textContent).toBe('system')
+    expect(document.documentElement.dataset.theme).toBe('light')
   })
 
   it('rejects unknown stored theme values back to dark', async () => {

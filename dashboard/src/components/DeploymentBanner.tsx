@@ -1,16 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { useSystemApi } from '../hooks/api/useSystemApi'
+import { isDesktopSurface } from '../desktop/desktopBridge'
 import type { DeploymentIdentity, VersionResponse } from '../types'
 import './DeploymentBanner.css'
 
 const WIDE_BYPASS_HELP_ID = 'deployment-wide-bypass-help'
-
-function isDesktopSurface(): boolean {
-  if (typeof window === 'undefined') return false
-  if (window.location.protocol === 'wails:' || window.location.hostname === 'wails.localhost') return true
-  return Boolean((window as unknown as { go?: { main?: { App?: unknown } } }).go?.main?.App)
-}
 
 function deploymentLabel(deployment?: DeploymentIdentity, environment?: string): string {
   const kind = deployment?.kind || ''

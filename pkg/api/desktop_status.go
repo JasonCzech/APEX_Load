@@ -5,6 +5,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/buildinfo"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -15,6 +16,9 @@ type DesktopStatusResponse struct {
 	BrowserURL      string           `json:"browser_url"`
 	AppDataPath     string           `json:"app_data_path,omitempty"`
 	LogPath         string           `json:"log_path,omitempty"`
+	Version         string           `json:"version,omitempty"`
+	Commit          string           `json:"commit,omitempty"`
+	BuildTime       string           `json:"build_time,omitempty"`
 	Storage         map[string]any   `json:"storage"`
 	Cache           CacheBackendInfo `json:"cache"`
 	RecorderProxy   map[string]any   `json:"recorder_proxy"`
@@ -58,6 +62,8 @@ func (s *Server) handleDesktopStatus(w http.ResponseWriter, _ *http.Request) {
 		recorderStatus["active_session_status"] = active.Status
 	}
 
+	build := buildinfo.Get()
+
 	writeJSON(w, http.StatusOK, DesktopStatusResponse{
 		DesktopMode:   s.desktopMode,
 		OS:            runtime.GOOS,
@@ -65,6 +71,9 @@ func (s *Server) handleDesktopStatus(w http.ResponseWriter, _ *http.Request) {
 		BrowserURL:    s.BrowserURL(),
 		AppDataPath:   s.desktopAppData,
 		LogPath:       s.desktopLogPath,
+		Version:       build.DisplayVersion,
+		Commit:        build.Commit,
+		BuildTime:     build.BuildTime,
 		Storage:       storageInfo,
 		Cache:         s.cache.Info(),
 		RecorderProxy: recorderStatus,

@@ -15,6 +15,29 @@
     "productName": "APEX Load",
     "productVersion": "1.0.0",
     "copyright": "Copyright 2026",
-    "comments": "APEX Load Desktop Application"
+    "comments": "APEX Load Desktop Application",
+    "fileAssociations": [
+      {
+        "ext": "json",
+        "name": "APEX Load Script",
+        "description": "APEX Load JSON DSL script",
+        "iconName": "appicon",
+        "role": "Editor"
+      },
+      {
+        "ext": "har",
+        "name": "HTTP Archive",
+        "description": "HTTP Archive recording",
+        "iconName": "appicon",
+        "role": "Editor"
+      }
+    ],
+    "protocols": [
+      {
+        "scheme": "apexload",
+        "description": "APEX Load deep link",
+        "role": "Viewer"
+      }
+    ]
   }
 }

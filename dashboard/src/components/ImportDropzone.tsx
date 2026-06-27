@@ -1,5 +1,8 @@
-import { useRef, useState, type DragEvent } from 'react'
+import { useCallback, useRef, useState, type CSSProperties, type DragEvent } from 'react'
 
+import { isDesktopSurface } from '../desktop/desktopBridge'
+import { canUseNativeDialogs, filesFromDroppedPaths, pickFilesViaBridge } from '../desktop/desktopFiles'
+import { useDesktopFileDrop } from '../desktop/useDesktopFileDrop'
 import './ImportDropzone.css'
 
 interface Props {
@@ -15,11 +18,20 @@ interface Props {
 // ImportDropzone is the shared drag-drop file picker for the import wizards,
 // matching the JMeter/Enterprise Archive dropzone interaction: drop or click
 // to browse, with file name + size and a change button once selected.
+//
+// In the desktop shell it prefers the native open dialog and accepts native file
+// drops (which carry real absolute paths via Wails OnFileDrop), reconstructing a
+// File for the existing upload path. In the browser it uses the standard
+// <input type=file> + HTML5 drag-drop.
 export default function ImportDropzone({ accept, file, onFile, dropHint, validate, onError }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
+  const zoneRef = useRef<HTMLDivElement>(null)
   const [dragOver, setDragOver] = useState(false)
 
-  const acceptFile = (next?: File | null) => {
+  const desktop = isDesktopSurface()
+  const nativeDialogs = desktop && canUseNativeDialogs()
+
+  const acceptFile = useCallback((next?: File | null) => {
     if (!next) return
     if (validate) {
       const error = validate(next)
@@ -29,24 +41,53 @@ export default function ImportDropzone({ accept, file, onFile, dropHint, validat
       }
     }
     onFile(next)
-  }
+  }, [validate, onError, onFile])
+
+  // Native drop (desktop): Wails delivers absolute paths; reconstruct a File.
+  const handleNativePaths = useCallback((paths: string[]) => {
+    void filesFromDroppedPaths(paths).then(files => {
+      setDragOver(false)
+      acceptFile(files[0])
+    })
+  }, [acceptFile])
+  useDesktopFileDrop(zoneRef, handleNativePaths, desktop)
+
+  const handleBrowse = useCallback(() => {
+    if (nativeDialogs) {
+      void pickFilesViaBridge(accept).then(files => {
+        if (files.length > 0) {
+          acceptFile(files[0])
+        }
+      })
+      return
+    }
+    inputRef.current?.click()
+  }, [nativeDialogs, accept, acceptFile])
 
   const handleDrop = (event: DragEvent) => {
     event.preventDefault()
     setDragOver(false)
+    // In the desktop shell, file drops arrive via the native OnFileDrop router
+    // (dataTransfer carries no usable path); ignore the HTML5 drop there.
+    if (desktop) return
     acceptFile(event.dataTransfer.files?.[0])
   }
 
+  // The CSS marker registers this element as a Wails native drop target.
+  const dropTargetStyle = desktop ? ({ '--wails-drop-target': 'drop' } as CSSProperties) : undefined
+
   return (
     <div
+      ref={zoneRef}
       className={`import-dropzone ${dragOver ? 'drag-over' : ''} ${file ? 'has-file' : ''}`}
+      style={dropTargetStyle}
       onDragOver={event => { event.preventDefault(); setDragOver(true) }}
       onDragLeave={() => setDragOver(false)}
       onDrop={handleDrop}
-      onClick={() => inputRef.current?.click()}
+      onClick={handleBrowse}
       role="button"
       tabIndex={0}
-      onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') inputRef.current?.click() }}
+      onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') handleBrowse() }}
     >
       <input
         ref={inputRef}
@@ -81,7 +122,7 @@ export default function ImportDropzone({ accept, file, onFile, dropHint, validat
             <line x1="12" y1="3" x2="12" y2="15" />
           </svg>
           <p>{dropHint}</p>
-          <span className="import-dropzone-hint">or click to browse</span>
+          <span className="import-dropzone-hint">{nativeDialogs ? 'or click to choose a file' : 'or click to browse'}</span>
         </div>
       )}
     </div>

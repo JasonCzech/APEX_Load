@@ -5,8 +5,8 @@ import (
 	"log"
 
 	"github.com/jasonczech/apexload/pkg/api"
+	"github.com/jasonczech/apexload/pkg/buildinfo"
 	"github.com/wailsapp/wails/v2"
-	"github.com/wailsapp/wails/v2/pkg/menu"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/mac"
@@ -23,18 +23,18 @@ func main() {
 		log.Fatal("failed to load embedded static assets:", err)
 	}
 
-	// Create application menu
-	AppMenu := menu.NewMenu()
-	FileMenu := AppMenu.AddSubmenu("File")
-	FileMenu.AddText("Quit", nil, func(_ *menu.CallbackData) {
-		// Handled by default OS behaviors mostly, but we can hook if needed
-	})
+	// Build the native application menu. On macOS this restores the role-based
+	// Edit menu (copy/paste/undo/select-all) that a custom menu would otherwise
+	// strip from WKWebView. See desktop/menu.go.
+	AppMenu := buildAppMenu(app)
 
 	// Create application with options
 	err = wails.Run(&options.App{
-		Title:  "APEX Load",
-		Width:  1280,
-		Height: 800,
+		Title:     "APEX Load",
+		Width:     1280,
+		Height:    800,
+		MinWidth:  minWindowWidth,
+		MinHeight: minWindowHeight,
 		AssetServer: &assetserver.Options{
 			Assets: staticSub,
 		},
@@ -42,6 +42,21 @@ func main() {
 		OnStartup:        app.startup,
 		OnShutdown:       app.shutdown,
 		Menu:             AppMenu,
+		// Only one instance may run: the first owns the local SQLite handle, and a
+		// second launch raises the existing window and forwards any open-with
+		// file/URL args to it (see desktop/instance.go).
+		SingleInstanceLock: &options.SingleInstanceLock{
+			UniqueId:               singleInstanceUniqueID,
+			OnSecondInstanceLaunch: app.onSecondInstanceLaunch,
+		},
+		// Surface dropped-file absolute paths to the dashboard (OnFileDrop). Drop
+		// targets opt in via the `--wails-drop-target: drop` CSS marker.
+		// DisableWebViewDrop stops the webview from navigating to an accidental
+		// file drop outside a registered target.
+		DragAndDrop: &options.DragAndDrop{
+			EnableFileDrop:     true,
+			DisableWebViewDrop: true,
+		},
 		Bind: []interface{}{
 			app,
 		},
@@ -58,14 +73,21 @@ func main() {
 			WindowIsTranslucent:  true,
 			About: &mac.AboutInfo{
 				Title:   "APEX Load",
-				Message: "Enterprise Performance Testing Platform\nCopyright 2026 Project Stormrunner",
+				Message: buildAboutMessage(buildinfo.Get()),
 			},
+			// Open-with handoff for file associations + the apexload:// scheme
+			// declared in wails.json (see desktop/instance.go).
+			OnFileOpen: app.handleOpenFile,
+			OnUrlOpen:  app.handleOpenURL,
 		},
 		Windows: &windows.Options{
 			WebviewIsTransparent: true,
 			WindowIsTranslucent:  true,
 			BackdropType:         windows.Mica,
 			DisableWindowIcon:    false,
+			// Branded WebView2 prerequisite prompts (Wails shows a native dialog +
+			// can auto-install when the runtime is missing). See desktop/windows.go.
+			Messages: apexloadWindowsMessages(),
 		},
 	})
 

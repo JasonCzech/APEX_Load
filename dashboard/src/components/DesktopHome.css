@@ -1,0 +1,139 @@
+.desktop-home {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.desktop-home-error {
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--danger, #e5484d) 12%, transparent);
+  border: 1px solid var(--danger, #e5484d);
+  color: var(--text-primary);
+}
+
+.desktop-home-quick {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.desktop-home-action {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.05s ease;
+}
+
+.desktop-home-action:hover {
+  border-color: var(--accent, #3b82f6);
+}
+
+.desktop-home-action:active {
+  transform: translateY(1px);
+}
+
+.desktop-home-action-label {
+  font-weight: 600;
+}
+
+.desktop-home-action-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.desktop-home-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.desktop-home-card {
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+
+.desktop-home-card h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+}
+
+.desktop-home-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.desktop-home-card dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 12px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.desktop-home-card dt {
+  color: var(--text-muted);
+}
+
+.desktop-home-card dd {
+  margin: 0;
+  text-align: right;
+  word-break: break-all;
+}
+
+.desktop-home-card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.desktop-home-empty {
+  color: var(--text-muted);
+  font-size: 13px;
+  margin: 0;
+}
+
+.desktop-home-recents {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.desktop-home-recent {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.desktop-home-recent:hover {
+  background: var(--bg-elevated, rgba(127, 127, 127, 0.08));
+  border-color: var(--border);
+}
+
+.desktop-home-recent-kind {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}

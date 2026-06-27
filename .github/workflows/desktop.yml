@@ -2,8 +2,19 @@ name: Build Client Packages
 
 on:
   push:
+    branches: [main]
     tags:
       - 'v*'
+  pull_request:
+    paths:
+      - 'desktop/**'
+      - 'dashboard/**'
+      - 'pkg/api/static/**'
+      - 'pkg/api/server.go'
+      - 'scripts/package-desktop.sh'
+      - 'scripts/build-desktop-local.sh'
+      - 'scripts/resolve-version.sh'
+      - '.github/workflows/desktop.yml'
   workflow_dispatch:
 
 permissions:
@@ -37,14 +48,18 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+          cache: true
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 18
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
 
       - name: Install Wails CLI
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+        # Pinned for reproducibility; keep in sync with scripts/build-desktop-local.sh.
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
 
       - name: Install Linux Dependencies
         if: matrix.os == 'ubuntu-latest'
@@ -61,7 +76,7 @@ jobs:
           echo "build_time=${BUILD_TIME}" >> "$GITHUB_OUTPUT"
 
       - name: Import macOS Developer ID certificate
-        if: matrix.os == 'macos-latest'
+        if: matrix.os == 'macos-latest' && startsWith(github.ref, 'refs/tags/')
         shell: bash
         env:
           MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.APEXLOAD_MACOS_CERTIFICATE_P12_BASE64 }}
@@ -85,7 +100,7 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -s -k "${keychain_password}" "${keychain_path}"
 
       - name: Configure macOS notarization profile
-        if: matrix.os == 'macos-latest'
+        if: matrix.os == 'macos-latest' && startsWith(github.ref, 'refs/tags/')
         shell: bash
         env:
           MACOS_NOTARY_PROFILE: ${{ secrets.APEXLOAD_MACOS_NOTARY_PROFILE }}
@@ -108,7 +123,7 @@ jobs:
             --password "${MACOS_NOTARY_PASSWORD}"
 
       - name: Prepare Windows Authenticode certificate
-        if: matrix.os == 'windows-latest'
+        if: matrix.os == 'windows-latest' && startsWith(github.ref, 'refs/tags/')
         shell: pwsh
         env:
           WINDOWS_CODESIGN_PFX_BASE64: ${{ secrets.APEXLOAD_WINDOWS_CODESIGN_PFX_BASE64 }}
@@ -134,6 +149,7 @@ jobs:
           }
 
       - name: Import GPG checksum signing key
+        if: startsWith(github.ref, 'refs/tags/')
         shell: bash
         env:
           GPG_PRIVATE_KEY: ${{ secrets.APEXLOAD_GPG_PRIVATE_KEY }}
@@ -268,6 +284,7 @@ jobs:
           echo "APEXLOAD_WINDOWS_CODESIGN_CERT_PATH=${cert_path}" >> "$GITHUB_ENV"
 
       - name: Import GPG checksum signing key
+        if: startsWith(github.ref, 'refs/tags/')
         shell: bash
         env:
           GPG_PRIVATE_KEY: ${{ secrets.APEXLOAD_GPG_PRIVATE_KEY }}

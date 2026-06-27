@@ -37,7 +37,7 @@ describe('ThemeToggle', () => {
     if (!select) return
 
     expect(select.value).toBe('solarized-dark')
-    expect(Array.from(select.options).map(o => o.value)).toEqual(['dark', 'light', 'solarized-dark', 'solarized-light', 'monokai-dimmed'])
+    expect(Array.from(select.options).map(o => o.value)).toEqual(['system', 'dark', 'light', 'solarized-dark', 'solarized-light', 'monokai-dimmed'])
 
     await act(async () => {
       select.value = 'light'

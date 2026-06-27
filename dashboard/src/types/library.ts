@@ -129,6 +129,9 @@ export type DesktopStatusResponse = {
   browser_url: string
   app_data_path?: string
   log_path?: string
+  version?: string
+  commit?: string
+  build_time?: string
   storage?: Record<string, unknown>
   cache?: Record<string, unknown>
   recorder_proxy?: Record<string, unknown>

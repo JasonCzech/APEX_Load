@@ -128,6 +128,45 @@ describe('useDashboardZoomShortcuts', () => {
     expect(document.documentElement.style.getPropertyValue('--dashboard-zoom')).toBe('1')
   })
 
+  it('responds to the desktop menu:zoom event', async () => {
+    const listeners: Record<string, (action?: unknown) => void> = {}
+    const runtimeWindow = window as typeof window & {
+      runtime?: { EventsOn?: (name: string, cb: (action?: unknown) => void) => () => void }
+    }
+    runtimeWindow.runtime = {
+      EventsOn: (name, cb) => {
+        listeners[name] = cb
+        return () => {
+          delete listeners[name]
+        }
+      },
+    }
+
+    try {
+      await act(async () => {
+        root.render(<ZoomHarness />)
+      })
+
+      await act(async () => {
+        listeners['menu:zoom']?.('in')
+      })
+      expect(container.querySelector('[data-testid="zoom"]')?.textContent).toBe('1.1')
+
+      await act(async () => {
+        listeners['menu:zoom']?.('reset')
+      })
+      expect(container.querySelector('[data-testid="zoom"]')?.textContent).toBe('1')
+
+      // Unknown payloads are ignored.
+      await act(async () => {
+        listeners['menu:zoom']?.('sideways')
+      })
+      expect(container.querySelector('[data-testid="zoom"]')?.textContent).toBe('1')
+    } finally {
+      delete runtimeWindow.runtime
+    }
+  })
+
   it('normalizes invalid and out-of-range stored zoom values', async () => {
     window.localStorage.setItem(DASHBOARD_ZOOM_STORAGE_KEY, '12')
 
