@@ -146,5 +146,5 @@ func externalRunnerRequiredMessage(protocolName string) string {
 }
 
 func javaVuserRunnerRequiredMessage() string {
-	return "Java Vuser scripts require a governed generator-java JVM runner pool. An operator must enable it on the runner fleet via APEXLOAD_JAVA_VUSER_RUNNER_ENABLED=true (with the runner command, classpath, and working directory configured through APEXLOAD_JAVA_VUSER_*). Script config cannot enable the runner."
+	return "Java Vuser sidecar actions (java_vuser_run) require a governed generator-java JVM runner pool. An operator must enable it on the runner fleet via APEXLOAD_JAVA_VUSER_RUNNER_ENABLED=true (with the runner command, classpath, and working directory configured through APEXLOAD_JAVA_VUSER_*). Review-only Java Vuser imports do not require this runner; script config cannot enable it."
 }

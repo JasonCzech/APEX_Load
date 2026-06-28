@@ -181,6 +181,9 @@ func TestPreflightLaunchBlocksJavaVuserWithoutRunnerCapability(t *testing.T) {
 	if !strings.Contains(preflight.BlockingConflicts[0].Message, config.EnvJavaVuserRunnerEnabled) {
 		t.Fatalf("conflict message = %q, want operator-enablement guidance referencing %s", preflight.BlockingConflicts[0].Message, config.EnvJavaVuserRunnerEnabled)
 	}
+	if !strings.Contains(preflight.BlockingConflicts[0].Message, "java_vuser_run") || !strings.Contains(preflight.BlockingConflicts[0].Message, "Review-only Java Vuser imports do not require this runner") {
+		t.Fatalf("conflict message = %q, want sidecar-action-specific guidance", preflight.BlockingConflicts[0].Message)
+	}
 	if preflight.RecommendedAssignment == nil {
 		t.Fatalf("blocked preflight should surface a recommended assignment for recovery, got nil")
 	}

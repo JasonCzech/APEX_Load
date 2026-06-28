@@ -822,7 +822,7 @@ Useful recorder and replay endpoints:
 | `GET` | `/api/v1/ws` |
 | `GET` | `/metrics` |
 
-`GET /api/v1/protocol-bundles/support-matrix` publishes the governed runner and entitlement metadata used by import and launch preflight decisions. Current external-runner entries include `sap_gui` (`windows_sap_gui_runner`) and `java_vuser` (`java_vuser_jvm_runner`). Launch preflight and `POST /api/v1/tests` return blocking conflicts such as `external_runner_required` or `java_vuser_runner_required` when a draft is saved before the required runner pool is configured.
+`GET /api/v1/protocol-bundles/support-matrix` publishes the governed runner and entitlement metadata used by import and launch preflight decisions. Current external-runner entries include `sap_gui` (`windows_sap_gui_runner`) and Java Vuser sidecar actions (`java_vuser_jvm_runner`). Launch preflight and `POST /api/v1/tests` return blocking conflicts such as `external_runner_required` or `java_vuser_runner_required` when a runner-backed draft is saved before the required runner pool is configured.
 
 ### Library Federation
 
