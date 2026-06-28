@@ -497,6 +497,47 @@ public class Actions {
 	}
 }
 
+func TestConvertZipJavaHTTPPreservesLRParameterSetup(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	addJavaZipFile(t, zw, "JavaHTTPParams/JavaHTTPParams.usr", `[General]
+Type=Java over HTTP
+ScriptLanguage=JAVA
+RunType=Java-Interpreter
+[Actions]
+Action=Actions.java
+`)
+	addJavaZipFile(t, zw, "JavaHTTPParams/Actions.java", `import lrapi.lr;
+
+public class Actions {
+  public int action() throws Throwable {
+    lr.save_string(lr.eval_string("{UserId}"), "Copy");
+    web.url("Profile", "URL=https://example.test/users/{Copy}", web.LAST);
+    return 0;
+  }
+}`)
+	if err := zw.Close(); err != nil {
+		t.Fatalf("close zip: %v", err)
+	}
+
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if result.Script == nil || result.Script.Protocol != "http" {
+		t.Fatalf("script = %#v, want executable HTTP script", result.Script)
+	}
+	if _, ok := javaActionByType(result.Script.Actions, "source_parameter"); !ok {
+		t.Fatalf("actions = %#v, want lr.save_string preserved as source_parameter", result.Script.Actions)
+	}
+	request, ok := javaActionByType(result.Script.Actions, "GET")
+	if !ok || request.Target != "/users/{{var.copy}}" {
+		t.Fatalf("request = %#v ok=%v, want GET /users/{{var.copy}}", request, ok)
+	}
+	assertSourceReviewMapping(t, result.SourceReview.Mappings, "lr_save_string", "actions[0]", "converted")
+	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_url", "actions[1]", "converted")
+}
+
 func TestConvertZipJavaApacheHTTPClientObjectProducesExecutableHTTP(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)

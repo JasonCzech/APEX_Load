@@ -845,6 +845,19 @@ func javaLRFunctionName(name string) string {
 	return strings.ToLower(b.String())
 }
 
+func javaLRFunctionAllowedInExecutableLane(name string) bool {
+	def, ok := lookupSourceFunction(name)
+	if !ok {
+		return false
+	}
+	switch def.Family {
+	case "web", "database":
+		return false
+	default:
+		return true
+	}
+}
+
 // javaArgToSourceArg renders one Java lr argument as a source-arg string: string
 // literals are unquoted + parameter-converted, a nested lr.eval_string("{x}") is
 // unwrapped to {{var.x}}, and everything else (variables, enum constants like

@@ -45,9 +45,7 @@ func javaHTTPParsedActions(program javaProgram) []*ParsedAction {
 			return fn, true
 		}
 		if fn, ok := javaLRToParsedFunction(statement, phase); ok {
-			switch fn.Name {
-			case "lr_start_transaction", "lr_end_transaction", "lr_start_sub_transaction", "lr_end_sub_transaction", "lr_think_time",
-				"lr_error_message", "lr_message", "lr_log_message", "lr_output_message", "lr_rendezvous", "lr_rendezvous_ex":
+			if javaLRFunctionAllowedInExecutableLane(fn.Name) {
 				return fn, true
 			}
 		}

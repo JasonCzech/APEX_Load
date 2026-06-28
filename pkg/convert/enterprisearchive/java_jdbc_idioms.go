@@ -61,9 +61,7 @@ func javaDatabaseParsedActions(program javaProgram, files map[string]string) []*
 			return javaDynamicSQLFunction(statement, phase, m[1]), true
 		}
 		if fn, ok := javaLRToParsedFunction(statement, phase); ok {
-			switch fn.Name {
-			case "lr_start_transaction", "lr_end_transaction", "lr_start_sub_transaction", "lr_end_sub_transaction", "lr_think_time",
-				"lr_error_message", "lr_message", "lr_log_message", "lr_output_message":
+			if javaLRFunctionAllowedInExecutableLane(fn.Name) {
 				return fn, true
 			}
 		}
