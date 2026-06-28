@@ -660,6 +660,56 @@ public class Actions {
 	}
 }
 
+func TestConvertZipJavaJDBCDynamicSQLProducesNamedReview(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	addJavaZipFile(t, zw, "JavaDynamicDB/JavaDynamicDB.usr", `[General]
+Type=Java Vuser
+ScriptLanguage=JAVA
+RunType=Java-Interpreter
+[Actions]
+Action=Actions.java
+`)
+	addJavaZipFile(t, zw, "JavaDynamicDB/Actions.java", `import java.sql.*;
+
+public class Actions {
+  public int action() throws Throwable {
+    Connection conn = DriverManager.getConnection("jdbc:postgresql://db.example.test/orders", "perf_user", "super-secret");
+    String sql = "select id, status from " + tableName;
+    PreparedStatement ps = conn.prepareStatement(sql);
+    ps.executeQuery();
+    return 0;
+  }
+}`)
+	if err := zw.Close(); err != nil {
+		t.Fatalf("close zip: %v", err)
+	}
+
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if result.Script == nil || result.Script.Protocol != "database" {
+		t.Fatalf("script = %#v, want database review script", result.Script)
+	}
+	if result.DetectedProtocol == nil || result.DetectedProtocol.ImportMode != ImportModeReviewOnly {
+		t.Fatalf("detected = %#v, want review-only dynamic SQL import", result.DetectedProtocol)
+	}
+	assertSourceReviewFunctionStatus(t, result.SourceReview.Mappings, "java_sql_dynamic", "review_only")
+	var reviewCount int
+	for _, action := range result.Script.Actions {
+		if action.Type == "source_review" && action.Metadata["review_reason"] == "unresolved_dynamic_sql" {
+			reviewCount++
+		}
+	}
+	if reviewCount == 0 {
+		t.Fatalf("actions = %#v, want unresolved_dynamic_sql source_review action", result.Script.Actions)
+	}
+	if _, ok := javaActionByType(result.Script.Actions, "db_query"); ok {
+		t.Fatalf("actions = %#v, dynamic SQL must not produce executable db_query", result.Script.Actions)
+	}
+}
+
 func TestConvertZipJavaMixedHTTPAndJDBCSplitsScripts(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)

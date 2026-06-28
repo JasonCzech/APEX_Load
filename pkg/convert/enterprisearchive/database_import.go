@@ -46,6 +46,10 @@ func ConvertDatabase(actions []*ParsedAction, opts ConvertOptions, detected Dete
 			recordSourceFunctionSupport(result, SourceFunctionSupportReviewOnly)
 			continue
 		}
+		if strings.EqualFold(strings.TrimSpace(fn.Name), "java_sql_dynamic") {
+			appendDatabaseReviewAction(result, fn, "unresolved_dynamic_sql", "Java JDBC SQL was built dynamically and could not be recovered safely; preserved for manual review instead of fabricating an executable query.")
+			continue
+		}
 		action, ok := convertDatabaseFunction(fn)
 		if !ok {
 			if fallback, mode, fallbackOK := convertSourceFunctionAction(fn); fallbackOK {
@@ -72,6 +76,14 @@ func ConvertDatabase(actions []*ParsedAction, opts ConvertOptions, detected Dete
 		result.Warnings = append(result.Warnings, "No executable SQL statements were found; import was preserved as a review artifact.")
 		return result, nil
 	}
+	if result.Stats.ConvertedActions == 0 {
+		reviewDetected := markDetectedReviewOnly(detected, "No executable SQL statements were found in the database script.")
+		result.DetectedProtocol = &reviewDetected
+		result.ReviewArtifact = NewReviewArtifact(reviewDetected, nil, actions, map[string]any{
+			"reason": "no_executable_database_actions",
+		})
+		result.Warnings = append(result.Warnings, "No executable SQL statements were found; database import actions are review-only.")
+	}
 
 	// Structure recognized source control flow (and strip the internal flow
 	// tags) just like the HTTP converter.
@@ -82,6 +94,40 @@ func ConvertDatabase(actions []*ParsedAction, opts ConvertOptions, detected Dete
 	}
 	result.Warnings = append(result.Warnings, "Database DSN was imported as {{secret.database_dsn}}; replace it with a governed connection secret before replay.")
 	return result, nil
+}
+
+func appendDatabaseReviewAction(result *ConvertResult, fn ParsedFunction, reason string, notes string) {
+	if result == nil || result.Script == nil {
+		return
+	}
+	action := dsl.Action{
+		Name:     databaseActionName(fn, reason),
+		Type:     "source_review",
+		Params:   map[string]any{"function": fn.Name},
+		Metadata: sourceFunctionMetadata(fn),
+	}
+	if action.Metadata == nil {
+		action.Metadata = map[string]any{}
+	}
+	action.Metadata["review_reason"] = reason
+	action.Metadata["source"] = "java_jdbc_idiom"
+	args := make([]any, 0, len(fn.RawArgs)+1)
+	if strings.TrimSpace(fn.RawBlock) != "" {
+		args = append(args, strings.TrimSpace(fn.RawBlock))
+	}
+	for _, raw := range fn.RawArgs {
+		if strings.TrimSpace(raw) != "" {
+			args = append(args, strings.TrimSpace(raw))
+		}
+	}
+	if len(args) > 0 {
+		action.Params["args"] = args
+	}
+	actionIndex := actionCountForPhase(result.Script, fn.Phase)
+	appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, sourceReviewActionPath(fn.Phase, actionIndex), action.Name, "action", "review_only", notes, SourceFunctionSupportReviewOnly))
+	appendActionForPhase(result.Script, fn.Phase, action)
+	result.Stats.ReviewOnlyFunctions++
+	recordSourceFunctionSupport(result, SourceFunctionSupportReviewOnly)
 }
 
 func convertDatabaseFunction(fn ParsedFunction) (dsl.Action, bool) {

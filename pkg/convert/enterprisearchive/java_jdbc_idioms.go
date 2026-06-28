@@ -18,6 +18,7 @@ var (
 func javaDatabaseParsedActions(program javaProgram, files map[string]string) []*ParsedAction {
 	sqlVars := map[string]string{}
 	prepared := map[string]string{}
+	preparedDynamic := map[string]bool{}
 	return javaParsedActionsFor(program, func(statement javaStatement, phase string) (ParsedFunction, bool) {
 		text := javaNormalizeStatementText(statement.Text)
 		if m := javaSQLAssignRe.FindStringSubmatch(text); len(m) == 3 {
@@ -30,6 +31,9 @@ func javaDatabaseParsedActions(program javaProgram, files map[string]string) []*
 		if m := javaPreparedStmtRe.FindStringSubmatch(text); len(m) == 3 {
 			if sql := javaResolveSQLExpression(m[2], sqlVars, files); sql != "" {
 				prepared[strings.TrimSpace(m[1])] = sql
+			} else {
+				preparedDynamic[strings.TrimSpace(m[1])] = true
+				return javaDynamicSQLFunction(statement, phase, m[2]), true
 			}
 			return ParsedFunction{}, false
 		}
@@ -46,11 +50,15 @@ func javaDatabaseParsedActions(program javaProgram, files map[string]string) []*
 			if sql := prepared[strings.TrimSpace(m[1])]; sql != "" {
 				return javaDatabaseFunction(statement, phase, "java_sql_execute", sql), true
 			}
+			if preparedDynamic[strings.TrimSpace(m[1])] {
+				return javaDynamicSQLFunction(statement, phase, strings.TrimSpace(m[1])), true
+			}
 		}
 		if m := javaStatementExecRe.FindStringSubmatch(text); len(m) == 2 {
 			if sql := javaResolveSQLExpression(m[1], sqlVars, files); sql != "" {
 				return javaDatabaseFunction(statement, phase, "java_sql_execute", sql), true
 			}
+			return javaDynamicSQLFunction(statement, phase, m[1]), true
 		}
 		if fn, ok := javaLRToParsedFunction(statement, phase); ok {
 			switch fn.Name {
@@ -61,6 +69,16 @@ func javaDatabaseParsedActions(program javaProgram, files map[string]string) []*
 		}
 		return ParsedFunction{}, false
 	})
+}
+
+func javaDynamicSQLFunction(statement javaStatement, phase string, expr string) ParsedFunction {
+	fn := javaDatabaseFunction(statement, phase, "java_sql_dynamic", "")
+	expr = strings.TrimSpace(expr)
+	if expr != "" {
+		fn.Args["Expression"] = expr
+		fn.RawArgs = []string{expr}
+	}
+	return fn
 }
 
 func javaSQLTransactionControlFunction(text string) (string, bool) {
