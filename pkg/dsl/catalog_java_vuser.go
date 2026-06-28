@@ -16,6 +16,9 @@ func javaVuserActionSpecs() []ActionSpec {
 				{Name: "params.method", Kind: FieldKindEnum, Enum: []string{"init", "action", "end", "full_lifecycle"}, Doc: "Lifecycle method or full lifecycle sequence to invoke."},
 				{Name: "params.source_archive_ref", Kind: FieldKindString, Doc: "Preserved source archive or authoring artifact reference."},
 				{Name: "params.timeout_ms", Kind: FieldKindInt, Doc: "Per-run timeout in milliseconds; falls back to config.java_vuser.action_timeout_ms."},
+				{Name: "params.runner_requirement", Kind: FieldKindString, Doc: "Governance gate required before execution, usually java_vuser_jvm_runner."},
+				{Name: "params.event_contract", Kind: FieldKindString, Doc: "Runner event stream contract expected from the sidecar shim."},
+				{Name: "params.lr_parameters", Kind: FieldKindObject, Doc: "Initial LoadRunner parameter values exposed to lrapi.lr.eval_string as {Name}."},
 			},
 			Validate: func(index int, action Action) []string {
 				if strings.TrimSpace(action.Target) == "" {

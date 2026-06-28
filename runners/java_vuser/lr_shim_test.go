@@ -36,7 +36,7 @@ func TestLRShimCompilesAndEmitsEventsForCommonJavaVuserAPI(t *testing.T) {
 	}
 
 	run := exec.Command(javaBin, "-cp", classes, "Harness", "--class", "Actions", "--method", "full_lifecycle")
-	run.Stdin = strings.NewReader(`{"class_name":"Actions","method":"full_lifecycle"}` + "\n")
+	run.Stdin = strings.NewReader(`{"class_name":"Actions","method":"full_lifecycle","params":{"lr_parameters":{"OrderId":"SEEDED-42","Count":7}}}` + "\n")
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	run.Stdout = &stdout
@@ -50,13 +50,15 @@ func TestLRShimCompilesAndEmitsEventsForCommonJavaVuserAPI(t *testing.T) {
 	if !strings.Contains(stderr.String(), `"type":"transaction_start"`) || !strings.Contains(stderr.String(), `"type":"transaction_end"`) {
 		t.Fatalf("stderr = %s, want transaction event JSON lines", stderr.String())
 	}
+	if !strings.Contains(stderr.String(), `log SEEDED-42`) {
+		t.Fatalf("stderr = %s, want seeded lr parameter to be visible through lr.eval_string", stderr.String())
+	}
 }
 
 const javaShimActionsSource = `import lrapi.lr;
 
 public class Actions {
   public int init() {
-    lr.save_string("A-100", "OrderId");
     return lr.PASS;
   }
 

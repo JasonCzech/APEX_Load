@@ -941,6 +941,9 @@ Runs a LoadRunner Java Vuser lifecycle through the governed JVM sidecar runner.
 | `params.method` | enum: init\|action\|end\|full_lifecycle |  | Lifecycle method or full lifecycle sequence to invoke. |
 | `params.source_archive_ref` | string |  | Preserved source archive or authoring artifact reference. |
 | `params.timeout_ms` | int |  | Per-run timeout in milliseconds; falls back to config.java_vuser.action_timeout_ms. |
+| `params.runner_requirement` | string |  | Governance gate required before execution, usually java_vuser_jvm_runner. |
+| `params.event_contract` | string |  | Runner event stream contract expected from the sidecar shim. |
+| `params.lr_parameters` | object |  | Initial LoadRunner parameter values exposed to lrapi.lr.eval_string as {Name}. |
 
 ## Protocol: jms
 

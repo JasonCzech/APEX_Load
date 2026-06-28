@@ -24,6 +24,29 @@ public final class lr {
     private lr() {
     }
 
+    public static void __apexload_seed_parameters(Map<String, String> values) {
+        if (values == null) {
+            return;
+        }
+        for (Map.Entry<String, String> entry : values.entrySet()) {
+            __apexload_set_parameter(entry.getKey(), entry.getValue());
+        }
+    }
+
+    public static void __apexload_set_parameter(String name, String value) {
+        if (name == null || name.trim().isEmpty()) {
+            return;
+        }
+        parameters.put(name.trim(), value == null ? "" : value);
+    }
+
+    public static String __apexload_get_parameter(String name) {
+        if (name == null) {
+            return "";
+        }
+        return parameters.getOrDefault(name.trim(), "");
+    }
+
     public static int abort(Object... args) {
         emit("runtime", "abort", join(args));
         throw new RuntimeException("lr.abort");

@@ -68,7 +68,14 @@ func TestJavaVuserRunnerInvokesConfiguredCommand(t *testing.T) {
 		Name:   "Run Actions",
 		Type:   "java_vuser_run",
 		Target: "Actions",
-		Params: map[string]any{"method": "full_lifecycle", "source_archive_ref": "artifact-1"},
+		Params: map[string]any{
+			"method":             "full_lifecycle",
+			"source_archive_ref": "artifact-1",
+			"lr_parameters": map[string]any{
+				"OrderId": "A-100",
+				"Count":   3,
+			},
+		},
 	})
 	if err != nil {
 		t.Fatalf("Execute returned protocol error: %v", err)
@@ -88,6 +95,13 @@ func TestJavaVuserRunnerInvokesConfiguredCommand(t *testing.T) {
 	events, ok := result.ProtocolEvidence["runner_events"].([]runnerEvent)
 	if !ok || len(events) != 2 || events[0].Type != "transaction_start" || events[0].Name != "Checkout" {
 		t.Fatalf("runner events = %#v, want parsed lrapi.lr event JSON lines", result.ProtocolEvidence["runner_events"])
+	}
+	captured, err := os.ReadFile(stdinCapture)
+	if err != nil {
+		t.Fatalf("read captured stdin: %v", err)
+	}
+	if !strings.Contains(string(captured), `"lr_parameters"`) || !strings.Contains(string(captured), `"OrderId":"A-100"`) || !strings.Contains(string(captured), `"Count":3`) {
+		t.Fatalf("runner stdin = %s, want lr_parameters forwarded to sidecar command", captured)
 	}
 }
 

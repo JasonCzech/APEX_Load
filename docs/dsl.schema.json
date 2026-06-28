@@ -2912,6 +2912,14 @@
             "properties": {
               "params": {
                 "properties": {
+                  "event_contract": {
+                    "description": "Runner event stream contract expected from the sidecar shim.",
+                    "type": "string"
+                  },
+                  "lr_parameters": {
+                    "description": "Initial LoadRunner parameter values exposed to lrapi.lr.eval_string as {Name}.",
+                    "type": "object"
+                  },
                   "method": {
                     "description": "Lifecycle method or full lifecycle sequence to invoke.",
                     "enum": [
@@ -2920,6 +2928,10 @@
                       "end",
                       "full_lifecycle"
                     ],
+                    "type": "string"
+                  },
+                  "runner_requirement": {
+                    "description": "Governance gate required before execution, usually java_vuser_jvm_runner.",
                     "type": "string"
                   },
                   "source_archive_ref": {
