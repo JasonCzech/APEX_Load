@@ -77,6 +77,22 @@ func storePreflightJavaVuserScript(runner *TestRunner, id string, projectID stri
 	})
 }
 
+func storePreflightJavaReviewScript(runner *TestRunner, id string, projectID string) {
+	runner.StoreScript(&dsl.Script{
+		ID:        id,
+		Name:      id,
+		Protocol:  "java_vuser",
+		Version:   "1.0.0",
+		ProjectID: projectID,
+		Actions: []dsl.Action{{
+			Name:   "Review Java Statement",
+			Type:   "source_review",
+			Target: "CustomClient.invokeBusinessOperation",
+			Params: map[string]any{"function": "CustomClient.invokeBusinessOperation"},
+		}},
+	})
+}
+
 func TestPreflightLaunchAllowsImmediateStartWhenCapacityAvailable(t *testing.T) {
 	runner := NewTestRunner(10, NewHub(), nil)
 	storePreflightScript(runner, "script-preflight-start", "")
@@ -167,6 +183,32 @@ func TestPreflightLaunchBlocksJavaVuserWithoutRunnerCapability(t *testing.T) {
 	}
 	if preflight.RecommendedAssignment == nil {
 		t.Fatalf("blocked preflight should surface a recommended assignment for recovery, got nil")
+	}
+}
+
+func TestPreflightLaunchAllowsJavaVuserReviewOnlyWithoutRunnerCapability(t *testing.T) {
+	t.Setenv(config.EnvJavaVuserRunnerEnabled, "false")
+	runner := NewTestRunner(10, NewHub(), nil)
+	storePreflightJavaReviewScript(runner, "script-preflight-java-review", "")
+
+	preflight, err := runner.PreflightLaunch(LaunchPreflightRequest{
+		CreateTestRequest: CreateTestRequest{
+			Name:     "Java Vuser Review",
+			Duration: "5m",
+			ScriptID: "script-preflight-java-review",
+			VUsers:   1,
+		},
+	})
+	if err != nil {
+		t.Fatalf("PreflightLaunch returned error: %v", err)
+	}
+	for _, conflict := range preflight.BlockingConflicts {
+		if conflict.Code == "java_vuser_runner_required" {
+			t.Fatalf("blocking conflicts = %#v, did not expect runner gate for source_review-only Java script", preflight.BlockingConflicts)
+		}
+	}
+	if !preflight.StartNowAllowed || preflight.Decision != "start_now" {
+		t.Fatalf("preflight = %#v, want start_now for review-only Java script without sidecar action", preflight)
 	}
 }
 

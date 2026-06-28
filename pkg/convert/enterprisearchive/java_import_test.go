@@ -43,11 +43,17 @@ Action=Actions.java
 	if err != nil {
 		t.Fatalf("ConvertZip without opt-in returned error: %v", err)
 	}
-	if reviewOnly.Script == nil || reviewOnly.Script.Protocol == "java_vuser" {
-		t.Fatalf("review-only default script = %#v, want non-sidecar draft", reviewOnly.Script)
+	if reviewOnly.Script == nil || reviewOnly.Script.Protocol != "java_vuser" {
+		t.Fatalf("review-only default script = %#v, want java_vuser review draft", reviewOnly.Script)
+	}
+	if _, ok := javaActionByType(reviewOnly.Script.Actions, "java_vuser_run"); ok {
+		t.Fatalf("review-only default actions = %#v, did not expect sidecar runner action without opt-in", reviewOnly.Script.Actions)
 	}
 	if reviewOnly.DetectedProtocol == nil || reviewOnly.DetectedProtocol.ImportMode != ImportModeReviewOnly {
 		t.Fatalf("default detected = %#v, want review_only", reviewOnly.DetectedProtocol)
+	}
+	if issues := dsl.ValidateScriptIssues(reviewOnly.Script); len(issues) > 0 {
+		t.Fatalf("ValidateScriptIssues(review-only) returned %v", issues)
 	}
 
 	result, err := ConvertZip(buf.Bytes(), ConvertOptions{AllowJavaVuserRunner: true})

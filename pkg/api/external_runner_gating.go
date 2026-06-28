@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/config"
+	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
@@ -83,22 +84,48 @@ func javaVuserRunnerLaunchConflicts(groups []TestGroup) []LaunchConflict {
 		return nil
 	}
 	for _, group := range groups {
-		protocolName := strings.ToLower(strings.TrimSpace(group.Protocol))
-		if protocolName == "" && group.script != nil {
-			protocolName = strings.ToLower(strings.TrimSpace(group.script.Protocol))
-		}
-		if protocolName != "java_vuser" {
+		if !groupRequiresJavaVuserRunner(group) {
 			continue
 		}
 		return []LaunchConflict{{
 			Code:       "java_vuser_runner_required",
 			Severity:   "blocking",
 			Source:     "protocol_runtime",
-			ResourceID: protocolName,
+			ResourceID: "java_vuser",
 			Message:    javaVuserRunnerRequiredMessage(),
 		}}
 	}
 	return nil
+}
+
+func groupRequiresJavaVuserRunner(group TestGroup) bool {
+	protocolName := strings.ToLower(strings.TrimSpace(group.Protocol))
+	if protocolName == "" && group.script != nil {
+		protocolName = strings.ToLower(strings.TrimSpace(group.script.Protocol))
+	}
+	if protocolName != "java_vuser" {
+		return false
+	}
+	if group.script == nil {
+		return true
+	}
+	return javaVuserActionsRequireRunner(group.script.Init) ||
+		javaVuserActionsRequireRunner(group.script.Actions) ||
+		javaVuserActionsRequireRunner(group.script.Teardown)
+}
+
+func javaVuserActionsRequireRunner(actions []dsl.Action) bool {
+	for _, action := range actions {
+		if strings.EqualFold(strings.TrimSpace(action.Type), "java_vuser_run") {
+			return true
+		}
+		if action.Control != nil {
+			if javaVuserActionsRequireRunner(action.Control.Steps) || javaVuserActionsRequireRunner(action.Control.Else) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func javaVuserRunnerLaunchConflict(groups []TestGroup) *LaunchConflict {

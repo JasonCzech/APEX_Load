@@ -215,13 +215,7 @@ func newJavaScriptForSurface(opts ConvertOptions, profile JavaProfile, surface j
 			Mock:            true,
 		}
 	default:
-		script.Protocol = "jms-solace"
-		script.Config.JMS = dsl.JMSConfig{
-			Provider:        "solace",
-			DestinationType: "queue",
-			TimeoutMs:       5000,
-			Mock:            true,
-		}
+		script.Protocol = "java_vuser"
 	}
 	return script
 }
