@@ -17,15 +17,28 @@ var (
 	javaApacheSetHeaderRe     = regexp.MustCompile(`(?is)^\s*([A-Za-z_][A-Za-z0-9_]*)\.setHeader\s*\(\s*("(?:(?:\\.)|[^"\\])*")\s*,\s*("(?:(?:\\.)|[^"\\])*")`)
 	javaApacheSetEntityRe     = regexp.MustCompile(`(?is)^\s*([A-Za-z_][A-Za-z0-9_]*)\.setEntity\s*\(.*?\bStringEntity\s*\(\s*("(?:(?:\\.)|[^"\\])*")`)
 	javaApacheExecuteRe       = regexp.MustCompile(`(?is)\.execute\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\b`)
+	javaURLAssignRe           = regexp.MustCompile(`(?is)^\s*(?:(?:final\s+)?(?:java\.net\.)?URL\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*new\s+(?:java\.net\.)?URL\s*\(\s*("(?:(?:\\.)|[^"\\])*")`)
+	javaURLOpenVarRe          = regexp.MustCompile(`(?is)^\s*(?:(?:final\s+)?[A-Za-z_$][A-Za-z0-9_$.<>\[\]]*\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?:\([^)]*HttpURLConnection[^)]*\)\s*)?([A-Za-z_][A-Za-z0-9_]*)\.openConnection\s*\(`)
+	javaURLOpenInlineRe       = regexp.MustCompile(`(?is)^\s*(?:(?:final\s+)?[A-Za-z_$][A-Za-z0-9_$.<>\[\]]*\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?:\([^)]*HttpURLConnection[^)]*\)\s*)?new\s+(?:java\.net\.)?URL\s*\(\s*("(?:(?:\\.)|[^"\\])*")\s*\)\.openConnection\s*\(`)
+	javaURLSetMethodRe        = regexp.MustCompile(`(?is)^\s*([A-Za-z_][A-Za-z0-9_]*)\.setRequestMethod\s*\(\s*("(?:(?:\\.)|[^"\\])*")`)
+	javaURLSetHeaderRe        = regexp.MustCompile(`(?is)^\s*([A-Za-z_][A-Za-z0-9_]*)\.(?:set|add)RequestProperty\s*\(\s*("(?:(?:\\.)|[^"\\])*")\s*,\s*("(?:(?:\\.)|[^"\\])*")`)
+	javaURLOutputStreamRe     = regexp.MustCompile(`(?is)^\s*(?:(?:final\s+)?[A-Za-z_$][A-Za-z0-9_$.<>\[\]]*\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([A-Za-z_][A-Za-z0-9_]*)\.getOutputStream\s*\(`)
+	javaURLStreamWriteRe      = regexp.MustCompile(`(?is)^\s*([A-Za-z_][A-Za-z0-9_]*)\.write\s*\(\s*("(?:(?:\\.)|[^"\\])*")`)
+	javaURLDirectWriteRe      = regexp.MustCompile(`(?is)^\s*([A-Za-z_][A-Za-z0-9_]*)\.getOutputStream\s*\(\s*\)\.write\s*\(\s*("(?:(?:\\.)|[^"\\])*")`)
+	javaURLSendRe             = regexp.MustCompile(`(?is)([A-Za-z_][A-Za-z0-9_]*)\.(?:getResponseCode|getInputStream)\s*\(`)
 )
 
 func javaHTTPParsedActions(program javaProgram) []*ParsedAction {
 	apache := newJavaApacheHTTPState()
+	urlConnection := newJavaURLConnectionHTTPState()
 	return javaParsedActionsFor(program, func(statement javaStatement, phase string) (ParsedFunction, bool) {
 		if fn, ok := javaWebToParsedFunction(statement, phase); ok {
 			return fn, true
 		}
 		if fn, ok := apache.mapStatement(statement, phase); ok {
+			return fn, true
+		}
+		if fn, ok := urlConnection.mapStatement(statement, phase); ok {
 			return fn, true
 		}
 		if fn, ok := javaHTTPClientToParsedFunction(statement, phase); ok {
@@ -89,6 +102,119 @@ func (state *javaApacheHTTPState) mapStatement(statement javaStatement, phase st
 		}
 	}
 	return ParsedFunction{}, false
+}
+
+type javaURLConnectionHTTPState struct {
+	urls     map[string]string
+	requests map[string]ParsedFunction
+	streams  map[string]string
+	emitted  map[string]bool
+}
+
+func newJavaURLConnectionHTTPState() *javaURLConnectionHTTPState {
+	return &javaURLConnectionHTTPState{
+		urls:     map[string]string{},
+		requests: map[string]ParsedFunction{},
+		streams:  map[string]string{},
+		emitted:  map[string]bool{},
+	}
+}
+
+func (state *javaURLConnectionHTTPState) mapStatement(statement javaStatement, phase string) (ParsedFunction, bool) {
+	text := javaNormalizeStatementText(statement.Text)
+	if matches := javaURLAssignRe.FindStringSubmatch(text); len(matches) == 3 {
+		if url, ok := parseJavaStringLiteral(matches[2]); ok && isAbsoluteHTTPURL(url) {
+			state.urls[matches[1]] = url
+		}
+		return ParsedFunction{}, false
+	}
+	if matches := javaURLOpenInlineRe.FindStringSubmatch(text); len(matches) == 3 {
+		if url, ok := parseJavaStringLiteral(matches[2]); ok && isAbsoluteHTTPURL(url) {
+			state.requests[matches[1]] = javaHTTPClientParsedFunction(statement, phase, url, "GET")
+		}
+		return ParsedFunction{}, false
+	}
+	if matches := javaURLOpenVarRe.FindStringSubmatch(text); len(matches) == 3 {
+		if url := state.urls[matches[2]]; isAbsoluteHTTPURL(url) {
+			state.requests[matches[1]] = javaHTTPClientParsedFunction(statement, phase, url, "GET")
+		}
+		return ParsedFunction{}, false
+	}
+	if matches := javaURLSetMethodRe.FindStringSubmatch(text); len(matches) == 3 {
+		if fn, ok := state.requests[matches[1]]; ok {
+			if method, ok := parseJavaStringLiteral(matches[2]); ok {
+				fn.Method = strings.ToUpper(method)
+				state.requests[matches[1]] = fn
+			}
+		}
+		return ParsedFunction{}, false
+	}
+	if matches := javaURLSetHeaderRe.FindStringSubmatch(text); len(matches) == 4 {
+		if fn, ok := state.requests[matches[1]]; ok {
+			key, _ := parseJavaStringLiteral(matches[2])
+			value, _ := parseJavaStringLiteral(matches[3])
+			if key != "" {
+				fn.Headers[key] = value
+				state.requests[matches[1]] = fn
+			}
+		}
+		return ParsedFunction{}, false
+	}
+	if matches := javaURLOutputStreamRe.FindStringSubmatch(text); len(matches) == 3 {
+		if _, ok := state.requests[matches[2]]; ok {
+			state.streams[matches[1]] = matches[2]
+		}
+		return ParsedFunction{}, false
+	}
+	if matches := javaURLStreamWriteRe.FindStringSubmatch(text); len(matches) == 3 {
+		if requestVar := state.streams[matches[1]]; requestVar != "" {
+			state.setBody(requestVar, matches[2])
+		}
+		return ParsedFunction{}, false
+	}
+	if matches := javaURLDirectWriteRe.FindStringSubmatch(text); len(matches) == 3 {
+		state.setBody(matches[1], matches[2])
+		return ParsedFunction{}, false
+	}
+	if matches := javaURLSendRe.FindStringSubmatch(text); len(matches) == 2 {
+		requestVar := matches[1]
+		if state.emitted[requestVar] {
+			return ParsedFunction{}, false
+		}
+		if fn, ok := state.requests[requestVar]; ok {
+			state.emitted[requestVar] = true
+			fn.Filename = statement.File
+			fn.LineNumber = statement.StartLine
+			fn.EndLine = statement.EndLine
+			fn.RawBlock = statement.Text
+			return fn, true
+		}
+	}
+	return ParsedFunction{}, false
+}
+
+func (state *javaURLConnectionHTTPState) setBody(requestVar string, rawLiteral string) {
+	fn, ok := state.requests[requestVar]
+	if !ok {
+		return
+	}
+	body, _ := parseJavaStringLiteral(rawLiteral)
+	fn.Body = body
+	fn.Args["Body"] = body
+	state.requests[requestVar] = fn
+}
+
+func javaURLConnectionStatementLooksOwned(text string) bool {
+	normalized := javaNormalizeStatementText(text)
+	return javaURLAssignRe.MatchString(normalized) ||
+		javaURLOpenInlineRe.MatchString(normalized) ||
+		javaURLOpenVarRe.MatchString(normalized) ||
+		javaURLSetMethodRe.MatchString(normalized) ||
+		javaURLSetHeaderRe.MatchString(normalized) ||
+		javaURLOutputStreamRe.MatchString(normalized) ||
+		javaURLStreamWriteRe.MatchString(normalized) ||
+		javaURLDirectWriteRe.MatchString(normalized) ||
+		javaURLSendRe.MatchString(normalized)
 }
 
 func javaWebToParsedFunction(statement javaStatement, phase string) (ParsedFunction, bool) {

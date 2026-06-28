@@ -548,6 +548,63 @@ public class Actions {
 	}
 }
 
+func TestConvertZipJavaHttpURLConnectionObjectFlowProducesExecutableHTTP(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	addJavaZipFile(t, zw, "JavaURLConnection/JavaURLConnection.usr", `[General]
+Type=Java over HTTP
+ScriptLanguage=JAVA
+RunType=Java-Interpreter
+[Actions]
+Action=Actions.java
+`)
+	addJavaZipFile(t, zw, "JavaURLConnection/Actions.java", `import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+
+public class Actions {
+  public int action() throws Throwable {
+    URL url = new URL("https://example.test/api/orders");
+    HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+    conn.setRequestMethod("POST");
+    conn.setRequestProperty("Content-Type", "application/json");
+    conn.setDoOutput(true);
+    OutputStream os = conn.getOutputStream();
+    os.write("{\"id\":\"{orderId}\"}".getBytes(StandardCharsets.UTF_8));
+    int code = conn.getResponseCode();
+    return code;
+  }
+}`)
+	if err := zw.Close(); err != nil {
+		t.Fatalf("close zip: %v", err)
+	}
+
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if result.Script == nil || result.Script.Protocol != "http" {
+		t.Fatalf("script = %#v, want executable HTTP script", result.Script)
+	}
+	if len(result.Script.Actions) != 1 {
+		t.Fatalf("actions = %#v, want one HTTP request", result.Script.Actions)
+	}
+	action := result.Script.Actions[0]
+	if action.Method != "POST" || action.Target != "/api/orders" {
+		t.Fatalf("action = %#v, want POST /api/orders", action)
+	}
+	if action.Body != `{"id":"{{var.orderid}}"}` {
+		t.Fatalf("body = %q, want templated JSON body", action.Body)
+	}
+	if action.Headers["Content-Type"] != "application/json" || len(action.HeaderList) == 0 {
+		t.Fatalf("headers=%#v header_list=%#v, want ordered content type", action.Headers, action.HeaderList)
+	}
+	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) > 0 {
+		t.Fatalf("ValidateScriptIssues returned %v", issues)
+	}
+}
+
 func TestConvertZipJavaJDBCIdiomsProduceExecutableDatabase(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)

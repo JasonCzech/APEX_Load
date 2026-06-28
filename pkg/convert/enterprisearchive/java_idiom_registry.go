@@ -48,6 +48,9 @@ func mapJavaHTTPOwnedStatement(ctx *javaMapperContext) (bool, error) {
 	if _, ok := javaHTTPClientToParsedFunction(ctx.statement, ctx.phase); ok {
 		return true, nil
 	}
+	if javaURLConnectionStatementLooksOwned(ctx.text) {
+		return true, nil
+	}
 	return false, nil
 }
 
