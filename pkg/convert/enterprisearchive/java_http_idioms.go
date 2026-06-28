@@ -8,7 +8,12 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
-var javaWebCallRe = regexp.MustCompile(`(?i)\bweb\.([A-Za-z_][A-Za-z0-9_]*)\s*\((.*)\)\s*;?\s*$`)
+var (
+	javaWebCallRe             = regexp.MustCompile(`(?i)\bweb\.([A-Za-z_][A-Za-z0-9_]*)\s*\((.*)\)\s*;?\s*$`)
+	javaHTTPBuilderURIRe      = regexp.MustCompile(`(?is)\.uri\s*\(\s*(?:URI\.create\s*\(\s*)?("(?:(?:\\.)|[^"\\])*")`)
+	javaHTTPBodyPublisherRe   = regexp.MustCompile(`(?is)\bofString\s*\(\s*("(?:(?:\\.)|[^"\\])*")`)
+	javaHTTPContentTypeHintRe = regexp.MustCompile(`(?is)\.header\s*\(\s*"Content-Type"\s*,\s*("(?:(?:\\.)|[^"\\])*")`)
+)
 
 func javaHTTPParsedActions(program javaProgram) []*ParsedAction {
 	return javaParsedActionsFor(program, func(statement javaStatement, phase string) (ParsedFunction, bool) {
@@ -75,11 +80,32 @@ func javaHTTPClientToParsedFunction(statement javaStatement, phase string) (Pars
 	if !strings.Contains(lower, "http") {
 		return ParsedFunction{}, false
 	}
+	if url := javaHTTPBuilderURL(text); url != "" {
+		fn := javaHTTPClientParsedFunction(statement, phase, url, javaHTTPMethodFromText(text))
+		if body := javaHTTPBodyPublisherString(text); body != "" {
+			fn.Body = body
+			fn.Args["Body"] = body
+		}
+		if contentType := javaHTTPContentTypeHint(text); contentType != "" {
+			fn.Headers["Content-Type"] = contentType
+		}
+		return fn, true
+	}
 	if !strings.Contains(lower, ".send(") && !strings.Contains(lower, ".execute(") && !strings.Contains(lower, ".openconnection(") {
 		return ParsedFunction{}, false
 	}
-	fn := ParsedFunction{
-		Name:       "java_http_client",
+	if url := firstQuotedURL(text); url != "" {
+		return javaHTTPClientParsedFunction(statement, phase, url, javaHTTPMethodFromText(text)), true
+	}
+	return ParsedFunction{}, false
+}
+
+func javaHTTPClientParsedFunction(statement javaStatement, phase string, url string, method string) ParsedFunction {
+	if method == "" {
+		method = "GET"
+	}
+	return ParsedFunction{
+		Name:       "web_custom_request",
 		StepName:   "Java HTTP Client",
 		Phase:      phase,
 		Filename:   statement.File,
@@ -88,16 +114,9 @@ func javaHTTPClientToParsedFunction(statement javaStatement, phase string) (Pars
 		RawBlock:   statement.Text,
 		Args:       map[string]string{},
 		Headers:    map[string]string{},
-		Method:     "GET",
+		URL:        url,
+		Method:     method,
 	}
-	if url := firstQuotedURL(text); url != "" {
-		fn.Name = "web_custom_request"
-		fn.StepName = "Java HTTP Client"
-		fn.URL = url
-		fn.Method = javaHTTPMethodFromText(text)
-		return fn, true
-	}
-	return ParsedFunction{}, false
 }
 
 func javaParsedFunctionBase(name string, statement javaStatement, phase string, args string) ParsedFunction {
@@ -208,6 +227,35 @@ func javaHTTPMethodFromText(text string) string {
 		}
 	}
 	return "GET"
+}
+
+func javaHTTPBuilderURL(text string) string {
+	match := javaHTTPBuilderURIRe.FindStringSubmatch(text)
+	if len(match) != 2 {
+		return ""
+	}
+	if value, ok := parseJavaStringLiteral(match[1]); ok && isAbsoluteHTTPURL(value) {
+		return value
+	}
+	return ""
+}
+
+func javaHTTPBodyPublisherString(text string) string {
+	match := javaHTTPBodyPublisherRe.FindStringSubmatch(text)
+	if len(match) != 2 {
+		return ""
+	}
+	value, _ := parseJavaStringLiteral(match[1])
+	return value
+}
+
+func javaHTTPContentTypeHint(text string) string {
+	match := javaHTTPContentTypeHintRe.FindStringSubmatch(text)
+	if len(match) != 2 {
+		return ""
+	}
+	value, _ := parseJavaStringLiteral(match[1])
+	return value
 }
 
 func javaEnsureHeaderLists(script *dsl.Script) {
