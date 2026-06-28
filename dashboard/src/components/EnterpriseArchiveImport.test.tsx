@@ -616,6 +616,111 @@ describe('EnterpriseArchiveImport', () => {
     }))
   })
 
+  it('shows and switches generated scripts for multi-script enterprise archive results', async () => {
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValueOnce({
+      scripts: [
+        {
+          name: 'Java HTTP Flow',
+          protocol: 'http',
+          actions: [{ name: 'Open Home', type: 'http_request' }],
+        },
+        {
+          name: 'Java JMS Orders',
+          protocol: 'jms-ibmmq',
+          actions: [{ name: 'Publish Order', type: 'jms_publish' }],
+        },
+        {
+          name: 'Java JDBC Checks',
+          protocol: 'database',
+          actions: [{ name: 'Select Orders', type: 'db_query' }],
+        },
+      ],
+      warnings: [],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [],
+      repair_suggestions: [],
+      summary: {
+        project_file: 'MixedJava.usr',
+        migration_readiness: {
+          score_pct: 100,
+          blocked: false,
+          summary: 'Ready',
+          policy: { block_statuses: ['blocked', 'partial', 'compatibility_only'] },
+        },
+      },
+      stats: {
+        total_functions: 3,
+        converted_actions: 3,
+        extractors: 0,
+        think_times: 0,
+        transactions: 0,
+        skipped: 0,
+      },
+    })
+
+    await act(async () => {
+      root.render(<EnterpriseArchiveImport />)
+    })
+
+    await flushPromises()
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+    if (!fileInput) {
+      return
+    }
+
+    const file = new File(['zip-content'], 'mixed-java.zip', { type: 'application/zip' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [file],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    await clickImportAction(container, 'Validate Only')
+
+    const outputSelector = container.querySelector('[aria-label="Generated scripts"]') as HTMLElement | null
+    expect(outputSelector).not.toBeNull()
+    expect(outputSelector?.textContent).toContain('3 scripts')
+    expect(outputSelector?.textContent).toContain('Java HTTP Flow')
+    expect(outputSelector?.textContent).toContain('http · 1 actions')
+    expect(outputSelector?.textContent).toContain('Java JMS Orders')
+    expect(outputSelector?.textContent).toContain('jms-ibmmq · 1 actions')
+    expect(outputSelector?.textContent).toContain('Java JDBC Checks')
+    expect(outputSelector?.textContent).toContain('database · 1 actions')
+
+    const preview = () => container.querySelector('.script-import-review-preview pre')?.textContent || ''
+    expect(preview()).toContain('"name": "Java HTTP Flow"')
+    expect(preview()).toContain('"protocol": "http"')
+
+    const jmsButton = container.querySelector('button[aria-label="Review generated script Java JMS Orders"]') as HTMLButtonElement | null
+    expect(jmsButton).not.toBeNull()
+    if (!jmsButton) {
+      return
+    }
+
+    await clickButton(jmsButton)
+
+    expect(jmsButton.getAttribute('aria-pressed')).toBe('true')
+    expect(preview()).toContain('"name": "Java JMS Orders"')
+    expect(preview()).toContain('"protocol": "jms-ibmmq"')
+
+    const databaseButton = container.querySelector('button[aria-label="Review generated script Java JDBC Checks"]') as HTMLButtonElement | null
+    expect(databaseButton).not.toBeNull()
+    if (!databaseButton) {
+      return
+    }
+
+    await clickButton(databaseButton)
+
+    expect(databaseButton.getAttribute('aria-pressed')).toBe('true')
+    expect(preview()).toContain('"name": "Java JDBC Checks"')
+    expect(preview()).toContain('"protocol": "database"')
+  })
+
   it('surfaces TrueClient2 compatibility report from Enterprise Script Archive import responses', async () => {
     apiMock.importEnterpriseArchive.mockResolvedValueOnce({
       script: {

@@ -577,6 +577,7 @@ export default function EnterpriseArchiveImport({ projectId, onImported, onEdit,
   const [protocolSupportMatrix, setProtocolSupportMatrix] = useState<EnterpriseArchiveProtocolSupportEntry[]>([])
   const [runtimeCoverageOpen, setRuntimeCoverageOpen] = useState(false)
   const [reviewArtifactSaving, setReviewArtifactSaving] = useState(false)
+  const [selectedResultScriptIndex, setSelectedResultScriptIndex] = useState(0)
 
   const [options, setOptions] = useState<ImportOptions>(DEFAULT_IMPORT_OPTIONS)
   const selectedItem = useMemo(
@@ -622,7 +623,11 @@ export default function EnterpriseArchiveImport({ projectId, onImported, onEdit,
         : convertedFileCount === queuedFileCount
           ? 'Conversion complete.'
           : `${pendingValidationFileCount} archive${pendingValidationFileCount === 1 ? '' : 's'} must pass validation before conversion.`
-  const importedScript = result?.script ?? result?.scripts?.[0] ?? null
+  const resultScripts = useMemo(() => getEnterpriseArchiveResultScripts(result), [result])
+  const activeResultScriptIndex = resultScripts.length > 0
+    ? Math.min(selectedResultScriptIndex, resultScripts.length - 1)
+    : 0
+  const importedScript = resultScripts[activeResultScriptIndex] ?? null
   const detectedProtocol = result?.detected_protocol ?? result?.summary?.detected_protocol ?? null
   const reviewArtifact = result?.review_artifact ?? result?.summary?.review_artifact ?? null
   const executableImport = !detectedProtocol || detectedProtocol.import_mode === 'executable'
@@ -985,6 +990,10 @@ export default function EnterpriseArchiveImport({ projectId, onImported, onEdit,
       cancelled = true
     }
   }, [api])
+
+  useEffect(() => {
+    setSelectedResultScriptIndex(0)
+  }, [result, selectedItemId])
 
   useEffect(() => {
     const sessionId = replayValidationSession?.id
@@ -1774,6 +1783,31 @@ export default function EnterpriseArchiveImport({ projectId, onImported, onEdit,
 
       {result && importedScript && (
         <div className="lr-result">
+          {resultScripts.length > 1 && (
+            <div className="lr-output-selector" aria-label="Generated scripts">
+              <div className="lr-output-selector-header">
+                <strong>Generated Scripts</strong>
+                <span>{resultScripts.length} scripts</span>
+              </div>
+              <div className="lr-output-list">
+                {resultScripts.map((script, index) => (
+                  <button
+                    key={`${script.name || 'script'}:${script.protocol || 'unknown'}:${index}`}
+                    type="button"
+                    className={`lr-output-row ${index === activeResultScriptIndex ? 'active' : ''}`}
+                    aria-pressed={index === activeResultScriptIndex}
+                    aria-label={`Review generated script ${script.name || `Script ${index + 1}`}`}
+                    onClick={() => setSelectedResultScriptIndex(index)}
+                  >
+                    <span className="lr-output-main">
+                      <strong>{script.name || `Generated Script ${index + 1}`}</strong>
+                      <small>{script.protocol || 'unknown'} · {scriptActionCount(script)} actions</small>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <ScriptImportReview
             title={reviewMode === 'validation' ? 'Validation Review' : 'Conversion Complete'}
             subtitle={reviewSubtitle}
