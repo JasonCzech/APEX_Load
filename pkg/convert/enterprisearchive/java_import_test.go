@@ -562,6 +562,7 @@ Action=Actions.java
 
 public class Actions {
   public int action() throws Throwable {
+    Connection conn = DriverManager.getConnection("jdbc:postgresql://db.example.test/orders", "perf_user", "super-secret");
     String sql = "select id, status from orders where id = ?";
     PreparedStatement ps = conn.prepareStatement(sql);
     ps.executeQuery();
@@ -593,6 +594,7 @@ public class Actions {
 	if query == nil || query.Target != "select id, status from orders where id = ?" {
 		t.Fatalf("query action = %#v, want db_query SQL", query)
 	}
+	assertSourceReviewMapping(t, result.SourceReview.Mappings, "java_sql_connect", "config.database.dsn", "review_only")
 	if _, ok := javaActionByType(result.Script.Actions, "db_commit"); !ok {
 		t.Fatalf("actions = %#v, want db_commit", result.Script.Actions)
 	}

@@ -40,6 +40,12 @@ func ConvertDatabase(actions []*ParsedAction, opts ConvertOptions, detected Dete
 	}
 
 	for _, fn := range functions {
+		if strings.EqualFold(strings.TrimSpace(fn.Name), "java_sql_connect") {
+			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "config.database.dsn", "{{secret.database_dsn}}", "config", "review_only", "Java JDBC connection details were redacted to {{secret.database_dsn}}; bind a governed DSN secret before replay.", SourceFunctionSupportReviewOnly))
+			result.Stats.ReviewOnlyFunctions++
+			recordSourceFunctionSupport(result, SourceFunctionSupportReviewOnly)
+			continue
+		}
 		action, ok := convertDatabaseFunction(fn)
 		if !ok {
 			if fallback, mode, fallbackOK := convertSourceFunctionAction(fn); fallbackOK {

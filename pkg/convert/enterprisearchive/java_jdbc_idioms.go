@@ -8,6 +8,7 @@ import (
 var (
 	javaSQLAssignRe      = regexp.MustCompile(`(?i)^\s*(?:final\s+)?String\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+);\s*$`)
 	javaPreparedStmtRe   = regexp.MustCompile(`(?i)^\s*(?:PreparedStatement|java\.sql\.PreparedStatement)?\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*.+?\.prepareStatement\s*\((.+)\)\s*;\s*$`)
+	javaDriverManagerRe  = regexp.MustCompile(`(?i)\bDriverManager\.getConnection\s*\(`)
 	javaStatementExecRe  = regexp.MustCompile(`(?i)\.execute(?:Query|Update)?\s*\((.*)\)\s*;?\s*$`)
 	javaStatementNoArgRe = regexp.MustCompile(`(?i)^([A-Za-z_][A-Za-z0-9_]*)\.execute(?:Query|Update)?\s*\(\s*\)\s*;?\s*$`)
 	javaSetAutoCommitRe  = regexp.MustCompile(`(?i)\.setAutoCommit\s*\(\s*false\s*\)\s*;?\s*$`)
@@ -32,6 +33,9 @@ func javaDatabaseParsedActions(program javaProgram, files map[string]string) []*
 				prepared[strings.TrimSpace(m[1])] = sql
 			}
 			return ParsedFunction{}, false
+		}
+		if javaDriverManagerRe.MatchString(text) {
+			return javaDatabaseFunction(statement, phase, "java_sql_connect", ""), true
 		}
 		if javaSetAutoCommitRe.MatchString(text) {
 			return javaDatabaseFunction(statement, phase, "java_sql_begin", ""), true
