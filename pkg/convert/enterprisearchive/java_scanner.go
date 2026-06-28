@@ -33,7 +33,7 @@ type javaStatement struct {
 	Children  []javaStatement
 }
 
-var javaMethodHeaderRe = regexp.MustCompile(`(?m)(?:^|[\r\n])\s*(?:public|private|protected)?\s*(?:static\s+)?(?:void|int|long|boolean|String|Object|[A-Za-z_][A-Za-z0-9_<>\[\].]*)\s+([A-Za-z_][A-Za-z0-9_]*)\s*\([^;{}]*\)\s*(?:throws\s+[^{;]+)?\s*\{`)
+var javaMethodHeaderRe = regexp.MustCompile(`(?m)(?:^|[\r\n])\s*(?:@[A-Za-z_][A-Za-z0-9_.]*(?:\s*\([^{};]*\))?\s*)*(?:public|private|protected)?\s*(?:(?:static|final|synchronized|native|strictfp|abstract)\s+)*(?:<[^{};()]+>\s*)?[A-Za-z_$][A-Za-z0-9_$.]*(?:\s*<[^{};()]+>)?(?:\s*\[\])*\s+([A-Za-z_][A-Za-z0-9_]*)\s*\([^;{}]*\)\s*(?:throws\s+[^{;]+)?\s*\{`)
 
 func parseJavaFile(filename string, content string) (javaClass, error) {
 	cls := javaClass{

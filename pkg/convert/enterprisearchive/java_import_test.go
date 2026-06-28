@@ -407,6 +407,43 @@ public class Actions {
 	}
 }
 
+func TestConvertZipJavaHTTPParsesAnnotatedGenericHelpers(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	addJavaZipFile(t, zw, "JavaHTTPAnnotated/JavaHTTPAnnotated.usr", `[General]
+Type=Java over HTTP
+ScriptLanguage=JAVA
+RunType=Java-Interpreter
+[Actions]
+Action=Actions.java
+`)
+	addJavaZipFile(t, zw, "JavaHTTPAnnotated/Actions.java", `public class Actions {
+  @Override public int action() throws Throwable {
+    helper();
+    return 0;
+  }
+
+  public <T> T helper() throws Exception {
+    web.url("Home", "URL=https://example.test/home", web.LAST);
+    return null;
+  }
+}`)
+	if err := zw.Close(); err != nil {
+		t.Fatalf("close zip: %v", err)
+	}
+
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if result.Script == nil || result.Script.Protocol != "http" {
+		t.Fatalf("script = %#v, want executable HTTP script", result.Script)
+	}
+	if len(result.Script.Actions) != 1 || result.Script.Actions[0].Method != "GET" || result.Script.Actions[0].Target != "/home" {
+		t.Fatalf("actions = %#v, want helper web.url converted to /home request", result.Script.Actions)
+	}
+}
+
 func TestConvertZipJavaJDBCIdiomsProduceExecutableDatabase(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
