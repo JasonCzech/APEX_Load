@@ -44,8 +44,8 @@ func TestDetectProtocolFromUSRType(t *testing.T) {
 		{name: "template", scriptType: "C Vuser", canonical: "c_vuser", storm: "", mode: ImportModeReviewOnly},
 		{name: "java vuser", scriptType: "Java Vuser", canonical: "java_vuser", storm: "", mode: ImportModeReviewOnly},
 		{name: "java protocols", scriptType: "Java_protocols", canonical: "java_jms_solace", storm: "jms-solace", mode: ImportModeExecutable},
-		{name: "java record replay", scriptType: "Java Record Replay", canonical: "java_vuser", storm: "", mode: ImportModeReviewOnly},
-		{name: "java over http", scriptType: "Java over HTTP", canonical: "java_vuser", storm: "", mode: ImportModeReviewOnly},
+		{name: "java record replay", scriptType: "Java Record Replay", canonical: "java_over_http", storm: "http", mode: ImportModeExecutable},
+		{name: "java over http", scriptType: "Java over HTTP", canonical: "java_over_http", storm: "http", mode: ImportModeExecutable},
 	}
 
 	for _, tt := range tests {
@@ -377,6 +377,47 @@ func TestDetectProtocolJavaVuserFromJavaSourcesWithoutMetadata(t *testing.T) {
 	}, nil, nil)
 	if detected.CanonicalSourceProtocol != "java_vuser" || detected.ImportMode != ImportModeReviewOnly {
 		t.Fatalf("detected = %#v, want java_vuser review_only from .java content evidence", detected)
+	}
+}
+
+func TestDetectProtocolJavaHTTPFromJavaSourcesWithoutMetadata(t *testing.T) {
+	detected := DetectProtocol(map[string]string{
+		"Actions.java": `import lrapi.lr;
+public class Actions {
+    public int action() {
+        web.url("Home", "URL=https://example.test/home", new String[] {});
+        return 0;
+    }
+}
+`,
+	}, nil, nil)
+	if detected.CanonicalSourceProtocol != "java_over_http" || detected.APEXLoadProtocol != "http" || detected.ImportMode != ImportModeExecutable {
+		t.Fatalf("detected = %#v, want executable java_over_http from Java HTTP idioms", detected)
+	}
+	if !containsString(detected.Signals, "Java HTTP API usage in Java Vuser source") {
+		t.Fatalf("signals = %#v, want Java HTTP API usage signal", detected.Signals)
+	}
+}
+
+func TestDetectProtocolJavaJDBCFromJavaSourcesWithoutMetadata(t *testing.T) {
+	detected := DetectProtocol(map[string]string{
+		"Actions.java": `import lrapi.lr;
+import java.sql.PreparedStatement;
+
+public class Actions {
+    public int action() throws Exception {
+        PreparedStatement stmt = conn.prepareStatement("select id from orders");
+        stmt.executeQuery();
+        return 0;
+    }
+}
+`,
+	}, nil, nil)
+	if detected.CanonicalSourceProtocol != "java_jdbc" || detected.APEXLoadProtocol != "database" || detected.ImportMode != ImportModeExecutable {
+		t.Fatalf("detected = %#v, want executable java_jdbc from Java SQL idioms", detected)
+	}
+	if !containsString(detected.Signals, "java.sql API usage in Java Vuser source") {
+		t.Fatalf("signals = %#v, want java.sql API usage signal", detected.Signals)
 	}
 }
 

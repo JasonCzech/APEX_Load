@@ -365,7 +365,7 @@ public class Actions {
 	if result.Script == nil || result.Script.Protocol != "http" {
 		t.Fatalf("script = %#v, want http", result.Script)
 	}
-	if result.DetectedProtocol == nil || result.DetectedProtocol.APEXLoadProtocol != "http" {
+	if result.DetectedProtocol == nil || result.DetectedProtocol.CanonicalSourceProtocol != "java_over_http" || result.DetectedProtocol.APEXLoadProtocol != "http" {
 		t.Fatalf("detected = %#v, want Java HTTP", result.DetectedProtocol)
 	}
 	var home *dsl.Action
@@ -429,6 +429,9 @@ public class Actions {
 	}
 	if result.Script == nil || result.Script.Protocol != "database" {
 		t.Fatalf("script = %#v, want database", result.Script)
+	}
+	if result.DetectedProtocol == nil || result.DetectedProtocol.CanonicalSourceProtocol != "java_jdbc" || result.DetectedProtocol.APEXLoadProtocol != "database" {
+		t.Fatalf("detected = %#v, want Java JDBC", result.DetectedProtocol)
 	}
 	var query *dsl.Action
 	for i := range result.Script.Actions {

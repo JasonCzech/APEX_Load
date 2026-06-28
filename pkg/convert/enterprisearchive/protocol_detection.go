@@ -132,9 +132,9 @@ var protocolTypeAliases = map[string]protocolProfile{
 	"c# .net":                       templateProfile("csharp_dotnet_vuser", "C# .NET Vuser"),
 	"java vuser":                    templateProfile("java_vuser", "Java Vuser"),
 	"java protocols":                javaJMSSolaceProfile(),
-	"java record replay":            templateProfile("java_vuser", "Java Vuser"),
-	"java record/replay":            templateProfile("java_vuser", "Java Vuser"),
-	"java over http":                templateProfile("java_vuser", "Java Vuser"),
+	"java record replay":            javaHTTPProfile(),
+	"java record/replay":            javaHTTPProfile(),
+	"java over http":                javaHTTPProfile(),
 	"vb .net":                       templateProfile("vb_dotnet_vuser", "VB .NET Vuser"),
 	"devweb":                        reviewProfile("devweb", "DevWeb", "Templates Protocol Bundle", "Use the native DevWeb importer for executable conversion."),
 	"jmeter":                        reviewProfile("jmeter", "JMeter", "Templates Protocol Bundle", "Use the native JMeter importer for executable conversion."),
@@ -228,6 +228,10 @@ func profileForType(scriptType string) (protocolProfile, bool) {
 		return externalProfile("sap_gui", "SAP GUI", "Foundation Entitlement", "SAP GUI requires an external SAP GUI runner bridge."), true
 	case strings.Contains(key, "java") && (strings.Contains(key, "protocol") || strings.Contains(key, "jms") || strings.Contains(key, "solace")):
 		return javaJMSSolaceProfile(), true
+	case strings.Contains(key, "java") && strings.Contains(key, "http"):
+		return javaHTTPProfile(), true
+	case strings.Contains(key, "java") && (strings.Contains(key, "jdbc") || strings.Contains(key, "sql") || strings.Contains(key, "database")):
+		return javaJDBCProfile(), true
 	case strings.Contains(key, "odbc") || strings.Contains(key, "database"):
 		return databaseProfile(), true
 	case strings.Contains(key, "web service") || strings.Contains(key, "soap"):
@@ -339,6 +343,10 @@ func profileFromContent(files map[string]string, actions []*ParsedAction) (*prot
 		profile := templateProfile("java_vuser", "Java Vuser")
 		if javaArchiveLooksLikeJMS(archiveText) {
 			profile = javaJMSSolaceProfile()
+		} else if javaLooksLikeHTTP(archiveText) {
+			profile = javaHTTPProfile()
+		} else if javaLooksLikeDatabase(archiveText) {
+			profile = javaJDBCProfile()
 		}
 		return &profile, javaSignals
 	}
@@ -387,11 +395,14 @@ func profileFromContent(files map[string]string, actions []*ParsedAction) (*prot
 
 // javaVuserContentSignals recognizes Java VUser archives from their source
 // files: VuGen Java protocols ship vuser_init.java/Actions.java/vuser_end.java
-// importing lrapi.lr instead of .c action files. A JMS API import is reported
-// as an extra signal so review guidance can point at the native jms protocol.
+// importing lrapi.lr instead of .c action files. Native Java API families are
+// reported as extra signals so detection can name the executable target before
+// ConvertJava performs the final per-statement disposition.
 func javaVuserContentSignals(files map[string]string) ([]string, bool) {
 	signals := make([]string, 0, 2)
 	jms := false
+	http := false
+	database := false
 	names := make([]string, 0, len(files))
 	for name := range files {
 		names = append(names, name)
@@ -413,12 +424,24 @@ func javaVuserContentSignals(files map[string]string) ([]string, bool) {
 		if strings.Contains(content, "javax.jms") || strings.Contains(content, "jakarta.jms") {
 			jms = true
 		}
+		if javaLooksLikeHTTP(content) {
+			http = true
+		}
+		if javaLooksLikeDatabase(content) {
+			database = true
+		}
 	}
 	if len(signals) == 0 {
 		return nil, false
 	}
 	if jms {
 		signals = append(signals, "javax.jms API usage in Java Vuser source")
+	}
+	if http {
+		signals = append(signals, "Java HTTP API usage in Java Vuser source")
+	}
+	if database {
+		signals = append(signals, "java.sql API usage in Java Vuser source")
 	}
 	return signals, true
 }
@@ -540,7 +563,7 @@ func javaArchiveLooksLikeJMS(archiveText string) bool {
 
 func isJavaCompatibleProfile(canonical string) bool {
 	switch canonical {
-	case "java_vuser", "java_jms_solace":
+	case "java_vuser", "java_jms_solace", "java_over_http", "java_jdbc", "java_soap":
 		return true
 	default:
 		return false
@@ -786,6 +809,36 @@ func javaJMSSolaceProfile() protocolProfile {
 			"Replay validation evidence against the target VPN/destination",
 		},
 		Warnings: []string{"Java JMS/Solace imports are generated as JMS DSL but promotion is blocked until a real Solace adapter or governed sidecar runner is configured."},
+	}
+}
+
+func javaHTTPProfile() protocolProfile {
+	return protocolProfile{
+		Canonical:   "java_over_http",
+		DisplayName: "Java Vuser HTTP",
+		APEXLoad:    "http",
+		Bundle:      "Foundation Entitlement",
+		Mode:        ImportModeExecutable,
+		Evidence: []string{
+			"Static Java HTTP idiom recognition",
+			"HTTP replay validation evidence",
+			"Correlation and ordered header review",
+		},
+	}
+}
+
+func javaJDBCProfile() protocolProfile {
+	return protocolProfile{
+		Canonical:   "java_jdbc",
+		DisplayName: "Java Vuser JDBC",
+		APEXLoad:    "database",
+		Bundle:      "Enterprise Database Protocol Bundle",
+		Mode:        ImportModeExecutable,
+		Evidence: []string{
+			"Database DSN secret",
+			"SQL bind data review",
+			"Replay validation evidence against the target database",
+		},
 	}
 }
 
