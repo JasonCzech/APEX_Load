@@ -3,7 +3,7 @@ import { useApi } from '../hooks/useApi'
 import { isDesktopSurface } from '../desktop/desktopBridge'
 import { canUseNativeDialogs, filesFromDroppedPaths, pickFilesViaBridge } from '../desktop/desktopFiles'
 import { useDesktopFileDrop } from '../desktop/useDesktopFileDrop'
-import { type DetectedSourceProtocol, type ImportRepairSuggestion, type EnterpriseArchiveImportResult, type EnterpriseArchiveImportSummary, type EnterpriseArchiveMigrationReadiness, type EnterpriseArchiveProtocolSupportEntry, type EnterpriseArchiveReviewArtifact, type EnterpriseArchiveSupportMatrixEntry, type EnterpriseArchiveSupportMatrixExample, type EnterpriseArchiveSupportMatrixResponse, type SalesforceReview, type TrueClient2CompatReport } from '../types/scriptImports'
+import { type DetectedSourceProtocol, type ImportRepairSuggestion, type EnterpriseArchiveImportResult, type EnterpriseArchiveImportSummary, type EnterpriseArchiveJavaSupportEntry, type EnterpriseArchiveMigrationReadiness, type EnterpriseArchiveProtocolSupportEntry, type EnterpriseArchiveReviewArtifact, type EnterpriseArchiveSupportMatrixEntry, type EnterpriseArchiveSupportMatrixExample, type EnterpriseArchiveSupportMatrixResponse, type SalesforceReview, type TrueClient2CompatReport } from '../types/scriptImports'
 import { type BrowserReplayEvent, type BrowserReplaySession, type StoredScript } from '../types'
 import { type SourceArchiveReview, type ScriptActionDefinition, type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
@@ -575,6 +575,10 @@ export default function EnterpriseArchiveImport({ projectId, onImported, onEdit,
   const [supportMatrixNotes, setSupportMatrixNotes] = useState<string[]>([])
   const [supportMatrixExamples, setSupportMatrixExamples] = useState<EnterpriseArchiveSupportMatrixExample[]>([])
   const [protocolSupportMatrix, setProtocolSupportMatrix] = useState<EnterpriseArchiveProtocolSupportEntry[]>([])
+  const [javaImportSurfaceMatrix, setJavaImportSurfaceMatrix] = useState<EnterpriseArchiveJavaSupportEntry[]>([])
+  const [javaHTTPIdiomMatrix, setJavaHTTPIdiomMatrix] = useState<EnterpriseArchiveJavaSupportEntry[]>([])
+  const [javaJMSIdiomMatrix, setJavaJMSIdiomMatrix] = useState<EnterpriseArchiveJavaSupportEntry[]>([])
+  const [javaJDBCIdiomMatrix, setJavaJDBCIdiomMatrix] = useState<EnterpriseArchiveJavaSupportEntry[]>([])
   const [runtimeCoverageOpen, setRuntimeCoverageOpen] = useState(false)
   const [reviewArtifactSaving, setReviewArtifactSaving] = useState(false)
   const [selectedResultScriptIndex, setSelectedResultScriptIndex] = useState(0)
@@ -655,6 +659,11 @@ export default function EnterpriseArchiveImport({ projectId, onImported, onEdit,
   const supportMatrixSections = summarizeEnterpriseArchiveSupportMatrix(supportMatrix)
   const hasRuntimeCoverage = supportMatrix.length > 0
   const protocolCoverageSections = summarizeEnterpriseArchiveProtocolSupport(protocolSupportMatrix)
+  const javaIdiomSections = [
+    { key: 'http', title: 'HTTP Idioms', items: javaHTTPIdiomMatrix },
+    { key: 'jms', title: 'JMS Idioms', items: javaJMSIdiomMatrix },
+    { key: 'jdbc', title: 'JDBC Idioms', items: javaJDBCIdiomMatrix },
+  ].filter(section => section.items.length > 0)
   const migrationReadiness: EnterpriseArchiveMigrationReadiness | null = reviewSummary?.migration_readiness || null
   const reviewedMigrationPolicy = migrationReadiness?.policy?.block_statuses
     ? buildMigrationPolicyOptions(migrationReadiness.policy.block_statuses)
@@ -975,6 +984,10 @@ export default function EnterpriseArchiveImport({ projectId, onImported, onEdit,
           setSupportMatrixNotes(Array.isArray(response.notes) ? response.notes : [])
           setSupportMatrixExamples(Array.isArray(response.tested_examples) ? response.tested_examples : [])
           setProtocolSupportMatrix(Array.isArray(response.protocol_support_matrix) ? response.protocol_support_matrix : [])
+          setJavaImportSurfaceMatrix(Array.isArray(response.java_import_surface_matrix) ? response.java_import_surface_matrix : [])
+          setJavaHTTPIdiomMatrix(Array.isArray(response.java_http_idiom_matrix) ? response.java_http_idiom_matrix : [])
+          setJavaJMSIdiomMatrix(Array.isArray(response.java_jms_idiom_matrix) ? response.java_jms_idiom_matrix : [])
+          setJavaJDBCIdiomMatrix(Array.isArray(response.java_jdbc_idiom_matrix) ? response.java_jdbc_idiom_matrix : [])
         }
       })
       .catch(() => {
@@ -983,6 +996,10 @@ export default function EnterpriseArchiveImport({ projectId, onImported, onEdit,
           setSupportMatrixNotes([])
           setSupportMatrixExamples([])
           setProtocolSupportMatrix([])
+          setJavaImportSurfaceMatrix([])
+          setJavaHTTPIdiomMatrix([])
+          setJavaJMSIdiomMatrix([])
+          setJavaJDBCIdiomMatrix([])
         }
       })
 
@@ -1733,6 +1750,34 @@ export default function EnterpriseArchiveImport({ projectId, onImported, onEdit,
               </details>
             ))}
           </div>
+          {javaImportSurfaceMatrix.length > 0 && (
+            <div className="lr-warnings" aria-label="java vuser import coverage">
+              <h4>Java Vuser Import Coverage</h4>
+              <p className="coverage-hint">Native Java Vuser lanes are classified below the broad Java Vuser external-runner protocol entry.</p>
+              <ul>
+                {javaImportSurfaceMatrix.map(entry => (
+                  <li key={entry.id}>
+                    <strong>{entry.area}</strong>: {entry.construct} — {formatJavaCoverageStatus(entry)}
+                    {entry.notes ? <>. {entry.notes}</> : null}
+                  </li>
+                ))}
+              </ul>
+              {javaIdiomSections.map(section => (
+                <details key={section.key} data-coverage={`java_${section.key}`}>
+                  <summary>{section.title} ({section.items.length})</summary>
+                  <ul>
+                    {section.items.map(entry => (
+                      <li key={entry.id}>
+                        <strong>{entry.construct}</strong> — {formatJavaCoverageStatus(entry)}
+                        {entry.fields?.length ? <> ({entry.fields.join(', ')})</> : null}
+                        {entry.notes ? <>. {entry.notes}</> : null}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -2693,6 +2738,14 @@ function enterpriseArchiveProtocolSupportDetail(entry: EnterpriseArchiveProtocol
     entry.runner_requirement ? `Requires ${entry.runner_requirement}.` : '',
     entry.recommended_workflow,
   ].filter(Boolean).join(' ')
+}
+
+function formatJavaCoverageStatus(entry: EnterpriseArchiveJavaSupportEntry): string {
+  return [
+    formatRuntimeSettingStatusLabel(entry.status),
+    entry.execution_status ? formatRuntimeSettingStatusLabel(entry.execution_status) : '',
+    entry.review_required ? 'Review Required' : '',
+  ].filter(Boolean).join(' / ')
 }
 
 function enterpriseArchiveProtocolCoverageHint(mode: string): string {

@@ -388,6 +388,44 @@ describe('EnterpriseArchiveImport', () => {
         { id: 'mapi', protocol: 'mapi', display_name: 'MAPI', status: 'review_only', notes: 'Preserved for review.' },
         { id: 'sap_gui', protocol: 'sap_gui', display_name: 'SAP GUI', status: 'external_runner', runner_requirement: 'External SAP GUI runner bridge' },
       ],
+      java_import_surface_matrix: [
+        {
+          id: 'java-web-http',
+          area: 'HTTP',
+          construct: 'web.* / HttpURLConnection / HttpClient / Apache HttpClient',
+          status: 'supported',
+          execution_status: 'executable',
+          fields: ['url', 'method', 'headers', 'body'],
+          notes: 'Recognized Java-over-HTTP idioms convert through the native HTTP path.',
+        },
+        {
+          id: 'java-jdbc',
+          area: 'Database',
+          construct: 'java.sql DriverManager/Connection/PreparedStatement',
+          status: 'supported',
+          execution_status: 'executable',
+          fields: ['sql', 'query', 'exec'],
+          notes: 'Statically recoverable JDBC statements are delegated to the database importer.',
+        },
+        {
+          id: 'java-no-runtime-surfaces',
+          area: 'Review',
+          construct: 'RMI, EJB, CORBA, SAP GUI Java, Jacada, Oracle NCA, Tuxedo',
+          status: 'review_only',
+          execution_status: 'not_executable',
+          review_required: true,
+          notes: 'No-runtime Java middleware surfaces receive deterministic named review dispositions.',
+        },
+      ],
+      java_http_idiom_matrix: [
+        { id: 'java-web-custom-request', area: 'HTTP', construct: 'web.customRequest', status: 'supported', execution_status: 'executable', fields: ['name', 'URL', 'Method', 'Body'], notes: 'Preserves ordered header_list.' },
+      ],
+      java_jms_idiom_matrix: [
+        { id: 'java-jms-publish-consume', area: 'JMS', construct: 'producer.send / consumer.receive', status: 'supported', execution_status: 'executable', fields: ['jms_publish', 'jms_consume'], notes: 'Mapped to native JMS actions.' },
+      ],
+      java_jdbc_idiom_matrix: [
+        { id: 'java-jdbc-query', area: 'JDBC', construct: 'PreparedStatement.executeQuery', status: 'supported', execution_status: 'executable', fields: ['select_sql'], notes: 'Static SELECT SQL becomes db_query.' },
+      ],
     })
 
     await act(async () => {
@@ -419,6 +457,23 @@ describe('EnterpriseArchiveImport', () => {
     const externalRunnerDetails = coverage?.querySelector('details[data-coverage="external_runner_required"]') as HTMLDetailsElement | null
     expect(externalRunnerDetails?.textContent).toContain('SAP GUI')
     expect(externalRunnerDetails?.textContent).toContain('Requires External SAP GUI runner bridge.')
+
+    const javaCoverage = coverage?.querySelector('[aria-label="java vuser import coverage"]') as HTMLElement | null
+    expect(javaCoverage).not.toBeNull()
+    expect(javaCoverage?.textContent).toContain('Java Vuser Import Coverage')
+    expect(javaCoverage?.textContent).toContain('HTTP: web.* / HttpURLConnection / HttpClient / Apache HttpClient')
+    expect(javaCoverage?.textContent).toContain('Supported / Executable')
+    expect(javaCoverage?.textContent).toContain('Database: java.sql DriverManager/Connection/PreparedStatement')
+    expect(javaCoverage?.textContent).toContain('Review: RMI, EJB, CORBA, SAP GUI Java, Jacada, Oracle NCA, Tuxedo')
+    expect(javaCoverage?.textContent).toContain('Review Only / Not Executable / Review Required')
+
+    const javaHTTPDetails = coverage?.querySelector('details[data-coverage="java_http"]') as HTMLDetailsElement | null
+    const javaJMSDetails = coverage?.querySelector('details[data-coverage="java_jms"]') as HTMLDetailsElement | null
+    const javaJDBCDetails = coverage?.querySelector('details[data-coverage="java_jdbc"]') as HTMLDetailsElement | null
+    expect(javaHTTPDetails?.textContent).toContain('web.customRequest')
+    expect(javaHTTPDetails?.textContent).toContain('Preserves ordered header_list.')
+    expect(javaJMSDetails?.textContent).toContain('producer.send / consumer.receive')
+    expect(javaJDBCDetails?.textContent).toContain('PreparedStatement.executeQuery')
   })
 
   it('imports a zip and saves the converted script', async () => {

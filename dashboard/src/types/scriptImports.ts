@@ -797,6 +797,21 @@ export interface EnterpriseArchiveSupportMatrixResponse {
   notes?: string[]
   tested_examples?: EnterpriseArchiveSupportMatrixExample[]
   protocol_support_matrix?: EnterpriseArchiveProtocolSupportEntry[]
+  java_import_surface_matrix?: EnterpriseArchiveJavaSupportEntry[]
+  java_http_idiom_matrix?: EnterpriseArchiveJavaSupportEntry[]
+  java_jms_idiom_matrix?: EnterpriseArchiveJavaSupportEntry[]
+  java_jdbc_idiom_matrix?: EnterpriseArchiveJavaSupportEntry[]
+}
+
+export interface EnterpriseArchiveJavaSupportEntry {
+  id: string
+  area: string
+  construct: string
+  status: string
+  execution_status: string
+  review_required?: boolean
+  fields?: string[]
+  notes?: string
 }
 
 export interface OracleEBusinessReviewFile {
