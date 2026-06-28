@@ -66,6 +66,7 @@ clients-release: controller desktop-release
 
 java-vuser-runner:
 	mkdir -p bin/java_vuser
+	rm -rf bin/java_vuser/classes bin/java_vuser/apexload-java-vuser-runner.jar
 	javac -d bin/java_vuser/classes runners/java_vuser/lrapi/lr.java runners/java_vuser/Harness.java
 	jar --create --file bin/java_vuser/apexload-java-vuser-runner.jar -C bin/java_vuser/classes .
 
