@@ -68,7 +68,11 @@ func mapJavaSymbolicStateStatement(ctx *javaMapperContext) (bool, error) {
 }
 
 func mapJavaInertStatement(ctx *javaMapperContext) (bool, error) {
-	return isJavaInertStatement(ctx.text), nil
+	if !isJavaInertStatement(ctx.text) {
+		return false, nil
+	}
+	appendJavaMapping(ctx.result, ctx.statement, "", statementName(ctx.statement), "noop", "converted", "Java statement has no executable replay effect and was recorded as an explicit no-op disposition.", SourceFunctionSupportNativeNoop)
+	return true, nil
 }
 
 func mapJavaJNDIConfigStatement(ctx *javaMapperContext) (bool, error) {

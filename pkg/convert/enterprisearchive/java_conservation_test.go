@@ -91,6 +91,47 @@ public class Actions {
 	}
 }
 
+func TestJavaStatementLaneConservesEveryLeafStatementDisposition(t *testing.T) {
+	files := map[string]string{
+		"Actions.java": `import javax.jms.*;
+
+public class Actions {
+  public int action() throws Throwable {
+    String body = "order={orderId}";
+    Queue q = session.createQueue("orders.in");
+    TextMessage msg = session.createTextMessage(body);
+    msg.setStringProperty("source", "lr");
+    producer.send(q, msg);
+    session.commit();
+    return 0;
+  }
+}`,
+	}
+	program, warnings := parseJavaProgram(files)
+	if len(warnings) > 0 {
+		t.Fatalf("parse warnings = %v", warnings)
+	}
+	profile := classifyJavaArchive(program, &ProjectConfig{ScriptType: "Java Vuser"}, files)
+	result, err := convertJavaStatementLane(files, ConvertOptions{}, DetectedProtocol{
+		CanonicalSourceProtocol: "java_vuser",
+		APEXLoadProtocol:        "jms-solace",
+		ImportMode:              ImportModeExecutable,
+	}, program, nil, profile, false)
+	if err != nil {
+		t.Fatalf("convertJavaStatementLane returned error: %v", err)
+	}
+	if result.SourceReview == nil {
+		t.Fatal("source review is nil, want one disposition per Java leaf statement")
+	}
+	counts := javaConservationMappingCounts(result.SourceReview.Mappings)
+	for _, statement := range javaConservationLeafStatements(program) {
+		key := javaConservationStatementKey{file: statement.File, startLine: statement.StartLine, endLine: statement.EndLine}
+		if counts[key] != 1 {
+			t.Fatalf("statement %s:%d-%d %q mapped %d time(s), want exactly one disposition; mappings=%#v", statement.File, statement.StartLine, statement.EndLine, statement.Text, counts[key], result.SourceReview.Mappings)
+		}
+	}
+}
+
 func assertNoGenericJavaFallbackDispositions(t *testing.T, result *ConvertResult) {
 	t.Helper()
 	if result == nil {
@@ -127,4 +168,43 @@ func javaConservationActions(actions []dsl.Action) []dslActionForJavaConservatio
 		out = append(out, item)
 	}
 	return out
+}
+
+type javaConservationStatementKey struct {
+	file      string
+	startLine int
+	endLine   int
+}
+
+func javaConservationLeafStatements(program javaProgram) []javaStatement {
+	out := make([]javaStatement, 0)
+	for _, phase := range []string{"init", "action", "teardown"} {
+		for _, statement := range javaLifecycleStatements(program, phase) {
+			out = append(out, javaConservationLeafStatementList(statement)...)
+		}
+	}
+	return out
+}
+
+func javaConservationLeafStatementList(statement javaStatement) []javaStatement {
+	if statement.Kind != "block" {
+		return []javaStatement{statement}
+	}
+	out := make([]javaStatement, 0)
+	for _, child := range statement.Children {
+		out = append(out, javaConservationLeafStatementList(child)...)
+	}
+	return out
+}
+
+func javaConservationMappingCounts(mappings []SourceReviewMapping) map[javaConservationStatementKey]int {
+	counts := map[javaConservationStatementKey]int{}
+	for _, mapping := range mappings {
+		if mapping.SourceFile == "" || mapping.StartLine == 0 {
+			continue
+		}
+		key := javaConservationStatementKey{file: mapping.SourceFile, startLine: mapping.StartLine, endLine: mapping.EndLine}
+		counts[key]++
+	}
+	return counts
 }
