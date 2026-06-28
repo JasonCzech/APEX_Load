@@ -319,3 +319,303 @@ public class Actions {
 		t.Fatalf("ValidateScriptIssues returned %v", issues)
 	}
 }
+
+func TestConvertZipJavaWebIdiomsProduceExecutableHTTP(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	addJavaZipFile(t, zw, "JavaHTTP/JavaHTTP.usr", `[General]
+Type=Java over HTTP
+ScriptLanguage=JAVA
+RunType=Java-Interpreter
+[Actions]
+Action=Actions.java
+`)
+	addJavaZipFile(t, zw, "JavaHTTP/Actions.java", `import lrapi.lr;
+
+public class Actions {
+  public int action() throws Throwable {
+    web.addHeader("X-Trace", "abc-123");
+    web.url("Home", "URL=https://example.test/app/home", web.LAST);
+    web.customRequest("Create", "URL=https://example.test/api/orders", "Method=POST", "Body={\"id\":\"{orderId}\"}", web.LAST);
+    return 0;
+  }
+}`)
+	if err := zw.Close(); err != nil {
+		t.Fatalf("close zip: %v", err)
+	}
+
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if result.Script == nil || result.Script.Protocol != "http" {
+		t.Fatalf("script = %#v, want http", result.Script)
+	}
+	if result.DetectedProtocol == nil || result.DetectedProtocol.APEXLoadProtocol != "http" {
+		t.Fatalf("detected = %#v, want Java HTTP", result.DetectedProtocol)
+	}
+	var home *dsl.Action
+	var create *dsl.Action
+	for i := range result.Script.Actions {
+		switch result.Script.Actions[i].Target {
+		case "/app/home":
+			home = &result.Script.Actions[i]
+		case "/api/orders":
+			create = &result.Script.Actions[i]
+		}
+	}
+	if home == nil || home.Method != "GET" || home.Target != "/app/home" {
+		t.Fatalf("home action = %#v, want GET /app/home", home)
+	}
+	if got := home.Headers["X-Trace"]; got != "abc-123" {
+		t.Fatalf("home headers = %#v, want X-Trace", home.Headers)
+	}
+	if len(home.HeaderList) == 0 {
+		t.Fatalf("home header_list is empty; headers=%#v", home.Headers)
+	}
+	if create == nil || create.Method != "POST" || create.Target != "/api/orders" {
+		t.Fatalf("create action = %#v, want POST /api/orders", create)
+	}
+	if create.Body != `{"id":"{{var.orderid}}"}` {
+		t.Fatalf("create body = %q, want template-converted body", create.Body)
+	}
+	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) > 0 {
+		t.Fatalf("ValidateScriptIssues returned %v", issues)
+	}
+}
+
+func TestConvertZipJavaJDBCIdiomsProduceExecutableDatabase(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	addJavaZipFile(t, zw, "JavaDB/JavaDB.usr", `[General]
+Type=Java Vuser
+ScriptLanguage=JAVA
+RunType=Java-Interpreter
+[Actions]
+Action=Actions.java
+`)
+	addJavaZipFile(t, zw, "JavaDB/Actions.java", `import java.sql.*;
+
+public class Actions {
+  public int action() throws Throwable {
+    String sql = "select id, status from orders where id = ?";
+    PreparedStatement ps = conn.prepareStatement(sql);
+    ps.executeQuery();
+    conn.commit();
+    return 0;
+  }
+}`)
+	if err := zw.Close(); err != nil {
+		t.Fatalf("close zip: %v", err)
+	}
+
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if result.Script == nil || result.Script.Protocol != "database" {
+		t.Fatalf("script = %#v, want database", result.Script)
+	}
+	var query *dsl.Action
+	for i := range result.Script.Actions {
+		if result.Script.Actions[i].Type == "db_query" {
+			query = &result.Script.Actions[i]
+			break
+		}
+	}
+	if query == nil || query.Target != "select id, status from orders where id = ?" {
+		t.Fatalf("query action = %#v, want db_query SQL", query)
+	}
+	if _, ok := javaActionByType(result.Script.Actions, "db_commit"); !ok {
+		t.Fatalf("actions = %#v, want db_commit", result.Script.Actions)
+	}
+	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) > 0 {
+		t.Fatalf("ValidateScriptIssues returned %v", issues)
+	}
+}
+
+func TestConvertZipJavaMixedHTTPAndJDBCSplitsScripts(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	addJavaZipFile(t, zw, "JavaMixed/JavaMixed.usr", `[General]
+Type=Java Vuser
+ScriptLanguage=JAVA
+RunType=Java-Interpreter
+[Actions]
+Action=Actions.java
+`)
+	addJavaZipFile(t, zw, "JavaMixed/Actions.java", `import lrapi.lr;
+import java.sql.*;
+
+public class Actions {
+  public int action() throws Throwable {
+    web.url("Home", "URL=https://example.test/home", web.LAST);
+    PreparedStatement ps = conn.prepareStatement("select 1");
+    ps.executeQuery();
+    return 0;
+  }
+}`)
+	if err := zw.Close(); err != nil {
+		t.Fatalf("close zip: %v", err)
+	}
+
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if len(result.Scripts) < 2 {
+		t.Fatalf("scripts = %#v, want split HTTP + database scripts", result.Scripts)
+	}
+	protocols := map[string]bool{}
+	for _, script := range result.Scripts {
+		protocols[script.Protocol] = true
+	}
+	if !protocols["http"] || !protocols["database"] {
+		t.Fatalf("protocols = %#v, want http and database", protocols)
+	}
+}
+
+func TestConvertZipJavaJMSInfersProviderAndTopicDestination(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	addJavaZipFile(t, zw, "JavaMQ/JavaMQ.usr", `[General]
+Type=Java Vuser
+ScriptLanguage=JAVA
+RunType=Java-Interpreter
+[Actions]
+Action=Actions.java
+`)
+	addJavaZipFile(t, zw, "JavaMQ/Actions.java", `import javax.jms.*;
+import com.ibm.mq.jms.MQTopicConnectionFactory;
+
+public class Actions {
+  public int action() throws Throwable {
+    Topic topic = session.createTopic("prices.topic");
+    TextMessage msg = session.createTextMessage("price={price}");
+    producer.send(topic, msg);
+    return 0;
+  }
+}`)
+	if err := zw.Close(); err != nil {
+		t.Fatalf("close zip: %v", err)
+	}
+
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if result.Script == nil || result.Script.Protocol != "jms-ibmmq" {
+		t.Fatalf("script = %#v, want jms-ibmmq", result.Script)
+	}
+	if result.Script.Config.JMS.Provider != "ibmmq" || result.Script.Config.JMS.DestinationType != "topic" {
+		t.Fatalf("jms config = %#v, want IBM MQ topic", result.Script.Config.JMS)
+	}
+	publish, ok := javaActionByType(result.Script.Actions, "jms_publish")
+	if !ok {
+		t.Fatalf("actions = %#v, want jms_publish", result.Script.Actions)
+	}
+	if publish.Target != "prices.topic" || publish.Body != "price={{var.price}}" {
+		t.Fatalf("publish action = %#v, want topic target and templated body", publish)
+	}
+}
+
+func TestConvertZipJavaSOAPWithRecoverableEnvelopeProducesHTTP(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	addJavaZipFile(t, zw, "JavaSOAP/JavaSOAP.usr", `[General]
+Type=Java Vuser
+ScriptLanguage=JAVA
+RunType=Java-Interpreter
+[Actions]
+Action=Actions.java
+`)
+	addJavaZipFile(t, zw, "JavaSOAP/Actions.java", `import javax.xml.soap.*;
+
+public class Actions {
+  public int action() throws Throwable {
+    String endpoint = "https://example.test/services/order";
+    String soapEnvelope = "<soapenv:Envelope><soapenv:Body><order>{orderId}</order></soapenv:Body></soapenv:Envelope>";
+    SOAPMessage message = null;
+    SOAPConnection connection = SOAPConnectionFactory.newInstance().createConnection();
+    connection.call(message, endpoint);
+    return 0;
+  }
+}`)
+	if err := zw.Close(); err != nil {
+		t.Fatalf("close zip: %v", err)
+	}
+
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if result.Script == nil || result.Script.Protocol != "soap" {
+		t.Fatalf("script = %#v, want native SOAP transport", result.Script)
+	}
+	if result.DetectedProtocol == nil || result.DetectedProtocol.CanonicalSourceProtocol != "java_soap" {
+		t.Fatalf("detected = %#v, want java_soap", result.DetectedProtocol)
+	}
+	if len(result.Script.Actions) != 1 {
+		t.Fatalf("actions = %#v, want one SOAP HTTP request", result.Script.Actions)
+	}
+	action := result.Script.Actions[0]
+	if action.Method != "POST" || action.Target != "/services/order" {
+		t.Fatalf("action = %#v, want POST /services/order SOAP request", action)
+	}
+	if action.Body != "<soapenv:Envelope><soapenv:Body><order>{{var.orderid}}</order></soapenv:Body></soapenv:Envelope>" {
+		t.Fatalf("body = %q, want templated SOAP envelope", action.Body)
+	}
+	if action.Headers["Content-Type"] != "text/xml" || len(action.HeaderList) == 0 {
+		t.Fatalf("headers = %#v header_list=%#v, want text/xml with header_list", action.Headers, action.HeaderList)
+	}
+}
+
+func TestConvertZipJavaNoRuntimeSurfacesUseNamedReviewDispositions(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	addJavaZipFile(t, zw, "JavaReview/JavaReview.usr", `[General]
+Type=Java Vuser
+ScriptLanguage=JAVA
+RunType=Java-Interpreter
+[Actions]
+Action=Actions.java
+`)
+	addJavaZipFile(t, zw, "JavaReview/Actions.java", `import javax.ejb.EJBHome;
+import org.omg.CORBA.ORB;
+import javax.xml.ws.Service;
+
+public class Actions {
+  public int action() throws Throwable {
+    javax.ejb.EJBHome home = null;
+    org.omg.CORBA.ORB orb = org.omg.CORBA.ORB.init(new String[0], null);
+    Object remote = javax.naming.Naming.lookup("rmi://example.test/service");
+    javax.xml.soap.SOAPMessage msg = null;
+    return 0;
+  }
+}`)
+	if err := zw.Close(); err != nil {
+		t.Fatalf("close zip: %v", err)
+	}
+
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if result.DetectedProtocol == nil || result.DetectedProtocol.ImportMode != ImportModeReviewOnly {
+		t.Fatalf("detected = %#v, want review-only named dispositions", result.DetectedProtocol)
+	}
+	reasons := map[string]bool{}
+	for _, action := range result.Script.Actions {
+		if action.Type != "source_review" || action.Metadata == nil {
+			continue
+		}
+		if reason, ok := action.Metadata["review_reason"].(string); ok {
+			reasons[reason] = true
+		}
+	}
+	for _, reason := range []string{"ejb_review", "corba_review", "rmi_java_review", "soap_java_review"} {
+		if !reasons[reason] {
+			t.Fatalf("review reasons = %#v, missing %s", reasons, reason)
+		}
+	}
+}

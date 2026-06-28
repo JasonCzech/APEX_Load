@@ -4,13 +4,13 @@
 
 Evaluation of the complete published OpenText/Micro Focus VuGen 26.1 Java Vuser **lr API** (the `lrapi.lr` class) against the APEX Load conversion engine (`pkg/convert/enterprisearchive`). Source: VuGen Function Reference, "Alphabetical Listing - Java Utility Functions".
 
-A Java Vuser script is arbitrary Java, not a closed library — so this matrix covers the **closed `lr` API** only. Everything else (custom logic, RMI/EJB, HTTP idioms) is routed to the governed `java_vuser_run` sidecar that executes the real Java, or preserved for review.
+A Java Vuser script is arbitrary Java, not a closed library — so this matrix covers the **closed `lr` API** only. Java-over-HTTP, JMS, JDBC, SOAP, and no-runtime Java middleware families are reported separately by the enterprise support-matrix endpoint. Arbitrary custom Java remains governed sidecar opt-in or named review; it is never fabricated as native behavior.
 
-**Total published lr methods:** 53 (40 shared with the C `lr_*` library, 13 Java-only)
+**Total tracked lr methods:** 59 (shared C `lr_*` baseline plus Java-only/alias supplement)
 
 | Disposition | Count | Meaning |
 |---|---|---|
-| `executable` | 34 | Translated to an executable DSL action or config mapping. |
+| `executable` | 40 | Translated to an executable DSL action or config mapping. |
 | `native_noop` | 3 | Preserved as a no-op (no replay effect in APEX Load). |
 | `review_only` | 14 | Preserved in the import-review artifact; no APEX equivalent, not executed. |
 | `external_required` | 2 | Needs an external provider (secret manager) before replay. |
@@ -29,6 +29,7 @@ Every published lr method resolves to one of the dispositions above — none fal
 | `lr.deserialize` | `lr_deserialize` | parameter | `review_only` | import review | Java object deserialization has no DSL equivalent. |
 | `lr.enable_redirection` | `lr_enable_redirection` | runtime | `native_noop` | native no-op | Java stdout/stderr log redirection; no replay effect. |
 | `lr.encrypt_ex` | `lr_encrypt_ex` | parameter | `review_only` | import review | Encryption helper; preserved for review. |
+| `lr.end_sub_trans` | `lr_end_sub_trans` | transaction | `executable` | source_transaction action | Closes a Java sub-transaction alias. |
 | `lr.end_sub_transaction` | `lr_end_sub_transaction` | transaction | `executable` | source_transaction action | Closes a sub-transaction; feeds transaction markers. |
 | `lr.end_timer` | `lr_end_timer` | timer | `executable` | source_timer action | Stops a named timer. |
 | `lr.end_transaction` | `lr_end_transaction` | transaction | `executable` | source_transaction action | Closes a transaction; feeds Stats.Transactions. |
@@ -47,6 +48,9 @@ Every published lr method resolves to one of the dispositions above — none fal
 | `lr.get_object` | `lr_get_object` | parameter | `review_only` | import review | Returns a Java runtime object; no DSL equivalent. |
 | `lr.get_scenario_id` | `lr_get_scenario_id` | info | `executable` | source_parameter action | Informational getter (scenario id). |
 | `lr.get_transaction_duration` | `lr_get_transaction_duration` | transaction | `executable` | source_transaction action | Reads a transaction's duration. |
+| `lr.get_transaction_status` | `lr_get_transaction_status` | transaction | `executable` | source_transaction action | Reads a transaction's status. |
+| `lr.get_transaction_think_time` | `lr_get_transaction_think_time` | transaction | `executable` | source_transaction action | Reads a transaction's think time. |
+| `lr.get_transaction_wasted_time` | `lr_get_transaction_wasted_time` | transaction | `executable` | source_transaction action | Reads a transaction's wasted time. |
 | `lr.get_vuser_id` | `lr_get_vuser_id` | info | `executable` | source_parameter action | Informational getter (Vuser id). |
 | `lr.log` | `lr_log` | message | `executable` | source_message action | General Java log message. |
 | `lr.log_message` | `lr_log_message` | message | `executable` | source_message action | Log-only message. |
@@ -64,6 +68,7 @@ Every published lr method resolves to one of the dispositions above — none fal
 | `lr.set_debug_message` | `lr_set_debug_message` | message | `executable` | source_message action | Sets the debug message level. |
 | `lr.set_transaction` | `lr_set_transaction` | transaction | `executable` | source_transaction action | Programmatic transaction with duration/status. |
 | `lr.set_transaction_status` | `lr_set_transaction_status` | transaction | `executable` | source_transaction action | Sets the current transaction status. |
+| `lr.sleep` | `lr_sleep` | runtime | `executable` | source_runtime action | Sleeps the Java Vuser thread. |
 | `lr.start_sub_transaction` | `lr_start_sub_transaction` | transaction | `executable` | source_transaction action | Opens a sub-transaction. |
 | `lr.start_timer` | `lr_start_timer` | timer | `executable` | source_timer action | Starts a named timer. |
 | `lr.start_transaction` | `lr_start_transaction` | transaction | `executable` | source_transaction action | Opens a transaction; feeds Stats.Transactions + grouping. |
@@ -72,3 +77,4 @@ Every published lr method resolves to one of the dispositions above — none fal
 | `lr.user_data_point` | `lr_user_data_point` | metric | `executable` | source_metric action | Custom data point. |
 | `lr.value_check` | `lr_value_check` | parameter | `review_only` | import review | Value verification has no positional DSL assertion target. |
 | `lr.vuser_status_message` | `lr_vuser_status_message` | message | `executable` | source_message action | Vuser status-area message. |
+| `lr.wasted_time` | `lr_wasted_time` | transaction | `executable` | source_transaction action | Records wasted time. |

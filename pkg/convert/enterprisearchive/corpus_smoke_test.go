@@ -67,11 +67,22 @@ func TestPinnedLRScriptsCorpusSmoke(t *testing.T) {
 					counts[result.DetectedProtocol.CanonicalSourceProtocol]++
 					assertCorpusProtocolPosture(t, dir, result)
 				}
+				for _, script := range result.effectiveScripts() {
+					if script == nil {
+						continue
+					}
+					switch script.Protocol {
+					case "jms-solace":
+						counts["java_jms_solace"]++
+					case "java_vuser":
+						counts["java_vuser"]++
+					}
+				}
 			}
 		})
 	}
 
-	for _, key := range []string{"devweb", "jmeter", "web_http_html", "soap", "sap_web", "sap_gui", "rdp", "rte", "truclient_web", "truclient_mobile_web", "truclient_native_mobile"} {
+	for _, key := range []string{"devweb", "jmeter", "web_http_html", "soap", "sap_web", "sap_gui", "rdp", "rte", "truclient_web", "truclient_mobile_web", "truclient_native_mobile", "java_vuser", "java_jms_solace"} {
 		if counts[key] == 0 {
 			t.Fatalf("corpus coverage counts = %#v, missing %s", counts, key)
 		}
@@ -150,6 +161,14 @@ func assertCorpusProtocolPosture(t *testing.T, dir string, result *ConvertResult
 		assert("rte", ImportModeExternalRunnerRequired, false)
 	case strings.Contains(path, "truclient - native mobile"):
 		assert("truclient_native_mobile", ImportModeExternalRunnerRequired, false)
+	case strings.Contains(path, "java") && strings.Contains(path, "solace"):
+		if result.Script == nil || result.Script.Protocol != "jms-solace" {
+			t.Fatalf("script = %#v, want jms-solace for Java Solace corpus entry", result.Script)
+		}
+	case strings.Contains(path, "java"):
+		if result.DetectedProtocol.CanonicalSourceProtocol != "java_vuser" && result.DetectedProtocol.CanonicalSourceProtocol != "java_over_http" && result.DetectedProtocol.CanonicalSourceProtocol != "java_jdbc" {
+			t.Fatalf("detected protocol = %#v, want Java Vuser/HTTP/JDBC corpus posture", result.DetectedProtocol)
+		}
 	case strings.Contains(path, "truclient - web"):
 		assert("truclient_web", ImportModeReviewOnly, false)
 	case strings.Contains(path, "truclient - mobile web"):

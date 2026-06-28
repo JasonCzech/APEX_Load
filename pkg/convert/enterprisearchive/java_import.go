@@ -34,6 +34,9 @@ type javaImportState struct {
 	jmsActions         int
 	configReview       int
 	statementCount     int
+	profile            JavaProfile
+	skipHTTP           bool
+	skipDatabase       bool
 
 	// recognizedLRActions counts lr.* methods that resolved to a documented
 	// disposition (so a fully-classified non-JMS lr script can be reported as
@@ -47,27 +50,16 @@ type javaImportState struct {
 	thinkTimes            []float64
 }
 
-func ConvertJava(files map[string]string, opts ConvertOptions, detected DetectedProtocol) (*ConvertResult, error) {
+func ConvertJava(files map[string]string, opts ConvertOptions, detected DetectedProtocol, projectConfig *ProjectConfig) (*ConvertResult, error) {
 	program, parseWarnings := parseJavaProgram(files)
+	profile := classifyJavaArchive(program, projectConfig, files)
+	if opts.UseMaskedBodySecretReferences == false {
+		opts.UseMaskedBodySecretReferences = true
+	}
 	result := &ConvertResult{
 		DetectedProtocol: &detected,
 		Warnings:         append([]string(nil), detected.Warnings...),
-		Script: &dsl.Script{
-			Name:          convertutil.FirstNonEmpty(opts.ScriptName, "Converted_Java_Vuser_JMS_Script"),
-			Version:       "1.0.0",
-			Protocol:      "jms-solace",
-			GeneratedBy:   "apexload-enterprise-script-archive-java-importer",
-			GeneratedFrom: "enterprise_script_archive",
-			Config: dsl.ScriptConfig{
-				JMS: dsl.JMSConfig{
-					Provider:        "solace",
-					DestinationType: "queue",
-					TimeoutMs:       5000,
-					Mock:            true,
-				},
-			},
-			Actions: make([]dsl.Action, 0),
-		},
+		Script:           newJavaScriptForSurface(opts, profile, profile.Primary),
 	}
 	result.Warnings = append(result.Warnings, parseWarnings...)
 
@@ -80,7 +72,112 @@ func ConvertJava(files map[string]string, opts ConvertOptions, detected Detected
 		return result, nil
 	}
 
-	state := &javaImportState{env: newJavaStringEnv()}
+	var laneResults []*ConvertResult
+	if profile.Surfaces[javaSurfaceHTTP] {
+		if httpActions := javaHTTPParsedActions(program); len(flattenParsedFunctions(httpActions)) > 0 {
+			httpResult, err := Convert(httpActions, opts)
+			if err != nil {
+				return nil, err
+			}
+			if httpResult != nil && httpResult.Script != nil {
+				httpDetected := detected
+				httpDetected.CanonicalSourceProtocol = "java_over_http"
+				httpDetected.APEXLoadProtocol = "http"
+				httpDetected.ImportMode = ImportModeExecutable
+				httpDetected.DisplayName = "Java Vuser HTTP"
+				httpResult.DetectedProtocol = &httpDetected
+				httpResult.Script.Name = convertutil.FirstNonEmpty(opts.ScriptName, "Converted_Java_HTTP")
+				httpResult.Script.GeneratedBy = "apexload-enterprise-script-archive-java-importer"
+				httpResult.Script.GeneratedFrom = "enterprise_script_archive"
+				javaEnsureHeaderLists(httpResult.Script)
+				laneResults = append(laneResults, httpResult)
+			}
+		}
+	}
+	if profile.Surfaces[javaSurfaceDatabase] {
+		if dbActions := javaDatabaseParsedActions(program, files); len(flattenParsedFunctions(dbActions)) > 0 {
+			dbDetected := detected
+			dbDetected.CanonicalSourceProtocol = "java_jdbc"
+			dbDetected.APEXLoadProtocol = "database"
+			dbDetected.ImportMode = ImportModeExecutable
+			dbDetected.DisplayName = "Java Vuser JDBC"
+			dbResult, err := ConvertDatabase(dbActions, opts, dbDetected)
+			if err != nil {
+				return nil, err
+			}
+			if dbResult != nil && dbResult.Script != nil {
+				dbResult.Script.Name = convertutil.FirstNonEmpty(opts.ScriptName, "Converted_Java_JDBC")
+				if len(laneResults) > 0 {
+					dbResult.Script.Name += "_database"
+				}
+				laneResults = append(laneResults, dbResult)
+			}
+		}
+	}
+	if profile.Surfaces[javaSurfaceSOAP] {
+		if soapActions := javaSOAPParsedActions(program, files); len(flattenParsedFunctions(soapActions)) > 0 {
+			soapResult, err := Convert(soapActions, opts)
+			if err != nil {
+				return nil, err
+			}
+			if soapResult != nil && soapResult.Script != nil {
+				soapDetected := detected
+				soapDetected.CanonicalSourceProtocol = "java_soap"
+				soapDetected.APEXLoadProtocol = soapResult.Script.Protocol
+				soapDetected.ImportMode = ImportModeExecutable
+				soapDetected.DisplayName = "Java Vuser SOAP"
+				soapResult.DetectedProtocol = &soapDetected
+				soapResult.Script.Name = convertutil.FirstNonEmpty(opts.ScriptName, "Converted_Java_SOAP")
+				if len(laneResults) > 0 {
+					soapResult.Script.Name += "_soap"
+				}
+				soapResult.Script.GeneratedBy = "apexload-enterprise-script-archive-java-importer"
+				soapResult.Script.GeneratedFrom = "enterprise_script_archive"
+				javaEnsureHeaderLists(soapResult.Script)
+				laneResults = append(laneResults, soapResult)
+			}
+		}
+	}
+	if profile.Surfaces[javaSurfaceJMS] || len(laneResults) == 0 || profile.Surfaces[javaSurfaceReview] {
+		jmsResult, err := convertJavaStatementLane(files, opts, detected, program, parseWarnings, profile, len(laneResults) > 0)
+		if err != nil {
+			return nil, err
+		}
+		if jmsResult != nil && jmsResult.Script != nil && (len(jmsResult.Script.Actions)+len(jmsResult.Script.Init)+len(jmsResult.Script.Teardown) > 0 || len(laneResults) == 0) {
+			laneResults = append(laneResults, jmsResult)
+		}
+	}
+	if len(laneResults) == 0 {
+		result.Script.Actions = append(result.Script.Actions, javaSourceReviewAction(javaStatement{
+			Text:      "No executable Java actions were recognized.",
+			StartLine: 1,
+			EndLine:   1,
+		}, "action", "no_java_actions"))
+		result.Scripts = []*dsl.Script{result.Script}
+		return result, nil
+	}
+	return mergeJavaLaneResults(laneResults, detected, files, profile), nil
+}
+
+func convertJavaStatementLane(files map[string]string, opts ConvertOptions, detected DetectedProtocol, program javaProgram, parseWarnings []string, profile JavaProfile, secondary bool) (*ConvertResult, error) {
+	surface := javaSurfaceJMS
+	if !profile.Surfaces[javaSurfaceJMS] {
+		surface = profile.Primary
+	}
+	result := &ConvertResult{
+		DetectedProtocol: &detected,
+		Warnings:         append(append([]string(nil), detected.Warnings...), parseWarnings...),
+		Script:           newJavaScriptForSurface(opts, profile, surface),
+	}
+	if secondary && result.Script != nil {
+		result.Script.Name = result.Script.Name + "_review"
+	}
+	state := &javaImportState{
+		env:          newJavaStringEnv(),
+		profile:      profile,
+		skipHTTP:     profile.Surfaces[javaSurfaceHTTP],
+		skipDatabase: profile.Surfaces[javaSurfaceDatabase],
+	}
 	for _, phase := range []string{"init", "action", "teardown"} {
 		statements := javaLifecycleStatements(program, phase)
 		for _, statement := range statements {
@@ -100,7 +197,9 @@ func ConvertJava(files map[string]string, opts ConvertOptions, detected Detected
 
 	if state.jmsActions == 0 || state.unrecognizedAction > 0 || state.configReview > 0 {
 		detected = markDetectedReviewOnly(detected, "")
-		detected.APEXLoadProtocol = "jms"
+		if profile.Surfaces[javaSurfaceJMS] {
+			detected.APEXLoadProtocol = profile.JMSProtocol
+		}
 		detected.RequiredEvidence = appendUnique(detected.RequiredEvidence, "Operator review of unmapped Java statements", "JMS broker configuration verification")
 		result.DetectedProtocol = &detected
 		result.ReviewArtifact = NewReviewArtifact(detected, files, nil, map[string]any{
@@ -133,6 +232,72 @@ func ConvertJava(files map[string]string, opts ConvertOptions, detected Detected
 		result.Stats.ReviewOnlyFunctions++
 	}
 	return result, nil
+}
+
+func mergeJavaLaneResults(lanes []*ConvertResult, detected DetectedProtocol, files map[string]string, profile JavaProfile) *ConvertResult {
+	if len(lanes) == 1 {
+		lanes[0].Scripts = lanes[0].effectiveScripts()
+		return lanes[0]
+	}
+	merged := &ConvertResult{
+		DetectedProtocol: &DetectedProtocol{
+			CanonicalSourceProtocol: "java_vuser",
+			APEXLoadProtocol:        "multi",
+			ImportMode:              ImportModeExecutable,
+			Confidence:              detected.Confidence,
+			DisplayName:             "Java Vuser Multi-Protocol",
+			SourceType:              detected.SourceType,
+			Signals:                 detected.Signals,
+			Warnings:                detected.Warnings,
+			RequiredEvidence:        detected.RequiredEvidence,
+		},
+		Warnings: append([]string(nil), detected.Warnings...),
+		Scripts:  make([]*dsl.Script, 0, len(lanes)),
+	}
+	for _, lane := range lanes {
+		if lane == nil {
+			continue
+		}
+		merged.Warnings = append(merged.Warnings, lane.Warnings...)
+		merged.Stats.TotalFunctions += lane.Stats.TotalFunctions
+		merged.Stats.ConvertedActions += lane.Stats.ConvertedActions
+		merged.Stats.LogicalActions += lane.Stats.LogicalActions
+		merged.Stats.RawRequestActions += lane.Stats.RawRequestActions
+		merged.Stats.CollapsedRequests += lane.Stats.CollapsedRequests
+		merged.Stats.TransactionMarkers += lane.Stats.TransactionMarkers
+		merged.Stats.ContributorFunctions += lane.Stats.ContributorFunctions
+		merged.Stats.Extractors += lane.Stats.Extractors
+		merged.Stats.ThinkTimes += lane.Stats.ThinkTimes
+		merged.Stats.Transactions += lane.Stats.Transactions
+		merged.Stats.NativeFunctions += lane.Stats.NativeFunctions
+		merged.Stats.ReviewOnlyFunctions += lane.Stats.ReviewOnlyFunctions
+		merged.Stats.ExternalRequiredFunctions += lane.Stats.ExternalRequiredFunctions
+		merged.Stats.CustomCallFunctions += lane.Stats.CustomCallFunctions
+		merged.Stats.Skipped += lane.Stats.Skipped
+		merged.Stats.UnsupportedFuncs = append(merged.Stats.UnsupportedFuncs, lane.Stats.UnsupportedFuncs...)
+		if lane.SourceReview != nil {
+			for _, mapping := range lane.SourceReview.Mappings {
+				appendSourceReviewMapping(merged, mapping)
+			}
+		}
+		if lane.Script != nil {
+			merged.Scripts = append(merged.Scripts, lane.Script)
+		}
+	}
+	if len(merged.Scripts) > 0 {
+		merged.Script = merged.Scripts[0]
+	}
+	if profile.Surfaces[javaSurfaceReview] {
+		reviewDetected := *merged.DetectedProtocol
+		reviewDetected.ImportMode = ImportModeReviewOnly
+		merged.ReviewArtifact = NewReviewArtifact(reviewDetected, files, nil, map[string]any{
+			"reason":          "java_named_review_surfaces",
+			"review_families": profile.ReviewFamilies,
+		})
+	}
+	merged.Warnings = uniqueSortedStrings(merged.Warnings)
+	merged.Stats.UnsupportedFuncs = uniqueSortedStrings(merged.Stats.UnsupportedFuncs)
+	return merged
 }
 
 func convertJavaVuserRunnerDraft(files map[string]string, opts ConvertOptions, detected DetectedProtocol, program javaProgram, warnings []string, state *javaImportState) *ConvertResult {
@@ -278,6 +443,17 @@ func convertJavaStatement(result *ConvertResult, state *javaImportState, files m
 		appendJavaReview(result, state, statement, phase, "unmapped_java_block", phase == "action")
 		return nil
 	}
+	if state.skipHTTP {
+		if _, ok := javaWebToParsedFunction(matchStatement, phase); ok {
+			return nil
+		}
+		if _, ok := javaHTTPClientToParsedFunction(matchStatement, phase); ok {
+			return nil
+		}
+	}
+	if state.skipDatabase && javaStatementLooksLikeDatabase(text) {
+		return nil
+	}
 	if state.env.assignDestination(text, files) || state.env.assignLookupDestination(text, files) || state.env.assignProducer(text, files) || state.env.assignMessage(text, files) || state.env.assignString(text, files) {
 		appendJavaMapping(result, matchStatement, "", "", "state", "converted", "Mapped Java symbolic state used by downstream JMS actions.", SourceFunctionSupportExecutable)
 		return nil
@@ -301,8 +477,48 @@ func convertJavaStatement(result *ConvertResult, state *javaImportState, files m
 		state.jmsActions++
 		return nil
 	}
+	if reason := javaNamedReviewReason(text); reason != "" {
+		appendJavaReview(result, state, statement, phase, reason, phase == "action")
+		return nil
+	}
 	appendJavaReview(result, state, statement, phase, "unmapped_java_statement", phase == "action")
 	return nil
+}
+
+func javaStatementLooksLikeDatabase(text string) bool {
+	lower := strings.ToLower(text)
+	return strings.Contains(lower, "preparedstatement") ||
+		strings.Contains(lower, "drivermanager") ||
+		strings.Contains(lower, "executequery(") ||
+		strings.Contains(lower, "executeupdate(") ||
+		strings.Contains(lower, "preparestatement(") ||
+		strings.Contains(lower, ".commit()") ||
+		strings.Contains(lower, ".rollback()") ||
+		strings.Contains(lower, ".setautocommit(false")
+}
+
+func javaNamedReviewReason(text string) string {
+	lower := strings.ToLower(text)
+	switch {
+	case strings.Contains(lower, "javax.ejb") || strings.Contains(lower, "jakarta.ejb"):
+		return "ejb_review"
+	case strings.Contains(lower, "org.omg.corba") || strings.Contains(lower, "corba.orb"):
+		return "corba_review"
+	case strings.Contains(lower, "naming.lookup") || strings.Contains(lower, "initialcontext.lookup") || strings.Contains(lower, "javax.rmi"):
+		return "rmi_java_review"
+	case strings.Contains(lower, "sapgui") || strings.Contains(lower, "com.sap"):
+		return "sapgui_java_review"
+	case strings.Contains(lower, "jacada"):
+		return "jacada_java_review"
+	case strings.Contains(lower, "oracle.apps") || strings.Contains(lower, "oracle.forms") || strings.Contains(lower, "oracle.nca"):
+		return "oracle_nca_java_review"
+	case strings.Contains(lower, "tuxedo") || strings.Contains(lower, "weblogic.wtc"):
+		return "tuxedo_java_review"
+	case strings.Contains(lower, "javax.xml.ws") || strings.Contains(lower, "soapmessage") || strings.Contains(lower, "soapconnection"):
+		return "soap_java_review"
+	default:
+		return ""
+	}
 }
 
 func javaTransparentBlockHeader(header string) bool {
@@ -521,7 +737,7 @@ func routeJavaLRFunction(result *ConvertResult, state *javaImportState, phase st
 	case "lr_start_sub_transaction":
 		state.currentSubTransaction = fn.StepName
 		result.Stats.TransactionMarkers++
-	case "lr_end_sub_transaction":
+	case "lr_end_sub_transaction", "lr_end_sub_trans":
 		result.Stats.TransactionMarkers++
 		state.currentSubTransaction = ""
 	case "lr_think_time":

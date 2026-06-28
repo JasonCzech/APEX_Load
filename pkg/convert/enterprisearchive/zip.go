@@ -187,7 +187,7 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 	}
 	if isJavaProtocolsProject(projectConfig) || isJavaVuserArchive(files, projectConfig) {
 		detected := DetectProtocol(files, projectConfig, nil)
-		result, err := ConvertJava(files, opts, detected)
+		result, err := ConvertJava(files, opts, detected, projectConfig)
 		if err != nil {
 			return nil, err
 		}
@@ -331,18 +331,24 @@ func finalizeEnterpriseArchiveImportResult(result *ConvertResult, ctx archiveFin
 		return
 	}
 	parameterSections := make(map[string]map[string]map[string]string)
-	if result.Script != nil {
+	scripts := result.effectiveScripts()
+	if len(scripts) > 0 {
 		for _, parameterFileName := range ctx.ParameterFileNames {
 			content, ok := findFile(ctx.Files, parameterFileName)
 			if !ok {
 				continue
 			}
 			parsed := ParseParameterFile(parameterFileName, content, ctx.Files)
-			if len(parsed.Parameters) > 0 {
-				result.Script.Parameters = append(result.Script.Parameters, parsed.Parameters...)
-			}
-			if len(parsed.DataSources) > 0 {
-				result.Script.DataSources = append(result.Script.DataSources, parsed.DataSources...)
+			for _, script := range scripts {
+				if script == nil {
+					continue
+				}
+				if len(parsed.Parameters) > 0 {
+					script.Parameters = append(script.Parameters, parsed.Parameters...)
+				}
+				if len(parsed.DataSources) > 0 {
+					script.DataSources = append(script.DataSources, parsed.DataSources...)
+				}
 			}
 			if len(parsed.Warnings) > 0 {
 				result.Warnings = append(result.Warnings, parsed.Warnings...)
@@ -351,13 +357,20 @@ func finalizeEnterpriseArchiveImportResult(result *ConvertResult, ctx archiveFin
 				parameterSections[filepath.Base(parameterFileName)] = parsed.Sections
 			}
 		}
-		applyKnownParameterReferences(result.Script)
-		applyParameterizedBaseURL(result.Script)
+		for _, script := range scripts {
+			if script == nil {
+				continue
+			}
+			applyKnownParameterReferences(script)
+			applyParameterizedBaseURL(script)
+		}
 		resolveTemplatedBaseURL(result)
 	}
 	result.SourceReview = BuildSourceReview(ctx.Files, sourceReviewMappings(result))
-	redactArchiveMaskedBodyMetadata(result.Script)
-	attachSourceMetadata(result.Script, result, ctx.ProjectFileName, ctx.ProjectSections, ctx.ProjectConfig, ctx.Files, ctx.RuntimeFileName, parameterSections, ctx.ParameterFileNames, ctx.TrueClientInspection)
+	for _, script := range scripts {
+		redactArchiveMaskedBodyMetadata(script)
+		attachSourceMetadata(script, result, ctx.ProjectFileName, ctx.ProjectSections, ctx.ProjectConfig, ctx.Files, ctx.RuntimeFileName, parameterSections, ctx.ParameterFileNames, ctx.TrueClientInspection)
+	}
 	attachImportFidelityReport(result, ctx.Files, ctx.ProjectConfig, ctx.ParsedActions)
 }
 

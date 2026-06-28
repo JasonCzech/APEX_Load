@@ -13,6 +13,7 @@ import (
 // ConvertResult holds the output of an enterprise script archive to APEX Load DSL conversion.
 type ConvertResult struct {
 	Script                       *dsl.Script           `json:"script"`
+	Scripts                      []*dsl.Script         `json:"scripts,omitempty"`
 	Warnings                     []string              `json:"warnings,omitempty"`
 	Stats                        ConvertStats          `json:"stats"`
 	DetectedProtocol             *DetectedProtocol     `json:"detected_protocol,omitempty"`
@@ -25,6 +26,19 @@ type ConvertResult struct {
 	// flowWarned deduplicates control-flow translation warnings per distinct
 	// condition/loop source text during one conversion.
 	flowWarned map[string]bool
+}
+
+func (result *ConvertResult) effectiveScripts() []*dsl.Script {
+	if result == nil {
+		return nil
+	}
+	if len(result.Scripts) > 0 {
+		return result.Scripts
+	}
+	if result.Script != nil {
+		return []*dsl.Script{result.Script}
+	}
+	return nil
 }
 
 // ConvertStats provides conversion statistics for reporting.

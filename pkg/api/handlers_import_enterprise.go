@@ -12,6 +12,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/enterprisearchive"
 	"github.com/jasonczech/apexload/pkg/convert/salesforce"
 	"github.com/jasonczech/apexload/pkg/convert/trueclient"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 func (s *Server) handleImportEnterpriseArchive(w http.ResponseWriter, r *http.Request) {
@@ -28,6 +29,11 @@ func (s *Server) handleImportEnterpriseArchive(w http.ResponseWriter, r *http.Re
 	}
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
+	}
+	for _, script := range result.Scripts {
+		if script != nil {
+			script.ProjectID = normalizeProjectID(importReq.ProjectID)
+		}
 	}
 	attachSalesforceReviewToEnterpriseArchiveResult(result, importReq)
 
@@ -48,21 +54,39 @@ func (s *Server) handleValidateEnterpriseArchiveImport(w http.ResponseWriter, r 
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
 	}
+	for _, script := range result.Scripts {
+		if script != nil {
+			script.ProjectID = normalizeProjectID(importReq.ProjectID)
+		}
+	}
 	attachSalesforceReviewToEnterpriseArchiveResult(result, importReq)
 
 	writeEnterpriseArchiveImportResponse(w, http.StatusOK, result, importReq.ReadinessPolicy)
 }
 
 func attachSalesforceReviewToEnterpriseArchiveResult(result *enterprisearchive.ConvertResult, importReq *enterpriseArchiveImportRequest) {
-	if result == nil || result.Script == nil || importReq == nil {
+	if result == nil || importReq == nil {
 		return
 	}
-	_ = attachMuleSoftReview(result.Script, "enterprise_script_archive", nil)
-	_ = attachAgentforceReview(result.Script, "enterprise_script_archive", nil, false)
+	scripts := result.Scripts
+	if len(scripts) == 0 && result.Script != nil {
+		scripts = []*dsl.Script{result.Script}
+	}
+	for _, script := range scripts {
+		_ = attachMuleSoftReview(script, "enterprise_script_archive", nil)
+		_ = attachAgentforceReview(script, "enterprise_script_archive", nil, false)
+	}
 	if !importReq.SalesforceNative && len(importReq.HARData) == 0 {
 		return
 	}
-	review, err := salesforce.Analyze(result.Script, salesforce.AnalyzeOptions{
+	reviewScript := result.Script
+	if reviewScript == nil && len(scripts) > 0 {
+		reviewScript = scripts[0]
+	}
+	if reviewScript == nil {
+		return
+	}
+	review, err := salesforce.Analyze(reviewScript, salesforce.AnalyzeOptions{
 		BuildNative: importReq.SalesforceNative,
 		HARData:     importReq.HARData,
 	})
@@ -73,31 +97,71 @@ func attachSalesforceReviewToEnterpriseArchiveResult(result *enterprisearchive.C
 	if review == nil || (!review.Detected && !importReq.SalesforceNative) {
 		return
 	}
-	preserved := ensureScriptImportPreserved(result.Script, "enterprise_script_archive")
-	preserved["salesforce_review"] = review
+	for _, script := range scripts {
+		preserved := ensureScriptImportPreserved(script, "enterprise_script_archive")
+		preserved["salesforce_review"] = review
+	}
 }
 
 func (s *Server) handleEnterpriseArchiveSupportMatrix(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
-		"support_matrix":            enterprisearchive.GetRTSSupportMatrix(),
-		"notes":                     enterprisearchive.GetRTSSupportMatrixNotes(),
-		"tested_examples":           enterprisearchive.GetRTSSupportMatrixExamples(),
-		"trueclient_script_types":   trueclient.ScriptTypeScopes(),
-		"trueclient_step_matrix":    trueclient.StepScopes(),
-		"trueclient_step_coverage":  trueclient.StepCoverage(),
-		"web2_profile_capabilities": trueclient.Web2ProfileCapabilityScopes(),
-		"web2_fixture_contract":     trueclient.Web2FixtureContracts(),
-		"protocol_support_matrix":   protocolBundleSupportMatrix(),
-		"web_http_function_matrix":  enterprisearchive.WebHTTPFunctionCoverage(),
-		"java_lr_function_matrix":   enterprisearchive.JavaLRFunctionCoverage(),
-		"source_protocol_matrix": []map[string]any{{
-			"canonical_source_protocol": "java_jms_solace",
-			"display_name":              "Java JMS/Solace",
-			"apexload_protocol":         "jms-solace",
-			"status":                    "blocked",
-			"promotion_gate":            "approved Solace JMS adapter or governed sidecar runner policy",
-			"notes":                     "Archives convert to JMS DSL for review, but executable promotion is blocked in this build unless real Solace replay policy and runtime credentials/truststore are configured.",
-		}},
+		"support_matrix":             enterprisearchive.GetRTSSupportMatrix(),
+		"notes":                      enterprisearchive.GetRTSSupportMatrixNotes(),
+		"tested_examples":            enterprisearchive.GetRTSSupportMatrixExamples(),
+		"trueclient_script_types":    trueclient.ScriptTypeScopes(),
+		"trueclient_step_matrix":     trueclient.StepScopes(),
+		"trueclient_step_coverage":   trueclient.StepCoverage(),
+		"web2_profile_capabilities":  trueclient.Web2ProfileCapabilityScopes(),
+		"web2_fixture_contract":      trueclient.Web2FixtureContracts(),
+		"protocol_support_matrix":    protocolBundleSupportMatrix(),
+		"web_http_function_matrix":   enterprisearchive.WebHTTPFunctionCoverage(),
+		"java_lr_function_matrix":    enterprisearchive.JavaLRFunctionCoverage(),
+		"java_import_surface_matrix": enterprisearchive.JavaImportSurfaceCoverage(),
+		"java_http_idiom_matrix":     enterprisearchive.JavaHTTPIdiomCoverage(),
+		"java_jms_idiom_matrix":      enterprisearchive.JavaJMSIdiomCoverage(),
+		"java_jdbc_idiom_matrix":     enterprisearchive.JavaJDBCIdiomCoverage(),
+		"source_protocol_matrix": []map[string]any{
+			{
+				"canonical_source_protocol": "java_over_http",
+				"display_name":              "Java Vuser HTTP",
+				"apexload_protocol":         "http",
+				"status":                    "supported",
+				"promotion_gate":            "static Java web/HTTP idioms recognized by the importer",
+				"notes":                     "Recorded Java-over-HTTP traffic targets native http_request actions, not the java_http serialized-object codec.",
+			},
+			{
+				"canonical_source_protocol": "java_vuser",
+				"display_name":              "Java Vuser JMS",
+				"apexload_protocol":         "jms-solace / jms-ibmmq / jms-servicebus",
+				"status":                    "supported",
+				"promotion_gate":            "JMS provider, destination, and broker runtime configuration verified",
+				"notes":                     "JMS idioms convert to native JMS DSL with mock enabled until real broker settings are supplied.",
+			},
+			{
+				"canonical_source_protocol": "java_jdbc",
+				"display_name":              "Java Vuser JDBC",
+				"apexload_protocol":         "database",
+				"status":                    "supported",
+				"promotion_gate":            "database DSN secret and SQL intent verified",
+				"notes":                     "Recoverable JDBC statements convert to native database actions; dynamic SQL remains review-only.",
+			},
+			{
+				"canonical_source_protocol": "java_soap",
+				"display_name":              "Java Vuser SOAP",
+				"apexload_protocol":         "soap",
+				"status":                    "partial",
+				"promotion_gate":            "static endpoint and SOAP envelope recovered",
+				"notes":                     "Recoverable Java SOAP calls promote to the native SOAP/HTTP runtime; dynamic clients remain named review.",
+			},
+			{
+				"canonical_source_protocol": "java_jms_solace",
+				"display_name":              "Java JMS/Solace",
+				"apexload_protocol":         "jms-solace",
+				"status":                    "supported",
+				"promotion_gate":            "approved Solace JMS runtime settings or governed sidecar runner policy",
+				"notes":                     "Legacy Java_protocols Solace projects route through the unified Java JMS lane and preserve XML-body templating.",
+			},
+		},
 	})
 }
 
@@ -179,9 +243,23 @@ func writeEnterpriseArchiveImportResponse(w http.ResponseWriter, status int, res
 	repairSuggestions := buildEnterpriseArchiveImportRepairSuggestions(result, unsupportedElements, summary)
 	protocolCompat := buildEnterpriseArchiveProtocolCompatReport(result, unsupportedElements, summary)
 	persistProtocolCompatReport(result.Script, "enterprise_script_archive", protocolCompat)
+	for _, script := range result.Scripts {
+		persistProtocolCompatReport(script, "enterprise_script_archive", protocolCompat)
+	}
+
+	scripts := result.Scripts
+	if len(scripts) == 0 && result.Script != nil {
+		scripts = []*dsl.Script{result.Script}
+	}
+	parameterization := buildImportParameterization(result.Script, nil)
+	if len(scripts) > 1 {
+		attachSourceReviewToScripts(scripts, "enterprise_script_archive", "", summary.SourceReview)
+		parameterization = buildMultiScriptParameterization(scripts)
+	}
 
 	writeJSON(w, status, newScriptImportResponse(scriptImportResponseOptions{
 		Result:              result,
+		Scripts:             scripts,
 		Script:              result.Script,
 		Warnings:            warnings,
 		Stats:               result.Stats,
@@ -195,7 +273,7 @@ func writeEnterpriseArchiveImportResponse(w http.ResponseWriter, status int, res
 		SourceReview:        summary.SourceReview,
 		TrueClient2Compat:   summary.TrueClient2CompatReport,
 		ProtocolCompat:      protocolCompat,
-		Parameterization:    buildImportParameterization(result.Script, nil),
+		Parameterization:    parameterization,
 	}))
 }
 
@@ -665,35 +743,44 @@ func buildEnterpriseArchiveImportSummary(result *enterprisearchive.ConvertResult
 }
 
 func persistEnterpriseArchiveImportSummary(result *enterprisearchive.ConvertResult, summary enterpriseArchiveImportSummary) {
-	if result == nil || result.Script == nil || result.Script.Metadata == nil || result.Script.Metadata.Import == nil {
+	if result == nil {
 		return
 	}
-	if result.Script.Metadata.Import.Preserved == nil {
-		result.Script.Metadata.Import.Preserved = make(map[string]any)
+	scripts := result.Scripts
+	if len(scripts) == 0 && result.Script != nil {
+		scripts = []*dsl.Script{result.Script}
 	}
-	if summary.MigrationReadiness != nil {
-		result.Script.Metadata.Import.Preserved["runtime_settings_migration_readiness"] = summary.MigrationReadiness
-	}
-	if summary.Web2MigrationReadiness != nil {
-		result.Script.Metadata.Import.Preserved["web2_migration_readiness"] = summary.Web2MigrationReadiness
-	}
-	if summary.TrueClient2CompatReport != nil {
-		result.Script.Metadata.Import.Preserved["trueclient2_compat_report"] = summary.TrueClient2CompatReport
-	}
-	if summary.SalesforceReview != nil {
-		result.Script.Metadata.Import.Preserved["salesforce_review"] = summary.SalesforceReview
-	}
-	if summary.AgentforceReview != nil {
-		result.Script.Metadata.Import.Preserved["agentforce_review"] = summary.AgentforceReview
-	}
-	if summary.MuleSoftReview != nil {
-		result.Script.Metadata.Import.Preserved["mulesoft_review"] = summary.MuleSoftReview
-	}
-	if summary.SourceReview != nil {
-		result.Script.Metadata.Import.Preserved["source_review"] = summary.SourceReview
-	}
-	if summary.FidelityReport != nil {
-		result.Script.Metadata.Import.Preserved["fidelity_report"] = summary.FidelityReport
+	for _, script := range scripts {
+		if script == nil || script.Metadata == nil || script.Metadata.Import == nil {
+			continue
+		}
+		if script.Metadata.Import.Preserved == nil {
+			script.Metadata.Import.Preserved = make(map[string]any)
+		}
+		if summary.MigrationReadiness != nil {
+			script.Metadata.Import.Preserved["runtime_settings_migration_readiness"] = summary.MigrationReadiness
+		}
+		if summary.Web2MigrationReadiness != nil {
+			script.Metadata.Import.Preserved["web2_migration_readiness"] = summary.Web2MigrationReadiness
+		}
+		if summary.TrueClient2CompatReport != nil {
+			script.Metadata.Import.Preserved["trueclient2_compat_report"] = summary.TrueClient2CompatReport
+		}
+		if summary.SalesforceReview != nil {
+			script.Metadata.Import.Preserved["salesforce_review"] = summary.SalesforceReview
+		}
+		if summary.AgentforceReview != nil {
+			script.Metadata.Import.Preserved["agentforce_review"] = summary.AgentforceReview
+		}
+		if summary.MuleSoftReview != nil {
+			script.Metadata.Import.Preserved["mulesoft_review"] = summary.MuleSoftReview
+		}
+		if summary.SourceReview != nil {
+			script.Metadata.Import.Preserved["source_review"] = summary.SourceReview
+		}
+		if summary.FidelityReport != nil {
+			script.Metadata.Import.Preserved["fidelity_report"] = summary.FidelityReport
+		}
 	}
 }
 

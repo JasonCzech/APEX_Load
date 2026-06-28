@@ -317,6 +317,7 @@ func splitJavaTopLevel(expr string, sep rune) []string {
 	parts := make([]string, 0)
 	start := 0
 	depth := 0
+	angleDepth := 0
 	inString := false
 	escaped := false
 	for i, r := range expr {
@@ -343,8 +344,16 @@ func splitJavaTopLevel(expr string, sep rune) []string {
 			if depth > 0 {
 				depth--
 			}
+		case '<':
+			if depth == 0 && findJavaGenericAngleEnd(expr, i) > i {
+				angleDepth++
+			}
+		case '>':
+			if angleDepth > 0 {
+				angleDepth--
+			}
 		default:
-			if r == sep && depth == 0 {
+			if r == sep && depth == 0 && angleDepth == 0 {
 				parts = append(parts, strings.TrimSpace(expr[start:i]))
 				start = i + len(string(r))
 			}
@@ -352,4 +361,46 @@ func splitJavaTopLevel(expr string, sep rune) []string {
 	}
 	parts = append(parts, strings.TrimSpace(expr[start:]))
 	return parts
+}
+
+func findJavaGenericAngleEnd(expr string, open int) int {
+	if open < 0 || open >= len(expr) || expr[open] != '<' {
+		return -1
+	}
+	depth := 0
+	inString := false
+	escaped := false
+	for i := open; i < len(expr); i++ {
+		ch := expr[i]
+		if inString {
+			if escaped {
+				escaped = false
+				continue
+			}
+			if ch == '\\' {
+				escaped = true
+				continue
+			}
+			if ch == '"' {
+				inString = false
+			}
+			continue
+		}
+		switch ch {
+		case '"':
+			inString = true
+		case '<':
+			depth++
+		case '>':
+			depth--
+			if depth == 0 {
+				return i
+			}
+		case ',':
+			if depth == 1 {
+				continue
+			}
+		}
+	}
+	return -1
 }

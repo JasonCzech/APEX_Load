@@ -3330,6 +3330,76 @@ func TestHandleValidateJMeterImportMatchesImportEnvelope(t *testing.T) {
 	}
 }
 
+func TestHandleEnterpriseArchiveImportJavaMixedArchiveReturnsMultipleScripts(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	archive := buildJavaEnterpriseArchive(t, "JavaMixed", "Java Vuser", `import lrapi.lr;
+import javax.jms.*;
+import java.sql.*;
+
+public class Actions {
+  public int action() throws Throwable {
+    web.url("Home", "URL=https://example.test/home", web.LAST);
+    Queue q = session.createQueue("orders.in");
+    TextMessage msg = session.createTextMessage("{\"orderId\":\"A-100\"}");
+    producer.send(q, msg);
+    PreparedStatement ps = conn.prepareStatement("select 1");
+    ps.executeQuery();
+    return 0;
+  }
+}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", bytes.NewReader(archive))
+	req.Header.Set("Content-Type", "application/zip")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var result struct {
+		Scripts []dsl.Script `json:"scripts"`
+		Script  dsl.Script   `json:"script"`
+		Stats   struct {
+			ConvertedActions int `json:"converted_actions"`
+		} `json:"stats"`
+		Parameterization struct {
+			Suggestions []struct {
+				ScriptName string `json:"script_name"`
+			} `json:"suggestions"`
+		} `json:"parameterization"`
+		DetectedProtocol struct {
+			APEXLoadProtocol string `json:"apexload_protocol"`
+		} `json:"detected_protocol"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if len(result.Scripts) < 3 {
+		t.Fatalf("scripts = %#v, want HTTP + database + JMS scripts", result.Scripts)
+	}
+	protocols := map[string]int{}
+	for _, script := range result.Scripts {
+		protocols[script.Protocol]++
+		if script.Metadata == nil || script.Metadata.Import == nil || script.Metadata.Import.Preserved["source_review"] == nil {
+			t.Fatalf("script %q metadata = %#v, want attached source_review", script.Name, script.Metadata)
+		}
+	}
+	for _, protocol := range []string{"http", "database", "jms-solace"} {
+		if protocols[protocol] == 0 {
+			t.Fatalf("protocols = %#v, missing %s", protocols, protocol)
+		}
+	}
+	if result.Script.Protocol != "http" {
+		t.Fatalf("primary script protocol = %q, want http", result.Script.Protocol)
+	}
+	if result.DetectedProtocol.APEXLoadProtocol != "multi" {
+		t.Fatalf("detected protocol = %#v, want multi", result.DetectedProtocol)
+	}
+	if result.Stats.ConvertedActions < 3 {
+		t.Fatalf("stats = %#v, want converted HTTP/JMS/JDBC actions", result.Stats)
+	}
+}
+
 func TestHandleJMeterSupportMatrix(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/import/jmeter/support-matrix", nil)
@@ -3399,6 +3469,25 @@ func TestHandleEnterpriseArchiveSupportMatrix(t *testing.T) {
 			Required bool   `json:"Required"`
 			Status   string `json:"Status"`
 		} `json:"web2_fixture_contract"`
+		JavaImportSurfaceMatrix []struct {
+			ID              string `json:"id"`
+			Area            string `json:"area"`
+			Construct       string `json:"construct"`
+			Status          string `json:"status"`
+			ExecutionStatus string `json:"execution_status"`
+		} `json:"java_import_surface_matrix"`
+		JavaHTTPIdiomMatrix []struct {
+			ID              string `json:"id"`
+			ExecutionStatus string `json:"execution_status"`
+		} `json:"java_http_idiom_matrix"`
+		JavaJMSIdiomMatrix []struct {
+			ID              string `json:"id"`
+			ExecutionStatus string `json:"execution_status"`
+		} `json:"java_jms_idiom_matrix"`
+		JavaJDBCIdiomMatrix []struct {
+			ID              string `json:"id"`
+			ExecutionStatus string `json:"execution_status"`
+		} `json:"java_jdbc_idiom_matrix"`
 	}
 	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
 		t.Fatalf("json.Unmarshal returned error: %v", err)
@@ -3435,6 +3524,18 @@ func TestHandleEnterpriseArchiveSupportMatrix(t *testing.T) {
 	}
 	if !containsEnterpriseArchiveWeb2Fixture(result.Web2FixtureContract, "web2_spa_checkout", true, "supported") {
 		t.Fatalf("web2_fixture_contract = %#v, want required SPA checkout fixture", result.Web2FixtureContract)
+	}
+	if !containsEnterpriseArchiveJavaSurface(result.JavaImportSurfaceMatrix, "java-web-http", "executable") {
+		t.Fatalf("java_import_surface_matrix = %#v, want executable java-web-http row", result.JavaImportSurfaceMatrix)
+	}
+	if !containsEnterpriseArchiveJavaIdiom(result.JavaHTTPIdiomMatrix, "java-web-custom-request", "executable") {
+		t.Fatalf("java_http_idiom_matrix = %#v, want executable custom request row", result.JavaHTTPIdiomMatrix)
+	}
+	if !containsEnterpriseArchiveJavaIdiom(result.JavaJMSIdiomMatrix, "java-jms-publish-consume", "executable") {
+		t.Fatalf("java_jms_idiom_matrix = %#v, want executable JMS publish/consume row", result.JavaJMSIdiomMatrix)
+	}
+	if !containsEnterpriseArchiveJavaIdiom(result.JavaJDBCIdiomMatrix, "java-jdbc-query", "executable") {
+		t.Fatalf("java_jdbc_idiom_matrix = %#v, want executable JDBC query row", result.JavaJDBCIdiomMatrix)
 	}
 }
 
@@ -4394,6 +4495,33 @@ func containsEnterpriseArchiveWeb2Fixture(entries []struct {
 	return false
 }
 
+func containsEnterpriseArchiveJavaSurface(entries []struct {
+	ID              string `json:"id"`
+	Area            string `json:"area"`
+	Construct       string `json:"construct"`
+	Status          string `json:"status"`
+	ExecutionStatus string `json:"execution_status"`
+}, id string, executionStatus string) bool {
+	for _, entry := range entries {
+		if entry.ID == id && entry.ExecutionStatus == executionStatus && entry.Area != "" && entry.Construct != "" && entry.Status != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func containsEnterpriseArchiveJavaIdiom(entries []struct {
+	ID              string `json:"id"`
+	ExecutionStatus string `json:"execution_status"`
+}, id string, executionStatus string) bool {
+	for _, entry := range entries {
+		if entry.ID == id && entry.ExecutionStatus == executionStatus {
+			return true
+		}
+	}
+	return false
+}
+
 func containsAuthoringSourceStatus(sources []AuthoringSourceCapability, source string, status string) bool {
 	for _, item := range sources {
 		if item.Source == source && item.Status == status {
@@ -4584,6 +4712,28 @@ func buildEnterpriseArchiveProtocolArchive(t *testing.T, scriptType string, acti
 	}
 	addFile("Protocol.usr", "[General]\nType="+scriptType+"\n\n[Actions]\nAction1=Action.c\n")
 	addFile("Action.c", action)
+	if err := writer.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+	return body.Bytes()
+}
+
+func buildJavaEnterpriseArchive(t *testing.T, name string, scriptType string, javaSource string) []byte {
+	t.Helper()
+
+	var body bytes.Buffer
+	writer := zip.NewWriter(&body)
+	addFile := func(path string, content string) {
+		entry, err := writer.Create(path)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", path, err)
+		}
+		if _, err := entry.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", path, err)
+		}
+	}
+	addFile(name+"/"+name+".usr", "[General]\nType="+scriptType+"\nScriptLanguage=JAVA\nRunType=Java-Interpreter\n\n[Actions]\nAction=Actions.java\n")
+	addFile(name+"/Actions.java", javaSource)
 	if err := writer.Close(); err != nil {
 		t.Fatalf("zip.Close returned error: %v", err)
 	}
