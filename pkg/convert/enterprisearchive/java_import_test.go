@@ -66,11 +66,25 @@ Action=Actions.java
 	if len(result.Script.Actions) != 1 || result.Script.Actions[0].Type != "java_vuser_run" || result.Script.Actions[0].Target != "Actions" {
 		t.Fatalf("actions = %#v, want java_vuser_run Actions", result.Script.Actions)
 	}
+	sidecarAction := result.Script.Actions[0]
+	if sidecarAction.Params["event_contract"] != javaVuserEventContract || sidecarAction.Metadata["event_contract"] != javaVuserEventContract {
+		t.Fatalf("sidecar action contract params=%#v metadata=%#v, want %s", sidecarAction.Params, sidecarAction.Metadata, javaVuserEventContract)
+	}
+	if sidecarAction.Metadata["shim_class"] != javaVuserShimClass || sidecarAction.Metadata["sidecar_transport"] != javaVuserSidecarTransport {
+		t.Fatalf("sidecar metadata = %#v, want shim/transport contract", sidecarAction.Metadata)
+	}
+	callbacks, _ := sidecarAction.Metadata["shim_callbacks"].([]string)
+	if len(callbacks) == 0 {
+		t.Fatalf("sidecar metadata = %#v, want shim callback list", sidecarAction.Metadata)
+	}
 	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) > 0 {
 		t.Fatalf("ValidateScriptIssues returned %v", issues)
 	}
 	if result.ReviewArtifact == nil || result.ReviewArtifact.Protocol.RunnerRequirement != javaVuserRunnerRequirement {
 		t.Fatalf("review artifact = %#v, want runner requirement", result.ReviewArtifact)
+	}
+	if result.ReviewArtifact.Metadata["event_contract"] != javaVuserEventContract || result.ReviewArtifact.Metadata["shim_class"] != javaVuserShimClass {
+		t.Fatalf("review artifact metadata = %#v, want sidecar contract", result.ReviewArtifact.Metadata)
 	}
 	if result.SourceReview == nil || len(result.SourceReview.Mappings) == 0 || result.SourceReview.Mappings[0].SupportMode != string(SourceFunctionSupportExternalRequired) {
 		t.Fatalf("source review = %#v, want external_required mapping", result.SourceReview)

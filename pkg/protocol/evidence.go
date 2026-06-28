@@ -63,6 +63,8 @@ func inferEvidenceProtocol(action *Action, result *Result) string {
 		return "jms"
 	case strings.HasPrefix(dependency, "kafka") || strings.HasPrefix(actionType, "kafka_"):
 		return "kafka"
+	case strings.HasPrefix(dependency, "java_vuser") || strings.HasPrefix(actionType, "java_vuser_"):
+		return "java_vuser"
 	default:
 		return ""
 	}

@@ -26,7 +26,12 @@ var (
 	javaBlockCommentRe       = regexp.MustCompile(`(?s)/\*.*?\*/`)
 )
 
-const javaVuserRunnerRequirement = "java_vuser_jvm_runner"
+const (
+	javaVuserRunnerRequirement = "java_vuser_jvm_runner"
+	javaVuserSidecarTransport  = "stdio_json_lines"
+	javaVuserEventContract     = "apexload.java_vuser.lrapi_events.v1"
+	javaVuserShimClass         = "lrapi.lr"
+)
 
 type javaImportState struct {
 	env                javaStringEnv
@@ -322,13 +327,17 @@ func convertJavaVuserRunnerDraft(files map[string]string, opts ConvertOptions, d
 			"method":             "full_lifecycle",
 			"source_archive_ref": "enterprise_script_archive",
 			"runner_requirement": javaVuserRunnerRequirement,
+			"event_contract":     javaVuserEventContract,
 		},
 		Metadata: map[string]any{
 			"review_required":    true,
 			"review_reason":      "java_vuser_sidecar_runner_required",
 			"runner_requirement": javaVuserRunnerRequirement,
 			"source_protocol":    "java_vuser",
-			"sidecar_transport":  "stdio_json_lines",
+			"sidecar_transport":  javaVuserSidecarTransport,
+			"event_contract":     javaVuserEventContract,
+			"shim_class":         javaVuserShimClass,
+			"shim_callbacks":     []string{"transaction_start", "transaction_end", "log", "error"},
 			"operator_opt_in":    true,
 			"source_class":       className,
 		},
@@ -365,7 +374,9 @@ func convertJavaVuserRunnerDraft(files map[string]string, opts ConvertOptions, d
 	result.ReviewArtifact = NewReviewArtifact(detected, files, nil, map[string]any{
 		"reason":                         "java_vuser_sidecar_runner_required",
 		"runner_requirement":             javaVuserRunnerRequirement,
-		"sidecar_transport":              "stdio_json_lines",
+		"sidecar_transport":              javaVuserSidecarTransport,
+		"event_contract":                 javaVuserEventContract,
+		"shim_class":                     javaVuserShimClass,
 		"unrecognized_action_statements": state.unrecognizedAction,
 		"configuration_review_items":     state.configReview,
 	})

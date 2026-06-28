@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 
@@ -43,7 +44,7 @@ func TestJavaVuserRunnerInvokesConfiguredCommand(t *testing.T) {
 	dir := t.TempDir()
 	runnerPath := filepath.Join(dir, "java-vuser-runner")
 	stdinCapture := filepath.Join(dir, "stdin-capture")
-	script := "#!/bin/sh\ncat >" + stdinCapture + "\nprintf '{\"success\":true,\"class\":\"ok\"}\\n'\n"
+	script := "#!/bin/sh\ncat >" + stdinCapture + "\nprintf '{\"type\":\"transaction_start\",\"name\":\"Checkout\",\"message\":\"\"}\\n' >&2\nprintf '{\"type\":\"log\",\"name\":\"\",\"message\":\"checkpoint\"}\\n' >&2\nprintf '{\"success\":true,\"class_name\":\"Actions\",\"method\":\"full_lifecycle\",\"duration_ms\":42}\\n'\n"
 	if err := os.WriteFile(runnerPath, []byte(script), 0o755); err != nil {
 		t.Fatalf("write runner: %v", err)
 	}
@@ -77,6 +78,56 @@ func TestJavaVuserRunnerInvokesConfiguredCommand(t *testing.T) {
 	}
 	if result.ResponseBody == "" || result.ProtocolEvidence["protocol"] != javaVuserProtocolName {
 		t.Fatalf("result evidence/body = %#v / %q", result.ProtocolEvidence, result.ResponseBody)
+	}
+	if result.ProtocolEvidence["status"] != "passed" {
+		t.Fatalf("protocol evidence = %#v, want passed status", result.ProtocolEvidence)
+	}
+	if result.Extractions["java_vuser_duration_ms"] != "42" || result.Extractions["java_vuser_event_count"] != "2" {
+		t.Fatalf("extractions = %#v, want duration and event count", result.Extractions)
+	}
+	events, ok := result.ProtocolEvidence["runner_events"].([]runnerEvent)
+	if !ok || len(events) != 2 || events[0].Type != "transaction_start" || events[0].Name != "Checkout" {
+		t.Fatalf("runner events = %#v, want parsed lrapi.lr event JSON lines", result.ProtocolEvidence["runner_events"])
+	}
+}
+
+func TestJavaVuserRunnerFailsClosedOnReportedFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture uses POSIX sh")
+	}
+	dir := t.TempDir()
+	runnerPath := filepath.Join(dir, "java-vuser-runner")
+	script := "#!/bin/sh\ncat >/dev/null\nprintf '{\"success\":false,\"error\":\"lr.abort: business failure\"}\\n'\n"
+	if err := os.WriteFile(runnerPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write runner: %v", err)
+	}
+
+	t.Setenv(config.EnvJavaVuserRunnerEnabled, "true")
+	t.Setenv(config.EnvJavaVuserRunnerCommand, runnerPath)
+
+	var runner JavaVuser
+	if err := runner.Init(context.Background(), map[string]any{
+		"java_vuser_action_timeout_ms": float64(60000),
+	}); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+	result, err := runner.Execute(context.Background(), &protocol.Action{
+		Name:   "Run Actions",
+		Type:   "java_vuser_run",
+		Target: "Actions",
+		Params: map[string]any{"method": "full_lifecycle"},
+	})
+	if err != nil {
+		t.Fatalf("Execute returned protocol error: %v", err)
+	}
+	if result.Success {
+		t.Fatalf("result.Success = true, want runner-reported failure to fail closed")
+	}
+	if result.StatusCode != 500 || !strings.Contains(result.ErrorMessage, "lr.abort") {
+		t.Fatalf("result = %#v, want status 500 with reported runner error", result)
+	}
+	if result.ProtocolEvidence["status"] != "failed" {
+		t.Fatalf("protocol evidence = %#v, want failed status", result.ProtocolEvidence)
 	}
 }
 

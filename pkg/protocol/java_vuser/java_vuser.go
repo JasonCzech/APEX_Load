@@ -75,6 +75,20 @@ type runCommand struct {
 	Params           map[string]any `json:"params,omitempty"`
 }
 
+type runnerSummary struct {
+	Success    *bool  `json:"success,omitempty"`
+	Error      string `json:"error,omitempty"`
+	ClassName  string `json:"class_name,omitempty"`
+	Method     string `json:"method,omitempty"`
+	DurationMS int64  `json:"duration_ms,omitempty"`
+}
+
+type runnerEvent struct {
+	Type    string `json:"type"`
+	Name    string `json:"name,omitempty"`
+	Message string `json:"message,omitempty"`
+}
+
 func (j *JavaVuser) Name() string {
 	return javaVuserProtocolName
 }
@@ -199,6 +213,40 @@ func finalizeResult(result *protocol.Result, start time.Time, action *protocol.A
 	result.Duration = time.Since(start)
 	result.ResponseBody = stdout
 	result.BytesReceived = int64(len(stdout))
+	if result.Extractions == nil {
+		result.Extractions = map[string]string{}
+	}
+	summary, hasSummary := parseRunnerSummary(stdout)
+	events := parseRunnerEvents(stderr)
+	if hasSummary {
+		if summary.DurationMS > 0 {
+			result.Extractions["java_vuser_duration_ms"] = strconv.FormatInt(summary.DurationMS, 10)
+		}
+		if summary.Success != nil && !*summary.Success && err == nil {
+			message := strings.TrimSpace(summary.Error)
+			if message == "" {
+				message = "runner reported success=false"
+			}
+			err = fmt.Errorf("java_vuser runner reported failure: %s", message)
+		}
+	}
+	if len(events) > 0 {
+		errorEvents := 0
+		for _, event := range events {
+			if strings.EqualFold(event.Type, "error") {
+				errorEvents++
+			}
+		}
+		result.Extractions["java_vuser_event_count"] = strconv.Itoa(len(events))
+		if errorEvents > 0 {
+			result.Extractions["java_vuser_error_event_count"] = strconv.Itoa(errorEvents)
+		}
+	}
+	if err != nil {
+		result.Success = false
+		result.StatusCode = 500
+		result.ErrorMessage = err.Error()
+	}
 	result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
 	if result.ProtocolEvidence == nil {
 		result.ProtocolEvidence = map[string]any{}
@@ -206,14 +254,73 @@ func finalizeResult(result *protocol.Result, start time.Time, action *protocol.A
 	result.ProtocolEvidence["protocol"] = javaVuserProtocolName
 	result.ProtocolEvidence["runner_stdout_bytes"] = len(stdout)
 	result.ProtocolEvidence["runner_stderr_bytes"] = len(stderr)
+	if hasSummary {
+		result.ProtocolEvidence["runner_result"] = summary
+	}
+	if len(events) > 0 {
+		result.ProtocolEvidence["runner_events"] = events
+		result.ProtocolEvidence["runner_event_count"] = len(events)
+		errorEvents := 0
+		for _, event := range events {
+			if strings.EqualFold(event.Type, "error") {
+				errorEvents++
+			}
+		}
+		if errorEvents > 0 {
+			result.ProtocolEvidence["runner_error_event_count"] = errorEvents
+		}
+	}
 	if stderr != "" {
 		result.ProtocolEvidence["runner_stderr"] = stderr
 	}
-	if err != nil {
-		result.Success = false
-		result.StatusCode = 500
-		result.ErrorMessage = err.Error()
+}
+
+func parseRunnerSummary(stdout string) (runnerSummary, bool) {
+	for _, line := range reverseNonEmptyLines(stdout) {
+		var summary runnerSummary
+		if err := json.Unmarshal([]byte(line), &summary); err != nil {
+			continue
+		}
+		if summary.Success != nil || summary.Error != "" || summary.DurationMS > 0 || summary.ClassName != "" || summary.Method != "" {
+			return summary, true
+		}
 	}
+	return runnerSummary{}, false
+}
+
+func parseRunnerEvents(stderr string) []runnerEvent {
+	lines := strings.Split(stderr, "\n")
+	events := make([]runnerEvent, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		var event runnerEvent
+		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			continue
+		}
+		event.Type = strings.TrimSpace(event.Type)
+		event.Name = strings.TrimSpace(event.Name)
+		event.Message = strings.TrimSpace(event.Message)
+		if event.Type == "" {
+			continue
+		}
+		events = append(events, event)
+	}
+	return events
+}
+
+func reverseNonEmptyLines(text string) []string {
+	raw := strings.Split(text, "\n")
+	out := make([]string, 0, len(raw))
+	for i := len(raw) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(raw[i])
+		if line != "" {
+			out = append(out, line)
+		}
+	}
+	return out
 }
 
 func acquireProcessSlot(ctx context.Context) (func(), error) {
