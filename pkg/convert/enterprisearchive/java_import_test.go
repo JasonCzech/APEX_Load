@@ -497,6 +497,57 @@ public class Actions {
 	}
 }
 
+func TestConvertZipJavaApacheHTTPClientObjectProducesExecutableHTTP(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	addJavaZipFile(t, zw, "JavaApacheHTTP/JavaApacheHTTP.usr", `[General]
+Type=Java over HTTP
+ScriptLanguage=JAVA
+RunType=Java-Interpreter
+[Actions]
+Action=Actions.java
+`)
+	addJavaZipFile(t, zw, "JavaApacheHTTP/Actions.java", `import org.apache.http.client.methods.HttpPost;
+import org.apache.http.entity.StringEntity;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClients;
+
+public class Actions {
+  public int action() throws Throwable {
+    CloseableHttpClient client = HttpClients.createDefault();
+    HttpPost post = new HttpPost("https://example.test/api/orders");
+    post.setHeader("Content-Type", "application/json");
+    post.setEntity(new StringEntity("{\"id\":\"{orderId}\"}"));
+    client.execute(post);
+    return 0;
+  }
+}`)
+	if err := zw.Close(); err != nil {
+		t.Fatalf("close zip: %v", err)
+	}
+
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if result.Script == nil || result.Script.Protocol != "http" {
+		t.Fatalf("script = %#v, want executable HTTP script", result.Script)
+	}
+	if len(result.Script.Actions) != 1 {
+		t.Fatalf("actions = %#v, want one HTTP request", result.Script.Actions)
+	}
+	action := result.Script.Actions[0]
+	if action.Method != "POST" || action.Target != "/api/orders" {
+		t.Fatalf("action = %#v, want POST /api/orders", action)
+	}
+	if action.Body != `{"id":"{{var.orderid}}"}` {
+		t.Fatalf("body = %q, want templated JSON body", action.Body)
+	}
+	if action.Headers["Content-Type"] != "application/json" || len(action.HeaderList) == 0 {
+		t.Fatalf("headers=%#v header_list=%#v, want ordered content type", action.Headers, action.HeaderList)
+	}
+}
+
 func TestConvertZipJavaJDBCIdiomsProduceExecutableDatabase(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)

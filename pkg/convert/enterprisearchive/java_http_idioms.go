@@ -13,11 +13,19 @@ var (
 	javaHTTPBuilderURIRe      = regexp.MustCompile(`(?is)\.uri\s*\(\s*(?:URI\.create\s*\(\s*)?("(?:(?:\\.)|[^"\\])*")`)
 	javaHTTPBodyPublisherRe   = regexp.MustCompile(`(?is)\bofString\s*\(\s*("(?:(?:\\.)|[^"\\])*")`)
 	javaHTTPContentTypeHintRe = regexp.MustCompile(`(?is)\.header\s*\(\s*"Content-Type"\s*,\s*("(?:(?:\\.)|[^"\\])*")`)
+	javaApacheRequestAssignRe = regexp.MustCompile(`(?is)^\s*(?:(?:final\s+)?[A-Za-z_$][A-Za-z0-9_$.<>\[\]]*\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*new\s+(?:[A-Za-z_$][A-Za-z0-9_$.]*\.)?Http(Get|Post|Put|Delete|Patch|Head|Options)\s*\(\s*("(?:(?:\\.)|[^"\\])*")`)
+	javaApacheSetHeaderRe     = regexp.MustCompile(`(?is)^\s*([A-Za-z_][A-Za-z0-9_]*)\.setHeader\s*\(\s*("(?:(?:\\.)|[^"\\])*")\s*,\s*("(?:(?:\\.)|[^"\\])*")`)
+	javaApacheSetEntityRe     = regexp.MustCompile(`(?is)^\s*([A-Za-z_][A-Za-z0-9_]*)\.setEntity\s*\(.*?\bStringEntity\s*\(\s*("(?:(?:\\.)|[^"\\])*")`)
+	javaApacheExecuteRe       = regexp.MustCompile(`(?is)\.execute\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\b`)
 )
 
 func javaHTTPParsedActions(program javaProgram) []*ParsedAction {
+	apache := newJavaApacheHTTPState()
 	return javaParsedActionsFor(program, func(statement javaStatement, phase string) (ParsedFunction, bool) {
 		if fn, ok := javaWebToParsedFunction(statement, phase); ok {
+			return fn, true
+		}
+		if fn, ok := apache.mapStatement(statement, phase); ok {
 			return fn, true
 		}
 		if fn, ok := javaHTTPClientToParsedFunction(statement, phase); ok {
@@ -32,6 +40,55 @@ func javaHTTPParsedActions(program javaProgram) []*ParsedAction {
 		}
 		return ParsedFunction{}, false
 	})
+}
+
+type javaApacheHTTPState struct {
+	requests map[string]ParsedFunction
+}
+
+func newJavaApacheHTTPState() *javaApacheHTTPState {
+	return &javaApacheHTTPState{requests: map[string]ParsedFunction{}}
+}
+
+func (state *javaApacheHTTPState) mapStatement(statement javaStatement, phase string) (ParsedFunction, bool) {
+	text := javaNormalizeStatementText(statement.Text)
+	if matches := javaApacheRequestAssignRe.FindStringSubmatch(text); len(matches) == 4 {
+		url, _ := parseJavaStringLiteral(matches[3])
+		if isAbsoluteHTTPURL(url) {
+			state.requests[matches[1]] = javaHTTPClientParsedFunction(statement, phase, url, strings.ToUpper(matches[2]))
+		}
+		return ParsedFunction{}, false
+	}
+	if matches := javaApacheSetHeaderRe.FindStringSubmatch(text); len(matches) == 4 {
+		if fn, ok := state.requests[matches[1]]; ok {
+			key, _ := parseJavaStringLiteral(matches[2])
+			value, _ := parseJavaStringLiteral(matches[3])
+			if key != "" {
+				fn.Headers[key] = value
+				state.requests[matches[1]] = fn
+			}
+		}
+		return ParsedFunction{}, false
+	}
+	if matches := javaApacheSetEntityRe.FindStringSubmatch(text); len(matches) == 3 {
+		if fn, ok := state.requests[matches[1]]; ok {
+			body, _ := parseJavaStringLiteral(matches[2])
+			fn.Body = body
+			fn.Args["Body"] = body
+			state.requests[matches[1]] = fn
+		}
+		return ParsedFunction{}, false
+	}
+	if matches := javaApacheExecuteRe.FindStringSubmatch(text); len(matches) == 2 {
+		if fn, ok := state.requests[matches[1]]; ok {
+			fn.Filename = statement.File
+			fn.LineNumber = statement.StartLine
+			fn.EndLine = statement.EndLine
+			fn.RawBlock = statement.Text
+			return fn, true
+		}
+	}
+	return ParsedFunction{}, false
 }
 
 func javaWebToParsedFunction(statement javaStatement, phase string) (ParsedFunction, bool) {
