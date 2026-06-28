@@ -443,45 +443,23 @@ func convertJavaStatement(result *ConvertResult, state *javaImportState, files m
 		appendJavaReview(result, state, statement, phase, "unmapped_java_block", phase == "action")
 		return nil
 	}
-	if state.skipHTTP {
-		if _, ok := javaWebToParsedFunction(matchStatement, phase); ok {
+	ctx := &javaMapperContext{
+		result:    result,
+		state:     state,
+		files:     files,
+		phase:     phase,
+		statement: matchStatement,
+		text:      text,
+	}
+	for _, mapper := range javaStatementMapperRegistry {
+		handled, err := mapper.Map(ctx)
+		if err != nil {
+			return err
+		}
+		if handled {
 			return nil
 		}
-		if _, ok := javaHTTPClientToParsedFunction(matchStatement, phase); ok {
-			return nil
-		}
 	}
-	if state.skipDatabase && javaStatementLooksLikeDatabase(text) {
-		return nil
-	}
-	if state.env.assignDestination(text, files) || state.env.assignLookupDestination(text, files) || state.env.assignProducer(text, files) || state.env.assignMessage(text, files) || state.env.assignString(text, files) {
-		appendJavaMapping(result, matchStatement, "", "", "state", "converted", "Mapped Java symbolic state used by downstream JMS actions.", SourceFunctionSupportExecutable)
-		return nil
-	}
-	if isJavaInertStatement(text) {
-		return nil
-	}
-	if convertJavaEnvPut(result, state, files, matchStatement) {
-		return nil
-	}
-	if convertJavaMessageProperty(result, state, files, matchStatement) {
-		return nil
-	}
-	if fn, ok := javaLRToParsedFunction(matchStatement, phase); ok {
-		routeJavaLRFunction(result, state, phase, matchStatement, fn)
-		return nil
-	}
-	if action, ok := convertJavaJMSAction(state, files, matchStatement); ok {
-		applyJavaTransactionMetadata(&action, state)
-		appendJavaAction(result, matchStatement, phase, action, SourceFunctionSupportExecutable, "Mapped Java JMS API idiom to native JMS action.")
-		state.jmsActions++
-		return nil
-	}
-	if reason := javaNamedReviewReason(text); reason != "" {
-		appendJavaReview(result, state, statement, phase, reason, phase == "action")
-		return nil
-	}
-	appendJavaReview(result, state, statement, phase, "unmapped_java_statement", phase == "action")
 	return nil
 }
 
