@@ -549,7 +549,8 @@ func javaTransparentBlockHeader(header string) bool {
 		strings.HasPrefix(normalized, "else") ||
 		strings.HasPrefix(normalized, "for") ||
 		strings.HasPrefix(normalized, "while") ||
-		strings.HasPrefix(normalized, "switch")
+		strings.HasPrefix(normalized, "switch") ||
+		strings.HasPrefix(normalized, "synchronized")
 }
 
 func javaNormalizeBlockHeader(header string) string {

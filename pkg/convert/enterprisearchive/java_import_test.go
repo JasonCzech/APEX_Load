@@ -691,6 +691,48 @@ public class Actions {
 	}
 }
 
+func TestConvertZipJavaSynchronizedBlockPreservesNestedJMS(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	addJavaZipFile(t, zw, "JavaSync/JavaSync.usr", `[General]
+Type=Java Vuser
+ScriptLanguage=JAVA
+RunType=Java-Interpreter
+[Actions]
+Action=Actions.java
+`)
+	addJavaZipFile(t, zw, "JavaSync/Actions.java", `import javax.jms.*;
+
+public class Actions {
+  public int action() throws Throwable {
+    synchronized (this) {
+      Queue q = session.createQueue("orders.in");
+      TextMessage msg = session.createTextMessage("hi");
+      producer.send(q, msg);
+    }
+    return 0;
+  }
+}`)
+	if err := zw.Close(); err != nil {
+		t.Fatalf("close zip: %v", err)
+	}
+
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if result.Script == nil || result.Script.Protocol != "jms-solace" {
+		t.Fatalf("script = %#v, want JMS script", result.Script)
+	}
+	publish, ok := javaActionByType(result.Script.Actions, "jms_publish")
+	if !ok {
+		t.Fatalf("actions = %#v, want nested jms_publish", result.Script.Actions)
+	}
+	if publish.Target != "orders.in" || publish.Body != "hi" {
+		t.Fatalf("publish = %#v, want nested publish target/body", publish)
+	}
+}
+
 func TestConvertZipJavaJMSInfersProviderAndTopicDestination(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
