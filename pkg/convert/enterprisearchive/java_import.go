@@ -507,9 +507,13 @@ func javaStatementLooksLikeDatabase(text string) bool {
 		strings.Contains(lower, "executequery(") ||
 		strings.Contains(lower, "executeupdate(") ||
 		strings.Contains(lower, "preparestatement(") ||
-		strings.Contains(lower, ".commit()") ||
-		strings.Contains(lower, ".rollback()") ||
+		javaStatementIsSQLTransactionControl(text) ||
 		strings.Contains(lower, ".setautocommit(false")
+}
+
+func javaStatementIsSQLTransactionControl(text string) bool {
+	_, ok := javaSQLTransactionControlFunction(text)
+	return ok
 }
 
 func javaNamedReviewReason(text string) string {

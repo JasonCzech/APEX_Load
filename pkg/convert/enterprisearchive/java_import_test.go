@@ -644,6 +644,53 @@ public class Actions {
 	}
 }
 
+func TestConvertZipJavaMixedJMSAndJDBCSeparatesCommitOwnership(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	addJavaZipFile(t, zw, "JavaMixedTx/JavaMixedTx.usr", `[General]
+Type=Java Vuser
+ScriptLanguage=JAVA
+RunType=Java-Interpreter
+[Actions]
+Action=Actions.java
+`)
+	addJavaZipFile(t, zw, "JavaMixedTx/Actions.java", `import javax.jms.*;
+import java.sql.*;
+
+public class Actions {
+  public int action() throws Throwable {
+    PreparedStatement ps = conn.prepareStatement("insert into audit values (1)");
+    ps.executeUpdate();
+    conn.commit();
+    Queue q = session.createQueue("orders.in");
+    TextMessage msg = session.createTextMessage("hi");
+    producer.send(q, msg);
+    session.commit();
+    return 0;
+  }
+}`)
+	if err := zw.Close(); err != nil {
+		t.Fatalf("close zip: %v", err)
+	}
+
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	counts := map[string]int{}
+	for _, script := range result.Scripts {
+		for _, action := range script.Actions {
+			counts[script.Protocol+":"+action.Type]++
+		}
+	}
+	if counts["database:db_commit"] != 1 {
+		t.Fatalf("action counts = %#v, want one database db_commit from conn.commit", counts)
+	}
+	if counts["jms-solace:jms_commit"] != 1 {
+		t.Fatalf("action counts = %#v, want one JMS jms_commit from session.commit", counts)
+	}
+}
+
 func TestConvertZipJavaJMSInfersProviderAndTopicDestination(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)

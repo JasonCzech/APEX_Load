@@ -12,8 +12,7 @@ var (
 	javaStatementExecRe  = regexp.MustCompile(`(?i)\.execute(?:Query|Update)?\s*\((.*)\)\s*;?\s*$`)
 	javaStatementNoArgRe = regexp.MustCompile(`(?i)^([A-Za-z_][A-Za-z0-9_]*)\.execute(?:Query|Update)?\s*\(\s*\)\s*;?\s*$`)
 	javaSetAutoCommitRe  = regexp.MustCompile(`(?i)\.setAutoCommit\s*\(\s*false\s*\)\s*;?\s*$`)
-	javaSQLCommitRe      = regexp.MustCompile(`(?i)\.commit\s*\(\s*\)\s*;?\s*$`)
-	javaSQLRollbackRe    = regexp.MustCompile(`(?i)\.rollback\s*\(\s*\)\s*;?\s*$`)
+	javaSQLTxControlRe   = regexp.MustCompile(`(?i)^\s*([A-Za-z_][A-Za-z0-9_]*)\.(commit|rollback)\s*\(\s*\)\s*;?\s*$`)
 )
 
 func javaDatabaseParsedActions(program javaProgram, files map[string]string) []*ParsedAction {
@@ -40,11 +39,8 @@ func javaDatabaseParsedActions(program javaProgram, files map[string]string) []*
 		if javaSetAutoCommitRe.MatchString(text) {
 			return javaDatabaseFunction(statement, phase, "java_sql_begin", ""), true
 		}
-		if javaSQLCommitRe.MatchString(text) {
-			return javaDatabaseFunction(statement, phase, "java_sql_commit", ""), true
-		}
-		if javaSQLRollbackRe.MatchString(text) {
-			return javaDatabaseFunction(statement, phase, "java_sql_rollback", ""), true
+		if name, ok := javaSQLTransactionControlFunction(text); ok {
+			return javaDatabaseFunction(statement, phase, name, ""), true
 		}
 		if m := javaStatementNoArgRe.FindStringSubmatch(text); len(m) == 2 {
 			if sql := prepared[strings.TrimSpace(m[1])]; sql != "" {
@@ -65,6 +61,24 @@ func javaDatabaseParsedActions(program javaProgram, files map[string]string) []*
 		}
 		return ParsedFunction{}, false
 	})
+}
+
+func javaSQLTransactionControlFunction(text string) (string, bool) {
+	matches := javaSQLTxControlRe.FindStringSubmatch(strings.TrimSpace(text))
+	if len(matches) != 3 {
+		return "", false
+	}
+	receiver := strings.ToLower(matches[1])
+	if strings.Contains(receiver, "jms") || strings.Contains(receiver, "session") {
+		return "", false
+	}
+	if receiver != "conn" && !strings.Contains(receiver, "connection") && !strings.Contains(receiver, "jdbc") && !strings.Contains(receiver, "db") {
+		return "", false
+	}
+	if strings.EqualFold(matches[2], "rollback") {
+		return "java_sql_rollback", true
+	}
+	return "java_sql_commit", true
 }
 
 func javaResolveSQLExpression(expr string, vars map[string]string, files map[string]string) string {

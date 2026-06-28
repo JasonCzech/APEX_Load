@@ -661,8 +661,9 @@ func joinArchiveText(files map[string]string) string {
 }
 
 func looksLikeSQLText(text string) bool {
-	for _, token := range []string{"select ", "insert into", "update ", "delete from", "create table", "exec ", "call "} {
-		if strings.Contains(text, token) {
+	lower := strings.ToLower(text)
+	for _, token := range []string{"select ", "insert into", "update ", "delete from", "create table", "drop table", "merge into", "truncate ", "exec ", "call ", "with "} {
+		if strings.Contains(lower, token) {
 			return true
 		}
 	}

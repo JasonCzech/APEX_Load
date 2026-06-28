@@ -7,6 +7,19 @@ import (
 	"testing"
 )
 
+func TestLooksLikeSQLTextRecognizesCaseInsensitiveStatementForms(t *testing.T) {
+	for _, sql := range []string{
+		"SELECT * FROM orders",
+		"MERGE INTO orders USING incoming ON orders.id = incoming.id",
+		"WITH recent AS (SELECT * FROM orders) SELECT * FROM recent",
+		"TRUNCATE TABLE scratch_orders",
+	} {
+		if !looksLikeSQLText(sql) {
+			t.Fatalf("looksLikeSQLText(%q) = false, want true", sql)
+		}
+	}
+}
+
 func TestDetectProtocolFromUSRType(t *testing.T) {
 	tests := []struct {
 		name       string
