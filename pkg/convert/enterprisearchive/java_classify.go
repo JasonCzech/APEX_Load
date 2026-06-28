@@ -60,6 +60,9 @@ func classifyJavaArchive(program javaProgram, projectConfig *ProjectConfig, file
 		profile.Surfaces[javaSurfaceSOAP] = true
 	}
 	profile.ReviewFamilies = inferJavaReviewFamilies(text)
+	if len(program.Unparsed) > 0 {
+		profile.ReviewFamilies = appendUnique(profile.ReviewFamilies, "unparsed_java_region")
+	}
 	if len(profile.ReviewFamilies) > 0 {
 		profile.Surfaces[javaSurfaceReview] = true
 	}

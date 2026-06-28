@@ -8,8 +8,9 @@ import (
 )
 
 type javaProgram struct {
-	Classes []javaClass
-	Methods map[string]javaMethod
+	Classes  []javaClass
+	Methods  map[string]javaMethod
+	Unparsed []javaStatement
 }
 
 type javaStringEnv struct {
@@ -48,9 +49,12 @@ func parseJavaProgram(files map[string]string) (javaProgram, []string) {
 		cls, err := parseJavaFile(name, files[name])
 		if err != nil {
 			warnings = append(warnings, err.Error())
-			continue
+			if len(cls.Methods) == 0 && len(cls.Unparsed) == 0 {
+				continue
+			}
 		}
 		program.Classes = append(program.Classes, cls)
+		program.Unparsed = append(program.Unparsed, cls.Unparsed...)
 		for methodName, method := range cls.Methods {
 			if _, exists := program.Methods[methodName]; !exists {
 				program.Methods[methodName] = method

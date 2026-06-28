@@ -633,3 +633,109 @@ public class Actions {
 		}
 	}
 }
+
+func TestConvertZipJavaUnmatchedBraceProducesUnparsedRegionReview(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	addJavaZipFile(t, zw, "JavaBroken/JavaBroken.usr", `[General]
+Type=Java over HTTP
+ScriptLanguage=JAVA
+RunType=Java-Interpreter
+[Actions]
+Action=Actions.java
+`)
+	addJavaZipFile(t, zw, "JavaBroken/Actions.java", `public class Actions {
+  public int action() throws Throwable {
+    web.url("Home", "URL=https://example.test/home", web.LAST);
+`)
+	if err := zw.Close(); err != nil {
+		t.Fatalf("close zip: %v", err)
+	}
+
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if result.Script == nil {
+		t.Fatal("script is nil, want review script with unparsed_java_region action")
+	}
+	if result.DetectedProtocol == nil || result.DetectedProtocol.ImportMode != ImportModeReviewOnly {
+		t.Fatalf("detected = %#v, want review-only unparsed Java import", result.DetectedProtocol)
+	}
+	if result.ReviewArtifact == nil || result.ReviewArtifact.Metadata["reason"] != "unparsed_java_region" {
+		t.Fatalf("review artifact = %#v, want unparsed_java_region metadata", result.ReviewArtifact)
+	}
+	assertJavaSourceReviewReason(t, result.effectiveScripts(), "unparsed_java_region")
+	if result.SourceReview == nil || len(result.SourceReview.Mappings) == 0 || result.SourceReview.Mappings[0].SupportMode != string(SourceFunctionSupportReviewOnly) {
+		t.Fatalf("source review = %#v, want review-only mapping", result.SourceReview)
+	}
+}
+
+func TestConvertZipJavaMixedHTTPWithMalformedHelperSplitsReviewRegion(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	addJavaZipFile(t, zw, "JavaMixedBroken/JavaMixedBroken.usr", `[General]
+Type=Java over HTTP
+ScriptLanguage=JAVA
+RunType=Java-Interpreter
+[Actions]
+Action=Actions.java
+`)
+	addJavaZipFile(t, zw, "JavaMixedBroken/Actions.java", `public class Actions {
+  public int action() throws Throwable {
+    web.url("Home", "URL=https://example.test/home", web.LAST);
+    return 0;
+  }
+
+  public void brokenHelper() throws Exception {
+    client.call();
+`)
+	if err := zw.Close(); err != nil {
+		t.Fatalf("close zip: %v", err)
+	}
+
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if len(result.Scripts) < 2 {
+		t.Fatalf("scripts = %#v, want executable HTTP script plus review script", result.Scripts)
+	}
+	var sawHTTP bool
+	for _, script := range result.Scripts {
+		for _, action := range script.Actions {
+			if action.Method == "GET" && action.Target == "/home" {
+				sawHTTP = true
+				break
+			}
+		}
+		if sawHTTP {
+			break
+		}
+	}
+	if !sawHTTP {
+		t.Fatalf("scripts = %#v, want preserved executable HTTP lane", result.Scripts)
+	}
+	assertJavaSourceReviewReason(t, result.Scripts, "unparsed_java_region")
+	if result.ReviewArtifact == nil || result.ReviewArtifact.Metadata["reason"] != "java_named_review_surfaces" {
+		t.Fatalf("review artifact = %#v, want named review surface artifact", result.ReviewArtifact)
+	}
+}
+
+func assertJavaSourceReviewReason(t *testing.T, scripts []*dsl.Script, reason string) {
+	t.Helper()
+	for _, script := range scripts {
+		if script == nil {
+			continue
+		}
+		for _, action := range script.Actions {
+			if action.Type != "source_review" || action.Metadata == nil {
+				continue
+			}
+			if action.Metadata["review_reason"] == reason {
+				return
+			}
+		}
+	}
+	t.Fatalf("scripts = %#v, missing source_review reason %q", scripts, reason)
+}

@@ -7,10 +7,11 @@ import (
 )
 
 type javaClass struct {
-	File    string
-	Imports []string
-	Fields  []javaStatement
-	Methods map[string]javaMethod
+	File     string
+	Imports  []string
+	Fields   []javaStatement
+	Methods  map[string]javaMethod
+	Unparsed []javaStatement
 }
 
 type javaMethod struct {
@@ -53,6 +54,14 @@ func parseJavaFile(filename string, content string) (javaClass, error) {
 		open := match[0] + openBrace
 		close := findMatchingJavaBrace(content, open)
 		if close < 0 {
+			cls.Unparsed = append(cls.Unparsed, javaStatement{
+				Kind:      "unparsed",
+				Text:      strings.TrimSpace(content[match[0]:]),
+				Header:    strings.TrimSpace(content[match[0]:match[1]]),
+				File:      filename,
+				StartLine: javaLineForOffset(content, match[0]),
+				EndLine:   javaLineForOffset(content, len(content)),
+			})
 			continue
 		}
 		body := content[open+1 : close]
@@ -68,8 +77,11 @@ func parseJavaFile(filename string, content string) (javaClass, error) {
 		method.Statements = parseJavaStatements(filename, body, startLine)
 		cls.Methods[name] = method
 	}
-	if len(cls.Methods) == 0 {
+	if len(cls.Methods) == 0 && len(cls.Unparsed) == 0 {
 		return cls, fmt.Errorf("no Java methods found in %s", filename)
+	}
+	if len(cls.Unparsed) > 0 {
+		return cls, fmt.Errorf("%s contains %d unparsed Java region(s) with unmatched braces", filename, len(cls.Unparsed))
 	}
 	return cls, nil
 }

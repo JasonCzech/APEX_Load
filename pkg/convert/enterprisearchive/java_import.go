@@ -69,6 +69,23 @@ func ConvertJava(files map[string]string, opts ConvertOptions, detected Detected
 	result.Warnings = append(result.Warnings, parseWarnings...)
 
 	if len(program.Methods) == 0 {
+		if len(program.Unparsed) > 0 {
+			state := &javaImportState{env: newJavaStringEnv(), profile: profile}
+			for _, statement := range program.Unparsed {
+				result.Stats.TotalFunctions++
+				state.statementCount++
+				appendJavaReview(result, state, statement, "action", "unparsed_java_region", true)
+			}
+			reviewDetected := markDetectedReviewOnly(detected, "Java source contained unparsed regions with unmatched braces.")
+			result.DetectedProtocol = &reviewDetected
+			result.ReviewArtifact = NewReviewArtifact(reviewDetected, files, nil, map[string]any{
+				"reason":           "unparsed_java_region",
+				"unparsed_regions": len(program.Unparsed),
+			})
+			result.Warnings = append(result.Warnings, "Java Vuser import preserved unparsed Java source regions for review because the scanner could not match their braces.")
+			result.Scripts = []*dsl.Script{result.Script}
+			return result, nil
+		}
 		result.Script = nil
 		reviewDetected := markDetectedReviewOnly(detected, "No parseable Java lifecycle methods were found.")
 		result.DetectedProtocol = &reviewDetected
@@ -193,6 +210,7 @@ func convertJavaStatementLane(files map[string]string, opts ConvertOptions, dete
 			}
 		}
 	}
+	appendJavaUnparsedRegions(result, state, program)
 	attachJavaTruststoreArtifact(result, files)
 	applyJavaThinkTimeDistribution(result, state)
 
@@ -237,6 +255,14 @@ func convertJavaStatementLane(files map[string]string, opts ConvertOptions, dete
 		result.Stats.ReviewOnlyFunctions++
 	}
 	return result, nil
+}
+
+func appendJavaUnparsedRegions(result *ConvertResult, state *javaImportState, program javaProgram) {
+	for _, statement := range program.Unparsed {
+		state.statementCount++
+		result.Stats.TotalFunctions++
+		appendJavaReview(result, state, statement, "action", "unparsed_java_region", true)
+	}
 }
 
 func mergeJavaLaneResults(lanes []*ConvertResult, detected DetectedProtocol, files map[string]string, profile JavaProfile) *ConvertResult {
