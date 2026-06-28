@@ -165,6 +165,9 @@ func DetectProtocol(files map[string]string, projectConfig *ProjectConfig, actio
 			if compatibleProfiles(*metadata, *contentProfile) {
 				confidence = DetectionConfidenceHigh
 				selected.Warnings = append(selected.Warnings, contentProfile.Warnings...)
+				if metadata.Canonical == "java_vuser" && isSpecializedJavaProfile(contentProfile.Canonical) {
+					selected = *contentProfile
+				}
 				if metadata.Canonical == "web_http_html" && contentProfile.Canonical == "soap" {
 					selected = *contentProfile
 					selected.Warnings = append(selected.Warnings, "Web HTTP/HTML metadata contains SOAP-only request evidence; routing to SOAP converter.")
@@ -232,6 +235,8 @@ func profileForType(scriptType string) (protocolProfile, bool) {
 		return javaHTTPProfile(), true
 	case strings.Contains(key, "java") && (strings.Contains(key, "jdbc") || strings.Contains(key, "sql") || strings.Contains(key, "database")):
 		return javaJDBCProfile(), true
+	case strings.Contains(key, "java") && strings.Contains(key, "soap"):
+		return javaSOAPProfile(), true
 	case strings.Contains(key, "odbc") || strings.Contains(key, "database"):
 		return databaseProfile(), true
 	case strings.Contains(key, "web service") || strings.Contains(key, "soap"):
@@ -347,6 +352,8 @@ func profileFromContent(files map[string]string, actions []*ParsedAction) (*prot
 			profile = javaHTTPProfile()
 		} else if javaLooksLikeDatabase(archiveText) {
 			profile = javaJDBCProfile()
+		} else if javaLooksLikeSOAP(archiveText) {
+			profile = javaSOAPProfile()
 		}
 		return &profile, javaSignals
 	}
@@ -403,6 +410,7 @@ func javaVuserContentSignals(files map[string]string) ([]string, bool) {
 	jms := false
 	http := false
 	database := false
+	soap := false
 	names := make([]string, 0, len(files))
 	for name := range files {
 		names = append(names, name)
@@ -430,6 +438,9 @@ func javaVuserContentSignals(files map[string]string) ([]string, bool) {
 		if javaLooksLikeDatabase(content) {
 			database = true
 		}
+		if javaLooksLikeSOAP(content) {
+			soap = true
+		}
 	}
 	if len(signals) == 0 {
 		return nil, false
@@ -442,6 +453,9 @@ func javaVuserContentSignals(files map[string]string) ([]string, bool) {
 	}
 	if database {
 		signals = append(signals, "java.sql API usage in Java Vuser source")
+	}
+	if soap {
+		signals = append(signals, "Java SOAP API usage in Java Vuser source")
 	}
 	return signals, true
 }
@@ -568,6 +582,10 @@ func isJavaCompatibleProfile(canonical string) bool {
 	default:
 		return false
 	}
+}
+
+func isSpecializedJavaProfile(canonical string) bool {
+	return canonical == "java_jms_solace" || canonical == "java_over_http" || canonical == "java_jdbc" || canonical == "java_soap"
 }
 
 func isHarmlessSOAPConflict(selected protocolProfile, contentProfile *protocolProfile) bool {
@@ -838,6 +856,21 @@ func javaJDBCProfile() protocolProfile {
 			"Database DSN secret",
 			"SQL bind data review",
 			"Replay validation evidence against the target database",
+		},
+	}
+}
+
+func javaSOAPProfile() protocolProfile {
+	return protocolProfile{
+		Canonical:   "java_soap",
+		DisplayName: "Java Vuser SOAP",
+		APEXLoad:    "soap",
+		Bundle:      "Foundation Entitlement",
+		Mode:        ImportModeExecutable,
+		Evidence: []string{
+			"Recoverable SOAP endpoint and envelope",
+			"SOAPAction and namespace review",
+			"Replay validation evidence",
 		},
 	}
 }

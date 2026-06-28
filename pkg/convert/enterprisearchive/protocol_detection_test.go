@@ -421,6 +421,73 @@ public class Actions {
 	}
 }
 
+func TestDetectProtocolPromotesGenericJavaMetadataWithSpecializedJavaSources(t *testing.T) {
+	tests := []struct {
+		name      string
+		source    string
+		canonical string
+		apex      string
+		signal    string
+	}{
+		{
+			name: "http",
+			source: `import lrapi.lr;
+public class Actions {
+    public int action() {
+        web.url("Home", "URL=https://example.test/home", new String[] {});
+        return 0;
+    }
+}
+`,
+			canonical: "java_over_http",
+			apex:      "http",
+			signal:    "Java HTTP API usage in Java Vuser source",
+		},
+		{
+			name: "jdbc",
+			source: `import lrapi.lr;
+import java.sql.PreparedStatement;
+public class Actions {
+    public int action() throws Exception {
+        PreparedStatement stmt = conn.prepareStatement("select id from orders");
+        stmt.executeQuery();
+        return 0;
+    }
+}
+`,
+			canonical: "java_jdbc",
+			apex:      "database",
+			signal:    "java.sql API usage in Java Vuser source",
+		},
+		{
+			name: "soap",
+			source: `import lrapi.lr;
+import javax.xml.soap.SOAPMessage;
+public class Actions {
+    public int action() throws Exception {
+        SOAPMessage message = null;
+        return 0;
+    }
+}
+`,
+			canonical: "java_soap",
+			apex:      "soap",
+			signal:    "Java SOAP API usage in Java Vuser source",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			detected := DetectProtocol(map[string]string{"Actions.java": tt.source}, &ProjectConfig{ScriptType: "Java Vuser"}, nil)
+			if detected.CanonicalSourceProtocol != tt.canonical || detected.APEXLoadProtocol != tt.apex || detected.ImportMode != ImportModeExecutable || detected.Confidence != DetectionConfidenceHigh {
+				t.Fatalf("detected = %#v, want high-confidence %s/%s", detected, tt.canonical, tt.apex)
+			}
+			if !containsString(detected.Signals, tt.signal) {
+				t.Fatalf("signals = %#v, want %q", detected.Signals, tt.signal)
+			}
+		})
+	}
+}
+
 func mustParseActionFile(t *testing.T, content string) *ParsedAction {
 	t.Helper()
 	parsed, err := ParseActionFile("Action.c", content)
