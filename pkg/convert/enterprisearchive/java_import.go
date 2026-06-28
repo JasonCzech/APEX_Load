@@ -242,7 +242,7 @@ func convertJavaStatementLane(files map[string]string, opts ConvertOptions, dete
 		}
 	} else {
 		detected.ImportMode = ImportModeExecutable
-		detected.APEXLoadProtocol = "jms"
+		detected.APEXLoadProtocol = profile.JMSProtocol
 		detected.CanonicalSourceProtocol = "java_vuser"
 		result.DetectedProtocol = &detected
 	}

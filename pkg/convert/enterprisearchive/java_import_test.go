@@ -306,6 +306,9 @@ public class Actions {
 	if result.DetectedProtocol == nil || result.DetectedProtocol.ImportMode != ImportModeExecutable {
 		t.Fatalf("detected = %#v, want executable Java JMS import", result.DetectedProtocol)
 	}
+	if result.DetectedProtocol.APEXLoadProtocol != "jms-solace" {
+		t.Fatalf("detected = %#v, want jms-solace target", result.DetectedProtocol)
+	}
 	if result.Script == nil || result.Script.Protocol != "jms-solace" {
 		t.Fatalf("script = %#v, want jms-solace draft", result.Script)
 	}
@@ -532,6 +535,9 @@ public class Actions {
 	}
 	if result.Script.Config.JMS.Provider != "ibmmq" || result.Script.Config.JMS.DestinationType != "topic" {
 		t.Fatalf("jms config = %#v, want IBM MQ topic", result.Script.Config.JMS)
+	}
+	if result.DetectedProtocol == nil || result.DetectedProtocol.APEXLoadProtocol != "jms-ibmmq" {
+		t.Fatalf("detected = %#v, want jms-ibmmq target", result.DetectedProtocol)
 	}
 	publish, ok := javaActionByType(result.Script.Actions, "jms_publish")
 	if !ok {

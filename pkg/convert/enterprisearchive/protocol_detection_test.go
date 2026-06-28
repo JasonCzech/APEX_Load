@@ -332,7 +332,7 @@ vuser_end=vuser_end.java
 	if result.Script == nil || result.Script.Protocol != "jms-solace" {
 		t.Fatalf("script = %#v, want executable Java JMS draft", result.Script)
 	}
-	if result.DetectedProtocol == nil || result.DetectedProtocol.CanonicalSourceProtocol != "java_vuser" || result.DetectedProtocol.ImportMode != ImportModeExecutable || result.DetectedProtocol.APEXLoadProtocol != "jms" {
+	if result.DetectedProtocol == nil || result.DetectedProtocol.CanonicalSourceProtocol != "java_vuser" || result.DetectedProtocol.ImportMode != ImportModeExecutable || result.DetectedProtocol.APEXLoadProtocol != "jms-solace" {
 		t.Fatalf("detected protocol = %#v, want executable Java Vuser JMS mapping", result.DetectedProtocol)
 	}
 	if result.ReviewArtifact != nil {

@@ -2175,7 +2175,7 @@ Format=%H:%M:%S
 	if result.Script.Protocol != "jms-solace" {
 		t.Fatalf("protocol = %q, want jms-solace", result.Script.Protocol)
 	}
-	if result.DetectedProtocol == nil || result.DetectedProtocol.CanonicalSourceProtocol != "java_vuser" || result.DetectedProtocol.ImportMode != ImportModeExecutable || result.DetectedProtocol.APEXLoadProtocol != "jms" {
+	if result.DetectedProtocol == nil || result.DetectedProtocol.CanonicalSourceProtocol != "java_vuser" || result.DetectedProtocol.ImportMode != ImportModeExecutable || result.DetectedProtocol.APEXLoadProtocol != "jms-solace" {
 		t.Fatalf("detected protocol = %#v, want executable Java JMS/Solace draft", result.DetectedProtocol)
 	}
 	if result.ReviewArtifact != nil {
@@ -4266,7 +4266,7 @@ public class Actions {
 	if result.Script == nil || result.Script.Protocol != "jms-solace" {
 		t.Fatalf("script = %#v, want jms-solace script", result.Script)
 	}
-	if result.DetectedProtocol == nil || result.DetectedProtocol.ImportMode != ImportModeExecutable || result.DetectedProtocol.APEXLoadProtocol != "jms" {
+	if result.DetectedProtocol == nil || result.DetectedProtocol.ImportMode != ImportModeExecutable || result.DetectedProtocol.APEXLoadProtocol != "jms-solace" {
 		t.Fatalf("detected = %#v, want executable Java JMS mapping", result.DetectedProtocol)
 	}
 	if result.Script.Config.JMS.BrokerURL != "smf://broker.example.test:55555" ||
