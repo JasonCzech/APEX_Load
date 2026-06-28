@@ -4,6 +4,7 @@
 //
 //	-set web        (default) → docs/LOADRUNNER_WEB_FUNCTION_COVERAGE.md
 //	-set java                 → docs/LOADRUNNER_JAVA_LR_FUNCTION_COVERAGE.md
+//	-set java-surfaces        → docs/LOADRUNNER_JAVA_VUSER_IMPORT_COVERAGE.md
 //	-set trueclient           → docs/LOADRUNNER_TRUCLIENT_STEP_COVERAGE.md
 package main
 
@@ -17,7 +18,7 @@ import (
 )
 
 func main() {
-	set := flag.String("set", "web", "coverage set to render: web | java | trueclient")
+	set := flag.String("set", "web", "coverage set to render: web | java | java-surfaces | trueclient")
 	out := flag.String("out", "", "output markdown path (defaults per set)")
 	flag.Parse()
 
@@ -29,11 +30,14 @@ func main() {
 	case "java":
 		content = enterprisearchive.RenderJavaLRFunctionCoverageMarkdown()
 		defaultOut = "docs/LOADRUNNER_JAVA_LR_FUNCTION_COVERAGE.md"
+	case "java-surfaces":
+		content = enterprisearchive.RenderJavaImportSurfaceCoverageMarkdown()
+		defaultOut = "docs/LOADRUNNER_JAVA_VUSER_IMPORT_COVERAGE.md"
 	case "trueclient":
 		content = trueclient.RenderStepCoverageMarkdown()
 		defaultOut = "docs/LOADRUNNER_TRUCLIENT_STEP_COVERAGE.md"
 	default:
-		fmt.Fprintf(os.Stderr, "webcoverage: unknown -set %q (want web|java|trueclient)\n", *set)
+		fmt.Fprintf(os.Stderr, "webcoverage: unknown -set %q (want web|java|java-surfaces|trueclient)\n", *set)
 		os.Exit(2)
 	}
 
