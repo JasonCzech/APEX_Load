@@ -83,6 +83,13 @@ Action=Actions.java
 	if len(callbacks) == 0 {
 		t.Fatalf("sidecar metadata = %#v, want shim callback list", sidecarAction.Metadata)
 	}
+	if !stringSliceContains(callbacks, "transaction_set") || !stringSliceContains(callbacks, "external_secret") {
+		t.Fatalf("sidecar callbacks = %#v, want full lrapi.lr shim event vocabulary", callbacks)
+	}
+	paramEvents, _ := sidecarAction.Params["shim_event_types"].([]string)
+	if !stringSliceContains(paramEvents, "parameter") || !stringSliceContains(paramEvents, "review") {
+		t.Fatalf("sidecar params = %#v, want shim_event_types contract", sidecarAction.Params)
+	}
 	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) > 0 {
 		t.Fatalf("ValidateScriptIssues returned %v", issues)
 	}
@@ -92,9 +99,22 @@ Action=Actions.java
 	if result.ReviewArtifact.Metadata["event_contract"] != javaVuserEventContract || result.ReviewArtifact.Metadata["shim_class"] != javaVuserShimClass {
 		t.Fatalf("review artifact metadata = %#v, want sidecar contract", result.ReviewArtifact.Metadata)
 	}
+	reviewEvents, _ := result.ReviewArtifact.Metadata["shim_event_types"].([]string)
+	if !stringSliceContains(reviewEvents, "metric") || !stringSliceContains(reviewEvents, "runtime") {
+		t.Fatalf("review artifact metadata = %#v, want full sidecar event contract", result.ReviewArtifact.Metadata)
+	}
 	if result.SourceReview == nil || len(result.SourceReview.Mappings) == 0 || result.SourceReview.Mappings[0].SupportMode != string(SourceFunctionSupportExternalRequired) {
 		t.Fatalf("source review = %#v, want external_required mapping", result.SourceReview)
 	}
+}
+
+func stringSliceContains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestConvertZipJavaVuserSolaceMapsJMSIdioms(t *testing.T) {

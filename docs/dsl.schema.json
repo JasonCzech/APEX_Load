@@ -2934,6 +2934,10 @@
                     "description": "Governance gate required before execution, usually java_vuser_jvm_runner.",
                     "type": "string"
                   },
+                  "shim_event_types": {
+                    "description": "Event type names emitted as JSON lines by the lrapi.lr sidecar shim under the declared event contract.",
+                    "type": "array"
+                  },
                   "source_archive_ref": {
                     "description": "Preserved source archive or authoring artifact reference.",
                     "type": "string"

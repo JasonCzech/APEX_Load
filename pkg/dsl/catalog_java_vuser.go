@@ -18,6 +18,7 @@ func javaVuserActionSpecs() []ActionSpec {
 				{Name: "params.timeout_ms", Kind: FieldKindInt, Doc: "Per-run timeout in milliseconds; falls back to config.java_vuser.action_timeout_ms."},
 				{Name: "params.runner_requirement", Kind: FieldKindString, Doc: "Governance gate required before execution, usually java_vuser_jvm_runner."},
 				{Name: "params.event_contract", Kind: FieldKindString, Doc: "Runner event stream contract expected from the sidecar shim."},
+				{Name: "params.shim_event_types", Kind: FieldKindArray, Doc: "Event type names emitted as JSON lines by the lrapi.lr sidecar shim under the declared event contract."},
 				{Name: "params.lr_parameters", Kind: FieldKindObject, Doc: "Initial LoadRunner parameter values exposed to lrapi.lr.eval_string as {Name}."},
 			},
 			Validate: func(index int, action Action) []string {

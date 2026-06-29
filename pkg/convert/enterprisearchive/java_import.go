@@ -33,6 +33,26 @@ const (
 	javaVuserShimClass         = "lrapi.lr"
 )
 
+var javaVuserShimEventTypes = []string{
+	"debug",
+	"error",
+	"external_secret",
+	"log",
+	"metric",
+	"parameter",
+	"rendezvous",
+	"review",
+	"runtime",
+	"status",
+	"timer_end",
+	"timer_start",
+	"transaction_end",
+	"transaction_set",
+	"transaction_start",
+	"transaction_status",
+	"transaction_wasted_time",
+}
+
 type javaImportState struct {
 	env                javaStringEnv
 	unrecognizedAction int
@@ -354,6 +374,7 @@ func convertJavaVuserRunnerDraft(files map[string]string, opts ConvertOptions, d
 			"source_archive_ref": "enterprise_script_archive",
 			"runner_requirement": javaVuserRunnerRequirement,
 			"event_contract":     javaVuserEventContract,
+			"shim_event_types":   append([]string(nil), javaVuserShimEventTypes...),
 		},
 		Metadata: map[string]any{
 			"review_required":    true,
@@ -363,7 +384,8 @@ func convertJavaVuserRunnerDraft(files map[string]string, opts ConvertOptions, d
 			"sidecar_transport":  javaVuserSidecarTransport,
 			"event_contract":     javaVuserEventContract,
 			"shim_class":         javaVuserShimClass,
-			"shim_callbacks":     []string{"transaction_start", "transaction_end", "log", "error"},
+			"shim_callbacks":     append([]string(nil), javaVuserShimEventTypes...),
+			"shim_event_types":   append([]string(nil), javaVuserShimEventTypes...),
 			"operator_opt_in":    true,
 			"source_class":       className,
 		},
@@ -403,6 +425,7 @@ func convertJavaVuserRunnerDraft(files map[string]string, opts ConvertOptions, d
 		"sidecar_transport":              javaVuserSidecarTransport,
 		"event_contract":                 javaVuserEventContract,
 		"shim_class":                     javaVuserShimClass,
+		"shim_event_types":               append([]string(nil), javaVuserShimEventTypes...),
 		"unrecognized_action_statements": state.unrecognizedAction,
 		"configuration_review_items":     state.configReview,
 	})
