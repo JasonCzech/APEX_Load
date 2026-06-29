@@ -54,6 +54,107 @@ func sortedIntMapKeys(values map[string]int) []string {
 	return keys
 }
 
+// writeNetworkPhaseCSVRows emits one network-phase rollup (overall or per-action)
+// as CSV rows. Called by the network_phases section renderer in the registry.
+func writeNetworkPhaseCSVRows(write reportCSVWriteFunc, key string, phases RunArchiveNetworkPhases) error {
+	rows := []struct {
+		metric string
+		value  string
+	}{
+		{"count", formatCSVInt(phases.Count)},
+		{"avg_dns_ms", formatCSVFloat(phases.AvgDNSMs)},
+		{"avg_connect_ms", formatCSVFloat(phases.AvgConnectMs)},
+		{"avg_tls_ms", formatCSVFloat(phases.AvgTLSMs)},
+		{"avg_ttfb_ms", formatCSVFloat(phases.AvgTTFBMs)},
+		{"max_dns_ms", formatCSVFloat(phases.MaxDNSMs)},
+		{"max_connect_ms", formatCSVFloat(phases.MaxConnectMs)},
+		{"max_tls_ms", formatCSVFloat(phases.MaxTLSMs)},
+		{"max_ttfb_ms", formatCSVFloat(phases.MaxTTFBMs)},
+	}
+	for _, row := range rows {
+		if err := write("network_phases", key, row.metric, row.value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// writeReleaseTrendSummaryCSVRows emits the compact release-over-release trend as
+// CSV rows. Called by the release_trend section renderer in the registry.
+func writeReleaseTrendSummaryCSVRows(write reportCSVWriteFunc, trend *RunArchiveReleaseTrendSummary) error {
+	rows := []struct {
+		metric string
+		value  string
+	}{
+		{"release_id", trend.ReleaseID},
+		{"run_count", formatCSVInt(int64(trend.RunCount))},
+		{"has_baseline", strconv.FormatBool(trend.HasBaseline)},
+		{"regressed", strconv.FormatBool(trend.Regressed)},
+		{"regressions", strings.Join(trend.Regressions, ";")},
+		{"avg_response_trend_pct", formatCSVFloat(trend.Trajectory.AvgResponseTrendPct)},
+		{"error_pct_trend", formatCSVFloat(trend.Trajectory.ErrorPctTrend)},
+		{"note", trend.Note},
+	}
+	for _, row := range rows {
+		if row.value == "" {
+			continue
+		}
+		if err := write("release_trend", "", row.metric, row.value); err != nil {
+			return err
+		}
+	}
+	if err := writeReleaseTrendPointCSVRows(write, "current", trend.Current); err != nil {
+		return err
+	}
+	if trend.HasBaseline && trend.Baseline != nil {
+		if err := writeReleaseTrendPointCSVRows(write, "baseline", *trend.Baseline); err != nil {
+			return err
+		}
+	}
+	if trend.Deltas != nil {
+		deltaRows := []struct {
+			metric string
+			value  string
+		}{
+			{"error_pct_delta", formatCSVFloat(trend.Deltas.ErrorPctDelta)},
+			{"avg_response_ms_delta", formatCSVFloat(trend.Deltas.AvgResponseMsDelta)},
+			{"avg_response_pct_delta", formatCSVFloat(trend.Deltas.AvgResponsePctDelta)},
+			{"peak_tps_delta", formatCSVFloat(trend.Deltas.PeakTPSDelta)},
+			{"completeness_delta", formatCSVFloat(trend.Deltas.CompletenessDelta)},
+		}
+		for _, row := range deltaRows {
+			if err := write("release_trend", "delta", row.metric, row.value); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func writeReleaseTrendPointCSVRows(write reportCSVWriteFunc, key string, point ReleaseTrendPoint) error {
+	rows := []struct {
+		metric string
+		value  string
+	}{
+		{"run_id", point.RunID},
+		{"run_name", point.RunName},
+		{"error_pct", formatCSVFloat(point.ErrorPct)},
+		{"avg_response_ms", formatCSVFloat(point.AvgResponseMs)},
+		{"peak_tps", formatCSVFloat(point.PeakTPS)},
+		{"completeness_pct", formatCSVFloat(point.CompletenessPct)},
+		{"sla_breached", strconv.FormatBool(point.SLABreached)},
+	}
+	for _, row := range rows {
+		if row.value == "" {
+			continue
+		}
+		if err := write("release_trend", key, row.metric, row.value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func writeChangeAttributionCSVRows(write reportCSVWriteFunc, attribution RunArchiveChangeAttribution) error {
 	rows := []struct {
 		metric string

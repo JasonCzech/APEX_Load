@@ -348,6 +348,33 @@ func isTerminalStatus(status string) bool {
 	}
 }
 
+// VerifyArchive re-verifies an archived run against the SHA-256 hashes recorded in
+// its manifest, returning the per-artifact match/mismatch/missing verdict. A
+// tampered or corrupt archive comes back as a populated report (not an error); a
+// transport failure or a missing archive returns an error.
+func (c *ApiClient) VerifyArchive(testID string) (*api.RunArchiveIntegrityReport, error) {
+	resp, err := c.do(http.MethodGet, "/api/v1/tests/"+testID+"/archive/verify", nil, "")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		detail, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return nil, fmt.Errorf("archive not found for test %s: %s", testID, strings.TrimSpace(string(detail)))
+	}
+	if resp.StatusCode != http.StatusOK {
+		detail, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return nil, fmt.Errorf("bad status: %s: %s", resp.Status, strings.TrimSpace(string(detail)))
+	}
+
+	var report api.RunArchiveIntegrityReport
+	if err := json.NewDecoder(resp.Body).Decode(&report); err != nil {
+		return nil, fmt.Errorf("decode integrity report: %w", err)
+	}
+	return &report, nil
+}
+
 func (c *ApiClient) GetSLAStatus(testID string) (*api.SLABreachReport, error) {
 	resp, err := c.do(http.MethodGet, "/api/v1/tests/"+testID+"/sla-status", nil, "")
 	if err != nil {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"html/template"
+	"sort"
 	"strings"
 )
 
@@ -383,14 +384,50 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 			return write("signoff", "", "prepared_by", prepared)
 		}})
 
-	// --- Release trend (no archive-bundled data) --------------------------
+	// --- Release trend -----------------------------------------------------
+	// The compact release-over-release trend (report.ReleaseTrend) is attached at
+	// the storage-aware handler layer ((*Server).attachReleaseTrend); the section
+	// degrades to a no-release note when it is nil.
 	add(reportSectionRenderer{ID: "release_trend", Label: "Release Trend",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
-			pdfHeading(lines, "Release Trend")
-			*lines = append(*lines, "No multi-run release trend is bundled with this archive; compare against prior runs from the Releases view.", "")
+			if d.Report.ReleaseTrend == nil {
+				pdfHeading(lines, "Release Trend")
+				*lines = append(*lines, "This run is not associated with a release, so release-over-release trend analysis is unavailable.", "")
+				return
+			}
+			appendReleaseTrendPDFLines(lines, d.Report.ReleaseTrend)
 		},
 		CSV: func(d *runArchiveHTMLReportData, write reportCSVWriteFunc) error {
-			return csvNote(write, "release_trend", "No multi-run release trend is bundled with this archive.")
+			if d.Report.ReleaseTrend == nil {
+				return csvNote(write, "release_trend", "This run is not associated with a release; no trend available.")
+			}
+			return writeReleaseTrendSummaryCSVRows(write, d.Report.ReleaseTrend)
+		}})
+
+	// --- Run context & confidence (executive completeness + change context) -
+	add(reportSectionRenderer{ID: "run_context", Label: "Run Context & Confidence",
+		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
+			pdfHeading(lines, "Run Context & Confidence")
+			*lines = append(*lines,
+				fmt.Sprintf("Data completeness: %.0f%% (%s)", d.Report.Completeness.ScorePct, d.Report.Completeness.Status),
+			)
+			appendPDFValueLine(lines, "Environment", d.Report.ChangeAttribution.Environment)
+			appendPDFValueLine(lines, "Scenario revision", d.Report.ChangeAttribution.ScenarioRevision)
+			if d.Report.ChangeAttribution.RuntimeOverrides {
+				appendPDFValueLine(lines, "Runtime overrides", strings.Join(d.Report.ChangeAttribution.RuntimeOverrideFields, ", "))
+			} else {
+				*lines = append(*lines, "Runtime overrides: none")
+			}
+			*lines = append(*lines, "")
+		},
+		CSV: func(d *runArchiveHTMLReportData, write reportCSVWriteFunc) error {
+			if err := write("run_context", "", "completeness_score_pct", formatCSVFloat(d.Report.Completeness.ScorePct)); err != nil {
+				return err
+			}
+			if err := write("run_context", "", "completeness_status", d.Report.Completeness.Status); err != nil {
+				return err
+			}
+			return writeChangeAttributionCSVRows(write, d.Report.ChangeAttribution)
 		}})
 
 	// --- Completeness ------------------------------------------------------
@@ -560,26 +597,27 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 				return
 			}
 			*lines = append(*lines,
-				fmt.Sprintf("DNS avg: %.1f ms", overall.AvgDNSMs),
-				fmt.Sprintf("Connect avg: %.1f ms", overall.AvgConnectMs),
-				fmt.Sprintf("TLS avg: %.1f ms", overall.AvgTLSMs),
-				fmt.Sprintf("TTFB avg: %.1f ms (max %.1f ms)", overall.AvgTTFBMs, overall.MaxTTFBMs),
+				fmt.Sprintf("Samples: %s", formatPDFInt(d.Report.NetworkPhases.Samples)),
+				fmt.Sprintf("DNS: avg %.1f ms / max %.1f ms", overall.AvgDNSMs, overall.MaxDNSMs),
+				fmt.Sprintf("Connect: avg %.1f ms / max %.1f ms", overall.AvgConnectMs, overall.MaxConnectMs),
+				fmt.Sprintf("TLS: avg %.1f ms / max %.1f ms", overall.AvgTLSMs, overall.MaxTLSMs),
+				fmt.Sprintf("TTFB: avg %.1f ms / max %.1f ms", overall.AvgTTFBMs, overall.MaxTTFBMs),
 				"")
 		},
 		CSV: func(d *runArchiveHTMLReportData, write reportCSVWriteFunc) error {
 			if d.Report.NetworkPhases.Samples == 0 {
 				return csvNote(write, "network_phases", "No network-phase timing was captured for this run.")
 			}
-			overall := d.Report.NetworkPhases.Overall
-			rows := [][2]string{
-				{"avg_dns_ms", formatCSVFloat(overall.AvgDNSMs)},
-				{"avg_connect_ms", formatCSVFloat(overall.AvgConnectMs)},
-				{"avg_tls_ms", formatCSVFloat(overall.AvgTLSMs)},
-				{"avg_ttfb_ms", formatCSVFloat(overall.AvgTTFBMs)},
-				{"max_ttfb_ms", formatCSVFloat(overall.MaxTTFBMs)},
+			if err := writeNetworkPhaseCSVRows(write, "overall", d.Report.NetworkPhases.Overall); err != nil {
+				return err
 			}
-			for _, row := range rows {
-				if err := write("network_phases", "overall", row[0], row[1]); err != nil {
+			actionKeys := make([]string, 0, len(d.Report.NetworkPhases.ByAction))
+			for action := range d.Report.NetworkPhases.ByAction {
+				actionKeys = append(actionKeys, action)
+			}
+			sort.Strings(actionKeys)
+			for _, action := range actionKeys {
+				if err := writeNetworkPhaseCSVRows(write, action, d.Report.NetworkPhases.ByAction[action]); err != nil {
 					return err
 				}
 			}
@@ -1056,6 +1094,13 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 	add(reportSectionRenderer{ID: "artifact_integrity", Label: "Artifact Integrity",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
 			pdfHeading(lines, "Artifact Integrity")
+			if d.Report.Integrity != nil {
+				verdict := "VERIFIED"
+				if !d.Report.Integrity.Verified {
+					verdict = strings.ToUpper(d.Report.Integrity.Status)
+				}
+				*lines = append(*lines, fmt.Sprintf("Verification: %s - %s", verdict, d.Report.Integrity.Summary))
+			}
 			if len(d.Report.ArtifactInventory) == 0 {
 				*lines = append(*lines, "No artifact inventory was available.", "")
 				return
@@ -1071,6 +1116,14 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 			*lines = append(*lines, "")
 		},
 		CSV: func(d *runArchiveHTMLReportData, write reportCSVWriteFunc) error {
+			if d.Report.Integrity != nil {
+				if err := write("artifact_integrity", "", "status", d.Report.Integrity.Status); err != nil {
+					return err
+				}
+				if err := write("artifact_integrity", "", "verified", fmt.Sprintf("%t", d.Report.Integrity.Verified)); err != nil {
+					return err
+				}
+			}
 			if d.Report.Manifest == nil {
 				return csvNote(write, "artifact_inventory", "No artifact inventory was available.")
 			}

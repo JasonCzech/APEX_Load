@@ -491,8 +491,13 @@ func TestRunArchiveReportProfilesAreConsistentAndRenderable(t *testing.T) {
 		t.Fatal("expected at least one report profile")
 	}
 
+	builtinIDs := map[string]bool{"executive": false, "engineer": false, "audit": false}
+
 	for _, profile := range profiles {
 		profile := profile
+		if _, known := builtinIDs[profile.ID]; known {
+			builtinIDs[profile.ID] = true
+		}
 		t.Run(profile.ID, func(t *testing.T) {
 			// A registered profile with no renderer for a declared section is a
 			// hard error: it would silently drop content at runtime.
@@ -503,10 +508,21 @@ func TestRunArchiveReportProfilesAreConsistentAndRenderable(t *testing.T) {
 				t.Fatalf("profile %q declares no sections", profile.ID)
 			}
 
+			// IncludedSections and SectionOrder must be a duplicate-free bijection,
+			// so the metadata is an unambiguous single source of truth.
+			included := reportSectionSet(profile.IncludedSections)
+			if len(included) != len(profile.IncludedSections) {
+				t.Fatalf("profile %q has duplicate ids in IncludedSections: %v", profile.ID, profile.IncludedSections)
+			}
 			order := reportSectionSet(profile.SectionOrder)
 			for _, id := range profile.IncludedSections {
 				if _, ok := order[id]; !ok {
 					t.Fatalf("profile %q section %q is included but absent from SectionOrder", profile.ID, id)
+				}
+			}
+			for id := range order {
+				if _, ok := included[id]; !ok {
+					t.Fatalf("profile %q section %q is in SectionOrder but not IncludedSections", profile.ID, id)
 				}
 			}
 
@@ -582,6 +598,12 @@ func TestRunArchiveReportProfilesAreConsistentAndRenderable(t *testing.T) {
 	missing := reportProfileSectionsMissingRenderers(bogus)
 	if len(missing) != 1 || missing[0] != "does_not_exist" {
 		t.Fatalf("expected unregistered section to be reported, got %v", missing)
+	}
+
+	for id, found := range builtinIDs {
+		if !found {
+			t.Errorf("expected built-in report profile %q to be defined", id)
+		}
 	}
 }
 
@@ -713,6 +735,26 @@ func TestWriteRunArchiveReportCSVAuditIncludesExecutionPlanApproval(t *testing.T
 	}
 	if strings.Contains(body, ",action,checkout,transactions,") {
 		t.Fatalf("audit csv should omit action drilldown:\n%s", body)
+	}
+	// Audit must not leak performance-tuning metrics or the network-phase drilldown.
+	for _, forbidden := range []string{"peak_tps", "network_phases"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("audit csv should omit tuning metric %q:\n%s", forbidden, body)
+		}
+	}
+}
+
+func TestWriteRunArchiveReportCSVEngineerIncludesNetworkPhases(t *testing.T) {
+	report := samplePDFRunArchiveReport()
+	var csvBuf bytes.Buffer
+	if err := writeRunArchiveReportCSVWithProfile(report, &csvBuf, "engineer"); err != nil {
+		t.Fatalf("write engineer csv returned error: %v", err)
+	}
+	body := csvBuf.String()
+	for _, expected := range []string{"network_phases,overall,avg_dns_ms", "network_phases,overall,avg_ttfb_ms", "network_phases,checkout,"} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("engineer csv missing network-phase row %q:\n%s", expected, body)
+		}
 	}
 }
 

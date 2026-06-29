@@ -475,7 +475,7 @@ function buildArchiveCompactPanels(
         { label: 'Scope', value: provenance ? `${provenance.project_id || 'unassigned'}${provenance.release_id ? ` / ${provenance.release_id}` : ''}${provenance.scenario_id ? ` / ${provenance.scenario_id}` : ''}` : 'n/a' },
         { label: 'Runtime Flags', value: provenance ? `Shakeout ${formatArchiveFlag(provenance.script_shakeout)} · Baseline ${formatArchiveFlag(provenance.resource_baseline)}` : 'n/a' },
         { label: 'Browser Runtime', value: compactValue(runtimeBrowserSummary) },
-	        { label: 'Metrics Interval', value: provenance?.execution_settings?.general?.metrics_interval_seconds !== undefined ? `${provenance.execution_settings.general.metrics_interval_seconds}s` : 'n/a' },
+        { label: 'Metrics Interval', value: provenance?.execution_settings?.general?.metrics_interval_seconds !== undefined ? `${provenance.execution_settings.general.metrics_interval_seconds}s` : 'n/a' },
         { label: 'Pinned Baseline', value: provenance?.baseline_pinned ? 'Pinned' : 'Not pinned' },
         { label: 'Scenario Groups', value: compactList((provenance?.groups || []).map(formatCompactGroup), 3) },
         { label: 'Controller Environment', value: compactList(Object.entries(provenance?.controller_env || {}).map(([key, value]) => `${key}=${value}`), 2) },
@@ -1474,15 +1474,15 @@ export default function TestExecutionArchive({
                 </thead>
                 <tbody>
                   {archiveActionEntries.slice(0, 8).map(([name, stats]) => (
-	                    <tr key={name}>
-	                      <td className="tx-name">{name}</td>
-	                      <td>{formatArchiveCount(stats.transactions)}</td>
-	                      <td className={(stats.errors || 0) > 0 ? 'error-cell' : ''}>{formatArchiveCount(stats.errors)}</td>
-	                      <td>{formatArchivePercent(stats.error_pct)}</td>
-	                      <td>{formatArchiveNumber(stats.avg_response_ms)}</td>
-	                      <td>{formatArchiveNumber(stats.max_response_ms)}</td>
-	                    </tr>
-	                  ))}
+                    <tr key={name}>
+                      <td className="tx-name">{name}</td>
+                      <td>{formatArchiveCount(stats.transactions)}</td>
+                      <td className={(stats.errors || 0) > 0 ? 'error-cell' : ''}>{formatArchiveCount(stats.errors)}</td>
+                      <td>{formatArchivePercent(stats.error_pct)}</td>
+                      <td>{formatArchiveNumber(stats.avg_response_ms)}</td>
+                      <td>{formatArchiveNumber(stats.max_response_ms)}</td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
 
@@ -1507,15 +1507,15 @@ export default function TestExecutionArchive({
                     </thead>
                     <tbody>
                       {soapOperationEntries.slice(0, 8).map(([name, stats]) => (
-	                        <tr key={name}>
-	                          <td className="tx-name">{name}</td>
-	                          <td>{formatArchiveCount(stats.transactions)}</td>
-	                          <td className={(stats.errors || 0) > 0 ? 'error-cell' : ''}>{formatArchiveCount(stats.errors)}</td>
-	                          <td>{formatArchivePercent(stats.error_pct)}</td>
-	                          <td>{formatArchiveNumber(stats.avg_response_ms)}</td>
-	                          <td>{formatArchiveNumber(stats.max_response_ms)}</td>
-	                        </tr>
-	                      ))}
+                        <tr key={name}>
+                          <td className="tx-name">{name}</td>
+                          <td>{formatArchiveCount(stats.transactions)}</td>
+                          <td className={(stats.errors || 0) > 0 ? 'error-cell' : ''}>{formatArchiveCount(stats.errors)}</td>
+                          <td>{formatArchivePercent(stats.error_pct)}</td>
+                          <td>{formatArchiveNumber(stats.avg_response_ms)}</td>
+                          <td>{formatArchiveNumber(stats.max_response_ms)}</td>
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
                 </>
@@ -1542,15 +1542,15 @@ export default function TestExecutionArchive({
                     </thead>
                     <tbody>
                       {regionEntries.map(([name, stats]) => (
-	                        <tr key={name}>
-	                          <td className="tx-name">{name}</td>
-	                          <td>{formatArchiveCount(stats.transactions)}</td>
-	                          <td className={(stats.errors || 0) > 0 ? 'error-cell' : ''}>{formatArchiveCount(stats.errors)}</td>
-	                          <td>{formatArchivePercent(stats.error_pct)}</td>
-	                          <td>{formatArchiveNumber(stats.avg_response_ms)}</td>
-	                          <td>{formatArchiveNumber(stats.max_response_ms)}</td>
-	                        </tr>
-	                      ))}
+                        <tr key={name}>
+                          <td className="tx-name">{name}</td>
+                          <td>{formatArchiveCount(stats.transactions)}</td>
+                          <td className={(stats.errors || 0) > 0 ? 'error-cell' : ''}>{formatArchiveCount(stats.errors)}</td>
+                          <td>{formatArchivePercent(stats.error_pct)}</td>
+                          <td>{formatArchiveNumber(stats.avg_response_ms)}</td>
+                          <td>{formatArchiveNumber(stats.max_response_ms)}</td>
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
                 </>
@@ -1577,15 +1577,15 @@ export default function TestExecutionArchive({
                     </thead>
                     <tbody>
                       {networkProfileEntries.map(([name, stats]) => (
-	                        <tr key={name}>
-	                          <td className="tx-name">{name}</td>
-	                          <td>{formatArchiveCount(stats.transactions)}</td>
-	                          <td className={(stats.errors || 0) > 0 ? 'error-cell' : ''}>{formatArchiveCount(stats.errors)}</td>
-	                          <td>{formatArchivePercent(stats.error_pct)}</td>
-	                          <td>{formatArchiveNumber(stats.avg_response_ms)}</td>
-	                          <td>{formatArchiveNumber(stats.max_response_ms)}</td>
-	                        </tr>
-	                      ))}
+                        <tr key={name}>
+                          <td className="tx-name">{name}</td>
+                          <td>{formatArchiveCount(stats.transactions)}</td>
+                          <td className={(stats.errors || 0) > 0 ? 'error-cell' : ''}>{formatArchiveCount(stats.errors)}</td>
+                          <td>{formatArchivePercent(stats.error_pct)}</td>
+                          <td>{formatArchiveNumber(stats.avg_response_ms)}</td>
+                          <td>{formatArchiveNumber(stats.max_response_ms)}</td>
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
                 </>
@@ -1764,17 +1764,17 @@ export default function TestExecutionArchive({
                 </div>
               </div>
 
-	              {selectedActionStats && (
-	                <div className="archive-drilldown-stats">
-	                  <span className="archive-drilldown-stat">{formatArchiveCount(selectedActionStats.transactions)} total</span>
-	                  <span className="archive-drilldown-stat-sep" />
-	                  <span className={`archive-drilldown-stat${(selectedActionStats.errors || 0) > 0 ? ' danger' : ''}`}>{formatArchivePercent(selectedActionStats.error_pct)} errors</span>
-	                  <span className="archive-drilldown-stat-sep" />
-	                  <span className="archive-drilldown-stat">avg {formatArchiveNumber(selectedActionStats.avg_response_ms)} ms</span>
-	                  <span className="archive-drilldown-stat-sep" />
-	                  <span className="archive-drilldown-stat">max {formatArchiveNumber(selectedActionStats.max_response_ms)} ms</span>
-	                </div>
-	              )}
+              {selectedActionStats && (
+                <div className="archive-drilldown-stats">
+                  <span className="archive-drilldown-stat">{formatArchiveCount(selectedActionStats.transactions)} total</span>
+                  <span className="archive-drilldown-stat-sep" />
+                  <span className={`archive-drilldown-stat${(selectedActionStats.errors || 0) > 0 ? ' danger' : ''}`}>{formatArchivePercent(selectedActionStats.error_pct)} errors</span>
+                  <span className="archive-drilldown-stat-sep" />
+                  <span className="archive-drilldown-stat">avg {formatArchiveNumber(selectedActionStats.avg_response_ms)} ms</span>
+                  <span className="archive-drilldown-stat-sep" />
+                  <span className="archive-drilldown-stat">max {formatArchiveNumber(selectedActionStats.max_response_ms)} ms</span>
+                </div>
+              )}
 
               <div className="archive-pagination-bar">
                 <span className="archive-pagination-copy">

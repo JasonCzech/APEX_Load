@@ -30,6 +30,34 @@ func (s *Server) handleGetRunArchiveManifest(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, manifest)
 }
 
+// handleVerifyRunArchive re-verifies an archived run against the SHA-256 hashes
+// recorded per artifact in its manifest, recomputing each artifact's hash on disk
+// and reporting match / mismatch (tampered) / missing (corrupt). It always returns
+// 200 with the verdict in the body — a tampered or corrupt archive is a reportable
+// result, not a server error.
+func (s *Server) handleVerifyRunArchive(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if _, ok := s.runner.GetTest(id); !ok {
+		writeError(w, http.StatusNotFound, "test not found")
+		return
+	}
+	record, ok := s.runner.GetRunArchive(id)
+	if !ok {
+		writeError(w, http.StatusNotFound, "archive not found")
+		return
+	}
+	if err := ensureArchiveMaterialized(record); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to materialize archive: "+err.Error())
+		return
+	}
+	manifest, err := s.runner.GetRunArchiveManifest(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, verifyRunArchiveIntegrity(record, manifest))
+}
+
 func (s *Server) handleDownloadRunArchive(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	test, ok := s.runner.GetTest(id)
@@ -286,6 +314,7 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 	switch queryFormat(r) {
 	case "csv":
 		testID := r.PathValue("id")
+		s.attachReleaseTrendForProfile(report, r.URL.Query().Get("profile"))
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 		w.Header().Set("Content-Disposition", "attachment; filename=\"apexload-archive-report-"+testID+".csv\"")
 		if err := writeRunArchiveReportCSVWithProfile(report, w, r.URL.Query().Get("profile")); err != nil {
@@ -307,6 +336,12 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 			writeError(w, http.StatusBadRequest, fmt.Sprintf("report profile %q does not support pdf export", profile.ID))
 			return
 		}
+		s.attachReleaseTrendForProfile(report, profile.ID)
+		// The audit PDF carries the tamper-evidence banner, so re-verify the archive
+		// against its recorded artifact hashes before rendering it.
+		if profile.ID == "audit" {
+			report.Integrity = verifyRunArchiveIntegrity(record, report.Manifest)
+		}
 		testID := r.PathValue("id")
 		w.Header().Set("Content-Type", "application/pdf")
 		w.Header().Set("Content-Disposition", "attachment; filename=\"apexload-archive-report-"+testID+"-"+profile.ID+".pdf\"")
@@ -315,6 +350,9 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 		}
 		return
 	}
+	// The raw JSON report carries the full model, so attach the release-over-release
+	// trend unconditionally (still a no-op for runs with no release association).
+	s.attachReleaseTrend(report)
 	writeJSON(w, http.StatusOK, report)
 }
 
@@ -631,6 +669,15 @@ func (s *Server) handleGetTestHTMLReport(w http.ResponseWriter, r *http.Request)
 	profile := r.URL.Query().Get("profile")
 	if profile == "" {
 		profile = "engineer"
+	}
+	// Attach release-over-release trend before rendering — only for profiles that
+	// actually display the section (executive), so engineer/audit avoid the cost.
+	s.attachReleaseTrendForProfile(report, profile)
+	// The audit profile renders a tamper-evidence banner, so re-verify the archive
+	// against its recorded artifact hashes here. Gated on the audit profile to keep
+	// the SHA-256 re-hash off the lighter engineer/executive render paths.
+	if profile == "audit" {
+		report.Integrity = verifyRunArchiveIntegrity(record, report.Manifest)
 	}
 	annotations, err := resolveReportAnnotations(s.store, report, r.PathValue("id"), profile)
 	if err != nil {

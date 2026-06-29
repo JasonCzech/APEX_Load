@@ -85,6 +85,38 @@ func actorPDFValue(displayName, subject string) string {
 	return firstNonEmptyPDFValue(displayName, subject)
 }
 
+// appendReleaseTrendPDFLines renders the compact release-over-release trend as
+// PDF text lines. Called by the release_trend section renderer in the registry.
+func appendReleaseTrendPDFLines(lines *[]string, trend *RunArchiveReleaseTrendSummary) {
+	if trend == nil {
+		return
+	}
+	*lines = append(*lines, "Release Trend")
+	*lines = append(*lines, fmt.Sprintf("Release: %s (%d archived run(s))", firstNonEmptyPDFValue(trend.ReleaseID), trend.RunCount))
+	if trend.HasBaseline && trend.Baseline != nil && trend.Deltas != nil {
+		baseline := trend.Baseline
+		*lines = append(*lines,
+			fmt.Sprintf("Baseline (prior run): %s, completed %s", firstNonEmptyPDFValue(baseline.RunName, baseline.RunID), formatPDFTime(baseline.CompletedAt)),
+			fmt.Sprintf("Error rate: %.2f%% -> %.2f%% (%+.2f pp)", baseline.ErrorPct, trend.Current.ErrorPct, trend.Deltas.ErrorPctDelta),
+			fmt.Sprintf("Avg response: %.1f ms -> %.1f ms (%+.1f ms / %+.1f%%)", baseline.AvgResponseMs, trend.Current.AvgResponseMs, trend.Deltas.AvgResponseMsDelta, trend.Deltas.AvgResponsePctDelta),
+			fmt.Sprintf("Peak TPS: %.1f -> %.1f (%+.1f)", baseline.PeakTPS, trend.Current.PeakTPS, trend.Deltas.PeakTPSDelta),
+			fmt.Sprintf("Completeness: %.0f%% -> %.0f%% (%+.1f pts)", baseline.CompletenessPct, trend.Current.CompletenessPct, trend.Deltas.CompletenessDelta),
+		)
+		if trend.Regressed {
+			*lines = append(*lines, "Regressions vs prior run: "+strings.Join(trend.Regressions, "; "))
+		} else {
+			*lines = append(*lines, "No regressions versus the prior run.")
+		}
+	} else {
+		note := trend.Note
+		if note == "" {
+			note = "First archived run for this release; no prior run to compare against."
+		}
+		*lines = append(*lines, note)
+	}
+	*lines = append(*lines, "")
+}
+
 func formatPDFTimePtr(value *time.Time) string {
 	if value == nil {
 		return ""

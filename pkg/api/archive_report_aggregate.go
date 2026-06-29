@@ -81,7 +81,10 @@ func buildRunArchiveNetworkPhaseSummary(transactions []TransactionEvent) RunArch
 	byAction := map[string]*networkPhaseAccumulator{}
 	byDependency := map[string]*networkPhaseAccumulator{}
 	for _, tx := range transactions {
-		if tx.DNSMs == 0 && tx.ConnectMs == 0 && tx.TLSMs == 0 && tx.TTFBMs == 0 {
+		// Skip rows with no positive phase measurement. Using <= 0 also discards any
+		// negative "unmeasured" sentinel a future importer/protocol might emit, so it
+		// cannot pull the averages below the real values.
+		if tx.DNSMs <= 0 && tx.ConnectMs <= 0 && tx.TLSMs <= 0 && tx.TTFBMs <= 0 {
 			continue
 		}
 		mergeNetworkPhaseAccumulator(overall, tx)
@@ -124,23 +127,36 @@ func mergeNetworkPhaseAccumulator(acc *networkPhaseAccumulator, tx TransactionEv
 	if acc == nil {
 		return
 	}
+	// Clamp negative sentinels to zero so an "unmeasured" phase neither drags the
+	// running average below the real value nor leaves the max pinned at zero.
+	dns := clampNonNegative(tx.DNSMs)
+	connect := clampNonNegative(tx.ConnectMs)
+	tls := clampNonNegative(tx.TLSMs)
+	ttfb := clampNonNegative(tx.TTFBMs)
 	acc.count++
-	acc.dnsTotal += tx.DNSMs
-	acc.connectTotal += tx.ConnectMs
-	acc.tlsTotal += tx.TLSMs
-	acc.ttfbTotal += tx.TTFBMs
-	if tx.DNSMs > acc.maxDNS {
-		acc.maxDNS = tx.DNSMs
+	acc.dnsTotal += dns
+	acc.connectTotal += connect
+	acc.tlsTotal += tls
+	acc.ttfbTotal += ttfb
+	if dns > acc.maxDNS {
+		acc.maxDNS = dns
 	}
-	if tx.ConnectMs > acc.maxConnect {
-		acc.maxConnect = tx.ConnectMs
+	if connect > acc.maxConnect {
+		acc.maxConnect = connect
 	}
-	if tx.TLSMs > acc.maxTLS {
-		acc.maxTLS = tx.TLSMs
+	if tls > acc.maxTLS {
+		acc.maxTLS = tls
 	}
-	if tx.TTFBMs > acc.maxTTFB {
-		acc.maxTTFB = tx.TTFBMs
+	if ttfb > acc.maxTTFB {
+		acc.maxTTFB = ttfb
 	}
+}
+
+func clampNonNegative(value float64) float64 {
+	if value < 0 {
+		return 0
+	}
+	return value
 }
 
 func finalizeNetworkPhaseAccumulator(acc *networkPhaseAccumulator) RunArchiveNetworkPhases {

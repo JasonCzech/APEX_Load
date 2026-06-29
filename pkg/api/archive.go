@@ -273,6 +273,7 @@ type RunArchiveReport struct {
 	ReportProfiles      []RunArchiveReportProfile              `json:"report_profiles,omitempty"`
 	NetworkPhases       RunArchiveNetworkPhaseSummary          `json:"network_phases,omitempty"`
 	ArtifactInventory   []RunArchiveArtifact                   `json:"artifact_inventory,omitempty"`
+	Integrity           *RunArchiveIntegrityReport             `json:"integrity,omitempty"`
 	Manifest            *RunArchiveManifest                    `json:"manifest"`
 	Overview            RunArchiveOverview                     `json:"overview"`
 	EvidenceTiers       []RunArchiveEvidenceTier               `json:"evidence_tiers,omitempty"`
@@ -294,6 +295,12 @@ type RunArchiveReport struct {
 	Web2Migration       *RunArchiveWeb2MigrationEvidence       `json:"web2_migration,omitempty"`
 	OracleDB            *RunArchiveOracleDBEvidence            `json:"oracle_db,omitempty"`
 	ResourcePeaks       RunArchiveResourcePeaks                `json:"resource_peaks"`
+	// ReleaseTrend is the compact release-over-release trend for this run (this run
+	// vs the immediately prior run in the same release). It is nil by default:
+	// buildRunArchiveReport is a pure function of a single archive record, so the
+	// multi-run trend is attached at the storage-aware handler layer via
+	// (*Server).attachReleaseTrend. It stays nil for runs with no release association.
+	ReleaseTrend *RunArchiveReleaseTrendSummary `json:"release_trend,omitempty"`
 }
 
 type RunArchiveReportProfile struct {

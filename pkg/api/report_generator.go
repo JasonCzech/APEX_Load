@@ -103,6 +103,14 @@ var profileHTMLFuncMap = template.FuncMap{
 	"join": func(values []string) string {
 		return strings.Join(values, ", ")
 	},
+	// signed/signedPct render run-over-run deltas with an explicit +/- so a
+	// regression reads at a glance in the release-trend table.
+	"signed": func(value float64) string {
+		return fmt.Sprintf("%+.1f", value)
+	},
+	"signedPct": func(value float64) string {
+		return fmt.Sprintf("%+.2f%%", value)
+	},
 	"sevPill": func(severity string) string {
 		if strings.EqualFold(severity, "major") {
 			return "warn"

@@ -2,6 +2,7 @@ package api
 
 import (
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -160,4 +161,77 @@ func detectTrendRegressions(prev, cur ReleaseTrendPoint) []string {
 		return nil
 	}
 	return regressions
+}
+
+// RunArchiveReleaseTrendSummary is the compact, single-run slice of the multi-run
+// ReleaseTrend that the executive archive report renders: this run measured against
+// the immediately prior run in the same release, plus the release-wide first→last
+// trajectory. It is attached at the storage-aware handler layer (which can read the
+// sibling archives); buildRunArchiveReport stays a pure function of one record.
+type RunArchiveReleaseTrendSummary struct {
+	ReleaseID   string              `json:"release_id"`
+	RunCount    int                 `json:"run_count"`
+	HasBaseline bool                `json:"has_baseline"`
+	Regressed   bool                `json:"regressed"`
+	Regressions []string            `json:"regressions,omitempty"`
+	Current     ReleaseTrendPoint   `json:"current"`
+	Baseline    *ReleaseTrendPoint  `json:"baseline,omitempty"`
+	Deltas      *ReleaseTrendDeltas `json:"deltas,omitempty"`
+	Trajectory  ReleaseTrendSummary `json:"trajectory"`
+	Note        string              `json:"note,omitempty"`
+}
+
+// buildRunArchiveReleaseTrendSummary distills a full ReleaseTrend down to the
+// compact this-run-vs-prior-run view for runID. The prior run is the point that
+// immediately precedes runID in completion-time order, so the deltas/regression
+// flags are exactly those the multi-run analysis already computed for this run.
+//
+// Returns nil when runID is empty or is not represented in the trend series (e.g.
+// the run has no release association, or its sibling archives were unreadable), so
+// callers can treat a nil summary as "no release-over-release trend available".
+// The first archived run in a release has no baseline; that case returns a non-nil
+// summary with HasBaseline=false and an explanatory Note.
+func buildRunArchiveReleaseTrendSummary(trend ReleaseTrend, runID string) *RunArchiveReleaseTrendSummary {
+	runID = strings.TrimSpace(runID)
+	if runID == "" {
+		return nil
+	}
+	index := -1
+	for i := range trend.Points {
+		if trend.Points[i].RunID == runID {
+			index = i
+			break
+		}
+	}
+	if index < 0 {
+		return nil
+	}
+
+	current := trend.Points[index]
+	// Surface the deltas/regressions at the top level so renderers read one place;
+	// blank them on the embedded Current point so it stays a clean headline snapshot.
+	deltas := current.Deltas
+	regressions := current.Regressions
+	current.Deltas = nil
+	current.Regressions = nil
+
+	summary := &RunArchiveReleaseTrendSummary{
+		ReleaseID:   trend.ReleaseID,
+		RunCount:    trend.RunCount,
+		Current:     current,
+		Regressed:   len(regressions) > 0,
+		Regressions: regressions,
+		Deltas:      deltas,
+		Trajectory:  trend.Summary,
+	}
+	if index > 0 {
+		baseline := trend.Points[index-1]
+		baseline.Deltas = nil
+		baseline.Regressions = nil
+		summary.HasBaseline = true
+		summary.Baseline = &baseline
+	} else {
+		summary.Note = "First archived run for this release; no prior run to compare against."
+	}
+	return summary
 }

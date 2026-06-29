@@ -3,7 +3,10 @@ import { useModalDialog } from '../hooks/useModalDialog'
 import type { RunArchiveReportProfile } from '../types'
 import './GenerateReportModal.css'
 
-export type ReportProfileId = 'executive' | 'engineer' | 'audit' | string
+// Known built-in profiles, while still accepting any backend-supplied id. The
+// `(string & {})` intersection keeps literal autocomplete without collapsing the
+// union to plain `string`.
+export type ReportProfileId = 'executive' | 'engineer' | 'audit' | (string & {})
 
 interface ReportTypeOption {
   id: ReportProfileId

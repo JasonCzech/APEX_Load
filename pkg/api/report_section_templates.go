@@ -62,6 +62,11 @@ var runArchiveReportShellTemplate = template.Must(template.New("run-archive-repo
     .meta-cell b { display: block; font-size: 9.5px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--slate); margin-bottom: 4px; }
     .meta-cell span { font-size: 13px; font-weight: 600; }
     .report-block { display: block; }
+    .integrity-banner { display: flex; align-items: baseline; gap: 10px; padding: 12px 16px; border-radius: 8px; margin: 6px 0 14px; font-size: 13px; border: 1px solid; }
+    .integrity-banner.pass { background: var(--good-bg); color: var(--good); border-color: #b7e0c6; }
+    .integrity-banner.caution { background: var(--warn-bg); color: var(--warn); border-color: #f0deb0; }
+    .integrity-banner.fail { background: var(--bad-bg); color: var(--bad); border-color: #f3c2bb; }
+    .integrity-banner .integrity-label { font-weight: 800; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
     .verdict { display: flex; align-items: stretch; margin: 18px 0 32px; border: 1px solid var(--line); }
     .verdict-badge { flex: 0 0 auto; padding: 16px 22px; font-weight: 700; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: #fff; background: var(--good); text-align: center; min-width: 130px; display: flex; align-items: center; justify-content: center; }
     .verdict-badge.conditional { background: var(--warn); }
@@ -322,8 +327,36 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{end}}
 
 {{define "release_trend"}}
-<h2>Release trend</h2>
-<p class="muted">No multi-run release trend is bundled with this archive. Compare against prior runs from the Releases view for delta and regression analysis.</p>
+<h2>Release Trend</h2>
+{{with .Report.ReleaseTrend}}
+  {{if .HasBaseline}}
+  <p class="muted">This run vs the prior run in release <strong>{{.ReleaseID}}</strong> (baseline {{if .Baseline.RunName}}{{.Baseline.RunName}}{{else}}{{.Baseline.RunID}}{{end}}{{if not .Baseline.CompletedAt.IsZero}}, completed {{formatTime .Baseline.CompletedAt}}{{end}}; {{.RunCount}} archived run(s)).</p>
+  <table>
+    <thead><tr><th>Metric</th><th class="num">Prior run</th><th class="num">This run</th><th class="num">Change</th></tr></thead>
+    <tbody>
+      <tr><td>Error rate</td><td class="num">{{formatPercent .Baseline.ErrorPct}}</td><td class="num">{{formatPercent .Current.ErrorPct}}</td><td class="num">{{signed .Deltas.ErrorPctDelta}} pp</td></tr>
+      <tr><td>Avg response</td><td class="num">{{f0 .Baseline.AvgResponseMs}} ms</td><td class="num">{{f0 .Current.AvgResponseMs}} ms</td><td class="num">{{signed .Deltas.AvgResponseMsDelta}} ms ({{signedPct .Deltas.AvgResponsePctDelta}})</td></tr>
+      <tr><td>Peak TPS</td><td class="num">{{formatFloat .Baseline.PeakTPS}}</td><td class="num">{{formatFloat .Current.PeakTPS}}</td><td class="num">{{signed .Deltas.PeakTPSDelta}}</td></tr>
+      <tr><td>Completeness</td><td class="num">{{f0 .Baseline.CompletenessPct}}%</td><td class="num">{{f0 .Current.CompletenessPct}}%</td><td class="num">{{signed .Deltas.CompletenessDelta}} pts</td></tr>
+    </tbody>
+  </table>
+  {{if .Regressed}}<div class="finding"><div class="finding-body"><strong>Regressions vs prior run</strong><p>{{join .Regressions}}</p></div></div>{{else}}<p class="muted">No regressions detected versus the prior run.</p>{{end}}
+  {{else}}
+  <p class="muted">{{if .Note}}{{.Note}}{{else}}First archived run for this release; no prior run to compare against.{{end}}</p>
+  {{end}}
+{{else}}
+<p class="muted">This run is not associated with a release, so release-over-release trend analysis is unavailable.</p>
+{{end}}
+{{end}}
+
+{{define "run_context"}}
+<h2>Run Context &amp; Confidence</h2>
+<div class="kpis">
+  <div class="kpi"><b>Data completeness</b><div class="v">{{f0 .Report.Completeness.ScorePct}}%</div></div>
+  <div class="kpi"><b>Environment</b><div class="v">{{if .Report.ChangeAttribution.Environment}}{{.Report.ChangeAttribution.Environment}}{{else}}—{{end}}</div></div>
+  <div class="kpi"><b>Scenario revision</b><div class="v">{{if .Report.ChangeAttribution.ScenarioRevision}}{{.Report.ChangeAttribution.ScenarioRevision}}{{else}}—{{end}}</div></div>
+  <div class="kpi"><b>Runtime overrides</b><div class="v">{{if .Report.ChangeAttribution.RuntimeOverrides}}Yes{{else}}No{{end}}</div></div>
+</div>
 {{end}}
 
 {{define "completeness"}}
@@ -397,12 +430,16 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{define "network_phases"}}
 <h2>Network Phase Breakdown</h2>
 {{if gt .Report.NetworkPhases.Samples 0}}
-<div class="overview">
-  <div class="metric"><span class="metric-label">DNS Avg</span><span class="metric-value">{{formatFloat .Report.NetworkPhases.Overall.AvgDNSMs}} ms</span></div>
-  <div class="metric"><span class="metric-label">Connect Avg</span><span class="metric-value">{{formatFloat .Report.NetworkPhases.Overall.AvgConnectMs}} ms</span></div>
-  <div class="metric"><span class="metric-label">TLS Avg</span><span class="metric-value">{{formatFloat .Report.NetworkPhases.Overall.AvgTLSMs}} ms</span></div>
-  <div class="metric"><span class="metric-label">TTFB Avg</span><span class="metric-value">{{formatFloat .Report.NetworkPhases.Overall.AvgTTFBMs}} ms</span></div>
-</div>
+<p class="section-copy">Connection-time decomposition across {{.Report.NetworkPhases.Samples}} measured transaction(s).</p>
+<table>
+  <thead><tr><th>Phase</th><th class="num">Avg (ms)</th><th class="num">Max (ms)</th></tr></thead>
+  <tbody>
+    <tr><td>DNS</td><td class="num">{{f0 .Report.NetworkPhases.Overall.AvgDNSMs}}</td><td class="num">{{f0 .Report.NetworkPhases.Overall.MaxDNSMs}}</td></tr>
+    <tr><td>Connect (TCP)</td><td class="num">{{f0 .Report.NetworkPhases.Overall.AvgConnectMs}}</td><td class="num">{{f0 .Report.NetworkPhases.Overall.MaxConnectMs}}</td></tr>
+    <tr><td>TLS handshake</td><td class="num">{{f0 .Report.NetworkPhases.Overall.AvgTLSMs}}</td><td class="num">{{f0 .Report.NetworkPhases.Overall.MaxTLSMs}}</td></tr>
+    <tr><td>TTFB (server + transfer)</td><td class="num">{{f0 .Report.NetworkPhases.Overall.AvgTTFBMs}}</td><td class="num">{{f0 .Report.NetworkPhases.Overall.MaxTTFBMs}}</td></tr>
+  </tbody>
+</table>
 {{else}}<p class="muted">No network-phase timing was captured for this run.</p>{{end}}
 {{end}}
 
@@ -658,6 +695,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 
 {{define "artifact_integrity"}}
 <h2>Artifact Integrity</h2>
+{{with .Report.Integrity}}<div class="integrity-banner {{if eq .Status "verified"}}pass{{else if eq .Status "verified_partial"}}caution{{else}}fail{{end}}"><span class="integrity-label">{{if eq .Status "verified"}}&#10003; Integrity Verified{{else if eq .Status "verified_partial"}}&#9888; Integrity Partially Verified{{else}}&#10007; Integrity {{.Status}}{{end}}</span><span>{{.Summary}}</span></div>{{end}}
 <table><thead><tr><th>Artifact</th><th>Type</th><th class="num">Records</th><th class="num">Bytes</th><th>SHA-256</th></tr></thead><tbody>
   {{range .Report.ArtifactInventory}}<tr><td class="mono">{{.Name}}</td><td>{{.RecordType}} {{.Format}}</td><td class="num">{{.Count}}</td><td class="num">{{.SizeBytes}}</td><td class="mono">{{if .SHA256}}{{.SHA256}}{{else}}not captured{{end}}</td></tr>
   {{else}}<tr><td colspan="5" class="muted">No artifact inventory was available.</td></tr>{{end}}

@@ -516,14 +516,19 @@ func buildRunArchiveGoalCompletion(provenance RunArchiveProvenance, overview Run
 func buildRunArchiveReportProfiles() []RunArchiveReportProfile {
 	return []RunArchiveReportProfile{
 		{
-			ID:               "executive",
-			Label:            "Executive Summary",
-			Description:      "Decision-focused summary with analyst commentary, supporting graphs, SLA verdict, error rate, throughput, completeness, and change attribution.",
-			Audience:         "Business stakeholders, release owners, and sign-off authorities.",
-			BestFor:          "Ship/no-ship decisions, business risk, SLA posture, and executive sign-off.",
-			ExportFormats:    []string{"html", "json", "csv", "pdf"},
-			IncludedSections: []string{"verdict", "executive_overview", "graphs", "sla_rollup", "release_trend", "risk_summary", "recommendations", "signoff", "completeness", "change_attribution"},
-			SectionOrder:     []string{"verdict", "executive_overview", "graphs", "sla_rollup", "release_trend", "risk_summary", "recommendations", "signoff", "completeness", "change_attribution"},
+			ID:            "executive",
+			Label:         "Executive Summary",
+			Description:   "Decision-focused summary with analyst commentary, supporting graphs, SLA verdict, error rate, throughput, release trend, and run context.",
+			Audience:      "Business stakeholders, release owners, and sign-off authorities.",
+			BestFor:       "Ship/no-ship decisions, business risk, SLA posture, and executive sign-off.",
+			ExportFormats: []string{"html", "json", "csv", "pdf"},
+			// "release_trend" renders real release-over-release data: buildRunArchiveReport
+			// stays a pure single-record function, so the multi-run trend is attached at the
+			// storage-aware handler layer ((*Server).attachReleaseTrend) and the section
+			// degrades to a no-baseline/no-release note rather than a ghost. "run_context"
+			// folds completeness + change attribution into one compact confidence block.
+			IncludedSections: []string{"verdict", "executive_overview", "graphs", "sla_rollup", "release_trend", "risk_summary", "run_context", "recommendations", "signoff"},
+			SectionOrder:     []string{"verdict", "executive_overview", "graphs", "sla_rollup", "release_trend", "risk_summary", "run_context", "recommendations", "signoff"},
 		},
 		{
 			ID:               "engineer",
