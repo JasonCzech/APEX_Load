@@ -538,6 +538,49 @@ public class Actions {
 	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_url", "actions[1]", "converted")
 }
 
+func TestConvertZipJavaHTTPUnknownLRForcesReviewArtifact(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	addJavaZipFile(t, zw, "JavaHTTPUnknownLR/JavaHTTPUnknownLR.usr", `[General]
+Type=Java over HTTP
+ScriptLanguage=JAVA
+RunType=Java-Interpreter
+[Actions]
+Action=Actions.java
+`)
+	addJavaZipFile(t, zw, "JavaHTTPUnknownLR/Actions.java", `import lrapi.lr;
+
+public class Actions {
+  public int action() throws Throwable {
+    lr.frobnicate("x");
+    web.url("Home", "URL=https://example.test/home", web.LAST);
+    return 0;
+  }
+}`)
+	if err := zw.Close(); err != nil {
+		t.Fatalf("close zip: %v", err)
+	}
+
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if result.Script == nil || result.Script.Protocol != "http" {
+		t.Fatalf("script = %#v, want primary executable HTTP script", result.Script)
+	}
+	if len(result.effectiveScripts()) < 2 || result.ReviewArtifact == nil {
+		t.Fatalf("result = %#v, want HTTP script plus review artifact for unknown lr.*", result)
+	}
+	assertSourceReviewSupportMode(t, result.SourceReview.Mappings, "lr_frobnicate", SourceFunctionSupportReviewOnly)
+	for _, script := range result.effectiveScripts() {
+		for _, action := range script.Actions {
+			if action.Type == "custom_call" {
+				t.Fatalf("unknown Java lr.* emitted custom_call: %#v", action)
+			}
+		}
+	}
+}
+
 func TestConvertZipJavaApacheHTTPClientObjectProducesExecutableHTTP(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)

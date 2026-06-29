@@ -63,6 +63,9 @@ func classifyJavaArchive(program javaProgram, projectConfig *ProjectConfig, file
 	if len(program.Unparsed) > 0 {
 		profile.ReviewFamilies = appendUnique(profile.ReviewFamilies, "unparsed_java_region")
 	}
+	if javaProgramHasUnknownLR(program) {
+		profile.ReviewFamilies = appendUnique(profile.ReviewFamilies, "unrecognized_lr_method")
+	}
 	if len(profile.ReviewFamilies) > 0 {
 		profile.Surfaces[javaSurfaceReview] = true
 	}
@@ -90,6 +93,34 @@ func classifyJavaArchive(program javaProgram, projectConfig *ProjectConfig, file
 		}
 	}
 	return profile
+}
+
+func javaProgramHasUnknownLR(program javaProgram) bool {
+	for _, phase := range []string{"init", "action", "teardown"} {
+		for _, statement := range javaLifecycleStatements(program, phase) {
+			if javaStatementHasUnknownLR(statement, phase) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func javaStatementHasUnknownLR(statement javaStatement, phase string) bool {
+	if statement.Kind == "block" {
+		for _, child := range statement.Children {
+			if javaStatementHasUnknownLR(child, phase) {
+				return true
+			}
+		}
+		return false
+	}
+	fn, ok := javaLRToParsedFunction(statement, phase)
+	if !ok {
+		return false
+	}
+	_, known := lookupSourceFunction(fn.Name)
+	return !known
 }
 
 func javaLooksLikeHTTP(text string) bool {
