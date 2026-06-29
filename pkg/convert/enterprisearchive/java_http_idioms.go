@@ -13,6 +13,12 @@ var (
 	javaHTTPBuilderURIRe      = regexp.MustCompile(`(?is)\.uri\s*\(\s*(?:URI\.create\s*\(\s*)?("(?:(?:\\.)|[^"\\])*")`)
 	javaHTTPBodyPublisherRe   = regexp.MustCompile(`(?is)\bofString\s*\(\s*("(?:(?:\\.)|[^"\\])*")`)
 	javaHTTPContentTypeHintRe = regexp.MustCompile(`(?is)\.header\s*\(\s*"Content-Type"\s*,\s*("(?:(?:\\.)|[^"\\])*")`)
+	javaHTTPBuilderAssignRe   = regexp.MustCompile(`(?is)^\s*(?:(?:final\s+)?[A-Za-z_$][A-Za-z0-9_$.<>\[\]]*\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?:[A-Za-z_$][A-Za-z0-9_$.]*\.)?HttpRequest\.newBuilder\s*\(`)
+	javaHTTPBuilderURIStmtRe  = regexp.MustCompile(`(?is)^\s*([A-Za-z_][A-Za-z0-9_]*)\.uri\s*\(\s*(?:URI\.create\s*\(\s*)?("(?:(?:\\.)|[^"\\])*")`)
+	javaHTTPBuilderHeaderRe   = regexp.MustCompile(`(?is)^\s*([A-Za-z_][A-Za-z0-9_]*)\.header\s*\(\s*("(?:(?:\\.)|[^"\\])*")\s*,\s*("(?:(?:\\.)|[^"\\])*")`)
+	javaHTTPBuilderMethodRe   = regexp.MustCompile(`(?is)^\s*([A-Za-z_][A-Za-z0-9_]*)\.(GET|DELETE|POST|PUT|PATCH)\s*\(`)
+	javaHTTPBuildRequestRe    = regexp.MustCompile(`(?is)^\s*(?:(?:final\s+)?[A-Za-z_$][A-Za-z0-9_$.<>\[\]]*\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([A-Za-z_][A-Za-z0-9_]*)\.build\s*\(`)
+	javaHTTPSendRequestRe     = regexp.MustCompile(`(?is)\.send\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\b`)
 	javaApacheRequestAssignRe = regexp.MustCompile(`(?is)^\s*(?:(?:final\s+)?[A-Za-z_$][A-Za-z0-9_$.<>\[\]]*\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*new\s+(?:[A-Za-z_$][A-Za-z0-9_$.]*\.)?Http(Get|Post|Put|Delete|Patch|Head|Options)\s*\(\s*("(?:(?:\\.)|[^"\\])*")`)
 	javaApacheSetHeaderRe     = regexp.MustCompile(`(?is)^\s*([A-Za-z_][A-Za-z0-9_]*)\.setHeader\s*\(\s*("(?:(?:\\.)|[^"\\])*")\s*,\s*("(?:(?:\\.)|[^"\\])*")`)
 	javaApacheSetEntityRe     = regexp.MustCompile(`(?is)^\s*([A-Za-z_][A-Za-z0-9_]*)\.setEntity\s*\(.*?\bStringEntity\s*\(\s*("(?:(?:\\.)|[^"\\])*")`)
@@ -29,10 +35,14 @@ var (
 )
 
 func javaHTTPParsedActions(program javaProgram) []*ParsedAction {
+	javaHTTPBuilder := newJavaHTTPBuilderState()
 	apache := newJavaApacheHTTPState()
 	urlConnection := newJavaURLConnectionHTTPState()
 	return javaParsedActionsFor(program, func(statement javaStatement, phase string) (ParsedFunction, bool) {
 		if fn, ok := javaWebToParsedFunction(statement, phase); ok {
+			return fn, true
+		}
+		if fn, ok := javaHTTPBuilder.mapStatement(statement, phase); ok {
 			return fn, true
 		}
 		if fn, ok := apache.mapStatement(statement, phase); ok {
@@ -55,6 +65,78 @@ func javaHTTPParsedActions(program javaProgram) []*ParsedAction {
 
 type javaApacheHTTPState struct {
 	requests map[string]ParsedFunction
+}
+
+type javaHTTPBuilderState struct {
+	builders map[string]ParsedFunction
+	requests map[string]ParsedFunction
+	emitted  map[string]bool
+}
+
+func newJavaHTTPBuilderState() *javaHTTPBuilderState {
+	return &javaHTTPBuilderState{
+		builders: map[string]ParsedFunction{},
+		requests: map[string]ParsedFunction{},
+		emitted:  map[string]bool{},
+	}
+}
+
+func (state *javaHTTPBuilderState) mapStatement(statement javaStatement, phase string) (ParsedFunction, bool) {
+	text := javaNormalizeStatementText(statement.Text)
+	if matches := javaHTTPBuilderAssignRe.FindStringSubmatch(text); len(matches) == 2 {
+		state.builders[matches[1]] = javaHTTPClientParsedFunction(statement, phase, "", "GET")
+		return ParsedFunction{}, false
+	}
+	if matches := javaHTTPBuilderURIStmtRe.FindStringSubmatch(text); len(matches) == 3 {
+		if fn, ok := state.builders[matches[1]]; ok {
+			if url, ok := parseJavaStringLiteral(matches[2]); ok && isAbsoluteHTTPURL(url) {
+				fn.URL = url
+				state.builders[matches[1]] = fn
+			}
+		}
+		return ParsedFunction{}, false
+	}
+	if matches := javaHTTPBuilderHeaderRe.FindStringSubmatch(text); len(matches) == 4 {
+		if fn, ok := state.builders[matches[1]]; ok {
+			key, _ := parseJavaStringLiteral(matches[2])
+			value, _ := parseJavaStringLiteral(matches[3])
+			javaAddParsedHeader(&fn, key, value)
+			state.builders[matches[1]] = fn
+		}
+		return ParsedFunction{}, false
+	}
+	if matches := javaHTTPBuilderMethodRe.FindStringSubmatch(text); len(matches) == 3 {
+		if fn, ok := state.builders[matches[1]]; ok {
+			fn.Method = strings.ToUpper(matches[2])
+			if body := javaHTTPBodyPublisherString(text); body != "" {
+				fn.Body = body
+				fn.Args["Body"] = body
+			}
+			state.builders[matches[1]] = fn
+		}
+		return ParsedFunction{}, false
+	}
+	if matches := javaHTTPBuildRequestRe.FindStringSubmatch(text); len(matches) == 3 {
+		if fn, ok := state.builders[matches[2]]; ok {
+			state.requests[matches[1]] = fn
+		}
+		return ParsedFunction{}, false
+	}
+	if matches := javaHTTPSendRequestRe.FindStringSubmatch(text); len(matches) == 2 {
+		requestVar := matches[1]
+		if state.emitted[requestVar] {
+			return ParsedFunction{}, false
+		}
+		if fn, ok := state.requests[requestVar]; ok && isAbsoluteHTTPURL(fn.URL) {
+			state.emitted[requestVar] = true
+			fn.Filename = statement.File
+			fn.LineNumber = statement.StartLine
+			fn.EndLine = statement.EndLine
+			fn.RawBlock = statement.Text
+			return fn, true
+		}
+	}
+	return ParsedFunction{}, false
 }
 
 func newJavaApacheHTTPState() *javaApacheHTTPState {
@@ -213,6 +295,22 @@ func javaAddParsedHeader(fn *ParsedFunction, key string, value string) {
 	fn.HeaderList = append(fn.HeaderList, dsl.HeaderEntry{Name: key, Value: value})
 }
 
+func javaHTTPBuilderStatementLooksOwned(text string) bool {
+	normalized := javaNormalizeStatementText(text)
+	return javaHTTPBuilderAssignRe.MatchString(normalized) ||
+		javaHTTPBuilderURIStmtRe.MatchString(normalized) ||
+		javaHTTPBuilderHeaderRe.MatchString(normalized) ||
+		javaHTTPBuilderMethodRe.MatchString(normalized) ||
+		javaHTTPBuildRequestRe.MatchString(normalized) ||
+		javaHTTPBuilderSendStatementLooksOwned(normalized)
+}
+
+func javaHTTPBuilderSendStatementLooksOwned(text string) bool {
+	lower := strings.ToLower(text)
+	return javaHTTPSendRequestRe.MatchString(text) &&
+		(strings.Contains(lower, "httpresponse") || strings.Contains(lower, "bodyhandlers"))
+}
+
 func javaURLConnectionStatementLooksOwned(text string) bool {
 	normalized := javaNormalizeStatementText(text)
 	return javaURLAssignRe.MatchString(normalized) ||
@@ -273,12 +371,18 @@ func javaHTTPClientToParsedFunction(statement javaStatement, phase string) (Pars
 		return ParsedFunction{}, false
 	}
 	if url := javaHTTPBuilderURL(text); url != "" {
-		fn := javaHTTPClientParsedFunction(statement, phase, url, javaHTTPMethodFromText(text))
-		if body := javaHTTPBodyPublisherString(text); body != "" {
+		method := javaHTTPMethodFromText(text)
+		body := javaHTTPBodyPublisherString(text)
+		contentType := javaHTTPContentTypeHint(text)
+		if method == "GET" && body == "" && contentType == "" && !strings.Contains(lower, ".build(") && !strings.Contains(lower, ".send(") {
+			return ParsedFunction{}, false
+		}
+		fn := javaHTTPClientParsedFunction(statement, phase, url, method)
+		if body != "" {
 			fn.Body = body
 			fn.Args["Body"] = body
 		}
-		if contentType := javaHTTPContentTypeHint(text); contentType != "" {
+		if contentType != "" {
 			javaAddParsedHeader(&fn, "Content-Type", contentType)
 		}
 		return fn, true

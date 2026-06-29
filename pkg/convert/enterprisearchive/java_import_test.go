@@ -497,6 +497,59 @@ public class Actions {
 	}
 }
 
+func TestConvertZipJavaHTTPClientSplitBuilderProducesExecutableHTTP(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	addJavaZipFile(t, zw, "JavaHTTPSplitBuilder/JavaHTTPSplitBuilder.usr", `[General]
+Type=Java over HTTP
+ScriptLanguage=JAVA
+RunType=Java-Interpreter
+[Actions]
+Action=Actions.java
+`)
+	addJavaZipFile(t, zw, "JavaHTTPSplitBuilder/Actions.java", `import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+
+public class Actions {
+  public int action() throws Throwable {
+    HttpClient client = HttpClient.newHttpClient();
+    HttpRequest.Builder builder = HttpRequest.newBuilder();
+    builder.uri(URI.create("https://example.test/api/orders"));
+    builder.header("Content-Type", "application/json");
+    builder.POST(HttpRequest.BodyPublishers.ofString("{\"id\":\"{orderId}\"}"));
+    HttpRequest request = builder.build();
+    HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+    return 0;
+  }
+}`)
+	if err := zw.Close(); err != nil {
+		t.Fatalf("close zip: %v", err)
+	}
+
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if result.Script == nil || result.Script.Protocol != "http" {
+		t.Fatalf("script = %#v, want executable HTTP script", result.Script)
+	}
+	if len(result.Script.Actions) != 1 {
+		t.Fatalf("actions = %#v, want one HTTP request", result.Script.Actions)
+	}
+	action := result.Script.Actions[0]
+	if action.Method != "POST" || action.Target != "/api/orders" {
+		t.Fatalf("action = %#v, want POST /api/orders", action)
+	}
+	if action.Body != `{"id":"{{var.orderid}}"}` {
+		t.Fatalf("body = %q, want templated JSON body", action.Body)
+	}
+	if action.Headers["Content-Type"] != "application/json" || len(action.HeaderList) == 0 {
+		t.Fatalf("headers=%#v header_list=%#v, want ordered content type", action.Headers, action.HeaderList)
+	}
+}
+
 func TestConvertZipJavaHTTPPreservesLRParameterSetup(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
