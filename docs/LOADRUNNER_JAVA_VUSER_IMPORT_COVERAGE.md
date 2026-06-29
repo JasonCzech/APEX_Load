@@ -24,7 +24,7 @@ This matrix covers the Java Vuser importer surfaces outside the closed `lrapi.lr
 | `java-web-submit-data` | HTTP | web.submitData | `supported` | `executable` | no | name, Action, Method, ItemData | Delegates to web_submit_data conversion. |
 | `java-web-custom-request` | HTTP | web.customRequest | `supported` | `executable` | no | name, URL, Method, Body | Delegates to web_custom_request conversion and preserves ordered header_list. |
 | `java-web-rest-request` | HTTP | web.restRequest | `supported` | `executable` | no | name, URL, Method, Body | Delegates to web_rest conversion. |
-| `java-http-client-static-url` | HTTP | HttpURLConnection / Java HttpClient / Apache HttpClient with static URL | `partial` | `executable` | yes | url, method | Simple static URL sends are promoted; dynamic builders remain named review items. |
+| `java-http-client-static-url` | HTTP | HttpURLConnection / Java HttpClient / Apache HttpClient with static URL | `partial` | `executable` | yes | url, method, headers, body | Static URL sends, split HttpURLConnection flows, split Java HttpRequest builders, and Apache HttpClient object flows are promoted; unrecoverable dynamic clients remain named review items. |
 
 ## JMS Idioms
 

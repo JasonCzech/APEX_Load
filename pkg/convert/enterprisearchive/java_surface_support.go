@@ -98,7 +98,7 @@ func JavaHTTPIdiomCoverage() []JavaImportSurfaceSupportEntry {
 		{ID: "java-web-submit-data", Area: "HTTP", Construct: "web.submitData", Status: "supported", ExecutionStatus: "executable", Fields: []string{"name", "Action", "Method", "ItemData"}, Notes: "Delegates to web_submit_data conversion."},
 		{ID: "java-web-custom-request", Area: "HTTP", Construct: "web.customRequest", Status: "supported", ExecutionStatus: "executable", Fields: []string{"name", "URL", "Method", "Body"}, Notes: "Delegates to web_custom_request conversion and preserves ordered header_list."},
 		{ID: "java-web-rest-request", Area: "HTTP", Construct: "web.restRequest", Status: "supported", ExecutionStatus: "executable", Fields: []string{"name", "URL", "Method", "Body"}, Notes: "Delegates to web_rest conversion."},
-		{ID: "java-http-client-static-url", Area: "HTTP", Construct: "HttpURLConnection / Java HttpClient / Apache HttpClient with static URL", Status: "partial", ExecutionStatus: "executable", ReviewRequired: true, Fields: []string{"url", "method"}, Notes: "Simple static URL sends are promoted; dynamic builders remain named review items."},
+		{ID: "java-http-client-static-url", Area: "HTTP", Construct: "HttpURLConnection / Java HttpClient / Apache HttpClient with static URL", Status: "partial", ExecutionStatus: "executable", ReviewRequired: true, Fields: []string{"url", "method", "headers", "body"}, Notes: "Static URL sends, split HttpURLConnection flows, split Java HttpRequest builders, and Apache HttpClient object flows are promoted; unrecoverable dynamic clients remain named review items."},
 	}
 }
 
