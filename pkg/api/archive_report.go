@@ -360,6 +360,8 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	report.Completeness = buildRunArchiveCompletenessScore(manifest, report, transactions, resources, summaries)
 	report.ChangeAttribution = buildRunArchiveChangeAttribution(manifest)
 	report.ReportProfiles = buildRunArchiveReportProfiles()
+	report.NetworkPhases = buildRunArchiveNetworkPhaseSummary(transactions)
+	report.ArtifactInventory = buildRunArchiveArtifactInventory(record, manifest)
 
 	return report, nil
 }
@@ -517,22 +519,31 @@ func buildRunArchiveReportProfiles() []RunArchiveReportProfile {
 			ID:               "executive",
 			Label:            "Executive Summary",
 			Description:      "Decision-focused summary with analyst commentary, supporting graphs, SLA verdict, error rate, throughput, completeness, and change attribution.",
+			Audience:         "Business stakeholders, release owners, and sign-off authorities.",
+			BestFor:          "Ship/no-ship decisions, business risk, SLA posture, and executive sign-off.",
 			ExportFormats:    []string{"html", "json", "csv", "pdf"},
-			IncludedSections: []string{"commentary", "overview", "graphs", "sla", "completeness", "change_attribution", "evidence_tiers"},
+			IncludedSections: []string{"verdict", "executive_overview", "sla_rollup", "release_trend", "risk_summary", "recommendations", "signoff", "completeness", "change_attribution"},
+			SectionOrder:     []string{"verdict", "executive_overview", "sla_rollup", "release_trend", "risk_summary", "recommendations", "signoff", "completeness", "change_attribution"},
 		},
 		{
 			ID:               "engineer",
 			Label:            "Detailed Technical",
 			Description:      "Engineering drilldown with analyst commentary, supporting graphs, timelines, action stats, browser diagnostics, resource peaks, and error patterns.",
+			Audience:         "Performance engineers, SREs, developers, and test analysts.",
+			BestFor:          "Bottleneck isolation, regression diagnosis, resource saturation, and remediation planning.",
 			ExportFormats:    []string{"html", "json", "csv", "pdf", "jsonl", "parquet"},
-			IncludedSections: []string{"commentary", "overview", "graphs", "summary_timeline", "actions", "browser", "web2_migration", "resources", "errors", "raw_exports"},
+			IncludedSections: []string{"verdict", "technical_overview", "graphs", "sla_detail", "summary_timeline", "actions", "network_phases", "errors", "resources", "browser", "soap", "web2_migration", "root_cause", "raw_exports"},
+			SectionOrder:     []string{"verdict", "technical_overview", "graphs", "sla_detail", "summary_timeline", "actions", "network_phases", "errors", "resources", "browser", "soap", "web2_migration", "root_cause", "raw_exports"},
 		},
 		{
 			ID:               "audit",
 			Label:            "Audit",
 			Description:      "Governance package with schema compatibility, evidence tiers, completeness findings, provenance, and artifact inventory.",
-			ExportFormats:    []string{"html", "json", "csv"},
-			IncludedSections: []string{"schema_compatibility", "evidence_tiers", "completeness", "provenance", "change_attribution", "artifact_inventory"},
+			Audience:         "Compliance, governance, change-control, and QA gatekeepers.",
+			BestFor:          "Evidence integrity, authorization traceability, reproducibility, and audit review.",
+			ExportFormats:    []string{"html", "json", "csv", "pdf"},
+			IncludedSections: []string{"audit_identity", "authorization", "governance", "schema_compatibility", "evidence_tiers", "completeness", "provenance", "change_attribution", "artifact_integrity", "report_authorship", "official_outcome"},
+			SectionOrder:     []string{"audit_identity", "authorization", "governance", "schema_compatibility", "evidence_tiers", "completeness", "provenance", "change_attribution", "artifact_integrity", "report_authorship", "official_outcome"},
 		},
 	}
 }
@@ -731,7 +742,7 @@ func buildRunArchiveReportCompatibility(record *storage.RunArchiveRecord, manife
 	compatibility := RunArchiveReportCompatibility{
 		Status:                   "compatible",
 		ReportSchemaVersion:      runArchiveReportSchemaVersion,
-		SupportedManifestSchemas: []string{archiveSchemaVersion},
+		SupportedManifestSchemas: []string{archiveSchemaVersionV1, archiveSchemaVersion},
 	}
 	if manifest != nil {
 		compatibility.ManifestSchemaVersion = manifest.SchemaVersion
@@ -756,7 +767,7 @@ func buildRunArchiveReportCompatibility(record *storage.RunArchiveRecord, manife
 		archiveFileOutputCompatibility(record, manifestField(manifest, "resources_parquet"), "resources_parquet", "resources.parquet", archiveSchemaVersion),
 		archiveFileOutputCompatibility(record, manifestField(manifest, "interval_summaries_parquet"), "interval_summaries_parquet", "interval_summaries.parquet", archiveSchemaVersion),
 		reportOutputCompatibility("csv", "archive/report?format=csv", runArchiveReportSchemaVersion, manifestOK, "CSV report export is generated from the archive report schema."),
-		reportOutputCompatibility("pdf", "archive/report?format=pdf", runArchiveReportSchemaVersion, manifestOK, "PDF report export is generated from the archive report schema for executive and engineer profiles."),
+		reportOutputCompatibility("pdf", "archive/report?format=pdf", runArchiveReportSchemaVersion, manifestOK, "PDF report export is generated from the archive report schema for profile-shaped reports."),
 	}
 	for _, output := range compatibility.Outputs {
 		switch output.Status {
@@ -779,7 +790,12 @@ func buildRunArchiveReportCompatibility(record *storage.RunArchiveRecord, manife
 }
 
 func supportedArchiveManifestSchema(version string) bool {
-	return version == archiveSchemaVersion
+	switch version {
+	case archiveSchemaVersion, archiveSchemaVersionV1:
+		return true
+	default:
+		return false
+	}
 }
 
 func reportOutputCompatibility(format, artifact, schemaVersion string, compatible bool, reason string) RunArchiveOutputCompatibility {

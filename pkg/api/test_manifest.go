@@ -47,6 +47,8 @@ type TestRunManifestIdentity struct {
 	CreatedByDisplayName string     `json:"created_by_display_name,omitempty"`
 	StartedBySubject     string     `json:"started_by_subject,omitempty"`
 	StartedByDisplayName string     `json:"started_by_display_name,omitempty"`
+	StoppedBySubject     string     `json:"stopped_by_subject,omitempty"`
+	StoppedByDisplayName string     `json:"stopped_by_display_name,omitempty"`
 }
 
 type TestRunManifestConfiguration struct {
@@ -254,6 +256,8 @@ func manifestIdentityFromTest(test *ManagedTest, completedAt time.Time) TestRunM
 		CreatedByDisplayName: test.CreatedByDisplayName,
 		StartedBySubject:     test.StartedBySubject,
 		StartedByDisplayName: test.StartedByDisplayName,
+		StoppedBySubject:     test.StoppedBySubject,
+		StoppedByDisplayName: test.StoppedByDisplayName,
 	}
 	if identity.EndedAt == nil && !completedAt.IsZero() {
 		identity.EndedAt = &completedAt
@@ -565,6 +569,9 @@ func (tr *TestRunner) persistTestManifestArtifact(test *ManagedTest, record *sto
 	}
 	archiveManifest.TestManifestFile = testRunManifestFileName
 	archiveManifest.TestNotesFile = testNotesFile
+	if err := updateRunArchiveArtifactIntegrity(record.ArchivePath, archiveManifest); err != nil {
+		return err
+	}
 	if err := writeIndentedJSONFile(record.ManifestPath, archiveManifest); err != nil {
 		return err
 	}

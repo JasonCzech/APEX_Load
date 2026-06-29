@@ -74,9 +74,33 @@ describe('TestExecutionArchive', () => {
       runtime_override_fields: ['browser', 'log_level'],
     },
     report_profiles: [
-      { id: 'executive', label: 'Executive', description: 'Decision-focused summary.', export_formats: ['html', 'csv', 'pdf'], included_sections: ['overview'] },
-      { id: 'engineer', label: 'Engineer', description: 'Engineering drilldown.', export_formats: ['html', 'pdf', 'jsonl'], included_sections: ['actions'] },
-      { id: 'audit', label: 'Audit', description: 'Governance package.', export_formats: ['html', 'json'], included_sections: ['evidence'] },
+      {
+        id: 'executive',
+        label: 'Executive',
+        description: 'Decision-focused summary.',
+        best_for: 'Release sign-off and business risk.',
+        export_formats: ['html', 'csv', 'pdf'],
+        included_sections: ['verdict', 'sla_rollup'],
+        section_order: ['verdict', 'sla_rollup'],
+      },
+      {
+        id: 'engineer',
+        label: 'Engineer',
+        description: 'Engineering drilldown.',
+        best_for: 'Bottleneck isolation.',
+        export_formats: ['html', 'pdf', 'jsonl'],
+        included_sections: ['actions', 'network_phases'],
+        section_order: ['actions', 'network_phases'],
+      },
+      {
+        id: 'audit',
+        label: 'Audit',
+        description: 'Governance package.',
+        best_for: 'Evidence integrity and approval review.',
+        export_formats: ['html', 'json', 'pdf'],
+        included_sections: ['audit_identity', 'artifact_integrity'],
+        section_order: ['audit_identity', 'artifact_integrity'],
+      },
     ],
     manifest: {
       schema_version: '1',
@@ -515,23 +539,28 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('present · 3')
     expect(container.textContent).toContain('External Metrics')
     expect(container.textContent).toContain('missing · 0')
-    expect(container.textContent).toContain('Executive')
-    expect(container.textContent).toContain('Engineer')
-    expect(container.textContent).toContain('Audit')
-    expect(container.querySelector('a[href="/api/v1/tests/test-1/report?profile=executive"]')).toBeTruthy()
+	    expect(container.textContent).toContain('Executive')
+	    expect(container.textContent).toContain('Engineer')
+	    expect(container.textContent).toContain('Audit')
+	    expect(container.textContent).toContain('Release sign-off and business risk.')
+	    expect(container.textContent).toContain('Evidence integrity and approval review.')
+	    expect(container.textContent).toContain('Run identity')
+	    expect(container.textContent).toContain('Artifact integrity')
+	    expect(container.querySelector('a[href="/api/v1/tests/test-1/report?profile=executive"]')).toBeTruthy()
     expect(container.querySelector('a[href="/api/v1/tests/test-1/archive/report"]')).toBeTruthy()
     const profileCsvLink = Array.from(container.querySelectorAll('a')).find(anchor => anchor.getAttribute('href') === '/api/v1/tests/test-1/archive/report?format=csv&profile=executive')
     expect(profileCsvLink).toBeTruthy()
-    const profilePdfLinks = Array.from(container.querySelectorAll('a')).map(anchor => anchor.getAttribute('href'))
-    expect(profilePdfLinks).toContain('/api/v1/tests/test-1/archive/report?format=pdf&profile=executive')
-    expect(profilePdfLinks).toContain('/api/v1/tests/test-1/archive/report?format=pdf&profile=engineer')
-    expect(profilePdfLinks).not.toContain('/api/v1/tests/test-1/archive/report?format=pdf&profile=audit')
+	    const profilePdfLinks = Array.from(container.querySelectorAll('a')).map(anchor => anchor.getAttribute('href'))
+	    expect(profilePdfLinks).toContain('/api/v1/tests/test-1/archive/report?format=pdf&profile=executive')
+	    expect(profilePdfLinks).toContain('/api/v1/tests/test-1/archive/report?format=pdf&profile=engineer')
+	    expect(profilePdfLinks).toContain('/api/v1/tests/test-1/archive/report?format=pdf&profile=audit')
     expect(container.textContent).toContain('Executive HTML')
     expect(container.textContent).toContain('Executive CSV')
     expect(container.textContent).toContain('Executive PDF')
-    expect(container.textContent).toContain('Engineer PDF')
-    expect(container.textContent).toContain('Engineer JSONL')
-    expect(container.textContent).toContain('overview')
+	    expect(container.textContent).toContain('Engineer PDF')
+	    expect(container.textContent).toContain('Audit PDF')
+	    expect(container.textContent).toContain('Engineer JSONL')
+	    expect(container.textContent).toContain('SLA rollup')
     expect(container.textContent).toContain('Error Patterns')
     expect(container.textContent).toContain('soap fault: Request validation failed for order 1001')
     expect(container.textContent).toContain('CreateOrder')
@@ -720,6 +749,58 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('Collapse snapshots')
     expect(container.textContent).toContain('X-Debug-11')
     expect(container.textContent).toContain('X-Trace-11')
+  })
+
+  it('renders provenance panels when execution settings are absent', async () => {
+    const { execution_settings: _executionSettings, ...sparseProvenance } = archiveReport.manifest.provenance!
+    const sparseReport: RunArchiveReport = {
+      ...archiveReport,
+      manifest: {
+        ...archiveReport.manifest,
+        provenance: sparseProvenance,
+      },
+    }
+
+    await act(async () => {
+      root.render(
+        <TestExecutionArchive
+          hasArchive={true}
+          test={test}
+          archiveError=""
+          archiveLoading={false}
+          archiveReport={sparseReport}
+          onDownloadBrowserDiagnostics={vi.fn()}
+          onDownloadArchiveArtifact={vi.fn()}
+          archiveActionEntries={[]}
+          archiveSOAPOperationEntries={[]}
+          selectedArchiveAction=""
+          onSelectedArchiveActionChange={vi.fn()}
+          selectedArchiveSOAPOperation=""
+          onSelectedArchiveSOAPOperationChange={vi.fn()}
+          archiveGroups={[]}
+          selectedArchiveGroup=""
+          onSelectedArchiveGroupChange={vi.fn()}
+          archiveErrorsOnly={false}
+          onArchiveErrorsOnlyChange={vi.fn()}
+          archiveTransactionsLoading={false}
+          archiveTransactionsTotal={0}
+          archivePageStart={0}
+          archivePageEnd={0}
+          archiveTransactionsOffset={0}
+          archivePageSize={50}
+          onPageSizeChange={vi.fn()}
+          onPreviousPage={vi.fn()}
+          onNextPage={vi.fn()}
+          archiveTransactions={[]}
+          expandedArchiveEvent={null}
+          onExpandedArchiveEventChange={vi.fn()}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('Run Provenance')
+    expect(container.textContent).toContain('Metrics Interval')
+    expect(container.textContent).toContain('n/a')
   })
 
   it('renders transaction drill-down column sort and filter controls', async () => {

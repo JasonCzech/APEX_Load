@@ -850,6 +850,7 @@ export default function TestExecution({ testId, history, initialWorkspaceTabId, 
 
       {showGenerateReport && (
         <GenerateReportModal
+          profiles={archiveReport?.report_profiles}
           onClose={() => setShowGenerateReport(false)}
           onGenerate={(profile) => {
             setReportProfile(profile)

@@ -210,6 +210,29 @@ func stringSet(values []string) map[string]struct{} {
 	for _, value := range values {
 		set[value] = struct{}{}
 	}
+	addAlias := func(alias string, sources ...string) {
+		for _, source := range sources {
+			if _, ok := set[source]; ok {
+				set[alias] = struct{}{}
+				return
+			}
+		}
+	}
+	addAlias("overview", "executive_overview", "technical_overview", "audit_identity")
+	addAlias("sla", "sla_rollup", "sla_detail", "official_outcome")
+	addAlias("graphs", "executive_overview", "technical_overview")
+	addAlias("summary_timeline", "technical_overview")
+	addAlias("actions", "sla_detail")
+	addAlias("errors", "risk_summary", "errors", "root_cause")
+	addAlias("resources", "resources")
+	addAlias("browser", "browser")
+	addAlias("raw_exports", "raw_exports", "artifact_integrity")
+	addAlias("artifact_inventory", "artifact_integrity")
+	addAlias("provenance", "audit_identity", "authorization", "provenance")
+	addAlias("schema_compatibility", "schema_compatibility")
+	addAlias("evidence_tiers", "evidence_tiers")
+	addAlias("completeness", "completeness")
+	addAlias("change_attribution", "change_attribution")
 	return set
 }
 
@@ -267,6 +290,12 @@ func writeArchiveProvenanceCSVRows(write func(string, string, string, string) er
 		{"total_vusers", strconv.Itoa(provenance.TotalVUsers)},
 		{"duration", provenance.Duration},
 		{"baseline_pinned", strconv.FormatBool(provenance.BaselinePinned)},
+		{"created_by_subject", provenance.CreatedBySubject},
+		{"created_by_display_name", provenance.CreatedByDisplayName},
+		{"started_by_subject", provenance.StartedBySubject},
+		{"started_by_display_name", provenance.StartedByDisplayName},
+		{"stopped_by_subject", provenance.StoppedBySubject},
+		{"stopped_by_display_name", provenance.StoppedByDisplayName},
 	}
 	for _, row := range rows {
 		if row.value == "" {
@@ -280,24 +309,48 @@ func writeArchiveProvenanceCSVRows(write func(string, string, string, string) er
 }
 
 func writeArchiveArtifactInventoryCSVRows(write func(string, string, string, string) error, manifest *RunArchiveManifest) error {
-	rows := []struct {
-		key   string
-		count int64
-	}{
-		{manifest.TransactionsFile, manifest.TransactionCount},
-		{manifest.TransactionsParquetFile, manifest.TransactionCount},
-		{manifest.ResourceSamplesFile, manifest.ResourceSampleCount},
-		{manifest.ResourceSamplesParquetFile, manifest.ResourceSampleCount},
-		{manifest.IntervalSummariesFile, manifest.IntervalSummaryCount},
-		{manifest.IntervalSummariesParquetFile, manifest.IntervalSummaryCount},
-		{manifest.TestManifestFile, 0},
-		{manifest.TestNotesFile, 0},
+	if len(manifest.Artifacts) > 0 {
+		for _, artifact := range manifest.Artifacts {
+			if artifact.Name == "" {
+				continue
+			}
+			rows := []struct {
+				metric string
+				value  string
+			}{
+				{"kind", artifact.Kind},
+				{"format", artifact.Format},
+				{"record_type", artifact.RecordType},
+				{"count", formatCSVInt(artifact.Count)},
+				{"size_bytes", formatCSVInt(artifact.SizeBytes)},
+				{"sha256", artifact.SHA256},
+			}
+			for _, row := range rows {
+				if row.value == "" || row.value == "0" && (row.metric == "count" || row.metric == "size_bytes") {
+					continue
+				}
+				if err := write("artifact_inventory", artifact.Name, row.metric, row.value); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+	rows := []RunArchiveArtifact{
+		{Name: manifest.TransactionsFile, Count: manifest.TransactionCount},
+		{Name: manifest.TransactionsParquetFile, Count: manifest.TransactionCount},
+		{Name: manifest.ResourceSamplesFile, Count: manifest.ResourceSampleCount},
+		{Name: manifest.ResourceSamplesParquetFile, Count: manifest.ResourceSampleCount},
+		{Name: manifest.IntervalSummariesFile, Count: manifest.IntervalSummaryCount},
+		{Name: manifest.IntervalSummariesParquetFile, Count: manifest.IntervalSummaryCount},
+		{Name: manifest.TestManifestFile},
+		{Name: manifest.TestNotesFile},
 	}
 	for _, row := range rows {
-		if row.key == "" {
+		if row.Name == "" {
 			continue
 		}
-		if err := write("artifact_inventory", row.key, "count", formatCSVInt(row.count)); err != nil {
+		if err := write("artifact_inventory", row.Name, "count", formatCSVInt(row.Count)); err != nil {
 			return err
 		}
 	}

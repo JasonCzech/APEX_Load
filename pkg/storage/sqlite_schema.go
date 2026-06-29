@@ -287,6 +287,8 @@ func schemaCreateTableStatements() []string {
 			created_by_display_name TEXT,
 			started_by_subject TEXT,
 			started_by_display_name TEXT,
+			stopped_by_subject TEXT,
+			stopped_by_display_name TEXT,
 			groups_json TEXT,
 			goal_config_json TEXT,
 			timeslot_id TEXT
@@ -815,6 +817,8 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "tests.created_by_display_name", query: `ALTER TABLE tests ADD COLUMN created_by_display_name TEXT`},
 		{name: "tests.started_by_subject", query: `ALTER TABLE tests ADD COLUMN started_by_subject TEXT`},
 		{name: "tests.started_by_display_name", query: `ALTER TABLE tests ADD COLUMN started_by_display_name TEXT`},
+		{name: "tests.stopped_by_subject", query: `ALTER TABLE tests ADD COLUMN stopped_by_subject TEXT`},
+		{name: "tests.stopped_by_display_name", query: `ALTER TABLE tests ADD COLUMN stopped_by_display_name TEXT`},
 		{name: "scenario_scripts.stages_json", query: `ALTER TABLE scenario_scripts ADD COLUMN stages_json TEXT`},
 		{name: "scenario_scripts.role", query: `ALTER TABLE scenario_scripts ADD COLUMN role TEXT`},
 		{name: "scenario_scripts.runtime_settings_json", query: `ALTER TABLE scenario_scripts ADD COLUMN runtime_settings_json TEXT`},

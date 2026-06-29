@@ -64,6 +64,10 @@ func (s *Server) syncTestNotesToArchive(testID string) {
 		return
 	}
 	manifest.TestNotesFile = testNotesFile
+	if err := updateRunArchiveArtifactIntegrity(record.ArchivePath, manifest); err != nil {
+		slog.Warn("failed to update archive artifact integrity for test notes sync", "test_id", testID, "err", err)
+		return
+	}
 	if err := writeIndentedJSONFile(record.ManifestPath, manifest); err != nil {
 		slog.Warn("failed to update archive manifest for test notes sync", "test_id", testID, "err", err)
 		return

@@ -14,7 +14,8 @@ import (
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
-const archiveSchemaVersion = "apexload.archive.v1"
+const archiveSchemaVersion = "apexload.archive.v2"
+const archiveSchemaVersionV1 = "apexload.archive.v1"
 const runArchiveReportSchemaVersion = "apexload.archive_report.v1"
 const browserDiagnosticsSchemaVersion = "apexload.browser_diagnostics.v1"
 const runArchiveManifestFileName = "manifest.json"
@@ -37,11 +38,22 @@ type RunArchiveManifest struct {
 	IntervalSummariesParquetFile string               `json:"interval_summaries_parquet_file,omitempty"`
 	TestManifestFile             string               `json:"test_manifest_file,omitempty"`
 	TestNotesFile                string               `json:"test_notes_file,omitempty"`
+	Artifacts                    []RunArchiveArtifact `json:"artifacts,omitempty"`
 	TransactionCount             int64                `json:"transaction_count"`
 	ResourceSampleCount          int64                `json:"resource_sample_count"`
 	IntervalSummaryCount         int64                `json:"interval_summary_count"`
 	SLABreached                  bool                 `json:"sla_breached"`
 	SLADetails                   []string             `json:"sla_details,omitempty"`
+}
+
+type RunArchiveArtifact struct {
+	Name       string `json:"name"`
+	Kind       string `json:"kind,omitempty"`
+	Format     string `json:"format,omitempty"`
+	RecordType string `json:"record_type,omitempty"`
+	Count      int64  `json:"count,omitempty"`
+	SizeBytes  int64  `json:"size_bytes,omitempty"`
+	SHA256     string `json:"sha256,omitempty"`
 }
 
 type RunArchiveExecutionSettingsSnapshot struct {
@@ -57,6 +69,7 @@ type RunArchiveProvenance struct {
 	ProjectID             string                              `json:"project_id,omitempty"`
 	RequestedAt           time.Time                           `json:"requested_at,omitempty"`
 	StartedAt             *time.Time                          `json:"started_at,omitempty"`
+	ScheduledStartAt      *time.Time                          `json:"scheduled_start_at,omitempty"`
 	ScenarioMode          string                              `json:"scenario_mode,omitempty"`
 	ScriptShakeout        bool                                `json:"script_shakeout,omitempty"`
 	ResourceBaseline      bool                                `json:"resource_baseline,omitempty"`
@@ -74,6 +87,41 @@ type RunArchiveProvenance struct {
 	ExecutionSettings     RunArchiveExecutionSettingsSnapshot `json:"execution_settings"`
 	ControllerEnv         map[string]string                   `json:"controller_env,omitempty"`
 	GeneratorInventory    []GeneratorInventoryEntry           `json:"generator_inventory,omitempty"`
+	CreatedBySubject      string                              `json:"created_by_subject,omitempty"`
+	CreatedByDisplayName  string                              `json:"created_by_display_name,omitempty"`
+	StartedBySubject      string                              `json:"started_by_subject,omitempty"`
+	StartedByDisplayName  string                              `json:"started_by_display_name,omitempty"`
+	StoppedBySubject      string                              `json:"stopped_by_subject,omitempty"`
+	StoppedByDisplayName  string                              `json:"stopped_by_display_name,omitempty"`
+	Governance            *RunArchiveGovernanceSnapshot       `json:"governance,omitempty"`
+}
+
+type RunArchiveGovernanceSnapshot struct {
+	LaunchPreflight        *RunArchiveLaunchPreflightSnapshot       `json:"launch_preflight,omitempty"`
+	ExecutionPlanApproval  *RunArchiveExecutionPlanApprovalSnapshot `json:"execution_plan_approval,omitempty"`
+	RuntimeSettingsReview  *RuntimeSettingsReview                   `json:"runtime_settings_review,omitempty"`
+	CapacityReservationID  string                                   `json:"capacity_reservation_id,omitempty"`
+	CapacityReservationRef string                                   `json:"capacity_reservation_ref,omitempty"`
+}
+
+type RunArchiveLaunchPreflightSnapshot struct {
+	Decision  string   `json:"decision,omitempty"`
+	Status    string   `json:"status,omitempty"`
+	Conflicts []string `json:"conflicts,omitempty"`
+	Warnings  []string `json:"warnings,omitempty"`
+}
+
+type RunArchiveExecutionPlanApprovalSnapshot struct {
+	ID             string     `json:"id,omitempty"`
+	PlanID         string     `json:"plan_id,omitempty"`
+	Policy         string     `json:"policy,omitempty"`
+	Status         string     `json:"status,omitempty"`
+	RequestedBy    string     `json:"requested_by,omitempty"`
+	RequestedAt    time.Time  `json:"requested_at,omitempty"`
+	ResolvedBy     string     `json:"resolved_by,omitempty"`
+	ResolvedAt     *time.Time `json:"resolved_at,omitempty"`
+	DecisionReason string     `json:"decision_reason,omitempty"`
+	RequiredRole   string     `json:"required_role,omitempty"`
 }
 
 type TransactionEvent struct {
@@ -223,6 +271,8 @@ type RunArchiveReport struct {
 	Completeness        RunArchiveCompletenessScore            `json:"completeness"`
 	ChangeAttribution   RunArchiveChangeAttribution            `json:"change_attribution"`
 	ReportProfiles      []RunArchiveReportProfile              `json:"report_profiles,omitempty"`
+	NetworkPhases       RunArchiveNetworkPhaseSummary          `json:"network_phases,omitempty"`
+	ArtifactInventory   []RunArchiveArtifact                   `json:"artifact_inventory,omitempty"`
 	Manifest            *RunArchiveManifest                    `json:"manifest"`
 	Overview            RunArchiveOverview                     `json:"overview"`
 	EvidenceTiers       []RunArchiveEvidenceTier               `json:"evidence_tiers,omitempty"`
@@ -250,8 +300,30 @@ type RunArchiveReportProfile struct {
 	ID               string   `json:"id"`
 	Label            string   `json:"label"`
 	Description      string   `json:"description"`
+	Audience         string   `json:"audience,omitempty"`
+	BestFor          string   `json:"best_for,omitempty"`
 	ExportFormats    []string `json:"export_formats"`
 	IncludedSections []string `json:"included_sections"`
+	SectionOrder     []string `json:"section_order,omitempty"`
+}
+
+type RunArchiveNetworkPhaseSummary struct {
+	Samples      int64                              `json:"samples,omitempty"`
+	Overall      RunArchiveNetworkPhases            `json:"overall,omitempty"`
+	ByAction     map[string]RunArchiveNetworkPhases `json:"by_action,omitempty"`
+	ByDependency map[string]RunArchiveNetworkPhases `json:"by_dependency,omitempty"`
+}
+
+type RunArchiveNetworkPhases struct {
+	Count        int64   `json:"count,omitempty"`
+	AvgDNSMs     float64 `json:"avg_dns_ms,omitempty"`
+	AvgConnectMs float64 `json:"avg_connect_ms,omitempty"`
+	AvgTLSMs     float64 `json:"avg_tls_ms,omitempty"`
+	AvgTTFBMs    float64 `json:"avg_ttfb_ms,omitempty"`
+	MaxDNSMs     float64 `json:"max_dns_ms,omitempty"`
+	MaxConnectMs float64 `json:"max_connect_ms,omitempty"`
+	MaxTLSMs     float64 `json:"max_tls_ms,omitempty"`
+	MaxTTFBMs    float64 `json:"max_ttfb_ms,omitempty"`
 }
 
 type RunArchiveWeb2MigrationEvidence struct {

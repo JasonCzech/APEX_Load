@@ -466,6 +466,7 @@ export interface RunArchiveProvenance {
   project_id?: string
   requested_at?: string
   started_at?: string
+  scheduled_start_at?: string
   scenario_mode?: ScenarioMode
   script_shakeout?: boolean
   resource_baseline?: boolean
@@ -479,8 +480,15 @@ export interface RunArchiveProvenance {
   generator_shards?: GeneratorShardSummary[]
   baseline_pinned?: boolean
   baseline_pinned_at?: string
-  execution_settings: RunArchiveExecutionSettingsSnapshot
+  execution_settings?: RunArchiveExecutionSettingsSnapshot
   controller_env?: Record<string, string>
+  created_by_subject?: string
+  created_by_display_name?: string
+  started_by_subject?: string
+  started_by_display_name?: string
+  stopped_by_subject?: string
+  stopped_by_display_name?: string
+  governance?: RunArchiveGovernanceSnapshot
   generator_inventory?: Array<{
     target: string
     generator_id?: string
@@ -494,6 +502,30 @@ export interface RunArchiveProvenance {
     memory_limit_bytes?: number
     max_vusers?: number
   }>
+}
+
+export interface RunArchiveGovernanceSnapshot {
+  launch_preflight?: {
+    decision?: string
+    status?: string
+    conflicts?: string[]
+    warnings?: string[]
+  }
+  execution_plan_approval?: {
+    id?: string
+    plan_id?: string
+    policy?: string
+    status?: string
+    requested_by?: string
+    requested_at?: string
+    resolved_by?: string
+    resolved_at?: string
+    decision_reason?: string
+    required_role?: string
+  }
+  runtime_settings_review?: RuntimeSettingsReview
+  capacity_reservation_id?: string
+  capacity_reservation_ref?: string
 }
 
 export interface RunArchiveErrorPattern {
@@ -643,11 +675,22 @@ export interface RunArchiveManifest {
   interval_summaries_parquet_file?: string
   test_manifest_file?: string
   test_notes_file?: string
+  artifacts?: RunArchiveArtifact[]
   transaction_count: number
   resource_sample_count: number
   interval_summary_count: number
   sla_breached?: boolean
   sla_details?: string[]
+}
+
+export interface RunArchiveArtifact {
+  name: string
+  kind?: string
+  format?: string
+  record_type?: string
+  count?: number
+  size_bytes?: number
+  sha256?: string
 }
 
 export interface TestRunManifestIdentity {
@@ -664,6 +707,8 @@ export interface TestRunManifestIdentity {
   created_by_display_name?: string
   started_by_subject?: string
   started_by_display_name?: string
+  stopped_by_subject?: string
+  stopped_by_display_name?: string
 }
 
 export interface TestRunManifestConfiguration {
@@ -1121,6 +1166,8 @@ export interface RunArchiveReport {
   completeness?: RunArchiveCompletenessScore
   change_attribution?: RunArchiveChangeAttribution
   report_profiles?: RunArchiveReportProfile[]
+  network_phases?: RunArchiveNetworkPhaseSummary
+  artifact_inventory?: RunArchiveArtifact[]
   manifest: RunArchiveManifest
   overview: RunArchiveOverview
   evidence_tiers?: RunArchiveEvidenceTier[]
@@ -1140,6 +1187,25 @@ export interface RunArchiveReport {
   browser_by_device?: Record<string, BrowserDeviceLiveMetrics>
   browser_resources?: BrowserResourceTiming[]
   resource_peaks: RunArchiveResourcePeaks
+}
+
+export interface RunArchiveNetworkPhaseSummary {
+  samples?: number
+  overall?: RunArchiveNetworkPhases
+  by_action?: Record<string, RunArchiveNetworkPhases>
+  by_dependency?: Record<string, RunArchiveNetworkPhases>
+}
+
+export interface RunArchiveNetworkPhases {
+  count?: number
+  avg_dns_ms?: number
+  avg_connect_ms?: number
+  avg_tls_ms?: number
+  avg_ttfb_ms?: number
+  max_dns_ms?: number
+  max_connect_ms?: number
+  max_tls_ms?: number
+  max_ttfb_ms?: number
 }
 
 export interface ReportCommentarySection {
@@ -1258,8 +1324,11 @@ export interface RunArchiveReportProfile {
   id: string
   label: string
   description: string
+  audience?: string
+  best_for?: string
   export_formats: string[]
   included_sections: string[]
+  section_order?: string[]
 }
 
 export interface ReportProfilesResponse {

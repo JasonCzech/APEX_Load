@@ -114,6 +114,60 @@ func buildRunArchiveReportPDFLines(report *RunArchiveReport, profile RunArchiveR
 		lines = append(lines, "")
 	}
 
+	if hasCSVSection(sections, "provenance") && report.Manifest != nil {
+		lines = append(lines, "Run Identity and Authorization")
+		provenance := report.Manifest.Provenance
+		appendPDFValueLine(&lines, "Project", provenance.ProjectID)
+		appendPDFValueLine(&lines, "Release", provenance.ReleaseID)
+		appendPDFValueLine(&lines, "Scenario", provenance.ScenarioID)
+		appendPDFValueLine(&lines, "Created by", actorPDFValue(provenance.CreatedByDisplayName, provenance.CreatedBySubject))
+		appendPDFValueLine(&lines, "Started by", actorPDFValue(provenance.StartedByDisplayName, provenance.StartedBySubject))
+		appendPDFValueLine(&lines, "Stopped by", actorPDFValue(provenance.StoppedByDisplayName, provenance.StoppedBySubject))
+		appendPDFValueLine(&lines, "Scheduled start", formatPDFTimePtr(provenance.ScheduledStartAt))
+		if provenance.Governance != nil {
+			appendPDFValueLine(&lines, "Capacity reservation", provenance.Governance.CapacityReservationID)
+			if provenance.Governance.LaunchPreflight != nil {
+				appendPDFValueLine(&lines, "Launch preflight", firstNonEmptyPDFValue(provenance.Governance.LaunchPreflight.Status, provenance.Governance.LaunchPreflight.Decision))
+			}
+		}
+		lines = append(lines, "")
+	}
+
+	if hasCSVSection(sections, "schema_compatibility") {
+		lines = append(lines, "Schema Compatibility")
+		lines = append(lines,
+			"Status: "+report.Compatibility.Status,
+			"Report schema: "+report.Compatibility.ReportSchemaVersion,
+			"Manifest schema: "+report.Compatibility.ManifestSchemaVersion,
+		)
+		for _, issue := range report.Compatibility.Issues {
+			lines = append(lines, fmt.Sprintf("- %s: %s", issue.Severity, issue.Message))
+		}
+		lines = append(lines, "")
+	}
+
+	if hasCSVSection(sections, "artifact_inventory") {
+		lines = append(lines, "Artifact Integrity")
+		for _, artifact := range report.ArtifactInventory {
+			hash := artifact.SHA256
+			if hash == "" {
+				hash = "not captured"
+			}
+			lines = append(lines, fmt.Sprintf("- %s: %s %s, %s record(s), %d bytes, sha256=%s",
+				artifact.Name,
+				artifact.RecordType,
+				artifact.Format,
+				formatPDFInt(artifact.Count),
+				artifact.SizeBytes,
+				hash,
+			))
+		}
+		if len(report.ArtifactInventory) == 0 {
+			lines = append(lines, "No artifact inventory was available.")
+		}
+		lines = append(lines, "")
+	}
+
 	if hasCSVSection(sections, "actions") {
 		appendPDFStatsSection(&lines, "Top Actions", report.ByAction, 12)
 		if len(report.BySOAPOperation) > 0 {
@@ -174,6 +228,22 @@ func buildRunArchiveReportPDFLines(report *RunArchiveReport, profile RunArchiveR
 	}
 
 	return lines
+}
+
+func actorPDFValue(displayName, subject string) string {
+	displayName = strings.TrimSpace(displayName)
+	subject = strings.TrimSpace(subject)
+	if displayName != "" && subject != "" {
+		return displayName + " (" + subject + ")"
+	}
+	return firstNonEmptyPDFValue(displayName, subject)
+}
+
+func formatPDFTimePtr(value *time.Time) string {
+	if value == nil {
+		return ""
+	}
+	return formatPDFTime(*value)
 }
 
 func appendPDFStatsSection(lines *[]string, title string, stats map[string]RunArchiveActionStats, limit int) {

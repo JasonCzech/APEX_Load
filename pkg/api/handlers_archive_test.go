@@ -507,16 +507,20 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 		}
 	})
 
-	t.Run("audit pdf report unsupported", func(t *testing.T) {
+	t.Run("audit pdf report includes evidence package", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/report?format=pdf&profile=audit", nil)
 		resp := httptest.NewRecorder()
 		server.mux.ServeHTTP(resp, req)
 
-		if resp.Code != http.StatusBadRequest {
-			t.Fatalf("audit pdf report status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+		if resp.Code != http.StatusOK {
+			t.Fatalf("audit pdf report status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
 		}
-		if !strings.Contains(resp.Body.String(), "does not support pdf export") {
-			t.Fatalf("audit pdf error = %q, want unsupported pdf profile", resp.Body.String())
+		body := resp.Body.String()
+		if !strings.HasPrefix(body, "%PDF-1.4") || !strings.Contains(body, "Profile: Audit") || !strings.Contains(body, "Artifact Integrity") {
+			t.Fatalf("audit pdf body missing evidence package content:\n%s", body)
+		}
+		if strings.Contains(body, "Top Actions") {
+			t.Fatalf("audit pdf report should omit action drilldown:\n%s", body)
 		}
 	})
 
@@ -708,14 +712,14 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 		if !strings.Contains(body, testRun.Name) {
 			t.Fatalf("expected report to contain test name %q", testRun.Name)
 		}
-		if !strings.Contains(body, "Executive Summary profile") {
+		if !strings.Contains(body, "Executive Summary Report") {
 			t.Fatalf("expected report to contain executive profile label, got %q", body)
 		}
-		if !strings.Contains(body, "Action Summary") {
-			t.Fatalf("expected report to contain action summary, got %q", body)
+		if strings.Contains(body, "Action Summary") {
+			t.Fatalf("executive report should omit action summary, got %q", body)
 		}
-		if !strings.Contains(body, "Summary Timeline") {
-			t.Fatalf("expected report to contain summary timeline, got %q", body)
+		if strings.Contains(body, "Summary Timeline") {
+			t.Fatalf("executive report should omit summary timeline, got %q", body)
 		}
 	})
 

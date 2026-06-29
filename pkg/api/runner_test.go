@@ -5177,23 +5177,37 @@ func TestBuildRunArchiveProvenanceCapturesExecutionSnapshots(t *testing.T) {
 		t.Fatalf("UpdateSystemSettings returned error: %v", err)
 	}
 	backend := provenanceInventoryBackend{}
+	timeslotID := "timeslot-123"
 	test := &ManagedTest{
-		ID:               "test-provenance",
-		Name:             "Checkout",
-		Status:           "RUNNING",
-		ProjectID:        storage.DefaultProjectID,
-		ScenarioID:       "scenario-1",
-		ScenarioMode:     "goal_oriented",
-		ScriptShakeout:   true,
-		ResourceBaseline: true,
-		StartDelay:       "3s",
-		TotalVUsers:      25,
-		DurationStr:      "1m0s",
-		Groups:           []TestGroup{{Name: "buyers", ScriptID: "script-1", ScriptName: "Checkout", Protocol: "http", VUsers: 25, RunLogicGoals: &RunLogicGoalSnapshot{GlobalIterations: 4, MaxTransactions: 40}}},
-		Assignment:       &GeneratorAssignmentSettings{Mode: "specific_hosts", SelectedTargets: []string{"generator-1"}},
-		GoalConfig:       &GoalConfig{MaxErrorPct: &maxErrorPct},
-		CreatedAt:        time.Date(2026, time.May, 13, 12, 0, 0, 0, time.UTC),
-		StartedAt:        func() *time.Time { ts := time.Date(2026, time.May, 13, 12, 0, 3, 0, time.UTC); return &ts }(),
+		ID:                   "test-provenance",
+		Name:                 "Checkout",
+		Status:               "RUNNING",
+		ProjectID:            storage.DefaultProjectID,
+		ScenarioID:           "scenario-1",
+		ScenarioMode:         "goal_oriented",
+		ScriptShakeout:       true,
+		ResourceBaseline:     true,
+		StartDelay:           "3s",
+		TotalVUsers:          25,
+		DurationStr:          "1m0s",
+		Groups:               []TestGroup{{Name: "buyers", ScriptID: "script-1", ScriptName: "Checkout", Protocol: "http", VUsers: 25, RunLogicGoals: &RunLogicGoalSnapshot{GlobalIterations: 4, MaxTransactions: 40}}},
+		Assignment:           &GeneratorAssignmentSettings{Mode: "specific_hosts", SelectedTargets: []string{"generator-1"}},
+		GoalConfig:           &GoalConfig{MaxErrorPct: &maxErrorPct},
+		CreatedAt:            time.Date(2026, time.May, 13, 12, 0, 0, 0, time.UTC),
+		ScheduledStartAt:     func() *time.Time { ts := time.Date(2026, time.May, 13, 12, 0, 2, 0, time.UTC); return &ts }(),
+		StartedAt:            func() *time.Time { ts := time.Date(2026, time.May, 13, 12, 0, 3, 0, time.UTC); return &ts }(),
+		TimeslotID:           &timeslotID,
+		PendingReason:        "waiting for capacity",
+		CreatedBySubject:     "user:creator",
+		CreatedByDisplayName: "Creator User",
+		StartedBySubject:     "user:starter",
+		StartedByDisplayName: "Starter User",
+		StoppedBySubject:     "user:stopper",
+		StoppedByDisplayName: "Stopper User",
+		RuntimeSettingsReview: &RuntimeSettingsReview{
+			Status:   "warning",
+			Findings: []RuntimeSettingsFinding{{Severity: "warning", Summary: "Think time override requires review"}},
+		},
 		executionBackend: backend,
 	}
 
@@ -5215,6 +5229,18 @@ func TestBuildRunArchiveProvenanceCapturesExecutionSnapshots(t *testing.T) {
 	}
 	if _, found := provenance.ControllerEnv["APEXLOAD_API_TOKEN"]; found {
 		t.Fatalf("expected secret-like env vars to be filtered, got %#v", provenance.ControllerEnv)
+	}
+	if provenance.ScheduledStartAt == nil || provenance.CreatedBySubject != "user:creator" || provenance.StartedByDisplayName != "Starter User" || provenance.StoppedBySubject != "user:stopper" {
+		t.Fatalf("actor/schedule provenance = %#v, want created/started/stopped actors and scheduled start", provenance)
+	}
+	if provenance.Governance == nil || provenance.Governance.CapacityReservationID != "timeslot-123" {
+		t.Fatalf("governance provenance = %#v, want capacity reservation", provenance.Governance)
+	}
+	if provenance.Governance.LaunchPreflight == nil || provenance.Governance.LaunchPreflight.Decision != "recorded" || len(provenance.Governance.LaunchPreflight.Conflicts) != 1 {
+		t.Fatalf("launch preflight provenance = %#v, want recorded pending-reason snapshot", provenance.Governance.LaunchPreflight)
+	}
+	if provenance.Governance.RuntimeSettingsReview == nil || provenance.Governance.RuntimeSettingsReview.Status != "warning" {
+		t.Fatalf("runtime settings review provenance = %#v, want copied review", provenance.Governance.RuntimeSettingsReview)
 	}
 }
 

@@ -40,15 +40,29 @@ func TestWriteRunArchiveReportPDFWithProfile(t *testing.T) {
 	if strings.Contains(executivePDF, "Top Actions") || strings.Contains(executivePDF, "Browser Metrics") {
 		t.Fatalf("executive pdf should omit engineer drilldown sections:\n%s", executivePDF)
 	}
+
+	var audit bytes.Buffer
+	if err := writeRunArchiveReportPDFWithProfile(report, &audit, "audit"); err != nil {
+		t.Fatalf("write audit pdf returned error: %v", err)
+	}
+	auditPDF := audit.String()
+	for _, expected := range []string{
+		"Profile: Audit",
+		"Run Identity and Authorization",
+		"Schema Compatibility",
+		"Artifact Integrity",
+	} {
+		if !strings.Contains(auditPDF, expected) {
+			t.Fatalf("audit pdf missing %q:\n%s", expected, auditPDF)
+		}
+	}
+	if strings.Contains(auditPDF, "Top Actions") || strings.Contains(auditPDF, "Browser Metrics") {
+		t.Fatalf("audit pdf should omit engineer drilldown sections:\n%s", auditPDF)
+	}
 }
 
 func TestWriteRunArchiveReportPDFRejectsUnsupportedProfiles(t *testing.T) {
 	report := samplePDFRunArchiveReport()
-
-	var unsupported bytes.Buffer
-	if err := writeRunArchiveReportPDFWithProfile(report, &unsupported, "audit"); err == nil || !strings.Contains(err.Error(), "does not support pdf export") {
-		t.Fatalf("audit pdf error = %v, want unsupported pdf profile", err)
-	}
 
 	var unknown bytes.Buffer
 	if err := writeRunArchiveReportPDFWithProfile(report, &unknown, "unknown"); err == nil || !strings.Contains(err.Error(), "unknown report profile") {

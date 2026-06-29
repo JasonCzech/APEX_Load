@@ -4,11 +4,13 @@ package api
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 func mergeRunArchiveTelemetrySummary(summary *RunArchiveTelemetrySummary, point IntervalSummaryRecord) {
@@ -60,6 +62,162 @@ func mergeRunArchiveTelemetrySummary(summary *RunArchiveTelemetrySummary, point 
 		}
 		summary.ConditionCounts[condition]++
 	}
+}
+
+type networkPhaseAccumulator struct {
+	count        int64
+	dnsTotal     float64
+	connectTotal float64
+	tlsTotal     float64
+	ttfbTotal    float64
+	maxDNS       float64
+	maxConnect   float64
+	maxTLS       float64
+	maxTTFB      float64
+}
+
+func buildRunArchiveNetworkPhaseSummary(transactions []TransactionEvent) RunArchiveNetworkPhaseSummary {
+	overall := &networkPhaseAccumulator{}
+	byAction := map[string]*networkPhaseAccumulator{}
+	byDependency := map[string]*networkPhaseAccumulator{}
+	for _, tx := range transactions {
+		if tx.DNSMs == 0 && tx.ConnectMs == 0 && tx.TLSMs == 0 && tx.TTFBMs == 0 {
+			continue
+		}
+		mergeNetworkPhaseAccumulator(overall, tx)
+		if tx.ActionName != "" {
+			acc := byAction[tx.ActionName]
+			if acc == nil {
+				acc = &networkPhaseAccumulator{}
+				byAction[tx.ActionName] = acc
+			}
+			mergeNetworkPhaseAccumulator(acc, tx)
+		}
+		if tx.DependencyTarget != "" {
+			key := tx.DependencyTarget
+			if tx.DependencyType != "" {
+				key = tx.DependencyType + ":" + key
+			}
+			acc := byDependency[key]
+			if acc == nil {
+				acc = &networkPhaseAccumulator{}
+				byDependency[key] = acc
+			}
+			mergeNetworkPhaseAccumulator(acc, tx)
+		}
+	}
+	if overall.count == 0 {
+		return RunArchiveNetworkPhaseSummary{}
+	}
+	summary := RunArchiveNetworkPhaseSummary{
+		Samples:  overall.count,
+		Overall:  finalizeNetworkPhaseAccumulator(overall),
+		ByAction: finalizeNetworkPhaseAccumulatorMap(byAction),
+	}
+	if dependencies := finalizeNetworkPhaseAccumulatorMap(byDependency); len(dependencies) > 0 {
+		summary.ByDependency = dependencies
+	}
+	return summary
+}
+
+func mergeNetworkPhaseAccumulator(acc *networkPhaseAccumulator, tx TransactionEvent) {
+	if acc == nil {
+		return
+	}
+	acc.count++
+	acc.dnsTotal += tx.DNSMs
+	acc.connectTotal += tx.ConnectMs
+	acc.tlsTotal += tx.TLSMs
+	acc.ttfbTotal += tx.TTFBMs
+	if tx.DNSMs > acc.maxDNS {
+		acc.maxDNS = tx.DNSMs
+	}
+	if tx.ConnectMs > acc.maxConnect {
+		acc.maxConnect = tx.ConnectMs
+	}
+	if tx.TLSMs > acc.maxTLS {
+		acc.maxTLS = tx.TLSMs
+	}
+	if tx.TTFBMs > acc.maxTTFB {
+		acc.maxTTFB = tx.TTFBMs
+	}
+}
+
+func finalizeNetworkPhaseAccumulator(acc *networkPhaseAccumulator) RunArchiveNetworkPhases {
+	if acc == nil || acc.count == 0 {
+		return RunArchiveNetworkPhases{}
+	}
+	divisor := float64(acc.count)
+	return RunArchiveNetworkPhases{
+		Count:        acc.count,
+		AvgDNSMs:     acc.dnsTotal / divisor,
+		AvgConnectMs: acc.connectTotal / divisor,
+		AvgTLSMs:     acc.tlsTotal / divisor,
+		AvgTTFBMs:    acc.ttfbTotal / divisor,
+		MaxDNSMs:     acc.maxDNS,
+		MaxConnectMs: acc.maxConnect,
+		MaxTLSMs:     acc.maxTLS,
+		MaxTTFBMs:    acc.maxTTFB,
+	}
+}
+
+func finalizeNetworkPhaseAccumulatorMap(values map[string]*networkPhaseAccumulator) map[string]RunArchiveNetworkPhases {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make(map[string]RunArchiveNetworkPhases, len(values))
+	for key, acc := range values {
+		finalized := finalizeNetworkPhaseAccumulator(acc)
+		if finalized.Count > 0 {
+			out[key] = finalized
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func buildRunArchiveArtifactInventory(record *storage.RunArchiveRecord, manifest *RunArchiveManifest) []RunArchiveArtifact {
+	if manifest == nil {
+		return nil
+	}
+	if len(manifest.Artifacts) > 0 {
+		return append([]RunArchiveArtifact(nil), manifest.Artifacts...)
+	}
+	if record == nil || strings.TrimSpace(record.ArchivePath) == "" {
+		return nil
+	}
+	descriptors := []RunArchiveArtifact{
+		{Name: manifest.TransactionsFile, Kind: "dataset", Format: "jsonl", RecordType: "transactions", Count: manifest.TransactionCount},
+		{Name: manifest.TransactionsParquetFile, Kind: "dataset", Format: "parquet", RecordType: "transactions", Count: manifest.TransactionCount},
+		{Name: manifest.ResourceSamplesFile, Kind: "dataset", Format: "jsonl", RecordType: "resource_samples", Count: manifest.ResourceSampleCount},
+		{Name: manifest.ResourceSamplesParquetFile, Kind: "dataset", Format: "parquet", RecordType: "resource_samples", Count: manifest.ResourceSampleCount},
+		{Name: manifest.IntervalSummariesFile, Kind: "dataset", Format: "jsonl", RecordType: "interval_summaries", Count: manifest.IntervalSummaryCount},
+		{Name: manifest.IntervalSummariesParquetFile, Kind: "dataset", Format: "parquet", RecordType: "interval_summaries", Count: manifest.IntervalSummaryCount},
+		{Name: manifest.TestManifestFile, Kind: "manifest", Format: "json", RecordType: "test_manifest"},
+		{Name: manifest.TestNotesFile, Kind: "notes", Format: "json", RecordType: "test_notes"},
+	}
+	out := make([]RunArchiveArtifact, 0, len(descriptors))
+	for _, artifact := range descriptors {
+		if strings.TrimSpace(artifact.Name) == "" {
+			continue
+		}
+		path, err := archiveArtifactPath(record.ArchivePath, artifact.Name)
+		if err != nil {
+			continue
+		}
+		info, err := os.Stat(path)
+		if err != nil {
+			continue
+		}
+		artifact.SizeBytes = info.Size()
+		out = append(out, artifact)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func recordTelemetryBreachTime(summary *RunArchiveTelemetrySummary, timestamp time.Time) {

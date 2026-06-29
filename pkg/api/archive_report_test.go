@@ -2,7 +2,9 @@ package api
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -76,6 +78,67 @@ func TestBuildRunArchiveReportComputesOverallPercentiles(t *testing.T) {
 	approx("p90", report.Overview.P90Ms, 91.0)
 	approx("p95", report.Overview.P95Ms, 95.5)
 	approx("p99", report.Overview.P99Ms, 99.1)
+}
+
+func TestBuildRunArchiveReportAggregatesNetworkPhases(t *testing.T) {
+	archiveDir := t.TempDir()
+	manifestPath := filepath.Join(archiveDir, "manifest.json")
+	manifest := RunArchiveManifest{
+		SchemaVersion:         archiveSchemaVersion,
+		TestID:                "network-phase-1",
+		TestName:              "Network Phase Rollup",
+		TransactionsFile:      "transactions.jsonl",
+		ResourceSamplesFile:   "resources.jsonl",
+		IntervalSummariesFile: "interval_summaries.jsonl",
+	}
+	manifestBytes, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("json.Marshal manifest returned error: %v", err)
+	}
+	if err := os.WriteFile(manifestPath, manifestBytes, 0o644); err != nil {
+		t.Fatalf("WriteFile manifest returned error: %v", err)
+	}
+
+	timestamp := time.Date(2026, time.May, 16, 10, 0, 0, 0, time.UTC)
+	txFile, err := os.Create(filepath.Join(archiveDir, "transactions.jsonl"))
+	if err != nil {
+		t.Fatalf("Create transactions.jsonl returned error: %v", err)
+	}
+	encoder := json.NewEncoder(txFile)
+	for _, tx := range []TransactionEvent{
+		{Timestamp: timestamp, TestID: manifest.TestID, TestName: manifest.TestName, ActionName: "Checkout", DependencyType: "http", DependencyTarget: "api.example.test", DNSMs: 1, ConnectMs: 2, TLSMs: 3, TTFBMs: 40, Success: true},
+		{Timestamp: timestamp.Add(time.Second), TestID: manifest.TestID, TestName: manifest.TestName, ActionName: "Checkout", DependencyType: "http", DependencyTarget: "api.example.test", DNSMs: 3, ConnectMs: 6, TLSMs: 9, TTFBMs: 80, Success: true},
+		{Timestamp: timestamp.Add(2 * time.Second), TestID: manifest.TestID, TestName: manifest.TestName, ActionName: "Health", DNSMs: 0, ConnectMs: 0, TLSMs: 0, TTFBMs: 0, Success: true},
+	} {
+		if err := encoder.Encode(tx); err != nil {
+			t.Fatalf("Encode transaction returned error: %v", err)
+		}
+	}
+	if err := txFile.Close(); err != nil {
+		t.Fatalf("Close transactions.jsonl returned error: %v", err)
+	}
+	for _, name := range []string{"resources.jsonl", "interval_summaries.jsonl"} {
+		if err := os.WriteFile(filepath.Join(archiveDir, name), nil, 0o644); err != nil {
+			t.Fatalf("WriteFile %s returned error: %v", name, err)
+		}
+	}
+
+	report, err := buildRunArchiveReport(&storage.RunArchiveRecord{ArchivePath: archiveDir, ManifestPath: manifestPath})
+	if err != nil {
+		t.Fatalf("buildRunArchiveReport returned error: %v", err)
+	}
+	if report.NetworkPhases.Samples != 2 {
+		t.Fatalf("network phase samples = %d, want 2", report.NetworkPhases.Samples)
+	}
+	if got := report.NetworkPhases.Overall; got.Count != 2 || got.AvgDNSMs != 2 || got.AvgConnectMs != 4 || got.AvgTLSMs != 6 || got.AvgTTFBMs != 60 || got.MaxTTFBMs != 80 {
+		t.Fatalf("overall network phases = %#v, want averaged DNS/connect/TLS/TTFB", got)
+	}
+	if got := report.NetworkPhases.ByAction["Checkout"]; got.Count != 2 || got.AvgTTFBMs != 60 {
+		t.Fatalf("checkout network phases = %#v, want action rollup", got)
+	}
+	if got := report.NetworkPhases.ByDependency["http:api.example.test"]; got.Count != 2 || got.MaxConnectMs != 6 {
+		t.Fatalf("dependency network phases = %#v, want dependency rollup", got)
+	}
 }
 
 func TestBuildRunArchiveReportClustersErrorPatterns(t *testing.T) {
@@ -387,8 +450,11 @@ func TestBuildRunArchiveReportDeclaresSchemaCompatibility(t *testing.T) {
 	if len(report.ReportProfiles) != 3 || report.ReportProfiles[0].ID != "executive" || report.ReportProfiles[2].ID != "audit" {
 		t.Fatalf("report profiles = %#v, want executive, engineer, audit", report.ReportProfiles)
 	}
-	if !runArchiveReportProfileSupportsFormat(report.ReportProfiles[0], "pdf") || !runArchiveReportProfileSupportsFormat(report.ReportProfiles[1], "pdf") || runArchiveReportProfileSupportsFormat(report.ReportProfiles[2], "pdf") {
-		t.Fatalf("report profile pdf formats = %#v, want executive+engineer pdf only", report.ReportProfiles)
+	if !runArchiveReportProfileSupportsFormat(report.ReportProfiles[0], "pdf") || !runArchiveReportProfileSupportsFormat(report.ReportProfiles[1], "pdf") || !runArchiveReportProfileSupportsFormat(report.ReportProfiles[2], "pdf") {
+		t.Fatalf("report profile pdf formats = %#v, want executive+engineer+audit pdf", report.ReportProfiles)
+	}
+	if report.ReportProfiles[2].BestFor == "" || len(report.ReportProfiles[2].SectionOrder) == 0 {
+		t.Fatalf("audit profile metadata = %#v, want best_for and section_order", report.ReportProfiles[2])
 	}
 	if report.Compatibility.Status != "compatible" || report.Compatibility.ManifestSchemaVersion != archiveSchemaVersion {
 		t.Fatalf("compatibility = %#v, want compatible archive schema", report.Compatibility)
@@ -440,6 +506,39 @@ func TestBuildRunArchiveReportFlagsUnsupportedManifestSchema(t *testing.T) {
 	}
 	if len(report.Compatibility.Issues) == 0 || report.Compatibility.Issues[0].Code != "unsupported_manifest_schema" {
 		t.Fatalf("compatibility issues = %#v, want unsupported manifest issue", report.Compatibility.Issues)
+	}
+}
+
+func TestBuildRunArchiveReportAcceptsV1ManifestSchema(t *testing.T) {
+	archiveDir := t.TempDir()
+	manifestPath := filepath.Join(archiveDir, "manifest.json")
+	manifest := RunArchiveManifest{
+		SchemaVersion:         archiveSchemaVersionV1,
+		TestID:                "test-schema-v1",
+		TestName:              "Legacy Schema Run",
+		TransactionsFile:      "transactions.jsonl",
+		ResourceSamplesFile:   "resources.jsonl",
+		IntervalSummariesFile: "interval_summaries.jsonl",
+	}
+	manifestBytes, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("json.Marshal manifest returned error: %v", err)
+	}
+	if err := os.WriteFile(manifestPath, manifestBytes, 0o644); err != nil {
+		t.Fatalf("WriteFile manifest returned error: %v", err)
+	}
+	for _, name := range []string{manifest.TransactionsFile, manifest.ResourceSamplesFile, manifest.IntervalSummariesFile} {
+		if err := os.WriteFile(filepath.Join(archiveDir, name), nil, 0o644); err != nil {
+			t.Fatalf("WriteFile %s returned error: %v", name, err)
+		}
+	}
+
+	report, err := buildRunArchiveReport(&storage.RunArchiveRecord{ArchivePath: archiveDir, ManifestPath: manifestPath})
+	if err != nil {
+		t.Fatalf("buildRunArchiveReport returned error: %v", err)
+	}
+	if report.Compatibility.Status != "compatible" || report.Compatibility.ManifestSchemaVersion != archiveSchemaVersionV1 {
+		t.Fatalf("compatibility = %#v, want compatible v1 archive", report.Compatibility)
 	}
 }
 
@@ -921,6 +1020,79 @@ func TestRunArchiveWriterPersistsThroughputGapSummary(t *testing.T) {
 	}
 	if summaries[0].TelemetryStatus == nil || summaries[0].TelemetryStatus.Status != "degraded" || len(summaries[0].TelemetryStatus.Conditions) != 2 {
 		t.Fatalf("summary telemetry status = %#v, want degraded telemetry health persisted", summaries[0].TelemetryStatus)
+	}
+}
+
+func TestRunArchiveWriterFinalizesArtifactHashes(t *testing.T) {
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	writer, err := newRunArchiveWriter(&ManagedTest{ID: "test-artifact-hash", Name: "Artifact Hashes"}, RunArchiveProvenance{})
+	if err != nil {
+		t.Fatalf("newRunArchiveWriter returned error: %v", err)
+	}
+	result := &protocol.Result{
+		ActionName:  "Checkout",
+		StartTime:   time.Date(2026, time.May, 18, 15, 0, 0, 0, time.UTC),
+		Duration:    125 * time.Millisecond,
+		Success:     true,
+		DNSTime:     time.Millisecond,
+		ConnectTime: 2 * time.Millisecond,
+		TLSTime:     3 * time.Millisecond,
+		TTFB:        40 * time.Millisecond,
+	}
+	if err := writer.RecordResult(result); err != nil {
+		t.Fatalf("RecordResult returned error: %v", err)
+	}
+	if err := writer.RecordIntervalSummary(&LiveMetrics{
+		Timestamp:    result.StartTime.Add(time.Second),
+		ActiveVUsers: 1,
+		TPS:          1,
+		TotalTx:      1,
+	}); err != nil {
+		t.Fatalf("RecordIntervalSummary returned error: %v", err)
+	}
+	record, err := writer.Finalize("COMPLETE", result.StartTime.Add(2*time.Second), "", false, nil)
+	if err != nil {
+		t.Fatalf("Finalize returned error: %v", err)
+	}
+
+	manifestBytes, err := os.ReadFile(record.ManifestPath)
+	if err != nil {
+		t.Fatalf("ReadFile manifest returned error: %v", err)
+	}
+	var manifest RunArchiveManifest
+	if err := json.Unmarshal(manifestBytes, &manifest); err != nil {
+		t.Fatalf("Unmarshal manifest returned error: %v", err)
+	}
+	if manifest.SchemaVersion != archiveSchemaVersion {
+		t.Fatalf("manifest schema = %q, want %q", manifest.SchemaVersion, archiveSchemaVersion)
+	}
+	if len(manifest.Artifacts) == 0 {
+		t.Fatal("expected finalized manifest artifact integrity entries")
+	}
+	var txArtifact *RunArchiveArtifact
+	for i := range manifest.Artifacts {
+		if manifest.Artifacts[i].Name == manifest.TransactionsFile {
+			txArtifact = &manifest.Artifacts[i]
+			break
+		}
+	}
+	if txArtifact == nil {
+		t.Fatalf("transactions artifact missing from %#v", manifest.Artifacts)
+	}
+	txBytes, err := os.ReadFile(filepath.Join(record.ArchivePath, manifest.TransactionsFile))
+	if err != nil {
+		t.Fatalf("ReadFile transactions returned error: %v", err)
+	}
+	expectedHash := fmt.Sprintf("%x", sha256.Sum256(txBytes))
+	if txArtifact.Count != 1 || txArtifact.SizeBytes != int64(len(txBytes)) || txArtifact.SHA256 != expectedHash {
+		t.Fatalf("transactions artifact = %#v, want count/size/hash", txArtifact)
+	}
+	report, err := buildRunArchiveReport(record)
+	if err != nil {
+		t.Fatalf("buildRunArchiveReport returned error: %v", err)
+	}
+	if len(report.ArtifactInventory) == 0 || report.ArtifactInventory[0].SHA256 == "" {
+		t.Fatalf("report artifact inventory = %#v, want hashed artifacts", report.ArtifactInventory)
 	}
 }
 

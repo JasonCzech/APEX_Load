@@ -266,6 +266,8 @@ func managedTestFromRecord(record *storage.TestRecord) *ManagedTest {
 		CreatedByDisplayName: record.CreatedByDisplayName,
 		StartedBySubject:     record.StartedBySubject,
 		StartedByDisplayName: record.StartedByDisplayName,
+		StoppedBySubject:     record.StoppedBySubject,
+		StoppedByDisplayName: record.StoppedByDisplayName,
 		Error:                record.Error,
 	}
 	if record.EndTime != nil {
@@ -599,6 +601,8 @@ func buildManagedTestRecord(test *ManagedTest) *storage.TestRecord {
 		CreatedByDisplayName: test.CreatedByDisplayName,
 		StartedBySubject:     test.StartedBySubject,
 		StartedByDisplayName: test.StartedByDisplayName,
+		StoppedBySubject:     test.StoppedBySubject,
+		StoppedByDisplayName: test.StoppedByDisplayName,
 		Groups:               test.Groups,
 		GoalConfig:           test.GoalConfig,
 		RuntimeSettings:      test.RuntimeSettings,
@@ -634,6 +638,19 @@ func (tr *TestRunner) AttributeTestStarted(id string, subject string, displayNam
 	}
 	test.StartedBySubject = strings.TrimSpace(subject)
 	test.StartedByDisplayName = strings.TrimSpace(displayName)
+	tr.saveManagedTestRecord(test)
+}
+
+func (tr *TestRunner) AttributeTestStopped(id string, subject string, displayName string) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	id = tr.resolveRefKeyLocked(id)
+	test, ok := tr.tests[id]
+	if !ok {
+		return
+	}
+	test.StoppedBySubject = strings.TrimSpace(subject)
+	test.StoppedByDisplayName = strings.TrimSpace(displayName)
 	tr.saveManagedTestRecord(test)
 }
 

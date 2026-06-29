@@ -44,7 +44,7 @@ func (s *Server) handleGetReportAnnotations(w http.ResponseWriter, r *http.Reque
 	}
 	writeJSON(w, http.StatusOK, reportAnnotationsResponse{
 		Annotations: annotations,
-		Sections:    reportCommentarySectionOrder(),
+		Sections:    reportCommentarySectionOrder(profile),
 	})
 }
 
@@ -96,7 +96,7 @@ func (s *Server) handleSaveReportAnnotations(w http.ResponseWriter, r *http.Requ
 
 	writeJSON(w, http.StatusOK, reportAnnotationsResponse{
 		Annotations: ann,
-		Sections:    reportCommentarySectionOrder(),
+		Sections:    reportCommentarySectionOrder(profile),
 	})
 }
 

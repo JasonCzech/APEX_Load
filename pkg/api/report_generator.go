@@ -63,6 +63,200 @@ type runArchiveHTMLReportData struct {
 	BrowserDeviceRows     []*BrowserDeviceLiveMetrics
 }
 
+var profileHTMLFuncMap = template.FuncMap{
+	"formatTime": func(value any) string {
+		var t time.Time
+		switch typed := value.(type) {
+		case time.Time:
+			t = typed
+		case *time.Time:
+			if typed != nil {
+				t = *typed
+			}
+		default:
+			return "n/a"
+		}
+		if t.IsZero() {
+			return "n/a"
+		}
+		return t.UTC().Format(time.RFC3339)
+	},
+	"formatFloat": func(value float64) string {
+		return fmt.Sprintf("%.1f", value)
+	},
+	"formatPercent": func(value float64) string {
+		return fmt.Sprintf("%.2f%%", value)
+	},
+	"f0": func(value float64) string {
+		return fmt.Sprintf("%.0f", value)
+	},
+	"hint": func(value int64) string {
+		return formatPDFInt(value)
+	},
+	"join": func(values []string) string {
+		return strings.Join(values, ", ")
+	},
+}
+
+var executiveRunArchiveReportTemplate = template.Must(template.New("run-archive-executive-report").Funcs(profileHTMLFuncMap).Parse(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Executive Summary — {{.Report.Manifest.TestName}}</title>
+  <style>
+    body { margin: 0; background: #eef2f6; color: #172033; font-family: "Avenir Next", "Segoe UI", -apple-system, sans-serif; line-height: 1.55; }
+    .page { max-width: 920px; margin: 28px auto; background: #fff; box-shadow: 0 12px 38px rgba(18,32,56,.14); }
+    .masthead { background: #0b2a4a; color: #fff; padding: 24px 46px; }
+    .content { padding: 34px 46px 52px; }
+    .eyebrow { color: #0b5fc7; font-size: 11px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+    h1 { margin: 6px 0 8px; font-size: 30px; color: #0b2a4a; }
+    h2 { margin: 34px 0 10px; font-size: 17px; color: #0b2a4a; border-bottom: 2px solid #0b2a4a; padding-bottom: 6px; }
+    .subtitle, .muted { color: #566477; }
+    .verdict { display: flex; border: 1px solid #d7dde6; margin: 24px 0; }
+    .verdict-badge { min-width: 128px; padding: 16px; color: #fff; background: #1a6e3c; font-weight: 800; text-transform: uppercase; display: flex; align-items: center; justify-content: center; }
+    .verdict-badge.fail { background: #b42318; }
+    .verdict-badge.conditional { background: #8a6100; }
+    .verdict-body { padding: 14px 18px; background: #e6f4ed; flex: 1; }
+    .verdict-body.fail { background: #fbe9e7; }
+    .verdict-body.conditional { background: #fdf3da; }
+    .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 18px 0; }
+    .kpi { border: 1px solid #d7dde6; border-top: 4px solid #1f6feb; padding: 12px; background: #f6f8fb; }
+    .kpi b { display: block; color: #566477; font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
+    .kpi span { display: block; margin-top: 7px; font-size: 24px; font-weight: 800; color: #0b2a4a; }
+    table { width: 100%; border-collapse: collapse; border: 1px solid #d7dde6; margin: 10px 0 16px; font-size: 13px; }
+    th, td { padding: 9px 11px; border-bottom: 1px solid #d7dde6; text-align: left; vertical-align: top; }
+    th { background: #f6f8fb; color: #566477; text-transform: uppercase; font-size: 10px; letter-spacing: .06em; }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .finding { border: 1px solid #d7dde6; padding: 12px 14px; margin: 10px 0; }
+    .signoff { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-top: 16px; }
+    .line { border-bottom: 1px solid #172033; height: 30px; }
+    @media print { body { background: #fff; } .page { box-shadow: none; margin: 0; } }
+  </style>
+</head>
+<body>
+<div class="page">
+  <div class="masthead">APEX Load · Executive Summary · Generated {{formatTime .GeneratedAt}}</div>
+  <div class="content">
+    <div class="eyebrow">Business Verdict</div>
+    <h1>{{if .Annotations.Title}}{{.Annotations.Title}}{{else}}{{.Report.Manifest.TestName}}{{end}}</h1>
+    <p class="subtitle">{{.Profile.BestFor}}{{if .Annotations.PreparedBy}} Prepared by {{.Annotations.PreparedBy}}.{{end}}</p>
+    <div class="verdict">
+      <div class="verdict-badge {{if .Verdict.Failed}}fail{{else if .Verdict.Conditional}}conditional{{end}}">{{.Verdict.Status}}</div>
+      <div class="verdict-body {{if .Verdict.Failed}}fail{{else if .Verdict.Conditional}}conditional{{end}}">{{.Verdict.Explanation}}</div>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><b>Peak TPS</b><span>{{formatFloat .Report.Overview.PeakTPS}}</span></div>
+      <div class="kpi"><b>Overall p95</b><span>{{f0 .Report.Overview.P95Ms}} ms</span></div>
+      <div class="kpi"><b>Error rate</b><span>{{formatPercent .Report.Overview.ErrorPct}}</span></div>
+      <div class="kpi"><b>Peak VUsers</b><span>{{.Report.Overview.PeakActiveVUsers}}</span></div>
+    </div>
+    <h2>Executive Summary</h2>
+    <p>{{.Annotations.ExecutiveNarrative}}</p>
+    {{with index .Annotations.SectionComments "decision"}}<p>{{.}}</p>{{end}}
+    {{with index .Annotations.SectionComments "business_impact"}}<p>{{.}}</p>{{end}}
+    <h2>SLA Scorecard</h2>
+    <table>
+      <thead><tr><th>Transaction</th><th class="num">Volume</th><th class="num">p95</th><th class="num">SLA</th><th>Result</th></tr></thead>
+      <tbody>
+      {{range .SLARows}}
+      <tr><td>{{.Name}}</td><td class="num">{{hint .Volume}}</td><td class="num">{{f0 .P95Ms}} ms</td><td class="num">{{if .HasSLA}}{{f0 .SLAMs}} ms{{else}}—{{end}}</td><td>{{.Result}}</td></tr>
+      {{else}}<tr><td colspan="5" class="muted">No per-transaction SLA evidence was archived.</td></tr>{{end}}
+      </tbody>
+    </table>
+    {{with index .Annotations.SectionComments "sla"}}<p>{{.}}</p>{{end}}
+    <h2>Top Risks</h2>
+    {{range .Findings}}
+      <div class="finding"><strong>{{.ID}} · {{.Title}}</strong>{{if .Impact}}<p>{{.Impact}}</p>{{else if .Observed}}<p>{{.Observed}}</p>{{end}}</div>
+    {{else}}<p class="muted">No material release risks were derived from the archive.</p>{{end}}
+    {{with index .Annotations.SectionComments "risks"}}<p>{{.}}</p>{{end}}
+    <h2>Recommendation & Sign-Off</h2>
+    {{with index .Annotations.SectionComments "recommendations"}}<p>{{.}}</p>{{end}}
+    <div class="signoff"><div><b>Prepared by</b><div class="line"></div></div><div><b>Approver</b><div class="line"></div></div><div><b>Decision date</b><div class="line"></div></div></div>
+  </div>
+</div>
+</body>
+</html>`))
+
+var auditRunArchiveReportTemplate = template.Must(template.New("run-archive-audit-report").Funcs(profileHTMLFuncMap).Parse(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Audit Report — {{.Report.Manifest.TestName}}</title>
+  <style>
+    body { margin: 0; background: #f0f2f5; color: #172033; font-family: "Avenir Next", "Segoe UI", -apple-system, sans-serif; line-height: 1.5; }
+    .page { max-width: 980px; margin: 28px auto; background: #fff; box-shadow: 0 12px 38px rgba(18,32,56,.14); }
+    .masthead { background: #172033; color: #fff; padding: 22px 46px; }
+    .content { padding: 34px 46px 52px; }
+    h1 { color: #172033; margin: 6px 0 8px; }
+    h2 { margin: 34px 0 10px; color: #172033; border-bottom: 2px solid #172033; padding-bottom: 6px; font-size: 17px; }
+    .eyebrow { color: #5b6f8f; font-size: 11px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+    .muted { color: #647084; }
+    table { width: 100%; border-collapse: collapse; border: 1px solid #d7dde6; margin: 10px 0 16px; font-size: 13px; }
+    th, td { padding: 9px 11px; border-bottom: 1px solid #d7dde6; text-align: left; vertical-align: top; }
+    th { background: #f6f8fb; color: #566477; text-transform: uppercase; font-size: 10px; letter-spacing: .06em; }
+    .mono { font-family: "IBM Plex Mono", Menlo, monospace; font-size: 12px; }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .verdict { display: inline-block; padding: 4px 10px; border-radius: 999px; background: #e6f4ed; color: #1a6e3c; font-weight: 700; }
+    .verdict.fail { background: #fbe9e7; color: #b42318; }
+    .verdict.conditional { background: #fdf3da; color: #8a6100; }
+    @media print { body { background: #fff; } .page { box-shadow: none; margin: 0; } }
+  </style>
+</head>
+<body>
+<div class="page">
+  <div class="masthead">APEX Load · Audit Evidence Package · Generated {{formatTime .GeneratedAt}}</div>
+  <div class="content">
+    <div class="eyebrow">Governance Evidence</div>
+    <h1>{{if .Annotations.Title}}{{.Annotations.Title}}{{else}}{{.Report.Manifest.TestName}} Audit Report{{end}}</h1>
+    <p class="muted">{{.Profile.BestFor}}</p>
+    <h2>Official Outcome</h2>
+    <p><span class="verdict {{if .Verdict.Failed}}fail{{else if .Verdict.Conditional}}conditional{{end}}">{{.Verdict.Status}}</span> {{.Verdict.Explanation}}</p>
+    <h2>Run Identity & Authorization</h2>
+    <table><tbody>
+      <tr><th>Test ID</th><td class="mono">{{.Report.Manifest.TestID}}</td><th>Run name</th><td>{{.Report.Manifest.TestName}}</td></tr>
+      <tr><th>Status</th><td>{{.Report.Manifest.Status}}</td><th>Completed</th><td>{{formatTime .Report.Manifest.CompletedAt}}</td></tr>
+      {{with .Manifest}}{{with .Identity}}
+      <tr><th>Project / Release / Scenario</th><td colspan="3" class="mono">{{.ProjectID}} / {{.ReleaseID}} / {{.ScenarioID}}</td></tr>
+      <tr><th>Created by</th><td>{{.CreatedByDisplayName}} <span class="mono">{{.CreatedBySubject}}</span></td><th>Started by</th><td>{{.StartedByDisplayName}} <span class="mono">{{.StartedBySubject}}</span></td></tr>
+      <tr><th>Stopped by</th><td>{{.StoppedByDisplayName}} <span class="mono">{{.StoppedBySubject}}</span></td><th>Scheduled start</th><td>{{if .ScheduledStartAt}}{{formatTime .ScheduledStartAt}}{{else}}n/a{{end}}</td></tr>
+      {{end}}{{end}}
+    </tbody></table>
+    <h2>Governance & Provenance</h2>
+    <table><tbody>
+      <tr><th>Environment</th><td>{{if .Report.ChangeAttribution.Environment}}{{.Report.ChangeAttribution.Environment}}{{else}}n/a{{end}}</td><th>Runtime overrides</th><td>{{if .Report.ChangeAttribution.RuntimeOverrides}}{{join .Report.ChangeAttribution.RuntimeOverrideFields}}{{else}}none{{end}}</td></tr>
+      <tr><th>Scripts</th><td>{{if .Report.ChangeAttribution.ScriptRevisions}}{{join .Report.ChangeAttribution.ScriptRevisions}}{{else}}n/a{{end}}</td><th>Generators</th><td>{{if .Report.ChangeAttribution.GeneratorVersions}}{{join .Report.ChangeAttribution.GeneratorVersions}}{{else}}n/a{{end}}</td></tr>
+      <tr><th>Report schema</th><td class="mono">{{.Report.SchemaVersion}}</td><th>Manifest schema</th><td class="mono">{{.Report.Manifest.SchemaVersion}}</td></tr>
+      {{with .Report.Manifest.Provenance.Governance}}<tr><th>Capacity reservation</th><td>{{if .CapacityReservationID}}{{.CapacityReservationID}}{{else}}n/a{{end}}</td><th>Launch status</th><td>{{if .LaunchPreflight}}{{.LaunchPreflight.Status}}{{else}}n/a{{end}}</td></tr>{{end}}
+    </tbody></table>
+    <h2>Completeness & Evidence Tiers</h2>
+    <p>Completeness score: <strong>{{formatFloat .Report.Completeness.ScorePct}}%</strong> ({{.Report.Completeness.Status}}).</p>
+    <table><thead><tr><th>Tier</th><th>Status</th><th class="num">Count</th><th>Notes</th></tr></thead><tbody>
+      {{range .Report.EvidenceTiers}}<tr><td>{{.Label}}</td><td>{{.Status}}</td><td class="num">{{.Count}}</td><td>{{.Reason}}</td></tr>{{end}}
+    </tbody></table>
+    {{if .Report.Completeness.Findings}}
+    <table><thead><tr><th>Dimension</th><th>Severity</th><th>Finding</th></tr></thead><tbody>
+      {{range .Report.Completeness.Findings}}<tr><td>{{.Dimension}}</td><td>{{.Severity}}</td><td>{{.Message}}</td></tr>{{end}}
+    </tbody></table>
+    {{end}}
+    <h2>Artifact Integrity</h2>
+    <table><thead><tr><th>Artifact</th><th>Type</th><th class="num">Records</th><th class="num">Bytes</th><th>SHA-256</th></tr></thead><tbody>
+      {{range .Report.ArtifactInventory}}<tr><td class="mono">{{.Name}}</td><td>{{.RecordType}} {{.Format}}</td><td class="num">{{.Count}}</td><td class="num">{{.SizeBytes}}</td><td class="mono">{{if .SHA256}}{{.SHA256}}{{else}}not captured{{end}}</td></tr>{{else}}<tr><td colspan="5" class="muted">No artifact inventory was available.</td></tr>{{end}}
+    </tbody></table>
+    <h2>Report Authorship / Edit Trail</h2>
+    <table><tbody>
+      <tr><th>Prepared by</th><td>{{if .Annotations.PreparedBy}}{{.Annotations.PreparedBy}}{{else}}n/a{{end}}</td><th>Updated by</th><td>{{if .Annotations.UpdatedBy}}{{.Annotations.UpdatedBy}}{{else}}n/a{{end}}</td></tr>
+      <tr><th>Updated at</th><td>{{formatTime .Annotations.UpdatedAt}}</td><th>Verdict override</th><td>{{if .Annotations.VerdictOverride}}{{.Annotations.VerdictOverride}} — {{.Annotations.VerdictExplanation}}{{else}}none{{end}}</td></tr>
+    </tbody></table>
+    <h2>Analyst Notes</h2>
+    <p>{{.Annotations.ExecutiveNarrative}}</p>
+    {{range $section := .CommentarySections}}{{with $comment := index $.Annotations.SectionComments $section.ID}}<p><strong>{{$section.Label}}</strong>: {{$comment}}</p>{{end}}{{end}}
+  </div>
+</div>
+</body>
+</html>`))
+
 var runArchiveReportTemplate = template.Must(template.New("run-archive-report").Funcs(template.FuncMap{
 	"formatTime": func(value time.Time) string {
 		if value.IsZero() {
@@ -732,7 +926,7 @@ func renderRunArchiveHTMLReportWithAnnotations(report *RunArchiveReport, profile
 		Report:                report,
 		Profile:               profile,
 		Annotations:           annotations,
-		CommentarySections:    reportCommentarySectionOrder(),
+		CommentarySections:    reportCommentarySectionOrder(profile.ID),
 		Charts:                buildReportCharts(report),
 		LogoDataURI:           reportLogoDataURI(),
 		Manifest:              manifest,
@@ -754,7 +948,16 @@ func renderRunArchiveHTMLReportWithAnnotations(report *RunArchiveReport, profile
 	}
 
 	var buf bytes.Buffer
-	if err := runArchiveReportTemplate.Execute(&buf, data); err != nil {
+	var tmpl *template.Template
+	switch profile.ID {
+	case "executive":
+		tmpl = executiveRunArchiveReportTemplate
+	case "audit":
+		tmpl = auditRunArchiveReportTemplate
+	default:
+		tmpl = runArchiveReportTemplate
+	}
+	if err := tmpl.Execute(&buf, data); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil

@@ -321,6 +321,10 @@ func (s *Server) handleStopTest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
+	if actorType == "user" || actorType == "service_account" {
+		s.runner.AttributeTestStopped(id, actorSubject, actorDisplayName)
+	}
 	projectID := ""
 	if test, ok := s.runner.GetTest(id); ok {
 		projectID = test.ProjectID
@@ -337,6 +341,10 @@ func (s *Server) handleAbortTest(w http.ResponseWriter, r *http.Request) {
 	if err := s.runner.AbortTest(id); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
+	}
+	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
+	if actorType == "user" || actorType == "service_account" {
+		s.runner.AttributeTestStopped(id, actorSubject, actorDisplayName)
 	}
 	projectID := ""
 	if test, ok := s.runner.GetTest(id); ok {

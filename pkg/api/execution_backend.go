@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/api/testexec"
@@ -129,6 +130,7 @@ func buildRunArchiveProvenance(tr *TestRunner, test *ManagedTest) RunArchiveProv
 	provenance.ProjectID = normalizeProjectID(test.ProjectID)
 	provenance.RequestedAt = test.CreatedAt
 	provenance.StartedAt = test.StartedAt
+	provenance.ScheduledStartAt = cloneTimePtr(test.ScheduledStartAt)
 	provenance.ScenarioMode = test.ScenarioMode
 	provenance.ScriptShakeout = test.ScriptShakeout
 	provenance.ResourceBaseline = test.ResourceBaseline
@@ -144,6 +146,13 @@ func buildRunArchiveProvenance(tr *TestRunner, test *ManagedTest) RunArchiveProv
 	provenance.BaselinePinned = test.BaselinePinned
 	provenance.BaselinePinnedAt = test.BaselinePinnedAt
 	provenance.ControllerEnv = captureAPEXLoadEnv()
+	provenance.CreatedBySubject = test.CreatedBySubject
+	provenance.CreatedByDisplayName = test.CreatedByDisplayName
+	provenance.StartedBySubject = test.StartedBySubject
+	provenance.StartedByDisplayName = test.StartedByDisplayName
+	provenance.StoppedBySubject = test.StoppedBySubject
+	provenance.StoppedByDisplayName = test.StoppedByDisplayName
+	provenance.Governance = buildRunArchiveGovernanceSnapshot(test)
 	if tr == nil {
 		return provenance
 	}
@@ -161,6 +170,49 @@ func buildRunArchiveProvenance(tr *TestRunner, test *ManagedTest) RunArchiveProv
 		provenance.GeneratorInventory = cloneGeneratorInventoryEntries(inventoryBackend.SystemInventory(context.Background()))
 	}
 	return provenance
+}
+
+func buildRunArchiveGovernanceSnapshot(test *ManagedTest) *RunArchiveGovernanceSnapshot {
+	if test == nil {
+		return nil
+	}
+	snapshot := &RunArchiveGovernanceSnapshot{
+		RuntimeSettingsReview: cloneRuntimeSettingsReview(test.RuntimeSettingsReview),
+	}
+	if test.TimeslotID != nil {
+		snapshot.CapacityReservationID = strings.TrimSpace(*test.TimeslotID)
+	}
+	if test.Error != "" || test.PendingReason != "" {
+		snapshot.LaunchPreflight = &RunArchiveLaunchPreflightSnapshot{
+			Decision:  "recorded",
+			Status:    test.Status,
+			Conflicts: compactNonEmptyStrings(test.PendingReason, test.Error),
+		}
+	}
+	if snapshot.RuntimeSettingsReview == nil && snapshot.CapacityReservationID == "" && snapshot.LaunchPreflight == nil {
+		return nil
+	}
+	return snapshot
+}
+
+func compactNonEmptyStrings(values ...string) []string {
+	out := make([]string, 0, len(values))
+	seen := map[string]struct{}{}
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		out = append(out, trimmed)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func (a *runArtifacts) resultSink() engine.ResultSink {
@@ -284,6 +336,11 @@ func (a *runArtifacts) finalize(test *ManagedTest, finalStatus string, endTime t
 		}
 	}
 
+	if test != nil {
+		if refresher, ok := a.recorder.(interface{ RefreshProvenance(RunArchiveProvenance) }); ok {
+			refresher.RefreshProvenance(buildRunArchiveProvenance(a.runner, test))
+		}
+	}
 	archiveRecord, archiveErr := a.recorder.Finalize(finalStatus, endTime, finalError, slaBreached, slaDetails)
 	if archiveRecord != nil && test != nil && archiveRecord.RefKey == "" {
 		archiveRecord.RefKey = test.RefKey

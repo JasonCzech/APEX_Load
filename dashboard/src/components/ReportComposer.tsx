@@ -10,9 +10,10 @@ import { ReportAnnotations, ReportCommentarySection, ReportFinding, RunArchiveRe
 import type { ReportProfileId } from './GenerateReportModal'
 import './ReportComposer.css'
 
-const PROFILE_LABEL: Record<ReportProfileId, string> = {
+const PROFILE_LABEL: Record<string, string> = {
   executive: 'Executive Summary',
   engineer: 'Detailed Technical',
+  audit: 'Audit',
 }
 
 interface Props {
@@ -154,6 +155,10 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
   const overview = report?.overview
   const manifest = report?.manifest
   const slaBreached = manifest?.sla_breached ?? false
+  const profileLabel = PROFILE_LABEL[profile] || profile
+  const isExecutive = profile === 'executive'
+  const isEngineer = profile === 'engineer'
+  const isAudit = profile === 'audit'
   const selectedNote = useMemo(
     () => testNotes.find((note) => note.id === selectedNoteId) || null,
     [selectedNoteId, testNotes],
@@ -202,7 +207,7 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
       <div className="report-toolbar">
         <div className="report-toolbar-left">
           <button type="button" className="btn btn-secondary" onClick={onClose}>Close</button>
-          <span className="report-toolbar-title">{PROFILE_LABEL[profile]} · {testName}</span>
+          <span className="report-toolbar-title">{profileLabel} · {testName}</span>
         </div>
         <div className="report-toolbar-right">
           {status && <span className="report-save-status">{status}</span>}
@@ -229,7 +234,7 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
                 <Logo size={40} />
                 <span className="report-brand-name">APEX Load</span>
               </div>
-              <p className="report-eyebrow">{PROFILE_LABEL[profile]} Report</p>
+              <p className="report-eyebrow">{profileLabel} Report</p>
               <input
                 className="report-title-input"
                 value={title}
@@ -293,20 +298,22 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
             </section>
 
             <section className="report-section">
-              <h2>Executive Summary</h2>
+              <h2>{isAudit ? 'Audit Summary' : isEngineer ? 'Technical Summary' : 'Executive Summary'}</h2>
               <textarea
                 className="report-narrative"
                 value={narrative}
                 onChange={(event) => setNarrative(event.target.value)}
-                placeholder="Summarize the outcome of this test run for stakeholders…"
+                placeholder={isAudit ? 'Summarize the audit scope, evidence posture, and exceptions…' : isEngineer ? 'Summarize the technical outcome, bottlenecks, and follow-up…' : 'Summarize the outcome of this test run for stakeholders…'}
                 rows={4}
               />
             </section>
 
-            <section className="report-section report-graphs">
-              <h2>Performance Graphs</h2>
-              <ReportCharts report={report} />
-            </section>
+            {!isAudit && (
+              <section className="report-section report-graphs">
+                <h2>{isExecutive ? 'Headline Performance' : 'Performance Graphs'}</h2>
+                <ReportCharts report={report} />
+              </section>
+            )}
 
             {slaBreached && (manifest?.sla_details?.length ?? 0) > 0 && (
               <section className="report-section">
@@ -319,7 +326,7 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
               </section>
             )}
 
-            {topActions.length > 0 && (
+            {isEngineer && topActions.length > 0 && (
               <section className="report-section">
                 <h2>Action Summary</h2>
                 <table className="report-table">
@@ -349,7 +356,19 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
               </section>
             )}
 
-            {profile === 'engineer' && (report.error_patterns?.length ?? 0) > 0 && (
+            {isEngineer && report.network_phases?.overall && (
+              <section className="report-section">
+                <h2>Network Phase Breakdown</h2>
+                <div className="report-metrics">
+                  <Metric label="DNS Avg" value={`${formatNum(report.network_phases.overall.avg_dns_ms)} ms`} />
+                  <Metric label="Connect Avg" value={`${formatNum(report.network_phases.overall.avg_connect_ms)} ms`} />
+                  <Metric label="TLS Avg" value={`${formatNum(report.network_phases.overall.avg_tls_ms)} ms`} />
+                  <Metric label="TTFB Avg" value={`${formatNum(report.network_phases.overall.avg_ttfb_ms)} ms`} />
+                </div>
+              </section>
+            )}
+
+            {isEngineer && (report.error_patterns?.length ?? 0) > 0 && (
               <section className="report-section">
                 <h2>Error Patterns</h2>
                 <table className="report-table">
@@ -375,7 +394,7 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
               </section>
             )}
 
-            {profile === 'engineer' && report.resource_peaks && (
+            {isEngineer && report.resource_peaks && (
               <section className="report-section">
                 <h2>Resource Peaks</h2>
                 <div className="report-metrics">
@@ -384,6 +403,40 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
                   <Metric label="Net Sent" value={`${formatNum(report.resource_peaks.net_sent_kbps)} KB/s`} />
                   <Metric label="Net Recv" value={`${formatNum(report.resource_peaks.net_recv_kbps)} KB/s`} />
                 </div>
+              </section>
+            )}
+
+            {isAudit && (
+              <section className="report-section">
+                <h2>Audit Evidence</h2>
+                <table className="report-table">
+                  <tbody>
+                    <tr><th>Manifest Schema</th><td>{report.manifest.schema_version}</td></tr>
+                    <tr><th>Report Schema</th><td>{report.schema_version || 'n/a'}</td></tr>
+                    <tr><th>Compatibility</th><td>{report.compatibility?.status || 'n/a'}</td></tr>
+                    <tr><th>Completeness</th><td>{formatNum(report.completeness?.score_pct)}% · {report.completeness?.status || 'n/a'}</td></tr>
+                    <tr><th>Created By</th><td>{formatActor(report.manifest.provenance?.created_by_display_name, report.manifest.provenance?.created_by_subject)}</td></tr>
+                    <tr><th>Started By</th><td>{formatActor(report.manifest.provenance?.started_by_display_name, report.manifest.provenance?.started_by_subject)}</td></tr>
+                    <tr><th>Stopped By</th><td>{formatActor(report.manifest.provenance?.stopped_by_display_name, report.manifest.provenance?.stopped_by_subject)}</td></tr>
+                    <tr><th>Runtime Overrides</th><td>{report.change_attribution?.runtime_overrides ? (report.change_attribution.runtime_override_fields || []).join(', ') || 'Yes' : 'No'}</td></tr>
+                  </tbody>
+                </table>
+                <h3>Artifact Integrity</h3>
+                <table className="report-table">
+                  <thead>
+                    <tr><th>Artifact</th><th>Records</th><th>Bytes</th><th>SHA-256</th></tr>
+                  </thead>
+                  <tbody>
+                    {(report.artifact_inventory || report.manifest.artifacts || []).map((artifact) => (
+                      <tr key={artifact.name}>
+                        <td>{artifact.name}</td>
+                        <td>{formatInt(artifact.count)}</td>
+                        <td>{formatInt(artifact.size_bytes)}</td>
+                        <td>{artifact.sha256 || 'not captured'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </section>
             )}
 
@@ -498,7 +551,7 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
                           </div>
                           <div className="report-note-source-actions">
                             <button type="button" className="btn btn-secondary" onClick={appendSelectedNoteToSummary}>
-                              Append to Executive Summary
+                              Append to {isAudit ? 'Audit Summary' : isEngineer ? 'Technical Summary' : 'Executive Summary'}
                             </button>
                             <select
                               className="report-select"
@@ -571,6 +624,13 @@ function formatTime(value: string | undefined): string {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return 'n/a'
   return date.toLocaleString()
+}
+
+function formatActor(displayName?: string, subject?: string): string {
+  const display = displayName?.trim()
+  const id = subject?.trim()
+  if (display && id) return `${display} (${id})`
+  return display || id || 'n/a'
 }
 
 function appendReportText(current: string, addition: string): string {

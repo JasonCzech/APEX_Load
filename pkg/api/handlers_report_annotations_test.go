@@ -41,11 +41,31 @@ func TestReportAnnotationsEndpointsRoundTrip(t *testing.T) {
 	if err := json.Unmarshal(getResp.Body.Bytes(), &initial); err != nil {
 		t.Fatalf("decode GET: %v", err)
 	}
-	if len(initial.Sections) != len(reportCommentarySectionOrder()) {
-		t.Fatalf("sections = %d, want %d", len(initial.Sections), len(reportCommentarySectionOrder()))
+	if len(initial.Sections) != len(reportCommentarySectionOrder("executive")) {
+		t.Fatalf("sections = %d, want %d", len(initial.Sections), len(reportCommentarySectionOrder("executive")))
 	}
 	if initial.Annotations == nil || initial.Annotations.Title == "" {
 		t.Fatalf("expected default annotations with a title, got %#v", initial.Annotations)
+	}
+	if _, ok := initial.Annotations.SectionComments["decision"]; !ok {
+		t.Fatalf("expected executive decision commentary default, got %#v", initial.Annotations.SectionComments)
+	}
+
+	auditReq := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testID+"/report/annotations?profile=audit", nil)
+	auditResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(auditResp, auditReq)
+	if auditResp.Code != http.StatusOK {
+		t.Fatalf("audit GET status = %d, want 200 (body=%s)", auditResp.Code, auditResp.Body.String())
+	}
+	var auditInitial reportAnnotationsResponse
+	if err := json.Unmarshal(auditResp.Body.Bytes(), &auditInitial); err != nil {
+		t.Fatalf("decode audit GET: %v", err)
+	}
+	if len(auditInitial.Sections) != len(reportCommentarySectionOrder("audit")) {
+		t.Fatalf("audit sections = %d, want %d", len(auditInitial.Sections), len(reportCommentarySectionOrder("audit")))
+	}
+	if _, ok := auditInitial.Annotations.SectionComments["audit_scope"]; !ok {
+		t.Fatalf("expected audit commentary defaults, got %#v", auditInitial.Annotations.SectionComments)
 	}
 
 	// PUT analyst edits, including a verdict override and a curated finding.

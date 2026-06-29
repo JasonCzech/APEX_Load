@@ -191,8 +191,21 @@ func TestRenderRunArchiveHTMLReportSupportsProfiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("renderRunArchiveHTMLReportWithProfile returned error: %v", err)
 	}
-	if !strings.Contains(string(html), "Executive Summary profile") {
+	body := string(html)
+	if !strings.Contains(body, "Executive Summary Report") {
 		t.Fatalf("expected executive profile label in HTML, got %q", string(html))
+	}
+	if strings.Contains(body, "Top Actions") || strings.Contains(body, "Appendix C") {
+		t.Fatalf("executive profile should omit technical drilldown sections, got %q", body)
+	}
+
+	auditHTML, err := renderRunArchiveHTMLReportWithProfile(report, "audit")
+	if err != nil {
+		t.Fatalf("renderRunArchiveHTMLReportWithProfile audit returned error: %v", err)
+	}
+	auditBody := string(auditHTML)
+	if !strings.Contains(auditBody, "Audit Evidence Package") || strings.Contains(auditBody, "Top Actions") {
+		t.Fatalf("audit profile should render audit evidence without technical drilldown, got %q", auditBody)
 	}
 
 	if _, err := renderRunArchiveHTMLReportWithProfile(report, "unknown"); err == nil {
@@ -229,7 +242,7 @@ func TestRenderRunArchiveHTMLReportIncludesManifestAppendix(t *testing.T) {
 		Scripts: []TestRunManifestScript{{GroupName: "buyers", ScriptName: "oms-order-flows", Protocol: "http", VUsers: 300, RampUp: "15m"}},
 	}
 
-	html, err := renderRunArchiveHTMLReportWithAnnotations(report, "executive", nil, manifest)
+	html, err := renderRunArchiveHTMLReportWithAnnotations(report, "engineer", nil, manifest)
 	if err != nil {
 		t.Fatalf("render with manifest returned error: %v", err)
 	}

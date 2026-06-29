@@ -18,8 +18,8 @@ func (s *SQLiteStore) SaveTest(test *TestRecord) error {
 	runtimeSettingsJSON, _ := json.Marshal(test.RuntimeSettings)
 	goalConfigJSON, _ := json.Marshal(test.GoalConfig)
 
-	query := `INSERT INTO tests (id, ref_key, name, status, application_id, release_id, scenario_id, project_id, folder_id, scenario_mode, shakeout_enabled, resource_baseline_enabled, assignment_json, total_vusers, duration_ns, start_time, scheduled_start_at, pending_since, baseline_pinned, baseline_pinned_at, end_time, error, created_by_subject, created_by_display_name, started_by_subject, started_by_display_name, groups_json, runtime_settings_json, goal_config_json, timeslot_id)
-			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	query := `INSERT INTO tests (id, ref_key, name, status, application_id, release_id, scenario_id, project_id, folder_id, scenario_mode, shakeout_enabled, resource_baseline_enabled, assignment_json, total_vusers, duration_ns, start_time, scheduled_start_at, pending_since, baseline_pinned, baseline_pinned_at, end_time, error, created_by_subject, created_by_display_name, started_by_subject, started_by_display_name, stopped_by_subject, stopped_by_display_name, groups_json, runtime_settings_json, goal_config_json, timeslot_id)
+			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			  ON CONFLICT(id) DO UPDATE SET
 			  ref_key=excluded.ref_key,
 			  name=excluded.name, status=excluded.status, application_id=excluded.application_id, release_id=excluded.release_id, scenario_id=excluded.scenario_id,
@@ -29,10 +29,11 @@ func (s *SQLiteStore) SaveTest(test *TestRecord) error {
 			  duration_ns=excluded.duration_ns, start_time=excluded.start_time, scheduled_start_at=excluded.scheduled_start_at, pending_since=excluded.pending_since,
 			  baseline_pinned=excluded.baseline_pinned, baseline_pinned_at=excluded.baseline_pinned_at, end_time=excluded.end_time,
 			  error=excluded.error, created_by_subject=excluded.created_by_subject, created_by_display_name=excluded.created_by_display_name,
-			  started_by_subject=excluded.started_by_subject, started_by_display_name=excluded.started_by_display_name, groups_json=excluded.groups_json,
+			  started_by_subject=excluded.started_by_subject, started_by_display_name=excluded.started_by_display_name,
+			  stopped_by_subject=excluded.stopped_by_subject, stopped_by_display_name=excluded.stopped_by_display_name, groups_json=excluded.groups_json,
 			  runtime_settings_json=excluded.runtime_settings_json, goal_config_json=excluded.goal_config_json, timeslot_id=excluded.timeslot_id`
 
-	_, err := s.db.Exec(query, test.ID, test.RefKey, test.Name, test.Status, test.ApplicationID, test.ReleaseID, test.ScenarioID, test.ProjectID, test.FolderID, test.ScenarioMode, test.ScriptShakeout, test.ResourceBaseline, string(assignmentJSON), test.TotalVUsers, test.Duration, test.StartTime, test.ScheduledStartAt, test.PendingSince, test.BaselinePinned, test.BaselinePinnedAt, test.EndTime, test.Error, test.CreatedBySubject, test.CreatedByDisplayName, test.StartedBySubject, test.StartedByDisplayName, string(groupsJSON), string(runtimeSettingsJSON), string(goalConfigJSON), test.TimeslotID)
+	_, err := s.db.Exec(query, test.ID, test.RefKey, test.Name, test.Status, test.ApplicationID, test.ReleaseID, test.ScenarioID, test.ProjectID, test.FolderID, test.ScenarioMode, test.ScriptShakeout, test.ResourceBaseline, string(assignmentJSON), test.TotalVUsers, test.Duration, test.StartTime, test.ScheduledStartAt, test.PendingSince, test.BaselinePinned, test.BaselinePinnedAt, test.EndTime, test.Error, test.CreatedBySubject, test.CreatedByDisplayName, test.StartedBySubject, test.StartedByDisplayName, test.StoppedBySubject, test.StoppedByDisplayName, string(groupsJSON), string(runtimeSettingsJSON), string(goalConfigJSON), test.TimeslotID)
 	return err
 }
 
@@ -46,7 +47,7 @@ func (s *SQLiteStore) GetTest(id string) (*TestRecord, error) {
 }
 
 func testSelectColumns() string {
-	return `SELECT id, COALESCE(ref_key, ''), name, status, COALESCE(application_id, ''), COALESCE(release_id, ''), COALESCE(scenario_id, ''), COALESCE(project_id, ''), folder_id, COALESCE(scenario_mode, ''), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(assignment_json, ''), total_vusers, duration_ns, start_time, scheduled_start_at, pending_since, COALESCE(baseline_pinned, 0), baseline_pinned_at, end_time, error, COALESCE(created_by_subject, ''), COALESCE(created_by_display_name, ''), COALESCE(started_by_subject, ''), COALESCE(started_by_display_name, ''), groups_json, COALESCE(runtime_settings_json, ''), COALESCE(goal_config_json, ''), timeslot_id`
+	return `SELECT id, COALESCE(ref_key, ''), name, status, COALESCE(application_id, ''), COALESCE(release_id, ''), COALESCE(scenario_id, ''), COALESCE(project_id, ''), folder_id, COALESCE(scenario_mode, ''), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(assignment_json, ''), total_vusers, duration_ns, start_time, scheduled_start_at, pending_since, COALESCE(baseline_pinned, 0), baseline_pinned_at, end_time, error, COALESCE(created_by_subject, ''), COALESCE(created_by_display_name, ''), COALESCE(started_by_subject, ''), COALESCE(started_by_display_name, ''), COALESCE(stopped_by_subject, ''), COALESCE(stopped_by_display_name, ''), groups_json, COALESCE(runtime_settings_json, ''), COALESCE(goal_config_json, ''), timeslot_id`
 }
 
 // rowScanner abstracts *sql.Row and *sql.Rows so scan helpers work with both
@@ -60,7 +61,7 @@ type rowScanner interface {
 func scanTest(scanner rowScanner) (TestRecord, error) {
 	var test TestRecord
 	var groupsJSON, assignmentJSON, runtimeSettingsJSON, goalConfigJSON string
-	if err := scanner.Scan(&test.ID, &test.RefKey, &test.Name, &test.Status, &test.ApplicationID, &test.ReleaseID, &test.ScenarioID, &test.ProjectID, &test.FolderID, &test.ScenarioMode, &test.ScriptShakeout, &test.ResourceBaseline, &assignmentJSON, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.ScheduledStartAt, &test.PendingSince, &test.BaselinePinned, &test.BaselinePinnedAt, &test.EndTime, &test.Error, &test.CreatedBySubject, &test.CreatedByDisplayName, &test.StartedBySubject, &test.StartedByDisplayName, &groupsJSON, &runtimeSettingsJSON, &goalConfigJSON, &test.TimeslotID); err != nil {
+	if err := scanner.Scan(&test.ID, &test.RefKey, &test.Name, &test.Status, &test.ApplicationID, &test.ReleaseID, &test.ScenarioID, &test.ProjectID, &test.FolderID, &test.ScenarioMode, &test.ScriptShakeout, &test.ResourceBaseline, &assignmentJSON, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.ScheduledStartAt, &test.PendingSince, &test.BaselinePinned, &test.BaselinePinnedAt, &test.EndTime, &test.Error, &test.CreatedBySubject, &test.CreatedByDisplayName, &test.StartedBySubject, &test.StartedByDisplayName, &test.StoppedBySubject, &test.StoppedByDisplayName, &groupsJSON, &runtimeSettingsJSON, &goalConfigJSON, &test.TimeslotID); err != nil {
 		return test, err
 	}
 	json.Unmarshal([]byte(groupsJSON), &test.Groups)

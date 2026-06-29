@@ -217,6 +217,8 @@ type ManagedTest struct {
 	CreatedByDisplayName  string                       `json:"created_by_display_name,omitempty"`
 	StartedBySubject      string                       `json:"started_by_subject,omitempty"`
 	StartedByDisplayName  string                       `json:"started_by_display_name,omitempty"`
+	StoppedBySubject      string                       `json:"stopped_by_subject,omitempty"`
+	StoppedByDisplayName  string                       `json:"stopped_by_display_name,omitempty"`
 	VUserRamps            map[string]VUserRampStatus   `json:"vuser_ramps,omitempty"`
 	LiveMetrics           *LiveMetrics                 `json:"live_metrics,omitempty"`
 	History               []*LiveMetrics               `json:"history,omitempty"`

@@ -4,8 +4,11 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -71,6 +74,15 @@ func newRunArchiveWriter(test *ManagedTest, provenance RunArchiveProvenance) (*r
 		resourceEncoder: resourceEncoder,
 		summaryEncoder:  summaryEncoder,
 	}, nil
+}
+
+func (w *runArchiveWriter) RefreshProvenance(provenance RunArchiveProvenance) {
+	if w == nil {
+		return
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.manifest.Provenance = provenance
 }
 
 func captureAPEXLoadEnv() map[string]string {
@@ -266,6 +278,9 @@ func (w *runArchiveWriter) Finalize(status string, completedAt time.Time, errStr
 	if err := writeArchiveParquetFiles(w.rootDir, &w.manifest); err != nil {
 		return nil, err
 	}
+	if err := updateRunArchiveArtifactIntegrity(w.rootDir, &w.manifest); err != nil {
+		return nil, err
+	}
 	data, err := json.MarshalIndent(w.manifest, "", "  ")
 	if err != nil {
 		return nil, err
@@ -292,6 +307,61 @@ func (w *runArchiveWriter) Finalize(status string, completedAt time.Time, errStr
 		CreatedAt:            w.manifest.CreatedAt,
 		CompletedAt:          w.manifest.CompletedAt,
 	}, nil
+}
+
+func updateRunArchiveArtifactIntegrity(root string, manifest *RunArchiveManifest) error {
+	if manifest == nil {
+		return nil
+	}
+	descriptors := []RunArchiveArtifact{
+		{Name: manifest.TransactionsFile, Kind: "dataset", Format: "jsonl", RecordType: "transactions", Count: manifest.TransactionCount},
+		{Name: manifest.TransactionsParquetFile, Kind: "dataset", Format: "parquet", RecordType: "transactions", Count: manifest.TransactionCount},
+		{Name: manifest.ResourceSamplesFile, Kind: "dataset", Format: "jsonl", RecordType: "resource_samples", Count: manifest.ResourceSampleCount},
+		{Name: manifest.ResourceSamplesParquetFile, Kind: "dataset", Format: "parquet", RecordType: "resource_samples", Count: manifest.ResourceSampleCount},
+		{Name: manifest.IntervalSummariesFile, Kind: "dataset", Format: "jsonl", RecordType: "interval_summaries", Count: manifest.IntervalSummaryCount},
+		{Name: manifest.IntervalSummariesParquetFile, Kind: "dataset", Format: "parquet", RecordType: "interval_summaries", Count: manifest.IntervalSummaryCount},
+		{Name: manifest.TestManifestFile, Kind: "manifest", Format: "json", RecordType: "test_manifest"},
+		{Name: manifest.TestNotesFile, Kind: "notes", Format: "json", RecordType: "test_notes"},
+	}
+	artifacts := make([]RunArchiveArtifact, 0, len(descriptors))
+	for _, artifact := range descriptors {
+		if strings.TrimSpace(artifact.Name) == "" {
+			continue
+		}
+		path, err := archiveArtifactPath(root, artifact.Name)
+		if err != nil {
+			return err
+		}
+		info, err := os.Stat(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return err
+		}
+		artifact.SizeBytes = info.Size()
+		sum, err := sha256File(path)
+		if err != nil {
+			return err
+		}
+		artifact.SHA256 = sum
+		artifacts = append(artifacts, artifact)
+	}
+	manifest.Artifacts = artifacts
+	return nil
+}
+
+func sha256File(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 func traceIDFromCorrelationID(correlationID string) string {

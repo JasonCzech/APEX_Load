@@ -1,37 +1,52 @@
-import { useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useModalDialog } from '../hooks/useModalDialog'
+import type { RunArchiveReportProfile } from '../types'
 import './GenerateReportModal.css'
 
-export type ReportProfileId = 'executive' | 'engineer'
+export type ReportProfileId = 'executive' | 'engineer' | 'audit' | string
 
 interface ReportTypeOption {
   id: ReportProfileId
   label: string
   blurb: string
+  bestFor?: string
 }
 
-const REPORT_TYPES: ReportTypeOption[] = [
-  {
-    id: 'executive',
-    label: 'Executive Summary',
-    blurb: 'High-level verdict, key metrics, supporting graphs, and a narrative for stakeholders and sign-off.',
-  },
-  {
-    id: 'engineer',
-    label: 'Detailed Technical',
-    blurb: 'Full drilldown — per-action stats, timelines, errors, resource peaks, and graphs for engineers.',
-  },
-]
-
 interface Props {
+  profiles?: RunArchiveReportProfile[]
   onClose: () => void
   onGenerate: (profile: ReportProfileId) => void
 }
 
-export default function GenerateReportModal({ onClose, onGenerate }: Props) {
-  const [selected, setSelected] = useState<ReportProfileId>('executive')
+const FALLBACK_REPORT_TYPES: ReportTypeOption[] = [
+  {
+    id: 'executive',
+    label: 'Executive Summary',
+    blurb: 'High-level verdict, key metrics, and release decision narrative for stakeholders.',
+  },
+  {
+    id: 'engineer',
+    label: 'Detailed Technical',
+    blurb: 'Full drilldown with per-action stats, timelines, errors, resources, and diagnostics.',
+  },
+  {
+    id: 'audit',
+    label: 'Audit',
+    blurb: 'Governance evidence, provenance, completeness, and artifact integrity.',
+  },
+]
+
+export default function GenerateReportModal({ profiles, onClose, onGenerate }: Props) {
+  const reportTypes = useMemo(() => buildReportTypeOptions(profiles), [profiles])
+  const [selected, setSelected] = useState<ReportProfileId>(reportTypes[0]?.id || 'executive')
   const dialogRef = useRef<HTMLDivElement | null>(null)
   useModalDialog({ dialogRef, onClose })
+
+  useEffect(() => {
+    if (!reportTypes.some((option) => option.id === selected)) {
+      setSelected(reportTypes[0]?.id || 'executive')
+    }
+  }, [reportTypes, selected])
 
   return (
     <div className="generate-report-backdrop" role="presentation" onMouseDown={onClose}>
@@ -42,7 +57,7 @@ export default function GenerateReportModal({ onClose, onGenerate }: Props) {
         </div>
         <p className="generate-report-intro">Choose the report type. You can edit the commentary and export to PDF or HTML in the next step.</p>
         <div className="generate-report-options">
-          {REPORT_TYPES.map((option) => (
+          {reportTypes.map((option) => (
             <button
               key={option.id}
               type="button"
@@ -52,6 +67,7 @@ export default function GenerateReportModal({ onClose, onGenerate }: Props) {
             >
               <span className="generate-report-option-label">{option.label}</span>
               <span className="generate-report-option-blurb">{option.blurb}</span>
+              {option.bestFor && <span className="generate-report-option-blurb">{option.bestFor}</span>}
             </button>
           ))}
         </div>
@@ -62,4 +78,15 @@ export default function GenerateReportModal({ onClose, onGenerate }: Props) {
       </div>
     </div>
   )
+}
+
+export function buildReportTypeOptions(profiles?: RunArchiveReportProfile[]): ReportTypeOption[] {
+  const htmlProfiles = (profiles || []).filter((profile) => profile.export_formats?.includes('html'))
+  if (htmlProfiles.length === 0) return FALLBACK_REPORT_TYPES
+  return htmlProfiles.map((profile) => ({
+    id: profile.id,
+    label: profile.label,
+    blurb: profile.description,
+    bestFor: profile.best_for || profile.audience,
+  }))
 }
