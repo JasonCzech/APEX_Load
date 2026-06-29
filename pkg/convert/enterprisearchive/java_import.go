@@ -196,9 +196,101 @@ func ConvertJava(files map[string]string, opts ConvertOptions, detected Detected
 			EndLine:   1,
 		}, "action", "no_java_actions"))
 		result.Scripts = []*dsl.Script{result.Script}
+		backfillJavaConservation(result, program)
 		return result, nil
 	}
-	return mergeJavaLaneResults(laneResults, detected, files, profile), nil
+	merged := mergeJavaLaneResults(laneResults, detected, files, profile)
+	backfillJavaConservation(merged, program)
+	return merged, nil
+}
+
+// javaLeafStatements enumerates the leaf statements the converter actually visits
+// — recursing into transparent blocks and treating opaque blocks as a single leaf
+// — so conservation can be checked against the real traversal.
+func javaLeafStatements(program javaProgram) []javaStatement {
+	out := make([]javaStatement, 0)
+	for _, phase := range []string{"init", "action", "teardown"} {
+		for _, statement := range javaLifecycleStatements(program, phase) {
+			out = append(out, javaLeafStatementList(statement)...)
+		}
+	}
+	return out
+}
+
+func javaLeafStatementList(statement javaStatement) []javaStatement {
+	if statement.Kind == "block" && javaTransparentBlockHeader(statement.Header) {
+		out := make([]javaStatement, 0)
+		for _, child := range statement.Children {
+			out = append(out, javaLeafStatementList(child)...)
+		}
+		return out
+	}
+	return []javaStatement{statement}
+}
+
+// backfillJavaConservation guarantees the no-silent-drop invariant: every leaf
+// statement the converter visits ends with at least one SourceReview disposition.
+// Executable lanes (HTTP/JDBC/SOAP) consume some contributor statements (SQL/bind
+// assignments, prepareStatement bookkeeping) without emitting their own mapping;
+// this records an honest disposition for any such leaf that no lane mapped.
+func backfillJavaConservation(result *ConvertResult, program javaProgram) {
+	if result == nil {
+		return
+	}
+	if result.SourceReview == nil {
+		result.SourceReview = &SourceReview{}
+	}
+	mapped := map[javaStatementKey]bool{}
+	for _, mapping := range result.SourceReview.Mappings {
+		if mapping.SourceFile == "" || mapping.StartLine == 0 {
+			continue
+		}
+		mapped[javaStatementKey{file: mapping.SourceFile, startLine: mapping.StartLine, endLine: mapping.EndLine}] = true
+	}
+	for _, statement := range javaLeafStatements(program) {
+		if javaNormalizeStatementText(statement.Text) == "" {
+			continue
+		}
+		key := javaStatementKey{file: statement.File, startLine: statement.StartLine, endLine: statement.EndLine}
+		if mapped[key] {
+			continue
+		}
+		mapped[key] = true
+		status, mode, notes := classifyJavaResidueStatement(javaNormalizeStatementText(statement.Text))
+		appendSourceReviewMapping(result, SourceReviewMapping{
+			SourceFile:  statement.File,
+			StartLine:   statement.StartLine,
+			EndLine:     statement.EndLine,
+			Function:    "java_statement",
+			TargetKind:  "disposition",
+			Status:      status,
+			SupportMode: string(mode),
+			Notes:       notes,
+		})
+	}
+}
+
+type javaStatementKey struct {
+	file      string
+	startLine int
+	endLine   int
+}
+
+// classifyJavaResidueStatement gives an honest disposition to a leaf statement no
+// lane claimed: no-op for inert lines, an executable-contributor note for
+// SQL/state plumbing the executable lanes consumed, a named review for known
+// no-runtime families, else a generic review.
+func classifyJavaResidueStatement(text string) (status string, mode SourceFunctionSupportMode, notes string) {
+	switch {
+	case isJavaInertStatement(text):
+		return "converted", SourceFunctionSupportNativeNoop, "Java statement has no executable replay effect (no-op disposition)."
+	case javaStatementLooksLikeDatabase(text) || javaSQLAssignRe.MatchString(text) || javaSetBindRe.MatchString(text):
+		return "converted", SourceFunctionSupportExecutable, "Contributor consumed by the executable database lane."
+	case javaNamedReviewReason(text) != "":
+		return "review_only", SourceFunctionSupportReviewOnly, "Preserved for manual review: " + javaNamedReviewReason(text) + "."
+	default:
+		return "review_only", SourceFunctionSupportReviewOnly, "Unmapped Java statement preserved for review."
+	}
 }
 
 func convertJavaStatementLane(files map[string]string, opts ConvertOptions, detected DetectedProtocol, program javaProgram, parseWarnings []string, profile JavaProfile, secondary bool) (*ConvertResult, error) {

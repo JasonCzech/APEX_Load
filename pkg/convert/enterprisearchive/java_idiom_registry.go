@@ -32,6 +32,7 @@ var javaStatementMapperRegistry = []JavaIdiomMapper{
 	javaIdiomMapperFunc{name: "java_inert_statement", fn: mapJavaInertStatement},
 	javaIdiomMapperFunc{name: "java_jndi_config", fn: mapJavaJNDIConfigStatement},
 	javaIdiomMapperFunc{name: "java_message_property", fn: mapJavaMessagePropertyStatement},
+	javaIdiomMapperFunc{name: "java_lr_owned_by_executable_lane", fn: mapJavaLROwnedByExecutableLane},
 	javaIdiomMapperFunc{name: "java_lr_api", fn: mapJavaLRStatement},
 	javaIdiomMapperFunc{name: "java_jms_api", fn: mapJavaJMSStatement},
 	javaIdiomMapperFunc{name: "java_named_review", fn: mapJavaNamedReviewStatement},
@@ -89,6 +90,21 @@ func mapJavaMessagePropertyStatement(ctx *javaMapperContext) (bool, error) {
 	return convertJavaMessageProperty(ctx.result, ctx.state, ctx.files, ctx.statement), nil
 }
 
+// mapJavaLROwnedByExecutableLane suppresses lr.* utility statements in the JMS
+// statement lane when an executable HTTP/JDBC lane is present: that lane already
+// converts the lr.* call (via the shared C registry through Convert/ConvertDatabase)
+// and records its disposition, so re-emitting here would double-count
+// transactions/think-times and duplicate the structure across scripts.
+func mapJavaLROwnedByExecutableLane(ctx *javaMapperContext) (bool, error) {
+	if !ctx.state.skipHTTP && !ctx.state.skipDatabase {
+		return false, nil
+	}
+	if fn, ok := javaLRToParsedFunction(ctx.statement, ctx.phase); ok && javaLRFunctionAllowedInExecutableLane(fn.Name) {
+		return true, nil
+	}
+	return false, nil
+}
+
 func mapJavaLRStatement(ctx *javaMapperContext) (bool, error) {
 	if fn, ok := javaLRToParsedFunction(ctx.statement, ctx.phase); ok {
 		routeJavaLRFunction(ctx.result, ctx.state, ctx.phase, ctx.statement, fn)
@@ -98,6 +114,12 @@ func mapJavaLRStatement(ctx *javaMapperContext) (bool, error) {
 }
 
 func mapJavaJMSStatement(ctx *javaMapperContext) (bool, error) {
+	// Only treat .send()/.receive()/.commit()/.acknowledge() idioms as JMS when the
+	// archive actually shows JMS evidence; otherwise a bare receiver.send(...) in a
+	// non-JMS Java Vuser would be fabricated into a jms_publish.
+	if !ctx.state.profile.Surfaces[javaSurfaceJMS] {
+		return false, nil
+	}
 	if action, ok := convertJavaJMSAction(ctx.state, ctx.files, ctx.statement); ok {
 		applyJavaTransactionMetadata(&action, ctx.state)
 		appendJavaAction(ctx.result, ctx.statement, ctx.phase, action, SourceFunctionSupportExecutable, "Mapped Java JMS API idiom to native JMS action.")

@@ -253,7 +253,11 @@ func newJavaScriptForSurface(opts ConvertOptions, profile JavaProfile, surface j
 			Provider:        profile.JMSProvider,
 			DestinationType: profile.DestinationType,
 			TimeoutMs:       5000,
-			Mock:            true,
+			// Imports default to mock: the standard build ships no real Solace/MQ
+			// adapter, so a non-mock JMS script fails validation, and the import
+			// fidelity promotion gate already blocks promotion until an operator
+			// configures a real adapter/sidecar (so mock is not falsely green).
+			Mock: true,
 		}
 	default:
 		script.Protocol = "java_vuser"

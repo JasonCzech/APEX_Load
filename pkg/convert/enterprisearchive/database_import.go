@@ -209,6 +209,11 @@ func isQuerySQL(sql string) bool {
 }
 
 func extractDatabaseBinds(fn ParsedFunction, sql string) []any {
+	// Explicit ordered binds (e.g. Java PreparedStatement setXxx, encoded into
+	// RawArgs in positional order) take precedence over heuristic extraction.
+	if ordered := orderedExplicitBinds(fn); len(ordered) > 0 {
+		return ordered
+	}
 	binds := make([]any, 0)
 	for key, value := range fn.Args {
 		if strings.HasPrefix(strings.ToLower(key), "param") || strings.Contains(strings.ToLower(key), "bind") {
@@ -224,6 +229,18 @@ func extractDatabaseBinds(fn ParsedFunction, sql string) []any {
 		}
 	}
 	return binds
+}
+
+// orderedExplicitBinds returns the positional binds encoded into RawArgs with the
+// javaSQLBindPrefix marker (in the order they were appended), or nil if none.
+func orderedExplicitBinds(fn ParsedFunction) []any {
+	ordered := make([]any, 0)
+	for _, raw := range fn.RawArgs {
+		if value, ok := strings.CutPrefix(raw, javaSQLBindPrefix); ok {
+			ordered = append(ordered, value)
+		}
+	}
+	return ordered
 }
 
 func databaseActionName(fn ParsedFunction, fallback string) string {
