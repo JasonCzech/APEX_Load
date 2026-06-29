@@ -87,8 +87,10 @@ func classifyJavaArchive(program javaProgram, projectConfig *ProjectConfig, file
 	if projectConfig != nil {
 		if profileForProject, _, ok := profileForProjectConfig(projectConfig); ok && profileForProject.Canonical == "java_jms_solace" {
 			profile.Surfaces[javaSurfaceJMS] = true
-			profile.JMSProvider = "solace"
-			profile.JMSProtocol = "jms-solace"
+			if !javaHasNonSolaceJMSProviderEvidence(text) {
+				profile.JMSProvider = "solace"
+				profile.JMSProtocol = "jms-solace"
+			}
 			profile.Primary = javaSurfaceJMS
 		}
 	}
@@ -169,6 +171,14 @@ func inferJavaJMSProvider(text string) (string, string) {
 	default:
 		return "solace", "jms-solace"
 	}
+}
+
+func javaHasNonSolaceJMSProviderEvidence(text string) bool {
+	return strings.Contains(text, "servicebus") ||
+		strings.Contains(text, "azure.servicebus") ||
+		strings.Contains(text, "com.ibm.mq") ||
+		strings.Contains(text, "wmq") ||
+		strings.Contains(text, "ibm.mq")
 }
 
 func inferJavaJMSDestinationType(text string) string {

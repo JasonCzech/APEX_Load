@@ -971,6 +971,47 @@ public class Actions {
 	}
 }
 
+func TestConvertZipJavaProtocolsDoesNotClobberExplicitIBMMQProvider(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	addJavaZipFile(t, zw, "JavaProtocolsMQ/JavaProtocolsMQ.usr", `[General]
+Type=Java_protocols
+ActiveTypes=Java_protocols
+ScriptLanguage=JAVA
+RunType=Java-Interpreter
+[Actions]
+Action=Actions.java
+`)
+	addJavaZipFile(t, zw, "JavaProtocolsMQ/Actions.java", `import javax.jms.*;
+import com.ibm.mq.jms.MQQueueConnectionFactory;
+
+public class Actions {
+  public int action() throws Throwable {
+    Queue queue = session.createQueue("orders.in");
+    TextMessage msg = session.createTextMessage("hi");
+    producer.send(queue, msg);
+    return 0;
+  }
+}`)
+	if err := zw.Close(); err != nil {
+		t.Fatalf("close zip: %v", err)
+	}
+
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if result.Script == nil || result.Script.Protocol != "jms-ibmmq" {
+		t.Fatalf("script = %#v, want Java_protocols IBM MQ script", result.Script)
+	}
+	if result.Script.Config.JMS.Provider != "ibmmq" || result.Script.Config.JMS.DestinationType != "queue" {
+		t.Fatalf("jms config = %#v, want IBM MQ queue despite Java_protocols metadata", result.Script.Config.JMS)
+	}
+	if result.DetectedProtocol == nil || result.DetectedProtocol.APEXLoadProtocol != "jms-ibmmq" {
+		t.Fatalf("detected = %#v, want IBM MQ protocol target", result.DetectedProtocol)
+	}
+}
+
 func TestConvertZipJavaSOAPWithRecoverableEnvelopeProducesHTTP(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
