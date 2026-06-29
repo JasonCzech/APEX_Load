@@ -860,6 +860,46 @@ export default function TestExecutionArchive({
 
       {archiveReport && (
         <>
+          {showReportProfilesView && (
+            archiveReport.report_profiles?.length ? (
+              <div className="archive-profile-grid">
+                {archiveReport.report_profiles.map(profile => (
+                  <div key={profile.id} className="archive-profile-card">
+                    <div className="archive-profile-heading">
+                      <strong>{profile.label}</strong>
+                      <span>{profile.export_formats.join(', ')}</span>
+                    </div>
+                    <p>{profile.description}</p>
+                    <div className="archive-report-badges">
+                      {profile.included_sections.map(section => (
+                        <span key={section} className="archive-chip">{section.replace(/_/g, ' ')}</span>
+                      ))}
+                    </div>
+                    <div className="inline-create-row">
+                      {profile.export_formats.includes('html') && (
+                        <a className="btn btn-secondary btn-sm" href={buildReportHref(test.id, profile.id)} target="_blank" rel="noreferrer">{profile.label} HTML</a>
+                      )}
+                      {profile.export_formats.includes('csv') && (
+                        <a className="btn btn-secondary btn-sm" href={buildArchiveReportHref(test.id, 'csv', profile.id)} target="_blank" rel="noreferrer">{profile.label} CSV</a>
+                      )}
+                      {profile.export_formats.includes('pdf') && (
+                        <a className="btn btn-secondary btn-sm" href={buildArchiveReportHref(test.id, 'pdf', profile.id)} target="_blank" rel="noreferrer">{profile.label} PDF</a>
+                      )}
+                      {profile.export_formats.includes('jsonl') && (
+                        <button className="btn btn-secondary btn-sm" onClick={() => onDownloadArchiveArtifact(archiveReport.manifest.transactions_file || 'transactions.jsonl')}>{profile.label} JSONL</button>
+                      )}
+                      {profile.export_formats.includes('parquet') && (
+                        <button className="btn btn-secondary btn-sm" onClick={() => onDownloadArchiveArtifact(archiveReport.manifest.transactions_parquet_file || 'transactions.parquet')}>{profile.label} Parquet</button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : showStandaloneReportSection ? (
+              <p className="scenario-script-status">No report profiles are configured for this archive.</p>
+            ) : null
+          )}
+
           {(showReportOverviewView || showReportCompletenessView || showReportMetadataView) && (
             <>
               {showReportOverviewView && (
@@ -1147,46 +1187,6 @@ export default function TestExecutionArchive({
                 </button>
               </div>
             </div>
-          )}
-
-          {showReportProfilesView && (
-            archiveReport.report_profiles?.length ? (
-              <div className="archive-profile-grid">
-                {archiveReport.report_profiles.map(profile => (
-                  <div key={profile.id} className="archive-profile-card">
-                    <div className="archive-profile-heading">
-                      <strong>{profile.label}</strong>
-                      <span>{profile.export_formats.join(', ')}</span>
-                    </div>
-                    <p>{profile.description}</p>
-                    <div className="archive-report-badges">
-                      {profile.included_sections.map(section => (
-                        <span key={section} className="archive-chip">{section.replace(/_/g, ' ')}</span>
-                      ))}
-                    </div>
-                    <div className="inline-create-row">
-                      {profile.export_formats.includes('html') && (
-                        <a className="btn btn-secondary btn-sm" href={buildReportHref(test.id, profile.id)} target="_blank" rel="noreferrer">{profile.label} HTML</a>
-                      )}
-                      {profile.export_formats.includes('csv') && (
-                        <a className="btn btn-secondary btn-sm" href={buildArchiveReportHref(test.id, 'csv', profile.id)} target="_blank" rel="noreferrer">{profile.label} CSV</a>
-                      )}
-                      {profile.export_formats.includes('pdf') && (
-                        <a className="btn btn-secondary btn-sm" href={buildArchiveReportHref(test.id, 'pdf', profile.id)} target="_blank" rel="noreferrer">{profile.label} PDF</a>
-                      )}
-                      {profile.export_formats.includes('jsonl') && (
-                        <button className="btn btn-secondary btn-sm" onClick={() => onDownloadArchiveArtifact(archiveReport.manifest.transactions_file || 'transactions.jsonl')}>{profile.label} JSONL</button>
-                      )}
-                      {profile.export_formats.includes('parquet') && (
-                        <button className="btn btn-secondary btn-sm" onClick={() => onDownloadArchiveArtifact(archiveReport.manifest.transactions_parquet_file || 'transactions.parquet')}>{profile.label} Parquet</button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : showStandaloneReportSection ? (
-              <p className="scenario-script-status">No report profiles are configured for this archive.</p>
-            ) : null
           )}
 
           {showReportSummaryTimelineView && (
