@@ -3338,7 +3338,7 @@ import java.sql.*;
 
 public class Actions {
   public int action() throws Throwable {
-    web.url("Home", "URL=https://example.test/home", web.LAST);
+    web.url("Home", "URL=https://example.test/home?user_id=12345", web.LAST);
     Queue q = session.createQueue("orders.in");
     TextMessage msg = session.createTextMessage("{\"orderId\":\"A-100\"}");
     producer.send(q, msg);
@@ -3347,7 +3347,7 @@ public class Actions {
     return 0;
   }
 }`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", bytes.NewReader(archive))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive?project_id=proj-java-mixed", bytes.NewReader(archive))
 	req.Header.Set("Content-Type", "application/zip")
 	resp := httptest.NewRecorder()
 
@@ -3380,6 +3380,9 @@ public class Actions {
 	protocols := map[string]int{}
 	for _, script := range result.Scripts {
 		protocols[script.Protocol]++
+		if script.ProjectID != "proj-java-mixed" {
+			t.Fatalf("script %q project_id = %q, want proj-java-mixed", script.Name, script.ProjectID)
+		}
 		if script.Metadata == nil || script.Metadata.Import == nil || script.Metadata.Import.Preserved["source_review"] == nil {
 			t.Fatalf("script %q metadata = %#v, want attached source_review", script.Name, script.Metadata)
 		}
@@ -3397,6 +3400,14 @@ public class Actions {
 	}
 	if result.Stats.ConvertedActions < 3 {
 		t.Fatalf("stats = %#v, want converted HTTP/JMS/JDBC actions", result.Stats)
+	}
+	if len(result.Parameterization.Suggestions) == 0 {
+		t.Fatalf("parameterization suggestions = %#v, want script-scoped suggestions", result.Parameterization.Suggestions)
+	}
+	for _, suggestion := range result.Parameterization.Suggestions {
+		if suggestion.ScriptName == "" {
+			t.Fatalf("parameterization suggestions = %#v, want script_name populated for multi-script Java imports", result.Parameterization.Suggestions)
+		}
 	}
 }
 
