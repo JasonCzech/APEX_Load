@@ -75,7 +75,7 @@ func (state *javaApacheHTTPState) mapStatement(statement javaStatement, phase st
 			key, _ := parseJavaStringLiteral(matches[2])
 			value, _ := parseJavaStringLiteral(matches[3])
 			if key != "" {
-				fn.Headers[key] = value
+				javaAddParsedHeader(&fn, key, value)
 				state.requests[matches[1]] = fn
 			}
 		}
@@ -152,7 +152,7 @@ func (state *javaURLConnectionHTTPState) mapStatement(statement javaStatement, p
 			key, _ := parseJavaStringLiteral(matches[2])
 			value, _ := parseJavaStringLiteral(matches[3])
 			if key != "" {
-				fn.Headers[key] = value
+				javaAddParsedHeader(&fn, key, value)
 				state.requests[matches[1]] = fn
 			}
 		}
@@ -200,6 +200,17 @@ func (state *javaURLConnectionHTTPState) setBody(requestVar string, rawLiteral s
 	fn.Body = body
 	fn.Args["Body"] = body
 	state.requests[requestVar] = fn
+}
+
+func javaAddParsedHeader(fn *ParsedFunction, key string, value string) {
+	if fn == nil || strings.TrimSpace(key) == "" {
+		return
+	}
+	if fn.Headers == nil {
+		fn.Headers = map[string]string{}
+	}
+	fn.Headers[key] = value
+	fn.HeaderList = append(fn.HeaderList, dsl.HeaderEntry{Name: key, Value: value})
 }
 
 func javaURLConnectionStatementLooksOwned(text string) bool {
@@ -268,7 +279,7 @@ func javaHTTPClientToParsedFunction(statement javaStatement, phase string) (Pars
 			fn.Args["Body"] = body
 		}
 		if contentType := javaHTTPContentTypeHint(text); contentType != "" {
-			fn.Headers["Content-Type"] = contentType
+			javaAddParsedHeader(&fn, "Content-Type", contentType)
 		}
 		return fn, true
 	}

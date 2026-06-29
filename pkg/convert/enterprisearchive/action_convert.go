@@ -73,12 +73,28 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, subTransactio
 	action.Metadata["original_url"] = rawURL
 
 	// Apply headers
+	for _, header := range fn.HeaderList {
+		name := strings.TrimSpace(header.Name)
+		if name == "" {
+			continue
+		}
+		value := convertParamReferences(header.Value)
+		action.HeaderList = append(action.HeaderList, dsl.HeaderEntry{Name: name, Value: value})
+		action.Headers[name] = value
+	}
 	for k, v := range fn.Headers {
+		if _, exists := headerValueCaseInsensitive(action.Headers, k); exists {
+			continue
+		}
 		action.Headers[k] = convertParamReferences(v)
 	}
 	if contentType := requestContentTypeFromFunction(fn); contentType != "" {
 		if _, exists := headerValueCaseInsensitive(action.Headers, "Content-Type"); !exists {
-			action.Headers["Content-Type"] = convertParamReferences(contentType)
+			value := convertParamReferences(contentType)
+			action.Headers["Content-Type"] = value
+			if len(action.HeaderList) > 0 {
+				action.HeaderList = append(action.HeaderList, dsl.HeaderEntry{Name: "Content-Type", Value: value})
+			}
 		}
 	}
 

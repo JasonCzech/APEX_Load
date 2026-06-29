@@ -653,6 +653,8 @@ public class Actions {
     HttpURLConnection conn = (HttpURLConnection) url.openConnection();
     conn.setRequestMethod("POST");
     conn.setRequestProperty("Content-Type", "application/json");
+    conn.addRequestProperty("Accept", "application/json");
+    conn.addRequestProperty("Accept", "text/plain");
     conn.setDoOutput(true);
     OutputStream os = conn.getOutputStream();
     os.write("{\"id\":\"{orderId}\"}".getBytes(StandardCharsets.UTF_8));
@@ -683,6 +685,19 @@ public class Actions {
 	}
 	if action.Headers["Content-Type"] != "application/json" || len(action.HeaderList) == 0 {
 		t.Fatalf("headers=%#v header_list=%#v, want ordered content type", action.Headers, action.HeaderList)
+	}
+	wantHeaders := dsl.HeaderList{
+		{Name: "Content-Type", Value: "application/json"},
+		{Name: "Accept", Value: "application/json"},
+		{Name: "Accept", Value: "text/plain"},
+	}
+	if len(action.HeaderList) < len(wantHeaders) {
+		t.Fatalf("header_list=%#v, want at least %#v", action.HeaderList, wantHeaders)
+	}
+	for i, want := range wantHeaders {
+		if action.HeaderList[i] != want {
+			t.Fatalf("header_list[%d]=%#v, want %#v in ordered duplicate header list %#v", i, action.HeaderList[i], want, action.HeaderList)
+		}
 	}
 	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) > 0 {
 		t.Fatalf("ValidateScriptIssues returned %v", issues)

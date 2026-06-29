@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 // ParsedFunction represents a single C/VUser source function call extracted from a script.
@@ -16,6 +18,7 @@ type ParsedFunction struct {
 	RawArgs      []string          // Raw string arguments in order
 	CallArgs     []ParsedArgument  // Structured top-level C call arguments in order
 	Headers      map[string]string // Extracted header key-value pairs
+	HeaderList   dsl.HeaderList    // Ordered header occurrences when the source preserves them
 	Body         string            // Request body if present
 	Method       string            // HTTP method (for web_custom_request)
 	URL          string            // Target URL
