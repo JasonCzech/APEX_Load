@@ -22,6 +22,7 @@ func TestWriteRunArchiveReportPDFWithProfile(t *testing.T) {
 		"Top Actions",
 		"Browser Metrics",
 		"Resource Peaks",
+		"Network Phase Breakdown",
 		"checkout: 42 tx",
 	} {
 		if !strings.Contains(engineerPDF, expected) {
@@ -60,6 +61,16 @@ func TestWriteRunArchiveReportPDFWithProfile(t *testing.T) {
 	}
 	if strings.Contains(auditPDF, "Top Actions") || strings.Contains(auditPDF, "Browser Metrics") {
 		t.Fatalf("audit pdf should omit engineer drilldown sections:\n%s", auditPDF)
+	}
+	// Audit is a compliance artifact: it must not leak performance-tuning metrics.
+	for _, forbidden := range []string{"Peak TPS", "Throughput gap", "Network Phase Breakdown"} {
+		if strings.Contains(auditPDF, forbidden) {
+			t.Fatalf("audit pdf should omit tuning metric %q:\n%s", forbidden, auditPDF)
+		}
+	}
+	// Network phases are an engineer-only section.
+	if strings.Contains(executivePDF, "Network Phase Breakdown") {
+		t.Fatalf("executive pdf should omit network-phase drilldown:\n%s", executivePDF)
 	}
 }
 
@@ -131,6 +142,16 @@ func samplePDFRunArchiveReport() *RunArchiveReport {
 		},
 		ByAction: map[string]RunArchiveActionStats{
 			"checkout": {Transactions: 42, Errors: 2, ErrorPct: 4.76, AvgResponseMs: 125, MinResponseMs: 75, MaxResponseMs: 390},
+		},
+		NetworkPhases: RunArchiveNetworkPhaseSummary{
+			Samples: 42,
+			Overall: RunArchiveNetworkPhases{
+				Count: 42, AvgDNSMs: 3.2, AvgConnectMs: 8.1, AvgTLSMs: 12.4, AvgTTFBMs: 95.6,
+				MaxDNSMs: 10, MaxConnectMs: 22, MaxTLSMs: 40, MaxTTFBMs: 320,
+			},
+			ByAction: map[string]RunArchiveNetworkPhases{
+				"checkout": {Count: 42, AvgDNSMs: 3.2, AvgConnectMs: 8.1, AvgTLSMs: 12.4, AvgTTFBMs: 95.6, MaxTTFBMs: 320},
+			},
 		},
 		ResourcePeaks: RunArchiveResourcePeaks{
 			CPUProcessPct: 67,

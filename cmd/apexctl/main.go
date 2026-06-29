@@ -32,6 +32,8 @@ func main() {
 		statusCmd()
 	case "wait":
 		waitCmd()
+	case "archive":
+		archiveCmd()
 	case "record":
 		recordCmd()
 	case "record-agent":
@@ -346,6 +348,7 @@ Commands:
   script    Validate or explain a JSON DSL script
   status    Print a test's current status + SLA verdict (exits 1 on breach/failure)
 	  wait      Block until a started test finishes, then report SLA verdict
+	  archive   Inspect an archived run (verify re-checks artifact SHA-256 integrity)
 	  record    Record a browser script with the embedded recorder (ranked selectors + side-car HAR)
 	  record-agent  Start the localhost browser recording bridge for a remote dashboard
 	  github    Inspect and run GitHub Enterprise sync/check workflows
@@ -383,4 +386,6 @@ Examples:
 	  apexctl github sync --api http://localhost:8080 --project <id> --kind import`)
 	fmt.Println()
 	fmt.Println(ctlUsage())
+	fmt.Println()
+	fmt.Println(archiveUsage())
 }

@@ -516,12 +516,17 @@ func buildRunArchiveGoalCompletion(provenance RunArchiveProvenance, overview Run
 func buildRunArchiveReportProfiles() []RunArchiveReportProfile {
 	return []RunArchiveReportProfile{
 		{
-			ID:               "executive",
-			Label:            "Executive Summary",
-			Description:      "Decision-focused summary with analyst commentary, supporting graphs, SLA verdict, error rate, throughput, completeness, and change attribution.",
-			Audience:         "Business stakeholders, release owners, and sign-off authorities.",
-			BestFor:          "Ship/no-ship decisions, business risk, SLA posture, and executive sign-off.",
-			ExportFormats:    []string{"html", "json", "csv", "pdf"},
+			ID:            "executive",
+			Label:         "Executive Summary",
+			Description:   "Decision-focused summary with analyst commentary, supporting graphs, SLA verdict, error rate, throughput, completeness, and change attribution.",
+			Audience:      "Business stakeholders, release owners, and sign-off authorities.",
+			BestFor:       "Ship/no-ship decisions, business risk, SLA posture, and executive sign-off.",
+			ExportFormats: []string{"html", "json", "csv", "pdf"},
+			// "release_trend" renders real release-over-release data: buildRunArchiveReport
+			// stays a pure single-record function, so the multi-run trend is attached at the
+			// storage-aware handler layer ((*Server).attachReleaseTrend) and the renderers
+			// gate the section on report.ReleaseTrend, degrading to a no-baseline/no-release
+			// note rather than a ghost.
 			IncludedSections: []string{"verdict", "executive_overview", "sla_rollup", "release_trend", "risk_summary", "recommendations", "signoff", "completeness", "change_attribution"},
 			SectionOrder:     []string{"verdict", "executive_overview", "sla_rollup", "release_trend", "risk_summary", "recommendations", "signoff", "completeness", "change_attribution"},
 		},
@@ -532,8 +537,8 @@ func buildRunArchiveReportProfiles() []RunArchiveReportProfile {
 			Audience:         "Performance engineers, SREs, developers, and test analysts.",
 			BestFor:          "Bottleneck isolation, regression diagnosis, resource saturation, and remediation planning.",
 			ExportFormats:    []string{"html", "json", "csv", "pdf", "jsonl", "parquet"},
-			IncludedSections: []string{"verdict", "technical_overview", "graphs", "sla_detail", "summary_timeline", "actions", "network_phases", "errors", "resources", "browser", "soap", "web2_migration", "root_cause", "raw_exports"},
-			SectionOrder:     []string{"verdict", "technical_overview", "graphs", "sla_detail", "summary_timeline", "actions", "network_phases", "errors", "resources", "browser", "soap", "web2_migration", "root_cause", "raw_exports"},
+			IncludedSections: []string{"verdict", "technical_overview", "graphs", "sla_detail", "summary_timeline", "actions", "network_phases", "errors", "resources", "browser", "soap", "web2_migration", "root_cause", "completeness", "schema_compatibility", "change_attribution", "raw_exports"},
+			SectionOrder:     []string{"verdict", "technical_overview", "graphs", "sla_detail", "summary_timeline", "actions", "network_phases", "errors", "resources", "browser", "soap", "web2_migration", "root_cause", "completeness", "schema_compatibility", "change_attribution", "raw_exports"},
 		},
 		{
 			ID:               "audit",

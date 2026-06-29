@@ -394,6 +394,22 @@ export interface ReleaseTrend {
   summary: ReleaseTrendSummary
 }
 
+// RunArchiveReleaseTrendSummary is the compact, single-run slice of the multi-run
+// release trend attached to an archive report's executive view: this run vs the
+// immediately prior run in the same release, plus the release-wide trajectory.
+export interface RunArchiveReleaseTrendSummary {
+  release_id: string
+  run_count: number
+  has_baseline: boolean
+  regressed: boolean
+  regressions?: string[]
+  current: ReleaseTrendPoint
+  baseline?: ReleaseTrendPoint
+  deltas?: ReleaseTrendDeltas
+  trajectory: ReleaseTrendSummary
+  note?: string
+}
+
 export type LoadComparisonScope = 'transaction' | 'group'
 
 export interface LoadComparisonOption {
@@ -691,6 +707,30 @@ export interface RunArchiveArtifact {
   count?: number
   size_bytes?: number
   sha256?: string
+}
+
+export interface RunArchiveIntegrityArtifact {
+  name: string
+  status: 'match' | 'mismatch' | 'missing' | 'unverifiable' | string
+  expected_sha256?: string
+  actual_sha256?: string
+  size_bytes?: number
+  detail?: string
+}
+
+export interface RunArchiveIntegrityReport {
+  schema_version: string
+  test_id: string
+  status: 'verified' | 'verified_partial' | 'tampered' | 'corrupt' | 'unverifiable' | string
+  verified: boolean
+  verified_at: string
+  summary: string
+  total: number
+  matched: number
+  mismatched: number
+  missing: number
+  unverifiable: number
+  artifacts?: RunArchiveIntegrityArtifact[]
 }
 
 export interface TestRunManifestIdentity {
@@ -1168,6 +1208,7 @@ export interface RunArchiveReport {
   report_profiles?: RunArchiveReportProfile[]
   network_phases?: RunArchiveNetworkPhaseSummary
   artifact_inventory?: RunArchiveArtifact[]
+  integrity?: RunArchiveIntegrityReport
   manifest: RunArchiveManifest
   overview: RunArchiveOverview
   evidence_tiers?: RunArchiveEvidenceTier[]
@@ -1187,6 +1228,7 @@ export interface RunArchiveReport {
   browser_by_device?: Record<string, BrowserDeviceLiveMetrics>
   browser_resources?: BrowserResourceTiming[]
   resource_peaks: RunArchiveResourcePeaks
+  release_trend?: RunArchiveReleaseTrendSummary
 }
 
 export interface RunArchiveNetworkPhaseSummary {

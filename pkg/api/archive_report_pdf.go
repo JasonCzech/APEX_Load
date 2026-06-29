@@ -92,6 +92,10 @@ func buildRunArchiveReportPDFLines(report *RunArchiveReport, profile RunArchiveR
 		lines = append(lines, "")
 	}
 
+	if hasCSVSection(sections, "release_trend") && report.ReleaseTrend != nil {
+		appendReleaseTrendPDFLines(&lines, report.ReleaseTrend)
+	}
+
 	if hasCSVSection(sections, "evidence_tiers") {
 		lines = append(lines, "Evidence Tiers")
 		for _, tier := range report.EvidenceTiers {
@@ -156,6 +160,13 @@ func buildRunArchiveReportPDFLines(report *RunArchiveReport, profile RunArchiveR
 
 	if hasCSVSection(sections, "artifact_inventory") {
 		lines = append(lines, "Artifact Integrity")
+		if report.Integrity != nil {
+			verdict := "VERIFIED"
+			if !report.Integrity.Verified {
+				verdict = strings.ToUpper(report.Integrity.Status)
+			}
+			lines = append(lines, fmt.Sprintf("Verification: %s - %s", verdict, report.Integrity.Summary))
+		}
 		for _, artifact := range report.ArtifactInventory {
 			hash := artifact.SHA256
 			if hash == "" {
@@ -181,6 +192,19 @@ func buildRunArchiveReportPDFLines(report *RunArchiveReport, profile RunArchiveR
 		if len(report.BySOAPOperation) > 0 {
 			appendPDFStatsSection(&lines, "SOAP Operations", report.BySOAPOperation, 8)
 		}
+	}
+
+	if hasCSVSection(sections, "network_phases") && report.NetworkPhases.Samples > 0 {
+		phases := report.NetworkPhases.Overall
+		lines = append(lines, "Network Phase Breakdown")
+		lines = append(lines,
+			fmt.Sprintf("Samples: %s", formatPDFInt(report.NetworkPhases.Samples)),
+			fmt.Sprintf("DNS: avg %.1f ms / max %.1f ms", phases.AvgDNSMs, phases.MaxDNSMs),
+			fmt.Sprintf("Connect: avg %.1f ms / max %.1f ms", phases.AvgConnectMs, phases.MaxConnectMs),
+			fmt.Sprintf("TLS: avg %.1f ms / max %.1f ms", phases.AvgTLSMs, phases.MaxTLSMs),
+			fmt.Sprintf("TTFB: avg %.1f ms / max %.1f ms", phases.AvgTTFBMs, phases.MaxTTFBMs),
+		)
+		lines = append(lines, "")
 	}
 
 	if hasCSVSection(sections, "summary_timeline") && len(report.SummaryTimeline) > 0 {
@@ -252,6 +276,36 @@ func formatPDFTimePtr(value *time.Time) string {
 		return ""
 	}
 	return formatPDFTime(*value)
+}
+
+func appendReleaseTrendPDFLines(lines *[]string, trend *RunArchiveReleaseTrendSummary) {
+	if trend == nil {
+		return
+	}
+	*lines = append(*lines, "Release Trend")
+	*lines = append(*lines, fmt.Sprintf("Release: %s (%d archived run(s))", firstNonEmptyPDFValue(trend.ReleaseID), trend.RunCount))
+	if trend.HasBaseline && trend.Baseline != nil && trend.Deltas != nil {
+		baseline := trend.Baseline
+		*lines = append(*lines,
+			fmt.Sprintf("Baseline (prior run): %s, completed %s", firstNonEmptyPDFValue(baseline.RunName, baseline.RunID), formatPDFTime(baseline.CompletedAt)),
+			fmt.Sprintf("Error rate: %.2f%% -> %.2f%% (%+.2f pp)", baseline.ErrorPct, trend.Current.ErrorPct, trend.Deltas.ErrorPctDelta),
+			fmt.Sprintf("Avg response: %.1f ms -> %.1f ms (%+.1f ms / %+.1f%%)", baseline.AvgResponseMs, trend.Current.AvgResponseMs, trend.Deltas.AvgResponseMsDelta, trend.Deltas.AvgResponsePctDelta),
+			fmt.Sprintf("Peak TPS: %.1f -> %.1f (%+.1f)", baseline.PeakTPS, trend.Current.PeakTPS, trend.Deltas.PeakTPSDelta),
+			fmt.Sprintf("Completeness: %.0f%% -> %.0f%% (%+.1f pts)", baseline.CompletenessPct, trend.Current.CompletenessPct, trend.Deltas.CompletenessDelta),
+		)
+		if trend.Regressed {
+			*lines = append(*lines, "Regressions vs prior run: "+strings.Join(trend.Regressions, "; "))
+		} else {
+			*lines = append(*lines, "No regressions versus the prior run.")
+		}
+	} else {
+		note := trend.Note
+		if note == "" {
+			note = "First archived run for this release; no prior run to compare against."
+		}
+		*lines = append(*lines, note)
+	}
+	*lines = append(*lines, "")
 }
 
 func appendPDFStatsSection(lines *[]string, title string, stats map[string]RunArchiveActionStats, limit int) {

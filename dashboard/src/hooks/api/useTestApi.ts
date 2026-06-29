@@ -20,6 +20,7 @@ import {
   ReportAnnotationsResponse,
   RemoteRunProxyResponse,
   RunArchiveAnalysisResponse,
+  RunArchiveIntegrityReport,
   RunArchiveManifest,
   RunArchiveReport,
   RunCalendarResponse,
@@ -489,6 +490,11 @@ export function useTestApi() {
 
   const getTestArchiveManifest = useCallback((id: string) => request<RunArchiveManifest>(`/tests/${id}/archive/manifest`), [])
 
+  const verifyTestArchive = useCallback(
+    (id: string) => request<RunArchiveIntegrityReport>(`/tests/${id}/archive/verify`),
+    [],
+  )
+
   const getTestArchiveTransactions = useCallback(
     (id: string, params?: ArchiveTransactionsParams) => {
       const suffix = buildQuery({
@@ -679,6 +685,7 @@ export function useTestApi() {
       getTestErrorEvidence,
       getTestManifest,
       getTestArchiveManifest,
+      verifyTestArchive,
       getTestArchiveTransactions,
       getTestArchiveResources,
       getTestArchiveSummaries,
@@ -755,6 +762,7 @@ export function useTestApi() {
       getTestErrorEvidence,
       getTestManifest,
       getTestArchiveManifest,
+      verifyTestArchive,
       getTestArchiveTransactions,
       getTestArchiveResources,
       getTestArchiveSummaries,

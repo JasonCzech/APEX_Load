@@ -387,6 +387,47 @@
   border-bottom: 0;
 }
 
+.report-integrity-banner {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  margin: 10px 0 14px;
+  border-radius: 8px;
+  border: 1px solid;
+  font-size: 13px;
+}
+
+.report-integrity-banner.pass {
+  background: rgba(26, 110, 60, 0.12);
+  border-color: rgba(26, 110, 60, 0.4);
+  color: #1a6e3c;
+}
+
+.report-integrity-banner.caution {
+  background: rgba(138, 97, 0, 0.12);
+  border-color: rgba(138, 97, 0, 0.4);
+  color: #8a6100;
+}
+
+.report-integrity-banner.fail {
+  background: rgba(180, 35, 24, 0.12);
+  border-color: rgba(180, 35, 24, 0.4);
+  color: #b42318;
+}
+
+.report-integrity-label {
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.report-integrity-summary {
+  color: var(--ink);
+}
+
 .report-list {
   margin: 0;
   padding-left: 20px;

@@ -4163,6 +4163,16 @@
       "access": "Requires Authentication (Role based on specific entity)"
     },
     {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/archive/verify",
+      "operationId": "handleVerifyRunArchive",
+      "summary": "Verify Run Archive",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
       "method": "DELETE",
       "path": "/api/v1/tests/{id}/comparison-baseline/pin",
       "operationId": "handleUnpinComparisonBaseline",

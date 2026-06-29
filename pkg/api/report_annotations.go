@@ -215,7 +215,6 @@ func defaultReportAnnotations(report *RunArchiveReport, testID, profile string) 
 		ann.SectionComments["business_impact"] = fmt.Sprintf("Customer-facing risk is driven by %.2f%% errors and %.1f ms average response time.", ov.ErrorPct, ov.AvgResponseMs)
 		ann.SectionComments["sla"] = defaultSLAComment(slaBreached, slaDetails)
 		ann.SectionComments["risks"] = defaultRiskComment(report)
-		ann.SectionComments["errors"] = defaultRiskComment(report)
 		ann.SectionComments["recommendations"] = "Document sign-off recommendation, owner, and any accepted risk."
 	case "audit":
 		ann.ExecutiveNarrative = fmt.Sprintf(

@@ -7308,6 +7308,26 @@ paths:
             type: string
       tags:
         - Tests
+  /api/v1/tests/{id}/archive/verify:
+    get:
+      summary: Verify Run Archive
+      description: |-
+        **Handler:** `handleVerifyRunArchive`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleVerifyRunArchive
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Tests
   /api/v1/tests/{id}/comparison-baseline/pin:
     delete:
       summary: Unpin Comparison Baseline

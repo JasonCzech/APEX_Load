@@ -41,6 +41,7 @@ type runArchiveHTMLReportData struct {
 	GeneratedAt           time.Time
 	Report                *RunArchiveReport
 	Profile               RunArchiveReportProfile
+	sections              map[string]struct{}
 	Annotations           *ReportAnnotations
 	CommentarySections    []reportCommentarySection
 	Charts                reportCharts
@@ -61,6 +62,18 @@ type runArchiveHTMLReportData struct {
 	BrowserEngineRows     []*BrowserEngineLiveMetrics
 	BrowserPlatformRows   []*BrowserPlatformLiveMetrics
 	BrowserDeviceRows     []*BrowserDeviceLiveMetrics
+}
+
+// Has reports whether the active report profile declares the named section in
+// its IncludedSections. The HTML templates gate every distinct content block on
+// this so that editing a profile's IncludedSections changes the rendered output,
+// exactly like the PDF/CSV renderers. The membership set is built (and aliased)
+// by stringSet, the same helper the CSV renderer uses, so all three formats gate
+// identically. A zero-value report (nil sections map) returns false for every
+// section, which renders only the ungated structural chrome.
+func (d runArchiveHTMLReportData) Has(section string) bool {
+	_, ok := d.sections[section]
+	return ok
 }
 
 var profileHTMLFuncMap = template.FuncMap{
@@ -95,6 +108,14 @@ var profileHTMLFuncMap = template.FuncMap{
 	},
 	"join": func(values []string) string {
 		return strings.Join(values, ", ")
+	},
+	// signed/signedPct render run-over-run deltas with an explicit +/- so a
+	// regression reads at a glance in the release-trend table.
+	"signed": func(value float64) string {
+		return fmt.Sprintf("%+.1f", value)
+	},
+	"signedPct": func(value float64) string {
+		return fmt.Sprintf("%+.2f%%", value)
 	},
 }
 
@@ -141,10 +162,13 @@ var executiveRunArchiveReportTemplate = template.Must(template.New("run-archive-
     <div class="eyebrow">Business Verdict</div>
     <h1>{{if .Annotations.Title}}{{.Annotations.Title}}{{else}}{{.Report.Manifest.TestName}}{{end}}</h1>
     <p class="subtitle">{{.Profile.BestFor}}{{if .Annotations.PreparedBy}} Prepared by {{.Annotations.PreparedBy}}.{{end}}</p>
+    {{if .Has "verdict"}}
     <div class="verdict">
       <div class="verdict-badge {{if .Verdict.Failed}}fail{{else if .Verdict.Conditional}}conditional{{end}}">{{.Verdict.Status}}</div>
       <div class="verdict-body {{if .Verdict.Failed}}fail{{else if .Verdict.Conditional}}conditional{{end}}">{{.Verdict.Explanation}}</div>
     </div>
+    {{end}}
+    {{if .Has "executive_overview"}}
     <div class="kpis">
       <div class="kpi"><b>Peak TPS</b><span>{{formatFloat .Report.Overview.PeakTPS}}</span></div>
       <div class="kpi"><b>Overall p95</b><span>{{f0 .Report.Overview.P95Ms}} ms</span></div>
@@ -155,6 +179,8 @@ var executiveRunArchiveReportTemplate = template.Must(template.New("run-archive-
     <p>{{.Annotations.ExecutiveNarrative}}</p>
     {{with index .Annotations.SectionComments "decision"}}<p>{{.}}</p>{{end}}
     {{with index .Annotations.SectionComments "business_impact"}}<p>{{.}}</p>{{end}}
+    {{end}}
+    {{if .Has "sla_rollup"}}
     <h2>SLA Scorecard</h2>
     <table>
       <thead><tr><th>Transaction</th><th class="num">Volume</th><th class="num">p95</th><th class="num">SLA</th><th>Result</th></tr></thead>
@@ -165,14 +191,50 @@ var executiveRunArchiveReportTemplate = template.Must(template.New("run-archive-
       </tbody>
     </table>
     {{with index .Annotations.SectionComments "sla"}}<p>{{.}}</p>{{end}}
+    {{end}}
+    {{if .Has "release_trend"}}
+    <h2>Release Trend</h2>
+    {{with .Report.ReleaseTrend}}
+      {{if .HasBaseline}}
+      <p class="muted">This run vs the prior run in release <strong>{{.ReleaseID}}</strong> (baseline {{if .Baseline.RunName}}{{.Baseline.RunName}}{{else}}{{.Baseline.RunID}}{{end}}{{if not .Baseline.CompletedAt.IsZero}}, completed {{formatTime .Baseline.CompletedAt}}{{end}}; {{.RunCount}} archived run(s)).</p>
+      <table>
+        <thead><tr><th>Metric</th><th class="num">Prior run</th><th class="num">This run</th><th class="num">Change</th></tr></thead>
+        <tbody>
+          <tr><td>Error rate</td><td class="num">{{formatPercent .Baseline.ErrorPct}}</td><td class="num">{{formatPercent .Current.ErrorPct}}</td><td class="num">{{signed .Deltas.ErrorPctDelta}} pp</td></tr>
+          <tr><td>Avg response</td><td class="num">{{f0 .Baseline.AvgResponseMs}} ms</td><td class="num">{{f0 .Current.AvgResponseMs}} ms</td><td class="num">{{signed .Deltas.AvgResponseMsDelta}} ms ({{signedPct .Deltas.AvgResponsePctDelta}})</td></tr>
+          <tr><td>Peak TPS</td><td class="num">{{formatFloat .Baseline.PeakTPS}}</td><td class="num">{{formatFloat .Current.PeakTPS}}</td><td class="num">{{signed .Deltas.PeakTPSDelta}}</td></tr>
+          <tr><td>Completeness</td><td class="num">{{f0 .Baseline.CompletenessPct}}%</td><td class="num">{{f0 .Current.CompletenessPct}}%</td><td class="num">{{signed .Deltas.CompletenessDelta}} pts</td></tr>
+        </tbody>
+      </table>
+      {{if .Regressed}}<div class="finding"><strong>Regressions vs prior run</strong><p>{{join .Regressions}}</p></div>{{else}}<p class="muted">No regressions detected versus the prior run.</p>{{end}}
+      {{else}}
+      <p class="muted">{{if .Note}}{{.Note}}{{else}}First archived run for this release; no prior run to compare against.{{end}}</p>
+      {{end}}
+    {{else}}
+    <p class="muted">This run is not associated with a release, so release-over-release trend analysis is unavailable.</p>
+    {{end}}
+    {{end}}
+    {{if .Has "risk_summary"}}
     <h2>Top Risks</h2>
     {{range .Findings}}
       <div class="finding"><strong>{{.ID}} · {{.Title}}</strong>{{if .Impact}}<p>{{.Impact}}</p>{{else if .Observed}}<p>{{.Observed}}</p>{{end}}</div>
     {{else}}<p class="muted">No material release risks were derived from the archive.</p>{{end}}
     {{with index .Annotations.SectionComments "risks"}}<p>{{.}}</p>{{end}}
+    {{end}}
+    {{if .Has "completeness"}}
+    <h2>Run Context &amp; Confidence</h2>
+    <div class="kpis">
+      <div class="kpi"><b>Data completeness</b><span>{{f0 .Report.Completeness.ScorePct}}%</span></div>
+      <div class="kpi"><b>Environment</b><span>{{if .Report.ChangeAttribution.Environment}}{{.Report.ChangeAttribution.Environment}}{{else}}—{{end}}</span></div>
+      <div class="kpi"><b>Scenario revision</b><span>{{if .Report.ChangeAttribution.ScenarioRevision}}{{.Report.ChangeAttribution.ScenarioRevision}}{{else}}—{{end}}</span></div>
+      <div class="kpi"><b>Runtime overrides</b><span>{{if .Report.ChangeAttribution.RuntimeOverrides}}Yes{{else}}No{{end}}</span></div>
+    </div>
+    {{end}}
+    {{if .Has "signoff"}}
     <h2>Recommendation & Sign-Off</h2>
     {{with index .Annotations.SectionComments "recommendations"}}<p>{{.}}</p>{{end}}
     <div class="signoff"><div><b>Prepared by</b><div class="line"></div></div><div><b>Approver</b><div class="line"></div></div><div><b>Decision date</b><div class="line"></div></div></div>
+    {{end}}
   </div>
 </div>
 </body>
@@ -201,6 +263,11 @@ var auditRunArchiveReportTemplate = template.Must(template.New("run-archive-audi
     .verdict { display: inline-block; padding: 4px 10px; border-radius: 999px; background: #e6f4ed; color: #1a6e3c; font-weight: 700; }
     .verdict.fail { background: #fbe9e7; color: #b42318; }
     .verdict.conditional { background: #fdf3da; color: #8a6100; }
+    .integrity-banner { display: flex; align-items: baseline; gap: 10px; padding: 12px 16px; border-radius: 8px; margin: 10px 0 16px; font-size: 13px; border: 1px solid; }
+    .integrity-banner.pass { background: #e6f4ed; color: #1a6e3c; border-color: #b7e0c6; }
+    .integrity-banner.caution { background: #fdf3da; color: #8a6100; border-color: #f0deb0; }
+    .integrity-banner.fail { background: #fbe9e7; color: #b42318; border-color: #f3c2bb; }
+    .integrity-banner .integrity-label { font-weight: 800; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
     @media print { body { background: #fff; } .page { box-shadow: none; margin: 0; } }
   </style>
 </head>
@@ -211,8 +278,11 @@ var auditRunArchiveReportTemplate = template.Must(template.New("run-archive-audi
     <div class="eyebrow">Governance Evidence</div>
     <h1>{{if .Annotations.Title}}{{.Annotations.Title}}{{else}}{{.Report.Manifest.TestName}} Audit Report{{end}}</h1>
     <p class="muted">{{.Profile.BestFor}}</p>
+    {{if .Has "official_outcome"}}
     <h2>Official Outcome</h2>
     <p><span class="verdict {{if .Verdict.Failed}}fail{{else if .Verdict.Conditional}}conditional{{end}}">{{.Verdict.Status}}</span> {{.Verdict.Explanation}}</p>
+    {{end}}
+    {{if .Has "audit_identity"}}
     <h2>Run Identity & Authorization</h2>
     <table><tbody>
       <tr><th>Test ID</th><td class="mono">{{.Report.Manifest.TestID}}</td><th>Run name</th><td>{{.Report.Manifest.TestName}}</td></tr>
@@ -223,6 +293,8 @@ var auditRunArchiveReportTemplate = template.Must(template.New("run-archive-audi
       <tr><th>Stopped by</th><td>{{.StoppedByDisplayName}} <span class="mono">{{.StoppedBySubject}}</span></td><th>Scheduled start</th><td>{{if .ScheduledStartAt}}{{formatTime .ScheduledStartAt}}{{else}}n/a{{end}}</td></tr>
       {{end}}{{end}}
     </tbody></table>
+    {{end}}
+    {{if .Has "governance"}}
     <h2>Governance & Provenance</h2>
     <table><tbody>
       <tr><th>Environment</th><td>{{if .Report.ChangeAttribution.Environment}}{{.Report.ChangeAttribution.Environment}}{{else}}n/a{{end}}</td><th>Runtime overrides</th><td>{{if .Report.ChangeAttribution.RuntimeOverrides}}{{join .Report.ChangeAttribution.RuntimeOverrideFields}}{{else}}none{{end}}</td></tr>
@@ -231,6 +303,8 @@ var auditRunArchiveReportTemplate = template.Must(template.New("run-archive-audi
       {{with .Report.Manifest.Provenance.Governance}}<tr><th>Capacity reservation</th><td>{{if .CapacityReservationID}}{{.CapacityReservationID}}{{else}}n/a{{end}}</td><th>Launch status</th><td>{{if .LaunchPreflight}}{{.LaunchPreflight.Status}}{{else}}n/a{{end}}</td></tr>
       {{with .ExecutionPlanApproval}}<tr><th>Execution-plan approval</th><td>{{if .ID}}{{.ID}}{{else}}n/a{{end}} · {{if .Status}}{{.Status}}{{else}}n/a{{end}}</td><th>Approved by</th><td>{{if .ResolvedBy}}{{.ResolvedBy}}{{else}}n/a{{end}} · {{if .DecisionReason}}{{.DecisionReason}}{{else}}no reason captured{{end}}</td></tr>{{end}}{{end}}
     </tbody></table>
+    {{end}}
+    {{if .Has "evidence_tiers"}}
     <h2>Completeness & Evidence Tiers</h2>
     <p>Completeness score: <strong>{{formatFloat .Report.Completeness.ScorePct}}%</strong> ({{.Report.Completeness.Status}}).</p>
     <table><thead><tr><th>Tier</th><th>Status</th><th class="num">Count</th><th>Notes</th></tr></thead><tbody>
@@ -241,15 +315,21 @@ var auditRunArchiveReportTemplate = template.Must(template.New("run-archive-audi
       {{range .Report.Completeness.Findings}}<tr><td>{{.Dimension}}</td><td>{{.Severity}}</td><td>{{.Message}}</td></tr>{{end}}
     </tbody></table>
     {{end}}
+    {{end}}
+    {{if .Has "artifact_integrity"}}
     <h2>Artifact Integrity</h2>
+    {{with .Report.Integrity}}<div class="integrity-banner {{if eq .Status "verified"}}pass{{else if eq .Status "verified_partial"}}caution{{else}}fail{{end}}"><span class="integrity-label">{{if eq .Status "verified"}}&#10003; Integrity Verified{{else if eq .Status "verified_partial"}}&#9888; Integrity Partially Verified{{else}}&#10007; Integrity {{.Status}}{{end}}</span><span>{{.Summary}}</span></div>{{end}}
     <table><thead><tr><th>Artifact</th><th>Type</th><th class="num">Records</th><th class="num">Bytes</th><th>SHA-256</th></tr></thead><tbody>
       {{range .Report.ArtifactInventory}}<tr><td class="mono">{{.Name}}</td><td>{{.RecordType}} {{.Format}}</td><td class="num">{{.Count}}</td><td class="num">{{.SizeBytes}}</td><td class="mono">{{if .SHA256}}{{.SHA256}}{{else}}not captured{{end}}</td></tr>{{else}}<tr><td colspan="5" class="muted">No artifact inventory was available.</td></tr>{{end}}
     </tbody></table>
+    {{end}}
+    {{if .Has "report_authorship"}}
     <h2>Report Authorship / Edit Trail</h2>
     <table><tbody>
       <tr><th>Prepared by</th><td>{{if .Annotations.PreparedBy}}{{.Annotations.PreparedBy}}{{else}}n/a{{end}}</td><th>Updated by</th><td>{{if .Annotations.UpdatedBy}}{{.Annotations.UpdatedBy}}{{else}}n/a{{end}}</td></tr>
       <tr><th>Updated at</th><td>{{formatTime .Annotations.UpdatedAt}}</td><th>Verdict override</th><td>{{if .Annotations.VerdictOverride}}{{.Annotations.VerdictOverride}} — {{.Annotations.VerdictExplanation}}{{else}}none{{end}}</td></tr>
     </tbody></table>
+    {{end}}
     <h2>Analyst Notes</h2>
     <p>{{.Annotations.ExecutiveNarrative}}</p>
     {{range $section := .CommentarySections}}{{with $comment := index $.Annotations.SectionComments $section.ID}}<p><strong>{{$section.Label}}</strong>: {{$comment}}</p>{{end}}{{end}}
@@ -464,10 +544,12 @@ var runArchiveReportTemplate = template.Must(template.New("run-archive-report").
   <div class="meta-cell"><b>Profile</b><span>{{.Profile.Label}}</span></div>
 </div>
 
+{{if .Has "verdict"}}
 <div class="verdict">
   <div class="verdict-badge {{if .Verdict.Failed}}fail{{else if .Verdict.Conditional}}conditional{{end}}">{{.Verdict.Status}}</div>
   <div class="verdict-body {{if .Verdict.Failed}}fail{{else if .Verdict.Conditional}}conditional{{end}}">{{.Verdict.Explanation}}</div>
 </div>
+{{end}}
 
 <h2><span class="sec-no">§</span>Contents</h2>
 <nav class="toc">
@@ -483,12 +565,15 @@ var runArchiveReportTemplate = template.Must(template.New("run-archive-report").
   <a href="#a4"><span class="mono">D</span>Appendix D — Engineering diagnostics</a>
 </nav>
 
+{{if .Has "verdict"}}
 <h2 id="s1"><span class="sec-no">1</span>Executive summary</h2>
 <div class="analyst">
   {{if .Annotations.ExecutiveNarrative}}<p>{{.Annotations.ExecutiveNarrative}}</p>{{end}}
   {{with index .Annotations.SectionComments "overview"}}<p>{{.}}</p>{{end}}
 </div>
+{{end}}
 
+{{if .Has "technical_overview"}}
 <h2 id="s2"><span class="sec-no">2</span>Run at a glance</h2>
 <div class="kpis">
   <div class="kpi"><b>Peak throughput</b><div class="v">{{formatFloat .Report.Overview.PeakTPS}} <small>TPS</small></div><div class="d">{{if gt .Report.Overview.PeakTargetTPS 0.0}}target {{formatFloat .Report.Overview.PeakTargetTPS}}{{else}}observed peak{{end}}</div></div>
@@ -506,7 +591,9 @@ var runArchiveReportTemplate = template.Must(template.New("run-archive-report").
 <tr><td>Telemetry health</td><td class="num">{{if .Report.Overview.Telemetry}}{{.Report.Overview.Telemetry.Status}}{{else}}n/a{{end}}</td><td>Data completeness</td><td class="num">{{formatFloat .Report.Completeness.ScorePct}}%</td></tr>
 <tr><td>Interval summaries</td><td class="num">{{.Report.Overview.IntervalSummaries}}</td><td>Resource samples</td><td class="num">{{.Report.Overview.ResourceSamples}}</td></tr>
 </tbody></table>
+{{end}}
 
+{{if .Has "sla_detail"}}
 <h2 id="s3"><span class="sec-no">3</span>SLA compliance</h2>
 <table>
 <caption>Table 3.1 — SLA evaluation by transaction (p95 vs configured latency SLA; full results in run archive)</caption>
@@ -519,7 +606,9 @@ var runArchiveReportTemplate = template.Must(template.New("run-archive-report").
 {{end}}
 </tbody></table>
 {{with index .Annotations.SectionComments "sla"}}<div class="analyst"><p>{{.}}</p></div>{{end}}
+{{end}}
 
+{{if .Has "graphs"}}
 <h2 id="s4"><span class="sec-no">4</span>Performance analysis</h2>
 {{if or .Charts.HasTimeline .Charts.HasActions}}
 <div class="charts">
@@ -530,7 +619,9 @@ var runArchiveReportTemplate = template.Must(template.New("run-archive-report").
 <p class="muted">No interval timeline was captured for this run, so time-series graphs are unavailable.</p>
 {{end}}
 {{with index .Annotations.SectionComments "performance"}}<div class="analyst"><p>{{.}}</p></div>{{end}}
+{{end}}
 
+{{if .Has "errors"}}
 <h2 id="s5"><span class="sec-no">5</span>Findings</h2>
 {{range .Findings}}
 <div class="finding">
@@ -546,6 +637,7 @@ var runArchiveReportTemplate = template.Must(template.New("run-archive-report").
 <p class="muted">No automated findings were derived; the run completed without notable issues.</p>
 {{end}}
 {{with index .Annotations.SectionComments "errors"}}<div class="analyst"><p>{{.}}</p></div>{{end}}
+{{end}}
 
 <h2 id="s6"><span class="sec-no">6</span>Recommendations</h2>
 <div class="analyst">
@@ -656,6 +748,7 @@ certification is final.</p>
 
 <h2 id="a4" class="appendix-h"><span class="sec-no">D</span>Appendix D — Engineering diagnostics</h2>
 
+{{if .Has "completeness"}}
 <h3>Completeness Score</h3>
 <p class="section-copy">{{formatFloat .Report.Completeness.ScorePct}}% — {{.Report.Completeness.Status}}</p>
 {{if .Report.Completeness.Findings}}
@@ -668,7 +761,9 @@ certification is final.</p>
   </tbody>
 </table>
 {{end}}
+{{end}}
 
+{{if .Has "schema_compatibility"}}
 <h3>Schema Compatibility</h3>
 <p class="section-copy">Report schema {{.Report.SchemaVersion}} is {{.Report.Compatibility.Status}} with archive manifest {{.Report.Compatibility.ManifestSchemaVersion}}.</p>
 <table>
@@ -679,7 +774,9 @@ certification is final.</p>
     {{end}}
   </tbody>
 </table>
+{{end}}
 
+{{if .Has "change_attribution"}}
 <h3>Change Attribution</h3>
 <div class="overview">
   <div class="metric"><span class="metric-label">Scripts</span><span class="metric-value">{{if .Report.ChangeAttribution.ScriptRevisions}}{{join .Report.ChangeAttribution.ScriptRevisions}}{{else}}n/a{{end}}</span></div>
@@ -687,7 +784,9 @@ certification is final.</p>
   <div class="metric"><span class="metric-label">Environment</span><span class="metric-value">{{if .Report.ChangeAttribution.Environment}}{{.Report.ChangeAttribution.Environment}}{{else}}n/a{{end}}</span></div>
   <div class="metric"><span class="metric-label">Generators</span><span class="metric-value">{{if .Report.ChangeAttribution.GeneratorVersions}}{{join .Report.ChangeAttribution.GeneratorVersions}}{{else}}n/a{{end}}</span></div>
 </div>
+{{end}}
 
+{{if .Has "summary_timeline"}}
 {{if .Report.SummaryTimeline}}
 <h3>Summary Timeline</h3>
 <table>
@@ -699,7 +798,9 @@ certification is final.</p>
   </tbody>
 </table>
 {{end}}
+{{end}}
 
+{{if .Has "errors"}}
 {{if .Report.ErrorPatterns}}
 <h3>Error Patterns</h3>
 <table>
@@ -711,7 +812,9 @@ certification is final.</p>
   </tbody>
 </table>
 {{end}}
+{{end}}
 
+{{if .Has "resources"}}
 <h3>Resource Peaks</h3>
 <div class="overview">
   <div class="metric"><span class="metric-label">CPU Peak</span><span class="metric-value">{{formatFloat .Report.ResourcePeaks.CPUProcessPct}}%</span></div>
@@ -719,7 +822,25 @@ certification is final.</p>
   <div class="metric"><span class="metric-label">Net Sent Peak</span><span class="metric-value">{{formatFloat .Report.ResourcePeaks.NetSentKbps}} KB/s</span></div>
   <div class="metric"><span class="metric-label">Net Recv Peak</span><span class="metric-value">{{formatFloat .Report.ResourcePeaks.NetRecvKbps}} KB/s</span></div>
 </div>
+{{end}}
 
+{{if .Has "network_phases"}}
+{{if .Report.NetworkPhases.Samples}}
+<h3>Network Phase Breakdown</h3>
+<p class="section-copy">Connection-time decomposition across {{.Report.NetworkPhases.Samples}} measured transaction(s).</p>
+<table>
+  <thead><tr><th>Phase</th><th class="num">Avg (ms)</th><th class="num">Max (ms)</th></tr></thead>
+  <tbody>
+    <tr><td>DNS</td><td class="num">{{f0 .Report.NetworkPhases.Overall.AvgDNSMs}}</td><td class="num">{{f0 .Report.NetworkPhases.Overall.MaxDNSMs}}</td></tr>
+    <tr><td>Connect (TCP)</td><td class="num">{{f0 .Report.NetworkPhases.Overall.AvgConnectMs}}</td><td class="num">{{f0 .Report.NetworkPhases.Overall.MaxConnectMs}}</td></tr>
+    <tr><td>TLS handshake</td><td class="num">{{f0 .Report.NetworkPhases.Overall.AvgTLSMs}}</td><td class="num">{{f0 .Report.NetworkPhases.Overall.MaxTLSMs}}</td></tr>
+    <tr><td>TTFB (server + transfer)</td><td class="num">{{f0 .Report.NetworkPhases.Overall.AvgTTFBMs}}</td><td class="num">{{f0 .Report.NetworkPhases.Overall.MaxTTFBMs}}</td></tr>
+  </tbody>
+</table>
+{{end}}
+{{end}}
+
+{{if .Has "actions"}}
 <h3>Action Summary</h3>
 <table>
   <thead><tr><th>Action</th><th class="num">Transactions</th><th class="num">Errors</th><th class="num">Error %</th><th class="num">Avg (ms)</th><th class="num">Max (ms)</th></tr></thead>
@@ -731,7 +852,9 @@ certification is final.</p>
     {{end}}
   </tbody>
 </table>
+{{end}}
 
+{{if .Has "browser"}}
 {{if .Report.Overview.Browser}}
 <h3>Browser Metrics</h3>
 <div class="overview">
@@ -776,7 +899,9 @@ certification is final.</p>
 </table>
 {{end}}
 {{end}}
+{{end}}
 
+{{if .Has "soap"}}
 {{if or .SOAPOperationRows .SOAPFaultCodeRows .SOAPFaultBuckets .SOAPPayloadBuckets}}
 <h3>SOAP Diagnostics</h3>
 {{if .SOAPOperationRows}}
@@ -833,6 +958,7 @@ certification is final.</p>
     {{end}}
   </tbody>
 </table>
+{{end}}
 {{end}}
 {{end}}
 
@@ -926,6 +1052,7 @@ func renderRunArchiveHTMLReportWithAnnotations(report *RunArchiveReport, profile
 		GeneratedAt:           time.Now().UTC(),
 		Report:                report,
 		Profile:               profile,
+		sections:              stringSet(profile.IncludedSections),
 		Annotations:           annotations,
 		CommentarySections:    reportCommentarySectionOrder(profile.ID),
 		Charts:                buildReportCharts(report),

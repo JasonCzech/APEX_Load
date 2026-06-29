@@ -3,6 +3,8 @@ package api
 import (
 	"log/slog"
 	"net/http"
+	"slices"
+	"strings"
 )
 
 func (s *Server) handleGetReleaseTrendExport(w http.ResponseWriter, r *http.Request) {
@@ -51,4 +53,52 @@ func (s *Server) collectReleaseTrendRuns(releaseID string) ([]releaseTrendRun, e
 		runs = append(runs, releaseTrendRun{Test: test, Report: report})
 	}
 	return runs, nil
+}
+
+// attachReleaseTrend enriches a freshly built archive report with the compact
+// release-over-release trend summary. It is the storage-aware counterpart to the
+// pure buildRunArchiveReport: it reads the run's release id from provenance, runs
+// the multi-run release-trend analysis over the release's archived siblings, and
+// distills this run's slice of it.
+//
+// Best-effort: a run with no release association or an unreadable sibling archive
+// simply leaves report.ReleaseTrend nil so the report still renders. Note this
+// collects and rebuilds every archived report in the release (the same cost as the
+// /releases/{id}/trend endpoint); it is on-demand only, never on the live path.
+func (s *Server) attachReleaseTrend(report *RunArchiveReport) {
+	if report == nil || report.Manifest == nil {
+		return
+	}
+	releaseID := strings.TrimSpace(report.Manifest.Provenance.ReleaseID)
+	if releaseID == "" {
+		return
+	}
+	runs, err := s.collectReleaseTrendRuns(releaseID)
+	if err != nil {
+		slog.Warn("archive report: release trend unavailable",
+			"release", releaseID, "test", report.Manifest.TestID, "err", err)
+		return
+	}
+	report.ReleaseTrend = buildRunArchiveReleaseTrendSummary(buildReleaseTrend(releaseID, runs), report.Manifest.TestID)
+}
+
+// attachReleaseTrendForProfile attaches the release-trend summary only when the
+// named profile actually renders the release_trend section, sparing the multi-run
+// collection cost for profiles (engineer/audit) that never display it.
+func (s *Server) attachReleaseTrendForProfile(report *RunArchiveReport, profileID string) {
+	if !profileIncludesReleaseTrend(profileID) {
+		return
+	}
+	s.attachReleaseTrend(report)
+}
+
+// profileIncludesReleaseTrend reports whether the resolved report profile declares
+// the release_trend section. An empty/unknown id resolves through the same default
+// (engineer) the renderers use, which does not include the section.
+func profileIncludesReleaseTrend(profileID string) bool {
+	profile, ok := lookupRunArchiveReportProfile(profileID)
+	if !ok {
+		return false
+	}
+	return slices.Contains(profile.IncludedSections, "release_trend")
 }

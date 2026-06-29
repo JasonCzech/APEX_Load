@@ -41,8 +41,13 @@ func TestDefaultReportAnnotationsSeedsBreachText(t *testing.T) {
 	if sla := ann.SectionComments["sla"]; !strings.Contains(sla, "P95 latency breached threshold") {
 		t.Fatalf("sla comment should include SLA detail, got %q", sla)
 	}
-	if errs := ann.SectionComments["errors"]; !strings.Contains(errs, "HTTP 500 on /checkout") {
-		t.Fatalf("errors comment should mention top error pattern, got %q", errs)
+	// The executive profile surfaces error context through its rendered "risks"
+	// section, not an orphaned "errors" key.
+	if risks := ann.SectionComments["risks"]; !strings.Contains(risks, "HTTP 500 on /checkout") {
+		t.Fatalf("risks comment should mention top error pattern, got %q", risks)
+	}
+	if _, ok := ann.SectionComments["errors"]; ok {
+		t.Fatalf("executive profile should not seed an unrendered errors comment")
 	}
 }
 

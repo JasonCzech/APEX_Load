@@ -488,6 +488,92 @@ func TestWriteRunArchiveReportCSVAuditIncludesExecutionPlanApproval(t *testing.T
 	if strings.Contains(body, ",action,checkout,transactions,") {
 		t.Fatalf("audit csv should omit action drilldown:\n%s", body)
 	}
+	// Audit must not leak performance-tuning metrics or the network-phase drilldown.
+	for _, forbidden := range []string{"peak_tps", "network_phases"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("audit csv should omit tuning metric %q:\n%s", forbidden, body)
+		}
+	}
+}
+
+func TestWriteRunArchiveReportCSVEngineerIncludesNetworkPhases(t *testing.T) {
+	report := samplePDFRunArchiveReport()
+	var csvBuf bytes.Buffer
+	if err := writeRunArchiveReportCSVWithProfile(report, &csvBuf, "engineer"); err != nil {
+		t.Fatalf("write engineer csv returned error: %v", err)
+	}
+	body := csvBuf.String()
+	for _, expected := range []string{"network_phases,overall,avg_dns_ms", "network_phases,overall,avg_ttfb_ms", "network_phases,checkout,"} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("engineer csv missing network-phase row %q:\n%s", expected, body)
+		}
+	}
+}
+
+// TestRunArchiveReportProfilesAreConsistentAndRenderable guards the report profile
+// metadata against the drift that produced the network_phases / release_trend ghost
+// sections: IncludedSections and SectionOrder must describe the same set (so a section
+// added to one but not the other cannot silently diverge), and every declared text
+// export format must actually render without error.
+func TestRunArchiveReportProfilesAreConsistentAndRenderable(t *testing.T) {
+	report := samplePDFRunArchiveReport()
+	profiles := buildRunArchiveReportProfiles()
+
+	toSet := func(values []string) map[string]int {
+		set := make(map[string]int, len(values))
+		for _, v := range values {
+			set[v]++
+		}
+		return set
+	}
+
+	wantIDs := map[string]bool{"executive": false, "engineer": false, "audit": false}
+	for _, profile := range profiles {
+		if _, known := wantIDs[profile.ID]; known {
+			wantIDs[profile.ID] = true
+		}
+		if len(profile.IncludedSections) == 0 {
+			t.Errorf("profile %q declares no included sections", profile.ID)
+		}
+		included := toSet(profile.IncludedSections)
+		ordered := toSet(profile.SectionOrder)
+		for section, count := range included {
+			if count > 1 {
+				t.Errorf("profile %q: section %q duplicated in IncludedSections", profile.ID, section)
+			}
+			if _, ok := ordered[section]; !ok {
+				t.Errorf("profile %q: section %q in IncludedSections but missing from SectionOrder", profile.ID, section)
+			}
+		}
+		for section := range ordered {
+			if _, ok := included[section]; !ok {
+				t.Errorf("profile %q: section %q in SectionOrder but missing from IncludedSections", profile.ID, section)
+			}
+		}
+		for _, format := range profile.ExportFormats {
+			switch format {
+			case "html":
+				if _, err := renderRunArchiveHTMLReportWithProfile(report, profile.ID); err != nil {
+					t.Errorf("profile %q html render: %v", profile.ID, err)
+				}
+			case "pdf":
+				var buf bytes.Buffer
+				if err := writeRunArchiveReportPDFWithProfile(report, &buf, profile.ID); err != nil {
+					t.Errorf("profile %q pdf render: %v", profile.ID, err)
+				}
+			case "csv":
+				var buf bytes.Buffer
+				if err := writeRunArchiveReportCSVWithProfile(report, &buf, profile.ID); err != nil {
+					t.Errorf("profile %q csv render: %v", profile.ID, err)
+				}
+			}
+		}
+	}
+	for id, found := range wantIDs {
+		if !found {
+			t.Errorf("expected built-in report profile %q to be defined", id)
+		}
+	}
 }
 
 func TestBuildRunArchiveReportFlagsUnsupportedManifestSchema(t *testing.T) {

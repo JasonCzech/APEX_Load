@@ -12,6 +12,7 @@ const apiMock = vi.hoisted(() => ({
   listTestNotes: vi.fn(),
   saveTestReportAnnotations: vi.fn(),
   downloadTestReport: vi.fn(),
+  verifyTestArchive: vi.fn(),
 }))
 
 vi.mock('../hooks/useApi', () => ({
@@ -33,6 +34,7 @@ describe('ReportComposer test notes source panel', () => {
     document.body.appendChild(container)
     root = createRoot(container)
     apiMock.getTestArchiveReport.mockResolvedValue(sampleReport())
+    apiMock.verifyTestArchive.mockResolvedValue(null)
     apiMock.getTestReportAnnotations.mockResolvedValue({
       sections: [{ id: 'overview', label: 'Test Overview' }],
       annotations: {
@@ -159,7 +161,137 @@ describe('ReportComposer test notes source panel', () => {
     expect(container.textContent).not.toContain('Network Phase Breakdown')
   })
 
-  async function renderComposer(profile: 'executive' | 'audit' = 'executive') {
+  it('renders a passing integrity banner when the archive verifies', async () => {
+    apiMock.getTestReportAnnotations.mockResolvedValueOnce(auditAnnotations())
+    apiMock.verifyTestArchive.mockResolvedValueOnce({
+      schema_version: 'apexload.archive_integrity.v1',
+      test_id: 'test-1',
+      status: 'verified',
+      verified: true,
+      verified_at: '2026-06-24T12:06:00Z',
+      summary: 'All 1 artifacts verified against their recorded SHA-256.',
+      total: 1,
+      matched: 1,
+      mismatched: 0,
+      missing: 0,
+      unverifiable: 0,
+      artifacts: [{ name: 'transactions.jsonl', status: 'match', expected_sha256: 'sha-transaction', actual_sha256: 'sha-transaction', size_bytes: 2048 }],
+    })
+
+    await renderComposer('audit')
+
+    expect(apiMock.verifyTestArchive).toHaveBeenCalledWith('test-1')
+    const banner = container.querySelector('.report-integrity-banner')
+    expect(banner).not.toBeNull()
+    expect(banner?.className).toContain('pass')
+    expect(banner?.textContent).toContain('Integrity Verified')
+    expect(banner?.textContent).toContain('All 1 artifacts verified')
+    // The inventory row reflects the per-artifact verdict.
+    expect(container.textContent).toContain('match')
+  })
+
+  it('renders a failing integrity banner when an artifact was tampered', async () => {
+    apiMock.getTestReportAnnotations.mockResolvedValueOnce(auditAnnotations())
+    apiMock.verifyTestArchive.mockResolvedValueOnce({
+      schema_version: 'apexload.archive_integrity.v1',
+      test_id: 'test-1',
+      status: 'tampered',
+      verified: false,
+      verified_at: '2026-06-24T12:06:00Z',
+      summary: '1 of 1 artifacts failed integrity verification — content no longer matches the recorded SHA-256 (tampered).',
+      total: 1,
+      matched: 0,
+      mismatched: 1,
+      missing: 0,
+      unverifiable: 0,
+      artifacts: [{ name: 'transactions.jsonl', status: 'mismatch', expected_sha256: 'sha-transaction', actual_sha256: 'sha-different', detail: 'recomputed SHA-256 does not match the manifest (artifact modified)' }],
+    })
+
+    await renderComposer('audit')
+
+    const banner = container.querySelector('.report-integrity-banner')
+    expect(banner).not.toBeNull()
+    expect(banner?.className).toContain('fail')
+    expect(banner?.textContent).toContain('Integrity tampered')
+    expect(banner?.textContent).toContain('failed integrity verification')
+    expect(container.textContent).toContain('mismatch')
+  })
+
+  it('omits the integrity banner for non-audit profiles', async () => {
+    await renderComposer('executive')
+
+    expect(apiMock.verifyTestArchive).not.toHaveBeenCalled()
+    expect(container.querySelector('.report-integrity-banner')).toBeNull()
+  })
+
+  it('gates engineer sections on the profile included_sections', async () => {
+    // Engineer report whose matching profile drops network_phases: the Action
+    // Summary stays (still declared) while the Network Phase Breakdown disappears,
+    // proving HTML visibility is driven by included_sections, not the id booleans.
+    apiMock.getTestArchiveReport.mockResolvedValueOnce({
+      ...sampleReport(),
+      network_phases: { samples: 4, overall: { count: 4, avg_dns_ms: 2, avg_connect_ms: 3, avg_tls_ms: 4, avg_ttfb_ms: 5 } },
+      report_profiles: [{
+        id: 'engineer',
+        label: 'Detailed Technical',
+        description: '',
+        export_formats: ['html'],
+        included_sections: ['verdict', 'technical_overview', 'graphs', 'actions'],
+        section_order: ['verdict', 'technical_overview', 'graphs', 'actions'],
+      }],
+    })
+    apiMock.getTestReportAnnotations.mockResolvedValueOnce({
+      sections: [{ id: 'overview', label: 'Overview' }],
+      annotations: {
+        test_id: 'test-1', profile: 'engineer', title: 'Eng', prepared_by: '',
+        executive_narrative: '', section_comments: {}, verdict_override: '',
+        verdict_explanation: '', findings: [], updated_at: '2026-06-24T12:00:00Z', updated_by: 'Ava',
+      },
+    })
+
+    await renderComposer('engineer')
+
+    expect(container.textContent).toContain('Action Summary')
+    expect(container.textContent).not.toContain('Network Phase Breakdown')
+  })
+
+  it('renders the executive release trend comparison when a baseline exists', async () => {
+    apiMock.getTestArchiveReport.mockResolvedValueOnce({
+      ...sampleReport(),
+      release_trend: releaseTrendWithBaseline(),
+    })
+
+    await renderComposer('executive')
+
+    expect(container.textContent).toContain('Release Trend')
+    expect(container.textContent).toContain('Prior Build') // baseline run name
+    expect(container.textContent).toContain('+2.0 pp') // signed error-rate delta
+    expect(container.textContent).toContain('Regressions vs prior run')
+  })
+
+  it('degrades the executive release trend to a note when there is no baseline', async () => {
+    apiMock.getTestArchiveReport.mockResolvedValueOnce({
+      ...sampleReport(),
+      release_trend: {
+        release_id: 'rel-9',
+        run_count: 1,
+        has_baseline: false,
+        regressed: false,
+        current: releaseTrendWithBaseline().current,
+        trajectory: { latest_regressed: false, avg_response_trend_pct: 0, error_pct_trend: 0 },
+        note: 'First archived run for this release; no prior run to compare against.',
+      },
+    })
+
+    await renderComposer('executive')
+
+    expect(container.textContent).toContain('Release Trend')
+    expect(container.textContent).toContain('First archived run for this release')
+    // No baseline => no comparison table header.
+    expect(container.textContent).not.toContain('Prior run')
+  })
+
+  async function renderComposer(profile: 'executive' | 'engineer' | 'audit' = 'executive') {
     await act(async () => {
       root.render(<ReportComposer testId="test-1" testName="Checkout Run" profile={profile} onClose={() => {}} />)
     })
@@ -183,6 +315,50 @@ async function flush() {
   await act(async () => {
     await Promise.resolve()
   })
+}
+
+function auditAnnotations() {
+  return {
+    sections: [{ id: 'audit_scope', label: 'Audit Scope' }],
+    annotations: {
+      test_id: 'test-1',
+      profile: 'audit',
+      title: 'Audit report',
+      prepared_by: '',
+      executive_narrative: 'Audit evidence narrative',
+      section_comments: { audit_scope: 'Review scope and evidence.' },
+      verdict_override: '',
+      verdict_explanation: '',
+      findings: [],
+      updated_at: '2026-06-24T12:00:00Z',
+      updated_by: 'Ava',
+    },
+  }
+}
+
+function releaseTrendWithBaseline() {
+  return {
+    release_id: 'rel-9',
+    run_count: 2,
+    has_baseline: true,
+    regressed: true,
+    regressions: ['error rate regressed'],
+    current: {
+      run_id: 'test-1', run_name: 'Checkout Run', status: 'COMPLETE', completed_at: '2026-06-24T12:05:00Z',
+      transactions: 10, error_pct: 3, avg_response_ms: 130, peak_tps: 50, peak_active_vusers: 5,
+      completeness_pct: 80, sla_breached: false,
+    },
+    baseline: {
+      run_id: 'run-prev', run_name: 'Prior Build', status: 'COMPLETE', completed_at: '2026-06-23T12:05:00Z',
+      transactions: 10, error_pct: 1, avg_response_ms: 100, peak_tps: 50, peak_active_vusers: 5,
+      completeness_pct: 100, sla_breached: false,
+    },
+    deltas: {
+      error_pct_delta: 2, avg_response_ms_delta: 30, avg_response_pct_delta: 30,
+      peak_tps_delta: 0, completeness_delta: -20,
+    },
+    trajectory: { latest_regressed: true, latest_regressions: ['error rate regressed'], avg_response_trend_pct: 30, error_pct_trend: 2 },
+  }
 }
 
 function sampleReport() {

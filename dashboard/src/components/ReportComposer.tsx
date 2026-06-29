@@ -6,7 +6,7 @@ import ReportCharts from './ReportCharts'
 import { useApi } from '../hooks/useApi'
 import { downloadBlob } from '../utils/fileUtils'
 import { getErrorMessage } from '../utils/errorUtils'
-import { ReportAnnotations, ReportCommentarySection, ReportFinding, RunArchiveReport, TestNote } from '../types'
+import { ReportAnnotations, ReportCommentarySection, ReportFinding, RunArchiveIntegrityReport, RunArchiveReleaseTrendSummary, RunArchiveReport, RunArchiveReportProfile, TestNote } from '../types'
 import type { ReportProfileId } from './GenerateReportModal'
 import './ReportComposer.css'
 
@@ -27,6 +27,7 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
   const api = useApi()
 
   const [report, setReport] = useState<RunArchiveReport | null>(null)
+  const [integrity, setIntegrity] = useState<RunArchiveIntegrityReport | null>(null)
   const [sections, setSections] = useState<ReportCommentarySection[]>([])
   const [title, setTitle] = useState('')
   const [preparedBy, setPreparedBy] = useState('')
@@ -83,10 +84,17 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
           response: { test_id: testId, notes: [] as TestNote[] },
           error: getErrorMessage(err, 'Unable to load test notes'),
         })),
+      // Re-verify artifact integrity for the audit profile only — it re-hashes the
+      // archived files server-side, so other profiles skip it. A failure degrades to
+      // no banner rather than blocking the whole report.
+      profile === 'audit'
+        ? api.verifyTestArchive(testId).catch(() => null)
+        : Promise.resolve(null),
     ])
-      .then(([reportResult, annotationsResult, notesResult]) => {
+      .then(([reportResult, annotationsResult, notesResult, integrityResult]) => {
         if (cancelled) return
         setReport(reportResult)
+        setIntegrity(integrityResult)
         setSections(annotationsResult.sections || [])
         setNoteSectionId(annotationsResult.sections?.[0]?.id || '')
         applyAnnotations(annotationsResult.annotations)
@@ -159,6 +167,26 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
   const isExecutive = profile === 'executive'
   const isEngineer = profile === 'engineer'
   const isAudit = profile === 'audit'
+
+  // Per-artifact verification verdicts keyed by artifact name, so the inventory
+  // table can show each row's match/mismatch/missing status alongside its hash.
+  const integrityByName = useMemo(
+    () => new Map((integrity?.artifacts || []).map((artifact) => [artifact.name, artifact])),
+    [integrity],
+  )
+
+  // Derive section visibility from the matching profile's included_sections, the
+  // same source the backend renderers gate on. When the report does not carry a
+  // matching profile with declared sections (older payloads, tests), fall back to
+  // the id-based isExecutive/isEngineer/isAudit booleans so behavior is unchanged.
+  const sectionSet = useMemo(
+    () => buildSectionSet(report?.report_profiles, profile),
+    [report?.report_profiles, profile],
+  )
+  const has = useCallback(
+    (id: string, fallback: boolean): boolean => (sectionSet ? sectionSet.has(id) : fallback),
+    [sectionSet],
+  )
   const executionPlanApproval = manifest?.provenance?.governance?.execution_plan_approval
   const executionPlanApprovalSummary = executionPlanApproval
     ? [
@@ -316,10 +344,17 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
               />
             </section>
 
-            {!isAudit && (
+            {has('graphs', !isAudit) && (
               <section className="report-section report-graphs">
                 <h2>{isExecutive ? 'Headline Performance' : 'Performance Graphs'}</h2>
                 <ReportCharts report={report} />
+              </section>
+            )}
+
+            {has('release_trend', isExecutive) && report.release_trend && (
+              <section className="report-section">
+                <h2>Release Trend</h2>
+                <ReleaseTrendSummaryView trend={report.release_trend} />
               </section>
             )}
 
@@ -334,7 +369,7 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
               </section>
             )}
 
-            {isEngineer && topActions.length > 0 && (
+            {has('actions', isEngineer) && topActions.length > 0 && (
               <section className="report-section">
                 <h2>Action Summary</h2>
                 <table className="report-table">
@@ -364,7 +399,7 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
               </section>
             )}
 
-            {isEngineer && report.network_phases?.overall && (
+            {has('network_phases', isEngineer) && report.network_phases?.overall && (
               <section className="report-section">
                 <h2>Network Phase Breakdown</h2>
                 <div className="report-metrics">
@@ -376,7 +411,7 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
               </section>
             )}
 
-            {isEngineer && (report.error_patterns?.length ?? 0) > 0 && (
+            {has('errors', isEngineer) && (report.error_patterns?.length ?? 0) > 0 && (
               <section className="report-section">
                 <h2>Error Patterns</h2>
                 <table className="report-table">
@@ -402,7 +437,7 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
               </section>
             )}
 
-            {isEngineer && report.resource_peaks && (
+            {has('resources', isEngineer) && report.resource_peaks && (
               <section className="report-section">
                 <h2>Resource Peaks</h2>
                 <div className="report-metrics">
@@ -414,7 +449,7 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
               </section>
             )}
 
-            {isAudit && (
+            {has('evidence_tiers', isAudit) && (
               <section className="report-section">
                 <h2>Audit Evidence</h2>
                 <table className="report-table">
@@ -431,19 +466,38 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
                   </tbody>
                 </table>
                 <h3>Artifact Integrity</h3>
+                {integrity && (
+                  <div
+                    className={`report-integrity-banner ${integrity.status === 'verified' ? 'pass' : integrity.status === 'verified_partial' ? 'caution' : 'fail'}`}
+                    role="status"
+                  >
+                    <span className="report-integrity-label">
+                      {integrity.status === 'verified'
+                        ? '✓ Integrity Verified'
+                        : integrity.status === 'verified_partial'
+                          ? '⚠ Integrity Partially Verified'
+                          : `✗ Integrity ${integrity.status}`}
+                    </span>
+                    <span className="report-integrity-summary">{integrity.summary}</span>
+                  </div>
+                )}
                 <table className="report-table">
                   <thead>
-                    <tr><th>Artifact</th><th>Records</th><th>Bytes</th><th>SHA-256</th></tr>
+                    <tr><th>Artifact</th><th>Status</th><th>Records</th><th>Bytes</th><th>SHA-256</th></tr>
                   </thead>
                   <tbody>
-                    {(report.artifact_inventory || report.manifest.artifacts || []).map((artifact) => (
-                      <tr key={artifact.name}>
-                        <td>{artifact.name}</td>
-                        <td>{formatInt(artifact.count)}</td>
-                        <td>{formatInt(artifact.size_bytes)}</td>
-                        <td>{artifact.sha256 || 'not captured'}</td>
-                      </tr>
-                    ))}
+                    {(report.artifact_inventory || report.manifest.artifacts || []).map((artifact) => {
+                      const verdict = integrityByName.get(artifact.name)
+                      return (
+                        <tr key={artifact.name}>
+                          <td>{artifact.name}</td>
+                          <td>{verdict ? verdict.status : integrity ? 'unverifiable' : '—'}</td>
+                          <td>{formatInt(artifact.count)}</td>
+                          <td>{formatInt(artifact.size_bytes)}</td>
+                          <td>{artifact.sha256 || 'not captured'}</td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </section>
@@ -618,6 +672,47 @@ function Metric({ label, value, tone }: { label: string; value: string; tone?: '
   )
 }
 
+// ReleaseTrendSummaryView renders this run measured against the immediately prior
+// run in the same release. With no baseline (first archived run, or no release
+// association) it degrades to the explanatory note instead of an empty table.
+function ReleaseTrendSummaryView({ trend }: { trend: RunArchiveReleaseTrendSummary }) {
+  if (!trend.has_baseline || !trend.baseline || !trend.deltas) {
+    return <p className="report-hint">{trend.note || 'First archived run for this release; no prior run to compare against.'}</p>
+  }
+  const { baseline, current, deltas } = trend
+  const baselineLabel = baseline.run_name || baseline.run_id
+  return (
+    <>
+      <p className="report-hint">
+        This run vs the prior run in release <strong>{trend.release_id}</strong> (baseline {baselineLabel}
+        {baseline.completed_at ? `, completed ${formatTime(baseline.completed_at)}` : ''}; {trend.run_count} archived run
+        {trend.run_count === 1 ? '' : 's'}).
+      </p>
+      <table className="report-table">
+        <thead>
+          <tr><th>Metric</th><th>Prior run</th><th>This run</th><th>Change</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Error rate</td><td>{formatNum(baseline.error_pct)}%</td><td>{formatNum(current.error_pct)}%</td><td>{signedDelta(deltas.error_pct_delta)} pp</td></tr>
+          <tr><td>Avg response</td><td>{formatNum(baseline.avg_response_ms)} ms</td><td>{formatNum(current.avg_response_ms)} ms</td><td>{signedDelta(deltas.avg_response_ms_delta)} ms ({signedDelta(deltas.avg_response_pct_delta)}%)</td></tr>
+          <tr><td>Peak TPS</td><td>{formatNum(baseline.peak_tps)}</td><td>{formatNum(current.peak_tps)}</td><td>{signedDelta(deltas.peak_tps_delta)}</td></tr>
+          <tr><td>Completeness</td><td>{formatNum(baseline.completeness_pct)}%</td><td>{formatNum(current.completeness_pct)}%</td><td>{signedDelta(deltas.completeness_delta)} pts</td></tr>
+        </tbody>
+      </table>
+      {trend.regressed ? (
+        <p className="report-hint report-error">Regressions vs prior run: {(trend.regressions || []).join(', ')}</p>
+      ) : (
+        <p className="report-hint">No regressions detected versus the prior run.</p>
+      )}
+    </>
+  )
+}
+
+function signedDelta(value: number | undefined): string {
+  if (value === undefined || Number.isNaN(value)) return '+0.0'
+  return `${value >= 0 ? '+' : ''}${value.toFixed(1)}`
+}
+
 function formatNum(value: number | undefined): string {
   if (value === undefined || Number.isNaN(value)) return '0.0'
   return value.toFixed(1)
@@ -652,4 +747,25 @@ function firstNoteLine(body: string): string {
   const line = body.split(/\r?\n/).find((entry) => entry.trim())?.trim() || 'Test note'
   const normalized = line.replace(/^#{1,6}\s+/, '')
   return normalized.length > 90 ? `${normalized.slice(0, 87)}...` : normalized
+}
+
+// buildSectionSet returns the membership set for the report profile matching the
+// given id, mirroring the backend's stringSet aliasing for the section ids the
+// composer gates on (notably `graphs`, derived from the *_overview KPI sections).
+// Returns null when no matching profile carries declared sections so callers can
+// fall back to the id-based booleans, preserving behavior for older payloads.
+function buildSectionSet(
+  profiles: RunArchiveReportProfile[] | undefined,
+  profileId: string,
+): Set<string> | null {
+  const profile = profiles?.find((entry) => entry.id === profileId)
+  const included = profile?.included_sections
+  if (!included || included.length === 0) return null
+  const set = new Set(included)
+  // The performance-graphs block has no dedicated section id; the backend renders
+  // it whenever an overview KPI section is declared, so alias it here too.
+  if (set.has('executive_overview') || set.has('technical_overview')) {
+    set.add('graphs')
+  }
+  return set
 }
