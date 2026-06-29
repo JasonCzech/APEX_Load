@@ -133,6 +133,31 @@ func TestJavaLRRegistryMatchesPublishedLibrary(t *testing.T) {
 	}
 }
 
+// TestJavaLRPublishedInventoriesAgree keeps the two hand-maintained published-lr
+// inventories in lockstep: the coverage slice javaLRPublishedMethods (which backs
+// the coverage doc + support-matrix endpoint) must be exactly the set pinned by
+// publishedJavaLRFunctionExpectations (the disposition pin table). Drift would let
+// a method be documented-but-unpinned, or pinned-but-undocumented, without notice.
+func TestJavaLRPublishedInventoriesAgree(t *testing.T) {
+	sliceSet := make(map[string]bool, len(javaLRPublishedMethods))
+	for _, name := range javaLRPublishedMethods {
+		if sliceSet[name] {
+			t.Errorf("javaLRPublishedMethods contains duplicate %q", name)
+		}
+		sliceSet[name] = true
+	}
+	for name := range publishedJavaLRFunctionExpectations {
+		if !sliceSet[name] {
+			t.Errorf("%q is pinned in publishedJavaLRFunctionExpectations but missing from javaLRPublishedMethods (coverage doc would omit it)", name)
+		}
+	}
+	for name := range sliceSet {
+		if _, ok := publishedJavaLRFunctionExpectations[name]; !ok {
+			t.Errorf("%q is in javaLRPublishedMethods but not pinned in publishedJavaLRFunctionExpectations (disposition unpinned)", name)
+		}
+	}
+}
+
 // TestJavaLRSupplementDisjointFromCRegistry guarantees the supplement only holds
 // genuine Java-only methods — a name in both registries with a different mode
 // would make the pin table silently lie (C wins in lookupSourceFunction).

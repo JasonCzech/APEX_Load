@@ -26,6 +26,7 @@ type JavaProfile struct {
 	JMSProvider     string
 	JMSProtocol     string
 	DestinationType string
+	DatabaseDriver  string
 	ReviewFamilies  []string
 }
 
@@ -55,6 +56,7 @@ func classifyJavaArchive(program javaProgram, projectConfig *ProjectConfig, file
 	}
 	if javaLooksLikeDatabase(text) {
 		profile.Surfaces[javaSurfaceDatabase] = true
+		profile.DatabaseDriver = inferJavaJDBCDriver(text)
 	}
 	if javaLooksLikeSOAP(text) {
 		profile.Surfaces[javaSurfaceSOAP] = true
@@ -181,6 +183,26 @@ func javaHasNonSolaceJMSProviderEvidence(text string) bool {
 		strings.Contains(text, "ibm.mq")
 }
 
+// inferJavaJDBCDriver maps a jdbc:<subprotocol>: URL found in the source to a
+// supported DSL database driver (sqlite/postgres/mysql/oracle/odbc), defaulting
+// to postgres when no recognizable JDBC URL is present.
+func inferJavaJDBCDriver(text string) string {
+	switch {
+	case strings.Contains(text, "jdbc:postgresql"):
+		return "postgres"
+	case strings.Contains(text, "jdbc:mysql") || strings.Contains(text, "jdbc:mariadb"):
+		return "mysql"
+	case strings.Contains(text, "jdbc:oracle"):
+		return "oracle"
+	case strings.Contains(text, "jdbc:sqlite"):
+		return "sqlite"
+	case strings.Contains(text, "jdbc:sqlserver") || strings.Contains(text, "jdbc:jtds") || strings.Contains(text, "jdbc:odbc"):
+		return "odbc"
+	default:
+		return "postgres"
+	}
+}
+
 func inferJavaJMSDestinationType(text string) string {
 	if strings.Contains(text, ".createtopic(") || strings.Contains(text, "topicpublisher") || strings.Contains(text, "topic ") || strings.Contains(text, "javax.jms.topic") {
 		return "topic"
@@ -242,7 +264,7 @@ func newJavaScriptForSurface(opts ConvertOptions, profile JavaProfile, surface j
 	case javaSurfaceDatabase:
 		script.Protocol = "database"
 		script.Config.Database = dsl.DatabaseConfig{
-			Driver:         "postgres",
+			Driver:         convertutil.FirstNonEmpty(profile.DatabaseDriver, "postgres"),
 			DSN:            "{{secret.database_dsn}}",
 			QueryTimeoutMs: 30000,
 			MaxRows:        100,

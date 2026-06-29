@@ -3,6 +3,7 @@ package enterprisearchive
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -562,7 +563,7 @@ func javaEnsureHeaderLists(script *dsl.Script) {
 	walk = func(actions []dsl.Action) {
 		for i := range actions {
 			if len(actions[i].HeaderList) == 0 && len(actions[i].Headers) > 0 {
-				actions[i].HeaderList = dsl.HeaderListFromMap(actions[i].Headers)
+				actions[i].HeaderList = javaDeterministicHeaderList(actions[i].Headers)
 			}
 			if actions[i].Control != nil {
 				walk(actions[i].Control.Steps)
@@ -573,4 +574,24 @@ func javaEnsureHeaderLists(script *dsl.Script) {
 	walk(script.Init)
 	walk(script.Actions)
 	walk(script.Teardown)
+}
+
+// javaDeterministicHeaderList builds an ordered HeaderList from the (unordered)
+// Headers map with a stable name-sorted order. The C HTTP builder only carries a
+// flattened map, so original wire order/duplicates are already lost; sorting at
+// least makes the emitted header_list deterministic (no flaky golden output).
+func javaDeterministicHeaderList(headers map[string]string) dsl.HeaderList {
+	if len(headers) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(headers))
+	for name := range headers {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	list := make(dsl.HeaderList, 0, len(headers))
+	for _, name := range names {
+		list = append(list, dsl.HeaderEntry{Name: name, Value: headers[name]})
+	}
+	return list
 }

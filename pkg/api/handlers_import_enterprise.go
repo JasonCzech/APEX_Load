@@ -244,7 +244,14 @@ func writeEnterpriseArchiveImportResponse(w http.ResponseWriter, status int, res
 	protocolCompat := buildEnterpriseArchiveProtocolCompatReport(result, unsupportedElements, summary)
 	persistProtocolCompatReport(result.Script, "enterprise_script_archive", protocolCompat)
 	for _, script := range result.Scripts {
-		persistProtocolCompatReport(script, "enterprise_script_archive", protocolCompat)
+		report := protocolCompat
+		if len(result.Scripts) > 1 {
+			// Each split script (HTTP / JDBC / JMS / SOAP) gets its own
+			// step/data-source/runtime-parity counts instead of the aggregate
+			// first-lane report being copied onto every script.
+			report = protocolCompatReportForScript(protocolCompat, script)
+		}
+		persistProtocolCompatReport(script, "enterprise_script_archive", report)
 	}
 
 	scripts := result.Scripts
@@ -782,6 +789,23 @@ func persistEnterpriseArchiveImportSummary(result *enterprisearchive.ConvertResu
 			script.Metadata.Import.Preserved["fidelity_report"] = summary.FidelityReport
 		}
 	}
+}
+
+// protocolCompatReportForScript returns a copy of the aggregate report with the
+// per-script-shaped fields (step / data-source / runtime-parity counts) recomputed
+// from the given split script, so a JDBC/JMS script does not carry the first
+// (HTTP) lane's counts in a multi-script import.
+func protocolCompatReportForScript(base *protocolCompatReport, script *dsl.Script) *protocolCompatReport {
+	if base == nil || script == nil {
+		return base
+	}
+	clone := *base
+	clone.MappedSteps = len(script.Init) + len(script.Actions) + len(script.Teardown)
+	clone.DataSources = protocolDataSourceCount(script)
+	if parity := protocolRuntimeParityFromScript(script); len(parity) > 0 {
+		clone.RuntimeParity = parity
+	}
+	return &clone
 }
 
 func buildEnterpriseArchiveProtocolCompatReport(result *enterprisearchive.ConvertResult, unsupported []string, summary enterpriseArchiveImportSummary) *protocolCompatReport {

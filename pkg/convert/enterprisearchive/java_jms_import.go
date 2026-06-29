@@ -1,7 +1,6 @@
 package enterprisearchive
 
 import (
-	"fmt"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -72,21 +71,6 @@ func javaPhaseOrder(phase string) int {
 	}
 }
 
-func joinSourceFiles(files map[string]string, names []string) string {
-	var b strings.Builder
-	for _, name := range names {
-		content, ok := findFile(files, name)
-		if !ok {
-			continue
-		}
-		b.WriteString("\n// ")
-		b.WriteString(name)
-		b.WriteByte('\n')
-		b.WriteString(content)
-	}
-	return b.String()
-}
-
 func findTruststoreArtifact(files map[string]string) string {
 	names := make([]string, 0)
 	for name := range files {
@@ -99,32 +83,6 @@ func findTruststoreArtifact(files map[string]string) string {
 		return ""
 	}
 	return names[0]
-}
-
-func javaPrimaryActionName(javaSources []string) string {
-	for _, name := range javaSources {
-		if normalizeSourcePhase(sourceActionPhase(name)) == "action" {
-			return strings.TrimSuffix(filepath.Base(name), filepath.Ext(name))
-		}
-	}
-	return ""
-}
-
-func javaSourceReviewMappings(javaSources []string) []SourceReviewMapping {
-	mappings := make([]SourceReviewMapping, 0, len(javaSources))
-	for index, name := range javaSources {
-		mappings = append(mappings, SourceReviewMapping{
-			SourceFile:  name,
-			StartLine:   1,
-			TargetPath:  fmt.Sprintf("source_files[%d]", index),
-			TargetName:  filepath.Base(name),
-			TargetKind:  "source",
-			Status:      "converted",
-			Notes:       "Java lifecycle source was preserved and mapped into the Java JMS/Solace import lane.",
-			SupportMode: string(SourceFunctionSupportExecutable),
-		})
-	}
-	return mappings
 }
 
 func javaSourcesAsParsedActions(javaSources []string, files map[string]string) []*ParsedAction {

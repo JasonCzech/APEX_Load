@@ -152,6 +152,9 @@ func ConvertJava(files map[string]string, opts ConvertOptions, detected Detected
 				if len(laneResults) > 0 {
 					dbResult.Script.Name += "_database"
 				}
+				if profile.DatabaseDriver != "" {
+					dbResult.Script.Config.Database.Driver = profile.DatabaseDriver
+				}
 				laneResults = append(laneResults, dbResult)
 			}
 		}
@@ -1063,6 +1066,13 @@ func convertJavaJMSAction(state *javaImportState, files map[string]string, state
 		action.Headers = cloneStringMap(msg.Properties)
 		if len(action.Headers) == 0 {
 			action.Headers = nil
+		}
+		if msg.BodyUnresolved {
+			// The source supplied a message body that could not be resolved; mark
+			// it so the mapper downgrades to review rather than shipping an empty
+			// broker message as executable (consistent with the unresolved JNDI /
+			// message-property handling).
+			action.Metadata["body_unresolved"] = true
 		}
 		return action, true
 	}

@@ -29,6 +29,7 @@ type ParsedFunction struct {
 	Filename     string            // Source file containing the function
 	EndLine      int               // Source line where the function call ends
 	RawBlock     string            // Original source block for source review
+	JavaOrigin   bool              // Body was decoded from Java source; skip C-string unescaping
 	Conditions   []string          // Enclosing if/else conditions (raw C, outermost first; else pre-negated as !(...))
 	ConditionIDs []string          // Stable per-construct identities (source positions) parallel to Conditions
 	Loops        []string          // Enclosing loop headers (raw C, outermost first)

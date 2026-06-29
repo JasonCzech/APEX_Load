@@ -121,6 +121,12 @@ func mapJavaJMSStatement(ctx *javaMapperContext) (bool, error) {
 		return false, nil
 	}
 	if action, ok := convertJavaJMSAction(ctx.state, ctx.files, ctx.statement); ok {
+		if unresolved, _ := action.Metadata["body_unresolved"].(bool); unresolved {
+			// An unresolvable body would replay as an empty broker message; preserve
+			// it for review instead of shipping it as executable.
+			appendJavaReview(ctx.result, ctx.state, ctx.statement, ctx.phase, "unresolved_jms_body", ctx.phase == "action")
+			return true, nil
+		}
 		applyJavaTransactionMetadata(&action, ctx.state)
 		appendJavaAction(ctx.result, ctx.statement, ctx.phase, action, SourceFunctionSupportExecutable, "Mapped Java JMS API idiom to native JMS action.")
 		ctx.state.jmsActions++

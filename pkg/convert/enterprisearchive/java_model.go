@@ -23,6 +23,9 @@ type javaStringEnv struct {
 type javaMessageModel struct {
 	Body       string
 	Properties map[string]string
+	// BodyUnresolved is true when the source supplied a body argument that could
+	// not be resolved (vs. a legitimately empty no-arg createTextMessage()).
+	BodyUnresolved bool
 }
 
 var (
@@ -32,7 +35,7 @@ var (
 	javaDestLookupRe   = regexp.MustCompile(`^\s*(?:Destination|Queue|Topic|javax\.jms\.Destination|javax\.jms\.Queue|javax\.jms\.Topic)?\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?:\(\s*(?:Destination|Queue|Topic|javax\.jms\.Destination|javax\.jms\.Queue|javax\.jms\.Topic)\s*\)\s*)?.+?\.lookup\s*\((.+)\)\s*;\s*$`)
 	javaMsgAssignRe    = regexp.MustCompile(`^\s*(?:(?:TextMessage|Message|javax\.jms\.TextMessage|javax\.jms\.Message)\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*.+?\.createTextMessage\s*\((.*)\)\s*;\s*$`)
 	javaProducerRe     = regexp.MustCompile(`^\s*(?:(?:MessageProducer|javax\.jms\.MessageProducer)\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*.+?\.createProducer\s*\((.+)\)\s*;\s*$`)
-	javaReplaceAllRe   = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)\.replaceAll\s*\((.+)\)\s*$`)
+	javaReplaceAllRe   = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)\.replace(?:All)?\s*\((.+)\)\s*$`)
 	javaFileReadCallRe = regexp.MustCompile(`(?i)(?:readFile|loadFile|fileToString|getFileContents|readText|convertXMLFileToString)\s*\((.+)\)`)
 	javaLREvalStringRe = regexp.MustCompile(`(?i)^\s*lr\.eval_string\s*\(\s*"(\{[A-Za-z_][A-Za-z0-9_.-]*\})"\s*\)\s*$`)
 	javaLREvalExprRe   = regexp.MustCompile(`(?i)^\s*lr\.eval_string\s*\((.+)\)\s*$`)
@@ -292,10 +295,13 @@ func (env javaStringEnv) assignMessage(text string, files map[string]string) boo
 		return false
 	}
 	body := ""
+	unresolved := false
 	if strings.TrimSpace(matches[2]) != "" {
-		body, _ = env.eval(matches[2], files)
+		var ok bool
+		body, ok = env.eval(matches[2], files)
+		unresolved = !ok
 	}
-	env.Messages[matches[1]] = javaMessageModel{Body: body, Properties: map[string]string{}}
+	env.Messages[matches[1]] = javaMessageModel{Body: body, Properties: map[string]string{}, BodyUnresolved: unresolved}
 	return true
 }
 

@@ -119,6 +119,92 @@ func actionSQLText(action dsl.Action) string {
 	return ""
 }
 
+// JMS-3: a jms_publish whose body could not be resolved is downgraded to review,
+// not shipped as an executable empty-body publish.
+func TestJavaUnresolvableJMSBodyIsReviewed(t *testing.T) {
+	result, err := ConvertZip(buildJavaReplayArchive(t, "JMSBody", "Java Vuser", `import javax.jms.*;
+public class Actions {
+  public int action() throws Throwable {
+    Queue q = session.createQueue("orders.in");
+    TextMessage msg = session.createTextMessage(unresolvableBody);
+    producer.send(q, msg);
+    return 0;
+  }
+}`), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip error: %v", err)
+	}
+	if action, ok := javaFindAction(result, "jms_publish"); ok {
+		t.Fatalf("unresolvable JMS body shipped as executable jms_publish (body=%q); want a review disposition", action.Body)
+	}
+}
+
+// JMS-4: a single-arg String.replace(..., lr.eval_string("{p}")) templates the
+// JMS body (the capability the deleted lane had, now ported via the regex).
+func TestJavaJMSBodyReplaceTemplating(t *testing.T) {
+	result, err := ConvertZip(buildJavaReplayArchive(t, "JMSReplace", "Java Vuser", `import javax.jms.*;
+public class Actions {
+  public int action() throws Throwable {
+    String envelope = "<order>PLACEHOLDER</order>";
+    String body = envelope.replace("PLACEHOLDER", lr.eval_string("{orderId}"));
+    Queue q = session.createQueue("orders.in");
+    TextMessage msg = session.createTextMessage(body);
+    producer.send(q, msg);
+    return 0;
+  }
+}`), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip error: %v", err)
+	}
+	action, ok := javaFindAction(result, "jms_publish")
+	if !ok {
+		t.Fatalf("expected an executable jms_publish; types=%v", javaActionTypesAcrossScripts(result))
+	}
+	if strings.Contains(action.Body, "PLACEHOLDER") || !strings.Contains(strings.ToLower(action.Body), "orderid") {
+		t.Fatalf("jms body not templated via .replace(): %q", action.Body)
+	}
+}
+
+// Tier 3: the JDBC script's driver is inferred from the connection URL, not
+// hardcoded to postgres.
+func TestJavaJDBCDriverInferredFromConnectionURL(t *testing.T) {
+	cases := map[string]string{
+		"jdbc:mysql://db/app":           "mysql",
+		"jdbc:oracle:thin:@host:1521:x": "oracle",
+		"jdbc:postgresql://db/app":      "postgres",
+	}
+	for url, wantDriver := range cases {
+		t.Run(wantDriver, func(t *testing.T) {
+			src := `import java.sql.*;
+public class Actions {
+  public int action() throws Throwable {
+    Connection conn = DriverManager.getConnection("` + url + `");
+    String sql = "select 1";
+    PreparedStatement ps = conn.prepareStatement(sql);
+    ps.executeQuery();
+    return 0;
+  }
+}`
+			result, err := ConvertZip(buildJavaReplayArchive(t, "Driver", "Java Vuser", src), ConvertOptions{})
+			if err != nil {
+				t.Fatalf("ConvertZip error: %v", err)
+			}
+			found := false
+			for _, script := range result.effectiveScripts() {
+				if script.Protocol == "database" {
+					found = true
+					if script.Config.Database.Driver != wantDriver {
+						t.Fatalf("driver = %q, want %q for %s", script.Config.Database.Driver, wantDriver, url)
+					}
+				}
+			}
+			if !found {
+				t.Fatalf("no database script produced for %s", url)
+			}
+		})
+	}
+}
+
 // Tier 2 #13: count-based conservation over MULTI-surface archives — every leaf
 // statement must receive at least one disposition (no silent drop).
 func TestJavaMultiSurfaceConservesEveryStatement(t *testing.T) {

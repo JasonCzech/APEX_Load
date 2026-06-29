@@ -39,6 +39,12 @@ func javaSOAPCallToParsedFunction(env javaStringEnv, files map[string]string, st
 	if !strings.Contains(strings.ToLower(text), ".call(") {
 		return ParsedFunction{}, false
 	}
+	// Require the .call(...) receiver to look like a SOAP connection, so a generic
+	// httpClient.call(...) / someRpc.call(...) inside a SOAP-importing program is
+	// not misread as a SOAP send.
+	if r := strings.ToLower(javaCallReceiver(text)); !strings.Contains(r, "soap") && !strings.Contains(r, "conn") {
+		return ParsedFunction{}, false
+	}
 	open := strings.Index(text, "(")
 	close := strings.LastIndex(text, ")")
 	if open < 0 || close <= open {
@@ -65,14 +71,36 @@ func javaSOAPCallToParsedFunction(env javaStringEnv, files map[string]string, st
 
 	fn := javaParsedFunctionBase("web_custom_request", statement, phase, "")
 	fn.StepName = convertutilFirstNonEmptySOAPName(statement)
+	fn.JavaOrigin = true
 	fn.Args["URL"] = endpoint
 	fn.Args["Method"] = "POST"
-	fn.Args["Body"] = convertParamReferences(body)
+	fn.Args["Body"] = body
 	fn.URL = endpoint
 	fn.Method = "POST"
-	fn.Body = convertParamReferences(body)
+	// Body is already Java-decoded + parameter-converted by env.eval; leave it for
+	// convertAction to template once (JavaOrigin skips the C-string unescaper).
+	fn.Body = body
 	fn.Headers["Content-Type"] = "text/xml"
 	return fn, true
+}
+
+// javaCallReceiver returns the identifier immediately before the ".call(" token.
+func javaCallReceiver(text string) string {
+	idx := strings.Index(strings.ToLower(text), ".call(")
+	if idx <= 0 {
+		return ""
+	}
+	prefix := text[:idx]
+	i := len(prefix)
+	for i > 0 {
+		c := prefix[i-1]
+		if c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') {
+			i--
+			continue
+		}
+		break
+	}
+	return prefix[i:]
 }
 
 func javaBestSOAPEnvelope(env javaStringEnv) string {

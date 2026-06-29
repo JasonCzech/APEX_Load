@@ -167,16 +167,50 @@ func (j *JavaVuser) Execute(ctx context.Context, action *protocol.Action) (*prot
 		cmd.Dir = j.cfg.WorkDir
 	}
 	cmd.Stdin = bytes.NewReader(append(payload, '\n'))
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	// Cap stdout/stderr capture so a chatty or runaway runner cannot OOM the
+	// generator: the action timeout bounds wall-clock, not bytes, and up to
+	// MaxProcesses runners capture concurrently.
+	stdout := &cappedBuffer{max: defaultRunnerMaxCaptureBytes}
+	stderr := &cappedBuffer{max: defaultRunnerMaxCaptureBytes}
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 	err = cmd.Run()
 	if runCtx.Err() == context.DeadlineExceeded {
 		err = fmt.Errorf("java_vuser runner timed out after %s", timeout)
 	}
-	finalizeResult(result, start, action, err, stdout.String(), stderr.String())
+	finalizeResult(result, start, action, err, stdout.buf.String(), stderr.buf.String())
+	if stdout.truncated {
+		result.ProtocolEvidence["runner_stdout_truncated"] = true
+	}
+	if stderr.truncated {
+		result.ProtocolEvidence["runner_stderr_truncated"] = true
+	}
 	return result, nil
+}
+
+const defaultRunnerMaxCaptureBytes = 8 << 20 // 8 MiB per stream
+
+// cappedBuffer captures up to max bytes and discards the rest. Write always
+// reports the full length so cmd.Run does not abort a still-running child with
+// io.ErrShortWrite/SIGPIPE; the overflow is dropped and flagged via truncated.
+type cappedBuffer struct {
+	buf       bytes.Buffer
+	max       int
+	truncated bool
+}
+
+func (c *cappedBuffer) Write(p []byte) (int, error) {
+	if remaining := c.max - c.buf.Len(); remaining > 0 {
+		if len(p) > remaining {
+			c.buf.Write(p[:remaining])
+			c.truncated = true
+		} else {
+			c.buf.Write(p)
+		}
+	} else if len(p) > 0 {
+		c.truncated = true
+	}
+	return len(p), nil
 }
 
 func (j *JavaVuser) Teardown(context.Context) error {
