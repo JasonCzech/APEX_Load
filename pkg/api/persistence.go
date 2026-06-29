@@ -236,39 +236,40 @@ func (tr *TestRunner) reconcileStoredActiveTest(test *ManagedTest) {
 
 func managedTestFromRecord(record *storage.TestRecord) *ManagedTest {
 	managedTest := &ManagedTest{
-		ID:                   record.ID,
-		RefKey:               record.RefKey,
-		Name:                 record.Name,
-		Status:               record.Status,
-		ApplicationID:        record.ApplicationID,
-		ReleaseID:            record.ReleaseID,
-		ScenarioID:           record.ScenarioID,
-		ProjectID:            record.ProjectID,
-		FolderID:             record.FolderID,
-		Groups:               decodeStoredGroups(record.Groups),
-		Assignment:           decodeStoredGeneratorAssignment(record.Assignment),
-		ScenarioMode:         normalizeScenarioMode(record.ScenarioMode),
-		ScriptShakeout:       record.ScriptShakeout,
-		ResourceBaseline:     record.ResourceBaseline,
-		StartDelay:           record.StartDelay,
-		GoalConfig:           decodeStoredGoalConfig(record.GoalConfig),
-		RuntimeSettings:      decodeStoredRuntimeSettings(record.RuntimeSettings),
-		TotalVUsers:          record.TotalVUsers,
-		Duration:             time.Duration(record.Duration),
-		DurationStr:          time.Duration(record.Duration).String(),
-		CreatedAt:            record.StartTime,
-		ScheduledStartAt:     cloneTimePtr(record.ScheduledStartAt),
-		TimeslotID:           cloneStringPtr(record.TimeslotID),
-		PendingSince:         record.PendingSince,
-		BaselinePinned:       record.BaselinePinned,
-		BaselinePinnedAt:     record.BaselinePinnedAt,
-		CreatedBySubject:     record.CreatedBySubject,
-		CreatedByDisplayName: record.CreatedByDisplayName,
-		StartedBySubject:     record.StartedBySubject,
-		StartedByDisplayName: record.StartedByDisplayName,
-		StoppedBySubject:     record.StoppedBySubject,
-		StoppedByDisplayName: record.StoppedByDisplayName,
-		Error:                record.Error,
+		ID:                    record.ID,
+		RefKey:                record.RefKey,
+		Name:                  record.Name,
+		Status:                record.Status,
+		ApplicationID:         record.ApplicationID,
+		ReleaseID:             record.ReleaseID,
+		ScenarioID:            record.ScenarioID,
+		ProjectID:             record.ProjectID,
+		FolderID:              record.FolderID,
+		Groups:                decodeStoredGroups(record.Groups),
+		Assignment:            decodeStoredGeneratorAssignment(record.Assignment),
+		ScenarioMode:          normalizeScenarioMode(record.ScenarioMode),
+		ScriptShakeout:        record.ScriptShakeout,
+		ResourceBaseline:      record.ResourceBaseline,
+		StartDelay:            record.StartDelay,
+		GoalConfig:            decodeStoredGoalConfig(record.GoalConfig),
+		RuntimeSettings:       decodeStoredRuntimeSettings(record.RuntimeSettings),
+		TotalVUsers:           record.TotalVUsers,
+		Duration:              time.Duration(record.Duration),
+		DurationStr:           time.Duration(record.Duration).String(),
+		CreatedAt:             record.StartTime,
+		ScheduledStartAt:      cloneTimePtr(record.ScheduledStartAt),
+		TimeslotID:            cloneStringPtr(record.TimeslotID),
+		PendingSince:          record.PendingSince,
+		BaselinePinned:        record.BaselinePinned,
+		BaselinePinnedAt:      record.BaselinePinnedAt,
+		CreatedBySubject:      record.CreatedBySubject,
+		CreatedByDisplayName:  record.CreatedByDisplayName,
+		StartedBySubject:      record.StartedBySubject,
+		StartedByDisplayName:  record.StartedByDisplayName,
+		StoppedBySubject:      record.StoppedBySubject,
+		StoppedByDisplayName:  record.StoppedByDisplayName,
+		ExecutionPlanApproval: decodeStoredExecutionPlanApproval(record.ExecutionPlanApproval),
+		Error:                 record.Error,
 	}
 	if record.EndTime != nil {
 		managedTest.EndedAt = record.EndTime
@@ -575,37 +576,38 @@ func buildManagedTestRecord(test *ManagedTest) *storage.TestRecord {
 		return nil
 	}
 	return &storage.TestRecord{
-		ID:                   test.ID,
-		RefKey:               test.RefKey,
-		Name:                 test.Name,
-		Status:               test.Status,
-		ApplicationID:        test.ApplicationID,
-		ReleaseID:            test.ReleaseID,
-		ScenarioID:           test.ScenarioID,
-		ProjectID:            normalizeProjectID(test.ProjectID),
-		FolderID:             test.FolderID,
-		ScenarioMode:         test.ScenarioMode,
-		ScriptShakeout:       test.ScriptShakeout,
-		ResourceBaseline:     test.ResourceBaseline,
-		StartDelay:           test.StartDelay,
-		Assignment:           test.Assignment,
-		TotalVUsers:          test.TotalVUsers,
-		Duration:             int64(test.Duration),
-		StartTime:            test.CreatedAt,
-		ScheduledStartAt:     cloneTimePtr(test.ScheduledStartAt),
-		TimeslotID:           cloneStringPtr(test.TimeslotID),
-		PendingSince:         test.PendingSince,
-		BaselinePinned:       test.BaselinePinned,
-		BaselinePinnedAt:     test.BaselinePinnedAt,
-		CreatedBySubject:     test.CreatedBySubject,
-		CreatedByDisplayName: test.CreatedByDisplayName,
-		StartedBySubject:     test.StartedBySubject,
-		StartedByDisplayName: test.StartedByDisplayName,
-		StoppedBySubject:     test.StoppedBySubject,
-		StoppedByDisplayName: test.StoppedByDisplayName,
-		Groups:               test.Groups,
-		GoalConfig:           test.GoalConfig,
-		RuntimeSettings:      test.RuntimeSettings,
+		ID:                    test.ID,
+		RefKey:                test.RefKey,
+		Name:                  test.Name,
+		Status:                test.Status,
+		ApplicationID:         test.ApplicationID,
+		ReleaseID:             test.ReleaseID,
+		ScenarioID:            test.ScenarioID,
+		ProjectID:             normalizeProjectID(test.ProjectID),
+		FolderID:              test.FolderID,
+		ScenarioMode:          test.ScenarioMode,
+		ScriptShakeout:        test.ScriptShakeout,
+		ResourceBaseline:      test.ResourceBaseline,
+		StartDelay:            test.StartDelay,
+		Assignment:            test.Assignment,
+		TotalVUsers:           test.TotalVUsers,
+		Duration:              int64(test.Duration),
+		StartTime:             test.CreatedAt,
+		ScheduledStartAt:      cloneTimePtr(test.ScheduledStartAt),
+		TimeslotID:            cloneStringPtr(test.TimeslotID),
+		PendingSince:          test.PendingSince,
+		BaselinePinned:        test.BaselinePinned,
+		BaselinePinnedAt:      test.BaselinePinnedAt,
+		CreatedBySubject:      test.CreatedBySubject,
+		CreatedByDisplayName:  test.CreatedByDisplayName,
+		StartedBySubject:      test.StartedBySubject,
+		StartedByDisplayName:  test.StartedByDisplayName,
+		StoppedBySubject:      test.StoppedBySubject,
+		StoppedByDisplayName:  test.StoppedByDisplayName,
+		ExecutionPlanApproval: test.ExecutionPlanApproval,
+		Groups:                test.Groups,
+		GoalConfig:            test.GoalConfig,
+		RuntimeSettings:       test.RuntimeSettings,
 	}
 }
 
@@ -651,6 +653,22 @@ func (tr *TestRunner) AttributeTestStopped(id string, subject string, displayNam
 	}
 	test.StoppedBySubject = strings.TrimSpace(subject)
 	test.StoppedByDisplayName = strings.TrimSpace(displayName)
+	tr.saveManagedTestRecord(test)
+}
+
+func (tr *TestRunner) AttributeTestExecutionPlanApproval(id string, approval *storage.ExecutionPlanApproval) {
+	snapshot := runArchiveExecutionPlanApprovalSnapshot(approval)
+	if snapshot == nil {
+		return
+	}
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	id = tr.resolveRefKeyLocked(id)
+	test, ok := tr.tests[id]
+	if !ok {
+		return
+	}
+	test.ExecutionPlanApproval = snapshot
 	tr.saveManagedTestRecord(test)
 }
 

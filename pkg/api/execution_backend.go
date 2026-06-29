@@ -178,6 +178,7 @@ func buildRunArchiveGovernanceSnapshot(test *ManagedTest) *RunArchiveGovernanceS
 	}
 	snapshot := &RunArchiveGovernanceSnapshot{
 		RuntimeSettingsReview: cloneRuntimeSettingsReview(test.RuntimeSettingsReview),
+		ExecutionPlanApproval: cloneRunArchiveExecutionPlanApprovalSnapshot(test.ExecutionPlanApproval),
 	}
 	if test.TimeslotID != nil {
 		snapshot.CapacityReservationID = strings.TrimSpace(*test.TimeslotID)
@@ -189,10 +190,37 @@ func buildRunArchiveGovernanceSnapshot(test *ManagedTest) *RunArchiveGovernanceS
 			Conflicts: compactNonEmptyStrings(test.PendingReason, test.Error),
 		}
 	}
-	if snapshot.RuntimeSettingsReview == nil && snapshot.CapacityReservationID == "" && snapshot.LaunchPreflight == nil {
+	if snapshot.RuntimeSettingsReview == nil && snapshot.CapacityReservationID == "" && snapshot.LaunchPreflight == nil && snapshot.ExecutionPlanApproval == nil {
 		return nil
 	}
 	return snapshot
+}
+
+func runArchiveExecutionPlanApprovalSnapshot(approval *storage.ExecutionPlanApproval) *RunArchiveExecutionPlanApprovalSnapshot {
+	if approval == nil {
+		return nil
+	}
+	return &RunArchiveExecutionPlanApprovalSnapshot{
+		ID:             strings.TrimSpace(approval.ID),
+		PlanID:         strings.TrimSpace(approval.PlanID),
+		Policy:         strings.TrimSpace(approval.Policy),
+		Status:         strings.TrimSpace(approval.Status),
+		RequestedBy:    strings.TrimSpace(approval.RequestedBy),
+		RequestedAt:    approval.RequestedAt,
+		ResolvedBy:     strings.TrimSpace(approval.ResolvedBy),
+		ResolvedAt:     cloneTimePtr(approval.ResolvedAt),
+		DecisionReason: strings.TrimSpace(approval.DecisionReason),
+		RequiredRole:   strings.TrimSpace(approval.RequiredRole),
+	}
+}
+
+func cloneRunArchiveExecutionPlanApprovalSnapshot(snapshot *RunArchiveExecutionPlanApprovalSnapshot) *RunArchiveExecutionPlanApprovalSnapshot {
+	if snapshot == nil {
+		return nil
+	}
+	clone := *snapshot
+	clone.ResolvedAt = cloneTimePtr(snapshot.ResolvedAt)
+	return &clone
 }
 
 func compactNonEmptyStrings(values ...string) []string {

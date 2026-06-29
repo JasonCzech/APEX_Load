@@ -63,6 +63,7 @@ type seqPlanRunState struct {
 	createdAt     time.Time
 	attribSubject string
 	attribName    string
+	approval      *storage.ExecutionPlanApproval
 }
 
 func (st *seqPlanRunState) toStorageRun() *storage.ExecutionPlanRun {
@@ -132,7 +133,7 @@ func trimPtr(s *string) string {
 // StartExecutionPlanRun launches a sequential execution plan as a gated run and
 // returns the initial run snapshot. The plan's enabled entries are snapshotted so
 // a mid-run edit to the plan does not change an in-flight run.
-func (tr *TestRunner) StartExecutionPlanRun(plan *storage.ExecutionPlan, attribSubject, attribName string) (*storage.ExecutionPlanRun, error) {
+func (tr *TestRunner) StartExecutionPlanRun(plan *storage.ExecutionPlan, attribSubject, attribName string, approval ...*storage.ExecutionPlanApproval) (*storage.ExecutionPlanRun, error) {
 	if plan == nil {
 		return nil, fmt.Errorf("execution plan is required")
 	}
@@ -157,6 +158,9 @@ func (tr *TestRunner) StartExecutionPlanRun(plan *storage.ExecutionPlan, attribS
 		createdAt:     now,
 		attribSubject: attribSubject,
 		attribName:    attribName,
+	}
+	if len(approval) > 0 {
+		st.approval = approval[0]
 	}
 
 	if len(enabled) == 0 {
@@ -255,6 +259,7 @@ func (tr *TestRunner) launchNextPlanEntry(runID string) {
 		if subject != "" {
 			tr.AttributeTestCreated(test.ID, subject, displayName)
 		}
+		tr.AttributeTestExecutionPlanApproval(test.ID, st.approval)
 
 		if err := tr.StartTest(test.ID); err != nil {
 			// StartTest errors only before spawning the run goroutine, so no

@@ -58,6 +58,24 @@ func decodeStoredGoalConfig(value any) *GoalConfig {
 	return cloneGoalConfig(&config)
 }
 
+func decodeStoredExecutionPlanApproval(value any) *RunArchiveExecutionPlanApprovalSnapshot {
+	if value == nil {
+		return nil
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	var snapshot RunArchiveExecutionPlanApprovalSnapshot
+	if err := json.Unmarshal(data, &snapshot); err != nil {
+		return nil
+	}
+	if snapshot.ID == "" && snapshot.PlanID == "" && snapshot.Policy == "" && snapshot.Status == "" {
+		return nil
+	}
+	return cloneRunArchiveExecutionPlanApprovalSnapshot(&snapshot)
+}
+
 // generatorAssignmentForStorage boxes a generator assignment into the storage
 // layer's `any` field, returning a true nil interface (not a typed-nil pointer)
 // when there is no override — mirroring runtimeSettingsForStorage. Without this,

@@ -63,6 +63,16 @@ func TestExecutionPlanRunGovernanceGate(t *testing.T) {
 	if res2.Blocked || res2.RunID == "" {
 		t.Fatalf("second run = %+v, want allowed with a run id", res2)
 	}
+	if len(res2.Results) != 1 || res2.Results[0].TestID == "" {
+		t.Fatalf("second run results = %+v, want created test id", res2.Results)
+	}
+	createdTest, ok := server.runner.GetTest(res2.Results[0].TestID)
+	if !ok || createdTest.ExecutionPlanApproval == nil {
+		t.Fatalf("created test = %+v, want execution plan approval snapshot", createdTest)
+	}
+	if createdTest.ExecutionPlanApproval.ID != approved.ID || createdTest.ExecutionPlanApproval.PlanID != plan.ID || createdTest.ExecutionPlanApproval.RequiredRole != RoleProjectAdmin || createdTest.ExecutionPlanApproval.ResolvedBy != "user:admin" {
+		t.Fatalf("approval snapshot = %+v, want approved plan governance", createdTest.ExecutionPlanApproval)
+	}
 	// Third run is blocked again — the approval was single-use.
 	res3, err := server.runner.MaterializeAndRunExecutionPlan(plan, "user:alice", "Alice")
 	if err != nil {

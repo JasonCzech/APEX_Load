@@ -159,6 +159,14 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
   const isExecutive = profile === 'executive'
   const isEngineer = profile === 'engineer'
   const isAudit = profile === 'audit'
+  const executionPlanApproval = manifest?.provenance?.governance?.execution_plan_approval
+  const executionPlanApprovalSummary = executionPlanApproval
+    ? [
+        executionPlanApproval.status || 'n/a',
+        executionPlanApproval.resolved_by || executionPlanApproval.requested_by || 'n/a',
+        executionPlanApproval.decision_reason || 'no reason captured',
+      ].join(' · ')
+    : 'not captured'
   const selectedNote = useMemo(
     () => testNotes.find((note) => note.id === selectedNoteId) || null,
     [selectedNoteId, testNotes],
@@ -418,6 +426,7 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
                     <tr><th>Created By</th><td>{formatActor(report.manifest.provenance?.created_by_display_name, report.manifest.provenance?.created_by_subject)}</td></tr>
                     <tr><th>Started By</th><td>{formatActor(report.manifest.provenance?.started_by_display_name, report.manifest.provenance?.started_by_subject)}</td></tr>
                     <tr><th>Stopped By</th><td>{formatActor(report.manifest.provenance?.stopped_by_display_name, report.manifest.provenance?.stopped_by_subject)}</td></tr>
+                    <tr><th>Execution-plan Approval</th><td>{executionPlanApprovalSummary}</td></tr>
                     <tr><th>Runtime Overrides</th><td>{report.change_attribution?.runtime_overrides ? (report.change_attribution.runtime_override_fields || []).join(', ') || 'Yes' : 'No'}</td></tr>
                   </tbody>
                 </table>

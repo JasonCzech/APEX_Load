@@ -473,6 +473,23 @@ func TestBuildRunArchiveReportDeclaresSchemaCompatibility(t *testing.T) {
 	}
 }
 
+func TestWriteRunArchiveReportCSVAuditIncludesExecutionPlanApproval(t *testing.T) {
+	report := samplePDFRunArchiveReport()
+	var csvBuf bytes.Buffer
+	if err := writeRunArchiveReportCSVWithProfile(report, &csvBuf, "audit"); err != nil {
+		t.Fatalf("write audit csv returned error: %v", err)
+	}
+	body := csvBuf.String()
+	for _, expected := range []string{"execution_plan_approval_plan_id", "plan-1", "execution_plan_approval_decision_reason", "release gate approved"} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("audit csv missing %q:\n%s", expected, body)
+		}
+	}
+	if strings.Contains(body, ",action,checkout,transactions,") {
+		t.Fatalf("audit csv should omit action drilldown:\n%s", body)
+	}
+}
+
 func TestBuildRunArchiveReportFlagsUnsupportedManifestSchema(t *testing.T) {
 	archiveDir := t.TempDir()
 	manifestPath := filepath.Join(archiveDir, "manifest.json")

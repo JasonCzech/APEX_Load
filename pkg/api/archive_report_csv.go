@@ -297,6 +297,19 @@ func writeArchiveProvenanceCSVRows(write func(string, string, string, string) er
 		{"stopped_by_subject", provenance.StoppedBySubject},
 		{"stopped_by_display_name", provenance.StoppedByDisplayName},
 	}
+	if provenance.Governance != nil && provenance.Governance.ExecutionPlanApproval != nil {
+		approval := provenance.Governance.ExecutionPlanApproval
+		rows = append(rows,
+			struct{ metric, value string }{"execution_plan_approval_id", approval.ID},
+			struct{ metric, value string }{"execution_plan_approval_plan_id", approval.PlanID},
+			struct{ metric, value string }{"execution_plan_approval_policy", approval.Policy},
+			struct{ metric, value string }{"execution_plan_approval_status", approval.Status},
+			struct{ metric, value string }{"execution_plan_approval_requested_by", approval.RequestedBy},
+			struct{ metric, value string }{"execution_plan_approval_resolved_by", approval.ResolvedBy},
+			struct{ metric, value string }{"execution_plan_approval_decision_reason", approval.DecisionReason},
+			struct{ metric, value string }{"execution_plan_approval_required_role", approval.RequiredRole},
+		)
+	}
 	for _, row := range rows {
 		if row.value == "" {
 			continue

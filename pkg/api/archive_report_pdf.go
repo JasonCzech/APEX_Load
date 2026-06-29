@@ -129,6 +129,14 @@ func buildRunArchiveReportPDFLines(report *RunArchiveReport, profile RunArchiveR
 			if provenance.Governance.LaunchPreflight != nil {
 				appendPDFValueLine(&lines, "Launch preflight", firstNonEmptyPDFValue(provenance.Governance.LaunchPreflight.Status, provenance.Governance.LaunchPreflight.Decision))
 			}
+			if approval := provenance.Governance.ExecutionPlanApproval; approval != nil {
+				appendPDFValueLine(&lines, "Execution-plan approval", strings.TrimSpace(approval.ID+" "+approval.Status))
+				appendPDFValueLine(&lines, "Approval policy", approval.Policy)
+				appendPDFValueLine(&lines, "Approval requested by", approval.RequestedBy)
+				appendPDFValueLine(&lines, "Approval resolved by", approval.ResolvedBy)
+				appendPDFValueLine(&lines, "Approval reason", approval.DecisionReason)
+				appendPDFValueLine(&lines, "Required role", approval.RequiredRole)
+			}
 		}
 		lines = append(lines, "")
 	}

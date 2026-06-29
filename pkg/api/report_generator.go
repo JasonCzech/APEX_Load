@@ -228,7 +228,8 @@ var auditRunArchiveReportTemplate = template.Must(template.New("run-archive-audi
       <tr><th>Environment</th><td>{{if .Report.ChangeAttribution.Environment}}{{.Report.ChangeAttribution.Environment}}{{else}}n/a{{end}}</td><th>Runtime overrides</th><td>{{if .Report.ChangeAttribution.RuntimeOverrides}}{{join .Report.ChangeAttribution.RuntimeOverrideFields}}{{else}}none{{end}}</td></tr>
       <tr><th>Scripts</th><td>{{if .Report.ChangeAttribution.ScriptRevisions}}{{join .Report.ChangeAttribution.ScriptRevisions}}{{else}}n/a{{end}}</td><th>Generators</th><td>{{if .Report.ChangeAttribution.GeneratorVersions}}{{join .Report.ChangeAttribution.GeneratorVersions}}{{else}}n/a{{end}}</td></tr>
       <tr><th>Report schema</th><td class="mono">{{.Report.SchemaVersion}}</td><th>Manifest schema</th><td class="mono">{{.Report.Manifest.SchemaVersion}}</td></tr>
-      {{with .Report.Manifest.Provenance.Governance}}<tr><th>Capacity reservation</th><td>{{if .CapacityReservationID}}{{.CapacityReservationID}}{{else}}n/a{{end}}</td><th>Launch status</th><td>{{if .LaunchPreflight}}{{.LaunchPreflight.Status}}{{else}}n/a{{end}}</td></tr>{{end}}
+      {{with .Report.Manifest.Provenance.Governance}}<tr><th>Capacity reservation</th><td>{{if .CapacityReservationID}}{{.CapacityReservationID}}{{else}}n/a{{end}}</td><th>Launch status</th><td>{{if .LaunchPreflight}}{{.LaunchPreflight.Status}}{{else}}n/a{{end}}</td></tr>
+      {{with .ExecutionPlanApproval}}<tr><th>Execution-plan approval</th><td>{{if .ID}}{{.ID}}{{else}}n/a{{end}} · {{if .Status}}{{.Status}}{{else}}n/a{{end}}</td><th>Approved by</th><td>{{if .ResolvedBy}}{{.ResolvedBy}}{{else}}n/a{{end}} · {{if .DecisionReason}}{{.DecisionReason}}{{else}}no reason captured{{end}}</td></tr>{{end}}{{end}}
     </tbody></table>
     <h2>Completeness & Evidence Tiers</h2>
     <p>Completeness score: <strong>{{formatFloat .Report.Completeness.ScorePct}}%</strong> ({{.Report.Completeness.Status}}).</p>

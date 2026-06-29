@@ -5178,6 +5178,7 @@ func TestBuildRunArchiveProvenanceCapturesExecutionSnapshots(t *testing.T) {
 	}
 	backend := provenanceInventoryBackend{}
 	timeslotID := "timeslot-123"
+	approvalResolvedAt := time.Date(2026, time.May, 13, 11, 55, 0, 0, time.UTC)
 	test := &ManagedTest{
 		ID:                   "test-provenance",
 		Name:                 "Checkout",
@@ -5204,6 +5205,18 @@ func TestBuildRunArchiveProvenanceCapturesExecutionSnapshots(t *testing.T) {
 		StartedByDisplayName: "Starter User",
 		StoppedBySubject:     "user:stopper",
 		StoppedByDisplayName: "Stopper User",
+		ExecutionPlanApproval: &RunArchiveExecutionPlanApprovalSnapshot{
+			ID:             "approval-1",
+			PlanID:         "plan-1",
+			Policy:         "quota_burst",
+			Status:         "approved",
+			RequestedBy:    "user:requester",
+			RequestedAt:    time.Date(2026, time.May, 13, 11, 50, 0, 0, time.UTC),
+			ResolvedBy:     "user:approver",
+			ResolvedAt:     &approvalResolvedAt,
+			DecisionReason: "approved for release gate",
+			RequiredRole:   RoleProjectAdmin,
+		},
 		RuntimeSettingsReview: &RuntimeSettingsReview{
 			Status:   "warning",
 			Findings: []RuntimeSettingsFinding{{Severity: "warning", Summary: "Think time override requires review"}},
@@ -5241,6 +5254,9 @@ func TestBuildRunArchiveProvenanceCapturesExecutionSnapshots(t *testing.T) {
 	}
 	if provenance.Governance.RuntimeSettingsReview == nil || provenance.Governance.RuntimeSettingsReview.Status != "warning" {
 		t.Fatalf("runtime settings review provenance = %#v, want copied review", provenance.Governance.RuntimeSettingsReview)
+	}
+	if provenance.Governance.ExecutionPlanApproval == nil || provenance.Governance.ExecutionPlanApproval.PlanID != "plan-1" || provenance.Governance.ExecutionPlanApproval.RequiredRole != RoleProjectAdmin || provenance.Governance.ExecutionPlanApproval.DecisionReason != "approved for release gate" {
+		t.Fatalf("execution plan approval provenance = %#v, want approval snapshot", provenance.Governance.ExecutionPlanApproval)
 	}
 }
 

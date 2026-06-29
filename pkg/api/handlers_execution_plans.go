@@ -227,7 +227,7 @@ func (tr *TestRunner) MaterializeAndRunExecutionPlan(plan *storage.ExecutionPlan
 
 	var result *ExecutionPlanMaterializeResult
 	if plan.RunMode == "sequential" {
-		run, err := tr.StartExecutionPlanRun(plan, attribSubject, attribDisplayName)
+		run, err := tr.StartExecutionPlanRun(plan, attribSubject, attribDisplayName, gateApproval)
 		if err != nil {
 			return nil, err
 		}
@@ -270,6 +270,7 @@ func (tr *TestRunner) MaterializeAndRunExecutionPlan(plan *storage.ExecutionPlan
 			if strings.TrimSpace(attribSubject) != "" {
 				tr.AttributeTestCreated(test.ID, attribSubject, attribDisplayName)
 			}
+			tr.AttributeTestExecutionPlanApproval(test.ID, gateApproval)
 		}
 		results = append(results, res)
 		runEntries = append(runEntries, runEntry)

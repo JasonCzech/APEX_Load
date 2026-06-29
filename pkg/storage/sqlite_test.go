@@ -766,6 +766,49 @@ func TestSQLiteStorePersistsTimeslotID(t *testing.T) {
 	}
 }
 
+func TestSQLiteStorePersistsExecutionPlanApprovalSnapshot(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	record := &TestRecord{
+		ID:          "test-exec-plan-approval",
+		Name:        "Approved Plan Entry",
+		Status:      "QUEUED",
+		ProjectID:   DefaultProjectID,
+		TotalVUsers: 25,
+		Duration:    int64(30 * time.Second),
+		StartTime:   time.Now().UTC(),
+		Groups:      []map[string]any{{"name": "Checkout"}},
+		ExecutionPlanApproval: map[string]any{
+			"id":              "approval-1",
+			"plan_id":         "plan-1",
+			"policy":          "quota_burst",
+			"status":          "approved",
+			"requested_by":    "user:requester",
+			"resolved_by":     "user:approver",
+			"decision_reason": "release gate approved",
+			"required_role":   "project-admin",
+		},
+	}
+	if err := store.SaveTest(record); err != nil {
+		t.Fatalf("SaveTest returned error: %v", err)
+	}
+	roundTrip, err := store.GetTest(record.ID)
+	if err != nil {
+		t.Fatalf("GetTest returned error: %v", err)
+	}
+	approval, ok := roundTrip.ExecutionPlanApproval.(map[string]any)
+	if !ok {
+		t.Fatalf("execution approval = %#v, want JSON map", roundTrip.ExecutionPlanApproval)
+	}
+	if approval["plan_id"] != "plan-1" || approval["required_role"] != "project-admin" || approval["decision_reason"] != "release gate approved" {
+		t.Fatalf("execution approval = %#v, want approval snapshot", approval)
+	}
+}
+
 func TestSQLiteStorePersistsBaselinePin(t *testing.T) {
 	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {

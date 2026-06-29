@@ -150,6 +150,7 @@ describe('ReportComposer test notes source panel', () => {
     expect(container.textContent).toContain('Audit Summary')
     expect(container.textContent).toContain('Creator User (user:creator)')
     expect(container.textContent).toContain('Stopper User (user:stopper)')
+    expect(container.textContent).toContain('approved · user:approver · release gate approved')
     expect(container.textContent).toContain('Artifact Integrity')
     expect(container.textContent).toContain('transactions.jsonl')
     expect(container.textContent).toContain('sha-transaction')
@@ -213,6 +214,18 @@ function sampleReport() {
         started_by_display_name: 'Starter User',
         stopped_by_subject: 'user:stopper',
         stopped_by_display_name: 'Stopper User',
+        governance: {
+          execution_plan_approval: {
+            id: 'approval-1',
+            plan_id: 'plan-1',
+            policy: 'quota_burst',
+            status: 'approved',
+            requested_by: 'user:requester',
+            resolved_by: 'user:approver',
+            decision_reason: 'release gate approved',
+            required_role: 'project-admin',
+          },
+        },
       },
       transaction_count: 10,
       resource_sample_count: 2,

@@ -51,6 +51,8 @@ func TestWriteRunArchiveReportPDFWithProfile(t *testing.T) {
 		"Run Identity and Authorization",
 		"Schema Compatibility",
 		"Artifact Integrity",
+		"approval-1 approved",
+		"release gate approved",
 	} {
 		if !strings.Contains(auditPDF, expected) {
 			t.Fatalf("audit pdf missing %q:\n%s", expected, auditPDF)
@@ -79,6 +81,20 @@ func samplePDFRunArchiveReport() *RunArchiveReport {
 			TestID:        "test-pdf",
 			TestName:      "Checkout Evidence",
 			CompletedAt:   completedAt,
+			Provenance: RunArchiveProvenance{
+				Governance: &RunArchiveGovernanceSnapshot{
+					ExecutionPlanApproval: &RunArchiveExecutionPlanApprovalSnapshot{
+						ID:             "approval-1",
+						PlanID:         "plan-1",
+						Policy:         "quota_burst",
+						Status:         "approved",
+						RequestedBy:    "user:requester",
+						ResolvedBy:     "user:approver",
+						DecisionReason: "release gate approved",
+						RequiredRole:   RoleProjectAdmin,
+					},
+				},
+			},
 		},
 		Overview: RunArchiveOverview{
 			Transactions:     42,
