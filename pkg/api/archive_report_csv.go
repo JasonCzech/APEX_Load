@@ -13,6 +13,10 @@ func writeRunArchiveReportCSV(report *RunArchiveReport, writer io.Writer) error 
 	return writeRunArchiveReportCSVWithProfile(report, writer, "engineer")
 }
 
+// writeRunArchiveReportCSVWithProfile writes the report as section/key/metric/value
+// rows by iterating the profile's SectionOrder (gated by IncludedSections)
+// through the shared section registry, so the profile metadata is the single
+// source of truth for which sections are emitted and in what order.
 func writeRunArchiveReportCSVWithProfile(report *RunArchiveReport, writer io.Writer, profileID string) error {
 	profile, ok := lookupRunArchiveReportProfile(profileID)
 	if !ok {
@@ -26,219 +30,19 @@ func writeRunArchiveReportCSVWithProfile(report *RunArchiveReport, writer io.Wri
 		csvWriter.Flush()
 		return csvWriter.Error()
 	}
-	write := func(section string, key string, metric string, value string) error {
+	write := func(section, key, metric, value string) error {
 		return csvWriter.Write([]string{section, key, metric, value})
 	}
 
-	sections := stringSet(profile.IncludedSections)
-	if hasCSVSection(sections, "overview") || hasCSVSection(sections, "schema_compatibility") {
-		if err := write("overview", "", "schema_version", report.SchemaVersion); err != nil {
+	data := buildRunArchiveReportRenderData(report, profile, nil, nil)
+	for _, section := range reportSectionsForProfile(profile) {
+		if err := section.CSV(&data, write); err != nil {
 			return err
-		}
-	}
-	if hasCSVSection(sections, "overview") {
-		overviewRows := []struct {
-			metric string
-			value  string
-		}{
-			{"transactions", formatCSVInt(report.Overview.Transactions)},
-			{"errors", formatCSVInt(report.Overview.Errors)},
-			{"error_pct", formatCSVFloat(report.Overview.ErrorPct)},
-			{"avg_response_ms", formatCSVFloat(report.Overview.AvgResponseMs)},
-			{"min_response_ms", formatCSVFloat(report.Overview.MinResponseMs)},
-			{"max_response_ms", formatCSVFloat(report.Overview.MaxResponseMs)},
-			{"peak_tps", formatCSVFloat(report.Overview.PeakTPS)},
-			{"peak_active_vusers", formatCSVInt(report.Overview.PeakActiveVUsers)},
-			{"completeness_score_pct", formatCSVFloat(report.Completeness.ScorePct)},
-			{"completeness_status", report.Completeness.Status},
-		}
-		for _, row := range overviewRows {
-			if err := write("overview", "", row.metric, row.value); err != nil {
-				return err
-			}
-		}
-	}
-
-	if hasCSVSection(sections, "schema_compatibility") {
-		if err := write("schema_compatibility", "", "status", report.Compatibility.Status); err != nil {
-			return err
-		}
-		if err := write("schema_compatibility", "", "report_schema_version", report.Compatibility.ReportSchemaVersion); err != nil {
-			return err
-		}
-		if err := write("schema_compatibility", "", "manifest_schema_version", report.Compatibility.ManifestSchemaVersion); err != nil {
-			return err
-		}
-		for _, output := range report.Compatibility.Outputs {
-			key := output.Format
-			if output.Artifact != "" {
-				key = key + ":" + output.Artifact
-			}
-			if err := write("output_compatibility", key, "status", output.Status); err != nil {
-				return err
-			}
-			if output.Reason != "" {
-				if err := write("output_compatibility", key, "reason", output.Reason); err != nil {
-					return err
-				}
-			}
-		}
-	}
-
-	if hasCSVSection(sections, "completeness") {
-		if err := write("completeness", "", "score_pct", formatCSVFloat(report.Completeness.ScorePct)); err != nil {
-			return err
-		}
-		if err := write("completeness", "", "status", report.Completeness.Status); err != nil {
-			return err
-		}
-		for _, finding := range report.Completeness.Findings {
-			key := finding.Dimension
-			if err := write("completeness_finding", key, "severity", finding.Severity); err != nil {
-				return err
-			}
-			if err := write("completeness_finding", key, "message", finding.Message); err != nil {
-				return err
-			}
-		}
-	}
-
-	if hasCSVSection(sections, "evidence_tiers") {
-		for _, tier := range report.EvidenceTiers {
-			if err := write("evidence_tier", tier.Tier, "status", tier.Status); err != nil {
-				return err
-			}
-			if err := write("evidence_tier", tier.Tier, "count", formatCSVInt(tier.Count)); err != nil {
-				return err
-			}
-		}
-	}
-
-	if hasCSVSection(sections, "change_attribution") {
-		if err := writeChangeAttributionCSVRows(write, report.ChangeAttribution); err != nil {
-			return err
-		}
-	}
-
-	if hasCSVSection(sections, "provenance") && report.Manifest != nil {
-		if err := writeArchiveProvenanceCSVRows(write, report.Manifest.Provenance); err != nil {
-			return err
-		}
-	}
-
-	if hasCSVSection(sections, "artifact_inventory") && report.Manifest != nil {
-		if err := writeArchiveArtifactInventoryCSVRows(write, report.Manifest); err != nil {
-			return err
-		}
-	}
-
-	if hasCSVSection(sections, "actions") {
-		actionNames := sortedArchiveReportStatKeys(report.ByAction)
-		for _, action := range actionNames {
-			if err := writeArchiveReportStatsCSVRows(csvWriter, "action", action, report.ByAction[action]); err != nil {
-				return err
-			}
-		}
-		soapOperations := sortedArchiveReportStatKeys(report.BySOAPOperation)
-		for _, operation := range soapOperations {
-			if err := writeArchiveReportStatsCSVRows(csvWriter, "soap_operation", operation, report.BySOAPOperation[operation]); err != nil {
-				return err
-			}
-		}
-	}
-
-	if hasCSVSection(sections, "web2_migration") && report.Web2Migration != nil {
-		rows := []struct {
-			metric string
-			value  string
-		}{
-			{"status", report.Web2Migration.Status},
-			{"imported_steps", strconv.Itoa(report.Web2Migration.ImportedSteps)},
-			{"replayed_steps", strconv.Itoa(report.Web2Migration.ReplayedSteps)},
-			{"failed_steps", strconv.Itoa(report.Web2Migration.FailedSteps)},
-			{"conversion_to_http_ready", strconv.FormatBool(report.Web2Migration.ConversionToHTTPReady)},
-			{"transaction_groups", strings.Join(report.Web2Migration.TransactionGroups, ";")},
-			{"source_profiles", strings.Join(report.Web2Migration.SourceProfiles, ";")},
-			{"next_actions", strings.Join(report.Web2Migration.NextActions, ";")},
-		}
-		for _, row := range rows {
-			if row.value == "" {
-				continue
-			}
-			if err := write("web2_migration", "", row.metric, row.value); err != nil {
-				return err
-			}
-		}
-		for _, key := range sortedIntMapKeys(report.Web2Migration.ReplayEvidence) {
-			if err := write("web2_migration_evidence", key, "count", strconv.Itoa(report.Web2Migration.ReplayEvidence[key])); err != nil {
-				return err
-			}
-		}
-	}
-
-	if hasCSVSection(sections, "summary_timeline") {
-		for _, point := range report.SummaryTimeline {
-			key := point.Timestamp.Format("2006-01-02T15:04:05Z07:00")
-			rows := []struct {
-				metric string
-				value  string
-			}{
-				{"active_vusers", formatCSVInt(point.ActiveVUsers)},
-				{"tps", formatCSVFloat(point.TPS)},
-				{"target_tps", formatCSVFloat(point.TargetTPS)},
-				{"throughput_gap_pct", formatCSVFloat(point.ThroughputGapPct)},
-				{"throughput_target_missed", strconv.FormatBool(point.ThroughputTargetMissed)},
-				{"error_pct", formatCSVFloat(point.ErrorPct)},
-				{"p95_ms", formatCSVFloat(point.P95Ms)},
-				{"total_transactions", formatCSVInt(point.TotalTx)},
-				{"total_errors", formatCSVInt(point.TotalErrors)},
-			}
-			for _, row := range rows {
-				if err := write("summary_timeline", key, row.metric, row.value); err != nil {
-					return err
-				}
-			}
 		}
 	}
 
 	csvWriter.Flush()
 	return csvWriter.Error()
-}
-
-func stringSet(values []string) map[string]struct{} {
-	set := make(map[string]struct{}, len(values))
-	for _, value := range values {
-		set[value] = struct{}{}
-	}
-	addAlias := func(alias string, sources ...string) {
-		for _, source := range sources {
-			if _, ok := set[source]; ok {
-				set[alias] = struct{}{}
-				return
-			}
-		}
-	}
-	addAlias("overview", "executive_overview", "technical_overview", "audit_identity")
-	addAlias("sla", "sla_rollup", "sla_detail", "official_outcome")
-	addAlias("graphs", "executive_overview", "technical_overview")
-	addAlias("summary_timeline", "technical_overview")
-	addAlias("actions", "sla_detail")
-	addAlias("errors", "risk_summary", "errors", "root_cause")
-	addAlias("resources", "resources")
-	addAlias("browser", "browser")
-	addAlias("raw_exports", "raw_exports", "artifact_integrity")
-	addAlias("artifact_inventory", "artifact_integrity")
-	addAlias("provenance", "audit_identity", "authorization", "provenance")
-	addAlias("schema_compatibility", "schema_compatibility")
-	addAlias("evidence_tiers", "evidence_tiers")
-	addAlias("completeness", "completeness")
-	addAlias("change_attribution", "change_attribution")
-	return set
-}
-
-func hasCSVSection(sections map[string]struct{}, section string) bool {
-	_, ok := sections[section]
-	return ok
 }
 
 func sortedIntMapKeys(values map[string]int) []string {
@@ -250,7 +54,7 @@ func sortedIntMapKeys(values map[string]int) []string {
 	return keys
 }
 
-func writeChangeAttributionCSVRows(write func(string, string, string, string) error, attribution RunArchiveChangeAttribution) error {
+func writeChangeAttributionCSVRows(write reportCSVWriteFunc, attribution RunArchiveChangeAttribution) error {
 	rows := []struct {
 		metric string
 		value  string
@@ -274,7 +78,7 @@ func writeChangeAttributionCSVRows(write func(string, string, string, string) er
 	return nil
 }
 
-func writeArchiveProvenanceCSVRows(write func(string, string, string, string) error, provenance RunArchiveProvenance) error {
+func writeArchiveProvenanceCSVRows(write reportCSVWriteFunc, provenance RunArchiveProvenance) error {
 	rows := []struct {
 		metric string
 		value  string
@@ -321,7 +125,7 @@ func writeArchiveProvenanceCSVRows(write func(string, string, string, string) er
 	return nil
 }
 
-func writeArchiveArtifactInventoryCSVRows(write func(string, string, string, string) error, manifest *RunArchiveManifest) error {
+func writeArchiveArtifactInventoryCSVRows(write reportCSVWriteFunc, manifest *RunArchiveManifest) error {
 	if len(manifest.Artifacts) > 0 {
 		for _, artifact := range manifest.Artifacts {
 			if artifact.Name == "" {
@@ -370,7 +174,7 @@ func writeArchiveArtifactInventoryCSVRows(write func(string, string, string, str
 	return nil
 }
 
-func writeArchiveReportStatsCSVRows(writer *csv.Writer, section string, key string, stats RunArchiveActionStats) error {
+func writeArchiveReportStatsCSVRows(write reportCSVWriteFunc, section string, key string, stats RunArchiveActionStats) error {
 	rows := []struct {
 		metric string
 		value  string
@@ -388,7 +192,7 @@ func writeArchiveReportStatsCSVRows(writer *csv.Writer, section string, key stri
 		{"p99_ms", formatCSVFloat(stats.P99Ms)},
 	}
 	for _, row := range rows {
-		if err := writer.Write([]string{section, key, row.metric, row.value}); err != nil {
+		if err := write(section, key, row.metric, row.value); err != nil {
 			return err
 		}
 	}

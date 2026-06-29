@@ -195,8 +195,19 @@ func TestRenderRunArchiveHTMLReportSupportsProfiles(t *testing.T) {
 	if !strings.Contains(body, "Executive Summary Report") {
 		t.Fatalf("expected executive profile label in HTML, got %q", string(html))
 	}
-	if strings.Contains(body, "Top Actions") || strings.Contains(body, "Appendix C") {
-		t.Fatalf("executive profile should omit technical drilldown sections, got %q", body)
+	// The executive profile declares neither the actions nor the
+	// generator-assignment sections, so the section-registry driver must omit
+	// them entirely (no fail-open to another profile's content).
+	for _, omit := range []string{"Action Summary", "Appendix C", `data-report-section="actions"`, `data-report-section="generator_manifest"`} {
+		if strings.Contains(body, omit) {
+			t.Fatalf("executive profile should omit technical drilldown %q, got %q", omit, body)
+		}
+	}
+	// And it must include exactly its declared sections, in order.
+	for _, want := range []string{`data-report-section="verdict"`, `data-report-section="executive_overview"`, `data-report-section="sla_rollup"`, `data-report-section="signoff"`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("executive profile missing declared section marker %q", want)
+		}
 	}
 
 	auditHTML, err := renderRunArchiveHTMLReportWithProfile(report, "audit")
@@ -204,8 +215,11 @@ func TestRenderRunArchiveHTMLReportSupportsProfiles(t *testing.T) {
 		t.Fatalf("renderRunArchiveHTMLReportWithProfile audit returned error: %v", err)
 	}
 	auditBody := string(auditHTML)
-	if !strings.Contains(auditBody, "Audit Evidence Package") || strings.Contains(auditBody, "Top Actions") {
-		t.Fatalf("audit profile should render audit evidence without technical drilldown, got %q", auditBody)
+	if !strings.Contains(auditBody, "Audit Report") || !strings.Contains(auditBody, "Run Identity") || !strings.Contains(auditBody, "Artifact Integrity") {
+		t.Fatalf("audit profile should render audit evidence sections, got %q", auditBody)
+	}
+	if strings.Contains(auditBody, "Action Summary") || strings.Contains(auditBody, `data-report-section="actions"`) {
+		t.Fatalf("audit profile should omit technical drilldown, got %q", auditBody)
 	}
 
 	if _, err := renderRunArchiveHTMLReportWithProfile(report, "unknown"); err == nil {

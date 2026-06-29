@@ -156,9 +156,24 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
   const manifest = report?.manifest
   const slaBreached = manifest?.sla_breached ?? false
   const profileLabel = PROFILE_LABEL[profile] || profile
+  // Gate preview sections off the profile's declared sections (the backend's
+  // single source of truth), not hardcoded profile ids. This keeps a 4th/custom
+  // backend profile from rendering a hybrid-executive preview.
+  const includedSections = useMemo(
+    () => new Set(report?.report_profiles?.find((candidate) => candidate.id === profile)?.included_sections ?? []),
+    [report?.report_profiles, profile],
+  )
+  const hasSection = useCallback((...ids: string[]) => ids.some((id) => includedSections.has(id)), [includedSections])
   const isExecutive = profile === 'executive'
   const isEngineer = profile === 'engineer'
   const isAudit = profile === 'audit'
+  // Narrative/summary heading derived from declared sections so it stays correct
+  // for profiles beyond the built-in three.
+  const summaryLabel = hasSection('audit_identity', 'official_outcome')
+    ? 'Audit Summary'
+    : hasSection('technical_overview')
+      ? 'Technical Summary'
+      : 'Executive Summary'
   const executionPlanApproval = manifest?.provenance?.governance?.execution_plan_approval
   const executionPlanApprovalSummary = executionPlanApproval
     ? [
@@ -306,7 +321,7 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
             </section>
 
             <section className="report-section">
-              <h2>{isAudit ? 'Audit Summary' : isEngineer ? 'Technical Summary' : 'Executive Summary'}</h2>
+              <h2>{summaryLabel}</h2>
               <textarea
                 className="report-narrative"
                 value={narrative}
@@ -316,14 +331,14 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
               />
             </section>
 
-            {!isAudit && (
+            {hasSection('graphs') && (
               <section className="report-section report-graphs">
                 <h2>{isExecutive ? 'Headline Performance' : 'Performance Graphs'}</h2>
                 <ReportCharts report={report} />
               </section>
             )}
 
-            {slaBreached && (manifest?.sla_details?.length ?? 0) > 0 && (
+            {hasSection('sla_detail', 'sla_rollup') && slaBreached && (manifest?.sla_details?.length ?? 0) > 0 && (
               <section className="report-section">
                 <h2>SLA Findings</h2>
                 <ul className="report-list">
@@ -334,7 +349,7 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
               </section>
             )}
 
-            {isEngineer && topActions.length > 0 && (
+            {hasSection('actions') && topActions.length > 0 && (
               <section className="report-section">
                 <h2>Action Summary</h2>
                 <table className="report-table">
@@ -364,7 +379,7 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
               </section>
             )}
 
-            {isEngineer && report.network_phases?.overall && (
+            {hasSection('network_phases') && report.network_phases?.overall && (
               <section className="report-section">
                 <h2>Network Phase Breakdown</h2>
                 <div className="report-metrics">
@@ -376,7 +391,7 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
               </section>
             )}
 
-            {isEngineer && (report.error_patterns?.length ?? 0) > 0 && (
+            {hasSection('errors') && (report.error_patterns?.length ?? 0) > 0 && (
               <section className="report-section">
                 <h2>Error Patterns</h2>
                 <table className="report-table">
@@ -402,7 +417,7 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
               </section>
             )}
 
-            {isEngineer && report.resource_peaks && (
+            {hasSection('resources') && report.resource_peaks && (
               <section className="report-section">
                 <h2>Resource Peaks</h2>
                 <div className="report-metrics">
@@ -414,7 +429,7 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
               </section>
             )}
 
-            {isAudit && (
+            {hasSection('audit_identity', 'artifact_integrity', 'governance') && (
               <section className="report-section">
                 <h2>Audit Evidence</h2>
                 <table className="report-table">
@@ -560,7 +575,7 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
                           </div>
                           <div className="report-note-source-actions">
                             <button type="button" className="btn btn-secondary" onClick={appendSelectedNoteToSummary}>
-                              Append to {isAudit ? 'Audit Summary' : isEngineer ? 'Technical Summary' : 'Executive Summary'}
+                              Append to {summaryLabel}
                             </button>
                             <select
                               className="report-select"

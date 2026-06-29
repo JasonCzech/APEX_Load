@@ -1,0 +1,677 @@
+package api
+
+import "html/template"
+
+// runArchiveReportShellTemplate is the single, profile-agnostic page shell. It
+// renders the shared chrome (masthead, cover, meta strip, footer) and then
+// places each profile-selected section body, in profile order, wrapped with a
+// data-report-section marker. The bespoke per-profile templates it replaced are
+// gone; profile metadata now drives the entire document.
+var runArchiveReportShellTemplate = template.Must(template.New("run-archive-report-shell").Funcs(profileHTMLFuncMap).Parse(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>APEX Load Report — {{.Data.Report.Manifest.TestName}}</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --navy:   #0b2a4a;
+      --blue:   #1f6feb;
+      --blue2:  #0b5fc7;
+      --sky:    #e7f1fd;
+      --silver: #f3f6f9;
+      --line:   #d4dbe3;
+      --ink:    #1a2330;
+      --slate:  #4a5568;
+      --good:    #1a6e3c;
+      --good-bg: #e6f4ed;
+      --warn:    #8a6100;
+      --warn-bg: #fdf3da;
+      --bad:     #b42318;
+      --bad-bg:  #fbe9e7;
+      --info:    var(--blue2);
+      --info-bg: var(--sky);
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    body {
+      font-family: "Avenir Next", "Segoe UI", -apple-system, sans-serif;
+      font-size: 14.5px;
+      line-height: 1.58;
+      color: var(--ink);
+      background: #dde3e9;
+    }
+    .mono { font-family: "IBM Plex Mono", "SF Mono", Menlo, monospace; }
+    .page { max-width: 960px; margin: 28px auto; background: #fff; box-shadow: 0 1px 32px rgba(11,42,74,.14); }
+    .masthead { background: var(--navy); padding: 22px 52px 20px; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+    .masthead-brand { display: flex; align-items: center; gap: 14px; }
+    .brand-logo { height: 34px; width: auto; filter: brightness(0) invert(1); }
+    .brand-unit { font-size: 12.5px; font-weight: 600; color: #8fc1ff; letter-spacing: .06em; text-transform: uppercase; line-height: 1.3; }
+    .brand-sub { font-size: 11px; color: rgba(255,255,255,.6); letter-spacing: .03em; margin-top: 2px; }
+    .doc-badge { text-align: right; font-size: 11px; line-height: 1.7; color: rgba(255,255,255,.55); }
+    .doc-badge .mono { color: rgba(255,255,255,.88); }
+    .header-rule { height: 4px; background: linear-gradient(90deg, var(--blue) 0%, var(--blue2) 100%); }
+    .content { padding: 40px 52px 60px; }
+    .eyebrow { font-size: 10.5px; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; color: var(--blue2); margin-bottom: 8px; }
+    h1 { font-size: 30px; font-weight: 700; letter-spacing: -.02em; line-height: 1.18; color: var(--navy); margin-bottom: 10px; }
+    .subtitle { font-size: 14.5px; color: var(--slate); max-width: 72ch; line-height: 1.55; margin-bottom: 28px; }
+    .meta-strip { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid var(--line); overflow: hidden; margin-bottom: 24px; }
+    .meta-cell { background: var(--silver); border-right: 1px solid var(--line); padding: 11px 14px; }
+    .meta-cell:last-child { border-right: none; }
+    .meta-cell b { display: block; font-size: 9.5px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--slate); margin-bottom: 4px; }
+    .meta-cell span { font-size: 13px; font-weight: 600; }
+    .report-block { display: block; }
+    .verdict { display: flex; align-items: stretch; margin: 18px 0 32px; border: 1px solid var(--line); }
+    .verdict-badge { flex: 0 0 auto; padding: 16px 22px; font-weight: 700; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: #fff; background: var(--good); text-align: center; min-width: 130px; display: flex; align-items: center; justify-content: center; }
+    .verdict-badge.conditional { background: var(--warn); }
+    .verdict-badge.fail { background: var(--bad); }
+    .verdict-body { padding: 14px 20px; font-size: 13.5px; background: var(--good-bg); flex: 1; border-left: 3px solid var(--good); line-height: 1.5; }
+    .verdict-body.conditional { background: var(--warn-bg); border-left-color: var(--warn); }
+    .verdict-body.fail { background: var(--bad-bg); border-left-color: var(--bad); }
+    .outcome-pill { display: inline-block; padding: 4px 10px; border-radius: 999px; background: var(--good-bg); color: var(--good); font-weight: 700; }
+    .outcome-pill.fail { background: var(--bad-bg); color: var(--bad); }
+    .outcome-pill.conditional { background: var(--warn-bg); color: var(--warn); }
+    h2 { font-size: 16.5px; font-weight: 700; color: var(--navy); margin: 30px 0 10px; padding-bottom: 8px; border-bottom: 2px solid var(--navy); }
+    h3 { font-size: 13.5px; font-weight: 700; color: var(--navy); margin: 22px 0 8px; }
+    .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
+    .kpi { border: 1px solid var(--line); border-top: 3px solid var(--blue); padding: 12px 14px; background: var(--silver); }
+    .kpi.warn { border-top-color: var(--warn); }
+    .kpi b { display: block; font-size: 9.5px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--slate); margin-bottom: 6px; }
+    .kpi .v { font-size: 26px; font-weight: 700; color: var(--navy); line-height: 1.05; }
+    .kpi .v small { font-size: 13px; font-weight: 600; color: var(--slate); }
+    .kpi .d { font-size: 11px; color: var(--slate); margin-top: 4px; }
+    table { width: 100%; border-collapse: collapse; border: 1px solid var(--line); margin: 6px 0 14px; font-size: 13px; }
+    caption { caption-side: top; text-align: left; font-size: 11px; color: var(--slate); padding: 0 0 6px; font-style: italic; }
+    th, td { padding: 9px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { background: var(--silver); font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--slate); }
+    td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    tr:last-child td { border-bottom: 0; }
+    .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+    .pill.pass, .pill.good { background: var(--good-bg); color: var(--good); }
+    .pill.warn { background: var(--warn-bg); color: var(--warn); }
+    .pill.fail, .pill.bad { background: var(--bad-bg); color: var(--bad); }
+    .pill.info, .pill.na { background: var(--info-bg); color: var(--info); }
+    .analyst { margin: 6px 0 14px; }
+    .analyst p { margin: 0 0 8px; white-space: pre-wrap; }
+    .muted, .section-copy { color: var(--slate); }
+    .section-copy { margin: 0 0 12px; font-size: 13px; }
+    .finding { border: 1px solid var(--line); margin-bottom: 12px; }
+    .finding-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: var(--silver); border-bottom: 1px solid var(--line); }
+    .finding-head.major { background: var(--warn-bg); }
+    .finding-head .fid { font-family: "IBM Plex Mono", monospace; font-weight: 700; color: var(--blue2); }
+    .finding-head .ft { flex: 1; font-weight: 600; color: var(--navy); }
+    .finding-body { padding: 4px 14px 12px; }
+    .finding-body dl { display: grid; grid-template-columns: 110px 1fr; gap: 4px 14px; margin-top: 8px; }
+    .finding-body dt { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--slate); padding-top: 2px; }
+    .finding-body dd { font-size: 13px; }
+    .signoff { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px 28px; margin-top: 14px; }
+    .sign-cell b { display: block; font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--slate); margin-bottom: 26px; }
+    .sign-line { border-bottom: 1px solid var(--ink); }
+    .sign-meta { font-size: 11px; color: var(--slate); margin-top: 4px; }
+    .overview { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 8px 0 14px; }
+    .metric { border: 1px solid var(--line); padding: 12px 14px; background: var(--silver); }
+    .metric-label { display: block; color: var(--slate); font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+    .metric-value { display: block; margin-top: 6px; font-size: 20px; font-weight: 700; color: var(--navy); }
+    .charts { display: grid; grid-template-columns: 1fr; gap: 16px; margin: 8px 0 14px; }
+    .page-footer { display: flex; justify-content: space-between; gap: 16px; padding: 16px 52px; border-top: 1px solid var(--line); color: var(--slate); font-size: 11px; }
+    @page { size: auto; margin: 14mm; }
+    @media print {
+      body { background: #fff; }
+      .page { max-width: none; margin: 0; box-shadow: none; }
+      .masthead { padding: 16px 0; }
+      .content { padding: 18px 0 24px; }
+      .page-footer { padding: 12px 0; }
+      .verdict, .finding, table, tr, .kpi, .metric { break-inside: avoid; page-break-inside: avoid; }
+      thead { display: table-header-group; }
+      tfoot { display: table-footer-group; }
+    }
+    @media (max-width: 640px) {
+      .content { padding: 22px 18px 32px; }
+      .masthead { padding: 18px 18px; }
+      h1 { font-size: 24px; }
+      .meta-strip, .kpis, .signoff { grid-template-columns: 1fr 1fr; }
+      table { display: block; overflow-x: auto; }
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+
+<div class="masthead">
+  <div class="masthead-brand">
+    {{if .Data.LogoDataURI}}<img class="brand-logo" src="{{.Data.LogoDataURI}}" alt="APEX Load">{{end}}
+    <div class="brand-lockup">
+      <div class="brand-unit">APEX Load · Performance Engineering</div>
+      <div class="brand-sub">Performance Test Results Analysis</div>
+    </div>
+  </div>
+  <div class="doc-badge">
+    Test <span class="mono">{{.Data.Report.Manifest.TestID}}</span><br>
+    Status <span class="mono">{{.Data.Report.Manifest.Status}}</span><br>
+    Generated <span class="mono">{{formatTime .Data.GeneratedAt}}</span>
+  </div>
+</div>
+<div class="header-rule"></div>
+
+<div class="content">
+
+<div class="eyebrow">{{.Data.Profile.Label}} Report</div>
+<h1>{{if .Data.Annotations.Title}}{{.Data.Annotations.Title}}{{else}}{{.Data.Report.Manifest.TestName}}{{end}}</h1>
+<p class="subtitle">{{.Data.Profile.Label}} profile generated from the archived run bundle for test
+<span class="mono">{{.Data.Report.Manifest.TestID}}</span>.{{if .Data.Annotations.PreparedBy}} Prepared by {{.Data.Annotations.PreparedBy}}.{{end}} {{.Data.Profile.Description}}</p>
+
+<div class="meta-strip">
+  <div class="meta-cell"><b>Environment</b><span>{{if .Data.Report.ChangeAttribution.Environment}}{{.Data.Report.ChangeAttribution.Environment}}{{else}}—{{end}}</span></div>
+  <div class="meta-cell"><b>Completed</b><span>{{formatTime .Data.Report.Manifest.CompletedAt}}</span></div>
+  <div class="meta-cell"><b>Peak load</b><span>{{.Data.Report.Overview.PeakActiveVUsers}} VUsers · {{formatFloat .Data.Report.Overview.PeakTPS}} TPS</span></div>
+  <div class="meta-cell"><b>Profile</b><span>{{.Data.Profile.Label}}</span></div>
+</div>
+
+{{range .Sections}}<section class="report-block" data-report-section="{{.ID}}">{{.Body}}</section>
+{{end}}
+
+</div><!-- .content -->
+
+<footer class="page-footer">
+  <span>APEX Load · Performance Test Results Analysis</span>
+  <span class="mono">{{.Data.Report.SchemaVersion}} · generated {{formatTime .Data.GeneratedAt}}{{if .Data.Annotations.UpdatedBy}} · commentary by {{.Data.Annotations.UpdatedBy}}{{end}}</span>
+</footer>
+</div>
+</body>
+</html>`))
+
+// reportSectionTemplates holds the per-section HTML fragment templates, one
+// {{define}} per registered section id. Each fragment is executed with the
+// shared *runArchiveHTMLReportData as its dot and always emits at least a
+// heading, so no profile-selected section ever renders blank.
+var reportSectionTemplates = template.Must(template.New("run-archive-report-sections").Funcs(profileHTMLFuncMap).Parse(`
+{{define "verdict"}}
+<div class="verdict">
+  <div class="verdict-badge {{if .Verdict.Failed}}fail{{else if .Verdict.Conditional}}conditional{{end}}">{{.Verdict.Status}}</div>
+  <div class="verdict-body {{if .Verdict.Failed}}fail{{else if .Verdict.Conditional}}conditional{{end}}">{{.Verdict.Explanation}}</div>
+</div>
+{{end}}
+
+{{define "official_outcome"}}
+<h2>Official Outcome</h2>
+<p><span class="outcome-pill {{if .Verdict.Failed}}fail{{else if .Verdict.Conditional}}conditional{{end}}">{{.Verdict.Status}}</span> {{.Verdict.Explanation}}</p>
+{{end}}
+
+{{define "executive_overview"}}
+<h2>Executive Summary</h2>
+<div class="kpis">
+  <div class="kpi"><b>Peak TPS</b><div class="v">{{formatFloat .Report.Overview.PeakTPS}}</div></div>
+  <div class="kpi"><b>Overall p95</b><div class="v">{{f0 .Report.Overview.P95Ms}} <small>ms</small></div></div>
+  <div class="kpi {{if gt .Report.Overview.ErrorPct 0.0}}warn{{end}}"><b>Error rate</b><div class="v">{{formatPercent .Report.Overview.ErrorPct}}</div></div>
+  <div class="kpi"><b>Peak VUsers</b><div class="v">{{.Report.Overview.PeakActiveVUsers}}</div></div>
+</div>
+<div class="analyst">
+  {{if .Annotations.ExecutiveNarrative}}<p>{{.Annotations.ExecutiveNarrative}}</p>{{end}}
+  {{with index .Annotations.SectionComments "decision"}}<p>{{.}}</p>{{end}}
+  {{with index .Annotations.SectionComments "business_impact"}}<p>{{.}}</p>{{end}}
+</div>
+{{end}}
+
+{{define "technical_overview"}}
+<h2>Executive summary</h2>
+<div class="analyst">
+  {{if .Annotations.ExecutiveNarrative}}<p>{{.Annotations.ExecutiveNarrative}}</p>{{end}}
+  {{with index .Annotations.SectionComments "overview"}}<p>{{.}}</p>{{end}}
+</div>
+<h3>Run at a glance</h3>
+<div class="kpis">
+  <div class="kpi"><b>Peak throughput</b><div class="v">{{formatFloat .Report.Overview.PeakTPS}} <small>TPS</small></div><div class="d">{{if gt .Report.Overview.PeakTargetTPS 0.0}}target {{formatFloat .Report.Overview.PeakTargetTPS}}{{else}}observed peak{{end}}</div></div>
+  <div class="kpi"><b>Overall p95</b><div class="v">{{f0 .Report.Overview.P95Ms}} <small>ms</small></div><div class="d">avg {{f0 .Report.Overview.AvgResponseMs}} ms</div></div>
+  <div class="kpi {{if gt .Report.Overview.ErrorPct 0.0}}warn{{end}}"><b>Error rate</b><div class="v">{{formatPercent .Report.Overview.ErrorPct}}</div><div class="d">{{hint .Report.Overview.Errors}} of {{hint .Report.Overview.Transactions}}</div></div>
+  <div class="kpi"><b>Transactions</b><div class="v">{{hint .Report.Overview.Transactions}}</div><div class="d">peak {{.Report.Overview.PeakActiveVUsers}} VUsers</div></div>
+</div>
+<table>
+<caption>Table — Run summary</caption>
+<thead><tr><th>Metric</th><th class="num">Value</th><th>Metric</th><th class="num">Value</th></tr></thead>
+<tbody>
+<tr><td>p50 / p90 / p99 (overall)</td><td class="num">{{f0 .Report.Overview.P50Ms}} / {{f0 .Report.Overview.P90Ms}} / {{f0 .Report.Overview.P99Ms}} ms</td><td>Peak concurrent VUsers</td><td class="num">{{.Report.Overview.PeakActiveVUsers}}</td></tr>
+<tr><td>Peak TPS observed</td><td class="num">{{formatFloat .Report.Overview.PeakTPS}}</td><td>Load generators</td><td class="num">{{if gt .GeneratorCount 0}}{{.GeneratorCount}}{{else}}n/a{{end}}</td></tr>
+<tr><td>Response range</td><td class="num">{{f0 .Report.Overview.MinResponseMs}}–{{f0 .Report.Overview.MaxResponseMs}} ms</td><td>Data completeness</td><td class="num">{{formatFloat .Report.Completeness.ScorePct}}%</td></tr>
+<tr><td>Interval summaries</td><td class="num">{{.Report.Overview.IntervalSummaries}}</td><td>Resource samples</td><td class="num">{{.Report.Overview.ResourceSamples}}</td></tr>
+</tbody></table>
+{{end}}
+
+{{define "sla_rollup"}}
+<h2>SLA Scorecard</h2>
+<table>
+  <thead><tr><th>Transaction</th><th class="num">Volume</th><th class="num">p95</th><th class="num">SLA</th><th>Result</th></tr></thead>
+  <tbody>
+  {{range .SLARows}}
+  <tr><td>{{.Name}}</td><td class="num">{{hint .Volume}}</td><td class="num">{{f0 .P95Ms}} ms</td><td class="num">{{if .HasSLA}}{{f0 .SLAMs}} ms{{else}}—{{end}}</td><td><span class="pill {{.ResultKind}}">{{.Result}}</span></td></tr>
+  {{else}}<tr><td colspan="5" class="muted">No per-transaction SLA evidence was archived.</td></tr>{{end}}
+  </tbody>
+</table>
+{{with index .Annotations.SectionComments "sla"}}<div class="analyst"><p>{{.}}</p></div>{{end}}
+{{end}}
+
+{{define "sla_detail"}}
+<h2>SLA compliance</h2>
+<table>
+<caption>SLA evaluation by transaction (p95 vs configured latency SLA; full results in run archive)</caption>
+<thead><tr><th>Transaction</th><th class="num">Volume</th><th class="num">p95 (ms)</th><th class="num">SLA (ms)</th><th class="num">Error %</th><th>Result</th></tr></thead>
+<tbody>
+{{range .SLARows}}
+<tr><td>{{.Name}}</td><td class="num">{{hint .Volume}}</td><td class="num">{{f0 .P95Ms}}</td><td class="num">{{if .HasSLA}}{{f0 .SLAMs}}{{else}}—{{end}}</td><td class="num">{{formatPercent .ErrorPct}}</td><td><span class="pill {{.ResultKind}}">{{.Result}}</span></td></tr>
+{{else}}
+<tr><td colspan="6" class="muted">No per-transaction archive data was recorded.</td></tr>
+{{end}}
+</tbody></table>
+{{with index .Annotations.SectionComments "sla"}}<div class="analyst"><p>{{.}}</p></div>{{end}}
+{{end}}
+
+{{define "graphs"}}
+<h2>Performance analysis</h2>
+{{if or .Charts.HasTimeline .Charts.HasActions}}
+<div class="charts">
+  {{if .Charts.HasTimeline}}{{.Charts.Throughput}}{{.Charts.ResponseTime}}{{.Charts.ErrorRate}}{{.Charts.VUsers}}{{end}}
+  {{if .Charts.HasActions}}{{.Charts.ActionLatency}}{{end}}
+</div>
+{{else}}
+<p class="muted">No interval timeline was captured for this run, so time-series graphs are unavailable.</p>
+{{end}}
+{{with index .Annotations.SectionComments "performance"}}<div class="analyst"><p>{{.}}</p></div>{{end}}
+{{end}}
+
+{{define "risk_summary"}}
+<h2>Top Risks</h2>
+{{range .Findings}}
+  <div class="finding"><div class="finding-head {{if eq .Severity "major"}}major{{end}}"><span class="fid">{{.ID}}</span><span class="ft">{{.Title}}</span><span class="pill {{sevPill .Severity}}">{{sevLabel .Severity}}</span></div>
+  <div class="finding-body">{{if .Impact}}<p>{{.Impact}}</p>{{else if .Observed}}<p>{{.Observed}}</p>{{end}}</div></div>
+{{else}}<p class="muted">No material release risks were derived from the archive.</p>{{end}}
+{{with index .Annotations.SectionComments "risks"}}<div class="analyst"><p>{{.}}</p></div>{{end}}
+{{end}}
+
+{{define "root_cause"}}
+<h2>Findings</h2>
+{{range .Findings}}
+<div class="finding">
+  <div class="finding-head {{if eq .Severity "major"}}major{{end}}"><span class="fid">{{.ID}}</span><span class="ft">{{.Title}}</span><span class="pill {{sevPill .Severity}}">{{sevLabel .Severity}}</span></div>
+  <div class="finding-body"><dl>
+    {{if .Observed}}<dt>Observed</dt><dd>{{.Observed}}</dd>{{end}}
+    {{if .Evidence}}<dt>Evidence</dt><dd>{{.Evidence}}</dd>{{end}}
+    {{if .RootCause}}<dt>Root cause</dt><dd>{{.RootCause}}</dd>{{end}}
+    {{if .Impact}}<dt>Impact</dt><dd>{{.Impact}}</dd>{{end}}
+  </dl></div>
+</div>
+{{else}}
+<p class="muted">No automated findings were derived; the run completed without notable issues.</p>
+{{end}}
+{{with index .Annotations.SectionComments "bottlenecks"}}<div class="analyst"><p>{{.}}</p></div>{{end}}
+{{with index .Annotations.SectionComments "errors"}}<div class="analyst"><p>{{.}}</p></div>{{end}}
+{{end}}
+
+{{define "recommendations"}}
+<h2>Recommendations</h2>
+<div class="analyst">
+  {{with index .Annotations.SectionComments "recommendations"}}<p>{{.}}</p>{{else}}<p class="muted">Document recommended follow-up actions, owners, target dates, retest scope, or accepted risks here.</p>{{end}}
+</div>
+{{end}}
+
+{{define "signoff"}}
+<h2>Recommendation &amp; Sign-Off</h2>
+<div class="signoff">
+  <div class="sign-cell"><b>Prepared by</b><div class="sign-line"></div><div class="sign-meta">{{if .Annotations.PreparedBy}}{{.Annotations.PreparedBy}}{{else}}Performance Engineer{{end}} · Date</div></div>
+  <div class="sign-cell"><b>Approver</b><div class="sign-line"></div><div class="sign-meta">Release Manager · Date</div></div>
+</div>
+{{end}}
+
+{{define "release_trend"}}
+<h2>Release trend</h2>
+<p class="muted">No multi-run release trend is bundled with this archive. Compare against prior runs from the Releases view for delta and regression analysis.</p>
+{{end}}
+
+{{define "completeness"}}
+<h2>Completeness Score</h2>
+<p class="section-copy">{{formatFloat .Report.Completeness.ScorePct}}% — {{.Report.Completeness.Status}}</p>
+{{if .Report.Completeness.Findings}}
+<table>
+  <thead><tr><th>Dimension</th><th>Severity</th><th class="num">Penalty</th><th>Finding</th></tr></thead>
+  <tbody>
+    {{range .Report.Completeness.Findings}}
+    <tr><td>{{.Dimension}}</td><td>{{.Severity}}</td><td class="num">-{{formatFloat .Penalty}}</td><td>{{.Message}}</td></tr>
+    {{end}}
+  </tbody>
+</table>
+{{end}}
+{{end}}
+
+{{define "change_attribution"}}
+<h2>Change Attribution</h2>
+<div class="overview">
+  <div class="metric"><span class="metric-label">Scripts</span><span class="metric-value">{{if .Report.ChangeAttribution.ScriptRevisions}}{{join .Report.ChangeAttribution.ScriptRevisions}}{{else}}n/a{{end}}</span></div>
+  <div class="metric"><span class="metric-label">Scenario</span><span class="metric-value">{{if .Report.ChangeAttribution.ScenarioRevision}}{{.Report.ChangeAttribution.ScenarioRevision}}{{else}}n/a{{end}}</span></div>
+  <div class="metric"><span class="metric-label">Environment</span><span class="metric-value">{{if .Report.ChangeAttribution.Environment}}{{.Report.ChangeAttribution.Environment}}{{else}}n/a{{end}}</span></div>
+  <div class="metric"><span class="metric-label">Generators</span><span class="metric-value">{{if .Report.ChangeAttribution.GeneratorVersions}}{{join .Report.ChangeAttribution.GeneratorVersions}}{{else}}n/a{{end}}</span></div>
+</div>
+<p class="section-copy">Runtime overrides {{if .Report.ChangeAttribution.RuntimeOverrides}}were applied{{if .Report.ChangeAttribution.RuntimeOverrideFields}} to: {{join .Report.ChangeAttribution.RuntimeOverrideFields}}{{end}}{{else}}were not applied{{end}}.</p>
+{{end}}
+
+{{define "schema_compatibility"}}
+<h2>Schema Compatibility</h2>
+<p class="section-copy">Report schema {{.Report.SchemaVersion}} is {{.Report.Compatibility.Status}} with archive manifest {{.Report.Compatibility.ManifestSchemaVersion}}.</p>
+<table>
+  <thead><tr><th>Output</th><th>Artifact</th><th>Status</th><th>Schema</th></tr></thead>
+  <tbody>
+    {{range .Report.Compatibility.Outputs}}
+    <tr><td>{{.Format}}</td><td>{{if .Artifact}}{{.Artifact}}{{else}}n/a{{end}}</td><td>{{.Status}}</td><td>{{if .SchemaVersion}}{{.SchemaVersion}}{{else}}n/a{{end}}</td></tr>
+    {{else}}<tr><td colspan="4" class="muted">No output compatibility was recorded.</td></tr>
+    {{end}}
+  </tbody>
+</table>
+{{end}}
+
+{{define "summary_timeline"}}
+<h2>Summary Timeline</h2>
+{{if .Report.SummaryTimeline}}
+<table>
+  <thead><tr><th>Timestamp</th><th class="num">Active VUsers</th><th class="num">TPS</th><th class="num">Target TPS</th><th class="num">Gap</th><th class="num">P95 (ms)</th><th class="num">Error %</th><th class="num">Total Tx</th><th class="num">Total Errors</th></tr></thead>
+  <tbody>
+    {{range .Report.SummaryTimeline}}
+    <tr><td>{{formatTime .Timestamp}}</td><td class="num">{{.ActiveVUsers}}</td><td class="num">{{formatFloat .TPS}}</td><td class="num">{{formatFloat .TargetTPS}}</td><td class="num"><span class="pill {{if .ThroughputTargetMissed}}fail{{else}}pass{{end}}">{{formatPercent .ThroughputGapPct}}</span></td><td class="num">{{formatFloat .P95Ms}}</td><td class="num">{{formatPercent .ErrorPct}}</td><td class="num">{{.TotalTx}}</td><td class="num">{{.TotalErrors}}</td></tr>
+    {{end}}
+  </tbody>
+</table>
+{{else}}<p class="muted">No interval timeline was captured for this run.</p>{{end}}
+{{end}}
+
+{{define "actions"}}
+<h2>Action Summary</h2>
+<table>
+  <thead><tr><th>Action</th><th class="num">Transactions</th><th class="num">Errors</th><th class="num">Error %</th><th class="num">Avg (ms)</th><th class="num">Max (ms)</th></tr></thead>
+  <tbody>
+    {{range .ActionRows}}
+    <tr><td>{{.Name}}</td><td class="num">{{.Stats.Transactions}}</td><td class="num">{{.Stats.Errors}}</td><td class="num">{{formatPercent .Stats.ErrorPct}}</td><td class="num">{{formatFloat .Stats.AvgResponseMs}}</td><td class="num">{{formatFloat .Stats.MaxResponseMs}}</td></tr>
+    {{else}}
+    <tr><td colspan="6" class="muted">No action-level archive data was recorded.</td></tr>
+    {{end}}
+  </tbody>
+</table>
+{{end}}
+
+{{define "network_phases"}}
+<h2>Network Phase Breakdown</h2>
+{{if gt .Report.NetworkPhases.Samples 0}}
+<div class="overview">
+  <div class="metric"><span class="metric-label">DNS Avg</span><span class="metric-value">{{formatFloat .Report.NetworkPhases.Overall.AvgDNSMs}} ms</span></div>
+  <div class="metric"><span class="metric-label">Connect Avg</span><span class="metric-value">{{formatFloat .Report.NetworkPhases.Overall.AvgConnectMs}} ms</span></div>
+  <div class="metric"><span class="metric-label">TLS Avg</span><span class="metric-value">{{formatFloat .Report.NetworkPhases.Overall.AvgTLSMs}} ms</span></div>
+  <div class="metric"><span class="metric-label">TTFB Avg</span><span class="metric-value">{{formatFloat .Report.NetworkPhases.Overall.AvgTTFBMs}} ms</span></div>
+</div>
+{{else}}<p class="muted">No network-phase timing was captured for this run.</p>{{end}}
+{{end}}
+
+{{define "errors"}}
+<h2>Error Patterns</h2>
+{{if .Report.ErrorPatterns}}
+<table>
+  <thead><tr><th>Pattern</th><th class="num">Occurrences</th><th>First Seen</th><th>Latest Seen</th><th>Actions</th><th>Snapshot</th></tr></thead>
+  <tbody>
+    {{range .Report.ErrorPatterns}}
+    <tr><td>{{.Sample}}</td><td class="num">{{.Count}}</td><td>{{formatTime .FirstSeen}}</td><td>{{formatTime .LatestSeen}}</td><td>{{if .Actions}}{{join .Actions}}{{else}}n/a{{end}}</td><td>{{if .Snapshot}}retained{{else}}n/a{{end}}</td></tr>
+    {{end}}
+  </tbody>
+</table>
+{{else}}<p class="muted">No clustered error patterns were recorded.</p>{{end}}
+{{end}}
+
+{{define "resources"}}
+<h2>Resource Peaks</h2>
+<div class="overview">
+  <div class="metric"><span class="metric-label">CPU Peak</span><span class="metric-value">{{formatFloat .Report.ResourcePeaks.CPUProcessPct}}%</span></div>
+  <div class="metric"><span class="metric-label">Memory Peak</span><span class="metric-value">{{formatFloat .Report.ResourcePeaks.MemProcessMB}} MB</span></div>
+  <div class="metric"><span class="metric-label">Net Sent Peak</span><span class="metric-value">{{formatFloat .Report.ResourcePeaks.NetSentKbps}} KB/s</span></div>
+  <div class="metric"><span class="metric-label">Net Recv Peak</span><span class="metric-value">{{formatFloat .Report.ResourcePeaks.NetRecvKbps}} KB/s</span></div>
+</div>
+{{end}}
+
+{{define "browser"}}
+<h2>Browser Metrics</h2>
+{{if .Report.Overview.Browser}}
+<div class="overview">
+  <div class="metric"><span class="metric-label">Samples</span><span class="metric-value">{{.Report.Overview.Browser.Samples}}</span></div>
+  <div class="metric"><span class="metric-label">Avg FCP</span><span class="metric-value">{{formatFloat .Report.Overview.Browser.AvgFCPMs}} ms</span></div>
+  <div class="metric"><span class="metric-label">Avg LCP</span><span class="metric-value">{{formatFloat .Report.Overview.Browser.AvgLCPMs}} ms</span></div>
+  <div class="metric"><span class="metric-label">Avg CLS</span><span class="metric-value">{{formatScore .Report.Overview.Browser.AvgCLSScore}}</span></div>
+  <div class="metric"><span class="metric-label">Avg INP</span><span class="metric-value">{{formatFloat .Report.Overview.Browser.AvgINPMs}} ms</span></div>
+</div>
+{{if .BrowserEngineRows}}
+<h3>Engine Rollup</h3>
+<table>
+  <thead><tr><th>Engine</th><th class="num">Samples</th><th class="num">Avg LCP</th><th class="num">Avg CLS</th><th class="num">Avg INP</th></tr></thead>
+  <tbody>
+    {{range .BrowserEngineRows}}
+    <tr><td>{{.BrowserEngine}}</td><td class="num">{{.Samples}}</td><td class="num">{{formatFloat .AvgLCPMs}} ms</td><td class="num">{{formatScore .AvgCLSScore}}</td><td class="num">{{formatFloat .AvgINPMs}} ms</td></tr>
+    {{end}}
+  </tbody>
+</table>
+{{end}}
+{{if .BrowserPlatformRows}}
+<h3>Platform Rollup</h3>
+<table>
+  <thead><tr><th>Platform</th><th>Engine</th><th class="num">Samples</th><th class="num">Avg LCP</th><th class="num">Avg CLS</th><th class="num">Avg INP</th></tr></thead>
+  <tbody>
+    {{range .BrowserPlatformRows}}
+    <tr><td>{{.DevicePlatform}}</td><td>{{.BrowserEngine}}</td><td class="num">{{.Samples}}</td><td class="num">{{formatFloat .AvgLCPMs}} ms</td><td class="num">{{formatScore .AvgCLSScore}}</td><td class="num">{{formatFloat .AvgINPMs}} ms</td></tr>
+    {{end}}
+  </tbody>
+</table>
+{{end}}
+{{if .BrowserDeviceRows}}
+<h3>Device Rollup</h3>
+<table>
+  <thead><tr><th>Device</th><th>Platform</th><th>Engine</th><th>Tier</th><th class="num">Avg LCP</th><th class="num">Avg INP</th></tr></thead>
+  <tbody>
+    {{range .BrowserDeviceRows}}
+    <tr><td>{{.DeviceProfile}}</td><td>{{.DevicePlatform}}</td><td>{{.BrowserEngine}}</td><td>{{.DeviceTier}}</td><td class="num">{{formatFloat .AvgLCPMs}} ms</td><td class="num">{{formatFloat .AvgINPMs}} ms</td></tr>
+    {{end}}
+  </tbody>
+</table>
+{{end}}
+{{else}}<p class="muted">No browser metrics were captured for this run.</p>{{end}}
+{{end}}
+
+{{define "soap"}}
+<h2>SOAP Diagnostics</h2>
+{{if or .SOAPOperationRows .SOAPFaultCodeRows .SOAPFaultBuckets .SOAPPayloadBuckets}}
+{{if .SOAPOperationRows}}
+<h3>SOAP Operation Summary</h3>
+<table>
+  <thead><tr><th>Operation</th><th class="num">Transactions</th><th class="num">Errors</th><th class="num">Error %</th><th class="num">Avg (ms)</th></tr></thead>
+  <tbody>
+    {{range .SOAPOperationRows}}
+    <tr><td>{{.Name}}</td><td class="num">{{.Stats.Transactions}}</td><td class="num">{{.Stats.Errors}}</td><td class="num">{{formatPercent .Stats.ErrorPct}}</td><td class="num">{{formatFloat .Stats.AvgResponseMs}}</td></tr>
+    {{end}}
+  </tbody>
+</table>
+{{end}}
+{{if .SOAPFaultCodeRows}}
+<h3>SOAP Fault Codes</h3>
+<table>
+  <thead><tr><th>Code</th><th class="num">Count</th></tr></thead>
+  <tbody>{{range .SOAPFaultCodeRows}}<tr><td>{{.Name}}</td><td class="num">{{.Count}}</td></tr>{{end}}</tbody>
+</table>
+{{end}}
+{{if .SOAPFaultCategoryRows}}
+<h3>SOAP Fault Categories</h3>
+<table>
+  <thead><tr><th>Category</th><th class="num">Count</th></tr></thead>
+  <tbody>{{range .SOAPFaultCategoryRows}}<tr><td>{{.Name}}</td><td class="num">{{.Count}}</td></tr>{{end}}</tbody>
+</table>
+{{end}}
+{{if .SOAPFaultBuckets}}
+<h3>SOAP Fault Timeline</h3>
+<table>
+  <thead><tr><th>Timestamp</th><th class="num">Total</th><th>Codes</th><th>Categories</th></tr></thead>
+  <tbody>{{range .SOAPFaultBuckets}}<tr><td>{{formatTime .Timestamp}}</td><td class="num">{{.Total}}</td><td>{{.Codes}}</td><td>{{.Categories}}</td></tr>{{end}}</tbody>
+</table>
+{{end}}
+{{if .SOAPPayloadBuckets}}
+<h3>SOAP Payload Timeline</h3>
+<table>
+  <thead><tr><th>Timestamp</th><th class="num">Samples</th><th class="num">Avg Request KB</th><th class="num">Avg Response KB</th><th class="num">Avg Envelope Overhead KB</th><th class="num">Max Envelope Overhead KB</th></tr></thead>
+  <tbody>{{range .SOAPPayloadBuckets}}<tr><td>{{formatTime .Timestamp}}</td><td class="num">{{.Samples}}</td><td class="num">{{formatFloat .AvgRequestPayloadKB}}</td><td class="num">{{formatFloat .AvgResponsePayloadKB}}</td><td class="num">{{formatFloat .AvgEnvelopeOverheadKB}}</td><td class="num">{{formatFloat .MaxEnvelopeOverheadKB}}</td></tr>{{end}}</tbody>
+</table>
+{{end}}
+{{else}}<p class="muted">No SOAP diagnostics were captured for this run.</p>{{end}}
+{{end}}
+
+{{define "web2_migration"}}
+<h2>Web 2.0 Migration</h2>
+{{if .Report.Web2Migration}}
+<div class="overview">
+  <div class="metric"><span class="metric-label">Status</span><span class="metric-value">{{.Report.Web2Migration.Status}}</span></div>
+  <div class="metric"><span class="metric-label">Imported Steps</span><span class="metric-value">{{.Report.Web2Migration.ImportedSteps}}</span></div>
+  <div class="metric"><span class="metric-label">Replayed Steps</span><span class="metric-value">{{.Report.Web2Migration.ReplayedSteps}}</span></div>
+  <div class="metric"><span class="metric-label">Failed Steps</span><span class="metric-value">{{.Report.Web2Migration.FailedSteps}}</span></div>
+</div>
+{{else}}<p class="muted">No TruClient/Web 2.0 migration evidence is present.</p>{{end}}
+{{end}}
+
+{{define "test_setup"}}
+<h2>Test setup</h2>
+<table>
+<thead><tr><th>Component</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>Environment</td><td>{{if .Report.ChangeAttribution.Environment}}{{.Report.ChangeAttribution.Environment}}{{else}}n/a{{end}}</td></tr>
+<tr><td>Scenario revision</td><td>{{if .Report.ChangeAttribution.ScenarioRevision}}{{.Report.ChangeAttribution.ScenarioRevision}}{{else}}n/a{{end}}</td></tr>
+<tr><td>Load generation</td><td>APEX Load{{if gt .GeneratorCount 0}} · {{.GeneratorCount}} generator(s){{end}}{{if .Report.ChangeAttribution.GeneratorVersions}} · {{join .Report.ChangeAttribution.GeneratorVersions}}{{end}}</td></tr>
+<tr><td>Scripts</td><td>{{if .Report.ChangeAttribution.ScriptRevisions}}{{join .Report.ChangeAttribution.ScriptRevisions}}{{else}}n/a{{end}}</td></tr>
+</tbody></table>
+{{end}}
+
+{{define "raw_exports"}}
+<h2>Data sources &amp; glossary</h2>
+<table>
+<thead><tr><th>Artifact</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>Run archive (manifest, transactions, summaries)</td><td><span class="mono">{{.Report.Manifest.TestID}}</span></td></tr>
+<tr><td>Transactions captured</td><td>{{hint .Report.Overview.Transactions}}</td></tr>
+<tr><td>Interval summaries</td><td>{{.Report.Overview.IntervalSummaries}}</td></tr>
+<tr><td>Resource samples</td><td>{{.Report.Overview.ResourceSamples}}</td></tr>
+<tr><td>Report schema</td><td><span class="mono">{{.Report.SchemaVersion}}</span></td></tr>
+</tbody></table>
+<p class="section-copy"><strong>Glossary.</strong> <strong>TPS</strong> — completed transactions per second.
+<strong>p95</strong> — 95th-percentile response time over the run. <strong>VU</strong> — virtual user.</p>
+{{end}}
+
+{{define "generator_manifest"}}
+<h2>Appendix C — Generator assignment manifest</h2>
+{{with .Manifest}}
+<h3>Assignment strategy</h3>
+<table>
+<thead><tr><th>Setting</th><th>Value</th></tr></thead>
+<tbody>
+{{with .LoadGenerators.Assignment}}
+<tr><td>Mode</td><td>{{if .Mode}}{{.Mode}}{{else}}auto{{end}}</td></tr>
+<tr><td>Shard strategy</td><td>{{if .ShardStrategy}}{{.ShardStrategy}}{{else}}capacity_weighted{{end}}</td></tr>
+{{if .SelectedTargets}}<tr><td>Selected targets</td><td class="mono">{{join .SelectedTargets}}</td></tr>{{end}}
+{{else}}
+<tr><td>Mode</td><td>auto (capacity-weighted)</td></tr>
+{{end}}
+</tbody></table>
+<h3>Generator shards</h3>
+<table>
+<thead><tr><th>Group</th><th>Target</th><th class="num">VUsers</th><th>Strategy</th></tr></thead>
+<tbody>
+{{range .LoadGenerators.GeneratorShards}}
+<tr><td>{{.Group}}</td><td class="mono">{{.Target}}</td><td class="num">{{.VUsers}}</td><td>{{if .ShardStrategy}}{{.ShardStrategy}}{{else}}—{{end}}</td></tr>
+{{else}}
+<tr><td colspan="4" class="muted">No generator shard assignment was recorded.</td></tr>
+{{end}}
+</tbody></table>
+<h3>Generator inventory</h3>
+<table>
+<thead><tr><th>Target</th><th>Region</th><th>Status</th><th class="num">Health</th><th class="num">Active</th><th class="num">Available</th><th class="num">Max</th><th>Capacity</th></tr></thead>
+<tbody>
+{{range $.InventoryRows}}
+<tr><td class="mono">{{.Target}}</td><td>{{if .Region}}{{.Region}}{{else}}—{{end}}</td><td>{{.Status}}</td><td class="num">{{.HealthScore}}</td><td class="num">{{.ActiveVUsers}}</td><td class="num">{{.AvailableCapacity}}</td><td class="num">{{.MaxVUsers}}</td><td>{{if .CapacityState}}{{.CapacityState}}{{else}}—{{end}}</td></tr>
+{{else}}
+<tr><td colspan="8" class="muted">No generator inventory snapshot was recorded.</td></tr>
+{{end}}
+</tbody></table>
+{{if gt $.InventoryOverflow 0}}<p class="section-copy">… and {{$.InventoryOverflow}} more generator(s) not shown.</p>{{end}}
+<h3>Scripts &amp; groups</h3>
+<table>
+<thead><tr><th>Group</th><th>Script</th><th>Protocol</th><th class="num">VUsers</th><th>Ramp up</th></tr></thead>
+<tbody>
+{{range .Scripts}}
+<tr><td>{{.GroupName}}</td><td>{{if .ScriptName}}{{.ScriptName}}{{else}}{{.ScriptID}}{{end}}</td><td>{{if .Protocol}}{{.Protocol}}{{else}}—{{end}}</td><td class="num">{{.VUsers}}</td><td>{{if .RampUp}}{{.RampUp}}{{else}}—{{end}}</td></tr>
+{{else}}
+<tr><td colspan="5" class="muted">No script/group assignment was recorded.</td></tr>
+{{end}}
+</tbody></table>
+{{else}}
+<p class="muted">The generator assignment manifest was not available for this run.</p>
+{{end}}
+{{end}}
+
+{{define "audit_identity"}}
+<h2>Run Identity</h2>
+<table><tbody>
+  <tr><th>Test ID</th><td class="mono">{{.Report.Manifest.TestID}}</td><th>Run name</th><td>{{.Report.Manifest.TestName}}</td></tr>
+  <tr><th>Status</th><td>{{.Report.Manifest.Status}}</td><th>Completed</th><td>{{formatTime .Report.Manifest.CompletedAt}}</td></tr>
+  <tr><th>Project / Release / Scenario</th><td colspan="3" class="mono">{{.Report.Manifest.Provenance.ProjectID}} / {{.Report.Manifest.Provenance.ReleaseID}} / {{.Report.Manifest.Provenance.ScenarioID}}</td></tr>
+</tbody></table>
+{{end}}
+
+{{define "authorization"}}
+<h2>Authorization &amp; Sign-off</h2>
+<table><tbody>
+  <tr><th>Created by</th><td>{{.Report.Manifest.Provenance.CreatedByDisplayName}} <span class="mono">{{.Report.Manifest.Provenance.CreatedBySubject}}</span></td><th>Started by</th><td>{{.Report.Manifest.Provenance.StartedByDisplayName}} <span class="mono">{{.Report.Manifest.Provenance.StartedBySubject}}</span></td></tr>
+  <tr><th>Stopped by</th><td>{{.Report.Manifest.Provenance.StoppedByDisplayName}} <span class="mono">{{.Report.Manifest.Provenance.StoppedBySubject}}</span></td><th>Scheduled start</th><td>{{if .Report.Manifest.Provenance.ScheduledStartAt}}{{formatTime .Report.Manifest.Provenance.ScheduledStartAt}}{{else}}n/a{{end}}</td></tr>
+</tbody></table>
+{{end}}
+
+{{define "governance"}}
+<h2>Governance &amp; Provenance</h2>
+{{with .Report.Manifest.Provenance.Governance}}
+<table><tbody>
+  <tr><th>Capacity reservation</th><td>{{if .CapacityReservationID}}{{.CapacityReservationID}}{{else}}n/a{{end}}</td><th>Launch status</th><td>{{if .LaunchPreflight}}{{.LaunchPreflight.Status}}{{else}}n/a{{end}}</td></tr>
+  {{with .ExecutionPlanApproval}}<tr><th>Execution-plan approval</th><td>{{if .ID}}{{.ID}}{{else}}n/a{{end}} · {{if .Status}}{{.Status}}{{else}}n/a{{end}}</td><th>Approved by</th><td>{{if .ResolvedBy}}{{.ResolvedBy}}{{else}}n/a{{end}} · {{if .DecisionReason}}{{.DecisionReason}}{{else}}no reason captured{{end}}</td></tr>{{end}}
+</tbody></table>
+{{else}}<p class="muted">No governance provenance was captured for this run.</p>{{end}}
+{{end}}
+
+{{define "provenance"}}
+<h2>Run Configuration &amp; Provenance</h2>
+<table><tbody>
+  <tr><th>Scenario mode</th><td>{{if .Report.Manifest.Provenance.ScenarioMode}}{{.Report.Manifest.Provenance.ScenarioMode}}{{else}}n/a{{end}}</td><th>Total VUsers</th><td>{{.Report.Manifest.Provenance.TotalVUsers}}</td></tr>
+  <tr><th>Duration</th><td>{{if .Report.Manifest.Provenance.Duration}}{{.Report.Manifest.Provenance.Duration}}{{else}}n/a{{end}}</td><th>Start delay</th><td>{{if .Report.Manifest.Provenance.StartDelay}}{{.Report.Manifest.Provenance.StartDelay}}{{else}}none{{end}}</td></tr>
+  <tr><th>Report schema</th><td class="mono">{{.Report.SchemaVersion}}</td><th>Manifest schema</th><td class="mono">{{.Report.Manifest.SchemaVersion}}</td></tr>
+</tbody></table>
+{{end}}
+
+{{define "evidence_tiers"}}
+<h2>Completeness &amp; Evidence Tiers</h2>
+<p class="section-copy">Completeness score: <strong>{{formatFloat .Report.Completeness.ScorePct}}%</strong> ({{.Report.Completeness.Status}}).</p>
+<table><thead><tr><th>Tier</th><th>Status</th><th class="num">Count</th><th>Notes</th></tr></thead><tbody>
+  {{range .Report.EvidenceTiers}}<tr><td>{{.Label}}</td><td>{{.Status}}</td><td class="num">{{.Count}}</td><td>{{.Reason}}</td></tr>
+  {{else}}<tr><td colspan="4" class="muted">No evidence tiers were declared for this run.</td></tr>{{end}}
+</tbody></table>
+{{end}}
+
+{{define "artifact_integrity"}}
+<h2>Artifact Integrity</h2>
+<table><thead><tr><th>Artifact</th><th>Type</th><th class="num">Records</th><th class="num">Bytes</th><th>SHA-256</th></tr></thead><tbody>
+  {{range .Report.ArtifactInventory}}<tr><td class="mono">{{.Name}}</td><td>{{.RecordType}} {{.Format}}</td><td class="num">{{.Count}}</td><td class="num">{{.SizeBytes}}</td><td class="mono">{{if .SHA256}}{{.SHA256}}{{else}}not captured{{end}}</td></tr>
+  {{else}}<tr><td colspan="5" class="muted">No artifact inventory was available.</td></tr>{{end}}
+</tbody></table>
+{{end}}
+
+{{define "report_authorship"}}
+<h2>Report Authorship / Edit Trail</h2>
+<table><tbody>
+  <tr><th>Prepared by</th><td>{{if .Annotations.PreparedBy}}{{.Annotations.PreparedBy}}{{else}}n/a{{end}}</td><th>Updated by</th><td>{{if .Annotations.UpdatedBy}}{{.Annotations.UpdatedBy}}{{else}}n/a{{end}}</td></tr>
+  <tr><th>Updated at</th><td>{{formatTime .Annotations.UpdatedAt}}</td><th>Verdict override</th><td>{{if .Annotations.VerdictOverride}}{{.Annotations.VerdictOverride}} — {{.Annotations.VerdictExplanation}}{{else}}none{{end}}</td></tr>
+</tbody></table>
+<div class="analyst">
+  {{range $section := .CommentarySections}}{{with $comment := index $.Annotations.SectionComments $section.ID}}<p><strong>{{$section.Label}}</strong>: {{$comment}}</p>{{end}}{{end}}
+</div>
+{{end}}
+`))
