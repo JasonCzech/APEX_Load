@@ -151,19 +151,23 @@ func TestHarnessJarHasMainClassEntrypoint(t *testing.T) {
 }
 
 func TestLRThinkTimeEmitsEventWithoutSleeping(t *testing.T) {
-	start := time.Now()
-	stdout, stderr, err := runHarnessFixture(t, `import lrapi.lr;
+	// Measure only the JVM run (runDur), not javac compilation + process setup:
+	// cold javac alone is seconds and would swamp any think_time budget.
+	stdout, stderr, runDur, err := runHarnessFixtureWithInputTimed(t, `import lrapi.lr;
 
 public class Actions {
   public int action() {
     return lr.think_time(2.0);
   }
-}`)
+}`, `{"class_name":"Actions","method":"full_lifecycle"}`+"\n")
 	if err != nil {
 		t.Fatalf("Harness failed: %v\nstdout:\n%s\nstderr:\n%s", err, stdout, stderr)
 	}
-	if elapsed := time.Since(start); elapsed > 750*time.Millisecond {
-		t.Fatalf("lr.think_time slept for %s; want event-only pacing", elapsed)
+	// think_time(2.0) that slept would push the run past ~2s; event-only pacing
+	// leaves just JVM startup (~0.5s). 1.5s cleanly separates the two while
+	// tolerating slow/cold JVM starts on CI.
+	if runDur > 1500*time.Millisecond {
+		t.Fatalf("lr.think_time slept for %s; want event-only pacing", runDur)
 	}
 	if !strings.Contains(stderr, `"type":"think_time"`) || !strings.Contains(stderr, `"message":"2000"`) {
 		t.Fatalf("stderr = %s, want think_time event with milliseconds", stderr)
@@ -175,6 +179,15 @@ func runHarnessFixture(t *testing.T, actionsSource string) (string, string, erro
 }
 
 func runHarnessFixtureWithInput(t *testing.T, actionsSource string, stdin string) (string, string, error) {
+	stdout, stderr, _, err := runHarnessFixtureWithInputTimed(t, actionsSource, stdin)
+	return stdout, stderr, err
+}
+
+// runHarnessFixtureWithInputTimed compiles and runs the shim like
+// runHarnessFixtureWithInput, but also returns the wall-clock duration of the
+// JVM run alone (excluding javac compilation and command setup) so timing
+// assertions measure the shim's behavior, not the toolchain.
+func runHarnessFixtureWithInputTimed(t *testing.T, actionsSource string, stdin string) (string, string, time.Duration, error) {
 	t.Helper()
 	javac, err := exec.LookPath("javac")
 	if err != nil {
@@ -204,8 +217,10 @@ func runHarnessFixtureWithInput(t *testing.T, actionsSource string, stdin string
 	var stderr bytes.Buffer
 	run.Stdout = &stdout
 	run.Stderr = &stderr
+	start := time.Now()
 	err = run.Run()
-	return stdout.String(), stderr.String(), err
+	runDur := time.Since(start)
+	return stdout.String(), stderr.String(), runDur, err
 }
 
 const javaShimActionsSource = `import lrapi.lr;

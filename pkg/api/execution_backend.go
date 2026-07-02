@@ -124,35 +124,48 @@ func buildRunArchiveProvenance(tr *TestRunner, test *ManagedTest) RunArchiveProv
 	if test == nil {
 		return provenance
 	}
-	provenance.ApplicationID = test.ApplicationID
-	provenance.ReleaseID = test.ReleaseID
-	provenance.ScenarioID = test.ScenarioID
-	provenance.ProjectID = normalizeProjectID(test.ProjectID)
-	provenance.RequestedAt = test.CreatedAt
-	provenance.StartedAt = test.StartedAt
-	provenance.ScheduledStartAt = cloneTimePtr(test.ScheduledStartAt)
-	provenance.ScenarioMode = test.ScenarioMode
-	provenance.ScriptShakeout = test.ScriptShakeout
-	provenance.ResourceBaseline = test.ResourceBaseline
-	provenance.StartDelay = test.StartDelay
-	provenance.TotalVUsers = test.TotalVUsers
-	provenance.Duration = test.DurationStr
-	provenance.Assignment = cloneGeneratorAssignmentSettings(test.Assignment)
-	provenance.GeneratorShards = cloneGeneratorShardSummaries(test.GeneratorShards)
-	provenance.GoalConfig = cloneGoalConfig(test.GoalConfig)
-	provenance.RuntimeSettings = cloneRuntimeSettings(test.RuntimeSettings)
-	provenance.RuntimeSettingsReview = cloneRuntimeSettingsReview(test.RuntimeSettingsReview)
-	provenance.Groups = cloneArchiveTestGroups(test.Groups)
-	provenance.BaselinePinned = test.BaselinePinned
-	provenance.BaselinePinnedAt = test.BaselinePinnedAt
+	// This runs in the test-execution goroutine, which does not hold tr.mu, while
+	// other goroutines mutate the ManagedTest under tr.mu (the pending-queue refresh
+	// clears PendingReason/QueuePosition; lifecycle/stop attribution updates
+	// Status/Error/Stopped*). Read the test fields from a snapshot taken under the
+	// lock so those reads don't race. tr.GetSystemSettings/SystemInventory take
+	// their own locks and must stay OUTSIDE this one.
+	snapshot := test
+	if tr != nil {
+		tr.mu.RLock()
+		copied := *test
+		tr.mu.RUnlock()
+		snapshot = &copied
+	}
+	provenance.ApplicationID = snapshot.ApplicationID
+	provenance.ReleaseID = snapshot.ReleaseID
+	provenance.ScenarioID = snapshot.ScenarioID
+	provenance.ProjectID = normalizeProjectID(snapshot.ProjectID)
+	provenance.RequestedAt = snapshot.CreatedAt
+	provenance.StartedAt = snapshot.StartedAt
+	provenance.ScheduledStartAt = cloneTimePtr(snapshot.ScheduledStartAt)
+	provenance.ScenarioMode = snapshot.ScenarioMode
+	provenance.ScriptShakeout = snapshot.ScriptShakeout
+	provenance.ResourceBaseline = snapshot.ResourceBaseline
+	provenance.StartDelay = snapshot.StartDelay
+	provenance.TotalVUsers = snapshot.TotalVUsers
+	provenance.Duration = snapshot.DurationStr
+	provenance.Assignment = cloneGeneratorAssignmentSettings(snapshot.Assignment)
+	provenance.GeneratorShards = cloneGeneratorShardSummaries(snapshot.GeneratorShards)
+	provenance.GoalConfig = cloneGoalConfig(snapshot.GoalConfig)
+	provenance.RuntimeSettings = cloneRuntimeSettings(snapshot.RuntimeSettings)
+	provenance.RuntimeSettingsReview = cloneRuntimeSettingsReview(snapshot.RuntimeSettingsReview)
+	provenance.Groups = cloneArchiveTestGroups(snapshot.Groups)
+	provenance.BaselinePinned = snapshot.BaselinePinned
+	provenance.BaselinePinnedAt = snapshot.BaselinePinnedAt
 	provenance.ControllerEnv = captureAPEXLoadEnv()
-	provenance.CreatedBySubject = test.CreatedBySubject
-	provenance.CreatedByDisplayName = test.CreatedByDisplayName
-	provenance.StartedBySubject = test.StartedBySubject
-	provenance.StartedByDisplayName = test.StartedByDisplayName
-	provenance.StoppedBySubject = test.StoppedBySubject
-	provenance.StoppedByDisplayName = test.StoppedByDisplayName
-	provenance.Governance = buildRunArchiveGovernanceSnapshot(test)
+	provenance.CreatedBySubject = snapshot.CreatedBySubject
+	provenance.CreatedByDisplayName = snapshot.CreatedByDisplayName
+	provenance.StartedBySubject = snapshot.StartedBySubject
+	provenance.StartedByDisplayName = snapshot.StartedByDisplayName
+	provenance.StoppedBySubject = snapshot.StoppedBySubject
+	provenance.StoppedByDisplayName = snapshot.StoppedByDisplayName
+	provenance.Governance = buildRunArchiveGovernanceSnapshot(snapshot)
 	if tr == nil {
 		return provenance
 	}
@@ -162,7 +175,7 @@ func buildRunArchiveProvenance(tr *TestRunner, test *ManagedTest) RunArchiveProv
 		Thresholds:       settings.Thresholds,
 		CapacityPlanning: settings.CapacityPlanning,
 	}
-	backend := test.executionBackend
+	backend := snapshot.executionBackend
 	if backend == nil {
 		backend = tr.getExecutionBackend()
 	}

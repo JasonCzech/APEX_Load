@@ -325,6 +325,13 @@ func (s *Server) reconcileMetadataCordonState(generatorID string, cordoned bool)
 		state = "cordoned"
 	}
 	if identityBackend, ok := backend.(identityDrainableExecutionBackend); ok {
+		// If the generator isn't currently mapped (offline, or not yet probed after
+		// a restart) the cordon can't be applied to the live drain state now — but
+		// the metadata cordon is persisted, and applyMetadataCordonOnReconnect will
+		// enforce it once the generator (re)connects. So don't fail the PATCH.
+		if identityBackend.GeneratorTargetForID(generatorID) == "" {
+			return nil
+		}
 		if _, err := identityBackend.SetGeneratorDrainStateByID(generatorID, state); err != nil {
 			return err
 		}
@@ -335,6 +342,63 @@ func (s *Server) reconcileMetadataCordonState(generatorID string, cordoned bool)
 		return s.saveGeneratorDrainStates(persistent.GeneratorDrainStates())
 	}
 	return nil
+}
+
+// drainStateReader reads a generator's live drain state by id (implemented by the
+// distributed backend). Kept as a narrow optional interface so it need not be
+// satisfied by every drainable backend / test stub.
+type drainStateReader interface {
+	GeneratorDrainStateByID(generatorID string) string
+}
+
+// reconcileMetadataCordonOnReconnect reconciles the live drain state to the
+// persisted metadata cordon when a generator (re)connects. This is what makes a
+// cordon (or un-cordon) issued while a generator was offline actually take effect:
+// the PATCH persists the intent in generator metadata, and this hook (registered on
+// the backend's identity-record event) enforces it once the generator has a live
+// target mapping. It reconciles BOTH directions but never clobbers a non-cordon
+// drain state (e.g. "draining" set by the pod watcher).
+func (s *Server) applyMetadataCordonOnReconnect(backend identityDrainableExecutionBackend, generatorID string) {
+	generatorID = strings.TrimSpace(generatorID)
+	if s == nil || s.store == nil || backend == nil || generatorID == "" {
+		return
+	}
+	metadata, err := s.store.GetGeneratorMetadata(generatorID)
+	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			slog.Warn("reconcile cordon on reconnect: metadata lookup failed", "generator_id", generatorID, "err", err)
+		}
+		return
+	}
+	if metadata == nil {
+		return // no persisted intent to reconcile
+	}
+	current := "active"
+	if reader, ok := backend.(drainStateReader); ok {
+		current = reader.GeneratorDrainStateByID(generatorID)
+	}
+	var desired string
+	switch {
+	case metadata.Cordoned && current != "cordoned" && current != "draining":
+		// Apply a cordon issued while offline. Don't override a live "draining"
+		// (pod termination) with "cordoned".
+		desired = "cordoned"
+	case !metadata.Cordoned && current == "cordoned":
+		// Clear a stale operator cordon that was removed while the generator was
+		// offline. Leave "draining" and already-"active" untouched.
+		desired = "active"
+	default:
+		return // already consistent, or a non-cordon drain state we must not clobber
+	}
+	if _, err := backend.SetGeneratorDrainStateByID(generatorID, desired); err != nil {
+		slog.Warn("reconcile cordon on reconnect: set drain state failed", "generator_id", generatorID, "desired", desired, "err", err)
+		return
+	}
+	if persistent, ok := backend.(persistentDrainBackend); ok {
+		if err := s.saveGeneratorDrainStates(persistent.GeneratorDrainStates()); err != nil {
+			slog.Warn("reconcile cordon on reconnect: persist drain states failed", "generator_id", generatorID, "err", err)
+		}
+	}
 }
 
 // ---- provisioning requests -----------------------------------------------

@@ -228,6 +228,14 @@ func NewServer(cfg ServerConfig) *Server {
 	// enabled + selected, else the unconfigured default → not_configured).
 	s.fleetScaler = newFleetPoolScaler(s.kubeRestarter, s.k8sRestart)
 
+	// Apply a persisted metadata cordon to the live drain state when a generator
+	// (re)connects, so a cordon issued while the generator was offline takes effect.
+	if distributedBackend != nil {
+		distributedBackend.setOnIdentityRecorded(func(generatorID string) {
+			s.applyMetadataCordonOnReconnect(distributedBackend, generatorID)
+		})
+	}
+
 	// Feed replay selector self-heals back to the bound object repository.
 	s.browserReplay.setCompletionHook(s.persistSelfHealToRepository)
 	s.scriptDebug.setCompletionHook(s.persistSelfHealToRepository)

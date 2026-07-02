@@ -227,6 +227,13 @@ func (tr *TestRunner) evaluateReservedCapacityBlockLocked(test *ManagedTest, exc
 	if test == nil {
 		return false, ""
 	}
+	// The shared (non-pool) reservation gate governs only non-pool runs. A pool-
+	// pinned run draws from its pool's member generators and is governed by the
+	// pool reservation gate (evaluatePoolReservedCapacityBlockLocked); charging it
+	// against the shared envelope here would double-count its draw.
+	if testAssignedPoolID(test) != "" {
+		return false, ""
+	}
 	now := time.Now()
 	activeSlots, err := tr.boundTimeslotsActiveAtLocked(now)
 	if err != nil {
@@ -234,9 +241,9 @@ func (tr *TestRunner) evaluateReservedCapacityBlockLocked(test *ManagedTest, exc
 		// bound reservation may be protecting but we could not read.
 		return true, "waiting for reservation state to become available"
 	}
-	totalReserved, projectReserved := reservationTotalsWithTimeslots(tr.settings, normalizeProjectID(test.ProjectID), now, activeSlots)
+	totalReserved, _ := reservationTotalsWithTimeslots(tr.settings, normalizeProjectID(test.ProjectID), now, activeSlots)
 	if totalReserved <= 0 {
-		return false, "" // no reservations configured -> nothing to protect
+		return false, "" // no global reservations configured -> nothing to protect
 	}
 	effective := tr.resolveCapacityAvailabilityAt(now).EffectiveAvailableGenerators
 	if effective <= 0 {
@@ -246,6 +253,13 @@ func (tr *TestRunner) evaluateReservedCapacityBlockLocked(test *ManagedTest, exc
 		totalReserved = effective
 	}
 	shared := maxInt(0, effective-totalReserved)
+
+	// A non-pool run may offset only its project's GLOBAL (non-pool) reservations
+	// against the shared envelope. It must NOT be credited by a pool-scoped
+	// reservation — that was the double-spend (RN-1): an idle pool reservation
+	// shrank a non-pool run's shared draw, admitting it against capacity the pool
+	// gate was separately protecting.
+	projectReserved := projectNonPoolReservedAt(tr.settings, normalizeProjectID(test.ProjectID), now, activeSlots)
 
 	// This project's shared-pool contribution before and after admitting the test.
 	projectActive := tr.countActiveRecommendedGeneratorsForProjectLocked(normalizeProjectID(test.ProjectID))
@@ -262,6 +276,33 @@ func (tr *TestRunner) evaluateReservedCapacityBlockLocked(test *ManagedTest, exc
 		return true, fmt.Sprintf("waiting for shared generator capacity (%d of %d generators reserved for other projects)", totalReserved, effective)
 	}
 	return false, ""
+}
+
+// projectNonPoolReservedAt sums a project's active global (non-pool) reserved
+// generators: settings reservations and bound timeslots that carry no PoolID.
+func projectNonPoolReservedAt(settings SystemSettings, projectID string, now time.Time, activeSlots []*storage.CapacityReservation) int {
+	projectID = normalizeProjectID(projectID)
+	if projectID == "" {
+		return 0
+	}
+	total := 0
+	for _, reservation := range normalizeCapacityReservations(settings.CapacityPlanning.Reservations) {
+		if strings.TrimSpace(reservation.PoolID) != "" || reservation.ReservedGenerators <= 0 {
+			continue
+		}
+		if reservation.ProjectID == projectID && reservationActiveAt(reservation, now) {
+			total += reservation.ReservedGenerators
+		}
+	}
+	for _, ts := range activeSlots {
+		if timeslotPoolID(ts) != "" || normalizeProjectID(ts.ProjectID) != projectID {
+			continue
+		}
+		if g := timeslotReservedGenerators(settings, ts); g > 0 {
+			total += g
+		}
+	}
+	return total
 }
 
 func (tr *TestRunner) resolveCapacityAvailabilityAt(now time.Time) CapacityAvailabilitySnapshot {
@@ -346,11 +387,18 @@ func (tr *TestRunner) sharedGeneratorUsageLocked(excludeTestID string, at time.T
 		if test == nil || id == excludeTestID || !reservationActiveStatus(test.Status) {
 			continue
 		}
+		// Pool-pinned runs draw from their pool's members, not the shared (non-pool)
+		// envelope, so they don't count toward shared usage (the pool gate accounts
+		// for them). Crediting their generators against a pool reservation here was
+		// the aggregate side of the RN-1 double-spend.
+		if testAssignedPoolID(test) != "" {
+			continue
+		}
 		byProject[normalizeProjectID(test.ProjectID)] += recommendedGeneratorCountForTest(test)
 	}
 	total := 0
 	for projectID, active := range byProject {
-		_, reserved := reservationTotalsWithTimeslots(tr.settings, projectID, at, activeSlots)
+		reserved := projectNonPoolReservedAt(tr.settings, projectID, at, activeSlots)
 		total += maxInt(0, active-reserved)
 	}
 	return total

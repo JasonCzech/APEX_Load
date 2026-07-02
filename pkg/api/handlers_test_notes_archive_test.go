@@ -168,12 +168,21 @@ func TestTestNoteMutationDoesNotReblessTamperedArchiveArtifacts(t *testing.T) {
 		if loaded.TestNotesFile != testNotesArchiveFileName {
 			return false
 		}
+		hasNotes := false
 		for _, artifact := range loaded.Artifacts {
 			if artifact.Name == testNotesArchiveFileName && artifact.SHA256 != "" {
-				return true
+				hasNotes = true
+				break
 			}
 		}
-		return false
+		if !hasNotes {
+			return false
+		}
+		// The note sync also persists the manifest trust anchor asynchronously; wait
+		// for it too so the assertions below don't race the sync goroutine (and the
+		// goroutine doesn't outlive the store into a "database is closed" error).
+		rec, err := store.GetRunArchive(testID)
+		return err == nil && rec != nil && rec.ManifestSHA256 != ""
 	})
 
 	var txArtifact *RunArchiveArtifact
@@ -401,7 +410,11 @@ func TestRunArchiveDownloadMissingTestNotesArtifactUsesJSONError(t *testing.T) {
 
 func waitForTestCondition(t *testing.T, condition func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
+	// Generous deadline: these conditions wait on an async archive-sync goroutine
+	// doing file + SQLite I/O, which can be starved under the full parallel test
+	// load (`go test ./...`). A large deadline only lengthens the genuine-failure
+	// path — a met condition returns immediately.
+	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
 		if condition() {
 			return

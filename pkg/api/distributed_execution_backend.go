@@ -59,6 +59,18 @@ type distributedExecutionBackend struct {
 	identityMu  sync.RWMutex
 	targetIDs   map[string]string
 	idTargets   map[string]string
+	// onIdentityRecorded, if set, is invoked (outside all backend locks) the first
+	// time a generator's id↔target mapping is established or changes — i.e. when a
+	// generator (re)connects. The Server uses it to apply a persisted metadata
+	// cordon to the now-live drain state.
+	onIdentityRecorded func(generatorID string)
+}
+
+// setOnIdentityRecorded registers a hook fired when a generator (re)connects.
+func (b *distributedExecutionBackend) setOnIdentityRecorded(hook func(generatorID string)) {
+	b.identityMu.Lock()
+	b.onIdentityRecorded = hook
+	b.identityMu.Unlock()
 }
 
 func newDistributedExecutionBackend(targets []string, timeout time.Duration, dial generatorDial) *distributedExecutionBackend {
@@ -265,22 +277,29 @@ func (b *distributedExecutionBackend) recordGeneratorIdentity(target string, gen
 		return
 	}
 	b.identityMu.Lock()
+	changed := b.idTargets[generatorID] != target
 	b.targetIDs[target] = generatorID
 	b.idTargets[generatorID] = target
+	hook := b.onIdentityRecorded
 	b.identityMu.Unlock()
 
-	if target == generatorID {
-		return
+	if target != generatorID {
+		b.drainMu.Lock()
+		if state := b.drainStates[target]; state != "" {
+			if b.drainStates[generatorID] == "" {
+				b.drainStates[generatorID] = state
+			}
+			delete(b.drainStates, target)
+		}
+		b.drainMu.Unlock()
 	}
 
-	b.drainMu.Lock()
-	if state := b.drainStates[target]; state != "" {
-		if b.drainStates[generatorID] == "" {
-			b.drainStates[generatorID] = state
-		}
-		delete(b.drainStates, target)
+	// Only fire on a genuine (re)connect (new/changed mapping), not on every
+	// steady-state re-probe, and outside all backend locks so the hook can safely
+	// call back into the backend (SetGeneratorDrainStateByID) and the store.
+	if changed && hook != nil {
+		hook(generatorID)
 	}
-	b.drainMu.Unlock()
 }
 
 func (b *distributedExecutionBackend) GeneratorIDForTarget(target string) string {
@@ -301,6 +320,28 @@ func (b *distributedExecutionBackend) GeneratorTargetForID(generatorID string) s
 	b.identityMu.RLock()
 	defer b.identityMu.RUnlock()
 	return b.idTargets[generatorID]
+}
+
+// GeneratorDrainStateByID returns a generator's current drain state ("active" if
+// unset), resolving both the id-keyed and target-keyed drain entries. The target
+// is resolved before taking drainMu so the two locks are never held together.
+func (b *distributedExecutionBackend) GeneratorDrainStateByID(generatorID string) string {
+	generatorID = strings.TrimSpace(generatorID)
+	if generatorID == "" {
+		return "active"
+	}
+	target := b.GeneratorTargetForID(generatorID)
+	b.drainMu.RLock()
+	defer b.drainMu.RUnlock()
+	if state := b.drainStates[generatorID]; state != "" {
+		return state
+	}
+	if target != "" {
+		if state := b.drainStates[target]; state != "" {
+			return state
+		}
+	}
+	return "active"
 }
 
 func (b *distributedExecutionBackend) allowedTargetsForTest(test *ManagedTest) ([]string, error) {

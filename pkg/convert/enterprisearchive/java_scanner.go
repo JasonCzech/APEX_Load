@@ -31,6 +31,11 @@ type javaStatement struct {
 	StartLine int
 	EndLine   int
 	Children  []javaStatement
+	// BranchKey identifies the nearest enclosing mutually-exclusive branch
+	// (if/else/switch/case) a leaf statement was flattened out of, so header
+	// idioms can tell that two same-name headers came from branches that cannot
+	// both run. Set transiently during traversal; empty outside conditionals.
+	BranchKey string
 }
 
 var javaMethodHeaderRe = regexp.MustCompile(`(?m)(?:^|[\r\n])\s*(?:@[A-Za-z_][A-Za-z0-9_.]*(?:\s*\([^{};]*\))?\s*)*(?:public|private|protected)?\s*(?:(?:static|final|synchronized|native|strictfp|abstract)\s+)*(?:<[^{};()]+>\s*)?[A-Za-z_$][A-Za-z0-9_$.]*(?:\s*<[^{};()]+>)?(?:\s*\[\])*\s+([A-Za-z_][A-Za-z0-9_]*)\s*\([^;{}]*\)\s*(?:throws\s+[^{;]+)?\s*\{`)

@@ -98,17 +98,53 @@ func (s *Server) syncTestNotesToArchive(testID string) {
 		slog.Warn("failed to update archive manifest for test notes sync", "test_id", testID, "err", err)
 		return
 	}
-	if err := refreshRunArchiveManifestTrust(record); err != nil {
+	// Publish the refreshed trust anchor via copy-and-swap rather than mutating the
+	// shared archive record in place: concurrent verify/report readers hold the
+	// record pointer lock-free (GetRunArchive returns the cached pointer), so an
+	// in-place ManifestSHA256 write would be a data race (RN-3).
+	if err := s.runner.replaceRunArchiveManifestTrust(testID); err != nil {
 		slog.Warn("failed to update archive manifest trust anchor for test notes sync", "test_id", testID, "err", err)
-		return
-	}
-	if err := s.runner.saveRunArchiveRecord(record); err != nil {
-		slog.Warn("failed to persist archive manifest trust anchor for test notes sync", "test_id", testID, "err", err)
 		return
 	}
 	if err := uploadArchiveObjects(context.Background(), record.ArchivePath, record.TestID, testNotesFile, runArchiveManifestFileName); err != nil {
 		slog.Warn("failed to upload archive after test notes sync", "test_id", testID, "err", err)
 	}
+}
+
+// replaceRunArchiveManifestTrust recomputes the archive manifest trust anchor and
+// publishes it by swapping in a fresh record pointer under tr.mu, so a concurrent
+// reader that already holds the archive record pointer (verify / report) never
+// observes a torn in-place ManifestSHA256 mutation.
+func (tr *TestRunner) replaceRunArchiveManifestTrust(testID string) error {
+	tr.mu.RLock()
+	id := tr.resolveRefKeyLocked(testID)
+	record, ok := tr.archives[id]
+	manifestPath := ""
+	if ok && record != nil {
+		manifestPath = strings.TrimSpace(record.ManifestPath)
+	}
+	tr.mu.RUnlock()
+	if manifestPath == "" {
+		return nil
+	}
+	sum, err := sha256File(manifestPath)
+	if err != nil {
+		return err
+	}
+	tr.mu.Lock()
+	current, ok := tr.archives[id]
+	if !ok || current == nil {
+		tr.mu.Unlock()
+		return nil
+	}
+	updated := *current // RunArchiveRecord is a flat value struct: this is a full copy
+	updated.ManifestSHA256 = sum
+	tr.archives[id] = &updated
+	if test, exists := tr.tests[id]; exists {
+		test.Archive = &updated
+	}
+	tr.mu.Unlock()
+	return tr.saveRunArchiveRecord(&updated)
 }
 
 func (s *Server) syncTestNotesToArchiveAsync(testID string) {

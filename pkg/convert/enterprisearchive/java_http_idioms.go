@@ -72,20 +72,38 @@ type javaHTTPBuilderState struct {
 	builders map[string]ParsedFunction
 	requests map[string]ParsedFunction
 	emitted  map[string]bool
+	// headerBranches tracks, per builder var, the branch each header name was first
+	// set from, so a same-name header set in a mutually-exclusive branch is not
+	// appended a second time.
+	headerBranches map[string]map[string]string
 }
 
 func newJavaHTTPBuilderState() *javaHTTPBuilderState {
 	return &javaHTTPBuilderState{
-		builders: map[string]ParsedFunction{},
-		requests: map[string]ParsedFunction{},
-		emitted:  map[string]bool{},
+		builders:       map[string]ParsedFunction{},
+		requests:       map[string]ParsedFunction{},
+		emitted:        map[string]bool{},
+		headerBranches: map[string]map[string]string{},
 	}
+}
+
+func (state *javaHTTPBuilderState) branchesFor(builderVar string) map[string]string {
+	m := state.headerBranches[builderVar]
+	if m == nil {
+		m = map[string]string{}
+		state.headerBranches[builderVar] = m
+	}
+	return m
 }
 
 func (state *javaHTTPBuilderState) mapStatement(statement javaStatement, phase string) (ParsedFunction, bool) {
 	text := javaNormalizeStatementText(statement.Text)
 	if matches := javaHTTPBuilderAssignRe.FindStringSubmatch(text); len(matches) == 2 {
 		state.builders[matches[1]] = javaHTTPClientParsedFunction(statement, phase, "", "GET")
+		// Reassigning the builder var starts a fresh request; drop the previous
+		// request's per-header branch tracking so conditional-header dedup keys off
+		// this request's branches, not the prior one's stale chain.
+		delete(state.headerBranches, matches[1])
 		return ParsedFunction{}, false
 	}
 	if matches := javaHTTPBuilderURIStmtRe.FindStringSubmatch(text); len(matches) == 3 {
@@ -101,7 +119,7 @@ func (state *javaHTTPBuilderState) mapStatement(statement javaStatement, phase s
 		if fn, ok := state.builders[matches[1]]; ok {
 			key, _ := parseJavaStringLiteral(matches[2])
 			value, _ := parseJavaStringLiteral(matches[3])
-			javaAddParsedHeader(&fn, key, value)
+			javaAppendConditionalHeader(&fn, state.branchesFor(matches[1]), key, value, statement.BranchKey)
 			state.builders[matches[1]] = fn
 		}
 		return ParsedFunction{}, false
@@ -491,10 +509,12 @@ func javaParsedArgument(raw string) ParsedArgument {
 func javaParsedActionsFor(program javaProgram, convert func(javaStatement, string) (ParsedFunction, bool)) []*ParsedAction {
 	var actions []*ParsedAction
 	for _, phase := range []string{"init", "action", "teardown"} {
-		functions := make([]ParsedFunction, 0)
-		for _, statement := range javaLifecycleStatements(program, phase) {
-			functions = append(functions, collectJavaParsedFunctions(statement, phase, convert)...)
-		}
+		// Wrap the phase's top-level statements in a synthetic block so if/else
+		// chains among sibling statements are detected for branch tagging exactly
+		// like nested ones (each statement was otherwise flattened in isolation,
+		// losing the if↔else sibling relationship).
+		phaseBlock := javaStatement{Kind: "block", Children: javaLifecycleStatements(program, phase)}
+		functions := collectJavaParsedFunctions(phaseBlock, phase, convert)
 		if len(functions) > 0 {
 			actions = append(actions, &ParsedAction{
 				Filename:  fmt.Sprintf("java_%s", phase),
@@ -507,17 +527,93 @@ func javaParsedActionsFor(program javaProgram, convert func(javaStatement, strin
 }
 
 func collectJavaParsedFunctions(statement javaStatement, phase string, convert func(javaStatement, string) (ParsedFunction, bool)) []ParsedFunction {
-	if statement.Kind == "block" {
-		var out []ParsedFunction
-		for _, child := range statement.Children {
-			out = append(out, collectJavaParsedFunctions(child, phase, convert)...)
+	return collectJavaParsedFunctionsInBranch(statement, phase, "", convert)
+}
+
+// collectJavaParsedFunctionsInBranch flattens a statement tree into ParsedFunctions
+// like collectJavaParsedFunctions, but tags each leaf with a branch key of the form
+// "<chain>#<branchIndex>". Branches of ONE if/else-if/else chain share the chain
+// segment with distinct indices (they are mutually exclusive — only one runs);
+// independent sibling `if`s get DISTINCT chains (both may run). Downstream header
+// idioms use this to drop a header duplicated across exclusive branches without
+// dropping one legitimately set by two independent conditionals.
+func collectJavaParsedFunctionsInBranch(statement javaStatement, phase, branchKey string, convert func(javaStatement, string) (ParsedFunction, bool)) []ParsedFunction {
+	if statement.Kind != "block" {
+		statement.BranchKey = branchKey
+		if fn, ok := convert(statement, phase); ok {
+			return []ParsedFunction{fn}
 		}
-		return out
+		return nil
 	}
-	if fn, ok := convert(statement, phase); ok {
-		return []ParsedFunction{fn}
+	var out []ParsedFunction
+	chain := ""
+	branchIndex := 0
+	for _, child := range statement.Children {
+		childBranch := branchKey
+		if child.Kind == "block" && isJavaConditionalBranchHeader(child.Header) {
+			if strings.HasPrefix(javaNormalizeBlockHeader(child.Header), "else") {
+				// Continues the current if/else chain (or starts one if the leading
+				// `if` was not itself a block boundary we tracked).
+				if chain == "" {
+					chain = fmt.Sprintf("cond@%s:%d", child.File, child.StartLine)
+				}
+				branchIndex++
+			} else {
+				// A bare `if` / `switch` / `case` starts a fresh, independent chain.
+				chain = fmt.Sprintf("cond@%s:%d", child.File, child.StartLine)
+				branchIndex = 0
+			}
+			childBranch = fmt.Sprintf("%s#%d", chain, branchIndex)
+		} else {
+			// A non-conditional sibling ends any in-progress if/else chain.
+			chain = ""
+			branchIndex = 0
+		}
+		out = append(out, collectJavaParsedFunctionsInBranch(child, phase, childBranch, convert)...)
 	}
-	return nil
+	return out
+}
+
+// isJavaConditionalBranchHeader reports whether a block header introduces a
+// mutually-exclusive branch. Loop/try/synchronized blocks run their body
+// sequentially, so they are not branch boundaries.
+func isJavaConditionalBranchHeader(header string) bool {
+	normalized := javaNormalizeBlockHeader(header)
+	return strings.HasPrefix(normalized, "if") ||
+		strings.HasPrefix(normalized, "else") ||
+		strings.HasPrefix(normalized, "switch") ||
+		strings.HasPrefix(normalized, "case") ||
+		strings.HasPrefix(normalized, "default")
+}
+
+// javaBranchChain returns the chain segment of a branch key ("<chain>#<idx>" ->
+// "<chain>"); branch keys sharing a chain are alternatives of one if/else chain.
+func javaBranchChain(branchKey string) string {
+	if i := strings.IndexByte(branchKey, '#'); i >= 0 {
+		return branchKey[:i]
+	}
+	return branchKey
+}
+
+// javaAppendConditionalHeader appends a header via javaAddParsedHeader, but when the
+// same header name was already set from a DIFFERENT branch of the SAME if/else chain,
+// it keeps the first branch's value instead of emitting both. Only one branch of a
+// chain runs, so appending both produced a request carrying a duplicated header
+// (F39). Independent conditionals (different chains) and non-conditional/same-branch
+// settings keep the append semantics that legitimate multi-value headers rely on.
+func javaAppendConditionalHeader(fn *ParsedFunction, branches map[string]string, key, value, branchKey string) {
+	if fn == nil || strings.TrimSpace(key) == "" {
+		return
+	}
+	lname := strings.ToLower(strings.TrimSpace(key))
+	if prev, ok := branches[lname]; ok {
+		if branchKey != "" && prev != "" && prev != branchKey && javaBranchChain(prev) == javaBranchChain(branchKey) {
+			return // a different branch of the same if/else chain already set this header
+		}
+	} else if branches != nil {
+		branches[lname] = branchKey
+	}
+	javaAddParsedHeader(fn, key, value)
 }
 
 func firstQuotedURL(text string) string {

@@ -150,7 +150,12 @@ func (b *distributedExecutionBackend) EvacuateGenerator(tr *TestRunner, test *Ma
 	if test.remoteTargetStates == nil {
 		test.remoteTargetStates = make(map[string]string)
 	}
-	test.remoteTargetStates[target] = firstNonEmpty(strings.TrimSpace(reason), "evacuated")
+	// Mark the target with a fixed evacuation sentinel, NOT the free-text reason: the
+	// state is read only by remoteTargetStateDone to suppress a spurious test failure
+	// when the evacuated generator's metrics stream closes. A custom operator reason
+	// (e.g. "node maintenance") would not be recognized as evacuated and would fail
+	// the run right after the API reported the evacuation succeeded (F13).
+	test.remoteTargetStates[target] = remoteTargetStateEvacuated
 	delete(test.remoteClientsByTarget, target)
 	delete(test.remoteMetricsStreamsByTarget, target)
 	delete(test.remoteMetricsBatchesByTarget, target)

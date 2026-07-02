@@ -1361,13 +1361,26 @@ func (tr *TestRunner) upsertScenarioScheduleLocked(scenarioID string, scheduleID
 	} else {
 		schedule.PendingApprovalID = ""
 	}
-	nextRun, err := nextScenarioScheduleRun(schedule, now)
-	if err != nil {
-		return nil, err
-	}
-	schedule.NextRunAt = nextRun
-	if existing != nil && existing.Enabled == schedule.Enabled && existing.CronExpr == schedule.CronExpr && existing.Timezone == schedule.Timezone && existing.ReleaseID == schedule.ReleaseID && existing.RunNameTemplate == schedule.RunNameTemplate && existing.Name == schedule.Name {
-		schedule.NextRunAt = existing.NextRunAt
+	// An open-ended pause (disabled_from set, disabled_until nil) makes every future
+	// candidate ineligible, so computing a next run would exhaust the full search
+	// horizon and return a misleading "impossible day/month" error. Short-circuit to
+	// a paused state instead (mirrors the execution-plan schedule path).
+	if executionPlanSchedulePausedIndefinitely(schedule.DisabledFrom, schedule.DisabledUntil, now) {
+		schedule.NextRunAt = nil
+	} else {
+		nextRun, err := nextScenarioScheduleRun(schedule, now)
+		if err != nil {
+			return nil, err
+		}
+		schedule.NextRunAt = nextRun
+		// Preserve the prior next-run only when it exists and no schedule-affecting
+		// field changed. A nil existing NextRunAt means the schedule was previously
+		// paused/unset, so it must NOT be preserved — otherwise clearing an
+		// open-ended pause (which doesn't touch the fields compared below) would
+		// leave the resumed schedule stuck at NextRunAt=nil and never fire.
+		if existing != nil && existing.NextRunAt != nil && existing.Enabled == schedule.Enabled && existing.CronExpr == schedule.CronExpr && existing.Timezone == schedule.Timezone && existing.ReleaseID == schedule.ReleaseID && existing.RunNameTemplate == schedule.RunNameTemplate && existing.Name == schedule.Name {
+			schedule.NextRunAt = existing.NextRunAt
+		}
 	}
 	if err := tr.saveScenarioScheduleLocked(schedule); err != nil {
 		return nil, err

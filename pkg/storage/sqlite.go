@@ -149,8 +149,28 @@ type IntervalSummaryRecord struct {
 	SampleAgeMs              float64                                `json:"sample_age_ms,omitempty"`
 }
 
+// sqliteDSN adds a busy_timeout pragma so a writer waits for a concurrent reader
+// (or vice versa) instead of failing immediately with "database is locked". The
+// controller has many concurrent DB accessors (HTTP handlers plus fire-and-forget
+// archive/notes goroutines); without this, brief read/write overlap surfaced as
+// transient failures. Existing query parameters on the path are preserved.
+func sqliteDSN(path string) string {
+	if strings.TrimSpace(path) == "" {
+		return path
+	}
+	const pragma = "_pragma=busy_timeout(5000)"
+	if strings.Contains(path, "_pragma=busy_timeout") {
+		return path
+	}
+	sep := "?"
+	if strings.Contains(path, "?") {
+		sep = "&"
+	}
+	return path + sep + pragma
+}
+
 func NewSQLiteStore(path string) (*SQLiteStore, error) {
-	db, err := sql.Open("sqlite", path)
+	db, err := sql.Open("sqlite", sqliteDSN(path))
 	if err != nil {
 		return nil, fmt.Errorf("failed to open sqlite db: %w", err)
 	}

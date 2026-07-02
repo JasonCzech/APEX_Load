@@ -188,3 +188,35 @@ func TestFailDistributedTestOnStreamErrorIgnoresEvacuatedTarget(t *testing.T) {
 		t.Fatalf("evacuated state overwritten: %#v", test.remoteTargetStates)
 	}
 }
+
+// F13: an operator evacuation with a custom free-text reason must still mark the
+// target with a state recognized as an intentional evacuation, so the closing
+// metrics stream does not fail the run right after the API reported success.
+func TestDistributedEvacuateGeneratorUsesRecognizedSentinelForCustomReason(t *testing.T) {
+	backend := newDistributedExecutionBackend([]string{"gen-a:9090", "gen-b:9090"}, time.Second, nil)
+	test := &ManagedTest{
+		ID:         "run-evac",
+		Status:     "RUNNING",
+		Assignment: &GeneratorAssignmentSettings{TolerateGeneratorLoss: true},
+		Groups:     []TestGroup{{Name: "buyers", Protocol: "http", VUsers: 6}},
+		remoteGroupShards: map[string][]GeneratorShardSummary{
+			"buyers": {
+				{Group: "buyers", Target: "gen-a:9090", VUsers: 3},
+				{Group: "buyers", Target: "gen-b:9090", VUsers: 3},
+			},
+		},
+		remoteClientsByTarget: map[string]generatorClient{
+			"gen-a:9090": newEvacuationFakeGeneratorClient("gen-a:9090"),
+			"gen-b:9090": newEvacuationFakeGeneratorClient("gen-b:9090"),
+		},
+		remoteTargetStates: map[string]string{"gen-a:9090": "RUNNING", "gen-b:9090": "RUNNING"},
+	}
+	runner := &TestRunner{tests: map[string]*ManagedTest{test.ID: test}}
+
+	if _, err := backend.EvacuateGenerator(runner, test, "gen-a:9090", false, "node maintenance window"); err != nil {
+		t.Fatalf("evacuate returned error: %v", err)
+	}
+	if state := test.remoteTargetStates["gen-a:9090"]; !remoteTargetStateDone(state) {
+		t.Fatalf("evacuated target state %q is not recognized as done; the run would be failed", state)
+	}
+}

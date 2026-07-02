@@ -1325,3 +1325,178 @@ func assertJavaSourceReviewReason(t *testing.T, scripts []*dsl.Script, reason st
 	}
 	t.Fatalf("scripts = %#v, missing source_review reason %q", scripts, reason)
 }
+
+// F39: a header set to different values in mutually-exclusive if/else branches must
+// be emitted once (only one branch runs at replay), not appended twice into a
+// request that carries a duplicated header.
+func TestConvertZipJavaHTTPClientConditionalHeaderEmittedOnce(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	addJavaZipFile(t, zw, "JavaHTTPCondHeader/JavaHTTPCondHeader.usr", `[General]
+Type=Java over HTTP
+ScriptLanguage=JAVA
+RunType=Java-Interpreter
+[Actions]
+Action=Actions.java
+`)
+	addJavaZipFile(t, zw, "JavaHTTPCondHeader/Actions.java", `import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+
+public class Actions {
+  public int action() throws Throwable {
+    boolean prod = System.getenv("ENV") != null;
+    HttpClient client = HttpClient.newHttpClient();
+    HttpRequest.Builder builder = HttpRequest.newBuilder();
+    builder.uri(URI.create("https://example.test/api/orders"));
+    if (prod) {
+      builder.header("Authorization", "Bearer prod-token");
+    } else {
+      builder.header("Authorization", "Bearer test-token");
+    }
+    builder.GET();
+    HttpRequest request = builder.build();
+    HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+    return 0;
+  }
+}`)
+	if err := zw.Close(); err != nil {
+		t.Fatalf("close zip: %v", err)
+	}
+
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if result.Script == nil || len(result.Script.Actions) != 1 {
+		t.Fatalf("script = %#v, want one HTTP request", result.Script)
+	}
+	action := result.Script.Actions[0]
+	got := javaHeaderListValues(action.HeaderList, "Authorization")
+	if len(got) != 1 {
+		t.Fatalf("Authorization header_list values = %#v, want exactly one (branches are mutually exclusive)", got)
+	}
+	if got[0] != "Bearer prod-token" {
+		t.Fatalf("Authorization value = %q, want the first branch's value", got[0])
+	}
+	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) > 0 {
+		t.Fatalf("ValidateScriptIssues returned %v", issues)
+	}
+}
+
+// F39 guard: two INDEPENDENT sequential if blocks (not an if/else pair) that both
+// set the same header can both run at replay, so java.net.http append semantics
+// must be preserved — both values are emitted, not collapsed.
+func TestConvertZipJavaHTTPClientIndependentIfHeadersBothKept(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	addJavaZipFile(t, zw, "JavaHTTPTwoIf/JavaHTTPTwoIf.usr", `[General]
+Type=Java over HTTP
+ScriptLanguage=JAVA
+RunType=Java-Interpreter
+[Actions]
+Action=Actions.java
+`)
+	addJavaZipFile(t, zw, "JavaHTTPTwoIf/Actions.java", `import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+
+public class Actions {
+  public int action() throws Throwable {
+    boolean a = System.getenv("A") != null;
+    boolean b = System.getenv("B") != null;
+    HttpClient client = HttpClient.newHttpClient();
+    HttpRequest.Builder builder = HttpRequest.newBuilder();
+    builder.uri(URI.create("https://example.test/api/orders"));
+    if (a) {
+      builder.header("X-Tag", "one");
+    }
+    if (b) {
+      builder.header("X-Tag", "two");
+    }
+    builder.GET();
+    HttpRequest request = builder.build();
+    HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+    return 0;
+  }
+}`)
+	if err := zw.Close(); err != nil {
+		t.Fatalf("close zip: %v", err)
+	}
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if result.Script == nil || len(result.Script.Actions) != 1 {
+		t.Fatalf("script = %#v, want one HTTP request", result.Script)
+	}
+	got := javaHeaderListValues(result.Script.Actions[0].HeaderList, "X-Tag")
+	if len(got) != 2 {
+		t.Fatalf("X-Tag values = %#v, want both (independent ifs can both run)", got)
+	}
+}
+
+// F39 (builder-var reuse): a SECOND request built by reassigning the same builder
+// variable must still collapse a header set in its own if/else branches — the
+// dedup state must not carry the first request's stale branch tracking.
+func TestConvertZipJavaHTTPClientReusedBuilderConditionalHeaderEmittedOnce(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	addJavaZipFile(t, zw, "JavaHTTPReuse/JavaHTTPReuse.usr", `[General]
+Type=Java over HTTP
+ScriptLanguage=JAVA
+RunType=Java-Interpreter
+[Actions]
+Action=Actions.java
+`)
+	addJavaZipFile(t, zw, "JavaHTTPReuse/Actions.java", `import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+
+public class Actions {
+  public int action() throws Throwable {
+    boolean prod = System.getenv("ENV") != null;
+    HttpClient client = HttpClient.newHttpClient();
+    HttpRequest.Builder builder = HttpRequest.newBuilder();
+    builder.uri(URI.create("https://example.test/api/first"));
+    if (prod) {
+      builder.header("Authorization", "Bearer first-prod");
+    } else {
+      builder.header("Authorization", "Bearer first-test");
+    }
+    builder.GET();
+    HttpRequest first = builder.build();
+    client.send(first, HttpResponse.BodyHandlers.ofString());
+    builder = HttpRequest.newBuilder();
+    builder.uri(URI.create("https://example.test/api/second"));
+    if (prod) {
+      builder.header("Authorization", "Bearer second-prod");
+    } else {
+      builder.header("Authorization", "Bearer second-test");
+    }
+    builder.GET();
+    HttpRequest second = builder.build();
+    client.send(second, HttpResponse.BodyHandlers.ofString());
+    return 0;
+  }
+}`)
+	if err := zw.Close(); err != nil {
+		t.Fatalf("close zip: %v", err)
+	}
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if result.Script == nil || len(result.Script.Actions) != 2 {
+		t.Fatalf("actions = %#v, want two HTTP requests", result.Script)
+	}
+	for _, action := range result.Script.Actions {
+		got := javaHeaderListValues(action.HeaderList, "Authorization")
+		if len(got) != 1 {
+			t.Fatalf("action %s Authorization values = %#v, want exactly one", action.Target, got)
+		}
+	}
+}
