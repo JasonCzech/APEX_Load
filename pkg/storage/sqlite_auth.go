@@ -11,6 +11,8 @@ import (
 	"time"
 )
 
+const storageSystemAdminRole = "system_admin"
+
 func (s *SQLiteStore) SaveServiceAccount(account *ServiceAccount) error {
 	if account == nil {
 		return fmt.Errorf("service account is required")
@@ -294,6 +296,18 @@ func (s *SQLiteStore) SaveUser(user *User) error {
 	return err
 }
 
+func (s *SQLiteStore) UpdateUserIdentitySeen(id string, displayName string, email string, lastSeenAt time.Time, updatedAt time.Time) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return fmt.Errorf("user id is required")
+	}
+	_, err := s.db.Exec(`UPDATE users
+		SET display_name = ?, email = ?, last_seen_at = ?, updated_at = ?
+		WHERE id = ?`,
+		displayName, email, lastSeenAt, updatedAt, id)
+	return err
+}
+
 func (s *SQLiteStore) SaveUserWithRoleBindings(user *User, bindings []*UserRoleBinding) error {
 	if user == nil {
 		return fmt.Errorf("user is required")
@@ -542,13 +556,24 @@ func (s *SQLiteStore) ListUsers(filter UserFilter) ([]*User, error) {
 	query.WriteString(userSelectColumns() + ` FROM users WHERE 1 = 1`)
 	args := []any{}
 	if q := strings.TrimSpace(filter.Query); q != "" {
-		query.WriteString(` AND (subject LIKE ? OR email LIKE ? OR display_name LIKE ?)`)
-		like := "%" + q + "%"
-		args = append(args, like, like, like)
+		query.WriteString(` AND (LOWER(subject) LIKE ? OR LOWER(email) LIKE ? OR LOWER(display_name) LIKE ? OR EXISTS (
+			SELECT 1 FROM user_role_bindings b
+			WHERE b.user_id = users.id
+			  AND (LOWER(b.role) LIKE ? OR LOWER(b.scope_type) LIKE ? OR LOWER(COALESCE(b.scope_id, '')) LIKE ?)
+		))`)
+		like := "%" + strings.ToLower(q) + "%"
+		args = append(args, like, like, like, like, like, like)
 	}
 	if filter.Active != nil {
 		query.WriteString(` AND active = ?`)
 		args = append(args, s.boolValue(*filter.Active))
+	}
+	if role := strings.ToLower(strings.TrimSpace(filter.Role)); role != "" {
+		query.WriteString(` AND EXISTS (
+			SELECT 1 FROM user_role_bindings b
+			WHERE b.user_id = users.id AND LOWER(b.role) = ?
+		)`)
+		args = append(args, role)
 	}
 	query.WriteString(` ORDER BY updated_at DESC LIMIT ? OFFSET ?`)
 	args = append(args, filter.Limit, filter.Offset)
@@ -578,13 +603,24 @@ func (s *SQLiteStore) CountUsers(filter UserFilter) (int, error) {
 	query.WriteString(`SELECT COUNT(*) FROM users WHERE 1 = 1`)
 	args := []any{}
 	if q := strings.TrimSpace(filter.Query); q != "" {
-		query.WriteString(` AND (subject LIKE ? OR email LIKE ? OR display_name LIKE ?)`)
-		like := "%" + q + "%"
-		args = append(args, like, like, like)
+		query.WriteString(` AND (LOWER(subject) LIKE ? OR LOWER(email) LIKE ? OR LOWER(display_name) LIKE ? OR EXISTS (
+			SELECT 1 FROM user_role_bindings b
+			WHERE b.user_id = users.id
+			  AND (LOWER(b.role) LIKE ? OR LOWER(b.scope_type) LIKE ? OR LOWER(COALESCE(b.scope_id, '')) LIKE ?)
+		))`)
+		like := "%" + strings.ToLower(q) + "%"
+		args = append(args, like, like, like, like, like, like)
 	}
 	if filter.Active != nil {
 		query.WriteString(` AND active = ?`)
 		args = append(args, s.boolValue(*filter.Active))
+	}
+	if role := strings.ToLower(strings.TrimSpace(filter.Role)); role != "" {
+		query.WriteString(` AND EXISTS (
+			SELECT 1 FROM user_role_bindings b
+			WHERE b.user_id = users.id AND LOWER(b.role) = ?
+		)`)
+		args = append(args, role)
 	}
 	var count int
 	if err := s.db.QueryRow(query.String(), args...).Scan(&count); err != nil {
@@ -602,6 +638,126 @@ func (s *SQLiteStore) UpdateUserActive(id string, active bool, updatedAt time.Ti
 	return err
 }
 
+type authMutationTx interface {
+	Exec(query string, args ...any) (sql.Result, error)
+	QueryRow(query string, args ...any) *sql.Row
+}
+
+type authConnMutationTx struct {
+	ctx     context.Context
+	conn    *sql.Conn
+	dialect storeDialect
+}
+
+func (tx authConnMutationTx) Exec(query string, args ...any) (sql.Result, error) {
+	return tx.conn.ExecContext(tx.ctx, rewriteSQL(query, tx.dialect), args...)
+}
+
+func (tx authConnMutationTx) QueryRow(query string, args ...any) *sql.Row {
+	return tx.conn.QueryRowContext(tx.ctx, rewriteSQL(query, tx.dialect), args...)
+}
+
+func (s *SQLiteStore) withAuthMutationLock(fn func(authMutationTx) (bool, error)) (bool, error) {
+	if s.db.dialect == storeDialectSQLite {
+		ctx := context.Background()
+		conn, err := s.db.db.Conn(ctx)
+		if err != nil {
+			return false, err
+		}
+		defer conn.Close()
+		deadline := time.Now().Add(2 * time.Second)
+		for {
+			if _, err := conn.ExecContext(ctx, `BEGIN IMMEDIATE`); err != nil {
+				if strings.Contains(strings.ToLower(err.Error()), "database is locked") && time.Now().Before(deadline) {
+					time.Sleep(10 * time.Millisecond)
+					continue
+				}
+				return false, err
+			}
+			break
+		}
+		done := false
+		defer func() {
+			if !done {
+				_, _ = conn.ExecContext(ctx, `ROLLBACK`)
+			}
+		}()
+		ok, err := fn(authConnMutationTx{ctx: ctx, conn: conn, dialect: s.db.dialect})
+		if err != nil {
+			return false, err
+		}
+		if _, err := conn.ExecContext(ctx, `COMMIT`); err != nil {
+			return false, err
+		}
+		done = true
+		return ok, nil
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	if s.db.dialect == storeDialectPostgres {
+		if _, err := tx.Exec(`LOCK TABLE users, user_role_bindings, github_connections IN EXCLUSIVE MODE`); err != nil {
+			return false, err
+		}
+	}
+	ok, err := fn(tx)
+	if err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return ok, nil
+}
+
+func (s *SQLiteStore) authMutationTargetIsActiveGlobalAdmin(tx authMutationTx, userID string) (bool, error) {
+	var count int
+	err := tx.QueryRow(`SELECT COUNT(*) FROM users u
+		JOIN user_role_bindings b ON b.user_id = u.id
+		WHERE u.id = ? AND u.active = ? AND b.scope_type = 'global' AND b.role = ?`,
+		userID, s.boolValue(true), storageSystemAdminRole).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+func (s *SQLiteStore) authMutationActiveGlobalAdminCount(tx authMutationTx) (int, error) {
+	var count int
+	err := tx.QueryRow(`SELECT COUNT(DISTINCT u.id) FROM users u
+		JOIN user_role_bindings b ON b.user_id = u.id
+		WHERE u.active = ? AND b.scope_type = 'global' AND b.role = ?`,
+		s.boolValue(true), storageSystemAdminRole).Scan(&count)
+	return count, err
+}
+
+func (s *SQLiteStore) UpdateUserActiveGuardLastAdmin(id string, active bool, updatedAt time.Time) (bool, error) {
+	if active {
+		return true, s.UpdateUserActive(id, true, updatedAt)
+	}
+	return s.withAuthMutationLock(func(tx authMutationTx) (bool, error) {
+		isAdmin, err := s.authMutationTargetIsActiveGlobalAdmin(tx, id)
+		if err != nil {
+			return false, err
+		}
+		if isAdmin {
+			count, err := s.authMutationActiveGlobalAdminCount(tx)
+			if err != nil {
+				return false, err
+			}
+			if count <= 1 {
+				return false, nil
+			}
+		}
+		_, err = tx.Exec(`UPDATE users SET active = ?, updated_at = ?, disabled_at = ? WHERE id = ?`,
+			s.boolValue(false), updatedAt, updatedAt, id)
+		return err == nil, err
+	})
+}
+
 func (s *SQLiteStore) CountActiveGlobalRoleHolders(role string) (int, error) {
 	normalized := strings.ToLower(strings.TrimSpace(role))
 	if normalized == "" {
@@ -610,7 +766,7 @@ func (s *SQLiteStore) CountActiveGlobalRoleHolders(role string) (int, error) {
 	var count int
 	err := s.db.QueryRow(`SELECT COUNT(DISTINCT u.id) FROM users u
 		JOIN user_role_bindings b ON b.user_id = u.id
-		WHERE u.active = 1 AND b.scope_type = 'global' AND b.role = ?`, normalized).Scan(&count)
+		WHERE u.active = ? AND b.scope_type = 'global' AND b.role = ?`, s.boolValue(true), normalized).Scan(&count)
 	if err != nil {
 		return 0, err
 	}
@@ -647,6 +803,43 @@ func (s *SQLiteStore) DeleteUser(id string) error {
 	return tx.Commit()
 }
 
+func (s *SQLiteStore) DeleteUserGuardLastAdmin(id string) (bool, error) {
+	return s.withAuthMutationLock(func(tx authMutationTx) (bool, error) {
+		isAdmin, err := s.authMutationTargetIsActiveGlobalAdmin(tx, id)
+		if err != nil {
+			return false, err
+		}
+		if isAdmin {
+			count, err := s.authMutationActiveGlobalAdminCount(tx)
+			if err != nil {
+				return false, err
+			}
+			if count <= 1 {
+				return false, nil
+			}
+		}
+		var subject string
+		if err := tx.QueryRow(`SELECT subject FROM users WHERE id = ?`, id).Scan(&subject); err != nil && err != sql.ErrNoRows {
+			return false, err
+		}
+		if _, err := tx.Exec(`DELETE FROM github_connections WHERE user_id = ?`, id); err != nil {
+			return false, err
+		}
+		if strings.TrimSpace(subject) != "" && strings.TrimSpace(subject) != id {
+			if _, err := tx.Exec(`DELETE FROM github_connections WHERE user_id = ?`, strings.TrimSpace(subject)); err != nil {
+				return false, err
+			}
+		}
+		if _, err := tx.Exec(`DELETE FROM user_role_bindings WHERE user_id = ?`, id); err != nil {
+			return false, err
+		}
+		if _, err := tx.Exec(`DELETE FROM users WHERE id = ?`, id); err != nil {
+			return false, err
+		}
+		return true, nil
+	})
+}
+
 func (s *SQLiteStore) SaveUserRoleBinding(binding *UserRoleBinding) error {
 	if binding == nil {
 		return fmt.Errorf("user role binding is required")
@@ -669,6 +862,34 @@ func (s *SQLiteStore) SaveUserRoleBinding(binding *UserRoleBinding) error {
 func (s *SQLiteStore) DeleteUserRoleBinding(id string) error {
 	_, err := s.db.Exec(`DELETE FROM user_role_bindings WHERE id = ?`, id)
 	return err
+}
+
+func (s *SQLiteStore) DeleteUserRoleBindingGuardLastAdmin(id string) (bool, error) {
+	return s.withAuthMutationLock(func(tx authMutationTx) (bool, error) {
+		var userID, scopeType, role string
+		var active any
+		err := tx.QueryRow(`SELECT b.user_id, b.scope_type, b.role, u.active
+			FROM user_role_bindings b
+			JOIN users u ON u.id = b.user_id
+			WHERE b.id = ?`, id).Scan(&userID, &scopeType, &role, &active)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				return true, nil
+			}
+			return false, err
+		}
+		if sqlBool(active) && strings.TrimSpace(scopeType) == "global" && strings.EqualFold(strings.TrimSpace(role), storageSystemAdminRole) {
+			count, err := s.authMutationActiveGlobalAdminCount(tx)
+			if err != nil {
+				return false, err
+			}
+			if count <= 1 {
+				return false, nil
+			}
+		}
+		_, err = tx.Exec(`DELETE FROM user_role_bindings WHERE id = ?`, id)
+		return err == nil, err
+	})
 }
 
 func (s *SQLiteStore) ListUserRoleBindings(userID string) ([]*UserRoleBinding, error) {

@@ -1,4 +1,4 @@
-import { useReducer, useRef, useState } from 'react'
+import { useCallback, useEffect, useReducer, useRef, useState, type CSSProperties } from 'react'
 import { useAsyncTask } from '../hooks/useAsyncTask'
 import { useApi } from '../hooks/useApi'
 import {
@@ -16,6 +16,9 @@ import { type SampleImportResult } from '../types/scriptImports'
 import { type StoredScript } from '../types'
 import { type ReplayPreflight, type ScriptDataSource, type ScriptDefinition, type SourceReview } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
+import { isDesktopSurface } from '../desktop/desktopBridge'
+import { canUseNativeDialogs, filesFromDroppedPaths, pickFilesViaBridge } from '../desktop/desktopFiles'
+import { useDesktopFileDrop } from '../desktop/useDesktopFileDrop'
 import { createJavaHttpDraft } from './scriptDraftFactories'
 import { attachImportCorrelationSuggestions } from './scriptEditorUtils'
 import ScriptImportReview from './ScriptImportReview'
@@ -58,6 +61,7 @@ type SampleImportOptionsAction =
 type AssetUploadState = Record<string, { pending?: boolean; error?: string; fileName?: string }>
 
 interface Props {
+  initialFiles?: File[] | null
   projectId?: string
   onImported?: (result: ImportedSaveResult) => void
   onEdit?: (script: ScriptDefinition) => void
@@ -363,10 +367,20 @@ function sampleImportOptionsReducer(state: SampleImportOptions, action: SampleIm
   }
 }
 
-export default function SampleScriptImport({ projectId, onImported, onEdit, onClose, preset: initialPreset = 'default' }: Props) {
+function inferSampleFormatFromFile(file: File | undefined, fallback: SampleFormat): SampleFormat {
+  const name = file?.name.toLowerCase() || ''
+  if (name.endsWith('.curl') || name.endsWith('.sh')) return 'curl'
+  if (name.endsWith('.har')) return 'har'
+  if (name.endsWith('.http') || name.endsWith('.req') || name.endsWith('.request')) return 'raw_http'
+  return fallback
+}
+
+export default function SampleScriptImport({ initialFiles, projectId, onImported, onEdit, onClose, preset: initialPreset = 'default' }: Props) {
   const api = useApi()
   const primaryFileRef = useRef<HTMLInputElement>(null)
   const secondaryFileRef = useRef<HTMLInputElement>(null)
+  const primaryDropRef = useRef<HTMLLabelElement>(null)
+  const secondaryDropRef = useRef<HTMLLabelElement>(null)
   const [preset, setPreset] = useState<SampleImportPreset>(initialPreset)
   const defaultFormat = defaultFormatByPreset[initialPreset]
   const defaultTemplate = getSampleTemplate(initialPreset, defaultFormat)
@@ -385,6 +399,8 @@ export default function SampleScriptImport({ projectId, onImported, onEdit, onCl
   const saveTask = useAsyncTask<StoredScript>()
   const [options, dispatchOptions] = useReducer(sampleImportOptionsReducer, initialOptions)
   const [assetUploads, setAssetUploads] = useState<AssetUploadState>({})
+  const desktop = isDesktopSurface()
+  const nativeDialogs = desktop && canUseNativeDialogs()
 
   const updateOption = <K extends keyof SampleImportOptions>(field: K, value: SampleImportOptions[K]) => {
     dispatchOptions({ type: 'update', field, value })
@@ -438,19 +454,20 @@ export default function SampleScriptImport({ projectId, onImported, onEdit, onCl
     setAssetUploads({})
   }
 
-  const handleFilesLoad = async (files: File[], target: 'primary' | 'secondary') => {
+  const handleFilesLoad = useCallback(async (files: File[], target: 'primary' | 'secondary', formatOverride?: SampleFormat) => {
+    const effectiveFormat = formatOverride || format
     try {
       const loaded = await Promise.all(files.map(async (file) => ({ file, text: await file.text() })))
       const normalized: LoadedSample[] = loaded.map(item => ({ name: item.file.name, text: item.text }))
       if (target === 'primary') {
-        const merged = mergePrimarySamples(format, normalized)
+        const merged = mergePrimarySamples(effectiveFormat, normalized)
         const names = normalized.map(item => item.name)
         setPrimaryContent(merged.content)
         setPrimaryFileName(formatFileLabel(names))
         setPrimaryFileNames(names)
         setPrimaryMergedCount(merged.mergedCount)
       } else {
-        const merged = mergeSecondarySamples(format, normalized)
+        const merged = mergeSecondarySamples(effectiveFormat, normalized)
         const names = normalized.map(item => item.name)
         setSecondaryContent(merged.content)
         setSecondaryFileName(formatFileLabel(names))
@@ -463,7 +480,16 @@ export default function SampleScriptImport({ projectId, onImported, onEdit, onCl
     } catch (error: unknown) {
       setMessageError(getErrorMessage(error, `Failed to read ${files[0]?.name || 'sample file'}`))
     }
-  }
+  }, [convertTask.reset, format, saveTask.clearError])
+
+  useEffect(() => {
+    if (!initialFiles || initialFiles.length === 0) return
+    const nextFormat = inferSampleFormatFromFile(initialFiles[0], format)
+    if (nextFormat !== format) {
+      setFormat(nextFormat)
+    }
+    void handleFilesLoad(supportsMultiPrimary(nextFormat) ? initialFiles : [initialFiles[0]], 'primary', nextFormat)
+  }, [format, handleFilesLoad, initialFiles])
 
   const handleDragOver = (event: React.DragEvent, target: 'primary' | 'secondary') => {
     event.preventDefault()
@@ -483,12 +509,44 @@ export default function SampleScriptImport({ projectId, onImported, onEdit, onCl
   const handleDrop = (event: React.DragEvent, target: 'primary' | 'secondary') => {
     event.preventDefault()
     setDragTarget(null)
+    if (desktop) return
     const files = Array.from(event.dataTransfer.files || [])
     if (files.length > 0) {
       const allowMultiple = target === 'primary' ? supportsMultiPrimary(format) : supportsMultiSecondary(format)
       void handleFilesLoad(allowMultiple ? files : [files[0]], target)
     }
   }
+
+  const handleNativeSamplePaths = useCallback((paths: string[], target: 'primary' | 'secondary') => {
+    void filesFromDroppedPaths(paths).then(files => {
+      setDragTarget(null)
+      if (files.length === 0) return
+      const allowMultiple = target === 'primary' ? supportsMultiPrimary(format) : supportsMultiSecondary(format)
+      void handleFilesLoad(allowMultiple ? files : [files[0]], target)
+    })
+  }, [format])
+  const handleNativePrimaryPaths = useCallback((paths: string[]) => handleNativeSamplePaths(paths, 'primary'), [handleNativeSamplePaths])
+  const handleNativeSecondaryPaths = useCallback((paths: string[]) => handleNativeSamplePaths(paths, 'secondary'), [handleNativeSamplePaths])
+  useDesktopFileDrop(primaryDropRef, handleNativePrimaryPaths, desktop)
+  useDesktopFileDrop(secondaryDropRef, handleNativeSecondaryPaths, desktop)
+
+  const handleBrowseSample = useCallback((target: 'primary' | 'secondary') => {
+    const accept = target === 'primary' ? sampleAcceptForFormat(format) : '.txt,.json,.http,.log'
+    const multiple = target === 'primary' ? supportsMultiPrimary(format) : supportsMultiSecondary(format)
+    if (nativeDialogs) {
+      void pickFilesViaBridge(accept, multiple).then(files => {
+        if (files.length > 0) {
+          void handleFilesLoad(multiple ? files : [files[0]], target)
+        }
+      })
+      return
+    }
+    if (target === 'primary') {
+      primaryFileRef.current?.click()
+    } else {
+      secondaryFileRef.current?.click()
+    }
+  }, [format, nativeDialogs])
 
   const buildScriptWithOptions = (baseScript?: ScriptDefinition) => {
     const script = JSON.parse(JSON.stringify(baseScript || {})) as ScriptDefinition
@@ -684,7 +742,9 @@ export default function SampleScriptImport({ projectId, onImported, onEdit, onCl
 
         <div className="sample-import-grid two-col">
           <label
+            ref={primaryDropRef}
             className={`sample-import-field sample-import-span-2 ${dragTarget === 'primary' ? 'sample-import-drop-active' : ''}`}
+            style={desktop ? ({ '--wails-drop-target': 'drop' } as CSSProperties) : undefined}
             onDragOver={event => handleDragOver(event, 'primary')}
             onDragLeave={event => handleDragLeave(event, 'primary')}
             onDrop={event => handleDrop(event, 'primary')}
@@ -703,7 +763,7 @@ export default function SampleScriptImport({ projectId, onImported, onEdit, onCl
                   e.target.value = ''
                 }}
               />
-              <button type="button" className="btn btn-secondary btn-sm" onClick={() => primaryFileRef.current?.click()}>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => handleBrowseSample('primary')}>
                 {supportsMultiPrimary(format) ? 'Upload Sample Files' : 'Upload Sample File'}
               </button>
               <span className="sample-import-drop-hint">{supportsMultiPrimary(format) ? 'or drag files here' : 'or drag a file here'}</span>
@@ -722,7 +782,9 @@ export default function SampleScriptImport({ projectId, onImported, onEdit, onCl
 
           {(format === 'raw_http' || format === 'curl') && (
             <label
+              ref={secondaryDropRef}
               className={`sample-import-field sample-import-span-2 ${dragTarget === 'secondary' ? 'sample-import-drop-active' : ''}`}
+              style={desktop ? ({ '--wails-drop-target': 'drop' } as CSSProperties) : undefined}
               onDragOver={event => handleDragOver(event, 'secondary')}
               onDragLeave={event => handleDragLeave(event, 'secondary')}
               onDrop={event => handleDrop(event, 'secondary')}
@@ -741,7 +803,7 @@ export default function SampleScriptImport({ projectId, onImported, onEdit, onCl
                     e.target.value = ''
                   }}
                 />
-                <button type="button" className="btn btn-secondary btn-sm" onClick={() => secondaryFileRef.current?.click()}>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => handleBrowseSample('secondary')}>
                   {supportsMultiSecondary(format) ? 'Upload Response Files' : 'Upload Response File'}
                 </button>
                 <span className="sample-import-drop-hint">{supportsMultiSecondary(format) ? 'or drag files here' : 'or drag a file here'}</span>

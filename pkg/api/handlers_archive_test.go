@@ -387,6 +387,23 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 		}
 	})
 
+	t.Run("audit json report includes integrity verdict", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/report?profile=audit", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusOK {
+			t.Fatalf("audit json report status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+		}
+		var payload RunArchiveReport
+		if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+			t.Fatalf("unmarshal audit report: %v", err)
+		}
+		if payload.Integrity == nil || payload.Integrity.Status == "" {
+			t.Fatalf("audit json report missing integrity verdict: %#v", payload.Integrity)
+		}
+	})
+
 	t.Run("analysis graph and drilldown", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/analysis?baseline_id="+baselineID+"&limit=5&action=step-1", nil)
 		resp := httptest.NewRecorder()
@@ -541,6 +558,9 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 		}
 		if !archiveReportCSVHasRow(rows, "artifact_inventory", "transactions.jsonl", "count") {
 			t.Fatalf("audit csv rows missing artifact inventory: %#v", rows)
+		}
+		if !archiveReportCSVHasRow(rows, "artifact_integrity", "", "status") {
+			t.Fatalf("audit csv rows missing integrity verdict: %#v", rows)
 		}
 		if archiveReportCSVHasRow(rows, "action", "step-1", "transactions") {
 			t.Fatalf("audit csv rows should omit action drilldown: %#v", rows)

@@ -34,6 +34,47 @@ func executionPlanScheduleAllows(disabledFrom, disabledUntil *time.Time) func(ti
 	}
 }
 
+func executionPlanSchedulePausedIndefinitely(disabledFrom, disabledUntil *time.Time, now time.Time) bool {
+	return disabledFrom != nil && disabledUntil == nil && !now.Before(disabledFrom.UTC())
+}
+
+func renderExecutionPlanScheduleRunName(schedule *storage.ExecutionPlanSchedule, plan *storage.ExecutionPlan, plannedAt time.Time) string {
+	template := ""
+	if schedule != nil {
+		template = strings.TrimSpace(schedule.RunNameTemplate)
+	}
+	planName := ""
+	if plan != nil {
+		planName = strings.TrimSpace(plan.Name)
+	}
+	if template == "" {
+		template = planName
+	}
+	if template == "" {
+		template = "Execution Plan Run"
+	}
+	scheduleName := ""
+	timezone := ""
+	if schedule != nil {
+		scheduleName = strings.TrimSpace(schedule.Name)
+		timezone = schedule.Timezone
+	}
+	local := plannedAt.UTC().In(scheduleEvalLocation(timezone))
+	out := strings.NewReplacer(
+		"{{plan}}", planName,
+		"{{schedule}}", scheduleName,
+		"{{date}}", local.Format("2006-01-02"),
+		"{{time}}", local.Format("15:04"),
+		"{{datetime}}", local.Format("2006-01-02 15:04 MST"),
+		"{{planned_at}}", plannedAt.UTC().Format(time.RFC3339),
+	).Replace(template)
+	out = strings.TrimSpace(out)
+	if out == "" {
+		return firstNonEmpty(planName, scheduleName, "Execution Plan Run")
+	}
+	return out
+}
+
 func (tr *TestRunner) CreateExecutionPlanSchedule(planID string, req CreateExecutionPlanScheduleRequest) (*storage.ExecutionPlanSchedule, error) {
 	return tr.upsertExecutionPlanSchedule(planID, uuid.New().String(), nil, req)
 }
@@ -110,11 +151,16 @@ func (tr *TestRunner) upsertExecutionPlanSchedule(planID, scheduleID string, exi
 		schedule.LastRunAt = existing.LastRunAt
 	}
 	if enabled {
-		next, err := nextCronRun(cronExpr, tz, now, executionPlanScheduleAllows(disabledFrom, disabledUntil))
-		if err != nil {
-			return nil, err
+		if executionPlanSchedulePausedIndefinitely(disabledFrom, disabledUntil, now) {
+			schedule.NextRunAt = nil
+			schedule.NextRequiredAction = "schedule_paused"
+		} else {
+			next, err := nextCronRun(cronExpr, tz, now, executionPlanScheduleAllows(disabledFrom, disabledUntil))
+			if err != nil {
+				return nil, err
+			}
+			schedule.NextRunAt = next
 		}
-		schedule.NextRunAt = next
 	}
 	if err := tr.execPlanScheduleStore.SaveExecutionPlanSchedule(schedule); err != nil {
 		return nil, err
@@ -168,7 +214,104 @@ func (tr *TestRunner) sweepDueExecutionPlanSchedules(now time.Time) {
 		if schedule == nil || !schedule.Enabled || schedule.NextRunAt == nil || schedule.NextRunAt.After(now) {
 			continue
 		}
-		tr.runDueExecutionPlanScheduleOnce(schedule, now)
+		catchUpAll := normalizeScenarioScheduleMissedRunPolicy(schedule.MissedRunPolicy) == "catch_up_all"
+		for materialized := 0; schedule.NextRunAt != nil && !schedule.NextRunAt.After(now); materialized++ {
+			if materialized >= maxScheduleCatchUpAllPerSweep {
+				schedule.NextRequiredAction = "catch_up_limit_reached"
+				schedule.LastError = fmt.Sprintf("catch_up_all materialized %d occurrences; next sweep will continue", maxScheduleCatchUpAllPerSweep)
+				schedule.UpdatedAt = now
+				_ = store.SaveExecutionPlanSchedule(schedule)
+				break
+			}
+			if handled, err := tr.applyMissedExecutionPlanSchedulePolicy(schedule, now); err != nil {
+				schedule.LastError = err.Error()
+				schedule.UpdatedAt = now
+				_ = store.SaveExecutionPlanSchedule(schedule)
+				break
+			} else if handled {
+				break
+			}
+			tr.runDueExecutionPlanScheduleOnce(schedule, now)
+			if !catchUpAll {
+				break
+			}
+		}
+	}
+}
+
+func (tr *TestRunner) applyMissedExecutionPlanSchedulePolicy(schedule *storage.ExecutionPlanSchedule, now time.Time) (bool, error) {
+	if schedule == nil || schedule.NextRunAt == nil || now.Sub(schedule.NextRunAt.UTC()) <= time.Minute {
+		return false, nil
+	}
+	plannedAt := schedule.NextRunAt.UTC()
+	switch normalizeScenarioScheduleMissedRunPolicy(schedule.MissedRunPolicy) {
+	case "catch_up_once", "catch_up_all":
+		return false, nil
+	case "skip":
+		occurrence := &storage.ExecutionPlanScheduleOccurrence{
+			ID:               uuid.New().String(),
+			ScheduleID:       schedule.ID,
+			PlanID:           schedule.PlanID,
+			ProjectID:        schedule.ProjectID,
+			ScheduleRevision: schedule.Revision,
+			PlannedAt:        plannedAt,
+			Status:           "skipped",
+			ReasonCode:       "missed_run_skipped",
+			ConflictSummary:  "Missed scheduled execution-plan occurrence skipped by policy.",
+			CreatedAt:        now,
+			UpdatedAt:        now,
+		}
+		if _, err := tr.execPlanScheduleStore.CreateExecutionPlanScheduleOccurrenceIfAbsent(occurrence); err != nil {
+			return true, err
+		}
+		if executionPlanSchedulePausedIndefinitely(schedule.DisabledFrom, schedule.DisabledUntil, now) {
+			schedule.NextRunAt = nil
+			schedule.LastError = ""
+			schedule.NextRequiredAction = "schedule_paused"
+			schedule.UpdatedAt = now
+			if err := tr.execPlanScheduleStore.SaveExecutionPlanSchedule(schedule); err != nil {
+				return true, err
+			}
+			return true, nil
+		}
+		next, err := nextCronRun(schedule.CronExpr, schedule.Timezone, now, executionPlanScheduleAllows(schedule.DisabledFrom, schedule.DisabledUntil))
+		if err != nil {
+			return true, err
+		}
+		schedule.NextRunAt = next
+		schedule.LastError = ""
+		schedule.NextRequiredAction = ""
+		schedule.UpdatedAt = now
+		if err := tr.execPlanScheduleStore.SaveExecutionPlanSchedule(schedule); err != nil {
+			return true, err
+		}
+		return true, nil
+	case "require_operator_decision":
+		occurrence := &storage.ExecutionPlanScheduleOccurrence{
+			ID:               uuid.New().String(),
+			ScheduleID:       schedule.ID,
+			PlanID:           schedule.PlanID,
+			ProjectID:        schedule.ProjectID,
+			ScheduleRevision: schedule.Revision,
+			PlannedAt:        plannedAt,
+			Status:           "blocked",
+			ReasonCode:       "missed_run_requires_decision",
+			ConflictSummary:  "Missed scheduled execution-plan occurrence requires an operator decision.",
+			CreatedAt:        now,
+			UpdatedAt:        now,
+		}
+		if _, err := tr.execPlanScheduleStore.CreateExecutionPlanScheduleOccurrenceIfAbsent(occurrence); err != nil {
+			return true, err
+		}
+		schedule.LastError = "missed scheduled occurrence requires operator decision"
+		schedule.NextRequiredAction = "operator_decision_required"
+		schedule.UpdatedAt = now
+		if err := tr.execPlanScheduleStore.SaveExecutionPlanSchedule(schedule); err != nil {
+			return true, err
+		}
+		return true, nil
+	default:
+		return false, nil
 	}
 }
 
@@ -177,6 +320,14 @@ func (tr *TestRunner) runDueExecutionPlanScheduleOnce(schedule *storage.Executio
 	plannedAt := schedule.NextRunAt.UTC()
 
 	advanceNextRun := func(lastErr string) {
+		if executionPlanSchedulePausedIndefinitely(schedule.DisabledFrom, schedule.DisabledUntil, now) {
+			schedule.NextRunAt = nil
+			schedule.LastError = lastErr
+			schedule.NextRequiredAction = "schedule_paused"
+			schedule.UpdatedAt = now
+			_ = store.SaveExecutionPlanSchedule(schedule)
+			return
+		}
 		next, err := nextCronRun(schedule.CronExpr, schedule.Timezone, plannedAt, executionPlanScheduleAllows(schedule.DisabledFrom, schedule.DisabledUntil))
 		if err != nil {
 			schedule.NextRunAt = nil
@@ -184,6 +335,7 @@ func (tr *TestRunner) runDueExecutionPlanScheduleOnce(schedule *storage.Executio
 		} else {
 			schedule.NextRunAt = next
 			schedule.LastError = lastErr
+			schedule.NextRequiredAction = ""
 		}
 		schedule.UpdatedAt = now
 		_ = store.SaveExecutionPlanSchedule(schedule)
@@ -213,10 +365,15 @@ func (tr *TestRunner) runDueExecutionPlanScheduleOnce(schedule *storage.Executio
 		CreatedAt:        now,
 		UpdatedAt:        now,
 	}
-	if err := store.SaveExecutionPlanScheduleOccurrence(occurrence); err != nil {
+	claimed, err := store.CreateExecutionPlanScheduleOccurrenceIfAbsent(occurrence)
+	if err != nil {
 		schedule.LastError = err.Error()
 		schedule.UpdatedAt = now
 		_ = store.SaveExecutionPlanSchedule(schedule)
+		return
+	}
+	if !claimed {
+		advanceNextRun(schedule.LastError)
 		return
 	}
 
@@ -241,7 +398,8 @@ func (tr *TestRunner) runDueExecutionPlanScheduleOnce(schedule *storage.Executio
 		finalize("blocked", "plan_not_found", "", "execution plan not found")
 		return
 	}
-	result, err := tr.MaterializeAndRunExecutionPlan(plan, "", "")
+	runName := renderExecutionPlanScheduleRunName(schedule, plan, plannedAt)
+	result, err := tr.materializeAndRunExecutionPlan(plan, "", "", runName)
 	if err != nil {
 		finalize("failed", "materialize_failed", "", err.Error())
 		return

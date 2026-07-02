@@ -6,6 +6,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/buildinfo"
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -113,6 +114,7 @@ func (s *Server) systemInventory(ctx context.Context) SystemInventoryResponse {
 	}
 	s.enrichGeneratorRestartability(ctx, entries)
 	s.enrichGeneratorInventoryWithPools(entries)
+	s.runner.setCachedGeneratorInventory(entries, time.Now())
 	s.cacheGeneratorInventory(ctx, entries)
 
 	return SystemInventoryResponse{

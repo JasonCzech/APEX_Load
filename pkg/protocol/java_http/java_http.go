@@ -261,10 +261,7 @@ func buildJavaHTTPPreflightSnapshot(baseURL string, action *protocol.Action) *pr
 	if action == nil {
 		return nil
 	}
-	method := strings.ToUpper(strings.TrimSpace(action.Method))
-	if method == "" {
-		method = "GET"
-	}
+	method := javaHTTPActionMethod(action)
 	requestURL := resolveJavaHTTPURL(baseURL, action.Target)
 	if strings.TrimSpace(action.RedactedTarget) != "" {
 		requestURL = resolveJavaHTTPURL(baseURL, action.RedactedTarget)
@@ -282,6 +279,21 @@ func buildJavaHTTPPreflightSnapshot(baseURL string, action *protocol.Action) *pr
 		RequestURL:     requestURL,
 		RequestHeaders: requestHeaders,
 		RequestBody:    requestBody,
+	}
+}
+
+func javaHTTPActionMethod(action *protocol.Action) string {
+	if action == nil {
+		return "GET"
+	}
+	if method := strings.ToUpper(strings.TrimSpace(action.Method)); method != "" {
+		return method
+	}
+	switch method := strings.ToUpper(strings.TrimSpace(action.Type)); method {
+	case "GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "CONNECT", "OPTIONS", "TRACE":
+		return method
+	default:
+		return "GET"
 	}
 }
 

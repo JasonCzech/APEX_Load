@@ -382,7 +382,13 @@ export default function AccessPage({
     setUsersLoading(true)
     try {
       const offset = userPage * userPageSize
-      const response = await api.listAuthUsers({ limit: userPageSize, offset })
+      const requestFilter: { q?: string; active?: string; role?: string; limit: number; offset: number } = { limit: userPageSize, offset }
+      const query = userFilters.query.trim()
+      if (query) requestFilter.q = query
+      if (userFilters.status === 'active') requestFilter.active = 'true'
+      if (userFilters.status === 'disabled') requestFilter.active = 'false'
+      if (userFilters.role) requestFilter.role = userFilters.role
+      const response = await api.listAuthUsers(requestFilter)
       setUsers(response.users || [])
       const total = typeof response.total === 'number' ? response.total : (response.users || []).length
       setUsersTotal(total)
@@ -397,7 +403,11 @@ export default function AccessPage({
     } finally {
       setUsersLoading(false)
     }
-  }, [api, canUseUsers, userPage, userPageSize])
+  }, [api, canUseUsers, userFilters.query, userFilters.role, userFilters.status, userPage, userPageSize])
+
+  useEffect(() => {
+    setUserPage(0)
+  }, [userFilters.query, userFilters.role, userFilters.status])
 
   const loadActivity = useCallback(async () => {
     if (!canViewUserActivity) {
@@ -422,8 +432,8 @@ export default function AccessPage({
   }, [activityFilter, api, canViewUserActivity])
 
   const loadAccessReview = useCallback(async () => {
-    // The report endpoint is gated by user-lifecycle admin; the activity tab surfaces it too.
-    if (!canViewUserActivity && !canManageUserLifecycle) return
+    // The report endpoint is gated by user-lifecycle admin.
+    if (!canManageUserLifecycle) return
     setAccessReviewLoading(true)
     try {
       const response = await api.getAccessReview()
@@ -435,13 +445,19 @@ export default function AccessPage({
     } finally {
       setAccessReviewLoading(false)
     }
-  }, [api, canViewUserActivity, canManageUserLifecycle])
+  }, [api, canManageUserLifecycle])
 
   useEffect(() => {
-    if (activeTab === 'activity' && activitySubTab === 'review' && !accessReview && !accessReviewLoading) {
+    if (activeTab === 'activity' && activitySubTab === 'review' && canManageUserLifecycle && !accessReview && !accessReviewLoading) {
       void loadAccessReview()
     }
-  }, [activeTab, activitySubTab, accessReview, accessReviewLoading, loadAccessReview])
+  }, [activeTab, activitySubTab, accessReview, accessReviewLoading, canManageUserLifecycle, loadAccessReview])
+
+  useEffect(() => {
+    if (!canManageUserLifecycle && activitySubTab === 'review') {
+      setActivitySubTab('events')
+    }
+  }, [activitySubTab, canManageUserLifecycle])
 
   // Admins get the access-review posture eagerly (for the attention badge) and refetched on
   // each `access_review_changed` ping, regardless of which tab is open.
@@ -1535,7 +1551,7 @@ export default function AccessPage({
             <div className="access-panel-header">
               <div>
                 <h3>Users</h3>
-                <p>{usersLoading ? 'Loading users...' : `${filteredUsers.length} of ${users.length} local users`}</p>
+                <p>{usersLoading ? 'Loading users...' : `${filteredUsers.length} of ${usersTotal} users`}</p>
               </div>
               {selectedUser && userInspectorCollapsed && (
                 <button className="btn btn-secondary btn-sm" type="button" onClick={() => setUserInspectorCollapsed(false)}>Show Details</button>
@@ -1735,7 +1751,9 @@ export default function AccessPage({
                 {accessReviewAttention.denials > 0 && (
                   <span>{accessReviewAttention.denials} recent access denial(s). </span>
                 )}
-                <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setActiveTab('activity'); setActivitySubTab('review') }}>Open access review</button>
+                {canManageUserLifecycle && (
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setActiveTab('activity'); setActivitySubTab('review') }}>Open access review</button>
+                )}
               </div>
             )}
             <div className="access-subtab-row" role="tablist" aria-label="Service account workspace views">
@@ -1949,7 +1967,9 @@ export default function AccessPage({
             <div className="access-subtab-row" role="tablist" aria-label="Activity workspace views">
               <button type="button" role="tab" aria-selected={activitySubTab === 'events'} className={`access-subtab ${activitySubTab === 'events' ? 'active' : ''}`} onClick={() => setActivitySubTab('events')}>Events</button>
               <button type="button" role="tab" aria-selected={activitySubTab === 'usage'} className={`access-subtab ${activitySubTab === 'usage' ? 'active' : ''}`} onClick={() => setActivitySubTab('usage')}>Usage By User</button>
-              <button type="button" role="tab" aria-selected={activitySubTab === 'review'} className={`access-subtab ${activitySubTab === 'review' ? 'active' : ''}`} onClick={() => setActivitySubTab('review')}>Access Review</button>
+              {canManageUserLifecycle && (
+                <button type="button" role="tab" aria-selected={activitySubTab === 'review'} className={`access-subtab ${activitySubTab === 'review' ? 'active' : ''}`} onClick={() => setActivitySubTab('review')}>Access Review</button>
+              )}
             </div>
 
             {activitySubTab === 'review' && (

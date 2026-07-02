@@ -153,7 +153,6 @@ export function buildGroupAssignmentPayload(assignment?: GeneratorAssignmentSett
   const requiredLabels = normalizeRequiredLabels(assignment.required_labels)
   if (assignment.mode === 'specific_hosts') {
     const selectedTargets = normalizeSelectedTargets(assignment.selected_targets)
-    if (selectedTargets.length === 0) return undefined
     return {
       mode: 'specific_hosts',
       selected_targets: selectedTargets,
@@ -175,14 +174,12 @@ function buildRootAssignmentPayload(assignment?: GeneratorAssignmentSettings): G
   const lossTolerance = assignment?.tolerate_generator_loss ? { tolerate_generator_loss: true } : {}
   if (assignment?.mode === 'specific_hosts') {
     const selectedTargets = normalizeSelectedTargets(assignment.selected_targets)
-    if (selectedTargets.length > 0) {
-      return {
-        mode: 'specific_hosts',
-        selected_targets: selectedTargets,
-        ...(selectedTargets.length > 1 ? { shard_strategy: 'capacity_weighted' as const } : {}),
-        ...(requiredLabels ? { required_labels: requiredLabels } : {}),
-        ...lossTolerance,
-      }
+    return {
+      mode: 'specific_hosts',
+      selected_targets: selectedTargets,
+      ...(selectedTargets.length > 1 ? { shard_strategy: 'capacity_weighted' as const } : {}),
+      ...(requiredLabels ? { required_labels: requiredLabels } : {}),
+      ...lossTolerance,
     }
   }
   if (assignment?.mode === 'region_weighted' && assignment.region_weights) {
@@ -204,15 +201,19 @@ export function buildGoalConfigPayload(scenarioMode: ScenarioMode, goalConfig: G
     return undefined
   }
 
+  const hasValue = (value: number | undefined) => value !== undefined && value !== null
   const payload: GoalConfig = {
-    ...(goalConfig.target_average_tps ? { target_average_tps: goalConfig.target_average_tps } : {}),
-    ...(goalConfig.p95_latency_ms ? { p95_latency_ms: goalConfig.p95_latency_ms } : {}),
-    ...(goalConfig.max_error_pct ? { max_error_pct: goalConfig.max_error_pct } : {}),
-    ...(goalConfig.max_avg_server_processing_ms ? { max_avg_server_processing_ms: goalConfig.max_avg_server_processing_ms } : {}),
-    ...(goalConfig.max_avg_transfer_ms ? { max_avg_transfer_ms: goalConfig.max_avg_transfer_ms } : {}),
-    ...(goalConfig.max_error_count ? { max_error_count: goalConfig.max_error_count } : {}),
-    ...(goalConfig.min_vusers ? { min_vusers: goalConfig.min_vusers } : {}),
-    ...(goalConfig.max_vusers ? { max_vusers: goalConfig.max_vusers } : {}),
+    ...(hasValue(goalConfig.target_average_tps) ? { target_average_tps: goalConfig.target_average_tps } : {}),
+    ...(hasValue(goalConfig.p95_latency_ms) ? { p95_latency_ms: goalConfig.p95_latency_ms } : {}),
+    ...(hasValue(goalConfig.max_error_pct) ? { max_error_pct: goalConfig.max_error_pct } : {}),
+    ...(hasValue(goalConfig.max_avg_server_processing_ms) ? { max_avg_server_processing_ms: goalConfig.max_avg_server_processing_ms } : {}),
+    ...(hasValue(goalConfig.max_avg_transfer_ms) ? { max_avg_transfer_ms: goalConfig.max_avg_transfer_ms } : {}),
+    ...(hasValue(goalConfig.max_error_count) ? { max_error_count: goalConfig.max_error_count } : {}),
+    ...(hasValue(goalConfig.min_vusers) ? { min_vusers: goalConfig.min_vusers } : {}),
+    ...(hasValue(goalConfig.max_vusers) ? { max_vusers: goalConfig.max_vusers } : {}),
+    ...(hasValue(goalConfig.max_lcp_ms) ? { max_lcp_ms: goalConfig.max_lcp_ms } : {}),
+    ...(hasValue(goalConfig.max_inp_ms) ? { max_inp_ms: goalConfig.max_inp_ms } : {}),
+    ...(hasValue(goalConfig.max_cls) ? { max_cls: goalConfig.max_cls } : {}),
     ...(goalConfig.stop_on_sla_breach ? { stop_on_sla_breach: true } : {}),
     ...(goalConfig.stop_on_max_errors ? { stop_on_max_errors: true } : {}),
     ...(goalConfig.sla_breach_window ? { sla_breach_window: goalConfig.sla_breach_window } : {}),

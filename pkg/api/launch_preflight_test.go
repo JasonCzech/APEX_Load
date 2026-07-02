@@ -289,6 +289,53 @@ func TestPreflightLaunchAllowsJavaVuserWithRunnerCapability(t *testing.T) {
 	}
 }
 
+func TestPreflightLaunchAllowsJavaVuserWithDistributedRunnerCapability(t *testing.T) {
+	t.Setenv(config.EnvJavaVuserRunnerEnabled, "false")
+	runner := NewTestRunner(10, NewHub(), nil)
+	runner.setExecutionBackend(newDistributedExecutionBackend([]string{"gen-jvm:9090|protocols=java_vuser|labels=runtime:java_vuser"}, time.Second, nil))
+	storePreflightJavaVuserScript(runner, "script-preflight-java-vuser-fleet", "", false)
+
+	preflight, err := runner.PreflightLaunch(LaunchPreflightRequest{
+		CreateTestRequest: CreateTestRequest{
+			Name:     "Java Vuser",
+			Duration: "5m",
+			ScriptID: "script-preflight-java-vuser-fleet",
+			VUsers:   1,
+		},
+	})
+	if err != nil {
+		t.Fatalf("PreflightLaunch returned error: %v", err)
+	}
+	if !preflight.StartNowAllowed || preflight.Decision != "start_now" {
+		t.Fatalf("preflight = %#v, want start_now from distributed runner capability", preflight)
+	}
+}
+
+func TestPreflightLaunchBlocksJavaVuserWhenOnlyControllerEnvEnabled(t *testing.T) {
+	t.Setenv(config.EnvJavaVuserRunnerEnabled, "true")
+	runner := NewTestRunner(10, NewHub(), nil)
+	runner.setExecutionBackend(newDistributedExecutionBackend([]string{"gen-http:9090|protocols=http"}, time.Second, nil))
+	storePreflightJavaVuserScript(runner, "script-preflight-java-vuser-controller-only", "", false)
+
+	preflight, err := runner.PreflightLaunch(LaunchPreflightRequest{
+		CreateTestRequest: CreateTestRequest{
+			Name:     "Java Vuser",
+			Duration: "5m",
+			ScriptID: "script-preflight-java-vuser-controller-only",
+			VUsers:   1,
+		},
+	})
+	if err != nil {
+		t.Fatalf("PreflightLaunch returned error: %v", err)
+	}
+	if preflight.Decision != "blocked" || preflight.StartNowAllowed {
+		t.Fatalf("preflight = %#v, want blocked without distributed runner capability", preflight)
+	}
+	if len(preflight.BlockingConflicts) == 0 || preflight.BlockingConflicts[0].Code != "java_vuser_runner_required" {
+		t.Fatalf("blocking conflicts = %#v, want Java Vuser runner conflict", preflight.BlockingConflicts)
+	}
+}
+
 func TestPreflightLaunchBlocksSAPGUIExternalRunner(t *testing.T) {
 	runner := NewTestRunner(10, NewHub(), nil)
 	storePreflightSAPGUIScript(runner, "script-preflight-sapgui", "")

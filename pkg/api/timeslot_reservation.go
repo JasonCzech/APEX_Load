@@ -89,6 +89,31 @@ func (tr *TestRunner) launchTimeslotRevalidationErrorLocked(test *ManagedTest, n
 	return nil
 }
 
+func (tr *TestRunner) releaseCapacityReservationForTerminalStatus(testID, status string) {
+	if tr == nil || tr.reservationStore == nil || strings.TrimSpace(testID) == "" {
+		return
+	}
+	switch strings.ToUpper(strings.TrimSpace(status)) {
+	case "COMPLETE", "FAILED", "ABORTED", "STOPPED":
+	default:
+		return
+	}
+	var slotID string
+	tr.mu.RLock()
+	if test := tr.tests[testID]; test != nil && test.TimeslotID != nil {
+		slotID = strings.TrimSpace(*test.TimeslotID)
+	}
+	tr.mu.RUnlock()
+	if slotID == "" {
+		return
+	}
+	if released, err := tr.reservationStore.ClearCapacityReservationBinding(slotID, testID, time.Now().UTC()); err != nil {
+		slog.Warn("release capacity timeslot binding failed", "timeslot_id", slotID, "test_id", testID, "error", err)
+	} else if released {
+		slog.Debug("released capacity timeslot binding", "timeslot_id", slotID, "test_id", testID)
+	}
+}
+
 // reservationFitError reports why a run with the given window and VUser count does
 // not fit a reservation (nil if it fits). Both bind paths — create-time
 // (validateAndBindTimeslotLocked) and the standalone bind endpoint — call it so
@@ -161,8 +186,11 @@ func (tr *TestRunner) boundTimeslotBoundariesInWindowLocked(window LaunchWindow)
 func reservationTotalsWithTimeslots(settings SystemSettings, projectID string, at time.Time, activeSlots []*storage.CapacityReservation) (int, int) {
 	totalReserved, projectReserved := capacityReservationTotalsAt(settings, projectID, at)
 	for _, ts := range activeSlots {
-		// Pool-scoped timeslots draw from a pool envelope, not the global pool.
 		if timeslotPoolID(ts) != "" {
+			g := timeslotReservedGenerators(settings, ts)
+			if g > 0 && normalizeProjectID(ts.ProjectID) == normalizeProjectID(projectID) {
+				projectReserved += g
+			}
 			continue
 		}
 		g := timeslotReservedGenerators(settings, ts)

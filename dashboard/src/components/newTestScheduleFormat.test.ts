@@ -37,6 +37,10 @@ describe('describeCron', () => {
     expect(describeCron('0 0 1 1 *')).toBe('At 12:00 AM, on day 1, in Jan')
   })
 
+  it('describes POSIX day-of-month and weekday matching as OR semantics', () => {
+    expect(describeCron('0 9 1 * 1')).toBe('At 9:00 AM, on day 1 or Mon')
+  })
+
   it('describes every-minute wildcards', () => {
     expect(describeCron('* * * * *')).toBe('Every minute')
   })

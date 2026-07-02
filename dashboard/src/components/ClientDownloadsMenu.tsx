@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { apiFetch } from '../hooks/apiClient'
 import { useSystemApi } from '../hooks/api/useSystemApi'
@@ -12,7 +12,9 @@ interface DownloadPlatform {
 }
 
 // The five platforms the controller stages packages for (see
-// sanitizeDownloadPlatform in pkg/api). macOS defaults to Apple Silicon.
+// sanitizeDownloadPlatform in pkg/api). macOS auto-detection only selects a
+// package when the browser exposes an architecture hint; otherwise the picker
+// is safer than sending Intel Macs to the Apple Silicon archive.
 const PLATFORMS: DownloadPlatform[] = [
   { value: 'darwin-arm64', label: 'macOS (Apple Silicon)' },
   { value: 'darwin-amd64', label: 'macOS (Intel)' },
@@ -46,14 +48,45 @@ const ARTIFACTS: DownloadArtifact[] = [
   },
 ]
 
-// detectPlatform guesses the visitor's platform from the User-Agent so the
-// primary download button targets the right package; unknown falls back to the
-// full platform picker.
-function detectPlatform(): string | null {
-  if (typeof navigator === 'undefined') return null
-  const ua = `${navigator.userAgent || ''} ${navigator.platform || ''}`.toLowerCase()
+interface NavigatorUserAgentData {
+  platform?: string
+  getHighEntropyValues?: (hints: string[]) => Promise<{ platform?: string; architecture?: string }>
+}
+
+function architecturePlatform(osHint: string, architectureHint: string): string | null {
+  const os = osHint.toLowerCase()
+  const architecture = architectureHint.toLowerCase()
+  if (os.includes('mac')) {
+    if (architecture.includes('arm') || architecture.includes('aarch64')) return 'darwin-arm64'
+    if (architecture.includes('x86') || architecture.includes('amd64')) return 'darwin-amd64'
+    return null
+  }
+  if (os.includes('win')) return 'windows-amd64'
+  if (os.includes('linux')) {
+    if (architecture.includes('arm') || architecture.includes('aarch64')) return 'linux-arm64'
+    return 'linux-amd64'
+  }
+  return null
+}
+
+// detectPlatformFromNavigator guesses the visitor's platform. A null return
+// intentionally falls back to the full picker.
+async function detectPlatformFromNavigator(nav?: Navigator): Promise<string | null> {
+  const currentNavigator = nav || (typeof navigator === 'undefined' ? null : navigator)
+  if (!currentNavigator) return null
+  const uaData = (currentNavigator as Navigator & { userAgentData?: NavigatorUserAgentData }).userAgentData
+  if (uaData?.getHighEntropyValues) {
+    try {
+      const values = await uaData.getHighEntropyValues(['architecture', 'platform'])
+      const detected = architecturePlatform(values.platform || uaData.platform || '', values.architecture || '')
+      if (detected) return detected
+    } catch {
+      // Fall back to lower-fidelity User-Agent checks below.
+    }
+  }
+  const ua = `${currentNavigator.userAgent || ''} ${currentNavigator.platform || ''}`.toLowerCase()
   if (ua.includes('win')) return 'windows-amd64'
-  if (ua.includes('mac')) return 'darwin-arm64'
+  if (ua.includes('mac')) return null
   if (ua.includes('linux') || ua.includes('android')) return 'linux-amd64'
   return null
 }
@@ -108,7 +141,17 @@ export default function ClientDownloadsMenu() {
     }
   }, [open])
 
-  const detectedPlatform = useMemo(() => detectPlatform(), [])
+  const [detectedPlatform, setDetectedPlatform] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    detectPlatformFromNavigator().then(platform => {
+      if (!cancelled) setDetectedPlatform(platform)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const enabled = Boolean(version?.deployment?.client_downloads_enabled)
   if (!version || !enabled) return null

@@ -16,14 +16,15 @@ func (s *SQLiteStore) SaveRunArchive(record *RunArchiveRecord) error {
 		return errors.New("run archive record is nil")
 	}
 	record.SchemaVersion = normalizeTelemetrySchemaVersion(record.SchemaVersion, archiveRecordSchemaVersion)
-	_, err := s.db.Exec(`INSERT INTO run_archives (test_id, ref_key, schema_version, archive_backend, archive_path, manifest_path, archive_uri, manifest_uri, transaction_count, resource_sample_count, interval_summary_count, created_at, completed_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	_, err := s.db.Exec(`INSERT INTO run_archives (test_id, ref_key, schema_version, archive_backend, archive_path, manifest_path, manifest_sha256, archive_uri, manifest_uri, transaction_count, resource_sample_count, interval_summary_count, created_at, completed_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(test_id) DO UPDATE SET
 		ref_key=excluded.ref_key,
 		schema_version=excluded.schema_version,
 		archive_backend=excluded.archive_backend,
 		archive_path=excluded.archive_path,
 		manifest_path=excluded.manifest_path,
+		manifest_sha256=excluded.manifest_sha256,
 		archive_uri=excluded.archive_uri,
 		manifest_uri=excluded.manifest_uri,
 		transaction_count=excluded.transaction_count,
@@ -37,6 +38,7 @@ func (s *SQLiteStore) SaveRunArchive(record *RunArchiveRecord) error {
 		record.ArchiveBackend,
 		record.ArchivePath,
 		record.ManifestPath,
+		record.ManifestSHA256,
 		record.ArchiveURI,
 		record.ManifestURI,
 		record.TransactionCount,
@@ -50,13 +52,14 @@ func (s *SQLiteStore) SaveRunArchive(record *RunArchiveRecord) error {
 
 func (s *SQLiteStore) GetRunArchive(testID string) (*RunArchiveRecord, error) {
 	var record RunArchiveRecord
-	err := s.db.QueryRow(`SELECT test_id, COALESCE(ref_key, ''), schema_version, COALESCE(archive_backend, ''), archive_path, manifest_path, COALESCE(archive_uri, ''), COALESCE(manifest_uri, ''), transaction_count, resource_sample_count, interval_summary_count, created_at, completed_at FROM run_archives WHERE test_id = ?`, testID).Scan(
+	err := s.db.QueryRow(`SELECT test_id, COALESCE(ref_key, ''), schema_version, COALESCE(archive_backend, ''), archive_path, manifest_path, COALESCE(manifest_sha256, ''), COALESCE(archive_uri, ''), COALESCE(manifest_uri, ''), transaction_count, resource_sample_count, interval_summary_count, created_at, completed_at FROM run_archives WHERE test_id = ?`, testID).Scan(
 		&record.TestID,
 		&record.RefKey,
 		&record.SchemaVersion,
 		&record.ArchiveBackend,
 		&record.ArchivePath,
 		&record.ManifestPath,
+		&record.ManifestSHA256,
 		&record.ArchiveURI,
 		&record.ManifestURI,
 		&record.TransactionCount,

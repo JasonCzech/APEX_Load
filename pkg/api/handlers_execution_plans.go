@@ -200,8 +200,16 @@ type ExecutionPlanMaterializeResult struct {
 // responsible for the execution-leader gate (the HTTP handler and the leader-only
 // scheduler sweep both satisfy it).
 func (tr *TestRunner) MaterializeAndRunExecutionPlan(plan *storage.ExecutionPlan, attribSubject, attribDisplayName string) (*ExecutionPlanMaterializeResult, error) {
+	return tr.materializeAndRunExecutionPlan(plan, attribSubject, attribDisplayName, "")
+}
+
+func (tr *TestRunner) materializeAndRunExecutionPlan(plan *storage.ExecutionPlan, attribSubject, attribDisplayName, runNameOverride string) (*ExecutionPlanMaterializeResult, error) {
 	if plan == nil {
 		return nil, errors.New("execution plan is required")
+	}
+	runName := strings.TrimSpace(runNameOverride)
+	if runName == "" {
+		runName = strings.TrimSpace(plan.Name)
 	}
 	// Governance gate: a plan whose aggregate peak exceeds the project VUser quota
 	// requires a project-admin approval before it can run.
@@ -227,7 +235,7 @@ func (tr *TestRunner) MaterializeAndRunExecutionPlan(plan *storage.ExecutionPlan
 
 	var result *ExecutionPlanMaterializeResult
 	if plan.RunMode == "sequential" {
-		run, err := tr.StartExecutionPlanRun(plan, attribSubject, attribDisplayName, gateApproval)
+		run, err := tr.startExecutionPlanRun(plan, attribSubject, attribDisplayName, runName, gateApproval)
 		if err != nil {
 			return nil, err
 		}
@@ -248,6 +256,7 @@ func (tr *TestRunner) MaterializeAndRunExecutionPlan(plan *storage.ExecutionPlan
 	results := make([]executionPlanRunResult, 0, len(entries))
 	runEntries := make([]storage.ExecutionPlanRunEntry, 0, len(entries))
 	created, failed := 0, 0
+	planTimeslotUsed := false
 	for _, entry := range entries {
 		res := executionPlanRunResult{Order: entry.Order, ScenarioID: entry.ScenarioID}
 		runEntry := storage.ExecutionPlanRunEntry{Order: entry.Order, ScenarioID: entry.ScenarioID, ScenarioName: entry.ScenarioName}
@@ -258,7 +267,12 @@ func (tr *TestRunner) MaterializeAndRunExecutionPlan(plan *storage.ExecutionPlan
 			runEntries = append(runEntries, runEntry)
 			continue
 		}
-		test, err := tr.CreateTest(buildPlanEntryCreateRequest(plan.Name, plan.ProjectID, plan.TimeslotID, entry))
+		var planTimeslot *string
+		if trimPtr(entry.TimeslotID) == "" && !planTimeslotUsed && trimPtr(plan.TimeslotID) != "" {
+			planTimeslot = plan.TimeslotID
+			planTimeslotUsed = true
+		}
+		test, err := tr.CreateTest(buildPlanEntryCreateRequest(runName, plan.ProjectID, planTimeslot, entry))
 		if err != nil {
 			failed++
 			res.Status, res.Detail = "failed", err.Error()

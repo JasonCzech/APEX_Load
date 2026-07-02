@@ -70,6 +70,35 @@ func TestExecuteWithRetry_ResolvedSecretRuns(t *testing.T) {
 	}
 }
 
+func TestResolveAction_RedactsSecretParams(t *testing.T) {
+	t.Setenv("APEXLOAD_SECRET_APP_PASSWORD", "runtime-secret")
+	proto := &captureProtocol{}
+	vu := newControlFlowVUser(proto, nil, nil)
+
+	resolved := vu.resolveAction(dsl.Action{
+		Name: "java",
+		Type: "java_vuser_run",
+		Params: map[string]any{
+			"lr_parameters": map[string]any{
+				"Password": "{{secret.app_password}}",
+			},
+			"nested": []any{"{{secret.app_password}}"},
+		},
+	})
+	lrParams, ok := resolved.Params["lr_parameters"].(map[string]any)
+	if !ok || lrParams["Password"] != "runtime-secret" {
+		t.Fatalf("resolved params = %#v, want runtime secret", resolved.Params)
+	}
+	redactedLRParams, ok := resolved.RedactedParams["lr_parameters"].(map[string]any)
+	if !ok || redactedLRParams["Password"] != "[REDACTED]" {
+		t.Fatalf("redacted params = %#v, want redacted secret", resolved.RedactedParams)
+	}
+	redactedNested, ok := resolved.RedactedParams["nested"].([]any)
+	if !ok || len(redactedNested) != 1 || redactedNested[0] != "[REDACTED]" {
+		t.Fatalf("redacted nested params = %#v", resolved.RedactedParams["nested"])
+	}
+}
+
 func TestExecuteWithRetry_FailsClosedOnUnresolvedFileAsset(t *testing.T) {
 	proto := &captureProtocol{}
 	vu := newControlFlowVUser(proto, nil, nil)

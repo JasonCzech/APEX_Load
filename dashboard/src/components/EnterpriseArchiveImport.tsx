@@ -201,6 +201,7 @@ function buildReviewArtifactDraft(
 }
 
 interface Props {
+  initialFiles?: File[] | null
   projectId?: string
   onImported?: (result: ImportedSaveResult) => void
   onEdit?: (script: ScriptDefinition, focus?: DraftEditorFocus) => void
@@ -557,7 +558,7 @@ function findUnsupportedRepairSuggestion(repairSuggestions: ImportRepairSuggesti
   }) || null
 }
 
-export default function EnterpriseArchiveImport({ projectId, onImported, onEdit, onClose }: Props) {
+export default function EnterpriseArchiveImport({ initialFiles, projectId, onImported, onEdit, onClose }: Props) {
   const api = useApi()
   const fileRef = useRef<HTMLInputElement>(null)
   const harFileRef = useRef<HTMLInputElement>(null)
@@ -1067,6 +1068,12 @@ export default function EnterpriseArchiveImport({ projectId, onImported, onEdit,
     setError(zipFiles.length === incomingFiles.length ? '' : `${incomingFiles.length - zipFiles.length} non-ZIP file${incomingFiles.length - zipFiles.length === 1 ? '' : 's'} skipped.`)
     setNotice('')
   }, [])
+
+  useEffect(() => {
+    if (initialFiles && initialFiles.length > 0) {
+      addFilesToQueue(initialFiles)
+    }
+  }, [addFilesToQueue, initialFiles])
 
   // Desktop shell: prefer the native multi-file dialog and accept native file
   // drops (absolute paths via Wails OnFileDrop), reconstructing File objects for

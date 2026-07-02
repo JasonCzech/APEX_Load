@@ -133,7 +133,7 @@ These dimensions are returned by `GET /api/v1/system/parity-status` in the `comp
 
 ### LoadRunner
 
-> Source: `LRE_26X_COMPARISON.md` (June 2026 reality-check). Deliberately unvarnished. Protocol breadth is excluded from this comparison — APEX Load is treated as having sufficient protocol coverage.
+> Source: June 2026 repository reality-check across the protocol support matrix, import coverage docs, API comparison, and evaluator trust pack. Deliberately unvarnished. Protocol breadth is excluded from this comparison — APEX Load is treated as having sufficient protocol coverage.
 
 **One-line verdict:** APEX wins on architecture and day-to-day usability; LRE wins on migration intelligence, analysis depth, and battle-tested scale.
 

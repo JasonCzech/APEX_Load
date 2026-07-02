@@ -106,6 +106,53 @@ public class Actions {
 	}
 }
 
+func TestJavaJDBCLRTransactionDoesNotBecomeDatabaseBegin(t *testing.T) {
+	result, err := ConvertZip(buildJavaReplayArchive(t, "JDBCLRTransaction", "Java Vuser", `import java.sql.*;
+public class Actions {
+  public int action() throws Throwable {
+    lr.start_transaction("T1");
+    PreparedStatement ps = conn.prepareStatement("insert into audit values (1)");
+    ps.executeUpdate();
+    lr.end_transaction("T1", lr.AUTO);
+    return 0;
+  }
+}`), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip error: %v", err)
+	}
+	if _, ok := javaFindAction(result, "db_begin"); ok {
+		t.Fatalf("lr.start_transaction was emitted as db_begin; types=%v", javaActionTypesAcrossScripts(result))
+	}
+	if _, ok := javaFindAction(result, "db_exec"); !ok {
+		t.Fatalf("expected JDBC DML to remain executable; types=%v", javaActionTypesAcrossScripts(result))
+	}
+}
+
+func TestJavaDetectedButUnconvertedHTTPLaneStaysReviewVisible(t *testing.T) {
+	result, err := ConvertZip(buildJavaReplayArchive(t, "IncompleteHTTPAndJMS", "Java Vuser", `import java.net.*;
+import javax.jms.*;
+public class Actions {
+  public int action() throws Throwable {
+    HttpURLConnection conn = null;
+    conn.setRequestMethod("POST");
+    Queue q = session.createQueue("orders.in");
+    TextMessage msg = session.createTextMessage("hi");
+    producer.send(q, msg);
+    return 0;
+  }
+}`), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip error: %v", err)
+	}
+	if _, ok := javaFindAction(result, "jms_publish"); !ok {
+		t.Fatalf("expected JMS publish to remain executable; types=%v", javaActionTypesAcrossScripts(result))
+	}
+	if result.ReviewArtifact == nil {
+		t.Fatalf("incomplete HTTP statements were hidden by lane ownership; want review artifact, types=%v", javaActionTypesAcrossScripts(result))
+	}
+	assertSourceReviewSupportMode(t, result.SourceReview.Mappings, "java_statement", SourceFunctionSupportReviewOnly)
+}
+
 func actionSQLText(action dsl.Action) string {
 	if action.Params == nil {
 		return ""

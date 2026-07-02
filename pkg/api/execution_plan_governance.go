@@ -8,7 +8,12 @@ package api
 // honor the same quota.
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -27,10 +32,7 @@ func (tr *TestRunner) executionPlanAggregatePeak(plan *storage.ExecutionPlan) in
 		if !ok {
 			continue
 		}
-		entryVUsers := 0
-		for _, script := range scenario.Scripts {
-			entryVUsers += script.VUsers
-		}
+		entryVUsers := scenarioPeakVUsers(scenario)
 		if plan.RunMode == "sequential" {
 			if entryVUsers > peak {
 				peak = entryVUsers
@@ -38,6 +40,26 @@ func (tr *TestRunner) executionPlanAggregatePeak(plan *storage.ExecutionPlan) in
 		} else {
 			peak += entryVUsers
 		}
+	}
+	return peak
+}
+
+func scenarioPeakVUsers(scenario *StoredScenario) int {
+	if scenario == nil {
+		return 0
+	}
+	peak := 0
+	for _, script := range scenario.Scripts {
+		groupPeak := script.VUsers
+		for _, stage := range script.Stages {
+			if stage.TargetVUsers > groupPeak {
+				groupPeak = stage.TargetVUsers
+			}
+		}
+		peak += groupPeak
+	}
+	if strings.EqualFold(scenario.ScenarioMode, "goal_oriented") && scenario.GoalConfig != nil && scenario.GoalConfig.MaxVUsers != nil && *scenario.GoalConfig.MaxVUsers > peak {
+		peak = *scenario.GoalConfig.MaxVUsers
 	}
 	return peak
 }
@@ -65,12 +87,16 @@ func (tr *TestRunner) executionPlanRunGate(plan *storage.ExecutionPlan, actorSub
 	if peak <= maxVUsers {
 		return nil, false, nil
 	}
+	contentHash := tr.executionPlanApprovalContentHash(plan)
 	approvals, err := tr.execPlanScheduleStore.ListExecutionPlanApprovals(plan.ID)
 	if err != nil {
 		return nil, false, err
 	}
 	var pending *storage.ExecutionPlanApproval
 	for _, approval := range approvals {
+		if approval.PlanContentHash != contentHash {
+			continue
+		}
 		if approval.Status == "approved" && approval.RunID == "" {
 			return approval, false, nil // consume this authorization
 		}
@@ -83,17 +109,18 @@ func (tr *TestRunner) executionPlanRunGate(plan *storage.ExecutionPlan, actorSub
 	}
 	now := time.Now().UTC()
 	approval := &storage.ExecutionPlanApproval{
-		ID:             uuid.New().String(),
-		PlanID:         plan.ID,
-		ProjectID:      projectID,
-		Policy:         "quota_burst",
-		Status:         "pending",
-		RequestedBy:    actorSubject,
-		RequestedAt:    now,
-		RequiredRole:   RoleProjectAdmin,
-		DecisionReason: fmt.Sprintf("Aggregate peak %d VUsers exceeds project limit %d; project-admin approval required.", peak, maxVUsers),
-		CreatedAt:      now,
-		UpdatedAt:      now,
+		ID:              uuid.New().String(),
+		PlanID:          plan.ID,
+		ProjectID:       projectID,
+		Policy:          "quota_burst",
+		Status:          "pending",
+		RequestedBy:     actorSubject,
+		RequestedAt:     now,
+		RequiredRole:    RoleProjectAdmin,
+		PlanContentHash: contentHash,
+		DecisionReason:  fmt.Sprintf("Aggregate peak %d VUsers exceeds project limit %d; project-admin approval required.", peak, maxVUsers),
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}
 	if err := tr.execPlanScheduleStore.SaveExecutionPlanApproval(approval); err != nil {
 		return nil, false, err
@@ -116,6 +143,23 @@ func (tr *TestRunner) ResolveExecutionPlanApproval(planID, approvalID string, ap
 	}
 	if approval.Status != "pending" {
 		return approval, true, fmt.Errorf("approval is already %s", approval.Status)
+	}
+	plan, err := tr.execPlanScheduleStore.GetExecutionPlan(planID)
+	if err != nil {
+		return nil, true, err
+	}
+	if plan == nil {
+		return nil, false, nil
+	}
+	currentHash := tr.executionPlanApprovalContentHash(plan)
+	if approval.PlanContentHash != "" && approval.PlanContentHash != currentHash {
+		return approval, true, fmt.Errorf("approval no longer matches current execution plan content")
+	}
+	if approval.PlanContentHash == "" {
+		approval.PlanContentHash = currentHash
+		if err := tr.execPlanScheduleStore.SaveExecutionPlanApproval(approval); err != nil {
+			return nil, true, err
+		}
 	}
 	now := time.Now().UTC()
 	toStatus := "rejected"
@@ -147,4 +191,163 @@ func (tr *TestRunner) ListExecutionPlanApprovals(planID string) ([]*storage.Exec
 		return nil, nil
 	}
 	return tr.execPlanScheduleStore.ListExecutionPlanApprovals(planID)
+}
+
+type executionPlanApprovalFingerprint struct {
+	PlanID        string                                  `json:"plan_id"`
+	ProjectID     string                                  `json:"project_id"`
+	Name          string                                  `json:"name"`
+	Description   string                                  `json:"description,omitempty"`
+	RunMode       string                                  `json:"run_mode"`
+	TimeslotID    string                                  `json:"timeslot_id,omitempty"`
+	AggregatePeak int                                     `json:"aggregate_peak_vusers"`
+	Entries       []executionPlanApprovalEntryFingerprint `json:"entries"`
+}
+
+type executionPlanApprovalEntryFingerprint struct {
+	Order            int                               `json:"order"`
+	ScenarioID       string                            `json:"scenario_id"`
+	ScenarioName     string                            `json:"scenario_name,omitempty"`
+	Enabled          bool                              `json:"enabled"`
+	FailurePolicy    string                            `json:"failure_policy,omitempty"`
+	TimeslotID       string                            `json:"timeslot_id,omitempty"`
+	RuntimeOverrides any                               `json:"runtime_overrides,omitempty"`
+	DataPools        []storage.ScenarioDataPoolBinding `json:"data_pools,omitempty"`
+	Scenario         *executionPlanScenarioFingerprint `json:"scenario,omitempty"`
+}
+
+type executionPlanScenarioFingerprint struct {
+	ID               string                                   `json:"id"`
+	ProjectID        string                                   `json:"project_id,omitempty"`
+	Name             string                                   `json:"name"`
+	Duration         string                                   `json:"duration"`
+	StartDelay       string                                   `json:"start_delay,omitempty"`
+	ScenarioMode     string                                   `json:"scenario_mode,omitempty"`
+	ScriptShakeout   bool                                     `json:"script_shakeout,omitempty"`
+	ResourceBaseline bool                                     `json:"resource_baseline,omitempty"`
+	GoalConfig       any                                      `json:"goal_config,omitempty"`
+	RuntimeSettings  any                                      `json:"runtime_settings,omitempty"`
+	Scripts          []executionPlanScenarioScriptFingerprint `json:"scripts"`
+	PeakVUsers       int                                      `json:"peak_vusers"`
+}
+
+type executionPlanScenarioScriptFingerprint struct {
+	Order           int                 `json:"order"`
+	ScriptID        string              `json:"script_id"`
+	ScriptName      string              `json:"script_name,omitempty"`
+	Protocol        string              `json:"protocol,omitempty"`
+	Role            string              `json:"role,omitempty"`
+	VUsers          int                 `json:"vusers"`
+	RampUp          string              `json:"ramp_up,omitempty"`
+	RampDown        string              `json:"ramp_down,omitempty"`
+	Stages          []storage.LoadStage `json:"stages,omitempty"`
+	Iterations      *int                `json:"iterations,omitempty"`
+	Initialization  string              `json:"initialization,omitempty"`
+	RuntimeSettings any                 `json:"runtime_settings,omitempty"`
+	Assignment      any                 `json:"assignment,omitempty"`
+}
+
+func (tr *TestRunner) executionPlanApprovalContentHash(plan *storage.ExecutionPlan) string {
+	if plan == nil {
+		return ""
+	}
+	entries := make([]storage.ExecutionPlanEntry, len(plan.Entries))
+	copy(entries, plan.Entries)
+	sort.SliceStable(entries, func(i, j int) bool { return entries[i].Order < entries[j].Order })
+	fp := executionPlanApprovalFingerprint{
+		PlanID:        strings.TrimSpace(plan.ID),
+		ProjectID:     normalizeProjectID(plan.ProjectID),
+		Name:          strings.TrimSpace(plan.Name),
+		Description:   strings.TrimSpace(plan.Description),
+		RunMode:       strings.TrimSpace(plan.RunMode),
+		TimeslotID:    trimPtr(plan.TimeslotID),
+		AggregatePeak: tr.executionPlanAggregatePeak(plan),
+		Entries:       make([]executionPlanApprovalEntryFingerprint, 0, len(entries)),
+	}
+	for _, entry := range entries {
+		entryFP := executionPlanApprovalEntryFingerprint{
+			Order:            entry.Order,
+			ScenarioID:       strings.TrimSpace(entry.ScenarioID),
+			ScenarioName:     strings.TrimSpace(entry.ScenarioName),
+			Enabled:          entry.IsEnabled(),
+			FailurePolicy:    strings.TrimSpace(entry.FailurePolicy),
+			TimeslotID:       trimPtr(entry.TimeslotID),
+			RuntimeOverrides: canonicalJSONValue(entry.RuntimeOverrides),
+			DataPools:        append([]storage.ScenarioDataPoolBinding(nil), entry.DataPools...),
+		}
+		if scenario, ok := tr.GetScenario(entry.ScenarioID); ok {
+			entryFP.Scenario = executionPlanScenarioApprovalFingerprint(scenario)
+		}
+		fp.Entries = append(fp.Entries, entryFP)
+	}
+	data, _ := json.Marshal(fp)
+	sum := sha256.Sum256(data)
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+func executionPlanScenarioApprovalFingerprint(scenario *StoredScenario) *executionPlanScenarioFingerprint {
+	if scenario == nil {
+		return nil
+	}
+	fp := &executionPlanScenarioFingerprint{
+		ID:               strings.TrimSpace(scenario.ID),
+		ProjectID:        normalizeProjectID(scenario.ProjectID),
+		Name:             strings.TrimSpace(scenario.Name),
+		Duration:         strings.TrimSpace(scenario.Duration),
+		StartDelay:       strings.TrimSpace(scenario.StartDelay),
+		ScenarioMode:     strings.TrimSpace(scenario.ScenarioMode),
+		ScriptShakeout:   scenario.ScriptShakeout,
+		ResourceBaseline: scenario.ResourceBaseline,
+		GoalConfig:       canonicalJSONValue(scenario.GoalConfig),
+		RuntimeSettings:  canonicalJSONValue(scenario.RuntimeSettings),
+		Scripts:          make([]executionPlanScenarioScriptFingerprint, 0, len(scenario.Scripts)),
+		PeakVUsers:       scenarioPeakVUsers(scenario),
+	}
+	scripts := append([]ScenarioScriptRef(nil), scenario.Scripts...)
+	sort.SliceStable(scripts, func(i, j int) bool { return scripts[i].Order < scripts[j].Order })
+	for _, script := range scripts {
+		fp.Scripts = append(fp.Scripts, executionPlanScenarioScriptFingerprint{
+			Order:           script.Order,
+			ScriptID:        strings.TrimSpace(script.ScriptID),
+			ScriptName:      strings.TrimSpace(script.ScriptName),
+			Protocol:        strings.TrimSpace(script.Protocol),
+			Role:            strings.TrimSpace(script.Role),
+			VUsers:          script.VUsers,
+			RampUp:          strings.TrimSpace(script.RampUp),
+			RampDown:        strings.TrimSpace(script.RampDown),
+			Stages:          cloneLoadStages(script.Stages),
+			Iterations:      cloneIntPtr(script.Iterations),
+			Initialization:  strings.TrimSpace(script.Initialization),
+			RuntimeSettings: canonicalJSONValue(script.RuntimeSettings),
+			Assignment:      canonicalJSONValue(script.Assignment),
+		})
+	}
+	return fp
+}
+
+func canonicalJSONValue(value any) any {
+	if value == nil {
+		return nil
+	}
+	var data []byte
+	var err error
+	switch v := value.(type) {
+	case json.RawMessage:
+		data = append([]byte(nil), v...)
+	case []byte:
+		data = append([]byte(nil), v...)
+	default:
+		data, err = json.Marshal(v)
+		if err != nil {
+			return fmt.Sprintf("%v", value)
+		}
+	}
+	if len(data) == 0 || string(data) == "null" {
+		return nil
+	}
+	var decoded any
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return string(data)
+	}
+	return decoded
 }

@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -340,41 +341,64 @@ func extractJSONPath(expr string, body []byte) (string, error) {
 }
 
 func extractJSONPathValue(expr string, body []byte) (any, error) {
-	// Simple JSONPath: supports $.field and $.field.nested and $.array[N].field
-	expr = strings.TrimPrefix(expr, "$.")
-	parts := strings.Split(expr, ".")
-
 	var current any
 	if err := json.Unmarshal(body, &current); err != nil {
 		return nil, fmt.Errorf("invalid JSON body: %w", err)
 	}
 
-	for _, part := range parts {
-		idx := -1
-		if bracket := strings.Index(part, "["); bracket != -1 {
-			idxStr := strings.TrimSuffix(part[bracket+1:], "]")
-			fmt.Sscanf(idxStr, "%d", &idx)
-			part = part[:bracket]
-		}
-
-		obj, ok := current.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("expected object at %q", part)
-		}
-		current, ok = obj[part]
-		if !ok {
-			return nil, fmt.Errorf("field %q not found", part)
-		}
-
-		if idx >= 0 {
+	if expr == "$" {
+		return current, nil
+	}
+	if !strings.HasPrefix(expr, "$") {
+		return nil, fmt.Errorf("jsonpath must start with $")
+	}
+	path := strings.TrimPrefix(expr, "$")
+	for len(path) > 0 {
+		switch path[0] {
+		case '.':
+			path = path[1:]
+			nextSep := len(path)
+			if dot := strings.Index(path, "."); dot >= 0 && dot < nextSep {
+				nextSep = dot
+			}
+			if bracket := strings.Index(path, "["); bracket >= 0 && bracket < nextSep {
+				nextSep = bracket
+			}
+			if nextSep == 0 {
+				return nil, fmt.Errorf("empty jsonpath field in %q", expr)
+			}
+			field := path[:nextSep]
+			obj, ok := current.(map[string]any)
+			if !ok {
+				return nil, fmt.Errorf("expected object at %q", field)
+			}
+			var exists bool
+			current, exists = obj[field]
+			if !exists {
+				return nil, fmt.Errorf("field %q not found", field)
+			}
+			path = path[nextSep:]
+		case '[':
+			close := strings.Index(path, "]")
+			if close < 0 {
+				return nil, fmt.Errorf("unterminated jsonpath index in %q", expr)
+			}
+			indexText := path[1:close]
+			idx, err := strconv.Atoi(indexText)
+			if err != nil {
+				return nil, fmt.Errorf("unsupported jsonpath index %q", indexText)
+			}
 			arr, ok := current.([]any)
 			if !ok {
-				return nil, fmt.Errorf("expected array at %q", part)
+				return nil, fmt.Errorf("expected array for index %d", idx)
 			}
-			if idx >= len(arr) {
-				return nil, fmt.Errorf("index %d out of range for %q", idx, part)
+			if idx < 0 || idx >= len(arr) {
+				return nil, fmt.Errorf("index %d out of range", idx)
 			}
 			current = arr[idx]
+			path = path[close+1:]
+		default:
+			return nil, fmt.Errorf("unsupported jsonpath segment in %q", expr)
 		}
 	}
 

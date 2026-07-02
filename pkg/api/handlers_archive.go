@@ -314,10 +314,14 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 	switch queryFormat(r) {
 	case "csv":
 		testID := r.PathValue("id")
-		s.attachReleaseTrendForProfile(report, r.URL.Query().Get("profile"))
+		profileID := r.URL.Query().Get("profile")
+		s.attachReleaseTrendForProfile(report, profileID)
+		if profileID == "audit" {
+			report.Integrity = verifyRunArchiveIntegrity(record, report.Manifest)
+		}
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 		w.Header().Set("Content-Disposition", "attachment; filename=\"apexload-archive-report-"+testID+".csv\"")
-		if err := writeRunArchiveReportCSVWithProfile(report, w, r.URL.Query().Get("profile")); err != nil {
+		if err := writeRunArchiveReportCSVWithProfile(report, w, profileID); err != nil {
 			if strings.Contains(err.Error(), "unknown report profile") {
 				writeError(w, http.StatusBadRequest, err.Error())
 				return
@@ -353,6 +357,9 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 	// The raw JSON report carries the full model, so attach the release-over-release
 	// trend unconditionally (still a no-op for runs with no release association).
 	s.attachReleaseTrend(report)
+	if r.URL.Query().Get("profile") == "audit" {
+		report.Integrity = verifyRunArchiveIntegrity(record, report.Manifest)
+	}
 	writeJSON(w, http.StatusOK, report)
 }
 

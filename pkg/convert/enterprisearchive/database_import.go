@@ -133,7 +133,7 @@ func appendDatabaseReviewAction(result *ConvertResult, fn ParsedFunction, reason
 func convertDatabaseFunction(fn ParsedFunction) (dsl.Action, bool) {
 	name := strings.ToLower(strings.TrimSpace(fn.Name))
 	switch {
-	case strings.Contains(name, "begin") || strings.Contains(name, "start_transaction"):
+	case strings.Contains(name, "begin"):
 		return dsl.Action{Name: databaseActionName(fn, "db_begin"), Type: "db_begin", Metadata: sourceFunctionMetadata(fn)}, true
 	case strings.Contains(name, "commit"):
 		return dsl.Action{Name: databaseActionName(fn, "db_commit"), Type: "db_commit", Metadata: sourceFunctionMetadata(fn)}, true

@@ -436,6 +436,65 @@ func TestCapacityReservationEnlargingApprovedRequiresReapproval(t *testing.T) {
 	}
 }
 
+func TestCapacityReservationUpdateDoesNotResurrectConcurrentReject(t *testing.T) {
+	server, store := newTimeslotServer(t)
+	start := time.Date(2026, 7, 1, 9, 0, 0, 0, time.UTC)
+	if err := store.SaveCapacityReservation(&storage.CapacityReservation{
+		ID:            "ts-race",
+		ProjectID:     "proj-a",
+		StartAt:       start,
+		EndAt:         start.Add(time.Hour),
+		ApprovalState: "approved",
+	}); err != nil {
+		t.Fatalf("seed reservation: %v", err)
+	}
+	if ok, err := store.UpdateCapacityReservationApprovalState("ts-race", []string{"approved"}, "rejected", time.Now()); err != nil || !ok {
+		t.Fatalf("reject reservation = (%v, %v), want (true, nil)", ok, err)
+	}
+	upd := timeslotRequest(t, server, http.MethodPut, "/api/v1/capacity/timeslots/ts-race",
+		map[string]any{"start_at": start, "end_at": start.Add(time.Hour), "timezone": "America/New_York"})
+	if upd.Code != http.StatusOK {
+		t.Fatalf("update status = %d body=%s", upd.Code, upd.Body.String())
+	}
+	var updated storage.CapacityReservation
+	if err := json.Unmarshal(upd.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("decode update: %v", err)
+	}
+	if updated.ApprovalState != "rejected" {
+		t.Fatalf("approval_state = %q, want rejected preserved", updated.ApprovalState)
+	}
+}
+
+func TestTerminalStatusReleasesCapacityReservationBinding(t *testing.T) {
+	server, store := newTimeslotServer(t)
+	start := time.Date(2026, 7, 1, 9, 0, 0, 0, time.UTC)
+	testID := "test-terminal"
+	status := "RUNNING"
+	if err := store.SaveCapacityReservation(&storage.CapacityReservation{
+		ID:              "ts-terminal",
+		ProjectID:       "proj-a",
+		StartAt:         start,
+		EndAt:           start.Add(time.Hour),
+		ApprovalState:   "approved",
+		BoundTestID:     &testID,
+		BoundTestStatus: &status,
+	}); err != nil {
+		t.Fatalf("seed reservation: %v", err)
+	}
+	server.runner.mu.Lock()
+	server.runner.tests[testID] = &ManagedTest{ID: testID, TimeslotID: reservedStr("ts-terminal")}
+	server.runner.mu.Unlock()
+	end := start.Add(30 * time.Minute)
+	server.runner.updateStoredTestStatus(testID, "COMPLETE", &end, "")
+	got, err := store.GetCapacityReservation("ts-terminal")
+	if err != nil {
+		t.Fatalf("get reservation: %v", err)
+	}
+	if got.BoundTestID != nil || got.BoundTestStatus != nil {
+		t.Fatalf("binding should be released after terminal status, got test=%v status=%v", got.BoundTestID, got.BoundTestStatus)
+	}
+}
+
 func TestReservationBoundStatusRefreshedOnRead(t *testing.T) {
 	server, store := newTimeslotServer(t)
 	now := time.Now()

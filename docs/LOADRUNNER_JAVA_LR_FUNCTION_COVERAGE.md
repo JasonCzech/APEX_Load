@@ -10,9 +10,9 @@ A Java Vuser script is arbitrary Java, not a closed library — so this matrix c
 
 | Disposition | Count | Meaning |
 |---|---|---|
-| `executable` | 40 | Translated to an executable DSL action or config mapping. |
+| `executable` | 34 | Translated to an executable DSL action or config mapping. |
 | `native_noop` | 3 | Preserved as a no-op (no replay effect in APEX Load). |
-| `review_only` | 14 | Preserved in the import-review artifact; no APEX equivalent, not executed. |
+| `review_only` | 20 | Preserved in the import-review artifact; no APEX equivalent, not executed. |
 | `external_required` | 2 | Needs an external provider (secret manager) before replay. |
 
 Every published lr method resolves to one of the dispositions above — none falls through to a `custom_call` review stub. Enforced by `TestJavaLRResolvesEveryPublishedFunction`.
@@ -20,7 +20,7 @@ Every published lr method resolves to one of the dispositions above — none fal
 | Java method | Function | Family | Support mode | Target | Notes |
 |---|---|---|---|---|---|
 | `lr.abort` | `lr_abort` | runtime | `executable` | source_runtime action | Abort the Vuser. |
-| `lr.advance_param` | `lr_advance_param` | parameter | `executable` | source_parameter action | Advance a parameter to the next value. |
+| `lr.advance_param` | `lr_advance_param` | parameter | `review_only` | import review | Parameter cursor advancement is preserved for review; the native replay engine does not advance VuGen parameter tables. |
 | `lr.aws_get_secret` | `lr_aws_get_secret` | secret | `external_required` | source_external action | AWS Secrets Manager fetch; needs an external secret provider. |
 | `lr.cyberark_get_vault` | `lr_cyberark_get_vault` | secret | `external_required` | source_external action | CyberArk vault fetch; needs an external secret provider. |
 | `lr.debug_message` | `lr_debug_message` | message | `executable` | source_message action | Conditional debug log message. |
@@ -35,27 +35,27 @@ Every published lr method resolves to one of the dispositions above — none fal
 | `lr.end_transaction` | `lr_end_transaction` | transaction | `executable` | source_transaction action | Closes a transaction; feeds Stats.Transactions. |
 | `lr.error_message` | `lr_error_message` | message | `executable` | error_message action | Native error-message action. |
 | `lr.eval_data` | `lr_eval_data` | parameter | `review_only` | import review | Returns byte[]; no DSL equivalent. |
-| `lr.eval_int` | `lr_eval_int` | parameter | `executable` | source_parameter action | Java typed eval of a parameter to int. |
+| `lr.eval_int` | `lr_eval_int` | parameter | `review_only` | import review | Java typed parameter evaluation returns a value to user code; native replay does not model that return channel. |
 | `lr.eval_string` | `lr_eval_string` | parameter | `executable` | source_parameter action | Evaluates {param} → {{var.*}}. |
 | `lr.exit` | `lr_exit` | runtime | `executable` | source_runtime action | Exit the Vuser/iteration. |
 | `lr.get_attrib_double` | `lr_get_attrib_double` | attribute | `review_only` | import review | Command-line attribute read; RTS-specific. |
 | `lr.get_attrib_long` | `lr_get_attrib_long` | attribute | `review_only` | import review | Command-line attribute read; RTS-specific. |
 | `lr.get_attrib_string` | `lr_get_attrib_string` | attribute | `review_only` | import review | Command-line attribute read; RTS-specific. |
 | `lr.get_debug_message` | `lr_get_debug_message` | message | `executable` | source_message action | Reads the debug message level. |
-| `lr.get_group_name` | `lr_get_group_name` | info | `executable` | source_parameter action | Informational getter (Vuser group). |
+| `lr.get_group_name` | `lr_get_group_name` | info | `review_only` | import review | Java informational getter returns a value to user code; native replay does not model that return channel. |
 | `lr.get_host_name` | `lr_get_host_name` | info | `executable` | source_parameter action | Informational getter (host). |
 | `lr.get_master_host_name` | `lr_get_master_host_name` | info | `executable` | source_parameter action | Informational getter (master host). |
 | `lr.get_object` | `lr_get_object` | parameter | `review_only` | import review | Returns a Java runtime object; no DSL equivalent. |
-| `lr.get_scenario_id` | `lr_get_scenario_id` | info | `executable` | source_parameter action | Informational getter (scenario id). |
+| `lr.get_scenario_id` | `lr_get_scenario_id` | info | `review_only` | import review | Java informational getter returns a value to user code; native replay does not model that return channel. |
 | `lr.get_transaction_duration` | `lr_get_transaction_duration` | transaction | `executable` | source_transaction action | Reads a transaction's duration. |
 | `lr.get_transaction_status` | `lr_get_transaction_status` | transaction | `executable` | source_transaction action | Reads a transaction's status. |
 | `lr.get_transaction_think_time` | `lr_get_transaction_think_time` | transaction | `executable` | source_transaction action | Reads a transaction's think time. |
 | `lr.get_transaction_wasted_time` | `lr_get_transaction_wasted_time` | transaction | `executable` | source_transaction action | Reads a transaction's wasted time. |
-| `lr.get_vuser_id` | `lr_get_vuser_id` | info | `executable` | source_parameter action | Informational getter (Vuser id). |
+| `lr.get_vuser_id` | `lr_get_vuser_id` | info | `review_only` | import review | Java informational getter returns a value to user code; native replay does not model that return channel. |
 | `lr.log` | `lr_log` | message | `executable` | source_message action | General Java log message. |
 | `lr.log_message` | `lr_log_message` | message | `executable` | source_message action | Log-only message. |
 | `lr.message` | `lr_message` | message | `executable` | source_message action | Output-window message. |
-| `lr.next_row` | `lr_next_row` | parameter | `executable` | source_parameter action | Advance a data file to the next row. |
+| `lr.next_row` | `lr_next_row` | parameter | `review_only` | import review | Data-file row advancement is preserved for review; the native replay engine does not advance VuGen data cursors. |
 | `lr.output_message` | `lr_output_message` | message | `executable` | source_message action | Output message with location. |
 | `lr.peek_events` | `lr_peek_events` | runtime | `native_noop` | native no-op | Runtime event queue not exposed; no-op. |
 | `lr.read_file` | `lr_read_file` | parameter | `review_only` | import review | Local file read; preserved for review. |

@@ -8,9 +8,7 @@ import { getDesktopBridge } from './desktopBridge'
 // useKeepAwakeDuringRuns engages the OS sleep inhibitor while activeRunCount > 0
 // and releases it when it returns to 0. It only calls the bridge on transitions.
 export function useKeepAwakeDuringRuns(activeRunCount: number) {
-  // The native inhibitor starts inactive, so seed to false: mounting with no
-  // active runs is a no-op rather than a redundant release call.
-  const lastWantAwake = useRef(false)
+  const lastWantAwake = useRef<boolean | null>(null)
 
   useEffect(() => {
     const bridge = getDesktopBridge()

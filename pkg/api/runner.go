@@ -102,6 +102,7 @@ type usageSnapshotPersistence interface {
 type reservationPersistence interface {
 	GetCapacityReservation(id string) (*storage.CapacityReservation, error)
 	UpdateCapacityReservationBinding(id string, testID *string, testStatus *string, updatedAt time.Time) (bool, error)
+	ClearCapacityReservationBinding(id string, testID string, updatedAt time.Time) (bool, error)
 	ListCapacityReservationsByTimeRange(projectID string, startAt, endAt time.Time) ([]*storage.CapacityReservation, error)
 }
 
@@ -176,6 +177,10 @@ type TestRunner struct {
 	capacityAdvisoryGen     uint64
 	capacityAdvisoryHits    uint64
 	capacityAdvisoryMisses  uint64
+
+	liveInventoryMu sync.RWMutex
+	liveInventory   []GeneratorInventoryEntry
+	liveInventoryAt time.Time
 }
 
 type ManagedTest struct {

@@ -54,6 +54,52 @@ func sortedIntMapKeys(values map[string]int) []string {
 	return keys
 }
 
+// writeArchiveIntegrityCSVRows emits the archive re-verification verdict (and each
+// artifact's status/hashes) as CSV rows. Called by the artifact_integrity section
+// renderer in the registry.
+func writeArchiveIntegrityCSVRows(write reportCSVWriteFunc, integrity *RunArchiveIntegrityReport) error {
+	rows := []struct {
+		metric string
+		value  string
+	}{
+		{"status", integrity.Status},
+		{"verified", strconv.FormatBool(integrity.Verified)},
+		{"summary", integrity.Summary},
+		{"total", strconv.Itoa(integrity.Total)},
+		{"matched", strconv.Itoa(integrity.Matched)},
+		{"mismatched", strconv.Itoa(integrity.Mismatched)},
+		{"missing", strconv.Itoa(integrity.Missing)},
+		{"unverifiable", strconv.Itoa(integrity.Unverifiable)},
+	}
+	for _, row := range rows {
+		if err := write("artifact_integrity", "", row.metric, row.value); err != nil {
+			return err
+		}
+	}
+	for _, artifact := range integrity.Artifacts {
+		key := artifact.Name
+		if err := write("artifact_integrity_artifact", key, "status", artifact.Status); err != nil {
+			return err
+		}
+		if artifact.ExpectedSHA256 != "" {
+			if err := write("artifact_integrity_artifact", key, "expected_sha256", artifact.ExpectedSHA256); err != nil {
+				return err
+			}
+		}
+		if artifact.ActualSHA256 != "" {
+			if err := write("artifact_integrity_artifact", key, "actual_sha256", artifact.ActualSHA256); err != nil {
+				return err
+			}
+		}
+		if artifact.Detail != "" {
+			if err := write("artifact_integrity_artifact", key, "detail", artifact.Detail); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // writeNetworkPhaseCSVRows emits one network-phase rollup (overall or per-action)
 // as CSV rows. Called by the network_phases section renderer in the registry.
 func writeNetworkPhaseCSVRows(write reportCSVWriteFunc, key string, phases RunArchiveNetworkPhases) error {

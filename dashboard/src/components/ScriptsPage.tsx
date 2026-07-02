@@ -24,6 +24,13 @@ interface Props {
   applicationRepository?: ApplicationRepository | null
   initialMode?: ScriptsAuthoringSubView
   initialEditId?: string
+  nativeImportRequest?: {
+    id: number
+    launcher: string
+    mode?: string | null
+    files: File[]
+  } | null
+  onNativeImportRequestHandled?: () => void
   onSelectScenario?: (id: string) => void
   onNavigate?: (page: NavPage) => void
   onAuthoringStateChange?: (state: { subView: ScriptsAuthoringSubView; editingId: string | null }) => void
@@ -111,7 +118,7 @@ function cloneScriptDraft(source: ScriptDefinition, fallbackName: string, projec
   return cloned
 }
 
-export default function ScriptsPage({ applicationRepository, initialMode = 'list', initialEditId, onSelectScenario, onNavigate, onAuthoringStateChange }: Props) {
+export default function ScriptsPage({ applicationRepository, initialMode = 'list', initialEditId, nativeImportRequest, onNativeImportRequestHandled, onSelectScenario, onNavigate, onAuthoringStateChange }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
   const hasTopbarContributionProvider = useHasTopbarContributionProvider()
@@ -170,6 +177,13 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
     initialMode,
     initialEditId,
   })
+  const openImportFiles = createOptionActions.openImportFiles
+
+  useEffect(() => {
+    if (!nativeImportRequest || nativeImportRequest.files.length === 0) return
+    openImportFiles(nativeImportRequest.launcher, nativeImportRequest.files, nativeImportRequest.mode)
+    onNativeImportRequestHandled?.()
+  }, [nativeImportRequest, onNativeImportRequestHandled, openImportFiles])
 
   const canManageScripts = useMemo(
     () => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_scripts'),

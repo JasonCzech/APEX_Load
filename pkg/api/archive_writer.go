@@ -288,6 +288,7 @@ func (w *runArchiveWriter) Finalize(status string, completedAt time.Time, errStr
 	if err := os.WriteFile(w.manifestPath, data, 0o644); err != nil {
 		return nil, err
 	}
+	manifestSHA256 := sha256BytesHex(data)
 	if err := uploadArchiveDirectory(context.Background(), w.rootDir, w.manifest.TestID); err != nil {
 		return nil, err
 	}
@@ -299,6 +300,7 @@ func (w *runArchiveWriter) Finalize(status string, completedAt time.Time, errStr
 		ArchiveBackend:       backend.Backend,
 		ArchivePath:          w.rootDir,
 		ManifestPath:         w.manifestPath,
+		ManifestSHA256:       manifestSHA256,
 		ArchiveURI:           backend.runURI(w.manifest.TestID),
 		ManifestURI:          backend.manifestURI(w.manifest.TestID),
 		TransactionCount:     w.manifest.TransactionCount,
@@ -307,6 +309,23 @@ func (w *runArchiveWriter) Finalize(status string, completedAt time.Time, errStr
 		CreatedAt:            w.manifest.CreatedAt,
 		CompletedAt:          w.manifest.CompletedAt,
 	}, nil
+}
+
+func sha256BytesHex(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+func refreshRunArchiveManifestTrust(record *storage.RunArchiveRecord) error {
+	if record == nil || strings.TrimSpace(record.ManifestPath) == "" {
+		return nil
+	}
+	sum, err := sha256File(record.ManifestPath)
+	if err != nil {
+		return err
+	}
+	record.ManifestSHA256 = sum
+	return nil
 }
 
 func updateRunArchiveArtifactIntegrity(root string, manifest *RunArchiveManifest) error {
@@ -348,6 +367,37 @@ func updateRunArchiveArtifactIntegrity(root string, manifest *RunArchiveManifest
 		artifacts = append(artifacts, artifact)
 	}
 	manifest.Artifacts = artifacts
+	return nil
+}
+
+func updateRunArchiveSingleArtifactIntegrity(root string, manifest *RunArchiveManifest, artifact RunArchiveArtifact) error {
+	if manifest == nil {
+		return nil
+	}
+	if strings.TrimSpace(artifact.Name) == "" {
+		return fmt.Errorf("archive artifact name is required")
+	}
+	path, err := archiveArtifactPath(root, artifact.Name)
+	if err != nil {
+		return err
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	sum, err := sha256File(path)
+	if err != nil {
+		return err
+	}
+	artifact.SizeBytes = info.Size()
+	artifact.SHA256 = sum
+	for i := range manifest.Artifacts {
+		if manifest.Artifacts[i].Name == artifact.Name {
+			manifest.Artifacts[i] = artifact
+			return nil
+		}
+	}
+	manifest.Artifacts = append(manifest.Artifacts, artifact)
 	return nil
 }
 

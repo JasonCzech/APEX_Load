@@ -178,6 +178,32 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
     [load],
   )
 
+  const approveSlot = useCallback(async (slot: CapacityTimeslot) => {
+    setBusy(true)
+    setError(null)
+    try {
+      await api.approveTimeslot(slot.id)
+      await load()
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409 && err.message.includes('conflict_override')) {
+        const reason = window.prompt('This reservation overlaps existing capacity. Enter an override reason to approve anyway:')
+        if (reason?.trim()) {
+          try {
+            await api.approveTimeslot(slot.id, { conflict_override: true, reason: reason.trim() })
+            await load()
+            return
+          } catch (overrideErr) {
+            setError(overrideErr instanceof ApiError ? overrideErr.message : 'Failed to approve with override.')
+            return
+          }
+        }
+      }
+      setError(err instanceof ApiError ? err.message : 'Failed to approve.')
+    } finally {
+      setBusy(false)
+    }
+  }, [api, load])
+
   const submitBind = useCallback(async () => {
     if (!bindFor || !bindFor.testId.trim()) return
     await act(() => api.bindTimeslot(bindFor.slot.id, bindFor.testId.trim()), 'Failed to bind timeslot.')
@@ -231,7 +257,7 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
                 <div className="pp-row-actions">
                   {slot.approval_state === 'pending' && (
                     <>
-                      <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => void act(() => api.approveTimeslot(slot.id), 'Failed to approve.')}>
+                      <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => void approveSlot(slot)}>
                         Approve
                       </button>
                       <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void act(() => api.rejectTimeslot(slot.id), 'Failed to reject.')}>

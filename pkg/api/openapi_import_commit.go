@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/csv"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -65,6 +66,12 @@ func diffImportByKey(existing *dsl.Script, imported *dsl.Script, replaceMode str
 	if diff.PreservedParameters > 0 {
 		diff.Items = append(diff.Items, fmt.Sprintf("Preserved %d existing parameter(s)", diff.PreservedParameters))
 	}
+	if merged := mergeImportLifecycle(existing.Init, imported.Init); !reflect.DeepEqual(merged, existing.Init) {
+		diff.Items = append(diff.Items, fmt.Sprintf("Updated init lifecycle (%d step(s))", len(merged)))
+	}
+	if merged := mergeImportLifecycle(existing.Teardown, imported.Teardown); !reflect.DeepEqual(merged, existing.Teardown) {
+		diff.Items = append(diff.Items, fmt.Sprintf("Updated teardown lifecycle (%d step(s))", len(merged)))
+	}
 	sort.Strings(diff.Items)
 	return diff
 }
@@ -120,10 +127,10 @@ func mergeImportScriptByKey(existing *dsl.Script, imported *dsl.Script, keyFn fu
 }
 
 // mergeImportLifecycle unions imported init/teardown steps with the existing
-// (target) ones, keeping imported steps first and appending existing steps that
-// the import does not re-emit (matched by type+name+method+target). This keeps
-// the importer-managed steps (e.g. a synthesized OAuth-token fetch) fresh while
-// preserving the user's manual setup/cleanup rather than clobbering it.
+// (target) ones, keeping the existing lifecycle order and replacing a matching
+// importer-managed step in place. Imported steps the user did not already have
+// are appended. This keeps synthesized steps fresh without moving them ahead of
+// manual setup they may depend on.
 func mergeImportLifecycle(existing, imported []dsl.Action) []dsl.Action {
 	if len(imported) == 0 {
 		return existing
@@ -131,13 +138,24 @@ func mergeImportLifecycle(existing, imported []dsl.Action) []dsl.Action {
 	if len(existing) == 0 {
 		return imported
 	}
-	importedSig := make(map[string]struct{}, len(imported))
+	importedBySig := make(map[string]dsl.Action, len(imported))
 	for _, action := range imported {
-		importedSig[lifecycleActionSignature(action)] = struct{}{}
+		importedBySig[lifecycleActionSignature(action)] = action
 	}
-	merged := append([]dsl.Action(nil), imported...)
+	used := make(map[string]struct{}, len(imported))
+	merged := make([]dsl.Action, 0, len(existing)+len(imported))
 	for _, action := range existing {
-		if _, dup := importedSig[lifecycleActionSignature(action)]; dup {
+		sig := lifecycleActionSignature(action)
+		if importedAction, ok := importedBySig[sig]; ok {
+			merged = append(merged, importedAction)
+			used[sig] = struct{}{}
+			continue
+		}
+		merged = append(merged, action)
+	}
+	for _, action := range imported {
+		sig := lifecycleActionSignature(action)
+		if _, ok := used[sig]; ok {
 			continue
 		}
 		merged = append(merged, action)

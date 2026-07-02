@@ -8,6 +8,16 @@ import (
 	"github.com/google/uuid"
 )
 
+func newAuthPhase1SQLiteStore(t *testing.T) *SQLiteStore {
+	t.Helper()
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	return store
+}
+
 func TestBumpUserSessionEpoch(t *testing.T) {
 	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
@@ -29,6 +39,46 @@ func TestBumpUserSessionEpoch(t *testing.T) {
 	}
 	if loaded, _ := store.GetUser(user.ID); loaded.SessionEpoch != 1 {
 		t.Fatalf("persisted session epoch = %d, want 1", loaded.SessionEpoch)
+	}
+}
+
+func TestUpdateUserIdentitySeenDoesNotRewriteSecurityFields(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	disabledAt := now.Add(time.Minute)
+	user := &User{
+		ID:           uuid.New().String(),
+		Subject:      "profile-refresh",
+		Email:        "old@example.test",
+		DisplayName:  "Old Name",
+		Active:       false,
+		DisabledAt:   &disabledAt,
+		SessionEpoch: 4,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+	if err := store.SaveUser(user); err != nil {
+		t.Fatalf("SaveUser: %v", err)
+	}
+
+	seenAt := now.Add(5 * time.Minute)
+	if err := store.UpdateUserIdentitySeen(user.ID, "New Name", "new@example.test", seenAt, seenAt); err != nil {
+		t.Fatalf("UpdateUserIdentitySeen: %v", err)
+	}
+	loaded, err := store.GetUser(user.ID)
+	if err != nil {
+		t.Fatalf("GetUser: %v", err)
+	}
+	if loaded.DisplayName != "New Name" || loaded.Email != "new@example.test" || loaded.LastSeenAt == nil || !loaded.LastSeenAt.Equal(seenAt) {
+		t.Fatalf("profile fields = %#v, want targeted refresh", loaded)
+	}
+	if loaded.Active || loaded.DisabledAt == nil || !loaded.DisabledAt.Equal(disabledAt) || loaded.SessionEpoch != 4 {
+		t.Fatalf("security fields changed after identity refresh: %#v", loaded)
 	}
 }
 
@@ -64,6 +114,91 @@ func TestCountActiveGlobalRoleHolders(t *testing.T) {
 
 	if count, err := store.CountActiveGlobalRoleHolders("viewer"); err != nil || count != 0 {
 		t.Fatalf("viewer count = %d (err=%v), want 0", count, err)
+	}
+}
+
+func TestUpdateUserActiveGuardLastAdminConcurrent(t *testing.T) {
+	store := newAuthPhase1SQLiteStore(t)
+	now := time.Now().UTC()
+	adminA := &User{ID: uuid.New().String(), Subject: "admin-a", Active: true, CreatedAt: now, UpdatedAt: now}
+	adminB := &User{ID: uuid.New().String(), Subject: "admin-b", Active: true, CreatedAt: now, UpdatedAt: now}
+	for _, user := range []*User{adminA, adminB} {
+		if err := store.SaveUser(user); err != nil {
+			t.Fatalf("SaveUser(%s): %v", user.ID, err)
+		}
+		if err := store.SaveUserRoleBinding(&UserRoleBinding{ID: uuid.New().String(), UserID: user.ID, ScopeType: "global", Role: storageSystemAdminRole, CreatedAt: now, UpdatedAt: now}); err != nil {
+			t.Fatalf("SaveUserRoleBinding(%s): %v", user.ID, err)
+		}
+	}
+
+	start := make(chan struct{})
+	results := make(chan bool, 2)
+	errs := make(chan error, 2)
+	for _, id := range []string{adminA.ID, adminB.ID} {
+		id := id
+		go func() {
+			<-start
+			ok, err := store.UpdateUserActiveGuardLastAdmin(id, false, now.Add(time.Second))
+			results <- ok
+			errs <- err
+		}()
+	}
+	close(start)
+	for i := 0; i < 2; i++ {
+		if err := <-errs; err != nil {
+			t.Fatalf("UpdateUserActiveGuardLastAdmin error: %v", err)
+		}
+		<-results
+	}
+
+	count, err := store.CountActiveGlobalRoleHolders(storageSystemAdminRole)
+	if err != nil {
+		t.Fatalf("CountActiveGlobalRoleHolders: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("active system admins = %d, want exactly one survivor", count)
+	}
+}
+
+func TestDeleteUserRoleBindingGuardLastAdminConcurrent(t *testing.T) {
+	store := newAuthPhase1SQLiteStore(t)
+	now := time.Now().UTC()
+	bindingIDs := make([]string, 0, 2)
+	for _, subject := range []string{"admin-a", "admin-b"} {
+		user := &User{ID: uuid.New().String(), Subject: subject, Active: true, CreatedAt: now, UpdatedAt: now}
+		if err := store.SaveUser(user); err != nil {
+			t.Fatalf("SaveUser(%s): %v", subject, err)
+		}
+		bindingID := uuid.New().String()
+		bindingIDs = append(bindingIDs, bindingID)
+		if err := store.SaveUserRoleBinding(&UserRoleBinding{ID: bindingID, UserID: user.ID, ScopeType: "global", Role: storageSystemAdminRole, CreatedAt: now, UpdatedAt: now}); err != nil {
+			t.Fatalf("SaveUserRoleBinding(%s): %v", subject, err)
+		}
+	}
+
+	start := make(chan struct{})
+	errs := make(chan error, 2)
+	for _, id := range bindingIDs {
+		id := id
+		go func() {
+			<-start
+			_, err := store.DeleteUserRoleBindingGuardLastAdmin(id)
+			errs <- err
+		}()
+	}
+	close(start)
+	for i := 0; i < 2; i++ {
+		if err := <-errs; err != nil {
+			t.Fatalf("DeleteUserRoleBindingGuardLastAdmin error: %v", err)
+		}
+	}
+
+	count, err := store.CountActiveGlobalRoleHolders(storageSystemAdminRole)
+	if err != nil {
+		t.Fatalf("CountActiveGlobalRoleHolders: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("active system admins = %d, want exactly one survivor", count)
 	}
 }
 

@@ -9,7 +9,7 @@ import (
 func TestExecutionPlanApprovalAtomicCAS(t *testing.T) {
 	store := openTimeslotStore(t)
 	now := time.Now().UTC()
-	approval := &ExecutionPlanApproval{ID: "appr-1", PlanID: "plan-1", ProjectID: "p", Policy: "quota_burst", Status: "pending", RequestedAt: now, CreatedAt: now, UpdatedAt: now}
+	approval := &ExecutionPlanApproval{ID: "appr-1", PlanID: "plan-1", ProjectID: "p", Policy: "quota_burst", Status: "pending", PlanContentHash: "sha256:abc", RequestedAt: now, CreatedAt: now, UpdatedAt: now}
 	if err := store.SaveExecutionPlanApproval(approval); err != nil {
 		t.Fatalf("save: %v", err)
 	}
@@ -34,8 +34,8 @@ func TestExecutionPlanApprovalAtomicCAS(t *testing.T) {
 		t.Fatalf("second claim = (%v, %v), want lost (single-use)", claimed, err)
 	}
 	got, _ := store.GetExecutionPlanApproval("appr-1")
-	if got == nil || got.RunID != "run-A" || got.Status != "approved" {
-		t.Fatalf("approval after claim = %+v, want run-A / approved", got)
+	if got == nil || got.RunID != "run-A" || got.Status != "approved" || got.PlanContentHash != "sha256:abc" {
+		t.Fatalf("approval after claim = %+v, want run-A / approved / plan hash", got)
 	}
 }
 

@@ -20,7 +20,7 @@ func TestDesktopPackageScriptDocumentsMacOSTrustPath(t *testing.T) {
 		"codesign --force --deep --options runtime --timestamp",
 		"notarytool submit",
 		"stapler staple",
-		"spctl -a -vvv -t open",
+		"spctl -a -vvv -t exec",
 		"Apple could not verify",
 		"xattr -dr com.apple.quarantine",
 		"APEXLOAD_WINDOWS_CODESIGN",
@@ -33,6 +33,9 @@ func TestDesktopPackageScriptDocumentsMacOSTrustPath(t *testing.T) {
 		"APEXLOAD_REQUIRE_TRUSTED_PACKAGES",
 		"--armor --detach-sign",
 		"sha256sum",
+		"clean_desktop_dist",
+		"find \"$DIST_DIR\" -mindepth 1",
+		"write_sha256_manifest apexload-desktop-*.tar.gz > SHA256SUMS.txt",
 	}
 	for _, check := range checks {
 		if !strings.Contains(script, check) {

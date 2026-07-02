@@ -513,6 +513,17 @@ describe('AccessPage', () => {
     expect(container.textContent).toContain('narrow')
   })
 
+  it('hides access review for activity-only project admins', async () => {
+    await act(async () => {
+      root.render(<AccessPage projects={projects} domains={domains} activeDomain={domains[0]} activeProject={projects[0]} canManageUserLifecycle={false} canManageUserBindings={false} canViewUserActivity canManageServiceAccounts={false} />)
+    })
+    await flushPromises()
+
+    expect(container.textContent).toContain('Activity')
+    expect(Array.from(container.querySelectorAll('button')).some(button => button.textContent?.trim() === 'Access Review')).toBe(false)
+    expect(apiMock.getAccessReview).not.toHaveBeenCalled()
+  })
+
   it('surfaces an attention badge when the access review flags principals (notifications)', async () => {
     apiMock.getAccessReview.mockResolvedValue({
       generated_at: '2026-06-26T00:00:00Z',
@@ -604,17 +615,36 @@ describe('AccessPage', () => {
     await act(async () => {
       changeInput(searchInput, 'bob')
     })
+    await flushPromises()
+    expect(apiMock.listAuthUsers).toHaveBeenLastCalledWith({ limit: 50, offset: 0, q: 'bob' })
     expect(tablePrimaryTexts(container)).toEqual(['Bob Viewer'])
 
     await act(async () => {
       changeInput(searchInput, '')
     })
+    await flushPromises()
+    expect(apiMock.listAuthUsers).toHaveBeenLastCalledWith({ limit: 50, offset: 0 })
+    const statusSelect = selectByLabelText(container, 'Status')
+    expect(statusSelect).toBeDefined()
+    if (!statusSelect) return
+    await act(async () => {
+      changeSelect(statusSelect, 'disabled')
+    })
+    await flushPromises()
+    expect(apiMock.listAuthUsers).toHaveBeenLastCalledWith({ limit: 50, offset: 0, active: 'false' })
+    expect(tablePrimaryTexts(container)).toEqual(['Bob Viewer'])
+    await act(async () => {
+      changeSelect(statusSelect, '')
+    })
+    await flushPromises()
     const roleSelect = selectByLabelText(container, 'Role')
     expect(roleSelect).toBeDefined()
     if (!roleSelect) return
     await act(async () => {
       changeSelect(roleSelect, 'editor')
     })
+    await flushPromises()
+    expect(apiMock.listAuthUsers).toHaveBeenLastCalledWith({ limit: 50, offset: 0, role: 'editor' })
     expect(tablePrimaryTexts(container)).toEqual(['Alice Admin'])
 
     await clickButton(container, 'Onboard Users')

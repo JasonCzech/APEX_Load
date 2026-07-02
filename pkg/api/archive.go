@@ -112,16 +112,17 @@ type RunArchiveLaunchPreflightSnapshot struct {
 }
 
 type RunArchiveExecutionPlanApprovalSnapshot struct {
-	ID             string     `json:"id,omitempty"`
-	PlanID         string     `json:"plan_id,omitempty"`
-	Policy         string     `json:"policy,omitempty"`
-	Status         string     `json:"status,omitempty"`
-	RequestedBy    string     `json:"requested_by,omitempty"`
-	RequestedAt    time.Time  `json:"requested_at,omitempty"`
-	ResolvedBy     string     `json:"resolved_by,omitempty"`
-	ResolvedAt     *time.Time `json:"resolved_at,omitempty"`
-	DecisionReason string     `json:"decision_reason,omitempty"`
-	RequiredRole   string     `json:"required_role,omitempty"`
+	ID              string     `json:"id,omitempty"`
+	PlanID          string     `json:"plan_id,omitempty"`
+	Policy          string     `json:"policy,omitempty"`
+	Status          string     `json:"status,omitempty"`
+	RequestedBy     string     `json:"requested_by,omitempty"`
+	RequestedAt     time.Time  `json:"requested_at,omitempty"`
+	ResolvedBy      string     `json:"resolved_by,omitempty"`
+	ResolvedAt      *time.Time `json:"resolved_at,omitempty"`
+	DecisionReason  string     `json:"decision_reason,omitempty"`
+	RequiredRole    string     `json:"required_role,omitempty"`
+	PlanContentHash string     `json:"plan_content_hash,omitempty"`
 }
 
 type TransactionEvent struct {

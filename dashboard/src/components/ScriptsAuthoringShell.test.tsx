@@ -110,6 +110,7 @@ function createActions(overrides: Partial<ScriptsCreateOptionActions> = {}): Scr
     composeComponentScript: vi.fn(),
     openRecorder: vi.fn(),
     openImportSurface: vi.fn(),
+    openImportFiles: vi.fn(),
     openEnterpriseArchiveImport: vi.fn(),
     openJMeterImport: vi.fn(),
     openSampleImport: vi.fn(),

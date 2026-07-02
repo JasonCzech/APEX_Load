@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -315,6 +316,24 @@ func TestGeneratorLifecycleEndpointsUpdateEnforcedStateAndMetadata(t *testing.T)
 	}
 	if meta.Cordoned {
 		t.Fatalf("metadata after uncordon = %+v, want not cordoned", meta)
+	}
+}
+
+func TestGeneratorLifecycleRejectsUnknownGeneratorID(t *testing.T) {
+	server, _ := newTimeslotServer(t)
+	backend := newDistributedExecutionBackend([]string{"gen-a:9090"}, time.Second, nil)
+	backend.recordGeneratorIdentity("gen-a:9090", "gen-a")
+	server.runner.setExecutionBackend(backend)
+
+	rec := timeslotRequest(t, server, http.MethodPost, "/api/v1/fleet/generators/missing-gen/cordon", nil)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("cordon unknown generator status = %d body=%s, want 400", rec.Code, rec.Body.String())
+	}
+	if got := backend.generatorDrainState("gen-a:9090"); got != "active" {
+		t.Fatalf("known generator drain_state = %q, want unchanged active", got)
+	}
+	if _, err := server.store.GetGeneratorMetadata("missing-gen"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("missing generator metadata err = %v, want sql.ErrNoRows", err)
 	}
 }
 

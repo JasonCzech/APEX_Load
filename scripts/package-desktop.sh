@@ -70,6 +70,17 @@ trusted_packages_required() {
   truthy "$REQUIRE_TRUSTED_PACKAGES"
 }
 
+clean_desktop_dist() {
+  mkdir -p "$DIST_DIR"
+  find "$DIST_DIR" -mindepth 1 \( \
+    -name 'apexload-desktop-*.tar.gz' -o \
+    -name 'apexload-desktop-*.notary.zip' -o \
+    -name 'apexload-desktop-*' -o \
+    -name 'SHA256SUMS.txt' -o \
+    -name 'SHA256SUMS.txt.asc' \
+  \) -exec rm -rf {} +
+}
+
 write_sha256_manifest() {
   if command -v shasum >/dev/null 2>&1; then
     shasum -a 256 "$@"
@@ -153,7 +164,7 @@ notarize_macos_package() {
   shopt -u nullglob
   for app in "${apps[@]}"; do
     xcrun stapler staple "$app"
-    spctl -a -vvv -t open "$app"
+    spctl -a -vvv -t exec "$app"
   done
   rm -f "$zip_path"
 }
@@ -338,7 +349,7 @@ sign_checksum_manifest() {
   gpg "${gpg_args[@]}" "$manifest_path"
 }
 
-rm -rf "$WORKDIR"
+clean_desktop_dist
 mkdir -p "$WORKDIR"
 
 if [[ ! -d "$SOURCE_DIR" ]]; then
@@ -389,12 +400,11 @@ APEXLOAD_WINDOWS_CODESIGN are unsigned; Windows SmartScreen or enterprise
 application-control policy may warn before running the desktop executable.
 EOF
 
-mkdir -p "$DIST_DIR"
 (
   cd "$DIST_DIR"
   tar -czf "${PACKAGE}.tar.gz" "$PACKAGE"
   rm -rf "$PACKAGE"
-  write_sha256_manifest "${PACKAGE}.tar.gz" > SHA256SUMS.txt
+  write_sha256_manifest apexload-desktop-*.tar.gz > SHA256SUMS.txt
   sign_checksum_manifest "$DIST_DIR/SHA256SUMS.txt"
 )
 

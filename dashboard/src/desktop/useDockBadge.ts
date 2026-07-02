@@ -8,7 +8,7 @@ import { getDesktopBridge } from './desktopBridge'
 // useDockBadge sets the dock/taskbar badge to the active-run count (cleared at
 // 0). Only calls the bridge on transitions.
 export function useDockBadge(activeRunCount: number) {
-  const lastLabel = useRef('')
+  const lastLabel = useRef<string | null>(null)
 
   useEffect(() => {
     const bridge = getDesktopBridge()

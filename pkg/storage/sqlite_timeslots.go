@@ -19,7 +19,9 @@ func (s *SQLiteStore) SaveCapacityReservation(reservation *CapacityReservation) 
 	if reservation.ApprovalState == "" {
 		reservation.ApprovalState = "pending"
 	}
-	now := time.Now()
+	reservation.StartAt = reservation.StartAt.UTC()
+	reservation.EndAt = reservation.EndAt.UTC()
+	now := time.Now().UTC()
 	if reservation.CreatedAt.IsZero() {
 		reservation.CreatedAt = now
 	}
@@ -84,6 +86,8 @@ func (s *SQLiteStore) ListCapacityReservations(projectID string, limit int, offs
 }
 
 func (s *SQLiteStore) ListCapacityReservationsByTimeRange(projectID string, startAt, endAt time.Time) ([]*CapacityReservation, error) {
+	startAt = startAt.UTC()
+	endAt = endAt.UTC()
 	// Half-open overlap: an existing reservation [start_at, end_at) overlaps the
 	// requested window [startAt, endAt) iff start_at < endAt AND end_at > startAt.
 	args := []any{}
@@ -97,6 +101,64 @@ func (s *SQLiteStore) ListCapacityReservationsByTimeRange(projectID string, star
 	return s.queryCapacityReservations(query, args...)
 }
 
+func (s *SQLiteStore) UpdateCapacityReservationDetails(reservation *CapacityReservation, resetApproval bool) error {
+	if reservation == nil {
+		return fmt.Errorf("capacity reservation is required")
+	}
+	reservation.ProjectID = normalizeProjectID(reservation.ProjectID)
+	reservation.StartAt = reservation.StartAt.UTC()
+	reservation.EndAt = reservation.EndAt.UTC()
+	reservation.UpdatedAt = time.Now().UTC()
+
+	var requestedCapacityJSON string
+	if reservation.RequestedCapacity != nil {
+		encoded, err := json.Marshal(reservation.RequestedCapacity)
+		if err != nil {
+			return fmt.Errorf("marshal requested_capacity: %w", err)
+		}
+		requestedCapacityJSON = string(encoded)
+	}
+
+	if resetApproval {
+		if reservation.ApprovalState == "" {
+			reservation.ApprovalState = "pending"
+		}
+		_, err := s.db.Exec(`UPDATE capacity_reservations
+			SET project_id = ?,
+				scenario_id = ?,
+				start_at = ?,
+				end_at = ?,
+				timezone = ?,
+				requested_capacity_json = ?,
+				approval_state = ?,
+				approval_id = ?,
+				bound_test_id = ?,
+				bound_test_status = ?,
+				conflict_summary = ?,
+				updated_at = ?
+			WHERE id = ?`,
+			reservation.ProjectID, reservation.ScenarioID, reservation.StartAt, reservation.EndAt,
+			reservation.Timezone, requestedCapacityJSON,
+			reservation.ApprovalState, reservation.ApprovalID, reservation.BoundTestID, reservation.BoundTestStatus,
+			reservation.ConflictSummary, reservation.UpdatedAt, reservation.ID)
+		return err
+	}
+
+	_, err := s.db.Exec(`UPDATE capacity_reservations
+		SET project_id = ?,
+			scenario_id = ?,
+			start_at = ?,
+			end_at = ?,
+			timezone = ?,
+			requested_capacity_json = ?,
+			conflict_summary = ?,
+			updated_at = ?
+		WHERE id = ?`,
+		reservation.ProjectID, reservation.ScenarioID, reservation.StartAt, reservation.EndAt,
+		reservation.Timezone, requestedCapacityJSON, reservation.ConflictSummary, reservation.UpdatedAt, reservation.ID)
+	return err
+}
+
 func (s *SQLiteStore) UpdateCapacityReservationBinding(id string, testID *string, testStatus *string, updatedAt time.Time) (bool, error) {
 	// Atomic check-and-set: bind only a reservation that is approved and not yet
 	// bound. Including approval_state in the predicate closes the TOCTOU window
@@ -105,7 +167,22 @@ func (s *SQLiteStore) UpdateCapacityReservationBinding(id string, testID *string
 	result, err := s.db.Exec(`UPDATE capacity_reservations
 		SET bound_test_id = ?, bound_test_status = ?, updated_at = ?
 		WHERE id = ? AND bound_test_id IS NULL AND approval_state = 'approved'`,
-		testID, testStatus, updatedAt, id)
+		testID, testStatus, updatedAt.UTC(), id)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return affected > 0, nil
+}
+
+func (s *SQLiteStore) ClearCapacityReservationBinding(id string, testID string, updatedAt time.Time) (bool, error) {
+	result, err := s.db.Exec(`UPDATE capacity_reservations
+		SET bound_test_id = NULL, bound_test_status = NULL, updated_at = ?
+		WHERE id = ? AND bound_test_id = ?`,
+		updatedAt.UTC(), id, testID)
 	if err != nil {
 		return false, err
 	}

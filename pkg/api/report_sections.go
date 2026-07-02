@@ -1117,10 +1117,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 		},
 		CSV: func(d *runArchiveHTMLReportData, write reportCSVWriteFunc) error {
 			if d.Report.Integrity != nil {
-				if err := write("artifact_integrity", "", "status", d.Report.Integrity.Status); err != nil {
-					return err
-				}
-				if err := write("artifact_integrity", "", "verified", fmt.Sprintf("%t", d.Report.Integrity.Verified)); err != nil {
+				if err := writeArchiveIntegrityCSVRows(write, d.Report.Integrity); err != nil {
 					return err
 				}
 			}

@@ -186,7 +186,7 @@ func applyLocalUserBindings(upstream *AuthenticatedUser, store storage.Store) (*
 	local.DisplayName = firstNonEmpty(upstream.DisplayName, local.DisplayName)
 	local.Email = firstNonEmpty(upstream.Email, local.Email)
 	local.UpdatedAt = now
-	_ = store.SaveUser(local)
+	_ = store.UpdateUserIdentitySeen(local.ID, local.DisplayName, local.Email, now, now)
 	return authenticatedUserFromStoredUser(local), nil
 }
 
@@ -267,7 +267,7 @@ func bootstrapFirstAdmin(upstream *AuthenticatedUser, store storage.Store) (*Aut
 	if subject == "" {
 		return nil, fmt.Errorf("user is not onboarded")
 	}
-	if pinned := strings.TrimSpace(os.Getenv("APEXLOAD_BOOTSTRAP_SUBJECT")); pinned != "" && !strings.EqualFold(pinned, subject) {
+	if pinned := strings.TrimSpace(os.Getenv("APEXLOAD_BOOTSTRAP_SUBJECT")); pinned != "" && pinned != subject {
 		return nil, fmt.Errorf("user is not onboarded")
 	}
 	now := time.Now().UTC()

@@ -116,7 +116,7 @@ public class Actions {
 		CanonicalSourceProtocol: "java_vuser",
 		APEXLoadProtocol:        "jms-solace",
 		ImportMode:              ImportModeExecutable,
-	}, program, nil, profile, false)
+	}, program, nil, profile, false, false, false)
 	if err != nil {
 		t.Fatalf("convertJavaStatementLane returned error: %v", err)
 	}

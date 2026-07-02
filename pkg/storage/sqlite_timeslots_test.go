@@ -116,6 +116,69 @@ func TestCapacityReservationRoundTrip(t *testing.T) {
 	}
 }
 
+func TestUpdateCapacityReservationDetailsDoesNotRewriteApprovalState(t *testing.T) {
+	store := openTimeslotStore(t)
+	start := time.Date(2026, 7, 1, 9, 0, 0, 0, time.UTC)
+	if err := store.SaveCapacityReservation(&CapacityReservation{
+		ID:            "ts-race",
+		ProjectID:     "proj-a",
+		StartAt:       start,
+		EndAt:         start.Add(time.Hour),
+		Timezone:      "UTC",
+		ApprovalState: "approved",
+	}); err != nil {
+		t.Fatalf("save approved reservation: %v", err)
+	}
+	stale, err := store.GetCapacityReservation("ts-race")
+	if err != nil {
+		t.Fatalf("get stale copy: %v", err)
+	}
+	if ok, err := store.UpdateCapacityReservationApprovalState("ts-race", []string{"approved"}, "rejected", time.Now()); err != nil || !ok {
+		t.Fatalf("reject approved reservation = (%v, %v), want (true, nil)", ok, err)
+	}
+	stale.Timezone = "America/New_York"
+	if err := store.UpdateCapacityReservationDetails(stale, false); err != nil {
+		t.Fatalf("cosmetic update from stale copy: %v", err)
+	}
+	got, err := store.GetCapacityReservation("ts-race")
+	if err != nil {
+		t.Fatalf("get updated reservation: %v", err)
+	}
+	if got.ApprovalState != "rejected" {
+		t.Fatalf("approval_state = %q, want concurrently rejected state preserved", got.ApprovalState)
+	}
+	if got.Timezone != "America/New_York" {
+		t.Fatalf("timezone = %q, want cosmetic update applied", got.Timezone)
+	}
+}
+
+func TestCapacityReservationRangeQueriesNormalizeNonUTCInstants(t *testing.T) {
+	store := openTimeslotStore(t)
+	local := time.FixedZone("UTC+2", 2*60*60)
+	start := time.Date(2026, 7, 10, 9, 0, 0, 0, local)
+	if err := store.SaveCapacityReservation(&CapacityReservation{
+		ID:            "ts-offset",
+		ProjectID:     "proj-a",
+		StartAt:       start,
+		EndAt:         start.Add(8 * time.Hour),
+		ApprovalState: "approved",
+	}); err != nil {
+		t.Fatalf("save offset reservation: %v", err)
+	}
+	overlaps, err := store.ListCapacityReservationsByTimeRange("proj-a",
+		time.Date(2026, 7, 10, 7, 30, 0, 0, time.UTC),
+		time.Date(2026, 7, 10, 8, 30, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("range query: %v", err)
+	}
+	if len(overlaps) != 1 || overlaps[0].ID != "ts-offset" {
+		t.Fatalf("overlaps = %+v, want non-UTC reservation found by UTC instant", overlaps)
+	}
+	if !overlaps[0].StartAt.Equal(time.Date(2026, 7, 10, 7, 0, 0, 0, time.UTC)) {
+		t.Fatalf("stored start = %v, want normalized UTC instant", overlaps[0].StartAt)
+	}
+}
+
 func TestCapacityReservationListTimeRangeAndBinding(t *testing.T) {
 	store := openTimeslotStore(t)
 	base := time.Date(2026, 7, 1, 9, 0, 0, 0, time.UTC)

@@ -37,6 +37,7 @@ type executionPlanSchedulePersistence interface {
 	ListExecutionPlanSchedules(planID string) ([]*storage.ExecutionPlanSchedule, error)
 	ListAllExecutionPlanSchedules() ([]*storage.ExecutionPlanSchedule, error)
 	DeleteExecutionPlanSchedule(id string) error
+	CreateExecutionPlanScheduleOccurrenceIfAbsent(occurrence *storage.ExecutionPlanScheduleOccurrence) (bool, error)
 	SaveExecutionPlanScheduleOccurrence(occurrence *storage.ExecutionPlanScheduleOccurrence) error
 	GetExecutionPlanScheduleOccurrenceByScheduleAndPlannedAt(scheduleID string, plannedAt time.Time) (*storage.ExecutionPlanScheduleOccurrence, error)
 	ListExecutionPlanScheduleOccurrences(scheduleID string) ([]*storage.ExecutionPlanScheduleOccurrence, error)
@@ -55,6 +56,7 @@ type seqPlanRunState struct {
 	planName      string
 	projectID     string
 	timeslot      *string                         // plan-level fallback timeslot
+	timeslotUsed  bool                            // plan-level timeslot is bound to at most one entry
 	entries       []storage.ExecutionPlanEntry    // enabled, sorted snapshot
 	statuses      []storage.ExecutionPlanRunEntry // parallel to entries
 	cursor        int                             // index of the active entry; -1 before start
@@ -134,8 +136,16 @@ func trimPtr(s *string) string {
 // returns the initial run snapshot. The plan's enabled entries are snapshotted so
 // a mid-run edit to the plan does not change an in-flight run.
 func (tr *TestRunner) StartExecutionPlanRun(plan *storage.ExecutionPlan, attribSubject, attribName string, approval ...*storage.ExecutionPlanApproval) (*storage.ExecutionPlanRun, error) {
+	return tr.startExecutionPlanRun(plan, attribSubject, attribName, "", approval...)
+}
+
+func (tr *TestRunner) startExecutionPlanRun(plan *storage.ExecutionPlan, attribSubject, attribName, runNameOverride string, approval ...*storage.ExecutionPlanApproval) (*storage.ExecutionPlanRun, error) {
 	if plan == nil {
 		return nil, fmt.Errorf("execution plan is required")
+	}
+	runName := strings.TrimSpace(runNameOverride)
+	if runName == "" {
+		runName = strings.TrimSpace(plan.Name)
 	}
 	enabled := enabledSortedEntries(plan.Entries)
 	now := time.Now().UTC()
@@ -148,7 +158,7 @@ func (tr *TestRunner) StartExecutionPlanRun(plan *storage.ExecutionPlan, attribS
 	st := &seqPlanRunState{
 		runID:         "exec-plan-run-" + uuid.New().String(),
 		planID:        plan.ID,
-		planName:      plan.Name,
+		planName:      runName,
 		projectID:     normalizeProjectID(plan.ProjectID),
 		timeslot:      plan.TimeslotID,
 		entries:       enabled,
@@ -222,7 +232,12 @@ func (tr *TestRunner) launchNextPlanEntry(runID string) {
 		idx := st.cursor
 		entry := st.entries[idx]
 		st.statuses[idx].Status = "running"
-		planName, projectID, timeslot := st.planName, st.projectID, st.timeslot
+		planName, projectID := st.planName, st.projectID
+		var timeslot *string
+		if trimPtr(entry.TimeslotID) == "" && !st.timeslotUsed && trimPtr(st.timeslot) != "" {
+			timeslot = st.timeslot
+			st.timeslotUsed = true
+		}
 		subject, displayName := st.attribSubject, st.attribName
 		tr.seqMu.Unlock()
 

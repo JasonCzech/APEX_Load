@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -46,10 +48,16 @@ func TestExecutionPlanRunGovernanceGate(t *testing.T) {
 	if !res1.Blocked || res1.Approval == nil || res1.Approval.Status != "pending" {
 		t.Fatalf("first run = %+v, want blocked + pending approval", res1)
 	}
+	if res1.Approval.PlanContentHash == "" {
+		t.Fatal("pending approval must be bound to a plan content hash")
+	}
 	// Approve it.
 	approved, ok, err := server.runner.ResolveExecutionPlanApproval(plan.ID, res1.Approval.ID, true, "user:admin", "ok")
 	if err != nil || !ok || approved.Status != "approved" {
 		t.Fatalf("resolve = (%+v, ok=%v, err=%v), want approved", approved, ok, err)
+	}
+	if approved.PlanContentHash != res1.Approval.PlanContentHash {
+		t.Fatalf("approved hash = %q, want %q", approved.PlanContentHash, res1.Approval.PlanContentHash)
 	}
 	// Re-resolving a non-pending approval is a conflict.
 	if _, found, err := server.runner.ResolveExecutionPlanApproval(plan.ID, res1.Approval.ID, true, "user:admin", "again"); err == nil || !found {
@@ -70,7 +78,7 @@ func TestExecutionPlanRunGovernanceGate(t *testing.T) {
 	if !ok || createdTest.ExecutionPlanApproval == nil {
 		t.Fatalf("created test = %+v, want execution plan approval snapshot", createdTest)
 	}
-	if createdTest.ExecutionPlanApproval.ID != approved.ID || createdTest.ExecutionPlanApproval.PlanID != plan.ID || createdTest.ExecutionPlanApproval.RequiredRole != RoleProjectAdmin || createdTest.ExecutionPlanApproval.ResolvedBy != "user:admin" {
+	if createdTest.ExecutionPlanApproval.ID != approved.ID || createdTest.ExecutionPlanApproval.PlanID != plan.ID || createdTest.ExecutionPlanApproval.RequiredRole != RoleProjectAdmin || createdTest.ExecutionPlanApproval.ResolvedBy != "user:admin" || createdTest.ExecutionPlanApproval.PlanContentHash != approved.PlanContentHash {
 		t.Fatalf("approval snapshot = %+v, want approved plan governance", createdTest.ExecutionPlanApproval)
 	}
 	// Third run is blocked again — the approval was single-use.
@@ -80,6 +88,193 @@ func TestExecutionPlanRunGovernanceGate(t *testing.T) {
 	}
 	if !res3.Blocked {
 		t.Fatalf("third run = %+v, want blocked again", res3)
+	}
+}
+
+func TestExecutionPlanRunGovernanceIncludesStagesAndGoalMax(t *testing.T) {
+	server, store := newTimeslotServer(t)
+	if err := store.SaveProject(&storage.Project{ID: "proj-a", Name: "A", Settings: storage.ProjectSettings{MaxVUsers: 10}, CreatedAt: time.Now(), UpdatedAt: time.Now()}); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+	server.runner.StoreScript(&dsl.Script{
+		ID: "s-peak", Name: "S", Protocol: "http", Version: "1.0.0",
+		Config:  dsl.ScriptConfig{BaseURL: "https://example.com"},
+		Actions: []dsl.Action{{Name: "a", Type: "request", Target: "/"}},
+	})
+	maxVUsers := 40
+	cases := []struct {
+		name     string
+		req      CreateScenarioRequest
+		scenario *StoredScenario
+		want     int
+	}{
+		{
+			name: "stage peak",
+			scenario: &StoredScenario{
+				ID: "legacy-stage-peak", ProjectID: "proj-a", Name: "Staged", Duration: "5m",
+				Scripts: []ScenarioScriptRef{{Order: 0, ScriptID: "s-peak", VUsers: 1, Stages: []storage.LoadStage{{Name: "hold", Type: "hold", Duration: "1m", TargetVUsers: 25}}}},
+			},
+			want: 25,
+		},
+		{
+			name: "goal max",
+			req: CreateScenarioRequest{
+				Name: "Goal", Duration: "5m", ScenarioMode: "goal_oriented", GoalConfig: &GoalConfig{MaxVUsers: &maxVUsers},
+				Groups: []CreateGroupEntry{{ScriptID: "s-peak", VUsers: 1}},
+			},
+			want: 40,
+		},
+	}
+	for i, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			scenario := tc.scenario
+			if scenario == nil {
+				var err error
+				scenario, err = server.runner.StoreScenario(tc.req)
+				if err != nil {
+					t.Fatalf("StoreScenario: %v", err)
+				}
+			} else {
+				server.runner.mu.Lock()
+				server.runner.scenarios[scenario.ID] = scenario
+				server.runner.mu.Unlock()
+			}
+			plan := &storage.ExecutionPlan{
+				ID: "plan-peak-" + string(rune('a'+i)), ProjectID: "proj-a", Name: tc.name, RunMode: "parallel",
+				Entries: []storage.ExecutionPlanEntry{{Order: 0, ScenarioID: scenario.ID}},
+			}
+			if got := server.runner.executionPlanAggregatePeak(plan); got != tc.want {
+				t.Fatalf("aggregate peak = %d, want %d", got, tc.want)
+			}
+			if err := store.SaveExecutionPlan(plan); err != nil {
+				t.Fatalf("SaveExecutionPlan: %v", err)
+			}
+			res, err := server.runner.MaterializeAndRunExecutionPlan(plan, "user:alice", "Alice")
+			if err != nil {
+				t.Fatalf("MaterializeAndRunExecutionPlan: %v", err)
+			}
+			if !res.Blocked || res.Approval == nil {
+				t.Fatalf("result = %+v, want approval block", res)
+			}
+			if !strings.Contains(res.Approval.DecisionReason, "Aggregate peak "+strconv.Itoa(tc.want)+" VUsers") {
+				t.Fatalf("decision reason = %q, want peak %d", res.Approval.DecisionReason, tc.want)
+			}
+		})
+	}
+}
+
+func TestExecutionPlanApprovalInvalidatedWhenPlanChanges(t *testing.T) {
+	server, store := newTimeslotServer(t)
+	if err := store.SaveProject(&storage.Project{ID: "proj-a", Name: "A", Settings: storage.ProjectSettings{MaxVUsers: 10}, CreatedAt: time.Now(), UpdatedAt: time.Now()}); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+	server.runner.StoreScript(&dsl.Script{
+		ID: "s-stale", Name: "S", Protocol: "http", Version: "1.0.0",
+		Config:  dsl.ScriptConfig{BaseURL: "https://example.com"},
+		Actions: []dsl.Action{{Name: "a", Type: "request", Target: "/"}},
+	})
+	scenario, err := server.runner.StoreScenario(CreateScenarioRequest{
+		Name: "Big", Duration: "5m",
+		Groups: []CreateGroupEntry{{ScriptID: "s-stale", VUsers: 100}},
+	})
+	if err != nil {
+		t.Fatalf("StoreScenario: %v", err)
+	}
+	plan := &storage.ExecutionPlan{
+		ID: "plan-stale", ProjectID: "proj-a", Name: "Stale", RunMode: "parallel",
+		Entries: []storage.ExecutionPlanEntry{{Order: 0, ScenarioID: scenario.ID}},
+	}
+	if err := store.SaveExecutionPlan(plan); err != nil {
+		t.Fatalf("SaveExecutionPlan: %v", err)
+	}
+	first, err := server.runner.MaterializeAndRunExecutionPlan(plan, "user:alice", "Alice")
+	if err != nil {
+		t.Fatalf("materialize first: %v", err)
+	}
+	if !first.Blocked || first.Approval == nil {
+		t.Fatalf("first result = %+v, want pending approval", first)
+	}
+	originalHash := first.Approval.PlanContentHash
+
+	plan.Entries = append(plan.Entries, storage.ExecutionPlanEntry{Order: 1, ScenarioID: scenario.ID})
+	if err := store.SaveExecutionPlan(plan); err != nil {
+		t.Fatalf("SaveExecutionPlan mutated: %v", err)
+	}
+	if _, ok, err := server.runner.ResolveExecutionPlanApproval(plan.ID, first.Approval.ID, true, "user:admin", "late"); err == nil || !ok || !strings.Contains(err.Error(), "no longer matches") {
+		t.Fatalf("stale resolve = ok %v err %v, want mismatch error", ok, err)
+	}
+	second, err := server.runner.MaterializeAndRunExecutionPlan(plan, "user:alice", "Alice")
+	if err != nil {
+		t.Fatalf("materialize second: %v", err)
+	}
+	if !second.Blocked || second.Approval == nil || second.Approval.ID == first.Approval.ID {
+		t.Fatalf("second result = %+v, want fresh pending approval", second)
+	}
+	if second.Approval.PlanContentHash == "" || second.Approval.PlanContentHash == originalHash {
+		t.Fatalf("fresh approval hash = %q, original %q", second.Approval.PlanContentHash, originalHash)
+	}
+}
+
+func TestApprovedSequentialExecutionPlanBypassesProjectVUserGate(t *testing.T) {
+	store, err := storage.NewSQLiteStore(t.TempDir() + "/apexload.db")
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	if err := store.SaveProject(&storage.Project{ID: "proj-a", Name: "A", Settings: storage.ProjectSettings{MaxVUsers: 10}, CreatedAt: time.Now(), UpdatedAt: time.Now()}); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+	runner := NewTestRunner(10, NewHub(), store)
+	spy := &executionBackendSpy{called: make(chan string, 1)}
+	runner.setExecutionBackend(spy)
+	runner.StoreScript(&dsl.Script{
+		ID: "s-seq-approved", Name: "S", Protocol: "http", Version: "1.0.0",
+		Config:  dsl.ScriptConfig{BaseURL: "https://example.com"},
+		Actions: []dsl.Action{{Name: "a", Type: "request", Target: "/"}},
+	})
+	scenario, err := runner.StoreScenario(CreateScenarioRequest{
+		Name: "Big Sequential", Duration: "5m",
+		Groups: []CreateGroupEntry{{ScriptID: "s-seq-approved", VUsers: 100}},
+	})
+	if err != nil {
+		t.Fatalf("StoreScenario: %v", err)
+	}
+	plan := &storage.ExecutionPlan{
+		ID: "plan-seq-approved", ProjectID: "proj-a", Name: "Approved Sequential", RunMode: "sequential",
+		Entries: []storage.ExecutionPlanEntry{{Order: 0, ScenarioID: scenario.ID}},
+	}
+	if err := store.SaveExecutionPlan(plan); err != nil {
+		t.Fatalf("SaveExecutionPlan: %v", err)
+	}
+	blocked, err := runner.MaterializeAndRunExecutionPlan(plan, "user:alice", "Alice")
+	if err != nil {
+		t.Fatalf("blocked materialize: %v", err)
+	}
+	if !blocked.Blocked || blocked.Approval == nil {
+		t.Fatalf("blocked result = %+v, want approval block", blocked)
+	}
+	if _, ok, err := runner.ResolveExecutionPlanApproval(plan.ID, blocked.Approval.ID, true, "user:admin", "ok"); err != nil || !ok {
+		t.Fatalf("ResolveExecutionPlanApproval: ok=%v err=%v", ok, err)
+	}
+	allowed, err := runner.MaterializeAndRunExecutionPlan(plan, "user:alice", "Alice")
+	if err != nil {
+		t.Fatalf("allowed materialize: %v", err)
+	}
+	if allowed.Blocked || allowed.RunID == "" {
+		t.Fatalf("allowed result = %+v, want started plan run", allowed)
+	}
+	startedID, ok := waitForStart(t, spy, 2*time.Second)
+	if !ok {
+		t.Fatal("approved over-quota sequential entry did not start")
+	}
+	started, ok := runner.GetTest(startedID)
+	if !ok {
+		t.Fatalf("started test %q not found", startedID)
+	}
+	if started.Status == "PENDING" {
+		t.Fatalf("approved test is pending: %s", started.PendingReason)
+	}
+	if started.ExecutionPlanApproval == nil || started.ExecutionPlanApproval.PlanContentHash == "" {
+		t.Fatalf("started test approval snapshot = %+v, want content hash", started.ExecutionPlanApproval)
 	}
 }
 
@@ -137,6 +332,155 @@ func TestExecutionPlanScheduleSweep(t *testing.T) {
 	server.runner.sweepDueExecutionPlanSchedules(now)
 	if again, _ := store.ListExecutionPlanScheduleOccurrences(schedule.ID); len(again) != 1 {
 		t.Fatalf("after second sweep occurrences = %d, want 1 (no duplicate)", len(again))
+	}
+}
+
+func TestExecutionPlanScheduleRunNameTemplateNamesMaterializedTests(t *testing.T) {
+	server, store := newTimeslotServer(t)
+	server.runner.StoreScript(&dsl.Script{
+		ID: "script-template", Name: "Template", Protocol: "http", Version: "1.0.0",
+		Config:  dsl.ScriptConfig{BaseURL: "https://example.com"},
+		Actions: []dsl.Action{{Name: "Home", Type: "request", Target: "/"}},
+	})
+	scenario, err := server.runner.StoreScenario(CreateScenarioRequest{
+		Name: "Checkout Scenario", Duration: "5m",
+		Groups: []CreateGroupEntry{{ScriptID: "script-template", VUsers: 1}},
+	})
+	if err != nil {
+		t.Fatalf("StoreScenario: %v", err)
+	}
+	plannedAt := time.Date(2026, 7, 2, 9, 30, 0, 0, time.UTC)
+	plan := &storage.ExecutionPlan{
+		ID:        "plan-template",
+		ProjectID: "proj-a",
+		Name:      "Nightly Plan",
+		RunMode:   "parallel",
+		Entries:   []storage.ExecutionPlanEntry{{Order: 0, ScenarioID: scenario.ID, ScenarioName: "Checkout"}},
+		CreatedAt: plannedAt,
+		UpdatedAt: plannedAt,
+	}
+	if err := store.SaveExecutionPlan(plan); err != nil {
+		t.Fatalf("SaveExecutionPlan: %v", err)
+	}
+	schedule, err := server.runner.CreateExecutionPlanSchedule(plan.ID, CreateExecutionPlanScheduleRequest{
+		Name:            "Weekday",
+		CronExpr:        "30 9 * * *",
+		Timezone:        "UTC",
+		RunNameTemplate: "{{plan}} {{date}} {{time}}",
+	})
+	if err != nil {
+		t.Fatalf("CreateExecutionPlanSchedule: %v", err)
+	}
+	schedule.NextRunAt = &plannedAt
+	if err := store.SaveExecutionPlanSchedule(schedule); err != nil {
+		t.Fatalf("SaveExecutionPlanSchedule: %v", err)
+	}
+
+	server.runner.sweepDueExecutionPlanSchedules(plannedAt.Add(time.Minute))
+
+	occurrences, err := store.ListExecutionPlanScheduleOccurrences(schedule.ID)
+	if err != nil || len(occurrences) != 1 {
+		t.Fatalf("occurrences = %d (err %v), want 1", len(occurrences), err)
+	}
+	run, err := store.GetExecutionPlanRun(occurrences[0].RunID)
+	if err != nil || run == nil || len(run.Entries) != 1 {
+		t.Fatalf("plan run = %+v err=%v, want one entry", run, err)
+	}
+	test, ok := server.runner.GetTest(run.Entries[0].TestID)
+	if !ok {
+		t.Fatalf("materialized test %q not found", run.Entries[0].TestID)
+	}
+	if test.Name != "Nightly Plan 2026-07-02 09:30 / Checkout" {
+		t.Fatalf("test name = %q, want rendered schedule template", test.Name)
+	}
+}
+
+func TestExecutionPlanScheduleSweepAppliesMissedRunPolicies(t *testing.T) {
+	for _, tc := range []struct {
+		name               string
+		policy             string
+		wantStatus         string
+		wantReason         string
+		wantRequiredAction string
+	}{
+		{name: "skip", policy: "skip", wantStatus: "skipped", wantReason: "missed_run_skipped"},
+		{name: "operator decision", policy: "require_operator_decision", wantStatus: "blocked", wantReason: "missed_run_requires_decision", wantRequiredAction: "operator_decision_required"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server, store := newTimeslotServer(t)
+			now := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
+			plan := &storage.ExecutionPlan{
+				ID:        "plan-missed-" + tc.policy,
+				ProjectID: "proj-a",
+				Name:      "Missed Plan",
+				RunMode:   "parallel",
+				Entries:   []storage.ExecutionPlanEntry{{Order: 0, ScenarioID: "missing"}},
+				CreatedAt: now,
+				UpdatedAt: now,
+			}
+			if err := store.SaveExecutionPlan(plan); err != nil {
+				t.Fatalf("SaveExecutionPlan: %v", err)
+			}
+			missed := now.Add(-10 * time.Minute)
+			schedule := &storage.ExecutionPlanSchedule{
+				ID:              "schedule-missed-" + tc.policy,
+				PlanID:          plan.ID,
+				ProjectID:       "proj-a",
+				Revision:        1,
+				Name:            "Missed",
+				CronExpr:        "* * * * *",
+				Timezone:        "UTC",
+				RunNameTemplate: "Missed",
+				Enabled:         true,
+				MissedRunPolicy: tc.policy,
+				NextRunAt:       &missed,
+				CreatedAt:       now.Add(-time.Hour),
+				UpdatedAt:       now.Add(-time.Hour),
+			}
+			if err := store.SaveExecutionPlanSchedule(schedule); err != nil {
+				t.Fatalf("SaveExecutionPlanSchedule: %v", err)
+			}
+			server.runner.sweepDueExecutionPlanSchedules(now)
+			occurrences, err := store.ListExecutionPlanScheduleOccurrences(schedule.ID)
+			if err != nil {
+				t.Fatalf("ListExecutionPlanScheduleOccurrences: %v", err)
+			}
+			if len(occurrences) != 1 || occurrences[0].Status != tc.wantStatus || occurrences[0].ReasonCode != tc.wantReason {
+				t.Fatalf("occurrences = %+v, want status=%s reason=%s", occurrences, tc.wantStatus, tc.wantReason)
+			}
+			updated, err := store.GetExecutionPlanSchedule(schedule.ID)
+			if err != nil {
+				t.Fatalf("GetExecutionPlanSchedule: %v", err)
+			}
+			if updated.NextRequiredAction != tc.wantRequiredAction {
+				t.Fatalf("next_required_action = %q, want %q", updated.NextRequiredAction, tc.wantRequiredAction)
+			}
+		})
+	}
+}
+
+func TestCreateExecutionPlanScheduleAllowsOpenEndedPause(t *testing.T) {
+	server, store := newTimeslotServer(t)
+	now := time.Now().UTC()
+	if err := store.SaveExecutionPlan(&storage.ExecutionPlan{ID: "plan-paused", ProjectID: "proj-a", Name: "Plan", RunMode: "parallel", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveExecutionPlan: %v", err)
+	}
+	pausedFrom := now.Add(-time.Hour)
+	create := timeslotRequest(t, server, http.MethodPost, "/api/v1/execution-plans/plan-paused/schedules", map[string]any{
+		"name":          "Paused",
+		"cron_expr":     "0 9 * * *",
+		"timezone":      "UTC",
+		"disabled_from": pausedFrom,
+	})
+	if create.Code != http.StatusCreated {
+		t.Fatalf("create paused schedule = %d body=%s", create.Code, create.Body.String())
+	}
+	var schedule storage.ExecutionPlanSchedule
+	if err := json.Unmarshal(create.Body.Bytes(), &schedule); err != nil {
+		t.Fatalf("decode schedule: %v", err)
+	}
+	if schedule.NextRunAt != nil || schedule.NextRequiredAction != "schedule_paused" {
+		t.Fatalf("schedule = %+v, want nil next_run_at and schedule_paused", schedule)
 	}
 }
 

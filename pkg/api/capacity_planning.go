@@ -447,9 +447,10 @@ func capacityReservationTotalsAt(settings SystemSettings, projectID string, now 
 	totalReserved := 0
 	projectReserved := 0
 	for _, reservation := range normalizeCapacityReservations(settings.CapacityPlanning.Reservations) {
-		// Pool-scoped reservations draw from a pool envelope, not the global pool;
-		// they are accounted separately (poolCapacityReservationTotalsAt).
 		if strings.TrimSpace(reservation.PoolID) != "" {
+			if normalizedProjectID != "" && reservation.ProjectID == normalizedProjectID && reservation.ReservedGenerators > 0 && reservationActiveAt(reservation, now) {
+				projectReserved += reservation.ReservedGenerators
+			}
 			continue
 		}
 		if reservation.ReservedGenerators < 0 || !reservationActiveAt(reservation, now) {

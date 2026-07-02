@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLRShimCompilesAndEmitsEventsForCommonJavaVuserAPI(t *testing.T) {
@@ -53,6 +54,158 @@ func TestLRShimCompilesAndEmitsEventsForCommonJavaVuserAPI(t *testing.T) {
 	if !strings.Contains(stderr.String(), `log SEEDED-42`) {
 		t.Fatalf("stderr = %s, want seeded lr parameter to be visible through lr.eval_string", stderr.String())
 	}
+}
+
+func TestHarnessFailsWhenActionMethodIsMissing(t *testing.T) {
+	stdout, stderr, err := runHarnessFixture(t, `public class Actions {
+  public int init() { return lrapi.lr.PASS; }
+  public int end() { return lrapi.lr.PASS; }
+}`)
+	if err == nil {
+		t.Fatalf("Harness succeeded unexpectedly\nstdout:\n%s\nstderr:\n%s", stdout, stderr)
+	}
+	if !strings.Contains(stdout, `"success":false`) || !strings.Contains(stdout, "action") {
+		t.Fatalf("stdout = %s, want failure summary naming missing action", stdout)
+	}
+}
+
+func TestHarnessFailsOnLifecycleFailReturnCode(t *testing.T) {
+	stdout, stderr, err := runHarnessFixture(t, `import lrapi.lr;
+
+public class Actions {
+  public int action() { return lr.FAIL; }
+}`)
+	if err == nil {
+		t.Fatalf("Harness succeeded unexpectedly\nstdout:\n%s\nstderr:\n%s", stdout, stderr)
+	}
+	if !strings.Contains(stdout, `"success":false`) || !strings.Contains(stdout, "non-PASS") {
+		t.Fatalf("stdout = %s, want non-PASS failure summary", stdout)
+	}
+}
+
+func TestHarnessStartupTimeoutBoundsClassLoading(t *testing.T) {
+	stdout, stderr, err := runHarnessFixtureWithInput(t, `import lrapi.lr;
+
+public class Actions {
+  static {
+    try {
+      Thread.sleep(500);
+    } catch (InterruptedException ex) {
+      Thread.currentThread().interrupt();
+    }
+  }
+  public int action() { return lr.PASS; }
+}`, `{"class_name":"Actions","method":"full_lifecycle","startup_timeout_ms":50}`+"\n")
+	if err == nil {
+		t.Fatalf("Harness succeeded unexpectedly\nstdout:\n%s\nstderr:\n%s", stdout, stderr)
+	}
+	if !strings.Contains(stdout, `"success":false`) || !strings.Contains(stdout, "startup timeout") {
+		t.Fatalf("stdout = %s, want startup timeout failure", stdout)
+	}
+}
+
+func TestHarnessJarHasMainClassEntrypoint(t *testing.T) {
+	javac, err := exec.LookPath("javac")
+	if err != nil {
+		t.Skip("javac is not available")
+	}
+	javaBin, err := exec.LookPath("java")
+	if err != nil {
+		t.Skip("java is not available")
+	}
+	jarBin, err := exec.LookPath("jar")
+	if err != nil {
+		t.Skip("jar is not available")
+	}
+	dir := t.TempDir()
+	classes := filepath.Join(dir, "classes")
+	if err := os.MkdirAll(classes, 0o755); err != nil {
+		t.Fatalf("mkdir classes: %v", err)
+	}
+	actionsPath := filepath.Join(dir, "Actions.java")
+	if err := os.WriteFile(actionsPath, []byte(`public class Actions { public int action() { return lrapi.lr.PASS; } }`), 0o644); err != nil {
+		t.Fatalf("write Actions.java: %v", err)
+	}
+	compile := exec.Command(javac, "-d", classes, "lrapi/lr.java", "Harness.java", actionsPath)
+	compile.Dir = "."
+	if out, err := compile.CombinedOutput(); err != nil {
+		t.Fatalf("javac failed: %v\n%s", err, out)
+	}
+	jarPath := filepath.Join(dir, "apexload-java-vuser-runner.jar")
+	createJar := exec.Command(jarBin, "--create", "--file", jarPath, "--main-class", "Harness", "-C", classes, ".")
+	if out, err := createJar.CombinedOutput(); err != nil {
+		t.Fatalf("jar failed: %v\n%s", err, out)
+	}
+	run := exec.Command(javaBin, "-jar", jarPath, "--class", "Actions", "--method", "full_lifecycle")
+	run.Stdin = strings.NewReader(`{"class_name":"Actions","method":"full_lifecycle"}` + "\n")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	run.Stdout = &stdout
+	run.Stderr = &stderr
+	if err := run.Run(); err != nil {
+		t.Fatalf("java -jar Harness failed: %v\nstdout:\n%s\nstderr:\n%s", err, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"success":true`) {
+		t.Fatalf("stdout = %s, want success summary", stdout.String())
+	}
+}
+
+func TestLRThinkTimeEmitsEventWithoutSleeping(t *testing.T) {
+	start := time.Now()
+	stdout, stderr, err := runHarnessFixture(t, `import lrapi.lr;
+
+public class Actions {
+  public int action() {
+    return lr.think_time(2.0);
+  }
+}`)
+	if err != nil {
+		t.Fatalf("Harness failed: %v\nstdout:\n%s\nstderr:\n%s", err, stdout, stderr)
+	}
+	if elapsed := time.Since(start); elapsed > 750*time.Millisecond {
+		t.Fatalf("lr.think_time slept for %s; want event-only pacing", elapsed)
+	}
+	if !strings.Contains(stderr, `"type":"think_time"`) || !strings.Contains(stderr, `"message":"2000"`) {
+		t.Fatalf("stderr = %s, want think_time event with milliseconds", stderr)
+	}
+}
+
+func runHarnessFixture(t *testing.T, actionsSource string) (string, string, error) {
+	return runHarnessFixtureWithInput(t, actionsSource, `{"class_name":"Actions","method":"full_lifecycle"}`+"\n")
+}
+
+func runHarnessFixtureWithInput(t *testing.T, actionsSource string, stdin string) (string, string, error) {
+	t.Helper()
+	javac, err := exec.LookPath("javac")
+	if err != nil {
+		t.Skip("javac is not available")
+	}
+	javaBin, err := exec.LookPath("java")
+	if err != nil {
+		t.Skip("java is not available")
+	}
+	dir := t.TempDir()
+	classes := filepath.Join(dir, "classes")
+	if err := os.MkdirAll(classes, 0o755); err != nil {
+		t.Fatalf("mkdir classes: %v", err)
+	}
+	actionsPath := filepath.Join(dir, "Actions.java")
+	if err := os.WriteFile(actionsPath, []byte(actionsSource), 0o644); err != nil {
+		t.Fatalf("write Actions.java: %v", err)
+	}
+	compile := exec.Command(javac, "-d", classes, "lrapi/lr.java", "Harness.java", actionsPath)
+	compile.Dir = "."
+	if out, err := compile.CombinedOutput(); err != nil {
+		t.Fatalf("javac failed: %v\n%s", err, out)
+	}
+	run := exec.Command(javaBin, "-cp", classes, "Harness", "--class", "Actions", "--method", "full_lifecycle")
+	run.Stdin = strings.NewReader(stdin)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	run.Stdout = &stdout
+	run.Stderr = &stderr
+	err = run.Run()
+	return stdout.String(), stderr.String(), err
 }
 
 const javaShimActionsSource = `import lrapi.lr;

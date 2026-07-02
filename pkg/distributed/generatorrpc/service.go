@@ -16,6 +16,7 @@ import (
 
 	pb "github.com/jasonczech/apexload/api/proto"
 	"github.com/jasonczech/apexload/pkg/buildinfo"
+	"github.com/jasonczech/apexload/pkg/config"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -882,6 +883,16 @@ func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
 
 func supportedProtocolNames() []string {
 	names := protocol.List()
+	if !config.JavaVuserRunnerEnabled() {
+		filtered := names[:0]
+		for _, name := range names {
+			if strings.EqualFold(strings.TrimSpace(name), "java_vuser") {
+				continue
+			}
+			filtered = append(filtered, name)
+		}
+		names = filtered
+	}
 	sort.Strings(names)
 	return names
 }

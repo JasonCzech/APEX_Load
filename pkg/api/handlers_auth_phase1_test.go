@@ -369,6 +369,83 @@ func TestCreateUserDuplicateSubjectReturns409(t *testing.T) {
 	}
 }
 
+func TestCreateUserConcurrentDuplicateSubjectReturns409(t *testing.T) {
+	store := phase1Store(t)
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"}) // dev bypass
+
+	start := make(chan struct{})
+	statuses := make(chan int, 2)
+	for i := 0; i < 2; i++ {
+		go func() {
+			<-start
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/users", bytes.NewReader([]byte(`{"subject":"race@example.com"}`)))
+			resp := httptest.NewRecorder()
+			server.mux.ServeHTTP(resp, req)
+			statuses <- resp.Code
+		}()
+	}
+	close(start)
+	got := []int{<-statuses, <-statuses}
+	created, conflict := 0, 0
+	for _, status := range got {
+		switch status {
+		case http.StatusCreated:
+			created++
+		case http.StatusConflict:
+			conflict++
+		default:
+			t.Fatalf("concurrent create statuses = %v, want one 201 and one 409", got)
+		}
+	}
+	if created != 1 || conflict != 1 {
+		t.Fatalf("concurrent create statuses = %v, want one 201 and one 409", got)
+	}
+}
+
+func TestUpdateUserRejectsSelfSubjectRename(t *testing.T) {
+	store := phase1Store(t)
+	admin := seedAdmin(t, store, "rename-self")
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+
+	req := trustedHeaderJSONRequest(http.MethodPatch, "/api/v1/auth/users/"+admin.ID, `{"subject":"renamed-self"}`, "rename-self")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusConflict {
+		t.Fatalf("self subject rename status = %d, want 409 body=%s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestUpdateUserRejectsLastAdminSubjectRename(t *testing.T) {
+	store := phase1Store(t)
+	admin := seedAdmin(t, store, "last-rename-admin")
+	key := "last-rename-key"
+	sum := sha256.Sum256([]byte(key))
+	now := time.Now().UTC()
+	if err := store.SaveServiceAccount(&storage.ServiceAccount{ID: "svc-last-rename", Name: "Rename Automation", KeyHash: fmt.Sprintf("%x", sum[:]), Active: true, GlobalRoles: []string{RoleSystemAdmin}, Scopes: []string{"automation:*"}, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveServiceAccount: %v", err)
+	}
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/auth/users/"+admin.ID, bytes.NewReader([]byte(`{"subject":"renamed-last-admin"}`)))
+	req.Header.Set("X-APEXLoad-API-Key", key)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusConflict {
+		t.Fatalf("last admin subject rename status = %d, want 409 body=%s", resp.Code, resp.Body.String())
+	}
+
+	seedAdmin(t, store, "backup-rename-admin")
+	req = httptest.NewRequest(http.MethodPatch, "/api/v1/auth/users/"+admin.ID, bytes.NewReader([]byte(`{"subject":"renamed-last-admin"}`)))
+	req.Header.Set("X-APEXLoad-API-Key", key)
+	resp = httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("non-last admin subject rename status = %d, want 200 body=%s", resp.Code, resp.Body.String())
+	}
+}
+
 // A10 — retention prune deletes rows older than the window and keeps recent ones.
 func TestPruneAuditRetention(t *testing.T) {
 	t.Setenv("APEXLOAD_AUDIT_RETENTION_DAYS", "1")

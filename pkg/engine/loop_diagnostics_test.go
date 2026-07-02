@@ -51,6 +51,32 @@ func TestControlLoop_FixedCountTruncationWarns(t *testing.T) {
 	}
 }
 
+func TestControlLoop_ConditionSafetyCapWarns(t *testing.T) {
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	defer slog.SetDefault(prev)
+
+	proto := &captureProtocol{}
+	loop := dsl.Action{
+		Name: "condition-safety-cap-test",
+		Type: "control_loop",
+		Control: &dsl.ControlFlow{
+			Condition: &dsl.Condition{Expr: "true"},
+			Steps:     []dsl.Action{click("step")},
+		},
+	}
+	vu := newControlFlowVUser(proto, nil, []dsl.Action{loop})
+	vu.Run(context.Background())
+
+	if len(proto.names) != defaultControlLoopMaxIterations {
+		t.Fatalf("loop executed %d steps, want %d (default safety cap)", len(proto.names), defaultControlLoopMaxIterations)
+	}
+	if !strings.Contains(buf.String(), "runtime safety cap") {
+		t.Fatalf("expected a condition safety-cap warning, log was: %q", buf.String())
+	}
+}
+
 func TestControlLoop_ExplicitMaxIterationsNoWarn(t *testing.T) {
 	// When max_iterations is set, the bound is intentional — no truncation warning.
 	var buf bytes.Buffer

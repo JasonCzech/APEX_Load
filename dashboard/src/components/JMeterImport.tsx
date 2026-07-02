@@ -1,9 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useApi } from '../hooks/useApi'
 import { summarizeImportExtractors, summarizeSupportMatrix, summarizeSupportMatrixEntries } from './jmeterImportUtils'
 import { type JMeterImportResult as ImportResult, type JMeterSupportMatrixEntry, type JMeterSupportMatrixResponse, type SupportMatrix } from '../types/scriptImports'
 import { type ScriptDefinition, type SourceReview } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
+import { isDesktopSurface } from '../desktop/desktopBridge'
+import { canUseNativeDialogs, filesFromDroppedPaths, pickFilesViaBridge } from '../desktop/desktopFiles'
+import { useDesktopFileDrop } from '../desktop/useDesktopFileDrop'
 import ParameterizationReview from './ParameterizationReview'
 import ScriptImportReview from './ScriptImportReview'
 import SourceMappingReview from './SourceMappingReview'
@@ -12,6 +15,7 @@ import { type ImportedSaveResult } from './useScriptsAuthoringState'
 import './EnterpriseArchiveImport.css'
 
 interface Props {
+  initialFile?: File | null
   projectId?: string
   onImported?: (result: ImportedSaveResult) => void
   onEdit?: (script: ScriptDefinition) => void
@@ -41,9 +45,10 @@ function sourceReviewForJMeter(result?: ImportResult | null, script?: ScriptDefi
   return review
 }
 
-export default function JMeterImport({ projectId, onImported, onEdit, onClose }: Props) {
+export default function JMeterImport({ initialFile, projectId, onImported, onEdit, onClose }: Props) {
   const api = useApi()
   const fileRef = useRef<HTMLInputElement>(null)
+  const dropzoneRef = useRef<HTMLDivElement>(null)
   const [file, setFile] = useState<File | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const [workingMode, setWorkingMode] = useState<'convert' | 'validate' | null>(null)
@@ -67,6 +72,8 @@ export default function JMeterImport({ projectId, onImported, onEdit, onClose }:
   const primaryScript = getPrimaryScript(result)
   const sourceReview = sourceReviewForJMeter(result, primaryScript)
   const parameterization = result?.parameterization
+  const desktop = isDesktopSurface()
+  const nativeDialogs = desktop && canUseNativeDialogs()
 
   useEffect(() => {
     let cancelled = false
@@ -92,7 +99,7 @@ export default function JMeterImport({ projectId, onImported, onEdit, onClose }:
     }
   }, [api])
 
-  const acceptFile = (nextFile?: File) => {
+  const acceptFile = useCallback((nextFile?: File) => {
     if (!nextFile) return
     if (!nextFile.name.toLowerCase().endsWith('.jmx')) {
       setError('Please upload a JMeter .jmx test plan.')
@@ -103,11 +110,36 @@ export default function JMeterImport({ projectId, onImported, onEdit, onClose }:
     setNotice('')
     setReviewMode(null)
     setResult(null)
-  }
+  }, [])
+
+  useEffect(() => {
+    if (initialFile) {
+      acceptFile(initialFile)
+    }
+  }, [acceptFile, initialFile])
+
+  const handleNativeJMeterPaths = useCallback((paths: string[]) => {
+    void filesFromDroppedPaths(paths).then(files => {
+      setDragOver(false)
+      acceptFile(files.find(next => next.name.toLowerCase().endsWith('.jmx')) || files[0])
+    })
+  }, [acceptFile])
+  useDesktopFileDrop(dropzoneRef, handleNativeJMeterPaths, desktop)
+
+  const handleBrowse = useCallback(() => {
+    if (nativeDialogs) {
+      void pickFilesViaBridge('.jmx,.xml').then(files => {
+        acceptFile(files.find(next => next.name.toLowerCase().endsWith('.jmx')) || files[0])
+      })
+      return
+    }
+    fileRef.current?.click()
+  }, [acceptFile, nativeDialogs])
 
   const handleDrop = (event: React.DragEvent) => {
     event.preventDefault()
     setDragOver(false)
+    if (desktop) return
     acceptFile(event.dataTransfer.files[0])
   }
 
@@ -208,11 +240,13 @@ export default function JMeterImport({ projectId, onImported, onEdit, onClose }:
       </div>
 
       <div
+        ref={dropzoneRef}
         className={`lr-dropzone ${dragOver ? 'drag-over' : ''} ${file ? 'has-file' : ''}`}
+        style={desktop ? ({ '--wails-drop-target': 'drop' } as CSSProperties) : undefined}
         onDragOver={event => { event.preventDefault(); setDragOver(true) }}
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
-        onClick={() => fileRef.current?.click()}
+        onClick={handleBrowse}
       >
         <input ref={fileRef} type="file" accept=".jmx,.xml" onChange={event => acceptFile(event.target.files?.[0])} hidden />
         {file ? (

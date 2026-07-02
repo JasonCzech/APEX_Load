@@ -184,7 +184,8 @@ func TestVerifyRunArchiveIntegrityRejectsPathTraversal(t *testing.T) {
 		Artifacts: []RunArchiveArtifact{
 			{Name: "transactions.jsonl", SHA256: writeArchiveArtifactFile(t, root, "transactions.jsonl", `{"a":1}`)},
 			// A manifest artifact name that escapes the archive root must never be
-			// hashed off-root; it is reported missing, not silently matched.
+			// hashed off-root; it is reported as a manifest tamper signal, not
+			// silently matched.
 			{Name: "../outside.jsonl", SHA256: "deadbeef"},
 		},
 	}
@@ -192,8 +193,8 @@ func TestVerifyRunArchiveIntegrityRejectsPathTraversal(t *testing.T) {
 
 	report := verifyRunArchiveIntegrity(record, manifest)
 
-	if report.Status != integrityStatusCorrupt {
-		t.Fatalf("status = %q, want %q", report.Status, integrityStatusCorrupt)
+	if report.Status != integrityStatusTampered {
+		t.Fatalf("status = %q, want %q", report.Status, integrityStatusTampered)
 	}
 	var traversal *RunArchiveIntegrityArtifact
 	for i := range report.Artifacts {
@@ -204,8 +205,8 @@ func TestVerifyRunArchiveIntegrityRejectsPathTraversal(t *testing.T) {
 	if traversal == nil {
 		t.Fatal("traversal artifact missing from report")
 	}
-	if traversal.Status != integrityArtifactMissing {
-		t.Fatalf("traversal artifact status = %q, want missing", traversal.Status)
+	if traversal.Status != integrityArtifactInvalid {
+		t.Fatalf("traversal artifact status = %q, want invalid", traversal.Status)
 	}
 	if traversal.ActualSHA256 != "" {
 		t.Fatalf("traversal artifact must not be hashed, got actual=%q", traversal.ActualSHA256)

@@ -119,3 +119,39 @@ func TestSanitizeWindowGeometryUnknownBoundsTrustsPosition(t *testing.T) {
 		t.Errorf("unknown bounds should trust position: got %+v want %+v", got, want)
 	}
 }
+
+func TestSanitizeWindowGeometryAllowsNegativeVirtualDesktopOrigins(t *testing.T) {
+	tests := []struct {
+		name string
+		st   windowState
+		desk virtualDesktopBounds
+		want sanitizedGeometry
+	}{
+		{
+			name: "window on monitor left of primary is trusted",
+			st:   windowState{Width: 1000, Height: 700, X: -1600, Y: 100},
+			desk: virtualDesktopBounds{MinX: -1920, Width: 4480, Height: 1440},
+			want: sanitizedGeometry{ApplySize: true, Width: 1000, Height: 700, ApplyPosition: true, X: -1600, Y: 100},
+		},
+		{
+			name: "window on monitor above primary is trusted",
+			st:   windowState{Width: 1000, Height: 700, X: 200, Y: -900},
+			desk: virtualDesktopBounds{MinY: -1080, Width: 2560, Height: 2520},
+			want: sanitizedGeometry{ApplySize: true, Width: 1000, Height: 700, ApplyPosition: true, X: 200, Y: -900},
+		},
+		{
+			name: "window beyond virtual desktop still recenters",
+			st:   windowState{Width: 1000, Height: 700, X: -4000, Y: 100},
+			desk: virtualDesktopBounds{MinX: -1920, Width: 4480, Height: 1440},
+			want: sanitizedGeometry{ApplySize: true, Width: 1000, Height: 700},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := sanitizeWindowGeometryInBounds(tc.st, tc.desk)
+			if got != tc.want {
+				t.Errorf("got %+v want %+v", got, tc.want)
+			}
+		})
+	}
+}

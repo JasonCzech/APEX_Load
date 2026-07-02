@@ -57,6 +57,8 @@ func TestBuildProtocolEvidenceRecognizesSOAPAndRedactsMetadata(t *testing.T) {
 		Target:          "https://soap.example.test/AuthService",
 		Headers:         map[string]string{"SOAPAction": "urn:auth#super-secret"},
 		RedactedHeaders: map[string]string{"SOAPAction": "urn:auth#[REDACTED]"},
+		Params:          map[string]any{"lr_parameters": map[string]any{"Password": "super-secret"}},
+		RedactedParams:  map[string]any{"lr_parameters": map[string]any{"Password": "[REDACTED]"}},
 		SOAP:            &SOAPActionConfig{Action: "urn:auth#super-secret", Operation: "Login", BodyMode: "generated"},
 		RedactedSOAP:    &SOAPActionConfig{Action: "urn:auth#[REDACTED]", Operation: "Login", BodyMode: "generated"},
 	}, &Result{
@@ -83,5 +85,13 @@ func TestBuildProtocolEvidenceRecognizesSOAPAndRedactsMetadata(t *testing.T) {
 	soapMetadata, ok := metadata["soap"].(map[string]any)
 	if !ok || soapMetadata["action"] != "urn:auth#[REDACTED]" {
 		t.Fatalf("soap metadata = %#v, want redacted action", metadata["soap"])
+	}
+	params, ok := metadata["params"].(map[string]any)
+	if !ok {
+		t.Fatalf("params = %#v, want redacted params map", metadata["params"])
+	}
+	lrParams, ok := params["lr_parameters"].(map[string]any)
+	if !ok || lrParams["Password"] != "[REDACTED]" {
+		t.Fatalf("params = %#v, want redacted lr parameter", metadata["params"])
 	}
 }

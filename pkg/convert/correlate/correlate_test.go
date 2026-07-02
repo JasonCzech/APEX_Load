@@ -118,7 +118,7 @@ func TestDetectSkipsNonEvaluableBracketJSONPath(t *testing.T) {
 	}
 	var sawAccessToken bool
 	for _, corr := range correlations {
-		if corr.ExtractType == "jsonpath" && strings.Contains(corr.Expression, "[") {
+		if corr.ExtractType == "jsonpath" && strings.Contains(corr.Expression, "[\"") {
 			t.Fatalf("emitted a bracket-quoted JSONPath the replay extractor cannot evaluate: %q", corr.Expression)
 		}
 		if corr.Name == "corr_access_token" {
@@ -130,6 +130,20 @@ func TestDetectSkipsNonEvaluableBracketJSONPath(t *testing.T) {
 	}
 	if !sawAccessToken {
 		t.Fatalf("identifier-keyed access_token correlation was dropped: %#v", correlations)
+	}
+}
+
+func TestDetectRootArrayJSONPathIsReplayEvaluable(t *testing.T) {
+	observations := []Observation{
+		{ID: 1, ResponseBody: `[{"id":"1234567","name":"Ada"}]`},
+		{ID: 2, RequestURL: "https://api.example.test/users/1234567"},
+	}
+	correlations := Detect(observations)
+	if len(correlations) != 1 {
+		t.Fatalf("correlation count = %d, want 1: %#v", len(correlations), correlations)
+	}
+	if correlations[0].ExtractType != "jsonpath" || correlations[0].Expression != "$[0].id" {
+		t.Fatalf("correlation = %#v, want jsonpath $[0].id", correlations[0])
 	}
 }
 

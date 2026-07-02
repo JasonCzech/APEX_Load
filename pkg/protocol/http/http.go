@@ -108,6 +108,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	}
 
 	targetURL := h.resolveURL(action.Target)
+	method := actionHTTPMethod(action)
 	requestBody := action.Body
 	redactedRequestBody := action.RedactedBody
 	if strings.EqualFold(strings.TrimSpace(action.BodyEncoding), "base64") && len(action.Body) > 0 {
@@ -115,7 +116,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		if err != nil {
 			result.Duration = time.Since(result.StartTime)
 			result.ErrorMessage = fmt.Sprintf("invalid base64 http body: %v", err)
-			result.Snapshot = buildHTTPSnapshot(action.Method, targetURL, nil, action.Body, action.RedactedTarget, action.RedactedHeaders, action.RedactedBody, 0, nil, nil)
+			result.Snapshot = buildHTTPSnapshot(method, targetURL, nil, action.Body, action.RedactedTarget, action.RedactedHeaders, action.RedactedBody, 0, nil, nil)
 			return result, nil
 		}
 		requestBody = decoded
@@ -136,10 +137,6 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		body = bytes.NewReader(requestBody)
 	}
 
-	method := strings.ToUpper(action.Method)
-	if method == "" {
-		method = http.MethodGet
-	}
 	req, err := http.NewRequestWithContext(ctx, method, targetURL, body)
 	if err != nil {
 		result.Duration = time.Since(result.StartTime)
@@ -425,6 +422,29 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	}
 
 	return result, nil
+}
+
+func actionHTTPMethod(action *protocol.Action) string {
+	if action == nil {
+		return http.MethodGet
+	}
+	if method := strings.ToUpper(strings.TrimSpace(action.Method)); method != "" {
+		return method
+	}
+	method := strings.ToUpper(strings.TrimSpace(action.Type))
+	if isKnownHTTPMethod(method) {
+		return method
+	}
+	return http.MethodGet
+}
+
+func isKnownHTTPMethod(method string) bool {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodConnect, http.MethodOptions, http.MethodTrace:
+		return true
+	default:
+		return false
+	}
 }
 
 // defaultHTTPMaxBodyBytes bounds the buffered+decoded response body when the

@@ -4,6 +4,12 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import lrapi.lr;
 
@@ -17,19 +23,20 @@ public final class Harness {
             System.setProperty("apexload.java_vuser.source_archive_ref", command.sourceArchiveRef);
         }
         lr.__apexload_seed_parameters(command.lrParameters);
-        Object actions = Class.forName(command.className).getDeclaredConstructor().newInstance();
         long start = System.currentTimeMillis();
         try {
+            Object actions = instantiateActions(command);
+            RunResult runResult = new RunResult();
             if ("init".equals(command.method)) {
-                invokeIfPresent(actions, "init");
+                runResult.required(invokeIfPresent(actions, "init"), "init");
             } else if ("end".equals(command.method)) {
-                invokeIfPresent(actions, "end");
+                runResult.required(invokeIfPresent(actions, "end"), "end");
             } else if ("action".equals(command.method)) {
-                invokeIfPresent(actions, "action");
+                runResult.required(invokeIfPresent(actions, "action"), "action");
             } else {
-                invokeIfPresent(actions, "init");
-                invokeIfPresent(actions, "action");
-                invokeIfPresent(actions, "end");
+                runResult.optional(invokeIfPresent(actions, "init"));
+                runResult.required(invokeIfPresent(actions, "action"), "action");
+                runResult.optional(invokeIfPresent(actions, "end"));
             }
             long duration = System.currentTimeMillis() - start;
             System.out.println("{\"success\":true,\"class_name\":\"" + escape(command.className) + "\",\"method\":\"" + escape(command.method) + "\",\"duration_ms\":" + duration + "}");
@@ -37,17 +44,91 @@ public final class Harness {
             Throwable cause = ex.getCause() == null ? ex : ex.getCause();
             System.out.println("{\"success\":false,\"error\":\"" + escape(cause.toString()) + "\"}");
             System.exit(1);
+        } catch (RuntimeException ex) {
+            System.out.println("{\"success\":false,\"error\":\"" + escape(ex.toString()) + "\"}");
+            System.exit(1);
         }
     }
 
-    private static void invokeIfPresent(Object target, String name) throws Exception {
+    private static InvocationResult invokeIfPresent(Object target, String name) throws Exception {
         Method method;
         try {
             method = target.getClass().getMethod(name);
         } catch (NoSuchMethodException ex) {
-            return;
+            return InvocationResult.missing(name);
         }
-        method.invoke(target);
+        Object returned = method.invoke(target);
+        int status = lr.PASS;
+        if (returned instanceof Number) {
+            status = ((Number) returned).intValue();
+        }
+        return InvocationResult.invoked(name, status);
+    }
+
+    private static Object instantiateActions(Command command) throws Exception {
+        if (command.startupTimeoutMs <= 0) {
+            return Class.forName(command.className).getDeclaredConstructor().newInstance();
+        }
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        Future<Object> future = executor.submit(() -> Class.forName(command.className).getDeclaredConstructor().newInstance());
+        try {
+            return future.get(command.startupTimeoutMs, TimeUnit.MILLISECONDS);
+        } catch (TimeoutException ex) {
+            future.cancel(true);
+            throw new IllegalStateException("startup timeout after " + command.startupTimeoutMs + "ms while loading " + command.className);
+        } catch (ExecutionException ex) {
+            Throwable cause = ex.getCause();
+            if (cause instanceof Exception) {
+                throw (Exception) cause;
+            }
+            if (cause instanceof Error) {
+                throw (Error) cause;
+            }
+            throw new RuntimeException(cause);
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    private static final class RunResult {
+        void optional(InvocationResult result) {
+            if (result.invoked) {
+                requirePass(result);
+            }
+        }
+
+        void required(InvocationResult result, String name) {
+            if (!result.invoked) {
+                throw new IllegalStateException("required zero-argument lifecycle method was not found: " + name);
+            }
+            requirePass(result);
+        }
+
+        private void requirePass(InvocationResult result) {
+            if (result.status != lr.PASS) {
+                throw new IllegalStateException("lifecycle method " + result.name + " returned non-PASS status " + result.status);
+            }
+        }
+    }
+
+    private static final class InvocationResult {
+        final String name;
+        final boolean invoked;
+        final int status;
+
+        private InvocationResult(String name, boolean invoked, int status) {
+            this.name = name;
+            this.invoked = invoked;
+            this.status = status;
+        }
+
+        static InvocationResult missing(String name) {
+            return new InvocationResult(name, false, lr.PASS);
+        }
+
+        static InvocationResult invoked(String name, int status) {
+            return new InvocationResult(name, true, status);
+        }
     }
 
     private static String readCommandLine() throws Exception {
@@ -67,6 +148,7 @@ public final class Harness {
         String className = "Actions";
         String method = "full_lifecycle";
         String sourceArchiveRef = "";
+        int startupTimeoutMs = 0;
         Map<String, String> lrParameters = new LinkedHashMap<>();
 
         static Command from(String[] args, String jsonLine) {
@@ -74,6 +156,7 @@ public final class Harness {
             command.className = firstNonEmpty(argValue(args, "--class"), jsonString(jsonLine, "class_name"), command.className);
             command.method = firstNonEmpty(argValue(args, "--method"), jsonString(jsonLine, "method"), command.method);
             command.sourceArchiveRef = firstNonEmpty(argValue(args, "--source-archive-ref"), jsonString(jsonLine, "source_archive_ref"));
+            command.startupTimeoutMs = parsePositiveInt(firstNonEmpty(argValue(args, "--startup-timeout-ms"), jsonNumber(jsonLine, "startup_timeout_ms")));
             String paramsObject = jsonObject(jsonLine, "params");
             command.lrParameters.putAll(jsonStringMap(jsonObject(paramsObject, "parameters")));
             command.lrParameters.putAll(jsonStringMap(jsonObject(paramsObject, "lr_parameters")));
@@ -105,6 +188,47 @@ public final class Harness {
             }
             ParsedString parsed = parseJsonString(json, start);
             return parsed == null ? "" : parsed.value;
+        }
+
+        private static String jsonNumber(String json, String key) {
+            if (json == null || json.isEmpty()) {
+                return "";
+            }
+            String needle = "\"" + key + "\"";
+            int keyIndex = json.indexOf(needle);
+            if (keyIndex < 0) {
+                return "";
+            }
+            int colon = json.indexOf(':', keyIndex + needle.length());
+            if (colon < 0) {
+                return "";
+            }
+            int start = nextNonWhitespace(json, colon + 1);
+            if (start < 0) {
+                return "";
+            }
+            int end = start;
+            while (end < json.length()) {
+                char ch = json.charAt(end);
+                if ((ch >= '0' && ch <= '9') || ch == '-') {
+                    end++;
+                    continue;
+                }
+                break;
+            }
+            return end > start ? json.substring(start, end) : "";
+        }
+
+        private static int parsePositiveInt(String value) {
+            if (value == null || value.isEmpty()) {
+                return 0;
+            }
+            try {
+                int parsed = Integer.parseInt(value.trim());
+                return parsed > 0 ? parsed : 0;
+            } catch (NumberFormatException ex) {
+                return 0;
+            }
         }
 
         private static String jsonObject(String json, String key) {

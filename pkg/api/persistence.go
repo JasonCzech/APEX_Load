@@ -336,8 +336,8 @@ func storedScenarioToStorage(stored *StoredScenario) *storage.Scenario {
 		ScriptShakeout:   stored.ScriptShakeout,
 		ResourceBaseline: stored.ResourceBaseline,
 		Assignment:       generatorAssignmentForStorage(stored.Assignment),
-		GoalConfig:       cloneGoalConfig(stored.GoalConfig),
-		RuntimeSettings:  cloneRuntimeSettings(stored.RuntimeSettings),
+		GoalConfig:       goalConfigForStorage(stored.GoalConfig),
+		RuntimeSettings:  runtimeSettingsForStorage(stored.RuntimeSettings),
 		CreatedAt:        stored.CreatedAt,
 		UpdatedAt:        stored.UpdatedAt,
 	}
@@ -688,6 +688,7 @@ func (tr *TestRunner) updateStoredTestStatus(testID string, status string, endTi
 	if tr.testStore != nil {
 		tr.testStore.UpdateTestStatus(testID, status, endTime, errStr)
 	}
+	tr.releaseCapacityReservationForTerminalStatus(testID, status)
 }
 
 func (tr *TestRunner) saveRunArchiveRecord(record *storage.RunArchiveRecord) error {

@@ -201,16 +201,17 @@ func runArchiveExecutionPlanApprovalSnapshot(approval *storage.ExecutionPlanAppr
 		return nil
 	}
 	return &RunArchiveExecutionPlanApprovalSnapshot{
-		ID:             strings.TrimSpace(approval.ID),
-		PlanID:         strings.TrimSpace(approval.PlanID),
-		Policy:         strings.TrimSpace(approval.Policy),
-		Status:         strings.TrimSpace(approval.Status),
-		RequestedBy:    strings.TrimSpace(approval.RequestedBy),
-		RequestedAt:    approval.RequestedAt,
-		ResolvedBy:     strings.TrimSpace(approval.ResolvedBy),
-		ResolvedAt:     cloneTimePtr(approval.ResolvedAt),
-		DecisionReason: strings.TrimSpace(approval.DecisionReason),
-		RequiredRole:   strings.TrimSpace(approval.RequiredRole),
+		ID:              strings.TrimSpace(approval.ID),
+		PlanID:          strings.TrimSpace(approval.PlanID),
+		Policy:          strings.TrimSpace(approval.Policy),
+		Status:          strings.TrimSpace(approval.Status),
+		RequestedBy:     strings.TrimSpace(approval.RequestedBy),
+		RequestedAt:     approval.RequestedAt,
+		ResolvedBy:      strings.TrimSpace(approval.ResolvedBy),
+		ResolvedAt:      cloneTimePtr(approval.ResolvedAt),
+		DecisionReason:  strings.TrimSpace(approval.DecisionReason),
+		RequiredRole:    strings.TrimSpace(approval.RequiredRole),
+		PlanContentHash: strings.TrimSpace(approval.PlanContentHash),
 	}
 }
 

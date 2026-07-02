@@ -8,9 +8,9 @@ Evaluation of the complete published OpenText/Micro Focus VuGen 26.1 **Web (HTTP
 
 | Disposition | Count | Meaning |
 |---|---|---|
-| `executable` | 50 | Translated to an executable DSL action or config mapping. |
+| `executable` | 41 | Translated to an executable DSL action or config mapping. |
 | `native_noop` | 9 | Preserved as a runtime-compatibility attribute; a guaranteed no-op in APEX Load (no client cache / no auto-resource fetch / no concurrent-request primitive). |
-| `review_only` | 22 | Preserved in the import-review artifact; no APEX runtime equivalent, so it is not executed (never fabricated). |
+| `review_only` | 31 | Preserved in the import-review artifact; no APEX runtime equivalent, so it is not executed (never fabricated). |
 
 Every published function resolves to one of the dispositions above — none falls through to a `custom_call` review stub. This is enforced by `TestWebHTTPFunctionRegistryResolvesEveryPublishedFunction`.
 
@@ -27,16 +27,16 @@ Every published function resolves to one of the dispositions above — none fall
 | `web_cleanup_cookies` | web | `executable` | cookie_clear action | Executable positional cookie clear. |
 | `web_concurrent_end` | web | `native_noop` | Block marker (preserved) | Closes the concurrent group. |
 | `web_concurrent_start` | web | `native_noop` | Block marker (preserved) | Inner requests replayed sequentially; warned. |
-| `web_convert_date_param` | parameter | `executable` | source_parameter action | Date conversion preserved for review/replay. |
-| `web_convert_from_formatted` | parameter | `executable` | source_parameter action | Formatted-string parse. |
+| `web_convert_date_param` | parameter | `review_only` | Import review | Date conversion is preserved for review; no APEX runtime equivalent yet. |
+| `web_convert_from_formatted` | parameter | `review_only` | Import review | Formatted-string parse is preserved for review; no APEX runtime equivalent yet. |
 | `web_convert_param` | parameter | `executable` | source_parameter action | Encoding/format conversion. |
-| `web_convert_to_formatted` | parameter | `executable` | source_parameter action | Formatted-string build. |
+| `web_convert_to_formatted` | parameter | `review_only` | Import review | Formatted-string build is preserved for review; no APEX runtime equivalent yet. |
 | `web_custom_request` | web | `executable` | HTTP request action | Arbitrary method/body. |
 | `web_disable_keep_alive` | web | `executable` | config.http.keep_alive=false | Disables persistent connections. |
 | `web_dump_cache` | web | `native_noop` | config.web_runtime attribute | No client cache; native no-op. |
 | `web_enable_keep_alive` | web | `executable` | config.http.keep_alive=true | Enables persistent connections. |
 | `web_find` | web | `executable` | Assertion (body_contains) | Deprecated inline check; What= aliased to Text=. |
-| `web_get_int_property` | parameter | `executable` | source_parameter action | Reads an HTTP info property. |
+| `web_get_int_property` | parameter | `review_only` | Import review | HTTP property capture is preserved for review; no APEX runtime equivalent yet. |
 | `web_global_verification` | web | `executable` | config.web_runtime.content_checks | Global content check. |
 | `web_global_verification_pause` | web | `review_only` | Import review | Per-region verification toggle has no global-check equivalent. |
 | `web_global_verification_resume` | web | `review_only` | Import review | Per-region verification toggle has no global-check equivalent. |
@@ -62,8 +62,8 @@ Every published function resolves to one of the dispositions above — none fall
 | `web_rest` | web | `executable` | HTTP request action | REST method/body/HEADERS block. |
 | `web_revert_auto_header` | web | `executable` | Request headers | Removes one persistent auto header. |
 | `web_save_header` | web | `review_only` | Import review | Saving response headers to a parameter has no extractor equivalent. |
-| `web_save_param_length` | parameter | `executable` | source_parameter action | Saves the length of a parameter. |
-| `web_save_timestamp_param` | parameter | `executable` | source_parameter action | Saves a millisecond timestamp. |
+| `web_save_param_length` | parameter | `review_only` | Import review | Parameter length capture is preserved for review; no APEX runtime equivalent yet. |
+| `web_save_timestamp_param` | parameter | `review_only` | Import review | Timestamp capture is preserved for review; no APEX runtime equivalent yet. |
 | `web_set_certificate` | web | `review_only` | Import review | Selects a cert by store index; no file path to map. |
 | `web_set_certificate_ex` | web | `executable` | config.http.tls client cert | CertFilePath=/KeyFilePath=. |
 | `web_set_max_html_param_len` | web | `native_noop` | config.web_runtime attribute | Native no-op compatibility attribute. |
@@ -77,7 +77,7 @@ Every published function resolves to one of the dispositions above — none fall
 | `web_set_sockets_option` | web | `executable` | config.http (TLS/conns) | SSL version, keep-alive, max connections. |
 | `web_set_timeout` | web | `executable` | config.http timeouts | Connect/receive/SSL timeouts. |
 | `web_set_user` | web | `executable` | config.http.auth | Basic auth credentials. |
-| `web_sjis_to_euc_param` | parameter | `executable` | source_parameter action | SJIS→EUC encoding conversion. |
+| `web_sjis_to_euc_param` | parameter | `review_only` | Import review | SJIS to EUC conversion is preserved for review; no APEX runtime equivalent yet. |
 | `web_stop_async` | web | `review_only` | Import review | Async polling/push has no APEX runtime equivalent. |
 | `web_stream_close` | web | `review_only` | Import review | Media streaming has no APEX runtime equivalent. |
 | `web_stream_get_param_double` | web | `review_only` | Import review | Media streaming has no APEX runtime equivalent. |
@@ -95,5 +95,5 @@ Every published function resolves to one of the dispositions above — none fall
 | `web_submit_form` | web | `executable` | HTTP request action | URL inferred from form context/Referer. |
 | `web_sync` | web | `review_only` | Import review | Async page-sync has no APEX runtime equivalent. |
 | `web_url` | web | `executable` | HTTP request action | GET/POST request from URL=. |
-| `web_util_set_request_body` | parameter | `executable` | source_parameter action | Overrides the next request body. |
-| `web_util_set_request_url` | parameter | `executable` | source_parameter action | Overrides the next request URL. |
+| `web_util_set_request_body` | parameter | `review_only` | Import review | Next-request body overrides are preserved for review; no APEX runtime equivalent yet. |
+| `web_util_set_request_url` | parameter | `review_only` | Import review | Next-request URL overrides are preserved for review; no APEX runtime equivalent yet. |

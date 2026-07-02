@@ -191,3 +191,37 @@ export function viewToLocationHash(view: AppView): string {
 
   return `#/${view.page}`
 }
+
+interface GuardedRouteChangeOptions {
+  currentView: AppView
+  locationHash: string
+  hasDirtyGuard: () => boolean
+  runGuarded: (proceed: () => void) => void
+  restoreHash: (hash: string) => void
+  applyView: (view: AppView) => void
+}
+
+export function handleGuardedRouteChange({
+  currentView,
+  locationHash,
+  hasDirtyGuard,
+  runGuarded,
+  restoreHash,
+  applyView,
+}: GuardedRouteChangeOptions) {
+  const nextView = parseAppViewFromHash(locationHash)
+  const nextHash = viewToLocationHash(nextView)
+  const currentHash = viewToLocationHash(currentView)
+  if (currentHash === nextHash) return
+
+  const proceed = () => applyView(nextView)
+  if (!hasDirtyGuard()) {
+    proceed()
+    return
+  }
+
+  if (locationHash !== currentHash) {
+    restoreHash(currentHash)
+  }
+  runGuarded(proceed)
+}

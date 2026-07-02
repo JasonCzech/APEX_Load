@@ -272,6 +272,38 @@ func TestJavaHTTPResponseMappingEmptyIsNoop(t *testing.T) {
 	}
 }
 
+func TestJavaHTTPUsesTypeAsMethodWhenMethodMissing(t *testing.T) {
+	seenMethod := ""
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenMethod = r.Method
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %q, want POST from action type", r.Method)
+		}
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer ts.Close()
+
+	p := &JavaHTTP{}
+	if err := p.Init(context.Background(), map[string]any{
+		"base_url":                ts.URL,
+		"java_http_codec":         supportedCodec,
+		"java_http_body_encoding": "base64",
+	}); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+	result, err := p.Execute(context.Background(), &protocol.Action{Name: "type-only", Type: "POST", Target: "/x"})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("expected success, got error: %s", result.ErrorMessage)
+	}
+	if seenMethod != http.MethodPost {
+		t.Fatalf("server saw method %q, want POST", seenMethod)
+	}
+}
+
 func TestJavaHTTPInitRejectsSidecarHelperMode(t *testing.T) {
 	p := &JavaHTTP{}
 	err := p.Init(context.Background(), map[string]any{

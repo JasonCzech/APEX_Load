@@ -1,8 +1,10 @@
 package lrapi;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.Base64;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -100,7 +102,7 @@ public final class lr {
 
     public static int end_sub_transaction(Object... args) {
         String name = valueAt(args, 0);
-        int status = intAt(args, 1, AUTO);
+        int status = resolveTransactionStatus(name, intAt(args, 1, AUTO));
         emit("transaction_end", name, Integer.toString(status));
         transactionStatus.put(name, status);
         return status;
@@ -117,7 +119,7 @@ public final class lr {
 
     public static int end_transaction(Object... args) {
         String name = valueAt(args, 0);
-        int status = intAt(args, 1, AUTO);
+        int status = resolveTransactionStatus(name, intAt(args, 1, AUTO));
         emit("transaction_end", name, Integer.toString(status));
         transactionStatus.put(name, status);
         return status;
@@ -339,7 +341,9 @@ public final class lr {
     }
 
     public static int think_time(double seconds) {
-        return sleepMillis(Math.round(Math.max(0.0, seconds) * 1000.0));
+        long millis = Math.round(Math.max(0.0, seconds) * 1000.0);
+        emit("think_time", "", Long.toString(millis));
+        return PASS;
     }
 
     public static int think_time(Object... args) {
@@ -433,6 +437,13 @@ public final class lr {
         }
     }
 
+    private static int resolveTransactionStatus(String name, int status) {
+        if (status == AUTO) {
+            return transactionStatus.getOrDefault(name, PASS);
+        }
+        return status;
+    }
+
     private static double doubleAt(Object[] args, int index, double fallback) {
         if (args == null || index < 0 || index >= args.length || args[index] == null) {
             return fallback;
@@ -478,7 +489,27 @@ public final class lr {
     }
 
     private static void emit(String type, String name, String message) {
-        System.err.println("{\"type\":\"" + escape(type) + "\",\"name\":\"" + escape(name) + "\",\"message\":\"" + escape(message) + "\"}");
+        String json = "{\"type\":\"" + escape(type) + "\",\"name\":\"" + escape(name) + "\",\"message\":\"" + escape(message) + "\"}";
+        String eventFile = eventFilePath();
+        if (!eventFile.isEmpty()) {
+            try {
+                synchronized (lr.class) {
+                    Files.write(Paths.get(eventFile), (json + System.lineSeparator()).getBytes(StandardCharsets.UTF_8), StandardOpenOption.CREATE, StandardOpenOption.APPEND, StandardOpenOption.WRITE);
+                }
+                return;
+            } catch (IOException ex) {
+                System.err.println("{\"type\":\"error\",\"name\":\"event_file\",\"message\":\"" + escape(ex.toString()) + "\"}");
+            }
+        }
+        System.err.println(json);
+    }
+
+    private static String eventFilePath() {
+        String value = System.getProperty("apexload.java_vuser.event_file");
+        if (value == null || value.trim().isEmpty()) {
+            value = System.getenv("APEXLOAD_JAVA_VUSER_EVENT_FILE");
+        }
+        return value == null ? "" : value.trim();
     }
 
     private static String escape(String value) {

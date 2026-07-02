@@ -589,12 +589,33 @@ func TestSQLiteStoreUsersRoleBindingsAndAuditFilters(t *testing.T) {
 		t.Fatalf("round-trip user = %#v, want one project_admin binding", roundTrip)
 	}
 
-	filtered, err := store.ListUsers(UserFilter{Query: "alice", Limit: 10})
+	filtered, err := store.ListUsers(UserFilter{Query: "ALICE", Limit: 10})
 	if err != nil {
 		t.Fatalf("ListUsers returned error: %v", err)
 	}
 	if len(filtered) != 1 || filtered[0].ID != user.ID {
 		t.Fatalf("filtered users = %#v, want alice", filtered)
+	}
+	roleFiltered, err := store.ListUsers(UserFilter{Role: "PROJECT_ADMIN", Limit: 10})
+	if err != nil {
+		t.Fatalf("ListUsers role returned error: %v", err)
+	}
+	if len(roleFiltered) != 1 || roleFiltered[0].ID != user.ID {
+		t.Fatalf("role filtered users = %#v, want alice", roleFiltered)
+	}
+	scopeFiltered, err := store.ListUsers(UserFilter{Query: "project-a", Limit: 10})
+	if err != nil {
+		t.Fatalf("ListUsers scope query returned error: %v", err)
+	}
+	if len(scopeFiltered) != 1 || scopeFiltered[0].ID != user.ID {
+		t.Fatalf("scope filtered users = %#v, want alice", scopeFiltered)
+	}
+	roleCount, err := store.CountUsers(UserFilter{Role: "project_admin"})
+	if err != nil {
+		t.Fatalf("CountUsers role returned error: %v", err)
+	}
+	if roleCount != 1 {
+		t.Fatalf("role count = %d, want 1", roleCount)
 	}
 
 	disabledAt := now.Add(2 * time.Minute)
@@ -1009,6 +1030,7 @@ func TestSQLiteStoreApplicationsReleasesScenariosAndContext(t *testing.T) {
 		SchemaVersion:    archiveRecordSchemaVersion,
 		ArchivePath:      "/tmp/apexload/archive",
 		ManifestPath:     "/tmp/apexload/archive/manifest.json",
+		ManifestSHA256:   "abc123",
 		TransactionCount: 10,
 		CreatedAt:        time.Now(),
 		CompletedAt:      time.Now(),
@@ -1022,6 +1044,9 @@ func TestSQLiteStoreApplicationsReleasesScenariosAndContext(t *testing.T) {
 	}
 	if roundArchive.RefKey != archive.RefKey {
 		t.Fatalf("archive ref key = %q, want %q", roundArchive.RefKey, archive.RefKey)
+	}
+	if roundArchive.ManifestSHA256 != archive.ManifestSHA256 {
+		t.Fatalf("archive manifest hash = %q, want %q", roundArchive.ManifestSHA256, archive.ManifestSHA256)
 	}
 	filtered, err := store.ListTestsByContext(app.ID, release.ID, scenario.ID)
 	if err != nil {

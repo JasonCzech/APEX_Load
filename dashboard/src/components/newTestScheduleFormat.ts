@@ -267,8 +267,11 @@ export function describeCron(expr: string): string {
   else if (hour === '*') segments.push(`At minute ${minute} of every hour`)
   else segments.push(`At ${hour}:${String(minute).padStart(2, '0')}`)
 
-  if (dowDesc) segments.push(dowDesc)
-  if (domDesc) segments.push(domDesc)
+  if (dowDesc && domDesc) segments.push(`${domDesc} or ${dowDesc}`)
+  else {
+    if (dowDesc) segments.push(dowDesc)
+    if (domDesc) segments.push(domDesc)
+  }
   if (monthDesc) segments.push(`in ${monthDesc}`)
 
   return segments.join(', ')

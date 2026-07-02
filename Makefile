@@ -38,7 +38,7 @@ collector-agent:
 package-recording-agent:
 	./scripts/package-recording-agent.sh
 
-desktop:
+desktop: desktop-preflight
 	cd desktop && COPYFILE_DISABLE=1 $(WAILS) build -clean $(WAILS_PLATFORM_FLAG) -ldflags "-s -w -X $(BI).Version=$(VERSION) -X $(BI).Commit=$(COMMIT) -X $(BI).BuildTime=$(BUILD_TIME)"
 
 desktop-release: desktop
@@ -68,7 +68,7 @@ java-vuser-runner:
 	mkdir -p bin/java_vuser
 	rm -rf bin/java_vuser/classes bin/java_vuser/apexload-java-vuser-runner.jar
 	javac -d bin/java_vuser/classes runners/java_vuser/lrapi/lr.java runners/java_vuser/Harness.java
-	jar --create --file bin/java_vuser/apexload-java-vuser-runner.jar -C bin/java_vuser/classes .
+	jar --create --file bin/java_vuser/apexload-java-vuser-runner.jar --main-class Harness -C bin/java_vuser/classes .
 
 test:
 	go test -race -count=1 ./...

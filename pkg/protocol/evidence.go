@@ -210,7 +210,11 @@ func evidenceMetadata(action *Action, result *Result) map[string]any {
 			metadata["headers"] = cloneEvidenceStringMap(headers)
 		}
 		if len(action.Params) > 0 {
-			metadata["params"] = cloneEvidenceAnyMap(action.Params)
+			params := action.Params
+			if len(action.RedactedParams) > 0 {
+				params = action.RedactedParams
+			}
+			metadata["params"] = cloneEvidenceAnyMap(params)
 		}
 	}
 	if len(result.Extractions) > 0 {

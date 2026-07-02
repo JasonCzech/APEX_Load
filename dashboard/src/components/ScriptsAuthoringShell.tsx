@@ -76,6 +76,7 @@ export default function ScriptsAuthoringShell({
         subView={authoringState.subView}
         importLauncher={authoringState.importLauncher}
         importMode={authoringState.importMode}
+        importFiles={authoringState.importFiles}
         draftScript={authoringState.draftScript}
         draftEditorFocus={authoringState.draftEditorFocus}
         draftReturnTarget={authoringState.draftReturnTarget}

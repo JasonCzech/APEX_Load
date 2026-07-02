@@ -443,3 +443,24 @@ func TestControlLoopDoWhileRunsBodyAtLeastOnce(t *testing.T) {
 		t.Fatalf("do_while loop ran body %d time(s), want exactly 1", len(dw.names))
 	}
 }
+
+func TestVUser_LifecycleControlLoopDoWhileRunsBodyAtLeastOnce(t *testing.T) {
+	loop := dsl.Action{
+		Name: "InitLoop",
+		Type: "control_loop",
+		Control: &dsl.ControlFlow{
+			Condition:     &dsl.Condition{Left: "{{var.done}}", Op: "ne", Right: "yes"},
+			DoWhile:       true,
+			MaxIterations: 5,
+			Steps:         []dsl.Action{click("InitBody")},
+		},
+	}
+	proto := &captureProtocol{}
+	vu := newControlFlowVUser(proto, map[string]string{"done": "yes"}, nil)
+	if !vu.RunLifecycleBlock(context.Background(), []dsl.Action{loop}, "init") {
+		t.Fatal("RunLifecycleBlock returned false, want true")
+	}
+	if len(proto.names) != 1 {
+		t.Fatalf("lifecycle do_while loop ran body %d time(s), want exactly 1", len(proto.names))
+	}
+}

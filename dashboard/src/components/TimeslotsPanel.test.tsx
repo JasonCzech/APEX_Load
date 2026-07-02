@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import TimeslotsPanel from './TimeslotsPanel'
 import { CapacityTimeslot } from '../types'
+import { ApiError } from '../hooks/apiClient'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -125,6 +126,29 @@ describe('TimeslotsPanel', () => {
     })
     await flush()
     expect(capacityApiMock.approveTimeslot).toHaveBeenCalledWith('slot-1')
+    expect(capacityApiMock.listTimeslots).toHaveBeenCalledTimes(2)
+  })
+
+  it('retries approval with conflict override reason when requested by the server', async () => {
+    vi.spyOn(window, 'prompt').mockReturnValue('approved maintenance window')
+    capacityApiMock.listTimeslots.mockResolvedValue({ timeslots: [slot({ approval_state: 'pending' })], count: 1 })
+    capacityApiMock.approveTimeslot
+      .mockRejectedValueOnce(new ApiError('overbooked; pass conflict_override with a reason to approve anyway', 409))
+      .mockResolvedValueOnce(slot({ approval_state: 'approved' }))
+    await act(async () => {
+      root.render(<TimeslotsPanel projectId="proj-a" canManage />)
+    })
+    await flush()
+    const approveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(b => b.textContent === 'Approve')
+    await act(async () => {
+      approveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flush()
+    expect(capacityApiMock.approveTimeslot).toHaveBeenNthCalledWith(1, 'slot-1')
+    expect(capacityApiMock.approveTimeslot).toHaveBeenNthCalledWith(2, 'slot-1', {
+      conflict_override: true,
+      reason: 'approved maintenance window',
+    })
     expect(capacityApiMock.listTimeslots).toHaveBeenCalledTimes(2)
   })
 

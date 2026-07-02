@@ -278,7 +278,7 @@ func (b *distributedExecutionBackend) failDistributedTestOnStreamError(tr *TestR
 	if test.remoteTargetStates == nil {
 		test.remoteTargetStates = make(map[string]string)
 	}
-	if state := test.remoteTargetStates[target]; state == "COMPLETE" || state == "FAILED" {
+	if remoteTargetStateDone(test.remoteTargetStates[target]) {
 		tr.mu.Unlock()
 		return
 	}
@@ -287,6 +287,15 @@ func (b *distributedExecutionBackend) failDistributedTestOnStreamError(tr *TestR
 	tr.mu.Unlock()
 
 	b.completeDistributedTestRun(tr, test, "FAILED", finalError)
+}
+
+func remoteTargetStateDone(state string) bool {
+	switch strings.ToLower(strings.TrimSpace(state)) {
+	case "complete", "failed", "evacuated", "operator_evacuate", "generator_loss":
+		return true
+	default:
+		return strings.Contains(strings.ToLower(strings.TrimSpace(state)), "evacuat")
+	}
 }
 
 func (b *distributedExecutionBackend) applyRemoteMetricsBatch(tr *TestRunner, test *ManagedTest, target string, batch generatorrpc.MetricsBatch) (*LiveMetrics, string, string) {

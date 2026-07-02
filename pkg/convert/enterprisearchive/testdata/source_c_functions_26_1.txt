@@ -3,7 +3,7 @@
 web_reg_async_attributes,web,review_only
 web_stop_async,web,review_only
 lr_abort,runtime,executable
-lr_advance_param,parameter,executable
+lr_advance_param,parameter,review_only
 lr_aws_get_secret,secret,external_required
 lr_azure_ad_client_get_token,secret,external_required
 lr_azure_kv_get_secret,secret,external_required
@@ -62,7 +62,7 @@ lr_json_stringify,json,executable
 lr_load_dll,runtime,external_required
 lr_log_message,message,executable
 lr_message,message,executable
-lr_next_row,parameter,executable
+lr_next_row,parameter,review_only
 lr_output_message,message,executable
 lr_param_increment,parameter,executable
 lr_param_sprintf,parameter,executable

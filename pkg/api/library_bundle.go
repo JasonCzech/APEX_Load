@@ -478,14 +478,17 @@ func createScenarioRequestFromStored(scenario *StoredScenario) CreateScenarioReq
 	}
 	for _, script := range scenario.Scripts {
 		req.Groups = append(req.Groups, CreateGroupEntry{
-			Name:         script.Name,
-			ScriptID:     script.ScriptID,
-			VUsers:       script.VUsers,
-			RampUp:       script.RampUp,
-			RampDown:     script.RampDown,
-			Stages:       script.Stages,
-			Iterations:   script.Iterations,
-			InitStrategy: script.Initialization,
+			Name:            script.Name,
+			ScriptID:        script.ScriptID,
+			Role:            script.Role,
+			VUsers:          script.VUsers,
+			RampUp:          script.RampUp,
+			RampDown:        script.RampDown,
+			Stages:          script.Stages,
+			Iterations:      script.Iterations,
+			RuntimeSettings: script.RuntimeSettings,
+			Assignment:      script.Assignment,
+			InitStrategy:    script.Initialization,
 		})
 	}
 	return req

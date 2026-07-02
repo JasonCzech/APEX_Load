@@ -51,12 +51,13 @@ type App struct {
 	// failure can be shown in-app — the HTTP /desktop/status endpoint can't carry
 	// it because a failed server isn't listening.
 	startupErr string
-	// dialogPaths is the set of absolute paths the OS file picker returned for
-	// this session. The base64 file bridge (ReadFileBase64/WriteFileBase64) is
-	// confined to these user-chosen paths (plus importable extensions / the app
-	// data dir) so webview JS can't read or write arbitrary files. Guarded by pathMu.
-	pathMu      sync.Mutex
-	dialogPaths map[string]bool
+	// readPaths/writePaths are the absolute paths the OS file picker/open-with
+	// handoff returned for this session. The base64 bridge keeps read and write
+	// grants separate so opening/importing a file never authorizes write-back.
+	pathMu     sync.Mutex
+	readPaths  map[string]bool
+	writePaths map[string]bool
+	recentsMu  sync.Mutex
 	// keepAwake inhibits OS sleep while load tests are running (driven by the
 	// dashboard's active-run count via SetKeepAwake).
 	keepAwake keepAwake
@@ -71,6 +72,13 @@ func NewApp() *App {
 // so we can call the runtime methods
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	runtime.OnFileDrop(ctx, func(_, _ int, paths []string) {
+		for _, path := range paths {
+			if isImportableFile(path) {
+				a.rememberReadPath(path)
+			}
+		}
+	})
 
 	appDataPath, err := desktopAppDataPath()
 	if err != nil {
@@ -148,8 +156,7 @@ func (a *App) restoreWindowState() {
 
 	// Apply the (preserved, non-maximized) geometry first so that un-maximizing a
 	// window that was closed while maximized restores the user's previous size.
-	deskW, deskH := a.desktopBounds()
-	g := sanitizeWindowGeometry(st, deskW, deskH)
+	g := sanitizeWindowGeometryInBounds(st, a.desktopBounds())
 	if g.ApplySize {
 		runtime.WindowSetSize(a.ctx, g.Width, g.Height)
 		if g.ApplyPosition {
@@ -164,16 +171,17 @@ func (a *App) restoreWindowState() {
 	}
 }
 
-// desktopBounds returns a conservative usable-desktop size (origin 0,0) modeled
-// as the sum of screen widths × the tallest screen height. Wails' Screen type
-// exposes logical size but not per-monitor offset, so this is a heuristic used
-// only to detect a fully off-screen restore; it returns 0,0 when unknown.
-func (a *App) desktopBounds() (int, int) {
+// desktopBounds returns conservative usable-desktop bounds. Wails' Screen type
+// exposes logical size but not per-monitor offset, so for multi-monitor setups
+// we allow the non-primary aggregate space to exist left of or above the primary
+// before declaring a negative saved position off-screen.
+func (a *App) desktopBounds() virtualDesktopBounds {
 	screens, err := runtime.ScreenGetAll(a.ctx)
 	if err != nil || len(screens) == 0 {
-		return 0, 0
+		return virtualDesktopBounds{}
 	}
-	totalW, maxH := 0, 0
+	totalW, totalH, maxH := 0, 0, 0
+	primaryW, primaryH := 0, 0
 	for _, s := range screens {
 		w := s.Size.Width
 		if w == 0 {
@@ -184,11 +192,27 @@ func (a *App) desktopBounds() (int, int) {
 			h = s.Height
 		}
 		totalW += w
+		totalH += h
 		if h > maxH {
 			maxH = h
 		}
+		if s.IsPrimary {
+			primaryW = w
+			primaryH = h
+		}
 	}
-	return totalW, maxH
+	if len(screens) == 1 {
+		return virtualDesktopBounds{Width: totalW, Height: maxH}
+	}
+	if primaryW <= 0 {
+		primaryW = totalW / len(screens)
+	}
+	if primaryH <= 0 {
+		primaryH = maxH
+	}
+	minX := -(totalW - primaryW)
+	minY := -(totalH - primaryH)
+	return virtualDesktopBounds{MinX: minX, MinY: minY, Width: totalW, Height: totalH}
 }
 
 // captureWindowState reads the current geometry for persistence.

@@ -189,7 +189,7 @@ func (tr *TestRunner) evaluateQuotaBlockLocked(test *ManagedTest, excludeTestID 
 		return true, fmt.Sprintf("waiting for a project test slot (%d max concurrent tests)", projectMaxConcurrent)
 	}
 	projectMaxVUsers := tr.projectMaxVUsers(test.ProjectID)
-	if projectMaxVUsers > 0 && projectActiveVUsers+test.TotalVUsers > projectMaxVUsers {
+	if projectMaxVUsers > 0 && projectActiveVUsers+test.TotalVUsers > projectMaxVUsers && !hasApprovedExecutionPlanQuotaBurst(test) {
 		return true, fmt.Sprintf("waiting for project VUser capacity (%d max vusers)", projectMaxVUsers)
 	}
 	if blocked, reason := tr.evaluatePoolQuotaBlockLocked(test, excludeTestID); blocked {
@@ -202,6 +202,18 @@ func (tr *TestRunner) evaluateQuotaBlockLocked(test *ManagedTest, excludeTestID 
 		return true, reason
 	}
 	return false, ""
+}
+
+func hasApprovedExecutionPlanQuotaBurst(test *ManagedTest) bool {
+	if test == nil || test.ExecutionPlanApproval == nil {
+		return false
+	}
+	approval := test.ExecutionPlanApproval
+	return approval.ID != "" &&
+		approval.PlanID != "" &&
+		approval.PlanContentHash != "" &&
+		approval.Policy == "quota_burst" &&
+		approval.Status == "approved"
 }
 
 // evaluateReservedCapacityBlockLocked enforces reserved capacity pools at
@@ -246,7 +258,7 @@ func (tr *TestRunner) evaluateReservedCapacityBlockLocked(test *ManagedTest, exc
 	sharedDelta := maxInt(0, projectActive+g-projectReserved) - maxInt(0, projectActive-projectReserved)
 
 	sharedUsedTotal := tr.sharedGeneratorUsageLocked(excludeTestID, now, activeSlots)
-	if sharedUsedTotal+sharedDelta > shared {
+	if sharedDelta > 0 && sharedUsedTotal+sharedDelta > shared {
 		return true, fmt.Sprintf("waiting for shared generator capacity (%d of %d generators reserved for other projects)", totalReserved, effective)
 	}
 	return false, ""
@@ -256,14 +268,14 @@ func (tr *TestRunner) resolveCapacityAvailabilityAt(now time.Time) CapacityAvail
 	if tr == nil {
 		return resolveCapacityAvailabilityAt(SystemSettings{}, now)
 	}
-	return resolveCapacityAvailabilityWithLiveAt(tr.settings, tr.liveAvailableGeneratorCount(context.Background()), now)
+	return resolveCapacityAvailabilityWithLiveAt(tr.settings, tr.cachedLiveAvailableGeneratorCount(now), now)
 }
 
 func (tr *TestRunner) resolveCapacityAvailabilityForProjectAt(projectID string, now time.Time) CapacityAvailabilitySnapshot {
 	if tr == nil {
 		return resolveCapacityAvailabilityForProjectAt(SystemSettings{}, projectID, now)
 	}
-	return resolveCapacityAvailabilityForProjectWithLiveAt(tr.settings, projectID, tr.liveAvailableGeneratorCount(context.Background()), now)
+	return resolveCapacityAvailabilityForProjectWithLiveAt(tr.settings, projectID, tr.cachedLiveAvailableGeneratorCount(now), now)
 }
 
 func (tr *TestRunner) liveAvailableGeneratorCount(ctx context.Context) *int {
@@ -275,6 +287,37 @@ func (tr *TestRunner) liveAvailableGeneratorCount(ctx context.Context) *int {
 		return nil
 	}
 	entries := backend.SystemInventory(ctx)
+	return liveAvailableGeneratorCountFromEntries(entries)
+}
+
+func (tr *TestRunner) setCachedGeneratorInventory(entries []GeneratorInventoryEntry, now time.Time) {
+	if tr == nil {
+		return
+	}
+	tr.liveInventoryMu.Lock()
+	defer tr.liveInventoryMu.Unlock()
+	tr.liveInventory = cloneGeneratorInventoryEntries(entries)
+	tr.liveInventoryAt = now.UTC()
+}
+
+func (tr *TestRunner) cachedLiveAvailableGeneratorCount(now time.Time) *int {
+	if tr == nil || tr.settings.CapacityPlanning.Availability.Source != capacityAvailabilityConfiguredPlusLive {
+		return nil
+	}
+	tr.liveInventoryMu.RLock()
+	entries := cloneGeneratorInventoryEntries(tr.liveInventory)
+	capturedAt := tr.liveInventoryAt
+	tr.liveInventoryMu.RUnlock()
+	if len(entries) == 0 || capturedAt.IsZero() {
+		return nil
+	}
+	if now.Sub(capturedAt) > defaultGeneratorSnapshotTTL {
+		return nil
+	}
+	return liveAvailableGeneratorCountFromEntries(entries)
+}
+
+func liveAvailableGeneratorCountFromEntries(entries []GeneratorInventoryEntry) *int {
 	count := 0
 	for _, entry := range entries {
 		status := strings.ToLower(strings.TrimSpace(entry.Status))

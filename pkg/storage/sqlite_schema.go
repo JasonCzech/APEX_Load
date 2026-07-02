@@ -348,6 +348,7 @@ func schemaCreateTableStatements() []string {
 			archive_backend TEXT,
 			archive_path TEXT,
 			manifest_path TEXT,
+			manifest_sha256 TEXT,
 			archive_uri TEXT,
 			manifest_uri TEXT,
 			transaction_count INTEGER,
@@ -687,6 +688,7 @@ func schemaCreateTableStatements() []string {
 			resolved_at DATETIME,
 			decision_reason TEXT,
 			required_role TEXT,
+			plan_content_hash TEXT,
 			run_id TEXT,
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL,
@@ -796,6 +798,7 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "run_archives.archive_backend", query: `ALTER TABLE run_archives ADD COLUMN archive_backend TEXT`},
 		{name: "run_archives.archive_uri", query: `ALTER TABLE run_archives ADD COLUMN archive_uri TEXT`},
 		{name: "run_archives.manifest_uri", query: `ALTER TABLE run_archives ADD COLUMN manifest_uri TEXT`},
+		{name: "run_archives.manifest_sha256", query: `ALTER TABLE run_archives ADD COLUMN manifest_sha256 TEXT`},
 		{name: "test_interval_summaries.generator_published_at", query: `ALTER TABLE test_interval_summaries ADD COLUMN generator_published_at DATETIME`},
 		{name: "test_interval_summaries.controller_received_at", query: `ALTER TABLE test_interval_summaries ADD COLUMN controller_received_at DATETIME`},
 		{name: "test_interval_summaries.generator_processing_lag_ms", query: `ALTER TABLE test_interval_summaries ADD COLUMN generator_processing_lag_ms REAL`},
@@ -847,6 +850,7 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "run_archives.ref_key", query: `ALTER TABLE run_archives ADD COLUMN ref_key TEXT`},
 		{name: "github_script_links.remote_blob_sha", query: `ALTER TABLE github_script_links ADD COLUMN remote_blob_sha TEXT`},
 		{name: "github_script_links.remote_commit_sha", query: `ALTER TABLE github_script_links ADD COLUMN remote_commit_sha TEXT`},
+		{name: "execution_plan_approvals.plan_content_hash", query: `ALTER TABLE execution_plan_approvals ADD COLUMN plan_content_hash TEXT`},
 	}
 }
 

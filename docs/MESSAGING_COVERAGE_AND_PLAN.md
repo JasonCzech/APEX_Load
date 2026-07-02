@@ -11,22 +11,26 @@
 
 Why this is being done: APEX Load advertises broad message-queue support, but an evaluation against
 the public specs (Jakarta Messaging/JMS, Apache Kafka + Confluent Schema Registry, Solace PubSub+,
-IBM MQ, Azure Service Bus, Azure Event Hubs) found the support is a **thin, provider-neutral
-publish/consume/request-reply veneer** with a good metrics pipeline bolted on — not broad coverage of
-any platform. Three structural facts drive everything below:
+IBM MQ, Azure Service Bus, Azure Event Hubs) found the default-build broker support is still mostly a
+provider-neutral publish/consume/request-reply layer with a good metrics pipeline bolted on — not
+broad coverage of every platform. Since this plan was first written, Kafka real-adapter validation,
+Kafka Event Hubs endpoint guidance, native Event Hubs mock/runtime scaffolding, and several messaging
+telemetry/dashboard paths have landed. The current gaps are narrower, but the plan remains the source
+for the deeper spec-parity work. Three structural facts drive everything below:
 
 1. **No real broker transport ships by default.** Every messaging provider defaults to an in-memory
-   FIFO mock or a fail-closed "unavailable" stub. Real adapters are opt-in Go build tags and exist for
-   only **three of six** paths (`kafka_real`, `jms_solace_real`, `jms_servicebus_real`). *(This is
-   scoped to message brokers — HTTP/2, gRPC, WebSocket, SOAP, DB, and the network protocols all have
-   real default-build transport.)*
+   mock or a fail-closed "unavailable" stub. Real adapters are opt-in Go build tags and currently
+   exist for Kafka (`kafka_real`), Solace JMS-over-AMQP (`jms_solace_real`), Azure Service Bus
+   (`jms_servicebus_real`), and native Azure Event Hubs (`eventhubs_real`). *(This is scoped to
+   message brokers — HTTP/2, gRPC, WebSocket, SOAP, DB, and the network protocols all have real
+   default-build transport.)*
 2. **IBM MQ has no real adapter at all** — permanent `unavailableIbmMqAdapter`
-   (`pkg/protocol/jms/jms.go:189-190,629-658`); **Solace is JMS-over-AMQP only** (no native SMF);
-   **Event Hubs has zero awareness today**.
-3. **Results are messaging-aware for throughput + latency but shallow elsewhere** — consumer lag is
-   wall-clock time not offset/queue-depth, there are no reliability counters beyond dead-letter, no
-   percentiles for message-latency/lag, no messaging SLA/goals, and **Kafka metrics never render in
-   the dashboard** (the surface filters to `jms_`/`websocket`/`grpc`).
+   (`pkg/protocol/jms/jms.go`); **Solace is JMS-over-AMQP only** (no native SMF).
+3. **Results are messaging-aware for throughput + latency, with newer reliability fields, but still
+   shallow compared with broker-native consoles.** Native Event Hubs and Kafka endpoint rows now have
+   dashboard surfaces, but trend widgets and SLAs remain uneven: consumer lag is still not a unified
+   offset/queue-depth model across providers, not every adapter populates the reliability counters,
+   and messaging-specific GoalConfig pass/fail rules are still pending.
 
 Intended outcome: a dependency-ordered program that brings all six platforms to broad spec coverage
 across import → run → results, building shared foundations once and reusing the protocol-neutral
@@ -34,7 +38,9 @@ results pipeline.
 
 This evaluation was produced by parallel code-recon + public-spec research, with an adversarial pass
 that re-verified every high-impact "missing" claim against the actual code (it corrected three draft
-findings — folded in below). Azure Event Hubs additionally has a complete, decisions-locked **day-1 implementation spec** in **Annex A** (producer-first; combined in from a parallel planning session).
+findings — folded in below). Azure Event Hubs additionally has a producer-first native protocol and
+Kafka-endpoint profile in the live tree; **Annex A** is retained as the implementation record and
+future parity checklist.
 
 ---
 
@@ -47,11 +53,11 @@ behind a Go build tag.
 | Platform | Import | Run (execute) | Results (evaluate) |
 |---|---|---|---|
 | JMS (generic) | None | Thin | Partial |
-| Apache Kafka | Partial | Basic † | Hidden (computed, not shown) |
+| Apache Kafka | Partial | Basic † | Partial |
 | Solace PubSub+ | None | AMQP-only † | Partial |
 | IBM MQ | None | **Mock only** | Partial |
 | Azure Service Bus | None | Basic † | Partial |
-| Azure Event Hubs | Partial (via Kafka binding) | **Runtime works, blocked by validator** † | Partial (inherits Kafka path) |
+| Azure Event Hubs | Partial (Kafka endpoint + Capture draft) | Basic † | Partial |
 
 ### Key findings by platform
 
@@ -61,25 +67,24 @@ behind a Go build tag.
   `jms_commit`/`jms_rollback` are **authorable no-ops**, `jms.go:240-241`), delivery-mode application
   (dead config `jms.go:158-160`), TTL/expiry, priority, selectors, durable/shared subscriptions,
   queue browse, topic fan-out.
-- **Kafka** — real produce/consume/request-reply behind `kafka_real`. Missing: transactions/EOS,
-  `read_committed`, Schema Registry/Avro/Protobuf serde, working `kafka_seek`/`kafka_commit`
-  (no-ops); idempotence force-disabled at acks 0/1; offset lag computed then **discarded** to a string
-  extraction (`realclient_franz.go:127-136`). **`validate.go:854` unconditionally blocks any non-mock
-  Kafka script at test creation even in a `kafka_real` build** — a P0 that also gates Event Hubs.
+- **Kafka** — real produce/consume/request-reply behind `kafka_real`, and non-mock validation is now
+  build-tag-aware through `KafkaRealAdapterAvailable()`. Remaining gaps: full transactions/EOS,
+  complete `read_committed` behavior, broader Schema Registry/Avro/Protobuf serde, and richer
+  offset-lag/partition telemetry in every dashboard view. `kafka_seek` remains limited on the real
+  adapter.
 - **Solace** — JMS-over-AMQP only. No native SMF, direct/guaranteed distinction, wildcards,
   partitioned queues, DMQ/max-redelivery, replay.
 - **IBM MQ** — mock-only; needs an entire real adapter (native MQI + MQMD control + QMgr/SVRCONN/
   CCDT connectivity).
-- **Azure Service Bus** — real adapter behind tag, with queue-vs-subscription routing and a peek-lock/
-  receive-and-delete switch. Missing: sessions, client-controlled settlement (abandon/defer/DLQ),
-  lock renewal, scheduled/deferred messages, dedup, DLQ receive, prefetch, cross-entity tx.
-- **Azure Event Hubs** — *added in this evaluation.* Zero code today. **The existing Kafka adapter's
-  runtime can reach the Event Hubs Kafka endpoint with config alone** (SASL PLAIN + `sasl_ssl` +
-  `$ConnectionString` are all wired: `realclient_franz.go:201-217`, `config_protocols.go:455-470`) —
-  but **not no-code end-to-end**: the `validate.go:854` block (P0.0) and the missing OAUTHBEARER
-  mechanism (advertised but silently downgraded to PLAIN) require code. A native AMQP path needs the
-  `azeventhubs` SDK in its own `pkg/protocol/eventhubs` package (Event Hubs is not JMS). The entire
-  protocol-neutral results pipeline carries over verbatim.
+- **Azure Service Bus** — real adapter behind tag, with queue-vs-subscription routing, peek-lock/
+  receive-and-delete, explicit settlement, lock renewal, sessions, deferred/scheduled operations, and
+  DLQ/sub-queue controls represented in the DSL. Remaining depth gaps include broader cross-entity
+  transactions, management/backlog probes, and emulator/live coverage breadth.
+- **Azure Event Hubs** — native `eventhubs` protocol exists with mock default and `eventhubs_real`
+  native AMQP adapter seam; the Kafka endpoint is also guided through `config.kafka.profile:
+  eventhubs` and AsyncAPI host detection. Remaining gaps: full native consume/checkpoint ownership
+  parity, Capture import depth, live Azure coverage, and complete Event Hubs-specific dashboard/goal
+  signals.
 
 ### Cross-cutting gaps (all platforms)
 
@@ -87,7 +92,9 @@ behind a Go build tag.
 - DSL **catalog-vs-runtime drift** — runtime reads `correlation_id`, `destination_type`,
   `dead_letter`, `consumer_group` params the catalog never declares; no messaging enum carries catalog
   `Enum` metadata (editor/JSON-schema/API give zero closed-set guidance).
-- Import is AsyncAPI→Kafka only; all JMS/AMQP/Solace/MQ/MQTT bindings are dropped or review-only.
+- Import now covers AsyncAPI→Kafka/Event Hubs endpoint and broker-config drafts for parts of the JMS
+  family, but many JMS/AMQP/Solace/MQ/MQTT bindings still downgrade to review-only rather than fully
+  executable scripts.
 - No messaging-specific SLA/goal pass-fail (`GoalConfig` is HTTP-only).
 
 ---
@@ -134,7 +141,7 @@ build tags, test plan, acceptance criteria, effort/deps/risks). Effort roll-up:
 
 | Item | Work | Effort | Depends on |
 |---|---|---|---|
-| P0.0 | Build-tag-aware Kafka non-mock validator (unblocks real Kafka + Event Hubs) | S | — |
+| P0.0 | Build-tag-aware Kafka non-mock validator (unblocks real Kafka + Event Hubs) | Done | — |
 | P1.1 | Unified messaging result model + reliability counters | L | — |
 | P1.2 | Shared ack / transaction / session state machine | XL | P1.1 |
 | P1.3 | Request-reply correlation primitive with safe requeue | M | P1.1 |
@@ -146,7 +153,7 @@ build tags, test plan, acceptance criteria, effort/deps/risks). Effort roll-up:
 | P2.4 | Azure Service Bus advanced (sessions, locks, scheduled, defer, dedup, DLQ, tx) | XL | P1.2, P1.3, P2.3 |
 | P2.5 | IBM MQ real adapter (native MQI) + connectivity | XL | P1.2, P1.4, P2.3 |
 | P2.6 | Solace native SMF transport | XL | P1.2, P2.3 |
-| EH.1 | Event Hubs Kafka-endpoint enablement (preset + AsyncAPI detection + docs) | S | P0.0 |
+| EH.1 | Event Hubs Kafka-endpoint enablement (preset + AsyncAPI detection + docs) | Done | P0.0 |
 | EH.2 | OAUTHBEARER / Microsoft Entra ID SASL for the Kafka adapter | M | P0.0 |
 | EH.3 | Native Event Hubs AMQP adapter (`pkg/protocol/eventhubs`, azeventhubs) | XL | P1.1, P1.5 |
 | EH.4 | Event Hubs results extension (skew, ServerBusy/throttle, checkpoint, TU/PU) | M | P1.1, P1.5, EH.3 |
@@ -157,11 +164,24 @@ build tags, test plan, acceptance criteria, effort/deps/risks). Effort roll-up:
 
 ### P0.0 — Build-tag-aware Kafka non-mock validator + real-broker creation path
 
-**Problem / current state** — `pkg/dsl/validate.go:854` unconditionally appends `"real Kafka network adapter is not available in this build; enable config.kafka.mock for replay"` for **any** script with `config.kafka.mock == false`, regardless of build tags. `pkg/api/testcreation.go` runs `dsl.ValidateScriptIssues` and turns any issue into a hard error (the API path), so even a `-tags kafka_real` controller binary cannot create a non-mock Kafka test through `POST /api/v1/tests`. This is inconsistent with the JMS pattern at `validate.go:707-712`, which gates Solace/Service Bus on the build-tag capability flags `SolaceJMSRealAdapterAvailable()` / `ServiceBusJMSRealAdapterAvailable()` (defined in `pkg/dsl/capabilities_jms_solace_real.go` / `capabilities_default.go`). The runtime already supports the real path: `pkg/protocol/kafka/kafka.go:123-129` dispatches to `newRealClient(k.cfg)`, which is the franz adapter under `kafka_real` (`realclient_franz.go`) and the fail-closed `unavailableClient` stub under the default build (`realclient_default.go`). So the runtime is correctly build-tag-aware; only the **validator** is not. **apexctl finding:** the `apexctl run` direct-execution path does NOT call the validator — `loadScriptForRun` (`cmd/apexctl/run_overrides.go:17-23`) only parses + applies overrides; validation is only invoked by `apexctl script validate` (`cmd/apexctl/script_commands.go:102`). So apexctl direct runs are gated solely by the runtime `unavailableClient` stub, which is already correct. Only the shared validator (used by the API and `apexctl script validate`) needs the fix.
+**Status / historical baseline** — This item has landed. `pkg/dsl` now exposes
+`KafkaRealAdapterAvailable()` with default and `kafka_real` build-tag implementations, and
+`validateKafkaScriptIssues` rejects non-mock Kafka only when the real adapter is absent from the
+binary. The default build still fails closed with guidance to enable mock replay or build with
+`-tags kafka_real`; a `kafka_real` build can validate non-mock Kafka and Kafka-endpoint Event Hubs
+configs. The original failure mode was an unconditional validator rejection that made the API reject
+non-mock Kafka even in a `kafka_real` controller.
 
 **Goal** — A `-tags kafka_real` build of the controller can create and run real Kafka tests (and Event Hubs Kafka-endpoint tests, which use the same broker path) through the REST API, while the default build continues to fail-closed with actionable guidance — mirroring the JMS capability gating.
 
-**Design** — Add a Kafka capability flag, set true only under `kafka_real`, and make the `validate.go:854` rejection conditional on `!KafkaRealAdapterAvailable()`. Reuse the existing JMS two-file split-by-build-tag pattern (no new mechanism). The franz adapter compiles in the same binary so no proto/results changes are needed — the results pipeline is already protocol-neutral and the franz client already populates `Extractions`/`ServerTelemetry`. Rejected alternatives: (a) a runtime env flag instead of a build tag — rejected because the real adapter is *physically absent* from a default build, so a runtime flag would lie; (b) removing the check entirely — rejected because default builds must fail-closed at validation time, not only at first action dispatch.
+**Design (implemented)** — Add a Kafka capability flag, set true only under `kafka_real`, and make
+the non-mock rejection conditional on `!KafkaRealAdapterAvailable()`. Reuse the existing JMS
+two-file split-by-build-tag pattern (no new mechanism). The franz adapter compiles in the same
+binary so no proto/results changes are needed — the results pipeline is already protocol-neutral and
+the franz client already populates `Extractions`/`ServerTelemetry`. Rejected alternatives: (a) a
+runtime env flag instead of a build tag — rejected because the real adapter is *physically absent*
+from a default build, so a runtime flag would lie; (b) removing the check entirely — rejected because
+default builds must fail-closed at validation time, not only at first action dispatch.
 
 **DSL & catalog changes** — None. No new action types, fields, or enums. `config.kafka.mock` already exists (`types.go:213`). The OAUTHBEARER silent-downgrade and the `kafka_consumer_lag` discard are separate work items, not in scope here. No `go generate ./pkg/dsl` needed since the catalog is untouched; the freshness test stays green.
 
@@ -174,7 +194,7 @@ Returns `true` in `capabilities_kafka_real.go` (`//go:build kafka_real`), `false
 **Files to touch**
 - NEW `pkg/dsl/capabilities_kafka_real.go` — `//go:build kafka_real`, returns `true`.
 - NEW `pkg/dsl/capabilities_kafka_default.go` — `//go:build !kafka_real`, returns `false`.
-- EDIT `pkg/dsl/validate.go:854` — wrap the rejection in `if !KafkaRealAdapterAvailable() { ... }`; keep the `len(kafka.Brokers) == 0` check unconditional. Update the message to add `"...or build with -tags kafka_real"` (mirror the Solace wording at :707).
+- EDIT `pkg/dsl/validate.go` — wrap the rejection in `if !KafkaRealAdapterAvailable() { ... }`; keep the `len(kafka.Brokers) == 0` check unconditional. Update the message to add `"...or build with -tags kafka_real"` (mirror the Solace wording). **Done.**
 - NEW/EDIT `pkg/dsl/validate_kafka_test.go` (or extend existing kafka validate test) — table-driven, plus a `kafka_real`-tagged variant.
 - EDIT `.github/workflows/go-protocol-tags.yml` — add a `kafka-real` job mirroring the `jms-solace-real` job.
 - VERIFY-ONLY (no edit): `cmd/apexctl/run_overrides.go`, `pkg/protocol/kafka/realclient_default.go` — confirm direct-run + fail-closed stub already correct.
@@ -184,12 +204,12 @@ Returns `true` in `capabilities_kafka_real.go` (`//go:build kafka_real`), `false
 **Test plan** — *Unit (default build, table-driven):* non-mock Kafka script → issue contains `"-tags kafka_real"`; mock script → no Kafka availability issue; non-mock with empty brokers → both broker + availability issues. *Unit (`kafka_real` tag):* non-mock script with brokers → NO availability issue; empty brokers still → broker issue. Add `KafkaRealAdapterAvailable()` direct assertions in each build. *Integration (behind `kafka_real` + testcontainers, optional CI):* `POST /api/v1/tests` with a non-mock Kafka script on a `kafka_real` controller returns 201, not a validation 400 — reuse existing franz integration harness (`franz_integration_test.go`). *Event Hubs:* a smoke unit asserting an Event Hubs-shaped config (`NAMESPACE.servicebus.windows.net:9093`, `sasl_ssl`/`plain`) passes validation under `kafka_real`. No UI touched → no dashboard verification.
 
 **Acceptance criteria**
-- [ ] `KafkaRealAdapterAvailable()` returns `false` (default) / `true` (`kafka_real`).
-- [ ] Default build: non-mock Kafka script is rejected with a message naming both `config.kafka.mock` and `-tags kafka_real`.
-- [ ] `kafka_real` build: non-mock Kafka script with brokers passes `ValidateScriptIssues`, and `POST /api/v1/tests` accepts it.
-- [ ] Empty `config.kafka.brokers` still rejected in both builds.
-- [ ] `go test ./pkg/dsl` and `go test -tags kafka_real ./pkg/dsl ./pkg/protocol/kafka` both green; new CI job added.
-- [ ] `apexctl run` confirmed unaffected (no validator call); fail-closed stub confirmed for default direct runs.
+- [x] `KafkaRealAdapterAvailable()` returns `false` (default) / `true` (`kafka_real`).
+- [x] Default build: non-mock Kafka script is rejected with a message naming both `config.kafka.mock` and `-tags kafka_real`.
+- [x] `kafka_real` build: non-mock Kafka script with brokers passes `ValidateScriptIssues`.
+- [x] Empty `config.kafka.brokers` still rejected in both builds.
+- [x] `go test ./pkg/dsl` and `go test -tags kafka_real ./pkg/dsl ./pkg/protocol/kafka` cover both gating directions.
+- [x] `apexctl run` remains gated by the runtime fail-closed stub in default builds.
 
 **Effort / dependencies / risks** — Effort **S** (smaller than the M estimate; it's a 2-file capability mirror + a 1-line conditional + tests). Depends on: none. Risks: (1) low — a real `kafka_real` controller binary will now *attempt* real connections, so downstream items (SASL/OAUTHBEARER fidelity, offset-lag) become user-visible; flag those as follow-ups. (2) Operators must actually deploy a `kafka_real`-tagged image; document in the Kafka/Event Hubs runbook that the default image still fail-closes.
 
@@ -286,7 +306,7 @@ Extend `brokerAdapter` (`jms.go:71-77`) with `Settle(ctx, op SettleOp, deliverie
 - EDIT `pkg/protocol/protocol.go`, `pkg/engine/metrics.go`, `api/proto/generator.proto`, `pkg/api/distributed_metrics.go`.
 - REGEN `docs/dsl.schema.json`, `docs/DSL_ACTION_REFERENCE.md`, generated proto.
 
-**Build tags / dependencies** — Reuse `kafka_real` (franz-go already vendored) and `jms_servicebus_real` (azservicebus). No new go.mod modules expected. CI matrix: real-settlement integration tests gated behind `kafka_real` + `jms_servicebus_real`; default/no-tag build must still compile and pass the mock-backed unit suite. The `validate.go:854` unconditional non-mock Kafka rejection must be relaxed under P1.1 so transactional real tests can run — flag as a cross-item coordination point.
+**Build tags / dependencies** — Reuse `kafka_real` (franz-go already vendored) and `jms_servicebus_real` (azservicebus). No new go.mod modules expected. CI matrix: real-settlement integration tests gated behind `kafka_real` + `jms_servicebus_real`; default/no-tag build must still compile and pass the mock-backed unit suite. The historical unconditional non-mock Kafka rejection is already build-tag-gated, so transactional real tests can be authored in `kafka_real` builds.
 
 **Test plan** — Table-driven unit tests in `pkg/protocol/messaging/session_test.go` over `{mode × op × scope}` against an in-memory `Settler`: auto-mode ack is idempotent no-op; client-mode ack settles all pending; transacted commit increments `CommitCount`; rollback re-enqueues with `Redelivered=true`/`DeliveryCount++` and increments `AbortCount`. JMS mock-broker test asserting rollback re-delivers to queue front (`jms.go:89-120`). Integration (testcontainers Kafka behind `kafka_real`): produce→consume→rollback→reconsume sees same offset; commit advances group offset. Service Bus integration behind `jms_servicebus_real`. Run `go test ./...` and the tag-on builds. No dashboard change beyond the existing messaging filter; if `CommitCount`/`AbortCount` surface in `TestExecution*.tsx`, browser-verify.
 
@@ -441,7 +461,7 @@ var ErrBacklogUnsupported = errors.New("backlog probe not supported in this buil
 
 ### P2.1 — Kafka producer/consumer depth (idempotence, transactions/EOS, isolation, batching, seek)
 
-**Problem / current state** — The franz adapter is shallow. The acks switch at `realclient_franz.go:53-60` force-calls `kgo.DisableIdempotentWrite()` on both `none` and `leader`, and never opts into idempotence on `all` (it just sets `AllISRAcks()`), so exactly-once producer semantics are unreachable. There is no `transactional.id`, no `Begin/Commit/Abort` — `kafka_commit`/`kafka_seek` are pure no-ops (`kafka.go:165-166` only writes `result.Extractions["kafka_operation"]`). `Consume` calls `cl.AddConsumeTopics` (`realclient_franz.go:113`) with no `read_committed` isolation and a hardcoded `PollRecords(cctx, 1)` (no `max.poll.records`); subscribe-vs-assign is implicit. `config.kafka.properties` is parsed (`kafka.go:89`, plumbed at `config_protocols.go:513`) but never applied — `linger.ms`/`batch.size` are dropped. The `kafkaClient` interface (`broker.go:17-24`) has no `Seek`. Worst, `validate.go:854` *unconditionally* appends "real Kafka network adapter is not available in this build" for any non-mock script, so even a `kafka_real` build cannot author/run a real script.
+**Problem / current state** — The franz adapter remains shallower than full Kafka parity. Exactly-once producer semantics, transaction lifecycle, full isolation-level behavior, and complete seek/offset management still need the deeper implementation below. The prior worst blocker — the validator unconditionally rejecting non-mock scripts even in `kafka_real` builds — has been fixed via the build-tag capability seam, so the remaining work is runtime depth rather than authoring being globally blocked.
 
 **Goal** — Bring the real adapter to Kafka producer/consumer spec: idempotent producer, transactional EOS (`transactional.id` + begin/commit/abort), `read_committed` consumer isolation, batching tunables (`linger.ms`/`batch.size` via `properties`), real `Seek` (offset/earliest/latest, per partition), explicit subscribe-vs-assign, and `max.poll.records`. Mock broker must support the same surface so CI exercises it without a real broker.
 
@@ -481,7 +501,7 @@ EnableIdempotence *bool; TransactionalID string; IsolationLevel string; MaxPollR
 - [ ] `linger.ms` / `batch.size` from `properties` reach franz producer opts.
 - [ ] `Seek` on interface + franz + mock; `kafka_seek` honors numeric offset / `earliest` / `latest` + partition.
 - [ ] `assignment_mode` selects subscribe vs assign; `max_poll_records` caps `PollRecords`.
-- [ ] `validate.go:854` no longer hard-rejects non-mock scripts in a `kafka_real` build; default build still fails closed.
+- [x] Non-mock scripts are no longer hard-rejected in a `kafka_real` build; default build still fails closed.
 - [ ] `go generate ./pkg/dsl` regenerated artifacts committed; `go test ./...` and schemagen freshness pass.
 
 **Effort / dependencies / risks** — Effort **XL**. Depends on **P1.2** (config-plumbing/properties pass) and **P1.4** (validate gating / real-adapter-available seam). Risks: franz idempotence/transaction interaction with `RequiredAcks` is order-sensitive (must be `AllISRAcks` for txns, easy to misconfigure); per-VUser transactional.id must be unique per producer or brokers fence each other — derive a VUser-suffixed id; mock-broker txn/isolation semantics are an approximation and could diverge from real broker behavior (document as best-effort); the `validate.go:854` change is fail-open-adjacent if the build-tag seam is wrong — test both build variants explicitly.
@@ -760,12 +780,16 @@ Populate existing telemetry: set `ServerTelemetry.RedeliveryCount` (NEW int fiel
 > **Reconciliation note (Event Hubs).** Items EH.1–EH.6 are the umbrella-level entries; the full,
 > decisions-locked day-1 implementation spec for Event Hubs (producer-first; Kafka-endpoint + native
 > AMQP; Capture import; Prometheus; dashboard; Azure deployment) is in **Annex A** below and is
-> authoritative for Event Hubs execution detail. **P0.0 is a prerequisite**, and the locked
+> authoritative for Event Hubs execution detail. **P0.0 has landed**, and the locked
 > **producer-first** scope defers EH.3's full consumer-side checkpoint/Processor/epoch work past day-1.
 
 ### EH.1 — Event Hubs Kafka-endpoint enablement (preset + AsyncAPI host detection + docs)
 
-**Problem / current state** — Azure Event Hubs has zero awareness in the codebase today (grep for `servicebus.windows.net`/`$ConnectionString`/`event_hub` across `pkg/`, `docs/`, `dashboard/src` returns nothing). The AsyncAPI converter's `deriveBrokers` (`pkg/convert/asyncapi/converter.go:338-375`) only distinguishes `kafka` vs `kafka-secure`: a `kafka-secure` host yields `securityProtocol = "sasl_ssl"` plus a generic warning, but it never sets a SASL mechanism, username, or password-secret. The final config block (`converter.go:248-253`) writes only `Brokers`, `SecurityProtocol`, `Acks:"all"`, `Mock` — so an Event Hubs `*.servicebus.windows.net:9093` host imports as a bare `sasl_ssl` Kafka config that fails validation (`pkg/dsl/validate.go:849-852` requires brokers + a real adapter, and the operator must hand-supply mechanism/username `$ConnectionString`/password). The support matrix (`pkg/convert/asyncapi/support.go:19,27`) describes only generic kafka-secure behavior. There is no DSL preset/snippet mechanism for the Event Hubs "magic values" anywhere.
+**Status / historical baseline** — This item has landed for the Kafka-endpoint path. AsyncAPI import
+detects `*.servicebus.windows.net:9093`, sets `config.kafka.profile: eventhubs`, forces
+`sasl_ssl`, and pre-fills the Event Hubs PLAIN-auth defaults (`$ConnectionString` plus the
+`eventhubs_connection_string` secret placeholder). The remaining Event Hubs work is native AMQP
+parity tracked in EH.3+ and live Azure coverage breadth.
 
 **Goal** — Make targeting Event Hubs over its Kafka endpoint a guided, first-class experience: (1) a canonical DSL `KafkaConfig` preset/snippet carrying the Event Hubs magic values; (2) AsyncAPI host auto-detection for `*.servicebus.windows.net:9093` that pre-fills `security_protocol=sasl_ssl`, `sasl_mechanism=plain`, `sasl_username=$ConnectionString`, `sasl_password_secret`, plus a specific review hint; (3) operator docs. No new runtime code — runtime already works against the Kafka endpoint per P0.0 verification.
 
@@ -806,7 +830,9 @@ Populate existing telemetry: set `ServerTelemetry.RedeliveryCount` (NEW int fiel
 - [ ] `docs/EVENT_HUBS_HOWTO.md` documents secret setup, the `$ConnectionString` username, and the build/validation gate.
 - [ ] `go test ./...` green.
 
-**Effort / dependencies / risks** — Effort: **S**. Depends on **P0.0** (real Kafka adapter / runtime verification against the Event Hubs endpoint). Risks: (1) host-match false positives if Microsoft introduces a non-9093 Kafka port — keep the port check strict; (2) operators may expect *execution* to work after import, but `validate.go:850-853` still hard-blocks non-mock on default builds — the docs and review hint must make the `kafka_real` requirement explicit to avoid a confusing fail-closed; (3) low risk of `go generate` drift if catalog doc-strings touch shared text — confine edits to the two Kafka fields.
+**Effort / dependencies / risks** — Effort: **S**. Done for the Kafka-endpoint path. Remaining risk:
+operators may expect live execution to work in the default image, but non-mock execution still
+requires a `kafka_real` build; the generated warning and docs must keep that requirement explicit.
 
 Spec written to /Users/jasonczech/.claude/plans/whimsical-moseying-phoenix-agent-ac10f5f48c7dd5ed9.md.
 
@@ -853,11 +879,22 @@ Add to `config` struct (`kafka.go:41-64`): `OAuthTokenSource, OAuthScope, OAuthT
 - [ ] Default (untagged) build still compiles with zero Azure/oauth imports; stub fail-closed behavior unchanged.
 - [ ] `go test ./...` green; `go test -tags kafka_real ./pkg/protocol/kafka/...` green.
 
-**Effort / dependencies / risks** — Effort **M**. Depends on **P0.0** (the unconditional non-mock rejection at `validate.go:854` and the `testcreation.go:499-501` hard error must be lifted before any real Kafka script, OAuth or not, can run). Risks: (1) franz's `oauth.Auth` re-invocation/refresh semantics must align with our cache window — verify against franz v1.21.3 docs to avoid stale-token auth failures; (2) Event Hubs requires SASL_SSL — ensure `usesTLS()` (`realclient_franz.go:215-217`) returns true (it keys off `security_protocol` containing `ssl`, which `sasl_ssl` satisfies); (3) azidentity DefaultAzureCredential's credential-chain latency/timeouts under high VUser fan-out — token caching mitigates but confirm the closure is not invoked per-message; (4) leaking the static token / client secret into logs or `Extractions` — must route through the secret fallback and never be echoed.
+**Effort / dependencies / risks** — Effort **M**. The P0.0 validation blocker has landed. Remaining
+risks: (1) franz's `oauth.Auth` re-invocation/refresh semantics must align with our cache window —
+verify against franz v1.21.3 docs to avoid stale-token auth failures; (2) Event Hubs requires
+SASL_SSL — ensure TLS remains forced for the Event Hubs profile; (3) azidentity
+DefaultAzureCredential's credential-chain latency/timeouts under high VUser fan-out — token caching
+mitigates but confirm the closure is not invoked per-message; (4) leaking the static token / client
+secret into logs or `Extractions` — must route through the secret fallback and never be echoed.
 
 ### EH.3 — Native Event Hubs AMQP adapter (pkg/protocol/eventhubs, azeventhubs SDK)
 
-**Problem / current state** — APEX Load has zero Event Hubs awareness. The only Azure-messaging native path is Service Bus (`pkg/protocol/jms/realadapter_servicebus.go`, build-tag `jms_servicebus_real`), which is queue/topic-semantics, not partitioned-stream semantics. Event Hubs is reachable today only by pointing the Kafka protocol at the `NAMESPACE.servicebus.windows.net:9093` SASL_SSL/PLAIN surface — but that path is doubly broken: `validate.go:854` unconditionally appends "real Kafka network adapter is not available" for any non-mock script (rejecting even a `kafka_real` build), Kafka SASL silently downgrades OAUTHBEARER to PLAIN, and offset lag is computed then discarded (`realclient_franz.go:127-136`). There is no partition/checkpoint/consumer-group ownership model anywhere. The Service Bus adapter is the correct structural template: ref-counted client pool (`serviceBusClientPool`, `realadapter_servicebus.go:198-262`), dual auth via `newServiceBusClient` (connection-string vs `azidentity.NewDefaultAzureCredential`, lines 299-308), fail-closed default stub (`realadapter_servicebus_default.go`), and a `serviceBusConfigErrorAdapter` for deferred config errors.
+**Status / current state** — Native Event Hubs awareness now exists: `pkg/protocol/eventhubs`
+registers an `eventhubs` protocol with mock default behavior and an `eventhubs_real` adapter seam,
+and the DSL exposes `config.eventhubs` plus producer/observer actions. The remaining native AMQP
+work is parity depth: checkpoint ownership, richer partition/lag semantics, broader live Azure
+coverage, Capture import depth, and dashboard/goal polish. The Kafka endpoint path is separately
+guided through `config.kafka.profile: eventhubs`.
 
 **Goal** — A first-class `pkg/protocol/eventhubs` protocol (its own package, NOT a JMS provider) using the `azeventhubs` Go SDK, giving authors native producer batching, partitioned consume with start positions, and checkpoint-based exclusive consumption — matching the public capability spec (EventDataBatch with PartitionKey vs PartitionID, ~1 MB batch / 20 MB throughput-unit caps, `ErrEventDataTooLarge`; `StartPosition` earliest/latest/offset/sequence/enqueued-time + prefetch; `Processor` + Blob `CheckpointStore` ownership claim/steal + `UpdateCheckpoint`; epoch/owner-level exclusivity).
 
@@ -1183,9 +1220,9 @@ parallel planning session). It **expands items EH.1–EH.4** above with file-lev
 Event Hubs Capture import, Prometheus exposition, dashboard wiring, and Azure deployment work not
 otherwise itemized in the umbrella program. Reconciliation with the umbrella program:
 
-- **P0.0 is a hard prerequisite** to Phase 2 below. The Kafka-endpoint profile cannot be *created*
-  through the REST API until the unconditional non-mock-Kafka validator block (`validate.go:854`) is
-  build-tag-gated; Phase 2's `validate.go` edits assume P0.0 has landed.
+- **P0.0 has landed** and is now the foundation for Phase 2 below. The Kafka-endpoint profile can be
+  validated through the REST API in `kafka_real` builds; default builds still fail closed for live
+  non-mock execution.
 - **Mapping:** EH.1 ⇄ Phase 2 (Kafka-endpoint as a `profile:"eventhubs"` on the `kafka` protocol —
   this **supersedes** EH.1's lighter "config preset" design); EH.2 ⇄ Phase 2's OAUTHBEARER work;
   EH.3 ⇄ Phase 3 (native AMQP `eventhubs` protocol) + Phase 4 (catalog/validate/capabilities);

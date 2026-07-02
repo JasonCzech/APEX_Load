@@ -127,4 +127,4 @@ The advisor applies the configured headroom percentage to protocol envelopes bef
 | P2.5 HPA/KEDA scaling signals | Complete for first-pass Prometheus signal contract and KEDA generator scale-out artifact | `/metrics`, this document, `deployments/k8s/local/generator-keda-scaledobject.yaml` |
 | P2.6 Capacity reservations | Complete for settings, advisory, health, metrics, fleet API, and Monitoring visibility | `capacity_planning.reservations`, capacity advisory fields, `/metrics`, `/api/v1/fleet/capacity` |
 | P2.7 Fair-share placement | Complete for reservation-aware pending promotion and project slot accounting | Project-aware pending promotion, `/api/v1/fleet/capacity` |
-| P2.8 Protocol density envelopes | Complete for code-owned benchmark-calibrated advisory envelopes | `capacity_advisory.protocol_densities` with benchmark metadata |
+| P2.8 Protocol density envelopes | Complete for code-owned advisory envelopes; values remain design/model inputs until local benchmark evidence is published | `capacity_advisory.protocol_densities` with benchmark metadata |

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -38,10 +39,29 @@ func writeTestNotesArtifact(archivePath string, testID string, notes []*storage.
 	return testNotesArchiveFileName, nil
 }
 
+func (s *Server) testNotesArchiveLock(testID string) *sync.Mutex {
+	testID = strings.TrimSpace(testID)
+	s.testNotesArchiveMu.Lock()
+	defer s.testNotesArchiveMu.Unlock()
+	if s.testNotesArchiveLocks == nil {
+		s.testNotesArchiveLocks = make(map[string]*sync.Mutex)
+	}
+	lock := s.testNotesArchiveLocks[testID]
+	if lock == nil {
+		lock = &sync.Mutex{}
+		s.testNotesArchiveLocks[testID] = lock
+	}
+	return lock
+}
+
 func (s *Server) syncTestNotesToArchive(testID string) {
 	if s == nil || s.runner == nil || s.store == nil {
 		return
 	}
+	lock := s.testNotesArchiveLock(testID)
+	lock.Lock()
+	defer lock.Unlock()
+
 	record, ok := s.runner.GetRunArchive(testID)
 	if !ok || record == nil {
 		// Running tests are not archived yet; persistTestManifestArtifact captures
@@ -64,12 +84,26 @@ func (s *Server) syncTestNotesToArchive(testID string) {
 		return
 	}
 	manifest.TestNotesFile = testNotesFile
-	if err := updateRunArchiveArtifactIntegrity(record.ArchivePath, manifest); err != nil {
+	if err := updateRunArchiveSingleArtifactIntegrity(record.ArchivePath, manifest, RunArchiveArtifact{
+		Name:       testNotesFile,
+		Kind:       "notes",
+		Format:     "json",
+		RecordType: "test_notes",
+		Count:      int64(len(notes)),
+	}); err != nil {
 		slog.Warn("failed to update archive artifact integrity for test notes sync", "test_id", testID, "err", err)
 		return
 	}
 	if err := writeIndentedJSONFile(record.ManifestPath, manifest); err != nil {
 		slog.Warn("failed to update archive manifest for test notes sync", "test_id", testID, "err", err)
+		return
+	}
+	if err := refreshRunArchiveManifestTrust(record); err != nil {
+		slog.Warn("failed to update archive manifest trust anchor for test notes sync", "test_id", testID, "err", err)
+		return
+	}
+	if err := s.runner.saveRunArchiveRecord(record); err != nil {
+		slog.Warn("failed to persist archive manifest trust anchor for test notes sync", "test_id", testID, "err", err)
 		return
 	}
 	if err := uploadArchiveObjects(context.Background(), record.ArchivePath, record.TestID, testNotesFile, runArchiveManifestFileName); err != nil {

@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { buildCreateTestPayload, buildScenarioUpsertPayload } from './scenarioPayloadUtils'
+import { buildCreateTestPayload, buildGoalConfigPayload, buildScenarioUpsertPayload } from './scenarioPayloadUtils'
 import { buildScenarioDraftFromTest } from './scenarioDraftUtils'
 
 describe('scenarioPayloadUtils', () => {
@@ -75,6 +75,9 @@ describe('scenarioPayloadUtils', () => {
         max_avg_server_processing_ms: 450,
         max_avg_transfer_ms: 120,
         max_error_count: 25,
+        max_lcp_ms: 2500,
+        max_inp_ms: 200,
+        max_cls: 0.1,
         stop_on_max_errors: true,
         sla_breach_window: '45s',
       },
@@ -121,8 +124,11 @@ describe('scenarioPayloadUtils', () => {
         target_average_tps: 300,
         max_avg_server_processing_ms: 450,
         max_avg_transfer_ms: 120,
-          max_error_count: 25,
-          stop_on_max_errors: true,
+        max_error_count: 25,
+        max_lcp_ms: 2500,
+        max_inp_ms: 200,
+        max_cls: 0.1,
+        stop_on_max_errors: true,
         sla_breach_window: '45s',
       },
       runtime_settings: {
@@ -145,6 +151,26 @@ describe('scenarioPayloadUtils', () => {
         access_mode: 'read_only',
         selection_strategy: 'sequential',
       }],
+    })
+  })
+
+  it('keeps zero-valued and Web Vitals goal thresholds', () => {
+    expect(buildGoalConfigPayload('goal_oriented', {
+      target_average_tps: 0,
+      max_error_pct: 0,
+      max_error_count: 0,
+      min_vusers: 0,
+      max_lcp_ms: 0,
+      max_inp_ms: 0,
+      max_cls: 0,
+    })).toEqual({
+      target_average_tps: 0,
+      max_error_pct: 0,
+      max_error_count: 0,
+      min_vusers: 0,
+      max_lcp_ms: 0,
+      max_inp_ms: 0,
+      max_cls: 0,
     })
   })
 
@@ -411,6 +437,48 @@ describe('scenarioPayloadUtils', () => {
       mode: 'specific_hosts',
       selected_targets: ['gen-a', 'gen-b'],
       shard_strategy: 'capacity_weighted',
+    })
+  })
+
+  it('preserves explicit empty hostname assignment so validation can reject it', () => {
+    const payload = buildScenarioUpsertPayload({
+      name: 'Incomplete Host Pinning',
+      duration: '5m',
+      startDelay: '',
+      scenarioMode: 'vuser_driven',
+      scriptShakeout: false,
+      resourceBaseline: false,
+      assignment: { mode: 'specific_hosts', selected_targets: [] },
+      groups: [
+        {
+          name: 'Pinned Group',
+          scriptId: 'script-1',
+          vusers: 25,
+          rampUp: '',
+          rampDown: '',
+          initialization: 'at_runtime',
+          assignment: { mode: 'specific_hosts', selected_targets: [] },
+        },
+      ],
+      goalConfig: {},
+      runtimeSettings: {
+        iterations: undefined,
+        pacing: undefined,
+        think_time: undefined,
+        log_level: '',
+        auto_transactions: '',
+        continue_on_error: false,
+        snapshot_on_error: false,
+      },
+    })
+
+    expect(payload.assignment).toEqual({
+      mode: 'specific_hosts',
+      selected_targets: [],
+    })
+    expect(payload.groups[0].assignment).toEqual({
+      mode: 'specific_hosts',
+      selected_targets: [],
     })
   })
 

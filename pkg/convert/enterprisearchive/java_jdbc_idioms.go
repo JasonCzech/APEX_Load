@@ -108,7 +108,7 @@ func javaSQLTransactionControlFunction(text string) (string, bool) {
 	if strings.Contains(receiver, "jms") || strings.Contains(receiver, "session") {
 		return "", false
 	}
-	if receiver != "conn" && !strings.Contains(receiver, "connection") && !strings.Contains(receiver, "jdbc") && !strings.Contains(receiver, "db") {
+	if receiver != "conn" && receiver != "con" && receiver != "c" && !strings.Contains(receiver, "connection") && !strings.Contains(receiver, "jdbc") && !strings.Contains(receiver, "db") {
 		return "", false
 	}
 	if strings.EqualFold(matches[2], "rollback") {

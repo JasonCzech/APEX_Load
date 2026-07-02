@@ -11,12 +11,12 @@ lr_deserialize,parameter,review_only
 lr_enable_redirection,runtime,native_noop
 lr_end_sub_trans,transaction,executable
 lr_eval_data,parameter,review_only
-lr_eval_int,parameter,executable
-lr_get_group_name,info,executable
+lr_eval_int,parameter,review_only
+lr_get_group_name,info,review_only
 lr_get_object,parameter,review_only
-lr_get_scenario_id,info,executable
+lr_get_scenario_id,info,review_only
 lr_get_transaction_wasted_time,transaction,executable
-lr_get_vuser_id,info,executable
+lr_get_vuser_id,info,review_only
 lr_log,message,executable
 lr_read_xml,xml,review_only
 lr_redirect,runtime,native_noop

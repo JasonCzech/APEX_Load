@@ -1,6 +1,9 @@
 package main
 
-import "sync"
+import (
+	"strconv"
+	"sync"
+)
 
 // keepAwake holds an OS sleep/idle inhibitor while load tests are running, so a
 // multi-hour run isn't silently corrupted by the machine sleeping or (on macOS)
@@ -43,11 +46,12 @@ func (k *keepAwake) set(on bool) {
 // inhibitorCommand returns the subprocess that holds a sleep/idle lock on
 // macOS/Linux. Killing the process releases the lock. Pure + unit-testable;
 // returns an empty name on platforms that use a non-subprocess mechanism.
-func inhibitorCommand(goos string) (string, []string) {
+func inhibitorCommand(goos string, parentPID int) (string, []string) {
 	switch goos {
 	case "darwin":
-		// -i prevents idle system sleep while caffeinate runs.
-		return "caffeinate", []string{"-i"}
+		// -i prevents idle system sleep while caffeinate runs; -w ties the
+		// assertion to the app process so a crash/force-quit releases it.
+		return "caffeinate", []string{"-i", "-w", strconv.Itoa(parentPID)}
 	case "linux":
 		// Hold an idle+sleep inhibitor lock for the lifetime of `sleep infinity`.
 		return "systemd-inhibit", []string{

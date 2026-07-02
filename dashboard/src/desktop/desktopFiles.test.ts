@@ -93,18 +93,28 @@ describe('pickFilesViaBridge', () => {
 })
 
 describe('filesFromDroppedPaths', () => {
-  it('only reads importable extensions (.json/.zip/.har), ignoring others', async () => {
+  it('reads supported import extensions, ignoring unrelated files', async () => {
     const read = vi.fn().mockResolvedValue(btoa('x'))
     setBridge({ ReadFileBase64: read })
     const files = await filesFromDroppedPaths([
       '/tmp/order.json',
+      '/tmp/plan.jmx',
+      '/tmp/service.wsdl',
+      '/tmp/openapi.yaml',
+      '/tmp/flow.js',
       '/etc/passwd',
       '/tmp/secrets.env',
       '/tmp/archive.ZIP',
     ])
-    // order.json + archive.ZIP (case-insensitive) are importable; the rest ignored.
-    expect(files.map(f => f.name).sort()).toEqual(['archive.ZIP', 'order.json'])
-    expect(read).toHaveBeenCalledTimes(2)
+    expect(files.map(f => f.name).sort()).toEqual([
+      'archive.ZIP',
+      'flow.js',
+      'openapi.yaml',
+      'order.json',
+      'plan.jmx',
+      'service.wsdl',
+    ])
+    expect(read).toHaveBeenCalledTimes(6)
     expect(read).not.toHaveBeenCalledWith('/etc/passwd')
   })
 })

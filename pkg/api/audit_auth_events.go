@@ -7,7 +7,9 @@ package api
 // bot from flooding the audit table while still recording the first hit per window.
 
 import (
+	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -72,7 +74,7 @@ func (s *Server) recordAuthDenial(r *http.Request, resolution authResolution, st
 		return
 	}
 	actorType, actorSubject, actorDisplayName := s.resolveAuthEventActor(r, resolution)
-	if !s.authAudit.allow(actorSubject+"|"+r.Method+"|"+r.URL.Path+"|denied", time.Now().UTC(), authDenialDedupWindow) {
+	if !s.authAudit.allow(authDenialThrottleKey(r, status, reason), time.Now().UTC(), authDenialDedupWindow) {
 		return
 	}
 	_ = s.store.SaveAuditEvent(&storage.AuditEvent{
@@ -92,6 +94,42 @@ func (s *Server) recordAuthDenial(r *http.Request, resolution authResolution, st
 		},
 		CreatedAt: time.Now().UTC(),
 	})
+}
+
+func authDenialThrottleKey(r *http.Request, status int, reason string) string {
+	remote := "unknown"
+	method := ""
+	if r != nil {
+		remote = strings.TrimSpace(r.RemoteAddr)
+		if host, _, err := net.SplitHostPort(remote); err == nil && strings.TrimSpace(host) != "" {
+			remote = strings.TrimSpace(host)
+		}
+		method = r.Method
+	}
+	return strings.Join([]string{
+		remote,
+		method,
+		strconv.Itoa(status),
+		coarseAuthDenialReason(reason),
+		"denied",
+	}, "|")
+}
+
+func coarseAuthDenialReason(reason string) string {
+	reason = strings.ToLower(strings.TrimSpace(reason))
+	if reason == "" {
+		return "unspecified"
+	}
+	if strings.Contains(reason, "role") || strings.Contains(reason, "permission") || strings.Contains(reason, "forbidden") {
+		return "forbidden"
+	}
+	if strings.Contains(reason, "subject") || strings.Contains(reason, "user") || strings.Contains(reason, "account") {
+		return "principal"
+	}
+	if strings.Contains(reason, "token") || strings.Contains(reason, "session") || strings.Contains(reason, "auth") {
+		return "authentication"
+	}
+	return "other"
 }
 
 func (s *Server) recordAuthLogin(r *http.Request, resolution authResolution) {

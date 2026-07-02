@@ -84,6 +84,9 @@ func TestBootstrapProductionPinnedSubject(t *testing.T) {
 	if _, err := applyLocalUserBindings(bootstrapUpstream("someone-else", RoleSystemAdmin), store); err == nil {
 		t.Fatalf("non-pinned subject must not bootstrap")
 	}
+	if _, err := applyLocalUserBindings(bootstrapUpstream("Ops@Example.com", RoleSystemAdmin), store); err == nil {
+		t.Fatalf("case-mismatched pinned subject must not bootstrap")
+	}
 
 	got, err := applyLocalUserBindings(bootstrapUpstream("ops@example.com", RoleViewer), store)
 	if err != nil {

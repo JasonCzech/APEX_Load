@@ -723,6 +723,7 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	filter := storage.UserFilter{Query: strings.TrimSpace(r.URL.Query().Get("q")), Limit: queryInt(r, "limit", 100), Offset: queryInt(r, "offset", 0)}
+	filter.Role = strings.ToLower(strings.TrimSpace(r.URL.Query().Get("role")))
 	if raw := strings.TrimSpace(r.URL.Query().Get("active")); raw != "" {
 		active := raw == "true" || raw == "1"
 		filter.Active = &active
@@ -780,6 +781,9 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		user.DisabledAt = &now
 	}
 	if err := s.store.SaveUser(user); err != nil {
+		if s.writeUserSubjectPersistenceError(w, subject, err) {
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -789,6 +793,48 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 
 type userOnboardingStore interface {
 	SaveUserWithRoleBindings(user *storage.User, bindings []*storage.UserRoleBinding) error
+}
+
+type guardedAuthMutationStore interface {
+	UpdateUserActiveGuardLastAdmin(id string, active bool, updatedAt time.Time) (bool, error)
+	DeleteUserGuardLastAdmin(id string) (bool, error)
+	DeleteUserRoleBindingGuardLastAdmin(id string) (bool, error)
+}
+
+func isUserSubjectConflict(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "users.subject") ||
+		(strings.Contains(msg, "subject") && strings.Contains(msg, "unique")) ||
+		(strings.Contains(msg, "subject") && strings.Contains(msg, "duplicate key"))
+}
+
+func isSQLiteBusyError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "sqlite_busy") || strings.Contains(msg, "database is locked")
+}
+
+func (s *Server) writeUserSubjectPersistenceError(w http.ResponseWriter, subject string, err error) bool {
+	if isUserSubjectConflict(err) {
+		writeError(w, http.StatusConflict, "a user with this subject already exists")
+		return true
+	}
+	if !isSQLiteBusyError(err) || s.store == nil {
+		return false
+	}
+	for i := 0; i < 5; i++ {
+		time.Sleep(time.Duration(i+1) * 10 * time.Millisecond)
+		if existing, lookupErr := s.store.GetUserBySubject(subject); lookupErr == nil && existing != nil {
+			writeError(w, http.StatusConflict, "a user with this subject already exists")
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) handleOnboardUser(w http.ResponseWriter, r *http.Request) {
@@ -856,6 +902,9 @@ func (s *Server) handleOnboardUser(w http.ResponseWriter, r *http.Request) {
 		bindings = append(bindings, binding)
 	}
 	if err := onboardingStore.SaveUserWithRoleBindings(user, bindings); err != nil {
+		if s.writeUserSubjectPersistenceError(w, subject, err) {
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -899,8 +948,20 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 	if req.Active != nil && !*req.Active && user.Active && !s.guardSystemAdminLockout(w, r, user, "disable") {
 		return
 	}
-	if strings.TrimSpace(req.Subject) != "" {
-		user.Subject = strings.TrimSpace(req.Subject)
+	if nextSubject := strings.TrimSpace(req.Subject); nextSubject != "" && nextSubject != strings.TrimSpace(user.Subject) {
+		if s.isSelfRequest(r, user) {
+			writeError(w, http.StatusConflict, "you cannot rename your own account subject")
+			return
+		}
+		if userHasActiveGlobalSystemAdmin(user) && s.wouldOrphanSystemAdmins(user) {
+			writeError(w, http.StatusConflict, "cannot rename the last active system administrator subject")
+			return
+		}
+		if existing, err := s.store.GetUserBySubject(nextSubject); err == nil && existing != nil && existing.ID != user.ID {
+			writeError(w, http.StatusConflict, "a user with this subject already exists")
+			return
+		}
+		user.Subject = nextSubject
 	}
 	user.Email = strings.TrimSpace(req.Email)
 	user.DisplayName = strings.TrimSpace(req.DisplayName)
@@ -915,6 +976,9 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err := s.store.SaveUser(user); err != nil {
+		if s.writeUserSubjectPersistenceError(w, user.Subject, err) {
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -1022,6 +1086,20 @@ func (s *Server) handleDeleteUserBinding(w http.ResponseWriter, r *http.Request)
 		!s.guardSystemAdminLockout(w, r, user, "revoke") {
 		return
 	}
+	if guardedStore, ok := s.store.(guardedAuthMutationStore); ok {
+		deleted, err := guardedStore.DeleteUserRoleBindingGuardLastAdmin(bindingID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if !deleted {
+			writeError(w, http.StatusConflict, "cannot remove the last active system administrator grant")
+			return
+		}
+		s.recordAuditEvent(r, "auth.user.binding.delete", "success", "user", user.ID, projectIDForBinding(binding), map[string]any{"subject": user.Subject, "scope_type": binding.ScopeType, "scope_id": binding.ScopeID, "role": binding.Role})
+		writeJSON(w, http.StatusOK, map[string]string{"deleted": bindingID})
+		return
+	}
 	if err := s.store.DeleteUserRoleBinding(bindingID); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -1066,6 +1144,37 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 	if !s.guardSystemAdminLockout(w, r, user, "delete") {
 		return
 	}
+	if guardedStore, ok := s.store.(guardedAuthMutationStore); ok {
+		deleted, err := guardedStore.DeleteUserGuardLastAdmin(user.ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if !deleted {
+			writeError(w, http.StatusConflict, "cannot delete the last active system administrator")
+			return
+		}
+		s.recordAuditEvent(r, "auth.user.delete", "success", "user", user.ID, "", map[string]any{"subject": user.Subject})
+		writeJSON(w, http.StatusOK, map[string]string{"deleted": user.ID})
+		return
+	}
+	if ghStore, ok := s.store.(storage.GitHubConnectionStore); ok {
+		seenKeys := map[string]struct{}{}
+		for _, key := range []string{user.Subject, user.ID} {
+			key = strings.TrimSpace(key)
+			if key == "" {
+				continue
+			}
+			if _, seen := seenKeys[key]; seen {
+				continue
+			}
+			seenKeys[key] = struct{}{}
+			if err := ghStore.DeleteGitHubConnection(key); err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+		}
+	}
 	if err := s.store.DeleteUser(user.ID); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -1095,7 +1204,17 @@ func (s *Server) setUserActive(w http.ResponseWriter, r *http.Request, active bo
 		return
 	}
 	updatedAt := time.Now().UTC()
-	if err := s.store.UpdateUserActive(user.ID, active, updatedAt); err != nil {
+	if guardedStore, ok := s.store.(guardedAuthMutationStore); ok && !active {
+		updated, err := guardedStore.UpdateUserActiveGuardLastAdmin(user.ID, active, updatedAt)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if !updated {
+			writeError(w, http.StatusConflict, "cannot disable the last active system administrator")
+			return
+		}
+	} else if err := s.store.UpdateUserActive(user.ID, active, updatedAt); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

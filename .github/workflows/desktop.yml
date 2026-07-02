@@ -11,9 +11,15 @@ on:
       - 'dashboard/**'
       - 'pkg/api/static/**'
       - 'pkg/api/server.go'
+      - 'cmd/apexload-record-agent/**'
+      - 'pkg/recordagent/**'
       - 'scripts/package-desktop.sh'
+      - 'scripts/package-recording-agent.sh'
+      - 'scripts/package_desktop_test.go'
+      - 'scripts/package_recording_agent_test.go'
       - 'scripts/build-desktop-local.sh'
       - 'scripts/resolve-version.sh'
+      - 'docs/recording-agent.md'
       - '.github/workflows/desktop.yml'
   workflow_dispatch:
 
@@ -29,14 +35,25 @@ jobs:
       matrix:
         include:
           - name: Linux
-            os: ubuntu-latest
-            artifact: apexload-desktop-linux
-          - name: macOS
+            os: ubuntu-24.04
+            platform: linux/amd64
+            artifact: apexload-desktop-linux-amd64
+          - name: Linux ARM64
+            os: ubuntu-24.04-arm
+            platform: linux/arm64
+            artifact: apexload-desktop-linux-arm64
+          - name: macOS Apple Silicon
             os: macos-latest
-            artifact: apexload-desktop-macos
+            platform: darwin/arm64
+            artifact: apexload-desktop-macos-arm64
+          - name: macOS Intel
+            os: macos-15-intel
+            platform: darwin/amd64
+            artifact: apexload-desktop-macos-amd64
           - name: Windows
             os: windows-latest
-            artifact: apexload-desktop-windows
+            platform: windows/amd64
+            artifact: apexload-desktop-windows-amd64
 
     steps:
       - name: Checkout Code
@@ -62,7 +79,7 @@ jobs:
         run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
 
       - name: Install Linux Dependencies
-        if: matrix.os == 'ubuntu-latest'
+        if: startsWith(matrix.os, 'ubuntu-')
         # Newer Ubuntu images ship webkit2gtk-4.1; fall back to 4.0 on older ones.
         run: |
           sudo apt-get update
@@ -80,7 +97,7 @@ jobs:
           echo "build_time=${BUILD_TIME}" >> "$GITHUB_OUTPUT"
 
       - name: Import macOS Developer ID certificate
-        if: matrix.os == 'macos-latest' && startsWith(github.ref, 'refs/tags/')
+        if: startsWith(matrix.platform, 'darwin/') && startsWith(github.ref, 'refs/tags/')
         shell: bash
         env:
           MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.APEXLOAD_MACOS_CERTIFICATE_P12_BASE64 }}
@@ -104,7 +121,7 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -s -k "${keychain_password}" "${keychain_path}"
 
       - name: Configure macOS notarization profile
-        if: matrix.os == 'macos-latest' && startsWith(github.ref, 'refs/tags/')
+        if: startsWith(matrix.platform, 'darwin/') && startsWith(github.ref, 'refs/tags/')
         shell: bash
         env:
           MACOS_NOTARY_PROFILE: ${{ secrets.APEXLOAD_MACOS_NOTARY_PROFILE }}
@@ -127,7 +144,7 @@ jobs:
             --password "${MACOS_NOTARY_PASSWORD}"
 
       - name: Prepare Windows Authenticode certificate
-        if: matrix.os == 'windows-latest' && startsWith(github.ref, 'refs/tags/')
+        if: startsWith(matrix.platform, 'windows/') && startsWith(github.ref, 'refs/tags/')
         shell: pwsh
         env:
           WINDOWS_CODESIGN_PFX_BASE64: ${{ secrets.APEXLOAD_WINDOWS_CODESIGN_PFX_BASE64 }}
@@ -176,7 +193,7 @@ jobs:
           set -euo pipefail
           BI=github.com/jasonczech/apexload/pkg/buildinfo
           cd desktop
-          wails build -clean -ldflags "-s -w -X ${BI}.Version=${{ steps.version.outputs.version }} -X ${BI}.Commit=${GITHUB_SHA} -X ${BI}.BuildTime=${{ steps.version.outputs.build_time }}"
+          wails build -clean -platform "${{ matrix.platform }}" -ldflags "-s -w -X ${BI}.Version=${{ steps.version.outputs.version }} -X ${BI}.Commit=${GITHUB_SHA} -X ${BI}.BuildTime=${{ steps.version.outputs.build_time }}"
 
       - name: Package Desktop App
         shell: bash
@@ -184,7 +201,8 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
           COMMIT: ${{ github.sha }}
           BUILD_TIME: ${{ steps.version.outputs.build_time }}
-          APEXLOAD_MACOS_CODESIGN_IDENTITY: ${{ secrets.APEXLOAD_MACOS_CODESIGN_IDENTITY }}
+          APEXLOAD_DESKTOP_PACKAGE_PLATFORM: ${{ matrix.platform }}
+          APEXLOAD_MACOS_CODESIGN_IDENTITY: ${{ startsWith(github.ref, 'refs/tags/') && secrets.APEXLOAD_MACOS_CODESIGN_IDENTITY || '' }}
           APEXLOAD_MACOS_NOTARIZE: ${{ startsWith(github.ref, 'refs/tags/') && '1' || vars.APEXLOAD_MACOS_NOTARIZE }}
           APEXLOAD_REQUIRE_TRUSTED_PACKAGES: ${{ startsWith(github.ref, 'refs/tags/') && '1' || vars.APEXLOAD_REQUIRE_TRUSTED_PACKAGES }}
           APEXLOAD_MACOS_NOTARY_PROFILE: ${{ secrets.APEXLOAD_MACOS_NOTARY_PROFILE }}
@@ -314,7 +332,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
           COMMIT: ${{ github.sha }}
           BUILD_TIME: ${{ steps.version.outputs.build_time }}
-          APEXLOAD_MACOS_CODESIGN_IDENTITY: ${{ secrets.APEXLOAD_MACOS_CODESIGN_IDENTITY }}
+          APEXLOAD_MACOS_CODESIGN_IDENTITY: ${{ startsWith(github.ref, 'refs/tags/') && secrets.APEXLOAD_MACOS_CODESIGN_IDENTITY || '' }}
           APEXLOAD_MACOS_NOTARIZE: ${{ startsWith(github.ref, 'refs/tags/') && '1' || vars.APEXLOAD_MACOS_NOTARIZE }}
           APEXLOAD_REQUIRE_TRUSTED_PACKAGES: ${{ startsWith(github.ref, 'refs/tags/') && '1' || vars.APEXLOAD_REQUIRE_TRUSTED_PACKAGES }}
           APEXLOAD_MACOS_NOTARY_PROFILE: ${{ secrets.APEXLOAD_MACOS_NOTARY_PROFILE }}
