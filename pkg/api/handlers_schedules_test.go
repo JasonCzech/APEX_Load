@@ -386,3 +386,62 @@ func TestHandleScenarioCRUDWritesAuditEvents(t *testing.T) {
 		t.Fatalf("audit actions = [%s %s %s], want delete/update/create", events[0].Action, events[1].Action, events[2].Action)
 	}
 }
+
+// F16: an open-ended pause (disabled_from set, disabled_until omitted) must save as
+// a paused schedule (next_run_at nil) instead of exhausting the cron search horizon
+// and returning a misleading "impossible day/month" error.
+func TestScenarioScheduleOpenEndedPauseSaves(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	server.runner.StoreScript(&dsl.Script{
+		ID: "script-pause", Name: "Pause Script", ProjectID: "project-pause", Protocol: "http",
+		Version: "1.0.0", Actions: []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+	scenario, err := server.runner.StoreScenario(CreateScenarioRequest{
+		Name: "Pause Scenario", Duration: "2m",
+		Groups: []CreateGroupEntry{{ScriptID: "script-pause", VUsers: 1}},
+	})
+	if err != nil {
+		t.Fatalf("StoreScenario returned error: %v", err)
+	}
+
+	disabledFrom := time.Now().Add(-1 * time.Hour).UTC().Format(time.RFC3339)
+	body := bytes.NewBufferString(`{"name":"Paused","cron_expr":"*/10 * * * *","disabled_from":"` + disabledFrom + `"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scenarios/"+scenario.ID+"/schedules", body)
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("open-ended pause create status = %d, want 201 body=%s", resp.Code, resp.Body.String())
+	}
+	var created storage.ScenarioSchedule
+	if err := json.Unmarshal(resp.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal create returned error: %v", err)
+	}
+	if created.NextRunAt != nil {
+		t.Fatalf("open-ended paused schedule next_run_at = %v, want nil", created.NextRunAt)
+	}
+
+	// Un-pause: clear disabled_from with every other schedule field unchanged. The
+	// next run must be recomputed (non-nil), not left at the stale paused nil — a
+	// resumed schedule stuck at nil would be skipped by the sweep forever.
+	unpauseBody := bytes.NewBufferString(`{"name":"Paused","cron_expr":"*/10 * * * *"}`)
+	unpauseReq := httptest.NewRequest(http.MethodPut, "/api/v1/scenarios/"+scenario.ID+"/schedules/"+created.ID, unpauseBody)
+	unpauseReq.Header.Set("Content-Type", "application/json")
+	unpauseResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(unpauseResp, unpauseReq)
+	if unpauseResp.Code != http.StatusOK {
+		t.Fatalf("un-pause update status = %d, want 200 body=%s", unpauseResp.Code, unpauseResp.Body.String())
+	}
+	var resumed storage.ScenarioSchedule
+	if err := json.Unmarshal(unpauseResp.Body.Bytes(), &resumed); err != nil {
+		t.Fatalf("json.Unmarshal un-pause returned error: %v", err)
+	}
+	if resumed.NextRunAt == nil {
+		t.Fatalf("resumed schedule next_run_at = nil, want a recomputed next run after clearing the pause")
+	}
+}

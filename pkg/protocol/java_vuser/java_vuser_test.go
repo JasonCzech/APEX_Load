@@ -343,3 +343,39 @@ func TestJavaVuserProcessSlotsSizedFromOperatorEnv(t *testing.T) {
 		t.Fatalf("process slot capacity = %d, want 3 (from operator env)", got)
 	}
 }
+
+// F41: with a harness jar AND a separate user classpath, `java -jar` would ignore
+// the classpath and fail to load the user Actions class. commandArgs must instead
+// launch via -cp (jar + classpath) with an explicit main class.
+func TestCommandArgsHarnessJarWithClasspathUsesClasspath(t *testing.T) {
+	j := &JavaVuser{cfg: configuration{
+		RunnerCommand: "java",
+		HarnessJar:    "/opt/apex/harness.jar",
+		Classpath:     []string{"/opt/user/classes", "/opt/user/lib.jar"},
+	}}
+	args := j.commandArgs(runCommand{ClassName: "Actions", Method: "full_lifecycle"})
+	for _, a := range args {
+		if a == "-jar" {
+			t.Fatalf("commandArgs used -jar with a user classpath set (classpath would be ignored): %v", args)
+		}
+	}
+	joined := strings.Join(args, " ")
+	wantCP := strings.Join([]string{"/opt/apex/harness.jar", "/opt/user/classes", "/opt/user/lib.jar"}, string(filepath.ListSeparator))
+	if !strings.Contains(joined, "-cp "+wantCP) {
+		t.Fatalf("args = %v, want -cp %q", args, wantCP)
+	}
+	if !strings.Contains(joined, " "+defaultHarnessMain+" ") && !strings.HasSuffix(joined, " "+defaultHarnessMain) {
+		if !strings.Contains(joined, defaultHarnessMain) {
+			t.Fatalf("args = %v, want explicit main class %q", args, defaultHarnessMain)
+		}
+	}
+}
+
+// A harness jar with no extra classpath still uses -jar (Main-Class from manifest).
+func TestCommandArgsHarnessJarOnlyUsesJar(t *testing.T) {
+	j := &JavaVuser{cfg: configuration{RunnerCommand: "java", HarnessJar: "/opt/apex/harness.jar"}}
+	args := j.commandArgs(runCommand{ClassName: "Actions", Method: "full_lifecycle"})
+	if got := strings.Join(args, " "); got != "-jar /opt/apex/harness.jar --class Actions --method full_lifecycle" {
+		t.Fatalf("args = %q, want -jar form", got)
+	}
+}

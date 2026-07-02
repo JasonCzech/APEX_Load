@@ -252,11 +252,20 @@ func (j *JavaVuser) HealthCheck(context.Context) error {
 
 func (j *JavaVuser) commandArgs(cmd runCommand) []string {
 	args := make([]string, 0, 8)
-	if strings.TrimSpace(j.cfg.HarnessJar) != "" {
-		args = append(args, "-jar", j.cfg.HarnessJar)
-	} else if len(j.cfg.Classpath) > 0 {
+	harnessJar := strings.TrimSpace(j.cfg.HarnessJar)
+	switch {
+	case harnessJar != "" && len(j.cfg.Classpath) > 0:
+		// `java -jar` ignores -cp/CLASSPATH, so a harness jar combined with a
+		// separate user classpath cannot load the user's Actions class. Launch via
+		// -cp with the jar and the user classes on one classpath and an explicit
+		// main class instead.
+		cp := append([]string{harnessJar}, j.cfg.Classpath...)
+		args = append(args, "-cp", strings.Join(cp, string(filepath.ListSeparator)), defaultHarnessMain)
+	case harnessJar != "":
+		args = append(args, "-jar", harnessJar)
+	case len(j.cfg.Classpath) > 0:
 		args = append(args, "-cp", strings.Join(j.cfg.Classpath, string(filepath.ListSeparator)), defaultHarnessMain)
-	} else if strings.EqualFold(filepath.Base(j.cfg.RunnerCommand), defaultRunnerCommand) {
+	case strings.EqualFold(filepath.Base(j.cfg.RunnerCommand), defaultRunnerCommand):
 		args = append(args, defaultHarnessMain)
 	}
 	args = append(args, "--class", cmd.ClassName, "--method", cmd.Method)

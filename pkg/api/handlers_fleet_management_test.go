@@ -638,3 +638,95 @@ func TestFleetManagementRouteAccessRequirements(t *testing.T) {
 		})
 	}
 }
+
+// RN-2: cordoning a configured-but-offline generator via PATCH must (a) succeed
+// (persist the metadata cordon, not 400 after a partial write), and (b) actually
+// take effect when the generator reconnects — the identity-record hook applies the
+// persisted metadata cordon to the live drain state.
+func TestGeneratorMetadataCordonAppliesOnReconnect(t *testing.T) {
+	server, store := newTimeslotServer(t)
+	backend := newDistributedExecutionBackend([]string{"gen-a:9090", "gen-off:9090"}, time.Second, nil)
+	backend.recordGeneratorIdentity("gen-a:9090", "gen-a")
+	server.runner.setExecutionBackend(backend)
+	// Register the reconnect hook the way NewServer does (this test builds the
+	// backend after construction, so wire it explicitly).
+	backend.setOnIdentityRecorded(func(generatorID string) {
+		server.applyMetadataCordonOnReconnect(backend, generatorID)
+	})
+
+	// gen-off is configured but its identity was never recorded (offline) ->
+	// GeneratorTargetForID("gen-off") == "".
+	rec := timeslotRequest(t, server, http.MethodPatch, "/api/v1/fleet/generators/gen-off", map[string]any{"cordoned": true})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("cordon of offline generator status = %d, want 200 body=%s", rec.Code, rec.Body.String())
+	}
+	meta, err := store.GetGeneratorMetadata("gen-off")
+	if err != nil || !meta.Cordoned {
+		t.Fatalf("metadata after cordon = %+v err=%v, want cordoned persisted", meta, err)
+	}
+	// Not enforced yet (offline).
+	if got := backend.generatorDrainState("gen-off:9090"); got != "active" {
+		t.Fatalf("drain_state before reconnect = %q, want active (not yet mapped)", got)
+	}
+
+	// gen-off reconnects: its identity is recorded, firing the hook.
+	backend.recordGeneratorIdentity("gen-off:9090", "gen-off")
+	if got := backend.generatorDrainState("gen-off:9090"); got != "cordoned" {
+		t.Fatalf("drain_state after reconnect = %q, want cordoned (metadata cordon applied)", got)
+	}
+	// And it's excluded from placement.
+	allowed, err := backend.allowedTargetsForTest(&ManagedTest{})
+	if err != nil {
+		t.Fatalf("allowedTargetsForTest: %v", err)
+	}
+	for _, tgt := range allowed {
+		if tgt == "gen-off:9090" {
+			t.Fatalf("cordoned generator still placeable: %#v", allowed)
+		}
+	}
+}
+
+// RN-2 (both directions + draining guard): the reconnect reconcile must apply a
+// metadata cordon, clear a stale operator cordon when metadata is un-cordoned, and
+// never clobber a "draining" state owned by the pod watcher.
+func TestApplyMetadataCordonOnReconnectReconcilesBothDirections(t *testing.T) {
+	server, store := newTimeslotServer(t)
+	backend := newDistributedExecutionBackend([]string{"gen-1:9090", "gen-2:9090", "gen-3:9090"}, time.Second, nil)
+	backend.recordGeneratorIdentity("gen-1:9090", "gen-1")
+	backend.recordGeneratorIdentity("gen-2:9090", "gen-2")
+	backend.recordGeneratorIdentity("gen-3:9090", "gen-3")
+	server.runner.setExecutionBackend(backend)
+
+	// gen-1: metadata un-cordoned, live state stale-cordoned -> clear to active.
+	if _, err := backend.SetGeneratorDrainStateByID("gen-1", "cordoned"); err != nil {
+		t.Fatalf("seed gen-1: %v", err)
+	}
+	if err := store.SaveGeneratorMetadata(&storage.GeneratorMetadata{GeneratorID: "gen-1", Cordoned: false}); err != nil {
+		t.Fatalf("meta gen-1: %v", err)
+	}
+	server.applyMetadataCordonOnReconnect(backend, "gen-1")
+	if got := backend.GeneratorDrainStateByID("gen-1"); got != "active" {
+		t.Fatalf("gen-1 = %q, want active (stale cordon cleared)", got)
+	}
+
+	// gen-2: metadata cordoned, live draining (pod watcher) -> must NOT be clobbered.
+	if _, err := backend.SetGeneratorDrainStateByID("gen-2", "draining"); err != nil {
+		t.Fatalf("seed gen-2: %v", err)
+	}
+	if err := store.SaveGeneratorMetadata(&storage.GeneratorMetadata{GeneratorID: "gen-2", Cordoned: true}); err != nil {
+		t.Fatalf("meta gen-2: %v", err)
+	}
+	server.applyMetadataCordonOnReconnect(backend, "gen-2")
+	if got := backend.GeneratorDrainStateByID("gen-2"); got != "draining" {
+		t.Fatalf("gen-2 = %q, want draining preserved", got)
+	}
+
+	// gen-3: metadata cordoned, live active -> apply the cordon.
+	if err := store.SaveGeneratorMetadata(&storage.GeneratorMetadata{GeneratorID: "gen-3", Cordoned: true}); err != nil {
+		t.Fatalf("meta gen-3: %v", err)
+	}
+	server.applyMetadataCordonOnReconnect(backend, "gen-3")
+	if got := backend.GeneratorDrainStateByID("gen-3"); got != "cordoned" {
+		t.Fatalf("gen-3 = %q, want cordoned applied", got)
+	}
+}

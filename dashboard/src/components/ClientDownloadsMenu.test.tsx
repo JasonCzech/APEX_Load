@@ -125,6 +125,18 @@ describe('ClientDownloadsMenu', () => {
     expect(container.textContent).toContain('Download for macOS (Intel)')
   })
 
+  it('raises the topbar above the sticky sidebar while the menu is open', async () => {
+    // @ts-expect-error node:fs is available in the Vitest runtime.
+    const { readFileSync } = await import('node:fs')
+    const css = readFileSync('src/components/ClientDownloadsMenu.css', 'utf8') as string
+
+    const rule = css.match(/\.main-topbar:has\(\.client-downloads-panel\) \{([\s\S]*?)\n\}/)?.[1] || ''
+    const panelRule = css.match(/\.client-downloads-panel \{([\s\S]*?)\n\}/)?.[1] || ''
+    expect(rule).toContain('z-index: 140;')
+    expect(panelRule).toContain('left: 0;')
+    expect(panelRule).toContain('right: auto;')
+  })
+
   it('downloads the recording agent for the detected platform', async () => {
     getVersionMock.mockResolvedValue(deploymentVersion(true))
     apiFetchMock.mockResolvedValue(okPackageResponse())

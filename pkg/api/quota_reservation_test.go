@@ -69,17 +69,41 @@ func TestReservedCapacityOwnerBeyondReservationDrawsShared(t *testing.T) {
 	}
 }
 
-func TestPoolReservationCreditsGlobalAdmissionForOwner(t *testing.T) {
+// A pool-pinned run draws from its pool's members and is governed by the pool
+// reservation gate, so the global (shared) gate must not hold it even when the
+// shared envelope is full (F12: it was previously blocked here forever).
+func TestPoolReservationAdmitsOwnersPoolPinnedRun(t *testing.T) {
 	runner := reservationRunner(t, 10, []CapacityReservation{
-		{ProjectID: "project-c", ReservedGenerators: 6},
-		{ProjectID: "project-a", PoolID: "pool-a", ReservedGenerators: 2},
+		{ProjectID: "project-b", ReservedGenerators: 6}, // shared = 10 - 6 = 4
+		{ProjectID: "project-a", PoolID: "pool-a", ReservedGenerators: 3},
 	}, map[string]*ManagedTest{
-		"b-running": activeTest("project-b", 4),
+		"c-running": activeTest("project-c", 4), // fills the shared envelope
 	})
 
-	blocked, reason := runner.evaluateReservedCapacityBlockLocked(activeTest("project-a", 2), "")
-	if blocked {
-		t.Fatalf("project-a should be admitted against its pool reservation global credit; blocked: %s", reason)
+	poolRun := activeTest("project-a", 3)
+	poolRun.Assignment = &GeneratorAssignmentSettings{Mode: "specific_hosts", PoolID: "pool-a"}
+	if blocked, reason := runner.evaluateReservedCapacityBlockLocked(poolRun, ""); blocked {
+		t.Fatalf("a pool-pinned run must not be held by the shared (non-pool) gate; blocked: %s", reason)
+	}
+}
+
+// RN-1 regression: a project's idle pool reservation must NOT credit a NON-pool run
+// against the shared envelope. Previously the pool reservation was credited to
+// projectReserved, shrinking the non-pool run's shared draw so it was admitted into
+// capacity the pool gate was separately protecting.
+func TestPoolReservationDoesNotCreditNonPoolRun(t *testing.T) {
+	runner := reservationRunner(t, 10, []CapacityReservation{
+		{ProjectID: "project-b", ReservedGenerators: 6}, // shared = 10 - 6 = 4
+		{ProjectID: "project-a", PoolID: "pool-a", ReservedGenerators: 3},
+	}, map[string]*ManagedTest{
+		"c-running": activeTest("project-c", 4), // fills the shared envelope
+	})
+
+	// project-a's non-pool run of 3 would need shared capacity; its pool-a
+	// reservation must give it no shared credit, so with shared full it is held.
+	nonPool := activeTest("project-a", 3) // no Assignment -> non-pool
+	if blocked, _ := runner.evaluateReservedCapacityBlockLocked(nonPool, ""); !blocked {
+		t.Fatalf("a non-pool run must not be credited by an idle pool reservation (double-spend)")
 	}
 }
 

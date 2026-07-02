@@ -289,6 +289,12 @@ func (b *distributedExecutionBackend) failDistributedTestOnStreamError(tr *TestR
 	b.completeDistributedTestRun(tr, test, "FAILED", finalError)
 }
 
+// remoteTargetStateEvacuated is the fixed sentinel stored for a target removed by
+// an operator evacuation or a tolerated generator loss. It is intentionally
+// independent of any free-text evacuation reason so remoteTargetStateDone always
+// recognizes the target as intentionally gone.
+const remoteTargetStateEvacuated = "evacuated"
+
 func remoteTargetStateDone(state string) bool {
 	switch strings.ToLower(strings.TrimSpace(state)) {
 	case "complete", "failed", "evacuated", "operator_evacuate", "generator_loss":
