@@ -146,7 +146,7 @@ func (tr *TestRunner) evaluatePoolReservedCapacityBlockLocked(test *ManagedTest,
 	sharedDelta := maxInt(0, projectActive+g-projectReserved) - maxInt(0, projectActive-projectReserved)
 
 	sharedUsedTotal := tr.poolSharedGeneratorUsageLocked(poolID, excludeTestID, now, activeSlots)
-	if sharedUsedTotal+sharedDelta > shared {
+	if sharedDelta > 0 && sharedUsedTotal+sharedDelta > shared {
 		return true, fmt.Sprintf("waiting for shared generator capacity on pool %q (%d of %d generators reserved for other projects)", poolID, totalReserved, envelope)
 	}
 	return false, ""

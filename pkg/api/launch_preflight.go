@@ -74,14 +74,15 @@ type LaunchPreflightResponse struct {
 }
 
 type launchCapacityEvent struct {
-	ID         string
-	Source     string
-	Title      string
-	ProjectID  string
-	StartAt    time.Time
-	EndAt      time.Time
-	Generators int
-	VUsers     int
+	ID                 string
+	Source             string
+	Title              string
+	ProjectID          string
+	StartAt            time.Time
+	EndAt              time.Time
+	Generators         int
+	VUsers             int
+	ApprovedQuotaBurst bool
 }
 
 func (tr *TestRunner) PreflightLaunch(req LaunchPreflightRequest) (*LaunchPreflightResponse, error) {
@@ -123,7 +124,7 @@ func (tr *TestRunner) PreflightLaunch(req LaunchPreflightRequest) (*LaunchPrefli
 	if conflicts := externalRunnerLaunchConflicts(preview.Groups); len(conflicts) > 0 {
 		blocking = append(blocking, conflicts...)
 	}
-	if conflicts := javaVuserRunnerLaunchConflicts(preview.Groups); len(conflicts) > 0 {
+	if conflicts := tr.javaVuserRunnerLaunchConflictsLocked(preview.Groups); len(conflicts) > 0 {
 		blocking = append(blocking, conflicts...)
 	}
 	if conflicts := importPromotionLaunchConflicts(preview.Groups); len(conflicts) > 0 {
@@ -179,13 +180,13 @@ func (tr *TestRunner) PreflightLaunch(req LaunchPreflightRequest) (*LaunchPrefli
 	}
 
 	return &LaunchPreflightResponse{
-		Intent:            strings.TrimSpace(req.Intent),
-		Decision:          decision,
-		StartNowAllowed:   startNowAllowed,
-		ScheduleAllowed:   scheduleAllowed,
-		QueueAllowed:      queueAllowed,
-		QueueReason:       currentReason,
-		CandidateWindow:   window,
+		Intent:                strings.TrimSpace(req.Intent),
+		Decision:              decision,
+		StartNowAllowed:       startNowAllowed,
+		ScheduleAllowed:       scheduleAllowed,
+		QueueAllowed:          queueAllowed,
+		QueueReason:           currentReason,
+		CandidateWindow:       window,
 		CapacityAdvisory:      cloneCapacityAdvisory(preview.CapacityAdvisory),
 		BlockingConflicts:     blocking,
 		Warnings:              warnings,
@@ -420,14 +421,15 @@ func (tr *TestRunner) launchWindowConflictsLocked(test *ManagedTest, window Laun
 	conflicts = append(conflicts, tr.launchGovernanceWindowConflictsLocked(test, window)...)
 
 	proposal := launchCapacityEvent{
-		ID:         "proposal",
-		Source:     "proposal",
-		Title:      test.Name,
-		ProjectID:  normalizeProjectID(test.ProjectID),
-		StartAt:    window.StartAt,
-		EndAt:      window.EndAt,
-		Generators: recommendedGeneratorCountForTest(test),
-		VUsers:     test.TotalVUsers,
+		ID:                 "proposal",
+		Source:             "proposal",
+		Title:              test.Name,
+		ProjectID:          normalizeProjectID(test.ProjectID),
+		StartAt:            window.StartAt,
+		EndAt:              window.EndAt,
+		Generators:         recommendedGeneratorCountForTest(test),
+		VUsers:             test.TotalVUsers,
+		ApprovedQuotaBurst: hasApprovedExecutionPlanQuotaBurst(test),
 	}
 	if proposal.Generators < 1 && proposal.VUsers > 0 {
 		proposal.Generators = 1
@@ -677,7 +679,7 @@ func (tr *TestRunner) launchCapacityConflictAtLocked(proposal launchCapacityEven
 	if maxConcurrent := tr.projectMaxConcurrentTests(proposal.ProjectID); maxConcurrent > 0 && projectTests > maxConcurrent {
 		return launchConflictAt("project_concurrency_window", "project", proposal.ProjectID, fmt.Sprintf("Window would exceed project max concurrent tests (%d).", maxConcurrent), sample, totalGenerators, availability)
 	}
-	if maxVUsers := tr.projectMaxVUsers(proposal.ProjectID); maxVUsers > 0 && projectVUsers > maxVUsers {
+	if maxVUsers := tr.projectMaxVUsers(proposal.ProjectID); maxVUsers > 0 && projectVUsers > maxVUsers && !proposal.ApprovedQuotaBurst {
 		return launchConflictAt("project_vuser_window", "project", proposal.ProjectID, fmt.Sprintf("Window would exceed project VUser capacity (%d max VUsers).", maxVUsers), sample, totalGenerators, availability)
 	}
 	if existingGenerators > 0 && totalGenerators > availability {

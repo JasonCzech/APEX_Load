@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -24,6 +25,8 @@ const (
 	defaultHarnessMain    = "Harness"
 	javaVuserProtocolName = "java_vuser"
 )
+
+var runnerWaitDelay = 2 * time.Second
 
 // processSlots bounds the number of concurrent runner processes per generator.
 // It is sized once from the operator-owned APEXLOAD_JAVA_VUSER_MAX_PROCESSES so
@@ -72,6 +75,7 @@ type runCommand struct {
 	ClassName        string         `json:"class_name"`
 	Method           string         `json:"method"`
 	SourceArchiveRef string         `json:"source_archive_ref,omitempty"`
+	StartupTimeoutMS int64          `json:"startup_timeout_ms,omitempty"`
 	Params           map[string]any `json:"params,omitempty"`
 }
 
@@ -132,18 +136,18 @@ func (j *JavaVuser) Execute(ctx context.Context, action *protocol.Action) (*prot
 	}
 	if strings.TrimSpace(action.Type) != "java_vuser_run" {
 		err := fmt.Errorf("unsupported Java Vuser action type %q", action.Type)
-		finalizeResult(result, start, action, err, "", "")
+		finalizeResult(result, start, action, err, "", "", "")
 		return result, nil
 	}
 	if !j.cfg.Enabled {
 		err := fmt.Errorf("java_vuser runner is disabled; an operator must enable it on this generator via %s=true (script config cannot enable it)", config.EnvJavaVuserRunnerEnabled)
-		finalizeResult(result, start, action, err, "", "")
+		finalizeResult(result, start, action, err, "", "", "")
 		return result, nil
 	}
 
 	release, err := acquireProcessSlot(ctx)
 	if err != nil {
-		finalizeResult(result, start, action, err, "", "")
+		finalizeResult(result, start, action, err, "", "", "")
 		return result, nil
 	}
 	defer release()
@@ -158,13 +162,22 @@ func (j *JavaVuser) Execute(ctx context.Context, action *protocol.Action) (*prot
 		ClassName:        strings.TrimSpace(action.Target),
 		Method:           actionMethod(action),
 		SourceArchiveRef: stringParam(action.Params, "source_archive_ref"),
+		StartupTimeoutMS: j.cfg.StartupTimeout.Milliseconds(),
 		Params:           action.Params,
 	}
 	payload, _ := json.Marshal(cmdPayload)
 	args := j.commandArgs(cmdPayload)
 	cmd := exec.CommandContext(runCtx, j.cfg.RunnerCommand, args...)
+	cmd.WaitDelay = runnerWaitDelay
 	if j.cfg.WorkDir != "" {
 		cmd.Dir = j.cfg.WorkDir
+	}
+	eventFile, cleanupEventFile := createRunnerEventFile()
+	if cleanupEventFile != nil {
+		defer cleanupEventFile()
+	}
+	if eventFile != "" {
+		cmd.Env = append(os.Environ(), "APEXLOAD_JAVA_VUSER_EVENT_FILE="+eventFile)
 	}
 	cmd.Stdin = bytes.NewReader(append(payload, '\n'))
 	// Cap stdout/stderr capture so a chatty or runaway runner cannot OOM the
@@ -174,16 +187,26 @@ func (j *JavaVuser) Execute(ctx context.Context, action *protocol.Action) (*prot
 	stderr := &cappedBuffer{max: defaultRunnerMaxCaptureBytes}
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
-	err = cmd.Run()
+	err = startRunnerCommand(ctx, cmd, j.cfg.StartupTimeout)
+	if err == nil {
+		err = cmd.Wait()
+	}
 	if runCtx.Err() == context.DeadlineExceeded {
 		err = fmt.Errorf("java_vuser runner timed out after %s", timeout)
 	}
-	finalizeResult(result, start, action, err, stdout.buf.String(), stderr.buf.String())
+	eventStream, eventStreamTruncated := readRunnerEventFile(eventFile)
+	finalizeResult(result, start, action, err, stdout.buf.String(), stderr.buf.String(), eventStream)
 	if stdout.truncated {
 		result.ProtocolEvidence["runner_stdout_truncated"] = true
 	}
 	if stderr.truncated {
 		result.ProtocolEvidence["runner_stderr_truncated"] = true
+	}
+	if eventFile != "" {
+		result.ProtocolEvidence["runner_event_stream_bytes"] = len(eventStream)
+	}
+	if eventStreamTruncated {
+		result.ProtocolEvidence["runner_event_stream_truncated"] = true
 	}
 	return result, nil
 }
@@ -240,10 +263,13 @@ func (j *JavaVuser) commandArgs(cmd runCommand) []string {
 	if cmd.SourceArchiveRef != "" {
 		args = append(args, "--source-archive-ref", cmd.SourceArchiveRef)
 	}
+	if cmd.StartupTimeoutMS > 0 {
+		args = append(args, "--startup-timeout-ms", strconv.FormatInt(cmd.StartupTimeoutMS, 10))
+	}
 	return args
 }
 
-func finalizeResult(result *protocol.Result, start time.Time, action *protocol.Action, err error, stdout string, stderr string) {
+func finalizeResult(result *protocol.Result, start time.Time, action *protocol.Action, err error, stdout string, stderr string, eventStream string) {
 	result.Duration = time.Since(start)
 	result.ResponseBody = stdout
 	result.BytesReceived = int64(len(stdout))
@@ -251,7 +277,14 @@ func finalizeResult(result *protocol.Result, start time.Time, action *protocol.A
 		result.Extractions = map[string]string{}
 	}
 	summary, hasSummary := parseRunnerSummary(stdout)
-	events := parseRunnerEvents(stderr)
+	eventText := eventStream
+	if strings.TrimSpace(eventText) == "" {
+		eventText = stderr
+	}
+	events := parseRunnerEvents(eventText)
+	if !hasSummary && err == nil {
+		err = fmt.Errorf("java_vuser runner produced no result summary")
+	}
 	if hasSummary {
 		if summary.DurationMS > 0 {
 			result.Extractions["java_vuser_duration_ms"] = strconv.FormatInt(summary.DurationMS, 10)
@@ -274,6 +307,13 @@ func finalizeResult(result *protocol.Result, start time.Time, action *protocol.A
 		result.Extractions["java_vuser_event_count"] = strconv.Itoa(len(events))
 		if errorEvents > 0 {
 			result.Extractions["java_vuser_error_event_count"] = strconv.Itoa(errorEvents)
+		}
+		failedTransactions := failedRunnerTransactions(events)
+		if len(failedTransactions) > 0 {
+			result.Extractions["java_vuser_failed_transaction_count"] = strconv.Itoa(len(failedTransactions))
+			if err == nil {
+				err = fmt.Errorf("java_vuser runner reported failed transaction(s): %s", strings.Join(failedTransactions, ", "))
+			}
 		}
 	}
 	if err != nil {
@@ -307,6 +347,85 @@ func finalizeResult(result *protocol.Result, start time.Time, action *protocol.A
 	if stderr != "" {
 		result.ProtocolEvidence["runner_stderr"] = stderr
 	}
+}
+
+func startRunnerCommand(ctx context.Context, cmd *exec.Cmd, startupTimeout time.Duration) error {
+	if startupTimeout <= 0 {
+		return cmd.Start()
+	}
+	startCtx, cancel := context.WithTimeout(ctx, startupTimeout)
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- cmd.Start()
+	}()
+	select {
+	case err := <-errCh:
+		return err
+	case <-startCtx.Done():
+		return fmt.Errorf("java_vuser runner failed to start within %s", startupTimeout)
+	}
+}
+
+func createRunnerEventFile() (string, func()) {
+	file, err := os.CreateTemp("", "apexload-java-vuser-events-*.jsonl")
+	if err != nil {
+		return "", nil
+	}
+	path := file.Name()
+	_ = file.Close()
+	return path, func() { _ = os.Remove(path) }
+}
+
+func readRunnerEventFile(path string) (string, bool) {
+	if strings.TrimSpace(path) == "" {
+		return "", false
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", false
+	}
+	if len(data) <= defaultRunnerMaxCaptureBytes {
+		return string(data), false
+	}
+	return string(data[:defaultRunnerMaxCaptureBytes]), true
+}
+
+func failedRunnerTransactions(events []runnerEvent) []string {
+	failed := []string{}
+	for _, event := range events {
+		if !strings.EqualFold(event.Type, "transaction_end") {
+			continue
+		}
+		status, ok := runnerTransactionStatus(event.Message)
+		if !ok || status == 0 {
+			continue
+		}
+		name := strings.TrimSpace(event.Name)
+		if name == "" {
+			name = "(unnamed)"
+		}
+		failed = append(failed, fmt.Sprintf("%s=%d", name, status))
+	}
+	return failed
+}
+
+func runnerTransactionStatus(raw string) (int, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, false
+	}
+	if strings.EqualFold(raw, "PASS") {
+		return 0, true
+	}
+	if strings.EqualFold(raw, "FAIL") {
+		return 1, true
+	}
+	status, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, false
+	}
+	return status, true
 }
 
 func parseRunnerSummary(stdout string) (runnerSummary, bool) {

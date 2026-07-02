@@ -20,9 +20,35 @@ const apexloadURLScheme = "apexload"
 // file-association / drag-open. Treated as untrusted input: only known import
 // types are forwarded to the dashboard, and they are never auto-executed.
 var openableFileExtensions = map[string]bool{
-	".json": true, // JSON DSL script / import draft
-	".zip":  true, // enterprise script archive
-	".har":  true, // recording capture
+	".json":                     true, // JSON DSL script / import draft
+	".zip":                      true, // enterprise script archive
+	".har":                      true, // recording capture
+	".jmx":                      true, // JMeter test plan
+	".xml":                      true, // JMeter/XML-backed import formats
+	".wsdl":                     true, // SOAP/WSDL import
+	".yaml":                     true, // OpenAPI/RAML/AsyncAPI
+	".yml":                      true, // OpenAPI/RAML/AsyncAPI
+	".raml":                     true, // RAML import
+	".js":                       true, // DevWeb/k6 JavaScript import
+	".devweb":                   true, // DevWeb archive/source import
+	".postman_collection.json":  true, // Postman collection
+	".postman_environment.json": true, // Postman environment
+	".asyncapi.json":            true, // AsyncAPI JSON
+	".asyncapi.yaml":            true, // AsyncAPI YAML
+	".asyncapi.yml":             true, // AsyncAPI YAML
+	".openapi.json":             true, // OpenAPI JSON
+	".openapi.yaml":             true, // OpenAPI YAML
+	".openapi.yml":              true, // OpenAPI YAML
+	".curl":                     true, // curl sample
+}
+
+// importReadableFileExtensions are additional sample/input file types that may
+// be read after the renderer receives an explicit native drop path. They are
+// intentionally not registered as OS open-with associations.
+var importReadableFileExtensions = map[string]bool{
+	".http": true, // raw HTTP sample
+	".txt":  true, // raw/curl/sample response
+	".sh":   true, // shell/curl sample
 }
 
 // Events emitted to the dashboard when the OS asks us to open a file/URL (via
@@ -40,6 +66,23 @@ func isOpenableFile(path string) bool {
 	}
 	lower := strings.ToLower(path)
 	for ext := range openableFileExtensions {
+		if strings.HasSuffix(lower, ext) {
+			return true
+		}
+	}
+	return false
+}
+
+func isImportableFile(path string) bool {
+	if isOpenableFile(path) {
+		return true
+	}
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return false
+	}
+	lower := strings.ToLower(path)
+	for ext := range importReadableFileExtensions {
 		if strings.HasSuffix(lower, ext) {
 			return true
 		}
@@ -102,6 +145,7 @@ func (a *App) handleOpenFile(path string) {
 	if a.ctx == nil || !isOpenableFile(path) {
 		return
 	}
+	a.rememberReadPath(path)
 	wailsruntime.EventsEmit(a.ctx, eventOpenFile, strings.TrimSpace(path))
 }
 

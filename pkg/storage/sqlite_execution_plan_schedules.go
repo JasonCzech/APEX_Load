@@ -155,6 +155,46 @@ func (s *SQLiteStore) SaveExecutionPlanScheduleOccurrence(occurrence *ExecutionP
 	return err
 }
 
+func (s *SQLiteStore) CreateExecutionPlanScheduleOccurrenceIfAbsent(occurrence *ExecutionPlanScheduleOccurrence) (bool, error) {
+	if occurrence == nil {
+		return false, errors.New("execution plan schedule occurrence is required")
+	}
+	if strings.TrimSpace(occurrence.ID) == "" {
+		return false, errors.New("execution plan schedule occurrence id is required")
+	}
+	if strings.TrimSpace(occurrence.ScheduleID) == "" {
+		return false, errors.New("execution plan schedule occurrence schedule_id is required")
+	}
+	if occurrence.PlannedAt.IsZero() {
+		return false, errors.New("execution plan schedule occurrence planned_at is required")
+	}
+	if strings.TrimSpace(occurrence.Status) == "" {
+		return false, errors.New("execution plan schedule occurrence status is required")
+	}
+	if occurrence.CreatedAt.IsZero() {
+		occurrence.CreatedAt = time.Now()
+	}
+	if occurrence.UpdatedAt.IsZero() {
+		occurrence.UpdatedAt = time.Now()
+	}
+	occurrence.ProjectID = normalizeProjectID(occurrence.ProjectID)
+	if occurrence.ScheduleRevision < 1 {
+		occurrence.ScheduleRevision = 1
+	}
+	result, err := s.db.Exec(`INSERT INTO execution_plan_schedule_occurrences (id, schedule_id, plan_id, project_id, schedule_revision, planned_at, materialized_at, status, reason_code, run_id, conflict_summary, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(schedule_id, planned_at) DO NOTHING`,
+		occurrence.ID, occurrence.ScheduleID, occurrence.PlanID, occurrence.ProjectID, occurrence.ScheduleRevision, occurrence.PlannedAt, occurrence.MaterializedAt, occurrence.Status, occurrence.ReasonCode, occurrence.RunID, occurrence.ConflictSummary, occurrence.CreatedAt, occurrence.UpdatedAt)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return affected > 0, nil
+}
+
 func (s *SQLiteStore) GetExecutionPlanScheduleOccurrenceByScheduleAndPlannedAt(scheduleID string, plannedAt time.Time) (*ExecutionPlanScheduleOccurrence, error) {
 	row := s.db.QueryRow(`SELECT `+executionPlanScheduleOccurrenceColumns+` WHERE schedule_id = ? AND planned_at = ?`, scheduleID, plannedAt)
 	occurrence, err := scanExecutionPlanScheduleOccurrence(row)

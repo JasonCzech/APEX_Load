@@ -37,6 +37,23 @@ func warnLoopTruncation(logger *slog.Logger, actionName string, requested, capLi
 		"cap", capLimit)
 }
 
+// conditionLoopSafetyCapWarned dedupes warnings for condition-driven loops that
+// never evaluated false before the default runtime cap.
+var conditionLoopSafetyCapWarned sync.Map
+
+func warnConditionLoopSafetyCap(logger *slog.Logger, actionName string, capLimit int) {
+	key := fmt.Sprintf("%s|%d", actionName, capLimit)
+	if _, loaded := conditionLoopSafetyCapWarned.LoadOrStore(key, struct{}{}); loaded {
+		return
+	}
+	if logger == nil {
+		logger = slog.Default()
+	}
+	logger.Warn("control_loop condition reached the runtime safety cap; set max_iterations or fix the loop condition",
+		"action", actionName,
+		"cap", capLimit)
+}
+
 // strayControlFlowWarned dedupes the "break/continue outside a loop" warning to
 // once per process per (action, phase) so a high VUser/iteration count cannot
 // flood the logs (mirrors loopTruncationWarned).

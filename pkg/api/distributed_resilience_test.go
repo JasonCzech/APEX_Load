@@ -163,3 +163,28 @@ func TestDistributedEvacuateGeneratorRefusesBrowserGroups(t *testing.T) {
 		t.Fatalf("browser survivor adjusted = %d, want 0", got)
 	}
 }
+
+func TestFailDistributedTestOnStreamErrorIgnoresEvacuatedTarget(t *testing.T) {
+	backend := newDistributedExecutionBackend([]string{"gen-a:9090", "gen-b:9090"}, time.Second, nil)
+	test := &ManagedTest{
+		ID:                 "run-evacuated-stream",
+		Status:             "RUNNING",
+		remoteTargetStates: map[string]string{"gen-a:9090": "operator_evacuate", "gen-b:9090": "RUNNING"},
+		remoteClientsByTarget: map[string]generatorClient{
+			"gen-b:9090": newEvacuationFakeGeneratorClient("gen-b:9090"),
+		},
+	}
+	runner := &TestRunner{tests: map[string]*ManagedTest{test.ID: test}}
+
+	backend.failDistributedTestOnStreamError(runner, test, "gen-a:9090", errors.New("stream closed after evacuation"))
+
+	if test.Status != "RUNNING" {
+		t.Fatalf("status = %q, want RUNNING after evacuated target stream closes", test.Status)
+	}
+	if test.remoteFinalizing {
+		t.Fatal("evacuated target stream close must not mark the test finalizing")
+	}
+	if test.remoteTargetStates["gen-a:9090"] != "operator_evacuate" {
+		t.Fatalf("evacuated state overwritten: %#v", test.remoteTargetStates)
+	}
+}

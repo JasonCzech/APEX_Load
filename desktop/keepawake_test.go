@@ -40,12 +40,12 @@ func TestInhibitorCommand(t *testing.T) {
 		{"plan9", ""},
 	}
 	for _, tc := range cases {
-		name, args := inhibitorCommand(tc.goos)
+		name, args := inhibitorCommand(tc.goos, 4321)
 		if name != tc.wantName {
 			t.Errorf("inhibitorCommand(%q) name = %q, want %q", tc.goos, name, tc.wantName)
 		}
-		if tc.goos == "darwin" && (len(args) == 0 || args[0] != "-i") {
-			t.Errorf("darwin caffeinate args = %v, want [-i ...]", args)
+		if tc.goos == "darwin" && (len(args) != 3 || args[0] != "-i" || args[1] != "-w" || args[2] != "4321") {
+			t.Errorf("darwin caffeinate args = %v, want [-i -w 4321]", args)
 		}
 		if tc.goos == "linux" && (len(args) == 0 || args[len(args)-1] != "infinity") {
 			t.Errorf("linux systemd-inhibit args = %v, want to end with 'infinity'", args)

@@ -21,14 +21,28 @@ func TestLibraryExportImportScenarioIncludesScriptDependency(t *testing.T) {
 	source := NewServer(ServerConfig{})
 	target := NewServer(ServerConfig{})
 
-	script := source.runner.StoreScript(libraryTestScript("script-checkout", "Checkout API", "project-a", "/checkout"))
+	scriptDef := libraryTestScript("script-checkout", "Checkout API", "project-a", "/checkout")
+	scriptDef.Protocol = "browser"
+	scriptDef.Actions[0].Type = "browser_navigate"
+	script := source.runner.StoreScript(scriptDef)
+	iter := 7
 	scenario, err := source.runner.StoreScenario(CreateScenarioRequest{
 		Name:     "Checkout Smoke",
 		Duration: "1m",
 		Groups: []CreateGroupEntry{{
-			Name:     "checkout",
-			ScriptID: script.ID,
-			VUsers:   3,
+			Name:       "checkout",
+			ScriptID:   script.ID,
+			Role:       GroupRoleObserver,
+			VUsers:     3,
+			Iterations: &iter,
+			RuntimeSettings: &RuntimeSettingsOverride{
+				LogLevel: "extended",
+			},
+			Assignment: &GeneratorAssignmentSettings{
+				Mode:            generatorAssignmentModeSpecificHosts,
+				SelectedTargets: []string{"gen-jvm:9090"},
+				RequiredLabels:  map[string]string{"jvm": "17"},
+			},
 		}},
 	})
 	if err != nil {
@@ -67,6 +81,23 @@ func TestLibraryExportImportScenarioIncludesScriptDependency(t *testing.T) {
 	}
 	if len(target.runner.ListScenariosFiltered("project-local")) != 1 {
 		t.Fatalf("target scenarios = %d, want 1", len(target.runner.ListScenariosFiltered("project-local")))
+	}
+	importedScenario := target.runner.ListScenariosFiltered("project-local")[0]
+	if len(importedScenario.Scripts) != 1 {
+		t.Fatalf("imported scenario scripts = %d, want 1", len(importedScenario.Scripts))
+	}
+	importedGroup := importedScenario.Scripts[0]
+	if importedGroup.Role != GroupRoleObserver {
+		t.Fatalf("imported role = %q, want observer", importedGroup.Role)
+	}
+	if importedGroup.RuntimeSettings == nil || importedGroup.RuntimeSettings.LogLevel != "extended" {
+		t.Fatalf("imported runtime settings = %+v, want log_level extended", importedGroup.RuntimeSettings)
+	}
+	if importedGroup.Iterations == nil || *importedGroup.Iterations != iter {
+		t.Fatalf("imported iterations = %v, want %d", importedGroup.Iterations, iter)
+	}
+	if importedGroup.Assignment == nil || importedGroup.Assignment.Mode != generatorAssignmentModeSpecificHosts || len(importedGroup.Assignment.SelectedTargets) != 1 || importedGroup.Assignment.SelectedTargets[0] != "gen-jvm:9090" {
+		t.Fatalf("imported assignment = %+v, want specific host assignment", importedGroup.Assignment)
 	}
 }
 

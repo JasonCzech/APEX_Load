@@ -110,6 +110,7 @@ func scrubSensitiveResult(result *protocol.Result, config *RedactionConfig) {
 
 	result.ResponseBody = scrubSensitiveTextWithConfig(result.ResponseBody, config)
 	result.NetworkEntries = scrubSensitiveNetworkEntries(result.NetworkEntries, config)
+	result.ProtocolEvidence = scrubSensitiveEvidenceMap(result.ProtocolEvidence, config)
 	if result.Snapshot == nil {
 		return
 	}
@@ -131,6 +132,38 @@ func scrubSensitiveNetworkEntries(entries []protocol.NetworkEntry, config *Redac
 		entries[i].ResponseHeaders = scrubSensitiveHeaders(entries[i].ResponseHeaders, config)
 	}
 	return entries
+}
+
+func scrubSensitiveEvidenceMap(input map[string]any, config *RedactionConfig) map[string]any {
+	if len(input) == 0 {
+		return input
+	}
+	for key, value := range input {
+		input[key] = scrubSensitiveEvidenceValue(value, config)
+	}
+	return input
+}
+
+func scrubSensitiveEvidenceValue(value any, config *RedactionConfig) any {
+	switch typed := value.(type) {
+	case string:
+		return scrubSensitiveTextWithConfig(typed, config)
+	case []any:
+		for i := range typed {
+			typed[i] = scrubSensitiveEvidenceValue(typed[i], config)
+		}
+		return typed
+	case map[string]any:
+		return scrubSensitiveEvidenceMap(typed, config)
+	case map[string]string:
+		out := make(map[string]string, len(typed))
+		for key, value := range typed {
+			out[key] = scrubSensitiveTextWithConfig(value, config)
+		}
+		return out
+	default:
+		return value
+	}
 }
 
 func scrubSensitiveHeaders(headers map[string]string, config *RedactionConfig) map[string]string {

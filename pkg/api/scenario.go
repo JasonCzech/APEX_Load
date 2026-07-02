@@ -88,8 +88,8 @@ func (tr *TestRunner) storeScenarioLocked(id string, req CreateScenarioRequest) 
 		ScriptShakeout:   req.ScriptShakeout,
 		ResourceBaseline: req.ResourceBaseline,
 		Assignment:       generatorAssignmentForStorage(req.Assignment),
-		GoalConfig:       req.GoalConfig,
-		RuntimeSettings:  req.RuntimeSettings,
+		GoalConfig:       goalConfigForStorage(req.GoalConfig),
+		RuntimeSettings:  runtimeSettingsForStorage(req.RuntimeSettings),
 		CreatedAt:        createdAt,
 		UpdatedAt:        now,
 	}

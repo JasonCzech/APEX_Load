@@ -70,9 +70,16 @@ type Store interface {
 	GetCapacityReservation(id string) (*CapacityReservation, error)
 	ListCapacityReservations(projectID string, limit int, offset int) ([]*CapacityReservation, error)
 	ListCapacityReservationsByTimeRange(projectID string, startAt, endAt time.Time) ([]*CapacityReservation, error)
+	// UpdateCapacityReservationDetails updates editor-owned reservation fields
+	// without rewriting approval/binding state from a stale read. When resetApproval
+	// is true, approval and binding are deliberately cleared for changed terms.
+	UpdateCapacityReservationDetails(reservation *CapacityReservation, resetApproval bool) error
 	// UpdateCapacityReservationBinding atomically binds a reservation to a test
 	// only if it is not already bound; the bool reports whether the bind happened.
 	UpdateCapacityReservationBinding(id string, testID *string, testStatus *string, updatedAt time.Time) (bool, error)
+	// ClearCapacityReservationBinding releases a reservation only if it is still
+	// bound to the supplied test id.
+	ClearCapacityReservationBinding(id string, testID string, updatedAt time.Time) (bool, error)
 	// UpdateCapacityReservationApprovalState atomically flips approval_state only
 	// when the row is currently in one of fromStates, closing the read-modify-write
 	// TOCTOU in the approve/reject handler. Returns false if no row matched.
@@ -124,6 +131,7 @@ type Store interface {
 	ListExecutionPlanSchedules(planID string) ([]*ExecutionPlanSchedule, error)
 	ListAllExecutionPlanSchedules() ([]*ExecutionPlanSchedule, error)
 	DeleteExecutionPlanSchedule(id string) error
+	CreateExecutionPlanScheduleOccurrenceIfAbsent(occurrence *ExecutionPlanScheduleOccurrence) (bool, error)
 	SaveExecutionPlanScheduleOccurrence(occurrence *ExecutionPlanScheduleOccurrence) error
 	GetExecutionPlanScheduleOccurrenceByScheduleAndPlannedAt(scheduleID string, plannedAt time.Time) (*ExecutionPlanScheduleOccurrence, error)
 	ListExecutionPlanScheduleOccurrences(scheduleID string) ([]*ExecutionPlanScheduleOccurrence, error)
@@ -233,6 +241,7 @@ type Store interface {
 	UpdateServiceAccountActive(id string, active bool, updatedAt time.Time) error
 	DeleteServiceAccount(id string) error
 	SaveUser(user *User) error
+	UpdateUserIdentitySeen(id string, displayName string, email string, lastSeenAt time.Time, updatedAt time.Time) error
 	GetUser(id string) (*User, error)
 	GetUserBySubject(subject string) (*User, error)
 	ListUsers(filter UserFilter) ([]*User, error)
@@ -268,6 +277,7 @@ type Store interface {
 type UserFilter struct {
 	Query  string
 	Active *bool
+	Role   string
 	Limit  int
 	Offset int
 }
@@ -888,6 +898,7 @@ type RunArchiveRecord struct {
 	ArchiveBackend       string    `json:"archive_backend,omitempty"`
 	ArchivePath          string    `json:"archive_path"`
 	ManifestPath         string    `json:"manifest_path"`
+	ManifestSHA256       string    `json:"manifest_sha256,omitempty"`
 	ArchiveURI           string    `json:"archive_uri,omitempty"`
 	ManifestURI          string    `json:"manifest_uri,omitempty"`
 	TransactionCount     int64     `json:"transaction_count"`

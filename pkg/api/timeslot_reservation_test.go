@@ -23,6 +23,10 @@ func (f failingReservationStore) UpdateCapacityReservationBinding(string, *strin
 	return false, f.err
 }
 
+func (f failingReservationStore) ClearCapacityReservationBinding(string, string, time.Time) (bool, error) {
+	return false, f.err
+}
+
 func (f failingReservationStore) ListCapacityReservationsByTimeRange(string, time.Time, time.Time) ([]*storage.CapacityReservation, error) {
 	return nil, f.err
 }

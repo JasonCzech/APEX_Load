@@ -32,6 +32,7 @@ const (
 	integrityArtifactMatch        = "match"
 	integrityArtifactMismatch     = "mismatch"
 	integrityArtifactMissing      = "missing"
+	integrityArtifactInvalid      = "invalid"
 	integrityArtifactUnverifiable = "unverifiable"
 )
 
@@ -89,6 +90,7 @@ func verifyRunArchiveIntegrity(record *storage.RunArchiveRecord, manifest *RunAr
 	}
 
 	report.Total = len(manifest.Artifacts)
+	verifyRunArchiveManifestTrust(record, report)
 	for _, artifact := range manifest.Artifacts {
 		entry := RunArchiveIntegrityArtifact{
 			Name:           artifact.Name,
@@ -105,9 +107,9 @@ func verifyRunArchiveIntegrity(record *storage.RunArchiveRecord, manifest *RunAr
 
 		path, err := archiveArtifactPath(root, artifact.Name)
 		if err != nil {
-			entry.Status = integrityArtifactMissing
-			entry.Detail = "artifact path is invalid: " + err.Error()
-			report.Missing++
+			entry.Status = integrityArtifactInvalid
+			entry.Detail = "manifest artifact path is invalid: " + err.Error()
+			report.Mismatched++
 			report.Artifacts = append(report.Artifacts, entry)
 			continue
 		}
@@ -148,6 +150,36 @@ func verifyRunArchiveIntegrity(record *storage.RunArchiveRecord, manifest *RunAr
 	return report
 }
 
+func verifyRunArchiveManifestTrust(record *storage.RunArchiveRecord, report *RunArchiveIntegrityReport) {
+	if record == nil || report == nil || strings.TrimSpace(record.ManifestSHA256) == "" {
+		return
+	}
+	report.Total++
+	entry := RunArchiveIntegrityArtifact{
+		Name:           runArchiveManifestFileName,
+		ExpectedSHA256: strings.TrimSpace(record.ManifestSHA256),
+	}
+	sum, err := sha256File(record.ManifestPath)
+	if err != nil {
+		entry.Status = integrityArtifactMissing
+		entry.Detail = "manifest file is unreadable for root-of-trust verification: " + err.Error()
+		report.Missing++
+		report.Artifacts = append(report.Artifacts, entry)
+		return
+	}
+	entry.ActualSHA256 = sum
+	if strings.EqualFold(sum, entry.ExpectedSHA256) {
+		entry.Status = integrityArtifactMatch
+		entry.Detail = "manifest matches the archive metadata trust anchor"
+		report.Matched++
+	} else {
+		entry.Status = integrityArtifactMismatch
+		entry.Detail = "manifest SHA-256 does not match the archive metadata trust anchor"
+		report.Mismatched++
+	}
+	report.Artifacts = append(report.Artifacts, entry)
+}
+
 // finalizeRunArchiveIntegrityStatus rolls the per-artifact counts into the overall
 // verdict. Tampering (a content mismatch) outranks corruption (a missing artifact)
 // because a hash mismatch is the stronger tamper signal; a clean run with at least
@@ -186,7 +218,7 @@ func runArchiveIntegritySummary(report *RunArchiveIntegrityReport) string {
 		return fmt.Sprintf("%d of %d artifacts verified against their recorded SHA-256; %d had no recorded hash and could not be checked.",
 			report.Matched, report.Total, report.Unverifiable)
 	case integrityStatusTampered:
-		return fmt.Sprintf("%d of %d artifacts failed integrity verification: content no longer matches the recorded SHA-256 (tampered).",
+		return fmt.Sprintf("%d of %d artifacts failed integrity verification: content or manifest references no longer match the recorded archive metadata (tampered).",
 			report.Mismatched, report.Total)
 	case integrityStatusCorrupt:
 		return fmt.Sprintf("%d of %d recorded artifacts are missing or unreadable (corrupt archive).",

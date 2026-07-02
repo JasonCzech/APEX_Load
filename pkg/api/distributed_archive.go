@@ -46,6 +46,7 @@ func (b *distributedExecutionBackend) stageRemoteArchive(tr *TestRunner, test *M
 	if err := os.WriteFile(filepath.Join(archiveDir, "manifest.json"), manifestContent, 0o644); err != nil {
 		return nil, err
 	}
+	manifestSHA256 := sha256BytesHex(manifestContent)
 	if err := uploadArchiveDirectory(context.Background(), archiveDir, manifest.TestID); err != nil {
 		return nil, err
 	}
@@ -56,6 +57,7 @@ func (b *distributedExecutionBackend) stageRemoteArchive(tr *TestRunner, test *M
 		ArchiveBackend:       archiveBackend.Backend,
 		ArchivePath:          archiveDir,
 		ManifestPath:         filepath.Join(archiveDir, "manifest.json"),
+		ManifestSHA256:       manifestSHA256,
 		ArchiveURI:           archiveBackend.runURI(manifest.TestID),
 		ManifestURI:          archiveBackend.manifestURI(manifest.TestID),
 		TransactionCount:     manifest.TransactionCount,

@@ -28,6 +28,13 @@ func TestDecodeStoredRuntimeSettings(t *testing.T) {
 	if got := decodeStoredRuntimeSettings(nil); got != nil {
 		t.Fatalf("nil runtime settings = %#v, want nil", got)
 	}
+	var nilSettings *RuntimeSettingsOverride
+	if boxed := runtimeSettingsForStorage(nilSettings); boxed != nil {
+		t.Fatalf("runtimeSettingsForStorage(nil typed pointer) = %#v, want nil interface", boxed)
+	}
+	if got := decodeStoredRuntimeSettings(nilSettings); got != nil {
+		t.Fatalf("typed-nil runtime settings = %#v, want nil", got)
+	}
 	if got := decodeStoredRuntimeSettings(map[string]any{"iterations": "not-a-number"}); got != nil {
 		t.Fatalf("invalid runtime settings = %#v, want nil", got)
 	}
@@ -67,6 +74,13 @@ func TestDecodeStoredRuntimeSettings(t *testing.T) {
 func TestDecodeStoredGoalConfig(t *testing.T) {
 	if got := decodeStoredGoalConfig(nil); got != nil {
 		t.Fatalf("nil goal config = %#v, want nil", got)
+	}
+	var nilGoal *GoalConfig
+	if boxed := goalConfigForStorage(nilGoal); boxed != nil {
+		t.Fatalf("goalConfigForStorage(nil typed pointer) = %#v, want nil interface", boxed)
+	}
+	if got := decodeStoredGoalConfig(nilGoal); got != nil {
+		t.Fatalf("typed-nil goal config = %#v, want nil", got)
 	}
 	if got := decodeStoredGoalConfig(map[string]any{"target_average_tps": []string{"bad"}}); got != nil {
 		t.Fatalf("invalid goal config = %#v, want nil", got)

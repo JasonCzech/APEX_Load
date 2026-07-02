@@ -2,7 +2,9 @@ package api
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -84,6 +86,203 @@ func TestTestNoteMutationSyncsArchiveArtifact(t *testing.T) {
 	}
 	if artifact.TestID != testID || len(artifact.Notes) != 1 || artifact.Notes[0].Body != "# Synced\n\npost-run note" {
 		t.Fatalf("synced artifact = %#v", artifact)
+	}
+	waitForTestCondition(t, func() bool {
+		record, err := store.GetRunArchive(testID)
+		return err == nil && record != nil && record.ManifestSHA256 != ""
+	})
+}
+
+func TestTestNoteMutationDoesNotReblessTamperedArchiveArtifacts(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	testID := "tamper-notes-run"
+	archiveDir := t.TempDir()
+	manifestPath := filepath.Join(archiveDir, "manifest.json")
+	originalTransactions := []byte(`{"name":"original"}` + "\n")
+	if err := os.WriteFile(filepath.Join(archiveDir, "transactions.jsonl"), originalTransactions, 0o644); err != nil {
+		t.Fatalf("write transactions: %v", err)
+	}
+	if err := store.SaveTest(&storage.TestRecord{
+		ID:        testID,
+		Name:      "Tamper Notes Run",
+		Status:    "COMPLETE",
+		StartTime: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("SaveTest returned error: %v", err)
+	}
+	record := &storage.RunArchiveRecord{
+		TestID:       testID,
+		ArchivePath:  archiveDir,
+		ManifestPath: manifestPath,
+		CreatedAt:    time.Now().UTC(),
+		CompletedAt:  time.Now().UTC(),
+	}
+	originalSum := sha256.Sum256(originalTransactions)
+	if err := writeIndentedJSONFile(manifestPath, RunArchiveManifest{
+		SchemaVersion:         archiveSchemaVersion,
+		TestID:                testID,
+		TestName:              "Tamper Notes Run",
+		CreatedAt:             time.Now().UTC(),
+		TransactionsFile:      "transactions.jsonl",
+		ResourceSamplesFile:   "resource_samples.jsonl",
+		IntervalSummariesFile: "interval_summaries.jsonl",
+		Artifacts: []RunArchiveArtifact{{
+			Name:       "transactions.jsonl",
+			Kind:       "dataset",
+			Format:     "jsonl",
+			RecordType: "transactions",
+			SizeBytes:  int64(len(originalTransactions)),
+			SHA256:     fmt.Sprintf("%x", originalSum[:]),
+		}},
+	}); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	if err := store.SaveRunArchive(record); err != nil {
+		t.Fatalf("SaveRunArchive returned error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(archiveDir, "transactions.jsonl"), []byte(`{"name":"tampered"}`+"\n"), 0o644); err != nil {
+		t.Fatalf("tamper transactions: %v", err)
+	}
+
+	server := NewServer(ServerConfig{Store: store})
+	body, _ := json.Marshal(testNoteRequest{Body: "tamper should remain visible"})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tests/"+testID+"/notes", bytes.NewReader(body))
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("POST status = %d, want 201 (body=%s)", resp.Code, resp.Body.String())
+	}
+
+	var manifest *RunArchiveManifest
+	waitForTestCondition(t, func() bool {
+		loaded, err := loadRunArchiveManifest(manifestPath)
+		if err != nil {
+			return false
+		}
+		manifest = loaded
+		if loaded.TestNotesFile != testNotesArchiveFileName {
+			return false
+		}
+		for _, artifact := range loaded.Artifacts {
+			if artifact.Name == testNotesArchiveFileName && artifact.SHA256 != "" {
+				return true
+			}
+		}
+		return false
+	})
+
+	var txArtifact *RunArchiveArtifact
+	for i := range manifest.Artifacts {
+		if manifest.Artifacts[i].Name == "transactions.jsonl" {
+			txArtifact = &manifest.Artifacts[i]
+			break
+		}
+	}
+	if txArtifact == nil {
+		t.Fatalf("transactions artifact disappeared from manifest: %#v", manifest.Artifacts)
+	}
+	if txArtifact.SHA256 != fmt.Sprintf("%x", originalSum[:]) {
+		t.Fatalf("transactions hash was re-blessed to %s, want original %x", txArtifact.SHA256, originalSum)
+	}
+	persistedRecord, err := store.GetRunArchive(testID)
+	if err != nil {
+		t.Fatalf("GetRunArchive returned error: %v", err)
+	}
+	if persistedRecord.ManifestSHA256 == "" {
+		t.Fatal("note sync did not persist a manifest trust anchor")
+	}
+	report := verifyRunArchiveIntegrity(persistedRecord, manifest)
+	if report.Status != integrityStatusTampered || report.Mismatched != 1 {
+		t.Fatalf("integrity report after note sync = %#v, want tampered mismatch", report)
+	}
+}
+
+func TestRunArchiveIntegrityDetectsManifestReblessing(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	testID := "manifest-rebless-run"
+	archiveDir := t.TempDir()
+	manifestPath := filepath.Join(archiveDir, runArchiveManifestFileName)
+	transactionsPath := filepath.Join(archiveDir, "transactions.jsonl")
+	if err := store.SaveTest(&storage.TestRecord{
+		ID:        testID,
+		Name:      "Manifest Rebless Run",
+		Status:    "COMPLETE",
+		StartTime: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("SaveTest returned error: %v", err)
+	}
+	originalTransactions := []byte(`{"name":"original"}` + "\n")
+	if err := os.WriteFile(transactionsPath, originalTransactions, 0o644); err != nil {
+		t.Fatalf("write transactions: %v", err)
+	}
+	originalSum := sha256.Sum256(originalTransactions)
+	manifest := RunArchiveManifest{
+		SchemaVersion:         archiveSchemaVersion,
+		TestID:                testID,
+		TestName:              "Manifest Rebless Run",
+		CreatedAt:             time.Now().UTC(),
+		TransactionsFile:      "transactions.jsonl",
+		ResourceSamplesFile:   "resource_samples.jsonl",
+		IntervalSummariesFile: "interval_summaries.jsonl",
+		Artifacts: []RunArchiveArtifact{{
+			Name:       "transactions.jsonl",
+			Kind:       "dataset",
+			Format:     "jsonl",
+			RecordType: "transactions",
+			SizeBytes:  int64(len(originalTransactions)),
+			SHA256:     fmt.Sprintf("%x", originalSum[:]),
+		}},
+	}
+	if err := writeIndentedJSONFile(manifestPath, manifest); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	manifestHash, err := sha256File(manifestPath)
+	if err != nil {
+		t.Fatalf("hash manifest: %v", err)
+	}
+	record := &storage.RunArchiveRecord{
+		TestID:         testID,
+		ArchivePath:    archiveDir,
+		ManifestPath:   manifestPath,
+		ManifestSHA256: manifestHash,
+		CreatedAt:      time.Now().UTC(),
+		CompletedAt:    time.Now().UTC(),
+	}
+	if err := store.SaveRunArchive(record); err != nil {
+		t.Fatalf("SaveRunArchive returned error: %v", err)
+	}
+
+	tamperedTransactions := []byte(`{"name":"tampered"}` + "\n")
+	if err := os.WriteFile(transactionsPath, tamperedTransactions, 0o644); err != nil {
+		t.Fatalf("tamper transactions: %v", err)
+	}
+	tamperedSum := sha256.Sum256(tamperedTransactions)
+	manifest.Artifacts[0].SHA256 = fmt.Sprintf("%x", tamperedSum[:])
+	manifest.Artifacts[0].SizeBytes = int64(len(tamperedTransactions))
+	if err := writeIndentedJSONFile(manifestPath, manifest); err != nil {
+		t.Fatalf("write tampered manifest: %v", err)
+	}
+
+	loaded, err := loadRunArchiveManifest(manifestPath)
+	if err != nil {
+		t.Fatalf("load tampered manifest: %v", err)
+	}
+	report := verifyRunArchiveIntegrity(record, loaded)
+	if report.Status != integrityStatusTampered || report.Mismatched != 1 {
+		t.Fatalf("integrity report = %#v, want manifest tampering", report)
+	}
+	if len(report.Artifacts) == 0 || report.Artifacts[0].Name != runArchiveManifestFileName || report.Artifacts[0].Status != integrityArtifactMismatch {
+		t.Fatalf("first artifact report = %#v, want manifest mismatch", report.Artifacts)
 	}
 }
 

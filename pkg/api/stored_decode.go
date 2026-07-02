@@ -32,6 +32,9 @@ func decodeStoredRuntimeSettings(value any) *RuntimeSettingsOverride {
 	if value == nil {
 		return nil
 	}
+	if rs, ok := value.(*RuntimeSettingsOverride); ok && rs == nil {
+		return nil
+	}
 	data, err := json.Marshal(value)
 	if err != nil {
 		return nil
@@ -43,8 +46,18 @@ func decodeStoredRuntimeSettings(value any) *RuntimeSettingsOverride {
 	return cloneRuntimeSettings(&overrides)
 }
 
+func goalConfigForStorage(config *GoalConfig) any {
+	if config == nil {
+		return nil
+	}
+	return cloneGoalConfig(config)
+}
+
 func decodeStoredGoalConfig(value any) *GoalConfig {
 	if value == nil {
+		return nil
+	}
+	if config, ok := value.(*GoalConfig); ok && config == nil {
 		return nil
 	}
 	data, err := json.Marshal(value)

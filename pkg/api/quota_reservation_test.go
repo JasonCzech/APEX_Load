@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"testing"
 	"time"
 )
@@ -68,6 +69,20 @@ func TestReservedCapacityOwnerBeyondReservationDrawsShared(t *testing.T) {
 	}
 }
 
+func TestPoolReservationCreditsGlobalAdmissionForOwner(t *testing.T) {
+	runner := reservationRunner(t, 10, []CapacityReservation{
+		{ProjectID: "project-c", ReservedGenerators: 6},
+		{ProjectID: "project-a", PoolID: "pool-a", ReservedGenerators: 2},
+	}, map[string]*ManagedTest{
+		"b-running": activeTest("project-b", 4),
+	})
+
+	blocked, reason := runner.evaluateReservedCapacityBlockLocked(activeTest("project-a", 2), "")
+	if blocked {
+		t.Fatalf("project-a should be admitted against its pool reservation global credit; blocked: %s", reason)
+	}
+}
+
 func TestReservedCapacityNoReservationsNeverBlocks(t *testing.T) {
 	runner := reservationRunner(t, 10, nil, map[string]*ManagedTest{
 		"b-running": activeTest("project-b", 50),
@@ -88,5 +103,42 @@ func TestSharedGeneratorUsageExcludesOwnReservationAndTest(t *testing.T) {
 	// Excluding b-running drops its 3 shared.
 	if got := runner.sharedGeneratorUsageLocked("b-running", time.Now(), nil); got != 1 {
 		t.Fatalf("shared usage excluding b = %d, want 1", got)
+	}
+}
+
+type countingInventoryBackend struct {
+	calls int
+}
+
+func (b *countingInventoryBackend) Run(*TestRunner, *ManagedTest) {}
+
+func (b *countingInventoryBackend) SystemInventory(context.Context) []GeneratorInventoryEntry {
+	b.calls++
+	return []GeneratorInventoryEntry{{
+		Target:            "live-should-not-be-called:9090",
+		Status:            "connected",
+		DrainState:        "active",
+		AvailableCapacity: 100,
+	}}
+}
+
+func TestReservedCapacityUsesCachedLiveInventoryForAdmission(t *testing.T) {
+	runner := reservationRunner(t, 0, []CapacityReservation{{ProjectID: "project-a", ReservedGenerators: 1}}, nil)
+	runner.settings.CapacityPlanning.Availability.Source = capacityAvailabilityConfiguredPlusLive
+	backend := &countingInventoryBackend{}
+	runner.setExecutionBackend(backend)
+	runner.setCachedGeneratorInventory([]GeneratorInventoryEntry{{
+		Target:            "gen-a:9090",
+		Status:            "connected",
+		DrainState:        "active",
+		AvailableCapacity: 100,
+	}}, time.Now())
+
+	blocked, reason := runner.evaluateReservedCapacityBlockLocked(activeTest("project-a", 1), "")
+	if blocked {
+		t.Fatalf("owner should be admitted using cached live inventory; blocked: %s", reason)
+	}
+	if backend.calls != 0 {
+		t.Fatalf("SystemInventory called %d time(s); admission must use cached snapshot", backend.calls)
 	}
 }

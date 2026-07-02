@@ -353,6 +353,9 @@ func (vu *VUser) Run(ctx context.Context) {
 							break
 						}
 					} else if pass >= maxPasses {
+						if loop.MaxIterations <= 0 {
+							warnConditionLoopSafetyCap(logger, action.Name, maxPasses)
+						}
 						break
 					} else if !(loop.DoWhile && pass == 0) && !vu.evalCondition(loop.Condition) {
 						// do_while runs the body once before the predicate is first
@@ -638,7 +641,12 @@ func (vu *VUser) runLifecycleActions(ctx context.Context, actions []dsl.Action, 
 					if pass >= loop.Count || pass >= maxPasses {
 						break
 					}
-				} else if pass >= maxPasses || !vu.evalCondition(loop.Condition) {
+				} else if pass >= maxPasses {
+					if loop.MaxIterations <= 0 {
+						warnConditionLoopSafetyCap(logger, action.Name, maxPasses)
+					}
+					break
+				} else if !(loop.DoWhile && pass == 0) && !vu.evalCondition(loop.Condition) {
 					break
 				}
 				switch runActions(loop.Steps, depth+1) {

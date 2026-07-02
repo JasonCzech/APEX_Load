@@ -155,6 +155,25 @@ func TestBuildLiveMetricsFromDistributedBatchUsesUncappedAggregateCounts(t *test
 	}
 }
 
+func TestAggregateDistributedMetricsBatchesSumsDroppedSubscriberBatches(t *testing.T) {
+	combined, _, _ := aggregateDistributedMetricsBatches("t", map[string]generatorrpc.MetricsBatch{
+		"gen-a": {
+			TestID:    "t",
+			Telemetry: &generatorrpc.MetricsTelemetry{DroppedSubscriberBatches: 3},
+		},
+		"gen-b": {
+			TestID:    "t",
+			Telemetry: &generatorrpc.MetricsTelemetry{DroppedSubscriberBatches: 5},
+		},
+	})
+	if combined.Telemetry == nil {
+		t.Fatal("combined telemetry is nil")
+	}
+	if combined.Telemetry.DroppedSubscriberBatches != 8 {
+		t.Fatalf("dropped subscriber batches = %d, want sum 8", combined.Telemetry.DroppedSubscriberBatches)
+	}
+}
+
 func TestBuildLiveMetricsFromDistributedBatchCarriesNetworkAndBrowserAggregates(t *testing.T) {
 	test := &ManagedTest{Groups: []TestGroup{{Name: "A", VUsers: 1}}}
 	batch := generatorrpc.MetricsBatch{

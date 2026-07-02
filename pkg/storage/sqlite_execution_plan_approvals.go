@@ -12,7 +12,7 @@ import (
 
 const executionPlanApprovalColumns = `id, plan_id, COALESCE(project_id, ''), policy, status, COALESCE(requested_by, ''),
 	requested_at, COALESCE(resolved_by, ''), resolved_at, COALESCE(decision_reason, ''), COALESCE(required_role, ''),
-	COALESCE(run_id, ''), created_at, updated_at FROM execution_plan_approvals`
+	COALESCE(plan_content_hash, ''), COALESCE(run_id, ''), created_at, updated_at FROM execution_plan_approvals`
 
 func (s *SQLiteStore) SaveExecutionPlanApproval(approval *ExecutionPlanApproval) error {
 	if approval == nil {
@@ -40,13 +40,13 @@ func (s *SQLiteStore) SaveExecutionPlanApproval(approval *ExecutionPlanApproval)
 		approval.UpdatedAt = time.Now()
 	}
 	approval.ProjectID = normalizeProjectID(approval.ProjectID)
-	_, err := s.db.Exec(`INSERT INTO execution_plan_approvals (id, plan_id, project_id, policy, status, requested_by, requested_at, resolved_by, resolved_at, decision_reason, required_role, run_id, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	_, err := s.db.Exec(`INSERT INTO execution_plan_approvals (id, plan_id, project_id, policy, status, requested_by, requested_at, resolved_by, resolved_at, decision_reason, required_role, plan_content_hash, run_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET plan_id=excluded.plan_id, project_id=excluded.project_id, policy=excluded.policy, status=excluded.status,
 		requested_by=excluded.requested_by, requested_at=excluded.requested_at, resolved_by=excluded.resolved_by,
 		resolved_at=excluded.resolved_at, decision_reason=excluded.decision_reason, required_role=excluded.required_role,
-		run_id=excluded.run_id, updated_at=excluded.updated_at`,
-		approval.ID, approval.PlanID, approval.ProjectID, approval.Policy, approval.Status, approval.RequestedBy, approval.RequestedAt, approval.ResolvedBy, approval.ResolvedAt, approval.DecisionReason, approval.RequiredRole, approval.RunID, approval.CreatedAt, approval.UpdatedAt)
+		plan_content_hash=excluded.plan_content_hash, run_id=excluded.run_id, updated_at=excluded.updated_at`,
+		approval.ID, approval.PlanID, approval.ProjectID, approval.Policy, approval.Status, approval.RequestedBy, approval.RequestedAt, approval.ResolvedBy, approval.ResolvedAt, approval.DecisionReason, approval.RequiredRole, approval.PlanContentHash, approval.RunID, approval.CreatedAt, approval.UpdatedAt)
 	return err
 }
 
@@ -116,7 +116,7 @@ func scanExecutionPlanApproval(row scanner) (*ExecutionPlanApproval, error) {
 	err := row.Scan(
 		&approval.ID, &approval.PlanID, &approval.ProjectID, &approval.Policy, &approval.Status, &approval.RequestedBy,
 		&approval.RequestedAt, &approval.ResolvedBy, &approval.ResolvedAt, &approval.DecisionReason, &approval.RequiredRole,
-		&approval.RunID, &approval.CreatedAt, &approval.UpdatedAt,
+		&approval.PlanContentHash, &approval.RunID, &approval.CreatedAt, &approval.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err

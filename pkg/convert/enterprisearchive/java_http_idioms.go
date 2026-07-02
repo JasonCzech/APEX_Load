@@ -28,7 +28,7 @@ var (
 	javaURLOpenVarRe          = regexp.MustCompile(`(?is)^\s*(?:(?:final\s+)?[A-Za-z_$][A-Za-z0-9_$.<>\[\]]*\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?:\([^)]*HttpURLConnection[^)]*\)\s*)?([A-Za-z_][A-Za-z0-9_]*)\.openConnection\s*\(`)
 	javaURLOpenInlineRe       = regexp.MustCompile(`(?is)^\s*(?:(?:final\s+)?[A-Za-z_$][A-Za-z0-9_$.<>\[\]]*\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?:\([^)]*HttpURLConnection[^)]*\)\s*)?new\s+(?:java\.net\.)?URL\s*\(\s*("(?:(?:\\.)|[^"\\])*")\s*\)\.openConnection\s*\(`)
 	javaURLSetMethodRe        = regexp.MustCompile(`(?is)^\s*([A-Za-z_][A-Za-z0-9_]*)\.setRequestMethod\s*\(\s*("(?:(?:\\.)|[^"\\])*")`)
-	javaURLSetHeaderRe        = regexp.MustCompile(`(?is)^\s*([A-Za-z_][A-Za-z0-9_]*)\.(?:set|add)RequestProperty\s*\(\s*("(?:(?:\\.)|[^"\\])*")\s*,\s*("(?:(?:\\.)|[^"\\])*")`)
+	javaURLSetHeaderRe        = regexp.MustCompile(`(?is)^\s*([A-Za-z_][A-Za-z0-9_]*)\.(set|add)RequestProperty\s*\(\s*("(?:(?:\\.)|[^"\\])*")\s*,\s*("(?:(?:\\.)|[^"\\])*")`)
 	javaURLOutputStreamRe     = regexp.MustCompile(`(?is)^\s*(?:(?:final\s+)?[A-Za-z_$][A-Za-z0-9_$.<>\[\]]*\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([A-Za-z_][A-Za-z0-9_]*)\.getOutputStream\s*\(`)
 	javaURLStreamWriteRe      = regexp.MustCompile(`(?is)^\s*([A-Za-z_][A-Za-z0-9_]*)\.write\s*\(\s*("(?:(?:\\.)|[^"\\])*")`)
 	javaURLDirectWriteRe      = regexp.MustCompile(`(?is)^\s*([A-Za-z_][A-Za-z0-9_]*)\.getOutputStream\s*\(\s*\)\.write\s*\(\s*("(?:(?:\\.)|[^"\\])*")`)
@@ -158,7 +158,7 @@ func (state *javaApacheHTTPState) mapStatement(statement javaStatement, phase st
 			key, _ := parseJavaStringLiteral(matches[2])
 			value, _ := parseJavaStringLiteral(matches[3])
 			if key != "" {
-				javaAddParsedHeader(&fn, key, value)
+				javaSetParsedHeader(&fn, key, value)
 				state.requests[matches[1]] = fn
 			}
 		}
@@ -230,12 +230,16 @@ func (state *javaURLConnectionHTTPState) mapStatement(statement javaStatement, p
 		}
 		return ParsedFunction{}, false
 	}
-	if matches := javaURLSetHeaderRe.FindStringSubmatch(text); len(matches) == 4 {
+	if matches := javaURLSetHeaderRe.FindStringSubmatch(text); len(matches) == 5 {
 		if fn, ok := state.requests[matches[1]]; ok {
-			key, _ := parseJavaStringLiteral(matches[2])
-			value, _ := parseJavaStringLiteral(matches[3])
+			key, _ := parseJavaStringLiteral(matches[3])
+			value, _ := parseJavaStringLiteral(matches[4])
 			if key != "" {
-				javaAddParsedHeader(&fn, key, value)
+				if strings.EqualFold(matches[2], "set") {
+					javaSetParsedHeader(&fn, key, value)
+				} else {
+					javaAddParsedHeader(&fn, key, value)
+				}
 				state.requests[matches[1]] = fn
 			}
 		}
@@ -294,6 +298,26 @@ func javaAddParsedHeader(fn *ParsedFunction, key string, value string) {
 	}
 	fn.Headers[key] = value
 	fn.HeaderList = append(fn.HeaderList, dsl.HeaderEntry{Name: key, Value: value})
+}
+
+func javaSetParsedHeader(fn *ParsedFunction, key string, value string) {
+	if fn == nil || strings.TrimSpace(key) == "" {
+		return
+	}
+	if fn.Headers == nil {
+		fn.Headers = map[string]string{}
+	}
+	fn.Headers[key] = value
+	replaced := false
+	for i := range fn.HeaderList {
+		if strings.EqualFold(fn.HeaderList[i].Name, key) {
+			fn.HeaderList[i] = dsl.HeaderEntry{Name: key, Value: value}
+			replaced = true
+		}
+	}
+	if !replaced {
+		fn.HeaderList = append(fn.HeaderList, dsl.HeaderEntry{Name: key, Value: value})
+	}
 }
 
 func javaHTTPBuilderStatementLooksOwned(text string) bool {

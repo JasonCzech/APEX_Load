@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/config"
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -74,18 +75,13 @@ func externalRunnerLaunchConflict(groups []TestGroup) *LaunchConflict {
 	return &conflicts[0]
 }
 
-func javaVuserRunnerLaunchConflicts(groups []TestGroup) []LaunchConflict {
-	// Enablement is operator-owned: the gate reflects whether an operator has
-	// enabled the Java Vuser runner on this controller/generator fleet via
-	// APEXLOAD_JAVA_VUSER_RUNNER_ENABLED. A script's config.java_vuser.enabled
-	// flag is inert and intentionally NOT consulted here — otherwise any script
-	// author could clear this blocking gate and drive local process execution.
-	if config.JavaVuserRunnerEnabled() {
-		return nil
-	}
+func (tr *TestRunner) javaVuserRunnerLaunchConflictsLocked(groups []TestGroup) []LaunchConflict {
 	for _, group := range groups {
 		if !groupRequiresJavaVuserRunner(group) {
 			continue
+		}
+		if tr.javaVuserRunnerAvailableLocked() {
+			return nil
 		}
 		return []LaunchConflict{{
 			Code:       "java_vuser_runner_required",
@@ -96,6 +92,103 @@ func javaVuserRunnerLaunchConflicts(groups []TestGroup) []LaunchConflict {
 		}}
 	}
 	return nil
+}
+
+func (tr *TestRunner) javaVuserRunnerAvailableLocked() bool {
+	if tr != nil {
+		if backend, ok := tr.execution.(*distributedExecutionBackend); ok {
+			return tr.distributedJavaVuserRunnerAvailableLocked(backend)
+		}
+	}
+	return config.JavaVuserRunnerEnabled()
+}
+
+func (tr *TestRunner) distributedJavaVuserRunnerAvailableLocked(backend *distributedExecutionBackend) bool {
+	if backend == nil {
+		return false
+	}
+	specs := tr.enrichGeneratorTargetSpecsWithLabels(backend.configuredTargetSpecs())
+	for _, spec := range specs {
+		if backend.generatorDrainState(spec.Address) != "active" {
+			continue
+		}
+		if generatorSpecHasJavaVuserRunner(spec) {
+			return true
+		}
+	}
+	for _, entry := range tr.cachedGeneratorInventory() {
+		if !generatorInventoryEntryReachable(entry) || entry.DrainState != "active" {
+			continue
+		}
+		if generatorInventoryHasJavaVuserRunner(entry) {
+			return true
+		}
+	}
+	return false
+}
+
+func (tr *TestRunner) cachedGeneratorInventory() []GeneratorInventoryEntry {
+	if tr == nil {
+		return nil
+	}
+	tr.liveInventoryMu.RLock()
+	entries := cloneGeneratorInventoryEntries(tr.liveInventory)
+	capturedAt := tr.liveInventoryAt
+	tr.liveInventoryMu.RUnlock()
+	if len(entries) == 0 || capturedAt.IsZero() {
+		return nil
+	}
+	if time.Since(capturedAt) > defaultGeneratorSnapshotTTL {
+		return nil
+	}
+	return entries
+}
+
+func generatorSpecHasJavaVuserRunner(spec generatorTargetSpec) bool {
+	if hasJavaVuserRunnerLabels(spec.Labels) {
+		return true
+	}
+	for _, protocolName := range spec.Protocols {
+		if strings.EqualFold(strings.TrimSpace(protocolName), "java_vuser") {
+			return true
+		}
+	}
+	return false
+}
+
+func generatorInventoryHasJavaVuserRunner(entry GeneratorInventoryEntry) bool {
+	if hasJavaVuserRunnerLabels(entry.Labels) {
+		return true
+	}
+	return stringSliceContainsEqualFold(entry.SupportedProtocols, "java_vuser") ||
+		stringSliceContainsEqualFold(entry.CompatibleFeatures, "java_vuser")
+}
+
+func hasJavaVuserRunnerLabels(labels map[string]string) bool {
+	if len(labels) == 0 {
+		return false
+	}
+	runtime := strings.ToLower(strings.TrimSpace(labels["runtime"]))
+	image := strings.ToLower(strings.TrimSpace(labels["image"]))
+	return runtime == "java_vuser" || image == "generator-java"
+}
+
+func generatorInventoryEntryReachable(entry GeneratorInventoryEntry) bool {
+	switch strings.ToLower(strings.TrimSpace(entry.Status)) {
+	case "connected", "healthy", "ready":
+		return true
+	default:
+		return false
+	}
+}
+
+func stringSliceContainsEqualFold(values []string, want string) bool {
+	for _, value := range values {
+		if strings.EqualFold(strings.TrimSpace(value), want) {
+			return true
+		}
+	}
+	return false
 }
 
 func groupRequiresJavaVuserRunner(group TestGroup) bool {
@@ -129,7 +222,7 @@ func javaVuserActionsRequireRunner(actions []dsl.Action) bool {
 }
 
 func javaVuserRunnerLaunchConflict(groups []TestGroup) *LaunchConflict {
-	conflicts := javaVuserRunnerLaunchConflicts(groups)
+	conflicts := (&TestRunner{}).javaVuserRunnerLaunchConflictsLocked(groups)
 	if len(conflicts) == 0 {
 		return nil
 	}

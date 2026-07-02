@@ -528,6 +528,7 @@ export function buildGroupsForRunPayload(scenario: StoredScenario | undefined, o
     return {
       name: effective.name || effective.script_name || `Group ${effective.order + 1}`,
       script_id: effective.script_id,
+      ...(effective.role ? { role: effective.role } : {}),
       vusers: effective.vusers,
       ramp_up: effective.ramp_up || undefined,
       ramp_down: effective.ramp_down || undefined,

@@ -4,6 +4,7 @@ package jms
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -158,4 +159,103 @@ func TestServiceBusDoesNotImplementTopicAdapter(t *testing.T) {
 	if _, ok := a.(topicAdapter); ok {
 		t.Fatal("Service Bus must NOT implement topicAdapter")
 	}
+}
+
+func TestServiceBusAwaitCorrelatedReplySettlesBatchRemainder(t *testing.T) {
+	foreignCorrelation := "corr-other"
+	matchCorrelation := "corr-match"
+	seq := int64(3)
+	receiver := &fakeServiceBusReplyReceiver{batches: [][]*azservicebus.ReceivedMessage{
+		{
+			{MessageID: "foreign-before", CorrelationID: &foreignCorrelation, Body: []byte("other-before")},
+			{MessageID: "match", CorrelationID: &matchCorrelation, Body: []byte("ok")},
+			{SequenceNumber: &seq, CorrelationID: &foreignCorrelation, Body: []byte("other-after")},
+		},
+	}}
+
+	reply, err := serviceBusAwaitCorrelatedReply(context.Background(), receiver, "orders.reply", message{CorrelationID: matchCorrelation}, time.Second)
+	if err != nil {
+		t.Fatalf("serviceBusAwaitCorrelatedReply returned error: %v", err)
+	}
+	if string(reply.Body) != "ok" {
+		t.Fatalf("reply body = %q, want ok", reply.Body)
+	}
+	if got := receiver.completeCount("match"); got != 1 {
+		t.Fatalf("completed match count = %d, want 1", got)
+	}
+	if got := receiver.abandonCount("foreign-before"); got != 1 {
+		t.Fatalf("abandoned foreign-before count = %d, want 1", got)
+	}
+	if got := receiver.abandonCount("sequence:3"); got != 1 {
+		t.Fatalf("abandoned sequence fallback count = %d, want 1", got)
+	}
+}
+
+func TestServiceBusAwaitCorrelatedReplyDoesNotRepeatedlyAbandonForeignReply(t *testing.T) {
+	foreignCorrelation := "corr-other"
+	receiver := &fakeServiceBusReplyReceiver{batches: [][]*azservicebus.ReceivedMessage{
+		{{MessageID: "foreign", CorrelationID: &foreignCorrelation, Body: []byte("other")}},
+		{{MessageID: "foreign", CorrelationID: &foreignCorrelation, Body: []byte("other")}},
+	}}
+
+	_, err := serviceBusAwaitCorrelatedReply(context.Background(), receiver, "orders.reply", message{CorrelationID: "corr-mine"}, 20*time.Millisecond)
+	if err == nil {
+		t.Fatal("serviceBusAwaitCorrelatedReply returned nil error without a correlated reply")
+	}
+	if got := receiver.abandonCount("foreign"); got != serviceBusForeignReplyAbandonLimit {
+		t.Fatalf("abandoned foreign count = %d, want budget %d", got, serviceBusForeignReplyAbandonLimit)
+	}
+}
+
+type fakeServiceBusReplyReceiver struct {
+	batches   [][]*azservicebus.ReceivedMessage
+	completed map[string]int
+	abandoned map[string]int
+}
+
+func (r *fakeServiceBusReplyReceiver) ReceiveMessages(ctx context.Context, _ int, _ *azservicebus.ReceiveMessagesOptions) ([]*azservicebus.ReceivedMessage, error) {
+	if len(r.batches) == 0 {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	batch := r.batches[0]
+	r.batches = r.batches[1:]
+	return batch, nil
+}
+
+func (r *fakeServiceBusReplyReceiver) CompleteMessage(_ context.Context, msg *azservicebus.ReceivedMessage, _ *azservicebus.CompleteMessageOptions) error {
+	if msg == nil {
+		return errors.New("message is required")
+	}
+	if r.completed == nil {
+		r.completed = make(map[string]int)
+	}
+	r.completed[msg.MessageID]++
+	return nil
+}
+
+func (r *fakeServiceBusReplyReceiver) AbandonMessage(_ context.Context, msg *azservicebus.ReceivedMessage, _ *azservicebus.AbandonMessageOptions) error {
+	if msg == nil {
+		return errors.New("message is required")
+	}
+	if r.abandoned == nil {
+		r.abandoned = make(map[string]int)
+	}
+	r.abandoned[serviceBusTestReplyMessageKey(msg)]++
+	return nil
+}
+
+func (r *fakeServiceBusReplyReceiver) completeCount(key string) int {
+	return r.completed[key]
+}
+
+func (r *fakeServiceBusReplyReceiver) abandonCount(key string) int {
+	return r.abandoned[key]
+}
+
+func serviceBusTestReplyMessageKey(msg *azservicebus.ReceivedMessage) string {
+	if msg.MessageID != "" {
+		return msg.MessageID
+	}
+	return serviceBusReplyMessageKey(msg)
 }

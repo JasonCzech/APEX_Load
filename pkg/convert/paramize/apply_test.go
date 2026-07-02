@@ -107,6 +107,45 @@ func TestApplySecretSuggestion(t *testing.T) {
 	}
 }
 
+func TestApplyHeaderSuggestionUpdatesHeaderList(t *testing.T) {
+	script := httpScript(dsl.Action{
+		Name:    "login",
+		Type:    "http_request",
+		Method:  "POST",
+		Target:  "/login",
+		Headers: map[string]string{"Authorization": "Bearer recorded-token"},
+		HeaderList: dsl.HeaderList{
+			{Name: "Accept", Value: "application/json"},
+			{Name: "Authorization", Value: "Bearer recorded-token"},
+		},
+	})
+	suggestion := Suggestion{
+		ID:   "s-header",
+		Kind: KindSecret,
+		Locations: []Location{{
+			Section:     "actions",
+			ActionIndex: 0,
+			Field:       "headers.Authorization",
+			SearchText:  "Bearer recorded-token",
+			ReplaceText: "Bearer {{env.AUTHORIZATION}}",
+		}},
+	}
+	applied, diffs, err := ApplySuggestions(script, []Suggestion{suggestion}, map[string]bool{"s-header": true})
+	if err != nil {
+		t.Fatalf("apply failed: %v", err)
+	}
+	action := applied.Actions[0]
+	if action.Headers["Authorization"] != "Bearer {{env.AUTHORIZATION}}" {
+		t.Fatalf("headers map authorization = %q, want template", action.Headers["Authorization"])
+	}
+	if action.HeaderList[1].Value != "Bearer {{env.AUTHORIZATION}}" {
+		t.Fatalf("header_list authorization = %q, want template", action.HeaderList[1].Value)
+	}
+	if len(diffs) != 1 || diffs[0].Before != "Bearer recorded-token" || diffs[0].After != "Bearer {{env.AUTHORIZATION}}" {
+		t.Fatalf("diffs = %+v, want one header replacement diff", diffs)
+	}
+}
+
 func TestApplyCorrelationSuggestion(t *testing.T) {
 	script := httpScript(
 		dsl.Action{Name: "login", Type: "http_request", Method: "POST", Target: "/login"},

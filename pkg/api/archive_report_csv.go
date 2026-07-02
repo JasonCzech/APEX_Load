@@ -141,6 +141,12 @@ func writeRunArchiveReportCSVWithProfile(report *RunArchiveReport, writer io.Wri
 		}
 	}
 
+	if hasCSVSection(sections, "artifact_integrity") && report.Integrity != nil {
+		if err := writeArchiveIntegrityCSVRows(write, report.Integrity); err != nil {
+			return err
+		}
+	}
+
 	if hasCSVSection(sections, "actions") {
 		actionNames := sortedArchiveReportStatKeys(report.ByAction)
 		for _, action := range actionNames {
@@ -262,6 +268,49 @@ func stringSet(values []string) map[string]struct{} {
 	addAlias("completeness", "completeness")
 	addAlias("change_attribution", "change_attribution")
 	return set
+}
+
+func writeArchiveIntegrityCSVRows(write func(string, string, string, string) error, integrity *RunArchiveIntegrityReport) error {
+	rows := []struct {
+		metric string
+		value  string
+	}{
+		{"status", integrity.Status},
+		{"verified", strconv.FormatBool(integrity.Verified)},
+		{"summary", integrity.Summary},
+		{"total", strconv.Itoa(integrity.Total)},
+		{"matched", strconv.Itoa(integrity.Matched)},
+		{"mismatched", strconv.Itoa(integrity.Mismatched)},
+		{"missing", strconv.Itoa(integrity.Missing)},
+		{"unverifiable", strconv.Itoa(integrity.Unverifiable)},
+	}
+	for _, row := range rows {
+		if err := write("artifact_integrity", "", row.metric, row.value); err != nil {
+			return err
+		}
+	}
+	for _, artifact := range integrity.Artifacts {
+		key := artifact.Name
+		if err := write("artifact_integrity_artifact", key, "status", artifact.Status); err != nil {
+			return err
+		}
+		if artifact.ExpectedSHA256 != "" {
+			if err := write("artifact_integrity_artifact", key, "expected_sha256", artifact.ExpectedSHA256); err != nil {
+				return err
+			}
+		}
+		if artifact.ActualSHA256 != "" {
+			if err := write("artifact_integrity_artifact", key, "actual_sha256", artifact.ActualSHA256); err != nil {
+				return err
+			}
+		}
+		if artifact.Detail != "" {
+			if err := write("artifact_integrity_artifact", key, "detail", artifact.Detail); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func hasCSVSection(sections map[string]struct{}, section string) bool {

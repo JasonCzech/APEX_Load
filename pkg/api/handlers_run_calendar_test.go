@@ -379,6 +379,32 @@ func TestBuildRunCalendarCapacityOverlay(t *testing.T) {
 	}
 }
 
+func TestBuildRunCalendarCapacityMarksZeroCapacityReservationsOver(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	day := time.Date(2026, 8, 10, 0, 0, 0, 0, time.UTC)
+	resStart := day.Add(9 * time.Hour)
+	resEnd := day.Add(17 * time.Hour)
+	server.runner.mu.Lock()
+	server.runner.settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators = 0
+	server.runner.settings.CapacityPlanning.Reservations = []CapacityReservation{
+		{ProjectID: "proj-a", ReservedGenerators: 8, StartsAt: &resStart, EndsAt: &resEnd},
+	}
+	server.runner.mu.Unlock()
+	capacity := server.runner.buildRunCalendarCapacity(day, day.Add(24*time.Hour), "proj-a", "UTC")
+	if capacity == nil || len(capacity.Days) != 1 {
+		t.Fatalf("capacity days = %+v, want one day", capacity)
+	}
+	got := capacity.Days[0]
+	if got.PeakReservedGenerators != 8 || got.Pressure != "over" || got.PressurePct <= 0 {
+		t.Fatalf("capacity day = %+v, want over pressure for 8 reserved / 0 capacity", got)
+	}
+}
+
 func TestHandleRunCalendarClampsRetentionAndFutureRange(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {

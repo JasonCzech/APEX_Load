@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { parseAppViewFromHash, viewToLocationHash } from './appRouting'
+import { handleGuardedRouteChange, parseAppViewFromHash, viewToLocationHash, type AppView } from './appRouting'
 
 describe('appRouting', () => {
   it('defaults empty and invalid hashes to the dashboard', () => {
@@ -70,5 +70,49 @@ describe('appRouting', () => {
       sessionId: 'brec/1',
     })
     expect(parseAppViewFromHash('#/recorder-panel')).toEqual({ page: 'recorder-panel' })
+  })
+
+  it('applies browser route changes immediately when no dirty guard is registered', () => {
+    const applied: AppView[] = []
+    let guarded = false
+
+    handleGuardedRouteChange({
+      currentView: { page: 'scripts', mode: 'edit', scriptId: 'script-1' },
+      locationHash: '#/results',
+      hasDirtyGuard: () => false,
+      runGuarded: () => {
+        guarded = true
+      },
+      restoreHash: () => {
+        throw new Error('hash should not be restored')
+      },
+      applyView: (view) => applied.push(view),
+    })
+
+    expect(guarded).toBe(false)
+    expect(applied).toEqual([{ page: 'results' }])
+  })
+
+  it('restores the current hash and waits for guard confirmation before applying browser route changes', () => {
+    const applied: AppView[] = []
+    const restored: string[] = []
+    let proceed: (() => void) | undefined
+
+    handleGuardedRouteChange({
+      currentView: { page: 'scripts', mode: 'edit', scriptId: 'script-1' },
+      locationHash: '#/results',
+      hasDirtyGuard: () => true,
+      runGuarded: (next) => {
+        proceed = next
+      },
+      restoreHash: (hash) => restored.push(hash),
+      applyView: (view) => applied.push(view),
+    })
+
+    expect(restored).toEqual(['#/scripts?mode=edit&scriptId=script-1'])
+    expect(applied).toEqual([])
+
+    proceed?.()
+    expect(applied).toEqual([{ page: 'results' }])
   })
 })

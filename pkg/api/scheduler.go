@@ -217,7 +217,7 @@ func nextCronRun(cronExpr, timezone string, from time.Time, allows func(candidat
 	// Resolve 3-letter month/day-of-week aliases (and dow 7=Sunday) to numbers up
 	// front so the rest of the matcher stays purely numeric.
 	fields[3] = applyCronAliases(fields[3], cronMonthAliases)
-	fields[4] = applyCronAliases(fields[4], cronDowAliases)
+	fields[4] = applyCronDowAliases(fields[4])
 	location := scheduleEvalLocation(timezone)
 	// Search far enough ahead to find a Feb-29 occurrence, whose gap between valid
 	// dates is up to ~4 years (a leap-day schedule like "0 0 29 2 *"). A 1-year
@@ -286,6 +286,21 @@ func applyCronAliases(field string, aliases map[string]int) string {
 	})
 }
 
+func applyCronDowAliases(field string) string {
+	return cronAlphaToken.ReplaceAllStringFunc(field, func(token string) string {
+		lower := strings.ToLower(token)
+		if n, ok := cronDowAliases[lower]; ok {
+			return strconv.Itoa(n)
+		}
+		if strings.HasSuffix(lower, "l") {
+			if n, ok := cronDowAliases[strings.TrimSuffix(lower, "l")]; ok {
+				return strconv.Itoa(n) + "L"
+			}
+		}
+		return token
+	})
+}
+
 // expandCronMacro rewrites a named macro (@daily, @weekly, …) into its 5-field
 // equivalent. Non-macro expressions pass through unchanged; the raw form is what
 // is persisted, so a schedule keeps showing the macro the operator entered.
@@ -320,7 +335,7 @@ func validateCronExpr(expr string) error {
 		return fmt.Errorf("cron expression must have 5 space-separated fields (minute hour day-of-month month day-of-week), got %d", len(fields))
 	}
 	fields[3] = applyCronAliases(fields[3], cronMonthAliases)
-	fields[4] = applyCronAliases(fields[4], cronDowAliases)
+	fields[4] = applyCronDowAliases(fields[4])
 	for i, field := range fields {
 		min, max := cronFieldBounds[i][0], cronFieldBounds[i][1]
 		for _, part := range strings.Split(field, ",") {
@@ -442,6 +457,9 @@ func validateDomSpecialToken(base, part, fieldName string) (bool, error) {
 // d#k nth weekday). Weekday accepts 0..7 (0 and 7 both Sunday).
 func validateDowSpecialToken(base, part, fieldName string) (bool, error) {
 	upper := strings.ToUpper(base)
+	if upper == "L" {
+		return true, nil
+	}
 	if hash := strings.Index(upper, "#"); hash >= 0 {
 		if _, ok := parseCronNumber(upper[:hash], 0, 7); !ok {
 			return true, fmt.Errorf("invalid weekday in cron %s field %q: use 0#n .. 7#n (0 or 7 = Sunday)", fieldName, part)
@@ -630,6 +648,9 @@ func cronDowPartMatches(part string, t time.Time) bool {
 	}
 	weekday := int(t.Weekday()) // 0=Sunday .. 6=Saturday
 	upper := strings.ToUpper(part)
+	if upper == "L" {
+		return weekday == int(time.Saturday) && t.Day()+7 > daysInMonth(t.Year(), t.Month(), t.Location())
+	}
 	if hash := strings.Index(upper, "#"); hash >= 0 {
 		d, ok := parseCronNumber(upper[:hash], 0, 7)
 		if !ok {

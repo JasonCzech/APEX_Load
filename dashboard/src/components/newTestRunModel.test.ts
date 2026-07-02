@@ -52,6 +52,7 @@ function scenarioFixture(): StoredScenario {
         script_id: 'script-2',
         script_name: 'Checkout Script',
         protocol: 'browser',
+        role: 'observer',
         vusers: 5,
         ramp_up: '30s',
         ramp_down: '30s',
@@ -170,6 +171,11 @@ describe('newTestRunModel', () => {
         selected_targets: ['gen-a:9090', 'gen-b:9090'],
         shard_strategy: 'capacity_weighted',
       },
+    })
+    expect(payload?.[1]).toMatchObject({
+      name: 'Checkout',
+      script_id: 'script-2',
+      role: 'observer',
     })
   })
 

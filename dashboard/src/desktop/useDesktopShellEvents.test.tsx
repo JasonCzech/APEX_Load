@@ -14,8 +14,8 @@ type DesktopWindow = typeof window & {
   runtime?: { EventsOn?: (event: string, cb: (arg?: unknown) => void) => () => void }
 }
 
-function Harness({ onMenuAbout }: { onMenuAbout?: () => void }) {
-  useDesktopShellEvents({ onMenuAbout })
+function Harness({ onMenuAbout, onRecentsChanged }: { onMenuAbout?: () => void; onRecentsChanged?: () => void }) {
+  useDesktopShellEvents({ onMenuAbout, onRecentsChanged })
   return null
 }
 
@@ -78,5 +78,17 @@ describe('useDesktopShellEvents', () => {
 
     await act(async () => { listeners['menu:about']?.() })
     expect(onMenuAbout).toHaveBeenCalledTimes(1)
+  })
+
+  it('invokes onRecentsChanged when the native menu mutates recents', async () => {
+    const listeners: Record<string, (arg?: unknown) => void> = {}
+    ;(window as DesktopWindow).runtime = {
+      EventsOn: (event, cb) => { listeners[event] = cb; return () => { delete listeners[event] } },
+    }
+    const onRecentsChanged = vi.fn()
+    await act(async () => { root.render(<Harness onRecentsChanged={onRecentsChanged} />) })
+
+    await act(async () => { listeners['desktop:recents-changed']?.() })
+    expect(onRecentsChanged).toHaveBeenCalledTimes(1)
   })
 })

@@ -123,9 +123,7 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 			if batch.Telemetry.TransportLagMs > combined.Telemetry.TransportLagMs {
 				combined.Telemetry.TransportLagMs = batch.Telemetry.TransportLagMs
 			}
-			if batch.Telemetry.DroppedSubscriberBatches > combined.Telemetry.DroppedSubscriberBatches {
-				combined.Telemetry.DroppedSubscriberBatches = batch.Telemetry.DroppedSubscriberBatches
-			}
+			combined.Telemetry.DroppedSubscriberBatches += batch.Telemetry.DroppedSubscriberBatches
 		}
 	}
 	combined.FleetMetrics = mergeGeneratorMetricAggregates(fleetMetrics)

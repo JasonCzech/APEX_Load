@@ -53,7 +53,16 @@ async function readFileFromBridge(path: string): Promise<File | null> {
     const base64 = await bridge.ReadFileBase64(path)
     return fileFromBase64(path, base64)
   } catch {
-    return null
+    // Wails emits the frontend drop event before the backend observes the same
+    // native drop and records the read grant. Give the secure grant path one
+    // short turn to catch up, then fail closed.
+    await new Promise(resolve => window.setTimeout(resolve, 75))
+    try {
+      const base64 = await bridge.ReadFileBase64(path)
+      return fileFromBase64(path, base64)
+    } catch {
+      return null
+    }
   }
 }
 
@@ -86,7 +95,31 @@ export async function pickFilesViaBridge(accept: string, multiple = false): Prom
 // Importable file types accepted from a native drop. Kept in sync with the Go
 // bridge's openableFileExtensions (instance.go), which is the security boundary;
 // this client-side gate avoids attempting to read unrelated dropped files.
-const IMPORTABLE_DROP_EXTENSIONS = ['.json', '.zip', '.har']
+const IMPORTABLE_DROP_EXTENSIONS = [
+  '.json',
+  '.zip',
+  '.har',
+  '.jmx',
+  '.xml',
+  '.wsdl',
+  '.yaml',
+  '.yml',
+  '.raml',
+  '.js',
+  '.devweb',
+  '.postman_collection.json',
+  '.postman_environment.json',
+  '.asyncapi.json',
+  '.asyncapi.yaml',
+  '.asyncapi.yml',
+  '.openapi.json',
+  '.openapi.yaml',
+  '.openapi.yml',
+  '.http',
+  '.txt',
+  '.curl',
+  '.sh',
+]
 
 function isImportableDropPath(path: string): boolean {
   const lower = path.toLowerCase()

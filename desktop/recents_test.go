@@ -84,6 +84,21 @@ func TestMergeRecentNeverEvictsPinned(t *testing.T) {
 	}
 }
 
+func TestMergeRecentKeepsNewItemWhenPinsFillLimit(t *testing.T) {
+	var existing []recentItem
+	for i := 0; i < maxRecentItems; i++ {
+		existing = append(existing, recentItem{Kind: "script", ID: string(rune('a' + i)), Pinned: true})
+	}
+
+	got := mergeRecent(existing, recentItem{Kind: "test", ID: "fresh", Name: "Fresh"}, maxRecentItems)
+	if len(got) != maxRecentItems+1 {
+		t.Fatalf("len = %d, want pinned items plus the fresh recent", len(got))
+	}
+	if got[0].ID != "fresh" {
+		t.Fatalf("first recent = %+v, want fresh item retained at the front", got[0])
+	}
+}
+
 func TestToggleRecentPinAndCarryOver(t *testing.T) {
 	app := NewApp()
 	app.appDataPath = t.TempDir()

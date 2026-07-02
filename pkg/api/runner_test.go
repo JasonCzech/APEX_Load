@@ -342,7 +342,13 @@ func (s *metricsStoreSpy) ListCapacityReservations(string, int, int) ([]*storage
 func (s *metricsStoreSpy) ListCapacityReservationsByTimeRange(string, time.Time, time.Time) ([]*storage.CapacityReservation, error) {
 	return nil, nil
 }
+func (s *metricsStoreSpy) UpdateCapacityReservationDetails(*storage.CapacityReservation, bool) error {
+	return nil
+}
 func (s *metricsStoreSpy) UpdateCapacityReservationBinding(string, *string, *string, time.Time) (bool, error) {
+	return false, nil
+}
+func (s *metricsStoreSpy) ClearCapacityReservationBinding(string, string, time.Time) (bool, error) {
 	return false, nil
 }
 func (s *metricsStoreSpy) UpdateCapacityReservationApprovalState(string, []string, string, time.Time) (bool, error) {
@@ -417,6 +423,9 @@ func (s *metricsStoreSpy) ListAllExecutionPlanSchedules() ([]*storage.ExecutionP
 	return nil, nil
 }
 func (s *metricsStoreSpy) DeleteExecutionPlanSchedule(string) error { return nil }
+func (s *metricsStoreSpy) CreateExecutionPlanScheduleOccurrenceIfAbsent(*storage.ExecutionPlanScheduleOccurrence) (bool, error) {
+	return true, nil
+}
 func (s *metricsStoreSpy) SaveExecutionPlanScheduleOccurrence(*storage.ExecutionPlanScheduleOccurrence) error {
 	return nil
 }
@@ -595,6 +604,9 @@ func (s *metricsStoreSpy) UpdateServiceAccountActive(id string, active bool, upd
 }
 func (s *metricsStoreSpy) DeleteServiceAccount(id string) error { return nil }
 func (s *metricsStoreSpy) SaveUser(user *storage.User) error    { return nil }
+func (s *metricsStoreSpy) UpdateUserIdentitySeen(id string, displayName string, email string, lastSeenAt time.Time, updatedAt time.Time) error {
+	return nil
+}
 func (s *metricsStoreSpy) GetUser(id string) (*storage.User, error) {
 	return nil, sql.ErrNoRows
 }
@@ -5011,7 +5023,7 @@ func TestCompleteTestRunPromotesPendingTests(t *testing.T) {
 	}
 }
 
-func TestGetTestRefreshesCapacityAdvisoryUsingLiveAvailability(t *testing.T) {
+func TestGetTestRefreshesCapacityAdvisoryUsingCachedLiveAvailability(t *testing.T) {
 	hub := NewHub()
 	runner := NewTestRunner(2, hub, nil)
 	runner.StoreScript(&dsl.Script{
@@ -5030,13 +5042,14 @@ func TestGetTestRefreshesCapacityAdvisoryUsingLiveAvailability(t *testing.T) {
 		t.Fatalf("UpdateSystemSettings returned error: %v", err)
 	}
 
-	runner.setExecutionBackend(stubInventoryBackend{entries: []GeneratorInventoryEntry{
+	initialLive := []GeneratorInventoryEntry{
 		{Target: "gen-a:9090", GeneratorID: "gen-a", Status: "connected", DrainState: "active", AvailableCapacity: 100, MaxVUsers: 1000},
 		{Target: "gen-b:9090", GeneratorID: "gen-b", Status: "connected", DrainState: "active", AvailableCapacity: 100, MaxVUsers: 1000},
 		{Target: "gen-c:9090", GeneratorID: "gen-c", Status: "connected", DrainState: "active", AvailableCapacity: 100, MaxVUsers: 1000},
 		{Target: "gen-d:9090", GeneratorID: "gen-d", Status: "connected", DrainState: "active", AvailableCapacity: 100, MaxVUsers: 1000},
 		{Target: "gen-e:9090", GeneratorID: "gen-e", Status: "connected", DrainState: "active", AvailableCapacity: 100, MaxVUsers: 1000},
-	}})
+	}
+	runner.setCachedGeneratorInventory(initialLive, time.Now())
 	test, err := runner.CreateTest(CreateTestRequest{
 		Name:     "Refresh Advisory Scenario",
 		Duration: "30s",
@@ -5050,9 +5063,9 @@ func TestGetTestRefreshesCapacityAdvisoryUsingLiveAvailability(t *testing.T) {
 		t.Fatalf("initial available generators = %#v, want 5", test.CapacityAdvisory)
 	}
 
-	runner.setExecutionBackend(stubInventoryBackend{entries: []GeneratorInventoryEntry{
+	runner.setCachedGeneratorInventory([]GeneratorInventoryEntry{
 		{Target: "gen-a:9090", GeneratorID: "gen-a", Status: "connected", DrainState: "active", AvailableCapacity: 100, MaxVUsers: 1000},
-	}})
+	}, time.Now())
 	refreshed, ok := runner.GetTest(test.ID)
 	if !ok {
 		t.Fatalf("expected test %s", test.ID)
@@ -5691,6 +5704,12 @@ func TestNextScenarioScheduleRunQuartzDaySpecifiers(t *testing.T) {
 	if got := next("0 9 * * FRI#3", from); got.Weekday() != time.Friday || (got.Day()-1)/7+1 != 3 {
 		t.Errorf("FRI#3 -> %v, want the 3rd Friday of the month", got)
 	}
+	if got := next("0 9 * * FRIL", from); got.Weekday() != time.Friday || got.Day()+7 <= dim(got) {
+		t.Errorf("FRIL -> %v, want the last Friday of the month", got)
+	}
+	if got := next("0 9 * * L", from); got.Weekday() != time.Saturday || got.Day()+7 <= dim(got) {
+		t.Errorf("L in day-of-week -> %v, want the last Saturday of the month", got)
+	}
 }
 
 func TestNextScenarioScheduleRunFindsLeapDay(t *testing.T) {
@@ -5712,7 +5731,7 @@ func TestValidateCronExprExtended(t *testing.T) {
 		"@daily", "@weekly", "@hourly", "@monthly", "@yearly",
 		"0 9 * * MON-FRI", "0 9 L * *", "0 9 LW * *", "0 9 L-3 * *",
 		"0 9 15W * *", "0 9 * * 5L", "0 9 * * 5#3", "0 9 * * 7",
-		"0 0 * JAN,MAR,DEC *", "0 9 * * FRI#2",
+		"0 0 * JAN,MAR,DEC *", "0 9 * * FRI#2", "0 9 * * FRIL", "0 9 * * L",
 		"0 0 29 2 *", // leap day is a legal (if sparse) schedule
 		"0 0 31 1 *", // Jan 31 exists
 	}

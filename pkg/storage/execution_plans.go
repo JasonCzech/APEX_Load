@@ -10,20 +10,21 @@ import (
 // approval blocks the run until a project admin approves; an approved, unconsumed
 // approval (RunID empty) authorizes the next run, which then stamps its RunID.
 type ExecutionPlanApproval struct {
-	ID             string     `json:"id"`
-	PlanID         string     `json:"plan_id"`
-	ProjectID      string     `json:"project_id,omitempty"`
-	Policy         string     `json:"policy"`
-	Status         string     `json:"status"` // pending | approved | rejected
-	RequestedBy    string     `json:"requested_by,omitempty"`
-	RequestedAt    time.Time  `json:"requested_at"`
-	ResolvedBy     string     `json:"resolved_by,omitempty"`
-	ResolvedAt     *time.Time `json:"resolved_at,omitempty"`
-	DecisionReason string     `json:"decision_reason,omitempty"`
-	RequiredRole   string     `json:"required_role,omitempty"`
-	RunID          string     `json:"run_id,omitempty"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
+	ID              string     `json:"id"`
+	PlanID          string     `json:"plan_id"`
+	ProjectID       string     `json:"project_id,omitempty"`
+	Policy          string     `json:"policy"`
+	Status          string     `json:"status"` // pending | approved | rejected
+	RequestedBy     string     `json:"requested_by,omitempty"`
+	RequestedAt     time.Time  `json:"requested_at"`
+	ResolvedBy      string     `json:"resolved_by,omitempty"`
+	ResolvedAt      *time.Time `json:"resolved_at,omitempty"`
+	DecisionReason  string     `json:"decision_reason,omitempty"`
+	RequiredRole    string     `json:"required_role,omitempty"`
+	PlanContentHash string     `json:"plan_content_hash,omitempty"`
+	RunID           string     `json:"run_id,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
 }
 
 // ExecutionPlanSchedule is a recurring trigger for an execution plan — the

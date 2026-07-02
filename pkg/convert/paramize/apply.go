@@ -140,14 +140,47 @@ func replaceInField(action *dsl.Action, location Location) (before, after string
 		if !isHeader {
 			return "", "", false
 		}
-		current, exists := action.Headers[headerKey]
-		if !exists {
-			return "", "", false
+		return replaceHeader(action, headerKey, replace)
+	}
+	return "", "", false
+}
+
+func replaceHeader(action *dsl.Action, headerKey string, replace func(string) (string, bool)) (before, after string, ok bool) {
+	if action == nil {
+		return "", "", false
+	}
+	firstBefore := ""
+	lastAfter := ""
+	changed := false
+	if action.Headers != nil {
+		if current, exists := action.Headers[headerKey]; exists {
+			if updated, didChange := replace(current); didChange {
+				action.Headers[headerKey] = updated
+				firstBefore = current
+				lastAfter = updated
+				changed = true
+			}
 		}
-		if updated, changed := replace(current); changed {
-			action.Headers[headerKey] = updated
-			return current, updated, true
+	}
+	for i := range action.HeaderList {
+		if !strings.EqualFold(action.HeaderList[i].Name, headerKey) {
+			continue
 		}
+		if updated, didChange := replace(action.HeaderList[i].Value); didChange {
+			if firstBefore == "" {
+				firstBefore = action.HeaderList[i].Value
+			}
+			action.HeaderList[i].Value = updated
+			lastAfter = updated
+			changed = true
+		}
+	}
+	if changed && lastAfter != "" {
+		if action.Headers == nil {
+			action.Headers = map[string]string{}
+		}
+		action.Headers[headerKey] = lastAfter
+		return firstBefore, lastAfter, true
 	}
 	return "", "", false
 }

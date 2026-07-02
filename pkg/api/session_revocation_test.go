@@ -58,6 +58,51 @@ func TestSessionEpochRevocation(t *testing.T) {
 	}
 }
 
+func TestApplyLocalUserBindingsCannotResurrectRevokedEpoch(t *testing.T) {
+	store := auditEventStore(t)
+	user := seedAdmin(t, store, "epoch-race-user")
+
+	upstream := &AuthenticatedUser{
+		Subject:         user.Subject,
+		DisplayName:     "Updated Name",
+		Email:           "updated@example.test",
+		SessionScoped:   true,
+		SessionEpoch:    0,
+		GlobalRoles:     map[string]struct{}{},
+		ProjectRoles:    map[string]map[string]struct{}{},
+		DomainRoles:     map[string]map[string]struct{}{},
+		RepositoryRoles: map[string]map[string]struct{}{},
+	}
+	if _, err := applyLocalUserBindings(upstream, store); err != nil {
+		t.Fatalf("initial current-epoch request should resolve: %v", err)
+	}
+
+	if _, err := store.BumpUserSessionEpoch(user.ID, time.Now().UTC()); err != nil {
+		t.Fatalf("BumpUserSessionEpoch: %v", err)
+	}
+	reloaded, err := store.GetUser(user.ID)
+	if err != nil {
+		t.Fatalf("GetUser: %v", err)
+	}
+	if reloaded.SessionEpoch != 1 {
+		t.Fatalf("session epoch after revoke = %d, want 1", reloaded.SessionEpoch)
+	}
+	if reloaded.DisplayName != "Updated Name" || reloaded.Email != "updated@example.test" {
+		t.Fatalf("identity refresh did not persist profile fields: %#v", reloaded)
+	}
+
+	if _, err := applyLocalUserBindings(upstream, store); err == nil || !strings.Contains(err.Error(), "revoked") {
+		t.Fatalf("stale session should stay revoked after identity refresh, got err=%v", err)
+	}
+	final, err := store.GetUser(user.ID)
+	if err != nil {
+		t.Fatalf("GetUser final: %v", err)
+	}
+	if final.SessionEpoch != 1 {
+		t.Fatalf("stale auth path rewrote session epoch to %d, want 1", final.SessionEpoch)
+	}
+}
+
 // C3-MVP — the revoke-sessions endpoint bumps the user's epoch and audits it.
 func TestRevokeUserSessionsEndpoint(t *testing.T) {
 	store := auditEventStore(t)

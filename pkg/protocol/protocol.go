@@ -106,6 +106,7 @@ type Action struct {
 	BodyEncoding       string                 `json:"body_encoding,omitempty"`
 	RedactedBody       []byte                 `json:"-"`
 	Params             map[string]any         `json:"params,omitempty"`
+	RedactedParams     map[string]any         `json:"-"`
 	WaitFor            *WaitCondition         `json:"wait_for,omitempty"`
 	Sync               *BrowserSyncPolicy     `json:"sync,omitempty"`
 	Capture            *BrowserCaptureOptions `json:"capture,omitempty"`

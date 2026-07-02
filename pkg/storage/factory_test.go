@@ -77,6 +77,23 @@ func TestRewriteSQLForPostgres(t *testing.T) {
 	}
 }
 
+func TestPostgresAuthQueriesUseDialectSafePredicates(t *testing.T) {
+	got := rewriteSQL(`SELECT COUNT(DISTINCT u.id) FROM users u
+		JOIN user_role_bindings b ON b.user_id = u.id
+		WHERE u.active = ? AND b.scope_type = 'global' AND b.role = ?`, storeDialectPostgres)
+	if strings.Contains(got, "active = 1") {
+		t.Fatalf("rewritten auth count query still uses SQLite boolean literal: %s", got)
+	}
+	if !strings.Contains(got, "u.active = $1") || !strings.Contains(got, "b.role = $2") {
+		t.Fatalf("rewritten auth count query placeholders = %s, want parameterized bool and role", got)
+	}
+
+	got = rewriteSQL(`SELECT id FROM users WHERE 1 = 1 AND (LOWER(subject) LIKE ? OR LOWER(email) LIKE ? OR LOWER(display_name) LIKE ?)`, storeDialectPostgres)
+	if !strings.Contains(got, "LOWER(subject) LIKE $1") || !strings.Contains(got, "LOWER(email) LIKE $2") || !strings.Contains(got, "LOWER(display_name) LIKE $3") {
+		t.Fatalf("rewritten user search query = %s, want case-normalized LIKE predicates", got)
+	}
+}
+
 // looksBooleanColumn reports whether a column name follows one of the project's
 // boolean naming conventions, i.e. it is bound/scanned as a Go bool and therefore
 // must be a Postgres BOOLEAN (not INTEGER). Counters/sizes/versions/flags stored as

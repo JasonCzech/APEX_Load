@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/config"
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -60,7 +61,8 @@ func TestJavaVuserRunnerInvokesConfiguredCommand(t *testing.T) {
 		// spawned-process context deadline, and a tight 2s budget flaked under
 		// parallel CPU load (process spawn + stdin/stdout round-trip racing the
 		// deadline). The assertions below check invocation + success, not timeout.
-		"java_vuser_action_timeout_ms": float64(60000),
+		"java_vuser_action_timeout_ms":  float64(60000),
+		"java_vuser_startup_timeout_ms": float64(3000),
 	}); err != nil {
 		t.Fatalf("Init returned error: %v", err)
 	}
@@ -103,6 +105,9 @@ func TestJavaVuserRunnerInvokesConfiguredCommand(t *testing.T) {
 	if !strings.Contains(string(captured), `"lr_parameters"`) || !strings.Contains(string(captured), `"OrderId":"A-100"`) || !strings.Contains(string(captured), `"Count":3`) {
 		t.Fatalf("runner stdin = %s, want lr_parameters forwarded to sidecar command", captured)
 	}
+	if !strings.Contains(string(captured), `"startup_timeout_ms":3000`) {
+		t.Fatalf("runner stdin = %s, want startup_timeout_ms forwarded to sidecar command", captured)
+	}
 }
 
 func TestJavaVuserRunnerFailsClosedOnReportedFailure(t *testing.T) {
@@ -142,6 +147,143 @@ func TestJavaVuserRunnerFailsClosedOnReportedFailure(t *testing.T) {
 	}
 	if result.ProtocolEvidence["status"] != "failed" {
 		t.Fatalf("protocol evidence = %#v, want failed status", result.ProtocolEvidence)
+	}
+}
+
+func TestJavaVuserRunnerFailsClosedOnMissingSummary(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture uses POSIX sh")
+	}
+	dir := t.TempDir()
+	runnerPath := filepath.Join(dir, "java-vuser-runner")
+	script := "#!/bin/sh\ncat >/dev/null\nprintf 'diagnostic without summary\\n'\n"
+	if err := os.WriteFile(runnerPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write runner: %v", err)
+	}
+
+	t.Setenv(config.EnvJavaVuserRunnerEnabled, "true")
+	t.Setenv(config.EnvJavaVuserRunnerCommand, runnerPath)
+
+	var runner JavaVuser
+	if err := runner.Init(context.Background(), map[string]any{
+		"java_vuser_action_timeout_ms": float64(60000),
+	}); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+	result, err := runner.Execute(context.Background(), &protocol.Action{
+		Name:   "Run Actions",
+		Type:   "java_vuser_run",
+		Target: "Actions",
+	})
+	if err != nil {
+		t.Fatalf("Execute returned protocol error: %v", err)
+	}
+	if result.Success || !strings.Contains(result.ErrorMessage, "no result summary") {
+		t.Fatalf("result = %#v, want missing summary failure", result)
+	}
+}
+
+func TestJavaVuserRunnerFailsOnFailedTransactionEvent(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture uses POSIX sh")
+	}
+	dir := t.TempDir()
+	runnerPath := filepath.Join(dir, "java-vuser-runner")
+	script := "#!/bin/sh\ncat >/dev/null\nprintf '{\"type\":\"transaction_end\",\"name\":\"Checkout\",\"message\":\"1\"}\\n' >&2\nprintf '{\"success\":true,\"class_name\":\"Actions\",\"method\":\"full_lifecycle\",\"duration_ms\":42}\\n'\n"
+	if err := os.WriteFile(runnerPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write runner: %v", err)
+	}
+
+	t.Setenv(config.EnvJavaVuserRunnerEnabled, "true")
+	t.Setenv(config.EnvJavaVuserRunnerCommand, runnerPath)
+
+	var runner JavaVuser
+	if err := runner.Init(context.Background(), map[string]any{
+		"java_vuser_action_timeout_ms": float64(60000),
+	}); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+	result, err := runner.Execute(context.Background(), &protocol.Action{
+		Name:   "Run Actions",
+		Type:   "java_vuser_run",
+		Target: "Actions",
+	})
+	if err != nil {
+		t.Fatalf("Execute returned protocol error: %v", err)
+	}
+	if result.Success || !strings.Contains(result.ErrorMessage, "Checkout=1") {
+		t.Fatalf("result = %#v, want failed transaction failure", result)
+	}
+	if result.Extractions["java_vuser_failed_transaction_count"] != "1" {
+		t.Fatalf("extractions = %#v, want failed transaction count", result.Extractions)
+	}
+}
+
+func TestJavaVuserRunnerReadsEventsFromSideChannelFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture uses POSIX sh")
+	}
+	dir := t.TempDir()
+	runnerPath := filepath.Join(dir, "java-vuser-runner")
+	script := "#!/bin/sh\ncat >/dev/null\nprintf 'diagnostic stderr\\n' >&2\nprintf '{\"type\":\"transaction_end\",\"name\":\"Checkout\",\"message\":\"FAIL\"}\\n' >> \"$APEXLOAD_JAVA_VUSER_EVENT_FILE\"\nprintf '{\"success\":true,\"class_name\":\"Actions\",\"method\":\"full_lifecycle\",\"duration_ms\":42}\\n'\n"
+	if err := os.WriteFile(runnerPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write runner: %v", err)
+	}
+
+	t.Setenv(config.EnvJavaVuserRunnerEnabled, "true")
+	t.Setenv(config.EnvJavaVuserRunnerCommand, runnerPath)
+
+	var runner JavaVuser
+	if err := runner.Init(context.Background(), map[string]any{"java_vuser_action_timeout_ms": float64(60000)}); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+	result, err := runner.Execute(context.Background(), &protocol.Action{Name: "Run Actions", Type: "java_vuser_run", Target: "Actions"})
+	if err != nil {
+		t.Fatalf("Execute returned protocol error: %v", err)
+	}
+	if result.Success || !strings.Contains(result.ErrorMessage, "Checkout=1") {
+		t.Fatalf("result = %#v, want failed transaction from side-channel event", result)
+	}
+	if result.ProtocolEvidence["runner_stderr"] != "diagnostic stderr\n" {
+		t.Fatalf("runner_stderr evidence = %#v, want diagnostics only", result.ProtocolEvidence["runner_stderr"])
+	}
+	if result.ProtocolEvidence["runner_event_stream_bytes"] == nil {
+		t.Fatalf("protocol evidence = %#v, want side-channel event byte count", result.ProtocolEvidence)
+	}
+}
+
+func TestJavaVuserRunnerWaitDelayBoundsInheritedPipes(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture uses POSIX sh")
+	}
+	previousDelay := runnerWaitDelay
+	runnerWaitDelay = 50 * time.Millisecond
+	t.Cleanup(func() { runnerWaitDelay = previousDelay })
+
+	dir := t.TempDir()
+	runnerPath := filepath.Join(dir, "java-vuser-runner")
+	script := "#!/bin/sh\ncat >/dev/null\n(sleep 5) &\nprintf '{\"success\":true,\"class_name\":\"Actions\",\"method\":\"full_lifecycle\",\"duration_ms\":1}\\n'\n"
+	if err := os.WriteFile(runnerPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write runner: %v", err)
+	}
+
+	t.Setenv(config.EnvJavaVuserRunnerEnabled, "true")
+	t.Setenv(config.EnvJavaVuserRunnerCommand, runnerPath)
+
+	var runner JavaVuser
+	if err := runner.Init(context.Background(), map[string]any{"java_vuser_action_timeout_ms": float64(60000)}); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+	start := time.Now()
+	result, err := runner.Execute(context.Background(), &protocol.Action{Name: "Run Actions", Type: "java_vuser_run", Target: "Actions"})
+	if err != nil {
+		t.Fatalf("Execute returned protocol error: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("Execute took %s; WaitDelay did not bound inherited pipe wait", elapsed)
+	}
+	if result.Success || !strings.Contains(result.ErrorMessage, "WaitDelay") {
+		t.Fatalf("result = %#v, want WaitDelay failure", result)
 	}
 }
 

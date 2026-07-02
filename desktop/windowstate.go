@@ -73,16 +73,28 @@ type sanitizedGeometry struct {
 	X, Y          int
 }
 
-// sanitizeWindowGeometry clamps a restored geometry against the usable desktop
-// bounds (deskW × deskH, origin at 0,0). It guarantees the window is at least
-// min-size and that enough of it stays on-screen to be reachable; otherwise it
-// asks the caller to re-center.
+type virtualDesktopBounds struct {
+	MinX, MinY    int
+	Width, Height int
+}
+
+// sanitizeWindowGeometry clamps a restored geometry against a usable desktop
+// with origin at 0,0. It is kept as a convenience wrapper for tests and callers
+// that only know desktop size.
+func sanitizeWindowGeometry(st windowState, deskW, deskH int) sanitizedGeometry {
+	return sanitizeWindowGeometryInBounds(st, virtualDesktopBounds{Width: deskW, Height: deskH})
+}
+
+// sanitizeWindowGeometryInBounds clamps a restored geometry against the usable
+// desktop bounds. It guarantees the window is at least min-size and that enough
+// of it stays on-screen to be reachable; otherwise it asks the caller to
+// re-center.
 //
 // deskW/deskH of 0 mean "unknown" (no screen info) — the saved position is then
 // trusted as-is (the OS will usually clamp an off-screen window anyway).
 //
 // This is a pure function so it is unit-testable without a live Wails window.
-func sanitizeWindowGeometry(st windowState, deskW, deskH int) sanitizedGeometry {
+func sanitizeWindowGeometryInBounds(st windowState, desk virtualDesktopBounds) sanitizedGeometry {
 	// No usable size persisted → keep the built-in option defaults entirely.
 	if st.Width <= 0 || st.Height <= 0 {
 		return sanitizedGeometry{}
@@ -95,27 +107,29 @@ func sanitizeWindowGeometry(st windowState, deskW, deskH int) sanitizedGeometry 
 	if h < minWindowHeight {
 		h = minWindowHeight
 	}
-	if deskW > 0 && w > deskW {
-		w = deskW
+	if desk.Width > 0 && w > desk.Width {
+		w = desk.Width
 	}
-	if deskH > 0 && h > deskH {
-		h = deskH
+	if desk.Height > 0 && h > desk.Height {
+		h = desk.Height
 	}
 
 	g := sanitizedGeometry{ApplySize: true, Width: w, Height: h}
 
 	// Without known desktop bounds, trust the saved position.
-	if deskW <= 0 || deskH <= 0 {
+	if desk.Width <= 0 || desk.Height <= 0 {
 		g.ApplyPosition = true
 		g.X, g.Y = st.X, st.Y
 		return g
 	}
 
 	// Re-center if the window would be (almost) entirely off the usable desktop.
-	offRight := st.X > deskW-windowEdgeMargin
-	offBottom := st.Y > deskH-windowEdgeMargin
-	offLeft := st.X+w < windowEdgeMargin
-	offTop := st.Y+h < windowEdgeMargin
+	maxX := desk.MinX + desk.Width
+	maxY := desk.MinY + desk.Height
+	offRight := st.X > maxX-windowEdgeMargin
+	offBottom := st.Y > maxY-windowEdgeMargin
+	offLeft := st.X+w < desk.MinX+windowEdgeMargin
+	offTop := st.Y+h < desk.MinY+windowEdgeMargin
 	if offRight || offBottom || offLeft || offTop {
 		return g // ApplyPosition stays false → caller centers
 	}

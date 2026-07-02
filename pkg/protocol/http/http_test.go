@@ -778,6 +778,35 @@ func TestHTTP_Execute_DefaultMethod(t *testing.T) {
 	}
 }
 
+func TestHTTP_Execute_UsesTypeAsMethodWhenMethodMissing(t *testing.T) {
+	seenMethod := ""
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenMethod = r.Method
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %q, want POST from action type", r.Method)
+		}
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{"base_url": ts.URL})
+	result, err := h.Execute(context.Background(), &protocol.Action{
+		Name:   "type-only-post",
+		Type:   "POST",
+		Target: "/",
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("expected success, got error: %s", result.ErrorMessage)
+	}
+	if seenMethod != http.MethodPost {
+		t.Fatalf("server saw method %q, want POST", seenMethod)
+	}
+}
+
 func TestHTTP_Execute_ServerError(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")

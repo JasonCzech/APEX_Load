@@ -57,7 +57,11 @@ export function useCapacityApi() {
   )
 
   const approveTimeslot = useCallback(
-    (id: string) => request<CapacityTimeslot>(`/capacity/timeslots/${id}/approve`, { method: 'POST' }),
+    (id: string, body?: { conflict_override?: boolean; reason?: string }) =>
+      request<CapacityTimeslot>(`/capacity/timeslots/${id}/approve`, {
+        method: 'POST',
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      }),
     [],
   )
 

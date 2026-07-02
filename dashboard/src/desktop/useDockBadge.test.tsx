@@ -38,7 +38,7 @@ describe('useDockBadge', () => {
 
   it('sets the badge to the active-run count and clears at zero, only on change', async () => {
     await act(async () => { root.render(<Harness count={0} />) })
-    expect(setDockBadge).not.toHaveBeenCalled()
+    expect(setDockBadge).toHaveBeenLastCalledWith('')
 
     await act(async () => { root.render(<Harness count={2} />) })
     expect(setDockBadge).toHaveBeenLastCalledWith('2')
@@ -48,7 +48,7 @@ describe('useDockBadge', () => {
 
     await act(async () => { root.render(<Harness count={0} />) })
     expect(setDockBadge).toHaveBeenLastCalledWith('')
-    expect(setDockBadge).toHaveBeenCalledTimes(3)
+    expect(setDockBadge).toHaveBeenCalledTimes(4)
   })
 
   it('is inert without the bridge', async () => {

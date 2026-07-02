@@ -31,6 +31,7 @@ export interface AuthoringState {
   authoringNotice: string | null
   importLauncher?: string | null
   importMode?: string | null
+  importFiles?: File[] | null
 }
 
 export interface ImportedSaveResult {
@@ -59,6 +60,7 @@ export interface ScriptsCreateOptionActions {
   composeComponentScript: (component: AuthoringComponent) => void
   openRecorder: () => void
   openImportSurface: (launcher: string, mode?: string | null) => void
+  openImportFiles: (launcher: string, files: File[], mode?: string | null) => void
   openEnterpriseArchiveImport: () => void
   openJMeterImport: () => void
   openSampleImport: () => void
@@ -180,6 +182,7 @@ function createAuthoringState(mode?: ScriptsAuthoringSubView, editId?: string): 
     authoringNotice: null,
     importLauncher: alias?.importLauncher || null,
     importMode: alias?.importMode || null,
+    importFiles: null,
   }
 }
 
@@ -202,6 +205,7 @@ export function useScriptsAuthoringState({
       authoringNotice: null,
       importLauncher: alias?.importLauncher || null,
       importMode: alias?.importMode || null,
+      importFiles: null,
     })
   }, [])
 
@@ -213,7 +217,7 @@ export function useScriptsAuthoringState({
     setSubview('create-options')
   }, [setSubview])
 
-  const openImportSurface = useCallback((launcher: string, mode?: string | null) => {
+  const openImportSurface = useCallback((launcher: string, mode?: string | null, files?: File[] | null) => {
     const next = importLauncherState(launcher, mode)
     setAuthoringState({
       subView: next.subView,
@@ -225,8 +229,13 @@ export function useScriptsAuthoringState({
       authoringNotice: null,
       importLauncher: next.importLauncher,
       importMode: next.importMode,
+      importFiles: files && files.length > 0 ? files : null,
     })
   }, [])
+
+  const openImportFiles = useCallback((launcher: string, files: File[], mode?: string | null) => {
+    openImportSurface(launcher, mode, files)
+  }, [openImportSurface])
 
   const openRecorder = useCallback(() => {
     setSubview('recorder')
@@ -257,6 +266,7 @@ export function useScriptsAuthoringState({
       authoringNotice: null,
       importLauncher: null,
       importMode: null,
+      importFiles: null,
     })
   }, [])
 
@@ -325,6 +335,7 @@ export function useScriptsAuthoringState({
         authoringNotice: null,
         importLauncher: null,
         importMode: null,
+        importFiles: null,
       })
     } catch (error) {
       setAuthoringState({
@@ -337,6 +348,7 @@ export function useScriptsAuthoringState({
         authoringNotice: getErrorMessage(error, 'Unable to load script for editing.'),
         importLauncher: null,
         importMode: null,
+        importFiles: null,
       })
     }
   }, [api])
@@ -352,6 +364,7 @@ export function useScriptsAuthoringState({
       authoringNotice: notice?.trim() || null,
       importLauncher: null,
       importMode: null,
+      importFiles: null,
     }))
   }, [])
 
@@ -370,6 +383,7 @@ export function useScriptsAuthoringState({
         authoringNotice: null,
         importLauncher: null,
         importMode: null,
+        importFiles: null,
       }
     })
   }, [])
@@ -408,6 +422,7 @@ export function useScriptsAuthoringState({
       composeComponentScript,
       openRecorder,
       openImportSurface,
+      openImportFiles,
       openEnterpriseArchiveImport,
       openJMeterImport,
       openSampleImport,

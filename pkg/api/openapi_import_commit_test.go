@@ -182,12 +182,30 @@ func TestMergeOpenAPIImportScriptPreservesInitTeardown(t *testing.T) {
 	if len(merged.Teardown) != 1 || merged.Teardown[0].Name != "ManualCleanup" {
 		t.Fatalf("manual teardown step lost: %#v", merged.Teardown)
 	}
+	if len(merged.Init) != 2 || merged.Init[0].Name != "ManualLogin" || merged.Init[1].Name != "TokenFetch" {
+		t.Fatalf("init order = %#v, want ManualLogin before refreshed TokenFetch", merged.Init)
+	}
 
 	// When the import emits no init of its own, the existing init is preserved wholesale.
 	importedNoInit := &dsl.Script{Actions: []dsl.Action{openAPIKeyedAction("GetA", "GET /a")}}
 	merged2 := mergeOpenAPIImportScript(existing, importedNoInit)
 	if len(merged2.Init) != 2 {
 		t.Fatalf("existing init dropped when import had none: %#v", merged2.Init)
+	}
+}
+
+func TestDiffOpenAPIImportReportsLifecycleChanges(t *testing.T) {
+	existing := &dsl.Script{
+		Init:    []dsl.Action{{Name: "SeedTenant", Type: "request", Method: "POST", Target: "/session"}},
+		Actions: []dsl.Action{openAPIKeyedAction("GetA", "GET /a")},
+	}
+	imported := &dsl.Script{
+		Init:    []dsl.Action{{Name: "TokenFetch", Type: "http_oauth2_token"}},
+		Actions: []dsl.Action{openAPIKeyedAction("GetA", "GET /a")},
+	}
+	diff := diffOpenAPIImport(existing, imported, "merge")
+	if !containsString(diff.Items, "Updated init lifecycle (2 step(s))") {
+		t.Fatalf("diff items = %#v, want lifecycle update disclosure", diff.Items)
 	}
 }
 

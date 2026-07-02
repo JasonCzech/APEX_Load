@@ -71,6 +71,17 @@ describe('ClientDownloadsMenu', () => {
       value: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)',
       configurable: true,
     })
+    Object.defineProperty(window.navigator, 'platform', {
+      value: 'MacIntel',
+      configurable: true,
+    })
+    Object.defineProperty(window.navigator, 'userAgentData', {
+      value: {
+        platform: 'macOS',
+        getHighEntropyValues: vi.fn().mockResolvedValue({ platform: 'macOS', architecture: 'x86' }),
+      },
+      configurable: true,
+    })
   })
 
   afterEach(() => {
@@ -111,7 +122,7 @@ describe('ClientDownloadsMenu', () => {
     expect(container.querySelector('.client-downloads-panel')).not.toBeNull()
     expect(container.textContent).toContain('Recording Agent')
     expect(container.textContent).toContain('Desktop App')
-    expect(container.textContent).toContain('Download for macOS (Apple Silicon)')
+    expect(container.textContent).toContain('Download for macOS (Intel)')
   })
 
   it('downloads the recording agent for the detected platform', async () => {
@@ -128,7 +139,7 @@ describe('ClientDownloadsMenu', () => {
     })
     await flush()
 
-    expect(apiFetchMock).toHaveBeenCalledWith('/downloads/recording-agent/latest?platform=darwin-arm64')
+    expect(apiFetchMock).toHaveBeenCalledWith('/downloads/recording-agent/latest?platform=darwin-amd64')
     expect(downloadBlobMock).toHaveBeenCalledTimes(1)
     expect(container.textContent).toContain('Recording Agent download started')
   })
@@ -138,7 +149,7 @@ describe('ClientDownloadsMenu', () => {
     apiFetchMock.mockResolvedValue({
       ok: false,
       headers: { get: () => null },
-      json: async () => ({ error: 'APEX Load Desktop package for darwin-arm64 is not staged.' }),
+      json: async () => ({ error: 'APEX Load Desktop package for darwin-amd64 is not staged.' }),
     })
     await render()
     await openPanel()
@@ -153,6 +164,22 @@ describe('ClientDownloadsMenu', () => {
 
     expect(downloadBlobMock).not.toHaveBeenCalled()
     expect(container.querySelector('.client-downloads-status.error')?.textContent).toContain('is not staged')
+  })
+
+  it('falls back to the platform picker when macOS architecture is unknown', async () => {
+    Object.defineProperty(window.navigator, 'userAgentData', {
+      value: undefined,
+      configurable: true,
+    })
+    getVersionMock.mockResolvedValue(deploymentVersion(true))
+    await render()
+    await openPanel()
+
+    expect(container.textContent).not.toContain('Download for macOS (Apple Silicon)')
+    expect(container.textContent).not.toContain('Download for macOS (Intel)')
+    expect(container.textContent).toContain('Choose a platform:')
+    expect(container.textContent).toContain('macOS (Apple Silicon)')
+    expect(container.textContent).toContain('macOS (Intel)')
   })
 
   it('closes the panel on an outside click', async () => {

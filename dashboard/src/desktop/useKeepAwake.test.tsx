@@ -38,19 +38,19 @@ describe('useKeepAwakeDuringRuns', () => {
 
   it('engages on first active run and only calls on transitions', async () => {
     await act(async () => { root.render(<Harness count={0} />) })
-    expect(setKeepAwake).not.toHaveBeenCalled() // 0 runs, already-not-awake
+    expect(setKeepAwake).toHaveBeenLastCalledWith(false)
 
     await act(async () => { root.render(<Harness count={1} />) })
     expect(setKeepAwake).toHaveBeenLastCalledWith(true)
 
     // 1 → 2 active runs: still awake, no redundant bridge call.
     await act(async () => { root.render(<Harness count={2} />) })
-    expect(setKeepAwake).toHaveBeenCalledTimes(1)
+    expect(setKeepAwake).toHaveBeenCalledTimes(2)
 
     // Back to 0: release.
     await act(async () => { root.render(<Harness count={0} />) })
     expect(setKeepAwake).toHaveBeenLastCalledWith(false)
-    expect(setKeepAwake).toHaveBeenCalledTimes(2)
+    expect(setKeepAwake).toHaveBeenCalledTimes(3)
   })
 
   it('is inert without the bridge', async () => {

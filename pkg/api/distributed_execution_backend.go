@@ -184,6 +184,9 @@ func (b *distributedExecutionBackend) SetGeneratorDrainStateByID(generatorID str
 		return "", err
 	}
 	target := b.GeneratorTargetForID(generatorID)
+	if target == "" {
+		return "", fmt.Errorf("generator_id %q is not configured on this controller", generatorID)
+	}
 	b.drainMu.Lock()
 	defer b.drainMu.Unlock()
 	if state == "active" {

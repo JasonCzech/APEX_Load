@@ -186,10 +186,17 @@ func (s *Server) setGeneratorLifecycleState(generatorID string, target string, s
 		if identityBackend, ok := backend.(identityDrainableExecutionBackend); ok {
 			resolvedTarget, err := identityBackend.SetGeneratorDrainStateByID(generatorID, state)
 			if err != nil {
-				return generatorID, target, err
-			}
-			if target == "" {
-				target = resolvedTarget
+				if target == "" || target != generatorID {
+					return generatorID, target, err
+				}
+				if err := backend.SetGeneratorDrainState(target, state); err != nil {
+					return generatorID, target, err
+				}
+				generatorID = identityBackend.GeneratorIDForTarget(target)
+			} else {
+				if target == "" {
+					target = resolvedTarget
+				}
 			}
 		} else if target != "" {
 			if err := backend.SetGeneratorDrainState(target, state); err != nil {

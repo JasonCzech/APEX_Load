@@ -48,6 +48,26 @@ func TestExtractJSONPath_ArrayIndex(t *testing.T) {
 	}
 }
 
+func TestExtractJSONPath_RootArrayAndChainedIndexes(t *testing.T) {
+	body := []byte(`[{"id":"first","tokens":[["nested-token"]]}]`)
+
+	val, err := extractJSONPath("$[0].id", body)
+	if err != nil {
+		t.Fatalf("extractJSONPath root array: %v", err)
+	}
+	if val != "first" {
+		t.Errorf("root array got %q, want first", val)
+	}
+
+	val, err = extractJSONPath("$[0].tokens[0][0]", body)
+	if err != nil {
+		t.Fatalf("extractJSONPath chained indexes: %v", err)
+	}
+	if val != "nested-token" {
+		t.Errorf("chained indexes got %q, want nested-token", val)
+	}
+}
+
 func TestExtractJSONPath_MissingField(t *testing.T) {
 	body := []byte(`{"name":"test"}`)
 
@@ -147,10 +167,9 @@ func TestExtractCompositeGraphReferenceId(t *testing.T) {
 	}
 }
 
-// TestExtractCometdClientIdArrayRoot guards the A5 CometD contract: a Bayeux
-// /meta/handshake response is a JSON ARRAY, so the clientId must be extracted
-// with an array-aware jmespath — the hand-rolled jsonpath errors on an array
-// root, which is why the importer emits jmespath for this rule.
+// TestExtractCometdClientIdArrayRoot guards the A5 CometD contract: Salesforce
+// still needs JMESPath for filter predicates, while the lighter JSONPath helper
+// now supports direct numeric array-root indexing used by generic correlations.
 func TestExtractCometdClientIdArrayRoot(t *testing.T) {
 	body := []byte(`[{"id":"1","channel":"/meta/handshake","successful":true,"clientId":"3f8k2j9xqz"}]`)
 
@@ -162,8 +181,12 @@ func TestExtractCometdClientIdArrayRoot(t *testing.T) {
 		t.Errorf("got %q, want %q", val, "3f8k2j9xqz")
 	}
 
-	if _, err := extractJSONPath("$.clientId", body); err == nil {
-		t.Fatal("hand-rolled jsonpath unexpectedly extracted from an array root; the importer relies on this failing")
+	val, err = extractJSONPath("$[0].clientId", body)
+	if err != nil {
+		t.Fatalf("extractJSONPath array-root index: %v", err)
+	}
+	if val != "3f8k2j9xqz" {
+		t.Errorf("jsonpath array-root got %q, want %q", val, "3f8k2j9xqz")
 	}
 }
 

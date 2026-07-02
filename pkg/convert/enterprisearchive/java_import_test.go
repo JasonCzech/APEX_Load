@@ -3,6 +3,7 @@ package enterprisearchive
 import (
 	"archive/zip"
 	"bytes"
+	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -673,6 +674,7 @@ public class Actions {
   public int action() throws Throwable {
     CloseableHttpClient client = HttpClients.createDefault();
     HttpPost post = new HttpPost("https://example.test/api/orders");
+    post.setHeader("Content-Type", "text/plain");
     post.setHeader("Content-Type", "application/json");
     post.setEntity(new StringEntity("{\"id\":\"{orderId}\"}"));
     client.execute(post);
@@ -703,6 +705,9 @@ public class Actions {
 	if action.Headers["Content-Type"] != "application/json" || len(action.HeaderList) == 0 {
 		t.Fatalf("headers=%#v header_list=%#v, want ordered content type", action.Headers, action.HeaderList)
 	}
+	if got := javaHeaderListValues(action.HeaderList, "Content-Type"); len(got) != 1 || got[0] != "application/json" {
+		t.Fatalf("Content-Type header_list values = %#v, want one replacement value", got)
+	}
 }
 
 func TestConvertZipJavaHttpURLConnectionObjectFlowProducesExecutableHTTP(t *testing.T) {
@@ -725,6 +730,7 @@ public class Actions {
     URL url = new URL("https://example.test/api/orders");
     HttpURLConnection conn = (HttpURLConnection) url.openConnection();
     conn.setRequestMethod("POST");
+    conn.setRequestProperty("Content-Type", "text/plain");
     conn.setRequestProperty("Content-Type", "application/json");
     conn.addRequestProperty("Accept", "application/json");
     conn.addRequestProperty("Accept", "text/plain");
@@ -758,6 +764,9 @@ public class Actions {
 	}
 	if action.Headers["Content-Type"] != "application/json" || len(action.HeaderList) == 0 {
 		t.Fatalf("headers=%#v header_list=%#v, want ordered content type", action.Headers, action.HeaderList)
+	}
+	if got := javaHeaderListValues(action.HeaderList, "Content-Type"); len(got) != 1 || got[0] != "application/json" {
+		t.Fatalf("Content-Type header_list values = %#v, want one replacement value", got)
 	}
 	wantHeaders := dsl.HeaderList{
 		{Name: "Content-Type", Value: "application/json"},
@@ -938,9 +947,9 @@ import java.sql.*;
 
 public class Actions {
   public int action() throws Throwable {
-    PreparedStatement ps = conn.prepareStatement("insert into audit values (1)");
+    PreparedStatement ps = con.prepareStatement("insert into audit values (1)");
     ps.executeUpdate();
-    conn.commit();
+    con.commit();
     Queue q = session.createQueue("orders.in");
     TextMessage msg = session.createTextMessage("hi");
     producer.send(q, msg);
@@ -963,11 +972,21 @@ public class Actions {
 		}
 	}
 	if counts["database:db_commit"] != 1 {
-		t.Fatalf("action counts = %#v, want one database db_commit from conn.commit", counts)
+		t.Fatalf("action counts = %#v, want one database db_commit from con.commit", counts)
 	}
 	if counts["jms-solace:jms_commit"] != 1 {
 		t.Fatalf("action counts = %#v, want one JMS jms_commit from session.commit", counts)
 	}
+}
+
+func javaHeaderListValues(headers dsl.HeaderList, name string) []string {
+	var values []string
+	for _, header := range headers {
+		if strings.EqualFold(header.Name, name) {
+			values = append(values, header.Value)
+		}
+	}
+	return values
 }
 
 func TestConvertZipJavaSynchronizedBlockPreservesNestedJMS(t *testing.T) {

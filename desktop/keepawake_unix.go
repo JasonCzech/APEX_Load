@@ -3,6 +3,7 @@
 package main
 
 import (
+	"os"
 	"os/exec"
 	"runtime"
 )
@@ -11,11 +12,12 @@ import (
 // stop func that releases the lock by killing it. Best-effort: if the tool is
 // unavailable the stop func is a no-op.
 func startSleepInhibitor() func() {
-	name, args := inhibitorCommand(runtime.GOOS)
+	name, args := inhibitorCommand(runtime.GOOS, os.Getpid())
 	if name == "" {
 		return func() {}
 	}
 	cmd := exec.Command(name, args...)
+	configureInhibitorCommand(cmd)
 	if err := cmd.Start(); err != nil {
 		return func() {}
 	}

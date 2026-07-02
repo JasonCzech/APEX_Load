@@ -160,6 +160,7 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 	body, redactedBody := vu.interpolateWithSecrets(action.Body)
 	auth, redactedAuth := toProtocolAuthConfig(action.Auth, vu)
 	soapAction, redactedSOAPAction := toProtocolSOAPActions(action.SOAP, vu)
+	params, redactedParams := vu.interpolateAnyMapWithSecrets(action.Params)
 	return &protocol.Action{
 		Name:               action.Name,
 		Type:               action.Type,
@@ -175,7 +176,8 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 		Body:               []byte(body),
 		BodyEncoding:       action.BodyEncoding,
 		RedactedBody:       []byte(redactedBody),
-		Params:             vu.interpolateAnyMap(action.Params),
+		Params:             params,
+		RedactedParams:     redactedParams,
 		WaitFor:            toProtocolWaitCondition(action.WaitFor, vu),
 		Sync:               toProtocolBrowserSyncPolicy(action.Sync, vu),
 		Capture:            toProtocolCaptureOptions(action.Capture),
@@ -352,6 +354,20 @@ func (vu *VUser) interpolateAnyMap(m map[string]any) map[string]any {
 	return out
 }
 
+func (vu *VUser) interpolateAnyMapWithSecrets(m map[string]any) (map[string]any, map[string]any) {
+	if m == nil {
+		return nil, nil
+	}
+	resolved := make(map[string]any, len(m))
+	redacted := make(map[string]any, len(m))
+	for k, v := range m {
+		resolvedValue, redactedValue := vu.interpolateAnyWithSecrets(v)
+		resolved[k] = resolvedValue
+		redacted[k] = redactedValue
+	}
+	return resolved, redacted
+}
+
 func (vu *VUser) interpolateAny(v any) any {
 	switch typed := v.(type) {
 	case string:
@@ -370,6 +386,29 @@ func (vu *VUser) interpolateAny(v any) any {
 		return out
 	default:
 		return v
+	}
+}
+
+func (vu *VUser) interpolateAnyWithSecrets(v any) (any, any) {
+	switch typed := v.(type) {
+	case string:
+		return vu.interpolateWithSecrets(typed)
+	case []any:
+		resolved := make([]any, len(typed))
+		redacted := make([]any, len(typed))
+		for i := range typed {
+			resolved[i], redacted[i] = vu.interpolateAnyWithSecrets(typed[i])
+		}
+		return resolved, redacted
+	case map[string]any:
+		resolved := make(map[string]any, len(typed))
+		redacted := make(map[string]any, len(typed))
+		for k, nested := range typed {
+			resolved[k], redacted[k] = vu.interpolateAnyWithSecrets(nested)
+		}
+		return resolved, redacted
+	default:
+		return v, v
 	}
 }
 

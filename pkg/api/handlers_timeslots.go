@@ -254,16 +254,21 @@ func (s *Server) handleUpdateCapacityReservation(w http.ResponseWriter, r *http.
 	existing.Timezone = req.Timezone
 	existing.ScenarioID = req.ScenarioID
 	existing.RequestedCapacity = req.RequestedCapacity
+	resetApproval := termsChanged && existing.ApprovalState == "approved"
 	if termsChanged && existing.ApprovalState == "approved" {
 		existing.ApprovalState = "pending"
+		existing.ApprovalID = nil
 		existing.BoundTestID = nil
 		existing.BoundTestStatus = nil
 	}
 	_, existing.ConflictSummary = s.summarizeReservationConflicts(existing.ProjectID, existing.ID, existing.StartAt, existing.EndAt)
 
-	if err := s.store.SaveCapacityReservation(existing); err != nil {
+	if err := s.store.UpdateCapacityReservationDetails(existing, resetApproval); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
+	}
+	if fresh, err := s.store.GetCapacityReservation(existing.ID); err == nil && fresh != nil {
+		existing = fresh
 	}
 	s.recordAuditEvent(r, "timeslot.update", "success", "timeslot", existing.ID, existing.ProjectID, nil)
 	writeJSON(w, http.StatusOK, existing)

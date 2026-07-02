@@ -73,6 +73,28 @@ func TestCreateUserBindingRejectsUnknownRole(t *testing.T) {
 	if err := store.SaveUser(user); err != nil {
 		t.Fatalf("SaveUser: %v", err)
 	}
+	if err := store.SaveGitHubConnection(&storage.GitHubConnection{
+		UserID:         user.Subject,
+		GitHubLogin:    "old-octocat",
+		GitHubUserID:   "100",
+		AccessTokenEnc: "enc-access-subject",
+		TokenType:      "bearer",
+		ConnectedAt:    now,
+		UpdatedAt:      now,
+	}); err != nil {
+		t.Fatalf("SaveGitHubConnection(subject): %v", err)
+	}
+	if err := store.SaveGitHubConnection(&storage.GitHubConnection{
+		UserID:         user.ID,
+		GitHubLogin:    "legacy-octocat",
+		GitHubUserID:   "101",
+		AccessTokenEnc: "enc-access-id",
+		TokenType:      "bearer",
+		ConnectedAt:    now,
+		UpdatedAt:      now,
+	}); err != nil {
+		t.Fatalf("SaveGitHubConnection(id): %v", err)
+	}
 	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"}) // dev bypass
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/users/"+user.ID+"/bindings", bytes.NewReader([]byte(`{"scope_type":"global","role":"superuser"}`)))
@@ -159,6 +181,12 @@ func TestDeleteUserEndpoint(t *testing.T) {
 	}
 	if _, err := store.GetUser(user.ID); err == nil {
 		t.Fatalf("user should be deleted")
+	}
+	if conn, err := store.GetGitHubConnection(user.Subject); err != nil || conn != nil {
+		t.Fatalf("subject GitHub connection = (%#v, %v), want deleted", conn, err)
+	}
+	if conn, err := store.GetGitHubConnection(user.ID); err != nil || conn != nil {
+		t.Fatalf("id GitHub connection = (%#v, %v), want deleted", conn, err)
 	}
 }
 

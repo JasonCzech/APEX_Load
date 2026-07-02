@@ -46,32 +46,65 @@ func parseFileFilters(filtersJSON string) []wailsruntime.FileFilter {
 	return out
 }
 
-// rememberDialogPath records a path the OS file picker returned so the file
-// bridge will operate on it. Stored as a cleaned absolute path.
-func (a *App) rememberDialogPath(path string) {
+func cleanBridgePath(path string) string {
 	path = strings.TrimSpace(path)
+	if path == "" {
+		return ""
+	}
+	if abs, err := filepath.Abs(path); err == nil {
+		path = abs
+	}
+	return filepath.Clean(path)
+}
+
+// rememberReadPath records a path the OS open-file picker/open-with handoff
+// returned so the file bridge may read it. Stored as a cleaned absolute path.
+func (a *App) rememberReadPath(path string) {
+	path = cleanBridgePath(path)
 	if path == "" {
 		return
 	}
-	if abs, err := filepath.Abs(path); err == nil {
-		path = abs
-	}
 	a.pathMu.Lock()
 	defer a.pathMu.Unlock()
-	if a.dialogPaths == nil {
-		a.dialogPaths = map[string]bool{}
+	if a.readPaths == nil {
+		a.readPaths = map[string]bool{}
 	}
-	a.dialogPaths[filepath.Clean(path)] = true
+	a.readPaths[path] = true
 }
 
-// isDialogPath reports whether a path was vended by a native dialog this session.
-func (a *App) isDialogPath(path string) bool {
-	if abs, err := filepath.Abs(path); err == nil {
-		path = abs
+// rememberWritePath records a path the OS save-file picker returned so the file
+// bridge may write it. Stored as a cleaned absolute path.
+func (a *App) rememberWritePath(path string) {
+	path = cleanBridgePath(path)
+	if path == "" {
+		return
 	}
 	a.pathMu.Lock()
 	defer a.pathMu.Unlock()
-	return a.dialogPaths[filepath.Clean(path)]
+	if a.writePaths == nil {
+		a.writePaths = map[string]bool{}
+	}
+	a.writePaths[path] = true
+}
+
+func (a *App) isReadPath(path string) bool {
+	path = cleanBridgePath(path)
+	if path == "" {
+		return false
+	}
+	a.pathMu.Lock()
+	defer a.pathMu.Unlock()
+	return a.readPaths[path]
+}
+
+func (a *App) isWritePath(path string) bool {
+	path = cleanBridgePath(path)
+	if path == "" {
+		return false
+	}
+	a.pathMu.Lock()
+	defer a.pathMu.Unlock()
+	return a.writePaths[path]
 }
 
 // isUnderAppData reports whether a path is inside the app data directory.
@@ -101,7 +134,7 @@ func (a *App) OpenFileDialogNative(title, filtersJSON string) (string, error) {
 		Filters: parseFileFilters(filtersJSON),
 	})
 	if err == nil {
-		a.rememberDialogPath(path)
+		a.rememberReadPath(path)
 	}
 	return path, err
 }
@@ -117,7 +150,7 @@ func (a *App) OpenFilesDialogNative(title, filtersJSON string) ([]string, error)
 	})
 	if err == nil {
 		for _, p := range paths {
-			a.rememberDialogPath(p)
+			a.rememberReadPath(p)
 		}
 	}
 	return paths, err
@@ -135,24 +168,22 @@ func (a *App) SaveFileDialogNative(title, defaultName, filtersJSON string) (stri
 		Filters:         parseFileFilters(filtersJSON),
 	})
 	if err == nil {
-		a.rememberDialogPath(path)
+		a.rememberWritePath(path)
 	}
 	return path, err
 }
 
-// ReadFileBase64 reads a file the user selected (or dropped) and returns it
-// base64-encoded so the dashboard can reconstruct a File/Blob for its existing
-// upload code path. Bounded by maxBridgeFileBytes.
+// ReadFileBase64 reads a file the user selected via the OS open dialog/open-with
+// handoff and returns it base64-encoded so the dashboard can reconstruct a
+// File/Blob for its existing upload code path. Bounded by maxBridgeFileBytes.
 func (a *App) ReadFileBase64(path string) (string, error) {
 	path = strings.TrimSpace(path)
 	if path == "" {
 		return "", fmt.Errorf("path is required")
 	}
-	// Confinement: only read paths the user explicitly chose via a native dialog,
-	// or files of an importable type (drag-drop delivers paths straight to JS, so
-	// the extension gate bounds the read surface to .json/.zip/.har). This stops
-	// webview JS from slurping arbitrary files (/etc/passwd, ~/.ssh, .env, …).
-	if !a.isDialogPath(path) && !isOpenableFile(path) {
+	// Confinement: extensions are not authorization. Only paths that the native
+	// app learned from an OS-mediated open action in this session are readable.
+	if !a.isReadPath(path) {
 		return "", fmt.Errorf("refusing to read a path that was not selected by the user")
 	}
 	info, err := os.Stat(path)
@@ -179,9 +210,10 @@ func (a *App) WriteFileBase64(path, b64 string) error {
 	if path == "" {
 		return fmt.Errorf("path is required")
 	}
-	// Confinement: only write to a save-dialog destination the user chose, or
-	// inside the app data dir. Never let webview JS write to arbitrary paths.
-	if !a.isDialogPath(path) && !a.isUnderAppData(path) {
+	// Confinement: only write to a save-dialog destination the user chose. Read
+	// grants do not authorize write-back, and app data is never writable via this
+	// renderer bridge.
+	if !a.isWritePath(path) {
 		return fmt.Errorf("refusing to write a path that was not chosen via the save dialog")
 	}
 	// Enforce the cap on the ENCODED length before allocating the decoded buffer,
@@ -206,7 +238,7 @@ func (a *App) RevealInFolder(path string) error {
 	// Only reveal paths the user chose, app-owned locations, or importable files,
 	// and only if they actually exist (avoids handing arbitrary strings to the OS
 	// file manager).
-	if !a.isDialogPath(path) && !a.isUnderAppData(path) && !isOpenableFile(path) {
+	if !a.isReadPath(path) && !a.isWritePath(path) && !a.isUnderAppData(path) && !isOpenableFile(path) {
 		return fmt.Errorf("refusing to reveal a path that was not selected by the user")
 	}
 	if _, err := os.Lstat(path); err != nil {

@@ -54,6 +54,30 @@ func TestAuthDenialIsAudited(t *testing.T) {
 	}
 }
 
+func TestAuthDenialThrottleIgnoresPathAndSubjectRotation(t *testing.T) {
+	store := auditEventStore(t)
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+
+	for _, tc := range []struct {
+		subject string
+		path    string
+	}{
+		{subject: "stranger-1", path: "/api/v1/auth/users"},
+		{subject: "stranger-2", path: "/api/v1/scripts"},
+		{subject: "stranger-3", path: "/api/v1/tests"},
+	} {
+		req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+		req.RemoteAddr = "203.0.113.10:12345"
+		req.Header.Set("X-Auth-Request-User", tc.subject)
+		server.recordAuthDenial(req, authResolution{}, http.StatusUnauthorized, "unknown user subject")
+	}
+
+	if got := countAuditEvents(t, store, "auth.access.denied"); got != 1 {
+		t.Fatalf("auth.access.denied events = %d, want 1 despite path/subject rotation", got)
+	}
+}
+
 // A4 — trusted-header logins are audited once per dedup window (not per request).
 func TestTrustedHeaderLoginAuditedAndDeduped(t *testing.T) {
 	store := auditEventStore(t)

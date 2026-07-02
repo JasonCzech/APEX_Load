@@ -22,7 +22,7 @@
 | ID | Item | Effort | Status | Depends on |
 |----|------|--------|--------|-----------|
 | **A16b** | Split `AccessPage.tsx` into workspace components | L | TODO | — (utils already extracted) |
-| **A14** | Move service-account scope into the route catalog | M | TODO (low value) | — |
+| **A14** | Explicit service-account scopes + freshness enforcement | S/M | TODO (low value) | route-catalog scope foundation |
 | **A18** | Atomic user onboarding (user + bindings) | M | DONE | — |
 | **A20** | Usage-accounting ramp/abort accuracy + archive-bytes cache | M | TODO | ManagedTest schema |
 | **A19** | Unify audit views (Settings vs Access) | — | WONT-DO | — |
@@ -88,19 +88,25 @@ aria-labels MUST be preserved); tsc + eslint clean; FULL vitest green.
 
 ## 2. Low-severity polish
 
-### A14 — Move service-account scope into the route catalog (M, TODO — low value)
+### A14 — Explicit service-account scopes + freshness enforcement (S/M, TODO — low value)
+
+**Status:** The route-catalog scope foundation has shipped. `accessRequirement` carries
+`ServiceAccountScope` / `ServiceAccountScopeLookup`, `routeAuth` applies
+`withRouteServiceAccountScope`, and `requiredServiceAccountScope` prefers catalog-derived values
+before the legacy prefix fallback.
 
 **Why deferred:** SA scopes are a *second* authorization gate applied **after** the RBAC role check
 (`serviceAccountAllowsRequest`), so a coarse default can only fail to *narrow*, never escalate.
-The current scope→path-prefix table can drift from the route catalog, but the blast radius is
-small. Folding scope into the route catalog is a broad cross-route refactor; failing the catch-all
-closed would break SA access to uncataloged routes.
+What remains is the smaller drift-prevention tail: many routes still inherit scopes from the legacy
+prefix table at catalog-build time instead of declaring explicit per-route scopes.
 
-**Approach:** add a `scope` field to the route-catalog entries (or a parallel cataloged map) and a
-freshness test that every SA-reachable route declares a scope; OR fail the scope catch-all closed
-and audit which routes break. **Acceptance:** scope requirements are catalog-derived + test-enforced,
-no SA regressions. **Anchors:** `pkg/api/auth_resolution.go` (`serviceAccountAllowsRequest`,
-`normalizeAuthenticatedServiceAccountScopes`), `pkg/api/middleware.go` (`grantIfScopeAllows`).
+**Approach:** convert inherited scope defaults into explicit route declarations where useful, add a
+freshness test that every SA-reachable route has either an explicit scope or an intentional fallback,
+then decide whether the non-catalog catch-all should fail closed. **Acceptance:** scope requirements
+are catalog-derived + test-enforced, no SA regressions. **Anchors:** `pkg/api/route_catalog.go`
+(`withRouteServiceAccountScope`), `pkg/api/auth_resolution.go` (`requiredServiceAccountScope`,
+`serviceAccountAllowsRequest`, `normalizeAuthenticatedServiceAccountScopes`),
+`pkg/api/middleware.go` (`grantIfScopeAllows`).
 
 ### A18 — Atomic user onboarding (M, DONE)
 

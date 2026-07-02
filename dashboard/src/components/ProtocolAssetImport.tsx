@@ -23,6 +23,7 @@ export type ImportKind = 'devweb' | 'har' | 'recorder-export' | 'openapi' | 'ram
 
 interface Props {
   kind: ImportKind
+  initialFile?: File | null
   initialMode?: string | null
   projectId?: string
   onImported?: (result: ImportedSaveResult) => void
@@ -518,7 +519,7 @@ function RecorderStepMappingReview({ summary }: { summary?: Record<string, unkno
 
 const endpointTotal = salesforceEndpointTotal
 
-export default function ProtocolAssetImport({ kind, initialMode, projectId, onImported, onEdit, onClose }: Props) {
+export default function ProtocolAssetImport({ kind, initialFile, initialMode, projectId, onImported, onEdit, onClose }: Props) {
   const api = useApi()
   const convertTask = useAsyncTask<ProtocolImportResult>()
   const saveTask = useAsyncTask<StoredScript>()
@@ -578,6 +579,14 @@ export default function ProtocolAssetImport({ kind, initialMode, projectId, onIm
   // base URL, so do not render inputs that would silently do nothing.
   const supportsScriptName = kind !== 'eventhubs-capture' && kind !== 'broker-config'
   const supportsBaseURL = kind !== 'asyncapi' && kind !== 'eventhubs-capture' && kind !== 'broker-config'
+
+  useEffect(() => {
+    if (!initialFile) return
+    setFile(initialFile)
+    setMessageError('')
+    convertTask.reset()
+    saveTask.reset()
+  }, [convertTask.reset, initialFile, saveTask.reset])
 
   useEffect(() => {
     if (kind !== 'devweb') return

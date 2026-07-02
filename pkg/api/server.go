@@ -72,6 +72,8 @@ type Server struct {
 	kubeRestarter            KubeRestarter
 	restartMu                sync.Mutex
 	restartInFlight          map[string]struct{}
+	testNotesArchiveMu       sync.Mutex
+	testNotesArchiveLocks    map[string]*sync.Mutex
 	metricsAddr              string
 	metricsToken             string
 	metricsServer            *http.Server
@@ -209,13 +211,14 @@ func NewServer(cfg ServerConfig) *Server {
 		importAssetDir:   resolveImportAssetDir(cfg),
 		bindScope:        cfg.BindScope,
 
-		generatorDiscovery: discovery,
-		k8sRestart:         normalizeK8sRestartSettings(cfg.K8sRestart),
-		kubeRestarter:      cfg.KubeRestarter,
-		restartInFlight:    make(map[string]struct{}),
-		metricsAddr:        strings.TrimSpace(cfg.MetricsAddr),
-		metricsToken:       strings.TrimSpace(cfg.MetricsToken),
-		staticFS:           StaticFS,
+		generatorDiscovery:    discovery,
+		k8sRestart:            normalizeK8sRestartSettings(cfg.K8sRestart),
+		kubeRestarter:         cfg.KubeRestarter,
+		restartInFlight:       make(map[string]struct{}),
+		testNotesArchiveLocks: make(map[string]*sync.Mutex),
+		metricsAddr:           strings.TrimSpace(cfg.MetricsAddr),
+		metricsToken:          strings.TrimSpace(cfg.MetricsToken),
+		staticFS:              StaticFS,
 	}
 	if err := fileasset.RegisterRoot(s.importAssetDir); err != nil {
 		slog.Warn("invalid import asset store; file assets will be unavailable", "dir", s.importAssetDir, "error", err)

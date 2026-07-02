@@ -575,6 +575,9 @@ func (tr *TestRunner) persistTestManifestArtifact(test *ManagedTest, record *sto
 	if err := writeIndentedJSONFile(record.ManifestPath, archiveManifest); err != nil {
 		return err
 	}
+	if err := refreshRunArchiveManifestTrust(record); err != nil {
+		return err
+	}
 	if err := uploadArchiveDirectory(context.Background(), record.ArchivePath, record.TestID); err != nil {
 		return err
 	}

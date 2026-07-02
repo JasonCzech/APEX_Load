@@ -52,6 +52,7 @@ export interface ScenarioFormState {
   goal_max_vusers?: number
   goal_p95_latency_ms?: number
   goal_max_error_pct?: number
+  goal_config?: GoalConfig
   continue_on_error: boolean
   snapshot_on_error: boolean
   runtime_iterations?: number
@@ -69,6 +70,7 @@ export interface ScenarioFormState {
   browser_headless?: '' | 'true' | 'false'
   assignment_mode: 'auto' | 'specific_hosts'
   assignment_targets: string[]
+  assignment?: GeneratorAssignmentSettings
   data_pool_id?: string
   data_pool_alias?: string
   data_pool_access_mode?: ScenarioDataPoolBinding['access_mode']
@@ -152,14 +154,32 @@ function emptyScenarioForm(scriptId = ''): ScenarioFormState {
 
 type LoadStageType = 'ramp_up' | 'hold' | 'ramp_down'
 
-function goalConfigFromForm(form: ScenarioFormState): GoalConfig {
+function cloneAssignment(assignment?: GeneratorAssignmentSettings): GeneratorAssignmentSettings | undefined {
+  if (!assignment) return undefined
   return {
-    ...(form.goal_target_average_tps ? { target_average_tps: Number(form.goal_target_average_tps) } : {}),
-    ...(form.goal_min_vusers ? { min_vusers: Number(form.goal_min_vusers) } : {}),
-    ...(form.goal_max_vusers ? { max_vusers: Number(form.goal_max_vusers) } : {}),
-    ...(form.goal_p95_latency_ms ? { p95_latency_ms: Number(form.goal_p95_latency_ms) } : {}),
-    ...(form.goal_max_error_pct ? { max_error_pct: Number(form.goal_max_error_pct) } : {}),
+    ...assignment,
+    selected_targets: assignment.selected_targets ? [...assignment.selected_targets] : undefined,
+    region_weights: assignment.region_weights ? { ...assignment.region_weights } : undefined,
+    load_zone_weights: assignment.load_zone_weights ? { ...assignment.load_zone_weights } : undefined,
+    required_labels: assignment.required_labels ? { ...assignment.required_labels } : undefined,
   }
+}
+
+function goalConfigFromForm(form: ScenarioFormState): GoalConfig {
+  const goal: GoalConfig = { ...(form.goal_config || {}) }
+  const setNumber = (field: keyof GoalConfig, value: number | undefined) => {
+    if (value === undefined || value === null) {
+      delete goal[field]
+      return
+    }
+    goal[field] = Number(value) as never
+  }
+  setNumber('target_average_tps', form.goal_target_average_tps)
+  setNumber('min_vusers', form.goal_min_vusers)
+  setNumber('max_vusers', form.goal_max_vusers)
+  setNumber('p95_latency_ms', form.goal_p95_latency_ms)
+  setNumber('max_error_pct', form.goal_max_error_pct)
+  return goal
 }
 
 function maxStageVUsers(stages: LoadStageDraft[]) {
@@ -287,7 +307,7 @@ function scenarioFormGroupFromStored(group: StoredScenario['scripts'][number], f
     stages: group.stages ? [...group.stages] : [],
     initialization: group.initialization || 'at_runtime',
     runtimeSettings: runtimeDraftFromOverride(group.runtime_settings),
-    assignment: group.assignment ? { ...group.assignment, selected_targets: group.assignment.selected_targets ? [...group.assignment.selected_targets] : undefined, required_labels: group.assignment.required_labels ? { ...group.assignment.required_labels } : undefined } : undefined,
+    assignment: cloneAssignment(group.assignment),
   }
 }
 
@@ -495,6 +515,25 @@ function booleanSelectValue(value?: boolean): '' | 'true' | 'false' {
   return value ? 'true' : 'false'
 }
 
+function assignmentFromForm(form: ScenarioFormState): GeneratorAssignmentSettings {
+  const preserved = cloneAssignment(form.assignment)
+  if (form.assignment_mode === 'specific_hosts') {
+    return {
+      ...(preserved || {}),
+      mode: 'specific_hosts',
+      selected_targets: [...form.assignment_targets],
+    }
+  }
+  if (preserved?.mode === 'region_weighted' || preserved?.mode === 'load_zone_weighted') {
+    return preserved
+  }
+  return {
+    ...(preserved || {}),
+    mode: 'auto',
+    selected_targets: [],
+  }
+}
+
 function scenarioFormStateFromStoredScenario(
   scenario: StoredScenario,
   fallbackScriptId: string,
@@ -520,6 +559,7 @@ function scenarioFormStateFromStoredScenario(
     goal_max_vusers: scenario.goal_config?.max_vusers,
     goal_p95_latency_ms: scenario.goal_config?.p95_latency_ms,
     goal_max_error_pct: scenario.goal_config?.max_error_pct,
+    goal_config: scenario.goal_config ? { ...scenario.goal_config } : undefined,
     continue_on_error: Boolean(scenario.runtime_settings?.error_handling?.continue_on_error),
     snapshot_on_error: Boolean(scenario.runtime_settings?.error_handling?.snapshot_on_error),
     runtime_iterations: runtimeSettings?.iterations,
@@ -537,6 +577,7 @@ function scenarioFormStateFromStoredScenario(
     browser_headless: booleanSelectValue(scenario.runtime_settings?.browser?.headless),
     assignment_mode: scenario.assignment?.mode === 'specific_hosts' ? 'specific_hosts' : 'auto',
     assignment_targets: scenario.assignment?.selected_targets ? [...scenario.assignment.selected_targets] : [],
+    assignment: cloneAssignment(scenario.assignment),
     data_pool_id: firstPool?.pool_id || '',
     data_pool_alias: firstPool?.alias || '',
     data_pool_access_mode: firstPool?.access_mode || 'read_only',
@@ -1181,9 +1222,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       scenarioMode: draftForm.scenario_mode,
       scriptShakeout: draftForm.script_shakeout,
       resourceBaseline: draftForm.resource_baseline,
-      assignment: draftForm.assignment_mode === 'specific_hosts'
-        ? { mode: 'specific_hosts', selected_targets: draftForm.assignment_targets }
-        : { mode: 'auto', selected_targets: [] },
+      assignment: assignmentFromForm(draftForm),
       groups: draftForm.groups.map(normalizeGroupForPayload),
       goalConfig: goalConfigFromForm(draftForm),
       runtimeSettings: runtimeSettingsFromForm(draftForm, showBrowserRuntimeSettings),

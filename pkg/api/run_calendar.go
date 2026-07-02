@@ -453,9 +453,13 @@ func (tr *TestRunner) buildRunCalendarCapacity(from, to time.Time, projectID str
 		pressurePct := 0.0
 		if denom > 0 {
 			pressurePct = float64(peakReserved) / float64(denom)
+		} else if peakReserved > 0 {
+			pressurePct = 1.0
 		}
 		pressure := "clear"
-		if pressurePct > 1.0 {
+		if peakReserved > 0 && denom <= 0 {
+			pressure = "over"
+		} else if pressurePct > 1.0 {
 			pressure = "over"
 		} else if pressurePct >= 0.85 {
 			pressure = "tight"

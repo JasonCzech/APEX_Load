@@ -115,6 +115,8 @@ func ConvertJava(files map[string]string, opts ConvertOptions, detected Detected
 	}
 
 	var laneResults []*ConvertResult
+	httpLaneEmitted := false
+	databaseLaneEmitted := false
 	if profile.Surfaces[javaSurfaceHTTP] {
 		if httpActions := javaHTTPParsedActions(program); len(flattenParsedFunctions(httpActions)) > 0 {
 			httpResult, err := Convert(httpActions, opts)
@@ -133,6 +135,7 @@ func ConvertJava(files map[string]string, opts ConvertOptions, detected Detected
 				httpResult.Script.GeneratedFrom = "enterprise_script_archive"
 				javaEnsureHeaderLists(httpResult.Script)
 				laneResults = append(laneResults, httpResult)
+				httpLaneEmitted = true
 			}
 		}
 	}
@@ -156,6 +159,7 @@ func ConvertJava(files map[string]string, opts ConvertOptions, detected Detected
 					dbResult.Script.Config.Database.Driver = profile.DatabaseDriver
 				}
 				laneResults = append(laneResults, dbResult)
+				databaseLaneEmitted = true
 			}
 		}
 	}
@@ -184,7 +188,7 @@ func ConvertJava(files map[string]string, opts ConvertOptions, detected Detected
 		}
 	}
 	if profile.Surfaces[javaSurfaceJMS] || len(laneResults) == 0 || profile.Surfaces[javaSurfaceReview] {
-		jmsResult, err := convertJavaStatementLane(files, opts, detected, program, parseWarnings, profile, len(laneResults) > 0)
+		jmsResult, err := convertJavaStatementLane(files, opts, detected, program, parseWarnings, profile, len(laneResults) > 0, httpLaneEmitted, databaseLaneEmitted)
 		if err != nil {
 			return nil, err
 		}
@@ -296,7 +300,7 @@ func classifyJavaResidueStatement(text string) (status string, mode SourceFuncti
 	}
 }
 
-func convertJavaStatementLane(files map[string]string, opts ConvertOptions, detected DetectedProtocol, program javaProgram, parseWarnings []string, profile JavaProfile, secondary bool) (*ConvertResult, error) {
+func convertJavaStatementLane(files map[string]string, opts ConvertOptions, detected DetectedProtocol, program javaProgram, parseWarnings []string, profile JavaProfile, secondary bool, skipHTTP bool, skipDatabase bool) (*ConvertResult, error) {
 	surface := javaSurfaceJMS
 	if !profile.Surfaces[javaSurfaceJMS] {
 		surface = profile.Primary
@@ -312,8 +316,8 @@ func convertJavaStatementLane(files map[string]string, opts ConvertOptions, dete
 	state := &javaImportState{
 		env:          newJavaStringEnv(),
 		profile:      profile,
-		skipHTTP:     profile.Surfaces[javaSurfaceHTTP],
-		skipDatabase: profile.Surfaces[javaSurfaceDatabase],
+		skipHTTP:     skipHTTP,
+		skipDatabase: skipDatabase,
 	}
 	for _, phase := range []string{"init", "action", "teardown"} {
 		statements := javaLifecycleStatements(program, phase)

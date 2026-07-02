@@ -5,6 +5,7 @@ package jms
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strconv"
 	"sync"
@@ -75,6 +76,12 @@ type sbMessageSettler interface {
 type sbReceiveSettler interface {
 	sbMessageSettler
 	ReceiveMessages(context.Context, int, *azservicebus.ReceiveMessagesOptions) ([]*azservicebus.ReceivedMessage, error)
+}
+
+type sbReplyReceiver interface {
+	ReceiveMessages(context.Context, int, *azservicebus.ReceiveMessagesOptions) ([]*azservicebus.ReceivedMessage, error)
+	CompleteMessage(context.Context, *azservicebus.ReceivedMessage, *azservicebus.CompleteMessageOptions) error
+	AbandonMessage(context.Context, *azservicebus.ReceivedMessage, *azservicebus.AbandonMessageOptions) error
 }
 
 type inflightMessage struct {
@@ -187,14 +194,24 @@ func (a *serviceBusAdapter) RequestReply(ctx context.Context, requestDestination
 	if err != nil {
 		return sent, message{}, err
 	}
+	reply, err := serviceBusAwaitCorrelatedReply(ctx, receiver, replyDestination, request, timeout)
+	if err != nil {
+		return sent, reply, err
+	}
+	return sent, reply, nil
+}
+
+const (
+	serviceBusReplyBackoff             = 50 * time.Millisecond
+	serviceBusForeignReplyAbandonLimit = 1
+)
+
+func serviceBusAwaitCorrelatedReply(ctx context.Context, receiver sbReplyReceiver, replyDestination string, request message, timeout time.Duration) (message, error) {
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
 	deadline := time.Now().Add(timeout)
-	// Track replies we have already abandoned this call. Abandon makes a message
-	// immediately redeliverable, so on a shared reply queue an uncorrelated reply
-	// would otherwise be received-and-abandoned in a tight CPU/network busy-loop
-	// until timeout. We batch-receive, abandon foreign replies for their rightful
-	// requester, and back off once a receive cycle yields only already-seen ones.
-	const replyBackoff = 50 * time.Millisecond
-	abandoned := make(map[string]struct{})
+	abandonCounts := make(map[string]int)
 	for time.Now().Before(deadline) {
 		remaining := time.Until(deadline)
 		if remaining <= 0 {
@@ -204,41 +221,83 @@ func (a *serviceBusAdapter) RequestReply(ctx context.Context, requestDestination
 		messages, rerr := receiver.ReceiveMessages(receiveCtx, 10, nil)
 		cancel()
 		if rerr != nil {
-			return sent, message{}, fmt.Errorf("receive Service Bus reply from %q: %w", replyDestination, rerr)
+			if errors.Is(rerr, context.DeadlineExceeded) && time.Now().After(deadline) {
+				break
+			}
+			return message{}, fmt.Errorf("receive Service Bus reply from %q: %w", replyDestination, rerr)
 		}
 		if len(messages) == 0 {
 			continue
 		}
-		sawNewForeign := false
-		for _, sbMsg := range messages {
+		sawAbandoned := false
+		sawBudgetExhausted := false
+		for idx, sbMsg := range messages {
 			reply := fromServiceBusMessage(replyDestination, sbMsg)
 			if messaging.CorrelationMatches(request.CorrelationID, reply.CorrelationID) {
 				if err := receiver.CompleteMessage(ctx, sbMsg, nil); err != nil {
-					return sent, reply, fmt.Errorf("complete Service Bus reply from %q: %w", replyDestination, err)
+					return reply, fmt.Errorf("complete Service Bus reply from %q: %w", replyDestination, err)
 				}
-				return sent, reply, nil
+				for otherIdx, other := range messages {
+					if otherIdx == idx {
+						continue
+					}
+					if _, err := serviceBusAbandonForeignReply(ctx, receiver, replyDestination, other, abandonCounts); err != nil {
+						return reply, err
+					}
+				}
+				return reply, nil
 			}
-			// Not our reply: abandon it so it returns to the queue for its rightful
-			// requester instead of being destroyed.
-			if _, seen := abandoned[sbMsg.MessageID]; !seen {
-				sawNewForeign = true
-				abandoned[sbMsg.MessageID] = struct{}{}
+			abandoned, err := serviceBusAbandonForeignReply(ctx, receiver, replyDestination, sbMsg, abandonCounts)
+			if err != nil {
+				return message{}, err
 			}
-			if err := receiver.AbandonMessage(ctx, sbMsg, nil); err != nil {
-				return sent, message{}, fmt.Errorf("abandon uncorrelated Service Bus reply from %q: %w", replyDestination, err)
+			if abandoned {
+				sawAbandoned = true
+			} else {
+				sawBudgetExhausted = true
 			}
 		}
-		// Only already-abandoned foreign replies recurred: back off briefly so we
-		// don't busy-spin re-receiving the same messages.
-		if !sawNewForeign {
+		if !sawAbandoned && sawBudgetExhausted {
+			sleep := serviceBusReplyBackoff
+			if remaining := time.Until(deadline); remaining > 0 && remaining < sleep {
+				sleep = remaining
+			}
 			select {
 			case <-ctx.Done():
-				return sent, message{}, ctx.Err()
-			case <-time.After(replyBackoff):
+				return message{}, ctx.Err()
+			case <-time.After(sleep):
 			}
 		}
 	}
-	return sent, message{}, fmt.Errorf("no correlated JMS reply received from %q within %s", replyDestination, timeout)
+	return message{}, fmt.Errorf("no correlated JMS reply received from %q within %s", replyDestination, timeout)
+}
+
+func serviceBusAbandonForeignReply(ctx context.Context, receiver sbReplyReceiver, replyDestination string, sbMsg *azservicebus.ReceivedMessage, abandonCounts map[string]int) (bool, error) {
+	key := serviceBusReplyMessageKey(sbMsg)
+	if abandonCounts[key] >= serviceBusForeignReplyAbandonLimit {
+		return false, nil
+	}
+	abandonCounts[key]++
+	if err := receiver.AbandonMessage(ctx, sbMsg, nil); err != nil {
+		return false, fmt.Errorf("abandon uncorrelated Service Bus reply from %q: %w", replyDestination, err)
+	}
+	return true, nil
+}
+
+func serviceBusReplyMessageKey(sbMsg *azservicebus.ReceivedMessage) string {
+	if sbMsg == nil {
+		return "nil"
+	}
+	if sbMsg.MessageID != "" {
+		return "message_id:" + sbMsg.MessageID
+	}
+	if sbMsg.SequenceNumber != nil {
+		return "sequence:" + strconv.FormatInt(*sbMsg.SequenceNumber, 10)
+	}
+	if sbMsg.CorrelationID != nil && *sbMsg.CorrelationID != "" {
+		return "correlation:" + *sbMsg.CorrelationID
+	}
+	return "lock_token:" + hex.EncodeToString(sbMsg.LockToken[:])
 }
 
 func (a *serviceBusAdapter) HealthCheck(ctx context.Context) error {

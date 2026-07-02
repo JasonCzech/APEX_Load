@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // nowRFC3339 returns the current UTC time as RFC3339. A var so tests can stub it.
@@ -55,9 +57,14 @@ func mergeRecent(existing []recentItem, next recentItem, limit int) []recentItem
 	}
 	kept := make([]recentItem, 0, len(out))
 	usedUnpinned := 0
-	for _, it := range out {
+	for i, it := range out {
 		if it.Pinned {
 			kept = append(kept, it)
+			continue
+		}
+		if i == 0 {
+			kept = append(kept, it)
+			usedUnpinned++
 			continue
 		}
 		if usedUnpinned < unpinnedBudget {
@@ -95,11 +102,45 @@ func saveRecents(appDataPath string, items []recentItem) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(recentsPath(appDataPath), data, 0o644)
+	path := recentsPath(appDataPath)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), recentsFileName+".*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.Remove(tmpName)
+		}
+	}()
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		return err
+	}
+	cleanup = false
+	return nil
+}
+
+func (a *App) emitRecentsChanged() {
+	if a.ctx != nil {
+		wailsruntime.EventsEmit(a.ctx, eventRecentsChanged)
+	}
 }
 
 // GetRecentItems returns the recent-items list as a JSON array string.
 func (a *App) GetRecentItems() (string, error) {
+	a.recentsMu.Lock()
+	defer a.recentsMu.Unlock()
 	items := loadRecents(a.appDataPath)
 	if items == nil {
 		items = []recentItem{}
@@ -125,6 +166,8 @@ func (a *App) AddRecentItem(itemJSON string) error {
 	if strings.TrimSpace(item.ID) == "" || strings.TrimSpace(item.Kind) == "" {
 		return nil
 	}
+	a.recentsMu.Lock()
+	defer a.recentsMu.Unlock()
 	item.OpenedAt = nowRFC3339() // stamp server-side so ordering/age is trustworthy
 	existing := loadRecents(a.appDataPath)
 	// Carry a prior pin across the re-add so opening a pinned item keeps it pinned.
@@ -139,11 +182,14 @@ func (a *App) AddRecentItem(itemJSON string) error {
 		return err
 	}
 	a.rebuildMenu() // refresh the native "Open Recent" submenu
+	a.emitRecentsChanged()
 	return nil
 }
 
 // ToggleRecentPin flips the pinned state of a recent item (no-op if not found).
 func (a *App) ToggleRecentPin(kind, id string) error {
+	a.recentsMu.Lock()
+	defer a.recentsMu.Unlock()
 	items := loadRecents(a.appDataPath)
 	changed := false
 	for i := range items {
@@ -160,14 +206,18 @@ func (a *App) ToggleRecentPin(kind, id string) error {
 		return err
 	}
 	a.rebuildMenu()
+	a.emitRecentsChanged()
 	return nil
 }
 
 // ClearRecentItems removes all recent items.
 func (a *App) ClearRecentItems() error {
+	a.recentsMu.Lock()
+	defer a.recentsMu.Unlock()
 	if err := saveRecents(a.appDataPath, []recentItem{}); err != nil {
 		return err
 	}
 	a.rebuildMenu()
+	a.emitRecentsChanged()
 	return nil
 }

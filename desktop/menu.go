@@ -16,10 +16,11 @@ import (
 // About panel is an in-app dialog so it can show live build info on every
 // platform, and File actions translate to dashboard navigation.
 const (
-	menuEventZoom   = "menu:zoom"           // payload: "in" | "out" | "reset"
-	menuEventAbout  = "menu:about"          // open the in-app About dialog
-	menuEventAction = "menu:action"         // payload: action id ("new-test" | "open-script" | "import")
-	eventOpenRecent = "desktop:open-recent" // payload: the recent item's dashboard route
+	menuEventZoom       = "menu:zoom"           // payload: "in" | "out" | "reset"
+	menuEventAbout      = "menu:about"          // open the in-app About dialog
+	menuEventAction     = "menu:action"         // payload: action id ("new-test" | "open-script" | "import")
+	eventOpenRecent     = "desktop:open-recent" // payload: the recent item's dashboard route
+	eventRecentsChanged = "desktop:recents-changed"
 )
 
 // buildAppMenu constructs the native application menu for the host OS.

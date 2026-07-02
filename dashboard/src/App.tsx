@@ -9,7 +9,13 @@ import { MetricsHistoryPoint, TelemetryDiagnostic, TelemetryDiagnosticEntry, WSM
 import Sidebar, { type NavPage } from './components/Sidebar'
 import DashboardPage, { type DashboardSnapshotAudience } from './components/DashboardPage'
 import TablePaginationManager from './components/TablePaginationManager'
-import { type AppView, parseAppViewFromHash, type TestWorkspaceTabID, viewToLocationHash } from './appRouting'
+import {
+  type AppView,
+  handleGuardedRouteChange,
+  parseAppViewFromHash,
+  type TestWorkspaceTabID,
+  viewToLocationHash,
+} from './appRouting'
 import { appendTelemetryDiagnostic } from './components/monitoringTelemetryDiagnostics'
 import { mapExecutionMetricToHistoryPoint } from './components/testExecutionMetricsModel'
 import AuthGate from './components/AuthGate'
@@ -36,6 +42,7 @@ import { useDesktopNotifications } from './hooks/useDesktopNotifications'
 import { useDesktopShellEvents } from './desktop/useDesktopShellEvents'
 import { useKeepAwakeDuringRuns } from './desktop/useKeepAwake'
 import { useDockBadge } from './desktop/useDockBadge'
+import { filesFromDroppedPaths } from './desktop/desktopFiles'
 import AboutDialog from './components/AboutDialog'
 import DesktopHome, { type DesktopQuickAction } from './components/DesktopHome'
 import { addRecent, clearRecents, getRecents, toggleRecentPin, type RecentItem } from './desktop/desktopRecents'
@@ -73,6 +80,34 @@ const SettingsPage = lazy(() => import('./components/SettingsPage'))
 const BrowserRecorderControlPanel = lazy(() => import('./components/BrowserRecorderControlPanel'))
 
 const getWailsDesktopBridge = getDesktopBridge
+
+type NativeImportTarget = {
+  launcher: string
+  mode?: string | null
+}
+
+type NativeImportRequest = NativeImportTarget & {
+  id: number
+  files: File[]
+}
+
+function nativeImportTargetForFileName(fileName: string): NativeImportTarget {
+  const name = fileName.toLowerCase()
+  if (name.endsWith('.zip')) return { launcher: 'enterprise_archive' }
+  if (name.endsWith('.jmx')) return { launcher: 'jmeter' }
+  if (name.endsWith('.har')) return { launcher: 'traffic_har', mode: 'auto_detect' }
+  if (name.endsWith('.postman_collection.json') || name.endsWith('.postman_environment.json')) return { launcher: 'postman' }
+  if (name.endsWith('.asyncapi.json') || name.endsWith('.asyncapi.yaml') || name.endsWith('.asyncapi.yml')) return { launcher: 'asyncapi' }
+  if (name.endsWith('.openapi.json') || name.endsWith('.openapi.yaml') || name.endsWith('.openapi.yml')) return { launcher: 'openapi' }
+  if (name.endsWith('.wsdl') || name.endsWith('.xml')) return { launcher: 'wsdl' }
+  if (name.endsWith('.raml')) return { launcher: 'raml' }
+  if (name.endsWith('.yaml') || name.endsWith('.yml')) return { launcher: 'openapi' }
+  if (name.endsWith('.avro')) return { launcher: 'eventhubs_capture' }
+  if (name.endsWith('.mqsc') || name.endsWith('.properties')) return { launcher: 'broker_config' }
+  if (name.endsWith('.js') || name.endsWith('.ts')) return { launcher: 'k6' }
+  if (name.endsWith('.http') || name.endsWith('.curl') || name.endsWith('.sh') || name.endsWith('.txt')) return { launcher: 'sample', mode: 'standard_api' }
+  return { launcher: 'openapi' }
+}
 
 function formatDesktopRemoteHealth(status?: DesktopStatusResponse) {
   const count = status?.remote_libraries?.count || 0
@@ -152,6 +187,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const [view, setView] = useState<AppView>(() => (
     typeof window === 'undefined' ? { page: 'dashboard' } : parseAppViewFromHash(window.location.hash)
   ))
+  const viewRef = useRef(view)
   const routeSyncInitialized = useRef(false)
   const lastRouteRestored = useRef(false)
   const [metricsHistory, setMetricsHistory] = useState<Record<string, MetricsHistoryPoint[]>>({})
@@ -176,13 +212,15 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const [repositoryCategories, setRepositoryCategories] = useState<import('./types').RepositoryCategory[]>([])
   const [desktopStatus, setDesktopStatus] = useState<DesktopStatusResponse | null>(null)
   const [activeTopbarRuns, setActiveTopbarRuns] = useState<TopbarRunSummary[]>([])
+  const [desktopActiveRunCount, setDesktopActiveRunCount] = useState(0)
+  const [nativeImportRequest, setNativeImportRequest] = useState<NativeImportRequest | null>(null)
   const [fleetEventSignal, setFleetEventSignal] = useState(0)
   // Bumped by the content-free `access_review_changed` WebSocket ping so the Access page
   // refetches its (admin-gated) review when the posture changes server-side.
   const [accessReviewSignal, setAccessReviewSignal] = useState(0)
   const testApi = useTestApi()
   const activeTopbarContribution = useActiveTopbarContribution()
-  const { runGuarded } = useNavigationGuardRunner()
+  const { hasDirtyGuard, runGuarded } = useNavigationGuardRunner()
   const { notifyTestStatus } = useDesktopNotifications()
   const [aboutOpen, setAboutOpen] = useState(false)
   const openAbout = useCallback(() => setAboutOpen(true), [])
@@ -245,7 +283,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
         status: msg.status,
         timestamp: msg.timestamp,
       }))
-      notifyTestStatus(msg.status, msg.test_name, testId)
+      notifyTestStatus(msg.type, msg.test_name, testId)
     }
   }, [notifyTestStatus])
 
@@ -275,8 +313,8 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
 
   const navigateToTest = useCallback((id: string, tab?: TestWorkspaceTabID) => {
     setGuardedView(tab ? { page: 'test', testId: id, tab } : { page: 'test', testId: id })
-    void addRecent({ kind: 'test', id, name: id, route: viewToLocationHash({ page: 'test', testId: id }) })
-  }, [setGuardedView])
+    void addRecent({ kind: 'test', id, name: id, route: viewToLocationHash({ page: 'test', testId: id }) }).then(reloadRecents)
+  }, [reloadRecents, setGuardedView])
   const navigateToTestArchive = useCallback((id: string) => navigateToTest(id, 'archive'), [navigateToTest])
   const navigateToCommandCenter = useCallback((id?: string) => {
     setGuardedView(id ? { page: 'command-center', testId: id } : { page: 'command-center' })
@@ -285,7 +323,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
 
   const navigateToScriptEdit = (scriptId: string) => {
     setGuardedView({ page: 'scripts', mode: 'edit', scriptId })
-    void addRecent({ kind: 'script', id: scriptId, name: scriptId, route: viewToLocationHash({ page: 'scripts', mode: 'edit', scriptId }) })
+    void addRecent({ kind: 'script', id: scriptId, name: scriptId, route: viewToLocationHash({ page: 'scripts', mode: 'edit', scriptId }) }).then(reloadRecents)
   }
   const navigateToScenarioBuilder = () => setGuardedView({ page: 'tests', scenarioView: 'builder' })
   const navigateToNewTestForScenario = (scenarioId: string) => {
@@ -305,6 +343,22 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const handleNavigate = useCallback((page: NavPage) => {
     runGuarded(() => performNavigate(page))
   }, [performNavigate, runGuarded])
+
+  const openNativeImportFiles = useCallback((files: File[]) => {
+    const usable = files.filter(Boolean)
+    if (usable.length === 0) return
+    const target = nativeImportTargetForFileName(usable[0].name)
+    runGuarded(() => {
+      setNativeImportRequest({
+        id: Date.now(),
+        files: usable,
+        ...target,
+      })
+      setScriptsNavigationVersion(version => version + 1)
+      setScriptsTopbarState(null)
+      setView({ page: 'scripts' })
+    })
+  }, [runGuarded])
 
   // Desktop workspace hub wiring.
   const handleDesktopQuickAction = useCallback((action: DesktopQuickAction) => {
@@ -351,7 +405,15 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
       if (action === 'new-test') setGuardedView({ page: 'new-test' })
       else handleNavigate('scripts')
     }, [setGuardedView, handleNavigate]),
-    onOpenFile: useCallback(() => handleNavigate('scripts'), [handleNavigate]),
+    onOpenFile: useCallback((path: string) => {
+      void filesFromDroppedPaths([path]).then(files => {
+        if (files.length > 0) {
+          openNativeImportFiles(files)
+        } else {
+          handleNavigate('scripts')
+        }
+      })
+    }, [handleNavigate, openNativeImportFiles]),
     onOpenURL: useCallback((url: string) => {
       // apexload://<hash> deep links map to a dashboard route.
       const idx = url.indexOf('#')
@@ -361,12 +423,14 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
       // Native File > Open Recent click → navigate to the recent's route.
       if (route) setGuardedView(parseAppViewFromHash(route))
     }, [setGuardedView]),
+    onRecentsChanged: reloadRecents,
   })
   // Keep the machine awake while runs are active so long tests aren't corrupted
   // by the host sleeping (desktop shell only; no-op in the browser).
-  useKeepAwakeDuringRuns(activeTopbarRuns.length)
+  const desktopShellActiveRunCount = desktopSurface ? desktopActiveRunCount : activeTopbarRuns.length
+  useKeepAwakeDuringRuns(desktopShellActiveRunCount)
   // Reflect the active-run count on the dock/taskbar badge.
-  useDockBadge(activeTopbarRuns.length)
+  useDockBadge(desktopShellActiveRunCount)
 
   const handleScriptsAuthoringStateChange = useCallback((state: { subView: ScriptsAuthoringSubView; editingId: string | null }) => {
     setScriptsTopbarState(state)
@@ -459,12 +523,26 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   useKeyboardShortcuts(appShellShortcuts)
 
   useEffect(() => {
+    viewRef.current = view
+  }, [view])
+
+  useEffect(() => {
     if (typeof window === 'undefined') return undefined
 
     const handleRouteChange = () => {
-      const nextView = parseAppViewFromHash(window.location.hash)
-      const nextHash = viewToLocationHash(nextView)
-      setView(current => (viewToLocationHash(current) === nextHash ? current : nextView))
+      handleGuardedRouteChange({
+        currentView: viewRef.current,
+        locationHash: window.location.hash,
+        hasDirtyGuard,
+        runGuarded,
+        restoreHash: (hash) => {
+          window.history.pushState(null, '', hash)
+        },
+        applyView: (nextView) => {
+          const nextHash = viewToLocationHash(nextView)
+          setView(current => (viewToLocationHash(current) === nextHash ? current : nextView))
+        },
+      })
     }
 
     window.addEventListener('popstate', handleRouteChange)
@@ -473,7 +551,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
       window.removeEventListener('popstate', handleRouteChange)
       window.removeEventListener('hashchange', handleRouteChange)
     }
-  }, [])
+  }, [hasDirtyGuard, runGuarded])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -747,6 +825,36 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
     }
   }, [activeApplication?.id, activeProject?.id, testApi, testStatuses])
 
+  useEffect(() => {
+    if (!desktopSurface) {
+      setDesktopActiveRunCount(activeTopbarRuns.length)
+      return
+    }
+
+    let cancelled = false
+
+    const loadDesktopActiveRuns = async () => {
+      try {
+        const response = await testApi.listTests()
+        if (!cancelled) {
+          setDesktopActiveRunCount(selectTopbarActiveRuns(response.tests || [], testStatuses).length)
+        }
+      } catch {
+        // Keep the previous native-shell count if the global snapshot fetch fails.
+      }
+    }
+
+    void loadDesktopActiveRuns()
+    const interval = window.setInterval(() => {
+      void loadDesktopActiveRuns()
+    }, 10000)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
+  }, [activeTopbarRuns.length, desktopSurface, testApi, testStatuses])
+
   // The recorder control panel renders chrome-less so it works as a compact
   // companion popup window next to the recording browser.
   if (view.page === 'recorder-panel' && view.sessionId) {
@@ -887,7 +995,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
               onTogglePin={handleTogglePin}
               onClearRecents={handleClearRecents}
               onReveal={handleRevealFolder}
-              onDropFiles={() => handleNavigate('scripts')}
+              onDropFiles={openNativeImportFiles}
             />
           )}
           {view.page === 'dashboard' && (
@@ -957,6 +1065,8 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
               applicationRepository={applicationRepository}
               initialMode={scriptMode}
               initialEditId={scriptEditId}
+              nativeImportRequest={nativeImportRequest}
+              onNativeImportRequestHandled={() => setNativeImportRequest(null)}
               onSelectScenario={navigateToTest}
               onNavigate={handleNavigate}
               onAuthoringStateChange={handleScriptsAuthoringStateChange}
