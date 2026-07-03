@@ -1,6 +1,7 @@
 package http
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -111,7 +112,7 @@ func extractAll(ext protocol.Extractor, headers http.Header, body []byte) ([]str
 		values, err = extractAllRegex(ext.Expression, content)
 	case "boundary":
 		values, err = extractAllBoundary(ext.Expression, content)
-	case "jsonpath":
+	case "jsonpath", "json_path":
 		values, err = extractAllJSONPath(ext.Expression, content)
 	case "xpath":
 		values, err = extractAllXPath(ext.Expression, content)
@@ -199,7 +200,7 @@ func flattenHeaders(headers http.Header) string {
 
 func extractFromBody(ext protocol.Extractor, body []byte) (string, error) {
 	switch ext.Type {
-	case "jsonpath":
+	case "jsonpath", "json_path":
 		return extractJSONPath(ext.Expression, body)
 	case "jmespath":
 		return extractJMESPath(ext.Expression, body)
@@ -337,12 +338,14 @@ func extractJSONPath(expr string, body []byte) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%v", current), nil
+	return jsonPathValueString(current), nil
 }
 
 func extractJSONPathValue(expr string, body []byte) (any, error) {
 	var current any
-	if err := json.Unmarshal(body, &current); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.UseNumber()
+	if err := decoder.Decode(&current); err != nil {
 		return nil, fmt.Errorf("invalid JSON body: %w", err)
 	}
 
@@ -403,6 +406,19 @@ func extractJSONPathValue(expr string, body []byte) (any, error) {
 	}
 
 	return current, nil
+}
+
+func jsonPathValueString(value any) string {
+	switch typed := value.(type) {
+	case json.Number:
+		return typed.String()
+	case float64:
+		return strconv.FormatFloat(typed, 'f', -1, 64)
+	case float32:
+		return strconv.FormatFloat(float64(typed), 'f', -1, 32)
+	default:
+		return fmt.Sprintf("%v", value)
+	}
 }
 
 // stringifyJSONLeaf renders one JSON value as a variable string: scalars use

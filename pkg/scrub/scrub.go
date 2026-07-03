@@ -9,6 +9,7 @@ package scrub
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"regexp"
 	"strings"
 )
@@ -54,7 +55,7 @@ var cookieHeaders = map[string]bool{
 }
 
 // sensitiveParamPattern redacts token-bearing query string and form fields.
-var sensitiveParamPattern = regexp.MustCompile(`(?i)((?:^|[&?])(?:password|passwd|secret|token|access_token|refresh_token|id_token|api_key|apikey|session|session_id|sessionid|auth|csrf|xsrf)=)([^&\s]+)`)
+var sensitiveParamPattern = regexp.MustCompile(`(?i)((?:^|[&?;\s])(?:password|passwd|secret|token|access_token|refresh_token|id_token|api_key|apikey|session|session_id|sessionid|auth|csrf|xsrf|client_secret|private_key)=)([^&\s;#"']+)`)
 
 // sensitiveJSONPattern redacts token-bearing JSON body fields. Note: this list is
 // deliberately narrower than sensitiveParamNames. Query-string/header values are
@@ -64,7 +65,14 @@ var sensitiveParamPattern = regexp.MustCompile(`(?i)((?:^|[&?])(?:password|passw
 // un-redacted here or replay parameterization breaks (see pkg/convert/har
 // TestConvertHAR). Only unambiguous secrets that are never correlation keys are
 // added; "authorization" carries a Bearer token in a body and is one such case.
-var sensitiveJSONPattern = regexp.MustCompile(`(?i)("(?:authorization|password|passwd|secret|token|access_token|refresh_token|id_token|api_key|apikey|session_id|csrf_token|client_secret)"\s*:\s*")([^"]*)(")`)
+var (
+	sensitiveJSONPattern = regexp.MustCompile(`(?i)("(?:authorization|password|passwd|secret|token|access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|apikey|client[_-]?secret|private[_-]?key)"\s*:\s*)("[^"]*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null)`)
+	sensitiveXMLPattern  = regexp.MustCompile(`(?is)(<(?:[\w.-]+:)?(?:authorization|password|passwd|secret|token|access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|apikey|client[_-]?secret|private[_-]?key)\b[^>]*>)(.*?)(</(?:[\w.-]+:)?(?:authorization|password|passwd|secret|token|access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|apikey|client[_-]?secret|private[_-]?key)>)`)
+	sensitiveXMLAttr     = regexp.MustCompile(`(?is)(\b(?:authorization|password|passwd|secret|token|access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|apikey|client[_-]?secret|private[_-]?key)\s*=\s*")([^"]*)(")`)
+	multipartSecretPart  = regexp.MustCompile(`(?is)(Content-Disposition:\s*form-data;[^\r\n]*\bname="(?:authorization|password|passwd|secret|token|access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|apikey|client[_-]?secret|private[_-]?key)"[^\r\n]*(?:\r?\nContent-Type:[^\r\n]*)?\r?\n\r?\n)(.*?)(\r?\n--)`)
+	jwtPattern           = regexp.MustCompile(`\b[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b`)
+	highEntropyToken     = regexp.MustCompile(`\b[A-Za-z0-9+/=_-]{24,}\b`)
+)
 
 // compiledRule is one ExtraPatterns rule with its regexp compiled exactly once.
 type compiledRule struct {
@@ -167,8 +175,18 @@ func (cp compiledPolicy) value(value string) string {
 	if value == "" {
 		return value
 	}
-	value = sensitiveJSONPattern.ReplaceAllString(value, "${1}"+Redacted+"${3}")
+	value = sensitiveJSONPattern.ReplaceAllString(value, "${1}\""+Redacted+"\"")
 	value = sensitiveParamPattern.ReplaceAllString(value, "${1}"+Redacted)
+	value = sensitiveXMLPattern.ReplaceAllString(value, "${1}"+Redacted+"${3}")
+	value = sensitiveXMLAttr.ReplaceAllString(value, "${1}"+Redacted+"${3}")
+	value = multipartSecretPart.ReplaceAllString(value, "${1}"+Redacted+"${3}")
+	value = jwtPattern.ReplaceAllString(value, Redacted)
+	value = highEntropyToken.ReplaceAllStringFunc(value, func(candidate string) string {
+		if looksSensitiveToken(candidate) {
+			return Redacted
+		}
+		return candidate
+	})
 	for _, rule := range cp.rules {
 		value = rule.pattern.ReplaceAllString(value, rule.replacement)
 	}
@@ -197,6 +215,13 @@ func HARWithErrors(data []byte, policy Policy) (scrubbed []byte, patternErrs []e
 		return nil, nil, fmt.Errorf("parse HAR for scrubbing: %w", err)
 	}
 	log, _ := doc["log"].(map[string]any)
+	singleEntry := false
+	if log == nil {
+		if _, hasRequest := doc["request"]; hasRequest {
+			log = map[string]any{"entries": []any{doc}}
+			singleEntry = true
+		}
+	}
 	if log == nil {
 		return nil, nil, fmt.Errorf("HAR document has no log section")
 	}
@@ -207,36 +232,46 @@ func HARWithErrors(data []byte, policy Policy) (scrubbed []byte, patternErrs []e
 		if !ok {
 			continue
 		}
-		if request, ok := entry["request"].(map[string]any); ok {
-			cp.scrubNameValueList(request, "headers")
-			cp.scrubNameValueList(request, "cookies")
-			cp.scrubNameValueList(request, "queryString")
-			if rawURL, ok := request["url"].(string); ok {
-				request["url"] = cp.value(rawURL)
-			}
-			if postData, ok := request["postData"].(map[string]any); ok {
-				if text, ok := postData["text"].(string); ok {
-					postData["text"] = cp.value(text)
-				}
-				cp.scrubNameValueList(postData, "params")
-			}
-		}
-		if response, ok := entry["response"].(map[string]any); ok {
-			cp.scrubNameValueList(response, "headers")
-			cp.scrubNameValueList(response, "cookies")
-			if content, ok := response["content"].(map[string]any); ok {
-				if text, ok := content["text"].(string); ok {
-					content["text"] = cp.value(text)
-				}
-			}
-		}
+		cp.scrubHAREntry(entry)
 	}
-	annotateScrubbed(log)
+	if singleEntry {
+		doc["_apexloadSensitivity"] = SensitivityScrubbed
+	} else {
+		annotateScrubbed(log)
+	}
 	out, err := json.Marshal(doc)
 	if err != nil {
 		return nil, patternErrs, err
 	}
 	return out, patternErrs, nil
+}
+
+func (cp compiledPolicy) scrubHAREntry(entry map[string]any) {
+	if request, ok := entry["request"].(map[string]any); ok {
+		cp.scrubNameValueList(request, "headers")
+		cp.scrubNameValueList(request, "cookies")
+		cp.scrubNameValueList(request, "queryString")
+		if rawURL, ok := request["url"].(string); ok {
+			request["url"] = cp.value(rawURL)
+		}
+		if postData, ok := request["postData"].(map[string]any); ok {
+			if text, ok := postData["text"].(string); ok {
+				postData["text"] = cp.value(text)
+			}
+			cp.scrubNameValueList(postData, "params")
+		}
+	}
+	if response, ok := entry["response"].(map[string]any); ok {
+		cp.scrubNameValueList(response, "headers")
+		cp.scrubNameValueList(response, "cookies")
+		if content, ok := response["content"].(map[string]any); ok {
+			if text, ok := content["text"].(string); ok {
+				content["text"] = cp.value(text)
+			}
+		}
+	}
+	cp.scrubWebSocketMessages(entry, "_webSocketMessages")
+	cp.scrubWebSocketMessages(entry, "websocket_messages")
 }
 
 // scrubNameValueList handles HAR's [{name, value}] collections. Cookie
@@ -285,6 +320,59 @@ func sensitiveParamName(name string) bool {
 	return sensitiveParamNames[strings.ToLower(strings.TrimSpace(name))]
 }
 
+func (cp compiledPolicy) scrubWebSocketMessages(entry map[string]any, key string) {
+	messages, _ := entry[key].([]any)
+	for _, rawMessage := range messages {
+		message, ok := rawMessage.(map[string]any)
+		if !ok {
+			continue
+		}
+		if data, ok := message["data"].(string); ok {
+			message["data"] = cp.value(data)
+		}
+		if payload, ok := message["payload"].(string); ok {
+			message["payload"] = cp.value(payload)
+		}
+	}
+}
+
+func looksSensitiveToken(value string) bool {
+	if len(value) < 24 {
+		return false
+	}
+	hasLetter := false
+	hasDigit := false
+	for _, ch := range value {
+		switch {
+		case ch >= 'a' && ch <= 'z', ch >= 'A' && ch <= 'Z':
+			hasLetter = true
+		case ch >= '0' && ch <= '9':
+			hasDigit = true
+		}
+	}
+	if !hasLetter || !hasDigit {
+		return false
+	}
+	return shannonEntropy(value) >= 4.0
+}
+
+func shannonEntropy(value string) float64 {
+	if value == "" {
+		return 0
+	}
+	counts := make(map[rune]float64)
+	for _, ch := range value {
+		counts[ch]++
+	}
+	length := float64(len([]rune(value)))
+	entropy := 0.0
+	for _, count := range counts {
+		p := count / length
+		entropy -= p * math.Log2(p)
+	}
+	return entropy
+}
+
 // Sensitivity labels for artifact metadata, surfaced in API/UI responses so
 // reviewers know whether an artifact passed through scrub-on-write.
 const (
@@ -302,14 +390,15 @@ func annotateScrubbed(log map[string]any) {
 // SensitivityRaw when the artifact never passed through scrub-on-write.
 func HARSensitivity(data []byte) string {
 	var doc struct {
-		Log struct {
+		Sensitivity string `json:"_apexloadSensitivity"`
+		Log         struct {
 			Sensitivity string `json:"_apexloadSensitivity"`
 		} `json:"log"`
 	}
 	if err := json.Unmarshal(data, &doc); err != nil {
 		return SensitivityRaw
 	}
-	if doc.Log.Sensitivity == SensitivityScrubbed {
+	if doc.Log.Sensitivity == SensitivityScrubbed || doc.Sensitivity == SensitivityScrubbed {
 		return SensitivityScrubbed
 	}
 	return SensitivityRaw

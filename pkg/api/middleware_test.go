@@ -1477,6 +1477,17 @@ func TestTrustedHeaderAuthProjectRoleGuardsImportPreviewEndpoints(t *testing.T) 
 	if editorSampleResp.Code == http.StatusForbidden || editorSampleResp.Code == http.StatusUnauthorized {
 		t.Fatalf("sample import editor status = %d, want auth to pass body=%s", editorSampleResp.Code, editorSampleResp.Body.String())
 	}
+
+	mismatchBody := []byte(`{"project_id":"other-` + projectID + `","content":"{\"log\":{\"entries\":[]}}"}`)
+	mismatchReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/har?project_id="+projectID, bytes.NewReader(mismatchBody))
+	mismatchReq.Header.Set("Content-Type", "application/json")
+	mismatchReq.Header.Set("X-Auth-Request-User", "editor-user")
+	mismatchReq.Header.Set("X-APEXLoad-Project-Roles", projectID+"="+RoleEditor)
+	mismatchResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(mismatchResp, mismatchReq)
+	if mismatchResp.Code != http.StatusBadRequest {
+		t.Fatalf("HAR import mismatched project_id status = %d, want %d body=%s", mismatchResp.Code, http.StatusBadRequest, mismatchResp.Body.String())
+	}
 }
 
 func TestTrustedHeaderAuthReadsEnterpriseArchiveMultipartProjectID(t *testing.T) {

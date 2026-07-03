@@ -108,8 +108,14 @@ func scrubSensitiveResult(result *protocol.Result, config *RedactionConfig) {
 		return
 	}
 
+	result.ErrorMessage = scrubSensitiveTextWithConfig(result.ErrorMessage, config)
 	result.ResponseBody = scrubSensitiveTextWithConfig(result.ResponseBody, config)
+	result.PageURL = scrubSensitiveTextWithConfig(result.PageURL, config)
+	result.PageTitle = scrubSensitiveTextWithConfig(result.PageTitle, config)
+	result.HTML = scrubSensitiveTextWithConfig(result.HTML, config)
+	result.ConsoleEntries = scrubSensitiveConsoleEntries(result.ConsoleEntries, config)
 	result.NetworkEntries = scrubSensitiveNetworkEntries(result.NetworkEntries, config)
+	result.DOMSummary = scrubSensitiveDOMSummary(result.DOMSummary, config)
 	result.ProtocolEvidence = scrubSensitiveEvidenceMap(result.ProtocolEvidence, config)
 	if result.Snapshot == nil {
 		return
@@ -120,8 +126,12 @@ func scrubSensitiveResult(result *protocol.Result, config *RedactionConfig) {
 	result.Snapshot.RequestBody = scrubSensitiveTextWithConfig(result.Snapshot.RequestBody, config)
 	result.Snapshot.ResponseHeaders = scrubSensitiveHeaders(result.Snapshot.ResponseHeaders, config)
 	result.Snapshot.ResponseBody = scrubSensitiveTextWithConfig(result.Snapshot.ResponseBody, config)
+	result.Snapshot.PageURL = scrubSensitiveTextWithConfig(result.Snapshot.PageURL, config)
+	result.Snapshot.PageTitle = scrubSensitiveTextWithConfig(result.Snapshot.PageTitle, config)
 	result.Snapshot.HTML = scrubSensitiveTextWithConfig(result.Snapshot.HTML, config)
+	result.Snapshot.ConsoleEntries = scrubSensitiveConsoleEntries(result.Snapshot.ConsoleEntries, config)
 	result.Snapshot.NetworkEntries = scrubSensitiveNetworkEntries(result.Snapshot.NetworkEntries, config)
+	result.Snapshot.DOMSummary = scrubSensitiveDOMSummary(result.Snapshot.DOMSummary, config)
 }
 
 func scrubSensitiveNetworkEntries(entries []protocol.NetworkEntry, config *RedactionConfig) []protocol.NetworkEntry {
@@ -132,6 +142,25 @@ func scrubSensitiveNetworkEntries(entries []protocol.NetworkEntry, config *Redac
 		entries[i].ResponseHeaders = scrubSensitiveHeaders(entries[i].ResponseHeaders, config)
 	}
 	return entries
+}
+
+func scrubSensitiveConsoleEntries(entries []protocol.ConsoleEntry, config *RedactionConfig) []protocol.ConsoleEntry {
+	for i := range entries {
+		entries[i].Text = scrubSensitiveTextWithConfig(entries[i].Text, config)
+		entries[i].Source = scrubSensitiveTextWithConfig(entries[i].Source, config)
+	}
+	return entries
+}
+
+func scrubSensitiveDOMSummary(summary *protocol.DOMSummary, config *RedactionConfig) *protocol.DOMSummary {
+	if summary == nil {
+		return nil
+	}
+	summary.Title = scrubSensitiveTextWithConfig(summary.Title, config)
+	for i := range summary.VisibleText {
+		summary.VisibleText[i] = scrubSensitiveTextWithConfig(summary.VisibleText[i], config)
+	}
+	return summary
 }
 
 func scrubSensitiveEvidenceMap(input map[string]any, config *RedactionConfig) map[string]any {

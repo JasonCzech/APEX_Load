@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -57,18 +58,17 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 	result := &ConvertResult{}
 
 	webSocketRequests := includedWebSocketRequests(session.Requests)
-	if len(webSocketRequests) > 0 {
+	hasHTTPRequests := hasIncludedHTTPRequests(session.Requests)
+	if len(webSocketRequests) > 0 && !hasHTTPRequests {
 		result.Script = convertWebSocketSession(session, name, webSocketRequests)
-		if hasIncludedHTTPRequests(session.Requests) {
-			result.Warnings = append(result.Warnings, "recording contains HTTP and WebSocket traffic; generated WebSocket script includes WebSocket exchanges only")
-		}
 		return result
 	}
 
 	correlations := detectCorrelations(convertibleCorrelationRequests(session.Requests))
 	result.Correlations = correlations
 
-	corrMap := buildCorrelationMap(correlations)
+	appliedCorrelations := highConfidenceCorrelations(correlations)
+	corrMap := buildCorrelationMap(appliedCorrelations)
 
 	script := &dsl.Script{
 		Name:        name,
@@ -100,15 +100,10 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 		if req.IsStatic || req.Excluded {
 			continue
 		}
-
-		target := req.Path
-		if session.BaseURL != "" && strings.HasPrefix(req.URL, session.BaseURL) {
-			target = strings.TrimPrefix(req.URL, session.BaseURL)
+		if len(req.WebSocketMessages) > 0 {
+			continue
 		}
-		if target == "" {
-			target = "/"
-		}
-
+		target := recordedRequestTarget(req, session.BaseURL)
 		target = applyCorrelationVars(target, corrMap)
 
 		actionName := fmt.Sprintf("%s %s", req.Method, simplifyPath(req.Path))
@@ -153,7 +148,7 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 			action.BodyEncoding = req.BodyEncoding
 		}
 
-		for _, corr := range correlations {
+		for _, corr := range appliedCorrelations {
 			if corr.FoundInSeq == req.Seq {
 				action.Extractors = append(action.Extractors, dsl.Extractor{
 					Name:       corr.Name,
@@ -183,18 +178,27 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 	if len(script.Actions) == 0 {
 		result.Warnings = append(result.Warnings, "no non-static requests found in recording")
 	}
-	if opts.Parameterize {
-		result.Warnings = append(result.Warnings, parameterizeInputs(script)...)
+	if skipped := len(correlations) - len(appliedCorrelations); skipped > 0 {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("Detected %d lower-confidence correlation candidate(s) left for review; only high-confidence correlations were applied to the generated script.", skipped))
 	}
+	if opts.Parameterize {
+		result.Warnings = append(result.Warnings, parameterizeInputs(script, session.Name)...)
+	}
+	preserved := make(map[string]any)
 	if len(recordedResourceURLs) > 0 {
-		script.Metadata = &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
-			Source:           "recorder",
-			SourceScriptName: session.Name,
-			Preserved: map[string]any{
-				"recorded_resource_urls_available": true,
-				"recorded_resource_urls":           recordedResourceURLs,
-			},
-		}}
+		preserved["recorded_resource_urls_available"] = true
+		preserved["recorded_resource_urls"] = recordedResourceURLs
+	}
+	if len(webSocketRequests) > 0 && hasHTTPRequests {
+		preserved["recorded_websocket_urls_available"] = true
+		preserved["recorded_websocket_urls"] = recordedWebSocketURLs(webSocketRequests)
+		result.Warnings = append(result.Warnings, "recording contains HTTP and WebSocket traffic; generated HTTP script includes HTTP requests and preserves WebSocket exchanges as review metadata")
+	}
+	if len(preserved) > 0 {
+		target := ensureRecorderImportPreserved(script, session.Name)
+		for key, value := range preserved {
+			target[key] = value
+		}
 	}
 
 	result.Script = script
@@ -204,7 +208,7 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 func convertibleCorrelationRequests(requests []RecordedRequest) []RecordedRequest {
 	filtered := make([]RecordedRequest, 0, len(requests))
 	for _, req := range requests {
-		if req.IsStatic || req.Excluded {
+		if req.IsStatic || req.Excluded || len(req.WebSocketMessages) > 0 {
 			continue
 		}
 		filtered = append(filtered, req)
@@ -225,7 +229,7 @@ func SessionBaseline(session *Session) []correlate.Observation {
 	observations := make([]correlate.Observation, 0, len(session.Requests))
 	actionIdx := 0
 	for _, req := range session.Requests {
-		if req.IsStatic || req.Excluded {
+		if req.IsStatic || req.Excluded || len(req.WebSocketMessages) > 0 {
 			continue
 		}
 		observations = append(observations, correlate.Observation{
@@ -252,6 +256,23 @@ func includedWebSocketRequests(requests []RecordedRequest) []RecordedRequest {
 	return result
 }
 
+func recordedWebSocketURLs(requests []RecordedRequest) []string {
+	urls := make([]string, 0, len(requests))
+	seen := make(map[string]struct{}, len(requests))
+	for _, req := range requests {
+		raw := strings.TrimSpace(req.URL)
+		if raw == "" {
+			continue
+		}
+		if _, ok := seen[raw]; ok {
+			continue
+		}
+		seen[raw] = struct{}{}
+		urls = append(urls, raw)
+	}
+	return urls
+}
+
 func hasIncludedHTTPRequests(requests []RecordedRequest) bool {
 	for _, req := range requests {
 		if req.Excluded || req.IsStatic || len(req.WebSocketMessages) > 0 {
@@ -260,6 +281,61 @@ func hasIncludedHTTPRequests(requests []RecordedRequest) bool {
 		return true
 	}
 	return false
+}
+
+func recordedRequestTarget(req RecordedRequest, baseURL string) string {
+	rawURL := strings.TrimSpace(req.URL)
+	base := strings.TrimSpace(baseURL)
+	if rawURL != "" {
+		if base != "" {
+			if target, ok := stripRecordedBaseURL(rawURL, base); ok {
+				return target
+			}
+		}
+		parsed, err := url.Parse(rawURL)
+		if err == nil && parsed.Host != "" {
+			if base != "" && sameRecordedOrigin(parsed, base) {
+				if uri := parsed.RequestURI(); uri != "" {
+					return uri
+				}
+			}
+			return rawURL
+		}
+	}
+	target := req.Path
+	if target == "" {
+		target = "/"
+	}
+	if req.QueryString != "" && !strings.Contains(target, "?") {
+		target += "?" + strings.TrimPrefix(req.QueryString, "?")
+	}
+	return target
+}
+
+func stripRecordedBaseURL(rawURL, baseURL string) (string, bool) {
+	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if base == "" || !strings.HasPrefix(rawURL, base) {
+		return "", false
+	}
+	rest := strings.TrimPrefix(rawURL, base)
+	if rest == "" {
+		return "/", true
+	}
+	if rest[0] != '/' && rest[0] != '?' && rest[0] != '#' {
+		return "", false
+	}
+	if rest[0] == '?' || rest[0] == '#' {
+		return "/" + rest, true
+	}
+	return rest, true
+}
+
+func sameRecordedOrigin(parsed *url.URL, baseURL string) bool {
+	base, err := url.Parse(strings.TrimSpace(baseURL))
+	if err != nil || base.Host == "" {
+		return false
+	}
+	return strings.EqualFold(parsed.Scheme, base.Scheme) && strings.EqualFold(parsed.Host, base.Host)
 }
 
 func convertWebSocketSession(session *Session, name string, requests []RecordedRequest) *dsl.Script {
@@ -486,7 +562,7 @@ func detectCorrelations(requests []RecordedRequest) []Correlation {
 			Reasons:     corr.Reasons,
 		})
 	}
-	return correlations
+	return uniquifyCorrelationNames(correlations)
 }
 
 func slugifyCorrelationName(field string) string {
@@ -501,6 +577,49 @@ func buildCorrelationMap(correlations []Correlation) map[string]string {
 	return correlate.BuildVarMap(shared)
 }
 
+func highConfidenceCorrelations(correlations []Correlation) []Correlation {
+	result := make([]Correlation, 0, len(correlations))
+	for _, c := range correlations {
+		if correlate.HighConfidence(toSharedCorrelation(c)) {
+			result = append(result, c)
+		}
+	}
+	return result
+}
+
+func toSharedCorrelation(c Correlation) correlate.Correlation {
+	return correlate.Correlation{
+		Name:        c.Name,
+		Source:      c.Source,
+		Expression:  c.Expression,
+		ExtractType: c.ExtractType,
+		FoundInID:   c.FoundInSeq,
+		UsedInIDs:   append([]int(nil), c.UsedInSeqs...),
+		Value:       c.Value,
+		SampleValue: c.SampleValue,
+		RuleID:      c.RuleID,
+		Confidence:  c.Confidence,
+		Reasons:     append([]string(nil), c.Reasons...),
+	}
+}
+
+func uniquifyCorrelationNames(correlations []Correlation) []Correlation {
+	seen := make(map[string]int, len(correlations))
+	for i := range correlations {
+		base := strings.TrimSpace(correlations[i].Name)
+		if base == "" {
+			base = "corr_value"
+		}
+		seen[base]++
+		if seen[base] == 1 {
+			correlations[i].Name = base
+			continue
+		}
+		correlations[i].Name = fmt.Sprintf("%s_%d", base, seen[base])
+	}
+	return correlations
+}
+
 func applyCorrelationVars(s string, corrMap map[string]string) string {
 	return correlate.ApplyVars(s, corrMap)
 }
@@ -511,6 +630,8 @@ const parameterizedDataSourceName = "recorded_inputs"
 // user-supplied input worth turning into data-driven parameters.
 var parameterizableField = regexp.MustCompile(`(?i)\b(user(name)?|email|login|pass(word|wd)?|search|query|q|first[_-]?name|last[_-]?name|full[_-]?name|phone|mobile|zip|postal[_-]?code|city|address|account|customer)\b`)
 
+var parameterizedSecretField = regexp.MustCompile(`(?i)\b(pass(word|wd)?|secret|api[_-]?key|private[_-]?key)\b`)
+
 // keyValuePair captures `key=value` segments in query strings and
 // form-urlencoded bodies, preserving the leading delimiter so it can be
 // re-emitted unchanged.
@@ -520,9 +641,10 @@ var keyValuePair = regexp.MustCompile(`([?&]|^)([A-Za-z0-9_.\-\[\]]+)=([^&#\s"']
 // source and rewrites the occurrences to {{data.recorded_inputs.<col>}}. It runs
 // after correlation replacement so values already turned into {{var.*}} are left
 // alone. Returns warnings describing what was parameterized.
-func parameterizeInputs(script *dsl.Script) []string {
+func parameterizeInputs(script *dsl.Script, sourceName string) []string {
 	columns := make([]string, 0)
 	sampleValues := make(map[string]string)
+	secretColumns := make(map[string]bool)
 	seen := make(map[string]bool)
 
 	rewrite := func(s string) string {
@@ -546,7 +668,12 @@ func parameterizeInputs(script *dsl.Script) []string {
 				if err != nil {
 					decoded = value
 				}
-				sampleValues[col] = decoded
+				if parameterizedSecretField.MatchString(key) {
+					sampleValues[col] = "__REPLACE_WITH_SECRET__"
+					secretColumns[col] = true
+				} else {
+					sampleValues[col] = decoded
+				}
 			}
 			return prefix + key + "={{data." + parameterizedDataSourceName + "." + col + "}}"
 		})
@@ -576,10 +703,42 @@ func parameterizeInputs(script *dsl.Script) []string {
 		InlineData:     header + "\n" + strings.Join(row, ","),
 	})
 
-	return []string{fmt.Sprintf(
+	warnings := []string{fmt.Sprintf(
 		"Parameterized %d recorded input field(s) into data source %q (%s). Review the sample values and add rows before running at load.",
 		len(columns), parameterizedDataSourceName, strings.Join(columns, ", "),
 	)}
+	if len(secretColumns) > 0 {
+		names := make([]string, 0, len(secretColumns))
+		for name := range secretColumns {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		ensureRecorderImportPreserved(script, sourceName)["recorded_input_secret_columns"] = names
+		warnings = append(warnings, fmt.Sprintf(
+			"Secret-like recorded input field(s) were seeded with placeholders instead of captured values (%s).",
+			strings.Join(names, ", "),
+		))
+	}
+	return warnings
+}
+
+func ensureRecorderImportPreserved(script *dsl.Script, sourceName string) map[string]any {
+	if script.Metadata == nil {
+		script.Metadata = &dsl.ScriptMetadata{}
+	}
+	if script.Metadata.Import == nil {
+		script.Metadata.Import = &dsl.ImportMetadata{}
+	}
+	if script.Metadata.Import.Source == "" {
+		script.Metadata.Import.Source = "recorder"
+	}
+	if script.Metadata.Import.SourceScriptName == "" {
+		script.Metadata.Import.SourceScriptName = sourceName
+	}
+	if script.Metadata.Import.Preserved == nil {
+		script.Metadata.Import.Preserved = make(map[string]any)
+	}
+	return script.Metadata.Import.Preserved
 }
 
 func csvEscapeField(value string) string {

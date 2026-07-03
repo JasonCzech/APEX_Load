@@ -111,8 +111,13 @@ type PreAppliedCorrelation struct {
 // leave Observations empty, which makes the correlation pass a no-op.
 type Options struct {
 	// Observations feed the correlation pass. Observation IDs are 1-based
-	// indexes into script.Actions (the convention used by the sample importer).
+	// indexes into script.Actions by default (the convention used by the sample
+	// importer). Set ObservationIDsZeroBased for recorder baselines, whose IDs
+	// are stored as generated script action indexes.
 	Observations []correlate.Observation
+	// ObservationIDsZeroBased switches correlation action mapping from the
+	// default 1-based observation convention to 0-based script action indexes.
+	ObservationIDsZeroBased bool
 	// PreApplied lists correlations the converter already wired into the
 	// script; they surface as informational pre_applied suggestions.
 	PreApplied        []PreAppliedCorrelation
@@ -134,7 +139,7 @@ func Suggest(script *dsl.Script, opts Options) Result {
 	suggestions := make([]Suggestion, 0)
 
 	if opts.EnableCorrelation {
-		suggestions = append(suggestions, correlationSuggestions(script, opts.Observations, names)...)
+		suggestions = append(suggestions, correlationSuggestions(script, opts.Observations, names, opts.ObservationIDsZeroBased)...)
 	}
 	suggestions = append(suggestions, preAppliedSuggestions(opts.PreApplied)...)
 	if opts.EnableSecrets {

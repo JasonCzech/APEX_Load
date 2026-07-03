@@ -121,13 +121,14 @@ type RequestUpdate struct {
 }
 
 type Recorder struct {
-	mu         sync.RWMutex
-	sessions   map[string]*Session
-	active     *Session
-	proxy      *http.Server
-	addr       string
-	caCertPath string
-	caKeyPath  string
+	mu             sync.RWMutex
+	sessions       map[string]*Session
+	active         *Session
+	proxy          *http.Server
+	addr           string
+	proxyAuthToken string
+	caCertPath     string
+	caKeyPath      string
 
 	// TLS interception fields
 	caOnce    sync.Once
@@ -145,13 +146,14 @@ func New(proxyAddr string) *Recorder {
 
 func NewWithCAFiles(proxyAddr, caCertPath, caKeyPath string) *Recorder {
 	if proxyAddr == "" {
-		proxyAddr = ":8081"
+		proxyAddr = defaultProxyAddr
 	}
 	return &Recorder{
-		sessions:   make(map[string]*Session),
-		addr:       proxyAddr,
-		caCertPath: caCertPath,
-		caKeyPath:  caKeyPath,
+		sessions:       make(map[string]*Session),
+		addr:           proxyAddr,
+		proxyAuthToken: os.Getenv(envProxyAuthToken),
+		caCertPath:     caCertPath,
+		caKeyPath:      caKeyPath,
 	}
 }
 
@@ -408,6 +410,9 @@ func (r *Recorder) ActiveSession() *Session {
 }
 
 func (r *Recorder) StartProxy() error {
+	if err := r.validateProxyStartup(); err != nil {
+		return err
+	}
 	r.proxy = &http.Server{
 		Addr:         r.addr,
 		Handler:      http.HandlerFunc(r.handleProxy),
@@ -435,7 +440,16 @@ func (r *Recorder) ProxyAddr() string {
 	return r.addr
 }
 
+func (r *Recorder) ProxyAuthToken() string {
+	return strings.TrimSpace(r.proxyAuthToken)
+}
+
 func (r *Recorder) handleProxy(w http.ResponseWriter, req *http.Request) {
+	if !r.authorizeProxyRequest(req) {
+		w.Header().Set("Proxy-Authenticate", `Bearer realm="apexload-recorder"`)
+		http.Error(w, "proxy authentication required", http.StatusProxyAuthRequired)
+		return
+	}
 	if req.Method == http.MethodConnect {
 		r.handleConnect(w, req)
 		return
@@ -455,6 +469,10 @@ func (r *Recorder) handleProxy(w http.ResponseWriter, req *http.Request) {
 	targetURL := req.URL.String()
 	if !req.URL.IsAbs() {
 		targetURL = "http://" + req.Host + req.URL.String()
+	}
+	if err := validateProxyTargetURL(targetURL); err != nil {
+		http.Error(w, "proxy target rejected: "+err.Error(), http.StatusForbidden)
+		return
 	}
 
 	var bodyBytes []byte
@@ -479,6 +497,7 @@ func (r *Recorder) handleProxy(w http.ResponseWriter, req *http.Request) {
 	client := &http.Client{
 		Timeout: 30 * time.Second,
 		Transport: &http.Transport{
+			DialContext:     proxySafeDialer(30 * time.Second).DialContext,
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		},
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {

@@ -35,6 +35,7 @@ type ConvertStats struct {
 	TotalRequests        int    `json:"total_requests"`
 	ConvertedActions     int    `json:"converted_actions"`
 	FilteredAssets       int    `json:"filtered_assets,omitempty"`
+	SkippedRequests      int    `json:"skipped_requests,omitempty"`
 	Assertions           int    `json:"assertions"`
 	Extractors           int    `json:"extractors"`
 	CorrelationsDetected int    `json:"correlations_detected"`
@@ -106,6 +107,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		err         error
 		diagnostics diag.Collector
 		filtered    int
+		skipped     int
 	)
 
 	switch format {
@@ -116,7 +118,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	case "rest_json":
 		exchanges, warnings, err = parseRESTJSON(req.Content)
 	case "har":
-		exchanges, warnings, filtered, err = parseHAR(req.Content, convertutil.BoolOption(req.Options.IncludeStaticAssets, false), &diagnostics)
+		exchanges, warnings, filtered, skipped, err = parseHAR(req.Content, convertutil.BoolOption(req.Options.IncludeStaticAssets, false), &diagnostics)
 	default:
 		return nil, fmt.Errorf("unsupported format %q", req.Format)
 	}
@@ -191,9 +193,10 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		Warnings:     warnings,
 		Correlations: correlations,
 		Stats: ConvertStats{
-			Format:         format,
-			TotalRequests:  len(exchanges) + filtered,
-			FilteredAssets: filtered,
+			Format:          format,
+			TotalRequests:   len(exchanges) + filtered + skipped,
+			FilteredAssets:  filtered,
+			SkippedRequests: skipped,
 		},
 	}
 	if javaHTTPConfig, ok := detectJavaHTTPConfig(exchanges); ok {
@@ -329,7 +332,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 
 	applySOAPSampleProtocol(result.Script, &result.Warnings)
 
-	if gap := result.Stats.TotalRequests - result.Stats.ConvertedActions; gap > 0 {
+	if gap := result.Stats.TotalRequests - result.Stats.FilteredAssets - result.Stats.SkippedRequests - result.Stats.ConvertedActions; gap > 0 {
 		diagnostics.Add(diag.Warning, "Sample completeness guard", format, fmt.Sprintf("%d request(s) were parsed but not converted into actions", gap))
 	}
 	result.Unsupported = diagnostics.Items()

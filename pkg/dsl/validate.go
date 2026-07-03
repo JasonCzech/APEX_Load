@@ -554,6 +554,18 @@ func validateExtractorIssues(path string, action Action) []string {
 		default:
 			issues = append(issues, fmt.Sprintf("%s: extractors[%d] convert must be \"\", \"url_encode\", \"html_decode\", or \"html_url_encode\" (got %q)", label, i, ext.Convert))
 		}
+		switch strings.TrimSpace(ext.Source) {
+		case "", "body":
+			if !isAllowedValue(strings.TrimSpace(ext.Type), "jsonpath", "json_path", "jmespath", "css", "xpath", "regex", "regex_count", "regex_ordinal", "boundary", "sse_concat", "sse_event") {
+				issues = append(issues, fmt.Sprintf("%s: extractors[%d] type %q is not supported for body extraction", label, i, ext.Type))
+			}
+		case "header":
+			if !isAllowedValue(strings.TrimSpace(ext.Type), "", "header", "regex", "boundary") {
+				issues = append(issues, fmt.Sprintf("%s: extractors[%d] type %q is not supported for header extraction", label, i, ext.Type))
+			}
+		default:
+			issues = append(issues, fmt.Sprintf("%s: extractors[%d] source must be \"\", \"body\", or \"header\" (got %q)", label, i, ext.Source))
+		}
 		if ext.SaveOffset < 0 {
 			issues = append(issues, fmt.Sprintf("%s: extractors[%d] save_offset must be zero or greater", label, i))
 		}

@@ -205,6 +205,7 @@ func TestHandleCACert(t *testing.T) {
 }
 
 func TestHTTPSInterception(t *testing.T) {
+	allowPrivateProxyTargets(t)
 	// Start a TLS backend server.
 	backend := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

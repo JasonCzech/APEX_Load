@@ -1,0 +1,168 @@
+package recorder
+
+import (
+	"crypto/subtle"
+	"encoding/base64"
+	"fmt"
+	"net"
+	"net/http"
+	"net/url"
+	"os"
+	"strings"
+	"syscall"
+	"time"
+)
+
+const (
+	defaultProxyAddr = "127.0.0.1:8081"
+
+	envProxyAllowProduction      = "APEXLOAD_RECORDER_PROXY_ALLOW_PRODUCTION"
+	envProxyAllowUnauthenticated = "APEXLOAD_RECORDER_PROXY_ALLOW_UNAUTHENTICATED"
+	envProxyAllowPrivateTargets  = "APEXLOAD_RECORDER_ALLOW_PRIVATE_TARGETS"
+	envProxyAuthToken            = "APEXLOAD_RECORDER_PROXY_TOKEN"
+)
+
+func proxyProductionMode() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("APEXLOAD_ENV"))) {
+	case "production", "prod":
+		return true
+	default:
+		return false
+	}
+}
+
+func proxyEnvBool(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(name))) {
+	case "1", "true", "yes", "on", "enabled":
+		return true
+	default:
+		return false
+	}
+}
+
+func proxyBindIsLoopback(addr string) bool {
+	host, _, err := net.SplitHostPort(strings.TrimSpace(addr))
+	if err != nil {
+		host = strings.TrimSpace(addr)
+	}
+	if host == "" || host == "0.0.0.0" || host == "::" || host == "[::]" {
+		return false
+	}
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	return ip != nil && ip.IsLoopback()
+}
+
+func (r *Recorder) validateProxyStartup() error {
+	if proxyProductionMode() && !proxyEnvBool(envProxyAllowProduction) {
+		return fmt.Errorf("recording proxy is disabled in production mode; set %s=true to opt in explicitly", envProxyAllowProduction)
+	}
+	if !proxyBindIsLoopback(r.addr) && strings.TrimSpace(r.proxyAuthToken) == "" && !proxyEnvBool(envProxyAllowUnauthenticated) {
+		return fmt.Errorf("recording proxy wide bind %q requires %s or explicit %s=true", r.addr, envProxyAuthToken, envProxyAllowUnauthenticated)
+	}
+	return nil
+}
+
+func (r *Recorder) authorizeProxyRequest(req *http.Request) bool {
+	token := strings.TrimSpace(r.proxyAuthToken)
+	if token == "" {
+		return true
+	}
+	for _, candidate := range proxyAuthCandidates(req) {
+		if subtle.ConstantTimeCompare([]byte(candidate), []byte(token)) == 1 {
+			return true
+		}
+	}
+	return false
+}
+
+func proxyAuthCandidates(req *http.Request) []string {
+	values := make([]string, 0, 3)
+	if req == nil {
+		return values
+	}
+	if token := strings.TrimSpace(req.Header.Get("X-APEXLoad-Recorder-Token")); token != "" {
+		values = append(values, token)
+	}
+	auth := strings.TrimSpace(req.Header.Get("Proxy-Authorization"))
+	if auth == "" {
+		return values
+	}
+	if len(auth) > len("bearer ") && strings.EqualFold(auth[:len("bearer ")], "bearer ") {
+		values = append(values, strings.TrimSpace(auth[len("bearer "):]))
+		return values
+	}
+	if strings.HasPrefix(strings.ToLower(auth), "basic ") {
+		decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(auth[len("basic "):]))
+		if err == nil {
+			_, password, ok := strings.Cut(string(decoded), ":")
+			if ok {
+				values = append(values, password)
+			}
+		}
+	}
+	return values
+}
+
+func validateProxyTargetURL(raw string) error {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return fmt.Errorf("invalid proxy target url: %w", err)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" && parsed.Scheme != "ws" && parsed.Scheme != "wss" {
+		return fmt.Errorf("proxy target scheme %q is not allowed", parsed.Scheme)
+	}
+	return validateProxyTargetHost(parsed.Hostname())
+}
+
+func validateProxyTargetHost(host string) error {
+	host = strings.Trim(strings.TrimSpace(host), "[]")
+	if host == "" {
+		return fmt.Errorf("proxy target is missing a host")
+	}
+	if proxyEnvBool(envProxyAllowPrivateTargets) {
+		return nil
+	}
+	lower := strings.ToLower(host)
+	if lower == "localhost" || strings.HasSuffix(lower, ".localhost") {
+		return fmt.Errorf("proxy target host %q is not allowed", host)
+	}
+	if ip := net.ParseIP(host); ip != nil && disallowedProxyTargetIP(ip) {
+		return fmt.Errorf("proxy target host %q is not allowed", host)
+	}
+	return nil
+}
+
+func disallowedProxyTargetIP(ip net.IP) bool {
+	return ip.IsLoopback() ||
+		ip.IsUnspecified() ||
+		ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() ||
+		ip.IsInterfaceLocalMulticast() ||
+		ip.IsMulticast() ||
+		ip.IsPrivate()
+}
+
+func proxyDialControl(network, address string, _ syscall.RawConn) error {
+	if proxyEnvBool(envProxyAllowPrivateTargets) {
+		return nil
+	}
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		host = address
+	}
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	if ip == nil {
+		return fmt.Errorf("unresolved proxy target host %q", host)
+	}
+	if disallowedProxyTargetIP(ip) {
+		return fmt.Errorf("proxy target address %s is not allowed", ip)
+	}
+	return nil
+}
+
+func proxySafeDialer(timeout time.Duration) *net.Dialer {
+	return &net.Dialer{Timeout: timeout, Control: proxyDialControl}
+}

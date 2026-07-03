@@ -256,6 +256,40 @@ func TestSuggestCorrelations(t *testing.T) {
 	}
 }
 
+func TestSuggestCorrelationsWithZeroBasedObservationIDs(t *testing.T) {
+	script := httpScript(
+		dsl.Action{Name: "login", Type: "http_request", Method: "POST", Target: "/login"},
+		dsl.Action{Name: "profile", Type: "http_request", Method: "GET", Target: "/profile?token=tok_a1b2c3d4e5f6a1b2c3d4"},
+	)
+	observations := []correlate.Observation{
+		{
+			ID:           0,
+			RequestURL:   "https://api.example.com/login",
+			ResponseBody: `{"access_token": "tok_a1b2c3d4e5f6a1b2c3d4"}`,
+		},
+		{
+			ID:         1,
+			RequestURL: "https://api.example.com/profile?token=tok_a1b2c3d4e5f6a1b2c3d4",
+		},
+	}
+	opts := allClasses()
+	opts.Observations = observations
+	opts.ObservationIDsZeroBased = true
+
+	result := Suggest(script, opts)
+	correlations := findByKind(result.Suggestions, KindCorrelation)
+	if len(correlations) != 1 {
+		t.Fatalf("expected 1 zero-based correlation suggestion, got %d (%+v)", len(correlations), correlations)
+	}
+	got := correlations[0]
+	if got.FoundInAction == nil || got.FoundInAction.ActionIndex != 0 {
+		t.Fatalf("found_in_action = %+v, want action index 0", got.FoundInAction)
+	}
+	if len(got.Locations) != 1 || got.Locations[0].ActionIndex != 1 {
+		t.Fatalf("locations = %+v, want replacement on action index 1", got.Locations)
+	}
+}
+
 func TestSuggestAutoApplyBoundary(t *testing.T) {
 	boundaryCases := []struct {
 		confidence float64

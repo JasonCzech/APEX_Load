@@ -372,21 +372,21 @@ func TestHandleExportBrowserRecordingHAR(t *testing.T) {
 	if resp.Code != http.StatusOK {
 		t.Fatalf("export status = %d body=%s", resp.Code, resp.Body.String())
 	}
-	if got := resp.Header().Get("X-APEXLoad-Sensitivity"); got != scrub.SensitivityRaw {
-		t.Errorf("default sensitivity = %q, want %q", got, scrub.SensitivityRaw)
+	if got := resp.Header().Get("X-APEXLoad-Sensitivity"); got != scrub.SensitivityScrubbed {
+		t.Errorf("default sensitivity = %q, want %q", got, scrub.SensitivityScrubbed)
 	}
 	if disposition := resp.Header().Get("Content-Disposition"); !strings.Contains(disposition, ".har") {
 		t.Errorf("content-disposition = %q", disposition)
 	}
 
-	scrubReq := httptest.NewRequest(http.MethodGet, "/api/v1/browser-recorder/sessions/"+id+"/export?scrub=true", nil)
-	scrubResp := httptest.NewRecorder()
-	server.mux.ServeHTTP(scrubResp, scrubReq)
-	if scrubResp.Code != http.StatusOK {
-		t.Fatalf("scrubbed export status = %d body=%s", scrubResp.Code, scrubResp.Body.String())
+	rawReq := httptest.NewRequest(http.MethodGet, "/api/v1/browser-recorder/sessions/"+id+"/export?raw=true", nil)
+	rawResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(rawResp, rawReq)
+	if rawResp.Code != http.StatusOK {
+		t.Fatalf("raw export status = %d body=%s", rawResp.Code, rawResp.Body.String())
 	}
-	if got := scrubResp.Header().Get("X-APEXLoad-Sensitivity"); got != scrub.SensitivityScrubbed {
-		t.Errorf("scrubbed sensitivity = %q, want %q", got, scrub.SensitivityScrubbed)
+	if got := rawResp.Header().Get("X-APEXLoad-Sensitivity"); got != scrub.SensitivityRaw {
+		t.Errorf("raw sensitivity = %q, want %q", got, scrub.SensitivityRaw)
 	}
 }
 

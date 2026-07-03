@@ -816,6 +816,7 @@ func buildNativePreview(script *dsl.Script, refs []actionRef, entries []harEntry
 
 	cloneRefs := flattenRequestActions(clone)
 	harIDToRef := make(map[int]*actionRef)
+	harSurfaces := harCorrelationSurfaces(entries)
 	for refIndex, harID := range matches {
 		if refIndex >= len(cloneRefs) {
 			continue
@@ -850,7 +851,7 @@ func buildNativePreview(script *dsl.Script, refs []actionRef, entries []harEntry
 		if foundRef == nil || foundRef.Action == nil {
 			continue
 		}
-		usage := correlationUsage(corr, harIDToRef)
+		usage := correlationUsage(corr, harIDToRef, harSurfaces)
 		value := correlationValue(corr)
 		base := dsl.Extractor{
 			Name:       corr.Name,
@@ -1258,7 +1259,7 @@ type correlationUse struct {
 	encoded bool
 }
 
-func correlationUsage(corr correlate.Correlation, refs map[int]*actionRef) correlationUse {
+func correlationUsage(corr correlate.Correlation, refs map[int]*actionRef, harSurfaces map[int][]string) correlationUse {
 	use := correlationUse{}
 	value := correlationValue(corr)
 	if strings.TrimSpace(value) == "" {
@@ -1270,7 +1271,11 @@ func correlationUsage(corr correlate.Correlation, refs map[int]*actionRef) corre
 		if ref == nil || ref.Action == nil {
 			continue
 		}
-		for _, candidate := range actionCorrelationSurfaces(ref.Action) {
+		surfaces := actionCorrelationSurfaces(ref.Action)
+		if raw, ok := harSurfaces[harID]; ok {
+			surfaces = append(surfaces, raw...)
+		}
+		for _, candidate := range surfaces {
 			if strings.Contains(candidate, value) {
 				use.raw = true
 			}
@@ -1296,23 +1301,7 @@ func correlationValue(corr correlate.Correlation) string {
 // encodedFormsOf returns the distinct percent-encoded representations of value that
 // differ from the raw value (query- and path-escaped).
 func encodedFormsOf(value string) []string {
-	forms := make([]string, 0, 2)
-	for _, encoded := range []string{url.QueryEscape(value), url.PathEscape(value)} {
-		if encoded == "" || encoded == value {
-			continue
-		}
-		seen := false
-		for _, existing := range forms {
-			if existing == encoded {
-				seen = true
-				break
-			}
-		}
-		if !seen {
-			forms = append(forms, encoded)
-		}
-	}
-	return forms
+	return correlate.EncodedFormsOf(value)
 }
 
 func actionCorrelationSurfaces(action *dsl.Action) []string {
@@ -1324,6 +1313,18 @@ func actionCorrelationSurfaces(action *dsl.Action) []string {
 		surfaces = append(surfaces, value)
 	}
 	return surfaces
+}
+
+func harCorrelationSurfaces(entries []harEntry) map[int][]string {
+	out := make(map[int][]string, len(entries))
+	for _, entry := range entries {
+		surfaces := []string{entry.URL, entry.RequestBody}
+		for _, value := range entry.RequestHeaders {
+			surfaces = append(surfaces, value)
+		}
+		out[entry.ID] = surfaces
+	}
+	return out
 }
 
 func cloneScript(script *dsl.Script) (*dsl.Script, error) {
@@ -2138,8 +2139,29 @@ func correlationConfidence(correlations []correlate.Correlation, harEntries int)
 }
 
 func addExtractorIfMissing(action *dsl.Action, extractor dsl.Extractor) {
-	for _, existing := range action.Extractors {
-		if existing.Name == extractor.Name {
+	for index := range action.Extractors {
+		if action.Extractors[index].Name == extractor.Name {
+			if extractor.Convert != "" && action.Extractors[index].Convert == "" {
+				action.Extractors[index].Convert = extractor.Convert
+			}
+			if extractor.Source != "" {
+				action.Extractors[index].Source = extractor.Source
+			}
+			if extractor.Type != "" {
+				action.Extractors[index].Type = extractor.Type
+			}
+			if extractor.Expression != "" {
+				action.Extractors[index].Expression = extractor.Expression
+			}
+			if extractor.OnMiss != "" {
+				action.Extractors[index].OnMiss = extractor.OnMiss
+			}
+			if extractor.SaveOffset != 0 {
+				action.Extractors[index].SaveOffset = extractor.SaveOffset
+			}
+			if extractor.SaveLength != 0 {
+				action.Extractors[index].SaveLength = extractor.SaveLength
+			}
 			return
 		}
 	}

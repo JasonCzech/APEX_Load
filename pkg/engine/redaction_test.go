@@ -94,7 +94,19 @@ func TestVUser_RecordResultScrubsSensitivePayloads(t *testing.T) {
 
 	result := &protocol.Result{
 		Success:      false,
+		ErrorMessage: "upstream rejected token=abc123&password=hunter2",
 		ResponseBody: `{"access_token":"abc123","status":"ok","ssn":"123-45-6789"}`,
+		PageURL:      "https://example.test/page?token=abc123",
+		PageTitle:    "Account 123-45-6789",
+		HTML:         `<html><body>token=AbCdEfGh1234567890ijklMN patient=123-45-6789</body></html>`,
+		ConsoleEntries: []protocol.ConsoleEntry{{
+			Text:   "client error access_token=console-secret",
+			Source: "https://example.test/app.js?token=source-secret",
+		}},
+		DOMSummary: &protocol.DOMSummary{
+			Title:       "Profile 123-45-6789",
+			VisibleText: []string{"Authorization token=visible-secret", "ordinary text"},
+		},
 		NetworkEntries: []protocol.NetworkEntry{{
 			URL:             "https://example.test/api?token=abc123",
 			RequestHeaders:  map[string]string{"Cookie": "sid=abc123", "X-Correlation-ID": "corr-123"},
@@ -111,6 +123,16 @@ func TestVUser_RecordResultScrubsSensitivePayloads(t *testing.T) {
 			ResponseHeaders: map[string]string{"Set-Cookie": "sessionid=abcdef1234567890", "Content-Type": "application/json"},
 			ResponseBody:    `{"patient_id":"p-123","status":"ok"}`,
 			HTML:            `<html><body>token=AbCdEfGh1234567890ijklMN patient=123-45-6789</body></html>`,
+			PageURL:         "https://example.test/error?token=snapshot-secret",
+			PageTitle:       "Failure 123-45-6789",
+			ConsoleEntries: []protocol.ConsoleEntry{{
+				Text:   "snapshot access_token=snapshot-console-secret",
+				Source: "https://example.test/error.js?token=snapshot-source-secret",
+			}},
+			DOMSummary: &protocol.DOMSummary{
+				Title:       "Snapshot 123-45-6789",
+				VisibleText: []string{"token=snapshot-visible-secret"},
+			},
 			NetworkEntries: []protocol.NetworkEntry{{
 				URL:             "https://example.test/snapshot?token=abc123",
 				RequestHeaders:  map[string]string{"Authorization": "Bearer abc123"},
@@ -126,6 +148,18 @@ func TestVUser_RecordResultScrubsSensitivePayloads(t *testing.T) {
 	}
 	if sink.result == nil || sink.result.Snapshot == nil {
 		t.Fatal("expected scrubbed result to reach sink")
+	}
+	if strings.Contains(sink.result.ErrorMessage, "hunter2") || strings.Contains(sink.result.ErrorMessage, "abc123") {
+		t.Fatalf("error message = %q, want secrets redacted", sink.result.ErrorMessage)
+	}
+	if strings.Contains(sink.result.PageURL, "abc123") || strings.Contains(sink.result.PageTitle, "123-45-6789") {
+		t.Fatalf("page evidence leaked: url=%q title=%q", sink.result.PageURL, sink.result.PageTitle)
+	}
+	if strings.Contains(sink.result.ConsoleEntries[0].Text, "console-secret") || strings.Contains(sink.result.ConsoleEntries[0].Source, "source-secret") {
+		t.Fatalf("console entries leaked: %#v", sink.result.ConsoleEntries)
+	}
+	if strings.Contains(sink.result.DOMSummary.Title, "123-45-6789") || strings.Contains(strings.Join(sink.result.DOMSummary.VisibleText, " "), "visible-secret") {
+		t.Fatalf("DOM summary leaked: %#v", sink.result.DOMSummary)
 	}
 	if sink.result.Snapshot.RequestHeaders["Authorization"] != redactedPayloadValue {
 		t.Fatalf("authorization header = %q, want %q", sink.result.Snapshot.RequestHeaders["Authorization"], redactedPayloadValue)
@@ -156,6 +190,17 @@ func TestVUser_RecordResultScrubsSensitivePayloads(t *testing.T) {
 	}
 	if strings.Contains(sink.result.Snapshot.HTML, "123-45-6789") {
 		t.Fatalf("html = %q, want SSN redacted", sink.result.Snapshot.HTML)
+	}
+	if strings.Contains(sink.result.Snapshot.PageURL, "snapshot-secret") || strings.Contains(sink.result.Snapshot.PageTitle, "123-45-6789") {
+		t.Fatalf("snapshot page evidence leaked: url=%q title=%q", sink.result.Snapshot.PageURL, sink.result.Snapshot.PageTitle)
+	}
+	if strings.Contains(sink.result.Snapshot.ConsoleEntries[0].Text, "snapshot-console-secret") ||
+		strings.Contains(sink.result.Snapshot.ConsoleEntries[0].Source, "snapshot-source-secret") {
+		t.Fatalf("snapshot console leaked: %#v", sink.result.Snapshot.ConsoleEntries)
+	}
+	if strings.Contains(sink.result.Snapshot.DOMSummary.Title, "123-45-6789") ||
+		strings.Contains(strings.Join(sink.result.Snapshot.DOMSummary.VisibleText, " "), "snapshot-visible-secret") {
+		t.Fatalf("snapshot DOM summary leaked: %#v", sink.result.Snapshot.DOMSummary)
 	}
 
 	snapshots := store.Snapshots()

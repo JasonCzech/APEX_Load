@@ -1269,6 +1269,24 @@ func TestValidateExtractorIssuesAcceptsNewEnums(t *testing.T) {
 	}
 }
 
+func TestValidateExtractorIssuesRejectsUnsupportedTypes(t *testing.T) {
+	script := &Script{
+		Name:     "bad-extractor",
+		Protocol: "http",
+		Config:   ScriptConfig{BaseURL: "https://example.test"},
+		Actions: []Action{{
+			Name: "a", Type: "GET", Method: "GET", Target: "/a",
+			Extractors: []Extractor{
+				{Name: "bad_header", Source: "header", Type: "header_query", Expression: "Location?code"},
+				{Name: "bad_source", Source: "cookie", Type: "regex", Expression: "sid=(.+)"},
+			},
+		}},
+	}
+	issues := ValidateScriptIssues(script)
+	assertIssueContains(t, issues, `extractors[0] type "header_query" is not supported for header extraction`)
+	assertIssueContains(t, issues, `extractors[1] source must be "", "body", or "header"`)
+}
+
 // TestValidateScriptIssues_NestedJMSHonorsConfigDestination locks in that a JMS
 // action nested inside a control block is NOT falsely flagged "missing target"
 // when config.jms.destination supplies the destination.

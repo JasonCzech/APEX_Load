@@ -48,6 +48,29 @@ func TestExtractJSONPath_ArrayIndex(t *testing.T) {
 	}
 }
 
+func TestExtractJSONPath_PreservesJSONNumbers(t *testing.T) {
+	body := []byte(`{"id":1000000,"order":9223372036854775807,"price":12.5}`)
+	tests := []struct {
+		expr string
+		want string
+	}{
+		{"$.id", "1000000"},
+		{"$.order", "9223372036854775807"},
+		{"$.price", "12.5"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.expr, func(t *testing.T) {
+			got, err := extractJSONPath(tt.expr, body)
+			if err != nil {
+				t.Fatalf("extractJSONPath: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestExtractJSONPath_RootArrayAndChainedIndexes(t *testing.T) {
 	body := []byte(`[{"id":"first","tokens":[["nested-token"]]}]`)
 

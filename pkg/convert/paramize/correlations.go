@@ -11,16 +11,16 @@ import (
 
 // correlationSuggestions runs the shared correlation engine over the supplied
 // observations and proposes an extractor at the source action plus literal
-// replacements at every action that reuses the value. Observation IDs are
-// 1-based indexes into script.Actions.
-func correlationSuggestions(script *dsl.Script, observations []correlate.Observation, names *nameRegistry) []Suggestion {
+// replacements at every action that reuses the value.
+func correlationSuggestions(script *dsl.Script, observations []correlate.Observation, names *nameRegistry, zeroBasedIDs bool) []Suggestion {
 	if len(observations) < 2 {
 		return nil
 	}
 	detected := correlate.Detect(observations)
 	suggestions := make([]Suggestion, 0, len(detected))
 	for _, corr := range detected {
-		sourceAction := actionAt(script, "actions", corr.FoundInID-1)
+		sourceIndex := observationActionIndex(corr.FoundInID, zeroBasedIDs)
+		sourceAction := actionAt(script, "actions", sourceIndex)
 		if sourceAction == nil || corr.Value == "" {
 			continue
 		}
@@ -29,11 +29,12 @@ func correlationSuggestions(script *dsl.Script, observations []correlate.Observa
 
 		locations := make([]Location, 0, len(corr.UsedInIDs))
 		for _, usedID := range corr.UsedInIDs {
-			action := actionAt(script, "actions", usedID-1)
+			usedIndex := observationActionIndex(usedID, zeroBasedIDs)
+			action := actionAt(script, "actions", usedIndex)
 			if action == nil {
 				continue
 			}
-			locations = append(locations, correlationLocations(action, usedID-1, corr.Value, template)...)
+			locations = append(locations, correlationLocations(action, usedIndex, corr.Value, template)...)
 		}
 		if len(locations) == 0 {
 			continue
@@ -64,12 +65,19 @@ func correlationSuggestions(script *dsl.Script, observations []correlate.Observa
 			},
 			FoundInAction: &Location{
 				Section:     "actions",
-				ActionIndex: corr.FoundInID - 1,
+				ActionIndex: sourceIndex,
 				ActionName:  sourceAction.Name,
 			},
 		})
 	}
 	return suggestions
+}
+
+func observationActionIndex(observationID int, zeroBasedIDs bool) int {
+	if zeroBasedIDs {
+		return observationID
+	}
+	return observationID - 1
 }
 
 // correlationLocations finds every field of an action containing the recorded

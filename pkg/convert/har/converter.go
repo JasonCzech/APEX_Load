@@ -62,7 +62,6 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 	artifactMode := normalizeArtifactMode(opts.ArtifactMode)
 	retentionDays := normalizeRetentionDays(opts.RetentionDays)
 	redactionEnabled := convertutil.BoolOption(opts.RedactSensitive, true)
-	content := data
 	governanceWarnings := []string{}
 	sensitivity := scrub.SensitivityRaw
 	if redactionEnabled {
@@ -70,7 +69,6 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 		if err != nil {
 			return nil, err
 		}
-		content = scrubbed
 		sensitivity = scrub.HARSensitivity(scrubbed)
 		if sensitivity != scrub.SensitivityScrubbed {
 			governanceWarnings = append(governanceWarnings, "HAR scrub-on-write did not produce a scrubbed sensitivity marker.")
@@ -79,7 +77,7 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 	result, err := sample.Convert(sample.ImportRequest{
 		Name:    convertutil.FirstNonEmpty(opts.ScriptName, "Imported_HAR_Script"),
 		Format:  "har",
-		Content: string(content),
+		Content: string(data),
 		Options: sample.ConvertOptions{
 			BaseURL:             opts.BaseURL,
 			IncludeAssertions:   opts.IncludeAssertions,

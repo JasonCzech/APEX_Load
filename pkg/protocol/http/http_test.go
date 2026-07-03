@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/klauspost/compress/zstd"
 )
 
 func initHTTP(t *testing.T, config map[string]any) *HTTP {
@@ -187,6 +188,18 @@ func TestHTTP_Init_NoRedirects(t *testing.T) {
 	}
 	if h.client.CheckRedirect == nil {
 		t.Error("CheckRedirect should be set when max_redirects is -1")
+	}
+}
+
+func TestHTTP_Init_MaxRedirectsZeroDisablesRedirects(t *testing.T) {
+	h := initHTTP(t, map[string]any{
+		"max_redirects": float64(0),
+	})
+	if h.maxRedirects != 0 {
+		t.Fatalf("maxRedirects = %d, want 0", h.maxRedirects)
+	}
+	if h.client.CheckRedirect == nil {
+		t.Fatal("CheckRedirect should be set when max_redirects is 0")
 	}
 }
 
@@ -1181,6 +1194,106 @@ func TestHTTP_Execute_DecodesContentEncodingForAssertionsAndSnapshots(t *testing
 	}
 	if _, ok := failing.Snapshot.ResponseHeaders["Content-Length"]; ok {
 		t.Fatalf("snapshot response headers retained Content-Length: %#v", failing.Snapshot.ResponseHeaders)
+	}
+}
+
+func TestHTTP_Execute_DecodesZstdContentEncoding(t *testing.T) {
+	payload := []byte(`{"access_token":"abc123","ok":true}`)
+	encoder, err := zstd.NewWriter(nil)
+	if err != nil {
+		t.Fatalf("zstd writer: %v", err)
+	}
+	compressedBody := encoder.EncodeAll(payload, nil)
+	encoder.Close()
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Accept-Encoding") != "zstd" {
+			http.Error(w, "missing zstd accept encoding", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Encoding", "zstd")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(compressedBody)
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{
+		"base_url":        ts.URL,
+		"accept_encoding": "zstd",
+	})
+	result, err := h.Execute(context.Background(), &protocol.Action{
+		Name:   "zstd-success",
+		Method: http.MethodGet,
+		Target: "/json",
+		Assertions: []protocol.Assertion{{
+			Type:  "body_contains",
+			Value: `"ok":true`,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("zstd assertion should pass, error: %s", result.ErrorMessage)
+	}
+	if result.ResponseBody != string(payload) {
+		t.Fatalf("response body = %q, want decoded payload", result.ResponseBody)
+	}
+}
+
+func TestHTTP_Execute_EmptyEncodedBodyDoesNotFail(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Encoding", "gzip")
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{"base_url": ts.URL})
+	result, err := h.Execute(context.Background(), &protocol.Action{
+		Name:   "empty-encoded",
+		Method: http.MethodGet,
+		Target: "/empty",
+		Assertions: []protocol.Assertion{{
+			Type:     "status_code",
+			Expected: http.StatusNoContent,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("empty encoded response should succeed, error: %s", result.ErrorMessage)
+	}
+}
+
+func TestHTTP_Execute_MaxRedirectsZeroReturnsRedirectResponse(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/redirect" {
+			http.Redirect(w, r, "/final", http.StatusFound)
+			return
+		}
+		_, _ = w.Write([]byte("final"))
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{"base_url": ts.URL})
+	zero := 0
+	result, err := h.Execute(context.Background(), &protocol.Action{
+		Name:         "no-follow",
+		Method:       http.MethodGet,
+		Target:       "/redirect",
+		MaxRedirects: &zero,
+		Assertions: []protocol.Assertion{{
+			Type:     "status_code",
+			Expected: http.StatusFound,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !result.Success || result.StatusCode != http.StatusFound {
+		t.Fatalf("result = success:%v status:%d error:%s, want returned 302", result.Success, result.StatusCode, result.ErrorMessage)
 	}
 }
 

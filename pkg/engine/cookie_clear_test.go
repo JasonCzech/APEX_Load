@@ -53,3 +53,29 @@ func TestHandleEngineActionCookieClearNoControllerIsNoop(t *testing.T) {
 		})
 	}
 }
+
+func TestVUserRunClearsHTTPCookiesPerIteration(t *testing.T) {
+	clearCookiesPerIteration := true
+	proto := &cookieControllerProtocol{}
+	vu := &VUser{
+		ID:    1,
+		Group: "g",
+		Proto: proto,
+		Script: &dsl.Script{
+			Name:     "s",
+			Protocol: "http",
+			Config: dsl.ScriptConfig{
+				RunLogic: dsl.RunLogicConfig{Iterations: 3},
+				HTTP:     dsl.HTTPConfig{ClearCookiesPerIter: &clearCookiesPerIteration},
+			},
+			Actions: []dsl.Action{{Name: "GET /", Type: "request", Method: "GET", Target: "/"}},
+		},
+		Metrics: NewMetricsCollector(16),
+	}
+
+	vu.Run(context.Background())
+
+	if proto.clearCalls != 2 {
+		t.Fatalf("ClearCookies calls = %d, want 2 between 3 iterations", proto.clearCalls)
+	}
+}

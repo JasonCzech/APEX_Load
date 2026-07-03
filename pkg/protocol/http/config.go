@@ -288,7 +288,7 @@ func parseMaxRedirects(config map[string]any) int {
 }
 
 func applyRedirectPolicy(client *http.Client, maxRedirects int) {
-	if maxRedirects == -1 {
+	if maxRedirects <= 0 {
 		client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
 		}

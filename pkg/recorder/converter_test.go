@@ -77,6 +77,32 @@ func TestConvertSession_Basic(t *testing.T) {
 	}
 }
 
+func TestConvertSession_CrossOriginTargetPreservesAbsoluteURLAndQuery(t *testing.T) {
+	s := &Session{
+		ID:      "cross-origin",
+		Name:    "Cross Origin",
+		BaseURL: "https://app.example.test",
+		Requests: []RecordedRequest{{
+			Seq:         1,
+			Method:      "GET",
+			URL:         "https://api.example.test/search?q=apex&cursor=abc123",
+			Path:        "/search",
+			QueryString: "q=apex&cursor=abc123",
+			Host:        "api.example.test",
+			StatusCode:  200,
+			Headers:     map[string]string{},
+		}},
+	}
+
+	result := ConvertSession(s, "")
+	if len(result.Script.Actions) != 1 {
+		t.Fatalf("actions = %d, want 1", len(result.Script.Actions))
+	}
+	if got := result.Script.Actions[0].Target; got != "https://api.example.test/search?q=apex&cursor=abc123" {
+		t.Fatalf("target = %q, want absolute cross-origin URL with query", got)
+	}
+}
+
 func TestConvertSession_CustomName(t *testing.T) {
 	s := &Session{
 		ID:      "test",
@@ -177,6 +203,67 @@ func TestConvertSession_WebSocketMessages(t *testing.T) {
 	}
 	if result.Script.Actions[4].Type != "ws_close" {
 		t.Fatalf("final action type = %q, want ws_close", result.Script.Actions[4].Type)
+	}
+}
+
+func TestConvertSession_MixedHTTPAndWebSocketKeepsHTTPActions(t *testing.T) {
+	s := &Session{
+		ID:      "mixed",
+		Name:    "Mixed Flow",
+		BaseURL: "https://app.example.test",
+		Requests: []RecordedRequest{
+			{
+				Seq:        1,
+				Method:     "GET",
+				URL:        "https://app.example.test/api/bootstrap?tenant=acme",
+				Path:       "/api/bootstrap",
+				Host:       "app.example.test",
+				StatusCode: 200,
+				Headers:    map[string]string{},
+			},
+			{
+				Seq:        2,
+				Method:     "GET",
+				URL:        "wss://app.example.test/events?tenant=acme",
+				Path:       "/events",
+				Host:       "app.example.test",
+				StatusCode: http.StatusSwitchingProtocols,
+				Headers:    map[string]string{"Sec-WebSocket-Protocol": "json"},
+				WebSocketMessages: []RecordedWebSocketMessage{
+					{Direction: webSocketDirectionClientToServer, Opcode: webSocketOpcodeText, Payload: `{"type":"subscribe"}`},
+				},
+			},
+			{
+				Seq:        3,
+				Method:     "POST",
+				URL:        "https://app.example.test/api/checkout",
+				Path:       "/api/checkout",
+				Host:       "app.example.test",
+				StatusCode: 200,
+				Headers:    map[string]string{},
+			},
+		},
+	}
+
+	result := ConvertSession(s, "")
+	if result.Script.Protocol != "http" {
+		t.Fatalf("protocol = %q, want http for mixed capture with replayable HTTP actions", result.Script.Protocol)
+	}
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("actions = %d, want 2 HTTP actions", len(result.Script.Actions))
+	}
+	if got := result.Script.Actions[0].Target; got != "/api/bootstrap?tenant=acme" {
+		t.Fatalf("first target = %q", got)
+	}
+	if got := result.Script.Actions[1].Target; got != "/api/checkout" {
+		t.Fatalf("second target = %q", got)
+	}
+	if len(result.Warnings) == 0 || !strings.Contains(strings.Join(result.Warnings, "\n"), "WebSocket") {
+		t.Fatalf("warnings = %#v, want mixed WebSocket warning", result.Warnings)
+	}
+	preserved := result.Script.Metadata.Import.Preserved
+	if preserved["recorded_websocket_urls_available"] != true {
+		t.Fatalf("preserved metadata = %#v, want recorded websocket URLs available", preserved)
 	}
 }
 
@@ -387,6 +474,17 @@ func TestConvertSessionWithOptions_Parameterize(t *testing.T) {
 			t.Fatalf("expected column %q in inline data %q", col, ds.InlineData)
 		}
 	}
+	if strings.Contains(ds.InlineData, "s3cret") {
+		t.Fatalf("generated data source leaked recorded password: %q", ds.InlineData)
+	}
+	if !strings.Contains(ds.InlineData, "__REPLACE_WITH_SECRET__") {
+		t.Fatalf("generated data source should seed password column with a placeholder, got %q", ds.InlineData)
+	}
+	preserved := result.Script.Metadata.Import.Preserved
+	secretColumns, ok := preserved["recorded_input_secret_columns"].([]string)
+	if !ok || len(secretColumns) != 1 || secretColumns[0] != "password" {
+		t.Fatalf("recorded_input_secret_columns = %#v, want [password]", preserved["recorded_input_secret_columns"])
+	}
 
 	bodies := result.Script.Actions[0].Body + result.Script.Actions[1].Target
 	if !strings.Contains(bodies, "{{data.recorded_inputs.username}}") {
@@ -407,6 +505,9 @@ func TestConvertSessionWithOptions_Parameterize(t *testing.T) {
 	}
 	if !foundWarning {
 		t.Fatalf("expected a parameterization warning, got %v", result.Warnings)
+	}
+	if !strings.Contains(strings.Join(result.Warnings, "\n"), "Secret-like") {
+		t.Fatalf("expected a secret placeholder warning, got %v", result.Warnings)
 	}
 }
 
@@ -702,6 +803,52 @@ func TestConvertSession_CorrelationApplied(t *testing.T) {
 	action2 := result.Script.Actions[1]
 	if action2.Target == "http://example.com/api/data?auth=dynamic-token-value-12345678" {
 		t.Fatal("expected correlation var to replace dynamic value in target URL")
+	}
+}
+
+func TestConvertSession_DoesNotAutoApplyLowConfidenceCorrelations(t *testing.T) {
+	s := &Session{
+		ID:      "test",
+		Name:    "Low Confidence Corr Test",
+		BaseURL: "http://example.com",
+		Requests: []RecordedRequest{
+			{
+				Seq:             1,
+				Method:          "POST",
+				URL:             "http://example.com/orders",
+				Path:            "/orders",
+				Host:            "example.com",
+				StatusCode:      200,
+				ResponseBody:    `{"order_id":1234}`,
+				ResponseHeaders: map[string]string{},
+				Headers:         map[string]string{},
+			},
+			{
+				Seq:        2,
+				Method:     "GET",
+				URL:        "http://example.com/orders/1234",
+				Path:       "/orders/1234",
+				Host:       "example.com",
+				StatusCode: 200,
+				Headers:    map[string]string{},
+			},
+		},
+	}
+
+	result := ConvertSession(s, "")
+	if len(result.Correlations) == 0 {
+		t.Fatal("expected low-confidence correlation candidate to remain available for review")
+	}
+	for _, corr := range result.Correlations {
+		if corr.Confidence >= 0.8 {
+			t.Fatalf("test setup produced high-confidence correlation unexpectedly: %#v", corr)
+		}
+	}
+	if len(result.Script.Actions[0].Extractors) != 0 {
+		t.Fatalf("extractors = %#v, want no auto-applied low-confidence extractor", result.Script.Actions[0].Extractors)
+	}
+	if got := result.Script.Actions[1].Target; got != "/orders/1234" {
+		t.Fatalf("target = %q, want literal value left for review", got)
 	}
 }
 

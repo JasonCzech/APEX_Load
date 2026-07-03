@@ -831,12 +831,16 @@ func (s *Server) handleExportBrowserRecording(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// Same contract as the proxy recorder export: raw HAR-with-bodies stays
-	// available for correlation analysis, scrub=true applies scrub-on-write,
-	// and the response is labeled either way.
 	data := artifact.HAR
+	raw := rawRecordingExportRequested(r)
+	if raw && !s.canExportRawRecording(r, info.ProjectID) {
+		s.recordAuditEvent(r, "browser_recording.export_har_raw", "denied", "browser_recording", info.ID, info.ProjectID, map[string]any{"reason": "insufficient_role"})
+		writeError(w, http.StatusForbidden, "raw browser recording export requires editor, project_admin, or system_admin access")
+		return
+	}
+
 	sensitivity := scrub.SensitivityRaw
-	if r.URL.Query().Get("scrub") == "true" {
+	if !raw {
 		scrubbed, err := scrub.HAR(data, scrub.Policy{})
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to scrub HAR: "+err.Error())
@@ -845,6 +849,7 @@ func (s *Server) handleExportBrowserRecording(w http.ResponseWriter, r *http.Req
 		data = scrubbed
 		sensitivity = scrub.SensitivityScrubbed
 	}
+	s.recordAuditEvent(r, "browser_recording.export_har", "success", "browser_recording", info.ID, info.ProjectID, map[string]any{"sensitivity": sensitivity, "raw": raw})
 
 	filename := sanitizeDownloadName(info.Name)
 	if filename == "" {

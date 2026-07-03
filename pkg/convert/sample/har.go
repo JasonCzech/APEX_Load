@@ -9,9 +9,9 @@ import (
 	"compress/zlib"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -24,17 +24,18 @@ import (
 
 const maxHARDecodedContentBytes = 10 << 20
 
-func parseHAR(content string, includeStaticAssets bool, diagnostics *diag.Collector) ([]exchange, []string, int, error) {
+func parseHAR(content string, includeStaticAssets bool, diagnostics *diag.Collector) ([]exchange, []string, int, int, error) {
 	var payload any
 	if err := json.Unmarshal([]byte(content), &payload); err != nil {
-		return nil, nil, 0, fmt.Errorf("failed to parse HAR JSON: %w", err)
+		return nil, nil, 0, 0, fmt.Errorf("failed to parse HAR JSON: %w", err)
 	}
 	items, err := extractHARItems(payload)
 	if err != nil {
-		return nil, nil, 0, err
+		return nil, nil, 0, 0, err
 	}
 	exchanges := make([]exchange, 0, len(items))
 	filtered := 0
+	skipped := 0
 	warnings := []string{}
 	for index, item := range items {
 		if !includeStaticAssets && isStaticHAREntry(item) {
@@ -44,11 +45,15 @@ func parseHAR(content string, includeStaticAssets bool, diagnostics *diag.Collec
 		if isHARWebSocketUpgrade(item) {
 			diagnostics.Add(diag.Warning, "HAR websocket upgrade", fmt.Sprintf("HAR entry %d", index+1), "WebSocket upgrade/101 traffic is not converted by the generic HTTP HAR importer; import with a WebSocket-aware path before replay")
 			warnings = append(warnings, "HAR WebSocket upgrade entries were skipped by the generic HTTP importer")
+			skipped++
 			continue
 		}
 		ex, err := parseHARItem(item, diagnostics, index)
 		if err != nil {
-			return nil, nil, 0, err
+			diagnostics.Add(diag.Warning, "HAR entry skipped", fmt.Sprintf("HAR entry %d", index+1), err.Error())
+			warnings = append(warnings, fmt.Sprintf("HAR entry %d was skipped: %s", index+1, err.Error()))
+			skipped++
+			continue
 		}
 		exchanges = append(exchanges, ex)
 	}
@@ -58,13 +63,13 @@ func parseHAR(content string, includeStaticAssets bool, diagnostics *diag.Collec
 	if filtered > 0 {
 		diagnostics.Add(diag.Info, "HAR static asset filter", "HAR import", fmt.Sprintf("%d static asset entr%s skipped by default; enable include_static_assets to retain browser assets", filtered, pluralSuffix(filtered, "y was", "ies were")))
 	}
-	return exchanges, warnings, filtered, nil
+	return exchanges, warnings, filtered, skipped, nil
 }
 
 func extractHARItems(payload any) ([]map[string]any, error) {
 	root, ok := payload.(map[string]any)
 	if !ok {
-		return nil, errors.New("HAR content must be a JSON object")
+		return nil, fmt.Errorf("HAR content must be a JSON object")
 	}
 	if logObj, ok := root["log"].(map[string]any); ok {
 		root = logObj
@@ -74,7 +79,7 @@ func extractHARItems(payload any) ([]map[string]any, error) {
 		for _, entry := range entries {
 			mapped, ok := entry.(map[string]any)
 			if !ok {
-				return nil, errors.New("HAR entries must be objects")
+				return nil, fmt.Errorf("HAR entries must be objects")
 			}
 			items = append(items, mapped)
 		}
@@ -83,11 +88,15 @@ func extractHARItems(payload any) ([]map[string]any, error) {
 	if _, hasRequest := root["request"]; hasRequest {
 		return []map[string]any{root}, nil
 	}
-	return nil, errors.New("HAR content must include log.entries or a single entry with request/response")
+	return nil, fmt.Errorf("HAR content must include log.entries or a single entry with request/response")
 }
 
 func isStaticHAREntry(item map[string]any) bool {
 	requestData, _ := item["request"].(map[string]any)
+	method := strings.ToUpper(strings.TrimSpace(stringValue(requestData["method"])))
+	if method != "" && method != http.MethodGet && method != http.MethodHead {
+		return false
+	}
 	responseData, _ := item["response"].(map[string]any)
 	if content, ok := responseData["content"].(map[string]any); ok {
 		if isStaticMIMEType(stringValue(content["mimeType"])) {
@@ -131,7 +140,7 @@ func isStaticURL(rawURL string) bool {
 func parseHARItem(item map[string]any, diagnostics *diag.Collector, index int) (exchange, error) {
 	requestData, ok := item["request"].(map[string]any)
 	if !ok {
-		return exchange{}, errors.New("HAR entry is missing request")
+		return exchange{}, fmt.Errorf("HAR entry is missing request")
 	}
 	location := fmt.Sprintf("HAR entry %d", index+1)
 	headers := headerListToMap(requestData["headers"], diagnostics, location)
@@ -160,12 +169,13 @@ func parseHARItem(item map[string]any, diagnostics *diag.Collector, index int) (
 	// sync so the body stays parseable at replay.
 	ex.HeaderList = reconcileMultipartBoundaryInList(ex.HeaderList, ex.Headers)
 	mergeHARCookies(requestData["cookies"], ex.Headers, diagnostics, location)
+	sanitizeReplayHeaders(&ex, diagnostics, location)
 	if startedAt, ok := parseHARStartedAt(item["startedDateTime"]); ok {
 		ex.StartedAt = startedAt
 		ex.HasStartedAt = true
 	}
 	if ex.Method == "" || ex.URL == "" {
-		return exchange{}, errors.New("HAR request entries must include method and url")
+		return exchange{}, fmt.Errorf("HAR request entries must include method and url")
 	}
 	if responseData, ok := item["response"].(map[string]any); ok {
 		ex.Metadata = harEntryMetadata(item, requestData, responseData)
@@ -532,31 +542,21 @@ func applyHARPostDataHeaders(requestData map[string]any, headers map[string]stri
 }
 
 func mergeHARCookies(value any, headers map[string]string, diagnostics *diag.Collector, location string) {
-	if headerLookup(headers, "Cookie") != "" {
-		return
-	}
 	items, ok := value.([]any)
-	if !ok || len(items) == 0 {
+	if !ok || len(items) == 0 || headers == nil {
 		return
 	}
-	pairs := make([]string, 0, len(items))
-	for _, item := range items {
-		mapped, ok := item.(map[string]any)
-		if !ok {
-			continue
-		}
-		name := stringValue(mapped["name"])
-		if name == "" {
-			continue
-		}
-		pairs = append(pairs, name+"="+stringValue(mapped["value"]))
-	}
-	if len(pairs) == 0 {
+	deleteHeader(headers, "Cookie")
+	diagnostics.Add(diag.Info, "HAR cookies[]", location, "recorded request cookies[] were not replayed verbatim; the runtime cookie jar owns Cookie headers")
+}
+
+func sanitizeReplayHeaders(ex *exchange, diagnostics *diag.Collector, location string) {
+	if ex == nil {
 		return
 	}
-	if headers == nil {
-		return
+	if headerLookup(ex.Headers, "Cookie") != "" {
+		deleteHeader(ex.Headers, "Cookie")
+		diagnostics.Add(diag.Info, "HAR Cookie header stripped", location, "recorded Cookie header was omitted so replay uses the per-VUser cookie jar")
 	}
-	headers["Cookie"] = strings.Join(pairs, "; ")
-	diagnostics.Add(diag.Info, "HAR cookies[]", location, "request cookies[] were merged into a Cookie header; browser cookie-jar state is not simulated")
+	ex.HeaderList = filterHeaderList(ex.HeaderList, "Cookie")
 }

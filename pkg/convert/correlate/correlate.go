@@ -227,8 +227,13 @@ func ApplyVarsWithEncodedValues(value string, vars map[string]string, encodedVal
 }
 
 func EncodedFormsOf(value string) []string {
-	forms := make([]string, 0, 2)
-	for _, encoded := range []string{url.QueryEscape(value), url.PathEscape(value)} {
+	forms := make([]string, 0, 4)
+	for _, encoded := range []string{
+		url.QueryEscape(value),
+		url.PathEscape(value),
+		strings.ReplaceAll(url.QueryEscape(value), "+", "%20"),
+		strings.ReplaceAll(url.QueryEscape(value), "%2B", "+"),
+	} {
 		if encoded == "" || encoded == value {
 			continue
 		}
@@ -736,7 +741,7 @@ func xmlCandidates(body string) []Candidate {
 			Value:          value,
 			Source:         "body",
 			ExtractType:    "xpath",
-			Expression:     "//*[@*[local-name()='" + localXMLName(name) + "']]",
+			Expression:     "string(//*[@*[local-name()='" + localXMLName(name) + "']]/@*[local-name()='" + localXMLName(name) + "'])",
 			RuleID:         ruleID,
 			BaseConfidence: base,
 			Reason:         "XML/SOAP attribute " + name + " looks dynamic",
@@ -873,8 +878,8 @@ func locationCandidates(headerName string, value string) []Candidate {
 			Name:           "corr_location_" + Slug(key),
 			Value:          values[0],
 			Source:         "header",
-			ExtractType:    "header_query",
-			Expression:     headerName + "?" + key,
+			ExtractType:    "regex",
+			Expression:     locationHeaderQueryRegex(headerName, key),
 			RuleID:         RuleLocationParam,
 			BaseConfidence: 0.78,
 			Reason:         "Location query parameter " + key + " looks dynamic",
@@ -891,6 +896,9 @@ func setCookieCandidates(headerName string, value string) []Candidate {
 		}
 		cookieName := match[1]
 		cookieValue := match[2]
+		if setCookieAttributeName(cookieName) {
+			continue
+		}
 		ruleID, base := RuleSetCookieOther, 0.55
 		if isSessionCookieName(cookieName) {
 			ruleID, base = RuleSetCookieSession, 0.8
@@ -907,6 +915,19 @@ func setCookieCandidates(headerName string, value string) []Candidate {
 		})
 	}
 	return candidates
+}
+
+func locationHeaderQueryRegex(headerName string, queryKey string) string {
+	return fmt.Sprintf(`(?im)^%s:\s*[^\r\n]*[?&]%s=([^&#\s]+)`, regexp.QuoteMeta(headerName), regexp.QuoteMeta(queryKey))
+}
+
+func setCookieAttributeName(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "path", "domain", "max-age", "expires", "samesite", "secure", "httponly", "partitioned", "priority":
+		return true
+	default:
+		return false
+	}
 }
 
 func isSessionCookieName(name string) bool {

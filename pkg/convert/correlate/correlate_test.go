@@ -42,6 +42,25 @@ func TestDetectHTMLTokenAndApplyLongestFirst(t *testing.T) {
 	}
 }
 
+func TestEncodedFormsOfIncludesFormEscapedPlus(t *testing.T) {
+	forms := EncodedFormsOf("tok+/==")
+	for _, want := range []string{"tok%2B%2F%3D%3D", "tok+%2F%3D%3D"} {
+		var found bool
+		for _, got := range forms {
+			if got == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("EncodedFormsOf missing %q in %#v", want, forms)
+		}
+	}
+	if !DetectEncodedValueUsage("tok+/==", []string{"aura.token=tok%2B%2F%3D%3D"}) {
+		t.Fatal("DetectEncodedValueUsage missed form-encoded + and / value")
+	}
+}
+
 func TestDetectSetCookieValue(t *testing.T) {
 	observations := []Observation{
 		{
@@ -68,6 +87,61 @@ func TestDetectSetCookieValue(t *testing.T) {
 	if !strings.Contains(corr.Expression, "Set-Cookie") || !strings.Contains(corr.Expression, "session=") {
 		t.Fatalf("unexpected expression: %q", corr.Expression)
 	}
+}
+
+func TestDetectSetCookieSkipsAttributes(t *testing.T) {
+	observations := []Observation{
+		{ID: 1, ResponseHeaders: map[string]string{"Set-Cookie": "Path=/account; Max-Age=3600; session=sid-abcdef123456; HttpOnly"}},
+		{ID: 2, RequestHeaders: map[string]string{"Cookie": "session=sid-abcdef123456"}},
+	}
+	correlations := Detect(observations)
+	if len(correlations) != 1 {
+		t.Fatalf("correlation count = %d, want only session cookie: %#v", len(correlations), correlations)
+	}
+	if correlations[0].Name != "corr_cookie_session" {
+		t.Fatalf("unexpected correlation: %#v", correlations[0])
+	}
+}
+
+func TestDetectLocationQueryEmitsReplayableHeaderRegex(t *testing.T) {
+	observations := []Observation{
+		{ID: 1, ResponseHeaders: map[string]string{"Location": "https://idp.example.test/callback?code=code-abcdef123456&state=state-abcdef123456"}},
+		{ID: 2, RequestURL: "https://client.example.test/callback?code=code-abcdef123456&state=state-abcdef123456"},
+	}
+	correlations := Detect(observations)
+	var found bool
+	for _, corr := range correlations {
+		if corr.RuleID == RuleLocationParam && corr.Value == "code-abcdef123456" {
+			found = true
+			if corr.Source != "header" || corr.ExtractType != "regex" || strings.Contains(corr.ExtractType, "header_query") {
+				t.Fatalf("location extractor = %#v, want header regex", corr)
+			}
+			if !strings.Contains(corr.Expression, "Location") || !strings.Contains(corr.Expression, "code") {
+				t.Fatalf("location regex = %q, want header/query expression", corr.Expression)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("location code correlation not found: %#v", correlations)
+	}
+}
+
+func TestDetectXMLAttributeExtractorTargetsAttributeValue(t *testing.T) {
+	const value = "soap-corr-abcdef123456"
+	observations := []Observation{
+		{ID: 1, ResponseBody: `<Envelope><Body><CreateOrderResponse correlationId="` + value + `">ok</CreateOrderResponse></Body></Envelope>`},
+		{ID: 2, RequestBody: `correlationId=` + value},
+	}
+	correlations := Detect(observations)
+	for _, corr := range correlations {
+		if corr.Value == value {
+			if corr.ExtractType != "xpath" || !strings.Contains(corr.Expression, "/@*") || !strings.HasPrefix(corr.Expression, "string(") {
+				t.Fatalf("xml attr extractor = %#v, want attribute-value XPath", corr)
+			}
+			return
+		}
+	}
+	t.Fatalf("xml attribute correlation not found: %#v", correlations)
 }
 
 func TestDetectNestedJSONPathToken(t *testing.T) {

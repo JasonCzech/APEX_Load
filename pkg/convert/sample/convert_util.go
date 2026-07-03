@@ -4,6 +4,7 @@ package sample
 
 import (
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -153,6 +154,10 @@ func headerListToMap(value any, diagnostics *diag.Collector, location string) ma
 		if name == "" {
 			continue
 		}
+		if dropReplayHeaderName(name) {
+			diagnostics.Add(diag.Info, "HAR request header stripped", location, fmt.Sprintf("header %q is connection-scoped or invalid for replay and was omitted", name))
+			continue
+		}
 		value := stringValue(mapped["value"])
 		normalized := strings.ToLower(name)
 		existingKey := canonical[normalized]
@@ -191,10 +196,26 @@ func headerListEntries(value any) dsl.HeaderList {
 		if name == "" {
 			continue
 		}
+		if dropReplayHeaderName(name) {
+			continue
+		}
 		headers = append(headers, dsl.HeaderEntry{Name: name, Value: stringValue(mapped["value"])})
 	}
 	if len(headers) == 0 {
 		return nil
 	}
 	return headers
+}
+
+func dropReplayHeaderName(name string) bool {
+	lower := strings.ToLower(strings.TrimSpace(name))
+	if lower == "" || strings.HasPrefix(lower, ":") {
+		return true
+	}
+	switch lower {
+	case "connection", "proxy-connection", "keep-alive", "transfer-encoding", "upgrade", "te", "trailer", "proxy-authorization", "proxy-authenticate":
+		return true
+	default:
+		return false
+	}
 }

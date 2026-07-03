@@ -147,6 +147,50 @@ func TestConvertHARScrubsGovernedSourceReview(t *testing.T) {
 	}
 }
 
+func TestConvertHARCorrelatesRawBeforeScrub(t *testing.T) {
+	result, err := Convert([]byte(`{
+  "log": {
+    "entries": [
+      {
+        "request": {"method": "POST", "url": "https://api.example.test/login", "headers": []},
+        "response": {
+          "status": 200,
+          "headers": [{"name": "Content-Type", "value": "application/json"}],
+          "content": {"text": "{\"access_token\":\"tok-secret-abcdef123456\"}"}
+        }
+      },
+      {
+        "request": {
+          "method": "GET",
+          "url": "https://api.example.test/orders?access_token=tok-secret-abcdef123456",
+          "headers": [{"name": "Authorization", "value": "Bearer tok-secret-abcdef123456"}]
+        },
+        "response": {"status": 200, "content": {"text": "{\"ok\":true}"}}
+      }
+    ]
+  }
+}`), ConvertOptions{ScriptName: "Raw Correlation"})
+	if err != nil {
+		t.Fatalf("Convert: %v", err)
+	}
+	if len(result.Correlations) != 1 {
+		t.Fatalf("correlations = %#v, want one raw token correlation", result.Correlations)
+	}
+	if result.Correlations[0].SampleValue == "[REDACTED]" {
+		t.Fatalf("correlation was detected from scrubbed token: %#v", result.Correlations[0])
+	}
+	if !strings.Contains(result.Script.Actions[1].Target, "{{var.corr_access_token}}") {
+		t.Fatalf("second action target = %q, want raw token parameterized", result.Script.Actions[1].Target)
+	}
+	if result.Governance == nil || result.Governance.Sensitivity != "scrubbed" {
+		t.Fatalf("governance = %#v, want scrubbed marker", result.Governance)
+	}
+	source := result.SourceReview.SourceFiles[0].Content
+	if strings.Contains(source, "tok-secret-abcdef123456") {
+		t.Fatalf("source review leaked raw token: %s", source)
+	}
+}
+
 func TestDiffClassifiesDynamicHARCorrelations(t *testing.T) {
 	baseline := []byte(dynamicHAR("cart-111111"))
 	comparison := []byte(dynamicHAR("cart-222222"))

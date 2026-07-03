@@ -22,9 +22,9 @@ func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingC
 	if result.NetworkProfile == "" && vu.Script != nil {
 		result.NetworkProfile = networkProfileLabel(vu.Script.Config.WebRuntime.NetworkSimulation)
 	}
-	vu.Metrics.Record(result)
 	vu.mergeExtractions(result)
 	scrubSensitiveResult(result, vu.RedactionConfig)
+	vu.Metrics.Record(result)
 	vu.handleSnapshot(result, errCfg)
 	if vu.ResultSink != nil {
 		_ = vu.ResultSink.RecordResult(result)

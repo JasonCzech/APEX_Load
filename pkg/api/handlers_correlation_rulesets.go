@@ -255,8 +255,9 @@ func (s *Server) handleApplyCorrelationRulesetToScript(w http.ResponseWriter, r 
 	}
 
 	result := paramize.Suggest(stored.Script, paramize.Options{
-		Observations:      baselineObservations(record),
-		EnableCorrelation: true,
+		Observations:            baselineObservations(record),
+		ObservationIDsZeroBased: true,
+		EnableCorrelation:       true,
 	})
 
 	selected := map[string]bool{}

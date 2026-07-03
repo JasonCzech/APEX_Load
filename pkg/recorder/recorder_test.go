@@ -26,8 +26,68 @@ func TestNewRecorder(t *testing.T) {
 	}
 
 	r2 := New("")
-	if r2.addr != ":8081" {
-		t.Fatalf("expected default :8081, got %s", r2.addr)
+	if r2.addr != defaultProxyAddr {
+		t.Fatalf("expected default %s, got %s", defaultProxyAddr, r2.addr)
+	}
+}
+
+func allowPrivateProxyTargets(t *testing.T) {
+	t.Helper()
+	t.Setenv(envProxyAllowPrivateTargets, "true")
+}
+
+func TestProxyStartupHardening(t *testing.T) {
+	t.Run("production requires explicit opt-in", func(t *testing.T) {
+		t.Setenv("APEXLOAD_ENV", "production")
+		rec := New(defaultProxyAddr)
+		if err := rec.validateProxyStartup(); err == nil || !strings.Contains(err.Error(), envProxyAllowProduction) {
+			t.Fatalf("validateProxyStartup error = %v, want production opt-in error", err)
+		}
+	})
+
+	t.Run("wide bind requires auth or explicit unauthenticated opt-in", func(t *testing.T) {
+		t.Setenv("APEXLOAD_ENV", "")
+		rec := New(":8081")
+		if err := rec.validateProxyStartup(); err == nil || !strings.Contains(err.Error(), envProxyAuthToken) {
+			t.Fatalf("validateProxyStartup error = %v, want token requirement", err)
+		}
+	})
+
+	t.Run("wide bind allows configured token", func(t *testing.T) {
+		t.Setenv(envProxyAuthToken, "secret-token")
+		rec := New(":8081")
+		if err := rec.validateProxyStartup(); err != nil {
+			t.Fatalf("validateProxyStartup with token: %v", err)
+		}
+	})
+}
+
+func TestProxyAuthTokenEnforced(t *testing.T) {
+	t.Setenv(envProxyAuthToken, "secret-token")
+	rec := New(defaultProxyAddr)
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.test/", nil)
+	if rec.authorizeProxyRequest(req) {
+		t.Fatal("request without proxy auth should be rejected")
+	}
+	req.Header.Set("Proxy-Authorization", "Bearer secret-token")
+	if !rec.authorizeProxyRequest(req) {
+		t.Fatal("Bearer proxy auth token should be accepted")
+	}
+}
+
+func TestProxyRejectsPrivateTargetsByDefault(t *testing.T) {
+	rec := New(defaultProxyAddr)
+	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1/private", nil)
+	rr := httptest.NewRecorder()
+	rec.handleProxy(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403 for private target", rr.Code)
+	}
+
+	t.Setenv(envProxyAllowPrivateTargets, "true")
+	if err := validateProxyTargetURL("http://127.0.0.1/private"); err != nil {
+		t.Fatalf("private target opt-in should allow localhost: %v", err)
 	}
 }
 
@@ -190,6 +250,7 @@ func TestUpdateRequestCurationFields(t *testing.T) {
 }
 
 func TestProxyIntegration(t *testing.T) {
+	allowPrivateProxyTargets(t)
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("X-Request-Id", "req-abc-123")
@@ -290,6 +351,7 @@ func TestProxyIntegration(t *testing.T) {
 }
 
 func TestProxyCapturesWebSocketFrames(t *testing.T) {
+	allowPrivateProxyTargets(t)
 	upgrader := gorillawebsocket.Upgrader{}
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
@@ -551,6 +613,7 @@ func TestRecordRequestLeavesTextBodiesUnencoded(t *testing.T) {
 }
 
 func TestProxyStreamsSSEWithoutWaitingForEOF(t *testing.T) {
+	allowPrivateProxyTargets(t)
 	backendReady := make(chan struct{})
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -639,6 +702,7 @@ func TestRecordRequestThinkTimeUsesRequestStartOrdering(t *testing.T) {
 }
 
 func TestStaticFiltering(t *testing.T) {
+	allowPrivateProxyTargets(t)
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
 		io.WriteString(w, "ok")
@@ -661,6 +725,7 @@ func TestStaticFiltering(t *testing.T) {
 }
 
 func TestStaticFilteringCanBeDisabled(t *testing.T) {
+	allowPrivateProxyTargets(t)
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
 		io.WriteString(w, "ok")
@@ -683,6 +748,7 @@ func TestStaticFilteringCanBeDisabled(t *testing.T) {
 }
 
 func TestHostFiltering(t *testing.T) {
+	allowPrivateProxyTargets(t)
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
 		io.WriteString(w, "ok")

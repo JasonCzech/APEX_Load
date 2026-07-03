@@ -883,15 +883,19 @@ func resolveScriptDebugSessionProjectID(manager *ScriptDebugManager) requestProj
 }
 
 func resolveImportProjectIDFromForm(r *http.Request, _ storage.Store) (string, int, string) {
-	if projectID := strings.TrimSpace(r.URL.Query().Get("project_id")); projectID != "" {
-		return normalizeProjectID(projectID), 0, ""
+	queryProjectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
+	formProjectID := ""
+	if !strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+		return reconcileImportProjectID(queryProjectID, "", "request body")
 	}
 	if err := r.ParseMultipartForm(50 << 20); err == nil {
-		if projectID := strings.TrimSpace(r.FormValue("project_id")); projectID != "" {
-			return normalizeProjectID(projectID), 0, ""
+		if r.MultipartForm != nil {
+			if values := r.MultipartForm.Value["project_id"]; len(values) > 0 {
+				formProjectID = strings.TrimSpace(values[0])
+			}
 		}
 	}
-	return "", http.StatusBadRequest, "project_id is required for project-scoped import access"
+	return reconcileImportProjectID(queryProjectID, formProjectID, "multipart form")
 }
 
 func resolveImportProjectIDFromJSON(r *http.Request, _ storage.Store) (string, int, string) {
@@ -901,16 +905,10 @@ func resolveImportProjectIDFromJSON(r *http.Request, _ storage.Store) (string, i
 	if err := decodeRequestBody(r, &req); err != nil {
 		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
 	}
-	if strings.TrimSpace(req.ProjectID) == "" {
-		return "", http.StatusBadRequest, "project_id is required for project-scoped import access"
-	}
-	return normalizeProjectID(req.ProjectID), 0, ""
+	return reconcileImportProjectID(r.URL.Query().Get("project_id"), req.ProjectID, "JSON body")
 }
 
 func resolveImportProjectIDFromJSONOrForm(r *http.Request, store storage.Store) (string, int, string) {
-	if projectID := strings.TrimSpace(r.URL.Query().Get("project_id")); projectID != "" {
-		return normalizeProjectID(projectID), 0, ""
-	}
 	contentType := r.Header.Get("Content-Type")
 	if strings.HasPrefix(contentType, "multipart/form-data") {
 		return resolveImportProjectIDFromForm(r, store)
@@ -919,6 +917,28 @@ func resolveImportProjectIDFromJSONOrForm(r *http.Request, store storage.Store) 
 		return resolveImportProjectIDFromJSON(r, store)
 	}
 	return "", http.StatusBadRequest, "project_id is required for project-scoped import access"
+}
+
+func reconcileImportProjectID(queryProjectID string, bodyProjectID string, bodySource string) (string, int, string) {
+	queryProjectID = normalizeExplicitImportProjectID(queryProjectID)
+	bodyProjectID = normalizeExplicitImportProjectID(bodyProjectID)
+	if queryProjectID != "" && bodyProjectID != "" && queryProjectID != bodyProjectID {
+		return "", http.StatusBadRequest, "project_id query parameter does not match " + bodySource + " project_id"
+	}
+	if bodyProjectID != "" {
+		return bodyProjectID, 0, ""
+	}
+	if queryProjectID != "" {
+		return queryProjectID, 0, ""
+	}
+	return "", http.StatusBadRequest, "project_id is required for project-scoped import access"
+}
+
+func normalizeExplicitImportProjectID(projectID string) string {
+	if strings.TrimSpace(projectID) == "" {
+		return ""
+	}
+	return normalizeProjectID(projectID)
 }
 
 func resolveK6ExportProjectID(r *http.Request, _ storage.Store) (string, int, string) {

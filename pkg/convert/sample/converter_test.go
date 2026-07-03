@@ -1087,7 +1087,7 @@ func TestConvertHARRewritesEncodedCorrelationValues(t *testing.T) {
 	}
 }
 
-func TestConvertHARPreservesFormParamsCookiesAndDuplicateHeaders(t *testing.T) {
+func TestConvertHARPreservesFormParamsStripsCookiesAndDuplicateHeaders(t *testing.T) {
 	sanitizeSensitive := false
 	inferExtractors := false
 	result, err := Convert(ImportRequest{
@@ -1161,8 +1161,8 @@ func TestConvertHARPreservesFormParamsCookiesAndDuplicateHeaders(t *testing.T) {
 	if first.Headers["Content-Type"] != "application/x-www-form-urlencoded" {
 		t.Fatalf("content type = %q", first.Headers["Content-Type"])
 	}
-	if first.Headers["Cookie"] != "sid=abc; theme=dark" {
-		t.Fatalf("cookie header = %q", first.Headers["Cookie"])
+	if first.Headers["Cookie"] != "" || len(headerListValues(first.HeaderList, "Cookie")) != 0 {
+		t.Fatalf("recorded cookies should be stripped for jar replay: headers=%#v header_list=%#v", first.Headers, first.HeaderList)
 	}
 	if first.Metadata["har.request.http_version"] != "HTTP/2" || first.Metadata["har.response.http_version"] != "HTTP/2" || first.Metadata["har.server_ip_address"] != "203.0.113.10" {
 		t.Fatalf("HAR metadata = %#v, want HTTP versions and server IP", first.Metadata)
@@ -1200,6 +1200,83 @@ func TestConvertHARPreservesFormParamsCookiesAndDuplicateHeaders(t *testing.T) {
 	}
 	if !containsSampleDiagnostic(result, "HAR cookies[]") {
 		t.Fatalf("diagnostics = %#v, want cookies[] info", result.Unsupported)
+	}
+}
+
+func TestConvertHARSkipsMalformedEntriesWithIndexedWarning(t *testing.T) {
+	inferExtractors := false
+	result, err := Convert(ImportRequest{
+		Format: "har",
+		Content: `{"log":{"entries":[
+			{"request":{"method":"GET","url":"https://api.example.com/ok","headers":[]},"response":{"status":200,"headers":[],"content":{"text":"{}"}}},
+			{"response":{"status":200,"headers":[],"content":{"text":"{}"}}}
+		]}}`,
+		Options: ConvertOptions{InferExtractors: &inferExtractors},
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if result.Stats.TotalRequests != 2 || result.Stats.ConvertedActions != 1 || result.Stats.SkippedRequests != 1 {
+		t.Fatalf("stats = %#v, want one converted and one skipped", result.Stats)
+	}
+	if !containsSampleDiagnostic(result, "HAR entry skipped") || !strings.Contains(strings.Join(result.Warnings, "\n"), "HAR entry 2") {
+		t.Fatalf("diagnostics=%#v warnings=%v, want indexed skip warning", result.Unsupported, result.Warnings)
+	}
+	if containsSampleDiagnostic(result, "Sample completeness guard") {
+		t.Fatalf("expected skipped entry not to trip completeness guard: %#v", result.Unsupported)
+	}
+}
+
+func TestConvertHARStaticFilterIsMethodAware(t *testing.T) {
+	inferExtractors := false
+	result, err := Convert(ImportRequest{
+		Format: "har",
+		Content: `{"log":{"entries":[
+			{"request":{"method":"POST","url":"https://api.example.com/avatar","headers":[]},"response":{"status":201,"headers":[],"content":{"mimeType":"image/png","text":"created"}}},
+			{"request":{"method":"GET","url":"https://api.example.com/app.js","headers":[]},"response":{"status":200,"headers":[],"content":{"mimeType":"application/javascript","text":"console.log(1)"}}}
+		]}}`,
+		Options: ConvertOptions{InferExtractors: &inferExtractors},
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if result.Stats.TotalRequests != 2 || result.Stats.FilteredAssets != 1 || result.Stats.ConvertedActions != 1 {
+		t.Fatalf("stats = %#v, want POST image retained and GET JS filtered", result.Stats)
+	}
+	if result.Script.Actions[0].Method != "POST" {
+		t.Fatalf("retained method = %q, want POST image request", result.Script.Actions[0].Method)
+	}
+	if containsSampleDiagnostic(result, "Sample completeness guard") {
+		t.Fatalf("static filter should not trip completeness guard: %#v", result.Unsupported)
+	}
+}
+
+func TestConvertHARStripsReplayHostileHeaders(t *testing.T) {
+	inferExtractors := false
+	result, err := Convert(ImportRequest{
+		Format: "har",
+		Content: `{"log":{"entries":[{
+			"request":{"method":"GET","url":"https://api.example.com/orders","headers":[
+				{"name":":authority","value":"api.example.com"},
+				{"name":"Connection","value":"keep-alive"},
+				{"name":"Cookie","value":"sid=abc"},
+				{"name":"Accept","value":"application/json"}
+			]},
+			"response":{"status":200,"headers":[],"content":{"text":"{}"}}
+		}]}}`,
+		Options: ConvertOptions{InferExtractors: &inferExtractors},
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	action := result.Script.Actions[0]
+	for _, name := range []string{":authority", "Connection", "Cookie"} {
+		if action.Headers[name] != "" || len(headerListValues(action.HeaderList, name)) != 0 {
+			t.Fatalf("%s should be stripped: headers=%#v header_list=%#v", name, action.Headers, action.HeaderList)
+		}
+	}
+	if action.Headers["Accept"] != "application/json" {
+		t.Fatalf("Accept header = %q, want preserved", action.Headers["Accept"])
 	}
 }
 

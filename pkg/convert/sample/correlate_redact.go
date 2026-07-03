@@ -32,6 +32,9 @@ func detectCorrelations(exchanges []exchange) []Correlation {
 	shared := correlate.Detect(observations)
 	correlations := make([]Correlation, 0, len(shared))
 	for _, corr := range shared {
+		if corr.Value == scrub.Redacted || corr.SampleValue == scrub.Redacted {
+			continue
+		}
 		correlations = append(correlations, Correlation{
 			Name:        corr.Name,
 			Source:      corr.Source,

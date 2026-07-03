@@ -21,6 +21,7 @@ import (
 
 	"github.com/andybalholm/brotli"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/klauspost/compress/zstd"
 )
 
 func init() {
@@ -41,7 +42,7 @@ type HTTP struct {
 	defaultHeaders           map[string]string
 	authType                 string
 	authHeader               string // pre-computed Authorization header value
-	maxRedirects             int    // -1 = no follow, 0 = default (10)
+	maxRedirects             int    // <=0 = no follow, unset/default = 10
 	requestTimeout           time.Duration
 	networkProfile           string // assigned network-profile label (population mix)
 }
@@ -478,6 +479,9 @@ func readAllLimited(r io.Reader, maxBytes int64) ([]byte, error) {
 }
 
 func decodeHTTPResponseContent(body []byte, headers http.Header, snapshotHeaders map[string]string, maxBytes int64) ([]byte, map[string]string, error) {
+	if len(body) == 0 {
+		return body, snapshotHeaders, nil
+	}
 	encodings := responseContentEncodings(headers)
 	if len(encodings) == 0 {
 		return body, snapshotHeaders, nil
@@ -498,6 +502,8 @@ func decodeHTTPResponseContent(body []byte, headers http.Header, snapshotHeaders
 			decoded, err = decodeDeflateBody(decoded, maxBytes)
 		case "br":
 			decoded, err = decodeBrotliBody(decoded, maxBytes)
+		case "zstd", "zstandard":
+			decoded, err = decodeZstdBody(decoded, maxBytes)
 		default:
 			return body, snapshotHeaders, fmt.Errorf("unsupported response content encoding %q", encoding)
 		}
@@ -543,6 +549,15 @@ func decodeDeflateBody(body []byte, maxBytes int64) ([]byte, error) {
 
 func decodeBrotliBody(body []byte, maxBytes int64) ([]byte, error) {
 	return readAllLimited(brotli.NewReader(bytes.NewReader(body)), maxBytes)
+}
+
+func decodeZstdBody(body []byte, maxBytes int64) ([]byte, error) {
+	reader, err := zstd.NewReader(bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+	return readAllLimited(reader, maxBytes)
 }
 
 func decodedResponseHeaders(headers map[string]string) map[string]string {

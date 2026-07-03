@@ -118,8 +118,8 @@ func seedScriptWithCorrelatedBaseline(t *testing.T, server *Server) *StoredScrip
 	if err := server.store.SaveScriptRecording(&storage.ScriptRecordingRecord{
 		ScriptID: stored.ID,
 		Observations: []storage.ScriptRecordingObservation{
-			{ID: 1, RequestURL: "/login", ResponseBody: `{"csrf_token":"TOKEN1234567"}`},
-			{ID: 2, RequestURL: "/checkout", RequestBody: `{"csrf":"TOKEN1234567"}`},
+			{ID: 0, RequestURL: "/login", ResponseBody: `{"csrf_token":"TOKEN1234567"}`},
+			{ID: 1, RequestURL: "/checkout", RequestBody: `{"csrf":"TOKEN1234567"}`},
 		},
 	}); err != nil {
 		t.Fatalf("save baseline: %v", err)
@@ -193,5 +193,12 @@ func TestCorrelationRulesetDiscoverAndApply(t *testing.T) {
 	}
 	if extractorCount == 0 {
 		t.Fatalf("apply did not add any extractor to the script")
+	}
+	if len(reloaded.Script.Actions[0].Extractors) != 1 {
+		t.Fatalf("first action extractors = %#v, want recorder-baseline extractor on source action", reloaded.Script.Actions[0].Extractors)
+	}
+	if strings.Contains(reloaded.Script.Actions[1].Body, "TOKEN1234567") ||
+		!strings.Contains(reloaded.Script.Actions[1].Body, "{{var.") {
+		t.Fatalf("second action body = %q, want recorded token templated on the used action", reloaded.Script.Actions[1].Body)
 	}
 }

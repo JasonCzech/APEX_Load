@@ -59,11 +59,15 @@ func (s *Server) handleStartRecording(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{
+	resp := map[string]any{
 		"session":      session,
 		"proxy_addr":   s.recorder.ProxyAddr(),
 		"ca_cert_path": s.recorder.CACertPath(),
-	})
+	}
+	if token := s.recorder.ProxyAuthToken(); token != "" {
+		resp["proxy_auth_token"] = token
+	}
+	writeJSON(w, http.StatusCreated, resp)
 }
 
 func (s *Server) handlePauseRecording(w http.ResponseWriter, r *http.Request) {
@@ -228,11 +232,15 @@ func (s *Server) handleExportRecording(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Raw HAR-with-bodies is needed for correlation analysis; scrub=true
-	// applies scrub-on-write for exports that leave the design workstation.
-	// Either way the response is labeled so downstream tooling can tell.
+	raw := rawRecordingExportRequested(r)
+	if raw && !s.canExportRawRecording(r, session.ProjectID) {
+		s.recordAuditEvent(r, "recording.export_har_raw", "denied", "recording", id, session.ProjectID, map[string]any{"reason": "insufficient_role"})
+		writeError(w, http.StatusForbidden, "raw recording export requires editor, project_admin, or system_admin access")
+		return
+	}
+
 	sensitivity := scrub.SensitivityRaw
-	if r.URL.Query().Get("scrub") == "true" {
+	if !raw {
 		scrubbed, err := scrub.HAR(data, scrub.Policy{})
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to scrub HAR: "+err.Error())
@@ -241,6 +249,7 @@ func (s *Server) handleExportRecording(w http.ResponseWriter, r *http.Request) {
 		data = scrubbed
 		sensitivity = scrub.SensitivityScrubbed
 	}
+	s.recordAuditEvent(r, "recording.export_har", "success", "recording", id, session.ProjectID, map[string]any{"sensitivity": sensitivity, "raw": raw})
 
 	filename := sanitizeDownloadName(session.Name)
 	if filename == "" {
@@ -251,6 +260,20 @@ func (s *Server) handleExportRecording(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-APEXLoad-Sensitivity", sensitivity)
 	w.WriteHeader(http.StatusOK)
 	w.Write(data)
+}
+
+func rawRecordingExportRequested(r *http.Request) bool {
+	query := r.URL.Query()
+	return query.Get("raw") == "true" || query.Get("scrub") == "false"
+}
+
+func (s *Server) canExportRawRecording(r *http.Request, projectID string) bool {
+	if user, ok := AuthenticatedUserFromContext(r.Context()); ok && user != nil {
+		return user.hasGlobalRole(RoleEditor, RoleProjectAdmin, RoleSystemAdmin) ||
+			user.hasProjectRole(projectID, RoleEditor, RoleProjectAdmin)
+	}
+	settings := normalizeAuthSettings(s.runner.GetSystemSettings().Auth)
+	return isAuthBypassMode(settings.Mode)
 }
 
 func (s *Server) handleRecorderCACert(w http.ResponseWriter, r *http.Request) {
@@ -290,7 +313,7 @@ func (s *Server) handleRecorderStatus(w http.ResponseWriter, r *http.Request) {
 			"started_at":    active.StartedAt,
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"proxy_addr":   s.recorder.ProxyAddr(),
 		"ca_cert_path": s.recorder.CACertPath(),
 		"active":       activeInfo,
@@ -299,5 +322,9 @@ func (s *Server) handleRecorderStatus(w http.ResponseWriter, r *http.Request) {
 			"active":       s.browserRecording.Active(),
 			"install":      s.browserInstall.snapshot(),
 		},
-	})
+	}
+	if token := s.recorder.ProxyAuthToken(); token != "" {
+		resp["proxy_auth_token"] = token
+	}
+	writeJSON(w, http.StatusOK, resp)
 }

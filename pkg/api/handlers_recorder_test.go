@@ -268,22 +268,8 @@ func TestHandleExportRecordingHARScrubOption(t *testing.T) {
 		ResponseBody:         `{"ok":true}`,
 	})
 
-	// Default export stays raw (correlation analysis needs real values) but is labeled.
-	rawReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/rec-scrub/export?format=har", nil)
-	rawResp := httptest.NewRecorder()
-	server.mux.ServeHTTP(rawResp, rawReq)
-	if rawResp.Code != http.StatusOK {
-		t.Fatalf("raw status = %d body=%s", rawResp.Code, rawResp.Body.String())
-	}
-	if got := rawResp.Header().Get("X-APEXLoad-Sensitivity"); got != "raw_contains_secrets" {
-		t.Errorf("raw sensitivity header = %q", got)
-	}
-	if !strings.Contains(rawResp.Body.String(), "top-secret-token") {
-		t.Error("raw export should preserve values for correlation analysis")
-	}
-
-	// scrub=true applies scrub-on-write.
-	scrubReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/rec-scrub/export?format=har&scrub=true", nil)
+	// Default export applies scrub-on-write for downloadable artifacts.
+	scrubReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/rec-scrub/export?format=har", nil)
 	scrubResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(scrubResp, scrubReq)
 	if scrubResp.Code != http.StatusOK {
@@ -308,5 +294,54 @@ func TestHandleExportRecordingHARScrubOption(t *testing.T) {
 	}
 	if len(payload.Log.Entries) != 1 {
 		t.Fatalf("scrubbed entry count = %d, want 1", len(payload.Log.Entries))
+	}
+
+	// Raw export is still available for privileged correlation diagnostics, but
+	// must be explicit and labeled.
+	rawReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/rec-scrub/export?format=har&raw=true", nil)
+	rawResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(rawResp, rawReq)
+	if rawResp.Code != http.StatusOK {
+		t.Fatalf("raw status = %d body=%s", rawResp.Code, rawResp.Body.String())
+	}
+	if got := rawResp.Header().Get("X-APEXLoad-Sensitivity"); got != "raw_contains_secrets" {
+		t.Errorf("raw sensitivity header = %q", got)
+	}
+	if !strings.Contains(rawResp.Body.String(), "top-secret-token") {
+		t.Error("raw export should preserve values for correlation analysis")
+	}
+}
+
+func TestHandleExportRecordingRawRequiresEditorRole(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	enableTrustedHeaderAuth(t, server)
+	session, err := server.recorder.StartSessionForProject("rec-rbac", "RBAC HAR", "proj-rbac", recorder.SessionFilters{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session.Requests = append(session.Requests, recorder.RecordedRequest{
+		Seq:        1,
+		Method:     http.MethodGet,
+		URL:        "https://shop.example.com/account",
+		Path:       "/account",
+		StatusCode: http.StatusOK,
+	})
+
+	scrubbedReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/rec-rbac/export", nil)
+	scrubbedReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	scrubbedReq.Header.Set("X-APEXLoad-Project-Roles", "proj-rbac="+RoleViewer)
+	scrubbedResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(scrubbedResp, scrubbedReq)
+	if scrubbedResp.Code != http.StatusOK {
+		t.Fatalf("scrubbed viewer export status = %d, want 200 body=%s", scrubbedResp.Code, scrubbedResp.Body.String())
+	}
+
+	rawReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/rec-rbac/export?raw=true", nil)
+	rawReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	rawReq.Header.Set("X-APEXLoad-Project-Roles", "proj-rbac="+RoleViewer)
+	rawResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(rawResp, rawReq)
+	if rawResp.Code != http.StatusForbidden {
+		t.Fatalf("raw viewer export status = %d, want 403 body=%s", rawResp.Code, rawResp.Body.String())
 	}
 }

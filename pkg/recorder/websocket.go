@@ -62,8 +62,12 @@ func (r *Recorder) handleWebSocketProxy(w http.ResponseWriter, req *http.Request
 		http.Error(w, "websocket target error: "+err.Error(), http.StatusBadGateway)
 		return
 	}
+	if err := validateProxyTargetURL(targetURL.String()); err != nil {
+		http.Error(w, "websocket target rejected: "+err.Error(), http.StatusForbidden)
+		return
+	}
 	upstreamAddr := hostWithDefaultPort(targetURL.Host, "80")
-	upstreamConn, err := net.DialTimeout("tcp", upstreamAddr, 30*time.Second)
+	upstreamConn, err := proxySafeDialer(30*time.Second).Dial("tcp", upstreamAddr)
 	if err != nil {
 		http.Error(w, "websocket upstream error: "+err.Error(), http.StatusBadGateway)
 		return
@@ -120,9 +124,13 @@ func (r *Recorder) forwardWebSocketHTTPS(tlsConn net.Conn, clientReader *bufio.R
 		writeHTTPError(tlsConn, http.StatusBadGateway, "websocket target error: "+err.Error())
 		return
 	}
+	if err := validateProxyTargetURL(targetURL.String()); err != nil {
+		writeHTTPError(tlsConn, http.StatusForbidden, "websocket target rejected: "+err.Error())
+		return
+	}
 
 	dialAddr := hostWithDefaultPort(connectHost, "443")
-	upstreamConn, err := tls.DialWithDialer(&net.Dialer{Timeout: 30 * time.Second}, "tcp", dialAddr, &tls.Config{
+	upstreamConn, err := tls.DialWithDialer(proxySafeDialer(30*time.Second), "tcp", dialAddr, &tls.Config{
 		ServerName:         hostname,
 		InsecureSkipVerify: true,
 	})
@@ -173,9 +181,13 @@ func (r *Recorder) forwardWebSocketPlainConnect(clientConn net.Conn, clientReade
 		writeHTTPError(clientConn, http.StatusBadGateway, "websocket target error: "+err.Error())
 		return
 	}
+	if err := validateProxyTargetURL(targetURL.String()); err != nil {
+		writeHTTPError(clientConn, http.StatusForbidden, "websocket target rejected: "+err.Error())
+		return
+	}
 
 	upstreamAddr := hostWithDefaultPort(connectHost, "80")
-	upstreamConn, err := net.DialTimeout("tcp", upstreamAddr, 30*time.Second)
+	upstreamConn, err := proxySafeDialer(30*time.Second).Dial("tcp", upstreamAddr)
 	if err != nil {
 		slog.Debug("websocket CONNECT upstream dial failed", "host", upstreamAddr, "err", err)
 		writeHTTPError(clientConn, http.StatusBadGateway, "websocket upstream error: "+err.Error())

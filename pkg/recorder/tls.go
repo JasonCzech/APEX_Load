@@ -282,6 +282,10 @@ func (r *Recorder) handleConnectMITM(w http.ResponseWriter, req *http.Request) {
 		host = host + ":443"
 	}
 	hostname := req.URL.Hostname()
+	if err := validateProxyTargetHost(hostname); err != nil {
+		http.Error(w, "proxy target rejected: "+err.Error(), http.StatusForbidden)
+		return
+	}
 
 	slog.Debug("HTTPS CONNECT interception", "host", host, "hostname", hostname)
 
@@ -337,6 +341,7 @@ func (r *Recorder) handleConnectMITM(w http.ResponseWriter, req *http.Request) {
 
 	// Create an HTTP client for upstream requests.
 	transport := &http.Transport{
+		DialContext:     proxySafeDialer(30 * time.Second).DialContext,
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
 	client := &http.Client{

@@ -907,8 +907,10 @@ func TestHandleImportHARForceGenericKeepsRawScriptAndSalesforceReview(t *testing
 	if _, ok := result.Script.Metadata.Import.Preserved["salesforce_review"]; !ok {
 		t.Fatalf("salesforce review metadata missing: %#v", result.Script.Metadata.Import.Preserved)
 	}
-	if len(result.Script.Actions) < 2 || !strings.Contains(result.Script.Actions[1].Body, "tok%2B%2F%3D%3D") {
-		t.Fatalf("raw HAR actions = %#v, want original encoded token retained", result.Script.Actions)
+	if len(result.Script.Actions) < 2 ||
+		strings.Contains(result.Script.Actions[1].Body, "tok%2B%2F%3D%3D") ||
+		!strings.Contains(result.Script.Actions[1].Body, "{{var.corr_access_token}}") {
+		t.Fatalf("raw HAR actions = %#v, want deterministic HAR script with correlated Aura token", result.Script.Actions)
 	}
 }
 

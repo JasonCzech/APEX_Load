@@ -71,6 +71,26 @@ func TestValue(t *testing.T) {
 			want:  "https://x.example/cb?code=ok&token=" + Redacted,
 		},
 		{
+			name:  "xml token element and attribute",
+			input: `<soap><auth token="abc123"><password>hunter2</password></auth></soap>`,
+			want:  `<soap><auth token="` + Redacted + `"><password>` + Redacted + `</password></auth></soap>`,
+		},
+		{
+			name:  "multipart password part",
+			input: "--b\r\nContent-Disposition: form-data; name=\"password\"\r\n\r\nhunter2\r\n--b--",
+			want:  "--b\r\nContent-Disposition: form-data; name=\"password\"\r\n\r\n" + Redacted + "\r\n--b--",
+		},
+		{
+			name:  "bare jwt",
+			input: "Authorization failed for eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature",
+			want:  "Authorization failed for " + Redacted,
+		},
+		{
+			name:  "high entropy bare token",
+			input: "token AbCdEfGh1234567890ijklMN should not persist",
+			want:  "token " + Redacted + " should not persist",
+		},
+		{
 			name:   "custom pattern",
 			input:  "ssn=123-45-6789 name=j",
 			policy: Policy{ExtraPatterns: []Rule{{Pattern: `\d{3}-\d{2}-\d{4}`}}},
@@ -96,6 +116,36 @@ func TestValue(t *testing.T) {
 				t.Errorf("Value(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestHARScrubsWebSocketMessages(t *testing.T) {
+	input := []byte(`{
+	  "log": {
+	    "version": "1.2",
+	    "creator": {"name": "test", "version": "1"},
+	    "entries": [{
+	      "request": {"method": "GET", "url": "wss://example.test/ws", "headers": []},
+	      "response": {"status": 101, "headers": []},
+	      "_webSocketMessages": [
+	        {"type": "send", "data": "{\"access_token\":\"ws-secret-token\"}"},
+	        {"type": "receive", "data": "Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature"}
+	      ]
+	    }]
+	  }
+	}`)
+	scrubbed, err := HAR(input, Policy{})
+	if err != nil {
+		t.Fatalf("HAR: %v", err)
+	}
+	text := string(scrubbed)
+	for _, secret := range []string{"ws-secret-token", "eyJhbGciOiJIUzI1NiJ9"} {
+		if strings.Contains(text, secret) {
+			t.Fatalf("websocket HAR payload leaked %q in %s", secret, text)
+		}
+	}
+	if !strings.Contains(text, Redacted) {
+		t.Fatalf("scrubbed HAR = %s, want redaction marker", text)
 	}
 }
 
@@ -163,6 +213,35 @@ func TestHAR(t *testing.T) {
 	}
 	if HARSensitivity([]byte(sampleHAR)) != SensitivityRaw {
 		t.Error("unscrubbed HAR must classify as raw")
+	}
+}
+
+func TestHARSingleEntryRootObject(t *testing.T) {
+	input := []byte(`{
+	  "request": {
+	    "method": "POST",
+	    "url": "https://shop.example/login?token=abc123",
+	    "headers": [{"name": "Authorization", "value": "Bearer secret-token"}],
+	    "postData": {"text": "{\"password\":\"hunter2\"}"}
+	  },
+	  "response": {
+	    "status": 200,
+	    "headers": [{"name": "Set-Cookie", "value": "sid=cookie-secret"}],
+	    "content": {"text": "{\"access_token\":\"jwt-secret\"}"}
+	  }
+	}`)
+	scrubbed, err := HAR(input, Policy{})
+	if err != nil {
+		t.Fatalf("HAR single entry: %v", err)
+	}
+	text := string(scrubbed)
+	for _, secret := range []string{"secret-token", "hunter2", "cookie-secret", "jwt-secret", "token=abc123"} {
+		if strings.Contains(text, secret) {
+			t.Fatalf("single-entry scrub leaked %q in %s", secret, text)
+		}
+	}
+	if HARSensitivity(scrubbed) != SensitivityScrubbed {
+		t.Fatalf("single-entry sensitivity = %q, want scrubbed", HARSensitivity(scrubbed))
 	}
 }
 
