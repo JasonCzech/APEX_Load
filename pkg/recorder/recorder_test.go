@@ -537,6 +537,32 @@ func TestRecordRequestCaptureCookiesOptIn(t *testing.T) {
 	}
 }
 
+func TestRecordRequestKeepsRawHeadersForCorrelationOnly(t *testing.T) {
+	req, _ := http.NewRequest("GET", "http://example.com/api/session", nil)
+	req.Header.Set("Authorization", "Bearer tok-abcdef123456")
+	req.Header.Set("X-Api-Key", "raw-api-secret")
+	req.Header.Set("Proxy-Authorization", "Basic proxy-secret")
+	resp := &http.Response{StatusCode: http.StatusOK, Header: http.Header{}}
+
+	rec := New(":0")
+	session, err := rec.StartSession("headers", "Header Correlation", SessionFilters{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec.recordRequest(session, req, nil, resp, []byte(`{}`), 10*time.Millisecond)
+
+	recorded := session.Requests[0]
+	if got := recorded.Headers["Authorization"]; got != "[redacted]" {
+		t.Fatalf("public authorization header = %q, want redacted", got)
+	}
+	if got := recorded.RawHeaders["Authorization"]; got != "Bearer tok-abcdef123456" {
+		t.Fatalf("raw authorization header = %q", got)
+	}
+	if _, ok := recorded.RawHeaders["Proxy-Authorization"]; ok {
+		t.Fatalf("proxy authorization leaked into raw headers: %#v", recorded.RawHeaders)
+	}
+}
+
 func TestRecordRequestCapturesBinaryBodiesAsBase64(t *testing.T) {
 	rec := New(":0")
 	session, err := rec.StartSession("test", "Binary Body Test", SessionFilters{

@@ -1,6 +1,7 @@
 package browser
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -76,5 +77,41 @@ func TestBrowserMatchWSEvents(t *testing.T) {
 	}
 	if browserWSPayloadMatches(`{"type":"ready"}`, `ready`, "exact") {
 		t.Fatal("exact payload match accepted partial payload")
+	}
+}
+
+func TestBrowserWSWaitThenAssertCanReadSameFrame(t *testing.T) {
+	b := &Browser{}
+	b.recordWSEvent("wss://shop.example/live", "received", []byte(`{"type":"ready"}`))
+
+	waitAction := &protocol.Action{
+		Type: "browser_ws_wait",
+		Params: map[string]any{
+			"url_contains": "live",
+			"direction":    "received",
+			"match":        `"ready"`,
+		},
+	}
+	waitResult := &protocol.Result{}
+	if err, fail := b.dispatchWSWait(context.Background(), waitAction, waitResult); err != nil || fail {
+		t.Fatalf("dispatchWSWait err=%v fail=%v", err, fail)
+	}
+	if got := b.currentWSWatermark(); got != 1 {
+		t.Fatalf("watermark after wait = %d, want 1", got)
+	}
+
+	assertResult := &protocol.Result{}
+	if err, fail := b.dispatchWSAssert(&protocol.Action{
+		Type:   "browser_ws_assert",
+		Params: waitAction.Params,
+	}, assertResult); err != nil || fail {
+		t.Fatalf("dispatchWSAssert err=%v fail=%v", err, fail)
+	}
+	if got := b.currentWSWatermark(); got != 1 {
+		t.Fatalf("watermark after assert = %d, want unchanged 1", got)
+	}
+	matches, ok := assertResult.ProtocolEvidence["browser_ws_matches"].([]browserWSEvent)
+	if !ok || len(matches) != 1 || matches[0].Seq != 1 {
+		t.Fatalf("assert matches = %#v, want original wait frame", assertResult.ProtocolEvidence["browser_ws_matches"])
 	}
 }

@@ -413,6 +413,10 @@ func (rc *RuntimeConfig) ToHTTPConfig() *dsl.HTTPConfig {
 	if rc.UseGzip {
 		cfg.AcceptEncoding = "gzip, deflate"
 	}
+	if rc.NewUserPerIteration {
+		clearCookies := true
+		cfg.ClearCookiesPerIter = &clearCookies
+	}
 
 	if rc.SSLVersion != "" {
 		cfg.TLS = dsl.TLSConfig{

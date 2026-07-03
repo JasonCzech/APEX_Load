@@ -118,6 +118,84 @@ func TestBrowserProtocolTouchActions(t *testing.T) {
 	}
 }
 
+func TestBrowserTapFallsBackToSyntheticWhenTouchModeOff(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<!doctype html>
+<html>
+  <head>
+    <title>Tap Fallback Test</title>
+    <script>
+      window.addEventListener('load', () => {
+        const button = document.querySelector('#tap-target');
+        button.addEventListener('touchend', () => {
+          document.querySelector('#status').textContent = 'touched';
+        });
+      });
+    </script>
+  </head>
+  <body>
+    <button id="tap-target">Tap me</button>
+    <div id="status">pending</div>
+  </body>
+</html>`))
+	}))
+	defer server.Close()
+
+	b := &Browser{}
+	if err := b.Init(context.Background(), map[string]any{
+		"base_url":         server.URL,
+		"browser_headless": true,
+	}); err != nil {
+		lower := strings.ToLower(err.Error())
+		if strings.Contains(lower, "executable") || strings.Contains(lower, "chrome") {
+			t.Skipf("browser runtime unavailable: %v", err)
+		}
+		t.Fatalf("Init returned error: %v", err)
+	}
+	defer b.Teardown(context.Background())
+
+	navigate, err := b.Execute(context.Background(), &protocol.Action{
+		Name:   "Open tap page",
+		Type:   "browser_navigate",
+		Target: "/",
+	})
+	if err != nil {
+		t.Fatalf("navigate returned error: %v", err)
+	}
+	if !navigate.Success {
+		t.Fatalf("navigate failed: %s", navigate.ErrorMessage)
+	}
+
+	tap, err := b.Execute(context.Background(), &protocol.Action{
+		Name:     "Tap target",
+		Type:     "browser_tap",
+		Selector: "#tap-target",
+	})
+	if err != nil {
+		t.Fatalf("tap returned error: %v", err)
+	}
+	if !tap.Success {
+		t.Fatalf("tap failed: %s", tap.ErrorMessage)
+	}
+
+	capture, err := b.Execute(context.Background(), &protocol.Action{
+		Name: "Capture tap state",
+		Type: "browser_screenshot",
+		Capture: &protocol.BrowserCaptureOptions{
+			HTML: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("capture returned error: %v", err)
+	}
+	if !capture.Success {
+		t.Fatalf("capture failed: %s", capture.ErrorMessage)
+	}
+	if !strings.Contains(capture.HTML, `<div id="status">touched</div>`) {
+		t.Fatalf("capture HTML missing touched status: %s", capture.HTML)
+	}
+}
+
 func TestBrowserProtocolAdvancedTouchActions(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`<!doctype html>

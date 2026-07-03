@@ -449,12 +449,12 @@ export default function BrowserRecorderControlPanel({
     }
   }
 
-  const handleAcceptSuggestion = async (name: string) => {
+  const handleAcceptSuggestion = async (suggestion: BrowserRecorderTransactionSuggestion) => {
     try {
-      const res = await api.startBrowserRecordingTransaction(sessionId, name)
+      const res = await api.startBrowserRecordingTransaction(sessionId, suggestion.name, suggestion.at_step_seq)
       setSession(res.session)
-      setSuggestions(prev => prev.filter(s => s.name !== name))
-      showFeedback(`Transaction "${name}" started`)
+      setSuggestions(prev => prev.filter(s => s.name !== suggestion.name || s.at_step_seq !== suggestion.at_step_seq))
+      showFeedback(`Transaction "${suggestion.name}" started`)
     } catch (e: any) {
       showFeedback(e.message, 'error')
     }
@@ -611,6 +611,7 @@ export default function BrowserRecorderControlPanel({
       step.candidates?.[0]?.value,
     ].filter(Boolean).join(' ').toLowerCase().includes(stepSearchQuery)
   })
+  const renderedSteps = live && !stepSearchQuery ? visibleSteps.slice(0, 25) : visibleSteps
   const stopped = session.status === 'stopped'
   const controllable = CONTROLLABLE_STATUSES.has(session.status)
   const openTransactions = session.open_transactions || []
@@ -753,7 +754,7 @@ export default function BrowserRecorderControlPanel({
             <div key={s.name + s.at_step_seq} className="brp-suggestion">
               <span className="brp-suggestion-name">{s.name}</span>
               <span className="brp-suggestion-detail">at step #{s.at_step_seq}</span>
-              <button type="button" className="rec-inline-action" onClick={() => handleAcceptSuggestion(s.name)}>Add</button>
+              <button type="button" className="rec-inline-action" onClick={() => handleAcceptSuggestion(s)}>Add</button>
             </div>
           ))}
         </div>
@@ -830,7 +831,7 @@ export default function BrowserRecorderControlPanel({
             </div>
           )}
           <div className="rec-feed-list">
-            {visibleSteps.map(step => {
+            {renderedSteps.map(step => {
               const quality = selectorQuality(step)
               return (
                 <div key={step.seq} className={`rec-feed-item brp-step ${step.excluded ? 'brp-step-excluded' : ''}`}>
@@ -862,7 +863,7 @@ export default function BrowserRecorderControlPanel({
                 </div>
               )
             })}
-            {visibleSteps.length === 0 && (
+            {renderedSteps.length === 0 && (
               <div className="brp-step-empty">No recorded steps match this search.</div>
             )}
           </div>

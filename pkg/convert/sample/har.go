@@ -258,11 +258,26 @@ func itemListMetadata(value any) ([]map[string]any, bool) {
 func isHARWebSocketUpgrade(item map[string]any) bool {
 	requestData, _ := item["request"].(map[string]any)
 	responseData, _ := item["response"].(map[string]any)
-	requestHeaders := headerListEntries(requestData["headers"]).ToMap()
-	responseHeaders := headerListEntries(responseData["headers"]).ToMap()
-	return strings.EqualFold(headerLookup(requestHeaders, "Upgrade"), "websocket") ||
-		strings.EqualFold(headerLookup(responseHeaders, "Upgrade"), "websocket") ||
+	return strings.EqualFold(rawHARHeaderLookup(requestData["headers"], "Upgrade"), "websocket") ||
+		strings.EqualFold(rawHARHeaderLookup(responseData["headers"], "Upgrade"), "websocket") ||
 		intValue(responseData["status"]) == 101
+}
+
+func rawHARHeaderLookup(value any, name string) string {
+	items, ok := value.([]any)
+	if !ok {
+		return ""
+	}
+	for _, item := range items {
+		mapped, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if strings.EqualFold(stringValue(mapped["name"]), name) {
+			return stringValue(mapped["value"])
+		}
+	}
+	return ""
 }
 
 func parseHARStartedAt(value any) (time.Time, bool) {

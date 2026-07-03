@@ -119,6 +119,26 @@ func TestExtractJMESPath(t *testing.T) {
 	}
 }
 
+func TestExtractJMESPathLargeNumberPreservesDecimalString(t *testing.T) {
+	body := []byte(`{"id":12345678901234567890,"items":[{"id":98765432109876543210}]}`)
+
+	val, err := extractJMESPath("id", body)
+	if err != nil {
+		t.Fatalf("extractJMESPath: %v", err)
+	}
+	if val != "12345678901234567890" {
+		t.Errorf("got %q, want decimal string", val)
+	}
+
+	nested, err := extractJMESPath("items[0].id", body)
+	if err != nil {
+		t.Fatalf("extractJMESPath nested: %v", err)
+	}
+	if nested != "98765432109876543210" {
+		t.Errorf("nested got %q, want decimal string", nested)
+	}
+}
+
 func TestExtractJMESPath_ArrayResult(t *testing.T) {
 	body := []byte(`{"people":[{"name":"James"},{"name":"Jacob"}]}`)
 
@@ -268,6 +288,16 @@ func TestExtractXPath_XMLAttribute(t *testing.T) {
 	}
 	if val != "/signin" {
 		t.Errorf("got %q, want %q", val, "/signin")
+	}
+}
+
+func TestExtractXPath_XMLAttributeLocalName(t *testing.T) {
+	val, err := extractFromBody(protocol.Extractor{Type: "xpath", Expression: "//@*[local-name()='correlationId']"}, []byte(`<Envelope><Body><CreateOrderResponse correlationId="soap-corr-abcdef123456">ok</CreateOrderResponse></Body></Envelope>`))
+	if err != nil {
+		t.Fatalf("extract XPath XML local-name attribute: %v", err)
+	}
+	if val != "soap-corr-abcdef123456" {
+		t.Errorf("got %q, want soap-corr-abcdef123456", val)
 	}
 }
 

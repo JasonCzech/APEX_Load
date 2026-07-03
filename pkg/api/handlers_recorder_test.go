@@ -328,6 +328,40 @@ func TestHandleRecorderStatusIncludesPersistentCAPath(t *testing.T) {
 	}
 }
 
+func TestRecorderResponsesDoNotExposeProxyAuthToken(t *testing.T) {
+	t.Setenv("APEXLOAD_RECORDER_PROXY_TOKEN", "proxy-secret")
+	server := NewServer(ServerConfig{})
+
+	statusReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/status", nil)
+	statusResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(statusResp, statusReq)
+	if statusResp.Code != http.StatusOK {
+		t.Fatalf("status response = %d, want %d body=%s", statusResp.Code, http.StatusOK, statusResp.Body.String())
+	}
+	var statusPayload map[string]any
+	if err := json.Unmarshal(statusResp.Body.Bytes(), &statusPayload); err != nil {
+		t.Fatalf("status json.Unmarshal returned error: %v", err)
+	}
+	if _, ok := statusPayload["proxy_auth_token"]; ok {
+		t.Fatalf("recorder status exposed proxy_auth_token: %s", statusResp.Body.String())
+	}
+
+	startReq := httptest.NewRequest(http.MethodPost, "/api/v1/recorder/start", bytes.NewBufferString(`{"name":"No Token Leak"}`))
+	startReq.Header.Set("Content-Type", "application/json")
+	startResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(startResp, startReq)
+	if startResp.Code != http.StatusCreated {
+		t.Fatalf("start response = %d, want %d body=%s", startResp.Code, http.StatusCreated, startResp.Body.String())
+	}
+	var startPayload map[string]any
+	if err := json.Unmarshal(startResp.Body.Bytes(), &startPayload); err != nil {
+		t.Fatalf("start json.Unmarshal returned error: %v", err)
+	}
+	if _, ok := startPayload["proxy_auth_token"]; ok {
+		t.Fatalf("recorder start exposed proxy_auth_token: %s", startResp.Body.String())
+	}
+}
+
 func TestHandleExportRecordingHARScrubOption(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	session, err := server.recorder.StartSession("rec-scrub", "Login HAR", recorder.SessionFilters{}, nil)

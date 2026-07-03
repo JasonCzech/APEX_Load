@@ -359,6 +359,53 @@ func TestConvertSession_CorrelatesCapturedCookies(t *testing.T) {
 	}
 }
 
+func TestConvertSession_UsesRawHeadersForCorrelationWithoutLeakingUnmatchedSecrets(t *testing.T) {
+	s := &Session{
+		ID:      "test",
+		Name:    "Header Token Flow",
+		BaseURL: "http://example.com",
+		Requests: []RecordedRequest{
+			{
+				Seq:          1,
+				Method:       "POST",
+				URL:          "http://example.com/login",
+				Path:         "/login",
+				Host:         "example.com",
+				StatusCode:   200,
+				ResponseBody: `{"auth":{"access_token":"tok-abcdef123456"}}`,
+			},
+			{
+				Seq:        2,
+				Method:     "GET",
+				URL:        "http://example.com/account",
+				Path:       "/account",
+				Host:       "example.com",
+				StatusCode: 200,
+				Headers: map[string]string{
+					"Authorization": "[redacted]",
+					"X-Api-Key":     "[redacted]",
+				},
+				RawHeaders: map[string]string{
+					"Authorization": "Bearer tok-abcdef123456",
+					"X-Api-Key":     "raw-api-secret",
+				},
+			},
+		},
+	}
+
+	result := ConvertSession(s, "")
+	if len(result.Correlations) != 1 || result.Correlations[0].Name != "corr_access_token" {
+		t.Fatalf("correlations = %#v, want access token from raw request header", result.Correlations)
+	}
+	headers := result.Script.Actions[1].Headers
+	if got := headers["Authorization"]; got != "Bearer {{var.corr_access_token}}" {
+		t.Fatalf("authorization header = %q, want correlated variable", got)
+	}
+	if got := headers["X-Api-Key"]; got != "[redacted]" {
+		t.Fatalf("unmatched API key header = %q, want redacted", got)
+	}
+}
+
 func TestConvertSession_StaticFiltered(t *testing.T) {
 	s := &Session{
 		ID:      "test",

@@ -235,10 +235,33 @@ describe('BrowserRecorderControlPanel', () => {
     expect(container.textContent).not.toContain('Save to Script Library')
   })
 
-  it('renders the full step history and filters it with search', async () => {
+  it('caps the unfiltered live step feed at 25 rows', async () => {
+    const steps = Array.from({ length: 30 }, (_, index) => ({
+      seq: index + 1,
+      kind: 'click',
+      value: `step-${index + 1}`,
+      title: `Step ${index + 1}`,
+      timestamp: '2026-05-12T20:00:01Z',
+      url: 'https://shop.example/login',
+    }))
     apiMock.getBrowserRecording.mockResolvedValue({
       session: {
         ...recordingSession,
+        step_count: steps.length,
+        steps,
+      },
+    })
+    await renderPanel()
+
+    expect(container.querySelectorAll('.rec-feed-item').length).toBe(25)
+    expect(container.textContent).toContain('#30')
+    expect(container.textContent).not.toContain('#5')
+  })
+
+  it('renders the full step history and filters it with search', async () => {
+    apiMock.getBrowserRecording.mockResolvedValue({
+      session: {
+        ...stoppedSession,
         step_count: 30,
         steps: Array.from({ length: 30 }, (_, index) => ({
           seq: index + 1,
@@ -622,7 +645,7 @@ describe('BrowserRecorderControlPanel', () => {
     expect(block?.textContent).toContain('Cart')
     await clickButton('Add')
     await flushPromises()
-    expect(apiMock.startBrowserRecordingTransaction).toHaveBeenCalledWith('brec-1', 'Cart')
+    expect(apiMock.startBrowserRecordingTransaction).toHaveBeenCalledWith('brec-1', 'Cart', 1)
   })
 
   it('renders console/network annotations', async () => {

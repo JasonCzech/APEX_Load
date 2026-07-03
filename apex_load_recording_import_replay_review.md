@@ -78,6 +78,18 @@ Current pass status:
   no-double-save handoff, visual-editor gating when nested DSL is absent,
   stopped-session delete confirmation, and scrubbed baseline persistence at the
   `/recorder/{id}/convert` seam.
+- 2026-07-03 continuation fixes landed for production-safe controller startup
+  when the proxy is disabled, proxy-token response redaction, scheduled browser
+  recording retention, managed private HAR working files, long WebSocket tunnel
+  idle windows, raw/redacted request-header split for correlation and
+  baselines, production-gated browser install, replayable XML attribute XPath,
+  encoded-form correlation substitution, Salesforce form-key boundaries,
+  synthetic non-touch `browser_tap`, wait-then-assert WebSocket matching,
+  self-heal probe budgeting, raw HAR WebSocket-upgrade detection, JMESPath
+  `UseNumber`, LR `NewUserPerIteration` to HTTP cookie clearing, anchored
+  transaction suggestions, restored live-step render cap, safer download
+  platform detection, Postman environment-file validation, and direct zstd
+  dependency tracking.
 - Remaining P2/P3 items are follow-on workstreams unless separately
   implemented.
 - The referenced `scratchpad/raw2.json` corpus was not present in this

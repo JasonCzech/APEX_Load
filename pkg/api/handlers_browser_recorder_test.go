@@ -203,6 +203,31 @@ func TestHandleStartBrowserRecordingClassifiesMissingBrowserInstall(t *testing.T
 	}
 }
 
+func TestHandleBrowserRecorderInstallProductionGate(t *testing.T) {
+	t.Setenv("APEXLOAD_ENV", "production")
+	t.Setenv("APEXLOAD_BROWSER_RECORDER", "")
+	server := newBrowserRecorderTestServer(t, newFakeBrowserRecorder(nil))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/install", nil)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusForbidden {
+		t.Fatalf("install status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	var payload struct {
+		Availability browserRecordingAvailability `json:"availability"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Availability.Code != browserRecordingUnavailableProductionDisabled {
+		t.Fatalf("availability = %+v, want production_disabled", payload.Availability)
+	}
+	if got := server.browserInstall.snapshot().Status; got != "idle" {
+		t.Fatalf("install status = %q, want idle", got)
+	}
+}
+
 func TestHandleGetAndStopBrowserRecording(t *testing.T) {
 	fake := newFakeBrowserRecorder(recordedBrowserArtifact())
 	server := newBrowserRecorderTestServer(t, fake)

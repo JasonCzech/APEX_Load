@@ -181,6 +181,8 @@ func NewServer(cfg ServerConfig) *Server {
 		}
 	}
 	rec := recorder.New(cfg.ProxyAddr)
+	browserRecording := NewBrowserRecordingManager(hub)
+	browserRecording.SetHARArtifactDir(runner.GetSystemSettings().ArchiveRetention.HARArtifactDir)
 
 	s := &Server{
 		hub:              hub,
@@ -188,7 +190,7 @@ func NewServer(cfg ServerConfig) *Server {
 		scheduler:        newScenarioScheduler(runner),
 		browserReplay:    NewBrowserReplayManager(hub),
 		scriptDebug:      NewScriptDebugManager(hub),
-		browserRecording: NewBrowserRecordingManager(hub),
+		browserRecording: browserRecording,
 		browserInstall:   newBrowserInstallState(),
 		recorder:         rec,
 		store:            cfg.Store,
@@ -982,12 +984,11 @@ func (s *Server) Start() error {
 	// Start websocket broadcast loop before serving HTTP requests.
 	go s.hub.Run()
 	s.startReplayRetentionJanitors()
+	s.startBrowserRecordingRetentionJanitor()
 	s.startCacheFanout()
 	s.startGeneratorDiscovery()
 
-	if err := s.recorder.StartProxy(); err != nil {
-		return fmt.Errorf("starting recording proxy: %w", err)
-	}
+	s.startRecorderProxy()
 	s.startUsageAccountingSnapshotCadence()
 	s.startAuditRetentionCadence()
 	s.startTimeslotRetentionCadence()
@@ -1033,6 +1034,22 @@ func (s *Server) startReplayRetentionJanitors() {
 	}
 	if s.scriptDebug != nil {
 		s.scriptDebug.StartJanitor(context.Background())
+	}
+}
+
+func (s *Server) startBrowserRecordingRetentionJanitor() {
+	if s == nil || s.browserRecording == nil {
+		return
+	}
+	s.browserRecording.StartJanitor(context.Background())
+}
+
+func (s *Server) startRecorderProxy() {
+	if s == nil || s.recorder == nil {
+		return
+	}
+	if err := s.recorder.StartProxy(); err != nil {
+		slog.Warn("recording proxy disabled", "error", err)
 	}
 }
 
@@ -1174,6 +1191,9 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	}
 	if s.scriptDebug != nil {
 		s.scriptDebug.Close()
+	}
+	if s.browserRecording != nil {
+		s.browserRecording.Close()
 	}
 	if s.recorder != nil {
 		s.recorder.StopProxy()

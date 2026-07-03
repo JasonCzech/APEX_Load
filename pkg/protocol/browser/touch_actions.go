@@ -11,6 +11,9 @@ import (
 )
 
 func (b *Browser) dispatchTap(ctx context.Context, action *protocol.Action, selector string) error {
+	if b.shouldUseSyntheticTap() {
+		return b.runTouchScript(ctx, action, selector, syntheticTapOperation(), "browser tap")
+	}
 	if locator, ok := b.actionLocator(action, selector); ok {
 		timeout := b.actionTimeout(action)
 		if err := b.waitLocatorVisible(ctx, locator, timeout); err != nil {
@@ -27,6 +30,20 @@ func (b *Browser) dispatchTap(ctx context.Context, action *protocol.Action, sele
 	return page.Tap(selector, playwright.PageTapOptions{
 		Timeout: playwright.Float(b.timeoutMS(ctx, b.actionTimeout(action))),
 	})
+}
+
+func (b *Browser) shouldUseSyntheticTap() bool {
+	return !b.touchMode
+}
+
+func syntheticTapOperation() string {
+	return `
+		dispatchPointer('pointerdown', x, y);
+		dispatchTouch('touchstart', x, y, true);
+		dispatchTouch('touchend', x, y, false);
+		dispatchPointer('pointerup', x, y);
+		dispatchClick(x, y);
+	`
 }
 
 func (b *Browser) dispatchLongPress(ctx context.Context, action *protocol.Action, selector string, duration time.Duration) error {

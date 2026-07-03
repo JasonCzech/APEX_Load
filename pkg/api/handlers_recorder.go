@@ -65,9 +65,6 @@ func (s *Server) handleStartRecording(w http.ResponseWriter, r *http.Request) {
 		"proxy_addr":   s.recorder.ProxyAddr(),
 		"ca_cert_path": s.recorder.CACertPath(),
 	}
-	if token := s.recorder.ProxyAuthToken(); token != "" {
-		resp["proxy_auth_token"] = token
-	}
 	writeJSON(w, http.StatusCreated, resp)
 }
 
@@ -328,9 +325,6 @@ func (s *Server) handleRecorderStatus(w http.ResponseWriter, r *http.Request) {
 			"active":       s.browserRecording.Active(),
 			"install":      s.browserInstall.snapshot(),
 		},
-	}
-	if token := s.recorder.ProxyAuthToken(); token != "" {
-		resp["proxy_auth_token"] = token
 	}
 	writeJSON(w, http.StatusOK, resp)
 }

@@ -172,9 +172,24 @@ func (f *fakeBrowserRecorderBackend) OpenControlPanel(url string, localStorage m
 	return nil
 }
 
-func (f *fakeBrowserRecorderBackend) AddMarker(kind, name, text string) (recbrowser.Marker, error) {
+func (f *fakeBrowserRecorderBackend) AddMarker(kind, name, text string, atStepSeq int) (recbrowser.Marker, error) {
 	f.mu.Lock()
-	marker, err := f.session.AddMarker(recbrowser.Marker{Kind: kind, Name: name, Text: text, Timestamp: time.Now()})
+	timestamp := time.Now()
+	if atStepSeq > 0 {
+		found := false
+		for _, step := range f.session.Steps {
+			if step.Seq == atStepSeq {
+				timestamp = step.Timestamp
+				found = true
+				break
+			}
+		}
+		if !found {
+			f.mu.Unlock()
+			return recbrowser.Marker{}, fmt.Errorf("step #%d not found for marker anchor", atStepSeq)
+		}
+	}
+	marker, err := f.session.AddMarker(recbrowser.Marker{Kind: kind, Name: name, Text: text, Timestamp: timestamp})
 	f.mu.Unlock()
 	if err != nil {
 		return recbrowser.Marker{}, err
@@ -969,7 +984,7 @@ func TestBrowserRecordingManagerMarkers(t *testing.T) {
 	}
 	drainHubBroadcasts(t, hub)
 
-	session, marker, ok, err := m.AddMarker(started.ID, recbrowser.MarkerTransactionStart, "Checkout", "")
+	session, marker, ok, err := m.AddMarker(started.ID, recbrowser.MarkerTransactionStart, "Checkout", "", 0)
 	if !ok || err != nil {
 		t.Fatalf("AddMarker() ok=%v err=%v", ok, err)
 	}
@@ -980,11 +995,11 @@ func TestBrowserRecordingManagerMarkers(t *testing.T) {
 		t.Errorf("open transactions = %v", session.OpenTransactions)
 	}
 
-	if _, _, _, err := m.AddMarker(started.ID, recbrowser.MarkerTransactionEnd, "Ghost", ""); err == nil {
+	if _, _, _, err := m.AddMarker(started.ID, recbrowser.MarkerTransactionEnd, "Ghost", "", 0); err == nil {
 		t.Error("ending an unopened transaction must error")
 	}
 
-	session, _, _, err = m.AddMarker(started.ID, recbrowser.MarkerTransactionEnd, "", "")
+	session, _, _, err = m.AddMarker(started.ID, recbrowser.MarkerTransactionEnd, "", "", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -992,7 +1007,7 @@ func TestBrowserRecordingManagerMarkers(t *testing.T) {
 		t.Errorf("open transactions after end = %v", session.OpenTransactions)
 	}
 
-	if _, _, _, err := m.AddMarker(started.ID, recbrowser.MarkerNote, "", "remember the promo banner"); err != nil {
+	if _, _, _, err := m.AddMarker(started.ID, recbrowser.MarkerNote, "", "remember the promo banner", 0); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1011,6 +1026,35 @@ func TestBrowserRecordingManagerMarkers(t *testing.T) {
 	}
 	if markerEvents != 3 {
 		t.Errorf("marker broadcasts = %d, want 3", markerEvents)
+	}
+}
+
+func TestBrowserRecordingManagerAnchorsMarkerAtStep(t *testing.T) {
+	hub := NewHub()
+	m := NewBrowserRecordingManager(hub)
+	anchorTime := time.Now().Add(-time.Hour).UTC()
+	fake := newFakeBrowserRecorder(&recbrowser.Session{
+		ID:        "rec_fake",
+		StartedAt: time.Now(),
+		Steps: []recbrowser.Step{
+			{Seq: 7, Kind: recbrowser.StepClick, Timestamp: anchorTime},
+		},
+	})
+	fake.install(m)
+
+	started, err := m.Start(BrowserRecordingStartRequest{StartURL: "https://shop.example/"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, marker, ok, err := m.AddMarker(started.ID, recbrowser.MarkerTransactionStart, "Cart", "", 7)
+	if !ok || err != nil {
+		t.Fatalf("AddMarker() ok=%v err=%v", ok, err)
+	}
+	if !marker.Timestamp.Equal(anchorTime) {
+		t.Fatalf("marker timestamp = %s, want anchor %s", marker.Timestamp, anchorTime)
+	}
+	if _, _, _, err := m.AddMarker(started.ID, recbrowser.MarkerTransactionStart, "Missing", "", 99); err == nil {
+		t.Fatal("expected missing anchor step to fail")
 	}
 }
 

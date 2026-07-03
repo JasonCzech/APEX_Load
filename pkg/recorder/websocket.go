@@ -27,6 +27,7 @@ const (
 	webSocketDirectionServerToClient = "server_to_client"
 
 	maxWebSocketFramePayloadBytes = 16 * 1024 * 1024
+	webSocketTunnelIdleTimeout    = 30 * time.Minute
 )
 
 type webSocketFrame struct {
@@ -397,7 +398,7 @@ func (r *Recorder) closeTunnelsForSession(sessionID string) {
 func (r *Recorder) copyWebSocketFrames(dst io.Writer, src io.Reader, srcConn net.Conn, session *Session, seq int, direction string) {
 	for {
 		if srcConn != nil {
-			_ = srcConn.SetReadDeadline(time.Now().Add(connectTunnelIdleTimeout))
+			_ = srcConn.SetReadDeadline(time.Now().Add(webSocketTunnelIdleTimeout))
 		}
 		frame, err := readWebSocketFrame(src)
 		if srcConn != nil {

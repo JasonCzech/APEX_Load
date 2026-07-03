@@ -2983,6 +2983,9 @@ FailIfFound=1
 	if result.Script.Config.Browser.NewUserPerIter == nil || !*result.Script.Config.Browser.NewUserPerIter {
 		t.Fatalf("browser config = %#v, want new user per iteration", result.Script.Config.Browser)
 	}
+	if result.Script.Config.HTTP.ClearCookiesPerIter == nil || !*result.Script.Config.HTTP.ClearCookiesPerIter {
+		t.Fatalf("http config = %#v, want clear cookies per iteration", result.Script.Config.HTTP)
+	}
 	if result.Script.Config.WebRuntime.DownloadFilters.Mode != "block_list" || len(result.Script.Config.WebRuntime.ContentChecks) != 1 {
 		t.Fatalf("web runtime = %#v, want download filter and content check", result.Script.Config.WebRuntime)
 	}

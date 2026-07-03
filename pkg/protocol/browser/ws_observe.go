@@ -97,6 +97,7 @@ func (b *Browser) dispatchWSWait(ctx context.Context, action *protocol.Action, r
 	for {
 		matches := b.matchWSEvents(matcher)
 		if len(matches) >= count {
+			b.recordWSWaitWindow(matcher.MinSeq)
 			b.advanceWSWatermark(matches)
 			result.ProtocolEvidence = map[string]any{"browser_ws_matches": matches}
 			return nil, false
@@ -116,15 +117,24 @@ func (b *Browser) dispatchWSAssert(action *protocol.Action, result *protocol.Res
 	if err != nil {
 		return nil, failBrowserAction(result, err.Error())
 	}
+	explicitMinSeq := matcher.MinSeq > 0
 	if matcher.MinSeq == 0 {
 		matcher.MinSeq = b.currentWSWatermark()
 	}
 	matches := b.matchWSEvents(matcher)
+	if len(matches) < count && !explicitMinSeq {
+		if minSeq, ok := b.lastWSWaitWindow(); ok && minSeq < matcher.MinSeq {
+			waitMatcher := matcher
+			waitMatcher.MinSeq = minSeq
+			if waitMatches := b.matchWSEvents(waitMatcher); len(waitMatches) >= count {
+				matches = waitMatches
+			}
+		}
+	}
 	result.ProtocolEvidence = map[string]any{"browser_ws_matches": matches}
 	if len(matches) < count {
 		return fmt.Errorf("browser_ws_assert found %d matching frame(s), want at least %d", len(matches), count), false
 	}
-	b.advanceWSWatermark(matches)
 	return nil, false
 }
 
@@ -218,11 +228,26 @@ func (b *Browser) advanceWSWatermark(matches []browserWSEvent) {
 	b.wsMu.Unlock()
 }
 
+func (b *Browser) recordWSWaitWindow(minSeq int64) {
+	b.wsMu.Lock()
+	b.wsLastWaitMinSeq = minSeq
+	b.wsLastWaitValid = true
+	b.wsMu.Unlock()
+}
+
+func (b *Browser) lastWSWaitWindow() (int64, bool) {
+	b.wsMu.Lock()
+	defer b.wsMu.Unlock()
+	return b.wsLastWaitMinSeq, b.wsLastWaitValid
+}
+
 func (b *Browser) resetWSEvents() {
 	b.wsMu.Lock()
 	b.wsEvents = nil
 	b.wsSeq = 0
 	b.wsWatermark = 0
+	b.wsLastWaitMinSeq = 0
+	b.wsLastWaitValid = false
 	b.wsMu.Unlock()
 }
 

@@ -193,6 +193,47 @@ func TestSanitizeDownloadPlatform(t *testing.T) {
 	}
 }
 
+func TestDownloadPlatformFromUserAgent(t *testing.T) {
+	cases := []struct {
+		name string
+		ua   string
+		want string
+	}{
+		{
+			name: "intel mac",
+			ua:   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+			want: "darwin-amd64",
+		},
+		{
+			name: "apple silicon explicit",
+			ua:   "APEXLoad/1.0 (Macintosh; Mac OS X 14.0; arm64)",
+			want: "darwin-arm64",
+		},
+		{
+			name: "ambiguous mac",
+			ua:   "Mozilla/5.0 (Macintosh; Mac OS X 14_5) AppleWebKit/605.1.15",
+			want: "",
+		},
+		{
+			name: "linux arm",
+			ua:   "curl/8.0 (Linux aarch64)",
+			want: "linux-arm64",
+		},
+		{
+			name: "unknown",
+			ua:   "UnknownClient/1.0",
+			want: "",
+		},
+	}
+	for _, tc := range cases {
+		req := httptest.NewRequest(http.MethodGet, "/download", nil)
+		req.Header.Set("User-Agent", tc.ua)
+		if got := downloadPlatform(req); got != tc.want {
+			t.Fatalf("%s: downloadPlatform() = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
 // TestFindDownloadPackageRejectsSymlinkEscape verifies a symlink staged inside
 // the dist directory that points outside it is never selected for serving —
 // the path-confinement guard added to findDownloadPackage.

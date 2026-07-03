@@ -41,8 +41,17 @@ func downloadPlatform(r *http.Request) string {
 	case strings.Contains(ua, "windows"):
 		return "windows-amd64"
 	case strings.Contains(ua, "macintosh"), strings.Contains(ua, "mac os x"):
-		return "darwin-arm64"
+		if strings.Contains(ua, "arm64") || strings.Contains(ua, "aarch64") || strings.Contains(ua, "apple silicon") {
+			return "darwin-arm64"
+		}
+		if strings.Contains(ua, "intel mac os x") || strings.Contains(ua, "x86_64") {
+			return "darwin-amd64"
+		}
+		return ""
 	case strings.Contains(ua, "linux"):
+		if strings.Contains(ua, "aarch64") || strings.Contains(ua, "arm64") {
+			return "linux-arm64"
+		}
 		return "linux-amd64"
 	default:
 		return ""

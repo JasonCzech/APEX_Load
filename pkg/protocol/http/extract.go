@@ -427,6 +427,8 @@ func stringifyJSONLeaf(value any) string {
 	switch v := value.(type) {
 	case string:
 		return v
+	case json.Number:
+		return v.String()
 	case []any, map[string]any:
 		encoded, err := json.Marshal(v)
 		if err != nil {
@@ -440,7 +442,9 @@ func stringifyJSONLeaf(value any) string {
 
 func extractJMESPath(expr string, body []byte) (string, error) {
 	var current any
-	if err := json.Unmarshal(body, &current); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.UseNumber()
+	if err := decoder.Decode(&current); err != nil {
 		return "", fmt.Errorf("invalid JSON body: %w", err)
 	}
 
@@ -452,18 +456,7 @@ func extractJMESPath(expr string, body []byte) (string, error) {
 		return "", fmt.Errorf("no match for JMESPath %q", expr)
 	}
 
-	switch value := result.(type) {
-	case string:
-		return value, nil
-	case []any, map[string]any:
-		encoded, err := json.Marshal(value)
-		if err != nil {
-			return "", fmt.Errorf("marshal JMESPath result: %w", err)
-		}
-		return string(encoded), nil
-	default:
-		return fmt.Sprintf("%v", value), nil
-	}
+	return stringifyJSONLeaf(result), nil
 }
 
 func extractRegex(expr string, body []byte) (string, error) {

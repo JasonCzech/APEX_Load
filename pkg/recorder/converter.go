@@ -131,10 +131,7 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 			action.Metadata = map[string]any{"source_transaction": txn}
 		}
 
-		headers := filterRecordedHeaders(req.Headers, session.Filters.CaptureCookies)
-		for key, value := range headers {
-			headers[key] = applyCorrelationVars(value, corrMap)
-		}
+		headers := correlatedRecordedHeaders(req, session.Filters.CaptureCookies, corrMap)
 		if len(headers) > 0 {
 			action.Headers = headers
 		}
@@ -214,9 +211,27 @@ func convertibleCorrelationRequests(requests []RecordedRequest) []RecordedReques
 		if req.IsStatic || req.Excluded || len(req.WebSocketMessages) > 0 {
 			continue
 		}
+		if len(req.RawHeaders) > 0 {
+			req.Headers = req.RawHeaders
+		}
 		filtered = append(filtered, req)
 	}
 	return filtered
+}
+
+func correlatedRecordedHeaders(req RecordedRequest, captureCookies bool, corrMap map[string]string) map[string]string {
+	headers := filterRecordedHeaders(req.Headers, captureCookies)
+	rawHeaders := filterRecordedHeaders(req.RawHeaders, captureCookies)
+	for key, rawValue := range rawHeaders {
+		correlated := applyCorrelationVars(rawValue, corrMap)
+		if correlated != rawValue {
+			headers[key] = correlated
+		}
+	}
+	for key, value := range headers {
+		headers[key] = applyCorrelationVars(value, corrMap)
+	}
+	return headers
 }
 
 func shouldAssertRecordedStatus(statusCode int) bool {
@@ -243,13 +258,20 @@ func SessionBaseline(session *Session) []correlate.Observation {
 			ID:              actionIdx,
 			RequestURL:      req.URL,
 			RequestBody:     req.Body,
-			RequestHeaders:  req.Headers,
+			RequestHeaders:  requestHeadersForBaseline(req),
 			ResponseBody:    req.ResponseBody,
 			ResponseHeaders: req.ResponseHeaders,
 		})
 		actionIdx++
 	}
 	return observations
+}
+
+func requestHeadersForBaseline(req RecordedRequest) map[string]string {
+	if len(req.RawHeaders) > 0 {
+		return req.RawHeaders
+	}
+	return req.Headers
 }
 
 func includedWebSocketRequests(requests []RecordedRequest) []RecordedRequest {

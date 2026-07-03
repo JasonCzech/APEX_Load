@@ -376,12 +376,13 @@ func (s *Server) handleAddBrowserRecordingNote(w http.ResponseWriter, r *http.Re
 
 func (s *Server) handleBrowserRecordingMarker(w http.ResponseWriter, r *http.Request, kind string) {
 	var req struct {
-		Name string `json:"name,omitempty"`
-		Text string `json:"text,omitempty"`
+		Name      string `json:"name,omitempty"`
+		Text      string `json:"text,omitempty"`
+		AtStepSeq int    `json:"at_step_seq,omitempty"`
 	}
 	json.NewDecoder(r.Body).Decode(&req)
 
-	session, marker, ok, err := s.browserRecording.AddMarker(r.PathValue("id"), kind, req.Name, req.Text)
+	session, marker, ok, err := s.browserRecording.AddMarker(r.PathValue("id"), kind, req.Name, req.Text, req.AtStepSeq)
 	if !ok {
 		writeError(w, http.StatusNotFound, "browser recording session not found")
 		return
@@ -856,6 +857,17 @@ func (s *Server) handleVerifyBrowserRecording(w http.ResponseWriter, r *http.Req
 // handleBrowserRecorderInstall provisions the Playwright driver/Chromium in the
 // background so a controller without browsers can become recording-capable.
 func (s *Server) handleBrowserRecorderInstall(w http.ResponseWriter, r *http.Request) {
+	availability := s.browserRecordingAvailability()
+	if !availability.Available {
+		switch availability.Code {
+		case browserRecordingUnavailableDisabled, browserRecordingUnavailableProductionDisabled:
+			writeJSON(w, http.StatusForbidden, map[string]any{
+				"error":        availability.Reason,
+				"availability": availability,
+			})
+			return
+		}
+	}
 	state := s.browserInstall.start(func() error { return recbrowser.EnsureBrowsers() })
 	s.recordAuditEvent(r, "browser_recording.install", "pending", "browser_recording", "", "", map[string]any{"status": state.Status})
 	writeJSON(w, http.StatusAccepted, map[string]any{"install": state})

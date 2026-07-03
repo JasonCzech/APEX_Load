@@ -1368,6 +1368,26 @@ describe('ProtocolAssetImport', () => {
     expect(container.textContent).toContain('environment values')
   })
 
+  it('rejects Postman collection files in the environment dropzone', async () => {
+    await act(async () => {
+      root.render(<ProtocolAssetImport kind="postman" projectId="project-1" />)
+    })
+
+    const fileInputs = container.querySelectorAll('input[type="file"]')
+    const environmentInput = fileInputs[1] as HTMLInputElement | undefined
+    expect(environmentInput).toBeDefined()
+    if (!environmentInput) return
+
+    const collectionFile = new File(['{"info":{"name":"Orders"},"item":[]}'], 'orders.postman_collection.json', { type: 'application/json' })
+    await act(async () => {
+      Object.defineProperty(environmentInput, 'files', { configurable: true, value: [collectionFile] })
+      environmentInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('is a Postman collection')
+    expect(apiMock.validatePostmanImport).not.toHaveBeenCalled()
+  })
+
   it('saves reviewed Postman imports by replacing an existing script', async () => {
     const onImported = vi.fn()
     apiMock.listScripts.mockResolvedValueOnce({

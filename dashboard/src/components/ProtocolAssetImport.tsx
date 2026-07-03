@@ -112,6 +112,7 @@ const copy = {
 } satisfies Record<ImportKind, Record<string, string>>
 
 const IMPORT_FILE_MAX_BYTES = 50 * 1024 * 1024
+const POSTMAN_ENVIRONMENT_ACCEPT = '.postman_environment.json,.json,application/json'
 
 function formatBytes(bytes: number): string {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
@@ -140,6 +141,19 @@ function validateImportFile(kind: ImportKind, file: File): string | null {
   if (!fileMatchesAccept(file, copy[kind].accept)) {
     const extensions = acceptTokens(copy[kind].accept).filter(token => token.startsWith('.')).join(', ')
     return `${file.name} is not a supported ${copy[kind].title.replace(/^Import\s+/i, '').toLowerCase()} file${extensions ? ` (${extensions})` : ''}.`
+  }
+  return null
+}
+
+function validatePostmanEnvironmentFile(file: File): string | null {
+  if (file.size > IMPORT_FILE_MAX_BYTES) {
+    return `${file.name} is ${formatBytes(file.size)}; imports are limited to ${formatBytes(IMPORT_FILE_MAX_BYTES)}.`
+  }
+  if (file.name.toLowerCase().endsWith('.postman_collection.json')) {
+    return `${file.name} is a Postman collection; choose a Postman environment file for this field.`
+  }
+  if (!fileMatchesAccept(file, POSTMAN_ENVIRONMENT_ACCEPT)) {
+    return `${file.name} is not a supported Postman environment file (.postman_environment.json, .json).`
   }
   return null
 }
@@ -1022,13 +1036,13 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
               <div className="sample-import-field sample-import-span-2">
                 <span>Environment File</span>
                 <ImportDropzone
-                accept=".postman_environment.json,.json,application/json"
-                file={postmanEnvironmentFile}
-                onFile={next => { setPostmanEnvironmentFile(next); setMessageError('') }}
-                dropHint="Drop an optional Postman environment JSON file here"
-                validate={candidate => validateImportFile('postman', candidate)}
-                onError={setMessageError}
-              />
+                  accept={POSTMAN_ENVIRONMENT_ACCEPT}
+                  file={postmanEnvironmentFile}
+                  onFile={next => { setPostmanEnvironmentFile(next); setMessageError('') }}
+                  dropHint="Drop an optional Postman environment JSON file here"
+                  validate={validatePostmanEnvironmentFile}
+                  onError={setMessageError}
+                />
               </div>
               <label className="sample-import-field">
                 <span>Default Think Time (ms)</span>

@@ -46,6 +46,8 @@ type RecordedRequest struct {
 	Host                  string                     `json:"host"`
 	Headers               map[string]string          `json:"headers"`
 	HeadersMulti          map[string][]string        `json:"headers_multi,omitempty"`
+	RawHeaders            map[string]string          `json:"-"`
+	RawHeadersMulti       map[string][]string        `json:"-"`
 	Body                  string                     `json:"body,omitempty"`
 	BodyEncoding          string                     `json:"body_encoding,omitempty"`
 	BodySizeBytes         int                        `json:"body_size_bytes,omitempty"`
@@ -787,6 +789,8 @@ func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBo
 		s.lastReqEnd = responseEndedAt
 	}
 
+	rawHeadersMulti := correlationHeaders(req.Header, s.Filters.RedactHeaders, true, s.Filters.CaptureCookies)
+	rawHeaders := firstHeaderValues(rawHeadersMulti)
 	headersMulti := sanitizeHeaders(req.Header, s.Filters.RedactHeaders, true, s.Filters.CaptureCookies)
 	headers := firstHeaderValues(headersMulti)
 	respHeadersMulti := sanitizeHeaders(resp.Header, s.Filters.RedactHeaders, false, s.Filters.CaptureCookies)
@@ -831,6 +835,8 @@ func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBo
 		Host:                  host,
 		Headers:               headers,
 		HeadersMulti:          headersMulti,
+		RawHeaders:            rawHeaders,
+		RawHeadersMulti:       rawHeadersMulti,
 		Body:                  reqBodyStr,
 		BodyEncoding:          reqBodyEncoding,
 		BodySizeBytes:         len(reqBody),
@@ -882,6 +888,35 @@ func (r *Recorder) appendWebSocketMessage(s *Session, seq int, msg RecordedWebSo
 		}
 		return
 	}
+}
+
+func correlationHeaders(headers http.Header, extraRedact []string, skipProxy bool, captureCookies bool) map[string][]string {
+	redact := map[string]bool{}
+	if !captureCookies {
+		redact["cookie"] = true
+		redact["set-cookie"] = true
+	}
+	for _, h := range extraRedact {
+		redact[strings.ToLower(strings.TrimSpace(h))] = true
+	}
+
+	result := make(map[string][]string)
+	for k, vv := range headers {
+		lk := strings.ToLower(k)
+		if skipProxy && (lk == "proxy-connection" || lk == "proxy-authorization") {
+			continue
+		}
+		values := make([]string, len(vv))
+		for i, v := range vv {
+			if redact[lk] {
+				values[i] = "[redacted]"
+			} else {
+				values[i] = v
+			}
+		}
+		result[k] = values
+	}
+	return result
 }
 
 func sanitizeHeaders(headers http.Header, extraRedact []string, skipProxy bool, captureCookies bool) map[string][]string {

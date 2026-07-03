@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sort"
@@ -49,7 +50,7 @@ type browserRecorderBackend interface {
 	Navigate(url string) error
 	Focus() error
 	OpenControlPanel(url string, localStorage map[string]string) error
-	AddMarker(kind, name, text string) (recbrowser.Marker, error)
+	AddMarker(kind, name, text string, atStepSeq int) (recbrowser.Marker, error)
 	SetSection(section string) string
 	SetAssertMode(on bool)
 	DeleteLastStep() (*recbrowser.Step, error)
@@ -132,13 +133,15 @@ type BrowserRecordingSession struct {
 // BrowserRecordingManager owns the controller's headed-browser recordings: one
 // live session at a time, lifecycle transitions, and hub broadcasts.
 type BrowserRecordingManager struct {
-	hub         *Hub
-	mu          sync.RWMutex
-	sessions    map[string]*BrowserRecordingSession
-	activeID    string
-	factory     browserRecorderFactory
-	stopTimeout time.Duration
-	retention   time.Duration
+	hub            *Hub
+	mu             sync.RWMutex
+	sessions       map[string]*BrowserRecordingSession
+	activeID       string
+	factory        browserRecorderFactory
+	stopTimeout    time.Duration
+	retention      time.Duration
+	harArtifactDir string
+	janitorCancel  context.CancelFunc
 }
 
 func NewBrowserRecordingManager(hub *Hub) *BrowserRecordingManager {
@@ -150,6 +153,62 @@ func NewBrowserRecordingManager(hub *Hub) *BrowserRecordingManager {
 		factory: func(opts recbrowser.Options) browserRecorderBackend {
 			return recbrowser.New(opts)
 		},
+	}
+}
+
+func (m *BrowserRecordingManager) SetHARArtifactDir(dir string) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	m.harArtifactDir = strings.TrimSpace(dir)
+	m.mu.Unlock()
+}
+
+func (m *BrowserRecordingManager) StartJanitor(ctx context.Context) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	if m.janitorCancel != nil {
+		m.mu.Unlock()
+		return
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	m.janitorCancel = cancel
+	interval := m.retention / 2
+	if interval <= 0 {
+		interval = time.Hour
+	}
+	if interval < time.Minute {
+		interval = time.Minute
+	}
+	m.mu.Unlock()
+
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				m.PruneExpired(time.Now())
+			}
+		}
+	}()
+}
+
+func (m *BrowserRecordingManager) Close() {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	cancel := m.janitorCancel
+	m.janitorCancel = nil
+	m.mu.Unlock()
+	if cancel != nil {
+		cancel()
 	}
 }
 
@@ -208,6 +267,7 @@ func (m *BrowserRecordingManager) Start(req BrowserRecordingStartRequest) (*Brow
 			return nil, errBrowserRecordingActive
 		}
 	}
+	harArtifactDir := m.harArtifactDir
 	m.activeID = session.ID
 	m.sessions[session.ID] = session
 	m.mu.Unlock()
@@ -215,6 +275,7 @@ func (m *BrowserRecordingManager) Start(req BrowserRecordingStartRequest) (*Brow
 	backend := m.factory(recbrowser.Options{
 		StartURL:            session.StartURL,
 		CaptureHAR:          captureHAR,
+		HARArtifactDir:      harArtifactDir,
 		OnEvent:             func(event recbrowser.Event) { m.handleEvent(session, event) },
 		Device:              device,
 		StorageStatePath:    strings.TrimSpace(req.StorageStatePath),
@@ -491,7 +552,7 @@ func (m *BrowserRecordingManager) OpenControlPanel(id string, panelURL string, l
 }
 
 // AddMarker inserts a transaction boundary or note into the live recording.
-func (m *BrowserRecordingManager) AddMarker(id string, kind, name, text string) (*BrowserRecordingSession, *recbrowser.Marker, bool, error) {
+func (m *BrowserRecordingManager) AddMarker(id string, kind, name, text string, atStepSeq int) (*BrowserRecordingSession, *recbrowser.Marker, bool, error) {
 	session, backend, err := m.liveBackend(id)
 	if session == nil {
 		return nil, nil, false, nil
@@ -499,7 +560,7 @@ func (m *BrowserRecordingManager) AddMarker(id string, kind, name, text string) 
 	if err != nil {
 		return session.fullSnapshot(), nil, true, err
 	}
-	marker, err := backend.AddMarker(kind, name, text)
+	marker, err := backend.AddMarker(kind, name, text, atStepSeq)
 	if err != nil {
 		return session.fullSnapshot(), nil, true, err
 	}

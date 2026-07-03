@@ -2,6 +2,8 @@ package browser
 
 import (
 	"encoding/base64"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -9,6 +11,35 @@ import (
 
 // Unit tests for the recorder's capture pipeline that do not need a real
 // browser: the binding handler, live event emission, and session snapshots.
+
+func TestManagedHARTempPathUsesArtifactPrefix(t *testing.T) {
+	dir := t.TempDir()
+	path := managedHARTempPath(dir, `rec/..\secret`)
+	if filepath.Dir(path) != dir {
+		t.Fatalf("dir = %q, want %q", filepath.Dir(path), dir)
+	}
+	name := filepath.Base(path)
+	if !strings.HasPrefix(name, "apexload_browser_rec_.._secret") || !strings.HasSuffix(name, ".har.tmp") {
+		t.Fatalf("managed HAR temp name = %q, want managed browser artifact prefix and temp suffix", name)
+	}
+}
+
+func TestPrepareHARPathCreatesPrivateFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "nested", "apexload_browser_rec_123.har.tmp")
+	if err := prepareHARPath(path); err != nil {
+		t.Fatalf("prepareHARPath: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat prepared HAR: %v", err)
+	}
+	if info.IsDir() {
+		t.Fatal("prepared HAR path is a directory")
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("mode = %#o, want 0600", got)
+	}
+}
 
 func TestHandleRecordBindingEmitsStepEvents(t *testing.T) {
 	var events []Event
@@ -197,13 +228,13 @@ func TestAddMarkerTransactionLifecycle(t *testing.T) {
 	var events []Event
 	r := New(Options{StartURL: "https://app.example/", OnEvent: func(e Event) { events = append(events, e) }})
 
-	if _, err := r.AddMarker(MarkerTransactionStart, "Checkout", ""); err != nil {
+	if _, err := r.AddMarker(MarkerTransactionStart, "Checkout", "", 0); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.AddMarker(MarkerTransactionStart, "Checkout", ""); err == nil {
+	if _, err := r.AddMarker(MarkerTransactionStart, "Checkout", "", 0); err == nil {
 		t.Error("duplicate open transaction must be rejected")
 	}
-	if _, err := r.AddMarker(MarkerTransactionStart, "Payment", ""); err != nil {
+	if _, err := r.AddMarker(MarkerTransactionStart, "Payment", "", 0); err != nil {
 		t.Fatal(err)
 	}
 	if open := r.Snapshot().OpenTransactions; len(open) != 2 || open[0] != "Checkout" || open[1] != "Payment" {
@@ -211,20 +242,20 @@ func TestAddMarkerTransactionLifecycle(t *testing.T) {
 	}
 
 	// Empty name ends the innermost open transaction.
-	marker, err := r.AddMarker(MarkerTransactionEnd, "", "")
+	marker, err := r.AddMarker(MarkerTransactionEnd, "", "", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if marker.Name != "Payment" {
 		t.Errorf("default end closed %q, want Payment (innermost)", marker.Name)
 	}
-	if _, err := r.AddMarker(MarkerTransactionEnd, "Nope", ""); err == nil {
+	if _, err := r.AddMarker(MarkerTransactionEnd, "Nope", "", 0); err == nil {
 		t.Error("ending an unopened transaction must be rejected")
 	}
-	if _, err := r.AddMarker(MarkerNote, "", "watch the cart badge"); err != nil {
+	if _, err := r.AddMarker(MarkerNote, "", "watch the cart badge", 0); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.AddMarker(MarkerNote, "", "   "); err == nil {
+	if _, err := r.AddMarker(MarkerNote, "", "   ", 0); err == nil {
 		t.Error("empty note must be rejected")
 	}
 
@@ -252,6 +283,23 @@ func TestAddMarkerTransactionLifecycle(t *testing.T) {
 	}
 	if !foundWarning {
 		t.Errorf("warnings = %v, want auto-close notice", session.Warnings)
+	}
+}
+
+func TestAddMarkerCanAnchorAtRecordedStep(t *testing.T) {
+	r := New(Options{StartURL: "https://app.example/"})
+	r.handleRecordBinding(nil, `{"kind":"click","ts":1700000000123,"element":{"tag":"button","css_path":"#cart"}}`)
+	step := r.Snapshot().Steps[0]
+
+	marker, err := r.AddMarker(MarkerTransactionStart, "Cart", "", step.Seq)
+	if err != nil {
+		t.Fatalf("AddMarker anchored to step: %v", err)
+	}
+	if !marker.Timestamp.Equal(step.Timestamp) {
+		t.Fatalf("marker timestamp = %s, want step timestamp %s", marker.Timestamp, step.Timestamp)
+	}
+	if _, err := r.AddMarker(MarkerTransactionStart, "Missing", "", 99); err == nil {
+		t.Fatal("expected missing anchor step to fail")
 	}
 }
 
@@ -632,7 +680,7 @@ func TestBuildSidebarStateSnapshot(t *testing.T) {
 	r.session.NavEvents = append(r.session.NavEvents, NavEvent{URL: "https://app.example/next"})
 	r.handleRecordBinding(nil, `{"kind":"fill","value":"hunter2","ts":1,"element":{"tag":"input","name":"u","css_path":"#u","text":""}}`)
 	r.handleRecordBinding(nil, `{"kind":"click","ts":2,"element":{"tag":"button","css_path":"#go","text":"Submit"}}`)
-	if _, err := r.AddMarker(MarkerTransactionStart, "Login", ""); err != nil {
+	if _, err := r.AddMarker(MarkerTransactionStart, "Login", "", 0); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := r.SetStepExcluded(2, true); err != nil {

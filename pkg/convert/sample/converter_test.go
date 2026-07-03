@@ -676,6 +676,35 @@ func TestConvertHARDiagnosticsForMissingResponseWebSocketAndRedirect(t *testing.
 	}
 }
 
+func TestConvertHARDetectsWebSocketUpgradeBeforeHeaderSanitization(t *testing.T) {
+	inferExtractors := false
+	result, err := Convert(ImportRequest{
+		Format: "har",
+		Content: `{"log":{"entries":[{
+			"request":{"method":"GET","url":"https://api.example.com/socket","headers":[
+				{"name":"Connection","value":"Upgrade"},
+				{"name":"Upgrade","value":"websocket"}
+			]}
+		},{
+			"request":{"method":"GET","url":"https://api.example.com/orders","headers":[]},
+			"response":{"status":200,"headers":[],"content":{"text":"{}"}}
+		}]}}`,
+		Options: ConvertOptions{InferExtractors: &inferExtractors},
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if result.Stats.ConvertedActions != 1 || result.Stats.SkippedRequests != 1 {
+		t.Fatalf("stats = %#v, want websocket entry skipped and normal entry converted", result.Stats)
+	}
+	if !containsSampleDiagnostic(result, "HAR websocket upgrade") {
+		t.Fatalf("diagnostics = %#v, want websocket warning", result.Unsupported)
+	}
+	if containsSampleDiagnostic(result, "HAR missing response") {
+		t.Fatalf("websocket upgrade should be classified before missing response: %#v", result.Unsupported)
+	}
+}
+
 func TestConvertHARFiltersStaticAssetsByDefault(t *testing.T) {
 	inferExtractors := false
 	content := `{

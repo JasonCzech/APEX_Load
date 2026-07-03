@@ -52,6 +52,43 @@ func TestSelectorSelfHealOffDisablesRetry(t *testing.T) {
 	}
 }
 
+func TestSelectorSelfHealProbeFailuresConsumeAttemptBudget(t *testing.T) {
+	b := &Browser{}
+	b.applyDefaultConfig()
+	action := selfHealTestAction()
+	action.Metadata[selector.MetadataFallbacksKey] = []selector.Candidate{
+		{Kind: "css", Value: "#missing-1", Confidence: 90},
+		{Kind: "css", Value: "#missing-2", Confidence: 89},
+		{Kind: "css", Value: "#missing-3", Confidence: 88},
+		{Kind: "css", Value: "#missing-4", Confidence: 87},
+	}
+
+	result := &protocol.Result{}
+	err := b.runWithSelectorSelfHeal(context.Background(), action, result, "#missing", func(string) error {
+		return errors.New(`Timeout 1000ms exceeded waiting for locator("#missing")`)
+	})
+	if err == nil {
+		t.Fatal("expected original selector error")
+	}
+	metrics, ok := result.ProtocolEvidence["selector_self_heal_metrics"].(map[string]any)
+	if !ok {
+		t.Fatalf("selector_self_heal_metrics = %#v", result.ProtocolEvidence["selector_self_heal_metrics"])
+	}
+	if got := metrics["probe_failures"]; got != maxHealAttempts {
+		t.Fatalf("probe_failures = %#v, want %d", got, maxHealAttempts)
+	}
+	if got := metrics["attempts"]; got != 0 {
+		t.Fatalf("attempts = %#v, want no run attempts when probes all fail", got)
+	}
+}
+
+func TestSelectorSelfHealBudgetSpentIncludesProbeFailures(t *testing.T) {
+	stats := selectorSelfHealStats{Attempts: 1, ProbeFailures: 2}
+	if got := stats.budgetSpent(); got != 3 {
+		t.Fatalf("budgetSpent = %d, want 3", got)
+	}
+}
+
 func TestNormalizeBrowserSelfHealMode(t *testing.T) {
 	tests := map[string]string{
 		"":            browserSelfHealReplayOnly,

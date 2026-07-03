@@ -3,10 +3,12 @@ package recorder
 import (
 	"bytes"
 	"encoding/binary"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestReadWebSocketFrameRejectsOversizedPayloadBeforeAllocation(t *testing.T) {
@@ -47,4 +49,41 @@ func TestCloneWebSocketRequestsStripCompressionExtension(t *testing.T) {
 	if got := recorded.Header.Get("Sec-WebSocket-Extensions"); got != "" {
 		t.Fatalf("recorded compression extension = %q, want stripped", got)
 	}
+}
+
+func TestCopyWebSocketFramesUsesLongWebSocketIdleDeadline(t *testing.T) {
+	var dst bytes.Buffer
+	conn := &deadlineRecorderConn{}
+	start := time.Now()
+
+	New(":0").copyWebSocketFrames(&dst, bytes.NewReader([]byte{0x88, 0x00}), conn, nil, 0, webSocketDirectionServerToClient)
+
+	if len(conn.readDeadlines) < 2 {
+		t.Fatalf("read deadlines = %v, want set and clear", conn.readDeadlines)
+	}
+	if remaining := conn.readDeadlines[0].Sub(start); remaining < webSocketTunnelIdleTimeout-time.Second {
+		t.Fatalf("first read deadline = %s from start, want close to %s", remaining, webSocketTunnelIdleTimeout)
+	}
+	if !conn.readDeadlines[1].IsZero() {
+		t.Fatalf("second read deadline = %v, want zero clear", conn.readDeadlines[1])
+	}
+	if got := dst.Bytes(); !bytes.Equal(got, []byte{0x88, 0x00}) {
+		t.Fatalf("forwarded bytes = %v, want close frame", got)
+	}
+}
+
+type deadlineRecorderConn struct {
+	readDeadlines []time.Time
+}
+
+func (c *deadlineRecorderConn) Read([]byte) (int, error)         { return 0, nil }
+func (c *deadlineRecorderConn) Write(p []byte) (int, error)      { return len(p), nil }
+func (c *deadlineRecorderConn) Close() error                     { return nil }
+func (c *deadlineRecorderConn) LocalAddr() net.Addr              { return nil }
+func (c *deadlineRecorderConn) RemoteAddr() net.Addr             { return nil }
+func (c *deadlineRecorderConn) SetDeadline(time.Time) error      { return nil }
+func (c *deadlineRecorderConn) SetWriteDeadline(time.Time) error { return nil }
+func (c *deadlineRecorderConn) SetReadDeadline(t time.Time) error {
+	c.readDeadlines = append(c.readDeadlines, t)
+	return nil
 }

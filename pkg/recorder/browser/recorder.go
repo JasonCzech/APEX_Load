@@ -45,8 +45,11 @@ type Options struct {
 	// (with content) flushed when the recording stops. Default on via New.
 	CaptureHAR bool
 	// HARPath overrides where the side-car HAR is written. Empty uses a
-	// temporary file that is read into Session.HAR and removed on Stop.
+	// managed temporary file that is read into Session.HAR and removed on Stop.
 	HARPath string
+	// HARArtifactDir overrides the directory for managed temporary HAR files.
+	// Empty uses os.TempDir().
+	HARArtifactDir string
 	// HARFilters narrows the side-car HAR by request host at stop time.
 	HARFilters HARFilters
 	// OnEvent, when set, observes recording activity live (steps, navigations,
@@ -194,6 +197,35 @@ func New(opts Options) *Recorder {
 	}
 }
 
+func managedHARTempPath(dir string, sessionID string) string {
+	dir = strings.TrimSpace(dir)
+	if dir == "" {
+		dir = os.TempDir()
+	}
+	safeID := strings.NewReplacer(string(filepath.Separator), "_", "/", "_", "\\", "_").Replace(strings.TrimSpace(sessionID))
+	if safeID == "" {
+		safeID = fmt.Sprintf("rec_%d", time.Now().UnixNano())
+	}
+	return filepath.Join(dir, "apexload_browser_"+safeID+".har.tmp")
+}
+
+func prepareHARPath(path string) error {
+	if strings.TrimSpace(path) == "" {
+		return fmt.Errorf("path is required")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	if closeErr := file.Close(); closeErr != nil {
+		return closeErr
+	}
+	return os.Chmod(path, 0o600)
+}
+
 // Start launches Chromium, injects the capture script into every frame, wires
 // the record binding plus navigation/network/WebSocket listeners, and opens the
 // start URL. The user interacts with the page; Stop (or closing the browser)
@@ -232,8 +264,12 @@ func (r *Recorder) Start() error {
 	if r.opts.CaptureHAR {
 		harPath := strings.TrimSpace(r.opts.HARPath)
 		if harPath == "" {
-			harPath = filepath.Join(os.TempDir(), r.session.ID+".har")
+			harPath = managedHARTempPath(r.opts.HARArtifactDir, r.session.ID)
 			r.harTemp = true
+		}
+		if err := prepareHARPath(harPath); err != nil {
+			r.cleanup()
+			return fmt.Errorf("prepare side-car HAR path: %w", err)
 		}
 		r.session.HARPath = harPath
 		contextOptions.RecordHarPath = playwright.String(harPath)
@@ -773,17 +809,26 @@ func (r *Recorder) currentPage() playwright.Page {
 }
 
 // AddMarker inserts a transaction boundary or note into the timeline.
-func (r *Recorder) AddMarker(kind, name, text string) (Marker, error) {
+func (r *Recorder) AddMarker(kind, name, text string, atStepSeq int) (Marker, error) {
 	r.mu.Lock()
 	if r.stopped {
 		r.mu.Unlock()
 		return Marker{}, fmt.Errorf("recording already stopped")
 	}
+	timestamp := time.Now()
+	if atStepSeq > 0 {
+		var ok bool
+		timestamp, ok = r.markerTimestampForStepLocked(atStepSeq)
+		if !ok {
+			r.mu.Unlock()
+			return Marker{}, fmt.Errorf("step #%d not found for marker anchor", atStepSeq)
+		}
+	}
 	marker, err := r.session.AddMarker(Marker{
 		Kind:      strings.TrimSpace(kind),
 		Name:      strings.TrimSpace(name),
 		Text:      strings.TrimSpace(text),
-		Timestamp: time.Now(),
+		Timestamp: timestamp,
 	})
 	r.mu.Unlock()
 	if err != nil {
@@ -791,6 +836,15 @@ func (r *Recorder) AddMarker(kind, name, text string) (Marker, error) {
 	}
 	r.emit(Event{Type: EventMarker, Marker: &marker})
 	return marker, nil
+}
+
+func (r *Recorder) markerTimestampForStepLocked(seq int) (time.Time, bool) {
+	for _, step := range r.session.Steps {
+		if step.Seq == seq && !step.Timestamp.IsZero() {
+			return step.Timestamp, true
+		}
+	}
+	return time.Time{}, false
 }
 
 // controlEventKind decodes just the payload kind so toolbar control events
@@ -859,11 +913,11 @@ func (r *Recorder) handleControlEvent(payload string) {
 	case "section_set":
 		r.SetSection(ev.Section)
 	case "transaction_start":
-		_, err = r.AddMarker(MarkerTransactionStart, ev.Name, "")
+		_, err = r.AddMarker(MarkerTransactionStart, ev.Name, "", 0)
 	case "transaction_end":
-		_, err = r.AddMarker(MarkerTransactionEnd, ev.Name, "")
+		_, err = r.AddMarker(MarkerTransactionEnd, ev.Name, "", 0)
 	case "note_add":
-		_, err = r.AddMarker(MarkerNote, "", ev.Text)
+		_, err = r.AddMarker(MarkerNote, "", ev.Text, 0)
 	case "navigate":
 		// Reject non-http(s) schemes synchronously (with a warning) before
 		// spawning: the binding is reachable by any recorded page's JS, so this

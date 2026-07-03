@@ -241,6 +241,54 @@ artifacts that expose secrets unless the caller opts into scrubbing.
   deleting stopped proxy sessions, and persists scrubbed recording baselines at
   the conversion seam for later correlation diagnosis.
 
+## Round-2 Continuation Status - 2026-07-03
+
+The follow-up remediation pass closed the highest-risk round-2 regressions and
+several small P1/P2 backlog items:
+
+- Controller startup no longer fails when the recording proxy is disabled by
+  production policy; the proxy is logged as disabled while the API continues to
+  serve.
+- Recorder status/start responses no longer disclose the proxy auth token.
+- Browser recording retention pruning is now scheduled by the server lifecycle
+  and cancelled during shutdown.
+- Browser recorder side-car HAR working files now use managed
+  `apexload_browser_*.har.tmp` names under the configured HAR artifact
+  directory (or `os.TempDir`) with `0600` permissions.
+- WebSocket proxy tunnels use a longer browser-appropriate idle window instead
+  of the short CONNECT deadline.
+- Request capture keeps raw request headers in memory for correlation while
+  preserving redacted public/persisted headers; baseline generation can use raw
+  request headers before scrub-on-write.
+- Browser recorder install is gated in production/default-off posture before
+  any background Playwright install starts.
+- XML/SOAP attribute correlation now emits node-set XPath expressions that
+  replay extraction can evaluate, and encoded correlation forms are substituted
+  when generated scripts contain form-escaped values.
+- Salesforce form-field boundary extractors now use the actual form key, not
+  the correlation rule name.
+- `browser_tap` falls back to synthetic pointer/touch/click dispatch when the
+  browser context is not touch-enabled.
+- `browser_ws_assert` can validate the same frame found by a preceding
+  `browser_ws_wait` without consuming the wait watermark itself.
+- Selector self-heal probe failures now count against the heal-attempt budget.
+- HAR WebSocket upgrade detection now reads raw HAR headers before stripping
+  replay-hostile headers.
+- JMESPath extraction now preserves large JSON numbers with `UseNumber()`.
+- Enterprise Archive `NewUserPerIteration` now maps to HTTP
+  `clear_cookies_per_iteration`.
+- Browser recording transaction suggestions now anchor accepted transaction
+  markers at the suggested step instead of click-time.
+- Recording Studio's live browser step feed again caps the unfiltered live
+  render to 25 rows while stopped review/search still sees the full history.
+- Client download platform detection no longer maps every macOS User-Agent to
+  `darwin-arm64`; ambiguous macOS agents require an explicit platform, and
+  Linux arm64 is detected.
+- The Postman environment dropzone now uses environment-specific validation and
+  rejects collection-shaped files in the environment slot.
+- `github.com/klauspost/compress` remains a direct module dependency so zstd
+  support is explicit.
+
 ## Verification Requirements
 
 - Run focused Go tests for every touched package.

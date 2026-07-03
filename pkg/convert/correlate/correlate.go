@@ -219,8 +219,9 @@ func ApplyVarsWithEncodedValues(value string, vars map[string]string, encodedVal
 		replacement := vars[raw]
 		value = strings.ReplaceAll(value, raw, replacement)
 		if encodedValues[raw] {
-			value = replaceEncodedValue(value, raw, replacement, url.QueryEscape)
-			value = replaceEncodedValue(value, raw, replacement, url.PathEscape)
+			for _, encoded := range EncodedFormsOf(raw) {
+				value = strings.ReplaceAll(value, encoded, replacement)
+			}
 		}
 	}
 	return value
@@ -274,14 +275,6 @@ func ApplyVarsToHeadersWithEncodedValues(headers map[string]string, vars map[str
 		headers[key] = ApplyVarsWithEncodedValues(value, vars, encodedValues)
 	}
 	return headers
-}
-
-func replaceEncodedValue(value, raw, replacement string, encode func(string) string) string {
-	encodedRaw := encode(raw)
-	if encodedRaw == "" || encodedRaw == raw {
-		return value
-	}
-	return strings.ReplaceAll(value, encodedRaw, replacement)
 }
 
 func ApplyVarsToHeaders(headers map[string]string, vars map[string]string) map[string]string {
@@ -382,7 +375,7 @@ func formCandidates(body string) []Candidate {
 		return nil
 	}
 	candidates := make([]Candidate, 0)
-	add := func(name, value, ruleID string, confidence float64, reason string) {
+	add := func(fieldName, name, value, ruleID string, confidence float64, reason string) {
 		if strings.TrimSpace(value) == "" {
 			return
 		}
@@ -391,7 +384,7 @@ func formCandidates(body string) []Candidate {
 			Value:          value,
 			Source:         "body",
 			ExtractType:    "boundary",
-			Expression:     name + "=|||&",
+			Expression:     fieldName + "=|||&",
 			RuleID:         ruleID,
 			BaseConfidence: confidence,
 			Reason:         reason,
@@ -401,19 +394,19 @@ func formCandidates(body string) []Candidate {
 		for _, value := range fieldValues {
 			switch strings.ToLower(key) {
 			case "aura.token":
-				add("salesforce_aura_token", value, RuleSalesforceAuraToken, 0.95, "Salesforce aura.token form field")
+				add(key, "salesforce_aura_token", value, RuleSalesforceAuraToken, 0.95, "Salesforce aura.token form field")
 			case "aura.context":
 				for _, candidate := range salesforceRegexCandidates(value) {
 					candidates = append(candidates, candidate)
 				}
 			case "aura.pageuri":
-				add("salesforce_aura_page_uri", value, RuleSalesforceAuraPageURI, 0.86, "Salesforce aura.pageURI form field")
+				add(key, "salesforce_aura_page_uri", value, RuleSalesforceAuraPageURI, 0.86, "Salesforce aura.pageURI form field")
 			case "com.salesforce.visualforce.viewstate", "viewstatemac", "viewstateversion", "viewstatecsrf":
-				add("salesforce_viewstate", value, RuleSalesforceViewState, 0.94, "Salesforce Visualforce ViewState form field")
+				add(key, "salesforce_viewstate", value, RuleSalesforceViewState, 0.94, "Salesforce Visualforce ViewState form field")
 			case "_confirmationtoken":
-				add("salesforce_confirmation_token", value, RuleSalesforceConfirmationToken, 0.93, "Salesforce confirmation token form field")
+				add(key, "salesforce_confirmation_token", value, RuleSalesforceConfirmationToken, 0.93, "Salesforce confirmation token form field")
 			case "sid", "sid_client", "sid_client_id":
-				add("salesforce_frontdoor_sid", value, RuleSalesforceFrontdoorSID, 0.85, "Salesforce frontdoor sid form field")
+				add(key, "salesforce_frontdoor_sid", value, RuleSalesforceFrontdoorSID, 0.85, "Salesforce frontdoor sid form field")
 			}
 		}
 	}
@@ -741,7 +734,7 @@ func xmlCandidates(body string) []Candidate {
 			Value:          value,
 			Source:         "body",
 			ExtractType:    "xpath",
-			Expression:     "string(//*[@*[local-name()='" + localXMLName(name) + "']]/@*[local-name()='" + localXMLName(name) + "'])",
+			Expression:     "//@*[local-name()='" + localXMLName(name) + "']",
 			RuleID:         ruleID,
 			BaseConfidence: base,
 			Reason:         "XML/SOAP attribute " + name + " looks dynamic",

@@ -59,6 +59,25 @@ func TestEncodedFormsOfIncludesFormEscapedPlus(t *testing.T) {
 	if !DetectEncodedValueUsage("tok+/==", []string{"aura.token=tok%2B%2F%3D%3D"}) {
 		t.Fatal("DetectEncodedValueUsage missed form-encoded + and / value")
 	}
+	vars := map[string]string{"tok+/==": "{{var.corr_token}}"}
+	encoded := map[string]bool{"tok+/==": true}
+	if got := ApplyVarsWithEncodedValues("aura.token=tok+%2F%3D%3D&raw=tok+/==", vars, encoded); got != "aura.token={{var.corr_token}}&raw={{var.corr_token}}" {
+		t.Fatalf("ApplyVarsWithEncodedValues form-escaped token = %q", got)
+	}
+}
+
+func TestSalesforceFormBoundaryUsesFormFieldKey(t *testing.T) {
+	candidates := formCandidates("aura.token=tok-abcdef123456&sid=sid-abcdef123456")
+	byRule := map[string]Candidate{}
+	for _, candidate := range candidates {
+		byRule[candidate.RuleID] = candidate
+	}
+	if got := byRule[RuleSalesforceAuraToken].Expression; got != "aura.token=|||&" {
+		t.Fatalf("aura.token boundary = %q, want form field key", got)
+	}
+	if got := byRule[RuleSalesforceFrontdoorSID].Expression; got != "sid=|||&" {
+		t.Fatalf("sid boundary = %q, want form field key", got)
+	}
 }
 
 func TestDetectSetCookieValue(t *testing.T) {
@@ -135,8 +154,8 @@ func TestDetectXMLAttributeExtractorTargetsAttributeValue(t *testing.T) {
 	correlations := Detect(observations)
 	for _, corr := range correlations {
 		if corr.Value == value {
-			if corr.ExtractType != "xpath" || !strings.Contains(corr.Expression, "/@*") || !strings.HasPrefix(corr.Expression, "string(") {
-				t.Fatalf("xml attr extractor = %#v, want attribute-value XPath", corr)
+			if corr.ExtractType != "xpath" || corr.Expression != "//@*[local-name()='correlationId']" {
+				t.Fatalf("xml attr extractor = %#v, want replayable attribute-node XPath", corr)
 			}
 			return
 		}

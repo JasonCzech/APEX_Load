@@ -1,6 +1,9 @@
 package browser
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestNormalizeSwipeDirection(t *testing.T) {
 	tests := map[string]string{
@@ -17,6 +20,21 @@ func TestNormalizeSwipeDirection(t *testing.T) {
 	for input, want := range tests {
 		if got := normalizeSwipeDirection(input); got != want {
 			t.Fatalf("normalizeSwipeDirection(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
+func TestBrowserTapUsesSyntheticPathWhenTouchModeOff(t *testing.T) {
+	if !(&Browser{touchMode: false}).shouldUseSyntheticTap() {
+		t.Fatal("tap should use synthetic touch events when the context has touch disabled")
+	}
+	if (&Browser{touchMode: true}).shouldUseSyntheticTap() {
+		t.Fatal("tap should keep the native Playwright path when touch mode is enabled")
+	}
+	operation := syntheticTapOperation()
+	for _, want := range []string{"dispatchTouch('touchstart'", "dispatchTouch('touchend'", "dispatchClick"} {
+		if !strings.Contains(operation, want) {
+			t.Fatalf("synthetic tap operation missing %q: %s", want, operation)
 		}
 	}
 }

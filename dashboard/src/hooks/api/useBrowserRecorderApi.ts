@@ -216,10 +216,10 @@ export function useBrowserRecorderApi() {
   )
 
   const startBrowserRecordingTransaction = useCallback(
-    (id: string, name: string) =>
+    (id: string, name: string, atStepSeq?: number) =>
       recorderRequest<BrowserRecorderMarkerEnvelope>(`/browser-recorder/sessions/${id}/transactions/start`, {
         method: 'POST',
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name, at_step_seq: atStepSeq || undefined }),
       }),
     [recorderRequest],
   )

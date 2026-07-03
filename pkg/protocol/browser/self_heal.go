@@ -31,6 +31,10 @@ type selectorSelfHealStats struct {
 	CacheHit      bool
 }
 
+func (s selectorSelfHealStats) budgetSpent() int {
+	return s.Attempts + s.ProbeFailures
+}
+
 // runWithSelectorSelfHeal executes a selector-driven action and, when it fails
 // and the action carries ranked selector candidates (recorded by any capture
 // surface under source_selector_fallbacks), retries with the strongest usable
@@ -66,7 +70,7 @@ func (b *Browser) runWithSelectorSelfHeal(ctx context.Context, action *protocol.
 		return err
 	}
 	for _, candidate := range fallbacks {
-		if stats.Attempts >= maxHealAttempts || ctx.Err() != nil {
+		if stats.budgetSpent() >= maxHealAttempts || ctx.Err() != nil {
 			break
 		}
 		if healed, ok := b.trySelfHealCandidate(ctx, action, primary, candidate, run, &stats, tried); ok {

@@ -88,6 +88,11 @@ type Browser struct {
 	wsEvents    []browserWSEvent
 	wsSeq       int64
 	wsWatermark int64
+	// wsLastWaitMinSeq keeps the action-local lower bound used by the last
+	// successful wait so an immediate assert can validate the same frame without
+	// rewinding the wait watermark for future waits.
+	wsLastWaitMinSeq int64
+	wsLastWaitValid  bool
 }
 
 // dialogPolicy is armed by a browser_handle_dialog action and consumed by the
