@@ -157,6 +157,27 @@ func TestUsable(t *testing.T) {
 	}
 }
 
+func TestFallbacksForPrimaryKeepsRoleAndTextSkippedByPrimarySelection(t *testing.T) {
+	candidates := []Candidate{
+		{Kind: "role", Value: `role=button[name="Checkout"]`, Confidence: 72},
+		{Kind: "text", Value: "Checkout", Confidence: 62},
+		{Kind: "xpath", Value: "//button[1]", Confidence: 58},
+		{Kind: "css", Value: "   ", Confidence: 95},
+	}
+	primary := PlaywrightSelector(candidates)
+	if primary != "xpath=//button[1]" {
+		t.Fatalf("primary = %q, want xpath fallback primary", primary)
+	}
+
+	fallbacks := FallbacksForPrimary(candidates, primary)
+	if len(fallbacks) != 2 {
+		t.Fatalf("fallbacks = %+v, want role and text only", fallbacks)
+	}
+	if fallbacks[0].Kind != "role" || fallbacks[1].Kind != "text" {
+		t.Fatalf("fallback kinds = %s/%s, want role/text", fallbacks[0].Kind, fallbacks[1].Kind)
+	}
+}
+
 func TestRoleAndTextSelector(t *testing.T) {
 	if got := RoleSelector("button", "Submit order"); got != `role=button[name="Submit order"]` {
 		t.Errorf("RoleSelector() = %q", got)

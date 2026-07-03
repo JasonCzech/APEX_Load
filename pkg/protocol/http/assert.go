@@ -74,6 +74,20 @@ func evaluate(a protocol.Assertion, result *protocol.Result, body []byte) error 
 	return nil
 }
 
+func responseStatusExplicitlyAccepted(assertions []protocol.Assertion, result *protocol.Result) bool {
+	checked := false
+	for _, assertion := range assertions {
+		switch assertion.Type {
+		case "status_code", "status_code_range":
+			checked = true
+			if err := evaluate(assertion, result, nil); err != nil {
+				return false
+			}
+		}
+	}
+	return checked
+}
+
 func toInt(v any) (int, bool) {
 	switch n := v.(type) {
 	case int:

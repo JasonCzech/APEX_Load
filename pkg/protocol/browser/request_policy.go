@@ -112,7 +112,7 @@ func (b *Browser) installRequestPolicy(browserContext playwright.BrowserContext)
 			_ = route.Abort()
 			return
 		}
-		if b.networkLatencyMS > 0 {
+		if b.routeNetworkLatencyEnabled() {
 			time.Sleep(time.Duration(b.networkLatencyMS) * time.Millisecond)
 		}
 
@@ -130,7 +130,11 @@ func (b *Browser) requestPolicyEnabled() bool {
 		b.checkNewerVersions ||
 		b.downloadResources != "all" ||
 		b.hasDownloadFilters() ||
-		b.networkLatencyMS > 0
+		b.routeNetworkLatencyEnabled()
+}
+
+func (b *Browser) routeNetworkLatencyEnabled() bool {
+	return b.networkLatencyMS > 0 && !b.supportsCDP()
 }
 
 func (b *Browser) shouldBlockRequest(request playwright.Request) bool {

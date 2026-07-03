@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -583,6 +584,70 @@ func TestRecordRequestCapturesBinaryBodiesAsBase64(t *testing.T) {
 	}
 }
 
+func TestRecordRequestPreservesMultipartUploadBodyAsReplayableBase64(t *testing.T) {
+	rec := New(":0")
+	session, err := rec.StartSession("test", "Multipart Body Test", SessionFilters{
+		BodyCaptureLimitBytes: 4,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("description", "quarterly report"); err != nil {
+		t.Fatal(err)
+	}
+	part, err := writer.CreateFormFile("file", "report.bin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fileBytes := []byte{0x00, 0xff, 0x10, 0x80, 0x42, 0x43}
+	if _, err := part.Write(fileBytes); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reqBody := body.Bytes()
+	req, _ := http.NewRequest("POST", "http://example.com/api/upload", bytes.NewReader(reqBody))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp := &http.Response{
+		StatusCode: http.StatusCreated,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+	}
+
+	rec.recordRequest(session, req, reqBody, resp, []byte(`{"ok":true}`), 10*time.Millisecond)
+
+	recorded := session.Requests[0]
+	if recorded.BodyEncoding != "base64" {
+		t.Fatalf("request body encoding = %q, want base64", recorded.BodyEncoding)
+	}
+	if recorded.BodyTruncated {
+		t.Fatal("multipart body should not be truncated when within capture cap")
+	}
+	decoded, err := base64.StdEncoding.DecodeString(recorded.Body)
+	if err != nil {
+		t.Fatalf("decode recorded body: %v", err)
+	}
+	if !bytes.Equal(decoded, reqBody) {
+		t.Fatalf("recorded multipart body did not round-trip")
+	}
+
+	converted := ConvertSession(session, "")
+	action := converted.Script.Actions[0]
+	if action.BodyEncoding != "base64" {
+		t.Fatalf("converted body encoding = %q, want base64", action.BodyEncoding)
+	}
+	decodedAction, err := base64.StdEncoding.DecodeString(action.Body)
+	if err != nil {
+		t.Fatalf("decode converted body: %v", err)
+	}
+	if !bytes.Equal(decodedAction, reqBody) {
+		t.Fatalf("converted multipart body did not round-trip")
+	}
+}
+
 func TestRecordRequestLeavesTextBodiesUnencoded(t *testing.T) {
 	rec := New(":0")
 	session, err := rec.StartSession("test", "Text Body Test", SessionFilters{}, nil)
@@ -673,7 +738,7 @@ func TestProxyStreamsSSEWithoutWaitingForEOF(t *testing.T) {
 	}
 }
 
-func TestRecordRequestThinkTimeUsesRequestStartOrdering(t *testing.T) {
+func TestRecordRequestThinkTimeUsesPreviousResponseEnd(t *testing.T) {
 	rec := New(":0")
 	session, err := rec.StartSession("test", "Think Time Test", SessionFilters{}, nil)
 	if err != nil {
@@ -687,17 +752,70 @@ func TestRecordRequestThinkTimeUsesRequestStartOrdering(t *testing.T) {
 	thirdReq, _ := http.NewRequest("GET", "http://example.com/api/third", nil)
 
 	rec.recordRequestStarted(session, secondReq, nil, resp, []byte(`{}`), 100*time.Millisecond, startedAt.Add(10*time.Millisecond))
-	rec.recordRequestStarted(session, firstReq, nil, resp, []byte(`{}`), 200*time.Millisecond, startedAt)
-	rec.recordRequestStarted(session, thirdReq, nil, resp, []byte(`{}`), 20*time.Millisecond, startedAt.Add(25*time.Millisecond))
+	rec.recordRequestStarted(session, firstReq, nil, resp, []byte(`{}`), 5*time.Millisecond, startedAt)
+	rec.recordRequestStarted(session, thirdReq, nil, resp, []byte(`{}`), 20*time.Millisecond, startedAt.Add(125*time.Millisecond))
 
 	if len(session.Requests) != 3 {
 		t.Fatalf("expected 3 requests, got %d", len(session.Requests))
+	}
+	if !session.Requests[0].Timestamp.Equal(startedAt.Add(10 * time.Millisecond)) {
+		t.Fatalf("first recorded timestamp = %s, want request start", session.Requests[0].Timestamp)
 	}
 	if session.Requests[1].ThinkTimeMs != 0 {
 		t.Fatalf("overlapping earlier request think time = %d, want 0", session.Requests[1].ThinkTimeMs)
 	}
 	if session.Requests[2].ThinkTimeMs != 15 {
-		t.Fatalf("third request think time = %d, want 15ms gap from latest start", session.Requests[2].ThinkTimeMs)
+		t.Fatalf("third request think time = %d, want 15ms gap from previous response end", session.Requests[2].ThinkTimeMs)
+	}
+}
+
+func TestProxyCapturesResponseToLimitWhileForwardingFullBody(t *testing.T) {
+	allowPrivateProxyTargets(t)
+	payload := strings.Repeat("x", 32)
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = io.WriteString(w, payload)
+	}))
+	defer backend.Close()
+
+	rec := New(":0")
+	if _, err := rec.StartSession("test", "Capture Limit Test", SessionFilters{BodyCaptureLimitBytes: 8}, nil); err != nil {
+		t.Fatal(err)
+	}
+	proxy := httptest.NewServer(http.HandlerFunc(rec.handleProxy))
+	defer proxy.Close()
+	proxyURL, _ := url.Parse(proxy.URL)
+	client := &http.Client{
+		Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)},
+		Timeout:   2 * time.Second,
+	}
+
+	resp, err := client.Get(backend.URL + "/download")
+	if err != nil {
+		t.Fatalf("GET through proxy: %v", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("reading response: %v", err)
+	}
+	if string(body) != payload {
+		t.Fatalf("client body length = %d, want full payload %d", len(body), len(payload))
+	}
+
+	session, _ := rec.GetSession("test")
+	if len(session.Requests) != 1 {
+		t.Fatalf("recorded requests = %d, want 1", len(session.Requests))
+	}
+	recorded := session.Requests[0]
+	if recorded.ResponseBody != payload[:8] {
+		t.Fatalf("recorded response body = %q, want capped prefix", recorded.ResponseBody)
+	}
+	if !recorded.ResponseBodyTruncated {
+		t.Fatal("expected recorded response body to be marked truncated")
+	}
+	if recorded.ResponseBodySizeBytes != len(payload) {
+		t.Fatalf("response body size = %d, want raw forwarded size %d", recorded.ResponseBodySizeBytes, len(payload))
 	}
 }
 
@@ -872,8 +990,8 @@ func TestRecordRequestDecompressesResponseBody(t *testing.T) {
 		if recorded.ResponseBody != string(payload) {
 			t.Fatalf("%s: expected decompressed body %q, got %q", tc.name, payload, recorded.ResponseBody)
 		}
-		if recorded.ResponseBodySizeBytes != len(payload) {
-			t.Fatalf("%s: expected size %d, got %d", tc.name, len(payload), recorded.ResponseBodySizeBytes)
+		if recorded.ResponseBodySizeBytes != len(tc.body) {
+			t.Fatalf("%s: expected raw size %d, got %d", tc.name, len(tc.body), recorded.ResponseBodySizeBytes)
 		}
 		if _, ok := recorded.ResponseHeaders["Content-Encoding"]; ok {
 			t.Fatalf("%s: expected Content-Encoding header to be stripped", tc.name)

@@ -89,11 +89,15 @@ func (b *Browser) dispatchWSWait(ctx context.Context, action *protocol.Action, r
 	if err != nil {
 		return nil, failBrowserAction(result, err.Error())
 	}
+	if matcher.MinSeq == 0 {
+		matcher.MinSeq = b.currentWSWatermark()
+	}
 	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()
 	for {
 		matches := b.matchWSEvents(matcher)
 		if len(matches) >= count {
+			b.advanceWSWatermark(matches)
 			result.ProtocolEvidence = map[string]any{"browser_ws_matches": matches}
 			return nil, false
 		}
@@ -112,11 +116,15 @@ func (b *Browser) dispatchWSAssert(action *protocol.Action, result *protocol.Res
 	if err != nil {
 		return nil, failBrowserAction(result, err.Error())
 	}
+	if matcher.MinSeq == 0 {
+		matcher.MinSeq = b.currentWSWatermark()
+	}
 	matches := b.matchWSEvents(matcher)
 	result.ProtocolEvidence = map[string]any{"browser_ws_matches": matches}
 	if len(matches) < count {
 		return fmt.Errorf("browser_ws_assert found %d matching frame(s), want at least %d", len(matches), count), false
 	}
+	b.advanceWSWatermark(matches)
 	return nil, false
 }
 
@@ -125,6 +133,7 @@ type browserWSMatcher struct {
 	Direction   string
 	Match       string
 	MatchMode   string
+	MinSeq      int64
 }
 
 func browserWSMatcherFromAction(action *protocol.Action) (browserWSMatcher, error) {
@@ -133,6 +142,7 @@ func browserWSMatcherFromAction(action *protocol.Action) (browserWSMatcher, erro
 		Direction:   strings.ToLower(strings.TrimSpace(actionParamString(action.Params, "direction", ""))),
 		Match:       actionParamString(action.Params, "match", ""),
 		MatchMode:   strings.ToLower(strings.TrimSpace(actionParamString(action.Params, "match_mode", "contains"))),
+		MinSeq:      bwsActionMinSeq(action),
 	}
 	switch matcher.Direction {
 	case "", "open", "sent", "received":
@@ -152,12 +162,25 @@ func browserWSMatcherFromAction(action *protocol.Action) (browserWSMatcher, erro
 	return matcher, nil
 }
 
+func bwsActionMinSeq(action *protocol.Action) int64 {
+	if action == nil {
+		return 0
+	}
+	if seq := actionParamInt(action.Params, "since_seq", 0); seq > 0 {
+		return int64(seq)
+	}
+	return 0
+}
+
 func (b *Browser) matchWSEvents(matcher browserWSMatcher) []browserWSEvent {
 	b.wsMu.Lock()
 	events := append([]browserWSEvent(nil), b.wsEvents...)
 	b.wsMu.Unlock()
 	matches := make([]browserWSEvent, 0)
 	for _, event := range events {
+		if matcher.MinSeq > 0 && event.Seq <= matcher.MinSeq {
+			continue
+		}
 		if matcher.URLContains != "" && !strings.Contains(event.URL, matcher.URLContains) {
 			continue
 		}
@@ -170,6 +193,37 @@ func (b *Browser) matchWSEvents(matcher browserWSMatcher) []browserWSEvent {
 		matches = append(matches, event)
 	}
 	return matches
+}
+
+func (b *Browser) currentWSWatermark() int64 {
+	b.wsMu.Lock()
+	defer b.wsMu.Unlock()
+	return b.wsWatermark
+}
+
+func (b *Browser) advanceWSWatermark(matches []browserWSEvent) {
+	if len(matches) == 0 {
+		return
+	}
+	maxSeq := int64(0)
+	for _, match := range matches {
+		if match.Seq > maxSeq {
+			maxSeq = match.Seq
+		}
+	}
+	b.wsMu.Lock()
+	if maxSeq > b.wsWatermark {
+		b.wsWatermark = maxSeq
+	}
+	b.wsMu.Unlock()
+}
+
+func (b *Browser) resetWSEvents() {
+	b.wsMu.Lock()
+	b.wsEvents = nil
+	b.wsSeq = 0
+	b.wsWatermark = 0
+	b.wsMu.Unlock()
 }
 
 func browserWSPayloadMatches(payload, expected, mode string) bool {

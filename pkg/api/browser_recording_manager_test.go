@@ -28,6 +28,7 @@ type fakeBrowserRecorderBackend struct {
 	assertMode   bool
 	section      string
 	stopCalls    int
+	forceCalls   int
 	focusCalls   int
 	navigatedTo  []string
 	panelURLs    []string
@@ -93,6 +94,13 @@ func (f *fakeBrowserRecorderBackend) Stop() (*recbrowser.Session, error) {
 	}
 	f.closeBrowser()
 	return session, nil
+}
+
+func (f *fakeBrowserRecorderBackend) ForceStop() {
+	f.mu.Lock()
+	f.forceCalls++
+	f.mu.Unlock()
+	f.closeBrowser()
 }
 
 func (f *fakeBrowserRecorderBackend) Done() <-chan struct{} { return f.done }
@@ -247,6 +255,27 @@ func drainHubBroadcasts(t *testing.T, hub *Hub) []map[string]any {
 	}
 }
 
+func waitForHubBroadcastType(t *testing.T, hub *Hub, want string) map[string]any {
+	t.Helper()
+	timer := time.NewTimer(2 * time.Second)
+	defer timer.Stop()
+	for {
+		select {
+		case msg := <-hub.broadcast:
+			var decoded map[string]any
+			if err := json.Unmarshal(msg, &decoded); err != nil {
+				t.Fatalf("broadcast not JSON: %v", err)
+			}
+			if decoded["type"] == want {
+				return decoded
+			}
+		case <-timer.C:
+			t.Fatalf("timed out waiting for broadcast %q", want)
+			return nil
+		}
+	}
+}
+
 func broadcastTypes(messages []map[string]any) []string {
 	types := make([]string, 0, len(messages))
 	for _, m := range messages {
@@ -270,6 +299,18 @@ func waitForRecordingStatus(t *testing.T, m *BrowserRecordingManager, id string,
 	session, _ := m.Get(id)
 	t.Fatalf("session never reached status %q: %+v", want, session)
 	return nil
+}
+
+func waitForCondition(t *testing.T, timeout time.Duration, ok func() bool, label string) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if ok() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %s", label)
 }
 
 func recordedBrowserArtifact() *recbrowser.Session {
@@ -331,6 +372,7 @@ func TestBrowserRecordingManagerStopRequested(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	drainHubBroadcasts(t, hub)
 
 	stopped, ok := m.Stop(started.ID)
 	if !ok {
@@ -352,28 +394,17 @@ func TestBrowserRecordingManagerStopRequested(t *testing.T) {
 	if fake.stopCalls != 1 {
 		t.Errorf("backend stop calls = %d, want 1", fake.stopCalls)
 	}
+	waitForHubBroadcastType(t, hub, "browser_recording_stopped")
 
 	// The slot frees up for the next recording.
 	if _, err := m.Start(BrowserRecordingStartRequest{Name: "Next", StartURL: "https://shop.example/"}); err != nil {
 		t.Errorf("Start() after stop error: %v", err)
 	}
-
-	types := broadcastTypes(drainHubBroadcasts(t, hub))
-	want := map[string]bool{"browser_recording_started": false, "browser_recording_stopped": false}
-	for _, typ := range types {
-		if _, ok := want[typ]; ok {
-			want[typ] = true
-		}
-	}
-	for typ, seen := range want {
-		if !seen {
-			t.Errorf("missing broadcast %q in %v", typ, types)
-		}
-	}
 }
 
 func TestBrowserRecordingManagerPromoteStepSelectorOnStoppedArtifact(t *testing.T) {
-	m := NewBrowserRecordingManager(NewHub())
+	hub := NewHub()
+	m := NewBrowserRecordingManager(hub)
 	fake := newFakeBrowserRecorder(recordedBrowserArtifact())
 	fake.install(m)
 
@@ -385,6 +416,7 @@ func TestBrowserRecordingManagerPromoteStepSelectorOnStoppedArtifact(t *testing.
 		t.Fatal("Stop() did not find session")
 	}
 	waitForRecordingStatus(t, m, started.ID, BrowserRecordingStopped)
+	drainHubBroadcasts(t, hub)
 
 	patched, ok, err := m.PromoteStepSelector(started.ID, 2, `[data-testid="healed-go"]`)
 	if err != nil || !ok {
@@ -398,6 +430,139 @@ func TestBrowserRecordingManagerPromoteStepSelectorOnStoppedArtifact(t *testing.
 	}
 	if got := fake.session.Steps[1].Candidates[0].Value; got != `[data-testid="healed-go"]` {
 		t.Fatalf("final artifact selector = %q", got)
+	}
+	if types := broadcastTypes(drainHubBroadcasts(t, hub)); !containsString(types, "browser_recording_step_update") {
+		t.Fatalf("promotion broadcasts = %v, want step update", types)
+	}
+}
+
+func TestBrowserRecordingManagerPostStopCuration(t *testing.T) {
+	m := NewBrowserRecordingManager(NewHub())
+	fake := newFakeBrowserRecorder(recordedBrowserArtifact())
+	fake.install(m)
+
+	started, err := m.Start(BrowserRecordingStartRequest{StartURL: "https://shop.example/login"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := m.Stop(started.ID); !ok {
+		t.Fatal("Stop() did not find session")
+	}
+	waitForRecordingStatus(t, m, started.ID, BrowserRecordingStopped)
+
+	excluded, ok, err := m.SetStepExcluded(started.ID, 2, true)
+	if !ok || err != nil {
+		t.Fatalf("SetStepExcluded() ok=%v err=%v", ok, err)
+	}
+	if len(excluded.Steps) < 2 || !excluded.Steps[1].Excluded {
+		t.Fatalf("excluded snapshot steps = %+v", excluded.Steps)
+	}
+	if !fake.session.Steps[1].Excluded {
+		t.Fatal("final artifact step was not excluded")
+	}
+
+	marked, ok, err := m.SetStepMark(started.ID, 1, true, false)
+	if !ok || err != nil {
+		t.Fatalf("SetStepMark() ok=%v err=%v", ok, err)
+	}
+	if len(marked.Steps) == 0 || !marked.Steps[0].MarkSecret || marked.Steps[0].MarkParam {
+		t.Fatalf("marked snapshot steps = %+v", marked.Steps)
+	}
+	if !fake.session.Steps[0].MarkSecret || fake.session.Steps[0].MarkParam {
+		t.Fatalf("final artifact mark = secret %v param %v", fake.session.Steps[0].MarkSecret, fake.session.Steps[0].MarkParam)
+	}
+	patchedMark, ok, err := m.PatchStepMark(started.ID, 1, nil, boolPtr(true))
+	if !ok || err != nil {
+		t.Fatalf("PatchStepMark() ok=%v err=%v", ok, err)
+	}
+	if len(patchedMark.Steps) == 0 || !patchedMark.Steps[0].MarkSecret || !patchedMark.Steps[0].MarkParam {
+		t.Fatalf("patched mark snapshot steps = %+v", patchedMark.Steps)
+	}
+
+	deleted, ok, err := m.DeleteLastStep(started.ID)
+	if !ok || err != nil {
+		t.Fatalf("DeleteLastStep() ok=%v err=%v", ok, err)
+	}
+	if len(deleted.Steps) != 1 {
+		t.Fatalf("visible steps after delete = %+v, want one remaining step", deleted.Steps)
+	}
+	if !fake.session.Steps[1].Deleted {
+		t.Fatal("final artifact step was not deleted")
+	}
+}
+
+func TestBrowserRecordingManagerListDeleteAndPrune(t *testing.T) {
+	hub := NewHub()
+	m := NewBrowserRecordingManager(hub)
+
+	firstBackend := newFakeBrowserRecorder(recordedBrowserArtifact())
+	firstBackend.install(m)
+	first, err := m.Start(BrowserRecordingStartRequest{Name: "First", StartURL: "https://shop.example/one", ProjectID: "proj-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := m.Stop(first.ID); !ok {
+		t.Fatal("Stop() did not find first session")
+	}
+	waitForRecordingStatus(t, m, first.ID, BrowserRecordingStopped)
+
+	secondBackend := newFakeBrowserRecorder(recordedBrowserArtifact())
+	secondBackend.install(m)
+	second, err := m.Start(BrowserRecordingStartRequest{Name: "Second", StartURL: "https://shop.example/two", ProjectID: "proj-2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := m.Stop(second.ID); !ok {
+		t.Fatal("Stop() did not find second session")
+	}
+	waitForRecordingStatus(t, m, second.ID, BrowserRecordingStopped)
+
+	all := m.List("")
+	if len(all) != 2 {
+		t.Fatalf("List() count = %d, want 2", len(all))
+	}
+	oneProject := m.List("proj-1")
+	if len(oneProject) != 1 || oneProject[0].ID != first.ID {
+		t.Fatalf("List(proj-1) = %+v, want first session", oneProject)
+	}
+
+	deleted, ok, err := m.Delete(first.ID)
+	if !ok || err != nil {
+		t.Fatalf("Delete() ok=%v err=%v", ok, err)
+	}
+	if deleted.ID != first.ID {
+		t.Fatalf("deleted session = %+v", deleted)
+	}
+	if _, ok := m.Get(first.ID); ok {
+		t.Fatal("deleted session should not be retrievable")
+	}
+	if types := broadcastTypes(drainHubBroadcasts(t, hub)); !containsString(types, "browser_recording_deleted") {
+		t.Fatalf("broadcasts = %v, want browser_recording_deleted", types)
+	}
+
+	liveBackend := newFakeBrowserRecorder(recordedBrowserArtifact())
+	liveBackend.install(m)
+	live, err := m.Start(BrowserRecordingStartRequest{Name: "Live", StartURL: "https://shop.example/live"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := m.Delete(live.ID); !ok || err == nil {
+		t.Fatalf("Delete(live) ok=%v err=%v, want conflict", ok, err)
+	}
+
+	oldStoppedAt := time.Now().Add(-48 * time.Hour)
+	m.mu.Lock()
+	m.sessions["old"] = &BrowserRecordingSession{ID: "old", Name: "Old", Status: BrowserRecordingStopped, StartedAt: oldStoppedAt, StoppedAt: &oldStoppedAt}
+	m.mu.Unlock()
+	m.retention = 24 * time.Hour
+	if removed := m.PruneExpired(time.Now()); removed != 1 {
+		t.Fatalf("PruneExpired removed %d, want 1", removed)
+	}
+	if _, ok := m.Get("old"); ok {
+		t.Fatal("old terminal session should be pruned")
+	}
+	if _, ok := m.Get(live.ID); !ok {
+		t.Fatal("live session should not be pruned")
 	}
 }
 
@@ -504,6 +669,11 @@ func TestBrowserRecordingManagerForceStopsStuckCleanup(t *testing.T) {
 	if !strings.Contains(strings.Join(forced.Warnings, "\n"), "force-finished") {
 		t.Errorf("forced warnings = %v, want force-finished warning", forced.Warnings)
 	}
+	waitForCondition(t, time.Second, func() bool {
+		fake.mu.Lock()
+		defer fake.mu.Unlock()
+		return fake.forceCalls == 1
+	}, "backend ForceStop call")
 	if active := m.Active(); active != nil {
 		t.Errorf("Active() after force stop = %+v, want nil", active)
 	}
@@ -511,11 +681,25 @@ func TestBrowserRecordingManagerForceStopsStuckCleanup(t *testing.T) {
 		t.Errorf("Start() after force stop error: %v", err)
 	}
 
+	fake.mu.Lock()
+	fake.session.HAR = []byte(`{"log":{"entries":[]}}`)
+	fake.session.StorageState = []byte(`{"cookies":[]}`)
+	fake.mu.Unlock()
 	close(fake.stopRelease)
-	waitForRecordingStatus(t, m, started.ID, BrowserRecordingStopped)
+	waitForCondition(t, time.Second, func() bool {
+		artifact, _, ok := m.Artifact(started.ID)
+		return ok && artifact != nil && string(artifact.HAR) == `{"log":{"entries":[]}}`
+	}, "late force-stop artifact recovery")
 	after, _ := m.Get(started.ID)
 	if after.StopReason != browserRecordingStopForced {
 		t.Errorf("late graceful cleanup changed stop reason to %q", after.StopReason)
+	}
+	artifact, _, ok := m.Artifact(started.ID)
+	if !ok || string(artifact.HAR) != `{"log":{"entries":[]}}` || string(artifact.StorageState) != `{"cookies":[]}` {
+		t.Fatalf("late artifact = %+v ok=%v, want recovered HAR and storage state", artifact, ok)
+	}
+	if !strings.Contains(strings.Join(artifact.Warnings, "\n"), "force-finished") {
+		t.Errorf("late artifact warnings = %v, want retained force-stop warning", artifact.Warnings)
 	}
 	if types := broadcastTypes(drainHubBroadcasts(t, hub)); !containsString(types, "browser_recording_force_stopped") {
 		t.Errorf("broadcasts = %v, want force stop broadcast", types)

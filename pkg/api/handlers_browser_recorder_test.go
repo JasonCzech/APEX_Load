@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"runtime"
@@ -144,7 +145,7 @@ func TestBrowserRecordingAvailabilityRules(t *testing.T) {
 		t.Setenv("APEXLOAD_ENV", "production")
 		t.Setenv("APEXLOAD_BROWSER_RECORDER", "")
 		got := server.browserRecordingAvailability()
-		if got.Available || !strings.Contains(got.Reason, "production") {
+		if got.Available || got.Code != browserRecordingUnavailableProductionDisabled || !strings.Contains(got.Reason, "production") {
 			t.Errorf("availability = %+v, want unavailable with production reason", got)
 		}
 	})
@@ -169,10 +170,37 @@ func TestBrowserRecordingAvailabilityRules(t *testing.T) {
 	t.Run("kill switch wins everywhere", func(t *testing.T) {
 		t.Setenv("APEXLOAD_ENV", "")
 		t.Setenv("APEXLOAD_BROWSER_RECORDER", "off")
-		if got := server.browserRecordingAvailability(); got.Available {
+		if got := server.browserRecordingAvailability(); got.Available || got.Code != browserRecordingUnavailableDisabled {
 			t.Errorf("availability = %+v, want unavailable", got)
 		}
 	})
+}
+
+func TestHandleStartBrowserRecordingClassifiesMissingBrowserInstall(t *testing.T) {
+	fake := newFakeBrowserRecorder(nil)
+	fake.startErr = errors.New("launch chromium: executable doesn't exist; please run: playwright install chromium")
+	server := newBrowserRecorderTestServer(t, fake)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions",
+		bytes.NewBufferString(`{"name":"Checkout","start_url":"https://shop.example/login","project_id":"proj-1"}`))
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusServiceUnavailable {
+		t.Fatalf("start status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	var payload struct {
+		Error        string                       `json:"error"`
+		Availability browserRecordingAvailability `json:"availability"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Availability.Code != browserRecordingUnavailableBrowsersNotInstalled || payload.Availability.Available {
+		t.Fatalf("availability = %+v, want browsers_not_installed", payload.Availability)
+	}
+	if payload.Error == "" || !strings.Contains(strings.ToLower(payload.Error), "chromium") {
+		t.Fatalf("error = %q, want install guidance", payload.Error)
+	}
 }
 
 func TestHandleGetAndStopBrowserRecording(t *testing.T) {
@@ -199,6 +227,37 @@ func TestHandleGetAndStopBrowserRecording(t *testing.T) {
 	stopped := stopBrowserRecordingViaAPI(t, server, id)
 	if stopped.Status != BrowserRecordingStopped || stopped.StopReason != browserRecordingStopRequested {
 		t.Errorf("stop session = %+v", &stopped)
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/browser-recorder/sessions?project_id=proj-1", nil)
+	listResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(listResp, listReq)
+	if listResp.Code != http.StatusOK {
+		t.Fatalf("list status = %d body=%s", listResp.Code, listResp.Body.String())
+	}
+	var listPayload struct {
+		Count    int                       `json:"count"`
+		Sessions []BrowserRecordingSession `json:"sessions"`
+	}
+	if err := json.Unmarshal(listResp.Body.Bytes(), &listPayload); err != nil {
+		t.Fatal(err)
+	}
+	if listPayload.Count != 1 || len(listPayload.Sessions) != 1 || listPayload.Sessions[0].ID != id {
+		t.Fatalf("list payload = %+v, want stopped session", listPayload)
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/v1/browser-recorder/sessions/"+id, nil)
+	deleteResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(deleteResp, deleteReq)
+	if deleteResp.Code != http.StatusOK {
+		t.Fatalf("delete status = %d body=%s", deleteResp.Code, deleteResp.Body.String())
+	}
+
+	deletedGet := httptest.NewRequest(http.MethodGet, "/api/v1/browser-recorder/sessions/"+id, nil)
+	deletedResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(deletedResp, deletedGet)
+	if deletedResp.Code != http.StatusNotFound {
+		t.Fatalf("deleted get status = %d, want 404", deletedResp.Code)
 	}
 
 	missing := httptest.NewRequest(http.MethodGet, "/api/v1/browser-recorder/sessions/nope", nil)
@@ -726,6 +785,12 @@ func TestHandleBrowserRecordingStepMutations(t *testing.T) {
 	}
 	if !fake.session.Steps[0].MarkSecret {
 		t.Error("step 1 not marked secret")
+	}
+	if code := patch("1", `{"mark_param":true}`); code != http.StatusOK {
+		t.Errorf("mark-param step status = %d", code)
+	}
+	if !fake.session.Steps[0].MarkSecret || !fake.session.Steps[0].MarkParam {
+		t.Errorf("partial mark patch clobbered step marks: secret=%v param=%v", fake.session.Steps[0].MarkSecret, fake.session.Steps[0].MarkParam)
 	}
 	// Delete last step.
 	delReq := httptest.NewRequest(http.MethodDelete, "/api/v1/browser-recorder/sessions/"+id+"/steps/last", nil)

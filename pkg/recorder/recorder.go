@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"mime"
 	"net/http"
 	"net/url"
 	"os"
@@ -26,6 +27,7 @@ import (
 
 const defaultBodyCaptureLimitBytes = 512 * 1024
 const streamingRecordDelay = 250 * time.Millisecond
+const maxMultipartRequestCaptureBytes = 50 << 20
 
 const (
 	defaultRecorderCADir  = "artifacts/recorder"
@@ -91,6 +93,7 @@ type Session struct {
 	mu          sync.Mutex
 	seq         int
 	lastReqTime time.Time
+	lastReqEnd  time.Time
 	notify      func(SessionEvent)
 }
 
@@ -137,6 +140,7 @@ type Recorder struct {
 	caKey     *rsa.PrivateKey
 	caCertPEM []byte
 	certCache sync.Map // map[string]*tls.Certificate
+	tunnels   sync.Map // map[*recorderTunnel]struct{}
 }
 
 func New(proxyAddr string) *Recorder {
@@ -231,6 +235,7 @@ func (r *Recorder) StopSession(id string) (*Session, error) {
 	if r.active != nil && r.active.ID == id {
 		r.active = nil
 	}
+	r.closeTunnelsForSession(id)
 
 	slog.Info("recording session stopped", "id", id, "requests", reqCount)
 	return s, nil
@@ -536,12 +541,16 @@ func (r *Recorder) handleProxy(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, respBodySize, respBodyTruncated, _ := copyAndCaptureBody(w, resp.Body, responseCaptureLimit(session))
 	elapsed := time.Since(start)
-	w.Write(respBody)
 
 	if session != nil {
-		r.recordRequestStarted(session, req, bodyBytes, resp, respBody, elapsed, start)
+		r.recordRequestWithOptions(session, req, bodyBytes, resp, respBody, elapsed, recordOptions{
+			requestStartedAt:          start,
+			forceResponseBodyTruncate: respBodyTruncated,
+			responseBodySizeBytes:     boundedInt(respBodySize),
+			responseBodySizeKnown:     true,
+		})
 	}
 }
 
@@ -574,14 +583,12 @@ func isStreamingResponse(resp *http.Response) bool {
 }
 
 func (r *Recorder) streamAndRecordResponse(w io.Writer, flush func(), session *Session, req *http.Request, reqBody []byte, resp *http.Response, startedAt time.Time) {
-	limit := defaultBodyCaptureLimitBytes
-	if session != nil && session.Filters.BodyCaptureLimitBytes > 0 {
-		limit = session.Filters.BodyCaptureLimitBytes
-	}
+	limit := responseCaptureLimit(session)
 
 	var (
 		mu       sync.Mutex
 		captured []byte
+		wireSize int64
 		once     sync.Once
 	)
 	record := func() {
@@ -590,10 +597,13 @@ func (r *Recorder) streamAndRecordResponse(w io.Writer, flush func(), session *S
 		}
 		mu.Lock()
 		snapshot := append([]byte(nil), captured...)
+		size := wireSize
 		mu.Unlock()
 		r.recordRequestWithOptions(session, req, reqBody, resp, snapshot, time.Since(startedAt), recordOptions{
 			requestStartedAt:          startedAt,
 			forceResponseBodyTruncate: true,
+			responseBodySizeBytes:     boundedInt(size),
+			responseBodySizeKnown:     true,
 		})
 	}
 	timer := time.AfterFunc(streamingRecordDelay, func() {
@@ -616,6 +626,7 @@ func (r *Recorder) streamAndRecordResponse(w io.Writer, flush func(), session *S
 
 			captureFull := false
 			mu.Lock()
+			wireSize += int64(n)
 			if len(captured) < limit {
 				remaining := limit - len(captured)
 				if remaining > len(chunk) {
@@ -636,8 +647,73 @@ func (r *Recorder) streamAndRecordResponse(w io.Writer, flush func(), session *S
 	}
 }
 
+func responseCaptureLimit(session *Session) int {
+	if session != nil && session.Filters.BodyCaptureLimitBytes > 0 {
+		return session.Filters.BodyCaptureLimitBytes
+	}
+	return defaultBodyCaptureLimitBytes
+}
+
+func copyAndCaptureBody(dst io.Writer, src io.Reader, limit int) ([]byte, int64, bool, error) {
+	if limit <= 0 {
+		limit = defaultBodyCaptureLimitBytes
+	}
+	var (
+		captured  []byte
+		wireSize  int64
+		truncated bool
+		firstErr  error
+	)
+	buf := make([]byte, 32*1024)
+	for {
+		n, readErr := src.Read(buf)
+		if n > 0 {
+			chunk := buf[:n]
+			written, writeErr := dst.Write(chunk)
+			wireSize += int64(written)
+			if len(captured) < limit {
+				remaining := limit - len(captured)
+				if remaining > written {
+					remaining = written
+				}
+				captured = append(captured, chunk[:remaining]...)
+			}
+			if written < n {
+				truncated = true
+				firstErr = io.ErrShortWrite
+				break
+			}
+			if len(captured) >= limit && wireSize > int64(limit) {
+				truncated = true
+			}
+			if writeErr != nil {
+				firstErr = writeErr
+				break
+			}
+		}
+		if readErr != nil {
+			if readErr != io.EOF {
+				firstErr = readErr
+			}
+			break
+		}
+	}
+	return captured, wireSize, truncated, firstErr
+}
+
+func boundedInt(n int64) int {
+	if n <= 0 {
+		return 0
+	}
+	maxInt := int64(int(^uint(0) >> 1))
+	if n > maxInt {
+		return int(maxInt)
+	}
+	return int(n)
+}
+
 func (r *Recorder) recordRequest(s *Session, req *http.Request, reqBody []byte, resp *http.Response, respBody []byte, elapsed time.Duration) int {
-	return r.recordRequestWithOptions(s, req, reqBody, resp, respBody, elapsed, recordOptions{requestStartedAt: time.Now()})
+	return r.recordRequestWithOptions(s, req, reqBody, resp, respBody, elapsed, recordOptions{requestStartedAt: time.Now().Add(-elapsed)})
 }
 
 func (r *Recorder) recordRequestStarted(s *Session, req *http.Request, reqBody []byte, resp *http.Response, respBody []byte, elapsed time.Duration, requestStartedAt time.Time) int {
@@ -647,6 +723,8 @@ func (r *Recorder) recordRequestStarted(s *Session, req *http.Request, reqBody [
 type recordOptions struct {
 	requestStartedAt          time.Time
 	forceResponseBodyTruncate bool
+	responseBodySizeBytes     int
+	responseBodySizeKnown     bool
 }
 
 func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBody []byte, resp *http.Response, respBody []byte, elapsed time.Duration, opts recordOptions) int {
@@ -655,6 +733,12 @@ func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBo
 
 	if s.Status != "recording" {
 		return 0
+	}
+	if opts.requestStartedAt.IsZero() {
+		opts.requestStartedAt = time.Now().Add(-elapsed)
+	}
+	if elapsed < 0 {
+		elapsed = 0
 	}
 
 	parsed, _ := url.Parse(req.URL.String())
@@ -689,14 +773,18 @@ func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBo
 	s.seq++
 
 	var thinkMs int64
-	if !s.lastReqTime.IsZero() {
-		thinkMs = opts.requestStartedAt.Sub(s.lastReqTime).Milliseconds()
+	if !s.lastReqEnd.IsZero() {
+		thinkMs = opts.requestStartedAt.Sub(s.lastReqEnd).Milliseconds()
 		if thinkMs < 0 {
 			thinkMs = 0
 		}
 	}
 	if s.lastReqTime.IsZero() || opts.requestStartedAt.After(s.lastReqTime) {
 		s.lastReqTime = opts.requestStartedAt
+	}
+	responseEndedAt := opts.requestStartedAt.Add(elapsed)
+	if s.lastReqEnd.IsZero() || responseEndedAt.After(s.lastReqEnd) {
+		s.lastReqEnd = responseEndedAt
 	}
 
 	headersMulti := sanitizeHeaders(req.Header, s.Filters.RedactHeaders, true, s.Filters.CaptureCookies)
@@ -721,7 +809,11 @@ func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBo
 	if opts.forceResponseBodyTruncate {
 		respBodyTruncated = true
 	}
-	reqBodyStr, reqBodyTruncated, reqBodyEncoding := capturedBody(reqBody, req.Header.Get("Content-Type"), s.Filters.BodyCaptureLimitBytes)
+	reqBodyStr, reqBodyTruncated, reqBodyEncoding := capturedRequestBody(reqBody, req.Header.Get("Content-Type"), s.Filters.BodyCaptureLimitBytes)
+	responseBodySizeBytes := len(respBody)
+	if opts.responseBodySizeKnown {
+		responseBodySizeBytes = opts.responseBodySizeBytes
+	}
 
 	if s.BaseURL == "" && parsed != nil {
 		s.BaseURL = parsed.Scheme + "://" + parsed.Host
@@ -730,7 +822,7 @@ func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBo
 	resourceType := classifyResource(parsed, ct)
 	rec := RecordedRequest{
 		Seq:                   s.seq,
-		Timestamp:             time.Now(),
+		Timestamp:             opts.requestStartedAt,
 		Method:                req.Method,
 		URL:                   req.URL.String(),
 		Scheme:                parsed.Scheme,
@@ -748,7 +840,7 @@ func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBo
 		ResponseTimeMs:        float64(elapsed.Microseconds()) / 1000.0,
 		ResponseBody:          respBodyStr,
 		ResponseBodyEncoding:  respBodyEncoding,
-		ResponseBodySizeBytes: len(respBodyForCapture),
+		ResponseBodySizeBytes: responseBodySizeBytes,
 		ResponseBodyTruncated: respBodyTruncated,
 		ResponseHeaders:       respHeaders,
 		ResponseHeadersMulti:  respHeadersMulti,
@@ -906,6 +998,34 @@ func capturedBody(body []byte, contentType string, limit int) (string, bool, str
 		return base64.StdEncoding.EncodeToString(captured), truncated, "base64"
 	}
 	return string(captured), truncated, ""
+}
+
+func capturedRequestBody(body []byte, contentType string, limit int) (string, bool, string) {
+	if len(body) == 0 {
+		return "", false, ""
+	}
+	if isMultipartContentType(contentType) {
+		if len(body) <= maxMultipartRequestCaptureBytes {
+			return base64.StdEncoding.EncodeToString(body), false, "base64"
+		}
+		if limit <= 0 {
+			limit = defaultBodyCaptureLimitBytes
+		}
+		if limit > maxMultipartRequestCaptureBytes {
+			limit = maxMultipartRequestCaptureBytes
+		}
+		return base64.StdEncoding.EncodeToString(body[:limit]), true, "base64"
+	}
+	return capturedBody(body, contentType, limit)
+}
+
+func isMultipartContentType(contentType string) bool {
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		mediaType = strings.TrimSpace(strings.Split(contentType, ";")[0])
+	}
+	mediaType = strings.ToLower(strings.TrimSpace(mediaType))
+	return strings.HasPrefix(mediaType, "multipart/")
 }
 
 func classifyResource(u *url.URL, contentType string) string {

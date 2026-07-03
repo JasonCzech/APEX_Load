@@ -38,6 +38,22 @@ const frameHTML = `<!doctype html><html><body>
   <button id="paybtn" name="pay-now">Pay</button>
 </body></html>`
 
+const keyboardFixtureHTML = `<!doctype html><html><body>
+  <form onsubmit="event.preventDefault(); window.formSubmits = (window.formSubmits || 0) + 1">
+    <input id="first" name="first" type="text">
+    <input id="second" name="second" type="text">
+    <button id="save" type="button" onclick="window.saveClicks = (window.saveClicks || 0) + 1">Save</button>
+  </form>
+</body></html>`
+
+const popupMainHTML = `<!doctype html><html><body>
+  <button id="main" type="button">Main action</button>
+</body></html>`
+
+const popupChildHTML = `<!doctype html><html><body>
+  <button id="child" type="button">Popup action</button>
+</body></html>`
+
 func fixtureServer() *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -51,6 +67,24 @@ func fixtureServer() *httptest.Server {
 			w.Header().Set("Content-Type", "text/html")
 			_, _ = w.Write([]byte(fixtureHTML))
 		}
+	}))
+}
+
+func keyboardFixtureServer() *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(keyboardFixtureHTML))
+	}))
+}
+
+func popupFixtureServer() *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		if r.URL.Path == "/popup" {
+			_, _ = w.Write([]byte(popupChildHTML))
+			return
+		}
+		_, _ = w.Write([]byte(popupMainHTML))
 	}))
 }
 
@@ -187,6 +221,155 @@ func TestRecorderCapturesModernWebInteractions(t *testing.T) {
 	}
 }
 
+func TestRecorderCapturesSwitchBackToEarlierWindow(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping browser integration test in -short mode")
+	}
+	server := popupFixtureServer()
+	defer server.Close()
+
+	recorder := New(Options{StartURL: server.URL, Headless: true})
+	if err := recorder.Start(); err != nil {
+		t.Skipf("browser runtime unavailable: %v", err)
+	}
+	defer func() { _, _ = recorder.Stop() }()
+
+	pages := recorder.context.Pages()
+	if len(pages) == 0 {
+		t.Fatal("no recording page open")
+	}
+	main := pages[0]
+	if _, err := main.Evaluate(`(url) => window.open(url, '_blank')`, server.URL+"/popup"); err != nil {
+		t.Fatalf("open popup: %v", err)
+	}
+	waitForSteps(t, recorder, 1, 10*time.Second)
+	waitForPages(t, recorder, 2, 10*time.Second)
+
+	if err := main.BringToFront(); err != nil {
+		t.Fatalf("bring main to front: %v", err)
+	}
+	if err := main.Click("#main"); err != nil {
+		t.Fatalf("click main: %v", err)
+	}
+	waitForSteps(t, recorder, 3, 10*time.Second)
+
+	session, err := recorder.Stop()
+	if err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+	if len(session.Steps) < 3 {
+		t.Fatalf("steps = %+v, want popup switch, switch-back, click", session.Steps)
+	}
+	if session.Steps[0].Kind != StepSwitchWindow || !strings.HasSuffix(session.Steps[0].Value, "/popup") {
+		t.Fatalf("first step = %+v, want switch to popup", session.Steps[0])
+	}
+	if session.Steps[1].Kind != StepSwitchWindow || session.Steps[1].Value != server.URL+"/" {
+		t.Fatalf("second step = %+v, want switch back to main page", session.Steps[1])
+	}
+	if session.Steps[2].Kind != StepClick {
+		t.Fatalf("third step = %+v, want click after switch-back", session.Steps[2])
+	}
+}
+
+func TestRecorderCapturesTabFillBeforePressKeyWithoutBlurDuplicate(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping browser integration test in -short mode")
+	}
+	server := keyboardFixtureServer()
+	defer server.Close()
+
+	recorder := New(Options{StartURL: server.URL, Headless: true})
+	if err := recorder.Start(); err != nil {
+		t.Skipf("browser runtime unavailable: %v", err)
+	}
+	defer func() { _, _ = recorder.Stop() }()
+
+	pages := recorder.context.Pages()
+	if len(pages) == 0 {
+		t.Fatal("no recording page open")
+	}
+	page := pages[0]
+
+	if err := page.Fill("#first", "alice"); err != nil {
+		t.Fatalf("fill first: %v", err)
+	}
+	if err := page.Press("#first", "Tab"); err != nil {
+		t.Fatalf("press tab: %v", err)
+	}
+
+	waitForSteps(t, recorder, 2, 10*time.Second)
+	time.Sleep(350 * time.Millisecond)
+	session, err := recorder.Stop()
+	if err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+
+	if len(session.Steps) != 2 {
+		t.Fatalf("steps = %d, want exactly fill + press_key: %+v", len(session.Steps), session.Steps)
+	}
+	if session.Steps[0].Kind != StepFill || session.Steps[0].Value != "alice" {
+		t.Fatalf("first step = %+v, want fill(alice)", session.Steps[0])
+	}
+	if session.Steps[1].Kind != StepPressKey || session.Steps[1].Value != "Tab" {
+		t.Fatalf("second step = %+v, want press_key(Tab)", session.Steps[1])
+	}
+}
+
+func TestRecorderSuppressesSyntheticClickAfterEnterPress(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping browser integration test in -short mode")
+	}
+	server := keyboardFixtureServer()
+	defer server.Close()
+
+	recorder := New(Options{StartURL: server.URL, Headless: true})
+	if err := recorder.Start(); err != nil {
+		t.Skipf("browser runtime unavailable: %v", err)
+	}
+	defer func() { _, _ = recorder.Stop() }()
+
+	pages := recorder.context.Pages()
+	if len(pages) == 0 {
+		t.Fatal("no recording page open")
+	}
+	page := pages[0]
+
+	if err := page.Press("#save", "Enter"); err != nil {
+		t.Fatalf("press enter: %v", err)
+	}
+	waitForSteps(t, recorder, 1, 10*time.Second)
+	time.Sleep(350 * time.Millisecond)
+
+	clicks, err := page.Evaluate(`() => window.saveClicks || 0`)
+	if err != nil {
+		t.Fatalf("read save click count: %v", err)
+	}
+	if got := evalInt(t, clicks); got != 1 {
+		t.Fatalf("save clicks = %d, want 1 keyboard activation", got)
+	}
+
+	session, err := recorder.Stop()
+	if err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+
+	var pressKeys, clicksRecorded int
+	for _, step := range session.Steps {
+		switch step.Kind {
+		case StepPressKey:
+			pressKeys++
+			if step.Value != "Enter" {
+				t.Errorf("press_key value = %q, want Enter", step.Value)
+			}
+		case StepClick:
+			clicksRecorded++
+		}
+	}
+	if pressKeys != 1 || clicksRecorded != 0 {
+		t.Fatalf("recorded press_key=%d click=%d, want press_key=1 click=0: %+v", pressKeys, clicksRecorded, session.Steps)
+	}
+}
+
 func waitForSteps(t *testing.T, recorder *Recorder, want int, timeout time.Duration) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
@@ -203,4 +386,33 @@ func waitForSteps(t *testing.T, recorder *Recorder, want int, timeout time.Durat
 	steps := recorder.session.Steps
 	recorder.mu.Unlock()
 	t.Fatalf("timed out waiting for %d steps, have %d: %+v", want, len(steps), steps)
+}
+
+func waitForPages(t *testing.T, recorder *Recorder, want int, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if got := len(recorder.context.Pages()); got >= want {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %d pages, have %d", want, len(recorder.context.Pages()))
+}
+
+func evalInt(t *testing.T, raw any) int {
+	t.Helper()
+	switch v := raw.(type) {
+	case int:
+		return v
+	case int64:
+		return int(v)
+	case float64:
+		return int(v)
+	case float32:
+		return int(v)
+	default:
+		t.Fatalf("unexpected numeric result %T (%v)", raw, raw)
+		return 0
+	}
 }

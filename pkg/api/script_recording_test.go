@@ -28,12 +28,13 @@ func TestRedactBaselineObservation(t *testing.T) {
 	if got.RequestHeaders["Authorization"] != "[REDACTED]" {
 		t.Errorf("Basic auth must be redacted, got %q", got.RequestHeaders["Authorization"])
 	}
-	// Correlation candidates preserved everywhere.
+	// Body correlation candidates are preserved; request headers are scrubbed as
+	// persisted artifact metadata.
 	if !strings.Contains(got.RequestBody, "tok-keep") {
 		t.Errorf("CSRF in body must be preserved: %q", got.RequestBody)
 	}
-	if got.RequestHeaders["X-CSRF-Token"] != "csrf-keep" {
-		t.Errorf("CSRF header must be preserved, got %q", got.RequestHeaders["X-CSRF-Token"])
+	if got.RequestHeaders["X-CSRF-Token"] != "[REDACTED]" {
+		t.Errorf("CSRF header must be redacted in persisted baselines, got %q", got.RequestHeaders["X-CSRF-Token"])
 	}
 	// Response is never redacted — it is the source of dynamic values.
 	if got.ResponseBody != `{"session_id":"sess-keep","token":"abc"}` {

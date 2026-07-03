@@ -26,4 +26,5 @@ func (b *Browser) close() {
 	b.networkEntries = nil
 	b.networkEntriesDropped = 0
 	b.networkBodyBytes = 0
+	b.resetWSEvents()
 }

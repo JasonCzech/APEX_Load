@@ -12,6 +12,7 @@ import (
 	"net/http/cookiejar"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -216,7 +217,7 @@ func applyProxy(transport *http.Transport, config map[string]any) error {
 		transport.Proxy = nil
 		return nil
 	case "system":
-		transport.Proxy = http.ProxyFromEnvironment
+		transport.Proxy = proxyWithNoProxy(http.ProxyFromEnvironment, parseNoProxyPatterns(config))
 		return nil
 	case "custom", "":
 		// Custom proxy stays URL-driven; empty mode preserves legacy behavior.
@@ -244,8 +245,121 @@ func applyProxy(transport *http.Transport, config map[string]any) error {
 		parsedProxy.User = url.UserPassword(proxyUser, proxyPass)
 	}
 
-	transport.Proxy = http.ProxyURL(parsedProxy)
+	transport.Proxy = proxyWithNoProxy(http.ProxyURL(parsedProxy), parseNoProxyPatterns(config))
 	return nil
+}
+
+func proxyWithNoProxy(proxy func(*http.Request) (*url.URL, error), patterns []string) func(*http.Request) (*url.URL, error) {
+	if len(patterns) == 0 {
+		return proxy
+	}
+	return func(req *http.Request) (*url.URL, error) {
+		if req != nil && req.URL != nil && noProxyMatches(req.URL.Host, patterns) {
+			return nil, nil
+		}
+		return proxy(req)
+	}
+}
+
+func parseNoProxyPatterns(config map[string]any) []string {
+	keys := []string{"no_proxy", "proxy_no_proxy", "proxy_bypass", "proxy_bypass_hosts"}
+	seen := make(map[string]struct{})
+	var patterns []string
+	add := func(value string) {
+		for _, part := range strings.FieldsFunc(value, func(r rune) bool { return r == ',' || r == ';' }) {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			key := strings.ToLower(part)
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			patterns = append(patterns, part)
+		}
+	}
+	for _, key := range keys {
+		if raw := protocol.ConfigString(config, key); raw != "" {
+			add(raw)
+		}
+		for _, value := range protocol.ConfigStringSlice(config, key) {
+			add(value)
+		}
+	}
+	return patterns
+}
+
+func noProxyMatches(reqHost string, patterns []string) bool {
+	host, port := splitNoProxyHostPort(reqHost)
+	if host == "" {
+		return false
+	}
+	for _, pattern := range patterns {
+		patternHost, patternPort := splitNoProxyHostPort(pattern)
+		if patternHost == "" {
+			continue
+		}
+		if patternHost == "*" {
+			return true
+		}
+		if patternPort != "" && patternPort != port {
+			continue
+		}
+		if _, network, err := net.ParseCIDR(patternHost); err == nil {
+			if ip := net.ParseIP(host); ip != nil && network.Contains(ip) {
+				return true
+			}
+			continue
+		}
+		if ip := net.ParseIP(patternHost); ip != nil {
+			if ip.Equal(net.ParseIP(host)) {
+				return true
+			}
+			continue
+		}
+		if strings.HasPrefix(patternHost, "*.") {
+			suffix := strings.TrimPrefix(patternHost, "*")
+			if strings.HasSuffix(host, suffix) && host != strings.TrimPrefix(suffix, ".") {
+				return true
+			}
+			continue
+		}
+		if strings.HasPrefix(patternHost, ".") {
+			root := strings.TrimPrefix(patternHost, ".")
+			if host == root || strings.HasSuffix(host, patternHost) {
+				return true
+			}
+			continue
+		}
+		if host == patternHost || strings.HasSuffix(host, "."+patternHost) {
+			return true
+		}
+	}
+	return false
+}
+
+func splitNoProxyHostPort(value string) (string, string) {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return "", ""
+	}
+	if strings.HasPrefix(value, "[") {
+		if host, port, err := net.SplitHostPort(value); err == nil {
+			return strings.Trim(host, "[]"), port
+		}
+		return strings.Trim(value, "[]"), ""
+	}
+	if host, port, err := net.SplitHostPort(value); err == nil {
+		return strings.Trim(host, "."), port
+	}
+	if idx := strings.LastIndex(value, ":"); idx > 0 && strings.Count(value, ":") == 1 {
+		maybePort := value[idx+1:]
+		if _, err := strconv.Atoi(maybePort); err == nil {
+			return strings.Trim(value[:idx], "."), maybePort
+		}
+	}
+	return strings.Trim(value, "."), ""
 }
 
 func buildCookieJar(config map[string]any) http.CookieJar {
@@ -259,6 +373,39 @@ func buildCookieJar(config map[string]any) http.CookieJar {
 
 	jar, _ := cookiejar.New(nil)
 	return jar
+}
+
+func parseTraceparentEnabled(config map[string]any) bool {
+	enabled := true
+	for _, key := range []string{"traceparent_enabled", "web_traceparent_enabled", "generate_traceparent", "web_generate_traceparent"} {
+		if value, ok := optionalConfigBool(config, key); ok {
+			enabled = value
+		}
+	}
+	for _, key := range []string{"disable_traceparent", "web_disable_traceparent"} {
+		if value, ok := optionalConfigBool(config, key); ok && value {
+			enabled = false
+		}
+	}
+	return enabled
+}
+
+func optionalConfigBool(config map[string]any, key string) (bool, bool) {
+	if config == nil {
+		return false, false
+	}
+	switch value := config[key].(type) {
+	case bool:
+		return value, true
+	case string:
+		parsed, err := strconv.ParseBool(strings.TrimSpace(value))
+		if err != nil {
+			return false, false
+		}
+		return parsed, true
+	default:
+		return false, false
+	}
 }
 
 // ClearCookies satisfies protocol.CookieController. It replaces the client's

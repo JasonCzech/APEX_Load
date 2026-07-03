@@ -83,6 +83,27 @@ func TestReadSSEResponseMaxEvents(t *testing.T) {
 	}
 }
 
+func TestReadSSEResponseTimeoutAfterPartialEventFails(t *testing.T) {
+	reader, writer := io.Pipe()
+	defer writer.Close()
+	go func() {
+		_, _ = writer.Write([]byte("event: token\ndata: hello\n\n"))
+		time.Sleep(150 * time.Millisecond)
+		_ = writer.Close()
+	}()
+
+	res, err := readSSEResponse(context.Background(), reader, map[string]any{
+		"stream_timeout_ms": float64(20),
+		"max_body_bytes":    float64(-1),
+	}, time.Now())
+	if err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("readSSEResponse error = %v, want timeout", err)
+	}
+	if res.EventCount != 1 {
+		t.Fatalf("EventCount = %d, want partial event count retained", res.EventCount)
+	}
+}
+
 func TestSSEMaxBodyBytesDefault(t *testing.T) {
 	if got := sseMaxBodyBytes(nil); got != defaultSSEMaxBodyBytes {
 		t.Fatalf("default cap = %d, want %d", got, defaultSSEMaxBodyBytes)

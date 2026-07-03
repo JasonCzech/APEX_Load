@@ -57,6 +57,17 @@ func TestBrowserMatchWSEvents(t *testing.T) {
 	if len(matches) != 1 || matches[0].Seq != 2 {
 		t.Fatalf("matches = %+v, want received ready frame", matches)
 	}
+	if matches := b.matchWSEvents(browserWSMatcher{URLContains: "live", Direction: "received", Match: `"ready"`, MatchMode: "contains", MinSeq: 2}); len(matches) != 0 {
+		t.Fatalf("matches with MinSeq=2 = %+v, want no stale frame", matches)
+	}
+	b.advanceWSWatermark([]browserWSEvent{{Seq: 2}})
+	if got := b.currentWSWatermark(); got != 2 {
+		t.Fatalf("ws watermark = %d, want 2", got)
+	}
+	b.resetWSEvents()
+	if got := b.currentWSWatermark(); got != 0 || len(b.wsEvents) != 0 || b.wsSeq != 0 {
+		t.Fatalf("reset ws state = watermark %d seq %d events %d", got, b.wsSeq, len(b.wsEvents))
+	}
 	if !browserWSPayloadMatches(`{"type":"ready"}`, `"type":"ready"`, "contains") {
 		t.Fatal("contains payload match failed")
 	}

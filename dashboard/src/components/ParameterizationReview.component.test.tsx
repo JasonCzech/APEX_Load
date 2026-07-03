@@ -144,6 +144,63 @@ describe('ParameterizationReview', () => {
     expect(container.textContent).toContain('Applied 1 change(s)')
   })
 
+  it('allows the selection to be applied again after the user changes it', async () => {
+    applyMock
+      .mockResolvedValueOnce({ script, diffs: [{ kind: 'value_replaced', path: '/actions/0/target', suggestion_id: 'pz_auto' }], applied_count: 1 })
+      .mockResolvedValueOnce({ script, diffs: [{ kind: 'value_replaced', path: '/actions/1/target', suggestion_id: 'pz_review' }], applied_count: 1 })
+    render(buildParameterization([
+      suggestion({ id: 'pz_auto', kind: 'correlation', var_name: 'corr_token', confidence: 0.9, auto_apply: true }),
+      suggestion({ id: 'pz_review', var_name: 'user_id', auto_apply: false }),
+    ]))
+
+    let applyButton = container.querySelector<HTMLButtonElement>('button.btn-primary')
+    await act(async () => {
+      applyButton!.click()
+    })
+    expect(container.textContent).toContain('Applied 1 change(s)')
+
+    const reviewBox = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')).find(box => !box.checked)
+    await act(async () => {
+      reviewBox!.click()
+    })
+    expect(container.textContent).not.toContain('Applied 1 change(s)')
+    applyButton = container.querySelector<HTMLButtonElement>('button.btn-primary')
+    expect(applyButton?.textContent).toContain('Apply Selected (2)')
+    await act(async () => {
+      applyButton!.click()
+    })
+
+    expect(applyMock).toHaveBeenLastCalledWith(expect.objectContaining({
+      selected_ids: ['pz_auto', 'pz_review'],
+    }))
+  })
+
+  it('resets stale applied state when the script changes', async () => {
+    applyMock.mockResolvedValue({ script: { ...script, name: 'Parameterized' }, diffs: [{ kind: 'value_replaced', path: '/actions/0/target', suggestion_id: 'pz_auto' }], applied_count: 1 })
+    const parameterization = buildParameterization([
+      suggestion({ id: 'pz_auto', auto_apply: true }),
+    ])
+    render(parameterization)
+
+    const applyButton = container.querySelector<HTMLButtonElement>('button.btn-primary')
+    await act(async () => {
+      applyButton!.click()
+    })
+    expect(container.textContent).toContain('Applied 1 change(s)')
+
+    act(() => {
+      root.render(
+        <ParameterizationReview
+          parameterization={parameterization}
+          script={{ ...script, name: 'Changed Script' }}
+          onApplied={vi.fn()}
+        />,
+      )
+    })
+    expect(container.textContent).not.toContain('Applied 1 change(s)')
+    expect(container.querySelector<HTMLButtonElement>('button.btn-primary')?.textContent).toContain('Apply Selected (1)')
+  })
+
   it('passes confirm_high_risk when a secret row is selected', async () => {
     applyMock.mockResolvedValue({ script, diffs: [], applied_count: 1 })
     render(buildParameterization([
@@ -163,6 +220,15 @@ describe('ParameterizationReview', () => {
       selected_ids: ['pz_secret'],
       confirm_high_risk: true,
     }))
+  })
+
+  it('masks high-risk sample values in the review list', () => {
+    render(buildParameterization([
+      suggestion({ id: 'pz_secret', kind: 'secret', var_name: 'PASSWORD', literal_value: 'super-secret', sample_value: 'super-secret', confidence: 0.9, high_risk: true }),
+    ]))
+
+    expect(container.textContent).toContain('••••••')
+    expect(container.textContent).not.toContain('super-secret')
   })
 
   it('shows the blocked reason without lifting state', async () => {

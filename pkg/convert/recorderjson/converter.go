@@ -460,8 +460,8 @@ func chromeElementActionNoSkip(step chromeStep) (dsl.Action, bool) {
 	if len(candidates) > 0 {
 		action.Metadata["source_selector_candidates"] = candidates
 		action.Metadata["source_selector_confidence"] = candidates[0].Confidence
-		if len(candidates) > 1 {
-			action.Metadata["source_selector_fallbacks"] = candidates[1:]
+		if fallbacks := selector.FallbacksForPrimary(candidates, best); len(fallbacks) > 0 {
+			action.Metadata["source_selector_fallbacks"] = fallbacks
 		}
 	}
 	return action, true

@@ -15,12 +15,17 @@ type capturedBrowserPageState struct {
 	screenshot string
 }
 
-func (b *Browser) finalizeActionResult(ctx context.Context, action *protocol.Action, result *protocol.Result, actionErr error, consoleStart, networkStart int, processBefore browserProcessSnapshot) {
+func (b *Browser) finalizeActionResult(ctx context.Context, action *protocol.Action, result *protocol.Result, actionErr error, consoleStart, networkStart int, processBefore browserProcessSnapshot, actionDuration time.Duration) {
 	pageState, captureErr := b.captureActionPageState(ctx, action, actionErr != nil)
 	b.applyCapturedPageState(result, pageState, consoleStart, networkStart)
-	result.Duration = time.Since(result.StartTime)
+	result.Duration = actionDuration
 	result.ClientMetrics = b.captureClientMetrics(ctx, result.Duration, processBefore)
 
+	if dialogErr := b.consumeDialogError(); dialogErr != nil {
+		result.ErrorMessage = dialogErr.Error()
+		result.Snapshot = browserErrorSnapshot(result)
+		return
+	}
 	if actionErr != nil {
 		result.ErrorMessage = actionErr.Error()
 		result.Snapshot = browserErrorSnapshot(result)
@@ -28,11 +33,6 @@ func (b *Browser) finalizeActionResult(ctx context.Context, action *protocol.Act
 	}
 	if captureErr != nil {
 		result.ErrorMessage = captureErr.Error()
-		return
-	}
-	if dialogErr := b.consumeDialogError(); dialogErr != nil {
-		result.ErrorMessage = dialogErr.Error()
-		result.Snapshot = browserErrorSnapshot(result)
 		return
 	}
 	if requiresBrowserAssertionHTML(action.Assertions) && result.HTML == "" {

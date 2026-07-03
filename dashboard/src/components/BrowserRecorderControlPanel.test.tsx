@@ -54,6 +54,26 @@ vi.mock('../utils/fileUtils', () => ({
   downloadBlob: downloadBlobMock,
 }))
 
+vi.mock('./BrowserReplayProgress', () => ({
+  default: ({ replaySessionId, onApplySuggestion, onComplete }: { replaySessionId: string; onApplySuggestion?: (suggestion: any) => void; onComplete?: (report: any, events: any[]) => void }) => (
+    <div data-testid="replay-progress">
+      <span>Replay {replaySessionId}</span>
+      <button
+        type="button"
+        onClick={() => onApplySuggestion?.({ id: 'repair-unsupported', title: 'Patch wait', description: 'Change timeout', draft_patch_type: 'update_timeout', fields: {} })}
+      >
+        Apply Unsupported Repair
+      </button>
+      <button
+        type="button"
+        onClick={() => onComplete?.({ success: true, events: [] }, [])}
+      >
+        Complete Replay
+      </button>
+    </div>
+  ),
+}))
+
 const recordingSession = {
   id: 'brec-1',
   name: 'Checkout Flow',
@@ -213,6 +233,38 @@ describe('BrowserRecorderControlPanel', () => {
     expect(container.textContent).not.toContain('hunter2')
     // No conversion controls while recording.
     expect(container.textContent).not.toContain('Save to Script Library')
+  })
+
+  it('renders the full step history and filters it with search', async () => {
+    apiMock.getBrowserRecording.mockResolvedValue({
+      session: {
+        ...recordingSession,
+        step_count: 30,
+        steps: Array.from({ length: 30 }, (_, index) => ({
+          seq: index + 1,
+          kind: index === 0 ? 'fill' : 'click',
+          value: index === 0 ? 'earliest-step' : `step-${index + 1}`,
+          title: `Step ${index + 1}`,
+          timestamp: '2026-05-12T20:00:01Z',
+          url: 'https://shop.example/login',
+        })),
+      },
+    })
+    await renderPanel()
+
+    expect(container.textContent).toContain('#1')
+    expect(container.textContent).toContain('#30')
+    const search = container.querySelector<HTMLInputElement>('input[aria-label="Search recorded steps"]')
+    expect(search).not.toBeNull()
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
+      setter.call(search, 'earliest-step')
+      search!.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('1 match')
+    expect(container.textContent).toContain('earliest-step')
+    expect(container.textContent).not.toContain('step-30')
   })
 
   it('renders long console and network annotations inside warning rows', async () => {
@@ -595,6 +647,19 @@ describe('BrowserRecorderControlPanel', () => {
     await flushPromises()
     expect(apiMock.verifyBrowserRecording).toHaveBeenCalledWith('brec-1')
     expect(container.querySelector('[data-testid="replay-progress"]')).not.toBeNull()
+  })
+
+  it('surfaces unsupported replay-repair patch types instead of no-oping', async () => {
+    apiMock.getBrowserRecording.mockResolvedValue({ session: stoppedSession })
+    await renderPanel()
+    const verify = container.querySelector('[data-testid="verify-recording"]') as HTMLButtonElement
+    expect(verify).not.toBeNull()
+    await act(async () => { verify.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    await flushPromises()
+
+    await clickButton('Apply Unsupported Repair')
+
+    expect(container.textContent).toContain('Replay suggestion type "update_timeout" is not supported')
   })
 
   it('passes split and dual-http options to convert', async () => {

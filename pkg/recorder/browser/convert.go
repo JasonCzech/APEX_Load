@@ -1,6 +1,7 @@
 package browser
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"sort"
@@ -10,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/selector"
 )
 
 // minRecordedThinkTimeMs filters out sub-perceptual gaps, mirroring the proxy
@@ -78,8 +80,9 @@ type TransactionSuggestion struct {
 
 // sectionedAction pairs a generated action with its DSL section.
 type sectionedAction struct {
-	action  dsl.Action
-	section string
+	action    dsl.Action
+	section   string
+	timestamp time.Time
 }
 
 // timelineEntry interleaves recorded interaction steps with explicit
@@ -93,6 +96,7 @@ type timelineEntry struct {
 	wsURL     string
 	wsFrame   *WebSocketFrame
 	wsOpen    bool
+	section   string
 }
 
 // Convert turns a recorded session into a browser-protocol DSL script with
@@ -128,7 +132,7 @@ func Convert(session *Session, opts ConvertOptions) *ConvertResult {
 	script := newBrowserScript(name, session, baseURL)
 	if session.StartURL != "" {
 		nav := sectionedAction{
-			action:  dsl.Action{Name: "Navigate to " + session.StartURL, Type: "browser_navigate", Target: startTarget},
+			action:  navigateAction(session.StartURL, startTarget),
 			section: firstSection(assembled),
 		}
 		assembled = append([]sectionedAction{nav}, assembled...)
@@ -149,7 +153,6 @@ func assembleActions(session *Session, opts ConvertOptions, baseURL string, resu
 	out := make([]sectionedAction, 0, len(session.Steps)+len(session.Markers))
 	var txnStack []string
 	var pendingNotes []string
-	lastSection := SectionActions
 
 	setMeta := func(action *dsl.Action, key string, value any) {
 		if action.Metadata == nil {
@@ -168,6 +171,7 @@ func assembleActions(session *Session, opts ConvertOptions, baseURL string, resu
 	}
 
 	for _, entry := range buildTimeline(session, opts.StepRange) {
+		entrySection := normalizeSection(entry.section)
 		switch {
 		case entry.wsOpen || entry.wsFrame != nil:
 			action, ok := websocketWaitAction(entry)
@@ -175,7 +179,7 @@ func assembleActions(session *Session, opts ConvertOptions, baseURL string, resu
 				continue
 			}
 			decorate(&action, true)
-			out = append(out, sectionedAction{action: action, section: lastSection})
+			out = append(out, sectionedAction{action: action, section: entrySection, timestamp: entry.timestamp})
 			result.Stats.SyncPolicies++
 		case entry.marker != nil:
 			marker := entry.marker
@@ -183,7 +187,7 @@ func assembleActions(session *Session, opts ConvertOptions, baseURL string, resu
 			case MarkerTransactionStart:
 				action := dsl.Action{Name: marker.Name, Type: "source_transaction", Params: map[string]any{"function": "lr_start_transaction"}}
 				decorate(&action, false)
-				out = append(out, sectionedAction{action: action, section: lastSection})
+				out = append(out, sectionedAction{action: action, section: entrySection, timestamp: entry.timestamp})
 				txnStack = append(txnStack, marker.Name)
 				result.Stats.Transactions++
 			case MarkerTransactionEnd:
@@ -201,7 +205,7 @@ func assembleActions(session *Session, opts ConvertOptions, baseURL string, resu
 				txnStack = append(txnStack[:index], txnStack[index+1:]...)
 				action := dsl.Action{Name: marker.Name, Type: "source_transaction", Params: map[string]any{"function": "lr_end_transaction"}}
 				decorate(&action, false)
-				out = append(out, sectionedAction{action: action, section: lastSection})
+				out = append(out, sectionedAction{action: action, section: entrySection, timestamp: entry.timestamp})
 			case MarkerNote:
 				pendingNotes = append(pendingNotes, marker.Text)
 				result.Stats.Notes++
@@ -209,18 +213,17 @@ func assembleActions(session *Session, opts ConvertOptions, baseURL string, resu
 		case entry.navURL != "":
 			action := dsl.Action{Name: "Navigate to " + entry.navURL, Type: "browser_navigate", Target: relativeTarget(baseURL, entry.navURL)}
 			decorate(&action, true)
-			out = append(out, sectionedAction{action: action, section: lastSection})
+			out = append(out, sectionedAction{action: action, section: entrySection, timestamp: entry.timestamp})
 			result.Stats.Navigations++
 		default:
 			step := *entry.step
-			lastSection = normalizeSection(step.Section)
 			action, ok := convertStep(step, session, opts, result)
 			if !ok {
 				result.Stats.SkippedSteps++
 				continue
 			}
 			decorate(&action, true)
-			sa := sectionedAction{action: action, section: lastSection}
+			sa := sectionedAction{action: action, section: entrySection, timestamp: entry.timestamp}
 			// A dialog fires from the action just before it, but replay arms the
 			// handler one-shot — so place handle_dialog before its trigger. Only
 			// reorder past an actual interaction; a preceding marker or
@@ -310,28 +313,39 @@ func splitByTransaction(assembled []sectionedAction, baseName string, session *S
 	depth := 0
 	var current *dsl.Script
 	var currentActions []sectionedAction
+	var currentStartNav sectionedAction
 	droppedOutside := 0
+	lastNav := sectionedAction{}
+	if session.StartURL != "" {
+		lastNav = sectionedAction{
+			action:  navigateAction(session.StartURL, startTarget),
+			section: SectionActions,
+		}
+	}
 
 	flush := func() {
 		if current == nil {
 			return
 		}
-		// Prepend the initial navigate as a section-tagged action so it lands in
-		// the same DSL block as the transaction's first step, not always Actions.
-		if session.StartURL != "" {
-			nav := sectionedAction{
-				action:  dsl.Action{Name: "Navigate to " + session.StartURL, Type: "browser_navigate", Target: startTarget},
-				section: firstSection(currentActions),
-			}
+		// Prepend the page the browser was on when the transaction started, so
+		// split scripts start from the transaction context rather than always
+		// rewinding to the original recorder StartURL.
+		if currentStartNav.action.Type == "browser_navigate" {
+			nav := currentStartNav
+			nav.section = firstSection(currentActions)
 			currentActions = append([]sectionedAction{nav}, currentActions...)
 		}
 		partitionInto(current, currentActions)
 		scripts = append(scripts, current)
 		current = nil
 		currentActions = nil
+		currentStartNav = sectionedAction{}
 	}
 
 	for _, sa := range assembled {
+		if sa.action.Type == "browser_navigate" {
+			lastNav = sa
+		}
 		isTxn := sa.action.Type == "source_transaction"
 		fn, _ := sa.action.Params["function"].(string)
 		switch {
@@ -339,6 +353,7 @@ func splitByTransaction(assembled []sectionedAction, baseName string, session *S
 			if depth == 0 {
 				current = newBrowserScript(fmt.Sprintf("%s — %s", baseName, sa.action.Name), session, baseURL)
 				currentActions = nil
+				currentStartNav = lastNav
 			} else {
 				currentActions = append(currentActions, sa)
 			}
@@ -506,8 +521,9 @@ func buildTimeline(session *Session, stepRange StepRange) []timelineEntry {
 			entries = append(entries, timelineEntry{timestamp: nav.Timestamp, navURL: nav.URL})
 		}
 	}
+	markerIndexes := markerIndexesForTimeline(session.Markers, stepRange, lower, upper, haveLower, haveUpper)
 	for i := range session.Markers {
-		if within(session.Markers[i].Timestamp) {
+		if markerIndexes[i] {
 			entries = append(entries, timelineEntry{timestamp: session.Markers[i].Timestamp, marker: &session.Markers[i]})
 		}
 	}
@@ -532,7 +548,109 @@ func buildTimeline(session *Session, stepRange StepRange) []timelineEntry {
 		}
 	}
 	sort.SliceStable(entries, func(i, j int) bool { return entries[i].timestamp.Before(entries[j].timestamp) })
+	assignTimelineSections(entries)
 	return entries
+}
+
+func markerIndexesForTimeline(markers []Marker, stepRange StepRange, lower, upper time.Time, haveLower, haveUpper bool) map[int]bool {
+	include := make(map[int]bool, len(markers))
+	if stepRange.empty() {
+		for i := range markers {
+			include[i] = true
+		}
+		return include
+	}
+	if !haveLower || !haveUpper {
+		return include
+	}
+
+	for i := range markers {
+		if !markers[i].Timestamp.Before(lower) && !markers[i].Timestamp.After(upper) {
+			include[i] = true
+		}
+	}
+
+	order := make([]int, len(markers))
+	for i := range markers {
+		order[i] = i
+	}
+	sort.SliceStable(order, func(i, j int) bool {
+		return markers[order[i]].Timestamp.Before(markers[order[j]].Timestamp)
+	})
+
+	activeBeforeLower := openTransactionsBefore(markers, order, lower)
+	for _, startIdx := range activeBeforeLower {
+		include[startIdx] = true
+	}
+
+	neededEnds := map[string]int{}
+	for _, startIdx := range openTransactionsThrough(markers, order, upper) {
+		name := markers[startIdx].Name
+		if name != "" {
+			neededEnds[name]++
+		}
+	}
+	for _, idx := range order {
+		marker := markers[idx]
+		if !marker.Timestamp.After(upper) || marker.Kind != MarkerTransactionEnd || neededEnds[marker.Name] == 0 {
+			continue
+		}
+		include[idx] = true
+		neededEnds[marker.Name]--
+	}
+	return include
+}
+
+func openTransactionsBefore(markers []Marker, order []int, before time.Time) []int {
+	var stack []int
+	for _, idx := range order {
+		if !markers[idx].Timestamp.Before(before) {
+			break
+		}
+		stack = updateOpenTransactionStack(stack, markers, idx)
+	}
+	return stack
+}
+
+func openTransactionsThrough(markers []Marker, order []int, through time.Time) []int {
+	var stack []int
+	for _, idx := range order {
+		if markers[idx].Timestamp.After(through) {
+			break
+		}
+		stack = updateOpenTransactionStack(stack, markers, idx)
+	}
+	return stack
+}
+
+func updateOpenTransactionStack(stack []int, markers []Marker, idx int) []int {
+	switch markers[idx].Kind {
+	case MarkerTransactionStart:
+		return append(stack, idx)
+	case MarkerTransactionEnd:
+		for i := len(stack) - 1; i >= 0; i-- {
+			if markers[stack[i]].Name == markers[idx].Name {
+				return append(stack[:i], stack[i+1:]...)
+			}
+		}
+	}
+	return stack
+}
+
+func assignTimelineSections(entries []timelineEntry) {
+	current := SectionActions
+	for i := range entries {
+		if entries[i].step != nil {
+			current = normalizeSection(entries[i].step.Section)
+			break
+		}
+	}
+	for i := range entries {
+		if entries[i].step != nil {
+			current = normalizeSection(entries[i].step.Section)
+		}
+		entries[i].section = current
+	}
 }
 
 func websocketWaitAction(entry timelineEntry) (dsl.Action, bool) {
@@ -555,7 +673,7 @@ func websocketWaitAction(entry timelineEntry) (dsl.Action, bool) {
 	params["direction"] = "received"
 	payload := strings.TrimSpace(entry.wsFrame.Payload)
 	if payload != "" {
-		params["match"] = truncateString(payload, 160)
+		params["match"] = truncateString(webSocketPayloadMatchHint(payload), 160)
 		params["match_mode"] = "contains"
 	}
 	if entry.wsURL != "" {
@@ -576,6 +694,20 @@ func truncateString(value string, limit int) string {
 		truncated = truncated[:len(truncated)-1]
 	}
 	return truncated
+}
+
+func webSocketPayloadMatchHint(payload string) string {
+	payload = strings.TrimSpace(payload)
+	for i, r := range payload {
+		if r != '{' && r != '[' {
+			continue
+		}
+		candidate := strings.TrimSpace(payload[i:])
+		if json.Valid([]byte(candidate)) {
+			return candidate
+		}
+	}
+	return payload
 }
 
 func convertStep(step Step, session *Session, opts ConvertOptions, result *ConvertResult) (dsl.Action, bool) {
@@ -777,8 +909,8 @@ func attachStepMetadata(action *dsl.Action, step Step) {
 	if len(step.Candidates) > 0 {
 		action.Metadata["source_selector_candidates"] = step.Candidates
 		action.Metadata["source_selector_confidence"] = step.Candidates[0].Confidence
-		if len(step.Candidates) > 1 {
-			action.Metadata["source_selector_fallbacks"] = step.Candidates[1:]
+		if fallbacks := selector.FallbacksForPrimary(step.Candidates, action.Selector); len(fallbacks) > 0 {
+			action.Metadata["source_selector_fallbacks"] = fallbacks
 		}
 	}
 	if step.FrameSelector != "" {
@@ -872,7 +1004,14 @@ func splitStartURL(raw string) (baseURL string, target string) {
 	if parsed.RawQuery != "" {
 		target += "?" + parsed.RawQuery
 	}
+	if parsed.Fragment != "" {
+		target += "#" + parsed.Fragment
+	}
 	return baseURL, target
+}
+
+func navigateAction(rawURL, target string) dsl.Action {
+	return dsl.Action{Name: "Navigate to " + rawURL, Type: "browser_navigate", Target: target}
 }
 
 func relativeTarget(baseURL string, raw string) string {

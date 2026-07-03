@@ -110,7 +110,7 @@ describe('BrowserReplayProgress', () => {
     expect(onComplete).toHaveBeenCalledWith(report, [])
   })
 
-  it('times out an inactive verification session', async () => {
+  it('marks inactive verification as waiting without completing it', async () => {
     vi.useFakeTimers()
     const onComplete = vi.fn()
     await act(async () => {
@@ -119,8 +119,28 @@ describe('BrowserReplayProgress', () => {
     await act(async () => {
       vi.advanceTimersByTime(30000)
     })
-    expect(container.textContent).toContain('Stopped')
-    expect(onComplete).toHaveBeenCalledWith(null, [])
+    expect(container.textContent).toContain('Still waiting for replay events')
+    expect(container.textContent).toContain('Verifying…')
+    expect(onComplete).not.toHaveBeenCalled()
+    await send({ type: 'browser_replay_event', replay_session_id: 'rep-timeout', event: { event_index: 0, action_name: 'Click', action_type: 'browser_click', target: '#go', phase: 'action', success: true, started_at: '2026-06-22T00:00:00Z', completed_at: '2026-06-22T00:00:01Z', duration_ms: 20 } } as any)
+    expect(container.textContent).not.toContain('Still waiting for replay events')
+  })
+
+  it('only completes once and synthesizes a report from observed events when needed', async () => {
+    const onComplete = vi.fn()
+    await act(async () => {
+      root.render(<BrowserReplayProgress replaySessionId="rep-once" onComplete={onComplete} />)
+    })
+    await send({ type: 'browser_replay_event', replay_session_id: 'rep-once', event: { event_index: 0, action_name: 'Click', action_type: 'browser_click', target: '#go', phase: 'action', success: true, started_at: '2026-06-22T00:00:00Z', completed_at: '2026-06-22T00:00:01Z', duration_ms: 20 } } as any)
+    await send({ type: 'browser_replay_completed', replay_session_id: 'rep-once' } as any)
+    await send({ type: 'browser_replay_failed', replay_session_id: 'rep-once', report: { events: [], success: false } } as any)
+
+    expect(onComplete).toHaveBeenCalledTimes(1)
+    expect(onComplete).toHaveBeenCalledWith(expect.objectContaining({
+      replay_session_id: 'rep-once',
+      success: true,
+      events: [expect.objectContaining({ action_name: 'Click' })],
+    }), [expect.objectContaining({ action_name: 'Click' })])
   })
 
   it('accepts and rejects replay repair suggestions', async () => {

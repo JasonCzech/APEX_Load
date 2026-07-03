@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/selector"
 )
 
 func promoteFrameContext(action *dsl.Action) {
@@ -544,8 +545,8 @@ func attachSourceStepMetadata(action *dsl.Action, step truXMLStep, transaction s
 	if candidates, _ := rankedSelectorCandidates(step, descriptors); len(candidates) > 0 {
 		action.Metadata["source_selector_candidates"] = candidates
 		action.Metadata["source_selector_confidence"] = candidates[0].Confidence
-		if len(candidates) > 1 {
-			action.Metadata["source_selector_fallbacks"] = candidates[1:]
+		if fallbacks := selector.FallbacksForPrimary(candidates, action.Selector); len(fallbacks) > 0 {
+			action.Metadata["source_selector_fallbacks"] = fallbacks
 		}
 	}
 	if values, err := parseArgumentValues(step.Arguments); err == nil {

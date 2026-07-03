@@ -507,13 +507,47 @@ func (r *Recorder) handleRecordBinding(source *playwright.BindingSource, args ..
 	}
 	step.Section = section
 	r.mu.Lock()
+	var switched *Step
+	if source != nil && source.Page != nil {
+		switched = r.recordPageSwitchIfNeededLocked(source.Page, step.Timestamp, section)
+	}
 	recorded := r.session.appendStep(step)
 	r.mu.Unlock()
+	if switched != nil {
+		r.emit(Event{Type: EventStep, Step: switched})
+	}
 	r.emit(Event{Type: EventStep, Step: &recorded})
 	if r.opts.CaptureScreenshots && source != nil && source.Page != nil {
 		r.captureThumbnailAsync(source.Page, recorded.Seq)
 	}
 	return nil
+}
+
+func (r *Recorder) recordPageSwitchIfNeededLocked(page playwright.Page, before time.Time, section string) *Step {
+	if page == nil || r.isControlPageLocked(page) {
+		return nil
+	}
+	if r.activePage == nil {
+		r.activePage = page
+		return nil
+	}
+	if r.activePage == page {
+		return nil
+	}
+	r.activePage = page
+	targetURL := page.URL()
+	ts := time.Now()
+	if !before.IsZero() {
+		ts = before.Add(-time.Millisecond)
+	}
+	step := r.session.appendStep(Step{
+		Kind:      StepSwitchWindow,
+		Value:     targetURL,
+		Timestamp: ts,
+		URL:       targetURL,
+		Section:   section,
+	})
+	return &step
 }
 
 // emit delivers an event to the configured observer. Never called while
@@ -888,17 +922,20 @@ func (r *Recorder) Stop() (*Session, error) {
 	// no-op, so the finished session is never mutated after we return it.
 	r.thumbWG.Wait()
 
-	if r.context != nil {
+	r.mu.Lock()
+	context := r.context
+	r.mu.Unlock()
+	if context != nil {
 		// Export storage state before closing so the user can reuse the
 		// authenticated session on a later recording.
-		if state, stateErr := r.context.StorageState(); stateErr == nil && state != nil {
+		if state, stateErr := context.StorageState(); stateErr == nil && state != nil {
 			if encoded, encErr := json.Marshal(state); encErr == nil {
 				r.mu.Lock()
 				r.session.StorageState = encoded
 				r.mu.Unlock()
 			}
 		}
-		_ = r.context.Close() // flushes RecordHarPath
+		_ = context.Close() // flushes RecordHarPath
 	}
 	r.cleanup()
 	r.signalDone()
@@ -948,6 +985,17 @@ func (r *Recorder) Stop() (*Session, error) {
 		}
 	}
 	return r.session, nil
+}
+
+// ForceStop is the best-effort teardown path used when graceful Stop is stuck.
+// It intentionally skips storage-state/HAR flushing, because the caller keeps a
+// snapshot artifact and may still recover a late Stop result if it completes.
+func (r *Recorder) ForceStop() {
+	r.mu.Lock()
+	r.stopped = true
+	r.mu.Unlock()
+	r.signalDone()
+	r.cleanup()
 }
 
 // SetSection switches the active recording section (init|actions|teardown).
@@ -1373,12 +1421,17 @@ func (r *Recorder) windowArgs() []string {
 }
 
 func (r *Recorder) cleanup() {
-	if r.browser != nil {
-		_ = r.browser.Close()
-		r.browser = nil
+	r.mu.Lock()
+	r.context = nil
+	browser := r.browser
+	r.browser = nil
+	pw := r.pw
+	r.pw = nil
+	r.mu.Unlock()
+	if browser != nil {
+		_ = browser.Close()
 	}
-	if r.pw != nil {
-		_ = r.pw.Stop()
-		r.pw = nil
+	if pw != nil {
+		_ = pw.Stop()
 	}
 }

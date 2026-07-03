@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"net"
+	"sync"
 	"time"
 )
 
@@ -35,20 +36,41 @@ func newShapedDialContext(base func(context.Context, string, string) (net.Conn, 
 
 type shapedConn struct {
 	net.Conn
-	profile networkSimulationProfile
+	profile    networkSimulationProfile
+	readDelay  shapedDirectionDelay
+	writeDelay shapedDirectionDelay
 }
 
 func (c *shapedConn) Read(p []byte) (int, error) {
 	n, err := c.Conn.Read(p)
 	if n > 0 {
-		c.profile.applyReadDelay(n)
+		c.readDelay.apply(c.profile, n)
 	}
 	return n, err
 }
 
 func (c *shapedConn) Write(p []byte) (int, error) {
-	c.profile.applyWriteDelay(len(p))
+	c.writeDelay.apply(c.profile, len(p))
 	return c.Conn.Write(p)
+}
+
+type shapedDirectionDelay struct {
+	mu             sync.Mutex
+	latencyApplied bool
+}
+
+func (d *shapedDirectionDelay) apply(profile networkSimulationProfile, bytes int) {
+	d.mu.Lock()
+	applyLatency := !d.latencyApplied
+	if applyLatency {
+		d.latencyApplied = true
+	}
+	d.mu.Unlock()
+
+	if applyLatency {
+		profile.applyJitterAndLoss()
+	}
+	profile.applyBandwidth(bytes)
 }
 
 func (p networkSimulationProfile) applyReadDelay(bytes int) {

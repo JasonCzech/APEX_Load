@@ -68,6 +68,16 @@ artifacts that expose secrets unless the caller opts into scrubbing.
 - Preserve Salesforce URL-encoded correlation conversion when a generic HAR
   import has already templated the draft.
 - Apply HTTP `clear_cookies_per_iteration` at iteration boundaries.
+- Capture pending text-entry fills before Enter/Tab navigation or blur without
+  duplicating the subsequent change event.
+- Suppress browser-synthesized zero-detail clicks after Enter keyboard
+  activation so replay does not double-submit.
+- Keep newly retyped fills from merging into excluded or deleted recorder steps.
+- Record proxied WebSocket frames at proxy-read time so fast echo responses do
+  not reorder sends and receives in generated replay scripts.
+- Preserve browser recording URL fragments, section pre-step transaction
+  wrappers, step-range boundary transaction markers, split-transaction starting
+  pages, popup switch-backs, and stable WebSocket payload match hints.
 
 ## P1 Remediation Program
 
@@ -142,6 +152,94 @@ artifacts that expose secrets unless the caller opts into scrubbing.
 - Scrub-on-write now covers WebSocket HAR payloads, XML/SOAP fields, multipart
   secret parts, JWT/high-entropy bare tokens, and runtime error, console, DOM,
   and page evidence before metrics/sinks/archive storage.
+- Browser recorder keyboard capture now records text-entry values before
+  Enter/Tab transitions, suppresses duplicate blur fills and synthetic
+  Enter-click steps, preserves retyped fills after undo/exclude curation, and
+  serializes in-page event delivery so pre-key fills cannot arrive after their
+  Enter/Tab `press_key` steps.
+- Proxy WebSocket frame capture now preserves client-send before server-echo
+  ordering under fast bidirectional traffic.
+- Browser recorder conversion now preserves SPA fragments, assigns pre-step
+  markers to the first step's section, keeps transaction wrappers around
+  trimmed step ranges, starts split transaction scripts from the page active at
+  transaction start, strips non-JSON WebSocket transport prefixes from match
+  hints, and records switch-back steps when returning from a popup to an
+  earlier window.
+- Browser replay now evicts disconnected pooled browser instances, honors
+  `timeout_ms` on selector/target-only `browser_wait`, clears stale WebSocket
+  observations on navigation/close, advances WebSocket wait/assert watermarks
+  after matched frames, and bounds one-shot dialog policies with `wait_ms` so
+  missing dialogs fail clearly instead of arming an unrelated future dialog.
+- HTTP replay P1 fidelity now honors custom `no_proxy`/bypass rules, routes
+  OAuth token source actions through the configured HTTP client/proxy/TLS stack,
+  accepts string `expires_in` token responses, fails prematurely truncated SSE
+  streams instead of treating partial events as success, allows traceparent
+  auto-generation to be disabled, amortizes simulated network latency once per
+  socket direction while preserving per-byte bandwidth shaping, and lets
+  explicit status assertions bless recorded 4xx/5xx responses.
+- Selector self-heal now preserves role/text candidates in fallback metadata
+  instead of dropping them when a lower-ranked CSS/XPath selector becomes the
+  primary, memoizes healed selectors per action identity during a run, exposes
+  `browser_self_heal`/`self_heal` modes, limits healing to selector-timeout or
+  not-found failures, counts only real retry attempts after successful probes,
+  emits `selector_self_heal_metrics` evidence, and applies the same healing path
+  to wait, tap, long-press, swipe, drag, upload, and keyed element actions.
+- Browser replay runtime configuration now applies device scale factor,
+  orientation-aware viewport/screen sizing, device-profile network presets, and
+  Chromium/CDP network emulation for latency and bandwidth while retaining route
+  latency fallback for non-CDP engines. Browser action duration now excludes
+  slow-motion delay and evidence capture, and browser process table scans are
+  skipped unless client metrics are enabled.
+- Browser replay correctness now keeps popup pages registered without
+  auto-activating them, supports numeric `browser_switch_window` targets,
+  follows nested frame selector paths, uses Playwright's native tap for
+  `browser_tap`, and records manual HAR sessions only when an action explicitly
+  requests capture via HAR params.
+- Proxy recorder fidelity now timestamps HAR/request records at request start,
+  computes think time from the previous response end and places replay waits on
+  the previous action, reports raw forwarded response byte sizes while keeping
+  decoded captured bodies for correlation, forwards full non-streaming bodies
+  while retaining only the configured capture prefix, preserves multipart
+  request uploads as full replayable base64 bodies within the governed capture
+  cap, strips WebSocket permessage-deflate negotiation, caps peer-declared
+  WebSocket frame allocation, applies WebSocket tunnel idle deadlines, and
+  closes active WebSocket tunnels when their recording session stops.
+- Browser recording lifecycle recovery now exposes a stopped/live session list,
+  deletes terminal sessions with conflict protection for live recordings,
+  provides a retention prune primitive for old stopped artifacts, publishes the
+  new lifecycle routes through generated API docs, tears down the recorder
+  backend on forced stops, recovers late graceful-stop HAR/storage artifacts
+  after a force-stop snapshot, supports post-stop step curation for
+  exclude/mark/delete-last/promote-selector operations against retained
+  artifacts, and treats browser step-mark PATCH bodies as partial updates so
+  omitted mark flags are not clobbered.
+- Browser recorder availability responses now include stable machine-readable
+  unavailability codes, including `browsers_not_installed` for Playwright/
+  Chromium launch failures, and Recording Studio now keys the install
+  affordance on that code instead of only parsing reason text.
+- Browser replay progress review now treats stream inactivity as a waiting
+  state instead of false completion, ignores duplicate terminal events, accepts
+  reports nested under the session payload, and synthesizes a minimal report
+  when terminal status arrives after observable replay events.
+- Parameterization review now resets stale apply state when the reviewed script
+  changes, supports re-applying after selection changes, and masks high-risk or
+  secret-like samples in the dashboard.
+- Import review UI now surfaces HAR replay preflight results, rejects invalid or
+  oversized dropped files before upload, caps large JSON previews with a clear
+  truncation note, and reports unsupported replay-repair patch types visibly.
+- Browser recorder control-panel review now guards overlapping refreshes,
+  keeps load errors visible while showing the last known session, exposes
+  searchable full step history instead of the first 25 steps only, and reports
+  unsupported replay-repair patch types.
+- Recording Studio now requires an explicit managed Recording Agent platform
+  choice when detection is inconclusive, shares the same platform detector as
+  the client downloads menu, requests per-platform SHA-256 metadata, and sends
+  platformed download requests for the local bridge package.
+- Proxy recording conversion now normalizes already-stored script wrappers from
+  `/recorder/{id}/convert`, avoids double-saving those stored scripts, disables
+  visual-editor handoff when no nested DSL script is available, confirms before
+  deleting stopped proxy sessions, and persists scrubbed recording baselines at
+  the conversion seam for later correlation diagnosis.
 
 ## Verification Requirements
 

@@ -42,6 +42,10 @@ func harCaptureFixtureServer() *httptest.Server {
 }
 
 func runHARCaptureSession(t *testing.T, policy string, harDir string, failAction bool) {
+	runHARCaptureSessionWithManualRequest(t, policy, harDir, failAction, false)
+}
+
+func runHARCaptureSessionWithManualRequest(t *testing.T, policy string, harDir string, failAction bool, manualRequest bool) {
 	t.Helper()
 	server := harCaptureFixtureServer()
 	defer server.Close()
@@ -61,6 +65,20 @@ func runHARCaptureSession(t *testing.T, policy string, harDir string, failAction
 	})
 	if err != nil || result.ErrorMessage != "" {
 		t.Fatalf("navigate failed: err=%v msg=%s", err, result.ErrorMessage)
+	}
+	if manualRequest {
+		manual, err := b.Execute(context.Background(), &protocol.Action{
+			Name:   "mark manual har",
+			Type:   "browser_wait",
+			Params: map[string]any{"capture_har": true},
+			WaitFor: &protocol.WaitCondition{
+				Type:  "duration",
+				Value: "25ms",
+			},
+		})
+		if err != nil || manual.ErrorMessage != "" {
+			t.Fatalf("manual marker failed: err=%v msg=%s", err, manual.ErrorMessage)
+		}
 	}
 	if failAction {
 		failed, err := b.Execute(context.Background(), &protocol.Action{
@@ -153,6 +171,22 @@ func TestHARCaptureOnErrorKeepsFailingSessions(t *testing.T) {
 	}
 	if strings.Contains(string(data), "super-secret-cookie") {
 		t.Error("scrub-on-write failed for on_error artifact")
+	}
+}
+
+func TestHARCaptureManualKeepsOnlyRequestedSessions(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping browser integration test in -short mode")
+	}
+	dir := t.TempDir()
+	runHARCaptureSession(t, "manual", dir, false)
+	if artifacts := harArtifacts(t, dir); len(artifacts) != 0 {
+		t.Fatalf("manual HAR without request produced artifacts: %v", artifacts)
+	}
+
+	runHARCaptureSessionWithManualRequest(t, "manual", dir, false, true)
+	if artifacts := harArtifacts(t, dir); len(artifacts) != 1 {
+		t.Fatalf("manual HAR with request artifacts = %v, want one", artifacts)
 	}
 }
 

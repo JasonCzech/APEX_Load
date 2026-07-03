@@ -94,6 +94,29 @@ describe('ScriptImportReview', () => {
     expect(container.querySelector('.script-import-review-preview-row')).toBeNull()
   })
 
+  it('caps very large generated previews', () => {
+    act(() => {
+      root.render(
+        <ScriptImportReview
+          title="Review Generated Script"
+          script={{
+            ...script,
+            actions: Array.from({ length: 5000 }, (_, index) => ({
+              name: `Action ${index}`,
+              type: 'request',
+              method: 'GET',
+              target: `/orders/${index}`,
+            })),
+          }}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('Preview truncated for browser performance')
+    const preview = container.querySelector('.script-import-review-preview pre')
+    expect(preview?.textContent?.length).toBeLessThan(121000)
+  })
+
   it('filters scoped parameterization suggestions to the active script', () => {
     const parameterization: Parameterization = {
       suggestions: [

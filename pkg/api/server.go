@@ -674,8 +674,10 @@ func (s *Server) routes(allowedOrigins []string) {
 
 	// Headed browser recording (local/desktop controllers): lifecycle control,
 	// conversion to the script library, and side-car HAR export.
+	s.mux.Handle("GET /api/v1/browser-recorder/sessions", cors(log(auth(http.HandlerFunc(s.handleListBrowserRecordings)))))
 	s.mux.Handle("POST /api/v1/browser-recorder/sessions", cors(log(browserRecordingCreateAuth(http.HandlerFunc(s.handleStartBrowserRecording)))))
 	s.mux.Handle("GET /api/v1/browser-recorder/sessions/{id}", cors(log(browserRecordingSessionViewAuth(http.HandlerFunc(s.handleGetBrowserRecording)))))
+	s.mux.Handle("DELETE /api/v1/browser-recorder/sessions/{id}", cors(log(browserRecordingSessionEditAuth(http.HandlerFunc(s.handleDeleteBrowserRecording)))))
 	s.mux.Handle("POST /api/v1/browser-recorder/sessions/{id}/stop", cors(log(browserRecordingSessionEditAuth(http.HandlerFunc(s.handleStopBrowserRecording)))))
 	s.mux.Handle("POST /api/v1/browser-recorder/sessions/{id}/force-stop", cors(log(browserRecordingSessionEditAuth(http.HandlerFunc(s.handleForceStopBrowserRecording)))))
 	s.mux.Handle("POST /api/v1/browser-recorder/sessions/{id}/pause", cors(log(browserRecordingSessionEditAuth(http.HandlerFunc(s.handlePauseBrowserRecording)))))

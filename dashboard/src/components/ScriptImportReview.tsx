@@ -11,6 +11,19 @@ const severityRank: Record<string, number> = {
   info: 2,
 }
 
+const PREVIEW_MAX_CHARS = 120000
+
+function previewJSON(value: unknown): { text: string; truncated: boolean } {
+  const text = JSON.stringify(value, null, 2)
+  if (text.length <= PREVIEW_MAX_CHARS) {
+    return { text, truncated: false }
+  }
+  return {
+    text: `${text.slice(0, PREVIEW_MAX_CHARS)}\n…`,
+    truncated: true,
+  }
+}
+
 interface Props {
   title: string
   subtitle?: ReactNode
@@ -54,12 +67,18 @@ export default function ScriptImportReview({
   onEdit,
   children,
 }: Props) {
+  const preview = previewJSON(previewData ?? { script })
   const previewPane = (
     <details className="script-import-review-preview" open>
       <summary>
         <h4>{previewTitle}</h4>
       </summary>
-      <pre>{JSON.stringify(previewData ?? { script }, null, 2)}</pre>
+      {preview.truncated && (
+        <div className="script-import-review-preview-note" role="status">
+          Preview truncated for browser performance. Save or open the script to review the full generated payload.
+        </div>
+      )}
+      <pre>{preview.text}</pre>
     </details>
   )
   const sortedReviewSections = [...reviewSections].sort((a, b) => {

@@ -45,6 +45,7 @@ type HTTP struct {
 	maxRedirects             int    // <=0 = no follow, unset/default = 10
 	requestTimeout           time.Duration
 	networkProfile           string // assigned network-profile label (population mix)
+	traceparentEnabled       bool
 }
 
 var (
@@ -57,6 +58,7 @@ func (h *HTTP) Name() string { return "http" }
 func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 	h.baseURL, _ = config["base_url"].(string)
 	h.networkProfile, _ = config["web_network_profile_label"].(string)
+	h.traceparentEnabled = parseTraceparentEnabled(config)
 	transportSettings := parseTransportConfig(config)
 	h.requestTimeout = transportSettings.requestTimeout
 
@@ -189,7 +191,10 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	}
 	redactedRequestHeaders := redactedRequestHeadersForSnapshot(req.Header, action.RedactedHeaders, typedAuthApplied, redactedAuthHeader)
 	explicitCorrelationID := correlationIDFromHTTPHeader(req.Header)
-	generatedTraceparent := ensureTraceparentHeader(req.Header)
+	generatedTraceparent := ""
+	if h.traceparentEnabled {
+		generatedTraceparent = ensureTraceparentHeader(req.Header)
+	}
 	redactedRequestHeaders = requestHeadersWithRedactedHeaderList(redactedRequestHeaders, action.RedactedHeaderList)
 	redactedRequestHeaders = requestHeadersWithHostForSnapshot(req.Header, redactedRequestHeaders, req.Host, action.RedactedHeaders)
 
@@ -355,6 +360,9 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		return result, nil
 	}
 	respBody = formattedBody
+	if !result.Success && bodyReadErr == nil && result.ErrorMessage == "" && responseStatusExplicitlyAccepted(action.Assertions, result) {
+		result.Success = true
+	}
 	result.ResponseBody = string(respBody)
 	for _, ext := range action.Extractors {
 		if ext.Mode == "all" {
@@ -586,6 +594,14 @@ func ensureTraceparentHeader(headers http.Header) string {
 	traceparent := newTraceparent()
 	headers.Set("Traceparent", traceparent)
 	return traceparent
+}
+
+func (h *HTTP) OAuthHTTPClient() *http.Client {
+	if h == nil || h.client == nil {
+		return nil
+	}
+	client := *h.client
+	return &client
 }
 
 func newTraceparent() string {

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/selector"
 )
 
 func (b *Browser) applyConfig(config map[string]any) error {
@@ -17,6 +18,7 @@ func (b *Browser) applyConfig(config map[string]any) error {
 	if err := b.applyConfiguredDeviceProfile(); err != nil {
 		return err
 	}
+	b.applyResolvedNetworkProfile()
 	if b.downloadResources == "recorded" && !b.recordedResourcesAvailable {
 		return fmt.Errorf("recorded resource metadata not available")
 	}
@@ -48,6 +50,7 @@ func (b *Browser) applyDefaultConfig() {
 	b.captureScreenshots = ""
 	b.clientMetricsEnabled = false
 	b.experienceCanary = false
+	b.selfHealMode = browserSelfHealReplayOnly
 	b.mobile = false
 	b.touchMode = false
 	b.orientation = "landscape"
@@ -60,6 +63,7 @@ func (b *Browser) applyDefaultConfig() {
 	b.resourceValidators = make(map[string]string)
 	b.pendingDialog = nil
 	b.dialogErr = nil
+	b.selfHealCache = make(map[string]selector.Candidate)
 }
 
 func (b *Browser) applyConfigOverrides(config map[string]any) {
@@ -133,6 +137,12 @@ func (b *Browser) applyConfigOverrides(config map[string]any) {
 	if traceparent, ok := config["browser_traceparent"].(bool); ok {
 		b.traceparentEnabled = traceparent
 	}
+	if selfHeal, ok := config["browser_self_heal"].(string); ok {
+		b.selfHealMode = normalizeBrowserSelfHealMode(selfHeal)
+	}
+	if selfHeal, ok := config["self_heal"].(string); ok {
+		b.selfHealMode = normalizeBrowserSelfHealMode(selfHeal)
+	}
 	if harCapture, ok := config["browser_har_capture"].(string); ok {
 		b.harCapturePolicy = normalizeHARCapturePolicy(harCapture)
 	}
@@ -178,6 +188,9 @@ func (b *Browser) validateConfig() error {
 	if !supportedBrowserEngine(b.engine) {
 		return fmt.Errorf("unsupported browser engine: %s", b.engine)
 	}
+	if b.selfHealMode == "" {
+		return fmt.Errorf("unsupported browser self-heal mode")
+	}
 	return nil
 }
 
@@ -221,7 +234,38 @@ func (b *Browser) applyConfiguredDeviceProfile() error {
 	if !b.mobile && profile.Mobile {
 		b.mobile = true
 	}
+	if b.networkMode == "" && profile.NetworkPreset != "" {
+		b.networkMode = "preset"
+		b.networkPreset = profile.NetworkPreset
+	}
 	return nil
+}
+
+func (b *Browser) applyResolvedNetworkProfile() {
+	if b.networkMode != "preset" {
+		return
+	}
+	latencyMS, bandwidthKbps := resolveBrowserNetworkProfile(b.networkPreset, b.networkLatencyMS, b.networkBandwidthKB)
+	if b.networkLatencyMS <= 0 {
+		b.networkLatencyMS = latencyMS
+	}
+	if b.networkBandwidthKB <= 0 {
+		b.networkBandwidthKB = bandwidthKbps
+	}
+}
+
+func resolveBrowserNetworkProfile(preset string, latencyMS, bandwidthKbps int) (int, int) {
+	switch strings.ToLower(strings.TrimSpace(preset)) {
+	case "56k":
+		return 120, 56
+	case "dsl":
+		return 50, 1536
+	case "t1":
+		return 20, 1544
+	case "4g", "10mbps":
+		return 5, 10240
+	}
+	return latencyMS, bandwidthKbps
 }
 
 func (b *Browser) applyDeviceProfile(profile DeviceProfile) {

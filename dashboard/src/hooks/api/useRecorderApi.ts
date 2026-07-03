@@ -86,7 +86,7 @@ type RecorderStatusResponse = {
   ca_cert_path?: string
   active?: RecorderActiveStatus
   browser?: {
-    availability: { available: boolean; reason?: string }
+    availability: { available: boolean; code?: string; reason?: string }
     active?: {
       id: string
       name: string

@@ -6,7 +6,7 @@ import { downloadBlob, downloadFilenameFromDisposition } from '../utils/fileUtil
 import type { VersionResponse } from '../types'
 import './ClientDownloadsMenu.css'
 
-interface DownloadPlatform {
+export interface DownloadPlatform {
   value: string
   label: string
 }
@@ -15,7 +15,7 @@ interface DownloadPlatform {
 // sanitizeDownloadPlatform in pkg/api). macOS auto-detection only selects a
 // package when the browser exposes an architecture hint; otherwise the picker
 // is safer than sending Intel Macs to the Apple Silicon archive.
-const PLATFORMS: DownloadPlatform[] = [
+export const CLIENT_DOWNLOAD_PLATFORMS: DownloadPlatform[] = [
   { value: 'darwin-arm64', label: 'macOS (Apple Silicon)' },
   { value: 'darwin-amd64', label: 'macOS (Intel)' },
   { value: 'windows-amd64', label: 'Windows (x64)' },
@@ -53,7 +53,7 @@ interface NavigatorUserAgentData {
   getHighEntropyValues?: (hints: string[]) => Promise<{ platform?: string; architecture?: string }>
 }
 
-function architecturePlatform(osHint: string, architectureHint: string): string | null {
+export function architecturePlatform(osHint: string, architectureHint: string): string | null {
   const os = osHint.toLowerCase()
   const architecture = architectureHint.toLowerCase()
   if (os.includes('mac')) {
@@ -71,7 +71,7 @@ function architecturePlatform(osHint: string, architectureHint: string): string 
 
 // detectPlatformFromNavigator guesses the visitor's platform. A null return
 // intentionally falls back to the full picker.
-async function detectPlatformFromNavigator(nav?: Navigator): Promise<string | null> {
+export async function detectPlatformFromNavigator(nav?: Navigator): Promise<string | null> {
   const currentNavigator = nav || (typeof navigator === 'undefined' ? null : navigator)
   if (!currentNavigator) return null
   const uaData = (currentNavigator as Navigator & { userAgentData?: NavigatorUserAgentData }).userAgentData
@@ -91,8 +91,8 @@ async function detectPlatformFromNavigator(nav?: Navigator): Promise<string | nu
   return null
 }
 
-function platformLabel(value: string): string {
-  return PLATFORMS.find(p => p.value === value)?.label || value
+export function platformLabel(value: string): string {
+  return CLIENT_DOWNLOAD_PLATFORMS.find(p => p.value === value)?.label || value
 }
 
 interface StatusMessage {
@@ -233,7 +233,7 @@ export default function ClientDownloadsMenu() {
                 </div>
                 {(expanded || !detectedPlatform) && (
                   <div className="client-downloads-platforms">
-                    {PLATFORMS.filter(p => p.value !== detectedPlatform).map(platform => (
+                    {CLIENT_DOWNLOAD_PLATFORMS.filter(p => p.value !== detectedPlatform).map(platform => (
                       <button
                         type="button"
                         key={platform.value}

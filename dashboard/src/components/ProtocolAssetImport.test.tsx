@@ -51,9 +51,15 @@ vi.mock('./LinkedCodePane', () => ({
 }))
 
 vi.mock('./BrowserReplayProgress', () => ({
-  default: ({ replaySessionId, onComplete }: { replaySessionId: string; onComplete?: (report: unknown, events: unknown[]) => void }) => (
+  default: ({ replaySessionId, onComplete, onApplySuggestion }: { replaySessionId: string; onComplete?: (report: unknown, events: unknown[]) => void; onApplySuggestion?: (suggestion: unknown) => void }) => (
     <div data-testid="replay-progress">
       <span>Replay {replaySessionId}</span>
+      <button
+        type="button"
+        onClick={() => onApplySuggestion?.({ id: 'unsupported', title: 'Change wait', description: 'Update wait timeout', draft_patch_type: 'update_timeout', fields: {} })}
+      >
+        Apply Unsupported Repair
+      </button>
       <button
         type="button"
         onClick={() => onComplete?.({
@@ -276,6 +282,18 @@ describe('ProtocolAssetImport', () => {
       review_sections: [],
       repair_suggestions: [],
       correlations: [],
+      preflight: {
+        valid: false,
+        action_count: 1,
+        expected_action_count: 2,
+        data_source_count: 0,
+        parameter_count: 0,
+        browser_required: false,
+        warnings: ['One HAR entry was filtered before replay.'],
+        checks: [
+          { id: 'har_accounting', label: 'HAR replay accounting', status: 'warn', detail: '1 of 2 requests converted.' },
+        ],
+      },
       stats: {
         format: 'har',
         total_requests: 2,
@@ -1013,6 +1031,30 @@ describe('ProtocolAssetImport', () => {
     expect(container.textContent).toContain('filtered assets')
     expect(container.textContent).toContain('HAR Artifact Review')
     expect(container.textContent).toContain('dynamic candidates')
+    expect(container.textContent).toContain('Preflight')
+    expect(container.textContent).toContain('HAR replay accounting')
+  })
+
+  it('rejects unsupported dropped import files before conversion', async () => {
+    await act(async () => {
+      root.render(<ProtocolAssetImport kind="har" projectId="project-1" />)
+    })
+
+    const zone = container.querySelector('.import-dropzone')
+    expect(zone).not.toBeNull()
+    if (!zone) return
+    const file = new File(['not a har'], 'notes.txt', { type: 'text/plain' })
+    const drop = new Event('drop', { bubbles: true, cancelable: true })
+    Object.defineProperty(drop, 'dataTransfer', { value: { files: [file] } })
+    await act(async () => {
+      zone.dispatchEvent(drop)
+    })
+
+    expect(container.textContent).toContain('notes.txt is not a supported har file')
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert HAR'))
+    expect(convertButton).toBeDefined()
+    expect((convertButton as HTMLButtonElement | undefined)?.disabled).toBe(true)
+    expect(apiMock.importHAR).not.toHaveBeenCalledWith(file, expect.anything())
   })
 
 	  it('imports Salesforce HAR files through the native review flow', async () => {
@@ -1521,6 +1563,14 @@ describe('ProtocolAssetImport', () => {
         ]),
       }),
     }))
+
+    const unsupportedRepair = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Apply Unsupported Repair'))
+    expect(unsupportedRepair).toBeDefined()
+    if (!unsupportedRepair) return
+    await act(async () => {
+      unsupportedRepair.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.textContent).toContain('Replay suggestion type "update_timeout" is not supported')
 
     const completeReplay = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Complete Replay'))
     expect(completeReplay).toBeDefined()

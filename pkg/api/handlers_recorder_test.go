@@ -77,6 +77,87 @@ func TestHandlePreviewRecordingConversionDoesNotStoreScript(t *testing.T) {
 	}
 }
 
+func TestHandleConvertRecordingPersistsBaseline(t *testing.T) {
+	server := recordingTestServer(t)
+	session, err := server.recorder.StartSession("rec-baseline", "Checkout Recording", recorder.SessionFilters{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session.ProjectID = "project-1"
+	session.BaseURL = "https://shop.example.com"
+	session.Requests = append(session.Requests,
+		recorder.RecordedRequest{
+			Seq:             1,
+			Method:          http.MethodPost,
+			URL:             "https://shop.example.com/api/login",
+			Path:            "/api/login",
+			Headers:         map[string]string{"Authorization": "Bearer recorded-secret"},
+			Body:            `{"password":"hunter2"}`,
+			StatusCode:      http.StatusOK,
+			ResponseBody:    `{"csrf":"csrf-recorded"}`,
+			ResponseHeaders: map[string]string{"Set-Cookie": "sid=abc"},
+		},
+		recorder.RecordedRequest{
+			Seq:        2,
+			Method:     http.MethodGet,
+			URL:        "https://shop.example.com/analytics.gif",
+			Path:       "/analytics.gif",
+			StatusCode: http.StatusOK,
+			Excluded:   true,
+		},
+	)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/recorder/rec-baseline/convert", bytes.NewBufferString(`{"name":"Checkout Converted"}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusCreated, resp.Body.String())
+	}
+	var payload struct {
+		Script struct {
+			ID        string `json:"id"`
+			ProjectID string `json:"project_id"`
+			Script    struct {
+				ProjectID string `json:"project_id"`
+			} `json:"script"`
+		} `json:"script"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if payload.Script.ID == "" {
+		t.Fatalf("stored script id was empty: %s", resp.Body.String())
+	}
+	if payload.Script.ProjectID != "project-1" || payload.Script.Script.ProjectID != "project-1" {
+		t.Fatalf("stored project ids = wrapper %q script %q, want project-1", payload.Script.ProjectID, payload.Script.Script.ProjectID)
+	}
+	record, err := server.store.GetScriptRecording(payload.Script.ID)
+	if err != nil {
+		t.Fatalf("GetScriptRecording returned error: %v", err)
+	}
+	if record == nil {
+		t.Fatal("recording baseline was not persisted")
+	}
+	if record.Source != "proxy_recording" {
+		t.Fatalf("baseline source = %q, want proxy_recording", record.Source)
+	}
+	if len(record.Observations) != 1 {
+		t.Fatalf("observations = %d, want 1 included request", len(record.Observations))
+	}
+	obs := record.Observations[0]
+	if obs.ID != 0 || obs.RequestURL != "https://shop.example.com/api/login" {
+		t.Fatalf("observation = %+v, want first included request at id 0", obs)
+	}
+	if strings.Contains(obs.RequestBody, "hunter2") || strings.Contains(obs.RequestHeaders["Authorization"], "recorded-secret") {
+		t.Fatalf("request-side secrets were not redacted: body=%q headers=%v", obs.RequestBody, obs.RequestHeaders)
+	}
+	if !strings.Contains(obs.ResponseBody, "csrf-recorded") {
+		t.Fatalf("response body = %q, want dynamic response values preserved", obs.ResponseBody)
+	}
+}
+
 func TestHandleStartRecordingThreadsCaptureCookies(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/recorder/start", bytes.NewBufferString(`{

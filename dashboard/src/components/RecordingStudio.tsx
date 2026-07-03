@@ -3,8 +3,9 @@ import { downloadBlob, downloadFilenameFromDisposition } from '../utils/fileUtil
 import { useAsyncTask } from '../hooks/useAsyncTask'
 import { useApi } from '../hooks/useApi'
 import { API_ORIGIN, apiFetch, trimTrailingSlash } from '../hooks/apiClient'
+import { type BrowserRecorderAvailability } from '../hooks/api/useBrowserRecorderApi'
 import { isWailsLocation } from '../desktop/desktopBridge'
-import { Project } from '../types'
+import { Project, type StoredScript } from '../types'
 import { type RecorderImportResult, type SalesforceImportResult } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
 import {
@@ -15,6 +16,11 @@ import {
 } from '../utils/httpUrlInput'
 import { withFallbackPersistedScript } from './importSaveUtils'
 import BrowserRecorderControlPanel from './BrowserRecorderControlPanel'
+import {
+  CLIENT_DOWNLOAD_PLATFORMS,
+  detectPlatformFromNavigator,
+  platformLabel,
+} from './ClientDownloadsMenu'
 import PageViewToggle from './PageViewToggle'
 import { attachImportCorrelationSuggestions } from './scriptEditorUtils'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
@@ -101,6 +107,29 @@ function recordingLooksSalesforce(session: RecordingSession): boolean {
   ].some(signal => text.includes(signal))
 }
 
+function isStoredScriptLike(value: unknown): value is StoredScript {
+  const candidate = value as Partial<StoredScript> | null | undefined
+  return !!candidate && typeof candidate === 'object' && typeof candidate.id === 'string' && typeof candidate.name === 'string' && typeof candidate.protocol === 'string'
+}
+
+function isScriptDefinitionLike(value: unknown): value is ScriptDefinition {
+  const candidate = value as Partial<ScriptDefinition> | null | undefined
+  return !!candidate && typeof candidate === 'object' && typeof candidate.name === 'string' && typeof candidate.protocol === 'string' && (Array.isArray(candidate.actions) || Array.isArray(candidate.init) || Array.isArray(candidate.teardown))
+}
+
+function recorderImportStoredScript(result?: RecorderImportResult | null): StoredScript | null {
+  const script = result?.script as unknown
+  return isStoredScriptLike(script) ? script : null
+}
+
+function recorderImportReviewScript(result?: RecorderImportResult | null): ScriptDefinition | null {
+  const script = result?.script as unknown
+  if (isStoredScriptLike(script)) {
+    return script.script || null
+  }
+  return isScriptDefinitionLike(script) ? script : null
+}
+
 interface RecorderStatus {
   proxy_addr?: string
   ca_cert_path?: string
@@ -112,14 +141,21 @@ interface RecorderStatus {
     started_at: string
   } | null
   browser?: {
-    availability: { available: boolean; reason?: string }
+    availability: BrowserRecorderAvailability
     active?: { id: string; name: string; status: string } | null
     install?: { status: string; error?: string }
   }
 }
 
-const MISSING_BROWSER_RECORDER_CAPABILITY = {
+interface RecordingAgentChecksum {
+  algorithm?: string
+  filename?: string
+  sha256?: string
+}
+
+const MISSING_BROWSER_RECORDER_CAPABILITY: BrowserRecorderAvailability = {
   available: false,
+  code: 'not_supported',
   reason: 'controller does not expose browser recording endpoints',
 }
 const DEFAULT_BRIDGE_ORIGIN = 'http://127.0.0.1:27777'
@@ -148,10 +184,18 @@ function initialBridgePairingToken(): string {
   }
 }
 
-function browserRecorderInstallRetryable(reason: string, installState: { status: string; error?: string } | null): boolean {
+function browserRecorderInstallRetryable(availability: BrowserRecorderAvailability | null, installState: { status: string; error?: string } | null): boolean {
   if (!installState || installState.status === 'installed') {
     return false
   }
+  const code = availability?.code?.trim()
+  if (code === 'browsers_not_installed') {
+    return true
+  }
+  if (code && ['display_missing', 'production_disabled', 'disabled', 'not_supported'].includes(code)) {
+    return false
+  }
+  const reason = availability?.reason || ''
   const normalizedReason = reason.toLowerCase()
   return ![
     'no display detected',
@@ -346,7 +390,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
   })
   const [showSetup, setShowSetup] = useState(false)
   const [parameterizeInputs, setParameterizeInputs] = useState(false)
-  const [browserAvailability, setBrowserAvailability] = useState<{ available: boolean; reason?: string } | null>(null)
+  const [browserAvailability, setBrowserAvailability] = useState<BrowserRecorderAvailability | null>(null)
   const [browserPanelSessionId, setBrowserPanelSessionId] = useState<string | null>(null)
   const [browserName, setBrowserName] = useState('')
   const [browserStartScheme, setBrowserStartScheme] = useState<HttpURLScheme>(DEFAULT_HTTP_URL_SCHEME)
@@ -367,10 +411,63 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
   const [bridgeVerifying, setBridgeVerifying] = useState(false)
   const [bridgeStatus, setBridgeStatus] = useState('')
   const [bridgeStatusTone, setBridgeStatusTone] = useState<'info' | 'success' | 'error'>('info')
+  const [recordingAgentPlatform, setRecordingAgentPlatform] = useState('')
+  const [recordingAgentPlatformDetecting, setRecordingAgentPlatformDetecting] = useState(true)
+  const [recordingAgentChecksum, setRecordingAgentChecksum] = useState<RecordingAgentChecksum | null>(null)
+  const [recordingAgentChecksumStatus, setRecordingAgentChecksumStatus] = useState('')
   const convertTask = useAsyncTask<RecorderImportResult>()
   const salesforceTask = useAsyncTask<SalesforceImportResult>()
 
   const proxyPort = recorderProxyPort(proxyAddr)
+
+  useEffect(() => {
+    let cancelled = false
+    setRecordingAgentPlatformDetecting(true)
+    detectPlatformFromNavigator().then(platform => {
+      if (cancelled) return
+      setRecordingAgentPlatform(platform || '')
+      setRecordingAgentPlatformDetecting(false)
+    }).catch(() => {
+      if (cancelled) return
+      setRecordingAgentPlatform('')
+      setRecordingAgentPlatformDetecting(false)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    const agentDownload = recordingAgentDownloadConfig()
+    const shouldShowBridgeDownload = browserAvailability?.available === false || !!api.browserRecorderBridge
+    if (!agentDownload.managed || !shouldShowBridgeDownload || !recordingAgentPlatform) {
+      setRecordingAgentChecksum(null)
+      setRecordingAgentChecksumStatus('')
+      return
+    }
+
+    let cancelled = false
+    setRecordingAgentChecksum(null)
+    setRecordingAgentChecksumStatus('Checking SHA-256...')
+    apiFetch(`/downloads/recording-agent/latest/checksum?platform=${encodeURIComponent(recordingAgentPlatform)}`)
+      .then(async response => {
+        if (cancelled) return
+        if (!response.ok) {
+          setRecordingAgentChecksumStatus('SHA-256 unavailable until this platform package is staged.')
+          return
+        }
+        const payload = await response.json() as RecordingAgentChecksum
+        if (cancelled) return
+        setRecordingAgentChecksum(payload)
+        setRecordingAgentChecksumStatus('')
+      })
+      .catch(() => {
+        if (!cancelled) setRecordingAgentChecksumStatus('SHA-256 unavailable until this platform package is staged.')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [api.browserRecorderBridge, browserAvailability?.available, recordingAgentPlatform])
 
   const handleCopyCAPath = async () => {
     if (!caCertPath) return
@@ -401,8 +498,12 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
   const handleDownloadRecordingAgent = async (event: MouseEvent<HTMLAnchorElement>, managedDownload: boolean) => {
     if (!managedDownload) return
     event.preventDefault()
+    if (!recordingAgentPlatform) {
+      showFeedback('Choose a Recording Agent platform before downloading.', 'error')
+      return
+    }
     try {
-      const res = await apiFetch('/downloads/recording-agent/latest')
+      const res = await apiFetch(`/downloads/recording-agent/latest?platform=${encodeURIComponent(recordingAgentPlatform)}`)
       const contentType = (res.headers.get('content-type') || '').toLowerCase()
       if (!res.ok) throw new Error('Recording Agent package is not available from this controller')
       if (contentType.includes('text/html')) {
@@ -410,7 +511,10 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
       }
       const blob = await res.blob()
       downloadBlob(blob, downloadFilenameFromDisposition(res.headers.get('content-disposition'), 'apexload-recording-agent.tar.gz'))
-      showFeedback('APEX Load Recording Agent download started')
+      const sum = res.headers.get('x-content-sha256') || recordingAgentChecksum?.sha256
+      showFeedback(sum
+        ? `APEX Load Recording Agent download started (${platformLabel(recordingAgentPlatform)}). SHA-256: ${sum}`
+        : `APEX Load Recording Agent download started (${platformLabel(recordingAgentPlatform)})`)
     } catch (e: any) {
       showFeedback(e.message || 'Failed to download the APEX Load Recording Agent', 'error')
     }
@@ -833,11 +937,11 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
   }
 
   const buildReviewedScript = (): ScriptDefinition | null => {
-    const script = convertTask.value?.script
+    const script = recorderImportReviewScript(convertTask.value)
     if (!script) {
       return null
     }
-    return attachImportCorrelationSuggestions(script as ScriptDefinition, 'recorder', convertTask.value?.correlations)
+    return attachImportCorrelationSuggestions(script, 'recorder', convertTask.value?.correlations)
   }
 
   const handleEditConvertedScript = () => {
@@ -851,9 +955,20 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
   const handleSaveConvertedScript = async () => {
     const script = buildReviewedScript()
     if (!script) {
+      const stored = recorderImportStoredScript(convertTask.value)
+      if (stored) {
+        onImported?.({ scripts: [stored] })
+        showFeedback(`Script "${stored.name}" is already in the script library`)
+      }
       return
     }
     try {
+      const stored = recorderImportStoredScript(convertTask.value)
+      if (stored) {
+        onImported?.({ scripts: [withFallbackPersistedScript(stored, script)] })
+        showFeedback(`Script "${stored.name}" is already in the script library`)
+        return
+      }
       const savedScript = await api.createScript(script, activeProject?.id)
       showFeedback(`Script "${script.name}" created with ${convertTask.value?.correlations?.length || 0} correlations detected`)
       onImported?.({ scripts: [withFallbackPersistedScript(savedScript, script)] })
@@ -884,6 +999,9 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
   }
 
   const handleDelete = async (id: string) => {
+    if (typeof window !== 'undefined' && window.confirm && !window.confirm('Delete this stopped recording session? This cannot be undone.')) {
+      return
+    }
     try {
       await api.deleteRecording(id)
       if (selectedSession?.id === id) setSelectedSession(null)
@@ -895,18 +1013,24 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
 
   const stoppedSessions = sessions.filter(s => s.status === 'stopped')
   const convertResult = convertTask.value
-  const convertedScript = convertResult?.script
+  const convertedStoredScript = recorderImportStoredScript(convertResult)
+  const convertedReviewScript = recorderImportReviewScript(convertResult)
+  const convertedScript = convertedReviewScript || convertedStoredScript
   const converting = convertTask.pending
   const salesforceResult = salesforceTask.value
   const salesforceScript = salesforceResult?.script || salesforceResult?.scripts?.[0]
   const reviewingSalesforce = salesforceTask.pending
   const browserUnavailableReason = browserAvailability?.reason?.trim() || ''
-  const browserUnavailableDueToDisplay = browserUnavailableReason.toLowerCase().includes('no display detected')
-  const canRetryBrowserInstall = browserRecorderInstallRetryable(browserUnavailableReason, installState)
+  const browserUnavailableCode = browserAvailability?.code?.trim() || ''
+  const browserUnavailableDueToDisplay = browserUnavailableCode === 'display_missing' || browserUnavailableReason.toLowerCase().includes('no display detected')
+  const canRetryBrowserInstall = browserRecorderInstallRetryable(browserAvailability, installState)
   const installStatusTone = installState ? browserRecorderInstallTone(installState.status) : 'info'
   const installStatusVisible = !!installState && installState.status !== 'idle'
   const bridgeCommand = bridgeRecordAgentCommand(bridgeOrigin, bridgeToken)
   const agentDownload = recordingAgentDownloadConfig()
+  const agentDownloadHref = agentDownload.managed && recordingAgentPlatform
+    ? `${agentDownload.url}?platform=${encodeURIComponent(recordingAgentPlatform)}`
+    : agentDownload.url
 
   return (
     <div className="page recording-studio">
@@ -955,16 +1079,39 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
                     <div className="rec-bridge-step-number">1</div>
                     <div className="rec-bridge-step-content">
                       <div className="rec-bridge-step-title">Download the Recording Agent</div>
+                      {agentDownload.managed && (
+                        <div className="rec-form-row rec-agent-platform-row">
+                          <label className="rec-label">Platform</label>
+                          <select
+                            className="rec-input"
+                            value={recordingAgentPlatform}
+                            onChange={event => setRecordingAgentPlatform(event.target.value)}
+                            aria-label="Recording Agent platform"
+                          >
+                            <option value="">{recordingAgentPlatformDetecting ? 'Detecting platform...' : 'Choose platform'}</option>
+                            {CLIENT_DOWNLOAD_PLATFORMS.map(platform => (
+                              <option key={platform.value} value={platform.value}>{platform.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
                       <div className="rec-bridge-install-note">
                         <a
-                          href={agentDownload.url}
+                          href={agentDownloadHref}
                           target="_blank"
                           rel="noreferrer"
                           onClick={event => handleDownloadRecordingAgent(event, agentDownload.managed)}
                         >
-                          Download the APEX Load Recording Agent
+                          Download the APEX Load Recording Agent{agentDownload.managed && recordingAgentPlatform ? ` for ${platformLabel(recordingAgentPlatform)}` : ''}
                         </a>
                       </div>
+                      {agentDownload.managed && (
+                        <div className="rec-bridge-help">
+                          {recordingAgentChecksum?.sha256
+                            ? <>SHA-256 <code>{recordingAgentChecksum.sha256}</code>{recordingAgentChecksum.filename ? <> for <code>{recordingAgentChecksum.filename}</code></> : null}</>
+                            : recordingAgentChecksumStatus || (recordingAgentPlatform ? 'SHA-256 will appear when the package manifest is staged.' : 'Choose a platform to show the package SHA-256.')}
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div className="rec-bridge-step">
@@ -1631,12 +1778,12 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
             </div>
             <div className="rec-result-item">
               <span className="rec-result-label">Script ID</span>
-              <code className="rec-result-value">{convertedScript.id || 'preview'}</code>
+              <code className="rec-result-value">{convertedStoredScript?.id || 'preview'}</code>
             </div>
           </div>
           <div className="rec-result-actions">
             <button className="btn btn-primary" type="button" onClick={handleSaveConvertedScript}>Save To Script Library</button>
-            {onEdit && <button className="btn btn-secondary" type="button" onClick={handleEditConvertedScript}>Open In Visual Editor</button>}
+            {onEdit && <button className="btn btn-secondary" type="button" onClick={handleEditConvertedScript} disabled={!convertedReviewScript}>Open In Visual Editor</button>}
           </div>
 
           {convertResult.correlations && convertResult.correlations.length > 0 && (

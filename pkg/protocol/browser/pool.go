@@ -34,7 +34,10 @@ func getBrowserInstance(engine string, headless bool) (playwright.Browser, error
 
 	key := browserPoolKey(engine, headless)
 	if browser := globalBrowsers[key]; browser != nil {
-		return browser, nil
+		if browser.IsConnected() {
+			return browser, nil
+		}
+		delete(globalBrowsers, key)
 	}
 
 	var (

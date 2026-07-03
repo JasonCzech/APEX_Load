@@ -26,8 +26,16 @@ import (
 // headed recording browser, with a human-readable reason when it cannot.
 type browserRecordingAvailability struct {
 	Available bool   `json:"available"`
+	Code      string `json:"code,omitempty"`
 	Reason    string `json:"reason,omitempty"`
 }
+
+const (
+	browserRecordingUnavailableDisabled             = "disabled"
+	browserRecordingUnavailableProductionDisabled   = "production_disabled"
+	browserRecordingUnavailableDisplayMissing       = "display_missing"
+	browserRecordingUnavailableBrowsersNotInstalled = "browsers_not_installed"
+)
 
 // browserRecordingAvailability gates the feature server-side (the UI hint is
 // advisory; POST /sessions fails closed on this check). Headed recording is
@@ -35,18 +43,36 @@ type browserRecordingAvailability struct {
 func (s *Server) browserRecordingAvailability() browserRecordingAvailability {
 	switch strings.ToLower(envValue("APEXLOAD_BROWSER_RECORDER")) {
 	case "off", "disabled", "false", "0":
-		return browserRecordingAvailability{Reason: "browser recording is disabled via APEXLOAD_BROWSER_RECORDER"}
+		return browserRecordingAvailability{Code: browserRecordingUnavailableDisabled, Reason: "browser recording is disabled via APEXLOAD_BROWSER_RECORDER"}
 	case "on", "enabled", "true", "1":
 		// Explicit opt-in overrides the production-mode default-off.
 	default:
 		if productionMode() && !s.desktopMode && !s.bridgeMode {
-			return browserRecordingAvailability{Reason: "browser recording launches a headed browser on the controller host and is disabled in production mode (set APEXLOAD_BROWSER_RECORDER=on to override)"}
+			return browserRecordingAvailability{Code: browserRecordingUnavailableProductionDisabled, Reason: "browser recording launches a headed browser on the controller host and is disabled in production mode (set APEXLOAD_BROWSER_RECORDER=on to override)"}
 		}
 	}
 	if runtime.GOOS == "linux" && strings.TrimSpace(os.Getenv("DISPLAY")) == "" && strings.TrimSpace(os.Getenv("WAYLAND_DISPLAY")) == "" {
-		return browserRecordingAvailability{Reason: "no display detected on the controller host for a headed browser"}
+		return browserRecordingAvailability{Code: browserRecordingUnavailableDisplayMissing, Reason: "no display detected on the controller host for a headed browser"}
 	}
 	return browserRecordingAvailability{Available: true}
+}
+
+func browserRecordingAvailabilityFromStartError(err error) (browserRecordingAvailability, bool) {
+	if err == nil {
+		return browserRecordingAvailability{}, false
+	}
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "please install") ||
+		strings.Contains(msg, "playwright install") ||
+		strings.Contains(msg, "executable doesn't exist") ||
+		strings.Contains(msg, "executable does not exist") ||
+		strings.Contains(msg, "browser has not been installed") {
+		return browserRecordingAvailability{
+			Code:   browserRecordingUnavailableBrowsersNotInstalled,
+			Reason: "Playwright Chromium is not installed on the controller host; install the recording browser and retry",
+		}, true
+	}
+	return browserRecordingAvailability{}, false
 }
 
 // browserStorageStateDir is the confined subdirectory (under the export base)
@@ -127,6 +153,13 @@ func (s *Server) handleStartBrowserRecording(w http.ResponseWriter, r *http.Requ
 			writeError(w, http.StatusConflict, err.Error())
 			return
 		}
+		if availability, ok := browserRecordingAvailabilityFromStartError(err); ok {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+				"error":        availability.Reason,
+				"availability": availability,
+			})
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "failed to start browser recording: "+err.Error())
 		return
 	}
@@ -143,6 +176,28 @@ func (s *Server) handleGetBrowserRecording(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"session": session})
+}
+
+func (s *Server) handleListBrowserRecordings(w http.ResponseWriter, r *http.Request) {
+	projectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
+	sessions := s.browserRecording.List(projectID)
+	writeJSON(w, http.StatusOK, map[string]any{"sessions": sessions, "count": len(sessions)})
+}
+
+func (s *Server) handleDeleteBrowserRecording(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	session, ok, err := s.browserRecording.Delete(id)
+	if !ok {
+		writeError(w, http.StatusNotFound, "browser recording session not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
+	s.recordAuditEvent(r, "browser_recording.delete", "success", "browser_recording", session.ID, session.ProjectID,
+		map[string]any{"status": session.Status, "step_count": session.StepCount})
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": id, "session": session})
 }
 
 func (s *Server) handleStopBrowserRecording(w http.ResponseWriter, r *http.Request) {
@@ -675,9 +730,7 @@ func (s *Server) handleUpdateBrowserRecordingStep(w http.ResponseWriter, r *http
 		return
 	}
 	if req.Secret != nil || req.Param != nil {
-		secret := req.Secret != nil && *req.Secret
-		param := req.Param != nil && *req.Param
-		session, ok, err := s.browserRecording.SetStepMark(id, seq, secret, param)
+		session, ok, err := s.browserRecording.PatchStepMark(id, seq, req.Secret, req.Param)
 		s.writeBrowserRecordingControlResult(w, session, ok, err)
 		return
 	}

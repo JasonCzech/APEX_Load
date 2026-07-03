@@ -86,7 +86,7 @@ func (vu *VUser) handleHTTPOAuth2TokenAction(ctx context.Context, action dsl.Act
 		value, _ := actionParamString(params, key)
 		return value
 	}
-	token, err := protocolhttp.FetchOAuth2Token(ctx, protocolhttp.OAuthTokenRequest{
+	tokenReq := protocolhttp.OAuthTokenRequest{
 		TokenURL:     paramString("token_url"),
 		GrantType:    paramString("grant_type"),
 		ClientID:     paramString("client_id"),
@@ -99,7 +99,11 @@ func (vu *VUser) handleHTTPOAuth2TokenAction(ctx context.Context, action dsl.Act
 		RefreshToken: paramString("refresh_token"),
 		Username:     paramString("username"),
 		Password:     paramString("password"),
-	})
+	}
+	if httpProto, ok := vu.Proto.(*protocolhttp.HTTP); ok {
+		tokenReq.HTTPClient = httpProto.OAuthHTTPClient()
+	}
+	token, err := protocolhttp.FetchOAuth2Token(ctx, tokenReq)
 	if err != nil {
 		return fmt.Errorf("http_oauth2_token %q: %w", action.Name, err)
 	}

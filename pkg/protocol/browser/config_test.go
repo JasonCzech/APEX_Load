@@ -108,8 +108,61 @@ func TestBrowserApplyConfigDeviceProfile(t *testing.T) {
 	if b.viewportW != 412 || b.viewportH != 915 || b.deviceScaleFactor != 2.625 {
 		t.Fatalf("profile viewport = %dx%d scale %v, want pixel_8 values", b.viewportW, b.viewportH, b.deviceScaleFactor)
 	}
+	if b.networkMode != "preset" || b.networkPreset != "10mbps" || b.networkLatencyMS != 5 || b.networkBandwidthKB != 10240 {
+		t.Fatalf("profile network = mode:%q preset:%q latency:%d bandwidth:%d, want 10mbps preset", b.networkMode, b.networkPreset, b.networkLatencyMS, b.networkBandwidthKB)
+	}
 	if !b.mobile || !b.touchMode || b.userAgent == "" {
 		t.Fatalf("profile mobile/touch/ua = %v/%v/%q", b.mobile, b.touchMode, b.userAgent)
+	}
+}
+
+func TestBrowserApplyConfigNetworkPreset(t *testing.T) {
+	var b Browser
+	if err := b.applyConfig(map[string]any{
+		"web_network_simulation_mode":   "preset",
+		"web_network_simulation_preset": "dsl",
+	}); err != nil {
+		t.Fatalf("applyConfig returned error: %v", err)
+	}
+	if b.networkLatencyMS != 50 || b.networkBandwidthKB != 1536 {
+		t.Fatalf("network profile = latency:%d bandwidth:%d, want DSL defaults", b.networkLatencyMS, b.networkBandwidthKB)
+	}
+
+	var explicit Browser
+	if err := explicit.applyConfig(map[string]any{
+		"web_network_simulation_mode":           "preset",
+		"web_network_simulation_preset":         "dsl",
+		"web_network_simulation_latency_ms":     float64(75),
+		"web_network_simulation_bandwidth_kbps": float64(2048),
+	}); err != nil {
+		t.Fatalf("explicit applyConfig returned error: %v", err)
+	}
+	if explicit.networkLatencyMS != 75 || explicit.networkBandwidthKB != 2048 {
+		t.Fatalf("explicit network profile = latency:%d bandwidth:%d, want explicit values preserved", explicit.networkLatencyMS, explicit.networkBandwidthKB)
+	}
+}
+
+func TestBrowserContextOptionsApplyScaleAndOrientation(t *testing.T) {
+	b := Browser{
+		viewportW:         900,
+		viewportH:         600,
+		orientation:       "portrait",
+		deviceScaleFactor: 2.5,
+		touchMode:         true,
+		mobile:            true,
+	}
+	options := b.browserContextOptions()
+	if options.Viewport == nil || options.Viewport.Width != 600 || options.Viewport.Height != 900 {
+		t.Fatalf("viewport = %+v, want portrait 600x900", options.Viewport)
+	}
+	if options.Screen == nil || options.Screen.Width != 600 || options.Screen.Height != 900 {
+		t.Fatalf("screen = %+v, want portrait 600x900", options.Screen)
+	}
+	if options.DeviceScaleFactor == nil || *options.DeviceScaleFactor != 2.5 {
+		t.Fatalf("DeviceScaleFactor = %v, want 2.5", options.DeviceScaleFactor)
+	}
+	if options.HasTouch == nil || !*options.HasTouch || options.IsMobile == nil || !*options.IsMobile {
+		t.Fatalf("touch/mobile options = %v/%v, want true/true", options.HasTouch, options.IsMobile)
 	}
 }
 

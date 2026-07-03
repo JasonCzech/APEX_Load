@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { useApi } from '../hooks/useApi'
 import {
@@ -33,24 +33,43 @@ function confidenceBand(confidence: number): 'high' | 'medium' | 'low' {
   return 'low'
 }
 
+function initialSelection(suggestions: ParameterizationSuggestion[]): Record<string, boolean> {
+  const initial: Record<string, boolean> = {}
+  for (const suggestion of suggestions) {
+    if (suggestion.auto_apply && !suggestion.pre_applied) initial[suggestion.id] = true
+  }
+  return initial
+}
+
+function suggestionDisplayValue(suggestion: ParameterizationSuggestion): string {
+  if (suggestion.kind === 'secret' || suggestion.high_risk) return '••••••'
+  return suggestion.sample_value || suggestion.literal_value
+}
+
 export default function ParameterizationReview({ parameterization, script, scriptName, onApplied }: Props) {
   const api = useApi()
   const suggestions = useMemo(
     () => (parameterization.suggestions ?? []).filter(s => !scriptName || !s.script_name || s.script_name === scriptName),
     [parameterization.suggestions, scriptName],
   )
-  const [selected, setSelected] = useState<Record<string, boolean>>(() => {
-    const initial: Record<string, boolean> = {}
-    for (const suggestion of suggestions) {
-      if (suggestion.auto_apply && !suggestion.pre_applied) initial[suggestion.id] = true
-    }
-    return initial
-  })
+  const [selected, setSelected] = useState<Record<string, boolean>>(() => initialSelection(suggestions))
   const [applying, setApplying] = useState(false)
   const [applied, setApplied] = useState(false)
   const [diffs, setDiffs] = useState<ParameterizationDiff[]>([])
   const [error, setError] = useState('')
   const [blockedReason, setBlockedReason] = useState('')
+  const suggestionSignature = useMemo(
+    () => suggestions.map(s => `${s.id}:${s.pre_applied ? '1' : '0'}:${s.auto_apply ? '1' : '0'}`).join('|'),
+    [suggestions],
+  )
+
+  useEffect(() => {
+    setSelected(initialSelection(suggestions))
+    setApplied(false)
+    setDiffs([])
+    setError('')
+    setBlockedReason('')
+  }, [script, scriptName, suggestionSignature, suggestions])
 
   if (suggestions.length === 0) return null
 
@@ -62,8 +81,12 @@ export default function ParameterizationReview({ parameterization, script, scrip
   const selectedHighRisk = suggestions.some(s => selected[s.id] && s.high_risk && !s.pre_applied)
 
   const toggle = (suggestion: ParameterizationSuggestion) => {
-    if (suggestion.pre_applied || applied) return
+    if (suggestion.pre_applied) return
     setSelected(prev => ({ ...prev, [suggestion.id]: !prev[suggestion.id] }))
+    if (applied) {
+      setApplied(false)
+      setDiffs([])
+    }
   }
 
   const handleApply = async () => {
@@ -104,11 +127,9 @@ export default function ParameterizationReview({ parameterization, script, scrip
             High-confidence suggestions are pre-selected; review each row, then apply the selection.
           </p>
         </div>
-        {!applied && (
-          <button className="btn btn-primary" onClick={handleApply} disabled={applying || selectedIds.length === 0}>
-            {applying ? 'Applying...' : `Apply Selected (${selectedIds.length})`}
-          </button>
-        )}
+        <button className="btn btn-primary" onClick={handleApply} disabled={applying || selectedIds.length === 0}>
+          {applying ? 'Applying...' : `${applied ? 'Reapply' : 'Apply'} Selected (${selectedIds.length})`}
+        </button>
         {applied && <span className="paramize-applied-badge">Applied {diffs.length} change(s)</span>}
       </div>
 
@@ -130,12 +151,11 @@ export default function ParameterizationReview({ parameterization, script, scrip
                     : <input
                         type="checkbox"
                         checked={!!selected[suggestion.id]}
-                        disabled={applied}
                         onChange={() => toggle(suggestion)}
                       />}
                   <span className="paramize-item-name">{suggestion.var_name}</span>
                   <span className="paramize-item-change">
-                    <code className="paramize-before">{suggestion.sample_value || suggestion.literal_value}</code>
+                    <code className="paramize-before">{suggestionDisplayValue(suggestion)}</code>
                     <span className="paramize-arrow" aria-hidden>→</span>
                     <code className="paramize-after">{suggestion.replacement}</code>
                   </span>

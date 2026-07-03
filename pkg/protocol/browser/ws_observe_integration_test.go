@@ -87,6 +87,7 @@ func TestBrowserReplayWebSocketSession(t *testing.T) {
 		t.Fatalf("ws wait missing evidence: %+v", wait.ProtocolEvidence)
 	}
 
+	b.recordWSEvent(server.URL+"/ws", "received", []byte(`{"type":"ready","seq":2}`))
 	assertResult, err := b.Execute(context.Background(), &protocol.Action{
 		Name: "Assert ready frame",
 		Type: "browser_ws_assert",

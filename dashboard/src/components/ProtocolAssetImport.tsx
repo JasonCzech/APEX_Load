@@ -111,6 +111,39 @@ const copy = {
   },
 } satisfies Record<ImportKind, Record<string, string>>
 
+const IMPORT_FILE_MAX_BYTES = 50 * 1024 * 1024
+
+function formatBytes(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${bytes} B`
+}
+
+function acceptTokens(accept: string): string[] {
+  return accept.split(',').map(token => token.trim().toLowerCase()).filter(Boolean)
+}
+
+function fileMatchesAccept(file: File, accept: string): boolean {
+  const name = file.name.toLowerCase()
+  const type = file.type.toLowerCase()
+  return acceptTokens(accept).some(token => {
+    if (token.startsWith('.')) return name.endsWith(token)
+    if (token.endsWith('/*')) return type.startsWith(token.slice(0, -1))
+    return type === token
+  })
+}
+
+function validateImportFile(kind: ImportKind, file: File): string | null {
+  if (file.size > IMPORT_FILE_MAX_BYTES) {
+    return `${file.name} is ${formatBytes(file.size)}; imports are limited to ${formatBytes(IMPORT_FILE_MAX_BYTES)}.`
+  }
+  if (!fileMatchesAccept(file, copy[kind].accept)) {
+    const extensions = acceptTokens(copy[kind].accept).filter(token => token.startsWith('.')).join(', ')
+    return `${file.name} is not a supported ${copy[kind].title.replace(/^Import\s+/i, '').toLowerCase()} file${extensions ? ` (${extensions})` : ''}.`
+  }
+  return null
+}
+
 type ProtocolImportResult = DevWebImportResult | HARImportResult | SalesforceImportResult | BrowserRecordingImportResult | OpenAPIImportResult | RAMLImportResult | PostmanImportResult | WSDLImportResult | AsyncAPIImportResult | K6ImportResult | EventHubsCaptureImportResult | BrokerConfigImportResult
 type SourceImportSupportEntry = DevWebSupportMatrixEntry | OpenAPISupportMatrixEntry | RAMLSupportMatrixEntry | PostmanSupportMatrixEntry | AsyncAPISupportMatrixEntry | K6SupportMatrixEntry | EventHubsCaptureSupportMatrixEntry | BrokerConfigSupportMatrixEntry
 
@@ -841,7 +874,10 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   }
 
   const handleApplyRecorderReplaySuggestion = async (suggestion: ReplayRepairSuggestion) => {
-    if (suggestion.draft_patch_type !== 'promote_selector') return
+    if (suggestion.draft_patch_type !== 'promote_selector') {
+      setMessageError(`Replay suggestion type "${suggestion.draft_patch_type || 'unknown'}" is not supported for imported-draft repair yet.`)
+      return
+    }
     const selector = typeof suggestion.fields?.selector === 'string' ? suggestion.fields.selector.trim() : ''
     if (!selector || !reviewedScript) {
       setMessageError('This replay suggestion did not include a selector to promote.')
@@ -977,6 +1013,8 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
               file={file}
               onFile={next => { setFile(next); setMessageError('') }}
               dropHint={labels.drop}
+              validate={candidate => validateImportFile(kind, candidate)}
+              onError={setMessageError}
             />
           </div>
           {kind === 'postman' && (
@@ -984,11 +1022,13 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
               <div className="sample-import-field sample-import-span-2">
                 <span>Environment File</span>
                 <ImportDropzone
-                  accept=".postman_environment.json,.json,application/json"
-                  file={postmanEnvironmentFile}
-                  onFile={next => { setPostmanEnvironmentFile(next); setMessageError('') }}
-                  dropHint="Drop an optional Postman environment JSON file here"
-                />
+                accept=".postman_environment.json,.json,application/json"
+                file={postmanEnvironmentFile}
+                onFile={next => { setPostmanEnvironmentFile(next); setMessageError('') }}
+                dropHint="Drop an optional Postman environment JSON file here"
+                validate={candidate => validateImportFile('postman', candidate)}
+                onError={setMessageError}
+              />
               </div>
               <label className="sample-import-field">
                 <span>Default Think Time (ms)</span>
@@ -1173,7 +1213,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                 </div>
               ))}
             </div>
-            {(kind === 'openapi' || kind === 'asyncapi' || kind === 'recorder-export') && replayPreflight && (
+            {(kind === 'har' || kind === 'openapi' || kind === 'asyncapi' || kind === 'recorder-export') && replayPreflight && (
               <div className="sample-import-preflight">
                 <ReplayPreflightCard preflight={replayPreflight} />
               </div>

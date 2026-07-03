@@ -159,14 +159,17 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 			}
 		}
 
-		action.Assertions = append(action.Assertions, dsl.Assertion{
-			Type:     "status_code",
-			Expected: req.StatusCode,
-		})
+		if shouldAssertRecordedStatus(req.StatusCode) {
+			action.Assertions = append(action.Assertions, dsl.Assertion{
+				Type:     "status_code",
+				Expected: req.StatusCode,
+			})
+		}
 
-		if req.ThinkTimeMs > 500 {
-			action.ThinkTimeAfter = true
-			action.ThinkTime = dsl.ThinkTimeConfig{
+		if req.ThinkTimeMs > 500 && len(script.Actions) > 0 {
+			prev := &script.Actions[len(script.Actions)-1]
+			prev.ThinkTimeAfter = true
+			prev.ThinkTime = dsl.ThinkTimeConfig{
 				Type:   "fixed",
 				MeanMs: float64(req.ThinkTimeMs),
 			}
@@ -214,6 +217,10 @@ func convertibleCorrelationRequests(requests []RecordedRequest) []RecordedReques
 		filtered = append(filtered, req)
 	}
 	return filtered
+}
+
+func shouldAssertRecordedStatus(statusCode int) bool {
+	return statusCode >= 200 && statusCode < 300
 }
 
 // SessionBaseline returns the recorded request/response exchanges that the

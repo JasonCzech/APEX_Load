@@ -20,6 +20,7 @@ export interface BrowserReplayProgressProps {
 }
 
 type Phase = 'running' | 'completed' | 'failed' | 'stopped'
+type TerminalPhase = Exclude<Phase, 'running'>
 
 // BrowserReplayProgress is a compact, read-only verification view: it replays
 // the just-recorded script and shows per-step pass/fail with selector self-heal
@@ -32,8 +33,10 @@ export default function BrowserReplayProgress({ replaySessionId, projectId, onDi
   const [expanded, setExpanded] = useState<string | null>(null)
   const [rejected, setRejected] = useState<Record<string, boolean>>({})
   const [applying, setApplying] = useState<Record<string, boolean>>({})
+  const [inactive, setInactive] = useState(false)
   const timeoutRef = useRef<number | null>(null)
   const eventsRef = useRef<BrowserReplayEvent[]>([])
+  const completedRef = useRef(false)
 
   const clearInactivityTimer = () => {
     if (timeoutRef.current !== null) {
@@ -45,8 +48,7 @@ export default function BrowserReplayProgress({ replaySessionId, projectId, onDi
   const armInactivityTimer = () => {
     clearInactivityTimer()
     timeoutRef.current = window.setTimeout(() => {
-      setPhase('stopped')
-      onComplete?.(null, eventsRef.current.filter(Boolean))
+      setInactive(true)
     }, 30000)
   }
 
@@ -56,15 +58,50 @@ export default function BrowserReplayProgress({ replaySessionId, projectId, onDi
     setReport(null)
     setRejected({})
     setApplying({})
+    setInactive(false)
     eventsRef.current = []
+    completedRef.current = false
     armInactivityTimer()
     return clearInactivityTimer
   }, [replaySessionId])
 
+  const complete = (nextPhase: TerminalPhase, nextReport: BrowserReplayReport | null) => {
+    if (completedRef.current) return
+    completedRef.current = true
+    clearInactivityTimer()
+    setInactive(false)
+    setPhase(nextPhase)
+    if (nextReport) setReport(nextReport)
+    onComplete?.(nextReport, eventsRef.current.filter(Boolean))
+  }
+
+  const reportFromMessage = (msg: WSMessage, nextPhase: TerminalPhase): BrowserReplayReport | null => {
+    if (isBrowserReplayReport(msg.report)) return msg.report
+    const sessionReport = typeof msg.session === 'object' && msg.session !== null
+      ? (msg.session as { report?: unknown }).report
+      : null
+    if (isBrowserReplayReport(sessionReport)) return sessionReport
+    const currentEvents = eventsRef.current.filter(Boolean)
+    if (currentEvents.length === 0 && nextPhase === 'stopped') return null
+    const first = currentEvents[0]
+    const last = currentEvents[currentEvents.length - 1]
+    return {
+      replay_session_id: msg.replay_session_id || replaySessionId,
+      group: 'Replay verification',
+      protocol: 'browser',
+      started_at: first?.started_at || '',
+      completed_at: last?.completed_at || new Date().toISOString(),
+      success: nextPhase === 'completed' && currentEvents.every(event => event.success),
+      events: currentEvents,
+    }
+  }
+
   const handleMessage = useMemo(
     () => (msg: WSMessage) => {
       if (msg.replay_session_id !== replaySessionId) return
+      if (completedRef.current) return
       armInactivityTimer()
+      setInactive(false)
       if (msg.type === 'browser_replay_event' && msg.event) {
         if (!isBrowserReplayEvent(msg.event)) return
         const event = msg.event
@@ -76,23 +113,11 @@ export default function BrowserReplayProgress({ replaySessionId, projectId, onDi
           return next
         })
       } else if (msg.type === 'browser_replay_completed') {
-        clearInactivityTimer()
-        setPhase('completed')
-        const nextReport = isBrowserReplayReport(msg.report) ? msg.report : null
-        if (nextReport) setReport(nextReport)
-        onComplete?.(nextReport, eventsRef.current.filter(Boolean))
+        complete('completed', reportFromMessage(msg, 'completed'))
       } else if (msg.type === 'browser_replay_failed') {
-        clearInactivityTimer()
-        setPhase('failed')
-        const nextReport = isBrowserReplayReport(msg.report) ? msg.report : null
-        if (nextReport) setReport(nextReport)
-        onComplete?.(nextReport, eventsRef.current.filter(Boolean))
+        complete('failed', reportFromMessage(msg, 'failed'))
       } else if (msg.type === 'browser_replay_stopped') {
-        clearInactivityTimer()
-        setPhase('stopped')
-        const nextReport = isBrowserReplayReport(msg.report) ? msg.report : null
-        if (nextReport) setReport(nextReport)
-        onComplete?.(nextReport, eventsRef.current.filter(Boolean))
+        complete('stopped', reportFromMessage(msg, 'stopped'))
       }
     },
     [replaySessionId, onComplete],
@@ -127,6 +152,9 @@ export default function BrowserReplayProgress({ replaySessionId, projectId, onDi
 
       {real.length === 0 && phase === 'running' && (
         <div className="brp-replay-empty">Launching replay…</div>
+      )}
+      {inactive && phase === 'running' && (
+        <div className="brp-replay-empty" role="status">Still waiting for replay events…</div>
       )}
 
       <div className="brp-replay-events">

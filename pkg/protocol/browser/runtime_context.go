@@ -1,6 +1,7 @@
 package browser
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"strings"
@@ -59,10 +60,17 @@ func (b *Browser) openBrowserContext() error {
 }
 
 func (b *Browser) browserContextOptions() playwright.BrowserNewContextOptions {
+	viewport := b.browserViewport()
+	deviceScaleFactor := b.deviceScaleFactor
+	if deviceScaleFactor <= 0 {
+		deviceScaleFactor = 1
+	}
 	contextOptions := playwright.BrowserNewContextOptions{
-		HasTouch: playwright.Bool(b.touchMode),
-		IsMobile: playwright.Bool(b.mobile),
-		Viewport: &playwright.Size{Width: b.viewportW, Height: b.viewportH},
+		DeviceScaleFactor: playwright.Float(deviceScaleFactor),
+		HasTouch:          playwright.Bool(b.touchMode),
+		IsMobile:          playwright.Bool(b.mobile),
+		Screen:            viewport,
+		Viewport:          viewport,
 	}
 	if b.userAgent != "" {
 		contextOptions.UserAgent = playwright.String(b.userAgent)
@@ -71,9 +79,31 @@ func (b *Browser) browserContextOptions() playwright.BrowserNewContextOptions {
 	return contextOptions
 }
 
+func (b *Browser) browserViewport() *playwright.Size {
+	width := b.viewportW
+	height := b.viewportH
+	if width <= 0 {
+		width = 1440
+	}
+	if height <= 0 {
+		height = 900
+	}
+	switch b.orientation {
+	case "portrait":
+		if width > height {
+			width, height = height, width
+		}
+	case "landscape":
+		if height > width {
+			width, height = height, width
+		}
+	}
+	return &playwright.Size{Width: width, Height: height}
+}
+
 func (b *Browser) installBrowserContextHandlers(browserContext playwright.BrowserContext) {
 	browserContext.OnPage(func(page playwright.Page) {
-		b.registerPage(page, true)
+		b.registerPage(page, false)
 	})
 	browserContext.OnConsole(func(message playwright.ConsoleMessage) {
 		source := ""
@@ -156,6 +186,50 @@ func (b *Browser) consumeDialogError() error {
 	err := b.dialogErr
 	b.dialogErr = nil
 	return err
+}
+
+func (b *Browser) pendingDialogState() (bool, time.Duration) {
+	b.dialogMu.Lock()
+	defer b.dialogMu.Unlock()
+	if b.pendingDialog == nil {
+		return false, 0
+	}
+	wait := b.pendingDialog.wait
+	if wait <= 0 {
+		wait = time.Second
+	}
+	return true, wait
+}
+
+func (b *Browser) waitForPendingDialog(ctx context.Context, timeout time.Duration) error {
+	if timeout <= 0 {
+		timeout = time.Second
+	}
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	ticker := time.NewTicker(25 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		armed, _ := b.pendingDialogState()
+		if !armed {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			b.clearPendingDialog()
+			return ctx.Err()
+		case <-deadline.C:
+			b.clearPendingDialog()
+			return fmt.Errorf("expected browser dialog was not observed within %s", timeout)
+		case <-ticker.C:
+		}
+	}
+}
+
+func (b *Browser) clearPendingDialog() {
+	b.dialogMu.Lock()
+	defer b.dialogMu.Unlock()
+	b.pendingDialog = nil
 }
 
 // currentPage returns the active page under b.mu. The OnPage handler activates
@@ -324,7 +398,7 @@ func (b *Browser) installCDPSession(browserContext playwright.BrowserContext, pa
 	if browserContext == nil || page == nil {
 		return
 	}
-	if b.engine != "chromium" || (b.cpuThrottleRate <= 1.0 && !b.clientMetricsEnabled) {
+	if !b.supportsCDP() || (b.cpuThrottleRate <= 1.0 && !b.clientMetricsEnabled && !b.browserNetworkSimulationActive()) {
 		return
 	}
 	cdp, err := browserContext.NewCDPSession(page)
@@ -339,5 +413,45 @@ func (b *Browser) installCDPSession(browserContext playwright.BrowserContext, pa
 	b.mu.Unlock()
 	if b.cpuThrottleRate > 1.0 {
 		_, _ = cdp.Send("Emulation.setCPUThrottlingRate", map[string]any{"rate": b.cpuThrottleRate})
+	}
+	b.applyCDPNetworkConditions(cdp)
+}
+
+func (b *Browser) supportsCDP() bool {
+	return b.engine == "chromium" || b.engine == "chrome"
+}
+
+func (b *Browser) browserNetworkSimulationActive() bool {
+	return b.networkLatencyMS > 0 || b.networkBandwidthKB > 0
+}
+
+func (b *Browser) applyCDPNetworkConditions(cdp playwright.CDPSession) {
+	if cdp == nil || !b.browserNetworkSimulationActive() {
+		return
+	}
+	_, _ = cdp.Send("Network.enable", map[string]any{})
+	throughput := -1.0
+	if b.networkBandwidthKB > 0 {
+		throughput = float64(b.networkBandwidthKB*1024) / 8.0
+	}
+	_, _ = cdp.Send("Network.emulateNetworkConditions", map[string]any{
+		"offline":            false,
+		"latency":            b.networkLatencyMS,
+		"downloadThroughput": throughput,
+		"uploadThroughput":   throughput,
+		"connectionType":     browserNetworkConnectionType(b.networkPreset),
+	})
+}
+
+func browserNetworkConnectionType(preset string) string {
+	switch strings.ToLower(strings.TrimSpace(preset)) {
+	case "56k", "2g":
+		return "cellular2g"
+	case "dsl", "3g":
+		return "cellular3g"
+	case "4g", "10mbps", "t1":
+		return "cellular4g"
+	default:
+		return "other"
 	}
 }

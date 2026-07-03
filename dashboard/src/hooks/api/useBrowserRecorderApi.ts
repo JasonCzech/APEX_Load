@@ -102,6 +102,7 @@ export type BrowserRecorderSession = {
 
 export type BrowserRecorderAvailability = {
   available: boolean
+  code?: string
   reason?: string
 }
 

@@ -72,7 +72,7 @@ func (b *Browser) runWait(ctx context.Context, action *protocol.Action) error {
 
 	selector := b.actionSelector(action)
 	if selector != "" {
-		waitCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		waitCtx, cancel := context.WithTimeout(ctx, b.actionTimeout(action))
 		defer cancel()
 		return b.waitVisibleForAction(waitCtx, action, selector)
 	}
@@ -81,9 +81,29 @@ func (b *Browser) runWait(ctx context.Context, action *protocol.Action) error {
 	}
 	delay, err := parseWaitDelay(action.Target)
 	if err != nil {
-		return b.waitVisible(ctx, action.Target)
+		waitCtx, cancel := context.WithTimeout(ctx, b.actionTimeout(action))
+		defer cancel()
+		return b.waitVisibleWithTimeout(waitCtx, action.Target, b.actionTimeout(action))
 	}
 	return b.sleep(ctx, delay)
+}
+
+func waitActionUsesActionSelector(action *protocol.Action) bool {
+	if action == nil {
+		return false
+	}
+	if action.WaitFor == nil {
+		return true
+	}
+	if strings.TrimSpace(action.WaitFor.Value) != "" {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(action.WaitFor.Type)) {
+	case "", "selector", "visible", "ready":
+		return true
+	default:
+		return false
+	}
 }
 
 func (b *Browser) runPostActionSync(ctx context.Context, action *protocol.Action) error {

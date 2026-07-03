@@ -25,6 +25,8 @@ const (
 
 	webSocketDirectionClientToServer = "client_to_server"
 	webSocketDirectionServerToClient = "server_to_client"
+
+	maxWebSocketFramePayloadBytes = 16 * 1024 * 1024
 )
 
 type webSocketFrame struct {
@@ -98,6 +100,7 @@ func (r *Recorder) handleWebSocketProxy(w http.ResponseWriter, req *http.Request
 		return
 	}
 
+	resp.Header.Del("Sec-WebSocket-Extensions")
 	if err := resp.Write(clientConn); err != nil {
 		_ = upstreamConn.Close()
 		_ = clientConn.Close()
@@ -157,6 +160,7 @@ func (r *Recorder) forwardWebSocketHTTPS(tlsConn net.Conn, clientReader *bufio.R
 		return
 	}
 
+	resp.Header.Del("Sec-WebSocket-Extensions")
 	if err := resp.Write(tlsConn); err != nil {
 		_ = upstreamConn.Close()
 		return
@@ -211,6 +215,7 @@ func (r *Recorder) forwardWebSocketPlainConnect(clientConn net.Conn, clientReade
 		return
 	}
 
+	resp.Header.Del("Sec-WebSocket-Extensions")
 	if err := resp.Write(clientConn); err != nil {
 		_ = upstreamConn.Close()
 		return
@@ -275,6 +280,7 @@ func cloneWebSocketUpstreamRequest(req *http.Request, target *url.URL) *http.Req
 	out.Header = req.Header.Clone()
 	out.Header.Del("Proxy-Connection")
 	out.Header.Del("Proxy-Authorization")
+	out.Header.Del("Sec-WebSocket-Extensions")
 	out.Body = nil
 	out.GetBody = nil
 	out.ContentLength = 0
@@ -290,6 +296,7 @@ func cloneWebSocketRecordRequest(req *http.Request, target *url.URL) *http.Reque
 	out.Header = req.Header.Clone()
 	out.Header.Del("Proxy-Connection")
 	out.Header.Del("Proxy-Authorization")
+	out.Header.Del("Sec-WebSocket-Extensions")
 	out.Body = nil
 	out.GetBody = nil
 	out.ContentLength = 0
@@ -323,36 +330,86 @@ func (r *Recorder) tunnelWebSocket(clientConn net.Conn, clientReader *bufio.Read
 		_ = clientConn.Close()
 		_ = upstreamConn.Close()
 	})
+	tunnel := &recorderTunnel{clientConn: clientConn, upstreamConn: upstreamConn}
+	if session != nil {
+		tunnel.sessionID = session.ID
+	}
+	unregister := r.registerTunnel(tunnel)
+	defer unregister()
 
 	go func() {
 		defer func() {
 			closeBoth()
 			done <- struct{}{}
 		}()
-		r.copyWebSocketFrames(upstreamConn, clientReader, session, seq, webSocketDirectionClientToServer)
+		r.copyWebSocketFrames(upstreamConn, clientReader, clientConn, session, seq, webSocketDirectionClientToServer)
 	}()
 	go func() {
 		defer func() {
 			closeBoth()
 			done <- struct{}{}
 		}()
-		r.copyWebSocketFrames(clientConn, upstreamReader, session, seq, webSocketDirectionServerToClient)
+		r.copyWebSocketFrames(clientConn, upstreamReader, upstreamConn, session, seq, webSocketDirectionServerToClient)
 	}()
 
 	<-done
 	<-done
 }
 
-func (r *Recorder) copyWebSocketFrames(dst io.Writer, src io.Reader, session *Session, seq int, direction string) {
+type recorderTunnel struct {
+	sessionID    string
+	clientConn   net.Conn
+	upstreamConn net.Conn
+}
+
+func (t *recorderTunnel) close() {
+	if t == nil {
+		return
+	}
+	if t.clientConn != nil {
+		_ = t.clientConn.Close()
+	}
+	if t.upstreamConn != nil {
+		_ = t.upstreamConn.Close()
+	}
+}
+
+func (r *Recorder) registerTunnel(t *recorderTunnel) func() {
+	if t == nil {
+		return func() {}
+	}
+	r.tunnels.Store(t, struct{}{})
+	return func() {
+		r.tunnels.Delete(t)
+	}
+}
+
+func (r *Recorder) closeTunnelsForSession(sessionID string) {
+	r.tunnels.Range(func(key, _ any) bool {
+		tunnel, ok := key.(*recorderTunnel)
+		if ok && tunnel.sessionID == sessionID {
+			tunnel.close()
+		}
+		return true
+	})
+}
+
+func (r *Recorder) copyWebSocketFrames(dst io.Writer, src io.Reader, srcConn net.Conn, session *Session, seq int, direction string) {
 	for {
+		if srcConn != nil {
+			_ = srcConn.SetReadDeadline(time.Now().Add(connectTunnelIdleTimeout))
+		}
 		frame, err := readWebSocketFrame(src)
+		if srcConn != nil {
+			_ = srcConn.SetReadDeadline(time.Time{})
+		}
 		if err != nil {
 			return
 		}
+		r.recordWebSocketFrame(session, seq, direction, frame)
 		if _, err := dst.Write(frame.raw); err != nil {
 			return
 		}
-		r.recordWebSocketFrame(session, seq, direction, frame)
 		if frame.opcode == webSocketOpcodeClose {
 			return
 		}
@@ -394,8 +451,11 @@ func readWebSocketFrame(r io.Reader) (webSocketFrame, error) {
 		raw = append(raw, maskKey[:]...)
 	}
 
+	if payloadLen > uint64(maxWebSocketFramePayloadBytes) {
+		return webSocketFrame{}, fmt.Errorf("websocket frame too large: %d exceeds %d byte limit", payloadLen, maxWebSocketFramePayloadBytes)
+	}
 	if payloadLen > uint64(int(^uint(0)>>1)) {
-		return webSocketFrame{}, fmt.Errorf("websocket frame too large: %d", payloadLen)
+		return webSocketFrame{}, fmt.Errorf("websocket frame too large for platform: %d", payloadLen)
 	}
 	payload := make([]byte, int(payloadLen))
 	if _, err := io.ReadFull(r, payload); err != nil {

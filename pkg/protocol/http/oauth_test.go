@@ -85,6 +85,65 @@ func TestFetchOAuth2TokenClientCredentials(t *testing.T) {
 	}
 }
 
+func TestFetchOAuth2TokenUsesConfiguredHTTPClient(t *testing.T) {
+	resetOAuthTokenCacheForTest()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-OAuth-Client"); got != "configured" {
+			t.Fatalf("X-OAuth-Client = %q, want configured", got)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"access_token": "custom-client-token",
+			"expires_in":   300,
+		})
+	}))
+	defer server.Close()
+
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		req.Header.Set("X-OAuth-Client", "configured")
+		return http.DefaultTransport.RoundTrip(req)
+	})}
+	token, err := FetchOAuth2Token(context.Background(), OAuthTokenRequest{
+		TokenURL:     server.URL,
+		GrantType:    OAuthGrantClientCredentials,
+		ClientID:     "client-1",
+		ClientSecret: "secret-1",
+		HTTPClient:   client,
+	})
+	if err != nil {
+		t.Fatalf("FetchOAuth2Token returned error: %v", err)
+	}
+	if token.AccessToken != "custom-client-token" {
+		t.Fatalf("access token = %q", token.AccessToken)
+	}
+}
+
+func TestFetchOAuth2TokenAcceptsStringExpiresIn(t *testing.T) {
+	resetOAuthTokenCacheForTest()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"access_token": "string-expiry-token",
+			"expires_in":   "600",
+		})
+	}))
+	defer server.Close()
+
+	token, err := FetchOAuth2Token(context.Background(), OAuthTokenRequest{
+		TokenURL:     server.URL,
+		GrantType:    OAuthGrantClientCredentials,
+		ClientID:     "client-1",
+		ClientSecret: "secret-1",
+	})
+	if err != nil {
+		t.Fatalf("FetchOAuth2Token returned error: %v", err)
+	}
+	if token.AccessToken != "string-expiry-token" {
+		t.Fatalf("access token = %q", token.AccessToken)
+	}
+	if time.Until(token.ExpiresAt) < 9*time.Minute {
+		t.Fatalf("expires_at = %s, want roughly 10 minutes from now", token.ExpiresAt)
+	}
+}
+
 func TestFetchOAuth2TokenPasswordGrant(t *testing.T) {
 	resetOAuthTokenCacheForTest()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -258,6 +317,12 @@ type tokenMismatchError struct {
 
 func (e *tokenMismatchError) Error() string {
 	return "access token = " + e.got
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
 }
 
 func mustParseForm(t *testing.T, r *http.Request) url.Values {

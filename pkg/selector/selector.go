@@ -153,6 +153,29 @@ func Usable(candidate Candidate) (string, bool) {
 	}
 }
 
+// FallbacksForPrimary returns replay-usable candidates whose engine selector is
+// different from the chosen primary selector. PlaywrightSelector intentionally
+// skips role/text candidates when choosing a primary, so callers must not assume
+// candidates[1:] is the fallback set.
+func FallbacksForPrimary(candidates []Candidate, primary string) []Candidate {
+	primary = strings.TrimSpace(primary)
+	fallbacks := make([]Candidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		engineSelector, ok := Usable(candidate)
+		if !ok {
+			continue
+		}
+		if strings.TrimSpace(engineSelector) == primary {
+			continue
+		}
+		fallbacks = append(fallbacks, candidate)
+	}
+	if len(fallbacks) == 0 {
+		return nil
+	}
+	return fallbacks
+}
+
 // RoleSelector builds a Playwright role-engine selector from a role and
 // accessible name, e.g. role=button[name="Submit"].
 func RoleSelector(role string, name string) string {

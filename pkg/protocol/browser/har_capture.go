@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/scrub"
 	playwright "github.com/playwright-community/playwright-go"
 )
@@ -44,7 +45,7 @@ func normalizeHARCapturePolicy(value string) string {
 // the evidence exists by the time the error happens; the file is discarded at
 // close when no error occurred.
 func (b *Browser) applyHARCaptureOptions(contextOptions *playwright.BrowserNewContextOptions) {
-	if b.harCapturePolicy == HARCaptureOff || b.harCapturePolicy == HARCaptureManual || b.harCapturePolicy == "" {
+	if b.harCapturePolicy == HARCaptureOff || b.harCapturePolicy == "" {
 		return
 	}
 	dir := b.harDir
@@ -73,6 +74,14 @@ func (b *Browser) noteHARSLABreach() {
 	}
 }
 
+func (b *Browser) noteHARManual() {
+	if b.harCapturePolicy == HARCaptureManual {
+		b.mu.Lock()
+		b.harManualSeen = true
+		b.mu.Unlock()
+	}
+}
+
 // finalizeHARCapture runs after the context closed (which flushes the working
 // HAR): it discards the recording when the policy does not require it, and
 // otherwise scrubs it and persists the artifact with a sensitivity-labeled
@@ -87,8 +96,10 @@ func (b *Browser) finalizeHARCapture() string {
 	b.mu.Lock()
 	errorSeen := b.harErrorSeen
 	slaBreachSeen := b.harSLABreachSeen
+	manualSeen := b.harManualSeen
 	b.harErrorSeen = false
 	b.harSLABreachSeen = false
+	b.harManualSeen = false
 	b.mu.Unlock()
 
 	if b.harCapturePolicy == HARCaptureOnError && !errorSeen {
@@ -96,6 +107,10 @@ func (b *Browser) finalizeHARCapture() string {
 		return ""
 	}
 	if b.harCapturePolicy == HARCaptureOnSLABreach && !slaBreachSeen {
+		_ = os.Remove(workingPath)
+		return ""
+	}
+	if b.harCapturePolicy == HARCaptureManual && !manualSeen {
 		_ = os.Remove(workingPath)
 		return ""
 	}
@@ -124,6 +139,27 @@ func (b *Browser) finalizeHARCapture() string {
 		"path", artifactPath,
 		"sensitivity", scrub.SensitivityScrubbed,
 		"error_seen", errorSeen,
-		"sla_breach_seen", slaBreachSeen)
+		"sla_breach_seen", slaBreachSeen,
+		"manual_seen", manualSeen)
 	return artifactPath
+}
+
+func browserActionRequestsHARCapture(action *protocol.Action) bool {
+	if action == nil || action.Params == nil {
+		return false
+	}
+	for _, key := range []string{"capture_har", "har_capture", "save_har"} {
+		switch value := action.Params[key].(type) {
+		case bool:
+			if value {
+				return true
+			}
+		case string:
+			switch strings.ToLower(strings.TrimSpace(value)) {
+			case "1", "true", "yes", "manual", "capture", "save":
+				return true
+			}
+		}
+	}
+	return false
 }

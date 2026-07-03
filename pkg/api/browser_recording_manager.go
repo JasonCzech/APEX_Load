@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -33,12 +34,14 @@ const (
 var errBrowserRecordingActive = errors.New("a browser recording is already in progress on this controller")
 
 const defaultBrowserRecordingStopTimeout = 20 * time.Second
+const defaultBrowserRecordingRetention = 24 * time.Hour
 
 // browserRecorderBackend abstracts recbrowser.Recorder so manager and handler
 // tests run without launching Chromium.
 type browserRecorderBackend interface {
 	Start() error
 	Stop() (*recbrowser.Session, error)
+	ForceStop()
 	Done() <-chan struct{}
 	Snapshot() *recbrowser.Session
 	Pause()
@@ -135,6 +138,7 @@ type BrowserRecordingManager struct {
 	activeID    string
 	factory     browserRecorderFactory
 	stopTimeout time.Duration
+	retention   time.Duration
 }
 
 func NewBrowserRecordingManager(hub *Hub) *BrowserRecordingManager {
@@ -142,6 +146,7 @@ func NewBrowserRecordingManager(hub *Hub) *BrowserRecordingManager {
 		hub:         hub,
 		sessions:    make(map[string]*BrowserRecordingSession),
 		stopTimeout: defaultBrowserRecordingStopTimeout,
+		retention:   defaultBrowserRecordingRetention,
 		factory: func(opts recbrowser.Options) browserRecorderBackend {
 			return recbrowser.New(opts)
 		},
@@ -258,6 +263,79 @@ func (m *BrowserRecordingManager) Get(id string) (*BrowserRecordingSession, bool
 		return nil, false
 	}
 	return session.fullSnapshot(), true
+}
+
+// List returns session summaries, newest first. projectID filters when supplied.
+func (m *BrowserRecordingManager) List(projectID string) []*BrowserRecordingSession {
+	projectID = strings.TrimSpace(projectID)
+	if projectID != "" {
+		projectID = normalizeProjectID(projectID)
+	}
+	m.mu.RLock()
+	sessions := make([]*BrowserRecordingSession, 0, len(m.sessions))
+	for _, session := range m.sessions {
+		summary := session.summary()
+		if projectID != "" && normalizeProjectID(summary.ProjectID) != projectID {
+			continue
+		}
+		sessions = append(sessions, summary)
+	}
+	m.mu.RUnlock()
+	sort.SliceStable(sessions, func(i, j int) bool {
+		return sessions[i].StartedAt.After(sessions[j].StartedAt)
+	})
+	return sessions
+}
+
+// Delete removes a terminal recording session from the in-memory registry.
+// Live sessions must be stopped or force-stopped first so a browser process is
+// never orphaned by a delete request.
+func (m *BrowserRecordingManager) Delete(id string) (*BrowserRecordingSession, bool, error) {
+	m.mu.RLock()
+	session, ok := m.sessions[id]
+	active := m.activeID == id
+	m.mu.RUnlock()
+	if !ok {
+		return nil, false, nil
+	}
+	if active || session.isLive() {
+		return session.fullSnapshot(), true, fmt.Errorf("recording is live; stop it before deleting")
+	}
+	snapshot := session.fullSnapshot()
+	m.mu.Lock()
+	if current := m.sessions[id]; current == session && m.activeID != id {
+		delete(m.sessions, id)
+	}
+	m.mu.Unlock()
+	m.broadcast("browser_recording_deleted", session, nil)
+	return snapshot, true, nil
+}
+
+// PruneExpired removes terminal sessions older than the configured retention
+// window. Live sessions and sessions without a terminal timestamp are retained.
+func (m *BrowserRecordingManager) PruneExpired(now time.Time) int {
+	retention := m.retention
+	if retention <= 0 {
+		return 0
+	}
+	cutoff := now.Add(-retention)
+	removed := 0
+	m.mu.Lock()
+	for id, session := range m.sessions {
+		if m.activeID == id {
+			continue
+		}
+		session.mu.RLock()
+		status := session.Status
+		stoppedAt := session.StoppedAt
+		session.mu.RUnlock()
+		if (status == BrowserRecordingStopped || status == BrowserRecordingFailed) && stoppedAt != nil && stoppedAt.Before(cutoff) {
+			delete(m.sessions, id)
+			removed++
+		}
+	}
+	m.mu.Unlock()
+	return removed
 }
 
 // Active returns a summary of the live session, or nil when idle.
@@ -461,7 +539,7 @@ func (m *BrowserRecordingManager) DeleteLastStep(id string) (*BrowserRecordingSe
 		return nil, false, nil
 	}
 	if err != nil {
-		return session.fullSnapshot(), true, err
+		return m.deleteLastStepFromArtifact(id, session)
 	}
 	if _, err := backend.DeleteLastStep(); err != nil {
 		return session.fullSnapshot(), true, err
@@ -476,7 +554,7 @@ func (m *BrowserRecordingManager) SetStepExcluded(id string, seq int, excluded b
 		return nil, false, nil
 	}
 	if err != nil {
-		return session.fullSnapshot(), true, err
+		return m.setArtifactStepExcluded(id, session, seq, excluded)
 	}
 	if _, err := backend.SetStepExcluded(seq, excluded); err != nil {
 		return session.fullSnapshot(), true, err
@@ -495,19 +573,42 @@ func (m *BrowserRecordingManager) PromoteStepSelector(id string, seq int, select
 	if !ok {
 		return nil, false, nil
 	}
-	session.mu.Lock()
-	if session.final == nil {
-		snapshot := session.summaryLocked()
-		session.mu.Unlock()
-		return snapshot, true, fmt.Errorf("recording has no stopped artifact")
+	step, err := mutateStoppedArtifactStep(session, func(artifact *recbrowser.Session) (*recbrowser.Step, error) {
+		step, ok := artifact.PromoteStepSelector(seq, selector)
+		if !ok {
+			return nil, fmt.Errorf("step %d not found", seq)
+		}
+		return step, nil
+	})
+	if err != nil {
+		return session.fullSnapshot(), true, err
 	}
-	if _, ok := session.final.PromoteStepSelector(seq, selector); !ok {
-		snapshot := session.summaryLocked()
-		session.mu.Unlock()
-		return snapshot, true, fmt.Errorf("step %d not found", seq)
-	}
-	session.mu.Unlock()
+	m.broadcast("browser_recording_step_update", session, map[string]any{"step": step})
 	return session.fullSnapshot(), true, nil
+}
+
+// PatchStepMark applies partial mark_secret/mark_param updates without
+// clobbering whichever flag the caller omitted.
+func (m *BrowserRecordingManager) PatchStepMark(id string, seq int, secret, param *bool) (*BrowserRecordingSession, bool, error) {
+	if secret == nil && param == nil {
+		return nil, false, fmt.Errorf("no step mark update provided")
+	}
+	m.mu.RLock()
+	session, ok := m.sessions[id]
+	m.mu.RUnlock()
+	if !ok {
+		return nil, false, nil
+	}
+	currentSecret, currentParam := browserRecordingStepMarkState(session.artifact(), seq)
+	nextSecret := currentSecret
+	nextParam := currentParam
+	if secret != nil {
+		nextSecret = *secret
+	}
+	if param != nil {
+		nextParam = *param
+	}
+	return m.SetStepMark(id, seq, nextSecret, nextParam)
 }
 
 // SetStepMark flags a fill step as a runtime secret or data parameter.
@@ -517,12 +618,91 @@ func (m *BrowserRecordingManager) SetStepMark(id string, seq int, secret, param 
 		return nil, false, nil
 	}
 	if err != nil {
-		return session.fullSnapshot(), true, err
+		return m.setArtifactStepMark(id, session, seq, secret, param)
 	}
 	if _, err := backend.SetStepMark(seq, secret, param); err != nil {
 		return session.fullSnapshot(), true, err
 	}
 	return session.fullSnapshot(), true, nil
+}
+
+func browserRecordingStepMarkState(artifact *recbrowser.Session, seq int) (bool, bool) {
+	if artifact == nil {
+		return false, false
+	}
+	for _, step := range artifact.Steps {
+		if step.Seq == seq {
+			return step.MarkSecret, step.MarkParam
+		}
+	}
+	return false, false
+}
+
+func (m *BrowserRecordingManager) deleteLastStepFromArtifact(id string, session *BrowserRecordingSession) (*BrowserRecordingSession, bool, error) {
+	step, err := mutateStoppedArtifactStep(session, func(artifact *recbrowser.Session) (*recbrowser.Step, error) {
+		for i := len(artifact.Steps) - 1; i >= 0; i-- {
+			if !artifact.Steps[i].Deleted {
+				artifact.Steps[i].Deleted = true
+				step := artifact.Steps[i]
+				return &step, nil
+			}
+		}
+		return nil, fmt.Errorf("no step to delete")
+	})
+	if err != nil {
+		return session.fullSnapshot(), true, err
+	}
+	m.broadcast("browser_recording_step_update", session, map[string]any{"step": step})
+	return session.fullSnapshot(), true, nil
+}
+
+func (m *BrowserRecordingManager) setArtifactStepExcluded(id string, session *BrowserRecordingSession, seq int, excluded bool) (*BrowserRecordingSession, bool, error) {
+	step, err := mutateStoppedArtifactStep(session, func(artifact *recbrowser.Session) (*recbrowser.Step, error) {
+		for i := range artifact.Steps {
+			if artifact.Steps[i].Seq == seq {
+				artifact.Steps[i].Excluded = excluded
+				step := artifact.Steps[i]
+				return &step, nil
+			}
+		}
+		return nil, fmt.Errorf("step %d not found", seq)
+	})
+	if err != nil {
+		return session.fullSnapshot(), true, err
+	}
+	m.broadcast("browser_recording_step_update", session, map[string]any{"step": step})
+	return session.fullSnapshot(), true, nil
+}
+
+func (m *BrowserRecordingManager) setArtifactStepMark(id string, session *BrowserRecordingSession, seq int, secret, param bool) (*BrowserRecordingSession, bool, error) {
+	step, err := mutateStoppedArtifactStep(session, func(artifact *recbrowser.Session) (*recbrowser.Step, error) {
+		for i := range artifact.Steps {
+			if artifact.Steps[i].Seq == seq {
+				artifact.Steps[i].MarkSecret = secret
+				artifact.Steps[i].MarkParam = param
+				step := artifact.Steps[i]
+				return &step, nil
+			}
+		}
+		return nil, fmt.Errorf("step %d not found", seq)
+	})
+	if err != nil {
+		return session.fullSnapshot(), true, err
+	}
+	m.broadcast("browser_recording_step_update", session, map[string]any{"step": step})
+	return session.fullSnapshot(), true, nil
+}
+
+func mutateStoppedArtifactStep(session *BrowserRecordingSession, mutate func(*recbrowser.Session) (*recbrowser.Step, error)) (*recbrowser.Step, error) {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	if session.Status != BrowserRecordingStopped && session.Status != BrowserRecordingFailed {
+		return nil, fmt.Errorf("recording is not live (status %s)", session.Status)
+	}
+	if session.final == nil {
+		return nil, fmt.Errorf("recording has no stopped artifact")
+	}
+	return mutate(session.final)
 }
 
 // SuggestTransactions derives transaction-boundary suggestions from the
@@ -636,8 +816,8 @@ func (m *BrowserRecordingManager) finishStop(session *BrowserRecordingSession) {
 	now := time.Now()
 	session.mu.Lock()
 	if session.Status != BrowserRecordingStopping {
-		if session.final == nil && final != nil {
-			session.final = final
+		if final != nil {
+			session.final = recoverLateBrowserRecordingArtifact(session.final, final)
 		}
 		session.mu.Unlock()
 		return
@@ -682,8 +862,36 @@ func (m *BrowserRecordingManager) forceStopSession(session *BrowserRecordingSess
 	}
 	session.mu.Unlock()
 	m.clearActive(session.ID)
+	session.forceStopBackend()
 	m.broadcast("browser_recording_force_stopped", session, nil)
 	return session.fullSnapshot()
+}
+
+func recoverLateBrowserRecordingArtifact(existing, late *recbrowser.Session) *recbrowser.Session {
+	if late == nil {
+		return existing
+	}
+	if existing == nil {
+		return late
+	}
+	if late.StoppedAt.IsZero() {
+		late.StoppedAt = existing.StoppedAt
+	}
+	for _, warning := range existing.Warnings {
+		if warning != "" && !browserRecordingStringSliceContains(late.Warnings, warning) {
+			late.Warnings = append(late.Warnings, warning)
+		}
+	}
+	return late
+}
+
+func browserRecordingStringSliceContains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func finalizeForcedBrowserRecordingArtifact(session *recbrowser.Session, stoppedAt time.Time, warning string) {
@@ -853,6 +1061,15 @@ func (s *BrowserRecordingSession) stopBackend() (*recbrowser.Session, error) {
 		return nil, fmt.Errorf("browser recorder backend unavailable")
 	}
 	return backend.Stop()
+}
+
+func (s *BrowserRecordingSession) forceStopBackend() {
+	s.mu.RLock()
+	backend := s.backend
+	s.mu.RUnlock()
+	if backend != nil {
+		go backend.ForceStop()
+	}
 }
 
 // artifact returns the finished session after stop, or a live snapshot copy

@@ -69,11 +69,14 @@ func TestConvertSession_Basic(t *testing.T) {
 	if a2.Body == "" {
 		t.Fatal("expected body on POST action")
 	}
-	if !a2.ThinkTimeAfter {
-		t.Fatal("expected think time after second action (2000ms)")
+	if !a1.ThinkTimeAfter {
+		t.Fatal("expected think time after first action before POST (2000ms)")
 	}
-	if a2.ThinkTime.MeanMs != 2000 {
-		t.Fatalf("expected think time 2000ms, got %f", a2.ThinkTime.MeanMs)
+	if a1.ThinkTime.MeanMs != 2000 {
+		t.Fatalf("expected think time 2000ms, got %f", a1.ThinkTime.MeanMs)
+	}
+	if a2.ThinkTimeAfter {
+		t.Fatal("did not expect think time after second action")
 	}
 }
 
@@ -535,6 +538,8 @@ func TestConvertSession_Assertions(t *testing.T) {
 		Requests: []RecordedRequest{
 			{Seq: 1, Method: "GET", URL: "http://example.com/ok", Path: "/ok", StatusCode: 200},
 			{Seq: 2, Method: "POST", URL: "http://example.com/create", Path: "/create", StatusCode: 201},
+			{Seq: 3, Method: "GET", URL: "http://example.com/redirect", Path: "/redirect", StatusCode: 302},
+			{Seq: 4, Method: "GET", URL: "http://example.com/not-found", Path: "/not-found", StatusCode: 404},
 		},
 	}
 
@@ -546,6 +551,11 @@ func TestConvertSession_Assertions(t *testing.T) {
 	a2 := result.Script.Actions[1]
 	if len(a2.Assertions) != 1 || a2.Assertions[0].Expected != 201 {
 		t.Fatalf("expected status_code assertion 201, got %+v", a2.Assertions)
+	}
+	for i, action := range result.Script.Actions[2:] {
+		if len(action.Assertions) != 0 {
+			t.Fatalf("action %d should not assert redirect/error status, got %+v", i+3, action.Assertions)
+		}
 	}
 }
 

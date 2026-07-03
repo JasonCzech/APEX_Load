@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -179,6 +180,11 @@ func (s *Server) handleConvertRecording(w http.ResponseWriter, r *http.Request) 
 	}
 
 	stored := s.runner.StoreScript(result.Script)
+	if result.Script != nil && stored.ID != "" {
+		if err := s.persistRecordedBaseline(stored.ID, "proxy_recording", recorder.SessionBaseline(session)); err != nil {
+			slog.Warn("failed to persist proxy recording baseline", "script_id", stored.ID, "error", err)
+		}
+	}
 
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"script":       stored,

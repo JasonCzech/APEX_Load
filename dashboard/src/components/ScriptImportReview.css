@@ -154,6 +154,12 @@
   white-space: pre-wrap;
 }
 
+.script-import-review-preview-note {
+  margin: 0 20px 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
 .script-import-review-preview-aside {
   display: block;
 }

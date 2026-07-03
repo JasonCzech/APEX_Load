@@ -455,6 +455,24 @@ func TestConvertPartitionsSections(t *testing.T) {
 	}
 }
 
+func TestConvertPreStepMarkersUseFirstStepSection(t *testing.T) {
+	btn := &selector.ElementMetadata{Tag: "button", ID: "setup", CSSPath: "#setup"}
+	session := &Session{ID: "rec_sec_marker", StartURL: "https://shop.example/setup", StartedAt: ts(0)}
+	session.Markers = append(session.Markers,
+		Marker{Kind: MarkerTransactionStart, Name: "Setup", Timestamp: ts(500)},
+		Marker{Kind: MarkerTransactionEnd, Name: "Setup", Timestamp: ts(1500)},
+	)
+	session.appendStep(Step{Kind: StepClick, Section: SectionInit, Timestamp: ts(1000), Element: btn, Candidates: selector.Candidates(*btn)})
+
+	result := Convert(session, ConvertOptions{})
+	if got := actionTypes(result.Script.Init); strings.Join(got, ",") != "browser_navigate,source_transaction,browser_click,source_transaction" {
+		t.Fatalf("init actions = %v, want navigate + transaction wrapper + click", got)
+	}
+	if len(result.Script.Actions) != 0 || len(result.Script.Teardown) != 0 {
+		t.Fatalf("non-init actions leaked: actions=%v teardown=%v", actionTypes(result.Script.Actions), actionTypes(result.Script.Teardown))
+	}
+}
+
 func TestConvertSkipsExcludedAndDeleted(t *testing.T) {
 	btn := &selector.ElementMetadata{Tag: "button", ID: "go", CSSPath: "#go"}
 	session := &Session{ID: "rec_skip", StartURL: "https://shop.example/", StartedAt: ts(0)}
@@ -489,6 +507,27 @@ func TestConvertTrimByStepRange(t *testing.T) {
 	}
 }
 
+func TestConvertTrimByStepRangeKeepsBoundaryTransactionMarkers(t *testing.T) {
+	btn := &selector.ElementMetadata{Tag: "button", ID: "go", CSSPath: "#go"}
+	session := &Session{ID: "rec_trim_txn", StartURL: "https://shop.example/", StartedAt: ts(0)}
+	session.Markers = append(session.Markers,
+		Marker{Kind: MarkerTransactionStart, Name: "Checkout", Timestamp: ts(500)},
+		Marker{Kind: MarkerTransactionEnd, Name: "Checkout", Timestamp: ts(2500)},
+	)
+	session.appendStep(Step{Kind: StepClick, Timestamp: ts(1000), Element: btn, Candidates: selector.Candidates(*btn)})
+	session.appendStep(Step{Kind: StepClick, Timestamp: ts(2000), Element: btn, Candidates: selector.Candidates(*btn)})
+	session.appendStep(Step{Kind: StepClick, Timestamp: ts(4000), Element: btn, Candidates: selector.Candidates(*btn)})
+
+	result := Convert(session, ConvertOptions{StepRange: StepRange{StartSeq: 1, EndSeq: 2}})
+	want := []string{"browser_navigate", "source_transaction", "browser_click", "browser_click", "source_transaction"}
+	if got := actionTypes(result.Script.Actions); strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("actions = %v, want %v", got, want)
+	}
+	if result.Script.Actions[1].Params["function"] != "lr_start_transaction" || result.Script.Actions[4].Params["function"] != "lr_end_transaction" {
+		t.Fatalf("boundary markers = %+v / %+v", result.Script.Actions[1], result.Script.Actions[4])
+	}
+}
+
 func TestConvertSplitAtTransactions(t *testing.T) {
 	btn := func(id string) *selector.ElementMetadata {
 		return &selector.ElementMetadata{Tag: "button", ID: id, CSSPath: "#" + id}
@@ -518,6 +557,36 @@ func TestConvertSplitAtTransactions(t *testing.T) {
 	}
 	if !strings.Contains(result.Scripts[0].Name, "Login") || !strings.Contains(result.Scripts[1].Name, "Checkout") {
 		t.Errorf("split names = %q, %q", result.Scripts[0].Name, result.Scripts[1].Name)
+	}
+}
+
+func TestConvertSplitAtTransactionsUsesPreTransactionNavigation(t *testing.T) {
+	btn := func(id string) *selector.ElementMetadata {
+		return &selector.ElementMetadata{Tag: "button", ID: id, CSSPath: "#" + id}
+	}
+	session := &Session{ID: "rec_split_nav", StartURL: "https://shop.example/home", StartedAt: ts(0)}
+	session.Markers = append(session.Markers,
+		Marker{Kind: MarkerTransactionStart, Name: "Login", Timestamp: ts(500)},
+		Marker{Kind: MarkerTransactionEnd, Name: "Login", Timestamp: ts(1500)},
+		Marker{Kind: MarkerTransactionStart, Name: "Checkout", Timestamp: ts(9000)},
+		Marker{Kind: MarkerTransactionEnd, Name: "Checkout", Timestamp: ts(11000)},
+	)
+	session.NavEvents = []NavEvent{
+		{Timestamp: ts(100), URL: "https://shop.example/home"},
+		{Timestamp: ts(5000), URL: "https://shop.example/cart?coupon=YES#review"},
+	}
+	session.appendStep(Step{Kind: StepClick, Timestamp: ts(1000), Element: btn("login"), Candidates: selector.Candidates(*btn("login"))})
+	session.appendStep(Step{Kind: StepClick, Timestamp: ts(10000), Element: btn("buy"), Candidates: selector.Candidates(*btn("buy"))})
+
+	result := Convert(session, ConvertOptions{SplitAtTransactions: true})
+	if len(result.Scripts) != 2 {
+		t.Fatalf("scripts = %d, want 2", len(result.Scripts))
+	}
+	if got := result.Scripts[0].Actions[0].Target; got != "/home" {
+		t.Fatalf("login script first navigate = %q, want /home", got)
+	}
+	if got := result.Scripts[1].Actions[0].Target; got != "/cart?coupon=YES#review" {
+		t.Fatalf("checkout script first navigate = %q, want pre-transaction cart URL", got)
 	}
 }
 
@@ -600,6 +669,7 @@ func TestSplitStartURL(t *testing.T) {
 		wantTarget string
 	}{
 		{name: "path and query", input: "https://a.example/p?q=1", wantBase: "https://a.example", wantTarget: "/p?q=1"},
+		{name: "fragment", input: "https://a.example/app?q=1#/orders/42", wantBase: "https://a.example", wantTarget: "/app?q=1#/orders/42"},
 		{name: "bare host", input: "https://a.example", wantBase: "https://a.example", wantTarget: "/"},
 		{name: "not absolute", input: "/relative", wantBase: "", wantTarget: "/relative"},
 	}
@@ -608,6 +678,25 @@ func TestSplitStartURL(t *testing.T) {
 			base, target := splitStartURL(tt.input)
 			if base != tt.wantBase || target != tt.wantTarget {
 				t.Errorf("splitStartURL(%q) = (%q, %q), want (%q, %q)", tt.input, base, target, tt.wantBase, tt.wantTarget)
+			}
+		})
+	}
+}
+
+func TestWebSocketPayloadMatchHintStripsJSONTransportPrefix(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "socket.io json array", input: `42["ready",{"status":"ok"}]`, want: `["ready",{"status":"ok"}]`},
+		{name: "json object unchanged", input: `{"type":"ready"}`, want: `{"type":"ready"}`},
+		{name: "plain text unchanged", input: `ready:42`, want: `ready:42`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := webSocketPayloadMatchHint(tt.input); got != tt.want {
+				t.Fatalf("webSocketPayloadMatchHint(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
 	}

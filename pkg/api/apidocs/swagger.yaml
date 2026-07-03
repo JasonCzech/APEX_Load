@@ -910,6 +910,19 @@ paths:
       tags:
         - Browser Recorder
   /api/v1/browser-recorder/sessions:
+    get:
+      summary: List Browser Recordings
+      description: |-
+        **Handler:** `handleListBrowserRecordings`
+
+        **Access Control:** Roles: Viewer, Editor, ProjectAdmin, SystemAdmin
+      operationId: handleListBrowserRecordings
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: 'Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      tags:
+        - Browser Recorder
     post:
       summary: Start Browser Recording
       description: |-
@@ -924,6 +937,25 @@ paths:
       tags:
         - Browser Recorder
   /api/v1/browser-recorder/sessions/{id}:
+    delete:
+      summary: Delete Browser Recording
+      description: |-
+        **Handler:** `handleDeleteBrowserRecording`
+
+        **Access Control:** Roles: Editor, ProjectAdmin, SystemAdmin
+      operationId: handleDeleteBrowserRecording
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: 'Roles: Editor, ProjectAdmin, SystemAdmin'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Browser Recorder
     get:
       summary: Get Browser Recording
       description: |-

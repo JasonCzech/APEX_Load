@@ -65,6 +65,7 @@ vi.mock('../hooks/apiClient', () => ({
 
 vi.mock('../utils/fileUtils', () => ({
   downloadBlob: downloadBlobMock,
+  downloadFilenameFromDisposition: (_header: string | null, fallback: string) => fallback,
 }))
 
 describe('RecordingStudio', () => {
@@ -544,6 +545,88 @@ describe('RecordingStudio', () => {
     }))
   })
 
+  it('confirms before deleting a stopped proxy recording', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)
+    await act(async () => {
+      root.render(<RecordingStudio />)
+    })
+    await flushPromises()
+    await openProxyAdvanced(container)
+
+    const deleteButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Delete')
+    expect(deleteButton).toBeDefined()
+    if (!deleteButton) return
+
+    await act(async () => {
+      deleteButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(confirmSpy).toHaveBeenCalledWith('Delete this stopped recording session? This cannot be undone.')
+    expect(apiMock.deleteRecording).not.toHaveBeenCalled()
+
+    await act(async () => {
+      deleteButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+    expect(apiMock.deleteRecording).toHaveBeenCalledWith('rec-1')
+  })
+
+  it('normalizes stored proxy conversion results before edit or save handoff', async () => {
+    const onImported = vi.fn()
+    const onEdit = vi.fn()
+    const nestedScript = {
+      name: 'Checkout Converted',
+      version: '1.0.0',
+      protocol: 'http',
+      config: { base_url: 'https://shop.example.com' },
+      actions: [{ name: '01 - GET /', type: 'request', method: 'GET', target: '/' }],
+    }
+    apiMock.convertRecording.mockResolvedValueOnce({
+      script: {
+        id: 'stored-recorder-script',
+        name: 'Checkout Converted',
+        protocol: 'http',
+        version: '1.0.0',
+        created_at: '2026-05-17T00:00:00Z',
+        script: nestedScript,
+      },
+      correlations: [],
+      warnings: [],
+    })
+
+    await act(async () => {
+      root.render(<RecordingStudio onImported={onImported} onEdit={onEdit} />)
+    })
+    await flushPromises()
+    await openProxyAdvanced(container)
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Convert to Script')
+    expect(convertButton).toBeDefined()
+    if (!convertButton) return
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(container.textContent).toContain('stored-recorder-script')
+    const editButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Open In Visual Editor')
+    expect(editButton).toBeDefined()
+    await act(async () => {
+      editButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({ actions: nestedScript.actions }))
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Save To Script Library')
+    expect(saveButton).toBeDefined()
+    await act(async () => {
+      saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(apiMock.createScript).not.toHaveBeenCalled()
+    expect(onImported).toHaveBeenCalledWith({
+      scripts: [expect.objectContaining({ id: 'stored-recorder-script', script: expect.objectContaining({ actions: nestedScript.actions }) })],
+    })
+  })
+
   it('reviews Salesforce-looking proxy recordings through the native HTTP importer', async () => {
     const onImported = vi.fn()
     const onEdit = vi.fn()
@@ -943,6 +1026,8 @@ describe('RecordingStudio', () => {
     const downloadLink = Array.from(container.querySelectorAll('a')).find(link => link.textContent?.includes('Download the APEX Load Recording Agent'))
     expect(downloadLink).toBeDefined()
     expect(downloadLink?.getAttribute('href')).toContain('/api/v1/downloads/recording-agent/latest')
+    expect(container.querySelector('select[aria-label="Recording Agent platform"]')).not.toBeNull()
+    expect(container.textContent).toContain('SHA-256')
     expect(container.textContent).not.toContain('Install it from your enterprise software catalog')
     expect(container.textContent).toContain('1Download the Recording Agent')
     expect(container.textContent).toContain('2Run the local command')
@@ -974,6 +1059,52 @@ describe('RecordingStudio', () => {
     expect(apiMock.pairBrowserRecorderBridge).toHaveBeenCalledWith('http://127.0.0.1:49152', generatedToken)
     expect(container.textContent).toContain('Local browser recording bridge paired')
     expect(container.textContent).toContain('Record Browser')
+  })
+
+  it('shows the selected Recording Agent platform and staged SHA-256', async () => {
+    apiMock.getRecorderStatus.mockResolvedValue({
+      proxy_addr: ':8081',
+      ca_cert_path: 'artifacts/recorder/ca-cert.pem',
+      active: null,
+      browser: {
+        availability: { available: false, reason: 'browser recording is disabled in production mode' },
+        active: null,
+      },
+    })
+    apiFetchMock
+      .mockResolvedValueOnce({
+        ok: false,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: vi.fn().mockResolvedValue({ error: 'checksum not staged' }),
+      })
+      .mockResolvedValueOnce({
+      ok: true,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: vi.fn().mockResolvedValue({
+        algorithm: 'sha-256',
+        filename: 'apexload-recording-agent-0.1.0-linux-amd64.tar.gz',
+        sha256: 'd8df2adeb0f3718d0beeebb225572273e1677b6208cef613c2378f3b3f41f3b2',
+      }),
+    })
+
+    await act(async () => {
+      root.render(<RecordingStudio />)
+    })
+    await flushPromises()
+
+    const platformSelect = container.querySelector('select[aria-label="Recording Agent platform"]') as HTMLSelectElement | null
+    expect(platformSelect).not.toBeNull()
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')!.set!
+      setter.call(platformSelect, 'linux-amd64')
+      platformSelect!.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiFetchMock).toHaveBeenCalledWith('/downloads/recording-agent/latest/checksum?platform=linux-amd64')
+    expect(container.textContent).toContain('Download the APEX Load Recording Agent for Linux (x64)')
+    expect(container.textContent).toContain('d8df2adeb0f3718d0beeebb225572273e1677b6208cef613c2378f3b3f41f3b2')
+    expect(container.textContent).toContain('apexload-recording-agent-0.1.0-linux-amd64.tar.gz')
   })
 
   it('verifies that the local recording agent is running before pairing', async () => {
@@ -1015,7 +1146,18 @@ describe('RecordingStudio', () => {
         active: null,
       },
     })
-    apiFetchMock.mockResolvedValueOnce({
+    apiFetchMock
+      .mockResolvedValueOnce({
+        ok: false,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: vi.fn().mockResolvedValue({ error: 'checksum not staged' }),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: vi.fn().mockResolvedValue({ error: 'checksum not staged' }),
+      })
+      .mockResolvedValueOnce({
       ok: true,
       headers: new Headers({ 'content-type': 'text/html; charset=utf-8' }),
       blob: vi.fn().mockResolvedValue(new Blob(['<html>dashboard</html>'])),
@@ -1028,12 +1170,20 @@ describe('RecordingStudio', () => {
 
     const downloadLink = Array.from(container.querySelectorAll('a')).find(link => link.textContent?.includes('Download the APEX Load Recording Agent'))
     expect(downloadLink).toBeDefined()
+    const platformSelect = container.querySelector('select[aria-label="Recording Agent platform"]') as HTMLSelectElement | null
+    expect(platformSelect).not.toBeNull()
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')!.set!
+      setter.call(platformSelect, 'linux-amd64')
+      platformSelect!.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await flushPromises()
     await act(async () => {
       downloadLink!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     })
     await flushPromises()
 
-    expect(apiFetchMock).toHaveBeenCalledWith('/downloads/recording-agent/latest')
+    expect(apiFetchMock).toHaveBeenCalledWith('/downloads/recording-agent/latest?platform=linux-amd64')
     expect(downloadBlobMock).not.toHaveBeenCalled()
     expect(container.textContent).toContain('Recording Agent download endpoint returned the dashboard instead of an agent archive')
   })
@@ -1288,7 +1438,7 @@ describe('RecordingStudio', () => {
       ca_cert_path: 'artifacts/recorder/ca-cert.pem',
       active: null,
       browser: {
-        availability: { available: false, reason: 'no recording browser installed' },
+        availability: { available: false, code: 'browsers_not_installed', reason: 'Playwright Chromium is not installed on the controller host' },
         active: null,
         install: { status: 'idle' },
       },

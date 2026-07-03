@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -51,6 +52,7 @@ type OAuthTokenRequest struct {
 	RefreshToken string
 	Username     string
 	Password     string
+	HTTPClient   *http.Client `json:"-"`
 }
 
 type OAuthToken struct {
@@ -198,7 +200,11 @@ func fetchOAuth2TokenUncached(ctx context.Context, req OAuthTokenRequest) (OAuth
 	httpReq.Header.Set("Content-Type", oauthFormContentType)
 	httpReq.Header.Set("Accept", oauthJSONAcceptMimeType)
 
-	resp, err := http.DefaultClient.Do(httpReq)
+	client := req.HTTPClient
+	if client == nil {
+		client = http.DefaultClient
+	}
+	resp, err := client.Do(httpReq)
 	if err != nil {
 		return OAuthToken{}, err
 	}
@@ -207,7 +213,7 @@ func fetchOAuth2TokenUncached(ctx context.Context, req OAuthTokenRequest) (OAuth
 	var payload struct {
 		AccessToken      string `json:"access_token"`
 		TokenType        string `json:"token_type"`
-		ExpiresIn        int64  `json:"expires_in"`
+		ExpiresIn        any    `json:"expires_in"`
 		InstanceURL      string `json:"instance_url"`
 		ErrorCode        string `json:"error"`
 		ErrorDescription string `json:"error_description"`
@@ -234,8 +240,8 @@ func fetchOAuth2TokenUncached(ctx context.Context, req OAuthTokenRequest) (OAuth
 		tokenType = defaultOAuthTokenType
 	}
 	ttl := defaultTokenCacheTTL
-	if payload.ExpiresIn > 0 {
-		ttl = time.Duration(payload.ExpiresIn) * time.Second
+	if expiresIn := oauthExpiresInSeconds(payload.ExpiresIn); expiresIn > 0 {
+		ttl = time.Duration(expiresIn) * time.Second
 	}
 	return OAuthToken{
 		AccessToken: strings.TrimSpace(payload.AccessToken),
@@ -243,6 +249,40 @@ func fetchOAuth2TokenUncached(ctx context.Context, req OAuthTokenRequest) (OAuth
 		InstanceURL: strings.TrimSpace(payload.InstanceURL),
 		ExpiresAt:   time.Now().Add(ttl),
 	}, nil
+}
+
+func oauthExpiresInSeconds(value any) int64 {
+	switch typed := value.(type) {
+	case nil:
+		return 0
+	case float64:
+		return int64(typed)
+	case float32:
+		return int64(typed)
+	case int:
+		return int64(typed)
+	case int64:
+		return typed
+	case json.Number:
+		if parsed, err := typed.Int64(); err == nil {
+			return parsed
+		}
+		if parsed, err := strconv.ParseFloat(typed.String(), 64); err == nil {
+			return int64(parsed)
+		}
+	case string:
+		trimmed := strings.TrimSpace(typed)
+		if trimmed == "" {
+			return 0
+		}
+		if parsed, err := strconv.ParseInt(trimmed, 10, 64); err == nil {
+			return parsed
+		}
+		if parsed, err := strconv.ParseFloat(trimmed, 64); err == nil {
+			return int64(parsed)
+		}
+	}
+	return 0
 }
 
 // redactOAuthErrorDescription bounds the length of an OAuth endpoint's

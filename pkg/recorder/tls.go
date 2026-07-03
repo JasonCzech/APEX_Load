@@ -505,16 +505,28 @@ func (r *Recorder) forwardHTTPS(tlsConn net.Conn, clientReader *bufio.Reader, cl
 		return
 	}
 
-	respBody, _ := io.ReadAll(resp.Body)
+	var responseWriter io.Writer = tlsConn
+	closeResponseWriter := func() {}
+	if resp.ContentLength >= 0 {
+		writeHTTPSResponseHeaders(tlsConn, resp, boundedInt(resp.ContentLength), false)
+	} else {
+		writeHTTPSResponseHeaders(tlsConn, resp, -1, true)
+		chunked := &chunkedHTTPWriter{w: tlsConn}
+		responseWriter = chunked
+		closeResponseWriter = chunked.Close
+	}
+	respBody, respBodySize, respBodyTruncated, _ := copyAndCaptureBody(responseWriter, resp.Body, responseCaptureLimit(session))
+	closeResponseWriter()
 	elapsed := time.Since(start)
-
-	// Write the response back to the client over the TLS connection.
-	writeHTTPSResponseHeaders(tlsConn, resp, len(respBody), false)
-	tlsConn.Write(respBody)
 
 	// Record the request if there is an active session.
 	if session != nil {
-		r.recordRequestStarted(session, clientReq, bodyBytes, resp, respBody, elapsed, start)
+		r.recordRequestWithOptions(session, clientReq, bodyBytes, resp, respBody, elapsed, recordOptions{
+			requestStartedAt:          start,
+			forceResponseBodyTruncate: respBodyTruncated,
+			responseBodySizeBytes:     boundedInt(respBodySize),
+			responseBodySizeKnown:     true,
+		})
 	}
 }
 

@@ -79,6 +79,28 @@ func TestSelectorSelfHealFallsThroughRankedCandidates(t *testing.T) {
 	if evidence["confidence"] != 95 {
 		t.Errorf("evidence confidence = %v", evidence["confidence"])
 	}
+	metrics, ok := result.ProtocolEvidence["selector_self_heal_metrics"].(map[string]any)
+	if !ok {
+		t.Fatalf("self-heal metrics missing: %+v", result.ProtocolEvidence)
+	}
+	if metrics["attempts"] != 1 || metrics["cache_hit"] != false || metrics["success"] != true {
+		t.Fatalf("self-heal metrics = %+v, want one non-cached successful attempt", metrics)
+	}
+
+	cached, err := b.Execute(context.Background(), action)
+	if err != nil {
+		t.Fatalf("cached execute returned error: %v", err)
+	}
+	if cached.ErrorMessage != "" {
+		t.Fatalf("cached click was not healed: %s", cached.ErrorMessage)
+	}
+	cachedMetrics, ok := cached.ProtocolEvidence["selector_self_heal_metrics"].(map[string]any)
+	if !ok {
+		t.Fatalf("cached self-heal metrics missing: %+v", cached.ProtocolEvidence)
+	}
+	if cachedMetrics["cache_hit"] != true || cachedMetrics["success"] != true {
+		t.Fatalf("cached metrics = %+v, want cache_hit successful heal", cachedMetrics)
+	}
 }
 
 // TestSelectorSelfHealDoesNotMaskRealFailures verifies that when no fallback

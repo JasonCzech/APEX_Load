@@ -76,9 +76,14 @@ func TestRequestPolicyEnabled(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "network latency",
-			b:    &Browser{cacheEnabled: true, downloadResources: "all", networkLatencyMS: 50},
+			name: "network latency route fallback for non-CDP engine",
+			b:    &Browser{engine: "webkit", cacheEnabled: true, downloadResources: "all", networkLatencyMS: 50},
 			want: true,
+		},
+		{
+			name: "network latency uses CDP for chromium",
+			b:    &Browser{engine: "chromium", cacheEnabled: true, downloadResources: "all", networkLatencyMS: 50},
+			want: false,
 		},
 	}
 

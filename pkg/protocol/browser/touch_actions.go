@@ -11,13 +11,22 @@ import (
 )
 
 func (b *Browser) dispatchTap(ctx context.Context, action *protocol.Action, selector string) error {
-	return b.runTouchScript(ctx, action, selector, `
-		dispatchPointer('pointerdown', x, y);
-		dispatchTouch('touchstart', x, y, true);
-		dispatchTouch('touchend', x, y, false);
-		dispatchPointer('pointerup', x, y);
-		dispatchClick(x, y);
-	`, "browser tap")
+	if locator, ok := b.actionLocator(action, selector); ok {
+		timeout := b.actionTimeout(action)
+		if err := b.waitLocatorVisible(ctx, locator, timeout); err != nil {
+			return err
+		}
+		return locator.Tap(playwright.LocatorTapOptions{
+			Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
+		})
+	}
+	page := b.currentPage()
+	if page == nil {
+		return fmt.Errorf("browser tap failed: no active page")
+	}
+	return page.Tap(selector, playwright.PageTapOptions{
+		Timeout: playwright.Float(b.timeoutMS(ctx, b.actionTimeout(action))),
+	})
 }
 
 func (b *Browser) dispatchLongPress(ctx context.Context, action *protocol.Action, selector string, duration time.Duration) error {

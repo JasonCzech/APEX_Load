@@ -11,15 +11,15 @@ import (
 )
 
 // redactBaselineObservation applies selective credential redaction to the
-// request side of a recorded observation, preserving responses and dynamic
-// correlation candidates (session ids, CSRF, view-state) that the correlation
-// engine relies on.
+// request side of a recorded observation. Request bodies preserve dynamic
+// correlation candidates (session ids, CSRF, view-state), while request headers
+// are scrubbed with the stricter artifact policy used for persisted baselines.
 func redactBaselineObservation(obs correlate.Observation) storage.ScriptRecordingObservation {
 	return storage.ScriptRecordingObservation{
 		ID:              obs.ID,
 		RequestURL:      obs.RequestURL,
 		RequestBody:     scrub.RedactCredentialBody(obs.RequestBody),
-		RequestHeaders:  scrub.RedactCredentialHeaders(obs.RequestHeaders),
+		RequestHeaders:  scrub.Headers(obs.RequestHeaders, scrub.Policy{}),
 		ResponseBody:    obs.ResponseBody,
 		ResponseHeaders: obs.ResponseHeaders,
 	}

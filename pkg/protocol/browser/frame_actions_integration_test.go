@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
@@ -86,6 +87,56 @@ func TestBrowserProtocolExecutesFrameScopedActions(t *testing.T) {
 	})
 	if !strings.Contains(result.HTML, "Coupon from iframe") {
 		t.Fatalf("HTML did not reflect frame-scoped click: %q", result.HTML)
+	}
+}
+
+func TestBrowserProtocolExecutesNestedFramePathActions(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/inner":
+			_, _ = w.Write([]byte(`<!doctype html><html><body>
+  <button id="confirm" onclick="parent.parent.postMessage('nested-confirmed', '*')">Confirm</button>
+</body></html>`))
+		case "/outer":
+			_, _ = w.Write([]byte(`<!doctype html><html><body>
+  <iframe id="inner-frame" name="inner-frame" src="/inner"></iframe>
+</body></html>`))
+		default:
+			_, _ = w.Write([]byte(`<!doctype html><html><head><title>Nested Frame Checkout</title>
+  <script>
+    window.addEventListener('message', event => {
+      if (event.data === 'nested-confirmed') document.querySelector('#status').textContent = 'Nested confirmed';
+    });
+  </script>
+</head><body>
+  <iframe id="outer-frame" name="outer-frame" src="/outer"></iframe>
+  <div id="status">Idle</div>
+</body></html>`))
+		}
+	}))
+	defer server.Close()
+
+	b := newChromiumIntegrationBrowser(t, server.URL)
+	defer b.Teardown(context.Background())
+
+	executeSuccessfulBrowserAction(t, b, &protocol.Action{Name: "Open nested frame checkout", Type: "browser_navigate", Target: "/"})
+	executeSuccessfulBrowserAction(t, b, &protocol.Action{
+		Name:     "Confirm in nested frame",
+		Type:     "browser_click",
+		Selector: "#confirm",
+		Metadata: map[string]any{"frame_path": []any{"outer-frame", "inner-frame"}},
+	})
+	result := executeSuccessfulBrowserAction(t, b, &protocol.Action{
+		Name: "Wait for nested confirmation",
+		Type: "browser_wait",
+		WaitFor: &protocol.WaitCondition{
+			Type:      "text",
+			Value:     "Nested confirmed",
+			TimeoutMs: 3000,
+		},
+	})
+	if result.PageTitle != "Nested Frame Checkout" {
+		t.Fatalf("PageTitle = %q, want main page title", result.PageTitle)
 	}
 }
 
@@ -270,6 +321,77 @@ func TestBrowserProtocolFailsOnUnexpectedDialogMessage(t *testing.T) {
 	}
 }
 
+func TestBrowserProtocolClearsUnobservedDialogPolicy(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<!doctype html>
+<html>
+  <body>
+    <button id="plain" onclick="document.querySelector('#status').textContent = 'plain clicked'">Plain</button>
+    <button id="alert" onclick="alert('late dialog')">Alert</button>
+    <div id="status">idle</div>
+  </body>
+</html>`))
+	}))
+	defer server.Close()
+
+	b := newChromiumIntegrationBrowser(t, server.URL)
+	defer b.Teardown(context.Background())
+
+	executeSuccessfulBrowserAction(t, b, &protocol.Action{Name: "Open dialog page", Type: "browser_navigate", Target: "/"})
+	executeSuccessfulBrowserAction(t, b, &protocol.Action{
+		Name: "Arm dialog",
+		Type: "browser_handle_dialog",
+		Params: map[string]any{
+			"action":           "accept",
+			"expected_message": "never appears",
+			"wait_ms":          100,
+		},
+	})
+	result, err := b.Execute(context.Background(), &protocol.Action{Name: "Plain click", Type: "browser_click", Selector: "#plain"})
+	if err != nil {
+		t.Fatalf("Plain click returned error: %v", err)
+	}
+	if result.Success || !strings.Contains(result.ErrorMessage, "expected browser dialog was not observed") {
+		t.Fatalf("plain click result = success:%v error:%q, want missing dialog failure", result.Success, result.ErrorMessage)
+	}
+
+	late, err := b.Execute(context.Background(), &protocol.Action{Name: "Late unrelated dialog", Type: "browser_click", Selector: "#alert"})
+	if err != nil {
+		t.Fatalf("Late dialog returned error: %v", err)
+	}
+	if !late.Success {
+		t.Fatalf("late unrelated dialog failed after stale policy should have cleared: %q", late.ErrorMessage)
+	}
+}
+
+func TestBrowserWaitHonorsActionTimeoutParam(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<!doctype html><html><body><div id="status">ready</div></body></html>`))
+	}))
+	defer server.Close()
+
+	b := newChromiumIntegrationBrowser(t, server.URL)
+	defer b.Teardown(context.Background())
+
+	executeSuccessfulBrowserAction(t, b, &protocol.Action{Name: "Open wait page", Type: "browser_navigate", Target: "/"})
+	start := time.Now()
+	result, err := b.Execute(context.Background(), &protocol.Action{
+		Name:   "Wait briefly for missing element",
+		Type:   "browser_wait",
+		Target: "#never",
+		Params: map[string]any{"timeout_ms": 100},
+	})
+	if err != nil {
+		t.Fatalf("wait returned error: %v", err)
+	}
+	if result.Success {
+		t.Fatal("wait for missing element succeeded, want timeout failure")
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("browser_wait ignored timeout_ms=100; elapsed %s error=%q", elapsed, result.ErrorMessage)
+	}
+}
+
 func TestBrowserProtocolExecutesWindowSwitchActions(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -303,7 +425,7 @@ func TestBrowserProtocolExecutesWindowSwitchActions(t *testing.T) {
 		Type:     "browser_click",
 		Selector: "#open-popup",
 	})
-	executeSuccessfulBrowserAction(t, b, &protocol.Action{
+	settle := executeSuccessfulBrowserAction(t, b, &protocol.Action{
 		Name: "Settle popup",
 		Type: "browser_wait",
 		WaitFor: &protocol.WaitCondition{
@@ -311,10 +433,13 @@ func TestBrowserProtocolExecutesWindowSwitchActions(t *testing.T) {
 			Value: "500ms",
 		},
 	})
+	if settle.PageTitle != "Main Checkout" {
+		t.Fatalf("PageTitle before explicit switch = %q, want main page to remain active", settle.PageTitle)
+	}
 	executeSuccessfulBrowserAction(t, b, &protocol.Action{
 		Name:   "Switch to popup",
 		Type:   "browser_switch_window",
-		Target: "Popup Checkout",
+		Target: "1",
 	})
 	executeSuccessfulBrowserAction(t, b, &protocol.Action{
 		Name:     "Confirm popup",

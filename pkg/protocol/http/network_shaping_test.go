@@ -99,3 +99,43 @@ func TestShapedDialContextWrapsConnection(t *testing.T) {
 		t.Fatalf("second sleep = %v, want 7ms", sleeps[1])
 	}
 }
+
+func TestShapedConnectionAmortizesLatencyPerDirection(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	defer serverConn.Close()
+
+	var sleeps []time.Duration
+	conn := &shapedConn{
+		Conn: clientConn,
+		profile: networkSimulationProfile{
+			latency:          20 * time.Millisecond,
+			bandwidthBytesPS: 1000,
+			sleep: func(delay time.Duration) {
+				sleeps = append(sleeps, roundDurationToMillis(delay))
+			},
+			randFloat64: func() float64 { return 0 },
+		},
+	}
+	defer conn.Close()
+
+	go func() {
+		_, _ = io.Copy(io.Discard, serverConn)
+	}()
+
+	if _, err := conn.Write([]byte("abcd")); err != nil {
+		t.Fatalf("first Write returned error: %v", err)
+	}
+	if _, err := conn.Write([]byte("efgh")); err != nil {
+		t.Fatalf("second Write returned error: %v", err)
+	}
+
+	if len(sleeps) != 3 {
+		t.Fatalf("sleep calls = %d, want latency once plus two bandwidth delays", len(sleeps))
+	}
+	if sleeps[0] != 20*time.Millisecond {
+		t.Fatalf("first sleep = %v, want one latency delay", sleeps[0])
+	}
+	if sleeps[1] != 4*time.Millisecond || sleeps[2] != 4*time.Millisecond {
+		t.Fatalf("bandwidth sleeps = %v/%v, want 4ms per 4-byte chunk", sleeps[1], sleeps[2])
+	}
+}

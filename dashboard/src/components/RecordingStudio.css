@@ -1056,6 +1056,29 @@
   margin-top: 0;
 }
 
+.brp-step-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.brp-step-search input {
+  min-width: 180px;
+  flex: 1;
+}
+
+.brp-step-search span,
+.brp-step-empty {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.brp-step-empty {
+  padding: 12px;
+}
+
 .brp-step-seq {
   color: var(--text-muted);
   font-size: 11px;

@@ -24,6 +24,9 @@
   let toolbarHost = null;
   let pendingClick = null;
   let pendingDrag = null;
+  let lastRecordedFill = null;
+  let lastEnterPressAt = 0;
+  let recordQueue = Promise.resolve();
 
   // Live recording state the Go recorder pushes into the page for the advanced
   // sidebar (counts, active section, open transactions, recent steps). Updated
@@ -77,12 +80,10 @@
   const CONTROL_NONCE = '__APEXLOAD_CONTROL_NONCE__';
 
   function send(payload) {
-    try {
-      if (typeof window.__apexloadRecord === 'function') {
-        if (payload && typeof payload === 'object') payload.nonce = CONTROL_NONCE;
-        window.__apexloadRecord(JSON.stringify(payload));
-      }
-    } catch (e) { /* recorder binding unavailable; drop event */ }
+    if (typeof window.__apexloadRecord !== 'function') return;
+    if (payload && typeof payload === 'object') payload.nonce = CONTROL_NONCE;
+    const serialized = JSON.stringify(payload);
+    recordQueue = recordQueue.then(() => window.__apexloadRecord(serialized)).catch(() => {});
   }
 
   function escAttr(v) {
@@ -261,9 +262,56 @@
       (el.getAttribute('type') || 'text').toLowerCase() === 'password';
   }
 
-  function recordFill(el) {
+  function isTextEntryControl(el) {
+    if (!el || !el.tagName) return false;
+    const tag = el.tagName.toLowerCase();
+    if (tag === 'textarea') return true;
+    if (tag !== 'input') return false;
+    const type = (el.getAttribute('type') || 'text').toLowerCase();
+    return type !== 'button' && type !== 'submit' && type !== 'reset' &&
+      type !== 'checkbox' && type !== 'radio' && type !== 'file' &&
+      type !== 'image';
+  }
+
+  function fillSnapshot(el) {
     const masked = isPasswordInput(el);
-    record('fill', el, masked ? '' : el.value, masked);
+    return { value: masked ? '' : String(el.value || ''), masked: masked };
+  }
+
+  function elementFingerprint(el) {
+    const meta = el ? safeMetaFor(el) : null;
+    if (!meta) return '';
+    return meta.css_path || meta.id || meta.name ||
+      [meta.tag, meta.type, meta.aria_label, meta.placeholder].join('|');
+  }
+
+  function recordFill(el, source) {
+    const snapshot = fillSnapshot(el);
+    record('fill', el, snapshot.value, snapshot.masked);
+    lastRecordedFill = {
+      key: elementFingerprint(el),
+      value: snapshot.value,
+      masked: snapshot.masked,
+      source: source || 'change',
+      ts: Date.now()
+    };
+  }
+
+  function shouldSkipDuplicateFill(el) {
+    if (!lastRecordedFill || lastRecordedFill.source !== 'keydown') return false;
+    const key = elementFingerprint(el);
+    if (!key || key !== lastRecordedFill.key) return false;
+    const snapshot = fillSnapshot(el);
+    const age = Date.now() - lastRecordedFill.ts;
+    return age >= 0 && age <= 1000 &&
+      snapshot.value === lastRecordedFill.value &&
+      snapshot.masked === lastRecordedFill.masked;
+  }
+
+  function shouldSuppressKeyboardClick(ev) {
+    if (!lastEnterPressAt || ev.detail !== 0) return false;
+    const age = Date.now() - lastEnterPressAt;
+    return age >= 0 && age <= 700;
   }
 
   function targetOf(ev) {
@@ -340,6 +388,7 @@
       return;
     }
     if (paused) return;
+    if (shouldSuppressKeyboardClick(ev)) return;
     const el = interactiveAncestor(raw);
     const tag = el.tagName ? el.tagName.toLowerCase() : '';
     if (tag === 'select') return; // the change listener records the selection
@@ -404,10 +453,10 @@
         record('set_files', el, names);
         return;
       }
-      recordFill(el);
+      if (!shouldSkipDuplicateFill(el)) recordFill(el, 'change');
       return;
     }
-    if (tag === 'textarea') recordFill(el);
+    if (tag === 'textarea' && !shouldSkipDuplicateFill(el)) recordFill(el, 'change');
   }, true);
 
   window.addEventListener('keydown', (ev) => {
@@ -416,11 +465,12 @@
     if (!el || isToolbar(el)) return;
     if (ev.key !== 'Enter' && ev.key !== 'Escape' && ev.key !== 'Tab') return;
     const tag = el.tagName ? el.tagName.toLowerCase() : '';
-    if (ev.key === 'Enter' && (tag === 'input' || tag === 'textarea')) {
+    if ((ev.key === 'Enter' || ev.key === 'Tab') && isTextEntryControl(el)) {
       // The change event fires on blur, after navigation may have started —
-      // capture the pending value now so Enter-submits keep their fill.
-      recordFill(el);
+      // capture the pending value now so Enter-submits and Tab moves keep it.
+      recordFill(el, 'keydown');
     }
+    if (ev.key === 'Enter') lastEnterPressAt = Date.now();
     record('press_key', el, ev.key);
   }, true);
 

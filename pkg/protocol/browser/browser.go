@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/selector"
 	playwright "github.com/playwright-community/playwright-go"
 )
 
@@ -41,11 +42,13 @@ type Browser struct {
 	clientMetricsEnabled       bool
 	experienceCanary           bool
 	traceparentEnabled         bool
+	selfHealMode               string
 	harCapturePolicy           string
 	harDir                     string
 	harWorkingPath             string
 	harErrorSeen               bool
 	harSLABreachSeen           bool
+	harManualSeen              bool
 	harSLABreachThreshold      time.Duration
 	lastHARArtifactPath        string
 	mobile                     bool
@@ -78,9 +81,13 @@ type Browser struct {
 	pendingDialog *dialogPolicy
 	dialogErr     error
 
-	wsMu     sync.Mutex
-	wsEvents []browserWSEvent
-	wsSeq    int64
+	selfHealMu    sync.Mutex
+	selfHealCache map[string]selector.Candidate
+
+	wsMu        sync.Mutex
+	wsEvents    []browserWSEvent
+	wsSeq       int64
+	wsWatermark int64
 }
 
 // dialogPolicy is armed by a browser_handle_dialog action and consumed by the
@@ -91,6 +98,7 @@ type dialogPolicy struct {
 	expectedType    string
 	matchMode       string
 	promptText      string
+	wait            time.Duration
 }
 
 type browserProcessSnapshot struct {
@@ -126,25 +134,42 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 	}
 
 	consoleStart, networkStart := b.eventOffsets()
+	dialogArmedBefore, dialogWait := b.pendingDialogState()
 	actionCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	processBefore, _ := b.captureBrowserProcessSnapshot(actionCtx)
+	var processBefore browserProcessSnapshot
+	if b.clientMetricsEnabled {
+		processBefore, _ = b.captureBrowserProcessSnapshot(actionCtx)
+	}
 	b.applyActionTraceparent(actionCtx, result)
 
 	actionErr, terminal := b.dispatchAction(actionCtx, action, result)
 	if terminal {
+		result.Duration = time.Since(result.StartTime)
+		if action.Type != "browser_handle_dialog" && dialogArmedBefore {
+			b.clearPendingDialog()
+		}
 		return result, nil
 	}
 
 	if actionErr == nil {
 		actionErr = b.runPostActionSync(actionCtx, action)
 	}
+	if actionErr == nil && action.Type != "browser_handle_dialog" && dialogArmedBefore {
+		actionErr = b.waitForPendingDialog(actionCtx, dialogWait)
+	} else if actionErr != nil && action.Type != "browser_handle_dialog" && dialogArmedBefore {
+		b.clearPendingDialog()
+	}
+	actionDuration := time.Since(result.StartTime)
 	if actionErr == nil {
 		actionErr = b.afterActionDelay(actionCtx)
 	}
-	b.finalizeActionResult(actionCtx, action, result, actionErr, consoleStart, networkStart, processBefore)
+	b.finalizeActionResult(actionCtx, action, result, actionErr, consoleStart, networkStart, processBefore, actionDuration)
 	if b.harSLABreachThreshold > 0 && result.Duration > b.harSLABreachThreshold {
 		b.noteHARSLABreach()
+	}
+	if browserActionRequestsHARCapture(action) {
+		b.noteHARManual()
 	}
 	if result.ErrorMessage != "" {
 		b.noteHARError()

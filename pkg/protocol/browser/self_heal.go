@@ -19,6 +19,18 @@ const healProbeTimeout = 2 * time.Second
 // maxHealAttempts caps how many ranked fallbacks one action will try.
 const maxHealAttempts = 3
 
+const (
+	browserSelfHealOff        = "off"
+	browserSelfHealReplayOnly = "replay_only"
+	browserSelfHealAlways     = "always"
+)
+
+type selectorSelfHealStats struct {
+	Attempts      int
+	ProbeFailures int
+	CacheHit      bool
+}
+
 // runWithSelectorSelfHeal executes a selector-driven action and, when it fails
 // and the action carries ranked selector candidates (recorded by any capture
 // surface under source_selector_fallbacks), retries with the strongest usable
@@ -29,29 +41,72 @@ func (b *Browser) runWithSelectorSelfHeal(ctx context.Context, action *protocol.
 	if err == nil || ctx.Err() != nil || action == nil {
 		return err
 	}
-	fallbacks := selector.FromMetadataValue(action.Metadata[selector.MetadataFallbacksKey])
-	if len(fallbacks) == 0 {
+	if !b.selectorSelfHealEnabled() || !isSelectorNotFoundError(err) {
 		return err
 	}
-	attempts := 0
+
+	stats := selectorSelfHealStats{}
+	key := selfHealActionIdentity(action, primary)
+	tried := make(map[string]struct{})
+	if cached, ok := b.cachedSelfHealCandidate(key); ok {
+		stats.CacheHit = true
+		if healed, ok := b.trySelfHealCandidate(ctx, action, primary, cached, run, &stats, tried); ok {
+			b.recordSelfHeal(action, result, primary, healed, cached, stats)
+			return nil
+		}
+		b.forgetSelfHealCandidate(key)
+	}
+
+	fallbacks := selector.FromMetadataValue(action.Metadata[selector.MetadataFallbacksKey])
+	if len(fallbacks) == 0 {
+		fallbacks = selector.FallbacksForPrimary(selector.FromMetadataValue(action.Metadata[selector.MetadataCandidatesKey]), primary)
+	}
+	if len(fallbacks) == 0 {
+		b.recordSelfHealMetrics(action, result, primary, false, stats)
+		return err
+	}
 	for _, candidate := range fallbacks {
-		if attempts >= maxHealAttempts || ctx.Err() != nil {
+		if stats.Attempts >= maxHealAttempts || ctx.Err() != nil {
 			break
 		}
-		engineSelector, ok := selector.Usable(candidate)
-		if !ok || engineSelector == primary {
-			continue
-		}
-		attempts++
-		if !b.selectorPresent(ctx, action, engineSelector) {
-			continue
-		}
-		if healErr := run(engineSelector); healErr == nil {
-			b.recordSelfHeal(action, result, primary, engineSelector, candidate)
+		if healed, ok := b.trySelfHealCandidate(ctx, action, primary, candidate, run, &stats, tried); ok {
+			b.storeSelfHealCandidate(key, candidate)
+			b.recordSelfHeal(action, result, primary, healed, candidate, stats)
 			return nil
 		}
 	}
+	b.recordSelfHealMetrics(action, result, primary, false, stats)
 	return err
+}
+
+func (b *Browser) trySelfHealCandidate(
+	ctx context.Context,
+	action *protocol.Action,
+	primary string,
+	candidate selector.Candidate,
+	run func(string) error,
+	stats *selectorSelfHealStats,
+	tried map[string]struct{},
+) (string, bool) {
+	engineSelector, ok := selector.Usable(candidate)
+	if !ok || strings.TrimSpace(engineSelector) == strings.TrimSpace(primary) {
+		return "", false
+	}
+	if tried != nil {
+		if _, ok := tried[engineSelector]; ok {
+			return "", false
+		}
+		tried[engineSelector] = struct{}{}
+	}
+	if !b.selectorPresent(ctx, action, engineSelector) {
+		stats.ProbeFailures++
+		return "", false
+	}
+	stats.Attempts++
+	if healErr := run(engineSelector); healErr == nil {
+		return engineSelector, true
+	}
+	return "", false
 }
 
 // selectorPresent probes a candidate with a short visibility wait, honoring the
@@ -67,7 +122,7 @@ func (b *Browser) selectorPresent(ctx context.Context, action *protocol.Action, 
 	return b.waitLocatorVisible(ctx, page.Locator(engineSelector), healProbeTimeout) == nil
 }
 
-func (b *Browser) recordSelfHeal(action *protocol.Action, result *protocol.Result, primary string, healed string, candidate selector.Candidate) {
+func (b *Browser) recordSelfHeal(action *protocol.Action, result *protocol.Result, primary string, healed string, candidate selector.Candidate, stats selectorSelfHealStats) {
 	slog.Warn("browser selector self-healed",
 		"action", action.Name,
 		"primary_selector", primary,
@@ -80,6 +135,7 @@ func (b *Browser) recordSelfHeal(action *protocol.Action, result *protocol.Resul
 	if result.ProtocolEvidence == nil {
 		result.ProtocolEvidence = map[string]any{}
 	}
+	b.recordSelfHealMetrics(action, result, primary, true, stats)
 	evidence := map[string]any{
 		"action":           action.Name,
 		"primary_selector": primary,
@@ -92,6 +148,114 @@ func (b *Browser) recordSelfHeal(action *protocol.Action, result *protocol.Resul
 		evidence["recorder_step_seq"] = seq
 	}
 	result.ProtocolEvidence["selector_self_heal"] = evidence
+}
+
+func (b *Browser) recordSelfHealMetrics(action *protocol.Action, result *protocol.Result, primary string, success bool, stats selectorSelfHealStats) {
+	if result == nil {
+		return
+	}
+	if result.ProtocolEvidence == nil {
+		result.ProtocolEvidence = map[string]any{}
+	}
+	result.ProtocolEvidence["selector_self_heal_metrics"] = map[string]any{
+		"action":           action.Name,
+		"primary_selector": primary,
+		"attempts":         stats.Attempts,
+		"probe_failures":   stats.ProbeFailures,
+		"cache_hit":        stats.CacheHit,
+		"success":          success,
+	}
+}
+
+func (b *Browser) selectorSelfHealEnabled() bool {
+	switch b.selfHealMode {
+	case browserSelfHealOff:
+		return false
+	case browserSelfHealReplayOnly, browserSelfHealAlways, "":
+		return true
+	default:
+		return false
+	}
+}
+
+func normalizeBrowserSelfHealMode(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "replay", "replay_only", "replay-only", "memoized":
+		return browserSelfHealReplayOnly
+	case "always", "on", "true", "enabled":
+		return browserSelfHealAlways
+	case "off", "false", "disabled", "none":
+		return browserSelfHealOff
+	default:
+		return ""
+	}
+}
+
+func isSelectorNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "strict mode violation") {
+		return false
+	}
+	if strings.Contains(msg, "selector not found") || strings.Contains(msg, "element not found") || strings.Contains(msg, "no node found") {
+		return true
+	}
+	if strings.Contains(msg, "waiting for locator") || strings.Contains(msg, "locator(") {
+		return true
+	}
+	return strings.Contains(msg, "timeout")
+}
+
+func selfHealActionIdentity(action *protocol.Action, primary string) string {
+	if action == nil {
+		return strings.TrimSpace(primary)
+	}
+	parts := []string{strings.TrimSpace(action.Type), strings.TrimSpace(primary)}
+	for _, key := range []string{"recorder_step_seq", "source_step_id", "source_step_index", "source_action", "source_url"} {
+		if value := actionMetadataString(action.Metadata, key); value != "" {
+			parts = append(parts, key+"="+value)
+		}
+	}
+	if len(parts) == 2 {
+		parts = append(parts, strings.TrimSpace(action.Name), strings.TrimSpace(action.Target), strings.TrimSpace(action.Selector))
+	}
+	return strings.Join(parts, "\x00")
+}
+
+func (b *Browser) cachedSelfHealCandidate(key string) (selector.Candidate, bool) {
+	if strings.TrimSpace(key) == "" {
+		return selector.Candidate{}, false
+	}
+	b.selfHealMu.Lock()
+	defer b.selfHealMu.Unlock()
+	if b.selfHealCache == nil {
+		return selector.Candidate{}, false
+	}
+	candidate, ok := b.selfHealCache[key]
+	return candidate, ok
+}
+
+func (b *Browser) storeSelfHealCandidate(key string, candidate selector.Candidate) {
+	if strings.TrimSpace(key) == "" {
+		return
+	}
+	b.selfHealMu.Lock()
+	defer b.selfHealMu.Unlock()
+	if b.selfHealCache == nil {
+		b.selfHealCache = make(map[string]selector.Candidate)
+	}
+	b.selfHealCache[key] = candidate
+}
+
+func (b *Browser) forgetSelfHealCandidate(key string) {
+	if strings.TrimSpace(key) == "" {
+		return
+	}
+	b.selfHealMu.Lock()
+	defer b.selfHealMu.Unlock()
+	delete(b.selfHealCache, key)
 }
 
 func actionMetadataString(metadata map[string]any, key string) string {

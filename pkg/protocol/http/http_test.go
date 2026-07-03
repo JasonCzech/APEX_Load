@@ -254,6 +254,41 @@ func TestHTTP_Init_CustomProxyMode(t *testing.T) {
 	}
 }
 
+func TestHTTP_Init_CustomProxyModeHonorsNoProxy(t *testing.T) {
+	h := initHTTP(t, map[string]any{
+		"proxy_mode": "custom",
+		"proxy_url":  "http://proxy.internal:8080",
+		"no_proxy":   "localhost,*.internal.test,10.0.0.0/8",
+	})
+
+	bypassedReq := httptest.NewRequest(http.MethodGet, "https://api.internal.test/orders", nil)
+	proxyURL, err := h.transport.Proxy(bypassedReq)
+	if err != nil {
+		t.Fatalf("Proxy() for bypassed host returned error: %v", err)
+	}
+	if proxyURL != nil {
+		t.Fatalf("proxy URL for no_proxy host = %v, want nil", proxyURL)
+	}
+
+	cidrReq := httptest.NewRequest(http.MethodGet, "http://10.20.30.40/status", nil)
+	proxyURL, err = h.transport.Proxy(cidrReq)
+	if err != nil {
+		t.Fatalf("Proxy() for CIDR-bypassed host returned error: %v", err)
+	}
+	if proxyURL != nil {
+		t.Fatalf("proxy URL for CIDR no_proxy host = %v, want nil", proxyURL)
+	}
+
+	proxiedReq := httptest.NewRequest(http.MethodGet, "https://service.example.com", nil)
+	proxyURL, err = h.transport.Proxy(proxiedReq)
+	if err != nil {
+		t.Fatalf("Proxy() for proxied host returned error: %v", err)
+	}
+	if proxyURL == nil || proxyURL.String() != "http://proxy.internal:8080" {
+		t.Fatalf("proxy URL = %v, want custom proxy", proxyURL)
+	}
+}
+
 func TestHTTP_Init_SystemProxyMode(t *testing.T) {
 	t.Setenv("HTTPS_PROXY", "http://system-proxy.internal:8443")
 	h := initHTTP(t, map[string]any{
@@ -422,6 +457,34 @@ func TestHTTP_ExecutePreservesExplicitTraceparentHeader(t *testing.T) {
 	}
 	if result.CorrelationID != traceparent {
 		t.Fatalf("CorrelationID = %q, want %q", result.CorrelationID, traceparent)
+	}
+}
+
+func TestHTTP_ExecuteCanDisableGeneratedTraceparentHeader(t *testing.T) {
+	var receivedTraceparent string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedTraceparent = r.Header.Get("Traceparent")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{
+		"base_url":            ts.URL,
+		"traceparent_enabled": false,
+	})
+	result, err := h.Execute(context.Background(), &protocol.Action{
+		Name:   "test-no-traceparent",
+		Method: "GET",
+		Target: "/trace",
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if receivedTraceparent != "" {
+		t.Fatalf("Traceparent header = %q, want empty", receivedTraceparent)
+	}
+	if result.CorrelationID != "" {
+		t.Fatalf("CorrelationID = %q, want empty when traceparent generation is disabled", result.CorrelationID)
 	}
 }
 
@@ -1317,6 +1380,31 @@ func TestHTTP_Execute_WithAssertion(t *testing.T) {
 
 	if !result.Success {
 		t.Errorf("assertion should pass, error: %s", result.ErrorMessage)
+	}
+}
+
+func TestHTTP_Execute_StatusAssertionCanAcceptRecordedClientError(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte("not found"))
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{"base_url": ts.URL})
+	result, _ := h.Execute(context.Background(), &protocol.Action{
+		Name:   "expected-404",
+		Method: "GET",
+		Target: "/missing",
+		Assertions: []protocol.Assertion{
+			{Type: "status_code", Expected: float64(http.StatusNotFound)},
+		},
+	})
+
+	if !result.Success {
+		t.Fatalf("expected asserted 404 to succeed, error: %s", result.ErrorMessage)
+	}
+	if result.StatusCode != http.StatusNotFound {
+		t.Fatalf("StatusCode = %d, want 404", result.StatusCode)
 	}
 }
 

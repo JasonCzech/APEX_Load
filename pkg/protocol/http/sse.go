@@ -161,9 +161,6 @@ func readSSEResponse(ctx context.Context, body io.ReadCloser, params map[string]
 			case errors.Is(err, io.EOF):
 				return result, nil
 			case timedOut.Load():
-				if result.EventCount > 0 {
-					return result, nil
-				}
 				return result, fmt.Errorf("SSE stream timed out after %s", timeout)
 			case ctx.Err() != nil:
 				return result, ctx.Err()

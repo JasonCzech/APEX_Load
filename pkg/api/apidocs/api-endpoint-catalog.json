@@ -523,6 +523,16 @@
       "access": "Roles: Editor, ProjectAdmin, SystemAdmin"
     },
     {
+      "method": "GET",
+      "path": "/api/v1/browser-recorder/sessions",
+      "operationId": "handleListBrowserRecordings",
+      "summary": "List Browser Recordings",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
       "method": "POST",
       "path": "/api/v1/browser-recorder/sessions",
       "operationId": "handleStartBrowserRecording",
@@ -531,6 +541,16 @@
       "public": false,
       "authenticated": true,
       "access": "Requires Authentication"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/browser-recorder/sessions/{id}",
+      "operationId": "handleDeleteBrowserRecording",
+      "summary": "Delete Browser Recording",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Editor, ProjectAdmin, SystemAdmin"
     },
     {
       "method": "GET",

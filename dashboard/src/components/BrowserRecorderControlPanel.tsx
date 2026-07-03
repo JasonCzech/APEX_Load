@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 
 import { useApi } from '../hooks/useApi'
 import { downloadBlob } from '../utils/fileUtils'
@@ -140,6 +140,8 @@ export default function BrowserRecorderControlPanel({
   const [suggestions, setSuggestions] = useState<BrowserRecorderTransactionSuggestion[]>([])
   const [replaySessionId, setReplaySessionId] = useState<string | null>(null)
   const [lastVerifyReport, setLastVerifyReport] = useState<BrowserReplayReport | null>(null)
+  const [stepSearch, setStepSearch] = useState('')
+  const refreshInFlightRef = useRef(false)
 
   const showFeedback = (msg: string, type: 'success' | 'error' = 'success') => {
     setFeedback(msg)
@@ -148,12 +150,16 @@ export default function BrowserRecorderControlPanel({
   }
 
   const refresh = useCallback(async () => {
+    if (refreshInFlightRef.current) return
+    refreshInFlightRef.current = true
     try {
       const res = await api.getBrowserRecording(sessionId)
       setSession(res.session)
       setLoadError('')
     } catch (e: any) {
       setLoadError(e.message || 'Failed to load browser recording session')
+    } finally {
+      refreshInFlightRef.current = false
     }
   }, [api, sessionId])
 
@@ -483,6 +489,7 @@ export default function BrowserRecorderControlPanel({
 
   const handleApplyReplaySuggestion = async (suggestion: ReplayRepairSuggestion) => {
     if (suggestion.draft_patch_type !== 'promote_selector') {
+      showFeedback(`Replay suggestion type "${suggestion.draft_patch_type || 'unknown'}" is not supported for recorded-session repair yet.`, 'error')
       return
     }
     const fields = suggestion.fields || {}
@@ -590,7 +597,20 @@ export default function BrowserRecorderControlPanel({
   }
 
   const steps = session.steps || []
-  const recentSteps = [...steps].reverse().slice(0, 25)
+  const stepSearchQuery = stepSearch.trim().toLowerCase()
+  const visibleSteps = [...steps].reverse().filter(step => {
+    if (!stepSearchQuery) return true
+    const detail = stepDetail(step)
+    return [
+      String(step.seq),
+      step.kind,
+      detail,
+      step.url,
+      step.title,
+      step.section,
+      step.candidates?.[0]?.value,
+    ].filter(Boolean).join(' ').toLowerCase().includes(stepSearchQuery)
+  })
   const stopped = session.status === 'stopped'
   const controllable = CONTROLLABLE_STATUSES.has(session.status)
   const openTransactions = session.open_transactions || []
@@ -612,6 +632,7 @@ export default function BrowserRecorderControlPanel({
       </div>
 
       {feedback && <div className={`rec-feedback ${feedbackType}`}>{feedback}</div>}
+      {loadError && <div className="rec-feedback error" role="alert">{loadError}</div>}
       {session.error && <div className="rec-feedback error">{session.error}</div>}
 
       {session.current_url && (
@@ -789,14 +810,27 @@ export default function BrowserRecorderControlPanel({
         </div>
       )}
 
-      {recentSteps.length > 0 && (
+      {steps.length > 0 && (
         <div className="rec-live-feed brp-feed">
           <div className="rec-feed-header">
             <span>{live ? 'Live Steps' : 'Recorded Steps'}</span>
             <span className="rec-feed-count">{session.step_count}</span>
           </div>
+          {steps.length > 10 && (
+            <div className="brp-step-search">
+              <input
+                className="rec-input"
+                type="search"
+                value={stepSearch}
+                onChange={event => setStepSearch(event.target.value)}
+                placeholder="Search recorded steps"
+                aria-label="Search recorded steps"
+              />
+              {stepSearchQuery && <span>{visibleSteps.length} match{visibleSteps.length === 1 ? '' : 'es'}</span>}
+            </div>
+          )}
           <div className="rec-feed-list">
-            {recentSteps.map(step => {
+            {visibleSteps.map(step => {
               const quality = selectorQuality(step)
               return (
                 <div key={step.seq} className={`rec-feed-item brp-step ${step.excluded ? 'brp-step-excluded' : ''}`}>
@@ -828,6 +862,9 @@ export default function BrowserRecorderControlPanel({
                 </div>
               )
             })}
+            {visibleSteps.length === 0 && (
+              <div className="brp-step-empty">No recorded steps match this search.</div>
+            )}
           </div>
           {controllable && session.step_count > 0 && (
             <button type="button" className="rec-inline-action brp-delete-last" onClick={handleDeleteLastStep}>Delete last step</button>

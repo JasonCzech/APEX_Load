@@ -141,6 +141,52 @@ func TestAppendStepCollapsesDuplicateFills(t *testing.T) {
 	}
 }
 
+func TestAppendStepDoesNotCollapseIntoExcludedOrDeletedFill(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		mutate func(*testing.T, *Session)
+	}{
+		{
+			name: "excluded",
+			mutate: func(t *testing.T, session *Session) {
+				if _, ok := session.setStepExcluded(1, true); !ok {
+					t.Fatal("setStepExcluded() ok = false")
+				}
+			},
+		},
+		{
+			name: "deleted",
+			mutate: func(t *testing.T, session *Session) {
+				if _, ok := session.deleteLastStep(); !ok {
+					t.Fatal("deleteLastStep() ok = false")
+				}
+			},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			session := &Session{}
+			el := &selector.ElementMetadata{Tag: "input", Name: "q", CSSPath: "#q"}
+			session.appendStep(Step{Kind: StepFill, Value: "first", Timestamp: time.UnixMilli(1000), Element: el})
+			tt.mutate(t, session)
+
+			recorded := session.appendStep(Step{Kind: StepFill, Value: "second", Timestamp: time.UnixMilli(2000), Element: el})
+
+			if len(session.Steps) != 2 {
+				t.Fatalf("steps = %d, want 2 (new fill must not merge into %s fill)", len(session.Steps), tt.name)
+			}
+			if recorded.Seq != 2 {
+				t.Fatalf("recorded seq = %d, want 2", recorded.Seq)
+			}
+			if session.Steps[0].Value != "first" {
+				t.Errorf("first fill value = %q, want unchanged first", session.Steps[0].Value)
+			}
+			if session.Steps[1].Value != "second" {
+				t.Errorf("second fill value = %q, want second", session.Steps[1].Value)
+			}
+		})
+	}
+}
+
 func TestUpdateSwitchWindowStepBackfillsPopupURL(t *testing.T) {
 	session := &Session{}
 	step := session.appendStep(Step{Kind: StepSwitchWindow, Value: "about:blank", URL: "about:blank", Timestamp: time.UnixMilli(1000)})
