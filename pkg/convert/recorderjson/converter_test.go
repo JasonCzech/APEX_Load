@@ -74,6 +74,9 @@ func TestConvertChromeRecording(t *testing.T) {
 	if click.Metadata["source_click_button"] != "secondary" {
 		t.Errorf("click metadata button = %+v", click.Metadata)
 	}
+	if click.Params["button"] != "right" {
+		t.Errorf("click params = %+v, want right button mapping", click.Params)
+	}
 	if offset, ok := click.Metadata["source_click_offset"].(map[string]int); !ok || offset["x"] != 7 || offset["y"] != 9 {
 		t.Errorf("click offset = %+v", click.Metadata["source_click_offset"])
 	}
@@ -157,6 +160,12 @@ func TestConvertChromeAriaSelectorMapping(t *testing.T) {
 			chains:    [][]string{{"#host", "#inner"}},
 			wantKind:  "css",
 			wantValue: "#host #inner",
+		},
+		{
+			name:      "multi part aria uses innermost target",
+			chains:    [][]string{{`aria/Checkout`, `aria/Pay now[role="button"]`}},
+			wantKind:  "role",
+			wantValue: `role=button[name="Pay now"]`,
 		},
 		{
 			name:      "xpath chain in shadow dropped",
@@ -338,17 +347,230 @@ await page.getByText('Total').filter({ hasText: '$10' }).hover();
 	if err != nil {
 		t.Fatalf("Convert: %v", err)
 	}
-	if got := actionTypes(result.Script.Actions); strings.Join(got, ",") != "browser_navigate,browser_click,browser_click,browser_click,browser_hover" {
+	if got := actionTypes(result.Script.Actions); strings.Join(got, ",") != "browser_navigate,browser_check,browser_click,browser_click,browser_hover" {
 		t.Fatalf("actions = %v", got)
 	}
 	check := result.Script.Actions[1]
-	if check.Metadata["frame_selector"] != "#pay" || check.Metadata["source_checkbox_state"] != "check" {
+	if check.Value != "true" || check.Metadata["frame_selector"] != "#pay" || check.Metadata["source_checkbox_state"] != "check" {
 		t.Errorf("check metadata = %+v", check.Metadata)
 	}
 	for _, idx := range []int{1, 2, 3, 4} {
 		if result.Script.Actions[idx].Metadata["import_disposition"] != "degraded" {
 			t.Errorf("action %d metadata = %+v, want degraded", idx, result.Script.Actions[idx].Metadata)
 		}
+	}
+}
+
+func TestConvertChromeSelectAndFrameLosses(t *testing.T) {
+	result, err := Convert([]byte(`{
+  "title": "Chrome select",
+  "steps": [
+    {"type": "navigate", "url": "https://shop.example/preferences"},
+    {"type": "change", "value": "US", "selectors": [["select#country"]]},
+    {"type": "click", "frame": [0], "selectors": [["#pay"]]}
+  ]
+}`), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("Convert: %v", err)
+	}
+	if len(result.Script.Actions) != 3 {
+		t.Fatalf("actions = %d, want 3", len(result.Script.Actions))
+	}
+	selectAction := result.Script.Actions[1]
+	if selectAction.Type != "browser_select" || selectAction.Selector != "select#country" || selectAction.Value != "US" {
+		t.Fatalf("select action = %+v, want browser_select for select#country", selectAction)
+	}
+	click := result.Script.Actions[2]
+	if click.Metadata["source_frame"] == nil {
+		t.Fatalf("click metadata = %+v, want source_frame", click.Metadata)
+	}
+	if click.Metadata["import_disposition"] != "degraded" {
+		t.Fatalf("click metadata = %+v, want degraded frame disposition", click.Metadata)
+	}
+	if result.StepMapping[2].Disposition != "degraded" || !strings.Contains(result.StepMapping[2].Reason, "frame index") {
+		t.Fatalf("frame mapping = %+v, want degraded frame index reason", result.StepMapping[2])
+	}
+}
+
+func TestConvertChromeWaitForElementAbsence(t *testing.T) {
+	result, err := Convert([]byte(`{
+  "title": "Chrome absence waits",
+  "steps": [
+    {"type": "navigate", "url": "https://shop.example/status"},
+    {"type": "waitForElement", "selectors": [["#toast"]], "operator": "<", "count": 1, "timeout": 2500},
+    {"type": "waitForElement", "selectors": [["#spinner"]], "visible": false, "timeout": 1500}
+  ]
+}`), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("Convert: %v", err)
+	}
+	if got := actionTypes(result.Script.Actions); strings.Join(got, ",") != "browser_navigate,browser_wait,browser_wait" {
+		t.Fatalf("actions = %v", got)
+	}
+	absence := result.Script.Actions[1]
+	if absence.WaitFor == nil || absence.WaitFor.Type != "hidden" || absence.WaitFor.Value != "#toast" || absence.WaitFor.TimeoutMs != 2500 {
+		t.Fatalf("absence wait = %+v, want hidden #toast with timeout", absence.WaitFor)
+	}
+	if absence.Params["operator"] != "<" || absence.Params["count"] != 1 {
+		t.Fatalf("absence wait params = %+v, want source operator/count preserved", absence.Params)
+	}
+	explicitHidden := result.Script.Actions[2]
+	if explicitHidden.WaitFor == nil || explicitHidden.WaitFor.Type != "hidden" || explicitHidden.WaitFor.Value != "#spinner" || explicitHidden.WaitFor.TimeoutMs != 1500 {
+		t.Fatalf("explicit hidden wait = %+v", explicitHidden.WaitFor)
+	}
+	if result.StepMapping[1].Disposition != "mapped" || result.StepMapping[2].Disposition != "mapped" {
+		t.Fatalf("step mapping = %+v, want mapped absence waits", result.StepMapping)
+	}
+}
+
+func TestConvertPlaywrightPreservesCheckboxAndClickOptions(t *testing.T) {
+	result, err := Convert([]byte(`
+await page.goto('https://shop.example/');
+await page.locator('#remember').uncheck();
+await page.locator('button.danger').click({ button: 'right', modifiers: ['ControlOrMeta', 'Shift'] });
+`), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("Convert: %v", err)
+	}
+	if got := actionTypes(result.Script.Actions); strings.Join(got, ",") != "browser_navigate,browser_check,browser_click" {
+		t.Fatalf("actions = %v", got)
+	}
+	check := result.Script.Actions[1]
+	if check.Type != "browser_check" || check.Value != "false" || check.Metadata["source_checkbox_state"] != "uncheck" {
+		t.Fatalf("check action = %+v", check)
+	}
+	click := result.Script.Actions[2]
+	if click.Params["button"] != "right" {
+		t.Fatalf("click params = %+v, want right button", click.Params)
+	}
+	modifiers, ok := click.Params["modifiers"].([]string)
+	if !ok || strings.Join(modifiers, ",") != "ControlOrMeta,Shift" {
+		t.Fatalf("click modifiers = %#v, want ControlOrMeta,Shift", click.Params["modifiers"])
+	}
+}
+
+func TestConvertPlaywrightEscapedStringLiterals(t *testing.T) {
+	result, err := Convert([]byte(`
+await page.goto('https://shop.example/');
+await page.getByText('Bob\'s cart').click();
+await page.locator('button[aria-label="Save \"draft\""]').click();
+await page.locator('#note').fill('He said \"go\"');
+`), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("Convert: %v", err)
+	}
+	if got := actionTypes(result.Script.Actions); strings.Join(got, ",") != "browser_navigate,browser_click,browser_click,browser_fill" {
+		t.Fatalf("actions = %v", got)
+	}
+	if result.Script.Actions[1].Selector != `text="Bob's cart"` {
+		t.Fatalf("escaped text selector = %q", result.Script.Actions[1].Selector)
+	}
+	if result.Script.Actions[2].Selector != `button[aria-label="Save "draft""]` {
+		t.Fatalf("escaped css selector = %q", result.Script.Actions[2].Selector)
+	}
+	if result.Script.Actions[3].Value != `He said "go"` {
+		t.Fatalf("escaped fill value = %q", result.Script.Actions[3].Value)
+	}
+}
+
+func TestConvertPlaywrightToHaveValueRequiresCSSSelector(t *testing.T) {
+	result, err := Convert([]byte(`
+await page.goto('https://shop.example/');
+await expect(page.locator('#email')).toHaveValue('alice@example.com');
+await expect(page.getByRole('textbox', { name: 'Email' })).toHaveValue('alice@example.com');
+`), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("Convert: %v", err)
+	}
+	if got := actionTypes(result.Script.Actions); strings.Join(got, ",") != "browser_navigate,browser_evaluate_js" {
+		t.Fatalf("actions = %v, want navigate + CSS-backed value assertion only", got)
+	}
+	assertion := result.Script.Actions[1]
+	if assertion.Type != "browser_evaluate_js" || !strings.Contains(assertion.Target, `document.querySelector("#email")`) {
+		t.Fatalf("css value assertion = %+v", assertion)
+	}
+	if result.Stats.TotalSteps != 3 || result.Stats.SkippedSteps != 1 {
+		t.Fatalf("stats = %+v, want one unsupported role-backed value assertion", result.Stats)
+	}
+	if len(result.StepMapping) != 3 || result.StepMapping[2].Disposition != "unsupported" {
+		t.Fatalf("step mapping = %+v, want unsupported mapping for role-backed value assertion", result.StepMapping)
+	}
+	if len(result.Unsupported) != 1 || !strings.Contains(result.Unsupported[0].Detail, "document.querySelector") {
+		t.Fatalf("unsupported = %+v, want querySelector diagnostic", result.Unsupported)
+	}
+}
+
+func TestConvertPlaywrightDirectPageActionsAndUnsupportedAccounting(t *testing.T) {
+	result, err := Convert([]byte(`
+await page.goto('https://shop.example/');
+await page.click('#direct', { button: 'middle' });
+await page.fill('#name', 'Ada');
+await page.check('#agree');
+await page.selectOption('#country', 'CA');
+await page.press('#search', 'Enter');
+await page.screenshot({ path: 'x.png' });
+`), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("Convert: %v", err)
+	}
+	if got := actionTypes(result.Script.Actions); strings.Join(got, ",") != "browser_navigate,browser_click,browser_fill,browser_check,browser_select,browser_press_key" {
+		t.Fatalf("actions = %v", got)
+	}
+	if result.Script.Actions[1].Params["button"] != "middle" {
+		t.Fatalf("direct click params = %+v, want middle button", result.Script.Actions[1].Params)
+	}
+	if result.Script.Actions[2].Value != "Ada" {
+		t.Fatalf("direct fill = %+v", result.Script.Actions[2])
+	}
+	if result.Script.Actions[3].Value != "true" {
+		t.Fatalf("direct check = %+v", result.Script.Actions[3])
+	}
+	if result.Script.Actions[4].Value != "CA" {
+		t.Fatalf("direct select = %+v", result.Script.Actions[4])
+	}
+	if result.Script.Actions[5].Value != "Enter" {
+		t.Fatalf("direct press = %+v", result.Script.Actions[5])
+	}
+	if result.Stats.TotalSteps != 7 || result.Stats.SkippedSteps != 1 {
+		t.Fatalf("stats = %+v, want unsupported screenshot counted", result.Stats)
+	}
+	if len(result.Unsupported) != 1 || !strings.Contains(result.Unsupported[0].Detail, "screenshot") {
+		t.Fatalf("unsupported = %+v, want screenshot diagnostic", result.Unsupported)
+	}
+}
+
+func TestConvertPlaywrightMarksNonPrimaryPageContextDegraded(t *testing.T) {
+	result, err := Convert([]byte(`
+await page.goto('https://shop.example/');
+const popupPromise = page.waitForEvent('popup');
+await page.getByRole('link', { name: 'Open report' }).click();
+const page1 = await popupPromise;
+await page1.goto('https://reports.example/detail');
+await page1.locator('#download').click();
+await expect(page1).toHaveURL('https://reports.example/detail');
+`), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("Convert: %v", err)
+	}
+	if got := actionTypes(result.Script.Actions); strings.Join(got, ",") != "browser_navigate,browser_click,browser_navigate,browser_click,browser_wait" {
+		t.Fatalf("actions = %v", got)
+	}
+	for _, idx := range []int{2, 3, 4} {
+		action := result.Script.Actions[idx]
+		if action.Metadata["source_page_variable"] != "page1" {
+			t.Fatalf("action %d metadata = %+v, want source_page_variable page1", idx, action.Metadata)
+		}
+		if action.Metadata["import_disposition"] != "degraded" {
+			t.Fatalf("action %d metadata = %+v, want degraded popup context", idx, action.Metadata)
+		}
+	}
+	for _, mapping := range result.StepMapping {
+		if mapping.ActionIndex != nil && *mapping.ActionIndex >= 2 && mapping.Disposition != "degraded" {
+			t.Fatalf("mapping = %+v, want degraded for page1 action", mapping)
+		}
+	}
+	if result.Stats.DegradedSteps < 3 {
+		t.Fatalf("degraded steps = %d, want page1 navigation/click/assertion counted", result.Stats.DegradedSteps)
 	}
 }
 

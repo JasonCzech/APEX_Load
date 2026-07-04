@@ -1702,6 +1702,39 @@ func TestTrustedHeaderAuthScopesRecorderCACertToProjectRoles(t *testing.T) {
 	}
 }
 
+func TestTrustedHeaderAuthScopesBrowserRecorderSessionListToProjectRoles(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+	projectID := uuid.New().String()
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/browser-recorder/sessions", nil)
+	listReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	listReq.Header.Set("X-APEXLoad-Project-Roles", projectID+"="+RoleViewer)
+	listResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(listResp, listReq)
+	if listResp.Code != http.StatusForbidden {
+		t.Fatalf("unfiltered browser recorder list status = %d, want %d body=%s", listResp.Code, http.StatusForbidden, listResp.Body.String())
+	}
+
+	filteredReq := httptest.NewRequest(http.MethodGet, "/api/v1/browser-recorder/sessions?project_id="+projectID, nil)
+	filteredReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	filteredReq.Header.Set("X-APEXLoad-Project-Roles", projectID+"="+RoleViewer)
+	filteredResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(filteredResp, filteredReq)
+	if filteredResp.Code != http.StatusOK {
+		t.Fatalf("filtered browser recorder list status = %d, want %d body=%s", filteredResp.Code, http.StatusOK, filteredResp.Body.String())
+	}
+
+	globalReq := httptest.NewRequest(http.MethodGet, "/api/v1/browser-recorder/sessions", nil)
+	globalReq.Header.Set("X-Auth-Request-User", "global-viewer")
+	globalReq.Header.Set("X-APEXLoad-Roles", RoleViewer)
+	globalResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(globalResp, globalReq)
+	if globalResp.Code != http.StatusOK {
+		t.Fatalf("global browser recorder list status = %d, want %d body=%s", globalResp.Code, http.StatusOK, globalResp.Body.String())
+	}
+}
+
 func TestTrustedHeaderAuthProjectRoleGuardsRecorderSessionEndpoints(t *testing.T) {
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
 	enableTrustedHeaderAuth(t, server)

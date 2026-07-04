@@ -9,6 +9,7 @@ import type {
 import type { ScriptRecordingStatus } from '../hooks/api/useScriptApi'
 import { useCorrelationRulesetApi } from '../hooks/api/useCorrelationRulesetApi'
 import { harToSteps, replayEventsToSteps } from './correlationDiagnose'
+import type { CorrelationExtractorRepair } from './scriptCorrelationRepair'
 
 interface CorrelationDiagnosePanelProps {
   scriptId: string | null
@@ -18,7 +19,7 @@ interface CorrelationDiagnosePanelProps {
   actionCount: number
   diagnoseWithBaseline: (scriptId: string, replay: CorrelationStep[]) => Promise<CorrelationDiagnoseResponse>
   diagnoseWithUpload: (recorded: CorrelationStep[], replay: CorrelationStep[]) => Promise<CorrelationDiagnoseResponse>
-  onAddExtractor: (actionIndex: number, extractor: ScriptExtractorDefinition) => void
+  onAddExtractor: (actionIndex: number, extractor: ScriptExtractorDefinition, repair?: CorrelationExtractorRepair) => void
 }
 
 function truncate(value: string, max = 80): string {
@@ -115,12 +116,27 @@ export function CorrelationDiagnosePanel({
     if (!suggestion.extractor) return
     const actionIndex = suggestion.source_step_id
     if (actionIndex < 0 || actionIndex >= actionCount) return
-    onAddExtractor(actionIndex, {
+    const repair = typeof suggestion.failing_step_id === 'number' &&
+      suggestion.failing_step_id >= 0 &&
+      suggestion.failing_step_id < actionCount &&
+      suggestion.recorded_value &&
+      suggestion.extractor.name
+      ? {
+        failingActionIndex: suggestion.failing_step_id,
+        recordedValue: suggestion.recorded_value,
+        replacement: `{{var.${suggestion.extractor.name}}}`,
+      }
+      : undefined
+    const extractor: ScriptExtractorDefinition = {
       name: suggestion.extractor.name || 'correlation_value',
       source: suggestion.extractor.source || 'body',
       type: suggestion.extractor.extract_type || 'regex',
       expression: suggestion.extractor.expression,
-    })
+    }
+    if (suggestion.extractor.convert) {
+      extractor.convert = suggestion.extractor.convert
+    }
+    onAddExtractor(actionIndex, extractor, repair)
     setApplied(previous => new Set(previous).add(suggestion.rule_id + suggestion.source_step_id))
   }
 

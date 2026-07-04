@@ -370,6 +370,41 @@ func TestRecorderSuppressesSyntheticClickAfterEnterPress(t *testing.T) {
 	}
 }
 
+func TestRecorderCapturesDebouncedHover(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping browser integration test in -short mode")
+	}
+	server := keyboardFixtureServer()
+	defer server.Close()
+
+	recorder := New(Options{StartURL: server.URL, Headless: true})
+	if err := recorder.Start(); err != nil {
+		t.Skipf("browser runtime unavailable: %v", err)
+	}
+	defer func() { _, _ = recorder.Stop() }()
+
+	pages := recorder.context.Pages()
+	if len(pages) == 0 {
+		t.Fatal("no recording page open")
+	}
+	page := pages[0]
+
+	if err := page.Hover("#save"); err != nil {
+		t.Fatalf("hover save: %v", err)
+	}
+	waitForSteps(t, recorder, 1, 10*time.Second)
+	session, err := recorder.Stop()
+	if err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+	if len(session.Steps) != 1 || session.Steps[0].Kind != StepHover {
+		t.Fatalf("steps = %+v, want one hover step", session.Steps)
+	}
+	if got := session.Steps[0].bestSelector(); got != "#save" {
+		t.Fatalf("hover selector = %q, want #save", got)
+	}
+}
+
 func waitForSteps(t *testing.T, recorder *Recorder, want int, timeout time.Duration) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)

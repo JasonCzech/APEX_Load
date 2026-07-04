@@ -314,7 +314,7 @@ type Extractor struct {
 	Mode       string `json:"mode,omitempty"`        // "": single value; "all": name_1..name_N + name_count
 	SaveOffset int    `json:"save_offset,omitempty"` // skip leading bytes of each matched value
 	SaveLength int    `json:"save_length,omitempty"` // truncate each value to at most N bytes (0 = entire)
-	Convert    string `json:"convert,omitempty"`     // "url_encode" | "html_decode"
+	Convert    string `json:"convert,omitempty"`     // "url_encode" | "url_decode" | "html_decode"
 }
 
 // Assertion validates a response matches expected conditions.

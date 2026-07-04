@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"mime"
+	"net"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -165,6 +166,9 @@ func readSSEResponse(ctx context.Context, body io.ReadCloser, params map[string]
 			case ctx.Err() != nil:
 				return result, ctx.Err()
 			default:
+				if isSSEPrematureReadTimeout(err) {
+					return result, err
+				}
 				if result.EventCount > 0 {
 					return result, nil
 				}
@@ -172,6 +176,23 @@ func readSSEResponse(ctx context.Context, body io.ReadCloser, params map[string]
 			}
 		}
 	}
+}
+
+func isSSEPrematureReadTimeout(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return true
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+	lower := strings.ToLower(err.Error())
+	return strings.Contains(lower, "client.timeout") ||
+		strings.Contains(lower, "context deadline exceeded") ||
+		strings.Contains(lower, "timeout awaiting response")
 }
 
 func writeSSEEvent(out *bytes.Buffer, event sseEvent) {

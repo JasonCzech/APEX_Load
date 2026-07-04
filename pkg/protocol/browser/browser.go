@@ -38,6 +38,13 @@ type Browser struct {
 	downloadResources          string
 	slowMo                     time.Duration
 	userAgent                  string
+	locale                     string
+	timezone                   string
+	geolocation                *playwright.Geolocation
+	geolocationIncomplete      bool
+	httpCredentials            *playwright.HttpCredentials
+	proxy                      *playwright.Proxy
+	clientCertificates         []playwright.ClientCertificate
 	captureScreenshots         string
 	clientMetricsEnabled       bool
 	experienceCanary           bool
@@ -54,8 +61,10 @@ type Browser struct {
 	mobile                     bool
 	touchMode                  bool
 	orientation                string
+	orientationExplicit        bool
 	deviceScaleFactor          float64
 	cpuThrottleRate            float64
+	cpuThrottleExplicit        bool
 	viewportW                  int
 	viewportH                  int
 

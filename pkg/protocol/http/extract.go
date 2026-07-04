@@ -150,6 +150,12 @@ func postProcessExtractedValue(ext protocol.Extractor, value string) (string, er
 		return value, nil
 	case "url_encode":
 		return url.QueryEscape(value), nil
+	case "url_decode":
+		decoded, err := url.QueryUnescape(value)
+		if err != nil {
+			return value, nil
+		}
+		return decoded, nil
 	case "html_decode":
 		return html.UnescapeString(value), nil
 	case "html_url_encode":

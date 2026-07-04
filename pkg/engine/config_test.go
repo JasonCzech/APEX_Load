@@ -336,6 +336,12 @@ func TestBuildProtoConfig_ResolvesSecretPlaceholders(t *testing.T) {
 			return "runtime-token", true
 		case "ws_password":
 			return "soap-pass", true
+		case "browser_password":
+			return "browser-pass", true
+		case "browser_proxy_password":
+			return "browser-proxy-pass", true
+		case "browser_cert_passphrase":
+			return "browser-cert-pass", true
 		default:
 			return "", false
 		}
@@ -352,6 +358,24 @@ func TestBuildProtoConfig_ResolvesSecretPlaceholders(t *testing.T) {
 					UsernameToken: &dsl.SOAPUsernameTokenConfig{Password: "{{secret.ws_password}}"},
 				},
 			},
+			Browser: dsl.BrowserConfig{
+				HTTPCredentials: dsl.BrowserHTTPCredentials{
+					Username: "browser-user",
+					Password: "{{secret.browser_password}}",
+					Origin:   "https://secure.example",
+					Send:     "always",
+				},
+				Proxy: dsl.BrowserProxyConfig{
+					Server:   "proxy.example:3128",
+					Username: "proxy-user",
+					Password: "{{secret.browser_proxy_password}}",
+				},
+				ClientCertificates: []dsl.BrowserClientCertificate{{
+					Origin:     "https://mtls.example",
+					PfxPath:    "/certs/client.p12",
+					Passphrase: "{{secret.browser_cert_passphrase}}",
+				}},
+			},
 		},
 	}
 
@@ -365,6 +389,19 @@ func TestBuildProtoConfig_ResolvesSecretPlaceholders(t *testing.T) {
 	}
 	if cfg["soap_ws_security_password"] != "soap-pass" {
 		t.Fatalf("soap_ws_security_password = %v, want soap-pass", cfg["soap_ws_security_password"])
+	}
+	if cfg["browser_http_credentials_password"] != "browser-pass" {
+		t.Fatalf("browser_http_credentials_password = %v, want browser-pass", cfg["browser_http_credentials_password"])
+	}
+	if cfg["browser_proxy_password"] != "browser-proxy-pass" {
+		t.Fatalf("browser_proxy_password = %v, want browser-proxy-pass", cfg["browser_proxy_password"])
+	}
+	certificates, ok := cfg["browser_client_certificates"].([]map[string]any)
+	if !ok || len(certificates) != 1 {
+		t.Fatalf("browser_client_certificates = %#v, want one certificate", cfg["browser_client_certificates"])
+	}
+	if certificates[0]["passphrase"] != "browser-cert-pass" {
+		t.Fatalf("browser client cert passphrase = %#v, want resolved secret", certificates[0]["passphrase"])
 	}
 }
 
@@ -404,6 +441,7 @@ func TestBuildProtoConfig_Connection(t *testing.T) {
 	keepAlive := true
 	maxRedirects := 5
 	cookiesEnabled := false
+	cacheEnabled := true
 
 	script := &dsl.Script{
 		Config: dsl.ScriptConfig{
@@ -414,6 +452,7 @@ func TestBuildProtoConfig_Connection(t *testing.T) {
 				Version:         "2",
 				MaxRedirects:    &maxRedirects,
 				CookiesEnabled:  &cookiesEnabled,
+				CacheEnabled:    &cacheEnabled,
 			},
 		},
 	}
@@ -434,6 +473,9 @@ func TestBuildProtoConfig_Connection(t *testing.T) {
 	}
 	if cfg["cookies_enabled"] != false {
 		t.Errorf("cookies_enabled = %v", cfg["cookies_enabled"])
+	}
+	if cfg["http_cache_enabled"] != true {
+		t.Errorf("http_cache_enabled = %v", cfg["http_cache_enabled"])
 	}
 }
 
@@ -739,6 +781,9 @@ func TestBuildProtoConfig_Browser(t *testing.T) {
 	touchMode := true
 	clientMetrics := true
 	latencyMs := 75
+	geoLat := 47.6062
+	geoLon := -122.3321
+	geoAccuracy := 15.0
 	script := &dsl.Script{
 		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Preserved: map[string]any{
 			"recorded_resource_urls_available": true,
@@ -754,6 +799,13 @@ func TestBuildProtoConfig_Browser(t *testing.T) {
 				DownloadResources:  "recorded",
 				SlowMoMs:           125,
 				UserAgent:          "APEXLoadBrowser/0.1",
+				Locale:             "en-GB",
+				Timezone:           "Europe/London",
+				Geolocation: dsl.BrowserGeolocation{
+					Latitude:  &geoLat,
+					Longitude: &geoLon,
+					Accuracy:  &geoAccuracy,
+				},
 				DeviceProfile:      "iphone_se",
 				TouchMode:          &touchMode,
 				Orientation:        "portrait",
@@ -825,6 +877,15 @@ func TestBuildProtoConfig_Browser(t *testing.T) {
 	}
 	if cfg["browser_capture_screenshots"] != "per_action" {
 		t.Errorf("browser_capture_screenshots = %v, want per_action", cfg["browser_capture_screenshots"])
+	}
+	if cfg["browser_locale"] != "en-GB" {
+		t.Errorf("browser_locale = %v, want en-GB", cfg["browser_locale"])
+	}
+	if cfg["browser_timezone"] != "Europe/London" {
+		t.Errorf("browser_timezone = %v, want Europe/London", cfg["browser_timezone"])
+	}
+	if cfg["browser_geolocation_latitude"] != geoLat || cfg["browser_geolocation_longitude"] != geoLon || cfg["browser_geolocation_accuracy"] != geoAccuracy {
+		t.Errorf("browser geolocation config = lat:%v lon:%v acc:%v", cfg["browser_geolocation_latitude"], cfg["browser_geolocation_longitude"], cfg["browser_geolocation_accuracy"])
 	}
 	if cfg["browser_device_profile"] != "iphone_se" {
 		t.Errorf("browser_device_profile = %v, want iphone_se", cfg["browser_device_profile"])

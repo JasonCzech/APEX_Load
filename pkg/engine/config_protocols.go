@@ -41,6 +41,9 @@ func appendHTTPConfig(cfg map[string]any, script *dsl.Script) {
 	if httpCfg.CookiesEnabled != nil {
 		cfg["cookies_enabled"] = *httpCfg.CookiesEnabled
 	}
+	if httpCfg.CacheEnabled != nil {
+		cfg["http_cache_enabled"] = *httpCfg.CacheEnabled
+	}
 
 	// Browser emulation headers
 	if httpCfg.UserAgent != "" {
@@ -350,6 +353,68 @@ func appendBrowserConfig(cfg map[string]any, script *dsl.Script) {
 	}
 	if browserCfg.UserAgent != "" {
 		cfg["browser_user_agent"] = browserCfg.UserAgent
+	}
+	if browserCfg.Locale != "" {
+		cfg["browser_locale"] = browserCfg.Locale
+	}
+	if browserCfg.Timezone != "" {
+		cfg["browser_timezone"] = browserCfg.Timezone
+	}
+	if browserCfg.Geolocation.Latitude != nil {
+		cfg["browser_geolocation_latitude"] = *browserCfg.Geolocation.Latitude
+	}
+	if browserCfg.Geolocation.Longitude != nil {
+		cfg["browser_geolocation_longitude"] = *browserCfg.Geolocation.Longitude
+	}
+	if browserCfg.Geolocation.Accuracy != nil {
+		cfg["browser_geolocation_accuracy"] = *browserCfg.Geolocation.Accuracy
+	}
+	if browserCfg.HTTPCredentials.Username != "" {
+		cfg["browser_http_credentials_username"] = browserCfg.HTTPCredentials.Username
+	}
+	if browserCfg.HTTPCredentials.Password != "" {
+		cfg["browser_http_credentials_password"] = browserCfg.HTTPCredentials.Password
+	}
+	if browserCfg.HTTPCredentials.Origin != "" {
+		cfg["browser_http_credentials_origin"] = browserCfg.HTTPCredentials.Origin
+	}
+	if browserCfg.HTTPCredentials.Send != "" {
+		cfg["browser_http_credentials_send"] = browserCfg.HTTPCredentials.Send
+	}
+	if browserCfg.Proxy.Server != "" {
+		cfg["browser_proxy_server"] = browserCfg.Proxy.Server
+	}
+	if browserCfg.Proxy.Bypass != "" {
+		cfg["browser_proxy_bypass"] = browserCfg.Proxy.Bypass
+	}
+	if browserCfg.Proxy.Username != "" {
+		cfg["browser_proxy_username"] = browserCfg.Proxy.Username
+	}
+	if browserCfg.Proxy.Password != "" {
+		cfg["browser_proxy_password"] = browserCfg.Proxy.Password
+	}
+	if len(browserCfg.ClientCertificates) > 0 {
+		certificates := make([]map[string]any, 0, len(browserCfg.ClientCertificates))
+		for _, certificate := range browserCfg.ClientCertificates {
+			item := map[string]any{}
+			if certificate.Origin != "" {
+				item["origin"] = certificate.Origin
+			}
+			if certificate.CertPath != "" {
+				item["cert_path"] = certificate.CertPath
+			}
+			if certificate.KeyPath != "" {
+				item["key_path"] = certificate.KeyPath
+			}
+			if certificate.PfxPath != "" {
+				item["pfx_path"] = certificate.PfxPath
+			}
+			if certificate.Passphrase != "" {
+				item["passphrase"] = certificate.Passphrase
+			}
+			certificates = append(certificates, item)
+		}
+		cfg["browser_client_certificates"] = certificates
 	}
 	if browserCfg.DeviceProfile != "" {
 		cfg["browser_device_profile"] = browserCfg.DeviceProfile

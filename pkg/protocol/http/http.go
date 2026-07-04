@@ -46,6 +46,8 @@ type HTTP struct {
 	requestTimeout           time.Duration
 	networkProfile           string // assigned network-profile label (population mix)
 	traceparentEnabled       bool
+	authConfig               *protocol.AuthConfig
+	cache                    *httpResponseCache
 }
 
 var (
@@ -89,10 +91,16 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 	h.dataFormattingAutoDetect = parseDataFormattingAutoDetect(config)
 	h.dataFormattingChain = parseDataFormattingChain(config)
 	h.streaming = parseStreamingProfile(config)
+	if parseHTTPCacheEnabled(config) {
+		h.cache = newHTTPResponseCache()
+	} else {
+		h.cache = nil
+	}
 	if err := validateAuthType(protocol.ConfigString(config, "auth_type")); err != nil {
 		return err
 	}
 	h.authType, h.authHeader = buildAuthHeader(config)
+	h.authConfig = buildAuthConfig(config)
 
 	h.bufPool = sync.Pool{
 		New: func() any { return new(bytes.Buffer) },
@@ -156,6 +164,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	}
 
 	authHeader := h.authHeader
+	digestAuth := digestAuthConfig(h.authConfig)
 	actionAuthHeader, actionAuthOverride, actionAuthErr := buildActionAuthHeader(action.Auth)
 	if actionAuthErr != nil {
 		result.Duration = time.Since(result.StartTime)
@@ -165,6 +174,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	}
 	if actionAuthOverride {
 		authHeader = actionAuthHeader
+		digestAuth = digestAuthConfig(action.Auth)
 	}
 	typedAuthApplied := false
 	if authHeader != "" {
@@ -194,6 +204,20 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	generatedTraceparent := ""
 	if h.traceparentEnabled {
 		generatedTraceparent = ensureTraceparentHeader(req.Header)
+	}
+	var staleCacheEntry *httpCacheEntry
+	cacheHit := false
+	var resp *http.Response
+	if h.cache != nil && method == http.MethodGet {
+		if entry, fresh := h.cache.lookup(req, time.Now()); entry != nil {
+			if fresh {
+				resp = entry.response(req)
+				cacheHit = true
+			} else {
+				entry.addConditionalHeaders(req)
+				staleCacheEntry = entry
+			}
+		}
 	}
 	redactedRequestHeaders = requestHeadersWithRedactedHeaderList(redactedRequestHeaders, action.RedactedHeaderList)
 	redactedRequestHeaders = requestHeadersWithHostForSnapshot(req.Header, redactedRequestHeaders, req.Host, action.RedactedHeaders)
@@ -261,14 +285,44 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		result.BytesSent = requestBytes
 	}
 
-	resp, err := client.Do(req)
-	if err != nil {
-		result.Duration = time.Since(result.StartTime)
-		reused, rCount, rDur := applyTraceTelemetry()
-		result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, 0, reused, rCount, rDur)
-		result.ErrorMessage = err.Error()
-		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, 0, nil, nil)
-		return result, nil
+	if !cacheHit {
+		var err error
+		resp, err = client.Do(req)
+		if err != nil {
+			result.Duration = time.Since(result.StartTime)
+			reused, rCount, rDur := applyTraceTelemetry()
+			result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, 0, reused, rCount, rDur)
+			result.ErrorMessage = err.Error()
+			result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, 0, nil, nil)
+			return result, nil
+		}
+	}
+	digestRetried := false
+	if !cacheHit && digestAuth != nil {
+		var retryErr error
+		req, resp, digestRetried, retryErr = retryWithDigestAuth(&client, req, resp, digestAuth, requestBody)
+		if retryErr != nil {
+			result.Duration = time.Since(result.StartTime)
+			reused, rCount, rDur := applyTraceTelemetry()
+			result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, 0, reused, rCount, rDur)
+			result.ErrorMessage = retryErr.Error()
+			result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, 0, nil, nil)
+			return result, nil
+		}
+		if digestRetried {
+			if requestBytes > 0 {
+				result.BytesSent += requestBytes
+			}
+			redactedRequestHeaders = redactedRequestHeadersForSnapshot(req.Header, action.RedactedHeaders, true, "Digest [REDACTED]")
+			redactedRequestHeaders = requestHeadersWithRedactedHeaderList(redactedRequestHeaders, action.RedactedHeaderList)
+			redactedRequestHeaders = requestHeadersWithHostForSnapshot(req.Header, redactedRequestHeaders, req.Host, action.RedactedHeaders)
+		}
+	}
+	if !cacheHit && staleCacheEntry != nil && resp != nil && resp.StatusCode == http.StatusNotModified {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+		_ = resp.Body.Close()
+		resp = staleCacheEntry.response(req)
+		cacheHit = true
 	}
 
 	buf := h.bufPool.Get().(*bytes.Buffer)
@@ -343,7 +397,11 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	}
 	responseHeaders := cloneHTTPHeaders(resp.Header)
 
-	respBody := append([]byte(nil), buf.Bytes()...)
+	rawResponseBody := append([]byte(nil), buf.Bytes()...)
+	if h.cache != nil && !cacheHit {
+		h.cache.store(req, resp, rawResponseBody, time.Now())
+	}
+	respBody := append([]byte(nil), rawResponseBody...)
 	respBody, responseHeaders, err = decodeHTTPResponseContent(respBody, resp.Header, responseHeaders, maxBody)
 	if err != nil {
 		result.Duration = time.Since(result.StartTime)

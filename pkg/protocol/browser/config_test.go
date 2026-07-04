@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	playwright "github.com/playwright-community/playwright-go"
 )
 
 func TestBrowserApplyConfigDefaults(t *testing.T) {
@@ -27,6 +29,9 @@ func TestBrowserApplyConfigDefaults(t *testing.T) {
 	if b.resourceValidators == nil {
 		t.Fatal("resourceValidators = nil, want initialized map")
 	}
+	if b.httpCredentials != nil || b.proxy != nil || len(b.clientCertificates) != 0 {
+		t.Fatalf("auth/proxy/certs defaults = %+v/%+v/%+v, want none", b.httpCredentials, b.proxy, b.clientCertificates)
+	}
 }
 
 func TestBrowserApplyConfigOverrides(t *testing.T) {
@@ -49,19 +54,38 @@ func TestBrowserApplyConfigOverrides(t *testing.T) {
 		"browser_download_resources":            " Recorded ",
 		"browser_slow_mo_ms":                    float64(125),
 		"browser_user_agent":                    "CustomUA",
-		"browser_touch_mode":                    true,
-		"browser_orientation":                   " portrait ",
-		"browser_client_metrics":                true,
-		"browser_experience_canary":             true,
-		"browser_har_capture_policy":            "on_sla_breach",
-		"browser_har_sla_breach_ms":             float64(1750),
-		"browser_capture_screenshots":           "per_action",
-		"browser_viewport_width":                800,
-		"browser_viewport_height":               600,
-		"browser_device_scale_factor":           float64(2.5),
-		"browser_cpu_throttle_rate":             float64(3),
-		"browser_device_platform":               "desktop",
-		"browser_device_tier":                   "mid",
+		"browser_locale":                        " fr-FR ",
+		"browser_timezone":                      " Europe/Paris ",
+		"browser_geolocation_latitude":          48.8566,
+		"browser_geolocation_longitude":         2.3522,
+		"browser_geolocation_accuracy":          12.5,
+		"browser_http_credentials_username":     "browser-user",
+		"browser_http_credentials_password":     "browser-pass",
+		"browser_http_credentials_origin":       "https://secure.example",
+		"browser_http_credentials_send":         "always",
+		"browser_proxy_server":                  "http://proxy.example:3128",
+		"browser_proxy_bypass":                  ".internal,localhost",
+		"browser_proxy_username":                "proxy-user",
+		"browser_proxy_password":                "proxy-pass",
+		"browser_client_certificates": []map[string]any{{
+			"origin":     "https://mtls.example",
+			"cert_path":  "/certs/client.pem",
+			"key_path":   "/certs/client-key.pem",
+			"passphrase": "cert-pass",
+		}},
+		"browser_touch_mode":          true,
+		"browser_orientation":         " portrait ",
+		"browser_client_metrics":      true,
+		"browser_experience_canary":   true,
+		"browser_har_capture_policy":  "on_sla_breach",
+		"browser_har_sla_breach_ms":   float64(1750),
+		"browser_capture_screenshots": "per_action",
+		"browser_viewport_width":      800,
+		"browser_viewport_height":     600,
+		"browser_device_scale_factor": float64(2.5),
+		"browser_cpu_throttle_rate":   float64(3),
+		"browser_device_platform":     "desktop",
+		"browser_device_tier":         "mid",
 	})
 	if err != nil {
 		t.Fatalf("applyConfig returned error: %v", err)
@@ -81,6 +105,18 @@ func TestBrowserApplyConfigOverrides(t *testing.T) {
 	}
 	if b.downloadResources != "recorded" || b.slowMo != 125*time.Millisecond || b.userAgent != "CustomUA" {
 		t.Fatalf("runtime config = resources:%q slow:%v ua:%q", b.downloadResources, b.slowMo, b.userAgent)
+	}
+	if b.locale != "fr-FR" || b.timezone != "Europe/Paris" || b.geolocation == nil || b.geolocation.Latitude != 48.8566 || b.geolocation.Longitude != 2.3522 || b.geolocation.Accuracy == nil || *b.geolocation.Accuracy != 12.5 {
+		t.Fatalf("locale/timezone/geolocation = %q/%q/%+v", b.locale, b.timezone, b.geolocation)
+	}
+	if b.httpCredentials == nil || b.httpCredentials.Username != "browser-user" || b.httpCredentials.Password != "browser-pass" || b.httpCredentials.Origin == nil || *b.httpCredentials.Origin != "https://secure.example" || b.httpCredentials.Send == nil || string(*b.httpCredentials.Send) != "always" {
+		t.Fatalf("http credentials = %+v", b.httpCredentials)
+	}
+	if b.proxy == nil || b.proxy.Server != "http://proxy.example:3128" || b.proxy.Bypass == nil || *b.proxy.Bypass != ".internal,localhost" || b.proxy.Username == nil || *b.proxy.Username != "proxy-user" || b.proxy.Password == nil || *b.proxy.Password != "proxy-pass" {
+		t.Fatalf("proxy = %+v", b.proxy)
+	}
+	if len(b.clientCertificates) != 1 || b.clientCertificates[0].Origin != "https://mtls.example" || b.clientCertificates[0].CertPath == nil || *b.clientCertificates[0].CertPath != "/certs/client.pem" || b.clientCertificates[0].KeyPath == nil || *b.clientCertificates[0].KeyPath != "/certs/client-key.pem" || b.clientCertificates[0].Passphrase == nil || *b.clientCertificates[0].Passphrase != "cert-pass" {
+		t.Fatalf("client certificates = %+v", b.clientCertificates)
 	}
 	if !b.touchMode || b.orientation != "portrait" || !b.clientMetricsEnabled || b.captureScreenshots != "per_action" {
 		t.Fatalf("interaction config = touch:%v orientation:%q metrics:%v screenshots:%q", b.touchMode, b.orientation, b.clientMetricsEnabled, b.captureScreenshots)
@@ -108,11 +144,31 @@ func TestBrowserApplyConfigDeviceProfile(t *testing.T) {
 	if b.viewportW != 412 || b.viewportH != 915 || b.deviceScaleFactor != 2.625 {
 		t.Fatalf("profile viewport = %dx%d scale %v, want pixel_8 values", b.viewportW, b.viewportH, b.deviceScaleFactor)
 	}
+	if b.orientation != "portrait" || b.cpuThrottleRate != 1.75 {
+		t.Fatalf("profile orientation/cpu = %q/%v, want portrait/1.75", b.orientation, b.cpuThrottleRate)
+	}
 	if b.networkMode != "preset" || b.networkPreset != "10mbps" || b.networkLatencyMS != 5 || b.networkBandwidthKB != 10240 {
 		t.Fatalf("profile network = mode:%q preset:%q latency:%d bandwidth:%d, want 10mbps preset", b.networkMode, b.networkPreset, b.networkLatencyMS, b.networkBandwidthKB)
 	}
 	if !b.mobile || !b.touchMode || b.userAgent == "" {
 		t.Fatalf("profile mobile/touch/ua = %v/%v/%q", b.mobile, b.touchMode, b.userAgent)
+	}
+}
+
+func TestBrowserApplyConfigDeviceProfilePreservesExplicitOrientationAndCPU(t *testing.T) {
+	var b Browser
+	if err := b.applyConfig(map[string]any{
+		"browser_device_profile":    "pixel_8",
+		"browser_orientation":       "landscape",
+		"browser_cpu_throttle_rate": float64(3),
+	}); err != nil {
+		t.Fatalf("applyConfig returned error: %v", err)
+	}
+	if b.orientation != "landscape" {
+		t.Fatalf("orientation = %q, want explicit landscape", b.orientation)
+	}
+	if b.cpuThrottleRate != 3 {
+		t.Fatalf("cpuThrottleRate = %v, want explicit 3", b.cpuThrottleRate)
 	}
 }
 
@@ -143,6 +199,7 @@ func TestBrowserApplyConfigNetworkPreset(t *testing.T) {
 }
 
 func TestBrowserContextOptionsApplyScaleAndOrientation(t *testing.T) {
+	accuracy := 10.0
 	b := Browser{
 		viewportW:         900,
 		viewportH:         600,
@@ -150,6 +207,21 @@ func TestBrowserContextOptionsApplyScaleAndOrientation(t *testing.T) {
 		deviceScaleFactor: 2.5,
 		touchMode:         true,
 		mobile:            true,
+		locale:            "en-GB",
+		timezone:          "Europe/London",
+		geolocation:       &playwright.Geolocation{Latitude: 51.5, Longitude: -0.12, Accuracy: &accuracy},
+		httpCredentials: &playwright.HttpCredentials{
+			Username: "browser-user",
+			Password: "browser-pass",
+		},
+		proxy: &playwright.Proxy{
+			Server: "http://proxy.example:3128",
+		},
+		clientCertificates: []playwright.ClientCertificate{{
+			Origin:   "https://mtls.example",
+			CertPath: playwright.String("/certs/client.pem"),
+			KeyPath:  playwright.String("/certs/client-key.pem"),
+		}},
 	}
 	options := b.browserContextOptions()
 	if options.Viewport == nil || options.Viewport.Width != 600 || options.Viewport.Height != 900 {
@@ -163,6 +235,24 @@ func TestBrowserContextOptionsApplyScaleAndOrientation(t *testing.T) {
 	}
 	if options.HasTouch == nil || !*options.HasTouch || options.IsMobile == nil || !*options.IsMobile {
 		t.Fatalf("touch/mobile options = %v/%v, want true/true", options.HasTouch, options.IsMobile)
+	}
+	if options.Locale == nil || *options.Locale != "en-GB" || options.TimezoneId == nil || *options.TimezoneId != "Europe/London" {
+		t.Fatalf("locale/timezone options = %v/%v", options.Locale, options.TimezoneId)
+	}
+	if options.Geolocation == nil || options.Geolocation.Latitude != 51.5 || options.Geolocation.Longitude != -0.12 {
+		t.Fatalf("geolocation options = %+v", options.Geolocation)
+	}
+	if len(options.Permissions) != 1 || options.Permissions[0] != "geolocation" {
+		t.Fatalf("permissions = %v, want [geolocation]", options.Permissions)
+	}
+	if options.HttpCredentials == nil || options.HttpCredentials.Username != "browser-user" || options.HttpCredentials.Password != "browser-pass" {
+		t.Fatalf("http credentials option = %+v", options.HttpCredentials)
+	}
+	if options.Proxy == nil || options.Proxy.Server != "http://proxy.example:3128" {
+		t.Fatalf("proxy option = %+v", options.Proxy)
+	}
+	if len(options.ClientCertificates) != 1 || options.ClientCertificates[0].Origin != "https://mtls.example" {
+		t.Fatalf("client certificates option = %+v", options.ClientCertificates)
 	}
 }
 
@@ -215,6 +305,17 @@ func TestBrowserApplyConfigValidationErrors(t *testing.T) {
 		{name: "unknown profile", config: map[string]any{"browser_device_profile": "unknown"}, wantErr: "unknown browser device profile"},
 		{name: "incompatible profile", config: map[string]any{"browser_device_profile": "iphone_se"}, wantErr: "incompatible device profile"},
 		{name: "recorded resources unavailable", config: map[string]any{"browser_download_resources": "recorded"}, wantErr: "recorded resource metadata not available"},
+		{name: "timezone", config: map[string]any{"browser_timezone": "Mars/Olympus"}, wantErr: "unsupported browser timezone"},
+		{name: "incomplete geolocation", config: map[string]any{"browser_geolocation_latitude": 0}, wantErr: "browser geolocation requires latitude and longitude"},
+		{name: "latitude", config: map[string]any{"browser_geolocation_latitude": 91, "browser_geolocation_longitude": 0}, wantErr: "latitude must be between -90 and 90"},
+		{name: "longitude", config: map[string]any{"browser_geolocation_latitude": 0, "browser_geolocation_longitude": -181}, wantErr: "longitude must be between -180 and 180"},
+		{name: "accuracy", config: map[string]any{"browser_geolocation_latitude": 0, "browser_geolocation_longitude": 0, "browser_geolocation_accuracy": -1}, wantErr: "accuracy must be zero or greater"},
+		{name: "http credentials username", config: map[string]any{"browser_http_credentials_password": "pass"}, wantErr: "browser HTTP credentials require username"},
+		{name: "http credentials send", config: map[string]any{"browser_http_credentials_username": "user", "browser_http_credentials_password": "pass", "browser_http_credentials_send": "eager"}, wantErr: "browser HTTP credentials send must be unauthorized or always"},
+		{name: "proxy server", config: map[string]any{"browser_proxy_username": "proxy-user"}, wantErr: "browser proxy requires server"},
+		{name: "proxy password", config: map[string]any{"browser_proxy_server": "proxy.example:3128", "browser_proxy_password": "proxy-pass"}, wantErr: "browser proxy password requires username"},
+		{name: "client certificate origin", config: map[string]any{"browser_client_certificates": []map[string]any{{"origin": "http://mtls.example", "pfx_path": "/certs/client.p12"}}}, wantErr: "origin must be an HTTPS origin"},
+		{name: "client certificate material", config: map[string]any{"browser_client_certificates": []map[string]any{{"origin": "https://mtls.example", "cert_path": "/certs/client.pem"}}}, wantErr: "requires cert_path and key_path, or pfx_path"},
 	}
 
 	for _, tt := range tests {

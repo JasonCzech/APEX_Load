@@ -1050,6 +1050,19 @@ func (r *Recorder) ForceStop() {
 	r.mu.Unlock()
 	r.signalDone()
 	r.cleanup()
+	r.discardManagedHARTemp()
+}
+
+func (r *Recorder) discardManagedHARTemp() {
+	r.mu.Lock()
+	if !r.harTemp || r.session == nil || strings.TrimSpace(r.session.HARPath) == "" {
+		r.mu.Unlock()
+		return
+	}
+	path := r.session.HARPath
+	r.session.HARPath = ""
+	r.mu.Unlock()
+	_ = os.Remove(path)
 }
 
 // SetSection switches the active recording section (init|actions|teardown).
@@ -1251,7 +1264,14 @@ func sidebarStepDetail(step Step) string {
 			return "••••"
 		}
 		return step.Value
-	case StepSelect, StepSetFiles, StepPressKey:
+	case StepSelect:
+		if len(step.Values) > 1 {
+			return strings.Join(step.Values, ", ")
+		}
+		return step.Value
+	case StepScroll:
+		return fmt.Sprintf("dx=%d dy=%d", step.DeltaX, step.DeltaY)
+	case StepSetFiles, StepPressKey:
 		return step.Value
 	case StepHandleDialog:
 		return step.DialogMessage

@@ -86,6 +86,32 @@ func TestConvertProducesBrowserScript(t *testing.T) {
 	}
 }
 
+func TestConvertPreservesDeviceProfileBrowserEngine(t *testing.T) {
+	tests := []struct {
+		name          string
+		deviceProfile string
+		wantEngine    string
+	}{
+		{name: "known webkit iphone", deviceProfile: "iphone_15_pro", wantEngine: "webkit"},
+		{name: "known chromium android", deviceProfile: "pixel_8", wantEngine: "chromium"},
+		{name: "unknown ios style", deviceProfile: "ipad_enterprise_lab", wantEngine: "webkit"},
+		{name: "unknown desktop style", deviceProfile: "desktop_lab", wantEngine: "chromium"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			session := recordedSession()
+			session.DeviceProfile = tt.deviceProfile
+			result := Convert(session, ConvertOptions{ScriptName: "Device Flow"})
+			if result.Script.Config.Browser.DeviceProfile != tt.deviceProfile {
+				t.Fatalf("device_profile = %q, want %q", result.Script.Config.Browser.DeviceProfile, tt.deviceProfile)
+			}
+			if result.Script.Config.Browser.Engine != tt.wantEngine {
+				t.Fatalf("browser engine = %q, want %q", result.Script.Config.Browser.Engine, tt.wantEngine)
+			}
+		})
+	}
+}
+
 func TestConvertSyncThinkTimeAndMetadata(t *testing.T) {
 	session := recordedSession()
 	result := Convert(session, ConvertOptions{})
@@ -197,9 +223,15 @@ func TestConvertExpandedBrowserCaptureActions(t *testing.T) {
 	target := &selector.ElementMetadata{Tag: "div", DataTestID: "lane-done", Attributes: map[string]string{"data-testid": "lane-done"}, CSSPath: "#done"}
 	upload := &selector.ElementMetadata{Tag: "input", ID: "avatar", Type: "file", CSSPath: "#avatar"}
 	button := &selector.ElementMetadata{Tag: "button", ID: "row", CSSPath: "#row"}
+	menu := &selector.ElementMetadata{Tag: "button", ID: "row-menu", CSSPath: "#row-menu"}
+	hoverMenu := &selector.ElementMetadata{Tag: "button", ID: "account-menu", CSSPath: "#account-menu"}
+	selectEl := &selector.ElementMetadata{Tag: "select", ID: "shipping", CSSPath: "#shipping"}
 	base := ts(0)
 	session := &Session{ID: "rec_expanded", StartURL: "https://shop.example/board", StartedAt: base}
 	session.appendStep(Step{Kind: StepDblClick, Timestamp: ts(1000), Element: button, Candidates: selector.Candidates(*button)})
+	session.appendStep(Step{Kind: StepClick, Button: "right", Modifiers: []string{"Shift"}, Timestamp: ts(1500), Element: menu, Candidates: selector.Candidates(*menu)})
+	session.appendStep(Step{Kind: StepHover, Timestamp: ts(1650), Element: hoverMenu, Candidates: selector.Candidates(*hoverMenu)})
+	session.appendStep(Step{Kind: StepScroll, DeltaY: 420, ScrollY: 420, Timestamp: ts(1750)})
 	session.appendStep(Step{
 		Kind:             StepDragAndDrop,
 		Timestamp:        ts(2000),
@@ -208,6 +240,7 @@ func TestConvertExpandedBrowserCaptureActions(t *testing.T) {
 		TargetSelector:   `[data-testid="lane-done"]`,
 		TargetCandidates: selector.Candidates(*target),
 	})
+	session.appendStep(Step{Kind: StepSelect, Value: "standard", Values: []string{"standard", "express"}, Timestamp: ts(2500), Element: selectEl, Candidates: selector.Candidates(*selectEl)})
 	session.appendStep(Step{Kind: StepSetFiles, Value: "avatar.png", Timestamp: ts(3000), Element: upload, Candidates: selector.Candidates(*upload)})
 	session.WebSockets = []WebSocketSummary{{
 		URL:      "wss://shop.example/live",
@@ -221,25 +254,41 @@ func TestConvertExpandedBrowserCaptureActions(t *testing.T) {
 
 	result := Convert(session, ConvertOptions{})
 	types := actionTypes(result.Script.Actions)
-	want := []string{"browser_navigate", "browser_dblclick", "browser_drag_and_drop", "browser_set_files", "browser_ws_wait"}
+	want := []string{"browser_navigate", "browser_dblclick", "browser_click", "browser_hover", "browser_scroll", "browser_drag_and_drop", "browser_select", "browser_set_files", "browser_ws_wait"}
 	if strings.Join(types, ",") != strings.Join(want, ",") {
 		t.Fatalf("actions = %v, want %v", types, want)
 	}
-	drag := result.Script.Actions[2]
+	click := result.Script.Actions[2]
+	if click.Params["button"] != "right" || fmt.Sprint(click.Params["modifiers"]) != "[Shift]" {
+		t.Errorf("right-click params = %+v", click.Params)
+	}
+	hover := result.Script.Actions[3]
+	if hover.Type != "browser_hover" || hover.Selector != "#account-menu" {
+		t.Errorf("hover action = %+v", hover)
+	}
+	scroll := result.Script.Actions[4]
+	if scroll.Params["delta_y"] != 420 || scroll.Selector != "" {
+		t.Errorf("scroll action = %+v", scroll)
+	}
+	drag := result.Script.Actions[5]
 	if drag.Params["target"] != `[data-testid="lane-done"]` {
 		t.Errorf("drag target = %+v", drag.Params)
 	}
-	if drag.Metadata["recorder_step_seq"] != 2 {
+	if drag.Metadata["recorder_step_seq"] != 5 {
 		t.Errorf("drag recorder_step_seq = %v", drag.Metadata["recorder_step_seq"])
 	}
 	if drag.Metadata["source_target_selector_candidates"] == nil {
 		t.Errorf("drag missing target candidates metadata: %+v", drag.Metadata)
 	}
-	uploadAction := result.Script.Actions[3]
+	selectAction := result.Script.Actions[6]
+	if selectAction.Value != "standard" || fmt.Sprint(selectAction.Params["values"]) != "[standard express]" {
+		t.Errorf("select action = %+v", selectAction)
+	}
+	uploadAction := result.Script.Actions[7]
 	if uploadAction.Metadata["source_upload_fixture"] != true {
 		t.Errorf("upload metadata = %+v", uploadAction.Metadata)
 	}
-	ws := result.Script.Actions[4]
+	ws := result.Script.Actions[8]
 	if ws.Params["direction"] != "received" || ws.Params["match_mode"] != "contains" {
 		t.Errorf("ws params = %+v", ws.Params)
 	}

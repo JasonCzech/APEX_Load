@@ -15,6 +15,13 @@ func TestStepFromEvent(t *testing.T) {
 		wantErr     string
 		wantKind    string
 		wantValue   string
+		wantValues  []string
+		wantButton  string
+		wantMods    []string
+		wantDeltaX  int
+		wantDeltaY  int
+		wantScrollX int
+		wantScrollY int
 		wantBest    string
 		wantFrame   string
 		wantNumCand int
@@ -31,10 +38,12 @@ func TestStepFromEvent(t *testing.T) {
 		},
 		{
 			name: "click with element metadata yields candidates",
-			payload: `{"kind":"click","ts":1700000000000,"url":"https://shop.example/cart",
+			payload: `{"kind":"click","button":"secondary","modifiers":["shift","ctrl","shift"],"ts":1700000000000,"url":"https://shop.example/cart",
 				"title":"Cart","element":{"tag":"button","id":"checkout","data_test_id":"checkout-btn",
 				"attributes":{"data-testid":"checkout-btn"},"text":"Checkout","css_path":"main > button"}}`,
 			wantKind:    StepClick,
+			wantButton:  "right",
+			wantMods:    []string{"Shift", "Control"},
 			wantBest:    `[data-testid="checkout-btn"]`,
 			wantNumCand: 4, // data-testid, id, css path, text
 		},
@@ -47,6 +56,31 @@ func TestStepFromEvent(t *testing.T) {
 			wantValue:   "jason",
 			wantFrame:   `iframe[name="login"]`,
 			wantBest:    `input[name="username"]`,
+			wantNumCand: 2,
+		},
+		{
+			name: "select captures multiple selected values",
+			payload: `{"kind":"select","value":"standard","values":["standard","express"],"ts":1700000000000,
+				"element":{"tag":"select","id":"shipping","css_path":"#shipping"}}`,
+			wantKind:    StepSelect,
+			wantValue:   "standard",
+			wantValues:  []string{"standard", "express"},
+			wantBest:    "#shipping",
+			wantNumCand: 1,
+		},
+		{
+			name:        "scroll captures delta and absolute position",
+			payload:     `{"kind":"scroll","delta_x":0,"delta_y":420,"scroll_x":0,"scroll_y":840,"ts":1700000000000}`,
+			wantKind:    StepScroll,
+			wantDeltaY:  420,
+			wantScrollY: 840,
+		},
+		{
+			name: "hover captures element metadata",
+			payload: `{"kind":"hover","ts":1700000000000,
+				"element":{"tag":"button","id":"menu","css_path":"#menu","text":"Menu"}}`,
+			wantKind:    StepHover,
+			wantBest:    "#menu",
 			wantNumCand: 2,
 		},
 		{
@@ -82,6 +116,21 @@ func TestStepFromEvent(t *testing.T) {
 			}
 			if step.Value != tt.wantValue {
 				t.Errorf("Value = %q, want %q", step.Value, tt.wantValue)
+			}
+			if strings.Join(step.Values, ",") != strings.Join(tt.wantValues, ",") {
+				t.Errorf("Values = %v, want %v", step.Values, tt.wantValues)
+			}
+			if step.Button != tt.wantButton {
+				t.Errorf("Button = %q, want %q", step.Button, tt.wantButton)
+			}
+			if strings.Join(step.Modifiers, ",") != strings.Join(tt.wantMods, ",") {
+				t.Errorf("Modifiers = %v, want %v", step.Modifiers, tt.wantMods)
+			}
+			if step.DeltaX != tt.wantDeltaX || step.DeltaY != tt.wantDeltaY {
+				t.Errorf("Delta = %d,%d want %d,%d", step.DeltaX, step.DeltaY, tt.wantDeltaX, tt.wantDeltaY)
+			}
+			if step.ScrollX != tt.wantScrollX || step.ScrollY != tt.wantScrollY {
+				t.Errorf("Scroll = %d,%d want %d,%d", step.ScrollX, step.ScrollY, tt.wantScrollX, tt.wantScrollY)
 			}
 			if tt.wantFrame != "" && step.FrameSelector != tt.wantFrame {
 				t.Errorf("FrameSelector = %q, want %q", step.FrameSelector, tt.wantFrame)
@@ -233,6 +282,20 @@ func TestPromoteStepSelectorPrependsHighConfidenceCandidate(t *testing.T) {
 	}
 	if got := session.Steps[0].bestSelector(); got != `[data-testid="new"]` {
 		t.Fatalf("best selector = %q", got)
+	}
+}
+
+func TestPromoteStepSelectorUsesRolePromotionAsPrimary(t *testing.T) {
+	session := &Session{}
+	el := &selector.ElementMetadata{Tag: "button", ID: "old", CSSPath: "#old", Text: "Pay now"}
+	step := session.appendStep(Step{Kind: StepClick, Element: el, Candidates: selector.Candidates(*el)})
+
+	const promoted = `role=button[name="Pay now"]`
+	if _, ok := session.PromoteStepSelector(step.Seq, promoted); !ok {
+		t.Fatal("PromoteStepSelector() ok = false")
+	}
+	if got := session.Steps[0].bestSelector(); got != promoted {
+		t.Fatalf("best selector = %q, want promoted role selector", got)
 	}
 }
 

@@ -850,6 +850,14 @@ func (tr *TestRunner) PauseTest(id string) error {
 
 	tr.mu.Lock()
 	test.Status = "PAUSED"
+	if test.LiveMetrics != nil {
+		test.LiveMetrics.ActiveVUsers = 0
+		for _, group := range test.LiveMetrics.GroupMetrics {
+			if group != nil {
+				group.VUsers = 0
+			}
+		}
+	}
 	tr.mu.Unlock()
 
 	tr.broadcastEvent("test_paused", test)

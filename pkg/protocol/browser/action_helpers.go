@@ -11,29 +11,58 @@ import (
 )
 
 func actionParamInt(params map[string]any, key string, defaultValue int) int {
+	if value, ok := actionParamIntValue(params, key); ok {
+		return value
+	}
+	return defaultValue
+}
+
+func actionParamIntValue(params map[string]any, key string) (int, bool) {
 	if params == nil {
-		return defaultValue
+		return 0, false
 	}
 	value, ok := params[key]
 	if !ok {
-		return defaultValue
+		return 0, false
 	}
 	switch typed := value.(type) {
 	case int:
-		return typed
+		return typed, true
 	case int64:
-		return int(typed)
+		return int(typed), true
 	case float64:
-		return int(typed)
+		return int(typed), true
 	case float32:
-		return int(typed)
+		return int(typed), true
 	case string:
 		parsed, err := strconv.Atoi(strings.TrimSpace(typed))
 		if err == nil {
-			return parsed
+			return parsed, true
 		}
 	}
-	return defaultValue
+	return 0, false
+}
+
+func actionParamFloatValue(params map[string]any, key string) (float64, bool) {
+	if params == nil {
+		return 0, false
+	}
+	value, ok := params[key]
+	if !ok {
+		return 0, false
+	}
+	switch typed := value.(type) {
+	case int:
+		return float64(typed), true
+	case int64:
+		return float64(typed), true
+	case float64:
+		return typed, true
+	case float32:
+		return float64(typed), true
+	default:
+		return 0, false
+	}
 }
 
 func actionParamString(params map[string]any, key, defaultValue string) string {
@@ -46,6 +75,28 @@ func actionParamString(params map[string]any, key, defaultValue string) string {
 	}
 	if typed, ok := value.(string); ok && strings.TrimSpace(typed) != "" {
 		return strings.TrimSpace(typed)
+	}
+	return defaultValue
+}
+
+func actionParamBool(params map[string]any, key string, defaultValue bool) bool {
+	if params == nil {
+		return defaultValue
+	}
+	value, ok := params[key]
+	if !ok {
+		return defaultValue
+	}
+	switch typed := value.(type) {
+	case bool:
+		return typed
+	case string:
+		switch strings.ToLower(strings.TrimSpace(typed)) {
+		case "true", "1", "yes", "on":
+			return true
+		case "false", "0", "no", "off":
+			return false
+		}
 	}
 	return defaultValue
 }
@@ -85,6 +136,44 @@ func actionFiles(action *protocol.Action) []string {
 		}
 	}
 	return files
+}
+
+func actionSelectValues(action *protocol.Action) []string {
+	if action == nil {
+		return nil
+	}
+	values := make([]string, 0)
+	appendValue := func(value string) {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			values = append(values, value)
+		}
+	}
+	appendValue(action.Value)
+	if action.Params == nil {
+		return values
+	}
+	for _, key := range []string{"value", "values"} {
+		for _, value := range stringSliceParam(action.Params[key]) {
+			appendValue(value)
+		}
+	}
+	return values
+}
+
+func actionScrollDelta(action *protocol.Action) (int, int) {
+	if action == nil {
+		return 0, 0
+	}
+	deltaX := actionParamInt(action.Params, "delta_x", 0)
+	deltaY := actionParamInt(action.Params, "delta_y", 0)
+	if deltaX == 0 {
+		deltaX = actionParamInt(action.Params, "x", 0)
+	}
+	if deltaY == 0 {
+		deltaY = actionParamInt(action.Params, "y", 0)
+	}
+	return deltaX, deltaY
 }
 
 func actionKey(action *protocol.Action) string {

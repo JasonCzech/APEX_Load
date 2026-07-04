@@ -62,6 +62,7 @@ func correlationSuggestions(script *dsl.Script, observations []correlate.Observa
 				Source:     corr.Source,
 				Type:       corr.ExtractType,
 				Expression: corr.Expression,
+				Convert:    corr.Convert,
 			},
 			FoundInAction: &Location{
 				Section:     "actions",
@@ -159,6 +160,7 @@ func preAppliedSuggestions(preApplied []PreAppliedCorrelation) []Suggestion {
 				Source:     corr.Source,
 				Type:       corr.ExtractType,
 				Expression: corr.Expression,
+				Convert:    corr.Convert,
 			},
 		})
 	}

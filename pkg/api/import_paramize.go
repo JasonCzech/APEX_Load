@@ -81,6 +81,7 @@ func sampleCorrelationsToPreApplied(correlations []sample.Correlation) []paramiz
 			Source:      corr.Source,
 			Expression:  corr.Expression,
 			ExtractType: corr.ExtractType,
+			Convert:     corr.Convert,
 			SampleValue: corr.SampleValue,
 			FoundInStep: corr.FoundInStep,
 			UsedInSteps: corr.UsedInSteps,

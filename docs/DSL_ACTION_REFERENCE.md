@@ -15,7 +15,7 @@ to their `source_*` equivalents.
 | `type` | string | yes | Action type discriminator; see the per-protocol action catalog. |
 | `think_time` | object |  | Per-action think-time override (type, mean_ms, ...). |
 | `think_time_after` | bool |  | Apply think time after this action completes. |
-| `extractors` | array |  | Response extractors: {name, source, type, expression, on_miss, mode, save_offset, save_length, convert}. on_miss: "fail" fails the request when nothing matches, "empty" assigns an empty string; mode "all" saves every match as name_1..name_N plus name_count; save_offset/save_length trim each value (bytes); convert post-processes it (url_encode | html_decode | html_url_encode). The behavior fields are honored by the HTTP protocol family. |
+| `extractors` | array |  | Response extractors: {name, source, type, expression, on_miss, mode, save_offset, save_length, convert}. on_miss: "fail" fails the request when nothing matches, "empty" assigns an empty string; mode "all" saves every match as name_1..name_N plus name_count; save_offset/save_length trim each value (bytes); convert post-processes it (url_encode | url_decode | html_decode | html_url_encode). The behavior fields are honored by the HTTP protocol family. |
 | `assertions` | array |  | Response assertions: {type, expected, value, max}. |
 | `metadata` | object |  | Free-form metadata; importers preserve source details here. |
 | `timeout_ms` | int |  | Per-action timeout override in milliseconds. |
@@ -212,6 +212,32 @@ Replays an imported XML document operation, saving the result into a variable.
 
 ## Protocol: browser
 
+### `browser_back`
+
+Navigates the current page to the previous browser-history entry.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `params.wait_until` | enum: load\|domcontentloaded\|networkidle\|commit |  | Navigation readiness point; defaults to Playwright's load event. |
+| `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
+| `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
+
+### `browser_check`
+
+Sets a checkbox or radio element to checked or unchecked.
+
+Requires one of: `target`, `selector`, `object_ref`
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `target` | string |  | Element locator; target, selector, or object_ref is required. |
+| `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
+| `object_ref` | string |  | Object-repository binding: a logical object name ("name" or "repoID:name") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector. |
+| `value` | string |  | Desired state. Use false/unchecked to uncheck; defaults to true. |
+| `params.checked` | bool |  | Desired checked state; overrides value when present. |
+| `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
+| `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
+
 ### `browser_click`
 
 Clicks an element.
@@ -223,6 +249,8 @@ Requires one of: `target`, `selector`, `object_ref`
 | `target` | string |  | Element locator; target, selector, or object_ref is required. |
 | `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
 | `object_ref` | string |  | Object-repository binding: a logical object name ("name" or "repoID:name") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector. |
+| `params.button` | enum: left\|right\|middle |  | Mouse button to use; defaults to left. |
+| `params.modifiers` | array |  | Modifier keys held for the click, such as Control, Shift, Alt, Meta, or ControlOrMeta. |
 | `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
@@ -237,6 +265,28 @@ Requires one of: `target`, `selector`, `object_ref`
 | `target` | string |  | Element locator; target, selector, or object_ref is required. |
 | `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
 | `object_ref` | string |  | Object-repository binding: a logical object name ("name" or "repoID:name") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector. |
+| `params.button` | enum: left\|right\|middle |  | Mouse button to use; defaults to left. |
+| `params.modifiers` | array |  | Modifier keys held for the double-click, such as Control, Shift, Alt, Meta, or ControlOrMeta. |
+| `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
+| `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
+
+### `browser_download`
+
+Clicks an element and waits for the resulting browser download.
+
+Requires one of: `target`, `selector`, `object_ref`
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `target` | string |  | Element locator; target, selector, or object_ref is required. |
+| `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
+| `object_ref` | string |  | Object-repository binding: a logical object name ("name" or "repoID:name") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector. |
+| `params.url_contains` | string |  | Substring that must appear in the download URL. |
+| `params.filename_contains` | string |  | Substring that must appear in the suggested filename. |
+| `params.filename_regex` | string |  | Regular expression matched against the suggested filename. |
+| `params.timeout_ms` | int |  | Maximum wait in milliseconds; defaults to the action timeout. |
+| `params.save_as` | string |  | Full local path to save the downloaded file. |
+| `params.save_dir` | string |  | Directory where the download should be saved using the suggested filename. |
 | `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
@@ -277,6 +327,16 @@ Requires one of: `target`, `selector`, `object_ref`
 | `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
 | `object_ref` | string |  | Object-repository binding: a logical object name ("name" or "repoID:name") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector. |
 | `value` | string |  | Text to enter; empty string clears the field and template variables are expanded. |
+| `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
+| `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
+
+### `browser_forward`
+
+Navigates the current page to the next browser-history entry.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `params.wait_until` | enum: load\|domcontentloaded\|networkidle\|commit |  | Navigation readiness point; defaults to Playwright's load event. |
 | `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
@@ -364,6 +424,16 @@ Requires one of: `value`, `params.key`, `params.key_name`, `params.keyName`
 | `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
+### `browser_reload`
+
+Reloads the current page.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `params.wait_until` | enum: load\|domcontentloaded\|networkidle\|commit |  | Navigation readiness point; defaults to Playwright's load event. |
+| `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
+| `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
+
 ### `browser_screenshot`
 
 Captures a screenshot of the current page, or of one element when a locator is set.
@@ -374,9 +444,25 @@ Captures a screenshot of the current page, or of one element when a locator is s
 | `target` | string |  | Element locator alternative to selector; empty captures the full page. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
+### `browser_scroll`
+
+Scrolls the page or a scrollable element by a pixel delta.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `target` | string |  | Element locator; target, selector, or object_ref is required. |
+| `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
+| `object_ref` | string |  | Object-repository binding: a logical object name ("name" or "repoID:name") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector. |
+| `params.delta_x` | int |  | Horizontal scroll delta in pixels. Positive values scroll right. |
+| `params.delta_y` | int |  | Vertical scroll delta in pixels. Positive values scroll down. |
+| `params.scroll_x` | int |  | Recorded absolute horizontal scroll position after capture; informational. |
+| `params.scroll_y` | int |  | Recorded absolute vertical scroll position after capture; informational. |
+| `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
+| `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
+
 ### `browser_select`
 
-Selects an option in a select element.
+Selects one or more options in a select element.
 
 Requires one of: `target`, `selector`, `object_ref`
 
@@ -385,7 +471,8 @@ Requires one of: `target`, `selector`, `object_ref`
 | `target` | string |  | Element locator; target, selector, or object_ref is required. |
 | `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
 | `object_ref` | string |  | Object-repository binding: a logical object name ("name" or "repoID:name") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector. |
-| `value` | string | yes | Option value or label to select. |
+| `value` | string |  | Single option value or label to select. |
+| `params.values` | array |  | Option values or labels to select for a multi-select. |
 | `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
@@ -407,6 +494,18 @@ Requires one of: `value`, `params.file`, `params.path`, `params.files`
 | `params.path` | string |  | Single file path alternative to value. |
 | `params.files` | array |  | Multiple file paths. |
 | `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
+| `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
+
+### `browser_set_geolocation`
+
+Sets the replay browser geolocation for subsequent page actions.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `params.latitude` | float | yes | Latitude in decimal degrees, between -90 and 90. |
+| `params.longitude` | float | yes | Longitude in decimal degrees, between -180 and 180. |
+| `params.accuracy` | float |  | Non-negative accuracy radius in meters. |
+| `params.grant_permission` | bool |  | Grant geolocation permission before setting the location; defaults to true. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
 ### `browser_swipe`
@@ -475,6 +574,24 @@ Requires one of: `wait_for`, `selector`, `target`
 | `wait_for` | object |  | Wait condition: {type, value, timeout_ms}. One of wait_for, selector, or target is required. |
 | `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
 | `target` | string |  | Element locator alternative to selector. |
+
+### `browser_wait_response`
+
+Waits for a browser network response matching URL, method, status, or resource filters.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `target` | string |  | URL substring to match. |
+| `params.url_contains` | string |  | URL substring to match; target is used when this is empty. |
+| `params.url` | string |  | Exact response URL to match. |
+| `params.url_regex` | string |  | Regular expression matched against response URL. |
+| `params.method` | enum: GET\|POST\|PUT\|PATCH\|DELETE\|HEAD\|OPTIONS |  | HTTP method filter. |
+| `params.status` | int |  | Expected HTTP status code; alias of params.status_code. |
+| `params.status_code` | int |  | Expected HTTP status code. |
+| `params.resource_type` | string |  | Browser resource type filter, such as xhr, fetch, document, script, or image. |
+| `params.timeout_ms` | int |  | Maximum wait in milliseconds; defaults to 10000. |
+| `params.include_failed` | bool |  | Also allow failed requests with status_code 0 to satisfy the wait. |
+| `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
 ### `browser_ws_assert`
 

@@ -381,6 +381,8 @@ func TestBrowserRecordingManagerStopRequested(t *testing.T) {
 	hub := NewHub()
 	m := NewBrowserRecordingManager(hub)
 	fake := newFakeBrowserRecorder(recordedBrowserArtifact())
+	fake.stopStarted = make(chan struct{})
+	fake.stopRelease = make(chan struct{})
 	fake.install(m)
 
 	started, err := m.Start(BrowserRecordingStartRequest{Name: "Checkout", StartURL: "https://shop.example/login", ProjectID: "proj-1"})
@@ -396,6 +398,12 @@ func TestBrowserRecordingManagerStopRequested(t *testing.T) {
 	if stopped.Status != BrowserRecordingStopping || stopped.StopReason != browserRecordingStopRequested {
 		t.Errorf("initial stop response = status %q reason %q, want stopping/requested", stopped.Status, stopped.StopReason)
 	}
+	select {
+	case <-fake.stopStarted:
+	case <-time.After(time.Second):
+		t.Fatal("backend Stop was not started")
+	}
+	close(fake.stopRelease)
 	stopped = waitForRecordingStatus(t, m, started.ID, BrowserRecordingStopped)
 	if stopped.Status != BrowserRecordingStopped || stopped.StopReason != browserRecordingStopRequested {
 		t.Errorf("stopped session = status %q reason %q", stopped.Status, stopped.StopReason)
@@ -619,6 +627,7 @@ func TestBrowserRecordingManagerStopsFromInPageControlEvent(t *testing.T) {
 	drainHubBroadcasts(t, hub)
 
 	fake.emit(recbrowser.Event{Type: recbrowser.EventStopRequested})
+	waitForHubBroadcastType(t, hub, "browser_recording_stopping")
 	stopping := waitForRecordingStatus(t, m, started.ID, BrowserRecordingStopping)
 	if stopping.StopReason != browserRecordingStopRequested {
 		t.Fatalf("in-page stop reason = %q, want requested", stopping.StopReason)
@@ -637,10 +646,7 @@ func TestBrowserRecordingManagerStopsFromInPageControlEvent(t *testing.T) {
 	if fake.stopCalls != 1 {
 		t.Errorf("backend stop calls = %d, want 1", fake.stopCalls)
 	}
-	types := broadcastTypes(drainHubBroadcasts(t, hub))
-	if !containsString(types, "browser_recording_stopping") || !containsString(types, "browser_recording_stopped") {
-		t.Errorf("broadcasts = %v, want stopping and stopped", types)
-	}
+	waitForHubBroadcastType(t, hub, "browser_recording_stopped")
 }
 
 func TestBrowserRecordingManagerForceStopsStuckCleanup(t *testing.T) {

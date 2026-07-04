@@ -19,6 +19,15 @@ func (b *Browser) dispatchAction(ctx context.Context, action *protocol.Action, r
 		}
 		b.resetWSEvents()
 		return b.navigate(ctx, action, b.resolveURL(action.Target)), false
+	case "browser_back":
+		b.resetWSEvents()
+		return b.historyBackAction(ctx, action), false
+	case "browser_forward":
+		b.resetWSEvents()
+		return b.historyForwardAction(ctx, action), false
+	case "browser_reload":
+		b.resetWSEvents()
+		return b.reloadAction(ctx, action), false
 	case "browser_open_window":
 		b.resetWSEvents()
 		return b.dispatchOpenWindow(ctx, action), false
@@ -34,6 +43,10 @@ func (b *Browser) dispatchAction(ctx context.Context, action *protocol.Action, r
 			}), false
 		}
 		return b.runWait(ctx, action), false
+	case "browser_wait_response":
+		return b.dispatchWaitResponse(ctx, action, result)
+	case "browser_set_geolocation":
+		return b.dispatchSetGeolocation(action, result)
 	case "browser_ws_wait":
 		return b.dispatchWSWait(ctx, action, result)
 	case "browser_ws_assert":
@@ -50,6 +63,23 @@ func (b *Browser) dispatchAction(ctx context.Context, action *protocol.Action, r
 		}
 		return b.runWithSelectorSelfHeal(ctx, action, result, selector, func(s string) error {
 			return b.clickAction(ctx, action, s)
+		}), false
+	case "browser_download":
+		selector := b.actionSelector(action)
+		if selector == "" {
+			return nil, failBrowserAction(result, "browser_download requires selector or target")
+		}
+		return b.runWithSelectorSelfHeal(ctx, action, result, selector, func(s string) error {
+			return b.downloadAction(ctx, action, s, result)
+		}), false
+	case "browser_check":
+		selector := b.actionSelector(action)
+		if selector == "" {
+			return nil, failBrowserAction(result, "browser_check requires selector or target")
+		}
+		checked := actionCheckedState(action)
+		return b.runWithSelectorSelfHeal(ctx, action, result, selector, func(s string) error {
+			return b.checkAction(ctx, action, s, checked)
 		}), false
 	case "browser_tap":
 		selector := b.actionSelector(action)
@@ -91,11 +121,24 @@ func (b *Browser) dispatchAction(ctx context.Context, action *protocol.Action, r
 		if selector == "" {
 			return nil, failBrowserAction(result, "browser_select requires selector or target")
 		}
-		if action.Value == "" {
+		values := actionSelectValues(action)
+		if len(values) == 0 {
 			return nil, failBrowserAction(result, "browser_select requires value")
 		}
 		return b.runWithSelectorSelfHeal(ctx, action, result, selector, func(s string) error {
-			return b.selectAction(ctx, action, s, action.Value)
+			return b.selectAction(ctx, action, s, values)
+		}), false
+	case "browser_scroll":
+		deltaX, deltaY := actionScrollDelta(action)
+		if deltaX == 0 && deltaY == 0 {
+			return nil, failBrowserAction(result, "browser_scroll requires delta_x or delta_y")
+		}
+		selector := b.actionSelector(action)
+		if selector == "" {
+			return b.scrollAction(ctx, action, "", deltaX, deltaY), false
+		}
+		return b.runWithSelectorSelfHeal(ctx, action, result, selector, func(s string) error {
+			return b.scrollAction(ctx, action, s, deltaX, deltaY)
 		}), false
 	case "browser_dblclick":
 		selector := b.actionSelector(action)
@@ -151,7 +194,7 @@ func (b *Browser) dispatchAction(ctx context.Context, action *protocol.Action, r
 	case "browser_switch_frame":
 		return b.dispatchSwitchFrame(ctx, action), false
 	case "browser_switch_window":
-		return b.dispatchSwitchWindow(action), false
+		return b.dispatchSwitchWindow(ctx, action), false
 	case "browser_handle_dialog":
 		return b.dispatchHandleDialog(action, result)
 	case "browser_screenshot":
@@ -239,6 +282,24 @@ func positiveActionParamInt(params map[string]any, key string, defaultValue int)
 		return defaultValue
 	}
 	return value
+}
+
+func actionCheckedState(action *protocol.Action) bool {
+	if action != nil && action.Params != nil {
+		if checked, ok := action.Params["checked"].(bool); ok {
+			return checked
+		}
+	}
+	value := ""
+	if action != nil {
+		value = strings.ToLower(strings.TrimSpace(action.Value))
+	}
+	switch value {
+	case "false", "0", "no", "off", "unchecked", "uncheck":
+		return false
+	default:
+		return true
+	}
 }
 
 func failBrowserAction(result *protocol.Result, message string) bool {

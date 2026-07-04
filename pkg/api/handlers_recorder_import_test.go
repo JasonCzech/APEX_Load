@@ -37,6 +37,9 @@ type recorderImportResponse struct {
 	Stats struct {
 		Format           string `json:"format"`
 		ConvertedActions int    `json:"converted_actions"`
+		TotalSteps       int    `json:"total_steps"`
+		SkippedSteps     int    `json:"skipped_steps"`
+		DegradedSteps    int    `json:"degraded_steps"`
 	} `json:"stats"`
 	Summary         map[string]any `json:"summary"`
 	ReplaySessionID string         `json:"replay_session_id"`
@@ -144,6 +147,12 @@ func TestHandleImportRecorderStepMappingDispositions(t *testing.T) {
 	}
 	if reasons["degraded"] == "" || reasons["unsupported"] == "" {
 		t.Fatalf("mapping reasons = %#v", stepMapping)
+	}
+	if result.Stats.TotalSteps != 3 || result.Stats.SkippedSteps != 1 || result.Stats.DegradedSteps != 1 {
+		t.Fatalf("stats = %+v, want total=3 skipped=1 degraded=1", result.Stats)
+	}
+	if confidence, _ := result.Summary["conversion_confidence"].(float64); confidence != 0.5 {
+		t.Fatalf("conversion confidence = %#v, want 0.5 for mapped+degraded+unsupported", result.Summary["conversion_confidence"])
 	}
 }
 

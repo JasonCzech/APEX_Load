@@ -102,6 +102,7 @@ type PreAppliedCorrelation struct {
 	Source      string
 	Expression  string
 	ExtractType string
+	Convert     string
 	SampleValue string
 	FoundInStep int
 	UsedInSteps []int

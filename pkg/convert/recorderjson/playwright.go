@@ -31,15 +31,11 @@ var (
 	keyboardPressPattern = regexp.MustCompile(`page\d*\.keyboard\.press\(\s*['"]([^'"]+)['"]`)
 	mouseClickPattern    = regexp.MustCompile(`page\d*\.mouse\.click\(\s*(\d+)\s*,\s*(\d+)`)
 	directSelectPattern  = regexp.MustCompile(`page\d*\.selectOption\(\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]+)['"]`)
+	directActionPattern  = regexp.MustCompile(`page\d*\.(click|dblclick|hover|fill|selectOption|press|check|uncheck)\(\s*(.*?)\s*\)\s*;?\s*$`)
+	pageVariablePattern  = regexp.MustCompile(`\b(page\d*)\s*(?:\.|\))`)
 
-	locatorPattern        = regexp.MustCompile(`^locator\(\s*['"](.+?)['"]\s*\)$`)
-	frameLocatorPattern   = regexp.MustCompile(`^frameLocator\(\s*['"](.+?)['"]\s*\)\.(.+)$`)
-	getByTestIDPattern    = regexp.MustCompile(`^getByTestId\(\s*['"](.+?)['"]\s*\)$`)
-	getByTextPattern      = regexp.MustCompile(`^getByText\(\s*['"](.+?)['"]`)
-	getByLabelPattern     = regexp.MustCompile(`^getByLabel\(\s*['"](.+?)['"]`)
-	getByPlaceholderPat   = regexp.MustCompile(`^getByPlaceholder\(\s*['"](.+?)['"]`)
-	getByRolePattern      = regexp.MustCompile(`^getByRole\(\s*['"](\w+)['"]\s*(?:,\s*\{\s*name:\s*['"](.+?)['"].*\})?\s*\)$`)
-	firstStringArgPattern = regexp.MustCompile(`^['"](.*?)['"]`)
+	buttonArgPattern    = regexp.MustCompile(`\bbutton\s*:\s*['"](\w+)['"]`)
+	modifiersArgPattern = regexp.MustCompile(`\bmodifiers\s*:\s*\[([^\]]*)\]`)
 )
 
 const extraSelectorCandidatesKey = "__extra_selector_candidates"
@@ -79,68 +75,84 @@ func convertPlaywright(content string, opts ConvertOptions) (*ConvertResult, err
 		}
 		location := fmt.Sprintf("line %d", lineNo+1)
 		sourceIndex := lineNo + 1
+		pageVariable := playwrightPageVariable(line)
 
 		if match := gotoPattern.FindStringSubmatch(line); match != nil {
 			result.Stats.TotalSteps++
 			if script.Config.BaseURL == "" {
 				script.Config.BaseURL = originOf(match[1])
 			}
-			appendImportedAction(script, result, StepMapping{
-				SourceIndex: sourceIndex, SourceLocation: location, SourceStepType: "goto",
-				RecorderStepSeq: sourceIndex, Disposition: "mapped",
-			}, dsl.Action{
+			action := dsl.Action{
 				Name:   "Navigate to " + match[1],
 				Type:   "browser_navigate",
 				Target: relativeTo(script.Config.BaseURL, match[1]),
-			})
+			}
+			annotatePlaywrightPageContext(&action, pageVariable)
+			disposition, reason := actionDisposition(action.Metadata, "mapped", "")
+			appendImportedAction(script, result, StepMapping{
+				SourceIndex: sourceIndex, SourceLocation: location, SourceStepType: "goto",
+				RecorderStepSeq: sourceIndex, Disposition: disposition, Reason: reason,
+			}, action)
 			continue
 		}
 
 		if match := waitURLPattern.FindStringSubmatch(line); match != nil {
 			result.Stats.TotalSteps++
-			appendImportedAction(script, result, StepMapping{
-				SourceIndex: sourceIndex, SourceLocation: location, SourceStepType: "waitForURL",
-				RecorderStepSeq: sourceIndex, Disposition: "mapped",
-			}, dsl.Action{
+			action := dsl.Action{
 				Name:    "Wait for URL",
 				Type:    "browser_wait",
 				WaitFor: &dsl.WaitCondition{Type: "url_contains", Value: portableURLFragment(match[1])},
-			})
+			}
+			annotatePlaywrightPageContext(&action, pageVariable)
+			disposition, reason := actionDisposition(action.Metadata, "mapped", "")
+			appendImportedAction(script, result, StepMapping{
+				SourceIndex: sourceIndex, SourceLocation: location, SourceStepType: "waitForURL",
+				RecorderStepSeq: sourceIndex, Disposition: disposition, Reason: reason,
+			}, action)
 			continue
 		}
 
 		if match := waitLoadStatePattern.FindStringSubmatch(line); match != nil {
 			result.Stats.TotalSteps++
-			appendImportedAction(script, result, StepMapping{
-				SourceIndex: sourceIndex, SourceLocation: location, SourceStepType: "waitForLoadState",
-				RecorderStepSeq: sourceIndex, Disposition: "mapped",
-			}, dsl.Action{
+			action := dsl.Action{
 				Name:    "Wait for load state",
 				Type:    "browser_wait",
 				WaitFor: &dsl.WaitCondition{Type: playwrightLoadState(match[1])},
-			})
+			}
+			annotatePlaywrightPageContext(&action, pageVariable)
+			disposition, reason := actionDisposition(action.Metadata, "mapped", "")
+			appendImportedAction(script, result, StepMapping{
+				SourceIndex: sourceIndex, SourceLocation: location, SourceStepType: "waitForLoadState",
+				RecorderStepSeq: sourceIndex, Disposition: disposition, Reason: reason,
+			}, action)
 			continue
 		}
 
 		if match := waitTimeoutPattern.FindStringSubmatch(line); match != nil {
 			result.Stats.TotalSteps++
-			appendImportedAction(script, result, StepMapping{
-				SourceIndex: sourceIndex, SourceLocation: location, SourceStepType: "waitForTimeout",
-				RecorderStepSeq: sourceIndex, Disposition: "mapped",
-			}, dsl.Action{
+			action := dsl.Action{
 				Name:    "Wait " + match[1] + "ms",
 				Type:    "browser_wait",
 				WaitFor: &dsl.WaitCondition{Type: "duration", Value: match[1] + "ms"},
-			})
+			}
+			annotatePlaywrightPageContext(&action, pageVariable)
+			disposition, reason := actionDisposition(action.Metadata, "mapped", "")
+			appendImportedAction(script, result, StepMapping{
+				SourceIndex: sourceIndex, SourceLocation: location, SourceStepType: "waitForTimeout",
+				RecorderStepSeq: sourceIndex, Disposition: disposition, Reason: reason,
+			}, action)
 			continue
 		}
 
 		if match := keyboardPressPattern.FindStringSubmatch(line); match != nil {
 			result.Stats.TotalSteps++
+			action := dsl.Action{Name: "Press " + match[1], Type: "browser_press_key", Value: match[1]}
+			annotatePlaywrightPageContext(&action, pageVariable)
+			disposition, reason := actionDisposition(action.Metadata, "mapped", "")
 			appendImportedAction(script, result, StepMapping{
 				SourceIndex: sourceIndex, SourceLocation: location, SourceStepType: "keyboard.press",
-				RecorderStepSeq: sourceIndex, Disposition: "mapped",
-			}, dsl.Action{Name: "Press " + match[1], Type: "browser_press_key", Value: match[1]})
+				RecorderStepSeq: sourceIndex, Disposition: disposition, Reason: reason,
+			}, action)
 			continue
 		}
 
@@ -162,13 +174,26 @@ func convertPlaywright(content string, opts ConvertOptions) (*ConvertResult, err
 			continue
 		}
 
+		if match := directActionPattern.FindStringSubmatch(line); match != nil {
+			result.Stats.TotalSteps++
+			action, ok := playwrightDirectPageAction(match[1], match[2], location, result, unsupported)
+			if ok {
+				annotatePlaywrightPageContext(&action, pageVariable)
+				disposition, reason := actionDisposition(action.Metadata, "mapped", "")
+				appendImportedAction(script, result, StepMapping{
+					SourceIndex: sourceIndex, SourceLocation: location, SourceStepType: "page." + match[1],
+					RecorderStepSeq: sourceIndex, Disposition: disposition, Reason: reason,
+				}, action)
+			} else {
+				appendUnsupportedStepMapping(result, sourceIndex, location, "page."+match[1], "Playwright direct page action could not be converted.")
+			}
+			continue
+		}
+
 		if match := directSelectPattern.FindStringSubmatch(line); match != nil {
 			result.Stats.TotalSteps++
 			candidate := selector.Candidate{Kind: "css", Value: match[1], Confidence: cssConfidence(match[1]), Reason: "Playwright page.selectOption selector."}
-			appendImportedAction(script, result, StepMapping{
-				SourceIndex: sourceIndex, SourceLocation: location, SourceStepType: "selectOption",
-				RecorderStepSeq: sourceIndex, Disposition: "mapped",
-			}, dsl.Action{
+			action := dsl.Action{
 				Name:     "Select " + match[1],
 				Type:     "browser_select",
 				Selector: match[1],
@@ -178,16 +203,24 @@ func convertPlaywright(content string, opts ConvertOptions) (*ConvertResult, err
 					"source_selector_candidates": []selector.Candidate{candidate},
 					"source_selector_confidence": candidate.Confidence,
 				},
-			})
+			}
+			annotatePlaywrightPageContext(&action, pageVariable)
+			disposition, reason := actionDisposition(action.Metadata, "mapped", "")
+			appendImportedAction(script, result, StepMapping{
+				SourceIndex: sourceIndex, SourceLocation: location, SourceStepType: "selectOption",
+				RecorderStepSeq: sourceIndex, Disposition: disposition, Reason: reason,
+			}, action)
 			continue
 		}
 
 		if match := pageExpectPattern.FindStringSubmatch(line); match != nil {
 			result.Stats.TotalSteps++
 			action := playwrightPageAssertionAction(match[1], match[2])
+			annotatePlaywrightPageContext(&action, pageVariable)
+			disposition, reason := actionDisposition(action.Metadata, "mapped", "")
 			appendImportedAction(script, result, StepMapping{
 				SourceIndex: sourceIndex, SourceLocation: location, SourceStepType: match[1],
-				RecorderStepSeq: sourceIndex, Disposition: "mapped",
+				RecorderStepSeq: sourceIndex, Disposition: disposition, Reason: reason,
 			}, action)
 			continue
 		}
@@ -196,6 +229,7 @@ func convertPlaywright(content string, opts ConvertOptions) (*ConvertResult, err
 			result.Stats.TotalSteps++
 			action, ok := playwrightAssertionAction(match[1], match[2], match[3], location, result, unsupported)
 			if ok {
+				annotatePlaywrightPageContext(&action, pageVariable)
 				disposition, reason := actionDisposition(action.Metadata, "mapped", "")
 				appendImportedAction(script, result, StepMapping{
 					SourceIndex: sourceIndex, SourceLocation: location, SourceStepType: match[2],
@@ -209,8 +243,7 @@ func convertPlaywright(content string, opts ConvertOptions) (*ConvertResult, err
 
 		match := actionPattern.FindStringSubmatch(line)
 		if match == nil {
-			if strings.Contains(line, "page.") && strings.Contains(line, "(") &&
-				(strings.Contains(line, "locator") || strings.Contains(line, "getBy")) {
+			if strings.Contains(line, "page.") && strings.Contains(line, "(") {
 				result.Stats.TotalSteps++
 				result.Stats.SkippedSteps++
 				unsupported.Add(diag.Warning, "playwright_line", location,
@@ -250,23 +283,25 @@ func convertPlaywright(content string, opts ConvertOptions) (*ConvertResult, err
 		for key, value := range metadata {
 			action.Metadata[key] = value
 		}
-		argValue := ""
-		if argMatch := firstStringArgPattern.FindStringSubmatch(strings.TrimSpace(match[3])); argMatch != nil {
-			argValue = argMatch[1]
-		}
+		argValue := firstStringArg(match[3])
 		switch match[2] {
 		case "click":
 			action.Type = "browser_click"
 			action.Name = "Click " + candidate.Value
+			applyPlaywrightClickOptions(&action, match[3])
 		case "check", "uncheck":
-			action.Type = "browser_click"
+			action.Type = "browser_check"
 			action.Name = strings.Title(match[2]) + " " + candidate.Value
+			if match[2] == "uncheck" {
+				action.Value = "false"
+			} else {
+				action.Value = "true"
+			}
 			action.Metadata["source_checkbox_state"] = match[2]
-			action.Metadata["import_disposition"] = "degraded"
-			action.Metadata["import_disposition_reason"] = "Playwright check/uncheck intent is preserved as metadata on a browser_click action."
 		case "dblclick":
 			action.Type = "browser_dblclick"
 			action.Name = "Double-click " + candidate.Value
+			applyPlaywrightClickOptions(&action, match[3])
 		case "hover":
 			action.Type = "browser_hover"
 			action.Name = "Hover " + candidate.Value
@@ -283,6 +318,7 @@ func convertPlaywright(content string, opts ConvertOptions) (*ConvertResult, err
 			action.Name = "Press " + argValue
 			action.Value = argValue
 		}
+		annotatePlaywrightPageContext(&action, pageVariable)
 		disposition, reason := actionDisposition(action.Metadata, "mapped", "")
 		appendImportedAction(script, result, StepMapping{
 			SourceIndex: sourceIndex, SourceLocation: location, SourceStepType: match[2],
@@ -307,19 +343,18 @@ func convertPlaywright(content string, opts ConvertOptions) (*ConvertResult, err
 func candidateFromLocatorExpression(expr string) (selector.Candidate, map[string]any, bool) {
 	metadata := map[string]any{}
 	expr = normalizeLocatorExpression(expr, metadata)
-	if match := frameLocatorPattern.FindStringSubmatch(expr); match != nil {
-		candidate, childMetadata, ok := candidateFromLocatorExpression(strings.TrimSpace(match[2]))
+	if frameSelector, childExpr, ok := splitFrameLocatorExpression(expr); ok {
+		candidate, childMetadata, ok := candidateFromLocatorExpression(strings.TrimSpace(childExpr))
 		if !ok {
 			return selector.Candidate{}, nil, false
 		}
 		for key, value := range childMetadata {
 			metadata[key] = value
 		}
-		metadata["frame_selector"] = match[1]
+		metadata["frame_selector"] = frameSelector
 		return candidate, metadata, true
 	}
-	if match := locatorPattern.FindStringSubmatch(expr); match != nil {
-		value := match[1]
+	if value, rest, ok := parseCallFirstStringArg(expr, "locator"); ok && strings.TrimSpace(rest) == ")" {
 		kind := "css"
 		confidence := cssConfidence(value)
 		if strings.HasPrefix(strings.ToLower(value), "xpath=") || strings.HasPrefix(value, "//") {
@@ -330,41 +365,59 @@ func candidateFromLocatorExpression(expr string) (selector.Candidate, map[string
 		return selector.Candidate{Kind: kind, Value: value, Confidence: confidence,
 			Reason: "Playwright codegen locator."}, metadata, true
 	}
-	if match := getByTestIDPattern.FindStringSubmatch(expr); match != nil {
-		return selector.Candidate{Kind: "css", Value: selector.CSSAttributeSelector("data-testid", match[1]),
+	if value, _, ok := parseCallFirstStringArg(expr, "getByTestId"); ok {
+		return selector.Candidate{Kind: "css", Value: selector.CSSAttributeSelector("data-testid", value),
 			Confidence: selector.ConfidenceDataTestID, Reason: "Playwright getByTestId locator."}, metadata, true
 	}
-	if match := getByRolePattern.FindStringSubmatch(expr); match != nil {
-		if match[2] == "" {
+	if role, rest, ok := parseCallFirstStringArg(expr, "getByRole"); ok {
+		name := parseNamedStringOption(rest, "name")
+		if name == "" {
 			return selector.Candidate{}, nil, false // role without name is too ambiguous
 		}
-		return selector.Candidate{Kind: "role", Value: selector.RoleSelector(match[1], match[2]),
+		return selector.Candidate{Kind: "role", Value: selector.RoleSelector(role, name),
 			Confidence: selector.ConfidenceRoleName, Reason: "Playwright getByRole locator."}, metadata, true
 	}
-	if match := getByTextPattern.FindStringSubmatch(expr); match != nil {
-		return selector.Candidate{Kind: "text", Value: selector.TextSelector(match[1]),
+	if value, _, ok := parseCallFirstStringArg(expr, "getByText"); ok {
+		return selector.Candidate{Kind: "text", Value: selector.TextSelector(value),
 			Confidence: selector.ConfidenceText, Reason: "Playwright getByText locator; verify uniqueness on replay."}, metadata, true
 	}
-	if match := getByLabelPattern.FindStringSubmatch(expr); match != nil {
+	if value, _, ok := parseCallFirstStringArg(expr, "getByLabel"); ok {
 		metadata[extraSelectorCandidatesKey] = []selector.Candidate{
 			{
 				Kind:       "text",
-				Value:      selector.TextSelector(match[1]),
+				Value:      selector.TextSelector(value),
 				Confidence: selector.ConfidenceText,
 				Reason:     "Fallback for Playwright getByLabel when the control is associated by a visible <label>.",
 			},
 		}
 		metadata["import_disposition"] = "degraded"
 		metadata["import_disposition_reason"] = "Playwright getByLabel was approximated with aria-label plus a visible-label fallback; review labelled controls."
-		return selector.Candidate{Kind: "css", Value: selector.CSSAttributeSelector("aria-label", match[1]),
+		return selector.Candidate{Kind: "css", Value: selector.CSSAttributeSelector("aria-label", value),
 			Confidence: selector.ConfidenceAriaLabel,
 			Reason:     "Playwright getByLabel locator approximated as aria-label; review controls labelled by <label> elements."}, metadata, true
 	}
-	if match := getByPlaceholderPat.FindStringSubmatch(expr); match != nil {
-		return selector.Candidate{Kind: "css", Value: selector.CSSAttributeSelector("placeholder", match[1]),
+	if value, _, ok := parseCallFirstStringArg(expr, "getByPlaceholder"); ok {
+		return selector.Candidate{Kind: "css", Value: selector.CSSAttributeSelector("placeholder", value),
 			Confidence: selector.ConfidencePlaceholder, Reason: "Playwright getByPlaceholder locator."}, metadata, true
 	}
 	return selector.Candidate{}, nil, false
+}
+
+func splitFrameLocatorExpression(expr string) (string, string, bool) {
+	frameSelector, rest, ok := parseCallFirstStringArg(expr, "frameLocator")
+	if !ok {
+		return "", "", false
+	}
+	rest = strings.TrimSpace(rest)
+	if !strings.HasPrefix(rest, ")") {
+		return "", "", false
+	}
+	rest = strings.TrimSpace(strings.TrimPrefix(rest, ")"))
+	if !strings.HasPrefix(rest, ".") {
+		return "", "", false
+	}
+	child := strings.TrimSpace(strings.TrimPrefix(rest, "."))
+	return frameSelector, child, child != ""
 }
 
 func normalizeLocatorExpression(expr string, metadata map[string]any) string {
@@ -401,6 +454,91 @@ func selectorCandidatesForAction(primary selector.Candidate, metadata map[string
 	return selector.Unique(candidates)
 }
 
+func playwrightDirectPageAction(method, rawArgs, location string, result *ConvertResult, unsupported *diag.Collector) (dsl.Action, bool) {
+	selectorValue, rest, ok := parseLeadingJSStringLiteral(rawArgs)
+	if !ok {
+		result.Stats.SkippedSteps++
+		unsupported.Add(diag.Warning, "playwright_direct_action", location,
+			"Direct Playwright page."+method+" action has no string selector.")
+		return dsl.Action{}, false
+	}
+	candidate := candidateFromDirectPageSelector(selectorValue)
+	best, usable := selector.Usable(candidate)
+	if !usable {
+		result.Stats.SkippedSteps++
+		unsupported.Add(diag.Warning, "playwright_direct_action", location,
+			"Direct Playwright page."+method+" selector is not replayable: "+truncate(selectorValue, 120))
+		return dsl.Action{}, false
+	}
+	action := dsl.Action{
+		Selector: best,
+		Target:   best,
+		Metadata: map[string]any{
+			"source_selector_candidates": []selector.Candidate{candidate},
+			"source_selector_confidence": candidate.Confidence,
+			"source_direct_page_action":  true,
+		},
+	}
+	value := firstCommaStringArg(rest)
+	switch method {
+	case "click":
+		action.Type = "browser_click"
+		action.Name = "Click " + candidate.Value
+		applyPlaywrightClickOptions(&action, rest)
+	case "dblclick":
+		action.Type = "browser_dblclick"
+		action.Name = "Double-click " + candidate.Value
+		applyPlaywrightClickOptions(&action, rest)
+	case "hover":
+		action.Type = "browser_hover"
+		action.Name = "Hover " + candidate.Value
+	case "fill":
+		action.Type = "browser_fill"
+		action.Name = "Fill " + candidate.Value
+		action.Value = value
+	case "selectOption":
+		action.Type = "browser_select"
+		action.Name = "Select " + candidate.Value
+		action.Value = value
+	case "press":
+		action.Type = "browser_press_key"
+		action.Name = "Press " + value
+		action.Value = value
+	case "check":
+		action.Type = "browser_check"
+		action.Name = "Check " + candidate.Value
+		action.Value = "true"
+		action.Metadata["source_checkbox_state"] = "check"
+	case "uncheck":
+		action.Type = "browser_check"
+		action.Name = "Uncheck " + candidate.Value
+		action.Value = "false"
+		action.Metadata["source_checkbox_state"] = "uncheck"
+	default:
+		return dsl.Action{}, false
+	}
+	return action, true
+}
+
+func candidateFromDirectPageSelector(value string) selector.Candidate {
+	kind := "css"
+	confidence := cssConfidence(value)
+	lower := strings.ToLower(strings.TrimSpace(value))
+	switch {
+	case strings.HasPrefix(lower, "xpath=") || strings.HasPrefix(value, "//"):
+		kind = "xpath"
+		confidence = selector.ConfidenceXPath
+		value = strings.TrimPrefix(strings.TrimPrefix(value, "xpath="), "XPATH=")
+	case strings.HasPrefix(lower, "role="):
+		kind = "role"
+		confidence = selector.ConfidenceRoleName
+	case strings.HasPrefix(lower, "text="):
+		kind = "text"
+		confidence = selector.ConfidenceText
+	}
+	return selector.Candidate{Kind: kind, Value: value, Confidence: confidence, Reason: "Playwright direct page action selector."}
+}
+
 func actionDisposition(metadata map[string]any, fallbackDisposition, fallbackReason string) (string, string) {
 	disposition := fallbackDisposition
 	reason := fallbackReason
@@ -414,6 +552,26 @@ func actionDisposition(metadata map[string]any, fallbackDisposition, fallbackRea
 		disposition = "mapped"
 	}
 	return disposition, reason
+}
+
+func playwrightPageVariable(line string) string {
+	match := pageVariablePattern.FindStringSubmatch(line)
+	if match == nil {
+		return ""
+	}
+	return strings.TrimSpace(match[1])
+}
+
+func annotatePlaywrightPageContext(action *dsl.Action, pageVariable string) {
+	pageVariable = strings.TrimSpace(pageVariable)
+	if action == nil || pageVariable == "" || pageVariable == "page" {
+		return
+	}
+	if action.Metadata == nil {
+		action.Metadata = map[string]any{}
+	}
+	action.Metadata["source_page_variable"] = pageVariable
+	markActionDisposition(action, "degraded", "Playwright page variable "+pageVariable+" may represent a popup or new tab; review imported window targeting.")
 }
 
 func playwrightPageAssertionAction(assertion, rawArgs string) dsl.Action {
@@ -490,6 +648,12 @@ func playwrightAssertionAction(expr, assertion, rawArgs, location string, result
 		action.Assertions = []dsl.Assertion{{Type: "element_text_contains", Value: best, Expected: expected}}
 	case "toHaveValue":
 		expected := firstStringArg(rawArgs)
+		if candidate.Kind != "css" {
+			result.Stats.SkippedSteps++
+			unsupported.Add(diag.Warning, "playwright_assertion", location,
+				"Playwright toHaveValue was not converted because "+candidate.Kind+" locators cannot be evaluated with document.querySelector.")
+			return dsl.Action{}, false
+		}
 		action.Type = "browser_evaluate_js"
 		action.Name = "Assert value " + candidate.Value
 		action.Target = fmt.Sprintf(`(() => {
@@ -508,10 +672,145 @@ func playwrightAssertionAction(expr, assertion, rawArgs, location string, result
 }
 
 func firstStringArg(raw string) string {
-	if match := firstStringArgPattern.FindStringSubmatch(strings.TrimSpace(raw)); match != nil {
-		return match[1]
+	if value, _, ok := parseLeadingJSStringLiteral(raw); ok {
+		return value
 	}
 	return ""
+}
+
+func firstCommaStringArg(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if !strings.HasPrefix(raw, ",") {
+		return ""
+	}
+	return firstStringArg(strings.TrimSpace(strings.TrimPrefix(raw, ",")))
+}
+
+func parseCallFirstStringArg(expr, name string) (string, string, bool) {
+	expr = strings.TrimSpace(expr)
+	prefix := name + "("
+	if !strings.HasPrefix(expr, prefix) {
+		return "", "", false
+	}
+	return parseLeadingJSStringLiteral(strings.TrimPrefix(expr, prefix))
+}
+
+func parseNamedStringOption(raw, name string) string {
+	index := strings.Index(raw, name)
+	if index < 0 {
+		return ""
+	}
+	afterName := strings.TrimSpace(raw[index+len(name):])
+	if !strings.HasPrefix(afterName, ":") {
+		return ""
+	}
+	value, _, ok := parseLeadingJSStringLiteral(strings.TrimSpace(strings.TrimPrefix(afterName, ":")))
+	if !ok {
+		return ""
+	}
+	return value
+}
+
+func parseLeadingJSStringLiteral(raw string) (string, string, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", "", false
+	}
+	quote := raw[0]
+	if quote != '\'' && quote != '"' {
+		return "", "", false
+	}
+	var b strings.Builder
+	escaped := false
+	for i := 1; i < len(raw); i++ {
+		ch := raw[i]
+		if escaped {
+			switch ch {
+			case 'n':
+				b.WriteByte('\n')
+			case 'r':
+				b.WriteByte('\r')
+			case 't':
+				b.WriteByte('\t')
+			case 'b':
+				b.WriteByte('\b')
+			case 'f':
+				b.WriteByte('\f')
+			default:
+				b.WriteByte(ch)
+			}
+			escaped = false
+			continue
+		}
+		if ch == '\\' {
+			escaped = true
+			continue
+		}
+		if ch == quote {
+			return b.String(), raw[i+1:], true
+		}
+		b.WriteByte(ch)
+	}
+	return "", "", false
+}
+
+func applyPlaywrightClickOptions(action *dsl.Action, rawArgs string) {
+	if action.Params == nil {
+		action.Params = map[string]any{}
+	}
+	if match := buttonArgPattern.FindStringSubmatch(rawArgs); match != nil {
+		if button := normalizeMouseButton(match[1]); button != "" {
+			action.Params["button"] = button
+		}
+	}
+	if match := modifiersArgPattern.FindStringSubmatch(rawArgs); match != nil {
+		var modifiers []string
+		for _, part := range strings.Split(match[1], ",") {
+			if value := firstStringArg(strings.TrimSpace(part)); value != "" {
+				modifiers = append(modifiers, normalizeKeyboardModifier(value))
+			}
+		}
+		if len(modifiers) > 0 {
+			action.Params["modifiers"] = modifiers
+		}
+	}
+	if len(action.Params) == 0 {
+		action.Params = nil
+	}
+}
+
+func normalizeMouseButton(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "right", "secondary":
+		return "right"
+	case "middle", "auxiliary", "aux":
+		return "middle"
+	case "left", "primary":
+		return "left"
+	default:
+		return ""
+	}
+}
+
+func normalizeKeyboardModifier(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "ctrl":
+		return "Control"
+	case "cmd", "command":
+		return "Meta"
+	case "controlormeta", "control_or_meta", "cmdorctrl", "commandorcontrol":
+		return "ControlOrMeta"
+	case "alt":
+		return "Alt"
+	case "control":
+		return "Control"
+	case "meta":
+		return "Meta"
+	case "shift":
+		return "Shift"
+	default:
+		return strings.TrimSpace(value)
+	}
 }
 
 func portableURLFragment(rawURL string) string {

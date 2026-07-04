@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 )
 
 type Observation struct {
@@ -27,6 +28,7 @@ type Correlation struct {
 	Source      string
 	Expression  string
 	ExtractType string
+	Convert     string
 	SaveOffset  int
 	SaveLength  int
 	FoundInID   int
@@ -50,6 +52,7 @@ type Candidate struct {
 	Source      string
 	ExtractType string
 	Expression  string
+	Convert     string
 	// RuleID and BaseConfidence are assigned by the rule that emitted the
 	// candidate; Reason is a short description of the matched pattern.
 	RuleID         string
@@ -127,6 +130,7 @@ func Detect(observations []Observation) []Correlation {
 				Source:      candidate.Source,
 				Expression:  candidate.Expression,
 				ExtractType: candidate.ExtractType,
+				Convert:     candidate.Convert,
 				FoundInID:   observation.ID,
 				UsedInIDs:   usedIn,
 				Value:       candidate.Value,
@@ -148,7 +152,35 @@ func Detect(observations []Observation) []Correlation {
 		}
 		return correlations[i].FoundInID < correlations[j].FoundInID
 	})
+	uniquifyCorrelationNames(correlations)
 	return correlations
+}
+
+func uniquifyCorrelationNames(correlations []Correlation) {
+	used := map[string]struct{}{}
+	nextSuffix := map[string]int{}
+	for i := range correlations {
+		base := strings.TrimSpace(correlations[i].Name)
+		if base == "" {
+			base = "corr_value"
+		}
+		name := base
+		for {
+			if _, exists := used[name]; !exists {
+				break
+			}
+			nextSuffix[base]++
+			if nextSuffix[base] < 2 {
+				nextSuffix[base] = 2
+			}
+			name = fmt.Sprintf("%s_%d", base, nextSuffix[base])
+		}
+		if nextSuffix[base] == 0 {
+			nextSuffix[base] = 1
+		}
+		correlations[i].Name = name
+		used[name] = struct{}{}
+	}
 }
 
 func Candidates(responseBody string, responseHeaders map[string]string) []Candidate {
@@ -304,14 +336,23 @@ func Truncate(value string, maxLen int) string {
 }
 
 func salesforceCandidates(responseBody string, responseHeaders map[string]string) []Candidate {
-	decoded := urlDecoded(responseBody)
 	candidates := make([]Candidate, 0)
-	candidates = append(candidates, salesforceRegexCandidates(decoded)...)
+	if !looksLikeFormEncodedBody(responseBody) {
+		candidates = append(candidates, salesforceRegexCandidates(responseBody)...)
+	}
 	for key, value := range responseHeaders {
 		header := key + ": " + value
 		candidates = append(candidates, salesforceRegexCandidates(header)...)
 	}
 	return candidates
+}
+
+func looksLikeFormEncodedBody(body string) bool {
+	if !strings.Contains(body, "=") {
+		return false
+	}
+	values, err := url.ParseQuery(body)
+	return err == nil && len(values) > 0
 }
 
 func salesforceRegexCandidates(body string) []Candidate {
@@ -369,6 +410,43 @@ func salesforceRegexCandidates(body string) []Candidate {
 	return candidates
 }
 
+func formFieldRegex(fieldName string) string {
+	return fmt.Sprintf(`(?i)(?:^|&)%s=([^&]*)`, regexp.QuoteMeta(fieldName))
+}
+
+func formEncodedJSONStringFieldRegex(formField, jsonField string) string {
+	return fmt.Sprintf(`(?i)(?:^|&)%s=[^&]*(?:%%22|")%s(?:%%22|")\s*(?:%%3A|:)\s*(?:%%22|")((?:%%[0-1][0-9A-Fa-f]|%%2[013-9A-Fa-f]|%%[3-9A-Fa-f][0-9A-Fa-f]|[^&%%"'])*)(?:%%22|")`,
+		regexp.QuoteMeta(formField), regexp.QuoteMeta(jsonField))
+}
+
+func salesforceFormContextCandidates(fieldName, decodedValue string) []Candidate {
+	candidates := make([]Candidate, 0)
+	addStringField := func(pattern *regexp.Regexp, jsonField, name, ruleID, reason string, confidence float64) {
+		for _, match := range pattern.FindAllStringSubmatch(decodedValue, -1) {
+			value := lastNonEmptyMatch(match)
+			if value == "" {
+				continue
+			}
+			candidates = append(candidates, Candidate{
+				Name:           "corr_" + Slug(name),
+				Value:          value,
+				Source:         "body",
+				ExtractType:    "regex",
+				Expression:     formEncodedJSONStringFieldRegex(fieldName, jsonField),
+				Convert:        "url_decode",
+				RuleID:         ruleID,
+				BaseConfidence: confidence,
+				Reason:         reason,
+			})
+		}
+	}
+	addStringField(auraFWUIDPattern, "fwuid", "salesforce_aura_fwuid", RuleSalesforceAuraContextFWUID, "Salesforce Aura context fwuid", 0.94)
+	addStringField(auraAppPattern, "app", "salesforce_aura_app", RuleSalesforceAuraAppDescriptor, "Salesforce Aura app descriptor", 0.9)
+	addStringField(auraPageScopeIDPattern, "pageScopeId", "salesforce_page_scope_id", RuleSalesforcePageScopeID, "Salesforce pageScopeId value", 0.85)
+	addStringField(auraPageURIPattern, "pageURI", "salesforce_aura_page_uri", RuleSalesforceAuraPageURI, "Salesforce Aura page URI", 0.86)
+	return candidates
+}
+
 func formCandidates(body string) []Candidate {
 	values, err := url.ParseQuery(body)
 	if err != nil || len(values) == 0 {
@@ -383,8 +461,9 @@ func formCandidates(body string) []Candidate {
 			Name:           "corr_" + Slug(name),
 			Value:          value,
 			Source:         "body",
-			ExtractType:    "boundary",
-			Expression:     fieldName + "=|||&",
+			ExtractType:    "regex",
+			Expression:     formFieldRegex(fieldName),
+			Convert:        "url_decode",
 			RuleID:         ruleID,
 			BaseConfidence: confidence,
 			Reason:         reason,
@@ -396,7 +475,7 @@ func formCandidates(body string) []Candidate {
 			case "aura.token":
 				add(key, "salesforce_aura_token", value, RuleSalesforceAuraToken, 0.95, "Salesforce aura.token form field")
 			case "aura.context":
-				for _, candidate := range salesforceRegexCandidates(value) {
+				for _, candidate := range salesforceFormContextCandidates(key, value) {
 					candidates = append(candidates, candidate)
 				}
 			case "aura.pageuri":
@@ -457,7 +536,7 @@ func urlDecoded(raw string) string {
 }
 
 func jsonCandidates(body string) []Candidate {
-	if parsed := jsonCandidatesFromParsedBody(body); len(parsed) > 0 {
+	if parsed, ok := jsonCandidatesFromParsedBody(body); ok {
 		return parsed
 	}
 	candidates := make([]Candidate, 0)
@@ -497,14 +576,14 @@ func jsonCandidates(body string) []Candidate {
 	return candidates
 }
 
-func jsonCandidatesFromParsedBody(body string) []Candidate {
+func jsonCandidatesFromParsedBody(body string) ([]Candidate, bool) {
 	var value any
 	if err := json.Unmarshal([]byte(body), &value); err != nil {
-		return nil
+		return nil, false
 	}
 	candidates := make([]Candidate, 0)
 	walkJSONCandidates(value, "$", true, &candidates)
-	return candidates
+	return candidates, true
 }
 
 // walkJSONCandidates descends the parsed body collecting correlation candidates.
@@ -571,19 +650,59 @@ func walkJSONCandidates(value any, path string, evaluable bool, candidates *[]Ca
 }
 
 func dynamicJSONKey(key string) bool {
-	lower := strings.ToLower(key)
-	return strings.Contains(lower, "token") ||
-		strings.Contains(lower, "access_token") ||
-		strings.Contains(lower, "id_token") ||
-		strings.Contains(lower, "refresh_token") ||
-		strings.Contains(lower, "session_id") ||
-		strings.Contains(lower, "sessionid") ||
-		strings.Contains(lower, "sid") ||
-		strings.Contains(lower, "csrf") ||
-		strings.Contains(lower, "_token") ||
-		strings.Contains(lower, "xsrf") ||
-		strings.Contains(lower, "auth") ||
-		strings.HasSuffix(lower, "id")
+	lower := strings.ToLower(strings.TrimSpace(key))
+	if lower == "" {
+		return false
+	}
+	tokens := correlationKeyTokens(key)
+	compact := strings.Join(tokens, "")
+	switch compact {
+	case "accesstoken", "idtoken", "refreshtoken", "sessionid", "jmscorrelationid", "jmsmessageid", "messageid", "operationid", "subscriptionid", "correlationid":
+		return true
+	}
+	for _, token := range tokens {
+		switch token {
+		case "token", "csrf", "xsrf", "nonce", "state", "session", "sid", "auth", "authorization", "bearer", "websocket", "correlation":
+			return true
+		case "id":
+			return true
+		}
+	}
+	return lower == "id" ||
+		strings.HasSuffix(key, "Id") ||
+		strings.HasSuffix(key, "ID") ||
+		strings.HasSuffix(lower, "_id") ||
+		strings.HasSuffix(lower, "-id") ||
+		strings.HasSuffix(lower, ".id")
+}
+
+func correlationKeyTokens(key string) []string {
+	var tokens []string
+	var current strings.Builder
+	flush := func() {
+		if current.Len() == 0 {
+			return
+		}
+		tokens = append(tokens, current.String())
+		current.Reset()
+	}
+	runes := []rune(strings.TrimSpace(key))
+	for i, r := range runes {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) {
+			flush()
+			continue
+		}
+		if unicode.IsUpper(r) && current.Len() > 0 {
+			prev := runes[i-1]
+			nextLower := i+1 < len(runes) && unicode.IsLower(runes[i+1])
+			if unicode.IsLower(prev) || unicode.IsDigit(prev) || nextLower {
+				flush()
+			}
+		}
+		current.WriteRune(unicode.ToLower(r))
+	}
+	flush()
+	return tokens
 }
 
 func jsonPathChild(parent string, key string) string {
@@ -653,19 +772,28 @@ func htmlInputCandidates(body string) []Candidate {
 			if pattern.nameGroup > pattern.valueGroup {
 				expression = fmt.Sprintf(`value="([^"]+)"[^>]*name="%s"`, regexp.QuoteMeta(field))
 			}
+			ruleID, base, reason := htmlInputCorrelationRule(field)
 			candidates = append(candidates, Candidate{
 				Name:           "corr_" + Slug(field),
 				Value:          value,
 				Source:         "body",
 				ExtractType:    "regex",
 				Expression:     expression,
-				RuleID:         RuleHTMLHiddenToken,
-				BaseConfidence: 0.9,
-				Reason:         "Hidden form field " + field + " (anti-CSRF/state token)",
+				RuleID:         ruleID,
+				BaseConfidence: base,
+				Reason:         reason,
 			})
 		}
 	}
 	return candidates
+}
+
+func htmlInputCorrelationRule(field string) (string, float64, string) {
+	lower := strings.ToLower(strings.TrimSpace(field))
+	if strings.Contains(lower, "visualforce.viewstate") {
+		return RuleSalesforceViewState, 0.94, "Salesforce Visualforce ViewState hidden field"
+	}
+	return RuleHTMLHiddenToken, 0.9, "Hidden form field " + field + " (anti-CSRF/state token)"
 }
 
 // aspNetHiddenCandidates handles ASP.NET WebForms state fields, which are the
@@ -788,7 +916,7 @@ func headerCandidates(headers map[string]string) []Candidate {
 		if lowerKey == "location" {
 			locationMatches := locationCandidates(key, value)
 			candidates = append(candidates, locationMatches...)
-			if len(locationMatches) == 0 {
+			if len(locationMatches) == 0 && shouldCorrelateWholeLocation(value) {
 				// A redirect target frequently carries a one-time code/state that the
 				// next request must echo back. Capture the whole value for review.
 				candidates = append(candidates, Candidate{
@@ -845,6 +973,59 @@ func headerCandidates(headers map[string]string) []Candidate {
 		})
 	}
 	return candidates
+}
+
+func shouldCorrelateWholeLocation(value string) bool {
+	trimmed := strings.TrimSpace(value)
+	if len(trimmed) < 12 {
+		return false
+	}
+	candidate := trimmed
+	if parsed, err := url.Parse(trimmed); err == nil {
+		if parsed.RawQuery != "" {
+			return true
+		}
+		candidate = lastPathSegment(parsed.Path)
+		if len(candidate) < 12 {
+			return false
+		}
+	}
+	return looksDynamicLocationValue(candidate)
+}
+
+func lastPathSegment(pathValue string) string {
+	pathValue = strings.Trim(pathValue, "/")
+	if pathValue == "" {
+		return ""
+	}
+	if idx := strings.LastIndex(pathValue, "/"); idx >= 0 {
+		return pathValue[idx+1:]
+	}
+	return pathValue
+}
+
+func looksDynamicLocationValue(value string) bool {
+	lower := strings.ToLower(strings.TrimSpace(value))
+	if strings.Contains(lower, "token") ||
+		strings.Contains(lower, "code") ||
+		strings.Contains(lower, "state") ||
+		strings.Contains(lower, "session") ||
+		strings.Contains(lower, "nonce") ||
+		strings.Contains(lower, "csrf") ||
+		strings.Contains(lower, "xsrf") {
+		return true
+	}
+	hasLetter := false
+	hasDigit := false
+	for _, r := range lower {
+		if unicode.IsLetter(r) {
+			hasLetter = true
+		}
+		if unicode.IsDigit(r) {
+			hasDigit = true
+		}
+	}
+	return hasLetter && hasDigit
 }
 
 func locationCandidates(headerName string, value string) []Candidate {

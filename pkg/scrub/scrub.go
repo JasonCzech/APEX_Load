@@ -9,6 +9,7 @@ package scrub
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"regexp"
 	"strings"
@@ -175,6 +176,9 @@ func (cp compiledPolicy) value(value string) string {
 	if value == "" {
 		return value
 	}
+	if redacted, ok := redactSensitiveJSON(value); ok {
+		value = redacted
+	}
 	value = sensitiveJSONPattern.ReplaceAllString(value, "${1}\""+Redacted+"\"")
 	value = sensitiveParamPattern.ReplaceAllString(value, "${1}"+Redacted)
 	value = sensitiveXMLPattern.ReplaceAllString(value, "${1}"+Redacted+"${3}")
@@ -191,6 +195,76 @@ func (cp compiledPolicy) value(value string) string {
 		value = rule.pattern.ReplaceAllString(value, rule.replacement)
 	}
 	return value
+}
+
+func redactSensitiveJSON(value string) (string, bool) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || (trimmed[0] != '{' && trimmed[0] != '[') {
+		return value, false
+	}
+	var parsed any
+	decoder := json.NewDecoder(strings.NewReader(trimmed))
+	decoder.UseNumber()
+	if err := decoder.Decode(&parsed); err != nil {
+		return value, false
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		return value, false
+	}
+	if !redactSensitiveJSONNode(parsed) {
+		return value, false
+	}
+	out, err := json.Marshal(parsed)
+	if err != nil {
+		return value, false
+	}
+	return string(out), true
+}
+
+func redactSensitiveJSONNode(node any) bool {
+	changed := false
+	switch typed := node.(type) {
+	case map[string]any:
+		for key, value := range typed {
+			if sensitiveJSONFieldName(key) {
+				typed[key] = Redacted
+				changed = true
+				continue
+			}
+			if redactSensitiveJSONNode(value) {
+				changed = true
+			}
+		}
+	case []any:
+		for _, item := range typed {
+			if redactSensitiveJSONNode(item) {
+				changed = true
+			}
+		}
+	}
+	return changed
+}
+
+var sensitiveJSONFieldNames = map[string]bool{
+	"authorization": true,
+	"password":      true,
+	"passwd":        true,
+	"secret":        true,
+	"token":         true,
+	"accesstoken":   true,
+	"refreshtoken":  true,
+	"idtoken":       true,
+	"apikey":        true,
+	"clientsecret":  true,
+	"privatekey":    true,
+}
+
+func sensitiveJSONFieldName(name string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(name))
+	normalized = strings.ReplaceAll(normalized, "_", "")
+	normalized = strings.ReplaceAll(normalized, "-", "")
+	return sensitiveJSONFieldNames[normalized]
 }
 
 // HAR scrubs a HAR document: request/response headers and cookies, post data,

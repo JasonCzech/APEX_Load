@@ -135,7 +135,6 @@ var routeCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodGet, "/api/v1/browser-recorder/devices", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/browser-recorder/install", viewerGlobalAccess()),
 	routeAuth(http.MethodPost, "/api/v1/browser-recorder/install", accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}),
-	routeAuth(http.MethodGet, "/api/v1/browser-recorder/sessions", viewerGlobalAccess()),
 	routeAuth(http.MethodDelete, "/api/v1/browser-recorder/sessions/{id}", accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}),
 	routeAuth(http.MethodGet, "/api/v1/downloads/recording-agent/latest", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/downloads/recording-agent/latest/checksum", viewerGlobalAccess()),

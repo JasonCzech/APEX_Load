@@ -23,8 +23,12 @@
   let assertMode = false;
   let toolbarHost = null;
   let pendingClick = null;
+  let pendingHover = null;
   let pendingDrag = null;
+  let windowScrollState = null;
+  const elementScrollStates = new WeakMap();
   let lastRecordedFill = null;
+  let lastRecordedHover = null;
   let lastEnterPressAt = 0;
   let recordQueue = Promise.resolve();
 
@@ -255,6 +259,48 @@
     send(payload);
   }
 
+  function currentWindowScroll() {
+    return {
+      x: Math.round(window.scrollX || window.pageXOffset || 0),
+      y: Math.round(window.scrollY || window.pageYOffset || 0)
+    };
+  }
+
+  windowScrollState = Object.assign(currentWindowScroll(), { dx: 0, dy: 0, timer: null });
+
+  function scrollEventElement(ev) {
+    const target = ev && ev.target;
+    if (!target || target === window || target === document ||
+        target === document.documentElement || target === document.body ||
+        target === document.scrollingElement) {
+      return null;
+    }
+    return target.nodeType === 1 ? target : null;
+  }
+
+  function flushScroll(el, state) {
+    if (state.timer) {
+      clearTimeout(state.timer);
+      state.timer = null;
+    }
+    const dx = Math.round(state.dx || 0);
+    const dy = Math.round(state.dy || 0);
+    state.dx = 0;
+    state.dy = 0;
+    if (paused || (!dx && !dy)) return;
+    record('scroll', el, '', false, {
+      delta_x: dx,
+      delta_y: dy,
+      scroll_x: Math.round(state.x || 0),
+      scroll_y: Math.round(state.y || 0)
+    });
+  }
+
+  function scheduleScroll(el, state) {
+    if (state.timer) clearTimeout(state.timer);
+    state.timer = setTimeout(() => flushScroll(el, state), 250);
+  }
+
   // Password values never leave the page: the fill is recorded with an empty
   // value and masked=true so conversion emits a {{env.*}} placeholder instead.
   function isPasswordInput(el) {
@@ -264,6 +310,7 @@
 
   function isTextEntryControl(el) {
     if (!el || !el.tagName) return false;
+    if (isEditableContent(el)) return true;
     const tag = el.tagName.toLowerCase();
     if (tag === 'textarea') return true;
     if (tag !== 'input') return false;
@@ -273,8 +320,16 @@
       type !== 'image';
   }
 
+  function isEditableContent(el) {
+    return !!(el && (el.isContentEditable ||
+      (el.getAttribute && String(el.getAttribute('contenteditable') || '').toLowerCase() === 'true')));
+  }
+
   function fillSnapshot(el) {
     const masked = isPasswordInput(el);
+    if (isEditableContent(el)) {
+      return { value: String(el.innerText || el.textContent || ''), masked: false };
+    }
     return { value: masked ? '' : String(el.value || ''), masked: masked };
   }
 
@@ -333,16 +388,82 @@
     const root = el.getRootNode();
     let scoped = el;
     try {
-      const found = el.closest('button, a[href], input, select, textarea, [role="button"], [role="link"], [role="tab"], [role="menuitem"], [role="checkbox"], [role="radio"], label, summary, [onclick]');
+      const found = el.closest('button, a[href], input, select, textarea, [contenteditable="true"], [role="button"], [role="link"], [role="tab"], [role="menuitem"], [role="checkbox"], [role="radio"], label, summary, [onclick]');
       if (found && found.getRootNode() === root) scoped = found;
     } catch (e) { /* keep leaf element */ }
     return scoped;
+  }
+
+  function mouseButtonName(ev, fallback) {
+    switch (ev && ev.button) {
+      case 1: return 'middle';
+      case 2: return 'right';
+      case 0: return fallback || '';
+      default: return fallback || '';
+    }
+  }
+
+  function eventModifiers(ev) {
+    const out = [];
+    if (ev.altKey) out.push('Alt');
+    if (ev.ctrlKey) out.push('Control');
+    if (ev.metaKey) out.push('Meta');
+    if (ev.shiftKey) out.push('Shift');
+    return out;
+  }
+
+  function pointerExtra(ev, fallbackButton) {
+    const extra = {};
+    const button = mouseButtonName(ev, fallbackButton);
+    const modifiers = eventModifiers(ev);
+    if (button && button !== 'left') extra.button = button;
+    if (modifiers.length) extra.modifiers = modifiers;
+    return extra;
+  }
+
+  function selectedValues(el) {
+    if (!el || !el.selectedOptions) return [];
+    return Array.prototype.map.call(el.selectedOptions, (opt) => String(opt.value || opt.text || ''))
+      .filter((value) => value !== '');
   }
 
   function cancelPendingClick() {
     if (!pendingClick) return;
     clearTimeout(pendingClick.timer);
     pendingClick = null;
+  }
+
+  function cancelPendingHover() {
+    if (!pendingHover) return;
+    clearTimeout(pendingHover.timer);
+    pendingHover = null;
+  }
+
+  function shouldSkipDuplicateHover(el) {
+    if (!lastRecordedHover) return false;
+    const key = elementFingerprint(el);
+    if (!key || key !== lastRecordedHover.key) return false;
+    const age = Date.now() - lastRecordedHover.ts;
+    return age >= 0 && age <= 2000;
+  }
+
+  function scheduleHover(el) {
+    if (!el || paused || assertMode || shouldSkipDuplicateHover(el)) return;
+    const key = elementFingerprint(el);
+    if (!key) return;
+    if (pendingHover && pendingHover.key === key) return;
+    cancelPendingHover();
+    pendingHover = {
+      el: el,
+      key: key,
+      timer: setTimeout(() => {
+        const pending = pendingHover;
+        pendingHover = null;
+        if (!pending || paused || assertMode) return;
+        record('hover', pending.el, '');
+        lastRecordedHover = { key: pending.key, ts: Date.now() };
+      }, 500)
+    };
   }
 
   function flushPendingClick() {
@@ -354,12 +475,12 @@
     // to 250ms (to coalesce double-clicks), so a fill/keypress landing inside that
     // window would otherwise carry an earlier ts and be ordered BEFORE the click
     // in the generated DSL.
-    if (!paused) record('click', pending.el, '', false, { ts: pending.ts });
+    if (!paused) record('click', pending.el, '', false, Object.assign({ ts: pending.ts }, pending.extra || {}));
   }
 
-  function scheduleClick(el) {
+  function scheduleClick(el, extra) {
     if (pendingClick) {
-      if (pendingClick.el !== el) {
+      if (pendingClick.el !== el || JSON.stringify(pendingClick.extra || {}) !== JSON.stringify(extra || {})) {
         flushPendingClick();
       } else {
         cancelPendingClick();
@@ -367,16 +488,18 @@
     }
     pendingClick = {
       el: el,
+      extra: extra || {},
       ts: Date.now(),
       timer: setTimeout(() => {
         const pending = pendingClick;
         pendingClick = null;
-        if (pending && !paused) record('click', pending.el, '', false, { ts: pending.ts });
+        if (pending && !paused) record('click', pending.el, '', false, Object.assign({ ts: pending.ts }, pending.extra || {}));
       }, 250)
     };
   }
 
   window.addEventListener('click', (ev) => {
+    cancelPendingHover();
     const raw = targetOf(ev);
     if (!raw || isToolbar(raw)) return;
     if (assertMode) {
@@ -398,18 +521,37 @@
         type === 'checkbox' || type === 'radio' || type === 'file';
       if (!clickable) return; // focus click before typing is noise
     }
-    scheduleClick(el);
+    scheduleClick(el, pointerExtra(ev, 'left'));
   }, true);
 
   window.addEventListener('dblclick', (ev) => {
+    cancelPendingHover();
     const raw = targetOf(ev);
     if (!raw || isToolbar(raw) || paused || assertMode) return;
     const el = interactiveAncestor(raw);
     cancelPendingClick();
-    record('dblclick', el, '');
+    record('dblclick', el, '', false, pointerExtra(ev, 'left'));
+  }, true);
+
+  window.addEventListener('contextmenu', (ev) => {
+    cancelPendingHover();
+    const raw = targetOf(ev);
+    if (!raw || isToolbar(raw) || paused || assertMode) return;
+    cancelPendingClick();
+    record('click', interactiveAncestor(raw), '', false, pointerExtra(ev, 'right'));
+  }, true);
+
+  window.addEventListener('auxclick', (ev) => {
+    cancelPendingHover();
+    if (ev.button !== 1) return;
+    const raw = targetOf(ev);
+    if (!raw || isToolbar(raw) || paused || assertMode) return;
+    cancelPendingClick();
+    record('click', interactiveAncestor(raw), '', false, pointerExtra(ev, 'middle'));
   }, true);
 
   window.addEventListener('dragstart', (ev) => {
+    cancelPendingHover();
     if (paused || assertMode) return;
     const raw = targetOf(ev);
     if (!raw || isToolbar(raw)) return;
@@ -433,6 +575,49 @@
     pendingDrag = null;
   }, true);
 
+  window.addEventListener('mouseover', (ev) => {
+    if (paused || assertMode) return;
+    const raw = targetOf(ev);
+    if (!raw || isToolbar(raw)) return;
+    scheduleHover(interactiveAncestor(raw));
+  }, true);
+
+  window.addEventListener('mouseout', (ev) => {
+    if (!pendingHover) return;
+    if (!ev.relatedTarget) {
+      cancelPendingHover();
+    }
+  }, true);
+
+  window.addEventListener('scroll', (ev) => {
+    if (paused || assertMode) return;
+    const el = scrollEventElement(ev);
+    if (el && isToolbar(el)) return;
+    if (!el) {
+      const next = currentWindowScroll();
+      windowScrollState.dx += next.x - windowScrollState.x;
+      windowScrollState.dy += next.y - windowScrollState.y;
+      windowScrollState.x = next.x;
+      windowScrollState.y = next.y;
+      scheduleScroll(null, windowScrollState);
+      return;
+    }
+    let state = elementScrollStates.get(el);
+    const next = {
+      x: Math.round(el.scrollLeft || 0),
+      y: Math.round(el.scrollTop || 0)
+    };
+    if (!state) {
+      state = { x: 0, y: 0, dx: 0, dy: 0, timer: null };
+      elementScrollStates.set(el, state);
+    }
+    state.dx += next.x - state.x;
+    state.dy += next.y - state.y;
+    state.x = next.x;
+    state.y = next.y;
+    scheduleScroll(el, state);
+  }, true);
+
   window.addEventListener('beforeunload', flushPendingClick, true);
   window.addEventListener('pagehide', flushPendingClick, true);
 
@@ -442,7 +627,8 @@
     if (!el || isToolbar(el)) return;
     const tag = el.tagName.toLowerCase();
     if (tag === 'select') {
-      record('select', el, el.value);
+      const values = selectedValues(el);
+      record('select', el, el.value, false, values.length > 1 ? { values: values } : {});
       return;
     }
     if (tag === 'input') {
@@ -456,7 +642,21 @@
       if (!shouldSkipDuplicateFill(el)) recordFill(el, 'change');
       return;
     }
-    if (tag === 'textarea' && !shouldSkipDuplicateFill(el)) recordFill(el, 'change');
+    if ((tag === 'textarea' || isEditableContent(el)) && !shouldSkipDuplicateFill(el)) recordFill(el, 'change');
+  }, true);
+
+  window.addEventListener('input', (ev) => {
+    if (paused) return;
+    const el = targetOf(ev);
+    if (!el || isToolbar(el) || !isEditableContent(el)) return;
+    recordFill(el, 'input');
+  }, true);
+
+  window.addEventListener('focusout', (ev) => {
+    if (paused) return;
+    const el = targetOf(ev);
+    if (!el || isToolbar(el) || !isEditableContent(el)) return;
+    if (!shouldSkipDuplicateFill(el)) recordFill(el, 'focusout');
   }, true);
 
   window.addEventListener('keydown', (ev) => {

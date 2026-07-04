@@ -134,7 +134,18 @@ func recorderConversionConfidence(stats recorderjson.ConvertStats) float64 {
 	if stats.TotalSteps <= 0 {
 		return 1
 	}
-	return float64(stats.TotalSteps-stats.SkippedSteps) / float64(stats.TotalSteps)
+	exactSteps := stats.TotalSteps - stats.SkippedSteps - stats.DegradedSteps
+	if exactSteps < 0 {
+		exactSteps = 0
+	}
+	confidence := (float64(exactSteps) + float64(stats.DegradedSteps)*0.5) / float64(stats.TotalSteps)
+	if confidence < 0 {
+		return 0
+	}
+	if confidence > 1 {
+		return 1
+	}
+	return confidence
 }
 
 func recorderStepMapping(result *recorderjson.ConvertResult) []map[string]any {

@@ -20,8 +20,10 @@ const (
 	StepClick        = "click"
 	StepDblClick     = "dblclick"
 	StepDragAndDrop  = "drag_and_drop"
+	StepHover        = "hover"
 	StepFill         = "fill"
 	StepSelect       = "select"
+	StepScroll       = "scroll"
 	StepPressKey     = "press_key"
 	StepSetFiles     = "set_files"
 	StepAssert       = "assert"
@@ -55,6 +57,13 @@ func normalizeSection(section string) string {
 type capturedEvent struct {
 	Kind          string                    `json:"kind"`
 	Value         string                    `json:"value,omitempty"`
+	Values        []string                  `json:"values,omitempty"`
+	Button        string                    `json:"button,omitempty"`
+	Modifiers     []string                  `json:"modifiers,omitempty"`
+	DeltaX        int                       `json:"delta_x,omitempty"`
+	DeltaY        int                       `json:"delta_y,omitempty"`
+	ScrollX       int                       `json:"scroll_x,omitempty"`
+	ScrollY       int                       `json:"scroll_y,omitempty"`
 	Masked        bool                      `json:"masked,omitempty"`
 	TimestampMs   int64                     `json:"ts"`
 	URL           string                    `json:"url,omitempty"`
@@ -71,6 +80,13 @@ type Step struct {
 	Seq              int                       `json:"seq"`
 	Kind             string                    `json:"kind"`
 	Value            string                    `json:"value,omitempty"`
+	Values           []string                  `json:"values,omitempty"`
+	Button           string                    `json:"button,omitempty"`
+	Modifiers        []string                  `json:"modifiers,omitempty"`
+	DeltaX           int                       `json:"delta_x,omitempty"`
+	DeltaY           int                       `json:"delta_y,omitempty"`
+	ScrollX          int                       `json:"scroll_x,omitempty"`
+	ScrollY          int                       `json:"scroll_y,omitempty"`
 	Masked           bool                      `json:"masked,omitempty"`
 	Timestamp        time.Time                 `json:"timestamp"`
 	URL              string                    `json:"url,omitempty"`
@@ -251,8 +267,10 @@ var validStepKinds = map[string]bool{
 	StepClick:        true,
 	StepDblClick:     true,
 	StepDragAndDrop:  true,
+	StepHover:        true,
 	StepFill:         true,
 	StepSelect:       true,
+	StepScroll:       true,
 	StepPressKey:     true,
 	StepSetFiles:     true,
 	StepAssert:       true,
@@ -273,6 +291,13 @@ func stepFromEvent(payload string) (Step, error) {
 	step := Step{
 		Kind:          kind,
 		Value:         event.Value,
+		Values:        compactStringSlice(event.Values),
+		Button:        normalizeMouseButton(event.Button),
+		Modifiers:     normalizeKeyboardModifiers(event.Modifiers),
+		DeltaX:        event.DeltaX,
+		DeltaY:        event.DeltaY,
+		ScrollX:       event.ScrollX,
+		ScrollY:       event.ScrollY,
 		Masked:        event.Masked,
 		Timestamp:     time.UnixMilli(event.TimestampMs),
 		URL:           strings.TrimSpace(event.URL),
@@ -300,6 +325,61 @@ func stepFromEvent(payload string) (Step, error) {
 		}
 	}
 	return step, nil
+}
+
+func compactStringSlice(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			out = append(out, value)
+		}
+	}
+	return out
+}
+
+func normalizeMouseButton(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "right", "secondary":
+		return "right"
+	case "middle", "auxiliary", "aux":
+		return "middle"
+	case "left", "primary":
+		return "left"
+	default:
+		return ""
+	}
+}
+
+func normalizeKeyboardModifiers(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(values))
+	seen := map[string]bool{}
+	for _, value := range values {
+		var normalized string
+		switch strings.ToLower(strings.TrimSpace(value)) {
+		case "alt", "option":
+			normalized = "Alt"
+		case "control", "ctrl":
+			normalized = "Control"
+		case "controlormeta", "control_or_meta", "cmdorctrl", "commandorcontrol":
+			normalized = "ControlOrMeta"
+		case "meta", "cmd", "command":
+			normalized = "Meta"
+		case "shift":
+			normalized = "Shift"
+		}
+		if normalized != "" && !seen[normalized] {
+			out = append(out, normalized)
+			seen[normalized] = true
+		}
+	}
+	return out
 }
 
 // appendStep adds a step to the session, assigning the sequence number and
@@ -500,9 +580,18 @@ func sameElement(a, b *selector.ElementMetadata) bool {
 	return a.Tag == b.Tag && a.ID == b.ID && a.Name == b.Name
 }
 
-// bestSelector returns the strongest replayable selector for the step: the
-// css/xpath promotion first, then any engine-usable candidate (role/text).
+// bestSelector returns the strongest replayable selector for the step:
+// replay-verified self-heal promotions first (including role/text), then the
+// normal css/xpath promotion, then any engine-usable candidate.
 func (s Step) bestSelector() string {
+	for _, candidate := range s.Candidates {
+		if !strings.Contains(strings.ToLower(candidate.Reason), "self-heal promotion") {
+			continue
+		}
+		if value, ok := selector.Usable(candidate); ok {
+			return value
+		}
+	}
 	if promoted := selector.PlaywrightSelector(s.Candidates); promoted != "" {
 		return promoted
 	}

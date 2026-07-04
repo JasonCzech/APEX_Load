@@ -17,11 +17,37 @@ func (b *Browser) clickAction(ctx context.Context, action *protocol.Action, sele
 		if err := b.waitLocatorVisible(ctx, locator, timeout); err != nil {
 			return err
 		}
-		return locator.Click(playwright.LocatorClickOptions{
+		options := locatorClickOptions(action)
+		options.Timeout = playwright.Float(b.timeoutMS(ctx, timeout))
+		return locator.Click(options)
+	}
+	return b.click(ctx, action, selector)
+}
+
+func (b *Browser) checkAction(ctx context.Context, action *protocol.Action, selector string, checked bool) error {
+	if locator, ok := b.actionLocator(action, selector); ok {
+		timeout := b.actionTimeout(action)
+		if err := b.waitLocatorVisible(ctx, locator, timeout); err != nil {
+			return err
+		}
+		if checked {
+			return locator.Check(playwright.LocatorCheckOptions{
+				Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
+			})
+		}
+		return locator.Uncheck(playwright.LocatorUncheckOptions{
 			Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
 		})
 	}
-	return b.click(ctx, action, selector)
+	timeout := b.actionTimeout(action)
+	if checked {
+		return b.currentPage().Check(selector, playwright.PageCheckOptions{
+			Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
+		})
+	}
+	return b.currentPage().Uncheck(selector, playwright.PageUncheckOptions{
+		Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
+	})
 }
 
 func (b *Browser) fillAction(ctx context.Context, action *protocol.Action, selector, value string) error {
@@ -37,18 +63,62 @@ func (b *Browser) fillAction(ctx context.Context, action *protocol.Action, selec
 	return b.fill(ctx, action, selector, value)
 }
 
-func (b *Browser) selectAction(ctx context.Context, action *protocol.Action, selector, value string) error {
+func (b *Browser) selectAction(ctx context.Context, action *protocol.Action, selector string, values []string) error {
 	if locator, ok := b.actionLocator(action, selector); ok {
 		timeout := b.actionTimeout(action)
 		if err := b.waitLocatorVisible(ctx, locator, timeout); err != nil {
 			return err
 		}
-		_, err := locator.SelectOption(playwright.SelectOptionValues{ValuesOrLabels: playwright.StringSlice(value)}, playwright.LocatorSelectOptionOptions{
+		_, err := locator.SelectOption(playwright.SelectOptionValues{ValuesOrLabels: playwright.StringSlice(values...)}, playwright.LocatorSelectOptionOptions{
 			Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
 		})
 		return err
 	}
-	return b.selectOption(ctx, action, selector, value)
+	return b.selectOption(ctx, action, selector, values)
+}
+
+func (b *Browser) scrollAction(ctx context.Context, action *protocol.Action, selector string, deltaX, deltaY int) error {
+	arg := map[string]any{"x": deltaX, "y": deltaY}
+	if selector == "" {
+		page := b.currentPage()
+		if page == nil {
+			return fmt.Errorf("browser page is not initialized")
+		}
+		_, err := page.Evaluate(`delta => {
+			window.scrollBy(delta.x, delta.y);
+			return { x: window.scrollX, y: window.scrollY };
+		}`, arg)
+		return err
+	}
+	if locator, ok := b.actionLocator(action, selector); ok {
+		timeout := b.actionTimeout(action)
+		if err := b.waitLocatorVisible(ctx, locator, timeout); err != nil {
+			return err
+		}
+		_, err := locator.Evaluate(`(el, delta) => {
+			el.scrollBy(delta.x, delta.y);
+			return { x: el.scrollLeft, y: el.scrollTop };
+		}`, arg, playwright.LocatorEvaluateOptions{
+			Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
+		})
+		return err
+	}
+	timeout := b.actionTimeout(action)
+	if err := b.waitVisibleWithTimeout(ctx, selector, timeout); err != nil {
+		return err
+	}
+	page := b.currentPage()
+	if page == nil {
+		return fmt.Errorf("browser page is not initialized")
+	}
+	locator := page.Locator(selector)
+	_, err := locator.Evaluate(`(el, delta) => {
+		el.scrollBy(delta.x, delta.y);
+		return { x: el.scrollLeft, y: el.scrollTop };
+	}`, arg, playwright.LocatorEvaluateOptions{
+		Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
+	})
+	return err
 }
 
 func (b *Browser) dblclickAction(ctx context.Context, action *protocol.Action, selector string) error {
@@ -57,13 +127,13 @@ func (b *Browser) dblclickAction(ctx context.Context, action *protocol.Action, s
 		if err := b.waitLocatorVisible(ctx, locator, timeout); err != nil {
 			return err
 		}
-		return locator.Dblclick(playwright.LocatorDblclickOptions{
-			Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
-		})
+		options := locatorDblclickOptions(action)
+		options.Timeout = playwright.Float(b.timeoutMS(ctx, timeout))
+		return locator.Dblclick(options)
 	}
-	return b.currentPage().Dblclick(selector, playwright.PageDblclickOptions{
-		Timeout: playwright.Float(b.timeoutMS(ctx, b.actionTimeout(action))),
-	})
+	options := pageDblclickOptions(action)
+	options.Timeout = playwright.Float(b.timeoutMS(ctx, b.actionTimeout(action)))
+	return b.currentPage().Dblclick(selector, options)
 }
 
 func (b *Browser) hoverAction(ctx context.Context, action *protocol.Action, selector string) error {
@@ -255,6 +325,118 @@ func cssAttrValue(value string) string {
 	return strings.ReplaceAll(value, `"`, `\"`)
 }
 
+func locatorClickOptions(action *protocol.Action) playwright.LocatorClickOptions {
+	options := playwright.LocatorClickOptions{}
+	if button := mouseButtonParam(action); button != nil {
+		options.Button = button
+	}
+	options.Modifiers = keyboardModifiersParam(action)
+	return options
+}
+
+func pageClickOptions(action *protocol.Action) playwright.PageClickOptions {
+	options := playwright.PageClickOptions{}
+	if button := mouseButtonParam(action); button != nil {
+		options.Button = button
+	}
+	options.Modifiers = keyboardModifiersParam(action)
+	return options
+}
+
+func locatorDblclickOptions(action *protocol.Action) playwright.LocatorDblclickOptions {
+	options := playwright.LocatorDblclickOptions{}
+	if button := mouseButtonParam(action); button != nil {
+		options.Button = button
+	}
+	options.Modifiers = keyboardModifiersParam(action)
+	return options
+}
+
+func pageDblclickOptions(action *protocol.Action) playwright.PageDblclickOptions {
+	options := playwright.PageDblclickOptions{}
+	if button := mouseButtonParam(action); button != nil {
+		options.Button = button
+	}
+	options.Modifiers = keyboardModifiersParam(action)
+	return options
+}
+
+func mouseButtonParam(action *protocol.Action) *playwright.MouseButton {
+	if action == nil || action.Params == nil {
+		return nil
+	}
+	switch strings.ToLower(strings.TrimSpace(actionParamString(action.Params, "button", ""))) {
+	case "right", "secondary":
+		return playwright.MouseButtonRight
+	case "middle", "auxiliary", "aux":
+		return playwright.MouseButtonMiddle
+	case "left", "primary":
+		return playwright.MouseButtonLeft
+	default:
+		return nil
+	}
+}
+
+func keyboardModifiersParam(action *protocol.Action) []playwright.KeyboardModifier {
+	if action == nil || action.Params == nil {
+		return nil
+	}
+	values := stringSliceParam(action.Params["modifiers"])
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]playwright.KeyboardModifier, 0, len(values))
+	for _, value := range values {
+		switch strings.ToLower(strings.TrimSpace(value)) {
+		case "alt":
+			out = append(out, *playwright.KeyboardModifierAlt)
+		case "control", "ctrl":
+			out = append(out, *playwright.KeyboardModifierControl)
+		case "controlormeta", "control_or_meta", "cmdorctrl", "commandorcontrol":
+			out = append(out, *playwright.KeyboardModifierControlOrMeta)
+		case "meta", "cmd", "command":
+			out = append(out, *playwright.KeyboardModifierMeta)
+		case "shift":
+			out = append(out, *playwright.KeyboardModifierShift)
+		}
+	}
+	return out
+}
+
+func stringSliceParam(value any) []string {
+	switch typed := value.(type) {
+	case nil:
+		return nil
+	case []string:
+		return typed
+	case []any:
+		out := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if text := stringAny(item); text != "" {
+				out = append(out, text)
+			}
+		}
+		return out
+	case string:
+		if strings.TrimSpace(typed) == "" {
+			return nil
+		}
+		parts := strings.Split(typed, ",")
+		out := make([]string, 0, len(parts))
+		for _, part := range parts {
+			if trimmed := strings.TrimSpace(part); trimmed != "" {
+				out = append(out, trimmed)
+			}
+		}
+		return out
+	default:
+		if text := stringAny(value); text != "" {
+			return []string{text}
+		}
+		return nil
+	}
+}
+
 func (b *Browser) waitLocatorVisible(ctx context.Context, locator playwright.Locator, timeout time.Duration) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -304,7 +486,36 @@ func (b *Browser) dispatchSwitchFrame(ctx context.Context, action *protocol.Acti
 	return nil
 }
 
-func (b *Browser) dispatchSwitchWindow(action *protocol.Action) error {
+func (b *Browser) dispatchSwitchWindow(ctx context.Context, action *protocol.Action) error {
+	timeout := b.actionTimeout(action)
+	if timeout <= 0 {
+		timeout = 10 * time.Second
+	}
+	switchCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	ticker := time.NewTicker(25 * time.Millisecond)
+	defer ticker.Stop()
+
+	var lastErr error
+	for {
+		if err := b.trySwitchWindow(action); err != nil {
+			lastErr = err
+		} else {
+			return nil
+		}
+		select {
+		case <-switchCtx.Done():
+			if lastErr != nil {
+				return lastErr
+			}
+			return switchCtx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
+func (b *Browser) trySwitchWindow(action *protocol.Action) error {
 	pages := b.contextPages()
 	if len(pages) == 0 {
 		return fmt.Errorf("browser_switch_window found no open pages")

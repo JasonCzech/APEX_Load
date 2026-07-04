@@ -7,6 +7,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/selector"
+	playwright "github.com/playwright-community/playwright-go"
 )
 
 func (b *Browser) applyConfig(config map[string]any) error {
@@ -47,6 +48,13 @@ func (b *Browser) applyDefaultConfig() {
 	b.downloadResources = "all"
 	b.slowMo = 0
 	b.userAgent = ""
+	b.locale = ""
+	b.timezone = ""
+	b.geolocation = nil
+	b.geolocationIncomplete = false
+	b.httpCredentials = nil
+	b.proxy = nil
+	b.clientCertificates = nil
 	b.captureScreenshots = ""
 	b.clientMetricsEnabled = false
 	b.experienceCanary = false
@@ -54,8 +62,10 @@ func (b *Browser) applyDefaultConfig() {
 	b.mobile = false
 	b.touchMode = false
 	b.orientation = "landscape"
+	b.orientationExplicit = false
 	b.deviceScaleFactor = 1
 	b.cpuThrottleRate = 1
+	b.cpuThrottleExplicit = false
 	b.viewportW = 1440
 	b.viewportH = 900
 	b.harCapturePolicy = HARCaptureOff
@@ -118,11 +128,28 @@ func (b *Browser) applyConfigOverrides(config map[string]any) {
 	if userAgent, ok := config["browser_user_agent"].(string); ok {
 		b.userAgent = userAgent
 	}
+	if locale, ok := config["browser_locale"].(string); ok {
+		b.locale = strings.TrimSpace(locale)
+	}
+	if timezone, ok := config["browser_timezone"].(string); ok {
+		b.timezone = strings.TrimSpace(timezone)
+	}
+	if timezone, ok := config["browser_timezone_id"].(string); ok && strings.TrimSpace(timezone) != "" {
+		b.timezone = strings.TrimSpace(timezone)
+	}
+	if geo, ok, incomplete := geolocationFromConfig(config); ok {
+		b.geolocation = geo
+		b.geolocationIncomplete = incomplete
+	}
+	b.httpCredentials = browserHTTPCredentialsFromConfig(config)
+	b.proxy = browserProxyFromConfig(config)
+	b.clientCertificates = browserClientCertificatesFromConfig(config)
 	if touchMode, ok := config["browser_touch_mode"].(bool); ok {
 		b.touchMode = touchMode
 	}
 	if orientation, ok := config["browser_orientation"].(string); ok && strings.TrimSpace(orientation) != "" {
 		b.orientation = normalizeOrientation(orientation)
+		b.orientationExplicit = true
 	}
 	if clientMetrics, ok := config["browser_client_metrics"].(bool); ok {
 		b.clientMetricsEnabled = clientMetrics
@@ -169,6 +196,7 @@ func (b *Browser) applyConfigOverrides(config map[string]any) {
 	}
 	if cpuThrottleRate, ok := config["browser_cpu_throttle_rate"].(float64); ok && cpuThrottleRate > 0 {
 		b.cpuThrottleRate = cpuThrottleRate
+		b.cpuThrottleExplicit = true
 	}
 	if deviceProfile, ok := config["browser_device_profile"].(string); ok {
 		b.deviceProfile = deviceProfile
@@ -190,6 +218,77 @@ func (b *Browser) validateConfig() error {
 	}
 	if b.selfHealMode == "" {
 		return fmt.Errorf("unsupported browser self-heal mode")
+	}
+	if b.timezone != "" {
+		if _, err := time.LoadLocation(b.timezone); err != nil {
+			return fmt.Errorf("unsupported browser timezone: %s", b.timezone)
+		}
+	}
+	if b.geolocationIncomplete {
+		return fmt.Errorf("browser geolocation requires latitude and longitude")
+	}
+	if err := validatePlaywrightGeolocation(b.geolocation); err != nil {
+		return err
+	}
+	if err := validateBrowserHTTPCredentials(b.httpCredentials); err != nil {
+		return err
+	}
+	if err := validateBrowserProxy(b.proxy); err != nil {
+		return err
+	}
+	if err := validateBrowserClientCertificates(b.clientCertificates); err != nil {
+		return err
+	}
+	return nil
+}
+
+func geolocationFromConfig(config map[string]any) (*playwright.Geolocation, bool, bool) {
+	latitude, hasLatitude := configFloatValue(config, "browser_geolocation_latitude")
+	longitude, hasLongitude := configFloatValue(config, "browser_geolocation_longitude")
+	if !hasLatitude && !hasLongitude {
+		return nil, false, false
+	}
+	geo := &playwright.Geolocation{Latitude: latitude, Longitude: longitude}
+	if accuracy, ok := configFloatValue(config, "browser_geolocation_accuracy"); ok {
+		geo.Accuracy = playwright.Float(accuracy)
+	}
+	return geo, true, !hasLatitude || !hasLongitude
+}
+
+func configFloatValue(config map[string]any, key string) (float64, bool) {
+	if config == nil {
+		return 0, false
+	}
+	value, ok := config[key]
+	if !ok {
+		return 0, false
+	}
+	switch typed := value.(type) {
+	case int:
+		return float64(typed), true
+	case int64:
+		return float64(typed), true
+	case float64:
+		return typed, true
+	case float32:
+		return float64(typed), true
+	default:
+		return 0, false
+	}
+}
+
+func validatePlaywrightGeolocation(geo *playwright.Geolocation) error {
+	if geo == nil {
+		return nil
+	}
+	if geo.Latitude < -90 || geo.Latitude > 90 {
+		return fmt.Errorf("browser geolocation latitude must be between -90 and 90")
+	}
+	if geo.Longitude < -180 || geo.Longitude > 180 {
+		return fmt.Errorf("browser geolocation longitude must be between -180 and 180")
+	}
+	if geo.Accuracy != nil && *geo.Accuracy < 0 {
+		return fmt.Errorf("browser geolocation accuracy must be zero or greater")
 	}
 	return nil
 }
@@ -233,6 +332,12 @@ func (b *Browser) applyConfiguredDeviceProfile() error {
 	}
 	if !b.mobile && profile.Mobile {
 		b.mobile = true
+	}
+	if !b.orientationExplicit && strings.TrimSpace(profile.DefaultOrientation) != "" {
+		b.orientation = normalizeOrientation(profile.DefaultOrientation)
+	}
+	if !b.cpuThrottleExplicit && profile.CPUThrottleRate > 0 {
+		b.cpuThrottleRate = profile.CPUThrottleRate
 	}
 	if b.networkMode == "" && profile.NetworkPreset != "" {
 		b.networkMode = "preset"

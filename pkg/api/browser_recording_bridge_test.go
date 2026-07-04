@@ -12,7 +12,7 @@ import (
 )
 
 const bridgeTestOrigin = "https://controller.example.test"
-const bridgeTestToken = "test-bridge-token-1234567890"
+const bridgeTestToken = "0123456789abcdef0123456789abcdef0123456789abcdef"
 
 func newBrowserRecorderBridgeTestServer(t *testing.T, fake *fakeBrowserRecorderBackend) *Server {
 	t.Helper()
@@ -119,6 +119,54 @@ func TestBrowserRecorderBridgeRejectsUnpairedAccess(t *testing.T) {
 	if unpairedResp.Code != http.StatusUnauthorized {
 		t.Fatalf("unpaired origin status = %d, want 401", unpairedResp.Code)
 	}
+}
+
+func TestBrowserRecorderBridgeRateLimitsInvalidPairing(t *testing.T) {
+	server := newBrowserRecorderBridgeTestServer(t, newFakeBrowserRecorder(nil))
+
+	for attempt := 1; attempt < bridgePairMaxFailures; attempt++ {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/bridge/pair", bytes.NewBufferString(`{"token":"wrong-token"}`))
+		req.Header.Set("Origin", bridgeTestOrigin)
+		req.Header.Set("Content-Type", "application/json")
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+		if resp.Code != http.StatusUnauthorized {
+			t.Fatalf("attempt %d status = %d, want 401 body=%s", attempt, resp.Code, resp.Body.String())
+		}
+	}
+
+	locked := httptest.NewRequest(http.MethodPost, "/api/v1/bridge/pair", bytes.NewBufferString(`{"token":"wrong-token"}`))
+	locked.Header.Set("Origin", bridgeTestOrigin)
+	locked.Header.Set("Content-Type", "application/json")
+	lockedResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(lockedResp, locked)
+	if lockedResp.Code != http.StatusTooManyRequests {
+		t.Fatalf("lockout status = %d, want 429 body=%s", lockedResp.Code, lockedResp.Body.String())
+	}
+	if lockedResp.Header().Get("Retry-After") == "" {
+		t.Fatalf("lockout response missing Retry-After header")
+	}
+
+	good := httptest.NewRequest(http.MethodPost, "/api/v1/bridge/pair", bytes.NewBufferString(`{"token":"`+bridgeTestToken+`"}`))
+	good.Header.Set("Origin", bridgeTestOrigin)
+	good.Header.Set("Content-Type", "application/json")
+	goodResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(goodResp, good)
+	if goodResp.Code != http.StatusTooManyRequests {
+		t.Fatalf("good token during lockout status = %d, want 429 body=%s", goodResp.Code, goodResp.Body.String())
+	}
+}
+
+func TestBrowserRecorderBridgeRejectsWeakConfiguredToken(t *testing.T) {
+	defer func() {
+		if recovered := recover(); recovered == nil {
+			t.Fatalf("expected weak configured bridge token to panic")
+		}
+	}()
+	_ = NewBrowserRecorderBridgeServer(BrowserRecorderBridgeConfig{
+		Addr:         "127.0.0.1:0",
+		PairingToken: "short",
+	})
 }
 
 func TestBrowserRecorderBridgeMountsOnlyBridgeSurface(t *testing.T) {

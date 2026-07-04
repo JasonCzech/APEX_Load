@@ -24,6 +24,7 @@ export function replayEventsToSteps(events: ScriptReplayActionEvent[] | undefine
       request_headers: snapshot?.request_headers ?? event.headers ?? undefined,
       response_body: snapshot?.response_body ?? undefined,
       response_headers: snapshot?.response_headers ?? undefined,
+      response_status: snapshot?.response_status ?? event.status_code ?? undefined,
     })
   }
   return steps
@@ -32,12 +33,13 @@ export function replayEventsToSteps(events: ScriptReplayActionEvent[] | undefine
 interface HarHeader { name?: string; value?: string }
 interface HarEntry {
   _resourceType?: string
-  request?: { url?: string; postData?: { text?: string }; headers?: HarHeader[] }
-  response?: { content?: { text?: string; mimeType?: string }; headers?: HarHeader[] }
+  request?: { method?: string; url?: string; postData?: { text?: string; encoding?: string }; headers?: HarHeader[] }
+  response?: { status?: number; content?: { text?: string; mimeType?: string; encoding?: string }; headers?: HarHeader[] }
 }
 
-const STATIC_RESOURCE_TYPES = new Set(['image', 'stylesheet', 'font', 'media', 'script', 'manifest', 'other'])
+const STATIC_RESOURCE_TYPES = new Set(['image', 'stylesheet', 'font', 'media', 'script', 'manifest'])
 const STATIC_MIME_PREFIXES = ['image/', 'font/', 'text/css', 'audio/', 'video/', 'application/javascript', 'text/javascript']
+const STATIC_URL_EXTENSIONS = ['.css', '.js', '.mjs', '.map', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.ico', '.woff', '.woff2', '.ttf', '.eot', '.otf', '.mp4', '.webm', '.mp3', '.wav']
 
 function headerArrayToMap(headers?: HarHeader[]): Record<string, string> | undefined {
   if (!Array.isArray(headers) || headers.length === 0) return undefined
@@ -49,10 +51,34 @@ function headerArrayToMap(headers?: HarHeader[]): Record<string, string> | undef
 }
 
 function isStaticAsset(entry: HarEntry): boolean {
+  const method = (entry.request?.method || '').trim().toUpperCase()
+  if (method && method !== 'GET' && method !== 'HEAD') return false
   const resourceType = (entry._resourceType || '').toLowerCase()
   if (resourceType && STATIC_RESOURCE_TYPES.has(resourceType)) return true
-  const mime = (entry.response?.content?.mimeType || '').toLowerCase()
-  return STATIC_MIME_PREFIXES.some(prefix => mime.startsWith(prefix))
+  const mime = (entry.response?.content?.mimeType || '').toLowerCase().split(';')[0].trim()
+  if (STATIC_MIME_PREFIXES.some(prefix => mime.startsWith(prefix))) return true
+  let path = entry.request?.url || ''
+  try {
+    const url = new URL(path, 'https://example.invalid')
+    path = url.pathname
+  } catch {
+    // Keep the raw path for suffix checks.
+  }
+  const lowerPath = path.toLowerCase()
+  return STATIC_URL_EXTENSIONS.some(ext => lowerPath.endsWith(ext))
+}
+
+function decodeHARText(text?: string, encoding?: string): string | undefined {
+  if (text === undefined) return undefined
+  if ((encoding || '').trim().toLowerCase() !== 'base64') return text
+  try {
+    const compact = text.replace(/\s+/g, '')
+    const binary = atob(compact)
+    const bytes = Uint8Array.from(binary, char => char.charCodeAt(0))
+    return new TextDecoder().decode(bytes)
+  } catch {
+    return text
+  }
 }
 
 /**
@@ -70,10 +96,11 @@ export function harToSteps(har: unknown): CorrelationStep[] {
     steps.push({
       id: id++,
       request_url: entry.request?.url,
-      request_body: entry.request?.postData?.text,
+      request_body: decodeHARText(entry.request?.postData?.text, entry.request?.postData?.encoding),
       request_headers: headerArrayToMap(entry.request?.headers),
-      response_body: entry.response?.content?.text,
+      response_body: decodeHARText(entry.response?.content?.text, entry.response?.content?.encoding),
       response_headers: headerArrayToMap(entry.response?.headers),
+      response_status: entry.response?.status,
     })
   }
   return steps

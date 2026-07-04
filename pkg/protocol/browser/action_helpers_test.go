@@ -1,6 +1,7 @@
 package browser
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -33,6 +34,34 @@ func TestActionParamInt(t *testing.T) {
 	}
 	if got := actionParamInt(nil, "anything", 7); got != 7 {
 		t.Fatalf("actionParamInt(nil) = %d, want 7", got)
+	}
+}
+
+func TestActionParamFloatValue(t *testing.T) {
+	params := map[string]any{
+		"int":     12,
+		"int64":   int64(34),
+		"float64": float64(56.75),
+		"float32": float32(78.5),
+		"string":  "90",
+	}
+
+	tests := map[string]struct {
+		want float64
+		ok   bool
+	}{
+		"int":     {want: 12, ok: true},
+		"int64":   {want: 34, ok: true},
+		"float64": {want: 56.75, ok: true},
+		"float32": {want: 78.5, ok: true},
+		"string":  {want: 0, ok: false},
+		"missing": {want: 0, ok: false},
+	}
+	for key, tc := range tests {
+		got, ok := actionParamFloatValue(params, key)
+		if got != tc.want || ok != tc.ok {
+			t.Fatalf("actionParamFloatValue(%q) = %v/%v, want %v/%v", key, got, ok, tc.want, tc.ok)
+		}
 	}
 }
 
@@ -99,6 +128,32 @@ func TestActionFilesAndKey(t *testing.T) {
 	}
 	if got := actionKey(&protocol.Action{Params: map[string]any{"key_name": "Tab"}}); got != "Tab" {
 		t.Fatalf("actionKey(params) = %q, want Tab", got)
+	}
+}
+
+func TestActionSelectValues(t *testing.T) {
+	values := actionSelectValues(&protocol.Action{
+		Value: "standard",
+		Params: map[string]any{
+			"values": []any{"express", "overnight", " "},
+		},
+	})
+	if strings.Join(values, ",") != "standard,express,overnight" {
+		t.Fatalf("actionSelectValues = %#v, want standard/express/overnight", values)
+	}
+	if got := actionSelectValues(&protocol.Action{Params: map[string]any{"value": " economy "}}); len(got) != 1 || got[0] != "economy" {
+		t.Fatalf("actionSelectValues(params.value) = %#v, want economy", got)
+	}
+}
+
+func TestActionScrollDelta(t *testing.T) {
+	dx, dy := actionScrollDelta(&protocol.Action{Params: map[string]any{"delta_x": 12, "delta_y": -240}})
+	if dx != 12 || dy != -240 {
+		t.Fatalf("actionScrollDelta(delta_*) = %d,%d, want 12,-240", dx, dy)
+	}
+	dx, dy = actionScrollDelta(&protocol.Action{Params: map[string]any{"x": 4, "y": 80}})
+	if dx != 4 || dy != 80 {
+		t.Fatalf("actionScrollDelta(x/y) = %d,%d, want 4,80", dx, dy)
 	}
 }
 

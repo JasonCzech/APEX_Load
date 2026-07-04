@@ -386,6 +386,121 @@
             "properties": {
               "type": {
                 "enum": [
+                  "browser_back"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Navigates the current page to the previous browser-history entry.",
+            "properties": {
+              "capture": {
+                "description": "Evidence capture: {screenshot, full_page, html}.",
+                "type": "object"
+              },
+              "params": {
+                "properties": {
+                  "wait_until": {
+                    "description": "Navigation readiness point; defaults to Playwright's load event.",
+                    "enum": [
+                      "load",
+                      "domcontentloaded",
+                      "networkidle",
+                      "commit"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "sync": {
+                "description": "Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}.",
+                "type": "object"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "browser_check"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "allOf": [
+              {
+                "anyOf": [
+                  {
+                    "required": [
+                      "target"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "selector"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "object_ref"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "description": "Sets a checkbox or radio element to checked or unchecked.",
+            "properties": {
+              "capture": {
+                "description": "Evidence capture: {screenshot, full_page, html}.",
+                "type": "object"
+              },
+              "object_ref": {
+                "description": "Object-repository binding: a logical object name (\"name\" or \"repoID:name\") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector.",
+                "type": "string"
+              },
+              "params": {
+                "properties": {
+                  "checked": {
+                    "description": "Desired checked state; overrides value when present.",
+                    "type": "boolean"
+                  }
+                },
+                "type": "object"
+              },
+              "selector": {
+                "description": "Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead.",
+                "type": "string"
+              },
+              "sync": {
+                "description": "Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}.",
+                "type": "object"
+              },
+              "target": {
+                "description": "Element locator; target, selector, or object_ref is required.",
+                "type": "string"
+              },
+              "value": {
+                "description": "Desired state. Use false/unchecked to uncheck; defaults to true.",
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
                   "browser_click"
                 ]
               }
@@ -425,6 +540,24 @@
               "object_ref": {
                 "description": "Object-repository binding: a logical object name (\"name\" or \"repoID:name\") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector.",
                 "type": "string"
+              },
+              "params": {
+                "properties": {
+                  "button": {
+                    "description": "Mouse button to use; defaults to left.",
+                    "enum": [
+                      "left",
+                      "right",
+                      "middle"
+                    ],
+                    "type": "string"
+                  },
+                  "modifiers": {
+                    "description": "Modifier keys held for the click, such as Control, Shift, Alt, Meta, or ControlOrMeta.",
+                    "type": "array"
+                  }
+                },
+                "type": "object"
               },
               "selector": {
                 "description": "Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead.",
@@ -485,6 +618,113 @@
               "object_ref": {
                 "description": "Object-repository binding: a logical object name (\"name\" or \"repoID:name\") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector.",
                 "type": "string"
+              },
+              "params": {
+                "properties": {
+                  "button": {
+                    "description": "Mouse button to use; defaults to left.",
+                    "enum": [
+                      "left",
+                      "right",
+                      "middle"
+                    ],
+                    "type": "string"
+                  },
+                  "modifiers": {
+                    "description": "Modifier keys held for the double-click, such as Control, Shift, Alt, Meta, or ControlOrMeta.",
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              },
+              "selector": {
+                "description": "Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead.",
+                "type": "string"
+              },
+              "sync": {
+                "description": "Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}.",
+                "type": "object"
+              },
+              "target": {
+                "description": "Element locator; target, selector, or object_ref is required.",
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "browser_download"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "allOf": [
+              {
+                "anyOf": [
+                  {
+                    "required": [
+                      "target"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "selector"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "object_ref"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "description": "Clicks an element and waits for the resulting browser download.",
+            "properties": {
+              "capture": {
+                "description": "Evidence capture: {screenshot, full_page, html}.",
+                "type": "object"
+              },
+              "object_ref": {
+                "description": "Object-repository binding: a logical object name (\"name\" or \"repoID:name\") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector.",
+                "type": "string"
+              },
+              "params": {
+                "properties": {
+                  "filename_contains": {
+                    "description": "Substring that must appear in the suggested filename.",
+                    "type": "string"
+                  },
+                  "filename_regex": {
+                    "description": "Regular expression matched against the suggested filename.",
+                    "type": "string"
+                  },
+                  "save_as": {
+                    "description": "Full local path to save the downloaded file.",
+                    "type": "string"
+                  },
+                  "save_dir": {
+                    "description": "Directory where the download should be saved using the suggested filename.",
+                    "type": "string"
+                  },
+                  "timeout_ms": {
+                    "description": "Maximum wait in milliseconds; defaults to the action timeout.",
+                    "type": "integer"
+                  },
+                  "url_contains": {
+                    "description": "Substring that must appear in the download URL.",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
               },
               "selector": {
                 "description": "Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead.",
@@ -670,6 +910,48 @@
               "value": {
                 "description": "Text to enter; empty string clears the field and template variables are expanded.",
                 "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "browser_forward"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Navigates the current page to the next browser-history entry.",
+            "properties": {
+              "capture": {
+                "description": "Evidence capture: {screenshot, full_page, html}.",
+                "type": "object"
+              },
+              "params": {
+                "properties": {
+                  "wait_until": {
+                    "description": "Navigation readiness point; defaults to Playwright's load event.",
+                    "enum": [
+                      "load",
+                      "domcontentloaded",
+                      "networkidle",
+                      "commit"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "sync": {
+                "description": "Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}.",
+                "type": "object"
               }
             }
           }
@@ -1084,6 +1366,48 @@
             "properties": {
               "type": {
                 "enum": [
+                  "browser_reload"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Reloads the current page.",
+            "properties": {
+              "capture": {
+                "description": "Evidence capture: {screenshot, full_page, html}.",
+                "type": "object"
+              },
+              "params": {
+                "properties": {
+                  "wait_until": {
+                    "description": "Navigation readiness point; defaults to Playwright's load event.",
+                    "enum": [
+                      "load",
+                      "domcontentloaded",
+                      "networkidle",
+                      "commit"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "sync": {
+                "description": "Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}.",
+                "type": "object"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
                   "browser_screenshot"
                 ]
               }
@@ -1105,6 +1429,66 @@
               },
               "target": {
                 "description": "Element locator alternative to selector; empty captures the full page.",
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "browser_scroll"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Scrolls the page or a scrollable element by a pixel delta.",
+            "properties": {
+              "capture": {
+                "description": "Evidence capture: {screenshot, full_page, html}.",
+                "type": "object"
+              },
+              "object_ref": {
+                "description": "Object-repository binding: a logical object name (\"name\" or \"repoID:name\") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector.",
+                "type": "string"
+              },
+              "params": {
+                "properties": {
+                  "delta_x": {
+                    "description": "Horizontal scroll delta in pixels. Positive values scroll right.",
+                    "type": "integer"
+                  },
+                  "delta_y": {
+                    "description": "Vertical scroll delta in pixels. Positive values scroll down.",
+                    "type": "integer"
+                  },
+                  "scroll_x": {
+                    "description": "Recorded absolute horizontal scroll position after capture; informational.",
+                    "type": "integer"
+                  },
+                  "scroll_y": {
+                    "description": "Recorded absolute vertical scroll position after capture; informational.",
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              },
+              "selector": {
+                "description": "Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead.",
+                "type": "string"
+              },
+              "sync": {
+                "description": "Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}.",
+                "type": "object"
+              },
+              "target": {
+                "description": "Element locator; target, selector, or object_ref is required.",
                 "type": "string"
               }
             }
@@ -1145,7 +1529,7 @@
                 ]
               }
             ],
-            "description": "Selects an option in a select element.",
+            "description": "Selects one or more options in a select element.",
             "properties": {
               "capture": {
                 "description": "Evidence capture: {screenshot, full_page, html}.",
@@ -1154,6 +1538,15 @@
               "object_ref": {
                 "description": "Object-repository binding: a logical object name (\"name\" or \"repoID:name\") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector.",
                 "type": "string"
+              },
+              "params": {
+                "properties": {
+                  "values": {
+                    "description": "Option values or labels to select for a multi-select.",
+                    "type": "array"
+                  }
+                },
+                "type": "object"
               },
               "selector": {
                 "description": "Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead.",
@@ -1168,13 +1561,10 @@
                 "type": "string"
               },
               "value": {
-                "description": "Option value or label to select.",
+                "description": "Single option value or label to select.",
                 "type": "string"
               }
-            },
-            "required": [
-              "value"
-            ]
+            }
           }
         },
         {
@@ -1301,6 +1691,57 @@
                 "type": "string"
               }
             }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "browser_set_geolocation"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Sets the replay browser geolocation for subsequent page actions.",
+            "properties": {
+              "capture": {
+                "description": "Evidence capture: {screenshot, full_page, html}.",
+                "type": "object"
+              },
+              "params": {
+                "properties": {
+                  "accuracy": {
+                    "description": "Non-negative accuracy radius in meters.",
+                    "type": "number"
+                  },
+                  "grant_permission": {
+                    "description": "Grant geolocation permission before setting the location; defaults to true.",
+                    "type": "boolean"
+                  },
+                  "latitude": {
+                    "description": "Latitude in decimal degrees, between -90 and 90.",
+                    "type": "number"
+                  },
+                  "longitude": {
+                    "description": "Longitude in decimal degrees, between -180 and 180.",
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "latitude",
+                  "longitude"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "params"
+            ]
           }
         },
         {
@@ -1609,6 +2050,83 @@
               "wait_for": {
                 "description": "Wait condition: {type, value, timeout_ms}. One of wait_for, selector, or target is required.",
                 "type": "object"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "browser_wait_response"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Waits for a browser network response matching URL, method, status, or resource filters.",
+            "properties": {
+              "capture": {
+                "description": "Evidence capture: {screenshot, full_page, html}.",
+                "type": "object"
+              },
+              "params": {
+                "properties": {
+                  "include_failed": {
+                    "description": "Also allow failed requests with status_code 0 to satisfy the wait.",
+                    "type": "boolean"
+                  },
+                  "method": {
+                    "description": "HTTP method filter.",
+                    "enum": [
+                      "GET",
+                      "POST",
+                      "PUT",
+                      "PATCH",
+                      "DELETE",
+                      "HEAD",
+                      "OPTIONS"
+                    ],
+                    "type": "string"
+                  },
+                  "resource_type": {
+                    "description": "Browser resource type filter, such as xhr, fetch, document, script, or image.",
+                    "type": "string"
+                  },
+                  "status": {
+                    "description": "Expected HTTP status code; alias of params.status_code.",
+                    "type": "integer"
+                  },
+                  "status_code": {
+                    "description": "Expected HTTP status code.",
+                    "type": "integer"
+                  },
+                  "timeout_ms": {
+                    "description": "Maximum wait in milliseconds; defaults to 10000.",
+                    "type": "integer"
+                  },
+                  "url": {
+                    "description": "Exact response URL to match.",
+                    "type": "string"
+                  },
+                  "url_contains": {
+                    "description": "URL substring to match; target is used when this is empty.",
+                    "type": "string"
+                  },
+                  "url_regex": {
+                    "description": "Regular expression matched against response URL.",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "target": {
+                "description": "URL substring to match.",
+                "type": "string"
               }
             }
           }
@@ -5423,25 +5941,33 @@
             "POST",
             "PUT",
             "begin",
+            "browser_back",
+            "browser_check",
             "browser_click",
             "browser_dblclick",
+            "browser_download",
             "browser_drag_and_drop",
             "browser_evaluate_js",
             "browser_fill",
+            "browser_forward",
             "browser_handle_dialog",
             "browser_hover",
             "browser_long_press",
             "browser_navigate",
             "browser_open_window",
             "browser_press_key",
+            "browser_reload",
             "browser_screenshot",
+            "browser_scroll",
             "browser_select",
             "browser_set_files",
+            "browser_set_geolocation",
             "browser_swipe",
             "browser_switch_frame",
             "browser_switch_window",
             "browser_tap",
             "browser_wait",
+            "browser_wait_response",
             "browser_ws_assert",
             "browser_ws_wait",
             "commit",
@@ -5636,6 +6162,27 @@
       },
       "type": "object"
     },
+    "BrowserClientCertificate": {
+      "additionalProperties": false,
+      "properties": {
+        "cert_path": {
+          "type": "string"
+        },
+        "key_path": {
+          "type": "string"
+        },
+        "origin": {
+          "type": "string"
+        },
+        "passphrase": {
+          "type": "string"
+        },
+        "pfx_path": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "BrowserConfig": {
       "additionalProperties": false,
       "properties": {
@@ -5650,6 +6197,12 @@
         },
         "check_newer_versions": {
           "type": "boolean"
+        },
+        "client_certificates": {
+          "items": {
+            "$ref": "#/$defs/BrowserClientCertificate"
+          },
+          "type": "array"
         },
         "client_metrics": {
           "type": "boolean"
@@ -5666,6 +6219,9 @@
         "experience_canary": {
           "type": "boolean"
         },
+        "geolocation": {
+          "$ref": "#/$defs/BrowserGeolocation"
+        },
         "har_capture": {
           "type": "string"
         },
@@ -5678,17 +6234,29 @@
         "headless": {
           "type": "boolean"
         },
+        "http_credentials": {
+          "$ref": "#/$defs/BrowserHTTPCredentials"
+        },
+        "locale": {
+          "type": "string"
+        },
         "new_user_per_iteration": {
           "type": "boolean"
         },
         "orientation": {
           "type": "string"
         },
+        "proxy": {
+          "$ref": "#/$defs/BrowserProxyConfig"
+        },
         "review_policy": {
           "$ref": "#/$defs/BrowserReviewPolicy"
         },
         "slow_mo_ms": {
           "type": "integer"
+        },
+        "timezone": {
+          "type": "string"
         },
         "touch_mode": {
           "type": "boolean"
@@ -5701,6 +6269,57 @@
         },
         "viewport": {
           "$ref": "#/$defs/BrowserViewport"
+        }
+      },
+      "type": "object"
+    },
+    "BrowserGeolocation": {
+      "additionalProperties": false,
+      "properties": {
+        "accuracy": {
+          "type": "number"
+        },
+        "latitude": {
+          "type": "number"
+        },
+        "longitude": {
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "BrowserHTTPCredentials": {
+      "additionalProperties": false,
+      "properties": {
+        "origin": {
+          "type": "string"
+        },
+        "password": {
+          "type": "string"
+        },
+        "send": {
+          "type": "string"
+        },
+        "username": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "BrowserProxyConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "bypass": {
+          "type": "string"
+        },
+        "password": {
+          "type": "string"
+        },
+        "server": {
+          "type": "string"
+        },
+        "username": {
+          "type": "string"
         }
       },
       "type": "object"
@@ -6157,6 +6776,9 @@
         },
         "auth": {
           "$ref": "#/$defs/AuthConfig"
+        },
+        "cache_enabled": {
+          "type": "boolean"
         },
         "clear_cookies_per_iteration": {
           "type": "boolean"

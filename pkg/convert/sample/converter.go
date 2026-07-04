@@ -46,6 +46,7 @@ type Correlation struct {
 	Source      string `json:"source"`
 	Expression  string `json:"expression"`
 	ExtractType string `json:"extract_type,omitempty"`
+	Convert     string `json:"convert,omitempty"`
 	Value       string `json:"-"`
 	SampleValue string `json:"sample_value"`
 	FoundInStep int    `json:"found_in_step"`
@@ -293,6 +294,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 							Source:     corr.Source,
 							Type:       extractorTypeForCorrelation(corr),
 							Expression: corr.Expression,
+							Convert:    corr.Convert,
 							OnMiss:     "fail",
 						})
 						if location := responseSourceLocation(sourceLocations, idx); location.SourceFile != "" {

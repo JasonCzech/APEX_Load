@@ -61,6 +61,11 @@ func TestValue(t *testing.T) {
 			want:  `{"access_token":"` + Redacted + `","user":"jason"}`,
 		},
 		{
+			name:  "json array and object secret fields",
+			input: `{"clientSecret":["alpha","beta"],"nested":{"apiKey":{"raw":"key-123"}},"csrf":"csrf-keep","largeId":9007199254740993}`,
+			want:  `{"clientSecret":"` + Redacted + `","csrf":"csrf-keep","largeId":9007199254740993,"nested":{"apiKey":"` + Redacted + `"}}`,
+		},
+		{
 			name:  "form password field",
 			input: "username=jason&password=hunter2&kind=login",
 			want:  "username=jason&password=" + Redacted + "&kind=login",

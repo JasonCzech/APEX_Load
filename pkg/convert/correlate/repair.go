@@ -25,6 +25,7 @@ type SuggestedExtractor struct {
 	Source      string `json:"source"`
 	ExtractType string `json:"extract_type"`
 	Expression  string `json:"expression"`
+	Convert     string `json:"convert,omitempty"`
 }
 
 // RepairSuggestion is a single ranked, explainable replay-correlation finding
@@ -243,6 +244,7 @@ func extractorFor(c Correlation) *SuggestedExtractor {
 		Source:      c.Source,
 		ExtractType: c.ExtractType,
 		Expression:  c.Expression,
+		Convert:     c.Convert,
 	}
 }
 

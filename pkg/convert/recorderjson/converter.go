@@ -28,6 +28,7 @@ type ConvertStats struct {
 	TotalSteps       int    `json:"total_steps"`
 	ConvertedActions int    `json:"converted_actions"`
 	SkippedSteps     int    `json:"skipped_steps"`
+	DegradedSteps    int    `json:"degraded_steps,omitempty"`
 }
 
 type ConvertResult struct {
@@ -202,26 +203,28 @@ func convertChrome(recording chromeRecording, opts ConvertOptions) (*ConvertResu
 				action.Name = "Click " + chromeStepLabel(step)
 			}
 			attachChromeActionMetadata(&action, step)
+			if step.Type == "click" || step.Type == "doubleClick" {
+				applyChromeClickOptions(&action, step)
+			}
 			applyAssertedNavigation(&action, step)
-			appendImportedAction(script, result, StepMapping{
-				SourceIndex: sourceIndex, SourceLocation: location, SourceStepType: step.Type,
-				RecorderStepSeq: sourceIndex, Disposition: "mapped",
-			}, action)
+			appendImportedAction(script, result, chromeActionStepMapping(sourceIndex, location, step.Type, action), action)
 		case "change":
 			action, ok := chromeElementAction(step, location, result)
 			if !ok {
 				appendUnsupportedStepMapping(result, sourceIndex, location, step.Type, "No replayable selector was available for the change step.")
 				continue
 			}
-			action.Type = "browser_fill"
-			action.Name = "Fill " + chromeStepLabel(step)
+			if chromeChangeLooksLikeSelect(step) {
+				action.Type = "browser_select"
+				action.Name = "Select " + chromeStepLabel(step)
+			} else {
+				action.Type = "browser_fill"
+				action.Name = "Fill " + chromeStepLabel(step)
+			}
 			action.Value = step.Value
 			attachChromeActionMetadata(&action, step)
 			applyAssertedNavigation(&action, step)
-			appendImportedAction(script, result, StepMapping{
-				SourceIndex: sourceIndex, SourceLocation: location, SourceStepType: step.Type,
-				RecorderStepSeq: sourceIndex, Disposition: "mapped",
-			}, action)
+			appendImportedAction(script, result, chromeActionStepMapping(sourceIndex, location, step.Type, action), action)
 		case "keyDown":
 			if key := strings.TrimSpace(step.Key); key != "" {
 				action := dsl.Action{
@@ -230,10 +233,7 @@ func convertChrome(recording chromeRecording, opts ConvertOptions) (*ConvertResu
 					Value: key,
 				}
 				attachChromeActionMetadata(&action, step)
-				appendImportedAction(script, result, StepMapping{
-					SourceIndex: sourceIndex, SourceLocation: location, SourceStepType: step.Type,
-					RecorderStepSeq: sourceIndex, Disposition: "mapped",
-				}, action)
+				appendImportedAction(script, result, chromeActionStepMapping(sourceIndex, location, step.Type, action), action)
 			} else {
 				appendUnsupportedStepMapping(result, sourceIndex, location, step.Type, "Chrome keyDown step had no key value.")
 			}
@@ -248,10 +248,7 @@ func convertChrome(recording chromeRecording, opts ConvertOptions) (*ConvertResu
 			}
 			action.Type = "browser_wait"
 			action.Name = "Wait for " + chromeStepLabel(step)
-			waitType := "visible"
-			if step.Visible != nil && !*step.Visible {
-				waitType = "hidden"
-			}
+			waitType := chromeWaitForElementType(step)
 			action.WaitFor = &dsl.WaitCondition{Type: waitType, Value: action.Selector, TimeoutMs: step.Timeout}
 			if action.Params == nil {
 				action.Params = map[string]any{}
@@ -269,10 +266,7 @@ func convertChrome(recording chromeRecording, opts ConvertOptions) (*ConvertResu
 				action.Params["attributes"] = step.Attributes
 			}
 			attachChromeActionMetadata(&action, step)
-			appendImportedAction(script, result, StepMapping{
-				SourceIndex: sourceIndex, SourceLocation: location, SourceStepType: step.Type,
-				RecorderStepSeq: sourceIndex, Disposition: "mapped",
-			}, action)
+			appendImportedAction(script, result, chromeActionStepMapping(sourceIndex, location, step.Type, action), action)
 		case "waitForExpression":
 			expr := strings.TrimSpace(step.Expression)
 			if expr == "" {
@@ -386,10 +380,16 @@ func appendImportedAction(script *dsl.Script, result *ConvertResult, mapping Ste
 	if mapping.Disposition == "" {
 		mapping.Disposition = "mapped"
 	}
+	if mapping.Disposition == "degraded" {
+		result.Stats.DegradedSteps++
+	}
 	result.StepMapping = append(result.StepMapping, mapping)
 }
 
 func appendConfigStepMapping(result *ConvertResult, sourceIndex int, location, sourceType, disposition, reason string) {
+	if disposition == "degraded" {
+		result.Stats.DegradedSteps++
+	}
 	result.StepMapping = append(result.StepMapping, StepMapping{
 		SourceIndex:     sourceIndex,
 		SourceLocation:  location,
@@ -402,6 +402,14 @@ func appendConfigStepMapping(result *ConvertResult, sourceIndex int, location, s
 
 func appendUnsupportedStepMapping(result *ConvertResult, sourceIndex int, location, sourceType, reason string) {
 	appendConfigStepMapping(result, sourceIndex, location, sourceType, "unsupported", reason)
+}
+
+func chromeActionStepMapping(sourceIndex int, location, sourceType string, action dsl.Action) StepMapping {
+	disposition, reason := actionDisposition(action.Metadata, "mapped", "")
+	return StepMapping{
+		SourceIndex: sourceIndex, SourceLocation: location, SourceStepType: sourceType,
+		RecorderStepSeq: sourceIndex, Disposition: disposition, Reason: reason,
+	}
 }
 
 func chromeScrollScript(step chromeStep, selectorValue string) (string, string) {
@@ -487,9 +495,65 @@ func attachChromeActionMetadata(action *dsl.Action, step chromeStep) {
 	for key, value := range chromeStepMetadata(step) {
 		action.Metadata[key] = value
 	}
+	if len(step.Frame) > 0 {
+		markActionDisposition(action, "degraded", "Chrome Recorder frame index metadata cannot be replayed exactly without a frame selector; review the imported frame target.")
+	}
+	if target := strings.TrimSpace(step.Target); target != "" && !strings.EqualFold(target, "main") && !strings.EqualFold(target, "page") {
+		markActionDisposition(action, "degraded", "Chrome Recorder target context metadata cannot be replayed exactly; review window or popup targeting.")
+	}
 	if step.Timeout > 0 && action.TimeoutMs == 0 {
 		action.TimeoutMs = step.Timeout
 	}
+}
+
+func markActionDisposition(action *dsl.Action, disposition, reason string) {
+	if action.Metadata == nil {
+		action.Metadata = map[string]any{}
+	}
+	if _, exists := action.Metadata["import_disposition"]; !exists {
+		action.Metadata["import_disposition"] = disposition
+	}
+	if _, exists := action.Metadata["import_disposition_reason"]; !exists {
+		action.Metadata["import_disposition_reason"] = reason
+	}
+}
+
+func applyChromeClickOptions(action *dsl.Action, step chromeStep) {
+	if button := normalizeMouseButton(step.Button); button != "" {
+		if action.Params == nil {
+			action.Params = map[string]any{}
+		}
+		action.Params["button"] = button
+	}
+}
+
+func chromeChangeLooksLikeSelect(step chromeStep) bool {
+	for key, value := range step.Attributes {
+		if strings.EqualFold(key, "role") && strings.EqualFold(value, "combobox") {
+			return true
+		}
+	}
+	for key, value := range step.Properties {
+		if strings.EqualFold(key, "tagName") && strings.EqualFold(value, "select") {
+			return true
+		}
+		if strings.EqualFold(key, "nodeName") && strings.EqualFold(value, "select") {
+			return true
+		}
+	}
+	for _, chain := range step.Selectors {
+		for _, part := range chain {
+			lower := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(part, "pierce/")))
+			if strings.HasPrefix(lower, "select") || strings.Contains(lower, " select") ||
+				strings.Contains(lower, "[role=\"combobox\"]") || strings.Contains(lower, "[role='combobox']") {
+				return true
+			}
+			if strings.HasPrefix(lower, "aria/") && strings.Contains(lower, `[role="combobox"]`) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func chromeStepMetadata(step chromeStep) map[string]any {
@@ -567,6 +631,32 @@ func chromeWaitForExpressionScript(expression string, timeoutMs int) string {
 }))()`, timeoutMs, expression)
 }
 
+func chromeWaitForElementType(step chromeStep) string {
+	if step.Visible != nil {
+		if *step.Visible {
+			return "visible"
+		}
+		return "hidden"
+	}
+	if chromeWaitForElementExpectsAbsence(step.Operator, step.Count) {
+		return "hidden"
+	}
+	return "visible"
+}
+
+func chromeWaitForElementExpectsAbsence(operator string, count int) bool {
+	switch strings.TrimSpace(operator) {
+	case "=", "==", "===":
+		return count == 0
+	case "<":
+		return count <= 1
+	case "<=":
+		return count <= 0
+	default:
+		return false
+	}
+}
+
 // applyAssertedNavigation maps the recorder's asserted navigation events onto
 // the replay vocabulary: the step waits for the page load, and the recorded
 // destination URL/title become verifiable assertions so a wrong landing page
@@ -623,9 +713,13 @@ func candidatesFromChromeSelectors(selectorChains [][]string) []selector.Candida
 			continue
 		}
 		pierced := len(chain) > 1
+		head := chain[0]
+		if pierced && (strings.HasPrefix(head, "aria/") || strings.HasPrefix(head, "text/")) {
+			head = chain[len(chain)-1]
+		}
 		switch {
-		case strings.HasPrefix(chain[0], "aria/"):
-			value := strings.TrimPrefix(chain[0], "aria/")
+		case strings.HasPrefix(head, "aria/"):
+			value := strings.TrimPrefix(head, "aria/")
 			if match := ariaWithRolePattern.FindStringSubmatch(value); match != nil {
 				candidates = append(candidates, selector.Candidate{
 					Kind:       "role",
@@ -641,19 +735,19 @@ func candidatesFromChromeSelectors(selectorChains [][]string) []selector.Candida
 					Reason:     "Chrome Recorder ARIA accessible-name selector; matched by visible text on replay.",
 				})
 			}
-		case strings.HasPrefix(chain[0], "xpath/"):
+		case strings.HasPrefix(head, "xpath/"):
 			if pierced {
 				continue // XPath cannot pierce shadow roots
 			}
-			value := strings.TrimPrefix(chain[0], "xpath/")
+			value := strings.TrimPrefix(head, "xpath/")
 			candidates = append(candidates, selector.Candidate{
 				Kind:       "xpath",
 				Value:      value,
 				Confidence: selector.ConfidenceXPath,
 				Reason:     "Chrome Recorder XPath selector; validate stability on replay.",
 			})
-		case strings.HasPrefix(chain[0], "text/"):
-			value := strings.TrimPrefix(chain[0], "text/")
+		case strings.HasPrefix(head, "text/"):
+			value := strings.TrimPrefix(head, "text/")
 			candidates = append(candidates, selector.Candidate{
 				Kind:       "text",
 				Value:      selector.TextSelector(value),

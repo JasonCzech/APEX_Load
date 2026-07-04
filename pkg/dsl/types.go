@@ -286,6 +286,8 @@ type BrowserConfig struct {
 	Headless         *bool  `json:"headless,omitempty"`
 	SlowMoMs         int    `json:"slow_mo_ms,omitempty"`
 	UserAgent        string `json:"user_agent,omitempty"`
+	Locale           string `json:"locale,omitempty"`
+	Timezone         string `json:"timezone,omitempty"`
 	DeviceProfile    string `json:"device_profile,omitempty"`
 	TouchMode        *bool  `json:"touch_mode,omitempty"`
 	Orientation      string `json:"orientation,omitempty"`
@@ -299,17 +301,49 @@ type BrowserConfig struct {
 	// HARCapture controls session network capture for diagnostics:
 	// "off" (default), "on_error", "on_sla_breach", "manual", or "always".
 	// Captured HARs pass through scrub-on-write before persistence.
-	HARCapture         string              `json:"har_capture,omitempty"`
-	HARCapturePolicy   string              `json:"har_capture_policy,omitempty"`
-	HARSLAThresholdMs  int                 `json:"har_sla_threshold_ms,omitempty"`
-	CaptureScreenshots string              `json:"capture_screenshots,omitempty"`
-	CacheEnabled       *bool               `json:"cache_enabled,omitempty"`
-	CacheContentURLs   *bool               `json:"cache_content_urls,omitempty"`
-	CheckNewerVersions *bool               `json:"check_newer_versions,omitempty"`
-	NewUserPerIter     *bool               `json:"new_user_per_iteration,omitempty"`
-	DownloadResources  string              `json:"download_resources,omitempty"`
-	Viewport           BrowserViewport     `json:"viewport,omitempty"`
-	ReviewPolicy       BrowserReviewPolicy `json:"review_policy,omitempty"`
+	HARCapture         string                     `json:"har_capture,omitempty"`
+	HARCapturePolicy   string                     `json:"har_capture_policy,omitempty"`
+	HARSLAThresholdMs  int                        `json:"har_sla_threshold_ms,omitempty"`
+	CaptureScreenshots string                     `json:"capture_screenshots,omitempty"`
+	CacheEnabled       *bool                      `json:"cache_enabled,omitempty"`
+	CacheContentURLs   *bool                      `json:"cache_content_urls,omitempty"`
+	CheckNewerVersions *bool                      `json:"check_newer_versions,omitempty"`
+	NewUserPerIter     *bool                      `json:"new_user_per_iteration,omitempty"`
+	DownloadResources  string                     `json:"download_resources,omitempty"`
+	Viewport           BrowserViewport            `json:"viewport,omitempty"`
+	Geolocation        BrowserGeolocation         `json:"geolocation,omitempty"`
+	HTTPCredentials    BrowserHTTPCredentials     `json:"http_credentials,omitempty"`
+	Proxy              BrowserProxyConfig         `json:"proxy,omitempty"`
+	ClientCertificates []BrowserClientCertificate `json:"client_certificates,omitempty"`
+	ReviewPolicy       BrowserReviewPolicy        `json:"review_policy,omitempty"`
+}
+
+type BrowserGeolocation struct {
+	Latitude  *float64 `json:"latitude,omitempty"`
+	Longitude *float64 `json:"longitude,omitempty"`
+	Accuracy  *float64 `json:"accuracy,omitempty"`
+}
+
+type BrowserHTTPCredentials struct {
+	Username string `json:"username,omitempty"`
+	Password string `json:"password,omitempty"`
+	Origin   string `json:"origin,omitempty"`
+	Send     string `json:"send,omitempty"`
+}
+
+type BrowserProxyConfig struct {
+	Server   string `json:"server,omitempty"`
+	Bypass   string `json:"bypass,omitempty"`
+	Username string `json:"username,omitempty"`
+	Password string `json:"password,omitempty"`
+}
+
+type BrowserClientCertificate struct {
+	Origin     string `json:"origin,omitempty"`
+	CertPath   string `json:"cert_path,omitempty"`
+	KeyPath    string `json:"key_path,omitempty"`
+	PfxPath    string `json:"pfx_path,omitempty"`
+	Passphrase string `json:"passphrase,omitempty"`
 }
 
 type BrowserReviewPolicy struct {
@@ -452,6 +486,7 @@ type HTTPConfig struct {
 	// Cookies
 	CookiesEnabled      *bool `json:"cookies_enabled,omitempty"` // default: true
 	ClearCookiesPerIter *bool `json:"clear_cookies_per_iteration,omitempty"`
+	CacheEnabled        *bool `json:"cache_enabled,omitempty"` // enable per-VUser HTTP response cache emulation
 }
 
 // TLSConfig controls TLS/SSL behavior for the HTTP client.
@@ -474,7 +509,7 @@ type ProxyConfig struct {
 
 // AuthConfig defines default authentication applied to all requests.
 type AuthConfig struct {
-	Type     string `json:"type,omitempty"`     // "basic" or "bearer"; imported "ntlm"/"digest"/"kerberos"/"negotiate" are review-only and fail closed at HTTP runtime
+	Type     string `json:"type,omitempty"`     // "basic", "bearer", or "digest"; imported "ntlm"/"kerberos"/"negotiate" are review-only and fail closed at HTTP runtime
 	Username string `json:"username,omitempty"` // for basic/ntlm/digest
 	Password string `json:"password,omitempty"`
 	Token    string `json:"token,omitempty"`  // for bearer
@@ -695,7 +730,8 @@ type Extractor struct {
 	SaveOffset int `json:"save_offset,omitempty"`
 	SaveLength int `json:"save_length,omitempty"`
 	// Convert post-processes each matched value: "url_encode" percent-encodes
-	// it for safe reuse in URLs/bodies; "html_decode" decodes HTML entities.
+	// it for safe reuse in URLs/bodies; "url_decode" decodes form/query
+	// escaping; "html_decode" decodes HTML entities.
 	Convert string `json:"convert,omitempty"`
 }
 

@@ -60,7 +60,7 @@ func TestRedactCredentialBodyJSON(t *testing.T) {
 }
 
 func TestRedactCredentialBodyForm(t *testing.T) {
-	out := RedactCredentialBody("user=alice&password=hunter2&__RequestVerificationToken=csrf-keep")
+	out := RedactCredentialBody("user=alice&clientSecret=hunter2&__RequestVerificationToken=csrf-keep")
 	if strings.Contains(out, "hunter2") {
 		t.Errorf("form password leaked: %q", out)
 	}
@@ -69,10 +69,44 @@ func TestRedactCredentialBodyForm(t *testing.T) {
 	}
 }
 
+func TestRedactCredentialBodyXML(t *testing.T) {
+	body := `<soap:Envelope><soap:Body><login apiKey="static-key"><password>hunter2</password><csrf>csrf-keep</csrf><sessionId>sid-keep</sessionId></login></soap:Body></soap:Envelope>`
+	out := RedactCredentialBody(body)
+
+	for _, secret := range []string{"hunter2", "static-key"} {
+		if strings.Contains(out, secret) {
+			t.Errorf("XML credential %q leaked: %q", secret, out)
+		}
+	}
+	for _, dynamic := range []string{"csrf-keep", "sid-keep"} {
+		if !strings.Contains(out, dynamic) {
+			t.Errorf("correlation candidate %q must be preserved: %q", dynamic, out)
+		}
+	}
+}
+
+func TestRedactCredentialBodyMultipart(t *testing.T) {
+	body := "--b\r\n" +
+		"Content-Disposition: form-data; name=\"username\"\r\n\r\nalice\r\n" +
+		"--b\r\n" +
+		"Content-Disposition: form-data; name=\"password\"\r\n\r\nhunter2\r\n" +
+		"--b\r\n" +
+		"Content-Disposition: form-data; name=\"csrf\"\r\n\r\ncsrf-keep\r\n" +
+		"--b--"
+
+	out := RedactCredentialBody(body)
+	if strings.Contains(out, "hunter2") {
+		t.Errorf("multipart credential leaked: %q", out)
+	}
+	if !strings.Contains(out, "alice") || !strings.Contains(out, "csrf-keep") {
+		t.Errorf("non-secret multipart fields must be preserved: %q", out)
+	}
+}
+
 func TestRedactCredentialBodyLeavesUnknownBodiesAlone(t *testing.T) {
-	xml := "<root><password>hunter2</password></root>"
+	xml := "<root><note>no credentials here</note></root>"
 	if RedactCredentialBody(xml) != xml {
-		t.Errorf("unrecognised (XML) body should be returned unchanged")
+		t.Errorf("XML without credential fields should be returned unchanged")
 	}
 	if RedactCredentialBody("") != "" {
 		t.Errorf("empty body should stay empty")

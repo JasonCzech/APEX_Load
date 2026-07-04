@@ -270,6 +270,14 @@ func TestValidateScriptIssues_BrowserRuntimeActionParity(t *testing.T) {
 			{Name: "hover", Type: "browser_hover", Selector: "#menu"},
 			{Name: "double click", Type: "browser_dblclick", Selector: "#quantity"},
 			{Name: "drag", Type: "browser_drag_and_drop", Selector: "#source", Params: map[string]any{"target": "#target"}},
+			{Name: "multi select", Type: "browser_select", Selector: "#shipping", Params: map[string]any{"values": []any{"standard", "express"}}},
+			{Name: "scroll", Type: "browser_scroll", Params: map[string]any{"delta_y": 320}},
+			{Name: "back", Type: "browser_back", Params: map[string]any{"wait_until": "domcontentloaded"}},
+			{Name: "forward", Type: "browser_forward"},
+			{Name: "reload", Type: "browser_reload"},
+			{Name: "wait response", Type: "browser_wait_response", Target: "/api/orders", Params: map[string]any{"method": "GET", "status": 200, "timeout_ms": 1000}},
+			{Name: "download", Type: "browser_download", Selector: "#export", Params: map[string]any{"filename_contains": "report"}},
+			{Name: "set geolocation", Type: "browser_set_geolocation", Params: map[string]any{"latitude": 47.6062, "longitude": -122.3321, "accuracy": 10}},
 			{Name: "upload", Type: "browser_set_files", Selector: "#upload", Value: "/tmp/upload.txt"},
 			{Name: "press enter", Type: "browser_press_key", Selector: "#search", Value: "Enter"},
 			{Name: "evaluate", Type: "browser_evaluate_js", Target: "window.app.ready", Metadata: map[string]any{"review_required": true}},
@@ -296,6 +304,67 @@ func TestValidateScriptIssues_BrowserRuntimeActionParity(t *testing.T) {
 	assertIssue(t, issues, `actions[0] "bad control": control max_iterations must be zero or greater`)
 	assertIssue(t, issues, `actions[0] "bad control": condition op "roughly" is not supported`)
 	assertIssue(t, issues, `actions[0].control.steps[0] "bad hover": missing target or selector`)
+}
+
+func TestValidateScriptIssues_BrowserNavigationWaitUntil(t *testing.T) {
+	script := &Script{
+		Name:     "browser-navigation",
+		Protocol: "browser",
+		Actions: []Action{{
+			Name:   "bad wait",
+			Type:   "browser_back",
+			Params: map[string]any{"wait_until": "interactive"},
+		}},
+	}
+
+	issues := ValidateScriptIssues(script)
+	assertIssue(t, issues, `actions[0] "bad wait": browser_back params.wait_until must be load, domcontentloaded, networkidle, or commit`)
+}
+
+func TestValidateScriptIssues_BrowserDownload(t *testing.T) {
+	script := &Script{
+		Name:     "browser-download",
+		Protocol: "browser",
+		Actions: []Action{{
+			Name: "bad download",
+			Type: "browser_download",
+			Params: map[string]any{
+				"filename_regex": "[",
+				"timeout_ms":     -5,
+				"save_as":        "/tmp/report.csv",
+				"save_dir":       "/tmp/downloads",
+			},
+		}},
+	}
+
+	issues := ValidateScriptIssues(script)
+	assertIssue(t, issues, `actions[0] "bad download": missing target or selector`)
+	assertIssueContains(t, issues, `actions[0] "bad download": browser_download params.filename_regex is invalid`)
+	assertIssue(t, issues, `actions[0] "bad download": browser_download params.timeout_ms must be >= 0`)
+	assertIssue(t, issues, `actions[0] "bad download": browser_download params.save_as and params.save_dir are mutually exclusive`)
+}
+
+func TestValidateScriptIssues_BrowserWaitResponse(t *testing.T) {
+	script := &Script{
+		Name:     "browser-response-wait",
+		Protocol: "browser",
+		Actions: []Action{{
+			Name: "bad response wait",
+			Type: "browser_wait_response",
+			Params: map[string]any{
+				"url_regex":  "[",
+				"method":     "BREW",
+				"status":     -1,
+				"timeout_ms": -5,
+			},
+		}},
+	}
+
+	issues := ValidateScriptIssues(script)
+	assertIssueContains(t, issues, `actions[0] "bad response wait": browser_wait_response params.url_regex is invalid`)
+	assertIssue(t, issues, `actions[0] "bad response wait": browser_wait_response params.status must be >= 0`)
+	assertIssue(t, issues, `actions[0] "bad response wait": browser_wait_response params.method must be a valid HTTP method`)
+	assertIssue(t, issues, `actions[0] "bad response wait": browser_wait_response params.timeout_ms must be >= 0`)
 }
 
 func TestValidateScriptIssues_ControlConditionCELExpr(t *testing.T) {
@@ -710,6 +779,9 @@ func TestValidateScriptIssues_WebRuntimeCustomNetworkSimulationAllowsLossOnly(t 
 }
 
 func TestValidateScriptIssues_BrowserValidation(t *testing.T) {
+	latitude := 120.0
+	longitude := -200.0
+	accuracy := -1.0
 	script := &Script{
 		Name:     "browser-invalid",
 		Protocol: "browser",
@@ -718,15 +790,38 @@ func TestValidateScriptIssues_BrowserValidation(t *testing.T) {
 				Engine:        "gecko",
 				DeviceProfile: "unknown_phone",
 				Orientation:   "diagonal",
+				Timezone:      "Mars/Olympus",
 				Viewport: BrowserViewport{
 					Width:  -1,
 					Height: -2,
 				},
+				Geolocation: BrowserGeolocation{
+					Latitude:  &latitude,
+					Longitude: &longitude,
+					Accuracy:  &accuracy,
+				},
+				HTTPCredentials: BrowserHTTPCredentials{
+					Origin: "ftp://secure.example",
+					Send:   "eager",
+				},
+				Proxy: BrowserProxyConfig{
+					Server:   "ftp://proxy.example:3128",
+					Password: "proxy-pass",
+				},
+				ClientCertificates: []BrowserClientCertificate{{
+					Origin:   "http://mtls.example",
+					CertPath: "/certs/client.pem",
+				}, {
+					Origin:   "https://mtls.example",
+					CertPath: "/certs/client.pem",
+					KeyPath:  "/certs/client-key.pem",
+					PfxPath:  "/certs/client.p12",
+				}},
 			},
 		},
 		Actions: []Action{
 			{
-				Name:   "bad type",
+				Name:   "missing scroll delta",
 				Type:   "browser_scroll",
 				Target: "#app",
 			},
@@ -766,6 +861,15 @@ func TestValidateScriptIssues_BrowserValidation(t *testing.T) {
 				Name: "missing key",
 				Type: "browser_press_key",
 			},
+			{
+				Name: "bad geolocation",
+				Type: "browser_set_geolocation",
+				Params: map[string]any{
+					"latitude":  95,
+					"longitude": -185,
+					"accuracy":  -1,
+				},
+			},
 		},
 	}
 
@@ -776,13 +880,29 @@ func TestValidateScriptIssues_BrowserValidation(t *testing.T) {
 	assertIssue(t, issues, "config.browser.orientation must be portrait or landscape")
 	assertIssue(t, issues, "config.browser.viewport.width must be zero or greater")
 	assertIssue(t, issues, "config.browser.viewport.height must be zero or greater")
-	assertIssue(t, issues, `actions[0] "bad type": unsupported browser action type "browser_scroll"`)
+	assertIssue(t, issues, `config.browser.timezone "Mars/Olympus" is not a valid IANA timezone`)
+	assertIssue(t, issues, "config.browser.geolocation.latitude must be between -90 and 90")
+	assertIssue(t, issues, "config.browser.geolocation.longitude must be between -180 and 180")
+	assertIssue(t, issues, "config.browser.geolocation.accuracy must be zero or greater")
+	assertIssue(t, issues, "config.browser.http_credentials.username is required when http_credentials is set")
+	assertIssue(t, issues, "config.browser.http_credentials.password is required when http_credentials is set")
+	assertIssue(t, issues, "config.browser.http_credentials.origin must be an HTTP(S) origin")
+	assertIssue(t, issues, "config.browser.http_credentials.send must be unauthorized or always")
+	assertIssue(t, issues, "config.browser.proxy.server must be an HTTP, HTTPS, SOCKS, or host:port proxy")
+	assertIssue(t, issues, "config.browser.proxy.password requires username")
+	assertIssue(t, issues, "config.browser.client_certificates[0].origin must be an HTTPS origin")
+	assertIssue(t, issues, "config.browser.client_certificates[0] requires cert_path and key_path, or pfx_path")
+	assertIssue(t, issues, "config.browser.client_certificates[1] must use either cert_path/key_path or pfx_path, not both")
+	assertIssue(t, issues, `actions[0] "missing scroll delta": browser_scroll requires params.delta_x or params.delta_y`)
 	assertIssue(t, issues, `actions[2] "missing select value": browser_select requires value`)
 	assertIssue(t, issues, `actions[3] "bad swipe": browser_swipe direction must be left, right, up, or down`)
 	assertIssue(t, issues, `actions[3] "bad swipe": browser_swipe distance must be greater than zero`)
 	assertIssue(t, issues, `actions[4] "bad long press": browser_long_press duration_ms must be greater than zero`)
 	assertIssue(t, issues, `actions[5] "missing upload file": browser_set_files requires value, params.file, params.path, or params.files`)
 	assertIssue(t, issues, `actions[6] "missing key": browser_press_key requires value, params.key, or params.key_name`)
+	assertIssue(t, issues, `actions[7] "bad geolocation": browser_set_geolocation params.latitude must be between -90 and 90`)
+	assertIssue(t, issues, `actions[7] "bad geolocation": browser_set_geolocation params.longitude must be between -180 and 180`)
+	assertIssue(t, issues, `actions[7] "bad geolocation": browser_set_geolocation params.accuracy must be zero or greater`)
 }
 
 func TestValidateScriptIssues_WebSocketValidation(t *testing.T) {
@@ -968,6 +1088,23 @@ func TestValidateScriptIssues_BrowserValidationAllowsSupportedFields(t *testing.
 				TouchMode:     &touchMode,
 				Orientation:   "portrait",
 				ClientMetrics: &clientMetrics,
+				HTTPCredentials: BrowserHTTPCredentials{
+					Username: "browser-user",
+					Password: "{{secret.browser_password}}",
+					Origin:   "https://secure.example",
+					Send:     "unauthorized",
+				},
+				Proxy: BrowserProxyConfig{
+					Server:   "proxy.example:3128",
+					Bypass:   ".internal,localhost",
+					Username: "proxy-user",
+					Password: "{{secret.proxy_password}}",
+				},
+				ClientCertificates: []BrowserClientCertificate{{
+					Origin:     "https://mtls.example",
+					PfxPath:    "/certs/client.p12",
+					Passphrase: "{{secret.cert_passphrase}}",
+				}},
 				Viewport: BrowserViewport{
 					Width:  375,
 					Height: 667,
@@ -1260,6 +1397,7 @@ func TestValidateExtractorIssuesAcceptsNewEnums(t *testing.T) {
 			Name: "a", Type: "GET", Method: "GET", Target: "/a",
 			Extractors: []Extractor{
 				{Name: "x", Source: "body", Type: "boundary", Expression: "a|||b", OnMiss: "empty", Convert: "html_url_encode"},
+				{Name: "decoded", Source: "body", Type: "regex", Expression: "token=([^&]+)", Convert: "url_decode"},
 				{Name: "y", Source: "body", Type: "regex", Expression: "v=(.+?);", Mode: "all", OnMiss: "fail"},
 			},
 		}},

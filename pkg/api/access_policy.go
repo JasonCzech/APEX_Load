@@ -82,6 +82,19 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		}, true
 	}
 
+	if path == "/api/v1/browser-recorder/sessions" && method == http.MethodGet {
+		if strings.TrimSpace(r.URL.Query().Get("project_id")) == "" {
+			return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
+		}
+		return accessRequirement{
+			GlobalRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+			ProjectRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin},
+			ProjectLookup: func(r *http.Request, _ storage.Store) (string, int, string) {
+				return resolveRecorderListProjectID(r)
+			},
+		}, true
+	}
+
 	if path == "/api/v1/ws" && method == http.MethodGet {
 		if strings.TrimSpace(r.URL.Query().Get("project_id")) == "" {
 			return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true

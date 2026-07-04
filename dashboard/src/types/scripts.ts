@@ -30,7 +30,7 @@ export interface ScriptExtractorDefinition {
   save_offset?: number
   /** Truncate each matched value to at most this many bytes (0 = entire remainder). */
   save_length?: number
-  /** Post-process each value: "url_encode" | "html_decode" | "html_url_encode". */
+  /** Post-process each value: "url_encode" | "url_decode" | "html_decode" | "html_url_encode". */
   convert?: string
 }
 
@@ -55,6 +55,7 @@ export interface CorrelationStep {
   request_headers?: Record<string, string>
   response_body?: string
   response_headers?: Record<string, string>
+  response_status?: number
 }
 
 export interface SuggestedExtractor {
@@ -62,6 +63,7 @@ export interface SuggestedExtractor {
   source: string
   extract_type: string
   expression: string
+  convert?: string
 }
 
 export interface CorrelationRepairSuggestion {

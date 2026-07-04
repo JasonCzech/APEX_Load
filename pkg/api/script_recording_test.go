@@ -41,3 +41,41 @@ func TestRedactBaselineObservation(t *testing.T) {
 		t.Errorf("response body must be preserved verbatim, got %q", got.ResponseBody)
 	}
 }
+
+func TestRedactBaselineObservationRedactsXMLAndMultipartCredentials(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+	}{
+		{
+			name: "xml",
+			body: `<soap:Envelope><soap:Body><login apiKey="static-key"><password>hunter2</password><csrf>csrf-keep</csrf></login></soap:Body></soap:Envelope>`,
+		},
+		{
+			name: "multipart",
+			body: "--b\r\n" +
+				"Content-Disposition: form-data; name=\"password\"\r\n\r\nhunter2\r\n" +
+				"--b\r\n" +
+				"Content-Disposition: form-data; name=\"csrf\"\r\n\r\ncsrf-keep\r\n" +
+				"--b--",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := redactBaselineObservation(correlate.Observation{
+				ID:          1,
+				RequestURL:  "/api/login",
+				RequestBody: tc.body,
+			})
+			for _, secret := range []string{"hunter2", "static-key"} {
+				if strings.Contains(got.RequestBody, secret) {
+					t.Fatalf("request credential %q leaked into baseline: %q", secret, got.RequestBody)
+				}
+			}
+			if !strings.Contains(got.RequestBody, "csrf-keep") {
+				t.Fatalf("request correlation token was not preserved: %q", got.RequestBody)
+			}
+		})
+	}
+}

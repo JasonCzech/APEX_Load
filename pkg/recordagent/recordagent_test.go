@@ -11,6 +11,7 @@ func TestParseArgs(t *testing.T) {
 	args := ParseArgs([]string{
 		"--addr", "127.0.0.1:7777",
 		"--token", "fixed-token",
+		"--token-stdin",
 		"--allow-origin", "https://controller.example.test/",
 		"--allow-origin", "*",
 		"--pairing-ttl", "2m",
@@ -23,6 +24,9 @@ func TestParseArgs(t *testing.T) {
 	}
 	if args.Token != "fixed-token" {
 		t.Fatalf("Token = %q", args.Token)
+	}
+	if !args.TokenStdin {
+		t.Fatalf("TokenStdin = false, want true")
 	}
 	if len(args.AllowOrigins) != 1 || args.AllowOrigins[0] != "https://controller.example.test" {
 		t.Fatalf("AllowOrigins = %#v", args.AllowOrigins)
@@ -52,7 +56,7 @@ func TestDefaultsDistinguishProductionAndDynamicAddress(t *testing.T) {
 
 func TestRunCommandHelp(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := RunCommand(t.Context(), []string{"--help"}, &stdout, &stderr, "apexload-record-agent", Defaults(DefaultProductionAddr))
+	code := RunCommand(t.Context(), []string{"--help"}, nil, &stdout, &stderr, "apexload-record-agent", Defaults(DefaultProductionAddr))
 	if code != 0 {
 		t.Fatalf("code = %d", code)
 	}
@@ -64,9 +68,49 @@ func TestRunCommandHelp(t *testing.T) {
 		"Usage: apexload-record-agent [options]",
 		"default 127.0.0.1:27777",
 		"--allow-origin",
+		"--token-stdin",
 	} {
 		if !strings.Contains(help, want) {
 			t.Fatalf("help missing %q:\n%s", want, help)
 		}
+	}
+}
+
+func TestRunCommandReadsPairingTokenFromStdin(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := RunCommand(
+		t.Context(),
+		[]string{"--token-stdin"},
+		strings.NewReader("short\n"),
+		&stdout,
+		&stderr,
+		"apexload-record-agent",
+		Defaults(DefaultDynamicAddr),
+	)
+	if code != 1 {
+		t.Fatalf("code = %d, want validation failure", code)
+	}
+	if !strings.Contains(stderr.String(), "Bridge pairing token: ") {
+		t.Fatalf("stderr missing prompt: %q", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "invalid bridge pairing token") {
+		t.Fatalf("stderr missing validation error: %q", stderr.String())
+	}
+}
+
+func TestRunRejectsWeakPairingToken(t *testing.T) {
+	var stdout bytes.Buffer
+	err := Run(t.Context(), Args{
+		Addr:  DefaultDynamicAddr,
+		Token: "short",
+	}, &stdout, "apexload-record-agent")
+	if err == nil {
+		t.Fatal("Run returned nil error for weak pairing token")
+	}
+	if !strings.Contains(err.Error(), "invalid bridge pairing token") {
+		t.Fatalf("error = %v, want invalid token detail", err)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
 	}
 }

@@ -25,10 +25,20 @@ func (b *Browser) runWait(ctx context.Context, action *protocol.Action) error {
 			if waitValue == "" {
 				return fmt.Errorf("browser_wait requires selector, target, or wait_for value")
 			}
+			if predicate, ok, err := browserWaitElementCountPredicate(action); err != nil {
+				return err
+			} else if ok {
+				return b.waitElementCountForAction(waitCtx, action, waitValue, predicate)
+			}
 			return b.waitVisibleForAction(waitCtx, action, waitValue)
 		case "hidden":
 			if waitValue == "" {
 				return fmt.Errorf("browser_wait hidden requires selector or wait_for value")
+			}
+			if predicate, ok, err := browserWaitElementCountPredicate(action); err != nil {
+				return err
+			} else if ok {
+				return b.waitElementCountForAction(waitCtx, action, waitValue, predicate)
 			}
 			return b.waitHiddenForAction(waitCtx, action, waitValue)
 		case "text":
@@ -86,6 +96,87 @@ func (b *Browser) runWait(ctx context.Context, action *protocol.Action) error {
 		return b.waitVisibleWithTimeout(waitCtx, action.Target, b.actionTimeout(action))
 	}
 	return b.sleep(ctx, delay)
+}
+
+type browserElementCountPredicate struct {
+	Operator string
+	Count    int
+}
+
+func browserWaitElementCountPredicate(action *protocol.Action) (browserElementCountPredicate, bool, error) {
+	if action == nil || action.Params == nil {
+		return browserElementCountPredicate{}, false, nil
+	}
+	count, hasCount := actionParamIntValue(action.Params, "count")
+	operator := strings.TrimSpace(actionParamString(action.Params, "operator", ""))
+	if !hasCount && operator == "" {
+		return browserElementCountPredicate{}, false, nil
+	}
+	if !hasCount {
+		return browserElementCountPredicate{}, false, fmt.Errorf("browser_wait params.count is required when params.operator is set")
+	}
+	if count < 0 {
+		return browserElementCountPredicate{}, false, fmt.Errorf("browser_wait params.count must be >= 0")
+	}
+	if operator == "" {
+		operator = ">="
+	}
+	switch operator {
+	case "=", "==", "===", "!=", "!==", ">", ">=", "<", "<=":
+	default:
+		return browserElementCountPredicate{}, false, fmt.Errorf("browser_wait params.operator must be one of =, ==, ===, !=, !==, >, >=, <, <=")
+	}
+	return browserElementCountPredicate{Operator: operator, Count: count}, true, nil
+}
+
+func (p browserElementCountPredicate) matches(actual int) bool {
+	switch p.Operator {
+	case "=", "==", "===":
+		return actual == p.Count
+	case "!=", "!==":
+		return actual != p.Count
+	case ">":
+		return actual > p.Count
+	case ">=":
+		return actual >= p.Count
+	case "<":
+		return actual < p.Count
+	case "<=":
+		return actual <= p.Count
+	default:
+		return false
+	}
+}
+
+func (b *Browser) waitElementCountForAction(ctx context.Context, action *protocol.Action, selector string, predicate browserElementCountPredicate) error {
+	page := b.currentPage()
+	var locator playwright.Locator
+	if framed, ok := b.actionLocator(action, selector); ok {
+		locator = framed
+	} else {
+		if page == nil {
+			return fmt.Errorf("browser_wait count predicate failed: no active page")
+		}
+		locator = page.Locator(selector)
+	}
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+	lastCount := -1
+	for {
+		count, err := locator.Count()
+		if err != nil {
+			return fmt.Errorf("browser_wait count predicate could not count selector %q: %w", selector, err)
+		}
+		lastCount = count
+		if predicate.matches(count) {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("browser_wait timed out waiting for selector %q count %s %d (last count %d): %w", selector, predicate.Operator, predicate.Count, lastCount, ctx.Err())
+		case <-ticker.C:
+		}
+	}
 }
 
 func waitActionUsesActionSelector(action *protocol.Action) bool {

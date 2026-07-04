@@ -40,6 +40,7 @@ func detectCorrelations(exchanges []exchange) []Correlation {
 			Source:      corr.Source,
 			Expression:  corr.Expression,
 			ExtractType: corr.ExtractType,
+			Convert:     corr.Convert,
 			Value:       corr.Value,
 			SampleValue: corr.SampleValue,
 			FoundInStep: corr.FoundInID,

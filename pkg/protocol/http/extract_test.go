@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"testing"
 
+	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
@@ -231,6 +233,85 @@ func TestExtractCometdClientIdArrayRoot(t *testing.T) {
 	if val != "3f8k2j9xqz" {
 		t.Errorf("jsonpath array-root got %q, want %q", val, "3f8k2j9xqz")
 	}
+}
+
+func TestCorrelationSuggestedExtractorsRoundTripThroughHTTPExtractor(t *testing.T) {
+	formToken := "tok+/==abcdef"
+	fwuid := "FWUID-abcdef1234567890"
+	app := "markup://one:one"
+	viewState := "/wEPDwABC123456789=="
+	formBody := "aura.token=" + url.QueryEscape(formToken) +
+		"&aura.context=" + url.QueryEscape(`{"fwuid":"`+fwuid+`","app":"`+app+`"}`) +
+		"&com.salesforce.visualforce.ViewState=" + url.QueryEscape(viewState)
+	observations := []correlate.Observation{
+		{
+			ID:           1,
+			ResponseBody: `{"auth":{"access_token":"tok-json-abcdef123456"},"items":[{"id":"1234567890123"}]}`,
+		},
+		{
+			ID:             2,
+			RequestURL:     "https://api.example.test/orders/1234567890123",
+			RequestHeaders: map[string]string{"Authorization": "Bearer tok-json-abcdef123456"},
+		},
+		{
+			ID:           3,
+			ResponseBody: `<Envelope><Body><CreateOrderResponse correlationId="soap-corr-abcdef123456">ok</CreateOrderResponse></Body></Envelope>`,
+			ResponseHeaders: map[string]string{
+				"Location":   "https://idp.example.test/callback?code=code-abcdef123456&state=state-abcdef123456",
+				"Set-Cookie": "session=sid-abcdef123456; Path=/; HttpOnly",
+			},
+		},
+		{
+			ID:             4,
+			RequestURL:     "https://client.example.test/callback?code=code-abcdef123456&state=state-abcdef123456",
+			RequestBody:    "correlationId=soap-corr-abcdef123456",
+			RequestHeaders: map[string]string{"Cookie": "session=sid-abcdef123456"},
+		},
+		{
+			ID:           5,
+			ResponseBody: formBody,
+		},
+		{
+			ID:          6,
+			RequestBody: "aura.token=" + url.QueryEscape(formToken) + "&fwuid=" + url.QueryEscape(fwuid) + "&app=" + url.QueryEscape(app) + "&viewstate=" + url.QueryEscape(viewState),
+		},
+	}
+
+	correlations := correlate.Detect(observations)
+	if len(correlations) < 8 {
+		t.Fatalf("correlations = %#v, want broad round-trip coverage", correlations)
+	}
+	byID := make(map[int]correlate.Observation, len(observations))
+	for _, observation := range observations {
+		byID[observation.ID] = observation
+	}
+	for _, corr := range correlations {
+		source := byID[corr.FoundInID]
+		got, err := extract(protocol.Extractor{
+			Name:       corr.Name,
+			Source:     corr.Source,
+			Type:       corr.ExtractType,
+			Expression: corr.Expression,
+			Convert:    corr.Convert,
+		}, http.Header(firstValuesToHeader(source.ResponseHeaders)), []byte(source.ResponseBody))
+		if err != nil {
+			t.Fatalf("%s (%s %q convert=%q) did not round-trip: %v", corr.Name, corr.ExtractType, corr.Expression, corr.Convert, err)
+		}
+		if got != corr.Value {
+			t.Fatalf("%s extracted %q, want %q (type=%s expr=%q convert=%q)", corr.Name, got, corr.Value, corr.ExtractType, corr.Expression, corr.Convert)
+		}
+	}
+}
+
+func firstValuesToHeader(values map[string]string) map[string][]string {
+	if len(values) == 0 {
+		return nil
+	}
+	headers := make(map[string][]string, len(values))
+	for key, value := range values {
+		headers[key] = []string{value}
+	}
+	return headers
 }
 
 func TestExtractCSS_Text(t *testing.T) {
@@ -730,6 +811,7 @@ func TestPostProcessExtractedValue(t *testing.T) {
 		{"offset then length", protocol.Extractor{SaveOffset: 1, SaveLength: 2}, "abcdef", "bc"},
 		{"length beyond end", protocol.Extractor{SaveLength: 10}, "abc", "abc"},
 		{"url encode", protocol.Extractor{Convert: "url_encode"}, "a b&c", "a+b%26c"},
+		{"url decode", protocol.Extractor{Convert: "url_decode"}, "a+b%26c", "a b&c"},
 		{"html decode", protocol.Extractor{Convert: "html_decode"}, "a &amp; b &lt;ok&gt;", "a & b <ok>"},
 		{"combined", protocol.Extractor{SaveOffset: 4, Convert: "url_encode"}, "val=x y", "x+y"},
 	}

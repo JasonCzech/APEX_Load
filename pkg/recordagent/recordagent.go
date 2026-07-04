@@ -1,6 +1,7 @@
 package recordagent
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -22,6 +23,7 @@ const (
 type Args struct {
 	Addr         string
 	Token        string
+	TokenStdin   bool
 	Format       string
 	PairingTTL   time.Duration
 	SessionTTL   time.Duration
@@ -71,6 +73,8 @@ func ParseArgs(argv []string, defaults Args) Args {
 			}
 		case "--token":
 			out.Token = strings.TrimSpace(next())
+		case "--token-stdin":
+			out.TokenStdin = true
 		case "--allow-origin":
 			if value := strings.TrimSpace(next()); value != "" && value != "*" {
 				out.AllowOrigins = append(out.AllowOrigins, strings.TrimRight(value, "/"))
@@ -107,24 +111,53 @@ and control a browser recording session on this workstation.
 Options:
   --addr            Listen address (default %s)
   --token           Pairing token (default: generated)
+  --token-stdin     Read the pairing token from stdin at startup
   --allow-origin    Pre-authorize a dashboard origin; may be repeated
   --pairing-ttl     Pairing token lifetime (default 10m)
   --session-ttl     Paired WebSocket session lifetime (default 12h)
   --json            Print machine-readable startup details`, program, defaultAddr)
 }
 
-func RunCommand(ctx context.Context, argv []string, stdout, stderr io.Writer, program string, defaults Args) int {
+func RunCommand(ctx context.Context, argv []string, stdin io.Reader, stdout, stderr io.Writer, program string, defaults Args) int {
 	for _, arg := range argv {
 		if arg == "--help" || arg == "-h" || arg == "help" {
 			fmt.Fprintln(stderr, Usage(program, defaults.Addr))
 			return 0
 		}
 	}
-	if err := Run(ctx, ParseArgs(argv, defaults), stdout, program); err != nil {
+	args := ParseArgs(argv, defaults)
+	if args.TokenStdin && strings.TrimSpace(args.Token) == "" {
+		token, err := readTokenFromStdin(stdin, stderr)
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		args.Token = token
+	}
+	if err := Run(ctx, args, stdout, program); err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 1
 	}
 	return 0
+}
+
+func readTokenFromStdin(stdin io.Reader, stderr io.Writer) (string, error) {
+	if stdin == nil {
+		return "", fmt.Errorf("--token-stdin requires stdin")
+	}
+	fmt.Fprint(stderr, "Bridge pairing token: ")
+	scanner := bufio.NewScanner(stdin)
+	if !scanner.Scan() {
+		if err := scanner.Err(); err != nil {
+			return "", fmt.Errorf("read bridge pairing token from stdin: %w", err)
+		}
+		return "", fmt.Errorf("read bridge pairing token from stdin: no token provided")
+	}
+	token := strings.TrimSpace(scanner.Text())
+	if token == "" {
+		return "", fmt.Errorf("read bridge pairing token from stdin: no token provided")
+	}
+	return token, nil
 }
 
 func Run(ctx context.Context, args Args, stdout io.Writer, program string) error {
@@ -135,6 +168,8 @@ func Run(ctx context.Context, args Args, stdout io.Writer, program string) error
 			return fmt.Errorf("generate bridge token: %w", err)
 		}
 		token = generated
+	} else if err := api.ValidateBrowserRecorderBridgePairingToken(token); err != nil {
+		return fmt.Errorf("invalid bridge pairing token: %w", err)
 	}
 
 	server := api.NewBrowserRecorderBridgeServer(api.BrowserRecorderBridgeConfig{

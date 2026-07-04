@@ -6,6 +6,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -935,9 +937,23 @@ func TestHandleVerifyBrowserRecordingRequiresStop(t *testing.T) {
 }
 
 func TestHandleExportBrowserRecordingStorageState(t *testing.T) {
-	t.Setenv("APEXLOAD_EXPORT_DIR", t.TempDir()) // confine the persisted copy to a temp dir
+	exportDir := t.TempDir()
+	t.Setenv("APEXLOAD_EXPORT_DIR", exportDir) // confine the persisted copy to a temp dir
+	oldDir := filepath.Join(exportDir, browserStorageStateDir, "proj-1")
+	if err := os.MkdirAll(oldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	oldPath := filepath.Join(oldDir, "old-state.json")
+	if err := os.WriteFile(oldPath, []byte(`{"cookies":[{"value":"stale"}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	oldTime := time.Now().Add(-defaultBrowserRecordingRetention - time.Hour)
+	if err := os.Chtimes(oldPath, oldTime, oldTime); err != nil {
+		t.Fatal(err)
+	}
+
 	artifact := recordedBrowserArtifact()
-	artifact.StorageState = []byte(`{"cookies":[],"origins":[]}`)
+	artifact.StorageState = []byte(`{"cookies":[{"name":"sid","value":"cookie-secret","domain":"shop.example","path":"/"}],"origins":[{"origin":"https://shop.example","localStorage":[{"name":"access_token","value":"local-secret"},{"name":"theme","value":"dark"}]}]}`)
 	fake := newFakeBrowserRecorder(artifact)
 	server := newBrowserRecorderTestServer(t, fake)
 	id := startBrowserRecordingViaAPI(t, server)
@@ -949,8 +965,45 @@ func TestHandleExportBrowserRecordingStorageState(t *testing.T) {
 	if resp.Code != http.StatusOK {
 		t.Fatalf("storage-state status = %d body=%s", resp.Code, resp.Body.String())
 	}
-	if !strings.Contains(resp.Body.String(), "cookies") {
-		t.Errorf("storage state body = %s", resp.Body.String())
+	if got := resp.Header().Get("X-APEXLoad-Sensitivity"); got != scrub.SensitivityScrubbed {
+		t.Errorf("sensitivity = %q, want %q", got, scrub.SensitivityScrubbed)
+	}
+	storagePath := filepath.ToSlash(resp.Header().Get("X-APEXLoad-StorageState-Path"))
+	if !strings.HasPrefix(storagePath, browserStorageStateDir+"/proj-1/checkout-") || !strings.HasSuffix(storagePath, "-state.json") {
+		t.Fatalf("storage state path = %q, want project/session scoped path", storagePath)
+	}
+	body := resp.Body.String()
+	for _, leaked := range []string{"cookie-secret", "local-secret"} {
+		if strings.Contains(body, leaked) {
+			t.Fatalf("storage state response leaked %q: %s", leaked, body)
+		}
+	}
+	if !strings.Contains(body, scrub.Redacted) || !strings.Contains(body, `"name":"theme"`) || !strings.Contains(body, `"value":"dark"`) {
+		t.Errorf("storage state body = %s, want redacted secrets and non-sensitive localStorage preserved", body)
+	}
+	persisted, err := os.ReadFile(filepath.Join(exportDir, filepath.FromSlash(storagePath)))
+	if err != nil {
+		t.Fatalf("read persisted storage state: %v", err)
+	}
+	if strings.Contains(string(persisted), "cookie-secret") || strings.Contains(string(persisted), "local-secret") {
+		t.Fatalf("persisted storage state leaked secrets: %s", string(persisted))
+	}
+	info, err := os.Stat(filepath.Join(exportDir, filepath.FromSlash(storagePath)))
+	if err != nil {
+		t.Fatalf("stat persisted storage state: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Errorf("persisted storage state mode = %o, want 600", got)
+	}
+	if _, err := os.Stat(oldPath); !os.IsNotExist(err) {
+		t.Fatalf("old storage state err = %v, want pruned", err)
+	}
+	confined, err := confineStorageStatePath(storagePath)
+	if err != nil {
+		t.Fatalf("exported storage path should be reusable: %v", err)
+	}
+	if confined != filepath.Join(exportDir, filepath.FromSlash(storagePath)) {
+		t.Errorf("confined path = %q, want exported path", confined)
 	}
 }
 

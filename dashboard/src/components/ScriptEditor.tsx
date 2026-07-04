@@ -52,6 +52,7 @@ import {
 import BrowserReplayDebugger from './BrowserReplayDebugger'
 import { ExtractorTester } from './ExtractorTester'
 import { CorrelationDiagnosePanel } from './CorrelationDiagnosePanel'
+import { applyCorrelationRepairToAction, type CorrelationExtractorRepair } from './scriptCorrelationRepair'
 import ParameterizationReview from './ParameterizationReview'
 import type { Parameterization } from '../types/scriptImports'
 import type { ScriptRecordingStatus } from '../hooks/api/useScriptApi'
@@ -4156,15 +4157,28 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     })
   }
 
-  const addExtractorDefinition = (actionIdx: number, extractor: ScriptExtractorDefinition) => {
+  const addExtractorDefinition = (actionIdx: number, extractor: ScriptExtractorDefinition, repair?: CorrelationExtractorRepair) => {
+    const repairAction = repair &&
+      repair.failingActionIndex >= 0 &&
+      repair.failingActionIndex < script.actions.length
+      ? script.actions[repair.failingActionIndex]
+      : undefined
+    const repairWillApply = Boolean(repairAction && repair && applyCorrelationRepairToAction(repairAction, repair) !== repairAction)
     setScript(prev => {
       const actions = [...prev.actions]
       if (actionIdx < 0 || actionIdx >= actions.length) return prev
       const ext = [...(actions[actionIdx].extractors || []), extractor]
       actions[actionIdx] = { ...actions[actionIdx], extractors: ext }
+      if (repair && repair.failingActionIndex >= 0 && repair.failingActionIndex < actions.length) {
+        const repaired = applyCorrelationRepairToAction(actions[repair.failingActionIndex], repair)
+        actions[repair.failingActionIndex] = repaired
+      }
       return { ...prev, actions }
     })
-    setSuccess(`Added extractor "${extractor.name}" to ${script.actions[actionIdx]?.name || `action ${actionIdx + 1}`}.`)
+    const repairSuffix = repairWillApply && repair
+      ? ` Updated action ${repair.failingActionIndex + 1} to use ${repair.replacement}.`
+      : ''
+    setSuccess(`Added extractor "${extractor.name}" to ${script.actions[actionIdx]?.name || `action ${actionIdx + 1}`}.${repairSuffix}`)
   }
 
   const updatePhaseExtractor = (phase: ScriptActionPhase, actionIdx: number, extIdx: number, field: string, value: string) => {

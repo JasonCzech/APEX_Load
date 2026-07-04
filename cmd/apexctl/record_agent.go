@@ -20,6 +20,7 @@ func recordAgentCmd() {
 	code := recordagent.RunCommand(
 		ctx,
 		os.Args[2:],
+		os.Stdin,
 		os.Stdout,
 		os.Stderr,
 		"apexctl record-agent",

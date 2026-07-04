@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/convert/har"
@@ -83,7 +84,18 @@ const browserStorageStateDir = "browser-recorder-state"
 // absolute path guaranteed to live under the export base dir, rejecting
 // traversal/absolute escapes. The file must already exist.
 func confineStorageStatePath(raw string) (string, error) {
-	dir, file := filepathSplitForward(strings.TrimSpace(raw))
+	cleaned := strings.ReplaceAll(strings.TrimSpace(raw), "\\", "/")
+	if cleaned == "" || strings.HasPrefix(cleaned, "/") || filepath.IsAbs(cleaned) {
+		return "", fmt.Errorf("storage_state_path is not allowed: absolute paths are not permitted")
+	}
+	cleaned = strings.Trim(cleaned, "/")
+	cleaned = strings.TrimPrefix(cleaned, browserStorageStateDir+"/")
+	for _, part := range strings.Split(cleaned, "/") {
+		if part == "" || part == "." || part == ".." {
+			return "", fmt.Errorf("storage_state_path is not allowed: path traversal is not permitted")
+		}
+	}
+	dir, file := filepathSplitForward(cleaned)
 	resolved, err := resolveConfinedExportPath(exportBaseDir(), filepath.Join(browserStorageStateDir, dir), file)
 	if err != nil {
 		return "", fmt.Errorf("storage_state_path is not allowed: %w", err)
@@ -101,6 +113,104 @@ func filepathSplitForward(p string) (dir, file string) {
 		return "", p
 	}
 	return p[:idx], p[idx+1:]
+}
+
+func browserStorageStateExportLocation(info *BrowserRecordingSession) (relativePath, stateFile string) {
+	projectDir := sanitizeDownloadName(normalizeProjectID(info.ProjectID))
+	if projectDir == "" {
+		projectDir = "unassigned"
+	}
+	filename := sanitizeDownloadName(info.Name)
+	if filename == "" {
+		filename = "browser-recording"
+	}
+	if sessionID := sanitizeDownloadName(info.ID); sessionID != "" {
+		filename += "-" + sessionID
+	}
+	stateFile = filename + "-state.json"
+	relativePath = filepath.ToSlash(filepath.Join(browserStorageStateDir, projectDir, stateFile))
+	return relativePath, stateFile
+}
+
+func pruneBrowserStorageStateExports(now time.Time) {
+	if defaultBrowserRecordingRetention <= 0 {
+		return
+	}
+	root := filepath.Join(exportBaseDir(), browserStorageStateDir)
+	cutoff := now.Add(-defaultBrowserRecordingRetention)
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || filepath.Ext(d.Name()) != ".json" {
+			return nil
+		}
+		info, statErr := d.Info()
+		if statErr != nil {
+			return nil
+		}
+		if info.ModTime().Before(cutoff) {
+			_ = os.Remove(path)
+		}
+		return nil
+	})
+}
+
+func scrubBrowserStorageState(data []byte) ([]byte, error) {
+	var doc any
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return nil, err
+	}
+	scrubBrowserStorageStateNode(doc, "")
+	return json.Marshal(doc)
+}
+
+func scrubBrowserStorageStateNode(node any, parentKey string) {
+	switch typed := node.(type) {
+	case []any:
+		for _, item := range typed {
+			scrubBrowserStorageStateNode(item, parentKey)
+		}
+	case map[string]any:
+		if value, ok := typed["value"].(string); ok {
+			name, _ := typed["name"].(string)
+			switch {
+			case parentKey == "cookies":
+				typed["value"] = scrub.Redacted
+			case browserStorageStateSensitiveName(name):
+				typed["value"] = scrub.Redacted
+			default:
+				typed["value"] = scrub.Value(value, scrub.Policy{})
+			}
+		}
+		for key, value := range typed {
+			if text, ok := value.(string); ok {
+				if browserStorageStateSensitiveName(key) {
+					typed[key] = scrub.Redacted
+				} else {
+					typed[key] = scrub.Value(text, scrub.Policy{})
+				}
+				continue
+			}
+			scrubBrowserStorageStateNode(value, key)
+		}
+	}
+}
+
+func browserStorageStateSensitiveName(name string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(name))
+	normalized = strings.NewReplacer("-", "_", " ", "_").Replace(normalized)
+	if normalized == "" {
+		return false
+	}
+	for _, marker := range []string{
+		"authorization", "password", "passwd", "secret", "token", "access_token",
+		"refresh_token", "id_token", "api_key", "apikey", "session", "session_id",
+		"sessionid", "auth", "csrf", "xsrf", "client_secret", "private_key",
+		"jwt", "bearer", "cookie",
+	} {
+		if normalized == marker || strings.Contains(normalized, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 // validateBrowserRecordingStartURL restricts recording targets to absolute
@@ -792,25 +902,28 @@ func (s *Server) handleExportBrowserRecordingStorageState(w http.ResponseWriter,
 		writeError(w, http.StatusConflict, "no storage state is available (the recording is still running or captured none)")
 		return
 	}
-	filename := sanitizeDownloadName(info.Name)
-	if filename == "" {
-		filename = "browser-recording"
+	data, err := scrubBrowserStorageState(artifact.StorageState)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to scrub storage state: "+err.Error())
+		return
 	}
-	stateFile := filename + "-state.json"
+	relativePath, stateFile := browserStorageStateExportLocation(info)
 	// Persist a confined copy under the export dir so it can be supplied as a
-	// storage_state_path on a later recording (login reuse). Best effort.
-	if confined, err := resolveConfinedExportPath(exportBaseDir(), browserStorageStateDir, stateFile); err == nil {
+	// storage_state_path on a later recording. Best effort; failures still
+	// allow the caller to download the scrubbed state.
+	pruneBrowserStorageStateExports(time.Now())
+	if confined, err := resolveConfinedExportPath(exportBaseDir(), filepath.Dir(relativePath), filepath.Base(relativePath)); err == nil {
 		if mkErr := os.MkdirAll(filepath.Dir(confined), 0o755); mkErr == nil {
-			if writeErr := os.WriteFile(confined, artifact.StorageState, 0o600); writeErr == nil {
-				w.Header().Set("X-APEXLoad-StorageState-Path", filepath.Join(browserStorageStateDir, stateFile))
+			if writeErr := os.WriteFile(confined, data, 0o600); writeErr == nil {
+				w.Header().Set("X-APEXLoad-StorageState-Path", relativePath)
 			}
 		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, stateFile))
-	w.Header().Set("X-APEXLoad-Sensitivity", scrub.SensitivityRaw)
+	w.Header().Set("X-APEXLoad-Sensitivity", scrub.SensitivityScrubbed)
 	w.WriteHeader(http.StatusOK)
-	w.Write(artifact.StorageState)
+	w.Write(data)
 }
 
 // handleVerifyBrowserRecording converts the stopped recording in-memory and

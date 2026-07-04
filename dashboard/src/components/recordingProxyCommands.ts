@@ -1,5 +1,6 @@
 export const DEFAULT_MACOS_NETWORK_SERVICE = 'Wi-Fi'
 const DEFAULT_RECORDER_PROXY_PORT = '8081'
+const DEFAULT_RECORDER_PROXY_HOST = 'localhost'
 
 function shellQuote(value: string) {
   return `'${value.replace(/'/g, `'\\''`)}'`
@@ -14,16 +15,57 @@ function normalizeProxyPort(value: string) {
   return /^\d+$/.test(trimmed) ? trimmed : DEFAULT_RECORDER_PROXY_PORT
 }
 
+function normalizeProxyHost(value: string) {
+  const trimmed = value.trim()
+  return trimmed && !/\s/.test(trimmed) ? trimmed : DEFAULT_RECORDER_PROXY_HOST
+}
+
+function hostFromAddress(value: string) {
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  try {
+    const url = new URL(trimmed)
+    return url.hostname
+  } catch {
+    // Fall through to host:port parsing for bare listener addresses.
+  }
+  if (trimmed.startsWith(':')) return ''
+  if (trimmed.startsWith('[')) {
+    const end = trimmed.indexOf(']')
+    return end > 0 ? trimmed.slice(1, end) : ''
+  }
+  const colon = trimmed.indexOf(':')
+  return colon >= 0 ? trimmed.slice(0, colon) : trimmed
+}
+
+export function recorderProxyHost(proxyAddr: string, dashboardOrigin: string = '') {
+  const explicitHost = hostFromAddress(proxyAddr)
+  if (explicitHost && !['0.0.0.0', '::'].includes(explicitHost)) {
+    return explicitHost === '127.0.0.1' ? DEFAULT_RECORDER_PROXY_HOST : explicitHost
+  }
+  const dashboardHost = hostFromAddress(dashboardOrigin)
+  if (!dashboardHost || dashboardHost === '127.0.0.1' || dashboardHost === '::1') {
+    return DEFAULT_RECORDER_PROXY_HOST
+  }
+  return dashboardHost
+}
+
+export function recorderProxyHostIsLocal(proxyHost: string) {
+  const normalized = proxyHost.trim().toLowerCase()
+  return normalized === '' || normalized === 'localhost' || normalized === '127.0.0.1' || normalized === '::1'
+}
+
 export function recorderProxyPort(proxyAddr: string) {
   return normalizeProxyPort((proxyAddr || `:${DEFAULT_RECORDER_PROXY_PORT}`).split(':').pop() || DEFAULT_RECORDER_PROXY_PORT)
 }
 
-export function buildMacOSStartProxyCommand(proxyPort: string, networkService: string = DEFAULT_MACOS_NETWORK_SERVICE) {
+export function buildMacOSStartProxyCommand(proxyPort: string, networkService: string = DEFAULT_MACOS_NETWORK_SERVICE, proxyHost: string = DEFAULT_RECORDER_PROXY_HOST) {
   const service = networkService.trim() || DEFAULT_MACOS_NETWORK_SERVICE
   const port = normalizeProxyPort(proxyPort)
+  const host = normalizeProxyHost(proxyHost)
   return [
     `SERVICE=${shellQuote(service)}`,
-    `PROXY_HOST='localhost'`,
+    `PROXY_HOST=${shellQuote(host)}`,
     `PROXY_PORT=${shellQuote(port)}`,
     `STATE_DIR="\${TMPDIR:-/tmp}/apexload-recorder-proxy-state"`,
     `STATE_KEY="$(printf '%s' "$SERVICE" | tr -c 'A-Za-z0-9._-' '_')"`,
@@ -74,11 +116,12 @@ function windowsProxyChangeNotifierCommand() {
   ]
 }
 
-export function buildWindowsStartProxyCommand(proxyPort: string) {
+export function buildWindowsStartProxyCommand(proxyPort: string, proxyHost: string = DEFAULT_RECORDER_PROXY_HOST) {
   const port = normalizeProxyPort(proxyPort)
+  const host = normalizeProxyHost(proxyHost)
   return [
     `$ErrorActionPreference = 'Stop'`,
-    `$proxyHost = 'localhost'`,
+    `$proxyHost = ${powerShellQuote(host)}`,
     `$proxyPort = ${powerShellQuote(port)}`,
     `$proxyServer = 'http={0}:{1};https={0}:{1}' -f $proxyHost, $proxyPort`,
     `$settingsPath = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings'`,

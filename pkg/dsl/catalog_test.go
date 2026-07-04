@@ -125,11 +125,13 @@ func TestProtocolActionTypeMembership(t *testing.T) {
 		{
 			family: "browser",
 			accepted: []string{
-				"browser_navigate", "browser_click", "browser_fill", "browser_select",
-				"browser_tap", "browser_long_press", "browser_swipe", "browser_dblclick",
+				"browser_navigate", "browser_back", "browser_forward", "browser_reload",
+				"browser_click", "browser_download", "browser_check", "browser_fill", "browser_select",
+				"browser_scroll", "browser_tap", "browser_long_press", "browser_swipe", "browser_dblclick",
 				"browser_hover", "browser_set_files", "browser_drag_and_drop",
 				"browser_press_key", "browser_evaluate_js", "browser_switch_frame",
-				"browser_switch_window", "browser_wait", "browser_screenshot",
+				"browser_switch_window", "browser_wait", "browser_wait_response",
+				"browser_set_geolocation", "browser_screenshot",
 			},
 			rejected: []string{"browser_unknown", "ws_send", "rendezvous"},
 		},

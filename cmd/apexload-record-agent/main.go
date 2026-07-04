@@ -35,6 +35,7 @@ func main() {
 	code := recordagent.RunCommand(
 		ctx,
 		os.Args[1:],
+		os.Stdin,
 		os.Stdout,
 		os.Stderr,
 		"apexload-record-agent",

@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -23,6 +24,13 @@ const (
 	bridgePairPath          = "/api/v1/bridge/pair"
 	bridgeSystemHealthPath  = "/api/v1/system/health"
 	bridgeWebSocketPath     = "/api/v1/ws"
+	bridgePairMaxFailures   = 5
+	bridgePairTokenMinChars = 32
+)
+
+var (
+	bridgePairFailureWindow = time.Minute
+	bridgePairLockout       = time.Minute
 )
 
 // BrowserRecorderBridgeConfig configures the loopback-only browser recording
@@ -43,12 +51,19 @@ type BrowserRecordingBridge struct {
 	sessionTTL     time.Duration
 	allowedOrigins map[string]struct{}
 	sessions       map[string]bridgeSession
+	pairFailures   map[string]bridgePairFailure
 	server         *Server
 }
 
 type bridgeSession struct {
 	Origin    string    `json:"origin"`
 	ExpiresAt time.Time `json:"expires_at"`
+}
+
+type bridgePairFailure struct {
+	Count        int
+	ResetAt      time.Time
+	BlockedUntil time.Time
 }
 
 // GenerateBrowserRecorderBridgeToken returns a URL-safe secret suitable for
@@ -83,6 +98,8 @@ func NewBrowserRecorderBridgeServer(cfg BrowserRecorderBridgeConfig) *Server {
 			panic(fmt.Sprintf("generate browser recorder bridge token: %v", err))
 		}
 		token = generated
+	} else if err := ValidateBrowserRecorderBridgePairingToken(token); err != nil {
+		panic(fmt.Sprintf("invalid browser recorder bridge pairing token: %v", err))
 	}
 
 	hub := NewHub()
@@ -105,6 +122,7 @@ func NewBrowserRecorderBridgeServer(cfg BrowserRecorderBridgeConfig) *Server {
 		sessionTTL:     cfg.SessionTTL,
 		allowedOrigins: make(map[string]struct{}),
 		sessions:       make(map[string]bridgeSession),
+		pairFailures:   make(map[string]bridgePairFailure),
 		server:         s,
 	}
 	for _, origin := range cfg.AllowedOrigins {
@@ -285,7 +303,14 @@ func (b *BrowserRecordingBridge) handlePair(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusBadRequest, "pairing requires a browser Origin")
 		return
 	}
-	if time.Now().After(b.pairingExpires) {
+	now := time.Now()
+	pairKey := bridgePairLimitKey(r, origin)
+	if retryAt, limited := b.pairRateLimited(pairKey, now); limited {
+		writeRetryAfter(w, retryAt, now)
+		writeError(w, http.StatusTooManyRequests, "too many invalid browser recorder bridge pairing attempts; retry after the lockout window")
+		return
+	}
+	if now.After(b.pairingExpires) {
 		writeError(w, http.StatusUnauthorized, "browser recorder bridge pairing token has expired; restart the APEX Load Recording Agent")
 		return
 	}
@@ -296,6 +321,11 @@ func (b *BrowserRecordingBridge) handlePair(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if !constantTimeEqual(strings.TrimSpace(req.Token), b.token) {
+		if retryAt, limited := b.recordPairFailure(pairKey, now); limited {
+			writeRetryAfter(w, retryAt, now)
+			writeError(w, http.StatusTooManyRequests, "too many invalid browser recorder bridge pairing attempts; retry after the lockout window")
+			return
+		}
 		writeError(w, http.StatusUnauthorized, "browser recorder bridge token is missing or invalid")
 		return
 	}
@@ -309,6 +339,7 @@ func (b *BrowserRecordingBridge) handlePair(w http.ResponseWriter, r *http.Reque
 	b.allowedOrigins[origin] = struct{}{}
 	b.sessions[sessionID] = bridgeSession{Origin: origin, ExpiresAt: expiresAt}
 	b.pruneExpiredSessionsLocked(time.Now())
+	delete(b.pairFailures, pairKey)
 	b.mu.Unlock()
 	b.syncHubAllowedOrigins()
 
@@ -352,6 +383,61 @@ func (b *BrowserRecordingBridge) pruneExpiredSessionsLocked(now time.Time) {
 	}
 }
 
+func (b *BrowserRecordingBridge) pairRateLimited(key string, now time.Time) (time.Time, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	failure, ok := b.pairFailures[key]
+	if !ok {
+		return time.Time{}, false
+	}
+	if !failure.BlockedUntil.IsZero() && now.Before(failure.BlockedUntil) {
+		return failure.BlockedUntil, true
+	}
+	if now.After(failure.ResetAt) {
+		delete(b.pairFailures, key)
+	}
+	return time.Time{}, false
+}
+
+func (b *BrowserRecordingBridge) recordPairFailure(key string, now time.Time) (time.Time, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	failure := b.pairFailures[key]
+	if failure.ResetAt.IsZero() || now.After(failure.ResetAt) {
+		failure = bridgePairFailure{ResetAt: now.Add(bridgePairFailureWindow)}
+	}
+	failure.Count++
+	if failure.Count >= bridgePairMaxFailures {
+		failure.BlockedUntil = now.Add(bridgePairLockout)
+		b.pairFailures[key] = failure
+		return failure.BlockedUntil, true
+	}
+	b.pairFailures[key] = failure
+	return time.Time{}, false
+}
+
+func bridgePairLimitKey(r *http.Request, origin string) string {
+	remote := strings.TrimSpace(r.RemoteAddr)
+	if host, _, err := net.SplitHostPort(remote); err == nil && host != "" {
+		remote = host
+	}
+	if remote == "" {
+		remote = "unknown"
+	}
+	return strings.TrimSpace(origin) + "|" + remote
+}
+
+func writeRetryAfter(w http.ResponseWriter, retryAt, now time.Time) {
+	delay := time.Until(retryAt).Seconds()
+	if !now.IsZero() {
+		delay = retryAt.Sub(now).Seconds()
+	}
+	if delay < 1 {
+		delay = 1
+	}
+	w.Header().Set("Retry-After", fmt.Sprintf("%.0f", delay))
+}
+
 func (b *BrowserRecordingBridge) syncHubAllowedOrigins() {
 	if b == nil || b.server == nil || b.server.hub == nil {
 		return
@@ -363,4 +449,18 @@ func (b *BrowserRecordingBridge) syncHubAllowedOrigins() {
 	}
 	b.mu.RUnlock()
 	b.server.hub.SetAllowedOrigins(origins)
+}
+
+// ValidateBrowserRecorderBridgePairingToken rejects manual bridge tokens that
+// are short enough to be practical brute-force targets against the CORS-open
+// pairing endpoint. Generated tokens are 32 random bytes encoded as base64url.
+func ValidateBrowserRecorderBridgePairingToken(token string) error {
+	token = strings.TrimSpace(token)
+	if len(token) < bridgePairTokenMinChars {
+		return fmt.Errorf("must be at least %d characters", bridgePairTokenMinChars)
+	}
+	if strings.ContainsAny(token, " \t\r\n") {
+		return fmt.Errorf("must not contain whitespace")
+	}
+	return nil
 }

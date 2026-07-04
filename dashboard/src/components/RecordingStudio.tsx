@@ -30,6 +30,8 @@ import {
   buildMacOSStartProxyCommand,
   buildWindowsRestoreProxyCommand,
   buildWindowsStartProxyCommand,
+  recorderProxyHost,
+  recorderProxyHostIsLocal,
   recorderProxyPort,
 } from './recordingProxyCommands'
 import './RecordingStudio.css'
@@ -260,15 +262,13 @@ function bridgeListenAddress(bridgeOrigin: string): string {
   }
 }
 
-function bridgeRecordAgentCommand(bridgeOrigin: string, token: string): string {
+function bridgeRecordAgentCommand(bridgeOrigin: string): string {
   const parts = [
     RECORDING_AGENT_COMMAND,
     '--addr',
     bridgeListenAddress(bridgeOrigin),
+    '--token-stdin',
   ]
-  if (token) {
-    parts.push('--token', token)
-  }
   for (const origin of bridgeAllowedDashboardOrigins()) {
     parts.push('--allow-origin', shellQuote(origin))
   }
@@ -419,6 +419,8 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
   const salesforceTask = useAsyncTask<SalesforceImportResult>()
 
   const proxyPort = recorderProxyPort(proxyAddr)
+  const proxyHost = recorderProxyHost(proxyAddr, currentDashboardOrigin())
+  const proxyHostIsLocal = recorderProxyHostIsLocal(proxyHost)
 
   useEffect(() => {
     let cancelled = false
@@ -542,12 +544,21 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
   }
 
   const handleCopyBridgeCommand = async () => {
+    ensureBridgeToken()
+    await copyProxyCommand(
+      bridgeRecordAgentCommand(bridgeOrigin),
+      'Terminal command copied. Paste it into a local terminal, then paste the pairing token at the prompt.',
+      'Failed to copy local bridge command',
+    )
+  }
+
+  const handleCopyBridgeToken = async () => {
     const token = ensureBridgeToken()
     if (!token) return
     await copyProxyCommand(
-      bridgeRecordAgentCommand(bridgeOrigin, token),
-      'Terminal command copied. Paste it into a local terminal, then click Pair Local Bridge.',
-      'Failed to copy local bridge command',
+      token,
+      'Pairing token copied. Paste it into the local agent prompt.',
+      'Failed to copy pairing token',
     )
   }
 
@@ -564,7 +575,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
 
   const handleCopyMacOSProxyCommand = async (mode: 'start' | 'restore') => {
     const command = mode === 'start'
-      ? buildMacOSStartProxyCommand(proxyPort, macOSNetworkService)
+      ? buildMacOSStartProxyCommand(proxyPort, macOSNetworkService, proxyHost)
       : buildMacOSRestoreProxyCommand(macOSNetworkService)
     await copyProxyCommand(
       command,
@@ -575,7 +586,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
 
   const handleCopyWindowsProxyCommand = async (mode: 'start' | 'restore') => {
     const command = mode === 'start'
-      ? buildWindowsStartProxyCommand(proxyPort)
+      ? buildWindowsStartProxyCommand(proxyPort, proxyHost)
       : buildWindowsRestoreProxyCommand()
     await copyProxyCommand(
       command,
@@ -1026,7 +1037,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
   const canRetryBrowserInstall = browserRecorderInstallRetryable(browserAvailability, installState)
   const installStatusTone = installState ? browserRecorderInstallTone(installState.status) : 'info'
   const installStatusVisible = !!installState && installState.status !== 'idle'
-  const bridgeCommand = bridgeRecordAgentCommand(bridgeOrigin, bridgeToken)
+  const bridgeCommand = bridgeRecordAgentCommand(bridgeOrigin)
   const agentDownload = recordingAgentDownloadConfig()
   const agentDownloadHref = agentDownload.managed && recordingAgentPlatform
     ? `${agentDownload.url}?platform=${encodeURIComponent(recordingAgentPlatform)}`
@@ -1119,15 +1130,15 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
                     <div className="rec-bridge-step-content">
                       <div className="rec-bridge-step-title">Run the local command</div>
                       <div className="rec-bridge-step-desc">Paste this command into Terminal or PowerShell on your workstation.</div>
-                      <div className="rec-bridge-terminal" data-testid="browser-recorder-bridge-terminal">
-                        <div className="rec-bridge-terminal-header">
-                          <span>Local terminal command</span>
-                          <span>Token included</span>
-                        </div>
-                        <div className="rec-bridge-command-row">
-                          <span className="rec-terminal-prompt">$</span>
-                          <code className="rec-command" data-testid="browser-recorder-bridge-command" tabIndex={0}>{bridgeCommand}</code>
-                        </div>
+                        <div className="rec-bridge-terminal" data-testid="browser-recorder-bridge-terminal">
+                          <div className="rec-bridge-terminal-header">
+                            <span>Local terminal command</span>
+                            <span>Token entered at prompt</span>
+                          </div>
+                          <div className="rec-bridge-command-row">
+                            <span className="rec-terminal-prompt">$</span>
+                            <code className="rec-command" data-testid="browser-recorder-bridge-command" tabIndex={0}>{bridgeCommand}</code>
+                          </div>
                         <div className="rec-bridge-command-actions">
                           <button type="button" className="btn btn-secondary btn-sm" onClick={handleCopyBridgeCommand}>
                             Copy Terminal Command
@@ -1138,7 +1149,16 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
                         </div>
                       </div>
                       <div className="rec-bridge-help">
-                        No separate token paste is needed. The generated token is already in the command as <code>--token</code>.
+                        When the agent asks, paste this pairing token. It is not included in the command or process arguments.
+                      </div>
+                      <div className="rec-bridge-command-row">
+                        <span className="rec-terminal-prompt">#</span>
+                        <code className="rec-command" data-testid="browser-recorder-bridge-token" tabIndex={0}>{bridgeToken}</code>
+                      </div>
+                      <div className="rec-bridge-command-actions">
+                        <button type="button" className="btn btn-secondary btn-sm" onClick={handleCopyBridgeToken}>
+                          Copy Pairing Token
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -1289,7 +1309,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
         <div className="rec-controls-card rec-proxy-recorder-option" data-testid="rec-proxy-recorder-option">
           <div className="rec-option-heading">
             <h3 className="rec-section-title">Advanced Proxy Recorder</h3>
-            <p>Capture HTTP(S) traffic through the local proxy when headed browser recording is unavailable or remote-safe capture is preferred.</p>
+            <p>Capture HTTP(S) traffic through the controller recording proxy when headed browser recording is unavailable.</p>
           </div>
 
       {/* Proxy Setup */}
@@ -1376,12 +1396,17 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
               <div className="rec-step-content">
                 <div className="rec-step-title">Configure Browser Proxy</div>
                 <div className="rec-step-desc">
-                  Route browser traffic through <code>localhost:{proxyPort}</code>
+                  Route browser traffic through <code>{proxyHost}:{proxyPort}</code>
                 </div>
+                {!proxyHostIsLocal && (
+                  <div className="rec-step-note rec-step-note-troubleshoot">
+                    This controller is remote. Use the Recording Agent bridge for workstation-local browser capture unless an operator has explicitly exposed the proxy on <code>{proxyHost}</code>.
+                  </div>
+                )}
                 <div className="rec-os-instructions">
                   <div>Use a browser extension like SwitchyOmega (Chrome) or FoxyProxy (Firefox) to route traffic through the proxy.</div>
-                  <div><span className="rec-os-label">System proxy:</span> macOS System Settings &rarr; Network &rarr; Wi-Fi &rarr; Details &rarr; Proxies &rarr; Web Proxy (HTTP) &amp; Secure Web Proxy (HTTPS) &rarr; <code>localhost</code> port <code>{proxyPort}</code></div>
-                  <div><span className="rec-os-label">Windows 11:</span> Settings &rarr; Network &amp; internet &rarr; Proxy &rarr; Manual proxy setup &rarr; <code>localhost</code> port <code>{proxyPort}</code></div>
+                  <div><span className="rec-os-label">System proxy:</span> macOS System Settings &rarr; Network &rarr; Wi-Fi &rarr; Details &rarr; Proxies &rarr; Web Proxy (HTTP) &amp; Secure Web Proxy (HTTPS) &rarr; <code>{proxyHost}</code> port <code>{proxyPort}</code></div>
+                  <div><span className="rec-os-label">Windows 11:</span> Settings &rarr; Network &amp; internet &rarr; Proxy &rarr; Manual proxy setup &rarr; <code>{proxyHost}</code> port <code>{proxyPort}</code></div>
                 </div>
                 <div className="rec-proxy-shortcut">
                   <PageViewToggle

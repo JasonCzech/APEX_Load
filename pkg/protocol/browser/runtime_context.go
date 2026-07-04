@@ -66,6 +66,7 @@ func (b *Browser) browserContextOptions() playwright.BrowserNewContextOptions {
 		deviceScaleFactor = 1
 	}
 	contextOptions := playwright.BrowserNewContextOptions{
+		AcceptDownloads:   playwright.Bool(true),
 		DeviceScaleFactor: playwright.Float(deviceScaleFactor),
 		HasTouch:          playwright.Bool(b.touchMode),
 		IsMobile:          playwright.Bool(b.mobile),
@@ -74,6 +75,25 @@ func (b *Browser) browserContextOptions() playwright.BrowserNewContextOptions {
 	}
 	if b.userAgent != "" {
 		contextOptions.UserAgent = playwright.String(b.userAgent)
+	}
+	if b.locale != "" {
+		contextOptions.Locale = playwright.String(b.locale)
+	}
+	if b.timezone != "" {
+		contextOptions.TimezoneId = playwright.String(b.timezone)
+	}
+	if b.geolocation != nil {
+		contextOptions.Geolocation = b.geolocation
+		contextOptions.Permissions = append(contextOptions.Permissions, "geolocation")
+	}
+	if b.httpCredentials != nil {
+		contextOptions.HttpCredentials = b.httpCredentials
+	}
+	if b.proxy != nil {
+		contextOptions.Proxy = b.proxy
+	}
+	if len(b.clientCertificates) > 0 {
+		contextOptions.ClientCertificates = b.clientCertificates
 	}
 	b.applyHARCaptureOptions(&contextOptions)
 	return contextOptions

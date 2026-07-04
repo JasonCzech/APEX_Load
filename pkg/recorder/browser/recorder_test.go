@@ -41,6 +41,27 @@ func TestPrepareHARPathCreatesPrivateFile(t *testing.T) {
 	}
 }
 
+func TestForceStopRemovesManagedHARTemp(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "apexload_browser_rec_123.har.tmp")
+	if err := os.WriteFile(path, []byte("raw-cookie=secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r := New(Options{StartURL: "https://app.example/"})
+	r.mu.Lock()
+	r.harTemp = true
+	r.session.HARPath = path
+	r.mu.Unlock()
+
+	r.ForceStop()
+
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("managed HAR temp stat err = %v, want removed", err)
+	}
+	if got := r.Snapshot().HARPath; got != "" {
+		t.Fatalf("snapshot HARPath = %q, want cleared after force-stop discard", got)
+	}
+}
+
 func TestHandleRecordBindingEmitsStepEvents(t *testing.T) {
 	var events []Event
 	r := New(Options{StartURL: "https://app.example/", OnEvent: func(e Event) { events = append(events, e) }})
@@ -740,6 +761,25 @@ func TestCaptureToolbarProvidesRecordingStopControl(t *testing.T) {
 	}
 	if !strings.Contains(captureScript, "send({ kind: 'recording_stop', ts: Date.now() });") {
 		t.Fatal("recorder Stop button must send a recording_stop control event")
+	}
+}
+
+func TestCaptureScriptRecordsP3InputParityEvents(t *testing.T) {
+	for _, fragment := range []string{
+		`window.addEventListener('contextmenu'`,
+		`window.addEventListener('auxclick'`,
+		`window.addEventListener('input'`,
+		`window.addEventListener('focusout'`,
+		`window.addEventListener('mouseover'`,
+		`record('hover'`,
+		`window.addEventListener('scroll'`,
+		`record('scroll'`,
+		`values: values`,
+		`[contenteditable="true"]`,
+	} {
+		if !strings.Contains(captureScript, fragment) {
+			t.Fatalf("capture script missing %s", fragment)
+		}
 	}
 }
 

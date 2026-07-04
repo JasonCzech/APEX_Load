@@ -18,6 +18,7 @@ type Correlation struct {
 	Source      string `json:"source"`
 	Expression  string `json:"expression"`
 	ExtractType string `json:"extract_type"`
+	Convert     string `json:"convert,omitempty"`
 	FoundInSeq  int    `json:"found_in_seq"`
 	UsedInSeqs  []int  `json:"used_in_seqs"`
 	Value       string `json:"-"`
@@ -152,6 +153,7 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 					Source:     corr.Source,
 					Type:       corr.ExtractType,
 					Expression: corr.Expression,
+					Convert:    corr.Convert,
 				})
 			}
 		}
@@ -582,6 +584,7 @@ func detectCorrelations(requests []RecordedRequest) []Correlation {
 			Source:      corr.Source,
 			Expression:  corr.Expression,
 			ExtractType: corr.ExtractType,
+			Convert:     corr.Convert,
 			FoundInSeq:  corr.FoundInID,
 			UsedInSeqs:  corr.UsedInIDs,
 			Value:       corr.Value,
@@ -622,6 +625,7 @@ func toSharedCorrelation(c Correlation) correlate.Correlation {
 		Source:      c.Source,
 		Expression:  c.Expression,
 		ExtractType: c.ExtractType,
+		Convert:     c.Convert,
 		FoundInID:   c.FoundInSeq,
 		UsedInIDs:   append([]int(nil), c.UsedInSeqs...),
 		Value:       c.Value,

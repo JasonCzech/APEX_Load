@@ -75,7 +75,11 @@ describe('CorrelationDiagnosePanel', () => {
     const addButton = Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Add as extractor')!
     await act(async () => { addButton.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
 
-    expect(onAddExtractor).toHaveBeenCalledWith(0, { name: 'csrf', source: 'body', type: 'jsonpath', expression: '$.t' })
+    expect(onAddExtractor).toHaveBeenCalledWith(
+      0,
+      { name: 'csrf', source: 'body', type: 'jsonpath', expression: '$.t' },
+      { failingActionIndex: 1, recordedValue: 'OLD', replacement: '{{var.csrf}}' },
+    )
     expect(container.textContent).toContain('Added')
   })
 

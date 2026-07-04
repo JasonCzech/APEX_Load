@@ -476,11 +476,27 @@ func buildAuthHeader(config map[string]any) (string, string) {
 	return authType, authHeaderFromParts(authType, authStringConfig(config, "auth_username"), authStringConfig(config, "auth_password"), authStringConfig(config, "auth_token"))
 }
 
+func buildAuthConfig(config map[string]any) *protocol.AuthConfig {
+	authType := strings.ToLower(strings.TrimSpace(protocol.ConfigString(config, "auth_type")))
+	switch authType {
+	case "", "none", "noauth", "inherit":
+		return nil
+	default:
+		return &protocol.AuthConfig{
+			Type:     authType,
+			Username: authStringConfig(config, "auth_username"),
+			Password: authStringConfig(config, "auth_password"),
+			Token:    authStringConfig(config, "auth_token"),
+			Domain:   authStringConfig(config, "auth_domain"),
+		}
+	}
+}
+
 func validateAuthType(authType string) error {
 	switch strings.ToLower(strings.TrimSpace(authType)) {
-	case "", "none", "noauth", "inherit", "basic", "bearer":
+	case "", "none", "noauth", "inherit", "basic", "bearer", "digest":
 		return nil
-	case "ntlm", "digest", "kerberos", "negotiate":
+	case "ntlm", "kerberos", "negotiate":
 		return fmt.Errorf("unsupported HTTP auth type %q: configure an external auth flow or remove the auth setting", authType)
 	default:
 		return fmt.Errorf("unsupported HTTP auth type %q", authType)
@@ -493,6 +509,11 @@ func buildActionAuthHeader(auth *protocol.AuthConfig) (string, bool, error) {
 	}
 	switch strings.ToLower(strings.TrimSpace(auth.Type)) {
 	case "", "none", "noauth", "inherit":
+		return "", true, nil
+	case "digest":
+		if err := validateAuthType(auth.Type); err != nil {
+			return "", true, err
+		}
 		return "", true, nil
 	default:
 		if err := validateAuthType(auth.Type); err != nil {
@@ -511,6 +532,8 @@ func buildRedactedActionAuthHeader(auth *protocol.AuthConfig) string {
 		return "Basic [REDACTED]"
 	case "bearer":
 		return "Bearer [REDACTED]"
+	case "digest":
+		return "Digest [REDACTED]"
 	default:
 		return "[REDACTED]"
 	}

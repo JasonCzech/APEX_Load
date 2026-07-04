@@ -10,6 +10,8 @@ import {
   buildMacOSStartProxyCommand,
   buildWindowsRestoreProxyCommand,
   buildWindowsStartProxyCommand,
+  recorderProxyHost,
+  recorderProxyHostIsLocal,
   recorderProxyPort,
 } from './recordingProxyCommands'
 
@@ -310,12 +312,17 @@ describe('RecordingStudio', () => {
   })
 
   it('builds macOS proxy shortcuts that save and restore the selected service', () => {
-    const startCommand = buildMacOSStartProxyCommand('9090', `USB Bob's LAN`)
+    const startCommand = buildMacOSStartProxyCommand('9090', `USB Bob's LAN`, 'controller.example.com')
     const restoreCommand = buildMacOSRestoreProxyCommand(`USB Bob's LAN`)
 
     expect(recorderProxyPort('127.0.0.1:9090')).toBe('9090')
     expect(recorderProxyPort('bad-port')).toBe('8081')
+    expect(recorderProxyHost(':8081', 'https://controller.example.com')).toBe('controller.example.com')
+    expect(recorderProxyHost('127.0.0.1:8081', 'https://controller.example.com')).toBe('localhost')
+    expect(recorderProxyHostIsLocal('controller.example.com')).toBe(false)
+    expect(recorderProxyHostIsLocal('localhost')).toBe(true)
     expect(startCommand).toContain(`SERVICE='USB Bob'\\''s LAN'`)
+    expect(startCommand).toContain(`PROXY_HOST='controller.example.com'`)
     expect(startCommand).toContain(`PROXY_PORT='9090'`)
     expect(startCommand).toContain('networksetup -getwebproxy "$SERVICE"')
     expect(startCommand).toContain('networksetup -setsecurewebproxystate "$SERVICE" on')
@@ -325,10 +332,11 @@ describe('RecordingStudio', () => {
   })
 
   it('builds Windows 11 proxy shortcuts that save and restore per-user proxy settings', () => {
-    const startCommand = buildWindowsStartProxyCommand('9090')
+    const startCommand = buildWindowsStartProxyCommand('9090', 'controller.example.com')
     const restoreCommand = buildWindowsRestoreProxyCommand()
     const fallbackStartCommand = buildWindowsStartProxyCommand('not-a-port')
 
+    expect(startCommand).toContain(`$proxyHost = 'controller.example.com'`)
     expect(startCommand).toContain(`$proxyPort = '9090'`)
     expect(startCommand).toContain(`$proxyServer = 'http={0}:{1};https={0}:{1}' -f $proxyHost, $proxyPort`)
     expect(startCommand).toContain(`$settingsPath = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings'`)
@@ -800,6 +808,7 @@ describe('RecordingStudio', () => {
     await flushPromises()
 
     expect(clipboardWriteMock).toHaveBeenLastCalledWith(expect.stringContaining(`SERVICE='Wi-Fi'`))
+    expect(clipboardWriteMock).toHaveBeenLastCalledWith(expect.stringContaining(`PROXY_HOST='localhost'`))
     expect(clipboardWriteMock).toHaveBeenLastCalledWith(expect.stringContaining(`PROXY_PORT='8081'`))
     expect(container.textContent).toContain('macOS start proxy command copied')
 
@@ -843,6 +852,7 @@ describe('RecordingStudio', () => {
     await flushPromises()
 
     expect(clipboardWriteMock).toHaveBeenLastCalledWith(expect.stringContaining(`$proxyPort = '8081'`))
+    expect(clipboardWriteMock).toHaveBeenLastCalledWith(expect.stringContaining(`$proxyHost = 'localhost'`))
     expect(clipboardWriteMock).toHaveBeenLastCalledWith(expect.stringContaining('windows-11-wininet.json'))
     expect(clipboardWriteMock).toHaveBeenLastCalledWith(expect.stringContaining('Notify-ProxySettingsChanged'))
     expect(container.textContent).toContain('Windows start proxy command copied')
@@ -1034,12 +1044,13 @@ describe('RecordingStudio', () => {
     expect(container.textContent).toContain('3Verify the agent')
     expect(container.textContent).toContain('4Pair the local bridge')
     expect(container.textContent).toContain('Paste this command into Terminal or PowerShell')
-    expect(container.textContent).toContain('Token included')
-    expect(container.textContent).toContain('No separate token paste is needed')
+    expect(container.textContent).toContain('Token entered at prompt')
+    expect(container.textContent).toContain('paste this pairing token')
     expect(container.textContent).toContain('Verify Agent')
     const command = container.querySelector('[data-testid="browser-recorder-bridge-command"]')?.textContent || ''
-    const generatedToken = command.match(/--token ([0-9a-f]+)/)?.[1]
-    expect(command).toContain('apexload-record-agent --addr 127.0.0.1:27777 --token')
+    const generatedToken = container.querySelector('[data-testid="browser-recorder-bridge-token"]')?.textContent || ''
+    expect(command).toContain('apexload-record-agent --addr 127.0.0.1:27777 --token-stdin')
+    expect(command).not.toContain('--token ')
     expect(command).toContain('--allow-origin')
     expect(generatedToken).toMatch(/^[0-9a-f]{48}$/)
 
@@ -1216,7 +1227,7 @@ describe('RecordingStudio', () => {
     expect(container.textContent).toContain('Download and run the agent command')
   })
 
-  it('copies and regenerates the dashboard-created bridge command token', async () => {
+  it('copies the bridge command without token argv and regenerates the pairing token', async () => {
     apiMock.getRecorderStatus.mockResolvedValue({
       proxy_addr: ':8081',
       ca_cert_path: 'artifacts/recorder/ca-cert.pem',
@@ -1233,7 +1244,9 @@ describe('RecordingStudio', () => {
     await flushPromises()
 
     const commandBefore = container.querySelector('[data-testid="browser-recorder-bridge-command"]')?.textContent || ''
-    const tokenBefore = commandBefore.match(/--token ([0-9a-f]+)/)?.[1]
+    const tokenBefore = container.querySelector('[data-testid="browser-recorder-bridge-token"]')?.textContent || ''
+    expect(commandBefore).toContain('--token-stdin')
+    expect(commandBefore).not.toContain(tokenBefore)
     expect(commandBefore).toContain("--allow-origin 'http://localhost:3000'")
     expect(commandBefore).toContain("--allow-origin 'http://127.0.0.1:3000'")
     const copyButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy Terminal Command'))
@@ -1246,6 +1259,15 @@ describe('RecordingStudio', () => {
 
     expect(clipboardWriteMock).toHaveBeenCalledWith(commandBefore)
 
+    const copyTokenButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy Pairing Token'))
+    expect(copyTokenButton).toBeDefined()
+    await act(async () => {
+      copyTokenButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(clipboardWriteMock).toHaveBeenCalledWith(tokenBefore)
+
     const regenerateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Regenerate Token'))
     expect(regenerateButton).toBeDefined()
     await act(async () => {
@@ -1254,7 +1276,8 @@ describe('RecordingStudio', () => {
     await flushPromises()
 
     const commandAfter = container.querySelector('[data-testid="browser-recorder-bridge-command"]')?.textContent || ''
-    const tokenAfter = commandAfter.match(/--token ([0-9a-f]+)/)?.[1]
+    const tokenAfter = container.querySelector('[data-testid="browser-recorder-bridge-token"]')?.textContent || ''
+    expect(commandAfter).toBe(commandBefore)
     expect(tokenAfter).toMatch(/^[0-9a-f]{48}$/)
     expect(tokenAfter).not.toBe(tokenBefore)
   })

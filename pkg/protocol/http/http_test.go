@@ -166,8 +166,26 @@ func TestHTTP_Init_BearerAuth(t *testing.T) {
 	}
 }
 
+func TestHTTP_Init_DigestAuth(t *testing.T) {
+	h := initHTTP(t, map[string]any{
+		"auth_type":     "digest",
+		"auth_username": "admin",
+		"auth_password": "secret",
+	})
+
+	if h.authType != "digest" {
+		t.Errorf("authType = %q, want digest", h.authType)
+	}
+	if h.authHeader != "" {
+		t.Errorf("authHeader = %q, want empty until challenge", h.authHeader)
+	}
+	if h.authConfig == nil || h.authConfig.Username != "admin" || h.authConfig.Password != "secret" {
+		t.Fatalf("authConfig = %#v, want digest credentials", h.authConfig)
+	}
+}
+
 func TestHTTP_Init_UnsupportedAuthFailsClosed(t *testing.T) {
-	for _, authType := range []string{"ntlm", "digest", "kerberos", "negotiate"} {
+	for _, authType := range []string{"ntlm", "kerberos", "negotiate"} {
 		t.Run(authType, func(t *testing.T) {
 			h := &HTTP{}
 			err := h.Init(context.Background(), map[string]any{"auth_type": authType})
@@ -820,7 +838,7 @@ func TestHTTP_Execute_UnsupportedActionAuthFailsBeforeSend(t *testing.T) {
 		Name:   "bad-auth",
 		Method: "GET",
 		Target: "/",
-		Auth:   &protocol.AuthConfig{Type: "digest", Username: "alice", Password: "secret"},
+		Auth:   &protocol.AuthConfig{Type: "ntlm", Username: "alice", Password: "secret"},
 	})
 	if err != nil {
 		t.Fatalf("Execute: %v", err)

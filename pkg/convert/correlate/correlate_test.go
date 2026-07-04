@@ -66,17 +66,81 @@ func TestEncodedFormsOfIncludesFormEscapedPlus(t *testing.T) {
 	}
 }
 
-func TestSalesforceFormBoundaryUsesFormFieldKey(t *testing.T) {
+func TestDetectUniquifiesDuplicateCorrelationNames(t *testing.T) {
+	observations := []Observation{
+		{
+			ID:           1,
+			ResponseBody: `{"id":"1111111","user":{"id":"2222222"}}`,
+		},
+		{
+			ID:          2,
+			RequestBody: "first=1111111&second=2222222",
+		},
+	}
+
+	correlations := Detect(observations)
+	if len(correlations) != 2 {
+		t.Fatalf("correlation count = %d, want 2: %#v", len(correlations), correlations)
+	}
+	names := map[string]bool{}
+	for _, corr := range correlations {
+		if names[corr.Name] {
+			t.Fatalf("duplicate correlation name %q in %#v", corr.Name, correlations)
+		}
+		names[corr.Name] = true
+	}
+	if !names["corr_id"] || !names["corr_id_2"] {
+		t.Fatalf("names = %#v, want corr_id and corr_id_2", names)
+	}
+	vars := BuildVarMap(correlations)
+	if vars["1111111"] == "" || vars["2222222"] == "" || vars["1111111"] == vars["2222222"] {
+		t.Fatalf("vars = %#v, want distinct replacements for duplicate id values", vars)
+	}
+}
+
+func TestDynamicJSONKeyAvoidsSubstringFalsePositives(t *testing.T) {
+	for _, key := range []string{"author", "consider", "paid", "valid", "candidate"} {
+		if dynamicJSONKey(key) {
+			t.Fatalf("dynamicJSONKey(%q) = true, want false", key)
+		}
+	}
+	for _, key := range []string{"id", "userId", "user_id", "accessToken", "access_token", "session_id", "sid", "csrfToken"} {
+		if !dynamicJSONKey(key) {
+			t.Fatalf("dynamicJSONKey(%q) = false, want true", key)
+		}
+	}
+}
+
+func TestDetectSkipsBenignJSONSubstringKeys(t *testing.T) {
+	observations := []Observation{
+		{
+			ID:           1,
+			ResponseBody: `{"author":"jason-czech","consider":"review-again","paid":"invoice-complete"}`,
+		},
+		{
+			ID:          2,
+			RequestBody: "author=jason-czech&consider=review-again&paid=invoice-complete",
+		},
+	}
+	if correlations := Detect(observations); len(correlations) != 0 {
+		t.Fatalf("correlations = %#v, want benign keys ignored", correlations)
+	}
+}
+
+func TestSalesforceFormExtractorUsesFormFieldKey(t *testing.T) {
 	candidates := formCandidates("aura.token=tok-abcdef123456&sid=sid-abcdef123456")
 	byRule := map[string]Candidate{}
 	for _, candidate := range candidates {
 		byRule[candidate.RuleID] = candidate
 	}
-	if got := byRule[RuleSalesforceAuraToken].Expression; got != "aura.token=|||&" {
-		t.Fatalf("aura.token boundary = %q, want form field key", got)
+	if got := byRule[RuleSalesforceAuraToken].Expression; got != `(?i)(?:^|&)aura\.token=([^&]*)` {
+		t.Fatalf("aura.token expression = %q, want form field key regex", got)
 	}
-	if got := byRule[RuleSalesforceFrontdoorSID].Expression; got != "sid=|||&" {
-		t.Fatalf("sid boundary = %q, want form field key", got)
+	if got := byRule[RuleSalesforceFrontdoorSID].Expression; got != `(?i)(?:^|&)sid=([^&]*)` {
+		t.Fatalf("sid expression = %q, want form field key regex", got)
+	}
+	if byRule[RuleSalesforceAuraToken].Convert != "url_decode" || byRule[RuleSalesforceFrontdoorSID].Convert != "url_decode" {
+		t.Fatalf("form extractors = %#v, want url_decode convert", byRule)
 	}
 }
 
@@ -142,6 +206,30 @@ func TestDetectLocationQueryEmitsReplayableHeaderRegex(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("location code correlation not found: %#v", correlations)
+	}
+}
+
+func TestDetectSkipsShortStaticLocationRedirect(t *testing.T) {
+	observations := []Observation{
+		{ID: 1, ResponseHeaders: map[string]string{"Location": "/login"}},
+		{ID: 2, RequestURL: "https://app.example.test/login"},
+	}
+	if correlations := Detect(observations); len(correlations) != 0 {
+		t.Fatalf("correlations = %#v, want short static redirect ignored", correlations)
+	}
+}
+
+func TestDetectWholeLocationRedirectRequiresTokenLikeValue(t *testing.T) {
+	observations := []Observation{
+		{ID: 1, ResponseHeaders: map[string]string{"Location": "/handoff/state-a1b2c3d4e5"}},
+		{ID: 2, RequestURL: "https://app.example.test/handoff/state-a1b2c3d4e5"},
+	}
+	correlations := Detect(observations)
+	if len(correlations) != 1 {
+		t.Fatalf("correlations = %#v, want token-like bare redirect correlated", correlations)
+	}
+	if correlations[0].Name != "corr_location" || correlations[0].ExtractType != "header" {
+		t.Fatalf("correlation = %#v, want whole Location header fallback", correlations[0])
 	}
 }
 

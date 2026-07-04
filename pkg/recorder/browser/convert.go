@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
 	"github.com/jasonczech/apexload/pkg/selector"
 )
 
@@ -267,7 +268,7 @@ func isDialogTrigger(action dsl.Action) bool {
 func newBrowserScript(name string, session *Session, baseURL string) *dsl.Script {
 	headless := true
 	clientMetrics := true
-	browser := dsl.BrowserConfig{Engine: "chromium", Headless: &headless, ClientMetrics: &clientMetrics}
+	browser := dsl.BrowserConfig{Engine: browserEngineForRecordingSession(session), Headless: &headless, ClientMetrics: &clientMetrics}
 	if session.DeviceProfile != "" {
 		browser.DeviceProfile = session.DeviceProfile
 	}
@@ -279,6 +280,25 @@ func newBrowserScript(name string, session *Session, baseURL string) *dsl.Script
 		Config:      dsl.ScriptConfig{BaseURL: baseURL, Browser: browser},
 		CreatedAt:   time.Now(),
 	}
+}
+
+func browserEngineForRecordingSession(session *Session) string {
+	if session == nil {
+		return "chromium"
+	}
+	profileName := strings.TrimSpace(session.DeviceProfile)
+	if profileName == "" {
+		return "chromium"
+	}
+	if profile, ok := browserprotocol.LookupDevice(profileName); ok && strings.TrimSpace(profile.BrowserFamily) != "" {
+		return strings.TrimSpace(profile.BrowserFamily)
+	}
+	normalized := strings.ToLower(strings.ReplaceAll(profileName, "-", "_"))
+	if strings.Contains(normalized, "iphone") || strings.Contains(normalized, "ipad") ||
+		strings.Contains(normalized, "ios") || strings.Contains(normalized, "webkit") {
+		return "webkit"
+	}
+	return "chromium"
 }
 
 // partitionInto routes section-tagged actions into the script's init/actions/
@@ -719,9 +739,11 @@ func convertStep(step Step, session *Session, opts ConvertOptions, result *Conve
 	case StepClick:
 		action.Name = "Click " + stepLabel(step)
 		action.Type = "browser_click"
+		attachPointerParams(&action, step)
 	case StepDblClick:
 		action.Name = "Double-click " + stepLabel(step)
 		action.Type = "browser_dblclick"
+		attachPointerParams(&action, step)
 	case StepDragAndDrop:
 		action.Name = "Drag " + stepLabel(step)
 		action.Type = "browser_drag_and_drop"
@@ -731,6 +753,9 @@ func convertStep(step Step, session *Session, opts ConvertOptions, result *Conve
 			return dsl.Action{}, false
 		}
 		action.Params = map[string]any{"target": step.TargetSelector}
+	case StepHover:
+		action.Name = "Hover " + stepLabel(step)
+		action.Type = "browser_hover"
 	case StepFill:
 		action.Name = "Fill " + stepLabel(step)
 		action.Type = "browser_fill"
@@ -769,6 +794,18 @@ func convertStep(step Step, session *Session, opts ConvertOptions, result *Conve
 		action.Name = "Select " + stepLabel(step)
 		action.Type = "browser_select"
 		action.Value = step.Value
+		if len(step.Values) > 1 {
+			action.Params = map[string]any{"values": append([]string(nil), step.Values...)}
+		}
+	case StepScroll:
+		action.Name = "Scroll " + stepLabel(step)
+		action.Type = "browser_scroll"
+		action.Params = map[string]any{
+			"delta_x":  step.DeltaX,
+			"delta_y":  step.DeltaY,
+			"scroll_x": step.ScrollX,
+			"scroll_y": step.ScrollY,
+		}
 	case StepPressKey:
 		action.Name = "Press " + step.Value
 		action.Type = "browser_press_key"
@@ -798,7 +835,7 @@ func convertStep(step Step, session *Session, opts ConvertOptions, result *Conve
 	if best == "" {
 		result.Warnings = append(result.Warnings, fmt.Sprintf(
 			"step %d (%s) has no replayable selector; review the captured element before replay", step.Seq, step.Kind))
-		if step.Kind != StepPressKey {
+		if step.Kind != StepPressKey && step.Kind != StepScroll {
 			return dsl.Action{}, false
 		}
 	}
@@ -809,6 +846,24 @@ func convertStep(step Step, session *Session, opts ConvertOptions, result *Conve
 	applyRecordedThinkTime(&action, session, stepIndex, opts.MaxThinkTimeMs)
 	attachStepMetadata(&action, step)
 	return action, true
+}
+
+func attachPointerParams(action *dsl.Action, step Step) {
+	if step.Button == "" && len(step.Modifiers) == 0 {
+		return
+	}
+	if action.Params == nil {
+		action.Params = map[string]any{}
+	}
+	if step.Button != "" && step.Button != "left" {
+		action.Params["button"] = step.Button
+	}
+	if len(step.Modifiers) > 0 {
+		action.Params["modifiers"] = append([]string(nil), step.Modifiers...)
+	}
+	if len(action.Params) == 0 {
+		action.Params = nil
+	}
 }
 
 // applyRecordedThinkTime encodes the recorded pause after this step onto the

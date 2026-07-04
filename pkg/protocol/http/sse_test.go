@@ -104,6 +104,20 @@ func TestReadSSEResponseTimeoutAfterPartialEventFails(t *testing.T) {
 	}
 }
 
+func TestReadSSEResponseClientTimeoutAfterPartialEventFails(t *testing.T) {
+	body := &timeoutAfterPayloadReadCloser{reader: strings.NewReader("event: token\ndata: hello\n\n")}
+	res, err := readSSEResponse(context.Background(), body, map[string]any{
+		"stream_timeout_ms": float64(1000),
+		"max_body_bytes":    float64(-1),
+	}, time.Now())
+	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "deadline") {
+		t.Fatalf("readSSEResponse error = %v, want client/body deadline", err)
+	}
+	if res.EventCount != 1 {
+		t.Fatalf("EventCount = %d, want partial event count retained", res.EventCount)
+	}
+}
+
 func TestSSEMaxBodyBytesDefault(t *testing.T) {
 	if got := sseMaxBodyBytes(nil); got != defaultSSEMaxBodyBytes {
 		t.Fatalf("default cap = %d, want %d", got, defaultSSEMaxBodyBytes)
@@ -126,4 +140,23 @@ func TestExtractSSEEventOrdinal(t *testing.T) {
 	if got != "second" {
 		t.Fatalf("ordinal[2] = %q, want second", got)
 	}
+}
+
+type timeoutAfterPayloadReadCloser struct {
+	reader *strings.Reader
+}
+
+func (r *timeoutAfterPayloadReadCloser) Read(p []byte) (int, error) {
+	n, err := r.reader.Read(p)
+	if n > 0 {
+		return n, nil
+	}
+	if err == io.EOF {
+		return 0, context.DeadlineExceeded
+	}
+	return n, err
+}
+
+func (r *timeoutAfterPayloadReadCloser) Close() error {
+	return nil
 }

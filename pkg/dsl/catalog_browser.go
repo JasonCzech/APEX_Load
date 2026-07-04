@@ -2,6 +2,7 @@ package dsl
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -29,6 +30,11 @@ func browserActionSpecs() []ActionSpec {
 	// locatorRequireOneOf marks the element-targeting actions as satisfiable by an
 	// inline target/selector or an object-repository binding.
 	locatorRequireOneOf := []string{"target", "selector", "object_ref"}
+	navigationFields := []FieldSpec{
+		{Name: "params.wait_until", Kind: FieldKindEnum, Enum: []string{"load", "domcontentloaded", "networkidle", "commit"}, Doc: "Navigation readiness point; defaults to Playwright's load event."},
+		fieldSync, fieldCapture,
+	}
+	navigationValidate := browserValidator(nil, browserNavigationChecks)
 
 	return []ActionSpec{
 		{
@@ -41,6 +47,27 @@ func browserActionSpecs() []ActionSpec {
 				fieldSelector, fieldSync, fieldCapture,
 			},
 			Validate: browserValidator(browserRequireTargetOrSelector, nil),
+		},
+		{
+			Type:      "browser_back",
+			Protocols: []string{"browser"},
+			Summary:   "Navigates the current page to the previous browser-history entry.",
+			Fields:    navigationFields,
+			Validate:  navigationValidate,
+		},
+		{
+			Type:      "browser_forward",
+			Protocols: []string{"browser"},
+			Summary:   "Navigates the current page to the next browser-history entry.",
+			Fields:    navigationFields,
+			Validate:  navigationValidate,
+		},
+		{
+			Type:      "browser_reload",
+			Protocols: []string{"browser"},
+			Summary:   "Reloads the current page.",
+			Fields:    navigationFields,
+			Validate:  navigationValidate,
 		},
 		{
 			Type:         "browser_open_window",
@@ -59,16 +86,48 @@ func browserActionSpecs() []ActionSpec {
 			Protocols:    []string{"browser"},
 			Summary:      "Clicks an element.",
 			RequireOneOf: [][]string{locatorRequireOneOf},
-			Fields:       locatorFields(),
-			Validate:     browserValidator(browserRequireElementLocator, nil),
+			Fields: locatorFields(
+				FieldSpec{Name: "params.button", Kind: FieldKindEnum, Enum: []string{"left", "right", "middle"}, Doc: "Mouse button to use; defaults to left."},
+				FieldSpec{Name: "params.modifiers", Kind: FieldKindArray, Doc: "Modifier keys held for the click, such as Control, Shift, Alt, Meta, or ControlOrMeta."},
+			),
+			Validate: browserValidator(browserRequireElementLocator, nil),
+		},
+		{
+			Type:         "browser_download",
+			Protocols:    []string{"browser"},
+			Summary:      "Clicks an element and waits for the resulting browser download.",
+			RequireOneOf: [][]string{locatorRequireOneOf},
+			Fields: locatorFields(
+				FieldSpec{Name: "params.url_contains", Kind: FieldKindString, Doc: "Substring that must appear in the download URL."},
+				FieldSpec{Name: "params.filename_contains", Kind: FieldKindString, Doc: "Substring that must appear in the suggested filename."},
+				FieldSpec{Name: "params.filename_regex", Kind: FieldKindString, Doc: "Regular expression matched against the suggested filename."},
+				FieldSpec{Name: "params.timeout_ms", Kind: FieldKindInt, Doc: "Maximum wait in milliseconds; defaults to the action timeout."},
+				FieldSpec{Name: "params.save_as", Kind: FieldKindString, Doc: "Full local path to save the downloaded file."},
+				FieldSpec{Name: "params.save_dir", Kind: FieldKindString, Doc: "Directory where the download should be saved using the suggested filename."},
+			),
+			Validate: browserValidator(browserRequireElementLocator, browserDownloadChecks),
+		},
+		{
+			Type:         "browser_check",
+			Protocols:    []string{"browser"},
+			Summary:      "Sets a checkbox or radio element to checked or unchecked.",
+			RequireOneOf: [][]string{locatorRequireOneOf},
+			Fields: locatorFields(
+				FieldSpec{Name: "value", Kind: FieldKindString, Doc: "Desired state. Use false/unchecked to uncheck; defaults to true."},
+				FieldSpec{Name: "params.checked", Kind: FieldKindBool, Doc: "Desired checked state; overrides value when present."},
+			),
+			Validate: browserValidator(browserRequireElementLocator, nil),
 		},
 		{
 			Type:         "browser_dblclick",
 			Protocols:    []string{"browser"},
 			Summary:      "Double-clicks an element.",
 			RequireOneOf: [][]string{locatorRequireOneOf},
-			Fields:       locatorFields(),
-			Validate:     browserValidator(browserRequireElementLocator, nil),
+			Fields: locatorFields(
+				FieldSpec{Name: "params.button", Kind: FieldKindEnum, Enum: []string{"left", "right", "middle"}, Doc: "Mouse button to use; defaults to left."},
+				FieldSpec{Name: "params.modifiers", Kind: FieldKindArray, Doc: "Modifier keys held for the double-click, such as Control, Shift, Alt, Meta, or ControlOrMeta."},
+			),
+			Validate: browserValidator(browserRequireElementLocator, nil),
 		},
 		{
 			Type:         "browser_hover",
@@ -89,10 +148,25 @@ func browserActionSpecs() []ActionSpec {
 		{
 			Type:         "browser_select",
 			Protocols:    []string{"browser"},
-			Summary:      "Selects an option in a select element.",
+			Summary:      "Selects one or more options in a select element.",
 			RequireOneOf: [][]string{locatorRequireOneOf},
-			Fields:       locatorFields(FieldSpec{Name: "value", Required: true, Kind: FieldKindString, Doc: "Option value or label to select."}),
-			Validate:     browserValidator(browserRequireElementLocator, browserRequireValue),
+			Fields: locatorFields(
+				FieldSpec{Name: "value", Kind: FieldKindString, Doc: "Single option value or label to select."},
+				FieldSpec{Name: "params.values", Kind: FieldKindArray, Doc: "Option values or labels to select for a multi-select."},
+			),
+			Validate: browserValidator(browserRequireElementLocator, browserRequireSelectValue),
+		},
+		{
+			Type:      "browser_scroll",
+			Protocols: []string{"browser"},
+			Summary:   "Scrolls the page or a scrollable element by a pixel delta.",
+			Fields: locatorFields(
+				FieldSpec{Name: "params.delta_x", Kind: FieldKindInt, Doc: "Horizontal scroll delta in pixels. Positive values scroll right."},
+				FieldSpec{Name: "params.delta_y", Kind: FieldKindInt, Doc: "Vertical scroll delta in pixels. Positive values scroll down."},
+				FieldSpec{Name: "params.scroll_x", Kind: FieldKindInt, Doc: "Recorded absolute horizontal scroll position after capture; informational."},
+				FieldSpec{Name: "params.scroll_y", Kind: FieldKindInt, Doc: "Recorded absolute vertical scroll position after capture; informational."},
+			),
+			Validate: browserValidator(nil, browserScrollChecks),
 		},
 		{
 			Type:         "browser_set_files",
@@ -174,6 +248,38 @@ func browserActionSpecs() []ActionSpec {
 				}
 				return nil
 			},
+		},
+		{
+			Type:      "browser_wait_response",
+			Protocols: []string{"browser"},
+			Summary:   "Waits for a browser network response matching URL, method, status, or resource filters.",
+			Fields: []FieldSpec{
+				{Name: "target", Kind: FieldKindString, Doc: "URL substring to match."},
+				{Name: "params.url_contains", Kind: FieldKindString, Doc: "URL substring to match; target is used when this is empty."},
+				{Name: "params.url", Kind: FieldKindString, Doc: "Exact response URL to match."},
+				{Name: "params.url_regex", Kind: FieldKindString, Doc: "Regular expression matched against response URL."},
+				{Name: "params.method", Kind: FieldKindEnum, Enum: []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}, Doc: "HTTP method filter."},
+				{Name: "params.status", Kind: FieldKindInt, Doc: "Expected HTTP status code; alias of params.status_code."},
+				{Name: "params.status_code", Kind: FieldKindInt, Doc: "Expected HTTP status code."},
+				{Name: "params.resource_type", Kind: FieldKindString, Doc: "Browser resource type filter, such as xhr, fetch, document, script, or image."},
+				{Name: "params.timeout_ms", Kind: FieldKindInt, Doc: "Maximum wait in milliseconds; defaults to 10000."},
+				{Name: "params.include_failed", Kind: FieldKindBool, Doc: "Also allow failed requests with status_code 0 to satisfy the wait."},
+				fieldCapture,
+			},
+			Validate: browserValidator(nil, browserWaitResponseChecks),
+		},
+		{
+			Type:      "browser_set_geolocation",
+			Protocols: []string{"browser"},
+			Summary:   "Sets the replay browser geolocation for subsequent page actions.",
+			Fields: []FieldSpec{
+				{Name: "params.latitude", Required: true, Kind: FieldKindFloat, Doc: "Latitude in decimal degrees, between -90 and 90."},
+				{Name: "params.longitude", Required: true, Kind: FieldKindFloat, Doc: "Longitude in decimal degrees, between -180 and 180."},
+				{Name: "params.accuracy", Kind: FieldKindFloat, Doc: "Non-negative accuracy radius in meters."},
+				{Name: "params.grant_permission", Kind: FieldKindBool, Doc: "Grant geolocation permission before setting the location; defaults to true."},
+				fieldCapture,
+			},
+			Validate: browserValidator(nil, browserSetGeolocationChecks),
 		},
 		{
 			Type:      "browser_ws_wait",
@@ -291,6 +397,19 @@ func browserHandleDialogChecks(label string, action Action) []string {
 	return nil
 }
 
+func browserNavigationChecks(label string, action Action) []string {
+	if waitUntil, ok := actionParamStringValue(action.Params, "wait_until"); ok && strings.TrimSpace(waitUntil) != "" {
+		value := strings.ToLower(strings.TrimSpace(waitUntil))
+		if value == "network_idle" {
+			value = "networkidle"
+		}
+		if !isAllowedValue(value, "load", "domcontentloaded", "networkidle", "commit") {
+			return []string{fmt.Sprintf("%s: %s params.wait_until must be load, domcontentloaded, networkidle, or commit", label, action.Type)}
+		}
+	}
+	return nil
+}
+
 // browserValidator composes the shared browser validation pipeline: the
 // per-type locator phase, then sync-policy checks, then the per-type value
 // phase — the same order the original switch-based validator produced.
@@ -342,6 +461,67 @@ func browserWSChecks(label string, action Action) []string {
 	return issues
 }
 
+func browserWaitResponseChecks(label string, action Action) []string {
+	var issues []string
+	if rawRegex, ok := actionParamStringValue(action.Params, "url_regex"); ok && strings.TrimSpace(rawRegex) != "" {
+		if _, err := regexp.Compile(rawRegex); err != nil {
+			issues = append(issues, fmt.Sprintf("%s: browser_wait_response params.url_regex is invalid: %v", label, err))
+		}
+	}
+	for _, key := range []string{"status", "status_code"} {
+		if statusCode, ok := actionParamIntValue(action.Params, key); ok && statusCode < 0 {
+			issues = append(issues, fmt.Sprintf("%s: browser_wait_response params.%s must be >= 0", label, key))
+		}
+	}
+	if method, ok := actionParamStringValue(action.Params, "method"); ok && strings.TrimSpace(method) != "" {
+		if !isAllowedValue(strings.ToUpper(strings.TrimSpace(method)), "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS") {
+			issues = append(issues, fmt.Sprintf("%s: browser_wait_response params.method must be a valid HTTP method", label))
+		}
+	}
+	if timeoutMs, ok := actionParamIntValue(action.Params, "timeout_ms"); ok && timeoutMs < 0 {
+		issues = append(issues, fmt.Sprintf("%s: browser_wait_response params.timeout_ms must be >= 0", label))
+	}
+	return issues
+}
+
+func browserDownloadChecks(label string, action Action) []string {
+	var issues []string
+	if rawRegex, ok := actionParamStringValue(action.Params, "filename_regex"); ok && strings.TrimSpace(rawRegex) != "" {
+		if _, err := regexp.Compile(rawRegex); err != nil {
+			issues = append(issues, fmt.Sprintf("%s: browser_download params.filename_regex is invalid: %v", label, err))
+		}
+	}
+	if timeoutMs, ok := actionParamIntValue(action.Params, "timeout_ms"); ok && timeoutMs < 0 {
+		issues = append(issues, fmt.Sprintf("%s: browser_download params.timeout_ms must be >= 0", label))
+	}
+	if saveAs, hasSaveAs := actionParamStringValue(action.Params, "save_as"); hasSaveAs && strings.TrimSpace(saveAs) != "" {
+		if saveDir, hasSaveDir := actionParamStringValue(action.Params, "save_dir"); hasSaveDir && strings.TrimSpace(saveDir) != "" {
+			issues = append(issues, fmt.Sprintf("%s: browser_download params.save_as and params.save_dir are mutually exclusive", label))
+		}
+	}
+	return issues
+}
+
+func browserSetGeolocationChecks(label string, action Action) []string {
+	var issues []string
+	latitude, hasLatitude := actionParamFloatValue(action.Params, "latitude")
+	longitude, hasLongitude := actionParamFloatValue(action.Params, "longitude")
+	if !hasLatitude {
+		issues = append(issues, fmt.Sprintf("%s: browser_set_geolocation requires params.latitude", label))
+	} else if latitude < -90 || latitude > 90 {
+		issues = append(issues, fmt.Sprintf("%s: browser_set_geolocation params.latitude must be between -90 and 90", label))
+	}
+	if !hasLongitude {
+		issues = append(issues, fmt.Sprintf("%s: browser_set_geolocation requires params.longitude", label))
+	} else if longitude < -180 || longitude > 180 {
+		issues = append(issues, fmt.Sprintf("%s: browser_set_geolocation params.longitude must be between -180 and 180", label))
+	}
+	if accuracy, ok := actionParamFloatValue(action.Params, "accuracy"); ok && accuracy < 0 {
+		issues = append(issues, fmt.Sprintf("%s: browser_set_geolocation params.accuracy must be zero or greater", label))
+	}
+	return issues
+}
+
 // browserRequireElementLocator is the element-action variant of
 // browserRequireTargetOrSelector that also accepts an object-repository binding
 // (object_ref). The controller resolves object_ref into a concrete selector at
@@ -377,6 +557,34 @@ func browserSwitchFrameChecks(label string, action Action) []string {
 func browserRequireValue(label string, action Action) []string {
 	if action.Value == "" {
 		return []string{fmt.Sprintf("%s: %s requires value", label, action.Type)}
+	}
+	return nil
+}
+
+func browserRequireSelectValue(label string, action Action) []string {
+	if strings.TrimSpace(action.Value) != "" {
+		return nil
+	}
+	if _, ok := action.Params["values"]; ok {
+		return nil
+	}
+	if value, ok := actionParamStringValue(action.Params, "value"); ok && strings.TrimSpace(value) != "" {
+		return nil
+	}
+	return []string{fmt.Sprintf("%s: browser_select requires value", label)}
+}
+
+func browserScrollChecks(label string, action Action) []string {
+	deltaX, hasX := actionParamIntValue(action.Params, "delta_x")
+	deltaY, hasY := actionParamIntValue(action.Params, "delta_y")
+	if !hasX {
+		deltaX, hasX = actionParamIntValue(action.Params, "x")
+	}
+	if !hasY {
+		deltaY, hasY = actionParamIntValue(action.Params, "y")
+	}
+	if (!hasX || deltaX == 0) && (!hasY || deltaY == 0) {
+		return []string{fmt.Sprintf("%s: browser_scroll requires params.delta_x or params.delta_y", label)}
 	}
 	return nil
 }
