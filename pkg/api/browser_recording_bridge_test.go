@@ -16,6 +16,7 @@ const bridgeTestToken = "0123456789abcdef0123456789abcdef0123456789abcdef"
 
 func newBrowserRecorderBridgeTestServer(t *testing.T, fake *fakeBrowserRecorderBackend) *Server {
 	t.Helper()
+	stubBrowserRecordingDependencyProbe(t, nil)
 	if runtime.GOOS == "linux" {
 		t.Setenv("DISPLAY", ":0")
 	}
@@ -82,10 +83,14 @@ func TestBrowserRecorderBridgePairingAndPNA(t *testing.T) {
 	if got := preflightResp.Header().Get("Access-Control-Allow-Private-Network"); got != "true" {
 		t.Errorf("allow-private-network = %q, want true", got)
 	}
+	if got := preflightResp.Header().Get("Access-Control-Allow-Headers"); !strings.Contains(got, bridgeSessionHeader) {
+		t.Errorf("allow-headers = %q, want bridge session header", got)
+	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/browser-recorder/devices", nil)
 	req.Header.Set("Origin", bridgeTestOrigin)
 	req.Header.Set(bridgeTokenHeader, bridgeTestToken)
+	req.Header.Set(bridgeSessionHeader, sessionID)
 	resp := httptest.NewRecorder()
 	server.mux.ServeHTTP(resp, req)
 	if resp.Code != http.StatusOK {
@@ -101,7 +106,7 @@ func TestBrowserRecorderBridgePairingAndPNA(t *testing.T) {
 
 func TestBrowserRecorderBridgeRejectsUnpairedAccess(t *testing.T) {
 	server := newBrowserRecorderBridgeTestServer(t, newFakeBrowserRecorder(nil))
-	pairBridgeForTest(t, server, bridgeTestOrigin)
+	sessionID := pairBridgeForTest(t, server, bridgeTestOrigin)
 
 	missing := httptest.NewRequest(http.MethodGet, "/api/v1/browser-recorder/devices", nil)
 	missing.Header.Set("Origin", bridgeTestOrigin)
@@ -114,10 +119,48 @@ func TestBrowserRecorderBridgeRejectsUnpairedAccess(t *testing.T) {
 	unpaired := httptest.NewRequest(http.MethodGet, "/api/v1/browser-recorder/devices", nil)
 	unpaired.Header.Set("Origin", "https://other.example.test")
 	unpaired.Header.Set(bridgeTokenHeader, bridgeTestToken)
+	unpaired.Header.Set(bridgeSessionHeader, sessionID)
 	unpairedResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(unpairedResp, unpaired)
 	if unpairedResp.Code != http.StatusUnauthorized {
 		t.Fatalf("unpaired origin status = %d, want 401", unpairedResp.Code)
+	}
+}
+
+func TestBrowserRecorderBridgeSessionAccessOutlivesPairingWindow(t *testing.T) {
+	server := newBrowserRecorderBridgeTestServer(t, newFakeBrowserRecorder(nil))
+	sessionID := pairBridgeForTest(t, server, bridgeTestOrigin)
+
+	server.recordingBridge.mu.Lock()
+	server.recordingBridge.pairingExpires = time.Now().Add(-time.Second)
+	server.recordingBridge.mu.Unlock()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/browser-recorder/devices", nil)
+	req.Header.Set("Origin", bridgeTestOrigin)
+	req.Header.Set(bridgeTokenHeader, bridgeTestToken)
+	req.Header.Set(bridgeSessionHeader, sessionID)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("session access after pairing expiry status = %d, want 200 body=%s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestBrowserRecorderBridgeTokenOnlyAccessExpiresWithPairingWindow(t *testing.T) {
+	server := newBrowserRecorderBridgeTestServer(t, newFakeBrowserRecorder(nil))
+	pairBridgeForTest(t, server, bridgeTestOrigin)
+
+	server.recordingBridge.mu.Lock()
+	server.recordingBridge.pairingExpires = time.Now().Add(-time.Second)
+	server.recordingBridge.mu.Unlock()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/browser-recorder/devices", nil)
+	req.Header.Set("Origin", bridgeTestOrigin)
+	req.Header.Set(bridgeTokenHeader, bridgeTestToken)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("expired token-only access status = %d, want 401 body=%s", resp.Code, resp.Body.String())
 	}
 }
 

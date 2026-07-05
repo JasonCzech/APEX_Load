@@ -68,7 +68,7 @@ func DiagnoseReplay(recorded, replay []Observation) []RepairSuggestion {
 		if !ok {
 			continue
 		}
-		replayValue := candidateValueByName(rep, c.Name)
+		replayValue := candidateValueForCorrelation(rep, c)
 
 		if replayValue == "" {
 			// The recording extracted this value here, but the replay response no
@@ -117,8 +117,8 @@ func DiagnoseReplay(recorded, replay []Observation) []RepairSuggestion {
 					UsedInIDs:      append([]int(nil), c.UsedInIDs...),
 					UsageCount:     len(c.UsedInIDs),
 					AffectedFields: affectedFields,
-					RecordedValue:  Truncate(c.Value, 80),
-					ReplayValue:    Truncate(replayValue, 80),
+					RecordedValue:  c.Value,
+					ReplayValue:    replayValue,
 					Suggestion:     fmt.Sprintf("Capture %s from step %d and substitute {{var.%s}} in step %d.", c.Name, c.FoundInID, c.Name, usedID),
 					Extractor:      extractorFor(c),
 					Confidence:     c.Confidence,
@@ -226,16 +226,27 @@ func indexObservations(observations []Observation) map[int]Observation {
 	return index
 }
 
-// candidateValueByName re-runs the rule extractors over a replay response and
-// returns the value of the same-named candidate, i.e. the fresh value the server
-// produced this time.
-func candidateValueByName(observation Observation, name string) string {
+// candidateValueForCorrelation re-runs the rule extractors over a replay
+// response and returns the fresh value from the same source/expression. Display
+// names may be uniquified after detection (corr_id_2), so name-only matching is
+// only a compatibility fallback.
+func candidateValueForCorrelation(observation Observation, corr Correlation) string {
+	var nameFallback string
 	for _, candidate := range Candidates(observation.ResponseBody, observation.ResponseHeaders) {
-		if candidate.Name == name {
+		if sameCandidateLocation(candidate, corr) {
 			return candidate.Value
 		}
+		if nameFallback == "" && candidate.Name == corr.Name {
+			nameFallback = candidate.Value
+		}
 	}
-	return ""
+	return nameFallback
+}
+
+func sameCandidateLocation(candidate Candidate, corr Correlation) bool {
+	return strings.EqualFold(strings.TrimSpace(candidate.Source), strings.TrimSpace(corr.Source)) &&
+		strings.EqualFold(strings.TrimSpace(candidate.ExtractType), strings.TrimSpace(corr.ExtractType)) &&
+		strings.TrimSpace(candidate.Expression) == strings.TrimSpace(corr.Expression)
 }
 
 func extractorFor(c Correlation) *SuggestedExtractor {

@@ -121,14 +121,39 @@ func downloadSavePath(action *protocol.Action, suggested string) (string, error)
 		return "", fmt.Errorf("browser_download params.save_as and params.save_dir are mutually exclusive")
 	}
 	if saveAs != "" {
-		return saveAs, nil
+		return resolveDownloadExportPath(filepath.Dir(saveAs), filepath.Base(saveAs))
 	}
 	if saveDir != "" {
-		filename := filepath.Base(strings.TrimSpace(suggested))
-		if filename == "." || filename == ".." || filename == string(filepath.Separator) || filename == "" {
-			filename = "download"
-		}
-		return filepath.Join(saveDir, filename), nil
+		return resolveDownloadExportPath(saveDir, downloadFilename(suggested))
 	}
 	return "", nil
+}
+
+func resolveDownloadExportPath(userDir, filename string) (string, error) {
+	base := strings.TrimSpace(os.Getenv("APEXLOAD_EXPORT_DIR"))
+	if base == "" {
+		base = "exports"
+	}
+	absBase, err := filepath.Abs(base)
+	if err != nil {
+		return "", fmt.Errorf("resolve browser download export base: %w", err)
+	}
+
+	safeName := downloadFilename(filename)
+	rooted := filepath.Clean("/" + filepath.ToSlash(strings.TrimSpace(userDir)))
+	sub := strings.TrimPrefix(rooted, "/")
+	target := filepath.Clean(filepath.Join(absBase, filepath.FromSlash(sub), safeName))
+	if target != absBase && !strings.HasPrefix(target, absBase+string(filepath.Separator)) {
+		return "", fmt.Errorf("resolved browser download path escapes the export directory")
+	}
+	return target, nil
+}
+
+func downloadFilename(filename string) string {
+	filename = strings.ReplaceAll(strings.TrimSpace(filename), "\\", "/")
+	safeName := filepath.Base(filepath.FromSlash(filename))
+	if safeName == "." || safeName == ".." || safeName == string(filepath.Separator) || safeName == "" {
+		return "download"
+	}
+	return safeName
 }

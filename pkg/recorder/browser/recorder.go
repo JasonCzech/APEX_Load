@@ -175,6 +175,22 @@ func EnsureBrowsers() error {
 	return playwright.Install(&playwright.RunOptions{Browsers: []string{"chromium"}})
 }
 
+func CheckChromiumInstalled() error {
+	pw, err := playwright.Run()
+	if err != nil {
+		return fmt.Errorf("start playwright: %w", err)
+	}
+	defer pw.Stop()
+	path := strings.TrimSpace(pw.Chromium.ExecutablePath())
+	if path == "" {
+		return fmt.Errorf("launch chromium: executable doesn't exist; please run: playwright install chromium")
+	}
+	if _, err := os.Stat(path); err != nil {
+		return fmt.Errorf("launch chromium: executable doesn't exist at %s; please run: playwright install chromium: %w", path, err)
+	}
+	return nil
+}
+
 // New prepares a recorder; Start launches the browser.
 func New(opts Options) *Recorder {
 	device := ""

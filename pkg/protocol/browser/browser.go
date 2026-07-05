@@ -26,6 +26,7 @@ type Browser struct {
 	headless                   bool
 	cacheEnabled               bool
 	cacheContentURLs           bool
+	cacheContentURLsConfigured bool
 	checkNewerVersions         bool
 	recordedResourcesAvailable bool
 	recordedResources          map[string]struct{}
@@ -50,6 +51,7 @@ type Browser struct {
 	experienceCanary           bool
 	traceparentEnabled         bool
 	selfHealMode               string
+	runMode                    string
 	harCapturePolicy           string
 	harDir                     string
 	harWorkingPath             string

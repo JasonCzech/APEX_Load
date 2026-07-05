@@ -23,6 +23,8 @@ const (
 	browserSelfHealOff        = "off"
 	browserSelfHealReplayOnly = "replay_only"
 	browserSelfHealAlways     = "always"
+	browserRunModeReplay      = "replay"
+	browserRunModeLoad        = "load"
 )
 
 type selectorSelfHealStats struct {
@@ -41,6 +43,20 @@ func (s selectorSelfHealStats) budgetSpent() int {
 // alternates. A successful heal is recorded as structured protocol evidence so
 // the diagnose endpoint and dashboard can suggest promoting the fallback.
 func (b *Browser) runWithSelectorSelfHeal(ctx context.Context, action *protocol.Action, result *protocol.Result, primary string, run func(string) error) error {
+	stats := selectorSelfHealStats{}
+	key := selfHealActionIdentity(action, primary)
+	tried := make(map[string]struct{})
+	if action != nil && b.selectorSelfHealEnabled() {
+		if cached, ok := b.cachedSelfHealCandidate(key); ok {
+			stats.CacheHit = true
+			if healed, ok := b.trySelfHealCandidate(ctx, action, primary, cached, run, &stats, tried, false); ok {
+				b.recordSelfHeal(action, result, primary, healed, cached, stats)
+				return nil
+			}
+			b.forgetSelfHealCandidate(key)
+		}
+	}
+
 	err := run(primary)
 	if err == nil || ctx.Err() != nil || action == nil {
 		return err
@@ -49,16 +65,9 @@ func (b *Browser) runWithSelectorSelfHeal(ctx context.Context, action *protocol.
 		return err
 	}
 
-	stats := selectorSelfHealStats{}
-	key := selfHealActionIdentity(action, primary)
-	tried := make(map[string]struct{})
-	if cached, ok := b.cachedSelfHealCandidate(key); ok {
-		stats.CacheHit = true
-		if healed, ok := b.trySelfHealCandidate(ctx, action, primary, cached, run, &stats, tried); ok {
-			b.recordSelfHeal(action, result, primary, healed, cached, stats)
-			return nil
-		}
-		b.forgetSelfHealCandidate(key)
+	if !b.selectorSelfHealFallbacksEnabled() {
+		b.recordSelfHealMetrics(action, result, primary, false, stats)
+		return err
 	}
 
 	fallbacks := selector.FromMetadataValue(action.Metadata[selector.MetadataFallbacksKey])
@@ -73,7 +82,7 @@ func (b *Browser) runWithSelectorSelfHeal(ctx context.Context, action *protocol.
 		if stats.budgetSpent() >= maxHealAttempts || ctx.Err() != nil {
 			break
 		}
-		if healed, ok := b.trySelfHealCandidate(ctx, action, primary, candidate, run, &stats, tried); ok {
+		if healed, ok := b.trySelfHealCandidate(ctx, action, primary, candidate, run, &stats, tried, true); ok {
 			b.storeSelfHealCandidate(key, candidate)
 			b.recordSelfHeal(action, result, primary, healed, candidate, stats)
 			return nil
@@ -91,6 +100,7 @@ func (b *Browser) trySelfHealCandidate(
 	run func(string) error,
 	stats *selectorSelfHealStats,
 	tried map[string]struct{},
+	probe bool,
 ) (string, bool) {
 	engineSelector, ok := selector.Usable(candidate)
 	if !ok || strings.TrimSpace(engineSelector) == strings.TrimSpace(primary) {
@@ -102,7 +112,7 @@ func (b *Browser) trySelfHealCandidate(
 		}
 		tried[engineSelector] = struct{}{}
 	}
-	if !b.selectorPresent(ctx, action, engineSelector) {
+	if probe && !b.selectorPresent(ctx, action, engineSelector) {
 		stats.ProbeFailures++
 		return "", false
 	}
@@ -151,6 +161,12 @@ func (b *Browser) recordSelfHeal(action *protocol.Action, result *protocol.Resul
 	if seq := actionMetadataString(action.Metadata, "recorder_step_seq"); seq != "" {
 		evidence["recorder_step_seq"] = seq
 	}
+	if repoID := actionMetadataString(action.Metadata, "object_ref_repository"); repoID != "" {
+		evidence["object_ref_repository"] = repoID
+	}
+	if logicalName := actionMetadataString(action.Metadata, "object_ref_logical_name"); logicalName != "" {
+		evidence["object_ref_logical_name"] = logicalName
+	}
 	result.ProtocolEvidence["selector_self_heal"] = evidence
 }
 
@@ -161,7 +177,7 @@ func (b *Browser) recordSelfHealMetrics(action *protocol.Action, result *protoco
 	if result.ProtocolEvidence == nil {
 		result.ProtocolEvidence = map[string]any{}
 	}
-	result.ProtocolEvidence["selector_self_heal_metrics"] = map[string]any{
+	metrics := map[string]any{
 		"action":           action.Name,
 		"primary_selector": primary,
 		"attempts":         stats.Attempts,
@@ -169,6 +185,8 @@ func (b *Browser) recordSelfHealMetrics(action *protocol.Action, result *protoco
 		"cache_hit":        stats.CacheHit,
 		"success":          success,
 	}
+	result.ProtocolEvidence["selector_self_heal_metrics"] = metrics
+	result.ProtocolEvidence["self_heal_metrics"] = metrics
 }
 
 func (b *Browser) selectorSelfHealEnabled() bool {
@@ -182,6 +200,19 @@ func (b *Browser) selectorSelfHealEnabled() bool {
 	}
 }
 
+func (b *Browser) selectorSelfHealFallbacksEnabled() bool {
+	switch b.selfHealMode {
+	case browserSelfHealOff:
+		return false
+	case browserSelfHealAlways:
+		return true
+	case browserSelfHealReplayOnly, "":
+		return b.runMode != browserRunModeLoad
+	default:
+		return false
+	}
+}
+
 func normalizeBrowserSelfHealMode(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "", "replay", "replay_only", "replay-only", "memoized":
@@ -190,6 +221,17 @@ func normalizeBrowserSelfHealMode(value string) string {
 		return browserSelfHealAlways
 	case "off", "false", "disabled", "none":
 		return browserSelfHealOff
+	default:
+		return ""
+	}
+}
+
+func normalizeBrowserRunMode(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "replay", "debug", "shakeout":
+		return browserRunModeReplay
+	case "load", "run", "vuser":
+		return browserRunModeLoad
 	default:
 		return ""
 	}

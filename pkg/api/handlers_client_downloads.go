@@ -58,6 +58,15 @@ func downloadPlatform(r *http.Request) string {
 	}
 }
 
+func requireDownloadPlatform(w http.ResponseWriter, r *http.Request, humanName string) (string, bool) {
+	platform := downloadPlatform(r)
+	if platform == "" {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("platform query parameter is required for %s downloads", humanName))
+		return "", false
+	}
+	return platform, true
+}
+
 func sanitizeDownloadPlatform(platform string) string {
 	platform = strings.ToLower(strings.TrimSpace(platform))
 	platform = strings.ReplaceAll(platform, "/", "-")

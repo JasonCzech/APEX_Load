@@ -11,6 +11,7 @@ import { type BrowserRecorderAvailability } from './useBrowserRecorderApi'
 export const BROWSER_RECORDER_BRIDGE_CHANGED_EVENT = 'apexload:browser-recorder-bridge-changed'
 const BRIDGE_STORAGE_PREFIX = 'apexload.browserRecorderBridge.'
 const BRIDGE_TOKEN_HEADER = 'X-APEXLoad-Bridge-Token'
+const BRIDGE_SESSION_HEADER = 'X-APEXLoad-Bridge-Session'
 
 export type BrowserRecorderBridgeConnection = {
   origin: string
@@ -93,6 +94,7 @@ export function clearBrowserRecorderBridge(remoteOrigin = API_ORIGIN): void {
 function withBridgeToken(connection: BrowserRecorderBridgeConnection, options?: RequestInit): RequestInit {
   const headers = new Headers(options?.headers)
   headers.set(BRIDGE_TOKEN_HEADER, connection.token)
+  headers.set(BRIDGE_SESSION_HEADER, connection.session_id)
   return { ...options, headers }
 }
 

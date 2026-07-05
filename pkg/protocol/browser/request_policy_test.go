@@ -61,6 +61,11 @@ func TestRequestPolicyEnabled(t *testing.T) {
 			want: true,
 		},
 		{
+			name: "explicit content url cache disabled",
+			b:    &Browser{cacheEnabled: true, cacheContentURLsConfigured: true, cacheContentURLs: false, downloadResources: "all"},
+			want: true,
+		},
+		{
 			name: "download resources none",
 			b:    &Browser{cacheEnabled: true, downloadResources: "none"},
 			want: true,
@@ -169,6 +174,27 @@ func TestRequestPolicyHeadersDisableCacheAndRevalidate(t *testing.T) {
 	}
 	if _, ok := original["Cache-Control"]; ok {
 		t.Fatal("requestPolicyHeadersFor mutated the original header map")
+	}
+}
+
+func TestRequestPolicyHeadersExplicitContentURLCacheDisabled(t *testing.T) {
+	b := Browser{
+		cacheEnabled:               true,
+		cacheContentURLsConfigured: true,
+		cacheContentURLs:           false,
+	}
+
+	headers := b.requestPolicyHeadersFor("https://cdn.example.com/app.js", "script", false, map[string]string{"Accept": "*/*"})
+	if headers["Cache-Control"] != "no-cache" || headers["Pragma"] != "no-cache" {
+		t.Fatalf("static headers = %+v, want no-cache revalidation", headers)
+	}
+	if got := b.requestPolicyHeadersFor("https://cdn.example.com/api", "xhr", false, nil); got != nil {
+		t.Fatalf("xhr headers = %+v, want nil", got)
+	}
+
+	zero := Browser{cacheEnabled: true}
+	if got := zero.requestPolicyHeadersFor("https://cdn.example.com/app.js", "script", false, nil); got != nil {
+		t.Fatalf("zero-value cache_content_urls headers = %+v, want nil", got)
 	}
 }
 

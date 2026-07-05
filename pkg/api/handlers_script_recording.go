@@ -55,13 +55,14 @@ func (s *Server) handleDiagnoseScriptReplay(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusInternalServerError, "failed to load recorded baseline")
 		return
 	}
-	if record == nil || len(record.Observations) == 0 {
+	baseline := baselineObservations(record)
+	if record == nil || len(baseline) == 0 {
 		writeError(w, http.StatusNotFound, "no recorded baseline for this script")
 		return
 	}
 
 	suggestions := correlate.DiagnoseReplay(
-		baselineObservations(record),
+		baseline,
 		toObservations(req.Replay),
 	)
 
@@ -85,8 +86,15 @@ func (s *Server) handleDiagnoseScriptReplay(w http.ResponseWriter, r *http.Reque
 // baselineObservations converts a stored recorded baseline into correlate
 // observations (the recorded side of a record-vs-replay diagnosis).
 func baselineObservations(record *storage.ScriptRecordingRecord) []correlate.Observation {
-	observations := make([]correlate.Observation, 0, len(record.Observations))
-	for _, o := range record.Observations {
+	if record == nil {
+		return nil
+	}
+	stored := record.CorrelationObservations
+	if len(stored) == 0 {
+		stored = record.Observations
+	}
+	observations := make([]correlate.Observation, 0, len(stored))
+	for _, o := range stored {
 		observations = append(observations, correlate.Observation{
 			ID:              o.ID,
 			RequestURL:      o.RequestURL,

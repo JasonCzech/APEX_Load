@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -138,6 +139,73 @@ func TestHTTPExecuteCacheRevalidatesWithETag(t *testing.T) {
 	}
 	if second.StatusCode != http.StatusOK {
 		t.Fatalf("second status = %d, want synthetic 200 from cache", second.StatusCode)
+	}
+}
+
+func TestHTTPExecuteCacheRevalidationRefreshesFreshness(t *testing.T) {
+	var hits int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hit := atomic.AddInt32(&hits, 1)
+		if hit == 1 {
+			w.Header().Set("Cache-Control", "max-age=0")
+			w.Header().Set("ETag", `"v1"`)
+			_, _ = w.Write([]byte("cached"))
+			return
+		}
+		if r.Header.Get("If-None-Match") != `"v1"` {
+			t.Errorf("If-None-Match = %q, want v1", r.Header.Get("If-None-Match"))
+		}
+		w.Header().Set("Cache-Control", "max-age=60")
+		w.Header().Set("ETag", `"v1"`)
+		w.WriteHeader(http.StatusNotModified)
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{"base_url": ts.URL, "http_cache_enabled": true})
+	first := executeCacheAction(t, h)
+	second := executeCacheAction(t, h)
+	third := executeCacheAction(t, h)
+
+	if atomic.LoadInt32(&hits) != 2 {
+		t.Fatalf("server hits = %d, want initial request plus one revalidation", hits)
+	}
+	for i, result := range []*protocol.Result{first, second, third} {
+		if result.ResponseBody != "cached" {
+			t.Fatalf("response %d body = %q, want cached", i+1, result.ResponseBody)
+		}
+	}
+}
+
+func TestHTTPExecuteDoesNotCacheFailedBodyRead(t *testing.T) {
+	var hits int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hit := atomic.AddInt32(&hits, 1)
+		w.Header().Set("Cache-Control", "max-age=60")
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = w.Write([]byte("version-" + strconv.Itoa(int(hit)) + "-body"))
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{"base_url": ts.URL, "http_cache_enabled": true})
+	first, err := h.Execute(context.Background(), &protocol.Action{
+		Name:   "bounded-cache-get",
+		Method: "GET",
+		Target: "/resource",
+		Params: map[string]any{"max_body_bytes": 4},
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if first.Success || !strings.Contains(first.ErrorMessage, "response body exceeded") {
+		t.Fatalf("first result = %+v, want bounded read failure", first)
+	}
+
+	second := executeCacheAction(t, h)
+	if atomic.LoadInt32(&hits) != 2 {
+		t.Fatalf("server hits = %d, want failed read to skip cache store", hits)
+	}
+	if second.ResponseBody != "version-2-body" {
+		t.Fatalf("second body = %q, want uncached version-2-body", second.ResponseBody)
 	}
 }
 

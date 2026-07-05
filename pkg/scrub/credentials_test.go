@@ -70,7 +70,7 @@ func TestRedactCredentialBodyForm(t *testing.T) {
 }
 
 func TestRedactCredentialBodyXML(t *testing.T) {
-	body := `<soap:Envelope><soap:Body><login apiKey="static-key"><password>hunter2</password><csrf>csrf-keep</csrf><sessionId>sid-keep</sessionId></login></soap:Body></soap:Envelope>`
+	body := `<soap:Envelope><soap:Body><login apiKey="static-key" data-secret="tracking"><password>hunter2</password><csrf>csrf-keep</csrf><sessionId>sid-keep</sessionId></login></soap:Body></soap:Envelope>`
 	out := RedactCredentialBody(body)
 
 	for _, secret := range []string{"hunter2", "static-key"} {
@@ -78,7 +78,7 @@ func TestRedactCredentialBodyXML(t *testing.T) {
 			t.Errorf("XML credential %q leaked: %q", secret, out)
 		}
 	}
-	for _, dynamic := range []string{"csrf-keep", "sid-keep"} {
+	for _, dynamic := range []string{"csrf-keep", "sid-keep", `data-secret="tracking"`} {
 		if !strings.Contains(out, dynamic) {
 			t.Errorf("correlation candidate %q must be preserved: %q", dynamic, out)
 		}

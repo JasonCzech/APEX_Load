@@ -45,7 +45,11 @@ func (b *Browser) captureClientMetrics(ctx context.Context, duration time.Durati
 	if err := b.captureRuntimeMetrics(ctx, metrics); err != nil {
 		// Keep metrics collection non-fatal for the browser action.
 	}
-	if err := b.captureBrowserProcessMetrics(ctx, metrics, processBefore); err != nil {
+	if b.processMetricsAttributionEnabled() {
+		if err := b.captureBrowserProcessMetrics(ctx, metrics, processBefore); err != nil {
+			// Keep browser-process attribution non-fatal because CDP support varies by runtime.
+		}
+	} else {
 		// Keep browser-process attribution non-fatal because CDP support varies by runtime.
 	}
 
@@ -53,6 +57,10 @@ func (b *Browser) captureClientMetrics(ctx context.Context, duration time.Durati
 		return metrics
 	}
 	return metrics
+}
+
+func (b *Browser) processMetricsAttributionEnabled() bool {
+	return envFlagEnabled("APEXLOAD_BROWSER_PROCESS_METRICS")
 }
 
 func (b *Browser) capturePageMetrics(ctx context.Context, metrics *protocol.ClientMetrics) error {

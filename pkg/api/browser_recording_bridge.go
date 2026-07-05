@@ -17,6 +17,7 @@ import (
 
 const (
 	bridgeTokenHeader       = "X-APEXLoad-Bridge-Token"
+	bridgeSessionHeader     = "X-APEXLoad-Bridge-Session"
 	bridgeSessionQueryParam = "bridge_session_id"
 	defaultBridgePairingTTL = 10 * time.Minute
 	defaultBridgeSessionTTL = 12 * time.Hour
@@ -217,7 +218,7 @@ func (b *BrowserRecordingBridge) corsMiddleware(next http.Handler) http.Handler 
 			}
 		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID, X-APEXLoad-API-Key, X-APEXLoad-Dev-View, X-APEXLoad-Dev-Project-ID, "+bridgeTokenHeader)
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID, X-APEXLoad-API-Key, X-APEXLoad-Dev-View, X-APEXLoad-Dev-Project-ID, "+bridgeTokenHeader+", "+bridgeSessionHeader)
 		w.Header().Set("Access-Control-Max-Age", "600")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
@@ -272,7 +273,20 @@ func (b *BrowserRecordingBridge) authorizeTokenRequest(r *http.Request) bool {
 		return false
 	}
 	origin := strings.TrimSpace(r.Header.Get("Origin"))
-	return origin == "" || b.originAllowed(origin)
+	sessionID := strings.TrimSpace(r.Header.Get(bridgeSessionHeader))
+	now := time.Now()
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	if sessionID != "" {
+		session, ok := b.sessions[sessionID]
+		return ok && origin != "" && strings.EqualFold(session.Origin, origin) && !now.After(session.ExpiresAt)
+	}
+	expired := now.After(b.pairingExpires)
+	_, originOK := b.allowedOrigins[origin]
+	if expired {
+		return false
+	}
+	return origin == "" || originOK
 }
 
 func (b *BrowserRecordingBridge) authorizeWebSocket(r *http.Request) bool {

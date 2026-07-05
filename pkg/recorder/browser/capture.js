@@ -27,6 +27,7 @@
   let pendingDrag = null;
   let windowScrollState = null;
   const elementScrollStates = new WeakMap();
+  const editableFillStates = new WeakMap();
   let lastRecordedFill = null;
   let lastRecordedHover = null;
   let lastEnterPressAt = 0;
@@ -227,21 +228,49 @@
     }
   }
 
+  function frameSelectorForElement(fe) {
+    if (!fe) return '';
+    const tag = (fe.tagName || 'iframe').toLowerCase();
+    if (fe.id && SAFE_IDENT.test(fe.id)) return tag + '#' + fe.id;
+    const name = fe.getAttribute('name');
+    if (name) return tag + '[name="' + escAttr(name) + '"]';
+    const title = fe.getAttribute('title');
+    if (title) return tag + '[title="' + escAttr(title) + '"]';
+    const src = fe.getAttribute('src');
+    if (src) return tag + '[src="' + escAttr(src) + '"]';
+    try {
+      const siblings = Array.from(fe.ownerDocument.querySelectorAll(tag));
+      const index = siblings.indexOf(fe);
+      if (index >= 0) return tag + ':nth-of-type(' + (index + 1) + ')';
+    } catch (e) {}
+    return tag;
+  }
+
   // Same-origin frames identify themselves via frameElement; cross-origin
   // frames are resolved on the Go side from the binding source frame URL.
   function frameSelector() {
     try {
-      const fe = window.frameElement;
-      if (!fe) return '';
-      if (fe.id && SAFE_IDENT.test(fe.id)) return 'iframe#' + fe.id;
-      const name = fe.getAttribute('name');
-      if (name) return 'iframe[name="' + escAttr(name) + '"]';
-      const src = fe.getAttribute('src');
-      if (src) return 'iframe[src="' + escAttr(src) + '"]';
-      return 'iframe';
+      return frameSelectorForElement(window.frameElement);
     } catch (e) {
       return '';
     }
+  }
+
+  function framePath() {
+    const path = [];
+    let win = window;
+    for (let guard = 0; guard < 20; guard++) {
+      try {
+        if (!win || win === win.parent) break;
+        const selector = frameSelectorForElement(win.frameElement);
+        if (!selector) break;
+        path.unshift(selector);
+        win = win.parent;
+      } catch (e) {
+        break;
+      }
+    }
+    return path;
   }
 
   function record(kind, el, value, masked, extra) {
@@ -253,6 +282,7 @@
       url: location.href,
       title: document.title,
       frame_selector: frameSelector(),
+      frame_path: framePath(),
       element: el ? safeMetaFor(el) : null
     };
     if (extra && typeof extra === 'object') Object.assign(payload, extra);
@@ -325,6 +355,22 @@
       (el.getAttribute && String(el.getAttribute('contenteditable') || '').toLowerCase() === 'true')));
   }
 
+  function isExplicitEditableHost(el) {
+    if (!el || !el.getAttribute) return false;
+    const value = el.getAttribute('contenteditable');
+    return value !== null && String(value).toLowerCase() !== 'false';
+  }
+
+  function contentEditableHost(el) {
+    if (!isEditableContent(el)) return null;
+    let cur = el;
+    while (cur && cur.nodeType === 1) {
+      if (isExplicitEditableHost(cur)) return cur;
+      cur = cur.parentElement;
+    }
+    return el;
+  }
+
   function fillSnapshot(el) {
     const masked = isPasswordInput(el);
     if (isEditableContent(el)) {
@@ -341,6 +387,7 @@
   }
 
   function recordFill(el, source) {
+    el = contentEditableHost(el) || el;
     const snapshot = fillSnapshot(el);
     record('fill', el, snapshot.value, snapshot.masked);
     lastRecordedFill = {
@@ -361,6 +408,29 @@
     return age >= 0 && age <= 1000 &&
       snapshot.value === lastRecordedFill.value &&
       snapshot.masked === lastRecordedFill.masked;
+  }
+
+  function scheduleEditableFill(el, source) {
+    const host = contentEditableHost(el);
+    if (!host) return;
+    const existing = editableFillStates.get(host);
+    if (existing && existing.timer) clearTimeout(existing.timer);
+    editableFillStates.set(host, {
+      source: source || 'input',
+      timer: setTimeout(() => {
+        editableFillStates.delete(host);
+        if (!shouldSkipDuplicateFill(host)) recordFill(host, source || 'input');
+      }, 350)
+    });
+  }
+
+  function flushEditableFill(el, source) {
+    const host = contentEditableHost(el);
+    if (!host) return;
+    const existing = editableFillStates.get(host);
+    if (existing && existing.timer) clearTimeout(existing.timer);
+    editableFillStates.delete(host);
+    if (!shouldSkipDuplicateFill(host)) recordFill(host, source || (existing && existing.source) || 'focusout');
   }
 
   function shouldSuppressKeyboardClick(ev) {
@@ -388,7 +458,7 @@
     const root = el.getRootNode();
     let scoped = el;
     try {
-      const found = el.closest('button, a[href], input, select, textarea, [contenteditable="true"], [role="button"], [role="link"], [role="tab"], [role="menuitem"], [role="checkbox"], [role="radio"], label, summary, [onclick]');
+      const found = el.closest('button, a[href], input, select, textarea, [contenteditable], [role="button"], [role="link"], [role="tab"], [role="menuitem"], [role="checkbox"], [role="radio"], label, summary, [onclick]');
       if (found && found.getRootNode() === root) scoped = found;
     } catch (e) { /* keep leaf element */ }
     return scoped;
@@ -642,21 +712,25 @@
       if (!shouldSkipDuplicateFill(el)) recordFill(el, 'change');
       return;
     }
-    if ((tag === 'textarea' || isEditableContent(el)) && !shouldSkipDuplicateFill(el)) recordFill(el, 'change');
+    const editHost = contentEditableHost(el);
+    if (tag === 'textarea' && !shouldSkipDuplicateFill(el)) recordFill(el, 'change');
+    if (editHost) flushEditableFill(editHost, 'change');
   }, true);
 
   window.addEventListener('input', (ev) => {
     if (paused) return;
     const el = targetOf(ev);
-    if (!el || isToolbar(el) || !isEditableContent(el)) return;
-    recordFill(el, 'input');
+    if (!el || isToolbar(el)) return;
+    if (!contentEditableHost(el)) return;
+    scheduleEditableFill(el, 'input');
   }, true);
 
   window.addEventListener('focusout', (ev) => {
     if (paused) return;
     const el = targetOf(ev);
-    if (!el || isToolbar(el) || !isEditableContent(el)) return;
-    if (!shouldSkipDuplicateFill(el)) recordFill(el, 'focusout');
+    if (!el || isToolbar(el)) return;
+    if (!contentEditableHost(el)) return;
+    flushEditableFill(el, 'focusout');
   }, true);
 
   window.addEventListener('keydown', (ev) => {
@@ -665,13 +739,18 @@
     if (!el || isToolbar(el)) return;
     if (ev.key !== 'Enter' && ev.key !== 'Escape' && ev.key !== 'Tab') return;
     const tag = el.tagName ? el.tagName.toLowerCase() : '';
-    if ((ev.key === 'Enter' || ev.key === 'Tab') && isTextEntryControl(el)) {
+    const entryEl = contentEditableHost(el) || el;
+    if ((ev.key === 'Enter' || ev.key === 'Tab') && isTextEntryControl(entryEl)) {
       // The change event fires on blur, after navigation may have started —
       // capture the pending value now so Enter-submits and Tab moves keep it.
-      recordFill(el, 'keydown');
+      if (contentEditableHost(entryEl)) {
+        flushEditableFill(entryEl, 'keydown');
+      } else {
+        recordFill(entryEl, 'keydown');
+      }
     }
     if (ev.key === 'Enter') lastEnterPressAt = Date.now();
-    record('press_key', el, ev.key);
+    record('press_key', entryEl, ev.key);
   }, true);
 
   // --- Control panel (main frame only), isolated in a closed shadow root ---

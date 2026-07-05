@@ -24,12 +24,12 @@ func TestNormalizeSwipeDirection(t *testing.T) {
 	}
 }
 
-func TestBrowserTapUsesSyntheticPathWhenTouchModeOff(t *testing.T) {
+func TestBrowserTapUsesSyntheticPath(t *testing.T) {
 	if !(&Browser{touchMode: false}).shouldUseSyntheticTap() {
 		t.Fatal("tap should use synthetic touch events when the context has touch disabled")
 	}
-	if (&Browser{touchMode: true}).shouldUseSyntheticTap() {
-		t.Fatal("tap should keep the native Playwright path when touch mode is enabled")
+	if !(&Browser{touchMode: true}).shouldUseSyntheticTap() {
+		t.Fatal("tap should use synthetic touch events in touch mode to avoid native tap flake")
 	}
 	operation := syntheticTapOperation()
 	for _, want := range []string{"dispatchTouch('touchstart'", "dispatchTouch('touchend'", "dispatchClick"} {

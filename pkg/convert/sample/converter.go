@@ -412,9 +412,6 @@ func thinkTimeAfter(exchanges []exchange, index int) (float64, bool) {
 			return float64(gap / time.Millisecond), true
 		}
 	}
-	if current.DurationMs > 500 {
-		return current.DurationMs, true
-	}
 	return 0, false
 }
 

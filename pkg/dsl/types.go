@@ -487,6 +487,8 @@ type HTTPConfig struct {
 	CookiesEnabled      *bool `json:"cookies_enabled,omitempty"` // default: true
 	ClearCookiesPerIter *bool `json:"clear_cookies_per_iteration,omitempty"`
 	CacheEnabled        *bool `json:"cache_enabled,omitempty"` // enable per-VUser HTTP response cache emulation
+	Traceparent         *bool `json:"traceparent,omitempty"`   // generate W3C traceparent headers (default: true)
+	TraceparentSampled  *bool `json:"traceparent_sampled,omitempty"`
 }
 
 // TLSConfig controls TLS/SSL behavior for the HTTP client.

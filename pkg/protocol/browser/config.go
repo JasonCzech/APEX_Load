@@ -36,6 +36,7 @@ func (b *Browser) applyDefaultConfig() {
 	b.headless = true
 	b.cacheEnabled = true
 	b.cacheContentURLs = true
+	b.cacheContentURLsConfigured = false
 	b.checkNewerVersions = false
 	b.recordedResourcesAvailable = false
 	b.recordedResources = nil
@@ -59,6 +60,7 @@ func (b *Browser) applyDefaultConfig() {
 	b.clientMetricsEnabled = false
 	b.experienceCanary = false
 	b.selfHealMode = browserSelfHealReplayOnly
+	b.runMode = browserRunModeReplay
 	b.mobile = false
 	b.touchMode = false
 	b.orientation = "landscape"
@@ -91,6 +93,7 @@ func (b *Browser) applyConfigOverrides(config map[string]any) {
 	}
 	if cacheContentURLs, ok := config["browser_cache_content_urls"].(bool); ok {
 		b.cacheContentURLs = cacheContentURLs
+		b.cacheContentURLsConfigured = true
 	}
 	if checkNewerVersions, ok := config["browser_check_newer_versions"].(bool); ok {
 		b.checkNewerVersions = checkNewerVersions
@@ -169,6 +172,13 @@ func (b *Browser) applyConfigOverrides(config map[string]any) {
 	}
 	if selfHeal, ok := config["self_heal"].(string); ok {
 		b.selfHealMode = normalizeBrowserSelfHealMode(selfHeal)
+	}
+	for _, key := range []string{"apexload_run_mode", "browser_run_mode", "run_mode"} {
+		if runMode, ok := config[key].(string); ok && strings.TrimSpace(runMode) != "" {
+			if normalized := normalizeBrowserRunMode(runMode); normalized != "" {
+				b.runMode = normalized
+			}
+		}
 	}
 	if harCapture, ok := config["browser_har_capture"].(string); ok {
 		b.harCapturePolicy = normalizeHARCapturePolicy(harCapture)

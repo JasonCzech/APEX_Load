@@ -74,6 +74,30 @@ func (c *httpResponseCache) store(req *http.Request, resp *http.Response, body [
 	c.entries[httpCacheKey(req)] = entry
 }
 
+func (c *httpResponseCache) refresh(req *http.Request, stale *httpCacheEntry, resp *http.Response, now time.Time) {
+	if c == nil || req == nil || req.URL == nil || stale == nil || resp == nil || req.Method != http.MethodGet || resp.StatusCode != http.StatusNotModified {
+		return
+	}
+	header := stale.header.Clone()
+	for key, values := range resp.Header {
+		header.Del(key)
+		for _, value := range values {
+			header.Add(key, value)
+		}
+	}
+	synthetic := &http.Response{
+		StatusCode: stale.statusCode,
+		Header:     header,
+	}
+	entry, ok := cacheEntryFromResponse(synthetic, stale.body, now)
+	if !ok {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.entries[httpCacheKey(req)] = entry
+}
+
 func (e *httpCacheEntry) addConditionalHeaders(req *http.Request) {
 	if e == nil || req == nil {
 		return

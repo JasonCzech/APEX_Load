@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -175,6 +176,29 @@ func TestDeleteSession(t *testing.T) {
 	}
 	if len(r.ListSessions()) != 0 {
 		t.Fatal("expected 0 sessions after delete")
+	}
+}
+
+func TestDeleteSessionClosesRegisteredTunnels(t *testing.T) {
+	r := New(":0")
+	r.StartSession("s1", "Tunnel Delete", SessionFilters{}, nil)
+	clientRecorder, clientPeer := net.Pipe()
+	upstreamRecorder, upstreamPeer := net.Pipe()
+	defer clientPeer.Close()
+	defer upstreamPeer.Close()
+
+	r.registerTunnel(&recorderTunnel{sessionID: "s1", clientConn: clientRecorder, upstreamConn: upstreamRecorder})
+	if !r.DeleteSession("s1") {
+		t.Fatal("expected delete to succeed")
+	}
+
+	_ = clientPeer.SetWriteDeadline(time.Now().Add(100 * time.Millisecond))
+	if _, err := clientPeer.Write([]byte("x")); err == nil {
+		t.Fatal("client tunnel peer write succeeded after DeleteSession; want closed pipe")
+	}
+	_ = upstreamPeer.SetWriteDeadline(time.Now().Add(100 * time.Millisecond))
+	if _, err := upstreamPeer.Write([]byte("x")); err == nil {
+		t.Fatal("upstream tunnel peer write succeeded after DeleteSession; want closed pipe")
 	}
 }
 
@@ -497,6 +521,77 @@ func TestRecordRequestRichMetadataRedactionAndTruncation(t *testing.T) {
 	}
 	if got := recorded.ResponseHeadersMulti["Set-Cookie"]; len(got) != 2 || got[0] != "[redacted]" || got[1] != "[redacted]" {
 		t.Fatalf("expected redacted multi set-cookie values, got %#v", got)
+	}
+}
+
+func TestBodyCaptureBoundsRequestStream(t *testing.T) {
+	capture := newBodyCapture(4)
+	reader := requestBodyReader(io.NopCloser(strings.NewReader("abcdef")), capture)
+	body, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+	if string(body) != "abcdef" {
+		t.Fatalf("proxied body = %q, want full body", body)
+	}
+	if got := string(capture.bytes()); got != "abcd" {
+		t.Fatalf("captured body = %q, want bounded prefix", got)
+	}
+	if got := capture.size(); got != 6 {
+		t.Fatalf("captured size = %d, want full stream size", got)
+	}
+	if !capture.truncated() {
+		t.Fatal("capture.truncated() = false, want true")
+	}
+}
+
+func TestStreamAndRecordResponsePreservesRequestBodyCaptureMetadata(t *testing.T) {
+	rec := New(":0")
+	session, err := rec.StartSession("test", "Streaming Request Body Metadata", SessionFilters{BodyCaptureLimitBytes: 4}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	capture := newBodyCapture(4)
+	if _, err := capture.Write([]byte("abcdef")); err != nil {
+		t.Fatalf("capture write: %v", err)
+	}
+	req, _ := http.NewRequest("POST", "http://example.com/upload", nil)
+	req.Header.Set("Content-Type", "text/plain")
+	resp := &http.Response{
+		StatusCode:       http.StatusOK,
+		Header:           http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:             io.NopCloser(strings.NewReader("data: ok\n\n")),
+		TransferEncoding: []string{"chunked"},
+	}
+
+	var forwarded bytes.Buffer
+	rec.streamAndRecordResponse(&forwarded, nil, session, req, capture.bytes(), resp, time.Now(), recordOptions{
+		requestBodySizeBytes:     boundedInt(capture.size()),
+		requestBodySizeKnown:     true,
+		forceRequestBodyTruncate: capture.truncated(),
+	})
+
+	if forwarded.String() != "data: ok\n\n" {
+		t.Fatalf("forwarded streaming body = %q", forwarded.String())
+	}
+	if len(session.Requests) != 1 {
+		t.Fatalf("recorded requests = %d, want 1", len(session.Requests))
+	}
+	recorded := session.Requests[0]
+	if recorded.Body != "abcd" {
+		t.Fatalf("recorded request body = %q, want capped prefix", recorded.Body)
+	}
+	if recorded.BodySizeBytes != 6 {
+		t.Fatalf("request body size = %d, want 6", recorded.BodySizeBytes)
+	}
+	if !recorded.BodyTruncated {
+		t.Fatal("expected streaming request body to be marked truncated")
+	}
+	if !recorded.ResponseBodyTruncated {
+		t.Fatal("expected streaming response body to be marked truncated")
+	}
+	if recorded.ResponseBodySizeBytes != len("data: ok\n\n") {
+		t.Fatalf("response body size = %d, want %d", recorded.ResponseBodySizeBytes, len("data: ok\n\n"))
 	}
 }
 

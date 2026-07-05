@@ -131,6 +131,47 @@ func TestActionFilesAndKey(t *testing.T) {
 	}
 }
 
+func TestKeyWithModifiers(t *testing.T) {
+	tests := []struct {
+		name   string
+		action *protocol.Action
+		key    string
+		want   string
+	}{
+		{
+			name:   "explicit modifiers",
+			action: &protocol.Action{Params: map[string]any{"modifiers": []any{"ControlOrMeta", "Shift", "Shift"}}},
+			key:    "A",
+			want:   "ControlOrMeta+Shift+A",
+		},
+		{
+			name:   "legacy chord value",
+			action: &protocol.Action{},
+			key:    "Control+Enter",
+			want:   "Control+Enter",
+		},
+		{
+			name:   "params override chord base",
+			action: &protocol.Action{Params: map[string]any{"modifiers": []string{"Alt"}}},
+			key:    "Control+A",
+			want:   "Alt+A",
+		},
+		{
+			name:   "unknown modifier ignored",
+			action: &protocol.Action{Params: map[string]any{"modifiers": []string{"Hyper"}}},
+			key:    "Enter",
+			want:   "Enter",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := keyWithModifiers(tt.action, tt.key); got != tt.want {
+				t.Fatalf("keyWithModifiers() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestActionSelectValues(t *testing.T) {
 	values := actionSelectValues(&protocol.Action{
 		Value: "standard",

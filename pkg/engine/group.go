@@ -249,7 +249,7 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 		gi, group := gi, mge.groups[gi]
 		groupResults[gi] = GroupResult{Name: group.Name}
 
-		protoConfig := buildProtoConfig(group.Script)
+		protoConfig := buildProtoConfigForRunMode(group.Script, "load")
 		if groupLifecycleAtOnce(group) {
 			if !mge.runGroupLifecycleBlock(mge.baseCtx, group, protoConfig, group.Script.Init, "init") {
 				baseCancel()
@@ -321,7 +321,7 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 
 	wg.Wait()
 	for _, group := range atOnceGroups {
-		protoConfig := buildProtoConfig(group.Script)
+		protoConfig := buildProtoConfigForRunMode(group.Script, "load")
 		tctx, tcancel := teardownContext()
 		mge.runGroupLifecycleBlock(tctx, group, protoConfig, group.Script.Teardown, "teardown")
 		tcancel()
@@ -614,7 +614,7 @@ func (mge *MultiGroupEngine) ScaleVUsers(groupName string, targetVUsers int) err
 	delta := targetVUsers - currentVUsers
 
 	if delta > 0 {
-		protoConfig := buildProtoConfig(group.Script)
+		protoConfig := buildProtoConfigForRunMode(group.Script, "load")
 
 		for i := 0; i < delta; i++ {
 			vuserID := mge.nextVUserID

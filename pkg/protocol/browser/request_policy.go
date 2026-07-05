@@ -127,6 +127,7 @@ func (b *Browser) installRequestPolicy(browserContext playwright.BrowserContext)
 
 func (b *Browser) requestPolicyEnabled() bool {
 	return !b.cacheEnabled ||
+		b.cacheContentURLRevalidationEnabled() ||
 		b.checkNewerVersions ||
 		b.downloadResources != "all" ||
 		b.hasDownloadFilters() ||
@@ -168,11 +169,12 @@ func (b *Browser) requestPolicyHeaders(request playwright.Request) map[string]st
 }
 
 func (b *Browser) requestPolicyHeadersFor(rawURL, resourceType string, isNavigation bool, headers map[string]string) map[string]string {
-	if b.cacheEnabled && !b.checkNewerVersions {
+	revalidateContentURL := b.cacheContentURLRevalidationEnabled() && shouldRevalidateBrowserRequestInfo(resourceType, isNavigation)
+	if b.cacheEnabled && !b.checkNewerVersions && !revalidateContentURL {
 		return nil
 	}
 	nextHeaders := cloneRequestHeaders(headers)
-	if !b.cacheEnabled || b.checkNewerVersions {
+	if !b.cacheEnabled || b.checkNewerVersions || revalidateContentURL {
 		nextHeaders["Cache-Control"] = "no-cache"
 		nextHeaders["Pragma"] = "no-cache"
 	}
@@ -182,6 +184,10 @@ func (b *Browser) requestPolicyHeadersFor(rawURL, resourceType string, isNavigat
 		}
 	}
 	return nextHeaders
+}
+
+func (b *Browser) cacheContentURLRevalidationEnabled() bool {
+	return b.cacheEnabled && b.cacheContentURLsConfigured && !b.cacheContentURLs
 }
 
 func shouldRevalidateBrowserRequest(request playwright.Request) bool {

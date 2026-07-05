@@ -29,6 +29,7 @@ type objectRepositoryReader interface {
 // supplied the binding so replay self-heal can write a healed locator back to
 // the originating object.
 const objectRefRepositoryMetadataKey = "object_ref_repository"
+const objectRefLogicalNameMetadataKey = "object_ref_logical_name"
 
 // resolvedRepositoryObject pairs a repository object with the repository it came
 // from, so write-back can target the right repository.
@@ -165,7 +166,7 @@ func resolveActionObjectRef(action *dsl.Action, label string, byName map[string]
 		return
 	}
 	action.Selector = primary
-	applyResolvedObjectBinding(action, candidates, primary, foundRepoID)
+	applyResolvedObjectBinding(action, candidates, primary, foundRepoID, logicalName)
 }
 
 // splitObjectRef parses a qualified "repoID:name" reference. Only a prefix that
@@ -267,7 +268,7 @@ func primarySelectorFromCandidates(candidates []selector.Candidate) string {
 // metadata in the exact shape capture surfaces emit (so self-heal consumes it
 // unchanged): the full ranked list under MetadataCandidatesKey and every
 // non-primary candidate under MetadataFallbacksKey, plus the source repository.
-func applyResolvedObjectBinding(action *dsl.Action, candidates []selector.Candidate, primary, repoID string) {
+func applyResolvedObjectBinding(action *dsl.Action, candidates []selector.Candidate, primary, repoID, logicalName string) {
 	if action.Metadata == nil {
 		action.Metadata = map[string]any{}
 	}
@@ -286,5 +287,8 @@ func applyResolvedObjectBinding(action *dsl.Action, candidates []selector.Candid
 	}
 	if repoID != "" {
 		action.Metadata[objectRefRepositoryMetadataKey] = repoID
+	}
+	if strings.TrimSpace(logicalName) != "" {
+		action.Metadata[objectRefLogicalNameMetadataKey] = strings.TrimSpace(logicalName)
 	}
 }

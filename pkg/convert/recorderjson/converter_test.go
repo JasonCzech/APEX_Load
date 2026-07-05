@@ -136,6 +136,32 @@ func TestConvertChromeRecording(t *testing.T) {
 	}
 }
 
+func TestConvertChromeElementScrollDoesNotEmitQuerySelectorForXPath(t *testing.T) {
+	result, err := Convert([]byte(`{
+  "title": "XPath scroll",
+  "steps": [
+    {"type": "navigate", "url": "https://shop.example/"},
+    {"type": "scroll", "selectors": [["xpath///*[@id='feed']"]], "x": 0, "y": 240}
+  ]
+}`), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("Convert: %v", err)
+	}
+	if got := actionTypes(result.Script.Actions); strings.Join(got, ",") != "browser_navigate,browser_evaluate_js" {
+		t.Fatalf("actions = %v", got)
+	}
+	scroll := result.Script.Actions[1]
+	if strings.Contains(scroll.Target, "document.querySelector") {
+		t.Fatalf("scroll target = %q, must not querySelector an XPath selector", scroll.Target)
+	}
+	if scroll.Selector != "" {
+		t.Fatalf("scroll selector = %q, want page-level fallback", scroll.Selector)
+	}
+	if result.StepMapping[1].Disposition != "degraded" || !strings.Contains(result.StepMapping[1].Reason, "page-level") {
+		t.Fatalf("scroll mapping = %+v, want degraded page-level reason", result.StepMapping[1])
+	}
+}
+
 func TestConvertChromeAriaSelectorMapping(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -446,6 +472,43 @@ await page.locator('button.danger').click({ button: 'right', modifiers: ['Contro
 	modifiers, ok := click.Params["modifiers"].([]string)
 	if !ok || strings.Join(modifiers, ",") != "ControlOrMeta,Shift" {
 		t.Fatalf("click modifiers = %#v, want ControlOrMeta,Shift", click.Params["modifiers"])
+	}
+}
+
+func TestConvertPlaywrightPreservesKeyboardChords(t *testing.T) {
+	result, err := Convert([]byte(`
+await page.goto('https://shop.example/');
+await page.keyboard.press('ControlOrMeta+A');
+await page.locator('#search').press('Shift+Enter');
+await page.press('#direct', 'Alt+ArrowDown');
+`), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("Convert: %v", err)
+	}
+	if got := actionTypes(result.Script.Actions); strings.Join(got, ",") != "browser_navigate,browser_press_key,browser_press_key,browser_press_key" {
+		t.Fatalf("actions = %v", got)
+	}
+	tests := []struct {
+		index     int
+		key       string
+		modifiers string
+	}{
+		{1, "A", "ControlOrMeta"},
+		{2, "Enter", "Shift"},
+		{3, "ArrowDown", "Alt"},
+	}
+	for _, tt := range tests {
+		action := result.Script.Actions[tt.index]
+		if action.Value != tt.key {
+			t.Fatalf("action[%d].Value = %q, want %q", tt.index, action.Value, tt.key)
+		}
+		modifiers, ok := action.Params["modifiers"].([]string)
+		if !ok || strings.Join(modifiers, ",") != tt.modifiers {
+			t.Fatalf("action[%d] modifiers = %#v, want %s", tt.index, action.Params["modifiers"], tt.modifiers)
+		}
+		if action.Params["key"] != tt.key {
+			t.Fatalf("action[%d] params.key = %#v, want %q", tt.index, action.Params["key"], tt.key)
+		}
 	}
 }
 

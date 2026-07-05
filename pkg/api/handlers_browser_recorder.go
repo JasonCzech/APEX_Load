@@ -38,6 +38,8 @@ const (
 	browserRecordingUnavailableBrowsersNotInstalled = "browsers_not_installed"
 )
 
+var browserRecordingDependencyProbe = recbrowser.CheckChromiumInstalled
+
 // browserRecordingAvailability gates the feature server-side (the UI hint is
 // advisory; POST /sessions fails closed on this check). Headed recording is
 // off in production posture unless explicitly enabled, and needs a display.
@@ -54,6 +56,14 @@ func (s *Server) browserRecordingAvailability() browserRecordingAvailability {
 	}
 	if runtime.GOOS == "linux" && strings.TrimSpace(os.Getenv("DISPLAY")) == "" && strings.TrimSpace(os.Getenv("WAYLAND_DISPLAY")) == "" {
 		return browserRecordingAvailability{Code: browserRecordingUnavailableDisplayMissing, Reason: "no display detected on the controller host for a headed browser"}
+	}
+	if browserRecordingDependencyProbe != nil {
+		if err := browserRecordingDependencyProbe(); err != nil {
+			if availability, ok := browserRecordingAvailabilityFromStartError(err); ok {
+				return availability
+			}
+			return browserRecordingAvailability{Code: browserRecordingUnavailableBrowsersNotInstalled, Reason: "Playwright Chromium is not available on the controller host; install the recording browser and retry"}
+		}
 	}
 	return browserRecordingAvailability{Available: true}
 }

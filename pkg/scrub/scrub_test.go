@@ -63,7 +63,7 @@ func TestValue(t *testing.T) {
 		{
 			name:  "json array and object secret fields",
 			input: `{"clientSecret":["alpha","beta"],"nested":{"apiKey":{"raw":"key-123"}},"csrf":"csrf-keep","largeId":9007199254740993}`,
-			want:  `{"clientSecret":"` + Redacted + `","csrf":"csrf-keep","largeId":9007199254740993,"nested":{"apiKey":"` + Redacted + `"}}`,
+			want:  `{"clientSecret":["` + Redacted + `","` + Redacted + `"],"csrf":"csrf-keep","largeId":9007199254740993,"nested":{"apiKey":{"raw":"` + Redacted + `"}}}`,
 		},
 		{
 			name:  "form password field",
@@ -77,8 +77,8 @@ func TestValue(t *testing.T) {
 		},
 		{
 			name:  "xml token element and attribute",
-			input: `<soap><auth token="abc123"><password>hunter2</password></auth></soap>`,
-			want:  `<soap><auth token="` + Redacted + `"><password>` + Redacted + `</password></auth></soap>`,
+			input: `<soap><auth token="abc123" data-secret="tracking"><password>hunter2</password></auth></soap>`,
+			want:  `<soap><auth token="` + Redacted + `" data-secret="tracking"><password>` + Redacted + `</password></auth></soap>`,
 		},
 		{
 			name:  "multipart password part",

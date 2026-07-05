@@ -20,10 +20,12 @@ import (
 // selfHealRecord is one observed selector self-heal extracted from a replay
 // report's per-action protocol evidence.
 type selfHealRecord struct {
-	actionName string
-	healed     string
-	kind       string
-	confidence int
+	actionName  string
+	logicalName string
+	repoID      string
+	healed      string
+	kind        string
+	confidence  int
 }
 
 // objectRefBinding records how a prepared action was bound to a repository
@@ -48,9 +50,6 @@ func (s *Server) persistSelfHealToRepository(projectID string, script *dsl.Scrip
 		return
 	}
 	bindings := objectRefBindingsByActionName(script)
-	if len(bindings) == 0 {
-		return
-	}
 
 	// Serialize the load→mutate→save sequence: completion hooks from the browser
 	// replay and script debug managers can run concurrently, and SaveObjectRepository
@@ -62,8 +61,15 @@ func (s *Server) persistSelfHealToRepository(projectID string, script *dsl.Scrip
 	loaded := map[string]*storage.ObjectRepository{}
 	changed := map[string]bool{}
 	for _, heal := range heals {
-		binding, ok := bindings[heal.actionName]
-		if !ok || binding.repoID == "" || binding.logicalName == "" {
+		binding := objectRefBinding{logicalName: heal.logicalName, repoID: heal.repoID}
+		if binding.repoID == "" || binding.logicalName == "" {
+			var ok bool
+			binding, ok = bindings[heal.actionName]
+			if !ok {
+				continue
+			}
+		}
+		if binding.repoID == "" || binding.logicalName == "" {
 			continue
 		}
 		repo := loaded[binding.repoID]
@@ -103,10 +109,12 @@ func collectSelfHeals(report *engine.ReplayReport) []selfHealRecord {
 			continue
 		}
 		rec := selfHealRecord{
-			actionName: anyToString(fields["action"]),
-			healed:     anyToString(fields["healed_selector"]),
-			kind:       anyToString(fields["candidate_kind"]),
-			confidence: anyToInt(fields["confidence"]),
+			actionName:  anyToString(fields["action"]),
+			logicalName: anyToString(fields["object_ref_logical_name"]),
+			repoID:      anyToString(fields["object_ref_repository"]),
+			healed:      anyToString(fields["healed_selector"]),
+			kind:        anyToString(fields["candidate_kind"]),
+			confidence:  anyToInt(fields["confidence"]),
 		}
 		if rec.actionName == "" {
 			rec.actionName = report.Events[i].ActionName

@@ -532,6 +532,7 @@ func schemaCreateTableStatements() []string {
 			sensitivity TEXT,
 			request_count INTEGER,
 			observations_json TEXT,
+			correlation_observations_json TEXT,
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL
 		)`,
@@ -782,6 +783,7 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "scripts.project_id", query: `ALTER TABLE scripts ADD COLUMN project_id TEXT REFERENCES projects(id)`},
 		{name: "scripts.folder_id", query: `ALTER TABLE scripts ADD COLUMN folder_id TEXT REFERENCES folders(id)`},
 		{name: "scripts.parameters", query: `ALTER TABLE scripts ADD COLUMN parameters TEXT`},
+		{name: "script_recordings.correlation_observations_json", query: `ALTER TABLE script_recordings ADD COLUMN correlation_observations_json TEXT`},
 		{name: "tests.project_id", query: `ALTER TABLE tests ADD COLUMN project_id TEXT REFERENCES projects(id)`},
 		{name: "tests.folder_id", query: `ALTER TABLE tests ADD COLUMN folder_id TEXT REFERENCES folders(id)`},
 		{name: "tests.application_id", query: `ALTER TABLE tests ADD COLUMN application_id TEXT REFERENCES applications(id)`},

@@ -69,6 +69,7 @@ type capturedEvent struct {
 	URL           string                    `json:"url,omitempty"`
 	Title         string                    `json:"title,omitempty"`
 	FrameSelector string                    `json:"frame_selector,omitempty"`
+	FramePath     []string                  `json:"frame_path,omitempty"`
 	Element       *selector.ElementMetadata `json:"element,omitempty"`
 	TargetElement *selector.ElementMetadata `json:"target_element,omitempty"`
 }
@@ -92,6 +93,7 @@ type Step struct {
 	URL              string                    `json:"url,omitempty"`
 	Title            string                    `json:"title,omitempty"`
 	FrameSelector    string                    `json:"frame_selector,omitempty"`
+	FramePath        []string                  `json:"frame_path,omitempty"`
 	Element          *selector.ElementMetadata `json:"element,omitempty"`
 	Candidates       []selector.Candidate      `json:"candidates,omitempty"`
 	TargetElement    *selector.ElementMetadata `json:"target_element,omitempty"`
@@ -303,6 +305,7 @@ func stepFromEvent(payload string) (Step, error) {
 		URL:           strings.TrimSpace(event.URL),
 		Title:         strings.TrimSpace(event.Title),
 		FrameSelector: strings.TrimSpace(event.FrameSelector),
+		FramePath:     compactStringSlice(event.FramePath),
 		Element:       event.Element,
 		TargetElement: event.TargetElement,
 	}
@@ -434,6 +437,13 @@ func isBlankPageURL(raw string) bool {
 func (s *Session) clone() *Session {
 	clone := *s
 	clone.Steps = append([]Step(nil), s.Steps...)
+	for i := range clone.Steps {
+		clone.Steps[i].Values = append([]string(nil), s.Steps[i].Values...)
+		clone.Steps[i].Modifiers = append([]string(nil), s.Steps[i].Modifiers...)
+		clone.Steps[i].FramePath = append([]string(nil), s.Steps[i].FramePath...)
+		clone.Steps[i].Candidates = append([]selector.Candidate(nil), s.Steps[i].Candidates...)
+		clone.Steps[i].TargetCandidates = append([]selector.Candidate(nil), s.Steps[i].TargetCandidates...)
+	}
 	clone.NavEvents = append([]NavEvent(nil), s.NavEvents...)
 	clone.NetworkEvents = append([]time.Time(nil), s.NetworkEvents...)
 	clone.WebSockets = append([]WebSocketSummary(nil), s.WebSockets...)
@@ -445,7 +455,18 @@ func (s *Session) clone() *Session {
 	if len(s.HAR) > 0 {
 		clone.HAR = append([]byte(nil), s.HAR...)
 	}
+	if len(s.StorageState) > 0 {
+		clone.StorageState = append([]byte(nil), s.StorageState...)
+	}
 	return &clone
+}
+
+// Clone deep-copies the session for callers outside the recorder package.
+func (s *Session) Clone() *Session {
+	if s == nil {
+		return nil
+	}
+	return s.clone()
 }
 
 // deleteLastStep tombstones the most recent non-deleted step and returns it.

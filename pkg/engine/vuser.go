@@ -728,5 +728,5 @@ func (vu *VUser) resetProtocolForIteration(ctx context.Context) error {
 	if err := vu.Proto.Teardown(tctx); err != nil {
 		return err
 	}
-	return vu.Proto.Init(ctx, buildProtoConfig(vu.Script))
+	return vu.Proto.Init(ctx, buildProtoConfigForRunMode(vu.Script, "load"))
 }

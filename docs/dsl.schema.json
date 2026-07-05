@@ -1342,6 +1342,10 @@
                   "key_name": {
                     "description": "Key name alternative to value.",
                     "type": "string"
+                  },
+                  "modifiers": {
+                    "description": "Modifier keys held for the press, such as Control, Shift, Alt, Meta, or ControlOrMeta.",
+                    "type": "array"
                   }
                 },
                 "type": "object"
@@ -1886,8 +1890,7 @@
               "params": {
                 "properties": {
                   "frame": {
-                    "description": "Frame name or index.",
-                    "type": "string"
+                    "description": "Frame name or zero-based index."
                   },
                   "frame_selector": {
                     "description": "Frame element locator.",
@@ -2039,6 +2042,30 @@
             ],
             "description": "Waits for a condition, element, or timeout before continuing.",
             "properties": {
+              "params": {
+                "properties": {
+                  "count": {
+                    "description": "Required element count for count-based waits; zero or greater.",
+                    "type": "integer"
+                  },
+                  "operator": {
+                    "description": "Element-count comparison operator used with params.count; defaults to \u003e= when count is set.",
+                    "enum": [
+                      "=",
+                      "==",
+                      "===",
+                      "!=",
+                      "!==",
+                      "\u003e",
+                      "\u003e=",
+                      "\u003c",
+                      "\u003c="
+                    ],
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
               "selector": {
                 "description": "Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead.",
                 "type": "string"
@@ -6824,6 +6851,12 @@
         },
         "tls_timeout_ms": {
           "type": "integer"
+        },
+        "traceparent": {
+          "type": "boolean"
+        },
+        "traceparent_sampled": {
+          "type": "boolean"
         },
         "user_agent": {
           "type": "string"

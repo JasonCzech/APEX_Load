@@ -31,7 +31,14 @@ func (s *SQLiteStore) SaveScriptRecording(record *ScriptRecordingRecord) error {
 	if len(record.Observations) > maxRecordingObservations {
 		record.Observations = record.Observations[:maxRecordingObservations]
 	}
-	record.RequestCount = len(record.Observations)
+	if len(record.CorrelationObservations) > maxRecordingObservations {
+		record.CorrelationObservations = record.CorrelationObservations[:maxRecordingObservations]
+	}
+	if len(record.CorrelationObservations) > 0 {
+		record.RequestCount = len(record.CorrelationObservations)
+	} else {
+		record.RequestCount = len(record.Observations)
+	}
 	now := time.Now().UTC()
 	if record.CreatedAt.IsZero() {
 		record.CreatedAt = now
@@ -42,14 +49,19 @@ func (s *SQLiteStore) SaveScriptRecording(record *ScriptRecordingRecord) error {
 	if err != nil {
 		return fmt.Errorf("marshal recording observations: %w", err)
 	}
-	_, err = s.db.Exec(`INSERT INTO script_recordings (script_id, schema_version, source, sensitivity, request_count, observations_json, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	correlationObservationsJSON, err := json.Marshal(record.CorrelationObservations)
+	if err != nil {
+		return fmt.Errorf("marshal recording correlation observations: %w", err)
+	}
+	_, err = s.db.Exec(`INSERT INTO script_recordings (script_id, schema_version, source, sensitivity, request_count, observations_json, correlation_observations_json, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(script_id) DO UPDATE SET
 			schema_version=excluded.schema_version,
 			source=excluded.source,
 			sensitivity=excluded.sensitivity,
 			request_count=excluded.request_count,
 			observations_json=excluded.observations_json,
+			correlation_observations_json=excluded.correlation_observations_json,
 			updated_at=excluded.updated_at`,
 		record.ScriptID,
 		record.SchemaVersion,
@@ -57,6 +69,7 @@ func (s *SQLiteStore) SaveScriptRecording(record *ScriptRecordingRecord) error {
 		record.Sensitivity,
 		record.RequestCount,
 		string(observationsJSON),
+		string(correlationObservationsJSON),
 		record.CreatedAt,
 		record.UpdatedAt,
 	)
@@ -71,16 +84,18 @@ func (s *SQLiteStore) GetScriptRecording(scriptID string) (*ScriptRecordingRecor
 		return nil, nil
 	}
 	var (
-		record           ScriptRecordingRecord
-		observationsJSON string
+		record                      ScriptRecordingRecord
+		observationsJSON            string
+		correlationObservationsJSON string
 	)
-	err := s.db.QueryRow(`SELECT script_id, COALESCE(schema_version, ''), COALESCE(source, ''), COALESCE(sensitivity, ''), COALESCE(request_count, 0), COALESCE(observations_json, ''), created_at, updated_at FROM script_recordings WHERE script_id = ?`, scriptID).Scan(
+	err := s.db.QueryRow(`SELECT script_id, COALESCE(schema_version, ''), COALESCE(source, ''), COALESCE(sensitivity, ''), COALESCE(request_count, 0), COALESCE(observations_json, ''), COALESCE(correlation_observations_json, ''), created_at, updated_at FROM script_recordings WHERE script_id = ?`, scriptID).Scan(
 		&record.ScriptID,
 		&record.SchemaVersion,
 		&record.Source,
 		&record.Sensitivity,
 		&record.RequestCount,
 		&observationsJSON,
+		&correlationObservationsJSON,
 		&record.CreatedAt,
 		&record.UpdatedAt,
 	)
@@ -93,6 +108,11 @@ func (s *SQLiteStore) GetScriptRecording(scriptID string) (*ScriptRecordingRecor
 	if observationsJSON != "" {
 		if err := json.Unmarshal([]byte(observationsJSON), &record.Observations); err != nil {
 			return nil, fmt.Errorf("unmarshal recording observations: %w", err)
+		}
+	}
+	if correlationObservationsJSON != "" {
+		if err := json.Unmarshal([]byte(correlationObservationsJSON), &record.CorrelationObservations); err != nil {
+			return nil, fmt.Errorf("unmarshal recording correlation observations: %w", err)
 		}
 	}
 	return &record, nil

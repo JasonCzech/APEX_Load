@@ -3,6 +3,7 @@ package browser
 import (
 	"context"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -186,6 +187,7 @@ func (b *Browser) setInputFilesAction(ctx context.Context, action *protocol.Acti
 }
 
 func (b *Browser) pressKeyAction(ctx context.Context, action *protocol.Action, selector string, key string) error {
+	key = keyWithModifiers(action, key)
 	if selector != "" {
 		if locator, ok := b.actionLocator(action, selector); ok {
 			timeout := b.actionTimeout(action)
@@ -201,6 +203,62 @@ func (b *Browser) pressKeyAction(ctx context.Context, action *protocol.Action, s
 		})
 	}
 	return b.currentPage().Keyboard().Press(key)
+}
+
+func keyWithModifiers(action *protocol.Action, key string) string {
+	key = strings.TrimSpace(key)
+	values := stringSliceParam(nil)
+	if action != nil && action.Params != nil {
+		values = stringSliceParam(action.Params["modifiers"])
+	}
+	chordModifiers, base := splitKeyChord(key)
+	if len(values) == 0 {
+		values = chordModifiers
+	}
+	if len(values) == 0 {
+		return key
+	}
+	seen := make(map[string]struct{}, len(values))
+	parts := make([]string, 0, len(values)+1)
+	for _, value := range values {
+		modifier := normalizeKeyboardModifierName(value)
+		if modifier == "" {
+			continue
+		}
+		if _, ok := seen[modifier]; ok {
+			continue
+		}
+		seen[modifier] = struct{}{}
+		parts = append(parts, modifier)
+	}
+	if len(parts) == 0 {
+		return key
+	}
+	if base == "" {
+		base = key
+	}
+	parts = append(parts, base)
+	return strings.Join(parts, "+")
+}
+
+func splitKeyChord(value string) ([]string, string) {
+	parts := strings.Split(strings.TrimSpace(value), "+")
+	if len(parts) < 2 {
+		return nil, strings.TrimSpace(value)
+	}
+	modifiers := make([]string, 0, len(parts)-1)
+	for _, part := range parts[:len(parts)-1] {
+		modifier := normalizeKeyboardModifierName(part)
+		if modifier == "" {
+			return nil, strings.TrimSpace(value)
+		}
+		modifiers = append(modifiers, modifier)
+	}
+	base := strings.TrimSpace(parts[len(parts)-1])
+	if base == "" {
+		return nil, strings.TrimSpace(value)
+	}
+	return modifiers, base
 }
 
 func (b *Browser) waitVisibleForAction(ctx context.Context, action *protocol.Action, selector string) error {
@@ -244,6 +302,11 @@ func (b *Browser) actionFrameSelectors(action *protocol.Action) []string {
 		if selector := firstActionString(action.Params, "frame_selector", "iframe_selector"); selector != "" {
 			return []string{selector}
 		}
+		for _, key := range []string{"frame", "iframe", "frame_context"} {
+			if selector := frameSelectorFromIndexValue(action.Params[key]); selector != "" {
+				return []string{selector}
+			}
+		}
 		if frame := firstActionString(action.Params, "frame", "iframe", "frame_context"); frame != "" {
 			return []string{normalizeFrameSelector(frame)}
 		}
@@ -273,8 +336,11 @@ func frameSelectorPathFromValue(value any) []string {
 	case []any:
 		items := make([]string, 0, len(typed))
 		for _, item := range typed {
-			if text := stringAny(item); text != "" {
-				items = append(items, text)
+			switch {
+			case frameSelectorFromIndexValue(item) != "":
+				items = append(items, frameSelectorFromIndexValue(item))
+			case stringAny(item) != "":
+				items = append(items, stringAny(item))
 			}
 		}
 		return normalizeFrameSelectorPath(items)
@@ -286,6 +352,9 @@ func frameSelectorPathFromValue(value any) []string {
 		parts := strings.Split(value, ">>")
 		return normalizeFrameSelectorPath(parts)
 	default:
+		if selector := frameSelectorFromIndexValue(value); selector != "" {
+			return []string{selector}
+		}
 		if text := stringAny(value); text != "" {
 			return normalizeFrameSelectorPath([]string{text})
 		}
@@ -318,6 +387,39 @@ func normalizeFrameSelector(value string) string {
 	}
 	escaped := cssAttrValue(value)
 	return fmt.Sprintf(`iframe[name="%s"], iframe[id="%s"], iframe[title="%s"]`, escaped, escaped, escaped)
+}
+
+func frameSelectorFromIndexValue(value any) string {
+	index, ok := intFromAny(value)
+	if !ok || index < 0 {
+		return ""
+	}
+	return fmt.Sprintf("iframe:nth-of-type(%d)", index+1)
+}
+
+func intFromAny(value any) (int, bool) {
+	switch typed := value.(type) {
+	case int:
+		return typed, true
+	case int64:
+		return int(typed), true
+	case float64:
+		if typed != math.Trunc(typed) {
+			return 0, false
+		}
+		return int(typed), true
+	case float32:
+		f := float64(typed)
+		if f != math.Trunc(f) {
+			return 0, false
+		}
+		return int(typed), true
+	case string:
+		parsed, err := strconv.Atoi(strings.TrimSpace(typed))
+		return parsed, err == nil
+	default:
+		return 0, false
+	}
 }
 
 func cssAttrValue(value string) string {
@@ -387,20 +489,37 @@ func keyboardModifiersParam(action *protocol.Action) []playwright.KeyboardModifi
 	}
 	out := make([]playwright.KeyboardModifier, 0, len(values))
 	for _, value := range values {
-		switch strings.ToLower(strings.TrimSpace(value)) {
-		case "alt":
+		switch normalizeKeyboardModifierName(value) {
+		case "Alt":
 			out = append(out, *playwright.KeyboardModifierAlt)
-		case "control", "ctrl":
+		case "Control":
 			out = append(out, *playwright.KeyboardModifierControl)
-		case "controlormeta", "control_or_meta", "cmdorctrl", "commandorcontrol":
+		case "ControlOrMeta":
 			out = append(out, *playwright.KeyboardModifierControlOrMeta)
-		case "meta", "cmd", "command":
+		case "Meta":
 			out = append(out, *playwright.KeyboardModifierMeta)
-		case "shift":
+		case "Shift":
 			out = append(out, *playwright.KeyboardModifierShift)
 		}
 	}
 	return out
+}
+
+func normalizeKeyboardModifierName(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "alt", "option":
+		return "Alt"
+	case "control", "ctrl":
+		return "Control"
+	case "controlormeta", "control_or_meta", "cmdorctrl", "commandorcontrol", "metaorcontrol":
+		return "ControlOrMeta"
+	case "meta", "cmd", "command":
+		return "Meta"
+	case "shift":
+		return "Shift"
+	default:
+		return ""
+	}
 }
 
 func stringSliceParam(value any) []string {
@@ -519,6 +638,17 @@ func (b *Browser) trySwitchWindow(action *protocol.Action) error {
 	pages := b.contextPages()
 	if len(pages) == 0 {
 		return fmt.Errorf("browser_switch_window found no open pages")
+	}
+	for _, key := range []string{"index", "page_index", "window_index"} {
+		if raw, exists := action.Params[key]; exists {
+			index, ok := intFromAny(raw)
+			if !ok || index < 0 || index >= len(pages) {
+				return fmt.Errorf("browser_switch_window index %q is out of range", fmt.Sprint(raw))
+			}
+			b.registerPage(pages[index], true)
+			b.currentFrameSelector = ""
+			return nil
+		}
 	}
 	if indexRaw := firstActionString(action.Params, "index", "page_index", "window_index"); indexRaw != "" {
 		index, err := strconv.Atoi(indexRaw)

@@ -20,7 +20,11 @@ func (s *Server) handleDownloadRecordingAgent(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusForbidden, clientDownloadsDisabledMessage)
 		return
 	}
-	packagePath, err := findRecordingAgentPackage(recordingAgentDistDir(), downloadPlatform(r))
+	platform, ok := requireDownloadPlatform(w, r, "APEX Load Recording Agent")
+	if !ok {
+		return
+	}
+	packagePath, err := findRecordingAgentPackage(recordingAgentDistDir(), platform)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
@@ -36,7 +40,11 @@ func (s *Server) handleRecordingAgentChecksum(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusForbidden, clientDownloadsDisabledMessage)
 		return
 	}
-	packagePath, err := findRecordingAgentPackage(recordingAgentDistDir(), downloadPlatform(r))
+	platform, ok := requireDownloadPlatform(w, r, "APEX Load Recording Agent")
+	if !ok {
+		return
+	}
+	packagePath, err := findRecordingAgentPackage(recordingAgentDistDir(), platform)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return

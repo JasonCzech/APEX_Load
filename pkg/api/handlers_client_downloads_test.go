@@ -234,6 +234,49 @@ func TestDownloadPlatformFromUserAgent(t *testing.T) {
 	}
 }
 
+func TestClientDownloadsRequireKnownPlatform(t *testing.T) {
+	raDir := t.TempDir()
+	for _, name := range []string{
+		"apexload-recording-agent-0.1.0-linux-amd64.tar.gz",
+		"apexload-recording-agent-0.1.0-darwin-arm64.tar.gz",
+	} {
+		if err := os.WriteFile(filepath.Join(raDir, name), []byte("agent"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	dtDir := t.TempDir()
+	for _, name := range []string{
+		"apexload-desktop-0.1.0-linux-amd64.tar.gz",
+		"apexload-desktop-0.1.0-darwin-arm64.tar.gz",
+	} {
+		if err := os.WriteFile(filepath.Join(dtDir, name), []byte("desktop"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv(recordingAgentDistDirEnv, raDir)
+	t.Setenv(desktopDistDirEnv, dtDir)
+
+	server := NewServer(ServerConfig{MaxConcurrent: 10})
+	endpoints := []string{
+		"/api/v1/downloads/recording-agent/latest",
+		"/api/v1/downloads/recording-agent/latest/checksum",
+		"/api/v1/downloads/desktop/latest",
+		"/api/v1/downloads/desktop/latest/checksum",
+	}
+	for _, endpoint := range endpoints {
+		req := httptest.NewRequest(http.MethodGet, endpoint, nil)
+		req.Header.Set("User-Agent", "UnknownClient/1.0")
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+		if resp.Code != http.StatusBadRequest {
+			t.Fatalf("%s status = %d, want 400 body=%s", endpoint, resp.Code, resp.Body.String())
+		}
+		if !strings.Contains(resp.Body.String(), "platform query parameter is required") {
+			t.Fatalf("%s body = %q, want platform guidance", endpoint, resp.Body.String())
+		}
+	}
+}
+
 // TestFindDownloadPackageRejectsSymlinkEscape verifies a symlink staged inside
 // the dist directory that points outside it is never selected for serving —
 // the path-confinement guard added to findDownloadPackage.

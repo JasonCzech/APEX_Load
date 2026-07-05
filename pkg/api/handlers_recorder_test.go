@@ -300,6 +300,7 @@ func TestHandleRecorderCACertHonorsFormatAfterInitialization(t *testing.T) {
 }
 
 func TestHandleRecorderStatusIncludesPersistentCAPath(t *testing.T) {
+	stubBrowserRecordingDependencyProbe(t, nil)
 	server := NewServer(ServerConfig{})
 	statusReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/status", nil)
 	statusResp := httptest.NewRecorder()
@@ -329,6 +330,7 @@ func TestHandleRecorderStatusIncludesPersistentCAPath(t *testing.T) {
 }
 
 func TestRecorderResponsesDoNotExposeProxyAuthToken(t *testing.T) {
+	stubBrowserRecordingDependencyProbe(t, nil)
 	t.Setenv("APEXLOAD_RECORDER_PROXY_TOKEN", "proxy-secret")
 	server := NewServer(ServerConfig{})
 

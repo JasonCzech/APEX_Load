@@ -459,6 +459,41 @@ func TestBrowserRecordingManagerPromoteStepSelectorOnStoppedArtifact(t *testing.
 	}
 }
 
+func TestBrowserRecordingManagerStoppedArtifactSnapshotsAreCopies(t *testing.T) {
+	m := NewBrowserRecordingManager(NewHub())
+	fake := newFakeBrowserRecorder(recordedBrowserArtifact())
+	fake.install(m)
+
+	started, err := m.Start(BrowserRecordingStartRequest{StartURL: "https://shop.example/login"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := m.Stop(started.ID); !ok {
+		t.Fatal("Stop() did not find session")
+	}
+	waitForRecordingStatus(t, m, started.ID, BrowserRecordingStopped)
+
+	snapshot, ok := m.Get(started.ID)
+	if !ok || len(snapshot.Steps) < 2 || len(snapshot.Steps[1].Candidates) == 0 {
+		t.Fatalf("snapshot = %#v", snapshot)
+	}
+	snapshot.Steps[1].Candidates[0].Value = "mutated-from-snapshot"
+
+	artifact, _, ok := m.Artifact(started.ID)
+	if !ok || len(artifact.Steps) < 2 || len(artifact.Steps[1].Candidates) == 0 {
+		t.Fatalf("artifact = %#v", artifact)
+	}
+	artifact.Steps[1].Candidates[0].Value = "mutated-from-artifact"
+
+	again, ok := m.Get(started.ID)
+	if !ok {
+		t.Fatal("Get() did not find stopped session")
+	}
+	if got := again.Steps[1].Candidates[0].Value; got == "mutated-from-snapshot" || got == "mutated-from-artifact" {
+		t.Fatalf("stopped artifact leaked caller mutation, selector = %q", got)
+	}
+}
+
 func TestBrowserRecordingManagerPostStopCuration(t *testing.T) {
 	m := NewBrowserRecordingManager(NewHub())
 	fake := newFakeBrowserRecorder(recordedBrowserArtifact())

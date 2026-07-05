@@ -231,6 +231,30 @@ describe('ParameterizationReview', () => {
     expect(container.textContent).not.toContain('super-secret')
   })
 
+  it('masks secret values in applied diffs', async () => {
+    applyMock.mockResolvedValue({
+      script,
+      diffs: [{ kind: 'value_replaced', path: '/actions/0/body', suggestion_id: 'pz_secret', before: 'super-secret', after: '{{secret.PASSWORD}}' }],
+      applied_count: 1,
+    })
+    render(buildParameterization([
+      suggestion({ id: 'pz_secret', kind: 'secret', var_name: 'PASSWORD', literal_value: 'super-secret', sample_value: 'super-secret', confidence: 0.9, high_risk: true }),
+    ]))
+
+    const checkbox = container.querySelector<HTMLInputElement>('input[type="checkbox"]')
+    await act(async () => {
+      checkbox!.click()
+    })
+    const applyButton = container.querySelector<HTMLButtonElement>('button.btn-primary')
+    await act(async () => {
+      applyButton!.click()
+    })
+
+    expect(container.textContent).toContain('••••••')
+    expect(container.textContent).toContain('{{secret.PASSWORD}}')
+    expect(container.textContent).not.toContain('super-secret')
+  })
+
   it('shows the blocked reason without lifting state', async () => {
     applyMock.mockResolvedValue({ script, diffs: [], applied_count: 0, blocked: true, blocked_reason: 'needs confirmation' })
     const onApplied = render(buildParameterization([

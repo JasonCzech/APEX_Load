@@ -275,12 +275,14 @@ func TestValidateScriptIssues_BrowserRuntimeActionParity(t *testing.T) {
 			{Name: "back", Type: "browser_back", Params: map[string]any{"wait_until": "domcontentloaded"}},
 			{Name: "forward", Type: "browser_forward"},
 			{Name: "reload", Type: "browser_reload"},
+			{Name: "wait count", Type: "browser_wait", Selector: ".toast", Params: map[string]any{"operator": "==", "count": 0}},
 			{Name: "wait response", Type: "browser_wait_response", Target: "/api/orders", Params: map[string]any{"method": "GET", "status": 200, "timeout_ms": 1000}},
 			{Name: "download", Type: "browser_download", Selector: "#export", Params: map[string]any{"filename_contains": "report"}},
 			{Name: "set geolocation", Type: "browser_set_geolocation", Params: map[string]any{"latitude": 47.6062, "longitude": -122.3321, "accuracy": 10}},
 			{Name: "upload", Type: "browser_set_files", Selector: "#upload", Value: "/tmp/upload.txt"},
 			{Name: "press enter", Type: "browser_press_key", Selector: "#search", Value: "Enter"},
 			{Name: "evaluate", Type: "browser_evaluate_js", Target: "window.app.ready", Metadata: map[string]any{"review_required": true}},
+			{Name: "switch frame by index", Type: "browser_switch_frame", Params: map[string]any{"frame": 0}},
 			{Name: "sync click", Type: "browser_click", Selector: "#save", Sync: &BrowserSyncPolicy{Type: "network_idle", TimeoutMs: 5000}},
 		},
 	}
@@ -870,6 +872,24 @@ func TestValidateScriptIssues_BrowserValidation(t *testing.T) {
 					"accuracy":  -1,
 				},
 			},
+			{
+				Name:   "empty select values",
+				Type:   "browser_select",
+				Target: "#shipping",
+				Params: map[string]any{"values": []any{" ", ""}},
+			},
+			{
+				Name:   "bad wait count",
+				Type:   "browser_wait",
+				Target: ".toast",
+				Params: map[string]any{"operator": "~", "count": -1},
+			},
+			{
+				Name:   "operator without count",
+				Type:   "browser_wait",
+				Target: ".toast",
+				Params: map[string]any{"operator": ">="},
+			},
 		},
 	}
 
@@ -903,6 +923,10 @@ func TestValidateScriptIssues_BrowserValidation(t *testing.T) {
 	assertIssue(t, issues, `actions[7] "bad geolocation": browser_set_geolocation params.latitude must be between -90 and 90`)
 	assertIssue(t, issues, `actions[7] "bad geolocation": browser_set_geolocation params.longitude must be between -180 and 180`)
 	assertIssue(t, issues, `actions[7] "bad geolocation": browser_set_geolocation params.accuracy must be zero or greater`)
+	assertIssue(t, issues, `actions[8] "empty select values": browser_select requires value`)
+	assertIssue(t, issues, `actions[9] "bad wait count": browser_wait params.operator must be one of =, ==, ===, !=, !==, >, >=, <, <=`)
+	assertIssue(t, issues, `actions[9] "bad wait count": browser_wait params.count must be >= 0`)
+	assertIssue(t, issues, `actions[10] "operator without count": browser_wait params.count is required when params.operator is set`)
 }
 
 func TestValidateScriptIssues_WebSocketValidation(t *testing.T) {

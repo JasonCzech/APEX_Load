@@ -931,17 +931,19 @@ type ScriptRecordingObservation struct {
 }
 
 // ScriptRecordingRecord is a per-script recorded baseline: the original recorded
-// exchanges (selectively redacted) that the script was generated from, keyed by
-// the DSL action index each exchange produced.
+// exchanges that the script was generated from, keyed by the DSL action index
+// each exchange produced. Observations is the scrubbed persistence view;
+// CorrelationObservations is a server-side raw sidecar used for diagnosis.
 type ScriptRecordingRecord struct {
-	ScriptID      string                       `json:"script_id"`
-	SchemaVersion string                       `json:"schema_version,omitempty"`
-	Source        string                       `json:"source,omitempty"`
-	Sensitivity   string                       `json:"sensitivity,omitempty"`
-	RequestCount  int                          `json:"request_count"`
-	Observations  []ScriptRecordingObservation `json:"observations"`
-	CreatedAt     time.Time                    `json:"created_at"`
-	UpdatedAt     time.Time                    `json:"updated_at"`
+	ScriptID                string                       `json:"script_id"`
+	SchemaVersion           string                       `json:"schema_version,omitempty"`
+	Source                  string                       `json:"source,omitempty"`
+	Sensitivity             string                       `json:"sensitivity,omitempty"`
+	RequestCount            int                          `json:"request_count"`
+	Observations            []ScriptRecordingObservation `json:"observations"`
+	CorrelationObservations []ScriptRecordingObservation `json:"correlation_observations,omitempty"`
+	CreatedAt               time.Time                    `json:"created_at"`
+	UpdatedAt               time.Time                    `json:"updated_at"`
 }
 
 // TestRecord represents a persisted test run.

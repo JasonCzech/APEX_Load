@@ -1139,6 +1139,9 @@ func (s *BrowserRecordingSession) artifact() *recbrowser.Session {
 	s.mu.RLock()
 	final := s.final
 	backend := s.backend
+	if final != nil {
+		final = final.Clone()
+	}
 	s.mu.RUnlock()
 	if final != nil {
 		return final

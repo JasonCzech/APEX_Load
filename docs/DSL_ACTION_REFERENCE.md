@@ -421,6 +421,7 @@ Requires one of: `value`, `params.key`, `params.key_name`, `params.keyName`
 | `value` | string |  | Key to press; one of value, params.key, or params.key_name is required. |
 | `params.key` | string |  | Key name alternative to value. |
 | `params.key_name` | string |  | Key name alternative to value. |
+| `params.modifiers` | array |  | Modifier keys held for the press, such as Control, Shift, Alt, Meta, or ControlOrMeta. |
 | `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
@@ -534,7 +535,7 @@ Requires one of: `selector`, `target`, `params.frame`, `params.frame_selector`
 |-------|------|----------|-------------|
 | `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
 | `target` | string |  | Frame locator alternative to selector. |
-| `params.frame` | string |  | Frame name or index. |
+| `params.frame` | any |  | Frame name or zero-based index. |
 | `params.frame_selector` | string |  | Frame element locator. |
 | `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
@@ -574,6 +575,8 @@ Requires one of: `wait_for`, `selector`, `target`
 | `wait_for` | object |  | Wait condition: {type, value, timeout_ms}. One of wait_for, selector, or target is required. |
 | `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
 | `target` | string |  | Element locator alternative to selector. |
+| `params.operator` | enum: =\|==\|===\|!=\|!==\|>\|>=\|<\|<= |  | Element-count comparison operator used with params.count; defaults to >= when count is set. |
+| `params.count` | int |  | Required element count for count-based waits; zero or greater. |
 
 ### `browser_wait_response`
 

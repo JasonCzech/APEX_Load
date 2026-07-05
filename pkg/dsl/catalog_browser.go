@@ -2,6 +2,7 @@ package dsl
 
 import (
 	"fmt"
+	"math"
 	"regexp"
 	"strings"
 )
@@ -191,6 +192,7 @@ func browserActionSpecs() []ActionSpec {
 				{Name: "value", Kind: FieldKindString, Doc: "Key to press; one of value, params.key, or params.key_name is required."},
 				{Name: "params.key", Kind: FieldKindString, Doc: "Key name alternative to value."},
 				{Name: "params.key_name", Kind: FieldKindString, Doc: "Key name alternative to value."},
+				{Name: "params.modifiers", Kind: FieldKindArray, Doc: "Modifier keys held for the press, such as Control, Shift, Alt, Meta, or ControlOrMeta."},
 				fieldSync, fieldCapture,
 			},
 			Validate: browserValidator(nil, browserRequirePressKeyValue),
@@ -241,13 +243,10 @@ func browserActionSpecs() []ActionSpec {
 				{Name: "wait_for", Kind: FieldKindObject, Doc: "Wait condition: {type, value, timeout_ms}. One of wait_for, selector, or target is required."},
 				fieldSelector,
 				{Name: "target", Kind: FieldKindString, Doc: "Element locator alternative to selector."},
+				{Name: "params.operator", Kind: FieldKindEnum, Enum: []string{"=", "==", "===", "!=", "!==", ">", ">=", "<", "<="}, Doc: "Element-count comparison operator used with params.count; defaults to >= when count is set."},
+				{Name: "params.count", Kind: FieldKindInt, Doc: "Required element count for count-based waits; zero or greater."},
 			},
-			Validate: func(index int, action Action) []string {
-				if action.WaitFor == nil && action.Selector == "" && action.Target == "" {
-					return []string{fmt.Sprintf("actions[%d] %q: browser_wait requires wait_for, selector, or target", index, action.Name)}
-				}
-				return nil
-			},
+			Validate: browserValidator(browserRequireWaitCondition, browserWaitChecks),
 		},
 		{
 			Type:      "browser_wait_response",
@@ -343,7 +342,7 @@ func browserActionSpecs() []ActionSpec {
 			Fields: []FieldSpec{
 				fieldSelector,
 				{Name: "target", Kind: FieldKindString, Doc: "Frame locator alternative to selector."},
-				{Name: "params.frame", Kind: FieldKindString, Doc: "Frame name or index."},
+				{Name: "params.frame", Kind: FieldKindAny, Doc: "Frame name or zero-based index."},
 				{Name: "params.frame_selector", Kind: FieldKindString, Doc: "Frame element locator."},
 				fieldSync, fieldCapture,
 			},
@@ -435,6 +434,13 @@ func browserRequireTargetOrSelector(label string, action Action) []string {
 	return nil
 }
 
+func browserRequireWaitCondition(label string, action Action) []string {
+	if action.WaitFor == nil && action.Selector == "" && action.Target == "" {
+		return []string{fmt.Sprintf("%s: browser_wait requires wait_for, selector, or target", label)}
+	}
+	return nil
+}
+
 func browserOpenWindowChecks(label string, action Action) []string {
 	if strings.TrimSpace(action.Target) == "" {
 		if urlValue, ok := actionParamStringValue(action.Params, "url"); !ok || strings.TrimSpace(urlValue) == "" {
@@ -480,6 +486,22 @@ func browserWaitResponseChecks(label string, action Action) []string {
 	}
 	if timeoutMs, ok := actionParamIntValue(action.Params, "timeout_ms"); ok && timeoutMs < 0 {
 		issues = append(issues, fmt.Sprintf("%s: browser_wait_response params.timeout_ms must be >= 0", label))
+	}
+	return issues
+}
+
+func browserWaitChecks(label string, action Action) []string {
+	var issues []string
+	operator, hasOperator := actionParamStringValue(action.Params, "operator")
+	_, hasCount := actionParamIntValue(action.Params, "count")
+	if hasOperator && !isAllowedValue(operator, "=", "==", "===", "!=", "!==", ">", ">=", "<", "<=") {
+		issues = append(issues, fmt.Sprintf("%s: browser_wait params.operator must be one of =, ==, ===, !=, !==, >, >=, <, <=", label))
+	}
+	if hasOperator && !hasCount {
+		issues = append(issues, fmt.Sprintf("%s: browser_wait params.count is required when params.operator is set", label))
+	}
+	if count, ok := actionParamIntValue(action.Params, "count"); ok && count < 0 {
+		issues = append(issues, fmt.Sprintf("%s: browser_wait params.count must be >= 0", label))
 	}
 	return issues
 }
@@ -545,13 +567,32 @@ func browserDragAndDropChecks(label string, action Action) []string {
 
 func browserSwitchFrameChecks(label string, action Action) []string {
 	if action.Target == "" && action.Selector == "" {
-		if frame, ok := actionParamStringValue(action.Params, "frame"); !ok || strings.TrimSpace(frame) == "" {
+		if !browserFrameParamPresent(action.Params, "frame") {
 			if frameSelector, ok := actionParamStringValue(action.Params, "frame_selector"); !ok || strings.TrimSpace(frameSelector) == "" {
 				return []string{fmt.Sprintf("%s: browser_switch_frame requires selector, target, params.frame, or params.frame_selector", label)}
 			}
 		}
 	}
 	return nil
+}
+
+func browserFrameParamPresent(params map[string]any, key string) bool {
+	if frame, ok := actionParamStringValue(params, key); ok && strings.TrimSpace(frame) != "" {
+		return true
+	}
+	switch value := params[key].(type) {
+	case int:
+		return value >= 0
+	case int64:
+		return value >= 0
+	case float64:
+		return value >= 0 && value == math.Trunc(value)
+	case float32:
+		asFloat := float64(value)
+		return value >= 0 && asFloat == math.Trunc(asFloat)
+	default:
+		return false
+	}
 }
 
 func browserRequireValue(label string, action Action) []string {
@@ -565,13 +606,54 @@ func browserRequireSelectValue(label string, action Action) []string {
 	if strings.TrimSpace(action.Value) != "" {
 		return nil
 	}
-	if _, ok := action.Params["values"]; ok {
+	if browserSelectParamsHaveValue(action.Params) {
 		return nil
 	}
 	if value, ok := actionParamStringValue(action.Params, "value"); ok && strings.TrimSpace(value) != "" {
 		return nil
 	}
 	return []string{fmt.Sprintf("%s: browser_select requires value", label)}
+}
+
+func browserSelectParamsHaveValue(params map[string]any) bool {
+	if params == nil {
+		return false
+	}
+	raw, ok := params["values"]
+	if !ok {
+		return false
+	}
+	hasValue := func(value any) bool {
+		switch typed := value.(type) {
+		case string:
+			return strings.TrimSpace(typed) != ""
+		default:
+			return strings.TrimSpace(fmt.Sprint(typed)) != ""
+		}
+	}
+	switch typed := raw.(type) {
+	case []string:
+		for _, value := range typed {
+			if strings.TrimSpace(value) != "" {
+				return true
+			}
+		}
+	case []any:
+		for _, value := range typed {
+			if hasValue(value) {
+				return true
+			}
+		}
+	case string:
+		for _, part := range strings.Split(typed, ",") {
+			if strings.TrimSpace(part) != "" {
+				return true
+			}
+		}
+	default:
+		return hasValue(raw)
+	}
+	return false
 }
 
 func browserScrollChecks(label string, action Action) []string {

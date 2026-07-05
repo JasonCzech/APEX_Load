@@ -20,7 +20,7 @@ func RunScriptShakeout(ctx context.Context, groupName string, script *dsl.Script
 		return fmt.Errorf("protocol init: %w", err)
 	}
 
-	if err := proto.Init(ctx, buildProtoConfig(script)); err != nil {
+	if err := proto.Init(ctx, buildProtoConfigForRunMode(script, "replay")); err != nil {
 		return fmt.Errorf("protocol init: %w", err)
 	}
 	defer proto.Teardown(context.Background())

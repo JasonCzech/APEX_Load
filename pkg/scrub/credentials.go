@@ -39,8 +39,8 @@ func normalizeCredentialFieldName(name string) string {
 
 var (
 	credentialXMLPattern    = regexp.MustCompile(`(?is)(<(?:[\w.-]+:)?(?:password|passwd|pwd|pass|secret|client[_-]?secret|api[_-]?key|apikey|private[_-]?key|secret[_-]?key|access[_-]?key)\b[^>]*>)(.*?)(</(?:[\w.-]+:)?(?:password|passwd|pwd|pass|secret|client[_-]?secret|api[_-]?key|apikey|private[_-]?key|secret[_-]?key|access[_-]?key)>)`)
-	credentialXMLAttrDouble = regexp.MustCompile(`(?is)(\b(?:password|passwd|pwd|pass|secret|client[_-]?secret|api[_-]?key|apikey|private[_-]?key|secret[_-]?key|access[_-]?key)\s*=\s*")([^"]*)(")`)
-	credentialXMLAttrSingle = regexp.MustCompile(`(?is)(\b(?:password|passwd|pwd|pass|secret|client[_-]?secret|api[_-]?key|apikey|private[_-]?key|secret[_-]?key|access[_-]?key)\s*=\s*')([^']*)(')`)
+	credentialXMLAttrDouble = regexp.MustCompile(`(?is)(^|[^\w-])((?:password|passwd|pwd|pass|secret|client[_-]?secret|api[_-]?key|apikey|private[_-]?key|secret[_-]?key|access[_-]?key)\s*=\s*")([^"]*)(")`)
+	credentialXMLAttrSingle = regexp.MustCompile(`(?is)(^|[^\w-])((?:password|passwd|pwd|pass|secret|client[_-]?secret|api[_-]?key|apikey|private[_-]?key|secret[_-]?key|access[_-]?key)\s*=\s*')([^']*)(')`)
 	credentialMultipartPart = regexp.MustCompile(`(?is)(Content-Disposition:\s*form-data;[^\r\n]*\bname="(?:password|passwd|pwd|pass|secret|client[_-]?secret|api[_-]?key|apikey|private[_-]?key|secret[_-]?key|access[_-]?key)"[^\r\n]*(?:\r?\nContent-[^\r\n]*)*\r?\n\r?\n)(.*?)(\r?\n--)`)
 )
 
@@ -124,8 +124,8 @@ func RedactCredentialBody(body string) string {
 
 func redactCredentialXML(body string) string {
 	redacted := credentialXMLPattern.ReplaceAllString(body, "${1}"+Redacted+"${3}")
-	redacted = credentialXMLAttrDouble.ReplaceAllString(redacted, "${1}"+Redacted+"${3}")
-	redacted = credentialXMLAttrSingle.ReplaceAllString(redacted, "${1}"+Redacted+"${3}")
+	redacted = credentialXMLAttrDouble.ReplaceAllString(redacted, "${1}${2}"+Redacted+"${4}")
+	redacted = credentialXMLAttrSingle.ReplaceAllString(redacted, "${1}${2}"+Redacted+"${4}")
 	return redacted
 }
 

@@ -52,6 +52,63 @@ func TestSelectorSelfHealOffDisablesRetry(t *testing.T) {
 	}
 }
 
+func TestSelectorSelfHealUsesCachedCandidateBeforePrimary(t *testing.T) {
+	b := &Browser{}
+	b.applyDefaultConfig()
+	action := selfHealTestAction()
+	cached := selector.Candidate{Kind: "css", Value: "#fallback", Confidence: 95}
+	b.storeSelfHealCandidate(selfHealActionIdentity(action, "#missing"), cached)
+
+	var calls []string
+	result := &protocol.Result{}
+	err := b.runWithSelectorSelfHeal(context.Background(), action, result, "#missing", func(selector string) error {
+		calls = append(calls, selector)
+		if selector == "#fallback" {
+			return nil
+		}
+		return errors.New(`Timeout 1000ms exceeded waiting for locator("#missing")`)
+	})
+	if err != nil {
+		t.Fatalf("runWithSelectorSelfHeal returned error: %v", err)
+	}
+	if len(calls) != 1 || calls[0] != "#fallback" {
+		t.Fatalf("calls = %v, want cached fallback only", calls)
+	}
+	metrics, ok := result.ProtocolEvidence["selector_self_heal_metrics"].(map[string]any)
+	if !ok {
+		t.Fatalf("selector_self_heal_metrics = %#v", result.ProtocolEvidence["selector_self_heal_metrics"])
+	}
+	if metrics["cache_hit"] != true || metrics["attempts"] != 1 || metrics["success"] != true {
+		t.Fatalf("metrics = %#v, want cache hit success with one attempt", metrics)
+	}
+}
+
+func TestSelectorSelfHealReplayOnlyDoesNotProbeFallbacksDuringLoad(t *testing.T) {
+	b := &Browser{}
+	b.applyDefaultConfig()
+	b.runMode = browserRunModeLoad
+
+	calls := 0
+	result := &protocol.Result{}
+	err := b.runWithSelectorSelfHeal(context.Background(), selfHealTestAction(), result, "#missing", func(string) error {
+		calls++
+		return errors.New(`Timeout 1000ms exceeded waiting for locator("#missing")`)
+	})
+	if err == nil {
+		t.Fatal("expected original selector error")
+	}
+	if calls != 1 {
+		t.Fatalf("calls = %d, want only primary attempt during load replay-only mode", calls)
+	}
+	metrics, ok := result.ProtocolEvidence["selector_self_heal_metrics"].(map[string]any)
+	if !ok {
+		t.Fatalf("selector_self_heal_metrics = %#v", result.ProtocolEvidence["selector_self_heal_metrics"])
+	}
+	if metrics["attempts"] != 0 || metrics["probe_failures"] != 0 || metrics["success"] != false {
+		t.Fatalf("metrics = %#v, want no fallback attempts under load replay-only mode", metrics)
+	}
+}
+
 func TestSelectorSelfHealProbeFailuresConsumeAttemptBudget(t *testing.T) {
 	b := &Browser{}
 	b.applyDefaultConfig()

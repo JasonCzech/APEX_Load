@@ -69,7 +69,7 @@ var sensitiveParamPattern = regexp.MustCompile(`(?i)((?:^|[&?;\s])(?:password|pa
 var (
 	sensitiveJSONPattern = regexp.MustCompile(`(?i)("(?:authorization|password|passwd|secret|token|access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|apikey|client[_-]?secret|private[_-]?key)"\s*:\s*)("[^"]*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null)`)
 	sensitiveXMLPattern  = regexp.MustCompile(`(?is)(<(?:[\w.-]+:)?(?:authorization|password|passwd|secret|token|access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|apikey|client[_-]?secret|private[_-]?key)\b[^>]*>)(.*?)(</(?:[\w.-]+:)?(?:authorization|password|passwd|secret|token|access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|apikey|client[_-]?secret|private[_-]?key)>)`)
-	sensitiveXMLAttr     = regexp.MustCompile(`(?is)(\b(?:authorization|password|passwd|secret|token|access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|apikey|client[_-]?secret|private[_-]?key)\s*=\s*")([^"]*)(")`)
+	sensitiveXMLAttr     = regexp.MustCompile(`(?is)(^|[^\w-])((?:authorization|password|passwd|secret|token|access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|apikey|client[_-]?secret|private[_-]?key)\s*=\s*")([^"]*)(")`)
 	multipartSecretPart  = regexp.MustCompile(`(?is)(Content-Disposition:\s*form-data;[^\r\n]*\bname="(?:authorization|password|passwd|secret|token|access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|apikey|client[_-]?secret|private[_-]?key)"[^\r\n]*(?:\r?\nContent-Type:[^\r\n]*)?\r?\n\r?\n)(.*?)(\r?\n--)`)
 	jwtPattern           = regexp.MustCompile(`\b[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b`)
 	highEntropyToken     = regexp.MustCompile(`\b[A-Za-z0-9+/=_-]{24,}\b`)
@@ -182,7 +182,7 @@ func (cp compiledPolicy) value(value string) string {
 	value = sensitiveJSONPattern.ReplaceAllString(value, "${1}\""+Redacted+"\"")
 	value = sensitiveParamPattern.ReplaceAllString(value, "${1}"+Redacted)
 	value = sensitiveXMLPattern.ReplaceAllString(value, "${1}"+Redacted+"${3}")
-	value = sensitiveXMLAttr.ReplaceAllString(value, "${1}"+Redacted+"${3}")
+	value = sensitiveXMLAttr.ReplaceAllString(value, "${1}${2}"+Redacted+"${4}")
 	value = multipartSecretPart.ReplaceAllString(value, "${1}"+Redacted+"${3}")
 	value = jwtPattern.ReplaceAllString(value, Redacted)
 	value = highEntropyToken.ReplaceAllStringFunc(value, func(candidate string) string {
@@ -228,8 +228,11 @@ func redactSensitiveJSONNode(node any) bool {
 	case map[string]any:
 		for key, value := range typed {
 			if sensitiveJSONFieldName(key) {
-				typed[key] = Redacted
-				changed = true
+				redacted, valueChanged := redactSensitiveJSONSecretValue(value)
+				if valueChanged {
+					typed[key] = redacted
+					changed = true
+				}
 				continue
 			}
 			if redactSensitiveJSONNode(value) {
@@ -244,6 +247,33 @@ func redactSensitiveJSONNode(node any) bool {
 		}
 	}
 	return changed
+}
+
+func redactSensitiveJSONSecretValue(node any) (any, bool) {
+	switch typed := node.(type) {
+	case map[string]any:
+		changed := false
+		for key, value := range typed {
+			redacted, valueChanged := redactSensitiveJSONSecretValue(value)
+			if valueChanged {
+				typed[key] = redacted
+				changed = true
+			}
+		}
+		return typed, changed
+	case []any:
+		changed := false
+		for i, item := range typed {
+			redacted, valueChanged := redactSensitiveJSONSecretValue(item)
+			if valueChanged {
+				typed[i] = redacted
+				changed = true
+			}
+		}
+		return typed, changed
+	default:
+		return Redacted, true
+	}
 }
 
 var sensitiveJSONFieldNames = map[string]bool{

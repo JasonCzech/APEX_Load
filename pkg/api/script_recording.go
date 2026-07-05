@@ -10,37 +10,49 @@ import (
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
-// redactBaselineObservation applies selective credential redaction to the
-// request side of a recorded observation. Request bodies preserve dynamic
-// correlation candidates (session ids, CSRF, view-state), while request headers
-// are scrubbed with the stricter artifact policy used for persisted baselines.
+// redactBaselineObservation returns the scrubbed persistence view of a recorded
+// observation. Raw values are kept separately for server-side correlation.
 func redactBaselineObservation(obs correlate.Observation) storage.ScriptRecordingObservation {
 	return storage.ScriptRecordingObservation{
 		ID:              obs.ID,
-		RequestURL:      obs.RequestURL,
-		RequestBody:     scrub.RedactCredentialBody(obs.RequestBody),
+		RequestURL:      scrub.Value(obs.RequestURL, scrub.Policy{}),
+		RequestBody:     scrub.Value(obs.RequestBody, scrub.Policy{}),
 		RequestHeaders:  scrub.Headers(obs.RequestHeaders, scrub.Policy{}),
+		ResponseBody:    scrub.Value(obs.ResponseBody, scrub.Policy{}),
+		ResponseHeaders: scrub.Headers(obs.ResponseHeaders, scrub.Policy{}),
+	}
+}
+
+func rawBaselineObservation(obs correlate.Observation) storage.ScriptRecordingObservation {
+	return storage.ScriptRecordingObservation{
+		ID:              obs.ID,
+		RequestURL:      obs.RequestURL,
+		RequestBody:     obs.RequestBody,
+		RequestHeaders:  obs.RequestHeaders,
 		ResponseBody:    obs.ResponseBody,
 		ResponseHeaders: obs.ResponseHeaders,
 	}
 }
 
-// persistRecordedBaseline stores a selectively-redacted recorded baseline for a
-// script. It is best-effort: a nil store, empty baseline, or save error must not
-// fail the surrounding import.
+// persistRecordedBaseline stores a scrubbed recorded baseline view plus a raw
+// correlation sidecar for a script. It is best-effort: a nil store, empty
+// baseline, or save error must not fail the surrounding import.
 func (s *Server) persistRecordedBaseline(scriptID, source string, observations []correlate.Observation) error {
 	if s.store == nil || scriptID == "" || len(observations) == 0 {
 		return nil
 	}
 	redacted := make([]storage.ScriptRecordingObservation, 0, len(observations))
+	raw := make([]storage.ScriptRecordingObservation, 0, len(observations))
 	for _, obs := range observations {
 		redacted = append(redacted, redactBaselineObservation(obs))
+		raw = append(raw, rawBaselineObservation(obs))
 	}
 	return s.store.SaveScriptRecording(&storage.ScriptRecordingRecord{
-		ScriptID:     scriptID,
-		Source:       source,
-		Sensitivity:  scrub.SensitivityScrubbed,
-		Observations: redacted,
+		ScriptID:                scriptID,
+		Source:                  source,
+		Sensitivity:             scrub.SensitivityRaw,
+		Observations:            redacted,
+		CorrelationObservations: raw,
 	})
 }
 

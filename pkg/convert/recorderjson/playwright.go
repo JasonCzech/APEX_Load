@@ -147,6 +147,7 @@ func convertPlaywright(content string, opts ConvertOptions) (*ConvertResult, err
 		if match := keyboardPressPattern.FindStringSubmatch(line); match != nil {
 			result.Stats.TotalSteps++
 			action := dsl.Action{Name: "Press " + match[1], Type: "browser_press_key", Value: match[1]}
+			applyPlaywrightKeyChord(&action, match[1])
 			annotatePlaywrightPageContext(&action, pageVariable)
 			disposition, reason := actionDisposition(action.Metadata, "mapped", "")
 			appendImportedAction(script, result, StepMapping{
@@ -316,7 +317,7 @@ func convertPlaywright(content string, opts ConvertOptions) (*ConvertResult, err
 		case "press":
 			action.Type = "browser_press_key"
 			action.Name = "Press " + argValue
-			action.Value = argValue
+			applyPlaywrightKeyChord(&action, argValue)
 		}
 		annotatePlaywrightPageContext(&action, pageVariable)
 		disposition, reason := actionDisposition(action.Metadata, "mapped", "")
@@ -503,7 +504,7 @@ func playwrightDirectPageAction(method, rawArgs, location string, result *Conver
 	case "press":
 		action.Type = "browser_press_key"
 		action.Name = "Press " + value
-		action.Value = value
+		applyPlaywrightKeyChord(&action, value)
 	case "check":
 		action.Type = "browser_check"
 		action.Name = "Check " + candidate.Value
@@ -776,6 +777,54 @@ func applyPlaywrightClickOptions(action *dsl.Action, rawArgs string) {
 	}
 	if len(action.Params) == 0 {
 		action.Params = nil
+	}
+}
+
+func applyPlaywrightKeyChord(action *dsl.Action, value string) {
+	key, modifiers := playwrightKeyChord(value)
+	action.Value = key
+	if len(modifiers) == 0 {
+		return
+	}
+	if action.Params == nil {
+		action.Params = map[string]any{}
+	}
+	action.Params["modifiers"] = modifiers
+	action.Params["key"] = key
+}
+
+func playwrightKeyChord(value string) (string, []string) {
+	value = strings.TrimSpace(value)
+	parts := strings.Split(value, "+")
+	if len(parts) < 2 {
+		return value, nil
+	}
+	modifiers := make([]string, 0, len(parts)-1)
+	seen := map[string]struct{}{}
+	for _, part := range parts[:len(parts)-1] {
+		modifier := normalizeKeyboardModifier(part)
+		if !isKnownKeyboardModifier(modifier) {
+			return value, nil
+		}
+		if _, ok := seen[modifier]; ok {
+			continue
+		}
+		seen[modifier] = struct{}{}
+		modifiers = append(modifiers, modifier)
+	}
+	key := strings.TrimSpace(parts[len(parts)-1])
+	if key == "" {
+		return value, nil
+	}
+	return key, modifiers
+}
+
+func isKnownKeyboardModifier(value string) bool {
+	switch value {
+	case "Alt", "Control", "ControlOrMeta", "Meta", "Shift":
+		return true
+	default:
+		return false
 	}
 }
 

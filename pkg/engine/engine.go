@@ -114,7 +114,7 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 		return nil, fmt.Errorf("protocol init: %w", err)
 	}
 
-	protoConfig := buildProtoConfig(e.script)
+	protoConfig := buildProtoConfigForRunMode(e.script, "load")
 	if err := proto.HealthCheck(ctx); err != nil {
 		slog.Warn("health check failed, proceeding anyway", "err", err)
 	}

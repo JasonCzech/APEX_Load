@@ -169,6 +169,19 @@ export function useBrowserRecorderApi() {
     [recorderRequest],
   )
 
+  const listBrowserRecordings = useCallback(
+    (projectId?: string) => {
+      const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : ''
+      return recorderRequest<{ sessions: BrowserRecorderSession[]; count: number }>(`/browser-recorder/sessions${query}`)
+    },
+    [recorderRequest],
+  )
+
+  const deleteBrowserRecording = useCallback(
+    (id: string) => recorderRequest<{ deleted: string; session: BrowserRecorderSession }>(`/browser-recorder/sessions/${id}`, { method: 'DELETE' }),
+    [recorderRequest],
+  )
+
   const stopBrowserRecording = useCallback(
     (id: string) => recorderRequest<BrowserRecorderSessionEnvelope>(`/browser-recorder/sessions/${id}/stop`, { method: 'POST' }),
     [recorderRequest],
@@ -364,6 +377,8 @@ export function useBrowserRecorderApi() {
       clearBrowserRecorderBridge: clearBrowserRecorderBridgeConnection,
       startBrowserRecording,
       getBrowserRecording,
+      listBrowserRecordings,
+      deleteBrowserRecording,
       stopBrowserRecording,
       forceStopBrowserRecording,
       pauseBrowserRecording,
@@ -394,6 +409,8 @@ export function useBrowserRecorderApi() {
       clearBrowserRecorderBridgeConnection,
       startBrowserRecording,
       getBrowserRecording,
+      listBrowserRecordings,
+      deleteBrowserRecording,
       stopBrowserRecording,
       forceStopBrowserRecording,
       pauseBrowserRecording,

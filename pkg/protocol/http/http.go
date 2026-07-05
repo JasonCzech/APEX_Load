@@ -46,6 +46,7 @@ type HTTP struct {
 	requestTimeout           time.Duration
 	networkProfile           string // assigned network-profile label (population mix)
 	traceparentEnabled       bool
+	traceparentSampled       bool
 	authConfig               *protocol.AuthConfig
 	cache                    *httpResponseCache
 }
@@ -61,6 +62,7 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 	h.baseURL, _ = config["base_url"].(string)
 	h.networkProfile, _ = config["web_network_profile_label"].(string)
 	h.traceparentEnabled = parseTraceparentEnabled(config)
+	h.traceparentSampled = parseTraceparentSampled(config)
 	transportSettings := parseTransportConfig(config)
 	h.requestTimeout = transportSettings.requestTimeout
 
@@ -203,7 +205,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	explicitCorrelationID := correlationIDFromHTTPHeader(req.Header)
 	generatedTraceparent := ""
 	if h.traceparentEnabled {
-		generatedTraceparent = ensureTraceparentHeader(req.Header)
+		generatedTraceparent = ensureTraceparentHeader(req.Header, h.traceparentSampled)
 	}
 	var staleCacheEntry *httpCacheEntry
 	cacheHit := false
@@ -319,6 +321,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		}
 	}
 	if !cacheHit && staleCacheEntry != nil && resp != nil && resp.StatusCode == http.StatusNotModified {
+		h.cache.refresh(req, staleCacheEntry, resp, time.Now())
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 		_ = resp.Body.Close()
 		resp = staleCacheEntry.response(req)
@@ -398,7 +401,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	responseHeaders := cloneHTTPHeaders(resp.Header)
 
 	rawResponseBody := append([]byte(nil), buf.Bytes()...)
-	if h.cache != nil && !cacheHit {
+	if h.cache != nil && !cacheHit && bodyReadErr == nil {
 		h.cache.store(req, resp, rawResponseBody, time.Now())
 	}
 	respBody := append([]byte(nil), rawResponseBody...)
@@ -642,14 +645,14 @@ func decodedResponseHeaders(headers map[string]string) map[string]string {
 	return decoded
 }
 
-func ensureTraceparentHeader(headers http.Header) string {
+func ensureTraceparentHeader(headers http.Header, sampled bool) string {
 	if headers == nil {
 		return ""
 	}
 	if existing := strings.TrimSpace(headers.Get("Traceparent")); existing != "" {
 		return existing
 	}
-	traceparent := newTraceparent()
+	traceparent := newTraceparent(sampled)
 	headers.Set("Traceparent", traceparent)
 	return traceparent
 }
@@ -662,7 +665,7 @@ func (h *HTTP) OAuthHTTPClient() *http.Client {
 	return &client
 }
 
-func newTraceparent() string {
+func newTraceparent(sampled bool) string {
 	traceID := make([]byte, 16)
 	if _, err := rand.Read(traceID); err != nil || bytes.Equal(traceID, make([]byte, len(traceID))) {
 		traceID[len(traceID)-1] = 1
@@ -671,7 +674,11 @@ func newTraceparent() string {
 	if _, err := rand.Read(spanID); err != nil || bytes.Equal(spanID, make([]byte, len(spanID))) {
 		spanID[len(spanID)-1] = 1
 	}
-	return "00-" + hex.EncodeToString(traceID) + "-" + hex.EncodeToString(spanID) + "-01"
+	flags := "00"
+	if sampled {
+		flags = "01"
+	}
+	return "00-" + hex.EncodeToString(traceID) + "-" + hex.EncodeToString(spanID) + "-" + flags
 }
 
 func setRequestHeader(req *http.Request, key string, value string) {

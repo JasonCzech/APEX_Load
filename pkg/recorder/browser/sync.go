@@ -1,6 +1,8 @@
 package browser
 
 import (
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -39,6 +41,9 @@ func inferSync(steps []Step, i int, navs []NavEvent, network []time.Time) *dsl.B
 	}
 	for _, nav := range navs {
 		if nav.Timestamp.After(step.Timestamp) && !nav.Timestamp.After(windowEnd) {
+			if sameDocumentURL(step.URL, nav.URL) {
+				continue
+			}
 			return &dsl.BrowserSyncPolicy{Type: "load"}
 		}
 	}
@@ -57,12 +62,25 @@ func inferSync(steps []Step, i int, navs []NavEvent, network []time.Time) *dsl.B
 // explicitNavigations returns the indexes into navs that should become
 // browser_navigate actions: navigations not attributable to a preceding
 // interaction (typed URLs, bookmarks), excluding the initial navigation which
-// the converter always emits from the session start URL.
+// the converter always emits from the session start URL. Before the first
+// captured interaction, only the final distinct URL is kept so redirect chains
+// collapse without losing a real user-initiated sidebar/bookmark navigation.
 func explicitNavigations(steps []Step, navs []NavEvent) []int {
 	out := make([]int, 0)
+	firstStepAt, haveFirstStep := firstConvertibleStepTimestamp(steps)
+	lastPreFirst := lastPreFirstNavigationIndex(navs, firstStepAt, haveFirstStep)
+	initialURL := ""
+	if len(navs) > 0 {
+		initialURL = navs[0].URL
+	}
 	for i, nav := range navs {
 		if i == 0 {
 			continue // initial goto, emitted from StartURL
+		}
+		if haveFirstStep && nav.Timestamp.Before(firstStepAt) {
+			if i != lastPreFirst || sameDocumentURL(initialURL, nav.URL) {
+				continue
+			}
 		}
 		attributed := false
 		for _, step := range steps {
@@ -81,4 +99,43 @@ func explicitNavigations(steps []Step, navs []NavEvent) []int {
 		}
 	}
 	return out
+}
+
+func lastPreFirstNavigationIndex(navs []NavEvent, firstStepAt time.Time, haveFirstStep bool) int {
+	if !haveFirstStep {
+		return -1
+	}
+	last := -1
+	for i := 1; i < len(navs); i++ {
+		if navs[i].Timestamp.Before(firstStepAt) {
+			last = i
+		}
+	}
+	return last
+}
+
+func firstConvertibleStepTimestamp(steps []Step) (time.Time, bool) {
+	for _, step := range steps {
+		if step.skipForConvert() {
+			continue
+		}
+		return step.Timestamp, true
+	}
+	return time.Time{}, false
+}
+
+func sameDocumentURL(before, after string) bool {
+	before = strings.TrimSpace(before)
+	after = strings.TrimSpace(after)
+	if before == "" || after == "" {
+		return false
+	}
+	left, errLeft := url.Parse(before)
+	right, errRight := url.Parse(after)
+	if errLeft != nil || errRight != nil || left == nil || right == nil {
+		return false
+	}
+	left.Fragment = ""
+	right.Fragment = ""
+	return left.String() == right.String()
 }

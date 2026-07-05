@@ -615,6 +615,37 @@ func TestConvertHARWithThinkTime(t *testing.T) {
 	}
 }
 
+func TestConvertHARWithoutTimestampsDoesNotUseDurationAsThinkTime(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Format: "har",
+		Content: `{
+			"log": {
+				"entries": [
+					{
+						"time": 5000,
+						"request": {"method": "GET", "url": "https://api.example.com/v1/session", "headers": []},
+						"response": {"status": 200, "headers": [], "content": {"text": "{}"}}
+					},
+					{
+						"time": 200,
+						"request": {"method": "GET", "url": "https://api.example.com/v1/orders", "headers": []},
+						"response": {"status": 200, "headers": [], "content": {"text": "{}"}}
+					}
+				]
+			}
+		}`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("action count = %d, want 2", len(result.Script.Actions))
+	}
+	if result.Script.Actions[0].ThinkTimeAfter {
+		t.Fatalf("first action think time = %#v; missing HAR timestamps must not synthesize think time from response duration", result.Script.Actions[0].ThinkTime)
+	}
+}
+
 func TestConvertHARDiagnosticsForMissingResponseWebSocketAndRedirect(t *testing.T) {
 	inferExtractors := false
 	result, err := Convert(ImportRequest{

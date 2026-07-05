@@ -24,6 +24,7 @@ func TestStepFromEvent(t *testing.T) {
 		wantScrollY int
 		wantBest    string
 		wantFrame   string
+		wantPath    []string
 		wantNumCand int
 	}{
 		{
@@ -51,10 +52,12 @@ func TestStepFromEvent(t *testing.T) {
 			name: "fill captures value and frame selector",
 			payload: `{"kind":"fill","value":"jason","ts":1700000000000,
 				"frame_selector":"iframe[name=\"login\"]",
+				"frame_path":["iframe#outer","iframe[name=\"login\"]"],
 				"element":{"tag":"input","name":"username","css_path":"form > input"}}`,
 			wantKind:    StepFill,
 			wantValue:   "jason",
 			wantFrame:   `iframe[name="login"]`,
+			wantPath:    []string{"iframe#outer", `iframe[name="login"]`},
 			wantBest:    `input[name="username"]`,
 			wantNumCand: 2,
 		},
@@ -134,6 +137,9 @@ func TestStepFromEvent(t *testing.T) {
 			}
 			if tt.wantFrame != "" && step.FrameSelector != tt.wantFrame {
 				t.Errorf("FrameSelector = %q, want %q", step.FrameSelector, tt.wantFrame)
+			}
+			if strings.Join(step.FramePath, "|") != strings.Join(tt.wantPath, "|") {
+				t.Errorf("FramePath = %v, want %v", step.FramePath, tt.wantPath)
 			}
 			if tt.wantNumCand > 0 && len(step.Candidates) != tt.wantNumCand {
 				t.Errorf("candidates = %d (%v), want %d", len(step.Candidates), step.Candidates, tt.wantNumCand)

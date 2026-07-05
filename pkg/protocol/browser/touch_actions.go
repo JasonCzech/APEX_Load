@@ -33,7 +33,7 @@ func (b *Browser) dispatchTap(ctx context.Context, action *protocol.Action, sele
 }
 
 func (b *Browser) shouldUseSyntheticTap() bool {
-	return !b.touchMode
+	return true
 }
 
 func syntheticTapOperation() string {

@@ -350,6 +350,18 @@ func splitByTransaction(assembled []sectionedAction, baseName string, session *S
 		// Prepend the page the browser was on when the transaction started, so
 		// split scripts start from the transaction context rather than always
 		// rewinding to the original recorder StartURL.
+		if currentStartNav.action.Type != "browser_navigate" {
+			if stepURL := firstActionSourceURL(currentActions); stepURL != "" {
+				currentStartNav = sectionedAction{
+					action:  navigateAction(stepURL, relativeTarget(baseURL, stepURL)),
+					section: firstSection(currentActions),
+				}
+				if session.StartURL != "" && stepURL != session.StartURL {
+					result.Warnings = append(result.Warnings, fmt.Sprintf(
+						"transaction %q starts from first captured step URL %s because no explicit pre-transaction navigation was recorded", current.Name, stepURL))
+				}
+			}
+		}
 		if currentStartNav.action.Type == "browser_navigate" {
 			nav := currentStartNav
 			nav.section = firstSection(currentActions)
@@ -404,6 +416,18 @@ func splitByTransaction(assembled []sectionedAction, baseName string, session *S
 			"%d action(s) recorded outside any transaction were omitted from the split scripts", droppedOutside))
 	}
 	return scripts
+}
+
+func firstActionSourceURL(actions []sectionedAction) string {
+	for _, sa := range actions {
+		if sa.action.Metadata == nil {
+			continue
+		}
+		if url, ok := sa.action.Metadata["source_url"].(string); ok && strings.TrimSpace(url) != "" {
+			return strings.TrimSpace(url)
+		}
+	}
+	return ""
 }
 
 func countScriptActions(scripts []*dsl.Script) int {
@@ -971,6 +995,9 @@ func attachStepMetadata(action *dsl.Action, step Step) {
 	if step.FrameSelector != "" {
 		action.Metadata["frame_selector"] = step.FrameSelector
 	}
+	if len(step.FramePath) > 0 {
+		action.Metadata["frame_path"] = append([]string(nil), step.FramePath...)
+	}
 	if step.URL != "" {
 		action.Metadata["source_url"] = step.URL
 	}
@@ -1070,11 +1097,22 @@ func navigateAction(rawURL, target string) dsl.Action {
 }
 
 func relativeTarget(baseURL string, raw string) string {
-	if baseURL != "" && strings.HasPrefix(raw, baseURL) {
+	if baseURL != "" && sameURLPrefix(baseURL, raw) {
 		if trimmed := strings.TrimPrefix(raw, baseURL); trimmed != "" {
 			return trimmed
 		}
 		return "/"
 	}
 	return raw
+}
+
+func sameURLPrefix(baseURL string, raw string) bool {
+	if !strings.HasPrefix(raw, baseURL) {
+		return false
+	}
+	if len(raw) == len(baseURL) {
+		return true
+	}
+	next := raw[len(baseURL)]
+	return next == '/' || next == '?' || next == '#'
 }

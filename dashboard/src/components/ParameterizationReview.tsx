@@ -46,6 +46,19 @@ function suggestionDisplayValue(suggestion: ParameterizationSuggestion): string 
   return suggestion.sample_value || suggestion.literal_value
 }
 
+function diffDisplayValue(
+  diff: ParameterizationDiff,
+  suggestionsById: Map<string, ParameterizationSuggestion>,
+  side: 'before' | 'after',
+): string | undefined {
+  const value = side === 'before' ? diff.before : diff.after
+  if (!value) return value
+  const suggestion = diff.suggestion_id ? suggestionsById.get(diff.suggestion_id) : undefined
+  if (!suggestion || (suggestion.kind !== 'secret' && !suggestion.high_risk)) return value
+  if (side === 'after' && value.includes('{{')) return value
+  return '••••••'
+}
+
 export default function ParameterizationReview({ parameterization, script, scriptName, onApplied }: Props) {
   const api = useApi()
   const suggestions = useMemo(
@@ -79,6 +92,7 @@ export default function ParameterizationReview({ parameterization, script, scrip
 
   const selectedIds = suggestions.filter(s => selected[s.id] && !s.pre_applied).map(s => s.id)
   const selectedHighRisk = suggestions.some(s => selected[s.id] && s.high_risk && !s.pre_applied)
+  const suggestionsById = new Map(suggestions.map(s => [s.id, s]))
 
   const toggle = (suggestion: ParameterizationSuggestion) => {
     if (suggestion.pre_applied) return
@@ -184,8 +198,8 @@ export default function ParameterizationReview({ parameterization, script, scrip
             {diffs.map((diff, index) => (
               <li key={`${diff.path}-${index}`}>
                 <code>{diff.path}</code> — {diff.kind.replace(/_/g, ' ')}
-                {diff.before && <> : <code className="paramize-before">{diff.before}</code></>}
-                {diff.after && <> <span className="paramize-arrow" aria-hidden>→</span> <code className="paramize-after">{diff.after}</code></>}
+                {diffDisplayValue(diff, suggestionsById, 'before') && <> : <code className="paramize-before">{diffDisplayValue(diff, suggestionsById, 'before')}</code></>}
+                {diffDisplayValue(diff, suggestionsById, 'after') && <> <span className="paramize-arrow" aria-hidden>→</span> <code className="paramize-after">{diffDisplayValue(diff, suggestionsById, 'after')}</code></>}
               </li>
             ))}
           </ul>

@@ -1,6 +1,9 @@
 package correlate
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // recording: step 1 issues a csrf token, step 2 echoes it back.
 func sampleRecording() []Observation {
@@ -43,6 +46,44 @@ func TestDiagnoseReplayDetectsStaleValue(t *testing.T) {
 	}
 	if !HasBlockingRepairs(suggestions) {
 		t.Fatalf("a stale value should be a blocking repair")
+	}
+}
+
+func TestDiagnoseReplayReturnsFullLongValues(t *testing.T) {
+	recordedValue := "tok-" + strings.Repeat("A", 120)
+	replayValue := "tok-" + strings.Repeat("B", 120)
+	recorded := []Observation{
+		{ID: 1, ResponseBody: `{"csrf_token":"` + recordedValue + `"}`},
+		{ID: 2, RequestBody: "csrf=" + recordedValue},
+	}
+	replay := []Observation{
+		{ID: 1, ResponseBody: `{"csrf_token":"` + replayValue + `"}`},
+		{ID: 2, RequestBody: "csrf=" + recordedValue},
+	}
+
+	suggestions := DiagnoseReplay(recorded, replay)
+	if len(suggestions) != 1 {
+		t.Fatalf("suggestions = %#v, want one stale-value repair", suggestions)
+	}
+	if suggestions[0].RecordedValue != recordedValue || suggestions[0].ReplayValue != replayValue {
+		t.Fatalf("values were truncated or altered: recorded len=%d replay len=%d suggestion=%#v", len(suggestions[0].RecordedValue), len(suggestions[0].ReplayValue), suggestions[0])
+	}
+	if strings.Contains(suggestions[0].RecordedValue, "…") || strings.Contains(suggestions[0].ReplayValue, "…") {
+		t.Fatalf("suggestion values must be full literals, got %#v", suggestions[0])
+	}
+}
+
+func TestCandidateValueForCorrelationMatchesLocationBeforeName(t *testing.T) {
+	observation := Observation{ResponseBody: `{"token":"tok-wrong-111111","payment":{"token":"tok-right-222222"}}`}
+	corr := Correlation{
+		Name:        "corr_token",
+		Source:      "body",
+		ExtractType: "json_path",
+		Expression:  "$.payment.token",
+		Value:       "tok-old-000000",
+	}
+	if got := candidateValueForCorrelation(observation, corr); got != "tok-right-222222" {
+		t.Fatalf("candidateValueForCorrelation = %q, want payment token by expression", got)
 	}
 }
 

@@ -199,6 +199,53 @@ func TestBrowserProtocolExecutesHistoryNavigationActions(t *testing.T) {
 	}
 }
 
+func TestBrowserProtocolBackForwardAllowsSameURLHistory(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/spa" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write([]byte(`<!doctype html><html><body>
+			<main id="view">First state</main>
+			<button id="push" onclick="history.pushState({view:'second'}, '', location.href); document.getElementById('view').textContent='Second state';">Push</button>
+			<script>
+			window.addEventListener('popstate', (event) => {
+				document.getElementById('view').textContent = event.state && event.state.view === 'second' ? 'Second state' : 'First state';
+			});
+			</script>
+		</body></html>`))
+	}))
+	defer server.Close()
+
+	b := &Browser{}
+	if err := b.Init(context.Background(), map[string]any{
+		"base_url":         server.URL,
+		"browser_headless": true,
+	}); err != nil {
+		lower := strings.ToLower(err.Error())
+		if strings.Contains(lower, "executable") || strings.Contains(lower, "chrome") {
+			t.Skipf("browser runtime unavailable: %v", err)
+		}
+		t.Fatalf("Init returned error: %v", err)
+	}
+	defer b.Teardown(context.Background())
+
+	for _, action := range []protocol.Action{
+		{Name: "Open SPA", Type: "browser_navigate", Target: "/spa"},
+		{Name: "Push same URL history", Type: "browser_click", Selector: "#push", Assertions: []protocol.Assertion{{Type: "body_contains", Value: "Second state"}}},
+		{Name: "Back same URL", Type: "browser_back", Assertions: []protocol.Assertion{{Type: "body_contains", Value: "First state"}}},
+		{Name: "Forward same URL", Type: "browser_forward", Assertions: []protocol.Assertion{{Type: "body_contains", Value: "Second state"}}},
+	} {
+		result, err := b.Execute(context.Background(), &action)
+		if err != nil {
+			t.Fatalf("%s returned error: %v", action.Name, err)
+		}
+		if !result.Success {
+			t.Fatalf("%s failed: %s", action.Name, result.ErrorMessage)
+		}
+	}
+}
+
 func TestBrowserProtocolWaitsForNetworkResponse(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -299,14 +346,14 @@ func TestBrowserProtocolExecutesDownloadAction(t *testing.T) {
 	if result, err := b.Execute(context.Background(), &protocol.Action{Name: "Open page", Type: "browser_navigate", Target: "/"}); err != nil || !result.Success {
 		t.Fatalf("navigate result=%+v err=%v", result, err)
 	}
-	saveDir := t.TempDir()
+	t.Setenv("APEXLOAD_EXPORT_DIR", t.TempDir())
 	result, err := b.Execute(context.Background(), &protocol.Action{
 		Name:     "Download report",
 		Type:     "browser_download",
 		Selector: "#download",
 		Params: map[string]any{
 			"filename_contains": "report",
-			"save_dir":          saveDir,
+			"save_dir":          "downloads",
 			"timeout_ms":        3000,
 		},
 	})

@@ -53,15 +53,19 @@ func TestScriptRecordingRoundTrip(t *testing.T) {
 	if loaded.Observations[1].RequestHeaders["X-Token"] != "abc" {
 		t.Errorf("request headers not round-tripped: %#v", loaded.Observations[1].RequestHeaders)
 	}
+	if len(loaded.CorrelationObservations) != 2 || loaded.CorrelationObservations[0].ResponseBody != `{"token":"raw"}` {
+		t.Errorf("correlation observations not round-tripped: %#v", loaded.CorrelationObservations)
+	}
 
 	// Upsert replaces observations.
 	record.Observations = record.Observations[:1]
+	record.CorrelationObservations = record.CorrelationObservations[:1]
 	if err := store.SaveScriptRecording(record); err != nil {
 		t.Fatalf("re-save: %v", err)
 	}
 	loaded, _ = store.GetScriptRecording("script-1")
-	if len(loaded.Observations) != 1 {
-		t.Errorf("upsert did not replace observations, got %d", len(loaded.Observations))
+	if len(loaded.Observations) != 1 || len(loaded.CorrelationObservations) != 1 {
+		t.Errorf("upsert did not replace observations, got obs=%d corr=%d", len(loaded.Observations), len(loaded.CorrelationObservations))
 	}
 }
 
@@ -92,12 +96,16 @@ func TestScriptRecordingCapsObservations(t *testing.T) {
 	record := &ScriptRecordingRecord{ScriptID: "big", Source: "har"}
 	for i := 0; i < maxRecordingObservations+50; i++ {
 		record.Observations = append(record.Observations, storage_obs(i))
+		record.CorrelationObservations = append(record.CorrelationObservations, storage_obs(i))
 	}
 	if err := store.SaveScriptRecording(record); err != nil {
 		t.Fatalf("SaveScriptRecording: %v", err)
 	}
 	if record.RequestCount != maxRecordingObservations {
 		t.Errorf("request count = %d, want cap %d", record.RequestCount, maxRecordingObservations)
+	}
+	if len(record.Observations) != maxRecordingObservations || len(record.CorrelationObservations) != maxRecordingObservations {
+		t.Errorf("observation caps = obs %d corr %d, want %d", len(record.Observations), len(record.CorrelationObservations), maxRecordingObservations)
 	}
 }
 
@@ -109,6 +117,10 @@ func storeRecording(scriptID string) *ScriptRecordingRecord {
 		Observations: []ScriptRecordingObservation{
 			{ID: 0, RequestURL: "/login", ResponseBody: `{"token":"abc"}`, ResponseHeaders: map[string]string{"Content-Type": "application/json"}},
 			{ID: 1, RequestURL: "/orders", RequestHeaders: map[string]string{"X-Token": "abc"}},
+		},
+		CorrelationObservations: []ScriptRecordingObservation{
+			{ID: 0, RequestURL: "/login", ResponseBody: `{"token":"raw"}`, ResponseHeaders: map[string]string{"Content-Type": "application/json"}},
+			{ID: 1, RequestURL: "/orders", RequestHeaders: map[string]string{"X-Token": "raw"}},
 		},
 	}
 }

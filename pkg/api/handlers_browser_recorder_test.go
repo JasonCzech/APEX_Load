@@ -19,12 +19,20 @@ import (
 
 func newBrowserRecorderTestServer(t *testing.T, fake *fakeBrowserRecorderBackend) *Server {
 	t.Helper()
+	stubBrowserRecordingDependencyProbe(t, nil)
 	if runtime.GOOS == "linux" {
 		t.Setenv("DISPLAY", ":0") // satisfy the headed-display availability probe in CI
 	}
 	server := NewServer(ServerConfig{})
 	fake.install(server.browserRecording)
 	return server
+}
+
+func stubBrowserRecordingDependencyProbe(t *testing.T, err error) {
+	t.Helper()
+	previous := browserRecordingDependencyProbe
+	browserRecordingDependencyProbe = func() error { return err }
+	t.Cleanup(func() { browserRecordingDependencyProbe = previous })
 }
 
 func startBrowserRecordingViaAPI(t *testing.T, server *Server) string {
@@ -130,6 +138,7 @@ func TestHandleStartBrowserRecordingUnavailableFailsClosed(t *testing.T) {
 }
 
 func TestBrowserRecordingAvailabilityRules(t *testing.T) {
+	stubBrowserRecordingDependencyProbe(t, nil)
 	if runtime.GOOS == "linux" {
 		t.Setenv("DISPLAY", ":0")
 	}
@@ -176,6 +185,21 @@ func TestBrowserRecordingAvailabilityRules(t *testing.T) {
 			t.Errorf("availability = %+v, want unavailable", got)
 		}
 	})
+}
+
+func TestBrowserRecordingAvailabilityDetectsMissingChromium(t *testing.T) {
+	stubBrowserRecordingDependencyProbe(t, errors.New("launch chromium: executable doesn't exist; please run: playwright install chromium"))
+	if runtime.GOOS == "linux" {
+		t.Setenv("DISPLAY", ":0")
+	}
+	t.Setenv("APEXLOAD_ENV", "")
+	t.Setenv("APEXLOAD_BROWSER_RECORDER", "")
+
+	server := NewServer(ServerConfig{})
+	got := server.browserRecordingAvailability()
+	if got.Available || got.Code != browserRecordingUnavailableBrowsersNotInstalled {
+		t.Fatalf("availability = %+v, want browsers_not_installed", got)
+	}
 }
 
 func TestHandleStartBrowserRecordingClassifiesMissingBrowserInstall(t *testing.T) {

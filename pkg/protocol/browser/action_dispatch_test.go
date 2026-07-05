@@ -26,6 +26,7 @@ func TestDispatchActionValidationFailures(t *testing.T) {
 		{name: "fill selector", action: protocol.Action{Type: "browser_fill"}, wantError: "browser_fill requires selector or target"},
 		{name: "select selector", action: protocol.Action{Type: "browser_select"}, wantError: "browser_select requires selector or target"},
 		{name: "select value", action: protocol.Action{Type: "browser_select", Selector: "#country"}, wantError: "browser_select requires value"},
+		{name: "select blank values", action: protocol.Action{Type: "browser_select", Selector: "#country", Params: map[string]any{"values": []any{" ", ""}}}, wantError: "browser_select requires value"},
 		{name: "scroll delta", action: protocol.Action{Type: "browser_scroll"}, wantError: "browser_scroll requires delta_x or delta_y"},
 		{name: "dblclick selector", action: protocol.Action{Type: "browser_dblclick"}, wantError: "browser_dblclick requires selector or target"},
 		{name: "hover selector", action: protocol.Action{Type: "browser_hover"}, wantError: "browser_hover requires selector or target"},
@@ -61,6 +62,21 @@ func TestDispatchActionValidationFailures(t *testing.T) {
 				t.Fatalf("Duration = %v, want > 0", result.Duration)
 			}
 		})
+	}
+}
+
+func TestFrameSelectorPathFromNumericValues(t *testing.T) {
+	if got := strings.Join(frameSelectorPathFromValue(float64(1)), ">>"); got != "iframe:nth-of-type(2)" {
+		t.Fatalf("numeric frame selector = %q, want iframe:nth-of-type(2)", got)
+	}
+	value := []any{float64(0), "iframe[name=\"pay\"]"}
+	if got := strings.Join(frameSelectorPathFromValue(value), ">>"); got != `iframe:nth-of-type(1)>>iframe[name="pay"]` {
+		t.Fatalf("numeric frame path = %q", got)
+	}
+	b := &Browser{}
+	action := &protocol.Action{Params: map[string]any{"frame": float64(2)}}
+	if got := strings.Join(b.actionFrameSelectors(action), ">>"); got != "iframe:nth-of-type(3)" {
+		t.Fatalf("action frame selectors = %q, want third iframe", got)
 	}
 }
 
@@ -191,7 +207,12 @@ func TestDownloadMatcherFromAction(t *testing.T) {
 }
 
 func TestDownloadSavePath(t *testing.T) {
-	saveDir := t.TempDir()
+	exportDir := t.TempDir()
+	t.Setenv("APEXLOAD_EXPORT_DIR", exportDir)
+	absExportDir, err := filepath.Abs(exportDir)
+	if err != nil {
+		t.Fatalf("filepath.Abs: %v", err)
+	}
 	tests := []struct {
 		name      string
 		action    *protocol.Action
@@ -200,11 +221,12 @@ func TestDownloadSavePath(t *testing.T) {
 		wantError string
 	}{
 		{name: "nil action", suggested: "report.csv", want: ""},
-		{name: "save as", action: &protocol.Action{Params: map[string]any{"save_as": "/tmp/report.csv"}}, suggested: "ignored.csv", want: "/tmp/report.csv"},
-		{name: "save dir", action: &protocol.Action{Params: map[string]any{"save_dir": saveDir}}, suggested: "../report.csv", want: filepath.Join(saveDir, "report.csv")},
-		{name: "empty filename fallback", action: &protocol.Action{Params: map[string]any{"save_dir": saveDir}}, suggested: "", want: filepath.Join(saveDir, "download")},
-		{name: "parent filename fallback", action: &protocol.Action{Params: map[string]any{"save_dir": saveDir}}, suggested: "..", want: filepath.Join(saveDir, "download")},
-		{name: "mutually exclusive", action: &protocol.Action{Params: map[string]any{"save_as": "/tmp/report.csv", "save_dir": saveDir}}, suggested: "report.csv", wantError: "mutually exclusive"},
+		{name: "save as", action: &protocol.Action{Params: map[string]any{"save_as": "/tmp/report.csv"}}, suggested: "ignored.csv", want: filepath.Join(absExportDir, "tmp", "report.csv")},
+		{name: "save dir", action: &protocol.Action{Params: map[string]any{"save_dir": "reports"}}, suggested: "../report.csv", want: filepath.Join(absExportDir, "reports", "report.csv")},
+		{name: "traversal is confined", action: &protocol.Action{Params: map[string]any{"save_as": "../../outside/report.csv"}}, suggested: "ignored.csv", want: filepath.Join(absExportDir, "outside", "report.csv")},
+		{name: "empty filename fallback", action: &protocol.Action{Params: map[string]any{"save_dir": "reports"}}, suggested: "", want: filepath.Join(absExportDir, "reports", "download")},
+		{name: "parent filename fallback", action: &protocol.Action{Params: map[string]any{"save_dir": "reports"}}, suggested: "..", want: filepath.Join(absExportDir, "reports", "download")},
+		{name: "mutually exclusive", action: &protocol.Action{Params: map[string]any{"save_as": "/tmp/report.csv", "save_dir": "reports"}}, suggested: "report.csv", wantError: "mutually exclusive"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

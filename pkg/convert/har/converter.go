@@ -94,7 +94,7 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 	if result.Script != nil {
 		result.Script.GeneratedBy = "apexload-har-converter"
 		result.Script.GeneratedFrom = "har"
-		if opts.DefaultThinkTimeMs > 0 && result.Script.Config.ThinkTime.MeanMs == 0 {
+		if opts.DefaultThinkTimeMs > 0 {
 			result.Script.Config.ThinkTime.Type = "fixed"
 			result.Script.Config.ThinkTime.MeanMs = float64(opts.DefaultThinkTimeMs)
 		}

@@ -8,6 +8,18 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
+func TestBuildProtoConfigForRunMode(t *testing.T) {
+	cfg := buildProtoConfigForRunMode(&dsl.Script{}, "load")
+	if cfg["apexload_run_mode"] != "load" {
+		t.Fatalf("apexload_run_mode = %v, want load", cfg["apexload_run_mode"])
+	}
+
+	defaultCfg := buildProtoConfigForRunMode(&dsl.Script{}, " ")
+	if _, ok := defaultCfg["apexload_run_mode"]; ok {
+		t.Fatalf("blank run mode should not be emitted: %#v", defaultCfg)
+	}
+}
+
 func TestBuildProtoConfig_Kafka(t *testing.T) {
 	script := &dsl.Script{
 		Config: dsl.ScriptConfig{
@@ -442,17 +454,21 @@ func TestBuildProtoConfig_Connection(t *testing.T) {
 	maxRedirects := 5
 	cookiesEnabled := false
 	cacheEnabled := true
+	traceparentEnabled := true
+	traceparentSampled := false
 
 	script := &dsl.Script{
 		Config: dsl.ScriptConfig{
 			HTTP: dsl.HTTPConfig{
-				MaxConnsPerHost: 50,
-				MaxIdleConns:    25,
-				KeepAlive:       &keepAlive,
-				Version:         "2",
-				MaxRedirects:    &maxRedirects,
-				CookiesEnabled:  &cookiesEnabled,
-				CacheEnabled:    &cacheEnabled,
+				MaxConnsPerHost:    50,
+				MaxIdleConns:       25,
+				KeepAlive:          &keepAlive,
+				Version:            "2",
+				MaxRedirects:       &maxRedirects,
+				CookiesEnabled:     &cookiesEnabled,
+				CacheEnabled:       &cacheEnabled,
+				Traceparent:        &traceparentEnabled,
+				TraceparentSampled: &traceparentSampled,
 			},
 		},
 	}
@@ -476,6 +492,12 @@ func TestBuildProtoConfig_Connection(t *testing.T) {
 	}
 	if cfg["http_cache_enabled"] != true {
 		t.Errorf("http_cache_enabled = %v", cfg["http_cache_enabled"])
+	}
+	if cfg["traceparent_enabled"] != true {
+		t.Errorf("traceparent_enabled = %v", cfg["traceparent_enabled"])
+	}
+	if cfg["traceparent_sampled"] != false {
+		t.Errorf("traceparent_sampled = %v", cfg["traceparent_sampled"])
 	}
 }
 

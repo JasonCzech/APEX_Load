@@ -120,14 +120,10 @@ func Diff(baseline []byte, comparison []byte, opts ConvertOptions) (*DiffReport,
 }
 
 func correlationDiffKey(corr sample.Correlation) string {
-	used := append([]int(nil), corr.UsedInSteps...)
-	sort.Ints(used)
-	return fmt.Sprintf("%s|%s|%s|%d|%v",
+	return fmt.Sprintf("%s|%s|%s",
 		strings.ToLower(strings.TrimSpace(corr.Source)),
 		strings.ToLower(strings.TrimSpace(corr.Expression)),
-		strings.ToLower(strings.TrimSpace(corr.ExtractType)),
-		corr.FoundInStep,
-		used)
+		strings.ToLower(strings.TrimSpace(corr.ExtractType)))
 }
 
 func correlationValue(corr sample.Correlation) string {

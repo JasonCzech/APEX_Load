@@ -439,7 +439,7 @@ func TestBrowserProtocolExecutesWindowSwitchActions(t *testing.T) {
 	executeSuccessfulBrowserAction(t, b, &protocol.Action{
 		Name:   "Switch to popup",
 		Type:   "browser_switch_window",
-		Target: "1",
+		Params: map[string]any{"index": 1},
 	})
 	executeSuccessfulBrowserAction(t, b, &protocol.Action{
 		Name:     "Confirm popup",

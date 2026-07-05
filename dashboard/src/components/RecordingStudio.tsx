@@ -3,7 +3,7 @@ import { downloadBlob, downloadFilenameFromDisposition } from '../utils/fileUtil
 import { useAsyncTask } from '../hooks/useAsyncTask'
 import { useApi } from '../hooks/useApi'
 import { API_ORIGIN, apiFetch, trimTrailingSlash } from '../hooks/apiClient'
-import { type BrowserRecorderAvailability } from '../hooks/api/useBrowserRecorderApi'
+import { type BrowserRecorderAvailability, type BrowserRecorderSession } from '../hooks/api/useBrowserRecorderApi'
 import { isWailsLocation } from '../desktop/desktopBridge'
 import { Project, type StoredScript } from '../types'
 import { type RecorderImportResult, type SalesforceImportResult } from '../types/scriptImports'
@@ -111,7 +111,7 @@ function recordingLooksSalesforce(session: RecordingSession): boolean {
 
 function isStoredScriptLike(value: unknown): value is StoredScript {
   const candidate = value as Partial<StoredScript> | null | undefined
-  return !!candidate && typeof candidate === 'object' && typeof candidate.id === 'string' && typeof candidate.name === 'string' && typeof candidate.protocol === 'string'
+  return !!candidate && typeof candidate === 'object' && typeof candidate.id === 'string' && candidate.id.trim() !== '' && typeof candidate.name === 'string' && typeof candidate.protocol === 'string'
 }
 
 function isScriptDefinitionLike(value: unknown): value is ScriptDefinition {
@@ -391,6 +391,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
   const [showSetup, setShowSetup] = useState(false)
   const [parameterizeInputs, setParameterizeInputs] = useState(false)
   const [browserAvailability, setBrowserAvailability] = useState<BrowserRecorderAvailability | null>(null)
+  const [browserSessions, setBrowserSessions] = useState<BrowserRecorderSession[]>([])
   const [browserPanelSessionId, setBrowserPanelSessionId] = useState<string | null>(null)
   const [browserName, setBrowserName] = useState('')
   const [browserStartScheme, setBrowserStartScheme] = useState<HttpURLScheme>(DEFAULT_HTTP_URL_SCHEME)
@@ -611,12 +612,14 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
 
   const refresh = useCallback(async () => {
     try {
-      const [listRes, statusRes] = await Promise.all([
+      const [listRes, statusRes, browserListRes] = await Promise.all([
         api.listRecordings(activeProject?.id),
         api.getRecorderStatus(),
+        api.listBrowserRecordings(activeProject?.id).catch(() => ({ sessions: [], count: 0 })),
       ])
       const recorderStatus = statusRes as RecorderStatus
       setSessions(listRes.sessions || [])
+      setBrowserSessions(browserListRes.sessions || [])
       setProxyAddr(recorderStatus.proxy_addr || '')
       setCaCertPath(recorderStatus.ca_cert_path || '')
       let liveBrowser = recorderStatus.browser?.active
@@ -799,6 +802,29 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
       } else {
         showFeedback('Recording browser launched — interact with the page, then stop from the control panel')
       }
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
+    }
+  }
+
+  const handleOpenBrowserRecordingSession = (session: BrowserRecorderSession) => {
+    setBrowserPanelSessionId(session.id)
+    showFeedback(`Opened browser recording "${session.name}"`)
+  }
+
+  const handleDeleteBrowserRecordingSession = async (session: BrowserRecorderSession, event?: MouseEvent) => {
+    event?.stopPropagation()
+    if (typeof window !== 'undefined' && window.confirm && !window.confirm('Delete this stopped browser recording? This cannot be undone.')) {
+      return
+    }
+    try {
+      await api.deleteBrowserRecording(session.id)
+      if (browserPanelSessionId === session.id) {
+        setBrowserPanelSessionId(null)
+      }
+      setBrowserSessions(prev => prev.filter(item => item.id !== session.id))
+      showFeedback(`Deleted browser recording "${session.name}"`)
+      refresh()
     } catch (e: any) {
       showFeedback(e.message, 'error')
     }
@@ -1023,6 +1049,9 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
   }
 
   const stoppedSessions = sessions.filter(s => s.status === 'stopped')
+  const recentBrowserSessions = browserSessions
+    .filter(s => s.status === 'stopped' || s.status === 'failed')
+    .sort((a, b) => new Date(b.stopped_at || b.started_at).getTime() - new Date(a.stopped_at || a.started_at).getTime())
   const convertResult = convertTask.value
   const convertedStoredScript = recorderImportStoredScript(convertResult)
   const convertedReviewScript = recorderImportReviewScript(convertResult)
@@ -1303,6 +1332,37 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
                 refresh()
               }}
             />
+          )}
+
+          {recentBrowserSessions.length > 0 && (
+            <div className="rec-browser-session-section" data-testid="browser-recording-recovery-list">
+              <div className="rec-feed-header">
+                <span>Recent Browser Recordings</span>
+                <span className="rec-feed-count">{recentBrowserSessions.length}</span>
+              </div>
+              <div className="rec-browser-session-list">
+                {recentBrowserSessions.map(session => (
+                  <div key={session.id} className="rec-browser-session-row">
+                    <button
+                      type="button"
+                      className="rec-browser-session-main"
+                      onClick={() => handleOpenBrowserRecordingSession(session)}
+                    >
+                      <span className="rec-session-name">{session.name || 'Browser Recording'}</span>
+                      <span className="rec-session-meta">
+                        <span>{session.step_count || 0} steps</span>
+                        <span>{session.network_request_count || 0} requests</span>
+                        <span>{new Date(session.stopped_at || session.started_at).toLocaleString()}</span>
+                      </span>
+                    </button>
+                    <div className="rec-browser-session-actions">
+                      <button type="button" className="btn btn-sm btn-secondary" onClick={() => handleOpenBrowserRecordingSession(session)}>Open</button>
+                      <button type="button" className="btn btn-sm btn-danger" onClick={event => handleDeleteBrowserRecordingSession(session, event)}>Delete</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
         </div>
 

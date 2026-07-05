@@ -70,6 +70,25 @@ func TestConvertHAR(t *testing.T) {
 	}
 }
 
+func TestConvertHARDefaultThinkTimeOverridesSampleDefault(t *testing.T) {
+	result, err := Convert([]byte(`{
+  "log": {
+    "entries": [{
+      "startedDateTime": "2026-01-01T00:00:00Z",
+      "time": 100,
+      "request": {"method": "GET", "url": "https://api.example.test/session", "headers": []},
+      "response": {"status": 200, "content": {"text": "{}"}}
+    }]
+  }
+}`), ConvertOptions{DefaultThinkTimeMs: 2500})
+	if err != nil {
+		t.Fatalf("Convert: %v", err)
+	}
+	if result.Script.Config.ThinkTime.MeanMs != 2500 {
+		t.Fatalf("default think time = %v, want 2500", result.Script.Config.ThinkTime.MeanMs)
+	}
+}
+
 func TestConvertHARRequiresContent(t *testing.T) {
 	_, err := Convert(nil, ConvertOptions{})
 	if err == nil {
@@ -212,6 +231,21 @@ func TestDiffClassifiesDynamicHARCorrelations(t *testing.T) {
 	}
 }
 
+func TestDiffClassifiesDynamicHARCorrelationsWithShiftedEntryCount(t *testing.T) {
+	baseline := []byte(dynamicHAR("cart-111111"))
+	comparison := []byte(dynamicHARWithPreamble("cart-222222"))
+	report, err := Diff(baseline, comparison, ConvertOptions{ScriptName: "Checkout Pair"})
+	if err != nil {
+		t.Fatalf("Diff: %v", err)
+	}
+	if report.DynamicCandidates != 1 || report.UnmatchedCandidates != 0 {
+		t.Fatalf("candidate counts = dynamic %d unmatched %d, want 1/0; classifications=%#v", report.DynamicCandidates, report.UnmatchedCandidates, report.Classifications)
+	}
+	if len(report.Classifications) == 0 || report.Classifications[0].Classification != DiffClassificationDynamic {
+		t.Fatalf("classifications = %#v, want dynamic first", report.Classifications)
+	}
+}
+
 func boolPtr(value bool) *bool {
 	return &value
 }
@@ -228,6 +262,33 @@ func dynamicHAR(cartID string) string {
       },
       {
         "startedDateTime": "2026-01-01T00:00:01Z",
+        "time": 50,
+        "request": {"method": "POST", "url": "https://shop.example.test/cart/` + cartID + `/checkout", "headers": []},
+        "response": {"status": 200, "content": {"mimeType": "application/json", "text": "{\"ok\":true}"}}
+      }
+    ]
+  }
+}`
+}
+
+func dynamicHARWithPreamble(cartID string) string {
+	return `{
+  "log": {
+    "entries": [
+      {
+        "startedDateTime": "2026-01-01T00:00:00Z",
+        "time": 20,
+        "request": {"method": "GET", "url": "https://shop.example.test/warmup", "headers": []},
+        "response": {"status": 200, "content": {"mimeType": "application/json", "text": "{\"ready\":true}"}}
+      },
+      {
+        "startedDateTime": "2026-01-01T00:00:01Z",
+        "time": 100,
+        "request": {"method": "POST", "url": "https://shop.example.test/cart", "headers": []},
+        "response": {"status": 201, "content": {"mimeType": "application/json", "text": "{\"cartId\":\"` + cartID + `\"}"}}
+      },
+      {
+        "startedDateTime": "2026-01-01T00:00:02Z",
         "time": 50,
         "request": {"method": "POST", "url": "https://shop.example.test/cart/` + cartID + `/checkout", "headers": []},
         "response": {"status": 200, "content": {"mimeType": "application/json", "text": "{\"ok\":true}"}}

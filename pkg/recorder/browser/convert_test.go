@@ -176,6 +176,7 @@ func TestConvertFrameAndShadowMetadata(t *testing.T) {
 	session.appendStep(Step{
 		Kind: StepFill, Value: "4111", Timestamp: ts(1000),
 		FrameSelector: `iframe[name="payframe"]`,
+		FramePath:     []string{`iframe#checkout`, `iframe[name="payframe"]`},
 		Element:       el, Candidates: selector.Candidates(*el),
 	})
 	result := Convert(session, ConvertOptions{})
@@ -185,6 +186,9 @@ func TestConvertFrameAndShadowMetadata(t *testing.T) {
 	fill := result.Script.Actions[1]
 	if fill.Metadata["frame_selector"] != `iframe[name="payframe"]` {
 		t.Errorf("frame_selector = %v", fill.Metadata["frame_selector"])
+	}
+	if got, ok := fill.Metadata["frame_path"].([]string); !ok || strings.Join(got, "|") != `iframe#checkout|iframe[name="payframe"]` {
+		t.Errorf("frame_path = %#v", fill.Metadata["frame_path"])
 	}
 	if fill.Metadata["source_shadow_dom"] != true {
 		t.Errorf("source_shadow_dom = %v", fill.Metadata["source_shadow_dom"])
@@ -729,6 +733,16 @@ func TestSplitStartURL(t *testing.T) {
 				t.Errorf("splitStartURL(%q) = (%q, %q), want (%q, %q)", tt.input, base, target, tt.wantBase, tt.wantTarget)
 			}
 		})
+	}
+}
+
+func TestRelativeTargetRequiresSameOrigin(t *testing.T) {
+	if got := relativeTarget("https://shop.example", "https://shop.example/cart?q=1"); got != "/cart?q=1" {
+		t.Fatalf("same-origin relativeTarget = %q, want /cart?q=1", got)
+	}
+	raw := "https://shop.example.evil/cart"
+	if got := relativeTarget("https://shop.example", raw); got != raw {
+		t.Fatalf("same-prefix-host relativeTarget = %q, want absolute %q", got, raw)
 	}
 }
 

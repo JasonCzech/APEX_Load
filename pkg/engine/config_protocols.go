@@ -44,6 +44,12 @@ func appendHTTPConfig(cfg map[string]any, script *dsl.Script) {
 	if httpCfg.CacheEnabled != nil {
 		cfg["http_cache_enabled"] = *httpCfg.CacheEnabled
 	}
+	if httpCfg.Traceparent != nil {
+		cfg["traceparent_enabled"] = *httpCfg.Traceparent
+	}
+	if httpCfg.TraceparentSampled != nil {
+		cfg["traceparent_sampled"] = *httpCfg.TraceparentSampled
+	}
 
 	// Browser emulation headers
 	if httpCfg.UserAgent != "" {

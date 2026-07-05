@@ -390,6 +390,16 @@ func parseTraceparentEnabled(config map[string]any) bool {
 	return enabled
 }
 
+func parseTraceparentSampled(config map[string]any) bool {
+	sampled := true
+	for _, key := range []string{"traceparent_sampled", "web_traceparent_sampled", "traceparent_sampling", "web_traceparent_sampling"} {
+		if value, ok := optionalConfigBool(config, key); ok {
+			sampled = value
+		}
+	}
+	return sampled
+}
+
 func optionalConfigBool(config map[string]any, key string) (bool, bool) {
 	if config == nil {
 		return false, false

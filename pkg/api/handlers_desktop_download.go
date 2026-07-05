@@ -17,7 +17,11 @@ func (s *Server) handleDownloadDesktopApp(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusForbidden, clientDownloadsDisabledMessage)
 		return
 	}
-	packagePath, err := findDesktopPackage(desktopDistDir(), downloadPlatform(r))
+	platform, ok := requireDownloadPlatform(w, r, "APEX Load Desktop")
+	if !ok {
+		return
+	}
+	packagePath, err := findDesktopPackage(desktopDistDir(), platform)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
@@ -33,7 +37,11 @@ func (s *Server) handleDesktopAppChecksum(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusForbidden, clientDownloadsDisabledMessage)
 		return
 	}
-	packagePath, err := findDesktopPackage(desktopDistDir(), downloadPlatform(r))
+	platform, ok := requireDownloadPlatform(w, r, "APEX Load Desktop")
+	if !ok {
+		return
+	}
+	packagePath, err := findDesktopPackage(desktopDistDir(), platform)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return

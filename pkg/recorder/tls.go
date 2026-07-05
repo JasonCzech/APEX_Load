@@ -2,7 +2,6 @@ package recorder
 
 import (
 	"bufio"
-	"bytes"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
@@ -455,22 +454,19 @@ func (r *Recorder) forwardHTTPS(tlsConn net.Conn, clientReader *bufio.Reader, cl
 		return
 	}
 
-	// Read the request body.
-	var bodyBytes []byte
-	if clientReq.Body != nil {
-		bodyBytes, _ = io.ReadAll(clientReq.Body)
-		clientReq.Body.Close()
-	}
+	reqBodyCapture := newBodyCapture(requestCaptureLimit(session))
+	upstreamBody := requestBodyReader(clientReq.Body, reqBodyCapture)
 
 	// Build the upstream URL using the full host:port from the CONNECT request.
 	targetURL := "https://" + host + clientReq.URL.RequestURI()
 
-	upstreamReq, err := http.NewRequest(clientReq.Method, targetURL, bytes.NewReader(bodyBytes))
+	upstreamReq, err := http.NewRequest(clientReq.Method, targetURL, upstreamBody)
 	if err != nil {
 		slog.Debug("failed to create upstream request", "err", err)
 		writeHTTPError(tlsConn, http.StatusBadGateway, "proxy error: "+err.Error())
 		return
 	}
+	upstreamReq.ContentLength = clientReq.ContentLength
 
 	// Copy headers, stripping proxy-specific ones.
 	for k, vv := range clientReq.Header {
@@ -500,7 +496,11 @@ func (r *Recorder) forwardHTTPS(tlsConn net.Conn, clientReader *bufio.Reader, cl
 	if isStreamingResponse(resp) {
 		writeHTTPSResponseHeaders(tlsConn, resp, -1, true)
 		chunked := &chunkedHTTPWriter{w: tlsConn}
-		r.streamAndRecordResponse(chunked, nil, session, clientReq, bodyBytes, resp, start)
+		r.streamAndRecordResponse(chunked, nil, session, clientReq, reqBodyCapture.bytes(), resp, start, recordOptions{
+			requestBodySizeBytes:     boundedInt(reqBodyCapture.size()),
+			requestBodySizeKnown:     true,
+			forceRequestBodyTruncate: reqBodyCapture.truncated(),
+		})
 		chunked.Close()
 		return
 	}
@@ -521,8 +521,11 @@ func (r *Recorder) forwardHTTPS(tlsConn net.Conn, clientReader *bufio.Reader, cl
 
 	// Record the request if there is an active session.
 	if session != nil {
-		r.recordRequestWithOptions(session, clientReq, bodyBytes, resp, respBody, elapsed, recordOptions{
+		r.recordRequestWithOptions(session, clientReq, reqBodyCapture.bytes(), resp, respBody, elapsed, recordOptions{
 			requestStartedAt:          start,
+			requestBodySizeBytes:      boundedInt(reqBodyCapture.size()),
+			requestBodySizeKnown:      true,
+			forceRequestBodyTruncate:  reqBodyCapture.truncated(),
 			forceResponseBodyTruncate: respBodyTruncated,
 			responseBodySizeBytes:     boundedInt(respBodySize),
 			responseBodySizeKnown:     true,

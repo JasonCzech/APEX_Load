@@ -769,13 +769,17 @@ func TestCaptureScriptRecordsP3InputParityEvents(t *testing.T) {
 		`window.addEventListener('contextmenu'`,
 		`window.addEventListener('auxclick'`,
 		`window.addEventListener('input'`,
+		`const editableFillStates = new WeakMap()`,
+		`function contentEditableHost`,
+		`scheduleEditableFill(el, 'input')`,
+		`flushEditableFill(el, 'focusout')`,
 		`window.addEventListener('focusout'`,
 		`window.addEventListener('mouseover'`,
 		`record('hover'`,
 		`window.addEventListener('scroll'`,
 		`record('scroll'`,
 		`values: values`,
-		`[contenteditable="true"]`,
+		`[contenteditable]`,
 	} {
 		if !strings.Contains(captureScript, fragment) {
 			t.Fatalf("capture script missing %s", fragment)

@@ -309,7 +309,7 @@ func convertChrome(recording chromeRecording, opts ConvertOptions) (*ConvertResu
 				},
 			}
 			if len(step.Selectors) > 0 {
-				if elementAction, ok := chromeElementActionNoSkip(step); ok {
+				if elementAction, ok := chromeElementCSSActionNoSkip(step); ok {
 					elementScript, elementReason := chromeScrollScript(step, elementAction.Selector)
 					action.Selector = elementAction.Selector
 					action.Target = elementScript
@@ -317,6 +317,9 @@ func convertChrome(recording chromeRecording, opts ConvertOptions) (*ConvertResu
 					action.Metadata["review_required"] = true
 					action.Metadata["compatibility_gate"] = "chrome_recorder_element_scroll"
 					scrollReason = elementReason
+				} else {
+					result.Warnings = append(result.Warnings, fmt.Sprintf("%s (scroll) element selector is not CSS-compatible; converted to page scroll instead of document.querySelector.", location))
+					scrollReason = "Converted element scroll to page-level JavaScript because the element selector cannot be used with document.querySelector."
 				}
 			}
 			attachChromeActionMetadata(&action, step)
@@ -465,6 +468,29 @@ func chromeElementActionNoSkip(step chromeStep) (dsl.Action, bool) {
 	}
 	action := dsl.Action{Selector: best, Target: best}
 	action.Metadata = map[string]any{}
+	if len(candidates) > 0 {
+		action.Metadata["source_selector_candidates"] = candidates
+		action.Metadata["source_selector_confidence"] = candidates[0].Confidence
+		if fallbacks := selector.FallbacksForPrimary(candidates, best); len(fallbacks) > 0 {
+			action.Metadata["source_selector_fallbacks"] = fallbacks
+		}
+	}
+	return action, true
+}
+
+func chromeElementCSSActionNoSkip(step chromeStep) (dsl.Action, bool) {
+	candidates := candidatesFromChromeSelectors(step.Selectors)
+	best := ""
+	for _, candidate := range candidates {
+		if strings.EqualFold(strings.TrimSpace(candidate.Kind), "css") && strings.TrimSpace(candidate.Value) != "" {
+			best = strings.TrimSpace(candidate.Value)
+			break
+		}
+	}
+	if best == "" {
+		return dsl.Action{}, false
+	}
+	action := dsl.Action{Selector: best, Target: best, Metadata: map[string]any{}}
 	if len(candidates) > 0 {
 		action.Metadata["source_selector_candidates"] = candidates
 		action.Metadata["source_selector_confidence"] = candidates[0].Confidence

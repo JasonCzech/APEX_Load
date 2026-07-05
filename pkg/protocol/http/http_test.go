@@ -506,6 +506,35 @@ func TestHTTP_ExecuteCanDisableGeneratedTraceparentHeader(t *testing.T) {
 	}
 }
 
+func TestHTTP_ExecuteCanGenerateUnsampledTraceparentHeader(t *testing.T) {
+	var receivedTraceparent string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedTraceparent = r.Header.Get("Traceparent")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{
+		"base_url":            ts.URL,
+		"traceparent_sampled": false,
+	})
+	result, err := h.Execute(context.Background(), &protocol.Action{
+		Name:   "test-unsampled-traceparent",
+		Method: "GET",
+		Target: "/trace",
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	pattern := regexp.MustCompile(`^00-[0-9a-f]{32}-[0-9a-f]{16}-00$`)
+	if !pattern.MatchString(receivedTraceparent) {
+		t.Fatalf("Traceparent header = %q, want unsampled W3C traceparent", receivedTraceparent)
+	}
+	if result.CorrelationID != receivedTraceparent {
+		t.Fatalf("CorrelationID = %q, want generated traceparent %q", result.CorrelationID, receivedTraceparent)
+	}
+}
+
 func TestHTTP_ExecutePopulatesServerTelemetry(t *testing.T) {
 	responseBody := strings.Repeat("x", 2048)
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

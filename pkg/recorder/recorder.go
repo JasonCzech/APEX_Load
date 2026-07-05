@@ -394,15 +394,15 @@ func (r *Recorder) ListSessions() []*Session {
 func (r *Recorder) DeleteSession(id string) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	s, ok := r.sessions[id]
+	_, ok := r.sessions[id]
 	if !ok {
 		return false
 	}
 	if r.active != nil && r.active.ID == id {
 		r.active = nil
 	}
-	_ = s
 	delete(r.sessions, id)
+	r.closeTunnelsForSession(id)
 	return true
 }
 
@@ -482,17 +482,15 @@ func (r *Recorder) handleProxy(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	var bodyBytes []byte
-	if req.Body != nil {
-		bodyBytes, _ = io.ReadAll(req.Body)
-		req.Body.Close()
-	}
+	reqBodyCapture := newBodyCapture(requestCaptureLimit(session))
+	upstreamBody := requestBodyReader(req.Body, reqBodyCapture)
 
-	proxyReq, err := http.NewRequest(req.Method, targetURL, bytes.NewReader(bodyBytes))
+	proxyReq, err := http.NewRequest(req.Method, targetURL, upstreamBody)
 	if err != nil {
 		http.Error(w, "proxy error: "+err.Error(), http.StatusBadGateway)
 		return
 	}
+	proxyReq.ContentLength = req.ContentLength
 
 	for k, vv := range req.Header {
 		for _, v := range vv {
@@ -538,7 +536,11 @@ func (r *Recorder) handleProxy(w http.ResponseWriter, req *http.Request) {
 			if flusher, ok := w.(http.Flusher); ok {
 				flusher.Flush()
 			}
-		}, session, req, bodyBytes, resp, start)
+		}, session, req, reqBodyCapture.bytes(), resp, start, recordOptions{
+			requestBodySizeBytes:     boundedInt(reqBodyCapture.size()),
+			requestBodySizeKnown:     true,
+			forceRequestBodyTruncate: reqBodyCapture.truncated(),
+		})
 		close(stopClientCloseWatch)
 		return
 	}
@@ -547,8 +549,11 @@ func (r *Recorder) handleProxy(w http.ResponseWriter, req *http.Request) {
 	elapsed := time.Since(start)
 
 	if session != nil {
-		r.recordRequestWithOptions(session, req, bodyBytes, resp, respBody, elapsed, recordOptions{
+		r.recordRequestWithOptions(session, req, reqBodyCapture.bytes(), resp, respBody, elapsed, recordOptions{
 			requestStartedAt:          start,
+			requestBodySizeBytes:      boundedInt(reqBodyCapture.size()),
+			requestBodySizeKnown:      true,
+			forceRequestBodyTruncate:  reqBodyCapture.truncated(),
 			forceResponseBodyTruncate: respBodyTruncated,
 			responseBodySizeBytes:     boundedInt(respBodySize),
 			responseBodySizeKnown:     true,
@@ -584,7 +589,7 @@ func isStreamingResponse(resp *http.Response) bool {
 	return false
 }
 
-func (r *Recorder) streamAndRecordResponse(w io.Writer, flush func(), session *Session, req *http.Request, reqBody []byte, resp *http.Response, startedAt time.Time) {
+func (r *Recorder) streamAndRecordResponse(w io.Writer, flush func(), session *Session, req *http.Request, reqBody []byte, resp *http.Response, startedAt time.Time, opts recordOptions) {
 	limit := responseCaptureLimit(session)
 
 	var (
@@ -601,12 +606,11 @@ func (r *Recorder) streamAndRecordResponse(w io.Writer, flush func(), session *S
 		snapshot := append([]byte(nil), captured...)
 		size := wireSize
 		mu.Unlock()
-		r.recordRequestWithOptions(session, req, reqBody, resp, snapshot, time.Since(startedAt), recordOptions{
-			requestStartedAt:          startedAt,
-			forceResponseBodyTruncate: true,
-			responseBodySizeBytes:     boundedInt(size),
-			responseBodySizeKnown:     true,
-		})
+		opts.requestStartedAt = startedAt
+		opts.forceResponseBodyTruncate = true
+		opts.responseBodySizeBytes = boundedInt(size)
+		opts.responseBodySizeKnown = true
+		r.recordRequestWithOptions(session, req, reqBody, resp, snapshot, time.Since(startedAt), opts)
 	}
 	timer := time.AfterFunc(streamingRecordDelay, func() {
 		once.Do(record)
@@ -654,6 +658,75 @@ func responseCaptureLimit(session *Session) int {
 		return session.Filters.BodyCaptureLimitBytes
 	}
 	return defaultBodyCaptureLimitBytes
+}
+
+func requestCaptureLimit(session *Session) int {
+	return responseCaptureLimit(session)
+}
+
+type bodyCapture struct {
+	limit int
+	mu    sync.Mutex
+	buf   []byte
+	total int64
+}
+
+func newBodyCapture(limit int) *bodyCapture {
+	if limit <= 0 {
+		limit = defaultBodyCaptureLimitBytes
+	}
+	return &bodyCapture{limit: limit}
+}
+
+func (c *bodyCapture) Write(p []byte) (int, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.total += int64(len(p))
+	if len(c.buf) < c.limit {
+		remaining := c.limit - len(c.buf)
+		if remaining > len(p) {
+			remaining = len(p)
+		}
+		c.buf = append(c.buf, p[:remaining]...)
+	}
+	return len(p), nil
+}
+
+func (c *bodyCapture) bytes() []byte {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]byte(nil), c.buf...)
+}
+
+func (c *bodyCapture) size() int64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.total
+}
+
+func (c *bodyCapture) truncated() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.total > int64(len(c.buf))
+}
+
+func requestBodyReader(body io.ReadCloser, capture *bodyCapture) io.ReadCloser {
+	if body == nil {
+		return http.NoBody
+	}
+	return &teeReadCloser{Reader: io.TeeReader(body, capture), closer: body}
+}
+
+type teeReadCloser struct {
+	io.Reader
+	closer io.Closer
+}
+
+func (r *teeReadCloser) Close() error {
+	if r.closer != nil {
+		return r.closer.Close()
+	}
+	return nil
 }
 
 func copyAndCaptureBody(dst io.Writer, src io.Reader, limit int) ([]byte, int64, bool, error) {
@@ -724,6 +797,9 @@ func (r *Recorder) recordRequestStarted(s *Session, req *http.Request, reqBody [
 
 type recordOptions struct {
 	requestStartedAt          time.Time
+	forceRequestBodyTruncate  bool
+	requestBodySizeBytes      int
+	requestBodySizeKnown      bool
 	forceResponseBodyTruncate bool
 	responseBodySizeBytes     int
 	responseBodySizeKnown     bool
@@ -814,6 +890,13 @@ func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBo
 		respBodyTruncated = true
 	}
 	reqBodyStr, reqBodyTruncated, reqBodyEncoding := capturedRequestBody(reqBody, req.Header.Get("Content-Type"), s.Filters.BodyCaptureLimitBytes)
+	if opts.forceRequestBodyTruncate {
+		reqBodyTruncated = true
+	}
+	requestBodySizeBytes := len(reqBody)
+	if opts.requestBodySizeKnown {
+		requestBodySizeBytes = opts.requestBodySizeBytes
+	}
 	responseBodySizeBytes := len(respBody)
 	if opts.responseBodySizeKnown {
 		responseBodySizeBytes = opts.responseBodySizeBytes
@@ -839,7 +922,7 @@ func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBo
 		RawHeadersMulti:       rawHeadersMulti,
 		Body:                  reqBodyStr,
 		BodyEncoding:          reqBodyEncoding,
-		BodySizeBytes:         len(reqBody),
+		BodySizeBytes:         requestBodySizeBytes,
 		BodyTruncated:         reqBodyTruncated,
 		ContentType:           req.Header.Get("Content-Type"),
 		StatusCode:            resp.StatusCode,

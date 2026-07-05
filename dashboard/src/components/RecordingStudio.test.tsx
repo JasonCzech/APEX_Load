@@ -38,6 +38,8 @@ const apiMock = {
   updateRecordedRequest: vi.fn(),
   startBrowserRecording: vi.fn(),
   getBrowserRecording: vi.fn(),
+  listBrowserRecordings: vi.fn(),
+  deleteBrowserRecording: vi.fn(),
   stopBrowserRecording: vi.fn(),
   openBrowserRecordingControlPanel: vi.fn(),
   previewBrowserRecordingConversion: vi.fn(),
@@ -228,6 +230,8 @@ describe('RecordingStudio', () => {
         har_available: false,
       },
     })
+    apiMock.listBrowserRecordings.mockResolvedValue({ sessions: [], count: 0 })
+    apiMock.deleteBrowserRecording.mockResolvedValue({ deleted: 'brec-1', session: { id: 'brec-1', name: 'Browser Recording', status: 'stopped' } })
     apiMock.openBrowserRecordingControlPanel.mockResolvedValue({
       session: {
         id: 'brec-1',
@@ -553,6 +557,53 @@ describe('RecordingStudio', () => {
     }))
   })
 
+  it('treats preview scripts with empty ids as unsaved drafts', async () => {
+    const onImported = vi.fn()
+    const onEdit = vi.fn()
+    apiMock.previewRecordingConversion.mockResolvedValueOnce({
+      script: {
+        id: '',
+        name: 'Unsaved Preview',
+        protocol: 'http',
+        version: '1.0.0',
+        actions: [{ name: '01 - GET /', type: 'request', method: 'GET', target: '/' }],
+      },
+      correlations: [],
+      warnings: [],
+    })
+
+    await act(async () => {
+      root.render(<RecordingStudio onImported={onImported} onEdit={onEdit} />)
+    })
+    await flushPromises()
+    await openProxyAdvanced(container)
+
+    const reviewButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Review Script')
+    expect(reviewButton).toBeDefined()
+    await act(async () => {
+      reviewButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(container.textContent).toContain('Unsaved Preview')
+    const editButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Open In Visual Editor')
+    await act(async () => {
+      editButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({ name: 'Unsaved Preview', protocol: 'http' }))
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Save To Script Library')
+    await act(async () => {
+      saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({ name: 'Unsaved Preview', protocol: 'http' }), undefined)
+    expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
+      scripts: [expect.objectContaining({ name: 'Unsaved Preview', protocol: 'http' })],
+    }))
+  })
+
   it('confirms before deleting a stopped proxy recording', async () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)
     await act(async () => {
@@ -576,6 +627,54 @@ describe('RecordingStudio', () => {
     })
     await flushPromises()
     expect(apiMock.deleteRecording).toHaveBeenCalledWith('rec-1')
+  })
+
+  it('surfaces stopped browser recordings after reload and can delete them', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    apiMock.listBrowserRecordings.mockResolvedValue({
+      sessions: [{
+        id: 'brec-stopped',
+        name: 'Checkout Browser',
+        status: 'stopped',
+        start_url: 'https://shop.example/login',
+        capture_har: true,
+        started_at: '2026-05-12T20:00:00Z',
+        stopped_at: '2026-05-12T20:05:00Z',
+        step_count: 4,
+        navigation_count: 2,
+        network_request_count: 9,
+        websocket_count: 0,
+        warning_count: 0,
+        har_available: true,
+      }],
+      count: 1,
+    })
+
+    await act(async () => {
+      root.render(<RecordingStudio />)
+    })
+    await flushPromises()
+
+    const recoveryList = container.querySelector('[data-testid="browser-recording-recovery-list"]')
+    expect(recoveryList?.textContent).toContain('Recent Browser Recordings')
+    expect(recoveryList?.textContent).toContain('Checkout Browser')
+    expect(recoveryList?.textContent).toContain('4 steps')
+    expect(recoveryList?.textContent).toContain('9 requests')
+
+    const openButton = Array.from(recoveryList?.querySelectorAll('button') || []).find(button => button.textContent?.trim() === 'Open')
+    await act(async () => {
+      openButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+    expect(apiMock.getBrowserRecording).toHaveBeenCalledWith('brec-stopped')
+
+    const deleteButton = Array.from(recoveryList?.querySelectorAll('button') || []).find(button => button.textContent?.trim() === 'Delete')
+    await act(async () => {
+      deleteButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+    expect(confirmSpy).toHaveBeenCalledWith('Delete this stopped browser recording? This cannot be undone.')
+    expect(apiMock.deleteBrowserRecording).toHaveBeenCalledWith('brec-stopped')
   })
 
   it('normalizes stored proxy conversion results before edit or save handoff', async () => {

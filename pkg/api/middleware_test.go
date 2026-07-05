@@ -1605,6 +1605,7 @@ func (zeroReader) Read(p []byte) (int, error) {
 }
 
 func TestTrustedHeaderAuthScopesRecorderListAndStartToProjectRoles(t *testing.T) {
+	stubBrowserRecordingDependencyProbe(t, nil)
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
 	enableTrustedHeaderAuth(t, server)
 	projectID := uuid.New().String()

@@ -139,6 +139,18 @@ func TestBrowserProcessResourceMetrics(t *testing.T) {
 	}
 }
 
+func TestProcessMetricsAttributionOptIn(t *testing.T) {
+	b := &Browser{}
+	t.Setenv("APEXLOAD_BROWSER_PROCESS_METRICS", "")
+	if b.processMetricsAttributionEnabled() {
+		t.Fatal("process metrics attribution enabled by default; want opt-in only")
+	}
+	t.Setenv("APEXLOAD_BROWSER_PROCESS_METRICS", "true")
+	if !b.processMetricsAttributionEnabled() {
+		t.Fatal("process metrics attribution disabled with opt-in env")
+	}
+}
+
 func TestParseProcessSamples(t *testing.T) {
 	samples := parseProcessSamples(`
   100   1  2048 00:00:01

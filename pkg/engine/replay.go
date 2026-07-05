@@ -266,7 +266,7 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 		return nil, fmt.Errorf("protocol init: %w", err)
 	}
 
-	if err := proto.Init(ctx, buildProtoConfig(script)); err != nil {
+	if err := proto.Init(ctx, buildProtoConfigForRunMode(script, "replay")); err != nil {
 		return nil, fmt.Errorf("protocol init: %w", err)
 	}
 	defer runProtocolTeardown(proto)

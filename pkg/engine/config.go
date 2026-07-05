@@ -10,6 +10,15 @@ func buildProtoConfig(script *dsl.Script) map[string]any {
 	return buildProtoConfigWithSecretResolver(script, newDefaultSecretResolver())
 }
 
+func buildProtoConfigForRunMode(script *dsl.Script, runMode string) map[string]any {
+	cfg := buildProtoConfig(script)
+	runMode = strings.TrimSpace(runMode)
+	if runMode != "" {
+		cfg["apexload_run_mode"] = runMode
+	}
+	return cfg
+}
+
 // normalizeSourceIPs trims, drops blanks, and de-duplicates a source-IP pool.
 func normalizeSourceIPs(ips []string) []string {
 	if len(ips) == 0 {
