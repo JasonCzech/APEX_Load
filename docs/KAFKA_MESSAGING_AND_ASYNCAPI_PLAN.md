@@ -1,6 +1,7 @@
 # Implementation Plan: Direct Kafka Messaging Testing + AsyncAPI Import
 
-> Status: **Fully implemented.** Kafka protocol plugin, DSL integration, binary wiring,
+> Status: Roadmap/detail. For current messaging support guidance, start with
+> [MESSAGING_SUPPORT.md](MESSAGING_SUPPORT.md). Kafka protocol plugin, DSL integration, binary wiring,
 > AsyncAPI converter + import wizard, direct Kafka authoring, and the franz-go real
 > network adapter (opt-in via the `kafka_real` build tag) are all in place. This document
 > is the design of record.

@@ -1,5 +1,8 @@
 # Messaging Platform Coverage — Evaluation & Implementation Plan
 
+> Status: Roadmap/detail. For current messaging support guidance, start with
+> [MESSAGING_SUPPORT.md](MESSAGING_SUPPORT.md).
+
 > Scope: general (non-LoadRunner) support for **importing, running, and evaluating results** from
 > message-queue platforms — **JMS, Apache Kafka, Solace PubSub+, IBM MQ, Azure Service Bus, and
 > Azure Event Hubs** — measured against each platform's public specification, with a phased plan to

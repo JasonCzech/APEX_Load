@@ -31,7 +31,7 @@ The current controller can run in either local or distributed mode without chang
 - **Zero-lock metrics**: Buffered channels (cap 10,000) in hot path; metrics aggregated downstream
 - **Protocol plugins**: HTTP/1.1, HTTP/2, SOAP (+ WSDL import), Java-over-HTTP (bounded codec MVP), Java Vuser sidecar bridge (governed and disabled unless runner config enables it), WebSocket, gRPC, JMS (Solace, IBM MQ; real Solace AMQP adapter via `-tags jms_solace_real`), Kafka (produce/consume/request-reply; in-memory mock broker by default, real franz-go adapter via `-tags kafka_real`), database (SQL), network (DNS/TCP/UDP/FTP/SMTP/POP3/IMAP/LDAP), browser (replay + canary diagnostics) — compiled-in, not runtime-loadable
 - **JSON DSL**: Human-readable test scripts with template variables and data sources
-- **Vendor-neutral telemetry**: OpenTelemetry native; exportable to Prometheus, Dynatrace, ELK
+- **Vendor-neutral telemetry**: Prometheus scrape metrics, W3C `traceparent` propagation, and Dynatrace event webhooks. Full OpenTelemetry span instrumentation is not implemented yet.
 - **Streaming percentiles**: T-digest for accurate p95/p99 computation without storing all samples
 
 ## Core Components
@@ -53,18 +53,21 @@ The current controller can run in either local or distributed mode without chang
 
 ## Documentation
 
-- **[QUICK_REFERENCE.md](QUICK_REFERENCE.md)** — Fast lookup: commands, API endpoints, common errors
+- **[docs/INDEX.md](docs/INDEX.md)** — Canonical documentation map with current/generated/roadmap/historical labels
+- **[QUICK_REFERENCE.md](QUICK_REFERENCE.md)** — Fast lookup: commands, DSL skeletons, common errors
 - **[DEVELOPMENT.md](DEVELOPMENT.md)** — Developer setup, packages overview, frontend architecture, conventions, testing policy
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** — System architecture, data flow diagrams, engine internals, metrics collection, performance characteristics
-- **[API_AND_DSL_REFERENCE.md](API_AND_DSL_REFERENCE.md)** — Complete REST API reference, DSL syntax guide, example scripts, template variables
+- **[API_AND_DSL_REFERENCE.md](API_AND_DSL_REFERENCE.md)** — Compatibility landing page for generated API and DSL references
+- **[docs/API_USER_GUIDE.md](docs/API_USER_GUIDE.md)** — Operator and CI/CD API workflows; generated Swagger/Endpoint Map remain the exhaustive route source
 - **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** — Common issues, debugging techniques, solutions
-- **[docs/ENTERPRISE_DATA_PLATFORM_UPGRADE_PLAN.md](docs/ENTERPRISE_DATA_PLATFORM_UPGRADE_PLAN.md)** — Implementation plan for PostgreSQL, object archives, Prometheus long-term metrics, and Redis/Valkey enterprise data services
+- **[docs/ENTERPRISE_DATA_PLATFORM_OPERATIONS_RUNBOOK.md](docs/ENTERPRISE_DATA_PLATFORM_OPERATIONS_RUNBOOK.md)** — Current enterprise storage, cache, archive, and telemetry operations
 - **[docs/COMPETITIVE_COMPARISON.md](docs/COMPETITIVE_COMPARISON.md)** — How APEX Load compares to LoadRunner/LRE, k6, NeoLoad, JMeter, and DevWeb; honest leads/matches/trails; migration and import reference (RTS mappings, protocol routing, bundle coverage)
-- **[docs/MOBILE_BROWSER_EMULATION_PLAN.md](docs/MOBILE_BROWSER_EMULATION_PLAN.md)** — Current browser engine and device profile support matrix plus conservative mobile-browser benchmark guidance
+- **[docs/BROWSER_AND_MOBILE_SUPPORT.md](docs/BROWSER_AND_MOBILE_SUPPORT.md)** — Current browser canary, mobile emulation, client metrics, and benchmark guidance
+- **[docs/MESSAGING_SUPPORT.md](docs/MESSAGING_SUPPORT.md)** — Current JMS, Kafka, AsyncAPI, and Event Hubs support summary
 - **[docs/AUTH_RBAC_OPERATIONS_RUNBOOK.md](docs/AUTH_RBAC_OPERATIONS_RUNBOOK.md)** — Self-hosted auth/RBAC operations, break-glass recovery, service-account handling, and audit export guidance
 - **[docs/ACCESS_SURFACES.md](docs/ACCESS_SURFACES.md)** — Hosted browser, desktop workspace, CLI, deployment identity, binding defaults, and desktop promotion governance
 - **[docs/recording-agent.md](docs/recording-agent.md)** — Production packaging and deployment guidance for the local browser Recording Agent
-- **[AGENTS.md](AGENTS.md)** — High-level platform overview, tech stack, release phases
+- **[AGENTS.md](AGENTS.md)** — Canonical agent/platform context
 
 ## Requirements
 
@@ -304,129 +307,16 @@ go run ./cmd/apexctl run \
   SLA:          passing
 ```
 
-## API Endpoints (Controller)
+## API Documentation
 
-### Quick Reference
+The exhaustive REST API docs are generated from the controller routing layer.
+Do not maintain endpoint catalogs by hand in Markdown.
 
-**Tests:**
-```
-POST   /api/v1/tests                    — Create and queue test
-GET    /api/v1/tests                    — List all tests
-GET    /api/v1/tests/{id}               — Get test details
-GET    /api/v1/tests/{id}/sla-status    — Get summarized SLA pass/fail status
-POST   /api/v1/tests/{id}/start         — Start test
-POST   /api/v1/tests/{id}/stop          — Graceful stop
-POST   /api/v1/tests/{id}/abort         — Immediate abort
-WS     /api/v1/ws                       — Global WebSocket stream
-```
-
-**Archives:**
-```
-GET    /api/v1/tests/{id}/archive                    — Download full archive bundle
-GET    /api/v1/tests/{id}/archive/browser-diagnostics — Download browser evidence bundle
-GET    /api/v1/tests/{id}/archive/report             — Get archive report JSON
-GET    /api/v1/tests/{id}/archive/analysis           — Get merged graph + transaction drilldown analysis
-GET    /api/v1/tests/{id}/report                     — Get standalone HTML report
-```
-
-**Scripts:**
-```
-POST   /api/v1/scripts                  — Create script
-GET    /api/v1/scripts                  — List scripts
-GET    /api/v1/scripts/{id}             — Get script
-PUT    /api/v1/scripts/{id}             — Update script
-DELETE /api/v1/scripts/{id}             — Delete script
-PATCH  /api/v1/scripts/{id}/move        — Move script to another folder
-POST   /api/v1/scripts/replay           — Replay a draft script
-POST   /api/v1/scripts/replay/sessions  — Start a unified replay/debug session for a draft script
-POST   /api/v1/scripts/browser-replay/sessions — Start browser replay for a draft script
-POST   /api/v1/scripts/{id}/validate    — Validate script
-POST   /api/v1/scripts/{id}/replay      — Replay a saved script
-POST   /api/v1/scripts/{id}/replay/sessions — Start a unified replay/debug session for a saved script
-POST   /api/v1/scripts/{id}/browser-replay/sessions — Start browser replay for a saved script
-POST   /api/v1/scripts/{id}/export      — Export script JSON to disk
-GET    /api/v1/scripts/{id}/download    — Download script JSON
-POST   /api/v1/scripts/import/sample    — Build a script from raw HTTP, cURL, REST JSON, or HAR samples
-GET    /api/v1/scripts/web-api/support-matrix — Get Web/API support, diagnostics, envelopes, and sample projects
-POST   /api/v1/scripts/import/enterprise-script-archive — Detect and route an enterprise script archive ZIP to executable script, review artifact, or external-runner-required draft
-POST   /api/v1/scripts/import/enterprise-script-archive/validate — Validate an enterprise script archive draft without saving
-POST   /api/v1/scripts/import/jmeter    — Convert a JMeter plan to DSL
-POST   /api/v1/scripts/import/jmeter/save — Save a reviewed JMeter import draft
-POST   /api/v1/scripts/import/jmeter/validate — Validate a JMeter import draft
-GET    /api/v1/scripts/import/jmeter/support-matrix — Get JMeter support matrix
-POST   /api/v1/scripts/import/k6       — Convert a constrained k6 HTTP subset to DSL
-POST   /api/v1/scripts/export/k6       — Export HTTP DSL to a reviewable k6 subset
-GET    /api/v1/scripts/import/k6/support-matrix — Get k6 subset support matrix
-POST   /api/v1/scripts/import/devweb   — Convert a DevWeb JavaScript file or archive to DSL
-GET    /api/v1/scripts/import/devweb/support-matrix — Get DevWeb construct support matrix
-POST   /api/v1/scripts/import/har      — Convert a HAR file to HTTP DSL
-POST   /api/v1/scripts/import/openapi  — Convert OpenAPI/Swagger JSON or YAML to HTTP DSL
-POST   /api/v1/scripts/import/wsdl     — Convert WSDL to SOAP DSL
-```
-
-**GitHub Enterprise Script Sync:**
-```
-GET    /api/v1/integrations/github/config       — Safe GitHub capability/config flags
-GET    /api/v1/integrations/github/diagnostics  — GHES reachability and auth/readiness checks
-GET    /api/v1/integrations/github/installations — GitHub App installation inventory
-GET    /api/v1/integrations/github/connection   — Current user's OAuth connection
-DELETE /api/v1/integrations/github/connection   — Disconnect current GitHub user
-GET    /api/v1/integrations/github/repos        — List accessible repositories
-GET    /api/v1/integrations/github/branches     — List repository branches
-GET    /api/v1/integrations/github/contents     — Browse repository contents
-GET    /api/v1/projects/{id}/github/policy      — Read project GitHub policy
-PUT    /api/v1/projects/{id}/github/policy      — Update allowed repos/branches/paths and CI policy
-POST   /api/v1/scripts/import/github            — Import one GitHub JSON DSL file
-POST   /api/v1/scripts/{id}/github/push         — Push a script via commit or PR
-GET    /api/v1/scripts/{id}/github/status       — Link, drift, blob/commit SHA, and check status
-POST   /api/v1/integrations/github/sync-jobs    — Start a bulk import/push sync job
-GET    /api/v1/integrations/github/sync-jobs    — List GitHub sync jobs
-GET    /api/v1/integrations/github/sync-jobs/{id} — Get sync job progress
-POST   /api/v1/integrations/github/webhook      — Receive verified GitHub webhooks
-GET    /api/v1/integrations/github/webhooks     — List webhook delivery records
-POST   /api/v1/tests/{id}/github/check-run      — Publish/retry a GitHub Check Run
-GET    /api/v1/integrations/github/check-links  — List run-to-check links
-```
-
-**Browser Replay:**
-```
-GET    /api/v1/replay/sessions/{session_id}               — Get unified replay session state
-POST   /api/v1/replay/sessions/{session_id}/pause         — Pause unified replay session
-POST   /api/v1/replay/sessions/{session_id}/resume        — Resume unified replay session
-POST   /api/v1/replay/sessions/{session_id}/step          — Step unified replay session
-POST   /api/v1/replay/sessions/{session_id}/stop          — Stop unified replay session
-PATCH  /api/v1/replay/sessions/{session_id}/breakpoints   — Update replay breakpoints
-GET    /api/v1/replay/sessions/{session_id}/export        — Export replay evidence JSON or log
-GET    /api/v1/browser-replay/sessions/{session_id}        — Get browser replay session state
-POST   /api/v1/browser-replay/sessions/{session_id}/pause  — Pause browser replay session
-POST   /api/v1/browser-replay/sessions/{session_id}/resume — Resume browser replay session
-POST   /api/v1/browser-replay/sessions/{session_id}/stop   — Stop browser replay session
-```
-
-**Scenario Schedules:**
-```
-GET    /api/v1/scenarios/{id}/schedules              — List recurring schedules for a scenario
-POST   /api/v1/scenarios/{id}/schedules              — Create a recurring schedule
-PUT    /api/v1/scenarios/{id}/schedules/{schedule_id} — Update or pause a schedule
-DELETE /api/v1/scenarios/{id}/schedules/{schedule_id} — Delete a recurring schedule
-```
-
-**System:**
-```
-GET    /api/v1/system/health            — Health check
-GET    /api/v1/system/readiness         — Production readiness checks
-GET    /api/v1/system/inventory         — Controller and generator inventory
-GET    /api/v1/fleet/load-zones         — Named self-hosted load zones and capacity signals
-GET    /api/v1/system/usage             — Usage accounting rollups
-GET    /api/v1/system/parity-status     — Platform and competitive parity status
-PATCH  /api/v1/system/generators/drain  — Cordon, drain, or reactivate a generator
-```
-
-**CI/CD Templates:**
-- GitHub composite action: `.github/actions/apexload-run/action.yml`
-- Azure Pipelines template: `azure-pipelines-task.yml`
-
-See [API_AND_DSL_REFERENCE.md](API_AND_DSL_REFERENCE.md) for complete endpoint documentation.
+- Generated OpenAPI: [docs/swagger.yaml](docs/swagger.yaml)
+- Generated endpoint catalog: [docs/api-endpoint-catalog.json](docs/api-endpoint-catalog.json)
+- Runtime docs endpoints: `GET /api/v1/docs/swagger.yaml` and `GET /api/v1/docs/endpoint-catalog`
+- Workflow guide: [docs/API_USER_GUIDE.md](docs/API_USER_GUIDE.md)
+- Compatibility landing page: [API_AND_DSL_REFERENCE.md](API_AND_DSL_REFERENCE.md)
 
 ## DSL Script Structure
 
@@ -487,7 +377,8 @@ Scripts are JSON with these sections:
 - `protocol: "java_http"` reuses the HTTP transport with a bounded `java_serialized_object_base64` codec.
 - Dashboard imports for Java-over-HTTP currently accept raw HTTP and cURL samples whose opaque request bodies are already base64-encoded serialized Java bytes.
 
-See [API_AND_DSL_REFERENCE.md](API_AND_DSL_REFERENCE.md) for complete DSL syntax.
+See [docs/DSL_ACTION_REFERENCE.md](docs/DSL_ACTION_REFERENCE.md) and
+[docs/dsl.schema.json](docs/dsl.schema.json) for generated DSL syntax.
 
 ## Repository Layout
 
@@ -537,7 +428,9 @@ examples/            # Sample scripts and HAR files
 1. Define handler in `pkg/api/handlers.go`
 2. Register route in `pkg/api/server.go`
 3. Add REST tests in `pkg/api/handlers_test.go`
-4. Update [API_AND_DSL_REFERENCE.md](API_AND_DSL_REFERENCE.md)
+4. Register access requirements in `pkg/api/route_catalog.go` when the route is under `/api/v1`
+5. Regenerate API docs with `go generate ./pkg/api`
+6. Run `go test ./pkg/api`
 
 **Add a new protocol:**
 1. Create `pkg/protocol/myproto/myproto.go`
@@ -564,7 +457,9 @@ make test-cover
 
 ## Performance Targets
 
-These are design targets, not yet backed by published benchmark artifacts. Do not cite as achieved.
+These are design targets. The metrics hot path has a reproducible harness-overhead benchmark in
+[docs/BENCHMARK_HARNESS_OVERHEAD.md](docs/BENCHMARK_HARNESS_OVERHEAD.md); VUser density and ramp-up
+targets still require release-specific benchmark evidence before they are cited as achieved.
 
 | Metric | Target | Notes |
 |--------|--------|-------|
@@ -586,8 +481,8 @@ These are design targets, not yet backed by published benchmark artifacts. Do no
 - ✅ Capacity-aware generator placement for distributed test startup, including self-hosted named load-zone summaries (`/api/v1/fleet/load-zones`)
 - ✅ Generator-loss detection and controlled failure handling during distributed execution
 - ✅ Runtime telemetry SLA hardening baseline now includes visible drop counters, bounded live history, end-to-end freshness, sampled telemetry diagnostics for transaction hotspots, schema-versioned typed telemetry retention, distributed telemetry propagation, first-class correlation/dependency metadata, and distributed lag-stage breakdowns from generator capture through controller fan-out
-- 🟡 Browser client metrics future plan for web-app synthetic UX telemetry
-- 🟡 JMS protocols (Solace, IBM MQ)
+- ✅ Browser client metrics for web-app synthetic UX telemetry are implemented for the current browser contract; WebKit process attribution and broader benchmark publication remain evidence/hardening work.
+- 🟡 Messaging protocols are mixed maturity: Kafka and Azure Event Hubs have opt-in real adapters, Solace/Service Bus are build-tag gated, IBM MQ remains mock/stub-only, and deeper broker-native parity is tracked in [docs/MESSAGING_SUPPORT.md](docs/MESSAGING_SUPPORT.md).
 - ✅ CI/CD gating: `apexctl` JUnit output + `status`/`wait` subcommands, local `apexctl script validate/explain`, with GitHub/Azure DevOps/Jenkins templates (see [docs/CICD_INTEGRATION.md](docs/CICD_INTEGRATION.md))
 - ✅ Evaluator trust pack: one-command demo seeding plus bounded k6 HTTP subset import/export (see [docs/EVALUATOR_TRUST_PACK.md](docs/EVALUATOR_TRUST_PACK.md))
 - ✅ Correlation rules engine + replay-failure detection, response-family rule packs, stale-literal evidence, and guided/batch repair (`/api/v1/correlations/diagnose`)
@@ -609,7 +504,7 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for coding conventions, testing policy, and
 - **Runtime telemetry SLA plan**: `docs/RUNTIME_TELEMETRY_SLA_PLAN.md` — Telemetry capture, streaming, and storage hardening roadmap
 - **Prometheus metrics catalog**: `docs/PROMETHEUS_METRICS.md` — Controller scrape series, labels, and telemetry troubleshooting
 - **Dynatrace webhook setup**: `docs/DYNATRACE_WEBHOOKS.md` — Events API webhook configuration and retry behavior
-- **Future browser client metrics plan**: `docs/BROWSER_CLIENT_METRICS_PLAN.md` — Browser-side client metrics roadmap and tradeoffs
+- **Browser and mobile support**: `docs/BROWSER_AND_MOBILE_SUPPORT.md` — Current browser canary, mobile emulation, client metrics, and benchmark evidence guidance
 
 ## License
 

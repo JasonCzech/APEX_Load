@@ -1,5 +1,8 @@
 # Recording, Import, and Replay Review - 2026-07-02
 
+> Status: Historical review snapshot. This file is preserved for audit context
+> and should not be treated as current product documentation.
+
 ## Scope
 
 This review covers the APEX Load authoring path from browser or HTTP recording

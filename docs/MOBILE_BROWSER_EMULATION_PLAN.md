@@ -1,5 +1,8 @@
 # Implementation Plan: Mobile Browser Emulation
 
+> Status: Roadmap/detail. For current browser and mobile support guidance, start
+> with [BROWSER_AND_MOBILE_SUPPORT.md](BROWSER_AND_MOBILE_SUPPORT.md).
+
 ## Objective
 Add mobile device emulation to APEX Load's existing browser protocol so that the same engine used for desktop browser tests can run mobile web tests with accurate device simulation.
 

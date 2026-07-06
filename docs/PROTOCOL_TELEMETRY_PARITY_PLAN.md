@@ -95,7 +95,7 @@ Each protocol must populate enough telemetry for the dashboard to answer the sam
 
 ---
 
-### 4. WebSocket Protocol (Not Yet Implemented)
+### 4. WebSocket Protocol (Runtime Implemented; Telemetry Parity Gaps Remain)
 
 **Reference:** [COMPETITIVE_COMPARISON.md#devweb-import](COMPETITIVE_COMPARISON.md#devweb-import) Phase 1 covers execution (L1). This section defines L2 and L3.
 
@@ -127,7 +127,7 @@ Each protocol must populate enough telemetry for the dashboard to answer the sam
 
 ---
 
-### 5. gRPC Protocol (Not Yet Implemented)
+### 5. gRPC Protocol (Runtime Implemented; Telemetry Parity Gaps Remain)
 
 **Reference:** [COMPETITIVE_COMPARISON.md#devweb-import](COMPETITIVE_COMPARISON.md#devweb-import) Phase 2 covers execution (L1). This section defines L2 and L3.
 

@@ -242,34 +242,34 @@ That order minimizes churn and avoids rebuilding the UI around unstable backend 
 ## File-Level Targets
 
 ### Live Dashboard Entry Points
-- [dashboard/src/App.tsx](dashboard/src/App.tsx)
-- [dashboard/src/components/ScriptsPage.tsx](dashboard/src/components/ScriptsPage.tsx)
-- [dashboard/src/components/ScriptEditor.tsx](dashboard/src/components/ScriptEditor.tsx)
-- [dashboard/src/components/JMeterImport.tsx](dashboard/src/components/JMeterImport.tsx)
-- [dashboard/src/components/EnterpriseArchiveImport.tsx](dashboard/src/components/EnterpriseArchiveImport.tsx)
-- [dashboard/src/components/SampleScriptImport.tsx](dashboard/src/components/SampleScriptImport.tsx)
-- [dashboard/src/components/RecordingStudio.tsx](dashboard/src/components/RecordingStudio.tsx)
-- [dashboard/src/components/BrowserReplayDebugger.tsx](dashboard/src/components/BrowserReplayDebugger.tsx)
+- [dashboard/src/App.tsx](../dashboard/src/App.tsx)
+- [dashboard/src/components/ScriptsPage.tsx](../dashboard/src/components/ScriptsPage.tsx)
+- [dashboard/src/components/ScriptEditor.tsx](../dashboard/src/components/ScriptEditor.tsx)
+- [dashboard/src/components/JMeterImport.tsx](../dashboard/src/components/JMeterImport.tsx)
+- [dashboard/src/components/EnterpriseArchiveImport.tsx](../dashboard/src/components/EnterpriseArchiveImport.tsx)
+- [dashboard/src/components/SampleScriptImport.tsx](../dashboard/src/components/SampleScriptImport.tsx)
+- [dashboard/src/components/RecordingStudio.tsx](../dashboard/src/components/RecordingStudio.tsx)
+- [dashboard/src/components/BrowserReplayDebugger.tsx](../dashboard/src/components/BrowserReplayDebugger.tsx)
 
 ### Scenario Assembly Surfaces
-- [dashboard/src/components/CreateTestModal.tsx](dashboard/src/components/CreateTestModal.tsx)
-- [dashboard/src/components/TestExecutionScenarioEditor.tsx](dashboard/src/components/TestExecutionScenarioEditor.tsx)
-- [dashboard/src/components/CreateTestGroupsEditor.tsx](dashboard/src/components/CreateTestGroupsEditor.tsx)
-- [dashboard/src/components/CreateTestGoalSettings.tsx](dashboard/src/components/CreateTestGoalSettings.tsx)
-- [dashboard/src/components/CreateTestRuntimeOverrides.tsx](dashboard/src/components/CreateTestRuntimeOverrides.tsx)
+- [dashboard/src/components/CreateTestModal.tsx](../dashboard/src/components/CreateTestModal.tsx)
+- [dashboard/src/components/TestExecutionScenarioEditor.tsx](../dashboard/src/components/TestExecutionScenarioEditor.tsx)
+- [dashboard/src/components/CreateTestGroupsEditor.tsx](../dashboard/src/components/CreateTestGroupsEditor.tsx)
+- [dashboard/src/components/CreateTestGoalSettings.tsx](../dashboard/src/components/CreateTestGoalSettings.tsx)
+- [dashboard/src/components/CreateTestRuntimeOverrides.tsx](../dashboard/src/components/CreateTestRuntimeOverrides.tsx)
 
 ### Backend Validation And Contracts
-- [pkg/dsl/parser.go](pkg/dsl/parser.go)
-- [pkg/dsl/types.go](pkg/dsl/types.go)
-- [pkg/api/handlers.go](pkg/api/handlers.go)
-- [pkg/api/handlers_scripts.go](pkg/api/handlers_scripts.go)
-- [pkg/api/handlers_recorder.go](pkg/api/handlers_recorder.go)
-- [pkg/api/handlers_replay.go](pkg/api/handlers_replay.go)
-- [pkg/api/handlers_browser_replay.go](pkg/api/handlers_browser_replay.go)
-- [pkg/convert/enterprisearchive/converter.go](pkg/convert/enterprisearchive/converter.go)
-- [pkg/convert/jmeter/converter.go](pkg/convert/jmeter/converter.go)
-- [pkg/convert/sample/converter.go](pkg/convert/sample/converter.go)
-- [pkg/recorder/converter.go](pkg/recorder/converter.go)
+- [pkg/dsl/parser.go](../pkg/dsl/parser.go)
+- [pkg/dsl/types.go](../pkg/dsl/types.go)
+- [pkg/api/handlers.go](../pkg/api/handlers.go)
+- [pkg/api/handlers_scripts.go](../pkg/api/handlers_scripts.go)
+- [pkg/api/handlers_recorder.go](../pkg/api/handlers_recorder.go)
+- [pkg/api/handlers_replay.go](../pkg/api/handlers_replay.go)
+- [pkg/api/handlers_browser_replay.go](../pkg/api/handlers_browser_replay.go)
+- [pkg/convert/enterprisearchive/converter.go](../pkg/convert/enterprisearchive/converter.go)
+- [pkg/convert/jmeter/converter.go](../pkg/convert/jmeter/converter.go)
+- [pkg/convert/sample/converter.go](../pkg/convert/sample/converter.go)
+- [pkg/recorder/converter.go](../pkg/recorder/converter.go)
 
 ### Cleanup Status
 - Route-owner verification confirmed that the live shell imports only the current dashboard pages.

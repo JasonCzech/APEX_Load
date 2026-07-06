@@ -1,5 +1,8 @@
 # APEX Load — Full Codebase Review
 
+> Status: Historical review snapshot. This file is preserved for audit context
+> and should not be treated as current product documentation.
+
 _Generated 2026-06-15. Multi-agent review (22 subsystem reviewers + per-finding adversarial verifiers, 49 agents) plus objective static analysis._
 
 ## Methodology

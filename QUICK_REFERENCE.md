@@ -77,87 +77,14 @@ cp apexload.db apexload.db.backup
 
 ---
 
-## API Endpoints Quick List
+## API Documentation
 
-### Tests
+The full route list is generated from the controller route catalog.
 
-| Method | Endpoint | Purpose |
-|--------|----------|---------|
-| POST | `/api/v1/tests` | Create test |
-| GET | `/api/v1/tests` | List tests |
-| POST | `/api/v1/tests/estimate` | Estimate capacity for a proposed run |
-| POST | `/api/v1/tests/preflight` | Pre-flight capacity and policy check |
-| GET | `/api/v1/tests/{id}` | Get test details |
-| GET | `/api/v1/tests/{id}/manifest` | Generator assignment manifest |
-| POST | `/api/v1/tests/{id}/start` | Start test |
-| POST | `/api/v1/tests/{id}/stop` | Stop gracefully |
-| POST | `/api/v1/tests/{id}/abort` | Stop immediately |
-| POST | `/api/v1/tests/{id}/pause` | Pause between actions |
-| POST | `/api/v1/tests/{id}/resume` | Resume a paused test |
-| PATCH | `/api/v1/tests/{id}/vusers` | Scale a group at runtime |
-| PATCH | `/api/v1/tests/{id}/goal-targets` | Adjust goal-based SLA thresholds at runtime |
-| PATCH | `/api/v1/tests/{id}/duration` | Adjust duration at runtime |
-| PATCH | `/api/v1/tests/{id}/move` | Move test to a folder |
-| DELETE | `/api/v1/tests/{id}` | Delete a non-active test |
-| GET | `/api/v1/tests/{id}/metrics` | Get current metrics |
-| GET | `/api/v1/tests/{id}/errors/evidence` | Live error evidence |
-| GET | `/api/v1/tests/{id}/sla-status` | SLA gate status |
-| GET | `/api/v1/tests/{id}/archive/browser-diagnostics` | Download browser evidence bundle |
-
-### Scripts
-
-| Method | Endpoint | Purpose |
-|--------|----------|---------|
-| POST | `/api/v1/scripts` | Create script |
-| GET | `/api/v1/scripts` | List scripts |
-| GET | `/api/v1/scripts/{id}` | Get script |
-| PUT | `/api/v1/scripts/{id}` | Update script |
-| DELETE | `/api/v1/scripts/{id}` | Delete script |
-| POST | `/api/v1/scripts/{id}/validate` | Validate script |
-| POST | `/api/v1/scripts/import/sample` | Build a script from raw HTTP, cURL, REST JSON, or HAR samples |
-| POST | `/api/v1/scripts/import/enterprise-script-archive` | Convert a LoadRunner archive |
-| POST | `/api/v1/scripts/import/jmeter/validate` | Validate a JMeter import draft |
-
-### WebSocket
-
-| Endpoint | Purpose |
-|----------|---------|
-| `WS /api/v1/ws` | Global events stream |
-| `WS /api/v1/tests/{id}/stream` | Test-specific metrics |
-
-### Scenarios
-
-| Method | Endpoint | Purpose |
-|--------|----------|---------|
-| POST | `/api/v1/scenarios` | Create scenario |
-| GET | `/api/v1/scenarios` | List scenarios |
-| POST | `/api/v1/scenarios/validate-load-model` | Validate load model |
-| POST | `/api/v1/scenarios/size-from-goal` | Reverse-calculate VUser count from performance goal |
-| GET | `/api/v1/run-calendar` | Calendar view of scheduled and recent runs |
-| GET | `/api/v1/schedules/health` | Scheduling health and queue signals |
-
-### Remote Workspaces
-
-| Method | Endpoint | Purpose |
-|--------|----------|---------|
-| POST | `/api/v1/remotes/{id}/runs` | Push local dependencies and create a remote run through the local controller proxy |
-| GET | `/api/v1/remotes/{id}/runs/{remote_test_id}` | Poll linked remote run status |
-| POST | `/api/v1/remotes/{id}/runs/{remote_test_id}/start` | Start linked remote run |
-| POST | `/api/v1/remotes/{id}/runs/{remote_test_id}/stop` | Stop linked remote run |
-| POST | `/api/v1/remotes/{id}/runs/{remote_test_id}/abort` | Abort linked remote run |
-| POST | `/api/v1/remotes/{id}/runs/{remote_test_id}/pause` | Pause linked remote run |
-| POST | `/api/v1/remotes/{id}/runs/{remote_test_id}/resume` | Resume linked remote run |
-
-### System
-
-| Method | Endpoint | Purpose |
-|--------|----------|---------|
-| GET | `/api/v1/system/health` | Health check |
-| GET | `/api/v1/system/readiness` | Readiness probe |
-| GET | `/api/v1/system/version` | Controller version plus deployment identity |
-| GET | `/api/v1/system/services` | Service health detail |
-| GET | `/api/v1/fleet/load-zones` | Named self-hosted load zones |
-| GET | `/api/v1/fleet/provisioner` | Active generator provisioner |
+- Generated OpenAPI: [docs/swagger.yaml](docs/swagger.yaml)
+- Generated endpoint catalog: [docs/api-endpoint-catalog.json](docs/api-endpoint-catalog.json)
+- Runtime docs endpoints: `GET /api/v1/docs/swagger.yaml` and `GET /api/v1/docs/endpoint-catalog`
+- Workflow guide: [docs/API_USER_GUIDE.md](docs/API_USER_GUIDE.md)
 
 ---
 
@@ -199,7 +126,9 @@ cp apexload.db apexload.db.backup
 }
 ```
 
-**Supported protocol surfaces:** `http`, `soap`, `java_http`, `browser`, `jms-solace`
+**Supported protocol surfaces:** `http`, `soap`, `java_http`, `browser`, `websocket`, `grpc`,
+`jms`, `kafka`, `eventhubs`, `database`, and `network` families. Real broker adapters are opt-in
+behind build tags; see [docs/MESSAGING_SUPPORT.md](docs/MESSAGING_SUPPORT.md).
 
 ## Browser And Mobile DSL
 
@@ -259,7 +188,7 @@ Supported browser actions:
 Current mobile-browser support envelope:
 - `chromium`: `desktop_1080p`, `galaxy_s24`, `pixel_8`
 - `webkit`: `ipad_air`, `iphone_15_pro`, `iphone_se`
-- Conservative starting concurrency and benchmark guidance live in `docs/MOBILE_BROWSER_EMULATION_PLAN.md`
+- Conservative starting concurrency and benchmark guidance live in [docs/BROWSER_AND_MOBILE_SUPPORT.md](docs/BROWSER_AND_MOBILE_SUPPORT.md).
 
 Browser/mobile config keys:
 - `config.browser.engine`: `chromium` or `webkit` (`webkit` executes through Playwright WebKit and requires Playwright WebKit assets installed on the controller host)
@@ -459,10 +388,12 @@ See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for detailed solutions.
 | Document | For |
 |----------|-----|
 | [README.md](README.md) | Overview, quick start, basic usage |
+| [docs/INDEX.md](docs/INDEX.md) | Canonical documentation map |
 | [DEVELOPMENT.md](DEVELOPMENT.md) | Development setup, conventions, architecture internals |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | System design, data flow, performance details |
-| [API_AND_DSL_REFERENCE.md](API_AND_DSL_REFERENCE.md) | Complete API docs, DSL syntax, examples |
-| [docs/API_USER_GUIDE.md](docs/API_USER_GUIDE.md) | Operator/CI-CD guide: auth, workflows, full endpoint catalogue |
+| [API_AND_DSL_REFERENCE.md](API_AND_DSL_REFERENCE.md) | Compatibility landing page for generated API and DSL docs |
+| [docs/API_USER_GUIDE.md](docs/API_USER_GUIDE.md) | Operator/CI-CD guide: auth and workflows |
+| [docs/DSL_ACTION_REFERENCE.md](docs/DSL_ACTION_REFERENCE.md) | Generated DSL action reference |
 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Common issues, debugging, solutions |
 | [QUICK_REFERENCE.md](QUICK_REFERENCE.md) | This file — fast lookup |
 
@@ -472,7 +403,7 @@ See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for detailed solutions.
 
 - **Dashboard**: http://localhost:8080
 - **Health check**: http://localhost:8080/api/v1/system/health
-- **API docs**: See [API_AND_DSL_REFERENCE.md](API_AND_DSL_REFERENCE.md)
+- **API docs**: see [docs/swagger.yaml](docs/swagger.yaml), [docs/api-endpoint-catalog.json](docs/api-endpoint-catalog.json), and [docs/API_USER_GUIDE.md](docs/API_USER_GUIDE.md)
 
 ---
 

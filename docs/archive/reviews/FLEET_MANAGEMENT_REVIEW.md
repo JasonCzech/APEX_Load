@@ -1,5 +1,8 @@
 # APEX Load Fleet Management Review
 
+> Status: Historical review snapshot. This file is preserved for audit context
+> and should not be treated as current product documentation.
+
 ## Summary
 
 Fleet management was reviewed across controller APIs, generator lifecycle, local

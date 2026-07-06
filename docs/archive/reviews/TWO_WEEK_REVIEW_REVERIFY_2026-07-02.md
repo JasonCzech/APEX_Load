@@ -1,5 +1,8 @@
 # Two-Week Review — Re-verification after the fix pass (fix commit `edab0967`)
 
+> Status: Historical review snapshot. This file is preserved for audit context
+> and should not be treated as current product documentation.
+
 **Re-reviewed:** 2026-07-02, against `edab0967` ("Refactor performance testing platform architecture and telemetry" — 174 files, +6,194/−667), which fixes the 122 findings from the [2026-07-01 review](TWO_WEEK_REVIEW_2026-06-17_to_2026-06-29.md).
 **Method:** 9 area agents re-classified every prior finding against current code (FIXED / PARTIAL / NOT_FIXED / REGRESSION) **and** hunted fresh bugs in the ~6,200 new lines; every negative verdict and fresh-bug claim went through a 3-vote adversarial panel. Plus a full baseline build/test run.
 

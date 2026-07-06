@@ -1,6 +1,9 @@
 # APEX Load Recording/Import/Replay Review Memory
 
-Canonical report: `docs/reviews/RECORDING_IMPORT_REPLAY_REVIEW_2026-07-02.md`
+> Status: Historical review memory. This file is preserved for audit context
+> and should not be treated as current product documentation.
+
+Canonical report: `docs/archive/reviews/RECORDING_IMPORT_REPLAY_REVIEW_2026-07-02.md`
 
 Use this memory entry when working on the recording, import, replay,
 correlation, scrub, recorder bridge, or Recording Studio surfaces. The review

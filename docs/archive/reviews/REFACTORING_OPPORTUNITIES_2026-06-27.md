@@ -1,5 +1,8 @@
 # APEX Load — Refactoring Opportunities (2026-06-27)
 
+> Status: Historical review snapshot. This file is preserved for audit context
+> and should not be treated as current product documentation.
+
 > **Scope:** 30-area multi-agent audit of ~325k LOC Go + ~180k LOC TypeScript, each finding adversarially re-verified against the source.
 > **131 confirmed findings** (4 rejected on verification) across 29 areas + 1 re-run. **~47 are quick wins** (S effort / low risk); **14 high-impact**.
 

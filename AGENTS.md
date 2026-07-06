@@ -13,7 +13,7 @@ default), a React dashboard, and a Prometheus/Dynatrace telemetry pipeline.
 - **Dashboard** (React 18 + TypeScript + Recharts): Real-time WebSocket-fed monitoring.
 - **Telemetry**: Prometheus scrape + W3C `traceparent` propagation + Dynatrace event webhooks. Controller aggregates with t-digest for percentiles. (Full OpenTelemetry span instrumentation is not yet implemented.)
 - **Storage**: SQLite by default (`apexload.db`); PostgreSQL is an optional enterprise backend (via pgx). Live state is in-memory with optional Redis/Valkey for HA. Archives are written to the local filesystem; S3/Azure Blob/GCS are optional enterprise backends.
-- **Deployment**: Kustomize manifests for local/kind, on-prem, and AKS; Helm chart for enterprise installs; KEDA-driven generator autoscaling; Terraform IaC for the Azure stack. (No operator/CRDs yet.)
+- **Deployment**: Kustomize manifests for local/kind (`deployments/k8s/local*`), production on-prem (`deployments/k8s/onprem`: gRPC mTLS+token, TLS ingress, dedicated metrics port, PSA restricted, scoped network policies), and production AKS (`deployments/k8s/aks`: workload identity, KEDA, ingress); Terraform IaC for the Azure stack (`deployments/azure/terraform`: AKS/ACR/PostgreSQL/Redis/Blob/Key Vault). Generator fleet scales via KEDA + `dns://` headless-service discovery. Azure App Service uses the launcher in `deployments/azure/appservice/` with PostgreSQL and static generator targets. A Helm chart for Kubernetes/AKS enterprise installs lives in `deployments/helm/apexload`. (No operator/CRDs yet.)
 
 ## Module Path
 `github.com/jasonczech/apexload`
@@ -37,11 +37,11 @@ pkg/
   api/static/    — Embedded dashboard build output (from dashboard/)
   storage/       — SQLite (default) / PostgreSQL persistence layer
   recorder/      — HTTP recording + HAR conversion + browser recording
-  convert/       — Multi-format import hub (LR, JMeter, k6, DevWeb, HAR, OpenAPI, WSDL, Postman, AsyncAPI, TruClient)
-  selector/      — Shared element-selector model + replay self-heal
-  scrub/         — PII/credential redaction for artifacts and HAR exports
+  convert/       — Multi-format import hub (LR archive, JMeter, k6, DevWeb, HAR, OpenAPI, WSDL, Postman, AsyncAPI, TruClient, SAP GUI, Java-family imports)
+  selector/      — Shared element-selector model (CSS/XPath/role/text) + replay self-heal
+  scrub/         — PII/credential redaction for recorder artifacts and HAR exports
   refkey/        — Human-readable, environment-aware reference keys
-  buildinfo/     — Build metadata (version/commit/build-time)
+  buildinfo/     — Build metadata (version/commit/build-time) via -ldflags
   config/        — Configuration types
   kubeops/       — In-cluster Kubernetes operations (generator pod restart/drain)
   recordagent/   — Local recording-agent runtime (Playwright/Chromium provisioning + bridge)
@@ -50,17 +50,16 @@ api/
 dashboard/       — React 18 + TypeScript + Recharts SPA
   src/components/ — Header, TestHub, TestExecution, StatusBadge, CreateTestModal
   src/hooks/      — useWebSocket (real-time), useApi (REST client)
-desktop/         — Wails native client shell (embeds controller API + dashboard)
+desktop/         — Wails native client shell embedding the controller API + dashboard
+mcp/             — Python MCP server exposing the REST API as agent tools
 deployments/
   k8s/           — Kubernetes manifests (Kustomize overlays: local/local-kind/onprem/aks)
-  helm/          — Helm chart for Kubernetes/AKS enterprise installs
+  helm/          — Helm chart (apexload) for Kubernetes/AKS enterprise installs
   docker/        — docker-compose stack for local multi-service runs
-  azure/         — Terraform IaC (AKS/ACR/PostgreSQL/Redis/Blob/Key Vault) + App Service launcher
-  ci/            — CI pipeline templates (GitHub Actions + Azure Pipelines)
-mcp/
-  apexload_mcp/  — Python MCP server package (client + tools)
-  server.py      — MCP server entrypoint for AI agents
-  README.md      — Setup and configuration instructions
+  azure/
+    terraform/   — Azure IaC (AKS, ACR, PostgreSQL, Redis, Blob, Key Vault)
+    appservice/  — Node.js launcher wrapper for Azure App Service deployments
+  ci/            — CI pipeline templates (GitHub Actions + Azure Pipelines) for AKS, on-prem registry, and App Service
 ```
 
 ## Key Design Decisions
@@ -70,60 +69,45 @@ mcp/
 - `sync.Pool` for request/response buffers to reduce GC pressure
 - t-digest for streaming percentile computation
 - JSON DSL scripts — no proprietary language
-- OpenTelemetry-native metrics, vendor-neutral export
+- Prometheus scrape metrics, W3C `traceparent` propagation, and Dynatrace event webhooks; full OpenTelemetry span instrumentation is not implemented yet
 - Real-time Network Latency monitoring via concurrent TCP dialer
 - "Soft Pause" execution gate (pauses between actions to preserve transaction integrity)
 - Manual timer-based duration management to support robust pause/resume
 
 ## Protocol Interface
 All protocols implement `pkg/protocol.Protocol`. Register new protocols in `pkg/protocol/registry.go`.
-Bundled and compiled into the standard binaries via `pkg/protocol/builtin`:
-HTTP (http/1.1, http/2), SOAP (+ WSDL import), Java-over-HTTP (`java_http`, bounded codec MVP),
-Java Vuser sidecar bridge (`java_vuser`, external-runner; governed and disabled unless runner config
-enables it), WebSocket, gRPC, JMS Solace, JMS IBM MQ, JMS Azure Service Bus (real adapter opt-in via
+Bundled and compiled into the standard binaries via `pkg/protocol/builtin`: HTTP (http/1.1, http/2),
+SOAP (+ WSDL import), Java-over-HTTP (`java_http`, bounded codec MVP), Java Vuser sidecar bridge
+(`java_vuser`, external-runner; governed and disabled unless runner config enables it), WebSocket,
+gRPC, JMS Solace, JMS IBM MQ, JMS Azure Service Bus (real adapter opt-in via
 `-tags jms_servicebus_real`), Kafka (produce/consume/request-reply; in-memory mock broker by default,
-real franz-go network adapter opt-in via `-tags kafka_real`), database (SQL query/exec/transactions),
-network (DNS/TCP/UDP/FTP/SMTP/POP3/IMAP/LDAP), and browser (replay + canary diagnostics). (`sap_gui` actions are
-authorable/importable via the DSL catalog but have no registered runtime protocol.)
+real franz-go network adapter opt-in via `-tags kafka_real`; Event Hubs Kafka-endpoint via
+`config.kafka.profile: eventhubs`), Azure Event Hubs (native `eventhubs` protocol, producer-first:
+`eventhubs_produce` + observer-probe `eventhubs_consume`; in-memory mock by default, real
+azeventhubs/AMQP adapter opt-in via `-tags eventhubs_real`), database (SQL query/exec/transactions),
+network (DNS/TCP/UDP/FTP/SMTP/POP3/IMAP/LDAP), and browser (replay + canary diagnostics).
+`sap_gui` actions are authorable/importable via the DSL catalog but have no registered runtime
+protocol and cannot be executed.
 
 ## Script DSL
 JSON-based. Template namespaces: `{{env.KEY}}`, `{{data.source.col}}`, `{{var.name}}`,
 `{{param.name}}`, `{{secret.name}}`, plus built-in functions under `{{fn.*}}`/`{{fake.*}}`
-(e.g. `fn.uuid()`, `fn.timestamp.unix()`, `fn.random(min,max)`, `fn.random_string(n)`, `fake.email()`).
+(e.g. `fn.uuid()`, `fn.timestamp.unix()`, `fn.timestamp.iso8601()`, `fn.random(min,max)`, `fn.random_string(n)`, `fake.email()`).
 Sections: config, data_sources, init, actions, teardown.
+The per-action-type contract is declared in the action catalog (`pkg/dsl/catalog*.go`), which drives
+validation, dashboard editor metadata, `GET /api/v1/dsl/actions`, and the generated artifacts
+`docs/dsl.schema.json` plus `docs/DSL_ACTION_REFERENCE.md`. After catalog changes, run
+`go generate ./pkg/dsl`; freshness is test-enforced.
 
 ## REST API
 The controller binary serves a REST API on `:8080` (configurable via `APEXLOAD_ADDR`).
+The OpenAPI spec `docs/swagger.yaml` and endpoint catalog `docs/api-endpoint-catalog.json` are
+generated from the controller routing layer by `cmd/swaggergen`; do not hand-edit them. After route
+changes, run `go generate ./pkg/api`; freshness is test-enforced by `pkg/api`.
 
-```
-POST   /api/v1/tests                 — Create and queue a test
-GET    /api/v1/tests                 — List all tests
-GET    /api/v1/tests/{id}            — Get test status + live metrics
-POST   /api/v1/tests/{id}/start      — Start a queued test
-POST   /api/v1/tests/{id}/stop       — Graceful stop
-POST   /api/v1/tests/{id}/abort      — Immediate abort
-POST   /api/v1/tests/{id}/pause      — Pause execution between actions
-POST   /api/v1/tests/{id}/resume     — Resume paused test
-PATCH  /api/v1/tests/{id}/vusers     — Scale VUsers for a group at runtime
-PATCH  /api/v1/tests/{id}/duration   — Extend/shorten test duration at runtime
-GET    /api/v1/tests/{id}/metrics    — Current metrics snapshot
-WS     /api/v1/tests/{id}/stream     — WebSocket stream for one test
-POST   /api/v1/scripts               — Upload a script (JSON DSL)
-GET    /api/v1/scripts               — List scripts
-GET    /api/v1/scripts/{id}          — Get script details
-PUT    /api/v1/scripts/{id}          — Update a script in-place
-DELETE /api/v1/scripts/{id}          — Delete a script
-POST   /api/v1/scripts/{id}/validate — Dry-run validation
-POST   /api/v1/scripts/{id}/export   — Export script JSON to disk
-GET    /api/v1/scripts/{id}/download — Download script as JSON file
-POST   /api/v1/scripts/import/enterprise-script-archive — Upload LR .zip, get converted DSL
-GET    /api/v1/system/health         — Health check
-WS     /api/v1/ws                    — Global WebSocket (all test events)
-```
-
-WebSocket messages are JSON with `type` field: `metrics_update`, `test_created`,
-`test_started`, `test_complete`, `test_failed`, `test_stopping`, `test_paused`, 
-`test_resumed`, `vusers_changed`, `duration_changed`, `latency_update`.
+Use the dashboard Swagger page, `GET /api/v1/docs/swagger.yaml`, or
+`GET /api/v1/docs/endpoint-catalog` for the complete current route list. Repository prose should
+describe workflows and link to those generated artifacts instead of duplicating endpoint catalogs.
 
 ## Testing Policy
 Every new feature, bug fix, or refactor **must** include corresponding tests. This is a default

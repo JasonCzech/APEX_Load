@@ -251,7 +251,23 @@ dashboard/
 - **DaisyUI**: TailwindCSS-based UI kit for buttons, modals, badges
 - **Recharts**: Time-series charting for metrics visualization
 
-## API Endpoints Reference
+## API Documentation
+
+The REST API surface is generated from the controller routing layer. Do not add
+hand-maintained endpoint catalogs here; they drift from `pkg/api/server.go` and
+`pkg/api/route_catalog.go`.
+
+- Generated OpenAPI: [docs/swagger.yaml](docs/swagger.yaml)
+- Generated endpoint catalog: [docs/api-endpoint-catalog.json](docs/api-endpoint-catalog.json)
+- Operator workflow guide: [docs/API_USER_GUIDE.md](docs/API_USER_GUIDE.md)
+- Compatibility landing page: [API_AND_DSL_REFERENCE.md](API_AND_DSL_REFERENCE.md)
+
+After route changes, run:
+
+```bash
+go generate ./pkg/api
+go test ./pkg/api
+```
 
 ## Distributed Runtime Commands
 
@@ -275,60 +291,7 @@ Current distributed test coverage is centered on:
 - real remote execution and scale routing
 - remote archive fetch and controller-local archive merge
 
-### Tests
-
-```
-POST   /api/v1/tests                          — Create and queue test
-GET    /api/v1/tests                          — List all tests
-GET    /api/v1/tests/{id}                     — Get test details + status
-POST   /api/v1/tests/{id}/start               — Start a queued test
-POST   /api/v1/tests/{id}/stop                — Graceful stop (wait for cleanup)
-POST   /api/v1/tests/{id}/abort               — Immediate abort
-GET    /api/v1/tests/{id}/metrics             — Current metrics snapshot
-WS     /api/v1/tests/{id}/stream              — WebSocket stream (test-specific)
-```
-
-### Scripts
-
-```
-POST   /api/v1/scripts                        — Upload/create script
-GET    /api/v1/scripts                        — List all scripts
-GET    /api/v1/scripts/{id}                   — Get script content
-PUT    /api/v1/scripts/{id}                   — Update script in-place
-DELETE /api/v1/scripts/{id}                   — Delete script
-POST   /api/v1/scripts/{id}/validate          — Dry-run validation
-POST   /api/v1/scripts/{id}/export            — Export as JSON file
-GET    /api/v1/scripts/{id}/download          — Download as JSON
-POST   /api/v1/scripts/import/sample          — Convert raw HTTP, cURL, REST JSON, or HAR samples into a draft
-POST   /api/v1/scripts/import/enterprise-script-archive      — Convert enterprise script archive ZIP to DSL
-```
-
-### Projects & Folders
-
-```
-GET    /api/v1/projects                       — List projects
-POST   /api/v1/projects                       — Create project
-GET    /api/v1/projects/{id}/folders          — List folders in project
-POST   /api/v1/projects/{id}/folders          — Create folder
-PUT    /api/v1/projects/{id}/folders/{fid}    — Rename folder
-DELETE /api/v1/projects/{id}/folders/{fid}    — Delete folder
-```
-
-### Recorder
-
-```
-GET    /api/v1/recorder/status                — Recorder status
-POST   /api/v1/recorder/start                 — Start HTTP recording
-POST   /api/v1/recorder/stop                  — Stop recording + save HAR
-GET    /api/v1/recorder/har                   — Download recorded HAR file
-```
-
-### System
-
-```
-GET    /api/v1/system/health                  — Health check (liveness)
-WS     /api/v1/ws                             — Global WebSocket (all test events)
-```
+For current route names, access rules, and generated summaries, use the generated docs above.
 
 ## Development Workflow
 

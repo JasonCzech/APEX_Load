@@ -1,5 +1,8 @@
 # Browser Client Metrics Plan
 
+> Status: Roadmap/detail. For current browser and mobile support guidance, start
+> with [BROWSER_AND_MOBILE_SUPPORT.md](BROWSER_AND_MOBILE_SUPPORT.md).
+
 ## Objective
 Add a browser-client metrics capability that serves as APEX Load's practical equivalent to LoadRunner TrueClient for web applications. The current implementation already covers the browser-side timing and artifact portion of that goal; the remaining gap is mainly browser-process sampling, benchmark publication, and some comparison UX.
 

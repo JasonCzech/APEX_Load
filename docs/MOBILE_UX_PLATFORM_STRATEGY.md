@@ -1,5 +1,8 @@
 # Strategic Plan: Mobile UX Performance Platform
 
+> Status: Roadmap/detail. For current browser and mobile support guidance, start
+> with [BROWSER_AND_MOBILE_SUPPORT.md](BROWSER_AND_MOBILE_SUPPORT.md).
+
 ## Vision
 Position APEX Load as a **synthetic digital experience platform** — capable of emulating any modern mobile device (iOS, iPadOS, Android) with high fidelity and measuring the complete client-side user experience with the depth and precision of tools like Quantum Metric, but from a controlled, repeatable performance testing context.
 

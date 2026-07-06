@@ -2,6 +2,9 @@
 
 # WSDL/SOAP Import + Replay: Code Review & Completion Plan
 
+> Status: Historical review snapshot. This file is preserved for audit context
+> and should not be treated as current product documentation.
+
 **Scope:** `pkg/convert/wsdl/converter.go` (importer), `pkg/protocol/soap/soap.go` (replay runtime), associated tests and the one shipped sample. Measured against the WSDL 1.1 / SOAP 1.1+1.2 / XSD 1.0 / WS-I BP / OASIS WSS yardstick.
 
 ---

@@ -28,7 +28,7 @@ readiness pass:
 | Secrets | Env resolver plus Azure Key Vault resolver using static token or DefaultAzureCredential. | Use AKS workload identity for `{{secret.*}}`; avoid static vault tokens. |
 | Observability | Prometheus metrics, ServiceMonitor, KEDA Prometheus scaler, remote-write examples. | Support either kube-prometheus-stack or Azure Monitor managed Prometheus. |
 | Identity | Workload identity enabled in Terraform and service accounts. | Split controller and generator identities for least privilege. |
-| Packaging | Kustomize overlays are deployable; Helm was documented but not implemented. | Treat Helm values as the enterprise install interface while preserving Kustomize. |
+| Packaging | Kustomize overlays and the Helm chart are both present. | Treat Helm values as the enterprise install interface while preserving Kustomize; validate with `helm lint`, `helm template`, and schema checks. |
 | HA control plane | Redis and PostgreSQL are present, but singleton loop ownership remains an operational constraint. | Default to one active controller; do not claim active-active controllers until background loops are lease-guarded. |
 
 ## Production Migration Gates

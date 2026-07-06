@@ -1,5 +1,8 @@
 # Browser Replay HAR Capture Plan
 
+> Status: Roadmap/detail. For current browser and mobile support guidance, start
+> with [BROWSER_AND_MOBILE_SUPPORT.md](BROWSER_AND_MOBILE_SUPPORT.md).
+
 ## Summary
 
 Add HAR export support to browser replay in two phases. V1 produces a practical HAR 1.2 artifact from enriched replay evidence and works across the current browser engines. V2 adds native Playwright HAR recording where the runtime can support full-fidelity browser capture.
