@@ -175,10 +175,12 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
     [integrity],
   )
 
-  // Derive section visibility from the matching profile's included_sections, the
-  // same source the backend renderers gate on. When the report does not carry a
-  // matching profile with declared sections (older payloads, tests), fall back to
-  // the id-based isExecutive/isEngineer/isAudit booleans so behavior is unchanged.
+  // Gate preview sections off the matching profile's included_sections — the same
+  // single source of truth the backend renderers use — not hardcoded profile ids,
+  // so a 4th/custom backend profile no longer renders a hybrid-executive preview.
+  // When the report does not carry a matching profile with declared sections
+  // (older payloads, tests), fall back to the id-based isExecutive/isEngineer/
+  // isAudit booleans so behavior is unchanged.
   const sectionSet = useMemo(
     () => buildSectionSet(report?.report_profiles, profile),
     [report?.report_profiles, profile],
@@ -187,6 +189,13 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
     (id: string, fallback: boolean): boolean => (sectionSet ? sectionSet.has(id) : fallback),
     [sectionSet],
   )
+  // Narrative/summary heading derived from declared sections (falling back to the
+  // profile id) so it stays correct for profiles beyond the built-in three.
+  const summaryLabel = has('audit_identity', isAudit) || has('official_outcome', isAudit)
+    ? 'Audit Summary'
+    : has('technical_overview', isEngineer)
+      ? 'Technical Summary'
+      : 'Executive Summary'
   const executionPlanApproval = manifest?.provenance?.governance?.execution_plan_approval
   const executionPlanApprovalSummary = executionPlanApproval
     ? [
@@ -334,7 +343,7 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
             </section>
 
             <section className="report-section">
-              <h2>{isAudit ? 'Audit Summary' : isEngineer ? 'Technical Summary' : 'Executive Summary'}</h2>
+              <h2>{summaryLabel}</h2>
               <textarea
                 className="report-narrative"
                 value={narrative}
@@ -614,7 +623,7 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
                           </div>
                           <div className="report-note-source-actions">
                             <button type="button" className="btn btn-secondary" onClick={appendSelectedNoteToSummary}>
-                              Append to {isAudit ? 'Audit Summary' : isEngineer ? 'Technical Summary' : 'Executive Summary'}
+                              Append to {summaryLabel}
                             </button>
                             <select
                               className="report-select"

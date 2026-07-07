@@ -364,6 +364,25 @@ function releaseTrendWithBaseline() {
 function sampleReport() {
   return {
     schema_version: 'apexload.archive_report.v1',
+    // The real API always returns report_profiles; the composer gates preview
+    // sections off the active profile's included_sections (single source of truth).
+    report_profiles: [
+      {
+        id: 'executive',
+        label: 'Executive Summary',
+        included_sections: ['verdict', 'executive_overview', 'graphs', 'sla_rollup', 'release_trend', 'risk_summary', 'recommendations', 'signoff', 'completeness', 'change_attribution'],
+      },
+      {
+        id: 'engineer',
+        label: 'Detailed Technical',
+        included_sections: ['verdict', 'technical_overview', 'sla_detail', 'graphs', 'root_cause', 'recommendations', 'test_setup', 'raw_exports', 'generator_manifest', 'completeness', 'schema_compatibility', 'change_attribution', 'summary_timeline', 'errors', 'resources', 'actions', 'browser', 'soap', 'network_phases', 'web2_migration'],
+      },
+      {
+        id: 'audit',
+        label: 'Audit',
+        included_sections: ['official_outcome', 'audit_identity', 'authorization', 'governance', 'provenance', 'schema_compatibility', 'evidence_tiers', 'completeness', 'change_attribution', 'artifact_integrity', 'report_authorship'],
+      },
+    ],
     manifest: {
       schema_version: 'apexload.archive.v1',
       test_id: 'test-1',

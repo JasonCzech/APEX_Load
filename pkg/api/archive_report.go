@@ -518,17 +518,17 @@ func buildRunArchiveReportProfiles() []RunArchiveReportProfile {
 		{
 			ID:            "executive",
 			Label:         "Executive Summary",
-			Description:   "Decision-focused summary with analyst commentary, supporting graphs, SLA verdict, error rate, throughput, completeness, and change attribution.",
+			Description:   "Decision-focused summary with analyst commentary, supporting graphs, SLA verdict, error rate, throughput, release trend, and run context.",
 			Audience:      "Business stakeholders, release owners, and sign-off authorities.",
 			BestFor:       "Ship/no-ship decisions, business risk, SLA posture, and executive sign-off.",
 			ExportFormats: []string{"html", "json", "csv", "pdf"},
 			// "release_trend" renders real release-over-release data: buildRunArchiveReport
 			// stays a pure single-record function, so the multi-run trend is attached at the
-			// storage-aware handler layer ((*Server).attachReleaseTrend) and the renderers
-			// gate the section on report.ReleaseTrend, degrading to a no-baseline/no-release
-			// note rather than a ghost.
-			IncludedSections: []string{"verdict", "executive_overview", "sla_rollup", "release_trend", "risk_summary", "recommendations", "signoff", "completeness", "change_attribution"},
-			SectionOrder:     []string{"verdict", "executive_overview", "sla_rollup", "release_trend", "risk_summary", "recommendations", "signoff", "completeness", "change_attribution"},
+			// storage-aware handler layer ((*Server).attachReleaseTrend) and the section
+			// degrades to a no-baseline/no-release note rather than a ghost. "run_context"
+			// folds completeness + change attribution into one compact confidence block.
+			IncludedSections: []string{"verdict", "executive_overview", "graphs", "sla_rollup", "release_trend", "risk_summary", "run_context", "recommendations", "signoff"},
+			SectionOrder:     []string{"verdict", "executive_overview", "graphs", "sla_rollup", "release_trend", "risk_summary", "run_context", "recommendations", "signoff"},
 		},
 		{
 			ID:               "engineer",
@@ -537,8 +537,8 @@ func buildRunArchiveReportProfiles() []RunArchiveReportProfile {
 			Audience:         "Performance engineers, SREs, developers, and test analysts.",
 			BestFor:          "Bottleneck isolation, regression diagnosis, resource saturation, and remediation planning.",
 			ExportFormats:    []string{"html", "json", "csv", "pdf", "jsonl", "parquet"},
-			IncludedSections: []string{"verdict", "technical_overview", "graphs", "sla_detail", "summary_timeline", "actions", "network_phases", "errors", "resources", "browser", "soap", "web2_migration", "root_cause", "completeness", "schema_compatibility", "change_attribution", "raw_exports"},
-			SectionOrder:     []string{"verdict", "technical_overview", "graphs", "sla_detail", "summary_timeline", "actions", "network_phases", "errors", "resources", "browser", "soap", "web2_migration", "root_cause", "completeness", "schema_compatibility", "change_attribution", "raw_exports"},
+			IncludedSections: []string{"verdict", "technical_overview", "sla_detail", "graphs", "root_cause", "recommendations", "test_setup", "raw_exports", "generator_manifest", "completeness", "schema_compatibility", "change_attribution", "summary_timeline", "errors", "resources", "actions", "browser", "soap", "network_phases", "web2_migration"},
+			SectionOrder:     []string{"verdict", "technical_overview", "sla_detail", "graphs", "root_cause", "recommendations", "test_setup", "raw_exports", "generator_manifest", "completeness", "schema_compatibility", "change_attribution", "summary_timeline", "errors", "resources", "actions", "browser", "soap", "network_phases", "web2_migration"},
 		},
 		{
 			ID:               "audit",
@@ -547,8 +547,8 @@ func buildRunArchiveReportProfiles() []RunArchiveReportProfile {
 			Audience:         "Compliance, governance, change-control, and QA gatekeepers.",
 			BestFor:          "Evidence integrity, authorization traceability, reproducibility, and audit review.",
 			ExportFormats:    []string{"html", "json", "csv", "pdf"},
-			IncludedSections: []string{"audit_identity", "authorization", "governance", "schema_compatibility", "evidence_tiers", "completeness", "provenance", "change_attribution", "artifact_integrity", "report_authorship", "official_outcome"},
-			SectionOrder:     []string{"audit_identity", "authorization", "governance", "schema_compatibility", "evidence_tiers", "completeness", "provenance", "change_attribution", "artifact_integrity", "report_authorship", "official_outcome"},
+			IncludedSections: []string{"official_outcome", "audit_identity", "authorization", "governance", "provenance", "schema_compatibility", "evidence_tiers", "completeness", "change_attribution", "artifact_integrity", "report_authorship"},
+			SectionOrder:     []string{"official_outcome", "audit_identity", "authorization", "governance", "provenance", "schema_compatibility", "evidence_tiers", "completeness", "change_attribution", "artifact_integrity", "report_authorship"},
 		},
 	}
 }

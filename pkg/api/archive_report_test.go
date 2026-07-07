@@ -473,6 +473,254 @@ func TestBuildRunArchiveReportDeclaresSchemaCompatibility(t *testing.T) {
 	}
 }
 
+// TestRunArchiveReportProfilesAreConsistentAndRenderable is the coverage matrix
+// over the shared section registry. For every shipped profile it asserts:
+//   - every declared section resolves to a registered renderer (a registered
+//     profile that declares a section with no renderer fails here — the
+//     build-time safety net the registry provides),
+//   - SectionOrder covers IncludedSections,
+//   - each declared section produces non-empty rendered output in HTML, PDF, and
+//     CSV (the profile metadata is the single source of truth across formats),
+//   - the full HTML render places each section, in SectionOrder.
+func TestRunArchiveReportProfilesAreConsistentAndRenderable(t *testing.T) {
+	report := consistencyMatrixReport()
+	manifest := consistencyMatrixManifest()
+
+	profiles := buildRunArchiveReportProfiles()
+	if len(profiles) == 0 {
+		t.Fatal("expected at least one report profile")
+	}
+
+	builtinIDs := map[string]bool{"executive": false, "engineer": false, "audit": false}
+
+	for _, profile := range profiles {
+		profile := profile
+		if _, known := builtinIDs[profile.ID]; known {
+			builtinIDs[profile.ID] = true
+		}
+		t.Run(profile.ID, func(t *testing.T) {
+			// A registered profile with no renderer for a declared section is a
+			// hard error: it would silently drop content at runtime.
+			if missing := reportProfileSectionsMissingRenderers(profile); len(missing) > 0 {
+				t.Fatalf("profile %q declares sections with no registered renderer: %v", profile.ID, missing)
+			}
+			if len(profile.IncludedSections) == 0 {
+				t.Fatalf("profile %q declares no sections", profile.ID)
+			}
+
+			// IncludedSections and SectionOrder must be a duplicate-free bijection,
+			// so the metadata is an unambiguous single source of truth.
+			included := reportSectionSet(profile.IncludedSections)
+			if len(included) != len(profile.IncludedSections) {
+				t.Fatalf("profile %q has duplicate ids in IncludedSections: %v", profile.ID, profile.IncludedSections)
+			}
+			order := reportSectionSet(profile.SectionOrder)
+			for _, id := range profile.IncludedSections {
+				if _, ok := order[id]; !ok {
+					t.Fatalf("profile %q section %q is included but absent from SectionOrder", profile.ID, id)
+				}
+			}
+			for id := range order {
+				if _, ok := included[id]; !ok {
+					t.Fatalf("profile %q section %q is in SectionOrder but not IncludedSections", profile.ID, id)
+				}
+			}
+
+			data := buildRunArchiveReportRenderData(report, profile, nil, manifest)
+			data.Charts = buildReportCharts(report)
+
+			for _, id := range profile.IncludedSections {
+				renderer, ok := reportSectionRegistry[id]
+				if !ok {
+					t.Fatalf("profile %q section %q missing from registry", profile.ID, id)
+				}
+
+				htmlBody, err := renderer.HTML(&data)
+				if err != nil {
+					t.Fatalf("profile %q section %q HTML error: %v", profile.ID, id, err)
+				}
+				if strings.TrimSpace(string(htmlBody)) == "" {
+					t.Fatalf("profile %q section %q produced empty HTML", profile.ID, id)
+				}
+
+				var pdfLines []string
+				renderer.PDF(&data, &pdfLines)
+				if len(pdfLines) == 0 {
+					t.Fatalf("profile %q section %q produced no PDF lines", profile.ID, id)
+				}
+
+				csvRows := 0
+				if err := renderer.CSV(&data, func(_, _, _, _ string) error { csvRows++; return nil }); err != nil {
+					t.Fatalf("profile %q section %q CSV error: %v", profile.ID, id, err)
+				}
+				if csvRows == 0 {
+					t.Fatalf("profile %q section %q produced no CSV rows", profile.ID, id)
+				}
+			}
+
+			// The full HTML render places each declared section, in SectionOrder.
+			htmlBytes, err := renderRunArchiveHTMLReportWithAnnotations(report, profile.ID, nil, manifest)
+			if err != nil {
+				t.Fatalf("profile %q HTML render error: %v", profile.ID, err)
+			}
+			full := string(htmlBytes)
+			lastIdx := -1
+			for _, id := range profile.SectionOrder {
+				marker := fmt.Sprintf("data-report-section=%q", id)
+				idx := strings.Index(full, marker)
+				if idx < 0 {
+					t.Fatalf("profile %q rendered HTML missing section marker %q", profile.ID, marker)
+				}
+				if idx < lastIdx {
+					t.Fatalf("profile %q section %q rendered out of SectionOrder", profile.ID, id)
+				}
+				lastIdx = idx
+			}
+
+			var pdfBuf bytes.Buffer
+			if err := writeRunArchiveReportPDFWithProfile(report, &pdfBuf, profile.ID); err != nil {
+				t.Fatalf("profile %q PDF render error: %v", profile.ID, err)
+			}
+			var csvBuf bytes.Buffer
+			if err := writeRunArchiveReportCSVWithProfile(report, &csvBuf, profile.ID); err != nil {
+				t.Fatalf("profile %q CSV render error: %v", profile.ID, err)
+			}
+		})
+	}
+
+	// A profile that declares a section the registry doesn't know about must be
+	// reported by the build-time check rather than silently fail-open.
+	bogus := RunArchiveReportProfile{
+		ID:               "bogus",
+		IncludedSections: []string{"verdict", "does_not_exist"},
+		SectionOrder:     []string{"verdict", "does_not_exist"},
+	}
+	missing := reportProfileSectionsMissingRenderers(bogus)
+	if len(missing) != 1 || missing[0] != "does_not_exist" {
+		t.Fatalf("expected unregistered section to be reported, got %v", missing)
+	}
+
+	for id, found := range builtinIDs {
+		if !found {
+			t.Errorf("expected built-in report profile %q to be defined", id)
+		}
+	}
+}
+
+// consistencyMatrixReport returns a richly-populated archive report so the
+// coverage matrix exercises real data paths in every section.
+func consistencyMatrixReport() *RunArchiveReport {
+	completedAt := time.Date(2026, time.June, 9, 18, 0, 0, 0, time.UTC)
+	scheduled := completedAt.Add(-time.Hour)
+	return &RunArchiveReport{
+		SchemaVersion: runArchiveReportSchemaVersion,
+		Manifest: &RunArchiveManifest{
+			SchemaVersion: archiveSchemaVersion,
+			TestID:        "test-matrix",
+			TestName:      "Coverage Matrix",
+			Status:        "COMPLETE",
+			CompletedAt:   completedAt,
+			SLABreached:   true,
+			SLADetails:    []string{"Checkout p95 exceeded SLA"},
+			Artifacts: []RunArchiveArtifact{
+				{Name: "transactions.jsonl", Kind: "transactions", Format: "jsonl", RecordType: "transaction", Count: 42, SizeBytes: 4096, SHA256: "abc123"},
+			},
+			Provenance: RunArchiveProvenance{
+				ProjectID:            "checkout",
+				ReleaseID:            "2026.06",
+				ScenarioID:           "scenario-9",
+				ScenarioMode:         "goal",
+				TotalVUsers:          8,
+				Duration:             "5m",
+				StartDelay:           "30s",
+				ScheduledStartAt:     &scheduled,
+				CreatedBySubject:     "user:creator",
+				CreatedByDisplayName: "Casey Creator",
+				StartedBySubject:     "user:starter",
+				StartedByDisplayName: "Sam Starter",
+				StoppedBySubject:     "user:stopper",
+				StoppedByDisplayName: "Sky Stopper",
+				Governance: &RunArchiveGovernanceSnapshot{
+					CapacityReservationID: "resv-1",
+					LaunchPreflight:       &RunArchiveLaunchPreflightSnapshot{Status: "passed", Decision: "allow"},
+					ExecutionPlanApproval: &RunArchiveExecutionPlanApprovalSnapshot{
+						ID: "approval-1", PlanID: "plan-1", Policy: "quota_burst", Status: "approved",
+						RequestedBy: "user:requester", ResolvedBy: "user:approver", DecisionReason: "release gate approved", RequiredRole: RoleProjectAdmin,
+					},
+				},
+			},
+		},
+		Overview: RunArchiveOverview{
+			Transactions: 42, Errors: 2, ErrorPct: 4.76,
+			AvgResponseMs: 125, MinResponseMs: 75, MaxResponseMs: 390,
+			P50Ms: 110, P90Ms: 300, P95Ms: 360, P99Ms: 388,
+			PeakTPS: 12.5, PeakTargetTPS: 15, PeakActiveVUsers: 8,
+			IntervalSummaries: 3, ResourceSamples: 3,
+			Browser: &BrowserLiveMetrics{Samples: 4, AvgFCPMs: 130, AvgLCPMs: 280, AvgCLSScore: 0.031, AvgINPMs: 64, AvgJSHeapUsedMB: 40},
+		},
+		Completeness: RunArchiveCompletenessScore{
+			ScorePct: 92, Status: "needs_review",
+			Findings: []RunArchiveCompletenessFinding{{Dimension: "telemetry_gaps", Severity: "warning", Penalty: 8, Message: "Telemetry was degraded for one interval."}},
+		},
+		Compatibility: RunArchiveReportCompatibility{
+			Status: "compatible", ReportSchemaVersion: runArchiveReportSchemaVersion, ManifestSchemaVersion: archiveSchemaVersion,
+			Outputs: []RunArchiveOutputCompatibility{{Format: "csv", Artifact: "report", SchemaVersion: runArchiveReportSchemaVersion, Status: "compatible"}},
+		},
+		ChangeAttribution: RunArchiveChangeAttribution{
+			ScriptRevisions: []string{"checkout-v3"}, ScenarioRevision: "scenario-9", Environment: "perf-lab",
+			GeneratorVersions: []string{"apexload-0.2.0"}, DataRevision: "checkout-v3:data",
+			RuntimeOverrides: true, RuntimeOverrideFields: []string{"iterations"},
+		},
+		EvidenceTiers: []RunArchiveEvidenceTier{{Tier: "summary", Label: "Summary", Status: "present", Count: 1, Reason: "interval summaries archived"}},
+		SummaryTimeline: []RunArchiveSummaryPoint{
+			{Timestamp: completedAt.Add(-time.Minute), ActiveVUsers: 8, TPS: 12.5, TargetTPS: 15, ThroughputGapPct: 16, ThroughputTargetMissed: true, P95Ms: 360, ErrorPct: 4.76, TotalTx: 42, TotalErrors: 2},
+		},
+		ByAction: map[string]RunArchiveActionStats{
+			"checkout": {Transactions: 42, Errors: 2, ErrorPct: 4.76, AvgResponseMs: 125, MaxResponseMs: 390, P95Ms: 360},
+		},
+		BySOAPOperation: map[string]RunArchiveActionStats{
+			"CreateOrder": {Transactions: 30, Errors: 2, ErrorPct: 6.67, AvgResponseMs: 320},
+		},
+		BySOAPFaultCode:     map[string]int64{"env:Sender": 2},
+		BySOAPFaultCategory: map[string]int64{"client": 2},
+		SOAPFaultTimeline:   []RunArchiveSOAPFaultTimelineBucket{{Timestamp: completedAt, Total: 2, ByCode: map[string]int64{"env:Sender": 2}, ByCategory: map[string]int64{"client": 2}}},
+		SOAPPayloadTimeline: []RunArchiveSOAPPayloadTimelineBucket{{Timestamp: completedAt, Samples: 3, AvgRequestPayloadKB: 12.5, AvgResponsePayloadKB: 18.8, AvgEnvelopeOverheadKB: 3.1, MaxEnvelopeOverheadKB: 5.2}},
+		BrowserByEngine:     map[string]*BrowserEngineLiveMetrics{"webkit": {BrowserEngine: "webkit", Samples: 4, AvgLCPMs: 280, AvgCLSScore: 0.031, AvgINPMs: 64}},
+		BrowserByPlatform:   map[string]*BrowserPlatformLiveMetrics{"ios": {DevicePlatform: "ios", BrowserEngine: "webkit", Samples: 4, AvgLCPMs: 280, AvgCLSScore: 0.031, AvgINPMs: 64}},
+		BrowserByDevice:     map[string]*BrowserDeviceLiveMetrics{"iphone-se": {DeviceProfile: "iphone-se", DevicePlatform: "ios", DeviceTier: "low", BrowserEngine: "webkit", Samples: 2, AvgLCPMs: 300, AvgINPMs: 70}},
+		NetworkPhases: RunArchiveNetworkPhaseSummary{
+			Samples: 2,
+			Overall: RunArchiveNetworkPhases{Count: 2, AvgDNSMs: 2, AvgConnectMs: 4, AvgTLSMs: 6, AvgTTFBMs: 60, MaxTTFBMs: 80},
+		},
+		Web2Migration: &RunArchiveWeb2MigrationEvidence{
+			Status: "ready_for_review", ImportedSteps: 1, ReplayedSteps: 1, ConversionToHTTPReady: true,
+			TransactionGroups: []string{"Checkout"}, ReplayEvidence: map[string]int{"network": 1},
+		},
+		ErrorPatterns: []RunArchiveErrorPattern{{
+			Signature: "soap fault: request validation failed for order #", Sample: "soap fault: Request validation failed for order 1001",
+			Count: 2, FirstSeen: completedAt.Add(-2 * time.Minute), LatestSeen: completedAt, Actions: []string{"CreateOrder"},
+			Snapshot: &protocol.ErrorSnapshot{RequestURL: "https://soap.example.test/orders"},
+		}},
+		ArtifactInventory: []RunArchiveArtifact{{Name: "transactions.jsonl", RecordType: "transaction", Format: "jsonl", Count: 42, SizeBytes: 4096, SHA256: "abc123"}},
+		ResourcePeaks:     RunArchiveResourcePeaks{CPUProcessPct: 67, MemProcessMB: 512, NetSentKbps: 1200, NetRecvKbps: 1800},
+	}
+}
+
+func consistencyMatrixManifest() *TestRunManifest {
+	return &TestRunManifest{
+		TestID:   "test-matrix",
+		TestName: "Coverage Matrix",
+		LoadGenerators: TestRunManifestLoadGenerators{
+			Assignment:      &GeneratorAssignmentSettings{Mode: "auto", ShardStrategy: "capacity_weighted"},
+			GeneratorShards: []GeneratorShardSummary{{Group: "buyers", Target: "gen-pod-1", VUsers: 8, ShardStrategy: "capacity_weighted"}},
+			GeneratorInventory: []GeneratorInventoryEntry{
+				{Target: "gen-pod-1", Region: "eastus2", Status: "connected", HealthScore: 98, ActiveVUsers: 8, AvailableCapacity: 992, MaxVUsers: 1000, CapacityState: "available"},
+			},
+		},
+		Scripts: []TestRunManifestScript{{GroupName: "buyers", ScriptName: "checkout-flow", Protocol: "http", VUsers: 8, RampUp: "1m"}},
+	}
+}
+
 func TestWriteRunArchiveReportCSVAuditIncludesExecutionPlanApproval(t *testing.T) {
 	report := samplePDFRunArchiveReport()
 	var csvBuf bytes.Buffer
@@ -506,72 +754,6 @@ func TestWriteRunArchiveReportCSVEngineerIncludesNetworkPhases(t *testing.T) {
 	for _, expected := range []string{"network_phases,overall,avg_dns_ms", "network_phases,overall,avg_ttfb_ms", "network_phases,checkout,"} {
 		if !strings.Contains(body, expected) {
 			t.Fatalf("engineer csv missing network-phase row %q:\n%s", expected, body)
-		}
-	}
-}
-
-// TestRunArchiveReportProfilesAreConsistentAndRenderable guards the report profile
-// metadata against the drift that produced the network_phases / release_trend ghost
-// sections: IncludedSections and SectionOrder must describe the same set (so a section
-// added to one but not the other cannot silently diverge), and every declared text
-// export format must actually render without error.
-func TestRunArchiveReportProfilesAreConsistentAndRenderable(t *testing.T) {
-	report := samplePDFRunArchiveReport()
-	profiles := buildRunArchiveReportProfiles()
-
-	toSet := func(values []string) map[string]int {
-		set := make(map[string]int, len(values))
-		for _, v := range values {
-			set[v]++
-		}
-		return set
-	}
-
-	wantIDs := map[string]bool{"executive": false, "engineer": false, "audit": false}
-	for _, profile := range profiles {
-		if _, known := wantIDs[profile.ID]; known {
-			wantIDs[profile.ID] = true
-		}
-		if len(profile.IncludedSections) == 0 {
-			t.Errorf("profile %q declares no included sections", profile.ID)
-		}
-		included := toSet(profile.IncludedSections)
-		ordered := toSet(profile.SectionOrder)
-		for section, count := range included {
-			if count > 1 {
-				t.Errorf("profile %q: section %q duplicated in IncludedSections", profile.ID, section)
-			}
-			if _, ok := ordered[section]; !ok {
-				t.Errorf("profile %q: section %q in IncludedSections but missing from SectionOrder", profile.ID, section)
-			}
-		}
-		for section := range ordered {
-			if _, ok := included[section]; !ok {
-				t.Errorf("profile %q: section %q in SectionOrder but missing from IncludedSections", profile.ID, section)
-			}
-		}
-		for _, format := range profile.ExportFormats {
-			switch format {
-			case "html":
-				if _, err := renderRunArchiveHTMLReportWithProfile(report, profile.ID); err != nil {
-					t.Errorf("profile %q html render: %v", profile.ID, err)
-				}
-			case "pdf":
-				var buf bytes.Buffer
-				if err := writeRunArchiveReportPDFWithProfile(report, &buf, profile.ID); err != nil {
-					t.Errorf("profile %q pdf render: %v", profile.ID, err)
-				}
-			case "csv":
-				var buf bytes.Buffer
-				if err := writeRunArchiveReportCSVWithProfile(report, &buf, profile.ID); err != nil {
-					t.Errorf("profile %q csv render: %v", profile.ID, err)
-				}
-			}
-		}
-	}
-	for id, found := range wantIDs {
-		if !found {
-			t.Errorf("expected built-in report profile %q to be defined", id)
 		}
 	}
 }

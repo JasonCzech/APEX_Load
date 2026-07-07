@@ -200,8 +200,19 @@ func TestRenderRunArchiveHTMLReportSupportsProfiles(t *testing.T) {
 	if !strings.Contains(body, "Executive Summary Report") {
 		t.Fatalf("expected executive profile label in HTML, got %q", string(html))
 	}
-	if strings.Contains(body, "Top Actions") || strings.Contains(body, "Appendix C") {
-		t.Fatalf("executive profile should omit technical drilldown sections, got %q", body)
+	// The executive profile declares neither the actions nor the
+	// generator-assignment sections, so the section-registry driver must omit
+	// them entirely (no fail-open to another profile's content).
+	for _, omit := range []string{"Action Summary", "Appendix C", `data-report-section="actions"`, `data-report-section="generator_manifest"`} {
+		if strings.Contains(body, omit) {
+			t.Fatalf("executive profile should omit technical drilldown %q, got %q", omit, body)
+		}
+	}
+	// And it must include exactly its declared sections, in order.
+	for _, want := range []string{`data-report-section="verdict"`, `data-report-section="executive_overview"`, `data-report-section="sla_rollup"`, `data-report-section="signoff"`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("executive profile missing declared section marker %q", want)
+		}
 	}
 	// Executive declares completeness + change_attribution; they render as the compact
 	// Run Context block, not as engineer-only drilldowns or the network-phase section.
@@ -217,8 +228,11 @@ func TestRenderRunArchiveHTMLReportSupportsProfiles(t *testing.T) {
 		t.Fatalf("renderRunArchiveHTMLReportWithProfile audit returned error: %v", err)
 	}
 	auditBody := string(auditHTML)
-	if !strings.Contains(auditBody, "Audit Evidence Package") || strings.Contains(auditBody, "Top Actions") {
-		t.Fatalf("audit profile should render audit evidence without technical drilldown, got %q", auditBody)
+	if !strings.Contains(auditBody, "Audit Report") || !strings.Contains(auditBody, "Run Identity") || !strings.Contains(auditBody, "Artifact Integrity") {
+		t.Fatalf("audit profile should render audit evidence sections, got %q", auditBody)
+	}
+	if strings.Contains(auditBody, "Action Summary") || strings.Contains(auditBody, `data-report-section="actions"`) {
+		t.Fatalf("audit profile should omit technical drilldown, got %q", auditBody)
 	}
 
 	if _, err := renderRunArchiveHTMLReportWithProfile(report, "unknown"); err == nil {
@@ -299,10 +313,11 @@ func TestRenderRunArchiveHTMLReportHandlesNilManifest(t *testing.T) {
 }
 
 // TestRenderRunArchiveHTMLReportHonorsIncludedSections proves the HTML renderer
-// gates content blocks on the profile's IncludedSections, exactly like the
-// PDF/CSV renderers: a section present in the default engineer profile renders,
-// and removing that section from IncludedSections removes its marker from the
-// HTML. This guards L1 — editing a profile's sections must change HTML output.
+// gates content blocks on the profile's IncludedSections via the shared section
+// registry, exactly like the PDF/CSV renderers: a section a profile declares
+// renders (with its data-report-section marker), and a profile that does not
+// declare it omits it. This guards the single-source-of-truth contract — editing
+// a profile's sections must change HTML output.
 func TestRenderRunArchiveHTMLReportHonorsIncludedSections(t *testing.T) {
 	report := &RunArchiveReport{
 		SchemaVersion: runArchiveReportSchemaVersion,
@@ -318,43 +333,52 @@ func TestRenderRunArchiveHTMLReportHonorsIncludedSections(t *testing.T) {
 		},
 	}
 
-	// Baseline: the default engineer profile declares network_phases and browser,
-	// so both markers render.
+	// The engineer profile declares network_phases, browser, and actions, so all
+	// three render (heading + data-report-section marker).
 	html, err := renderRunArchiveHTMLReportWithProfile(report, "engineer")
 	if err != nil {
 		t.Fatalf("baseline render returned error: %v", err)
 	}
 	body := string(html)
-	for _, want := range []string{"Network Phase Breakdown", "Browser Metrics", "Action Summary"} {
+	for _, want := range []string{
+		"Network Phase Breakdown", "Browser Metrics", "Action Summary",
+		`data-report-section="network_phases"`, `data-report-section="browser"`, `data-report-section="actions"`,
+	} {
 		if !strings.Contains(body, want) {
-			t.Fatalf("baseline engineer HTML should contain %q", want)
+			t.Fatalf("engineer HTML should contain %q", want)
 		}
 	}
 
-	// Render the engineer template with a reduced section set that drops
-	// network_phases and browser. This exercises the same .Has gating the
-	// renderer uses; the excluded markers must disappear while a retained
-	// section (actions) stays.
-	reduced := runArchiveHTMLReportData{
-		GeneratedAt: time.Now().UTC(),
-		Report:      report,
-		Profile:     RunArchiveReportProfile{ID: "engineer", Label: "Detailed Technical"},
-		sections:    stringSet([]string{"technical_overview", "actions"}),
-		Annotations: defaultReportAnnotations(report, report.Manifest.TestID, "engineer"),
-		ActionRows:  []runArchiveHTMLActionRow{{Name: "checkout", Stats: RunArchiveActionStats{Transactions: 100}}},
+	// The executive profile declares none of those engineer drilldowns, so the
+	// registry-driven renderer omits both their headings and their markers — proof
+	// that IncludedSections, not a hardcoded template, drives the output.
+	execHTML, err := renderRunArchiveHTMLReportWithProfile(report, "executive")
+	if err != nil {
+		t.Fatalf("executive render returned error: %v", err)
 	}
-	var buf strings.Builder
-	if err := runArchiveReportTemplate.Execute(&buf, reduced); err != nil {
-		t.Fatalf("reduced render returned error: %v", err)
-	}
-	reducedBody := buf.String()
-	if !strings.Contains(reducedBody, "Action Summary") {
-		t.Fatalf("reduced HTML should retain the still-declared Action Summary section")
-	}
-	for _, absent := range []string{"Network Phase Breakdown", "Browser Metrics"} {
-		if strings.Contains(reducedBody, absent) {
-			t.Fatalf("reduced HTML must omit %q after it is removed from IncludedSections", absent)
+	execBody := string(execHTML)
+	for _, absent := range []string{
+		"Network Phase Breakdown", "Browser Metrics", "Action Summary",
+		`data-report-section="network_phases"`, `data-report-section="browser"`, `data-report-section="actions"`,
+	} {
+		if strings.Contains(execBody, absent) {
+			t.Fatalf("executive HTML must omit engineer-only %q", absent)
 		}
+	}
+
+	// And reportSectionsForProfile honors a synthetic reduced section set directly:
+	// only declared+registered sections come back, in order.
+	reduced := RunArchiveReportProfile{
+		ID:               "engineer",
+		IncludedSections: []string{"technical_overview", "actions"},
+		SectionOrder:     []string{"technical_overview", "actions"},
+	}
+	var ids []string
+	for _, section := range reportSectionsForProfile(reduced) {
+		ids = append(ids, section.ID)
+	}
+	if strings.Join(ids, ",") != "technical_overview,actions" {
+		t.Fatalf("reduced profile sections = %v, want [technical_overview actions]", ids)
 	}
 }
 

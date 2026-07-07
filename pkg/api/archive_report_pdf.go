@@ -44,6 +44,10 @@ func runArchiveReportProfileSupportsFormat(profile RunArchiveReportProfile, form
 	return false
 }
 
+// buildRunArchiveReportPDFLines renders the report as text lines by iterating the
+// profile's SectionOrder (gated by IncludedSections) through the shared section
+// registry, so the profile metadata is the single source of truth for which
+// sections appear and in what order.
 func buildRunArchiveReportPDFLines(report *RunArchiveReport, profile RunArchiveReportProfile) []string {
 	lines := []string{
 		"APEX Load Archive Report",
@@ -64,199 +68,9 @@ func buildRunArchiveReportPDFLines(report *RunArchiveReport, profile RunArchiveR
 		)
 	}
 
-	sections := stringSet(profile.IncludedSections)
-	if hasCSVSection(sections, "overview") {
-		lines = append(lines, "Overview")
-		lines = append(lines,
-			fmt.Sprintf("Transactions: %s", formatPDFInt(report.Overview.Transactions)),
-			fmt.Sprintf("Errors: %s (%.2f%%)", formatPDFInt(report.Overview.Errors), report.Overview.ErrorPct),
-			fmt.Sprintf("Average response: %.1f ms (min %.1f ms / max %.1f ms)", report.Overview.AvgResponseMs, report.Overview.MinResponseMs, report.Overview.MaxResponseMs),
-			fmt.Sprintf("Peak TPS: %.1f", report.Overview.PeakTPS),
-			fmt.Sprintf("Peak active VUsers: %s", formatPDFInt(report.Overview.PeakActiveVUsers)),
-		)
-		if report.Overview.PeakTargetTPS > 0 {
-			lines = append(lines, fmt.Sprintf("Peak target TPS: %.1f", report.Overview.PeakTargetTPS))
-		}
-		if report.Overview.MaxThroughputGapPct > 0 || report.Overview.ThroughputMissedIntervals > 0 {
-			lines = append(lines, fmt.Sprintf("Throughput gap: %.1f%% across %d missed interval(s)", report.Overview.MaxThroughputGapPct, report.Overview.ThroughputMissedIntervals))
-		}
-		lines = append(lines, "")
-	}
-
-	if hasCSVSection(sections, "completeness") || hasCSVSection(sections, "overview") {
-		lines = append(lines, "Completeness")
-		lines = append(lines, fmt.Sprintf("Score: %.0f%% (%s)", report.Completeness.ScorePct, report.Completeness.Status))
-		for _, finding := range report.Completeness.Findings {
-			lines = append(lines, fmt.Sprintf("- %s: %s", finding.Dimension, finding.Message))
-		}
-		lines = append(lines, "")
-	}
-
-	if hasCSVSection(sections, "release_trend") && report.ReleaseTrend != nil {
-		appendReleaseTrendPDFLines(&lines, report.ReleaseTrend)
-	}
-
-	if hasCSVSection(sections, "evidence_tiers") {
-		lines = append(lines, "Evidence Tiers")
-		for _, tier := range report.EvidenceTiers {
-			lines = append(lines, fmt.Sprintf("- %s: %s (%s)", firstNonEmptyPDFValue(tier.Label, tier.Tier), tier.Status, formatPDFInt(tier.Count)))
-		}
-		lines = append(lines, "")
-	}
-
-	if hasCSVSection(sections, "change_attribution") {
-		lines = append(lines, "Change Attribution")
-		attribution := report.ChangeAttribution
-		appendPDFValueLine(&lines, "Scenario revision", attribution.ScenarioRevision)
-		appendPDFValueLine(&lines, "Environment", attribution.Environment)
-		appendPDFValueLine(&lines, "Data revision", attribution.DataRevision)
-		appendPDFValueLine(&lines, "Script revisions", strings.Join(attribution.ScriptRevisions, ", "))
-		appendPDFValueLine(&lines, "Generator versions", strings.Join(attribution.GeneratorVersions, ", "))
-		if attribution.RuntimeOverrides {
-			appendPDFValueLine(&lines, "Runtime overrides", strings.Join(attribution.RuntimeOverrideFields, ", "))
-		}
-		lines = append(lines, "")
-	}
-
-	if hasCSVSection(sections, "provenance") && report.Manifest != nil {
-		lines = append(lines, "Run Identity and Authorization")
-		provenance := report.Manifest.Provenance
-		appendPDFValueLine(&lines, "Project", provenance.ProjectID)
-		appendPDFValueLine(&lines, "Release", provenance.ReleaseID)
-		appendPDFValueLine(&lines, "Scenario", provenance.ScenarioID)
-		appendPDFValueLine(&lines, "Created by", actorPDFValue(provenance.CreatedByDisplayName, provenance.CreatedBySubject))
-		appendPDFValueLine(&lines, "Started by", actorPDFValue(provenance.StartedByDisplayName, provenance.StartedBySubject))
-		appendPDFValueLine(&lines, "Stopped by", actorPDFValue(provenance.StoppedByDisplayName, provenance.StoppedBySubject))
-		appendPDFValueLine(&lines, "Scheduled start", formatPDFTimePtr(provenance.ScheduledStartAt))
-		if provenance.Governance != nil {
-			appendPDFValueLine(&lines, "Capacity reservation", provenance.Governance.CapacityReservationID)
-			if provenance.Governance.LaunchPreflight != nil {
-				appendPDFValueLine(&lines, "Launch preflight", firstNonEmptyPDFValue(provenance.Governance.LaunchPreflight.Status, provenance.Governance.LaunchPreflight.Decision))
-			}
-			if approval := provenance.Governance.ExecutionPlanApproval; approval != nil {
-				appendPDFValueLine(&lines, "Execution-plan approval", strings.TrimSpace(approval.ID+" "+approval.Status))
-				appendPDFValueLine(&lines, "Approval policy", approval.Policy)
-				appendPDFValueLine(&lines, "Approval requested by", approval.RequestedBy)
-				appendPDFValueLine(&lines, "Approval resolved by", approval.ResolvedBy)
-				appendPDFValueLine(&lines, "Approval reason", approval.DecisionReason)
-				appendPDFValueLine(&lines, "Required role", approval.RequiredRole)
-			}
-		}
-		lines = append(lines, "")
-	}
-
-	if hasCSVSection(sections, "schema_compatibility") {
-		lines = append(lines, "Schema Compatibility")
-		lines = append(lines,
-			"Status: "+report.Compatibility.Status,
-			"Report schema: "+report.Compatibility.ReportSchemaVersion,
-			"Manifest schema: "+report.Compatibility.ManifestSchemaVersion,
-		)
-		for _, issue := range report.Compatibility.Issues {
-			lines = append(lines, fmt.Sprintf("- %s: %s", issue.Severity, issue.Message))
-		}
-		lines = append(lines, "")
-	}
-
-	if hasCSVSection(sections, "artifact_inventory") {
-		lines = append(lines, "Artifact Integrity")
-		if report.Integrity != nil {
-			verdict := "VERIFIED"
-			if !report.Integrity.Verified {
-				verdict = strings.ToUpper(report.Integrity.Status)
-			}
-			lines = append(lines, fmt.Sprintf("Verification: %s - %s", verdict, report.Integrity.Summary))
-		}
-		for _, artifact := range report.ArtifactInventory {
-			hash := artifact.SHA256
-			if hash == "" {
-				hash = "not captured"
-			}
-			lines = append(lines, fmt.Sprintf("- %s: %s %s, %s record(s), %d bytes, sha256=%s",
-				artifact.Name,
-				artifact.RecordType,
-				artifact.Format,
-				formatPDFInt(artifact.Count),
-				artifact.SizeBytes,
-				hash,
-			))
-		}
-		if len(report.ArtifactInventory) == 0 {
-			lines = append(lines, "No artifact inventory was available.")
-		}
-		lines = append(lines, "")
-	}
-
-	if hasCSVSection(sections, "actions") {
-		appendPDFStatsSection(&lines, "Top Actions", report.ByAction, 12)
-		if len(report.BySOAPOperation) > 0 {
-			appendPDFStatsSection(&lines, "SOAP Operations", report.BySOAPOperation, 8)
-		}
-	}
-
-	if hasCSVSection(sections, "network_phases") && report.NetworkPhases.Samples > 0 {
-		phases := report.NetworkPhases.Overall
-		lines = append(lines, "Network Phase Breakdown")
-		lines = append(lines,
-			fmt.Sprintf("Samples: %s", formatPDFInt(report.NetworkPhases.Samples)),
-			fmt.Sprintf("DNS: avg %.1f ms / max %.1f ms", phases.AvgDNSMs, phases.MaxDNSMs),
-			fmt.Sprintf("Connect: avg %.1f ms / max %.1f ms", phases.AvgConnectMs, phases.MaxConnectMs),
-			fmt.Sprintf("TLS: avg %.1f ms / max %.1f ms", phases.AvgTLSMs, phases.MaxTLSMs),
-			fmt.Sprintf("TTFB: avg %.1f ms / max %.1f ms", phases.AvgTTFBMs, phases.MaxTTFBMs),
-		)
-		lines = append(lines, "")
-	}
-
-	if hasCSVSection(sections, "summary_timeline") && len(report.SummaryTimeline) > 0 {
-		lines = append(lines, "Summary Timeline")
-		limit := len(report.SummaryTimeline)
-		if limit > 10 {
-			limit = 10
-		}
-		for _, point := range report.SummaryTimeline[:limit] {
-			lines = append(lines, fmt.Sprintf("- %s: %s VUsers, %.1f TPS, p95 %.1f ms, %.2f%% errors",
-				point.Timestamp.Format(time.RFC3339),
-				formatPDFInt(point.ActiveVUsers),
-				point.TPS,
-				point.P95Ms,
-				point.ErrorPct,
-			))
-		}
-		if len(report.SummaryTimeline) > limit {
-			lines = append(lines, fmt.Sprintf("... %d additional interval(s) omitted from the PDF profile.", len(report.SummaryTimeline)-limit))
-		}
-		lines = append(lines, "")
-	}
-
-	if hasCSVSection(sections, "browser") && report.Overview.Browser != nil {
-		browser := report.Overview.Browser
-		lines = append(lines, "Browser Metrics")
-		lines = append(lines,
-			fmt.Sprintf("Samples: %s", formatPDFInt(int64(browser.Samples))),
-			fmt.Sprintf("Average FCP: %.1f ms", browser.AvgFCPMs),
-			fmt.Sprintf("Average LCP: %.1f ms", browser.AvgLCPMs),
-			fmt.Sprintf("Average CLS: %.3f", browser.AvgCLSScore),
-			fmt.Sprintf("Average INP: %.1f ms", browser.AvgINPMs),
-		)
-		lines = append(lines, "")
-	}
-
-	if hasCSVSection(sections, "resources") {
-		lines = append(lines, "Resource Peaks")
-		lines = append(lines,
-			fmt.Sprintf("CPU process: %.1f%%", report.ResourcePeaks.CPUProcessPct),
-			fmt.Sprintf("Memory process: %.1f MB", report.ResourcePeaks.MemProcessMB),
-			fmt.Sprintf("Network sent/received: %.1f / %.1f Kbps", report.ResourcePeaks.NetSentKbps, report.ResourcePeaks.NetRecvKbps),
-		)
-		lines = append(lines, "")
-	}
-
-	if hasCSVSection(sections, "errors") && len(report.ErrorPatterns) > 0 {
-		lines = append(lines, "Error Patterns")
-		for _, pattern := range report.ErrorPatterns {
-			lines = append(lines, fmt.Sprintf("- %s (%d occurrence(s))", pattern.Sample, pattern.Count))
-		}
-		lines = append(lines, "")
+	data := buildRunArchiveReportRenderData(report, profile, nil, nil)
+	for _, section := range reportSectionsForProfile(profile) {
+		section.PDF(&data, &lines)
 	}
 
 	return lines
@@ -271,13 +85,8 @@ func actorPDFValue(displayName, subject string) string {
 	return firstNonEmptyPDFValue(displayName, subject)
 }
 
-func formatPDFTimePtr(value *time.Time) string {
-	if value == nil {
-		return ""
-	}
-	return formatPDFTime(*value)
-}
-
+// appendReleaseTrendPDFLines renders the compact release-over-release trend as
+// PDF text lines. Called by the release_trend section renderer in the registry.
 func appendReleaseTrendPDFLines(lines *[]string, trend *RunArchiveReleaseTrendSummary) {
 	if trend == nil {
 		return
@@ -306,6 +115,13 @@ func appendReleaseTrendPDFLines(lines *[]string, trend *RunArchiveReleaseTrendSu
 		*lines = append(*lines, note)
 	}
 	*lines = append(*lines, "")
+}
+
+func formatPDFTimePtr(value *time.Time) string {
+	if value == nil {
+		return ""
+	}
+	return formatPDFTime(*value)
 }
 
 func appendPDFStatsSection(lines *[]string, title string, stats map[string]RunArchiveActionStats, limit int) {
