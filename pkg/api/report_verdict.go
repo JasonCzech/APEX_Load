@@ -342,7 +342,7 @@ func reportGoalThresholds(report *RunArchiveReport) (slaMs float64, hasSLA bool,
 		slaMs = *gc.P95LatencyMs
 		hasSLA = true
 	}
-	if gc.MaxErrorPct != nil && *gc.MaxErrorPct > 0 {
+	if gc.MaxErrorPct != nil {
 		maxErrPct = *gc.MaxErrorPct
 		hasErrLimit = true
 	}
@@ -358,6 +358,9 @@ func evaluateSLARow(stats RunArchiveActionStats, hasSLA bool, slaMs float64, has
 	if !hasSLA {
 		if errorFail {
 			return "Fail — error rate", "fail"
+		}
+		if hasErrLimit {
+			return "Pass", "pass"
 		}
 		return "—", "na"
 	}

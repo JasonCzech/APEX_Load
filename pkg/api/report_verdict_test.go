@@ -213,6 +213,31 @@ func TestBuildSLAComplianceRowsNoSLAConfigured(t *testing.T) {
 	}
 }
 
+func TestBuildSLAComplianceRowsZeroErrorThreshold(t *testing.T) {
+	report := &RunArchiveReport{
+		Manifest: &RunArchiveManifest{
+			Provenance: RunArchiveProvenance{
+				GoalConfig: &GoalConfig{MaxErrorPct: ptr(0.0)},
+			},
+		},
+		ByAction: map[string]RunArchiveActionStats{
+			"CleanAction": {Transactions: 10, P95Ms: 999, ErrorPct: 0},
+			"ErrorAction": {Transactions: 5, P95Ms: 100, ErrorPct: 0.1},
+		},
+	}
+	rows := buildSLAComplianceRowMap(report)
+	if rows["CleanAction"].ResultKind != "pass" {
+		t.Fatalf("zero-error action should pass a zero max_error_pct guardrail, got %#v", rows["CleanAction"])
+	}
+	if rows["ErrorAction"].ResultKind != "fail" {
+		t.Fatalf("non-zero errors should fail a zero max_error_pct guardrail, got %#v", rows["ErrorAction"])
+	}
+	rollup := buildSLARollup(rows)
+	if rollup.Evaluated != 2 || rollup.Passed != 1 || rollup.Failed != 1 || rollup.WorstKind != "fail" {
+		t.Fatalf("zero-error threshold rollup = %+v", rollup)
+	}
+}
+
 func TestBuildSLARollupCountsWorstKind(t *testing.T) {
 	rows := map[string]SLAComplianceRow{
 		"ok":      {Name: "ok", ResultKind: "pass"},

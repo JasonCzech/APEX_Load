@@ -12,6 +12,7 @@ import TablePaginationManager from './components/TablePaginationManager'
 import {
   type AppView,
   handleGuardedRouteChange,
+  normalizeReportViewForFeatureFlag,
   parseAppViewFromHash,
   type TestWorkspaceTabID,
   viewToLocationHash,
@@ -195,7 +196,9 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   useDashboardZoomShortcuts()
 
   const [view, setView] = useState<AppView>(() => (
-    typeof window === 'undefined' ? { page: 'dashboard' } : parseAppViewFromHash(window.location.hash)
+    typeof window === 'undefined'
+      ? { page: 'dashboard' }
+      : normalizeReportViewForFeatureFlag(parseAppViewFromHash(window.location.hash), isRunReportEnabled())
   ))
   const viewRef = useRef(view)
   const routeSyncInitialized = useRef(false)
@@ -323,9 +326,12 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
 
   const setGuardedView = useCallback((next: AppView | ((current: AppView) => AppView)) => {
     runGuarded(() => {
-      setView(current => (typeof next === 'function' ? next(current) : next))
+      setView(current => {
+        const resolved = typeof next === 'function' ? next(current) : next
+        return normalizeReportViewForFeatureFlag(resolved, runReportEnabled)
+      })
     })
-  }, [runGuarded])
+  }, [runGuarded, runReportEnabled])
 
   const navigateToTest = useCallback((id: string, tab?: TestWorkspaceTabID) => {
     setGuardedView(tab ? { page: 'test', testId: id, tab } : { page: 'test', testId: id })
@@ -565,8 +571,12 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
           window.history.pushState(null, '', hash)
         },
         applyView: (nextView) => {
-          const nextHash = viewToLocationHash(nextView)
-          setView(current => (viewToLocationHash(current) === nextHash ? current : nextView))
+          const normalizedView = normalizeReportViewForFeatureFlag(nextView, runReportEnabled)
+          const nextHash = viewToLocationHash(normalizedView)
+          if (window.location.hash !== nextHash) {
+            window.history.replaceState(null, '', nextHash)
+          }
+          setView(current => (viewToLocationHash(current) === nextHash ? current : normalizedView))
         },
       })
     }
@@ -577,7 +587,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
       window.removeEventListener('popstate', handleRouteChange)
       window.removeEventListener('hashchange', handleRouteChange)
     }
-  }, [hasDirtyGuard, runGuarded])
+  }, [hasDirtyGuard, runGuarded, runReportEnabled])
 
   useEffect(() => {
     if (typeof window === 'undefined') return

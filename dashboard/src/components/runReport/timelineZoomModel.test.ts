@@ -27,4 +27,21 @@ describe('timelineZoomReducer', () => {
       pointCount: 5,
     })).toEqual({ window: null })
   })
+
+  it('offsets brush windows from the current visible slice on repeated zooms', () => {
+    const first = timelineZoomReducer(initialTimelineZoomState, {
+      type: 'set-window',
+      startIndex: 20,
+      endIndex: 40,
+      pointCount: 100,
+    })
+
+    expect(timelineZoomReducer(first, {
+      type: 'set-window',
+      startIndex: 5,
+      endIndex: 10,
+      pointCount: 100,
+      baseStartIndex: first.window?.startIndex ?? 0,
+    })).toEqual({ window: { startIndex: 25, endIndex: 30 } })
+  })
 })

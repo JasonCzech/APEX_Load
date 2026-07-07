@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { handleGuardedRouteChange, parseAppViewFromHash, viewToLocationHash, type AppView } from './appRouting'
+import { handleGuardedRouteChange, normalizeReportViewForFeatureFlag, parseAppViewFromHash, viewToLocationHash, type AppView } from './appRouting'
 
 describe('appRouting', () => {
   it('defaults empty and invalid hashes to the dashboard', () => {
@@ -79,6 +79,15 @@ describe('appRouting', () => {
       sessionId: 'brec/1',
     })
     expect(parseAppViewFromHash('#/recorder-panel')).toEqual({ page: 'recorder-panel' })
+  })
+
+  it('falls direct report routes back to legacy archives when the report flag is disabled', () => {
+    expect(normalizeReportViewForFeatureFlag({ page: 'report', testId: 'run-1', lens: 'audit' }, false)).toEqual({
+      page: 'test',
+      testId: 'run-1',
+      tab: 'archive',
+    })
+    expect(normalizeReportViewForFeatureFlag({ page: 'report', testId: 'run-1' }, true)).toEqual({ page: 'report', testId: 'run-1' })
   })
 
   it('applies browser route changes immediately when no dirty guard is registered', () => {
