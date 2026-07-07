@@ -190,7 +190,13 @@ export default function SynchronizedTimeline({ data, goalConfig, loading, error,
             showBaseline={showBaseline}
             onBrush={(range) => {
               if (typeof range.startIndex === 'number' && typeof range.endIndex === 'number') {
-                dispatchZoom({ type: 'set-window', startIndex: range.startIndex, endIndex: range.endIndex, pointCount: data.length })
+                dispatchZoom({
+                  type: 'set-window',
+                  startIndex: range.startIndex,
+                  endIndex: range.endIndex,
+                  pointCount: data.length,
+                  baseStartIndex: zoomState.window?.startIndex ?? 0,
+                })
               }
             }}
           />

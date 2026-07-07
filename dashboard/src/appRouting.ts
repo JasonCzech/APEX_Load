@@ -218,6 +218,11 @@ export function viewToLocationHash(view: AppView): string {
   return `#/${view.page}`
 }
 
+export function normalizeReportViewForFeatureFlag(view: AppView, runReportEnabled: boolean): AppView {
+  if (runReportEnabled || view.page !== 'report') return view
+  return { page: 'test', testId: view.testId, tab: 'archive' }
+}
+
 interface GuardedRouteChangeOptions {
   currentView: AppView
   locationHash: string
