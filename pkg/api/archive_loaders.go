@@ -247,31 +247,27 @@ func loadArchiveIntervalSummariesForFilters(record *storage.RunArchiveRecord, ac
 	if (action == "" && !groupFilter.Explicit) || len(summaries) == 0 {
 		return summaries, nil
 	}
-	transactions, err := readAllArchiveTransactions(record)
-	if err != nil {
-		return nil, err
-	}
 	var configuredGroups []TestGroup
 	if manifest, err := loadRunArchiveManifest(record.ManifestPath); err == nil && manifest != nil {
 		configuredGroups = manifest.Provenance.Groups
 	}
 	groupSet := selectedGroupNameSet(groupFilter.Names)
 	buckets := make([]archiveActionSummaryBucket, len(summaries))
-	for _, tx := range transactions {
+	if err := forEachArchiveTransaction(record, func(tx *TransactionEvent) error {
 		if groupFilter.Explicit {
 			if len(groupSet) == 0 {
-				continue
+				return nil
 			}
 			if _, ok := groupSet[tx.Group]; !ok {
-				continue
+				return nil
 			}
 		}
 		if action != "" && !strings.EqualFold(tx.ActionName, action) {
-			continue
+			return nil
 		}
 		index := archiveSummaryBucketIndex(summaries, tx.Timestamp)
 		if index < 0 {
-			continue
+			return nil
 		}
 		bucket := &buckets[index]
 		bucket.transactions++
@@ -280,6 +276,9 @@ func loadArchiveIntervalSummariesForFilters(record *storage.RunArchiveRecord, ac
 		if !tx.Success {
 			bucket.errors++
 		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 
 	filtered := make([]IntervalSummaryRecord, 0, len(summaries))
@@ -316,6 +315,39 @@ func loadArchiveIntervalSummariesForFilters(record *storage.RunArchiveRecord, ac
 		filtered = append(filtered, record)
 	}
 	return filtered, nil
+}
+
+func forEachArchiveTransaction(record *storage.RunArchiveRecord, fn func(*TransactionEvent) error) error {
+	if err := ensureArchiveMaterialized(record); err != nil {
+		return err
+	}
+	manifest, err := loadRunArchiveManifest(record.ManifestPath)
+	if err != nil {
+		return err
+	}
+	path, err := archiveArtifactPath(record.ArchivePath, manifest.TransactionsFile)
+	if err != nil {
+		return err
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	buf := make([]byte, 0, 64*1024)
+	scanner.Buffer(buf, 2*1024*1024)
+	for scanner.Scan() {
+		var tx TransactionEvent
+		if err := json.Unmarshal(scanner.Bytes(), &tx); err != nil {
+			return err
+		}
+		if err := fn(&tx); err != nil {
+			return err
+		}
+	}
+	return scanner.Err()
 }
 
 func archiveFilteredThroughputTarget(summary IntervalSummaryRecord, groupSet map[string]struct{}, explicit bool, filteredTPS float64) (float64, float64, bool) {
@@ -408,10 +440,11 @@ func archiveSummaryBucketIndex(summaries []IntervalSummaryRecord, timestamp time
 	if len(summaries) == 0 {
 		return -1
 	}
-	for index, summary := range summaries {
-		if !timestamp.After(summary.Timestamp) {
-			return index
-		}
+	index := sort.Search(len(summaries), func(i int) bool {
+		return !timestamp.After(summaries[i].Timestamp)
+	})
+	if index < len(summaries) {
+		return index
 	}
 	return len(summaries) - 1
 }
@@ -623,11 +656,22 @@ func readJSONLPage[T any](path string, page archivePage, predicate func(*T) bool
 	items := make([]T, 0, limit)
 	matched := 0
 	for scanner.Scan() {
+		if predicate == nil {
+			if matched >= page.Offset && len(items) < limit {
+				var item T
+				if err := json.Unmarshal(scanner.Bytes(), &item); err != nil {
+					return nil, 0, err
+				}
+				items = append(items, item)
+			}
+			matched++
+			continue
+		}
 		var item T
 		if err := json.Unmarshal(scanner.Bytes(), &item); err != nil {
 			return nil, 0, err
 		}
-		if predicate != nil && !predicate(&item) {
+		if !predicate(&item) {
 			continue
 		}
 		if matched >= page.Offset && len(items) < limit {

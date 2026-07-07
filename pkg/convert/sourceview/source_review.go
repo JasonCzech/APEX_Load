@@ -15,6 +15,8 @@ const (
 	MaxFileChars = 60000
 )
 
+var mappingIDUnsafeChars = regexp.MustCompile(`[^a-z0-9_.\[\]-]+`)
+
 // Review contains redacted source files and source-to-DSL mappings produced by
 // import converters for side-by-side review.
 type Review struct {
@@ -103,13 +105,39 @@ func NormalizeMapping(mapping Mapping) Mapping {
 }
 
 func LineForOffset(content string, offset int) int {
+	return NewLineIndex(content).LineForOffset(offset)
+}
+
+type LineIndex struct {
+	contentLen     int
+	newlineOffsets []int
+}
+
+func NewLineIndex(content string) LineIndex {
+	index := LineIndex{contentLen: len(content)}
+	for offset, char := range content {
+		if char == '\n' {
+			index.newlineOffsets = append(index.newlineOffsets, offset)
+		}
+	}
+	return index
+}
+
+func (idx LineIndex) LineForOffset(offset int) int {
 	if offset <= 0 {
 		return 1
 	}
-	if offset > len(content) {
-		offset = len(content)
+	if offset > idx.contentLen {
+		offset = idx.contentLen
 	}
-	return strings.Count(content[:offset], "\n") + 1
+	return sort.SearchInts(idx.newlineOffsets, offset) + 1
+}
+
+func (idx LineIndex) MaxLine(fallback int) int {
+	if idx.contentLen == 0 {
+		return fallback
+	}
+	return len(idx.newlineOffsets) + 1
 }
 
 func CoarseMapping(sourceFile string, function string, targetPath string, targetName string, targetKind string, status string, notes string) Mapping {
@@ -186,7 +214,8 @@ func buildFiles(files map[string]string, mappings []Mapping) []SourceFile {
 
 	out := make([]SourceFile, 0, len(names))
 	for _, name := range names {
-		content, redacted := Redact(files[name])
+		raw := files[name]
+		content, redacted := Redact(raw)
 		truncated := false
 		if len(content) > MaxFileChars {
 			content = content[:MaxFileChars] + "\n\n[truncated for source review]"
@@ -196,7 +225,7 @@ func buildFiles(files map[string]string, mappings []Mapping) []SourceFile {
 			Path:          name,
 			Language:      Language(name),
 			Content:       content,
-			OriginalBytes: len([]byte(files[name])),
+			OriginalBytes: len([]byte(raw)),
 			Truncated:     truncated,
 			Redacted:      redacted,
 		})
@@ -233,7 +262,7 @@ func stableMappingID(mapping Mapping) string {
 	}
 	for index, part := range parts {
 		part = strings.ToLower(strings.TrimSpace(part))
-		part = regexp.MustCompile(`[^a-z0-9_.\[\]-]+`).ReplaceAllString(part, "-")
+		part = mappingIDUnsafeChars.ReplaceAllString(part, "-")
 		part = strings.Trim(part, "-")
 		if part == "" {
 			part = "na"

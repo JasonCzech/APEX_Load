@@ -5,10 +5,25 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
+
+var extractorRegexCache sync.Map // map[string]*regexp.Regexp
+
+func compileExtractorRegex(expr string) (*regexp.Regexp, error) {
+	if cached, ok := extractorRegexCache.Load(expr); ok {
+		return cached.(*regexp.Regexp), nil
+	}
+	re, err := regexp.Compile(expr)
+	if err != nil {
+		return nil, err
+	}
+	actual, _ := extractorRegexCache.LoadOrStore(expr, re)
+	return actual.(*regexp.Regexp), nil
+}
 
 // ---- config / param value helpers ----
 
@@ -163,7 +178,7 @@ func runExtractors(extractors []protocol.Extractor, result *protocol.Result, ev 
 		switch ex.Source {
 		case "body":
 			if ex.Type == "regex" {
-				re, err := regexp.Compile(ex.Expression)
+				re, err := compileExtractorRegex(ex.Expression)
 				if err != nil {
 					return fmt.Errorf("eventhubs extractor %q: %w", ex.Name, err)
 				}

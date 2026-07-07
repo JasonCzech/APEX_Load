@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, type MouseEvent } from 'react'
+import { useState, useEffect, useCallback, useRef, type MouseEvent } from 'react'
 import { downloadBlob, downloadFilenameFromDisposition } from '../utils/fileUtils'
 import { useAsyncTask } from '../hooks/useAsyncTask'
 import { useApi } from '../hooks/useApi'
@@ -71,7 +71,9 @@ interface RecordingSession {
   started_at: string
   stopped_at?: string
   base_url?: string
-  requests: RecordedRequest[]
+  requests?: RecordedRequest[]
+  request_count?: number
+  last_seq?: number
   filters: {
     exclude_static: boolean
     exclude_hosts?: string[]
@@ -107,6 +109,24 @@ function recordingLooksSalesforce(session: RecordingSession): boolean {
     'mulesoft',
     'anypoint',
   ].some(signal => text.includes(signal))
+}
+
+function mergeRecordingSession(previous: RecordingSession | null, next: RecordingSession): RecordingSession {
+  const incoming = next.requests || []
+  if (!previous || previous.id !== next.id) {
+    return { ...next, requests: incoming }
+  }
+  if (incoming.length === 0) {
+    return { ...previous, ...next, requests: previous.requests || [] }
+  }
+  const bySeq = new Map<number, RecordedRequest>()
+  ;(previous.requests || []).forEach(req => bySeq.set(req.seq, req))
+  incoming.forEach(req => bySeq.set(req.seq, req))
+  return {
+    ...previous,
+    ...next,
+    requests: Array.from(bySeq.values()).sort((a, b) => a.seq - b.seq),
+  }
 }
 
 function isStoredScriptLike(value: unknown): value is StoredScript {
@@ -418,10 +438,16 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
   const [recordingAgentChecksumStatus, setRecordingAgentChecksumStatus] = useState('')
   const convertTask = useAsyncTask<RecorderImportResult>()
   const salesforceTask = useAsyncTask<SalesforceImportResult>()
+  const refreshInFlightRef = useRef(false)
+  const activeSessionRef = useRef<RecordingSession | null>(null)
 
   const proxyPort = recorderProxyPort(proxyAddr)
   const proxyHost = recorderProxyHost(proxyAddr, currentDashboardOrigin())
   const proxyHostIsLocal = recorderProxyHostIsLocal(proxyHost)
+
+  useEffect(() => {
+    activeSessionRef.current = activeSession
+  }, [activeSession])
 
   useEffect(() => {
     let cancelled = false
@@ -611,6 +637,9 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
   }
 
   const refresh = useCallback(async () => {
+    if (refreshInFlightRef.current) return
+    if (typeof document !== 'undefined' && document.hidden) return
+    refreshInFlightRef.current = true
     try {
       const [listRes, statusRes, browserListRes] = await Promise.all([
         api.listRecordings(activeProject?.id),
@@ -648,12 +677,21 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
         setBrowserPanelSessionId(current => current ?? liveBrowser.id)
       }
       if (recorderStatus.active) {
-        const full = await api.getRecording(recorderStatus.active.id)
-        setActiveSession(full)
+        const current = activeSessionRef.current
+        const full = await api.getRecording(
+          recorderStatus.active.id,
+          current?.id === recorderStatus.active.id && current.last_seq
+            ? { includeRequests: true, since: current.last_seq }
+            : { includeRequests: true },
+        )
+        setActiveSession(prev => mergeRecordingSession(prev, full))
       } else {
         setActiveSession(null)
       }
     } catch { /* API not ready */ }
+    finally {
+      refreshInFlightRef.current = false
+    }
   }, [api, activeProject?.id])
 
   useEffect(() => {
@@ -856,7 +894,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
     if (!activeSession) return
     try {
       await api.stopRecording(activeSession.id)
-      showFeedback(`Recording stopped — ${activeSession.requests?.length || 0} requests captured`)
+      showFeedback(`Recording stopped — ${activeSession.request_count ?? activeSession.requests?.length ?? 0} requests captured`)
       setActiveSession(null)
       refresh()
     } catch (e: any) {
@@ -877,18 +915,38 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
     }
   }
 
-  const replaceRequest = (sessionId: string, updated: RecordedRequest) => {
-    const apply = (session: RecordingSession | null) => {
-      if (!session || session.id !== sessionId) return session
-      return {
-        ...session,
-        requests: session.requests.map(req => req.seq === updated.seq ? updated : req),
-      }
+	  const replaceRequest = (sessionId: string, updated: RecordedRequest) => {
+	    const apply = (session: RecordingSession | null) => {
+	      if (!session || session.id !== sessionId) return session
+	      if (!session.requests) return session
+	      return {
+	        ...session,
+	        requests: session.requests.map(req => req.seq === updated.seq ? updated : req),
+	      }
     }
     setSelectedSession(apply)
     setActiveSession(apply)
     setSessions(prev => prev.map(session => apply(session) || session))
     setSelectedRequest(current => current?.seq === updated.seq ? updated : current)
+  }
+
+  const handleSelectSession = async (session: RecordingSession) => {
+    if (selectedSession?.id === session.id) {
+      setSelectedSession(null)
+      setSelectedRequest(null)
+      return
+    }
+    setSelectedRequest(null)
+    if (session.requests && session.requests.length > 0) {
+      setSelectedSession(session)
+      return
+    }
+    try {
+      const full = await api.getRecording(session.id, { includeRequests: true })
+      setSelectedSession({ ...full, requests: full.requests || [] })
+    } catch {
+      setSelectedSession(session)
+    }
   }
 
   const handleToggleRequestExcluded = async (session: RecordingSession, req: RecordedRequest) => {
@@ -1604,7 +1662,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
           <div className="rec-active-panel">
             <div className="rec-active-stats">
               <div className="rec-stat">
-                <span className="rec-stat-value">{activeSession.requests?.length || 0}</span>
+                <span className="rec-stat-value">{activeSession.request_count ?? activeSession.requests?.length ?? 0}</span>
                 <span className="rec-stat-label">Requests</span>
               </div>
               <div className="rec-stat">
@@ -1622,7 +1680,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
               <div className="rec-live-feed">
                 <div className="rec-feed-header">
                   <span>Live Requests</span>
-                  <span className="rec-feed-count">{activeSession.requests.length}</span>
+                  <span className="rec-feed-count">{activeSession.request_count ?? activeSession.requests.length}</span>
                 </div>
                 <div className="rec-feed-list">
                   {[...activeSession.requests].reverse().slice(0, 20).map(req => (
@@ -1674,13 +1732,12 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
                 key={session.id}
                 className={`rec-session-card ${selectedSession?.id === session.id ? 'selected' : ''}`}
                 onClick={() => {
-                  setSelectedSession(selectedSession?.id === session.id ? null : session)
-                  setSelectedRequest(null)
+                  handleSelectSession(session)
                 }}
               >
                 <div className="rec-session-header">
                   <span className="rec-session-name">{session.name}</span>
-                  <span className="rec-session-count">{session.requests?.length || 0} requests</span>
+                  <span className="rec-session-count">{session.request_count ?? session.requests?.length ?? 0} requests</span>
                 </div>
                 <div className="rec-session-meta">
                   <span>{session.base_url || 'No base URL'}</span>
@@ -1735,7 +1792,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
         <div className="rec-detail-section">
           <h3 className="rec-section-title">
             Request Detail: {selectedSession.name}
-            <span className="rec-detail-count">{selectedSession.requests?.length || 0} requests</span>
+            <span className="rec-detail-count">{selectedSession.request_count ?? selectedSession.requests?.length ?? 0} requests</span>
           </h3>
           <div className="rec-detail-table-wrap">
             <table className="rec-detail-table">

@@ -23,6 +23,7 @@ package api
 
 import (
 	"strings"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/scrub"
@@ -33,6 +34,15 @@ import (
 var sensitiveEnvMarkers = []string{
 	"password", "passwd", "secret", "token",
 	"apikey", "api_key", "credential", "private_key", "client_secret",
+}
+
+const defaultManagedTestSparklinePoints = 60
+
+type managedTestMaskOptions struct {
+	IncludeHistory   bool
+	HistorySince     *time.Time
+	HistoryLimit     int
+	IncludeSparkline bool
 }
 
 // sensitiveEnvKey reports whether a runtime Env variable name looks secret-bearing
@@ -119,10 +129,24 @@ func maskStoredScenarios(scenarios []*StoredScenario) []*StoredScenario {
 // unexported compiled-script field is not JSON-serialized, so only RuntimeSettings
 // needs masking.
 func maskManagedTest(test *ManagedTest) *ManagedTest {
+	return maskManagedTestWithOptions(test, managedTestMaskOptions{IncludeSparkline: true})
+}
+
+func maskManagedTestWithOptions(test *ManagedTest, opts managedTestMaskOptions) *ManagedTest {
 	if test == nil {
 		return nil
 	}
 	masked := *test
+	if opts.IncludeHistory {
+		masked.History = selectLiveMetricsHistory(test.History, opts.HistorySince, opts.HistoryLimit)
+	} else {
+		masked.History = nil
+	}
+	if opts.IncludeSparkline {
+		masked.Sparkline = buildManagedTestSparkline(test.History, test.LiveMetrics, defaultManagedTestSparklinePoints)
+	} else {
+		masked.Sparkline = nil
+	}
 	masked.RuntimeSettings = maskRuntimeSettings(test.RuntimeSettings)
 	if len(test.Groups) > 0 {
 		groups := make([]TestGroup, len(test.Groups))
@@ -142,9 +166,67 @@ func maskManagedTests(tests []*ManagedTest) []*ManagedTest {
 	}
 	masked := make([]*ManagedTest, len(tests))
 	for i, t := range tests {
-		masked[i] = maskManagedTest(t)
+		masked[i] = maskManagedTestWithOptions(t, managedTestMaskOptions{IncludeSparkline: true})
 	}
 	return masked
+}
+
+func selectLiveMetricsHistory(history []*LiveMetrics, since *time.Time, limit int) []*LiveMetrics {
+	if len(history) == 0 {
+		return nil
+	}
+	start := 0
+	if since != nil && !since.IsZero() {
+		start = len(history)
+		for i, point := range history {
+			if point != nil && point.Timestamp.After(*since) {
+				start = i
+				break
+			}
+		}
+	}
+	selected := history[start:]
+	if limit > 0 && len(selected) > limit {
+		selected = selected[len(selected)-limit:]
+	}
+	if len(selected) == 0 {
+		return nil
+	}
+	return append([]*LiveMetrics(nil), selected...)
+}
+
+func buildManagedTestSparkline(history []*LiveMetrics, live *LiveMetrics, limit int) []TestSparklinePoint {
+	if limit <= 0 {
+		return nil
+	}
+	points := history
+	if len(points) == 0 && live != nil {
+		points = []*LiveMetrics{live}
+	}
+	if len(points) == 0 {
+		return nil
+	}
+	count := len(points)
+	if count > limit {
+		count = limit
+	}
+	out := make([]TestSparklinePoint, 0, count)
+	if count == 1 {
+		if point := points[len(points)-1]; point != nil {
+			out = append(out, TestSparklinePoint{Timestamp: point.Timestamp, TPS: point.TPS})
+		}
+		return out
+	}
+	last := len(points) - 1
+	for i := 0; i < count; i++ {
+		index := i * last / (count - 1)
+		point := points[index]
+		if point == nil {
+			continue
+		}
+		out = append(out, TestSparklinePoint{Timestamp: point.Timestamp, TPS: point.TPS})
+	}
+	return out
 }
 
 // reconcileGroupRuntimeSecrets folds an incoming (possibly client-masked) override

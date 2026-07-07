@@ -100,7 +100,18 @@ func (s *Server) handleStopRecording(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGetRecording(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	session, ok := s.recorder.GetSession(id)
+	includeRequests := queryIncludes(r.URL.Query(), "requests") || strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("include_requests")), "true")
+	sinceSeq := 0
+	if rawSince := strings.TrimSpace(r.URL.Query().Get("since")); rawSince != "" {
+		parsed, err := strconv.Atoi(rawSince)
+		if err != nil || parsed < 0 {
+			writeError(w, http.StatusBadRequest, "since must be a non-negative request sequence")
+			return
+		}
+		sinceSeq = parsed
+		includeRequests = true
+	}
+	session, ok := s.recorder.GetSessionWithOptions(id, includeRequests, sinceSeq)
 	if !ok {
 		writeError(w, http.StatusNotFound, "recording session not found")
 		return
@@ -110,7 +121,11 @@ func (s *Server) handleGetRecording(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleListRecordings(w http.ResponseWriter, r *http.Request) {
 	projectID := r.URL.Query().Get("project_id")
-	sessions := s.recorder.ListSessions()
+	includeRequests := queryIncludes(r.URL.Query(), "requests") || strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("include_requests")), "true")
+	sessions := s.recorder.ListSessionSummaries()
+	if includeRequests {
+		sessions = s.recorder.ListSessions()
+	}
 	if projectID != "" {
 		filtered := sessions[:0]
 		for _, session := range sessions {
@@ -123,7 +138,7 @@ func (s *Server) handleListRecordings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"sessions": sessions,
 		"count":    len(sessions),
-		"active":   s.recorder.ActiveSession(),
+		"active":   s.recorder.ActiveSessionSummary(),
 	})
 }
 
@@ -305,14 +320,14 @@ func sanitizeDownloadName(name string) string {
 }
 
 func (s *Server) handleRecorderStatus(w http.ResponseWriter, r *http.Request) {
-	active := s.recorder.ActiveSession()
+	active := s.recorder.ActiveSessionSummary()
 	var activeInfo any
 	if active != nil {
 		activeInfo = map[string]any{
 			"id":            active.ID,
 			"name":          active.Name,
 			"status":        active.Status,
-			"request_count": len(active.Requests),
+			"request_count": active.RequestCount,
 			"started_at":    active.StartedAt,
 		}
 	}

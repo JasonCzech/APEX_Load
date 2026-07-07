@@ -118,7 +118,7 @@ func actionLogAttrs(actionName string, resolved *protocol.Action, result *protoc
 		options[strings.TrimSpace(option)] = struct{}{}
 	}
 
-	if _, ok := options["parameter_substitution"]; ok {
+	if _, ok := options["parameter_substitution"]; ok && resolved != nil {
 		target := resolved.Target
 		if resolved.RedactedTarget != "" {
 			target = resolved.RedactedTarget
@@ -276,49 +276,58 @@ func (vu *VUser) interpolateWithSecrets(s string) (string, string) {
 	if s == "" {
 		return s, s
 	}
-	hasSecret := false
-	resolved := templatePattern.ReplaceAllStringFunc(s, func(token string) string {
+	matches := templatePattern.FindAllStringIndex(s, -1)
+	if len(matches) == 0 {
+		return s, s
+	}
+	var resolved strings.Builder
+	var redacted strings.Builder
+	resolved.Grow(len(s))
+	redacted.Grow(len(s))
+	hasRedaction := false
+	last := 0
+	for _, match := range matches {
+		token := s[match[0]:match[1]]
 		expr := strings.TrimSpace(token[2 : len(token)-2])
+		resolved.WriteString(s[last:match[0]])
+		redacted.WriteString(s[last:match[0]])
+		last = match[1]
 		if expr == "" {
-			return token
+			resolved.WriteString(token)
+			redacted.WriteString(token)
+			continue
 		}
+		resolvedValue := token
+		redactedValue := token
+		resolvedOK := false
 		if value, ok := vu.resolveTemplateValue(expr); ok {
-			return value
-		}
-		if strings.HasPrefix(expr, "secret.") {
+			resolvedValue = value
+			redactedValue = value
+			resolvedOK = true
+		} else if strings.HasPrefix(expr, "secret.") {
 			vu.unresolvedSecretRefs = append(vu.unresolvedSecretRefs, expr)
-		}
-		if strings.HasPrefix(expr, "file.") {
+		} else if strings.HasPrefix(expr, "file.") {
 			vu.unresolvedFileRefs = append(vu.unresolvedFileRefs, expr)
 		}
-		return token
-	})
-	redacted := templatePattern.ReplaceAllStringFunc(s, func(token string) string {
-		expr := strings.TrimSpace(token[2 : len(token)-2])
-		if expr == "" {
-			return token
-		}
 		if strings.HasPrefix(expr, "secret.") {
-			hasSecret = true
-			return "[REDACTED]"
-		}
-		if strings.HasPrefix(expr, "file.") {
-			hasSecret = true
-			if value, ok := vu.resolveTemplateValue(expr); ok {
-				_ = value
-				return "[FILE:" + strings.TrimSpace(strings.TrimPrefix(expr, "file.")) + "]"
+			hasRedaction = true
+			redactedValue = "[REDACTED]"
+		} else if strings.HasPrefix(expr, "file.") {
+			hasRedaction = true
+			if resolvedOK {
+				redactedValue = "[FILE:" + strings.TrimSpace(strings.TrimPrefix(expr, "file.")) + "]"
 			}
-			return token
 		}
-		if value, ok := vu.resolveTemplateValue(expr); ok {
-			return value
-		}
-		return token
-	})
-	if !hasSecret {
-		return resolved, resolved
+		resolved.WriteString(resolvedValue)
+		redacted.WriteString(redactedValue)
 	}
-	return resolved, redacted
+	resolved.WriteString(s[last:])
+	if !hasRedaction {
+		resolvedString := resolved.String()
+		return resolvedString, resolvedString
+	}
+	redacted.WriteString(s[last:])
+	return resolved.String(), redacted.String()
 }
 
 func (vu *VUser) interpolateMap(m map[string]string) map[string]string {

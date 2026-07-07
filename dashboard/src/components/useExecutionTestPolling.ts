@@ -1,8 +1,9 @@
-import { Dispatch, SetStateAction, useEffect, useState } from 'react'
+import { Dispatch, SetStateAction, useEffect, useRef, useState } from 'react'
 
 import { useApi } from '../hooks/useApi'
 import { TestSummary } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
+import { isCompletedTestStatus } from '../utils/testStatusUtils'
 
 export const EXECUTION_POLL_INTERVAL_MS = 2000
 
@@ -12,30 +13,60 @@ interface ExecutionTestPollingModel {
   error: string
 }
 
-export function useExecutionTestPolling(testId: string): ExecutionTestPollingModel {
+interface ExecutionTestPollingOptions {
+  enabled?: boolean
+  stopOnTerminal?: boolean
+}
+
+export function useExecutionTestPolling(testId: string, options: ExecutionTestPollingOptions = {}): ExecutionTestPollingModel {
   const api = useApi()
+  const enabled = options.enabled ?? true
+  const stopOnTerminal = options.stopOnTerminal ?? true
   const [test, setTest] = useState<TestSummary | null>(null)
   const [error, setError] = useState('')
+  const lastPayloadSignatureRef = useRef('')
 
   useEffect(() => {
+    if (!enabled || !testId) {
+      setTest(null)
+      setError('')
+      lastPayloadSignatureRef.current = ''
+      return
+    }
+
+    let stopped = false
+    let inFlight = false
+
     const load = async () => {
+      if (stopped || inFlight) return
       if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
         return
       }
+      inFlight = true
 
       try {
         const data = await api.getTest(testId)
-        setTest(data)
+        const signature = JSON.stringify(data)
+        if (signature !== lastPayloadSignatureRef.current) {
+          lastPayloadSignatureRef.current = signature
+          setTest(data)
+        }
+        if (stopOnTerminal && isCompletedTestStatus(data.status)) {
+          stopped = true
+          clearInterval(interval)
+        }
       } catch (error: unknown) {
         setError(getErrorMessage(error, 'Unable to load test execution details'))
+      } finally {
+        inFlight = false
       }
     }
 
-    load()
     const interval = setInterval(load, EXECUTION_POLL_INTERVAL_MS)
+    load()
 
     const handleVisibilityChange = () => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+      if (!stopped && typeof document !== 'undefined' && document.visibilityState === 'visible') {
         load()
       }
     }
@@ -45,12 +76,13 @@ export function useExecutionTestPolling(testId: string): ExecutionTestPollingMod
     }
 
     return () => {
-      clearInterval(interval)
+      stopped = true
+      if (interval) clearInterval(interval)
       if (typeof document !== 'undefined') {
         document.removeEventListener('visibilitychange', handleVisibilityChange)
       }
     }
-  }, [api, testId])
+  }, [api, enabled, stopOnTerminal, testId])
 
   return {
     test,

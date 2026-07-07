@@ -443,7 +443,6 @@ func (tr *TestRunner) DeleteScenarioScheduleOccurrence(scenarioID string, schedu
 
 func (tr *TestRunner) ScenarioScheduleHealth(now time.Time) ScenarioScheduleHealth {
 	tr.mu.RLock()
-	defer tr.mu.RUnlock()
 	health := ScenarioScheduleHealth{StatusCounts: map[string]int{}}
 	for _, schedule := range tr.listAllScenarioSchedulesLocked() {
 		if schedule == nil {
@@ -466,8 +465,10 @@ func (tr *TestRunner) ScenarioScheduleHealth(now time.Time) ScenarioScheduleHeal
 			health.PendingApproval++
 		}
 	}
-	if tr.scenarioStore != nil {
-		if occurrences, err := tr.scenarioStore.ListAllScenarioScheduleOccurrences(); err == nil {
+	store := tr.scenarioStore
+	tr.mu.RUnlock()
+	if store != nil {
+		if occurrences, err := store.ListAllScenarioScheduleOccurrences(); err == nil {
 			for _, occurrence := range occurrences {
 				if occurrence != nil {
 					health.StatusCounts[occurrence.Status]++

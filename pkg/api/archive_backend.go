@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -185,12 +186,8 @@ func uploadArchiveDirectory(ctx context.Context, localDir string, testID string)
 		if err != nil {
 			return err
 		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
 		key := backend.objectKey(testID, filepath.ToSlash(relative))
-		if err := bucket.WriteAll(ctx, key, data, nil); err != nil {
+		if err := uploadArchiveFileToBucket(ctx, bucket, key, path); err != nil {
 			return fmt.Errorf("upload archive object %s: %w", key, err)
 		}
 		return nil
@@ -225,16 +222,29 @@ func uploadArchiveObjectsToBucket(ctx context.Context, bucket *blob.Bucket, back
 		if err != nil {
 			return err
 		}
-		data, err := os.ReadFile(localPath)
-		if err != nil {
-			return err
-		}
 		key := backend.objectKey(testID, name)
-		if err := bucket.WriteAll(ctx, key, data, nil); err != nil {
+		if err := uploadArchiveFileToBucket(ctx, bucket, key, localPath); err != nil {
 			return fmt.Errorf("upload archive object %s: %w", key, err)
 		}
 	}
 	return nil
+}
+
+func uploadArchiveFileToBucket(ctx context.Context, bucket *blob.Bucket, key string, localPath string) error {
+	file, err := os.Open(localPath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	writer, err := bucket.NewWriter(ctx, key, nil)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(writer, file); err != nil {
+		_ = writer.Close()
+		return err
+	}
+	return writer.Close()
 }
 
 func ensureArchiveMaterialized(record *storage.RunArchiveRecord) error {
@@ -286,10 +296,6 @@ func ensureArchiveMaterialized(record *storage.RunArchiveRecord) error {
 		if artifact == "manifest.json" {
 			continue
 		}
-		data, err := bucket.ReadAll(ctx, backend.objectKey(record.TestID, artifact))
-		if err != nil {
-			return fmt.Errorf("download archive artifact %s: %w", artifact, err)
-		}
 		localPath, err := archiveArtifactPath(localRoot, artifact)
 		if err != nil {
 			return err
@@ -297,11 +303,28 @@ func ensureArchiveMaterialized(record *storage.RunArchiveRecord) error {
 		if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
 			return err
 		}
-		if err := os.WriteFile(localPath, data, 0o644); err != nil {
-			return err
+		if err := downloadArchiveObjectToFile(ctx, bucket, backend.objectKey(record.TestID, artifact), localPath); err != nil {
+			return fmt.Errorf("download archive artifact %s: %w", artifact, err)
 		}
 	}
 	return nil
+}
+
+func downloadArchiveObjectToFile(ctx context.Context, bucket *blob.Bucket, key string, localPath string) error {
+	reader, err := bucket.NewReader(ctx, key, nil)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+	file, err := os.Create(localPath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	if _, err := io.Copy(file, reader); err != nil {
+		return err
+	}
+	return file.Sync()
 }
 
 func (b archiveBackendRuntime) validate() error {

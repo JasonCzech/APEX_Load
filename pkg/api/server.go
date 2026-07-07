@@ -70,6 +70,8 @@ type Server struct {
 	discoveryCancel          context.CancelFunc
 	k8sRestart               K8sRestartSettings
 	kubeRestarter            KubeRestarter
+	kubePodsCacheMu          sync.Mutex
+	kubePodsCache            generatorPodInventoryCache
 	restartMu                sync.Mutex
 	restartInFlight          map[string]struct{}
 	testNotesArchiveMu       sync.Mutex
@@ -442,6 +444,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/tests/{id}/archive/resources", cors(log(auth(http.HandlerFunc(s.handleGetRunArchiveResources)))))
 	s.mux.Handle("GET /api/v1/tests/{id}/archive/summaries", cors(log(auth(http.HandlerFunc(s.handleGetRunArchiveSummaries)))))
 	s.mux.Handle("GET /api/v1/tests/{id}/archive/report", cors(log(auth(http.HandlerFunc(s.handleGetRunArchiveReport)))))
+	s.mux.Handle("POST /api/v1/tests/archive/reports", cors(log(auth(http.HandlerFunc(s.handleGetRunArchiveReportsBatch)))))
 	s.mux.Handle("GET /api/v1/tests/{id}/archive/analysis", cors(log(auth(http.HandlerFunc(s.handleGetRunArchiveAnalysis)))))
 	s.mux.Handle("GET /api/v1/tests/{id}/archive/root-cause", cors(log(auth(http.HandlerFunc(s.handleGetRunArchiveRootCause)))))
 	s.mux.Handle("GET /api/v1/tests/{id}/archive/ai-root-cause", cors(log(auth(http.HandlerFunc(s.handleGetRunArchiveAIRootCause)))))
@@ -1238,7 +1241,12 @@ func (s *Server) startCacheFanout() {
 			if len(envelope.Payload) == 0 {
 				continue
 			}
-			s.hub.broadcastLocal(envelope.Payload)
+			s.hub.broadcastLocal(hubBroadcast{
+				payload:      envelope.Payload,
+				testID:       envelope.TestID,
+				projectID:    envelope.ProjectID,
+				broadcastAll: envelope.BroadcastAll && envelope.TestID == "" && envelope.ProjectID == "",
+			})
 		}
 	}()
 }

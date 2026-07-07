@@ -5,6 +5,7 @@ export type AppView =
   | { page: Exclude<NavPage, 'command-center' | 'new-test' | 'scripts' | 'tests' | 'docs'> }
   | { page: 'docs'; guidePage?: ApiGuideContentPageID }
   | { page: 'command-center'; testId?: string }
+  | { page: 'report'; testId: string; lens?: ReportLens; compare?: string }
   | { page: 'tests'; scenarioView?: 'library' | 'builder' | 'plans' }
   | { page: 'new-test'; scenarioId?: string; prefillStartLocal?: string }
   | { page: 'scripts'; mode?: 'list' | 'create' | 'edit' | 'import'; scriptId?: string }
@@ -32,8 +33,10 @@ const NAV_PAGES: NavPage[] = [
 const SCRIPT_MODES = ['list', 'create', 'edit', 'import'] as const
 const SCENARIO_VIEWS = ['library', 'builder', 'plans'] as const
 const TEST_WORKSPACE_TABS = ['overview', 'control', 'graphs', 'diagnostics', 'archive', 'action-summary', 'load-impact', 'transaction-drilldown'] as const
+export const REPORT_LENSES = ['executive', 'engineer', 'audit'] as const
 
 export type TestWorkspaceTabID = typeof TEST_WORKSPACE_TABS[number]
+export type ReportLens = typeof REPORT_LENSES[number]
 
 function cleanSegment(value: string | undefined) {
   if (!value) return ''
@@ -58,6 +61,10 @@ function isScenarioView(value: string | null): value is NonNullable<Extract<AppV
 
 function isTestWorkspaceTab(value: string | null): value is TestWorkspaceTabID {
   return TEST_WORKSPACE_TABS.includes(value as TestWorkspaceTabID)
+}
+
+export function isReportLens(value: string | null | undefined): value is ReportLens {
+  return REPORT_LENSES.includes(value as ReportLens)
 }
 
 export function parseAppViewFromHash(hash: string): AppView {
@@ -97,6 +104,17 @@ export function parseAppViewFromHash(hash: string): AppView {
   if (page === 'command-center') {
     const testId = segments[1] || params.get('testId') || undefined
     return testId ? { page: 'command-center', testId } : { page: 'command-center' }
+  }
+
+  if (page === 'report' && segments[1]) {
+    const lens = params.get('lens')
+    const compare = params.get('compare') || undefined
+    return {
+      page: 'report',
+      testId: segments[1],
+      ...(isReportLens(lens) ? { lens } : {}),
+      ...(compare ? { compare } : {}),
+    }
   }
 
   if (page === 'scripts') {
@@ -158,6 +176,14 @@ export function viewToLocationHash(view: AppView): string {
 
   if (view.page === 'command-center') {
     return view.testId ? `#/command-center/${encodeURIComponent(view.testId)}` : '#/command-center'
+  }
+
+  if (view.page === 'report') {
+    const params = new URLSearchParams()
+    if (view.lens) params.set('lens', view.lens)
+    if (view.compare) params.set('compare', view.compare)
+    const query = params.toString()
+    return query ? `#/report/${encodeURIComponent(view.testId)}?${query}` : `#/report/${encodeURIComponent(view.testId)}`
   }
 
   if (view.page === 'scripts') {

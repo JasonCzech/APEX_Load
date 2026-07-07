@@ -400,11 +400,11 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	}
 	responseHeaders := cloneHTTPHeaders(resp.Header)
 
-	rawResponseBody := append([]byte(nil), buf.Bytes()...)
+	rawResponseBody := buf.Bytes()
 	if h.cache != nil && !cacheHit && bodyReadErr == nil {
 		h.cache.store(req, resp, rawResponseBody, time.Now())
 	}
-	respBody := append([]byte(nil), rawResponseBody...)
+	respBody := rawResponseBody
 	respBody, responseHeaders, err = decodeHTTPResponseContent(respBody, resp.Header, responseHeaders, maxBody)
 	if err != nil {
 		result.Duration = time.Since(result.StartTime)
@@ -474,15 +474,28 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		}
 	}
 
+	responseBodyText := ""
+	responseBodyTextLoaded := false
+	loadResponseBodyText := func() string {
+		if !responseBodyTextLoaded {
+			responseBodyText = string(respBody)
+			responseBodyTextLoaded = true
+		}
+		return responseBodyText
+	}
 	for _, assertion := range action.Assertions {
-		if err := evaluate(assertion, result, respBody); err != nil {
+		bodyText := ""
+		if assertionNeedsResponseBody(assertion) {
+			bodyText = loadResponseBodyText()
+		}
+		if err := evaluate(assertion, result, bodyText); err != nil {
 			result.Success = false
 			result.ErrorMessage = err.Error()
 			break
 		}
 	}
-	if result.Success {
-		if err := evaluateContentChecks(h.contentChecks, result, respBody); err != nil {
+	if result.Success && len(h.contentChecks) > 0 {
+		if err := evaluateContentChecks(h.contentChecks, result, loadResponseBodyText()); err != nil {
 			result.Success = false
 			result.ErrorMessage = err.Error()
 		}
@@ -556,7 +569,7 @@ func decodeHTTPResponseContent(body []byte, headers http.Header, snapshotHeaders
 		return body, snapshotHeaders, nil
 	}
 
-	decoded := append([]byte(nil), body...)
+	decoded := body
 	decodedAny := false
 	for i := len(encodings) - 1; i >= 0; i-- {
 		encoding := encodings[i]

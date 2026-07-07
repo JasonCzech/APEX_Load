@@ -57,6 +57,7 @@ type Engine struct {
 	mu       sync.Mutex // guards cancel
 	cancel   context.CancelFunc
 	softStop context.CancelFunc
+	secrets  SecretResolver
 }
 
 // Config contains configuration for Engine creation.
@@ -99,6 +100,7 @@ func New(cfg Config) (*Engine, error) {
 		duration: cfg.Duration,
 		rampUp:   cfg.RampUp,
 		metrics:  NewMetricsCollector(10000),
+		secrets:  newDefaultSecretResolver(),
 	}, nil
 }
 
@@ -114,7 +116,7 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 		return nil, fmt.Errorf("protocol init: %w", err)
 	}
 
-	protoConfig := buildProtoConfigForRunMode(e.script, "load")
+	protoConfig := buildProtoConfigForRunModeWithSecretResolver(e.script, "load", e.secrets)
 	if err := proto.HealthCheck(ctx); err != nil {
 		slog.Warn("health check failed, proceeding anyway", "err", err)
 	}
@@ -202,6 +204,7 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 				Proto:                vuProto,
 				Script:               e.script,
 				Metrics:              e.metrics,
+				SecretResolver:       e.secrets,
 				IterationRateLimiter: iterationRateLimiter,
 				Rendezvous:           rendezvous,
 				ExecutionGoals:       executionGoals,
@@ -319,6 +322,7 @@ func (e *Engine) runOpenWorkload(ctx context.Context, protoConfig map[string]any
 				Proto:          vuProto,
 				Script:         iterationScript,
 				Metrics:        e.metrics,
+				SecretResolver: e.secrets,
 				ExecutionGoals: executionGoals,
 				HardStopCtx:    ctx,
 			}

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -341,6 +342,56 @@ func TestJavaVuserProcessSlotsSizedFromOperatorEnv(t *testing.T) {
 
 	if got := cap(processSlotChan()); got != 3 {
 		t.Fatalf("process slot capacity = %d, want 3 (from operator env)", got)
+	}
+}
+
+func TestJavaVuserQueueWaitIsReportedOutsideActionDuration(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture uses POSIX sh")
+	}
+	t.Setenv(config.EnvJavaVuserMaxProcesses, "1")
+	resetProcessSlots()
+	t.Cleanup(resetProcessSlots)
+	slots := processSlotChan()
+	slots <- struct{}{}
+	go func() {
+		time.Sleep(75 * time.Millisecond)
+		<-slots
+	}()
+
+	dir := t.TempDir()
+	runnerPath := filepath.Join(dir, "java-vuser-runner")
+	script := "#!/bin/sh\ncat >/dev/null\nprintf '{\"success\":true,\"class_name\":\"Actions\",\"method\":\"full_lifecycle\",\"duration_ms\":1}\\n'\n"
+	if err := os.WriteFile(runnerPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write runner: %v", err)
+	}
+
+	t.Setenv(config.EnvJavaVuserRunnerEnabled, "true")
+	t.Setenv(config.EnvJavaVuserRunnerCommand, runnerPath)
+
+	var runner JavaVuser
+	if err := runner.Init(context.Background(), map[string]any{"java_vuser_action_timeout_ms": float64(60000)}); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+
+	wallStart := time.Now()
+	result, err := runner.Execute(context.Background(), &protocol.Action{Name: "Run Actions", Type: "java_vuser_run", Target: "Actions"})
+	wallElapsed := time.Since(wallStart)
+	if err != nil {
+		t.Fatalf("Execute returned protocol error: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("result.Success = false: %s", result.ErrorMessage)
+	}
+	queueWaitMS, err := strconv.Atoi(result.Extractions["java_vuser_queue_wait_ms"])
+	if err != nil || queueWaitMS < 50 {
+		t.Fatalf("queue wait extraction = %q (%v), want at least 50ms", result.Extractions["java_vuser_queue_wait_ms"], err)
+	}
+	if result.StartTime.Sub(wallStart) < 50*time.Millisecond {
+		t.Fatalf("StartTime advanced by %s, want queue wait excluded from action start", result.StartTime.Sub(wallStart))
+	}
+	if wallElapsed-result.Duration < 50*time.Millisecond {
+		t.Fatalf("wall elapsed %s minus action duration %s, want queue wait excluded", wallElapsed, result.Duration)
 	}
 }
 

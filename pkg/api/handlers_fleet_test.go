@@ -209,6 +209,53 @@ func TestTerminatingGeneratorPodWatcherMarksStableIDDraining(t *testing.T) {
 	}
 }
 
+func TestGeneratorPodInventoryCacheSharedAcrossWatcherAndRestartability(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	fakeKube := &fakeKubeRestarter{}
+	fakeKube.setPods([]KubePodRef{
+		{Name: "apexload-generator-0", Namespace: "apex", IP: "10.0.0.10", Phase: "Running", Ready: true},
+	})
+	server := NewServer(ServerConfig{
+		Store:            store,
+		MaxConcurrent:    2,
+		Addr:             ":8080",
+		GeneratorTargets: []string{"10.0.0.10:9090"},
+		GeneratorTimeout: time.Millisecond,
+		K8sRestart: K8sRestartSettings{
+			Enabled:           true,
+			Namespace:         "apex",
+			GeneratorSelector: "app=generator",
+		},
+		KubeRestarter: fakeKube,
+	})
+	backend, ok := server.runner.getExecutionBackend().(*distributedExecutionBackend)
+	if !ok {
+		t.Fatalf("backend = %T, want *distributedExecutionBackend", server.runner.getExecutionBackend())
+	}
+	backend.recordGeneratorIdentity("10.0.0.10:9090", "apexload-generator-0")
+
+	ctx := context.Background()
+	server.reconcileTerminatingGeneratorPods(ctx)
+	entries := []GeneratorInventoryEntry{{
+		Target:      "10.0.0.10:9090",
+		GeneratorID: "apexload-generator-0",
+		Status:      "connected",
+	}}
+	server.enrichGeneratorRestartability(ctx, entries)
+
+	if got := len(fakeKube.listCalls()); got != 1 {
+		t.Fatalf("ListPods calls = %d, want 1 shared cached call", got)
+	}
+	if entries[0].PodName != "apexload-generator-0" || !entries[0].Restartable {
+		t.Fatalf("restartability entry = %#v, want cached pod match and restartable", entries[0])
+	}
+}
+
 func TestPoolScopedAssignmentSkipsOfflineMembersLeniently(t *testing.T) {
 	backend := newDistributedExecutionBackend([]string{"gen-a:9090"}, time.Second, nil)
 

@@ -172,20 +172,78 @@ func redactSourceReviewSecrets(files map[string]string, exchanges []exchange) ma
 
 func redactExchangeSecrets(content string, exchanges []exchange) (string, bool) {
 	original := content
-	for _, ex := range exchanges {
-		content = redactSensitiveHeaderValues(content, ex.Headers)
-		if ex.BodyEncoding == "" {
-			content = redactBodySecrets(content, ex.Body)
-		}
-		if ex.Response != nil {
-			content = redactSensitiveHeaderValues(content, ex.Response.Headers)
-			content = redactBodySecrets(content, ex.Response.Body)
-		}
+	redactions := collectExchangeSecretRedactions(exchanges)
+	for _, value := range redactions.headerValues {
+		content = replaceRawAndJSONEscaped(content, value, "[REDACTED]")
+	}
+	for _, replacement := range redactions.bodyReplacements {
+		content = replaceRawAndJSONEscaped(content, replacement.body, replacement.sanitized)
 	}
 	// Catch-all for secret fields that did not round-trip through a parsed
 	// exchange verbatim (re-serialized bodies, query strings, ...).
 	content = paramize.SanitizeBodySecrets(content)
 	return content, content != original
+}
+
+type exchangeSecretRedactions struct {
+	headerValues     []string
+	seenHeaderValues map[string]struct{}
+	bodyReplacements []bodySecretReplacement
+	seenBodies       map[string]struct{}
+}
+
+type bodySecretReplacement struct {
+	body      string
+	sanitized string
+}
+
+func collectExchangeSecretRedactions(exchanges []exchange) exchangeSecretRedactions {
+	redactions := exchangeSecretRedactions{
+		seenHeaderValues: make(map[string]struct{}),
+		seenBodies:       make(map[string]struct{}),
+	}
+	for _, ex := range exchanges {
+		redactions.addSensitiveHeaderValues(ex.Headers)
+		if ex.BodyEncoding == "" {
+			redactions.addBody(ex.Body)
+		}
+		if ex.Response != nil {
+			redactions.addSensitiveHeaderValues(ex.Response.Headers)
+			redactions.addBody(ex.Response.Body)
+		}
+	}
+	return redactions
+}
+
+func (redactions *exchangeSecretRedactions) addSensitiveHeaderValues(headers map[string]string) {
+	for key, value := range headers {
+		if !paramize.SensitiveHeaderKey(key) || strings.TrimSpace(value) == "" {
+			continue
+		}
+		if _, exists := redactions.seenHeaderValues[value]; exists {
+			continue
+		}
+		redactions.seenHeaderValues[value] = struct{}{}
+		redactions.headerValues = append(redactions.headerValues, value)
+	}
+}
+
+func (redactions *exchangeSecretRedactions) addBody(body string) {
+	if strings.TrimSpace(body) == "" {
+		return
+	}
+	if _, exists := redactions.seenBodies[body]; exists {
+		return
+	}
+	sanitized := paramize.SanitizeBodySecrets(body)
+	if sanitized == body {
+		return
+	}
+	redactions.seenBodies[body] = struct{}{}
+	redactions.bodyReplacements = append(redactions.bodyReplacements, bodySecretReplacement{
+		body:      body,
+		sanitized: sanitized,
+	})
 }
 
 func redactSensitiveHeaderValues(content string, headers map[string]string) string {

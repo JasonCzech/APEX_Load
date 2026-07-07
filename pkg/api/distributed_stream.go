@@ -51,6 +51,9 @@ func (b *distributedExecutionBackend) startDistributedTestRun(tr *TestRunner, te
 	test.remoteMetricsBatchesByTarget = make(map[string]generatorrpc.MetricsBatch)
 	test.remoteTargetStates = make(map[string]string)
 	test.remoteFinalizing = false
+	test.remoteMetricsLastPublishedAt = time.Time{}
+	test.remoteMetricsFlushScheduled = false
+	test.remoteGoalUpdateRunning = false
 	// Goal-oriented distributed runs evaluate the goal controller from the
 	// per-target consumeMetrics goroutines (applyRemoteMetricsBatch). Initialize
 	// the controller state here, mirroring the local path (startManagedTestRun),
@@ -251,8 +254,20 @@ func (b *distributedExecutionBackend) consumeMetrics(ctx context.Context, tr *Te
 		if batch.Telemetry.PublishedAtUnixMs > 0 {
 			batch.Telemetry.TransportLagMs = float64(receivedAtUnixMs - batch.Telemetry.PublishedAtUnixMs)
 		}
+		if !isTerminalRemoteLifecycle(batch.LifecycleState) {
+			publish, flushDelay := b.shouldPublishDistributedMetricsBatch(tr, test, time.Now())
+			if !publish {
+				b.storeRemoteMetricsBatchOnly(tr, test, target, batch)
+				if flushDelay >= 0 {
+					go b.flushStoredDistributedMetricsAfterDelay(ctx, tr, test, target, batch, flushDelay)
+				}
+				continue
+			}
+		}
 		live, finalStatus, finalError := b.applyRemoteMetricsBatch(tr, test, target, batch)
-		tr.publishLiveMetrics(test, live, nil)
+		if live != nil {
+			tr.publishLiveMetrics(test, live, nil)
+		}
 		switch finalStatus {
 		case "COMPLETE":
 			b.completeDistributedTestRun(tr, test, "COMPLETE", "")
@@ -262,6 +277,106 @@ func (b *distributedExecutionBackend) consumeMetrics(ctx context.Context, tr *Te
 			return
 		}
 	}
+}
+
+func isTerminalRemoteLifecycle(state string) bool {
+	switch strings.ToUpper(strings.TrimSpace(state)) {
+	case "COMPLETE", "FAILED":
+		return true
+	default:
+		return false
+	}
+}
+
+func (b *distributedExecutionBackend) shouldPublishDistributedMetricsBatch(tr *TestRunner, test *ManagedTest, now time.Time) (bool, time.Duration) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	if test.remoteMetricsLastPublishedAt.IsZero() || now.Sub(test.remoteMetricsLastPublishedAt) >= time.Second {
+		test.remoteMetricsLastPublishedAt = now
+		test.remoteMetricsFlushScheduled = false
+		return true, 0
+	}
+	if !test.remoteMetricsFlushScheduled {
+		test.remoteMetricsFlushScheduled = true
+		return false, time.Second - now.Sub(test.remoteMetricsLastPublishedAt)
+	}
+	return false, -1
+}
+
+func (b *distributedExecutionBackend) flushStoredDistributedMetricsAfterDelay(ctx context.Context, tr *TestRunner, test *ManagedTest, target string, batch generatorrpc.MetricsBatch, delay time.Duration) {
+	if delay > 0 {
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+	} else {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+	}
+
+	tr.mu.Lock()
+	if ctx.Err() != nil || test.Status == "COMPLETE" || test.Status == "FAILED" || test.remoteMetricsBatchesByTarget == nil {
+		test.remoteMetricsFlushScheduled = false
+		tr.mu.Unlock()
+		return
+	}
+	test.remoteMetricsLastPublishedAt = time.Now()
+	test.remoteMetricsFlushScheduled = false
+	tr.mu.Unlock()
+
+	live, _, _ := b.applyRemoteMetricsBatch(tr, test, target, batch)
+	if live != nil {
+		tr.publishLiveMetrics(test, live, nil)
+	}
+}
+
+func (b *distributedExecutionBackend) storeRemoteMetricsBatchOnly(tr *TestRunner, test *ManagedTest, target string, batch generatorrpc.MetricsBatch) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	if test.remoteMetricsBatchesByTarget == nil {
+		test.remoteMetricsBatchesByTarget = make(map[string]generatorrpc.MetricsBatch)
+	}
+	if isTerminalRemoteLifecycle(batch.LifecycleState) {
+		if prior, ok := test.remoteMetricsBatchesByTarget[target]; ok {
+			if len(batch.Transactions) == 0 {
+				batch.Transactions = prior.Transactions
+			}
+			if batch.FleetMetrics == nil {
+				batch.FleetMetrics = prior.FleetMetrics
+			}
+			if len(batch.TransactionMetrics) == 0 {
+				batch.TransactionMetrics = prior.TransactionMetrics
+			}
+			if len(batch.DependencyMetrics) == 0 {
+				batch.DependencyMetrics = prior.DependencyMetrics
+			}
+			if len(batch.SOAPMetrics) == 0 {
+				batch.SOAPMetrics = prior.SOAPMetrics
+			}
+			if len(batch.NetworkProfileMetrics) == 0 {
+				batch.NetworkProfileMetrics = prior.NetworkProfileMetrics
+			}
+			if batch.Browser == nil {
+				batch.Browser = prior.Browser
+			}
+			if len(batch.BrowserByDevice) == 0 {
+				batch.BrowserByDevice = prior.BrowserByDevice
+			}
+			if len(batch.Groups) == 0 {
+				batch.Groups = prior.Groups
+			}
+		}
+	}
+	if prior, ok := test.remoteMetricsBatchesByTarget[target]; ok && !isTerminalRemoteLifecycle(batch.LifecycleState) && batch.TimestampUnixMs > 0 && prior.TimestampUnixMs > 0 && batch.TimestampUnixMs <= prior.TimestampUnixMs {
+		return
+	}
+	test.remoteMetricsBatchesByTarget[target] = batch
 }
 
 func (b *distributedExecutionBackend) failDistributedTestOnStreamError(tr *TestRunner, test *ManagedTest, target string, err error) {
@@ -412,14 +527,34 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatch(tr *TestRunner, te
 		goalGroupVUsers = liveGroupVUsers(test, live)
 		currentTotalVUsers := totalGroupVUsers(goalGroupVUsers)
 		goalUpdate = evaluateGoalController(live.Timestamp, currentTotalVUsers, live, test.GoalConfig, test.goalControl)
-		runGoalUpdate = true
+		live.GoalStatus = goalUpdate.Status
+		if goalUpdate.ShouldScale {
+			if test.remoteGoalUpdateRunning {
+				runGoalUpdate = false
+			} else {
+				test.remoteGoalUpdateRunning = true
+				runGoalUpdate = true
+			}
+		}
 	}
 	tr.mu.Unlock()
 
 	if runGoalUpdate {
-		applyGoalControllerUpdate(tr, test, live, goalGroupVUsers, goalUpdate, func(groupName string, target int) error {
-			return b.ScaleVUsers(tr, test, groupName, target)
-		})
+		goalLive := *live
+		if live.GoalStatus != nil {
+			statusCopy := *live.GoalStatus
+			goalLive.GoalStatus = &statusCopy
+		}
+		go func() {
+			defer func() {
+				tr.mu.Lock()
+				test.remoteGoalUpdateRunning = false
+				tr.mu.Unlock()
+			}()
+			applyGoalControllerUpdate(tr, test, &goalLive, goalGroupVUsers, goalUpdate, func(groupName string, target int) error {
+				return b.ScaleVUsers(tr, test, groupName, target)
+			})
+		}()
 	}
 	live.GeneratorResources = b.buildGeneratorResourceSnapshots(test, batches)
 	return live, finalStatus, finalError

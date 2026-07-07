@@ -29,7 +29,9 @@ import (
 // the static extractor config (delimiters/expression) are cached here; nothing
 // keyed on per-request response bytes is ever stored, so the map stays bounded
 // by the number of distinct extractor patterns in the script.
-var compiledRegexCache sync.Map // map[string]*regexp.Regexp
+var compiledRegexCache sync.Map    // map[string]*regexp.Regexp
+var compiledXPathCache sync.Map    // map[string]*xpath.Expr
+var compiledJMESPathCache sync.Map // map[string]*jmespath.JMESPath
 
 // compileRegexCached returns a shared compiled regexp for expr, compiling it on
 // the first request and reusing the result thereafter. Compile errors are not
@@ -45,6 +47,18 @@ func compileRegexCached(expr string) (*regexp.Regexp, error) {
 	}
 	actual, _ := compiledRegexCache.LoadOrStore(expr, re)
 	return actual.(*regexp.Regexp), nil
+}
+
+func compileJMESPathCached(expr string) (*jmespath.JMESPath, error) {
+	if cached, ok := compiledJMESPathCache.Load(expr); ok {
+		return cached.(*jmespath.JMESPath), nil
+	}
+	compiled, err := jmespath.Compile(expr)
+	if err != nil {
+		return nil, err
+	}
+	actual, _ := compiledJMESPathCache.LoadOrStore(expr, compiled)
+	return actual.(*jmespath.JMESPath), nil
 }
 
 const xpathFragmentExpressionPrefix = "__apexload_xpath_fragment__:"
@@ -324,10 +338,44 @@ func decodeXPathExpression(expr string) (string, bool, map[string]string, error)
 }
 
 func compileXPathSelector(expr string, namespaces map[string]string) (*xpath.Expr, error) {
-	if len(namespaces) == 0 {
-		return xpath.Compile(expr)
+	cacheKey := xpathSelectorCacheKey(expr, namespaces)
+	if cached, ok := compiledXPathCache.Load(cacheKey); ok {
+		return cached.(*xpath.Expr), nil
 	}
-	return xpath.CompileWithNS(expr, namespaces)
+	var (
+		selector *xpath.Expr
+		err      error
+	)
+	if len(namespaces) == 0 {
+		selector, err = xpath.Compile(expr)
+	} else {
+		selector, err = xpath.CompileWithNS(expr, namespaces)
+	}
+	if err != nil {
+		return nil, err
+	}
+	actual, _ := compiledXPathCache.LoadOrStore(cacheKey, selector)
+	return actual.(*xpath.Expr), nil
+}
+
+func xpathSelectorCacheKey(expr string, namespaces map[string]string) string {
+	if len(namespaces) == 0 {
+		return expr
+	}
+	keys := make([]string, 0, len(namespaces))
+	for key := range namespaces {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	var builder strings.Builder
+	builder.WriteString(expr)
+	for _, key := range keys {
+		builder.WriteByte(0)
+		builder.WriteString(key)
+		builder.WriteByte('=')
+		builder.WriteString(namespaces[key])
+	}
+	return builder.String()
 }
 
 func splitCSSExpression(expr string) (selector string, attribute string) {
@@ -454,9 +502,13 @@ func extractJMESPath(expr string, body []byte) (string, error) {
 		return "", fmt.Errorf("invalid JSON body: %w", err)
 	}
 
-	result, err := jmespath.Search(expr, current)
+	compiled, err := compileJMESPathCached(expr)
 	if err != nil {
 		return "", fmt.Errorf("invalid JMESPath expression: %w", err)
+	}
+	result, err := compiled.Search(current)
+	if err != nil {
+		return "", fmt.Errorf("evaluate JMESPath expression: %w", err)
 	}
 	if result == nil {
 		return "", fmt.Errorf("no match for JMESPath %q", expr)

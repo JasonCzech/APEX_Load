@@ -8,6 +8,8 @@ import (
 	playwright "github.com/playwright-community/playwright-go"
 )
 
+const maxBrowserResourceValidators = 1024
+
 func normalizeRecordedResources(urls []string) map[string]struct{} {
 	normalized := make(map[string]struct{})
 	for _, rawURL := range urls {
@@ -234,7 +236,16 @@ func (b *Browser) rememberResourceValidator(rawURL string, headers map[string]st
 	if b.resourceValidators == nil {
 		b.resourceValidators = make(map[string]string)
 	}
+	if _, exists := b.resourceValidators[rawURL]; !exists {
+		b.resourceValidatorKeys = append(b.resourceValidatorKeys, rawURL)
+	}
 	b.resourceValidators[rawURL] = etag
+	for len(b.resourceValidatorKeys) > maxBrowserResourceValidators {
+		evict := b.resourceValidatorKeys[0]
+		copy(b.resourceValidatorKeys, b.resourceValidatorKeys[1:])
+		b.resourceValidatorKeys = b.resourceValidatorKeys[:len(b.resourceValidatorKeys)-1]
+		delete(b.resourceValidators, evict)
+	}
 }
 
 func (b *Browser) resourceValidator(rawURL string) string {

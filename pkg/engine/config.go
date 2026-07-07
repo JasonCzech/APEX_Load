@@ -11,7 +11,11 @@ func buildProtoConfig(script *dsl.Script) map[string]any {
 }
 
 func buildProtoConfigForRunMode(script *dsl.Script, runMode string) map[string]any {
-	cfg := buildProtoConfig(script)
+	return buildProtoConfigForRunModeWithSecretResolver(script, runMode, newDefaultSecretResolver())
+}
+
+func buildProtoConfigForRunModeWithSecretResolver(script *dsl.Script, runMode string, resolver SecretResolver) map[string]any {
+	cfg := buildProtoConfigWithSecretResolver(script, resolver)
 	runMode = strings.TrimSpace(runMode)
 	if runMode != "" {
 		cfg["apexload_run_mode"] = runMode

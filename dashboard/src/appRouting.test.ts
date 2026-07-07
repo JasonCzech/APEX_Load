@@ -16,6 +16,8 @@ describe('appRouting', () => {
     expect(parseAppViewFromHash('#/command-center')).toEqual({ page: 'command-center' })
     expect(parseAppViewFromHash('#/command-center/run-1')).toEqual({ page: 'command-center', testId: 'run-1' })
     expect(parseAppViewFromHash('#/command-center?testId=run-2')).toEqual({ page: 'command-center', testId: 'run-2' })
+    expect(parseAppViewFromHash('#/report/run-1?lens=engineer&compare=run-0')).toEqual({ page: 'report', testId: 'run-1', lens: 'engineer', compare: 'run-0' })
+    expect(parseAppViewFromHash('#/report/run-1?lens=not-real')).toEqual({ page: 'report', testId: 'run-1' })
     expect(parseAppViewFromHash('#/new-test')).toEqual({ page: 'new-test' })
     expect(parseAppViewFromHash('#/tests')).toEqual({ page: 'tests' })
     expect(parseAppViewFromHash('#/tests?view=builder')).toEqual({ page: 'tests', scenarioView: 'builder' })
@@ -36,6 +38,12 @@ describe('appRouting', () => {
       page: 'test',
       testId: 'run/123',
       tab: 'archive',
+    })
+    expect(parseAppViewFromHash(viewToLocationHash({ page: 'report', testId: 'run/123', lens: 'audit', compare: 'baseline/1' }))).toEqual({
+      page: 'report',
+      testId: 'run/123',
+      lens: 'audit',
+      compare: 'baseline/1',
     })
     expect(parseAppViewFromHash(viewToLocationHash({ page: 'new-test', scenarioId: 'scenario-1' }))).toEqual({
       page: 'new-test',
@@ -62,6 +70,7 @@ describe('appRouting', () => {
     expect(viewToLocationHash({ page: 'command-center' })).toBe('#/command-center')
     expect(viewToLocationHash({ page: 'test', testId: 'run/123', tab: 'archive' })).toBe('#/test/run%2F123?tab=archive')
     expect(viewToLocationHash({ page: 'command-center', testId: 'run/123' })).toBe('#/command-center/run%2F123')
+    expect(viewToLocationHash({ page: 'report', testId: 'run/123', lens: 'executive', compare: 'base/123' })).toBe('#/report/run%2F123?lens=executive&compare=base%2F123')
     expect(parseAppViewFromHash(viewToLocationHash({ page: 'repository-guide' }))).toEqual({ page: 'repository-guide' })
     expect(viewToLocationHash({ page: 'recorder-panel', sessionId: 'brec/1' })).toBe('#/recorder-panel?session=brec%2F1')
     expect(parseAppViewFromHash('#/recorder-panel?session=brec-1')).toEqual({ page: 'recorder-panel', sessionId: 'brec-1' })

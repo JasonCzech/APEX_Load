@@ -14,7 +14,7 @@ type contentCheck struct {
 	CaseInsensitive bool
 }
 
-func evaluate(a protocol.Assertion, result *protocol.Result, body []byte) error {
+func evaluate(a protocol.Assertion, result *protocol.Result, bodyText string) error {
 	switch a.Type {
 	case "status_code":
 		expected, ok := toInt(a.Expected)
@@ -59,12 +59,12 @@ func evaluate(a protocol.Assertion, result *protocol.Result, body []byte) error 
 		}
 
 	case "body_contains":
-		if !strings.Contains(string(body), a.Value) {
+		if !strings.Contains(bodyText, a.Value) {
 			return fmt.Errorf("response body does not contain %q", a.Value)
 		}
 
 	case "body_not_contains":
-		if strings.Contains(string(body), a.Value) {
+		if strings.Contains(bodyText, a.Value) {
 			return fmt.Errorf("response body contains %q (unexpected)", a.Value)
 		}
 
@@ -80,12 +80,21 @@ func responseStatusExplicitlyAccepted(assertions []protocol.Assertion, result *p
 		switch assertion.Type {
 		case "status_code", "status_code_range":
 			checked = true
-			if err := evaluate(assertion, result, nil); err != nil {
+			if err := evaluate(assertion, result, ""); err != nil {
 				return false
 			}
 		}
 	}
 	return checked
+}
+
+func assertionNeedsResponseBody(assertion protocol.Assertion) bool {
+	switch assertion.Type {
+	case "body_contains", "body_not_contains":
+		return true
+	default:
+		return false
+	}
 }
 
 func toInt(v any) (int, bool) {
@@ -162,8 +171,7 @@ func normalizeContentCheckScope(scope string) string {
 	}
 }
 
-func evaluateContentChecks(checks []contentCheck, result *protocol.Result, body []byte) error {
-	bodyText := string(body)
+func evaluateContentChecks(checks []contentCheck, result *protocol.Result, bodyText string) error {
 	for _, check := range checks {
 		if check.Scope == "resource" {
 			continue

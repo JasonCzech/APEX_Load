@@ -22,6 +22,7 @@ type GroupConfig struct {
 	InitStrategy    string // "at_runtime", "at_once"
 	ResultSink      ResultSink
 	RedactionConfig *RedactionConfig
+	SecretResolver  SecretResolver
 	rateLimiter     *TokenBucket
 	rendezvous      *RendezvousCoordinator
 	executionGoals  *ExecutionGoalLimiter
@@ -111,6 +112,12 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 		}
 		if g.Name == "" {
 			cfg.Groups[i].Name = g.Script.Name
+		}
+	}
+	sharedSecretResolver := newDefaultSecretResolver()
+	for i := range cfg.Groups {
+		if cfg.Groups[i].SecretResolver == nil {
+			cfg.Groups[i].SecretResolver = sharedSecretResolver
 		}
 	}
 	mge := &MultiGroupEngine{
@@ -249,7 +256,7 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 		gi, group := gi, mge.groups[gi]
 		groupResults[gi] = GroupResult{Name: group.Name}
 
-		protoConfig := buildProtoConfigForRunMode(group.Script, "load")
+		protoConfig := buildProtoConfigForRunModeWithSecretResolver(group.Script, "load", group.SecretResolver)
 		if groupLifecycleAtOnce(group) {
 			if !mge.runGroupLifecycleBlock(mge.baseCtx, group, protoConfig, group.Script.Init, "init") {
 				baseCancel()
@@ -321,7 +328,7 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 
 	wg.Wait()
 	for _, group := range atOnceGroups {
-		protoConfig := buildProtoConfigForRunMode(group.Script, "load")
+		protoConfig := buildProtoConfigForRunModeWithSecretResolver(group.Script, "load", group.SecretResolver)
 		tctx, tcancel := teardownContext()
 		mge.runGroupLifecycleBlock(tctx, group, protoConfig, group.Script.Teardown, "teardown")
 		tcancel()
@@ -380,6 +387,7 @@ func (mge *MultiGroupEngine) runGroupLifecycleBlock(ctx context.Context, group G
 		Metrics:         mge.metrics,
 		ResultSink:      group.ResultSink,
 		RedactionConfig: group.RedactionConfig,
+		SecretResolver:  group.SecretResolver,
 		Rendezvous:      group.rendezvous,
 	}
 	return vu.RunLifecycleBlock(ctx, actions, phase)
@@ -475,6 +483,7 @@ func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoCon
 			Metrics:              mge.metrics,
 			ResultSink:           group.ResultSink,
 			RedactionConfig:      group.RedactionConfig,
+			SecretResolver:       group.SecretResolver,
 			PauseControl:         mge,
 			IterationRateLimiter: group.rateLimiter,
 			Rendezvous:           group.rendezvous,
@@ -575,6 +584,7 @@ func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, pro
 			Metrics:         mge.metrics,
 			ResultSink:      group.ResultSink,
 			RedactionConfig: group.RedactionConfig,
+			SecretResolver:  group.SecretResolver,
 			PauseControl:    mge,
 			ExecutionGoals:  group.executionGoals,
 			HardStopCtx:     shedCtx,
@@ -614,7 +624,7 @@ func (mge *MultiGroupEngine) ScaleVUsers(groupName string, targetVUsers int) err
 	delta := targetVUsers - currentVUsers
 
 	if delta > 0 {
-		protoConfig := buildProtoConfigForRunMode(group.Script, "load")
+		protoConfig := buildProtoConfigForRunModeWithSecretResolver(group.Script, "load", group.SecretResolver)
 
 		for i := 0; i < delta; i++ {
 			vuserID := mge.nextVUserID

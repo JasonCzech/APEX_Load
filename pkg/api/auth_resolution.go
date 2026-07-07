@@ -16,11 +16,21 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
+
+const userIdentitySeenWriteInterval = time.Minute
+
+var userIdentitySeenThrottle = struct {
+	sync.Mutex
+	lastWriteByUserID map[string]time.Time
+}{
+	lastWriteByUserID: make(map[string]time.Time),
+}
 
 func AuthenticatedUserFromContext(ctx context.Context) (*AuthenticatedUser, bool) {
 	user, ok := ctx.Value(authUserContextKey{}).(*AuthenticatedUser)
@@ -182,12 +192,42 @@ func applyLocalUserBindings(upstream *AuthenticatedUser, store storage.Store) (*
 		return nil, fmt.Errorf("session revoked")
 	}
 	now := time.Now().UTC()
+	previousDisplayName := local.DisplayName
+	previousEmail := local.Email
 	local.LastSeenAt = &now
 	local.DisplayName = firstNonEmpty(upstream.DisplayName, local.DisplayName)
 	local.Email = firstNonEmpty(upstream.Email, local.Email)
-	local.UpdatedAt = now
-	_ = store.UpdateUserIdentitySeen(local.ID, local.DisplayName, local.Email, now, now)
+	if shouldUpdateUserIdentitySeen(local.ID, previousDisplayName, previousEmail, local.DisplayName, local.Email, now) {
+		local.UpdatedAt = now
+		_ = store.UpdateUserIdentitySeen(local.ID, local.DisplayName, local.Email, now, now)
+	}
 	return authenticatedUserFromStoredUser(local), nil
+}
+
+func shouldUpdateUserIdentitySeen(userID string, previousDisplayName string, previousEmail string, nextDisplayName string, nextEmail string, now time.Time) bool {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return true
+	}
+	profileChanged := previousDisplayName != nextDisplayName || previousEmail != nextEmail
+	userIdentitySeenThrottle.Lock()
+	defer userIdentitySeenThrottle.Unlock()
+	if profileChanged {
+		userIdentitySeenThrottle.lastWriteByUserID[userID] = now
+		return true
+	}
+	lastWrite, ok := userIdentitySeenThrottle.lastWriteByUserID[userID]
+	if !ok || now.Sub(lastWrite) >= userIdentitySeenWriteInterval {
+		userIdentitySeenThrottle.lastWriteByUserID[userID] = now
+		return true
+	}
+	return false
+}
+
+func resetUserIdentitySeenThrottleForTests() {
+	userIdentitySeenThrottle.Lock()
+	defer userIdentitySeenThrottle.Unlock()
+	userIdentitySeenThrottle.lastWriteByUserID = make(map[string]time.Time)
 }
 
 // authenticatedUserFromStoredUser folds a stored user's local role bindings into an

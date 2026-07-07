@@ -64,6 +64,7 @@ export function useExecutionMetricsStream(testId: string, status?: TestStatus) {
   // Guard a late-resolving backfill against a test switch or unmount.
   const activeTestIdRef = useRef(testId)
   activeTestIdRef.current = testId
+  const lastSeenTimestampRef = useRef<string | undefined>()
   const mountedRef = useRef(true)
   useEffect(() => {
     mountedRef.current = true
@@ -78,6 +79,7 @@ export function useExecutionMetricsStream(testId: string, status?: TestStatus) {
   useEffect(() => {
     setLocalMetricsHistory([])
     setLatestMetrics(undefined)
+    lastSeenTimestampRef.current = undefined
     hasConnectedRef.current = false
   }, [testId])
 
@@ -106,22 +108,22 @@ export function useExecutionMetricsStream(testId: string, status?: TestStatus) {
     })
 
     const point = mapExecutionMetricToHistoryPoint({ ...msg.data, timestamp: msg.timestamp })
+    lastSeenTimestampRef.current = msg.timestamp
 
     setLocalMetricsHistory((prev) => [...prev, applyLatencyTargets(point, msg.data?.latency)].slice(-EXECUTION_STREAM_HISTORY_LIMIT))
   }, [])
 
-  // On reconnect, pull the controller's recorded history for this run and merge
-  // it into the live series, filling any window missed while the socket was down
-  // (e.g. a backgrounded tab the browser froze, or the machine sleeping). The
-  // first open is skipped — nothing has been missed, and the parent already
-  // seeds history from the test snapshot.
+  // Pull a bounded history seed on first open, then only the missed window on
+  // reconnect. The normal test poll intentionally stays history-free.
   const handleStreamOpen = useCallback(() => {
-    if (!hasConnectedRef.current) {
-      hasConnectedRef.current = true
-      return
-    }
     if (!testId) return
-    void getTest(testId)
+    const isReconnect = hasConnectedRef.current
+    hasConnectedRef.current = true
+    void getTest(testId, {
+      includeHistory: true,
+      since: isReconnect ? lastSeenTimestampRef.current : undefined,
+      limit: EXECUTION_STREAM_HISTORY_LIMIT,
+    })
       .then((test) => {
         if (!mountedRef.current || activeTestIdRef.current !== testId) return
         const backfill = mapExecutionHistory(test?.history)

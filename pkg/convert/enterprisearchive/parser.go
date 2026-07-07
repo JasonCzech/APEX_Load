@@ -201,9 +201,11 @@ func parseActionFileLegacy(filename string, content string) (*ParsedAction, erro
 			rawBlock.WriteString(line)
 			rawBlock.WriteString("\n")
 
-			// Check if the block is complete (ends with ");")
-			blockStr := currentBlock.String()
-			if strings.Contains(blockStr, ");") {
+			// Lines are concatenated with separators, so the terminator cannot
+			// straddle line boundaries; checking the current line avoids an
+			// accumulated-block rescan for large multiline bodies.
+			if strings.Contains(trimmed, ");") {
+				blockStr := currentBlock.String()
 				fn, err := parseFunctionBlock(blockStr, filename, blockStartLine, lineNum, rawBlock.String())
 				if err == nil {
 					parsed.Functions = append(parsed.Functions, fn)

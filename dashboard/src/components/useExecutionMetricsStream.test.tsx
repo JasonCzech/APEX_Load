@@ -268,35 +268,48 @@ describe('useExecutionMetricsStream', () => {
     expect(readTestId('tps')).toBe('-1')
   })
 
-  it('backfills the missed window from server history when the stream reconnects', async () => {
-    // Server has recorded two snapshots; the client only saw the first live.
-    getTestMock.mockResolvedValueOnce({
-      history: [
-        { timestamp: '2026-05-12T20:05:00Z', tps: 9, active_vusers: 5, avg_response_ms: 100, error_pct: 0, p50_ms: 1, p90_ms: 1, p95_ms: 1, p99_ms: 1 },
-        { timestamp: '2026-05-12T20:06:00Z', tps: 99, active_vusers: 5, avg_response_ms: 100, error_pct: 0, p50_ms: 1, p90_ms: 1, p95_ms: 1, p99_ms: 1 },
-      ],
-    })
+  it('seeds history on first open and backfills only the missed window on reconnect', async () => {
+    getTestMock
+      .mockResolvedValueOnce({
+        history: [
+          { timestamp: '2026-05-12T20:04:00Z', tps: 4, active_vusers: 5, avg_response_ms: 100, error_pct: 0, p50_ms: 1, p90_ms: 1, p95_ms: 1, p99_ms: 1 },
+        ],
+      })
+      .mockResolvedValueOnce({
+        history: [
+          { timestamp: '2026-05-12T20:06:00Z', tps: 99, active_vusers: 5, avg_response_ms: 100, error_pct: 0, p50_ms: 1, p90_ms: 1, p95_ms: 1, p99_ms: 1 },
+        ],
+      })
 
     await act(async () => {
       root.render(<MetricsStreamHarness />)
     })
 
-    // First open: nothing has been missed, so no backfill fetch happens.
     await triggerOpen()
-    expect(getTestMock).not.toHaveBeenCalled()
+    expect(getTestMock).toHaveBeenCalledWith('test-1', {
+      includeHistory: true,
+      since: undefined,
+      limit: 300,
+    })
+    expect(readTestId('count')).toBe('1')
+    expect(readTestId('tps')).toBe('4')
 
     await emit({
       type: 'metrics_update',
       timestamp: '2026-05-12T20:05:00Z',
       data: { active_vusers: 5, tps: 9, avg_response_ms: 100, error_pct: 0, p50_ms: 1, p90_ms: 1, p99_ms: 1 },
     } as WSMessage)
-    expect(readTestId('count')).toBe('1')
+    expect(readTestId('count')).toBe('2')
+    expect(readTestId('tps')).toBe('9')
 
-    // Reconnect: the 20:06:00 snapshot the client missed is merged in.
     await triggerOpen()
 
-    expect(getTestMock).toHaveBeenCalledWith('test-1')
-    expect(readTestId('count')).toBe('2')
+    expect(getTestMock).toHaveBeenLastCalledWith('test-1', {
+      includeHistory: true,
+      since: '2026-05-12T20:05:00Z',
+      limit: 300,
+    })
+    expect(readTestId('count')).toBe('3')
     expect(readTestId('tps')).toBe('99')
   })
 

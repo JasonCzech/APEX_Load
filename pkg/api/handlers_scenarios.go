@@ -97,7 +97,7 @@ func (s *Server) handleSizeScenarioFromGoal(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusInternalServerError, "failed to materialize baseline archive: "+err.Error())
 		return
 	}
-	report, err := buildRunArchiveReport(record)
+	report, err := cachedRunArchiveReport(record)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to build baseline report: "+err.Error())
 		return

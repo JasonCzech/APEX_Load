@@ -615,6 +615,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		},
 	}
 
+	sourceLineIndex := sourceview.NewLineIndex(content)
 	for _, op := range actions {
 		target := soapActionTarget(baseURL)
 		action := dsl.Action{
@@ -642,7 +643,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		}
 		actionIndex := len(result.Script.Actions)
 		result.Script.Actions = append(result.Script.Actions, action)
-		sourceMappings = append(sourceMappings, wsdlSourceMapping(sourceFileName, content, op, fmt.Sprintf("actions[%d]", actionIndex), action.Name, "action", "converted", "WSDL operation was converted into a generated SOAP action."))
+		sourceMappings = append(sourceMappings, wsdlSourceMapping(sourceFileName, content, sourceLineIndex, op, fmt.Sprintf("actions[%d]", actionIndex), action.Name, "action", "converted", "WSDL operation was converted into a generated SOAP action."))
 		result.Summary.Operations = append(result.Summary.Operations, op.Name)
 		result.Stats.ConvertedActions++
 	}
@@ -662,8 +663,8 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	return result, nil
 }
 
-func wsdlSourceMapping(sourceFile string, content string, op operationInfo, targetPath string, targetName string, targetKind string, status string, notes string) sourceview.Mapping {
-	line := wsdlOperationLine(content, op.Name)
+func wsdlSourceMapping(sourceFile string, content string, lineIndex sourceview.LineIndex, op operationInfo, targetPath string, targetName string, targetKind string, status string, notes string) sourceview.Mapping {
+	line := wsdlOperationLine(content, lineIndex, op.Name)
 	return sourceview.Mapping{
 		SourceFile: sourceFile,
 		StartLine:  line,
@@ -677,10 +678,10 @@ func wsdlSourceMapping(sourceFile string, content string, op operationInfo, targ
 	}
 }
 
-func wsdlOperationLine(content string, operationName string) int {
+func wsdlOperationLine(content string, lineIndex sourceview.LineIndex, operationName string) int {
 	for _, needle := range []string{`name="` + operationName + `"`, `name='` + operationName + `'`} {
 		if offset := strings.Index(content, needle); offset >= 0 {
-			return sourceview.LineForOffset(content, offset)
+			return lineIndex.LineForOffset(offset)
 		}
 	}
 	return 1

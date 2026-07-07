@@ -189,7 +189,7 @@ func (s *Server) enrichGeneratorRestartability(ctx context.Context, entries []Ge
 	if s == nil || !s.k8sRestart.Enabled || s.kubeRestarter == nil || len(entries) == 0 {
 		return
 	}
-	pods, err := s.kubeRestarter.ListPods(ctx, s.k8sRestart.Namespace, s.k8sRestart.GeneratorSelector)
+	pods, err := s.cachedGeneratorPods(ctx)
 	if err != nil {
 		for i := range entries {
 			entries[i].RestartBlockedReason = "Kubernetes pod inventory is unavailable."

@@ -604,9 +604,13 @@ func extractJMESPath(expr string, body []byte) (string, error) {
 	if err := json.Unmarshal(body, &current); err != nil {
 		return "", fmt.Errorf("invalid JSON message: %w", err)
 	}
-	result, err := jmespath.Search(expr, current)
+	compiled, err := compileJMESPathCached(expr)
 	if err != nil {
 		return "", fmt.Errorf("invalid JMESPath expression: %w", err)
+	}
+	result, err := compiled.Search(current)
+	if err != nil {
+		return "", fmt.Errorf("evaluate JMESPath expression: %w", err)
 	}
 	if result == nil {
 		return "", fmt.Errorf("no match for JMESPath %q", expr)
@@ -615,7 +619,7 @@ func extractJMESPath(expr string, body []byte) (string, error) {
 }
 
 func extractRegex(expr string, body []byte) (string, error) {
-	matches, err := regexp.Compile(expr)
+	matches, err := compileRegexCached(expr)
 	if err != nil {
 		return "", fmt.Errorf("invalid regex: %w", err)
 	}
@@ -624,6 +628,33 @@ func extractRegex(expr string, body []byte) (string, error) {
 		return "", fmt.Errorf("no match for regex %q", expr)
 	}
 	return string(found[1]), nil
+}
+
+var regexCache sync.Map    // map[string]*regexp.Regexp
+var jmesPathCache sync.Map // map[string]*jmespath.JMESPath
+
+func compileRegexCached(expr string) (*regexp.Regexp, error) {
+	if cached, ok := regexCache.Load(expr); ok {
+		return cached.(*regexp.Regexp), nil
+	}
+	re, err := regexp.Compile(expr)
+	if err != nil {
+		return nil, err
+	}
+	actual, _ := regexCache.LoadOrStore(expr, re)
+	return actual.(*regexp.Regexp), nil
+}
+
+func compileJMESPathCached(expr string) (*jmespath.JMESPath, error) {
+	if cached, ok := jmesPathCache.Load(expr); ok {
+		return cached.(*jmespath.JMESPath), nil
+	}
+	compiled, err := jmespath.Compile(expr)
+	if err != nil {
+		return nil, err
+	}
+	actual, _ := jmesPathCache.LoadOrStore(expr, compiled)
+	return actual.(*jmespath.JMESPath), nil
 }
 
 func extractBoundary(expr string, body []byte) (string, error) {

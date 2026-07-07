@@ -11,10 +11,17 @@ import (
 
 var conditionExprPrograms sync.Map
 
-func conditionExprProgram(expr string) (cel.Program, error) {
+type conditionExprProgramCache struct {
+	program   cel.Program
+	needsVars bool
+	needsData bool
+	needsEnv  bool
+}
+
+func conditionExprProgram(expr string) (*conditionExprProgramCache, error) {
 	expr = dsl.NormalizeConditionExpression(expr)
 	if cached, ok := conditionExprPrograms.Load(expr); ok {
-		return cached.(cel.Program), nil
+		return cached.(*conditionExprProgramCache), nil
 	}
 	env, err := dsl.NewConditionCELEnv()
 	if err != nil {
@@ -31,16 +38,26 @@ func conditionExprProgram(expr string) (cel.Program, error) {
 	if err != nil {
 		return nil, err
 	}
-	actual, _ := conditionExprPrograms.LoadOrStore(expr, program)
-	return actual.(cel.Program), nil
+	entry := &conditionExprProgramCache{
+		program:   program,
+		needsVars: conditionExprUsesNamespace(expr, "vars"),
+		needsData: conditionExprUsesNamespace(expr, "data"),
+		needsEnv:  conditionExprUsesNamespace(expr, "env"),
+	}
+	actual, _ := conditionExprPrograms.LoadOrStore(expr, entry)
+	return actual.(*conditionExprProgramCache), nil
+}
+
+func conditionExprUsesNamespace(expr string, namespace string) bool {
+	return strings.Contains(expr, namespace+".") || strings.Contains(expr, namespace+"[")
 }
 
 func (vu *VUser) evalConditionExpr(expr string) bool {
-	program, err := conditionExprProgram(expr)
+	compiled, err := conditionExprProgram(expr)
 	if err != nil {
 		return false
 	}
-	out, _, err := program.Eval(vu.conditionExprActivation())
+	out, _, err := compiled.program.Eval(vu.conditionExprActivation(compiled))
 	if err != nil || out == nil {
 		return false
 	}
@@ -48,12 +65,25 @@ func (vu *VUser) evalConditionExpr(expr string) bool {
 	return ok && value
 }
 
-func (vu *VUser) conditionExprActivation() map[string]any {
-	return map[string]any{
-		"vars": vu.conditionExprVarMap(),
-		"data": vu.conditionExprDataMap(),
-		"env":  conditionExprEnvMap(),
+func (vu *VUser) conditionExprActivation(compiled *conditionExprProgramCache) map[string]any {
+	if compiled == nil {
+		return map[string]any{
+			"vars": vu.conditionExprVarMap(),
+			"data": vu.conditionExprDataMap(),
+			"env":  conditionExprEnvMap(),
+		}
 	}
+	activation := make(map[string]any, 3)
+	if compiled.needsVars {
+		activation["vars"] = vu.conditionExprVarMap()
+	}
+	if compiled.needsData {
+		activation["data"] = vu.conditionExprDataMap()
+	}
+	if compiled.needsEnv {
+		activation["env"] = conditionExprEnvMap()
+	}
+	return activation
 }
 
 func (vu *VUser) conditionExprVarMap() map[string]any {

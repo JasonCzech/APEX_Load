@@ -15,12 +15,27 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/protocol/messaging"
 )
+
+var extractorRegexCache sync.Map // map[string]*regexp.Regexp
+
+func compileExtractorRegex(expr string) (*regexp.Regexp, error) {
+	if cached, ok := extractorRegexCache.Load(expr); ok {
+		return cached.(*regexp.Regexp), nil
+	}
+	re, err := regexp.Compile(expr)
+	if err != nil {
+		return nil, err
+	}
+	actual, _ := extractorRegexCache.LoadOrStore(expr, re)
+	return actual.(*regexp.Regexp), nil
+}
 
 func init() {
 	protocol.Register("kafka", func() protocol.Protocol {
@@ -29,6 +44,7 @@ func init() {
 }
 
 const defaultMockPartitions = 4
+const kafkaExtractionBodyLimit = 64 << 10
 
 // Kafka implements protocol.Protocol for Apache Kafka messaging.
 type Kafka struct {
@@ -713,7 +729,12 @@ func addRecordExtractions(result *protocol.Result, rec kafkaRecord) {
 	result.Extractions["kafka_topic"] = rec.Topic
 	result.Extractions["kafka_partition"] = strconv.FormatInt(int64(rec.Partition), 10)
 	result.Extractions["kafka_offset"] = strconv.FormatInt(rec.Offset, 10)
-	result.Extractions["kafka_body"] = string(rec.Value)
+	if len(rec.Value) > kafkaExtractionBodyLimit {
+		result.Extractions["kafka_body"] = string(rec.Value[:kafkaExtractionBodyLimit])
+		result.Extractions["kafka_body_truncated"] = "true"
+	} else {
+		result.Extractions["kafka_body"] = string(rec.Value)
+	}
 	if !rec.Timestamp.IsZero() {
 		result.Extractions["kafka_timestamp"] = rec.Timestamp.UTC().Format(time.RFC3339Nano)
 	}
@@ -787,7 +808,7 @@ func extract(ext protocol.Extractor, rec kafkaRecord) (string, error) {
 	case "body":
 		switch ext.Type {
 		case "regex":
-			re, err := regexp.Compile(ext.Expression)
+			re, err := compileExtractorRegex(ext.Expression)
 			if err != nil {
 				return "", fmt.Errorf("invalid regex: %w", err)
 			}

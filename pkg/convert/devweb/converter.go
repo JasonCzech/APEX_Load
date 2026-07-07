@@ -267,6 +267,7 @@ type namedBlock struct {
 }
 
 func actionBlocks(content string) []namedBlock {
+	lineIndex := sourceview.NewLineIndex(content)
 	matches := actionBlockStartPattern.FindAllStringSubmatchIndex(content, -1)
 	blocks := make([]namedBlock, 0, len(matches))
 	for _, match := range matches {
@@ -277,7 +278,7 @@ func actionBlocks(content string) []namedBlock {
 			continue
 		}
 		body := content[bodyStart:bodyEnd]
-		blocks = append(blocks, namedBlock{Name: name, Body: body, StartLine: sourceview.LineForOffset(content, bodyStart)})
+		blocks = append(blocks, namedBlock{Name: name, Body: body, StartLine: lineIndex.LineForOffset(bodyStart)})
 	}
 	return blocks
 }

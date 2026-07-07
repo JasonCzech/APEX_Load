@@ -41,6 +41,7 @@ type fileDataSource struct {
 	contentType string
 	storageRef  string
 	body        []byte
+	bodyText    string
 }
 
 // NewDataProvider creates a provider from DSL DataSource definitions.
@@ -86,6 +87,7 @@ func loadFileDataSource(src dsl.DataSource) (*fileDataSource, error) {
 		contentType: src.ContentType,
 		storageRef:  src.StorageRef,
 		body:        content,
+		bodyText:    string(content),
 	}, nil
 }
 
@@ -418,5 +420,5 @@ func (dp *DataProvider) GetFileContent(name string) (string, bool) {
 	if !ok || fileSource == nil {
 		return "", false
 	}
-	return string(fileSource.body), true
+	return fileSource.bodyText, true
 }

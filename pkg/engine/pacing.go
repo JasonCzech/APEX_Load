@@ -214,15 +214,37 @@ func (tb *TokenBucket) Stop() {
 func (tb *TokenBucket) fill() {
 	ticker := time.NewTicker(tb.interval)
 	defer ticker.Stop()
+	last := time.Now()
 	for {
 		select {
 		case <-tb.done:
 			return
-		case <-ticker.C:
-			select {
-			case tb.tokens <- struct{}{}:
-			default:
-			}
+		case now := <-ticker.C:
+			elapsed := now.Sub(last)
+			last = now
+			tb.addTokensForElapsed(elapsed)
 		}
 	}
+}
+
+func (tb *TokenBucket) addTokensForElapsed(elapsed time.Duration) {
+	due := tokenBucketTokensForElapsed(elapsed, tb.interval)
+	for i := 0; i < due; i++ {
+		select {
+		case tb.tokens <- struct{}{}:
+		default:
+			return
+		}
+	}
+}
+
+func tokenBucketTokensForElapsed(elapsed time.Duration, interval time.Duration) int {
+	if elapsed <= 0 || interval <= 0 {
+		return 0
+	}
+	due := int(elapsed / interval)
+	if due < 1 {
+		return 1
+	}
+	return due
 }

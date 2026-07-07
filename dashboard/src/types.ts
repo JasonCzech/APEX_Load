@@ -591,6 +591,7 @@ export interface TestSummary {
   vuser_ramps?: Record<string, VUserRampStatus>
   goal_targets?: Record<string, GoalTargetStatus>
   live_metrics?: LiveMetrics
+  sparkline?: TestSparklinePoint[]
   telemetry_health?: TelemetryRunHealth
   error?: string
   history?: LiveMetrics[]
@@ -603,6 +604,11 @@ export interface TestSummary {
   // backwards compat
   script_id?: string
   script_name?: string
+}
+
+export interface TestSparklinePoint {
+  timestamp: string
+  tps: number
 }
 
 export interface RemoteRunLink {
@@ -1121,6 +1127,10 @@ export interface RunArchiveOverview {
   avg_response_ms: number
   min_response_ms: number
   max_response_ms: number
+  p50_ms?: number
+  p90_ms?: number
+  p95_ms?: number
+  p99_ms?: number
   resource_samples: number
   interval_summaries: number
   peak_tps: number
@@ -1194,10 +1204,39 @@ export interface RunArchiveSummaryPoint {
   active_vusers: number
   tps: number
   target_tps?: number
+  throughput_gap_pct?: number
+  throughput_target_missed?: boolean
   error_pct: number
   p95_ms: number
   total_transactions: number
   total_errors: number
+}
+
+export interface RunArchiveVerdict {
+  status: string
+  conditional: boolean
+  failed: boolean
+  explanation: string
+}
+
+export interface RunArchiveSLARow {
+  name: string
+  volume: number
+  p95_ms: number
+  sla_ms?: number
+  has_sla: boolean
+  error_pct: number
+  result: string
+  result_kind: 'pass' | 'warn' | 'fail' | 'na' | string
+}
+
+export interface RunArchiveSLARollup {
+  evaluated: number
+  passed: number
+  warned: number
+  failed: number
+  na: number
+  worst_kind: 'pass' | 'warn' | 'fail' | 'na' | string
 }
 
 export interface RunArchiveReport {
@@ -1211,6 +1250,9 @@ export interface RunArchiveReport {
   integrity?: RunArchiveIntegrityReport
   manifest: RunArchiveManifest
   overview: RunArchiveOverview
+  verdict?: RunArchiveVerdict
+  sla_rows?: Record<string, RunArchiveSLARow>
+  sla_rollup?: RunArchiveSLARollup
   evidence_tiers?: RunArchiveEvidenceTier[]
   error_patterns?: RunArchiveErrorPattern[]
   summary_timeline?: RunArchiveSummaryPoint[]

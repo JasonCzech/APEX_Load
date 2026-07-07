@@ -16,8 +16,8 @@ vi.mock('../hooks/useApi', () => ({
   useApi: () => apiMock,
 }))
 
-function PollingHarness() {
-  const model = useExecutionTestPolling('test-1')
+function PollingHarness({ enabled = true }: { enabled?: boolean }) {
+  const model = useExecutionTestPolling('test-1', { enabled })
 
   return (
     <div>
@@ -97,6 +97,54 @@ describe('useExecutionTestPolling', () => {
 
     expect(apiMock.getTest).toHaveBeenCalledTimes(1)
     expect(readTestId('status')).toBe('COMPLETE')
+
+    await act(async () => {
+      vi.advanceTimersByTime(4000)
+    })
+    await flushPromises()
+
+    expect(apiMock.getTest).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not load when disabled', async () => {
+    apiMock.getTest.mockResolvedValue(buildTest('RUNNING'))
+
+    await act(async () => {
+      root.render(<PollingHarness enabled={false} />)
+    })
+    await flushPromises()
+
+    expect(apiMock.getTest).not.toHaveBeenCalled()
+    expect(readTestId('status')).toBe('none')
+  })
+
+  it('does not stack overlapping polls', async () => {
+    let resolveFirst: (value: ReturnType<typeof buildTest>) => void = () => {}
+    apiMock.getTest.mockReturnValueOnce(new Promise(resolve => {
+      resolveFirst = resolve
+    }))
+    apiMock.getTest.mockResolvedValue(buildTest('RUNNING'))
+
+    await act(async () => {
+      root.render(<PollingHarness />)
+    })
+
+    await act(async () => {
+      vi.advanceTimersByTime(4000)
+    })
+    expect(apiMock.getTest).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      resolveFirst(buildTest('RUNNING'))
+    })
+    await flushPromises()
+
+    await act(async () => {
+      vi.advanceTimersByTime(2000)
+    })
+    await flushPromises()
+
+    expect(apiMock.getTest).toHaveBeenCalledTimes(2)
   })
 
   function readTestId(testId: string) {

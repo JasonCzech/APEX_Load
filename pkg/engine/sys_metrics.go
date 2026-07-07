@@ -25,11 +25,15 @@ type ResourceCollector struct {
 	lastRuntime runtime.MemStats
 	lastCgroup  cgroupResourceSnapshot
 	lastTCP     tcpDiagnostics
+	lastTCPTime time.Time
+	lastTCPRate float64
 	lastNet     net.IOCountersStat
 	lastDisk    disk.IOCountersStat
 	lastTime    time.Time
 	initialized bool
 }
+
+const tcpDiagnosticsInterval = 5 * time.Second
 
 func NewResourceCollector() *ResourceCollector {
 	p, _ := process.NewProcess(int32(os.Getpid()))
@@ -117,14 +121,21 @@ func (rc *ResourceCollector) Collect() *SystemResources {
 		}
 		rc.lastNet = current
 	}
-	tcp := collectTCPDiagnostics(rc.procRoot)
-	res.TCPEstablished = tcp.Established
-	res.TCPTimeWait = tcp.TimeWait
-	res.EphemeralPortUtilizationPct = tcp.EphemeralPortUtilizationPct
-	if rc.initialized && dt > 0 {
-		res.TCPRetransmitsPerSec = safeRateUint64(tcp.Retransmits, rc.lastTCP.Retransmits, dt)
+	if !rc.initialized || rc.lastTCPTime.IsZero() || now.Sub(rc.lastTCPTime) >= tcpDiagnosticsInterval {
+		tcp := collectTCPDiagnostics(rc.procRoot)
+		if !rc.lastTCPTime.IsZero() {
+			tcpDT := now.Sub(rc.lastTCPTime).Seconds()
+			if tcpDT > 0 {
+				rc.lastTCPRate = safeRateUint64(tcp.Retransmits, rc.lastTCP.Retransmits, tcpDT)
+			}
+		}
+		rc.lastTCP = tcp
+		rc.lastTCPTime = now
 	}
-	rc.lastTCP = tcp
+	res.TCPEstablished = rc.lastTCP.Established
+	res.TCPTimeWait = rc.lastTCP.TimeWait
+	res.EphemeralPortUtilizationPct = rc.lastTCP.EphemeralPortUtilizationPct
+	res.TCPRetransmitsPerSec = rc.lastTCPRate
 
 	// Disk
 	if io, err := disk.IOCounters(); err == nil {

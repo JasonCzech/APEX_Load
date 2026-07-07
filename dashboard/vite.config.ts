@@ -38,6 +38,9 @@ export default defineConfig({
           if (!id.includes('node_modules')) {
             return undefined
           }
+          if (id.includes('/three/')) {
+            return 'vendor-three'
+          }
           if (id.includes('/recharts/')) {
             return 'vendor-recharts'
           }

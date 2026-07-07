@@ -39,6 +39,8 @@ type metricsStoreSpy struct {
 	projectsByID          map[string]*storage.Project
 	releasesByID          map[string]*storage.Release
 	historyByTestID       map[string][]any
+	limitedHistoryCalls   int
+	limitedHistoryLimit   int
 	archiveByTestID       map[string]*storage.RunArchiveRecord
 	schedulesByID         map[string]*storage.ScenarioSchedule
 	occurrencesByID       map[string]*storage.ScenarioScheduleOccurrence
@@ -551,6 +553,18 @@ func (s *metricsStoreSpy) GetHistory(testID string) ([]any, error) {
 		return nil, nil
 	}
 	return s.historyByTestID[testID], nil
+}
+func (s *metricsStoreSpy) GetHistoryLimit(testID string, limit int) ([]any, error) {
+	s.limitedHistoryCalls++
+	s.limitedHistoryLimit = limit
+	if s.historyByTestID == nil {
+		return nil, nil
+	}
+	history := s.historyByTestID[testID]
+	if limit > 0 && len(history) > limit {
+		history = history[len(history)-limit:]
+	}
+	return history, nil
 }
 func (s *metricsStoreSpy) SaveRunArchive(record *storage.RunArchiveRecord) error { return nil }
 func (s *metricsStoreSpy) GetRunArchive(testID string) (*storage.RunArchiveRecord, error) {
@@ -2312,7 +2326,7 @@ func TestPublishLiveMetricsUpdatesStatePersistsHistoryAndBroadcasts(t *testing.T
 			Timestamp time.Time    `json:"timestamp"`
 			Data      *LiveMetrics `json:"data"`
 		}
-		if err := json.Unmarshal(msg, &payload); err != nil {
+		if err := json.Unmarshal(msg.payload, &payload); err != nil {
 			t.Fatalf("failed to decode broadcast payload: %v", err)
 		}
 		if payload.Type != "metrics_update" || payload.TestID != "test-1" || payload.TestName != "Checkout" {
@@ -2370,7 +2384,7 @@ func TestPublishLiveMetricsCarriesPreviousNetworkLatency(t *testing.T) {
 			Type string       `json:"type"`
 			Data *LiveMetrics `json:"data"`
 		}
-		if err := json.Unmarshal(msg, &payload); err != nil {
+		if err := json.Unmarshal(msg.payload, &payload); err != nil {
 			t.Fatalf("failed to decode broadcast payload: %v", err)
 		}
 		if payload.Type != "metrics_update" || payload.Data == nil || payload.Data.Latency == nil {
@@ -2435,7 +2449,7 @@ func TestPublishLiveMetricsBroadcastsTelemetryDiagnosticOnDegradation(t *testing
 	}
 	select {
 	case msg := <-hub.broadcast:
-		if err := json.Unmarshal(msg, &metricsPayload); err != nil {
+		if err := json.Unmarshal(msg.payload, &metricsPayload); err != nil {
 			t.Fatalf("failed to decode metrics payload: %v", err)
 		}
 		if metricsPayload.Type != "metrics_update" {
@@ -2451,7 +2465,7 @@ func TestPublishLiveMetricsBroadcastsTelemetryDiagnosticOnDegradation(t *testing
 	}
 	select {
 	case msg := <-hub.broadcast:
-		if err := json.Unmarshal(msg, &diagnosticPayload); err != nil {
+		if err := json.Unmarshal(msg.payload, &diagnosticPayload); err != nil {
 			t.Fatalf("failed to decode diagnostic payload: %v", err)
 		}
 		if diagnosticPayload.Type != "telemetry_diagnostic" {
@@ -2516,7 +2530,7 @@ func TestPublishLiveMetricsUsesConfiguredTelemetryBudgets(t *testing.T) {
 	}
 	select {
 	case msg := <-hub.broadcast:
-		if err := json.Unmarshal(msg, &diagnosticPayload); err != nil {
+		if err := json.Unmarshal(msg.payload, &diagnosticPayload); err != nil {
 			t.Fatalf("failed to decode diagnostic payload: %v", err)
 		}
 	default:
@@ -2592,7 +2606,7 @@ func TestPublishLiveMetricsDispatchesTelemetryBreachNotifications(t *testing.T) 
 				EventType string              `json:"event_type"`
 				Data      *TelemetryRunHealth `json:"data"`
 			}
-			if err := json.Unmarshal(msg, &envelope); err != nil {
+			if err := json.Unmarshal(msg.payload, &envelope); err != nil {
 				t.Fatalf("failed to decode broadcast payload: %v", err)
 			}
 			messageTypes = append(messageTypes, envelope.Type)
@@ -2715,7 +2729,7 @@ func TestPublishLiveMetricsBroadcastsSampledTransactionDiagnostics(t *testing.T)
 	}
 	select {
 	case msg := <-hub.broadcast:
-		if err := json.Unmarshal(msg, &metricsPayload); err != nil {
+		if err := json.Unmarshal(msg.payload, &metricsPayload); err != nil {
 			t.Fatalf("failed to decode metrics payload: %v", err)
 		}
 		if metricsPayload.Type != "metrics_update" {
@@ -2731,7 +2745,7 @@ func TestPublishLiveMetricsBroadcastsSampledTransactionDiagnostics(t *testing.T)
 	}
 	select {
 	case msg := <-hub.broadcast:
-		if err := json.Unmarshal(msg, &diagnosticPayload); err != nil {
+		if err := json.Unmarshal(msg.payload, &diagnosticPayload); err != nil {
 			t.Fatalf("failed to decode diagnostic payload: %v", err)
 		}
 		if diagnosticPayload.Type != "telemetry_diagnostic" {
@@ -2799,7 +2813,7 @@ func TestPublishLiveMetricsBroadcastsJMSBrokerPressureDiagnostic(t *testing.T) {
 	}
 	select {
 	case msg := <-hub.broadcast:
-		if err := json.Unmarshal(msg, &diagnosticPayload); err != nil {
+		if err := json.Unmarshal(msg.payload, &diagnosticPayload); err != nil {
 			t.Fatalf("failed to decode diagnostic payload: %v", err)
 		}
 		if diagnosticPayload.Type != "telemetry_diagnostic" {
@@ -2860,7 +2874,7 @@ func TestPublishLiveMetricsBroadcastsJMSDeadLetterDiagnostic(t *testing.T) {
 	}
 	select {
 	case msg := <-hub.broadcast:
-		if err := json.Unmarshal(msg, &diagnosticPayload); err != nil {
+		if err := json.Unmarshal(msg.payload, &diagnosticPayload); err != nil {
 			t.Fatalf("failed to decode diagnostic payload: %v", err)
 		}
 		if diagnosticPayload.Type != "telemetry_diagnostic" {
@@ -2919,17 +2933,17 @@ func TestPublishLiveMetricsSamplesTelemetryDiagnosticUntilStateChanges(t *testin
 			var envelope struct {
 				Type string `json:"type"`
 			}
-			if err := json.Unmarshal(msg, &envelope); err != nil {
+			if err := json.Unmarshal(msg.payload, &envelope); err != nil {
 				t.Fatalf("failed to decode diagnostic payload: %v", err)
 			}
 			messageTypes = append(messageTypes, envelope.Type)
 			if envelope.Type == "telemetry_diagnostic" {
-				if err := json.Unmarshal(msg, &recoveryDiagnostic); err != nil {
+				if err := json.Unmarshal(msg.payload, &recoveryDiagnostic); err != nil {
 					t.Fatalf("failed to decode diagnostic payload: %v", err)
 				}
 			}
 			if envelope.Type == "telemetry_health_changed" {
-				if err := json.Unmarshal(msg, &recoveryHealth); err != nil {
+				if err := json.Unmarshal(msg.payload, &recoveryHealth); err != nil {
 					t.Fatalf("failed to decode telemetry health payload: %v", err)
 				}
 			}
@@ -2966,6 +2980,9 @@ func TestLoadStoredTestHistoryTrimsHistoryWindow(t *testing.T) {
 
 	if got := len(testRun.History); got != maxManagedTestHistory {
 		t.Fatalf("history length = %d, want %d", got, maxManagedTestHistory)
+	}
+	if store.limitedHistoryCalls != 1 || store.limitedHistoryLimit != maxManagedTestHistory {
+		t.Fatalf("GetHistoryLimit calls/limit = %d/%d, want 1/%d", store.limitedHistoryCalls, store.limitedHistoryLimit, maxManagedTestHistory)
 	}
 	if first := testRun.History[0].Timestamp; !first.Equal(time.Unix(5, 0)) {
 		t.Fatalf("expected trimmed first timestamp %s, got %s", time.Unix(5, 0), first)
@@ -3546,7 +3563,7 @@ func TestRequestStopIfRunningTransitionsAndBroadcasts(t *testing.T) {
 			Type   string `json:"type"`
 			TestID string `json:"test_id"`
 		}
-		if err := json.Unmarshal(msg, &payload); err != nil {
+		if err := json.Unmarshal(msg.payload, &payload); err != nil {
 			t.Fatalf("failed to decode broadcast payload: %v", err)
 		}
 		if payload.Type != "test_stopping" || payload.TestID != "test-1" {
@@ -3570,7 +3587,7 @@ func TestRequestStopIfRunningIgnoresNonRunningTests(t *testing.T) {
 	}
 	select {
 	case msg := <-hub.broadcast:
-		t.Fatalf("did not expect broadcast for non-running test, got %s", string(msg))
+		t.Fatalf("did not expect broadcast for non-running test, got %s", string(msg.payload))
 	default:
 	}
 	if shouldStopForGoalStatus(&LiveMetrics{}) {
@@ -4038,7 +4055,7 @@ func TestProcessMetricsSnapshotBroadcastsAlertAndStopRequest(t *testing.T) {
 			var payload struct {
 				Type string `json:"type"`
 			}
-			if err := json.Unmarshal(msg, &payload); err != nil {
+			if err := json.Unmarshal(msg.payload, &payload); err != nil {
 				t.Fatalf("failed to decode broadcast payload: %v", err)
 			}
 			messageTypes = append(messageTypes, payload.Type)

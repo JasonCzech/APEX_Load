@@ -111,7 +111,7 @@ func (s *Server) tryBuildRunArchiveReport(testID string) *RunArchiveReport {
 	if err := ensureArchiveMaterialized(record); err != nil {
 		return nil
 	}
-	report, err := buildRunArchiveReport(record)
+	report, err := cachedRunArchiveReport(record)
 	if err != nil {
 		return nil
 	}

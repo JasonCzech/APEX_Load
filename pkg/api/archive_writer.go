@@ -3,6 +3,7 @@ package api
 // writer — split from archive.go (same package, behavior-preserving).
 
 import (
+	"bufio"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -26,31 +27,32 @@ func newRunArchiveWriter(test *ManagedTest, provenance RunArchiveProvenance) (*r
 		return nil, fmt.Errorf("create archive dir: %w", err)
 	}
 
-	open := func(name string) (*os.File, *json.Encoder, error) {
+	open := func(name string) (*os.File, *bufio.Writer, *json.Encoder, error) {
 		file, err := os.Create(filepath.Join(archiveDir, name))
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
-		return file, json.NewEncoder(file), nil
+		writer := bufio.NewWriterSize(file, 256*1024)
+		return file, writer, json.NewEncoder(writer), nil
 	}
 
-	txFile, txEncoder, err := open("transactions.jsonl")
+	txFile, txBuf, txEncoder, err := open("transactions.jsonl")
 	if err != nil {
 		return nil, fmt.Errorf("open transactions archive: %w", err)
 	}
-	resourceFile, resourceEncoder, err := open("resources.jsonl")
+	resourceFile, resourceBuf, resourceEncoder, err := open("resources.jsonl")
 	if err != nil {
 		txFile.Close()
 		return nil, fmt.Errorf("open resources archive: %w", err)
 	}
-	summaryFile, summaryEncoder, err := open("interval_summaries.jsonl")
+	summaryFile, summaryBuf, summaryEncoder, err := open("interval_summaries.jsonl")
 	if err != nil {
 		txFile.Close()
 		resourceFile.Close()
 		return nil, fmt.Errorf("open summaries archive: %w", err)
 	}
 
-	return &runArchiveWriter{
+	writer := &runArchiveWriter{
 		manifest: RunArchiveManifest{
 			SchemaVersion:                archiveSchemaVersion,
 			TestID:                       test.ID,
@@ -70,10 +72,58 @@ func newRunArchiveWriter(test *ManagedTest, provenance RunArchiveProvenance) (*r
 		txFile:          txFile,
 		resourceFile:    resourceFile,
 		summaryFile:     summaryFile,
+		txBuf:           txBuf,
+		resourceBuf:     resourceBuf,
+		summaryBuf:      summaryBuf,
 		txEncoder:       txEncoder,
 		resourceEncoder: resourceEncoder,
 		summaryEncoder:  summaryEncoder,
-	}, nil
+		flushStop:       make(chan struct{}),
+		flushStopped:    make(chan struct{}),
+	}
+	go writer.flushLoop()
+	return writer, nil
+}
+
+func (w *runArchiveWriter) flushLoop() {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	defer close(w.flushStopped)
+	for {
+		select {
+		case <-ticker.C:
+			w.mu.Lock()
+			if err := w.flushBuffersLocked(); err != nil && w.flushErr == nil {
+				w.flushErr = err
+			}
+			w.mu.Unlock()
+		case <-w.flushStop:
+			return
+		}
+	}
+}
+
+func (w *runArchiveWriter) stopFlushLoop() {
+	if w == nil || w.flushStop == nil {
+		return
+	}
+	close(w.flushStop)
+	if w.flushStopped != nil {
+		<-w.flushStopped
+	}
+	w.flushStop = nil
+}
+
+func (w *runArchiveWriter) flushBuffersLocked() error {
+	for _, writer := range []*bufio.Writer{w.txBuf, w.resourceBuf, w.summaryBuf} {
+		if writer == nil {
+			continue
+		}
+		if err := writer.Flush(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (w *runArchiveWriter) RefreshProvenance(provenance RunArchiveProvenance) {
@@ -110,6 +160,9 @@ func (w *runArchiveWriter) RecordResult(result *protocol.Result) error {
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if w.flushErr != nil {
+		return w.flushErr
+	}
 	event := TransactionEvent{
 		Timestamp:         result.StartTime,
 		TestID:            w.manifest.TestID,
@@ -163,6 +216,9 @@ func (w *runArchiveWriter) RecordResourceSample(timestamp time.Time, activeVUser
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if w.flushErr != nil {
+		return w.flushErr
+	}
 	record := ResourceSample{
 		Timestamp:                         timestamp,
 		TestID:                            w.manifest.TestID,
@@ -225,6 +281,9 @@ func (w *runArchiveWriter) RecordIntervalSummary(live *LiveMetrics) error {
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if w.flushErr != nil {
+		return w.flushErr
+	}
 	record := IntervalSummaryRecord{
 		Timestamp:              live.Timestamp,
 		TestID:                 w.manifest.TestID,
@@ -256,14 +315,21 @@ func (w *runArchiveWriter) RecordIntervalSummary(live *LiveMetrics) error {
 }
 
 func (w *runArchiveWriter) Finalize(status string, completedAt time.Time, errStr string, slaBreached bool, slaDetails []string) (*storage.RunArchiveRecord, error) {
+	w.stopFlushLoop()
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if w.flushErr != nil {
+		return nil, w.flushErr
+	}
 	w.manifest.Status = status
 	w.manifest.CompletedAt = completedAt
 	w.manifest.Error = errStr
 	w.manifest.SLABreached = slaBreached
 	w.manifest.SLADetails = slaDetails
 
+	if err := w.flushBuffersLocked(); err != nil {
+		return nil, err
+	}
 	for _, file := range []*os.File{w.txFile, w.resourceFile, w.summaryFile} {
 		if file == nil {
 			continue

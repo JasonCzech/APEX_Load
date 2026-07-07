@@ -66,6 +66,14 @@ type ArchiveListParams = {
 
 type MetricsParams = {
   groups?: string[]
+  since?: string
+  limit?: number
+}
+
+type GetTestParams = {
+  includeHistory?: boolean
+  since?: string
+  limit?: number
 }
 
 type TestListResponse = {
@@ -76,6 +84,11 @@ type TestListResponse = {
 type TestNotesResponse = {
   test_id: string
   notes: TestNote[]
+}
+
+type ArchiveReportsBatchResponse = {
+  reports: Record<string, RunArchiveReport>
+  errors?: Record<string, string>
 }
 
 type DeleteTestNoteResponse = {
@@ -309,7 +322,14 @@ export function useTestApi() {
     [],
   )
 
-  const getTest = useCallback((id: string) => request<TestSummary>(`/tests/${id}`), [])
+  const getTest = useCallback((id: string, params?: GetTestParams) => {
+    const suffix = buildQuery({
+      include: params?.includeHistory ? 'history' : undefined,
+      since: params?.since,
+      limit: params?.limit,
+    })
+    return request<TestSummary>(`/tests/${id}${suffix}`)
+  }, [])
 
   const createTest = useCallback(
     (data: TestCreateRequest) => request<TestSummary>('/tests', { method: 'POST', body: JSON.stringify(data) }),
@@ -472,7 +492,7 @@ export function useTestApi() {
   )
 
   const getMetrics = useCallback((id: string, params?: MetricsParams) => {
-    const suffix = buildQuery({ groups: params?.groups })
+    const suffix = buildQuery({ groups: params?.groups, since: params?.since, limit: params?.limit })
     return request<TestMetricsResponse>(`/tests/${id}/metrics${suffix}`)
   }, [])
 
@@ -538,6 +558,15 @@ export function useTestApi() {
 
   const getTestArchiveReport = useCallback((id: string) => request<RunArchiveReport>(`/tests/${id}/archive/report`), [])
 
+  const getTestArchiveReports = useCallback(
+    (ids: string[], projectId: string) =>
+      request<ArchiveReportsBatchResponse>(`/tests/archive/reports${buildQuery({ project_id: projectId })}`, {
+        method: 'POST',
+        body: JSON.stringify({ ids }),
+      }),
+    [],
+  )
+
   const getTestReportAnnotations = useCallback(
     (id: string, profile: string) =>
       request<ReportAnnotationsResponse>(`/tests/${id}/report/annotations${buildQuery({ profile })}`),
@@ -583,6 +612,12 @@ export function useTestApi() {
 
   const downloadTestReport = useCallback(
     (id: string, profile: string) => fetchBlob(`/tests/${id}/report${buildQuery({ profile })}`),
+    [],
+  )
+
+  const downloadTestReportFormat = useCallback(
+    (id: string, profile: string, format: 'pdf' | 'csv') =>
+      fetchBlob(`/tests/${id}/archive/report${buildQuery({ format, profile })}`),
     [],
   )
 
@@ -690,6 +725,7 @@ export function useTestApi() {
       getTestArchiveResources,
       getTestArchiveSummaries,
       getTestArchiveReport,
+      getTestArchiveReports,
       getTestReportAnnotations,
       saveTestReportAnnotations,
       listTestNotes,
@@ -697,6 +733,7 @@ export function useTestApi() {
       updateTestNote,
       deleteTestNote,
       downloadTestReport,
+      downloadTestReportFormat,
       getTestArchiveAnalysis,
       downloadTestArchive,
       downloadTestArchiveComparison,
@@ -767,6 +804,7 @@ export function useTestApi() {
       getTestArchiveResources,
       getTestArchiveSummaries,
       getTestArchiveReport,
+      getTestArchiveReports,
       getTestReportAnnotations,
       saveTestReportAnnotations,
       listTestNotes,
@@ -774,6 +812,7 @@ export function useTestApi() {
       updateTestNote,
       deleteTestNote,
       downloadTestReport,
+      downloadTestReportFormat,
       getTestArchiveAnalysis,
       downloadTestArchive,
       downloadTestArchiveComparison,

@@ -14,6 +14,31 @@ import (
 	"github.com/jasonczech/apexload/pkg/engine"
 )
 
+func TestSQLiteDSNAddsPerformancePragmas(t *testing.T) {
+	dsn := sqliteDSN("/tmp/apexload.db?mode=rwc&_pragma=busy_timeout(250)")
+
+	if strings.Count(dsn, "_pragma=busy_timeout") != 1 {
+		t.Fatalf("busy_timeout pragma count in %q = %d, want 1", dsn, strings.Count(dsn, "_pragma=busy_timeout"))
+	}
+	for _, want := range []string{"_pragma=journal_mode(WAL)", "_pragma=synchronous(NORMAL)"} {
+		if !strings.Contains(dsn, want) {
+			t.Fatalf("sqliteDSN(%q) missing %s", dsn, want)
+		}
+	}
+}
+
+func TestSQLiteStoreUsesSingleWriterPool(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	if got := store.db.db.Stats().MaxOpenConnections; got != 1 {
+		t.Fatalf("MaxOpenConnections = %d, want 1", got)
+	}
+}
+
 func TestSQLiteStoreSaveScriptPreservesMetadata(t *testing.T) {
 	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
@@ -1219,6 +1244,50 @@ func TestSQLiteStoreSaveHistoryUsesTypedIntervalSummaries(t *testing.T) {
 	}
 	if storedSchemaVersion != intervalSummarySchemaVersion {
 		t.Fatalf("stored schema version = %q, want %q", storedSchemaVersion, intervalSummarySchemaVersion)
+	}
+}
+
+func TestSQLiteStoreGetHistoryLimitReturnsNewestWindowAscending(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	base := time.Date(2026, time.May, 13, 18, 0, 0, 0, time.UTC)
+	for i := 0; i < 5; i++ {
+		timestamp := base.Add(time.Duration(i) * time.Second)
+		metrics := map[string]any{
+			"timestamp":          timestamp,
+			"active_vusers":      i + 1,
+			"tps":                float64(i + 1),
+			"avg_response_ms":    100.0,
+			"error_pct":          0.0,
+			"total_transactions": i + 1,
+			"total_errors":       0,
+		}
+		if err := store.SaveHistory("test-window", timestamp, metrics); err != nil {
+			t.Fatalf("SaveHistory(%d) returned error: %v", i, err)
+		}
+	}
+
+	history, err := store.GetHistoryLimit("test-window", 2)
+	if err != nil {
+		t.Fatalf("GetHistoryLimit returned error: %v", err)
+	}
+	if len(history) != 2 {
+		t.Fatalf("history length = %d, want 2", len(history))
+	}
+	first, ok := history[0].(IntervalSummaryRecord)
+	if !ok {
+		t.Fatalf("first history entry = %#v, want IntervalSummaryRecord", history[0])
+	}
+	second, ok := history[1].(IntervalSummaryRecord)
+	if !ok {
+		t.Fatalf("second history entry = %#v, want IntervalSummaryRecord", history[1])
+	}
+	if !first.Timestamp.Equal(base.Add(3*time.Second)) || !second.Timestamp.Equal(base.Add(4*time.Second)) {
+		t.Fatalf("window timestamps = %s, %s; want newest two ascending", first.Timestamp, second.Timestamp)
 	}
 }
 

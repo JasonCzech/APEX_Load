@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -29,6 +30,18 @@ func TestKafkaProtocolIsRegistered(t *testing.T) {
 	}
 	if p.Name() != "kafka" {
 		t.Fatalf("Name() = %q, want kafka", p.Name())
+	}
+}
+
+func TestAddRecordExtractionsCapsKafkaBody(t *testing.T) {
+	result := &protocol.Result{Extractions: map[string]string{}}
+	addRecordExtractions(result, kafkaRecord{Value: []byte(strings.Repeat("x", kafkaExtractionBodyLimit+10))})
+
+	if len(result.Extractions["kafka_body"]) != kafkaExtractionBodyLimit {
+		t.Fatalf("kafka_body length = %d, want %d", len(result.Extractions["kafka_body"]), kafkaExtractionBodyLimit)
+	}
+	if result.Extractions["kafka_body_truncated"] != "true" {
+		t.Fatalf("kafka_body_truncated = %q, want true", result.Extractions["kafka_body_truncated"])
 	}
 }
 

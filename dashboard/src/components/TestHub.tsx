@@ -663,7 +663,7 @@ function goalBaselinePeakTps(run: TestSummary, report?: RunArchiveReport): numbe
   return maxFinite([
     report?.overview?.peak_tps,
     run.live_metrics?.tps,
-    ...(run.history || []).map(point => point.tps),
+    ...(run.sparkline || []).map(point => point.tps),
   ])
 }
 
@@ -671,7 +671,6 @@ function goalBaselineArt(run: TestSummary, report?: RunArchiveReport): number | 
   return firstFinite([
     report?.overview?.avg_response_ms,
     run.live_metrics?.avg_response_ms,
-    ...(run.history || []).slice(-1).map(point => point.avg_response_ms),
   ])
 }
 
@@ -679,7 +678,6 @@ function goalBaselineErrorRate(run: TestSummary, report?: RunArchiveReport): num
   return firstFinite([
     report?.overview?.error_pct,
     run.live_metrics?.error_pct,
-    ...(run.history || []).slice(-1).map(point => point.error_pct),
   ])
 }
 

@@ -236,7 +236,7 @@ func (tr *TestRunner) BuildRunCalendar(from time.Time, to time.Time, projectID s
 	if limit > 0 && limit < maxEvents {
 		maxEvents = limit
 	}
-	snapshot := tr.runCalendarSnapshot(projectID)
+	snapshot := tr.runCalendarSnapshot(projectID, from, to)
 	testsByID := map[string]*ManagedTest{}
 	for _, test := range snapshot.Tests {
 		if test != nil {
@@ -490,7 +490,15 @@ func reservationWindowOverlapsDay(start, end *time.Time, dayStart, dayEnd time.T
 	return true
 }
 
-func (tr *TestRunner) runCalendarSnapshot(projectID string) runCalendarSnapshot {
+type scenarioScheduleOccurrenceWindowStore interface {
+	ListScenarioScheduleOccurrencesByTimeRange(projectID string, from time.Time, to time.Time) ([]*storage.ScenarioScheduleOccurrence, error)
+}
+
+type executionPlanScheduleOccurrenceWindowStore interface {
+	ListExecutionPlanScheduleOccurrencesByTimeRange(projectID string, from time.Time, to time.Time) ([]*storage.ExecutionPlanScheduleOccurrence, error)
+}
+
+func (tr *TestRunner) runCalendarSnapshot(projectID string, from time.Time, to time.Time) runCalendarSnapshot {
 	tests := tr.ListTests()
 	filteredTests := make([]*ManagedTest, 0, len(tests))
 	for _, test := range tests {
@@ -549,7 +557,14 @@ func (tr *TestRunner) runCalendarSnapshot(projectID string) runCalendarSnapshot 
 
 	occurrences := make([]*storage.ScenarioScheduleOccurrence, 0)
 	if store != nil {
-		if storedOccurrences, err := store.ListAllScenarioScheduleOccurrences(); err == nil {
+		var storedOccurrences []*storage.ScenarioScheduleOccurrence
+		var err error
+		if windowStore, ok := store.(scenarioScheduleOccurrenceWindowStore); ok {
+			storedOccurrences, err = windowStore.ListScenarioScheduleOccurrencesByTimeRange(projectID, from, to)
+		} else {
+			storedOccurrences, err = store.ListAllScenarioScheduleOccurrences()
+		}
+		if err == nil {
 			for _, occurrence := range storedOccurrences {
 				if occurrence == nil {
 					continue
@@ -568,6 +583,17 @@ func (tr *TestRunner) runCalendarSnapshot(projectID string) runCalendarSnapshot 
 	planOccurrences := make([]*storage.ExecutionPlanScheduleOccurrence, 0)
 	plans := map[string]*storage.ExecutionPlan{}
 	if planStore := tr.execPlanScheduleStore; planStore != nil {
+		windowOccurrencesLoaded := false
+		if windowStore, ok := planStore.(executionPlanScheduleOccurrenceWindowStore); ok {
+			if occ, err := windowStore.ListExecutionPlanScheduleOccurrencesByTimeRange(projectID, from, to); err == nil {
+				for _, o := range occ {
+					if o != nil {
+						planOccurrences = append(planOccurrences, o)
+					}
+				}
+				windowOccurrencesLoaded = true
+			}
+		}
 		if allSchedules, err := planStore.ListAllExecutionPlanSchedules(); err == nil {
 			for _, schedule := range allSchedules {
 				if schedule == nil {
@@ -582,10 +608,12 @@ func (tr *TestRunner) runCalendarSnapshot(projectID string) runCalendarSnapshot 
 						plans[schedule.PlanID] = plan
 					}
 				}
-				if occ, err := planStore.ListExecutionPlanScheduleOccurrences(schedule.ID); err == nil {
-					for _, o := range occ {
-						if o != nil {
-							planOccurrences = append(planOccurrences, o)
+				if !windowOccurrencesLoaded {
+					if occ, err := planStore.ListExecutionPlanScheduleOccurrences(schedule.ID); err == nil {
+						for _, o := range occ {
+							if o != nil {
+								planOccurrences = append(planOccurrences, o)
+							}
 						}
 					}
 				}

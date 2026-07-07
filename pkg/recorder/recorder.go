@@ -82,15 +82,17 @@ type RecordedWebSocketMessage struct {
 }
 
 type Session struct {
-	ID        string            `json:"id"`
-	Name      string            `json:"name"`
-	ProjectID string            `json:"project_id,omitempty"`
-	Status    string            `json:"status"`
-	StartedAt time.Time         `json:"started_at"`
-	StoppedAt *time.Time        `json:"stopped_at,omitempty"`
-	BaseURL   string            `json:"base_url,omitempty"`
-	Requests  []RecordedRequest `json:"requests"`
-	Filters   SessionFilters    `json:"filters"`
+	ID           string            `json:"id"`
+	Name         string            `json:"name"`
+	ProjectID    string            `json:"project_id,omitempty"`
+	Status       string            `json:"status"`
+	StartedAt    time.Time         `json:"started_at"`
+	StoppedAt    *time.Time        `json:"stopped_at,omitempty"`
+	BaseURL      string            `json:"base_url,omitempty"`
+	Requests     []RecordedRequest `json:"requests,omitempty"`
+	RequestCount int               `json:"request_count,omitempty"`
+	LastSeq      int               `json:"last_seq,omitempty"`
+	Filters      SessionFilters    `json:"filters"`
 
 	mu          sync.Mutex
 	seq         int
@@ -130,6 +132,7 @@ type Recorder struct {
 	sessions       map[string]*Session
 	active         *Session
 	proxy          *http.Server
+	proxyClient    *http.Client
 	addr           string
 	proxyAuthToken string
 	caCertPath     string
@@ -154,8 +157,16 @@ func NewWithCAFiles(proxyAddr, caCertPath, caKeyPath string) *Recorder {
 	if proxyAddr == "" {
 		proxyAddr = defaultProxyAddr
 	}
+	transport := &http.Transport{
+		DialContext:         proxySafeDialer(30 * time.Second).DialContext,
+		TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
+		MaxIdleConns:        256,
+		MaxIdleConnsPerHost: 64,
+		IdleConnTimeout:     90 * time.Second,
+	}
 	return &Recorder{
 		sessions:       make(map[string]*Session),
+		proxyClient:    &http.Client{Timeout: 30 * time.Second, Transport: transport, CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }},
 		addr:           proxyAddr,
 		proxyAuthToken: os.Getenv(envProxyAuthToken),
 		caCertPath:     caCertPath,
@@ -323,7 +334,7 @@ func (r *Recorder) UpdateRequest(sessionID string, seq int, update RequestUpdate
 			}
 			s.Requests[i].ThinkTimeMs = *update.ThinkTimeMs
 		}
-		updated := s.Requests[i]
+		updated := recordingEventRequest(s.Requests[i])
 		if s.notify != nil {
 			s.notify(SessionEvent{Type: "request_updated", SessionID: s.ID, Request: &updated})
 		}
@@ -341,43 +352,79 @@ func (r *Recorder) UpdateRequest(sessionID string, seq int, update RequestUpdate
 // Header maps are created once under lock and never mutated afterward, so they
 // are aliased; WebSocketMessages is appended after creation, so it is cloned.
 func (s *Session) snapshot() *Session {
+	return s.snapshotWithOptions(true, 0)
+}
+
+func (s *Session) summarySnapshot() *Session {
+	return s.snapshotWithOptions(false, 0)
+}
+
+func (s *Session) snapshotSince(seq int) *Session {
+	return s.snapshotWithOptions(true, seq)
+}
+
+func (s *Session) snapshotWithOptions(includeRequests bool, sinceSeq int) *Session {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	cp := &Session{
-		ID:        s.ID,
-		Name:      s.Name,
-		ProjectID: s.ProjectID,
-		Status:    s.Status,
-		StartedAt: s.StartedAt,
-		StoppedAt: s.StoppedAt,
-		BaseURL:   s.BaseURL,
-		Filters:   s.Filters,
+		ID:           s.ID,
+		Name:         s.Name,
+		ProjectID:    s.ProjectID,
+		Status:       s.Status,
+		StartedAt:    s.StartedAt,
+		StoppedAt:    s.StoppedAt,
+		BaseURL:      s.BaseURL,
+		RequestCount: len(s.Requests),
+		LastSeq:      s.seq,
+		Filters:      s.Filters,
 	}
-	if len(s.Requests) > 0 {
-		cp.Requests = make([]RecordedRequest, len(s.Requests))
-		copy(cp.Requests, s.Requests)
-		for i := range cp.Requests {
-			if msgs := cp.Requests[i].WebSocketMessages; len(msgs) > 0 {
+	if includeRequests && len(s.Requests) > 0 {
+		cp.Requests = make([]RecordedRequest, 0, len(s.Requests))
+		for _, request := range s.Requests {
+			if sinceSeq > 0 && request.Seq <= sinceSeq {
+				continue
+			}
+			clonedRequest := request
+			if msgs := clonedRequest.WebSocketMessages; len(msgs) > 0 {
 				cloned := make([]RecordedWebSocketMessage, len(msgs))
 				copy(cloned, msgs)
-				cp.Requests[i].WebSocketMessages = cloned
+				clonedRequest.WebSocketMessages = cloned
 			}
+			cp.Requests = append(cp.Requests, clonedRequest)
 		}
 	}
 	return cp
 }
 
 func (r *Recorder) GetSession(id string) (*Session, bool) {
+	return r.GetSessionWithOptions(id, true, 0)
+}
+
+func (r *Recorder) GetSessionWithOptions(id string, includeRequests bool, sinceSeq int) (*Session, bool) {
 	r.mu.RLock()
 	s, ok := r.sessions[id]
 	r.mu.RUnlock()
 	if !ok {
 		return nil, false
 	}
-	return s.snapshot(), true
+	if sinceSeq > 0 {
+		return s.snapshotSince(sinceSeq), true
+	}
+	if includeRequests {
+		return s.snapshot(), true
+	}
+	return s.summarySnapshot(), true
 }
 
 func (r *Recorder) ListSessions() []*Session {
+	return r.listSessions(true)
+}
+
+func (r *Recorder) ListSessionSummaries() []*Session {
+	return r.listSessions(false)
+}
+
+func (r *Recorder) listSessions(includeRequests bool) []*Session {
 	r.mu.RLock()
 	live := make([]*Session, 0, len(r.sessions))
 	for _, s := range r.sessions {
@@ -386,7 +433,11 @@ func (r *Recorder) ListSessions() []*Session {
 	r.mu.RUnlock()
 	result := make([]*Session, len(live))
 	for i, s := range live {
-		result[i] = s.snapshot()
+		if includeRequests {
+			result[i] = s.snapshot()
+		} else {
+			result[i] = s.summarySnapshot()
+		}
 	}
 	return result
 }
@@ -407,13 +458,24 @@ func (r *Recorder) DeleteSession(id string) bool {
 }
 
 func (r *Recorder) ActiveSession() *Session {
+	return r.activeSessionWithRequests(true)
+}
+
+func (r *Recorder) ActiveSessionSummary() *Session {
+	return r.activeSessionWithRequests(false)
+}
+
+func (r *Recorder) activeSessionWithRequests(includeRequests bool) *Session {
 	r.mu.RLock()
 	s := r.active
 	r.mu.RUnlock()
 	if s == nil {
 		return nil
 	}
-	return s.snapshot()
+	if includeRequests {
+		return s.snapshot()
+	}
+	return s.summarySnapshot()
 }
 
 func (r *Recorder) StartProxy() error {
@@ -499,18 +561,7 @@ func (r *Recorder) handleProxy(w http.ResponseWriter, req *http.Request) {
 	}
 	proxyReq.Header.Del("Proxy-Connection")
 
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-		Transport: &http.Transport{
-			DialContext:     proxySafeDialer(30 * time.Second).DialContext,
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		},
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
-
-	resp, err := client.Do(proxyReq)
+	resp, err := r.proxyClient.Do(proxyReq)
 	if err != nil {
 		http.Error(w, "upstream error: "+err.Error(), http.StatusBadGateway)
 		return
@@ -941,10 +992,11 @@ func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBo
 	s.Requests = append(s.Requests, rec)
 
 	if s.notify != nil {
+		eventRequest := recordingEventRequest(rec)
 		s.notify(SessionEvent{
 			Type:      "request_recorded",
 			SessionID: s.ID,
-			Request:   &rec,
+			Request:   &eventRequest,
 		})
 	}
 	return rec.Seq
@@ -965,12 +1017,26 @@ func (r *Recorder) appendWebSocketMessage(s *Session, seq int, msg RecordedWebSo
 			continue
 		}
 		s.Requests[i].WebSocketMessages = append(s.Requests[i].WebSocketMessages, msg)
-		updated := s.Requests[i]
+		updated := recordingEventRequest(s.Requests[i])
 		if s.notify != nil {
 			s.notify(SessionEvent{Type: "request_updated", SessionID: s.ID, Request: &updated})
 		}
 		return
 	}
+}
+
+func recordingEventRequest(request RecordedRequest) RecordedRequest {
+	request.Body = ""
+	request.ResponseBody = ""
+	if len(request.WebSocketMessages) > 0 {
+		messages := make([]RecordedWebSocketMessage, len(request.WebSocketMessages))
+		copy(messages, request.WebSocketMessages)
+		for i := range messages {
+			messages[i].Payload = ""
+		}
+		request.WebSocketMessages = messages
+	}
+	return request
 }
 
 func correlationHeaders(headers http.Header, extraRedact []string, skipProxy bool, captureCookies bool) map[string][]string {

@@ -51,7 +51,7 @@ func (s *Server) systemServices(r *http.Request) SystemServicesResponse {
 	if s.recorder != nil {
 		recorderStatus := "idle"
 		recorderMetadata := map[string]any{}
-		if active := s.recorder.ActiveSession(); active != nil {
+		if active := s.recorder.ActiveSessionSummary(); active != nil {
 			recorderStatus = active.Status
 			recorderMetadata["active_session_id"] = active.ID
 			recorderMetadata["active_session_name"] = active.Name

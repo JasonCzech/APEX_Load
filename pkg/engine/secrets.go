@@ -29,6 +29,13 @@ type cachingSecretResolver struct {
 	mu       sync.Mutex
 	values   map[string]string
 	missing  map[string]struct{}
+	inflight map[string]*secretResolutionFlight
+}
+
+type secretResolutionFlight struct {
+	done  chan struct{}
+	value string
+	ok    bool
 }
 
 func newCachingSecretResolver(delegate SecretResolver) SecretResolver {
@@ -39,6 +46,7 @@ func newCachingSecretResolver(delegate SecretResolver) SecretResolver {
 		delegate: delegate,
 		values:   make(map[string]string),
 		missing:  make(map[string]struct{}),
+		inflight: make(map[string]*secretResolutionFlight),
 	}
 }
 
@@ -52,6 +60,13 @@ func (r *cachingSecretResolver) Resolve(name string) (string, bool) {
 		r.mu.Unlock()
 		return "", false
 	}
+	if flight := r.inflight[name]; flight != nil {
+		r.mu.Unlock()
+		<-flight.done
+		return flight.value, flight.ok
+	}
+	flight := &secretResolutionFlight{done: make(chan struct{})}
+	r.inflight[name] = flight
 	r.mu.Unlock()
 
 	value, ok := r.delegate.Resolve(name)
@@ -60,10 +75,14 @@ func (r *cachingSecretResolver) Resolve(name string) (string, bool) {
 	defer r.mu.Unlock()
 	if ok {
 		r.values[name] = value
-		return value, true
+	} else {
+		r.missing[name] = struct{}{}
 	}
-	r.missing[name] = struct{}{}
-	return "", false
+	flight.value = value
+	flight.ok = ok
+	delete(r.inflight, name)
+	close(flight.done)
+	return value, ok
 }
 
 type chainedSecretResolver struct {

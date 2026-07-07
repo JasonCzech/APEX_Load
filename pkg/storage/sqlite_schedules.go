@@ -155,8 +155,34 @@ func (s *SQLiteStore) ListScenarioScheduleOccurrences(scheduleID string) ([]*Sce
 	return collectScenarioScheduleOccurrences(rows)
 }
 
+func (s *SQLiteStore) LatestScenarioScheduleOccurrence(scheduleID string) (*ScenarioScheduleOccurrence, error) {
+	row := s.db.QueryRow(`SELECT id, schedule_id, scenario_id, COALESCE(project_id, ''), COALESCE(schedule_revision, 1), planned_at, materialized_at, status, COALESCE(reason_code, ''), COALESCE(test_id, ''), COALESCE(approval_id, ''), COALESCE(conflict_summary, ''), created_at, updated_at FROM scenario_schedule_occurrences WHERE schedule_id = ? ORDER BY planned_at DESC LIMIT 1`, scheduleID)
+	occurrence, err := scanScenarioScheduleOccurrence(row)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return occurrence, err
+}
+
 func (s *SQLiteStore) ListAllScenarioScheduleOccurrences() ([]*ScenarioScheduleOccurrence, error) {
 	rows, err := s.db.Query(`SELECT id, schedule_id, scenario_id, COALESCE(project_id, ''), COALESCE(schedule_revision, 1), planned_at, materialized_at, status, COALESCE(reason_code, ''), COALESCE(test_id, ''), COALESCE(approval_id, ''), COALESCE(conflict_summary, ''), created_at, updated_at FROM scenario_schedule_occurrences ORDER BY planned_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return collectScenarioScheduleOccurrences(rows)
+}
+
+func (s *SQLiteStore) ListScenarioScheduleOccurrencesByTimeRange(projectID string, from time.Time, to time.Time) ([]*ScenarioScheduleOccurrence, error) {
+	projectID = normalizeProjectID(projectID)
+	query := `SELECT id, schedule_id, scenario_id, COALESCE(project_id, ''), COALESCE(schedule_revision, 1), planned_at, materialized_at, status, COALESCE(reason_code, ''), COALESCE(test_id, ''), COALESCE(approval_id, ''), COALESCE(conflict_summary, ''), created_at, updated_at FROM scenario_schedule_occurrences WHERE planned_at >= ? AND planned_at < ?`
+	args := []any{from.UTC(), to.UTC()}
+	if projectID != "" {
+		query += ` AND COALESCE(project_id, '') = ?`
+		args = append(args, projectID)
+	}
+	query += ` ORDER BY planned_at DESC`
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}

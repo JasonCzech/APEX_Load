@@ -7,7 +7,7 @@ import { ApplicationProvider } from './hooks/ApplicationProvider'
 import { useApplication } from './hooks/useApplication'
 import { MetricsHistoryPoint, TelemetryDiagnostic, TelemetryDiagnosticEntry, WSMessage } from './types'
 import Sidebar, { type NavPage } from './components/Sidebar'
-import DashboardPage, { type DashboardSnapshotAudience } from './components/DashboardPage'
+import type { DashboardSnapshotAudience } from './components/DashboardPage'
 import TablePaginationManager from './components/TablePaginationManager'
 import {
   type AppView,
@@ -36,6 +36,7 @@ import {
 } from './hooks/TopbarContributionProvider'
 import { NavigationGuardProvider, useNavigationGuardRunner } from './hooks/NavigationGuardProvider'
 import { isEffectiveOperationAllowed } from './utils/authAccessUtils'
+import { isRunReportEnabled } from './utils/featureFlags'
 import { DesktopStatusResponse } from './types/library'
 import { getDesktopBridge, isDesktopSurface, isMacDesktop } from './desktop/desktopBridge'
 import { useDesktopNotifications } from './hooks/useDesktopNotifications'
@@ -65,9 +66,11 @@ import './App.css'
 import './components/Pages.css'
 
 const ScriptsPage = lazy(() => import('./components/ScriptsPage'))
+const DashboardPage = lazy(() => import('./components/DashboardPage'))
 const CommandCenterPrototype = lazy(() => import('./components/CommandCenterPrototype'))
 const TestHub = lazy(() => import('./components/TestHub'))
 const TestExecution = lazy(() => import('./components/TestExecution'))
+const RunReportPage = lazy(() => import('./components/RunReportPage'))
 const ResultsPage = lazy(() => import('./components/ResultsPage'))
 const NewTestPage = lazy(() => import('./components/NewTestPage'))
 const MonitoringPage = lazy(() => import('./components/MonitoringPage'))
@@ -181,6 +184,13 @@ function dashboardSnapshotAudience(
     : 'user'
 }
 
+function viewConsumesMetrics(view: AppView, testId: string) {
+  if (view.page === 'dashboard') return true
+  if (view.page === 'test') return view.testId === testId
+  if (view.page === 'command-center') return view.testId === testId
+  return false
+}
+
 function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuthStatus }) {
   useDashboardZoomShortcuts()
 
@@ -190,7 +200,8 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const viewRef = useRef(view)
   const routeSyncInitialized = useRef(false)
   const lastRouteRestored = useRef(false)
-  const [metricsHistory, setMetricsHistory] = useState<Record<string, MetricsHistoryPoint[]>>({})
+  const metricsHistoryRef = useRef<Record<string, MetricsHistoryPoint[]>>({})
+  const [, setMetricsHistoryVersion] = useState(0)
   const [testStatuses, setTestStatuses] = useState<Record<string, string>>({})
   const [telemetryDiagnostics, setTelemetryDiagnostics] = useState<TelemetryDiagnosticEntry[]>([])
   const { theme, setTheme } = useDashboardTheme()
@@ -219,6 +230,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   // refetches its (admin-gated) review when the posture changes server-side.
   const [accessReviewSignal, setAccessReviewSignal] = useState(0)
   const testApi = useTestApi()
+  const runReportEnabled = useMemo(() => isRunReportEnabled(), [])
   const activeTopbarContribution = useActiveTopbarContribution()
   const { hasDirtyGuard, runGuarded } = useNavigationGuardRunner()
   const { notifyTestStatus } = useDesktopNotifications()
@@ -253,11 +265,14 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
     if (msg.type === 'metrics_update' && msg.data && msg.test_id && msg.timestamp) {
       const testId = msg.test_id
       const point = mapExecutionMetricToHistoryPoint({ ...msg.data, timestamp: String(msg.timestamp) })
-      setMetricsHistory((prev) => {
-        const existing = prev[testId] || []
-        const updated = [...existing, point].slice(-300)
-        return { ...prev, [testId]: updated }
-      })
+      const existing = metricsHistoryRef.current[testId] || []
+      metricsHistoryRef.current = {
+        ...metricsHistoryRef.current,
+        [testId]: [...existing, point].slice(-300),
+      }
+      if (viewConsumesMetrics(viewRef.current, testId)) {
+        setMetricsHistoryVersion((version) => version + 1)
+      }
     }
 
     if (msg.type === 'telemetry_diagnostic' && msg.data && msg.test_id && msg.timestamp) {
@@ -286,6 +301,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
       notifyTestStatus(msg.type, msg.test_name, testId)
     }
   }, [notifyTestStatus])
+  const metricsHistory = metricsHistoryRef.current
 
   const { projects, activeProject, setActiveProject, createAndSelectProject, refreshProjects } = useProject()
   const domainProjects = useMemo(() => {
@@ -316,10 +332,20 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
     void addRecent({ kind: 'test', id, name: id, route: viewToLocationHash({ page: 'test', testId: id }) }).then(reloadRecents)
   }, [reloadRecents, setGuardedView])
   const navigateToTestArchive = useCallback((id: string) => navigateToTest(id, 'archive'), [navigateToTest])
+  const navigateToRunReport = useCallback((id: string) => {
+    if (!runReportEnabled) {
+      navigateToTest(id, 'archive')
+      return
+    }
+    const next = { page: 'report', testId: id } as const
+    setGuardedView(next)
+    void addRecent({ kind: 'test', id, name: id, route: viewToLocationHash(next) }).then(reloadRecents)
+  }, [navigateToTest, reloadRecents, runReportEnabled, setGuardedView])
   const navigateToCommandCenter = useCallback((id?: string) => {
     setGuardedView(id ? { page: 'command-center', testId: id } : { page: 'command-center' })
   }, [setGuardedView])
-  const activePage: NavPage = view.page === 'test' ? 'tests' : view.page === 'swagger' || view.page === 'repository-guide' ? 'docs' : view.page === 'recorder-panel' ? 'scripts' : view.page
+  const openCompletedRun = runReportEnabled ? navigateToRunReport : navigateToTestArchive
+  const activePage: NavPage = view.page === 'test' ? 'tests' : view.page === 'report' ? 'results' : view.page === 'swagger' || view.page === 'repository-guide' ? 'docs' : view.page === 'recorder-panel' ? 'scripts' : view.page
 
   const navigateToScriptEdit = (scriptId: string) => {
     setGuardedView({ page: 'scripts', mode: 'edit', scriptId })
@@ -794,12 +820,19 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
 
   useEffect(() => {
     let cancelled = false
+    let inFlight = false
+    let lastSignature = ''
 
     const loadTopbarRuns = async () => {
       if (!activeProject?.id) {
         setActiveTopbarRuns([])
         return
       }
+      if (inFlight) return
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+        return
+      }
+      inFlight = true
 
       try {
         const response = await testApi.listTests({
@@ -807,10 +840,17 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
           application_id: activeApplication?.id,
         })
         if (!cancelled) {
-          setActiveTopbarRuns(selectTopbarActiveRuns(response.tests || [], testStatuses))
+          const nextRuns = selectTopbarActiveRuns(response.tests || [], testStatuses)
+          const signature = JSON.stringify(nextRuns)
+          if (signature !== lastSignature) {
+            lastSignature = signature
+            setActiveTopbarRuns(nextRuns)
+          }
         }
       } catch {
         // WebSocket updates will keep the rail useful if the snapshot fetch fails.
+      } finally {
+        inFlight = false
       }
     }
 
@@ -818,10 +858,21 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
     const interval = window.setInterval(() => {
       void loadTopbarRuns()
     }, 10000)
+    const handleVisibilityChange = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        void loadTopbarRuns()
+      }
+    }
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibilityChange)
+    }
 
     return () => {
       cancelled = true
       window.clearInterval(interval)
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibilityChange)
+      }
     }
   }, [activeApplication?.id, activeProject?.id, testApi, testStatuses])
 
@@ -832,8 +883,14 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
     }
 
     let cancelled = false
+    let inFlight = false
 
     const loadDesktopActiveRuns = async () => {
+      if (inFlight) return
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+        return
+      }
+      inFlight = true
       try {
         const response = await testApi.listTests()
         if (!cancelled) {
@@ -841,6 +898,8 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
         }
       } catch {
         // Keep the previous native-shell count if the global snapshot fetch fails.
+      } finally {
+        inFlight = false
       }
     }
 
@@ -848,10 +907,21 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
     const interval = window.setInterval(() => {
       void loadDesktopActiveRuns()
     }, 10000)
+    const handleVisibilityChange = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        void loadDesktopActiveRuns()
+      }
+    }
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibilityChange)
+    }
 
     return () => {
       cancelled = true
       window.clearInterval(interval)
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibilityChange)
+      }
     }
   }, [activeTopbarRuns.length, desktopSurface, testApi, testStatuses])
 
@@ -1004,7 +1074,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
               metricsHistory={metricsHistory}
               connectionState={connectionState}
               onSelectTest={navigateToTest}
-              onOpenTestArchive={navigateToTestArchive}
+              onOpenTestArchive={openCompletedRun}
               onOpenCommandCenter={navigateToCommandCenter}
               onNavigate={handleNavigate}
               snapshotAudience={snapshotAudience}
@@ -1018,7 +1088,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
               applicationId={activeApplication?.id}
               projectId={activeProject?.id}
               onOpenExecution={navigateToTest}
-              onOpenArchive={navigateToTestArchive}
+              onOpenArchive={openCompletedRun}
               onOpenResults={() => handleNavigate('results')}
             />
           )}
@@ -1059,6 +1129,17 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
               onOpenCommandCenter={navigateToCommandCenter}
             />
           )}
+          {view.page === 'report' && (
+            <RunReportPage
+              testId={view.testId}
+              initialLens={view.lens}
+              initialCompare={view.compare}
+              statusOverride={testStatuses[view.testId]}
+              onOpenCommandCenter={navigateToCommandCenter}
+              onOpenLegacyArchive={navigateToTestArchive}
+              onNavigateReport={(next) => setGuardedView({ page: 'report', testId: view.testId, ...next })}
+            />
+          )}
           {view.page === 'scripts' && (
             <ScriptsPage
               key={`scripts-${scriptsNavigationVersion}-${scriptMode || 'list'}-${scriptEditId || ''}`}
@@ -1077,7 +1158,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
               testStatuses={testStatuses}
               onSelectTest={navigateToTest}
               onOpenCommandCenter={navigateToCommandCenter}
-              onOpenTestArchive={navigateToTestArchive}
+              onOpenTestArchive={openCompletedRun}
               onNavigate={handleNavigate}
               activeApplication={activeApplication}
               activeRelease={activeRelease}

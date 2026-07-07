@@ -15,26 +15,17 @@ import (
 )
 
 func (tr *TestRunner) GetTest(id string) (*ManagedTest, bool) {
-	tr.mu.Lock()
-	defer tr.mu.Unlock()
+	tr.refreshReadMetadataForTest(id)
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
 	id = tr.resolveRefKeyLocked(id)
-	tr.refreshPendingQueueMetadataLocked()
 	t, ok := tr.tests[id]
-	if ok && t.Status == "QUEUED" {
-		tr.refreshCapacityAdvisoryLocked(t)
-	}
-	if ok && t.Status == "PENDING" {
-		tr.refreshCapacityAdvisoryLocked(t)
-	}
 	if !ok {
 		return nil, false
 	}
-	cloned := *t
-	cloned.Groups = cloneArchiveTestGroups(t.Groups)
-	cloned.VUserRamps = cloneVUserRampStatusMap(t.VUserRamps)
-	cloned.GoalTargets = cloneGoalTargetStatusMap(t.GoalTargets)
+	cloned := cloneManagedTestForReadLocked(t)
 	cloned.ComparisonBaseline = tr.buildRunComparisonBaselineLocked(t)
-	return &cloned, true
+	return cloned, true
 }
 
 func (tr *TestRunner) buildRunComparisonBaselineLocked(test *ManagedTest) *RunComparisonBaseline {
@@ -280,27 +271,21 @@ func (tr *TestRunner) TestCount() int {
 }
 
 func (tr *TestRunner) ListTests() []*ManagedTest {
-	tr.mu.Lock()
-	defer tr.mu.Unlock()
-	tr.refreshPendingQueueMetadataLocked()
+	tr.refreshReadMetadataForTestList()
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
 	out := make([]*ManagedTest, 0, len(tr.tests))
 	for _, t := range tr.tests {
-		if t.Status == "QUEUED" {
-			tr.refreshCapacityAdvisoryLocked(t)
-		}
-		if t.Status == "PENDING" {
-			tr.refreshCapacityAdvisoryLocked(t)
-		}
-		out = append(out, t)
+		out = append(out, cloneManagedTestForReadLocked(t))
 	}
 	return out
 }
 
 func (tr *TestRunner) ListTestsFiltered(projectID string, folderID *string) []*ManagedTest {
 	projectID = normalizeProjectID(projectID)
-	tr.mu.Lock()
-	defer tr.mu.Unlock()
-	tr.refreshPendingQueueMetadataLocked()
+	tr.refreshReadMetadataForTestList()
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
 	out := make([]*ManagedTest, 0, len(tr.tests))
 	for _, t := range tr.tests {
 		if t.ProjectID != projectID {
@@ -315,22 +300,16 @@ func (tr *TestRunner) ListTestsFiltered(projectID string, folderID *string) []*M
 				continue
 			}
 		}
-		if t.Status == "QUEUED" {
-			tr.refreshCapacityAdvisoryLocked(t)
-		}
-		if t.Status == "PENDING" {
-			tr.refreshCapacityAdvisoryLocked(t)
-		}
-		out = append(out, t)
+		out = append(out, cloneManagedTestForReadLocked(t))
 	}
 	return out
 }
 
 func (tr *TestRunner) ListTestsByContext(applicationID string, releaseID string, scenarioID string) []*ManagedTest {
-	tr.mu.Lock()
-	defer tr.mu.Unlock()
+	tr.refreshReadMetadataForTestList()
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
 	scenarioID = tr.resolveRefKeyLocked(scenarioID)
-	tr.refreshPendingQueueMetadataLocked()
 	out := make([]*ManagedTest, 0, len(tr.tests))
 	for _, t := range tr.tests {
 		if applicationID != "" && t.ApplicationID != applicationID {
@@ -342,15 +321,69 @@ func (tr *TestRunner) ListTestsByContext(applicationID string, releaseID string,
 		if scenarioID != "" && t.ScenarioID != scenarioID {
 			continue
 		}
-		if t.Status == "QUEUED" {
-			tr.refreshCapacityAdvisoryLocked(t)
-		}
-		if t.Status == "PENDING" {
-			tr.refreshCapacityAdvisoryLocked(t)
-		}
-		out = append(out, t)
+		out = append(out, cloneManagedTestForReadLocked(t))
 	}
 	return out
+}
+
+func (tr *TestRunner) refreshReadMetadataForTest(id string) {
+	tr.mu.RLock()
+	resolvedID := tr.resolveRefKeyLocked(id)
+	test, ok := tr.tests[resolvedID]
+	needsRefresh := ok && (test.Status == "QUEUED" || test.Status == "PENDING")
+	tr.mu.RUnlock()
+	if !needsRefresh {
+		return
+	}
+
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	resolvedID = tr.resolveRefKeyLocked(id)
+	tr.refreshPendingQueueMetadataLocked()
+	if test, ok := tr.tests[resolvedID]; ok && (test.Status == "QUEUED" || test.Status == "PENDING") {
+		tr.refreshCapacityAdvisoryLocked(test)
+	}
+}
+
+func (tr *TestRunner) refreshReadMetadataForTestList() {
+	tr.mu.RLock()
+	needsRefresh := false
+	for _, test := range tr.tests {
+		if test != nil && (test.Status == "QUEUED" || test.Status == "PENDING") {
+			needsRefresh = true
+			break
+		}
+	}
+	tr.mu.RUnlock()
+	if !needsRefresh {
+		return
+	}
+
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	tr.refreshPendingQueueMetadataLocked()
+	for _, test := range tr.tests {
+		if test != nil && (test.Status == "QUEUED" || test.Status == "PENDING") {
+			tr.refreshCapacityAdvisoryLocked(test)
+		}
+	}
+}
+
+func cloneManagedTestForReadLocked(test *ManagedTest) *ManagedTest {
+	if test == nil {
+		return nil
+	}
+	cloned := *test
+	cloned.Groups = cloneArchiveTestGroups(test.Groups)
+	cloned.VUserRamps = cloneVUserRampStatusMap(test.VUserRamps)
+	cloned.GoalTargets = cloneGoalTargetStatusMap(test.GoalTargets)
+	if len(test.History) > 0 {
+		cloned.History = append([]*LiveMetrics(nil), test.History...)
+	}
+	if len(test.Sparkline) > 0 {
+		cloned.Sparkline = append([]TestSparklinePoint(nil), test.Sparkline...)
+	}
+	return &cloned
 }
 
 func (tr *TestRunner) MoveTest(id string, folderID *string) bool {
@@ -413,10 +446,7 @@ func (tr *TestRunner) GetRunArchiveManifest(id string) (*RunArchiveManifest, err
 	if !ok {
 		return nil, fmt.Errorf("archive not found: %s", id)
 	}
-	if err := ensureArchiveMaterialized(record); err != nil {
-		return nil, err
-	}
-	return loadRunArchiveManifest(record.ManifestPath)
+	return cachedRunArchiveManifest(record)
 }
 
 func (tr *TestRunner) resolveTestID(id string) string {
@@ -433,6 +463,7 @@ func (tr *TestRunner) DeleteTest(id string) bool {
 	if !ok {
 		return false
 	}
+	deleteGroupMetricsHistoryCache(id)
 	if test.Status == "RUNNING" || test.Status == "INITIALIZING" || test.Status == "PAUSED" || test.Status == "STOPPING" {
 		return false // Can't delete active tests
 	}

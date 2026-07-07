@@ -149,24 +149,33 @@ type IntervalSummaryRecord struct {
 	SampleAgeMs              float64                                `json:"sample_age_ms,omitempty"`
 }
 
-// sqliteDSN adds a busy_timeout pragma so a writer waits for a concurrent reader
-// (or vice versa) instead of failing immediately with "database is locked". The
-// controller has many concurrent DB accessors (HTTP handlers plus fire-and-forget
-// archive/notes goroutines); without this, brief read/write overlap surfaced as
-// transient failures. Existing query parameters on the path are preserved.
+// sqliteDSN adds pragmas for the controller's high-read, single-writer shape.
+// busy_timeout waits out brief read/write overlap, WAL lets readers continue
+// while a writer commits, and synchronous=NORMAL avoids fsyncing every page while
+// keeping WAL recovery semantics. Existing query parameters on the path are
+// preserved and caller-provided pragmas win.
 func sqliteDSN(path string) string {
 	if strings.TrimSpace(path) == "" {
 		return path
 	}
-	const pragma = "_pragma=busy_timeout(5000)"
-	if strings.Contains(path, "_pragma=busy_timeout") {
-		return path
+	for _, pragma := range []struct {
+		key   string
+		value string
+	}{
+		{key: "_pragma=busy_timeout", value: "_pragma=busy_timeout(5000)"},
+		{key: "_pragma=journal_mode", value: "_pragma=journal_mode(WAL)"},
+		{key: "_pragma=synchronous", value: "_pragma=synchronous(NORMAL)"},
+	} {
+		if strings.Contains(path, pragma.key) {
+			continue
+		}
+		sep := "?"
+		if strings.Contains(path, "?") {
+			sep = "&"
+		}
+		path += sep + pragma.value
 	}
-	sep := "?"
-	if strings.Contains(path, "?") {
-		sep = "&"
-	}
-	return path + sep + pragma
+	return path
 }
 
 func NewSQLiteStore(path string) (*SQLiteStore, error) {
@@ -174,6 +183,8 @@ func NewSQLiteStore(path string) (*SQLiteStore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open sqlite db: %w", err)
 	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 
 	s := newSQLStore(db, storeDialectSQLite, StoreBackendInfo{
 		Type:             "sqlite",

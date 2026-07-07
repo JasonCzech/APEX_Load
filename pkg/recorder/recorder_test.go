@@ -163,6 +163,79 @@ func TestSessionLifecycle(t *testing.T) {
 	}
 }
 
+func TestRecorderSnapshotsDeltasAndEventsOmitHeavyBodies(t *testing.T) {
+	r := New(":0")
+	var events []SessionEvent
+	session, err := r.StartSession("s1", "Delta Test", SessionFilters{}, func(evt SessionEvent) {
+		events = append(events, evt)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp := &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}}}
+	req1, _ := http.NewRequest(http.MethodPost, "https://shop.example.com/api/login", nil)
+	req1.Header.Set("Content-Type", "application/json")
+	seq1 := r.recordRequest(session, req1, []byte(`{"password":"secret"}`), resp, []byte(`{"token":"abc"}`), 10*time.Millisecond)
+	r.appendWebSocketMessage(session, seq1, RecordedWebSocketMessage{
+		Direction: "sent",
+		Opcode:    1,
+		Payload:   `{"subscribe":true}`,
+		Timestamp: time.Now(),
+	})
+	req2, _ := http.NewRequest(http.MethodGet, "https://shop.example.com/api/cart", nil)
+	r.recordRequest(session, req2, nil, resp, []byte(`{"items":[]}`), 10*time.Millisecond)
+
+	if len(events) < 3 {
+		t.Fatalf("events = %d, want request recorded/update events", len(events))
+	}
+	for _, evt := range events {
+		if evt.Request == nil {
+			continue
+		}
+		if evt.Request.Body != "" || evt.Request.ResponseBody != "" {
+			t.Fatalf("event %s carried bodies: %#v", evt.Type, evt.Request)
+		}
+		for _, msg := range evt.Request.WebSocketMessages {
+			if msg.Payload != "" {
+				t.Fatalf("event %s carried websocket payload %q", evt.Type, msg.Payload)
+			}
+		}
+	}
+
+	full, ok := r.GetSession("s1")
+	if !ok {
+		t.Fatal("GetSession failed")
+	}
+	if len(full.Requests) != 2 {
+		t.Fatalf("full requests = %d, want 2", len(full.Requests))
+	}
+	if full.Requests[0].Body == "" || full.Requests[0].ResponseBody == "" {
+		t.Fatalf("stored request lost bodies: %#v", full.Requests[0])
+	}
+	if got := full.Requests[0].WebSocketMessages[0].Payload; got != `{"subscribe":true}` {
+		t.Fatalf("stored websocket payload = %q, want preserved payload", got)
+	}
+
+	summary, ok := r.GetSessionWithOptions("s1", false, 0)
+	if !ok {
+		t.Fatal("summary GetSessionWithOptions failed")
+	}
+	if len(summary.Requests) != 0 || summary.RequestCount != 2 || summary.LastSeq != 2 {
+		t.Fatalf("summary = %#v, want counts without request bodies", summary)
+	}
+	listed := r.ListSessionSummaries()
+	if len(listed) != 1 || len(listed[0].Requests) != 0 || listed[0].RequestCount != 2 {
+		t.Fatalf("listed summaries = %#v, want request-free summary", listed)
+	}
+	delta, ok := r.GetSessionWithOptions("s1", true, 1)
+	if !ok {
+		t.Fatal("delta GetSessionWithOptions failed")
+	}
+	if len(delta.Requests) != 1 || delta.Requests[0].Seq != 2 || delta.RequestCount != 2 || delta.LastSeq != 2 {
+		t.Fatalf("delta = %#v, want only requests after seq 1 with full counts", delta)
+	}
+}
+
 func TestDeleteSession(t *testing.T) {
 	r := New(":0")
 	r.StartSession("s1", "Delete Test", SessionFilters{}, nil)

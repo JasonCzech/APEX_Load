@@ -498,19 +498,20 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 	tr.saveLiveMetricsHistory(test.ID, live.Timestamp, live)
 	artifacts.recordLiveMetrics(test, live)
 
-	tr.hub.BroadcastJSON(map[string]any{
+	projectID := normalizeProjectID(test.ProjectID)
+	tr.hub.BroadcastScopedJSON(test.ID, projectID, map[string]any{
 		"type":       "metrics_update",
 		"test_id":    test.ID,
-		"project_id": normalizeProjectID(test.ProjectID),
+		"project_id": projectID,
 		"test_name":  test.Name,
 		"timestamp":  live.Timestamp,
 		"data":       live,
 	})
 	if publishDiagnostic {
-		tr.hub.BroadcastJSON(map[string]any{
+		tr.hub.BroadcastScopedJSON(test.ID, projectID, map[string]any{
 			"type":       "telemetry_diagnostic",
 			"test_id":    test.ID,
-			"project_id": normalizeProjectID(test.ProjectID),
+			"project_id": projectID,
 			"test_name":  test.Name,
 			"timestamp":  now,
 			"data":       diagnostic,
@@ -529,10 +530,11 @@ func (tr *TestRunner) broadcastOpenWorkloadShedding(test *ManagedTest, sheddedAr
 	if tr == nil || tr.hub == nil || test == nil {
 		return
 	}
-	tr.hub.BroadcastJSON(map[string]any{
+	projectID := normalizeProjectID(test.ProjectID)
+	tr.hub.BroadcastScopedJSON(test.ID, projectID, map[string]any{
 		"type":       "open_workload_shedding",
 		"test_id":    test.ID,
-		"project_id": normalizeProjectID(test.ProjectID),
+		"project_id": projectID,
 		"test_name":  test.Name,
 		"timestamp":  now,
 		"data": map[string]any{
@@ -649,9 +651,10 @@ func (tr *TestRunner) processMetricsSnapshot(test *ManagedTest, snap engine.Metr
 	go tr.measureNetworkLatency(test, live)
 
 	settings := tr.GetSystemSettings()
+	projectID := normalizeProjectID(test.ProjectID)
 	for _, alert := range buildThresholdAlerts(test, live, settings.Thresholds) {
-		alert["project_id"] = normalizeProjectID(test.ProjectID)
-		tr.hub.BroadcastJSON(alert)
+		alert["project_id"] = projectID
+		tr.hub.BroadcastScopedJSON(test.ID, projectID, alert)
 	}
 
 	if shouldStopForErrorThreshold(live, settings.Thresholds) {
@@ -666,10 +669,11 @@ func (tr *TestRunner) processMetricsSnapshot(test *ManagedTest, snap engine.Metr
 func (tr *TestRunner) broadcastEvent(eventType string, test *ManagedTest) {
 	now := time.Now()
 	if tr.hub != nil {
-		tr.hub.BroadcastJSON(map[string]any{
+		projectID := normalizeProjectID(test.ProjectID)
+		tr.hub.BroadcastScopedJSON(test.ID, projectID, map[string]any{
 			"type":       eventType,
 			"test_id":    test.ID,
-			"project_id": normalizeProjectID(test.ProjectID),
+			"project_id": projectID,
 			"test_name":  test.Name,
 			"status":     test.Status,
 			"timestamp":  now,

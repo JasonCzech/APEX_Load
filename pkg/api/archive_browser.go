@@ -168,20 +168,76 @@ func browserResourceTimingsFromTransaction(tx TransactionEvent) []BrowserResourc
 	return timings
 }
 
+func appendTopBrowserResourceTimingsFromTransaction(current []BrowserResourceTiming, tx TransactionEvent, limit int) []BrowserResourceTiming {
+	entries := tx.NetworkEntries
+	if len(entries) == 0 && tx.Snapshot != nil {
+		entries = tx.Snapshot.NetworkEntries
+	}
+	for _, entry := range entries {
+		if strings.TrimSpace(entry.URL) == "" {
+			continue
+		}
+		timing := BrowserResourceTiming{
+			Timestamp:     tx.Timestamp,
+			ActionName:    tx.ActionName,
+			PageURL:       tx.PageURL,
+			URL:           entry.URL,
+			Method:        entry.Method,
+			StatusCode:    entry.StatusCode,
+			ResourceType:  entry.ResourceType,
+			DurationMs:    entry.DurationMs,
+			BytesReceived: entry.BytesReceived,
+		}
+		if timing.PageURL == "" && tx.Snapshot != nil {
+			timing.PageURL = tx.Snapshot.PageURL
+		}
+		if tx.ClientMetrics != nil {
+			timing.DeviceProfile = tx.ClientMetrics.DeviceProfile
+			timing.DevicePlatform = tx.ClientMetrics.DevicePlatform
+			timing.BrowserEngine = tx.ClientMetrics.BrowserEngine
+		}
+		current = insertTopBrowserResourceTiming(current, timing, limit)
+	}
+	return current
+}
+
+func insertTopBrowserResourceTiming(entries []BrowserResourceTiming, timing BrowserResourceTiming, limit int) []BrowserResourceTiming {
+	if limit <= 0 {
+		return append(entries, timing)
+	}
+	insertAt := sort.Search(len(entries), func(index int) bool {
+		return browserResourceTimingRanksBefore(timing, entries[index])
+	})
+	if insertAt >= limit {
+		return entries
+	}
+	entries = append(entries, BrowserResourceTiming{})
+	copy(entries[insertAt+1:], entries[insertAt:])
+	entries[insertAt] = timing
+	if len(entries) > limit {
+		entries = entries[:limit]
+	}
+	return entries
+}
+
 func finalizeBrowserResourceTimings(entries []BrowserResourceTiming, limit int) []BrowserResourceTiming {
 	if len(entries) == 0 {
 		return nil
 	}
 	sort.SliceStable(entries, func(left, right int) bool {
-		if entries[left].DurationMs == entries[right].DurationMs {
-			return entries[left].URL < entries[right].URL
-		}
-		return entries[left].DurationMs > entries[right].DurationMs
+		return browserResourceTimingRanksBefore(entries[left], entries[right])
 	})
 	if limit > 0 && len(entries) > limit {
 		entries = entries[:limit]
 	}
 	return entries
+}
+
+func browserResourceTimingRanksBefore(left, right BrowserResourceTiming) bool {
+	if left.DurationMs == right.DurationMs {
+		return left.URL < right.URL
+	}
+	return left.DurationMs > right.DurationMs
 }
 
 func writeRunArchiveBrowserDiagnosticsZip(bundle *BrowserDiagnosticsBundle, dst io.Writer) error {

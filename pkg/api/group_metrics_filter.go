@@ -3,14 +3,25 @@ package api
 import (
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/jasonczech/apexload/pkg/engine"
 )
 
+const maxGroupMetricsHistoryCacheEntries = 32
+
+var groupMetricsHistoryCaches sync.Map // map[testID]*groupMetricsHistoryCache
+
 type groupFilterQuery struct {
 	Names    []string
 	Explicit bool
+}
+
+type groupMetricsHistoryCache struct {
+	mu      sync.Mutex
+	entries map[string][]*LiveMetrics
 }
 
 func parseGroupFilterQuery(query url.Values) groupFilterQuery {
@@ -78,6 +89,9 @@ func filterLiveMetricsForGroups(live *LiveMetrics, filter groupFilterQuery) *Liv
 }
 
 func filterLiveMetricsHistoryForGroups(history []*LiveMetrics, filter groupFilterQuery) []*LiveMetrics {
+	if len(history) == 0 {
+		return nil
+	}
 	if !filter.Explicit {
 		return history
 	}
@@ -86,6 +100,70 @@ func filterLiveMetricsHistoryForGroups(history []*LiveMetrics, filter groupFilte
 		filtered = append(filtered, filterLiveMetricsForGroups(point, filter))
 	}
 	return filtered
+}
+
+func filterLiveMetricsHistoryForGroupsCached(testID string, history []*LiveMetrics, filter groupFilterQuery) []*LiveMetrics {
+	if len(history) == 0 {
+		return nil
+	}
+	if !filter.Explicit {
+		return history
+	}
+	cache := getGroupMetricsHistoryCache(testID)
+	key := groupMetricsHistoryCacheKey(history, filter)
+	cache.mu.Lock()
+	if cached := cache.entries[key]; cached != nil {
+		out := append([]*LiveMetrics(nil), cached...)
+		cache.mu.Unlock()
+		return out
+	}
+	cache.mu.Unlock()
+
+	filtered := filterLiveMetricsHistoryForGroups(history, filter)
+
+	cache.mu.Lock()
+	if len(cache.entries) >= maxGroupMetricsHistoryCacheEntries {
+		cache.entries = make(map[string][]*LiveMetrics)
+	}
+	cache.entries[key] = append([]*LiveMetrics(nil), filtered...)
+	cache.mu.Unlock()
+	return filtered
+}
+
+func getGroupMetricsHistoryCache(testID string) *groupMetricsHistoryCache {
+	if testID == "" {
+		testID = "unknown"
+	}
+	if value, ok := groupMetricsHistoryCaches.Load(testID); ok {
+		return value.(*groupMetricsHistoryCache)
+	}
+	cache := &groupMetricsHistoryCache{entries: make(map[string][]*LiveMetrics)}
+	actual, _ := groupMetricsHistoryCaches.LoadOrStore(testID, cache)
+	return actual.(*groupMetricsHistoryCache)
+}
+
+func deleteGroupMetricsHistoryCache(testID string) {
+	groupMetricsHistoryCaches.Delete(testID)
+}
+
+func groupMetricsHistoryCacheKey(history []*LiveMetrics, filter groupFilterQuery) string {
+	names := append([]string(nil), filter.Names...)
+	sort.Strings(names)
+	firstUnixNano := int64(0)
+	lastUnixNano := int64(0)
+	if len(history) > 0 {
+		firstUnixNano = history[0].Timestamp.UnixNano()
+		lastUnixNano = history[len(history)-1].Timestamp.UnixNano()
+	}
+	var builder strings.Builder
+	builder.WriteString(strconv.Itoa(len(history)))
+	builder.WriteByte('|')
+	builder.WriteString(strconv.FormatInt(firstUnixNano, 10))
+	builder.WriteByte('|')
+	builder.WriteString(strconv.FormatInt(lastUnixNano, 10))
+	builder.WriteByte('|')
+	builder.WriteString(strings.Join(names, "\x00"))
+	return builder.String()
 }
 
 func cloneGroupLiveMetrics(metrics *GroupLiveMetrics) *GroupLiveMetrics {

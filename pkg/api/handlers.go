@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -127,7 +128,11 @@ func (s *Server) handleGetTest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "test not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, maskManagedTest(test))
+	opts, ok := managedTestMaskOptionsFromQuery(w, r.URL.Query())
+	if !ok {
+		return
+	}
+	writeJSON(w, http.StatusOK, maskManagedTestWithOptions(test, opts))
 }
 
 func (s *Server) handleGetTestManifest(w http.ResponseWriter, r *http.Request) {
@@ -422,12 +427,63 @@ func (s *Server) handleGetMetrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	groupFilter := parseGroupFilterQuery(r.URL.Query())
+	historySince, historyLimit, ok := liveMetricsHistoryWindowFromQuery(w, r.URL.Query())
+	if !ok {
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"test_id": id,
 		"status":  test.Status,
 		"metrics": filterLiveMetricsForGroups(test.LiveMetrics, groupFilter),
-		"history": filterLiveMetricsHistoryForGroups(test.History, groupFilter),
+		"history": filterLiveMetricsHistoryForGroupsCached(id, selectLiveMetricsHistory(test.History, historySince, historyLimit), groupFilter),
 	})
+}
+
+func managedTestMaskOptionsFromQuery(w http.ResponseWriter, query url.Values) (managedTestMaskOptions, bool) {
+	since, limit, ok := liveMetricsHistoryWindowFromQuery(w, query)
+	if !ok {
+		return managedTestMaskOptions{}, false
+	}
+	return managedTestMaskOptions{
+		IncludeHistory:   queryIncludes(query, "history"),
+		HistorySince:     since,
+		HistoryLimit:     limit,
+		IncludeSparkline: true,
+	}, true
+}
+
+func liveMetricsHistoryWindowFromQuery(w http.ResponseWriter, query url.Values) (*time.Time, int, bool) {
+	var since *time.Time
+	if raw := strings.TrimSpace(query.Get("since")); raw != "" {
+		parsed, err := time.Parse(time.RFC3339Nano, raw)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "since must be an RFC3339 timestamp")
+			return nil, 0, false
+		}
+		since = &parsed
+	}
+	limit := 0
+	if raw := strings.TrimSpace(query.Get("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed <= 0 {
+			writeError(w, http.StatusBadRequest, "limit must be a positive integer")
+			return nil, 0, false
+		}
+		limit = parsed
+	}
+	return since, limit, true
+}
+
+func queryIncludes(query url.Values, token string) bool {
+	token = strings.ToLower(strings.TrimSpace(token))
+	for _, raw := range query["include"] {
+		for _, part := range strings.Split(raw, ",") {
+			if strings.ToLower(strings.TrimSpace(part)) == token {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (s *Server) handleGetLiveErrorEvidence(w http.ResponseWriter, r *http.Request) {

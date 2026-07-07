@@ -15,6 +15,7 @@ import (
 )
 
 const maxArchiveComparisonRuns = 10
+const maxArchiveReportBatchIDs = 50
 
 func (s *Server) handleGetRunArchiveManifest(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
@@ -306,7 +307,7 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	report, err := buildRunArchiveReport(record)
+	report, err := cachedRunArchiveReport(record)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to build archive report: "+err.Error())
 		return
@@ -356,11 +357,69 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 	}
 	// The raw JSON report carries the full model, so attach the release-over-release
 	// trend unconditionally (still a no-op for runs with no release association).
+	attachReportVerdictAndSLA(report)
 	s.attachReleaseTrend(report)
 	if r.URL.Query().Get("profile") == "audit" {
 		report.Integrity = verifyRunArchiveIntegrity(record, report.Manifest)
 	}
 	writeJSON(w, http.StatusOK, report)
+}
+
+func (s *Server) handleGetRunArchiveReportsBatch(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		IDs []string `json:"ids"`
+	}
+	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	if len(req.IDs) == 0 {
+		writeError(w, http.StatusBadRequest, "ids is required")
+		return
+	}
+	if len(req.IDs) > maxArchiveReportBatchIDs {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("at most %d archive reports can be requested at once", maxArchiveReportBatchIDs))
+		return
+	}
+	projectID := normalizeProjectID(r.URL.Query().Get("project_id"))
+	reports := make(map[string]*RunArchiveReport, len(req.IDs))
+	errorsByID := make(map[string]string)
+	seen := make(map[string]struct{}, len(req.IDs))
+	for _, rawID := range req.IDs {
+		id := strings.TrimSpace(rawID)
+		if id == "" {
+			continue
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		test, ok := s.runner.GetTest(id)
+		if !ok {
+			errorsByID[id] = "test not found"
+			continue
+		}
+		if projectID != "" && normalizeProjectID(test.ProjectID) != projectID {
+			errorsByID[id] = "test not found"
+			continue
+		}
+		record, ok := s.runner.GetRunArchive(id)
+		if !ok {
+			errorsByID[id] = "archive not found"
+			continue
+		}
+		report, err := cachedRunArchiveReport(record)
+		if err != nil {
+			errorsByID[id] = err.Error()
+			continue
+		}
+		attachReportVerdictAndSLA(report)
+		s.attachReleaseTrend(report)
+		reports[id] = report
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"reports": reports,
+		"errors":  errorsByID,
+	})
 }
 
 func (s *Server) handleGetRunArchiveAnalysis(w http.ResponseWriter, r *http.Request) {
@@ -583,7 +642,7 @@ func (s *Server) archiveComparisonRunsFromRecords(baselineID string, baselineRec
 }
 
 func (s *Server) archiveComparisonRunFromRecord(id string, test *ManagedTest, record *storage.RunArchiveRecord, action string) (archiveComparisonRunWithStart, error) {
-	report, err := buildRunArchiveReport(record)
+	report, err := cachedRunArchiveReport(record)
 	if err != nil {
 		return archiveComparisonRunWithStart{}, err
 	}
@@ -668,7 +727,7 @@ func (s *Server) handleGetTestHTMLReport(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	report, err := buildRunArchiveReport(record)
+	report, err := cachedRunArchiveReport(record)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to build archive report: "+err.Error())
 		return

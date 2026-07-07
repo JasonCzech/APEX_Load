@@ -3,7 +3,10 @@ package engine
 import (
 	"context"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
@@ -14,6 +17,52 @@ func unresolvedSecretAction() dsl.Action {
 		Type:   "GET",
 		Method: "GET",
 		Target: "/login?token={{secret.missing_token}}",
+	}
+}
+
+func TestCachingSecretResolverSingleflightsConcurrentResolution(t *testing.T) {
+	var calls atomic.Int64
+	release := make(chan struct{})
+	resolver := newCachingSecretResolver(SecretResolverFunc(func(name string) (string, bool) {
+		calls.Add(1)
+		<-release
+		return "runtime-secret", true
+	}))
+
+	const workers = 20
+	var wg sync.WaitGroup
+	errCh := make(chan string, workers)
+	start := make(chan struct{})
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			value, ok := resolver.Resolve("db_password")
+			if !ok || value != "runtime-secret" {
+				errCh <- value
+			}
+		}()
+	}
+	close(start)
+
+	deadline := time.After(time.Second)
+	for calls.Load() == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("delegate was not called")
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+	close(release)
+	wg.Wait()
+	close(errCh)
+	if calls.Load() != 1 {
+		t.Fatalf("delegate calls = %d, want 1", calls.Load())
+	}
+	if len(errCh) > 0 {
+		t.Fatalf("unexpected resolved value: %q", <-errCh)
 	}
 }
 

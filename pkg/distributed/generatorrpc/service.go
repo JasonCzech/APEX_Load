@@ -346,7 +346,8 @@ func (b *transactionBuffer) RecordTransaction(result *protocol.Result) error {
 	b.window.add(tx)
 	b.transactions = append(b.transactions, tx)
 	if len(b.transactions) > 1024 {
-		b.transactions = append([]TransactionMetric(nil), b.transactions[len(b.transactions)-1024:]...)
+		copy(b.transactions, b.transactions[len(b.transactions)-1024:])
+		b.transactions = b.transactions[:1024]
 	}
 	return nil
 }

@@ -519,6 +519,7 @@ type fakeKubeRestarter struct {
 	deletes       []restartDeleteCall
 	rollouts      []restartRolloutCall
 	scales        []restartScaleCall
+	lists         []restartListCall
 	deleteErr     error
 	rolloutErr    error
 	scaleErr      error
@@ -532,6 +533,11 @@ type restartScaleCall struct {
 	namespace string
 	name      string
 	replicas  int
+}
+
+type restartListCall struct {
+	namespace string
+	selector  string
 }
 
 func (f *fakeKubeRestarter) DeletePod(ctx context.Context, namespace string, name string) error {
@@ -593,6 +599,7 @@ func (f *fakeKubeRestarter) PodByIP(ctx context.Context, namespace string, selec
 func (f *fakeKubeRestarter) ListPods(ctx context.Context, namespace string, selector string) ([]KubePodRef, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.lists = append(f.lists, restartListCall{namespace: namespace, selector: selector})
 	if f.listErr != nil {
 		return nil, f.listErr
 	}
@@ -615,4 +622,10 @@ func (f *fakeKubeRestarter) rolloutCalls() []restartRolloutCall {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]restartRolloutCall(nil), f.rollouts...)
+}
+
+func (f *fakeKubeRestarter) listCalls() []restartListCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]restartListCall(nil), f.lists...)
 }

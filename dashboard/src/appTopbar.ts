@@ -22,6 +22,8 @@ export function pageTitleForView(view: AppView, options: TopbarPageTitleOptions 
       return 'Dashboard'
     case 'command-center':
       return 'Command Center'
+    case 'report':
+      return 'Run Report'
     case 'repository':
       return options.repositoryName || 'Application Repository'
     case 'tests':

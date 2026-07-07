@@ -138,7 +138,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 				mergeReportBrowserDeviceMetrics(deviceMetrics, tx.ClientMetrics)
 			}
 		}
-		report.BrowserResources = append(report.BrowserResources, browserResourceTimingsFromTransaction(tx)...)
+		report.BrowserResources = appendTopBrowserResourceTimingsFromTransaction(report.BrowserResources, tx, 50)
 	}
 	if report.Overview.Transactions > 0 {
 		report.Overview.AvgResponseMs = totalDuration / float64(report.Overview.Transactions)

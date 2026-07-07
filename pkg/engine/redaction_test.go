@@ -141,7 +141,7 @@ func TestVUser_RecordResultScrubsSensitivePayloads(t *testing.T) {
 		},
 	}
 
-	vu.recordResult(result, dsl.ErrorHandlingConfig{SnapshotOnError: true})
+	vu.recordResult(result, dsl.ErrorHandlingConfig{SnapshotOnError: true}, dsl.LogConfig{})
 
 	if got := vu.Variables["session_token"]; got != "abc123" {
 		t.Fatalf("session_token variable = %q, want raw extracted value", got)
@@ -209,5 +209,28 @@ func TestVUser_RecordResultScrubsSensitivePayloads(t *testing.T) {
 	}
 	if snapshots[0].RequestHeaders["Authorization"] != redactedPayloadValue {
 		t.Fatalf("stored snapshot authorization = %q, want %q", snapshots[0].RequestHeaders["Authorization"], redactedPayloadValue)
+	}
+}
+
+func TestVUserRecordResultDropsSuccessfulResponseBodyUnlessExtendedLoggingNeedsIt(t *testing.T) {
+	vu := &VUser{
+		Group:     "Checkout",
+		Metrics:   NewMetricsCollector(1),
+		Variables: map[string]string{},
+	}
+
+	plainSuccess := &protocol.Result{Success: true, ResponseBody: `{"access_token":"secret-token","status":"ok"}`}
+	vu.recordResult(plainSuccess, dsl.ErrorHandlingConfig{}, dsl.LogConfig{})
+	if plainSuccess.ResponseBody != "" {
+		t.Fatalf("plain success response body = %q, want dropped", plainSuccess.ResponseBody)
+	}
+
+	extendedSuccess := &protocol.Result{Success: true, ResponseBody: `{"access_token":"secret-token","status":"ok"}`}
+	vu.recordResult(extendedSuccess, dsl.ErrorHandlingConfig{}, dsl.LogConfig{
+		Level:           "extended",
+		ExtendedOptions: []string{"data_returned"},
+	})
+	if !strings.Contains(extendedSuccess.ResponseBody, `"access_token":"[REDACTED]"`) {
+		t.Fatalf("extended success response body = %q, want retained and scrubbed", extendedSuccess.ResponseBody)
 	}
 }

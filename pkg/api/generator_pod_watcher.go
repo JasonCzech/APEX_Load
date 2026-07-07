@@ -7,7 +7,18 @@ import (
 	"time"
 )
 
-const defaultGeneratorPodTerminationWatchInterval = 5 * time.Second
+const (
+	defaultGeneratorPodTerminationWatchInterval = 5 * time.Second
+	generatorPodInventoryCacheTTL               = 4 * time.Second
+)
+
+type generatorPodInventoryCache struct {
+	namespace string
+	selector  string
+	pods      []KubePodRef
+	expiresAt time.Time
+	inFlight  chan struct{}
+}
 
 // RunGeneratorPodTerminationWatcher polls the Kubernetes pod inventory and marks
 // terminating generator pods as draining before the scheduler can place more
@@ -42,7 +53,7 @@ func (s *Server) reconcileTerminatingGeneratorPods(ctx context.Context) {
 	if !ok {
 		return
 	}
-	pods, err := s.kubeRestarter.ListPods(ctx, s.k8sRestart.Namespace, s.k8sRestart.GeneratorSelector)
+	pods, err := s.cachedGeneratorPods(ctx)
 	if err != nil {
 		if ctx.Err() == nil {
 			slog.Warn("generator pod termination watch failed", "err", err)
@@ -83,4 +94,62 @@ func (s *Server) reconcileTerminatingGeneratorPods(ctx context.Context) {
 			}
 		}
 	}
+}
+
+func (s *Server) cachedGeneratorPods(ctx context.Context) ([]KubePodRef, error) {
+	if s == nil || s.kubeRestarter == nil {
+		return nil, nil
+	}
+	namespace := s.k8sRestart.Namespace
+	selector := s.k8sRestart.GeneratorSelector
+	for {
+		now := time.Now()
+		s.kubePodsCacheMu.Lock()
+		if s.kubePodsCache.namespace == namespace &&
+			s.kubePodsCache.selector == selector &&
+			now.Before(s.kubePodsCache.expiresAt) {
+			pods := cloneKubePodRefs(s.kubePodsCache.pods)
+			s.kubePodsCacheMu.Unlock()
+			return pods, nil
+		}
+		if wait := s.kubePodsCache.inFlight; wait != nil {
+			s.kubePodsCacheMu.Unlock()
+			select {
+			case <-wait:
+				continue
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+		wait := make(chan struct{})
+		s.kubePodsCache.inFlight = wait
+		s.kubePodsCacheMu.Unlock()
+
+		pods, err := s.kubeRestarter.ListPods(ctx, namespace, selector)
+		s.kubePodsCacheMu.Lock()
+		if err == nil {
+			s.kubePodsCache.namespace = namespace
+			s.kubePodsCache.selector = selector
+			s.kubePodsCache.pods = cloneKubePodRefs(pods)
+			s.kubePodsCache.expiresAt = time.Now().Add(generatorPodInventoryCacheTTL)
+		}
+		if s.kubePodsCache.inFlight == wait {
+			s.kubePodsCache.inFlight = nil
+			close(wait)
+		}
+		s.kubePodsCacheMu.Unlock()
+		if err != nil {
+			return nil, err
+		}
+		return cloneKubePodRefs(pods), nil
+	}
+}
+
+func cloneKubePodRefs(pods []KubePodRef) []KubePodRef {
+	if len(pods) == 0 {
+		return nil
+	}
+	cloned := make([]KubePodRef, len(pods))
+	copy(cloned, pods)
+	return cloned
 }

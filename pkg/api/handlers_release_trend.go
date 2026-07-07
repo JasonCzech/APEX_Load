@@ -44,7 +44,7 @@ func (s *Server) collectReleaseTrendRuns(releaseID string) ([]releaseTrendRun, e
 		if !ok {
 			continue
 		}
-		report, err := buildRunArchiveReport(record)
+		report, err := cachedRunArchiveReport(record)
 		if err != nil {
 			// One corrupt/unreadable archive must not fail the whole trend; skip it.
 			slog.Warn("release trend: archive report unavailable", "test", test.ID, "err", err)

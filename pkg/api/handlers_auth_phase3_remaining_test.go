@@ -278,11 +278,11 @@ func TestNotifyAccessReviewChange(t *testing.T) {
 				Type         string `json:"type"`
 				BroadcastAll bool   `json:"broadcast_all"`
 			}
-			if err := json.Unmarshal(msg, &env); err != nil {
+			if err := json.Unmarshal(msg.payload, &env); err != nil {
 				t.Fatalf("unmarshal ping: %v", err)
 			}
 			if env.Type != "access_review_changed" || !env.BroadcastAll {
-				t.Fatalf("unexpected broadcast: %s", string(msg))
+				t.Fatalf("unexpected broadcast: %s", string(msg.payload))
 			}
 			return true
 		default:

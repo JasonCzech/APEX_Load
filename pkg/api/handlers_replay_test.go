@@ -531,7 +531,7 @@ func TestHandleReplayDraftScriptBroadcastsProgress(t *testing.T) {
 			ProjectID       string `json:"project_id"`
 			EventIndex      *int   `json:"event_index,omitempty"`
 		}
-		if err := json.Unmarshal(msg, &decoded); err != nil {
+		if err := json.Unmarshal(msg.payload, &decoded); err != nil {
 			t.Fatalf("json.Unmarshal broadcast returned error: %v", err)
 		}
 		if decoded.ReplaySessionID != "session-123" {

@@ -222,6 +222,23 @@ func (s *SQLiteStore) ListAllExecutionPlanScheduleOccurrences() ([]*ExecutionPla
 	return collectExecutionPlanScheduleOccurrences(rows)
 }
 
+func (s *SQLiteStore) ListExecutionPlanScheduleOccurrencesByTimeRange(projectID string, from time.Time, to time.Time) ([]*ExecutionPlanScheduleOccurrence, error) {
+	projectID = normalizeProjectID(projectID)
+	query := `SELECT ` + executionPlanScheduleOccurrenceColumns + ` WHERE planned_at >= ? AND planned_at < ?`
+	args := []any{from.UTC(), to.UTC()}
+	if projectID != "" {
+		query += ` AND COALESCE(project_id, '') = ?`
+		args = append(args, projectID)
+	}
+	query += ` ORDER BY planned_at DESC`
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return collectExecutionPlanScheduleOccurrences(rows)
+}
+
 func scanExecutionPlanScheduleOccurrence(row scanner) (*ExecutionPlanScheduleOccurrence, error) {
 	var occurrence ExecutionPlanScheduleOccurrence
 	err := row.Scan(

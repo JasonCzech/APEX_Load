@@ -213,8 +213,30 @@ func TestBuildSLAComplianceRowsNoSLAConfigured(t *testing.T) {
 	}
 }
 
+func TestBuildSLARollupCountsWorstKind(t *testing.T) {
+	rows := map[string]SLAComplianceRow{
+		"ok":      {Name: "ok", ResultKind: "pass"},
+		"near":    {Name: "near", ResultKind: "warn"},
+		"broken":  {Name: "broken", ResultKind: "fail"},
+		"unknown": {Name: "unknown", ResultKind: "na"},
+	}
+
+	rollup := buildSLARollup(rows)
+	if rollup.Evaluated != 3 || rollup.Passed != 1 || rollup.Warned != 1 || rollup.Failed != 1 || rollup.NA != 1 {
+		t.Fatalf("rollup counts = %+v", rollup)
+	}
+	if rollup.WorstKind != "fail" {
+		t.Fatalf("worst kind = %q, want fail", rollup.WorstKind)
+	}
+
+	empty := buildSLARollup(nil)
+	if empty.Evaluated != 0 || empty.WorstKind != "na" {
+		t.Fatalf("empty rollup = %+v, want zero counts and na worst kind", empty)
+	}
+}
+
 func TestApplyVerdictOverrideUnknownStatusIsConditionalNotPass(t *testing.T) {
-	base := reportVerdict{Status: reportVerdictFail, Failed: true, Explanation: "SLA breached"}
+	base := ReportVerdict{Status: reportVerdictFail, Failed: true, Explanation: "SLA breached"}
 	// An out-of-vocabulary override must not fall through to clean green pass.
 	got := applyVerdictOverride("Blocked", "", base)
 	if got.Failed {

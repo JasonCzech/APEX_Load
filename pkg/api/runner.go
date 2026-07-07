@@ -79,6 +79,10 @@ type historyPersistence interface {
 	GetHistory(testID string) ([]any, error)
 }
 
+type limitedHistoryPersistence interface {
+	GetHistoryLimit(testID string, limit int) ([]any, error)
+}
+
 type archivePersistence interface {
 	SaveRunArchive(record *storage.RunArchiveRecord) error
 	GetRunArchive(testID string) (*storage.RunArchiveRecord, error)
@@ -228,6 +232,7 @@ type ManagedTest struct {
 	VUserRamps            map[string]VUserRampStatus               `json:"vuser_ramps,omitempty"`
 	LiveMetrics           *LiveMetrics                             `json:"live_metrics,omitempty"`
 	History               []*LiveMetrics                           `json:"history,omitempty"`
+	Sparkline             []TestSparklinePoint                     `json:"sparkline,omitempty"`
 	ComparisonBaseline    *RunComparisonBaseline                   `json:"comparison_baseline,omitempty"`
 	Archive               *storage.RunArchiveRecord                `json:"archive,omitempty"`
 	TelemetryHealth       *TelemetryRunHealth                      `json:"telemetry_health,omitempty"`
@@ -243,6 +248,7 @@ type ManagedTest struct {
 	goalControl                  *goalControllerState
 	executionBackend             testExecutionBackend
 	lastNetworkLatency           *NetworkLatency
+	latencyEndpointsCache        latencyEndpointCache
 	latencyProbeSamples          map[string][]latencyProbeSample
 	remoteTarget                 string
 	remoteClient                 generatorClient
@@ -254,11 +260,19 @@ type ManagedTest struct {
 	remoteMetricsBatchesByTarget map[string]generatorrpc.MetricsBatch
 	remoteTargetStates           map[string]string
 	remoteFinalizing             bool
+	remoteMetricsLastPublishedAt time.Time
+	remoteMetricsFlushScheduled  bool
+	remoteGoalUpdateRunning      bool
 	telemetryDiagnostic          telemetryDiagnosticState
 	errorPatterns                map[string]*LiveErrorPattern
 	liveErrorEvidence            map[string][]LiveErrorEvidence
 	vuserScaleRamps              map[string]*vuserScaleRamp
 	openWorkloadSheddingWarned   bool
+}
+
+type TestSparklinePoint struct {
+	Timestamp time.Time `json:"timestamp"`
+	TPS       float64   `json:"tps"`
 }
 
 type ScaleVUsersOptions struct {

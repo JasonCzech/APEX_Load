@@ -84,9 +84,10 @@ type Browser struct {
 	networkEntriesDropped int
 	// networkBodyBytes tracks the captured request-body bytes currently retained,
 	// used to enforce the byte budget.
-	networkBodyBytes   int
-	resourceValidators map[string]string
-	pages              []playwright.Page
+	networkBodyBytes      int
+	resourceValidators    map[string]string
+	resourceValidatorKeys []string
+	pages                 []playwright.Page
 
 	dialogMu      sync.Mutex
 	pendingDialog *dialogPolicy

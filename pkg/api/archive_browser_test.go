@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -185,6 +186,46 @@ func TestBuildRunArchiveReportAggregatesBrowserMetrics(t *testing.T) {
 	}
 	if report.BrowserResources[0].DeviceProfile != "iphone_se" || report.BrowserResources[0].BrowserEngine != "webkit" {
 		t.Fatalf("first browser resource device context = %#v", report.BrowserResources[0])
+	}
+}
+
+func TestAppendTopBrowserResourceTimingsFromTransactionBoundsResources(t *testing.T) {
+	tx := TransactionEvent{
+		Timestamp:  time.Date(2026, time.May, 17, 10, 0, 0, 0, time.UTC),
+		ActionName: "browser_navigate",
+		PageURL:    "https://example.test/home",
+		ClientMetrics: &protocol.ClientMetrics{
+			DeviceProfile:  "iphone_15_pro",
+			DevicePlatform: "ios",
+			BrowserEngine:  "webkit",
+		},
+	}
+	for index := 0; index < 60; index++ {
+		tx.NetworkEntries = append(tx.NetworkEntries, protocol.NetworkEntry{
+			URL:          fmt.Sprintf("https://example.test/resource-%02d.js", index),
+			Method:       "GET",
+			ResourceType: "script",
+			DurationMs:   float64(index),
+		})
+	}
+
+	resources := appendTopBrowserResourceTimingsFromTransaction(nil, tx, 50)
+	if len(resources) != 50 {
+		t.Fatalf("resources = %d, want 50", len(resources))
+	}
+	if resources[0].DurationMs != 59 || resources[0].URL != "https://example.test/resource-59.js" {
+		t.Fatalf("first resource = %#v, want slowest resource", resources[0])
+	}
+	if resources[len(resources)-1].DurationMs != 10 {
+		t.Fatalf("last resource duration = %v, want boundary duration 10", resources[len(resources)-1].DurationMs)
+	}
+	for _, resource := range resources {
+		if resource.DurationMs < 10 {
+			t.Fatalf("resource below top-50 boundary retained: %#v", resource)
+		}
+		if resource.DeviceProfile != "iphone_15_pro" || resource.BrowserEngine != "webkit" {
+			t.Fatalf("resource lost browser context: %#v", resource)
+		}
 	}
 }
 

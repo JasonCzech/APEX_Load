@@ -41,7 +41,7 @@ func TestHubBroadcastAllReachesScopedClientsButGuardsScopedPayloads(t *testing.T
 
 func TestHubStatsTracksDroppedBroadcastsAndClientMessages(t *testing.T) {
 	hub := NewHub()
-	hub.broadcast = make(chan []byte, 1)
+	hub.broadcast = make(chan hubBroadcast, 1)
 	hub.Broadcast([]byte("one"))
 	hub.Broadcast([]byte("two"))
 
@@ -68,6 +68,33 @@ func TestHubStatsTracksDroppedBroadcastsAndClientMessages(t *testing.T) {
 	}
 	if stats.ConnectedClients != 1 {
 		t.Fatalf("ConnectedClients = %d, want 1", stats.ConnectedClients)
+	}
+}
+
+func TestHubBroadcastScopedJSONCarriesRoutingMetadata(t *testing.T) {
+	hub := NewHub()
+	hub.broadcast = make(chan hubBroadcast, 1)
+
+	hub.BroadcastScopedJSON(" test-1 ", " project-1 ", map[string]any{
+		"type":       "metrics_update",
+		"test_id":    "test-1",
+		"project_id": "project-1",
+	})
+
+	select {
+	case msg := <-hub.broadcast:
+		if msg.testID != "test-1" || msg.projectID != "project-1" || msg.broadcastAll {
+			t.Fatalf("routing metadata = %#v, want scoped test/project without broadcast_all", msg)
+		}
+		var payload map[string]any
+		if err := json.Unmarshal(msg.payload, &payload); err != nil {
+			t.Fatalf("json.Unmarshal returned error: %v", err)
+		}
+		if payload["type"] != "metrics_update" {
+			t.Fatalf("type = %#v, want metrics_update", payload["type"])
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for scoped broadcast")
 	}
 }
 

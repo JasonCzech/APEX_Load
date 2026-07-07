@@ -2,6 +2,7 @@ package api
 
 import (
 	"testing"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/scrub"
@@ -180,5 +181,50 @@ func TestMaskManagedTestRedactsHTTPSecrets(t *testing.T) {
 	}
 	if test.RuntimeSettings.HTTP.Auth.Password != "pw" {
 		t.Fatalf("masking mutated the input test")
+	}
+}
+
+func TestMaskManagedTestStripsHistoryByDefaultAndAddsSparkline(t *testing.T) {
+	base := time.Date(2026, 7, 6, 12, 0, 0, 0, time.UTC)
+	test := &ManagedTest{
+		ID: "run-1",
+		History: []*LiveMetrics{
+			{Timestamp: base, TPS: 1},
+			{Timestamp: base.Add(time.Second), TPS: 2},
+			{Timestamp: base.Add(2 * time.Second), TPS: 3},
+		},
+	}
+
+	masked := maskManagedTest(test)
+	if len(masked.History) != 0 {
+		t.Fatalf("default masked history length = %d, want 0", len(masked.History))
+	}
+	if len(masked.Sparkline) != 3 || masked.Sparkline[2].TPS != 3 {
+		t.Fatalf("sparkline = %#v, want compact TPS points", masked.Sparkline)
+	}
+	if len(test.History) != 3 {
+		t.Fatalf("masking mutated source history")
+	}
+}
+
+func TestMaskManagedTestIncludesHistoryWindowWhenRequested(t *testing.T) {
+	base := time.Date(2026, 7, 6, 12, 0, 0, 0, time.UTC)
+	since := base
+	test := &ManagedTest{
+		ID: "run-1",
+		History: []*LiveMetrics{
+			{Timestamp: base, TPS: 1},
+			{Timestamp: base.Add(time.Second), TPS: 2},
+			{Timestamp: base.Add(2 * time.Second), TPS: 3},
+		},
+	}
+
+	masked := maskManagedTestWithOptions(test, managedTestMaskOptions{
+		IncludeHistory: true,
+		HistorySince:   &since,
+		HistoryLimit:   1,
+	})
+	if len(masked.History) != 1 || masked.History[0].TPS != 3 {
+		t.Fatalf("history window = %#v, want latest point after since", masked.History)
 	}
 }

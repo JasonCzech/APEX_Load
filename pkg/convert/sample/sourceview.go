@@ -74,15 +74,19 @@ func sampleSourceLocations(format string, content string, responseContent string
 	if strings.TrimSpace(responseContent) != "" {
 		responseFile = sampleResponseFileName(format)
 	}
+	contentLineIndex := sourceview.NewLineIndex(content)
+	responseLineIndex := sourceview.NewLineIndex(responseContent)
+	contentMaxLine := maxLineFromIndex(content, contentLineIndex, 1)
+	responseMaxLine := maxLineFromIndex(responseContent, responseLineIndex, 1)
 	locations := make([]sampleSourceLocation, len(exchanges))
 	for index := range exchanges {
 		locations[index] = sampleSourceLocation{
 			SourceFile:        sourceFile,
 			StartLine:         1,
-			EndLine:           maxLine(content, 1),
+			EndLine:           contentMaxLine,
 			ResponseFile:      responseFile,
 			ResponseStartLine: 1,
-			ResponseEndLine:   maxLine(responseContent, 1),
+			ResponseEndLine:   responseMaxLine,
 		}
 	}
 	if len(exchanges) == 0 {
@@ -91,19 +95,19 @@ func sampleSourceLocations(format string, content string, responseContent string
 
 	switch normalizeFormat(format) {
 	case "raw_http":
-		assignDelimitedContentLocations(locations, content, rawHTTPRequestDelimiter)
+		assignDelimitedContentLocations(locations, content, contentLineIndex, rawHTTPRequestDelimiter)
 	case "rest_json", "har":
-		assignURLLocations(locations, content, exchanges)
+		assignURLLocations(locations, content, contentLineIndex, exchanges)
 	case "curl":
-		assignCurlLocations(locations, content, exchanges)
+		assignCurlLocations(locations, contentLineIndex, contentMaxLine, exchanges)
 	}
 	if responseFile != "" {
-		assignResponseLocations(locations, responseContent)
+		assignResponseLocations(locations, responseContent, responseLineIndex)
 	}
 	return locations
 }
 
-func assignDelimitedContentLocations(locations []sampleSourceLocation, content string, delimiter string) {
+func assignDelimitedContentLocations(locations []sampleSourceLocation, content string, lineIndex sourceview.LineIndex, delimiter string) {
 	offset := 0
 	for index := range locations {
 		start := offset
@@ -112,12 +116,12 @@ func assignDelimitedContentLocations(locations []sampleSourceLocation, content s
 			end = offset + next
 			offset = end + len(delimiter)
 		}
-		locations[index].StartLine = sourceview.LineForOffset(content, start)
-		locations[index].EndLine = sourceview.LineForOffset(content, end)
+		locations[index].StartLine = lineIndex.LineForOffset(start)
+		locations[index].EndLine = lineIndex.LineForOffset(end)
 	}
 }
 
-func assignURLLocations(locations []sampleSourceLocation, content string, exchanges []exchange) {
+func assignURLLocations(locations []sampleSourceLocation, content string, lineIndex sourceview.LineIndex, exchanges []exchange) {
 	offset := 0
 	for index := range locations {
 		needle := exchanges[index].URL
@@ -133,25 +137,24 @@ func assignURLLocations(locations []sampleSourceLocation, content string, exchan
 		} else {
 			found += offset
 		}
-		locations[index].StartLine = sourceview.LineForOffset(content, found)
+		locations[index].StartLine = lineIndex.LineForOffset(found)
 		locations[index].EndLine = locations[index].StartLine
 		offset = found + len(needle)
 	}
 }
 
-func assignCurlLocations(locations []sampleSourceLocation, content string, exchanges []exchange) {
+func assignCurlLocations(locations []sampleSourceLocation, lineIndex sourceview.LineIndex, end int, exchanges []exchange) {
 	if len(exchanges) == 0 {
 		return
 	}
-	start := sourceview.LineForOffset(content, 0)
-	end := maxLine(content, start)
+	start := lineIndex.LineForOffset(0)
 	for index := range locations {
 		locations[index].StartLine = start
 		locations[index].EndLine = end
 	}
 }
 
-func assignResponseLocations(locations []sampleSourceLocation, responseContent string) {
+func assignResponseLocations(locations []sampleSourceLocation, responseContent string, lineIndex sourceview.LineIndex) {
 	offset := 0
 	for index := range locations {
 		start := offset
@@ -160,8 +163,8 @@ func assignResponseLocations(locations []sampleSourceLocation, responseContent s
 			end = offset + next
 			offset = end + len(rawHTTPResponseDelimiter)
 		}
-		locations[index].ResponseStartLine = sourceview.LineForOffset(responseContent, start)
-		locations[index].ResponseEndLine = sourceview.LineForOffset(responseContent, end)
+		locations[index].ResponseStartLine = lineIndex.LineForOffset(start)
+		locations[index].ResponseEndLine = lineIndex.LineForOffset(end)
 	}
 }
 
@@ -182,9 +185,9 @@ func responseSourceLocation(locations []sampleSourceLocation, index int) sampleS
 	return location
 }
 
-func maxLine(content string, fallback int) int {
+func maxLineFromIndex(content string, lineIndex sourceview.LineIndex, fallback int) int {
 	if strings.TrimSpace(content) == "" {
 		return fallback
 	}
-	return strings.Count(content, "\n") + 1
+	return lineIndex.MaxLine(fallback)
 }

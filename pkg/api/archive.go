@@ -2,6 +2,7 @@ package api
 
 import (
 	"archive/zip"
+	"bufio"
 	"encoding/json"
 	"io"
 	"os"
@@ -277,6 +278,9 @@ type RunArchiveReport struct {
 	Integrity           *RunArchiveIntegrityReport             `json:"integrity,omitempty"`
 	Manifest            *RunArchiveManifest                    `json:"manifest"`
 	Overview            RunArchiveOverview                     `json:"overview"`
+	Verdict             *ReportVerdict                         `json:"verdict,omitempty"`
+	SLARows             map[string]SLAComplianceRow            `json:"sla_rows,omitempty"`
+	SLARollup           *RunArchiveSLARollup                   `json:"sla_rollup,omitempty"`
 	EvidenceTiers       []RunArchiveEvidenceTier               `json:"evidence_tiers,omitempty"`
 	ErrorPatterns       []RunArchiveErrorPattern               `json:"error_patterns,omitempty"`
 	SummaryTimeline     []RunArchiveSummaryPoint               `json:"summary_timeline,omitempty"`
@@ -656,9 +660,15 @@ type runArchiveWriter struct {
 	txFile          *os.File
 	resourceFile    *os.File
 	summaryFile     *os.File
+	txBuf           *bufio.Writer
+	resourceBuf     *bufio.Writer
+	summaryBuf      *bufio.Writer
 	txEncoder       *json.Encoder
 	resourceEncoder *json.Encoder
 	summaryEncoder  *json.Encoder
+	flushStop       chan struct{}
+	flushStopped    chan struct{}
+	flushErr        error
 }
 
 func cloneArchiveTestGroups(groups []TestGroup) []TestGroup {

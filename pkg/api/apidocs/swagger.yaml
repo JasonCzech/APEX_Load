@@ -7826,6 +7826,20 @@ paths:
             type: string
       tags:
         - Tests
+  /api/v1/tests/archive/reports:
+    post:
+      summary: Get Run Archive Reports Batch
+      description: |-
+        **Handler:** `handleGetRunArchiveReportsBatch`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleGetRunArchiveReportsBatch
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+        - Tests
   /api/v1/tests/estimate:
     post:
       summary: Estimate Test

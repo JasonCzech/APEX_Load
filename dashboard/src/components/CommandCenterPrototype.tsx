@@ -14,7 +14,7 @@ import PageViewToggle from './PageViewToggle'
 import StatusBadge from './StatusBadge'
 import { useApi } from '../hooks/useApi'
 import { isValidDurationInput, parseDurationToSeconds } from '../utils/timeUtils'
-import { isLiveTestStatus } from '../utils/testStatusUtils'
+import { isCompletedTestStatus, isLiveTestStatus } from '../utils/testStatusUtils'
 import type { BrowserReplaySnapshot, GroupLiveMetrics, IntervalSummaryRecord, LiveErrorEvidence, LiveMetrics, MetricsHistoryPoint, TestGroup, TestStatus, TestSummary, TransactionEvent, VUserRampStatus } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
 import TestExecutionCharts, { type GraphCursorState, type GraphGroupTabId, type UnderLoadDisplayMode } from './TestExecutionCharts'
@@ -959,27 +959,58 @@ export default function CommandCenterPrototype({
     }
 
     let cancelled = false
+    let inFlight = false
+    let stopped = false
+    let lastSignature = ''
+    let interval: number | undefined
     const load = async () => {
+      if (stopped || inFlight) return
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+        return
+      }
+      inFlight = true
       try {
         const next = await api.getTest(testId)
         if (!cancelled) {
-          setLiveTest(next)
+          const signature = JSON.stringify(next)
+          if (signature !== lastSignature) {
+            lastSignature = signature
+            setLiveTest(next)
+          }
           setLoadError('')
+          if (isCompletedTestStatus(next.status)) {
+            stopped = true
+            if (interval !== undefined) window.clearInterval(interval)
+          }
         }
       } catch (error: unknown) {
         if (!cancelled) {
           setLoadError(getErrorMessage(error, 'Unable to load command-center run data'))
         }
+      } finally {
+        inFlight = false
       }
     }
 
     void load()
-    const interval = window.setInterval(() => {
+    interval = window.setInterval(() => {
       void load()
     }, 2000)
+    const handleVisibilityChange = () => {
+      if (!stopped && typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        void load()
+      }
+    }
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibilityChange)
+    }
     return () => {
       cancelled = true
-      window.clearInterval(interval)
+      stopped = true
+      if (interval !== undefined) window.clearInterval(interval)
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibilityChange)
+      }
     }
   }, [api, initialTest, testId])
 
@@ -995,10 +1026,13 @@ export default function CommandCenterPrototype({
       return undefined
     }
     let cancelled = false
+    let inFlight = false
     const discover = async () => {
+      if (inFlight) return
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
         return
       }
+      inFlight = true
       setDiscoveringRuns(true)
       try {
         const res = await api.listTests({ application_id: applicationId, project_id: projectId })
@@ -1013,6 +1047,7 @@ export default function CommandCenterPrototype({
       } catch {
         if (!cancelled) setLiveRunOptions([])
       } finally {
+        inFlight = false
         if (!cancelled) setDiscoveringRuns(false)
       }
     }
@@ -1256,7 +1291,7 @@ export default function CommandCenterPrototype({
           return
         }
 
-        const response = await api.getMetrics(testId, { groups: selectedGroupNames })
+        const response = await api.getMetrics(testId, { groups: selectedGroupNames, limit: 300 })
         if (cancelled) return
         const mappedHistory = mapExecutionHistory((response.history || []) as LiveMetrics[])
         setBackendScopedChartData(responseHonorsGroupFilter(response.metrics)

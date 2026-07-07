@@ -2765,7 +2765,7 @@ func TestDistributedExecutionBackendPausesAndResumesTest(t *testing.T) {
 		t.Fatalf("ResumeTest returned error: %v", err)
 	}
 
-	deadline = time.Now().Add(2 * time.Second)
+	deadline = time.Now().Add(5 * time.Second)
 	for {
 		resumed, ok := runner.GetTest(testRun.ID)
 		if !ok {

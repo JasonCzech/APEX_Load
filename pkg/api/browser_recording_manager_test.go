@@ -260,7 +260,7 @@ func drainHubBroadcasts(t *testing.T, hub *Hub) []map[string]any {
 		select {
 		case msg := <-hub.broadcast:
 			var decoded map[string]any
-			if err := json.Unmarshal(msg, &decoded); err != nil {
+			if err := json.Unmarshal(msg.payload, &decoded); err != nil {
 				t.Fatalf("broadcast not JSON: %v", err)
 			}
 			out = append(out, decoded)
@@ -278,7 +278,7 @@ func waitForHubBroadcastType(t *testing.T, hub *Hub, want string) map[string]any
 		select {
 		case msg := <-hub.broadcast:
 			var decoded map[string]any
-			if err := json.Unmarshal(msg, &decoded); err != nil {
+			if err := json.Unmarshal(msg.payload, &decoded); err != nil {
 				t.Fatalf("broadcast not JSON: %v", err)
 			}
 			if decoded["type"] == want {
@@ -948,6 +948,8 @@ func TestBrowserRecordingManagerToolbarPauseSyncs(t *testing.T) {
 func TestBrowserRecordingManagerStopFromPaused(t *testing.T) {
 	m := NewBrowserRecordingManager(NewHub())
 	fake := newFakeBrowserRecorder(recordedBrowserArtifact())
+	fake.stopStarted = make(chan struct{})
+	fake.stopRelease = make(chan struct{})
 	fake.install(m)
 
 	started, err := m.Start(BrowserRecordingStartRequest{StartURL: "https://shop.example/"})
@@ -961,6 +963,8 @@ func TestBrowserRecordingManagerStopFromPaused(t *testing.T) {
 	if !ok || stopped.Status != BrowserRecordingStopping {
 		t.Errorf("Stop from paused = %q ok=%v", stopped.Status, ok)
 	}
+	<-fake.stopStarted
+	close(fake.stopRelease)
 	waitForRecordingStatus(t, m, started.ID, BrowserRecordingStopped)
 	if fake.stopCalls != 1 {
 		t.Errorf("stop calls = %d", fake.stopCalls)

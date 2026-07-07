@@ -58,6 +58,49 @@ func TestSessionEpochRevocation(t *testing.T) {
 	}
 }
 
+func TestApplyLocalUserBindingsThrottlesLastSeenWrites(t *testing.T) {
+	resetUserIdentitySeenThrottleForTests()
+	t.Cleanup(resetUserIdentitySeenThrottleForTests)
+	store := auditEventStore(t)
+	user := seedAdmin(t, store, "seen-user")
+
+	upstream := bootstrapUpstream(user.Subject, RoleViewer)
+	if _, err := applyLocalUserBindings(upstream, store); err != nil {
+		t.Fatalf("first applyLocalUserBindings returned error: %v", err)
+	}
+	firstStored, err := store.GetUser(user.ID)
+	if err != nil {
+		t.Fatalf("GetUser after first apply returned error: %v", err)
+	}
+	if firstStored.LastSeenAt == nil {
+		t.Fatal("first apply should persist last_seen_at")
+	}
+
+	if _, err := applyLocalUserBindings(upstream, store); err != nil {
+		t.Fatalf("second applyLocalUserBindings returned error: %v", err)
+	}
+	secondStored, err := store.GetUser(user.ID)
+	if err != nil {
+		t.Fatalf("GetUser after second apply returned error: %v", err)
+	}
+	if secondStored.LastSeenAt == nil || !secondStored.LastSeenAt.Equal(*firstStored.LastSeenAt) {
+		t.Fatalf("second apply should be throttled; last_seen_at = %v, want %v", secondStored.LastSeenAt, firstStored.LastSeenAt)
+	}
+
+	renamed := bootstrapUpstream(user.Subject, RoleViewer)
+	renamed.DisplayName = "Renamed User"
+	if _, err := applyLocalUserBindings(renamed, store); err != nil {
+		t.Fatalf("renamed applyLocalUserBindings returned error: %v", err)
+	}
+	renamedStored, err := store.GetUser(user.ID)
+	if err != nil {
+		t.Fatalf("GetUser after rename returned error: %v", err)
+	}
+	if renamedStored.DisplayName != "Renamed User" {
+		t.Fatalf("DisplayName = %q, want profile update despite throttle", renamedStored.DisplayName)
+	}
+}
+
 func TestApplyLocalUserBindingsCannotResurrectRevokedEpoch(t *testing.T) {
 	store := auditEventStore(t)
 	user := seedAdmin(t, store, "epoch-race-user")

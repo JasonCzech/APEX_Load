@@ -20,7 +20,8 @@ func RunScriptShakeout(ctx context.Context, groupName string, script *dsl.Script
 		return fmt.Errorf("protocol init: %w", err)
 	}
 
-	if err := proto.Init(ctx, buildProtoConfigForRunMode(script, "replay")); err != nil {
+	secretResolver := newDefaultSecretResolver()
+	if err := proto.Init(ctx, buildProtoConfigForRunModeWithSecretResolver(script, "replay", secretResolver)); err != nil {
 		return fmt.Errorf("protocol init: %w", err)
 	}
 	defer proto.Teardown(context.Background())
@@ -31,13 +32,14 @@ func RunScriptShakeout(ctx context.Context, groupName string, script *dsl.Script
 	}
 
 	vu := &VUser{
-		ID:           0,
-		Group:        groupName,
-		Proto:        proto,
-		Script:       script,
-		Metrics:      NewMetricsCollector(16),
-		Variables:    make(map[string]string),
-		DataProvider: dataProvider,
+		ID:             0,
+		Group:          groupName,
+		Proto:          proto,
+		Script:         script,
+		Metrics:        NewMetricsCollector(16),
+		Variables:      make(map[string]string),
+		DataProvider:   dataProvider,
+		SecretResolver: secretResolver,
 	}
 	vu.loadDataRow()
 

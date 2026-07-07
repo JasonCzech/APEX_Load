@@ -47,9 +47,9 @@ type runArchiveHTMLReportData struct {
 	Charts                reportCharts
 	LogoDataURI           template.URL
 	Manifest              *TestRunManifest
-	Verdict               reportVerdict
+	Verdict               ReportVerdict
 	Findings              []ReportFinding
-	SLARows               []slaComplianceRow
+	SLARows               []SLAComplianceRow
 	GeneratorCount        int
 	InventoryRows         []GeneratorInventoryEntry
 	InventoryOverflow     int
@@ -1094,8 +1094,8 @@ func renderRunArchiveHTMLReportWithAnnotations(report *RunArchiveReport, profile
 // applyVerdictOverride replaces the auto-derived verdict with an analyst-set
 // status (and optional explanation), recomputing the conditional/failed styling
 // flags from the override label.
-func applyVerdictOverride(status, explanation string, base reportVerdict) reportVerdict {
-	override := reportVerdict{Status: strings.TrimSpace(status)}
+func applyVerdictOverride(status, explanation string, base ReportVerdict) ReportVerdict {
+	override := ReportVerdict{Status: strings.TrimSpace(status)}
 	switch strings.ToLower(override.Status) {
 	case "fail", "failed":
 		override.Status = reportVerdictFail

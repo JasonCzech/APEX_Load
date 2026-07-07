@@ -321,6 +321,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	sanitizeSensitive := convertutil.BoolOption(req.Options.SanitizeSensitive, true)
 	includeAssertions := convertutil.BoolOption(req.Options.IncludeAssertions, true)
 	chainItems := make([]postmanChainItem, 0, len(requests))
+	sourceLineIndex := sourceview.NewLineIndex(content)
 	for index, item := range requests {
 		reportPostmanEvents(item, &diagnostics)
 
@@ -348,7 +349,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		if action.Name == "" {
 			result.Stats.SkippedItems = append(result.Stats.SkippedItems, item.Name)
 			diagnostics.Add(diag.Warning, "Postman item skipped", postmanItemLocation(item), "request item could not be converted into an executable action")
-			sourceMappings = append(sourceMappings, postmanSourceMapping(sourceFileName, content, item, "", postmanItemLocation(item), "request", "review_only", "Postman item could not be converted into an executable action."))
+			sourceMappings = append(sourceMappings, postmanSourceMapping(sourceFileName, content, sourceLineIndex, item, "", postmanItemLocation(item), "request", "review_only", "Postman item could not be converted into an executable action."))
 			continue
 		}
 		result.Warnings = append(result.Warnings, actionWarnings...)
@@ -361,7 +362,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		actionIndex := len(result.Script.Actions)
 		result.Script.Actions = append(result.Script.Actions, action)
 		chainItems = append(chainItems, postmanChainItem{ActionIndex: actionIndex, Item: item})
-		sourceMappings = append(sourceMappings, postmanSourceMapping(sourceFileName, content, item, fmt.Sprintf("actions[%d]", actionIndex), action.Name, "action", "converted", "Postman request was converted into a generated APEX Load action."))
+		sourceMappings = append(sourceMappings, postmanSourceMapping(sourceFileName, content, sourceLineIndex, item, fmt.Sprintf("actions[%d]", actionIndex), action.Name, "action", "converted", "Postman request was converted into a generated APEX Load action."))
 		result.Summary.Requests = append(result.Summary.Requests, action.Method+" "+action.Target)
 		result.Stats.ConvertedActions++
 	}
@@ -384,8 +385,8 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	return result, nil
 }
 
-func postmanSourceMapping(sourceFile string, content string, item requestItem, targetPath string, targetName string, targetKind string, status string, notes string) sourceview.Mapping {
-	line := postmanItemLine(content, item)
+func postmanSourceMapping(sourceFile string, content string, lineIndex sourceview.LineIndex, item requestItem, targetPath string, targetName string, targetKind string, status string, notes string) sourceview.Mapping {
+	line := postmanItemLine(content, lineIndex, item)
 	return sourceview.Mapping{
 		SourceFile: sourceFile,
 		StartLine:  line,
@@ -399,13 +400,13 @@ func postmanSourceMapping(sourceFile string, content string, item requestItem, t
 	}
 }
 
-func postmanItemLine(content string, item requestItem) int {
+func postmanItemLine(content string, lineIndex sourceview.LineIndex, item requestItem) int {
 	for _, needle := range []string{`"` + item.Name + `"`, item.Request.URL.Raw, item.Request.Method} {
 		if strings.TrimSpace(needle) == "" {
 			continue
 		}
 		if offset := strings.Index(content, needle); offset >= 0 {
-			return sourceview.LineForOffset(content, offset)
+			return lineIndex.LineForOffset(offset)
 		}
 	}
 	return 1

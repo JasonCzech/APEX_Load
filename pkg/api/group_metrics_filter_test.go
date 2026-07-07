@@ -138,6 +138,33 @@ func TestFilterLiveMetricsForGroupsHandlesEmptySelection(t *testing.T) {
 	}
 }
 
+func TestFilterLiveMetricsHistoryForGroupsCachedInvalidatesOnNewPoint(t *testing.T) {
+	const testID = "run-group-filter-cache"
+	deleteGroupMetricsHistoryCache(testID)
+	t.Cleanup(func() { deleteGroupMetricsHistoryCache(testID) })
+
+	filter := groupFilterQuery{Names: []string{"Checkout"}, Explicit: true}
+	first := liveMetricsForGroupFilterTest()
+	second := liveMetricsForGroupFilterTest()
+	second.Timestamp = first.Timestamp.Add(time.Second)
+	second.GroupMetrics["Checkout"].TPS = 9
+
+	initial := filterLiveMetricsHistoryForGroupsCached(testID, []*LiveMetrics{first}, filter)
+	if len(initial) != 1 || initial[0].TPS != 4 {
+		t.Fatalf("initial cached filter = %#v, want one checkout point with tps 4", initial)
+	}
+
+	cachedAgain := filterLiveMetricsHistoryForGroupsCached(testID, []*LiveMetrics{first}, filter)
+	if len(cachedAgain) != 1 || cachedAgain[0].TPS != 4 {
+		t.Fatalf("cached filter = %#v, want one checkout point with tps 4", cachedAgain)
+	}
+
+	updated := filterLiveMetricsHistoryForGroupsCached(testID, []*LiveMetrics{first, second}, filter)
+	if len(updated) != 2 || updated[1].TPS != 9 {
+		t.Fatalf("updated cached filter = %#v, want second checkout point with tps 9", updated)
+	}
+}
+
 func TestHandleGetMetricsAppliesGroupFilter(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	live := liveMetricsForGroupFilterTest()
@@ -170,5 +197,87 @@ func TestHandleGetMetricsAppliesGroupFilter(t *testing.T) {
 	}
 	if len(payload.History) != 1 || payload.History[0].ActiveVUsers != 12 {
 		t.Fatalf("filtered history = %#v, want Checkout-only history", payload.History)
+	}
+}
+
+func TestHandleGetTestHistoryOptIn(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	base := time.Date(2026, 6, 10, 10, 0, 0, 0, time.UTC)
+	server.runner.mu.Lock()
+	server.runner.tests["run-history-opt-in"] = &ManagedTest{
+		ID:     "run-history-opt-in",
+		Name:   "History Opt In",
+		Status: "RUNNING",
+		History: []*LiveMetrics{
+			{Timestamp: base, TPS: 1},
+			{Timestamp: base.Add(time.Second), TPS: 2},
+			{Timestamp: base.Add(2 * time.Second), TPS: 3},
+		},
+	}
+	server.runner.mu.Unlock()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/run-history-opt-in", nil)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("default status = %d: %s", resp.Code, resp.Body.String())
+	}
+	var defaultPayload ManagedTest
+	if err := json.Unmarshal(resp.Body.Bytes(), &defaultPayload); err != nil {
+		t.Fatalf("decode default response: %v", err)
+	}
+	if len(defaultPayload.History) != 0 {
+		t.Fatalf("default history length = %d, want 0", len(defaultPayload.History))
+	}
+	if len(defaultPayload.Sparkline) != 3 {
+		t.Fatalf("sparkline length = %d, want 3", len(defaultPayload.Sparkline))
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/tests/run-history-opt-in?include=history&since="+url.QueryEscape(base.Format(time.RFC3339Nano))+"&limit=1", nil)
+	resp = httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("opt-in status = %d: %s", resp.Code, resp.Body.String())
+	}
+	var optInPayload ManagedTest
+	if err := json.Unmarshal(resp.Body.Bytes(), &optInPayload); err != nil {
+		t.Fatalf("decode opt-in response: %v", err)
+	}
+	if len(optInPayload.History) != 1 || optInPayload.History[0].TPS != 3 {
+		t.Fatalf("opt-in history = %#v, want latest point after since", optInPayload.History)
+	}
+}
+
+func TestHandleGetMetricsAppliesHistoryWindow(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	base := time.Date(2026, 6, 10, 10, 0, 0, 0, time.UTC)
+	server.runner.mu.Lock()
+	server.runner.tests["run-metrics-window"] = &ManagedTest{
+		ID:          "run-metrics-window",
+		Name:        "Metrics Window",
+		Status:      "RUNNING",
+		LiveMetrics: &LiveMetrics{Timestamp: base.Add(2 * time.Second), TPS: 3},
+		History: []*LiveMetrics{
+			{Timestamp: base, TPS: 1},
+			{Timestamp: base.Add(time.Second), TPS: 2},
+			{Timestamp: base.Add(2 * time.Second), TPS: 3},
+		},
+	}
+	server.runner.mu.Unlock()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/run-metrics-window/metrics?since="+url.QueryEscape(base.Format(time.RFC3339Nano))+"&limit=1", nil)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", resp.Code, resp.Body.String())
+	}
+	var payload struct {
+		History []*LiveMetrics `json:"history"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode metrics response: %v", err)
+	}
+	if len(payload.History) != 1 || payload.History[0].TPS != 3 {
+		t.Fatalf("metrics history window = %#v, want latest point after since", payload.History)
 	}
 }

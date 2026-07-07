@@ -512,6 +512,9 @@
     flex: 0 0 auto;
     align-items: center;
   }
+  .sidebar .dev-view-control {
+    display: none;
+  }
   .sidebar .sidebar-footer-row {
     flex-direction: column;
     justify-content: center;

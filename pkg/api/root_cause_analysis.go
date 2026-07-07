@@ -47,7 +47,7 @@ func (s *Server) handleGetRunArchiveRootCause(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
-	report, err := buildRunArchiveReport(record)
+	report, err := cachedRunArchiveReport(record)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to build root-cause summary: "+err.Error())
 		return

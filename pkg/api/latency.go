@@ -10,6 +10,7 @@ import (
 	"crypto/tls"
 	"encoding/csv"
 	"fmt"
+	"io"
 	"math"
 	"net"
 	"net/http"
@@ -63,29 +64,114 @@ func (tr *TestRunner) measureNetworkLatency(test *ManagedTest, live *LiveMetrics
 	// Broadcast the latency update specifically if needed,
 	// though it will be part of the next metrics broadcast too.
 	if tr.hub != nil {
-		tr.hub.BroadcastJSON(map[string]any{
+		projectID := normalizeProjectID(test.ProjectID)
+		tr.hub.BroadcastScopedJSON(test.ID, projectID, map[string]any{
 			"type":       "latency_update",
 			"test_id":    test.ID,
-			"project_id": normalizeProjectID(test.ProjectID),
+			"project_id": projectID,
 			"latency":    latency,
 		})
 	}
 }
 
 func (tr *TestRunner) latencyEndpointsForTest(test *ManagedTest) map[string]string {
+	if tr == nil || test == nil {
+		return map[string]string{}
+	}
+	signature, inputs := tr.latencyEndpointInputs(test)
+	tr.mu.RLock()
+	if test.latencyEndpointsCache.valid && test.latencyEndpointsCache.signature == signature {
+		endpoints := cloneLatencyEndpoints(test.latencyEndpointsCache.endpoints)
+		tr.mu.RUnlock()
+		return endpoints
+	}
+	tr.mu.RUnlock()
+
 	endpoints := make(map[string]string)
-	for _, g := range test.Groups {
-		script := g.script
-		if script == nil && g.ScriptID != "" {
-			tr.mu.RLock()
-			if stored, ok := tr.scripts[g.ScriptID]; ok {
+	for _, input := range inputs {
+		addLatencyEndpoint(endpoints, input.script)
+	}
+	tr.mu.Lock()
+	test.latencyEndpointsCache = latencyEndpointCache{
+		signature: signature,
+		endpoints: cloneLatencyEndpoints(endpoints),
+		valid:     true,
+	}
+	tr.mu.Unlock()
+	return endpoints
+}
+
+type latencyEndpointCache struct {
+	signature string
+	endpoints map[string]string
+	valid     bool
+}
+
+type latencyEndpointInput struct {
+	groupName string
+	scriptID  string
+	script    *dsl.Script
+}
+
+func (tr *TestRunner) latencyEndpointInputs(test *ManagedTest) (string, []latencyEndpointInput) {
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	inputs := make([]latencyEndpointInput, 0, len(test.Groups))
+	var signature strings.Builder
+	for _, group := range test.Groups {
+		script := group.script
+		if script == nil && group.ScriptID != "" {
+			if stored, ok := tr.scripts[group.ScriptID]; ok {
 				script = stored.Script
 			}
-			tr.mu.RUnlock()
 		}
-		addLatencyEndpoint(endpoints, script)
+		inputs = append(inputs, latencyEndpointInput{
+			groupName: group.Name,
+			scriptID:  group.ScriptID,
+			script:    script,
+		})
+		writeLatencyEndpointSignature(&signature, group, script)
 	}
-	return endpoints
+	return signature.String(), inputs
+}
+
+func writeLatencyEndpointSignature(signature *strings.Builder, group TestGroup, script *dsl.Script) {
+	fmt.Fprintf(signature, "group=%s;script_id=%s;", group.Name, group.ScriptID)
+	if script == nil {
+		signature.WriteString("nil|")
+		return
+	}
+	fmt.Fprintf(signature, "ptr=%p;id=%s;version=%s;updated=%d;base=%s;actions=%d;params=%d;sources=%d;",
+		script,
+		script.ID,
+		script.Version,
+		script.UpdatedAt.UnixNano(),
+		script.Config.BaseURL,
+		len(script.Actions),
+		len(script.Parameters),
+		len(script.DataSources),
+	)
+	for _, action := range script.Actions {
+		fmt.Fprintf(signature, "target=%s;", action.Target)
+	}
+	for _, param := range script.Parameters {
+		fmt.Fprintf(signature, "param=%s/%s/%s/%s/%d;", param.Name, param.Type, param.DataSource, param.Column, len(param.Values))
+	}
+	for _, source := range script.DataSources {
+		fmt.Fprintf(signature, "source=%s/%s/%t/%s/%d;", source.Name, source.Type, source.FirstRowHeader, source.Delimiter, len(source.InlineData))
+	}
+	signature.WriteByte('|')
+}
+
+func cloneLatencyEndpoints(endpoints map[string]string) map[string]string {
+	if len(endpoints) == 0 {
+		return map[string]string{}
+	}
+	cloned := make(map[string]string, len(endpoints))
+	for host, endpoint := range endpoints {
+		cloned[host] = endpoint
+	}
+	return cloned
 }
 
 func addLatencyEndpoint(endpoints map[string]string, script *dsl.Script) {
@@ -104,12 +190,13 @@ func addLatencyEndpoint(endpoints map[string]string, script *dsl.Script) {
 
 func addParameterizedLatencyEndpoints(endpoints map[string]string, script *dsl.Script) bool {
 	added := false
+	paramCache := make(map[string]latencyParameterLookup)
 	for _, action := range script.Actions {
 		raw := strings.TrimSpace(action.Target)
 		if raw == "" {
 			continue
 		}
-		if endpoint, ok := resolveLatencyEndpointTemplatePrefix(raw, script); ok {
+		if endpoint, ok := resolveLatencyEndpointTemplatePrefix(raw, script, paramCache); ok {
 			addLatencyEndpointValue(endpoints, endpoint)
 			added = true
 		}
@@ -119,7 +206,12 @@ func addParameterizedLatencyEndpoints(endpoints map[string]string, script *dsl.S
 
 var latencyTemplatePrefixPattern = regexp.MustCompile(`^\{\{([^{}]+)\}\}`)
 
-func resolveLatencyEndpointTemplatePrefix(raw string, script *dsl.Script) (string, bool) {
+type latencyParameterLookup struct {
+	value string
+	ok    bool
+}
+
+func resolveLatencyEndpointTemplatePrefix(raw string, script *dsl.Script, paramCache map[string]latencyParameterLookup) (string, bool) {
 	raw = strings.TrimSpace(raw)
 	match := latencyTemplatePrefixPattern.FindStringSubmatchIndex(raw)
 	if len(match) != 4 {
@@ -130,7 +222,7 @@ func resolveLatencyEndpointTemplatePrefix(raw string, script *dsl.Script) (strin
 		return "", false
 	}
 	name := strings.TrimSpace(strings.TrimPrefix(expr, "var."))
-	value, ok := firstScriptParameterValue(script, name)
+	value, ok := firstScriptParameterValueCached(script, name, paramCache)
 	if !ok {
 		return "", false
 	}
@@ -140,6 +232,19 @@ func resolveLatencyEndpointTemplatePrefix(raw string, script *dsl.Script) (strin
 	}
 	suffix := strings.TrimLeft(raw[match[1]:], " \t\r\n")
 	return normalizeLatencyEndpointValue(value + suffix), true
+}
+
+func firstScriptParameterValueCached(script *dsl.Script, name string, cache map[string]latencyParameterLookup) (string, bool) {
+	if cache == nil {
+		return firstScriptParameterValue(script, name)
+	}
+	key := strings.TrimSpace(name)
+	if got, ok := cache[key]; ok {
+		return got.value, got.ok
+	}
+	value, ok := firstScriptParameterValue(script, key)
+	cache[key] = latencyParameterLookup{value: value, ok: ok}
+	return value, ok
 }
 
 func addLatencyEndpointValue(endpoints map[string]string, raw string) {
@@ -209,7 +314,7 @@ func latencyDataSourceDelimiters(delimiter string) []rune {
 }
 
 func firstScriptDataSourceValueWithDelimiter(source dsl.DataSource, column string, delimiter rune) (string, bool) {
-	rows := parseInlineDataRows(source.InlineData, delimiter)
+	rows := parseInlineDataRows(source.InlineData, delimiter, 2)
 	if len(rows) == 0 {
 		return "", false
 	}
@@ -239,18 +344,21 @@ func firstScriptDataSourceValueWithDelimiter(source dsl.DataSource, column strin
 	return value, value != ""
 }
 
-func parseInlineDataRows(content string, delimiter rune) [][]string {
+func parseInlineDataRows(content string, delimiter rune, maxRows int) [][]string {
 	reader := csv.NewReader(strings.NewReader(content))
 	reader.Comma = delimiter
 	reader.FieldsPerRecord = -1
 	reader.LazyQuotes = true
 	reader.TrimLeadingSpace = true
-	rows, err := reader.ReadAll()
-	if err != nil {
-		return nil
-	}
-	filtered := rows[:0]
-	for _, row := range rows {
+	filtered := make([][]string, 0, maxRows)
+	for maxRows <= 0 || len(filtered) < maxRows {
+		row, err := reader.Read()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return nil
+		}
 		nonEmpty := false
 		for index := range row {
 			row[index] = strings.TrimSpace(strings.TrimPrefix(row[index], "\ufeff"))

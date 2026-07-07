@@ -69,13 +69,20 @@ func TestBrowserMatchWSEvents(t *testing.T) {
 	if got := b.currentWSWatermark(); got != 0 || len(b.wsEvents) != 0 || b.wsSeq != 0 {
 		t.Fatalf("reset ws state = watermark %d seq %d events %d", got, b.wsSeq, len(b.wsEvents))
 	}
-	if !browserWSPayloadMatches(`{"type":"ready"}`, `"type":"ready"`, "contains") {
+	if !browserWSPayloadMatches(`{"type":"ready"}`, `"type":"ready"`, "contains", nil) {
 		t.Fatal("contains payload match failed")
 	}
-	if !browserWSPayloadMatches(`{"type":"ready"}`, `^\{"type":"ready"\}$`, "regex") {
+	matcher, err := browserWSMatcherFromAction(&protocol.Action{Type: "browser_ws_wait", Params: map[string]any{
+		"match":      `^\{"type":"ready"\}$`,
+		"match_mode": "regex",
+	}})
+	if err != nil {
+		t.Fatalf("browserWSMatcherFromAction regex: %v", err)
+	}
+	if !browserWSPayloadMatches(`{"type":"ready"}`, `^\{"type":"ready"\}$`, "regex", matcher.MatchRegex) {
 		t.Fatal("regex payload match failed")
 	}
-	if browserWSPayloadMatches(`{"type":"ready"}`, `ready`, "exact") {
+	if browserWSPayloadMatches(`{"type":"ready"}`, `ready`, "exact", nil) {
 		t.Fatal("exact payload match accepted partial payload")
 	}
 }

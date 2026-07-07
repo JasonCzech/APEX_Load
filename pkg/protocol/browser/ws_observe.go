@@ -143,6 +143,7 @@ type browserWSMatcher struct {
 	Direction   string
 	Match       string
 	MatchMode   string
+	MatchRegex  *regexp.Regexp
 	MinSeq      int64
 }
 
@@ -165,9 +166,11 @@ func browserWSMatcherFromAction(action *protocol.Action) (browserWSMatcher, erro
 		return matcher, fmt.Errorf("%s params.match_mode must be contains, exact, or regex", action.Type)
 	}
 	if matcher.MatchMode == "regex" && matcher.Match != "" {
-		if _, err := regexp.Compile(matcher.Match); err != nil {
+		compiled, err := regexp.Compile(matcher.Match)
+		if err != nil {
 			return matcher, fmt.Errorf("%s params.match regex is invalid: %w", action.Type, err)
 		}
+		matcher.MatchRegex = compiled
 	}
 	return matcher, nil
 }
@@ -184,10 +187,8 @@ func bwsActionMinSeq(action *protocol.Action) int64 {
 
 func (b *Browser) matchWSEvents(matcher browserWSMatcher) []browserWSEvent {
 	b.wsMu.Lock()
-	events := append([]browserWSEvent(nil), b.wsEvents...)
-	b.wsMu.Unlock()
 	matches := make([]browserWSEvent, 0)
-	for _, event := range events {
+	for _, event := range b.wsEvents {
 		if matcher.MinSeq > 0 && event.Seq <= matcher.MinSeq {
 			continue
 		}
@@ -197,11 +198,12 @@ func (b *Browser) matchWSEvents(matcher browserWSMatcher) []browserWSEvent {
 		if matcher.Direction != "" && event.Direction != matcher.Direction {
 			continue
 		}
-		if matcher.Match != "" && !browserWSPayloadMatches(event.Payload, matcher.Match, matcher.MatchMode) {
+		if matcher.Match != "" && !browserWSPayloadMatches(event.Payload, matcher.Match, matcher.MatchMode, matcher.MatchRegex) {
 			continue
 		}
 		matches = append(matches, event)
 	}
+	b.wsMu.Unlock()
 	return matches
 }
 
@@ -251,13 +253,15 @@ func (b *Browser) resetWSEvents() {
 	b.wsMu.Unlock()
 }
 
-func browserWSPayloadMatches(payload, expected, mode string) bool {
+func browserWSPayloadMatches(payload, expected, mode string, compiled *regexp.Regexp) bool {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
 	case "exact":
 		return payload == expected
 	case "regex":
-		matched, _ := regexp.MatchString(expected, payload)
-		return matched
+		if compiled == nil {
+			return false
+		}
+		return compiled.MatchString(payload)
 	default:
 		return strings.Contains(payload, expected)
 	}

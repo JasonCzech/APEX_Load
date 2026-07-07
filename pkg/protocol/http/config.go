@@ -77,7 +77,10 @@ func parseTransportConfig(config map[string]any) transportConfig {
 }
 
 func buildTLSConfig(config map[string]any) (*tls.Config, error) {
-	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
+	tlsCfg := &tls.Config{
+		MinVersion:         tls.VersionTLS12,
+		ClientSessionCache: tls.NewLRUClientSessionCache(1024),
+	}
 
 	if value, ok := config["tls_min_version"].(string); ok {
 		if version, err := parseTLSVersion(value); err == nil {

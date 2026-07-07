@@ -393,6 +393,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	operationNames := []string{}
 	built := make([]builtOperation, 0)
 	auth := newAuthContext(result.Script, schemes, baseURL, req.Options, &result.Warnings, res)
+	sourceLineIndex := sourceview.NewLineIndex(content)
 	for _, path := range sortedPathKeys(doc.Paths) {
 		item := doc.Paths[path]
 		for _, candidate := range operationsForPath(item) {
@@ -401,7 +402,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 				skipped := strings.ToUpper(candidate.method) + " " + path
 				result.Stats.SkippedOperations = append(result.Stats.SkippedOperations, skipped)
 				diagnostics.Add(diag.Warning, "OpenAPI operation skipped", skipped, "operation was not converted because it was filtered or uses an unsupported HTTP method")
-				sourceMappings = append(sourceMappings, openAPISourceMapping(sourceFileName, content, path, candidate.method, "", skipped, "operation", "review_only", "OpenAPI operation was filtered or used an unsupported HTTP method."))
+				sourceMappings = append(sourceMappings, openAPISourceMapping(sourceFileName, content, sourceLineIndex, path, candidate.method, "", skipped, "operation", "review_only", "OpenAPI operation was filtered or used an unsupported HTTP method."))
 				continue
 			}
 			action, bodyColumns, assertionAdded, opInfo := buildAction(path, candidate.method, item.Parameters, candidate.op, convertutil.BoolOption(req.Options.IncludeAssertions, true), res, columns, auth)
@@ -410,7 +411,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			opInfo.ActionName = action.Name
 			result.Script.Actions = append(result.Script.Actions, action)
 			built = append(built, opInfo)
-			sourceMappings = append(sourceMappings, openAPISourceMapping(sourceFileName, content, path, candidate.method, fmt.Sprintf("actions[%d]", actionIndex), action.Name, "action", "converted", "OpenAPI operation was converted into a generated APEX Load action."))
+			sourceMappings = append(sourceMappings, openAPISourceMapping(sourceFileName, content, sourceLineIndex, path, candidate.method, fmt.Sprintf("actions[%d]", actionIndex), action.Name, "action", "converted", "OpenAPI operation was converted into a generated APEX Load action."))
 			result.Stats.ConvertedActions++
 			result.Stats.ParametersDetected += len(item.Parameters) + len(candidate.op.Parameters)
 			if action.Body != "" {
@@ -466,8 +467,8 @@ func openAPISourceFileName(content string) string {
 	return "openapi.yaml"
 }
 
-func openAPISourceMapping(sourceFile string, content string, path string, method string, targetPath string, targetName string, targetKind string, status string, notes string) sourceview.Mapping {
-	line := openAPIOperationLine(content, path, method)
+func openAPISourceMapping(sourceFile string, content string, lineIndex sourceview.LineIndex, path string, method string, targetPath string, targetName string, targetKind string, status string, notes string) sourceview.Mapping {
+	line := openAPIOperationLine(content, lineIndex, path, method)
 	return sourceview.Mapping{
 		SourceFile: sourceFile,
 		StartLine:  line,
@@ -481,10 +482,10 @@ func openAPISourceMapping(sourceFile string, content string, path string, method
 	}
 }
 
-func openAPIOperationLine(content string, path string, method string) int {
-	pathLine := lineForNeedle(content, `"`+path+`"`)
+func openAPIOperationLine(content string, lineIndex sourceview.LineIndex, path string, method string) int {
+	pathLine := lineForNeedle(content, lineIndex, `"`+path+`"`)
 	if pathLine == 1 {
-		pathLine = lineForNeedle(content, path+":")
+		pathLine = lineForNeedle(content, lineIndex, path+":")
 	}
 	if pathLine < 1 {
 		pathLine = 1
@@ -502,7 +503,7 @@ func openAPIOperationLine(content string, path string, method string) int {
 	return pathLine
 }
 
-func lineForNeedle(content string, needle string) int {
+func lineForNeedle(content string, lineIndex sourceview.LineIndex, needle string) int {
 	if needle == "" {
 		return 1
 	}
@@ -510,7 +511,7 @@ func lineForNeedle(content string, needle string) int {
 	if offset < 0 {
 		return 1
 	}
-	return sourceview.LineForOffset(content, offset)
+	return lineIndex.LineForOffset(offset)
 }
 
 func decodeDocument(data []byte) (*document, error) {

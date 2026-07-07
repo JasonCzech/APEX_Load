@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -28,6 +29,10 @@ type scenarioSchedulePersistence interface {
 	TryAcquireSchedulerLease(name string, ownerID string, now time.Time, ttl time.Duration) (bool, error)
 	GetSchedulerLease(name string) (*storage.SchedulerLease, error)
 	SaveAuditEvent(event *storage.AuditEvent) error
+}
+
+type latestScenarioScheduleOccurrenceStore interface {
+	LatestScenarioScheduleOccurrence(scheduleID string) (*storage.ScenarioScheduleOccurrence, error)
 }
 
 type scenarioScheduler struct {
@@ -223,6 +228,9 @@ func nextCronRun(cronExpr, timezone string, from time.Time, allows func(candidat
 	// dates is up to ~4 years (a leap-day schedule like "0 0 29 2 *"). A 1-year
 	// window wrongly rejected those; this covers a full leap cycle plus margin.
 	limit := from.Add(maxCronSearchHorizon)
+	if !cronHasPossibleCalendarDate(fields[2], fields[3], fields[4], from, limit, location) {
+		return nil, fmt.Errorf("could not find a matching run within %d years — check for an impossible day/month combination (e.g. Feb 30, or Feb 29 outside a leap year)", maxCronSearchHorizonYears)
+	}
 	for candidate := from.Truncate(time.Minute).Add(time.Minute); !candidate.After(limit); candidate = candidate.Add(time.Minute) {
 		// Match cron fields in the schedule's declared timezone so a schedule
 		// fires at its local wall-clock time; iteration and the returned
@@ -246,6 +254,40 @@ func nextCronRun(cronExpr, timezone string, from time.Time, allows func(candidat
 		}
 	}
 	return nil, fmt.Errorf("could not find a matching run within %d years — check for an impossible day/month combination (e.g. Feb 30, or Feb 29 outside a leap year)", maxCronSearchHorizonYears)
+}
+
+func cronHasPossibleCalendarDate(domField, monthField, dowField string, from time.Time, limit time.Time, location *time.Location) bool {
+	dowField = strings.TrimSpace(dowField)
+	if dowField != "" && dowField != "*" && dowField != "?" {
+		return true
+	}
+	domField = strings.ToUpper(strings.TrimSpace(domField))
+	if domField == "" || domField == "*" || domField == "?" || strings.ContainsAny(domField, "LW#") {
+		return true
+	}
+	startYear := from.In(location).Year()
+	endYear := limit.In(location).Year()
+	for year := startYear; year <= endYear; year++ {
+		for month := 1; month <= 12; month++ {
+			if !cronFieldMatches(monthField, month, 1, 12) {
+				continue
+			}
+			for day := 1; day <= 31; day++ {
+				if !cronFieldMatches(domField, day, 1, 31) {
+					continue
+				}
+				candidate := time.Date(year, time.Month(month), day, 12, 0, 0, 0, location)
+				if candidate.Month() != time.Month(month) || candidate.Day() != day {
+					continue
+				}
+				if candidate.Before(from.In(location)) || candidate.After(limit.In(location)) {
+					continue
+				}
+				return true
+			}
+		}
+	}
+	return false
 }
 
 const (
@@ -560,11 +602,29 @@ func scheduleEvalLocation(timezone string) *time.Location {
 	if timezone == "" {
 		return time.UTC
 	}
-	location, err := time.LoadLocation(timezone)
+	location, err := cachedScheduleLocation(timezone)
 	if err != nil {
 		return time.UTC
 	}
 	return location
+}
+
+var scheduleLocationCache sync.Map // map[string]*time.Location
+
+func cachedScheduleLocation(timezone string) (*time.Location, error) {
+	timezone = strings.TrimSpace(timezone)
+	if timezone == "" || timezone == "UTC" {
+		return time.UTC, nil
+	}
+	if cached, ok := scheduleLocationCache.Load(timezone); ok {
+		return cached.(*time.Location), nil
+	}
+	location, err := time.LoadLocation(timezone)
+	if err != nil {
+		return nil, err
+	}
+	actual, _ := scheduleLocationCache.LoadOrStore(timezone, location)
+	return actual.(*time.Location), nil
 }
 
 // cronMatchesDayOfMonthAndWeek applies POSIX cron semantics for the
@@ -801,7 +861,7 @@ func scheduleWindowContains(window storage.ScenarioScheduleWindow, fallbackTimez
 	if timezone == "" {
 		timezone = "UTC"
 	}
-	location, err := time.LoadLocation(timezone)
+	location, err := cachedScheduleLocation(timezone)
 	if err != nil {
 		return false, fmt.Errorf("invalid schedule window timezone %q: %w", timezone, err)
 	}
@@ -1245,6 +1305,13 @@ func (tr *TestRunner) ListScenarioSchedules(scenarioID string) ([]*storage.Scena
 
 func (tr *TestRunner) attachLatestScenarioScheduleOccurrenceLocked(schedule *storage.ScenarioSchedule) {
 	if schedule == nil || tr.scenarioStore == nil {
+		return
+	}
+	if store, ok := tr.scenarioStore.(latestScenarioScheduleOccurrenceStore); ok {
+		occurrence, err := store.LatestScenarioScheduleOccurrence(schedule.ID)
+		if err == nil && occurrence != nil {
+			schedule.LastOccurrence = cloneScenarioScheduleOccurrence(occurrence)
+		}
 		return
 	}
 	occurrences, err := tr.scenarioStore.ListScenarioScheduleOccurrences(schedule.ID)

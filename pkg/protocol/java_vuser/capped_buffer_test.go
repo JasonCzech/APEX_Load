@@ -1,6 +1,8 @@
 package java_vuser
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -29,5 +31,21 @@ func TestCappedBufferUnderCapKeepsAll(t *testing.T) {
 	c.Write([]byte("hello"))
 	if c.buf.String() != "hello" || c.truncated {
 		t.Fatalf("under-cap write changed content/flag: %q truncated=%v", c.buf.String(), c.truncated)
+	}
+}
+
+func TestReadRunnerEventFileCapsRead(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "events.jsonl")
+	if err := os.WriteFile(path, []byte(strings.Repeat("e", defaultRunnerMaxCaptureBytes+1024)), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	events, truncated := readRunnerEventFile(path)
+
+	if !truncated {
+		t.Fatal("truncated = false, want true")
+	}
+	if len(events) != defaultRunnerMaxCaptureBytes {
+		t.Fatalf("event stream length = %d, want %d", len(events), defaultRunnerMaxCaptureBytes)
 	}
 }

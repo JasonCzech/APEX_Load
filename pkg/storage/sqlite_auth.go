@@ -581,21 +581,30 @@ func (s *SQLiteStore) ListUsers(filter UserFilter) ([]*User, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	users := []*User{}
 	for rows.Next() {
 		user, err := scanUser(rows)
 		if err != nil {
+			rows.Close()
 			return nil, err
 		}
+		users = append(users, user)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	for _, user := range users {
 		bindings, err := s.ListUserRoleBindings(user.ID)
 		if err != nil {
 			return nil, err
 		}
 		user.Bindings = bindings
-		users = append(users, user)
 	}
-	return users, rows.Err()
+	return users, nil
 }
 
 func (s *SQLiteStore) CountUsers(filter UserFilter) (int, error) {

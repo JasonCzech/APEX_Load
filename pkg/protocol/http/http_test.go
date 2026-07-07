@@ -109,6 +109,9 @@ func TestHTTP_Init_TLSVersions(t *testing.T) {
 	if h.transport.TLSClientConfig.MaxVersion != tls.VersionTLS13 {
 		t.Errorf("MaxVersion = %d, want %d", h.transport.TLSClientConfig.MaxVersion, tls.VersionTLS13)
 	}
+	if h.transport.TLSClientConfig.ClientSessionCache == nil {
+		t.Error("ClientSessionCache should be enabled")
+	}
 }
 
 func TestHTTP_Init_InsecureSkipVerify(t *testing.T) {

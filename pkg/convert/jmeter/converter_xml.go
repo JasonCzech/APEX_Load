@@ -15,6 +15,7 @@ import (
 func parseXML(data []byte) (*xmlNode, error) {
 	decoder := xml.NewDecoder(bytes.NewReader(data))
 	content := string(data)
+	lineIndex := sourceview.NewLineIndex(content)
 	var stack []*xmlNode
 	for {
 		tok, err := decoder.Token()
@@ -26,7 +27,7 @@ func parseXML(data []byte) (*xmlNode, error) {
 		}
 		switch t := tok.(type) {
 		case xml.StartElement:
-			node := &xmlNode{Name: t.Name.Local, Attrs: map[string]string{}, StartLine: sourceview.LineForOffset(content, int(decoder.InputOffset()))}
+			node := &xmlNode{Name: t.Name.Local, Attrs: map[string]string{}, StartLine: lineIndex.LineForOffset(int(decoder.InputOffset()))}
 			for _, attr := range t.Attr {
 				node.Attrs[attr.Name.Local] = attr.Value
 			}
@@ -43,7 +44,7 @@ func parseXML(data []byte) (*xmlNode, error) {
 			if len(stack) == 0 {
 				continue
 			}
-			stack[len(stack)-1].EndLine = sourceview.LineForOffset(content, int(decoder.InputOffset()))
+			stack[len(stack)-1].EndLine = lineIndex.LineForOffset(int(decoder.InputOffset()))
 			if len(stack) == 1 {
 				return stack[0], nil
 			}

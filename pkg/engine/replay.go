@@ -266,7 +266,8 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 		return nil, fmt.Errorf("protocol init: %w", err)
 	}
 
-	if err := proto.Init(ctx, buildProtoConfigForRunMode(script, "replay")); err != nil {
+	secretResolver := newDefaultSecretResolver()
+	if err := proto.Init(ctx, buildProtoConfigForRunModeWithSecretResolver(script, "replay", secretResolver)); err != nil {
 		return nil, fmt.Errorf("protocol init: %w", err)
 	}
 	defer runProtocolTeardown(proto)
@@ -313,6 +314,7 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 		Metrics:         NewMetricsCollector(16),
 		Variables:       make(map[string]string),
 		DataProvider:    dataProvider,
+		SecretResolver:  secretResolver,
 		RedactionConfig: redactionConfig,
 		SnapshotStore:   NewSnapshotStore(128),
 	}
@@ -941,7 +943,7 @@ func runReplayAction(
 		return event, false
 	}
 
-	vu.recordResult(result, vu.Script.Config.ErrorHandling)
+	vu.recordResult(result, vu.Script.Config.ErrorHandling, vu.Script.Config.Log)
 	event.StatusCode = result.StatusCode
 	event.Success = result.Success
 	event.ErrorMessage = result.ErrorMessage

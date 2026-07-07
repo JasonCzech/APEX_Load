@@ -100,8 +100,9 @@ export type DesktopCapabilities = {
 // all-false map so native-only UI hides cleanly.
 export function desktopCapabilities(
   bridge: WailsDesktopBridge | undefined = getDesktopBridge(),
-  _status?: DesktopStatusResponse | null,
+  status?: DesktopStatusResponse | null,
 ): DesktopCapabilities {
+  void status
   const isDesktop = bridge !== undefined || isDesktopSurface()
   if (!isDesktop) {
     return {

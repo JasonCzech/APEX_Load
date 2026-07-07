@@ -104,26 +104,30 @@ var (
 )
 
 func Detect(observations []Observation) []Correlation {
-	seen := map[string]bool{}
+	checkedValues := map[string]bool{}
+	searches := make([]observationSearch, len(observations))
+	for index, observation := range observations {
+		searches[index] = newObservationSearch(observation)
+	}
 	correlations := make([]Correlation, 0)
 	for index, observation := range observations {
 		if observation.ResponseBody == "" && len(observation.ResponseHeaders) == 0 {
 			continue
 		}
 		for _, candidate := range Candidates(observation.ResponseBody, observation.ResponseHeaders) {
-			if candidate.Value == "" || seen[candidate.Value] {
+			if candidate.Value == "" || checkedValues[candidate.Value] {
 				continue
 			}
+			checkedValues[candidate.Value] = true
 			usedIn := make([]int, 0)
 			for later := index + 1; later < len(observations); later++ {
-				if ObservationContains(observations[later], candidate.Value) {
+				if searches[later].Contains(candidate.Value) {
 					usedIn = append(usedIn, observations[later].ID)
 				}
 			}
 			if len(usedIn) == 0 {
 				continue
 			}
-			seen[candidate.Value] = true
 			confidence, reasons := scoreConfidence(candidate, len(usedIn))
 			correlations = append(correlations, Correlation{
 				Name:        candidate.Name,
@@ -154,6 +158,74 @@ func Detect(observations []Observation) []Correlation {
 	})
 	uniquifyCorrelationNames(correlations)
 	return correlations
+}
+
+type observationSearch struct {
+	rawSurfaces     []string
+	decodedSurfaces []string
+	formValues      []string
+}
+
+func newObservationSearch(observation Observation) observationSearch {
+	search := observationSearch{
+		rawSurfaces: make([]string, 0, 2+len(observation.RequestHeaders)),
+	}
+	search.addSurface(observation.RequestURL)
+	search.addSurface(observation.RequestBody)
+	for _, headerValue := range observation.RequestHeaders {
+		search.addSurface(headerValue)
+	}
+	search.addFormValues(observation.RequestBody)
+	return search
+}
+
+func (search *observationSearch) addSurface(raw string) {
+	if raw == "" {
+		return
+	}
+	search.rawSurfaces = append(search.rawSurfaces, raw)
+	if decoded := urlDecoded(raw); decoded != raw {
+		search.decodedSurfaces = append(search.decodedSurfaces, decoded)
+	}
+}
+
+func (search *observationSearch) addFormValues(body string) {
+	values, err := url.ParseQuery(body)
+	if err != nil || len(values) == 0 {
+		return
+	}
+	for key, vals := range values {
+		if key != "" {
+			search.formValues = append(search.formValues, key)
+		}
+		for _, val := range vals {
+			if val != "" {
+				search.formValues = append(search.formValues, val)
+			}
+		}
+	}
+}
+
+func (search observationSearch) Contains(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, surface := range search.rawSurfaces {
+		if strings.Contains(surface, value) {
+			return true
+		}
+	}
+	for _, surface := range search.decodedSurfaces {
+		if strings.Contains(surface, value) {
+			return true
+		}
+	}
+	for _, formValue := range search.formValues {
+		if strings.Contains(formValue, value) {
+			return true
+		}
+	}
+	return false
 }
 
 func uniquifyCorrelationNames(correlations []Correlation) {
@@ -196,21 +268,7 @@ func Candidates(responseBody string, responseHeaders map[string]string) []Candid
 }
 
 func ObservationContains(observation Observation, value string) bool {
-	if strings.Contains(observation.RequestURL, value) || strings.Contains(observation.RequestBody, value) {
-		return true
-	}
-	if decodedContains(observation.RequestURL, value) || decodedContains(observation.RequestBody, value) {
-		return true
-	}
-	if formContainsValue(observation.RequestBody, value) {
-		return true
-	}
-	for _, headerValue := range observation.RequestHeaders {
-		if strings.Contains(headerValue, value) || decodedContains(headerValue, value) {
-			return true
-		}
-	}
-	return false
+	return newObservationSearch(observation).Contains(value)
 }
 
 func BuildVarMap(correlations []Correlation) map[string]string {

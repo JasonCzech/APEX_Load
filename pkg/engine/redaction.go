@@ -104,12 +104,20 @@ func (c *RedactionConfig) ScrubText(value string) string {
 }
 
 func scrubSensitiveResult(result *protocol.Result, config *RedactionConfig) {
+	scrubSensitiveResultWithOptions(result, config, true)
+}
+
+func scrubSensitiveResultWithOptions(result *protocol.Result, config *RedactionConfig, retainResponseBody bool) {
 	if result == nil {
 		return
 	}
 
 	result.ErrorMessage = scrubSensitiveTextWithConfig(result.ErrorMessage, config)
-	result.ResponseBody = scrubSensitiveTextWithConfig(result.ResponseBody, config)
+	if retainResponseBody {
+		result.ResponseBody = scrubSensitiveTextWithConfig(result.ResponseBody, config)
+	} else {
+		result.ResponseBody = ""
+	}
 	result.PageURL = scrubSensitiveTextWithConfig(result.PageURL, config)
 	result.PageTitle = scrubSensitiveTextWithConfig(result.PageTitle, config)
 	result.HTML = scrubSensitiveTextWithConfig(result.HTML, config)

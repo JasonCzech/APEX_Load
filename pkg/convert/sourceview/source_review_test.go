@@ -66,6 +66,40 @@ func TestLanguageAndLineForOffset(t *testing.T) {
 	if got := LineForOffset(content, len(content)+100); got != 3 {
 		t.Fatalf("LineForOffset(past end) = %d, want 3", got)
 	}
+	index := NewLineIndex(content)
+	if got := index.LineForOffset(strings.Index(content, "line2")); got != 2 {
+		t.Fatalf("LineIndex.LineForOffset(line2) = %d, want 2", got)
+	}
+	if got := index.MaxLine(1); got != 3 {
+		t.Fatalf("LineIndex.MaxLine = %d, want 3", got)
+	}
+	if got := NewLineIndex("").MaxLine(7); got != 7 {
+		t.Fatalf("empty LineIndex.MaxLine = %d, want fallback 7", got)
+	}
+}
+
+func TestBuildRedactsBeforeTruncatingReviewContent(t *testing.T) {
+	key := `{"password":"`
+	value := strings.Repeat("BOUNDARYLEAK", 8)
+	prefix := strings.Repeat("a", MaxFileChars-len(key)-5)
+	content := prefix + key + value + `"}` + strings.Repeat("z", 200)
+	review := Build(map[string]string{"huge.json": content}, nil)
+	if review == nil || len(review.SourceFiles) != 1 {
+		t.Fatalf("review source files = %#v, want one file", review)
+	}
+	file := review.SourceFiles[0]
+	if !file.Truncated {
+		t.Fatalf("file truncated = false, want true")
+	}
+	if !file.Redacted {
+		t.Fatalf("file redacted = false, want true for displayed secret")
+	}
+	if file.OriginalBytes != len([]byte(content)) {
+		t.Fatalf("original bytes = %d, want %d", file.OriginalBytes, len([]byte(content)))
+	}
+	if strings.Contains(file.Content, value) || strings.Contains(file.Content, "BOUND") {
+		t.Fatalf("review content leaked secret: %s", file.Content)
+	}
 }
 
 func TestBuildLimitsSourceFiles(t *testing.T) {

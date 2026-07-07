@@ -268,7 +268,11 @@ func (s *SQLiteStore) SaveHistory(testID string, timestamp time.Time, metrics an
 }
 
 func (s *SQLiteStore) GetHistory(testID string) ([]any, error) {
-	typedHistory, err := s.getTypedHistory(testID)
+	return s.GetHistoryLimit(testID, 0)
+}
+
+func (s *SQLiteStore) GetHistoryLimit(testID string, limit int) ([]any, error) {
+	typedHistory, err := s.getTypedHistoryLimit(testID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -276,7 +280,18 @@ func (s *SQLiteStore) GetHistory(testID string) ([]any, error) {
 		return typedHistory, nil
 	}
 
-	rows, err := s.db.Query(`SELECT metrics_json FROM test_history WHERE test_id = ? ORDER BY timestamp ASC`, testID)
+	query := `SELECT metrics_json FROM test_history WHERE test_id = ? ORDER BY timestamp ASC`
+	args := []any{testID}
+	if limit > 0 {
+		query = `SELECT metrics_json FROM (
+			SELECT timestamp, metrics_json FROM test_history
+			WHERE test_id = ?
+			ORDER BY timestamp DESC
+			LIMIT ?
+		) ORDER BY timestamp ASC`
+		args = append(args, limit)
+	}
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -296,7 +311,11 @@ func (s *SQLiteStore) GetHistory(testID string) ([]any, error) {
 }
 
 func (s *SQLiteStore) getTypedHistory(testID string) ([]any, error) {
-	rows, err := s.db.Query(`SELECT
+	return s.getTypedHistoryLimit(testID, 0)
+}
+
+func (s *SQLiteStore) getTypedHistoryLimit(testID string, limit int) ([]any, error) {
+	query := `SELECT
 		schema_version,
 		timestamp,
 		active_vusers,
@@ -324,7 +343,15 @@ func (s *SQLiteStore) getTypedHistory(testID string) ([]any, error) {
 		transport_lag_ms,
 		controller_fanout_lag_ms,
 		sample_age_ms
-	FROM test_interval_summaries WHERE test_id = ? ORDER BY timestamp ASC`, testID)
+	FROM test_interval_summaries WHERE test_id = ?`
+	args := []any{testID}
+	if limit > 0 {
+		query = `SELECT * FROM (` + query + ` ORDER BY timestamp DESC LIMIT ?) ORDER BY timestamp ASC`
+		args = append(args, limit)
+	} else {
+		query += ` ORDER BY timestamp ASC`
+	}
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}

@@ -1052,8 +1052,8 @@ func (tr *TestRunner) completeTestRun(test *ManagedTest, finalStatus string, end
 	if archiveRecord != nil {
 		tr.archives[test.ID] = archiveRecord
 	}
-	tr.captureUsageSnapshotForTerminalRunLocked(test.ID, test.ProjectID)
 	tr.mu.Unlock()
+	tr.captureUsageSnapshotForTerminalRun(test.ID, test.ProjectID)
 	tr.updateStoredTestStatus(test.ID, finalStatus, &endTime, finalError)
 	if finalStatus == "FAILED" {
 		tr.broadcastEvent("test_failed", test)

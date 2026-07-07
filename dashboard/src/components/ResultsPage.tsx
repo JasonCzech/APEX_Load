@@ -1,4 +1,5 @@
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
 import { downloadBlob } from '../utils/fileUtils'
@@ -597,6 +598,20 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
       return 0
     })
   }, [filteredRows, sortDirection, sortField])
+  const resultsTableRef = useRef<HTMLDivElement | null>(null)
+  const shouldVirtualizeRows = sortedRows.length > 80
+  const rowVirtualizer = useVirtualizer({
+    count: sortedRows.length,
+    getScrollElement: () => resultsTableRef.current,
+    estimateSize: () => 76,
+    overscan: 8,
+    getItemKey: index => sortedRows[index]?.rowKey ?? index,
+  })
+  const virtualRows = shouldVirtualizeRows ? rowVirtualizer.getVirtualItems() : []
+  const virtualPaddingTop = shouldVirtualizeRows ? (virtualRows[0]?.start ?? 0) : 0
+  const virtualPaddingBottom = shouldVirtualizeRows && virtualRows.length > 0
+    ? Math.max(0, rowVirtualizer.getTotalSize() - virtualRows[virtualRows.length - 1].end)
+    : 0
 
   const selectedTests = useMemo(
     () => sortedRows.flatMap(row => (row.test && selectedIds.has(row.test.id) ? [row.test] : [])),
@@ -943,6 +958,133 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
       setError(getErrorMessage(error, 'Unable to update pinned comparison baseline'))
     }
   }, [api, applyUpdatedTest, refresh])
+
+  const renderResultRow = (row: ResultSourceRow, measureElement?: (element: HTMLTableRowElement | null) => void) => {
+    const test = row.test
+    const item = row.item
+    const hostItem = test ? hostItemForLocal(test.id) : undefined
+    const href = row.source === 'Remote' && item ? remoteItemHref(item) : ''
+    const localItemID = item?.local_item_id
+    const transferBlockedByConflict = row.syncStatus === 'conflict'
+    const transferBlockTitle = transferBlockedByConflict ? 'Compare this conflict before transferring.' : actionBlockedReason
+    return (
+      <tr
+        key={row.rowKey}
+        ref={measureElement}
+        className={`${test ? 'clickable-row' : 'no-hover'} ${test && selectedIds.has(test.id) ? 'selected' : ''}`}
+        onClick={test ? () => onSelectTest(test.id) : undefined}
+      >
+        <td className="results-compare-select-cell">
+          {test ? (
+            <input
+              aria-label={`Select ${row.name} for comparison`}
+              type="checkbox"
+              checked={selectedIds.has(test.id)}
+              onClick={event => event.stopPropagation()}
+              onChange={event => toggleSelect(test.id, event)}
+            />
+          ) : (
+            <span className="cell-muted">-</span>
+          )}
+        </td>
+        <td className="results-source-cell">
+          <span className="script-health-token">{row.source}</span>
+        </td>
+        <td className="cell-name">
+          <div>{row.name}</div>
+          <div className="script-table-meta">
+            {test?.ref_key ? (
+              <ReferenceKeyBadge value={test.ref_key} />
+            ) : test ? (
+              <span className="results-run-id" title={test.id}>Run ID {formatShortRunId(test.id)}</span>
+            ) : (
+              <>
+                <span className="script-health-token">result</span>
+                {row.releaseName && <span className="script-health-token">{row.releaseName}</span>}
+                {item?.content_hash && <span className="script-health-token">hash {shortLibraryHash(item.content_hash)}</span>}
+              </>
+            )}
+          </div>
+        </td>
+        <td>
+          {test ? (
+            <StatusBadge status={row.status} />
+          ) : (
+            <span className={`script-health-token ${resultSourceStatusTone(row.status)}`}>{row.status}</span>
+          )}
+        </td>
+        <td>{row.totalVusers ?? '-'}</td>
+        <td>{row.groupCount ?? '-'}</td>
+        <td className="cell-muted">{row.startedAt ? formatDate(row.startedAt) : '-'}</td>
+        <td className="cell-muted">{row.duration || '-'}</td>
+        <td className="cell-muted">
+          {test ? (test.archive ? `${test.archive.transaction_count} tx` : 'Pending') : (row.hasArchive ? 'Ready' : '-')}
+          {test?.baseline_pinned && (
+            <>
+              <br />
+              <span title={formatBaselinePin(test.baseline_pinned_at)}>Pinned baseline</span>
+            </>
+          )}
+        </td>
+        <td>
+          <div className="results-row-actions">
+            {test ? (
+              <>
+                <button className="btn btn-sm btn-ghost" onClick={event => toggleBaselinePin(test, event)}>
+                  {test.baseline_pinned ? 'Unpin Baseline' : 'Pin Baseline'}
+                </button>
+                {test.archive && onOpenTestArchive && (
+                  <button className="btn btn-sm btn-secondary" onClick={event => { event.stopPropagation(); onOpenTestArchive(test.id) }}>
+                    Run Archive
+                  </button>
+                )}
+                <button className="btn btn-sm btn-primary" onClick={event => { event.stopPropagation(); (onOpenCommandCenter ?? onSelectTest)(test.id) }}>
+                  Run Dashboard
+                </button>
+                <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={event => handleDelete(test.id, event)}>
+                  Delete
+                </button>
+                <button
+                  className="btn btn-sm btn-secondary"
+                  type="button"
+                  onClick={event => { event.stopPropagation(); void pushLocalItem(item ?? catalogItemForTest(test)) }}
+                  disabled={actionBlocked || transferBlockedByConflict}
+                  title={transferBlockTitle}
+                >
+                  Push
+                </button>
+                {hostItem?.local_item_id && (
+                  <button className="btn btn-sm btn-ghost" type="button" onClick={event => { event.stopPropagation(); void compareItems(test.id, hostItem) }}>
+                    Compare
+                  </button>
+                )}
+              </>
+            ) : item ? (
+              <>
+                <button
+                  className="btn btn-sm btn-secondary"
+                  type="button"
+                  onClick={event => { event.stopPropagation(); void pullRemoteItem(item) }}
+                  disabled={actionBlocked || transferBlockedByConflict}
+                  title={transferBlockTitle}
+                >
+                  Pull
+                </button>
+                {localItemID && (
+                  <button className="btn btn-sm btn-ghost" type="button" onClick={event => { event.stopPropagation(); void compareItems(localItemID, item) }}>
+                    Compare
+                  </button>
+                )}
+                {href && <a className="btn btn-sm btn-ghost" href={href} target="_blank" rel="noreferrer" onClick={event => event.stopPropagation()}>Open in Remote Workspace</a>}
+              </>
+            ) : (
+              <span className="cell-muted">-</span>
+            )}
+          </div>
+        </td>
+      </tr>
+    )
+  }
 
   if (!activeApplication?.id || !activeRelease?.id) {
     return (
@@ -1400,7 +1542,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
               <p className="empty-hint">Clear the search or filter values to bring the result sources back into view.</p>
             </div>
           ) : (
-            <div className="data-table library-source-table-wrap">
+            <div ref={resultsTableRef} className={`data-table library-source-table-wrap${shouldVirtualizeRows ? ' results-virtual-table-wrap' : ''}`}>
               <table className="library-source-table results-library-source-table">
                 <colgroup>
                   <col className="results-select-col" />
@@ -1431,135 +1573,22 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
                   </tr>
                 </thead>
                 <tbody>
-                  {sortedRows.map(row => {
-                    const test = row.test
-                    const item = row.item
-                    const hostItem = test ? hostItemForLocal(test.id) : undefined
-                    const href = row.source === 'Remote' && item ? remoteItemHref(item) : ''
-                    const localItemID = item?.local_item_id
-                    const transferBlockedByConflict = row.syncStatus === 'conflict'
-                    const transferBlockTitle = transferBlockedByConflict ? 'Compare this conflict before transferring.' : actionBlockedReason
-                    return (
-                      <tr
-                        key={row.rowKey}
-                        className={`${test ? 'clickable-row' : 'no-hover'} ${test && selectedIds.has(test.id) ? 'selected' : ''}`}
-                        onClick={test ? () => onSelectTest(test.id) : undefined}
-                      >
-                        <td className="results-compare-select-cell">
-                          {test ? (
-                            <input
-                              aria-label={`Select ${row.name} for comparison`}
-                              type="checkbox"
-                              checked={selectedIds.has(test.id)}
-                              onClick={event => event.stopPropagation()}
-                              onChange={event => toggleSelect(test.id, event)}
-                            />
-                          ) : (
-                            <span className="cell-muted">-</span>
-                          )}
-                        </td>
-                        <td className="results-source-cell">
-                          <span className="script-health-token">{row.source}</span>
-                        </td>
-                        <td className="cell-name">
-                          <div>{row.name}</div>
-                          <div className="script-table-meta">
-                            {test?.ref_key ? (
-                              <ReferenceKeyBadge value={test.ref_key} />
-                            ) : test ? (
-                              <span className="results-run-id" title={test.id}>Run ID {formatShortRunId(test.id)}</span>
-                            ) : (
-                              <>
-                                <span className="script-health-token">result</span>
-                                {row.releaseName && <span className="script-health-token">{row.releaseName}</span>}
-                                {item?.content_hash && <span className="script-health-token">hash {shortLibraryHash(item.content_hash)}</span>}
-                              </>
-                            )}
-                          </div>
-                        </td>
-                        <td>
-                          {test ? (
-                            <StatusBadge status={row.status} />
-                          ) : (
-                            <span className={`script-health-token ${resultSourceStatusTone(row.status)}`}>{row.status}</span>
-                          )}
-                        </td>
-                        <td>{row.totalVusers ?? '-'}</td>
-                        <td>{row.groupCount ?? '-'}</td>
-                        <td className="cell-muted">{row.startedAt ? formatDate(row.startedAt) : '-'}</td>
-                        <td className="cell-muted">{row.duration || '-'}</td>
-                        <td className="cell-muted">
-                          {test ? (test.archive ? `${test.archive.transaction_count} tx` : 'Pending') : (row.hasArchive ? 'Ready' : '-')}
-                          {test?.baseline_pinned && (
-                            <>
-                              <br />
-                              <span title={formatBaselinePin(test.baseline_pinned_at)}>Pinned baseline</span>
-                            </>
-                          )}
-                        </td>
-                        <td>
-                          <div className="results-row-actions">
-                            {test ? (
-                              <>
-                                <button className="btn btn-sm btn-ghost" onClick={event => toggleBaselinePin(test, event)}>
-                                  {test.baseline_pinned ? 'Unpin Baseline' : 'Pin Baseline'}
-                                </button>
-                                {test.archive && (
-                                  <>
-                                    {onOpenTestArchive && (
-                                      <button className="btn btn-sm btn-secondary" onClick={event => { event.stopPropagation(); onOpenTestArchive(test.id) }}>
-                                        Run Archive
-                                      </button>
-                                    )}
-                                  </>
-                                )}
-                                <button className="btn btn-sm btn-primary" onClick={event => { event.stopPropagation(); (onOpenCommandCenter ?? onSelectTest)(test.id) }}>
-                                  Run Dashboard
-                                </button>
-                                <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={event => handleDelete(test.id, event)}>
-                                  Delete
-                                </button>
-                                <button
-                                  className="btn btn-sm btn-secondary"
-                                  type="button"
-                                  onClick={event => { event.stopPropagation(); void pushLocalItem(item ?? catalogItemForTest(test)) }}
-                                  disabled={actionBlocked || transferBlockedByConflict}
-                                  title={transferBlockTitle}
-                                >
-                                  Push
-                                </button>
-                                {hostItem?.local_item_id && (
-                                  <button className="btn btn-sm btn-ghost" type="button" onClick={event => { event.stopPropagation(); void compareItems(test.id, hostItem) }}>
-                                    Compare
-                                  </button>
-                                )}
-                              </>
-                            ) : item ? (
-                              <>
-                                <button
-                                  className="btn btn-sm btn-secondary"
-                                  type="button"
-                                  onClick={event => { event.stopPropagation(); void pullRemoteItem(item) }}
-                                  disabled={actionBlocked || transferBlockedByConflict}
-                                  title={transferBlockTitle}
-                                >
-                                  Pull
-                                </button>
-                                {localItemID && (
-                                  <button className="btn btn-sm btn-ghost" type="button" onClick={event => { event.stopPropagation(); void compareItems(localItemID, item) }}>
-                                    Compare
-                                  </button>
-                                )}
-                                {href && <a className="btn btn-sm btn-ghost" href={href} target="_blank" rel="noreferrer" onClick={event => event.stopPropagation()}>Open in Remote Workspace</a>}
-                              </>
-                            ) : (
-                              <span className="cell-muted">-</span>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  })}
+                  {shouldVirtualizeRows && virtualPaddingTop > 0 && (
+                    <tr aria-hidden="true" className="results-virtual-spacer-row">
+                      <td colSpan={10} style={{ height: virtualPaddingTop }} />
+                    </tr>
+                  )}
+                  {shouldVirtualizeRows
+                    ? virtualRows.map(virtualRow => renderResultRow(
+                      sortedRows[virtualRow.index],
+                      rowVirtualizer.measureElement as (element: HTMLTableRowElement | null) => void,
+                    ))
+                    : sortedRows.map(row => renderResultRow(row))}
+                  {shouldVirtualizeRows && virtualPaddingBottom > 0 && (
+                    <tr aria-hidden="true" className="results-virtual-spacer-row">
+                      <td colSpan={10} style={{ height: virtualPaddingBottom }} />
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>

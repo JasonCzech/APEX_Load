@@ -70,10 +70,12 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 	})
 
 	testRun, err := server.runner.CreateTest(CreateTestRequest{
-		Name:     "Archive API Run",
-		Duration: "2200ms",
-		ScriptID: "script-archive-api",
-		VUsers:   1,
+		Name:         "Archive API Run",
+		Duration:     "2200ms",
+		ScriptID:     "script-archive-api",
+		VUsers:       1,
+		ScenarioMode: "goal_oriented",
+		GoalConfig:   &GoalConfig{P95LatencyMs: ptr(100000.0), MaxErrorPct: ptr(99.0)},
 	})
 	if err != nil {
 		t.Fatalf("CreateTest returned error: %v", err)
@@ -366,6 +368,9 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 		if payload.Overview.Transactions == 0 {
 			t.Fatal("expected report to include transaction totals")
 		}
+		if payload.Verdict == nil || payload.Verdict.Status == "" || payload.Verdict.Explanation == "" {
+			t.Fatalf("expected report verdict, got %#v", payload.Verdict)
+		}
 		stats, ok := payload.ByAction["step-1"]
 		if !ok {
 			t.Fatal("expected action breakdown for step-1")
@@ -381,6 +386,16 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 		}
 		if payload.BySOAPOperation["CreateOrder"].Transactions == 0 {
 			t.Fatalf("expected SOAP operation breakdown, got %#v", payload.BySOAPOperation)
+		}
+		slaRow, ok := payload.SLARows["step-1"]
+		if !ok {
+			t.Fatalf("expected SLA row for step-1, got %#v", payload.SLARows)
+		}
+		if !slaRow.HasSLA || slaRow.ResultKind != "pass" {
+			t.Fatalf("expected passing evaluated SLA row, got %#v", slaRow)
+		}
+		if payload.SLARollup == nil || payload.SLARollup.Evaluated == 0 || payload.SLARollup.WorstKind != "pass" {
+			t.Fatalf("expected passing SLA rollup, got %#v", payload.SLARollup)
 		}
 		if len(payload.SummaryTimeline) == 0 {
 			t.Fatal("expected report to include summary timeline")

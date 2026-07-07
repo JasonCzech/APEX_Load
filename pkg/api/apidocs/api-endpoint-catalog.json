@@ -4014,6 +4014,16 @@
     },
     {
       "method": "POST",
+      "path": "/api/v1/tests/archive/reports",
+      "operationId": "handleGetRunArchiveReportsBatch",
+      "summary": "Get Run Archive Reports Batch",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
       "path": "/api/v1/tests/estimate",
       "operationId": "handleEstimateTest",
       "summary": "Estimate Test",

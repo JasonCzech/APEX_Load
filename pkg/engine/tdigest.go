@@ -46,10 +46,14 @@ func NewTDigest(compression float64) *TDigest {
 		compression = 200
 	}
 	bufCap := int(compression) * 5
+	initialBufferCap := bufCap
+	if initialBufferCap > 16 {
+		initialBufferCap = 16
+	}
 	return &TDigest{
 		compression: compression,
-		centroids:   make([]centroid, 0, int(compression)*2),
-		buffer:      make([]float64, 0, bufCap),
+		centroids:   nil,
+		buffer:      make([]float64, 0, initialBufferCap),
 		bufferCap:   bufCap,
 		min:         math.Inf(1),
 		max:         math.Inf(-1),

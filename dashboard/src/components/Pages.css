@@ -7625,6 +7625,23 @@
   margin-top: 0;
 }
 
+.results-library-panel .results-virtual-table-wrap {
+  max-height: min(72vh, 760px);
+  overflow: auto;
+}
+
+.results-virtual-table-wrap .results-library-source-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--bg-card);
+}
+
+.results-virtual-spacer-row td {
+  padding: 0;
+  border-bottom: 0;
+}
+
 .results-library-panel .table-pagination-toolbar {
   margin: 0;
 }

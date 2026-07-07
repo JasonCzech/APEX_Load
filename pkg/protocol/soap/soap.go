@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -49,6 +50,16 @@ var envelopePrefixPattern = regexp.MustCompile(`<([A-Za-z_][A-Za-z0-9_.-]*):Enve
 var soapNamespaceDeclPattern = regexp.MustCompile(`xmlns:([A-Za-z_][A-Za-z0-9_.-]*)\s*=\s*['"][^'"]+['"]`)
 var soapElementPrefixPattern = regexp.MustCompile(`</?([A-Za-z_][A-Za-z0-9_.-]*):[A-Za-z_][A-Za-z0-9_.-]*\b`)
 var soapAttributePrefixPattern = regexp.MustCompile(`\s([A-Za-z_][A-Za-z0-9_.-]*):[A-Za-z_][A-Za-z0-9_.-]*\s*=`)
+var soapGeneratedPatternCache sync.Map // map[string]*regexp.Regexp
+
+func compileGeneratedSOAPPattern(key string, pattern string) *regexp.Regexp {
+	if cached, ok := soapGeneratedPatternCache.Load(key); ok {
+		return cached.(*regexp.Regexp)
+	}
+	re := regexp.MustCompile(pattern)
+	actual, _ := soapGeneratedPatternCache.LoadOrStore(key, re)
+	return actual.(*regexp.Regexp)
+}
 
 func (s *SOAP) Name() string { return "soap" }
 
@@ -429,16 +440,16 @@ func (s *SOAP) applySecurity(body []byte) []byte {
 	}
 
 	quotedPrefix := regexp.QuoteMeta(prefix)
-	headerClosePattern := regexp.MustCompile(fmt.Sprintf(`(?is)</%s:Header\s*>`, quotedPrefix))
+	headerClosePattern := compileGeneratedSOAPPattern("header-close:"+prefix, fmt.Sprintf(`(?is)</%s:Header\s*>`, quotedPrefix))
 	if headerClosePattern.MatchString(bodyStr) {
 		return []byte(headerClosePattern.ReplaceAllString(bodyStr, securityXML+"$0"))
 	}
-	selfClosingHeaderPattern := regexp.MustCompile(fmt.Sprintf(`(?is)<%s:Header\b([^>]*)/>`, quotedPrefix))
+	selfClosingHeaderPattern := compileGeneratedSOAPPattern("header-self-close:"+prefix, fmt.Sprintf(`(?is)<%s:Header\b([^>]*)/>`, quotedPrefix))
 	if selfClosingHeaderPattern.MatchString(bodyStr) {
 		replacement := fmt.Sprintf(`<%s:Header$1>%s</%s:Header>`, prefix, securityXML, prefix)
 		return []byte(selfClosingHeaderPattern.ReplaceAllString(bodyStr, replacement))
 	}
-	bodyOpenPattern := regexp.MustCompile(fmt.Sprintf(`(?is)<%s:Body\b[^>]*>`, quotedPrefix))
+	bodyOpenPattern := compileGeneratedSOAPPattern("body-open:"+prefix, fmt.Sprintf(`(?is)<%s:Body\b[^>]*>`, quotedPrefix))
 	if bodyOpen := bodyOpenPattern.FindString(bodyStr); bodyOpen != "" {
 		header := fmt.Sprintf("<%s:Header>%s</%s:Header>", prefix, securityXML, prefix)
 		return []byte(strings.Replace(bodyStr, bodyOpen, header+bodyOpen, 1))
@@ -667,7 +678,7 @@ func firstSOAPTagText(body, tag string) string {
 
 func firstSOAPTagInnerXML(body, tag string) string {
 	pattern := fmt.Sprintf(`(?is)<(?:[A-Za-z_][A-Za-z0-9_.-]*:)?%s\b[^>]*>(.*?)</(?:[A-Za-z_][A-Za-z0-9_.-]*:)?%s>`, regexp.QuoteMeta(tag), regexp.QuoteMeta(tag))
-	re := regexp.MustCompile(pattern)
+	re := compileGeneratedSOAPPattern("tag-inner:"+tag, pattern)
 	matches := re.FindStringSubmatch(body)
 	if len(matches) != 2 {
 		return ""

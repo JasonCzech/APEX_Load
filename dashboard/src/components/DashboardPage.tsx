@@ -551,18 +551,31 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
       return
     }
 
+    let inFlight = false
+    let lastTestsSignature = ''
     const load = async () => {
+      if (inFlight) {
+        return
+      }
       if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
         return
       }
+      inFlight = true
       try {
         const [testRes, healthRes] = await Promise.all([
           api.listTests({ application_id: activeApplicationId!, project_id: activeProjectId! }),
           api.getHealth().catch(() => null),
         ])
-        setTests(testRes.tests || [])
+        const nextTests = testRes.tests || []
+        const signature = JSON.stringify(nextTests)
+        if (signature !== lastTestsSignature) {
+          lastTestsSignature = signature
+          setTests(nextTests)
+        }
         if (healthRes) setHealth(healthRes)
-      } catch { /* ignore */ }
+      } catch { /* ignore */ } finally {
+        inFlight = false
+      }
     }
 
     load()
@@ -664,16 +677,21 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
 
     let cancelled = false
 
-    Promise.all(
-      missingReports.map(async test => {
-        try {
-          const report = await api.getTestArchiveReport(test.id)
-          return [test.id, report as RunArchiveReport] as const
-        } catch {
-          return [test.id, null] as const
-        }
-      }),
-    ).then(entries => {
+    const loadReports = activeRelease?.project_id
+      ? api.getTestArchiveReports(missingReports.map(test => test.id), activeRelease.project_id)
+        .then(result => missingReports.map(test => [test.id, result.reports[test.id] ?? null] as const))
+      : Promise.all(
+        missingReports.map(async test => {
+          try {
+            const report = await api.getTestArchiveReport(test.id)
+            return [test.id, report as RunArchiveReport] as const
+          } catch {
+            return [test.id, null] as const
+          }
+        }),
+      )
+
+    loadReports.then(entries => {
       if (cancelled) return
       setArchiveReports(prev => {
         const next = { ...prev }
@@ -687,7 +705,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
     return () => {
       cancelled = true
     }
-  }, [api, archivedReleaseRuns, archiveReports])
+  }, [api, archivedReleaseRuns, archiveReports, activeRelease?.project_id])
 
   const performanceTrend = useMemo(() =>
     archivedReleaseRuns
@@ -1036,7 +1054,18 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
   )
   const performanceTableBounds = useBottomBoundedTable(`${activeDashboardTab}:${releasePanelOpen}:${sortedPerformanceTrend.length}`)
   const activityTableBounds = useBottomBoundedTable(`${activeDashboardTab}:${releasePanelOpen}:${sortedRecentTests.length}`)
-  const aggregateHistory = Object.values(metricsHistory).flat().slice(-60)
+  const activeTestIds = useMemo(() => activeTests.map(test => test.id), [activeTests])
+  const aggregateHistory = useMemo(() => {
+    if (activeTestIds.length === 0) return []
+    const rows: MetricsHistoryPoint[] = []
+    for (const testId of activeTestIds) {
+      const history = metricsHistory[testId]
+      if (history?.length) rows.push(...history.slice(-60))
+    }
+    return rows
+      .sort((left, right) => (left.timestampMs ?? 0) - (right.timestampMs ?? 0))
+      .slice(-60)
+  }, [activeTestIds, metricsHistory])
 
   return (
     <div className="page dash">

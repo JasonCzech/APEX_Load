@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -15,7 +16,7 @@ import (
 type Hub struct {
 	clients           map[*Client]bool
 	clientsMu         sync.RWMutex
-	broadcast         chan []byte
+	broadcast         chan hubBroadcast
 	register          chan *Client
 	unregister        chan *Client
 	done              chan struct{}
@@ -69,15 +70,25 @@ type Client struct {
 }
 
 type websocketFanoutEnvelope struct {
-	Origin  string          `json:"origin"`
-	SentAt  time.Time       `json:"sent_at"`
-	Payload json.RawMessage `json:"payload"`
+	Origin       string          `json:"origin"`
+	SentAt       time.Time       `json:"sent_at"`
+	TestID       string          `json:"test_id,omitempty"`
+	ProjectID    string          `json:"project_id,omitempty"`
+	BroadcastAll bool            `json:"broadcast_all,omitempty"`
+	Payload      json.RawMessage `json:"payload"`
+}
+
+type hubBroadcast struct {
+	payload      []byte
+	testID       string
+	projectID    string
+	broadcastAll bool
 }
 
 func NewHub() *Hub {
 	return &Hub{
 		clients:    make(map[*Client]bool),
-		broadcast:  make(chan []byte, 256),
+		broadcast:  make(chan hubBroadcast, 256),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
 		done:       make(chan struct{}),
@@ -124,31 +135,17 @@ func (h *Hub) Run() {
 
 		case msg := <-h.broadcast:
 			h.clientsMu.RLock()
-			var envelope struct {
-				TestID    string `json:"test_id"`
-				ProjectID string `json:"project_id"`
-				// BroadcastAll bypasses the test/project filters so a message reaches every
-				// connected client regardless of its subscription. Reserved for content-free
-				// global signals (e.g. access_review_changed) where fanning out leaks nothing;
-				// never set it on a message carrying test- or project-scoped data.
-				BroadcastAll bool `json:"broadcast_all"`
-			}
-			_ = json.Unmarshal(msg, &envelope)
-			// Honor the bypass only for a genuinely global, scope-free message. If a payload
-			// sets broadcast_all but ALSO carries a test_id/project_id (a misuse that would
-			// otherwise leak scoped data to every client), fall back to normal filtering.
-			broadcastAll := envelope.BroadcastAll && envelope.TestID == "" && envelope.ProjectID == ""
 			for client := range h.clients {
-				if !broadcastAll {
-					if client.testID != "" && envelope.TestID != client.testID {
+				if !msg.broadcastAll {
+					if client.testID != "" && msg.testID != client.testID {
 						continue
 					}
-					if client.projectID != "" && envelope.ProjectID != client.projectID {
+					if client.projectID != "" && msg.projectID != client.projectID {
 						continue
 					}
 				}
 				select {
-				case client.send <- msg:
+				case client.send <- msg.payload:
 				default:
 					h.droppedClientMsgs.Add(1)
 					// slow client — drop message
@@ -164,11 +161,12 @@ func (h *Hub) Stop() {
 }
 
 func (h *Hub) Broadcast(msg []byte) {
-	h.broadcastLocal(msg)
-	h.publishFanout(msg)
+	broadcast := newHubBroadcast(msg)
+	h.broadcastLocal(broadcast)
+	h.publishFanout(broadcast)
 }
 
-func (h *Hub) broadcastLocal(msg []byte) {
+func (h *Hub) broadcastLocal(msg hubBroadcast) {
 	select {
 	case h.broadcast <- msg:
 	default:
@@ -176,19 +174,22 @@ func (h *Hub) broadcastLocal(msg []byte) {
 	}
 }
 
-func (h *Hub) publishFanout(msg []byte) {
+func (h *Hub) publishFanout(msg hubBroadcast) {
 	h.fanoutMu.RLock()
 	bus := h.fanout
 	channel := h.fanoutChannel
 	origin := h.fanoutOrigin
 	h.fanoutMu.RUnlock()
-	if bus == nil || channel == "" || origin == "" || len(msg) == 0 {
+	if bus == nil || channel == "" || origin == "" || len(msg.payload) == 0 {
 		return
 	}
 	payload, err := json.Marshal(websocketFanoutEnvelope{
-		Origin:  origin,
-		SentAt:  time.Now().UTC(),
-		Payload: append([]byte(nil), msg...),
+		Origin:       origin,
+		SentAt:       time.Now().UTC(),
+		TestID:       msg.testID,
+		ProjectID:    msg.projectID,
+		BroadcastAll: msg.broadcastAll,
+		Payload:      append([]byte(nil), msg.payload...),
 	})
 	if err != nil {
 		slog.Warn("failed to marshal websocket fanout envelope", "err", err)
@@ -210,6 +211,40 @@ func (h *Hub) BroadcastJSON(v any) {
 		return
 	}
 	h.Broadcast(data)
+}
+
+func (h *Hub) BroadcastScopedJSON(testID string, projectID string, v any) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		slog.Error("failed to marshal broadcast", "err", err)
+		return
+	}
+	broadcast := hubBroadcast{
+		payload:   data,
+		testID:    strings.TrimSpace(testID),
+		projectID: strings.TrimSpace(projectID),
+	}
+	h.broadcastLocal(broadcast)
+	h.publishFanout(broadcast)
+}
+
+func newHubBroadcast(payload []byte) hubBroadcast {
+	var envelope struct {
+		TestID       string `json:"test_id"`
+		ProjectID    string `json:"project_id"`
+		BroadcastAll bool   `json:"broadcast_all"`
+	}
+	_ = json.Unmarshal(payload, &envelope)
+	// Honor the bypass only for a genuinely global, scope-free message. If a payload
+	// sets broadcast_all but ALSO carries a test_id/project_id (a misuse that would
+	// otherwise leak scoped data to every client), fall back to normal filtering.
+	broadcastAll := envelope.BroadcastAll && envelope.TestID == "" && envelope.ProjectID == ""
+	return hubBroadcast{
+		payload:      payload,
+		testID:       envelope.TestID,
+		projectID:    envelope.ProjectID,
+		broadcastAll: broadcastAll,
+	}
 }
 
 func (h *Hub) ClientCount() int {

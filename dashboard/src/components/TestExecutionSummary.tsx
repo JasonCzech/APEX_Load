@@ -1,3 +1,5 @@
+import { useMemo } from 'react'
+
 import { GoalConfig, LiveDependencyMap, LiveErrorPattern, MetricsHistoryPoint, RunComparisonBaseline, TxMetrics } from '../types'
 
 interface MetricsSummary {
@@ -22,73 +24,75 @@ interface Props {
 export default function TestExecutionSummary({ transactions, metrics, baseline, history, goalConfig }: Props) {
   const previousTransactions = baseline?.transactions || {}
   const previousDependencyHealth = baseline?.dependency_health || {}
-  const topServerTelemetry = transactions
+  const dependencyHealthValues = useMemo(() => Object.values(metrics?.dependency_health ?? {}), [metrics?.dependency_health])
+  const topServerTelemetry = useMemo(() => transactions
     .filter((tx) => tx.server_telemetry)
     .sort((left, right) => (right.server_telemetry?.avg_server_processing_ms || 0) - (left.server_telemetry?.avg_server_processing_ms || 0))
-    .slice(0, 4)
-  const topHTTPDecomposition = transactions
+    .slice(0, 4), [transactions])
+  const topHTTPDecomposition = useMemo(() => transactions
     .filter((tx) => hasHTTPTimingDecomposition(tx))
     .sort((left, right) => totalHTTPDecompositionMs(right) - totalHTTPDecompositionMs(left))
-    .slice(0, 4)
-  const topHTTPDependencyHealth = Object.values(metrics?.dependency_health ?? {})
+    .slice(0, 4), [transactions])
+  const topHTTPDependencyHealth = useMemo(() => dependencyHealthValues
     .filter((tx) => tx.dependency_type?.startsWith('http') === true)
     .sort((left, right) => ((right.p95_ms ?? right.p99_ms ?? 0) - (left.p95_ms ?? left.p99_ms ?? 0)))
-    .slice(0, 4)
+    .slice(0, 4), [dependencyHealthValues])
   const dependencyMap = metrics?.dependency_map
-  const dependencySource = dependencyMap?.nodes.find((node) => node.kind === 'source')
-  const dependencyNodes = dependencyMap?.nodes.filter((node) => node.kind === 'dependency') ?? []
-  const errorPatterns = metrics?.error_patterns?.slice(0, 4) ?? []
+  const dependencySource = useMemo(() => dependencyMap?.nodes.find((node) => node.kind === 'source'), [dependencyMap?.nodes])
+  const dependencyNodes = useMemo(() => dependencyMap?.nodes.filter((node) => node.kind === 'dependency') ?? [], [dependencyMap?.nodes])
+  const errorPatterns = useMemo(() => metrics?.error_patterns?.slice(0, 4) ?? [], [metrics?.error_patterns])
   // Messaging panels cover the queue/stream protocols whose telemetry is
   // protocol-neutral (JMS family, Kafka, Event Hubs). Dead-letter and topic
   // fan-out below stay JMS-specific (their builders self-filter by jms_ prefix).
-  const messagingTransactions = transactions.filter(
+  const messagingTransactions = useMemo(() => transactions.filter(
     (tx) =>
       (tx.dependency_type?.startsWith('jms_') ||
         tx.dependency_type?.startsWith('kafka') ||
         tx.dependency_type?.startsWith('eventhubs')) &&
       tx.server_telemetry,
-  )
-  const jmsPayloadProfiles = buildJMSPayloadProfiles(messagingTransactions)
-  const jmsMessagingProfiles = buildJMSMessagingProfiles(messagingTransactions)
-  const jmsPayloadDistribution = buildJMSPayloadDistribution(messagingTransactions)
-  const jmsPayloadHistogram = buildJMSPayloadHistogram(messagingTransactions)
-  const jmsDeadLetterActivity = buildJMSDeadLetterActivity(messagingTransactions)
-  const jmsDeadLetterProfiles = buildJMSDeadLetterProfiles(jmsDeadLetterActivity)
-  const jmsTopicFanOut = buildJMSTopicFanOut(messagingTransactions)
-  const jmsTopicFanOutProfiles = buildJMSTopicFanOutProfiles(jmsTopicFanOut)
-  const jmsLagTrend = buildJMSConsumerLagTrend(history)
+  ), [transactions])
+  const jmsPayloadProfiles = useMemo(() => buildJMSPayloadProfiles(messagingTransactions), [messagingTransactions])
+  const jmsMessagingProfiles = useMemo(() => buildJMSMessagingProfiles(messagingTransactions), [messagingTransactions])
+  const jmsPayloadDistribution = useMemo(() => buildJMSPayloadDistribution(messagingTransactions), [messagingTransactions])
+  const jmsPayloadHistogram = useMemo(() => buildJMSPayloadHistogram(messagingTransactions), [messagingTransactions])
+  const jmsDeadLetterActivity = useMemo(() => buildJMSDeadLetterActivity(messagingTransactions), [messagingTransactions])
+  const jmsDeadLetterProfiles = useMemo(() => buildJMSDeadLetterProfiles(jmsDeadLetterActivity), [jmsDeadLetterActivity])
+  const jmsTopicFanOut = useMemo(() => buildJMSTopicFanOut(messagingTransactions), [messagingTransactions])
+  const jmsTopicFanOutProfiles = useMemo(() => buildJMSTopicFanOutProfiles(jmsTopicFanOut), [jmsTopicFanOut])
+  const jmsLagTrend = useMemo(() => buildJMSConsumerLagTrend(history), [history])
   // Event Hubs producer hotspots: streaming-ingestion signals (throttle / E2E
   // latency / partition skew) that only the eventhubs protocol emits. Messaging
   // server-telemetry is dependency-scoped, so it lives in dependency_health
   // (keyed by event hub), mirroring topHTTPDependencyHealth.
-  const eventHubsProducers = Object.values(metrics?.dependency_health ?? {})
+  const eventHubsProducers = useMemo(() => dependencyHealthValues
     .filter((tx) => tx.dependency_type?.startsWith('eventhubs') && hasEventHubsProducerTelemetry(tx))
     .sort((left, right) => eventHubsThrottleTotal(right) - eventHubsThrottleTotal(left))
-    .slice(0, 6)
+    .slice(0, 6), [dependencyHealthValues])
   // Cross-protocol reliability: redelivery / dead-letter / duplicate / commit /
   // abort for any messaging dependency that reported a reliability signal (P4.1).
-  const messagingReliability = Object.values(metrics?.dependency_health ?? {})
+  const messagingReliability = useMemo(() => dependencyHealthValues
     .filter((tx) => isMessagingDependency(tx) && hasReliabilitySignal(tx))
     .sort((left, right) => messagingReliabilityWeight(right) - messagingReliabilityWeight(left))
-    .slice(0, 8)
-  const topJMSPayloads = [...messagingTransactions]
+    .slice(0, 8), [dependencyHealthValues])
+  const topJMSPayloads = useMemo(() => [...messagingTransactions]
     .sort((left, right) => combinedPayloadKB(right) - combinedPayloadKB(left))
-    .slice(0, 4)
-  const topJMSMessaging = [...messagingTransactions]
+    .slice(0, 4), [messagingTransactions])
+  const topJMSMessaging = useMemo(() => [...messagingTransactions]
     .filter((tx) => hasJMSMessagingTelemetry(tx))
     .sort((left, right) => totalObservedMessages(right) - totalObservedMessages(left))
-    .slice(0, 4)
-  const protocolStreamTransactions = transactions
+    .slice(0, 4), [messagingTransactions])
+  const protocolStreamTransactions = useMemo(() => transactions
     .filter((tx) => isProtocolStreamTransaction(tx) && hasProtocolMessagingTelemetry(tx))
-  const protocolStreamProfiles = buildProtocolStreamProfiles(protocolStreamTransactions)
-  const topProtocolStreams = [...protocolStreamTransactions]
+  , [transactions])
+  const protocolStreamProfiles = useMemo(() => buildProtocolStreamProfiles(protocolStreamTransactions), [protocolStreamTransactions])
+  const topProtocolStreams = useMemo(() => [...protocolStreamTransactions]
     .sort((left, right) => totalObservedMessages(right) - totalObservedMessages(left))
-    .slice(0, 4)
-  const soapOperations = Object.values(metrics?.soap_operations ?? {})
-  const topSOAPOperations = [...soapOperations]
+    .slice(0, 4), [protocolStreamTransactions])
+  const soapOperations = useMemo(() => Object.values(metrics?.soap_operations ?? {}), [metrics?.soap_operations])
+  const topSOAPOperations = useMemo(() => [...soapOperations]
     .sort((left, right) => ((right.server_telemetry?.avg_server_processing_ms ?? right.avg_ms ?? 0) - (left.server_telemetry?.avg_server_processing_ms ?? left.avg_ms ?? 0)))
-    .slice(0, 4)
-  const soapOperationProfiles = buildSOAPOperationProfiles(soapOperations)
+    .slice(0, 4), [soapOperations])
+  const soapOperationProfiles = useMemo(() => buildSOAPOperationProfiles(soapOperations), [soapOperations])
 
   return (
     <>

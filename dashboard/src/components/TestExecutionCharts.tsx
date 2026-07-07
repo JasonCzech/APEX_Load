@@ -176,6 +176,11 @@ export interface GraphCursorState {
   timestampMs?: number
 }
 
+function sameGraphCursor(left: GraphCursorState | null | undefined, right: GraphCursorState | null | undefined) {
+  return (left?.label ?? undefined) === (right?.label ?? undefined)
+    && (left?.timestampMs ?? undefined) === (right?.timestampMs ?? undefined)
+}
+
 interface RechartsMouseEvent {
   activeLabel?: string | number
   activeTooltipIndex?: number
@@ -488,6 +493,10 @@ export default function TestExecutionCharts({
   const chartCardRefs = useRef<Record<string, ChartCardElement>>({})
   const chartMenuRef = useRef<HTMLDivElement | null>(null)
   const axisLabelPopoverRef = useRef<HTMLDivElement | null>(null)
+  const sharedCursorRef = useRef<GraphCursorState | null>(activeCursor ?? null)
+  const pendingMouseMoveRef = useRef<{ activeLabel?: string | number; cursor: GraphCursorState | null } | null>(null)
+  const mouseMoveFrameRef = useRef<number | null>(null)
+  const onChartMouseMoveRef = useRef(onChartMouseMove)
   // Per-chart memo cache for the expensive derived series (downsample + std-dev band + smoothing).
   // These derivations are recomputed inside displayedCharts.map() on every render, but renders also
   // fire on unrelated state changes (hover via setHoveredChartId, metrics ticks that leave a given
@@ -827,6 +836,20 @@ export default function TestExecutionCharts({
 
     return () => observer.disconnect()
   }, [displayedChartIdSignature])
+  const sharedCursor = activeCursor !== undefined ? activeCursor : localActiveCursor
+  useEffect(() => {
+    sharedCursorRef.current = sharedCursor
+  }, [sharedCursor])
+
+  useEffect(() => {
+    onChartMouseMoveRef.current = onChartMouseMove
+  }, [onChartMouseMove])
+
+  useEffect(() => () => {
+    if (mouseMoveFrameRef.current !== null && typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function') {
+      window.cancelAnimationFrame(mouseMoveFrameRef.current)
+    }
+  }, [])
 
   if (filteredData.length <= 1 && loadImpactCharts.length === 0 && prometheusGraphCharts.length === 0 && !loadImpactLoading && !loadImpactError && !prometheusLoading && !prometheusError) {
     return (
@@ -856,13 +879,44 @@ export default function TestExecutionCharts({
     }
     return chart.id === 'latency' ? granularResponseTimeData : granularBaseData
   }
-  const sharedCursor = activeCursor !== undefined ? activeCursor : localActiveCursor
   const updateSharedCursor = (cursor: GraphCursorState | null) => {
+    if (sameGraphCursor(sharedCursorRef.current, cursor)) {
+      if (onActiveCursorChange && sharedCursorRef.current !== cursor) {
+        onActiveCursorChange(sharedCursorRef.current)
+      }
+      return
+    }
+    sharedCursorRef.current = cursor
     if (onActiveCursorChange) {
       onActiveCursorChange(cursor)
     } else {
       setLocalActiveCursor(cursor)
     }
+  }
+
+  const flushPendingMouseMove = () => {
+    mouseMoveFrameRef.current = null
+    const pending = pendingMouseMoveRef.current
+    if (!pending) return
+    pendingMouseMoveRef.current = null
+    if (surface === 'command-center') {
+      updateSharedCursor(pending.cursor)
+    }
+    onChartMouseMoveRef.current(pending.activeLabel)
+  }
+
+  const scheduleChartMouseMove = (activeLabel: string | number | undefined, cursor: GraphCursorState | null) => {
+    pendingMouseMoveRef.current = { activeLabel, cursor }
+    if (mouseMoveFrameRef.current !== null) return
+    if (import.meta.env.MODE === 'test') {
+      flushPendingMouseMove()
+      return
+    }
+    if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
+      flushPendingMouseMove()
+      return
+    }
+    mouseMoveFrameRef.current = window.requestAnimationFrame(flushPendingMouseMove)
   }
 
   const cursorXForChart = (chartData: MetricsHistoryPoint[]) => resolveSharedCursorTime(chartData, sharedCursor)
@@ -954,21 +1008,26 @@ export default function TestExecutionCharts({
   const handleChartMouseMove = (chartId: string, event?: RechartsMouseEvent) => {
     setHoveredChartId(current => current === chartId ? current : chartId)
     const activeLabel = event?.activeLabel
+    let nextCursor: GraphCursorState | null = null
     if (surface === 'command-center') {
       // Key the shared crosshair on the hovered sample's timestamp (from the
       // Recharts active payload), not a positional index — so it lines up on
       // every chart regardless of how each was downsampled.
       const timestampMs = event?.activePayload?.[0]?.payload?.timestampMs
-      const nextCursor = activeLabel !== undefined || typeof timestampMs === 'number'
+      nextCursor = activeLabel !== undefined || typeof timestampMs === 'number'
         ? { label: activeLabel, timestampMs }
         : null
-      updateSharedCursor(nextCursor)
     }
-    onChartMouseMove(activeLabel)
+    scheduleChartMouseMove(activeLabel, nextCursor)
   }
 
   const handleChartMouseLeave = (chartId: string) => {
     setHoveredChartId(current => current === chartId ? null : current)
+    pendingMouseMoveRef.current = null
+    if (mouseMoveFrameRef.current !== null && typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function') {
+      window.cancelAnimationFrame(mouseMoveFrameRef.current)
+      mouseMoveFrameRef.current = null
+    }
     if (surface === 'command-center') {
       updateSharedCursor(null)
     }

@@ -4,6 +4,7 @@ package api
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
@@ -12,61 +13,68 @@ import (
 
 func (b *distributedExecutionBackend) SystemInventory(ctx context.Context) []GeneratorInventoryEntry {
 	specs := b.configuredTargetSpecs()
-	entries := make([]GeneratorInventoryEntry, 0, len(specs))
-	for _, target := range specs {
-		entry := GeneratorInventoryEntry{
-			Target:              target.Address,
-			GeneratorID:         target.Address,
-			Region:              target.Region,
-			Status:              "unreachable",
-			Version:             generatorSpecVersion(target),
-			SupportedProtocols:  generatorSpecProtocols(target),
-			DrainState:          b.generatorDrainState(target.Address),
-			CapacityState:       generatorCapacityState(0, 0, false),
-			HealthScore:         generatorHealthScore(false, "unavailable"),
-			CompatibilityState:  generatorCompatibilityState(target),
-			CompatibilityIssues: generatorCompatibilityIssues(target),
-		}
-
-		probeCtx, cancel := context.WithTimeout(ctx, b.timeout)
-		client, err := b.dial(probeCtx, target.Address)
-		if err != nil {
-			cancel()
-			entries = append(entries, entry)
-			continue
-		}
-
-		snapshot := b.probeGeneratorLoad(probeCtx, target.Address, client)
-		_ = client.Close()
-		cancel()
-
-		if snapshot.GeneratorID != "" {
-			entry.GeneratorID = snapshot.GeneratorID
-			b.recordGeneratorIdentity(target.Address, snapshot.GeneratorID)
-		}
-		entry.DrainState = b.generatorDrainState(target.Address)
-		if snapshot.HeartbeatOK {
-			effectiveSpec := generatorEffectiveSpec(target, snapshot)
-			entry.Version = generatorSpecVersion(effectiveSpec)
-			entry.SupportedProtocols = generatorSpecProtocols(effectiveSpec)
-			entry.CompatibleFeatures = snapshot.CompatibleFeatures
-			if len(entry.CompatibleFeatures) == 0 {
-				entry.CompatibleFeatures = append([]string(nil), entry.SupportedProtocols...)
+	entries := make([]GeneratorInventoryEntry, len(specs))
+	var wg sync.WaitGroup
+	for index, target := range specs {
+		index, target := index, target
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			entry := GeneratorInventoryEntry{
+				Target:              target.Address,
+				GeneratorID:         target.Address,
+				Region:              target.Region,
+				Status:              "unreachable",
+				Version:             generatorSpecVersion(target),
+				SupportedProtocols:  generatorSpecProtocols(target),
+				DrainState:          b.generatorDrainState(target.Address),
+				CapacityState:       generatorCapacityState(0, 0, false),
+				HealthScore:         generatorHealthScore(false, "unavailable"),
+				CompatibilityState:  generatorCompatibilityState(target),
+				CompatibilityIssues: generatorCompatibilityIssues(target),
 			}
-			entry.CompatibilityState = generatorCompatibilityState(effectiveSpec)
-			entry.CompatibilityIssues = generatorCompatibilityIssues(effectiveSpec)
-			entry.Status = "connected"
-			entry.AvailableCapacity = snapshot.AvailableCapacity
-			applyGeneratorStatsToInventory(&entry, snapshot.Stats)
-			entry.CPULimitCores = snapshot.CPULimitCores
-			entry.MemoryLimitBytes = snapshot.MemoryLimitBytes
-			entry.MaxVUsers = snapshot.MaxVUsers
-			entry.CapacityState = generatorCapacityState(entry.AvailableCapacity, entry.MaxVUsers, true)
-			entry.HealthScore = generatorHealthScore(true, entry.CapacityState)
-		}
 
-		entries = append(entries, entry)
+			probeCtx, cancel := context.WithTimeout(ctx, b.timeout)
+			client, err := b.dial(probeCtx, target.Address)
+			if err != nil {
+				cancel()
+				entries[index] = entry
+				return
+			}
+
+			snapshot := b.probeGeneratorLoad(probeCtx, target.Address, client)
+			_ = client.Close()
+			cancel()
+
+			if snapshot.GeneratorID != "" {
+				entry.GeneratorID = snapshot.GeneratorID
+				b.recordGeneratorIdentity(target.Address, snapshot.GeneratorID)
+			}
+			entry.DrainState = b.generatorDrainState(target.Address)
+			if snapshot.HeartbeatOK {
+				effectiveSpec := generatorEffectiveSpec(target, snapshot)
+				entry.Version = generatorSpecVersion(effectiveSpec)
+				entry.SupportedProtocols = generatorSpecProtocols(effectiveSpec)
+				entry.CompatibleFeatures = snapshot.CompatibleFeatures
+				if len(entry.CompatibleFeatures) == 0 {
+					entry.CompatibleFeatures = append([]string(nil), entry.SupportedProtocols...)
+				}
+				entry.CompatibilityState = generatorCompatibilityState(effectiveSpec)
+				entry.CompatibilityIssues = generatorCompatibilityIssues(effectiveSpec)
+				entry.Status = "connected"
+				entry.AvailableCapacity = snapshot.AvailableCapacity
+				applyGeneratorStatsToInventory(&entry, snapshot.Stats)
+				entry.CPULimitCores = snapshot.CPULimitCores
+				entry.MemoryLimitBytes = snapshot.MemoryLimitBytes
+				entry.MaxVUsers = snapshot.MaxVUsers
+				entry.CapacityState = generatorCapacityState(entry.AvailableCapacity, entry.MaxVUsers, true)
+				entry.HealthScore = generatorHealthScore(true, entry.CapacityState)
+			}
+
+			entries[index] = entry
+		}()
 	}
+	wg.Wait()
 	return entries
 }
 

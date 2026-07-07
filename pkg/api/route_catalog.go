@@ -108,6 +108,7 @@ var routeCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodGet, "/api/v1/scenarios/load-models/templates", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/tests/{id}/report/annotations", accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin}, ProjectLookup: resolveTestProjectID}),
 	routeAuth(http.MethodPut, "/api/v1/tests/{id}/report/annotations", accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleEditor, RoleProjectAdmin}, ProjectLookup: resolveTestProjectID}),
+	routeAuth(http.MethodPost, "/api/v1/tests/archive/reports", accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin}, ProjectLookup: resolveProjectIDFromQuery, MaxBodyBytes: 65536}),
 	routeAuth(http.MethodGet, "/api/v1/tests/{id}/notes", viewerProjectAccess(resolveTestProjectID)),
 	routeAuth(http.MethodPost, "/api/v1/tests/{id}/notes", editorImportAccess(resolveTestProjectID, 262144)),
 	routeAuth(http.MethodPatch, "/api/v1/tests/{id}/notes/{note_id}", editorImportAccess(resolveTestProjectID, 262144)),

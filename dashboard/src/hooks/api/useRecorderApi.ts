@@ -39,7 +39,9 @@ type RecorderSession = {
   started_at: string
   stopped_at?: string
   base_url?: string
-  requests: RecorderRequestRecord[]
+  requests?: RecorderRequestRecord[]
+  request_count?: number
+  last_seq?: number
   filters: {
     exclude_static: boolean
     exclude_hosts?: string[]
@@ -111,7 +113,16 @@ export function useRecorderApi() {
 
   const resumeRecording = useCallback((id: string) => request<RecorderSession>(`/recorder/${id}/resume`, { method: 'POST' }), [])
 
-  const getRecording = useCallback((id: string) => request<RecorderSession>(`/recorder/${id}`), [])
+  const getRecording = useCallback(
+    (id: string, params?: { includeRequests?: boolean; since?: number }) => {
+      const query = new URLSearchParams()
+      if (params?.includeRequests) query.set('include', 'requests')
+      if (typeof params?.since === 'number') query.set('since', String(params.since))
+      const suffix = query.toString()
+      return request<RecorderSession>(`/recorder/${id}${suffix ? `?${suffix}` : ''}`)
+    },
+    [],
+  )
 
   const listRecordings = useCallback(
     (projectId?: string) => request<RecorderListResponse>(`/recorder${projectId ? `?project_id=${encodeURIComponent(projectId)}` : ''}`),

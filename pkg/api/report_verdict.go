@@ -31,15 +31,15 @@ type ReportFinding struct {
 	Impact    string `json:"impact,omitempty"`
 }
 
-// reportVerdict carries the headline pass / conditional / fail verdict and a
+// ReportVerdict carries the headline pass / conditional / fail verdict and a
 // short explanation rendered in the report's verdict bar. Conditional and
 // Failed drive the badge styling (warn / danger); neither set means a clean
 // pass (good styling).
-type reportVerdict struct {
-	Status      string
-	Conditional bool
-	Failed      bool
-	Explanation string
+type ReportVerdict struct {
+	Status      string `json:"status"`
+	Conditional bool   `json:"conditional"`
+	Failed      bool   `json:"failed"`
+	Explanation string `json:"explanation"`
 }
 
 // deriveReportVerdict computes the headline verdict from the archived run
@@ -47,9 +47,9 @@ type reportVerdict struct {
 // (degraded telemetry, incomplete data, throughput misses) yield a Conditional
 // Pass; an otherwise clean run is a Pass. Analysts can override the result for
 // nuance (e.g. a transient, self-recovered breach) via report annotations.
-func deriveReportVerdict(report *RunArchiveReport) reportVerdict {
+func deriveReportVerdict(report *RunArchiveReport) ReportVerdict {
 	if report == nil {
-		return reportVerdict{Status: reportVerdictConditional, Conditional: true,
+		return ReportVerdict{Status: reportVerdictConditional, Conditional: true,
 			Explanation: "No archived run evidence was available to evaluate this test."}
 	}
 
@@ -65,19 +65,19 @@ func deriveReportVerdict(report *RunArchiveReport) reportVerdict {
 		if len(slaDetails) > 0 {
 			explanation = "SLA breached: " + strings.Join(slaDetails, "; ") + "."
 		}
-		return reportVerdict{Status: reportVerdictFail, Failed: true, Explanation: explanation}
+		return ReportVerdict{Status: reportVerdictFail, Failed: true, Explanation: explanation}
 	}
 
 	concerns := reportConditionalConcerns(report)
 	if len(concerns) > 0 {
-		return reportVerdict{
+		return ReportVerdict{
 			Status:      reportVerdictConditional,
 			Conditional: true,
 			Explanation: "All configured SLA targets were met, but the run warrants review: " + strings.Join(concerns, "; ") + ".",
 		}
 	}
 
-	return reportVerdict{
+	return ReportVerdict{
 		Status:      reportVerdictPass,
 		Explanation: "All configured SLA targets were met and the run completed cleanly with healthy telemetry and complete data.",
 	}
@@ -212,32 +212,44 @@ func completenessSeverityToFinding(severity string) string {
 	}
 }
 
-// slaComplianceRow is one row of the per-transaction SLA compliance table
+// SLAComplianceRow is one row of the per-transaction SLA compliance table
 // (report Section 3). SLAMs is the configured global p95 SLA; HasSLA is false
 // when no latency SLA was configured for the run.
-type slaComplianceRow struct {
-	Name       string
-	Volume     int64
-	P95Ms      float64
-	SLAMs      float64
-	HasSLA     bool
-	ErrorPct   float64
-	Result     string
-	ResultKind string // "pass" | "warn" | "fail" | "na"
+type SLAComplianceRow struct {
+	Name       string  `json:"name"`
+	Volume     int64   `json:"volume"`
+	P95Ms      float64 `json:"p95_ms"`
+	SLAMs      float64 `json:"sla_ms,omitempty"`
+	HasSLA     bool    `json:"has_sla"`
+	ErrorPct   float64 `json:"error_pct"`
+	Result     string  `json:"result"`
+	ResultKind string  `json:"result_kind"` // "pass" | "warn" | "fail" | "na"
+}
+
+// RunArchiveSLARollup summarizes the per-action SLA rows for dashboard
+// scoreboards. Evaluated excludes "na" rows, which have no configured latency
+// SLA or failing error threshold to evaluate.
+type RunArchiveSLARollup struct {
+	Evaluated int64  `json:"evaluated"`
+	Passed    int64  `json:"passed"`
+	Warned    int64  `json:"warned"`
+	Failed    int64  `json:"failed"`
+	NA        int64  `json:"na"`
+	WorstKind string `json:"worst_kind"`
 }
 
 // buildSLAComplianceRows builds the per-transaction SLA table from the archived
 // per-action stats, evaluated against the run's global goal config (p95 latency
 // and max error rate). Rows are ordered by volume descending.
-func buildSLAComplianceRows(report *RunArchiveReport) []slaComplianceRow {
+func buildSLAComplianceRows(report *RunArchiveReport) []SLAComplianceRow {
 	if report == nil {
 		return nil
 	}
 	slaMs, hasSLA, maxErrPct, hasErrLimit := reportGoalThresholds(report)
 
-	rows := make([]slaComplianceRow, 0, len(report.ByAction))
+	rows := make([]SLAComplianceRow, 0, len(report.ByAction))
 	for name, stats := range report.ByAction {
-		row := slaComplianceRow{
+		row := SLAComplianceRow{
 			Name:     name,
 			Volume:   stats.Transactions,
 			P95Ms:    stats.P95Ms,
@@ -255,6 +267,65 @@ func buildSLAComplianceRows(report *RunArchiveReport) []slaComplianceRow {
 		return rows[i].Volume > rows[j].Volume
 	})
 	return rows
+}
+
+func buildSLAComplianceRowMap(report *RunArchiveReport) map[string]SLAComplianceRow {
+	rows := buildSLAComplianceRows(report)
+	if len(rows) == 0 {
+		return nil
+	}
+	byAction := make(map[string]SLAComplianceRow, len(rows))
+	for _, row := range rows {
+		byAction[row.Name] = row
+	}
+	return byAction
+}
+
+func buildSLARollup(rows map[string]SLAComplianceRow) RunArchiveSLARollup {
+	rollup := RunArchiveSLARollup{WorstKind: "na"}
+	if len(rows) == 0 {
+		return rollup
+	}
+	worstRank := 0
+	for _, row := range rows {
+		switch row.ResultKind {
+		case "fail":
+			rollup.Failed++
+			rollup.Evaluated++
+			if worstRank < 3 {
+				worstRank = 3
+				rollup.WorstKind = "fail"
+			}
+		case "warn":
+			rollup.Warned++
+			rollup.Evaluated++
+			if worstRank < 2 {
+				worstRank = 2
+				rollup.WorstKind = "warn"
+			}
+		case "pass":
+			rollup.Passed++
+			rollup.Evaluated++
+			if worstRank < 1 {
+				worstRank = 1
+				rollup.WorstKind = "pass"
+			}
+		default:
+			rollup.NA++
+		}
+	}
+	return rollup
+}
+
+func attachReportVerdictAndSLA(report *RunArchiveReport) {
+	if report == nil {
+		return
+	}
+	verdict := deriveReportVerdict(report)
+	report.Verdict = &verdict
+	report.SLARows = buildSLAComplianceRowMap(report)
+	rollup := buildSLARollup(report.SLARows)
+	report.SLARollup = &rollup
 }
 
 // reportGoalThresholds extracts the global p95 latency SLA and max error-rate

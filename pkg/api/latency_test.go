@@ -288,6 +288,36 @@ func TestLatencyEndpointsPreferParameterizedURL(t *testing.T) {
 	}
 }
 
+func TestLatencyEndpointsForTestCachesDerivedEndpointMapDefensively(t *testing.T) {
+	tr := NewTestRunner(1, NewHub(), nil)
+	test := &ManagedTest{
+		ID: "test-latency",
+		Groups: []TestGroup{{
+			Name: "Group1",
+			script: &dsl.Script{
+				Config: dsl.ScriptConfig{BaseURL: "https://app.example.com"},
+				Actions: []dsl.Action{{
+					Name:   "Health",
+					Type:   "GET",
+					Method: "GET",
+					Target: "https://app.example.com/health",
+				}},
+			},
+		}},
+	}
+
+	first := tr.latencyEndpointsForTest(test)
+	first["app.example.com"] = "mutated"
+	second := tr.latencyEndpointsForTest(test)
+
+	if test.latencyEndpointsCache.signature == "" {
+		t.Fatal("expected latency endpoint cache signature to be recorded")
+	}
+	if got := second["app.example.com"]; got != "https://app.example.com" {
+		t.Fatalf("cached endpoint = %q, want defensive cached value", got)
+	}
+}
+
 func TestLatencyEndpointsNormalizeParameterizedURLBoundaryWhitespace(t *testing.T) {
 	script := &dsl.Script{
 		Parameters: []dsl.Parameter{{
@@ -308,6 +338,36 @@ func TestLatencyEndpointsNormalizeParameterizedURLBoundaryWhitespace(t *testing.
 
 	if got := endpoints["csi-gw-ext.att.com:443"]; got != "https://csi-gw-ext.att.com:443/Services/com/cingular/csi/edp/InquireSubscriberBillingAgreement.jws" {
 		t.Fatalf("parameterized endpoint = %q, want normalized full URL", got)
+	}
+}
+
+func TestLatencyEndpointInlineDataOnlyRequiresPreviewRows(t *testing.T) {
+	script := &dsl.Script{
+		Parameters: []dsl.Parameter{{
+			Name:       "url",
+			Type:       "file",
+			DataSource: "url",
+			Column:     "URL",
+		}},
+		DataSources: []dsl.DataSource{{
+			Name:           "url",
+			Type:           "csv",
+			InlineData:     "URL\nhttps://preview.example.test\n\"unterminated trailing row",
+			FirstRowHeader: true,
+		}},
+		Actions: []dsl.Action{{
+			Name:   "PreviewRows",
+			Type:   "GET",
+			Method: "GET",
+			Target: "{{var.url}}/health",
+		}},
+	}
+
+	endpoints := make(map[string]string)
+	addLatencyEndpoint(endpoints, script)
+
+	if got := endpoints["preview.example.test"]; got != "https://preview.example.test/health" {
+		t.Fatalf("parameterized endpoint = %q, want endpoint from first valid data row", got)
 	}
 }
 

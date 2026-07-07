@@ -15,11 +15,13 @@ import (
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/apexload/pkg/kubeops"
 	_ "github.com/jasonczech/apexload/pkg/protocol/builtin"
+	"github.com/jasonczech/apexload/pkg/runtimetuning"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	logRuntimeTuning(runtimetuning.ApplyFromCgroup(os.Getenv))
 
 	// Optional pprof debug server (disabled unless APEXLOAD_PPROF_ADDR is set).
 	if pprofSrv, err := debugserver.StartPprofFromEnv(os.Getenv); err != nil {
@@ -122,6 +124,20 @@ func main() {
 	<-ctx.Done()
 	slog.Info("shutting down")
 	server.Shutdown(context.Background())
+}
+
+func logRuntimeTuning(settings runtimetuning.Settings) {
+	if settings.GOMAXPROCS == 0 && settings.GOMEMLIMIT == 0 {
+		return
+	}
+	args := []any{}
+	if settings.GOMAXPROCS > 0 {
+		args = append(args, "gomaxprocs", settings.GOMAXPROCS, "gomaxprocs_source", settings.GOMAXPROCSSource)
+	}
+	if settings.GOMEMLIMIT > 0 {
+		args = append(args, "gomemlimit", settings.GOMEMLIMIT, "gomemlimit_source", settings.GOMEMLIMITSource)
+	}
+	slog.Info("go runtime tuning applied", args...)
 }
 
 func envIsTruthy(raw string) bool {

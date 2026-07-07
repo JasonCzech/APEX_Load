@@ -208,6 +208,80 @@ func TestHandleStartRecordingAllowsStaticCapture(t *testing.T) {
 	}
 }
 
+func TestHandleRecordingSummariesAndDeltaRequests(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	session, err := server.recorder.StartSessionForProject("rec-delta", "Delta Recording", "project-1", recorder.SessionFilters{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session.Requests = append(session.Requests,
+		recorder.RecordedRequest{Seq: 1, Method: http.MethodPost, URL: "https://shop.example.com/api/login", Path: "/api/login", Body: `{"password":"secret"}`, ResponseBody: `{"token":"abc"}`, StatusCode: http.StatusOK},
+		recorder.RecordedRequest{Seq: 2, Method: http.MethodGet, URL: "https://shop.example.com/api/cart", Path: "/api/cart", ResponseBody: `{"items":[]}`, StatusCode: http.StatusOK},
+	)
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder?project_id=project-1", nil)
+	listResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(listResp, listReq)
+	if listResp.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want %d body=%s", listResp.Code, http.StatusOK, listResp.Body.String())
+	}
+	var listPayload struct {
+		Sessions []recorder.Session `json:"sessions"`
+		Active   *recorder.Session  `json:"active"`
+	}
+	if err := json.Unmarshal(listResp.Body.Bytes(), &listPayload); err != nil {
+		t.Fatalf("json.Unmarshal list returned error: %v", err)
+	}
+	if len(listPayload.Sessions) != 1 || len(listPayload.Sessions[0].Requests) != 0 || listPayload.Sessions[0].RequestCount != 2 {
+		t.Fatalf("list payload = %#v, want summary without requests", listPayload.Sessions)
+	}
+	if listPayload.Active == nil || len(listPayload.Active.Requests) != 0 || listPayload.Active.RequestCount != 2 {
+		t.Fatalf("active payload = %#v, want active summary without requests", listPayload.Active)
+	}
+
+	summaryReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/rec-delta", nil)
+	summaryResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(summaryResp, summaryReq)
+	if summaryResp.Code != http.StatusOK {
+		t.Fatalf("summary status = %d, want %d body=%s", summaryResp.Code, http.StatusOK, summaryResp.Body.String())
+	}
+	var summary recorder.Session
+	if err := json.Unmarshal(summaryResp.Body.Bytes(), &summary); err != nil {
+		t.Fatalf("json.Unmarshal summary returned error: %v", err)
+	}
+	if len(summary.Requests) != 0 || summary.RequestCount != 2 {
+		t.Fatalf("summary = %#v, want no requests with full count", summary)
+	}
+
+	deltaReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/rec-delta?since=1", nil)
+	deltaResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(deltaResp, deltaReq)
+	if deltaResp.Code != http.StatusOK {
+		t.Fatalf("delta status = %d, want %d body=%s", deltaResp.Code, http.StatusOK, deltaResp.Body.String())
+	}
+	var delta recorder.Session
+	if err := json.Unmarshal(deltaResp.Body.Bytes(), &delta); err != nil {
+		t.Fatalf("json.Unmarshal delta returned error: %v", err)
+	}
+	if len(delta.Requests) != 1 || delta.Requests[0].Seq != 2 || delta.Requests[0].ResponseBody == "" {
+		t.Fatalf("delta = %#v, want full request after sequence 1", delta)
+	}
+
+	fullReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/rec-delta?include=requests", nil)
+	fullResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(fullResp, fullReq)
+	if fullResp.Code != http.StatusOK {
+		t.Fatalf("full status = %d, want %d body=%s", fullResp.Code, http.StatusOK, fullResp.Body.String())
+	}
+	var full recorder.Session
+	if err := json.Unmarshal(fullResp.Body.Bytes(), &full); err != nil {
+		t.Fatalf("json.Unmarshal full returned error: %v", err)
+	}
+	if len(full.Requests) != 2 || full.Requests[0].Body == "" {
+		t.Fatalf("full = %#v, want include=requests to return stored bodies", full)
+	}
+}
+
 func TestHandleExportRecordingHAR(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	session, err := server.recorder.StartSession("rec-2", "Checkout HAR", recorder.SessionFilters{}, nil)

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -13,6 +14,20 @@ import (
 )
 
 const supportedCodec = "java_serialized_object_base64"
+
+var responseMappingRegexCache sync.Map // map[string]*regexp.Regexp
+
+func compileResponseMappingRegex(expr string) *regexp.Regexp {
+	if cached, ok := responseMappingRegexCache.Load(expr); ok {
+		return cached.(*regexp.Regexp)
+	}
+	re, err := regexp.Compile(expr)
+	if err != nil {
+		re = regexp.MustCompile(regexp.QuoteMeta(expr))
+	}
+	actual, _ := responseMappingRegexCache.LoadOrStore(expr, re)
+	return actual.(*regexp.Regexp)
+}
 
 func init() {
 	protocol.Register("java_http", func() protocol.Protocol {
@@ -220,10 +235,7 @@ func applyResponseMapping(mapping map[string]string, body string) map[string]str
 		if strings.TrimSpace(expr) == "" {
 			continue
 		}
-		re, err := regexp.Compile(expr)
-		if err != nil {
-			re = regexp.MustCompile(regexp.QuoteMeta(expr))
-		}
+		re := compileResponseMappingRegex(expr)
 		m := re.FindStringSubmatch(body)
 		if m == nil {
 			continue

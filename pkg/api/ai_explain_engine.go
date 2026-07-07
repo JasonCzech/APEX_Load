@@ -58,7 +58,7 @@ func (s *Server) buildAIExplainResponse(req AIExplainRequest, provider string, p
 			if !ok {
 				return response, fmt.Errorf("run archive not found")
 			}
-			report, err := buildRunArchiveReport(record)
+			report, err := cachedRunArchiveReport(record)
 			if err != nil {
 				return response, err
 			}

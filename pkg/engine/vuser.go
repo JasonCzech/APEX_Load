@@ -418,14 +418,14 @@ func (vu *VUser) Run(ctx context.Context) {
 					iterSuccess = false
 					iterTransactionSource = result
 					if logCfg.OnErrorOnly || logCfg.Level == "extended" {
-						logger.Error("action failed", actionLogAttrs(action.Name, vu.resolveAction(action), result, logCfg, true)...)
+						logger.Error("action failed", actionLogAttrs(action.Name, nil, result, logCfg, true)...)
 					}
 					if !continueOnError {
 						recordIterationTransaction(false)
 						return flowTeardown
 					}
 				} else if logCfg.Level == "extended" {
-					logger.Info("action ok", actionLogAttrs(action.Name, vu.resolveAction(action), result, logCfg, false)...)
+					logger.Info("action ok", actionLogAttrs(action.Name, nil, result, logCfg, false)...)
 				}
 				applyActionThinkTime(action)
 				return flowNext
@@ -456,7 +456,7 @@ func (vu *VUser) Run(ctx context.Context) {
 				return flowNext
 			}
 
-			vu.recordResult(result, cfg.ErrorHandling)
+			vu.recordResult(result, cfg.ErrorHandling, logCfg)
 			iterTxDuration += result.Duration
 
 			// Record auto-transaction for this action
@@ -686,7 +686,7 @@ func (vu *VUser) runLifecycleActions(ctx context.Context, actions []dsl.Action, 
 			}
 			return flowNext
 		}
-		vu.recordResult(result, errCfg)
+		vu.recordResult(result, errCfg, logCfg)
 		if result != nil && !result.Success {
 			if logCfg.OnErrorOnly || logCfg.Level == "extended" {
 				logger.Error(phase+" action unsuccessful", "action", action.Name, "status", result.StatusCode, "error", result.ErrorMessage)
@@ -728,5 +728,5 @@ func (vu *VUser) resetProtocolForIteration(ctx context.Context) error {
 	if err := vu.Proto.Teardown(tctx); err != nil {
 		return err
 	}
-	return vu.Proto.Init(ctx, buildProtoConfigForRunMode(vu.Script, "load"))
+	return vu.Proto.Init(ctx, buildProtoConfigForRunModeWithSecretResolver(vu.Script, "load", vu.secretResolver()))
 }

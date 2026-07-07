@@ -394,7 +394,67 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       ? `${calendarEvents.length.toLocaleString()} shown`
       : `${calendarEvents.length.toLocaleString()} run${calendarEvents.length === 1 ? '' : 's'}`
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (categoryId: MonitorCategoryId = activeCategoryId) => {
+    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+      return
+    }
+    try {
+      if (categoryId === 'overview') {
+        const [healthRes, inventoryRes, restartCapsRes, readinessRes, servicesRes] = await Promise.all([
+          api.getHealth(),
+          api.getSystemInventory().catch(() => null),
+          canManageSystem ? api.getRestartCapabilities().catch(() => disabledRestartCapabilities('Restart capability status is unavailable.')) : Promise.resolve(null),
+          api.getSystemReadiness().catch(() => null),
+          api.getSystemServices().catch(() => null),
+        ])
+        setHealth(healthRes)
+        setInventory(inventoryRes)
+        setRestartCapabilities(restartCapsRes)
+        setSystemReadiness(readinessRes)
+        setSystemServices(servicesRes)
+      } else if (categoryId === 'fleet') {
+        const [inventoryRes, restartCapsRes, fleetAlertsRes, fleetAuditRes, fleetCapacityRes, provisionerRes] = await Promise.all([
+          api.getSystemInventory().catch(() => null),
+          canManageSystem ? api.getRestartCapabilities().catch(() => disabledRestartCapabilities('Restart capability status is unavailable.')) : Promise.resolve(null),
+          api.getFleetAlerts().catch(() => ({ alerts: [], count: 0, unacknowledged_count: 0 })),
+          canManageSystem ? api.listAuthAuditEvents({ limit: 20 }).catch(() => ({ events: [], count: 0 })) : Promise.resolve(null),
+          api.getFleetCapacity(activeProject?.id ? { project_id: activeProject.id } : undefined).catch(() => null),
+          api.getFleetProvisioner().catch(() => null),
+        ])
+        setInventory(inventoryRes)
+        setRestartCapabilities(restartCapsRes)
+        setFleetAlerts(fleetAlertsRes.alerts || [])
+        setFleetAuditEvents(canManageSystem ? (fleetAuditRes?.events || []).filter(isFleetAuditEvent).slice(0, 8) : [])
+        setFleetCapacity(fleetCapacityRes)
+        setProvisioner(provisionerRes)
+      } else if (categoryId === 'telemetry') {
+        const [apmProfilesRes, monitorPacksRes] = await Promise.all([
+          safeApiCall(() => api.getAPMIntegrationProfiles(), null),
+          safeApiCall(() => api.getInfrastructureMonitorPacks(), null),
+        ])
+        setApmProfiles(apmProfilesRes)
+        setMonitorPacks(monitorPacksRes)
+      } else if (categoryId === 'schedules') {
+        const [scheduleHealthRes, runCalendarRes] = await Promise.all([
+          api.getScheduleHealth().catch(() => null),
+          api.getRunCalendar({
+            from: calendarRange.from.toISOString(),
+            to: calendarRange.to.toISOString(),
+            project_id: activeProject?.id,
+            capacity: true,
+            tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          }).catch(() => null),
+        ])
+        setScheduleHealth(scheduleHealthRes)
+        setRunCalendar(runCalendarRes)
+      }
+      setLastRefreshed(new Date())
+    } catch {
+      // API not available
+    }
+  }, [activeCategoryId, activeProject?.id, api, calendarRange.from, calendarRange.to, canManageSystem])
+
+  const refreshAll = useCallback(async () => {
     if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
       return
     }
@@ -445,7 +505,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     setFleetAlertActionBusy(alert.id)
     try {
       await api.ackFleetAlert(alert.id, { acknowledged: !alert.acknowledged })
-      await refresh()
+      await refresh('fleet')
     } catch (err) {
       setFleetAlertActionError(err instanceof Error ? err.message : 'Failed to update fleet alert.')
     } finally {
@@ -454,7 +514,10 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   }, [api, refresh])
 
   useEffect(() => {
-    refresh()
+    refreshAll()
+  }, [refreshAll])
+
+  useEffect(() => {
     const interval = setInterval(refresh, 5000)
 
     const handleVisibilityChange = () => {
@@ -477,8 +540,19 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
 
   useEffect(() => {
     if (fleetEventSignal <= 0) return
-    void refresh()
-  }, [fleetEventSignal, refresh])
+    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
+    let cancelled = false
+    void api.getFleetAlerts()
+      .then(result => {
+        if (cancelled) return
+        setFleetAlerts(result.alerts || [])
+        setLastRefreshed(new Date())
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [api, fleetEventSignal])
 
   useEffect(() => {
     if (!selectedCalendarEventId) return

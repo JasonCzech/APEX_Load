@@ -19,6 +19,20 @@ import (
 	"github.com/jasonczech/apexload/pkg/protocol/messaging"
 )
 
+var extractorRegexCache sync.Map // map[string]*regexp.Regexp
+
+func compileExtractorRegex(expr string) (*regexp.Regexp, error) {
+	if cached, ok := extractorRegexCache.Load(expr); ok {
+		return cached.(*regexp.Regexp), nil
+	}
+	re, err := regexp.Compile(expr)
+	if err != nil {
+		return nil, err
+	}
+	actual, _ := extractorRegexCache.LoadOrStore(expr, re)
+	return actual.(*regexp.Regexp), nil
+}
+
 // sidecarCommandEnv is the operator-owned environment variable that supplies the
 // JMS sidecar command line. The sidecar command is deliberately NOT sourced from
 // script-supplied properties: a script is user-controlled JSON, so honoring a
@@ -1819,7 +1833,7 @@ func extract(ext protocol.Extractor, msg message) (string, error) {
 	case "body":
 		switch ext.Type {
 		case "regex":
-			re, err := regexp.Compile(ext.Expression)
+			re, err := compileExtractorRegex(ext.Expression)
 			if err != nil {
 				return "", fmt.Errorf("invalid regex: %w", err)
 			}

@@ -2,7 +2,6 @@ package enterprisearchive
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
@@ -261,26 +260,19 @@ func remapSourceReviewTargets(result *ConvertResult, pathMap map[string]string) 
 	if result == nil || result.SourceReview == nil || len(pathMap) == 0 {
 		return
 	}
-	keys := make([]string, 0, len(pathMap))
-	for key := range pathMap {
-		keys = append(keys, key)
-	}
-	sort.Slice(keys, func(i, j int) bool {
-		return len(keys[i]) > len(keys[j])
-	})
 	for index := range result.SourceReview.Mappings {
 		target := result.SourceReview.Mappings[index].TargetPath
 		if target == "" {
 			continue
 		}
-		for _, oldPath := range keys {
-			newPath := pathMap[oldPath]
-			if target == oldPath {
-				result.SourceReview.Mappings[index].TargetPath = newPath
-				break
-			}
-			if strings.HasPrefix(target, oldPath+".") {
-				result.SourceReview.Mappings[index].TargetPath = newPath + strings.TrimPrefix(target, oldPath)
+		if newPath, ok := pathMap[target]; ok {
+			result.SourceReview.Mappings[index].TargetPath = newPath
+			continue
+		}
+		for dot := strings.LastIndexByte(target, '.'); dot > 0; dot = strings.LastIndexByte(target[:dot], '.') {
+			oldPath := target[:dot]
+			if newPath, ok := pathMap[oldPath]; ok {
+				result.SourceReview.Mappings[index].TargetPath = newPath + target[dot:]
 				break
 			}
 		}

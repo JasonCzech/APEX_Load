@@ -9,11 +9,14 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
+
+var usageArchiveBytesCache sync.Map // map[string]int64
 
 type UsageAccountingResponse struct {
 	GeneratedAt time.Time               `json:"generated_at"`
@@ -440,6 +443,12 @@ func usageArchiveBytes(test *ManagedTest) int64 {
 	if test == nil || test.Archive == nil || strings.TrimSpace(test.Archive.ArchivePath) == "" {
 		return 0
 	}
+	cacheKey := usageArchiveBytesCacheKey(test.Archive)
+	if cacheKey != "" {
+		if cached, ok := usageArchiveBytesCache.Load(cacheKey); ok {
+			return cached.(int64)
+		}
+	}
 	var total int64
 	_ = filepath.WalkDir(test.Archive.ArchivePath, func(path string, entry os.DirEntry, err error) error {
 		if err != nil || entry == nil || entry.IsDir() {
@@ -452,7 +461,25 @@ func usageArchiveBytes(test *ManagedTest) int64 {
 		total += info.Size()
 		return nil
 	})
+	if cacheKey != "" {
+		usageArchiveBytesCache.Store(cacheKey, total)
+	}
 	return total
+}
+
+func usageArchiveBytesCacheKey(record *storage.RunArchiveRecord) string {
+	if record == nil {
+		return ""
+	}
+	return strings.Join([]string{
+		strings.TrimSpace(record.TestID),
+		strings.TrimSpace(record.ArchivePath),
+		strings.TrimSpace(record.ManifestSHA256),
+		strconv.FormatInt(record.CompletedAt.UnixNano(), 10),
+		strconv.FormatInt(record.TransactionCount, 10),
+		strconv.FormatInt(record.ResourceSampleCount, 10),
+		strconv.FormatInt(record.IntervalSummaryCount, 10),
+	}, "|")
 }
 
 func usageRegionsForTest(test *ManagedTest) []string {

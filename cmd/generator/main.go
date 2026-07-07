@@ -14,6 +14,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/debugserver"
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	_ "github.com/jasonczech/apexload/pkg/protocol/builtin"
+	"github.com/jasonczech/apexload/pkg/runtimetuning"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -21,6 +22,7 @@ import (
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	logRuntimeTuning(runtimetuning.ApplyFromCgroup(os.Getenv))
 
 	// Optional pprof debug server (disabled unless APEXLOAD_PPROF_ADDR is set).
 	if pprofSrv, err := debugserver.StartPprofFromEnv(os.Getenv); err != nil {
@@ -100,4 +102,18 @@ func main() {
 		slog.Error("generator server error", "err", err)
 		os.Exit(1)
 	}
+}
+
+func logRuntimeTuning(settings runtimetuning.Settings) {
+	if settings.GOMAXPROCS == 0 && settings.GOMEMLIMIT == 0 {
+		return
+	}
+	args := []any{}
+	if settings.GOMAXPROCS > 0 {
+		args = append(args, "gomaxprocs", settings.GOMAXPROCS, "gomaxprocs_source", settings.GOMAXPROCSSource)
+	}
+	if settings.GOMEMLIMIT > 0 {
+		args = append(args, "gomemlimit", settings.GOMEMLIMIT, "gomemlimit_source", settings.GOMEMLIMITSource)
+	}
+	slog.Info("go runtime tuning applied", args...)
 }

@@ -747,46 +747,86 @@ func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedT
 	}
 	targets := shardTargets(shards)
 	loadByTarget := make(map[string]generatorLoadSnapshot, len(targets))
+	type loadProbeResult struct {
+		target   string
+		snapshot generatorLoadSnapshot
+		err      error
+	}
+	loadCh := make(chan loadProbeResult, len(targets))
 	for _, target := range targets {
+		target := target
 		client := clients[target]
 		if client == nil {
 			return fmt.Errorf("selected generator %q is not connected", target)
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
-		snapshot := b.probeGeneratorLoad(ctx, target, client)
-		cancel()
-		snapshot.AvailableCapacity += int32(shardVUsersForTarget(shards, target))
-		loadByTarget[target] = snapshot
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
+			defer cancel()
+			snapshot := b.probeGeneratorLoad(ctx, target, client)
+			snapshot.AvailableCapacity += int32(shardVUsersForTarget(shards, target))
+			loadCh <- loadProbeResult{target: target, snapshot: snapshot}
+		}()
+	}
+	for range targets {
+		result := <-loadCh
+		if result.err != nil {
+			return result.err
+		}
+		loadByTarget[result.target] = result.snapshot
 	}
 	nextShards := capacityWeightedShardsIncludingZero(groupName, targetVUsers, targets, loadByTarget, shardStrategyForGroupShards(shards))
 	previousByTarget := make(map[string]int, len(shards))
 	for _, shard := range shards {
 		previousByTarget[shard.Target] = shard.VUsers
 	}
-	successes := make([]GeneratorShardSummary, 0, len(nextShards))
+	type adjustResult struct {
+		shard GeneratorShardSummary
+		err   error
+	}
+	adjustCh := make(chan adjustResult, len(nextShards))
 	for _, shard := range nextShards {
+		shard := shard
 		client := clients[shard.Target]
-		ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
-		adjustment, err := client.AdjustVUsers(ctx, generatorrpc.VUserAdjustment{
-			TestID:       test.ID,
-			GroupName:    groupName,
-			TargetVUsers: int32(shard.VUsers),
-		})
-		cancel()
-		if err != nil || !adjustment.Accepted {
-			rollbackErr := b.rollbackShardVUsers(test.ID, groupName, clients, successes, previousByTarget)
-			if err != nil {
-				if rollbackErr != nil {
-					return fmt.Errorf("adjust remote vusers on %s: %w; rollback shard vusers: %v", shard.Target, err, rollbackErr)
-				}
-				return fmt.Errorf("adjust remote vusers on %s: %w", shard.Target, err)
-			}
-			if rollbackErr != nil {
-				return fmt.Errorf("generator did not accept vuser adjustment for %s on %s; rollback shard vusers: %v", test.ID, shard.Target, rollbackErr)
-			}
-			return fmt.Errorf("generator did not accept vuser adjustment for %s on %s", test.ID, shard.Target)
+		if client == nil {
+			adjustCh <- adjustResult{shard: shard, err: fmt.Errorf("selected generator %q is not connected", shard.Target)}
+			continue
 		}
-		successes = append(successes, shard)
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
+			defer cancel()
+			adjustment, err := client.AdjustVUsers(ctx, generatorrpc.VUserAdjustment{
+				TestID:       test.ID,
+				GroupName:    groupName,
+				TargetVUsers: int32(shard.VUsers),
+			})
+			if err != nil {
+				adjustCh <- adjustResult{shard: shard, err: fmt.Errorf("adjust remote vusers on %s: %w", shard.Target, err)}
+				return
+			}
+			if !adjustment.Accepted {
+				adjustCh <- adjustResult{shard: shard, err: fmt.Errorf("generator did not accept vuser adjustment for %s on %s", test.ID, shard.Target)}
+				return
+			}
+			adjustCh <- adjustResult{shard: shard}
+		}()
+	}
+	successes := make([]GeneratorShardSummary, 0, len(nextShards))
+	var adjustErr error
+	for range nextShards {
+		result := <-adjustCh
+		if result.err != nil && adjustErr == nil {
+			adjustErr = result.err
+			continue
+		}
+		if result.err == nil {
+			successes = append(successes, result.shard)
+		}
+	}
+	if adjustErr != nil {
+		if rollbackErr := b.rollbackShardVUsers(test.ID, groupName, clients, successes, previousByTarget); rollbackErr != nil {
+			return fmt.Errorf("%w; rollback shard vusers: %v", adjustErr, rollbackErr)
+		}
+		return adjustErr
 	}
 	tr.mu.Lock()
 	if test.remoteGroupShards == nil {

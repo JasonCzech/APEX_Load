@@ -313,6 +313,7 @@ func Export(req ExportRequest) (*ExportResult, error) {
 }
 
 func parseHTTPRequests(content string) []parsedHTTPRequest {
+	lineIndex := sourceview.NewLineIndex(content)
 	matches := httpCallStartPattern.FindAllStringSubmatchIndex(content, -1)
 	out := make([]parsedHTTPRequest, 0, len(matches))
 	for _, match := range matches {
@@ -344,8 +345,8 @@ func parseHTTPRequests(content string) []parsedHTTPRequest {
 			URL:       rawURL,
 			Body:      body,
 			Headers:   parseHeaders(options),
-			StartLine: sourceview.LineForOffset(content, match[0]),
-			EndLine:   sourceview.LineForOffset(content, closeOffset),
+			StartLine: lineIndex.LineForOffset(match[0]),
+			EndLine:   lineIndex.LineForOffset(closeOffset),
 		})
 	}
 	return out
@@ -467,10 +468,11 @@ func parseOptions(content string, result *ConvertResult) map[string]any {
 }
 
 func diagnoseUnsupported(content string, diagnostics *diag.Collector, stats *ConvertStats, unsorted *[]sortedAction, sourceFile string) {
+	lineIndex := sourceview.NewLineIndex(content)
 	addUnsupported := func(matches [][]int, construct, element, detail string, diagType string) {
 		for _, match := range matches {
 			stats.UnsupportedCalls = append(stats.UnsupportedCalls, construct)
-			startLine := sourceview.LineForOffset(content, match[0])
+			startLine := lineIndex.LineForOffset(match[0])
 			if diagType == "blocker" {
 				diagnostics.Add(diag.Blocker, element, fmt.Sprintf("%s line %d", sourceFile, startLine), detail)
 			} else {

@@ -538,7 +538,7 @@ func (s *Server) handleGetRunArchiveAIRootCause(w http.ResponseWriter, r *http.R
 	if !ok {
 		return
 	}
-	report, err := buildRunArchiveReport(record)
+	report, err := cachedRunArchiveReport(record)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to build AI root-cause summary: "+err.Error())
 		return

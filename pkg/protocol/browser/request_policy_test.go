@@ -1,6 +1,9 @@
 package browser
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 func TestNormalizeDownloadFilterHosts(t *testing.T) {
 	hosts := normalizeDownloadFilterHosts([]string{
@@ -174,6 +177,26 @@ func TestRequestPolicyHeadersDisableCacheAndRevalidate(t *testing.T) {
 	}
 	if _, ok := original["Cache-Control"]; ok {
 		t.Fatal("requestPolicyHeadersFor mutated the original header map")
+	}
+}
+
+func TestRememberResourceValidatorCapsEntries(t *testing.T) {
+	b := &Browser{}
+	for i := 0; i < maxBrowserResourceValidators+5; i++ {
+		b.rememberResourceValidator(fmt.Sprintf("https://cdn.example.com/app-%04d.js", i), map[string]string{
+			"ETag": fmt.Sprintf(`"v-%04d"`, i),
+		})
+	}
+
+	if len(b.resourceValidators) != maxBrowserResourceValidators {
+		t.Fatalf("resource validator cache length = %d, want %d", len(b.resourceValidators), maxBrowserResourceValidators)
+	}
+	if got := b.resourceValidator("https://cdn.example.com/app-0000.js"); got != "" {
+		t.Fatalf("oldest validator = %q, want evicted", got)
+	}
+	latestURL := fmt.Sprintf("https://cdn.example.com/app-%04d.js", maxBrowserResourceValidators+4)
+	if got := b.resourceValidator(latestURL); got == "" {
+		t.Fatal("latest validator was not retained")
 	}
 }
 

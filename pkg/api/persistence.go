@@ -281,7 +281,13 @@ func (tr *TestRunner) loadStoredTestHistory(test *ManagedTest) {
 	if tr.historyStore == nil {
 		return
 	}
-	history, err := tr.historyStore.GetHistory(test.ID)
+	var history []any
+	var err error
+	if limited, ok := tr.historyStore.(limitedHistoryPersistence); ok {
+		history, err = limited.GetHistoryLimit(test.ID, maxManagedTestHistory)
+	} else {
+		history, err = tr.historyStore.GetHistory(test.ID)
+	}
 	if err != nil {
 		return
 	}
@@ -698,16 +704,12 @@ func (tr *TestRunner) saveRunArchiveRecord(record *storage.RunArchiveRecord) err
 	return tr.archiveStore.SaveRunArchive(record)
 }
 
-func (tr *TestRunner) captureUsageSnapshotForTerminalRunLocked(testID string, projectID string) {
+func (tr *TestRunner) captureUsageSnapshotForTerminalRun(testID string, projectID string) {
 	if tr == nil || tr.usageStore == nil {
 		return
 	}
 	projectID = normalizeProjectID(projectID)
-	tests := make([]*ManagedTest, 0, len(tr.tests))
-	for _, test := range tr.tests {
-		tests = append(tests, test)
-	}
-	if _, err := tr.saveUsageAccountingSnapshotFromTests(projectID, tests); err != nil {
+	if _, err := tr.captureUsageSnapshotForCadence(projectID); err != nil {
 		slog.Warn("failed to save usage accounting snapshot", "test_id", testID, "project_id", projectID, "error", err)
 	}
 }

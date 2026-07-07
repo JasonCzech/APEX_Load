@@ -14,7 +14,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
-func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingConfig) {
+func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingConfig, logCfg dsl.LogConfig) {
 	if result == nil {
 		return
 	}
@@ -23,12 +23,30 @@ func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingC
 		result.NetworkProfile = networkProfileLabel(vu.Script.Config.WebRuntime.NetworkSimulation)
 	}
 	vu.mergeExtractions(result)
-	scrubSensitiveResult(result, vu.RedactionConfig)
+	scrubSensitiveResultWithOptions(result, vu.RedactionConfig, shouldRetainResultResponseBody(result, logCfg))
 	vu.Metrics.Record(result)
 	vu.handleSnapshot(result, errCfg)
 	if vu.ResultSink != nil {
 		_ = vu.ResultSink.RecordResult(result)
 	}
+}
+
+func shouldRetainResultResponseBody(result *protocol.Result, logCfg dsl.LogConfig) bool {
+	if result == nil || result.ResponseBody == "" {
+		return false
+	}
+	if !result.Success || result.Snapshot != nil {
+		return true
+	}
+	if strings.ToLower(strings.TrimSpace(logCfg.Level)) != "extended" {
+		return false
+	}
+	for _, option := range logCfg.ExtendedOptions {
+		if strings.TrimSpace(option) == "data_returned" {
+			return true
+		}
+	}
+	return false
 }
 
 func (vu *VUser) recordTransaction(name string, duration time.Duration, success bool, source *protocol.Result) {
@@ -294,7 +312,7 @@ func (vu *VUser) executeHTTPSequenceAction(ctx context.Context, action dsl.Actio
 		if result == nil {
 			continue
 		}
-		vu.recordResult(result, errCfg)
+		vu.recordResult(result, errCfg, dsl.LogConfig{})
 		copySequenceSourceResult(aggregate, result)
 		for key, value := range result.Extractions {
 			aggregate.Extractions[key] = value

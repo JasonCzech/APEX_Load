@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -151,6 +152,12 @@ func (j *JavaVuser) Execute(ctx context.Context, action *protocol.Action) (*prot
 		return result, nil
 	}
 	defer release()
+	queueWait := time.Since(start)
+	runStart := time.Now()
+	result.StartTime = runStart
+	if queueWait > 0 {
+		result.Extractions["java_vuser_queue_wait_ms"] = strconv.FormatInt(queueWait.Milliseconds(), 10)
+	}
 
 	timeout := actionTimeout(action, j.cfg.ActionTimeout)
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
@@ -195,7 +202,7 @@ func (j *JavaVuser) Execute(ctx context.Context, action *protocol.Action) (*prot
 		err = fmt.Errorf("java_vuser runner timed out after %s", timeout)
 	}
 	eventStream, eventStreamTruncated := readRunnerEventFile(eventFile)
-	finalizeResult(result, start, action, err, stdout.buf.String(), stderr.buf.String(), eventStream)
+	finalizeResult(result, runStart, action, err, stdout.buf.String(), stderr.buf.String(), eventStream)
 	if stdout.truncated {
 		result.ProtocolEvidence["runner_stdout_truncated"] = true
 	}
@@ -211,7 +218,7 @@ func (j *JavaVuser) Execute(ctx context.Context, action *protocol.Action) (*prot
 	return result, nil
 }
 
-const defaultRunnerMaxCaptureBytes = 8 << 20 // 8 MiB per stream
+const defaultRunnerMaxCaptureBytes = 256 << 10 // 256 KiB per stream
 
 // cappedBuffer captures up to max bytes and discards the rest. Write always
 // reports the full length so cmd.Run does not abort a still-running child with
@@ -390,11 +397,18 @@ func readRunnerEventFile(path string) (string, bool) {
 	if strings.TrimSpace(path) == "" {
 		return "", false
 	}
-	data, err := os.ReadFile(path)
+	file, err := os.Open(path)
 	if err != nil {
 		return "", false
 	}
-	if len(data) <= defaultRunnerMaxCaptureBytes {
+	defer file.Close()
+	var buf bytes.Buffer
+	n, err := io.Copy(&buf, io.LimitReader(file, int64(defaultRunnerMaxCaptureBytes)+1))
+	if err != nil {
+		return "", false
+	}
+	data := buf.Bytes()
+	if n <= int64(defaultRunnerMaxCaptureBytes) {
 		return string(data), false
 	}
 	return string(data[:defaultRunnerMaxCaptureBytes]), true

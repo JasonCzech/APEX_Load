@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 )
 
 type javaClass struct {
@@ -41,6 +43,7 @@ type javaStatement struct {
 var javaMethodHeaderRe = regexp.MustCompile(`(?m)(?:^|[\r\n])\s*(?:@[A-Za-z_][A-Za-z0-9_.]*(?:\s*\([^{};]*\))?\s*)*(?:public|private|protected)?\s*(?:(?:static|final|synchronized|native|strictfp|abstract)\s+)*(?:<[^{};()]+>\s*)?[A-Za-z_$][A-Za-z0-9_$.]*(?:\s*<[^{};()]+>)?(?:\s*\[\])*\s+([A-Za-z_][A-Za-z0-9_]*)\s*\([^;{}]*\)\s*(?:throws\s+[^{;]+)?\s*\{`)
 
 func parseJavaFile(filename string, content string) (javaClass, error) {
+	lineIndex := sourceview.NewLineIndex(content)
 	cls := javaClass{
 		File:    filename,
 		Imports: parseJavaImports(content),
@@ -64,14 +67,14 @@ func parseJavaFile(filename string, content string) (javaClass, error) {
 				Text:      strings.TrimSpace(content[match[0]:]),
 				Header:    strings.TrimSpace(content[match[0]:match[1]]),
 				File:      filename,
-				StartLine: javaLineForOffset(content, match[0]),
-				EndLine:   javaLineForOffset(content, len(content)),
+				StartLine: lineIndex.LineForOffset(match[0]),
+				EndLine:   lineIndex.LineForOffset(len(content)),
 			})
 			continue
 		}
 		body := content[open+1 : close]
-		startLine := javaLineForOffset(content, match[0])
-		endLine := javaLineForOffset(content, close)
+		startLine := lineIndex.LineForOffset(match[0])
+		endLine := lineIndex.LineForOffset(close)
 		method := javaMethod{
 			Name:      name,
 			File:      filename,
@@ -103,6 +106,7 @@ func parseJavaImports(content string) []string {
 }
 
 func parseJavaStatements(filename string, body string, baseLine int) []javaStatement {
+	lineIndex := sourceview.NewLineIndex(body)
 	statements := make([]javaStatement, 0)
 	start := 0
 	parenDepth := 0
@@ -174,7 +178,7 @@ func parseJavaStatements(filename string, body string, baseLine int) []javaState
 			}
 		case ';':
 			if parenDepth == 0 && bracketDepth == 0 {
-				appendJavaStatement(&statements, filename, body, start, i+1, baseLine, "", nil)
+				appendJavaStatement(&statements, filename, body, lineIndex, start, i+1, baseLine, "", nil)
 				start = i + 1
 			}
 		case '{':
@@ -184,18 +188,18 @@ func parseJavaStatements(filename string, body string, baseLine int) []javaState
 					continue
 				}
 				header := strings.TrimSpace(body[start:i])
-				children := parseJavaStatements(filename, body[i+1:close], baseLine+strings.Count(body[:i+1], "\n"))
-				appendJavaStatement(&statements, filename, body, start, close+1, baseLine, header, children)
+				children := parseJavaStatements(filename, body[i+1:close], baseLine+lineIndex.LineForOffset(i+1)-1)
+				appendJavaStatement(&statements, filename, body, lineIndex, start, close+1, baseLine, header, children)
 				i = close
 				start = close + 1
 			}
 		}
 	}
-	appendJavaStatement(&statements, filename, body, start, len(body), baseLine, "", nil)
+	appendJavaStatement(&statements, filename, body, lineIndex, start, len(body), baseLine, "", nil)
 	return statements
 }
 
-func appendJavaStatement(statements *[]javaStatement, filename string, body string, start int, end int, baseLine int, header string, children []javaStatement) {
+func appendJavaStatement(statements *[]javaStatement, filename string, body string, lineIndex sourceview.LineIndex, start int, end int, baseLine int, header string, children []javaStatement) {
 	if start < 0 {
 		start = 0
 	}
@@ -215,8 +219,8 @@ func appendJavaStatement(statements *[]javaStatement, filename string, body stri
 		Text:      text,
 		Header:    header,
 		File:      filename,
-		StartLine: baseLine + strings.Count(body[:start], "\n"),
-		EndLine:   baseLine + strings.Count(body[:end], "\n"),
+		StartLine: baseLine + lineIndex.LineForOffset(start) - 1,
+		EndLine:   baseLine + lineIndex.LineForOffset(end) - 1,
 		Children:  children,
 	})
 }
@@ -288,14 +292,4 @@ func findMatchingJavaBrace(content string, open int) int {
 		}
 	}
 	return -1
-}
-
-func javaLineForOffset(content string, offset int) int {
-	if offset < 0 {
-		offset = 0
-	}
-	if offset > len(content) {
-		offset = len(content)
-	}
-	return strings.Count(content[:offset], "\n") + 1
 }

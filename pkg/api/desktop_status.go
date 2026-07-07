@@ -56,7 +56,7 @@ func (s *Server) handleDesktopStatus(w http.ResponseWriter, _ *http.Request) {
 	recorderStatus := map[string]any{
 		"proxy_addr": s.recorder.ProxyAddr(),
 	}
-	if active := s.recorder.ActiveSession(); active != nil {
+	if active := s.recorder.ActiveSessionSummary(); active != nil {
 		recorderStatus["active_session_id"] = active.ID
 		recorderStatus["active_session_name"] = active.Name
 		recorderStatus["active_session_status"] = active.Status

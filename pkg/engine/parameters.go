@@ -455,13 +455,21 @@ func formatNumericValue(value int, param dsl.Parameter) string {
 }
 
 func generateRandomString(generator *rand.Rand, length int, charset string) string {
+	return generateRandomStringWithIntn(generator.Intn, length, charset)
+}
+
+func generateRandomStringGlobal(length int, charset string) string {
+	return generateRandomStringWithIntn(rand.Intn, length, charset)
+}
+
+func generateRandomStringWithIntn(intn func(int) int, length int, charset string) string {
 	letters := charset
 	if letters == "" {
 		letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	}
 	b := make([]byte, length)
 	for i := range b {
-		b[i] = letters[generator.Intn(len(letters))]
+		b[i] = letters[intn(len(letters))]
 	}
 	return string(b)
 }
@@ -543,15 +551,6 @@ func normalizeParameterValues(values []string) []string {
 	return normalized
 }
 
-// builtinRand returns the deterministic generator when one is supplied (replay)
-// and otherwise a fresh time-seeded generator, preserving load-run behavior.
-func builtinRand(rng *rand.Rand, now func() time.Time) *rand.Rand {
-	if rng != nil {
-		return rng
-	}
-	return rand.New(rand.NewSource(now().UnixNano()))
-}
-
 func resolveBuiltinFunction(expr string, now func() time.Time, rng *rand.Rand) (string, bool) {
 	switch expr {
 	case "fn.uuid()", "fn.uuid", "fn.uuid.v4":
@@ -559,8 +558,13 @@ func resolveBuiltinFunction(expr string, now func() time.Time, rng *rand.Rand) (
 	case "fake.uuid", "fake.uuid()":
 		return uuid.NewString(), true
 	case "fake.email", "fake.email()":
-		generator := builtinRand(rng, now)
-		localPart := strings.ToLower(generateRandomString(generator, 12, "abcdefghijklmnopqrstuvwxyz0123456789"))
+		localPart := ""
+		if rng != nil {
+			localPart = generateRandomString(rng, 12, "abcdefghijklmnopqrstuvwxyz0123456789")
+		} else {
+			localPart = generateRandomStringGlobal(12, "abcdefghijklmnopqrstuvwxyz0123456789")
+		}
+		localPart = strings.ToLower(localPart)
 		return localPart + "@example.test", true
 	case "fn.timestamp.unix":
 		return strconv.FormatInt(now().Unix(), 10), true
@@ -583,8 +587,10 @@ func resolveBuiltinFunction(expr string, now func() time.Time, rng *rand.Rand) (
 		if err != nil || min > max {
 			return "", false
 		}
-		generator := builtinRand(rng, now)
-		return strconv.Itoa(generator.Intn(max-min+1) + min), true
+		if rng != nil {
+			return strconv.Itoa(rng.Intn(max-min+1) + min), true
+		}
+		return strconv.Itoa(rand.Intn(max-min+1) + min), true
 	}
 
 	if strings.HasPrefix(expr, "fn.random_string(") && strings.HasSuffix(expr, ")") {
@@ -596,8 +602,10 @@ func resolveBuiltinFunction(expr string, now func() time.Time, rng *rand.Rand) (
 		if err != nil || length <= 0 {
 			return "", false
 		}
-		generator := builtinRand(rng, now)
-		return generateRandomString(generator, length, ""), true
+		if rng != nil {
+			return generateRandomString(rng, length, ""), true
+		}
+		return generateRandomStringGlobal(length, ""), true
 	}
 
 	return "", false

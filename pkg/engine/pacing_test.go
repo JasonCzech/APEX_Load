@@ -92,6 +92,27 @@ func TestTokenBucket(t *testing.T) {
 	}
 }
 
+func TestTokenBucketAddsTokensForElapsedIntervals(t *testing.T) {
+	tb := &TokenBucket{
+		tokens:   make(chan struct{}, 10),
+		interval: time.Millisecond,
+	}
+	tb.addTokensForElapsed(5*time.Millisecond + 500*time.Microsecond)
+
+	drained := 0
+	for {
+		select {
+		case <-tb.tokens:
+			drained++
+		default:
+			if drained != 5 {
+				t.Fatalf("drained tokens = %d, want 5", drained)
+			}
+			return
+		}
+	}
+}
+
 // TestNewTokenBucket_LargeTPS ensures a very large pacing.tps (which truncates
 // the fill interval to 0) does not panic the fill goroutine via NewTicker(0).
 func TestNewTokenBucket_LargeTPS(t *testing.T) {
