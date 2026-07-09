@@ -153,7 +153,7 @@ func csvFindingsRows(write reportCSVWriteFunc, section string, findings []Report
 }
 
 // csvSLARows writes the SLA compliance table as CSV rows.
-func csvSLARows(write reportCSVWriteFunc, section string, rows []slaComplianceRow) error {
+func csvSLARows(write reportCSVWriteFunc, section string, rows []SLAComplianceRow) error {
 	if len(rows) == 0 {
 		return csvNote(write, section, "No per-transaction SLA evidence was archived.")
 	}
@@ -197,7 +197,7 @@ func pdfFindingsLines(lines *[]string, findings []ReportFinding) {
 }
 
 // pdfSLALines appends the SLA compliance table as PDF lines.
-func pdfSLALines(lines *[]string, rows []slaComplianceRow) {
+func pdfSLALines(lines *[]string, rows []SLAComplianceRow) {
 	if len(rows) == 0 {
 		*lines = append(*lines, "No per-transaction SLA evidence was archived.")
 		return
