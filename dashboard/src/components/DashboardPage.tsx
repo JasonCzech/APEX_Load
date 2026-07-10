@@ -691,16 +691,30 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
         }),
       )
 
-    loadReports.then(entries => {
-      if (cancelled) return
-      setArchiveReports(prev => {
-        const next = { ...prev }
-        entries.forEach(([id, report]) => {
-          next[id] = report
+    loadReports
+      .then(entries => {
+        if (cancelled) return
+        setArchiveReports(prev => {
+          const next = { ...prev }
+          entries.forEach(([id, report]) => {
+            next[id] = report
+          })
+          return next
         })
-        return next
       })
-    })
+      .catch(() => {
+        if (cancelled) return
+        // The batch fetch rejected (5xx / auth / proxy). Mark these ids null so
+        // the release trend degrades gracefully AND the effect does not re-fire
+        // and throw another unhandled rejection on every dependency change.
+        setArchiveReports(prev => {
+          const next = { ...prev }
+          missingReports.forEach(test => {
+            if (!(test.id in next)) next[test.id] = null
+          })
+          return next
+        })
+      })
 
     return () => {
       cancelled = true

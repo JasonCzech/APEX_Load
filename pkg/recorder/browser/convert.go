@@ -591,9 +591,38 @@ func buildTimeline(session *Session, stepRange StepRange) []timelineEntry {
 			entries = append(entries, timelineEntry{timestamp: ws.OpenedAt, wsURL: ws.URL, wsOpen: true})
 		}
 	}
-	sort.SliceStable(entries, func(i, j int) bool { return entries[i].timestamp.Before(entries[j].timestamp) })
+	sort.SliceStable(entries, func(i, j int) bool {
+		ti, tj := entries[i].timestamp, entries[j].timestamp
+		if !ti.Equal(tj) {
+			return ti.Before(tj)
+		}
+		// A marker anchored to a step shares that step's exact timestamp. Break
+		// the tie by intent so the anchor step falls inside the transaction: a
+		// transaction-start marker must open before its anchor step, and a
+		// transaction-end marker must close after it. Without this, sort
+		// stability keeps steps (appended first) ahead of markers, so an
+		// anchored start lands after its step and excludes it from the
+		// transaction (and, with split-at-transactions, drops it entirely).
+		return timelineTieRank(entries[i]) < timelineTieRank(entries[j])
+	})
 	assignTimelineSections(entries)
 	return entries
+}
+
+// timelineTieRank orders entries that share an identical timestamp: a
+// transaction-start marker sorts before steps (rank 0), a transaction-end
+// marker sorts after steps (rank 2), and everything else (steps, navigations,
+// websocket frames, notes) keeps its relative order in the middle (rank 1).
+func timelineTieRank(entry timelineEntry) int {
+	if entry.marker != nil {
+		switch entry.marker.Kind {
+		case MarkerTransactionStart:
+			return 0
+		case MarkerTransactionEnd:
+			return 2
+		}
+	}
+	return 1
 }
 
 func markerIndexesForTimeline(markers []Marker, stepRange StepRange, lower, upper time.Time, haveLower, haveUpper bool) map[int]bool {

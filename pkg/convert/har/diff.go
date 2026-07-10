@@ -120,10 +120,19 @@ func Diff(baseline []byte, comparison []byte, opts ConvertOptions) (*DiffReport,
 }
 
 func correlationDiffKey(corr sample.Correlation) string {
-	return fmt.Sprintf("%s|%s|%s",
+	// Include the (uniquified) correlation Name so two distinct correlations that
+	// share source/expression/extract_type — e.g. a cart-id and an order-id both
+	// extracted via $.id from different steps — do not collide in the comparison
+	// map (the last would overwrite the first, comparing every same-keyed
+	// baseline correlation against one arbitrary value). Name is assigned
+	// deterministically in detection order (corr_id / corr_id_2), so it stays
+	// stable across baseline/comparison even when entry counts shift — unlike the
+	// step indexes the key deliberately omits.
+	return fmt.Sprintf("%s|%s|%s|%s",
 		strings.ToLower(strings.TrimSpace(corr.Source)),
 		strings.ToLower(strings.TrimSpace(corr.Expression)),
-		strings.ToLower(strings.TrimSpace(corr.ExtractType)))
+		strings.ToLower(strings.TrimSpace(corr.ExtractType)),
+		strings.ToLower(strings.TrimSpace(corr.Name)))
 }
 
 func correlationValue(corr sample.Correlation) string {

@@ -606,12 +606,24 @@ func javaAppendConditionalHeader(fn *ParsedFunction, branches map[string]string,
 		return
 	}
 	lname := strings.ToLower(strings.TrimSpace(key))
-	if prev, ok := branches[lname]; ok {
-		if branchKey != "" && prev != "" && prev != branchKey && javaBranchChain(prev) == javaBranchChain(branchKey) {
-			return // a different branch of the same if/else chain already set this header
+	// Track the first branch that set this header PER if/else chain, keyed by
+	// (header, chain). Within one chain the branches are mutually exclusive, so
+	// only the first branch's value is emitted (the alternative is deduped; the
+	// original source is preserved verbatim in fn.RawBlock for source review).
+	// Keying by chain rather than by header alone means a SECOND, independent
+	// if/else chain that sets the same header still dedups its OWN branches
+	// instead of re-emitting both — the incomplete-fix case that reintroduced the
+	// duplicate-header bug. Unconditional (branchKey "") and same-branch sets keep
+	// append semantics that legitimate multi-value headers rely on.
+	if branches != nil {
+		stateKey := lname + "\x00" + javaBranchChain(branchKey)
+		if prev, ok := branches[stateKey]; ok {
+			if branchKey != "" && prev != "" && prev != branchKey {
+				return // a different branch of the same if/else chain already set this header
+			}
+		} else {
+			branches[stateKey] = branchKey
 		}
-	} else if branches != nil {
-		branches[lname] = branchKey
 	}
 	javaAddParsedHeader(fn, key, value)
 }

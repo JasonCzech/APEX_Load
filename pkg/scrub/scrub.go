@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net/url"
 	"regexp"
 	"strings"
 )
@@ -58,16 +59,15 @@ var cookieHeaders = map[string]bool{
 // sensitiveParamPattern redacts token-bearing query string and form fields.
 var sensitiveParamPattern = regexp.MustCompile(`(?i)((?:^|[&?;\s])(?:password|passwd|secret|token|access_token|refresh_token|id_token|api_key|apikey|session|session_id|sessionid|auth|csrf|xsrf|client_secret|private_key)=)([^&\s;#"']+)`)
 
-// sensitiveJSONPattern redacts token-bearing JSON body fields. Note: this list is
-// deliberately narrower than sensitiveParamNames. Query-string/header values are
-// in transit, but JSON BODY fields are the primary source the correlation engine
-// captures-and-replays (the HAR/recorder pipelines scrub BEFORE correlation), so
-// classic correlation targets — session/sessionid/csrf/xsrf — must stay
-// un-redacted here or replay parameterization breaks (see pkg/convert/har
-// TestConvertHAR). Only unambiguous secrets that are never correlation keys are
-// added; "authorization" carries a Bearer token in a body and is one such case.
+// sensitiveJSONPattern redacts token-bearing JSON body fields. Correlation-time
+// replay reconstruction runs against the raw server-side recording sidecar and
+// the raw import content (not this scrubbed view), so session/CSRF tokens — live
+// credentials that were previously left un-redacted here for correlation — are
+// now redacted like any other secret. The structural redactor
+// (redactSensitiveJSON / sensitiveJSONFieldNames) handles valid JSON; this regex
+// is the fallback for JSON-ish bodies that do not parse strictly.
 var (
-	sensitiveJSONPattern = regexp.MustCompile(`(?i)("(?:authorization|password|passwd|secret|token|access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|apikey|client[_-]?secret|private[_-]?key)"\s*:\s*)("[^"]*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null)`)
+	sensitiveJSONPattern = regexp.MustCompile(`(?i)("(?:authorization|password|passwd|secret|token|access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|apikey|client[_-]?secret|private[_-]?key|session[_-]?id|session|csrf[_-]?token|csrf|xsrf[_-]?token|xsrf)"\s*:\s*)("[^"]*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null)`)
 	sensitiveXMLPattern  = regexp.MustCompile(`(?is)(<(?:[\w.-]+:)?(?:authorization|password|passwd|secret|token|access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|apikey|client[_-]?secret|private[_-]?key)\b[^>]*>)(.*?)(</(?:[\w.-]+:)?(?:authorization|password|passwd|secret|token|access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|apikey|client[_-]?secret|private[_-]?key)>)`)
 	sensitiveXMLAttr     = regexp.MustCompile(`(?is)(^|[^\w-])((?:authorization|password|passwd|secret|token|access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|apikey|client[_-]?secret|private[_-]?key)\s*=\s*")([^"]*)(")`)
 	multipartSecretPart  = regexp.MustCompile(`(?is)(Content-Disposition:\s*form-data;[^\r\n]*\bname="(?:authorization|password|passwd|secret|token|access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|apikey|client[_-]?secret|private[_-]?key)"[^\r\n]*(?:\r?\nContent-Type:[^\r\n]*)?\r?\n\r?\n)(.*?)(\r?\n--)`)
@@ -170,6 +170,17 @@ func Value(value string, policy Policy) string {
 	return cp.value(value)
 }
 
+// ValueURL scrubs a URL string: sensitive query parameters and custom rules are
+// applied, but the blanket JWT/high-entropy heuristics are skipped because they
+// corrupt hostnames and content-hashed paths (see compiledPolicy.valueURL).
+func ValueURL(value string, policy Policy) string {
+	if value == "" {
+		return value
+	}
+	cp, _ := policy.compile()
+	return cp.valueURL(value)
+}
+
 // value applies the built-in body/query token patterns and the policy's
 // pre-compiled custom rules to a string, reusing the compiled regexps.
 func (cp compiledPolicy) value(value string) string {
@@ -184,17 +195,84 @@ func (cp compiledPolicy) value(value string) string {
 	value = sensitiveXMLPattern.ReplaceAllString(value, "${1}"+Redacted+"${3}")
 	value = sensitiveXMLAttr.ReplaceAllString(value, "${1}${2}"+Redacted+"${4}")
 	value = multipartSecretPart.ReplaceAllString(value, "${1}"+Redacted+"${3}")
-	value = jwtPattern.ReplaceAllString(value, Redacted)
-	value = highEntropyToken.ReplaceAllStringFunc(value, func(candidate string) string {
+	value = redactBareTokens(value)
+	for _, rule := range cp.rules {
+		value = rule.pattern.ReplaceAllString(value, rule.replacement)
+	}
+	return value
+}
+
+// valueURL scrubs a URL: it redacts sensitive query parameters and applies
+// custom rules, but deliberately skips the blanket JWT/high-entropy heuristics.
+// Those match structurally on any three 8+-char dot-separated labels (every
+// multi-label hostname) and on any 24+-char base64-ish run (content-hashed
+// asset paths), so running them over a URL corrupts the host/path — replacing
+// the request URL itself with [REDACTED] and breaking HAR re-import — without
+// catching anything the query-param redaction does not already handle.
+func (cp compiledPolicy) valueURL(value string) string {
+	if value == "" {
+		return value
+	}
+	// Redact bare secret-shaped tokens (signed-URL signatures, OAuth codes and
+	// access tokens) in the query string and fragment — where opaque credentials
+	// live — WITHOUT running the blanket JWT/high-entropy heuristics over the
+	// scheme/host/path, which would mangle multi-label hostnames and
+	// content-hashed asset filenames. This catches secrets under param names not
+	// in sensitiveParamPattern's list (sig, code, ...) via entropy, and fragment
+	// params (e.g. #access_token=) the '=' param pattern misses.
+	if parsed, err := url.Parse(value); err == nil {
+		changedURL := false
+		if parsed.RawQuery != "" {
+			if red := redactBareTokens(parsed.RawQuery); red != parsed.RawQuery {
+				parsed.RawQuery = red
+				changedURL = true
+			}
+		}
+		if parsed.Fragment != "" {
+			if red := redactBareTokens(parsed.Fragment); red != parsed.Fragment {
+				parsed.RawFragment = red
+				parsed.Fragment = red
+				changedURL = true
+			}
+		}
+		if changedURL {
+			value = parsed.String()
+		}
+	}
+	value = sensitiveParamPattern.ReplaceAllString(value, "${1}"+Redacted)
+	for _, rule := range cp.rules {
+		value = rule.pattern.ReplaceAllString(value, rule.replacement)
+	}
+	return value
+}
+
+// redactBareTokens redacts JWTs and high-entropy secret-shaped runs that appear
+// as bare values (not inside a recognized named field). Both are gated on a
+// credential-shape heuristic so structural look-alikes — plain lowercase
+// hostnames like dashboard.internal.example (JWT shape) and low-entropy IDs —
+// are preserved, keeping scrubbed artifacts usable as evidence and re-import
+// inputs while still removing real tokens.
+func redactBareTokens(value string) string {
+	value = jwtPattern.ReplaceAllStringFunc(value, func(candidate string) string {
+		if looksLikeJWT(candidate) {
+			return Redacted
+		}
+		return candidate
+	})
+	return highEntropyToken.ReplaceAllStringFunc(value, func(candidate string) string {
 		if looksSensitiveToken(candidate) {
 			return Redacted
 		}
 		return candidate
 	})
-	for _, rule := range cp.rules {
-		value = rule.pattern.ReplaceAllString(value, rule.replacement)
-	}
-	return value
+}
+
+// looksLikeJWT reports whether a three-segment dotted match is a real JWT rather
+// than a coincidental hostname. Real JWTs are base64url encodings of JSON, so
+// the concatenated segments carry mixed case and digits at high entropy; a plain
+// hostname (all lowercase, no digits) does not, so it is preserved.
+func looksLikeJWT(candidate string) bool {
+	return looksSensitiveToken(strings.ReplaceAll(candidate, ".", ""))
 }
 
 func redactSensitiveJSON(value string) (string, bool) {
@@ -288,6 +366,16 @@ var sensitiveJSONFieldNames = map[string]bool{
 	"apikey":        true,
 	"clientsecret":  true,
 	"privatekey":    true,
+	// Live session/CSRF tokens: redacted here so a scrubbed body cannot leak
+	// them. Correlation-time replay reconstruction runs against the raw
+	// server-side sidecar / raw import content, not this scrubbed view, so
+	// redacting these no longer breaks parameterization.
+	"session":    true,
+	"sessionid":  true,
+	"csrf":       true,
+	"csrftoken":  true,
+	"xsrf":       true,
+	"xsrftoken":  true,
 }
 
 func sensitiveJSONFieldName(name string) bool {
@@ -356,7 +444,7 @@ func (cp compiledPolicy) scrubHAREntry(entry map[string]any) {
 		cp.scrubNameValueList(request, "cookies")
 		cp.scrubNameValueList(request, "queryString")
 		if rawURL, ok := request["url"].(string); ok {
-			request["url"] = cp.value(rawURL)
+			request["url"] = cp.valueURL(rawURL)
 		}
 		if postData, ok := request["postData"].(map[string]any); ok {
 			if text, ok := postData["text"].(string); ok {

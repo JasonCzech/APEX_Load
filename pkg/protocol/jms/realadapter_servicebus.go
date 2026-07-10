@@ -229,8 +229,8 @@ func serviceBusAwaitCorrelatedReply(ctx context.Context, receiver sbReplyReceive
 		if len(messages) == 0 {
 			continue
 		}
-		sawAbandoned := false
-		sawBudgetExhausted := false
+		sawFreshForeign := false
+		sawForeignChurn := false
 		for idx, sbMsg := range messages {
 			reply := fromServiceBusMessage(replyDestination, sbMsg)
 			if messaging.CorrelationMatches(request.CorrelationID, reply.CorrelationID) {
@@ -247,17 +247,20 @@ func serviceBusAwaitCorrelatedReply(ctx context.Context, receiver sbReplyReceive
 				}
 				return reply, nil
 			}
-			abandoned, err := serviceBusAbandonForeignReply(ctx, receiver, replyDestination, sbMsg, abandonCounts)
+			fresh, err := serviceBusAbandonForeignReply(ctx, receiver, replyDestination, sbMsg, abandonCounts)
 			if err != nil {
 				return message{}, err
 			}
-			if abandoned {
-				sawAbandoned = true
+			if fresh {
+				sawFreshForeign = true
 			} else {
-				sawBudgetExhausted = true
+				sawForeignChurn = true
 			}
 		}
-		if !sawAbandoned && sawBudgetExhausted {
+		// Back off only when this batch was pure redelivery churn (every foreign
+		// reply was one we have already abandoned repeatedly), to avoid a tight
+		// receive→abandon loop. The replies are always released above regardless.
+		if !sawFreshForeign && sawForeignChurn {
 			sleep := serviceBusReplyBackoff
 			if remaining := time.Until(deadline); remaining > 0 && remaining < sleep {
 				sleep = remaining
@@ -272,16 +275,19 @@ func serviceBusAwaitCorrelatedReply(ctx context.Context, receiver sbReplyReceive
 	return message{}, fmt.Errorf("no correlated JMS reply received from %q within %s", replyDestination, timeout)
 }
 
-func serviceBusAbandonForeignReply(ctx context.Context, receiver sbReplyReceiver, replyDestination string, sbMsg *azservicebus.ReceivedMessage, abandonCounts map[string]int) (bool, error) {
+// serviceBusAbandonForeignReply always abandons an uncorrelated (foreign) reply
+// so it is immediately redeliverable to its rightful requester — never holding
+// the peek-lock, which would starve that requester until the ~30–60s lock
+// expiry. The abandon count is used only to distinguish a fresh foreign message
+// from redelivery churn (fresh == count within the limit), so the caller can
+// back off on churn instead of busy-looping. The message is released either way.
+func serviceBusAbandonForeignReply(ctx context.Context, receiver sbReplyReceiver, replyDestination string, sbMsg *azservicebus.ReceivedMessage, abandonCounts map[string]int) (fresh bool, err error) {
 	key := serviceBusReplyMessageKey(sbMsg)
-	if abandonCounts[key] >= serviceBusForeignReplyAbandonLimit {
-		return false, nil
-	}
 	abandonCounts[key]++
 	if err := receiver.AbandonMessage(ctx, sbMsg, nil); err != nil {
 		return false, fmt.Errorf("abandon uncorrelated Service Bus reply from %q: %w", replyDestination, err)
 	}
-	return true, nil
+	return abandonCounts[key] <= serviceBusForeignReplyAbandonLimit, nil
 }
 
 func serviceBusReplyMessageKey(sbMsg *azservicebus.ReceivedMessage) string {

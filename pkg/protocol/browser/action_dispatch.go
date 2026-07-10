@@ -254,6 +254,10 @@ func (b *Browser) dispatchHandleDialog(action *protocol.Action, result *protocol
 		matchMode:       actionParamString(action.Params, "match_mode", "exact"),
 		promptText:      actionParamString(action.Params, "prompt_text", ""),
 		wait:            time.Duration(positiveActionParamInt(action.Params, "wait_ms", 1000)) * time.Millisecond,
+		// Strict by default (the dialog is expected on the next action). Scripts
+		// that arm the handler ahead of the triggering action pass
+		// expect_immediate:false so intermediate actions are not failed.
+		expectImmediate: actionParamBool(action.Params, "expect_immediate", true),
 	}
 	b.dialogMu.Unlock()
 	return nil, false

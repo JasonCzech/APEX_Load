@@ -58,6 +58,7 @@ func (b *Browser) applyDefaultConfig() {
 	b.clientCertificates = nil
 	b.captureScreenshots = ""
 	b.clientMetricsEnabled = false
+	b.autoActivatePopups = false
 	b.experienceCanary = false
 	b.selfHealMode = browserSelfHealReplayOnly
 	b.runMode = browserRunModeReplay
@@ -87,6 +88,9 @@ func (b *Browser) applyConfigOverrides(config map[string]any) {
 	}
 	if headless, ok := config["browser_headless"].(bool); ok {
 		b.headless = headless
+	}
+	if autoActivatePopups, ok := config["browser_auto_activate_popups"].(bool); ok {
+		b.autoActivatePopups = autoActivatePopups
 	}
 	if cacheEnabled, ok := config["browser_cache_enabled"].(bool); ok {
 		b.cacheEnabled = cacheEnabled

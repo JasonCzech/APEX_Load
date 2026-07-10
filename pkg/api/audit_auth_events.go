@@ -74,7 +74,7 @@ func (s *Server) recordAuthDenial(r *http.Request, resolution authResolution, st
 		return
 	}
 	actorType, actorSubject, actorDisplayName := s.resolveAuthEventActor(r, resolution)
-	if !s.authAudit.allow(authDenialThrottleKey(r, status, reason), time.Now().UTC(), authDenialDedupWindow) {
+	if !s.authAudit.allow(authDenialThrottleKey(r, authDenialTrustedIdentity(resolution), status, reason), time.Now().UTC(), authDenialDedupWindow) {
 		return
 	}
 	_ = s.store.SaveAuditEvent(&storage.AuditEvent{
@@ -96,23 +96,56 @@ func (s *Server) recordAuthDenial(r *http.Request, resolution authResolution, st
 	})
 }
 
-func authDenialThrottleKey(r *http.Request, status int, reason string) string {
-	remote := "unknown"
+// authDenialTrustedIdentity returns a stable identity for a denial ONLY when the
+// request resolved to a real principal (a known user or service account). An
+// attacker-supplied but unresolved subject (401 "unknown user subject") returns
+// "", so the throttle falls back to the remote host and cannot be flooded by
+// rotating the claimed subject.
+func authDenialTrustedIdentity(resolution authResolution) string {
+	if resolution.ServiceAccount != nil {
+		return "service-account:" + resolution.ServiceAccount.ID
+	}
+	if resolution.User != nil {
+		return "user:" + strings.TrimSpace(resolution.User.Subject)
+	}
+	return ""
+}
+
+func authDenialThrottleKey(r *http.Request, trustedIdentity string, status int, reason string) string {
 	method := ""
 	if r != nil {
-		remote = strings.TrimSpace(r.RemoteAddr)
-		if host, _, err := net.SplitHostPort(remote); err == nil && strings.TrimSpace(host) != "" {
-			remote = strings.TrimSpace(host)
-		}
 		method = r.Method
 	}
-	return strings.Join([]string{
-		remote,
-		method,
-		strconv.Itoa(status),
-		coarseAuthDenialReason(reason),
-		"denied",
-	}, "|")
+	// Bucket a denial for a resolved principal by that principal: the platform's
+	// primary deployment is trusted-header auth behind a proxy, where every
+	// request's RemoteAddr is the proxy IP — keying on RemoteAddr collapses all
+	// real users' denials into one bucket and hides per-insider forensic detail.
+	// The path is deliberately NOT in the key (in either branch): its cardinality
+	// is unbounded and attacker-controlled, so including it would let a single
+	// authenticated user (or an anonymous source) flood the audit log by rotating
+	// path segments. The full path is still recorded in the audit event's Details;
+	// the throttle only bounds duplicate (principal, method, status, reason)
+	// denials per window. Unresolved/anonymous requests fall back to the remote
+	// host as the identity.
+	identity := trustedIdentity
+	if identity == "" {
+		identity = authDenialRemoteHost(r)
+	}
+	return strings.Join([]string{identity, method, strconv.Itoa(status), coarseAuthDenialReason(reason), "denied"}, "|")
+}
+
+func authDenialRemoteHost(r *http.Request) string {
+	if r == nil {
+		return "unknown"
+	}
+	remote := strings.TrimSpace(r.RemoteAddr)
+	if host, _, err := net.SplitHostPort(remote); err == nil && strings.TrimSpace(host) != "" {
+		return strings.TrimSpace(host)
+	}
+	if remote == "" {
+		return "unknown"
+	}
+	return remote
 }
 
 func coarseAuthDenialReason(reason string) string {

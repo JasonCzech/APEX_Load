@@ -2141,25 +2141,30 @@ func correlationConfidence(correlations []correlate.Correlation, harEntries int)
 func addExtractorIfMissing(action *dsl.Action, extractor dsl.Extractor) {
 	for index := range action.Extractors {
 		if action.Extractors[index].Name == extractor.Name {
+			// "If missing": only fill fields the existing extractor leaves unset.
+			// Never overwrite an already-defined Source/Type/Expression (or the
+			// other fields), so a converter-tuned extractor is not silently
+			// replaced by a later same-named correlation carrying a generic
+			// expression that matches a different span.
 			if extractor.Convert != "" && action.Extractors[index].Convert == "" {
 				action.Extractors[index].Convert = extractor.Convert
 			}
-			if extractor.Source != "" {
+			if extractor.Source != "" && action.Extractors[index].Source == "" {
 				action.Extractors[index].Source = extractor.Source
 			}
-			if extractor.Type != "" {
+			if extractor.Type != "" && action.Extractors[index].Type == "" {
 				action.Extractors[index].Type = extractor.Type
 			}
-			if extractor.Expression != "" {
+			if extractor.Expression != "" && action.Extractors[index].Expression == "" {
 				action.Extractors[index].Expression = extractor.Expression
 			}
-			if extractor.OnMiss != "" {
+			if extractor.OnMiss != "" && action.Extractors[index].OnMiss == "" {
 				action.Extractors[index].OnMiss = extractor.OnMiss
 			}
-			if extractor.SaveOffset != 0 {
+			if extractor.SaveOffset != 0 && action.Extractors[index].SaveOffset == 0 {
 				action.Extractors[index].SaveOffset = extractor.SaveOffset
 			}
-			if extractor.SaveLength != 0 {
+			if extractor.SaveLength != 0 && action.Extractors[index].SaveLength == 0 {
 				action.Extractors[index].SaveLength = extractor.SaveLength
 			}
 			return

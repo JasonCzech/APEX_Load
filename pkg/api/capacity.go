@@ -341,6 +341,15 @@ func (tr *TestRunner) setCachedGeneratorInventory(entries []GeneratorInventoryEn
 	tr.liveInventoryAt = now.UTC()
 }
 
+// cachedLiveAvailableGeneratorCount returns the live-available generator count
+// from the cached fleet inventory, or nil when the source isn't
+// configured_plus_live or the cache is stale/empty. It MUST stay cheap and
+// lock-free of any network I/O: capacity gates call it while holding tr.mu
+// (evaluateQuotaBlockLocked / evaluateReservedCapacityBlockLocked), so a
+// synchronous fleet probe here would stall the whole control plane. The cache is
+// kept warm out-of-band by the background inventory-refresh cadence (see
+// Server.startGeneratorInventoryRefreshCadence), so it stays fresh even on a
+// headless controller with no dashboard traffic.
 func (tr *TestRunner) cachedLiveAvailableGeneratorCount(now time.Time) *int {
 	if tr == nil || tr.settings.CapacityPlanning.Availability.Source != capacityAvailabilityConfiguredPlusLive {
 		return nil

@@ -22,6 +22,15 @@ const (
 )
 
 func writeRunArchiveReportPDFWithProfile(report *RunArchiveReport, writer io.Writer, profileID string) error {
+	return writeRunArchiveReportPDFWithProfileAndAnnotations(report, writer, profileID, nil, nil)
+}
+
+// writeRunArchiveReportPDFWithProfileAndAnnotations renders the PDF with the
+// analyst-saved annotations (verdict override / official outcome) and the
+// generator-assignment manifest, so the exported audit PDF matches the HTML
+// report instead of showing the auto-derived outcome and a "manifest
+// unavailable" note.
+func writeRunArchiveReportPDFWithProfileAndAnnotations(report *RunArchiveReport, writer io.Writer, profileID string, annotations *ReportAnnotations, manifest *TestRunManifest) error {
 	profile, ok := lookupRunArchiveReportProfile(profileID)
 	if !ok {
 		return fmt.Errorf("unknown report profile %q", profileID)
@@ -29,7 +38,7 @@ func writeRunArchiveReportPDFWithProfile(report *RunArchiveReport, writer io.Wri
 	if !runArchiveReportProfileSupportsFormat(profile, "pdf") {
 		return fmt.Errorf("report profile %q does not support pdf export", profile.ID)
 	}
-	lines := buildRunArchiveReportPDFLines(report, profile)
+	lines := buildRunArchiveReportPDFLines(report, profile, annotations, manifest)
 	_, err := writer.Write(renderTextPDF(lines))
 	return err
 }
@@ -48,7 +57,7 @@ func runArchiveReportProfileSupportsFormat(profile RunArchiveReportProfile, form
 // profile's SectionOrder (gated by IncludedSections) through the shared section
 // registry, so the profile metadata is the single source of truth for which
 // sections appear and in what order.
-func buildRunArchiveReportPDFLines(report *RunArchiveReport, profile RunArchiveReportProfile) []string {
+func buildRunArchiveReportPDFLines(report *RunArchiveReport, profile RunArchiveReportProfile, annotations *ReportAnnotations, manifest *TestRunManifest) []string {
 	lines := []string{
 		"APEX Load Archive Report",
 		"Profile: " + profile.Label,
@@ -68,7 +77,7 @@ func buildRunArchiveReportPDFLines(report *RunArchiveReport, profile RunArchiveR
 		)
 	}
 
-	data := buildRunArchiveReportRenderData(report, profile, nil, nil)
+	data := buildRunArchiveReportRenderData(report, profile, annotations, manifest)
 	for _, section := range reportSectionsForProfile(profile) {
 		section.PDF(&data, &lines)
 	}
@@ -261,6 +270,20 @@ func escapePDFText(value string) string {
 	return value
 }
 
+// pdfASCIITransliterations maps common non-ASCII punctuation to ASCII so report
+// CONTENT (transaction names, analyst verdict text, annotations — which often
+// carry copy-pasted curly quotes, en/em-dashes, ellipses, or non-breaking
+// spaces) renders sensibly in the ASCII-only PDF writer instead of as '?'.
+var pdfASCIITransliterations = map[rune]string{
+	'–': "-", '—': "-", '−': "-", // en/em dash, minus
+	'‘': "'", '’': "'", '‚': "'", '′': "'", // single quotes / prime
+	'“': "\"", '”': "\"", '„': "\"", '″': "\"", // double quotes
+	'…': "...",     // ellipsis
+	' ': " ",       // non-breaking space
+	'•': "*",       // bullet
+	'«': "<<", '»': ">>", // guillemets
+}
+
 func pdfASCIIText(value string) string {
 	var out strings.Builder
 	for _, r := range value {
@@ -270,7 +293,11 @@ func pdfASCIIText(value string) string {
 		case r >= 32 && r <= 126:
 			out.WriteRune(r)
 		default:
-			out.WriteByte('?')
+			if replacement, ok := pdfASCIITransliterations[r]; ok {
+				out.WriteString(replacement)
+			} else {
+				out.WriteByte('?')
+			}
 		}
 	}
 	return strings.TrimRight(out.String(), " ")

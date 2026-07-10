@@ -851,12 +851,26 @@ func (tr *TestRunner) PauseTest(id string) error {
 	tr.mu.Lock()
 	test.Status = "PAUSED"
 	if test.LiveMetrics != nil {
-		test.LiveMetrics.ActiveVUsers = 0
-		for _, group := range test.LiveMetrics.GroupMetrics {
-			if group != nil {
-				group.VUsers = 0
+		// Pointer-swap a copy with the VUser counts zeroed rather than mutating
+		// the shared *LiveMetrics in place: the same object is the newest element
+		// of test.History and is handed (by pointer) to concurrent HTTP/websocket
+		// readers, so an in-place write both races those reads (a Go data race)
+		// and retroactively zeroes the VUser counts of the last recorded history
+		// interval. Every other LiveMetrics update swaps the pointer too.
+		paused := *test.LiveMetrics
+		paused.ActiveVUsers = 0
+		if len(paused.GroupMetrics) > 0 {
+			clonedGroups := make(map[string]*GroupLiveMetrics, len(paused.GroupMetrics))
+			for name, group := range paused.GroupMetrics {
+				cloned := cloneGroupLiveMetrics(group)
+				if cloned != nil {
+					cloned.VUsers = 0
+				}
+				clonedGroups[name] = cloned
 			}
+			paused.GroupMetrics = clonedGroups
 		}
+		test.LiveMetrics = &paused
 	}
 	tr.mu.Unlock()
 

@@ -916,7 +916,12 @@ func resolveImportProjectIDFromJSONOrForm(r *http.Request, store storage.Store) 
 	if strings.HasPrefix(contentType, "application/json") {
 		return resolveImportProjectIDFromJSON(r, store)
 	}
-	return "", http.StatusBadRequest, "project_id is required for project-scoped import access"
+	// Raw-body uploads (text/yaml, text/xml, application/zip, or no Content-Type)
+	// are a supported import path: the handlers read the raw body directly and
+	// take project_id from the query string. Honor the query parameter so
+	// project-scoped users keep the raw-body upload path (a 400 here locked them
+	// out of it entirely). reconcileImportProjectID still 400s when it is absent.
+	return reconcileImportProjectID(r.URL.Query().Get("project_id"), "", "query parameter")
 }
 
 func reconcileImportProjectID(queryProjectID string, bodyProjectID string, bodySource string) (string, int, string) {

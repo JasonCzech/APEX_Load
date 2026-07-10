@@ -66,6 +66,7 @@ type Server struct {
 	authAudit                auditThrottle
 	fanoutCancel             context.CancelFunc
 	fanoutSub                FanoutSubscription
+	generatorInventoryCancel context.CancelFunc
 	generatorDiscovery       *generatorDiscovery
 	discoveryCancel          context.CancelFunc
 	k8sRestart               K8sRestartSettings
@@ -993,6 +994,7 @@ func (s *Server) Start() error {
 
 	s.startRecorderProxy()
 	s.startUsageAccountingSnapshotCadence()
+	s.startGeneratorInventoryRefreshCadence()
 	s.startAuditRetentionCadence()
 	s.startTimeslotRetentionCadence()
 	s.startAccessReviewNotifierCadence()
@@ -1182,6 +1184,10 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		s.discoveryCancel()
 		s.discoveryCancel = nil
 	}
+	if s.generatorInventoryCancel != nil {
+		s.generatorInventoryCancel()
+		s.generatorInventoryCancel = nil
+	}
 	if s.fanoutSub != nil {
 		_ = s.fanoutSub.Close()
 		s.fanoutSub = nil
@@ -1241,12 +1247,21 @@ func (s *Server) startCacheFanout() {
 			if len(envelope.Payload) == 0 {
 				continue
 			}
-			s.hub.broadcastLocal(hubBroadcast{
+			broadcast := hubBroadcast{
 				payload:      envelope.Payload,
 				testID:       envelope.TestID,
 				projectID:    envelope.ProjectID,
 				broadcastAll: envelope.BroadcastAll && envelope.TestID == "" && envelope.ProjectID == "",
-			})
+			}
+			// Backward compatibility during a rolling HA upgrade: an envelope from
+			// a not-yet-upgraded replica carries no top-level routing fields, so
+			// fall back to the scoping embedded in the message payload (the
+			// pre-envelope wire format) rather than dropping it for every scoped
+			// subscriber.
+			if envelope.TestID == "" && envelope.ProjectID == "" && !envelope.BroadcastAll {
+				broadcast = newHubBroadcast(envelope.Payload)
+			}
+			s.hub.broadcastLocal(broadcast)
 		}
 	}()
 }
@@ -1265,6 +1280,46 @@ func (s *Server) startUsageAccountingSnapshotCadence() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		s.runner.RunUsageAccountingSnapshotCadence(ctx, ticker.C)
+	}()
+}
+
+// generatorInventoryRefreshInterval keeps the cached fleet inventory well within
+// its TTL so capacity gates read fresh data without probing under tr.mu.
+const generatorInventoryRefreshInterval = defaultGeneratorSnapshotTTL / 2
+
+// startGeneratorInventoryRefreshCadence periodically refreshes the cached
+// generator inventory out-of-band. Capacity/launch gates read that cache under
+// tr.mu and must never probe the fleet synchronously themselves; without this
+// cadence the cache is only populated by dashboard/inventory HTTP traffic, so a
+// headless controller (scheduled runs, CI launches) would fall back to
+// configured-only capacity and over-admit when generators are down. Only runs
+// when live availability actually feeds admission.
+func (s *Server) startGeneratorInventoryRefreshCadence() {
+	if s == nil || s.runner == nil || s.generatorInventoryCancel != nil {
+		return
+	}
+	if s.runner.settings.CapacityPlanning.Availability.Source != capacityAvailabilityConfiguredPlusLive {
+		return
+	}
+	if _, ok := s.runner.getExecutionBackend().(inventoryExecutionBackend); !ok {
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	s.generatorInventoryCancel = cancel
+	go func() {
+		// Prime the cache immediately so the first gate after startup sees live
+		// data, then refresh on the cadence.
+		s.systemInventory(ctx)
+		ticker := time.NewTicker(generatorInventoryRefreshInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				s.systemInventory(ctx)
+			}
+		}
 	}()
 }
 

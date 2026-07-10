@@ -128,6 +128,10 @@ type BrowserRecordingSession struct {
 	mu      sync.RWMutex
 	backend browserRecorderBackend
 	final   *recbrowser.Session
+	// curated is set once an operator edits the stopped artifact (delete step,
+	// exclude, mark, promote selector). A late-arriving backend artifact must not
+	// clobber those edits.
+	curated bool
 }
 
 // BrowserRecordingManager owns the controller's headed-browser recordings: one
@@ -763,7 +767,13 @@ func mutateStoppedArtifactStep(session *BrowserRecordingSession, mutate func(*re
 	if session.final == nil {
 		return nil, fmt.Errorf("recording has no stopped artifact")
 	}
-	return mutate(session.final)
+	step, err := mutate(session.final)
+	if err == nil {
+		// Mark the artifact curated so a late graceful-stop artifact cannot
+		// overwrite these operator edits in finishStop.
+		session.curated = true
+	}
+	return step, err
 }
 
 // SuggestTransactions derives transaction-boundary suggestions from the
@@ -877,7 +887,12 @@ func (m *BrowserRecordingManager) finishStop(session *BrowserRecordingSession) {
 	now := time.Now()
 	session.mu.Lock()
 	if session.Status != BrowserRecordingStopping {
-		if final != nil {
+		// A late graceful-stop artifact arrived after the session was already
+		// force-finished. Adopt it only if the operator has NOT curated the
+		// synthesized artifact in the meantime (marked a step secret, excluded or
+		// deleted a step, promoted a selector); otherwise it would silently
+		// discard those edits — e.g. re-exposing a password fill marked secret.
+		if final != nil && !session.curated {
 			session.final = recoverLateBrowserRecordingArtifact(session.final, final)
 		}
 		session.mu.Unlock()

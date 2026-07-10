@@ -210,6 +210,53 @@ func TestConvertHARCorrelatesRawBeforeScrub(t *testing.T) {
 	}
 }
 
+// TestConvertHARRedactsSecretShapedSampleValueInResponse locks in that a
+// credential-shaped correlated value is redacted in the response's
+// correlations[].sample_value (matching the "scrubbed" governance marker) while
+// the script is still parameterized from the raw value. Regression guard for
+// the raw-sample-value-in-a-scrubbed-response leak.
+func TestConvertHARRedactsSecretShapedSampleValueInResponse(t *testing.T) {
+	token := "AbCdEf0123456789GhIjKlMn0Z" // 26 chars, mixed case + digits, high entropy
+	har := `{
+  "log": {
+    "entries": [
+      {
+        "request": {"method": "POST", "url": "https://api.example.test/login", "headers": []},
+        "response": {
+          "status": 200,
+          "headers": [{"name": "Content-Type", "value": "application/json"}],
+          "content": {"text": "{\"access_token\":\"` + token + `\"}"}
+        }
+      },
+      {
+        "request": {"method": "GET", "url": "https://api.example.test/orders?access_token=` + token + `", "headers": []},
+        "response": {"status": 200, "content": {"text": "{\"ok\":true}"}}
+      }
+    ]
+  }
+}`
+	result, err := Convert([]byte(har), ConvertOptions{ScriptName: "Redacted Sample"})
+	if err != nil {
+		t.Fatalf("Convert: %v", err)
+	}
+	if len(result.Correlations) != 1 {
+		t.Fatalf("correlations = %#v, want one correlation", result.Correlations)
+	}
+	if result.Correlations[0].SampleValue == token {
+		t.Fatalf("response sample_value leaked the raw secret-shaped token %q", token)
+	}
+	if result.Governance == nil || result.Governance.Sensitivity != "scrubbed" {
+		t.Fatalf("governance = %#v, want scrubbed marker", result.Governance)
+	}
+	// The script must still be parameterized from the raw value, not leak it.
+	if !strings.Contains(result.Script.Actions[1].Target, "{{var.") {
+		t.Fatalf("second action target = %q, want correlated value parameterized", result.Script.Actions[1].Target)
+	}
+	if strings.Contains(result.Script.Actions[1].Target, token) {
+		t.Fatalf("second action target leaked raw token: %q", result.Script.Actions[1].Target)
+	}
+}
+
 func TestDiffClassifiesDynamicHARCorrelations(t *testing.T) {
 	baseline := []byte(dynamicHAR("cart-111111"))
 	comparison := []byte(dynamicHAR("cart-222222"))

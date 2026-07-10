@@ -15,7 +15,7 @@ import (
 func redactBaselineObservation(obs correlate.Observation) storage.ScriptRecordingObservation {
 	return storage.ScriptRecordingObservation{
 		ID:              obs.ID,
-		RequestURL:      scrub.Value(obs.RequestURL, scrub.Policy{}),
+		RequestURL:      scrub.ValueURL(obs.RequestURL, scrub.Policy{}),
 		RequestBody:     scrub.Value(obs.RequestBody, scrub.Policy{}),
 		RequestHeaders:  scrub.Headers(obs.RequestHeaders, scrub.Policy{}),
 		ResponseBody:    scrub.Value(obs.ResponseBody, scrub.Policy{}),
@@ -32,6 +32,22 @@ func rawBaselineObservation(obs correlate.Observation) storage.ScriptRecordingOb
 		ResponseBody:    obs.ResponseBody,
 		ResponseHeaders: obs.ResponseHeaders,
 	}
+}
+
+// scrubRepairSuggestions redacts the literal recorded/replay values carried on
+// correlation repair suggestions before they leave the server. Detection runs
+// on the raw baseline sidecar for accuracy, but a suggestion's RecordedValue /
+// ReplayValue can be a live credential (a password or bearer token is exactly
+// the kind of dynamic value the detector flags), and the diagnostic only needs
+// to name the field and extractor — not echo the secret to the client.
+// scrub.Value leaves non-secret values (numeric IDs, CSRF-style correlation
+// keys) intact, so the diagnostic stays useful.
+func scrubRepairSuggestions(suggestions []correlate.RepairSuggestion) []correlate.RepairSuggestion {
+	for i := range suggestions {
+		suggestions[i].RecordedValue = scrub.Value(suggestions[i].RecordedValue, scrub.Policy{})
+		suggestions[i].ReplayValue = scrub.Value(suggestions[i].ReplayValue, scrub.Policy{})
+	}
+	return suggestions
 }
 
 // persistRecordedBaseline stores a scrubbed recorded baseline view plus a raw

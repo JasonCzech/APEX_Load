@@ -781,7 +781,7 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		user.DisabledAt = &now
 	}
 	if err := s.store.SaveUser(user); err != nil {
-		if s.writeUserSubjectPersistenceError(w, subject, err) {
+		if s.writeUserSubjectPersistenceError(w, subject, user.ID, err) {
 			return
 		}
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -819,7 +819,14 @@ func isSQLiteBusyError(err error) bool {
 	return strings.Contains(msg, "sqlite_busy") || strings.Contains(msg, "database is locked")
 }
 
-func (s *Server) writeUserSubjectPersistenceError(w http.ResponseWriter, subject string, err error) bool {
+// writeUserSubjectPersistenceError maps a SaveUser failure to a client response.
+// A genuine unique-subject violation is a 409. A transient SQLITE_BUSY is
+// disambiguated by polling GetUserBySubject: a 409 is only reported if the
+// subject is now held by a DIFFERENT user (another request won the create race).
+// excludeID is the id of the user being written; on an update whose subject is
+// unchanged, the user's own row already exists under that subject, so excluding
+// it prevents a transient lock from being reported as a bogus duplicate 409.
+func (s *Server) writeUserSubjectPersistenceError(w http.ResponseWriter, subject string, excludeID string, err error) bool {
 	if isUserSubjectConflict(err) {
 		writeError(w, http.StatusConflict, "a user with this subject already exists")
 		return true
@@ -829,7 +836,7 @@ func (s *Server) writeUserSubjectPersistenceError(w http.ResponseWriter, subject
 	}
 	for i := 0; i < 5; i++ {
 		time.Sleep(time.Duration(i+1) * 10 * time.Millisecond)
-		if existing, lookupErr := s.store.GetUserBySubject(subject); lookupErr == nil && existing != nil {
+		if existing, lookupErr := s.store.GetUserBySubject(subject); lookupErr == nil && existing != nil && existing.ID != excludeID {
 			writeError(w, http.StatusConflict, "a user with this subject already exists")
 			return true
 		}
@@ -902,7 +909,7 @@ func (s *Server) handleOnboardUser(w http.ResponseWriter, r *http.Request) {
 		bindings = append(bindings, binding)
 	}
 	if err := onboardingStore.SaveUserWithRoleBindings(user, bindings); err != nil {
-		if s.writeUserSubjectPersistenceError(w, subject, err) {
+		if s.writeUserSubjectPersistenceError(w, subject, user.ID, err) {
 			return
 		}
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -945,9 +952,15 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	if req.Active != nil && !*req.Active && user.Active && !s.guardSystemAdminLockout(w, r, user, "disable") {
+	deactivating := req.Active != nil && !*req.Active && user.Active
+	if deactivating && !s.guardSystemAdminLockout(w, r, user, "disable") {
 		return
 	}
+	// Run ALL validation (including the subject-change checks) BEFORE persisting
+	// anything, so a request that ultimately 4xx/5xxs does not leave a partial
+	// mutation. Previously the atomic deactivation was committed first, so a
+	// {active:false, subject:"taken"} request disabled the user and then returned
+	// 409 for the subject conflict.
 	if nextSubject := strings.TrimSpace(req.Subject); nextSubject != "" && nextSubject != strings.TrimSpace(user.Subject) {
 		if s.isSelfRequest(r, user) {
 			writeError(w, http.StatusConflict, "you cannot rename your own account subject")
@@ -963,6 +976,25 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		}
 		user.Subject = nextSubject
 	}
+	// The guardSystemAdminLockout check above is a non-atomic read-then-act fast
+	// path; enforce the last-admin invariant atomically at the storage layer so
+	// two concurrent disables of the last two admins cannot both succeed through
+	// this update route (the same guard setUserActive/DeleteUser already use).
+	// This is the first persisting step, and it runs only after every validation
+	// above has passed.
+	if deactivating {
+		if guardedStore, ok := s.store.(guardedAuthMutationStore); ok {
+			updated, err := guardedStore.UpdateUserActiveGuardLastAdmin(user.ID, false, time.Now().UTC())
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			if !updated {
+				writeError(w, http.StatusConflict, "cannot disable the last active system administrator")
+				return
+			}
+		}
+	}
 	user.Email = strings.TrimSpace(req.Email)
 	user.DisplayName = strings.TrimSpace(req.DisplayName)
 	user.UpdatedAt = time.Now().UTC()
@@ -976,7 +1008,7 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err := s.store.SaveUser(user); err != nil {
-		if s.writeUserSubjectPersistenceError(w, user.Subject, err) {
+		if s.writeUserSubjectPersistenceError(w, user.Subject, user.ID, err) {
 			return
 		}
 		writeError(w, http.StatusInternalServerError, err.Error())

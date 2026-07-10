@@ -281,9 +281,6 @@ func ensureArchiveMaterialized(record *storage.RunArchiveRecord) error {
 	if strings.TrimSpace(record.ManifestPath) == "" {
 		record.ManifestPath = filepath.Join(localRoot, "manifest.json")
 	}
-	if err := os.WriteFile(record.ManifestPath, manifestData, 0o644); err != nil {
-		return err
-	}
 	var manifest RunArchiveManifest
 	if err := json.Unmarshal(manifestData, &manifest); err != nil {
 		return err
@@ -307,6 +304,14 @@ func ensureArchiveMaterialized(record *storage.RunArchiveRecord) error {
 			return fmt.Errorf("download archive artifact %s: %w", artifact, err)
 		}
 	}
+	// Write manifest.json LAST and atomically, so the "manifest.json exists"
+	// idempotency guard at the top only short-circuits once every artifact is
+	// fully materialized. If any artifact download above failed the manifest is
+	// never written, forcing a clean re-materialization instead of serving a
+	// truncated transactions.jsonl as if the archive were complete.
+	if err := writeFileAtomic(record.ManifestPath, manifestData, 0o644); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -316,15 +321,57 @@ func downloadArchiveObjectToFile(ctx context.Context, bucket *blob.Bucket, key s
 		return err
 	}
 	defer reader.Close()
-	file, err := os.Create(localPath)
+	// Stream to a temp file and atomically rename on success so a mid-stream
+	// failure (transient network error mid-download) never leaves a truncated
+	// file at the final path. A line-boundary truncation would otherwise be
+	// consumed silently by the JSONL readers as a complete-but-short artifact.
+	tmp, err := os.CreateTemp(filepath.Dir(localPath), ".apexload-archive-*.tmp")
 	if err != nil {
 		return err
 	}
-	defer file.Close()
-	if _, err := io.Copy(file, reader); err != nil {
+	tmpPath := tmp.Name()
+	defer func() {
+		tmp.Close()
+		os.Remove(tmpPath) // no-op after a successful rename
+	}()
+	if _, err := io.Copy(tmp, reader); err != nil {
 		return err
 	}
-	return file.Sync()
+	if err := tmp.Sync(); err != nil {
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, localPath)
+}
+
+// writeFileAtomic writes data to a temp file in the destination directory and
+// atomically renames it into place, so a crash or error mid-write never leaves a
+// partial file at path.
+func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".apexload-tmp-*")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	defer func() {
+		tmp.Close()
+		os.Remove(tmpPath) // no-op after a successful rename
+	}()
+	if _, err := tmp.Write(data); err != nil {
+		return err
+	}
+	if err := tmp.Chmod(perm); err != nil {
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, path)
 }
 
 func (b archiveBackendRuntime) validate() error {

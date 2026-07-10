@@ -6,8 +6,11 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.Base64;
+import java.util.Deque;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.concurrent.atomic.AtomicLong;
 
 public final class lr {
     public static final int PASS = 0;
@@ -21,7 +24,17 @@ public final class lr {
 
     private static final Map<String, String> parameters = new ConcurrentHashMap<>();
     private static final Map<String, Long> timers = new ConcurrentHashMap<>();
+    // Explicit per-transaction status overrides set via set_transaction /
+    // set_transaction_status. An entry here wins over LR_AUTO error inference.
     private static final Map<String, Integer> transactionStatus = new ConcurrentHashMap<>();
+    // Value of errorCount observed when each still-open transaction started, so
+    // LR_AUTO can fail a transaction that saw an error while it was open.
+    private static final Map<String, Long> transactionStartErrors = new ConcurrentHashMap<>();
+    // Currently-open transactions in start order (top = current transaction),
+    // for lr_set_transaction_status's "current/open transaction" semantics.
+    private static final Deque<String> openTransactions = new ConcurrentLinkedDeque<>();
+    // Monotonic count of errors raised via lr.error_message during this run.
+    private static final AtomicLong errorCount = new AtomicLong();
 
     private lr() {
     }
@@ -104,7 +117,7 @@ public final class lr {
         String name = valueAt(args, 0);
         int status = resolveTransactionStatus(name, intAt(args, 1, AUTO));
         emit("transaction_end", name, Integer.toString(status));
-        transactionStatus.put(name, status);
+        closeTransaction(name);
         return status;
     }
 
@@ -121,11 +134,12 @@ public final class lr {
         String name = valueAt(args, 0);
         int status = resolveTransactionStatus(name, intAt(args, 1, AUTO));
         emit("transaction_end", name, Integer.toString(status));
-        transactionStatus.put(name, status);
+        closeTransaction(name);
         return status;
     }
 
     public static int error_message(Object... args) {
+        errorCount.incrementAndGet();
         emit("error", "", join(args));
         return FAIL;
     }
@@ -313,6 +327,12 @@ public final class lr {
 
     public static int set_transaction_status(Object... args) {
         int status = intAt(args, 0, AUTO);
+        // lr_set_transaction_status sets the status of the open transaction(s).
+        // Record it as an explicit override so a subsequent end_transaction with
+        // LR_AUTO honors it instead of inferring pass/fail from error events.
+        for (String name : openTransactions) {
+            transactionStatus.put(name, status);
+        }
         emit("transaction_status", "", Integer.toString(status));
         return status;
     }
@@ -323,6 +343,7 @@ public final class lr {
 
     public static int start_sub_transaction(Object... args) {
         String name = valueAt(args, 0);
+        openTransaction(name);
         emit("transaction_start", name, "sub");
         return PASS;
     }
@@ -336,13 +357,21 @@ public final class lr {
 
     public static int start_transaction(Object... args) {
         String name = valueAt(args, 0);
+        openTransaction(name);
         emit("transaction_start", name, "");
         return PASS;
     }
 
     public static int think_time(double seconds) {
         long millis = Math.round(Math.max(0.0, seconds) * 1000.0);
+        millis = effectiveThinkTimeMillis(millis);
         emit("think_time", "", Long.toString(millis));
+        // The whole Vuser class runs inside a single java_vuser_run protocol
+        // action, so the engine cannot re-insert pacing between lr.think_time
+        // calls. The pause has to happen here in the JVM or it is lost entirely.
+        if (millis > 0L) {
+            return sleepMillis(millis);
+        }
         return PASS;
     }
 
@@ -437,11 +466,66 @@ public final class lr {
         }
     }
 
-    private static int resolveTransactionStatus(String name, int status) {
-        if (status == AUTO) {
-            return transactionStatus.getOrDefault(name, PASS);
+    private static void openTransaction(String name) {
+        if (name == null) {
+            name = "";
         }
-        return status;
+        transactionStartErrors.put(name, errorCount.get());
+        transactionStatus.remove(name);
+        openTransactions.push(name);
+    }
+
+    private static void closeTransaction(String name) {
+        if (name == null) {
+            name = "";
+        }
+        openTransactions.remove(name);
+        transactionStartErrors.remove(name);
+        transactionStatus.remove(name);
+    }
+
+    private static int resolveTransactionStatus(String name, int requested) {
+        // An explicit end status (LR_PASS/LR_FAIL/LR_STOP) always wins.
+        if (requested != AUTO) {
+            return requested;
+        }
+        // LR_AUTO: honor an explicit override from lr_set_transaction[_status]...
+        Integer override = transactionStatus.get(name);
+        if (override != null && override != AUTO) {
+            return override;
+        }
+        // ...otherwise fail the transaction if an error was raised while it was
+        // open (LoadRunner LR_AUTO semantics), else pass.
+        Long startErrors = transactionStartErrors.get(name);
+        if (startErrors != null && errorCount.get() > startErrors) {
+            return FAIL;
+        }
+        return PASS;
+    }
+
+    private static long effectiveThinkTimeMillis(long requestedMillis) {
+        if (requestedMillis <= 0L) {
+            return 0L;
+        }
+        // Runtime-settings escape hatches so the controller can disable or cap
+        // think time for a stress run without re-importing the script.
+        if (boolFromEnv("APEXLOAD_IGNORE_THINK_TIME")) {
+            return 0L;
+        }
+        long limit = (long) intFromEnv("APEXLOAD_THINK_TIME_LIMIT_MS", 0);
+        if (limit > 0L && requestedMillis > limit) {
+            return limit;
+        }
+        return requestedMillis;
+    }
+
+    private static boolean boolFromEnv(String name) {
+        String raw = System.getenv(name);
+        if (raw == null) {
+            return false;
+        }
+        raw = raw.trim();
+        return raw.equals("1") || raw.equalsIgnoreCase("true") || raw.equalsIgnoreCase("yes");
     }
 
     private static double doubleAt(Object[] args, int index, double fallback) {

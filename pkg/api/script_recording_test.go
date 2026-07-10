@@ -16,7 +16,7 @@ func TestRedactBaselineObservation(t *testing.T) {
 		RequestURL:     "/api/login",
 		RequestBody:    `{"username":"alice","password":"hunter2","csrf":"tok-keep"}`,
 		RequestHeaders: map[string]string{"Authorization": "Basic dXNlcjpwdw==", "X-CSRF-Token": "csrf-keep"},
-		ResponseBody:   `{"session_id":"sess-keep","token":"abc"}`,
+		ResponseBody:   `{"session_id":"sess-keep","token":"abc","user_role":"admin"}`,
 	}
 
 	got := redactBaselineObservation(obs)
@@ -24,17 +24,21 @@ func TestRedactBaselineObservation(t *testing.T) {
 	if got.ID != 3 {
 		t.Errorf("ID must be preserved as the action index, got %d", got.ID)
 	}
-	// Credentials stripped on the request side.
+	// Credentials stripped on the request side; non-secret fields survive.
 	if strings.Contains(got.RequestBody, "hunter2") {
 		t.Errorf("password leaked into baseline: %q", got.RequestBody)
+	}
+	if !strings.Contains(got.RequestBody, "alice") {
+		t.Errorf("non-secret username must be preserved in persisted view: %q", got.RequestBody)
 	}
 	if got.RequestHeaders["Authorization"] != "[REDACTED]" {
 		t.Errorf("Basic auth must be redacted, got %q", got.RequestHeaders["Authorization"])
 	}
-	// JSON CSRF body fields are preserved by the generic body scrubber; request
-	// headers are scrubbed as persisted artifact metadata.
-	if !strings.Contains(got.RequestBody, "tok-keep") {
-		t.Errorf("CSRF in body must be preserved: %q", got.RequestBody)
+	// Live session/CSRF tokens are redacted in the persisted (scrubbed) view —
+	// including in JSON bodies — because correlation-time replay reconstruction
+	// uses the raw sidecar (rawBaselineObservation) below, not this view.
+	if strings.Contains(got.RequestBody, "tok-keep") {
+		t.Errorf("CSRF token in body must be redacted in the persisted view: %q", got.RequestBody)
 	}
 	if got.RequestHeaders["X-CSRF-Token"] != "[REDACTED]" {
 		t.Errorf("CSRF header must be redacted in persisted baselines, got %q", got.RequestHeaders["X-CSRF-Token"])
@@ -42,8 +46,18 @@ func TestRedactBaselineObservation(t *testing.T) {
 	if strings.Contains(got.ResponseBody, `"token":"abc"`) {
 		t.Errorf("response token leaked into persisted baseline: %q", got.ResponseBody)
 	}
-	if !strings.Contains(got.ResponseBody, "sess-keep") {
-		t.Errorf("response non-secret value should be preserved in persisted view: %q", got.ResponseBody)
+	if strings.Contains(got.ResponseBody, "sess-keep") {
+		t.Errorf("session_id must be redacted in the persisted view: %q", got.ResponseBody)
+	}
+	if !strings.Contains(got.ResponseBody, "admin") {
+		t.Errorf("non-secret response field must be preserved in persisted view: %q", got.ResponseBody)
+	}
+
+	// The raw server-side sidecar preserves the live session/CSRF values so
+	// correlation and record-vs-replay diagnosis still work.
+	raw := rawBaselineObservation(obs)
+	if !strings.Contains(raw.ResponseBody, "sess-keep") || !strings.Contains(raw.RequestBody, "tok-keep") {
+		t.Errorf("raw correlation sidecar must preserve session/csrf: req=%q resp=%q", raw.RequestBody, raw.ResponseBody)
 	}
 }
 

@@ -13,11 +13,18 @@ import (
 const (
 	httpCacheMaxEntries   = 256
 	httpCacheMaxBodyBytes = 2 * 1024 * 1024
+	// httpCacheMaxTotalBytes bounds the aggregate size of one VUser's cache.
+	// Each VUser gets its own HTTP protocol instance (hence its own cache), so
+	// without a total-byte budget the entry-count × per-entry caps alone allow
+	// ~512MiB per VUser (256 × 2MiB), which a fleet of VUsers caching multi-MB
+	// assets can multiply into an OOM.
+	httpCacheMaxTotalBytes = 32 * 1024 * 1024
 )
 
 type httpResponseCache struct {
-	mu      sync.Mutex
-	entries map[string]httpCacheEntry
+	mu         sync.Mutex
+	entries    map[string]httpCacheEntry
+	totalBytes int64
 }
 
 type httpCacheEntry struct {
@@ -65,13 +72,45 @@ func (c *httpResponseCache) store(req *http.Request, resp *http.Response, body [
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if len(c.entries) >= httpCacheMaxEntries {
-		for key := range c.entries {
-			delete(c.entries, key)
+	c.putLocked(httpCacheKey(req), entry)
+}
+
+// putLocked inserts/replaces an entry and enforces both the entry-count cap and
+// the aggregate-byte budget, evicting the oldest entries first. Caller holds mu.
+func (c *httpResponseCache) putLocked(key string, entry httpCacheEntry) {
+	if old, ok := c.entries[key]; ok {
+		c.totalBytes -= old.size()
+		delete(c.entries, key)
+	}
+	c.entries[key] = entry
+	c.totalBytes += entry.size()
+	for len(c.entries) > 0 && (len(c.entries) > httpCacheMaxEntries || c.totalBytes > httpCacheMaxTotalBytes) {
+		oldestKey := ""
+		var oldest time.Time
+		for k, e := range c.entries {
+			if oldestKey == "" || e.storedAt.Before(oldest) {
+				oldestKey, oldest = k, e.storedAt
+			}
+		}
+		if oldestKey == "" {
 			break
 		}
+		c.totalBytes -= c.entries[oldestKey].size()
+		delete(c.entries, oldestKey)
 	}
-	c.entries[httpCacheKey(req)] = entry
+}
+
+// size estimates the memory footprint of a cache entry: the body plus the
+// header key/value bytes.
+func (e httpCacheEntry) size() int64 {
+	size := int64(len(e.body))
+	for key, values := range e.header {
+		size += int64(len(key))
+		for _, value := range values {
+			size += int64(len(value))
+		}
+	}
+	return size
 }
 
 func (c *httpResponseCache) refresh(req *http.Request, stale *httpCacheEntry, resp *http.Response, now time.Time) {
@@ -95,7 +134,7 @@ func (c *httpResponseCache) refresh(req *http.Request, stale *httpCacheEntry, re
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.entries[httpCacheKey(req)] = entry
+	c.putLocked(httpCacheKey(req), entry)
 }
 
 func (e *httpCacheEntry) addConditionalHeaders(req *http.Request) {

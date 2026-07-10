@@ -16,6 +16,12 @@ const (
 	runCalendarDefaultWindow       = 30 * 24 * time.Hour
 	runCalendarMaxEvents           = 2000
 	runCalendarMaxProjectedPerCron = 1000
+	// calendarOccurrenceLookbackFloor is the minimum amount by which the
+	// occurrence fetch reaches before the requested window's start, so an
+	// occurrence that began earlier but runs into the window (e.g. an overnight
+	// soak) is still returned and overlap-filtered. Widened further when a
+	// scenario's configured duration exceeds it.
+	calendarOccurrenceLookbackFloor = 25 * time.Hour
 )
 
 type RunCalendarResponse struct {
@@ -514,6 +520,7 @@ func (tr *TestRunner) runCalendarSnapshot(projectID string, from time.Time, to t
 	tr.mu.RLock()
 	schedules := make([]*storage.ScenarioSchedule, 0)
 	scenarios := make(map[string]runCalendarScenarioSummary, len(tr.scenarios))
+	var maxScenarioDuration time.Duration
 	for _, scenario := range tr.scenarios {
 		if scenario == nil {
 			continue
@@ -521,6 +528,9 @@ func (tr *TestRunner) runCalendarSnapshot(projectID string, from time.Time, to t
 		scenarioProjectID := normalizeProjectID(scenario.ProjectID)
 		if projectID != "" && scenarioProjectID != projectID {
 			continue
+		}
+		if parsed, err := time.ParseDuration(scenario.Duration); err == nil && parsed > maxScenarioDuration {
+			maxScenarioDuration = parsed
 		}
 		groups := make([]TestGroup, 0, len(scenario.Scripts))
 		totalVUsers := 0
@@ -555,12 +565,24 @@ func (tr *TestRunner) runCalendarSnapshot(projectID string, from time.Time, to t
 	store := tr.scenarioStore
 	tr.mu.RUnlock()
 
+	// The window queries filter on planned_at >= from, but an occurrence planned
+	// before `from` can still run INTO the window (its EndAt = planned_at +
+	// scenario duration), e.g. an overnight soak. Widen the lower bound of the
+	// fetch by the longest scenario duration (with a floor that covers common
+	// overnight runs) so those boundary-spanning occurrences are returned;
+	// BuildRunCalendar then trims by precise overlap, so over-fetching is safe.
+	queryLookback := maxScenarioDuration
+	if queryLookback < calendarOccurrenceLookbackFloor {
+		queryLookback = calendarOccurrenceLookbackFloor
+	}
+	queryFrom := from.Add(-queryLookback)
+
 	occurrences := make([]*storage.ScenarioScheduleOccurrence, 0)
 	if store != nil {
 		var storedOccurrences []*storage.ScenarioScheduleOccurrence
 		var err error
 		if windowStore, ok := store.(scenarioScheduleOccurrenceWindowStore); ok {
-			storedOccurrences, err = windowStore.ListScenarioScheduleOccurrencesByTimeRange(projectID, from, to)
+			storedOccurrences, err = windowStore.ListScenarioScheduleOccurrencesByTimeRange(projectID, queryFrom, to)
 		} else {
 			storedOccurrences, err = store.ListAllScenarioScheduleOccurrences()
 		}
@@ -585,7 +607,7 @@ func (tr *TestRunner) runCalendarSnapshot(projectID string, from time.Time, to t
 	if planStore := tr.execPlanScheduleStore; planStore != nil {
 		windowOccurrencesLoaded := false
 		if windowStore, ok := planStore.(executionPlanScheduleOccurrenceWindowStore); ok {
-			if occ, err := windowStore.ListExecutionPlanScheduleOccurrencesByTimeRange(projectID, from, to); err == nil {
+			if occ, err := windowStore.ListExecutionPlanScheduleOccurrencesByTimeRange(projectID, queryFrom, to); err == nil {
 				for _, o := range occ {
 					if o != nil {
 						planOccurrences = append(planOccurrences, o)

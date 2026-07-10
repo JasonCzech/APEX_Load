@@ -289,6 +289,10 @@ func (tr *TestRunner) loadStoredTestHistory(test *ManagedTest) {
 		history, err = tr.historyStore.GetHistory(test.ID)
 	}
 	if err != nil {
+		// Best-effort at startup, but never swallow silently: a dialect break
+		// here (e.g. a Postgres-incompatible query) would otherwise blank every
+		// run's history with no trace.
+		slog.Warn("failed to load stored test history", "test_id", test.ID, "error", err)
 		return
 	}
 	for _, entry := range history {

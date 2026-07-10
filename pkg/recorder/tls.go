@@ -515,8 +515,16 @@ func (r *Recorder) forwardHTTPS(tlsConn net.Conn, clientReader *bufio.Reader, cl
 		responseWriter = chunked
 		closeResponseWriter = chunked.Close
 	}
-	respBody, respBodySize, respBodyTruncated, _ := copyAndCaptureBody(responseWriter, resp.Body, responseCaptureLimit(session))
+	respBody, respBodySize, respBodyTruncated, copyErr := copyAndCaptureBody(responseWriter, resp.Body, responseCaptureLimit(session))
 	closeResponseWriter()
+	// When the response was framed with a fixed Content-Length but the upstream
+	// body came up short (connection reset mid-body, or the server lied about the
+	// length), fewer bytes than declared were written. Close the TLS connection
+	// so the recorded browser stops waiting for the missing bytes instead of
+	// stalling on a half-delivered response until its own timeout.
+	if copyErr != nil && resp.ContentLength >= 0 {
+		_ = tlsConn.Close()
+	}
 	elapsed := time.Since(start)
 
 	// Record the request if there is an active session.

@@ -150,9 +150,11 @@ func TestHarnessJarHasMainClassEntrypoint(t *testing.T) {
 	}
 }
 
-func TestLRThinkTimeEmitsEventWithoutSleeping(t *testing.T) {
-	// Measure only the JVM run (runDur), not javac compilation + process setup:
-	// cold javac alone is seconds and would swamp any think_time budget.
+func TestLRThinkTimeSleepsAndEmitsEvent(t *testing.T) {
+	// The whole Vuser class runs inside one java_vuser_run protocol action, so
+	// the engine cannot re-insert pacing between lr.think_time calls: the pause
+	// must happen in the JVM or pacing is silently dropped. Measure only the JVM
+	// run (runDur), not javac compilation + process setup.
 	stdout, stderr, runDur, err := runHarnessFixtureWithInputTimed(t, `import lrapi.lr;
 
 public class Actions {
@@ -163,14 +165,84 @@ public class Actions {
 	if err != nil {
 		t.Fatalf("Harness failed: %v\nstdout:\n%s\nstderr:\n%s", err, stdout, stderr)
 	}
-	// think_time(2.0) that slept would push the run past ~2s; event-only pacing
-	// leaves just JVM startup (~0.5s). 1.5s cleanly separates the two while
-	// tolerating slow/cold JVM starts on CI.
-	if runDur > 1500*time.Millisecond {
-		t.Fatalf("lr.think_time slept for %s; want event-only pacing", runDur)
+	// think_time(2.0) must actually pace ~2s. Allow generous JVM-startup slack on
+	// the upper bound; the lower bound (1.5s) proves the sleep happened and is
+	// well clear of a no-op event-only run (~0.5s of pure startup).
+	if runDur < 1500*time.Millisecond {
+		t.Fatalf("lr.think_time only took %s; want it to sleep for the requested pacing", runDur)
 	}
 	if !strings.Contains(stderr, `"type":"think_time"`) || !strings.Contains(stderr, `"message":"2000"`) {
 		t.Fatalf("stderr = %s, want think_time event with milliseconds", stderr)
+	}
+}
+
+func TestLRThinkTimeHonorsIgnoreEnv(t *testing.T) {
+	// APEXLOAD_IGNORE_THINK_TIME lets the controller disable pacing for a stress
+	// run without re-importing the script; the event is still emitted.
+	t.Setenv("APEXLOAD_IGNORE_THINK_TIME", "1")
+	stdout, stderr, runDur, err := runHarnessFixtureWithInputTimed(t, `import lrapi.lr;
+
+public class Actions {
+  public int action() {
+    return lr.think_time(2.0);
+  }
+}`, `{"class_name":"Actions","method":"full_lifecycle"}`+"\n")
+	if err != nil {
+		t.Fatalf("Harness failed: %v\nstdout:\n%s\nstderr:\n%s", err, stdout, stderr)
+	}
+	if runDur > 1500*time.Millisecond {
+		t.Fatalf("lr.think_time slept for %s with ignore-think-time set; want no pacing", runDur)
+	}
+	if !strings.Contains(stderr, `"type":"think_time"`) || !strings.Contains(stderr, `"message":"0"`) {
+		t.Fatalf("stderr = %s, want think_time event reporting 0ms", stderr)
+	}
+}
+
+func TestLRAutoTransactionFailsWhenErrorRaisedDuringTransaction(t *testing.T) {
+	// LoadRunner LR_AUTO fails a transaction if an error was raised while it was
+	// open. Regression guard for the "Java false-success" P0: end_transaction
+	// with LR_AUTO after lr.error_message must emit a FAIL (status 1) so the Go
+	// adapter marks the run failed instead of reporting success.
+	stdout, stderr, err := runHarnessFixture(t, `import lrapi.lr;
+
+public class Actions {
+  public int action() {
+    lr.start_transaction("Login");
+    lr.error_message("login failed");
+    lr.end_transaction("Login", lr.AUTO);
+    return lr.PASS;
+  }
+}`)
+	if err != nil {
+		t.Fatalf("Harness failed: %v\nstdout:\n%s\nstderr:\n%s", err, stdout, stderr)
+	}
+	if !strings.Contains(stderr, `"type":"transaction_end"`) ||
+		!strings.Contains(stderr, `"name":"Login"`) ||
+		!strings.Contains(stderr, `"message":"1"`) {
+		t.Fatalf("stderr = %s, want transaction_end Login with FAIL status 1", stderr)
+	}
+}
+
+func TestLRAutoTransactionPassesWhenErrorPrecedesTransaction(t *testing.T) {
+	// An error raised before the transaction opened must not fail it: LR_AUTO
+	// only fails on errors during the transaction's own window.
+	stdout, stderr, err := runHarnessFixture(t, `import lrapi.lr;
+
+public class Actions {
+  public int action() {
+    lr.error_message("earlier failure");
+    lr.start_transaction("Checkout");
+    lr.end_transaction("Checkout", lr.AUTO);
+    return lr.PASS;
+  }
+}`)
+	if err != nil {
+		t.Fatalf("Harness failed: %v\nstdout:\n%s\nstderr:\n%s", err, stdout, stderr)
+	}
+	if !strings.Contains(stderr, `"type":"transaction_end"`) ||
+		!strings.Contains(stderr, `"name":"Checkout"`) ||
+		!strings.Contains(stderr, `"message":"0"`) {
+		t.Fatalf("stderr = %s, want transaction_end Checkout with PASS status 0", stderr)
 	}
 }
 

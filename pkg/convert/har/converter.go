@@ -74,6 +74,13 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 			governanceWarnings = append(governanceWarnings, "HAR scrub-on-write did not produce a scrubbed sensitivity marker.")
 		}
 	}
+	// Correlation detection deliberately runs against the raw HAR so dynamic
+	// values (which scrubbing would either redact or preserve inconsistently) are
+	// caught and parameterized out of the generated script. But the detected
+	// sample values ride along in the response (result.Correlations[].SampleValue
+	// and the parameterization suggestions), so when redaction is enabled they
+	// must be scrubbed before returning — otherwise a live token surfaces in a
+	// payload whose governance block claims Sensitivity="scrubbed".
 	result, err := sample.Convert(sample.ImportRequest{
 		Name:    convertutil.FirstNonEmpty(opts.ScriptName, "Imported_HAR_Script"),
 		Format:  "har",
@@ -88,6 +95,17 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 	})
 	if err != nil {
 		return nil, err
+	}
+	if redactionEnabled {
+		// The script and source review are already parameterized/scrubbed by the
+		// converter; the detected correlation sample values are the last raw
+		// secrets riding in the response. Redact secret-shaped samples so the
+		// payload matches its Sensitivity="scrubbed" governance marker. This runs
+		// after script generation, so the internal (json:"-") raw Value used to
+		// parameterize the script is unaffected.
+		for i := range result.Correlations {
+			result.Correlations[i].SampleValue = scrub.Value(result.Correlations[i].SampleValue, scrub.Policy{})
+		}
 	}
 	warnings := append([]string{}, result.Warnings...)
 	warnings = append(warnings, governanceWarnings...)

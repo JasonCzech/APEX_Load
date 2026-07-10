@@ -210,9 +210,15 @@ func (a *App) desktopBounds() virtualDesktopBounds {
 	if primaryH <= 0 {
 		primaryH = maxH
 	}
+	// A secondary monitor may sit on any side of the primary, and the aggregate
+	// screen metrics do not reveal the arrangement. Span both directions: from
+	// all-secondary-left (MinX/MinY) to all-secondary-right/below (MaxX = totalW,
+	// MaxY = totalH). Deriving the max edge from MinX+Width would place it at the
+	// primary's right edge and wrongly recenter a window on a right/below monitor
+	// on every launch. Width/Height stay the total extent for the size clamp.
 	minX := -(totalW - primaryW)
 	minY := -(totalH - primaryH)
-	return virtualDesktopBounds{MinX: minX, MinY: minY, Width: totalW, Height: totalH}
+	return virtualDesktopBounds{MinX: minX, MinY: minY, MaxX: totalW, MaxY: totalH, Width: totalW, Height: totalH}
 }
 
 // captureWindowState reads the current geometry for persistence.

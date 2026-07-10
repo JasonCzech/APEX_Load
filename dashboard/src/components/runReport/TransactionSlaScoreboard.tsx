@@ -151,17 +151,26 @@ export default function TransactionSlaScoreboard({
           </tbody>
         </table>
       </div>
-      <table className="sr-only" aria-label="Complete transaction SLA scoreboard">
-        <tbody>
-          {filteredRows.map(row => (
-            <tr key={row.name}>
-              <td>{row.name}</td>
-              <td>{row.volume}</td>
-              <td>{row.result_kind}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {/*
+        The screen-reader mirror renders every filtered row, so it is only worth
+        it for small sets: when the visible table is virtualized (large set) this
+        full hidden table would rebuild O(n) DOM nodes on every filter keystroke,
+        negating the virtualization it sits beside. For large sets the virtualized
+        table's own rows carry the accessible content.
+      */}
+      {!virtualizeRows && (
+        <table className="sr-only" aria-label="Complete transaction SLA scoreboard">
+          <tbody>
+            {filteredRows.map(row => (
+              <tr key={row.name}>
+                <td>{row.name}</td>
+                <td>{row.volume}</td>
+                <td>{row.result_kind}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
       <div className="run-report-drilldown">
         <h3>{selectedAction || 'Select a transaction'}</h3>
         {loadingTransactions ? (

@@ -406,6 +406,53 @@ func TestConvertSession_UsesRawHeadersForCorrelationWithoutLeakingUnmatchedSecre
 	}
 }
 
+// TestConvertSession_PartialHeaderCorrelationKeepsRedacted locks in that when a
+// correlation matches only a substring of a redacted secret header, leaving
+// live credential material around the {{var}}, the header stays redacted rather
+// than splicing the un-correlated remainder of the secret into the script.
+func TestConvertSession_PartialHeaderCorrelationKeepsRedacted(t *testing.T) {
+	s := &Session{
+		ID:      "test",
+		Name:    "Partial Header Correlation",
+		BaseURL: "http://example.com",
+		Requests: []RecordedRequest{
+			{
+				Seq:          1,
+				Method:       "POST",
+				URL:          "http://example.com/login",
+				Path:         "/login",
+				Host:         "example.com",
+				StatusCode:   200,
+				ResponseBody: `{"auth":{"access_token":"tok-abcdef123456"}}`,
+			},
+			{
+				Seq:        2,
+				Method:     "GET",
+				URL:        "http://example.com/account",
+				Path:       "/account",
+				Host:       "example.com",
+				StatusCode: 200,
+				Headers:    map[string]string{"Authorization": "[redacted]"},
+				// The correlated token is only a substring; the rest of the raw
+				// header ("residualsecretmaterial") is un-correlated live secret.
+				RawHeaders: map[string]string{"Authorization": "Bearer tok-abcdef123456 residualsecretmaterial"},
+			},
+		},
+	}
+
+	result := ConvertSession(s, "")
+	if len(result.Correlations) != 1 {
+		t.Fatalf("correlations = %#v, want the access token correlated", result.Correlations)
+	}
+	got := result.Script.Actions[1].Headers["Authorization"]
+	if strings.Contains(got, "residualsecretmaterial") {
+		t.Fatalf("authorization header leaked residual raw secret: %q", got)
+	}
+	if got != "[redacted]" {
+		t.Fatalf("authorization header = %q, want it kept redacted (partial correlation must not splice raw secret)", got)
+	}
+}
+
 func TestConvertSession_StaticFiltered(t *testing.T) {
 	s := &Session{
 		ID:      "test",

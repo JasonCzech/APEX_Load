@@ -207,7 +207,7 @@ func pdfSLALines(lines *[]string, rows []SLAComplianceRow) {
 		if row.HasSLA {
 			sla = fmt.Sprintf("%.0f ms", row.SLAMs)
 		}
-		*lines = append(*lines, fmt.Sprintf("- %s: %s tx, p95 %.0f ms, SLA %s, %.2f%% errors — %s",
+		*lines = append(*lines, fmt.Sprintf("- %s: %s tx, p95 %.0f ms, SLA %s, %.2f%% errors - %s",
 			row.Name, formatPDFInt(row.Volume), row.P95Ms, sla, row.ErrorPct, row.Result))
 	}
 }
@@ -235,7 +235,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 	add(reportSectionRenderer{ID: "verdict", Label: "Verdict",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
 			pdfHeading(lines, "Verdict")
-			*lines = append(*lines, fmt.Sprintf("%s — %s", d.Verdict.Status, d.Verdict.Explanation), "")
+			*lines = append(*lines, fmt.Sprintf("%s - %s", d.Verdict.Status, d.Verdict.Explanation), "")
 		},
 		CSV: func(d *runArchiveHTMLReportData, write reportCSVWriteFunc) error {
 			if err := write("verdict", "", "status", d.Verdict.Status); err != nil {
@@ -246,7 +246,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 	add(reportSectionRenderer{ID: "official_outcome", Label: "Official Outcome",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
 			pdfHeading(lines, "Official Outcome")
-			*lines = append(*lines, fmt.Sprintf("%s — %s", d.Verdict.Status, d.Verdict.Explanation), "")
+			*lines = append(*lines, fmt.Sprintf("%s - %s", d.Verdict.Status, d.Verdict.Explanation), "")
 		},
 		CSV: func(d *runArchiveHTMLReportData, write reportCSVWriteFunc) error {
 			if err := write("official_outcome", "", "status", d.Verdict.Status); err != nil {
@@ -1134,7 +1134,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 			appendPDFValueLine(lines, "Prepared by", d.Annotations.PreparedBy)
 			appendPDFValueLine(lines, "Updated by", d.Annotations.UpdatedBy)
 			if strings.TrimSpace(d.Annotations.VerdictOverride) != "" {
-				appendPDFValueLine(lines, "Verdict override", d.Annotations.VerdictOverride+" — "+d.Annotations.VerdictExplanation)
+				appendPDFValueLine(lines, "Verdict override", d.Annotations.VerdictOverride+" - "+d.Annotations.VerdictExplanation)
 			}
 			*lines = append(*lines, "")
 		},

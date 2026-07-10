@@ -25,7 +25,13 @@ func (b *Browser) dispatchWaitResponse(ctx context.Context, action *protocol.Act
 	if err != nil {
 		return nil, failBrowserAction(result, err.Error())
 	}
-	_, networkStart := b.eventOffsets()
+	// Scan from the start of the PREVIOUS action (the trigger), not this wait
+	// action's start: a response fired by the trigger frequently completes during
+	// that trigger's own finalization, before this wait begins, and scanning only
+	// newer entries would miss it and spin until timeout.
+	b.mu.Lock()
+	networkStart := b.waitResponseScanStart
+	b.mu.Unlock()
 	timeoutMS := actionParamInt(action.Params, "timeout_ms", 0)
 	if timeoutMS < 0 {
 		return nil, failBrowserAction(result, "browser_wait_response params.timeout_ms must be >= 0")

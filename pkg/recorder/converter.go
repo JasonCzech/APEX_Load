@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -226,14 +227,54 @@ func correlatedRecordedHeaders(req RecordedRequest, captureCookies bool, corrMap
 	rawHeaders := filterRecordedHeaders(req.RawHeaders, captureCookies)
 	for key, rawValue := range rawHeaders {
 		correlated := applyCorrelationVars(rawValue, corrMap)
-		if correlated != rawValue {
-			headers[key] = correlated
+		if correlated == rawValue {
+			continue // nothing in the raw value correlated
 		}
+		redactedValue, ok := headers[key]
+		// When the raw header value was redacted (its redacted view differs from
+		// raw, i.e. it carried secret material), only adopt the raw-derived
+		// correlated value if the correlation consumed the secret and left behind
+		// nothing but recognized non-secret scaffolding (e.g. a "Bearer " auth
+		// scheme). A substring match on the secret itself (e.g. a token inside
+		// "Bearer abc<matched>xyz") would splice the un-correlated remainder of
+		// the live credential into the generated script.
+		if ok && redactedValue != rawValue && !headerResidualIsSafe(correlated) {
+			continue
+		}
+		headers[key] = correlated
 	}
 	for key, value := range headers {
 		headers[key] = applyCorrelationVars(value, corrMap)
 	}
 	return headers
+}
+
+// templatePlaceholderPattern matches a {{...}} correlation/parameter placeholder.
+var templatePlaceholderPattern = regexp.MustCompile(`\{\{[^}]*\}\}`)
+
+// knownHeaderScaffolding is the set of non-secret words allowed to remain around
+// a correlated token in a header that was otherwise redacted (auth schemes and
+// similar structural keywords).
+var knownHeaderScaffolding = map[string]bool{
+	"bearer": true, "basic": true, "digest": true, "negotiate": true,
+	"token": true, "apikey": true, "hmac": true, "sso": true, "jwt": true,
+}
+
+// headerResidualIsSafe reports whether the non-placeholder remainder of a
+// correlated header value is free of leftover secret material: once the {{...}}
+// placeholders are removed, every remaining alphanumeric word must be recognized
+// non-secret scaffolding (e.g. "Bearer"). Any other residual word is treated as
+// an un-correlated fragment of the original secret, so the header stays redacted.
+func headerResidualIsSafe(correlated string) bool {
+	stripped := templatePlaceholderPattern.ReplaceAllString(correlated, " ")
+	for _, word := range strings.FieldsFunc(stripped, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	}) {
+		if !knownHeaderScaffolding[strings.ToLower(word)] {
+			return false
+		}
+	}
+	return true
 }
 
 func shouldAssertRecordedStatus(statusCode int) bool {

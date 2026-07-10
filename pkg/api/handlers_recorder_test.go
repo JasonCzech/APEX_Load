@@ -153,8 +153,18 @@ func TestHandleConvertRecordingPersistsBaseline(t *testing.T) {
 	if strings.Contains(obs.RequestBody, "hunter2") || strings.Contains(obs.RequestHeaders["Authorization"], "recorded-secret") {
 		t.Fatalf("request-side secrets were not redacted: body=%q headers=%v", obs.RequestBody, obs.RequestHeaders)
 	}
-	if !strings.Contains(obs.ResponseBody, "csrf-recorded") {
-		t.Fatalf("response body = %q, want dynamic response values preserved", obs.ResponseBody)
+	// The scrubbed persistence view redacts live session/CSRF tokens so they
+	// cannot leak from a persisted baseline; correlation uses the raw sidecar.
+	if strings.Contains(obs.ResponseBody, "csrf-recorded") {
+		t.Fatalf("scrubbed observation leaked csrf token: %q", obs.ResponseBody)
+	}
+	// The server-side raw correlation sidecar preserves the dynamic value so
+	// record-vs-replay diagnosis and correlation still work.
+	if len(record.CorrelationObservations) != 1 {
+		t.Fatalf("correlation observations = %d, want 1 raw sidecar entry", len(record.CorrelationObservations))
+	}
+	if !strings.Contains(record.CorrelationObservations[0].ResponseBody, "csrf-recorded") {
+		t.Fatalf("raw correlation sidecar = %q, want dynamic response value preserved for correlation", record.CorrelationObservations[0].ResponseBody)
 	}
 }
 

@@ -71,18 +71,24 @@ export default function ParameterizationReview({ parameterization, script, scrip
   const [diffs, setDiffs] = useState<ParameterizationDiff[]>([])
   const [error, setError] = useState('')
   const [blockedReason, setBlockedReason] = useState('')
-  const suggestionSignature = useMemo(
-    () => suggestions.map(s => `${s.id}:${s.pre_applied ? '1' : '0'}:${s.auto_apply ? '1' : '0'}`).join('|'),
-    [suggestions],
-  )
 
+  // Reset only when the reviewed import actually changes, keyed by the
+  // `parameterization` prop's IDENTITY — not the `script` prop and not a content
+  // signature. On a successful apply every call site lifts the parameterized
+  // script back into `script` via `{ ...result, script }`, which keeps the same
+  // `parameterization` object reference, so the apply flow no longer wipes its
+  // own "Applied N change(s)" badge/diffs/selection. A genuinely new import
+  // supplies a fresh `parameterization` object and DOES reset — including
+  // re-importing the same file, which a content signature would have treated as
+  // unchanged and left showing a stale "applied" state over the new raw script.
   useEffect(() => {
     setSelected(initialSelection(suggestions))
     setApplied(false)
     setDiffs([])
     setError('')
     setBlockedReason('')
-  }, [script, scriptName, suggestionSignature, suggestions])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [parameterization, scriptName])
 
   if (suggestions.length === 0) return null
 

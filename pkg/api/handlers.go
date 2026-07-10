@@ -435,7 +435,11 @@ func (s *Server) handleGetMetrics(w http.ResponseWriter, r *http.Request) {
 		"test_id": id,
 		"status":  test.Status,
 		"metrics": filterLiveMetricsForGroups(test.LiveMetrics, groupFilter),
-		"history": filterLiveMetricsHistoryForGroupsCached(id, selectLiveMetricsHistory(test.History, historySince, historyLimit), groupFilter),
+		// Key the group-metrics history cache by the canonical test.ID, not the
+		// request path value which may be a RefKey alias. DeleteTest cleans up the
+		// cache by canonical id, so an alias-keyed entry would otherwise never be
+		// evicted and leak for the process lifetime.
+		"history": filterLiveMetricsHistoryForGroupsCached(test.ID, selectLiveMetricsHistory(test.History, historySince, historyLimit), groupFilter),
 	})
 }
 

@@ -31,7 +31,6 @@
   let lastRecordedFill = null;
   let lastRecordedHover = null;
   let lastEnterPressAt = 0;
-  let recordQueue = Promise.resolve();
 
   // Live recording state the Go recorder pushes into the page for the advanced
   // sidebar (counts, active section, open transactions, recent steps). Updated
@@ -88,7 +87,19 @@
     if (typeof window.__apexloadRecord !== 'function') return;
     if (payload && typeof payload === 'object') payload.nonce = CONTROL_NONCE;
     const serialized = JSON.stringify(payload);
-    recordQueue = recordQueue.then(() => window.__apexloadRecord(serialized)).catch(() => {});
+    // Dispatch immediately (fire-and-forget) rather than chaining through a
+    // single promise. Chaining deferred each binding call until the previous
+    // event's full round-trip to the Go recorder resolved, so any events still
+    // queued when a navigation tore down this JS context were silently dropped —
+    // exactly the pending fill/click that the beforeunload/pagehide flush exists
+    // to preserve. Dispatching now puts every event in flight before teardown;
+    // the Go handler serializes them under its own lock so ordering is kept.
+    try {
+      const result = window.__apexloadRecord(serialized);
+      if (result && typeof result.catch === 'function') result.catch(() => {});
+    } catch (e) {
+      /* binding torn down mid-navigation; nothing more we can do */
+    }
   }
 
   function escAttr(v) {
@@ -239,9 +250,14 @@
     const src = fe.getAttribute('src');
     if (src) return tag + '[src="' + escAttr(src) + '"]';
     try {
-      const siblings = Array.from(fe.ownerDocument.querySelectorAll(tag));
-      const index = siblings.indexOf(fe);
-      if (index >= 0) return tag + ':nth-of-type(' + (index + 1) + ')';
+      // Build a per-parent CSS path (segmentFor counts :nth-of-type among the
+      // element's own siblings). A document-wide index — `querySelectorAll(tag)`
+      // then :nth-of-type(N) — is wrong: :nth-of-type counts within a parent, so
+      // that selector matches a different frame (or nothing) whenever same-tag
+      // frames live under different parents.
+      const root = fe.ownerDocument.documentElement || fe.ownerDocument.body;
+      const path = cssPathWithin(fe, root);
+      if (path) return path;
     } catch (e) {}
     return tag;
   }
@@ -678,7 +694,12 @@
       y: Math.round(el.scrollTop || 0)
     };
     if (!state) {
-      state = { x: 0, y: 0, dx: 0, dy: 0, timer: null };
+      // Seed from the element's current scroll position, not {0,0}: an element
+      // may already be scrolled (browser scroll restoration, anchor jump, an
+      // app-initialized virtual list) before the user first touches it, and
+      // seeding at 0 would record that entire pre-existing offset as the first
+      // scroll delta and make replay over-scroll the container.
+      state = { x: next.x, y: next.y, dx: 0, dy: 0, timer: null };
       elementScrollStates.set(el, state);
     }
     state.dx += next.x - state.x;

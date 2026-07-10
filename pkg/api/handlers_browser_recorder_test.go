@@ -1009,8 +1009,13 @@ func TestHandleExportBrowserRecordingStorageState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read persisted storage state: %v", err)
 	}
-	if strings.Contains(string(persisted), "cookie-secret") || strings.Contains(string(persisted), "local-secret") {
-		t.Fatalf("persisted storage state leaked secrets: %s", string(persisted))
+	// The confined reuse copy MUST retain the raw storage state so a later
+	// recording can actually restore the session (login reuse) — seeding a
+	// Playwright context with scrubbed [REDACTED] cookies silently breaks it.
+	// This copy is read only server-side and is never served to a client; the
+	// download response above is the scrubbed view.
+	if !strings.Contains(string(persisted), "cookie-secret") || !strings.Contains(string(persisted), "local-secret") {
+		t.Fatalf("persisted reuse copy must retain raw cookies for login reuse, got: %s", string(persisted))
 	}
 	info, err := os.Stat(filepath.Join(exportDir, filepath.FromSlash(storagePath)))
 	if err != nil {
@@ -1022,12 +1027,16 @@ func TestHandleExportBrowserRecordingStorageState(t *testing.T) {
 	if _, err := os.Stat(oldPath); !os.IsNotExist(err) {
 		t.Fatalf("old storage state err = %v, want pruned", err)
 	}
-	confined, err := confineStorageStatePath(storagePath)
+	confined, err := confineStorageStatePath(storagePath, "proj-1")
 	if err != nil {
-		t.Fatalf("exported storage path should be reusable: %v", err)
+		t.Fatalf("exported storage path should be reusable within its own project: %v", err)
 	}
 	if confined != filepath.Join(exportDir, filepath.FromSlash(storagePath)) {
 		t.Errorf("confined path = %q, want exported path", confined)
+	}
+	// A different project must not be able to reuse proj-1's raw storage state.
+	if _, err := confineStorageStatePath(storagePath, "proj-2"); err == nil {
+		t.Errorf("storage_state_path from another project must be rejected, got no error")
 	}
 }
 

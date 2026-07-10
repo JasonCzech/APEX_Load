@@ -48,6 +48,12 @@ type Browser struct {
 	clientCertificates         []playwright.ClientCertificate
 	captureScreenshots         string
 	clientMetricsEnabled       bool
+	// autoActivatePopups restores the pre-change behavior where a newly-opened
+	// popup/window becomes the active page. It defaults to false (popups are
+	// registered but not activated; scripts switch explicitly with
+	// browser_switch_window); scripts recorded against the old auto-switch
+	// behavior set browser_auto_activate_popups=true as a migration path.
+	autoActivatePopups         bool
 	experienceCanary           bool
 	traceparentEnabled         bool
 	selfHealMode               string
@@ -82,6 +88,14 @@ type Browser struct {
 	// networkEntries by the ring/byte-budget cap, so absolute offset-based
 	// slicing (eventOffsets/networkEntriesSince) stays correct across eviction.
 	networkEntriesDropped int
+	// prevActionNetworkStart / waitResponseScanStart let browser_wait_response
+	// scan network entries from the start of the PREVIOUS action (the trigger,
+	// e.g. a click), not from the wait action's own start. A response fired by
+	// the trigger often completes during that trigger's finalization (HTML
+	// capture, screenshot), before the wait action begins, and would otherwise
+	// never be seen. Both are absolute network offsets, guarded by b.mu.
+	prevActionNetworkStart int
+	waitResponseScanStart  int
 	// networkBodyBytes tracks the captured request-body bytes currently retained,
 	// used to enforce the byte budget.
 	networkBodyBytes      int
@@ -116,6 +130,12 @@ type dialogPolicy struct {
 	matchMode       string
 	promptText      string
 	wait            time.Duration
+	// expectImmediate is true when the dialog is expected on the very next
+	// action (the strict default: the following action fails if no dialog fires
+	// within wait). Scripts that arm a handler several steps ahead of the
+	// dialog-triggering action set expect_immediate:false so the armed policy
+	// persists across intermediate actions instead of failing them.
+	expectImmediate bool
 }
 
 type browserProcessSnapshot struct {
@@ -151,7 +171,17 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 	}
 
 	consoleStart, networkStart := b.eventOffsets()
-	dialogArmedBefore, dialogWait := b.pendingDialogState()
+	// Remember the previous action's network start so a browser_wait_response
+	// here scans from the trigger action rather than from its own start.
+	b.mu.Lock()
+	b.waitResponseScanStart = b.prevActionNetworkStart
+	b.prevActionNetworkStart = networkStart
+	b.mu.Unlock()
+	dialogArmedBefore, dialogWait, dialogExpectImmediate := b.pendingDialogState()
+	// An arm-ahead policy (expect_immediate:false) persists across intermediate
+	// actions until its dialog actually fires, so it must not fail or clear the
+	// following action the way the strict (default) immediate policy does.
+	dialogGuardsThisAction := dialogArmedBefore && dialogExpectImmediate && action.Type != "browser_handle_dialog"
 	actionCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var processBefore browserProcessSnapshot
@@ -163,7 +193,7 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 	actionErr, terminal := b.dispatchAction(actionCtx, action, result)
 	if terminal {
 		result.Duration = time.Since(result.StartTime)
-		if action.Type != "browser_handle_dialog" && dialogArmedBefore {
+		if dialogGuardsThisAction {
 			b.clearPendingDialog()
 		}
 		return result, nil
@@ -172,9 +202,9 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 	if actionErr == nil {
 		actionErr = b.runPostActionSync(actionCtx, action)
 	}
-	if actionErr == nil && action.Type != "browser_handle_dialog" && dialogArmedBefore {
+	if actionErr == nil && dialogGuardsThisAction {
 		actionErr = b.waitForPendingDialog(actionCtx, dialogWait)
-	} else if actionErr != nil && action.Type != "browser_handle_dialog" && dialogArmedBefore {
+	} else if actionErr != nil && dialogGuardsThisAction {
 		b.clearPendingDialog()
 	}
 	actionDuration := time.Since(result.StartTime)

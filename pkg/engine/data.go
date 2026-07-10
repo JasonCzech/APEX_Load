@@ -41,7 +41,6 @@ type fileDataSource struct {
 	contentType string
 	storageRef  string
 	body        []byte
-	bodyText    string
 }
 
 // NewDataProvider creates a provider from DSL DataSource definitions.
@@ -87,7 +86,6 @@ func loadFileDataSource(src dsl.DataSource) (*fileDataSource, error) {
 		contentType: src.ContentType,
 		storageRef:  src.StorageRef,
 		body:        content,
-		bodyText:    string(content),
 	}, nil
 }
 
@@ -420,5 +418,8 @@ func (dp *DataProvider) GetFileContent(name string) (string, bool) {
 	if !ok || fileSource == nil {
 		return "", false
 	}
-	return fileSource.bodyText, true
+	// Convert on demand rather than keeping a permanent second copy of the file
+	// content: a large data file (up to 512MiB) would otherwise hold ~2x its size
+	// in generator memory for the whole run even when this accessor is never used.
+	return string(fileSource.body), true
 }

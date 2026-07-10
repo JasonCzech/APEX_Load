@@ -18,6 +18,14 @@ func writeRunArchiveReportCSV(report *RunArchiveReport, writer io.Writer) error 
 // through the shared section registry, so the profile metadata is the single
 // source of truth for which sections are emitted and in what order.
 func writeRunArchiveReportCSVWithProfile(report *RunArchiveReport, writer io.Writer, profileID string) error {
+	return writeRunArchiveReportCSVWithProfileAndAnnotations(report, writer, profileID, nil, nil)
+}
+
+// writeRunArchiveReportCSVWithProfileAndAnnotations writes the CSV with the
+// analyst-saved annotations and generator manifest applied, so the audit CSV's
+// official_outcome and generator_manifest sections match the HTML report
+// instead of showing the auto-derived outcome and a "manifest unavailable" note.
+func writeRunArchiveReportCSVWithProfileAndAnnotations(report *RunArchiveReport, writer io.Writer, profileID string, annotations *ReportAnnotations, manifest *TestRunManifest) error {
 	profile, ok := lookupRunArchiveReportProfile(profileID)
 	if !ok {
 		return fmt.Errorf("unknown report profile %q", profileID)
@@ -34,7 +42,7 @@ func writeRunArchiveReportCSVWithProfile(report *RunArchiveReport, writer io.Wri
 		return csvWriter.Write([]string{section, key, metric, value})
 	}
 
-	data := buildRunArchiveReportRenderData(report, profile, nil, nil)
+	data := buildRunArchiveReportRenderData(report, profile, annotations, manifest)
 	for _, section := range reportSectionsForProfile(profile) {
 		if err := section.CSV(&data, write); err != nil {
 			return err

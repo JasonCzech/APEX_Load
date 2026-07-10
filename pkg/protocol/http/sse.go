@@ -162,10 +162,24 @@ func readSSEResponse(ctx context.Context, body io.ReadCloser, params map[string]
 			case errors.Is(err, io.EOF):
 				return result, nil
 			case timedOut.Load():
+				// stream_timeout_ms is a bounded collection window: reaching it
+				// after collecting events is a successful end-of-collection (the
+				// standard SSE sampling pattern against an endpoint that streams
+				// indefinitely), not a failure. Only a window that captured
+				// nothing is reported as a timeout error.
+				if result.EventCount > 0 {
+					return result, nil
+				}
 				return result, fmt.Errorf("SSE stream timed out after %s", timeout)
 			case ctx.Err() != nil:
 				return result, ctx.Err()
 			default:
+				// A premature CLIENT/transport read timeout (http.Client.Timeout, a
+				// read deadline, a mid-stream connection reset) is NOT the intended
+				// stream_timeout_ms collection window (handled above) — it truncates
+				// the sample unexpectedly, so it must surface as an error even when
+				// some events were collected. Only after ruling that out does an
+				// events-collected result count as a successful read.
 				if isSSEPrematureReadTimeout(err) {
 					return result, err
 				}

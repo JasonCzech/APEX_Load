@@ -139,3 +139,66 @@ func TestShapedConnectionAmortizesLatencyPerDirection(t *testing.T) {
 		t.Fatalf("bandwidth sleeps = %v/%v, want 4ms per 4-byte chunk", sleeps[1], sleeps[2])
 	}
 }
+
+func TestShapedConnectionReAppliesLatencyPerKeepAliveRequest(t *testing.T) {
+	// Regression guard: on a reused (keep-alive) connection, every request must
+	// incur the simulated latency again, not just the first. A request is a
+	// write; the response is a read; the following write is a new request.
+	clientConn, serverConn := net.Pipe()
+	defer serverConn.Close()
+
+	var sleeps []time.Duration
+	conn := &shapedConn{
+		Conn: clientConn,
+		profile: networkSimulationProfile{
+			latency: 30 * time.Millisecond,
+			sleep: func(delay time.Duration) {
+				sleeps = append(sleeps, roundDurationToMillis(delay))
+			},
+			randFloat64: func() float64 { return 0 },
+		},
+	}
+	defer conn.Close()
+
+	go func() {
+		// Echo one response byte for each request so the client can Read.
+		buf := make([]byte, 1)
+		for {
+			if _, err := serverConn.Read(buf); err != nil {
+				return
+			}
+			if _, err := serverConn.Write([]byte("R")); err != nil {
+				return
+			}
+		}
+	}()
+
+	readOne := func() {
+		buf := make([]byte, 1)
+		if _, err := conn.Read(buf); err != nil {
+			t.Fatalf("Read returned error: %v", err)
+		}
+	}
+
+	// Request 1: write (latency) + read response (latency).
+	if _, err := conn.Write([]byte("a")); err != nil {
+		t.Fatalf("Write 1 returned error: %v", err)
+	}
+	readOne()
+	// Request 2 on the same connection: must pay latency again on both directions.
+	if _, err := conn.Write([]byte("b")); err != nil {
+		t.Fatalf("Write 2 returned error: %v", err)
+	}
+	readOne()
+
+	// Two requests, each paying latency on write and on read = 4 latency sleeps.
+	// Bandwidth is unset, so latency sleeps are the only sleeps recorded.
+	if len(sleeps) != 4 {
+		t.Fatalf("latency sleeps = %d (%v), want 4 (once per direction per request)", len(sleeps), sleeps)
+	}
+	for i, s := range sleeps {
+		if s != 30*time.Millisecond {
+			t.Fatalf("sleep[%d] = %v, want 30ms latency", i, s)
+		}
+	}
+}

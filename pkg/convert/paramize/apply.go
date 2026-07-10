@@ -175,7 +175,11 @@ func replaceHeader(action *dsl.Action, headerKey string, replace func(string) (s
 			changed = true
 		}
 	}
-	if changed && lastAfter != "" {
+	if changed {
+		// An empty replacement is still a real change: the loops above already
+		// mutated Headers/HeaderList, so gating on lastAfter != "" would report no
+		// change, skip the diff, and leave the Headers map out of sync with the
+		// now-empty HeaderList value.
 		if action.Headers == nil {
 			action.Headers = map[string]string{}
 		}

@@ -7,7 +7,7 @@ interface Props {
   report: RunArchiveReport | null
   annotations: ReportAnnotations | null
   saving: boolean
-  onSaveOverride: (status: string, explanation: string) => Promise<void>
+  onSaveOverride: (status: string, explanation: string) => Promise<boolean>
 }
 
 function verdictTone(verdict: ReturnType<typeof effectiveReportVerdict>) {
@@ -30,8 +30,11 @@ export default function RunReportVerdictBanner({ report, annotations, saving, on
 
   const save = async () => {
     setMessage('')
-    await onSaveOverride(status, explanation)
-    setMessage('Saved')
+    // Only confirm "Saved" when the override actually persisted; the parent
+    // surfaces the failure message on error.
+    if (await onSaveOverride(status, explanation)) {
+      setMessage('Saved')
+    }
   }
 
   return (

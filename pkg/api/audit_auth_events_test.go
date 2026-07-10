@@ -78,6 +78,32 @@ func TestAuthDenialThrottleIgnoresPathAndSubjectRotation(t *testing.T) {
 	}
 }
 
+// TestAuthDenialThrottleDistinguishesResolvedUsersBehindProxy locks in that
+// denials for DIFFERENT resolved principals are recorded separately even when
+// they share a proxy RemoteAddr — otherwise per-insider forensic detail is lost
+// in the platform's primary trusted-header-behind-a-proxy deployment.
+func TestAuthDenialThrottleDistinguishesResolvedUsersBehindProxy(t *testing.T) {
+	store := auditEventStore(t)
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+
+	for _, tc := range []struct {
+		subject string
+		path    string
+	}{
+		{subject: "alice", path: "/api/v1/auth/users"},
+		{subject: "bob", path: "/api/v1/projects"},
+	} {
+		req := httptest.NewRequest(http.MethodDelete, tc.path, nil)
+		req.RemoteAddr = "203.0.113.10:12345" // shared proxy IP
+		resolution := authResolution{User: &AuthenticatedUser{ID: tc.subject, Subject: tc.subject}}
+		server.recordAuthDenial(req, resolution, http.StatusForbidden, "insufficient role")
+	}
+
+	if got := countAuditEvents(t, store, "auth.access.denied"); got != 2 {
+		t.Fatalf("auth.access.denied events = %d, want 2 (one per resolved user behind the proxy)", got)
+	}
+}
+
 // A4 — trusted-header logins are audited once per dedup window (not per request).
 func TestTrustedHeaderLoginAuditedAndDeduped(t *testing.T) {
 	store := auditEventStore(t)

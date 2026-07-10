@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
+	"github.com/jasonczech/apexload/pkg/scrub"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -181,7 +182,12 @@ func (s *Server) handleDiscoverCorrelationRulesetFromScript(w http.ResponseWrite
 			Source:      c.Source,
 			ExtractType: c.ExtractType,
 			Expression:  c.Expression,
-			SampleValue: c.SampleValue,
+			// Detection runs on the raw baseline, but the sample value is
+			// persisted at rest and returned to the client; scrub it so a
+			// credential-shaped sample never leaks. Rule matching keys on
+			// source/type/expression (see ruleMatchesSuggestion), not the
+			// sample, so redaction here does not affect correlation.
+			SampleValue: scrub.Value(c.SampleValue, scrub.Policy{}),
 			Confidence:  c.Confidence,
 		})
 	}

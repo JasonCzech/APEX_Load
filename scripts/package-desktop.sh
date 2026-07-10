@@ -72,13 +72,13 @@ trusted_packages_required() {
 
 clean_desktop_dist() {
   mkdir -p "$DIST_DIR"
-  find "$DIST_DIR" -mindepth 1 \( \
-    -name 'apexload-desktop-*.tar.gz' -o \
-    -name 'apexload-desktop-*.notary.zip' -o \
-    -name 'apexload-desktop-*' -o \
-    -name 'SHA256SUMS.txt' -o \
-    -name 'SHA256SUMS.txt.asc' \
-  \) -exec rm -rf {} +
+  # Remove only the CURRENT platform's artifacts (staging dir, tarball,
+  # notary.zip) so a rebuild of this platform starts clean while previously
+  # built platforms' tarballs survive in the shared DIST_DIR — they are meant to
+  # accumulate and be co-signed in one multi-platform SHA256SUMS.txt (see the
+  # apexload-desktop-*.tar.gz glob in the manifest step). The SHA256SUMS files
+  # are regenerated over the surviving tarballs later in the run.
+  find "$DIST_DIR" -mindepth 1 -name "${PACKAGE}*" -exec rm -rf {} +
 }
 
 write_sha256_manifest() {

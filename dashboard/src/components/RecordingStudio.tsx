@@ -677,13 +677,13 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
         setBrowserPanelSessionId(current => current ?? liveBrowser.id)
       }
       if (recorderStatus.active) {
-        const current = activeSessionRef.current
-        const full = await api.getRecording(
-          recorderStatus.active.id,
-          current?.id === recorderStatus.active.id && current.last_seq
-            ? { includeRequests: true, since: current.last_seq }
-            : { includeRequests: true },
-        )
+        // Always fetch the FULL active session, not an incremental since=last_seq
+        // window: its already-captured requests mutate in place — WebSocket frames
+        // are appended to an existing request (its Seq is unchanged) and
+        // exclusion/think-time edits change existing seqs — and snapshotSince
+        // filters those out, so an incremental fetch would leave the UI copy
+        // permanently stale until the session is re-selected.
+        const full = await api.getRecording(recorderStatus.active.id, { includeRequests: true })
         setActiveSession(prev => mergeRecordingSession(prev, full))
       } else {
         setActiveSession(null)

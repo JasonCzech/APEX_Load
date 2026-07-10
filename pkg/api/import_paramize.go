@@ -7,7 +7,18 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/sample"
 	"github.com/jasonczech/apexload/pkg/convert/uniquify"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/scrub"
 )
+
+// scrubPreAppliedSampleValue redacts a credential-shaped correlation sample
+// before it leaves the server in an import response or the ParameterizationReview
+// UI. Applied at THIS shared PreAppliedCorrelation boundary so every importer
+// (HAR, OpenAPI, Postman, recorder) is covered, not just the HAR converter.
+// scrub.Value only redacts secret-shaped values, so non-secret example values
+// (the common case for spec importers) pass through unchanged.
+func scrubPreAppliedSampleValue(value string) string {
+	return scrub.Value(value, scrub.Policy{})
+}
 
 // buildImportParameterization is the single shared hook every importer calls
 // before writing its response. Spec-only importers pass nil pre-applied
@@ -82,7 +93,7 @@ func sampleCorrelationsToPreApplied(correlations []sample.Correlation) []paramiz
 			Expression:  corr.Expression,
 			ExtractType: corr.ExtractType,
 			Convert:     corr.Convert,
-			SampleValue: corr.SampleValue,
+			SampleValue: scrubPreAppliedSampleValue(corr.SampleValue),
 			FoundInStep: corr.FoundInStep,
 			UsedInSteps: corr.UsedInSteps,
 		})
@@ -98,7 +109,7 @@ func openAPICorrelationsToPreApplied(correlations []openapi.Correlation) []param
 			Source:      corr.Source,
 			Expression:  corr.Expression,
 			ExtractType: corr.ExtractType,
-			SampleValue: corr.SampleValue,
+			SampleValue: scrubPreAppliedSampleValue(corr.SampleValue),
 			FoundInStep: corr.FoundInStep,
 			UsedInSteps: corr.UsedInSteps,
 		})
@@ -114,7 +125,7 @@ func postmanCorrelationsToPreApplied(correlations []postman.Correlation) []param
 			Source:      corr.Source,
 			Expression:  corr.Expression,
 			ExtractType: corr.ExtractType,
-			SampleValue: corr.SampleValue,
+			SampleValue: scrubPreAppliedSampleValue(corr.SampleValue),
 			FoundInStep: corr.FoundInStep,
 			UsedInSteps: corr.UsedInSteps,
 		})

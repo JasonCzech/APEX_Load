@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -48,8 +49,24 @@ func conditionExprProgram(expr string) (*conditionExprProgramCache, error) {
 	return actual.(*conditionExprProgramCache), nil
 }
 
+// conditionNamespacePatterns matches a namespace referenced as a whole
+// identifier token, so a bare reference — `'promo' in vars`, `size(data) > 0`,
+// `'REGION' in env`, or a whitespaced `vars ["key"]` — is detected, not just
+// `vars.`/`vars[`. Missing a binding makes cel-go error at eval time ("no such
+// attribute"), which evalConditionExpr swallows to false; over-detecting only
+// binds an unused namespace (harmless), so err toward inclusion.
+var conditionNamespacePatterns = map[string]*regexp.Regexp{
+	"vars": regexp.MustCompile(`\bvars\b`),
+	"data": regexp.MustCompile(`\bdata\b`),
+	"env":  regexp.MustCompile(`\benv\b`),
+}
+
 func conditionExprUsesNamespace(expr string, namespace string) bool {
-	return strings.Contains(expr, namespace+".") || strings.Contains(expr, namespace+"[")
+	pattern, ok := conditionNamespacePatterns[namespace]
+	if !ok {
+		return true // unknown namespace: bind it to be safe
+	}
+	return pattern.MatchString(expr)
 }
 
 func (vu *VUser) evalConditionExpr(expr string) bool {
