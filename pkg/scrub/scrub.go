@@ -213,37 +213,67 @@ func (cp compiledPolicy) valueURL(value string) string {
 	if value == "" {
 		return value
 	}
-	// Redact bare secret-shaped tokens (signed-URL signatures, OAuth codes and
-	// access tokens) in the query string and fragment — where opaque credentials
-	// live — WITHOUT running the blanket JWT/high-entropy heuristics over the
-	// scheme/host/path, which would mangle multi-label hostnames and
-	// content-hashed asset filenames. This catches secrets under param names not
-	// in sensitiveParamPattern's list (sig, code, ...) via entropy, and fragment
-	// params (e.g. #access_token=) the '=' param pattern misses.
-	if parsed, err := url.Parse(value); err == nil {
-		changedURL := false
-		if parsed.RawQuery != "" {
-			if red := redactBareTokens(parsed.RawQuery); red != parsed.RawQuery {
-				parsed.RawQuery = red
-				changedURL = true
-			}
-		}
-		if parsed.Fragment != "" {
-			if red := redactBareTokens(parsed.Fragment); red != parsed.Fragment {
-				parsed.RawFragment = red
-				parsed.Fragment = red
-				changedURL = true
-			}
-		}
-		if changedURL {
-			value = parsed.String()
-		}
+	// Split scheme/host/path from the query and fragment by hand (NOT url.Parse +
+	// String(), which would re-encode/normalize parts a token-redaction touched).
+	// Query/fragment param VALUES are redacted individually so the param NAME is
+	// never swallowed and percent-escapes are decoded before the credential-shape
+	// check, while scheme/host/path — where multi-label hosts and content-hashed
+	// asset filenames live — are left byte-for-byte intact.
+	base, fragment, hasFragment := strings.Cut(value, "#")
+	path, query, hasQuery := strings.Cut(base, "?")
+	out := path
+	if hasQuery {
+		out += "?" + redactURLParams(query)
 	}
-	value = sensitiveParamPattern.ReplaceAllString(value, "${1}"+Redacted)
+	if hasFragment {
+		out += "#" + redactURLParams(fragment)
+	}
+	out = sensitiveParamPattern.ReplaceAllString(out, "${1}"+Redacted)
 	for _, rule := range cp.rules {
-		value = rule.pattern.ReplaceAllString(value, rule.replacement)
+		out = rule.pattern.ReplaceAllString(out, rule.replacement)
 	}
-	return value
+	return out
+}
+
+// redactURLParams redacts secret-shaped VALUES in a URL query or fragment segment
+// (key=value pairs joined by '&'). The param name is preserved; only the value is
+// replaced. Values under a recognized sensitive param name are always redacted;
+// otherwise the DECODED value (percent-escapes resolved, so an encoded signature
+// is still caught) is checked with the credential-shape heuristics. Bare segments
+// with no '=' are treated as a single opaque token.
+func redactURLParams(segment string) string {
+	if segment == "" {
+		return segment
+	}
+	parts := strings.Split(segment, "&")
+	for i, part := range parts {
+		key, val, hasEq := strings.Cut(part, "=")
+		if !hasEq {
+			if urlTokenLooksSensitive(part) {
+				parts[i] = Redacted
+			}
+			continue
+		}
+		if sensitiveParamName(key) || urlTokenLooksSensitive(val) {
+			parts[i] = key + "=" + Redacted
+		}
+	}
+	return strings.Join(parts, "&")
+}
+
+// urlTokenLooksSensitive reports whether a URL query value or bare segment is
+// credential-shaped, checking the percent-decoded form so encoded secrets are not
+// missed. It reuses the same gated heuristics as bare-token body redaction, so a
+// plain low-entropy value (a page number, a country code) is preserved.
+func urlTokenLooksSensitive(token string) bool {
+	if token == "" {
+		return false
+	}
+	decoded := token
+	if unescaped, err := url.QueryUnescape(token); err == nil {
+		decoded = unescaped
+	}
+	return looksLikeJWT(decoded) || looksSensitiveToken(decoded)
 }
 
 // redactBareTokens redacts JWTs and high-entropy secret-shaped runs that appear

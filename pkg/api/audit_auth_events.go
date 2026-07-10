@@ -120,18 +120,70 @@ func authDenialThrottleKey(r *http.Request, trustedIdentity string, status int, 
 	// primary deployment is trusted-header auth behind a proxy, where every
 	// request's RemoteAddr is the proxy IP — keying on RemoteAddr collapses all
 	// real users' denials into one bucket and hides per-insider forensic detail.
-	// The path is deliberately NOT in the key (in either branch): its cardinality
-	// is unbounded and attacker-controlled, so including it would let a single
-	// authenticated user (or an anonymous source) flood the audit log by rotating
-	// path segments. The full path is still recorded in the audit event's Details;
-	// the throttle only bounds duplicate (principal, method, status, reason)
-	// denials per window. Unresolved/anonymous requests fall back to the remote
-	// host as the identity.
-	identity := trustedIdentity
-	if identity == "" {
-		identity = authDenialRemoteHost(r)
+	//
+	// For a RESOLVED principal (a real user/service account) the COARSENED route
+	// is included so distinct endpoints an insider probes are recorded separately;
+	// coarsenAuditPath replaces ID-like segments with a placeholder so the key's
+	// cardinality stays bounded by the route set and cannot be flooded by rotating
+	// an id in the path. Unresolved/anonymous requests fall back to the remote
+	// host as the identity and drop the path entirely, since an anonymous source's
+	// path is fully attacker-controlled and the anti-flood bound must not depend on
+	// requests hitting only real routes. The full path is always in the event
+	// Details regardless.
+	if trustedIdentity != "" {
+		return strings.Join([]string{trustedIdentity, method, coarsenAuditPath(auditRequestPath(r)), strconv.Itoa(status), coarseAuthDenialReason(reason), "denied"}, "|")
 	}
-	return strings.Join([]string{identity, method, strconv.Itoa(status), coarseAuthDenialReason(reason), "denied"}, "|")
+	return strings.Join([]string{authDenialRemoteHost(r), method, strconv.Itoa(status), coarseAuthDenialReason(reason), "denied"}, "|")
+}
+
+func auditRequestPath(r *http.Request) string {
+	if r == nil || r.URL == nil {
+		return ""
+	}
+	return r.URL.Path
+}
+
+// coarsenAuditPath normalizes a request path for the throttle key: it preserves
+// the route SHAPE (so denials on distinct endpoints bucket separately) while
+// replacing ID-like segments (numeric ids, UUIDs, long opaque tokens) with ":id",
+// so an attacker cannot inflate the key's cardinality by rotating an id.
+func coarsenAuditPath(path string) string {
+	trimmed := strings.Trim(path, "/")
+	if trimmed == "" {
+		return "/"
+	}
+	segments := strings.Split(trimmed, "/")
+	for i, seg := range segments {
+		if auditPathSegmentLooksLikeID(seg) {
+			segments[i] = ":id"
+		}
+	}
+	return "/" + strings.Join(segments, "/")
+}
+
+// auditPathSegmentLooksLikeID reports whether a path segment is an identifier
+// (a pure number, or a long opaque token such as a UUID/hash/session id) rather
+// than a stable route name.
+func auditPathSegmentLooksLikeID(seg string) bool {
+	if seg == "" {
+		return false
+	}
+	allDigits := true
+	hasDigit := false
+	for _, r := range seg {
+		switch {
+		case r >= '0' && r <= '9':
+			hasDigit = true
+		default:
+			allDigits = false
+		}
+	}
+	if allDigits {
+		return true
+	}
+	// Long mixed-content tokens (UUIDs, hex hashes, opaque session ids) carry a
+	// digit; short lowercase route names ("users", "projects") do not qualify.
+	return len(seg) >= 16 && hasDigit
 }
 
 func authDenialRemoteHost(r *http.Request) string {

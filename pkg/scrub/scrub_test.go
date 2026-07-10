@@ -173,16 +173,31 @@ func TestValueURLRedactsOpaqueQueryAndFragmentSecrets(t *testing.T) {
 		redact []string
 	}{
 		{
-			name:   "azure sas signature",
-			in:     "https://storage.example/blob/app.a1b2c3d4e5f6a7b8.js?sig=AbCdEf0123456789GhIjKlMn0Z&se=2026",
-			keep:   []string{"storage.example", "app.a1b2c3d4e5f6a7b8.js", "se=2026"},
+			name: "azure sas signature keeps param name",
+			in:   "https://storage.example/blob/app.a1b2c3d4e5f6a7b8.js?sig=AbCdEf0123456789GhIjKlMn0Z&se=2026",
+			// The param NAME must survive (not be swallowed into the redaction).
+			keep:   []string{"storage.example", "app.a1b2c3d4e5f6a7b8.js", "se=2026", "sig="},
 			redact: []string{"AbCdEf0123456789GhIjKlMn0Z"},
 		},
 		{
 			name:   "oauth implicit fragment token",
 			in:     "https://app.example/callback#access_token=AbCdEf0123456789GhIjKlMn0Z&state=xyz",
-			keep:   []string{"app.example", "/callback"},
+			keep:   []string{"app.example", "/callback", "state=xyz"},
 			redact: []string{"AbCdEf0123456789GhIjKlMn0Z"},
+		},
+		{
+			name: "percent-encoded signature is decoded and caught",
+			// A base64 signature whose +,/ are percent-encoded (%2B/%2F) must still
+			// be detected via the decoded form, and the raw encoded run redacted.
+			in:     "https://x.example/dl?Signature=YWJjZGVm%2Bghijkl%2Fmnop0123456789QRS",
+			keep:   []string{"x.example", "Signature="},
+			redact: []string{"YWJjZGVm", "mnop0123456789QRS"},
+		},
+		{
+			name:   "low-entropy values preserved",
+			in:     "https://x.example/v2/orders?page=2&size=100&code=US&sort=name",
+			keep:   []string{"page=2", "size=100", "code=US", "sort=name", "/v2/orders"},
+			redact: []string{},
 		},
 	}
 	for _, tc := range cases {

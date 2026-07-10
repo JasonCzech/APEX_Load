@@ -8,6 +8,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 const (
@@ -282,9 +285,22 @@ var pdfASCIITransliterations = map[rune]string{
 	' ': " ",       // non-breaking space
 	'•': "*",       // bullet
 	'«': "<<", '»': ">>", // guillemets
+	// Latin letters NFD does not decompose.
+	'ß': "ss", 'ẞ': "SS",
+	'ø': "o", 'Ø': "O",
+	'æ': "ae", 'Æ': "AE",
+	'œ': "oe", 'Œ': "OE",
+	'đ': "d", 'Đ': "D", 'ð': "d", 'Ð': "D",
+	'ł': "l", 'Ł': "L",
+	'þ': "th", 'Þ': "TH",
+	'ı': "i",
 }
 
 func pdfASCIIText(value string) string {
+	// Canonically decompose first (é -> e + combining acute) so accented Latin
+	// letters fold to their base ASCII letter (the combining mark is dropped
+	// below) instead of becoming '?'. Covers the common international-name case.
+	value = norm.NFD.String(value)
 	var out strings.Builder
 	for _, r := range value {
 		switch {
@@ -292,6 +308,8 @@ func pdfASCIIText(value string) string {
 			out.WriteByte(' ')
 		case r >= 32 && r <= 126:
 			out.WriteRune(r)
+		case unicode.Is(unicode.Mn, r):
+			// combining mark from NFD decomposition; base letter already emitted
 		default:
 			if replacement, ok := pdfASCIITransliterations[r]; ok {
 				out.WriteString(replacement)

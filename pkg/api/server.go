@@ -1287,18 +1287,26 @@ func (s *Server) startUsageAccountingSnapshotCadence() {
 // its TTL so capacity gates read fresh data without probing under tr.mu.
 const generatorInventoryRefreshInterval = defaultGeneratorSnapshotTTL / 2
 
+// generatorInventoryRefreshTimeout bounds each background probe so a slow or
+// unreachable fleet cannot hang the refresh goroutine indefinitely (which would
+// leave the cache cold and the gate over-admitting).
+const generatorInventoryRefreshTimeout = 10 * time.Second
+
 // startGeneratorInventoryRefreshCadence periodically refreshes the cached
 // generator inventory out-of-band. Capacity/launch gates read that cache under
 // tr.mu and must never probe the fleet synchronously themselves; without this
 // cadence the cache is only populated by dashboard/inventory HTTP traffic, so a
 // headless controller (scheduled runs, CI launches) would fall back to
-// configured-only capacity and over-admit when generators are down. Only runs
-// when live availability actually feeds admission.
+// configured-only capacity and over-admit when generators are down.
+//
+// It is gated on the STRUCTURAL capability (a distributed inventory backend),
+// NOT the availability SETTING, because that setting is runtime-mutable
+// (UpdateSystemSettings): if we keyed the goroutine's existence on the setting
+// at boot, flipping to configured_plus_live later would never start the cadence
+// and the cache would stay cold. Instead the per-tick refresh checks the current
+// setting and only probes when live availability actually feeds admission.
 func (s *Server) startGeneratorInventoryRefreshCadence() {
 	if s == nil || s.runner == nil || s.generatorInventoryCancel != nil {
-		return
-	}
-	if s.runner.settings.CapacityPlanning.Availability.Source != capacityAvailabilityConfiguredPlusLive {
 		return
 	}
 	if _, ok := s.runner.getExecutionBackend().(inventoryExecutionBackend); !ok {
@@ -1309,7 +1317,7 @@ func (s *Server) startGeneratorInventoryRefreshCadence() {
 	go func() {
 		// Prime the cache immediately so the first gate after startup sees live
 		// data, then refresh on the cadence.
-		s.systemInventory(ctx)
+		s.refreshGeneratorInventory(ctx)
 		ticker := time.NewTicker(generatorInventoryRefreshInterval)
 		defer ticker.Stop()
 		for {
@@ -1317,10 +1325,33 @@ func (s *Server) startGeneratorInventoryRefreshCadence() {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				s.systemInventory(ctx)
+				s.refreshGeneratorInventory(ctx)
 			}
 		}
 	}()
+}
+
+// refreshGeneratorInventory performs one bounded, panic-safe inventory probe for
+// the background cadence. A panic in the broad systemInventory surface (fleet
+// RPC, k8s enrichment) must NOT escape and crash the controller into a
+// timer-driven restart loop, and each probe is time-bounded so a hung fleet does
+// not stall the refresh. It no-ops when live availability is not the active
+// source, so a configured-only deployment carries only an idle ticker.
+func (s *Server) refreshGeneratorInventory(ctx context.Context) {
+	if s == nil || s.runner == nil {
+		return
+	}
+	if s.runner.settings.CapacityPlanning.Availability.Source != capacityAvailabilityConfiguredPlusLive {
+		return
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("generator inventory refresh panicked", "panic", r)
+		}
+	}()
+	probeCtx, cancel := context.WithTimeout(ctx, generatorInventoryRefreshTimeout)
+	defer cancel()
+	s.systemInventory(probeCtx)
 }
 
 func (s *Server) RunDueSchedules() error {
