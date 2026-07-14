@@ -247,7 +247,7 @@ func readRecorderImportRequest(w http.ResponseWriter, r *http.Request) (*recorde
 		name := strings.TrimSuffix(uploadName, filepath.Ext(uploadName))
 		return &recorderImportRequest{
 			Data:      data,
-			ProjectID: r.FormValue("project_id"),
+			ProjectID: authorizedImportProjectID(r),
 			Opts: recorderjson.ConvertOptions{
 				ScriptName: firstNonEmpty(r.FormValue("name"), name),
 				BaseURL:    r.FormValue("base_url"),

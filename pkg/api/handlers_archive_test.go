@@ -20,6 +20,15 @@ import (
 
 type archiveRedactionProtocol struct{}
 
+type archiveQueryStubProtocol struct{ archiveStubProtocol }
+
+func (p *archiveQueryStubProtocol) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
+	// Keep this archive API fixture below the production query byte budget on
+	// fast hosts; the test exercises archive/report behavior, not engine throughput.
+	time.Sleep(25 * time.Microsecond)
+	return p.archiveStubProtocol.Execute(ctx, action)
+}
+
 func (p *archiveRedactionProtocol) Name() string                                   { return "archive-redaction" }
 func (p *archiveRedactionProtocol) Init(_ context.Context, _ map[string]any) error { return nil }
 func (p *archiveRedactionProtocol) Execute(_ context.Context, action *protocol.Action) (*protocol.Result, error) {
@@ -59,7 +68,7 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 	server := NewServer(ServerConfig{Store: store})
 	protocolName := "archive-api-stub-" + strings.ReplaceAll(strings.ToLower(t.Name()), "/", "-")
 	protocol.Register(protocolName, func() protocol.Protocol {
-		return &archiveStubProtocol{}
+		return &archiveQueryStubProtocol{}
 	})
 
 	server.runner.StoreScript(&dsl.Script{

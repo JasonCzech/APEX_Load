@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -49,7 +50,11 @@ func (tr *TestRunner) StoreScriptDurable(script *dsl.Script) (*StoredScript, err
 		script.RefKey = existing.RefKey
 	}
 	if script.RefKey == "" {
-		script.RefKey = refkey.Script(tr.envCode, tr.nextScriptSeqLocked(), 1)
+		sequence, err := tr.nextScriptSeqLocked()
+		if err != nil {
+			return nil, fmt.Errorf("allocate script reference key: %w", err)
+		}
+		script.RefKey = refkey.Script(tr.envCode, sequence, 1)
 	}
 
 	createdAt := time.Now()
@@ -109,7 +114,11 @@ func (tr *TestRunner) CreateScriptDurable(script *dsl.Script) (*StoredScript, er
 		// stale cached script after another replica edited or replaced the durable
 		// row, so never let the cache bypass the create-only ownership fence.
 		if strings.TrimSpace(script.RefKey) == "" {
-			script.RefKey = refkey.Script(tr.envCode, tr.nextScriptSeqLocked(), 1)
+			sequence, err := tr.nextScriptSeqLocked()
+			if err != nil {
+				return nil, fmt.Errorf("allocate script reference key: %w", err)
+			}
+			script.RefKey = refkey.Script(tr.envCode, sequence, 1)
 		}
 		created, err := store.CreateScriptIfAbsent(script)
 		if err != nil {
@@ -135,7 +144,11 @@ func (tr *TestRunner) CreateScriptDurable(script *dsl.Script) (*StoredScript, er
 			return cloneStoredScriptForReadLocked(existing), nil
 		}
 		if strings.TrimSpace(script.RefKey) == "" {
-			script.RefKey = refkey.Script(tr.envCode, tr.nextScriptSeqLocked(), 1)
+			sequence, err := tr.nextScriptSeqLocked()
+			if err != nil {
+				return nil, fmt.Errorf("allocate script reference key: %w", err)
+			}
+			script.RefKey = refkey.Script(tr.envCode, sequence, 1)
 		}
 		if err := tr.saveStoredScript(script); err != nil {
 			return nil, err
@@ -181,11 +194,21 @@ func equivalentCreateOnlyScript(existing, candidate *dsl.Script) bool {
 }
 
 func (tr *TestRunner) GetScript(id string) (*StoredScript, bool) {
+	tr.refreshScriptsForHARead()
 	tr.mu.RLock()
 	defer tr.mu.RUnlock()
 	id = tr.resolveRefKeyLocked(id)
 	s, ok := tr.scripts[id]
 	return cloneStoredScriptForReadLocked(s), ok
+}
+
+func (tr *TestRunner) refreshScriptsForHARead() {
+	if tr == nil || tr.leadership == nil {
+		return
+	}
+	if err := tr.reloadStoredScripts(); err != nil {
+		slog.Warn("failed to refresh scripts for HA read", "error", err)
+	}
 }
 
 // GetScriptDurable refreshes from shared storage when available. Approval
@@ -246,6 +269,7 @@ func (tr *TestRunner) ReplayScriptDefinition(script *dsl.Script, opts engine.Rep
 }
 
 func (tr *TestRunner) ListScripts() []*StoredScript {
+	tr.refreshScriptsForHARead()
 	tr.mu.RLock()
 	defer tr.mu.RUnlock()
 	out := make([]*StoredScript, 0, len(tr.scripts))
@@ -256,6 +280,7 @@ func (tr *TestRunner) ListScripts() []*StoredScript {
 }
 
 func (tr *TestRunner) ListScriptsFiltered(projectID string, folderID *string) []*StoredScript {
+	tr.refreshScriptsForHARead()
 	projectID = normalizeProjectID(projectID)
 	tr.mu.RLock()
 	defer tr.mu.RUnlock()
@@ -334,7 +359,11 @@ func (tr *TestRunner) UpdateScriptDurable(id string, script *dsl.Script) (*Store
 	if ok && parts.Type == refkey.TypeScript {
 		script.RefKey = refkey.Script(parts.Env, parts.Seq, parts.Version+1)
 	} else {
-		script.RefKey = refkey.Script(tr.envCode, tr.nextScriptSeqLocked(), 1)
+		sequence, err := tr.nextScriptSeqLocked()
+		if err != nil {
+			return nil, false, fmt.Errorf("allocate script reference key: %w", err)
+		}
+		script.RefKey = refkey.Script(tr.envCode, sequence, 1)
 	}
 	// Project ownership is immutable for an in-place update. Moving a script
 	// requires a dedicated operation that authorizes both source and destination;
@@ -387,6 +416,7 @@ func (tr *TestRunner) DeleteScriptDurable(id string) (bool, error) {
 }
 
 func (tr *TestRunner) ListScriptsWithUsage() []*StoredScript {
+	tr.refreshScriptsForHARead()
 	tr.mu.RLock()
 	defer tr.mu.RUnlock()
 	out := make([]*StoredScript, 0, len(tr.scripts))

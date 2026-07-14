@@ -205,7 +205,7 @@ func readHARImportRequest(w http.ResponseWriter, r *http.Request) (*harImportReq
 		return &harImportRequest{
 			Data:          data,
 			SecondaryData: secondaryData,
-			ProjectID:     r.FormValue("project_id"),
+			ProjectID:     authorizedImportProjectID(r),
 			Opts: har.ConvertOptions{
 				ScriptName:          firstNonEmpty(r.FormValue("name"), strings.TrimSuffix(uploadName, filepath.Ext(uploadName))),
 				BaseURL:             r.FormValue("base_url"),

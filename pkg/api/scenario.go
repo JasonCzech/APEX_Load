@@ -88,7 +88,11 @@ func (tr *TestRunner) storeScenarioLocked(id string, req CreateScenarioRequest) 
 		refKey = existing.RefKey
 	}
 	if refKey == "" {
-		refKey = refkey.Scenario(tr.envCode, tr.nextScenarioSeqLocked())
+		sequence, err := tr.nextScenarioSeqLocked()
+		if err != nil {
+			return nil, fmt.Errorf("allocate scenario reference key: %w", err)
+		}
+		refKey = refkey.Scenario(tr.envCode, sequence)
 	}
 	scenario := &storage.Scenario{
 		ID:               id,
@@ -212,6 +216,7 @@ func normalizeScenarioDataPoolBindings(scenarioID string, bindings []storage.Sce
 }
 
 func (tr *TestRunner) GetScenario(id string) (*StoredScenario, bool) {
+	tr.refreshScenariosForHARead()
 	tr.mu.RLock()
 	defer tr.mu.RUnlock()
 	id = tr.resolveRefKeyLocked(id)
@@ -220,6 +225,15 @@ func (tr *TestRunner) GetScenario(id string) (*StoredScenario, bool) {
 		return nil, false
 	}
 	return tr.enrichScenarioSummaryLocked(scenario), true
+}
+
+func (tr *TestRunner) refreshScenariosForHARead() {
+	if tr == nil || tr.leadership == nil {
+		return
+	}
+	if err := tr.reloadStoredScenarios(); err != nil {
+		slog.Warn("failed to refresh scenarios for HA read", "error", err)
+	}
 }
 
 func (tr *TestRunner) replaceScenarioDataPools(id string, bindings []storage.ScenarioDataPoolBinding) bool {
@@ -235,6 +249,7 @@ func (tr *TestRunner) replaceScenarioDataPools(id string, bindings []storage.Sce
 }
 
 func (tr *TestRunner) ListScenarios() []*StoredScenario {
+	tr.refreshScenariosForHARead()
 	tr.mu.RLock()
 	defer tr.mu.RUnlock()
 	out := make([]*StoredScenario, 0, len(tr.scenarios))
@@ -245,6 +260,7 @@ func (tr *TestRunner) ListScenarios() []*StoredScenario {
 }
 
 func (tr *TestRunner) ListScenariosFiltered(projectID string) []*StoredScenario {
+	tr.refreshScenariosForHARead()
 	projectID = normalizeProjectID(projectID)
 	tr.mu.RLock()
 	defer tr.mu.RUnlock()

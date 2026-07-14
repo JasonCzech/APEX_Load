@@ -16,6 +16,11 @@ import (
 const libraryBundleSchemaVersion = "apexload.library_bundle.v1"
 const libraryRemotesSettingKey = "library.remotes.v1"
 const librarySyncLinksSettingKey = "library.sync_links.v1"
+
+type librarySettingsCASStore interface {
+	CompareAndSwapSetting(key, expected, value string) (bool, error)
+}
+
 const defaultLibraryArchiveMaxBytes int64 = 512 * 1024 * 1024
 const defaultLibraryRemoteJSONTimeout = 30 * time.Second
 const defaultLibraryRemoteArchiveTimeout = 5 * time.Minute
@@ -208,50 +213,92 @@ func (s *Server) loadLibraryState() {
 	}
 	if raw, err := s.store.GetSetting(libraryRemotesSettingKey); err != nil {
 		slog.Warn("failed to load library remotes", "err", err)
-	} else if strings.TrimSpace(raw) != "" {
-		var remotes []LibraryRemote
-		if err := json.Unmarshal([]byte(raw), &remotes); err != nil {
-			slog.Warn("failed to decode library remotes", "err", err)
-		} else {
-			s.libraryMu.Lock()
-			for i := range remotes {
-				remote := remotes[i]
-				remote.APIKey = ""
-				remote.CredentialConfigured = false
-				if remote.ID != "" {
-					copied := remote
-					s.libraryRemotes[remote.ID] = &copied
+	} else {
+		loaded := make(map[string]*LibraryRemote)
+		if strings.TrimSpace(raw) != "" {
+			var remotes []LibraryRemote
+			if err := json.Unmarshal([]byte(raw), &remotes); err != nil {
+				slog.Warn("failed to decode library remotes", "err", err)
+			} else {
+				for i := range remotes {
+					remote := remotes[i]
+					remote.APIKey = ""
+					remote.CredentialConfigured = false
+					if remote.ID != "" {
+						copied := remote
+						loaded[remote.ID] = &copied
+					}
 				}
 			}
-			s.libraryMu.Unlock()
 		}
+		s.libraryMu.Lock()
+		s.libraryRemotes = loaded
+		s.libraryRemotesRaw = raw
+		s.libraryMu.Unlock()
 	}
 	if raw, err := s.store.GetSetting(librarySyncLinksSettingKey); err != nil {
 		slog.Warn("failed to load library sync links", "err", err)
-	} else if strings.TrimSpace(raw) != "" {
-		var links []librarySyncLink
-		if err := json.Unmarshal([]byte(raw), &links); err != nil {
-			slog.Warn("failed to decode library sync links", "err", err)
-		} else {
-			s.libraryMu.Lock()
-			for i := range links {
-				link := links[i]
-				if link.Kind == "" || link.SourceItemID == "" {
-					continue
+	} else {
+		loaded := make(map[string]*librarySyncLink)
+		if strings.TrimSpace(raw) != "" {
+			var links []librarySyncLink
+			if err := json.Unmarshal([]byte(raw), &links); err != nil {
+				slog.Warn("failed to decode library sync links", "err", err)
+			} else {
+				for i := range links {
+					link := links[i]
+					if link.Kind == "" || link.SourceItemID == "" {
+						continue
+					}
+					copied := link
+					loaded[libraryLinkKey(link.RemoteID, link.Kind, link.SourceInstanceID, link.SourceItemID)] = &copied
 				}
-				copied := link
-				s.libraryLinks[libraryLinkKey(link.RemoteID, link.Kind, link.SourceInstanceID, link.SourceItemID)] = &copied
 			}
-			s.libraryMu.Unlock()
 		}
+		s.libraryMu.Lock()
+		s.libraryLinks = loaded
+		s.libraryLinksRaw = raw
+		s.libraryMu.Unlock()
 	}
 }
 
-func (s *Server) persistLibraryRemotes() {
+func (s *Server) loadLibraryLinksState() {
 	if s == nil || s.store == nil {
 		return
 	}
+	raw, err := s.store.GetSetting(librarySyncLinksSettingKey)
+	if err != nil {
+		slog.Warn("failed to load library sync links", "err", err)
+		return
+	}
+	loaded := make(map[string]*librarySyncLink)
+	if strings.TrimSpace(raw) != "" {
+		var links []librarySyncLink
+		if err := json.Unmarshal([]byte(raw), &links); err != nil {
+			slog.Warn("failed to decode library sync links", "err", err)
+			return
+		}
+		for i := range links {
+			link := links[i]
+			if link.Kind == "" || link.SourceItemID == "" {
+				continue
+			}
+			copied := link
+			loaded[libraryLinkKey(link.RemoteID, link.Kind, link.SourceInstanceID, link.SourceItemID)] = &copied
+		}
+	}
 	s.libraryMu.Lock()
+	s.libraryLinks = loaded
+	s.libraryLinksRaw = raw
+	s.libraryMu.Unlock()
+}
+
+func (s *Server) persistLibraryRemotes() error {
+	if s == nil || s.store == nil {
+		return nil
+	}
+	s.libraryMu.Lock()
+	expected := s.libraryRemotesRaw
 	remotes := make([]LibraryRemote, 0, len(s.libraryRemotes))
 	for _, remote := range s.libraryRemotes {
 		if remote == nil {
@@ -268,19 +315,32 @@ func (s *Server) persistLibraryRemotes() {
 	s.libraryMu.Unlock()
 	payload, err := json.Marshal(remotes)
 	if err != nil {
-		slog.Warn("failed to encode library remotes", "err", err)
-		return
+		return fmt.Errorf("encode library remotes: %w", err)
 	}
-	if err := s.store.SaveSetting(libraryRemotesSettingKey, string(payload)); err != nil {
-		slog.Warn("failed to persist library remotes", "err", err)
-	}
-}
-
-func (s *Server) persistLibraryLinks() {
-	if s == nil || s.store == nil {
-		return
+	encoded := string(payload)
+	if cas, ok := s.store.(librarySettingsCASStore); ok {
+		updated, err := cas.CompareAndSwapSetting(libraryRemotesSettingKey, expected, encoded)
+		if err != nil {
+			return fmt.Errorf("persist library remotes: %w", err)
+		}
+		if !updated {
+			return fmt.Errorf("persist library remotes: shared settings changed concurrently; retry the request")
+		}
+	} else if err := s.store.SaveSetting(libraryRemotesSettingKey, encoded); err != nil {
+		return fmt.Errorf("persist library remotes: %w", err)
 	}
 	s.libraryMu.Lock()
+	s.libraryRemotesRaw = encoded
+	s.libraryMu.Unlock()
+	return nil
+}
+
+func (s *Server) persistLibraryLinks() error {
+	if s == nil || s.store == nil {
+		return nil
+	}
+	s.libraryMu.Lock()
+	expected := s.libraryLinksRaw
 	links := make([]librarySyncLink, 0, len(s.libraryLinks))
 	for _, link := range s.libraryLinks {
 		if link == nil {
@@ -295,12 +355,24 @@ func (s *Server) persistLibraryLinks() {
 	s.libraryMu.Unlock()
 	payload, err := json.Marshal(links)
 	if err != nil {
-		slog.Warn("failed to encode library sync links", "err", err)
-		return
+		return fmt.Errorf("encode library sync links: %w", err)
 	}
-	if err := s.store.SaveSetting(librarySyncLinksSettingKey, string(payload)); err != nil {
-		slog.Warn("failed to persist library sync links", "err", err)
+	encoded := string(payload)
+	if cas, ok := s.store.(librarySettingsCASStore); ok {
+		updated, err := cas.CompareAndSwapSetting(librarySyncLinksSettingKey, expected, encoded)
+		if err != nil {
+			return fmt.Errorf("persist library sync links: %w", err)
+		}
+		if !updated {
+			return fmt.Errorf("persist library sync links: shared settings changed concurrently; retry the request")
+		}
+	} else if err := s.store.SaveSetting(librarySyncLinksSettingKey, encoded); err != nil {
+		return fmt.Errorf("persist library sync links: %w", err)
 	}
+	s.libraryMu.Lock()
+	s.libraryLinksRaw = encoded
+	s.libraryMu.Unlock()
+	return nil
 }
 
 func resolveLibraryTransferProjectID(r *http.Request, store storage.Store) (string, int, string) {

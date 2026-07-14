@@ -296,7 +296,11 @@ func (s *Server) importLibraryBundleWithArchive(req LibraryImportRequest, remote
 			}
 			response.Items = append(response.Items, LibraryImportResultItem{Kind: "scenario", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, LocalItemID: localID, ContentHash: item.ContentHash, Action: action})
 		case "result":
-			localID, action, conflict := s.importLibraryResult(item, projectID, remoteID, archiveImport)
+			var itemArchive *libraryArchiveImport
+			if item.Result != nil && strings.EqualFold(item.Result.ArchiveTransfer, "stream") {
+				itemArchive = archiveImport
+			}
+			localID, action, conflict := s.importLibraryResult(item, projectID, remoteID, itemArchive)
 			if conflict != nil {
 				response.Conflicts = append(response.Conflicts, *conflict)
 				continue
@@ -334,7 +338,9 @@ func (s *Server) importLibraryScript(item LibraryBundleItem, projectID string, r
 	if err != nil {
 		return "", "", &LibraryConflict{Kind: "script", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, LocalItemID: localID, Reason: "failed to persist imported script: " + err.Error()}
 	}
-	s.rememberLibraryLink(remoteID, item.Kind, item.SourceInstanceID, item.SourceItemID, stored.ID, item.SourceItemID, hashLibraryScript(stored.Script), item.ContentHash)
+	if err := s.rememberLibraryLink(remoteID, item.Kind, item.SourceInstanceID, item.SourceItemID, stored.ID, item.SourceItemID, hashLibraryScript(stored.Script), item.ContentHash); err != nil {
+		return "", "", &LibraryConflict{Kind: "script", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, LocalItemID: stored.ID, Reason: err.Error()}
+	}
 	return stored.ID, action, nil
 }
 
@@ -368,7 +374,9 @@ func (s *Server) importLibraryScenario(item LibraryBundleItem, projectID string,
 		if err != nil {
 			return "", "", &LibraryConflict{Kind: "scenario", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: err.Error()}
 		}
-		s.rememberLibraryLink(remoteID, item.Kind, item.SourceInstanceID, item.SourceItemID, stored.ID, item.SourceItemID, hashLibraryScenario(stored), item.ContentHash)
+		if err := s.rememberLibraryLink(remoteID, item.Kind, item.SourceInstanceID, item.SourceItemID, stored.ID, item.SourceItemID, hashLibraryScenario(stored), item.ContentHash); err != nil {
+			return "", "", &LibraryConflict{Kind: "scenario", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, LocalItemID: stored.ID, Reason: err.Error()}
+		}
 		return stored.ID, action, nil
 	}
 	stored, ok, err := s.runner.UpdateScenario(localID, req)
@@ -382,7 +390,9 @@ func (s *Server) importLibraryScenario(item LibraryBundleItem, projectID string,
 		}
 		action = "created"
 	}
-	s.rememberLibraryLink(remoteID, item.Kind, item.SourceInstanceID, item.SourceItemID, stored.ID, item.SourceItemID, hashLibraryScenario(stored), item.ContentHash)
+	if err := s.rememberLibraryLink(remoteID, item.Kind, item.SourceInstanceID, item.SourceItemID, stored.ID, item.SourceItemID, hashLibraryScenario(stored), item.ContentHash); err != nil {
+		return "", "", &LibraryConflict{Kind: "scenario", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, LocalItemID: stored.ID, Reason: err.Error()}
+	}
 	return stored.ID, action, nil
 }
 
@@ -395,6 +405,13 @@ func (s *Server) importLibraryResult(item LibraryBundleItem, projectID string, r
 		resultID = item.Result.Test.ID
 	}
 	importID := uuid.New().String()
+	archiveDir := ""
+	keepArchiveDir := false
+	defer func() {
+		if !keepArchiveDir && archiveDir != "" {
+			_ = os.RemoveAll(archiveDir)
+		}
+	}()
 	rawResult := map[string]any{
 		"schema_version":        libraryBundleSchemaVersion,
 		"source_instance":       item.SourceInstanceID,
@@ -408,6 +425,7 @@ func (s *Server) importLibraryResult(item LibraryBundleItem, projectID string, r
 	}
 	if archiveImport != nil && strings.TrimSpace(archiveImport.ZipPath) != "" {
 		dir := libraryImportedArchiveDir(importID)
+		archiveDir = dir
 		if err := os.RemoveAll(dir); err != nil {
 			return "", "", &LibraryConflict{Kind: "result", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: err.Error()}
 		}
@@ -433,6 +451,7 @@ func (s *Server) importLibraryResult(item LibraryBundleItem, projectID string, r
 		}
 	} else if strings.TrimSpace(item.Result.ArchiveZipB64) != "" {
 		dir := libraryImportedArchiveDir(importID)
+		archiveDir = dir
 		if err := os.RemoveAll(dir); err != nil {
 			return "", "", &LibraryConflict{Kind: "result", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: err.Error()}
 		}
@@ -461,7 +480,10 @@ func (s *Server) importLibraryResult(item LibraryBundleItem, projectID string, r
 	if err := s.saveExternalResultImport(imported); err != nil {
 		return "", "", &LibraryConflict{Kind: "result", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: err.Error()}
 	}
-	s.rememberLibraryLink(remoteID, item.Kind, item.SourceInstanceID, item.SourceItemID, imported.ID, resultID, item.ContentHash, item.ContentHash)
+	keepArchiveDir = true
+	if err := s.rememberLibraryLink(remoteID, item.Kind, item.SourceInstanceID, item.SourceItemID, imported.ID, resultID, item.ContentHash, item.ContentHash); err != nil {
+		return "", "", &LibraryConflict{Kind: "result", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, LocalItemID: imported.ID, Reason: err.Error()}
+	}
 	return imported.ID, "created", nil
 }
 

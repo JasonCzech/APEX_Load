@@ -19,6 +19,7 @@ import (
 )
 
 func (tr *TestRunner) GetTest(id string) (*ManagedTest, bool) {
+	tr.refreshTestsForHARead()
 	tr.refreshReadMetadataForTest(id)
 	tr.mu.RLock()
 	resolvedID := tr.resolveRefKeyLocked(id)
@@ -40,7 +41,27 @@ func (tr *TestRunner) GetTest(id string) (*ManagedTest, bool) {
 	if err != nil || record == nil {
 		return nil, false
 	}
-	return managedTestFromRecord(record), true
+	managed := managedTestFromRecord(record)
+	tr.loadStoredTestHistory(managed)
+	tr.loadStoredTestArchive(managed)
+	tr.mu.Lock()
+	if current := tr.tests[managed.ID]; current == nil || current.cancel == nil {
+		tr.tests[managed.ID] = managed
+		tr.observeAndIndexRefKeyLocked(managed.RefKey, managed.ID)
+	}
+	cloned := cloneManagedTestForReadLocked(tr.tests[managed.ID])
+	cloned.ComparisonBaseline = tr.buildRunComparisonBaselineLocked(tr.tests[managed.ID])
+	tr.mu.Unlock()
+	return cloned, true
+}
+
+func (tr *TestRunner) refreshTestsForHARead() {
+	if tr == nil || tr.leadership == nil || tr.holdsExecutionLeadership() {
+		return
+	}
+	if err := tr.reloadStoredTests(); err != nil {
+		slog.Warn("failed to refresh tests for HA read", "error", err)
+	}
 }
 
 func (tr *TestRunner) buildRunComparisonBaselineLocked(test *ManagedTest) *RunComparisonBaseline {
@@ -315,6 +336,7 @@ func (tr *TestRunner) TestCount() int {
 }
 
 func (tr *TestRunner) ListTests() []*ManagedTest {
+	tr.refreshTestsForHARead()
 	tr.refreshReadMetadataForTestList()
 	tr.mu.RLock()
 	defer tr.mu.RUnlock()
@@ -326,6 +348,7 @@ func (tr *TestRunner) ListTests() []*ManagedTest {
 }
 
 func (tr *TestRunner) ListTestSummaries() []*ManagedTest {
+	tr.refreshTestsForHARead()
 	tr.refreshReadMetadataForTestList()
 	tr.mu.RLock()
 	defer tr.mu.RUnlock()
@@ -416,6 +439,7 @@ func (tr *TestRunner) listTestSummaryPage(query testSummaryListQuery) ([]*Manage
 }
 
 func (tr *TestRunner) ListTestsFiltered(projectID string, folderID *string) []*ManagedTest {
+	tr.refreshTestsForHARead()
 	projectID = normalizeProjectID(projectID)
 	tr.refreshReadMetadataForTestList()
 	tr.mu.RLock()
@@ -440,6 +464,7 @@ func (tr *TestRunner) ListTestsFiltered(projectID string, folderID *string) []*M
 }
 
 func (tr *TestRunner) ListTestSummariesFiltered(projectID string, folderID *string) []*ManagedTest {
+	tr.refreshTestsForHARead()
 	projectID = normalizeProjectID(projectID)
 	tr.refreshReadMetadataForTestList()
 	tr.mu.RLock()
@@ -464,6 +489,7 @@ func (tr *TestRunner) ListTestSummariesFiltered(projectID string, folderID *stri
 }
 
 func (tr *TestRunner) ListTestsByContext(applicationID string, releaseID string, scenarioID string) []*ManagedTest {
+	tr.refreshTestsForHARead()
 	tr.refreshReadMetadataForTestList()
 	tr.mu.RLock()
 	defer tr.mu.RUnlock()
@@ -485,6 +511,7 @@ func (tr *TestRunner) ListTestsByContext(applicationID string, releaseID string,
 }
 
 func (tr *TestRunner) ListTestSummariesByContext(applicationID string, releaseID string, scenarioID string) []*ManagedTest {
+	tr.refreshTestsForHARead()
 	tr.refreshReadMetadataForTestList()
 	tr.mu.RLock()
 	defer tr.mu.RUnlock()

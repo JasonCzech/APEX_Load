@@ -801,7 +801,7 @@ func (s *Server) handleImportEventHubsCapture(w http.ResponseWriter, r *http.Req
 			return
 		}
 		name = strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename))
-		projectID = r.FormValue("project_id")
+		projectID = authorizedImportProjectID(r)
 	} else {
 		data, ok = readImportBody(w, r)
 		if !ok {
@@ -899,7 +899,7 @@ func (s *Server) handleImportBrokerConfig(w http.ResponseWriter, r *http.Request
 			return
 		}
 		name = strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename))
-		projectID = r.FormValue("project_id")
+		projectID = authorizedImportProjectID(r)
 	} else {
 		data, ok = readImportBody(w, r)
 		if !ok {
@@ -1043,7 +1043,7 @@ func readAsyncAPIImportRequest(w http.ResponseWriter, r *http.Request) (*asyncAP
 		}
 		return &asyncAPIImportRequest{
 			Data:      data,
-			ProjectID: r.FormValue("project_id"),
+			ProjectID: authorizedImportProjectID(r),
 			Name:      strings.TrimSuffix(filename, filepath.Ext(filename)),
 			Opts:      asyncAPIOptionsFromForm(r),
 		}, true
@@ -1166,7 +1166,7 @@ func readOpenAPIImportRequest(w http.ResponseWriter, r *http.Request) (*openAPII
 		}
 		return &openAPIImportRequest{
 			Data:      data,
-			ProjectID: r.FormValue("project_id"),
+			ProjectID: authorizedImportProjectID(r),
 			Name:      strings.TrimSuffix(filename, filepath.Ext(filename)),
 			Opts: openapi.ConvertOptions{
 				BaseURL:    r.FormValue("base_url"),
@@ -1224,7 +1224,7 @@ func readRAMLImportRequest(w http.ResponseWriter, r *http.Request) (*ramlImportR
 			return nil, false
 		}
 		data = fileData
-		projectID = r.FormValue("project_id")
+		projectID = authorizedImportProjectID(r)
 		name = strings.TrimSuffix(filename, filepath.Ext(filename))
 		origName = filename
 		opts = raml.ConvertOptions{BaseURL: r.FormValue("base_url"), ScriptName: r.FormValue("script_name")}
@@ -1362,7 +1362,7 @@ func readWSDLImportRequest(w http.ResponseWriter, r *http.Request) (*wsdlImportR
 			Data:      data,
 			RootFile:  rootFile,
 			Files:     files,
-			ProjectID: r.FormValue("project_id"),
+			ProjectID: authorizedImportProjectID(r),
 			Name:      name,
 			Opts:      wsdlConvertOptionsFromValue(r.FormValue),
 		}, true
@@ -1442,7 +1442,7 @@ func readPostmanImportRequest(w http.ResponseWriter, r *http.Request) (*postmanI
 		return &postmanImportRequest{
 			Data:            data,
 			EnvironmentData: environmentData,
-			ProjectID:       r.FormValue("project_id"),
+			ProjectID:       authorizedImportProjectID(r),
 			Name:            strings.TrimSuffix(filename, filepath.Ext(filename)),
 			Opts:            postmanConvertOptionsFromValue(r.FormValue),
 		}, true

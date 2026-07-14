@@ -304,6 +304,7 @@ type BrowserConfig struct {
 	HARCapture         string                     `json:"har_capture,omitempty"`
 	HARCapturePolicy   string                     `json:"har_capture_policy,omitempty"`
 	HARSLAThresholdMs  int                        `json:"har_sla_threshold_ms,omitempty"`
+	HARArtifactDir     string                     `json:"har_artifact_dir,omitempty"`
 	CaptureScreenshots string                     `json:"capture_screenshots,omitempty"`
 	CacheEnabled       *bool                      `json:"cache_enabled,omitempty"`
 	CacheContentURLs   *bool                      `json:"cache_content_urls,omitempty"`

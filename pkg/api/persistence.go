@@ -145,7 +145,23 @@ func (tr *TestRunner) reloadStoredScenarios() error {
 			tr.mu.RUnlock()
 			return loadErr
 		}
-		loaded[scenario.ID] = tr.buildStoredScenario(full, scripts)
+		bindings, loadErr := tr.scenarioStore.ListScenarioDataPoolBindings(scenario.ID)
+		if loadErr != nil {
+			tr.mu.RUnlock()
+			return fmt.Errorf("load scenario %s data pools: %w", scenario.ID, loadErr)
+		}
+		schedules, loadErr := tr.scenarioStore.ListScenarioSchedules(scenario.ID)
+		if loadErr != nil {
+			tr.mu.RUnlock()
+			return fmt.Errorf("load scenario %s schedules: %w", scenario.ID, loadErr)
+		}
+		stored := tr.buildStoredScenario(full, scripts)
+		stored.DataPools = append([]storage.ScenarioDataPoolBinding(nil), bindings...)
+		stored.Schedules = make([]*storage.ScenarioSchedule, 0, len(schedules))
+		for _, schedule := range schedules {
+			stored.Schedules = append(stored.Schedules, cloneScenarioSchedule(schedule))
+		}
+		loaded[scenario.ID] = stored
 	}
 	tr.mu.RUnlock()
 	tr.mu.Lock()
@@ -268,7 +284,9 @@ func (tr *TestRunner) loadStoredTests() {
 		// non-leader (HA standby) must not clobber the active leader's live runs
 		// in the shared database. The eventual leader reconciles on acquisition.
 		if tr.isExecutionLeader() {
-			tr.reconcileStoredActiveTest(managedTest)
+			if err := tr.reconcileStoredActiveTest(managedTest); err != nil {
+				slog.Error("failed to reconcile stored active test", "test_id", managedTest.ID, "error", err)
+			}
 		}
 		tr.loadStoredTestHistory(managedTest)
 		tr.loadStoredTestArchive(managedTest)
@@ -301,7 +319,9 @@ func (tr *TestRunner) reloadStoredTests() error {
 		}
 		managedTest := managedTestFromRecord(record)
 		if tr.holdsExecutionLeadership() {
-			tr.reconcileStoredActiveTest(managedTest)
+			if err := tr.reconcileStoredActiveTest(managedTest); err != nil {
+				return fmt.Errorf("reconcile stored active test %s: %w", managedTest.ID, err)
+			}
 		}
 		tr.loadStoredTestHistory(managedTest)
 		tr.loadStoredTestArchive(managedTest)
@@ -333,14 +353,14 @@ func (tr *TestRunner) reloadStoredTests() error {
 	return nil
 }
 
-func (tr *TestRunner) reconcileStoredActiveTest(test *ManagedTest) {
+func (tr *TestRunner) reconcileStoredActiveTest(test *ManagedTest) error {
 	if test == nil {
-		return
+		return nil
 	}
 	switch test.Status {
 	case "INITIALIZING", "RUNNING", "PAUSED", "STOPPING", "SHAKEOUT":
 	default:
-		return
+		return nil
 	}
 	previousStatus := test.Status
 	previousPendingSince := cloneTimePtr(test.PendingSince)
@@ -365,7 +385,7 @@ func (tr *TestRunner) reconcileStoredActiveTest(test *ManagedTest) {
 		test.EndedAt = previousEndedAt
 		test.Error = previousError
 		slog.Error("failed to persist recovered test state", "test_id", test.ID, "status", test.Status, "error", err)
-		return
+		return err
 	}
 	// The hydrated row is deliberately not in tr.tests yet. Release from the
 	// explicit durable binding and retain that slot ID for retry so startup
@@ -377,6 +397,7 @@ func (tr *TestRunner) reconcileStoredActiveTest(test *ManagedTest) {
 			tr.enqueueCapacityReservationReleaseRetry(test.ID, slotID)
 		}
 	}
+	return nil
 }
 
 func managedTestFromRecord(record *storage.TestRecord) *ManagedTest {
@@ -474,7 +495,9 @@ func (tr *TestRunner) loadStoredTestArchive(test *ManagedTest) {
 		return
 	}
 	test.Archive = archive
+	tr.mu.Lock()
 	tr.archives[test.ID] = archive
+	tr.mu.Unlock()
 }
 
 func storedScenarioToStorage(stored *StoredScenario) *storage.Scenario {

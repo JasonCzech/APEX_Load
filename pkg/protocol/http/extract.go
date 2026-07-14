@@ -22,43 +22,73 @@ import (
 	"github.com/jmespath/go-jmespath"
 )
 
-// compiledRegexCache memoizes *regexp.Regexp keyed by the exact pattern string.
-// Extractor expressions are static for the life of a script, so without caching
-// each VUser would recompile the same pattern on every request — a measurable
-// CPU/allocation cost on the load-generator hot path. Only patterns derived from
-// the static extractor config (delimiters/expression) are cached here; nothing
-// keyed on per-request response bytes is ever stored, so the map stays bounded
-// by the number of distinct extractor patterns in the script.
-var compiledRegexCache sync.Map    // map[string]*regexp.Regexp
-var compiledXPathCache sync.Map    // map[string]*xpath.Expr
-var compiledJMESPathCache sync.Map // map[string]*jmespath.JMESPath
+const maxCompiledExtractorCacheEntries = 1024
+
+type compiledExtractorCache[T any] struct {
+	mu    sync.Mutex
+	items map[string]T
+	order []string
+}
+
+func (c *compiledExtractorCache[T]) get(key string) (T, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	value, ok := c.items[key]
+	return value, ok
+}
+
+// Load preserves the small sync.Map-style test seam used by cache behavior
+// tests while the production cache remains bounded.
+func (c *compiledExtractorCache[T]) Load(key string) (T, bool) {
+	return c.get(key)
+}
+
+func (c *compiledExtractorCache[T]) put(key string, value T) T {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if existing, ok := c.items[key]; ok {
+		return existing
+	}
+	if c.items == nil {
+		c.items = make(map[string]T)
+	}
+	if len(c.items) >= maxCompiledExtractorCacheEntries {
+		delete(c.items, c.order[0])
+		c.order = c.order[1:]
+	}
+	c.items[key] = value
+	c.order = append(c.order, key)
+	return value
+}
+
+var compiledRegexCache compiledExtractorCache[*regexp.Regexp]
+var compiledXPathCache compiledExtractorCache[*xpath.Expr]
+var compiledJMESPathCache compiledExtractorCache[*jmespath.JMESPath]
 
 // compileRegexCached returns a shared compiled regexp for expr, compiling it on
 // the first request and reusing the result thereafter. Compile errors are not
 // cached: an invalid pattern surfaces the same error on every call, exactly as
 // regexp.Compile did before.
 func compileRegexCached(expr string) (*regexp.Regexp, error) {
-	if cached, ok := compiledRegexCache.Load(expr); ok {
-		return cached.(*regexp.Regexp), nil
+	if cached, ok := compiledRegexCache.get(expr); ok {
+		return cached, nil
 	}
 	re, err := regexp.Compile(expr)
 	if err != nil {
 		return nil, err
 	}
-	actual, _ := compiledRegexCache.LoadOrStore(expr, re)
-	return actual.(*regexp.Regexp), nil
+	return compiledRegexCache.put(expr, re), nil
 }
 
 func compileJMESPathCached(expr string) (*jmespath.JMESPath, error) {
-	if cached, ok := compiledJMESPathCache.Load(expr); ok {
-		return cached.(*jmespath.JMESPath), nil
+	if cached, ok := compiledJMESPathCache.get(expr); ok {
+		return cached, nil
 	}
 	compiled, err := jmespath.Compile(expr)
 	if err != nil {
 		return nil, err
 	}
-	actual, _ := compiledJMESPathCache.LoadOrStore(expr, compiled)
-	return actual.(*jmespath.JMESPath), nil
+	return compiledJMESPathCache.put(expr, compiled), nil
 }
 
 const xpathFragmentExpressionPrefix = "__apexload_xpath_fragment__:"
@@ -354,8 +384,8 @@ func decodeXPathExpression(expr string) (string, bool, map[string]string, error)
 
 func compileXPathSelector(expr string, namespaces map[string]string) (*xpath.Expr, error) {
 	cacheKey := xpathSelectorCacheKey(expr, namespaces)
-	if cached, ok := compiledXPathCache.Load(cacheKey); ok {
-		return cached.(*xpath.Expr), nil
+	if cached, ok := compiledXPathCache.get(cacheKey); ok {
+		return cached, nil
 	}
 	var (
 		selector *xpath.Expr
@@ -369,8 +399,7 @@ func compileXPathSelector(expr string, namespaces map[string]string) (*xpath.Exp
 	if err != nil {
 		return nil, err
 	}
-	actual, _ := compiledXPathCache.LoadOrStore(cacheKey, selector)
-	return actual.(*xpath.Expr), nil
+	return compiledXPathCache.put(cacheKey, selector), nil
 }
 
 func xpathSelectorCacheKey(expr string, namespaces map[string]string) string {
@@ -787,10 +816,10 @@ func extractAllXPath(expr string, body []byte) ([]string, error) {
 	}
 
 	if doc, err := xmlquery.Parse(strings.NewReader(string(body))); err == nil {
-		nodes := xmlquery.QuerySelectorAll(doc, selector)
-		if len(nodes) > maxAllExtractorMatches {
+		if xpathMatchLimitExceeded(selector, xmlquery.CreateXPathNavigator(doc)) {
 			return nil, fmt.Errorf("XPath match limit exceeded (%d)", maxAllExtractorMatches)
 		}
+		nodes := xmlquery.QuerySelectorAll(doc, selector)
 		values := make([]string, 0, len(nodes))
 		var totalBytes int64
 		for _, node := range nodes {
@@ -813,10 +842,10 @@ func extractAllXPath(expr string, body []byte) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid HTML/XML body: %w", err)
 	}
-	nodes := htmlquery.QuerySelectorAll(doc, selector)
-	if len(nodes) > maxAllExtractorMatches {
+	if xpathMatchLimitExceeded(selector, htmlquery.CreateXPathNavigator(doc)) {
 		return nil, fmt.Errorf("XPath match limit exceeded (%d)", maxAllExtractorMatches)
 	}
+	nodes := htmlquery.QuerySelectorAll(doc, selector)
 	values := make([]string, 0, len(nodes))
 	var totalBytes int64
 	for _, node := range nodes {
@@ -833,6 +862,18 @@ func extractAllXPath(expr string, body []byte) ([]string, error) {
 		values = append(values, value)
 	}
 	return values, nil
+}
+
+func xpathMatchLimitExceeded(selector *xpath.Expr, navigator xpath.NodeNavigator) bool {
+	iterator := selector.Select(navigator)
+	count := 0
+	for iterator.MoveNext() {
+		count++
+		if count > maxAllExtractorMatches {
+			return true
+		}
+	}
+	return false
 }
 
 func decodeBoundaryExpression(expr string) (boundaryExpressionConfig, error) {

@@ -167,10 +167,27 @@ func readLibraryArchiveImportRequest(r *http.Request) (LibraryImportRequest, *li
 		cleanup()
 		return LibraryImportRequest{}, nil, nil, fmt.Errorf("archive part is required for streamed result imports")
 	}
+	if streamedLibraryResultCount(&req.Bundle) > 1 {
+		cleanup()
+		return LibraryImportRequest{}, nil, nil, fmt.Errorf("a streamed archive import may contain only one result item")
+	}
 	if archivePath == "" {
 		return req, nil, cleanup, nil
 	}
 	return req, &libraryArchiveImport{ZipPath: archivePath, SizeBytes: archiveSize}, cleanup, nil
+}
+
+func streamedLibraryResultCount(bundle *LibraryBundle) int {
+	if bundle == nil {
+		return 0
+	}
+	count := 0
+	for _, item := range bundle.Items {
+		if normalizeLibraryKind(item.Kind) == "result" && item.Result != nil && strings.EqualFold(item.Result.ArchiveTransfer, "stream") {
+			count++
+		}
+	}
+	return count
 }
 
 func archiveImportSize(archiveImport *libraryArchiveImport) int64 {

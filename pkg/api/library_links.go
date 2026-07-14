@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -83,7 +84,8 @@ func (s *Server) libraryLink(remoteID string, kind string, sourceInstanceID stri
 	return &copied
 }
 
-func (s *Server) rememberLibraryLink(remoteID string, kind string, sourceInstanceID string, sourceItemID string, localItemID string, remoteItemID string, localHash string, remoteHash string) {
+func (s *Server) rememberLibraryLink(remoteID string, kind string, sourceInstanceID string, sourceItemID string, localItemID string, remoteItemID string, localHash string, remoteHash string) error {
+	s.loadLibraryLinksState()
 	if remoteID == "" {
 		remoteID = "direct"
 	}
@@ -100,7 +102,7 @@ func (s *Server) rememberLibraryLink(remoteID string, kind string, sourceInstanc
 		LastSyncedAt:      time.Now().UTC(),
 	}
 	s.libraryMu.Unlock()
-	s.persistLibraryLinks()
+	return s.persistLibraryLinks()
 }
 
 func libraryLinkKey(remoteID string, kind string, sourceInstanceID string, sourceItemID string) string {
@@ -171,6 +173,8 @@ func (s *Server) rememberRemoteImportLinks(remoteID string, bundle *LibraryBundl
 			continue
 		}
 		localHash, _ := s.localLibraryItemHash(item.Kind, localID)
-		s.rememberLibraryLink(remoteID, item.Kind, s.controllerID, localID, localID, item.LocalItemID, localHash, item.ContentHash)
+		if err := s.rememberLibraryLink(remoteID, item.Kind, s.controllerID, localID, localID, item.LocalItemID, localHash, item.ContentHash); err != nil {
+			slog.Warn("failed to persist remote import link", "remote_id", remoteID, "error", err)
+		}
 	}
 }

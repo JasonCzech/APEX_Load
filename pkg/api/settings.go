@@ -1292,22 +1292,23 @@ func (tr *TestRunner) loadSystemSettings(defaultMaxConcurrent int) {
 }
 
 func (tr *TestRunner) GetSystemSettings() SystemSettings {
-	tr.refreshAuthSettingsFromStore()
+	tr.refreshSystemSettingsFromStore(false)
 	tr.mu.RLock()
 	defer tr.mu.RUnlock()
 	return cloneSystemSettings(tr.settings)
 }
 
-// refreshAuthSettingsFromStore keeps authentication policy consistent across
-// HA replicas without replacing unrelated settings that require migration
-// defaults or local runtime derivation.
-func (tr *TestRunner) refreshAuthSettingsFromStore() {
+// refreshSystemSettingsFromStore keeps the complete settings snapshot
+// consistent across HA replicas. force bypasses the short read throttle and is
+// used before read-modify-write updates so stale replicas cannot overwrite a
+// newer shared value.
+func (tr *TestRunner) refreshSystemSettingsFromStore(force bool) {
 	if tr == nil || tr.settingsStore == nil {
 		return
 	}
 	tr.settingsRefreshMu.Lock()
 	now := time.Now()
-	if !tr.settingsAuthRefreshAt.IsZero() && now.Sub(tr.settingsAuthRefreshAt) < systemSettingsAuthRefreshInterval {
+	if !force && !tr.settingsAuthRefreshAt.IsZero() && now.Sub(tr.settingsAuthRefreshAt) < systemSettingsAuthRefreshInterval {
 		tr.settingsRefreshMu.Unlock()
 		return
 	}
@@ -1321,13 +1322,25 @@ func (tr *TestRunner) refreshAuthSettingsFromStore() {
 	if err := json.Unmarshal([]byte(raw), &loaded); err != nil {
 		return
 	}
-	auth := normalizeAuthSettings(loaded.Auth)
-	if err := validateAuthSettings(auth); err != nil {
+	if !rawJSONHasKey(raw, "prometheus") {
+		loaded.Prometheus = defaultPrometheusSettings()
+	}
+	if !rawJSONHasKey(raw, "client_downloads") {
+		loaded.ClientDownloads = defaultClientDownloadsSettings()
+	}
+	tr.mu.RLock()
+	defaultMaxConcurrent := tr.settings.General.MaxConcurrentTests
+	tr.mu.RUnlock()
+	loaded = normalizeLoadedSystemSettings(loaded, defaultMaxConcurrent)
+	if err := validateSystemSettings(loaded); err != nil {
 		return
 	}
 	tr.mu.Lock()
-	tr.settings.Auth = auth
+	tr.settings = cloneSystemSettings(loaded)
+	tr.maxTests = loaded.General.MaxConcurrentTests
+	tr.invalidateCapacityAdvisoryCacheLocked()
 	tr.mu.Unlock()
+	tr.setNotificationSettings(loaded.Notifications)
 }
 
 func redactedSystemSettingsResponse(settings SystemSettings) map[string]any {
@@ -1357,19 +1370,29 @@ func redactedSystemSettingsResponse(settings SystemSettings) map[string]any {
 
 func preserveWriteOnlySystemSettingsSecrets(next SystemSettings, current SystemSettings) SystemSettings {
 	out := cloneSystemSettings(next)
+	currentTokens := make(map[string]string, len(current.Notifications.Webhooks))
+	for _, webhook := range current.Notifications.Webhooks {
+		if webhook.Format != notificationFormatDynatrace || strings.TrimSpace(webhook.APIToken) == "" {
+			continue
+		}
+		currentTokens[notificationWebhookIdentity(webhook)] = webhook.APIToken
+	}
 	for index := range out.Notifications.Webhooks {
 		webhook := &out.Notifications.Webhooks[index]
 		if webhook.Format != notificationFormatDynatrace || strings.TrimSpace(webhook.APIToken) != "" {
 			continue
 		}
-		if index < len(current.Notifications.Webhooks) {
-			currentWebhook := current.Notifications.Webhooks[index]
-			if currentWebhook.Format == notificationFormatDynatrace && strings.TrimSpace(currentWebhook.APIToken) != "" {
-				webhook.APIToken = currentWebhook.APIToken
-			}
-		}
+		webhook.APIToken = currentTokens[notificationWebhookIdentity(*webhook)]
 	}
 	return out
+}
+
+func notificationWebhookIdentity(webhook NotificationWebhookSettings) string {
+	return strings.Join([]string{
+		strings.ToLower(strings.TrimSpace(webhook.Format)),
+		strings.TrimSpace(webhook.URL),
+		strings.TrimSpace(webhook.Name),
+	}, "\x00")
 }
 
 func (tr *TestRunner) setNotificationSettings(settings NotificationsSettings) {

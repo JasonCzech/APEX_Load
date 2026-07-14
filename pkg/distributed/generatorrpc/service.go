@@ -967,8 +967,10 @@ func (s *Service) StopTest(ctx context.Context, request *pb.StopRequest) (*pb.St
 	}
 	if err := waitForGeneratorExecutions(ctx, executions); err != nil {
 		if !trackedFinalizer {
-			_ = waitForGeneratorExecutions(context.Background(), executions)
-			s.finishStoppedTest(request.GetTestId(), assignment, writer)
+			go func() {
+				_ = waitForGeneratorExecutions(context.Background(), executions)
+				s.finishStoppedTest(request.GetTestId(), assignment, writer)
+			}()
 			return nil, status.Errorf(codes.DeadlineExceeded, "wait for stopped execution: %v", err)
 		}
 		go func() {
@@ -1330,8 +1332,10 @@ func (s *Service) FailTest(testID string, message string) {
 	cancel()
 	if waitErr != nil {
 		if !trackedFinalizer {
-			_ = waitForGeneratorExecutions(context.Background(), executions)
-			s.finishFailedTest(testID, assignment, writer, message)
+			go func() {
+				_ = waitForGeneratorExecutions(context.Background(), executions)
+				s.finishFailedTest(testID, assignment, writer, message)
+			}()
 			return
 		}
 		go func() {
@@ -1703,16 +1707,34 @@ func (s *Service) completeAssignment(testID string) {
 	s.broadcastMetrics(s.metricsBatchForState(testID, 0, false, assignment.groups, finalState, finalError))
 }
 
-func (s *Service) startExecutionLocked(assignment *pb.WorkAssignment) error {
+func (s *Service) startExecutionLocked(assignment *pb.WorkAssignment) (err error) {
 	if !s.executionEnabled {
 		return nil
 	}
 	if assignment.GetGroupName() == "" {
 		return status.Error(codes.InvalidArgument, "group_name is required")
 	}
+	createdExecutionMap := false
 	if _, ok := s.executions[assignment.GetTestId()]; !ok {
 		s.executions[assignment.GetTestId()] = make(map[string]*groupExecution)
+		createdExecutionMap = true
 	}
+	createdWriter := false
+	defer func() {
+		if err == nil {
+			return
+		}
+		if createdWriter {
+			writer := s.archiveWriters[assignment.GetTestId()]
+			delete(s.archiveWriters, assignment.GetTestId())
+			if discardErr := writer.Discard(); discardErr != nil {
+				slog.Warn("discard failed execution archive", "test_id", assignment.GetTestId(), "error", discardErr)
+			}
+		}
+		if createdExecutionMap && len(s.executions[assignment.GetTestId()]) == 0 {
+			delete(s.executions, assignment.GetTestId())
+		}
+	}()
 	if s.executions[assignment.GetTestId()][assignment.GetGroupName()] != nil {
 		return nil
 	}
@@ -1752,6 +1774,7 @@ func (s *Service) startExecutionLocked(assignment *pb.WorkAssignment) error {
 		}
 		writer = archiveWriter
 		s.archiveWriters[assignment.GetTestId()] = writer
+		createdWriter = true
 	}
 	rampUp, err := validatedGeneratorDuration(int64(assignment.GetRampUpSeconds()), "ramp_up_seconds", true)
 	if err != nil {

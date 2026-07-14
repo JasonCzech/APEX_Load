@@ -128,7 +128,7 @@ func readJMeterImportRequest(w http.ResponseWriter, r *http.Request) (*jmeterImp
 
 	return &jmeterImportRequest{
 		Data:      data,
-		ProjectID: firstNonEmpty(r.FormValue("project_id"), r.URL.Query().Get("project_id")),
+		ProjectID: authorizedImportProjectID(r),
 		Opts: jmeter.ConvertOptions{
 			ScriptName:        r.FormValue("name"),
 			BaseURL:           r.FormValue("base_url"),

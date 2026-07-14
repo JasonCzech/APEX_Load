@@ -449,6 +449,9 @@ func appendBrowserConfig(cfg map[string]any, script *dsl.Script) {
 	if browserCfg.HARSLAThresholdMs > 0 {
 		cfg["browser_har_sla_breach_ms"] = float64(browserCfg.HARSLAThresholdMs)
 	}
+	if browserCfg.HARArtifactDir != "" {
+		cfg["browser_har_dir"] = browserCfg.HARArtifactDir
+	}
 	if browserCfg.CaptureScreenshots != "" {
 		cfg["browser_capture_screenshots"] = browserCfg.CaptureScreenshots
 	}

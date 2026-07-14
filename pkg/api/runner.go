@@ -984,6 +984,16 @@ func WithExecutionLeadership(leadership *executionLeadership) TestRunnerOption {
 	}
 }
 
+// WithExecutionBackend installs the execution backend before persisted state is
+// loaded and reconciled. Pending tests bind their backend when promoted.
+func WithExecutionBackend(backend testExecutionBackend) TestRunnerOption {
+	return func(tr *TestRunner) {
+		if backend != nil {
+			tr.execution = backend
+		}
+	}
+}
+
 func NewTestRunner(maxTests int, hub *Hub, store storage.Store, opts ...TestRunnerOption) *TestRunner {
 	tr := &TestRunner{
 		tests:                 make(map[string]*ManagedTest),
@@ -1080,6 +1090,19 @@ func (tr *TestRunner) holdsExecutionLeadership() bool {
 		return true
 	}
 	return tr.leadership.IsLeader()
+}
+
+// executionOperationContext combines caller cancellation with the current
+// leadership epoch. Single-controller deployments retain ordinary caller
+// cancellation semantics.
+func (tr *TestRunner) executionOperationContext(parent context.Context) (context.Context, context.CancelFunc) {
+	if parent == nil {
+		parent = context.Background()
+	}
+	if tr == nil || tr.leadership == nil {
+		return context.WithCancel(parent)
+	}
+	return tr.leadership.operationContext(parent)
 }
 
 const (

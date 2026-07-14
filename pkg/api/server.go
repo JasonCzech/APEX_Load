@@ -48,6 +48,8 @@ type Server struct {
 	libraryMu           sync.Mutex
 	libraryRemotes      map[string]*LibraryRemote
 	libraryLinks        map[string]*librarySyncLink
+	libraryRemotesRaw   string
+	libraryLinksRaw     string
 	libraryCreds        LibraryCredentialStore
 	c4Mu                sync.Mutex
 	slaWaivers          map[string][]*storage.ReleaseSLAWaiver
@@ -183,6 +185,13 @@ func NewServer(cfg ServerConfig) *Server {
 			slog.Warn("HA execution leadership requested but the store does not support scheduler leases; running single-active")
 		}
 	}
+	staticTargets, discoverySpecs := splitGeneratorTargets(cfg.GeneratorTargets)
+	var distributedBackend *distributedExecutionBackend
+	if len(staticTargets) > 0 || len(discoverySpecs) > 0 {
+		distributedBackend = newDistributedExecutionBackend(staticTargets, cfg.GeneratorTimeout, nil)
+		distributedBackend.ApplyGeneratorDrainStates(loadGeneratorDrainStates(cfg.Store))
+		runnerOpts = append(runnerOpts, WithExecutionBackend(distributedBackend))
+	}
 	runner := NewTestRunner(cfg.MaxConcurrent, hub, cfg.Store, runnerOpts...)
 	if leadership != nil {
 		leadership.setOnLoss(func() {
@@ -194,16 +203,9 @@ func NewServer(cfg ServerConfig) *Server {
 		})
 	}
 	runner.setLiveStateStore(cache)
-	staticTargets, discoverySpecs := splitGeneratorTargets(cfg.GeneratorTargets)
-	var distributedBackend *distributedExecutionBackend
 	var discovery *generatorDiscovery
-	if len(staticTargets) > 0 || len(discoverySpecs) > 0 {
-		distributedBackend = newDistributedExecutionBackend(staticTargets, cfg.GeneratorTimeout, nil)
-		distributedBackend.ApplyGeneratorDrainStates(loadGeneratorDrainStates(cfg.Store))
-		runner.setExecutionBackend(distributedBackend)
-		if len(discoverySpecs) > 0 {
-			discovery = newGeneratorDiscovery(staticTargets, discoverySpecs, distributedBackend)
-		}
+	if distributedBackend != nil && len(discoverySpecs) > 0 {
+		discovery = newGeneratorDiscovery(staticTargets, discoverySpecs, distributedBackend)
 	}
 	rec := recorder.New(cfg.ProxyAddr)
 	browserRecording := NewBrowserRecordingManager(hub)
@@ -1383,16 +1385,43 @@ func (s *Server) startUsageAccountingSnapshotCadence() {
 	if s == nil || s.runner == nil || s.usageCancel != nil {
 		return
 	}
-	interval := s.runner.UsageAccountingSnapshotInterval()
-	if interval <= 0 {
-		return
-	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s.usageCancel = cancel
 	go func() {
-		ticker := time.NewTicker(interval)
+		// Poll settings at a small fixed cadence so enabling, disabling, or
+		// changing the snapshot interval takes effect without a restart.
+		ticker := time.NewTicker(time.Second)
 		defer ticker.Stop()
-		s.runner.RunUsageAccountingSnapshotCadence(ctx, ticker.C)
+		var enabledAt time.Time
+		var lastCapture time.Time
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case now := <-ticker.C:
+				interval := s.runner.UsageAccountingSnapshotInterval()
+				if interval <= 0 {
+					enabledAt = time.Time{}
+					lastCapture = time.Time{}
+					continue
+				}
+				if enabledAt.IsZero() {
+					enabledAt = now
+				}
+				reference := lastCapture
+				if reference.IsZero() {
+					reference = enabledAt
+				}
+				if now.Sub(reference) < interval {
+					continue
+				}
+				if _, err := s.runner.captureUsageSnapshotForCadence(""); err != nil {
+					slog.Warn("failed to save cadence usage accounting snapshot", "error", err)
+					continue
+				}
+				lastCapture = now
+			}
+		}
 	}()
 }
 
@@ -1454,7 +1483,7 @@ func (s *Server) refreshGeneratorInventory(ctx context.Context) {
 	if s == nil || s.runner == nil {
 		return
 	}
-	if s.runner.settings.CapacityPlanning.Availability.Source != capacityAvailabilityConfiguredPlusLive {
+	if s.runner.GetSystemSettings().CapacityPlanning.Availability.Source != capacityAvailabilityConfiguredPlusLive {
 		return
 	}
 	defer func() {

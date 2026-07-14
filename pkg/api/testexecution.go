@@ -341,10 +341,17 @@ func (tr *TestRunner) reconcilePendingTestsDuringAcquire() error {
 	if err := tr.recoverSequentialExecutionPlanRuns(); err != nil {
 		return err
 	}
-	tr.promotePendingTestsAllowed()
+	// Promotion starts execution and therefore waits for admission to open. The
+	// onAdmit callback calls ReconcilePendingTests after reconciling is cleared.
 	tr.mu.Lock()
 	tr.refreshPendingQueueMetadataLocked()
 	tr.mu.Unlock()
+	// During the leadership callback admission remains closed and onAdmit will
+	// perform promotion after recovery completes. Direct callers that already
+	// hold an admitted lease (including recovery retries) can promote now.
+	if tr.isExecutionLeader() {
+		tr.ReconcilePendingTests()
+	}
 	return nil
 }
 

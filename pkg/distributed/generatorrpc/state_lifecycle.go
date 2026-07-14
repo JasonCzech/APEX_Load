@@ -571,7 +571,20 @@ func (s *Service) sweepGeneratorArchiveDirectories(now time.Time) {
 	for _, dir := range toLoad {
 		record, err := s.loadRetainedGeneratorArchive(dir.testID, dir.identity)
 		if err != nil {
-			slog.Warn("ignore incomplete retained generator archive", "path", dir.path, "error", err)
+			// Keep a quarantined catalog entry so the test ID remains reserved and
+			// normal TTL/count retention can remove the crash-left directory. This
+			// prevents a later assignment from silently replacing partial evidence.
+			slog.Warn("quarantine incomplete retained generator archive", "path", dir.path, "error", err)
+			s.archiveRecords[dir.testID] = &storage.RunArchiveRecord{
+				TestID:         dir.testID,
+				SchemaVersion:  archiveSchemaVersion,
+				ArchivePath:    dir.path,
+				ManifestPath:   filepath.Join(dir.path, "manifest.json"),
+				CreatedAt:      dir.modTime,
+				CompletedAt:    dir.modTime,
+				ArchiveBackend: "filesystem",
+			}
+			s.archiveIdentities[dir.testID] = dir.identity
 			continue
 		}
 		s.archiveRecords[dir.testID] = record

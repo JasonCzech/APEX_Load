@@ -488,7 +488,9 @@ func (s *Server) handleCreateProvisioningRequest(w http.ResponseWriter, r *http.
 		s.saveProvisioningEvent(req.ID, "requested", "provisioning requested", now)
 		s.saveProvisioningEvent(req.ID, "provisioning", fmt.Sprintf("scaling pool %q toward %d generators", pool.Name, req.DesiredCount), now)
 
-		workload, scaledTo, perr := s.fleetScaler.ScalePool(r.Context(), pool, req.DesiredCount)
+		scaleCtx, cancelScale := s.runner.executionOperationContext(r.Context())
+		workload, scaledTo, perr := s.fleetScaler.ScalePool(scaleCtx, pool, req.DesiredCount)
+		cancelScale()
 		if s.runner == nil || !s.runner.isExecutionLeader() {
 			writeError(w, http.StatusConflict, "execution leadership changed while provisioning; result left for the active leader to reconcile")
 			return
@@ -699,7 +701,9 @@ func (s *Server) handleRetryProvisioningRequest(w http.ResponseWriter, r *http.R
 	}
 	s.saveProvisioningEvent(req.ID, "retry", "provisioning retry requested", now)
 
-	status, workload, scaledTo, message := s.executeProvisioningScale(r.Context(), req, pool)
+	scaleCtx, cancelScale := s.runner.executionOperationContext(r.Context())
+	status, workload, scaledTo, message := s.executeProvisioningScale(scaleCtx, req, pool)
+	cancelScale()
 	if s.runner == nil || !s.runner.isExecutionLeader() {
 		writeError(w, http.StatusConflict, "execution leadership changed while provisioning; result left for the active leader to reconcile")
 		return

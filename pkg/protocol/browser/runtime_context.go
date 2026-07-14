@@ -180,9 +180,11 @@ func (b *Browser) installBrowserContextHandlers(browserContext playwright.Browse
 		b.rememberResourceValidator(response.URL(), safeResponseHeaders(response))
 	})
 	browserContext.OnRequestFinished(func(request playwright.Request) {
+		b.noteHARRequest(request)
 		b.enqueueNetworkRequest(request, true)
 	})
 	browserContext.OnRequestFailed(func(request playwright.Request) {
+		b.noteHARRequest(request)
 		b.enqueueNetworkRequest(request, false)
 	})
 }
@@ -398,10 +400,8 @@ func (b *Browser) recordNetworkRequest(request playwright.Request, finished bool
 	requestHeaders := safeRequestHeaders(request)
 	requestBody, requestBodyEncoding, requestBodyTruncated := browserRequestBody(request)
 	var bytesReceived int64
-	var harBytes int64
 	if sizes, err := request.Sizes(); err == nil && sizes != nil {
 		bytesReceived = int64(sizes.ResponseHeadersSize + sizes.ResponseBodySize)
-		harBytes = int64(sizes.RequestHeadersSize + sizes.RequestBodySize + sizes.ResponseHeadersSize + sizes.ResponseBodySize)
 	}
 	durationMs := requestDurationMs(request.Timing())
 	if !finished && durationMs < 0 {
@@ -424,7 +424,6 @@ func (b *Browser) recordNetworkRequest(request playwright.Request, finished bool
 	b.networkBodyBytes += len(requestBody)
 	b.trimNetworkEntriesLocked()
 	b.mu.Unlock()
-	b.noteHARNetworkUsage(harBytes)
 }
 
 // trimNetworkEntriesLocked evicts the oldest network entries once the count or

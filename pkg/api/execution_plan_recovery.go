@@ -40,7 +40,7 @@ type sequentialPlanRecoveryAction struct {
 // and on leadership acquisition, making the test->plan mapping visible before
 // any recovered test can reach its terminal hook.
 func (tr *TestRunner) recoverSequentialExecutionPlanRuns() error {
-	if tr == nil || tr.execPlanRunStore == nil || !tr.isExecutionLeader() {
+	if tr == nil || tr.execPlanRunStore == nil || !tr.holdsExecutionLeadership() {
 		return nil
 	}
 	runs, err := tr.runningSequentialExecutionPlanRuns()

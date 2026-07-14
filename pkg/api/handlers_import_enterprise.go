@@ -241,7 +241,7 @@ func readEnterpriseArchiveImportRequest(w http.ResponseWriter, r *http.Request) 
 	return &enterpriseArchiveImportRequest{
 		Data:             data,
 		HARData:          harData,
-		ProjectID:        firstNonEmpty(r.FormValue("project_id"), r.URL.Query().Get("project_id")),
+		ProjectID:        authorizedImportProjectID(r),
 		SalesforceNative: parseBoolDefault(firstNonEmpty(r.FormValue("salesforce_native"), r.URL.Query().Get("salesforce_native")), false),
 		Opts: enterprisearchive.ConvertOptions{
 			ScriptName:           r.FormValue("name"),

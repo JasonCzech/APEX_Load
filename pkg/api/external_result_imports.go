@@ -315,10 +315,14 @@ func (s *Server) listExternalResultImports(filter storage.ExternalResultImportFi
 }
 
 func parseLimitOffsetQuery(r *http.Request, defaultLimit int) (int, int) {
+	const maxListLimit = 1000
 	limit := defaultLimit
 	offset := 0
 	if parsed, err := parsePositiveIntQuery(r.URL.Query().Get("limit")); err == nil && parsed > 0 {
 		limit = parsed
+	}
+	if limit > maxListLimit {
+		limit = maxListLimit
 	}
 	if parsed, err := parsePositiveIntQuery(r.URL.Query().Get("offset")); err == nil && parsed >= 0 {
 		offset = parsed

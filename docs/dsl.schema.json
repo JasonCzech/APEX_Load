@@ -6249,6 +6249,9 @@
         "geolocation": {
           "$ref": "#/$defs/BrowserGeolocation"
         },
+        "har_artifact_dir": {
+          "type": "string"
+        },
         "har_capture": {
           "type": "string"
         },

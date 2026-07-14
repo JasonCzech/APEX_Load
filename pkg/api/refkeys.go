@@ -75,37 +75,64 @@ func (tr *TestRunner) loadRefSeqSettingLocked(key string) int {
 	return n
 }
 
-func (tr *TestRunner) saveRefSeqSettingLocked(key string, value int) {
+func (tr *TestRunner) saveRefSeqSettingLocked(key string, value int) error {
 	if tr.settingsStore == nil {
-		return
+		return nil
 	}
 	if err := tr.settingsStore.SaveSetting(key, strconv.Itoa(value)); err != nil {
-		slog.Warn("failed to persist reference-key sequence", "key", key, "value", value, "error", err)
+		return err
 	}
+	return nil
 }
 
-func (tr *TestRunner) nextScriptSeqLocked() int {
-	tr.refScriptSeq++
-	tr.saveRefSeqSettingLocked(refSeqSettingKey(tr.envCode, refkey.TypeScript), tr.refScriptSeq)
-	return tr.refScriptSeq
+type atomicReferenceSequenceStore interface {
+	NextSettingSequence(key string) (int, error)
 }
 
-func (tr *TestRunner) nextScenarioSeqLocked() int {
-	tr.refScenarioSeq++
-	tr.saveRefSeqSettingLocked(refSeqSettingKey(tr.envCode, refkey.TypeScenario), tr.refScenarioSeq)
-	return tr.refScenarioSeq
+func (tr *TestRunner) allocateRefSequenceLocked(key string, current int) (int, error) {
+	if store, ok := tr.settingsStore.(atomicReferenceSequenceStore); ok {
+		return store.NextSettingSequence(key)
+	}
+	next := current + 1
+	if tr.settingsStore != nil {
+		persisted := tr.loadRefSeqSettingLocked(key)
+		if persisted >= next {
+			next = persisted + 1
+		}
+		if err := tr.saveRefSeqSettingLocked(key, next); err != nil {
+			return 0, err
+		}
+	}
+	return next, nil
 }
 
-func (tr *TestRunner) nextRunSeqLocked(now time.Time) int {
+func (tr *TestRunner) nextScriptSeqLocked() (int, error) {
+	next, err := tr.allocateRefSequenceLocked(refSeqSettingKey(tr.envCode, refkey.TypeScript), tr.refScriptSeq)
+	if err == nil {
+		tr.refScriptSeq = next
+	}
+	return next, err
+}
+
+func (tr *TestRunner) nextScenarioSeqLocked() (int, error) {
+	next, err := tr.allocateRefSequenceLocked(refSeqSettingKey(tr.envCode, refkey.TypeScenario), tr.refScenarioSeq)
+	if err == nil {
+		tr.refScenarioSeq = next
+	}
+	return next, err
+}
+
+func (tr *TestRunner) nextRunSeqLocked(now time.Time) (int, error) {
 	day := refRunDay(now)
 	current := tr.refRunSeqByDay[day]
 	if current == 0 {
 		current = tr.loadRefSeqSettingLocked(refRunSeqSettingKey(tr.envCode, day))
 	}
-	current++
-	tr.refRunSeqByDay[day] = current
-	tr.saveRefSeqSettingLocked(refRunSeqSettingKey(tr.envCode, day), current)
-	return current
+	next, err := tr.allocateRefSequenceLocked(refRunSeqSettingKey(tr.envCode, day), current)
+	if err == nil {
+		tr.refRunSeqByDay[day] = next
+	}
+	return next, err
 }
 
 func refRunDay(t time.Time) string {
@@ -217,7 +244,12 @@ func (tr *TestRunner) backfillScriptRefKeysLocked() {
 		} else if strings.TrimSpace(stored.Version) != "" {
 			version = scriptRefVersion(stored.Version)
 		}
-		stored.RefKey = refkey.Script(tr.envCode, tr.nextScriptSeqLocked(), version)
+		sequence, err := tr.nextScriptSeqLocked()
+		if err != nil {
+			slog.Warn("failed to allocate script reference key", "script_id", stored.ID, "error", err)
+			continue
+		}
+		stored.RefKey = refkey.Script(tr.envCode, sequence, version)
 		if stored.Script != nil {
 			stored.Script.RefKey = stored.RefKey
 			if err := tr.saveStoredScript(stored.Script); err != nil {
@@ -267,7 +299,12 @@ func (tr *TestRunner) backfillScenarioRefKeysLocked() {
 		return left.ID < right.ID
 	})
 	for _, stored := range scenarios {
-		stored.RefKey = refkey.Scenario(tr.envCode, tr.nextScenarioSeqLocked())
+		sequence, err := tr.nextScenarioSeqLocked()
+		if err != nil {
+			slog.Warn("failed to allocate scenario reference key", "scenario_id", stored.ID, "error", err)
+			continue
+		}
+		stored.RefKey = refkey.Scenario(tr.envCode, sequence)
 		if tr.scenarioStore != nil {
 			if err := tr.scenarioStore.SaveScenario(storedScenarioToStorage(stored), storedScenarioRefsToStorage(stored)); err != nil {
 				slog.Warn("failed to persist scenario reference key", "scenario_id", stored.ID, "error", err)
@@ -298,7 +335,12 @@ func (tr *TestRunner) backfillTestRefKeysLocked() {
 	})
 	for _, test := range tests {
 		createdAt := refKeyTime(test.CreatedAt)
-		test.RefKey = refkey.Run(tr.envCode, createdAt, tr.nextRunSeqLocked(createdAt))
+		sequence, err := tr.nextRunSeqLocked(createdAt)
+		if err != nil {
+			slog.Warn("failed to allocate test reference key", "test_id", test.ID, "error", err)
+			continue
+		}
+		test.RefKey = refkey.Run(tr.envCode, createdAt, sequence)
 		if err := tr.saveManagedTestRecord(test); err != nil {
 			slog.Warn("failed to persist test reference key", "test_id", test.ID, "error", err)
 			test.RefKey = ""

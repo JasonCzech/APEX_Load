@@ -1552,6 +1552,7 @@ func (tr *TestRunner) PreviewScenarioScheduleRuns(scenarioID string, req CreateS
 }
 
 func (tr *TestRunner) UpdateScenarioSchedule(scenarioID string, scheduleID string, req CreateScenarioScheduleRequest) (*storage.ScenarioSchedule, bool, error) {
+	tr.refreshScenariosForHARead()
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	scenario, ok := tr.scenarios[scenarioID]
@@ -1568,6 +1569,7 @@ func (tr *TestRunner) UpdateScenarioSchedule(scenarioID string, scheduleID strin
 }
 
 func (tr *TestRunner) ListScenarioSchedules(scenarioID string) ([]*storage.ScenarioSchedule, bool) {
+	tr.refreshScenariosForHARead()
 	tr.mu.RLock()
 	defer tr.mu.RUnlock()
 	scenario, ok := tr.scenarios[scenarioID]
@@ -1602,6 +1604,7 @@ func (tr *TestRunner) attachLatestScenarioScheduleOccurrenceLocked(schedule *sto
 }
 
 func (tr *TestRunner) DeleteScenarioSchedule(scenarioID string, scheduleID string) (bool, error) {
+	tr.refreshScenariosForHARead()
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	scenario, ok := tr.scenarios[scenarioID]

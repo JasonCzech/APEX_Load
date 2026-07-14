@@ -835,6 +835,7 @@ func TestBuildProtoConfig_Browser(t *testing.T) {
 				ExperienceCanary:   true,
 				HARCapturePolicy:   "on_sla_breach",
 				HARSLAThresholdMs:  1800,
+				HARArtifactDir:     "/var/lib/apexload/har",
 				CaptureScreenshots: "per_action",
 				Viewport: dsl.BrowserViewport{
 					Width:  1440,
@@ -929,6 +930,9 @@ func TestBuildProtoConfig_Browser(t *testing.T) {
 	}
 	if cfg["browser_har_sla_breach_ms"] != float64(1800) {
 		t.Errorf("browser_har_sla_breach_ms = %v, want 1800", cfg["browser_har_sla_breach_ms"])
+	}
+	if cfg["browser_har_dir"] != "/var/lib/apexload/har" {
+		t.Errorf("browser_har_dir = %v, want configured retention directory", cfg["browser_har_dir"])
 	}
 	if cfg["browser_viewport_width"] != float64(1440) {
 		t.Errorf("browser_viewport_width = %v, want 1440", cfg["browser_viewport_width"])

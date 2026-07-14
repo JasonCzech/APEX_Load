@@ -5,9 +5,12 @@ package api
 // request for project-scoped RBAC enforcement.
 
 import (
+	"bytes"
 	"database/sql"
 	"errors"
 	"io"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"strings"
 
@@ -895,18 +898,51 @@ func resolveScriptDebugSessionProjectID(manager *ScriptDebugManager) requestProj
 
 func resolveImportProjectIDFromForm(r *http.Request, _ storage.Store) (string, int, string) {
 	queryProjectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
-	formProjectID := ""
-	if !strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
-		return reconcileImportProjectID(queryProjectID, "", "request body")
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+		if queryProjectID != "" {
+			return normalizeProjectID(queryProjectID), 0, ""
+		}
+		bodyProjectID, err := peekMultipartProjectID(r)
+		if err != nil || bodyProjectID == "" {
+			return "", http.StatusBadRequest, "project_id query parameter or leading multipart field is required for multipart imports"
+		}
+		return normalizeProjectID(bodyProjectID), 0, ""
 	}
-	if err := r.ParseMultipartForm(50 << 20); err == nil {
-		if r.MultipartForm != nil {
-			if values := r.MultipartForm.Value["project_id"]; len(values) > 0 {
-				formProjectID = strings.TrimSpace(values[0])
-			}
+	return reconcileImportProjectID(queryProjectID, "", "request body")
+}
+
+// peekMultipartProjectID reads only leading scalar multipart fields and restores
+// every consumed byte. It deliberately stops at the first file, avoiding the
+// pre-authorization buffering and temporary files caused by ParseMultipartForm.
+func peekMultipartProjectID(r *http.Request) (string, error) {
+	mediaType, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || mediaType != "multipart/form-data" || params["boundary"] == "" {
+		return "", errors.New("invalid multipart content type")
+	}
+	var consumed bytes.Buffer
+	limited := io.LimitReader(r.Body, 256<<10)
+	reader := multipart.NewReader(io.TeeReader(limited, &consumed), params["boundary"])
+	defer func() { r.Body = io.NopCloser(io.MultiReader(bytes.NewReader(consumed.Bytes()), r.Body)) }()
+	for {
+		part, err := reader.NextPart()
+		if err != nil {
+			return "", err
+		}
+		if part.FileName() != "" {
+			return "", nil
+		}
+		value, err := io.ReadAll(io.LimitReader(part, 64<<10))
+		if err != nil {
+			return "", err
+		}
+		if part.FormName() == "project_id" {
+			return strings.TrimSpace(string(value)), nil
 		}
 	}
-	return reconcileImportProjectID(queryProjectID, formProjectID, "multipart form")
+}
+
+func authorizedImportProjectID(r *http.Request) string {
+	return firstNonEmpty(strings.TrimSpace(r.URL.Query().Get("project_id")), strings.TrimSpace(r.FormValue("project_id")))
 }
 
 func resolveImportProjectIDFromJSON(r *http.Request, _ storage.Store) (string, int, string) {

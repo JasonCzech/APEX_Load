@@ -89,6 +89,22 @@ func (b *Browser) startHARMonitor() {
 
 const maxRuntimeHAREntries = 100_000
 
+func (b *Browser) noteHARRequest(request playwright.Request) {
+	b.mu.Lock()
+	active := b.harLimitExceeded != nil
+	b.mu.Unlock()
+	if !active {
+		return
+	}
+	// Count synchronously in the Playwright callback so the separately bounded
+	// diagnostics queue cannot bypass the limiter. Do not call Request.Sizes
+	// here: Playwright delivers this callback on its protocol dispatcher and a
+	// nested protocol request deadlocks that dispatcher. A conservative fixed
+	// allowance covers HAR structure, headers, and embedded response content.
+	_ = request
+	b.noteHARNetworkUsage(64 << 10)
+}
+
 func (b *Browser) noteHARNetworkUsage(bytes int64) {
 	b.mu.Lock()
 	if b.harLimitExceeded == nil {

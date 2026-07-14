@@ -130,6 +130,7 @@ func (s *Server) handleLibraryResultArchive(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) handleLibraryListRemotes(w http.ResponseWriter, r *http.Request) {
+	s.loadLibraryState()
 	s.libraryMu.Lock()
 	defer s.libraryMu.Unlock()
 	remotes := make([]LibraryRemote, 0, len(s.libraryRemotes))
@@ -143,6 +144,7 @@ func (s *Server) handleLibraryListRemotes(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) handleLibraryCreateRemote(w http.ResponseWriter, r *http.Request) {
+	s.loadLibraryState()
 	var req LibraryRemoteRequest
 	if !decodeJSONBody(w, r, &req) {
 		return
@@ -159,12 +161,16 @@ func (s *Server) handleLibraryCreateRemote(w http.ResponseWriter, r *http.Reques
 	s.libraryMu.Lock()
 	s.libraryRemotes[remote.ID] = remote
 	s.libraryMu.Unlock()
-	s.persistLibraryRemotes()
+	if err := s.persistLibraryRemotes(); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	s.recordAuditEvent(r, "library.remote.create", "success", "library_remote", remote.ID, "", map[string]any{"name": remote.Name, "base_url": remote.BaseURL})
 	writeJSON(w, http.StatusCreated, s.sanitizeLibraryRemote(remote))
 }
 
 func (s *Server) handleLibraryUpdateRemote(w http.ResponseWriter, r *http.Request) {
+	s.loadLibraryState()
 	id := strings.TrimSpace(r.PathValue("id"))
 	var req LibraryRemoteRequest
 	if !decodeJSONBody(w, r, &req) {
@@ -204,12 +210,16 @@ func (s *Server) handleLibraryUpdateRemote(w http.ResponseWriter, r *http.Reques
 	s.libraryMu.Lock()
 	s.libraryRemotes[id] = &updated
 	s.libraryMu.Unlock()
-	s.persistLibraryRemotes()
+	if err := s.persistLibraryRemotes(); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	s.recordAuditEvent(r, "library.remote.update", "success", "library_remote", id, "", map[string]any{"name": updated.Name, "base_url": updated.BaseURL})
 	writeJSON(w, http.StatusOK, s.sanitizeLibraryRemote(&updated))
 }
 
 func (s *Server) handleLibraryDeleteRemote(w http.ResponseWriter, r *http.Request) {
+	s.loadLibraryState()
 	id := strings.TrimSpace(r.PathValue("id"))
 	s.libraryMu.Lock()
 	remote := s.libraryRemotes[id]
@@ -230,13 +240,20 @@ func (s *Server) handleLibraryDeleteRemote(w http.ResponseWriter, r *http.Reques
 			slog.Warn("failed to delete remote library credential", "remote_id", id, "err", err)
 		}
 	}
-	s.persistLibraryRemotes()
-	s.persistLibraryLinks()
+	if err := s.persistLibraryRemotes(); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := s.persistLibraryLinks(); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	s.recordAuditEvent(r, "library.remote.delete", "success", "library_remote", id, "", map[string]any{"name": remote.Name})
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleLibraryProbeRemote(w http.ResponseWriter, r *http.Request) {
+	s.loadLibraryState()
 	remote, ok := s.libraryRemote(r.PathValue("id"))
 	if !ok {
 		writeError(w, http.StatusNotFound, "remote library not found")
@@ -259,7 +276,10 @@ func (s *Server) handleLibraryProbeRemote(w http.ResponseWriter, r *http.Request
 		remote = s.sanitizeLibraryRemote(stored)
 	}
 	s.libraryMu.Unlock()
-	s.persistLibraryRemotes()
+	if persistErr := s.persistLibraryRemotes(); persistErr != nil {
+		writeError(w, http.StatusInternalServerError, persistErr.Error())
+		return
+	}
 	if err != nil {
 		s.recordAuditEvent(r, "library.remote.probe", "failure", "library_remote", remote.ID, "", map[string]any{"error": err.Error()})
 		writeJSON(w, http.StatusOK, map[string]any{"remote": remote, "status": "unreachable", "error": err.Error()})

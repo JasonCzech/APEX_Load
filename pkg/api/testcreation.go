@@ -223,7 +223,11 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	now := time.Now()
 	refKey := ""
 	if status != "DRAFT" {
-		refKey = refkey.Run(tr.envCode, now, tr.nextRunSeqLocked(now))
+		sequence, err := tr.nextRunSeqLocked(now)
+		if err != nil {
+			return nil, fmt.Errorf("allocate run reference key: %w", err)
+		}
+		refKey = refkey.Run(tr.envCode, now, sequence)
 	}
 	test := &ManagedTest{
 		ID:                    id,
@@ -540,6 +544,10 @@ func (tr *TestRunner) compileManagedTestGroupForModeLocked(index int, totalGroup
 	}
 
 	scriptCopy := *script.Script
+	// Runtime HAR capture and retention must use the same centrally managed
+	// directory. Override any script-supplied path before local or distributed
+	// execution so scripts cannot select arbitrary filesystem locations.
+	scriptCopy.Config.Browser.HARArtifactDir = strings.TrimSpace(tr.settings.ArchiveRetention.HARArtifactDir)
 	if len(sharedDataSources) > 0 {
 		scriptCopy.DataSources = append(cloneDataSources(scriptCopy.DataSources), sharedDataSources...)
 	}

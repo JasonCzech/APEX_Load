@@ -139,7 +139,7 @@ func readK6ImportRequest(w http.ResponseWriter, r *http.Request) (*k6ImportReque
 		}
 		return &k6ImportRequest{
 			Data:      data,
-			ProjectID: r.FormValue("project_id"),
+			ProjectID: authorizedImportProjectID(r),
 			Name:      strings.TrimSuffix(filename, filepath.Ext(filename)),
 			Opts: k6.ConvertOptions{
 				BaseURL:    r.FormValue("base_url"),
@@ -190,7 +190,7 @@ func readDevWebImportRequest(w http.ResponseWriter, r *http.Request) (*devWebImp
 		}
 		return &devWebImportRequest{
 			Data:      data,
-			ProjectID: r.FormValue("project_id"),
+			ProjectID: authorizedImportProjectID(r),
 			Name:      strings.TrimSuffix(filename, filepath.Ext(filename)),
 			IsZip:     strings.EqualFold(filepath.Ext(filename), ".zip"),
 			Opts:      opts,

@@ -999,6 +999,10 @@ func (s *Server) handleUpdateSystemSettings(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
+	// A settings PUT is a read-modify-write operation because omitted sections
+	// and write-only secrets are preserved. Refresh without throttling first so a
+	// stale HA replica cannot overwrite a newer shared snapshot.
+	s.runner.refreshSystemSettingsFromStore(true)
 	// A PUT that omits the prometheus section must not wipe it — inherit the
 	// currently-stored value. When the section IS present, settings.Prometheus
 	// carries the admin's explicit choice (including an explicit disable), which
