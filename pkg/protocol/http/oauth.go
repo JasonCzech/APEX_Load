@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -35,6 +36,8 @@ const (
 	// error_description is echoed into a returned error message.
 	maxOAuthErrorDescriptionLen = 256
 	defaultOAuthTokenType       = "Bearer"
+	maxOAuthTokenCacheEntries   = 1024
+	maxOAuthTokenResponseBytes  = 1 << 20
 	oauthFormContentType        = "application/x-www-form-urlencoded"
 	oauthJSONAcceptMimeType     = "application/json"
 )
@@ -93,12 +96,30 @@ func FetchOAuth2Token(ctx context.Context, req OAuthTokenRequest) (OAuthToken, e
 			return OAuthToken{}, fetchErr
 		}
 		oauthTokenCache.Store(key, token)
+		boundOAuthTokenCache()
 		return token, nil
 	})
 	if err != nil {
 		return OAuthToken{}, err
 	}
 	return value.(OAuthToken), nil
+}
+
+func boundOAuthTokenCache() {
+	count := 0
+	now := time.Now()
+	oauthTokenCache.Range(func(key, value any) bool {
+		token, ok := value.(OAuthToken)
+		if !ok || token.ExpiresAt.Before(now) {
+			oauthTokenCache.Delete(key)
+			return true
+		}
+		count++
+		if count > maxOAuthTokenCacheEntries {
+			oauthTokenCache.Delete(key)
+		}
+		return true
+	})
 }
 
 func normalizeOAuthGrant(grant string) string {
@@ -220,7 +241,7 @@ func fetchOAuth2TokenUncached(ctx context.Context, req OAuthTokenRequest) (OAuth
 		ErrorCode        string `json:"error"`
 		ErrorDescription string `json:"error_description"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxOAuthTokenResponseBytes)).Decode(&payload); err != nil {
 		return OAuthToken{}, fmt.Errorf("decode OAuth2 token response: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {

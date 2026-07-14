@@ -432,17 +432,25 @@ func (s *Service) removeGeneratorArchiveRecords(records []generatorArchiveRemova
 		if record == nil {
 			continue
 		}
-		defer func(testID string) {
+		restore := func() {
 			s.mu.Lock()
-			delete(s.archiveDeleting, testID)
+			if _, exists := s.archiveRecords[record.TestID]; !exists {
+				s.archiveRecords[record.TestID] = cloneRunArchiveRecord(record)
+				if removal.identity != nil {
+					s.archiveIdentities[record.TestID] = removal.identity
+				}
+			}
+			delete(s.archiveDeleting, record.TestID)
 			s.mu.Unlock()
-		}(record.TestID)
+		}
 		if err := validateArchiveTestID(record.TestID); err != nil {
 			slog.Warn("generator archive retention rejected unsafe test id", "test_id", record.TestID, "error", err)
+			restore()
 			continue
 		}
 		if removal.identity == nil {
 			slog.Warn("generator archive retention refused archive without identity", "test_id", record.TestID, "path", record.ArchivePath)
+			restore()
 			continue
 		}
 		err := removeGeneratorArchiveRun(s.archiveNamespace, record.TestID, removal.identity)
@@ -452,6 +460,7 @@ func (s *Service) removeGeneratorArchiveRecords(records []generatorArchiveRemova
 		if err != nil {
 			slog.Warn("generator archive retention cleanup failed", "test_id", record.TestID, "path", record.ArchivePath, "error", err)
 		}
+		restore()
 	}
 }
 

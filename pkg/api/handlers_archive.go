@@ -196,11 +196,11 @@ func (s *Server) handleDownloadRunArchiveBrowserDiagnostics(w http.ResponseWrite
 	http.ServeContent(w, r, filename, record.CompletedAt.UTC(), staged.File)
 }
 
-// clearArchiveWriteDeadline allows large archive materialization and transfers
-// to outlive the server's short default WriteTimeout. Request cancellation and
-// the archive-specific context still bound the operation.
+// clearArchiveWriteDeadline allows archive transfers to outlive the server's
+// short default WriteTimeout while retaining a finite archive-specific bound.
 func clearArchiveWriteDeadline(w http.ResponseWriter) {
-	_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
+	deadline := time.Now().Add(configuredArchiveMaterializationTimeout())
+	_ = http.NewResponseController(w).SetWriteDeadline(deadline)
 }
 
 func (s *Server) handleGetRunArchiveTransactions(w http.ResponseWriter, r *http.Request) {

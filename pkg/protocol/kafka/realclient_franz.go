@@ -29,10 +29,12 @@ func newRealClient(cfg config) kafkaClient {
 }
 
 type franzClient struct {
-	cfg  config
-	once sync.Once
-	cl   *kgo.Client
-	err  error
+	cfg       config
+	once      sync.Once
+	cl        *kgo.Client
+	err       error
+	pendingMu sync.Mutex
+	pending   []kafkaRecord
 }
 
 // handle lazily constructs the underlying *kgo.Client so Init never blocks or
@@ -194,6 +196,15 @@ func (c *franzClient) RequestReply(ctx context.Context, reqTopic, replyTopic str
 
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
+		c.pendingMu.Lock()
+		for i, pending := range c.pending {
+			if req.CorrelationID == "" || pending.CorrelationID == req.CorrelationID || pending.Headers["kafka_correlation_id"] == req.CorrelationID {
+				c.pending = append(c.pending[:i], c.pending[i+1:]...)
+				c.pendingMu.Unlock()
+				return meta, pending, nil
+			}
+		}
+		c.pendingMu.Unlock()
 		cctx, cancel := context.WithDeadline(ctx, deadline)
 		fetches := cl.PollRecords(cctx, 10)
 		cancel()
@@ -205,6 +216,12 @@ func (c *franzClient) RequestReply(ctx context.Context, reqTopic, replyTopic str
 			if req.CorrelationID == "" || converted.CorrelationID == req.CorrelationID || converted.Headers["kafka_correlation_id"] == req.CorrelationID {
 				return meta, converted, nil
 			}
+			c.pendingMu.Lock()
+			if len(c.pending) >= 10_000 {
+				c.pending = c.pending[1:]
+			}
+			c.pending = append(c.pending, converted)
+			c.pendingMu.Unlock()
 		}
 	}
 	return recordMeta{}, kafkaRecord{}, fmt.Errorf("no correlated kafka reply received from %q within %s", replyTopic, timeout)
