@@ -71,6 +71,7 @@ func TestVUser_EvalCondition(t *testing.T) {
 		"users.id": "42",
 	}}
 	t.Setenv("APEXLOAD_CEL_CONDITION", "enabled")
+	t.Setenv(EnvScriptEnvAllowlist, "APEXLOAD_CEL_CONDITION")
 	tests := []struct {
 		name string
 		cond *dsl.Condition

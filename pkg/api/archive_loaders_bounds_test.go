@@ -1,13 +1,24 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestArchiveJSONLScanHonorsRequestCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, _, err := readJSONLPageFrom[TransactionEvent](ctx, strings.NewReader("{}\n"), archivePage{Limit: 1}, nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("scan error = %v, want context canceled", err)
+	}
+}
 
 func writeTransactionJSONL(t *testing.T, transactions []TransactionEvent) string {
 	t.Helper()

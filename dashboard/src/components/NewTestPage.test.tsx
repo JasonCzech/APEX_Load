@@ -238,6 +238,32 @@ describe('NewTestPage', () => {
     expect(openScenarioBuilder).toHaveBeenCalledTimes(1)
   })
 
+  it('shows a first-run scenario state and does not complete Run Setup without a name', async () => {
+    apiMock.listScenarios.mockResolvedValue({ scenarios: [] })
+
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+          onOpenScenarioBuilder={vi.fn()}
+        />,
+      )
+    })
+    await flushPromises()
+
+    expect(container.textContent).toContain('No scenarios are available yet. Open Scenario Builder to create the first reusable workload.')
+    expect(container.textContent).not.toContain('No scenarios match this search.')
+    const runSetupStep = Array.from(container.querySelectorAll<HTMLElement>('.new-test-step'))
+      .find(step => step.querySelector('h3')?.textContent === 'Run Setup')
+    const stepIndicator = runSetupStep?.querySelector('.new-test-step-index')
+    expect(stepIndicator?.textContent).toBe('2')
+    expect(stepIndicator?.classList.contains('complete')).toBe(false)
+  })
+
   it('defaults to the provided scenario when opening from the scenario builder', async () => {
     apiMock.listScenarios.mockResolvedValue({
       scenarios: [
@@ -504,12 +530,15 @@ describe('NewTestPage', () => {
     })
     expect(scenarioRowTexts(container)[0]).toContain('Checkout Smoke')
 
-    const vusersHeader = Array.from(container.querySelectorAll('.new-test-scenario-table th')).find(header => header.textContent?.includes('VUsers')) as HTMLElement | undefined
+    const vusersHeader = Array.from(container.querySelectorAll<HTMLButtonElement>('.new-test-scenario-table th.sortable > button')).find(button => button.textContent?.includes('VUsers'))
     expect(vusersHeader).toBeTruthy()
+    expect(vusersHeader?.closest('th')?.getAttribute('aria-sort')).toBe('none')
+    expect(vusersHeader?.tabIndex).toBe(0)
     await act(async () => {
-      vusersHeader?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      vusersHeader?.click()
     })
     expect(scenarioRowTexts(container)[0]).toContain('Java Batch Review')
+    expect(vusersHeader?.closest('th')?.getAttribute('aria-sort')).toBe('descending')
 
     const searchInput = Array.from(container.querySelectorAll('input[type="search"]')).find(input => input.getAttribute('placeholder')?.includes('Find by scenario')) as HTMLInputElement | undefined
     expect(searchInput).toBeDefined()

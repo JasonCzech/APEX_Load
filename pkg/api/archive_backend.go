@@ -45,6 +45,8 @@ const (
 	archiveBackendGCS        = "gcs"
 	archiveVersionSegment    = "_versions"
 	archiveVersionSchema     = "v1"
+	archiveSourceSegment     = "_source"
+	archiveSourceSchema      = "v1"
 )
 
 type archiveBackendRuntime struct {
@@ -78,22 +80,41 @@ func currentArchiveBackend() archiveBackendRuntime {
 	case archiveBackendS3:
 		runtime.Bucket = strings.TrimSpace(os.Getenv("APEXLOAD_ARCHIVE_BUCKET"))
 		runtime.LocalRoot = objectArchiveStagingRoot(filesystemRoot, backend)
-		runtime.URIPrefix = joinArchiveURI("s3://"+runtime.Bucket, prefix)
 	case archiveBackendAzureBlob:
 		runtime.Container = firstNonEmpty(strings.TrimSpace(os.Getenv("APEXLOAD_ARCHIVE_CONTAINER")), strings.TrimSpace(os.Getenv("APEXLOAD_ARCHIVE_BUCKET")))
 		runtime.LocalRoot = objectArchiveStagingRoot(filesystemRoot, backend)
-		runtime.URIPrefix = joinArchiveURI("azblob://"+runtime.Container, prefix)
 	case archiveBackendGCS:
 		runtime.Bucket = strings.TrimSpace(os.Getenv("APEXLOAD_ARCHIVE_BUCKET"))
 		runtime.LocalRoot = objectArchiveStagingRoot(filesystemRoot, backend)
-		runtime.URIPrefix = joinArchiveURI("gs://"+runtime.Bucket, prefix)
 	default:
 		runtime.Backend = archiveBackendFilesystem
 	}
 	if runtime.Backend != archiveBackendFilesystem {
+		target := runtime.Bucket
+		scheme := map[string]string{archiveBackendS3: "s3", archiveBackendAzureBlob: "azblob", archiveBackendGCS: "gs"}[runtime.Backend]
+		if runtime.Backend == archiveBackendAzureBlob {
+			target = runtime.Container
+		}
+		runtime.Prefix = joinArchiveURI(prefix, archiveSourceSegment, archiveSourceSchema, archiveObjectSourceIdentity(runtime, prefix))
+		runtime.URIPrefix = joinArchiveURI(scheme+"://"+target, runtime.Prefix)
 		runtime.LocalRoot = archiveObjectNamespaceRoot(runtime.LocalRoot, runtime)
 	}
 	return runtime
+}
+
+func archiveObjectSourceIdentity(backend archiveBackendRuntime, basePrefix string) string {
+	target := backend.Bucket
+	if backend.Backend == archiveBackendAzureBlob {
+		target = backend.Container
+	}
+	identity := strings.Join([]string{
+		strings.ToLower(strings.TrimSpace(backend.Backend)),
+		strings.ToLower(strings.TrimSpace(target)),
+		strings.Trim(strings.TrimSpace(basePrefix), "/"),
+		strings.TrimRight(strings.ToLower(strings.TrimSpace(backend.Endpoint)), "/"),
+		strings.ToLower(strings.TrimSpace(backend.Account)),
+	}, "\x00")
+	return sha256BytesHex([]byte(identity))
 }
 
 func resolveArchiveRoot() string {
@@ -276,6 +297,37 @@ func archiveObjectRunPathPrefix(parsed *url.URL, testID string) (string, error) 
 		return "", fmt.Errorf("object URI is not scoped to test %q", testID)
 	}
 	return strings.Join(segments[:len(segments)-1], "/"), nil
+}
+
+func validatePersistedArchiveSource(configured archiveBackendRuntime, recordedBackend string, target string, prefix string) error {
+	segments := strings.Split(strings.Trim(prefix, "/"), "/")
+	baseEnd := len(segments)
+	if baseEnd >= 3 && segments[baseEnd-3] == archiveVersionSegment && segments[baseEnd-2] == archiveVersionSchema && validateArchiveIntentToken(segments[baseEnd-1]) == nil {
+		baseEnd -= 3
+	}
+	if baseEnd >= 3 && segments[baseEnd-3] == archiveSourceSegment && segments[baseEnd-2] == archiveSourceSchema {
+		persistedIdentity := segments[baseEnd-1]
+		basePrefix := strings.Join(segments[:baseEnd-3], "/")
+		expected := configured
+		expected.Backend = recordedBackend
+		expected.Bucket = target
+		expected.Container = ""
+		if recordedBackend == archiveBackendAzureBlob {
+			expected.Bucket = ""
+			expected.Container = target
+		}
+		if persistedIdentity != archiveObjectSourceIdentity(expected, basePrefix) {
+			return fmt.Errorf("persisted archive source identity does not match the configured endpoint/account namespace")
+		}
+		return nil
+	}
+	// Legacy global S3/GCS URIs remain unambiguous without a custom endpoint.
+	// Custom endpoints and Azure container-only URIs are not: require the source
+	// marker for those archives instead of silently opening a different account.
+	if strings.TrimSpace(configured.Endpoint) != "" || (recordedBackend == archiveBackendAzureBlob && strings.TrimSpace(configured.Account) != "") {
+		return fmt.Errorf("persisted archive URI lacks an endpoint/account source identity")
+	}
+	return nil
 }
 
 func (b archiveBackendRuntime) bucketURL() string {
@@ -523,6 +575,9 @@ func archiveDeletionRuntime(backend archiveBackendRuntime, record *storage.RunAr
 	prefix, err := archiveObjectRunPathPrefix(parsed, testID)
 	if err != nil {
 		return backend, fmt.Errorf("archive URI %q: %w", runURI, err)
+	}
+	if err := validatePersistedArchiveSource(backend, backend.Backend, parsed.Host, prefix); err != nil {
+		return backend, err
 	}
 	backend.Prefix = prefix
 	return backend, nil
@@ -817,6 +872,9 @@ func archiveMaterializationRuntime(configured archiveBackendRuntime, record *sto
 	prefix, err := archiveObjectRunPathPrefix(parsed, testID)
 	if err != nil {
 		return archiveBackendRuntime{}, fmt.Errorf("archive URI %q: %w", runURI, err)
+	}
+	if err := validatePersistedArchiveSource(configured, recordedBackend, parsed.Host, prefix); err != nil {
+		return archiveBackendRuntime{}, err
 	}
 	if manifestURI != "" && strings.TrimRight(manifestURI, "/") != joinArchiveURI(strings.TrimRight(runURI, "/"), "manifest.json") {
 		return archiveBackendRuntime{}, fmt.Errorf("persisted manifest URI does not belong to archive URI")
@@ -1156,7 +1214,12 @@ func removeArchiveSubdirectory(rootPath, targetPath string) error {
 		return err
 	}
 	defer root.Close()
-	info, err := root.Lstat(relative)
+	parent, name, closeParent, err := openArchiveRelativeParent(root, relative)
+	if err != nil {
+		return err
+	}
+	defer closeParent()
+	info, err := parent.Lstat(name)
 	if os.IsNotExist(err) {
 		return nil
 	}
@@ -1166,7 +1229,109 @@ func removeArchiveSubdirectory(rootPath, targetPath string) error {
 	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
 		return fmt.Errorf("archive staging path %q is not a regular directory", targetPath)
 	}
-	return root.RemoveAll(relative)
+	return removeArchiveDirectoryWithIdentity(parent, name, info)
+}
+
+// openArchiveRelativeParent traverses every parent component using directory
+// descriptors and returns the descriptor/name pair for the final entry. The
+// caller must invoke the returned cleanup function, including on error-free
+// paths. The supplied root itself is never closed.
+func openArchiveRelativeParent(root *os.Root, relative string) (*os.Root, string, func(), error) {
+	if root == nil {
+		return nil, "", func() {}, fmt.Errorf("archive root is required")
+	}
+	normalized, err := normalizeArchiveRelativeDirectory(relative)
+	if err != nil {
+		return nil, "", func() {}, err
+	}
+	if normalized == "." {
+		return nil, "", func() {}, fmt.Errorf("archive root has no relative parent")
+	}
+	components := strings.Split(normalized, string(filepath.Separator))
+	name := components[len(components)-1]
+	parent := root
+	var owned *os.Root
+	cleanup := func() {
+		if owned != nil {
+			_ = owned.Close()
+		}
+	}
+	for _, component := range components[:len(components)-1] {
+		child, openErr := openArchiveChildDirectoryAt(parent, component, false, 0)
+		if openErr != nil {
+			cleanup()
+			return nil, "", func() {}, openErr
+		}
+		if owned != nil {
+			_ = owned.Close()
+		}
+		owned = child
+		parent = child
+	}
+	return parent, name, cleanup, nil
+}
+
+func removeArchiveDirectoryWithIdentity(parent *os.Root, name string, expected os.FileInfo) error {
+	if parent == nil || expected == nil {
+		return fmt.Errorf("archive directory identity is required")
+	}
+	before, err := parent.Lstat(name)
+	if err != nil {
+		return err
+	}
+	if before.Mode()&os.ModeSymlink != 0 || !before.IsDir() || !os.SameFile(before, expected) {
+		return fmt.Errorf("archive directory %q changed before deletion", name)
+	}
+	directory, err := openArchiveChildDirectoryAt(parent, name, false, 0)
+	if err != nil {
+		return err
+	}
+	if err := clearArchiveDirectoryRoot(directory); err != nil {
+		_ = directory.Close()
+		return err
+	}
+	if err := directory.Close(); err != nil {
+		return err
+	}
+	after, err := parent.Lstat(name)
+	if err != nil {
+		return err
+	}
+	if after.Mode()&os.ModeSymlink != 0 || !after.IsDir() || !os.SameFile(after, expected) {
+		return fmt.Errorf("archive directory %q changed during deletion", name)
+	}
+	return parent.Remove(name)
+}
+
+func clearArchiveDirectoryRoot(root *os.Root) error {
+	directory, err := root.Open(".")
+	if err != nil {
+		return err
+	}
+	entries, readErr := directory.ReadDir(-1)
+	closeErr := directory.Close()
+	if readErr != nil {
+		return readErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	for _, entry := range entries {
+		info, err := root.Lstat(entry.Name())
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+			if err := root.Remove(entry.Name()); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := removeArchiveDirectoryWithIdentity(root, entry.Name(), info); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // replaceArchiveArtifactForWrite creates a fresh inode and atomically places
@@ -1230,6 +1395,40 @@ func openArchiveArtifactForRead(rootPath, name string) (*os.File, os.FileInfo, e
 	}
 	defer root.Close()
 	return openArchiveArtifactForReadAt(root, name)
+}
+
+func loadRunArchiveManifestFromRecord(record *storage.RunArchiveRecord) (*RunArchiveManifest, error) {
+	if record == nil {
+		return nil, fmt.Errorf("archive record is required")
+	}
+	relative, err := filepath.Rel(record.ArchivePath, record.ManifestPath)
+	if err != nil {
+		return nil, err
+	}
+	name, err := normalizeArchiveArtifactName(filepath.ToSlash(relative))
+	if err != nil || name != runArchiveManifestFileName {
+		return nil, fmt.Errorf("archive manifest path is not the run manifest")
+	}
+	file, info, err := openArchiveArtifactForRead(record.ArchivePath, name)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	if info.Size() > maxArchiveManifestDownloadBytes {
+		return nil, fmt.Errorf("archive manifest exceeds %d bytes", maxArchiveManifestDownloadBytes)
+	}
+	data, err := io.ReadAll(io.LimitReader(file, maxArchiveManifestDownloadBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > maxArchiveManifestDownloadBytes {
+		return nil, fmt.Errorf("archive manifest exceeds %d bytes", maxArchiveManifestDownloadBytes)
+	}
+	var manifest RunArchiveManifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return nil, err
+	}
+	return &manifest, nil
 }
 
 func openArchiveArtifactForReadAt(root *os.Root, name string) (*os.File, os.FileInfo, error) {
@@ -1638,7 +1837,13 @@ func atomicReplaceArchiveDirectory(tempRoot, finalRoot string) error {
 		return fmt.Errorf("commit materialized archive: %w", err)
 	}
 	if backupName != "" {
-		_ = root.RemoveAll(backupName)
+		backupInfo, err := root.Lstat(backupName)
+		if err != nil {
+			return err
+		}
+		if err := removeArchiveDirectoryWithIdentity(root, backupName, backupInfo); err != nil {
+			return fmt.Errorf("remove previous archive cache: %w", err)
+		}
 	}
 	if err := syncArchiveDirectory(parent); err != nil {
 		return err

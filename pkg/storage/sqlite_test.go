@@ -39,6 +39,95 @@ func TestSQLiteStoreUsesSingleWriterPool(t *testing.T) {
 	}
 }
 
+func TestSQLiteStoreSaveTestPersistsBlankOptionalRelationsAsNull(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	var foreignKeysEnabled int
+	if err := store.db.QueryRow(`PRAGMA foreign_keys`).Scan(&foreignKeysEnabled); err != nil {
+		t.Fatalf("read foreign_keys pragma: %v", err)
+	}
+	if foreignKeysEnabled != 1 {
+		t.Fatalf("foreign_keys pragma = %d, want 1", foreignKeysEnabled)
+	}
+
+	ptr := func(value string) *string { return &value }
+	tests := []struct {
+		name       string
+		scenarioID string
+		folderID   *string
+		timeslotID *string
+	}{
+		{name: "nil pointers"},
+		{name: "empty strings", folderID: ptr(""), timeslotID: ptr("")},
+		{name: "whitespace strings", scenarioID: " \t", folderID: ptr("  "), timeslotID: ptr("\n")},
+	}
+	for index, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			record := &TestRecord{
+				ID:         fmt.Sprintf("test-blank-relations-%d", index),
+				Name:       "Run without optional relations",
+				Status:     "COMPLETE",
+				ScenarioID: tt.scenarioID,
+				FolderID:   tt.folderID,
+				TimeslotID: tt.timeslotID,
+				StartTime:  time.Now().UTC(),
+			}
+			if err := store.SaveTest(record); err != nil {
+				t.Fatalf("SaveTest with blank optional relations returned error: %v", err)
+			}
+
+			var scenarioID, folderID, timeslotID sql.NullString
+			if err := store.db.QueryRow(`SELECT scenario_id, folder_id, timeslot_id FROM tests WHERE id = ?`, record.ID).Scan(&scenarioID, &folderID, &timeslotID); err != nil {
+				t.Fatalf("read raw optional relation values: %v", err)
+			}
+			if scenarioID.Valid || folderID.Valid || timeslotID.Valid {
+				t.Fatalf("raw optional relations = scenario %#v folder %#v timeslot %#v, want SQL NULL values", scenarioID, folderID, timeslotID)
+			}
+
+			roundTrip, err := store.GetTest(record.ID)
+			if err != nil {
+				t.Fatalf("GetTest returned error: %v", err)
+			}
+			if roundTrip.ScenarioID != "" || roundTrip.FolderID != nil || roundTrip.TimeslotID != nil {
+				t.Fatalf("round-trip optional relations = scenario %q folder %#v timeslot %#v, want empty/nil/nil", roundTrip.ScenarioID, roundTrip.FolderID, roundTrip.TimeslotID)
+			}
+			// Application, release, and project are not nullable run relations:
+			// blank input deliberately resolves to seeded compatibility records.
+			if roundTrip.ApplicationID != LegacyApplicationID || roundTrip.ReleaseID != LegacyReleaseID || roundTrip.ProjectID != DefaultProjectID {
+				t.Fatalf("default context = application %q release %q project %q", roundTrip.ApplicationID, roundTrip.ReleaseID, roundTrip.ProjectID)
+			}
+		})
+	}
+
+	invalidRelations := []struct {
+		name       string
+		scenarioID string
+		folderID   *string
+	}{
+		{name: "scenario", scenarioID: "missing-scenario"},
+		{name: "folder", folderID: ptr("missing-folder")},
+	}
+	for index, tt := range invalidRelations {
+		t.Run("reject unknown "+tt.name, func(t *testing.T) {
+			invalid := &TestRecord{
+				ID:         fmt.Sprintf("test-unknown-relation-%d", index),
+				Name:       "Run with invalid relation",
+				Status:     "COMPLETE",
+				ScenarioID: tt.scenarioID,
+				FolderID:   tt.folderID,
+				StartTime:  time.Now().UTC(),
+			}
+			if err := store.SaveTest(invalid); err == nil {
+				t.Fatalf("SaveTest with an unknown non-blank %s succeeded; want foreign-key enforcement", tt.name)
+			}
+		})
+	}
+}
+
 func TestSQLiteStoreSaveScriptPreservesMetadata(t *testing.T) {
 	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {

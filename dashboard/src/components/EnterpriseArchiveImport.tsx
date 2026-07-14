@@ -7,6 +7,7 @@ import { type DetectedSourceProtocol, type ImportRepairSuggestion, type Enterpri
 import { type BrowserReplayEvent, type BrowserReplaySession, type StoredScript } from '../types'
 import { type SourceArchiveReview, type ScriptActionDefinition, type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
+import { useModalDialog } from '../hooks/useModalDialog'
 import { buildReplayStartPayload, getImportSummary, summarizeInlineData } from './scriptEditorUtils'
 import ScriptImportReview from './ScriptImportReview'
 import SourceMappingReview from './SourceMappingReview'
@@ -581,6 +582,8 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
   const [javaJMSIdiomMatrix, setJavaJMSIdiomMatrix] = useState<EnterpriseArchiveJavaSupportEntry[]>([])
   const [javaJDBCIdiomMatrix, setJavaJDBCIdiomMatrix] = useState<EnterpriseArchiveJavaSupportEntry[]>([])
   const [runtimeCoverageOpen, setRuntimeCoverageOpen] = useState(false)
+  const runtimeCoverageDialogRef = useRef<HTMLDivElement | null>(null)
+  const runtimeCoverageCloseButtonRef = useRef<HTMLButtonElement | null>(null)
   const [reviewArtifactSaving, setReviewArtifactSaving] = useState(false)
   const [selectedResultScriptIndex, setSelectedResultScriptIndex] = useState(0)
 
@@ -659,6 +662,12 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
   const repairSuggestions = result?.repair_suggestions || []
   const supportMatrixSections = summarizeEnterpriseArchiveSupportMatrix(supportMatrix)
   const hasRuntimeCoverage = supportMatrix.length > 0
+  useModalDialog({
+    dialogRef: runtimeCoverageDialogRef,
+    enabled: runtimeCoverageOpen && hasRuntimeCoverage,
+    initialFocusRef: runtimeCoverageCloseButtonRef,
+    onClose: () => setRuntimeCoverageOpen(false),
+  })
   const protocolCoverageSections = summarizeEnterpriseArchiveProtocolSupport(protocolSupportMatrix)
   const javaIdiomSections = [
     { key: 'http', title: 'HTTP Idioms', items: javaHTTPIdiomMatrix },
@@ -1671,20 +1680,26 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
       )}
 
       {runtimeCoverageOpen && hasRuntimeCoverage && (
-        <div className="lr-modal-backdrop" role="presentation" onClick={() => setRuntimeCoverageOpen(false)}>
+        <div
+          className="lr-modal-backdrop"
+          role="presentation"
+          onPointerDown={event => {
+            if (event.target === event.currentTarget) setRuntimeCoverageOpen(false)
+          }}
+        >
           <div
+            ref={runtimeCoverageDialogRef}
             className="lr-modal"
             role="dialog"
             aria-modal="true"
             aria-labelledby="lr-runtime-coverage-title"
-            onClick={event => event.stopPropagation()}
           >
             <div className="lr-modal-header">
               <div>
                 <h3 id="lr-runtime-coverage-title">Runtime Settings Coverage</h3>
                 <p>Code-owned runtime compatibility support matrix</p>
               </div>
-              <button type="button" className="btn btn-ghost" onClick={() => setRuntimeCoverageOpen(false)}>Close</button>
+              <button ref={runtimeCoverageCloseButtonRef} type="button" className="btn btn-ghost" onClick={() => setRuntimeCoverageOpen(false)}>Close</button>
             </div>
             <div className="lr-modal-body">
               <div className="lr-warnings">

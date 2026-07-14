@@ -188,6 +188,13 @@ func nullableString(value string) any {
 	return value
 }
 
+func nullableStringPointer(value *string) any {
+	if value == nil {
+		return nil
+	}
+	return nullableString(*value)
+}
+
 func NewSQLiteStore(path string) (*SQLiteStore, error) {
 	db, err := sql.Open("sqlite", sqliteDSN(path))
 	if err != nil {

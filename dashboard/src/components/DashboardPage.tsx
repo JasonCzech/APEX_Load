@@ -116,6 +116,7 @@ interface ReleaseSnapshotPanelProps {
   activeTests: TestSummary[]
   pendingTests: TestSummary[]
   attentionItems: AttentionItem[]
+  testDataReady: boolean
   onToggle: () => void
   onReleaseChange: (release: Release) => void
   onLatestResult: () => void
@@ -125,6 +126,17 @@ interface ReleaseSnapshotPanelProps {
   onNewTest: () => void
   onSelectTest: (id: string) => void
 }
+
+interface DashboardTestListState {
+  scopeReady: boolean
+  ready: boolean
+  loading: boolean
+  refreshing: boolean
+  error: string
+  onRefresh: () => Promise<void>
+}
+
+const ARCHIVE_REPORT_BATCH_LIMIT = 50
 
 const tableBottomGutterPx = 24
 const tableMinimumViewportHeightPx = 80
@@ -364,6 +376,50 @@ function SnapshotStat({ label, value, tone = 'neutral', onClick }: SnapshotStatP
   return <div className={className}>{content}</div>
 }
 
+function DashboardTestListStatus({ scopeReady, ready, loading, refreshing, error, onRefresh }: DashboardTestListState) {
+  if (!scopeReady) {
+    return (
+      <div className="dash-empty small" role="status">
+        <span>Select a project and application to load dashboard runs.</span>
+      </div>
+    )
+  }
+
+  if (!ready) {
+    return (
+      <div className="dash-empty small" role={error ? 'alert' : 'status'} aria-live={error ? 'assertive' : 'polite'}>
+        <span>{error ? `Unable to load dashboard runs. ${error}` : 'Loading dashboard runs…'}</span>
+        {error && (
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => { void onRefresh() }}>
+            Retry
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="dash-empty small" role="alert">
+        <span>{`Dashboard run data may be stale. ${error}`}</span>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={() => { void onRefresh() }}>
+          Retry
+        </button>
+      </div>
+    )
+  }
+
+  if (refreshing || loading) {
+    return (
+      <div className="dash-empty small" role="status" aria-live="polite">
+        <span>Refreshing dashboard runs…</span>
+      </div>
+    )
+  }
+
+  return null
+}
+
 function ReleaseSnapshotPanel({
   open,
   audience,
@@ -379,6 +435,7 @@ function ReleaseSnapshotPanel({
   activeTests,
   pendingTests,
   attentionItems,
+  testDataReady,
   onToggle,
   onReleaseChange,
   onLatestResult,
@@ -452,76 +509,82 @@ function ReleaseSnapshotPanel({
           ))}
         </div>
 
-        <div className="release-panel-stat-grid shared">
-          <SnapshotStat label="Latest Result" value={latestReleaseRun ? latestReleaseRun.name : 'No runs'} tone="accent" onClick={onLatestResult} />
-          <SnapshotStat label="Failed Runs" value={releaseStats.failed} tone={releaseStats.failed > 0 ? 'danger' : 'success'} onClick={onResults} />
-          <SnapshotStat label="Archives Ready" value={archivesReady} onClick={onResults} />
-          <SnapshotStat label="Archived Transactions" value={releaseStats.totalTx.toLocaleString()} onClick={onResults} />
-          <SnapshotStat label="Current TPS" value={formatNumber(dashboardStats.activeTps, 1)} onClick={onPrimaryActiveRun} />
-          <SnapshotStat label="Current Error Rate" value={`${formatNumber(dashboardStats.avgError, 2)}%`} tone={dashboardStats.avgError > 0 ? 'danger' : 'neutral'} onClick={onPrimaryActiveRun} />
-        </div>
-
-        <div className="release-panel-status-strip" aria-label="Run status summary">
-          <SnapshotStat label="Completed" value={dashboardStats.completed} tone="success" onClick={onResults} />
-          <SnapshotStat label="Aborted" value={dashboardStats.aborted} tone="warning" onClick={onResults} />
-          <SnapshotStat label="Active Now" value={dashboardStats.active} tone="accent" onClick={onPrimaryActiveRun} />
-        </div>
-
-        {audience === 'admin' ? (
-          <div className="release-panel-section" aria-label="Operations activity">
-            <div className="release-panel-section-header">
-              <h4>Operations Activity</h4>
-              <span>{activeTests.length} live · {pendingTests.length} queued</span>
-            </div>
-            <div className="release-panel-detail-grid">
-              <SnapshotStat label="API Health" value={statusLabel} tone={statusColor === 'healthy' ? 'success' : statusColor === 'offline' ? 'danger' : 'warning'} onClick={onMonitoring} />
-              <SnapshotStat label="Generators Ready" value={generatorAvailability} onClick={onMonitoring} />
-              <SnapshotStat label="WebSocket Clients" value={health?.ws_clients ?? 0} />
-              <SnapshotStat label="Pending Runs" value={pendingTests.length} tone={pendingTests.length > 0 ? 'warning' : 'neutral'} onClick={onPrimaryActiveRun} />
-            </div>
-            <div className="release-panel-feed">
-              {visibleAttentionItems.length === 0 ? (
-                <div className="release-panel-feed-empty">No active attention items for this release.</div>
-              ) : visibleAttentionItems.map((item, index) => (
-                <button
-                  type="button"
-                  key={`attention-${index}-${item.testId ?? item.title}`}
-                  className={`release-panel-feed-item tone-${item.tone}`}
-                  onClick={() => item.testId ? onSelectTest(item.testId) : onMonitoring()}
-                >
-                  <strong>{item.title}</strong>
-                  <span>{item.detail}</span>
-                </button>
-              ))}
-            </div>
-            <div className="release-panel-actions" aria-label="Release operations links">
-              <button type="button" className="btn btn-secondary btn-sm" onClick={onMonitoring}>Monitoring</button>
-              <button type="button" className="btn btn-secondary btn-sm" onClick={onNewTest}>New Test</button>
-              <button type="button" className="btn btn-secondary btn-sm" onClick={onResults}>Results</button>
-            </div>
+        {testDataReady && (
+          <div className="release-panel-stat-grid shared">
+            <SnapshotStat label="Latest Result" value={latestReleaseRun ? latestReleaseRun.name : 'No runs'} tone="accent" onClick={onLatestResult} />
+            <SnapshotStat label="Failed Runs" value={releaseStats.failed} tone={releaseStats.failed > 0 ? 'danger' : 'success'} onClick={onResults} />
+            <SnapshotStat label="Archives Ready" value={archivesReady} onClick={onResults} />
+            <SnapshotStat label="Archived Transactions" value={releaseStats.totalTx.toLocaleString()} onClick={onResults} />
+            <SnapshotStat label="Current TPS" value={formatNumber(dashboardStats.activeTps, 1)} onClick={onPrimaryActiveRun} />
+            <SnapshotStat label="Current Error Rate" value={`${formatNumber(dashboardStats.avgError, 2)}%`} tone={dashboardStats.avgError > 0 ? 'danger' : 'neutral'} onClick={onPrimaryActiveRun} />
           </div>
-        ) : (
-          <div className="release-panel-section" aria-label="Release quality">
-            <div className="release-panel-section-header">
-              <h4>Release Quality</h4>
-              <span>{latestReleaseRun ? latestReleaseRun.status : 'No result'}</span>
-            </div>
-            <div className="release-panel-detail-grid">
-              <SnapshotStat label="SLA Breaches" value={releaseTrendStats.slaBreaches} tone={releaseTrendStats.slaBreaches > 0 ? 'danger' : 'success'} onClick={onResults} />
-              <SnapshotStat label="Avg Completeness" value={`${formatNumber(releaseTrendStats.avgCompleteness, 0)}%`} tone={qualityTone} onClick={onResults} />
-              <SnapshotStat label="Peak VUsers" value={releaseTrendStats.peakVUsers.toLocaleString()} />
-              <SnapshotStat label="Telemetry Breaches" value={releaseTrendStats.telemetryBreached} tone={releaseTrendStats.telemetryBreached > 0 ? 'warning' : 'success'} onClick={onResults} />
-              <SnapshotStat label="Max CPU" value={`${formatNumber(releaseTrendStats.maxCPU, 1)}%`} />
-              <SnapshotStat label="Max Memory" value={`${formatNumber(releaseTrendStats.maxMemoryMB, 0)} MB`} />
-            </div>
-            <button type="button" className="release-panel-quality-callout dash-card-button" onClick={onLatestResult}>
-              <span>Latest Outcome</span>
-              <strong>{latestStatus}</strong>
-            </button>
-            <div className="release-panel-actions" aria-label="Release quality links">
-              <button type="button" className="btn btn-secondary btn-sm" onClick={onResults}>View Results</button>
-            </div>
+        )}
+
+        {testDataReady && (
+          <div className="release-panel-status-strip" aria-label="Run status summary">
+            <SnapshotStat label="Completed" value={dashboardStats.completed} tone="success" onClick={onResults} />
+            <SnapshotStat label="Aborted" value={dashboardStats.aborted} tone="warning" onClick={onResults} />
+            <SnapshotStat label="Active Now" value={dashboardStats.active} tone="accent" onClick={onPrimaryActiveRun} />
           </div>
+        )}
+
+        {testDataReady && (
+          audience === 'admin' ? (
+            <div className="release-panel-section" aria-label="Operations activity">
+              <div className="release-panel-section-header">
+                <h4>Operations Activity</h4>
+                <span>{activeTests.length} live · {pendingTests.length} queued</span>
+              </div>
+              <div className="release-panel-detail-grid">
+                <SnapshotStat label="API Health" value={statusLabel} tone={statusColor === 'healthy' ? 'success' : statusColor === 'offline' ? 'danger' : 'warning'} onClick={onMonitoring} />
+                <SnapshotStat label="Generators Ready" value={generatorAvailability} onClick={onMonitoring} />
+                <SnapshotStat label="WebSocket Clients" value={health?.ws_clients ?? 0} />
+                <SnapshotStat label="Pending Runs" value={pendingTests.length} tone={pendingTests.length > 0 ? 'warning' : 'neutral'} onClick={onPrimaryActiveRun} />
+              </div>
+              <div className="release-panel-feed">
+                {visibleAttentionItems.length === 0 ? (
+                  <div className="release-panel-feed-empty">No active attention items for this release.</div>
+                ) : visibleAttentionItems.map((item, index) => (
+                  <button
+                    type="button"
+                    key={`attention-${index}-${item.testId ?? item.title}`}
+                    className={`release-panel-feed-item tone-${item.tone}`}
+                    onClick={() => item.testId ? onSelectTest(item.testId) : onMonitoring()}
+                  >
+                    <strong>{item.title}</strong>
+                    <span>{item.detail}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="release-panel-actions" aria-label="Release operations links">
+                <button type="button" className="btn btn-secondary btn-sm" onClick={onMonitoring}>Monitoring</button>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={onNewTest}>New Test</button>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={onResults}>Results</button>
+              </div>
+            </div>
+          ) : (
+            <div className="release-panel-section" aria-label="Release quality">
+              <div className="release-panel-section-header">
+                <h4>Release Quality</h4>
+                <span>{latestReleaseRun ? latestReleaseRun.status : 'No result'}</span>
+              </div>
+              <div className="release-panel-detail-grid">
+                <SnapshotStat label="SLA Breaches" value={releaseTrendStats.slaBreaches} tone={releaseTrendStats.slaBreaches > 0 ? 'danger' : 'success'} onClick={onResults} />
+                <SnapshotStat label="Avg Completeness" value={`${formatNumber(releaseTrendStats.avgCompleteness, 0)}%`} tone={qualityTone} onClick={onResults} />
+                <SnapshotStat label="Peak VUsers" value={releaseTrendStats.peakVUsers.toLocaleString()} />
+                <SnapshotStat label="Telemetry Breaches" value={releaseTrendStats.telemetryBreached} tone={releaseTrendStats.telemetryBreached > 0 ? 'warning' : 'success'} onClick={onResults} />
+                <SnapshotStat label="Max CPU" value={`${formatNumber(releaseTrendStats.maxCPU, 1)}%`} />
+                <SnapshotStat label="Max Memory" value={`${formatNumber(releaseTrendStats.maxMemoryMB, 0)} MB`} />
+              </div>
+              <button type="button" className="release-panel-quality-callout dash-card-button" onClick={onLatestResult}>
+                <span>Latest Outcome</span>
+                <strong>{latestStatus}</strong>
+              </button>
+              <div className="release-panel-actions" aria-label="Release quality links">
+                <button type="button" className="btn btn-secondary btn-sm" onClick={onResults}>View Results</button>
+              </div>
+            </div>
+          )
         )}
       </section>
     </aside>
@@ -541,7 +604,14 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
     summary: true,
     limit: 500,
   } : null, [activeApplicationId, activeProjectId, dashboardScopeReady])
-  const { tests } = useSharedTestList(testListParams, { loader: api.listTests, pollIntervalMs: 3000 })
+  const {
+    tests,
+    error: testListError,
+    loading: testListLoading,
+    refreshing: testListRefreshing,
+    updatedAt: testListUpdatedAt,
+    refresh: refreshTestList,
+  } = useSharedTestList(testListParams, { loader: api.listTests, pollIntervalMs: 3000 })
   const [health, setHealth] = useState<HealthData | null>(null)
   const [archiveReports, setArchiveReports] = useState<Record<string, RunArchiveReport | null>>({})
   const [releasePanelOpen, setReleasePanelOpen] = useState(true)
@@ -558,6 +628,15 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
     setSelectedPerformanceTestIds(new Set())
     previousPerformanceTestIdsRef.current = []
   }, [activeApplicationId, activeProjectId])
+
+  const testListState = useMemo<DashboardTestListState>(() => ({
+    scopeReady: dashboardScopeReady,
+    ready: testListUpdatedAt !== null,
+    loading: testListLoading,
+    refreshing: testListRefreshing,
+    error: testListError,
+    onRefresh: refreshTestList,
+  }), [dashboardScopeReady, refreshTestList, testListError, testListLoading, testListRefreshing, testListUpdatedAt])
 
   useEffect(() => {
     if (!dashboardScopeReady) {
@@ -683,21 +762,42 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
 
     let cancelled = false
 
-    const loadReports = activeRelease?.project_id
-      ? api.getTestArchiveReports(missingReports.map(test => test.id), activeRelease.project_id)
-        .then(result => missingReports.map(test => [test.id, result.reports[test.id] ?? null] as const))
-      : Promise.all(
-        missingReports.map(async test => {
+    const loadReports = async () => {
+      const entries: Array<readonly [string, RunArchiveReport | null]> = []
+
+      if (activeProjectId) {
+        const batches: TestSummary[][] = []
+        for (let index = 0; index < missingReports.length; index += ARCHIVE_REPORT_BATCH_LIMIT) {
+          batches.push(missingReports.slice(index, index + ARCHIVE_REPORT_BATCH_LIMIT))
+        }
+        const results = await Promise.allSettled(batches.map(batch => (
+          api.getTestArchiveReports(batch.map(test => test.id), activeProjectId)
+        )))
+        results.forEach((result, index) => {
+          const batch = batches[index]
+          if (result.status === 'rejected') {
+            batch.forEach(test => {
+              entries.push([test.id, null] as const)
+            })
+            return
+          }
+          batch.forEach(test => {
+            const report = result.value.reports[test.id] ?? null
+            entries.push([test.id, result.value.errors?.[test.id] ? null : report] as const)
+          })
+        })
+      } else {
+        const results = await Promise.all(missingReports.map(async test => {
           try {
             const report = await api.getTestArchiveReport(test.id)
             return [test.id, report as RunArchiveReport] as const
           } catch {
             return [test.id, null] as const
           }
-        }),
-      )
+        }))
+        entries.push(...results)
+      }
 
-    loadReports.then(entries => {
       if (cancelled) return
       setArchiveReports(prev => {
         const next = { ...prev }
@@ -706,12 +806,28 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
         })
         return next
       })
-    })
+    }
+
+    void loadReports()
 
     return () => {
       cancelled = true
     }
-  }, [api, archivedReleaseRuns, archiveReports, activeRelease?.project_id])
+  }, [activeProjectId, api, archivedReleaseRuns, archiveReports])
+
+  const failedArchiveReportCount = useMemo(
+    () => Object.values(archiveReports).filter(report => report === null).length,
+    [archiveReports],
+  )
+  const archiveReportsError = failedArchiveReportCount > 0
+    ? `${failedArchiveReportCount} archived performance report${failedArchiveReportCount === 1 ? '' : 's'} could not be loaded.`
+    : ''
+
+  const retryArchiveReports = () => {
+    setArchiveReports(current => Object.fromEntries(
+      Object.entries(current).filter(([, report]) => report !== null),
+    ))
+  }
 
   const performanceTrend = useMemo(() =>
     archivedReleaseRuns
@@ -1084,13 +1200,15 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
         </div>
       </div>
 
+      <DashboardTestListStatus {...testListState} />
+
       <div className={`dash-dashboard-layout ${releasePanelOpen ? 'snapshot-open' : 'snapshot-collapsed'}`}>
         <div className="dash-main-column">
           <div className="dash-primary-content">
             {!hasTopbarContributionProvider && dashboardTabControls}
 
             <div className="dash-tab-panel" role="tabpanel" aria-label={`${activeDashboardTabLabel} dashboard section`}>
-        {activeDashboardTab === 'performance' && (
+        {testListState.ready && activeDashboardTab === 'performance' && (
           <section className="dash-section dash-performance-trend">
             <div className="dash-section-heading-row">
               <h3 className="dash-section-title">Performance Trend</h3>
@@ -1108,6 +1226,12 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                 <span className="dash-context-chip">Last {archivedReleaseRuns.length || 0} archived runs</span>
               </div>
             </div>
+            {archiveReportsError && (
+              <div className="dash-empty small" role="alert">
+                <span>{archiveReportsError}</span>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={retryArchiveReports}>Retry reports</button>
+              </div>
+            )}
             {performanceTrend.length === 0 ? (
               <div className="dash-empty small">
                 <span>No archived performance reports yet</span>
@@ -1228,7 +1352,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
           </section>
         )}
 
-        {activeDashboardTab === 'active' && (
+        {testListState.ready && activeDashboardTab === 'active' && (
           <section className="dash-section">
             <h3 className="dash-section-title">
               Active Tests
@@ -1387,7 +1511,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
           </section>
         )}
 
-        {activeDashboardTab === 'activity' && (
+        {testListState.ready && activeDashboardTab === 'activity' && (
           <section className="dash-section dash-activity">
             <h3 className="dash-section-title">Recent Activity</h3>
             {recentTests.length === 0 ? (
@@ -1459,7 +1583,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
           </section>
         )}
 
-        {activeDashboardTab === 'releaseTrend' && (
+        {testListState.ready && activeDashboardTab === 'releaseTrend' && (
           <section className="dash-section dash-release-trend-analysis">
             {activeRelease?.id ? (
               <ReleaseTrendPanel releaseId={activeRelease.id} getReleaseTrend={api.getReleaseTrend} />
@@ -1488,6 +1612,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
           activeTests={activeTests}
           pendingTests={pendingTests}
           attentionItems={attentionItems}
+          testDataReady={testListState.ready}
           onToggle={() => setReleasePanelOpen(value => !value)}
           onReleaseChange={setActiveRelease}
           onLatestResult={navigateToLatestResult}

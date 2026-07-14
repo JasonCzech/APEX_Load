@@ -136,8 +136,9 @@ func TestWebSocketAuthorizerRechecksServiceAccountScopes(t *testing.T) {
 
 	account.Scopes = []string{"scripts:write"}
 	account.UpdatedAt = now.Add(time.Minute)
-	if err := store.SaveServiceAccount(account); err != nil {
-		t.Fatal(err)
+	updated, err := store.UpdateServiceAccountMetadata(account, now)
+	if err != nil || !updated {
+		t.Fatalf("UpdateServiceAccountMetadata = %v, %v", updated, err)
 	}
 	if authorized() {
 		t.Fatal("removing the websocket read scope must revoke the existing socket")

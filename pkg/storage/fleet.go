@@ -53,6 +53,8 @@ type GeneratorMetadata struct {
 // with an explanatory event rather than silently succeeding.
 type ProvisioningRequest struct {
 	ID                 string               `json:"id"`
+	Revision           int                  `json:"revision,omitempty"`
+	AttemptToken       string               `json:"-"`
 	FleetPoolID        string               `json:"fleet_pool_id"`
 	ProjectID          string               `json:"project_id,omitempty"`
 	Status             string               `json:"status"` // pending, accepted, scaling, waiting_ready, provisioning, success, failed, not_configured, cancelled, timed_out

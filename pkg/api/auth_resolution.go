@@ -433,12 +433,6 @@ func serviceAccountAllowsRequest(account *AuthenticatedServiceAccount, r *http.R
 		if scope == "*" || scope == "automation:*" || scope == required {
 			return true
 		}
-		if required == "read" && (scope == "results:read" || scope == "system:read" || scope == "audit:read") {
-			return true
-		}
-		if required == "write" && (scope == "scripts:write" || scope == "tests:run" || scope == "results:write" || scope == "settings:manage" || scope == "service_accounts:manage") {
-			return true
-		}
 	}
 	return false
 }
@@ -489,6 +483,21 @@ var serviceAccountScopeRules = []serviceAccountScopeRule{
 	{method: http.MethodGet, prefix: "/api/v1/scenarios", scope: "results:read"},
 	{method: http.MethodHead, prefix: "/api/v1/scenarios", scope: "results:read"},
 	{prefix: "/api/v1/scenarios", scope: "tests:run"},
+	{method: http.MethodGet, prefix: "/api/v1/execution-plans", scope: "results:read"},
+	{method: http.MethodHead, prefix: "/api/v1/execution-plans", scope: "results:read"},
+	{prefix: "/api/v1/execution-plans", scope: "tests:run"},
+	{method: http.MethodGet, prefix: "/api/v1/capacity/", scope: "results:read"},
+	{method: http.MethodHead, prefix: "/api/v1/capacity/", scope: "results:read"},
+	{prefix: "/api/v1/capacity/", scope: "tests:run"},
+	{method: http.MethodGet, prefix: "/api/v1/data-pools", scope: "read"},
+	{method: http.MethodHead, prefix: "/api/v1/data-pools", scope: "read"},
+	{prefix: "/api/v1/data-pools", scope: "scripts:write"},
+	{method: http.MethodGet, prefix: "/api/v1/object-repositories", scope: "read"},
+	{method: http.MethodHead, prefix: "/api/v1/object-repositories", scope: "read"},
+	{prefix: "/api/v1/object-repositories", scope: "scripts:write"},
+	{method: http.MethodGet, prefix: "/api/v1/correlation-rulesets", scope: "read"},
+	{method: http.MethodHead, prefix: "/api/v1/correlation-rulesets", scope: "read"},
+	{prefix: "/api/v1/correlation-rulesets", scope: "scripts:write"},
 }
 
 func requiredServiceAccountScope(r *http.Request) string {
@@ -526,7 +535,7 @@ func requiredLibraryServiceAccountScope(r *http.Request) string {
 	path := r.URL.Path
 	method := r.Method
 	if method == http.MethodGet || method == http.MethodHead || path == "/api/v1/library/export" || strings.HasSuffix(path, "/diff") {
-		return "read"
+		return "results:read"
 	}
 	if path == "/api/v1/library/import/archive" {
 		return "results:write"

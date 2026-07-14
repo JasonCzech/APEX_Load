@@ -2,6 +2,7 @@ package generatorrpc
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -16,7 +17,9 @@ import (
 	"github.com/jasonczech/apexload/pkg/storage"
 	local "github.com/xitongsys/parquet-go-source/local"
 	"github.com/xitongsys/parquet-go/parquet"
+	"github.com/xitongsys/parquet-go/source"
 	"github.com/xitongsys/parquet-go/writer"
+	"golang.org/x/sys/unix"
 )
 
 const archiveSchemaVersion = "apexload.archive.v1"
@@ -137,6 +140,119 @@ type archiveRecorder struct {
 	txEncoder       *json.Encoder
 	resourceEncoder *json.Encoder
 	summaryEncoder  *json.Encoder
+	byteBudget      *generatorArchiveByteBudget
+	closed          bool
+}
+
+type generatorArchiveByteBudget struct {
+	mu            sync.Mutex
+	root          string
+	maxBytes      int64
+	minFreeBytes  int64
+	written       int64
+	nextFreeCheck int64
+	knownFree     int64
+	freeKnown     bool
+}
+
+type generatorArchiveQuotaWriter struct {
+	file   *os.File
+	budget *generatorArchiveByteBudget
+}
+
+func (w *generatorArchiveQuotaWriter) Write(content []byte) (int, error) {
+	if w == nil || w.file == nil || w.budget == nil {
+		return 0, fmt.Errorf("generator archive writer is unavailable")
+	}
+	return w.budget.writeTo(w.file, content)
+}
+
+func (b *generatorArchiveByteBudget) writeTo(destination io.Writer, content []byte) (int, error) {
+	if b == nil || destination == nil {
+		return 0, fmt.Errorf("generator archive byte budget is unavailable")
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	length := int64(len(content))
+	if b.written > b.maxBytes || length > b.maxBytes-b.written {
+		return 0, fmt.Errorf("generator archive exceeds byte limit %d", b.maxBytes)
+	}
+	if !b.freeKnown || b.written >= b.nextFreeCheck {
+		free, err := generatorArchiveFreeBytes(b.root)
+		if err != nil {
+			return 0, err
+		}
+		b.knownFree = free
+		b.freeKnown = true
+		if b.written > int64(^uint64(0)>>1)-(1<<20) {
+			b.nextFreeCheck = int64(^uint64(0) >> 1)
+		} else {
+			b.nextFreeCheck = b.written + 1<<20
+		}
+	}
+	if b.knownFree < b.minFreeBytes || length > b.knownFree-b.minFreeBytes {
+		return 0, fmt.Errorf("generator archive free space would fall below reserve %d", b.minFreeBytes)
+	}
+	n, err := destination.Write(content)
+	if n < 0 || n > len(content) {
+		return 0, fmt.Errorf("generator archive writer returned invalid byte count %d", n)
+	}
+	b.written += int64(n)
+	if int64(n) >= b.knownFree {
+		b.knownFree = 0
+	} else {
+		b.knownFree -= int64(n)
+	}
+	if err == nil && n != len(content) {
+		err = io.ErrShortWrite
+	}
+	return n, err
+}
+
+// generatorArchiveQuotaParquetFile keeps parquet-go's writes inside the same
+// aggregate quota used by the JSONL producers. Embedding retains Seek/Read and
+// Close semantics while Write, Open, and Create preserve quota enforcement.
+type generatorArchiveQuotaParquetFile struct {
+	source.ParquetFile
+	budget *generatorArchiveByteBudget
+}
+
+func (f *generatorArchiveQuotaParquetFile) Write(content []byte) (int, error) {
+	if f == nil || f.ParquetFile == nil || f.budget == nil {
+		return 0, fmt.Errorf("generator parquet archive writer is unavailable")
+	}
+	return f.budget.writeTo(f.ParquetFile, content)
+}
+
+func (f *generatorArchiveQuotaParquetFile) Open(name string) (source.ParquetFile, error) {
+	opened, err := f.ParquetFile.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	return &generatorArchiveQuotaParquetFile{ParquetFile: opened, budget: f.budget}, nil
+}
+
+func (f *generatorArchiveQuotaParquetFile) Create(name string) (source.ParquetFile, error) {
+	created, err := f.ParquetFile.Create(name)
+	if err != nil {
+		return nil, err
+	}
+	return &generatorArchiveQuotaParquetFile{ParquetFile: created, budget: f.budget}, nil
+}
+
+func generatorArchiveFreeBytes(path string) (int64, error) {
+	var stat unix.Statfs_t
+	if err := unix.Statfs(path, &stat); err != nil {
+		return 0, err
+	}
+	if stat.Bavail > uint64(^uint64(0)/uint64(stat.Bsize)) {
+		return int64(^uint64(0) >> 1), nil
+	}
+	available := stat.Bavail * uint64(stat.Bsize)
+	if available > uint64(^uint64(0)>>1) {
+		return int64(^uint64(0) >> 1), nil
+	}
+	return int64(available), nil
 }
 
 type parquetTransactionEvent struct {
@@ -259,6 +375,10 @@ func newArchiveRecorderInNamespace(namespace *generatorArchiveNamespace, testID 
 		return nil, fmt.Errorf("create archive dir: %w", err)
 	}
 	archiveDir := filepath.Join(namespace.path, testID)
+	budget := &generatorArchiveByteBudget{
+		root: archiveDir, maxBytes: configuredGeneratorArchiveMaxBytes(),
+		minFreeBytes: configuredGeneratorArchiveMinFreeBytes(),
+	}
 	artifactNames := []string{
 		"transactions.jsonl", "resources.jsonl", "interval_summaries.jsonl",
 		"transactions.parquet", "resources.parquet", "interval_summaries.parquet",
@@ -279,7 +399,7 @@ func newArchiveRecorderInNamespace(namespace *generatorArchiveNamespace, testID 
 		if err != nil {
 			return nil, nil, err
 		}
-		return file, json.NewEncoder(file), nil
+		return file, json.NewEncoder(&generatorArchiveQuotaWriter{file: file, budget: budget}), nil
 	}
 
 	txFile, txEncoder, err := open("transactions.jsonl")
@@ -335,46 +455,80 @@ func newArchiveRecorderInNamespace(namespace *generatorArchiveNamespace, testID 
 		txEncoder:       txEncoder,
 		resourceEncoder: resourceEncoder,
 		summaryEncoder:  summaryEncoder,
+		byteBudget:      budget,
 	}, nil
 }
 
 // Discard closes any files left open by a failed finalization and removes the
 // incomplete archive directory. A failed archive must not become an untracked
 // on-disk leak or expose a partial manifest to the controller.
+type archiveRecorderCleanup struct {
+	files         []*os.File
+	namespace     *generatorArchiveNamespace
+	runRoot       *os.Root
+	runIdentity   os.FileInfo
+	runName       string
+	rootDir       string
+	ownsNamespace bool
+}
+
+func (w *archiveRecorder) detachCleanupLocked() archiveRecorderCleanup {
+	cleanup := archiveRecorderCleanup{
+		files:         []*os.File{w.txFile, w.resourceFile, w.summaryFile},
+		namespace:     w.namespace,
+		runRoot:       w.runRoot,
+		runIdentity:   w.runIdentity,
+		runName:       w.runName,
+		rootDir:       w.rootDir,
+		ownsNamespace: w.ownsNamespace,
+	}
+	w.txFile = nil
+	w.resourceFile = nil
+	w.summaryFile = nil
+	w.runRoot = nil
+	w.closed = true
+	return cleanup
+}
+
+func (c archiveRecorderCleanup) run() error {
+	failures := make([]error, 0, 5)
+	for _, file := range c.files {
+		if file != nil {
+			if err := file.Close(); err != nil && !errors.Is(err, os.ErrClosed) {
+				failures = append(failures, err)
+			}
+		}
+	}
+	if c.runRoot != nil {
+		if err := c.runRoot.Close(); err != nil && !errors.Is(err, os.ErrClosed) {
+			failures = append(failures, err)
+		}
+	}
+	if strings.TrimSpace(c.rootDir) != "" {
+		if err := removeGeneratorArchiveRun(c.namespace, c.runName, c.runIdentity); err != nil {
+			failures = append(failures, err)
+		}
+	}
+	if c.ownsNamespace && c.namespace != nil {
+		if err := c.namespace.close(); err != nil && !errors.Is(err, os.ErrClosed) {
+			failures = append(failures, err)
+		}
+	}
+	return errors.Join(failures...)
+}
+
 func (w *archiveRecorder) Discard() error {
 	if w == nil {
 		return nil
 	}
 	w.mu.Lock()
-	for _, file := range []*os.File{w.txFile, w.resourceFile, w.summaryFile} {
-		if file != nil {
-			_ = file.Close()
-		}
-	}
-	w.txFile = nil
-	w.resourceFile = nil
-	w.summaryFile = nil
-	rootDir := w.rootDir
-	namespace := w.namespace
-	runRoot := w.runRoot
-	runIdentity := w.runIdentity
-	runName := w.runName
-	ownsNamespace := w.ownsNamespace
-	w.runRoot = nil
-	w.mu.Unlock()
-	if strings.TrimSpace(rootDir) == "" {
+	if w.closed {
+		w.mu.Unlock()
 		return nil
 	}
-	if runRoot != nil {
-		_ = runRoot.Close()
-	}
-	err := removeGeneratorArchiveRun(namespace, runName, runIdentity)
-	if ownsNamespace {
-		if closeErr := namespace.close(); err == nil {
-			err = closeErr
-		}
-	}
-	return err
+	cleanup := w.detachCleanupLocked()
+	w.mu.Unlock()
+	return cleanup.run()
 }
 
 func validateArchiveTestID(testID string) error {
@@ -401,6 +555,9 @@ func (w *archiveRecorder) RecordResult(result *protocol.Result) error {
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if w.closed || w.txEncoder == nil {
+		return fmt.Errorf("generator archive recorder is closed")
+	}
 	event := archiveTransactionEvent{
 		Timestamp:      result.StartTime,
 		TestID:         w.manifest.TestID,
@@ -435,6 +592,9 @@ func (w *archiveRecorder) RecordResourceSample(timestamp time.Time, activeVUsers
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if w.closed || w.resourceEncoder == nil {
+		return fmt.Errorf("generator archive recorder is closed")
+	}
 	record := archiveResourceSample{
 		Timestamp:                         timestamp,
 		TestID:                            w.manifest.TestID,
@@ -487,6 +647,9 @@ func (w *archiveRecorder) RecordResourceSample(timestamp time.Time, activeVUsers
 func (w *archiveRecorder) RecordIntervalSummary(summary archiveIntervalSummary) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if w.closed || w.summaryEncoder == nil {
+		return fmt.Errorf("generator archive recorder is closed")
+	}
 	summary.TestID = w.manifest.TestID
 	summary.TestName = w.manifest.TestName
 	if err := w.summaryEncoder.Encode(summary); err != nil {
@@ -496,9 +659,27 @@ func (w *archiveRecorder) RecordIntervalSummary(summary archiveIntervalSummary) 
 	return nil
 }
 
-func (w *archiveRecorder) Finalize(status string, completedAt time.Time, errStr string) (*storage.RunArchiveRecord, error) {
+func (w *archiveRecorder) Finalize(status string, completedAt time.Time, errStr string) (record *storage.RunArchiveRecord, err error) {
+	if w == nil {
+		return nil, fmt.Errorf("generator archive recorder is unavailable")
+	}
 	w.mu.Lock()
-	defer w.mu.Unlock()
+	if w.closed {
+		w.mu.Unlock()
+		return nil, fmt.Errorf("generator archive recorder is closed")
+	}
+	cleanupOnError := true
+	defer func() {
+		if !cleanupOnError {
+			w.mu.Unlock()
+			return
+		}
+		cleanup := w.detachCleanupLocked()
+		w.mu.Unlock()
+		if cleanupErr := cleanup.run(); cleanupErr != nil {
+			err = errors.Join(err, fmt.Errorf("discard failed generator archive: %w", cleanupErr))
+		}
+	}()
 	w.manifest.Status = status
 	w.manifest.CompletedAt = completedAt
 	w.manifest.Error = errStr
@@ -507,11 +688,11 @@ func (w *archiveRecorder) Finalize(status string, completedAt time.Time, errStr 
 		if file == nil {
 			continue
 		}
-		if err := file.Sync(); err != nil {
-			return nil, err
+		if syncErr := file.Sync(); syncErr != nil {
+			return nil, syncErr
 		}
-		if err := file.Close(); err != nil {
-			return nil, err
+		if closeErr := file.Close(); closeErr != nil {
+			return nil, closeErr
 		}
 	}
 	w.txFile = nil
@@ -520,20 +701,35 @@ func (w *archiveRecorder) Finalize(status string, completedAt time.Time, errStr 
 	if w.runRoot == nil {
 		return nil, fmt.Errorf("archive run root is unavailable")
 	}
-	if err := writeArchiveParquetFilesAt(w.runRoot, &w.manifest); err != nil {
+	if err := writeArchiveParquetFilesAtWithBudget(w.runRoot, &w.manifest, w.byteBudget); err != nil {
 		return nil, err
+	}
+	if size, err := generatorArchiveRunSize(w.runRoot); err != nil {
+		return nil, err
+	} else if w.byteBudget != nil && size > w.byteBudget.maxBytes {
+		return nil, fmt.Errorf("generator archive size %d exceeds byte limit %d", size, w.byteBudget.maxBytes)
 	}
 	data, err := json.MarshalIndent(w.manifest, "", "  ")
 	if err != nil {
 		return nil, err
 	}
-	if err := writeGeneratorArchiveFileDurable(w.runRoot, "manifest.json", data, 0o644); err != nil {
+	if err := writeGeneratorArchiveFileDurableWithWriter(w.runRoot, "manifest.json", data, 0o644, func(file *os.File, content []byte) (int, error) {
+		if w.byteBudget == nil {
+			return file.Write(content)
+		}
+		return w.byteBudget.writeTo(file, content)
+	}); err != nil {
 		return nil, err
+	}
+	if size, err := generatorArchiveRunSize(w.runRoot); err != nil {
+		return nil, err
+	} else if w.byteBudget != nil && size > w.byteBudget.maxBytes {
+		return nil, fmt.Errorf("generator archive size %d exceeds byte limit %d", size, w.byteBudget.maxBytes)
 	}
 	if err := verifyGeneratorArchiveRun(w.namespace, w.runName, w.runIdentity); err != nil {
 		return nil, fmt.Errorf("verify finalized archive directory: %w", err)
 	}
-	record := &storage.RunArchiveRecord{
+	record = &storage.RunArchiveRecord{
 		TestID:               w.manifest.TestID,
 		SchemaVersion:        w.manifest.SchemaVersion,
 		ArchivePath:          w.rootDir,
@@ -550,9 +746,16 @@ func (w *archiveRecorder) Finalize(status string, completedAt time.Time, errStr 
 	w.runRoot = nil
 	if w.ownsNamespace {
 		if err := w.namespace.close(); err != nil {
-			return nil, err
+			// The archive has already been fully synced and verified. A directory
+			// descriptor close error cannot be repaired by deleting that durable
+			// result, and the descriptor is no longer usable after Close.
+			w.closed = true
+			cleanupOnError = false
+			return record, nil
 		}
 	}
+	w.closed = true
+	cleanupOnError = false
 	return record, nil
 }
 
@@ -612,33 +815,40 @@ func writeArchiveParquetFiles(rootDir string, manifest *archiveManifest) error {
 }
 
 func writeArchiveParquetFilesAt(root *os.Root, manifest *archiveManifest) error {
+	return writeArchiveParquetFilesAtWithBudget(root, manifest, nil)
+}
+
+func writeArchiveParquetFilesAtWithBudget(root *os.Root, manifest *archiveManifest, budget *generatorArchiveByteBudget) error {
 	if root == nil || manifest == nil {
 		return fmt.Errorf("archive root and manifest are required")
 	}
-	if err := streamJSONLToParquetAt(
+	if err := streamJSONLToParquetAtWithBudget(
 		root,
 		manifest.TransactionsFile,
 		manifest.TransactionsParquetFile,
+		budget,
 		func(item archiveTransactionEvent) parquetTransactionEvent {
 			return toParquetTransactions([]archiveTransactionEvent{item})[0]
 		},
 	); err != nil {
 		return fmt.Errorf("write transaction parquet: %w", err)
 	}
-	if err := streamJSONLToParquetAt(
+	if err := streamJSONLToParquetAtWithBudget(
 		root,
 		manifest.ResourceSamplesFile,
 		manifest.ResourceSamplesParquetFile,
+		budget,
 		func(item archiveResourceSample) parquetResourceSample {
 			return toParquetResources([]archiveResourceSample{item})[0]
 		},
 	); err != nil {
 		return fmt.Errorf("write resource parquet: %w", err)
 	}
-	if err := streamJSONLToParquetAt(
+	if err := streamJSONLToParquetAtWithBudget(
 		root,
 		manifest.IntervalSummariesFile,
 		manifest.IntervalSummariesParquetFile,
+		budget,
 		func(item archiveIntervalSummary) parquetIntervalSummary {
 			return toParquetSummaries([]archiveIntervalSummary{item})[0]
 		},
@@ -669,6 +879,10 @@ func streamJSONLToParquet[In any, Out any](inputPath string, outputPath string, 
 }
 
 func streamJSONLToParquetAt[In any, Out any](root *os.Root, inputName string, outputName string, convert func(In) Out) error {
+	return streamJSONLToParquetAtWithBudget(root, inputName, outputName, nil, convert)
+}
+
+func streamJSONLToParquetAtWithBudget[In any, Out any](root *os.Root, inputName string, outputName string, budget *generatorArchiveByteBudget, convert func(In) Out) error {
 	input, _, err := openGeneratorArchiveRegularFile(root, inputName)
 	if err != nil {
 		return err
@@ -678,7 +892,10 @@ func streamJSONLToParquetAt[In any, Out any](root *os.Root, inputName string, ou
 	if err != nil {
 		return err
 	}
-	fw := &local.LocalFile{FilePath: outputName, File: output}
+	var fw source.ParquetFile = &local.LocalFile{FilePath: outputName, File: output}
+	if budget != nil {
+		fw = &generatorArchiveQuotaParquetFile{ParquetFile: fw, budget: budget}
+	}
 	pw, err := writer.NewParquetWriter(fw, new(Out), 4)
 	if err != nil {
 		_ = fw.Close()
@@ -706,7 +923,41 @@ func streamJSONLToParquetAt[In any, Out any](root *os.Root, inputName string, ou
 		_ = fw.Close()
 		return err
 	}
+	if err := output.Sync(); err != nil {
+		_ = fw.Close()
+		return err
+	}
 	return fw.Close()
+}
+
+func generatorArchiveRunSize(root *os.Root) (int64, error) {
+	directory, err := root.Open(".")
+	if err != nil {
+		return 0, err
+	}
+	entries, readErr := directory.ReadDir(-1)
+	closeErr := directory.Close()
+	if readErr != nil {
+		return 0, readErr
+	}
+	if closeErr != nil {
+		return 0, closeErr
+	}
+	var total int64
+	for _, entry := range entries {
+		info, err := root.Lstat(entry.Name())
+		if err != nil {
+			return 0, err
+		}
+		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+			return 0, fmt.Errorf("generator archive contains non-regular artifact %q", entry.Name())
+		}
+		if info.Size() > 0 && total > int64(^uint64(0)>>1)-info.Size() {
+			return 0, fmt.Errorf("generator archive size overflow")
+		}
+		total += info.Size()
+	}
+	return total, nil
 }
 
 func toParquetTransactions(items []archiveTransactionEvent) []parquetTransactionEvent {

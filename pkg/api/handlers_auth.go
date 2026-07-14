@@ -796,6 +796,7 @@ type userOnboardingStore interface {
 }
 
 type guardedAuthMutationStore interface {
+	UpdateUserGuardLastAdmin(user *storage.User) (bool, error)
 	UpdateUserActiveGuardLastAdmin(id string, active bool, updatedAt time.Time) (bool, error)
 	DeleteUserGuardLastAdmin(id string) (bool, error)
 	DeleteUserRoleBindingGuardLastAdmin(id string) (bool, error)
@@ -975,11 +976,16 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 			user.DisabledAt = nil
 		}
 	}
-	if err := s.store.SaveUser(user); err != nil {
+	updated, err := s.store.UpdateUserGuardLastAdmin(user)
+	if err != nil {
 		if s.writeUserSubjectPersistenceError(w, user.Subject, err) {
 			return
 		}
 		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !updated {
+		writeError(w, http.StatusConflict, "cannot update the last active system administrator")
 		return
 	}
 	s.recordAuditEvent(r, "auth.user.update", "success", "user", user.ID, "", map[string]any{"subject": user.Subject})
@@ -1851,6 +1857,7 @@ func (s *Server) handleUpdateServiceAccount(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	before := serviceAccountAuditSummary(account)
+	expectedUpdatedAt := account.UpdatedAt
 	if !applyServiceAccountUpdate(w, account, req) {
 		return
 	}
@@ -1865,8 +1872,13 @@ func (s *Server) handleUpdateServiceAccount(w http.ResponseWriter, r *http.Reque
 	} else {
 		account.RotationDueAt = nil
 	}
-	if err := s.store.SaveServiceAccount(account); err != nil {
+	updated, err := s.store.UpdateServiceAccountMetadata(account, expectedUpdatedAt)
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !updated {
+		writeError(w, http.StatusConflict, "service account changed or was deleted; reload and retry")
 		return
 	}
 	s.recordAuditEvent(r, "auth.service_account.update", "success", "service_account", account.ID, "", map[string]any{"before": before, "after": serviceAccountAuditSummary(account)})

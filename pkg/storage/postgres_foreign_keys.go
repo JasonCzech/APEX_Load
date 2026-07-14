@@ -131,22 +131,71 @@ func postgresAddForeignKeyStatement(spec postgresForeignKeySpec) string {
 	if spec.onDelete != "" {
 		onDelete = " ON DELETE " + spec.onDelete
 	}
+	deleteAction := "a"
+	switch spec.onDelete {
+	case "CASCADE":
+		deleteAction = "c"
+	case "SET NULL":
+		deleteAction = "n"
+	case "RESTRICT":
+		deleteAction = "r"
+	case "", "NO ACTION":
+		deleteAction = "a"
+	}
 	// The duplicate_object handler makes simultaneous HA controller startup safe:
 	// both replicas may observe a missing constraint before one wins the table lock.
+	// Checking the complete catalog shape also repairs an older or manually-created
+	// constraint that happens to reuse the deterministic name with the wrong target
+	// or delete action.
 	return fmt.Sprintf(`DO $apexload$
+DECLARE
+	existing_definition text;
+	constraint_matches boolean := false;
 BEGIN
-	IF NOT EXISTS (
-		SELECT 1 FROM pg_constraint
-		WHERE conname = '%s' AND conrelid = '%s'::regclass
-	) THEN
+	SELECT
+		pg_get_constraintdef(constraint_row.oid),
+		constraint_row.contype = 'f'
+			AND constraint_row.confrelid = '%s'::regclass
+			AND constraint_row.conkey = ARRAY[(
+				SELECT attnum FROM pg_attribute
+				WHERE attrelid = '%s'::regclass AND attname = '%s' AND NOT attisdropped
+			)]::smallint[]
+			AND constraint_row.confkey = ARRAY[(
+				SELECT attnum FROM pg_attribute
+				WHERE attrelid = '%s'::regclass AND attname = '%s' AND NOT attisdropped
+			)]::smallint[]
+			AND constraint_row.confdeltype = '%s'
+			AND constraint_row.confupdtype = 'a'
+			AND constraint_row.confmatchtype = 's'
+			AND NOT constraint_row.condeferrable
+			AND NOT constraint_row.condeferred
+	INTO existing_definition, constraint_matches
+	FROM pg_constraint AS constraint_row
+	WHERE constraint_row.conname = '%s'
+		AND constraint_row.conrelid = '%s'::regclass;
+
+	IF existing_definition IS NOT NULL AND NOT constraint_matches THEN
+		ALTER TABLE %s DROP CONSTRAINT %s;
+		existing_definition := NULL;
+	END IF;
+
+	IF existing_definition IS NULL THEN
 		ALTER TABLE %s ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s)%s NOT VALID;
 	END IF;
 EXCEPTION WHEN duplicate_object THEN
 	NULL;
 END;
 $apexload$;`,
+		spec.references,
+		spec.table,
+		spec.column,
+		spec.references,
+		spec.refColumn,
+		deleteAction,
 		name,
 		spec.table,
+		quotePostgresIdentifier(spec.table),
+		quotePostgresIdentifier(name),
 		quotePostgresIdentifier(spec.table),
 		quotePostgresIdentifier(name),
 		quotePostgresIdentifier(spec.column),

@@ -3,12 +3,19 @@ package network
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
+const maxSocketReadBytes = 1 << 20
+
 func (n *Network) runSocket(ctx context.Context, action *protocol.Action, networkName string) (*operationResult, error) {
+	readLimit := actionParamInt(action.Params, "read_bytes")
+	if readLimit > maxSocketReadBytes {
+		return nil, fmt.Errorf("read_bytes exceeds maximum of %d", maxSocketReadBytes)
+	}
 	target, err := n.endpoint(action, defaultPortForSubprotocol(networkName))
 	if err != nil {
 		return nil, err
@@ -28,7 +35,6 @@ func (n *Network) runSocket(ctx context.Context, action *protocol.Action, networ
 			return nil, err
 		}
 	}
-	readLimit := actionParamInt(action.Params, "read_bytes")
 	readRequested := actionParamBool(action.Params, "read") || readLimit > 0
 	if readLimit <= 0 {
 		readLimit = 4096

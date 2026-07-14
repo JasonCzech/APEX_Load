@@ -17,12 +17,19 @@ import (
 )
 
 func buildRunArchiveBrowserDiagnostics(record *storage.RunArchiveRecord) (*BrowserDiagnosticsBundle, error) {
-	lease, err := acquireArchiveMaterialized(context.Background(), record)
+	return buildRunArchiveBrowserDiagnosticsContext(context.Background(), record)
+}
+
+func buildRunArchiveBrowserDiagnosticsContext(ctx context.Context, record *storage.RunArchiveRecord) (*BrowserDiagnosticsBundle, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	lease, err := acquireArchiveMaterialized(ctx, record)
 	if err != nil {
 		return nil, err
 	}
 	defer lease.Release()
-	manifest, err := loadRunArchiveManifest(record.ManifestPath)
+	manifest, err := loadRunArchiveManifestFromRecord(record)
 	if err != nil {
 		return nil, err
 	}
@@ -35,7 +42,7 @@ func buildRunArchiveBrowserDiagnostics(record *storage.RunArchiveRecord) (*Brows
 	const maxBrowserDiagnosticEvents = 5_000
 	const maxBrowserDiagnosticPayloadBytes = 128 << 20
 	payloadBytes := 0
-	if err := forEachArchiveTransaction(record, func(tx *TransactionEvent) error {
+	if err := forEachArchiveTransactionContext(ctx, record, func(tx *TransactionEvent) error {
 		if tx == nil {
 			return nil
 		}
@@ -288,30 +295,54 @@ func browserResourceTimingRanksBefore(left, right BrowserResourceTiming) bool {
 }
 
 func writeRunArchiveBrowserDiagnosticsZip(bundle *BrowserDiagnosticsBundle, dst io.Writer) error {
-	zipWriter := zip.NewWriter(dst)
-	defer zipWriter.Close()
+	return writeRunArchiveBrowserDiagnosticsZipContext(context.Background(), bundle, dst)
+}
 
+func writeRunArchiveBrowserDiagnosticsZipContext(ctx context.Context, bundle *BrowserDiagnosticsBundle, dst io.Writer) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	zipWriter := zip.NewWriter(dst)
 	for index := range bundle.Events {
+		if err := ctx.Err(); err != nil {
+			_ = zipWriter.Close()
+			return err
+		}
 		event := &bundle.Events[index]
 		baseName := fmt.Sprintf("%03d-%s", event.Index, sanitizeFilename(event.ActionName))
 		if event.screenshotBase64 != "" {
 			event.Artifacts.ScreenshotFile = filepath.ToSlash(filepath.Join("screenshots", baseName+".b64"))
 			if err := writeZipString(zipWriter, event.Artifacts.ScreenshotFile, event.screenshotBase64); err != nil {
+				_ = zipWriter.Close()
 				return err
 			}
 		}
 		if event.html != "" {
 			event.Artifacts.HTMLFile = filepath.ToSlash(filepath.Join("html", baseName+".html"))
 			if err := writeZipString(zipWriter, event.Artifacts.HTMLFile, event.html); err != nil {
+				_ = zipWriter.Close()
 				return err
 			}
 		}
 	}
-	indexBytes, err := json.MarshalIndent(bundle, "", "  ")
-	if err != nil {
+	if err := ctx.Err(); err != nil {
+		_ = zipWriter.Close()
 		return err
 	}
-	return writeZipBytes(zipWriter, "browser_diagnostics.json", indexBytes)
+	indexBytes, err := json.MarshalIndent(bundle, "", "  ")
+	if err != nil {
+		_ = zipWriter.Close()
+		return err
+	}
+	if err := writeZipBytes(zipWriter, "browser_diagnostics.json", indexBytes); err != nil {
+		_ = zipWriter.Close()
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		_ = zipWriter.Close()
+		return err
+	}
+	return zipWriter.Close()
 }
 
 func writeZipString(zipWriter *zip.Writer, name string, value string) error {

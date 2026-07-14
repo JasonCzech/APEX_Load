@@ -37,6 +37,10 @@ type latestScenarioScheduleOccurrenceStore interface {
 	LatestScenarioScheduleOccurrence(scheduleID string) (*storage.ScenarioScheduleOccurrence, error)
 }
 
+type atomicScenarioScheduleApprovalStore interface {
+	ResolveScenarioScheduleApproval(approval *storage.ScenarioScheduleApproval, schedule *storage.ScenarioSchedule, expectedScheduleRevision int) (bool, error)
+}
+
 type scenarioScheduler struct {
 	runner   *TestRunner
 	now      func() time.Time
@@ -1789,15 +1793,32 @@ func (tr *TestRunner) ResolveScenarioScheduleApproval(scenarioID string, schedul
 		schedule.LastError = ""
 	} else {
 		approval.Status = "rejected"
+		schedule.PendingApprovalID = ""
 		schedule.NextRequiredAction = "approval_rejected"
 		schedule.LastError = "schedule approval rejected"
 	}
-	if err := tr.scenarioStore.SaveScenarioScheduleApproval(approval); err != nil {
-		return nil, nil, false, err
-	}
 	schedule.UpdatedAt = now
-	if err := tr.saveScenarioScheduleLocked(schedule); err != nil {
-		return nil, nil, false, err
+	if atomicStore, ok := tr.scenarioStore.(atomicScenarioScheduleApprovalStore); ok {
+		changed, err := atomicStore.ResolveScenarioScheduleApproval(approval, schedule, schedule.Revision)
+		if err != nil {
+			return nil, nil, false, err
+		}
+		if !changed {
+			return nil, nil, false, fmt.Errorf("schedule approval was already resolved or the schedule changed concurrently")
+		}
+		for index, current := range scenario.Schedules {
+			if current != nil && current.ID == schedule.ID {
+				scenario.Schedules[index] = cloneScenarioSchedule(schedule)
+				break
+			}
+		}
+	} else {
+		if err := tr.scenarioStore.SaveScenarioScheduleApproval(approval); err != nil {
+			return nil, nil, false, err
+		}
+		if err := tr.saveScenarioScheduleLocked(schedule); err != nil {
+			return nil, nil, false, err
+		}
 	}
 	return approval, cloneScenarioSchedule(schedule), true, nil
 }

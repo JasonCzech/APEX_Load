@@ -77,6 +77,14 @@ type scalableExecutionBackendSpy struct {
 	calls chan scaleBackendCall
 }
 
+type blockingScaleExecutionBackendSpy struct {
+	calls       chan scaleBackendCall
+	blockTarget int
+	blocked     chan struct{}
+	release     chan struct{}
+	blockOnce   sync.Once
+}
+
 func (provenanceInventoryBackend) Run(_ *TestRunner, _ *ManagedTest) {}
 
 func (provenanceInventoryBackend) SystemInventory(_ context.Context) []GeneratorInventoryEntry {
@@ -93,6 +101,17 @@ func (b *scalableExecutionBackendSpy) Run(_ *TestRunner, _ *ManagedTest) {}
 
 func (b *scalableExecutionBackendSpy) ScaleVUsers(_ *TestRunner, _ *ManagedTest, groupName string, targetVUsers int) error {
 	b.calls <- scaleBackendCall{group: groupName, target: targetVUsers}
+	return nil
+}
+
+func (b *blockingScaleExecutionBackendSpy) Run(_ *TestRunner, _ *ManagedTest) {}
+
+func (b *blockingScaleExecutionBackendSpy) ScaleVUsers(_ *TestRunner, _ *ManagedTest, groupName string, targetVUsers int) error {
+	b.calls <- scaleBackendCall{group: groupName, target: targetVUsers}
+	if targetVUsers == b.blockTarget {
+		b.blockOnce.Do(func() { close(b.blocked) })
+		<-b.release
+	}
 	return nil
 }
 
@@ -598,6 +617,9 @@ func (s *metricsStoreSpy) GetSetting(key string) (string, error) {
 func (s *metricsStoreSpy) SaveServiceAccount(account *storage.ServiceAccount) error {
 	return nil
 }
+func (s *metricsStoreSpy) UpdateServiceAccountMetadata(account *storage.ServiceAccount, expectedUpdatedAt time.Time) (bool, error) {
+	return true, nil
+}
 func (s *metricsStoreSpy) GetServiceAccount(id string) (*storage.ServiceAccount, error) {
 	return nil, nil
 }
@@ -618,6 +640,9 @@ func (s *metricsStoreSpy) UpdateServiceAccountActive(id string, active bool, upd
 }
 func (s *metricsStoreSpy) DeleteServiceAccount(id string) error { return nil }
 func (s *metricsStoreSpy) SaveUser(user *storage.User) error    { return nil }
+func (s *metricsStoreSpy) UpdateUserGuardLastAdmin(user *storage.User) (bool, error) {
+	return true, nil
+}
 func (s *metricsStoreSpy) UpdateUserIdentitySeen(id string, displayName string, email string, lastSeenAt time.Time, updatedAt time.Time) error {
 	return nil
 }
@@ -3313,6 +3338,73 @@ func TestRunStageScheduleDrivesRampHoldAndDrain(t *testing.T) {
 	}
 }
 
+func TestRunStageScheduleWaitsForRampCompletionBeforeAdvancing(t *testing.T) {
+	runner := NewTestRunner(1, NewHub(), nil)
+	backend := &blockingScaleExecutionBackendSpy{
+		calls:       make(chan scaleBackendCall, 8),
+		blockTarget: 2,
+		blocked:     make(chan struct{}),
+		release:     make(chan struct{}),
+	}
+	runner.setExecutionBackend(backend)
+	runner.tests["test-1"] = &ManagedTest{
+		ID:           "test-1",
+		Name:         "Blocked staged schedule test",
+		Status:       "RUNNING",
+		ScenarioMode: "vuser_driven",
+		ProjectID:    storage.DefaultProjectID,
+		TotalVUsers:  2,
+		Groups: []TestGroup{{
+			Name:          "buyers",
+			VUsers:        2,
+			stageDriven:   true,
+			initialVUsers: 0,
+			currentVUsers: 0,
+		}},
+	}
+
+	released := false
+	defer func() {
+		if !released {
+			close(backend.release)
+		}
+	}()
+	done := make(chan struct{})
+	go func() {
+		runner.runStageSchedule(context.Background(), "test-1", "buyers", []storage.LoadStage{
+			{Name: "Step", Type: "ramp_up", Duration: "20ms", TargetVUsers: 2},
+			{Name: "Hold", Type: "hold", Duration: "10ms", TargetVUsers: 2},
+			{Name: "Drain", Type: "ramp_down", Duration: "20ms", TargetVUsers: 0},
+		}, nil)
+		close(done)
+	}()
+
+	select {
+	case <-backend.blocked:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for final ramp-up step to block")
+	}
+	select {
+	case <-done:
+		t.Fatal("stage schedule advanced before the active ramp completed")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(backend.release)
+	released = true
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for stage schedule after ramp completion")
+	}
+
+	got := drainScaleCalls(t, backend.calls, 4)
+	want := []int{1, 2, 1, 0}
+	if !intSlicesEqual(got, want) {
+		t.Fatalf("stage scale targets = %v, want %v", got, want)
+	}
+}
+
 func TestStartStageSchedulesSkipsGoalOrientedGroups(t *testing.T) {
 	runner := NewTestRunner(1, NewHub(), nil)
 	backend := &scalableExecutionBackendSpy{calls: make(chan scaleBackendCall, 1)}
@@ -4638,7 +4730,8 @@ func TestStartTestQueuesWhenMaxConcurrentTestsReached(t *testing.T) {
 	}
 
 	runner.mu.Lock()
-	runner.tests[first.ID].Status = "RUNNING"
+	activeFirst := runner.tests[first.ID]
+	activeFirst.Status = "RUNNING"
 	runner.mu.Unlock()
 
 	err = runner.StartTest(second.ID)
@@ -5059,7 +5152,8 @@ func TestCompleteTestRunPromotesPendingTests(t *testing.T) {
 	}
 
 	runner.mu.Lock()
-	runner.tests[first.ID].Status = "RUNNING"
+	activeFirst := runner.tests[first.ID]
+	activeFirst.Status = "RUNNING"
 	runner.mu.Unlock()
 
 	if err := runner.StartTest(second.ID); err != nil {
@@ -5071,7 +5165,7 @@ func TestCompleteTestRunPromotesPendingTests(t *testing.T) {
 	}
 
 	endTime := time.Now()
-	runner.completeTestRun(first, "COMPLETE", endTime, "", nil)
+	runner.completeTestRun(activeFirst, "COMPLETE", endTime, "", nil)
 
 	promoted := waitForStatusAny(t, runner, second.ID, 5*time.Second, "INITIALIZING", "RUNNING", "COMPLETE")
 	if promoted.Status == "PENDING" || promoted.Status == "QUEUED" {
@@ -6811,7 +6905,10 @@ func TestRunnerCapturesUsageSnapshotOnCadenceTick(t *testing.T) {
 }
 
 func waitForTestStatus(t *testing.T, runner *TestRunner, testID string, want string) *ManagedTest {
-	return waitForTestStatusWithin(t, runner, testID, 12*time.Second, want)
+	// Several integration tests execute and archive a real high-throughput run.
+	// Keep the wait bounded, but allow enough scheduler/I/O headroom when the
+	// entire API package is exercising those paths concurrently.
+	return waitForTestStatusWithin(t, runner, testID, 30*time.Second, want)
 }
 
 func waitForTestStatusWithin(t *testing.T, runner *TestRunner, testID string, timeout time.Duration, want string) *ManagedTest {

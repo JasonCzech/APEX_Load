@@ -337,6 +337,9 @@ func TestExecutionPlanScheduleSweep(t *testing.T) {
 
 func TestExecutionPlanScheduleRunNameTemplateNamesMaterializedTests(t *testing.T) {
 	server, store := newTimeslotServer(t)
+	if err := store.SaveProject(&storage.Project{ID: "proj-a", Name: "A", CreatedAt: time.Now(), UpdatedAt: time.Now()}); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
 	server.runner.StoreScript(&dsl.Script{
 		ID: "script-template", Name: "Template", Protocol: "http", Version: "1.0.0",
 		Config:  dsl.ScriptConfig{BaseURL: "https://example.com"},
@@ -524,6 +527,7 @@ func TestExecutionPlanCRUD(t *testing.T) {
 		{"missing name", map[string]any{"project_id": "p", "entries": []any{}}},
 		{"bad run_mode", map[string]any{"project_id": "p", "name": "x", "run_mode": "weird"}},
 		{"entry missing scenario", map[string]any{"project_id": "p", "name": "x", "entries": []map[string]any{{"order": 0}}}},
+		{"invalid runtime overrides", map[string]any{"project_id": "p", "name": "x", "entries": []map[string]any{{"order": 0, "scenario_id": "scn-1", "runtime_overrides": []any{"invalid"}}}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rec := timeslotRequest(t, server, http.MethodPost, "/api/v1/execution-plans", tc.body)

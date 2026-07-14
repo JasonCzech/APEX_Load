@@ -26,6 +26,28 @@ type archiveStreamingFakeClient struct {
 	legacyCalls int
 }
 
+type parallelArchiveClient struct {
+	*archiveStreamingFakeClient
+	started chan<- string
+	release <-chan struct{}
+}
+
+func (c *parallelArchiveClient) StreamArchiveArtifact(ctx context.Context, request generatorrpc.ArchiveArtifactRequest, destination io.Writer, maxBytes int64) (int64, error) {
+	if request.Name == runArchiveManifestFileName {
+		select {
+		case c.started <- request.TestID:
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		}
+		select {
+		case <-c.release:
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		}
+	}
+	return c.archiveStreamingFakeClient.StreamArchiveArtifact(ctx, request, destination, maxBytes)
+}
+
 type retryingArchivePersistence struct {
 	mu        sync.Mutex
 	calls     int
@@ -293,6 +315,66 @@ func TestFetchRemoteArchiveRejectsManifestForDifferentTest(t *testing.T) {
 	client.mu.Unlock()
 	if streamCalls != 1 {
 		t.Fatalf("stream calls = %d, want manifest only before rejection", streamCalls)
+	}
+}
+
+func TestFetchRemoteArchivesStartsTargetsInParallelAndCancelsAsAGroup(t *testing.T) {
+	testID := "parallel-archive"
+	source := t.TempDir()
+	write := func(name string, content []byte) string {
+		t.Helper()
+		path := filepath.Join(source, name)
+		if err := os.WriteFile(path, content, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	manifestBytes, err := json.Marshal(RunArchiveManifest{
+		SchemaVersion: archiveSchemaVersion, TestID: testID,
+		TransactionsFile: "transactions.jsonl", ResourceSamplesFile: "resources.jsonl", IntervalSummariesFile: "summaries.jsonl",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifacts := map[string]string{
+		runArchiveManifestFileName: write("manifest.json", manifestBytes),
+		"transactions.jsonl":       write("transactions.jsonl", nil),
+		"resources.jsonl":          write("resources.jsonl", nil),
+		"summaries.jsonl":          write("summaries.jsonl", nil),
+	}
+	started := make(chan string, 2)
+	release := make(chan struct{})
+	clientA := &parallelArchiveClient{archiveStreamingFakeClient: &archiveStreamingFakeClient{artifacts: artifacts}, started: started, release: release}
+	clientB := &parallelArchiveClient{archiveStreamingFakeClient: &archiveStreamingFakeClient{artifacts: artifacts}, started: started, release: release}
+	backend := newDistributedExecutionBackend([]string{"generator-a", "generator-b"}, time.Second, nil)
+	test := &ManagedTest{ID: testID, remoteClientsByTarget: map[string]generatorClient{"generator-a": clientA, "generator-b": clientB}}
+	done := make(chan error, 1)
+	go func() {
+		bundles, err := backend.fetchRemoteArchiveBundlesContext(context.Background(), &TestRunner{}, test, true)
+		if err == nil {
+			cleanupRemoteArchiveBundles(bundles)
+		}
+		done <- err
+	}()
+	for count := 0; count < 2; count++ {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatal("remote archive targets were fetched sequentially")
+		}
+	}
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+
+	blocked := make(chan struct{})
+	cancelClient := &parallelArchiveClient{archiveStreamingFakeClient: &archiveStreamingFakeClient{artifacts: artifacts}, started: make(chan string, 1), release: blocked}
+	cancelTest := &ManagedTest{ID: testID, remoteClientsByTarget: map[string]generatorClient{"generator-a": cancelClient}}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := backend.fetchRemoteArchiveBundlesContext(ctx, &TestRunner{}, cancelTest, true); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled fetch error = %v, want context canceled", err)
 	}
 }
 

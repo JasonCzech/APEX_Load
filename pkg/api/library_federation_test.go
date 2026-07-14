@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -680,6 +681,48 @@ func TestLibraryArchiveImportRejectsMismatchedFormProjectID(t *testing.T) {
 	}
 	if got.ProjectID != "project-a" {
 		t.Fatalf("resolved project_id = %q, want project-a (the authorized query value)", got.ProjectID)
+	}
+}
+
+func TestLibraryArchiveImportRejectsDuplicateArchiveAndCleansTemporaryFile(t *testing.T) {
+	temp := t.TempDir()
+	t.Setenv("TMPDIR", temp)
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	bundlePart, err := writer.CreateFormField("bundle")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.NewEncoder(bundlePart).Encode(LibraryBundle{}); err != nil {
+		t.Fatal(err)
+	}
+	for index := 0; index < 2; index++ {
+		part, err := writer.CreateFormFile("archive", fmt.Sprintf("archive-%d.zip", index))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := part.Write([]byte("zip")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/library/import/archive?project_id=project-a", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	_, _, cleanup, err := readLibraryArchiveImportRequest(req)
+	if cleanup != nil {
+		cleanup()
+	}
+	if err == nil || !strings.Contains(err.Error(), "duplicate archive") {
+		t.Fatalf("duplicate archive error = %v", err)
+	}
+	entries, err := os.ReadDir(temp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("temporary archive leaked after duplicate rejection: %v", entries)
 	}
 }
 

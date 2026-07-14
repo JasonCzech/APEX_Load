@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -19,6 +20,17 @@ import (
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
+
+const (
+	activeVUserDrainTimeout = 100 * time.Second
+	serviceShutdownTimeout  = 10 * time.Second
+	grpcShutdownTimeout     = 5 * time.Second
+)
+
+type grpcStopper interface {
+	GracefulStop()
+	Stop()
+}
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
@@ -69,38 +81,84 @@ func main() {
 	grpcServer := grpc.NewServer(serverOptions...)
 	healthServer := health.NewServer()
 	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
-	healthpb.RegisterHealthServer(grpcServer, healthServer)
+	// Keep health on a dedicated service-only listener. Kubernetes native gRPC
+	// probes cannot present the production mTLS certificate or bearer token, so
+	// probing the secured control listener makes every healthy pod unready.
+	healthAddr := strings.TrimSpace(os.Getenv("APEXLOAD_GENERATOR_HEALTH_ADDR"))
+	if healthAddr == "" {
+		healthAddr = ":9092"
+	}
+	healthListener, err := net.Listen("tcp", healthAddr)
+	if err != nil {
+		slog.Error("failed to listen for generator health", "addr", healthAddr, "err", err)
+		os.Exit(1)
+	}
+	defer healthListener.Close()
+	healthGRPCServer := grpc.NewServer()
+	healthpb.RegisterHealthServer(healthGRPCServer, healthServer)
 	controlService := generatorrpc.NewService(generatorID, cfg.MaxVUsers, generatorrpc.WithExecution())
 	pb.RegisterGeneratorControlServer(grpcServer, controlService)
 
-	errCh := make(chan error, 1)
+	errCh := make(chan error, 2)
 	go func() {
 		errCh <- grpcServer.Serve(listener)
 	}()
+	go func() {
+		errCh <- healthGRPCServer.Serve(healthListener)
+	}()
 
-	slog.Info("apexload generator starting", "addr", cfg.ListenAddr, "generator_id", generatorID, "max_vusers", cfg.MaxVUsers, "grpc_transport", security.String())
+	slog.Info("apexload generator starting", "addr", cfg.ListenAddr, "health_addr", healthAddr, "generator_id", generatorID, "max_vusers", cfg.MaxVUsers, "grpc_transport", security.String())
 
 	select {
 	case <-ctx.Done():
 		slog.Info("generator shutting down")
 		controlService.SetDraining(true)
 		healthServer.SetServingStatus("", healthpb.HealthCheckResponse_NOT_SERVING)
-		deadline := time.After(110 * time.Second)
+		deadline := time.NewTimer(activeVUserDrainTimeout)
+		defer deadline.Stop()
 		ticker := time.NewTicker(500 * time.Millisecond)
 		defer ticker.Stop()
 		for controlService.ActiveVUsers() > 0 {
 			select {
-			case <-deadline:
+			case <-deadline.C:
 				slog.Warn("generator drain deadline reached", "active_vusers", controlService.ActiveVUsers())
 				goto stop
 			case <-ticker.C:
 			}
 		}
 	stop:
-		grpcServer.GracefulStop()
+		drainCtx, drainCancel := context.WithTimeout(context.Background(), serviceShutdownTimeout)
+		if err := controlService.Shutdown(drainCtx); err != nil {
+			slog.Warn("generator service shutdown incomplete", "err", err)
+		}
+		drainCancel()
+		if !gracefulStopWithTimeout(grpcServer, grpcShutdownTimeout) {
+			slog.Warn("generator control gRPC graceful shutdown timed out; forced stop")
+		}
+		if !gracefulStopWithTimeout(healthGRPCServer, grpcShutdownTimeout) {
+			slog.Warn("generator health gRPC graceful shutdown timed out; forced stop")
+		}
 	case err := <-errCh:
 		slog.Error("generator server error", "err", err)
 		os.Exit(1)
+	}
+}
+
+func gracefulStopWithTimeout(server grpcStopper, timeout time.Duration) bool {
+	done := make(chan struct{})
+	go func() {
+		server.GracefulStop()
+		close(done)
+	}()
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-done:
+		return true
+	case <-timer.C:
+		server.Stop()
+		<-done
+		return false
 	}
 }
 

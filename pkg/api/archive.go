@@ -3,12 +3,14 @@ package api
 import (
 	"archive/zip"
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -758,39 +760,99 @@ func cloneGroupLiveMetricsMap(metrics map[string]*GroupLiveMetrics) map[string]*
 }
 
 func zipDirectory(sourceDir string, dst io.Writer) error {
-	zipWriter := zip.NewWriter(dst)
-	defer zipWriter.Close()
+	return zipDirectoryContext(context.Background(), sourceDir, dst)
+}
 
-	return filepath.Walk(sourceDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
+func zipDirectoryContext(ctx context.Context, sourceDir string, dst io.Writer) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	zipWriter := zip.NewWriter(dst)
+	root, err := openArchiveDirectoryNoSymlink(sourceDir)
+	if err != nil {
+		_ = zipWriter.Close()
+		return err
+	}
+	err = zipArchiveDirectoryRoot(ctx, root, "", zipWriter)
+	rootCloseErr := root.Close()
+	zipCloseErr := zipWriter.Close()
+	if err != nil {
+		return err
+	}
+	if rootCloseErr != nil {
+		return rootCloseErr
+	}
+	return zipCloseErr
+}
+
+func zipArchiveDirectoryRoot(ctx context.Context, root *os.Root, prefix string, zipWriter *zip.Writer) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	directory, err := root.Open(".")
+	if err != nil {
+		return err
+	}
+	entries, readErr := directory.ReadDir(-1)
+	closeErr := directory.Close()
+	if readErr != nil {
+		return readErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
+	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if info.IsDir() {
-			return nil
+		name := entry.Name()
+		if name == archiveMaterializationCacheMarkerSuffix {
+			continue
+		}
+		info, err := root.Lstat(name)
+		if err != nil {
+			return err
 		}
 		if info.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("archive contains symbolic link %s", path)
+			return fmt.Errorf("archive contains symbolic link %s", filepath.Join(prefix, name))
 		}
-		relPath, err := filepath.Rel(sourceDir, path)
+		archiveName := filepath.ToSlash(filepath.Join(prefix, name))
+		if info.IsDir() {
+			child, err := openArchiveChildDirectoryAt(root, name, false, 0)
+			if err != nil {
+				return err
+			}
+			err = zipArchiveDirectoryRoot(ctx, child, archiveName, zipWriter)
+			closeErr := child.Close()
+			if err != nil {
+				return err
+			}
+			if closeErr != nil {
+				return closeErr
+			}
+			continue
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("archive contains non-regular artifact %s", archiveName)
+		}
+		file, _, err := openArchiveArtifactForReadAt(root, name)
 		if err != nil {
 			return err
 		}
-		if filepath.ToSlash(relPath) == archiveMaterializationCacheMarkerSuffix {
-			return nil
-		}
-		fileWriter, err := zipWriter.Create(filepath.ToSlash(relPath))
+		fileWriter, err := zipWriter.Create(archiveName)
 		if err != nil {
+			_ = file.Close()
 			return err
 		}
-		file, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		_, copyErr := io.Copy(fileWriter, file)
-		closeErr := file.Close()
+		_, copyErr := io.Copy(fileWriter, archiveContextReader{ctx: ctx, r: file})
+		fileCloseErr := file.Close()
 		if copyErr != nil {
 			return copyErr
 		}
-		return closeErr
-	})
+		if fileCloseErr != nil {
+			return fileCloseErr
+		}
+	}
+	return nil
 }

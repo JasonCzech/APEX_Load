@@ -16,10 +16,16 @@ import (
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
+type scenarioScheduleCASPersistence interface {
+	CreateScenarioScheduleIfAbsent(schedule *storage.ScenarioSchedule) (bool, error)
+	UpdateScenarioScheduleIfRevision(schedule *storage.ScenarioSchedule, expectedRevision int) (bool, error)
+}
+
 func (tr *TestRunner) StoreScenario(req CreateScenarioRequest) (*StoredScenario, error) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
-	return tr.storeScenarioLocked(uuid.New().String(), req)
+	stored, err := tr.storeScenarioLocked(uuid.New().String(), req)
+	return cloneStoredScenarioForReadLocked(stored), err
 }
 
 func (tr *TestRunner) UpdateScenario(id string, req CreateScenarioRequest) (*StoredScenario, bool, error) {
@@ -30,7 +36,7 @@ func (tr *TestRunner) UpdateScenario(id string, req CreateScenarioRequest) (*Sto
 		return nil, false, nil
 	}
 	scenario, err := tr.storeScenarioLocked(id, req)
-	return scenario, true, err
+	return cloneStoredScenarioForReadLocked(scenario), true, err
 }
 
 func (tr *TestRunner) storeScenarioLocked(id string, req CreateScenarioRequest) (*StoredScenario, error) {
@@ -119,13 +125,18 @@ func (tr *TestRunner) storeScenarioLocked(id string, req CreateScenarioRequest) 
 			Assignment:      generatorAssignmentForStorage(group.Assignment),
 		})
 	}
-	if projectID, singleProject := tr.scenarioProjectIDFromScriptsLocked(scripts); singleProject {
-		if err := tr.projectDeletionErrorLocked(projectID); err != nil {
-			return nil, err
-		}
+	projectID, singleProject := tr.scenarioProjectIDFromScriptsLocked(scripts)
+	if !singleProject {
+		return nil, fmt.Errorf("scenario scripts span multiple projects")
+	}
+	if err := tr.projectDeletionErrorLocked(projectID); err != nil {
+		return nil, err
 	}
 	dataPools, err := normalizeScenarioDataPoolBindings(id, req.DataPools)
 	if err != nil {
+		return nil, err
+	}
+	if err := tr.validateDataPoolProjectsLocked(projectID, dataPools); err != nil {
 		return nil, err
 	}
 	if tr.scenarioStore != nil {
@@ -284,16 +295,37 @@ func (tr *TestRunner) saveScenarioScheduleLocked(schedule *storage.ScenarioSched
 	if !ok {
 		return fmt.Errorf("scenario not found: %s", schedule.ScenarioID)
 	}
+	existingIndex := -1
+	expectedRevision := 0
+	for index, existing := range scenario.Schedules {
+		if existing != nil && existing.ID == schedule.ID {
+			existingIndex = index
+			expectedRevision = existing.Revision
+			break
+		}
+	}
 	if tr.scenarioStore != nil {
-		if err := tr.scenarioStore.SaveScenarioSchedule(schedule); err != nil {
+		if casStore, ok := tr.scenarioStore.(scenarioScheduleCASPersistence); ok {
+			var changed bool
+			var err error
+			if existingIndex < 0 {
+				changed, err = casStore.CreateScenarioScheduleIfAbsent(schedule)
+			} else {
+				changed, err = casStore.UpdateScenarioScheduleIfRevision(schedule, expectedRevision)
+			}
+			if err != nil {
+				return err
+			}
+			if !changed {
+				return fmt.Errorf("scenario schedule %q changed or was deleted; reload and retry", schedule.ID)
+			}
+		} else if err := tr.scenarioStore.SaveScenarioSchedule(schedule); err != nil {
 			return err
 		}
 	}
-	for index, existing := range scenario.Schedules {
-		if existing != nil && existing.ID == schedule.ID {
-			scenario.Schedules[index] = cloneScenarioSchedule(schedule)
-			return nil
-		}
+	if existingIndex >= 0 {
+		scenario.Schedules[existingIndex] = cloneScenarioSchedule(schedule)
+		return nil
 	}
 	scenario.Schedules = append(scenario.Schedules, cloneScenarioSchedule(schedule))
 	return nil

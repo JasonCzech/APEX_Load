@@ -219,6 +219,9 @@ func TestSQLiteStoreAcquiresSchedulerLease(t *testing.T) {
 	if acquired {
 		t.Fatal("expected second controller to be blocked by active lease")
 	}
+	if _, err := store.db.Exec(`UPDATE scheduler_leases SET expires_at = ? WHERE name = ?`, time.Now().UTC().Add(-time.Minute), "scenario-scheduler"); err != nil {
+		t.Fatalf("expire scheduler lease: %v", err)
+	}
 	acquired, err = store.TryAcquireSchedulerLease("scenario-scheduler", "controller-b", now.Add(2*time.Minute), time.Minute)
 	if err != nil {
 		t.Fatalf("TryAcquireSchedulerLease expired returned error: %v", err)

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import CommandCenterPrototype, {
   buildSelectedGroupChartHistoryFromTransactions,
+  historicalGroupSummaryQuery,
   selectedGroupLoadImpactData,
   type CommandGroup,
 } from './CommandCenterPrototype'
@@ -31,6 +32,13 @@ describe('CommandCenterPrototype', () => {
     vi.restoreAllMocks()
     vi.useRealTimers()
     container.remove()
+  })
+
+  it('requests one bounded sampled series for historical group charts', () => {
+    expect(historicalGroupSummaryQuery(['Checkout', 'Search'])).toEqual({
+      sample_limit: 5000,
+      groups: ['Checkout', 'Search'],
+    })
   })
 
   it('keeps unfiltered graph data when selected group fields are absent', () => {

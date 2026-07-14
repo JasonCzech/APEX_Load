@@ -17,6 +17,7 @@ import {
 import { LatencyTarget, LiveMetrics, MetricsHistoryPoint, NetworkLatency, PrometheusGraph } from '../types'
 import { copyTextToClipboard } from '../utils/clipboardUtils'
 import { downloadTextFile } from '../utils/fileUtils'
+import { useModalDialog } from '../hooks/useModalDialog'
 import { buildGeneratorImpactView, type GeneratorImpactVerdict } from './generatorImpact'
 import LoadImpactHeatmap from './LoadImpactHeatmap'
 import {
@@ -494,6 +495,8 @@ export default function TestExecutionCharts({
   const chartMenuRef = useRef<HTMLDivElement | null>(null)
   const chartMenuFirstItemRef = useRef<HTMLButtonElement | null>(null)
   const chartMenuTriggerRef = useRef<HTMLElement | null>(null)
+  const chartDrawerRef = useRef<HTMLElement | null>(null)
+  const chartDrawerCloseButtonRef = useRef<HTMLButtonElement | null>(null)
   const axisLabelPopoverRef = useRef<HTMLDivElement | null>(null)
   const sharedCursorRef = useRef<GraphCursorState | null>(activeCursor ?? null)
   const pendingMouseMoveRef = useRef<{ activeLabel?: string | number; cursor: GraphCursorState | null } | null>(null)
@@ -710,17 +713,12 @@ export default function TestExecutionCharts({
     }
   }, [axisLabelPopover])
 
-  useEffect(() => {
-    if (!chartDrawerOpen) return
-
-    const closeDrawerOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setChartDrawerOpen(false)
-      }
-    }
-    window.addEventListener('keydown', closeDrawerOnEscape)
-    return () => window.removeEventListener('keydown', closeDrawerOnEscape)
-  }, [chartDrawerOpen])
+  useModalDialog({
+    dialogRef: chartDrawerRef,
+    enabled: chartDrawerOpen,
+    initialFocusRef: chartDrawerCloseButtonRef,
+    onClose: () => setChartDrawerOpen(false),
+  })
 
   const orderedCharts = useMemo(() => {
     const byId = new Map(allChartConfigs.map(chart => [chart.id, chart]))
@@ -2873,13 +2871,13 @@ export default function TestExecutionCharts({
             aria-label="Close graph configuration"
             onClick={() => setChartDrawerOpen(false)}
           />
-          <aside className="charts-config-drawer" role="dialog" aria-modal="true" aria-label="Final graph configuration">
+          <aside ref={chartDrawerRef} className="charts-config-drawer" role="dialog" aria-modal="true" aria-label="Final graph configuration">
             <div className="charts-config-drawer-header">
               <div>
                 <h3>Graph Configuration</h3>
                 <p>{externalControlsTarget ? 'Choose graph cards for the final graph area.' : 'Choose graph cards, presets, density, and time display for the final graph area.'}</p>
               </div>
-              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setChartDrawerOpen(false)}>Close</button>
+              <button ref={chartDrawerCloseButtonRef} type="button" className="btn btn-secondary btn-sm" onClick={() => setChartDrawerOpen(false)}>Close</button>
             </div>
             {renderChartConfigurationPanel()}
           </aside>

@@ -85,6 +85,9 @@ func TestArchiveRetentionPlanAndApplyHandlersPruneExpiredArchives(t *testing.T) 
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
 	defer store.Close()
+	if err := store.SaveProject(&storage.Project{ID: "project-a", Name: "Project A", CreatedAt: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
 	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
 	settings := server.runner.GetSystemSettings()
 	settings.ArchiveRetention = ArchiveRetentionSettings{
@@ -108,6 +111,9 @@ func TestArchiveRetentionPlanAndApplyHandlersPruneExpiredArchives(t *testing.T) 
 	archiveRecord := &storage.RunArchiveRecord{
 		TestID: "expired", ArchiveBackend: archiveBackendFilesystem, ArchivePath: archiveDir,
 		ManifestPath: filepath.Join(archiveDir, "manifest.json"), CompletedAt: completedAt,
+	}
+	if err := store.SaveProject(&storage.Project{ID: "project-a", Name: "Project A", CreatedAt: completedAt, UpdatedAt: completedAt}); err != nil {
+		t.Fatal(err)
 	}
 	if err := store.SaveTest(&storage.TestRecord{ID: "expired", Name: "Expired", Status: "COMPLETE", ProjectID: "project-a", StartTime: completedAt}); err != nil {
 		t.Fatal(err)

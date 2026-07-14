@@ -559,7 +559,10 @@ func TestSequentialPlanTransitionPersistenceFailurePreventsEntryLaunch(t *testin
 func TestSequentialPlanAdvancePersistenceFailureRetriesAutomatically(t *testing.T) {
 	runner, backend, scenarioIDs := newPlanTestRunner(t, "first", "second")
 	wantErr := errors.New("plan store unavailable")
-	planStore := &scriptedExecutionPlanRunStore{err: wantErr, failCalls: failCalls(3, durableTransitionAttempts)}
+	// Save 1 anchors the run, save 2 claims the first entry before creating its
+	// test, and save 3 attaches the queued test. Fail the subsequent terminal
+	// transition so the retry path is exercised after a successful launch.
+	planStore := &scriptedExecutionPlanRunStore{err: wantErr, failCalls: failCalls(4, durableTransitionAttempts)}
 	runner.execPlanRunStore = planStore
 	plan := &storage.ExecutionPlan{
 		ID: "plan-advance-failure", ProjectID: "project-a", Name: "Durable", RunMode: "sequential",

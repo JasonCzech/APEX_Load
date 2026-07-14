@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"sort"
@@ -346,18 +347,42 @@ func resolveLibraryImportProjectID(r *http.Request, _ storage.Store) (string, in
 	if err := decodeRequestBody(r, &req); err != nil {
 		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
 	}
-	if strings.TrimSpace(req.ProjectID) != "" {
-		return normalizeProjectID(req.ProjectID), 0, ""
+	projectID, err := validateLibraryImportDestination(req)
+	if err != nil {
+		return "", http.StatusBadRequest, err.Error()
 	}
-	if strings.TrimSpace(req.Bundle.Source.ProjectID) != "" {
-		return normalizeProjectID(req.Bundle.Source.ProjectID), 0, ""
+	return projectID, 0, ""
+}
+
+// validateLibraryImportDestination establishes one explicit local write scope.
+// Bundle project fields describe provenance, never an implicit destination.
+// They must also agree with each other so a bundle cannot conceal assets from
+// several tenants behind the first project encountered by the auth resolver.
+func validateLibraryImportDestination(req LibraryImportRequest) (string, error) {
+	if strings.TrimSpace(req.ProjectID) == "" {
+		return "", fmt.Errorf("project_id is required as the library import destination")
 	}
-	for _, item := range req.Bundle.Items {
-		if strings.TrimSpace(item.ProjectID) != "" {
-			return normalizeProjectID(item.ProjectID), 0, ""
+	destination := normalizeProjectID(req.ProjectID)
+	sourceProjects := map[string]struct{}{}
+	addSourceProject := func(value string) {
+		if strings.TrimSpace(value) != "" {
+			sourceProjects[normalizeProjectID(value)] = struct{}{}
 		}
 	}
-	return "", 0, ""
+	addSourceProject(req.Bundle.Source.ProjectID)
+	for _, item := range req.Bundle.Items {
+		addSourceProject(item.ProjectID)
+		if item.Script != nil {
+			addSourceProject(item.Script.ProjectID)
+		}
+		if item.Result != nil && item.Result.Test != nil {
+			addSourceProject(item.Result.Test.ProjectID)
+		}
+	}
+	if len(sourceProjects) > 1 {
+		return "", fmt.Errorf("library bundle items span multiple source projects")
+	}
+	return destination, nil
 }
 
 func resolveLibraryResultArchiveProjectID(r *http.Request, store storage.Store) (string, int, string) {

@@ -14,18 +14,28 @@ func TestScriptEnvAlwaysBlocksSecretNamespace(t *testing.T) {
 	}
 }
 
-func TestScriptEnvUnsetAllowlistAllowsOrdinaryKeys(t *testing.T) {
+func TestScriptEnvUnsetAllowlistDeniesOrdinaryKeys(t *testing.T) {
 	t.Setenv(EnvScriptEnvAllowlist, "")
 	t.Setenv("APEXLOAD_PUBLIC_REGION", "east")
-	// A name containing TOKEN is legitimately used by scripts; without an
-	// allowlist it remains readable (backward-compatible default).
 	t.Setenv("APEXLOAD_LOG_TOKEN", "abc123")
 
-	if v, ok := lookupScriptEnv("APEXLOAD_PUBLIC_REGION"); !ok || v != "east" {
-		t.Fatalf("expected ordinary key readable, got %q ok=%v", v, ok)
+	if _, ok := lookupScriptEnv("APEXLOAD_PUBLIC_REGION"); ok {
+		t.Fatal("unset allowlist must deny process environment access")
 	}
-	if v, ok := lookupScriptEnv("APEXLOAD_LOG_TOKEN"); !ok || v != "abc123" {
-		t.Fatalf("expected TOKEN-named key readable without allowlist, got %q ok=%v", v, ok)
+	if _, ok := lookupScriptEnv("APEXLOAD_LOG_TOKEN"); ok {
+		t.Fatal("credential-like names must always be denied")
+	}
+}
+
+func TestScriptEnvAllowlistCannotExposeCredentials(t *testing.T) {
+	t.Setenv(EnvScriptEnvAllowlist, "APEXLOAD_GRPC_AUTH_TOKEN,AWS_ACCESS_KEY_ID,SAFE_API_KEY")
+	t.Setenv("APEXLOAD_GRPC_AUTH_TOKEN", "controller-token")
+	t.Setenv("AWS_ACCESS_KEY_ID", "cloud-key")
+	t.Setenv("SAFE_API_KEY", "api-key")
+	for _, key := range []string{"APEXLOAD_GRPC_AUTH_TOKEN", "AWS_ACCESS_KEY_ID", "SAFE_API_KEY"} {
+		if _, ok := lookupScriptEnv(key); ok {
+			t.Errorf("credential key %q was exposed despite the hard block", key)
+		}
 	}
 }
 

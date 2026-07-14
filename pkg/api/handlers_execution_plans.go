@@ -9,6 +9,7 @@ package api
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -41,6 +42,12 @@ func (s *Server) validateExecutionPlan(plan *storage.ExecutionPlan) (int, string
 		}
 		if entry.FailurePolicy != "" && entry.FailurePolicy != "halt" && entry.FailurePolicy != "skip" {
 			return http.StatusBadRequest, "entry failure_policy must be halt or skip"
+		}
+		if len(entry.RuntimeOverrides) > 0 {
+			var runtimeOverrides *RuntimeSettingsOverride
+			if err := json.Unmarshal(entry.RuntimeOverrides, &runtimeOverrides); err != nil {
+				return http.StatusBadRequest, "entry runtime_overrides must be a valid runtime settings object"
+			}
 		}
 		for _, binding := range entry.DataPools {
 			if strings.TrimSpace(binding.PoolID) == "" {
@@ -351,7 +358,11 @@ func (tr *TestRunner) materializeAndRunExecutionPlanWithRunID(plan *storage.Exec
 			planTimeslot = plan.TimeslotID
 			planTimeslotUsed = true
 		}
-		test, err := tr.createTest(buildPlanEntryCreateRequest(runName, plan.ProjectID, planTimeslot, entry), false)
+		createRequest, err := buildPlanEntryCreateRequest(runName, plan.ProjectID, planTimeslot, entry)
+		var test *ManagedTest
+		if err == nil {
+			test, err = tr.createTest(createRequest, false)
+		}
 		if err != nil {
 			failed++
 			res.Status, res.Detail = "failed", err.Error()
@@ -388,6 +399,18 @@ func (tr *TestRunner) materializeAndRunExecutionPlanWithRunID(plan *storage.Exec
 	}
 	if err := tr.persistExecutionPlanRunDurable(finalRun); err != nil {
 		persistErr := executionPlanPersistenceError("persist completed parallel execution-plan run", err)
+		if errors.Is(err, errExecutionPlanRunCommitUnknown) {
+			// A lost commit response is not proof that the final transition failed.
+			// Keep the silently staged tests intact and reconcile the exact snapshot;
+			// deleting them could corrupt a run the database already accepted.
+			tr.enqueueExecutionPlanRunRecordRetryAfter(finalRun, func() {
+				for _, test := range createdTests {
+					tr.broadcastEvent("test_created", test)
+				}
+				tr.consumeExecutionPlanApproval(gateApproval, finalRun.ID)
+			})
+			return nil, persistErr
+		}
 		for _, test := range createdTests {
 			if _, cleanupErr := tr.DeleteTestWithError(test.ID); cleanupErr != nil {
 				persistErr = errors.Join(persistErr, fmt.Errorf("clean up uncommitted plan test %s: %w", test.ID, cleanupErr))

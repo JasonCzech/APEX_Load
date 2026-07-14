@@ -108,6 +108,7 @@ func (s *SQLiteStore) UpdateCapacityReservationDetails(reservation *CapacityRese
 	reservation.ProjectID = normalizeProjectID(reservation.ProjectID)
 	reservation.StartAt = reservation.StartAt.UTC()
 	reservation.EndAt = reservation.EndAt.UTC()
+	expectedUpdatedAt := reservation.UpdatedAt.UTC()
 	reservation.UpdatedAt = time.Now().UTC()
 
 	var requestedCapacityJSON string
@@ -123,7 +124,7 @@ func (s *SQLiteStore) UpdateCapacityReservationDetails(reservation *CapacityRese
 		if reservation.ApprovalState == "" {
 			reservation.ApprovalState = "pending"
 		}
-		_, err := s.db.Exec(`UPDATE capacity_reservations
+		result, err := s.db.Exec(`UPDATE capacity_reservations
 			SET project_id = ?,
 				scenario_id = ?,
 				start_at = ?,
@@ -136,15 +137,25 @@ func (s *SQLiteStore) UpdateCapacityReservationDetails(reservation *CapacityRese
 				bound_test_status = ?,
 				conflict_summary = ?,
 				updated_at = ?
-			WHERE id = ?`,
+			WHERE id = ? AND updated_at = ? AND approval_state = 'approved'`,
 			reservation.ProjectID, reservation.ScenarioID, reservation.StartAt, reservation.EndAt,
 			reservation.Timezone, requestedCapacityJSON,
 			reservation.ApprovalState, reservation.ApprovalID, reservation.BoundTestID, reservation.BoundTestStatus,
-			reservation.ConflictSummary, reservation.UpdatedAt, reservation.ID)
-		return err
+			reservation.ConflictSummary, reservation.UpdatedAt, reservation.ID, expectedUpdatedAt)
+		if err != nil {
+			return err
+		}
+		affected, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if affected != 1 {
+			return fmt.Errorf("capacity reservation changed concurrently; reload and retry")
+		}
+		return nil
 	}
 
-	_, err := s.db.Exec(`UPDATE capacity_reservations
+	result, err := s.db.Exec(`UPDATE capacity_reservations
 		SET project_id = ?,
 			scenario_id = ?,
 			start_at = ?,
@@ -153,10 +164,20 @@ func (s *SQLiteStore) UpdateCapacityReservationDetails(reservation *CapacityRese
 			requested_capacity_json = ?,
 			conflict_summary = ?,
 			updated_at = ?
-		WHERE id = ?`,
+		WHERE id = ? AND updated_at = ?`,
 		reservation.ProjectID, reservation.ScenarioID, reservation.StartAt, reservation.EndAt,
-		reservation.Timezone, requestedCapacityJSON, reservation.ConflictSummary, reservation.UpdatedAt, reservation.ID)
-	return err
+		reservation.Timezone, requestedCapacityJSON, reservation.ConflictSummary, reservation.UpdatedAt, reservation.ID, expectedUpdatedAt)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return fmt.Errorf("capacity reservation changed concurrently; reload and retry")
+	}
+	return nil
 }
 
 func (s *SQLiteStore) UpdateCapacityReservationBinding(id string, testID *string, testStatus *string, updatedAt time.Time) (bool, error) {
@@ -220,6 +241,91 @@ func (s *SQLiteStore) UpdateCapacityReservationApprovalState(id string, fromStat
 	return affected > 0, nil
 }
 
+// ApproveCapacityReservationWithinLimit serializes approvals that draw from the
+// same capacity envelope and performs the overlap calculation inside the same
+// transaction as the pending→approved transition. This closes the race where
+// two different overlapping reservations both pass a pre-CAS aggregate check.
+func (s *SQLiteStore) ApproveCapacityReservationWithinLimit(
+	id string,
+	updatedAt time.Time,
+	capacity func(*CapacityReservation) (envelope string, maxUnits int),
+	units func(*CapacityReservation) int,
+) (bool, bool, error) {
+	if strings.TrimSpace(id) == "" {
+		return false, false, fmt.Errorf("capacity reservation id is required")
+	}
+	if capacity == nil {
+		return false, false, fmt.Errorf("capacity reservation envelope resolver is required")
+	}
+	if units == nil {
+		return false, false, fmt.Errorf("capacity reservation unit calculator is required")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, false, err
+	}
+	defer tx.Rollback()
+	target, err := scanCapacityReservation(tx.QueryRow(capacityReservationSelect+` WHERE id = ?`, id))
+	if err != nil {
+		return false, false, err
+	}
+	if target.ApprovalState != "pending" {
+		return false, false, nil
+	}
+	envelope, maxUnits := capacity(target)
+	envelope = strings.TrimSpace(envelope)
+	lockKey := "global"
+	if envelope != "" {
+		lockKey = "pool:" + envelope
+	}
+	if _, err := tx.Exec(`INSERT INTO capacity_approval_locks (lock_key, updated_at) VALUES (?, ?) ON CONFLICT(lock_key) DO UPDATE SET updated_at=excluded.updated_at`, lockKey, updatedAt.UTC()); err != nil {
+		return false, false, err
+	}
+	total := units(target)
+	rows, err := tx.Query(capacityReservationSelect+` WHERE id != ? AND approval_state = 'approved' AND start_at < ? AND end_at > ?`, target.ID, target.EndAt.UTC(), target.StartAt.UTC())
+	if err != nil {
+		return false, false, err
+	}
+	for rows.Next() {
+		reservation, scanErr := scanCapacityReservation(rows)
+		if scanErr != nil {
+			rows.Close()
+			return false, false, scanErr
+		}
+		reservationEnvelope := ""
+		if reservation.RequestedCapacity != nil {
+			reservationEnvelope = strings.TrimSpace(reservation.RequestedCapacity.PoolID)
+		}
+		if reservationEnvelope == envelope {
+			total += units(reservation)
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return false, false, err
+	}
+	if err := rows.Err(); err != nil {
+		return false, false, err
+	}
+	if maxUnits > 0 && total > maxUnits {
+		return false, true, nil
+	}
+	result, err := tx.Exec(`UPDATE capacity_reservations SET approval_state='approved', updated_at=? WHERE id=? AND approval_state='pending' AND updated_at=?`, updatedAt.UTC(), id, target.UpdatedAt.UTC())
+	if err != nil {
+		return false, false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, false, err
+	}
+	if affected != 1 {
+		return false, false, nil
+	}
+	if err := tx.Commit(); err != nil {
+		return false, false, err
+	}
+	return true, false, nil
+}
+
 func (s *SQLiteStore) DeleteCapacityReservationsEndedBefore(cutoff time.Time) (int64, error) {
 	result, err := s.db.Exec(`DELETE FROM capacity_reservations WHERE end_at < ?`, cutoff.UTC())
 	if err != nil {
@@ -237,8 +343,25 @@ func (s *SQLiteStore) DeleteRejectedCapacityReservationsBefore(cutoff time.Time)
 }
 
 func (s *SQLiteStore) DeleteCapacityReservation(id string) error {
-	_, err := s.db.Exec(`DELETE FROM capacity_reservations WHERE id = ?`, id)
-	return err
+	result, err := s.db.Exec(`DELETE FROM capacity_reservations WHERE id = ? AND bound_test_id IS NULL AND approval_state != 'approved'`, id)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 1 {
+		return nil
+	}
+	var exists int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM capacity_reservations WHERE id = ?`, id).Scan(&exists); err != nil {
+		return err
+	}
+	if exists > 0 {
+		return fmt.Errorf("approved or bound capacity reservation cannot be deleted; reject and unbind it first")
+	}
+	return nil
 }
 
 const capacityReservationSelect = `SELECT id, COALESCE(project_id, ''), scenario_id, start_at, end_at,

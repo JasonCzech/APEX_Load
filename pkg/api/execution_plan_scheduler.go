@@ -31,6 +31,11 @@ type CreateExecutionPlanScheduleRequest struct {
 	DisabledUntil   *time.Time `json:"disabled_until,omitempty"`
 }
 
+type executionPlanScheduleCASPersistence interface {
+	CreateExecutionPlanScheduleIfAbsent(schedule *storage.ExecutionPlanSchedule) (bool, error)
+	UpdateExecutionPlanScheduleIfRevision(schedule *storage.ExecutionPlanSchedule, expectedRevision int) (bool, error)
+}
+
 func executionPlanScheduleAllows(disabledFrom, disabledUntil *time.Time) func(time.Time) (bool, error) {
 	return func(candidate time.Time) (bool, error) {
 		return !dateRangePauseActive(disabledFrom, disabledUntil, candidate), nil
@@ -165,10 +170,40 @@ func (tr *TestRunner) upsertExecutionPlanSchedule(planID, scheduleID string, exi
 			schedule.NextRunAt = next
 		}
 	}
-	if err := tr.execPlanScheduleStore.SaveExecutionPlanSchedule(schedule); err != nil {
+	expectedRevision := 0
+	create := existing == nil
+	if existing != nil {
+		expectedRevision = existing.Revision
+	}
+	if err := tr.persistExecutionPlanSchedule(schedule, create, expectedRevision); err != nil {
 		return nil, err
 	}
 	return schedule, nil
+}
+
+func (tr *TestRunner) persistExecutionPlanSchedule(schedule *storage.ExecutionPlanSchedule, create bool, expectedRevision int) error {
+	if tr == nil || tr.execPlanScheduleStore == nil {
+		return fmt.Errorf("execution plan schedule storage is not configured")
+	}
+	if cas, ok := tr.execPlanScheduleStore.(executionPlanScheduleCASPersistence); ok {
+		var (
+			changed bool
+			err     error
+		)
+		if create {
+			changed, err = cas.CreateExecutionPlanScheduleIfAbsent(schedule)
+		} else {
+			changed, err = cas.UpdateExecutionPlanScheduleIfRevision(schedule, expectedRevision)
+		}
+		if err != nil {
+			return err
+		}
+		if !changed {
+			return fmt.Errorf("execution plan schedule %s changed or was deleted concurrently", schedule.ID)
+		}
+		return nil
+	}
+	return tr.execPlanScheduleStore.SaveExecutionPlanSchedule(schedule)
 }
 
 func (tr *TestRunner) ListExecutionPlanSchedulesForPlan(planID string) ([]*storage.ExecutionPlanSchedule, error) {
@@ -232,7 +267,7 @@ func (tr *TestRunner) sweepDueExecutionPlanSchedules(now time.Time) {
 				schedule.NextRequiredAction = "catch_up_limit_reached"
 				schedule.LastError = fmt.Sprintf("catch_up_all materialized %d occurrences; next sweep will continue", maxScheduleCatchUpAllPerSweep)
 				schedule.UpdatedAt = now
-				if err := store.SaveExecutionPlanSchedule(schedule); err != nil {
+				if err := tr.persistExecutionPlanSchedule(schedule, false, schedule.Revision); err != nil {
 					slog.Warn("failed to persist execution-plan catch-up limit", "schedule_id", schedule.ID, "error", err)
 				}
 				break
@@ -240,7 +275,7 @@ func (tr *TestRunner) sweepDueExecutionPlanSchedules(now time.Time) {
 			if handled, err := tr.applyMissedExecutionPlanSchedulePolicy(schedule, now); err != nil {
 				schedule.LastError = err.Error()
 				schedule.UpdatedAt = now
-				if saveErr := store.SaveExecutionPlanSchedule(schedule); saveErr != nil {
+				if saveErr := tr.persistExecutionPlanSchedule(schedule, false, schedule.Revision); saveErr != nil {
 					slog.Warn("failed to persist execution-plan schedule error", "schedule_id", schedule.ID, "error", saveErr)
 				}
 				break
@@ -250,7 +285,7 @@ func (tr *TestRunner) sweepDueExecutionPlanSchedules(now time.Time) {
 			if err := tr.runDueExecutionPlanScheduleOnce(schedule, now); err != nil {
 				schedule.LastError = err.Error()
 				schedule.UpdatedAt = now
-				if saveErr := retryDurableTransition(func() error { return store.SaveExecutionPlanSchedule(schedule) }); saveErr != nil {
+				if saveErr := retryDurableTransition(func() error { return tr.persistExecutionPlanSchedule(schedule, false, schedule.Revision) }); saveErr != nil {
 					slog.Warn("failed to persist execution-plan schedule materialization error", "schedule_id", schedule.ID, "error", saveErr)
 				}
 				break
@@ -292,7 +327,7 @@ func (tr *TestRunner) applyMissedExecutionPlanSchedulePolicy(schedule *storage.E
 			schedule.LastError = ""
 			schedule.NextRequiredAction = "schedule_paused"
 			schedule.UpdatedAt = now
-			if err := tr.execPlanScheduleStore.SaveExecutionPlanSchedule(schedule); err != nil {
+			if err := tr.persistExecutionPlanSchedule(schedule, false, schedule.Revision); err != nil {
 				return true, err
 			}
 			return true, nil
@@ -305,7 +340,7 @@ func (tr *TestRunner) applyMissedExecutionPlanSchedulePolicy(schedule *storage.E
 		schedule.LastError = ""
 		schedule.NextRequiredAction = ""
 		schedule.UpdatedAt = now
-		if err := tr.execPlanScheduleStore.SaveExecutionPlanSchedule(schedule); err != nil {
+		if err := tr.persistExecutionPlanSchedule(schedule, false, schedule.Revision); err != nil {
 			return true, err
 		}
 		return true, nil
@@ -329,7 +364,7 @@ func (tr *TestRunner) applyMissedExecutionPlanSchedulePolicy(schedule *storage.E
 		schedule.LastError = "missed scheduled occurrence requires operator decision"
 		schedule.NextRequiredAction = "operator_decision_required"
 		schedule.UpdatedAt = now
-		if err := tr.execPlanScheduleStore.SaveExecutionPlanSchedule(schedule); err != nil {
+		if err := tr.persistExecutionPlanSchedule(schedule, false, schedule.Revision); err != nil {
 			return true, err
 		}
 		return true, nil
@@ -534,7 +569,7 @@ func (tr *TestRunner) advanceExecutionPlanScheduleAfterOccurrence(schedule *stor
 		schedule.LastError = lastErr
 		schedule.NextRequiredAction = "schedule_paused"
 		schedule.UpdatedAt = now
-		if err := retryDurableTransition(func() error { return tr.execPlanScheduleStore.SaveExecutionPlanSchedule(schedule) }); err != nil {
+		if err := retryDurableTransition(func() error { return tr.persistExecutionPlanSchedule(schedule, false, schedule.Revision) }); err != nil {
 			*schedule = previous
 			return fmt.Errorf("persist paused execution-plan schedule: %w", err)
 		}
@@ -550,7 +585,7 @@ func (tr *TestRunner) advanceExecutionPlanScheduleAfterOccurrence(schedule *stor
 		schedule.NextRequiredAction = ""
 	}
 	schedule.UpdatedAt = now
-	if err := retryDurableTransition(func() error { return tr.execPlanScheduleStore.SaveExecutionPlanSchedule(schedule) }); err != nil {
+	if err := retryDurableTransition(func() error { return tr.persistExecutionPlanSchedule(schedule, false, schedule.Revision) }); err != nil {
 		*schedule = previous
 		return fmt.Errorf("persist advanced execution-plan schedule: %w", err)
 	}

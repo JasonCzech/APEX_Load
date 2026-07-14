@@ -7,7 +7,28 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/playwright-community/playwright-go"
 )
+
+type pageLimitBrowserContext struct {
+	playwright.BrowserContext
+	pages []playwright.Page
+}
+
+func (c *pageLimitBrowserContext) Pages() []playwright.Page { return c.pages }
+
+type pageLimitPage struct {
+	playwright.Page
+	closed bool
+}
+
+func (*pageLimitPage) Opener() (playwright.Page, error) { return nil, nil }
+func (*pageLimitPage) URL() string                      { return "about:blank" }
+func (p *pageLimitPage) Close(...playwright.PageCloseOptions) error {
+	p.closed = true
+	return nil
+}
 
 // Unit tests for the recorder's capture pipeline that do not need a real
 // browser: the binding handler, live event emission, and session snapshots.
@@ -38,6 +59,39 @@ func TestPrepareHARPathCreatesPrivateFile(t *testing.T) {
 	}
 	if got := info.Mode().Perm(); got != 0o600 {
 		t.Fatalf("mode = %#o, want 0600", got)
+	}
+}
+
+func TestReadFileLimitedRejectsOversizedHAR(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "capture.har")
+	if err := os.WriteFile(path, []byte("0123456789"), 0o600); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	if _, err := readFileLimited(path, 9); err == nil || !strings.Contains(err.Error(), "maximum") {
+		t.Fatalf("readFileLimited error = %v, want size rejection", err)
+	}
+	data, err := readFileLimited(path, 10)
+	if err != nil || string(data) != "0123456789" {
+		t.Fatalf("bounded read = %q, %v", data, err)
+	}
+}
+
+func TestRegisterPageRejectsPageBeyondLimit(t *testing.T) {
+	existing := make([]playwright.Page, maxBrowserPages)
+	for i := range existing {
+		existing[i] = &pageLimitPage{}
+	}
+	r := New(Options{StartURL: "https://app.example/"})
+	r.context = &pageLimitBrowserContext{pages: existing}
+	excess := &pageLimitPage{}
+
+	r.registerPage(excess)
+
+	if !excess.closed {
+		t.Fatal("page 33 was not closed at the configured page limit")
+	}
+	if warnings := r.Snapshot().Warnings; len(warnings) != 1 || !strings.Contains(warnings[0], "page limit") {
+		t.Fatalf("warnings = %v, want page-limit warning", warnings)
 	}
 }
 
@@ -419,6 +473,20 @@ func TestRecordAnnotationGatedByPause(t *testing.T) {
 	}
 }
 
+func TestRecordAnnotationBoundsCountAndText(t *testing.T) {
+	r := New(Options{StartURL: "https://app.example/"})
+	r.session.Annotations = make([]Annotation, maxBrowserAnnotations-1)
+	r.recordAnnotation(Annotation{Kind: "console_error", Text: strings.Repeat("x", maxBrowserAnnotationLen+100)})
+	r.recordAnnotation(Annotation{Kind: "console_error", Text: "overflow"})
+	session := r.Snapshot()
+	if len(session.Annotations) != maxBrowserAnnotations {
+		t.Fatalf("annotations = %d, want cap %d", len(session.Annotations), maxBrowserAnnotations)
+	}
+	if got := len(session.Annotations[len(session.Annotations)-1].Text); got != maxBrowserAnnotationLen {
+		t.Fatalf("annotation text length = %d, want %d", got, maxBrowserAnnotationLen)
+	}
+}
+
 func TestRecordWSFrameOptIn(t *testing.T) {
 	// Without opt-in, only counts move.
 	r := New(Options{StartURL: "https://app.example/"})
@@ -469,6 +537,25 @@ func TestRecordWSFrameIgnoredAfterStop(t *testing.T) {
 	r.recordWSFrame(0, "sent", []byte("late"))
 	if got := r.Snapshot().WebSockets[0]; got.FramesSent != 0 || len(got.Frames) != 0 {
 		t.Errorf("post-stop WS frame recorded: %+v", got)
+	}
+}
+
+func TestRecordWSFrameCapsStoredFrames(t *testing.T) {
+	r := New(Options{StartURL: "https://app.example/", CaptureWSPayloads: true})
+	r.session.WebSockets = append(r.session.WebSockets, WebSocketSummary{URL: "wss://x", Frames: make([]WebSocketFrame, maxBrowserWSFrames)})
+	r.wsFrames = maxBrowserWSFrames
+	r.recordWSFrame(0, "sent", []byte("overflow"))
+	if got := len(r.Snapshot().WebSockets[0].Frames); got != maxBrowserWSFrames {
+		t.Fatalf("frames = %d, want cap %d", got, maxBrowserWSFrames)
+	}
+}
+
+func TestBindingDropsEventsAfterStop(t *testing.T) {
+	r := New(Options{StartURL: "https://app.example/"})
+	r.stopped = true
+	r.handleRecordBinding(nil, `{"kind":"click","ts":1,"element":{"tag":"button","css_path":"#go"}}`)
+	if got := len(r.Snapshot().Steps); got != 0 {
+		t.Fatalf("post-stop steps = %d, want 0", got)
 	}
 }
 

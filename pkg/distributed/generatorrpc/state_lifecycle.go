@@ -1,7 +1,9 @@
 package generatorrpc
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -18,15 +20,19 @@ import (
 )
 
 const (
-	envGeneratorScriptCacheMax = "APEXLOAD_GENERATOR_SCRIPT_CACHE_MAX"
-	envGeneratorScriptMaxBytes = "APEXLOAD_GENERATOR_SCRIPT_CACHE_MAX_BYTES"
-	envGeneratorArchiveMax     = "APEXLOAD_GENERATOR_ARCHIVE_MAX"
-	envGeneratorArchiveTTL     = "APEXLOAD_GENERATOR_ARCHIVE_TTL"
+	envGeneratorScriptCacheMax  = "APEXLOAD_GENERATOR_SCRIPT_CACHE_MAX"
+	envGeneratorScriptMaxBytes  = "APEXLOAD_GENERATOR_SCRIPT_CACHE_MAX_BYTES"
+	envGeneratorArchiveMax      = "APEXLOAD_GENERATOR_ARCHIVE_MAX"
+	envGeneratorArchiveTTL      = "APEXLOAD_GENERATOR_ARCHIVE_TTL"
+	envGeneratorArchiveMaxBytes = "APEXLOAD_GENERATOR_ARCHIVE_MAX_BYTES"
+	envGeneratorArchiveMinFree  = "APEXLOAD_GENERATOR_ARCHIVE_MIN_FREE_BYTES"
 
-	defaultGeneratorScriptCacheMax = 1024
-	defaultGeneratorScriptMaxBytes = 64 << 20
-	defaultGeneratorArchiveMax     = 256
-	defaultGeneratorArchiveTTL     = 24 * time.Hour
+	defaultGeneratorScriptCacheMax  = 1024
+	defaultGeneratorScriptMaxBytes  = 64 << 20
+	defaultGeneratorArchiveMax      = 256
+	defaultGeneratorArchiveTTL      = 24 * time.Hour
+	defaultGeneratorArchiveMaxBytes = int64(256 << 30)
+	defaultGeneratorArchiveMinFree  = int64(1 << 30)
 )
 
 // WithGeneratorStateLimits overrides generator-local cache retention. It is
@@ -96,6 +102,26 @@ func configuredGeneratorArchiveTTL() time.Duration {
 	value, err := time.ParseDuration(raw)
 	if err != nil || value < 0 {
 		return defaultGeneratorArchiveTTL
+	}
+	return value
+}
+
+func configuredGeneratorArchiveMaxBytes() int64 {
+	return positiveGeneratorInt64Env(envGeneratorArchiveMaxBytes, defaultGeneratorArchiveMaxBytes)
+}
+
+func configuredGeneratorArchiveMinFreeBytes() int64 {
+	return positiveGeneratorInt64Env(envGeneratorArchiveMinFree, defaultGeneratorArchiveMinFree)
+}
+
+func positiveGeneratorInt64Env(name string, fallback int64) int64 {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return fallback
+	}
+	value, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || value <= 0 {
+		return fallback
 	}
 	return value
 }
@@ -504,18 +530,66 @@ func (s *Service) sweepGeneratorArchiveDirectories(now time.Time) {
 		}
 		retained = append(retained, dir)
 	}
-	if len(retained) <= s.archiveRecordMax {
-		return
-	}
 	sort.Slice(retained, func(i, j int) bool {
 		if retained[i].modTime.Equal(retained[j].modTime) {
 			return retained[i].path < retained[j].path
 		}
 		return retained[i].modTime.Before(retained[j].modTime)
 	})
-	for _, dir := range retained[:len(retained)-s.archiveRecordMax] {
+	removeCount := len(retained) - s.archiveRecordMax
+	if removeCount < 0 {
+		removeCount = 0
+	}
+	for _, dir := range retained[:removeCount] {
 		if err := removeGeneratorArchiveRun(s.archiveNamespace, dir.testID, dir.identity); err != nil {
 			slog.Warn("remove excess generator archive directory", "path", dir.path, "error", err)
 		}
 	}
+	for _, dir := range retained[removeCount:] {
+		record, err := s.loadRetainedGeneratorArchive(dir.testID, dir.identity)
+		if err != nil {
+			slog.Warn("ignore incomplete retained generator archive", "path", dir.path, "error", err)
+			continue
+		}
+		s.archiveRecords[dir.testID] = record
+		s.archiveIdentities[dir.testID] = dir.identity
+	}
+}
+
+func (s *Service) loadRetainedGeneratorArchive(testID string, expectedIdentity os.FileInfo) (*storage.RunArchiveRecord, error) {
+	runRoot, identity, err := openGeneratorArchiveRun(s.archiveNamespace, testID, false)
+	if err != nil {
+		return nil, err
+	}
+	defer runRoot.Close()
+	if expectedIdentity == nil || !os.SameFile(expectedIdentity, identity) {
+		return nil, fmt.Errorf("generator archive run changed during recovery")
+	}
+	manifestFile, _, err := openGeneratorArchiveRegularFile(runRoot, "manifest.json")
+	if err != nil {
+		return nil, err
+	}
+	defer manifestFile.Close()
+	const manifestLimit = int64(8 << 20)
+	data, err := io.ReadAll(io.LimitReader(manifestFile, manifestLimit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > manifestLimit {
+		return nil, fmt.Errorf("generator archive manifest exceeds %d bytes", manifestLimit)
+	}
+	var manifest archiveManifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return nil, err
+	}
+	if manifest.TestID != testID || manifest.SchemaVersion == "" || manifest.CompletedAt.IsZero() {
+		return nil, fmt.Errorf("generator archive manifest is incomplete or mismatched")
+	}
+	return &storage.RunArchiveRecord{
+		TestID: manifest.TestID, SchemaVersion: manifest.SchemaVersion,
+		ArchivePath:      filepath.Join(s.generatorArchiveRoot(), testID),
+		ManifestPath:     filepath.Join(s.generatorArchiveRoot(), testID, "manifest.json"),
+		TransactionCount: manifest.TransactionCount, ResourceSampleCount: manifest.ResourceSampleCount,
+		IntervalSummaryCount: manifest.IntervalSummaryCount, CreatedAt: manifest.CreatedAt, CompletedAt: manifest.CompletedAt,
+	}, nil
 }

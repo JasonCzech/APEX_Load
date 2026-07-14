@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"strings"
 	"time"
 
@@ -831,7 +830,7 @@ func runArchiveRecordAvailableContext(ctx context.Context, record *storage.RunAr
 		return false
 	}
 	defer lease.Release()
-	_, err = os.Stat(record.ManifestPath)
+	_, err = loadRunArchiveManifestFromRecord(record)
 	return err == nil
 }
 

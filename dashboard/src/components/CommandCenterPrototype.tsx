@@ -22,6 +22,7 @@ import type { ExecutionChartTimeRange } from './testExecutionChartZoomModel'
 import { mapArchiveSummarySamples, mapExecutionHistory, mapExecutionMetricToHistoryPoint, recentMetricAverages } from './testExecutionMetricsModel'
 import { useExecutionChartModel } from './useExecutionChartModel'
 import { useExecutionMetricsStream } from './useExecutionMetricsStream'
+import { ARCHIVE_CHART_MAX_SAMPLES } from './archiveHistorySampling'
 import { chartTooltipContentStyle, chartTooltipLabelStyle } from './chartTooltipTheme'
 import SnapshotBodyPreview from './SnapshotBodyPreview'
 import SnapshotTextPreview from './SnapshotTextPreview'
@@ -37,6 +38,13 @@ type VariantId = 'ops' | 'grafana'
 type CommandTableTab = 'scenario' | 'errors' | 'infrastructure'
 type SortDirection = 'asc' | 'desc'
 type TargetTransitionMode = 'immediate' | 'gradual'
+
+export function historicalGroupSummaryQuery(groups: string[]) {
+  return {
+    sample_limit: ARCHIVE_CHART_MAX_SAMPLES,
+    groups,
+  }
+}
 
 interface CommandCenterPrototypeProps {
   testId?: string
@@ -1271,24 +1279,13 @@ export default function CommandCenterPrototype({
     const loadScopedHistory = async () => {
       try {
         if (historicalRun && displayTest.archive?.interval_summary_count) {
-          const loaded: IntervalSummaryRecord[] = []
-          let archiveFilterHonored = false
-          let offset = 0
-          let total = displayTest.archive.interval_summary_count
-          while (!cancelled && loaded.length < total) {
-            const response = await api.getTestArchiveSummaries(testId, {
-              limit: 1000,
-              offset,
-              groups: selectedGroupNames,
-            })
-            const page = response.summaries || []
-            const responseGroups = Array.isArray(response.filters?.groups) ? response.filters.groups : []
-            archiveFilterHonored = archiveFilterHonored || selectedGroupNames.every(name => responseGroups.includes(name))
-            loaded.push(...page)
-            total = response.total || loaded.length
-            if (page.length === 0) break
-            offset += page.length
-          }
+          const response = await api.getTestArchiveSummaries(
+            testId,
+            historicalGroupSummaryQuery(selectedGroupNames),
+          )
+          const loaded: IntervalSummaryRecord[] = response.summaries || []
+          const responseGroups = Array.isArray(response.filters?.groups) ? response.filters.groups : []
+          const archiveFilterHonored = selectedGroupNames.every(name => responseGroups.includes(name))
           if (!cancelled) {
             const mappedHistory = mapArchiveSummarySamples(loaded)
             if (archiveFilterHonored) {

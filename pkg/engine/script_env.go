@@ -8,23 +8,28 @@ import (
 // EnvScriptEnvAllowlist is the operator-owned, comma-separated allowlist of
 // environment variable names that uploaded scripts may read — via the
 // {{env.KEY}} template and the CEL condition `env` binding. When set, ONLY the
-// listed keys are script-visible; everything else resolves as missing. When
-// unset, scripts retain their historical access to process environment values
-// (minus the always-blocked engine secret namespace below).
+// listed keys are script-visible; everything else resolves as missing. An
+// unset allowlist is deliberately default-deny.
 const EnvScriptEnvAllowlist = "APEXLOAD_SCRIPT_ENV_ALLOWLIST"
 
 // scriptEnvSecretPrefix is the engine's own secret store namespace
 // (see secrets.go: APEXLOAD_SECRET_<name>). These must never be reachable
 // through script-visible env, regardless of the allowlist, so a script cannot
 // read resolved credentials by name through {{env.KEY}} or CEL `env`.
-const scriptEnvSecretPrefix = "APEXLOAD_SECRET_"
+var scriptEnvBlockedPrefixes = []string{
+	"APEXLOAD_SECRET_", "AWS_", "AZURE_", "GOOGLE_", "GCP_", "OCI_", "KUBERNETES_",
+}
 
-// scriptEnvAllowlist parses EnvScriptEnvAllowlist into a set, or returns nil
-// when unset/empty (meaning "no allowlist configured").
+var scriptEnvBlockedFragments = []string{
+	"TOKEN", "PASSWORD", "PASSWD", "SECRET", "API_KEY", "PRIVATE_KEY", "CREDENTIAL",
+}
+
+// scriptEnvAllowlist parses EnvScriptEnvAllowlist into a set. An empty set
+// means no process environment variables are visible to scripts.
 func scriptEnvAllowlist() map[string]struct{} {
 	raw := strings.TrimSpace(os.Getenv(EnvScriptEnvAllowlist))
 	if raw == "" {
-		return nil
+		return map[string]struct{}{}
 	}
 	allow := make(map[string]struct{})
 	for _, part := range strings.Split(raw, ",") {
@@ -32,19 +37,21 @@ func scriptEnvAllowlist() map[string]struct{} {
 			allow[name] = struct{}{}
 		}
 	}
-	if len(allow) == 0 {
-		return nil
-	}
 	return allow
 }
 
 // scriptEnvKeyAllowed reports whether a script may read the given env key.
 func scriptEnvKeyAllowed(key string, allow map[string]struct{}) bool {
-	if strings.HasPrefix(key, scriptEnvSecretPrefix) {
-		return false
+	upper := strings.ToUpper(strings.TrimSpace(key))
+	for _, prefix := range scriptEnvBlockedPrefixes {
+		if strings.HasPrefix(upper, prefix) {
+			return false
+		}
 	}
-	if allow == nil {
-		return true
+	for _, fragment := range scriptEnvBlockedFragments {
+		if strings.Contains(upper, fragment) {
+			return false
+		}
 	}
 	_, ok := allow[key]
 	return ok

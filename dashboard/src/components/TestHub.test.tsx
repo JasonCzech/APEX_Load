@@ -516,9 +516,14 @@ describe('TestHub', () => {
       .find(header => header.textContent?.includes('Created'))
     expect(createdHeader).toBeDefined()
     if (!createdHeader) return
+    expect(createdHeader.getAttribute('aria-sort')).toBe('none')
+    const createdSortButton = createdHeader.querySelector('button')
+    expect(createdSortButton).toBeDefined()
+    if (!createdSortButton) return
     await act(async () => {
-      createdHeader.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      createdSortButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
+    expect(createdHeader.getAttribute('aria-sort')).toBe('descending')
     const firstSortedRow = container.querySelector('.scenario-existing-script-library tbody tr')
     expect(firstSortedRow?.textContent).toContain('Payments Flow')
 

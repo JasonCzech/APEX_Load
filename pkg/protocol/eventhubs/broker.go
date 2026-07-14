@@ -3,6 +3,7 @@ package eventhubs
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
@@ -49,24 +50,79 @@ type memoryBroker struct {
 	logs    map[string][]event
 	base    map[string]int64 // absolute offset of logs[hub][0] (evicted count)
 	cursors map[string]int64
+	refs    map[string]int
+	bytes   map[string]int64
 }
 
 // maxBrokerLogPerHub bounds retained events per hub in the in-memory mock. It is
 // generous enough that ordinary shakeout/CI runs never evict.
-const maxBrokerLogPerHub = 50000
+const (
+	maxBrokerLogPerHub   = 50000
+	maxBrokerBytesPerHub = 64 << 20
+	maxBrokerHubKeys     = 1024
+	maxBrokerCursorKeys  = 4096
+)
 
 func newMemoryBroker() *memoryBroker {
-	return &memoryBroker{logs: make(map[string][]event), base: make(map[string]int64), cursors: make(map[string]int64)}
+	return &memoryBroker{logs: make(map[string][]event), base: make(map[string]int64), cursors: make(map[string]int64), refs: make(map[string]int), bytes: make(map[string]int64)}
 }
 
 // sharedBroker lets multiple VUser goroutines exercise the same mock hubs.
 var sharedBroker = newMemoryBroker()
 
-func cursorKey(hub, group string) string { return hub + "\x00" + group }
+func mockHubKey(namespace, hub string) string {
+	if namespace == "" {
+		return hub
+	}
+	return namespace + "\x00" + hub
+}
 
-func (b *memoryBroker) send(hub string, ev event) eventMeta {
+func (b *memoryBroker) acquire(namespace string) {
+	if namespace == "" {
+		return
+	}
+	b.mu.Lock()
+	b.refs[namespace]++
+	b.mu.Unlock()
+}
+
+func (b *memoryBroker) release(namespace string) {
+	if namespace == "" {
+		return
+	}
+	prefix := namespace + "\x00"
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.refs[namespace]--
+	if b.refs[namespace] > 0 {
+		return
+	}
+	delete(b.refs, namespace)
+	for hub := range b.logs {
+		if strings.HasPrefix(hub, prefix) {
+			delete(b.logs, hub)
+			delete(b.base, hub)
+			delete(b.bytes, hub)
+		}
+	}
+	for key := range b.cursors {
+		if strings.HasPrefix(key, prefix) {
+			delete(b.cursors, key)
+		}
+	}
+}
+
+func cursorKey(hub, group string) string { return hub + "\x00" + group }
+
+func (b *memoryBroker) send(hub string, ev event) (eventMeta, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if _, exists := b.logs[hub]; !exists && len(b.logs) >= maxBrokerHubKeys {
+		return eventMeta{}, fmt.Errorf("mock event hubs capacity exceeded (%d hub keys)", maxBrokerHubKeys)
+	}
+	if size := eventSize(ev); size > maxBrokerBytesPerHub {
+		return eventMeta{}, fmt.Errorf("mock event exceeds per-hub capacity (%d bytes)", maxBrokerBytesPerHub)
+	}
 	offset := b.base[hub] + int64(len(b.logs[hub]))
 	ev.Offset = offset
 	ev.SequenceNum = offset
@@ -74,42 +130,70 @@ func (b *memoryBroker) send(hub string, ev event) eventMeta {
 		ev.EnqueuedAt = time.Now()
 	}
 	b.logs[hub] = append(b.logs[hub], ev)
+	b.bytes[hub] += int64(eventSize(ev))
 	// Bound retained events: evict the oldest and advance the base offset.
-	if over := len(b.logs[hub]) - maxBrokerLogPerHub; over > 0 {
-		b.logs[hub] = append(b.logs[hub][:0], b.logs[hub][over:]...)
-		b.base[hub] += int64(over)
+	drop := 0
+	for drop < len(b.logs[hub]) && (len(b.logs[hub])-drop > maxBrokerLogPerHub || b.bytes[hub] > maxBrokerBytesPerHub) {
+		b.bytes[hub] -= int64(eventSize(b.logs[hub][drop]))
+		drop++
 	}
-	return eventMeta{PartitionID: ev.PartitionID, Offset: offset, SequenceNum: offset, EnqueuedAt: ev.EnqueuedAt}
+	if drop > 0 {
+		b.logs[hub] = append(b.logs[hub][:0], b.logs[hub][drop:]...)
+		b.base[hub] += int64(drop)
+	}
+	return eventMeta{PartitionID: ev.PartitionID, Offset: offset, SequenceNum: offset, EnqueuedAt: ev.EnqueuedAt}, nil
 }
 
-func (b *memoryBroker) receive(hub, group string) (event, int64, bool) {
+func eventSize(ev event) int {
+	size := len(ev.Body) + len(ev.PartitionKey) + len(ev.PartitionID)
+	for key, value := range ev.Properties {
+		size += len(key) + len(value)
+	}
+	return size
+}
+
+func (b *memoryBroker) receiveChecked(hub, group string) (event, int64, bool, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	log := b.logs[hub]
 	base := b.base[hub]
 	end := base + int64(len(log))
 	key := cursorKey(hub, group)
+	if _, exists := b.cursors[key]; !exists && len(b.cursors) >= maxBrokerCursorKeys {
+		return event{}, 0, false, fmt.Errorf("mock event hubs consumer cursor capacity exceeded (%d keys)", maxBrokerCursorKeys)
+	}
 	pos := b.cursors[key]
 	if pos < base {
 		// Cursor lagged behind eviction; skip to the earliest retained event.
 		pos = base
 	}
 	if pos >= end {
-		return event{}, 0, false
+		return event{}, 0, false, nil
 	}
 	ev := log[pos-base]
 	b.cursors[key] = pos + 1
-	return ev, end - (pos + 1), true
+	return ev, end - (pos + 1), true, nil
+}
+
+func (b *memoryBroker) receive(hub, group string) (event, int64, bool) {
+	event, lag, ok, _ := b.receiveChecked(hub, group)
+	return event, lag, ok
 }
 
 // mockClient adapts the in-memory broker to the eventHubsClient interface.
-type mockClient struct{ broker *memoryBroker }
+type mockClient struct {
+	broker    *memoryBroker
+	namespace string
+	release   *sync.Once
+}
+
+func (c mockClient) hub(hub string) string { return mockHubKey(c.namespace, hub) }
 
 func (c mockClient) Send(_ context.Context, hub string, ev event) (eventMeta, error) {
 	if hub == "" {
 		return eventMeta{}, fmt.Errorf("event hub name is required")
 	}
-	return c.broker.send(hub, ev), nil
+	return c.broker.send(c.hub(hub), ev)
 }
 
 func (c mockClient) Receive(ctx context.Context, hub, group string, timeout time.Duration) (event, int64, error) {
@@ -118,7 +202,11 @@ func (c mockClient) Receive(ctx context.Context, hub, group string, timeout time
 	tick := time.NewTicker(5 * time.Millisecond)
 	defer tick.Stop()
 	for {
-		if ev, lag, ok := c.broker.receive(hub, group); ok {
+		ev, lag, ok, err := c.broker.receiveChecked(c.hub(hub), group)
+		if err != nil {
+			return event{}, 0, err
+		}
+		if ok {
 			return ev, lag, nil
 		}
 		select {
@@ -138,7 +226,12 @@ func (c mockClient) HealthCheck(context.Context) error {
 	return nil
 }
 
-func (c mockClient) Teardown(context.Context) error { return nil }
+func (c mockClient) Teardown(context.Context) error {
+	if c.release != nil {
+		c.release.Do(func() { c.broker.release(c.namespace) })
+	}
+	return nil
+}
 
 // unavailableClient is returned in non-mock mode when the real azeventhubs
 // adapter is not compiled in; it fails closed with actionable guidance, mirroring

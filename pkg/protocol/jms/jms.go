@@ -54,15 +54,18 @@ func init() {
 	protocol.Register("jms-servicebus", func() protocol.Protocol {
 		return &JMS{name: "jms-servicebus", provider: "servicebus"}
 	})
+	protocol.RegisterRuntimeNamespaceManager("jms", broker.acquire, broker.release)
 }
 
 type JMS struct {
-	name        string
-	provider    string
-	cfg         config
-	adapter     brokerAdapter
-	session     *messaging.Session[message]
-	initialized bool
+	name          string
+	provider      string
+	cfg           config
+	adapter       brokerAdapter
+	session       *messaging.Session[message]
+	initialized   bool
+	mockNamespace string
+	mockRelease   *sync.Once
 }
 
 type config struct {
@@ -208,6 +211,7 @@ type topicAdapter interface {
 var broker = &memoryBroker{
 	queues: make(map[string][]message),
 	topics: make(map[string]map[string][]message),
+	refs:   make(map[string]int),
 }
 
 type memoryBroker struct {
@@ -224,6 +228,91 @@ type memoryBroker struct {
 	// redelivered message keeps its original sequence (it is non-zero), so a
 	// rollback redelivery is not mistaken for a new message.
 	seqLast int64
+	refs    map[string]int
+}
+
+const (
+	maxJMSDestinationKeys = 2048
+	maxJMSQueueDepth      = 10000
+	maxJMSQueueBytes      = 16 << 20
+)
+
+func mockJMSKey(namespace, destination string) string {
+	if namespace == "" {
+		return destination
+	}
+	return namespace + "\x00" + destination
+}
+
+func (b *memoryBroker) acquire(namespace string) {
+	if namespace == "" {
+		return
+	}
+	b.mu.Lock()
+	b.refs[namespace]++
+	b.mu.Unlock()
+}
+
+func (b *memoryBroker) release(namespace string) {
+	if namespace == "" {
+		return
+	}
+	prefix := namespace + "\x00"
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.refs[namespace]--
+	if b.refs[namespace] > 0 {
+		return
+	}
+	delete(b.refs, namespace)
+	for destination := range b.queues {
+		if strings.HasPrefix(destination, prefix) {
+			delete(b.queues, destination)
+		}
+	}
+	for topic := range b.topics {
+		if strings.HasPrefix(topic, prefix) {
+			delete(b.topics, topic)
+		}
+	}
+}
+
+func boundedMessageQueue(queue []message) []message {
+	bytes := 0
+	keepFrom := len(queue)
+	for keepFrom > 0 && len(queue)-keepFrom < maxJMSQueueDepth {
+		size := messageSize(queue[keepFrom-1])
+		if bytes+size > maxJMSQueueBytes {
+			break
+		}
+		bytes += size
+		keepFrom--
+	}
+	if keepFrom == 0 {
+		return queue
+	}
+	retained := make([]message, len(queue)-keepFrom)
+	copy(retained, queue[keepFrom:])
+	return retained
+}
+
+func messageSize(msg message) int {
+	size := len(msg.Body) + len(msg.ID) + len(msg.CorrelationID) + len(msg.Destination)
+	for key, value := range msg.Headers {
+		size += len(key) + len(value)
+	}
+	for key, value := range msg.Properties {
+		size += len(key) + len(value)
+	}
+	return size
+}
+
+func (b *memoryBroker) resourceKeyCountLocked() int {
+	count := len(b.queues) + len(b.topics)
+	for _, subscriptions := range b.topics {
+		count += len(subscriptions)
+	}
+	return count
 }
 
 // assignSequenceLocked stamps a monotonic sequence on a message that doesn't
@@ -253,11 +342,18 @@ func cloneMessageValue(msg message) message {
 	return out
 }
 
-func (b *memoryBroker) publish(destination string, msg message) {
+func (b *memoryBroker) publish(destination string, msg message) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if _, exists := b.queues[destination]; !exists && b.resourceKeyCountLocked() >= maxJMSDestinationKeys {
+		return fmt.Errorf("mock JMS destination capacity exceeded (%d keys)", maxJMSDestinationKeys)
+	}
+	if messageSize(msg) > maxJMSQueueBytes {
+		return fmt.Errorf("mock JMS message exceeds per-destination capacity (%d bytes)", maxJMSQueueBytes)
+	}
 	b.assignSequenceLocked(&msg)
-	b.queues[destination] = append(b.queues[destination], msg)
+	b.queues[destination] = boundedMessageQueue(append(b.queues[destination], msg))
+	return nil
 }
 
 func (b *memoryBroker) consume(destination string) (message, bool) {
@@ -345,27 +441,41 @@ func browseMatching(queue []message, sel *selector, max int) []message {
 // lazily on first consume only collects publishes after that point. The mock has
 // no long-lived connection, so it does not model a durable subscriber collecting
 // messages published before it ever registered.
-func (b *memoryBroker) subscribe(topic, subscription string) {
+func (b *memoryBroker) subscribe(topic, subscription string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.topics[topic] == nil {
-		b.topics[topic] = make(map[string][]message)
+	if subscriptions := b.topics[topic]; subscriptions != nil {
+		if _, exists := subscriptions[subscription]; exists {
+			return nil
+		}
+		if b.resourceKeyCountLocked() >= maxJMSDestinationKeys {
+			return fmt.Errorf("mock JMS destination capacity exceeded (%d keys)", maxJMSDestinationKeys)
+		}
+		subscriptions[subscription] = nil
+		return nil
 	}
-	if _, ok := b.topics[topic][subscription]; !ok {
-		b.topics[topic][subscription] = nil
+	// A new topic consumes one key and its first subscription consumes another.
+	if b.resourceKeyCountLocked()+2 > maxJMSDestinationKeys {
+		return fmt.Errorf("mock JMS destination capacity exceeded (%d keys)", maxJMSDestinationKeys)
 	}
+	b.topics[topic] = map[string][]message{subscription: nil}
+	return nil
 }
 
 // publishTopic fans a message out to every registered subscription on the topic,
 // each receiving its own deep copy. A topic with no subscriptions drops the
 // message (standard topic semantics — only subscribers receive).
-func (b *memoryBroker) publishTopic(topic string, msg message) {
+func (b *memoryBroker) publishTopic(topic string, msg message) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if messageSize(msg) > maxJMSQueueBytes {
+		return fmt.Errorf("mock JMS message exceeds per-destination capacity (%d bytes)", maxJMSQueueBytes)
+	}
 	b.assignSequenceLocked(&msg)
 	for sub := range b.topics[topic] {
-		b.topics[topic][sub] = append(b.topics[topic][sub], cloneMessageValue(msg))
+		b.topics[topic][sub] = boundedMessageQueue(append(b.topics[topic][sub], cloneMessageValue(msg)))
 	}
+	return nil
 }
 
 // requeueTopic re-appends a rolled-back message to a specific subscription's
@@ -378,7 +488,7 @@ func (b *memoryBroker) requeueTopic(topic, subscription string, msg message) {
 	if b.topics[topic] == nil {
 		b.topics[topic] = make(map[string][]message)
 	}
-	b.topics[topic][subscription] = append(b.topics[topic][subscription], cloneMessageValue(msg))
+	b.topics[topic][subscription] = boundedMessageQueue(append(b.topics[topic][subscription], cloneMessageValue(msg)))
 }
 
 // consumeTopic pops the first message matching the selector from a subscription's
@@ -453,8 +563,14 @@ func (j *JMS) Init(_ context.Context, cfg map[string]any) error {
 		j.cfg.Timeout = 5 * time.Second
 	}
 	j.session = messaging.New[message](messaging.ParseAckMode(j.cfg.Acknowledgement))
+	if !j.cfg.Mock && j.session.NeedsSettlement() {
+		return fmt.Errorf("jms acknowledgement mode %q is not supported by real adapters; use auto/dups_ok or a provider action with explicit settlement", j.cfg.Acknowledgement)
+	}
 	if j.cfg.Mock {
-		j.adapter = memoryAdapter{broker: broker}
+		j.mockNamespace = stringValue(cfg, "runtime_mock_namespace")
+		j.mockRelease = &sync.Once{}
+		broker.acquire(j.mockNamespace)
+		j.adapter = memoryAdapter{broker: broker, namespace: j.mockNamespace}
 		// Pre-register a configured topic subscription at connect time so a topic
 		// publish that lands before the subscriber's first consume is still captured
 		// (durable-subscription semantics). Without this, the mock only retains
@@ -462,7 +578,11 @@ func (j *JMS) Init(_ context.Context, cfg map[string]any) error {
 		if !strings.EqualFold(strings.TrimSpace(j.provider), "servicebus") &&
 			strings.EqualFold(strings.TrimSpace(j.cfg.DestinationType), "topic") &&
 			strings.TrimSpace(j.cfg.Subscription) != "" && strings.TrimSpace(j.cfg.Destination) != "" {
-			broker.subscribe(j.cfg.Destination, j.cfg.Subscription)
+			if err := broker.subscribe(mockJMSKey(j.mockNamespace, j.cfg.Destination), j.cfg.Subscription); err != nil {
+				j.mockRelease.Do(func() { broker.release(j.mockNamespace) })
+				j.adapter = nil
+				return err
+			}
 		}
 	} else {
 		adapter, err := j.selectAdapter()
@@ -590,7 +710,11 @@ func (j *JMS) Teardown(ctx context.Context) error {
 	if j.adapter == nil {
 		return nil
 	}
-	return j.adapter.Teardown(ctx)
+	err := j.adapter.Teardown(ctx)
+	if j.cfg.Mock && j.mockRelease != nil {
+		j.mockRelease.Do(func() { broker.release(j.mockNamespace) })
+	}
+	return err
 }
 
 func (j *JMS) HealthCheck(ctx context.Context) error {
@@ -1067,10 +1191,10 @@ func (j *JMS) requeueForRedelivery(msgs []message) {
 			// broker.publish would land it in the unrelated queue map (keyed by the
 			// topic name), where the topic consume path never looks, so it would
 			// never be redelivered.
-			broker.requeueTopic(msg.sourceTopic, msg.sourceSubscription, msg)
+			broker.requeueTopic(mockJMSKey(j.mockNamespace, msg.sourceTopic), msg.sourceSubscription, msg)
 			continue
 		}
-		broker.publish(msg.Destination, msg)
+		_ = broker.publish(mockJMSKey(j.mockNamespace, msg.Destination), msg)
 	}
 }
 
@@ -1114,11 +1238,16 @@ func (j *JMS) timeout(action *protocol.Action) time.Duration {
 }
 
 type memoryAdapter struct {
-	broker *memoryBroker
+	broker    *memoryBroker
+	namespace string
 }
 
+func (a memoryAdapter) destination(value string) string { return mockJMSKey(a.namespace, value) }
+
 func (a memoryAdapter) Publish(_ context.Context, destination string, msg message) (message, error) {
-	a.broker.publish(destination, msg)
+	if err := a.broker.publish(a.destination(destination), msg); err != nil {
+		return message{}, err
+	}
 	return msg, nil
 }
 
@@ -1129,7 +1258,7 @@ func (a memoryAdapter) Consume(ctx context.Context, destination string, timeout 
 	defer tick.Stop()
 
 	for {
-		if msg, ok := a.broker.consume(destination); ok {
+		if msg, ok := a.broker.consume(a.destination(destination)); ok {
 			return msg, nil
 		}
 		select {
@@ -1143,7 +1272,9 @@ func (a memoryAdapter) Consume(ctx context.Context, destination string, timeout 
 }
 
 func (a memoryAdapter) RequestReply(ctx context.Context, requestDestination string, replyDestination string, request message, timeout time.Duration) (message, message, error) {
-	a.broker.publish(requestDestination, request)
+	if err := a.broker.publish(a.destination(requestDestination), request); err != nil {
+		return message{}, message{}, err
+	}
 
 	matchesRequest := func(reply message) bool {
 		return request.CorrelationID == "" ||
@@ -1152,9 +1283,9 @@ func (a memoryAdapter) RequestReply(ctx context.Context, requestDestination stri
 			reply.Properties["jms_correlation_id"] == request.CorrelationID ||
 			reply.Properties["JMSCorrelationID"] == request.CorrelationID
 	}
-	if (request.CorrelationID != "" && !a.broker.hasMatching(replyDestination, matchesRequest)) ||
-		(request.CorrelationID == "" && !a.broker.hasMessages(replyDestination)) {
-		a.broker.publish(replyDestination, message{
+	if (request.CorrelationID != "" && !a.broker.hasMatching(a.destination(replyDestination), matchesRequest)) ||
+		(request.CorrelationID == "" && !a.broker.hasMessages(a.destination(replyDestination))) {
+		if err := a.broker.publish(a.destination(replyDestination), message{
 			ID:            uuid.NewString(),
 			CorrelationID: request.CorrelationID,
 			Destination:   replyDestination,
@@ -1162,7 +1293,9 @@ func (a memoryAdapter) RequestReply(ctx context.Context, requestDestination stri
 			Properties:    cloneStringMap(request.Properties),
 			Body:          request.Body,
 			CreatedAt:     time.Now(),
-		})
+		}); err != nil {
+			return request, message{}, err
+		}
 	}
 
 	deadline := time.NewTimer(timeout)
@@ -1171,7 +1304,7 @@ func (a memoryAdapter) RequestReply(ctx context.Context, requestDestination stri
 	defer tick.Stop()
 
 	for {
-		if response, ok := a.broker.consumeWhere(replyDestination, matchesRequest); ok {
+		if response, ok := a.broker.consumeWhere(a.destination(replyDestination), matchesRequest); ok {
 			return request, response, nil
 		}
 		select {
@@ -1206,7 +1339,7 @@ func (a memoryAdapter) ConsumeSelective(ctx context.Context, destination, select
 	tick := time.NewTicker(10 * time.Millisecond)
 	defer tick.Stop()
 	for {
-		if msg, ok := a.broker.consumeMatching(destination, sel); ok {
+		if msg, ok := a.broker.consumeMatching(a.destination(destination), sel); ok {
 			return msg, nil
 		}
 		select {
@@ -1225,13 +1358,12 @@ func (a memoryAdapter) Browse(_ context.Context, destination, selectorExpr strin
 	if err != nil {
 		return nil, err
 	}
-	return a.broker.browse(destination, sel, max), nil
+	return a.broker.browse(a.destination(destination), sel, max), nil
 }
 
 // PublishTopic fans a message out to every registered subscription (P2.3).
 func (a memoryAdapter) PublishTopic(_ context.Context, topic string, msg message) error {
-	a.broker.publishTopic(topic, msg)
-	return nil
+	return a.broker.publishTopic(a.destination(topic), msg)
 }
 
 // ConsumeTopic registers the subscription (so future publishes fan out to it,
@@ -1239,7 +1371,9 @@ func (a memoryAdapter) PublishTopic(_ context.Context, topic string, msg message
 // The mock retains messages for durable and non-durable subscriptions alike (it
 // has no long-lived consumer connection to model a non-durable drop).
 func (a memoryAdapter) ConsumeTopic(ctx context.Context, topic, subscription, selectorExpr string, _ bool, timeout time.Duration) (message, error) {
-	a.broker.subscribe(topic, subscription)
+	if err := a.broker.subscribe(a.destination(topic), subscription); err != nil {
+		return message{}, err
+	}
 	sel, err := compileSelector(selectorExpr)
 	if err != nil {
 		return message{}, err
@@ -1249,7 +1383,7 @@ func (a memoryAdapter) ConsumeTopic(ctx context.Context, topic, subscription, se
 	tick := time.NewTicker(10 * time.Millisecond)
 	defer tick.Stop()
 	for {
-		if msg, ok := a.broker.consumeTopic(topic, subscription, sel); ok {
+		if msg, ok := a.broker.consumeTopic(a.destination(topic), subscription, sel); ok {
 			return msg, nil
 		}
 		select {
@@ -1265,12 +1399,14 @@ func (a memoryAdapter) ConsumeTopic(ctx context.Context, topic, subscription, se
 // BrowseTopic registers the subscription then non-destructively reads its
 // matching messages (P2.3).
 func (a memoryAdapter) BrowseTopic(_ context.Context, topic, subscription, selectorExpr string, max int, _ time.Duration) ([]message, error) {
-	a.broker.subscribe(topic, subscription)
+	if err := a.broker.subscribe(a.destination(topic), subscription); err != nil {
+		return nil, err
+	}
 	sel, err := compileSelector(selectorExpr)
 	if err != nil {
 		return nil, err
 	}
-	return a.broker.browseTopic(topic, subscription, sel, max), nil
+	return a.broker.browseTopic(a.destination(topic), subscription, sel, max), nil
 }
 
 type sidecarAdapter struct {

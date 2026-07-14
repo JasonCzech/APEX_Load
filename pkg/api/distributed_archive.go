@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
@@ -27,6 +28,7 @@ const (
 	remoteArchiveArtifactMaxBytes = int64(16 << 30)
 	remoteArchiveTotalMaxBytes    = int64(32 << 30)
 	remoteArchiveMaxTargets       = 256
+	remoteArchiveFetchConcurrency = 8
 	remoteArchiveMergeBufferBytes = 256 << 10
 )
 
@@ -147,6 +149,44 @@ func cleanupRemoteArchiveBundles(bundles []remoteArchiveBundle) {
 }
 
 func (b *distributedExecutionBackend) fetchRemoteArchiveBundles(tr *TestRunner, test *ManagedTest, requireAll bool) ([]remoteArchiveBundle, error) {
+	return b.fetchRemoteArchiveBundlesContext(context.Background(), tr, test, requireAll)
+}
+
+type remoteArchiveTransferBudget struct {
+	mu        sync.Mutex
+	remaining int64
+}
+
+func (b *remoteArchiveTransferBudget) reserve(size int64) error {
+	if size < 0 {
+		return fmt.Errorf("archive transfer size cannot be negative")
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if size > b.remaining {
+		return fmt.Errorf("remote archive total size limit of %d bytes was exceeded", remoteArchiveTotalMaxBytes)
+	}
+	b.remaining -= size
+	return nil
+}
+
+func (b *remoteArchiveTransferBudget) release(size int64) {
+	if size <= 0 {
+		return
+	}
+	b.mu.Lock()
+	b.remaining += size
+	b.mu.Unlock()
+}
+
+type remoteArchiveFetchResult struct {
+	index   int
+	bundle  remoteArchiveBundle
+	missing bool
+	err     error
+}
+
+func (b *distributedExecutionBackend) fetchRemoteArchiveBundlesContext(ctx context.Context, tr *TestRunner, test *ManagedTest, requireAll bool) ([]remoteArchiveBundle, error) {
 	if test == nil {
 		return nil, fmt.Errorf("test is required")
 	}
@@ -175,89 +215,52 @@ func (b *distributedExecutionBackend) fetchRemoteArchiveBundles(tr *TestRunner, 
 		}
 	}()
 
-	bundles := make([]remoteArchiveBundle, 0, len(clients))
-	missingTargets := make([]string, 0)
-	remainingTotalBytes := remoteArchiveTotalMaxBytes
-	for index, target := range orderedGeneratorTargets(clients, b.configuredTargets()) {
-		client := clients[target]
-		targetCtx, targetCancel := context.WithTimeout(context.Background(), remoteArchiveTargetTimeout(b.timeout))
-		targetDir, err := ensureArchiveRelativeDirectory(transferStageRoot, fmt.Sprintf("target-%03d", index), 0o700)
-		if err != nil {
-			targetCancel()
-			return nil, err
-		}
-
-		var manifestBuffer bytes.Buffer
-		manifestBytes, err := copyRemoteArchiveArtifact(targetCtx, client, generatorrpc.ArchiveArtifactRequest{
-			TestID: test.ID,
-			Name:   runArchiveManifestFileName,
-		}, &manifestBuffer, minArchiveTransferLimit(remoteArchiveManifestMaxBytes, remainingTotalBytes))
-		if err != nil {
-			targetCancel()
-			code := grpcStatus.Code(err)
-			if code == grpcCodes.NotFound || code == grpcCodes.Unimplemented || (!requireAll && (code == grpcCodes.Canceled || code == grpcCodes.Unavailable)) {
-				missingTargets = append(missingTargets, target)
-				continue
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	targets := orderedGeneratorTargets(clients, b.configuredTargets())
+	results := make(chan remoteArchiveFetchResult, len(targets))
+	semaphore := make(chan struct{}, remoteArchiveFetchConcurrency)
+	budget := &remoteArchiveTransferBudget{remaining: remoteArchiveTotalMaxBytes}
+	var workers sync.WaitGroup
+	for index, target := range targets {
+		workers.Add(1)
+		go func(index int, target string) {
+			defer workers.Done()
+			select {
+			case semaphore <- struct{}{}:
+				defer func() { <-semaphore }()
+			case <-ctx.Done():
+				results <- remoteArchiveFetchResult{index: index, err: ctx.Err()}
+				return
 			}
-			return nil, fmt.Errorf("fetch archive manifest from %s: %w", target, err)
+			bundle, missing, err := b.fetchRemoteArchiveBundleTarget(ctx, clients[target], test.ID, target, index, transferStageRoot, requireAll, budget)
+			results <- remoteArchiveFetchResult{index: index, bundle: bundle, missing: missing, err: err}
+		}(index, target)
+	}
+	go func() {
+		workers.Wait()
+		close(results)
+	}()
+	ordered := make([]remoteArchiveFetchResult, len(targets))
+	var firstErr error
+	for result := range results {
+		ordered[result.index] = result
+		if result.err != nil && firstErr == nil {
+			firstErr = result.err
+			cancel()
 		}
-		remainingTotalBytes -= manifestBytes
-
-		var manifest RunArchiveManifest
-		if err := json.Unmarshal(manifestBuffer.Bytes(), &manifest); err != nil {
-			targetCancel()
-			return nil, fmt.Errorf("decode archive manifest from %s: %w", target, err)
+	}
+	if firstErr != nil {
+		return nil, firstErr
+	}
+	bundles := make([]remoteArchiveBundle, 0, len(targets))
+	missingTargets := make([]string, 0)
+	for index, result := range ordered {
+		if result.missing {
+			missingTargets = append(missingTargets, targets[index])
+			continue
 		}
-		if strings.TrimSpace(manifest.TestID) != strings.TrimSpace(test.ID) {
-			targetCancel()
-			return nil, fmt.Errorf("validate archive manifest from %s: test_id %q does not match requested test %q", target, manifest.TestID, test.ID)
-		}
-		transactionsName, err := requiredArchiveArtifactName("transactions_file", manifest.TransactionsFile)
-		if err != nil {
-			targetCancel()
-			return nil, fmt.Errorf("validate archive manifest from %s: %w", target, err)
-		}
-		resourcesName, err := requiredArchiveArtifactName("resource_samples_file", manifest.ResourceSamplesFile)
-		if err != nil {
-			targetCancel()
-			return nil, fmt.Errorf("validate archive manifest from %s: %w", target, err)
-		}
-		summariesName, err := requiredArchiveArtifactName("interval_summaries_file", manifest.IntervalSummariesFile)
-		if err != nil {
-			targetCancel()
-			return nil, fmt.Errorf("validate archive manifest from %s: %w", target, err)
-		}
-
-		transactionsPath := filepath.Join(targetDir, "transactions.jsonl")
-		copied, err := fetchRemoteArchiveArtifactFile(targetCtx, client, test.ID, transactionsName, transactionsPath, minArchiveTransferLimit(remoteArchiveArtifactMaxBytes, remainingTotalBytes))
-		if err != nil {
-			targetCancel()
-			return nil, fmt.Errorf("fetch transaction archive from %s: %w", target, err)
-		}
-		remainingTotalBytes -= copied
-		resourcesPath := filepath.Join(targetDir, "resources.jsonl")
-		copied, err = fetchRemoteArchiveArtifactFile(targetCtx, client, test.ID, resourcesName, resourcesPath, minArchiveTransferLimit(remoteArchiveArtifactMaxBytes, remainingTotalBytes))
-		if err != nil {
-			targetCancel()
-			return nil, fmt.Errorf("fetch resource archive from %s: %w", target, err)
-		}
-		remainingTotalBytes -= copied
-		summariesPath := filepath.Join(targetDir, "interval_summaries.jsonl")
-		copied, err = fetchRemoteArchiveArtifactFile(targetCtx, client, test.ID, summariesName, summariesPath, minArchiveTransferLimit(remoteArchiveArtifactMaxBytes, remainingTotalBytes))
-		targetCancel()
-		if err != nil {
-			return nil, fmt.Errorf("fetch interval summaries archive from %s: %w", target, err)
-		}
-		remainingTotalBytes -= copied
-
-		bundles = append(bundles, remoteArchiveBundle{
-			target:            target,
-			manifest:          manifest,
-			transactionsPath:  transactionsPath,
-			resourcesPath:     resourcesPath,
-			summariesPath:     summariesPath,
-			transferStageRoot: transferStageRoot,
-		})
+		bundles = append(bundles, result.bundle)
 	}
 	if len(bundles) == 0 {
 		if requireAll {
@@ -273,6 +276,52 @@ func (b *distributedExecutionBackend) fetchRemoteArchiveBundles(tr *TestRunner, 
 	}
 	keepStaging = true
 	return bundles, nil
+}
+
+func (b *distributedExecutionBackend) fetchRemoteArchiveBundleTarget(ctx context.Context, client generatorClient, testID, target string, index int, transferStageRoot string, requireAll bool, budget *remoteArchiveTransferBudget) (remoteArchiveBundle, bool, error) {
+	targetCtx, cancel := context.WithTimeout(ctx, remoteArchiveTargetTimeout(b.timeout))
+	defer cancel()
+	targetDir, err := ensureArchiveRelativeDirectory(transferStageRoot, fmt.Sprintf("target-%03d", index), 0o700)
+	if err != nil {
+		return remoteArchiveBundle{}, false, err
+	}
+	var manifestBuffer bytes.Buffer
+	_, err = copyRemoteArchiveArtifactWithBudget(targetCtx, client, generatorrpc.ArchiveArtifactRequest{TestID: testID, Name: runArchiveManifestFileName}, &manifestBuffer, remoteArchiveManifestMaxBytes, budget)
+	if err != nil {
+		code := grpcStatus.Code(err)
+		if code == grpcCodes.NotFound || code == grpcCodes.Unimplemented || (!requireAll && (code == grpcCodes.Canceled || code == grpcCodes.Unavailable)) {
+			return remoteArchiveBundle{}, true, nil
+		}
+		return remoteArchiveBundle{}, false, fmt.Errorf("fetch archive manifest from %s: %w", target, err)
+	}
+	var manifest RunArchiveManifest
+	if err := json.Unmarshal(manifestBuffer.Bytes(), &manifest); err != nil {
+		return remoteArchiveBundle{}, false, fmt.Errorf("decode archive manifest from %s: %w", target, err)
+	}
+	if strings.TrimSpace(manifest.TestID) != strings.TrimSpace(testID) {
+		return remoteArchiveBundle{}, false, fmt.Errorf("validate archive manifest from %s: test_id %q does not match requested test %q", target, manifest.TestID, testID)
+	}
+	transactionsName, err := requiredArchiveArtifactName("transactions_file", manifest.TransactionsFile)
+	if err != nil {
+		return remoteArchiveBundle{}, false, fmt.Errorf("validate archive manifest from %s: %w", target, err)
+	}
+	resourcesName, err := requiredArchiveArtifactName("resource_samples_file", manifest.ResourceSamplesFile)
+	if err != nil {
+		return remoteArchiveBundle{}, false, fmt.Errorf("validate archive manifest from %s: %w", target, err)
+	}
+	summariesName, err := requiredArchiveArtifactName("interval_summaries_file", manifest.IntervalSummariesFile)
+	if err != nil {
+		return remoteArchiveBundle{}, false, fmt.Errorf("validate archive manifest from %s: %w", target, err)
+	}
+	paths := []string{filepath.Join(targetDir, "transactions.jsonl"), filepath.Join(targetDir, "resources.jsonl"), filepath.Join(targetDir, "interval_summaries.jsonl")}
+	names := []string{transactionsName, resourcesName, summariesName}
+	labels := []string{"transaction", "resource", "interval summaries"}
+	for i := range paths {
+		if _, err := fetchRemoteArchiveArtifactFileWithBudget(targetCtx, client, testID, names[i], paths[i], remoteArchiveArtifactMaxBytes, budget); err != nil {
+			return remoteArchiveBundle{}, false, fmt.Errorf("fetch %s archive from %s: %w", labels[i], target, err)
+		}
+	}
+	return remoteArchiveBundle{target: target, manifest: manifest, transactionsPath: paths[0], resourcesPath: paths[1], summariesPath: paths[2], transferStageRoot: transferStageRoot}, false, nil
 }
 
 func remoteArchiveTargetTimeout(base time.Duration) time.Duration {
@@ -303,29 +352,48 @@ type boundedArchiveWriter struct {
 	destination io.Writer
 	remaining   int64
 	written     int64
+	totalBudget *remoteArchiveTransferBudget
 }
 
 func (w *boundedArchiveWriter) Write(content []byte) (int, error) {
 	if int64(len(content)) > w.remaining {
 		return 0, fmt.Errorf("archive artifact exceeds configured transfer limit")
 	}
+	if w.totalBudget != nil {
+		if err := w.totalBudget.reserve(int64(len(content))); err != nil {
+			return 0, err
+		}
+	}
 	n, err := w.destination.Write(content)
+	if w.totalBudget != nil && n < len(content) {
+		w.totalBudget.release(int64(len(content) - n))
+	}
 	w.remaining -= int64(n)
 	w.written += int64(n)
 	return n, err
 }
 
 func copyRemoteArchiveArtifact(ctx context.Context, client generatorClient, request generatorrpc.ArchiveArtifactRequest, destination io.Writer, maxBytes int64) (int64, error) {
+	return copyRemoteArchiveArtifactWithBudget(ctx, client, request, destination, maxBytes, nil)
+}
+
+func copyRemoteArchiveArtifactWithBudget(ctx context.Context, client generatorClient, request generatorrpc.ArchiveArtifactRequest, destination io.Writer, maxBytes int64, totalBudget *remoteArchiveTransferBudget) (int64, error) {
 	if maxBytes <= 0 {
 		return 0, fmt.Errorf("remote archive total size limit of %d bytes was exceeded", remoteArchiveTotalMaxBytes)
 	}
-	bounded := &boundedArchiveWriter{destination: destination, remaining: maxBytes}
+	bounded := &boundedArchiveWriter{destination: destination, remaining: maxBytes, totalBudget: totalBudget}
 	if streaming, ok := client.(streamingArchiveGeneratorClient); ok {
 		copied, err := streaming.StreamArchiveArtifact(ctx, request, bounded, maxBytes)
 		if err != nil {
+			if totalBudget != nil {
+				totalBudget.release(bounded.written)
+			}
 			return bounded.written, err
 		}
 		if copied != bounded.written {
+			if totalBudget != nil {
+				totalBudget.release(bounded.written)
+			}
 			return bounded.written, fmt.Errorf("archive artifact stream reported %d bytes but wrote %d", copied, bounded.written)
 		}
 		return copied, nil
@@ -342,10 +410,17 @@ func copyRemoteArchiveArtifact(ctx context.Context, client generatorClient, requ
 		return 0, fmt.Errorf("archive artifact is %d bytes, limit is %d", len(content), maxBytes)
 	}
 	n, err := bounded.Write(content)
+	if err != nil && totalBudget != nil {
+		totalBudget.release(bounded.written)
+	}
 	return int64(n), err
 }
 
 func fetchRemoteArchiveArtifactFile(ctx context.Context, client generatorClient, testID, name, destinationPath string, maxBytes int64) (copied int64, err error) {
+	return fetchRemoteArchiveArtifactFileWithBudget(ctx, client, testID, name, destinationPath, maxBytes, nil)
+}
+
+func fetchRemoteArchiveArtifactFileWithBudget(ctx context.Context, client generatorClient, testID, name, destinationPath string, maxBytes int64, totalBudget *remoteArchiveTransferBudget) (copied int64, err error) {
 	if err := validateArchiveRunID(testID); err != nil {
 		return 0, err
 	}
@@ -365,7 +440,7 @@ func fetchRemoteArchiveArtifactFile(ctx context.Context, client generatorClient,
 			_ = os.Remove(destinationPath)
 		}
 	}()
-	copied, err = copyRemoteArchiveArtifact(ctx, client, generatorrpc.ArchiveArtifactRequest{TestID: testID, Name: name}, file, maxBytes)
+	copied, err = copyRemoteArchiveArtifactWithBudget(ctx, client, generatorrpc.ArchiveArtifactRequest{TestID: testID, Name: name}, file, maxBytes, totalBudget)
 	if err != nil {
 		return copied, err
 	}

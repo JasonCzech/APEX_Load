@@ -13,14 +13,14 @@ import (
 )
 
 func (s *SQLiteStore) SaveScript(script *dsl.Script) error {
+	if script == nil {
+		return errors.New("script is required")
+	}
 	script.ProjectID = normalizeProjectID(script.ProjectID)
-	metadataJSON, _ := json.Marshal(script.Metadata)
-	configJSON, _ := json.Marshal(script.Config)
-	dataSourcesJSON, _ := json.Marshal(script.DataSources)
-	parametersJSON, _ := json.Marshal(script.Parameters)
-	initJSON, _ := json.Marshal(script.Init)
-	actionsJSON, _ := json.Marshal(script.Actions)
-	teardownJSON, _ := json.Marshal(script.Teardown)
+	encoded, err := marshalScriptForStorage(script)
+	if err != nil {
+		return err
+	}
 
 	if script.CreatedAt.IsZero() {
 		script.CreatedAt = time.Now()
@@ -39,10 +39,10 @@ func (s *SQLiteStore) SaveScript(script *dsl.Script) error {
 			  init=excluded.init, actions=excluded.actions, teardown=excluded.teardown,
 			  updated_at=excluded.updated_at`
 
-	_, err := s.db.Exec(query,
+	_, err = s.db.Exec(query,
 		script.ID, script.RefKey, script.Name, script.Protocol, script.Version, script.ProjectID, script.FolderID,
 		script.GeneratedBy, script.GeneratedFrom,
-		string(metadataJSON), string(configJSON), string(dataSourcesJSON), string(parametersJSON), string(initJSON), string(actionsJSON), string(teardownJSON),
+		encoded.metadata, encoded.config, encoded.dataSources, encoded.parameters, encoded.init, encoded.actions, encoded.teardown,
 		script.CreatedAt, script.UpdatedAt)
 	return err
 }
@@ -56,13 +56,10 @@ func (s *SQLiteStore) CreateScriptIfAbsent(script *dsl.Script) (bool, error) {
 		return false, errors.New("script is required")
 	}
 	script.ProjectID = normalizeProjectID(script.ProjectID)
-	metadataJSON, _ := json.Marshal(script.Metadata)
-	configJSON, _ := json.Marshal(script.Config)
-	dataSourcesJSON, _ := json.Marshal(script.DataSources)
-	parametersJSON, _ := json.Marshal(script.Parameters)
-	initJSON, _ := json.Marshal(script.Init)
-	actionsJSON, _ := json.Marshal(script.Actions)
-	teardownJSON, _ := json.Marshal(script.Teardown)
+	encoded, err := marshalScriptForStorage(script)
+	if err != nil {
+		return false, err
+	}
 	if script.CreatedAt.IsZero() {
 		script.CreatedAt = time.Now()
 	}
@@ -72,13 +69,55 @@ func (s *SQLiteStore) CreateScriptIfAbsent(script *dsl.Script) (bool, error) {
 		ON CONFLICT(id) DO NOTHING`,
 		script.ID, script.RefKey, script.Name, script.Protocol, script.Version, script.ProjectID, script.FolderID,
 		script.GeneratedBy, script.GeneratedFrom,
-		string(metadataJSON), string(configJSON), string(dataSourcesJSON), string(parametersJSON), string(initJSON), string(actionsJSON), string(teardownJSON),
+		encoded.metadata, encoded.config, encoded.dataSources, encoded.parameters, encoded.init, encoded.actions, encoded.teardown,
 		script.CreatedAt, script.UpdatedAt)
 	if err != nil {
 		return false, err
 	}
 	rows, err := result.RowsAffected()
 	return rows == 1, err
+}
+
+type storedScriptJSON struct {
+	metadata    string
+	config      string
+	dataSources string
+	parameters  string
+	init        string
+	actions     string
+	teardown    string
+}
+
+func marshalScriptForStorage(script *dsl.Script) (storedScriptJSON, error) {
+	fields := []struct {
+		name  string
+		value any
+		dst   *string
+	}{
+		{name: "metadata_json", value: script.Metadata},
+		{name: "config", value: script.Config},
+		{name: "data_sources", value: script.DataSources},
+		{name: "parameters", value: script.Parameters},
+		{name: "init", value: script.Init},
+		{name: "actions", value: script.Actions},
+		{name: "teardown", value: script.Teardown},
+	}
+	var encoded storedScriptJSON
+	fields[0].dst = &encoded.metadata
+	fields[1].dst = &encoded.config
+	fields[2].dst = &encoded.dataSources
+	fields[3].dst = &encoded.parameters
+	fields[4].dst = &encoded.init
+	fields[5].dst = &encoded.actions
+	fields[6].dst = &encoded.teardown
+	for _, field := range fields {
+		payload, err := json.Marshal(field.value)
+		if err != nil {
+			return storedScriptJSON{}, fmt.Errorf("marshal script %s: %w", field.name, err)
+		}
+		*field.dst = string(payload)
+	}
+	return encoded, nil
 }
 
 func (s *SQLiteStore) GetScript(id string) (*dsl.Script, error) {
@@ -97,17 +136,9 @@ func (s *SQLiteStore) GetScript(id string) (*dsl.Script, error) {
 		return nil, err
 	}
 
-	if metadataJSON != "" && metadataJSON != "null" {
-		json.Unmarshal([]byte(metadataJSON), &script.Metadata)
+	if err := decodeStoredScriptJSON(&script, metadataJSON, configJSON, dataSourcesJSON, parametersJSON, initJSON, actionsJSON, teardownJSON); err != nil {
+		return nil, fmt.Errorf("decode script %s: %w", script.ID, err)
 	}
-	json.Unmarshal([]byte(configJSON), &script.Config)
-	json.Unmarshal([]byte(dataSourcesJSON), &script.DataSources)
-	if parametersJSON != "" && parametersJSON != "null" {
-		json.Unmarshal([]byte(parametersJSON), &script.Parameters)
-	}
-	json.Unmarshal([]byte(initJSON), &script.Init)
-	json.Unmarshal([]byte(actionsJSON), &script.Actions)
-	json.Unmarshal([]byte(teardownJSON), &script.Teardown)
 
 	return &script, nil
 }
@@ -151,29 +182,60 @@ func (s *SQLiteStore) ListScripts(projectID string, folderID *string) ([]*dsl.Sc
 		if err != nil {
 			return nil, err
 		}
-		if metadataJSON != "" && metadataJSON != "null" {
-			json.Unmarshal([]byte(metadataJSON), &script.Metadata)
+		if err := decodeStoredScriptJSON(&script, metadataJSON, configJSON, dataSourcesJSON, parametersJSON, initJSON, actionsJSON, teardownJSON); err != nil {
+			return nil, fmt.Errorf("decode script %s: %w", script.ID, err)
 		}
-		json.Unmarshal([]byte(configJSON), &script.Config)
-		json.Unmarshal([]byte(dataSourcesJSON), &script.DataSources)
-		if parametersJSON != "" && parametersJSON != "null" {
-			json.Unmarshal([]byte(parametersJSON), &script.Parameters)
-		}
-		json.Unmarshal([]byte(initJSON), &script.Init)
-		json.Unmarshal([]byte(actionsJSON), &script.Actions)
-		json.Unmarshal([]byte(teardownJSON), &script.Teardown)
 		scripts = append(scripts, &script)
 	}
-	return scripts, nil
+	return scripts, rows.Err()
 }
 
 func (s *SQLiteStore) DeleteScript(id string) error {
-	if _, err := s.db.Exec(`DELETE FROM scripts WHERE id = ?`, id); err != nil {
+	tx, err := s.db.Begin()
+	if err != nil {
 		return err
 	}
-	// Cascade the recorded baseline (SQLite foreign-key cascade is not enabled).
-	_, err := s.db.Exec(`DELETE FROM script_recordings WHERE script_id = ?`, id)
-	return err
+	defer tx.Rollback()
+	for _, query := range []string{
+		`DELETE FROM github_check_links WHERE script_id = ?`,
+		`DELETE FROM github_script_links WHERE script_id = ?`,
+		`DELETE FROM script_recordings WHERE script_id = ?`,
+		`DELETE FROM scripts WHERE id = ?`,
+	} {
+		if _, err := tx.Exec(query, id); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func decodeStoredScriptJSON(script *dsl.Script, metadataJSON, configJSON, dataSourcesJSON, parametersJSON, initJSON, actionsJSON, teardownJSON string) error {
+	if script == nil {
+		return errors.New("script is required")
+	}
+	fields := []struct {
+		name     string
+		raw      string
+		dst      any
+		optional bool
+	}{
+		{name: "metadata_json", raw: metadataJSON, dst: &script.Metadata, optional: true},
+		{name: "config", raw: configJSON, dst: &script.Config},
+		{name: "data_sources", raw: dataSourcesJSON, dst: &script.DataSources},
+		{name: "parameters", raw: parametersJSON, dst: &script.Parameters, optional: true},
+		{name: "init", raw: initJSON, dst: &script.Init},
+		{name: "actions", raw: actionsJSON, dst: &script.Actions},
+		{name: "teardown", raw: teardownJSON, dst: &script.Teardown},
+	}
+	for _, field := range fields {
+		if field.optional && (field.raw == "" || field.raw == "null") {
+			continue
+		}
+		if err := json.Unmarshal([]byte(field.raw), field.dst); err != nil {
+			return fmt.Errorf("%s: %w", field.name, err)
+		}
+	}
+	return nil
 }
 
 func (s *SQLiteStore) MoveScript(id string, folderID *string) error {

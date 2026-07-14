@@ -60,6 +60,10 @@ func newSequentialRecoveryFixture(t *testing.T, failurePolicy string) (*storage.
 	runner := NewTestRunner(10, NewHub(), store)
 	backend := &executionBackendSpy{called: make(chan string, 8)}
 	runner.setExecutionBackend(backend)
+	now := time.Now().UTC()
+	if err := store.SaveProject(&storage.Project{ID: "proj-a", Name: "proj-a", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveProject(proj-a): %v", err)
+	}
 
 	scenarioIDs := make([]string, 0, 2)
 	for i, label := range []string{"recover-first", "recover-second"} {
@@ -153,6 +157,42 @@ func TestSequentialPlanRecoveryAdvancesPersistedTerminalTestExactlyOnce(t *testi
 	}
 	if run.Status != "completed" || run.Entries[0].Status != "complete" || run.Entries[1].Status != "complete" {
 		t.Fatalf("recovered run = %+v, want completed entries", run)
+	}
+}
+
+func TestSequentialPlanRecoveryMaterializesClaimedEntryWithoutTest(t *testing.T) {
+	store, original, _, _, firstID := newSequentialRecoveryFixture(t, "halt")
+	original.beginShutdown()
+
+	run, err := store.GetExecutionPlanRun("exec-plan-run-recovery")
+	if err != nil {
+		t.Fatalf("GetExecutionPlanRun: %v", err)
+	}
+	// Model a controller that committed the side-effect-free entry claim but
+	// stopped before persisting/creating its queued test.
+	run.Entries[0].Status = "running"
+	run.Entries[0].TestID = ""
+	if err := store.SaveExecutionPlanRun(run); err != nil {
+		t.Fatalf("persist claimed entry without test: %v", err)
+	}
+	if err := store.DeleteTest(firstID); err != nil {
+		t.Fatalf("remove test created by fixture: %v", err)
+	}
+
+	_, backend := acquireRecoveredSequentialRunner(t, store)
+	recoveredID, started := waitForStart(t, backend, 2*time.Second)
+	if !started {
+		t.Fatal("recovery did not materialize the durably claimed entry")
+	}
+	if recoveredID == firstID {
+		t.Fatalf("recovery reused deleted test id %s", recoveredID)
+	}
+	fresh, err := store.GetExecutionPlanRun(run.ID)
+	if err != nil {
+		t.Fatalf("reload recovered run: %v", err)
+	}
+	if fresh.Entries[0].Status != "running" || fresh.Entries[0].TestID != recoveredID {
+		t.Fatalf("recovered entry = %+v, want running test %s", fresh.Entries[0], recoveredID)
 	}
 }
 
@@ -269,6 +309,10 @@ func TestSequentialPlanRecoveryRetriesAfterProvisionalStatePersistenceFailure(t 
 		run := cloneExecutionPlanRunForTest(store.run)
 		calls := store.saveCalls
 		store.mu.Unlock()
+		runner.seqMu.Lock()
+		_, runTracked := runner.seqPlanRuns["recover-retry"]
+		_, testMapped := runner.seqPlanByTest["missing-test"]
+		runner.seqMu.Unlock()
 		if run != nil && run.Status == "halted" {
 			if calls != durableTransitionAttempts+1 {
 				t.Fatalf("SaveExecutionPlanRun calls = %d, want %d", calls, durableTransitionAttempts+1)
@@ -276,19 +320,17 @@ func TestSequentialPlanRecoveryRetriesAfterProvisionalStatePersistenceFailure(t 
 			if run.Entries[0].Status != "failed" || run.Entries[1].Status != "skipped" {
 				t.Fatalf("recovered retry run = %+v", run)
 			}
-			break
+			// Persistence becomes visible just before failRecoveredSequentialEntry
+			// removes its test-to-run mapping. Wait for the whole recovery action,
+			// not only its durable write, before asserting cleanup.
+			if !runTracked && !testMapped {
+				break
+			}
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("recovery retry never terminalized run; last=%+v calls=%d", run, calls)
+			t.Fatalf("recovery retry did not fully settle; last=%+v calls=%d run_tracked=%v test_mapped=%v", run, calls, runTracked, testMapped)
 		}
 		time.Sleep(10 * time.Millisecond)
-	}
-	runner.seqMu.Lock()
-	_, runTracked := runner.seqPlanRuns["recover-retry"]
-	_, testMapped := runner.seqPlanByTest["missing-test"]
-	runner.seqMu.Unlock()
-	if runTracked || testMapped {
-		t.Fatalf("provisional recovery state leaked after retry: run=%v mapping=%v", runTracked, testMapped)
 	}
 }
 
@@ -317,11 +359,12 @@ func TestSequentialPlanRecoveryQuarantinesMalformedRunWithoutBlockingPendingProm
 		t.Fatalf("CreateTest: %v", err)
 	}
 	runner.mu.Lock()
-	pending.Status = "PENDING"
+	pendingRecord := runner.tests[pending.ID]
+	pendingRecord.Status = "PENDING"
 	pendingAt := time.Now().UTC().Add(-time.Minute)
-	pending.PendingSince = &pendingAt
-	pending.PendingReason = "awaiting recovery"
-	if err := runner.saveManagedTestRecord(pending); err != nil {
+	pendingRecord.PendingSince = &pendingAt
+	pendingRecord.PendingReason = "awaiting recovery"
+	if err := runner.saveManagedTestRecord(pendingRecord); err != nil {
 		runner.mu.Unlock()
 		t.Fatalf("save pending test: %v", err)
 	}

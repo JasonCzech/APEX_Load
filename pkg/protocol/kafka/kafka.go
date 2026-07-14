@@ -41,6 +41,7 @@ func init() {
 	protocol.Register("kafka", func() protocol.Protocol {
 		return &Kafka{name: "kafka"}
 	})
+	protocol.RegisterRuntimeNamespaceManager("kafka", sharedBroker.acquire, sharedBroker.release)
 }
 
 const defaultMockPartitions = 4
@@ -64,6 +65,14 @@ type Kafka struct {
 type pendingProduce struct {
 	topic string
 	rec   kafkaRecord
+}
+
+// atomicTransactionCommitter is implemented by the in-memory mock, whose
+// no-op transaction lifecycle otherwise cannot roll back records already
+// appended during a failed commit flush. Real clients rely on broker-native
+// transaction isolation and intentionally do not implement this interface.
+type atomicTransactionCommitter interface {
+	CommitBufferedTransaction(ctx context.Context, pending []pendingProduce) error
 }
 
 type config struct {
@@ -189,17 +198,19 @@ func (k *Kafka) Init(_ context.Context, cfg map[string]any) error {
 	if k.cfg.Timeout <= 0 {
 		k.cfg.Timeout = 5 * time.Second
 	}
+	valueSerde, err := buildSerde(k.cfg)
+	if err != nil {
+		return err
+	}
 	if k.cfg.Mock {
-		k.client = mockClient{broker: sharedBroker}
+		namespace := stringValue(cfg, "runtime_mock_namespace")
+		sharedBroker.acquire(namespace)
+		k.client = mockClient{broker: sharedBroker, namespace: namespace, release: &sync.Once{}}
 	} else {
 		// The real network adapter is provided by the build-tagged seam
 		// (newRealClient). Default builds return an unavailable stub; build with
 		// -tags kafka_real to compile in the franz-go-backed client.
 		k.client = newRealClient(k.cfg)
-	}
-	valueSerde, err := buildSerde(k.cfg)
-	if err != nil {
-		return err
 	}
 	k.valueSerde = valueSerde
 	k.session = messaging.New[string](messaging.ParseAckMode(""))
@@ -491,16 +502,24 @@ func (k *Kafka) commitTransaction(ctx context.Context, result *protocol.Result) 
 	if !k.txOpen {
 		return fmt.Errorf("no open kafka transaction to commit")
 	}
-	for _, p := range k.txBuffer {
-		if _, err := k.client.Produce(ctx, p.topic, p.rec); err != nil {
+	if committer, ok := k.client.(atomicTransactionCommitter); ok {
+		if err := committer.CommitBufferedTransaction(ctx, k.txBuffer); err != nil {
 			_ = k.client.AbortTransaction(ctx)
 			k.txOpen, k.txBuffer = false, nil
 			return err
 		}
-	}
-	if err := k.client.CommitTransaction(ctx); err != nil {
-		k.txOpen, k.txBuffer = false, nil
-		return err
+	} else {
+		for _, p := range k.txBuffer {
+			if _, err := k.client.Produce(ctx, p.topic, p.rec); err != nil {
+				_ = k.client.AbortTransaction(ctx)
+				k.txOpen, k.txBuffer = false, nil
+				return err
+			}
+		}
+		if err := k.client.CommitTransaction(ctx); err != nil {
+			k.txOpen, k.txBuffer = false, nil
+			return err
+		}
 	}
 	n := len(k.txBuffer)
 	k.txOpen, k.txBuffer = false, nil

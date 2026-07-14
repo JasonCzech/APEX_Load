@@ -1,7 +1,8 @@
-import { forwardRef, lazy, Suspense, type CSSProperties, type MouseEventHandler, useEffect, useMemo, useState } from 'react'
+import { forwardRef, lazy, Suspense, type CSSProperties, type MouseEventHandler, useMemo, useRef, useState } from 'react'
 import LazyLoadBoundary from './LazyLoadBoundary'
 
 import type { MetricsHistoryPoint } from '../types'
+import { useModalDialog } from '../hooks/useModalDialog'
 import {
   LOAD_IMPACT_METRICS,
   buildLoadImpactModel,
@@ -76,6 +77,8 @@ const LoadImpactHeatmap = forwardRef<HTMLElement, Props>(function LoadImpactHeat
   const [selectedBucketIds, setSelectedBucketIds] = useState<string[] | null>(null)
   const [sortState, setSortState] = useState<LoadImpactSortState | null>(null)
   const [highlightedAxis, setHighlightedAxis] = useState<{ metricId: string; bucketId: string } | null>(null)
+  const drawerRef = useRef<HTMLElement | null>(null)
+  const drawerCloseButtonRef = useRef<HTMLButtonElement | null>(null)
   const model = useMemo(() => buildLoadImpactModel(points), [points])
   const availableMetricIds = useMemo(() => model.rows.map(row => row.metric.id), [model.rows])
   const availableBucketIds = useMemo(() => model.buckets.map(bucket => bucket.id), [model.buckets])
@@ -100,17 +103,12 @@ const LoadImpactHeatmap = forwardRef<HTMLElement, Props>(function LoadImpactHeat
   const availableMetricIdSet = useMemo(() => new Set(availableMetricIds), [availableMetricIds])
   const unavailableMetricCount = LOAD_IMPACT_METRICS.filter(metric => !availableMetricIdSet.has(metric.id)).length
 
-  useEffect(() => {
-    if (!drawerOpen) return
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setDrawerOpen(false)
-      }
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [drawerOpen])
+  useModalDialog({
+    dialogRef: drawerRef,
+    enabled: drawerOpen,
+    initialFocusRef: drawerCloseButtonRef,
+    onClose: () => setDrawerOpen(false),
+  })
 
   const resetConfiguration = () => {
     setSelectedMetricIds(null)
@@ -452,13 +450,13 @@ const LoadImpactHeatmap = forwardRef<HTMLElement, Props>(function LoadImpactHeat
             aria-label="Close heatmap configuration"
             onClick={() => setDrawerOpen(false)}
           />
-          <aside className="load-impact-graph-drawer" role="dialog" aria-modal="true" aria-label="Load impact heatmap configuration">
+          <aside ref={drawerRef} className="load-impact-graph-drawer" role="dialog" aria-modal="true" aria-label="Load impact heatmap configuration">
             <div className="load-impact-graph-drawer-header">
               <div>
                 <h3>Heatmap Configuration</h3>
                 <p>Choose which metrics and VUser load points are displayed in this heatmap.</p>
               </div>
-              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setDrawerOpen(false)}>Close</button>
+              <button ref={drawerCloseButtonRef} type="button" className="btn btn-secondary btn-sm" onClick={() => setDrawerOpen(false)}>Close</button>
             </div>
             <div className="load-impact-graph-drawer-actions">
               <button type="button" className="btn btn-secondary btn-sm" onClick={resetConfiguration}>

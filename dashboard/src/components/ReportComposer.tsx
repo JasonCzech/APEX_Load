@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import Logo from './Logo'
 import MarkdownRenderer from './MarkdownRenderer'
 import ReportCharts from './ReportCharts'
 import { useApi } from '../hooks/useApi'
+import { useModalDialog } from '../hooks/useModalDialog'
+import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { downloadBlob } from '../utils/fileUtils'
 import { getErrorMessage } from '../utils/errorUtils'
 import { ReportAnnotations, ReportCommentarySection, ReportFinding, RunArchiveIntegrityReport, RunArchiveReleaseTrendSummary, RunArchiveReport, RunArchiveReportProfile, TestNote } from '../types'
@@ -23,8 +25,28 @@ interface Props {
   onClose: () => void
 }
 
+type EditableReportAnnotations = Pick<
+  ReportAnnotations,
+  'title' | 'prepared_by' | 'executive_narrative' | 'section_comments' | 'verdict_override' | 'verdict_explanation' | 'findings'
+>
+
+function reportDraftSnapshot(annotations: EditableReportAnnotations): string {
+  return JSON.stringify({
+    title: annotations.title || '',
+    prepared_by: annotations.prepared_by || '',
+    executive_narrative: annotations.executive_narrative || '',
+    section_comments: Object.fromEntries(Object.entries(annotations.section_comments || {}).sort(([left], [right]) => left.localeCompare(right))),
+    verdict_override: annotations.verdict_override || '',
+    verdict_explanation: annotations.verdict_explanation || '',
+    findings: annotations.findings || [],
+  })
+}
+
 export default function ReportComposer({ testId, testName, profile, onClose }: Props) {
   const api = useApi()
+  const { runGuarded } = useNavigationGuardRunner()
+  const dialogRef = useRef<HTMLDivElement | null>(null)
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null)
 
   const [report, setReport] = useState<RunArchiveReport | null>(null)
   const [integrity, setIntegrity] = useState<RunArchiveIntegrityReport | null>(null)
@@ -46,6 +68,7 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [status, setStatus] = useState('')
+  const [savedDraftSnapshot, setSavedDraftSnapshot] = useState<string | null>(null)
 
   const applyAnnotations = useCallback((annotations: ReportAnnotations) => {
     setTitle(annotations.title || '')
@@ -56,6 +79,7 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
     setVerdictExplanation(annotations.verdict_explanation || '')
     setFindings(annotations.findings || [])
     setUpdatedBy(annotations.updated_by || '')
+    setSavedDraftSnapshot(reportDraftSnapshot(annotations))
   }, [])
 
   const addFinding = useCallback(() => {
@@ -144,6 +168,31 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
     }
   }, [api, testId, profile, title, preparedBy, narrative, comments, verdictOverride, verdictExplanation, findings, applyAnnotations])
 
+  const currentDraftSnapshot = useMemo(() => reportDraftSnapshot({
+    title,
+    prepared_by: preparedBy,
+    executive_narrative: narrative,
+    section_comments: comments,
+    verdict_override: verdictOverride,
+    verdict_explanation: verdictExplanation,
+    findings,
+  }), [comments, findings, narrative, preparedBy, title, verdictExplanation, verdictOverride])
+  const isDirty = savedDraftSnapshot !== null && currentDraftSnapshot !== savedDraftSnapshot
+  const isDirtyRef = useRef(isDirty)
+  const persistRef = useRef(persist)
+  isDirtyRef.current = isDirty
+  persistRef.current = persist
+  const navigationGuard = useMemo<NavigationGuard>(() => ({
+    id: `report-composer-${testId}-${profile}`,
+    label: `${PROFILE_LABEL[profile] || profile} Report`,
+    isDirty: () => isDirtyRef.current,
+    save: () => persistRef.current(),
+    discard: () => undefined,
+  }), [profile, testId])
+  useNavigationGuard(navigationGuard, isDirty)
+  const handleClose = useCallback(() => runGuarded(onClose), [onClose, runGuarded])
+  useModalDialog({ dialogRef, initialFocusRef: closeButtonRef, onClose: handleClose })
+
   const handleDownloadHtml = useCallback(async () => {
     if (!(await persist())) return
     try {
@@ -156,7 +205,7 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
   }, [api, persist, testId, testName, profile])
 
   const handlePrint = useCallback(async () => {
-    await persist()
+    if (!(await persist())) return
     window.print()
   }, [persist])
 
@@ -239,10 +288,10 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
   }, [selectedNote])
 
   return (
-    <div className="report-composer-overlay" role="dialog" aria-modal="true" aria-label="Report composer">
+    <div ref={dialogRef} className="report-composer-overlay" role="dialog" aria-modal="true" aria-label="Report composer">
       <div className="report-toolbar">
         <div className="report-toolbar-left">
-          <button type="button" className="btn btn-secondary" onClick={onClose}>Close</button>
+          <button ref={closeButtonRef} type="button" className="btn btn-secondary" onClick={handleClose}>Close</button>
           <span className="report-toolbar-title">{profileLabel} · {testName}</span>
         </div>
         <div className="report-toolbar-right">

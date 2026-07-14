@@ -32,6 +32,21 @@ type authoringSessionFailureStore struct {
 	err                error
 }
 
+func seedAuthoringScriptProjects(t *testing.T, store *storage.SQLiteStore, projectIDs ...string) {
+	t.Helper()
+	now := time.Now().UTC()
+	for _, projectID := range projectIDs {
+		if err := store.SaveProject(&storage.Project{
+			ID:        projectID,
+			Name:      projectID,
+			CreatedAt: now,
+			UpdatedAt: now,
+		}); err != nil {
+			t.Fatalf("SaveProject(%s): %v", projectID, err)
+		}
+	}
+}
+
 func (s *authoringSessionFailureStore) SaveAuthoringSession(session *storage.AuthoringSession) error {
 	s.authoringSaveCalls++
 	if s.failOnCall > 0 && s.authoringSaveCalls == s.failOnCall {
@@ -4161,6 +4176,7 @@ func TestApproveAuthoringSessionPromotesDraftToScriptLibrary(t *testing.T) {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
 	defer store.Close()
+	seedAuthoringScriptProjects(t, store, "project-authoring")
 	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
 	body := []byte(`{
 		"project_id":"project-authoring",
@@ -4271,6 +4287,7 @@ func TestApproveAuthoringSessionFailsClosedWhenSessionPersistenceFails(t *testin
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
 	defer baseStore.Close()
+	seedAuthoringScriptProjects(t, baseStore, "project-authoring")
 	wantErr := errors.New("authoring database unavailable")
 	store := &authoringSessionFailureStore{SQLiteStore: baseStore, err: wantErr}
 	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
@@ -4432,6 +4449,7 @@ func TestConcurrentAuthoringApprovalsConvergeOnOneScript(t *testing.T) {
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
 	defer baseStore.Close()
+	seedAuthoringScriptProjects(t, baseStore, "project-authoring")
 	server := NewServer(ServerConfig{Store: baseStore, MaxConcurrent: 2, Addr: ":8080"})
 	session := &storage.AuthoringSession{
 		ID:        "concurrent-approval",
@@ -4501,6 +4519,7 @@ func TestAuthoringApprovalCannotOverwriteClientSelectedScriptID(t *testing.T) {
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
 	defer store.Close()
+	seedAuthoringScriptProjects(t, store, "project-authoring")
 	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
 	victim := &dsl.Script{
 		ID: "existing-library-script", Name: "Existing", Version: "1.0.0", Protocol: "http", ProjectID: "project-authoring",
@@ -4543,6 +4562,7 @@ func TestAuthoringApprovalCreateOnlyFenceProtectsDurableScriptFromStaleReplica(t
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
 	defer store.Close()
+	seedAuthoringScriptProjects(t, store, "project-authoring", "another-project")
 	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
 	sessionID := "stale-replica-approval"
 	reservedID := authoringApprovalScriptID(sessionID)
@@ -4587,6 +4607,7 @@ func TestCreateScriptDurableAlwaysConsultsSharedStore(t *testing.T) {
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
 	defer store.Close()
+	seedAuthoringScriptProjects(t, store, "project-authoring")
 	runner := NewTestRunner(1, NewHub(), nil)
 	runner.scriptStore = store
 	original := &dsl.Script{
@@ -4669,6 +4690,7 @@ func TestApprovedAuthoringRetryReturnsCurrentDurableScriptWithoutRevertingEdits(
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
 	defer store.Close()
+	seedAuthoringScriptProjects(t, store, "project-authoring")
 	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
 	session := &storage.AuthoringSession{
 		ID: "approved-retry-current-script", ProjectID: "project-authoring", Source: "test", Name: "Draft", Status: "ready",

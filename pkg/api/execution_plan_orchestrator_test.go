@@ -2,7 +2,9 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -10,12 +12,81 @@ import (
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
+type commitThenErrorExecutionPlanRunStore struct {
+	base      *storage.SQLiteStore
+	mu        sync.Mutex
+	casCalls  int
+	failOnCAS int
+}
+
+type errorBeforeCommitExecutionPlanRunStore struct {
+	base      *storage.SQLiteStore
+	mu        sync.Mutex
+	casCalls  int
+	failOnCAS int
+}
+
+func (s *errorBeforeCommitExecutionPlanRunStore) SaveExecutionPlanRun(run *storage.ExecutionPlanRun) error {
+	return s.base.SaveExecutionPlanRun(run)
+}
+
+func (s *errorBeforeCommitExecutionPlanRunStore) GetExecutionPlanRun(id string) (*storage.ExecutionPlanRun, error) {
+	return s.base.GetExecutionPlanRun(id)
+}
+
+func (s *errorBeforeCommitExecutionPlanRunStore) ListExecutionPlanRuns(planID string, limit, offset int) ([]*storage.ExecutionPlanRun, error) {
+	return s.base.ListExecutionPlanRuns(planID, limit, offset)
+}
+
+func (s *errorBeforeCommitExecutionPlanRunStore) CreateExecutionPlanRunIfAbsent(run *storage.ExecutionPlanRun) (bool, error) {
+	return s.base.CreateExecutionPlanRunIfAbsent(run)
+}
+
+func (s *errorBeforeCommitExecutionPlanRunStore) CompareAndSwapExecutionPlanRun(run *storage.ExecutionPlanRun, expectedRevision int64) (bool, error) {
+	s.mu.Lock()
+	s.casCalls++
+	call := s.casCalls
+	s.mu.Unlock()
+	if call == s.failOnCAS {
+		return false, errors.New("simulated ambiguous CAS response before local commit")
+	}
+	return s.base.CompareAndSwapExecutionPlanRun(run, expectedRevision)
+}
+
+func (s *commitThenErrorExecutionPlanRunStore) SaveExecutionPlanRun(run *storage.ExecutionPlanRun) error {
+	return s.base.SaveExecutionPlanRun(run)
+}
+
+func (s *commitThenErrorExecutionPlanRunStore) GetExecutionPlanRun(id string) (*storage.ExecutionPlanRun, error) {
+	return s.base.GetExecutionPlanRun(id)
+}
+
+func (s *commitThenErrorExecutionPlanRunStore) ListExecutionPlanRuns(planID string, limit, offset int) ([]*storage.ExecutionPlanRun, error) {
+	return s.base.ListExecutionPlanRuns(planID, limit, offset)
+}
+
+func (s *commitThenErrorExecutionPlanRunStore) CreateExecutionPlanRunIfAbsent(run *storage.ExecutionPlanRun) (bool, error) {
+	return s.base.CreateExecutionPlanRunIfAbsent(run)
+}
+
+func (s *commitThenErrorExecutionPlanRunStore) CompareAndSwapExecutionPlanRun(run *storage.ExecutionPlanRun, expectedRevision int64) (bool, error) {
+	updated, err := s.base.CompareAndSwapExecutionPlanRun(run, expectedRevision)
+	s.mu.Lock()
+	s.casCalls++
+	call := s.casCalls
+	s.mu.Unlock()
+	if err == nil && updated && call == s.failOnCAS {
+		return false, errors.New("simulated lost commit response")
+	}
+	return updated, err
+}
+
 func TestBuildPlanEntryCreateRequest(t *testing.T) {
 	entryTS := "slot-entry"
 	planTS := "slot-plan"
 
 	// Entry-level timeslot wins; data pools + runtime overrides pass through.
-	req := buildPlanEntryCreateRequest("Nightly", "proj-a", &planTS, storage.ExecutionPlanEntry{
+	req, err := buildPlanEntryCreateRequest("Nightly", "proj-a", &planTS, storage.ExecutionPlanEntry{
 		Order:            0,
 		ScenarioID:       "scn-1",
 		ScenarioName:     "Checkout",
@@ -25,6 +96,9 @@ func TestBuildPlanEntryCreateRequest(t *testing.T) {
 			{ID: "b1", PoolID: "pool-9", Alias: "users"},
 		},
 	})
+	if err != nil {
+		t.Fatalf("buildPlanEntryCreateRequest: %v", err)
+	}
 	if req.ScenarioID != "scn-1" || req.ProjectID != "proj-a" {
 		t.Fatalf("scenario/project not mapped: %+v", req)
 	}
@@ -42,15 +116,146 @@ func TestBuildPlanEntryCreateRequest(t *testing.T) {
 	}
 
 	// Falls back to the plan-level timeslot when the entry has none.
-	req = buildPlanEntryCreateRequest("Nightly", "proj-a", &planTS, storage.ExecutionPlanEntry{ScenarioID: "scn-2"})
+	req, err = buildPlanEntryCreateRequest("Nightly", "proj-a", &planTS, storage.ExecutionPlanEntry{ScenarioID: "scn-2"})
+	if err != nil {
+		t.Fatalf("buildPlanEntryCreateRequest fallback: %v", err)
+	}
 	if req.TimeslotID == nil || *req.TimeslotID != "slot-plan" {
 		t.Fatalf("plan timeslot fallback failed: %+v", req.TimeslotID)
 	}
 
 	// No timeslot anywhere → nil.
-	req = buildPlanEntryCreateRequest("Nightly", "proj-a", nil, storage.ExecutionPlanEntry{ScenarioID: "scn-3"})
+	req, err = buildPlanEntryCreateRequest("Nightly", "proj-a", nil, storage.ExecutionPlanEntry{ScenarioID: "scn-3"})
+	if err != nil {
+		t.Fatalf("buildPlanEntryCreateRequest no timeslot: %v", err)
+	}
 	if req.TimeslotID != nil {
 		t.Fatalf("expected nil timeslot, got %+v", req.TimeslotID)
+	}
+
+	if _, err := buildPlanEntryCreateRequest("Nightly", "proj-a", nil, storage.ExecutionPlanEntry{ScenarioID: "scn-bad", RuntimeOverrides: json.RawMessage(`{"iterations":`)}); err == nil {
+		t.Fatal("malformed runtime overrides must fail")
+	}
+}
+
+func TestSequentialPlanReconcilesLostCASResponseWithoutDeletingCommittedTest(t *testing.T) {
+	runner, backend, scenarioIDs := newPlanTestRunner(t, "lost-response")
+	base, ok := runner.execPlanRunStore.(*storage.SQLiteStore)
+	if !ok {
+		t.Fatalf("plan store type = %T, want *storage.SQLiteStore", runner.execPlanRunStore)
+	}
+	// CAS 1 claims the entry; CAS 2 attaches its queued test. Simulate the
+	// database committing CAS 2 while its success response is lost.
+	runner.execPlanRunStore = &commitThenErrorExecutionPlanRunStore{base: base, failOnCAS: 2}
+	plan := &storage.ExecutionPlan{
+		ID: "plan-lost-sequential", ProjectID: "project-a", Name: "Lost response", RunMode: "sequential",
+		Entries: []storage.ExecutionPlanEntry{{Order: 0, ScenarioID: scenarioIDs[0]}},
+	}
+	run, err := runner.StartExecutionPlanRun(plan, "", "")
+	if err != nil {
+		t.Fatalf("StartExecutionPlanRun: %v", err)
+	}
+	startedID, started := waitForStart(t, backend, time.Second)
+	if !started {
+		t.Fatal("committed entry was not launched after CAS reconciliation")
+	}
+	if len(run.Entries) != 1 || run.Entries[0].TestID != startedID {
+		t.Fatalf("run entries = %+v, started test = %s", run.Entries, startedID)
+	}
+	if _, ok := runner.GetTest(startedID); !ok {
+		t.Fatalf("committed test %s was deleted after a lost response", startedID)
+	}
+}
+
+func TestParallelPlanReconcilesLostFinalCASResponse(t *testing.T) {
+	runner, _, scenarioIDs := newPlanTestRunner(t, "parallel-lost-response")
+	base, ok := runner.execPlanRunStore.(*storage.SQLiteStore)
+	if !ok {
+		t.Fatalf("plan store type = %T, want *storage.SQLiteStore", runner.execPlanRunStore)
+	}
+	runner.execPlanRunStore = &commitThenErrorExecutionPlanRunStore{base: base, failOnCAS: 1}
+	plan := &storage.ExecutionPlan{
+		ID: "plan-lost-parallel", ProjectID: "project-a", Name: "Lost response", RunMode: "parallel",
+		Entries: []storage.ExecutionPlanEntry{{Order: 0, ScenarioID: scenarioIDs[0]}},
+	}
+	result, err := runner.MaterializeAndRunExecutionPlan(plan, "", "")
+	if err != nil {
+		t.Fatalf("MaterializeAndRunExecutionPlan: %v", err)
+	}
+	if result.Created != 1 || len(result.Results) != 1 || result.Results[0].TestID == "" {
+		t.Fatalf("materialization result = %+v", result)
+	}
+	if _, ok := runner.GetTest(result.Results[0].TestID); !ok {
+		t.Fatalf("committed test %s was deleted after a lost response", result.Results[0].TestID)
+	}
+}
+
+func TestSequentialPlanRetriesAmbiguousEntryClaimBeforeMaterialization(t *testing.T) {
+	runner, backend, scenarioIDs := newPlanTestRunner(t, "ambiguous-claim")
+	base := runner.execPlanRunStore.(*storage.SQLiteStore)
+	runner.execPlanRunStore = &errorBeforeCommitExecutionPlanRunStore{base: base, failOnCAS: 1}
+	plan := &storage.ExecutionPlan{
+		ID: "plan-ambiguous-claim", ProjectID: "project-a", Name: "Ambiguous claim", RunMode: "sequential",
+		Entries: []storage.ExecutionPlanEntry{{Order: 0, ScenarioID: scenarioIDs[0]}},
+	}
+
+	if _, err := runner.StartExecutionPlanRun(plan, "", ""); !errors.Is(err, errExecutionPlanRunCommitUnknown) {
+		t.Fatalf("StartExecutionPlanRun error = %v, want commit-unknown", err)
+	}
+	startedID, started := waitForStart(t, backend, 3*time.Second)
+	if !started {
+		t.Fatal("ambiguous claim retry did not eventually materialize the entry")
+	}
+	runs, err := base.ListExecutionPlanRuns(plan.ID, 0, 0)
+	if err != nil {
+		t.Fatalf("ListExecutionPlanRuns: %v", err)
+	}
+	var fresh *storage.ExecutionPlanRun
+	if len(runs) == 1 {
+		fresh = runs[0]
+	}
+	if fresh == nil || len(fresh.Entries) != 1 || fresh.Entries[0].TestID != startedID {
+		t.Fatalf("durable run = %+v, want started test %s", fresh, startedID)
+	}
+}
+
+func TestParallelPlanRetainsTestsWhileAmbiguousFinalCASRetries(t *testing.T) {
+	runner, _, scenarioIDs := newPlanTestRunner(t, "ambiguous-parallel")
+	base := runner.execPlanRunStore.(*storage.SQLiteStore)
+	runner.execPlanRunStore = &errorBeforeCommitExecutionPlanRunStore{base: base, failOnCAS: 1}
+	plan := &storage.ExecutionPlan{
+		ID: "plan-ambiguous-parallel", ProjectID: "project-a", Name: "Ambiguous parallel", RunMode: "parallel",
+		Entries: []storage.ExecutionPlanEntry{{Order: 0, ScenarioID: scenarioIDs[0]}},
+	}
+
+	if _, err := runner.MaterializeAndRunExecutionPlan(plan, "", ""); !errors.Is(err, errExecutionPlanRunCommitUnknown) {
+		t.Fatalf("MaterializeAndRunExecutionPlan error = %v, want commit-unknown", err)
+	}
+	tests := runner.ListTests()
+	if len(tests) != 1 {
+		t.Fatalf("staged tests = %d, want retained test while commit is unknown", len(tests))
+	}
+	testID := tests[0].ID
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		runs, err := base.ListExecutionPlanRuns(plan.ID, 0, 0)
+		if err != nil {
+			t.Fatalf("ListExecutionPlanRuns: %v", err)
+		}
+		var fresh *storage.ExecutionPlanRun
+		if len(runs) == 1 {
+			fresh = runs[0]
+		}
+		if fresh != nil && fresh.Status == "completed" && len(fresh.Entries) == 1 && fresh.Entries[0].TestID == testID {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("ambiguous final CAS was not reconciled; run=%+v", fresh)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if _, ok := runner.GetTest(testID); !ok {
+		t.Fatalf("staged test %s was deleted during ambiguous commit reconciliation", testID)
 	}
 }
 
@@ -67,6 +272,16 @@ func newPlanTestRunner(t *testing.T, scenarioLabels ...string) (*TestRunner, *ex
 	runner := NewTestRunner(10, NewHub(), store)
 	spy := &executionBackendSpy{called: make(chan string, 8)}
 	runner.setExecutionBackend(spy)
+
+	// The plan fixtures below intentionally exercise two distinct project IDs.
+	// Seed both ownership rows so the tests reach orchestration behavior instead
+	// of failing test persistence at the projects foreign-key boundary.
+	now := time.Now().UTC()
+	for _, projectID := range []string{"proj-a", "project-a"} {
+		if err := store.SaveProject(&storage.Project{ID: projectID, Name: projectID, CreatedAt: now, UpdatedAt: now}); err != nil {
+			t.Fatalf("SaveProject(%s): %v", projectID, err)
+		}
+	}
 
 	ids := make([]string, 0, len(scenarioLabels))
 	for _, label := range scenarioLabels {
@@ -123,6 +338,9 @@ func TestSequentialPlanRunHaltsWhenEntryFailsSynchronously(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	if err := store.SaveProject(&storage.Project{ID: "proj-a", Name: "Project A", CreatedAt: time.Now().UTC()}); err != nil {
+		t.Fatalf("SaveProject: %v", err)
 	}
 	runner := NewTestRunner(10, NewHub(), store)
 	runner.setExecutionBackend(syncFailBackend{msg: "no generator targets configured"})

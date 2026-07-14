@@ -1391,7 +1391,7 @@ Aliases: `tcp_send`, `winsock_tcp`
 |-------|------|----------|-------------|
 | `target` | string | yes | Destination address host:port; defaults to the configured endpoint when set. |
 | `body` | string |  | Bytes to send; template variables are expanded. |
-| `params.read_bytes` | int |  | Bytes to read back; zero or greater. |
+| `params.read_bytes` | int |  | Bytes to read back; 0 through 1048576. |
 | `params.timeout_ms` | int |  | Socket timeout in milliseconds; zero or greater. |
 
 ### `udp_request`
@@ -1404,7 +1404,7 @@ Aliases: `udp_send`, `winsock_udp`
 |-------|------|----------|-------------|
 | `target` | string | yes | Destination address host:port; defaults to the configured endpoint when set. |
 | `body` | string |  | Bytes to send; template variables are expanded. |
-| `params.read_bytes` | int |  | Bytes to read back; zero or greater. |
+| `params.read_bytes` | int |  | Bytes to read back; 0 through 1048576. |
 | `params.timeout_ms` | int |  | Socket timeout in milliseconds; zero or greater. |
 
 ## Protocol: sap_gui

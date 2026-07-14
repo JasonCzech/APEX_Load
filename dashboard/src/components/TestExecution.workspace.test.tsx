@@ -186,6 +186,32 @@ describe('TestExecution workspace layout', () => {
     expect(container.textContent).toContain('Archive Empty Content transactions')
   })
 
+  it('feeds archived summary points into the runtime chart model', async () => {
+    const archivedPoint = {
+      time: '8:00:00 PM',
+      timestampMs: Date.parse('2026-05-12T20:00:00Z'),
+      vusers: 10,
+      tps: 23,
+      avgMs: 145,
+      errorPct: 1.5,
+      p50: 100,
+      p90: 170,
+      p95: 190,
+      p99: 240,
+    }
+    hookMocks.useExecutionArchiveSummaryHistory.mockReturnValue({
+      archiveSummaryHistory: [archivedPoint],
+      archiveSummaryError: '',
+      archiveSummariesLoading: false,
+    })
+
+    await renderExecution()
+
+    expect(hookMocks.useExecutionChartModel).toHaveBeenLastCalledWith(expect.objectContaining({
+      archiveSummaryHistory: [archivedPoint],
+    }))
+  })
+
   it('opens the requested archive workspace tab without changing the default layout', async () => {
     await renderExecution({ initialWorkspaceTabId: 'archive' })
 

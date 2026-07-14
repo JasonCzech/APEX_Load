@@ -109,6 +109,15 @@ func TestPostgresForeignKeyStatementsAreFencedAndValidated(t *testing.T) {
 	add := postgresAddForeignKeyStatement(spec)
 	for _, fragment := range []string{
 		"pg_constraint",
+		"pg_get_constraintdef",
+		"constraint_matches",
+		`confrelid = 'execution_plan_schedules'::regclass`,
+		`confdeltype = 'a'`,
+		`confupdtype = 'a'`,
+		`confmatchtype = 's'`,
+		`NOT constraint_row.condeferrable`,
+		`NOT constraint_row.condeferred`,
+		`DROP CONSTRAINT`,
 		"EXCEPTION WHEN duplicate_object",
 		"FOREIGN KEY (\"schedule_id\")",
 		"REFERENCES \"execution_plan_schedules\" (\"id\")",

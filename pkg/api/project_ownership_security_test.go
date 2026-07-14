@@ -179,6 +179,9 @@ func TestProjectAccessResolversReconcileAllReferencedObjects(t *testing.T) {
 	}
 	defer store.Close()
 	now := time.Now().UTC()
+	if err := store.SaveProject(&storage.Project{ID: "project-b", Name: "Project B", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveProject returned error: %v", err)
+	}
 	if err := store.SaveScript(projectSecurityScript("resolver-script-b", "project-b")); err != nil {
 		t.Fatalf("SaveScript returned error: %v", err)
 	}

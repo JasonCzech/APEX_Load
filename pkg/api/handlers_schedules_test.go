@@ -19,15 +19,21 @@ func TestHandleScenarioScheduleCRUD(t *testing.T) {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
 	defer store.Close()
+	seededAt := time.Now().UTC()
+	if err := store.SaveProject(&storage.Project{ID: "project-schedule", Name: "Schedule", CreatedAt: seededAt, UpdatedAt: seededAt}); err != nil {
+		t.Fatalf("SaveProject returned error: %v", err)
+	}
 	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
-	server.runner.StoreScript(&dsl.Script{
+	if _, err := server.runner.StoreScriptDurable(&dsl.Script{
 		ID:        "script-schedule-api",
 		Name:      "Scenario API Script",
 		ProjectID: "project-schedule",
 		Protocol:  "http",
 		Version:   "1.0.0",
 		Actions:   []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
-	})
+	}); err != nil {
+		t.Fatalf("StoreScriptDurable returned error: %v", err)
+	}
 	scenario, err := server.runner.StoreScenario(CreateScenarioRequest{
 		Name:     "Checkout Scenario",
 		Duration: "2m",
@@ -102,6 +108,16 @@ func TestHandleScenarioScheduleCRUD(t *testing.T) {
 		t.Fatalf("list payload = %#v, want exactly one schedule", listed)
 	}
 	plannedAt := time.Date(2026, time.May, 18, 9, 0, 0, 0, time.UTC)
+	if err := store.SaveTest(&storage.TestRecord{
+		ID:         "test-scheduled",
+		Name:       "Scheduled Checkout",
+		Status:     "COMPLETE",
+		ScenarioID: scenario.ID,
+		ProjectID:  "project-schedule",
+		StartTime:  plannedAt,
+	}); err != nil {
+		t.Fatalf("SaveTest returned error: %v", err)
+	}
 	if err := store.SaveScenarioScheduleOccurrence(&storage.ScenarioScheduleOccurrence{
 		ID:               "occurrence-1",
 		ScheduleID:       created.ID,
@@ -331,16 +347,22 @@ func TestHandleScenarioCRUDWritesAuditEvents(t *testing.T) {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
 	defer store.Close()
+	seededAt := time.Now().UTC()
+	if err := store.SaveProject(&storage.Project{ID: "project-scenario", Name: "Scenario", CreatedAt: seededAt, UpdatedAt: seededAt}); err != nil {
+		t.Fatalf("SaveProject returned error: %v", err)
+	}
 
 	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
-	server.runner.StoreScript(&dsl.Script{
+	if _, err := server.runner.StoreScriptDurable(&dsl.Script{
 		ID:        "script-scenario-api",
 		Name:      "Scenario CRUD Script",
 		ProjectID: "project-scenario",
 		Protocol:  "http",
 		Version:   "1.0.0",
 		Actions:   []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
-	})
+	}); err != nil {
+		t.Fatalf("StoreScriptDurable returned error: %v", err)
+	}
 
 	createBody := bytes.NewBufferString(`{"name":"Checkout Scenario","duration":"2m","groups":[{"script_id":"script-scenario-api","vusers":1}]}`)
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/scenarios", createBody)
@@ -396,11 +418,17 @@ func TestScenarioScheduleOpenEndedPauseSaves(t *testing.T) {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
 	defer store.Close()
+	seededAt := time.Now().UTC()
+	if err := store.SaveProject(&storage.Project{ID: "project-pause", Name: "Pause", CreatedAt: seededAt, UpdatedAt: seededAt}); err != nil {
+		t.Fatalf("SaveProject returned error: %v", err)
+	}
 	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
-	server.runner.StoreScript(&dsl.Script{
+	if _, err := server.runner.StoreScriptDurable(&dsl.Script{
 		ID: "script-pause", Name: "Pause Script", ProjectID: "project-pause", Protocol: "http",
 		Version: "1.0.0", Actions: []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
-	})
+	}); err != nil {
+		t.Fatalf("StoreScriptDurable returned error: %v", err)
+	}
 	scenario, err := server.runner.StoreScenario(CreateScenarioRequest{
 		Name: "Pause Scenario", Duration: "2m",
 		Groups: []CreateGroupEntry{{ScriptID: "script-pause", VUsers: 1}},

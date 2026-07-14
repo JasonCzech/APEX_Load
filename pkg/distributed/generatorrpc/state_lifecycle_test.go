@@ -5,10 +5,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	pb "github.com/jasonczech/apexload/api/proto"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/storage"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -306,6 +308,121 @@ func TestGeneratorRejectsCompletedTestIDReuseWhileArchiveIsRetained(t *testing.T
 	}
 }
 
+func TestGeneratorRehydratesCompletedArchivesAfterRestart(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", root)
+	const generatorID = "archive-restart"
+	writer, err := newArchiveRecorder(generatorID, "completed-run", "Completed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writer.Finalize("COMPLETE", time.Now().UTC(), ""); err != nil {
+		t.Fatal(err)
+	}
+
+	service := NewService(generatorID, 10, WithGeneratorStateLimits(10, 10, 24*time.Hour))
+	service.mu.RLock()
+	rehydrated := service.archiveRecords["completed-run"]
+	service.mu.RUnlock()
+	if rehydrated == nil || rehydrated.CompletedAt.IsZero() {
+		t.Fatalf("completed archive was not rehydrated: %+v", rehydrated)
+	}
+	ack, err := service.AssignWork(context.Background(), &pb.WorkAssignment{
+		TestId: "completed-run", GroupName: "group", ScriptId: "script", ScriptContent: []byte(`{"name":"script"}`), VuserCount: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ack.GetAccepted() || !strings.Contains(ack.GetErrorMessage(), "retained completed archive") {
+		t.Fatalf("reused archive assignment = %+v", ack)
+	}
+}
+
+func TestGeneratorArchiveWriterEnforcesByteAndFreeSpaceBounds(t *testing.T) {
+	t.Run("byte limit", func(t *testing.T) {
+		t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+		t.Setenv(envGeneratorArchiveMaxBytes, "128")
+		t.Setenv(envGeneratorArchiveMinFree, "1")
+		writer, err := newArchiveRecorder("quota-byte", "run", "Quota")
+		if err != nil {
+			t.Fatal(err)
+		}
+		result := &protocol.Result{ActionName: strings.Repeat("x", 512), StartTime: time.Now()}
+		if err := writer.RecordResult(result); err == nil || !strings.Contains(err.Error(), "byte limit") {
+			t.Fatalf("RecordResult error = %v, want byte limit", err)
+		}
+		_ = writer.Discard()
+	})
+	t.Run("free space reserve", func(t *testing.T) {
+		t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+		t.Setenv(envGeneratorArchiveMaxBytes, "1048576")
+		t.Setenv(envGeneratorArchiveMinFree, "9223372036854775807")
+		writer, err := newArchiveRecorder("quota-free", "run", "Quota")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := writer.RecordResult(&protocol.Result{ActionName: "x", StartTime: time.Now()}); err == nil || !strings.Contains(err.Error(), "free space") {
+			t.Fatalf("RecordResult error = %v, want free-space reserve", err)
+		}
+		_ = writer.Discard()
+	})
+}
+
+func TestGeneratorArchiveFinalizeEnforcesParquetQuotaAndCleansFailure(t *testing.T) {
+	for _, testCase := range []struct {
+		name      string
+		configure func(*generatorArchiveByteBudget)
+		wantError string
+	}{
+		{
+			name: "byte limit during parquet output",
+			configure: func(budget *generatorArchiveByteBudget) {
+				budget.maxBytes = budget.written
+			},
+			wantError: "write transaction parquet: generator archive exceeds byte limit",
+		},
+		{
+			name: "free-space reserve during parquet output",
+			configure: func(budget *generatorArchiveByteBudget) {
+				budget.minFreeBytes = int64(^uint64(0) >> 1)
+				budget.freeKnown = false
+				budget.nextFreeCheck = 0
+			},
+			wantError: "write transaction parquet: generator archive free space",
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+			t.Setenv(envGeneratorArchiveMaxBytes, "1073741824")
+			t.Setenv(envGeneratorArchiveMinFree, "1")
+			writer, err := newArchiveRecorder("parquet-quota-"+strings.ReplaceAll(testCase.name, " ", "-"), "run", "Quota")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := writer.RecordResult(&protocol.Result{ActionName: "action", StartTime: time.Now(), Success: true}); err != nil {
+				t.Fatal(err)
+			}
+			writer.byteBudget.mu.Lock()
+			testCase.configure(writer.byteBudget)
+			writer.byteBudget.mu.Unlock()
+			archivePath := writer.rootDir
+			_, err = writer.Finalize("COMPLETE", time.Now(), "")
+			if err == nil || !strings.Contains(err.Error(), testCase.wantError) {
+				t.Fatalf("Finalize error = %v, want %q", err, testCase.wantError)
+			}
+			if _, statErr := os.Stat(archivePath); !os.IsNotExist(statErr) {
+				t.Fatalf("failed parquet archive was not removed: %v", statErr)
+			}
+			if !writer.closed || writer.runRoot != nil {
+				t.Fatalf("failed recorder remained open: closed=%v runRoot=%v", writer.closed, writer.runRoot)
+			}
+			if err := writer.Discard(); err != nil {
+				t.Fatalf("idempotent Discard after failed Finalize: %v", err)
+			}
+		})
+	}
+}
+
 func TestGeneratorArchiveCleanupRefusesPathOutsideNamespace(t *testing.T) {
 	root := t.TempDir()
 	outside := filepath.Join(t.TempDir(), "outside")
@@ -320,7 +437,7 @@ func TestGeneratorArchiveCleanupRefusesPathOutsideNamespace(t *testing.T) {
 	}
 }
 
-func TestFailedGeneratorArchiveCanBeDiscardedWithoutDiskLeak(t *testing.T) {
+func TestFailedGeneratorArchiveFinalizationCleansWithoutDiskLeak(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("APEXLOAD_ARCHIVE_DIR", root)
 	writer, err := newArchiveRecorder("discard-generator", "discard-run", "Discard")
@@ -334,11 +451,11 @@ func TestFailedGeneratorArchiveCanBeDiscardedWithoutDiskLeak(t *testing.T) {
 	if _, err := writer.Finalize("COMPLETE", time.Now(), ""); err == nil {
 		t.Fatal("expected finalization with a closed transaction file to fail")
 	}
-	if err := writer.Discard(); err != nil {
-		t.Fatal(err)
-	}
 	if _, err := os.Stat(archivePath); !os.IsNotExist(err) {
 		t.Fatalf("failed archive directory remains: %v", err)
+	}
+	if err := writer.Discard(); err != nil {
+		t.Fatalf("idempotent Discard after failed Finalize: %v", err)
 	}
 }
 

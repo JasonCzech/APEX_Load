@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -58,6 +59,19 @@ type groupExecution struct {
 	engine    *engine.MultiGroupEngine
 	cancel    context.CancelFunc
 	results   *transactionBuffer
+	done      chan struct{}
+}
+
+const maxGeneratorDurationSeconds = int64(^uint64(0)>>1) / int64(time.Second)
+
+func validatedGeneratorDuration(seconds int64, field string, allowZero bool) (time.Duration, error) {
+	if seconds < 0 || (!allowZero && seconds == 0) {
+		return 0, fmt.Errorf("%s must be positive", field)
+	}
+	if seconds > maxGeneratorDurationSeconds {
+		return 0, fmt.Errorf("%s exceeds maximum %d", field, maxGeneratorDurationSeconds)
+	}
+	return time.Duration(seconds) * time.Second, nil
 }
 
 type transactionBuffer struct {
@@ -427,6 +441,8 @@ type Service struct {
 	subscribers         map[int]chan *pb.MetricsBatch
 	nextSubID           int
 	droppedBatches      atomic.Int64
+	shutdown            chan struct{}
+	shutdownOnce        sync.Once
 }
 
 func (s *Service) SetDraining(draining bool) {
@@ -477,6 +493,7 @@ func NewService(generatorID string, maxVUsers int, opts ...ServiceOption) *Servi
 		publishInterval:     time.Second,
 		completionTimers:    make(map[string]*time.Timer),
 		subscribers:         make(map[int]chan *pb.MetricsBatch),
+		shutdown:            make(chan struct{}),
 	}
 	if archiveNamespaceErr != nil {
 		slog.Error("initialize generator archive namespace", "generator_id", generatorID, "error", archiveNamespaceErr)
@@ -488,6 +505,34 @@ func NewService(generatorID string, maxVUsers int, opts ...ServiceOption) *Servi
 	}
 	service.sweepGeneratorArchiveDirectories(time.Now())
 	return service
+}
+
+// Shutdown stops active work, waits for engine goroutines to quiesce so their
+// archive sinks cannot race finalization, and releases long-lived metrics
+// streams so grpc.GracefulStop has a bounded path to completion.
+func (s *Service) Shutdown(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	s.SetDraining(true)
+	s.mu.RLock()
+	testIDs := make([]string, 0, len(s.assignments))
+	for testID := range s.assignments {
+		testIDs = append(testIDs, testID)
+	}
+	s.mu.RUnlock()
+	sort.Strings(testIDs)
+	var failures []error
+	for _, testID := range testIDs {
+		if _, err := s.StopTest(ctx, &pb.StopRequest{TestId: testID}); err != nil {
+			failures = append(failures, fmt.Errorf("stop test %s: %w", testID, err))
+		}
+		if ctx.Err() != nil {
+			break
+		}
+	}
+	s.shutdownOnce.Do(func() { close(s.shutdown) })
+	return errors.Join(failures...)
 }
 
 func (s *Service) DistributeScript(_ context.Context, payload *pb.ScriptPayload) (*pb.ScriptAck, error) {
@@ -520,6 +565,12 @@ func (s *Service) AssignWork(_ context.Context, assignment *pb.WorkAssignment) (
 	}
 	if assignment.GetVuserCount() < 0 {
 		return nil, status.Error(codes.InvalidArgument, "vuser_count must not be negative")
+	}
+	if _, err := validatedGeneratorDuration(assignment.GetTargetDurationSeconds(), "target_duration_seconds", true); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	if _, err := validatedGeneratorDuration(int64(assignment.GetRampUpSeconds()), "ramp_up_seconds", true); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 	assignmentBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(assignment)
 	if err != nil {
@@ -810,8 +861,9 @@ func (s *Service) AdjustDuration(_ context.Context, request *pb.DurationAdjustme
 	if request.GetTestId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "test_id is required")
 	}
-	if request.GetTargetDurationSeconds() <= 0 {
-		return nil, status.Error(codes.InvalidArgument, "target_duration_seconds must be positive")
+	duration, err := validatedGeneratorDuration(request.GetTargetDurationSeconds(), "target_duration_seconds", false)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
 	s.mu.Lock()
@@ -824,7 +876,7 @@ func (s *Service) AdjustDuration(_ context.Context, request *pb.DurationAdjustme
 	if s.executionEnabled {
 		if execs, ok := s.executions[request.GetTestId()]; ok {
 			for _, exec := range execs {
-				if err := exec.engine.AdjustDuration(time.Duration(request.GetTargetDurationSeconds()) * time.Second); err != nil {
+				if err := exec.engine.AdjustDuration(duration); err != nil {
 					return nil, status.Errorf(codes.FailedPrecondition, "adjust running duration: %v", err)
 				}
 			}
@@ -833,7 +885,7 @@ func (s *Service) AdjustDuration(_ context.Context, request *pb.DurationAdjustme
 	assignment.durationSeconds = request.GetTargetDurationSeconds()
 	s.assignments[request.GetTestId()] = assignment
 	if !s.executionEnabled {
-		s.scheduleCompletionLocked(assignment.testID, time.Duration(assignment.durationSeconds)*time.Second)
+		s.scheduleCompletionLocked(assignment.testID, duration)
 	}
 
 	return &pb.DurationAck{
@@ -842,7 +894,7 @@ func (s *Service) AdjustDuration(_ context.Context, request *pb.DurationAdjustme
 	}, nil
 }
 
-func (s *Service) StopTest(_ context.Context, request *pb.StopRequest) (*pb.StopAck, error) {
+func (s *Service) StopTest(ctx context.Context, request *pb.StopRequest) (*pb.StopAck, error) {
 	if request.GetTestId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "test_id is required")
 	}
@@ -875,14 +927,50 @@ func (s *Service) StopTest(_ context.Context, request *pb.StopRequest) (*pb.Stop
 	}
 	execs := s.executions[request.GetTestId()]
 	delete(s.executions, request.GetTestId())
+	writer := s.archiveWriters[request.GetTestId()]
+	delete(s.archiveWriters, request.GetTestId())
 	s.mu.Unlock()
 
+	executions := make([]*groupExecution, 0, len(execs))
 	for _, exec := range execs {
+		executions = append(executions, exec)
 		exec.cancel()
 	}
+	if err := waitForGeneratorExecutions(ctx, executions); err != nil {
+		go func() {
+			_ = waitForGeneratorExecutions(context.Background(), executions)
+			s.finishStoppedTest(request.GetTestId(), assignment, writer)
+		}()
+		return nil, status.Errorf(codes.DeadlineExceeded, "wait for stopped execution: %v", err)
+	}
+	_, finalError := s.finishStoppedTest(request.GetTestId(), assignment, writer)
+	if finalError != "" {
+		return nil, status.Error(codes.Internal, finalError)
+	}
+	return &pb.StopAck{Acknowledged: ok, PendingVusers: assignment.vuserCount}, nil
+}
+
+func waitForGeneratorExecutions(ctx context.Context, executions []*groupExecution) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	for _, execution := range executions {
+		if execution == nil || execution.done == nil {
+			continue
+		}
+		select {
+		case <-execution.done:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return nil
+}
+
+func (s *Service) finishStoppedTest(testID string, assignment assignedTest, writer *archiveRecorder) (string, string) {
 	finalState := "COMPLETE"
 	finalError := ""
-	if writer := s.takeArchiveWriter(request.GetTestId()); writer != nil {
+	if writer != nil {
 		err := s.finalizeArchiveWriter(writer, "COMPLETE", time.Now(), "")
 		if err != nil {
 			finalState = "FAILED"
@@ -890,15 +978,9 @@ func (s *Service) StopTest(_ context.Context, request *pb.StopRequest) (*pb.Stop
 		}
 	}
 
-	batch := s.metricsBatchForState(request.GetTestId(), 0, false, assignment.groups, finalState, finalError)
+	batch := s.metricsBatchForState(testID, 0, false, assignment.groups, finalState, finalError)
 	go s.broadcastMetrics(batch)
-	if finalError != "" {
-		return nil, status.Error(codes.Internal, finalError)
-	}
-	return &pb.StopAck{
-		Acknowledged:  ok,
-		PendingVusers: assignment.vuserCount,
-	}, nil
+	return finalState, finalError
 }
 
 func (s *Service) StreamMetrics(stream pb.GeneratorControl_StreamMetricsServer) error {
@@ -938,6 +1020,8 @@ func (s *Service) StreamMetrics(stream pb.GeneratorControl_StreamMetricsServer) 
 
 	for {
 		select {
+		case <-s.shutdown:
+			return nil
 		case <-stream.Context().Done():
 			return nil
 		case err := <-recvErr:
@@ -1191,12 +1275,28 @@ func (s *Service) FailTest(testID string, message string) {
 	delete(s.archiveWriters, testID)
 	s.stopCompletionTimerLocked(testID)
 	s.mu.Unlock()
+	executions := make([]*groupExecution, 0, len(execs))
 	for _, exec := range execs {
+		executions = append(executions, exec)
 		exec.cancel()
 	}
 	if !ok {
 		return
 	}
+	waitCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	waitErr := waitForGeneratorExecutions(waitCtx, executions)
+	cancel()
+	if waitErr != nil {
+		go func() {
+			_ = waitForGeneratorExecutions(context.Background(), executions)
+			s.finishFailedTest(testID, assignment, writer, message)
+		}()
+		return
+	}
+	s.finishFailedTest(testID, assignment, writer, message)
+}
+
+func (s *Service) finishFailedTest(testID string, assignment assignedTest, writer *archiveRecorder, message string) {
 	if writer != nil {
 		err := s.finalizeArchiveWriter(writer, "FAILED", time.Now(), message)
 		if err != nil {
@@ -1573,7 +1673,10 @@ func (s *Service) startExecutionLocked(assignment *pb.WorkAssignment) error {
 	if err := json.Unmarshal(rawScript, &script); err != nil {
 		return status.Errorf(codes.InvalidArgument, "decode script: %v", err)
 	}
-	duration := time.Duration(s.assignments[assignment.GetTestId()].durationSeconds) * time.Second
+	duration, err := validatedGeneratorDuration(s.assignments[assignment.GetTestId()].durationSeconds, "target_duration_seconds", true)
+	if err != nil {
+		return status.Error(codes.InvalidArgument, err.Error())
+	}
 	if duration <= 0 {
 		duration = time.Second
 	}
@@ -1595,12 +1698,16 @@ func (s *Service) startExecutionLocked(assignment *pb.WorkAssignment) error {
 		writer = archiveWriter
 		s.archiveWriters[assignment.GetTestId()] = writer
 	}
+	rampUp, err := validatedGeneratorDuration(int64(assignment.GetRampUpSeconds()), "ramp_up_seconds", true)
+	if err != nil {
+		return status.Error(codes.InvalidArgument, err.Error())
+	}
 	mge, err := engine.NewMultiGroup(engine.MultiGroupConfig{
 		Groups: []engine.GroupConfig{{
 			Name:            assignment.GetGroupName(),
 			Script:          &script,
 			VUsers:          int(assignment.GetVuserCount()),
-			RampUp:          time.Duration(assignment.GetRampUpSeconds()) * time.Second,
+			RampUp:          rampUp,
 			AllowZeroVUsers: assignment.GetVuserCount() == 0,
 			InitStrategy:    "at_runtime",
 			ResultSink:      combineSinks(results, writer),
@@ -1617,6 +1724,7 @@ func (s *Service) startExecutionLocked(assignment *pb.WorkAssignment) error {
 		engine:    mge,
 		cancel:    cancel,
 		results:   results,
+		done:      make(chan struct{}),
 	}
 	s.executions[assignment.GetTestId()][assignment.GetGroupName()] = exec
 	go s.runExecutionPublisher(ctx, assignment.GetTestId(), assignment.GetGroupName(), exec)
@@ -1624,6 +1732,7 @@ func (s *Service) startExecutionLocked(assignment *pb.WorkAssignment) error {
 		_, err := exec.engine.Run(ctx)
 		s.publishExecutionSnapshot(testID, groupName, exec)
 		exec.cancel()
+		close(exec.done)
 		s.finishExecution(testID, groupName, err)
 	}(assignment.GetTestId(), assignment.GetGroupName(), exec)
 	return nil

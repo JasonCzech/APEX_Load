@@ -127,7 +127,7 @@ func (tr *TestRunner) createTest(req CreateTestRequest, broadcast bool) (*Manage
 	if broadcast {
 		tr.broadcastEvent("test_created", test)
 	}
-	return test, nil
+	return cloneManagedTestForReadLocked(test), nil
 }
 
 func ceilToNextQuarterHour(value time.Time) time.Time {
@@ -173,6 +173,13 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	if err != nil {
 		return nil, err
 	}
+	projectID, err := tr.resolveCreateTestProjectID(req.ProjectID, groups)
+	if err != nil {
+		return nil, err
+	}
+	if err := tr.validateDataPoolProjectsLocked(projectID, req.DataPools); err != nil {
+		return nil, err
+	}
 
 	sharedDataSources, err := tr.buildSharedDataSourcesLocked(req.DataPools)
 	if err != nil {
@@ -190,10 +197,6 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 
 	testName := deriveManagedTestName(req.Name, testGroups)
 
-	projectID, err := tr.resolveCreateTestProjectID(req.ProjectID, groups)
-	if err != nil {
-		return nil, err
-	}
 	if err := tr.projectDeletionErrorLocked(projectID); err != nil {
 		return nil, err
 	}
@@ -629,6 +632,37 @@ func (tr *TestRunner) buildSharedDataSourcesLocked(bindings []storage.ScenarioDa
 		})
 	}
 	return sources, nil
+}
+
+// validateDataPoolProjectsLocked prevents a binding from turning a project-
+// scoped scenario or run into a read primitive for another project's rows.
+// Callers hold tr.mu, so validation and compilation observe one controller
+// snapshot; the database ownership check remains authoritative.
+func (tr *TestRunner) validateDataPoolProjectsLocked(projectID string, bindings []storage.ScenarioDataPoolBinding) error {
+	if len(bindings) == 0 {
+		return nil
+	}
+	if tr.dataPoolStore == nil {
+		return fmt.Errorf("data pool storage is not configured")
+	}
+	expectedProjectID := normalizeProjectID(projectID)
+	for _, binding := range bindings {
+		poolID := strings.TrimSpace(binding.PoolID)
+		if poolID == "" {
+			return fmt.Errorf("data pool id is required")
+		}
+		pool, err := tr.dataPoolStore.GetDataPool(poolID)
+		if err != nil || pool == nil {
+			if err != nil {
+				return fmt.Errorf("load data pool %q: %w", poolID, err)
+			}
+			return fmt.Errorf("data pool %q not found", poolID)
+		}
+		if normalizeProjectID(pool.ProjectID) != expectedProjectID {
+			return fmt.Errorf("data pool %q does not belong to project %q", poolID, expectedProjectID)
+		}
+	}
+	return nil
 }
 
 func inlineCSVFromDataPoolRows(rows []*storage.SharedDataPoolRow) (string, []string, error) {

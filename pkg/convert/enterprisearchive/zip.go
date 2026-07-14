@@ -20,6 +20,7 @@ import (
 const (
 	maxEnterpriseArchiveEntryBytes = 64 << 20  // 64 MiB per file
 	maxEnterpriseArchiveTotalBytes = 512 << 20 // 512 MiB total uncompressed
+	maxEnterpriseArchiveEntries    = 4096
 )
 
 // ConvertZip processes a ZIP archive containing enterprise C/VUser source files
@@ -28,6 +29,9 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 	reader, err := zip.NewReader(bytes.NewReader(zipData), int64(len(zipData)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to open zip archive: %w", err)
+	}
+	if len(reader.File) > maxEnterpriseArchiveEntries {
+		return nil, fmt.Errorf("zip archive contains %d entries; maximum is %d", len(reader.File), maxEnterpriseArchiveEntries)
 	}
 
 	// Read all files from the zip
@@ -39,13 +43,16 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 		}
 		rc, err := f.Open()
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("open zip entry %q: %w", f.Name, err)
 		}
 		// Read at most one byte beyond the per-entry cap so we can detect overflow.
 		data, err := io.ReadAll(io.LimitReader(rc, maxEnterpriseArchiveEntryBytes+1))
-		rc.Close()
+		closeErr := rc.Close()
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("read zip entry %q: %w", f.Name, err)
+		}
+		if closeErr != nil {
+			return nil, fmt.Errorf("close zip entry %q: %w", f.Name, closeErr)
 		}
 		if int64(len(data)) > maxEnterpriseArchiveEntryBytes {
 			return nil, fmt.Errorf("zip entry %q exceeds the maximum allowed uncompressed size", filepath.Base(f.Name))
@@ -63,6 +70,9 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 			if name == "" {
 				name = filepath.Base(f.Name)
 			}
+		}
+		if _, duplicate := files[name]; duplicate {
+			return nil, fmt.Errorf("zip archive contains duplicate normalized entry %q", name)
 		}
 		files[name] = string(data)
 	}

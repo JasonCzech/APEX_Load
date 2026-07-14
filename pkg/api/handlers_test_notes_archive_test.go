@@ -24,7 +24,17 @@ func TestTestNoteMutationSyncsArchiveArtifact(t *testing.T) {
 	t.Cleanup(func() { _ = store.Close() })
 
 	testID := "sync-notes-run"
-	archiveDir := t.TempDir()
+	archiveRoot := t.TempDir()
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", archiveRoot)
+	archiveDir := filepath.Join(archiveRoot, testID)
+	if err := os.MkdirAll(archiveDir, 0o755); err != nil {
+		t.Fatalf("create archive directory: %v", err)
+	}
+	for _, name := range []string{"transactions.jsonl", "resource_samples.jsonl", "interval_summaries.jsonl"} {
+		if err := os.WriteFile(filepath.Join(archiveDir, name), nil, 0o644); err != nil {
+			t.Fatalf("write archive dataset %s: %v", name, err)
+		}
+	}
 	manifestPath := filepath.Join(archiveDir, "manifest.json")
 	if err := store.SaveTest(&storage.TestRecord{
 		ID:        testID,
@@ -65,11 +75,17 @@ func TestTestNoteMutationSyncsArchiveArtifact(t *testing.T) {
 	}
 
 	var manifest *RunArchiveManifest
+	var published *storage.RunArchiveRecord
 	waitForTestCondition(t, func() bool {
-		loaded, err := loadRunArchiveManifest(manifestPath)
+		record, err := store.GetRunArchive(testID)
+		if err != nil || record == nil || record.ManifestSHA256 == "" {
+			return false
+		}
+		loaded, err := loadRunArchiveManifest(record.ManifestPath)
 		if err != nil {
 			return false
 		}
+		published = record
 		manifest = loaded
 		return loaded.TestNotesFile == testNotesArchiveFileName
 	})
@@ -77,7 +93,7 @@ func TestTestNoteMutationSyncsArchiveArtifact(t *testing.T) {
 		t.Fatalf("manifest test_notes_file = %q, want %q", manifest.TestNotesFile, testNotesArchiveFileName)
 	}
 	var artifact testNotesArchiveArtifact
-	data, err := os.ReadFile(filepath.Join(archiveDir, testNotesArchiveFileName))
+	data, err := os.ReadFile(filepath.Join(published.ArchivePath, testNotesArchiveFileName))
 	if err != nil {
 		t.Fatalf("read synced artifact: %v", err)
 	}
@@ -87,10 +103,6 @@ func TestTestNoteMutationSyncsArchiveArtifact(t *testing.T) {
 	if artifact.TestID != testID || len(artifact.Notes) != 1 || artifact.Notes[0].Body != "# Synced\n\npost-run note" {
 		t.Fatalf("synced artifact = %#v", artifact)
 	}
-	waitForTestCondition(t, func() bool {
-		record, err := store.GetRunArchive(testID)
-		return err == nil && record != nil && record.ManifestSHA256 != ""
-	})
 }
 
 func TestTestNoteMutationDoesNotReblessTamperedArchiveArtifacts(t *testing.T) {
@@ -101,11 +113,21 @@ func TestTestNoteMutationDoesNotReblessTamperedArchiveArtifacts(t *testing.T) {
 	t.Cleanup(func() { _ = store.Close() })
 
 	testID := "tamper-notes-run"
-	archiveDir := t.TempDir()
+	archiveRoot := t.TempDir()
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", archiveRoot)
+	archiveDir := filepath.Join(archiveRoot, testID)
+	if err := os.MkdirAll(archiveDir, 0o755); err != nil {
+		t.Fatalf("create archive directory: %v", err)
+	}
 	manifestPath := filepath.Join(archiveDir, "manifest.json")
 	originalTransactions := []byte(`{"name":"original"}` + "\n")
 	if err := os.WriteFile(filepath.Join(archiveDir, "transactions.jsonl"), originalTransactions, 0o644); err != nil {
 		t.Fatalf("write transactions: %v", err)
+	}
+	for _, name := range []string{"resource_samples.jsonl", "interval_summaries.jsonl"} {
+		if err := os.WriteFile(filepath.Join(archiveDir, name), nil, 0o644); err != nil {
+			t.Fatalf("write archive dataset %s: %v", name, err)
+		}
 	}
 	if err := store.SaveTest(&storage.TestRecord{
 		ID:        testID,
@@ -158,32 +180,28 @@ func TestTestNoteMutationDoesNotReblessTamperedArchiveArtifacts(t *testing.T) {
 		t.Fatalf("POST status = %d, want 201 (body=%s)", resp.Code, resp.Body.String())
 	}
 
-	var manifest *RunArchiveManifest
-	waitForTestCondition(t, func() bool {
-		loaded, err := loadRunArchiveManifest(manifestPath)
-		if err != nil {
-			return false
-		}
-		manifest = loaded
-		if loaded.TestNotesFile != testNotesArchiveFileName {
-			return false
-		}
-		hasNotes := false
-		for _, artifact := range loaded.Artifacts {
-			if artifact.Name == testNotesArchiveFileName && artifact.SHA256 != "" {
-				hasNotes = true
-				break
-			}
-		}
-		if !hasNotes {
-			return false
-		}
-		// The note sync also persists the manifest trust anchor asynchronously; wait
-		// for it too so the assertions below don't race the sync goroutine (and the
-		// goroutine doesn't outlive the store into a "database is closed" error).
-		rec, err := store.GetRunArchive(testID)
-		return err == nil && rec != nil && rec.ManifestSHA256 != ""
-	})
+	refresh, err := store.GetArchiveRefreshJob(testID)
+	if err != nil {
+		t.Fatalf("GetArchiveRefreshJob returned error: %v", err)
+	}
+	finalization, err := store.GetArchiveFinalizationJob(testID)
+	if err != nil {
+		t.Fatalf("GetArchiveFinalizationJob returned error: %v", err)
+	}
+	if finalization.RefreshToken != refresh.IntentToken {
+		t.Fatalf("durable retry refresh token = %q, want %q", finalization.RefreshToken, refresh.IntentToken)
+	}
+
+	manifest, err := loadRunArchiveManifest(manifestPath)
+	if err != nil {
+		t.Fatalf("loadRunArchiveManifest returned error: %v", err)
+	}
+	if manifest.TestNotesFile != "" {
+		t.Fatalf("tampered archive was mutated with test_notes_file %q", manifest.TestNotesFile)
+	}
+	if _, err := os.Stat(filepath.Join(archiveDir, testNotesArchiveFileName)); !os.IsNotExist(err) {
+		t.Fatalf("tampered archive notes artifact stat = %v, want not created", err)
+	}
 
 	var txArtifact *RunArchiveArtifact
 	for i := range manifest.Artifacts {
@@ -202,8 +220,8 @@ func TestTestNoteMutationDoesNotReblessTamperedArchiveArtifacts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetRunArchive returned error: %v", err)
 	}
-	if persistedRecord.ManifestSHA256 == "" {
-		t.Fatal("note sync did not persist a manifest trust anchor")
+	if persistedRecord.ManifestSHA256 != "" {
+		t.Fatalf("tampered archive manifest was re-blessed with trust anchor %q", persistedRecord.ManifestSHA256)
 	}
 	report := verifyRunArchiveIntegrity(persistedRecord, manifest)
 	if report.Status != integrityStatusTampered || report.Mismatched != 1 {

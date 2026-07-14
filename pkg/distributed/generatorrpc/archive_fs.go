@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -275,6 +276,15 @@ func replaceGeneratorArchiveFile(root *os.Root, name string, perm os.FileMode) (
 }
 
 func writeGeneratorArchiveFileDurable(root *os.Root, name string, data []byte, perm os.FileMode) error {
+	return writeGeneratorArchiveFileDurableWithWriter(root, name, data, perm, func(file *os.File, content []byte) (int, error) {
+		return file.Write(content)
+	})
+}
+
+func writeGeneratorArchiveFileDurableWithWriter(root *os.Root, name string, data []byte, perm os.FileMode, write func(*os.File, []byte) (int, error)) error {
+	if write == nil {
+		return fmt.Errorf("generator archive durable writer is required")
+	}
 	name, err := normalizeGeneratorArchiveArtifactName(name)
 	if err != nil {
 		return err
@@ -299,9 +309,14 @@ func writeGeneratorArchiveFileDurable(root *os.Root, name string, data []byte, p
 			_ = root.Remove(temp)
 		}
 	}()
-	if _, err := file.Write(data); err != nil {
+	written, err := write(file, data)
+	if err != nil {
 		_ = file.Close()
 		return err
+	}
+	if written != len(data) {
+		_ = file.Close()
+		return io.ErrShortWrite
 	}
 	if err := file.Sync(); err != nil {
 		_ = file.Close()

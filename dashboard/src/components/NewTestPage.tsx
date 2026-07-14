@@ -966,7 +966,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
   }, [api, runCreatePayload, scheduledStartISO])
 
   const step1Complete = Boolean(scenario && scenario.scripts.length > 0)
-  const step2Complete = Boolean(activeApplication && release)
+  const step2Complete = Boolean(activeApplication && release && runName.trim())
   const step3Complete = step1Complete
 
   const createRelease = async () => {
@@ -991,6 +991,10 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
     setScenarioSortField(field)
     setScenarioSortDirection(field === 'last_run_at' || field === 'vusers' ? 'desc' : 'asc')
   }
+
+  const scenarioAriaSort = (field: ScenarioSortField): 'ascending' | 'descending' | 'none' => (
+    scenarioSortField === field ? (scenarioSortDirection === 'asc' ? 'ascending' : 'descending') : 'none'
+  )
 
   const createRun = async (intent: 'reserve' | 'queue' | 'schedule', options: { navigate?: boolean } = {}): Promise<boolean> => {
     const navigate = options.navigate ?? true
@@ -1998,13 +2002,13 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                         <table className="new-test-scenario-table" aria-label="Available scenarios">
                           <thead>
                             <tr>
-                              <th onClick={() => sortScenarios('name')} className="sortable">Scenario <SortIndicator active={scenarioSortField === 'name'} direction={scenarioSortDirection} /></th>
-                              <th onClick={() => sortScenarios('releases')} className="sortable">Releases <SortIndicator active={scenarioSortField === 'releases'} direction={scenarioSortDirection} /></th>
-                              <th onClick={() => sortScenarios('last_run_at')} className="sortable">Most Recent Run <SortIndicator active={scenarioSortField === 'last_run_at'} direction={scenarioSortDirection} /></th>
-                              <th onClick={() => sortScenarios('vusers')} className="sortable">VUsers <SortIndicator active={scenarioSortField === 'vusers'} direction={scenarioSortDirection} /></th>
-                              <th onClick={() => sortScenarios('duration')} className="sortable">Duration <SortIndicator active={scenarioSortField === 'duration'} direction={scenarioSortDirection} /></th>
-                              <th onClick={() => sortScenarios('groups')} className="sortable">Groups <SortIndicator active={scenarioSortField === 'groups'} direction={scenarioSortDirection} /></th>
-                              <th>Protocols</th>
+                              <th scope="col" aria-sort={scenarioAriaSort('name')} className="sortable"><button type="button" onClick={() => sortScenarios('name')}>Scenario <SortIndicator active={scenarioSortField === 'name'} direction={scenarioSortDirection} /></button></th>
+                              <th scope="col" aria-sort={scenarioAriaSort('releases')} className="sortable"><button type="button" onClick={() => sortScenarios('releases')}>Releases <SortIndicator active={scenarioSortField === 'releases'} direction={scenarioSortDirection} /></button></th>
+                              <th scope="col" aria-sort={scenarioAriaSort('last_run_at')} className="sortable"><button type="button" onClick={() => sortScenarios('last_run_at')}>Most Recent Run <SortIndicator active={scenarioSortField === 'last_run_at'} direction={scenarioSortDirection} /></button></th>
+                              <th scope="col" aria-sort={scenarioAriaSort('vusers')} className="sortable"><button type="button" onClick={() => sortScenarios('vusers')}>VUsers <SortIndicator active={scenarioSortField === 'vusers'} direction={scenarioSortDirection} /></button></th>
+                              <th scope="col" aria-sort={scenarioAriaSort('duration')} className="sortable"><button type="button" onClick={() => sortScenarios('duration')}>Duration <SortIndicator active={scenarioSortField === 'duration'} direction={scenarioSortDirection} /></button></th>
+                              <th scope="col" aria-sort={scenarioAriaSort('groups')} className="sortable"><button type="button" onClick={() => sortScenarios('groups')}>Groups <SortIndicator active={scenarioSortField === 'groups'} direction={scenarioSortDirection} /></button></th>
+                              <th scope="col">Protocols</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -2158,7 +2162,11 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                       </div>
                     </div>
                   ) : (
-                    <div className="new-test-empty compact">No scenarios match this search.</div>
+                    <div className="new-test-empty compact">
+                      {scenarioFiltersActive
+                        ? 'No scenarios match this search.'
+                        : 'No scenarios are available yet. Open Scenario Builder to create the first reusable workload.'}
+                    </div>
                   )}
                 </div>
               </div>

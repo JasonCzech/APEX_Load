@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -43,10 +44,11 @@ func TestCurrentArchiveBackendBuildsObjectURIAndStagingRoot(t *testing.T) {
 	if backend.LocalRoot != wantRoot {
 		t.Fatalf("local root = %q, want %q", backend.LocalRoot, wantRoot)
 	}
-	if got := backend.runURI("run-1"); got != "s3://apexload-archives/prod/evidence/run-1" {
+	wantPrefix := "s3://apexload-archives/prod/evidence/_source/v1/" + archiveObjectSourceIdentity(archiveBackendRuntime{Backend: archiveBackendS3, Bucket: "apexload-archives"}, "prod/evidence")
+	if got := backend.runURI("run-1"); got != wantPrefix+"/run-1" {
 		t.Fatalf("run uri = %q", got)
 	}
-	if got := backend.manifestURI("run-1"); got != "s3://apexload-archives/prod/evidence/run-1/manifest.json" {
+	if got := backend.manifestURI("run-1"); got != wantPrefix+"/run-1/manifest.json" {
 		t.Fatalf("manifest uri = %q", got)
 	}
 }
@@ -219,6 +221,46 @@ func TestArchiveMaterializationRuntimeUsesPersistedBackendAndURI(t *testing.T) {
 	}
 	if got := resolved.objectKey("run-1", "transactions.jsonl"); got != "retained/2025/run-1/transactions.jsonl" {
 		t.Fatalf("object key = %q", got)
+	}
+}
+
+func TestArchiveMaterializationRejectsChangedCustomEndpointNamespace(t *testing.T) {
+	base := archiveBackendRuntime{Backend: archiveBackendS3, Bucket: "archives", Endpoint: "https://endpoint-a.example", Prefix: "prod/evidence"}
+	identity := archiveObjectSourceIdentity(base, base.Prefix)
+	record := &storage.RunArchiveRecord{
+		TestID: "run-1", ArchiveBackend: archiveBackendS3,
+		ArchiveURI:  "s3://archives/prod/evidence/_source/v1/" + identity + "/run-1",
+		ManifestURI: "s3://archives/prod/evidence/_source/v1/" + identity + "/run-1/manifest.json",
+	}
+	changed := base
+	changed.Endpoint = "https://endpoint-b.example"
+	if _, err := archiveMaterializationRuntime(changed, record); err == nil || !strings.Contains(err.Error(), "source identity") {
+		t.Fatalf("materialization error = %v, want source identity rejection", err)
+	}
+	resolved, err := archiveMaterializationRuntime(base, record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Prefix != "prod/evidence/_source/v1/"+identity {
+		t.Fatalf("resolved prefix = %q", resolved.Prefix)
+	}
+}
+
+func TestZipDirectoryRejectsNestedSymlinkWithoutReadingTarget(t *testing.T) {
+	root := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "secret")
+	if err := os.WriteFile(outside, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(root, "nested"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(root, "nested", "artifact")); err != nil {
+		t.Fatal(err)
+	}
+	var bundle bytes.Buffer
+	if err := zipDirectory(root, &bundle); err == nil || !strings.Contains(err.Error(), "symbolic link") {
+		t.Fatalf("zip error = %v, want symbolic-link rejection", err)
 	}
 }
 

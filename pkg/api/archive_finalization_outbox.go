@@ -221,7 +221,11 @@ func (tr *TestRunner) processArchiveFinalizationJobUnderFence(ctx context.Contex
 		return fmt.Errorf("archive record test id %q does not match job %q", record.TestID, job.TestID)
 	}
 	var materializationLease *archiveMaterializationLease
-	if strings.TrimSpace(job.RefreshToken) != "" && archiveRecordBackend(record) != archiveBackendFilesystem {
+	// Refreshes always operate on a token-private copy. This is required for
+	// filesystem archives too: adjunct generation writes manifest/report files,
+	// and doing that in the currently catalogued directory would expose partial
+	// refresh output before the durable token CAS commits.
+	if strings.TrimSpace(job.RefreshToken) != "" {
 		if tr.archiveStore != nil {
 			catalogRecord, catalogErr := tr.archiveStore.GetRunArchive(job.TestID)
 			if catalogErr == nil && catalogRecord != nil {
@@ -722,11 +726,12 @@ func (s *Server) startArchiveFinalizationRetry() {
 			}
 			sweepCtx, sweepCancel := context.WithTimeout(ctx, archiveFinalizationAttemptTimeout)
 			defer sweepCancel()
-			var orphanErr error
-			if recoverOrphans {
-				orphanErr = s.runner.recoverOrphanedLocalRunArchives(sweepCtx)
+			// Durable intents are latency-sensitive. Process them before the bounded
+			// filesystem recovery scan so a large archive root cannot delay known jobs.
+			err := errors.Join(s.retryArchiveFinalizationJobs(sweepCtx), s.retryArchiveRefreshJobs(sweepCtx))
+			if recoverOrphans && sweepCtx.Err() == nil {
+				err = errors.Join(err, s.runner.recoverOrphanedLocalRunArchives(sweepCtx))
 			}
-			err := errors.Join(orphanErr, s.retryArchiveFinalizationJobs(sweepCtx), s.retryArchiveRefreshJobs(sweepCtx))
 			if err != nil && ctx.Err() == nil {
 				slog.Warn("archive finalization outbox retry incomplete", "error", err)
 			}

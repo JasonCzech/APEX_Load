@@ -5,6 +5,7 @@ package storage
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 )
@@ -76,9 +77,18 @@ func saveScenarioTx(tx *storeTx, scenario *Scenario, scripts []ScenarioScript, a
 		if script.ScenarioID == "" {
 			script.ScenarioID = scenario.ID
 		}
-		stagesJSON, _ := json.Marshal(script.Stages)
-		runtimeJSON, _ := json.Marshal(script.RuntimeSettings)
-		assignmentJSON, _ := json.Marshal(script.Assignment)
+		stagesJSON, err := json.Marshal(script.Stages)
+		if err != nil {
+			return fmt.Errorf("marshal scenario %s script %d stages_json: %w", scenario.ID, i, err)
+		}
+		runtimeJSON, err := json.Marshal(script.RuntimeSettings)
+		if err != nil {
+			return fmt.Errorf("marshal scenario %s script %d runtime_settings_json: %w", scenario.ID, i, err)
+		}
+		assignmentJSON, err := json.Marshal(script.Assignment)
+		if err != nil {
+			return fmt.Errorf("marshal scenario %s script %d assignment_json: %w", scenario.ID, i, err)
+		}
 		if _, err := tx.Exec(`INSERT INTO scenario_scripts (scenario_id, sort_order, name, script_id, vusers, ramp_up, ramp_down, stages_json, initialization, role, runtime_settings_json, assignment_json)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, script.ScenarioID, script.Order, script.Name, script.ScriptID, script.VUsers, script.RampUp, script.RampDown, string(stagesJSON), script.Initialization, script.Role, string(runtimeJSON), string(assignmentJSON)); err != nil {
 			return err
@@ -117,14 +127,8 @@ func (s *SQLiteStore) GetScenario(id string) (*Scenario, []ScenarioScript, error
 	if err != nil {
 		return nil, nil, err
 	}
-	if assignmentJSON != "" && assignmentJSON != "null" {
-		json.Unmarshal([]byte(assignmentJSON), &scenario.Assignment)
-	}
-	if goalJSON != "" && goalJSON != "null" {
-		json.Unmarshal([]byte(goalJSON), &scenario.GoalConfig)
-	}
-	if runtimeJSON != "" && runtimeJSON != "null" {
-		json.Unmarshal([]byte(runtimeJSON), &scenario.RuntimeSettings)
+	if err := decodeScenarioJSON(&scenario, assignmentJSON, goalJSON, runtimeJSON); err != nil {
+		return nil, nil, err
 	}
 	scripts, err := s.listScenarioScripts(id)
 	if err != nil {
@@ -146,18 +150,33 @@ func (s *SQLiteStore) ListScenarios() ([]*Scenario, error) {
 		if err := rows.Scan(&scenario.ID, &scenario.RefKey, &scenario.Name, &scenario.Duration, &scenario.StartDelay, &scenario.ScenarioMode, &scenario.ScriptShakeout, &scenario.ResourceBaseline, &assignmentJSON, &goalJSON, &runtimeJSON, &scenario.CreatedAt, &scenario.UpdatedAt); err != nil {
 			return nil, err
 		}
-		if assignmentJSON != "" && assignmentJSON != "null" {
-			json.Unmarshal([]byte(assignmentJSON), &scenario.Assignment)
-		}
-		if goalJSON != "" && goalJSON != "null" {
-			json.Unmarshal([]byte(goalJSON), &scenario.GoalConfig)
-		}
-		if runtimeJSON != "" && runtimeJSON != "null" {
-			json.Unmarshal([]byte(runtimeJSON), &scenario.RuntimeSettings)
+		if err := decodeScenarioJSON(&scenario, assignmentJSON, goalJSON, runtimeJSON); err != nil {
+			return nil, err
 		}
 		scenarios = append(scenarios, &scenario)
 	}
 	return scenarios, rows.Err()
+}
+
+func decodeScenarioJSON(scenario *Scenario, assignmentJSON, goalJSON, runtimeJSON string) error {
+	fields := []struct {
+		name string
+		raw  string
+		dst  any
+	}{
+		{name: "assignment_json", raw: assignmentJSON, dst: &scenario.Assignment},
+		{name: "goal_config_json", raw: goalJSON, dst: &scenario.GoalConfig},
+		{name: "runtime_settings_json", raw: runtimeJSON, dst: &scenario.RuntimeSettings},
+	}
+	for _, field := range fields {
+		if strings.TrimSpace(field.raw) == "" || field.raw == "null" {
+			continue
+		}
+		if err := json.Unmarshal([]byte(field.raw), field.dst); err != nil {
+			return fmt.Errorf("decode scenario %s %s: %w", scenario.ID, field.name, err)
+		}
+	}
+	return nil
 }
 
 func (s *SQLiteStore) listScenarioScripts(scenarioID string) ([]ScenarioScript, error) {
@@ -174,13 +193,19 @@ func (s *SQLiteStore) listScenarioScripts(scenarioID string) ([]ScenarioScript, 
 			return nil, err
 		}
 		if strings.TrimSpace(stagesJSON) != "" {
-			json.Unmarshal([]byte(stagesJSON), &script.Stages)
+			if err := json.Unmarshal([]byte(stagesJSON), &script.Stages); err != nil {
+				return nil, fmt.Errorf("decode scenario %s script %d stages_json: %w", scenarioID, script.Order, err)
+			}
 		}
 		if strings.TrimSpace(runtimeSettingsJSON) != "" && runtimeSettingsJSON != "null" {
-			json.Unmarshal([]byte(runtimeSettingsJSON), &script.RuntimeSettings)
+			if err := json.Unmarshal([]byte(runtimeSettingsJSON), &script.RuntimeSettings); err != nil {
+				return nil, fmt.Errorf("decode scenario %s script %d runtime_settings_json: %w", scenarioID, script.Order, err)
+			}
 		}
 		if strings.TrimSpace(assignmentJSON) != "" && assignmentJSON != "null" {
-			json.Unmarshal([]byte(assignmentJSON), &script.Assignment)
+			if err := json.Unmarshal([]byte(assignmentJSON), &script.Assignment); err != nil {
+				return nil, fmt.Errorf("decode scenario %s script %d assignment_json: %w", scenarioID, script.Order, err)
+			}
 		}
 		scripts = append(scripts, script)
 	}

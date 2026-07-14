@@ -131,6 +131,7 @@ func TestVUser_Interpolate(t *testing.T) {
 func TestVUser_Interpolate_EnvAndFn(t *testing.T) {
 	t.Setenv("APEXLOAD_TEST_ENV", "env-value")
 	t.Setenv("APEXLOAD_SECRET_DB_PASSWORD", "super-secret")
+	t.Setenv(EnvScriptEnvAllowlist, "APEXLOAD_TEST_ENV")
 	vu := &VUser{Variables: map[string]string{}}
 
 	if got := vu.interpolate("{{env.APEXLOAD_TEST_ENV}}"); got != "env-value" {
@@ -197,6 +198,7 @@ func TestVUser_MergeExtractions(t *testing.T) {
 
 func TestVUser_ResolveAction(t *testing.T) {
 	t.Setenv("APEXLOAD_ACTION_ENV", "env-action")
+	t.Setenv(EnvScriptEnvAllowlist, "APEXLOAD_ACTION_ENV")
 	maxRedirects := 2
 
 	vu := &VUser{
@@ -439,7 +441,8 @@ func TestVUser_HandleSnapshot(t *testing.T) {
 
 func TestVUser_Run_LogsExtendedOptions(t *testing.T) {
 	t.Setenv("APEXLOAD_LOG_HOST", "api.example.test")
-	t.Setenv("APEXLOAD_LOG_TOKEN", "abc123")
+	t.Setenv("APEXLOAD_LOG_VALUE", "abc123")
+	t.Setenv(EnvScriptEnvAllowlist, "APEXLOAD_LOG_HOST,APEXLOAD_LOG_VALUE")
 
 	protoStub := &loggingProtocol{result: &protocol.Result{
 		Success:          true,
@@ -478,7 +481,7 @@ func TestVUser_Run_LogsExtendedOptions(t *testing.T) {
 				Type:   "request",
 				Method: "POST",
 				Target: "https://{{env.APEXLOAD_LOG_HOST}}/checkout",
-				Body:   "token={{env.APEXLOAD_LOG_TOKEN}}",
+				Body:   "token={{env.APEXLOAD_LOG_VALUE}}",
 			}},
 		},
 		Metrics: NewMetricsCollector(16),

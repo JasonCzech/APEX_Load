@@ -5,19 +5,38 @@ package storage
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 )
 
 func (s *SQLiteStore) SaveTest(test *TestRecord) error {
+	if test == nil {
+		return fmt.Errorf("test is required")
+	}
 	test.ApplicationID = normalizeApplicationID(test.ApplicationID)
 	test.ReleaseID = normalizeReleaseID(test.ReleaseID)
 	test.ProjectID = normalizeProjectID(test.ProjectID)
-	groupsJSON, _ := json.Marshal(test.Groups)
-	assignmentJSON, _ := json.Marshal(test.Assignment)
-	runtimeSettingsJSON, _ := json.Marshal(test.RuntimeSettings)
-	goalConfigJSON, _ := json.Marshal(test.GoalConfig)
-	executionPlanApprovalJSON, _ := json.Marshal(test.ExecutionPlanApproval)
+	groupsJSON, err := marshalTestField("groups_json", test.Groups)
+	if err != nil {
+		return err
+	}
+	assignmentJSON, err := marshalTestField("assignment_json", test.Assignment)
+	if err != nil {
+		return err
+	}
+	runtimeSettingsJSON, err := marshalTestField("runtime_settings_json", test.RuntimeSettings)
+	if err != nil {
+		return err
+	}
+	goalConfigJSON, err := marshalTestField("goal_config_json", test.GoalConfig)
+	if err != nil {
+		return err
+	}
+	executionPlanApprovalJSON, err := marshalTestField("execution_plan_approval_json", test.ExecutionPlanApproval)
+	if err != nil {
+		return err
+	}
 
 	query := `INSERT INTO tests (id, ref_key, name, status, application_id, release_id, scenario_id, project_id, folder_id, scenario_mode, shakeout_enabled, resource_baseline_enabled, assignment_json, total_vusers, duration_ns, start_time, scheduled_start_at, pending_since, baseline_pinned, baseline_pinned_at, end_time, error, created_by_subject, created_by_display_name, started_by_subject, started_by_display_name, stopped_by_subject, stopped_by_display_name, groups_json, runtime_settings_json, goal_config_json, execution_plan_approval_json, timeslot_id)
 			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -35,8 +54,16 @@ func (s *SQLiteStore) SaveTest(test *TestRecord) error {
 			  runtime_settings_json=excluded.runtime_settings_json, goal_config_json=excluded.goal_config_json, execution_plan_approval_json=excluded.execution_plan_approval_json,
 			  timeslot_id=excluded.timeslot_id`
 
-	_, err := s.db.Exec(query, test.ID, test.RefKey, test.Name, test.Status, test.ApplicationID, test.ReleaseID, nullableString(test.ScenarioID), test.ProjectID, test.FolderID, test.ScenarioMode, test.ScriptShakeout, test.ResourceBaseline, string(assignmentJSON), test.TotalVUsers, test.Duration, test.StartTime, test.ScheduledStartAt, test.PendingSince, test.BaselinePinned, test.BaselinePinnedAt, test.EndTime, test.Error, test.CreatedBySubject, test.CreatedByDisplayName, test.StartedBySubject, test.StartedByDisplayName, test.StoppedBySubject, test.StoppedByDisplayName, string(groupsJSON), string(runtimeSettingsJSON), string(goalConfigJSON), string(executionPlanApprovalJSON), test.TimeslotID)
+	_, err = s.db.Exec(query, test.ID, test.RefKey, test.Name, test.Status, test.ApplicationID, test.ReleaseID, nullableString(test.ScenarioID), test.ProjectID, nullableStringPointer(test.FolderID), test.ScenarioMode, test.ScriptShakeout, test.ResourceBaseline, assignmentJSON, test.TotalVUsers, test.Duration, test.StartTime, test.ScheduledStartAt, test.PendingSince, test.BaselinePinned, test.BaselinePinnedAt, test.EndTime, test.Error, test.CreatedBySubject, test.CreatedByDisplayName, test.StartedBySubject, test.StartedByDisplayName, test.StoppedBySubject, test.StoppedByDisplayName, groupsJSON, runtimeSettingsJSON, goalConfigJSON, executionPlanApprovalJSON, nullableStringPointer(test.TimeslotID))
 	return err
+}
+
+func marshalTestField(name string, value any) (string, error) {
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return "", fmt.Errorf("marshal test %s: %w", name, err)
+	}
+	return string(payload), nil
 }
 
 func (s *SQLiteStore) GetTest(id string) (*TestRecord, error) {
@@ -66,18 +93,28 @@ func scanTest(scanner rowScanner) (TestRecord, error) {
 	if err := scanner.Scan(&test.ID, &test.RefKey, &test.Name, &test.Status, &test.ApplicationID, &test.ReleaseID, &test.ScenarioID, &test.ProjectID, &test.FolderID, &test.ScenarioMode, &test.ScriptShakeout, &test.ResourceBaseline, &assignmentJSON, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.ScheduledStartAt, &test.PendingSince, &test.BaselinePinned, &test.BaselinePinnedAt, &test.EndTime, &test.Error, &test.CreatedBySubject, &test.CreatedByDisplayName, &test.StartedBySubject, &test.StartedByDisplayName, &test.StoppedBySubject, &test.StoppedByDisplayName, &groupsJSON, &runtimeSettingsJSON, &goalConfigJSON, &executionPlanApprovalJSON, &test.TimeslotID); err != nil {
 		return test, err
 	}
-	json.Unmarshal([]byte(groupsJSON), &test.Groups)
+	if err := json.Unmarshal([]byte(groupsJSON), &test.Groups); err != nil {
+		return test, fmt.Errorf("decode test %s groups_json: %w", test.ID, err)
+	}
 	if assignmentJSON != "" && assignmentJSON != "null" {
-		json.Unmarshal([]byte(assignmentJSON), &test.Assignment)
+		if err := json.Unmarshal([]byte(assignmentJSON), &test.Assignment); err != nil {
+			return test, fmt.Errorf("decode test %s assignment_json: %w", test.ID, err)
+		}
 	}
 	if runtimeSettingsJSON != "" && runtimeSettingsJSON != "null" {
-		json.Unmarshal([]byte(runtimeSettingsJSON), &test.RuntimeSettings)
+		if err := json.Unmarshal([]byte(runtimeSettingsJSON), &test.RuntimeSettings); err != nil {
+			return test, fmt.Errorf("decode test %s runtime_settings_json: %w", test.ID, err)
+		}
 	}
 	if goalConfigJSON != "" && goalConfigJSON != "null" {
-		json.Unmarshal([]byte(goalConfigJSON), &test.GoalConfig)
+		if err := json.Unmarshal([]byte(goalConfigJSON), &test.GoalConfig); err != nil {
+			return test, fmt.Errorf("decode test %s goal_config_json: %w", test.ID, err)
+		}
 	}
 	if executionPlanApprovalJSON != "" && executionPlanApprovalJSON != "null" {
-		json.Unmarshal([]byte(executionPlanApprovalJSON), &test.ExecutionPlanApproval)
+		if err := json.Unmarshal([]byte(executionPlanApprovalJSON), &test.ExecutionPlanApproval); err != nil {
+			return test, fmt.Errorf("decode test %s execution_plan_approval_json: %w", test.ID, err)
+		}
 	}
 	return test, nil
 }
@@ -116,7 +153,7 @@ func (s *SQLiteStore) ListTests(projectID string, folderID *string) ([]*TestReco
 		}
 		tests = append(tests, &test)
 	}
-	return tests, nil
+	return tests, rows.Err()
 }
 
 func (s *SQLiteStore) ListTestsByContext(applicationID string, releaseID string, scenarioID string) ([]*TestRecord, error) {
@@ -305,7 +342,10 @@ func (s *SQLiteStore) SaveHistory(testID string, timestamp time.Time, metrics an
 		return err
 	}
 
-	metricsJSON, _ := json.Marshal(metrics)
+	metricsJSON, err := json.Marshal(metrics)
+	if err != nil {
+		return fmt.Errorf("marshal test history metrics for %s: %w", testID, err)
+	}
 	_, err = s.db.Exec(`INSERT INTO test_history (test_id, timestamp, metrics_json) VALUES (?, ?, ?)`, testID, timestamp, string(metricsJSON))
 	return err
 }
@@ -347,10 +387,12 @@ func (s *SQLiteStore) GetHistoryLimit(testID string, limit int) ([]any, error) {
 			return nil, err
 		}
 		var metrics any
-		json.Unmarshal([]byte(metricsJSON), &metrics)
+		if err := json.Unmarshal([]byte(metricsJSON), &metrics); err != nil {
+			return nil, fmt.Errorf("decode test %s history metrics: %w", testID, err)
+		}
 		history = append(history, metrics)
 	}
-	return history, nil
+	return history, rows.Err()
 }
 
 func (s *SQLiteStore) getTypedHistory(testID string) ([]any, error) {

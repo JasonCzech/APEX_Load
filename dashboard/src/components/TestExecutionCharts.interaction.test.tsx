@@ -1170,6 +1170,33 @@ describe('TestExecutionCharts context menu', () => {
     expect(container.querySelectorAll('.chart-card')).toHaveLength(15)
   })
 
+  it('traps graph configuration focus, closes on Escape, and restores its trigger', async () => {
+    await renderCharts(null, false)
+    const trigger = buttonByText('Configure Graphs')
+    trigger?.focus()
+    await act(async () => trigger?.click())
+    await act(async () => {
+      await new Promise(resolve => window.setTimeout(resolve, 0))
+    })
+
+    const drawer = container.querySelector<HTMLElement>('.charts-config-drawer')
+    const closeButton = drawer?.querySelector<HTMLButtonElement>('.charts-config-drawer-header button')
+    expect(drawer?.getAttribute('aria-modal')).toBe('true')
+    expect(document.activeElement).toBe(closeButton)
+
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true }))
+    })
+    expect(drawer?.contains(document.activeElement)).toBe(true)
+    expect(document.activeElement).not.toBe(closeButton)
+
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    expect(container.querySelector('.charts-config-drawer')).toBeNull()
+    expect(document.activeElement).toBe(trigger)
+  })
+
   it('changes the graph display window from the minute slider', async () => {
     const onTimeRangeChange = vi.fn()
     await act(async () => {

@@ -142,6 +142,15 @@ func (tr *TestRunner) rehydrateSequentialExecutionPlanRun(run *storage.Execution
 			return sequentialPlanRecoveryAction{}, false, unrecoverableSequentialPlanRunError("execution-plan run %s entry %d has unsupported status %q", run.ID, i, status.Status)
 		}
 	}
+	claimedWithoutTest := activeIdx >= 0 && strings.TrimSpace(statuses[activeIdx].TestID) == ""
+	if claimedWithoutTest {
+		// A controller may have durably claimed an entry and stopped before it
+		// created the queued test. Rewind only the in-memory cursor/status so the
+		// next CAS reclaims the same entry at the durable revision; no external
+		// side effect has happened yet.
+		statuses[activeIdx].Status = "pending"
+		cursor = activeIdx - 1
+	}
 
 	st := &seqPlanRunState{
 		runID:      run.ID,
@@ -201,7 +210,7 @@ func (tr *TestRunner) rehydrateSequentialExecutionPlanRun(run *storage.Execution
 	tr.seqMu.Unlock()
 
 	action := sequentialPlanRecoveryAction{runID: run.ID, idx: activeIdx}
-	if activeIdx < 0 {
+	if activeIdx < 0 || claimedWithoutTest {
 		action.launch = true
 		return action, true, nil
 	}

@@ -1234,7 +1234,7 @@ func TestDistributedExecutionBackendRunsRemoteMultiGroupEngine(t *testing.T) {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("expected remote multi-group execution to complete, got status=%q ended=%v", completed.Status, completed.EndedAt)
+			t.Fatalf("expected remote multi-group execution to complete, got status=%q ended=%v error=%q", completed.Status, completed.EndedAt, completed.Error)
 		}
 		time.Sleep(25 * time.Millisecond)
 	}

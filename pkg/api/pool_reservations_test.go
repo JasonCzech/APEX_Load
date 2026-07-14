@@ -82,3 +82,39 @@ func TestPoolReservedCapacityProtectsPool(t *testing.T) {
 		t.Fatalf("non-pool run should not be gated by pool reservations, got %q", reason)
 	}
 }
+
+func TestPoolGeneratorEnvelopeSnapshotDeduplicatesStoredTargets(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 50, Addr: ":8080"})
+
+	if err := store.SaveFleetPool(&storage.FleetPool{ID: "pool-snapshot", Name: "Snapshot Pool", Status: "active"}); err != nil {
+		t.Fatalf("SaveFleetPool returned error: %v", err)
+	}
+	if err := store.SaveFleetPoolMembers("pool-snapshot", []*storage.FleetPoolMember{
+		{ID: "member-1", PoolID: "pool-snapshot", GeneratorID: "gen-1", Target: "gen-1:9090", Status: "ready"},
+		{ID: "member-2", PoolID: "pool-snapshot", GeneratorID: "gen-2", Target: "gen-2:9090", Status: "ready"},
+	}); err != nil {
+		t.Fatalf("SaveFleetPoolMembers returned error: %v", err)
+	}
+	poolID := "pool-snapshot"
+	for _, metadata := range []*storage.GeneratorMetadata{
+		{GeneratorID: "gen-2", Target: "gen-2:9090", FleetPoolID: &poolID},
+		{GeneratorID: "gen-3", Target: "gen-3:9090", FleetPoolID: &poolID},
+	} {
+		if err := store.SaveGeneratorMetadata(metadata); err != nil {
+			t.Fatalf("SaveGeneratorMetadata(%s) returned error: %v", metadata.GeneratorID, err)
+		}
+	}
+
+	envelopes, err := server.runner.PoolGeneratorEnvelopeSnapshot()
+	if err != nil {
+		t.Fatalf("PoolGeneratorEnvelopeSnapshot returned error: %v", err)
+	}
+	if got := envelopes[poolID]; got != 3 {
+		t.Fatalf("pool envelope = %d, want 3 unique targets", got)
+	}
+}

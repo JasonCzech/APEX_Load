@@ -23,10 +23,11 @@ const apiMock = {
   sizeScenarioFromGoal: vi.fn(),
   getConfigDefaults: vi.fn().mockResolvedValue({ config: {} }),
 }
+const projectMockState = vi.hoisted(() => ({ activeProjectId: 'project-1' }))
 
 vi.mock('../hooks/useApi', () => ({ useApi: () => apiMock }))
 vi.mock('../hooks/useProject', () => ({
-  useProject: () => ({ activeProject: { id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' } }),
+  useProject: () => ({ activeProject: { id: projectMockState.activeProjectId, name: 'Checkout', created_at: '', updated_at: '' } }),
 }))
 vi.mock('recharts', () => ({
   Area: () => <span />,
@@ -54,12 +55,23 @@ function goalBaselineRunNames(root: HTMLElement): string[] {
     .map(node => node.textContent || '')
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
 describe('TestHub build-from-goal', () => {
   let container: HTMLDivElement
   let root: Root
   let consoleErrorSpy: ReturnType<typeof vi.spyOn>
 
   beforeEach(() => {
+    projectMockState.activeProjectId = 'project-1'
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -163,9 +175,13 @@ describe('TestHub build-from-goal', () => {
     expect(goalBaselineRunNames(container)).toEqual(['Search Baseline', 'Baseline Run'])
 
     const runSortHeader = Array.from(container.querySelectorAll('.goal-baseline-table th'))
-      .find(header => header.textContent?.includes('Run ↕')) as HTMLTableCellElement | undefined
+      .find(header => header.querySelector('button')?.textContent?.startsWith('Run')) as HTMLTableCellElement | undefined
     expect(runSortHeader).toBeTruthy()
-    await act(async () => { runSortHeader?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    expect(runSortHeader?.getAttribute('aria-sort')).toBe('none')
+    const runSortButton = runSortHeader?.querySelector('button') as HTMLButtonElement | null
+    expect(runSortButton).toBeTruthy()
+    await act(async () => { runSortButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    expect(runSortHeader?.getAttribute('aria-sort')).toBe('ascending')
     expect(goalBaselineRunNames(container)).toEqual(['Baseline Run', 'Search Baseline'])
 
     // Filter the completed-run table, then expand the run to inspect script metrics.
@@ -223,5 +239,78 @@ describe('TestHub build-from-goal', () => {
     expect(container.querySelector('[data-testid="goal-sizing-panel"]')).toBeNull()
     const numberInputs = Array.from(container.querySelectorAll('input[type="number"]')) as HTMLInputElement[]
     expect(numberInputs.some(input => input.value === '300')).toBe(true)
+  })
+
+  it('ignores a completed-run list that resolves after the active project changes', async () => {
+    const projectAResponse = deferred<{ tests: Array<{ id: string; name: string; status: string; groups: never[]; total_vusers: number; duration: string; created_at: string }> }>()
+    apiMock.listTests.mockReturnValueOnce(projectAResponse.promise)
+
+    await act(async () => {
+      root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} />)
+    })
+    await flush()
+    await act(async () => { findButton(container, 'Scenario Builder')?.click() })
+    await act(async () => { findButton(container, 'Build from Goal')?.click() })
+    expect(apiMock.listTests).toHaveBeenCalledWith({ project_id: 'project-1' })
+
+    projectMockState.activeProjectId = 'project-2'
+    await act(async () => {
+      root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} />)
+    })
+    await flush()
+
+    await act(async () => {
+      projectAResponse.resolve({
+        tests: [{ id: 'project-a-run', name: 'Project A Baseline', status: 'COMPLETE', groups: [], total_vusers: 1, duration: '1m', created_at: '2026-05-01T10:00:00Z' }],
+      })
+      await projectAResponse.promise
+    })
+
+    expect(container.textContent).not.toContain('Project A Baseline')
+    apiMock.listTests.mockResolvedValueOnce({
+      tests: [{ id: 'project-b-run', name: 'Project B Baseline', status: 'COMPLETE', groups: [], total_vusers: 2, duration: '2m', created_at: '2026-05-02T10:00:00Z' }],
+    })
+    await act(async () => { findButton(container, 'Build from Goal')?.click() })
+    await flush()
+
+    expect(apiMock.listTests).toHaveBeenLastCalledWith({ project_id: 'project-2' })
+    expect(container.textContent).toContain('Project B Baseline')
+    expect(container.textContent).not.toContain('Project A Baseline')
+  })
+
+  it('keeps the latest baseline selection when an older report resolves later', async () => {
+    const firstReport = deferred<Awaited<ReturnType<typeof apiMock.getTestArchiveReport>>>()
+    apiMock.getTestArchiveReport.mockImplementationOnce(() => firstReport.promise)
+
+    await act(async () => {
+      root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} />)
+    })
+    await flush()
+    await act(async () => { findButton(container, 'Scenario Builder')?.click() })
+    await act(async () => { findButton(container, 'Build from Goal')?.click() })
+    await flush()
+
+    const selectBaseline = container.querySelector('button[aria-label="Select Baseline Run as goal baseline"]') as HTMLButtonElement
+    const selectSearch = container.querySelector('button[aria-label="Select Search Baseline as goal baseline"]') as HTMLButtonElement
+    await act(async () => { selectBaseline.click() })
+    await act(async () => { selectSearch.click() })
+    await flush()
+
+    expect(container.querySelector('input[aria-label="Target TPS for Search"]')).toBeTruthy()
+    expect(container.querySelector('input[aria-label="Target TPS for Checkout"]')).toBeNull()
+
+    await act(async () => {
+      firstReport.resolve({
+        manifest: { provenance: { groups: [{ name: 'Checkout', script_id: 'script-a', script_name: 'Checkout', protocol: 'http', vusers: 1 }] } },
+        overview: { transactions: 10, errors: 0, error_pct: 0, avg_response_ms: 3000, min_response_ms: 900, max_response_ms: 3800, resource_samples: 0, interval_summaries: 0, peak_tps: 42.4, peak_active_vusers: 1 },
+        by_action: {},
+        by_group: { Checkout: { transactions: 10, errors: 0, error_pct: 0, avg_response_ms: 3000, min_response_ms: 900, max_response_ms: 3800, peak_tps: 42.4 } },
+        resource_peaks: { cpu_process_pct: 0, mem_process_mb: 0, net_sent_kbps: 0, net_recv_kbps: 0, disk_read_kbps: 0, disk_write_kbps: 0 },
+      })
+      await firstReport.promise
+    })
+
+    expect(container.querySelector('input[aria-label="Target TPS for Search"]')).toBeTruthy()
+    expect(container.querySelector('input[aria-label="Target TPS for Checkout"]')).toBeNull()
   })
 })

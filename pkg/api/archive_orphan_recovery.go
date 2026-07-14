@@ -28,6 +28,8 @@ type orphanArchiveCandidate struct {
 	identity os.FileInfo
 }
 
+const maxOrphanArchiveRecoveryCandidates = 10_000
+
 // recoverOrphanedLocalRunArchives closes the crash window between committing a
 // local manifest and committing the durable finalization outbox row. Only the
 // execution leader performs recovery, and only a production store exposing an
@@ -136,6 +138,10 @@ func discoverOrphanArchiveDirectories(ctx context.Context, root string) ([]orpha
 			return
 		}
 		for _, entry := range entries {
+			if len(seen) >= maxOrphanArchiveRecoveryCandidates {
+				failures = append(failures, fmt.Errorf("archive orphan recovery candidate limit %d exceeded", maxOrphanArchiveRecoveryCandidates))
+				return
+			}
 			if err := ctx.Err(); err != nil {
 				failures = append(failures, err)
 				return

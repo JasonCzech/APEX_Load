@@ -6,12 +6,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import DashboardPage from './DashboardPage'
 import { downloadBlob } from '../utils/fileUtils'
+import { resetSharedTestListStoreForTests } from '../hooks/useSharedTestList'
 
 const apiMock = {
   listTests: vi.fn(),
   getHealth: vi.fn(),
   getSystemInventory: vi.fn(),
   getTestArchiveReport: vi.fn(),
+  getTestArchiveReports: vi.fn(),
   getTestArchiveAnalysis: vi.fn(),
   downloadReleaseTrend: vi.fn(),
   getReleaseTrend: vi.fn(),
@@ -59,6 +61,7 @@ describe('DashboardPage', () => {
   const onNavigate = vi.fn()
 
   beforeEach(() => {
+    resetSharedTestListStoreForTests()
     projectState.activeProject = { id: 'project-1', name: 'Checkout', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' }
     applicationState.activeApplication = { id: 'app-1', name: 'Storefront', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' }
     applicationState.activeRelease = { id: 'rel-1', application_id: 'app-1', name: 'Sprint 24', created_at: '2026-05-02T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' }
@@ -235,6 +238,12 @@ describe('DashboardPage', () => {
         disk_write_kbps: 0,
       },
     }))
+    apiMock.getTestArchiveReports.mockImplementation(async (testIds: string[]) => {
+      const reports = Object.fromEntries(await Promise.all(testIds.map(async testId => (
+        [testId, await apiMock.getTestArchiveReport(testId)] as const
+      ))))
+      return { reports }
+    })
     apiMock.downloadReleaseTrend.mockResolvedValue(new Blob(['release trend csv'], { type: 'text/csv' }))
     apiMock.getReleaseTrend.mockResolvedValue({
       release_id: 'rel-1',
@@ -272,6 +281,7 @@ describe('DashboardPage', () => {
       root.unmount()
     })
     container.remove()
+    resetSharedTestListStoreForTests()
     vi.clearAllMocks()
   })
 
@@ -1044,6 +1054,51 @@ describe('DashboardPage', () => {
     expect(container.textContent).not.toContain('Checkout Late Run')
   })
 
+  it('hides cached runs while a newly selected project scope performs its first load', async () => {
+    await act(async () => {
+      root.render(
+        <DashboardPage
+          testStatuses={{}}
+          metricsHistory={{}}
+          connectionState="connected"
+          onSelectTest={onSelectTest}
+          onNavigate={onNavigate}
+        />,
+      )
+    })
+    await flushDashboard()
+    expect(container.textContent).toContain('Payments Failure Drill')
+
+    const projectTwo = deferred<{ tests: Array<ReturnType<typeof scopedTest>> }>()
+    apiMock.listTests.mockReturnValueOnce(projectTwo.promise)
+    projectState.activeProject = { id: 'project-2', name: 'Catalog', created_at: '', updated_at: '' }
+    applicationState.activeApplication = { id: 'app-2', name: 'Catalog', created_at: '', updated_at: '' }
+    applicationState.activeRelease = { id: 'rel-2', application_id: 'app-2', name: 'Catalog 1.0', created_at: '', updated_at: '' }
+
+    await act(async () => {
+      root.render(
+        <DashboardPage
+          testStatuses={{}}
+          metricsHistory={{}}
+          connectionState="connected"
+          onSelectTest={onSelectTest}
+          onNavigate={onNavigate}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('Loading dashboard runs…')
+    expect(container.textContent).not.toContain('Payments Failure Drill')
+    expect(container.textContent).not.toContain('No completed tests yet')
+
+    await act(async () => {
+      projectTwo.resolve({ tests: [scopedTest('test-project-2', 'Catalog Run', 'app-2', 'rel-2')] })
+    })
+    await flushDashboard()
+    expect(container.textContent).toContain('Catalog Run')
+    expect(container.textContent).not.toContain('Payments Failure Drill')
+  })
+
   it('uses the compact empty state when no tests are active', async () => {
     apiMock.listTests.mockResolvedValueOnce({
       tests: [
@@ -1111,6 +1166,169 @@ describe('DashboardPage', () => {
     expect(container.textContent).toContain('Start a test to build activity, performance, and release history.')
     clickButtonByText('Start New Test')
     expect(onNavigate).toHaveBeenCalledWith('new-test')
+  })
+
+  it('shows loading and retry states instead of first-run empties before the list is available', async () => {
+    const pending = deferred<{ tests: [] }>()
+    apiMock.listTests.mockReturnValueOnce(pending.promise)
+
+    await act(async () => {
+      root.render(
+        <DashboardPage
+          testStatuses={{}}
+          metricsHistory={{}}
+          connectionState="connected"
+          onSelectTest={onSelectTest}
+          onNavigate={onNavigate}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('Loading dashboard runs…')
+    expect(container.textContent).not.toContain('No completed tests yet')
+
+    await act(async () => {
+      pending.resolve({ tests: [] })
+    })
+    await flushDashboard()
+
+    expect(container.textContent).toContain('No completed tests yet')
+    expect(container.textContent).not.toContain('Loading dashboard runs…')
+  })
+
+  it('surfaces an initial list failure and retries it without presenting an empty account', async () => {
+    apiMock.listTests.mockRejectedValueOnce(new Error('controller unavailable'))
+
+    await act(async () => {
+      root.render(
+        <DashboardPage
+          testStatuses={{}}
+          metricsHistory={{}}
+          connectionState="connected"
+          onSelectTest={onSelectTest}
+          onNavigate={onNavigate}
+        />,
+      )
+    })
+    await flushDashboard()
+
+    expect(container.textContent).toContain('Unable to load dashboard runs. controller unavailable')
+    expect(container.textContent).not.toContain('No completed tests yet')
+
+    clickButtonByText('Retry')
+    await flushDashboard()
+
+    expect(container.textContent).toContain('Payments Failure Drill')
+    expect(container.textContent).not.toContain('Unable to load dashboard runs')
+  })
+
+  it('retains cached runs and labels them stale after a refresh failure', async () => {
+    await act(async () => {
+      root.render(
+        <DashboardPage
+          testStatuses={{}}
+          metricsHistory={{}}
+          connectionState="connected"
+          onSelectTest={onSelectTest}
+          onNavigate={onNavigate}
+        />,
+      )
+    })
+    await flushDashboard()
+    expect(container.textContent).toContain('Payments Failure Drill')
+
+    apiMock.listTests.mockRejectedValueOnce(new Error('refresh failed'))
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    await flushDashboard()
+
+    expect(container.textContent).toContain('Dashboard run data may be stale. refresh failed')
+    expect(container.textContent).toContain('Payments Failure Drill')
+    expect(container.textContent).not.toContain('No completed tests yet')
+  })
+
+  it('chunks project-scoped archive reports and retries a rejected partial batch', async () => {
+    expect('project_id' in applicationState.activeRelease).toBe(false)
+    const completedTests = Array.from({ length: 51 }, (_, index) => ({
+      id: `batch-run-${String(index + 1).padStart(2, '0')}`,
+      name: `Batch Run ${String(index + 1).padStart(2, '0')}`,
+      status: 'COMPLETE' as const,
+      project_id: 'project-1',
+      application_id: 'app-1',
+      release_id: 'rel-1',
+      groups: [],
+      total_vusers: 1,
+      duration: '1m',
+      created_at: `2026-05-12T18:${String(index).padStart(2, '0')}:00Z`,
+      ended_at: `2026-05-12T18:${String(index).padStart(2, '0')}:30Z`,
+      archive: { transaction_count: index + 1 },
+    }))
+    apiMock.listTests.mockResolvedValueOnce({ tests: completedTests })
+    let rejectedFinalBatch = false
+    apiMock.getTestArchiveReports.mockImplementation(async (testIds: string[]) => {
+      if (testIds.length === 1 && !rejectedFinalBatch) {
+        rejectedFinalBatch = true
+        throw new Error('archive store unavailable')
+      }
+      return {
+        reports: Object.fromEntries(testIds.map(testId => [testId, archiveReport(testId)])),
+      }
+    })
+
+    await act(async () => {
+      root.render(
+        <DashboardPage
+          testStatuses={{}}
+          metricsHistory={{}}
+          connectionState="connected"
+          onSelectTest={onSelectTest}
+          onNavigate={onNavigate}
+        />,
+      )
+    })
+    await flushDashboard()
+    await flushDashboard()
+
+    expect(apiMock.getTestArchiveReports).toHaveBeenCalledTimes(2)
+    expect(apiMock.getTestArchiveReports.mock.calls.map(call => call[0].length)).toEqual([50, 1])
+    expect(apiMock.getTestArchiveReports.mock.calls.every(call => call[1] === 'project-1')).toBe(true)
+    expect(apiMock.getTestArchiveReport).not.toHaveBeenCalled()
+
+    clickButtonByText('Performance Trend')
+    await flushDashboard()
+    expect(getTabByText('Performance Trend').textContent).toContain('50')
+    expect(container.textContent).toContain('1 archived performance report could not be loaded.')
+    expect(currentTableRunNames()).toHaveLength(50)
+
+    const laterRun = {
+      ...completedTests[0],
+      id: 'batch-run-52',
+      name: 'Batch Run 52',
+      created_at: '2026-05-12T19:00:00Z',
+      ended_at: '2026-05-12T19:00:30Z',
+    }
+    apiMock.listTests.mockResolvedValueOnce({ tests: [...completedTests, laterRun] })
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    await flushDashboard()
+    await flushDashboard()
+
+    expect(apiMock.getTestArchiveReports).toHaveBeenCalledTimes(3)
+    expect(apiMock.getTestArchiveReports.mock.calls[2][0]).toEqual(['batch-run-52'])
+    expect(container.textContent).toContain('1 archived performance report could not be loaded.')
+    expect(currentTableRunNames()).toHaveLength(51)
+
+    clickButtonByText('Retry reports')
+    await flushDashboard()
+    await flushDashboard()
+
+    expect(apiMock.getTestArchiveReports).toHaveBeenCalledTimes(4)
+    expect(apiMock.getTestArchiveReports.mock.calls[3][0]).toHaveLength(1)
+    expect(container.textContent).not.toContain('archived performance report could not be loaded')
+    expect(getTabByText('Performance Trend').textContent).toContain('52')
+    expect(currentTableRunNames()).toHaveLength(52)
   })
 
   it('keeps terminal tests out of active cards when websocket overrides are stale', async () => {
@@ -1267,6 +1485,26 @@ function scopedTest(id: string, name: string, applicationId: string, releaseId: 
     duration: '1m',
     created_at: '2026-05-12T20:00:00Z',
     ended_at: '2026-05-12T20:01:00Z',
+  }
+}
+
+function archiveReport(testId: string) {
+  return {
+    manifest: {
+      test_id: testId,
+      sla_breached: false,
+    },
+    overview: {
+      peak_tps: 10,
+      avg_response_ms: 100,
+      error_pct: 0,
+      peak_active_vusers: 1,
+      transactions: 100,
+    },
+    completeness: {
+      score_pct: 100,
+      status: 'complete',
+    },
   }
 }
 

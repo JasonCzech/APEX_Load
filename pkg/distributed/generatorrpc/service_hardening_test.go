@@ -2,6 +2,7 @@ package generatorrpc
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -13,6 +14,58 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+func TestGeneratorRejectsDurationOverflow(t *testing.T) {
+	service := NewService("duration-overflow", 10)
+	_, err := service.AssignWork(context.Background(), &pb.WorkAssignment{
+		TestId: "overflow", GroupName: "group", ScriptId: "script", VuserCount: 1,
+		TargetDurationSeconds: maxGeneratorDurationSeconds + 1,
+	})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("AssignWork error = %v, want InvalidArgument", err)
+	}
+	service.mu.Lock()
+	service.assignments["adjust-overflow"] = assignedTest{testID: "adjust-overflow"}
+	service.mu.Unlock()
+	_, err = service.AdjustDuration(context.Background(), &pb.DurationAdjustment{TestId: "adjust-overflow", TargetDurationSeconds: maxGeneratorDurationSeconds + 1})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("AdjustDuration error = %v, want InvalidArgument", err)
+	}
+}
+
+func TestWaitForGeneratorExecutionsHonorsCompletionAndCancellation(t *testing.T) {
+	done := make(chan struct{})
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		close(done)
+	}()
+	if err := waitForGeneratorExecutions(context.Background(), []*groupExecution{{done: done}}); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := waitForGeneratorExecutions(ctx, []*groupExecution{{done: make(chan struct{})}}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("wait error = %v, want context canceled", err)
+	}
+}
+
+func TestGeneratorShutdownStopsAssignmentsAndReleasesStreams(t *testing.T) {
+	service := NewService("shutdown", 10)
+	service.mu.Lock()
+	service.assignments["run"] = assignedTest{testID: "run", vuserCount: 1, groups: map[string]int32{"group": 1}}
+	service.mu.Unlock()
+	if err := service.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := service.ActiveVUsers(); got != 0 {
+		t.Fatalf("active VUsers after shutdown = %d", got)
+	}
+	select {
+	case <-service.shutdown:
+	default:
+		t.Fatal("shutdown signal was not closed")
+	}
+}
 
 func TestConfinedArchiveArtifactPath(t *testing.T) {
 	base := "/var/lib/apexload/archives/test-1"

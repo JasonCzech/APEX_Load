@@ -295,31 +295,85 @@ func (s *SQLiteStore) SaveProvisioningRequest(req *ProvisioningRequest) error {
 	if req.Status == "" {
 		req.Status = "pending"
 	}
+	if req.Revision < 1 {
+		req.Revision = 1
+	}
 	now := time.Now()
 	if req.CreatedAt.IsZero() {
 		req.CreatedAt = now
 	}
 	req.UpdatedAt = now
 	_, err := s.db.Exec(`INSERT INTO provisioning_requests (
-			id, fleet_pool_id, project_id, status, desired_count, reason, requested_by_subject, created_at, updated_at, completed_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			id, revision, attempt_token, fleet_pool_id, project_id, status, desired_count, reason, requested_by_subject, created_at, updated_at, completed_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
+			revision=excluded.revision, attempt_token=excluded.attempt_token,
 			fleet_pool_id=excluded.fleet_pool_id, project_id=excluded.project_id, status=excluded.status,
 			desired_count=excluded.desired_count, reason=excluded.reason,
 			requested_by_subject=excluded.requested_by_subject, updated_at=excluded.updated_at,
 			completed_at=excluded.completed_at`,
-		req.ID, req.FleetPoolID, req.ProjectID, req.Status, req.DesiredCount, req.Reason,
+		req.ID, req.Revision, req.AttemptToken, req.FleetPoolID, req.ProjectID, req.Status, req.DesiredCount, req.Reason,
 		req.RequestedBySubject, req.CreatedAt, req.UpdatedAt, req.CompletedAt)
 	return err
 }
 
-const provisioningRequestSelect = `SELECT id, fleet_pool_id, COALESCE(project_id, ''), COALESCE(status, 'pending'),
+func (s *SQLiteStore) CreateProvisioningRequestIfAbsent(req *ProvisioningRequest) (bool, error) {
+	if req == nil {
+		return false, fmt.Errorf("provisioning request is required")
+	}
+	if req.Status == "" {
+		req.Status = "pending"
+	}
+	if req.Revision < 1 {
+		req.Revision = 1
+	}
+	now := time.Now()
+	if req.CreatedAt.IsZero() {
+		req.CreatedAt = now
+	}
+	req.UpdatedAt = now
+	result, err := s.db.Exec(`INSERT INTO provisioning_requests (id, revision, attempt_token, fleet_pool_id, project_id, status, desired_count, reason, requested_by_subject, created_at, updated_at, completed_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING`,
+		req.ID, req.Revision, req.AttemptToken, req.FleetPoolID, req.ProjectID, req.Status, req.DesiredCount, req.Reason,
+		req.RequestedBySubject, req.CreatedAt, req.UpdatedAt, req.CompletedAt)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return affected == 1, nil
+}
+
+func (s *SQLiteStore) TransitionProvisioningRequest(req *ProvisioningRequest, expectedRevision int, expectedAttemptToken string) (bool, error) {
+	if req == nil {
+		return false, fmt.Errorf("provisioning request is required")
+	}
+	if req.Revision != expectedRevision+1 {
+		return false, fmt.Errorf("provisioning request revision must advance by one")
+	}
+	req.UpdatedAt = time.Now()
+	result, err := s.db.Exec(`UPDATE provisioning_requests SET revision=?, attempt_token=?, fleet_pool_id=?, project_id=?, status=?, desired_count=?, reason=?, requested_by_subject=?, updated_at=?, completed_at=? WHERE id=? AND COALESCE(revision, 1)=? AND COALESCE(attempt_token, '')=?`,
+		req.Revision, req.AttemptToken, req.FleetPoolID, req.ProjectID, req.Status, req.DesiredCount, req.Reason, req.RequestedBySubject, req.UpdatedAt, req.CompletedAt,
+		req.ID, expectedRevision, expectedAttemptToken)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return affected == 1, nil
+}
+
+const provisioningRequestSelect = `SELECT id, COALESCE(revision, 1), COALESCE(attempt_token, ''), fleet_pool_id, COALESCE(project_id, ''), COALESCE(status, 'pending'),
 	desired_count, COALESCE(reason, ''), COALESCE(requested_by_subject, ''), created_at, updated_at, completed_at
 	FROM provisioning_requests`
 
 func scanProvisioningRequest(row capacityRowScanner) (*ProvisioningRequest, error) {
 	var req ProvisioningRequest
-	if err := row.Scan(&req.ID, &req.FleetPoolID, &req.ProjectID, &req.Status, &req.DesiredCount,
+	if err := row.Scan(&req.ID, &req.Revision, &req.AttemptToken, &req.FleetPoolID, &req.ProjectID, &req.Status, &req.DesiredCount,
 		&req.Reason, &req.RequestedBySubject, &req.CreatedAt, &req.UpdatedAt, &req.CompletedAt); err != nil {
 		return nil, err
 	}

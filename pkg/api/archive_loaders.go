@@ -25,7 +25,39 @@ const (
 	maxArchiveJSONLRecordBytes     = 64 << 20
 	maxArchiveAnalysisDimensions   = 10_000
 	maxArchiveReportAggregateCells = 1_000_000
+	maxArchiveQueryRecords         = 2_000_000
+	maxArchiveQueryBytes           = 512 << 20
 )
+
+type archiveScanBudget struct {
+	ctx        context.Context
+	records    int
+	bytes      int64
+	maxRecords int
+	maxBytes   int64
+}
+
+func newArchiveScanBudget(ctx context.Context, maxRecords int, maxBytes int64) *archiveScanBudget {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return &archiveScanBudget{ctx: ctx, maxRecords: maxRecords, maxBytes: maxBytes}
+}
+
+func (b *archiveScanBudget) Observe(record []byte) error {
+	if err := b.ctx.Err(); err != nil {
+		return err
+	}
+	b.records++
+	b.bytes += int64(len(record))
+	if b.maxRecords > 0 && b.records > b.maxRecords {
+		return fmt.Errorf("archive query exceeds record budget %d", b.maxRecords)
+	}
+	if b.maxBytes > 0 && b.bytes > b.maxBytes {
+		return fmt.Errorf("archive query exceeds byte budget %d", b.maxBytes)
+	}
+	return nil
+}
 
 func newArchiveJSONLScanner(reader io.Reader) *bufio.Scanner {
 	scanner := bufio.NewScanner(reader)
@@ -34,25 +66,30 @@ func newArchiveJSONLScanner(reader io.Reader) *bufio.Scanner {
 }
 
 func loadArchiveTransactions(record *storage.RunArchiveRecord, filter transactionEventFilter, page archivePage) ([]TransactionEvent, int, error) {
-	lease, err := acquireArchiveMaterialized(context.Background(), record)
+	return loadArchiveTransactionsContext(context.Background(), record, filter, page)
+}
+
+func loadArchiveTransactionsContext(ctx context.Context, record *storage.RunArchiveRecord, filter transactionEventFilter, page archivePage) ([]TransactionEvent, int, error) {
+	lease, err := acquireArchiveMaterialized(ctx, record)
 	if err != nil {
 		return nil, 0, err
 	}
 	defer lease.Release()
-	manifest, err := loadRunArchiveManifest(record.ManifestPath)
+	manifest, err := loadRunArchiveManifestFromRecord(record)
 	if err != nil {
 		return nil, 0, err
 	}
-	path, err := archiveArtifactPath(record.ArchivePath, manifest.TransactionsFile)
+	file, _, err := openArchiveArtifactForRead(record.ArchivePath, manifest.TransactionsFile)
 	if err != nil {
 		return nil, 0, err
 	}
+	defer file.Close()
 	predicate := func(item *TransactionEvent) bool {
 		return transactionMatchesArchiveFilter(item, filter)
 	}
 
 	if filter.SortBy != "" {
-		items, total, err := readJSONLSortedTransactionPage(path, predicate, page, filter.SortBy, filter.SortDir)
+		items, total, err := readJSONLSortedTransactionPageFrom(ctx, file, predicate, page, filter.SortBy, filter.SortDir)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -60,7 +97,7 @@ func loadArchiveTransactions(record *storage.RunArchiveRecord, filter transactio
 		return items, total, nil
 	}
 
-	items, total, err := readJSONLPage(path, page, predicate)
+	items, total, err := readJSONLPageFrom(ctx, file, page, predicate)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -72,6 +109,15 @@ func loadArchiveTransactions(record *storage.RunArchiveRecord, filter transactio
 // scanning the archive. It never materializes every matching transaction just
 // to return one sorted page.
 func readJSONLSortedTransactionPage(path string, predicate func(*TransactionEvent) bool, page archivePage, sortBy, sortDir string) ([]TransactionEvent, int, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer file.Close()
+	return readJSONLSortedTransactionPageFrom(context.Background(), file, predicate, page, sortBy, sortDir)
+}
+
+func readJSONLSortedTransactionPageFrom(ctx context.Context, reader io.Reader, predicate func(*TransactionEvent) bool, page archivePage, sortBy, sortDir string) ([]TransactionEvent, int, error) {
 	limit := page.Limit
 	if limit <= 0 {
 		limit = 100
@@ -86,15 +132,14 @@ func readJSONLSortedTransactionPage(path string, predicate func(*TransactionEven
 	if keep < limit || keep > maxArchiveSortWindow {
 		return nil, 0, fmt.Errorf("sorted archive window exceeds %d records", maxArchiveSortWindow)
 	}
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, 0, err
-	}
-	defer file.Close()
-	scanner := newArchiveJSONLScanner(file)
+	scanner := newArchiveJSONLScanner(reader)
+	budget := newArchiveScanBudget(ctx, maxArchiveQueryRecords, maxArchiveQueryBytes)
 	items := make([]TransactionEvent, 0, min(keep, limit*2))
 	total := 0
 	for scanner.Scan() {
+		if err := budget.Observe(scanner.Bytes()); err != nil {
+			return nil, 0, err
+		}
 		var item TransactionEvent
 		if err := json.Unmarshal(scanner.Bytes(), &item); err != nil {
 			return nil, 0, err
@@ -269,45 +314,55 @@ func compareInt64(a int64, b int64) int {
 }
 
 func loadArchiveResourceSamples(record *storage.RunArchiveRecord, page archivePage) ([]ResourceSample, int, error) {
-	lease, err := acquireArchiveMaterialized(context.Background(), record)
+	return loadArchiveResourceSamplesContext(context.Background(), record, page)
+}
+
+func loadArchiveResourceSamplesContext(ctx context.Context, record *storage.RunArchiveRecord, page archivePage) ([]ResourceSample, int, error) {
+	lease, err := acquireArchiveMaterialized(ctx, record)
 	if err != nil {
 		return nil, 0, err
 	}
 	defer lease.Release()
-	manifest, err := loadRunArchiveManifest(record.ManifestPath)
+	manifest, err := loadRunArchiveManifestFromRecord(record)
 	if err != nil {
 		return nil, 0, err
 	}
-	path, err := archiveArtifactPath(record.ArchivePath, manifest.ResourceSamplesFile)
+	file, _, err := openArchiveArtifactForRead(record.ArchivePath, manifest.ResourceSamplesFile)
 	if err != nil {
 		return nil, 0, err
 	}
-	return readJSONLPage[ResourceSample](path, page, nil)
+	defer file.Close()
+	return readJSONLPageFrom[ResourceSample](ctx, file, page, nil)
 }
 
 func loadArchiveIntervalSummaries(record *storage.RunArchiveRecord, page archivePage, action string, groupFilter groupFilterQuery) ([]IntervalSummaryRecord, int, error) {
+	return loadArchiveIntervalSummariesContext(context.Background(), record, page, action, groupFilter)
+}
+
+func loadArchiveIntervalSummariesContext(ctx context.Context, record *storage.RunArchiveRecord, page archivePage, action string, groupFilter groupFilterQuery) ([]IntervalSummaryRecord, int, error) {
 	action = strings.TrimSpace(action)
 	if action != "" || groupFilter.Explicit {
-		summaries, err := loadArchiveIntervalSummariesForFilters(record, action, groupFilter)
+		summaries, err := loadArchiveIntervalSummariesForFiltersContext(ctx, record, action, groupFilter)
 		if err != nil {
 			return nil, 0, err
 		}
 		return pageArchiveItems(summaries, page), len(summaries), nil
 	}
-	lease, err := acquireArchiveMaterialized(context.Background(), record)
+	lease, err := acquireArchiveMaterialized(ctx, record)
 	if err != nil {
 		return nil, 0, err
 	}
 	defer lease.Release()
-	manifest, err := loadRunArchiveManifest(record.ManifestPath)
+	manifest, err := loadRunArchiveManifestFromRecord(record)
 	if err != nil {
 		return nil, 0, err
 	}
-	path, err := archiveArtifactPath(record.ArchivePath, manifest.IntervalSummariesFile)
+	file, _, err := openArchiveArtifactForRead(record.ArchivePath, manifest.IntervalSummariesFile)
 	if err != nil {
 		return nil, 0, err
 	}
-	return readJSONLPage[IntervalSummaryRecord](path, page, nil)
+	defer file.Close()
+	return readJSONLPageFrom[IntervalSummaryRecord](ctx, file, page, nil)
 }
 
 func loadArchiveIntervalSummariesForAction(record *storage.RunArchiveRecord, action string) ([]IntervalSummaryRecord, error) {
@@ -315,8 +370,12 @@ func loadArchiveIntervalSummariesForAction(record *storage.RunArchiveRecord, act
 }
 
 func loadArchiveIntervalSummariesForFilters(record *storage.RunArchiveRecord, action string, groupFilter groupFilterQuery) ([]IntervalSummaryRecord, error) {
+	return loadArchiveIntervalSummariesForFiltersContext(context.Background(), record, action, groupFilter)
+}
+
+func loadArchiveIntervalSummariesForFiltersContext(ctx context.Context, record *storage.RunArchiveRecord, action string, groupFilter groupFilterQuery) ([]IntervalSummaryRecord, error) {
 	action = strings.TrimSpace(action)
-	summaries, err := readAllArchiveSummaries(record)
+	summaries, err := readAllArchiveSummariesContext(ctx, record)
 	if err != nil {
 		return nil, err
 	}
@@ -324,13 +383,13 @@ func loadArchiveIntervalSummariesForFilters(record *storage.RunArchiveRecord, ac
 		return summaries, nil
 	}
 	var configuredGroups []TestGroup
-	if manifest, err := loadRunArchiveManifest(record.ManifestPath); err == nil && manifest != nil {
+	if manifest, err := loadRunArchiveManifestFromRecord(record); err == nil && manifest != nil {
 		configuredGroups = manifest.Provenance.Groups
 	}
 	groupSet := selectedGroupNameSet(groupFilter.Names)
 	buckets := make([]archiveActionSummaryBucket, len(summaries))
 	durationQuantiles := make([]*archiveQuantileAccumulator, len(summaries))
-	if err := forEachArchiveTransaction(record, func(tx *TransactionEvent) error {
+	if err := forEachArchiveTransactionContext(ctx, record, func(tx *TransactionEvent) error {
 		if groupFilter.Explicit {
 			if len(groupSet) == 0 {
 				return nil
@@ -398,37 +457,44 @@ func loadArchiveIntervalSummariesForFilters(record *storage.RunArchiveRecord, ac
 }
 
 func forEachArchiveTransaction(record *storage.RunArchiveRecord, fn func(*TransactionEvent) error) error {
-	return forEachArchiveRecord(record, func(manifest *RunArchiveManifest) string {
+	return forEachArchiveTransactionContext(context.Background(), record, fn)
+}
+
+func forEachArchiveTransactionContext(ctx context.Context, record *storage.RunArchiveRecord, fn func(*TransactionEvent) error) error {
+	return forEachArchiveRecordContext(ctx, record, func(manifest *RunArchiveManifest) string {
 		return manifest.TransactionsFile
 	}, fn)
 }
 
-// forEachArchiveRecord streams a JSONL artifact without imposing a total-file
-// record or byte ceiling. Large, legitimate load-test archives routinely exceed
-// those totals; callers that aggregate them must keep their own state bounded.
-// newArchiveJSONLScanner still enforces the hard per-record size limit.
+// forEachArchiveRecord streams a JSONL artifact under a larger, but still hard,
+// cumulative budget than materializing helpers. Reports can process archives
+// beyond the in-memory limit without turning one request into unbounded CPU.
 func forEachArchiveRecord[T any](record *storage.RunArchiveRecord, pathSelector func(*RunArchiveManifest) string, fn func(*T) error) error {
-	lease, err := acquireArchiveMaterialized(context.Background(), record)
+	return forEachArchiveRecordContext(context.Background(), record, pathSelector, fn)
+}
+
+func forEachArchiveRecordContext[T any](ctx context.Context, record *storage.RunArchiveRecord, pathSelector func(*RunArchiveManifest) string, fn func(*T) error) error {
+	lease, err := acquireArchiveMaterialized(ctx, record)
 	if err != nil {
 		return err
 	}
 	defer lease.Release()
-	manifest, err := loadRunArchiveManifest(record.ManifestPath)
+	manifest, err := loadRunArchiveManifestFromRecord(record)
 	if err != nil {
 		return err
 	}
-	path, err := archiveArtifactPath(record.ArchivePath, pathSelector(manifest))
-	if err != nil {
-		return err
-	}
-	file, err := os.Open(path)
+	file, _, err := openArchiveArtifactForRead(record.ArchivePath, pathSelector(manifest))
 	if err != nil {
 		return err
 	}
 	defer file.Close()
 
 	scanner := newArchiveJSONLScanner(file)
+	budget := newArchiveScanBudget(ctx, maxArchiveQueryRecords, maxArchiveQueryBytes)
 	for scanner.Scan() {
+		if err := budget.Observe(scanner.Bytes()); err != nil {
+			return err
+		}
 		var item T
 		if err := json.Unmarshal(scanner.Bytes(), &item); err != nil {
 			return err
@@ -642,21 +708,27 @@ func readAllArchiveSummaries(record *storage.RunArchiveRecord) ([]IntervalSummar
 	})
 }
 
+func readAllArchiveSummariesContext(ctx context.Context, record *storage.RunArchiveRecord) ([]IntervalSummaryRecord, error) {
+	return readAllArchiveRecordsContext[IntervalSummaryRecord](ctx, record, func(manifest *RunArchiveManifest) string {
+		return manifest.IntervalSummariesFile
+	})
+}
+
 func readAllArchiveRecords[T any](record *storage.RunArchiveRecord, pathSelector func(*RunArchiveManifest) string) ([]T, error) {
-	lease, err := acquireArchiveMaterialized(context.Background(), record)
+	return readAllArchiveRecordsContext[T](context.Background(), record, pathSelector)
+}
+
+func readAllArchiveRecordsContext[T any](ctx context.Context, record *storage.RunArchiveRecord, pathSelector func(*RunArchiveManifest) string) ([]T, error) {
+	lease, err := acquireArchiveMaterialized(ctx, record)
 	if err != nil {
 		return nil, err
 	}
 	defer lease.Release()
-	manifest, err := loadRunArchiveManifest(record.ManifestPath)
+	manifest, err := loadRunArchiveManifestFromRecord(record)
 	if err != nil {
 		return nil, err
 	}
-	path, err := archiveArtifactPath(record.ArchivePath, pathSelector(manifest))
-	if err != nil {
-		return nil, err
-	}
-	file, err := os.Open(path)
+	file, _, err := openArchiveArtifactForRead(record.ArchivePath, pathSelector(manifest))
 	if err != nil {
 		return nil, err
 	}
@@ -667,6 +739,9 @@ func readAllArchiveRecords[T any](record *storage.RunArchiveRecord, pathSelector
 	items := make([]T, 0)
 	totalBytes := 0
 	for scanner.Scan() {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		totalBytes += len(scanner.Bytes())
 		if len(items) >= maxArchiveAnalysisRecords || totalBytes > maxArchiveAnalysisBytes {
 			return nil, fmt.Errorf("archive exceeds bounded analysis limit (%d records or %d bytes)", maxArchiveAnalysisRecords, maxArchiveAnalysisBytes)
@@ -747,7 +822,10 @@ func readJSONLPage[T any](path string, page archivePage, predicate func(*T) bool
 		return nil, 0, err
 	}
 	defer file.Close()
+	return readJSONLPageFrom(context.Background(), file, page, predicate)
+}
 
+func readJSONLPageFrom[T any](ctx context.Context, reader io.Reader, page archivePage, predicate func(*T) bool) ([]T, int, error) {
 	limit := page.Limit
 	if limit <= 0 {
 		limit = 100
@@ -759,11 +837,15 @@ func readJSONLPage[T any](path string, page archivePage, predicate func(*T) bool
 		page.Offset = 0
 	}
 
-	scanner := newArchiveJSONLScanner(file)
+	scanner := newArchiveJSONLScanner(reader)
+	budget := newArchiveScanBudget(ctx, maxArchiveQueryRecords, maxArchiveQueryBytes)
 
 	items := make([]T, 0, limit)
 	matched := 0
 	for scanner.Scan() {
+		if err := budget.Observe(scanner.Bytes()); err != nil {
+			return nil, 0, err
+		}
 		if predicate == nil {
 			if matched >= page.Offset && len(items) < limit {
 				var item T
@@ -807,75 +889,62 @@ type archiveSampleBucket[T any] struct {
 	maxima []indexedArchiveSample[T]
 }
 
-// readJSONLDownsampled scans an archive artifact once and retains temporal
-// endpoints plus independent per-bucket extrema. Unlike offset pagination it
-// does not rescan the entire JSONL file for every chart window, and isolated
-// spikes remain visible instead of falling between sampled windows.
-func readJSONLDownsampled[T any](path string, totalHint, maxItems int, scoreFunctions ...func(*T) float64) ([]T, int, error) {
+func boundedArchiveScoreFunctions[T any](maxItems int, scoreFunctions []func(*T) float64) ([]func(*T) float64, error) {
 	if maxItems < 2 {
-		return nil, 0, fmt.Errorf("sample limit must be at least 2")
+		return nil, fmt.Errorf("sample limit must be at least 2")
 	}
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, 0, err
-	}
-	defer file.Close()
-
 	maxScoreFunctions := (maxItems - 2) / 2
 	if len(scoreFunctions) > maxScoreFunctions {
 		scoreFunctions = scoreFunctions[:maxScoreFunctions]
 	}
-	slotsPerBucket := 2 + 2*len(scoreFunctions)
+	return scoreFunctions, nil
+}
+
+func newArchiveSampleBuckets[T any](maxItems int, scoreFunctionCount int) []archiveSampleBucket[T] {
+	slotsPerBucket := 2 + 2*scoreFunctionCount
 	bucketCount := maxItems / slotsPerBucket
 	if bucketCount < 1 {
 		bucketCount = 1
 	}
-	if totalHint < 1 {
-		totalHint = maxItems
-	}
 	buckets := make([]archiveSampleBucket[T], bucketCount)
 	for index := range buckets {
-		buckets[index].minima = make([]indexedArchiveSample[T], len(scoreFunctions))
-		buckets[index].maxima = make([]indexedArchiveSample[T], len(scoreFunctions))
+		buckets[index].minima = make([]indexedArchiveSample[T], scoreFunctionCount)
+		buckets[index].maxima = make([]indexedArchiveSample[T], scoreFunctionCount)
 	}
+	return buckets
+}
 
-	scanner := newArchiveJSONLScanner(file)
-	matched := 0
-	for scanner.Scan() {
-		var item T
-		if err := json.Unmarshal(scanner.Bytes(), &item); err != nil {
-			return nil, 0, err
-		}
-		bucketIndex := int((int64(matched) * int64(bucketCount)) / int64(totalHint))
-		if bucketIndex >= bucketCount {
-			bucketIndex = bucketCount - 1
-		}
-		bucket := &buckets[bucketIndex]
-		candidate := indexedArchiveSample[T]{index: matched, value: item, set: true}
-		if !bucket.first.set {
-			bucket.first = candidate
-		}
-		bucket.last = candidate
-		for scoreIndex, scoreFunction := range scoreFunctions {
-			score := scoreFunction(&item)
-			if math.IsNaN(score) {
-				continue
-			}
-			scoredCandidate := candidate
-			scoredCandidate.score = score
-			if !bucket.minima[scoreIndex].set || score < bucket.minima[scoreIndex].score {
-				bucket.minima[scoreIndex] = scoredCandidate
-			}
-			if !bucket.maxima[scoreIndex].set || score > bucket.maxima[scoreIndex].score {
-				bucket.maxima[scoreIndex] = scoredCandidate
-			}
-		}
-		matched++
+func recordArchiveSample[T any](buckets []archiveSampleBucket[T], totalHint int, index int, item T, scoreFunctions []func(*T) float64) {
+	if totalHint < 1 {
+		totalHint = 1
 	}
-	if err := scanner.Err(); err != nil {
-		return nil, 0, err
+	bucketIndex := int((int64(index) * int64(len(buckets))) / int64(totalHint))
+	if bucketIndex >= len(buckets) {
+		bucketIndex = len(buckets) - 1
 	}
+	bucket := &buckets[bucketIndex]
+	candidate := indexedArchiveSample[T]{index: index, value: item, set: true}
+	if !bucket.first.set {
+		bucket.first = candidate
+	}
+	bucket.last = candidate
+	for scoreIndex, scoreFunction := range scoreFunctions {
+		score := scoreFunction(&item)
+		if math.IsNaN(score) {
+			continue
+		}
+		scoredCandidate := candidate
+		scoredCandidate.score = score
+		if !bucket.minima[scoreIndex].set || score < bucket.minima[scoreIndex].score {
+			bucket.minima[scoreIndex] = scoredCandidate
+		}
+		if !bucket.maxima[scoreIndex].set || score > bucket.maxima[scoreIndex].score {
+			bucket.maxima[scoreIndex] = scoredCandidate
+		}
+	}
+}
 
+func collectArchiveSamples[T any](buckets []archiveSampleBucket[T], maxItems int) []T {
 	candidates := make(map[int]T, maxItems)
 	for _, bucket := range buckets {
 		if bucket.first.set {
@@ -901,30 +970,78 @@ func readJSONLDownsampled[T any](path string, totalHint, maxItems int, scoreFunc
 	for _, index := range indexes {
 		items = append(items, candidates[index])
 	}
-	return items, matched, nil
+	return items
 }
 
-func loadArchiveResourceSamplesDownsampled(record *storage.RunArchiveRecord, limit int) ([]ResourceSample, int, error) {
-	lease, err := acquireArchiveMaterialized(context.Background(), record)
+func downsampleArchiveItems[T any](items []T, maxItems int, scoreFunctions ...func(*T) float64) ([]T, error) {
+	boundedScores, err := boundedArchiveScoreFunctions(maxItems, scoreFunctions)
+	if err != nil {
+		return nil, err
+	}
+	if len(items) <= maxItems {
+		return append([]T(nil), items...), nil
+	}
+	buckets := newArchiveSampleBuckets[T](maxItems, len(boundedScores))
+	for index, item := range items {
+		recordArchiveSample(buckets, len(items), index, item, boundedScores)
+	}
+	return collectArchiveSamples(buckets, maxItems), nil
+}
+
+// readJSONLDownsampled scans an archive artifact once and retains temporal
+// endpoints plus independent per-bucket extrema. Unlike offset pagination it
+// does not rescan the entire JSONL file for every chart window, and isolated
+// spikes remain visible instead of falling between sampled windows.
+func readJSONLDownsampled[T any](path string, totalHint, maxItems int, scoreFunctions ...func(*T) float64) ([]T, int, error) {
+	file, err := os.Open(path)
 	if err != nil {
 		return nil, 0, err
 	}
-	defer lease.Release()
-	manifest, err := loadRunArchiveManifest(record.ManifestPath)
+	defer file.Close()
+	return readJSONLDownsampledFrom(context.Background(), file, totalHint, maxItems, scoreFunctions...)
+}
+
+func readJSONLDownsampledFrom[T any](ctx context.Context, reader io.Reader, totalHint, maxItems int, scoreFunctions ...func(*T) float64) ([]T, int, error) {
+	boundedScores, err := boundedArchiveScoreFunctions(maxItems, scoreFunctions)
 	if err != nil {
 		return nil, 0, err
 	}
-	path, err := archiveArtifactPath(record.ArchivePath, manifest.ResourceSamplesFile)
-	if err != nil {
+
+	if totalHint < 1 {
+		totalHint = maxItems
+	}
+	buckets := newArchiveSampleBuckets[T](maxItems, len(boundedScores))
+
+	scanner := newArchiveJSONLScanner(reader)
+	budget := newArchiveScanBudget(ctx, maxArchiveQueryRecords, maxArchiveQueryBytes)
+	matched := 0
+	for scanner.Scan() {
+		if err := budget.Observe(scanner.Bytes()); err != nil {
+			return nil, 0, err
+		}
+		var item T
+		if err := json.Unmarshal(scanner.Bytes(), &item); err != nil {
+			return nil, 0, err
+		}
+		recordArchiveSample(buckets, totalHint, matched, item, boundedScores)
+		matched++
+	}
+	if err := scanner.Err(); err != nil {
 		return nil, 0, err
 	}
-	return readJSONLDownsampled(path, int(manifest.ResourceSampleCount), limit,
+	return collectArchiveSamples(buckets, maxItems), matched, nil
+}
+
+func archiveResourceSampleScores() []func(*ResourceSample) float64 {
+	return []func(*ResourceSample) float64{
+		// Safety-critical container signals are independent dimensions. Keeping
+		// them ahead of general utilization also preserves them at small limits.
+		func(sample *ResourceSample) float64 { return float64(sample.ContainerOOMKillCountDelta) },
+		func(sample *ResourceSample) float64 { return sample.ContainerMemoryUsagePct },
 		func(sample *ResourceSample) float64 {
 			return math.Max(math.Max(sample.CPUProcessPct, 100-sample.CPUFreePct), math.Max(sample.ContainerCPUUsagePct, sample.CPUIOWaitPct+sample.CPUStealPct))
 		},
-		func(sample *ResourceSample) float64 {
-			return math.Max(math.Max(sample.MemProcessMB, sample.HeapAllocMB), math.Max(sample.ContainerMemoryUsagePct, float64(sample.ContainerOOMKillCountDelta)*1000))
-		},
+		func(sample *ResourceSample) float64 { return math.Max(sample.MemProcessMB, sample.HeapAllocMB) },
 		func(sample *ResourceSample) float64 {
 			return sample.NetSentKbps + sample.NetRecvKbps + sample.NetDropInPerSec + sample.NetDropOutPerSec + sample.TCPRetransmitsPerSec
 		},
@@ -932,30 +1049,79 @@ func loadArchiveResourceSamplesDownsampled(record *storage.RunArchiveRecord, lim
 			return sample.DiskReadKbps + sample.DiskWriteKbps + sample.DiskIOTimePct + sample.DiskWeightedIOTimePct
 		},
 		func(sample *ResourceSample) float64 { return float64(sample.ActiveVUsers) },
-	)
+	}
 }
 
-func loadArchiveIntervalSummariesDownsampled(record *storage.RunArchiveRecord, limit int) ([]IntervalSummaryRecord, int, error) {
-	lease, err := acquireArchiveMaterialized(context.Background(), record)
+func archiveIntervalSummaryScores() []func(*IntervalSummaryRecord) float64 {
+	return []func(*IntervalSummaryRecord) float64{
+		// Error rate and cumulative error count answer different questions and
+		// must not compete for the same extrema slot.
+		func(sample *IntervalSummaryRecord) float64 { return sample.ErrorPct },
+		func(sample *IntervalSummaryRecord) float64 { return float64(sample.TotalErrors) },
+		func(sample *IntervalSummaryRecord) float64 { return sample.TPS },
+		func(sample *IntervalSummaryRecord) float64 { return math.Abs(sample.ThroughputGapPct) },
+		func(sample *IntervalSummaryRecord) float64 { return math.Max(sample.P99Ms, sample.AvgResponseMs) },
+		func(sample *IntervalSummaryRecord) float64 { return float64(sample.ActiveVUsers) },
+	}
+}
+
+func loadArchiveResourceSamplesDownsampled(record *storage.RunArchiveRecord, limit int) ([]ResourceSample, int, error) {
+	return loadArchiveResourceSamplesDownsampledContext(context.Background(), record, limit)
+}
+
+func loadArchiveResourceSamplesDownsampledContext(ctx context.Context, record *storage.RunArchiveRecord, limit int) ([]ResourceSample, int, error) {
+	lease, err := acquireArchiveMaterialized(ctx, record)
 	if err != nil {
 		return nil, 0, err
 	}
 	defer lease.Release()
-	manifest, err := loadRunArchiveManifest(record.ManifestPath)
+	manifest, err := loadRunArchiveManifestFromRecord(record)
 	if err != nil {
 		return nil, 0, err
 	}
-	path, err := archiveArtifactPath(record.ArchivePath, manifest.IntervalSummariesFile)
+	file, _, err := openArchiveArtifactForRead(record.ArchivePath, manifest.ResourceSamplesFile)
 	if err != nil {
 		return nil, 0, err
 	}
-	return readJSONLDownsampled(path, int(manifest.IntervalSummaryCount), limit,
-		func(sample *IntervalSummaryRecord) float64 { return sample.TPS },
-		func(sample *IntervalSummaryRecord) float64 { return math.Abs(sample.ThroughputGapPct) },
-		func(sample *IntervalSummaryRecord) float64 { return math.Max(sample.P99Ms, sample.AvgResponseMs) },
-		func(sample *IntervalSummaryRecord) float64 {
-			return math.Max(sample.ErrorPct, float64(sample.TotalErrors))
-		},
-		func(sample *IntervalSummaryRecord) float64 { return float64(sample.ActiveVUsers) },
-	)
+	defer file.Close()
+	return readJSONLDownsampledFrom(ctx, file, int(manifest.ResourceSampleCount), limit, archiveResourceSampleScores()...)
+}
+
+func loadArchiveIntervalSummariesDownsampled(record *storage.RunArchiveRecord, limit int) ([]IntervalSummaryRecord, int, error) {
+	return loadArchiveIntervalSummariesDownsampledContext(context.Background(), record, limit)
+}
+
+func loadArchiveIntervalSummariesDownsampledContext(ctx context.Context, record *storage.RunArchiveRecord, limit int) ([]IntervalSummaryRecord, int, error) {
+	lease, err := acquireArchiveMaterialized(ctx, record)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer lease.Release()
+	manifest, err := loadRunArchiveManifestFromRecord(record)
+	if err != nil {
+		return nil, 0, err
+	}
+	file, _, err := openArchiveArtifactForRead(record.ArchivePath, manifest.IntervalSummariesFile)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer file.Close()
+	return readJSONLDownsampledFrom(ctx, file, int(manifest.IntervalSummaryCount), limit, archiveIntervalSummaryScores()...)
+}
+
+func loadArchiveIntervalSummariesForFiltersDownsampled(record *storage.RunArchiveRecord, limit int, action string, groupFilter groupFilterQuery) ([]IntervalSummaryRecord, int, error) {
+	return loadArchiveIntervalSummariesForFiltersDownsampledContext(context.Background(), record, limit, action, groupFilter)
+}
+
+func loadArchiveIntervalSummariesForFiltersDownsampledContext(ctx context.Context, record *storage.RunArchiveRecord, limit int, action string, groupFilter groupFilterQuery) ([]IntervalSummaryRecord, int, error) {
+	summaries, err := loadArchiveIntervalSummariesForFiltersContext(ctx, record, action, groupFilter)
+	if err != nil {
+		return nil, 0, err
+	}
+	total := len(summaries)
+	items, err := downsampleArchiveItems(summaries, limit, archiveIntervalSummaryScores()...)
+	if err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
 }

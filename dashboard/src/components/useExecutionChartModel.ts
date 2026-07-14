@@ -1,6 +1,7 @@
 import { useMemo, useReducer } from 'react'
 
 import { MetricsHistoryPoint, TestSummary } from '../types'
+import { isCompletedTestStatus } from '../utils/testStatusUtils'
 import {
   executionChartZoomReducer,
   getExecutionChartRefArea,
@@ -17,6 +18,7 @@ interface UseExecutionChartModelOptions {
   test: TestSummary | null
   history: MetricsHistoryPoint[]
   localMetricsHistory: MetricsHistoryPoint[]
+  archiveSummaryHistory?: MetricsHistoryPoint[]
   archiveResourceHistory?: MetricsHistoryPoint[]
 }
 
@@ -24,22 +26,25 @@ export function useExecutionChartModel({
   test,
   history,
   localMetricsHistory,
+  archiveSummaryHistory = [],
   archiveResourceHistory = [],
 }: UseExecutionChartModelOptions) {
   const [chartZoomState, dispatchChartZoom] = useReducer(executionChartZoomReducer, initialExecutionChartZoomState)
   const mappedBackendHistory = useMemo(() => {
     return mapExecutionHistory(test?.history)
   }, [test?.history])
+  const useArchivePerformanceHistory = archiveSummaryHistory.length > 0
+    && (Boolean(test?.archive) || isCompletedTestStatus(test?.status))
 
   const chartData = useMemo(() => {
     return buildExecutionChartData({
-      mappedBackendHistory,
-      localMetricsHistory,
+      mappedBackendHistory: useArchivePerformanceHistory ? [] : mappedBackendHistory,
+      localMetricsHistory: useArchivePerformanceHistory ? archiveSummaryHistory : localMetricsHistory,
       fallbackHistory: history,
       archiveResourceHistory,
       status: test?.status,
     })
-  }, [archiveResourceHistory, history, localMetricsHistory, mappedBackendHistory, test?.status])
+  }, [archiveResourceHistory, archiveSummaryHistory, history, localMetricsHistory, mappedBackendHistory, test?.status, useArchivePerformanceHistory])
 
   const filteredData = useMemo(() => {
     return filterExecutionChartData(chartData, chartZoomState.timeRange, chartZoomState.zoomRange)

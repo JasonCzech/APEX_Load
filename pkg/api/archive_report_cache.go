@@ -167,7 +167,7 @@ func cachedRunArchiveManifest(record *storage.RunArchiveRecord) (*RunArchiveMani
 	defer lease.Release()
 	key := runArchiveReportCacheKey(record)
 	manifest, err := runArchiveManifestCache.getOrLoad(key, func() (*RunArchiveManifest, error) {
-		return loadRunArchiveManifest(record.ManifestPath)
+		return loadRunArchiveManifestFromRecord(record)
 	})
 	if err != nil {
 		return nil, err

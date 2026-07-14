@@ -119,4 +119,45 @@ describe('useExecutionTestManifest', () => {
     })
     expect(apiMocks.getTestManifest).toHaveBeenCalledTimes(2)
   })
+
+  it('coalesces interval and manual refreshes while a manifest request is in flight', async () => {
+    vi.useFakeTimers()
+    const first = deferred<TestRunManifest>()
+    apiMocks.getTestManifest
+      .mockReturnValueOnce(first.promise)
+      .mockResolvedValue(manifest('slow-test'))
+
+    await act(async () => {
+      root.render(<Harness test={testSummary('slow-test', 'RUNNING')} />)
+      await Promise.resolve()
+    })
+    expect(apiMocks.getTestManifest).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000)
+      container.querySelector('button')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+    expect(apiMocks.getTestManifest).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      first.resolve(manifest('slow-test'))
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(container.querySelector('[data-testid="manifest"]')?.textContent).toBe('slow-test')
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000)
+    })
+    expect(apiMocks.getTestManifest).toHaveBeenCalledTimes(2)
+  })
 })
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>(next => {
+    resolve = next
+  })
+  return { promise, resolve }
+}

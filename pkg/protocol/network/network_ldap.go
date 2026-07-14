@@ -13,15 +13,36 @@ import (
 )
 
 func (n *Network) runLDAP(ctx context.Context, action *protocol.Action) (*operationResult, error) {
-	_ = ctx
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	address := n.ldapURL(action)
 	start := time.Now()
-	dialer := &net.Dialer{Timeout: n.actionTimeout(action)}
+	timeout := n.actionTimeout(action)
+	if deadline, ok := ctx.Deadline(); ok {
+		remaining := time.Until(deadline)
+		if timeout <= 0 || remaining < timeout {
+			timeout = remaining
+		}
+	}
+	dialer := &net.Dialer{Timeout: timeout}
 	conn, err := ldap.DialURL(address, ldap.DialWithDialer(dialer), ldap.DialWithTLSConfig(&tls.Config{MinVersion: tls.VersionTLS12}))
 	if err != nil {
 		return nil, err
 	}
 	defer conn.Close()
+	if timeout > 0 {
+		conn.SetTimeout(timeout)
+	}
+	operationDone := make(chan struct{})
+	defer close(operationDone)
+	go func() {
+		select {
+		case <-ctx.Done():
+			conn.Close()
+		case <-operationDone:
+		}
+	}()
 	connectTime := time.Since(start)
 
 	username := protocol.FirstNonEmpty(actionParamString(action.Params, "username"), n.username)
@@ -54,7 +75,11 @@ func (n *Network) runLDAP(ctx context.Context, action *protocol.Action) (*operat
 	if maxEntries <= 0 {
 		maxEntries = 100
 	}
-	searchRequest := ldap.NewSearchRequest(baseDN, ldap.ScopeWholeSubtree, ldap.NeverDerefAliases, maxEntries, int(n.actionTimeout(action).Seconds()), false, filter, attrs, nil)
+	searchTimeout := int(timeout.Seconds())
+	if timeout > 0 && searchTimeout == 0 {
+		searchTimeout = 1
+	}
+	searchRequest := ldap.NewSearchRequest(baseDN, ldap.ScopeWholeSubtree, ldap.NeverDerefAliases, maxEntries, searchTimeout, false, filter, attrs, nil)
 	searchResult, err := conn.Search(searchRequest)
 	if err != nil {
 		return nil, err

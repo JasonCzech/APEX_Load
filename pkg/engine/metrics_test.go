@@ -79,6 +79,25 @@ func TestMetricsCollector_LatestSnapshot_Empty(t *testing.T) {
 	}
 }
 
+func TestMetricsCollectorStopFlushesTrailingPartialWindow(t *testing.T) {
+	mc := NewMetricsCollector(8)
+	mc.Start(time.Hour)
+	mc.RecordTransaction("short", 5*time.Millisecond, true, "")
+	mc.Stop()
+
+	snap, ok := mc.LatestSnapshot()
+	if !ok {
+		t.Fatal("Stop did not synchronously publish the trailing window")
+	}
+	if snap.Transactions != 1 {
+		t.Fatalf("transactions = %d, want 1", snap.Transactions)
+	}
+	if snap.Window <= 0 || snap.Window >= time.Hour {
+		t.Fatalf("partial window = %v, want between zero and the tick interval", snap.Window)
+	}
+	mc.Stop()
+}
+
 func TestMetricsCollector_AggregateProducesSnapshot(t *testing.T) {
 	mc := NewMetricsCollector(100)
 	mc.Start(50 * time.Millisecond)

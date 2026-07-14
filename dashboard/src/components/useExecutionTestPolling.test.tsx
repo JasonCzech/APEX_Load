@@ -4,7 +4,11 @@ import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { useExecutionTestPolling } from './useExecutionTestPolling'
+import {
+  EXECUTION_ARCHIVE_FINALIZATION_TIMEOUT_MS,
+  EXECUTION_POLL_INTERVAL_MS,
+  useExecutionTestPolling,
+} from './useExecutionTestPolling'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -22,6 +26,7 @@ function PollingHarness({ enabled = true, testId = 'test-1' }: { enabled?: boole
   return (
     <div>
       <span data-testid="status">{model.test?.status || 'none'}</span>
+      <span data-testid="archive">{model.test?.archive ? 'ready' : 'pending'}</span>
       <span data-testid="error">{model.error || 'none'}</span>
     </div>
   )
@@ -78,7 +83,7 @@ describe('useExecutionTestPolling', () => {
 
   it('skips hidden loads and refreshes when the page becomes visible again', async () => {
     visibilityState = 'hidden'
-    apiMock.getTest.mockResolvedValue(buildTest('COMPLETE'))
+    apiMock.getTest.mockResolvedValue(buildTest('COMPLETE', true))
 
     await act(async () => {
       root.render(<PollingHarness />)
@@ -104,6 +109,52 @@ describe('useExecutionTestPolling', () => {
     await flushPromises()
 
     expect(apiMock.getTest).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps polling a terminal run until its archive is attached', async () => {
+    apiMock.getTest
+      .mockResolvedValueOnce(buildTest('FAILED'))
+      .mockResolvedValueOnce(buildTest('FAILED', true))
+
+    await act(async () => {
+      root.render(<PollingHarness />)
+    })
+    await flushPromises()
+
+    expect(readTestId('status')).toBe('FAILED')
+    expect(readTestId('archive')).toBe('pending')
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(EXECUTION_POLL_INTERVAL_MS)
+    })
+
+    expect(apiMock.getTest).toHaveBeenCalledTimes(2)
+    expect(readTestId('archive')).toBe('ready')
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(EXECUTION_POLL_INTERVAL_MS * 2)
+    })
+    expect(apiMock.getTest).toHaveBeenCalledTimes(2)
+  })
+
+  it('bounds archive finalization polling when no archive is produced', async () => {
+    apiMock.getTest.mockResolvedValue(buildTest('ABORTED'))
+
+    await act(async () => {
+      root.render(<PollingHarness />)
+    })
+    await flushPromises()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(EXECUTION_ARCHIVE_FINALIZATION_TIMEOUT_MS)
+    })
+    const callsAtTimeout = apiMock.getTest.mock.calls.length
+    expect(callsAtTimeout).toBeGreaterThan(1)
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(EXECUTION_POLL_INTERVAL_MS * 3)
+    })
+    expect(apiMock.getTest).toHaveBeenCalledTimes(callsAtTimeout)
   })
 
   it('does not load when disabled', async () => {
@@ -202,7 +253,7 @@ describe('useExecutionTestPolling', () => {
   }
 })
 
-function buildTest(status: 'QUEUED' | 'RUNNING' | 'COMPLETE') {
+function buildTest(status: 'QUEUED' | 'RUNNING' | 'COMPLETE' | 'FAILED' | 'ABORTED', withArchive = false) {
   return {
     id: 'test-1',
     name: 'Checkout Journey',
@@ -211,6 +262,19 @@ function buildTest(status: 'QUEUED' | 'RUNNING' | 'COMPLETE') {
     duration: '5m',
     created_at: '2026-05-12T20:00:00Z',
     groups: [],
+    ...(withArchive ? {
+      archive: {
+        test_id: 'test-1',
+        schema_version: '1',
+        archive_path: '/tmp/test-1',
+        manifest_path: '/tmp/test-1/manifest.json',
+        transaction_count: 100,
+        resource_sample_count: 1,
+        interval_summary_count: 1,
+        created_at: '2026-05-12T20:05:00Z',
+        completed_at: '2026-05-12T20:05:01Z',
+      },
+    } : {}),
   }
 }
 

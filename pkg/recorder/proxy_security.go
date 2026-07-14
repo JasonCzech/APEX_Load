@@ -2,6 +2,7 @@ package recorder
 
 import (
 	"crypto/subtle"
+	"crypto/tls"
 	"encoding/base64"
 	"fmt"
 	"net"
@@ -20,6 +21,7 @@ const (
 	envProxyAllowUnauthenticated = "APEXLOAD_RECORDER_PROXY_ALLOW_UNAUTHENTICATED"
 	envProxyAllowPrivateTargets  = "APEXLOAD_RECORDER_ALLOW_PRIVATE_TARGETS"
 	envProxyAuthToken            = "APEXLOAD_RECORDER_PROXY_TOKEN"
+	envRecorderTLSInsecure       = "APEXLOAD_RECORDER_TLS_INSECURE_SKIP_VERIFY"
 )
 
 func proxyProductionMode() bool {
@@ -62,7 +64,51 @@ func (r *Recorder) validateProxyStartup() error {
 	if !proxyBindIsLoopback(r.addr) && strings.TrimSpace(r.proxyAuthToken) == "" && !proxyEnvBool(envProxyAllowUnauthenticated) {
 		return fmt.Errorf("recording proxy wide bind %q requires %s or explicit %s=true", r.addr, envProxyAuthToken, envProxyAllowUnauthenticated)
 	}
+	if proxyProductionMode() && proxyEnvBool(envRecorderTLSInsecure) {
+		return fmt.Errorf("%s is a development-only override and cannot be enabled in production", envRecorderTLSInsecure)
+	}
 	return nil
+}
+
+func recorderUpstreamTLSConfig(serverName string) *tls.Config {
+	return &tls.Config{
+		MinVersion:         tls.VersionTLS12,
+		ServerName:         serverName,
+		InsecureSkipVerify: !proxyProductionMode() && proxyEnvBool(envRecorderTLSInsecure), //nolint:gosec // explicit development-only operator override
+	}
+}
+
+// stripProxyRequestHeaders removes proxy credentials, recorder-control
+// headers, and hop-by-hop fields before a browser request reaches the origin.
+// WebSocket handshakes retain only the Connection/Upgrade pair they require.
+func stripProxyRequestHeaders(header http.Header, websocket bool) {
+	if header == nil {
+		return
+	}
+	for _, nominated := range strings.Split(header.Get("Connection"), ",") {
+		name := strings.TrimSpace(nominated)
+		if websocket && strings.EqualFold(name, "upgrade") {
+			continue
+		}
+		header.Del(name)
+	}
+	for _, name := range []string{
+		"Proxy-Connection", "Proxy-Authorization", "Proxy-Authenticate",
+		"Keep-Alive", "TE", "Trailer", "Transfer-Encoding",
+	} {
+		header.Del(name)
+	}
+	if !websocket {
+		header.Del("Connection")
+		header.Del("Upgrade")
+	} else {
+		header.Set("Connection", "Upgrade")
+	}
+	for name := range header {
+		if strings.HasPrefix(strings.ToLower(name), "x-apexload-recorder-") {
+			header.Del(name)
+		}
+	}
 }
 
 func (r *Recorder) authorizeProxyRequest(req *http.Request) bool {

@@ -251,19 +251,20 @@ func (b *Browser) eventOffsets() (int, int) {
 	// The network offset is absolute (total ever appended) so it survives eviction
 	// of older entries by the ring/byte-budget cap; networkEntriesSince translates
 	// it back to a local index.
-	return len(b.consoleEntries), b.networkEntriesDropped + len(b.networkEntries)
+	return b.consoleDropped + len(b.consoleEntries), b.networkEntriesDropped + len(b.networkEntries)
 }
 
 func (b *Browser) consoleEntriesSince(offset int) []protocol.ConsoleEntry {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if offset <= 0 {
+	local := offset - b.consoleDropped
+	if local <= 0 {
 		return cloneConsoleEntries(b.consoleEntries)
 	}
-	if offset >= len(b.consoleEntries) {
+	if local >= len(b.consoleEntries) {
 		return nil
 	}
-	return cloneConsoleEntries(b.consoleEntries[offset:])
+	return cloneConsoleEntries(b.consoleEntries[local:])
 }
 
 func (b *Browser) networkEntriesSince(offset int) []protocol.NetworkEntry {

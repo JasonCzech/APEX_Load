@@ -233,6 +233,11 @@ type Store interface {
 	SaveSetting(key string, value string) error
 	GetSetting(key string) (string, error)
 	SaveServiceAccount(account *ServiceAccount) error
+	// UpdateServiceAccountMetadata atomically updates non-secret service-account
+	// fields only when the row still has expectedUpdatedAt. It deliberately never
+	// writes key material, key-rotation state, or last-used state. A false result
+	// means the account was deleted or changed concurrently.
+	UpdateServiceAccountMetadata(account *ServiceAccount, expectedUpdatedAt time.Time) (bool, error)
 	GetServiceAccount(id string) (*ServiceAccount, error)
 	GetServiceAccountByKeyHash(keyHash string) (*ServiceAccount, error)
 	ListServiceAccounts() ([]*ServiceAccount, error)
@@ -241,6 +246,10 @@ type Store interface {
 	UpdateServiceAccountActive(id string, active bool, updatedAt time.Time) error
 	DeleteServiceAccount(id string) error
 	SaveUser(user *User) error
+	// UpdateUserGuardLastAdmin atomically updates administrator-managed profile
+	// fields while refusing any change that would make the last active global
+	// system administrator unreachable or inactive.
+	UpdateUserGuardLastAdmin(user *User) (bool, error)
 	UpdateUserIdentitySeen(id string, displayName string, email string, lastSeenAt time.Time, updatedAt time.Time) error
 	GetUser(id string) (*User, error)
 	GetUserBySubject(subject string) (*User, error)
@@ -1006,8 +1015,12 @@ type ScriptRecordingRecord struct {
 	RequestCount            int                          `json:"request_count"`
 	Observations            []ScriptRecordingObservation `json:"observations"`
 	CorrelationObservations []ScriptRecordingObservation `json:"correlation_observations,omitempty"`
-	CreatedAt               time.Time                    `json:"created_at"`
-	UpdatedAt               time.Time                    `json:"updated_at"`
+	// EncryptedCorrelationObservations is an opaque API-layer AES-GCM payload.
+	// Storage never decrypts it and never persists CorrelationObservations as
+	// plaintext. The field is intentionally excluded from API serialization.
+	EncryptedCorrelationObservations string    `json:"-"`
+	CreatedAt                        time.Time `json:"created_at"`
+	UpdatedAt                        time.Time `json:"updated_at"`
 }
 
 // TestRecord represents a persisted test run.

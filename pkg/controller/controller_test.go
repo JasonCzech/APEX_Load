@@ -130,17 +130,18 @@ func TestAbortTest(t *testing.T) {
 
 	cancelled := false
 	_, cancel := context.WithCancel(context.Background())
-	test, _ := c.GetTest(id)
-	test.Cancel = func() {
+	if err := c.SetCancel(id, func() {
 		cancelled = true
 		cancel()
+	}); err != nil {
+		t.Fatalf("SetCancel: %v", err)
 	}
 
 	if err := c.AbortTest(id); err != nil {
 		t.Fatalf("AbortTest: %v", err)
 	}
 
-	test, _ = c.GetTest(id)
+	test, _ := c.GetTest(id)
 	if test.Status != StatusAborted {
 		t.Errorf("status = %q, want %q", test.Status, StatusAborted)
 	}
@@ -149,6 +150,62 @@ func TestAbortTest(t *testing.T) {
 	}
 	if test.EndedAt.IsZero() {
 		t.Error("EndedAt should be set after abort")
+	}
+}
+
+func TestGetAndListReturnDeepSnapshots(t *testing.T) {
+	c := New(10)
+	script := testScript()
+	id, err := c.CreateTest(TestConfig{Name: "snapshot", Script: script, VUsers: 1, Duration: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	script.Name = "caller-mutated"
+	got, _ := c.GetTest(id)
+	got.Config.Name = "mutated"
+	got.Config.Script.Name = "mutated"
+	listed := c.ListTests()
+	listed[0].Config.Script.Actions[0].Name = "mutated"
+
+	again, _ := c.GetTest(id)
+	if again.Config.Name != "snapshot" || again.Config.Script.Name != "test" || again.Config.Script.Actions[0].Name != "a" {
+		t.Fatalf("canonical test was mutated through a returned snapshot: %+v", again)
+	}
+}
+
+func TestAbortCallbackRunsOutsideControllerLock(t *testing.T) {
+	c := New(1)
+	id, _ := c.CreateTest(TestConfig{Name: "abort-reentrant", Script: testScript(), VUsers: 1, Duration: time.Minute})
+	if err := c.SetCancel(id, func() { _, _ = c.GetTest(id) }); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- c.AbortTest(id) }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("AbortTest deadlocked while invoking a reentrant cancel callback")
+	}
+}
+
+func TestSetStatusRejectsIllegalAndOverCapacityTransitions(t *testing.T) {
+	c := New(1)
+	first, _ := c.CreateTest(TestConfig{Name: "first", Script: testScript(), VUsers: 1, Duration: time.Minute})
+	second, _ := c.CreateTest(TestConfig{Name: "second", Script: testScript(), VUsers: 1, Duration: time.Minute})
+	if err := c.SetStatus(first, StatusRunning); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.SetStatus(second, StatusRunning); err == nil {
+		t.Fatal("expected active-test admission limit")
+	}
+	if err := c.SetStatus(first, StatusComplete); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.SetStatus(first, StatusRunning); err == nil {
+		t.Fatal("expected terminal test resurrection to be rejected")
 	}
 }
 

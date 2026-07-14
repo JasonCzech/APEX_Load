@@ -25,6 +25,7 @@ import (
 
 var errExecutionPlanRunPersistence = errors.New("execution-plan run persistence failed")
 var errExecutionPlanRunConflict = errors.New("execution-plan run revision conflict")
+var errExecutionPlanRunCommitUnknown = errors.New("execution-plan run commit outcome is unknown")
 
 func executionPlanPersistenceError(action string, err error) error {
 	return fmt.Errorf("%w: %s: %w", errExecutionPlanRunPersistence, action, err)
@@ -123,17 +124,18 @@ func enabledSortedEntries(entries []storage.ExecutionPlanEntry) []storage.Execut
 // pools because createTestRequestFromScenario only fills empty DataPools), and an
 // optional timeslot (entry-level, else the plan-level fallback). Shared by both the
 // sequential orchestrator and the parallel materialize path.
-func buildPlanEntryCreateRequest(planName, projectID string, planTimeslot *string, entry storage.ExecutionPlanEntry) CreateTestRequest {
+func buildPlanEntryCreateRequest(planName, projectID string, planTimeslot *string, entry storage.ExecutionPlanEntry) (CreateTestRequest, error) {
 	req := CreateTestRequest{
 		Name:       strings.TrimSpace(planName + " / " + executionEntryLabel(entry)),
 		ScenarioID: entry.ScenarioID,
 		ProjectID:  projectID,
 	}
 	if len(entry.RuntimeOverrides) > 0 {
-		var parsed RuntimeSettingsOverride
-		if err := json.Unmarshal(entry.RuntimeOverrides, &parsed); err == nil {
-			req.RuntimeSettings = &parsed
+		var parsed *RuntimeSettingsOverride
+		if err := json.Unmarshal(entry.RuntimeOverrides, &parsed); err != nil {
+			return CreateTestRequest{}, fmt.Errorf("decode runtime overrides for scenario %s: %w", entry.ScenarioID, err)
 		}
+		req.RuntimeSettings = parsed
 	}
 	if len(entry.DataPools) > 0 {
 		req.DataPools = append([]storage.ScenarioDataPoolBinding(nil), entry.DataPools...)
@@ -141,7 +143,7 @@ func buildPlanEntryCreateRequest(planName, projectID string, planTimeslot *strin
 	if ts := firstNonEmpty(trimPtr(entry.TimeslotID), trimPtr(planTimeslot)); ts != "" {
 		req.TimeslotID = &ts
 	}
-	return req
+	return req, nil
 }
 
 func trimPtr(s *string) string {
@@ -281,6 +283,12 @@ func (tr *TestRunner) startExecutionPlanRunWithID(plan *storage.ExecutionPlan, a
 
 	tr.broadcastExecutionPlanEvent("execution_plan_run_started", st.toStorageRun(), nil)
 	if err := tr.launchNextPlanEntry(st.runID); err != nil {
+		if errors.Is(err, errExecutionPlanRunCommitUnknown) {
+			// The queued entry is deliberately retained while its CAS outcome is
+			// reconciled in the background. Terminalizing or deleting it here could
+			// destroy a transition that the database actually committed.
+			return nil, err
+		}
 		if reconcileErr := tr.failExecutionPlanRunDurably(st.runID, err.Error()); reconcileErr != nil {
 			tr.enqueueFailedExecutionPlanRunRetry(st.runID, err.Error())
 			slog.Error("failed to durably terminalize execution-plan run after launch transition failure", "run_id", st.runID, "error", reconcileErr)
@@ -373,6 +381,10 @@ func (tr *TestRunner) enqueueFailedExecutionPlanRunRetry(runID, detail string) {
 }
 
 func (tr *TestRunner) enqueueExecutionPlanRunRecordRetry(run *storage.ExecutionPlanRun) {
+	tr.enqueueExecutionPlanRunRecordRetryAfter(run, nil)
+}
+
+func (tr *TestRunner) enqueueExecutionPlanRunRecordRetryAfter(run *storage.ExecutionPlanRun, afterCommit func()) {
 	if run == nil {
 		return
 	}
@@ -389,6 +401,9 @@ func (tr *TestRunner) enqueueExecutionPlanRunRecordRetry(run *storage.ExecutionP
 				return
 			}
 			if err := tr.persistExecutionPlanRunDurable(snapshot); err == nil {
+				if afterCommit != nil {
+					afterCommit()
+				}
 				return
 			} else {
 				slog.Warn("execution-plan run record retry failed", "run_id", snapshot.ID, "status", snapshot.Status, "error", err)
@@ -452,10 +467,31 @@ func (tr *TestRunner) launchNextPlanEntry(runID string) error {
 			st.timeslotUsed = true
 		}
 		subject, displayName, approval := st.attribSubject, st.attribName, st.approval
+		// Claim this entry durably before creating its queued test. This is the
+		// side-effect fence for HA recovery: only the controller that advances the
+		// run revision from pending to running may materialize the entry.
+		claimRun := st.toStorageRun()
+		if err := tr.persistExecutionPlanRunDurable(claimRun); err != nil {
+			st.cursor = previousCursor
+			st.timeslotUsed = previousTimeslotUsed
+			st.statuses[idx] = previousEntry
+			tr.seqMu.Unlock()
+			if errors.Is(err, errExecutionPlanRunCommitUnknown) {
+				// The claim may still commit after the response was lost. Retrying the
+				// same transition is side-effect free and will reconcile an already
+				// committed claim before materializing the test.
+				tr.enqueueExecutionPlanRunAdvanceRetry(runID)
+			}
+			return executionPlanPersistenceError("claim execution-plan entry before materialization", err)
+		}
+		st.revision = claimRun.Revision
 		tr.seqMu.Unlock()
 
-		req := buildPlanEntryCreateRequest(planName, projectID, timeslot, entry)
-		test, err := tr.createTest(req, false)
+		req, err := buildPlanEntryCreateRequest(planName, projectID, timeslot, entry)
+		var test *ManagedTest
+		if err == nil {
+			test, err = tr.createTest(req, false)
+		}
 		if err != nil {
 			halted, recordErr := tr.recordPlanEntryFailure(runID, idx, entry, err.Error())
 			if recordErr != nil {
@@ -493,6 +529,11 @@ func (tr *TestRunner) launchNextPlanEntry(runID string) error {
 		tr.seqPlanByTest[test.ID] = runID
 		run := st.toStorageRun()
 		if err := tr.persistExecutionPlanRunDurable(run); err != nil {
+			if errors.Is(err, errExecutionPlanRunCommitUnknown) {
+				tr.seqMu.Unlock()
+				tr.enqueueExecutionPlanEntryCommitRetry(runID, idx, test, run, subject, displayName, approval)
+				return executionPlanPersistenceError("reconcile execution-plan entry before launch", err)
+			}
 			delete(tr.seqPlanByTest, test.ID)
 			st.cursor = previousCursor
 			st.timeslotUsed = previousTimeslotUsed
@@ -538,6 +579,73 @@ func (tr *TestRunner) launchNextPlanEntry(runID string) error {
 		}
 		return nil
 	}
+}
+
+// enqueueExecutionPlanEntryCommitRetry resolves an indeterminate CAS without
+// deleting or launching the queued test. Once the intended transition is
+// durably observable, it performs the same post-commit launch steps as the
+// synchronous path.
+func (tr *TestRunner) enqueueExecutionPlanEntryCommitRetry(runID string, idx int, test *ManagedTest, run *storage.ExecutionPlanRun, subject, displayName string, approval *storage.ExecutionPlanApproval) {
+	if test == nil || run == nil {
+		return
+	}
+	key := "entry-commit:" + test.ID
+	if !tr.beginExecutionPlanRetry(key) {
+		return
+	}
+	snapshot := cloneExecutionPlanRunRecord(run)
+	go func() {
+		defer tr.endExecutionPlanRetry(key)
+		delay := executionPlanRetryInitialDelay
+		for tr.executionPlanRetryAllowed() {
+			if !tr.waitExecutionPlanRetry(delay) {
+				return
+			}
+			if err := tr.persistExecutionPlanRunDurable(snapshot); err != nil {
+				slog.Warn("execution-plan entry commit reconciliation failed", "run_id", runID, "test_id", test.ID, "error", err)
+				if !durableBackgroundRetryable(err) {
+					return
+				}
+				delay = min(delay*2, executionPlanRetryMaxDelay)
+				continue
+			}
+
+			tr.seqMu.Lock()
+			state := tr.seqPlanRuns[runID]
+			if state == nil || idx < 0 || idx >= len(state.statuses) || state.statuses[idx].TestID != test.ID {
+				tr.seqMu.Unlock()
+				return
+			}
+			state.revision = snapshot.Revision
+			tr.seqMu.Unlock()
+
+			tr.broadcastEvent("test_created", test)
+			tr.broadcastExecutionPlanEvent("execution_plan_entry_started", snapshot, &snapshot.Entries[idx])
+			if subject != "" {
+				tr.AttributeTestCreated(test.ID, subject, displayName)
+			}
+			tr.AttributeTestExecutionPlanApproval(test.ID, approval)
+			if err := tr.StartTest(test.ID); err != nil {
+				tr.seqMu.Lock()
+				delete(tr.seqPlanByTest, test.ID)
+				if current := tr.seqPlanRuns[runID]; current != nil && idx < len(current.statuses) {
+					current.statuses[idx].TestID = ""
+				}
+				tr.seqMu.Unlock()
+				halted, recordErr := tr.recordPlanEntryFailure(runID, idx, executionPlanEntryFromRunEntry(snapshot.Entries[idx]), err.Error())
+				if recordErr != nil {
+					slog.Error("failed to persist execution-plan entry launch failure after reconciliation", "run_id", runID, "test_id", test.ID, "error", recordErr)
+					return
+				}
+				if !halted {
+					if err := tr.launchNextPlanEntry(runID); err != nil {
+						tr.enqueueExecutionPlanRunAdvanceRetry(runID)
+					}
+				}
+			}
+			return
+		}
+	}()
 }
 
 // recordPlanEntryFailure marks entry idx failed and applies its failure policy.
@@ -819,20 +927,73 @@ func (tr *TestRunner) persistExecutionPlanRunDurable(run *storage.ExecutionPlanR
 	}
 	if store, ok := tr.execPlanRunStore.(atomicExecutionPlanRunPersistence); ok && run.Revision > 0 {
 		expectedRevision := run.Revision
-		return retryDurableTransition(func() error {
-			updated, err := store.CompareAndSwapExecutionPlanRun(run, expectedRevision)
-			if err != nil {
-				return err
-			}
-			if !updated {
-				return fmt.Errorf("%w: run %s expected revision %d", errExecutionPlanRunConflict, run.ID, expectedRevision)
-			}
+		// A transport error does not establish whether the database committed:
+		// the write can still be in flight even if an immediate read observes the
+		// old revision. Submit once, then reconcile; background workers retry the
+		// idempotent CAS only after this call reports an unknown outcome.
+		run.Revision = expectedRevision
+		updated, err := store.CompareAndSwapExecutionPlanRun(run, expectedRevision)
+		if err == nil && updated {
 			return nil
-		})
+		}
+
+		current, reloadErr := tr.reloadExecutionPlanRunForTransition(run.ID)
+		if reloadErr == nil && executionPlanRunTransitionMatches(current, run, expectedRevision) {
+			run.Revision = current.Revision
+			run.UpdatedAt = current.UpdatedAt
+			run.CompletedAt = cloneTimePtr(current.CompletedAt)
+			return nil
+		}
+		run.Revision = expectedRevision
+		if err != nil {
+			if reloadErr != nil {
+				return fmt.Errorf("%w: reconcile run %s after CAS error %v: %v", errExecutionPlanRunCommitUnknown, run.ID, err, reloadErr)
+			}
+			return fmt.Errorf("%w: run %s CAS failed: %v", errExecutionPlanRunCommitUnknown, run.ID, err)
+		}
+		if reloadErr != nil {
+			return errors.Join(fmt.Errorf("%w: run %s expected revision %d", errExecutionPlanRunConflict, run.ID, expectedRevision), reloadErr)
+		}
+		return fmt.Errorf("%w: run %s expected revision %d, durable revision is %d", errExecutionPlanRunConflict, run.ID, expectedRevision, current.Revision)
 	}
 	return retryDurableTransition(func() error {
 		return tr.execPlanRunStore.SaveExecutionPlanRun(run)
 	})
+}
+
+func (tr *TestRunner) reloadExecutionPlanRunForTransition(runID string) (*storage.ExecutionPlanRun, error) {
+	var current *storage.ExecutionPlanRun
+	err := retryDurableTransition(func() error {
+		var err error
+		current, err = tr.execPlanRunStore.GetExecutionPlanRun(runID)
+		if err != nil {
+			return err
+		}
+		if current == nil {
+			return fmt.Errorf("execution-plan run %s was not found", runID)
+		}
+		return nil
+	})
+	return current, err
+}
+
+func executionPlanRunTransitionMatches(current, intended *storage.ExecutionPlanRun, expectedRevision int64) bool {
+	if current == nil || intended == nil || current.ID != intended.ID || current.Revision != expectedRevision+1 ||
+		current.Status != intended.Status || current.PlanID != intended.PlanID ||
+		normalizeProjectID(current.ProjectID) != normalizeProjectID(intended.ProjectID) || current.RunMode != intended.RunMode ||
+		!sameOptionalTime(current.CompletedAt, intended.CompletedAt) {
+		return false
+	}
+	currentEntries, currentErr := json.Marshal(current.Entries)
+	intendedEntries, intendedErr := json.Marshal(intended.Entries)
+	return currentErr == nil && intendedErr == nil && string(currentEntries) == string(intendedEntries)
+}
+
+func sameOptionalTime(left, right *time.Time) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return left.Equal(*right)
 }
 
 func (tr *TestRunner) loadExistingExecutionPlanRun(runID, planID, projectID, runMode string) (*storage.ExecutionPlanRun, error) {

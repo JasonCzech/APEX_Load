@@ -159,7 +159,7 @@ func (tr *TestRunner) buildTestManifestForManagedTest(test *ManagedTest, request
 			// necessarily been uploaded yet. Reading it through the materializer
 			// would try to fetch the not-yet-published remote manifest and can add a
 			// false warning (or block until the remote timeout).
-			loaded, err := loadRunArchiveManifest(archiveRecord.ManifestPath)
+			loaded, err := loadRunArchiveManifestFromRecord(archiveRecord)
 			if err != nil {
 				warnings = append(warnings, "archive manifest could not be loaded: "+err.Error())
 			} else {
@@ -171,7 +171,7 @@ func (tr *TestRunner) buildTestManifestForManagedTest(test *ManagedTest, request
 				warnings = append(warnings, "archive record exists but could not be materialized: "+err.Error())
 			} else {
 				defer lease.Release()
-				loaded, err := loadRunArchiveManifest(archiveRecord.ManifestPath)
+				loaded, err := loadRunArchiveManifestFromRecord(archiveRecord)
 				if err != nil {
 					warnings = append(warnings, "archive manifest could not be loaded: "+err.Error())
 				} else {
@@ -559,7 +559,7 @@ func (tr *TestRunner) persistTestManifestArtifact(test *ManagedTest, record *sto
 	if test == nil || record == nil || strings.TrimSpace(record.ArchivePath) == "" || strings.TrimSpace(record.ManifestPath) == "" {
 		return nil
 	}
-	archiveManifest, err := loadRunArchiveManifest(record.ManifestPath)
+	archiveManifest, err := loadRunArchiveManifestFromRecord(record)
 	if err != nil {
 		return err
 	}

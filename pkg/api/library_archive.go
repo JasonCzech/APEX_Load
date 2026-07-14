@@ -24,7 +24,47 @@ type libraryArchiveImport struct {
 	ManifestHash string
 }
 
+const libraryArchiveMultipartMetadataBytes = int64(20 << 20)
+
+type libraryArchiveRequestReader struct {
+	reader    io.Reader
+	remaining int64
+}
+
+func (r *libraryArchiveRequestReader) Read(buffer []byte) (int, error) {
+	if r.remaining <= 0 {
+		probe := []byte{0}
+		if n, err := r.reader.Read(probe); n > 0 || err == nil {
+			return 0, fmt.Errorf("multipart archive import exceeds total request limit")
+		} else {
+			return 0, err
+		}
+	}
+	if int64(len(buffer)) > r.remaining {
+		buffer = buffer[:r.remaining]
+	}
+	n, err := r.reader.Read(buffer)
+	r.remaining -= int64(n)
+	return n, err
+}
+
+type libraryArchiveRequestBody struct {
+	io.Reader
+	io.Closer
+}
+
 func readLibraryArchiveImportRequest(r *http.Request) (LibraryImportRequest, *libraryArchiveImport, func(), error) {
+	originalBody := r.Body
+	requestLimit := libraryArchiveMaxBytes()
+	if requestLimit > int64(^uint64(0)>>1)-libraryArchiveMultipartMetadataBytes {
+		requestLimit = int64(^uint64(0) >> 1)
+	} else {
+		requestLimit += libraryArchiveMultipartMetadataBytes
+	}
+	r.Body = &libraryArchiveRequestBody{
+		Reader: &libraryArchiveRequestReader{reader: originalBody, remaining: requestLimit},
+		Closer: originalBody,
+	}
 	reader, err := r.MultipartReader()
 	if err != nil {
 		return LibraryImportRequest{}, nil, nil, fmt.Errorf("invalid multipart archive import: %w", err)
@@ -32,6 +72,8 @@ func readLibraryArchiveImportRequest(r *http.Request) (LibraryImportRequest, *li
 	var req LibraryImportRequest
 	req.ProjectID = strings.TrimSpace(r.URL.Query().Get("project_id"))
 	var bundleSeen bool
+	var projectSeen bool
+	var archiveSeen bool
 	var archivePath string
 	var archiveSize int64
 	cleanup := func() {
@@ -50,12 +92,24 @@ func readLibraryArchiveImportRequest(r *http.Request) (LibraryImportRequest, *li
 		}
 		switch part.FormName() {
 		case "bundle":
+			if bundleSeen {
+				_ = part.Close()
+				cleanup()
+				return LibraryImportRequest{}, nil, nil, fmt.Errorf("duplicate bundle part")
+			}
 			if err := json.NewDecoder(io.LimitReader(part, 16*1024*1024)).Decode(&req.Bundle); err != nil {
+				_ = part.Close()
 				cleanup()
 				return LibraryImportRequest{}, nil, nil, fmt.Errorf("invalid bundle part: %w", err)
 			}
 			bundleSeen = true
 		case "project_id":
+			if projectSeen {
+				_ = part.Close()
+				cleanup()
+				return LibraryImportRequest{}, nil, nil, fmt.Errorf("duplicate project_id part")
+			}
+			projectSeen = true
 			data, err := io.ReadAll(io.LimitReader(part, 4096))
 			if err != nil {
 				cleanup()
@@ -77,6 +131,12 @@ func readLibraryArchiveImportRequest(r *http.Request) (LibraryImportRequest, *li
 				return LibraryImportRequest{}, nil, nil, fmt.Errorf("project_id form field %q does not match the authorized project_id query parameter %q", formProject, req.ProjectID)
 			}
 		case "archive":
+			if archiveSeen {
+				_ = part.Close()
+				cleanup()
+				return LibraryImportRequest{}, nil, nil, fmt.Errorf("duplicate archive part")
+			}
+			archiveSeen = true
 			tmp, err := os.CreateTemp("", "apexload-library-import-*.zip")
 			if err != nil {
 				cleanup()
@@ -93,6 +153,10 @@ func readLibraryArchiveImportRequest(r *http.Request) (LibraryImportRequest, *li
 				cleanup()
 				return LibraryImportRequest{}, nil, nil, closeErr
 			}
+		}
+		if err := part.Close(); err != nil {
+			cleanup()
+			return LibraryImportRequest{}, nil, nil, err
 		}
 	}
 	if !bundleSeen {

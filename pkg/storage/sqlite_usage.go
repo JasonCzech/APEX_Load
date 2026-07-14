@@ -44,7 +44,7 @@ func (s *SQLiteStore) DeleteUsageAccountingSnapshotsBefore(cutoff time.Time) (in
 	}
 	affected, err := result.RowsAffected()
 	if err != nil {
-		return 0, nil
+		return 0, err
 	}
 	return affected, nil
 }

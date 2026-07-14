@@ -248,7 +248,7 @@ func TestArchiveFinalizationPersistsImmutableVersionBeforeObjectUpload(t *testin
 	if loadErr != nil {
 		t.Fatal(loadErr)
 	}
-	wantURI := "s3://unreachable-archive-bucket/prod/evidence/_versions/v1/" + job.IntentToken + "/" + testID
+	wantURI := strings.TrimSuffix(currentArchiveBackend().URIPrefix, "/") + "/_versions/v1/" + job.IntentToken + "/" + testID
 	if job.IntentToken == "" || job.ArchiveRecord.ArchiveURI != wantURI || job.ArchiveRecord.ManifestURI != wantURI+"/manifest.json" {
 		t.Fatalf("durable publication pointer = token:%q archive:%q manifest:%q", job.IntentToken, job.ArchiveRecord.ArchiveURI, job.ArchiveRecord.ManifestURI)
 	}
@@ -306,6 +306,46 @@ func TestArchiveRefreshRematerializesPersistedObjectVersionBeforeMutation(t *tes
 	}
 	if pending.RefreshToken != refresh.IntentToken || pending.ArchiveRecord.ArchiveURI != record.ArchiveURI {
 		t.Fatalf("durable refresh finalization = %+v", pending)
+	}
+}
+
+func TestFilesystemArchiveRefreshStagesBeforeCatalogCAS(t *testing.T) {
+	archiveRoot := t.TempDir()
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", archiveRoot)
+	t.Setenv("APEXLOAD_ARCHIVE_BACKEND", archiveBackendFilesystem)
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	const testID = "filesystem-refresh-stage"
+	test, record := createArchiveFinalizationTest(t, store, testID, archiveRoot)
+	if err := store.SaveRunArchive(record); err != nil {
+		t.Fatal(err)
+	}
+	refresh, err := store.BumpArchiveRefreshJob(testID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := NewTestRunner(1, NewHub(), store)
+	runner.mu.Lock()
+	runner.tests[test.ID] = test
+	runner.mu.Unlock()
+	if err := runner.processArchiveRefreshJob(context.Background(), refresh); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(record.ArchivePath, testRunManifestFileName)); !os.IsNotExist(err) {
+		t.Fatalf("catalogued source archive was mutated before CAS: %v", err)
+	}
+	committed, err := store.GetRunArchive(testID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if committed.ArchivePath == record.ArchivePath || !strings.Contains(committed.ArchivePath, string(filepath.Separator)+"_publication"+string(filepath.Separator)) {
+		t.Fatalf("committed filesystem refresh path = %q, source = %q", committed.ArchivePath, record.ArchivePath)
+	}
+	if _, err := os.Stat(filepath.Join(committed.ArchivePath, testRunManifestFileName)); err != nil {
+		t.Fatalf("staged adjunct missing after CAS: %v", err)
 	}
 }
 

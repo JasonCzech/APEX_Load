@@ -67,6 +67,7 @@ type atomicScenarioPersistence interface {
 }
 
 type dataPoolPersistence interface {
+	GetDataPool(id string) (*storage.SharedDataPool, error)
 	ListDataPoolRows(poolID string) ([]*storage.SharedDataPoolRow, error)
 }
 
@@ -339,6 +340,7 @@ type GoalTargetUpdate struct {
 type vuserScaleRamp struct {
 	cancel context.CancelFunc
 	status VUserRampStatus
+	done   chan error
 }
 
 type VUserRampStatus struct {
@@ -916,6 +918,7 @@ type GeneratorAssignmentSettings struct {
 // store satisfies it). Used to make generator assignment pool-aware.
 type fleetMembershipReader interface {
 	GetFleetPool(id string) (*storage.FleetPool, error)
+	ListFleetPools(limit int, offset int) ([]*storage.FleetPool, error)
 	ListFleetPoolMembers(poolID string) ([]*storage.FleetPoolMember, error)
 	ListGeneratorMetadata(limit int, offset int) ([]*storage.GeneratorMetadata, error)
 }

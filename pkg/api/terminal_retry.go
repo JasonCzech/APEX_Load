@@ -48,6 +48,9 @@ func durableBackgroundRetryable(err error) bool {
 	if errors.Is(err, sql.ErrConnDone) {
 		return false
 	}
+	if errors.Is(err, errExecutionPlanRunConflict) {
+		return false
+	}
 	message := strings.ToLower(err.Error())
 	return !strings.Contains(message, "database is closed") && !strings.Contains(message, "sql: database is closed")
 }

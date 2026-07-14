@@ -413,9 +413,7 @@ func TestArchiveMaterializationCacheProtectsActiveAndPendingLeases(t *testing.T)
 	if _, err := os.Stat(activeRoot); err != nil {
 		t.Fatalf("recently released cache was unexpectedly evicted: %v", err)
 	}
-	if _, err := os.Stat(pendingRoot); !os.IsNotExist(err) {
-		t.Fatalf("expired cache remained after its pending lease ended: %v", err)
-	}
+	waitForCondition(t, time.Second, func() bool { _, err := os.Stat(pendingRoot); return os.IsNotExist(err) }, "pending cache eviction after lease release")
 }
 
 func TestArchiveMaterializationRetentionSweepsAreCoalesced(t *testing.T) {
@@ -428,9 +426,7 @@ func TestArchiveMaterializationRetentionSweepsAreCoalesced(t *testing.T) {
 	coordinator.retentionSweepInterval = time.Hour
 	coordinator.now = func() time.Time { return now }
 	coordinator.enforceRetentionIfDue(scanRoot)
-	if _, err := os.Stat(firstRoot); !os.IsNotExist(err) {
-		t.Fatalf("initial due retention sweep did not evict expired cache: %v", err)
-	}
+	waitForCondition(t, time.Second, func() bool { _, err := os.Stat(firstRoot); return os.IsNotExist(err) }, "initial async cache retention")
 
 	secondRoot := writeArchiveMaterializationCacheFixture(t, scanRoot, "second-expired", 8, now.Add(-2*time.Hour))
 	coordinator.enforceRetentionIfDue(scanRoot)
@@ -439,9 +435,7 @@ func TestArchiveMaterializationRetentionSweepsAreCoalesced(t *testing.T) {
 	}
 	now = now.Add(time.Hour)
 	coordinator.enforceRetentionIfDue(scanRoot)
-	if _, err := os.Stat(secondRoot); !os.IsNotExist(err) {
-		t.Fatalf("retention sweep did not run after throttle interval: %v", err)
-	}
+	waitForCondition(t, time.Second, func() bool { _, err := os.Stat(secondRoot); return os.IsNotExist(err) }, "subsequent async cache retention")
 }
 
 func writeArchiveMaterializationCacheFixture(t *testing.T, parent, testID string, sizeBytes int64, accessedAt time.Time) string {

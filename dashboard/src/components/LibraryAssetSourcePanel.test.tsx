@@ -220,8 +220,13 @@ describe('LibraryAssetSourcePanel', () => {
     expect(rowNamed('Alpha Run').textContent).toContain('5/1/2026')
     expect(rowNamed('Alpha Run').querySelectorAll('.script-table-meta .script-health-token')).toHaveLength(0)
 
-    await click(headerNamed('Name'))
+    const nameSortButton = headerNamed('Name')
+    expect(nameSortButton.closest('th')?.getAttribute('aria-sort')).toBe('none')
+    expect(nameSortButton.tabIndex).toBe(0)
+    await click(nameSortButton)
     expect(visibleLibraryRowNames()).toEqual(['Alpha Run', 'Zebra Run'])
+    expect(nameSortButton.closest('th')?.getAttribute('aria-sort')).toBe('ascending')
+    expect(headerNamed('Execution Run Date').closest('th')?.getAttribute('aria-sort')).toBe('none')
 
     await changeSelect(releaseFilter(), 'rel-29')
     expect(visibleLibraryRowNames()).toEqual(['Alpha Run'])
@@ -314,9 +319,9 @@ function rowNamed(text: string) {
 }
 
 function headerNamed(text: string) {
-  const header = Array.from(document.querySelectorAll('th.sortable')).find(header => header.textContent?.includes(text))
-  expect(header).toBeTruthy()
-  return header as HTMLElement
+  const button = Array.from(document.querySelectorAll<HTMLButtonElement>('th.sortable > button')).find(candidate => candidate.textContent?.includes(text))
+  expect(button).toBeTruthy()
+  return button as HTMLButtonElement
 }
 
 function releaseFilter() {

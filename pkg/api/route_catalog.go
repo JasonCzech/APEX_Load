@@ -321,7 +321,7 @@ var routeCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodPost, "/api/v1/scripts/{id}/github/push", editorProjectAccess(resolveScriptProjectID)),
 	routeAuth(http.MethodGet, "/api/v1/scripts/{id}/github/status", viewerProjectAccess(resolveScriptProjectID)),
 	routeAuth(http.MethodGet, "/api/v1/scripts/{id}/recording/status", viewerProjectAccess(resolveScriptProjectID)),
-	routeAuth(http.MethodPost, "/api/v1/scripts/{id}/diagnose-replay", viewerProjectAccess(resolveScriptProjectID)),
+	routeAuth(http.MethodPost, "/api/v1/scripts/{id}/diagnose-replay", editorProjectAccess(resolveScriptProjectID)),
 	routeAuth(http.MethodPost, "/api/v1/tests/{id}/github/check-run", editorProjectAccess(resolveTestProjectID)),
 
 	// Capacity estimate (write-level, project-scoped).

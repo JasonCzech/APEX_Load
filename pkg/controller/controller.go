@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -60,20 +61,18 @@ func (c *Controller) CreateTest(cfg TestConfig) (string, error) {
 	c.testsMu.Lock()
 	defer c.testsMu.Unlock()
 
-	running := 0
-	for _, t := range c.tests {
-		if t.Status == StatusRunning || t.Status == StatusInitializing {
-			running++
-		}
-	}
-	if running >= c.maxTests {
+	if c.activeTestsLocked("") >= c.maxTests {
 		return "", fmt.Errorf("max concurrent tests (%d) reached", c.maxTests)
 	}
 
 	id := uuid.New().String()
+	clonedConfig, err := cloneTestConfig(cfg)
+	if err != nil {
+		return "", fmt.Errorf("clone test config: %w", err)
+	}
 	c.tests[id] = &TestRun{
 		ID:     id,
-		Config: cfg,
+		Config: clonedConfig,
 		Status: StatusQueued,
 	}
 
@@ -88,7 +87,7 @@ func (c *Controller) GetTest(id string) (*TestRun, error) {
 	if !ok {
 		return nil, fmt.Errorf("test not found: %s", id)
 	}
-	return t, nil
+	return cloneTestRun(t), nil
 }
 
 func (c *Controller) SetStatus(id string, status TestStatus) error {
@@ -98,8 +97,17 @@ func (c *Controller) SetStatus(id string, status TestStatus) error {
 	if !ok {
 		return fmt.Errorf("test not found: %s", id)
 	}
+	if t.Status == status {
+		return nil
+	}
+	if !validStatusTransition(t.Status, status) {
+		return fmt.Errorf("invalid test status transition %s -> %s", t.Status, status)
+	}
+	if !isActiveStatus(t.Status) && isActiveStatus(status) && c.activeTestsLocked(id) >= c.maxTests {
+		return fmt.Errorf("max concurrent tests (%d) reached", c.maxTests)
+	}
 	t.Status = status
-	if status == StatusRunning {
+	if status == StatusRunning && t.StartedAt.IsZero() {
 		t.StartedAt = time.Now()
 	}
 	if status == StatusComplete || status == StatusFailed || status == StatusAborted {
@@ -111,16 +119,37 @@ func (c *Controller) SetStatus(id string, status TestStatus) error {
 
 func (c *Controller) AbortTest(id string) error {
 	c.testsMu.Lock()
+	t, ok := c.tests[id]
+	if !ok {
+		c.testsMu.Unlock()
+		return fmt.Errorf("test not found: %s", id)
+	}
+	if !validStatusTransition(t.Status, StatusAborted) {
+		c.testsMu.Unlock()
+		return fmt.Errorf("invalid test status transition %s -> %s", t.Status, StatusAborted)
+	}
+	cancel := t.Cancel
+	t.Status = StatusAborted
+	t.EndedAt = time.Now()
+	c.testsMu.Unlock()
+	// A cancel callback is external code. It must not run while the controller
+	// mutex is held because it may synchronously call back into the controller.
+	if cancel != nil {
+		cancel()
+	}
+	return nil
+}
+
+// SetCancel installs the execution cancellation hook without exposing the
+// controller's canonical mutable TestRun pointer.
+func (c *Controller) SetCancel(id string, cancel context.CancelFunc) error {
+	c.testsMu.Lock()
 	defer c.testsMu.Unlock()
 	t, ok := c.tests[id]
 	if !ok {
 		return fmt.Errorf("test not found: %s", id)
 	}
-	if t.Cancel != nil {
-		t.Cancel()
-	}
-	t.Status = StatusAborted
-	t.EndedAt = time.Now()
+	t.Cancel = cancel
 	return nil
 }
 
@@ -129,7 +158,79 @@ func (c *Controller) ListTests() []*TestRun {
 	defer c.testsMu.RUnlock()
 	runs := make([]*TestRun, 0, len(c.tests))
 	for _, t := range c.tests {
-		runs = append(runs, t)
+		runs = append(runs, cloneTestRun(t))
 	}
 	return runs
+}
+
+func (c *Controller) activeTestsLocked(excludeID string) int {
+	active := 0
+	for id, test := range c.tests {
+		if id != excludeID && isActiveStatus(test.Status) {
+			active++
+		}
+	}
+	return active
+}
+
+func isActiveStatus(status TestStatus) bool {
+	return status == StatusInitializing || status == StatusRunning || status == StatusRampingDown
+}
+
+func isTerminalStatus(status TestStatus) bool {
+	return status == StatusComplete || status == StatusFailed || status == StatusAborted
+}
+
+func validStatusTransition(from, to TestStatus) bool {
+	if from == to {
+		return true
+	}
+	if isTerminalStatus(from) {
+		return false
+	}
+	switch from {
+	case StatusQueued:
+		return to == StatusInitializing || to == StatusRunning || to == StatusFailed || to == StatusAborted
+	case StatusInitializing:
+		return to == StatusRunning || to == StatusFailed || to == StatusAborted
+	case StatusRunning:
+		return to == StatusRampingDown || to == StatusComplete || to == StatusFailed || to == StatusAborted
+	case StatusRampingDown:
+		return to == StatusComplete || to == StatusFailed || to == StatusAborted
+	default:
+		return false
+	}
+}
+
+func cloneTestRun(test *TestRun) *TestRun {
+	if test == nil {
+		return nil
+	}
+	clone := *test
+	clone.Cancel = nil
+	if config, err := cloneTestConfig(test.Config); err == nil {
+		clone.Config = config
+	} else {
+		// JSON cloning can only fail for a future unsupported DSL value. Preserve
+		// scalar isolation and fail closed on the mutable script pointer.
+		clone.Config.Script = nil
+	}
+	return &clone
+}
+
+func cloneTestConfig(config TestConfig) (TestConfig, error) {
+	clone := config
+	if config.Script == nil {
+		return clone, nil
+	}
+	encoded, err := json.Marshal(config.Script)
+	if err != nil {
+		return TestConfig{}, err
+	}
+	var script dsl.Script
+	if err := json.Unmarshal(encoded, &script); err != nil {
+		return TestConfig{}, err
+	}
+	clone.Script = &script
+	return clone, nil
 }

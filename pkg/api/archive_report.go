@@ -20,7 +20,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		return nil, err
 	}
 	defer lease.Release()
-	manifest, err := loadRunArchiveManifest(record.ManifestPath)
+	manifest, err := loadRunArchiveManifestFromRecord(record)
 	if err != nil {
 		return nil, err
 	}

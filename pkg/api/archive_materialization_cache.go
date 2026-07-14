@@ -34,6 +34,8 @@ type archiveMaterializationCoordinator struct {
 	now                    func() time.Time
 	lastRetentionSweep     map[string]time.Time
 	retentionSweepInterval time.Duration
+	retentionOnce          sync.Once
+	retentionWake          chan string
 }
 
 type archiveMaterializationEntry struct {
@@ -80,6 +82,7 @@ func newArchiveMaterializationCoordinator() *archiveMaterializationCoordinator {
 		now:                    time.Now,
 		lastRetentionSweep:     make(map[string]time.Time),
 		retentionSweepInterval: archiveMaterializationRetentionSweepInterval,
+		retentionWake:          make(chan string, 16),
 	}
 }
 
@@ -555,37 +558,42 @@ func removeArchiveDirectoryAt(root *os.Root, relative string, expected os.FileIn
 		}
 		return fmt.Errorf("archive root cannot be removed")
 	}
-	info, err := root.Lstat(relative)
+	parent, name, closeParent, err := openArchiveRelativeParent(root, relative)
+	if err != nil {
+		return err
+	}
+	defer closeParent()
+	info, err := parent.Lstat(name)
 	if err != nil {
 		return err
 	}
 	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() || !os.SameFile(expected, info) {
 		return fmt.Errorf("archive directory %q was replaced before deletion", relative)
 	}
-	tombstone, err := archiveTemporaryName(filepath.Dir(relative), filepath.Base(relative)+".evicting")
+	tombstone, err := archiveTemporaryName(".", name+".evicting")
 	if err != nil {
 		return err
 	}
-	if err := root.Rename(relative, tombstone); err != nil {
+	if err := parent.Rename(name, tombstone); err != nil {
 		return err
 	}
-	tombstoneInfo, err := root.Lstat(tombstone)
+	tombstoneInfo, err := parent.Lstat(tombstone)
 	if err != nil || tombstoneInfo.Mode()&os.ModeSymlink != 0 || !tombstoneInfo.IsDir() || !os.SameFile(expected, tombstoneInfo) {
-		if _, currentErr := root.Lstat(relative); os.IsNotExist(currentErr) {
-			_ = root.Rename(tombstone, relative)
+		if _, currentErr := parent.Lstat(name); os.IsNotExist(currentErr) {
+			_ = parent.Rename(tombstone, name)
 		}
 		if err != nil {
 			return err
 		}
 		return fmt.Errorf("archive directory %q changed during deletion", relative)
 	}
-	if err := root.RemoveAll(tombstone); err != nil {
-		if _, currentErr := root.Lstat(relative); os.IsNotExist(currentErr) {
-			_ = root.Rename(tombstone, relative)
+	if err := removeArchiveDirectoryWithIdentity(parent, tombstone, tombstoneInfo); err != nil {
+		if _, currentErr := parent.Lstat(name); os.IsNotExist(currentErr) {
+			_ = parent.Rename(tombstone, name)
 		}
 		return err
 	}
-	return syncOpenedArchiveDirectory(root)
+	return syncOpenedArchiveDirectory(parent)
 }
 
 func (m *archiveMaterializationCoordinator) enforceRetentionIfDue(scanRoot string) {
@@ -603,7 +611,22 @@ func (m *archiveMaterializationCoordinator) enforceRetentionIfDue(scanRoot strin
 	// instead of queuing serialized O(cache-entry) walks on evictionMu.
 	m.lastRetentionSweep[scanRoot] = now
 	m.mu.Unlock()
-	m.enforceRetention(scanRoot)
+	m.retentionOnce.Do(func() {
+		go func() {
+			for root := range m.retentionWake {
+				m.enforceRetention(root)
+			}
+		}()
+	})
+	select {
+	case m.retentionWake <- scanRoot:
+	default:
+		// The bounded queue is saturated. Permit a later lease release to retry
+		// instead of accumulating one goroutine per cache namespace.
+		m.mu.Lock()
+		delete(m.lastRetentionSweep, scanRoot)
+		m.mu.Unlock()
+	}
 }
 
 func (m *archiveMaterializationCoordinator) tryEvict(candidate archiveMaterializationCacheCandidate) bool {

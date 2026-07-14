@@ -19,6 +19,10 @@ type MetricsCollector struct {
 	resCollector      *ResourceCollector
 	emitIdleSnapshots bool
 	done              chan struct{}
+	aggregateDone     chan struct{}
+	startOnce         sync.Once
+	stopOnce          sync.Once
+	startedAt         time.Time
 	targetTPS         float64
 	groupTargetTPS    map[string]float64
 	groupActiveFn     func() map[string]int
@@ -257,6 +261,7 @@ func NewMetricsCollector(bufferSize int) *MetricsCollector {
 		current:        &liveCounters{},
 		resCollector:   NewResourceCollector(),
 		done:           make(chan struct{}),
+		aggregateDone:  make(chan struct{}),
 		groupTargetTPS: make(map[string]float64),
 	}
 }
@@ -315,7 +320,13 @@ func (mc *MetricsCollector) SetGroupActiveVUsersProvider(fn func() map[string]in
 }
 
 func (mc *MetricsCollector) Start(interval time.Duration) {
-	go mc.aggregate(interval)
+	if interval <= 0 {
+		interval = time.Second
+	}
+	mc.startOnce.Do(func() {
+		mc.startedAt = time.Now()
+		go mc.aggregate(interval)
+	})
 }
 
 func (mc *MetricsCollector) EnableIdleSnapshots(enabled bool) {
@@ -323,7 +334,18 @@ func (mc *MetricsCollector) EnableIdleSnapshots(enabled bool) {
 }
 
 func (mc *MetricsCollector) Stop() {
-	close(mc.done)
+	mc.stopOnce.Do(func() {
+		notStarted := false
+		mc.startOnce.Do(func() {
+			notStarted = true
+			close(mc.aggregateDone)
+		})
+		if notStarted {
+			return
+		}
+		close(mc.done)
+		<-mc.aggregateDone
+	})
 }
 
 func (mc *MetricsCollector) LatestSnapshot() (MetricsSnapshot, bool) {
@@ -387,14 +409,31 @@ func (mc *MetricsCollector) RecordTransactionResult(r *protocol.Result) {
 func (mc *MetricsCollector) aggregate(interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
+	defer close(mc.aggregateDone)
 
 	var batch []*protocol.Result
+	windowStart := mc.startedAt
 
 	for {
 		select {
 		case <-mc.done:
-			return
+			for {
+				select {
+				case r := <-mc.ch:
+					batch = append(batch, r)
+				default:
+					if len(batch) > 0 {
+						window := time.Since(windowStart)
+						if window <= 0 {
+							window = time.Nanosecond
+						}
+						mc.publishSnapshot(batch, window)
+					}
+					return
+				}
+			}
 		case <-ticker.C:
+			windowEnd := time.Now()
 			// drain channel
 			for {
 				select {
@@ -416,29 +455,36 @@ func (mc *MetricsCollector) aggregate(interval time.Duration) {
 			if len(batch) == 0 && !mc.emitIdleSnapshots && mc.current.activeVUsers.Load() == 0 {
 				continue
 			}
-			snap := mc.computeSnapshot(batch, interval)
-			if mc.resCollector != nil {
-				snap.Resources = &SystemResources{}
+			window := windowEnd.Sub(windowStart)
+			if window <= 0 {
+				window = interval
 			}
-			mc.snapshotsMu.Lock()
-			mc.snapshots = append(mc.snapshots, snap)
-			// keep last 3600 snapshots (1 hour at 1s interval)
-			if len(mc.snapshots) > 3600 {
-				mc.snapshots = mc.snapshots[len(mc.snapshots)-3600:]
-			}
-			snapshotIndex := len(mc.snapshots) - 1
-			mc.snapshotsMu.Unlock()
-			if mc.resCollector != nil {
-				resources := mc.resCollector.Collect()
-				if resources != nil {
-					mc.snapshotsMu.Lock()
-					if snapshotIndex >= 0 && snapshotIndex < len(mc.snapshots) {
-						mc.snapshots[snapshotIndex].Resources = resources
-					}
-					mc.snapshotsMu.Unlock()
-				}
-			}
+			mc.publishSnapshot(batch, window)
+			windowStart = windowEnd
 			batch = batch[:0]
+		}
+	}
+}
+
+func (mc *MetricsCollector) publishSnapshot(batch []*protocol.Result, window time.Duration) {
+	snap := mc.computeSnapshot(batch, window)
+	if mc.resCollector != nil {
+		snap.Resources = &SystemResources{}
+	}
+	mc.snapshotsMu.Lock()
+	mc.snapshots = append(mc.snapshots, snap)
+	if len(mc.snapshots) > 3600 {
+		mc.snapshots = mc.snapshots[len(mc.snapshots)-3600:]
+	}
+	snapshotIndex := len(mc.snapshots) - 1
+	mc.snapshotsMu.Unlock()
+	if mc.resCollector != nil {
+		if resources := mc.resCollector.Collect(); resources != nil {
+			mc.snapshotsMu.Lock()
+			if snapshotIndex >= 0 && snapshotIndex < len(mc.snapshots) {
+				mc.snapshots[snapshotIndex].Resources = resources
+			}
+			mc.snapshotsMu.Unlock()
 		}
 	}
 }

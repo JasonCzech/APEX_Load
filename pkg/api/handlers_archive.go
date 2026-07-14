@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -18,7 +19,11 @@ import (
 const (
 	maxArchiveComparisonRuns = 10
 	maxArchivePageLimit      = 1000
-	maxArchiveSampleLimit    = 5000
+	// The downsampler reserves two temporal endpoints plus independent min/max
+	// slots for every resource safety dimension. Keeping the public minimum at
+	// this bound prevents a small request from silently dropping critical extrema.
+	minArchiveSampleLimit = 16
+	maxArchiveSampleLimit = 5000
 )
 const maxArchiveReportBatchIDs = 50
 
@@ -84,15 +89,18 @@ func (s *Server) handleDownloadRunArchive(w http.ResponseWriter, r *http.Request
 		return
 	}
 	defer lease.Release()
-	filename := fmt.Sprintf("%s-%s.zip", sanitizeFilename(test.Name), id)
-	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
-	w.Header().Set("Last-Modified", record.CompletedAt.UTC().Format(http.TimeFormat))
-	w.WriteHeader(http.StatusOK)
-	if err := zipDirectory(record.ArchivePath, w); err != nil {
+	staged, err := stageArchiveDownload(r.Context(), func(destination io.Writer) error {
+		return zipDirectoryContext(r.Context(), record.ArchivePath, destination)
+	})
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to build archive bundle: "+err.Error())
 		return
 	}
+	defer removeStagedArchiveDownload(staged)
+	filename := fmt.Sprintf("%s-%s.zip", sanitizeFilename(test.Name), id)
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+	http.ServeContent(w, r, filename, record.CompletedAt.UTC(), staged.File)
 }
 
 func (s *Server) handleDownloadRunArchiveArtifact(w http.ResponseWriter, r *http.Request) {
@@ -133,12 +141,8 @@ func (s *Server) handleDownloadRunArchiveArtifact(w http.ResponseWriter, r *http
 		writeError(w, http.StatusNotFound, "archive artifact not found")
 		return
 	}
-	fullPath, err := archiveArtifactPath(record.ArchivePath, name)
+	artifact, info, err := openArchiveArtifactForRead(record.ArchivePath, name)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "archive artifact not found")
-		return
-	}
-	if _, err := os.Stat(fullPath); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			writeError(w, http.StatusNotFound, "archive artifact not found")
 			return
@@ -146,10 +150,11 @@ func (s *Server) handleDownloadRunArchiveArtifact(w http.ResponseWriter, r *http
 		writeError(w, http.StatusInternalServerError, "failed to read archive artifact: "+err.Error())
 		return
 	}
+	defer artifact.Close()
 	filename := fmt.Sprintf("%s-%s-%s", sanitizeFilename(test.Name), id, name)
 	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
 	w.Header().Set("Content-Type", artifactContentType(name))
-	http.ServeFile(w, r, fullPath)
+	http.ServeContent(w, r, filename, info.ModTime(), artifact)
 }
 
 func (s *Server) handleDownloadRunArchiveBrowserDiagnostics(w http.ResponseWriter, r *http.Request) {
@@ -170,20 +175,22 @@ func (s *Server) handleDownloadRunArchiveBrowserDiagnostics(w http.ResponseWrite
 		return
 	}
 	defer lease.Release()
-	bundle, err := buildRunArchiveBrowserDiagnostics(record)
+	staged, err := stageArchiveDownload(r.Context(), func(destination io.Writer) error {
+		bundle, err := buildRunArchiveBrowserDiagnosticsContext(r.Context(), record)
+		if err != nil {
+			return fmt.Errorf("build browser diagnostics bundle: %w", err)
+		}
+		return writeRunArchiveBrowserDiagnosticsZipContext(r.Context(), bundle, destination)
+	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to build browser diagnostics bundle: "+err.Error())
-		return
-	}
-	filename := fmt.Sprintf("%s-%s-browser-diagnostics.zip", sanitizeFilename(test.Name), id)
-	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
-	w.Header().Set("Last-Modified", record.CompletedAt.UTC().Format(http.TimeFormat))
-	w.WriteHeader(http.StatusOK)
-	if err := writeRunArchiveBrowserDiagnosticsZip(bundle, w); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to write browser diagnostics bundle: "+err.Error())
 		return
 	}
+	defer removeStagedArchiveDownload(staged)
+	filename := fmt.Sprintf("%s-%s-browser-diagnostics.zip", sanitizeFilename(test.Name), id)
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+	http.ServeContent(w, r, filename, record.CompletedAt.UTC(), staged.File)
 }
 
 func (s *Server) handleGetRunArchiveTransactions(w http.ResponseWriter, r *http.Request) {
@@ -200,7 +207,7 @@ func (s *Server) handleGetRunArchiveTransactions(w http.ResponseWriter, r *http.
 	if !ok {
 		return
 	}
-	items, total, err := loadArchiveTransactions(record, filter, page)
+	items, total, err := loadArchiveTransactionsContext(r.Context(), record, filter, page)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to read archive transactions: "+err.Error())
 		return
@@ -260,11 +267,11 @@ func (s *Server) handleGetRunArchiveResources(w http.ResponseWriter, r *http.Req
 		sampled bool
 	)
 	if sampleLimit > 0 {
-		items, total, err = loadArchiveResourceSamplesDownsampled(record, sampleLimit)
+		items, total, err = loadArchiveResourceSamplesDownsampledContext(r.Context(), record, sampleLimit)
 		page = archivePage{Limit: sampleLimit}
 		sampled = true
 	} else {
-		items, total, err = loadArchiveResourceSamples(record, page)
+		items, total, err = loadArchiveResourceSamplesContext(r.Context(), record, page)
 	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to read archive resources: "+err.Error())
@@ -305,10 +312,6 @@ func (s *Server) handleGetRunArchiveSummaries(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
-	if sampleLimit > 0 && (action != "" || groupFilter.Explicit) {
-		writeError(w, http.StatusBadRequest, "sample_limit cannot be combined with summary filters")
-		return
-	}
 	var (
 		items   []IntervalSummaryRecord
 		total   int
@@ -316,11 +319,15 @@ func (s *Server) handleGetRunArchiveSummaries(w http.ResponseWriter, r *http.Req
 		sampled bool
 	)
 	if sampleLimit > 0 {
-		items, total, err = loadArchiveIntervalSummariesDownsampled(record, sampleLimit)
+		if action != "" || groupFilter.Explicit {
+			items, total, err = loadArchiveIntervalSummariesForFiltersDownsampledContext(r.Context(), record, sampleLimit, action, groupFilter)
+		} else {
+			items, total, err = loadArchiveIntervalSummariesDownsampledContext(r.Context(), record, sampleLimit)
+		}
 		page = archivePage{Limit: sampleLimit}
 		sampled = true
 	} else {
-		items, total, err = loadArchiveIntervalSummaries(record, page, action, groupFilter)
+		items, total, err = loadArchiveIntervalSummariesContext(r.Context(), record, page, action, groupFilter)
 	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to read archive summaries: "+err.Error())
@@ -898,7 +905,7 @@ func parseArchiveSampleLimit(w http.ResponseWriter, r *http.Request) (int, bool)
 		return 0, true
 	}
 	parsed, err := strconv.Atoi(raw)
-	if err != nil || parsed < 2 || parsed > maxArchiveSampleLimit {
+	if err != nil || parsed < minArchiveSampleLimit || parsed > maxArchiveSampleLimit {
 		writeError(w, http.StatusBadRequest, "invalid sample_limit")
 		return 0, false
 	}

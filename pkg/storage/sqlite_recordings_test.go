@@ -53,18 +53,25 @@ func TestScriptRecordingRoundTrip(t *testing.T) {
 	if loaded.Observations[1].RequestHeaders["X-Token"] != "abc" {
 		t.Errorf("request headers not round-tripped: %#v", loaded.Observations[1].RequestHeaders)
 	}
-	if len(loaded.CorrelationObservations) != 2 || loaded.CorrelationObservations[0].ResponseBody != `{"token":"raw"}` {
-		t.Errorf("correlation observations not round-tripped: %#v", loaded.CorrelationObservations)
+	if len(loaded.CorrelationObservations) != 0 {
+		t.Errorf("plaintext correlation observations were persisted: %#v", loaded.CorrelationObservations)
+	}
+	var persistedSidecar string
+	if err := store.db.QueryRow(`SELECT correlation_observations_json FROM script_recordings WHERE script_id = ?`, "script-1").Scan(&persistedSidecar); err != nil {
+		t.Fatal(err)
+	}
+	if persistedSidecar != "[]" {
+		t.Fatalf("plaintext correlation sidecar = %q, want empty encrypted slot", persistedSidecar)
 	}
 
 	// Upsert replaces observations.
 	record.Observations = record.Observations[:1]
-	record.CorrelationObservations = record.CorrelationObservations[:1]
+	record.CorrelationObservations = []ScriptRecordingObservation{{ID: 0, ResponseBody: `{"token":"still-raw"}`}}
 	if err := store.SaveScriptRecording(record); err != nil {
 		t.Fatalf("re-save: %v", err)
 	}
 	loaded, _ = store.GetScriptRecording("script-1")
-	if len(loaded.Observations) != 1 || len(loaded.CorrelationObservations) != 1 {
+	if len(loaded.Observations) != 1 || len(loaded.CorrelationObservations) != 0 {
 		t.Errorf("upsert did not replace observations, got obs=%d corr=%d", len(loaded.Observations), len(loaded.CorrelationObservations))
 	}
 }
@@ -104,7 +111,7 @@ func TestScriptRecordingCapsObservations(t *testing.T) {
 	if record.RequestCount != maxRecordingObservations {
 		t.Errorf("request count = %d, want cap %d", record.RequestCount, maxRecordingObservations)
 	}
-	if len(record.Observations) != maxRecordingObservations || len(record.CorrelationObservations) != maxRecordingObservations {
+	if len(record.Observations) != maxRecordingObservations || len(record.CorrelationObservations) != 0 {
 		t.Errorf("observation caps = obs %d corr %d, want %d", len(record.Observations), len(record.CorrelationObservations), maxRecordingObservations)
 	}
 }

@@ -668,42 +668,47 @@ func (tr *TestRunner) UpdateGoalTargetTPS(id string, groupName string, targetTPS
 }
 
 func (tr *TestRunner) scheduleVUserScaleRamp(id string, groupName string, targetVUsers int, rampDuration time.Duration) error {
+	_, err := tr.startVUserScaleRamp(context.Background(), id, groupName, targetVUsers, rampDuration)
+	return err
+}
+
+func (tr *TestRunner) startVUserScaleRamp(parent context.Context, id string, groupName string, targetVUsers int, rampDuration time.Duration) (*vuserScaleRamp, error) {
 	if targetVUsers < 0 {
-		return fmt.Errorf("target vusers must be non-negative")
+		return nil, fmt.Errorf("target vusers must be non-negative")
 	}
 	if rampDuration <= 0 {
-		return fmt.Errorf("ramp duration must be positive")
+		return nil, fmt.Errorf("ramp duration must be positive")
 	}
 
 	tr.mu.Lock()
 	if !tr.isExecutionLeader() {
 		tr.mu.Unlock()
-		return errNotExecutionLeader
+		return nil, errNotExecutionLeader
 	}
 	id = tr.resolveRefKeyLocked(id)
 	test, ok := tr.tests[id]
 	if !ok {
 		tr.mu.Unlock()
-		return fmt.Errorf("test not found: %s", id)
+		return nil, fmt.Errorf("test not found: %s", id)
 	}
 	if test.remoteFinalizing {
 		tr.mu.Unlock()
-		return fmt.Errorf("test is finalizing and cannot be scaled")
+		return nil, fmt.Errorf("test is finalizing and cannot be scaled")
 	}
 	if test.Status != "RUNNING" {
 		tr.mu.Unlock()
-		return fmt.Errorf("test is %s, must be RUNNING to scale", test.Status)
+		return nil, fmt.Errorf("test is %s, must be RUNNING to scale", test.Status)
 	}
 
 	currentVUsers, found := testGroupVUsers(test, groupName)
 	if !found {
 		tr.mu.Unlock()
-		return fmt.Errorf("group not found: %s", groupName)
+		return nil, fmt.Errorf("group not found: %s", groupName)
 	}
 	tr.cancelVUserScaleRampLocked(test, groupName)
 	if currentVUsers == targetVUsers {
 		tr.mu.Unlock()
-		return nil
+		return nil, nil
 	}
 
 	startedAt := time.Now()
@@ -715,8 +720,12 @@ func (tr *TestRunner) scheduleVUserScaleRamp(id string, groupName string, target
 		RampDuration:        rampDuration.String(),
 		RampDurationSeconds: int64(rampDuration / time.Second),
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	ramp := &vuserScaleRamp{cancel: cancel, status: rampStatus}
+	ctx, cancel := context.WithCancel(parent)
+	ramp := &vuserScaleRamp{
+		cancel: cancel,
+		status: rampStatus,
+		done:   make(chan error, 1),
+	}
 	if test.vuserScaleRamps == nil {
 		test.vuserScaleRamps = make(map[string]*vuserScaleRamp)
 	}
@@ -741,11 +750,16 @@ func (tr *TestRunner) scheduleVUserScaleRamp(id string, groupName string, target
 	})
 
 	go tr.runVUserScaleRamp(ctx, ramp, id, groupName, currentVUsers, targetVUsers, rampDuration)
-	return nil
+	return ramp, nil
 }
 
 func (tr *TestRunner) runVUserScaleRamp(ctx context.Context, ramp *vuserScaleRamp, id string, groupName string, currentVUsers int, targetVUsers int, rampDuration time.Duration) {
-	defer tr.finishVUserScaleRamp(id, groupName, ramp)
+	var result error
+	defer func() {
+		tr.finishVUserScaleRamp(id, groupName, ramp)
+		ramp.done <- result
+		close(ramp.done)
+	}()
 
 	delta := targetVUsers - currentVUsers
 	steps := testexec.AbsInt(delta)
@@ -766,12 +780,14 @@ func (tr *TestRunner) runVUserScaleRamp(ctx context.Context, ramp *vuserScaleRam
 	for step := 1; step <= steps; step++ {
 		select {
 		case <-ctx.Done():
+			result = ctx.Err()
 			return
 		case <-timer.C:
 		}
 
 		nextTarget := currentVUsers + direction*step
 		if err := tr.scaleVUsersNow(id, groupName, nextTarget, false); err != nil {
+			result = err
 			slog.Warn("gradual vuser scale stopped", "test_id", id, "group", groupName, "target_vusers", nextTarget, "error", err)
 			return
 		}
@@ -823,10 +839,31 @@ func (tr *TestRunner) runStageSchedule(ctx context.Context, testID string, group
 		}
 		switch stageType {
 		case "ramp_up", "ramp_down":
-			if err := tr.ScaleVUsersWithOptions(testID, groupName, stage.TargetVUsers, ScaleVUsersOptions{RampDuration: duration}); err != nil {
+			ramp, err := tr.startVUserScaleRamp(ctx, testID, groupName, stage.TargetVUsers, duration)
+			if err != nil {
 				slog.Warn("stage schedule scale failed", "test_id", testID, "group", groupName, "stage", index, "target_vusers", stage.TargetVUsers, "error", err)
 				return
 			}
+			if ramp == nil {
+				if !sleepStageDuration(ctx, duration) {
+					return
+				}
+				continue
+			}
+			select {
+			case <-ctx.Done():
+				ramp.cancel()
+				return
+			case err := <-ramp.done:
+				if err != nil {
+					if errors.Is(err, context.Canceled) {
+						return
+					}
+					slog.Warn("stage schedule ramp stopped", "test_id", testID, "group", groupName, "stage", index, "target_vusers", stage.TargetVUsers, "error", err)
+					return
+				}
+			}
+			continue
 		case "hold":
 			// The engine is already at the hold target: first holds are seeded by
 			// compilation, later holds inherit the preceding ramp target.
