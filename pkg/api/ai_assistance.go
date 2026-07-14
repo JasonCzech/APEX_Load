@@ -374,7 +374,11 @@ func (s *Server) handleAIDraftGeneration(w http.ResponseWriter, r *http.Request)
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	projectID := s.deriveAIDraftProjectID(req)
+	projectID, err := s.bindAIDraftProject(&req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	policy := buildAIPolicyResponse(projectID, time.Now().UTC())
 	provider := normalizeAIProvider(req.Provider)
 	if !enforceAIPolicy(w, policy, provider) {
@@ -433,13 +437,14 @@ func (s *Server) handleAIRepairSuggestions(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	projectID := normalizeProjectID(firstNonEmpty(req.ProjectID, script.ProjectID))
+	projectID, err := s.bindAIRepairProject(&req, script.ProjectID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	policy := buildAIPolicyResponse(projectID, time.Now().UTC())
 	if !enforceAIPolicy(w, policy, provider) {
 		return
-	}
-	if projectID == "" {
-		projectID = normalizeProjectID(script.ProjectID)
 	}
 	validation := buildScriptValidationResponse(req.ScriptID, script)
 	suggestions := buildAIRepairSuggestions(script, validation, req.Categories)
@@ -474,7 +479,11 @@ func (s *Server) handleAIExplain(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	projectID := s.deriveAIExplainProjectID(req)
+	projectID, err := s.bindAIExplainProject(&req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	provider := normalizeAIProvider(req.Provider)
 	policy := buildAIPolicyResponse(projectID, time.Now().UTC())
 	if !enforceAIPolicy(w, policy, provider) {
@@ -534,10 +543,11 @@ func (s *Server) handleAIReviewQueue(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetRunArchiveAIRootCause(w http.ResponseWriter, r *http.Request) {
-	record, ok := s.requireRunArchive(w, r)
+	record, lease, ok := s.requireRunArchive(w, r)
 	if !ok {
 		return
 	}
+	defer lease.Release()
 	report, err := cachedRunArchiveReport(record)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to build AI root-cause summary: "+err.Error())

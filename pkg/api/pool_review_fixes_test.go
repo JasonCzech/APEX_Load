@@ -67,7 +67,17 @@ func TestReservationOverbookingGuardPoolScoped(t *testing.T) {
 		return got.ID
 	}
 	approve := func(id string) *httptest.ResponseRecorder {
-		return timeslotRequest(t, server, http.MethodPost, "/api/v1/capacity/timeslots/"+id+"/approve", nil)
+		result := make(chan *httptest.ResponseRecorder, 1)
+		go func() {
+			result <- timeslotRequest(t, server, http.MethodPost, "/api/v1/capacity/timeslots/"+id+"/approve", nil)
+		}()
+		select {
+		case rec := <-result:
+			return rec
+		case <-time.After(2 * time.Second):
+			t.Fatal("timeslot approval deadlocked while resolving the pool envelope")
+			return nil
+		}
 	}
 
 	p1 := create("p1", 2, "pool-x") // fills the 2-member envelope exactly

@@ -9,6 +9,7 @@ import {
   readStoredDevViewMode,
   request,
   requestFromOrigin,
+  resolveApiResourceUrl,
   resolveApiOrigin,
   writeStoredDevViewMode,
 } from './apiClient'
@@ -47,6 +48,17 @@ describe('resolveApiOrigin', () => {
       {},
       { protocol: 'http:', hostname: 'apexload.example.test', port: '', origin: 'https://apexload.example.test' },
     )).toBe('https://apexload.example.test')
+  })
+})
+
+describe('resolveApiResourceUrl', () => {
+  it('resolves API-provided relative auth URLs against the configured controller origin', () => {
+    expect(resolveApiResourceUrl('/api/v1/auth/login', 'https://controller.example.test')).toBe('https://controller.example.test/api/v1/auth/login')
+    expect(resolveApiResourceUrl('api/v1/auth/logout', 'https://controller.example.test/')).toBe('https://controller.example.test/api/v1/auth/logout')
+  })
+
+  it('preserves absolute identity-provider URLs', () => {
+    expect(resolveApiResourceUrl('https://login.example.test/start', 'https://controller.example.test')).toBe('https://login.example.test/start')
   })
 })
 
@@ -93,6 +105,7 @@ describe('dev preview API headers', () => {
     expect(headers.get('X-APEXLoad-Dev-View')).toBe('user')
     expect(headers.get('X-APEXLoad-Dev-Project-ID')).toBe('project-2')
     expect(headers.has('Content-Type')).toBe(false)
+    expect(init.credentials).toBe('include')
   })
 
   it('attaches preview headers to JSON requests', async () => {
@@ -107,6 +120,7 @@ describe('dev preview API headers', () => {
     const headers = init.headers as Headers
     expect(headers.get('X-APEXLoad-Dev-View')).toBe('admin')
     expect(headers.get('Content-Type')).toBe('application/json')
+    expect(init.credentials).toBe('include')
   })
 
   it('can send JSON requests to an alternate API origin', async () => {
@@ -120,6 +134,22 @@ describe('dev preview API headers', () => {
     expect(fetchMock.mock.calls[0][0]).toBe('http://127.0.0.1:49152/api/v1/bridge/status')
     const init = fetchMock.mock.calls[0][1] as RequestInit
     expect((init.headers as Headers).get('Content-Type')).toBe('application/json')
+    expect(init.credentials).toBe('include')
+  })
+
+  it.each([204, 205])('accepts a successful %i response without a JSON body', async status => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status }))
+
+    await expect(request<void>('/library/remotes/remote-1', { method: 'DELETE' })).resolves.toBeUndefined()
+  })
+
+  it('accepts an empty successful response even when the endpoint declares JSON', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('', {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+
+    await expect(request<void>('/library/remotes/remote-1', { method: 'DELETE' })).resolves.toBeUndefined()
   })
 
   it('reports dashboard HTML fallbacks as unavailable API routes without echoing markup', async () => {

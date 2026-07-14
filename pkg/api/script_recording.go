@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"log/slog"
 	"strings"
 
@@ -63,13 +64,20 @@ func (s *Server) persistRecordedBaseline(scriptID, source string, observations [
 		redacted = append(redacted, redactBaselineObservation(obs))
 		raw = append(raw, rawBaselineObservation(obs))
 	}
-	return s.store.SaveScriptRecording(&storage.ScriptRecordingRecord{
-		ScriptID:                scriptID,
-		Source:                  source,
-		Sensitivity:             scrub.SensitivityRaw,
-		Observations:            redacted,
-		CorrelationObservations: raw,
-	})
+	record := &storage.ScriptRecordingRecord{
+		ScriptID:     scriptID,
+		Source:       source,
+		Sensitivity:  scrub.SensitivityScrubbed,
+		RequestCount: len(observations),
+		Observations: redacted,
+	}
+	if payload, err := json.Marshal(raw); err == nil && recordingBaselineEncryptionAvailable() {
+		if encrypted, err := encryptRecordingBaseline(payload); err == nil {
+			record.EncryptedCorrelationObservations = encrypted
+			record.Sensitivity = "encrypted_contains_secrets"
+		}
+	}
+	return s.store.SaveScriptRecording(record)
 }
 
 // captureRecordingBaseline persists the recorded baseline for a newly-created

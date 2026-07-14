@@ -114,7 +114,11 @@ func (s *SQLiteStore) UpdateMonitoringCollectorHealth(id string, health string, 
 	if err != nil {
 		return err
 	}
-	if affected, err := res.RowsAffected(); err == nil && affected == 0 {
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
 		return fmt.Errorf("monitoring collector not found: %s", id)
 	}
 	return nil

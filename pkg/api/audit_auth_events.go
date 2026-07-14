@@ -7,6 +7,7 @@ package api
 // bot from flooding the audit table while still recording the first hit per window.
 
 import (
+	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
@@ -77,7 +78,7 @@ func (s *Server) recordAuthDenial(r *http.Request, resolution authResolution, st
 	if !s.authAudit.allow(authDenialThrottleKey(r, authDenialTrustedIdentity(resolution), status, reason), time.Now().UTC(), authDenialDedupWindow) {
 		return
 	}
-	_ = s.store.SaveAuditEvent(&storage.AuditEvent{
+	if err := s.store.SaveAuditEvent(&storage.AuditEvent{
 		ID:               uuid.New().String(),
 		Action:           auditActionAccessDenied,
 		ActorType:        actorType,
@@ -93,7 +94,9 @@ func (s *Server) recordAuthDenial(r *http.Request, resolution authResolution, st
 			"reason": reason,
 		},
 		CreatedAt: time.Now().UTC(),
-	})
+	}); err != nil {
+		slog.Warn("failed to persist authorization denial audit event", "method", r.Method, "path", r.URL.Path, "error", err)
+	}
 }
 
 // authDenialTrustedIdentity returns a stable identity for a denial ONLY when the
@@ -224,7 +227,7 @@ func (s *Server) recordAuthLogin(r *http.Request, resolution authResolution) {
 	if !s.authAudit.allow(resolution.User.Subject+"|login", time.Now().UTC(), authLoginDedupWindow) {
 		return
 	}
-	_ = s.store.SaveAuditEvent(&storage.AuditEvent{
+	if err := s.store.SaveAuditEvent(&storage.AuditEvent{
 		ID:               uuid.New().String(),
 		Action:           "auth.session.login",
 		ActorType:        "user",
@@ -235,5 +238,7 @@ func (s *Server) recordAuthLogin(r *http.Request, resolution authResolution) {
 		Status:           "success",
 		Details:          map[string]any{"mode": authModeTrustedHeaders},
 		CreatedAt:        time.Now().UTC(),
-	})
+	}); err != nil {
+		slog.Warn("failed to persist authentication login audit event", "subject", resolution.User.Subject, "error", err)
+	}
 }

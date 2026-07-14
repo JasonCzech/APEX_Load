@@ -19,6 +19,9 @@ func TestGetTestManifestBuildsLiveConfigurationAndRuntimeChanges(t *testing.T) {
 	defer store.Close()
 
 	createdAt := time.Date(2026, 6, 7, 14, 0, 0, 0, time.UTC)
+	if err := store.SaveProject(&storage.Project{ID: "project-1", Name: "Project 1", CreatedAt: createdAt, UpdatedAt: createdAt}); err != nil {
+		t.Fatalf("SaveProject returned error: %v", err)
+	}
 	initialGroups := []TestGroup{{
 		Name:       "buyers",
 		ScriptID:   "script-1",
@@ -120,6 +123,9 @@ func TestTestManifestArchiveArtifactAndFallback(t *testing.T) {
 
 	runner := NewTestRunner(2, NewHub(), store)
 	completedAt := time.Date(2026, 6, 7, 15, 0, 0, 0, time.UTC)
+	if err := store.SaveProject(&storage.Project{ID: "project-1", Name: "Project 1", CreatedAt: completedAt, UpdatedAt: completedAt}); err != nil {
+		t.Fatalf("SaveProject returned error: %v", err)
+	}
 	test := &ManagedTest{
 		ID:          "test-archived-manifest",
 		Name:        "Archived Run",

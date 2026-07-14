@@ -144,6 +144,10 @@ func hasGoalConfig(config *GoalConfig) bool {
 }
 
 func evaluateGoalController(now time.Time, currentTotalVUsers int, live *LiveMetrics, config *GoalConfig, state *goalControllerState) goalControllerUpdate {
+	errorCount := live.TotalErrors
+	if state != nil && state.errorWindowsTracked {
+		errorCount = state.cumulativeErrors
+	}
 	status := &GoalStatus{
 		Mode:                 "goal_oriented",
 		CurrentTPS:           live.TPS,
@@ -169,7 +173,7 @@ func evaluateGoalController(now time.Time, currentTotalVUsers int, live *LiveMet
 		transfer: hasServerTelemetryBreach(live, config.MaxAvgTransferMs, func(summary *ServerTelemetrySummary) float64 {
 			return summary.AvgTransferMs
 		}),
-		errorCount: config.MaxErrorCount != nil && live.TotalErrors > int64(*config.MaxErrorCount),
+		errorCount: config.MaxErrorCount != nil && errorCount > int64(*config.MaxErrorCount),
 		lcp:        hasBrowserVitalsBreach(live, config.MaxLCPMs, func(browser *BrowserLiveMetrics) float64 { return browser.AvgLCPMs }),
 		inp:        hasBrowserVitalsBreach(live, config.MaxINPMs, func(browser *BrowserLiveMetrics) float64 { return browser.AvgINPMs }),
 		cls:        hasBrowserVitalsBreach(live, config.MaxCLS, func(browser *BrowserLiveMetrics) float64 { return browser.AvgCLSScore }),
@@ -276,6 +280,26 @@ func evaluateGoalController(now time.Time, currentTotalVUsers int, live *LiveMet
 	}
 
 	return goalControllerUpdate{Status: status}
+}
+
+// recordGoalErrorWindow accumulates each metrics window once. Local engine
+// snapshots and per-generator distributed batches report window counts, not
+// run totals; comparing a single window to max_error_count lets sustained errors
+// evade the stop condition. The source/timestamp key also prevents terminal or
+// repeated distributed batches from double-counting a prior target's window.
+func recordGoalErrorWindow(state *goalControllerState, source string, timestamp time.Time, errors int64) {
+	if state == nil || errors < 0 || timestamp.IsZero() {
+		return
+	}
+	if state.lastErrorWindowBySource == nil {
+		state.lastErrorWindowBySource = make(map[string]time.Time)
+	}
+	if prior := state.lastErrorWindowBySource[source]; !prior.IsZero() && !timestamp.After(prior) {
+		return
+	}
+	state.lastErrorWindowBySource[source] = timestamp
+	state.cumulativeErrors += errors
+	state.errorWindowsTracked = true
 }
 
 func currentGoalTargetStatuses(test *ManagedTest, now time.Time) map[string]GoalTargetStatus {

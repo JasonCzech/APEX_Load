@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 import { useApi } from '../hooks/useApi'
 import { TestRunManifest, TestSummary } from '../types'
@@ -6,8 +6,14 @@ import { getErrorMessage } from '../utils/errorUtils'
 
 const LIVE_MANIFEST_REFRESH_MS = 5000
 
+interface ManifestRequest {
+  testID: string
+  generation: number
+  promise: Promise<void>
+}
+
 function shouldPollManifest(status?: string): boolean {
-  return status === 'RUNNING' || status === 'PAUSED' || status === 'STOPPING' || status === 'INITIALIZING'
+  return status === 'SHAKEOUT' || status === 'RUNNING' || status === 'PAUSED' || status === 'STOPPING' || status === 'INITIALIZING'
 }
 
 export function useExecutionTestManifest(test: TestSummary | null): {
@@ -24,6 +30,69 @@ export function useExecutionTestManifest(test: TestSummary | null): {
   const testID = test?.id || ''
   const testStatus = test?.status
   const archiveCompletedAt = test?.archive?.completed_at || ''
+  const activeTestIDRef = useRef(testID)
+  const requestGenerationRef = useRef(0)
+  const inFlightRequestRef = useRef<ManifestRequest | null>(null)
+  const mountedRef = useRef(true)
+  activeTestIDRef.current = testID
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
+
+  useLayoutEffect(() => {
+    requestGenerationRef.current += 1
+    setManifest(null)
+    setManifestError('')
+    setManifestLoading(Boolean(testID))
+  }, [testID])
+
+  const requestManifest = useCallback((requestTestID: string, showLoading: boolean, clearManifestOnError: boolean) => {
+    const existingRequest = inFlightRequestRef.current
+    if (existingRequest?.testID === requestTestID) {
+      if (showLoading) setManifestLoading(true)
+      return existingRequest.promise
+    }
+
+    const requestGeneration = ++requestGenerationRef.current
+    if (showLoading) setManifestLoading(true)
+    setManifestError('')
+
+    const promise = api.getTestManifest(requestTestID)
+      .then(next => {
+        if (
+          mountedRef.current
+          && activeTestIDRef.current === requestTestID
+          && requestGenerationRef.current === requestGeneration
+        ) setManifest(next)
+      })
+      .catch((error: unknown) => {
+        if (
+          mountedRef.current
+          && activeTestIDRef.current === requestTestID
+          && requestGenerationRef.current === requestGeneration
+        ) {
+          if (clearManifestOnError) setManifest(null)
+          setManifestError(getErrorMessage(error, 'Unable to load test manifest'))
+        }
+      })
+      .finally(() => {
+        if (inFlightRequestRef.current?.generation === requestGeneration) {
+          inFlightRequestRef.current = null
+        }
+        if (
+          mountedRef.current
+          && activeTestIDRef.current === requestTestID
+          && requestGenerationRef.current === requestGeneration
+        ) setManifestLoading(false)
+      })
+
+    inFlightRequestRef.current = { testID: requestTestID, generation: requestGeneration, promise }
+    return promise
+  }, [api])
 
   useEffect(() => {
     if (!testID) {
@@ -33,55 +102,25 @@ export function useExecutionTestManifest(test: TestSummary | null): {
       return undefined
     }
 
-    let cancelled = false
-
-    const load = async (showLoading: boolean) => {
-      if (showLoading) setManifestLoading(true)
-      setManifestError('')
-      try {
-        const next = await api.getTestManifest(testID)
-        if (!cancelled) setManifest(next)
-      } catch (error: unknown) {
-        if (!cancelled) {
-          setManifest(null)
-          setManifestError(getErrorMessage(error, 'Unable to load test manifest'))
-        }
-      } finally {
-        if (!cancelled && showLoading) setManifestLoading(false)
-      }
-    }
-
-    void load(true)
+    void requestManifest(testID, true, true)
 
     if (!shouldPollManifest(testStatus)) {
-      return () => {
-        cancelled = true
-      }
+      return undefined
     }
 
     const interval = window.setInterval(() => {
-      void load(false)
+      void requestManifest(testID, false, true)
     }, LIVE_MANIFEST_REFRESH_MS)
 
     return () => {
-      cancelled = true
       window.clearInterval(interval)
     }
-  }, [api, archiveCompletedAt, testID, testStatus])
+  }, [archiveCompletedAt, requestManifest, testID, testStatus])
 
-  const reloadManifest = async () => {
+  const reloadManifest = useCallback(async () => {
     if (!testID) return
-    setManifestLoading(true)
-    setManifestError('')
-    try {
-      const next = await api.getTestManifest(testID)
-      setManifest(next)
-    } catch (error: unknown) {
-      setManifestError(getErrorMessage(error, 'Unable to load test manifest'))
-    } finally {
-      setManifestLoading(false)
-    }
-  }
+    await requestManifest(testID, true, false)
+  }, [requestManifest, testID])
 
   return {
     manifest,

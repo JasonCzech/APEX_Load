@@ -65,11 +65,12 @@ func scenarioPeakVUsers(scenario *StoredScenario) int {
 }
 
 // executionPlanRunGate decides whether a plan run may proceed. It returns:
-//   - (approval, false, nil): proceed; if approval != nil it is an approved,
-//     unconsumed approval the caller must stamp with the new run id.
+//   - (approval, false, nil): proceed; if approval != nil it is either an
+//     unconsumed approval the caller must claim or an approval already claimed
+//     by the same recoveryRunID.
 //   - (approval, true, nil): blocked; approval is the pending approval to surface.
 //   - (nil, false, nil): no governance required (under quota / no quota set).
-func (tr *TestRunner) executionPlanRunGate(plan *storage.ExecutionPlan, actorSubject string) (*storage.ExecutionPlanApproval, bool, error) {
+func (tr *TestRunner) executionPlanRunGate(plan *storage.ExecutionPlan, actorSubject string, recoveryRunID ...string) (*storage.ExecutionPlanApproval, bool, error) {
 	if tr.execPlanScheduleStore == nil {
 		return nil, false, nil
 	}
@@ -88,6 +89,10 @@ func (tr *TestRunner) executionPlanRunGate(plan *storage.ExecutionPlan, actorSub
 		return nil, false, nil
 	}
 	contentHash := tr.executionPlanApprovalContentHash(plan)
+	desiredRunID := ""
+	if len(recoveryRunID) > 0 {
+		desiredRunID = strings.TrimSpace(recoveryRunID[0])
+	}
 	approvals, err := tr.execPlanScheduleStore.ListExecutionPlanApprovals(plan.ID)
 	if err != nil {
 		return nil, false, err
@@ -97,8 +102,11 @@ func (tr *TestRunner) executionPlanRunGate(plan *storage.ExecutionPlan, actorSub
 		if approval.PlanContentHash != contentHash {
 			continue
 		}
-		if approval.Status == "approved" && approval.RunID == "" {
-			return approval, false, nil // consume this authorization
+		if approval.Status == "approved" && (approval.RunID == "" || (desiredRunID != "" && approval.RunID == desiredRunID)) {
+			// An approval already claimed by this exact preassigned run remains
+			// valid when schedule recovery resumes after a crash. It cannot
+			// authorize any other run ID.
+			return approval, false, nil
 		}
 		if approval.Status == "pending" && pending == nil {
 			pending = approval

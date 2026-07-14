@@ -58,6 +58,59 @@ func TestProjectAndFolderHandlers(t *testing.T) {
 	}
 }
 
+func TestDeleteProjectRetainsAndAttributesAuditHistory(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	now := time.Now().UTC()
+	domainID := "deletion-audit-domain"
+	projectID := "deletion-audit-project"
+	if err := store.SaveDomain(&storage.Domain{ID: domainID, Name: "Deletion Audit", CreatedAt: now}); err != nil {
+		t.Fatalf("SaveDomain returned error: %v", err)
+	}
+	if err := store.SaveProject(&storage.Project{ID: projectID, DomainID: domainID, Name: "Delete Me", CreatedAt: now}); err != nil {
+		t.Fatalf("SaveProject returned error: %v", err)
+	}
+	if err := store.SaveAuditEvent(&storage.AuditEvent{
+		ID: "pre-delete-audit", Action: "project.update", ActorType: "user", ActorSubject: "operator",
+		ProjectID: projectID, DomainID: domainID, ResourceType: "project", ResourceID: projectID,
+		Status: "success", CreatedAt: now,
+	}); err != nil {
+		t.Fatalf("SaveAuditEvent returned error: %v", err)
+	}
+
+	server := NewServer(ServerConfig{Store: store})
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/projects/"+projectID, nil)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("delete project status = %d, want 200 body=%s", resp.Code, resp.Body.String())
+	}
+
+	history, err := store.ListAuditEvents(storage.AuditEventFilter{ProjectID: projectID, Limit: 20})
+	if err != nil {
+		t.Fatalf("ListAuditEvents returned error: %v", err)
+	}
+	if len(history) != 2 {
+		t.Fatalf("project audit history = %+v, want retained update plus delete", history)
+	}
+	var deleteEvent *storage.AuditEvent
+	for _, event := range history {
+		if event.Action == "project.delete" {
+			deleteEvent = event
+		}
+	}
+	if deleteEvent == nil {
+		t.Fatalf("project.delete event missing from %+v", history)
+	}
+	if deleteEvent.ProjectID != projectID || deleteEvent.DomainID != domainID {
+		t.Fatalf("project.delete scope = project %q domain %q, want %q/%q", deleteEvent.ProjectID, deleteEvent.DomainID, projectID, domainID)
+	}
+}
+
 func TestProjectHandlersPersistRedactionSettings(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {

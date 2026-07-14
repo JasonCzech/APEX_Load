@@ -13,8 +13,8 @@ const apiMock = {
   getTestArchiveResources: vi.fn(),
 }
 
-vi.mock('../hooks/useApi', () => ({
-  useApi: () => apiMock,
+vi.mock('../hooks/api/useTestApi', () => ({
+  useTestApi: () => apiMock,
 }))
 
 function ResourceHistoryHarness({ test }: { test: TestSummary | null }) {
@@ -49,26 +49,18 @@ describe('useExecutionArchiveResourceHistory', () => {
     vi.clearAllMocks()
   })
 
-  it('loads archived resource pages for completed runs', async () => {
-    apiMock.getTestArchiveResources
-      .mockResolvedValueOnce({
-        resources: [
-          buildResourceSample('2026-05-12T20:00:00Z', 11, 3),
-        ],
-        total: 2,
-        count: 1,
-        limit: 1000,
-        offset: 0,
-      })
-      .mockResolvedValueOnce({
-        resources: [
-          buildResourceSample('2026-05-12T20:00:01Z', 12, 4),
-        ],
-        total: 2,
-        count: 1,
-        limit: 1000,
-        offset: 1,
-      })
+  it('loads a bounded server-downsampled resource series for completed runs', async () => {
+    apiMock.getTestArchiveResources.mockResolvedValueOnce({
+      resources: [
+        buildResourceSample('2026-05-12T20:00:00Z', 11, 3),
+        buildResourceSample('2026-05-12T20:00:01Z', 12, 4),
+      ],
+      total: 2,
+      count: 2,
+      limit: 5000,
+      offset: 0,
+      sampled: true,
+    })
 
     await act(async () => {
       root.render(<ResourceHistoryHarness test={buildArchivedTest()} />)
@@ -76,9 +68,8 @@ describe('useExecutionArchiveResourceHistory', () => {
 
     await flushPromises()
 
-    expect(apiMock.getTestArchiveResources).toHaveBeenCalledTimes(2)
-    expect(apiMock.getTestArchiveResources).toHaveBeenNthCalledWith(1, 'test-1', { limit: 1000, offset: 0 })
-    expect(apiMock.getTestArchiveResources).toHaveBeenNthCalledWith(2, 'test-1', { limit: 1000, offset: 1 })
+    expect(apiMock.getTestArchiveResources).toHaveBeenCalledTimes(1)
+    expect(apiMock.getTestArchiveResources).toHaveBeenCalledWith('test-1', { sample_limit: 5000 })
     expect(readTestId('loading')).toBe('idle')
     expect(readTestId('count')).toBe('2')
     expect(readTestId('cpu')).toBe('11')

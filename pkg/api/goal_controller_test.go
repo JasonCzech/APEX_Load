@@ -186,6 +186,30 @@ func TestEvaluateGoalControllerStopsOnMaxErrorCount(t *testing.T) {
 	}
 }
 
+func TestEvaluateGoalControllerUsesCumulativeErrorWindows(t *testing.T) {
+	maxErrorCount := 10
+	config := &GoalConfig{MaxErrorCount: &maxErrorCount, StopOnMaxErrors: true}
+	state := &goalControllerState{}
+	started := time.Now()
+
+	recordGoalErrorWindow(state, "local", started, 6)
+	first := evaluateGoalController(started, 1, &LiveMetrics{Timestamp: started, TotalErrors: 6}, config, state)
+	if first.ShouldStop {
+		t.Fatal("first six-error window unexpectedly stopped the run")
+	}
+	recordGoalErrorWindow(state, "local", started.Add(time.Second), 5)
+	second := evaluateGoalController(started.Add(time.Second), 1, &LiveMetrics{Timestamp: started.Add(time.Second), TotalErrors: 5}, config, state)
+	if !second.ShouldStop || second.Status == nil || !second.Status.ErrorCountBreached {
+		t.Fatalf("cumulative eleven errors did not stop the run: %+v", second)
+	}
+
+	// Replaying the same distributed/local window must not double count it.
+	recordGoalErrorWindow(state, "local", started.Add(time.Second), 5)
+	if state.cumulativeErrors != 11 {
+		t.Fatalf("duplicate window changed cumulative errors to %d, want 11", state.cumulativeErrors)
+	}
+}
+
 func TestEvaluateGoalControllerStopTakesPrecedenceOverScaling(t *testing.T) {
 	targetTPS := 300.0
 	p95LatencyMs := 900.0

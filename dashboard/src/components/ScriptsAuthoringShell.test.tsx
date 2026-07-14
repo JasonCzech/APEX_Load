@@ -227,6 +227,20 @@ describe('ScriptsAuthoringShell', () => {
     expect(container.textContent).toContain('library-view')
   })
 
+  it('defaults an empty library to the start-new workflow', async () => {
+    await act(async () => {
+      root.render(renderShell({
+        authoringState: createState('create-options'),
+        scripts: [],
+      }))
+    })
+    await flushPromises()
+
+    expect(container.textContent).toContain('New draft authoring')
+    expect(container.textContent).not.toContain('Model From Existing Script')
+    expect(Array.from(container.querySelectorAll('.script-workflow-card')).find(button => button.textContent?.includes('Start New Script'))?.classList.contains('active')).toBe(true)
+  })
+
   it('renders create options and delegates launcher actions', async () => {
     const actions = createActions()
     const onOpenLibrary = vi.fn()

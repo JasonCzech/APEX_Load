@@ -12284,7 +12284,7 @@ function ParameterInfoPanel({
           <tbody>
             <tr>
               <th scope="row">Parameter Name</th>
-              <td><input value={parameter.name || ''} onChange={event => onUpdateParameter('name', event.target.value)} placeholder="session_id" /></td>
+              <td><input aria-label="Parameter name" value={parameter.name || ''} onChange={event => onUpdateParameter('name', event.target.value)} placeholder="session_id" /></td>
             </tr>
             <tr>
               <th scope="row">Parameter Type</th>
@@ -12390,7 +12390,7 @@ function ParameterInfoPanel({
                           ))}
                         </select>
                       ) : (
-                        <input value={currentDataSource} onChange={event => onUpdateParameter('data_source', event.target.value)} placeholder="users" />
+                        <input aria-label={`Data Source for ${parameterName}`} value={currentDataSource} onChange={event => onUpdateParameter('data_source', event.target.value)} placeholder="users" />
                       )}
                     </td>
                   </tr>
@@ -12405,7 +12405,7 @@ function ParameterInfoPanel({
                           ))}
                         </select>
                       ) : (
-                        <input value={currentColumn} onChange={event => onUpdateParameter('column', event.target.value)} placeholder="column name" />
+                        <input aria-label={`Column for ${parameterName}`} value={currentColumn} onChange={event => onUpdateParameter('column', event.target.value)} placeholder="column name" />
                       )}
                     </td>
                   </tr>
@@ -12420,6 +12420,7 @@ function ParameterInfoPanel({
                   <th scope="row">{parameterType === 'host' ? 'Host Overrides' : 'Inline Values'}</th>
                   <td>
                     <input
+                      aria-label={`${parameterType === 'host' ? 'Host Overrides' : 'Inline Values'} for ${parameterName}`}
                       value={(parameter.values || []).join(', ')}
                       onChange={event => onUpdateParameter('values', parseParameterListInput(event.target.value))}
                       placeholder={parameterType === 'host' ? 'host-a, host-b' : 'value1, value2'}
@@ -12467,21 +12468,21 @@ function ParameterInfoPanel({
             <tbody>
               {parameterType === 'random_number' && (
                 <>
-                  <tr><th scope="row">Minimum</th><td><input type="number" value={numberInputValue(parameter.min, 0)} onChange={event => onUpdateParameter('min', Number(event.target.value))} placeholder="min" /></td></tr>
-                  <tr><th scope="row">Maximum</th><td><input type="number" value={numberInputValue(parameter.max, 100)} onChange={event => onUpdateParameter('max', Number(event.target.value))} placeholder="max" /></td></tr>
+                  <tr><th scope="row">Minimum</th><td><input aria-label={`Minimum for ${parameterName}`} type="number" value={numberInputValue(parameter.min, 0)} onChange={event => onUpdateParameter('min', Number(event.target.value))} placeholder="min" /></td></tr>
+                  <tr><th scope="row">Maximum</th><td><input aria-label={`Maximum for ${parameterName}`} type="number" value={numberInputValue(parameter.max, 100)} onChange={event => onUpdateParameter('max', Number(event.target.value))} placeholder="max" /></td></tr>
                 </>
               )}
               {(parameterType === 'counter' || parameterType === 'current_iteration') && (
                 <>
-                  <tr><th scope="row">Start</th><td><input type="number" value={numberInputValue(parameter.start, parameterType === 'current_iteration' ? 1 : 0)} onChange={event => onUpdateParameter('start', Number(event.target.value))} placeholder="start" /></td></tr>
-                  <tr><th scope="row">End</th><td><input type="number" value={numberInputValue(parameter.end, 0)} onChange={event => onUpdateParameter('end', Number(event.target.value))} placeholder="end (optional)" /></td></tr>
-                  <tr><th scope="row">Step</th><td><input type="number" value={numberInputValue(parameter.step, 1)} onChange={event => onUpdateParameter('step', Number(event.target.value))} placeholder="step" /></td></tr>
+                  <tr><th scope="row">Start</th><td><input aria-label={`Start for ${parameterName}`} type="number" value={numberInputValue(parameter.start, parameterType === 'current_iteration' ? 1 : 0)} onChange={event => onUpdateParameter('start', Number(event.target.value))} placeholder="start" /></td></tr>
+                  <tr><th scope="row">End</th><td><input aria-label={`End for ${parameterName}`} type="number" value={numberInputValue(parameter.end, 0)} onChange={event => onUpdateParameter('end', Number(event.target.value))} placeholder="end (optional)" /></td></tr>
+                  <tr><th scope="row">Step</th><td><input aria-label={`Step for ${parameterName}`} type="number" value={numberInputValue(parameter.step, 1)} onChange={event => onUpdateParameter('step', Number(event.target.value))} placeholder="step" /></td></tr>
                 </>
               )}
               {parameterType === 'random_string' && (
                 <>
-                  <tr><th scope="row">Length</th><td><input type="number" value={numberInputValue(parameter.length, 12)} onChange={event => onUpdateParameter('length', Number(event.target.value))} placeholder="length" /></td></tr>
-                  <tr><th scope="row">Charset</th><td><input value={parameter.charset || ''} onChange={event => onUpdateParameter('charset', event.target.value)} placeholder="charset override" /></td></tr>
+                  <tr><th scope="row">Length</th><td><input aria-label={`Length for ${parameterName}`} type="number" value={numberInputValue(parameter.length, 12)} onChange={event => onUpdateParameter('length', Number(event.target.value))} placeholder="length" /></td></tr>
+                  <tr><th scope="row">Charset</th><td><input aria-label={`Charset for ${parameterName}`} value={parameter.charset || ''} onChange={event => onUpdateParameter('charset', event.target.value)} placeholder="charset override" /></td></tr>
                 </>
               )}
               {parameterType === 'uuid' && (
@@ -12495,8 +12496,8 @@ function ParameterInfoPanel({
                       <ParameterFormatControl parameter={parameter} onUpdate={onUpdateParameter} />
                     </td>
                   </tr>
-                  <tr><th scope="row">Timezone</th><td><input value={parameter.timezone || ''} onChange={event => onUpdateParameter('timezone', event.target.value)} placeholder="UTC, America/New_York" /></td></tr>
-                  <tr><th scope="row">Offset Seconds</th><td><input type="number" value={numberInputValue(parameter.offset_seconds, 0)} onChange={event => onUpdateParameter('offset_seconds', Number(event.target.value))} placeholder="offset seconds" /></td></tr>
+                  <tr><th scope="row">Timezone</th><td><input aria-label={`Timezone for ${parameterName}`} value={parameter.timezone || ''} onChange={event => onUpdateParameter('timezone', event.target.value)} placeholder="UTC, America/New_York" /></td></tr>
+                  <tr><th scope="row">Offset Seconds</th><td><input aria-label={`Offset Seconds for ${parameterName}`} type="number" value={numberInputValue(parameter.offset_seconds, 0)} onChange={event => onUpdateParameter('offset_seconds', Number(event.target.value))} placeholder="offset seconds" /></td></tr>
                 </>
               )}
             </tbody>
@@ -12511,14 +12512,15 @@ function ParameterInfoPanel({
             <tbody>
               {(parameterType === 'counter' || parameterType === 'current_iteration' || parameterType === 'random_number') && (
                 <>
-                  <tr><th scope="row">Pad Width</th><td><input type="number" value={numberInputValue(parameter.pad_width, 0)} onChange={event => onUpdateParameter('pad_width', Number(event.target.value))} placeholder="pad width" /></td></tr>
-                  <tr><th scope="row">Pad Character</th><td><input value={parameter.pad_char || ''} onChange={event => onUpdateParameter('pad_char', event.target.value)} placeholder="pad char" /></td></tr>
+                  <tr><th scope="row">Pad Width</th><td><input aria-label={`Pad Width for ${parameterName}`} type="number" value={numberInputValue(parameter.pad_width, 0)} onChange={event => onUpdateParameter('pad_width', Number(event.target.value))} placeholder="pad width" /></td></tr>
+                  <tr><th scope="row">Pad Character</th><td><input aria-label={`Pad Character for ${parameterName}`} value={parameter.pad_char || ''} onChange={event => onUpdateParameter('pad_char', event.target.value)} placeholder="pad char" /></td></tr>
                 </>
               )}
               <tr>
                 <th scope="row">Seed</th>
                 <td>
                   <input
+                    aria-label={`Seed for ${parameterName}`}
                     type="number"
                     value={numberInputValue(parameter.seed, '')}
                     onChange={event => updateOptionalNumber(onUpdateParameter, 'seed', event.target.value)}
@@ -13525,6 +13527,7 @@ function ParameterDefinitionRow({
       <td className="parameter-source-type-cell" aria-label="Source file or type inherited from expanded row" />
       <td>
         <input
+          aria-label={`Parameter name for row ${idx + 1}`}
           value={parameter.name || ''}
           onChange={e => onUpdateParameter(idx, 'name', e.target.value)}
           placeholder="session_id"
@@ -13711,7 +13714,7 @@ function ParameterFormatControl({ parameter, onUpdate }: ParameterFormatControlP
 
   return (
     <div className="parameter-format-control">
-      <select value={selectValue} onChange={event => applyPreset(event.target.value)}>
+      <select aria-label="Parameter format preset" value={selectValue} onChange={event => applyPreset(event.target.value)}>
         {presets.map(preset => (
           <option key={preset.value} value={preset.value}>{preset.label}</option>
         ))}
@@ -13719,6 +13722,7 @@ function ParameterFormatControl({ parameter, onUpdate }: ParameterFormatControlP
       </select>
       {allowsCustom && selectValue === CUSTOM_PARAMETER_FORMAT_VALUE && (
         <input
+          aria-label="Custom parameter format"
           value={parameter.format || ''}
           onChange={event => onUpdate('format', event.target.value)}
           placeholder="Go time layout"
@@ -13767,10 +13771,10 @@ function ParameterTypeFields({ parameter, onUpdate }: ParameterTypeFieldsProps) 
       )}
       {isTime && (
         <>
-          <label>
+          <div className="parameter-settings-field">
             <span>Format</span>
             <ParameterFormatControl parameter={parameter} onUpdate={onUpdate} />
-          </label>
+          </div>
           <label><span>Timezone</span><input value={parameter.timezone || ''} onChange={event => onUpdate('timezone', event.target.value)} placeholder="UTC, America/New_York" /></label>
           <label><span>Offset Seconds</span><input type="number" value={numberInputValue(parameter.offset_seconds, 0)} onChange={event => onUpdate('offset_seconds', Number(event.target.value))} placeholder="offset seconds" /></label>
         </>
@@ -13938,6 +13942,7 @@ function JsonOccurrenceReviewDialog({
               {optionalOccurrences.map(occurrence => (
                 <label className="parameter-occurrence-item" key={occurrence.id}>
                   <input
+                    aria-label={`Include occurrence at ${occurrence.path}, line ${occurrence.line}`}
                     type="checkbox"
                     checked={selectedIds.has(occurrence.id)}
                     onChange={event => toggleOccurrence(occurrence.id, event.target.checked)}
@@ -14279,10 +14284,10 @@ export function ParameterSettingsBody({
             {parameterType === 'uuid' && <p className="parameter-settings-empty">UUID values are generated automatically using the selected update cadence.</p>}
             {isTime && (
               <>
-                <label>
+                <div className="parameter-settings-field">
                   <span>Format</span>
                   <ParameterFormatControl parameter={parameter} onUpdate={onUpdate} />
-                </label>
+                </div>
                 <label><span>Timezone</span><input value={parameter.timezone || ''} onChange={event => onUpdate('timezone', event.target.value)} placeholder="UTC, America/New_York" /></label>
                 <label><span>Offset Seconds</span><input type="number" value={numberInputValue(parameter.offset_seconds, 0)} onChange={event => onUpdate('offset_seconds', Number(event.target.value))} placeholder="offset seconds" /></label>
               </>
@@ -14468,10 +14473,10 @@ function ParameterSettingsDialog({
             </summary>
             {hasTimeSettings ? (
               <div className="parameter-settings-grid">
-                <label>
+                <div className="parameter-settings-field">
                   <span>Format</span>
                   <ParameterFormatControl parameter={parameter} onUpdate={onUpdate} />
-                </label>
+                </div>
                 <label>
                   <span>Timezone</span>
                   <input value={parameter.timezone || ''} onChange={event => onUpdate('timezone', event.target.value)} placeholder="timezone (UTC, America/New_York)" />
@@ -15156,6 +15161,7 @@ function ParameterDataSourceRows({
             <span className="cell-mono">{focusedParameterLabel}</span>
           ) : (
             <input
+              aria-label={`Source name for ${sourceLabel}`}
               value={source.name || ''}
               onChange={e => onUpdateDataSource(index, 'name', e.target.value)}
               placeholder="users"
@@ -15168,13 +15174,13 @@ function ParameterDataSourceRows({
           </td>
         )}
         <td>
-          <select value={source.type || 'csv'} onChange={e => onUpdateDataSource(index, 'type', e.target.value)}>
+          <select aria-label={`File type for ${sourceLabel}`} value={source.type || 'csv'} onChange={e => onUpdateDataSource(index, 'type', e.target.value)}>
             <option value="csv">csv</option>
             <option value="dat">dat</option>
           </select>
         </td>
         <td>
-          <select value={source.strategy || 'sequential'} onChange={e => onUpdateDataSource(index, 'strategy', e.target.value)}>
+          <select aria-label={`Iteration strategy for ${sourceLabel}`} value={source.strategy || 'sequential'} onChange={e => onUpdateDataSource(index, 'strategy', e.target.value)}>
             <option value="sequential">sequential</option>
             <option value="random">random</option>
             <option value="unique">unique</option>
@@ -15183,6 +15189,7 @@ function ParameterDataSourceRows({
         <td>
           <label className="checkbox-label compact">
             <input
+              aria-label={`First row is header for ${sourceLabel}`}
               type="checkbox"
               checked={source.first_row_header !== false}
               onChange={e => onUpdateDataSource(index, 'first_row_header', e.target.checked)}
@@ -15198,6 +15205,7 @@ function ParameterDataSourceRows({
             </span>
           ) : (
             <input
+              aria-label={`Columns for ${sourceLabel}`}
               value={(source.columns || []).join(', ')}
               onChange={e => onUpdateDataSource(
                 index,
@@ -15221,6 +15229,7 @@ function ParameterDataSourceRows({
         </td>
         <td>
           <input
+            aria-label={`Data file path for ${sourceLabel}`}
             value={source.path || ''}
             onChange={e => onUpdateDataSource(index, 'path', e.target.value)}
             placeholder="/absolute/path/to/data.csv (optional when inline data is used)"
@@ -15488,6 +15497,7 @@ function ParameterDataEditor({
                             <span>{columnLabel}</span>
                           ) : (
                             <input
+                              aria-label={`Column ${colIdx + 1} name for ${sourceLabel}`}
                               value={column}
                               onChange={e => onUpdateDataColumnName(index, colIdx, e.target.value)}
                               placeholder={`col_${colIdx + 1}`}
@@ -15531,6 +15541,7 @@ function ParameterDataEditor({
                     {visibleColumnIndexes.map((colIdx) => (
                       <td key={`${index}-c-${rowIdx}-${colIdx}`}>
                         <input
+                          aria-label={`Row ${rowIdx + 1}, ${formatDataSourceColumnLabel(parsed.columns[colIdx], colIdx)} for ${sourceLabel}`}
                           value={row[colIdx] || ''}
                           onChange={e => onUpdateDataCell(index, rowIdx, colIdx, e.target.value)}
                         />

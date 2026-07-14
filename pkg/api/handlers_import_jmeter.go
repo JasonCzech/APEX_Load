@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"path/filepath"
 	"sort"
@@ -358,7 +359,16 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 			writeError(w, http.StatusBadRequest, strings.Join(issues, "; "))
 			return
 		}
-		stored := s.runner.StoreScript(&script)
+		stored, err := s.runner.StoreScriptDurable(&script)
+		if err != nil {
+			for _, prior := range storedScripts {
+				if _, cleanupErr := s.runner.DeleteScriptDurable(prior.ID); cleanupErr != nil {
+					slog.Warn("failed to roll back imported JMeter script", "script_id", prior.ID, "error", cleanupErr)
+				}
+			}
+			writeError(w, http.StatusInternalServerError, "failed to save imported script: "+err.Error())
+			return
+		}
 		storedScripts = append(storedScripts, stored)
 		scriptIDsByName[script.Name] = stored.ID
 	}

@@ -1,6 +1,7 @@
-import { ReactNode, useEffect, useRef } from 'react'
+import { ReactNode, useEffect, useId, useRef } from 'react'
 import { createPortal } from 'react-dom'
 
+import { useModalDialog } from '../hooks/useModalDialog'
 import './SnapshotBodyPreview.css'
 
 interface Props {
@@ -26,20 +27,17 @@ export default function SnapshotFullDialog({
   onClose,
   children,
 }: Props) {
+  const dialogRef = useRef<HTMLElement | null>(null)
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null)
   const manualCopyRef = useRef<HTMLTextAreaElement | null>(null)
+  const titleId = useId()
 
-  useEffect(() => {
-    if (!open || typeof window === 'undefined') return
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        onClose()
-      }
-    }
-
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [open, onClose])
+  useModalDialog({
+    dialogRef,
+    enabled: open,
+    initialFocusRef: closeButtonRef,
+    onClose,
+  })
 
   useEffect(() => {
     if (!open || !copyFailed || !manualCopyText || typeof window === 'undefined') return
@@ -63,16 +61,22 @@ export default function SnapshotFullDialog({
   }
 
   return createPortal(
-    <div className="snapshot-full-dialog-backdrop" role="presentation" onMouseDown={onClose}>
+    <div
+      className="snapshot-full-dialog-backdrop"
+      role="presentation"
+      onPointerDown={event => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+    >
       <section
+        ref={dialogRef}
         className="snapshot-full-dialog"
         role="dialog"
         aria-modal="true"
-        aria-label={title}
-        onMouseDown={(event) => event.stopPropagation()}
+        aria-labelledby={titleId}
       >
         <header className="snapshot-full-dialog-header">
-          <h3>{title}</h3>
+          <h3 id={titleId}>{title}</h3>
           <div className="snapshot-full-dialog-actions">
             <button
               type="button"
@@ -82,7 +86,7 @@ export default function SnapshotFullDialog({
             >
               {copyFailed ? manualCopyText ? 'Text selected' : 'Copy failed' : copied ? 'Copied' : 'Copy'}
             </button>
-            <button type="button" className="btn btn-sm btn-ghost" onClick={onClose}>
+            <button ref={closeButtonRef} type="button" className="btn btn-sm btn-ghost" onClick={onClose}>
               Close
             </button>
           </div>

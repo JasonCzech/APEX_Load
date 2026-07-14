@@ -190,12 +190,19 @@ func (s *Server) handleUpdateDataPoolRow(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
 		return
 	}
+	poolID := r.PathValue("id")
+	rowID := r.PathValue("row_id")
+	existing, ok := s.requireDataPoolRow(w, poolID, rowID)
+	if !ok {
+		return
+	}
 	var req storage.SharedDataPoolRow
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	req.ID = r.PathValue("row_id")
-	req.PoolID = r.PathValue("id")
+	req.ID = rowID
+	req.PoolID = poolID
+	req.CreatedAt = existing.CreatedAt
 	if err := s.store.SaveDataPoolRow(&req); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -216,15 +223,65 @@ func (s *Server) handleDeleteDataPoolRow(w http.ResponseWriter, r *http.Request)
 	id := r.PathValue("row_id")
 	projectID := ""
 	poolID := r.PathValue("id")
+	if _, ok := s.requireDataPoolRow(w, poolID, id); !ok {
+		return
+	}
 	if pool, err := s.store.GetDataPool(poolID); err == nil && pool != nil {
 		projectID = pool.ProjectID
 	}
-	if err := s.store.DeleteDataPoolRow(id); err != nil {
+	if scoped, ok := s.store.(interface {
+		DeleteDataPoolRowFromPool(poolID string, id string) (bool, error)
+	}); ok {
+		deleted, err := scoped.DeleteDataPoolRowFromPool(poolID, id)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if !deleted {
+			writeError(w, http.StatusNotFound, "data pool row not found")
+			return
+		}
+	} else if err := s.store.DeleteDataPoolRow(id); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	s.recordAuditEvent(r, "data_pool.row.delete", "success", "data_pool_row", id, projectID, map[string]any{"pool_id": poolID})
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
+}
+
+func (s *Server) requireDataPoolRow(w http.ResponseWriter, poolID string, rowID string) (*storage.SharedDataPoolRow, bool) {
+	if scoped, ok := s.store.(interface {
+		GetDataPoolRowFromPool(poolID string, id string) (*storage.SharedDataPoolRow, error)
+	}); ok {
+		row, err := scoped.GetDataPoolRowFromPool(poolID, rowID)
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "data pool row not found")
+			return nil, false
+		}
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to load data pool row")
+			return nil, false
+		}
+		if row == nil || row.ID != rowID || row.PoolID != poolID {
+			writeError(w, http.StatusNotFound, "data pool row not found")
+			return nil, false
+		}
+		return row, true
+	}
+	rows, err := s.store.ListDataPoolRows(poolID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load data pool rows")
+		return nil, false
+	}
+	for _, row := range rows {
+		if row != nil && row.ID == rowID && row.PoolID == poolID {
+			return row, true
+		}
+	}
+	// Use the same response for a missing row and a row owned by another pool so
+	// callers cannot use this nested route to enumerate cross-project row IDs.
+	writeError(w, http.StatusNotFound, "data pool row not found")
+	return nil, false
 }
 
 func (s *Server) handleListScenarioDataPools(w http.ResponseWriter, r *http.Request) {
@@ -273,9 +330,7 @@ func (s *Server) handleUpdateScenarioDataPools(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if scenario, ok := s.runner.GetScenario(scenarioID); ok {
-		scenario.DataPools = bindings
-	}
+	s.runner.replaceScenarioDataPools(scenarioID, bindings)
 	s.recordAuditEvent(r, "scenario.data_pools.update", "success", "scenario", scenarioID, scenario.ProjectID, map[string]any{"binding_count": len(bindings)})
 	writeJSON(w, http.StatusOK, map[string]any{"data_pools": bindings, "count": len(bindings)})
 }

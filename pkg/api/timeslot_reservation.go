@@ -89,14 +89,14 @@ func (tr *TestRunner) launchTimeslotRevalidationErrorLocked(test *ManagedTest, n
 	return nil
 }
 
-func (tr *TestRunner) releaseCapacityReservationForTerminalStatus(testID, status string) {
+func (tr *TestRunner) releaseCapacityReservationForTerminalStatus(testID, status string) error {
 	if tr == nil || tr.reservationStore == nil || strings.TrimSpace(testID) == "" {
-		return
+		return nil
 	}
 	switch strings.ToUpper(strings.TrimSpace(status)) {
 	case "COMPLETE", "FAILED", "ABORTED", "STOPPED":
 	default:
-		return
+		return nil
 	}
 	var slotID string
 	tr.mu.RLock()
@@ -105,13 +105,60 @@ func (tr *TestRunner) releaseCapacityReservationForTerminalStatus(testID, status
 	}
 	tr.mu.RUnlock()
 	if slotID == "" {
-		return
+		return nil
+	}
+	return tr.releaseCapacityReservationBinding(testID, slotID)
+}
+
+// releaseCapacityReservationBinding releases a known test/slot pair without
+// consulting tr.tests. Startup and leadership reconciliation call this before
+// the hydrated test is inserted into the map, so map-only lookup silently leaks
+// the binding and prevents the normal retry worker from knowing which slot to
+// clear.
+func (tr *TestRunner) releaseCapacityReservationBinding(testID, slotID string) error {
+	if tr == nil || tr.reservationStore == nil {
+		return nil
+	}
+	testID = strings.TrimSpace(testID)
+	slotID = strings.TrimSpace(slotID)
+	if testID == "" || slotID == "" {
+		return nil
 	}
 	if released, err := tr.reservationStore.ClearCapacityReservationBinding(slotID, testID, time.Now().UTC()); err != nil {
 		slog.Warn("release capacity timeslot binding failed", "timeslot_id", slotID, "test_id", testID, "error", err)
+		return fmt.Errorf("release capacity timeslot %s for test %s: %w", slotID, testID, err)
 	} else if released {
 		slog.Debug("released capacity timeslot binding", "timeslot_id", slotID, "test_id", testID)
 	}
+	return nil
+}
+
+func (tr *TestRunner) enqueueCapacityReservationReleaseRetry(testID, slotID string) {
+	if tr == nil || tr.reservationStore == nil || testID == "" || slotID == "" {
+		return
+	}
+	key := "capacity-release:" + testID
+	if !tr.beginExecutionPlanRetry(key) {
+		return
+	}
+	go func() {
+		defer tr.endExecutionPlanRetry(key)
+		delay := executionPlanRetryInitialDelay
+		for tr.executionPlanRetryAllowed() {
+			if !tr.waitExecutionPlanRetry(delay) {
+				return
+			}
+			_, err := tr.reservationStore.ClearCapacityReservationBinding(slotID, testID, time.Now().UTC())
+			if err == nil {
+				return
+			}
+			slog.Warn("capacity timeslot release retry failed", "timeslot_id", slotID, "test_id", testID, "error", err)
+			if !durableBackgroundRetryable(err) {
+				return
+			}
+			delay = min(delay*2, executionPlanRetryMaxDelay)
+		}
+	}()
 }
 
 // reservationFitError reports why a run with the given window and VUser count does

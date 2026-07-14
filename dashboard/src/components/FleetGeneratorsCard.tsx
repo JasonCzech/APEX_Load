@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { useFleetApi, GeneratorMetadataPatch } from '../hooks/api/useFleetApi'
 import { ApiError } from '../hooks/apiClient'
+import { useModalDialog } from '../hooks/useModalDialog'
 import { FleetGeneratorMetadata } from '../types'
 import './parityPanels.css'
 
@@ -51,6 +52,10 @@ export default function FleetGeneratorsCard({ canManage = false }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [draft, setDraft] = useState<MetaDraft | null>(null)
   const [busy, setBusy] = useState(false)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const closeDraft = useCallback(() => setDraft(null), [])
+
+  useModalDialog({ dialogRef, enabled: Boolean(draft), onClose: closeDraft })
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -135,7 +140,7 @@ export default function FleetGeneratorsCard({ canManage = false }: Props) {
         )}
       </div>
 
-      {error && <div className="pp-error">{error}</div>}
+      {error && <div className="pp-error" role="alert">{error}</div>}
 
       {loading ? (
         <div className="pp-empty">Loading generator metadata…</div>
@@ -188,16 +193,23 @@ export default function FleetGeneratorsCard({ canManage = false }: Props) {
       )}
 
       {draft && (
-        <div className="pp-modal-overlay" onClick={() => setDraft(null)}>
-          <div className="pp-modal" onClick={event => event.stopPropagation()}>
+        <div className="pp-modal-overlay" onClick={closeDraft}>
+          <div
+            ref={dialogRef}
+            className="pp-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="fleet-generator-dialog-title"
+            onClick={event => event.stopPropagation()}
+          >
             <div className="pp-modal-header">
-              <h3>{draft.isNew ? 'Add Generator Metadata' : 'Edit Generator Metadata'}</h3>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setDraft(null)}>Close</button>
+              <h3 id="fleet-generator-dialog-title">{draft.isNew ? 'Add Generator Metadata' : 'Edit Generator Metadata'}</h3>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={closeDraft}>Close</button>
             </div>
             <div className="pp-modal-form">
               <label className="pp-field">
                 <span>Generator ID</span>
-                <input value={draft.generator_id} disabled={!draft.isNew} autoFocus={draft.isNew} onChange={e => setDraft(d => (d ? { ...d, generator_id: e.target.value } : d))} placeholder="host:port or pod name" />
+                <input value={draft.generator_id} disabled={!draft.isNew} onChange={e => setDraft(d => (d ? { ...d, generator_id: e.target.value } : d))} placeholder="host:port or pod name" />
               </label>
               <div className="pp-field-row">
                 <label className="pp-field">
@@ -230,7 +242,7 @@ export default function FleetGeneratorsCard({ canManage = false }: Props) {
               </label>
             </div>
             <div className="pp-modal-actions">
-              <button type="button" className="btn btn-secondary" onClick={() => setDraft(null)}>Cancel</button>
+              <button type="button" className="btn btn-secondary" onClick={closeDraft}>Cancel</button>
               <button type="button" className="btn btn-primary" disabled={busy || !draft.generator_id.trim()} onClick={() => void submitDraft()}>
                 {busy ? 'Saving…' : 'Save'}
               </button>

@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 
 import { useExecutionPlansApi } from '../hooks/api/useExecutionPlansApi'
 import { ApiError } from '../hooks/apiClient'
+import { useModalDialog } from '../hooks/useModalDialog'
 import { ExecutionPlan, ExecutionPlanApproval } from '../types'
 
 interface Props {
@@ -37,6 +38,11 @@ export default function ExecutionPlanApprovalsModal({ plan, canManage, onClose, 
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [reasons, setReasons] = useState<Record<string, string>>({})
+  const dialogRef = useRef<HTMLDivElement | null>(null)
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null)
+  const titleId = useId()
+
+  useModalDialog({ dialogRef, initialFocusRef: closeButtonRef, onClose })
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -81,11 +87,17 @@ export default function ExecutionPlanApprovalsModal({ plan, canManage, onClose, 
   const pendingCount = approvals.filter(a => a.status === 'pending').length
 
   return (
-    <div className="pp-modal-overlay" onClick={onClose}>
-      <div className="pp-modal" onClick={event => event.stopPropagation()}>
+    <div
+      className="pp-modal-overlay"
+      role="presentation"
+      onPointerDown={event => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+    >
+      <div ref={dialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <div className="pp-modal-header">
-          <h3>Approvals — “{plan.name}”</h3>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
+          <h3 id={titleId}>Approvals — “{plan.name}”</h3>
+          <button ref={closeButtonRef} type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
             Close
           </button>
         </div>
@@ -96,7 +108,7 @@ export default function ExecutionPlanApprovalsModal({ plan, canManage, onClose, 
               {pendingCount > 0 ? ` ${pendingCount} pending.` : ''}
             </span>
           </div>
-          {error && <div className="pp-error">{error}</div>}
+          {error && <div className="pp-error" role="alert">{error}</div>}
 
           {loading ? (
             <div className="pp-empty">Loading approvals…</div>

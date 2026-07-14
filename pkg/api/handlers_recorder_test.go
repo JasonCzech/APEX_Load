@@ -78,6 +78,7 @@ func TestHandlePreviewRecordingConversionDoesNotStoreScript(t *testing.T) {
 }
 
 func TestHandleConvertRecordingPersistsBaseline(t *testing.T) {
+	t.Setenv(recordingBaselineKeyEnvVar, "recorder-handler-test-key")
 	server := recordingTestServer(t)
 	session, err := server.recorder.StartSession("rec-baseline", "Checkout Recording", recorder.SessionFilters{}, nil)
 	if err != nil {
@@ -158,13 +159,14 @@ func TestHandleConvertRecordingPersistsBaseline(t *testing.T) {
 	if strings.Contains(obs.ResponseBody, "csrf-recorded") {
 		t.Fatalf("scrubbed observation leaked csrf token: %q", obs.ResponseBody)
 	}
-	// The server-side raw correlation sidecar preserves the dynamic value so
-	// record-vs-replay diagnosis and correlation still work.
-	if len(record.CorrelationObservations) != 1 {
-		t.Fatalf("correlation observations = %d, want 1 raw sidecar entry", len(record.CorrelationObservations))
+	// The server-side encrypted correlation sidecar preserves the dynamic value
+	// without persisting plaintext credentials.
+	if len(record.CorrelationObservations) != 0 || record.EncryptedCorrelationObservations == "" {
+		t.Fatalf("correlation sidecar = plaintext:%d encrypted:%t, want encrypted only", len(record.CorrelationObservations), record.EncryptedCorrelationObservations != "")
 	}
-	if !strings.Contains(record.CorrelationObservations[0].ResponseBody, "csrf-recorded") {
-		t.Fatalf("raw correlation sidecar = %q, want dynamic response value preserved for correlation", record.CorrelationObservations[0].ResponseBody)
+	correlationObservations := baselineObservations(record)
+	if len(correlationObservations) != 1 || !strings.Contains(correlationObservations[0].ResponseBody, "csrf-recorded") {
+		t.Fatalf("decrypted correlation observations = %#v, want dynamic response value preserved for correlation", correlationObservations)
 	}
 }
 
@@ -260,7 +262,7 @@ func TestHandleRecordingSummariesAndDeltaRequests(t *testing.T) {
 		t.Fatalf("json.Unmarshal summary returned error: %v", err)
 	}
 	if len(summary.Requests) != 0 || summary.RequestCount != 2 {
-		t.Fatalf("summary = %#v, want no requests with full count", summary)
+		t.Fatalf("summary = %#v, want no requests with full count", &summary)
 	}
 
 	deltaReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/rec-delta?since=1", nil)
@@ -274,7 +276,7 @@ func TestHandleRecordingSummariesAndDeltaRequests(t *testing.T) {
 		t.Fatalf("json.Unmarshal delta returned error: %v", err)
 	}
 	if len(delta.Requests) != 1 || delta.Requests[0].Seq != 2 || delta.Requests[0].ResponseBody == "" {
-		t.Fatalf("delta = %#v, want full request after sequence 1", delta)
+		t.Fatalf("delta = %#v, want full request after sequence 1", &delta)
 	}
 
 	fullReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/rec-delta?include=requests", nil)
@@ -288,7 +290,7 @@ func TestHandleRecordingSummariesAndDeltaRequests(t *testing.T) {
 		t.Fatalf("json.Unmarshal full returned error: %v", err)
 	}
 	if len(full.Requests) != 2 || full.Requests[0].Body == "" {
-		t.Fatalf("full = %#v, want include=requests to return stored bodies", full)
+		t.Fatalf("full = %#v, want include=requests to return stored bodies", &full)
 	}
 }
 

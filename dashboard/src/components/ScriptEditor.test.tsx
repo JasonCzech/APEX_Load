@@ -1060,6 +1060,7 @@ describe('ScriptEditor', () => {
     const documentDialogRule = cssRule(editorCss, '.editor-dialog.parameter-data-document')
     const gridScrollRule = cssRule(editorCss, '.parameter-grid-scroll')
     const gridHeaderRule = cssRule(editorCss, '.parameter-grid thead th')
+    const formFocusRule = cssRule(editorCss, '.script-editor :where(input, select, textarea):focus-visible')
 
     expect(backdropRule).toContain('z-index: 220;')
     expect(dialogRule).toContain('width: min(1440px, calc(100vw - 48px));')
@@ -1069,6 +1070,8 @@ describe('ScriptEditor', () => {
     expect(gridScrollRule).toContain('max-height: min(440px, 45vh);')
     expect(gridHeaderRule).toContain('position: sticky;')
     expect(gridHeaderRule).toContain('top: 0;')
+    expect(formFocusRule).toContain('outline: 2px solid var(--focus-ring);')
+    expect(formFocusRule).toContain('outline-offset: 2px;')
   })
 
   it('lets the author center workbench fill the desktop editor frame', async () => {
@@ -3719,6 +3722,7 @@ describe('ScriptEditor', () => {
 
     const infoPanel = container.querySelector('.parameter-info-panel') as HTMLDivElement | null
     expect(infoPanel).not.toBeNull()
+    expect(infoPanel?.querySelector('input[aria-label="Parameter name"]')).not.toBeNull()
     expect(infoPanel?.textContent).toContain('Identity')
     expect(infoPanel?.textContent).toContain('Behavior')
     expect(infoPanel?.textContent).toContain('Data Mapping')
@@ -3990,11 +3994,17 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Users.dat')
     expect(container.querySelector('.parameter-sidebar-item.selected')?.textContent).toContain('username')
     expect(container.textContent).toContain('2 rows · 1 column · Auto: Comma')
-    expect((container.querySelector('.parameter-grid-head input[placeholder="col_1"]') as HTMLInputElement | null)?.value).toBe('username')
+    const columnNameInput = container.querySelector('.parameter-grid-head input[placeholder="col_1"]') as HTMLInputElement | null
+    expect(columnNameInput?.value).toBe('username')
+    expect(columnNameInput?.getAttribute('aria-label')).toBe('Column 1 name for users')
     const firstRowCells = Array.from(container.querySelectorAll('.parameter-grid tbody tr:first-child td'))
     expect(firstRowCells[0]?.classList.contains('parameter-grid-row-action')).toBe(true)
     expect(firstRowCells[0]?.querySelector('button')?.getAttribute('aria-label')).toBe('Remove row 1')
     expect(firstRowCells[1]?.classList.contains('parameter-grid-index')).toBe(true)
+    expect(Array.from(container.querySelectorAll('.parameter-grid tbody input')).map(input => input.getAttribute('aria-label'))).toEqual([
+      'Row 1, username for users',
+      'Row 2, username for users',
+    ])
     expect((container.querySelector('select[aria-label="Delimiter for username"]') as HTMLSelectElement | null)?.value).toBe('auto')
   })
 

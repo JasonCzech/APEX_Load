@@ -2264,7 +2264,7 @@
 
 .btn-chip.active {
   background: var(--accent);
-  color: white;
+  color: var(--accent-contrast);
   box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
 }
 
@@ -3864,26 +3864,26 @@
   gap: 4px;
 }
 
-.btn-sm {
+.execution .btn-sm {
   padding: 4px 10px;
   font-size: 12px;
   border-radius: 4px;
 }
 
-.btn-accent {
+.execution .btn-accent {
   background: var(--accent);
-  color: white;
+  color: var(--accent-contrast);
   border: none;
   cursor: pointer;
   font-weight: 600;
   transition: opacity 0.15s;
 }
 
-.btn-accent:hover {
+.execution .btn-accent:hover:not(:disabled) {
   opacity: 0.85;
 }
 
-.btn-accent:disabled {
+.execution .btn-accent:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }

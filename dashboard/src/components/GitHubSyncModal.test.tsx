@@ -95,8 +95,16 @@ describe('GitHubSyncModal (push)', () => {
     await flushPromises()
     await flushPromises()
     await flushPromises()
+    await act(async () => {
+      await new Promise(resolve => window.setTimeout(resolve, 0))
+    })
 
     expect(container.textContent).toContain('Push "Order Flow" to GitHub')
+    const dialog = container.querySelector<HTMLElement>('[role="dialog"]')
+    const repositorySelect = container.querySelector<HTMLSelectElement>('select')
+    expect(dialog?.getAttribute('aria-modal')).toBe('true')
+    expect(document.getElementById(dialog?.getAttribute('aria-labelledby') || '')?.textContent).toContain('Push "Order Flow" to GitHub')
+    expect(document.activeElement).toBe(repositorySelect)
     const commit = findButton('Commit')
     expect(commit).toBeTruthy()
 
@@ -106,5 +114,26 @@ describe('GitHubSyncModal (push)', () => {
     expect(onPushed).toHaveBeenCalled()
     expect(onClose).toHaveBeenCalled()
     expect(pushBody).toMatchObject({ owner: 'org', repo: 'scripts', branch: 'main', strategy: 'commit' })
+  })
+
+  it('closes with Escape through the shared dialog behavior', async () => {
+    const onClose = vi.fn()
+    await act(async () => {
+      root.render(<GitHubSyncModal mode="push" config={config} script={script} projectId="team-a" onClose={onClose} />)
+    })
+    await flushPromises()
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    expect(onClose).toHaveBeenCalledOnce()
+  })
+
+  it('announces repository-loading failures', async () => {
+    fetchMock.mockRejectedValue(new Error('network unavailable'))
+    await act(async () => {
+      root.render(<GitHubSyncModal mode="push" config={config} script={script} projectId="team-a" onClose={() => {}} />)
+    })
+    await flushPromises()
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe('network unavailable')
   })
 })

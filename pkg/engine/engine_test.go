@@ -366,7 +366,7 @@ func TestMultiGroupZeroStartReadyAllowsRuntimeScale(t *testing.T) {
 			VUsers:          0,
 			AllowZeroVUsers: true,
 		}},
-		Duration: 80 * time.Millisecond,
+		Duration: time.Second,
 	})
 	if err != nil {
 		t.Fatalf("NewMultiGroup: %v", err)
@@ -388,6 +388,15 @@ func TestMultiGroupZeroStartReadyAllowsRuntimeScale(t *testing.T) {
 	if err := mge.ScaleVUsers("buyers", 1); err != nil {
 		t.Fatalf("ScaleVUsers after Ready: %v", err)
 	}
+	waitForActiveVUsers(t, mge, 1)
+	if err := mge.ScaleVUsers("buyers", 0); err != nil {
+		t.Fatalf("ScaleVUsers back to zero: %v", err)
+	}
+	waitForActiveVUsers(t, mge, 0)
+	if err := mge.ScaleVUsers("buyers", 1); err != nil {
+		t.Fatalf("ScaleVUsers after reaching zero: %v", err)
+	}
+	waitForActiveVUsers(t, mge, 1)
 	cancel()
 	select {
 	case err := <-done:
@@ -396,6 +405,100 @@ func TestMultiGroupZeroStartReadyAllowsRuntimeScale(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("zero-start engine did not stop after cancel")
+	}
+}
+
+func TestMultiGroupNormallyStartedGroupCanPauseAtZeroAndResume(t *testing.T) {
+	mge, err := NewMultiGroup(MultiGroupConfig{
+		Groups: []GroupConfig{{
+			Name: "buyers",
+			Script: &dsl.Script{
+				Name:     "normal-start",
+				Protocol: "stub",
+				Actions:  []dsl.Action{{Name: "main", Type: "request", Target: "/"}},
+			},
+			VUsers: 1,
+		}},
+		Duration: time.Second,
+	})
+	if err != nil {
+		t.Fatalf("NewMultiGroup: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, runErr := mge.Run(ctx)
+		done <- runErr
+	}()
+	select {
+	case <-mge.Ready():
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for engine readiness")
+	}
+	waitForActiveVUsers(t, mge, 1)
+	if err := mge.ScaleVUsers("buyers", 0); err != nil {
+		t.Fatalf("ScaleVUsers to zero: %v", err)
+	}
+	waitForActiveVUsers(t, mge, 0)
+	if err := mge.ScaleVUsers("buyers", 1); err != nil {
+		t.Fatalf("ScaleVUsers after zero pause: %v", err)
+	}
+	waitForActiveVUsers(t, mge, 1)
+	cancel()
+	select {
+	case runErr := <-done:
+		if runErr != nil {
+			t.Fatalf("Run returned error after cancel: %v", runErr)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("engine did not stop after cancel")
+	}
+}
+
+func waitForActiveVUsers(t *testing.T, mge *MultiGroupEngine, want int) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		mge.mu.Lock()
+		got := mge.activeVUserCount()
+		mge.mu.Unlock()
+		if got == want {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	mge.mu.Lock()
+	got := mge.activeVUserCount()
+	mge.mu.Unlock()
+	t.Fatalf("active vusers = %d, want %d", got, want)
+}
+
+func TestMultiGroupRampDownIsProgressive(t *testing.T) {
+	mge, err := NewMultiGroup(MultiGroupConfig{
+		Groups: []GroupConfig{{
+			Name: "buyers",
+			Script: &dsl.Script{
+				Name:     "progressive-ramp-down",
+				Protocol: "stub",
+				Actions:  []dsl.Action{{Name: "main", Type: "request", Target: "/"}},
+			},
+			VUsers:   3,
+			RampDown: 90 * time.Millisecond,
+		}},
+		Duration: 50 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("NewMultiGroup: %v", err)
+	}
+
+	started := time.Now()
+	if _, err := mge.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if elapsed := time.Since(started); elapsed < 160*time.Millisecond {
+		t.Fatalf("ramp-down ended too early: %v", elapsed)
 	}
 }
 
@@ -525,6 +628,7 @@ func TestEngine_Stop(t *testing.T) {
 		Script:   script,
 		VUsers:   2,
 		Duration: 10 * time.Second,
+		RampUp:   10 * time.Second,
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)

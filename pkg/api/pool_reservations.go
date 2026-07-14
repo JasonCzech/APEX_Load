@@ -28,6 +28,62 @@ func (tr *TestRunner) PoolGeneratorEnvelope(poolID string) int {
 	return tr.poolCapacityGeneratorsLocked(poolID)
 }
 
+// PoolGeneratorEnvelopeSnapshot resolves every fleet pool's capacity before a
+// caller enters a storage transaction. Approval paths must not call back into
+// the same SQLite store while holding that transaction's only connection.
+func (tr *TestRunner) PoolGeneratorEnvelopeSnapshot() (map[string]int, error) {
+	tr.mu.RLock()
+	store := tr.fleetStore
+	tr.mu.RUnlock()
+	if store == nil {
+		return map[string]int{}, nil
+	}
+	pools, err := store.ListFleetPools(0, 0)
+	if err != nil {
+		return nil, err
+	}
+	metadata, err := store.ListGeneratorMetadata(0, 0)
+	if err != nil {
+		return nil, err
+	}
+	targetsByPool := make(map[string]map[string]struct{}, len(pools))
+	add := func(poolID, target string) {
+		poolID = strings.TrimSpace(poolID)
+		target = strings.TrimSpace(target)
+		if poolID == "" || target == "" {
+			return
+		}
+		if targetsByPool[poolID] == nil {
+			targetsByPool[poolID] = make(map[string]struct{})
+		}
+		targetsByPool[poolID][target] = struct{}{}
+	}
+	for _, pool := range pools {
+		if pool == nil {
+			continue
+		}
+		poolID := strings.TrimSpace(pool.ID)
+		if poolID != "" && targetsByPool[poolID] == nil {
+			targetsByPool[poolID] = make(map[string]struct{})
+		}
+		for _, member := range pool.Members {
+			if member != nil {
+				add(poolID, member.Target)
+			}
+		}
+	}
+	for _, item := range metadata {
+		if item != nil && item.FleetPoolID != nil {
+			add(*item.FleetPoolID, item.Target)
+		}
+	}
+	envelopes := make(map[string]int, len(targetsByPool))
+	for poolID, targets := range targetsByPool {
+		envelopes[poolID] = len(targets)
+	}
+	return envelopes, nil
+}
+
 // FleetPoolExists reports whether a fleet pool with the given id is known. A
 // blank id or an unconfigured fleet store reports "exists" (nothing to validate
 // against). A definitive not-found reports false; any other (transient) store

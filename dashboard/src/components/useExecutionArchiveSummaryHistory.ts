@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 
-import { useApi } from '../hooks/useApi'
+import { useTestApi } from '../hooks/api/useTestApi'
 import { IntervalSummaryRecord, MetricsHistoryPoint, TestSummary } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
+import { ARCHIVE_CHART_MAX_SAMPLES } from './archiveHistorySampling'
 import { mapArchiveSummarySamples } from './testExecutionMetricsModel'
-
-const ARCHIVE_SUMMARY_PAGE_SIZE = 1000
 
 function isTerminalStatus(status?: string): boolean {
   return status === 'COMPLETE' || status === 'FAILED' || status === 'ABORTED'
@@ -16,7 +15,7 @@ export function useExecutionArchiveSummaryHistory(test: TestSummary | null): {
   archiveSummaryError: string
   archiveSummariesLoading: boolean
 } {
-  const api = useApi()
+  const { getTestArchiveSummaries } = useTestApi()
   const [summaries, setSummaries] = useState<IntervalSummaryRecord[]>([])
   const [archiveSummaryError, setArchiveSummaryError] = useState('')
   const [archiveSummariesLoading, setArchiveSummariesLoading] = useState(false)
@@ -41,23 +40,8 @@ export function useExecutionArchiveSummaryHistory(test: TestSummary | null): {
       setArchiveSummariesLoading(true)
       setArchiveSummaryError('')
       try {
-        const loaded: IntervalSummaryRecord[] = []
-        let offset = 0
-        let total = intervalSummaryCount
-
-        while (!cancelled && loaded.length < total) {
-          const response = await api.getTestArchiveSummaries(testID, {
-            limit: ARCHIVE_SUMMARY_PAGE_SIZE,
-            offset,
-          })
-          const page = response.summaries || []
-          loaded.push(...page)
-          total = response.total || loaded.length
-          if (page.length === 0) {
-            break
-          }
-          offset += page.length
-        }
+        const response = await getTestArchiveSummaries(testID, { sample_limit: ARCHIVE_CHART_MAX_SAMPLES })
+        const loaded = response.summaries || []
 
         if (!cancelled) {
           setSummaries(loaded)
@@ -79,7 +63,7 @@ export function useExecutionArchiveSummaryHistory(test: TestSummary | null): {
     return () => {
       cancelled = true
     }
-  }, [api, archiveCompletedAt, intervalSummaryCount, shouldLoadSummaries, testID])
+  }, [archiveCompletedAt, getTestArchiveSummaries, intervalSummaryCount, shouldLoadSummaries, testID])
 
   const archiveSummaryHistory = useMemo(() => mapArchiveSummarySamples(summaries), [summaries])
 

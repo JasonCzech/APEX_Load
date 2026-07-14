@@ -70,6 +70,23 @@ describe('MonitoringCollectorsCard', () => {
     expect(container.textContent).toContain('Register Collector')
   })
 
+  it('exposes the register form as a labelled modal and closes it with Escape', async () => {
+    collectorsApiMock.listCollectors.mockResolvedValue({ collectors: [], count: 0 })
+    await act(async () => {
+      root.render(<MonitoringCollectorsCard projectId="proj-a" canManage />)
+    })
+    await flush()
+    const registerButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Register Collector')
+    await act(async () => registerButton?.click())
+
+    const dialog = container.querySelector<HTMLElement>('[role="dialog"]')
+    expect(dialog?.getAttribute('aria-labelledby')).toBe('collector-create-dialog-title')
+    expect(dialog?.getAttribute('aria-modal')).toBe('true')
+
+    await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(container.querySelector('[role="dialog"]')).toBeNull()
+  })
+
   it('prompts to select a project when none is active and does not fetch', async () => {
     await act(async () => {
       root.render(<MonitoringCollectorsCard canManage />)

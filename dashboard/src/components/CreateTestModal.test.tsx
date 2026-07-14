@@ -212,6 +212,35 @@ describe('CreateTestModal', () => {
     expect(container.textContent).not.toContain('Unsaved Changes')
   })
 
+  it('exposes a labelled modal, focuses the scenario name, and supports Escape', async () => {
+    const onClose = vi.fn()
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <CreateTestModal
+            scripts={[{ id: 'script-1', name: 'Checkout Script', protocol: 'http', created_at: '2026-05-12T00:00:00Z' } as never]}
+            onClose={onClose}
+            onCreated={vi.fn()}
+          />
+        </NavigationGuardProvider>,
+      )
+    })
+    await act(async () => {
+      vi.advanceTimersByTime(0)
+    })
+
+    const dialog = container.querySelector<HTMLElement>('[role="dialog"]')
+    const scenarioName = container.querySelector<HTMLInputElement>('input[placeholder*="auto-generated"]')
+    expect(dialog?.getAttribute('aria-modal')).toBe('true')
+    expect(document.getElementById(dialog?.getAttribute('aria-labelledby') || '')?.textContent).toBe('Create Queued Run')
+    expect(document.activeElement).toBe(scenarioName)
+
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    expect(onClose).toHaveBeenCalledOnce()
+  })
+
   async function click(label: string) {
     const button = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
       .find(candidate => candidate.textContent?.includes(label))

@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"sync"
+	"time"
 
 	pb "github.com/jasonczech/apexload/api/proto"
 	"github.com/jasonczech/apexload/pkg/engine"
@@ -296,7 +299,10 @@ type HeartbeatStream struct {
 }
 
 type MetricsStream struct {
-	stream pb.GeneratorControl_StreamMetricsClient
+	stream    pb.GeneratorControl_StreamMetricsClient
+	cancel    context.CancelFunc
+	closeOnce sync.Once
+	closeErr  error
 }
 
 func Dial(ctx context.Context, target string, opts ...grpc.DialOption) (*Client, error) {
@@ -392,12 +398,58 @@ func (c *Client) AdjustDuration(ctx context.Context, adjustment DurationAdjustme
 }
 
 func (c *Client) OpenMetricsStream(ctx context.Context) (*MetricsStream, error) {
-	stream, err := c.rpc.StreamMetrics(ctx)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	lifetimeCtx, cancel := context.WithCancel(ctx)
+	stream, err := c.rpc.StreamMetrics(lifetimeCtx)
 	if err != nil {
+		cancel()
 		return nil, err
 	}
 
-	return &MetricsStream{stream: stream}, nil
+	return &MetricsStream{stream: stream, cancel: cancel}, nil
+}
+
+// OpenMetricsStreamWithSetupTimeout bounds creation of the gRPC stream without
+// attaching the setup deadline to the stream's lifetime. Once setup succeeds,
+// the stream remains live until its parent context is canceled or CloseSend is
+// called.
+func (c *Client) OpenMetricsStreamWithSetupTimeout(parent context.Context, setupTimeout time.Duration) (*MetricsStream, error) {
+	if parent == nil {
+		parent = context.Background()
+	}
+	if setupTimeout <= 0 {
+		return c.OpenMetricsStream(parent)
+	}
+
+	lifetimeCtx, cancel := context.WithCancel(parent)
+	type openResult struct {
+		stream pb.GeneratorControl_StreamMetricsClient
+		err    error
+	}
+	resultCh := make(chan openResult, 1)
+	go func() {
+		stream, err := c.rpc.StreamMetrics(lifetimeCtx)
+		resultCh <- openResult{stream: stream, err: err}
+	}()
+
+	timer := time.NewTimer(setupTimeout)
+	defer timer.Stop()
+	select {
+	case <-parent.Done():
+		cancel()
+		return nil, parent.Err()
+	case <-timer.C:
+		cancel()
+		return nil, fmt.Errorf("open metrics stream setup: %w", context.DeadlineExceeded)
+	case result := <-resultCh:
+		if result.err != nil {
+			cancel()
+			return nil, result.err
+		}
+		return &MetricsStream{stream: result.stream, cancel: cancel}, nil
+	}
 }
 
 func (c *Client) StopTest(ctx context.Context, testID string, graceful bool) (StopResult, error) {
@@ -422,6 +474,79 @@ func (c *Client) GetArchiveArtifact(ctx context.Context, request ArchiveArtifact
 		return nil, err
 	}
 	return artifact.GetContent(), nil
+}
+
+// StreamArchiveArtifact copies an artifact to destination while keeping memory
+// bounded to one server chunk. maxBytes is a mandatory controller-side safety
+// limit; total-size and offset checks reject incomplete or reordered streams.
+func (c *Client) StreamArchiveArtifact(ctx context.Context, request ArchiveArtifactRequest, destination io.Writer, maxBytes int64) (int64, error) {
+	if destination == nil {
+		return 0, fmt.Errorf("archive artifact destination is required")
+	}
+	if maxBytes <= 0 {
+		return 0, fmt.Errorf("archive artifact max bytes must be positive")
+	}
+	stream, err := c.rpc.StreamArchiveArtifact(ctx, &pb.ArchiveArtifactRequest{TestId: request.TestID, Name: request.Name})
+	if err != nil {
+		return 0, err
+	}
+
+	var (
+		written      int64
+		declaredSize int64 = -1
+	)
+	for {
+		chunk, recvErr := stream.Recv()
+		if recvErr == io.EOF {
+			return written, fmt.Errorf("archive artifact stream ended before eof at %d of %d bytes", written, declaredSize)
+		}
+		if recvErr != nil {
+			return written, recvErr
+		}
+		if chunk.GetName() != request.Name {
+			return written, fmt.Errorf("archive artifact stream name %q does not match %q", chunk.GetName(), request.Name)
+		}
+		if chunk.GetTotalSize() < 0 {
+			return written, fmt.Errorf("archive artifact stream declared a negative size")
+		}
+		if declaredSize < 0 {
+			declaredSize = chunk.GetTotalSize()
+			if declaredSize > maxBytes {
+				return written, fmt.Errorf("archive artifact is %d bytes, limit is %d", declaredSize, maxBytes)
+			}
+		} else if chunk.GetTotalSize() != declaredSize {
+			return written, fmt.Errorf("archive artifact total size changed from %d to %d", declaredSize, chunk.GetTotalSize())
+		}
+		if chunk.GetOffset() != written {
+			return written, fmt.Errorf("archive artifact chunk offset is %d, expected %d", chunk.GetOffset(), written)
+		}
+		content := chunk.GetContent()
+		if len(content) == 0 && !chunk.GetEof() {
+			return written, fmt.Errorf("archive artifact stream made no progress at offset %d", written)
+		}
+		if int64(len(content)) > maxBytes-written || int64(len(content)) > declaredSize-written {
+			return written, fmt.Errorf("archive artifact chunk exceeds declared or configured size")
+		}
+		if len(content) > 0 {
+			n, writeErr := destination.Write(content)
+			written += int64(n)
+			if writeErr != nil {
+				return written, writeErr
+			}
+			if n != len(content) {
+				return written, io.ErrShortWrite
+			}
+		}
+		if chunk.GetEof() {
+			if written != declaredSize {
+				return written, fmt.Errorf("archive artifact eof at %d of %d bytes", written, declaredSize)
+			}
+			return written, nil
+		}
+		if written == declaredSize {
+			return written, fmt.Errorf("archive artifact reached declared size without eof")
+		}
+	}
 }
 
 func (c *Client) OpenHeartbeat(ctx context.Context) (*HeartbeatStream, error) {
@@ -479,7 +604,18 @@ func (s *MetricsStream) SendPause(control PauseControl) error {
 }
 
 func (s *MetricsStream) CloseSend() error {
-	return s.stream.CloseSend()
+	if s == nil {
+		return nil
+	}
+	s.closeOnce.Do(func() {
+		if s.stream != nil {
+			s.closeErr = s.stream.CloseSend()
+		}
+		if s.cancel != nil {
+			s.cancel()
+		}
+	})
+	return s.closeErr
 }
 
 func (s *MetricsStream) Receive() (MetricsBatch, error) {

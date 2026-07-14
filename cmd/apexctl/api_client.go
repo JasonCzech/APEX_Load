@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -60,7 +62,50 @@ func (c *ApiClient) do(method string, path string, body io.Reader, contentType s
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}
-	return client.Do(req)
+	clientCopy := *client
+	baseRedirectPolicy := client.CheckRedirect
+	clientCopy.CheckRedirect = func(next *http.Request, via []*http.Request) error {
+		if len(via) >= 10 && baseRedirectPolicy == nil {
+			return fmt.Errorf("stopped after 10 redirects")
+		}
+		if len(via) > 0 {
+			origin := via[0].URL
+			if strings.EqualFold(origin.Scheme, "https") && strings.EqualFold(next.URL.Scheme, "http") {
+				return fmt.Errorf("refusing HTTPS-to-HTTP redirect to %s", next.URL.Redacted())
+			}
+			if !sameHTTPOrigin(origin, next.URL) {
+				next.Header.Del("X-APEXLoad-API-Key")
+				next.Header.Del("Authorization")
+			}
+		}
+		if baseRedirectPolicy != nil {
+			return baseRedirectPolicy(next, via)
+		}
+		return nil
+	}
+	return clientCopy.Do(req)
+}
+
+func sameHTTPOrigin(a, b *url.URL) bool {
+	if a == nil || b == nil || !strings.EqualFold(a.Scheme, b.Scheme) || !strings.EqualFold(a.Hostname(), b.Hostname()) {
+		return false
+	}
+	return effectiveURLPort(a) == effectiveURLPort(b)
+}
+
+func effectiveURLPort(u *url.URL) string {
+	if port := u.Port(); port != "" {
+		return port
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "http":
+		return "80"
+	case "https":
+		return "443"
+	default:
+		_, port, _ := net.SplitHostPort(u.Host)
+		return port
+	}
 }
 
 // Result mimics engine.TestResult for formatting
@@ -326,7 +371,10 @@ func (c *ApiClient) resolveTestResult(testID string, test *api.ManagedTest, elap
 		}
 	}
 	sla, err := c.GetSLAStatus(testID)
-	if err == nil && sla != nil && (sla.SLABreached || len(sla.Details) > 0) {
+	if err != nil {
+		return res, fmt.Errorf("fetch SLA status: %w", err)
+	}
+	if sla != nil {
 		res.SLASummary = &SLASummary{
 			Evaluated: true,
 			Breached:  sla.SLABreached,
@@ -381,6 +429,10 @@ func (c *ApiClient) GetSLAStatus(testID string) (*api.SLABreachReport, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		detail, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return nil, fmt.Errorf("SLA status request failed: %s: %s", resp.Status, strings.TrimSpace(string(detail)))
+	}
 
 	var report api.SLABreachReport
 	if err := json.NewDecoder(resp.Body).Decode(&report); err != nil {

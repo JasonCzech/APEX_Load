@@ -191,7 +191,11 @@ func (s *Server) handleConvertRecording(w http.ResponseWriter, r *http.Request) 
 		result.Script.ProjectID = normalizeProjectID(session.ProjectID)
 	}
 
-	stored := s.runner.StoreScript(result.Script)
+	stored, err := s.runner.StoreScriptDurable(result.Script)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to save recorded script: "+err.Error())
+		return
+	}
 	if result.Script != nil && stored.ID != "" {
 		if err := s.persistRecordedBaseline(stored.ID, "proxy_recording", recorder.SessionBaseline(session)); err != nil {
 			slog.Warn("failed to persist proxy recording baseline", "script_id", stored.ID, "error", err)

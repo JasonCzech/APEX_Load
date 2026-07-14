@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type Dispatch, type DragEvent, type SetStateAction } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type Dispatch, type DragEvent, type ReactNode, type SetStateAction } from 'react'
 import { type DashboardThemePreference } from '../hooks/useDashboardTheme'
 import { useApplicationApi } from '../hooks/api/useApplicationApi'
 import { useProjectApi } from '../hooks/api/useProjectApi'
@@ -91,6 +91,7 @@ import PageViewToggle from './PageViewToggle'
 import DesktopNotificationsToggle from './DesktopNotificationsToggle'
 import { isDesktopSurface } from '../desktop/desktopBridge'
 import { useTopbarContribution } from '../hooks/TopbarContributionProvider'
+import { useModalDialog } from '../hooks/useModalDialog'
 
 const SETTINGS_SECTION_TOPBAR_LABELS: Record<SettingsSectionId, string> = {
   general: 'General',
@@ -115,6 +116,64 @@ const NOTIFICATION_FORMAT_OPTIONS = [
   { value: 'teams', label: 'Microsoft Teams Adaptive Card' },
   { value: 'dynatrace', label: 'Dynatrace Events API v2' },
 ] as const
+
+interface SettingsConfirmDialogProps {
+  open: boolean
+  title: string
+  children: ReactNode
+  confirmLabel: string
+  confirmClassName?: string
+  onCancel: () => void
+  onConfirm: () => void
+}
+
+function SettingsConfirmDialog({
+  open,
+  title,
+  children,
+  confirmLabel,
+  confirmClassName = 'btn btn-danger',
+  onCancel,
+  onConfirm,
+}: SettingsConfirmDialogProps) {
+  const dialogRef = useRef<HTMLDivElement | null>(null)
+  const titleId = useId()
+  const descriptionId = useId()
+  useModalDialog({ dialogRef, enabled: open, onClose: onCancel })
+
+  if (!open) return null
+
+  return (
+    <div
+      className="modal-overlay"
+      role="presentation"
+      onPointerDown={event => {
+        if (event.target === event.currentTarget) onCancel()
+      }}
+    >
+      <div
+        ref={dialogRef}
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={descriptionId}
+      >
+        <div className="modal-header">
+          <h3 id={titleId}>{title}</h3>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={onCancel}>Cancel</button>
+        </div>
+        <div className="monitor-body" id={descriptionId}>
+          {children}
+          <div className="settings-inline-actions">
+            <button className="btn btn-secondary" type="button" onClick={onCancel}>Cancel</button>
+            <button className={confirmClassName} type="button" onClick={onConfirm}>{confirmLabel}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 
 interface SettingsPageProps {
@@ -1773,12 +1832,12 @@ export default function SettingsPage({
 
       <div className="settings-tabbed-layout">
         <div className="settings-main">
-          {loading && <p className="settings-notice">Loading settings...</p>}
+          {loading && <p className="settings-notice" role="status" aria-live="polite">Loading settings...</p>}
           {activeSectionMessages.notices.map(msg => (
-            <p key={msg} className="settings-notice">{msg}</p>
+            <p key={msg} className="settings-notice" role="status" aria-live="polite">{msg}</p>
           ))}
           {activeSectionMessages.errors.map(msg => (
-            <p key={msg} className="settings-error-inline">{msg}</p>
+            <p key={msg} className="settings-error-inline" role="alert">{msg}</p>
           ))}
           {validationErrors.length > 0 && (
             <div className="settings-errors" role="alert">
@@ -1966,8 +2025,8 @@ export default function SettingsPage({
                   Export Usage CSV
                 </button>
               </div>
-              {usageActionMessage && <p className="settings-notice">{usageActionMessage}</p>}
-              {usageActionError && <p className="settings-error-inline">{usageActionError}</p>}
+              {usageActionMessage && <p className="settings-notice" role="status" aria-live="polite">{usageActionMessage}</p>}
+              {usageActionError && <p className="settings-error-inline" role="alert">{usageActionError}</p>}
               <div className="settings-release-list">
                 {usageSnapshots.slice(0, 5).map(snapshot => (
                   <div key={snapshot.id} className="settings-release-row">
@@ -2033,8 +2092,8 @@ export default function SettingsPage({
                   Refresh Readiness
                 </button>
               </div>
-              {readinessActionMessage && <p className="settings-notice">{readinessActionMessage}</p>}
-              {readinessActionError && <p className="settings-error-inline">{readinessActionError}</p>}
+              {readinessActionMessage && <p className="settings-notice" role="status" aria-live="polite">{readinessActionMessage}</p>}
+              {readinessActionError && <p className="settings-error-inline" role="alert">{readinessActionError}</p>}
               <div className="settings-release-list">
                 {(systemReadiness?.checks || []).map(check => {
                   const details = formatReadinessDetails(check.details)
@@ -3341,8 +3400,8 @@ export default function SettingsPage({
                   Apply Retention
                 </button>
               </div>
-              {archiveRetentionActionMessage && <p className="settings-notice">{archiveRetentionActionMessage}</p>}
-              {archiveRetentionActionError && <p className="settings-error-inline">{archiveRetentionActionError}</p>}
+              {archiveRetentionActionMessage && <p className="settings-notice" role="status" aria-live="polite">{archiveRetentionActionMessage}</p>}
+              {archiveRetentionActionError && <p className="settings-error-inline" role="alert">{archiveRetentionActionError}</p>}
               {archiveRetentionPlan && (
                 <div className="settings-release-list">
                   {archiveRetentionPlan.candidates.slice(0, 5).map(candidate => (
@@ -4536,136 +4595,89 @@ export default function SettingsPage({
         </div>
       </div>
 
-      {confirmDeleteApp && (
-        <div className="modal-overlay" onClick={() => setConfirmDeleteApp(false)}>
-          <div className="modal" role="dialog" aria-modal="true" onClick={event => event.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Delete Application</h3>
-              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setConfirmDeleteApp(false)}>Cancel</button>
-            </div>
-            <div className="monitor-body">
-              <p>Permanently delete <strong>{activeApplication?.name}</strong>? All associated releases and test results will also be removed.</p>
-              <p style={{ color: 'var(--danger)', fontWeight: 600 }}>This action cannot be undone.</p>
-              <div className="settings-inline-actions">
-                <button className="btn btn-secondary" type="button" onClick={() => setConfirmDeleteApp(false)}>Cancel</button>
-                <button className="btn btn-danger" type="button" onClick={deleteApplication}>Delete Application</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <SettingsConfirmDialog
+        open={confirmDeleteApp}
+        title="Delete Application"
+        confirmLabel="Delete Application"
+        onCancel={() => setConfirmDeleteApp(false)}
+        onConfirm={deleteApplication}
+      >
+        <p>Permanently delete <strong>{activeApplication?.name}</strong>? All associated releases and test results will also be removed.</p>
+        <p style={{ color: 'var(--danger)', fontWeight: 600 }}>This action cannot be undone.</p>
+      </SettingsConfirmDialog>
 
-      {confirmDeleteRelease && (
-        <div className="modal-overlay" onClick={() => setConfirmDeleteRelease(null)}>
-          <div className="modal" role="dialog" aria-modal="true" onClick={event => event.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Delete Release</h3>
-              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setConfirmDeleteRelease(null)}>Cancel</button>
-            </div>
-            <div className="monitor-body">
-              <p>Permanently delete release <strong>{confirmDeleteRelease.name}</strong>?</p>
-              <p style={{ color: 'var(--danger)', fontWeight: 600 }}>This action cannot be undone.</p>
-              <div className="settings-inline-actions">
-                <button className="btn btn-secondary" type="button" onClick={() => setConfirmDeleteRelease(null)}>Cancel</button>
-                <button className="btn btn-danger" type="button" onClick={() => deleteRelease(confirmDeleteRelease.id, confirmDeleteRelease.name)}>Delete Release</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <SettingsConfirmDialog
+        open={Boolean(confirmDeleteRelease)}
+        title="Delete Release"
+        confirmLabel="Delete Release"
+        onCancel={() => setConfirmDeleteRelease(null)}
+        onConfirm={() => {
+          if (confirmDeleteRelease) void deleteRelease(confirmDeleteRelease.id, confirmDeleteRelease.name)
+        }}
+      >
+        <p>Permanently delete release <strong>{confirmDeleteRelease?.name}</strong>?</p>
+        <p style={{ color: 'var(--danger)', fontWeight: 600 }}>This action cannot be undone.</p>
+      </SettingsConfirmDialog>
 
-      {confirmArchiveRelease && (
-        <div className="modal-overlay" onClick={() => setConfirmArchiveRelease(null)}>
-          <div className="modal" role="dialog" aria-modal="true" onClick={event => event.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Archive Release</h3>
-              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setConfirmArchiveRelease(null)}>Cancel</button>
-            </div>
-            <div className="monitor-body">
-              <p>Archive release <strong>{confirmArchiveRelease.name}</strong>? Archived releases are read-only and cannot be used for new tests.</p>
-              <div className="settings-inline-actions">
-                <button className="btn btn-secondary" type="button" onClick={() => setConfirmArchiveRelease(null)}>Cancel</button>
-                <button className="btn btn-primary" type="button" onClick={() => archiveRelease(confirmArchiveRelease.id, confirmArchiveRelease.name)}>Archive Release</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <SettingsConfirmDialog
+        open={Boolean(confirmArchiveRelease)}
+        title="Archive Release"
+        confirmLabel="Archive Release"
+        confirmClassName="btn btn-primary"
+        onCancel={() => setConfirmArchiveRelease(null)}
+        onConfirm={() => {
+          if (confirmArchiveRelease) void archiveRelease(confirmArchiveRelease.id, confirmArchiveRelease.name)
+        }}
+      >
+        <p>Archive release <strong>{confirmArchiveRelease?.name}</strong>? Archived releases are read-only and cannot be used for new tests.</p>
+      </SettingsConfirmDialog>
 
-      {confirmApplyRetention && (
-        <div className="modal-overlay" onClick={() => setConfirmApplyRetention(false)}>
-          <div className="modal" role="dialog" aria-modal="true" onClick={event => event.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Apply Archive Retention</h3>
-              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setConfirmApplyRetention(false)}>Cancel</button>
-            </div>
-            <div className="monitor-body">
-              <p>Apply archive retention pruning for the current plan? This will permanently remove {archiveRetentionPlan?.summary.candidate_count || 0} archive{(archiveRetentionPlan?.summary.candidate_count || 0) === 1 ? '' : 's'}.</p>
-              <p style={{ color: 'var(--danger)', fontWeight: 600 }}>This action cannot be undone.</p>
-              <div className="settings-inline-actions">
-                <button className="btn btn-secondary" type="button" onClick={() => setConfirmApplyRetention(false)}>Cancel</button>
-                <button className="btn btn-danger" type="button" onClick={applyArchiveRetention}>Apply Retention</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <SettingsConfirmDialog
+        open={confirmApplyRetention}
+        title="Apply Archive Retention"
+        confirmLabel="Apply Retention"
+        onCancel={() => setConfirmApplyRetention(false)}
+        onConfirm={applyArchiveRetention}
+      >
+        <p>Apply archive retention pruning for the current plan? This will permanently remove {archiveRetentionPlan?.summary.candidate_count || 0} archive{(archiveRetentionPlan?.summary.candidate_count || 0) === 1 ? '' : 's'}.</p>
+        <p style={{ color: 'var(--danger)', fontWeight: 600 }}>This action cannot be undone.</p>
+      </SettingsConfirmDialog>
 
-      {confirmDeletePool && (
-        <div className="modal-overlay" onClick={() => setConfirmDeletePool(null)}>
-          <div className="modal" role="dialog" aria-modal="true" onClick={event => event.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Delete Data Pool</h3>
-              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setConfirmDeletePool(null)}>Cancel</button>
-            </div>
-            <div className="monitor-body">
-              <p>Delete data pool <strong>{confirmDeletePool.name}</strong>? Data pools bound to scenarios must be unbound first.</p>
-              <p style={{ color: 'var(--danger)', fontWeight: 600 }}>This action cannot be undone.</p>
-              <div className="settings-inline-actions">
-                <button className="btn btn-secondary" type="button" onClick={() => setConfirmDeletePool(null)}>Cancel</button>
-                <button className="btn btn-danger" type="button" onClick={() => deleteDataPool(confirmDeletePool)}>Delete Data Pool</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <SettingsConfirmDialog
+        open={Boolean(confirmDeletePool)}
+        title="Delete Data Pool"
+        confirmLabel="Delete Data Pool"
+        onCancel={() => setConfirmDeletePool(null)}
+        onConfirm={() => {
+          if (confirmDeletePool) void deleteDataPool(confirmDeletePool)
+        }}
+      >
+        <p>Delete data pool <strong>{confirmDeletePool?.name}</strong>? Data pools bound to scenarios must be unbound first.</p>
+        <p style={{ color: 'var(--danger)', fontWeight: 600 }}>This action cannot be undone.</p>
+      </SettingsConfirmDialog>
 
-      {confirmDeleteRow && (
-        <div className="modal-overlay" onClick={() => setConfirmDeleteRow(null)}>
-          <div className="modal" role="dialog" aria-modal="true" onClick={event => event.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Delete Data Row</h3>
-              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setConfirmDeleteRow(null)}>Cancel</button>
-            </div>
-            <div className="monitor-body">
-              <p>Permanently delete this data row?</p>
-              <div className="settings-inline-actions">
-                <button className="btn btn-secondary" type="button" onClick={() => setConfirmDeleteRow(null)}>Cancel</button>
-                <button className="btn btn-danger" type="button" onClick={() => deleteDataPoolRow(confirmDeleteRow)}>Delete Row</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <SettingsConfirmDialog
+        open={Boolean(confirmDeleteRow)}
+        title="Delete Data Row"
+        confirmLabel="Delete Row"
+        onCancel={() => setConfirmDeleteRow(null)}
+        onConfirm={() => {
+          if (confirmDeleteRow) void deleteDataPoolRow(confirmDeleteRow)
+        }}
+      >
+        <p>Permanently delete this data row?</p>
+      </SettingsConfirmDialog>
 
-      {confirmingResetAll && (
-        <div className="modal-overlay" onClick={() => setConfirmingResetAll(false)}>
-          <div className="modal" role="dialog" aria-modal="true" aria-labelledby="reset-confirm-title" onClick={event => event.stopPropagation()}>
-            <div className="modal-header">
-              <h3 id="reset-confirm-title">Reset All Settings</h3>
-              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setConfirmingResetAll(false)}>Cancel</button>
-            </div>
-            <div className="monitor-body">
-              <p>This will reset every system setting to its factory default, including thresholds, capacity planning, notifications, and auth configuration.</p>
-              <p style={{ color: 'var(--danger)', fontWeight: 600 }}>This action cannot be undone.</p>
-              <div className="settings-inline-actions">
-                <button className="btn btn-secondary" type="button" onClick={() => setConfirmingResetAll(false)}>Cancel</button>
-                <button className="btn btn-danger" type="button" onClick={resetSettings}>Reset All Settings</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <SettingsConfirmDialog
+        open={confirmingResetAll}
+        title="Reset All Settings"
+        confirmLabel="Reset All Settings"
+        onCancel={() => setConfirmingResetAll(false)}
+        onConfirm={resetSettings}
+      >
+        <p>This will reset every system setting to its factory default, including thresholds, capacity planning, notifications, and auth configuration.</p>
+        <p style={{ color: 'var(--danger)', fontWeight: 600 }}>This action cannot be undone.</p>
+      </SettingsConfirmDialog>
     </div>
   )
 }

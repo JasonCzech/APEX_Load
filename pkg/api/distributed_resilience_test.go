@@ -3,11 +3,17 @@ package api
 import (
 	"context"
 	"errors"
+	"net"
 	"sync"
 	"testing"
 	"time"
 
+	pb "github.com/jasonczech/apexload/api/proto"
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/test/bufconn"
 )
 
 type evacuationFakeGeneratorClient struct {
@@ -218,5 +224,88 @@ func TestDistributedEvacuateGeneratorUsesRecognizedSentinelForCustomReason(t *te
 	}
 	if state := test.remoteTargetStates["gen-a:9090"]; !remoteTargetStateDone(state) {
 		t.Fatalf("evacuated target state %q is not recognized as done; the run would be failed", state)
+	}
+}
+
+func TestDistributedEvacuateGeneratorProvisionsPreviouslyUnassignedSurvivor(t *testing.T) {
+	const bufSize = 1024 * 1024
+	listener := bufconn.Listen(bufSize)
+	server := grpc.NewServer()
+	service := generatorrpc.NewService("generator-b", 10)
+	pb.RegisterGeneratorControlServer(server, service)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+
+	failedClient := newEvacuationFakeGeneratorClient("gen-a")
+	backend := newDistributedExecutionBackend([]string{"gen-a", "gen-b"}, 2*time.Second, func(ctx context.Context, target string) (generatorClient, error) {
+		if target != "gen-b" {
+			return nil, errors.New("failed generator is unavailable")
+		}
+		return generatorrpc.Dial(
+			ctx,
+			target,
+			grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithBlock(),
+		)
+	})
+	script := &dsl.Script{
+		ID:       "buyers-script",
+		Name:     "Buyers",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: "http://127.0.0.1"},
+		Actions:  []dsl.Action{{Name: "home", Type: "GET", Target: "/"}},
+	}
+	runCtx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	started := time.Now()
+	test := &ManagedTest{
+		ID:           "run-provision-survivor",
+		Name:         "provision survivor",
+		Status:       "RUNNING",
+		Duration:     time.Minute,
+		StartedAt:    &started,
+		executionCtx: runCtx,
+		cancel:       cancel,
+		Assignment:   &GeneratorAssignmentSettings{TolerateGeneratorLoss: true},
+		Groups:       []TestGroup{{Name: "buyers", ScriptID: script.ID, ScriptName: script.Name, Protocol: "http", VUsers: 4, script: script}},
+		remoteGroupShards: map[string][]GeneratorShardSummary{
+			"buyers": {{Group: "buyers", Target: "gen-a", VUsers: 4}},
+		},
+		remoteClientsByTarget:        map[string]generatorClient{"gen-a": failedClient},
+		remoteMetricsStreamsByTarget: make(map[string]*generatorrpc.MetricsStream),
+		remoteMetricsBatchesByTarget: make(map[string]generatorrpc.MetricsBatch),
+		remoteTargetStates:           map[string]string{"gen-a": "RUNNING"},
+	}
+	hub := NewHub()
+	go hub.Run()
+	t.Cleanup(hub.Stop)
+	runner := NewTestRunner(1, hub, nil)
+	runner.tests[test.ID] = test
+
+	impacts, err := backend.EvacuateGenerator(runner, test, "gen-a", false, "generator_loss")
+	if err != nil {
+		t.Fatalf("EvacuateGenerator: %v", err)
+	}
+	if len(impacts) != 1 || len(impacts[0].ToShards) != 1 || impacts[0].ToShards[0].Target != "gen-b" {
+		t.Fatalf("evacuation impacts = %+v, want replacement shard on gen-b", impacts)
+	}
+	if got := service.ActiveVUsers(); got != 4 {
+		t.Fatalf("new survivor active VUsers = %d, want 4", got)
+	}
+	if test.remoteClientsByTarget["gen-b"] == nil || test.remoteMetricsStreamsByTarget["gen-b"] == nil {
+		t.Fatalf("new survivor was not retained with a metrics stream: clients=%v streams=%v", test.remoteClientsByTarget, test.remoteMetricsStreamsByTarget)
+	}
+	if _, exists := test.remoteClientsByTarget["gen-a"]; exists {
+		t.Fatal("failed target remains in run client set")
+	}
+
+	cancel()
+	backend.closeRemoteResources(runner, test)
+	if _, err := service.StopTest(context.Background(), &pb.StopRequest{TestId: test.ID}); err != nil {
+		t.Fatalf("cleanup StopTest: %v", err)
 	}
 }

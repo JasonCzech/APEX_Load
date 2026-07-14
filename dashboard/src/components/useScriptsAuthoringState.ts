@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { type AuthoringComponent, type StoredScenario, type StoredScript } from '../types'
 import { type ScriptDefinition } from '../types/scripts'
@@ -192,8 +192,13 @@ export function useScriptsAuthoringState({
   initialEditId,
 }: UseScriptsAuthoringStateOptions): ScriptsAuthoringStateModel {
   const [authoringState, setAuthoringState] = useState<AuthoringState>(() => createAuthoringState(initialMode, initialEditId))
+  const editRequestGenerationRef = useRef(0)
+  const invalidateEditRequest = useCallback(() => {
+    editRequestGenerationRef.current += 1
+  }, [])
 
   const setSubview = useCallback((subView: ScriptsAuthoringSubView) => {
+    invalidateEditRequest()
     const alias = aliasImportState(subView)
     setAuthoringState({
       subView: alias?.subView || subView,
@@ -207,7 +212,7 @@ export function useScriptsAuthoringState({
       importMode: alias?.importMode || null,
       importFiles: null,
     })
-  }, [])
+  }, [invalidateEditRequest])
 
   const openLibrary = useCallback(() => {
     setSubview('list')
@@ -218,6 +223,7 @@ export function useScriptsAuthoringState({
   }, [setSubview])
 
   const openImportSurface = useCallback((launcher: string, mode?: string | null, files?: File[] | null) => {
+    invalidateEditRequest()
     const next = importLauncherState(launcher, mode)
     setAuthoringState({
       subView: next.subView,
@@ -231,7 +237,7 @@ export function useScriptsAuthoringState({
       importMode: next.importMode,
       importFiles: files && files.length > 0 ? files : null,
     })
-  }, [])
+  }, [invalidateEditRequest])
 
   const openImportFiles = useCallback((launcher: string, files: File[], mode?: string | null) => {
     openImportSurface(launcher, mode, files)
@@ -256,6 +262,7 @@ export function useScriptsAuthoringState({
   const openAsyncAPIImport = useCallback(() => openImportSurface('asyncapi'), [openImportSurface])
 
   const openDraftEditor = useCallback((script: ScriptDefinition, focus?: DraftEditorFocus, returnTarget?: AuthoringReturnTarget | null) => {
+    invalidateEditRequest()
     setAuthoringState({
       subView: 'create',
       editingId: null,
@@ -268,7 +275,7 @@ export function useScriptsAuthoringState({
       importMode: null,
       importFiles: null,
     })
-  }, [])
+  }, [invalidateEditRequest])
 
   const startDraft = useCallback((factory: () => ScriptDefinition) => {
     openDraftEditor(factory())
@@ -323,8 +330,24 @@ export function useScriptsAuthoringState({
   }, [openDraftEditor])
 
   const handleEdit = useCallback(async (id: string) => {
+    const requestGeneration = ++editRequestGenerationRef.current
+    setAuthoringState(previous => previous.subView === 'edit'
+      ? {
+          subView: 'edit',
+          editingId: id,
+          editingScript: null,
+          draftScript: null,
+          draftEditorFocus: null,
+          draftReturnTarget: null,
+          authoringNotice: null,
+          importLauncher: null,
+          importMode: null,
+          importFiles: null,
+        }
+      : previous)
     try {
       const res = await api.getScript(id)
+      if (editRequestGenerationRef.current !== requestGeneration) return
       setAuthoringState({
         subView: 'edit',
         editingId: id,
@@ -338,6 +361,7 @@ export function useScriptsAuthoringState({
         importFiles: null,
       })
     } catch (error) {
+      if (editRequestGenerationRef.current !== requestGeneration) return
       setAuthoringState({
         subView: 'list',
         editingId: null,
@@ -354,6 +378,7 @@ export function useScriptsAuthoringState({
   }, [api])
 
   const handleSavedScript = useCallback((savedScript: StoredScript, notice?: string | null) => {
+    invalidateEditRequest()
     setAuthoringState(previous => ({
       subView: 'edit',
       editingId: savedScript.id,
@@ -366,9 +391,10 @@ export function useScriptsAuthoringState({
       importMode: null,
       importFiles: null,
     }))
-  }, [])
+  }, [invalidateEditRequest])
 
   const returnToDraftSource = useCallback(() => {
+    invalidateEditRequest()
     setAuthoringState(previous => {
       const returnTarget = previous.draftReturnTarget
       if (!returnTarget) return previous
@@ -386,16 +412,17 @@ export function useScriptsAuthoringState({
         importFiles: null,
       }
     })
-  }, [])
+  }, [invalidateEditRequest])
 
   useEffect(() => {
     if (initialMode === 'edit' && initialEditId) {
       void handleEdit(initialEditId)
-      return
+    } else {
+      invalidateEditRequest()
+      setAuthoringState(createAuthoringState(initialMode, initialEditId))
     }
-
-    setAuthoringState(createAuthoringState(initialMode, initialEditId))
-  }, [handleEdit, initialEditId, initialMode])
+    return invalidateEditRequest
+  }, [handleEdit, initialEditId, initialMode, invalidateEditRequest])
 
   return {
     authoringState,

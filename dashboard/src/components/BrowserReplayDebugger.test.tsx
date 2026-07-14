@@ -185,27 +185,33 @@ describe('BrowserReplayDebugger', () => {
       return
     }
 
+    viewScreenshotButton.focus()
     await act(async () => {
       viewScreenshotButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
     })
+    await act(async () => {
+      await new Promise(resolve => window.setTimeout(resolve, 0))
+    })
 
-    const screenshotDialog = container.querySelector('[aria-label="Browser Replay Screenshot"]')
+    const screenshotDialog = container.querySelector<HTMLElement>('[aria-label="Browser Replay Screenshot"]')
     expect(screenshotDialog).not.toBeNull()
     expect(screenshotDialog?.textContent).toContain('Inspect the current browser debugger viewport at full size.')
 
-    const closeDialogButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Close')
+    const closeDialogButton = screenshotDialog?.querySelector<HTMLButtonElement>('button')
     expect(closeDialogButton).toBeDefined()
-    if (!closeDialogButton) {
-      return
-    }
+    expect(document.activeElement).toBe(closeDialogButton)
 
     await act(async () => {
-      closeDialogButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      await Promise.resolve()
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }))
     })
+    expect(document.activeElement).toBe(closeDialogButton)
 
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
     expect(container.querySelector('[aria-label="Browser Replay Screenshot"]')).toBeNull()
+    expect(document.activeElement).toBe(viewScreenshotButton)
 
     const expandAllButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Expand all'))
     expect(expandAllButton).toBeDefined()

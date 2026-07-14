@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type DragEvent, type KeyboardEvent, type MouseEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent } from 'react'
 import {
   CARD_WIDTH_SEQUENCE,
   normalizeProfile,
@@ -266,6 +266,8 @@ export default function DashboardWorkspace({
   const [collapsedLibraryCategories, setCollapsedLibraryCategories] = useState<Record<string, boolean>>({})
   const [newTabName, setNewTabName] = useState('')
   const [tabContextMenu, setTabContextMenu] = useState<TabContextMenuState | null>(null)
+  const tabButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({})
+  const tabMenuItemRef = useRef<HTMLButtonElement | null>(null)
 
   useEffect(() => {
     const nextActiveTabOverride = initialActiveTabId || null
@@ -290,13 +292,22 @@ export default function DashboardWorkspace({
 
   useEffect(() => {
     if (!tabContextMenu) return undefined
-    const closeMenu = () => setTabContextMenu(null)
-    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') closeMenu()
+    const triggerTabId = tabContextMenu.tabId
+    const closeMenu = () => {
+      setTabContextMenu(null)
+      window.setTimeout(() => tabButtonRefs.current[triggerTabId]?.focus(), 0)
     }
+    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        closeMenu()
+      }
+    }
+    const focusTimer = window.setTimeout(() => tabMenuItemRef.current?.focus(), 0)
     window.addEventListener('click', closeMenu)
     window.addEventListener('keydown', closeOnEscape)
     return () => {
+      window.clearTimeout(focusTimer)
       window.removeEventListener('click', closeMenu)
       window.removeEventListener('keydown', closeOnEscape)
     }
@@ -402,6 +413,8 @@ export default function DashboardWorkspace({
 
   const removeTab = (tabId: string) => {
     if (selectedProfile.tabs.length <= 1) return
+    const removedIndex = selectedProfile.tabs.findIndex(tab => tab.id === tabId)
+    const focusTabId = selectedProfile.tabs[removedIndex + 1]?.id || selectedProfile.tabs[removedIndex - 1]?.id
     setTabContextMenu(null)
     updateProfile(selectedProfile.id, profile => {
       const removedTab = profile.tabs.find(tab => tab.id === tabId)
@@ -416,6 +429,9 @@ export default function DashboardWorkspace({
           : profile.dismissedDefaultTabIds,
       }
     })
+    window.setTimeout(() => {
+      if (focusTabId) tabButtonRefs.current[focusTabId]?.focus()
+    }, 0)
   }
 
   const copyCardToTab = (cardId: string, targetTabId: string, targetCardId?: string) => {
@@ -495,6 +511,13 @@ export default function DashboardWorkspace({
   }
 
   const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, tabId: string) => {
+    if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+      event.preventDefault()
+      const rect = event.currentTarget.getBoundingClientRect()
+      selectTab(tabId)
+      setTabContextMenu({ tabId, x: rect.left, y: rect.bottom + 4 })
+      return
+    }
     const order = selectedProfile.tabs.map(tab => tab.id)
     const index = order.indexOf(tabId)
     if (index < 0) return
@@ -650,13 +673,16 @@ export default function DashboardWorkspace({
               onContextMenu={event => handleTabContextMenu(event, tab.id)}
             >
               <button
+                ref={element => { tabButtonRefs.current[tab.id] = element }}
                 type="button"
                 className={`dashboard-workspace-tab ${activeTab.id === tab.id ? 'active' : ''}`}
                 role="tab"
                 aria-selected={activeTab.id === tab.id}
+                aria-haspopup="menu"
+                aria-controls={tabContextMenu?.tabId === tab.id ? `dashboard-workspace-tab-menu-${tab.id}` : undefined}
                 onClick={() => selectTab(tab.id)}
                 onKeyDown={event => handleTabKeyDown(event, tab.id)}
-                title="Drag to reorder. Use Shift+Arrow to reorder with the keyboard. Right-click for tab actions."
+                title="Drag to reorder. Use Shift+Arrow to reorder with the keyboard. Press Shift+F10 for tab actions."
               >
                 <span>{tab.label}</span>
                 <small>{tab.cardIds.length}</small>
@@ -678,12 +704,14 @@ export default function DashboardWorkspace({
       {contextMenuTab && tabContextMenu && (
         <div
           className="dashboard-workspace-tab-menu"
+          id={`dashboard-workspace-tab-menu-${contextMenuTab.id}`}
           role="menu"
+          tabIndex={-1}
           aria-label={`${contextMenuTab.label} tab actions`}
           style={{ left: tabContextMenu.x, top: tabContextMenu.y }}
-          onClick={event => event.stopPropagation()}
         >
           <button
+            ref={tabMenuItemRef}
             type="button"
             role="menuitem"
             disabled={selectedProfile.tabs.length <= 1}

@@ -62,6 +62,14 @@ func (tr *TestRunner) EstimateDraftCapacity(req CreateTestRequest) (*DraftCapaci
 }
 
 func (tr *TestRunner) CreateTest(req CreateTestRequest) (*ManagedTest, error) {
+	return tr.createTest(req, true)
+}
+
+// createTest can defer the externally visible creation event until a containing
+// execution-plan transition is durable. Ordinary API creation broadcasts
+// immediately; plan materialization passes false and publishes only after its
+// run entry (including the generated test ID) commits.
+func (tr *TestRunner) createTest(req CreateTestRequest, broadcast bool) (*ManagedTest, error) {
 	// Tests must be created on the execution leader so the in-memory queue stays
 	// coherent with the replica that will actually run them.
 	if !tr.isExecutionLeader() {
@@ -105,10 +113,21 @@ func (tr *TestRunner) CreateTest(req CreateTestRequest) (*ManagedTest, error) {
 	tr.tests[test.ID] = test
 	tr.indexRefKeyLocked(test.RefKey, test.ID)
 
-	tr.saveManagedTestRecord(test)
+	if err := tr.saveManagedTestRecord(test); err != nil {
+		delete(tr.tests, test.ID)
+		tr.removeRefKeyLocked(test.RefKey)
+		if tr.reservationStore != nil && test.TimeslotID != nil {
+			if _, clearErr := tr.reservationStore.ClearCapacityReservationBinding(*test.TimeslotID, test.ID, time.Now().UTC()); clearErr != nil {
+				slog.Warn("failed to release test timeslot after persistence failure", "test_id", test.ID, "timeslot_id", *test.TimeslotID, "error", clearErr)
+			}
+		}
+		return nil, fmt.Errorf("persist test: %w", err)
+	}
 
-	tr.broadcastEvent("test_created", test)
-	return test, nil
+	if broadcast {
+		tr.broadcastEvent("test_created", test)
+	}
+	return cloneManagedTestForReadLocked(test), nil
 }
 
 func ceilToNextQuarterHour(value time.Time) time.Time {
@@ -154,6 +173,13 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	if err != nil {
 		return nil, err
 	}
+	projectID, err := tr.resolveCreateTestProjectID(req.ProjectID, groups)
+	if err != nil {
+		return nil, err
+	}
+	if err := tr.validateDataPoolProjectsLocked(projectID, req.DataPools); err != nil {
+		return nil, err
+	}
 
 	sharedDataSources, err := tr.buildSharedDataSourcesLocked(req.DataPools)
 	if err != nil {
@@ -171,8 +197,7 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 
 	testName := deriveManagedTestName(req.Name, testGroups)
 
-	projectID, err := tr.resolveCreateTestProjectID(req.ProjectID, groups)
-	if err != nil {
+	if err := tr.projectDeletionErrorLocked(projectID); err != nil {
 		return nil, err
 	}
 	if err := tr.enforceTestQuotaLocked(projectID, totalVUsers, dur, status); err != nil {
@@ -607,6 +632,37 @@ func (tr *TestRunner) buildSharedDataSourcesLocked(bindings []storage.ScenarioDa
 		})
 	}
 	return sources, nil
+}
+
+// validateDataPoolProjectsLocked prevents a binding from turning a project-
+// scoped scenario or run into a read primitive for another project's rows.
+// Callers hold tr.mu, so validation and compilation observe one controller
+// snapshot; the database ownership check remains authoritative.
+func (tr *TestRunner) validateDataPoolProjectsLocked(projectID string, bindings []storage.ScenarioDataPoolBinding) error {
+	if len(bindings) == 0 {
+		return nil
+	}
+	if tr.dataPoolStore == nil {
+		return fmt.Errorf("data pool storage is not configured")
+	}
+	expectedProjectID := normalizeProjectID(projectID)
+	for _, binding := range bindings {
+		poolID := strings.TrimSpace(binding.PoolID)
+		if poolID == "" {
+			return fmt.Errorf("data pool id is required")
+		}
+		pool, err := tr.dataPoolStore.GetDataPool(poolID)
+		if err != nil || pool == nil {
+			if err != nil {
+				return fmt.Errorf("load data pool %q: %w", poolID, err)
+			}
+			return fmt.Errorf("data pool %q not found", poolID)
+		}
+		if normalizeProjectID(pool.ProjectID) != expectedProjectID {
+			return fmt.Errorf("data pool %q does not belong to project %q", poolID, expectedProjectID)
+		}
+	}
+	return nil
 }
 
 func inlineCSVFromDataPoolRows(rows []*storage.SharedDataPoolRow) (string, []string, error) {

@@ -49,6 +49,11 @@ type recordMeta struct {
 	Timestamp time.Time
 }
 
+type brokerProduce struct {
+	topic string
+	rec   kafkaRecord
+}
+
 // memoryBroker is a process-local broker keyed by topic. Each topic is an
 // append-only commit log (offset = index, records are never removed), and each
 // (topic, consumer-group) pair has an independent read position. This mirrors a
@@ -67,18 +72,27 @@ type memoryBroker struct {
 	logs    map[string][]kafkaRecord // per topic; logs[topic][i] has offset base[topic]+i
 	base    map[string]int64         // per topic: absolute offset of logs[topic][0] (evicted count)
 	cursors map[string]int64         // per cursorKey(topic, group): next read offset (absolute)
+	refs    map[string]int
+	bytes   map[string]int64
 }
 
 // maxBrokerLogPerTopic bounds retained records per topic in the in-memory mock so
 // a long-lived process does not accumulate every produced event forever. It is
 // generous enough that ordinary shakeout/CI runs never evict.
-const maxBrokerLogPerTopic = 50000
+const (
+	maxBrokerLogPerTopic   = 50000
+	maxBrokerBytesPerTopic = 64 << 20
+	maxBrokerTopicKeys     = 1024
+	maxBrokerCursorKeys    = 4096
+)
 
 func newMemoryBroker() *memoryBroker {
 	return &memoryBroker{
 		logs:    make(map[string][]kafkaRecord),
 		base:    make(map[string]int64),
 		cursors: make(map[string]int64),
+		refs:    make(map[string]int),
+		bytes:   make(map[string]int64),
 	}
 }
 
@@ -88,48 +102,158 @@ func cursorKey(topic, group string) string { return topic + "\x00" + group }
 // same mock topics (e.g. one VUser produces, another consumes).
 var sharedBroker = newMemoryBroker()
 
-func (b *memoryBroker) produce(topic string, rec kafkaRecord) recordMeta {
+func mockTopicKey(namespace, topic string) string {
+	if namespace == "" {
+		return topic
+	}
+	return namespace + "\x00" + topic
+}
+
+func (b *memoryBroker) acquire(namespace string) {
+	if namespace == "" {
+		return
+	}
+	b.mu.Lock()
+	b.refs[namespace]++
+	b.mu.Unlock()
+}
+
+func (b *memoryBroker) release(namespace string) {
+	if namespace == "" {
+		return
+	}
+	prefix := namespace + "\x00"
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	offset := b.base[topic] + int64(len(b.logs[topic]))
+	b.refs[namespace]--
+	if b.refs[namespace] > 0 {
+		return
+	}
+	delete(b.refs, namespace)
+	for topic := range b.logs {
+		if strings.HasPrefix(topic, prefix) {
+			delete(b.logs, topic)
+			delete(b.base, topic)
+			delete(b.bytes, topic)
+		}
+	}
+	for key := range b.cursors {
+		if strings.HasPrefix(key, prefix) {
+			delete(b.cursors, key)
+		}
+	}
+}
+
+func (b *memoryBroker) produce(topic string, rec kafkaRecord) (recordMeta, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if _, exists := b.logs[topic]; !exists && len(b.logs) >= maxBrokerTopicKeys {
+		return recordMeta{}, fmt.Errorf("mock kafka topic capacity exceeded (%d keys)", maxBrokerTopicKeys)
+	}
 	rec.Topic = topic
+	if size := kafkaRecordSize(rec); size > maxBrokerBytesPerTopic {
+		return recordMeta{}, fmt.Errorf("mock kafka record exceeds per-topic capacity (%d bytes)", maxBrokerBytesPerTopic)
+	}
+	return b.appendLocked(topic, rec), nil
+}
+
+// produceBatch atomically admits and appends a mock transaction. Every capacity
+// and record-size check runs before the first log mutation, and the broker lock
+// remains held through all appends, so consumers observe either the entire
+// transaction or none of it.
+func (b *memoryBroker) produceBatch(batch []brokerProduce) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	newTopics := make(map[string]struct{})
+	for i := range batch {
+		batch[i].rec.Topic = batch[i].topic
+		if size := kafkaRecordSize(batch[i].rec); size > maxBrokerBytesPerTopic {
+			return fmt.Errorf("mock kafka record exceeds per-topic capacity (%d bytes)", maxBrokerBytesPerTopic)
+		}
+		if _, exists := b.logs[batch[i].topic]; !exists {
+			newTopics[batch[i].topic] = struct{}{}
+		}
+	}
+	if len(b.logs)+len(newTopics) > maxBrokerTopicKeys {
+		return fmt.Errorf("mock kafka topic capacity exceeded (%d keys)", maxBrokerTopicKeys)
+	}
+	for _, pending := range batch {
+		b.appendLocked(pending.topic, pending.rec)
+	}
+	return nil
+}
+
+// appendLocked appends one already-validated record and enforces bounded mock
+// retention. The caller must hold b.mu.
+func (b *memoryBroker) appendLocked(topic string, rec kafkaRecord) recordMeta {
+	offset := b.base[topic] + int64(len(b.logs[topic]))
 	rec.Offset = offset
 	if rec.Timestamp.IsZero() {
 		rec.Timestamp = time.Now()
 	}
 	b.logs[topic] = append(b.logs[topic], rec)
+	b.bytes[topic] += int64(kafkaRecordSize(rec))
 	// Bound retained records: evict the oldest and advance the base offset so a
 	// long-lived process does not grow unbounded. Offsets are absolute, so this is
 	// transparent to cursors/lag/seek.
-	if over := len(b.logs[topic]) - maxBrokerLogPerTopic; over > 0 {
-		b.logs[topic] = append(b.logs[topic][:0], b.logs[topic][over:]...)
-		b.base[topic] += int64(over)
+	drop := 0
+	for drop < len(b.logs[topic]) && (len(b.logs[topic])-drop > maxBrokerLogPerTopic || b.bytes[topic] > maxBrokerBytesPerTopic) {
+		b.bytes[topic] -= int64(kafkaRecordSize(b.logs[topic][drop]))
+		drop++
+	}
+	if drop > 0 {
+		b.logs[topic] = append(b.logs[topic][:0], b.logs[topic][drop:]...)
+		b.base[topic] += int64(drop)
 	}
 	return recordMeta{Topic: topic, Partition: rec.Partition, Offset: offset, Timestamp: rec.Timestamp}
+}
+
+func (b *memoryBroker) ensureCursorCapacityLocked(key string) error {
+	if _, exists := b.cursors[key]; exists || len(b.cursors) < maxBrokerCursorKeys {
+		return nil
+	}
+	return fmt.Errorf("mock kafka consumer cursor capacity exceeded (%d keys)", maxBrokerCursorKeys)
+}
+
+func kafkaRecordSize(rec kafkaRecord) int {
+	size := len(rec.Key) + len(rec.Value) + len(rec.CorrelationID) + len(rec.Topic)
+	for key, value := range rec.Headers {
+		size += len(key) + len(value)
+	}
+	return size
 }
 
 // consume returns the next unread record for (topic, group) without removing it
 // from the log (offset-based, like a real consumer), advances the group's read
 // position, and returns the remaining offset lag (records still behind the tail).
-func (b *memoryBroker) consume(topic, group string) (kafkaRecord, int64, bool) {
+func (b *memoryBroker) consumeChecked(topic, group string) (kafkaRecord, int64, bool, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	log := b.logs[topic]
 	base := b.base[topic]
 	end := base + int64(len(log))
 	key := cursorKey(topic, group)
+	if err := b.ensureCursorCapacityLocked(key); err != nil {
+		return kafkaRecord{}, 0, false, err
+	}
 	pos := b.cursors[key]
 	if pos < base {
 		// The cursor lagged behind eviction; skip to the earliest retained record.
 		pos = base
 	}
 	if pos >= end {
-		return kafkaRecord{}, 0, false
+		return kafkaRecord{}, 0, false, nil
 	}
 	rec := log[pos-base]
 	b.cursors[key] = pos + 1
 	lag := end - (pos + 1)
-	return rec, lag, true
+	return rec, lag, true, nil
+}
+
+func (b *memoryBroker) consume(topic, group string) (kafkaRecord, int64, bool) {
+	record, lag, ok, _ := b.consumeChecked(topic, group)
+	return record, lag, ok
 }
 
 func (b *memoryBroker) hasMessages(topic, group string) bool {
@@ -151,6 +275,9 @@ func (b *memoryBroker) seek(topic, group, target string) (int64, error) {
 	base := b.base[topic]
 	end := base + int64(len(b.logs[topic]))
 	key := cursorKey(topic, group)
+	if err := b.ensureCursorCapacityLocked(key); err != nil {
+		return 0, err
+	}
 	switch strings.ToLower(strings.TrimSpace(target)) {
 	case "", "earliest", "beginning", "start":
 		b.cursors[key] = base
@@ -176,14 +303,37 @@ func (b *memoryBroker) seek(topic, group, target string) (int64, error) {
 
 // mockClient adapts the in-memory broker to the kafkaClient interface.
 type mockClient struct {
-	broker *memoryBroker
+	broker    *memoryBroker
+	namespace string
+	release   *sync.Once
 }
+
+func (c mockClient) topic(topic string) string { return mockTopicKey(c.namespace, topic) }
 
 func (c mockClient) Produce(_ context.Context, topic string, rec kafkaRecord) (recordMeta, error) {
 	if topic == "" {
 		return recordMeta{}, fmt.Errorf("kafka topic is required")
 	}
-	return c.broker.produce(topic, rec), nil
+	meta, err := c.broker.produce(c.topic(topic), rec)
+	if err != nil {
+		return recordMeta{}, err
+	}
+	meta.Topic = topic
+	return meta, nil
+}
+
+// CommitBufferedTransaction atomically moves a Kafka protocol transaction's
+// buffered records into the in-memory broker. Real clients use their native
+// Begin/Produce/Commit transaction lifecycle instead.
+func (c mockClient) CommitBufferedTransaction(_ context.Context, pending []pendingProduce) error {
+	batch := make([]brokerProduce, len(pending))
+	for i, produce := range pending {
+		if produce.topic == "" {
+			return fmt.Errorf("kafka topic is required")
+		}
+		batch[i] = brokerProduce{topic: c.topic(produce.topic), rec: produce.rec}
+	}
+	return c.broker.produceBatch(batch)
 }
 
 func (c mockClient) Consume(ctx context.Context, topic string, group string, timeout time.Duration) (kafkaRecord, int64, error) {
@@ -193,7 +343,12 @@ func (c mockClient) Consume(ctx context.Context, topic string, group string, tim
 	defer tick.Stop()
 
 	for {
-		if rec, lag, ok := c.broker.consume(topic, group); ok {
+		rec, lag, ok, err := c.broker.consumeChecked(c.topic(topic), group)
+		if err != nil {
+			return kafkaRecord{}, 0, err
+		}
+		if ok {
+			rec.Topic = topic
 			return rec, lag, nil
 		}
 		select {
@@ -213,14 +368,16 @@ func (c mockClient) RequestReply(ctx context.Context, reqTopic, replyTopic strin
 	}
 	// Synthesize a correlated reply if nothing is waiting, so request/reply
 	// flows can be exercised end-to-end against the mock broker.
-	if !c.broker.hasMessages(replyTopic, "") {
-		c.broker.produce(replyTopic, kafkaRecord{
+	if !c.broker.hasMessages(c.topic(replyTopic), "") {
+		if _, err := c.broker.produce(c.topic(replyTopic), kafkaRecord{
 			Key:           req.Key,
 			Value:         req.Value,
 			Headers:       cloneStringMap(req.Headers),
 			CorrelationID: req.CorrelationID,
 			Timestamp:     time.Now(),
-		})
+		}); err != nil {
+			return recordMeta{}, kafkaRecord{}, err
+		}
 	}
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
@@ -245,7 +402,7 @@ func (c mockClient) Seek(_ context.Context, topic, group, target string) error {
 	if topic == "" {
 		return fmt.Errorf("kafka topic is required")
 	}
-	_, err := c.broker.seek(topic, group, target)
+	_, err := c.broker.seek(c.topic(topic), group, target)
 	return err
 }
 
@@ -264,7 +421,12 @@ func (c mockClient) HealthCheck(context.Context) error {
 	return nil
 }
 
-func (c mockClient) Teardown(context.Context) error { return nil }
+func (c mockClient) Teardown(context.Context) error {
+	if c.release != nil {
+		c.release.Do(func() { c.broker.release(c.namespace) })
+	}
+	return nil
+}
 
 // unavailableClient is returned when mock mode is disabled. A real,
 // franz-go-backed adapter is not compiled into this build; this stub fails

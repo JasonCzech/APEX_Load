@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -43,6 +44,9 @@ func newGitHubTestServer(t *testing.T, stubURL string) *Server {
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
+	if err := store.SaveProject(&storage.Project{ID: "team-a", Name: "Team A", CreatedAt: time.Now().UTC()}); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
 	server := NewServer(ServerConfig{Store: store})
 
 	settings := server.runner.GetSystemSettings()

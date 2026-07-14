@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useCallback, useId, useRef } from 'react'
 import { useModalDialog } from '../hooks/useModalDialog'
 
 interface Props {
@@ -19,31 +19,47 @@ export default function UnsavedChangesModal({
   onCancel,
 }: Props) {
   const dialogRef = useRef<HTMLDivElement | null>(null)
-  useModalDialog({ dialogRef, onClose: saving ? undefined : onCancel })
+  const keepEditingRef = useRef<HTMLButtonElement | null>(null)
+  const titleId = useId()
+  const descriptionId = useId()
+  const requestCancel = useCallback(() => {
+    if (!saving) onCancel()
+  }, [onCancel, saving])
+  useModalDialog({
+    dialogRef,
+    initialFocusRef: keepEditingRef,
+    onClose: saving ? undefined : requestCancel,
+  })
 
   return (
-    <div className="modal-overlay" onClick={saving ? undefined : onCancel}>
+    <div
+      className="modal-overlay"
+      role="presentation"
+      onPointerDown={event => {
+        if (event.target === event.currentTarget) requestCancel()
+      }}
+    >
       <div
         ref={dialogRef}
         className="modal unsaved-changes-modal"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="unsaved-changes-title"
-        onClick={event => event.stopPropagation()}
+        aria-labelledby={titleId}
+        aria-describedby={descriptionId}
       >
         <div className="modal-header">
           <div>
-            <h3 id="unsaved-changes-title">Unsaved Changes</h3>
-            <p className="page-subtitle">
+            <h3 id={titleId}>Unsaved Changes</h3>
+            <p id={descriptionId} className="page-subtitle">
               {label} has unsaved changes. Save them before leaving, discard them, or keep editing.
             </p>
           </div>
         </div>
 
-        {error && <p className="form-error">{error}</p>}
+        {error && <p className="form-error" role="alert">{error}</p>}
 
         <div className="modal-actions">
-          <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={saving}>
+          <button ref={keepEditingRef} type="button" className="btn btn-secondary" onClick={requestCancel} disabled={saving}>
             Keep editing
           </button>
           <button type="button" className="btn btn-danger-outline" onClick={onDiscard} disabled={saving}>

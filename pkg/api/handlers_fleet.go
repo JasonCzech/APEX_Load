@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strings"
@@ -465,7 +466,9 @@ func (s *Server) routeFleetAlertNotifications(alerts []FleetAlert) {
 	if !fleetNotificationConfigured(settings, "fleet_alert") {
 		if changed {
 			if encoded, err := json.Marshal(state); err == nil {
-				_ = s.store.SaveSetting(fleetAlertNotificationStateStoreKey, string(encoded))
+				if err := s.store.SaveSetting(fleetAlertNotificationStateStoreKey, string(encoded)); err != nil {
+					slog.Warn("failed to persist fleet alert notification state", "error", err)
+				}
 			}
 		}
 		return
@@ -484,7 +487,9 @@ func (s *Server) routeFleetAlertNotifications(alerts []FleetAlert) {
 	}
 	if changed {
 		if encoded, err := json.Marshal(state); err == nil {
-			_ = s.store.SaveSetting(fleetAlertNotificationStateStoreKey, string(encoded))
+			if err := s.store.SaveSetting(fleetAlertNotificationStateStoreKey, string(encoded)); err != nil {
+				slog.Warn("failed to persist fleet alert notification state", "error", err)
+			}
 		}
 	}
 }

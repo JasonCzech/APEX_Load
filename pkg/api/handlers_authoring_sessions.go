@@ -3,6 +3,8 @@ package api
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
@@ -18,6 +20,11 @@ type authoringSessionPersistence interface {
 	GetAuthoringSession(id string) (*storage.AuthoringSession, error)
 	ListAuthoringSessions(projectID string) ([]*storage.AuthoringSession, error)
 	DeleteAuthoringSession(id string) error
+}
+
+type authoringSessionCASPersistence interface {
+	CompareAndSwapAuthoringSession(session *storage.AuthoringSession, expectedUpdatedAt time.Time, expectedStatus string) (bool, error)
+	DeleteAuthoringSessionUnlessApproving(id string) (bool, error)
 }
 
 type authoringSessionRequest struct {
@@ -40,10 +47,18 @@ func (s *Server) handleCreateAuthoringSession(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
+	if err := validateClientAuthoringSessionStatus(req.Status); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := bindDraftScriptProject(&req.Draft, req.ProjectID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	now := time.Now()
 	session := &storage.AuthoringSession{
 		ID:             uuid.New().String(),
-		ProjectID:      normalizeProjectID(req.ProjectID),
+		ProjectID:      normalizeProjectID(req.Draft.ProjectID),
 		Source:         normalizeAuthoringSessionSource(req.Source),
 		Name:           authoringSessionName(req.Name, &req.Draft),
 		Status:         normalizeAuthoringSessionStatus(req.Status),
@@ -52,9 +67,6 @@ func (s *Server) handleCreateAuthoringSession(w http.ResponseWriter, r *http.Req
 		CreatedAt:      now,
 		UpdatedAt:      now,
 		LastAccessedAt: now,
-	}
-	if session.Draft.ProjectID == "" {
-		session.Draft.ProjectID = session.ProjectID
 	}
 	if err := s.saveAuthoringSession(session); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -86,28 +98,49 @@ func (s *Server) handleGetAuthoringSession(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) handleUpdateAuthoringSession(w http.ResponseWriter, r *http.Request) {
+	s.authoringMutationMu.Lock()
+	defer s.authoringMutationMu.Unlock()
 	id := r.PathValue("id")
 	existing, ok := s.getAuthoringSession(w, id)
 	if !ok {
 		return
 	}
+	if existing.Status == "approved" {
+		writeError(w, http.StatusConflict, "approved authoring sessions are immutable")
+		return
+	}
+	if existing.Status == "approving" {
+		writeError(w, http.StatusConflict, "authoring session approval is in progress")
+		return
+	}
+	expectedUpdatedAt := existing.UpdatedAt
+	expectedStatus := existing.Status
 	req, ok := readAuthoringSessionRequest(w, r)
 	if !ok {
 		return
 	}
-	existing.ProjectID = normalizeProjectID(firstNonEmpty(req.ProjectID, existing.ProjectID))
+	if err := validateClientAuthoringSessionStatus(req.Status); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := bindStoredScriptProject(&req.Draft, existing.ProjectID, req.ProjectID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	existing.Source = normalizeAuthoringSessionSource(firstNonEmpty(req.Source, existing.Source))
 	existing.Name = authoringSessionName(firstNonEmpty(req.Name, existing.Name), &req.Draft)
 	existing.Status = normalizeAuthoringSessionStatus(firstNonEmpty(req.Status, existing.Status))
 	existing.Draft = &req.Draft
-	if existing.Draft.ProjectID == "" {
-		existing.Draft.ProjectID = existing.ProjectID
-	}
 	existing.ReviewState = cloneReviewState(req.ReviewState)
 	existing.UpdatedAt = time.Now()
 	existing.LastAccessedAt = existing.UpdatedAt
-	if err := s.saveAuthoringSession(existing); err != nil {
+	saved, err := s.compareAndSwapAuthoringSession(existing, expectedUpdatedAt, expectedStatus)
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !saved {
+		writeError(w, http.StatusConflict, "authoring session changed while it was being updated")
 		return
 	}
 	enrichAuthoringSession(existing)
@@ -116,13 +149,24 @@ func (s *Server) handleUpdateAuthoringSession(w http.ResponseWriter, r *http.Req
 }
 
 func (s *Server) handleDeleteAuthoringSession(w http.ResponseWriter, r *http.Request) {
+	s.authoringMutationMu.Lock()
+	defer s.authoringMutationMu.Unlock()
 	id := r.PathValue("id")
 	session, ok := s.getAuthoringSession(w, id)
 	if !ok {
 		return
 	}
-	if err := s.deleteAuthoringSession(id); err != nil {
+	if session.Status == "approving" {
+		writeError(w, http.StatusConflict, "authoring session approval is in progress")
+		return
+	}
+	deleted, err := s.deleteAuthoringSessionUnlessApproving(id)
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !deleted {
+		writeError(w, http.StatusConflict, "authoring session changed while it was being deleted")
 		return
 	}
 	s.recordAuditEvent(r, "script.authoring_session.delete", "success", "authoring_session", id, session.ProjectID, map[string]any{"name": session.Name, "source": session.Source})
@@ -130,6 +174,8 @@ func (s *Server) handleDeleteAuthoringSession(w http.ResponseWriter, r *http.Req
 }
 
 func (s *Server) handleApproveAuthoringSession(w http.ResponseWriter, r *http.Request) {
+	s.authoringMutationMu.Lock()
+	defer s.authoringMutationMu.Unlock()
 	id := r.PathValue("id")
 	session, ok := s.getAuthoringSession(w, id)
 	if !ok {
@@ -139,11 +185,44 @@ func (s *Server) handleApproveAuthoringSession(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusBadRequest, "authoring session draft is required")
 		return
 	}
+	if err := bindStoredScriptProject(session.Draft, session.ProjectID, ""); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if session.Status == "approved" {
+		scriptID, _ := session.ReviewState["approved_script_id"].(string)
+		if strings.TrimSpace(scriptID) == "" {
+			scriptID = authoringApprovalScriptID(session.ID)
+		}
+		stored, found, err := s.runner.GetScriptDurable(scriptID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "load approved script: "+err.Error())
+			return
+		}
+		if !found || stored == nil || normalizeProjectID(stored.ProjectID) != normalizeProjectID(session.ProjectID) {
+			writeError(w, http.StatusConflict, "approved authoring session has no matching library script")
+			return
+		}
+		validation := buildScriptValidationResponse("", session.Draft)
+		enrichAuthoringSession(session)
+		writeJSON(w, http.StatusOK, authoringSessionApprovalResponse{Session: session, Script: stored, AuthoringHealth: validation.AuthoringHealth})
+		return
+	}
 
 	validation := buildScriptValidationResponse("", session.Draft)
 	if !validation.Valid || validation.AuthoringHealth.Status == "blocked" {
+		expectedUpdatedAt := session.UpdatedAt
+		expectedStatus := session.Status
 		updateAuthoringSessionReviewReadiness(session, validation.AuthoringHealth)
-		_ = s.saveAuthoringSession(session)
+		saved, err := s.compareAndSwapAuthoringSession(session, expectedUpdatedAt, expectedStatus)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to persist authoring review state: "+err.Error())
+			return
+		}
+		if !saved {
+			writeError(w, http.StatusConflict, "authoring session changed while review state was being persisted")
+			return
+		}
 		s.recordAuditEvent(r, "script.authoring_session.approve", "failure", "authoring_session", session.ID, session.ProjectID, map[string]any{
 			"health_status": validation.AuthoringHealth.Status,
 			"next_actions":  session.NextActions,
@@ -153,9 +232,56 @@ func (s *Server) handleApproveAuthoringSession(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	session.Draft.ProjectID = normalizeProjectID(firstNonEmpty(session.Draft.ProjectID, session.ProjectID))
-	stored := s.runner.StoreScript(session.Draft)
+	// Persist an idempotent approval intent before writing the script library.
+	// If the process stops between the two durable writes, a retry reuses the
+	// same script ID and completes the session instead of creating a duplicate.
+	// Deriving the ID from the durable session also makes concurrent approvals
+	// from separate controller replicas converge on one library record.
+	// A draft ID is client-controlled and may name an unrelated library script.
+	// Approval always promotes to the ID owned by this durable session, so neither
+	// retries nor two different sessions can overwrite another script.
+	session.Draft.ID = authoringApprovalScriptID(session.ID)
+	previousStatus := session.Status
+	previousReviewState := cloneReviewState(session.ReviewState)
+	previousUpdatedAt := session.UpdatedAt
+	previousLastAccessedAt := session.LastAccessedAt
+	expectedUpdatedAt := session.UpdatedAt
+	expectedStatus := session.Status
 	now := time.Now()
+	session.Status = "approving"
+	session.UpdatedAt = now
+	session.LastAccessedAt = now
+	if session.ReviewState == nil {
+		session.ReviewState = map[string]any{}
+	}
+	session.ReviewState["pending_script_id"] = session.Draft.ID
+	session.ReviewState["approval_started_at"] = now.Format(time.RFC3339Nano)
+	claimed, err := s.compareAndSwapAuthoringSession(session, expectedUpdatedAt, expectedStatus)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to persist authoring approval intent: "+err.Error())
+		return
+	}
+	if !claimed {
+		writeError(w, http.StatusConflict, "authoring session changed while approval was starting")
+		return
+	}
+	intentUpdatedAt := session.UpdatedAt
+	stored, err := s.runner.CreateScriptDurable(session.Draft)
+	if err != nil {
+		session.Status = previousStatus
+		session.ReviewState = previousReviewState
+		session.UpdatedAt = previousUpdatedAt
+		session.LastAccessedAt = previousLastAccessedAt
+		rolledBack, rollbackErr := s.compareAndSwapAuthoringSession(session, intentUpdatedAt, "approving")
+		if rollbackErr != nil {
+			err = errors.Join(err, fmt.Errorf("rollback approval intent: %w", rollbackErr))
+		} else if !rolledBack {
+			err = errors.Join(err, errors.New("approval intent changed before rollback"))
+		}
+		writeError(w, http.StatusInternalServerError, "failed to save approved script: "+err.Error())
+		return
+	}
+	now = time.Now()
 	session.Status = "approved"
 	session.UpdatedAt = now
 	session.LastAccessedAt = now
@@ -166,9 +292,16 @@ func (s *Server) handleApproveAuthoringSession(w http.ResponseWriter, r *http.Re
 	session.ReviewState["approved_script_id"] = stored.ID
 	session.ReviewState["approved_at"] = now.Format(time.RFC3339Nano)
 	session.ReviewState["approval_health_status"] = validation.AuthoringHealth.Status
+	delete(session.ReviewState, "pending_script_id")
+	delete(session.ReviewState, "approval_started_at")
 	updateAuthoringSessionReviewReadiness(session, validation.AuthoringHealth)
-	if err := s.saveAuthoringSession(session); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+	finalized, err := s.compareAndSwapAuthoringSession(session, intentUpdatedAt, "approving")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to finalize authoring approval; retry will resume the durable approval intent: "+err.Error())
+		return
+	}
+	if !finalized {
+		writeError(w, http.StatusConflict, "authoring session changed while approval was finalizing")
 		return
 	}
 	enrichAuthoringSession(session)
@@ -179,6 +312,10 @@ func (s *Server) handleApproveAuthoringSession(w http.ResponseWriter, r *http.Re
 		Script:          stored,
 		AuthoringHealth: validation.AuthoringHealth,
 	})
+}
+
+func authoringApprovalScriptID(sessionID string) string {
+	return uuid.NewSHA1(uuid.NameSpaceURL, []byte("apexload:authoring-session:"+strings.TrimSpace(sessionID))).String()
 }
 
 func enrichAuthoringSessions(sessions []*storage.AuthoringSession) {
@@ -196,6 +333,11 @@ func enrichAuthoringSession(session *storage.AuthoringSession) {
 		if len(session.NextActions) == 0 {
 			session.NextActions = []string{"Session is already approved and promoted to a stored script."}
 		}
+		return
+	}
+	if session.Status == "approving" {
+		session.ApprovalReady = false
+		session.NextActions = []string{"Retry approval to finish the durable script promotion."}
 		return
 	}
 	if session.Draft == nil {
@@ -298,6 +440,27 @@ func (s *Server) saveAuthoringSession(session *storage.AuthoringSession) error {
 	return nil
 }
 
+func (s *Server) compareAndSwapAuthoringSession(session *storage.AuthoringSession, expectedUpdatedAt time.Time, expectedStatus string) (bool, error) {
+	if store, ok := s.store.(authoringSessionCASPersistence); ok {
+		return store.CompareAndSwapAuthoringSession(session, expectedUpdatedAt, expectedStatus)
+	}
+	// Mutating handlers hold authoringMutationMu, so the in-memory fallback can
+	// perform the same version/status check without another lock spanning I/O.
+	s.authoringMu.Lock()
+	defer s.authoringMu.Unlock()
+	current := s.authoring[session.ID]
+	if current == nil || current.Status != expectedStatus || !current.UpdatedAt.Equal(expectedUpdatedAt) {
+		return false, nil
+	}
+	now := time.Now()
+	session.UpdatedAt = now
+	if session.LastAccessedAt.IsZero() {
+		session.LastAccessedAt = now
+	}
+	s.authoring[session.ID] = cloneAuthoringSession(session)
+	return true, nil
+}
+
 func (s *Server) getAuthoringSession(w http.ResponseWriter, id string) (*storage.AuthoringSession, bool) {
 	session, err := s.loadAuthoringSession(id)
 	if err != nil {
@@ -360,6 +523,20 @@ func (s *Server) deleteAuthoringSession(id string) error {
 	return nil
 }
 
+func (s *Server) deleteAuthoringSessionUnlessApproving(id string) (bool, error) {
+	if store, ok := s.store.(authoringSessionCASPersistence); ok {
+		return store.DeleteAuthoringSessionUnlessApproving(id)
+	}
+	s.authoringMu.Lock()
+	defer s.authoringMu.Unlock()
+	session := s.authoring[id]
+	if session == nil || session.Status == "approving" {
+		return false, nil
+	}
+	delete(s.authoring, id)
+	return true, nil
+}
+
 func normalizeAuthoringSessionSource(source string) string {
 	return strings.ToLower(strings.TrimSpace(source))
 }
@@ -367,10 +544,19 @@ func normalizeAuthoringSessionSource(source string) string {
 func normalizeAuthoringSessionStatus(status string) string {
 	status = strings.ToLower(strings.TrimSpace(status))
 	switch status {
-	case "reviewing", "editing", "blocked", "ready", "approved":
+	case "reviewing", "editing", "blocked", "ready", "approving", "approved":
 		return status
 	default:
 		return "editing"
+	}
+}
+
+func validateClientAuthoringSessionStatus(status string) error {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "approving", "approved":
+		return fmt.Errorf("authoring session status %q is managed by the approval workflow", strings.TrimSpace(status))
+	default:
+		return nil
 	}
 }
 

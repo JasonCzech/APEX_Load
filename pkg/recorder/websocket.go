@@ -134,10 +134,7 @@ func (r *Recorder) forwardWebSocketHTTPS(tlsConn net.Conn, clientReader *bufio.R
 	}
 
 	dialAddr := hostWithDefaultPort(connectHost, "443")
-	upstreamConn, err := tls.DialWithDialer(proxySafeDialer(30*time.Second), "tcp", dialAddr, &tls.Config{
-		ServerName:         hostname,
-		InsecureSkipVerify: true,
-	})
+	upstreamConn, err := tls.DialWithDialer(proxySafeDialer(30*time.Second), "tcp", dialAddr, recorderUpstreamTLSConfig(hostname))
 	if err != nil {
 		slog.Debug("websocket TLS upstream dial failed", "host", dialAddr, "err", err)
 		writeHTTPError(tlsConn, http.StatusBadGateway, "websocket upstream error: "+err.Error())
@@ -279,8 +276,7 @@ func cloneWebSocketUpstreamRequest(req *http.Request, target *url.URL) *http.Req
 	out.RequestURI = ""
 	out.Host = target.Host
 	out.Header = req.Header.Clone()
-	out.Header.Del("Proxy-Connection")
-	out.Header.Del("Proxy-Authorization")
+	stripProxyRequestHeaders(out.Header, true)
 	out.Header.Del("Sec-WebSocket-Extensions")
 	out.Body = nil
 	out.GetBody = nil
@@ -295,8 +291,7 @@ func cloneWebSocketRecordRequest(req *http.Request, target *url.URL) *http.Reque
 	out.RequestURI = target.RequestURI()
 	out.Host = target.Host
 	out.Header = req.Header.Clone()
-	out.Header.Del("Proxy-Connection")
-	out.Header.Del("Proxy-Authorization")
+	stripProxyRequestHeaders(out.Header, true)
 	out.Header.Del("Sec-WebSocket-Extensions")
 	out.Body = nil
 	out.GetBody = nil

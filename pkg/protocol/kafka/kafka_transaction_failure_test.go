@@ -97,6 +97,61 @@ func TestKafkaCommitTransactionProduceFailureAborts(t *testing.T) {
 	}
 }
 
+func TestKafkaMockCommitCapacityFailureIsAtomicAcrossTopics(t *testing.T) {
+	ctx := context.Background()
+	k := newMockKafka(t, map[string]any{"kafka_transactional_id": "tx-capacity"})
+	mock := k.client.(mockClient)
+
+	// Leave exactly one free topic slot. A sequential flush would append the
+	// first new topic, then fail on the second and leak the first record despite
+	// reporting that the transaction commit failed.
+	mock.broker.mu.Lock()
+	for i := 0; i < maxBrokerTopicKeys-1; i++ {
+		mock.broker.logs[fmt.Sprintf("occupied-%d", i)] = nil
+	}
+	mock.broker.mu.Unlock()
+
+	exec := func(action *protocol.Action) *protocol.Result {
+		result, err := k.Execute(ctx, action)
+		if err != nil {
+			t.Fatalf("execute %s: %v", action.Type, err)
+		}
+		return result
+	}
+	if result := exec(&protocol.Action{Name: "begin", Type: "kafka_begin_transaction"}); !result.Success {
+		t.Fatalf("begin failed: %s", result.ErrorMessage)
+	}
+	if result := exec(&protocol.Action{Name: "first", Type: "kafka_produce", Target: "first-new-topic", Body: []byte("first")}); !result.Success {
+		t.Fatalf("first buffered produce failed: %s", result.ErrorMessage)
+	}
+	if result := exec(&protocol.Action{Name: "second", Type: "kafka_produce", Target: "second-new-topic", Body: []byte("second")}); !result.Success {
+		t.Fatalf("second buffered produce failed: %s", result.ErrorMessage)
+	}
+
+	commit := exec(&protocol.Action{Name: "commit", Type: "kafka_commit_transaction"})
+	if commit.Success || !strings.Contains(commit.ErrorMessage, "capacity") {
+		t.Fatalf("commit result = %#v, want topic-capacity failure", commit)
+	}
+	if k.txOpen || len(k.txBuffer) != 0 {
+		t.Fatalf("transaction state survived failed commit: open=%v buffered=%d", k.txOpen, len(k.txBuffer))
+	}
+	if k.session.Commits() != 0 {
+		t.Fatalf("session commits = %d, want 0", k.session.Commits())
+	}
+
+	mock.broker.mu.Lock()
+	defer mock.broker.mu.Unlock()
+	if _, exists := mock.broker.logs["first-new-topic"]; exists {
+		t.Fatal("failed transaction leaked the first topic's record")
+	}
+	if _, exists := mock.broker.logs["second-new-topic"]; exists {
+		t.Fatal("failed transaction created the second topic")
+	}
+	if got := len(mock.broker.logs); got != maxBrokerTopicKeys-1 {
+		t.Fatalf("topic keys = %d, want unchanged %d", got, maxBrokerTopicKeys-1)
+	}
+}
+
 // TestKafkaTeardownAbortsOpenTransaction covers xcut-tests-3: Teardown must abort
 // a transaction the script left open, discard buffered records, and record the
 // rollback on the session.

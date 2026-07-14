@@ -166,6 +166,14 @@ function apiUrl(pathOrURL: string): string {
   return buildApiUrl(API_ORIGIN, pathOrURL)
 }
 
+export function resolveApiResourceUrl(pathOrURL: string, apiOrigin = API_ORIGIN): string {
+  if (/^https?:\/\//i.test(pathOrURL)) {
+    return pathOrURL
+  }
+  const path = pathOrURL.startsWith('/') ? pathOrURL : `/${pathOrURL}`
+  return `${trimTrailingSlash(apiOrigin)}${path}`
+}
+
 export function wsUrl(path: string, apiOrigin = API_ORIGIN): string {
   const wsOrigin = trimTrailingSlash(apiOrigin).replace(/^http:/, 'ws:').replace(/^https:/, 'wss:')
   const normalizedPath = path.startsWith('/') ? path : `/${path}`
@@ -174,10 +182,16 @@ export function wsUrl(path: string, apiOrigin = API_ORIGIN): string {
 
 async function parseJsonResponse(res: Response): Promise<unknown> {
   const contentType = (res.headers.get('content-type') || '').toLowerCase()
-  if (contentType.includes('application/json')) {
-    return res.json()
+  if (res.status === 204 || res.status === 205) {
+    return undefined
   }
   const text = await res.text()
+  if (!text.trim()) {
+    return undefined
+  }
+  if (contentType.includes('application/json')) {
+    return JSON.parse(text) as unknown
+  }
   const snippet = text.trim().slice(0, 180)
   const isHTML = contentType.includes('text/html') || snippet.toLowerCase().startsWith('<!doctype html') || snippet.toLowerCase().startsWith('<html')
   const message = isHTML
@@ -207,6 +221,7 @@ export class ApiError extends Error {
 export function apiFetch(pathOrURL: string, options?: RequestInit): Promise<Response> {
   return fetch(apiUrl(pathOrURL), {
     ...options,
+    credentials: options?.credentials ?? 'include',
     headers: mergeHeaders(options?.headers),
   })
 }
@@ -214,6 +229,7 @@ export function apiFetch(pathOrURL: string, options?: RequestInit): Promise<Resp
 export function apiFetchFromOrigin(apiOrigin: string, pathOrURL: string, options?: RequestInit): Promise<Response> {
   return fetch(buildApiUrl(apiOrigin, pathOrURL), {
     ...options,
+    credentials: options?.credentials ?? 'include',
     headers: mergeHeaders(options?.headers),
   })
 }

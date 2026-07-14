@@ -135,7 +135,7 @@ func socketFields() []FieldSpec {
 	return []FieldSpec{
 		{Name: "target", Required: true, Kind: FieldKindString, Doc: "Destination address host:port; defaults to the configured endpoint when set."},
 		{Name: "body", Kind: FieldKindString, Doc: "Bytes to send; template variables are expanded."},
-		{Name: "params.read_bytes", Kind: FieldKindInt, Doc: "Bytes to read back; zero or greater."},
+		{Name: "params.read_bytes", Kind: FieldKindInt, Doc: "Bytes to read back; 0 through 1048576."},
 		{Name: "params.timeout_ms", Kind: FieldKindInt, Doc: "Socket timeout in milliseconds; zero or greater."},
 	}
 }
@@ -143,6 +143,9 @@ func socketFields() []FieldSpec {
 func validateNetworkSocketAction(index int, action Action) []string {
 	if strings.TrimSpace(action.Target) == "" {
 		return []string{fmt.Sprintf("actions[%d] %q: socket action requires target address", index, action.Name)}
+	}
+	if readBytes, ok := actionParamIntValue(action.Params, "read_bytes"); ok && readBytes > 1<<20 {
+		return []string{fmt.Sprintf("actions[%d] %q: read_bytes must not exceed 1048576", index, action.Name)}
 	}
 	return nil
 }

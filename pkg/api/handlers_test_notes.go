@@ -22,6 +22,12 @@ type testNoteRequest struct {
 	Body string `json:"body"`
 }
 
+type atomicTestNoteArchiveStore interface {
+	CreateTestNoteAndArchiveRefresh(note *storage.TestNote) error
+	UpdateTestNoteAndArchiveRefresh(note *storage.TestNote) error
+	DeleteTestNoteAndArchiveRefresh(id string, testID string) error
+}
+
 func (s *Server) handleListTestNotes(w http.ResponseWriter, r *http.Request) {
 	testID := r.PathValue("id")
 	test, ok := s.runner.GetTest(testID)
@@ -73,7 +79,13 @@ func (s *Server) handleCreateTestNote(w http.ResponseWriter, r *http.Request) {
 		CreatedBy: actor,
 		UpdatedBy: actor,
 	}
-	if err := s.store.CreateTestNote(note); err != nil {
+	var err error
+	if atomicStore, ok := s.store.(atomicTestNoteArchiveStore); ok {
+		err = atomicStore.CreateTestNoteAndArchiveRefresh(note)
+	} else {
+		err = s.store.CreateTestNote(note)
+	}
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create test note: "+err.Error())
 		return
 	}
@@ -81,7 +93,7 @@ func (s *Server) handleCreateTestNote(w http.ResponseWriter, r *http.Request) {
 	s.recordAuditEvent(r, "test.notes.create", "success", "test", testID, projectID, map[string]any{
 		"note_id": note.ID,
 	})
-	s.syncTestNotesToArchiveAsync(testID)
+	s.scheduleTestNotesArchiveRefresh(testID)
 	writeJSON(w, http.StatusCreated, note)
 }
 
@@ -115,7 +127,12 @@ func (s *Server) handleUpdateTestNote(w http.ResponseWriter, r *http.Request) {
 	note.Body = body
 	note.UpdatedAt = time.Now().UTC()
 	note.UpdatedBy = firstNonEmpty(actorDisplay, actorSubject)
-	if err := s.store.UpdateTestNote(note); err != nil {
+	if atomicStore, ok := s.store.(atomicTestNoteArchiveStore); ok {
+		err = atomicStore.UpdateTestNoteAndArchiveRefresh(note)
+	} else {
+		err = s.store.UpdateTestNote(note)
+	}
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "test note not found")
 			return
@@ -127,7 +144,7 @@ func (s *Server) handleUpdateTestNote(w http.ResponseWriter, r *http.Request) {
 	s.recordAuditEvent(r, "test.notes.update", "success", "test", testID, projectID, map[string]any{
 		"note_id": note.ID,
 	})
-	s.syncTestNotesToArchiveAsync(testID)
+	s.scheduleTestNotesArchiveRefresh(testID)
 	writeJSON(w, http.StatusOK, note)
 }
 
@@ -153,7 +170,12 @@ func (s *Server) handleDeleteTestNote(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to load test note: "+err.Error())
 		return
 	}
-	if err := s.store.DeleteTestNote(noteID); err != nil {
+	if atomicStore, ok := s.store.(atomicTestNoteArchiveStore); ok {
+		err = atomicStore.DeleteTestNoteAndArchiveRefresh(noteID, testID)
+	} else {
+		err = s.store.DeleteTestNote(noteID)
+	}
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "test note not found")
 			return
@@ -165,7 +187,7 @@ func (s *Server) handleDeleteTestNote(w http.ResponseWriter, r *http.Request) {
 	s.recordAuditEvent(r, "test.notes.delete", "success", "test", testID, projectID, map[string]any{
 		"note_id": noteID,
 	})
-	s.syncTestNotesToArchiveAsync(testID)
+	s.scheduleTestNotesArchiveRefresh(testID)
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": noteID})
 }
 

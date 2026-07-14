@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useModalDialog } from '../hooks/useModalDialog'
 import './ConfirmDestructiveModal.css'
 
@@ -43,7 +43,17 @@ export default function ConfirmDestructiveModal({
   const [confirmation, setConfirmation] = useState('')
   const [force, setForce] = useState(false)
   const dialogRef = useRef<HTMLDivElement | null>(null)
-  useModalDialog({ dialogRef, onClose: loading ? undefined : onCancel })
+  const reasonInputRef = useRef<HTMLInputElement | null>(null)
+  const titleId = useId()
+  const descriptionId = useId()
+  const requestCancel = useCallback(() => {
+    if (!loading) onCancel()
+  }, [loading, onCancel])
+  useModalDialog({
+    dialogRef,
+    initialFocusRef: reasonInputRef,
+    onClose: loading ? undefined : requestCancel,
+  })
 
   useEffect(() => {
     setReason('')
@@ -54,14 +64,27 @@ export default function ConfirmDestructiveModal({
   const canSubmit = useMemo(() => reason.trim().length > 0 && confirmation.trim() === target && !loading, [confirmation, loading, reason, target])
 
   return (
-    <div className="modal-overlay" onClick={onCancel}>
-      <div ref={dialogRef} className="modal destructive-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="destructive-confirm-title" onClick={event => event.stopPropagation()}>
+    <div
+      className="modal-overlay"
+      role="presentation"
+      onPointerDown={event => {
+        if (event.target === event.currentTarget) requestCancel()
+      }}
+    >
+      <div
+        ref={dialogRef}
+        className="modal destructive-confirm-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={descriptionId}
+      >
         <div className="modal-header">
           <div>
-            <h3 id="destructive-confirm-title">{title}</h3>
-            <p className="page-subtitle">{description}</p>
+            <h3 id={titleId}>{title}</h3>
+            <p id={descriptionId} className="page-subtitle">{description}</p>
           </div>
-          <button type="button" className="btn btn-secondary btn-sm" onClick={onCancel} disabled={loading}>Close</button>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={requestCancel} disabled={loading}>Close</button>
         </div>
 
         <form
@@ -79,16 +102,16 @@ export default function ConfirmDestructiveModal({
           </div>
 
           {warning && <p className="destructive-warning">{warning}</p>}
-          {error && <p className="form-error">{error}</p>}
+          {error && <p className="form-error" role="alert">{error}</p>}
 
           <label>
             <span>Reason</span>
             <input
+              ref={reasonInputRef}
               value={reason}
               onChange={event => setReason(event.target.value)}
               placeholder="Operational reason"
               disabled={loading}
-              autoFocus
             />
           </label>
 
@@ -118,7 +141,7 @@ export default function ConfirmDestructiveModal({
           )}
 
           <div className="modal-actions">
-            <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={loading}>Cancel</button>
+            <button type="button" className="btn btn-secondary" onClick={requestCancel} disabled={loading}>Cancel</button>
             <button type="submit" className="btn btn-primary" disabled={!canSubmit}>
               {loading ? 'Working...' : confirmLabel}
             </button>

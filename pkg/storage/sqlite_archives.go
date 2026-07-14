@@ -11,12 +11,36 @@ import (
 	"time"
 )
 
+// ErrArchiveCleanupPending means retention/deletion has already installed a
+// durable tombstone, so archive metadata must not be (re)published.
+var ErrArchiveCleanupPending = errors.New("archive cleanup is pending")
+
 func (s *SQLiteStore) SaveRunArchive(record *RunArchiveRecord) error {
 	if record == nil {
 		return errors.New("run archive record is nil")
 	}
 	record.SchemaVersion = normalizeTelemetrySchemaVersion(record.SchemaVersion, archiveRecordSchemaVersion)
-	_, err := s.db.Exec(`INSERT INTO run_archives (test_id, ref_key, schema_version, archive_backend, archive_path, manifest_path, manifest_sha256, archive_uri, manifest_uri, transaction_count, resource_sample_count, interval_summary_count, created_at, completed_at)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	existenceQuery := `SELECT 1 FROM tests WHERE id = ?`
+	if s.db.dialect == storeDialectPostgres {
+		existenceQuery += ` FOR UPDATE`
+	}
+	var exists int
+	if err := tx.QueryRow(existenceQuery, record.TestID).Scan(&exists); err != nil {
+		return err
+	}
+	var cleanupExists int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM archive_cleanup_jobs WHERE test_id = ?`, record.TestID).Scan(&cleanupExists); err != nil {
+		return err
+	}
+	if cleanupExists != 0 {
+		return ErrArchiveCleanupPending
+	}
+	_, err = tx.Exec(`INSERT INTO run_archives (test_id, ref_key, schema_version, archive_backend, archive_path, manifest_path, manifest_sha256, archive_uri, manifest_uri, transaction_count, resource_sample_count, interval_summary_count, created_at, completed_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(test_id) DO UPDATE SET
 		ref_key=excluded.ref_key,
@@ -47,7 +71,10 @@ func (s *SQLiteStore) SaveRunArchive(record *RunArchiveRecord) error {
 		record.CreatedAt,
 		record.CompletedAt,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *SQLiteStore) GetRunArchive(testID string) (*RunArchiveRecord, error) {
@@ -73,6 +100,17 @@ func (s *SQLiteStore) GetRunArchive(testID string) (*RunArchiveRecord, error) {
 	}
 	record.SchemaVersion = normalizeTelemetrySchemaVersion(record.SchemaVersion, archiveRecordSchemaVersion)
 	return &record, nil
+}
+
+// DeleteRunArchive removes the persisted pointer to a run archive. Physical
+// archive data is deliberately deleted by the API's archive backend first so
+// a failed object-store deletion cannot be hidden by removing this record.
+func (s *SQLiteStore) DeleteRunArchive(testID string) error {
+	if strings.TrimSpace(testID) == "" {
+		return errors.New("test id is required")
+	}
+	_, err := s.db.Exec(`DELETE FROM run_archives WHERE test_id = ?`, testID)
+	return err
 }
 
 func (s *SQLiteStore) SaveReleaseSLAWaiver(waiver *ReleaseSLAWaiver) error {

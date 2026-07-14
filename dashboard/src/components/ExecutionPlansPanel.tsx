@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useExecutionPlansApi } from '../hooks/api/useExecutionPlansApi'
 import { ApiError } from '../hooks/apiClient'
+import { useModalDialog } from '../hooks/useModalDialog'
 import {
   ExecutionPlan,
   ExecutionPlanEntry,
@@ -108,6 +109,16 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, scen
   const [schedulesTarget, setSchedulesTarget] = useState<ExecutionPlan | null>(null)
   const [approvalsTarget, setApprovalsTarget] = useState<ExecutionPlan | null>(null)
   const [busy, setBusy] = useState(false)
+  const draftDialogRef = useRef<HTMLDivElement>(null)
+  const resultDialogRef = useRef<HTMLDivElement>(null)
+  const progressDialogRef = useRef<HTMLDivElement>(null)
+  const closeDraft = useCallback(() => setDraft(null), [])
+  const closeRunResult = useCallback(() => setRunResult(null), [])
+  const closePlanRun = useCallback(() => setPlanRun(null), [])
+
+  useModalDialog({ dialogRef: draftDialogRef, enabled: Boolean(draft), onClose: closeDraft })
+  useModalDialog({ dialogRef: resultDialogRef, enabled: Boolean(runResult), onClose: closeRunResult })
+  useModalDialog({ dialogRef: progressDialogRef, enabled: Boolean(planRun), onClose: closePlanRun })
 
   const load = useCallback(async () => {
     if (!projectId) {
@@ -349,7 +360,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, scen
         )}
       </div>
 
-      {error && <div className="pp-error">{error}</div>}
+      {error && <div className="pp-error" role="alert">{error}</div>}
 
       {!projectId ? (
         <div className="pp-empty">Select a project to view its execution plans.</div>
@@ -401,11 +412,11 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, scen
 
       {/* Create / edit modal */}
       {draft && (
-        <div className="pp-modal-overlay" onClick={() => setDraft(null)}>
-          <div className="pp-modal" onClick={event => event.stopPropagation()}>
+        <div className="pp-modal-overlay" onClick={closeDraft}>
+          <div ref={draftDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby="execution-plan-editor-title" onClick={event => event.stopPropagation()}>
             <div className="pp-modal-header">
-              <h3>{draft.id ? 'Edit Execution Plan' : 'New Execution Plan'}</h3>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setDraft(null)}>
+              <h3 id="execution-plan-editor-title">{draft.id ? 'Edit Execution Plan' : 'New Execution Plan'}</h3>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={closeDraft}>
                 Close
               </button>
             </div>
@@ -413,7 +424,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, scen
               <div className="pp-field-row">
                 <label className="pp-field">
                   <span>Name</span>
-                  <input value={draft.name} onChange={e => setDraft(d => (d ? { ...d, name: e.target.value } : d))} autoFocus placeholder="e.g. nightly regression" />
+                  <input value={draft.name} onChange={e => setDraft(d => (d ? { ...d, name: e.target.value } : d))} placeholder="e.g. nightly regression" />
                 </label>
                 <label className="pp-field">
                   <span>Run mode</span>
@@ -433,6 +444,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, scen
                       <div className="pp-entry-index">{index + 1}</div>
                       {scenarioOptions && scenarioOptions.length > 0 ? (
                         <select
+                          aria-label={`Entry ${index + 1} scenario`}
                           value={entry.scenario_id}
                           onChange={e => {
                             const opt = scenarioOptions.find(s => s.id === e.target.value)
@@ -447,9 +459,9 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, scen
                           ))}
                         </select>
                       ) : (
-                        <input value={entry.scenario_id} placeholder="scenario id" onChange={e => updateEntry(index, { scenario_id: e.target.value })} />
+                        <input aria-label={`Entry ${index + 1} scenario ID`} value={entry.scenario_id} placeholder="scenario id" onChange={e => updateEntry(index, { scenario_id: e.target.value })} />
                       )}
-                      <select value={entry.failure_policy} onChange={e => updateEntry(index, { failure_policy: e.target.value })} title="On failure">
+                      <select aria-label={`Entry ${index + 1} failure policy`} value={entry.failure_policy} onChange={e => updateEntry(index, { failure_policy: e.target.value })} title="On failure">
                         <option value="halt">halt</option>
                         <option value="skip">skip</option>
                       </select>
@@ -476,6 +488,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, scen
                         <label className="pp-entry-advanced-field">
                           <span>Timeslot</span>
                           <input
+                            aria-label={`Entry ${index + 1} timeslot ID`}
                             value={entry.timeslot_id}
                             placeholder="optional timeslot id"
                             onChange={e => updateEntry(index, { timeslot_id: e.target.value })}
@@ -485,8 +498,8 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, scen
                           <span className="pp-entry-advanced-label">Data pools</span>
                           {entry.data_pools.map((dp, di) => (
                             <div className="pp-entry-pool" key={di}>
-                              <input value={dp.pool_id} placeholder="pool id" onChange={e => updatePool(index, di, { pool_id: e.target.value })} />
-                              <input value={dp.alias} placeholder="alias" onChange={e => updatePool(index, di, { alias: e.target.value })} />
+                              <input aria-label={`Entry ${index + 1} data pool ${di + 1} ID`} value={dp.pool_id} placeholder="pool id" onChange={e => updatePool(index, di, { pool_id: e.target.value })} />
+                              <input aria-label={`Entry ${index + 1} data pool ${di + 1} alias`} value={dp.alias} placeholder="alias" onChange={e => updatePool(index, di, { alias: e.target.value })} />
                               <button type="button" className="btn btn-ghost btn-sm" onClick={() => removePool(index, di)} title="Remove data pool">
                                 ✕
                               </button>
@@ -506,7 +519,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, scen
               </div>
             </div>
             <div className="pp-modal-actions">
-              <button type="button" className="btn btn-secondary" onClick={() => setDraft(null)}>
+              <button type="button" className="btn btn-secondary" onClick={closeDraft}>
                 Cancel
               </button>
               <button type="button" className="btn btn-primary" disabled={!draftValid || busy} onClick={() => void submitDraft()}>
@@ -519,11 +532,11 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, scen
 
       {/* Run result modal */}
       {runResult && (
-        <div className="pp-modal-overlay" onClick={() => setRunResult(null)}>
-          <div className="pp-modal" onClick={event => event.stopPropagation()}>
+        <div className="pp-modal-overlay" onClick={closeRunResult}>
+          <div ref={resultDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby="execution-plan-result-title" onClick={event => event.stopPropagation()}>
             <div className="pp-modal-header">
-              <h3>Run “{runResult.plan}”</h3>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setRunResult(null)}>
+              <h3 id="execution-plan-result-title">Run “{runResult.plan}”</h3>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={closeRunResult}>
                 Close
               </button>
             </div>
@@ -555,7 +568,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, scen
               </div>
             </div>
             <div className="pp-modal-actions">
-              <button type="button" className="btn btn-primary" onClick={() => setRunResult(null)}>
+              <button type="button" className="btn btn-primary" onClick={closeRunResult}>
                 Done
               </button>
             </div>
@@ -565,16 +578,16 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, scen
 
       {/* Sequential plan-run progress modal (dependency-gated, polled live) */}
       {planRun && (
-        <div className="pp-modal-overlay" onClick={() => setPlanRun(null)}>
-          <div className="pp-modal" onClick={event => event.stopPropagation()}>
+        <div className="pp-modal-overlay" onClick={closePlanRun}>
+          <div ref={progressDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby="execution-plan-progress-title" onClick={event => event.stopPropagation()}>
             <div className="pp-modal-header">
-              <h3>
+              <h3 id="execution-plan-progress-title">
                 Run “{planRun.planName}”
-                <span className={runStatusPill(planRun.run.status)} style={{ marginLeft: 8 }}>
+                <span className={runStatusPill(planRun.run.status)} style={{ marginLeft: 8 }} role="status" aria-live="polite">
                   {planRun.run.status}
                 </span>
               </h3>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPlanRun(null)}>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={closePlanRun}>
                 Close
               </button>
             </div>
@@ -605,7 +618,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, scen
               </div>
             </div>
             <div className="pp-modal-actions">
-              <button type="button" className="btn btn-primary" onClick={() => setPlanRun(null)}>
+              <button type="button" className="btn btn-primary" onClick={closePlanRun}>
                 Done
               </button>
             </div>

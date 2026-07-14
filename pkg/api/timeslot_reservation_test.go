@@ -41,6 +41,10 @@ func storeBackedRunner(t *testing.T) (*TestRunner, *storage.SQLiteStore) {
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
+	now := time.Now().UTC()
+	if err := store.SaveProject(&storage.Project{ID: "proj-a", Name: "Project A", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
 	runner := NewTestRunner(100, NewHub(), store)
 	runner.StoreScript(&dsl.Script{
 		ID: "script-1", Name: "S", Protocol: "http", Version: "1",
@@ -170,7 +174,14 @@ func TestReservationAwareAdmissionBlocksOtherTenant(t *testing.T) {
 		t.Fatal("project-a holds the reservation and should admit its own run")
 	}
 
-	// Control: remove the timeslot → project-b is no longer blocked.
+	// Control: release and reject the timeslot before deleting it. Approved or
+	// bound reservations are intentionally protected from destructive deletion.
+	if changed, err := store.ClearCapacityReservationBinding("ts-a", "a-test", time.Now().UTC()); err != nil || !changed {
+		t.Fatalf("clear timeslot binding = %v, %v", changed, err)
+	}
+	if changed, err := store.UpdateCapacityReservationApprovalState("ts-a", []string{"approved"}, "rejected", time.Now().UTC()); err != nil || !changed {
+		t.Fatalf("reject timeslot = %v, %v", changed, err)
+	}
 	if err := store.DeleteCapacityReservation("ts-a"); err != nil {
 		t.Fatalf("delete timeslot: %v", err)
 	}

@@ -26,6 +26,19 @@ type executionLeaseStore interface {
 	TryAcquireSchedulerLease(name string, ownerID string, now time.Time, ttl time.Duration) (bool, error)
 }
 
+type leadershipCallbackKind uint8
+
+const (
+	leadershipCallbackAcquire leadershipCallbackKind = iota + 1
+	leadershipCallbackLoss
+)
+
+type leadershipCallbackEvent struct {
+	kind       leadershipCallbackKind
+	generation uint64
+	fn         func()
+}
+
 // executionLeadership coordinates which controller replica performs test
 // execution when more than one replica runs against a shared database (HA).
 //
@@ -47,27 +60,36 @@ type executionLeadership struct {
 
 	leader atomic.Bool
 
-	// reconcileMu guards the acquire-time reconcile lifecycle. At most one
-	// reconcile runs at a time; if leadership flaps (false->true->false->true)
-	// while one is in flight, the new request is COALESCED via reconcilePending
-	// and re-run when the in-flight one finishes — rather than dropped, which
-	// would leave the final takeover unreconciled.
-	reconcileMu      sync.Mutex
-	reconcileRunning bool
-	reconcilePending bool
+	// callbackMu guards the ordered leadership-transition callback worker.
+	// Loss cleanup and acquire-time reconciliation share this queue so a loss
+	// callback from an older generation always finishes before reconciliation
+	// for a newer generation. Consecutive acquire requests are coalesced while a
+	// reconcile is in flight, preserving the original bounded-work behavior.
+	callbackMu      sync.Mutex
+	callbackRunning bool
+	callbackQueue   []leadershipCallbackEvent
 
 	mu            sync.Mutex
 	onAcquire     func()
+	onLoss        func()
 	lastConfirmed time.Time // last time we positively held the lease
+	generation    uint64    // incremented on every leader/follower transition
+	pendingLoss   uint64    // queued or running loss callbacks blocking admission
+	operationCtx    context.Context
+	operationCancel context.CancelFunc
 }
 
 func newExecutionLeadership(store executionLeaseStore, ownerID string) *executionLeadership {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
 	return &executionLeadership{
 		store:   store,
 		ownerID: ownerID,
 		ttl:     defaultExecutionLeaseTTL,
 		renew:   defaultExecutionLeaseRenew,
 		now:     time.Now,
+		operationCtx: ctx,
+		operationCancel: cancel,
 	}
 }
 
@@ -83,26 +105,45 @@ func (l *executionLeadership) setOnAcquire(fn func()) {
 	l.mu.Unlock()
 }
 
+// setOnLoss registers a non-blocking cleanup callback for lease loss and
+// controller shutdown. The old leader still owns the live generator clients,
+// so it is the only replica that can reliably stop work before takeover.
+func (l *executionLeadership) setOnLoss(fn func()) {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	l.onLoss = fn
+	l.mu.Unlock()
+}
+
 // IsLeader reports whether this replica currently holds the execution lease. A
 // nil receiver is always the leader (single-node default).
 func (l *executionLeadership) IsLeader() bool {
 	if l == nil {
 		return true
 	}
-	if !l.leader.Load() {
+	now := l.now().UTC()
+	l.mu.Lock()
+	if !l.leader.Load() || l.pendingLoss > 0 {
+		l.mu.Unlock()
 		return false
 	}
 	// Defense in depth: if renewals have not positively confirmed the lease for
 	// longer than the TTL — e.g. the renewal goroutine is wedged on a blocking
 	// store call and can never reach the step-down path in tick() — fail closed
 	// rather than continue mutating shared execution state after the DB lease
-	// could already have been granted to another replica.
-	l.mu.Lock()
-	last := l.lastConfirmed
-	l.mu.Unlock()
-	if !last.IsZero() && l.now().UTC().Sub(last) >= l.ttl {
+	// could already have been granted to another replica. The freshness read and
+	// step-down decision stay under the same lock used by successful renewals;
+	// this prevents a stale snapshot from stepping down after a concurrent tick
+	// has already renewed the lease.
+	if !l.lastConfirmed.IsZero() && now.Sub(l.lastConfirmed) >= l.ttl {
+		l.transitionToFollowerLocked()
+		l.mu.Unlock()
+		slog.Warn("execution leadership expired without a successful renewal", "owner", l.ownerID)
 		return false
 	}
+	l.mu.Unlock()
 	return true
 }
 
@@ -112,6 +153,7 @@ func (l *executionLeadership) Run(ctx context.Context) {
 	if l == nil {
 		return
 	}
+	defer l.relinquish()
 	l.tick()
 	ticker := time.NewTicker(l.renew)
 	defer ticker.Stop()
@@ -139,8 +181,9 @@ func (l *executionLeadership) tick() {
 		// older than the TTL — bounding the split-brain window to the TTL.
 		l.mu.Lock()
 		stale := !l.lastConfirmed.IsZero() && now.Sub(l.lastConfirmed) >= l.ttl
+		steppedDown := stale && l.transitionToFollowerLocked()
 		l.mu.Unlock()
-		if stale && l.leader.CompareAndSwap(true, false) {
+		if steppedDown {
 			slog.Warn("execution leadership lost after lease renewal errors", "owner", l.ownerID)
 		}
 		slog.Warn("execution lease renewal failed", "owner", l.ownerID, "err", err)
@@ -148,7 +191,10 @@ func (l *executionLeadership) tick() {
 	}
 	if !acquired {
 		// Another replica holds an unexpired lease. We are not the leader.
-		if l.leader.CompareAndSwap(true, false) {
+		l.mu.Lock()
+		steppedDown := l.transitionToFollowerLocked()
+		l.mu.Unlock()
+		if steppedDown {
 			slog.Info("execution leadership relinquished to another replica", "owner", l.ownerID)
 		}
 		return
@@ -156,15 +202,84 @@ func (l *executionLeadership) tick() {
 	l.mu.Lock()
 	l.lastConfirmed = now
 	onAcquire := l.onAcquire
+	acquiredLeadership := false
+	if !l.leader.Load() {
+		if l.operationCancel != nil {
+			l.operationCancel()
+		}
+		l.operationCtx, l.operationCancel = context.WithCancel(context.Background())
+		l.leader.Store(true)
+		l.generation++
+		acquiredLeadership = true
+		// The ordered worker keeps the potentially long reconcile off the lease
+		// renewal goroutine while preserving transition order.
+		l.enqueueLeadershipCallback(leadershipCallbackEvent{
+			kind:       leadershipCallbackAcquire,
+			generation: l.generation,
+			fn:         onAcquire,
+		})
+	}
 	l.mu.Unlock()
-	if l.leader.CompareAndSwap(false, true) {
+	if acquiredLeadership {
 		slog.Info("execution leadership acquired", "owner", l.ownerID)
-		// Run the acquire-time reconcile OFF the renewal goroutine. It can reload
-		// the full test set and run synchronous per-group script shakeouts (up to
-		// ~30s each), which is longer than the lease TTL; if it ran inline it would
-		// block lease renewal and let the lease this replica just acquired expire
-		// mid-takeover, admitting a second leader (split-brain).
-		l.triggerReconcile(onAcquire)
+	}
+}
+
+func (l *executionLeadership) relinquish() {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	l.transitionToFollowerLocked()
+	l.mu.Unlock()
+}
+
+// transitionToFollowerLocked records a leadership loss and enqueues its
+// cleanup callback in generation order. l.mu must be held by the caller.
+func (l *executionLeadership) transitionToFollowerLocked() bool {
+	if !l.leader.Load() {
+		return false
+	}
+	l.leader.Store(false)
+	if l.operationCancel != nil {
+		// Cancel object-store publication/deletion synchronously with admission
+		// closing. A stale leader must not finish an in-flight catalog or outbox
+		// commit after another replica can acquire the lease.
+		l.operationCancel()
+	}
+	l.generation++
+	l.pendingLoss++
+	l.enqueueLeadershipCallback(leadershipCallbackEvent{
+		kind:       leadershipCallbackLoss,
+		generation: l.generation,
+		fn:         l.onLoss,
+	})
+	return true
+}
+
+// operationContext combines caller cancellation with the current leadership
+// epoch. The epoch is cancelled synchronously on lease loss and never reused on
+// reacquisition, so an old operation cannot resume under a newer lease.
+func (l *executionLeadership) operationContext(parent context.Context) (context.Context, context.CancelFunc) {
+	if parent == nil {
+		parent = context.Background()
+	}
+	if l == nil {
+		return context.WithCancel(parent)
+	}
+	l.mu.Lock()
+	epoch := l.operationCtx
+	active := l.leader.Load() && l.pendingLoss == 0 && epoch != nil
+	l.mu.Unlock()
+	ctx, cancel := context.WithCancel(parent)
+	if !active {
+		cancel()
+		return ctx, cancel
+	}
+	stop := context.AfterFunc(epoch, cancel)
+	return ctx, func() {
+		stop()
+		cancel()
 	}
 }
 
@@ -176,31 +291,91 @@ func (l *executionLeadership) triggerReconcile(onAcquire func()) {
 	if onAcquire == nil {
 		return
 	}
-	l.reconcileMu.Lock()
-	l.reconcilePending = true
-	if l.reconcileRunning {
-		// A worker is already running; it will observe reconcilePending and re-run.
-		l.reconcileMu.Unlock()
+	l.enqueueLeadershipCallback(leadershipCallbackEvent{
+		kind: leadershipCallbackAcquire,
+		fn:   onAcquire,
+	})
+}
+
+// enqueueLeadershipCallback appends a transition callback to the single
+// ordered worker. State transitions invoke this while holding l.mu, which makes
+// queue insertion follow generation assignment exactly; the worker never holds
+// callbackMu while invoking callbacks or consulting leadership state.
+func (l *executionLeadership) enqueueLeadershipCallback(event leadershipCallbackEvent) {
+	// Loss events must be queued even without a registered callback: their
+	// completion releases the admission gate established by the transition.
+	if event.fn == nil && event.kind != leadershipCallbackLoss {
 		return
 	}
-	l.reconcileRunning = true
-	l.reconcileMu.Unlock()
+	l.callbackMu.Lock()
+	if event.kind == leadershipCallbackAcquire && len(l.callbackQueue) > 0 && l.callbackQueue[len(l.callbackQueue)-1].kind == leadershipCallbackAcquire {
+		// Keep only the newest of consecutive pending acquire callbacks. A loss
+		// event is an ordering barrier and is never crossed by coalescing.
+		l.callbackQueue[len(l.callbackQueue)-1] = event
+		l.callbackMu.Unlock()
+		return
+	}
+	l.callbackQueue = append(l.callbackQueue, event)
+	if l.callbackRunning {
+		l.callbackMu.Unlock()
+		return
+	}
+	l.callbackRunning = true
+	l.callbackMu.Unlock()
 
 	go func() {
 		for {
-			l.reconcileMu.Lock()
-			if !l.reconcilePending {
-				// No pending request: clear the running flag under the lock so a
-				// concurrent triggerReconcile either sees running=true (and sets
-				// pending, which we'd miss) — avoided because we re-check pending
-				// here before releasing — or sees running=false and starts fresh.
-				l.reconcileRunning = false
-				l.reconcileMu.Unlock()
+			l.callbackMu.Lock()
+			if len(l.callbackQueue) == 0 {
+				l.callbackRunning = false
+				l.callbackMu.Unlock()
 				return
 			}
-			l.reconcilePending = false
-			l.reconcileMu.Unlock()
-			onAcquire()
+			event := l.callbackQueue[0]
+			l.callbackQueue = l.callbackQueue[1:]
+			l.callbackMu.Unlock()
+
+			if event.kind == leadershipCallbackLoss {
+				if event.fn != nil {
+					event.fn()
+				}
+				l.completeLossCallback()
+				continue
+			}
+			if l.shouldRunLeadershipCallback(event) {
+				event.fn()
+			}
 		}
 	}()
+}
+
+// shouldRunLeadershipCallback drops acquire callbacks superseded before they
+// begin. Loss cleanup is never dropped: even after reacquisition it must run
+// before the newer acquire callback can reconcile live work safely. Generation
+// zero is reserved for direct triggerReconcile calls in tests; those bypass the
+// leader-generation check but still respect the pending-loss admission gate.
+func (l *executionLeadership) shouldRunLeadershipCallback(event leadershipCallbackEvent) bool {
+	if event.kind != leadershipCallbackAcquire {
+		return true
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.pendingLoss > 0 {
+		return false
+	}
+	if event.generation == 0 {
+		return true
+	}
+	return l.leader.Load() && l.generation == event.generation
+}
+
+// completeLossCallback opens admission only after one queued/running cleanup
+// has fully returned. The internal leader bit may already be true because tick
+// must keep renewing a reacquired lease while cleanup drains.
+func (l *executionLeadership) completeLossCallback() {
+	l.mu.Lock()
+	if l.pendingLoss > 0 {
+		l.pendingLoss--
+	}
+	l.mu.Unlock()
 }

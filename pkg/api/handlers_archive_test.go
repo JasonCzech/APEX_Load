@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -273,6 +274,39 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 		groups, ok := payload.Filters["groups"].([]any)
 		if !ok || len(groups) != 2 || groups[0] != "Wikipedia" || groups[1] != "BBC" {
 			t.Fatalf("filters.groups = %#v, want Wikipedia and BBC", payload.Filters["groups"])
+		}
+	})
+
+	t.Run("summaries group filter supports bounded sampling", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/summaries?sample_limit="+strconv.Itoa(minArchiveSampleLimit)+"&groups=Wikipedia,BBC", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusOK {
+			t.Fatalf("sampled summaries group filter status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+		}
+		var payload struct {
+			Summaries []IntervalSummaryRecord `json:"summaries"`
+			Count     int                     `json:"count"`
+			Total     int                     `json:"total"`
+			Limit     int                     `json:"limit"`
+			Offset    int                     `json:"offset"`
+			Sampled   bool                    `json:"sampled"`
+			Filters   struct {
+				Groups []string `json:"groups"`
+			} `json:"filters"`
+		}
+		if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+			t.Fatalf("unmarshal sampled group summaries: %v", err)
+		}
+		if !payload.Sampled || payload.Limit != minArchiveSampleLimit || payload.Offset != 0 {
+			t.Fatalf("sample metadata = sampled %v limit %d offset %d, want true/%d/0", payload.Sampled, payload.Limit, payload.Offset, minArchiveSampleLimit)
+		}
+		if payload.Count != len(payload.Summaries) || payload.Count > minArchiveSampleLimit || payload.Total < payload.Count {
+			t.Fatalf("sample counts = count %d len %d total %d, want a bounded response", payload.Count, len(payload.Summaries), payload.Total)
+		}
+		if len(payload.Filters.Groups) != 2 || payload.Filters.Groups[0] != "Wikipedia" || payload.Filters.Groups[1] != "BBC" {
+			t.Fatalf("sample filters.groups = %#v, want Wikipedia and BBC", payload.Filters.Groups)
 		}
 	})
 

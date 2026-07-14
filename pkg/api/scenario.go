@@ -7,6 +7,7 @@ package api
 
 import (
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -15,10 +16,16 @@ import (
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
+type scenarioScheduleCASPersistence interface {
+	CreateScenarioScheduleIfAbsent(schedule *storage.ScenarioSchedule) (bool, error)
+	UpdateScenarioScheduleIfRevision(schedule *storage.ScenarioSchedule, expectedRevision int) (bool, error)
+}
+
 func (tr *TestRunner) StoreScenario(req CreateScenarioRequest) (*StoredScenario, error) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
-	return tr.storeScenarioLocked(uuid.New().String(), req)
+	stored, err := tr.storeScenarioLocked(uuid.New().String(), req)
+	return cloneStoredScenarioForReadLocked(stored), err
 }
 
 func (tr *TestRunner) UpdateScenario(id string, req CreateScenarioRequest) (*StoredScenario, bool, error) {
@@ -29,7 +36,7 @@ func (tr *TestRunner) UpdateScenario(id string, req CreateScenarioRequest) (*Sto
 		return nil, false, nil
 	}
 	scenario, err := tr.storeScenarioLocked(id, req)
-	return scenario, true, err
+	return cloneStoredScenarioForReadLocked(scenario), true, err
 }
 
 func (tr *TestRunner) storeScenarioLocked(id string, req CreateScenarioRequest) (*StoredScenario, error) {
@@ -44,6 +51,11 @@ func (tr *TestRunner) storeScenarioLocked(id string, req CreateScenarioRequest) 
 	// clobbers a stored Env secret and never reaches the engine. Keyed by stable
 	// group identity, not array index (reorder-safe).
 	existing := tr.scenarios[id]
+	if existing != nil {
+		if err := tr.projectDeletionErrorLocked(existing.ProjectID); err != nil {
+			return nil, err
+		}
+	}
 	req.RuntimeSettings = reconcileGroupRuntimeSecrets(req.RuntimeSettings, existingRootRuntime(existing))
 	for i := range req.Groups {
 		req.Groups[i].RuntimeSettings = reconcileGroupRuntimeSecrets(req.Groups[i].RuntimeSettings, existingGroupRuntime(existing, req.Groups[i]))
@@ -113,16 +125,34 @@ func (tr *TestRunner) storeScenarioLocked(id string, req CreateScenarioRequest) 
 			Assignment:      generatorAssignmentForStorage(group.Assignment),
 		})
 	}
+	projectID, singleProject := tr.scenarioProjectIDFromScriptsLocked(scripts)
+	if !singleProject {
+		return nil, fmt.Errorf("scenario scripts span multiple projects")
+	}
+	if err := tr.projectDeletionErrorLocked(projectID); err != nil {
+		return nil, err
+	}
 	dataPools, err := normalizeScenarioDataPoolBindings(id, req.DataPools)
 	if err != nil {
 		return nil, err
 	}
+	if err := tr.validateDataPoolProjectsLocked(projectID, dataPools); err != nil {
+		return nil, err
+	}
 	if tr.scenarioStore != nil {
-		if err := tr.scenarioStore.SaveScenario(scenario, scripts); err != nil {
-			return nil, err
-		}
-		if err := tr.scenarioStore.SaveScenarioDataPoolBindings(id, dataPools); err != nil {
-			return nil, err
+		if atomicStore, ok := tr.scenarioStore.(atomicScenarioPersistence); ok {
+			if err := atomicStore.SaveScenarioWithDataPoolBindings(scenario, scripts, dataPools); err != nil {
+				return nil, err
+			}
+		} else {
+			// Non-SQL test/adaptor stores retain the legacy two-call contract.
+			// Production SQLite/PostgreSQL stores implement the atomic interface.
+			if err := tr.scenarioStore.SaveScenario(scenario, scripts); err != nil {
+				return nil, err
+			}
+			if err := tr.scenarioStore.SaveScenarioDataPoolBindings(id, dataPools); err != nil {
+				return nil, err
+			}
 		}
 	}
 	stored := tr.buildStoredScenario(scenario, scripts)
@@ -192,6 +222,18 @@ func (tr *TestRunner) GetScenario(id string) (*StoredScenario, bool) {
 	return tr.enrichScenarioSummaryLocked(scenario), true
 }
 
+func (tr *TestRunner) replaceScenarioDataPools(id string, bindings []storage.ScenarioDataPoolBinding) bool {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	id = tr.resolveRefKeyLocked(id)
+	scenario := tr.scenarios[id]
+	if scenario == nil {
+		return false
+	}
+	scenario.DataPools = append([]storage.ScenarioDataPoolBinding(nil), bindings...)
+	return true
+}
+
 func (tr *TestRunner) ListScenarios() []*StoredScenario {
 	tr.mu.RLock()
 	defer tr.mu.RUnlock()
@@ -218,24 +260,31 @@ func (tr *TestRunner) ListScenariosFiltered(projectID string) []*StoredScenario 
 }
 
 func (tr *TestRunner) DeleteScenario(id string) bool {
+	deleted, _ := tr.DeleteScenarioDurable(id)
+	return deleted
+}
+
+func (tr *TestRunner) DeleteScenarioDurable(id string) (bool, error) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	id = tr.resolveRefKeyLocked(id)
 	scenario, ok := tr.scenarios[id]
 	if !ok {
-		return false
+		return false, nil
 	}
 	for _, test := range tr.tests {
 		if test.ScenarioID == id {
-			return false
+			return false, nil
+		}
+	}
+	if tr.scenarioStore != nil {
+		if err := tr.scenarioStore.DeleteScenario(id); err != nil {
+			return false, err
 		}
 	}
 	tr.removeRefKeyLocked(scenario.RefKey)
 	delete(tr.scenarios, id)
-	if tr.scenarioStore != nil {
-		_ = tr.scenarioStore.DeleteScenario(id)
-	}
-	return true
+	return true, nil
 }
 
 func (tr *TestRunner) saveScenarioScheduleLocked(schedule *storage.ScenarioSchedule) error {
@@ -246,16 +295,37 @@ func (tr *TestRunner) saveScenarioScheduleLocked(schedule *storage.ScenarioSched
 	if !ok {
 		return fmt.Errorf("scenario not found: %s", schedule.ScenarioID)
 	}
+	existingIndex := -1
+	expectedRevision := 0
+	for index, existing := range scenario.Schedules {
+		if existing != nil && existing.ID == schedule.ID {
+			existingIndex = index
+			expectedRevision = existing.Revision
+			break
+		}
+	}
 	if tr.scenarioStore != nil {
-		if err := tr.scenarioStore.SaveScenarioSchedule(schedule); err != nil {
+		if casStore, ok := tr.scenarioStore.(scenarioScheduleCASPersistence); ok {
+			var changed bool
+			var err error
+			if existingIndex < 0 {
+				changed, err = casStore.CreateScenarioScheduleIfAbsent(schedule)
+			} else {
+				changed, err = casStore.UpdateScenarioScheduleIfRevision(schedule, expectedRevision)
+			}
+			if err != nil {
+				return err
+			}
+			if !changed {
+				return fmt.Errorf("scenario schedule %q changed or was deleted; reload and retry", schedule.ID)
+			}
+		} else if err := tr.scenarioStore.SaveScenarioSchedule(schedule); err != nil {
 			return err
 		}
 	}
-	for index, existing := range scenario.Schedules {
-		if existing != nil && existing.ID == schedule.ID {
-			scenario.Schedules[index] = cloneScenarioSchedule(schedule)
-			return nil
-		}
+	if existingIndex >= 0 {
+		scenario.Schedules[existingIndex] = cloneScenarioSchedule(schedule)
+		return nil
 	}
 	scenario.Schedules = append(scenario.Schedules, cloneScenarioSchedule(schedule))
 	return nil
@@ -309,7 +379,7 @@ func (tr *TestRunner) recordScenarioScheduleOccurrenceAuditLocked(occurrence *st
 	if occurrence.ConflictSummary != "" {
 		details["conflict_summary"] = occurrence.ConflictSummary
 	}
-	_ = tr.scenarioStore.SaveAuditEvent(&storage.AuditEvent{
+	if err := tr.scenarioStore.SaveAuditEvent(&storage.AuditEvent{
 		ID:               uuid.New().String(),
 		Action:           action,
 		ActorType:        "system",
@@ -321,7 +391,9 @@ func (tr *TestRunner) recordScenarioScheduleOccurrenceAuditLocked(occurrence *st
 		Status:           status,
 		Details:          details,
 		CreatedAt:        time.Now().UTC(),
-	})
+	}); err != nil {
+		slog.Warn("failed to persist scenario-scheduler audit event", "occurrence_id", occurrence.ID, "action", action, "error", err)
+	}
 }
 
 func scenarioScheduleOccurrenceAuditAction(occurrenceStatus string) (string, string, bool) {
@@ -487,8 +559,7 @@ func (tr *TestRunner) enrichScenarioSummaryLocked(scenario *StoredScenario) *Sto
 	if scenario == nil {
 		return nil
 	}
-	copy := *scenario
-	copy.Scripts = cloneScenarioScriptRefs(scenario.Scripts)
+	copy := cloneStoredScenarioForReadLocked(scenario)
 	releaseSet := map[string]ReleaseRef{}
 	var lastRunTestID string
 	var lastRunStartedAt *time.Time
@@ -520,5 +591,29 @@ func (tr *TestRunner) enrichScenarioSummaryLocked(scenario *StoredScenario) *Sto
 	copy.LastRunTestID = lastRunTestID
 	copy.LastRunAt = lastRunStartedAt
 	copy.LastRunEndedAt = lastRunEndedAt
-	return &copy
+	return copy
+}
+
+// cloneStoredScenarioForReadLocked returns a snapshot that shares no mutable
+// pointers, slices, or maps with the runner's canonical scenario. Callers hold
+// tr.mu while taking the snapshot, then may safely encode or mutate it after
+// the lock is released.
+func cloneStoredScenarioForReadLocked(scenario *StoredScenario) *StoredScenario {
+	if scenario == nil {
+		return nil
+	}
+	cloned := *scenario
+	cloned.Assignment = cloneGeneratorAssignmentSettings(scenario.Assignment)
+	cloned.GoalConfig = cloneGoalConfig(scenario.GoalConfig)
+	cloned.RuntimeSettings = cloneRuntimeSettings(scenario.RuntimeSettings)
+	cloned.Scripts = cloneScenarioScriptRefs(scenario.Scripts)
+	cloned.Schedules = make([]*storage.ScenarioSchedule, len(scenario.Schedules))
+	for index, schedule := range scenario.Schedules {
+		cloned.Schedules[index] = cloneScenarioSchedule(schedule)
+	}
+	cloned.DataPools = append([]storage.ScenarioDataPoolBinding(nil), scenario.DataPools...)
+	cloned.AssociatedReleases = append([]ReleaseRef(nil), scenario.AssociatedReleases...)
+	cloned.LastRunAt = cloneTimePtr(scenario.LastRunAt)
+	cloned.LastRunEndedAt = cloneTimePtr(scenario.LastRunEndedAt)
+	return &cloned
 }

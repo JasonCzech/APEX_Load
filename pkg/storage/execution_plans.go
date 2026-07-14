@@ -119,9 +119,8 @@ func (e ExecutionPlanEntry) IsEnabled() bool {
 
 // ExecutionPlanRun is a single materialization of an execution plan. Sequential
 // runs advance entry-by-entry, gated on each run reaching a terminal state; the
-// row is persisted at every transition so progress survives a dashboard reload.
-// Live orchestration is in-memory on the TestRunner, so an in-flight run is
-// orphaned on controller restart exactly as in-flight tests are.
+// row is persisted at every transition so progress survives both dashboard
+// reloads and controller/leadership failover.
 type ExecutionPlanRun struct {
 	ID          string                  `json:"id"`
 	PlanID      string                  `json:"plan_id"`
@@ -129,6 +128,7 @@ type ExecutionPlanRun struct {
 	RunMode     string                  `json:"run_mode"` // parallel | sequential
 	Status      string                  `json:"status"`   // running | completed | halted | failed
 	Entries     []ExecutionPlanRunEntry `json:"entries"`
+	Revision    int64                   `json:"revision,omitempty"`
 	CreatedAt   time.Time               `json:"created_at"`
 	UpdatedAt   time.Time               `json:"updated_at"`
 	CompletedAt *time.Time              `json:"completed_at,omitempty"`
@@ -142,4 +142,17 @@ type ExecutionPlanRunEntry struct {
 	TestID       string `json:"test_id,omitempty"`
 	Status       string `json:"status"` // pending | running | complete | failed | skipped
 	Detail       string `json:"detail,omitempty"`
+
+	// The remaining fields are the immutable materialization snapshot needed to
+	// resume a sequential run after a controller restart. They live inside the
+	// existing entries_json column, so adding them requires no SQL migration and
+	// old rows remain readable (their zero values use the safe halt policy).
+	FailurePolicy    string                    `json:"failure_policy,omitempty"`
+	RuntimeOverrides json.RawMessage           `json:"runtime_overrides,omitempty"`
+	DataPools        []ScenarioDataPoolBinding `json:"data_pools,omitempty"`
+	TimeslotID       *string                   `json:"timeslot_id,omitempty"`
+	RunName          string                    `json:"run_name,omitempty"`
+	AttribSubject    string                    `json:"attrib_subject,omitempty"`
+	AttribName       string                    `json:"attrib_name,omitempty"`
+	ApprovalID       string                    `json:"approval_id,omitempty"`
 }

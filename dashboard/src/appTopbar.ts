@@ -38,7 +38,7 @@ export function pageTitleForView(view: AppView, options: TopbarPageTitleOptions 
     case 'results':
       return 'Results Library'
     case 'monitoring':
-      return 'Monitoring'
+      return view.category === 'telemetry' ? 'Telemetry' : 'Monitoring'
     case 'fleet':
       return 'Fleet'
     case 'schedules':
@@ -49,6 +49,8 @@ export function pageTitleForView(view: AppView, options: TopbarPageTitleOptions 
       return 'Swagger Docs'
     case 'repository-guide':
       return 'Repository Guide'
+    case 'recorder-panel':
+      return 'Browser Recorder'
     case 'access':
       return 'Access'
     case 'settings':

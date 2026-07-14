@@ -63,4 +63,17 @@ describe('AboutDialog', () => {
     await act(async () => { closeBtn?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     expect(onClose).toHaveBeenCalled()
   })
+
+  it('exposes dialog semantics and closes from Escape', async () => {
+    const onClose = vi.fn()
+    await act(async () => { root.render(<AboutDialog open onClose={onClose} />) })
+
+    const dialog = container.querySelector('[role="dialog"]')
+    expect(dialog?.getAttribute('aria-labelledby')).toBe('about-dialog-title')
+
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
 })

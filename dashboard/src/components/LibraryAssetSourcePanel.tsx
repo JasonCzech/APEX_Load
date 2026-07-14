@@ -25,7 +25,7 @@ type LibraryAssetRow = {
   syncStatus: string
 }
 
-type LibraryAssetSortField = 'source' | 'name' | 'status' | 'release' | 'metadata'
+type LibraryAssetSortField = 'source' | 'name' | 'status' | 'release' | 'execution_run_date' | 'metadata'
 
 const KIND_LABELS: Record<LibraryKind, string> = {
   script: 'Scripts',
@@ -108,8 +108,10 @@ function sortValue(row: LibraryAssetRow, field: LibraryAssetSortField): string |
       return displayStatus(row).toLowerCase()
     case 'release':
       return releaseLabel(row.item).toLowerCase()
+    case 'execution_run_date':
+      return Date.parse(executionRunDate(row.item) || '') || 0
     case 'metadata':
-      return Date.parse(row.item.kind === 'result' ? executionRunDate(row.item) || '' : row.item.updated_at || '') || 0
+      return Date.parse(row.item.updated_at || '') || 0
     case 'name':
     default:
       return (row.item.name || row.item.id || '').toLowerCase()
@@ -159,9 +161,15 @@ export default function LibraryAssetSourcePanel({
   const rows = useMemo(() => [...localRows, ...remoteRows], [localRows, remoteRows])
   const showReleaseControls = kind === 'result'
   const [releaseFilter, setReleaseFilter] = useState('all')
-  const [sortField, setSortField] = useState<LibraryAssetSortField>('metadata')
+  const [sortField, setSortField] = useState<LibraryAssetSortField>(showReleaseControls ? 'execution_run_date' : 'metadata')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
   const [selectedRowKey, setSelectedRowKey] = useState<string | null>(null)
+
+  useEffect(() => {
+    setReleaseFilter('all')
+    setSortField(showReleaseControls ? 'execution_run_date' : 'metadata')
+    setSortDirection('desc')
+  }, [showReleaseControls])
 
   const releaseOptions = useMemo(() => {
     const options = new Map<string, string>()
@@ -205,8 +213,12 @@ export default function LibraryAssetSourcePanel({
       return
     }
     setSortField(field)
-    setSortDirection(field === 'metadata' ? 'desc' : 'asc')
+    setSortDirection(field === 'metadata' || field === 'execution_run_date' ? 'desc' : 'asc')
   }
+
+  const ariaSort = (field: LibraryAssetSortField): 'ascending' | 'descending' | 'none' => (
+    sortField === field ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none'
+  )
 
   return (
     <div className="library-source-panel">
@@ -236,17 +248,17 @@ export default function LibraryAssetSourcePanel({
         <table className="library-source-table">
           <thead>
             <tr>
-              <th onClick={() => handleSort('source')} className="sortable">Source <SortIndicator active={sortField === 'source'} direction={sortDirection} /></th>
-              <th onClick={() => handleSort('name')} className="sortable">Name <SortIndicator active={sortField === 'name'} direction={sortDirection} /></th>
-              <th onClick={() => handleSort('status')} className="sortable">Status <SortIndicator active={sortField === 'status'} direction={sortDirection} /></th>
+              <th scope="col" aria-sort={ariaSort('source')} className="sortable"><button type="button" onClick={() => handleSort('source')}>Source <SortIndicator active={sortField === 'source'} direction={sortDirection} /></button></th>
+              <th scope="col" aria-sort={ariaSort('name')} className="sortable"><button type="button" onClick={() => handleSort('name')}>Name <SortIndicator active={sortField === 'name'} direction={sortDirection} /></button></th>
+              <th scope="col" aria-sort={ariaSort('status')} className="sortable"><button type="button" onClick={() => handleSort('status')}>Status <SortIndicator active={sortField === 'status'} direction={sortDirection} /></button></th>
               {showReleaseControls && (
-                <th onClick={() => handleSort('release')} className="sortable">Release <SortIndicator active={sortField === 'release'} direction={sortDirection} /></th>
+                <th scope="col" aria-sort={ariaSort('release')} className="sortable"><button type="button" onClick={() => handleSort('release')}>Release <SortIndicator active={sortField === 'release'} direction={sortDirection} /></button></th>
               )}
               {showReleaseControls && (
-                <th onClick={() => handleSort('metadata')} className="sortable">Execution Run Date <SortIndicator active={sortField === 'metadata'} direction={sortDirection} /></th>
+                <th scope="col" aria-sort={ariaSort('execution_run_date')} className="sortable"><button type="button" onClick={() => handleSort('execution_run_date')}>Execution Run Date <SortIndicator active={sortField === 'execution_run_date'} direction={sortDirection} /></button></th>
               )}
-              <th onClick={() => handleSort('metadata')} className="sortable">Metadata <SortIndicator active={sortField === 'metadata'} direction={sortDirection} /></th>
-              <th>Actions</th>
+              <th scope="col" aria-sort={ariaSort('metadata')} className="sortable"><button type="button" onClick={() => handleSort('metadata')}>Metadata <SortIndicator active={sortField === 'metadata'} direction={sortDirection} /></button></th>
+              <th scope="col">Actions</th>
             </tr>
           </thead>
           <tbody>

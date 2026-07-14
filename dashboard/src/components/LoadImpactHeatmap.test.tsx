@@ -115,6 +115,41 @@ describe('LoadImpactHeatmap', () => {
     expect(container.textContent).toContain('2/3 loads')
   })
 
+  it('traps drawer focus, closes on Escape, and restores the Configure Map trigger', async () => {
+    await act(async () => {
+      root.render(
+        <LoadImpactHeatmap
+          points={[
+            point('10:00:00', 5, { avgMs: 100, tps: 3 }),
+            point('10:00:01', 10, { avgMs: 140, tps: 4 }),
+          ]}
+        />,
+      )
+    })
+
+    const configureButton = buttonByText('Configure Map')
+    configureButton?.focus()
+    await act(async () => configureButton?.click())
+    await flushFocus()
+
+    const drawer = container.querySelector<HTMLElement>('.load-impact-graph-drawer')
+    const closeButton = drawer?.querySelector<HTMLButtonElement>('.load-impact-graph-drawer-header button')
+    expect(drawer?.getAttribute('aria-modal')).toBe('true')
+    expect(document.activeElement).toBe(closeButton)
+
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true }))
+    })
+    expect(drawer?.contains(document.activeElement)).toBe(true)
+    expect(document.activeElement).not.toBe(closeButton)
+
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    expect(container.querySelector('.load-impact-graph-drawer')).toBeNull()
+    expect(document.activeElement).toBe(configureButton)
+  })
+
   it('sorts heatmap rows from metric and VUser load column headers', async () => {
     await act(async () => {
       root.render(
@@ -294,6 +329,12 @@ describe('LoadImpactHeatmap', () => {
     return container.querySelector<HTMLTableCellElement>('.load-impact-table tbody th[data-axis-active="true"]')
   }
 })
+
+async function flushFocus() {
+  await act(async () => {
+    await new Promise(resolve => window.setTimeout(resolve, 0))
+  })
+}
 
 function point(time: string, vusers: number, values: Partial<MetricsHistoryPoint> = {}): MetricsHistoryPoint {
   return {

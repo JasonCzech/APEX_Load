@@ -39,6 +39,12 @@ jobs:
           set -euo pipefail
           cd dashboard
           npm ci
+          npx tsc --noEmit --pretty false
+          npm run lint
+          npm run lint:a11y
+          npm test
+          npm run test:bundle-budget
+          npm run bundle:check
           npm run build
 
       # Build a static linux/amd64 controller binary.

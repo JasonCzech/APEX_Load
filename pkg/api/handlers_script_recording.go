@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -90,6 +91,14 @@ func baselineObservations(record *storage.ScriptRecordingRecord) []correlate.Obs
 		return nil
 	}
 	stored := record.CorrelationObservations
+	if encrypted := strings.TrimSpace(record.EncryptedCorrelationObservations); encrypted != "" {
+		if payload, err := decryptRecordingBaseline(encrypted); err == nil {
+			var decrypted []storage.ScriptRecordingObservation
+			if json.Unmarshal(payload, &decrypted) == nil {
+				stored = decrypted
+			}
+		}
+	}
 	if len(stored) == 0 {
 		stored = record.Observations
 	}

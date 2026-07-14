@@ -60,6 +60,8 @@ type authoringCorrelationPreviewItem struct {
 }
 
 func (s *Server) handlePreviewAuthoringCorrelation(w http.ResponseWriter, r *http.Request) {
+	s.authoringMutationMu.Lock()
+	defer s.authoringMutationMu.Unlock()
 	session, ok := s.getAuthoringSession(w, r.PathValue("id"))
 	if !ok {
 		return
@@ -72,6 +74,16 @@ func (s *Server) handlePreviewAuthoringCorrelation(w http.ResponseWriter, r *htt
 	var req authoringCorrelationPreviewRequest
 	if !decodeJSONBody(w, r, &req) {
 		return
+	}
+	if req.Apply {
+		switch session.Status {
+		case "approving":
+			writeError(w, http.StatusConflict, "authoring session approval is in progress")
+			return
+		case "approved":
+			writeError(w, http.StatusConflict, "approved authoring sessions are immutable")
+			return
+		}
 	}
 	if len(req.Repairs) > 0 {
 		s.handleBatchAuthoringCorrelationPreview(w, r, session, req)
@@ -92,6 +104,8 @@ func (s *Server) handlePreviewAuthoringCorrelation(w http.ResponseWriter, r *htt
 	validation := buildScriptValidationResponse("", draft)
 
 	if req.Apply {
+		expectedUpdatedAt := session.UpdatedAt
+		expectedStatus := session.Status
 		session.Draft = draft
 		session.Status = "editing"
 		session.UpdatedAt = time.Now()
@@ -106,8 +120,13 @@ func (s *Server) handlePreviewAuthoringCorrelation(w http.ResponseWriter, r *htt
 			"applied_at":   session.UpdatedAt.Format(time.RFC3339Nano),
 			"health_state": validation.AuthoringHealth.Status,
 		}
-		if err := s.saveAuthoringSession(session); err != nil {
+		saved, err := s.compareAndSwapAuthoringSession(session, expectedUpdatedAt, expectedStatus)
+		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if !saved {
+			writeError(w, http.StatusConflict, "authoring session changed while correlation repairs were applied")
 			return
 		}
 		s.recordAuditEvent(r, "script.authoring_session.correlation.apply", "success", "authoring_session", session.ID, session.ProjectID, map[string]any{"name": extractor.Name, "changes": len(changes)})
@@ -193,6 +212,8 @@ func (s *Server) handleBatchAuthoringCorrelationPreview(w http.ResponseWriter, r
 
 	validation := buildScriptValidationResponse("", draft)
 	if req.Apply && appliedCount > 0 {
+		expectedUpdatedAt := session.UpdatedAt
+		expectedStatus := session.Status
 		session.Draft = draft
 		session.Status = "editing"
 		session.UpdatedAt = time.Now()
@@ -209,8 +230,13 @@ func (s *Server) handleBatchAuthoringCorrelationPreview(w http.ResponseWriter, r
 			"applied_at":      session.UpdatedAt.Format(time.RFC3339Nano),
 			"health_state":    validation.AuthoringHealth.Status,
 		}
-		if err := s.saveAuthoringSession(session); err != nil {
+		saved, err := s.compareAndSwapAuthoringSession(session, expectedUpdatedAt, expectedStatus)
+		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if !saved {
+			writeError(w, http.StatusConflict, "authoring session changed while correlation repairs were applied")
 			return
 		}
 		s.recordAuditEvent(r, "script.authoring_session.correlation.batch_apply", "success", "authoring_session", session.ID, session.ProjectID, map[string]any{"applied": appliedCount, "review_required": len(reviewRequired), "blocked": blocked})

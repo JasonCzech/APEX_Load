@@ -68,8 +68,11 @@ func stopBrowserRecordingViaAPI(t *testing.T, server *Server, id string) Browser
 	if err := json.Unmarshal(stopResp.Body.Bytes(), &stopPayload); err != nil {
 		t.Fatal(err)
 	}
-	if stopPayload.Session.Status != BrowserRecordingStopping || stopPayload.Session.StopReason != browserRecordingStopRequested {
-		t.Fatalf("initial stop response = %+v, want stopping/requested", &stopPayload.Session)
+	// Graceful cleanup is asynchronous but the in-memory fake can finish before
+	// the handler snapshots its response. Both states satisfy the API contract:
+	// stopping means cleanup is in flight; stopped means it already completed.
+	if (stopPayload.Session.Status != BrowserRecordingStopping && stopPayload.Session.Status != BrowserRecordingStopped) || stopPayload.Session.StopReason != browserRecordingStopRequested {
+		t.Fatalf("initial stop response = %+v, want stopping-or-stopped/requested", &stopPayload.Session)
 	}
 	return *waitForRecordingStatus(t, server.browserRecording, id, BrowserRecordingStopped)
 }

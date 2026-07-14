@@ -3,6 +3,7 @@ package network
 import (
 	"bufio"
 	"context"
+	"io"
 	"net"
 	"strings"
 	"testing"
@@ -87,6 +88,63 @@ func TestNetworkProtocolTCPRequest(t *testing.T) {
 	}
 	if transcript, ok := result.ProtocolEvidence["transcript"].([]any); !ok || len(transcript) == 0 || transcript[0] != "pong" {
 		t.Fatalf("protocol transcript = %#v, want pong", result.ProtocolEvidence["transcript"])
+	}
+}
+
+func TestNetworkProtocolRejectsOversizedSocketRead(t *testing.T) {
+	netProto := &Network{}
+	if err := netProto.Init(context.Background(), map[string]any{}); err != nil {
+		t.Fatalf("init network: %v", err)
+	}
+	result, err := netProto.Execute(context.Background(), &protocol.Action{
+		Name: "oversized", Type: "tcp_request", Target: "127.0.0.1:1",
+		Params: map[string]any{"read_bytes": maxSocketReadBytes + 1},
+	})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if result.Success || !strings.Contains(result.ErrorMessage, "exceeds maximum") {
+		t.Fatalf("result = %#v, want bounded read rejection", result)
+	}
+}
+
+func TestLDAPBindHonorsContextCancellation(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer listener.Close()
+	accepted := make(chan struct{})
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		close(accepted)
+		defer conn.Close()
+		_, _ = io.Copy(io.Discard, conn)
+	}()
+
+	netProto := &Network{}
+	if err := netProto.Init(context.Background(), map[string]any{
+		"network_timeout_ms": 10_000,
+		"network_username":   "user",
+		"network_password":   "password",
+	}); err != nil {
+		t.Fatalf("init network: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 75*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	result, err := netProto.Execute(ctx, &protocol.Action{Name: "bind", Type: "ldap_bind", Target: listener.Addr().String()})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if result.Success {
+		t.Fatalf("result = %#v, want cancellation failure", result)
+	}
+	if time.Since(start) > time.Second {
+		t.Fatalf("LDAP bind ignored context cancellation")
 	}
 }
 

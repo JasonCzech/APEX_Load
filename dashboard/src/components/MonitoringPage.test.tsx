@@ -7,6 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TopbarContributionProvider, useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
 import MonitoringPage from './MonitoringPage'
 
+const projectMockState = vi.hoisted(() => ({ activeProjectId: 'project-1' }))
+
 const apiMock = {
   getAPMIntegrationProfiles: vi.fn(),
   getHealth: vi.fn(),
@@ -61,7 +63,7 @@ vi.mock('../hooks/api/useFleetApi', () => ({
 
 vi.mock('../hooks/useProject', () => ({
   useProject: () => ({
-    activeProject: { id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' },
+    activeProject: { id: projectMockState.activeProjectId, name: 'Checkout', created_at: '', updated_at: '' },
   }),
 }))
 
@@ -73,6 +75,7 @@ describe('MonitoringPage', () => {
 
   beforeEach(() => {
     window.localStorage.clear()
+    projectMockState.activeProjectId = 'project-1'
     apiMock.getHealth.mockResolvedValue({
       status: 'ok',
       version: '1.2.3',
@@ -267,6 +270,14 @@ describe('MonitoringPage', () => {
 
   const visibleMonitorCardIds = () => Array.from(container.querySelectorAll<HTMLElement>('.monitoring-grid .monitor-card'))
     .map(card => card.dataset.cardId)
+
+  async function flushAsyncWork() {
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 0))
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+  }
 
   function TopbarContributionHarness() {
     const contribution = useActiveTopbarContribution()
@@ -636,6 +647,198 @@ describe('MonitoringPage', () => {
     expect(container.textContent).toContain('Generators')
     expect(container.textContent).toContain('Fleet Alerts')
     expect(container.textContent).toContain('No generator inventory was returned by the controller.')
+  })
+
+  it('supports a controlled category so monitor tabs remain synchronized with the route', async () => {
+    const onCategoryChange = vi.fn()
+    await act(async () => {
+      root.render(
+        <MonitoringPage
+          connectionState="connected"
+          activeCategoryId="overview"
+          onCategoryChange={onCategoryChange}
+        />,
+      )
+    })
+
+    expect(visibleMonitorCardIds()).toEqual(['system-health', 'production-readiness'])
+    await clickMonitorTab('Telemetry')
+    expect(onCategoryChange).toHaveBeenCalledWith('telemetry')
+    expect(visibleMonitorCardIds()).toEqual(['system-health', 'production-readiness'])
+
+    await act(async () => {
+      root.render(
+        <MonitoringPage
+          connectionState="connected"
+          activeCategoryId="telemetry"
+          onCategoryChange={onCategoryChange}
+        />,
+      )
+    })
+    expect(visibleMonitorCardIds()).toEqual(['telemetry-diagnostics', 'apm-integrations', 'monitor-packs', 'collectors'])
+    expect(container.querySelector('.monitor-page-title')?.textContent).toContain('Telemetry')
+  })
+
+  it('traps focus in telemetry details, closes on Escape, and restores the trigger', async () => {
+    await act(async () => {
+      root.render(
+        <MonitoringPage
+          connectionState="connected"
+          initialCategoryId="telemetry"
+          telemetryDiagnostics={[{
+            test_id: 'run-1',
+            test_name: 'Checkout',
+            timestamp: '2026-05-12T20:00:00Z',
+            diagnostic: { severity: 'warning', summary: 'Collector delay', conditions: ['collector_delay'], samples: [] },
+          }]}
+        />,
+      )
+    })
+
+    const trigger = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('View details'))
+    expect(trigger).toBeDefined()
+    await act(async () => {
+      trigger?.focus()
+      trigger?.click()
+    })
+    await flushAsyncWork()
+
+    const dialog = container.querySelector<HTMLElement>('[aria-labelledby="telemetry-diagnostics-title"]')
+    expect(dialog).not.toBeNull()
+    expect(dialog?.contains(document.activeElement)).toBe(true)
+
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    await flushAsyncWork()
+    expect(container.querySelector('[aria-labelledby="telemetry-diagnostics-title"]')).toBeNull()
+    expect(document.activeElement).toBe(trigger)
+  })
+
+  it('preserves last-known-good values when a partial refresh fails', async () => {
+    apiMock.getFleetCapacity.mockResolvedValue({
+      project_id: 'project-1',
+      total_generators: 1,
+      eligible_generators: 1,
+      active_slots: 1,
+      available_slots: 7,
+      reserved_slots: 0,
+      max_slots: 8,
+      compatible_features: [],
+      rejection_reasons: [],
+    })
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" activeCategoryId="fleet" />)
+    })
+    await flushAsyncWork()
+    expect(container.textContent).toContain('7 available')
+
+    apiMock.getFleetCapacity.mockRejectedValue(new Error('capacity temporarily unavailable'))
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    await flushAsyncWork()
+
+    expect(container.textContent).toContain('7 available')
+    const capacityCard = container.querySelector<HTMLElement>('[data-card-id="capacity"]')
+    expect(capacityCard?.classList.contains('stale')).toBe(true)
+    expect(capacityCard?.textContent).toContain('Stale')
+    expect(container.querySelector('.monitor-last-refreshed')?.textContent).toContain('stale card')
+  })
+
+  it('coalesces slow polling instead of starting overlapping refreshes', async () => {
+    vi.useFakeTimers()
+    let resolveHealth: ((value: Awaited<ReturnType<typeof apiMock.getHealth>>) => void) | undefined
+    const slowHealth = new Promise<Awaited<ReturnType<typeof apiMock.getHealth>>>(resolve => {
+      resolveHealth = resolve
+    })
+    apiMock.getHealth.mockReturnValue(slowHealth)
+
+    try {
+      await act(async () => {
+        root.render(<MonitoringPage connectionState="connected" />)
+        await Promise.resolve()
+      })
+
+      await act(async () => {
+        vi.advanceTimersByTime(12_000)
+        await Promise.resolve()
+      })
+
+      expect(apiMock.getHealth).toHaveBeenCalledTimes(1)
+
+      await act(async () => {
+        resolveHealth?.({
+          status: 'ok',
+          version: '1.2.3',
+          display_version: 'v1.2.3',
+          build_time: '2026-06-04T14:00:00Z',
+          ws_clients: 2,
+          test_count: 1,
+        })
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+
+      expect(apiMock.getHealth.mock.calls.length).toBeLessThanOrEqual(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('clears project-scoped monitor data before loading a new project', async () => {
+    apiMock.getFleetCapacity.mockResolvedValue({
+      project_id: 'project-1',
+      total_generators: 1,
+      eligible_generators: 1,
+      active_slots: 1,
+      available_slots: 17,
+      reserved_slots: 0,
+      max_slots: 18,
+      compatible_features: [],
+      rejection_reasons: [],
+    })
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" activeCategoryId="fleet" />)
+    })
+    await flushAsyncWork()
+    expect(container.textContent).toContain('17 available')
+
+    apiMock.getFleetCapacity.mockRejectedValue(new Error('project-2 capacity pending'))
+    projectMockState.activeProjectId = 'project-2'
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" activeCategoryId="fleet" />)
+    })
+    await flushAsyncWork()
+
+    expect(apiMock.getFleetCapacity).toHaveBeenCalledWith({ project_id: 'project-2' })
+    expect(container.textContent).not.toContain('17 available')
+  })
+
+  it('does not report a refresh timestamp when every requested endpoint fails', async () => {
+    for (const request of [
+      apiMock.getHealth,
+      apiMock.getSystemInventory,
+      apiMock.getSystemReadiness,
+      apiMock.getSystemServices,
+      apiMock.getScheduleHealth,
+      apiMock.getRunCalendar,
+      apiMock.getAPMIntegrationProfiles,
+      apiMock.getInfrastructureMonitorPacks,
+      apiMock.getFleetAlerts,
+      apiMock.getFleetCapacity,
+      apiMock.getFleetProvisioner,
+    ]) {
+      request.mockRejectedValue(new Error('offline'))
+    }
+
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" />)
+    })
+    await flushAsyncWork()
+
+    expect(container.querySelector('.monitor-last-refreshed')).toBeNull()
   })
 
   it('renders active APEX backend and frontend services', async () => {

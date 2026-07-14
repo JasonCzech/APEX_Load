@@ -3,11 +3,12 @@ package api
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/jasonczech/apexload/pkg/api/testexec"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/api/testexec"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -848,7 +849,12 @@ func (tr *TestRunner) markScheduledStartError(id string, message string) {
 	if !ok || test == nil || test.Status != "SCHEDULED" {
 		return
 	}
+	previousError := test.Error
 	test.Error = message
-	tr.saveManagedTestRecord(test)
+	if err := tr.saveManagedTestRecord(test); err != nil {
+		test.Error = previousError
+		slog.Warn("failed to persist scheduled start error", "test_id", id, "error", err)
+		return
+	}
 	tr.broadcastEvent("test_schedule_blocked", test)
 }

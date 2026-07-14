@@ -287,6 +287,10 @@ func TestHandleScenarioDataPoolBindingWritesAuditEvent(t *testing.T) {
 func TestHandleScriptCRUDWritesAuditEvents(t *testing.T) {
 	server, store := newAuditTestServer(t)
 	defer store.Close()
+	now := time.Now().UTC()
+	if err := store.SaveProject(&storage.Project{ID: "project-script-audit", Name: "Script Audit", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveProject returned error: %v", err)
+	}
 
 	if err := store.SaveFolder(&storage.Folder{ID: "folder-script-audit", ProjectID: "project-script-audit", Name: "Library", Category: "general", CreatedAt: time.Now(), UpdatedAt: time.Now()}); err != nil {
 		t.Fatalf("SaveFolder returned error: %v", err)

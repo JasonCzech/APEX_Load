@@ -51,7 +51,7 @@ describe('SnapshotTextPreview', () => {
       button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    const dialog = document.body.querySelector('[role="dialog"][aria-label="Full text"]')
+    const dialog = document.body.querySelector('.snapshot-full-dialog[role="dialog"]')
     expect(dialog).not.toBeNull()
     expect(container.textContent).not.toContain('X-Debug-13')
     expect(dialog?.textContent).toContain('X-Debug-13')
@@ -80,7 +80,7 @@ describe('SnapshotTextPreview', () => {
       closeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(document.body.querySelector('[role="dialog"][aria-label="Full text"]')).toBeNull()
+    expect(document.body.querySelector('.snapshot-full-dialog[role="dialog"]')).toBeNull()
   })
 
   it('renders short text with copy and full-text actions', async () => {

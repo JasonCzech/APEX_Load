@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import { useExecutionPlansApi } from '../hooks/api/useExecutionPlansApi'
 import { ApiError } from '../hooks/apiClient'
+import { useModalDialog } from '../hooks/useModalDialog'
 import {
   ExecutionPlan,
   ExecutionPlanSchedule,
@@ -85,6 +86,13 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, onClose }
   const [occurrencesFor, setOccurrencesFor] = useState<string | null>(null)
   const [occurrences, setOccurrences] = useState<ExecutionPlanScheduleOccurrence[]>([])
   const [occLoading, setOccLoading] = useState(false)
+  const dialogRef = useRef<HTMLDivElement | null>(null)
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null)
+  const nameInputRef = useRef<HTMLInputElement | null>(null)
+  const titleId = useId()
+  const draftOpen = Boolean(draft)
+
+  useModalDialog({ dialogRef, initialFocusRef: closeButtonRef, onClose })
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -103,6 +111,12 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, onClose }
   useEffect(() => {
     void load()
   }, [load])
+
+  useEffect(() => {
+    if (!draftOpen) return
+    const timeout = window.setTimeout(() => nameInputRef.current?.focus(), 0)
+    return () => window.clearTimeout(timeout)
+  }, [draftOpen])
 
   const startEdit = (schedule: ExecutionPlanSchedule) =>
     setDraft({
@@ -194,11 +208,17 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, onClose }
   const draftValid = Boolean(draft && draft.name.trim() && draft.cron_expr.trim())
 
   return (
-    <div className="pp-modal-overlay" onClick={onClose}>
-      <div className="pp-modal" onClick={event => event.stopPropagation()}>
+    <div
+      className="pp-modal-overlay"
+      role="presentation"
+      onPointerDown={event => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+    >
+      <div ref={dialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <div className="pp-modal-header">
-          <h3>Schedules — “{plan.name}”</h3>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
+          <h3 id={titleId}>Schedules — “{plan.name}”</h3>
+          <button ref={closeButtonRef} type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
             Close
           </button>
         </div>
@@ -206,7 +226,7 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, onClose }
           <div className="pp-row-meta">
             <span>Recurring triggers materialize a plan run on each cron occurrence.</span>
           </div>
-          {error && <div className="pp-error">{error}</div>}
+          {error && <div className="pp-error" role="alert">{error}</div>}
 
           {!draft && canManage && (
             <button type="button" className="btn btn-primary btn-sm" onClick={() => setDraft(emptyDraft())}>
@@ -221,8 +241,8 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, onClose }
                 <label className="pp-field">
                   <span>Name</span>
                   <input
+                    ref={nameInputRef}
                     value={draft.name}
-                    autoFocus
                     placeholder="e.g. nightly"
                     onChange={e => setDraft(d => (d ? { ...d, name: e.target.value } : d))}
                   />

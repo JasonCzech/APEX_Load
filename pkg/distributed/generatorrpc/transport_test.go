@@ -255,16 +255,18 @@ func TestTransport_MustRefuseInsecure(t *testing.T) {
 	}{
 		// Fail-closed: insecure + production must refuse.
 		{"insecure+production refuses", insecure, "production", true},
-		{"insecure+production with surrounding whitespace refuses", insecure, "  production  ", true},
+		{"insecure+production with surrounding whitespace refuses", insecure, "  ProDuction  ", true},
+		{"insecure+prod alias refuses", insecure, "prod", true},
 		// Permissive everywhere outside production.
 		{"insecure+empty env allowed", insecure, "", false},
 		{"insecure+local env allowed", insecure, "local", false},
 		{"insecure+dev env allowed", insecure, "dev", false},
 		{"insecure+kind env allowed", insecure, "kind", false},
-		// Any secured channel is allowed even in production.
-		{"token-only+production allowed", tokenOnly, "production", false},
-		{"tls-only+production allowed", tlsOnly, "production", false},
+		// Production requires encryption plus client authentication.
+		{"token-only+production refuses", tokenOnly, "production", true},
+		{"tls-only+production refuses", tlsOnly, "production", true},
 		{"mtls+production allowed", mtls, "production", false},
+		{"tls-token+production allowed", TransportSecurity{TLS: true, Token: true}, "production", false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -272,6 +274,18 @@ func TestTransport_MustRefuseInsecure(t *testing.T) {
 				t.Fatalf("MustRefuseInsecure(%q) for %s = %v, want %v", tc.env, tc.security.String(), got, tc.want)
 			}
 		})
+	}
+}
+
+func TestTransportProductionConfigurationFailsClosed(t *testing.T) {
+	clearTransportEnv(t)
+	t.Setenv("APEXLOAD_ENV", " PROD ")
+	t.Setenv(grpcAuthTokenEnvVar, "plaintext-token")
+	if _, err := ServerOptionsFromEnv(); err == nil {
+		t.Fatal("production server accepted a plaintext bearer token")
+	}
+	if _, err := DialOptionsFromEnv(); err == nil {
+		t.Fatal("production client accepted a plaintext bearer token")
 	}
 }
 

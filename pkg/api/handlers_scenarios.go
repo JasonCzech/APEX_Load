@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -49,6 +50,20 @@ func (s *Server) handleUpdateScenario(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
+	existing, ok := s.runner.GetScenario(r.PathValue("id"))
+	if !ok || existing == nil {
+		writeError(w, http.StatusNotFound, "scenario not found")
+		return
+	}
+	requestProjectID, err := s.scenarioRequestProjectID(req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if requestProjectID != "" && normalizeProjectID(requestProjectID) != normalizeProjectID(existing.ProjectID) {
+		writeError(w, http.StatusBadRequest, "scenario scripts must remain in the scenario project")
+		return
+	}
 	scenario, ok, err := s.runner.UpdateScenario(r.PathValue("id"), req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -60,6 +75,22 @@ func (s *Server) handleUpdateScenario(w http.ResponseWriter, r *http.Request) {
 	}
 	s.recordAuditEvent(r, "scenario.update", "success", "scenario", scenario.ID, scenario.ProjectID, map[string]any{"name": scenario.Name, "duration": scenario.Duration})
 	writeJSON(w, http.StatusOK, maskStoredScenario(scenario))
+}
+
+func (s *Server) scenarioRequestProjectID(req CreateScenarioRequest) (string, error) {
+	projectID := ""
+	for _, group := range req.Groups {
+		script, ok := s.runner.GetScript(strings.TrimSpace(group.ScriptID))
+		if !ok || script == nil {
+			return "", fmt.Errorf("script not found: %s", group.ScriptID)
+		}
+		candidate := normalizeProjectID(script.ProjectID)
+		if projectID != "" && candidate != projectID {
+			return "", fmt.Errorf("scenario scripts span multiple projects")
+		}
+		projectID = candidate
+	}
+	return projectID, nil
 }
 
 func (s *Server) handleValidateScenarioLoadModel(w http.ResponseWriter, r *http.Request) {
@@ -88,15 +119,17 @@ func (s *Server) handleSizeScenarioFromGoal(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusNotFound, "baseline test not found")
 		return
 	}
-	record, ok := s.runner.GetRunArchive(req.BaselineTestID)
+	record, ok := s.runner.GetRunArchiveContext(r.Context(), req.BaselineTestID)
 	if !ok {
 		writeError(w, http.StatusNotFound, "baseline run archive not found")
 		return
 	}
-	if err := ensureArchiveMaterialized(record); err != nil {
+	lease, err := acquireArchiveMaterialized(r.Context(), record)
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to materialize baseline archive: "+err.Error())
 		return
 	}
+	defer lease.Release()
 	report, err := cachedRunArchiveReport(record)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to build baseline report: "+err.Error())
@@ -121,7 +154,12 @@ func (s *Server) handleDeleteScenario(w http.ResponseWriter, r *http.Request) {
 	if scenario, ok := s.runner.GetScenario(id); ok {
 		projectID = scenario.ProjectID
 	}
-	if !s.runner.DeleteScenario(id) {
+	deleted, err := s.runner.DeleteScenarioDurable(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to delete scenario: "+err.Error())
+		return
+	}
+	if !deleted {
 		writeError(w, http.StatusBadRequest, "scenario not found or has results")
 		return
 	}
@@ -224,7 +262,12 @@ func (s *Server) handleDeleteScenarioSchedule(w http.ResponseWriter, r *http.Req
 	if scenario, ok := s.runner.GetScenario(r.PathValue("id")); ok {
 		projectID = scenario.ProjectID
 	}
-	if !s.runner.DeleteScenarioSchedule(r.PathValue("id"), r.PathValue("schedule_id")) {
+	deleted, err := s.runner.DeleteScenarioSchedule(r.PathValue("id"), r.PathValue("schedule_id"))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to delete scenario schedule")
+		return
+	}
+	if !deleted {
 		writeError(w, http.StatusNotFound, "scenario schedule not found")
 		return
 	}

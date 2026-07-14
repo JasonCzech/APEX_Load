@@ -4011,6 +4011,84 @@
   color: var(--text-primary);
 }
 
+.data-table th.sortable > button {
+  appearance: none;
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  text-transform: inherit;
+}
+
+.data-table th.sortable > button:hover,
+.data-table th.sortable > button:focus-visible {
+  color: var(--text-primary);
+}
+
+.scripts-library-table th.sortable,
+.scripts-library-runs-table th.sortable {
+  padding: 0;
+}
+
+.scripts-library-table th.sortable button,
+.scripts-library-runs-table th.sortable button {
+  appearance: none;
+  width: 100%;
+  min-height: 36px;
+  padding: 8px 16px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  text-transform: inherit;
+}
+
+.scripts-library-table th.sortable button:hover,
+.scripts-library-table th.sortable button:focus-visible,
+.scripts-library-runs-table th.sortable button:hover,
+.scripts-library-runs-table th.sortable button:focus-visible {
+  color: var(--text-primary);
+}
+
+.scripts-library-table th.sortable button:focus-visible,
+.scripts-library-runs-table th.sortable button:focus-visible {
+  outline-offset: -2px;
+}
+
+.script-row-toggle,
+.script-run-link {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  text-decoration: none;
+}
+
+.script-row-toggle:hover,
+.script-row-toggle:focus-visible,
+.script-run-link:hover,
+.script-run-link:focus-visible {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .sort-icon {
   margin-left: 6px;
   opacity: 0.3;
@@ -4558,6 +4636,10 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
+}
+
+.monitor-card.stale {
+  border-color: color-mix(in srgb, var(--warning) 45%, var(--border));
 }
 
 .monitor-empty-category {
@@ -5907,7 +5989,7 @@
   border: 1px solid var(--accent);
   border-radius: 8px;
   background: var(--accent);
-  color: white;
+  color: var(--accent-contrast);
   font-size: 13px;
   font-weight: 800;
   letter-spacing: 0;
@@ -6472,7 +6554,7 @@
 .new-test-launch-actions .btn-primary {
   border-color: var(--accent);
   background: var(--accent);
-  color: white;
+  color: var(--accent-contrast);
 }
 
 .run-default-modal .btn-secondary,
@@ -7661,6 +7743,16 @@
   background: var(--bg-card);
 }
 
+.results-truncation-status {
+  margin: 0;
+  padding: 7px 9px;
+  border: 1px solid color-mix(in srgb, var(--warning) 42%, var(--border));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--warning) 9%, var(--bg-card));
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
 .results-table-selection-summary {
   display: flex;
   align-items: center;
@@ -8232,7 +8324,7 @@ col.results-actions-col {
 .cron-day-chip.active {
   background: var(--accent, #4a9eff);
   border-color: var(--accent, #4a9eff);
-  color: #fff;
+  color: var(--accent-contrast);
 }
 
 .cron-day-chip:disabled {
@@ -8931,7 +9023,7 @@ col.results-actions-col {
   border: 0;
   border-radius: 8px;
   background: var(--accent);
-  color: white;
+  color: var(--accent-contrast);
   padding: 10px 14px;
   font-weight: 700;
   cursor: pointer;

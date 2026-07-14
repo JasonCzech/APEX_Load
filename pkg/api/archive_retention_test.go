@@ -1,6 +1,7 @@
 package api
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -84,6 +85,9 @@ func TestArchiveRetentionPlanAndApplyHandlersPruneExpiredArchives(t *testing.T) 
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
 	defer store.Close()
+	if err := store.SaveProject(&storage.Project{ID: "project-a", Name: "Project A", CreatedAt: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
 	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
 	settings := server.runner.GetSystemSettings()
 	settings.ArchiveRetention = ArchiveRetentionSettings{
@@ -94,7 +98,9 @@ func TestArchiveRetentionPlanAndApplyHandlersPruneExpiredArchives(t *testing.T) 
 		t.Fatalf("UpdateSystemSettings returned error: %v", err)
 	}
 
-	archiveDir := filepath.Join(t.TempDir(), "expired-archive")
+	archiveRoot := t.TempDir()
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", archiveRoot)
+	archiveDir := filepath.Join(archiveRoot, "expired-archive")
 	if err := os.MkdirAll(archiveDir, 0o755); err != nil {
 		t.Fatalf("create archive dir: %v", err)
 	}
@@ -102,13 +108,26 @@ func TestArchiveRetentionPlanAndApplyHandlersPruneExpiredArchives(t *testing.T) 
 		t.Fatalf("write archive file: %v", err)
 	}
 	completedAt := time.Now().UTC().Add(-48 * time.Hour)
+	archiveRecord := &storage.RunArchiveRecord{
+		TestID: "expired", ArchiveBackend: archiveBackendFilesystem, ArchivePath: archiveDir,
+		ManifestPath: filepath.Join(archiveDir, "manifest.json"), CompletedAt: completedAt,
+	}
+	if err := store.SaveProject(&storage.Project{ID: "project-a", Name: "Project A", CreatedAt: completedAt, UpdatedAt: completedAt}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveTest(&storage.TestRecord{ID: "expired", Name: "Expired", Status: "COMPLETE", ProjectID: "project-a", StartTime: completedAt}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveRunArchive(archiveRecord); err != nil {
+		t.Fatal(err)
+	}
 	server.runner.mu.Lock()
 	server.runner.tests["expired"] = &ManagedTest{
 		ID:        "expired",
 		Name:      "Expired",
 		Status:    "COMPLETE",
 		ProjectID: "project-a",
-		Archive:   &storage.RunArchiveRecord{TestID: "expired", ArchivePath: archiveDir, CompletedAt: completedAt},
+		Archive:   archiveRecord,
 	}
 	server.runner.mu.Unlock()
 
@@ -152,6 +171,9 @@ func TestArchiveRetentionPlanAndApplyHandlersPruneExpiredArchives(t *testing.T) 
 	}
 	if _, err := os.Stat(archiveDir); !os.IsNotExist(err) {
 		t.Fatalf("archive dir stat err = %v, want removed", err)
+	}
+	if _, err := store.GetRunArchive("expired"); err != sql.ErrNoRows {
+		t.Fatalf("archive metadata lookup err = %v, want sql.ErrNoRows", err)
 	}
 	events, err := store.ListAuditEvents(storage.AuditEventFilter{Action: "archive.retention.prune", Limit: 10})
 	if err != nil {

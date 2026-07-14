@@ -1,6 +1,7 @@
 package api
 
 import (
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -13,7 +14,6 @@ func (s *Server) recordAuditEvent(r *http.Request, action string, status string,
 	if s.store == nil {
 		return
 	}
-	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
 	normalizedProjectID := normalizeProjectID(projectID)
 	domainID := ""
 	if normalizedProjectID != "" && normalizedProjectID != storage.DefaultProjectID {
@@ -21,20 +21,39 @@ func (s *Server) recordAuditEvent(r *http.Request, action string, status string,
 			domainID = normalizeDomainID(project.DomainID)
 		}
 	}
-	_ = s.store.SaveAuditEvent(&storage.AuditEvent{
+	s.recordAuditEventWithProjectSnapshot(r, action, status, resourceType, resourceID, normalizedProjectID, domainID, details)
+}
+
+// recordAuditEventWithProjectSnapshot preserves scope after the project row has
+// been deleted. Destructive handlers capture the project/domain before commit
+// and use this helper so the governance record is not reassigned to the default
+// project or stripped of its original domain.
+func (s *Server) recordAuditEventWithProjectSnapshot(r *http.Request, action string, status string, resourceType string, resourceID string, projectID string, domainID string, details map[string]any) {
+	if s.store == nil {
+		return
+	}
+	projectID = normalizeProjectID(projectID)
+	domainID = strings.TrimSpace(domainID)
+	if domainID != "" {
+		domainID = normalizeDomainID(domainID)
+	}
+	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
+	if err := s.store.SaveAuditEvent(&storage.AuditEvent{
 		ID:               uuid.New().String(),
 		Action:           action,
 		ActorType:        actorType,
 		ActorSubject:     actorSubject,
 		ActorDisplayName: actorDisplayName,
-		ProjectID:        normalizedProjectID,
+		ProjectID:        projectID,
 		DomainID:         domainID,
 		ResourceType:     resourceType,
 		ResourceID:       strings.TrimSpace(resourceID),
 		Status:           strings.TrimSpace(status),
 		Details:          details,
 		CreatedAt:        time.Now().UTC(),
-	})
+	}); err != nil {
+		slog.Warn("failed to persist audit event", "action", action, "resource_type", resourceType, "resource_id", resourceID, "error", err)
+	}
 }
 
 func (s *Server) resolveAuditActor(r *http.Request) (string, string, string) {

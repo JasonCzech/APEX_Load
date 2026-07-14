@@ -2,7 +2,8 @@ import { API_GUIDE_DEFAULT_PAGE, isApiGuideContentPageID, type ApiGuideContentPa
 import type { NavPage } from './components/Sidebar'
 
 export type AppView =
-  | { page: Exclude<NavPage, 'command-center' | 'new-test' | 'scripts' | 'tests' | 'docs'> }
+  | { page: Exclude<NavPage, 'command-center' | 'new-test' | 'scripts' | 'tests' | 'docs' | 'monitoring'> }
+  | { page: 'monitoring'; category?: MonitoringCategoryID }
   | { page: 'docs'; guidePage?: ApiGuideContentPageID }
   | { page: 'command-center'; testId?: string }
   | { page: 'report'; testId: string; lens?: ReportLens; compare?: string }
@@ -11,7 +12,7 @@ export type AppView =
   | { page: 'scripts'; mode?: 'list' | 'create' | 'edit' | 'import'; scriptId?: string }
   | { page: 'swagger' }
   | { page: 'repository-guide' }
-  | { page: 'recorder-panel'; sessionId?: string }
+  | { page: 'recorder-panel'; sessionId: string }
   | { page: 'test'; testId: string; tab?: TestWorkspaceTabID }
 
 const NAV_PAGES: NavPage[] = [
@@ -33,10 +34,30 @@ const NAV_PAGES: NavPage[] = [
 const SCRIPT_MODES = ['list', 'create', 'edit', 'import'] as const
 const SCENARIO_VIEWS = ['library', 'builder', 'plans'] as const
 const TEST_WORKSPACE_TABS = ['overview', 'control', 'graphs', 'diagnostics', 'archive', 'action-summary', 'load-impact', 'transaction-drilldown'] as const
+const MONITORING_CATEGORIES = ['overview', 'telemetry'] as const
 export const REPORT_LENSES = ['executive', 'engineer', 'audit'] as const
 
 export type TestWorkspaceTabID = typeof TEST_WORKSPACE_TABS[number]
+export type MonitoringCategoryID = typeof MONITORING_CATEGORIES[number]
 export type ReportLens = typeof REPORT_LENSES[number]
+
+export const APP_HISTORY_INDEX_KEY = '__apexloadHistoryIndex'
+
+export function readAppHistoryIndex(state: unknown): number | null {
+  if (!state || typeof state !== 'object') return null
+  const index = (state as Record<string, unknown>)[APP_HISTORY_INDEX_KEY]
+  return typeof index === 'number' && Number.isInteger(index) && index >= 0 ? index : null
+}
+
+export function withAppHistoryIndex(state: unknown, index: number): Record<string, unknown> {
+  const existing = state && typeof state === 'object' && !Array.isArray(state)
+    ? state as Record<string, unknown>
+    : {}
+  return {
+    ...existing,
+    [APP_HISTORY_INDEX_KEY]: Math.max(0, Math.trunc(index)),
+  }
+}
 
 function cleanSegment(value: string | undefined) {
   if (!value) return ''
@@ -61,6 +82,10 @@ function isScenarioView(value: string | null): value is NonNullable<Extract<AppV
 
 function isTestWorkspaceTab(value: string | null): value is TestWorkspaceTabID {
   return TEST_WORKSPACE_TABS.includes(value as TestWorkspaceTabID)
+}
+
+function isMonitoringCategory(value: string | null): value is MonitoringCategoryID {
+  return MONITORING_CATEGORIES.includes(value as MonitoringCategoryID)
 }
 
 export function isReportLens(value: string | null | undefined): value is ReportLens {
@@ -135,6 +160,14 @@ export function parseAppViewFromHash(hash: string): AppView {
     }
   }
 
+  if (page === 'monitoring') {
+    const category = params.get('category')
+    return {
+      page: 'monitoring',
+      ...(isMonitoringCategory(category) && category !== 'overview' ? { category } : {}),
+    }
+  }
+
   if (page === 'swagger') {
     return { page: 'swagger' }
   }
@@ -145,7 +178,9 @@ export function parseAppViewFromHash(hash: string): AppView {
 
   if (page === 'recorder-panel') {
     const sessionId = params.get('session') || undefined
-    return sessionId ? { page: 'recorder-panel', sessionId } : { page: 'recorder-panel' }
+    // The compact recorder panel cannot function without a session. Recover to
+    // the script library instead of leaving the normal application shell blank.
+    return sessionId ? { page: 'recorder-panel', sessionId } : { page: 'scripts' }
   }
 
   return isNavPage(page) ? { page } : { page: 'dashboard' }
@@ -201,6 +236,13 @@ export function viewToLocationHash(view: AppView): string {
     return query ? `#/docs?${query}` : '#/docs'
   }
 
+  if (view.page === 'monitoring') {
+    const params = new URLSearchParams()
+    if (view.category && view.category !== 'overview') params.set('category', view.category)
+    const query = params.toString()
+    return query ? `#/monitoring?${query}` : '#/monitoring'
+  }
+
   if (view.page === 'swagger') {
     return '#/swagger'
   }
@@ -210,9 +252,7 @@ export function viewToLocationHash(view: AppView): string {
   }
 
   if (view.page === 'recorder-panel') {
-    return view.sessionId
-      ? `#/recorder-panel?session=${encodeURIComponent(view.sessionId)}`
-      : '#/recorder-panel'
+    return `#/recorder-panel?session=${encodeURIComponent(view.sessionId)}`
   }
 
   return `#/${view.page}`

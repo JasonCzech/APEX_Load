@@ -5,6 +5,7 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import ReportComposer from './ReportComposer'
+import { NavigationGuardProvider } from '../hooks/NavigationGuardProvider'
 
 const apiMock = vi.hoisted(() => ({
   getTestArchiveReport: vi.fn(),
@@ -79,6 +80,67 @@ describe('ReportComposer test notes source panel', () => {
     })
     container.remove()
     vi.clearAllMocks()
+  })
+
+  it('announces loading and load failures to assistive technology', async () => {
+    apiMock.getTestArchiveReport.mockReturnValueOnce(new Promise(() => {}))
+    await act(async () => {
+      root.render(<ReportComposer testId="test-1" testName="Checkout Run" profile="executive" onClose={() => {}} />)
+    })
+
+    const loadingStatus = container.querySelector('[role="status"]')
+    expect(loadingStatus?.getAttribute('aria-live')).toBe('polite')
+    expect(loadingStatus?.textContent).toContain('Loading report')
+
+    await act(async () => {
+      root.unmount()
+    })
+    root = createRoot(container)
+    apiMock.getTestArchiveReport.mockRejectedValueOnce(new Error('Archive report unavailable'))
+    await renderComposer()
+
+    const alert = container.querySelector('[role="alert"]')
+    expect(alert?.textContent).toContain('Archive report unavailable')
+  })
+
+  it('focuses the composer and confirms before discarding unsaved report edits', async () => {
+    const onClose = vi.fn()
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <ReportComposer testId="test-1" testName="Checkout Run" profile="executive" onClose={onClose} />
+        </NavigationGuardProvider>,
+      )
+    })
+    await flush()
+    await flushFocus()
+
+    const composer = container.querySelector<HTMLElement>('.report-composer-overlay[role="dialog"]')
+    const closeButton = button('Close')
+    expect(composer?.getAttribute('aria-modal')).toBe('true')
+    expect(document.activeElement).toBe(closeButton)
+
+    const titleInput = container.querySelector<HTMLInputElement>('[aria-label="Report title"]')
+    expect(titleInput).not.toBeNull()
+    await act(async () => {
+      setInputValue(titleInput!, 'Changed report title')
+    })
+    await click(closeButton)
+    await flushFocus()
+
+    expect(onClose).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Unsaved Changes')
+    expect(document.activeElement?.textContent).toContain('Keep editing')
+
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    expect(container.textContent).not.toContain('Unsaved Changes')
+    expect(document.activeElement).toBe(closeButton)
+
+    await click(closeButton)
+    await click(button('Discard changes'))
+    expect(onClose).toHaveBeenCalledOnce()
   })
 
   it('inserts selected notes into summary, commentary, and info findings', async () => {
@@ -315,6 +377,18 @@ async function flush() {
   await act(async () => {
     await Promise.resolve()
   })
+}
+
+async function flushFocus() {
+  await act(async () => {
+    await new Promise(resolve => window.setTimeout(resolve, 0))
+  })
+}
+
+function setInputValue(input: HTMLInputElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+  setter?.call(input, value)
+  input.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
 function auditAnnotations() {

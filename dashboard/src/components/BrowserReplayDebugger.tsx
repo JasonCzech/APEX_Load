@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   BrowserReplayEvent,
@@ -10,6 +10,7 @@ import {
 } from '../types'
 import { formatConsoleEntries, formatNetworkEntries } from './scriptEditorUtils'
 import RepairSuggestionList from './RepairSuggestionList'
+import { useModalDialog } from '../hooks/useModalDialog'
 
 function eventStatus(event?: BrowserReplayEvent | null): string {
   if (!event) return 'idle'
@@ -641,21 +642,31 @@ export default function BrowserReplayDebugger({
 }
 
 function BrowserReplayScreenshotDialog({ onClose, src }: BrowserReplayScreenshotDialogProps) {
+  const dialogRef = useRef<HTMLDivElement | null>(null)
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null)
+  useModalDialog({ dialogRef, initialFocusRef: closeButtonRef, onClose })
+
   return (
-    <div className="editor-dialog-backdrop" onClick={onClose}>
+    <div
+      className="editor-dialog-backdrop"
+      role="presentation"
+      onPointerDown={event => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+    >
       <div
+        ref={dialogRef}
         className="editor-dialog replay-screenshot-dialog"
         role="dialog"
         aria-modal="true"
         aria-label="Browser Replay Screenshot"
-        onClick={event => event.stopPropagation()}
       >
         <div className="editor-dialog-header">
           <div>
             <h3 className="panel-title">Browser Replay Screenshot</h3>
             <p className="editor-dialog-subtitle">Inspect the current browser debugger viewport at full size.</p>
           </div>
-          <button className="btn btn-sm btn-ghost" onClick={onClose}>Close</button>
+          <button ref={closeButtonRef} type="button" className="btn btn-sm btn-ghost" onClick={onClose}>Close</button>
         </div>
         <div className="editor-dialog-body replay-screenshot-dialog-body">
           <img className="replay-screenshot-dialog-image" src={src} alt="Browser replay viewport" />

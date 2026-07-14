@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // schemaCreateTableStatements returns every CREATE TABLE statement in dependency
@@ -246,8 +248,8 @@ func schemaCreateTableStatements() []string {
 			name TEXT,
 			protocol TEXT,
 			version TEXT,
-			project_id TEXT,
-			folder_id TEXT,
+			project_id TEXT REFERENCES projects(id),
+			folder_id TEXT REFERENCES folders(id),
 			generated_by TEXT,
 			generated_from TEXT,
 			metadata_json TEXT,
@@ -265,11 +267,11 @@ func schemaCreateTableStatements() []string {
 			ref_key TEXT,
 			name TEXT,
 			status TEXT,
-			application_id TEXT,
-			release_id TEXT,
-			scenario_id TEXT,
-			project_id TEXT,
-			folder_id TEXT,
+			application_id TEXT REFERENCES applications(id),
+			release_id TEXT REFERENCES releases(id),
+			scenario_id TEXT REFERENCES scenarios(id),
+			project_id TEXT REFERENCES projects(id),
+			folder_id TEXT REFERENCES folders(id),
 			scenario_mode TEXT,
 			shakeout_enabled INTEGER DEFAULT 0,
 			resource_baseline_enabled INTEGER DEFAULT 0,
@@ -356,6 +358,54 @@ func schemaCreateTableStatements() []string {
 			interval_summary_count INTEGER,
 			created_at DATETIME,
 			completed_at DATETIME,
+			FOREIGN KEY(test_id) REFERENCES tests(id)
+		)`,
+		// Archive payloads live outside the relational store, so their deletion
+		// cannot participate in the test/project transaction. Persist the complete
+		// cleanup intent before removing run_archives/tests; a controller restart can
+		// then retry physical cleanup without needing metadata that no longer exists.
+		`CREATE TABLE IF NOT EXISTS archive_cleanup_jobs (
+			test_id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL,
+			archive_record_json TEXT NOT NULL,
+			attempts INTEGER NOT NULL DEFAULT 0,
+			last_error TEXT,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL
+		)`,
+		// Immutable object publications are replaced, never overwritten. Retain
+		// every superseded pointer independently until physical deletion succeeds.
+		`CREATE TABLE IF NOT EXISTS archive_version_cleanup_jobs (
+			id TEXT PRIMARY KEY,
+			test_id TEXT NOT NULL,
+			project_id TEXT NOT NULL,
+			archive_record_json TEXT NOT NULL,
+			attempts INTEGER NOT NULL DEFAULT 0,
+			last_error TEXT,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS archive_finalization_jobs (
+			test_id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL,
+			archive_record_json TEXT NOT NULL,
+			persist_artifacts INTEGER NOT NULL DEFAULT 1,
+			generation INTEGER NOT NULL DEFAULT 1,
+			intent_token TEXT NOT NULL DEFAULT '',
+			refresh_token TEXT NOT NULL DEFAULT '',
+			attempts INTEGER NOT NULL DEFAULT 0,
+			last_error TEXT,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			FOREIGN KEY(test_id) REFERENCES tests(id)
+		)`,
+		`CREATE TABLE IF NOT EXISTS archive_refresh_jobs (
+			test_id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL,
+			generation INTEGER NOT NULL DEFAULT 1,
+			intent_token TEXT NOT NULL,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
 			FOREIGN KEY(test_id) REFERENCES tests(id)
 		)`,
 		`CREATE TABLE IF NOT EXISTS app_settings (
@@ -564,6 +614,10 @@ func schemaCreateTableStatements() []string {
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS capacity_approval_locks (
+			lock_key TEXT PRIMARY KEY,
+			updated_at DATETIME NOT NULL
+		)`,
 		`CREATE TABLE IF NOT EXISTS fleet_pools (
 			id TEXT PRIMARY KEY,
 			name TEXT NOT NULL,
@@ -601,6 +655,8 @@ func schemaCreateTableStatements() []string {
 		)`,
 		`CREATE TABLE IF NOT EXISTS provisioning_requests (
 			id TEXT PRIMARY KEY,
+			revision INTEGER NOT NULL DEFAULT 1,
+			attempt_token TEXT,
 			fleet_pool_id TEXT NOT NULL,
 			project_id TEXT,
 			status TEXT NOT NULL DEFAULT 'pending',
@@ -650,6 +706,7 @@ func schemaCreateTableStatements() []string {
 			run_mode TEXT NOT NULL DEFAULT 'sequential',
 			status TEXT NOT NULL DEFAULT 'running',
 			entries_json TEXT,
+			revision INTEGER NOT NULL DEFAULT 1,
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL,
 			completed_at DATETIME
@@ -801,6 +858,9 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "run_archives.archive_uri", query: `ALTER TABLE run_archives ADD COLUMN archive_uri TEXT`},
 		{name: "run_archives.manifest_uri", query: `ALTER TABLE run_archives ADD COLUMN manifest_uri TEXT`},
 		{name: "run_archives.manifest_sha256", query: `ALTER TABLE run_archives ADD COLUMN manifest_sha256 TEXT`},
+		{name: "archive_finalization_jobs.generation", query: `ALTER TABLE archive_finalization_jobs ADD COLUMN generation INTEGER NOT NULL DEFAULT 1`},
+		{name: "archive_finalization_jobs.intent_token", query: `ALTER TABLE archive_finalization_jobs ADD COLUMN intent_token TEXT NOT NULL DEFAULT ''`},
+		{name: "archive_finalization_jobs.refresh_token", query: `ALTER TABLE archive_finalization_jobs ADD COLUMN refresh_token TEXT NOT NULL DEFAULT ''`},
 		{name: "test_interval_summaries.generator_published_at", query: `ALTER TABLE test_interval_summaries ADD COLUMN generator_published_at DATETIME`},
 		{name: "test_interval_summaries.controller_received_at", query: `ALTER TABLE test_interval_summaries ADD COLUMN controller_received_at DATETIME`},
 		{name: "test_interval_summaries.generator_processing_lag_ms", query: `ALTER TABLE test_interval_summaries ADD COLUMN generator_processing_lag_ms REAL`},
@@ -853,6 +913,9 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "github_script_links.remote_blob_sha", query: `ALTER TABLE github_script_links ADD COLUMN remote_blob_sha TEXT`},
 		{name: "github_script_links.remote_commit_sha", query: `ALTER TABLE github_script_links ADD COLUMN remote_commit_sha TEXT`},
 		{name: "execution_plan_approvals.plan_content_hash", query: `ALTER TABLE execution_plan_approvals ADD COLUMN plan_content_hash TEXT`},
+		{name: "execution_plan_runs.revision", query: `ALTER TABLE execution_plan_runs ADD COLUMN revision INTEGER NOT NULL DEFAULT 1`},
+		{name: "provisioning_requests.revision", query: `ALTER TABLE provisioning_requests ADD COLUMN revision INTEGER NOT NULL DEFAULT 1`},
+		{name: "provisioning_requests.attempt_token", query: `ALTER TABLE provisioning_requests ADD COLUMN attempt_token TEXT`},
 	}
 }
 
@@ -870,6 +933,11 @@ var schemaIndexes = []schemaIndex{
 	{`CREATE UNIQUE INDEX IF NOT EXISTS idx_scenarios_ref_key ON scenarios(ref_key) WHERE ref_key IS NOT NULL AND ref_key != ''`, "idx_scenarios_ref_key"},
 	{`CREATE UNIQUE INDEX IF NOT EXISTS idx_tests_ref_key ON tests(ref_key) WHERE ref_key IS NOT NULL AND ref_key != ''`, "idx_tests_ref_key"},
 	{`CREATE UNIQUE INDEX IF NOT EXISTS idx_run_archives_ref_key ON run_archives(ref_key) WHERE ref_key IS NOT NULL AND ref_key != ''`, "idx_run_archives_ref_key"},
+	{`CREATE INDEX IF NOT EXISTS idx_archive_cleanup_jobs_updated ON archive_cleanup_jobs(updated_at)`, "idx_archive_cleanup_jobs_updated"},
+	{`CREATE INDEX IF NOT EXISTS idx_archive_version_cleanup_jobs_updated ON archive_version_cleanup_jobs(updated_at)`, "idx_archive_version_cleanup_jobs_updated"},
+	{`CREATE INDEX IF NOT EXISTS idx_archive_version_cleanup_jobs_test ON archive_version_cleanup_jobs(test_id)`, "idx_archive_version_cleanup_jobs_test"},
+	{`CREATE INDEX IF NOT EXISTS idx_archive_finalization_jobs_updated ON archive_finalization_jobs(updated_at)`, "idx_archive_finalization_jobs_updated"},
+	{`CREATE INDEX IF NOT EXISTS idx_archive_refresh_jobs_updated ON archive_refresh_jobs(updated_at)`, "idx_archive_refresh_jobs_updated"},
 	{`CREATE INDEX IF NOT EXISTS idx_test_notes_test_id ON test_notes(test_id)`, "idx_test_notes_test_id"},
 	{`CREATE INDEX IF NOT EXISTS idx_test_history_test_time ON test_history(test_id, timestamp)`, "idx_test_history_test_time"},
 	{`CREATE INDEX IF NOT EXISTS idx_test_interval_summaries_test_time ON test_interval_summaries(test_id, timestamp)`, "idx_test_interval_summaries_test_time"},
@@ -913,6 +981,9 @@ func (s *SQLiteStore) init() error {
 	if err := s.applyOptionalSchemaMigrations(schemaColumnMigrations()); err != nil {
 		return err
 	}
+	if err := s.backfillArchiveFinalizationIntentTokens(); err != nil {
+		return err
+	}
 	if _, err := s.db.Exec(`UPDATE github_script_links SET remote_blob_sha = last_commit_sha WHERE (remote_blob_sha IS NULL OR remote_blob_sha = '') AND last_commit_sha IS NOT NULL AND last_commit_sha != ''`); err != nil {
 		return fmt.Errorf("failed to backfill github_script_links.remote_blob_sha: %w", err)
 	}
@@ -939,7 +1010,38 @@ func (s *SQLiteStore) init() error {
 	if err := s.ensureLegacyApplication(); err != nil {
 		return err
 	}
+	if err := s.ensurePostgresForeignKeys(); err != nil {
+		return err
+	}
 	return s.applyTimescaleDB()
+}
+
+func (s *SQLiteStore) backfillArchiveFinalizationIntentTokens() error {
+	rows, err := s.db.Query(`SELECT test_id FROM archive_finalization_jobs WHERE intent_token IS NULL OR TRIM(intent_token) = ''`)
+	if err != nil {
+		return fmt.Errorf("list legacy archive finalization intents: %w", err)
+	}
+	ids := make([]string, 0)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+	for _, id := range ids {
+		if _, err := s.db.Exec(`UPDATE archive_finalization_jobs SET intent_token = ?, updated_at = ?
+			WHERE test_id = ? AND (intent_token IS NULL OR TRIM(intent_token) = '')`, uuid.NewString(), time.Now().UTC(), id); err != nil {
+			return fmt.Errorf("upgrade legacy archive finalization intent %s: %w", id, err)
+		}
+	}
+	return nil
 }
 
 func timescaleSetupStatements(tables []timescaleHypertable) []string {
@@ -1019,7 +1121,20 @@ func (s *SQLiteStore) ensureDefaultProject() error {
 	return nil
 }
 
-func legacyScenarioID(name string) string {
+func legacyScenarioID(projectID, name string) string {
+	projectID = normalizeProjectID(projectID)
+	if strings.TrimSpace(name) == "" {
+		name = "Unnamed Scenario"
+	}
+	sum := sha1.Sum([]byte(projectID + "\x00" + name))
+	return "legacy-" + hex.EncodeToString(sum[:])[:12]
+}
+
+// legacyGlobalScenarioID reproduces the identifier generated by releases that
+// predated project-scoped legacy scenarios. It is intentionally retained as a
+// migration-only helper so databases initialized by those releases can be
+// repaired without guessing from a legacy- prefix alone.
+func legacyGlobalScenarioID(name string) string {
 	if strings.TrimSpace(name) == "" {
 		name = "Unnamed Scenario"
 	}
@@ -1027,94 +1142,455 @@ func legacyScenarioID(name string) string {
 	return "legacy-" + hex.EncodeToString(sum[:])[:12]
 }
 
-func (s *SQLiteStore) ensureLegacyApplication() error {
-	now := time.Now()
-	if _, err := s.db.Exec(`INSERT OR IGNORE INTO applications (id, project_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, LegacyApplicationID, DefaultProjectID, "Legacy", now, now); err != nil {
-		return fmt.Errorf("failed to create legacy application: %w", err)
+func legacyApplicationID(projectID string) string {
+	projectID = normalizeProjectID(projectID)
+	if projectID == DefaultProjectID {
+		return LegacyApplicationID
 	}
-	if _, err := s.db.Exec(`INSERT OR IGNORE INTO releases (id, application_id, project_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`, LegacyReleaseID, LegacyApplicationID, DefaultProjectID, "Imported Legacy", now, now); err != nil {
-		return fmt.Errorf("failed to create legacy release: %w", err)
-	}
-	if _, err := s.db.Exec(`UPDATE releases SET project_id = COALESCE((SELECT project_id FROM applications WHERE applications.id = releases.application_id), ?) WHERE project_id IS NULL OR project_id = ''`, DefaultProjectID); err != nil {
-		return fmt.Errorf("failed to backfill release project ids: %w", err)
-	}
-	if _, err := s.db.Exec(`UPDATE tests SET application_id = ? WHERE application_id IS NULL OR application_id = ''`, LegacyApplicationID); err != nil {
-		return fmt.Errorf("failed to backfill test application ids: %w", err)
-	}
-	if _, err := s.db.Exec(`UPDATE tests SET release_id = ? WHERE release_id IS NULL OR release_id = ''`, LegacyReleaseID); err != nil {
-		return fmt.Errorf("failed to backfill test release ids: %w", err)
-	}
-	return s.ensureLegacyScenarios()
+	sum := sha1.Sum([]byte(projectID))
+	return LegacyApplicationID + "-" + hex.EncodeToString(sum[:])[:12]
 }
 
-func (s *SQLiteStore) ensureLegacyScenarios() error {
-	rows, err := s.db.Query(`SELECT id, COALESCE(name, ''), COALESCE(scenario_mode, ''), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), duration_ns, COALESCE(groups_json, '[]'), COALESCE(runtime_settings_json, ''), COALESCE(goal_config_json, ''), start_time
-		FROM tests
-		WHERE scenario_id IS NULL OR scenario_id = ''
-		ORDER BY CASE WHEN status = 'QUEUED' THEN 0 ELSE 1 END, start_time DESC`)
+func legacyReleaseID(projectID string) string {
+	projectID = normalizeProjectID(projectID)
+	if projectID == DefaultProjectID {
+		return LegacyReleaseID
+	}
+	sum := sha1.Sum([]byte(projectID))
+	return LegacyReleaseID + "-" + hex.EncodeToString(sum[:])[:12]
+}
+
+func (s *SQLiteStore) ensureLegacyApplication() error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	now := time.Now()
+	projectRows, err := tx.Query(`SELECT id FROM projects ORDER BY id`)
+	if err != nil {
+		return fmt.Errorf("list projects for legacy hierarchy: %w", err)
+	}
+	var projectIDs []string
+	for projectRows.Next() {
+		var projectID string
+		if err := projectRows.Scan(&projectID); err != nil {
+			projectRows.Close()
+			return fmt.Errorf("scan project for legacy hierarchy: %w", err)
+		}
+		projectIDs = append(projectIDs, normalizeProjectID(projectID))
+	}
+	if err := projectRows.Err(); err != nil {
+		projectRows.Close()
+		return fmt.Errorf("list projects for legacy hierarchy: %w", err)
+	}
+	projectRows.Close()
+
+	for _, projectID := range projectIDs {
+		applicationID := legacyApplicationID(projectID)
+		releaseID := legacyReleaseID(projectID)
+		if _, err := tx.Exec(`INSERT OR IGNORE INTO applications (id, project_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, applicationID, projectID, "Legacy", now, now); err != nil {
+			return fmt.Errorf("create legacy application for project %s: %w", projectID, err)
+		}
+		if _, err := tx.Exec(`INSERT OR IGNORE INTO releases (id, application_id, project_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`, releaseID, applicationID, projectID, "Imported Legacy", now, now); err != nil {
+			return fmt.Errorf("create legacy release for project %s: %w", projectID, err)
+		}
+		if _, err := tx.Exec(`UPDATE tests SET application_id = ?
+			WHERE project_id = ? AND (application_id IS NULL OR application_id = '' OR (application_id = ? AND ? <> ?))`,
+			applicationID, projectID, LegacyApplicationID, projectID, DefaultProjectID); err != nil {
+			return fmt.Errorf("backfill test application ids for project %s: %w", projectID, err)
+		}
+		if _, err := tx.Exec(`UPDATE tests SET release_id = ?
+			WHERE project_id = ? AND (release_id IS NULL OR release_id = '' OR (release_id = ? AND ? <> ?))`,
+			releaseID, projectID, LegacyReleaseID, projectID, DefaultProjectID); err != nil {
+			return fmt.Errorf("backfill test release ids for project %s: %w", projectID, err)
+		}
+	}
+	if _, err := tx.Exec(`UPDATE releases SET project_id = COALESCE((SELECT project_id FROM applications WHERE applications.id = releases.application_id), ?) WHERE project_id IS NULL OR project_id = ''`, DefaultProjectID); err != nil {
+		return fmt.Errorf("failed to backfill release project ids: %w", err)
+	}
+	if err := s.ensureLegacyScenariosTx(tx); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+type legacyScenarioCandidate struct {
+	testID             string
+	projectID          string
+	name               string
+	scenarioMode       string
+	scriptShakeout     bool
+	resourceBaseline   bool
+	duration           int64
+	groupsJSON         string
+	runtimeJSON        string
+	goalJSON           string
+	startTime          time.Time
+	existingScenarioID string
+}
+
+func (s *SQLiteStore) ensureLegacyScenariosTx(tx *storeTx) error {
+	rows, err := tx.Query(`SELECT test_row.id, COALESCE(test_row.project_id, ?),
+			COALESCE(NULLIF(scenario_row.name, ''), test_row.name, ''),
+			COALESCE(test_row.scenario_mode, ''), COALESCE(test_row.shakeout_enabled, 0),
+			COALESCE(test_row.resource_baseline_enabled, 0), test_row.duration_ns,
+			COALESCE(test_row.groups_json, '[]'), COALESCE(test_row.runtime_settings_json, ''),
+			COALESCE(test_row.goal_config_json, ''), test_row.start_time,
+			COALESCE(test_row.scenario_id, '')
+		FROM tests AS test_row
+		LEFT JOIN scenarios AS scenario_row ON scenario_row.id = test_row.scenario_id
+		WHERE test_row.scenario_id IS NULL OR test_row.scenario_id = '' OR test_row.scenario_id LIKE 'legacy-%'
+		ORDER BY CASE WHEN test_row.status = 'QUEUED' THEN 0 ELSE 1 END, test_row.start_time DESC`, DefaultProjectID)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
 
-	type legacyCandidate struct {
-		testID           string
-		name             string
-		scenarioMode     string
-		scriptShakeout   bool
-		resourceBaseline bool
-		duration         int64
-		groupsJSON       string
-		runtimeJSON      string
-		goalJSON         string
-		startTime        time.Time
-	}
-	seen := map[string]bool{}
-	var candidates []legacyCandidate
+	var candidates []legacyScenarioCandidate
 	for rows.Next() {
-		var candidate legacyCandidate
-		if err := rows.Scan(&candidate.testID, &candidate.name, &candidate.scenarioMode, &candidate.scriptShakeout, &candidate.resourceBaseline, &candidate.duration, &candidate.groupsJSON, &candidate.runtimeJSON, &candidate.goalJSON, &candidate.startTime); err != nil {
+		var candidate legacyScenarioCandidate
+		if err := rows.Scan(&candidate.testID, &candidate.projectID, &candidate.name, &candidate.scenarioMode, &candidate.scriptShakeout, &candidate.resourceBaseline, &candidate.duration, &candidate.groupsJSON, &candidate.runtimeJSON, &candidate.goalJSON, &candidate.startTime, &candidate.existingScenarioID); err != nil {
 			return err
 		}
+		candidate.projectID = normalizeProjectID(candidate.projectID)
 		if candidate.name == "" {
 			candidate.name = "Unnamed Scenario"
 		}
-		scenarioID := legacyScenarioID(candidate.name)
-		if seen[scenarioID] {
-			continue
+		targetScenarioID := legacyScenarioID(candidate.projectID, candidate.name)
+		if candidate.existingScenarioID != "" {
+			// A matching project-scoped identifier is already repaired. A reserved
+			// legacy identifier that no longer matches can be either the released
+			// global form or a scoped scenario renamed after migration; both need
+			// one deterministic re-key to the current project/name tuple.
+			if candidate.existingScenarioID == targetScenarioID {
+				continue
+			}
+			if !strings.HasPrefix(candidate.existingScenarioID, "legacy-") {
+				continue
+			}
 		}
-		seen[scenarioID] = true
+		if err := validateLegacyScenarioJSON(candidate); err != nil {
+			return err
+		}
 		candidates = append(candidates, candidate)
 	}
 	if err := rows.Err(); err != nil {
 		return err
 	}
 
+	migratedScenarios := make(map[string]struct{}, len(candidates))
+	migratedReferences := make(map[string]struct{}, len(candidates))
+	oldScenarioIDs := make(map[string]struct{}, len(candidates))
 	for _, candidate := range candidates {
-		scenarioID := legacyScenarioID(candidate.name)
-		now := candidate.startTime
-		if now.IsZero() {
-			now = time.Now()
+		scenarioID := legacyScenarioID(candidate.projectID, candidate.name)
+		if _, migrated := migratedScenarios[scenarioID]; !migrated {
+			now := candidate.startTime
+			if now.IsZero() {
+				now = time.Now()
+			}
+			duration := time.Duration(candidate.duration).String()
+			if candidate.duration <= 0 {
+				duration = "1m"
+			}
+			if candidate.existingScenarioID != "" {
+				// Preserve edits made to the globally migrated scenario after its
+				// original import. The test snapshot remains the source for scripts,
+				// because the old global migration selected scripts from only one
+				// project when same-named tests existed in several projects.
+				if _, err := tx.Exec(`INSERT OR IGNORE INTO scenarios
+					(id, ref_key, name, duration, start_delay, scenario_mode, shakeout_enabled,
+					 resource_baseline_enabled, assignment_json, goal_config_json,
+					 runtime_settings_json, created_at, updated_at)
+					SELECT ?, ref_key, name, duration, start_delay, scenario_mode, shakeout_enabled,
+						resource_baseline_enabled, assignment_json, goal_config_json,
+						runtime_settings_json, created_at, updated_at
+					FROM scenarios WHERE id = ?`, scenarioID, candidate.existingScenarioID); err != nil {
+					return fmt.Errorf("clone legacy scenario %s for project %s: %w", candidate.existingScenarioID, candidate.projectID, err)
+				}
+			}
+			if _, err := tx.Exec(`INSERT OR IGNORE INTO scenarios (id, name, duration, scenario_mode, shakeout_enabled, resource_baseline_enabled, goal_config_json, runtime_settings_json, created_at, updated_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, scenarioID, candidate.name, duration, candidate.scenarioMode, candidate.scriptShakeout, candidate.resourceBaseline, candidate.goalJSON, candidate.runtimeJSON, now, now); err != nil {
+				return err
+			}
+			if err := insertLegacyScenarioScriptsTx(tx, scenarioID, candidate.testID, candidate.groupsJSON); err != nil {
+				return err
+			}
+			migratedScenarios[scenarioID] = struct{}{}
 		}
-		duration := time.Duration(candidate.duration).String()
-		if candidate.duration <= 0 {
-			duration = "1m"
-		}
-		if _, err := s.db.Exec(`INSERT OR IGNORE INTO scenarios (id, name, duration, scenario_mode, shakeout_enabled, resource_baseline_enabled, goal_config_json, runtime_settings_json, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, scenarioID, candidate.name, duration, candidate.scenarioMode, candidate.scriptShakeout, candidate.resourceBaseline, candidate.goalJSON, candidate.runtimeJSON, now, now); err != nil {
+		if _, err := tx.Exec(`UPDATE tests SET scenario_id = ?
+			WHERE id = ? AND project_id = ?
+				AND (scenario_id IS NULL OR scenario_id = '' OR scenario_id = ?)`,
+			scenarioID, candidate.testID, candidate.projectID, candidate.existingScenarioID); err != nil {
 			return err
 		}
-		if err := s.insertLegacyScenarioScripts(scenarioID, candidate.groupsJSON); err != nil {
+		if candidate.existingScenarioID == "" {
+			continue
+		}
+		oldScenarioIDs[candidate.existingScenarioID] = struct{}{}
+		referenceKey := candidate.existingScenarioID + "\x00" + scenarioID + "\x00" + candidate.projectID
+		if _, migrated := migratedReferences[referenceKey]; migrated {
+			continue
+		}
+		if err := migrateLegacyScenarioReferencesTx(tx, candidate.existingScenarioID, scenarioID, candidate.projectID); err != nil {
 			return err
 		}
-		if _, err := s.db.Exec(`UPDATE tests SET scenario_id = ? WHERE name = ? AND (scenario_id IS NULL OR scenario_id = '')`, scenarioID, candidate.name); err != nil {
+		migratedReferences[referenceKey] = struct{}{}
+	}
+	for oldScenarioID := range oldScenarioIDs {
+		if err := deleteLegacyScenarioIfUnreferencedTx(tx, oldScenarioID); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (s *SQLiteStore) insertLegacyScenarioScripts(scenarioID string, groupsJSON string) error {
+func validateLegacyScenarioJSON(candidate legacyScenarioCandidate) error {
+	for field, payload := range map[string]string{
+		"groups_json":           candidate.groupsJSON,
+		"runtime_settings_json": candidate.runtimeJSON,
+		"goal_config_json":      candidate.goalJSON,
+	} {
+		if strings.TrimSpace(payload) == "" {
+			continue
+		}
+		var decoded any
+		if err := json.Unmarshal([]byte(payload), &decoded); err != nil {
+			return fmt.Errorf("decode legacy test %s %s: %w", candidate.testID, field, err)
+		}
+	}
+	return nil
+}
+
+func migrateLegacyScenarioReferencesTx(tx *storeTx, oldScenarioID, scenarioID, projectID string) error {
+	projectID = normalizeProjectID(projectID)
+	updates := []struct {
+		name  string
+		query string
+		args  []any
+	}{
+		{
+			name:  "scenario schedules",
+			query: `UPDATE scenario_schedules SET scenario_id = ? WHERE scenario_id = ? AND COALESCE(NULLIF(project_id, ''), ?) = ?`,
+			args:  []any{scenarioID, oldScenarioID, DefaultProjectID, projectID},
+		},
+		{
+			name: "scenario schedule occurrences",
+			query: `UPDATE scenario_schedule_occurrences SET scenario_id = ?
+				WHERE scenario_id = ? AND (
+					COALESCE(NULLIF(project_id, ''), ?) = ? OR
+					schedule_id IN (
+						SELECT id FROM scenario_schedules
+						WHERE scenario_id = ? AND COALESCE(NULLIF(project_id, ''), ?) = ?
+					)
+				)`,
+			args: []any{scenarioID, oldScenarioID, DefaultProjectID, projectID, scenarioID, DefaultProjectID, projectID},
+		},
+		{
+			name: "scenario schedule approvals",
+			query: `UPDATE scenario_schedule_approvals SET scenario_id = ?
+				WHERE scenario_id = ? AND (
+					COALESCE(NULLIF(project_id, ''), ?) = ? OR
+					schedule_id IN (
+						SELECT id FROM scenario_schedules
+						WHERE scenario_id = ? AND COALESCE(NULLIF(project_id, ''), ?) = ?
+					)
+				)`,
+			args: []any{scenarioID, oldScenarioID, DefaultProjectID, projectID, scenarioID, DefaultProjectID, projectID},
+		},
+		{
+			name:  "capacity reservations",
+			query: `UPDATE capacity_reservations SET scenario_id = ? WHERE scenario_id = ? AND COALESCE(NULLIF(project_id, ''), ?) = ?`,
+			args:  []any{scenarioID, oldScenarioID, DefaultProjectID, projectID},
+		},
+		{
+			name:  "external result imports",
+			query: `UPDATE external_result_imports SET scenario_id = ? WHERE scenario_id = ? AND COALESCE(NULLIF(project_id, ''), ?) = ?`,
+			args:  []any{scenarioID, oldScenarioID, DefaultProjectID, projectID},
+		},
+	}
+	for _, update := range updates {
+		if _, err := tx.Exec(update.query, update.args...); err != nil {
+			return fmt.Errorf("migrate legacy %s from scenario %s for project %s: %w", update.name, oldScenarioID, projectID, err)
+		}
+	}
+
+	// Bindings do not carry project_id, so ownership is derived from the bound
+	// pool. Remove a duplicate alias first when an earlier interrupted repair
+	// already created the target binding, then move the remaining rows intact.
+	if _, err := tx.Exec(`DELETE FROM scenario_data_pool_bindings AS old_binding
+		WHERE old_binding.scenario_id = ?
+			AND old_binding.pool_id IN (
+				SELECT id FROM shared_data_pools WHERE COALESCE(NULLIF(project_id, ''), ?) = ?
+			)
+			AND EXISTS (
+				SELECT 1 FROM scenario_data_pool_bindings AS target_binding
+				WHERE target_binding.scenario_id = ? AND target_binding.alias = old_binding.alias
+			)`, oldScenarioID, DefaultProjectID, projectID, scenarioID); err != nil {
+		return fmt.Errorf("deduplicate legacy scenario data bindings for project %s: %w", projectID, err)
+	}
+	if _, err := tx.Exec(`UPDATE scenario_data_pool_bindings SET scenario_id = ?
+		WHERE scenario_id = ? AND pool_id IN (
+			SELECT id FROM shared_data_pools WHERE COALESCE(NULLIF(project_id, ''), ?) = ?
+		)`, scenarioID, oldScenarioID, DefaultProjectID, projectID); err != nil {
+		return fmt.Errorf("migrate legacy scenario data bindings for project %s: %w", projectID, err)
+	}
+
+	if err := migrateLegacyScenarioJSONReferencesTx(tx, oldScenarioID, scenarioID, projectID); err != nil {
+		return err
+	}
+	return nil
+}
+
+func migrateLegacyScenarioJSONReferencesTx(tx *storeTx, oldScenarioID, scenarioID, projectID string) error {
+	sources := []struct {
+		name        string
+		selectQuery string
+		updateQuery string
+	}{
+		{
+			name:        "execution plan",
+			selectQuery: `SELECT id, COALESCE(entries_json, '') FROM execution_plans WHERE COALESCE(NULLIF(project_id, ''), ?) = ?`,
+			updateQuery: `UPDATE execution_plans SET entries_json = ? WHERE id = ?`,
+		},
+		{
+			name:        "execution plan run",
+			selectQuery: `SELECT id, COALESCE(entries_json, '') FROM execution_plan_runs WHERE COALESCE(NULLIF(project_id, ''), ?) = ?`,
+			updateQuery: `UPDATE execution_plan_runs SET entries_json = ? WHERE id = ?`,
+		},
+	}
+	for _, source := range sources {
+		rows, err := tx.Query(source.selectQuery, DefaultProjectID, projectID)
+		if err != nil {
+			return fmt.Errorf("list %s references for legacy scenario migration: %w", source.name, err)
+		}
+		type entryDocument struct {
+			id      string
+			payload string
+		}
+		var documents []entryDocument
+		for rows.Next() {
+			var document entryDocument
+			if err := rows.Scan(&document.id, &document.payload); err != nil {
+				rows.Close()
+				return fmt.Errorf("scan %s references for legacy scenario migration: %w", source.name, err)
+			}
+			documents = append(documents, document)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return fmt.Errorf("list %s references for legacy scenario migration: %w", source.name, err)
+		}
+		rows.Close()
+
+		for _, document := range documents {
+			payload, changed, err := rewriteLegacyScenarioEntries(document.payload, oldScenarioID, scenarioID)
+			if err != nil {
+				return fmt.Errorf("rewrite %s %s entries for legacy scenario migration: %w", source.name, document.id, err)
+			}
+			if !changed {
+				continue
+			}
+			if _, err := tx.Exec(source.updateQuery, payload, document.id); err != nil {
+				return fmt.Errorf("save %s %s after legacy scenario migration: %w", source.name, document.id, err)
+			}
+		}
+	}
+	return nil
+}
+
+func rewriteLegacyScenarioEntries(payload, oldScenarioID, scenarioID string) (string, bool, error) {
+	trimmed := strings.TrimSpace(payload)
+	if trimmed == "" || trimmed == "null" {
+		return payload, false, nil
+	}
+	var entries []map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(payload), &entries); err != nil {
+		return "", false, err
+	}
+	changed := false
+	for _, entry := range entries {
+		rawScenarioID, ok := entry["scenario_id"]
+		if !ok {
+			continue
+		}
+		var entryScenarioID string
+		if err := json.Unmarshal(rawScenarioID, &entryScenarioID); err != nil {
+			return "", false, fmt.Errorf("decode scenario_id: %w", err)
+		}
+		if entryScenarioID != oldScenarioID {
+			continue
+		}
+		replacement, err := json.Marshal(scenarioID)
+		if err != nil {
+			return "", false, err
+		}
+		entry["scenario_id"] = replacement
+		changed = true
+	}
+	if !changed {
+		return payload, false, nil
+	}
+	encoded, err := json.Marshal(entries)
+	if err != nil {
+		return "", false, err
+	}
+	return string(encoded), true, nil
+}
+
+func deleteLegacyScenarioIfUnreferencedTx(tx *storeTx, scenarioID string) error {
+	var referenceCount int
+	if err := tx.QueryRow(`SELECT
+		(SELECT COUNT(*) FROM tests WHERE scenario_id = ?) +
+		(SELECT COUNT(*) FROM scenario_schedules WHERE scenario_id = ?) +
+		(SELECT COUNT(*) FROM scenario_schedule_occurrences WHERE scenario_id = ?) +
+		(SELECT COUNT(*) FROM scenario_schedule_approvals WHERE scenario_id = ?) +
+		(SELECT COUNT(*) FROM scenario_data_pool_bindings WHERE scenario_id = ?) +
+		(SELECT COUNT(*) FROM capacity_reservations WHERE scenario_id = ?) +
+		(SELECT COUNT(*) FROM external_result_imports WHERE scenario_id = ?)`,
+		scenarioID, scenarioID, scenarioID, scenarioID, scenarioID, scenarioID, scenarioID).Scan(&referenceCount); err != nil {
+		return fmt.Errorf("count remaining references to legacy scenario %s: %w", scenarioID, err)
+	}
+	if referenceCount != 0 {
+		return nil
+	}
+	for _, query := range []string{
+		`SELECT COALESCE(entries_json, '') FROM execution_plans WHERE entries_json LIKE ?`,
+		`SELECT COALESCE(entries_json, '') FROM execution_plan_runs WHERE entries_json LIKE ?`,
+	} {
+		rows, err := tx.Query(query, "%"+scenarioID+"%")
+		if err != nil {
+			return fmt.Errorf("check JSON references to legacy scenario %s: %w", scenarioID, err)
+		}
+		for rows.Next() {
+			var payload string
+			if err := rows.Scan(&payload); err != nil {
+				rows.Close()
+				return fmt.Errorf("scan JSON references to legacy scenario %s: %w", scenarioID, err)
+			}
+			_, changed, err := rewriteLegacyScenarioEntries(payload, scenarioID, "")
+			if err != nil || changed {
+				rows.Close()
+				return nil
+			}
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return fmt.Errorf("check JSON references to legacy scenario %s: %w", scenarioID, err)
+		}
+		rows.Close()
+	}
+	if _, err := tx.Exec(`DELETE FROM scenario_scripts WHERE scenario_id = ?`, scenarioID); err != nil {
+		return fmt.Errorf("delete scripts for retired legacy scenario %s: %w", scenarioID, err)
+	}
+	if _, err := tx.Exec(`DELETE FROM scenarios WHERE id = ?`, scenarioID); err != nil {
+		return fmt.Errorf("delete retired legacy scenario %s: %w", scenarioID, err)
+	}
+	return nil
+}
+
+func insertLegacyScenarioScriptsTx(tx *storeTx, scenarioID, testID, groupsJSON string) error {
 	var groups []struct {
 		Name           string      `json:"name"`
 		ScriptID       string      `json:"script_id"`
@@ -1126,14 +1602,17 @@ func (s *SQLiteStore) insertLegacyScenarioScripts(scenarioID string, groupsJSON 
 		Role           string      `json:"role"`
 	}
 	if err := json.Unmarshal([]byte(groupsJSON), &groups); err != nil {
-		return nil
+		return fmt.Errorf("decode legacy test %s groups_json: %w", testID, err)
 	}
 	for i, group := range groups {
 		if group.ScriptID == "" {
 			continue
 		}
-		stagesJSON, _ := json.Marshal(group.Stages)
-		if _, err := s.db.Exec(`INSERT OR IGNORE INTO scenario_scripts (scenario_id, sort_order, name, script_id, vusers, ramp_up, ramp_down, stages_json, initialization, role)
+		stagesJSON, err := json.Marshal(group.Stages)
+		if err != nil {
+			return fmt.Errorf("marshal legacy test %s group %d stages: %w", testID, i, err)
+		}
+		if _, err := tx.Exec(`INSERT OR IGNORE INTO scenario_scripts (scenario_id, sort_order, name, script_id, vusers, ramp_up, ramp_down, stages_json, initialization, role)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, scenarioID, i, group.Name, group.ScriptID, group.VUsers, group.RampUp, group.RampDown, string(stagesJSON), group.Initialization, group.Role); err != nil {
 			return err
 		}

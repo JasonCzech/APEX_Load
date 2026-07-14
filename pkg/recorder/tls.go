@@ -341,7 +341,7 @@ func (r *Recorder) handleConnectMITM(w http.ResponseWriter, req *http.Request) {
 	// Create an HTTP client for upstream requests.
 	transport := &http.Transport{
 		DialContext:     proxySafeDialer(30 * time.Second).DialContext,
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		TLSClientConfig: recorderUpstreamTLSConfig(hostname),
 	}
 	client := &http.Client{
 		Transport: transport,
@@ -474,7 +474,7 @@ func (r *Recorder) forwardHTTPS(tlsConn net.Conn, clientReader *bufio.Reader, cl
 			upstreamReq.Header.Add(k, v)
 		}
 	}
-	upstreamReq.Header.Del("Proxy-Connection")
+	stripProxyRequestHeaders(upstreamReq.Header, false)
 
 	resp, err := client.Do(upstreamReq)
 	if err != nil {

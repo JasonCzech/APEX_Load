@@ -117,6 +117,10 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 	}
 
 	protoConfig := buildProtoConfigForRunModeWithSecretResolver(e.script, "load", e.secrets)
+	mockNamespace := newRuntimeMockNamespace()
+	applyRuntimeMockNamespace(protoConfig, mockNamespace)
+	releaseMockNamespace := protocol.AcquireRuntimeNamespace(mockNamespace)
+	defer releaseMockNamespace()
 	if err := proto.HealthCheck(ctx); err != nil {
 		slog.Warn("health check failed, proceeding anyway", "err", err)
 	}
@@ -140,7 +144,14 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 			e.softStop = nil
 			e.mu.Unlock()
 		}()
-		return e.runOpenWorkload(loopCtx, protoConfig)
+		result, err := e.runOpenWorkload(loopCtx, protoConfig)
+		e.metrics.Stop()
+		if result != nil {
+			if snap, ok := e.metrics.LatestSnapshot(); ok {
+				result.FinalSnapshot = snap
+			}
+		}
+		return result, err
 	}
 
 	// Execution goals cancel only loopCtx so VUsers stop claiming new
@@ -163,6 +174,7 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 
 	start := time.Now()
 	var wg sync.WaitGroup
+	var activeVUsers atomic.Int64
 	rendezvous := NewRendezvousCoordinator()
 
 	rampDelay := e.rampDelay()
@@ -172,8 +184,8 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 			break
 		}
 
-		if i > 0 && rampDelay > 0 {
-			time.Sleep(rampDelay)
+		if i > 0 && rampDelay > 0 && !sleepContext(loopCtx, rampDelay) {
+			break
 		}
 
 		wg.Add(1)
@@ -191,12 +203,13 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 			continue
 		}
 
-		e.metrics.SetActiveVUsers(int64(i + 1))
+		e.metrics.SetActiveVUsers(activeVUsers.Add(1))
 
 		go func() {
 			defer recoverVUserGoroutine(vuserID)
 			defer wg.Done()
 			defer runProtocolTeardown(vuProto)
+			defer func() { e.metrics.SetActiveVUsers(activeVUsers.Add(-1)) }()
 
 			vu := &VUser{
 				ID:                   vuserID,
@@ -216,6 +229,7 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 
 	wg.Wait()
 	elapsed := time.Since(start)
+	e.metrics.Stop()
 
 	result := &RunResult{
 		Duration:          elapsed,

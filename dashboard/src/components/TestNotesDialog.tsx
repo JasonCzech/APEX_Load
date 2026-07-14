@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 
-import { useApi } from '../hooks/useApi'
+import { useTestApi } from '../hooks/api/useTestApi'
 import { useModalDialog } from '../hooks/useModalDialog'
 import { getErrorMessage } from '../utils/errorUtils'
 import { TestNote } from '../types'
@@ -18,9 +18,12 @@ interface Props {
 type NoteMode = 'preview' | 'edit' | 'new'
 
 export default function TestNotesDialog({ testId, testName, onClose }: Props) {
-  const api = useApi()
+  const api = useTestApi()
   const dialogRef = useRef<HTMLDivElement | null>(null)
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const titleId = useId()
+  const descriptionId = useId()
   const [notes, setNotes] = useState<TestNote[]>([])
   const [selectedId, setSelectedId] = useState<string>('')
   const [mode, setMode] = useState<NoteMode>('preview')
@@ -47,7 +50,11 @@ export default function TestNotesDialog({ testId, testName, onClose }: Props) {
     onClose()
   }, [confirmDiscard, onClose, saving])
 
-  useModalDialog({ dialogRef, onClose: saving ? undefined : requestClose })
+  useModalDialog({
+    dialogRef,
+    initialFocusRef: closeButtonRef,
+    onClose: saving ? undefined : requestClose,
+  })
 
   useEffect(() => {
     let cancelled = false
@@ -166,21 +173,27 @@ export default function TestNotesDialog({ testId, testName, onClose }: Props) {
   }, [api, notes, selectedId, testId])
 
   return (
-    <div className="modal-overlay test-notes-overlay" onClick={saving ? undefined : requestClose}>
+    <div
+      className="modal-overlay test-notes-overlay"
+      role="presentation"
+      onPointerDown={event => {
+        if (event.target === event.currentTarget) requestClose()
+      }}
+    >
       <div
         ref={dialogRef}
         className="modal test-notes-dialog"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="test-notes-title"
-        onClick={(event) => event.stopPropagation()}
+        aria-labelledby={titleId}
+        aria-describedby={descriptionId}
       >
         <div className="modal-header test-notes-header">
           <div>
-            <h3 id="test-notes-title">Test Notes</h3>
-            <p className="page-subtitle">{testName || testId}</p>
+            <h3 id={titleId}>Test Notes</h3>
+            <p id={descriptionId} className="page-subtitle">{testName || testId}</p>
           </div>
-          <button type="button" className="btn btn-secondary btn-sm" onClick={requestClose} disabled={saving}>Close</button>
+          <button ref={closeButtonRef} type="button" className="btn btn-secondary btn-sm" onClick={requestClose} disabled={saving}>Close</button>
         </div>
 
         {error && <p className="form-error test-notes-message" role="alert">{error}</p>}

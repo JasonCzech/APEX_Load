@@ -4,7 +4,7 @@ import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { WSMessage } from '../types'
+import { TestStatus, WSMessage } from '../types'
 import { latencySeriesKeyForTarget, routeLatencyDetailSeriesKeyForTarget } from './latencySeries'
 import { useExecutionMetricsStream } from './useExecutionMetricsStream'
 
@@ -20,11 +20,11 @@ vi.mock('../hooks/useWebSocket', () => ({
   useWebSocket: (...args: unknown[]) => useWebSocketMock(...args),
 }))
 
-vi.mock('../hooks/useApi', () => ({
-  useApi: () => ({ getTest: getTestMock }),
+vi.mock('../hooks/api/useTestApi', () => ({
+  useTestApi: () => ({ getTest: getTestMock }),
 }))
 
-function MetricsStreamHarness({ status = 'RUNNING', testId = 'test-1' }: { status?: 'RUNNING' | 'COMPLETE'; testId?: string }) {
+function MetricsStreamHarness({ status = 'RUNNING', testId = 'test-1' }: { status?: TestStatus; testId?: string }) {
   const { localMetricsHistory, latestMetrics } = useExecutionMetricsStream(testId, status)
   const latest = localMetricsHistory[localMetricsHistory.length - 1]
 
@@ -219,6 +219,17 @@ describe('useExecutionMetricsStream', () => {
     expect(useWebSocketMock).toHaveBeenCalledWith(expect.objectContaining({
       testId: 'test-1',
       enabled: false,
+    }))
+  })
+
+  it('enables the test websocket stream during shakeout', async () => {
+    await act(async () => {
+      root.render(<MetricsStreamHarness status="SHAKEOUT" />)
+    })
+
+    expect(useWebSocketMock).toHaveBeenCalledWith(expect.objectContaining({
+      testId: 'test-1',
+      enabled: true,
     }))
   })
 

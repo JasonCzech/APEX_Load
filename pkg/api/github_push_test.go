@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -81,7 +82,11 @@ func newGitHubWriteStub(t *testing.T) *githubWriteStub {
 
 func storeGitHubTestScript(t *testing.T, server *Server) *StoredScript {
 	t.Helper()
-	stored := server.runner.StoreScript(&dsl.Script{
+	now := time.Now().UTC()
+	if err := server.store.SaveProject(&storage.Project{ID: "team-a", Name: "Team A", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveProject(team-a): %v", err)
+	}
+	stored, err := server.runner.StoreScriptDurable(&dsl.Script{
 		Name:      "Order Flow",
 		Version:   "1.0.0",
 		Protocol:  "http",
@@ -89,6 +94,9 @@ func storeGitHubTestScript(t *testing.T, server *Server) *StoredScript {
 		Config:    dsl.ScriptConfig{BaseURL: "https://example.test"},
 		Actions:   []dsl.Action{{Name: "Home", Type: "request", Method: "GET", Target: "/"}},
 	})
+	if err != nil {
+		t.Fatalf("StoreScriptDurable: %v", err)
+	}
 	return stored
 }
 

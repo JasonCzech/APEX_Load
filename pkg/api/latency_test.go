@@ -197,14 +197,11 @@ func TestLatencyStabilityUsesRollingWindow(t *testing.T) {
 }
 
 func TestMeasureNetworkLatency(t *testing.T) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("failed to listen: %v", err)
-	}
-	defer ln.Close()
-
-	addr := ln.Addr().String()
-	baseURL := "http://" + addr
+	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer endpoint.Close()
+	baseURL := endpoint.URL
 
 	hub := NewHub()
 	tr := NewTestRunner(1, hub, nil)
@@ -224,7 +221,10 @@ func TestMeasureNetworkLatency(t *testing.T) {
 	}
 
 	live := &LiveMetrics{}
+	test.LiveMetrics = live
+	tr.tests[test.ID] = test
 	tr.measureNetworkLatency(test, live)
+	live = test.LiveMetrics
 
 	if live.Latency == nil {
 		t.Fatal("expected live.Latency to be populated")
@@ -372,14 +372,11 @@ func TestLatencyEndpointInlineDataOnlyRequiresPreviewRows(t *testing.T) {
 }
 
 func TestMeasureNetworkLatencyHydratesScriptByGroupScriptID(t *testing.T) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("failed to listen: %v", err)
-	}
-	defer ln.Close()
-
-	addr := ln.Addr().String()
-	baseURL := "http://" + addr
+	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer endpoint.Close()
+	baseURL := endpoint.URL
 
 	hub := NewHub()
 	tr := NewTestRunner(1, hub, nil)
@@ -401,7 +398,10 @@ func TestMeasureNetworkLatencyHydratesScriptByGroupScriptID(t *testing.T) {
 	}
 
 	live := &LiveMetrics{}
+	test.LiveMetrics = live
+	tr.tests[test.ID] = test
 	tr.measureNetworkLatency(test, live)
+	live = test.LiveMetrics
 
 	if live.Latency == nil || len(live.Latency.Targets) != 1 {
 		t.Fatalf("expected hydrated script to produce one latency target, got %#v", live.Latency)

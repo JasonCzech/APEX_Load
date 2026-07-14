@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useMonitoringCollectorsApi } from '../hooks/api/useMonitoringCollectorsApi'
 import { ApiError } from '../hooks/apiClient'
+import { useModalDialog } from '../hooks/useModalDialog'
 import { CollectorMetricSnapshot, MonitoringCollector } from '../types'
 import ConfirmDestructiveModal from './ConfirmDestructiveModal'
 import './parityPanels.css'
@@ -60,6 +61,19 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
   const [metrics, setMetrics] = useState<{ name: string; snapshot: CollectorMetricSnapshot } | null>(null)
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState(false)
+  const createDialogRef = useRef<HTMLDivElement>(null)
+  const editDialogRef = useRef<HTMLDivElement>(null)
+  const tokenDialogRef = useRef<HTMLDivElement>(null)
+  const metricsDialogRef = useRef<HTMLDivElement>(null)
+  const closeCreate = useCallback(() => setShowCreate(false), [])
+  const closeEdit = useCallback(() => setEdit(null), [])
+  const closeToken = useCallback(() => setOneTimeToken(null), [])
+  const closeMetrics = useCallback(() => setMetrics(null), [])
+
+  useModalDialog({ dialogRef: createDialogRef, enabled: showCreate, onClose: closeCreate })
+  useModalDialog({ dialogRef: editDialogRef, enabled: Boolean(edit), onClose: closeEdit })
+  useModalDialog({ dialogRef: tokenDialogRef, enabled: Boolean(oneTimeToken), onClose: closeToken })
+  useModalDialog({ dialogRef: metricsDialogRef, enabled: Boolean(metrics), onClose: closeMetrics })
 
   const load = useCallback(async () => {
     if (!projectId) {
@@ -207,7 +221,7 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
         )}
       </div>
 
-      {error && <div className="pp-error">{error}</div>}
+      {error && <div className="pp-error" role="alert">{error}</div>}
 
       {!projectId ? (
         <div className="pp-empty">Select a project to view its monitoring collectors.</div>
@@ -270,11 +284,11 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
 
       {/* Register modal */}
       {showCreate && (
-        <div className="pp-modal-overlay" onClick={() => setShowCreate(false)}>
-          <div className="pp-modal" onClick={event => event.stopPropagation()}>
+        <div className="pp-modal-overlay" onClick={closeCreate}>
+          <div ref={createDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby="collector-create-dialog-title" onClick={event => event.stopPropagation()}>
             <div className="pp-modal-header">
-              <h3>Register Monitoring Collector</h3>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowCreate(false)}>
+              <h3 id="collector-create-dialog-title">Register Monitoring Collector</h3>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={closeCreate}>
                 Close
               </button>
             </div>
@@ -285,7 +299,6 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
                   value={createForm.name}
                   onChange={e => setCreateForm(f => ({ ...f, name: e.target.value }))}
                   placeholder="e.g. edge-eu-collector"
-                  autoFocus
                 />
               </label>
               <label className="pp-field">
@@ -306,7 +319,7 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
               </label>
             </div>
             <div className="pp-modal-actions">
-              <button type="button" className="btn btn-secondary" onClick={() => setShowCreate(false)}>
+              <button type="button" className="btn btn-secondary" onClick={closeCreate}>
                 Cancel
               </button>
               <button type="button" className="btn btn-primary" disabled={!createValid || busy} onClick={() => void submitCreate()}>
@@ -319,11 +332,11 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
 
       {/* Edit modal */}
       {edit && (
-        <div className="pp-modal-overlay" onClick={() => setEdit(null)}>
-          <div className="pp-modal" onClick={event => event.stopPropagation()}>
+        <div className="pp-modal-overlay" onClick={closeEdit}>
+          <div ref={editDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby="collector-edit-dialog-title" onClick={event => event.stopPropagation()}>
             <div className="pp-modal-header">
-              <h3>Edit Collector</h3>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEdit(null)}>
+              <h3 id="collector-edit-dialog-title">Edit Collector</h3>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={closeEdit}>
                 Close
               </button>
             </div>
@@ -352,7 +365,7 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
               </div>
             </div>
             <div className="pp-modal-actions">
-              <button type="button" className="btn btn-secondary" onClick={() => setEdit(null)}>
+              <button type="button" className="btn btn-secondary" onClick={closeEdit}>
                 Cancel
               </button>
               <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void submitEdit()}>
@@ -365,11 +378,11 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
 
       {/* One-time token reveal */}
       {oneTimeToken && (
-        <div className="pp-modal-overlay" onClick={() => setOneTimeToken(null)}>
-          <div className="pp-modal" onClick={event => event.stopPropagation()}>
+        <div className="pp-modal-overlay" onClick={closeToken}>
+          <div ref={tokenDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby="collector-token-dialog-title" onClick={event => event.stopPropagation()}>
             <div className="pp-modal-header">
-              <h3>Collector token for “{oneTimeToken.name}”</h3>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setOneTimeToken(null)}>
+              <h3 id="collector-token-dialog-title">Collector token for “{oneTimeToken.name}”</h3>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={closeToken}>
                 Close
               </button>
             </div>
@@ -383,7 +396,7 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
               </div>
             </div>
             <div className="pp-modal-actions">
-              <button type="button" className="btn btn-primary" onClick={() => setOneTimeToken(null)}>
+              <button type="button" className="btn btn-primary" onClick={closeToken}>
                 Done
               </button>
             </div>
@@ -393,16 +406,16 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
 
       {/* Latest ingested metrics snapshot */}
       {metrics && (
-        <div className="pp-modal-overlay" onClick={() => setMetrics(null)}>
-          <div className="pp-modal" onClick={event => event.stopPropagation()}>
+        <div className="pp-modal-overlay" onClick={closeMetrics}>
+          <div ref={metricsDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby="collector-metrics-dialog-title" onClick={event => event.stopPropagation()}>
             <div className="pp-modal-header">
-              <h3>
+              <h3 id="collector-metrics-dialog-title">
                 Live metrics — “{metrics.name}”
                 <span className={freshness(metrics.snapshot).cls} style={{ marginLeft: 8 }}>
                   {freshness(metrics.snapshot).label}
                 </span>
               </h3>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setMetrics(null)}>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={closeMetrics}>
                 Close
               </button>
             </div>
@@ -434,7 +447,7 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
               )}
             </div>
             <div className="pp-modal-actions">
-              <button type="button" className="btn btn-primary" onClick={() => setMetrics(null)}>
+              <button type="button" className="btn btn-primary" onClick={closeMetrics}>
                 Done
               </button>
             </div>

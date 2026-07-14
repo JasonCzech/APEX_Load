@@ -1,10 +1,15 @@
 package api
 
 import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
 	"net/http"
-	"os"
 	"strings"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 type ArchiveRetentionPlanResponse struct {
@@ -155,6 +160,9 @@ func (s *Server) handlePlanArchiveRetention(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) handleApplyArchiveRetention(w http.ResponseWriter, r *http.Request) {
+	if !s.requireExecutionLeader(w) {
+		return
+	}
 	now := time.Now().UTC()
 	settings := s.runner.GetSystemSettings().ArchiveRetention
 	candidates := planArchiveRetentionPrune(now, settings, s.runner.ListTests())
@@ -168,7 +176,23 @@ func (s *Server) handleApplyArchiveRetention(w http.ResponseWriter, r *http.Requ
 			ComplianceClass: candidate.ComplianceClass,
 			Reason:          candidate.Reason,
 		}
-		if err := os.RemoveAll(candidate.ArchivePath); err != nil {
+		record, ok := s.runner.GetRunArchive(candidate.TestID)
+		if !ok && s.store != nil {
+			persisted, err := s.store.GetRunArchive(candidate.TestID)
+			if err == nil && persisted != nil {
+				record, ok = persisted, true
+			} else if err != nil && !errors.Is(err, sql.ErrNoRows) {
+				result.Status = "failed"
+				result.Error = "load durable archive record: " + err.Error()
+				summary.FailedCount++
+				results = append(results, result)
+				continue
+			}
+		}
+		if !ok && candidate.ArchivePath != "" {
+			record = &storage.RunArchiveRecord{TestID: candidate.TestID, ArchivePath: candidate.ArchivePath}
+		}
+		if err := s.pruneRunArchive(r.Context(), record); err != nil {
 			result.Status = "failed"
 			result.Error = err.Error()
 			summary.FailedCount++
@@ -204,6 +228,138 @@ func (s *Server) handleApplyArchiveRetention(w http.ResponseWriter, r *http.Requ
 		HARResults:    harResults,
 		Summary:       summary,
 	})
+}
+
+type runArchiveMetadataDeleter interface {
+	DeleteRunArchive(testID string) error
+}
+
+// pruneRunArchive deletes durable object data first, then the local staging
+// directory, and finally the database pointer. That ordering prevents a
+// metadata-only prune from being undone by ensureArchiveMaterialized.
+func (s *Server) pruneRunArchive(ctx context.Context, record *storage.RunArchiveRecord) error {
+	if record == nil || strings.TrimSpace(record.TestID) == "" {
+		return fmt.Errorf("run archive record is required")
+	}
+	if s.runner != nil {
+		if !s.runner.isExecutionLeader() {
+			return errNotExecutionLeader
+		}
+		unlock := s.runner.lockArchiveCommitFence(record.TestID)
+		defer unlock()
+		operationCtx, cancel := s.runner.archiveOperationContext(ctx)
+		defer cancel()
+		if err := s.pruneRunArchiveUnderFence(operationCtx, record); err != nil {
+			return err
+		}
+		return s.completeArchiveCleanupIntent(record.TestID)
+	}
+	if err := s.pruneRunArchiveUnderFence(ctx, record); err != nil {
+		return err
+	}
+	return s.completeArchiveCleanupIntent(record.TestID)
+}
+
+func (s *Server) pruneRunArchiveUnderFence(ctx context.Context, record *storage.RunArchiveRecord) error {
+	if record == nil || strings.TrimSpace(record.TestID) == "" {
+		return fmt.Errorf("run archive record is required")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := s.ensureArchiveCleanupIntent(record); err != nil {
+		return err
+	}
+	if s.runner != nil {
+		if !s.runner.isExecutionLeader() {
+			return errNotExecutionLeader
+		}
+		// Retention/cleanup is a durable cancellation of any publication that
+		// still owns this local source. Delete its intent while holding the same
+		// fence before removing objects or the catalog pointer.
+		if outbox := s.runner.archiveFinalizationOutbox(); outbox != nil {
+			if err := outbox.DeleteArchiveFinalizationJob(record.TestID); err != nil {
+				return fmt.Errorf("cancel archive finalization before prune: %w", err)
+			}
+		}
+		if outbox := s.runner.archiveRefreshOutbox(); outbox != nil {
+			if err := outbox.DeleteArchiveRefreshJob(record.TestID); err != nil {
+				return fmt.Errorf("cancel archive refresh before prune: %w", err)
+			}
+		}
+	}
+	if err := deleteArchiveBackendObjects(ctx, record); err != nil {
+		return err
+	}
+	if err := removeLocalArchiveDirectory(record.ArchivePath); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if s.runner != nil && !s.runner.isExecutionLeader() {
+		return errNotExecutionLeader
+	}
+	deleter, ok := s.store.(runArchiveMetadataDeleter)
+	if s.store != nil && !ok {
+		return fmt.Errorf("archive metadata deletion is not supported by the configured store")
+	}
+	if ok {
+		if err := deleter.DeleteRunArchive(record.TestID); err != nil {
+			return fmt.Errorf("delete archive metadata: %w", err)
+		}
+	}
+	forgetRunArchiveCache(record.TestID)
+	if s.runner != nil {
+		s.runner.mu.Lock()
+		delete(s.runner.archives, record.TestID)
+		if test := s.runner.tests[record.TestID]; test != nil {
+			test.Archive = nil
+		}
+		s.runner.mu.Unlock()
+	}
+	return nil
+}
+
+func (s *Server) ensureArchiveCleanupIntent(record *storage.RunArchiveRecord) error {
+	outbox := s.archiveCleanupOutbox()
+	if outbox == nil {
+		return fmt.Errorf("archive cleanup durability is not supported by the configured store")
+	}
+	if _, err := outbox.GetArchiveCleanupJob(record.TestID); err == nil {
+		return nil
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("load archive cleanup intent: %w", err)
+	}
+	projectID := storage.DefaultProjectID
+	if s.runner == nil || s.runner.testStore == nil {
+		return fmt.Errorf("cannot create archive cleanup intent without durable test storage")
+	}
+	test, err := s.runner.testStore.GetTest(record.TestID)
+	if err != nil {
+		return fmt.Errorf("load test for archive cleanup intent: %w", err)
+	}
+	if test != nil {
+		projectID = normalizeProjectID(test.ProjectID)
+	}
+	copy := *record
+	if err := outbox.SaveArchiveCleanupJob(&storage.ArchiveCleanupJob{
+		TestID: record.TestID, ProjectID: projectID, ArchiveRecord: copy,
+	}); err != nil {
+		return fmt.Errorf("save archive cleanup intent: %w", err)
+	}
+	return nil
+}
+
+func (s *Server) completeArchiveCleanupIntent(testID string) error {
+	outbox := s.archiveCleanupOutbox()
+	if outbox == nil {
+		return nil
+	}
+	if err := outbox.DeleteArchiveCleanupJob(testID); err != nil {
+		return fmt.Errorf("complete archive cleanup intent: %w", err)
+	}
+	return nil
 }
 
 func archiveRetentionAuditDetails(candidate ArchivePruneCandidate, result ArchiveRetentionResult) map[string]any {

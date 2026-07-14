@@ -56,6 +56,88 @@ func (s *SQLiteStore) SaveExecutionPlanSchedule(schedule *ExecutionPlanSchedule)
 	return err
 }
 
+// CreateExecutionPlanScheduleIfAbsent creates a schedule without ever replacing
+// an existing row. Operator create paths use this instead of the legacy UPSERT
+// so a concurrent writer cannot be silently overwritten.
+func (s *SQLiteStore) CreateExecutionPlanScheduleIfAbsent(schedule *ExecutionPlanSchedule) (bool, error) {
+	if err := prepareExecutionPlanSchedule(schedule); err != nil {
+		return false, err
+	}
+	result, err := s.db.Exec(`INSERT INTO execution_plan_schedules (id, plan_id, project_id, revision, name, cron_expr, timezone, run_name_template, enabled, missed_run_policy, conflict_summary, next_required_action, last_run_run_id, last_run_at, next_run_at, disabled_from, disabled_until, last_error, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO NOTHING`,
+		schedule.ID, schedule.PlanID, schedule.ProjectID, schedule.Revision, schedule.Name, schedule.CronExpr, schedule.Timezone, schedule.RunNameTemplate,
+		schedule.Enabled, schedule.MissedRunPolicy, schedule.ConflictSummary, schedule.NextRequiredAction, schedule.LastRunRunID,
+		schedule.LastRunAt, schedule.NextRunAt, schedule.DisabledFrom, schedule.DisabledUntil, schedule.LastError, schedule.CreatedAt, schedule.UpdatedAt)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return affected == 1, nil
+}
+
+// UpdateExecutionPlanScheduleIfRevision updates an existing schedule only when
+// its durable revision still matches the caller's snapshot. It never inserts,
+// which also prevents a stale scheduler from resurrecting a deleted row.
+func (s *SQLiteStore) UpdateExecutionPlanScheduleIfRevision(schedule *ExecutionPlanSchedule, expectedRevision int) (bool, error) {
+	if err := prepareExecutionPlanSchedule(schedule); err != nil {
+		return false, err
+	}
+	if expectedRevision < 1 {
+		return false, errors.New("expected execution plan schedule revision must be positive")
+	}
+	nextRevision := expectedRevision + 1
+	result, err := s.db.Exec(`UPDATE execution_plan_schedules SET plan_id=?, project_id=?, revision=?, name=?, cron_expr=?, timezone=?, run_name_template=?, enabled=?, missed_run_policy=?, conflict_summary=?, next_required_action=?, last_run_run_id=?, last_run_at=?, next_run_at=?, disabled_from=?, disabled_until=?, last_error=?, updated_at=? WHERE id=? AND COALESCE(revision, 1)=?`,
+		schedule.PlanID, schedule.ProjectID, nextRevision, schedule.Name, schedule.CronExpr, schedule.Timezone, schedule.RunNameTemplate,
+		schedule.Enabled, schedule.MissedRunPolicy, schedule.ConflictSummary, schedule.NextRequiredAction, schedule.LastRunRunID,
+		schedule.LastRunAt, schedule.NextRunAt, schedule.DisabledFrom, schedule.DisabledUntil, schedule.LastError, schedule.UpdatedAt,
+		schedule.ID, expectedRevision)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	if affected != 1 {
+		return false, nil
+	}
+	schedule.Revision = nextRevision
+	return true, nil
+}
+
+func prepareExecutionPlanSchedule(schedule *ExecutionPlanSchedule) error {
+	if schedule == nil {
+		return errors.New("execution plan schedule is required")
+	}
+	if strings.TrimSpace(schedule.ID) == "" {
+		return errors.New("execution plan schedule id is required")
+	}
+	if strings.TrimSpace(schedule.PlanID) == "" {
+		return errors.New("execution plan schedule plan_id is required")
+	}
+	if strings.TrimSpace(schedule.Name) == "" {
+		return errors.New("execution plan schedule name is required")
+	}
+	if strings.TrimSpace(schedule.CronExpr) == "" {
+		return errors.New("execution plan schedule cron_expr is required")
+	}
+	if schedule.CreatedAt.IsZero() {
+		schedule.CreatedAt = time.Now()
+	}
+	if schedule.UpdatedAt.IsZero() {
+		schedule.UpdatedAt = time.Now()
+	}
+	schedule.ProjectID = normalizeProjectID(schedule.ProjectID)
+	if schedule.Revision < 1 {
+		schedule.Revision = 1
+	}
+	return nil
+}
+
 func (s *SQLiteStore) GetExecutionPlanSchedule(id string) (*ExecutionPlanSchedule, error) {
 	row := s.db.QueryRow(`SELECT `+executionPlanScheduleColumns+` WHERE id = ?`, id)
 	return scanExecutionPlanSchedule(row)
@@ -80,8 +162,18 @@ func (s *SQLiteStore) ListAllExecutionPlanSchedules() ([]*ExecutionPlanSchedule,
 }
 
 func (s *SQLiteStore) DeleteExecutionPlanSchedule(id string) error {
-	_, err := s.db.Exec(`DELETE FROM execution_plan_schedules WHERE id = ?`, id)
-	return err
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM execution_plan_schedule_occurrences WHERE schedule_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM execution_plan_schedules WHERE id = ?`, id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func scanExecutionPlanSchedule(row scanner) (*ExecutionPlanSchedule, error) {

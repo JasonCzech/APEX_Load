@@ -99,7 +99,8 @@ func TestRedactBaselineObservationRedactsXMLAndMultipartCredentials(t *testing.T
 	}
 }
 
-func TestPersistRecordedBaselineStoresRedactedAndRawViews(t *testing.T) {
+func TestPersistRecordedBaselineStoresRedactedAndEncryptedViews(t *testing.T) {
+	t.Setenv(recordingBaselineKeyEnvVar, "recording-test-key")
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore: %v", err)
@@ -125,20 +126,40 @@ func TestPersistRecordedBaselineStoresRedactedAndRawViews(t *testing.T) {
 	if record == nil {
 		t.Fatal("recording was not persisted")
 	}
-	if record.Sensitivity != scrub.SensitivityRaw {
-		t.Fatalf("Sensitivity = %q, want raw", record.Sensitivity)
+	if record.Sensitivity != "encrypted_contains_secrets" {
+		t.Fatalf("Sensitivity = %q, want encrypted", record.Sensitivity)
 	}
-	if len(record.Observations) != 1 || len(record.CorrelationObservations) != 1 {
+	if len(record.Observations) != 1 || len(record.CorrelationObservations) != 0 || record.EncryptedCorrelationObservations == "" {
 		t.Fatalf("recording observations = %#v", record)
 	}
 	persisted := record.Observations[0]
-	raw := record.CorrelationObservations[0]
 	for _, secret := range []string{"request-token", "hunter2", "response-token", "Basic dXNlcjpwdw=="} {
-		if strings.Contains(persisted.RequestURL+persisted.RequestBody+persisted.ResponseBody+persisted.RequestHeaders["Authorization"], secret) {
+		if strings.Contains(persisted.RequestURL+persisted.RequestBody+persisted.ResponseBody+persisted.RequestHeaders["Authorization"]+record.EncryptedCorrelationObservations, secret) {
 			t.Fatalf("persisted observation leaked %q: %#v", secret, persisted)
 		}
 	}
-	if !strings.Contains(raw.RequestURL, "request-token") || !strings.Contains(raw.RequestBody, "hunter2") || !strings.Contains(raw.ResponseBody, "response-token") {
-		t.Fatalf("raw correlation observation lost source values: %#v", raw)
+	decrypted := baselineObservations(record)
+	if len(decrypted) != 1 || !strings.Contains(decrypted[0].RequestURL, "request-token") || !strings.Contains(decrypted[0].RequestBody, "hunter2") || !strings.Contains(decrypted[0].ResponseBody, "response-token") {
+		t.Fatalf("encrypted correlation observation lost source values: %#v", decrypted)
+	}
+}
+
+func TestPersistRecordedBaselineWithoutKeyKeepsOnlyScrubbedView(t *testing.T) {
+	t.Setenv(recordingBaselineKeyEnvVar, "")
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	server := &Server{store: store}
+	if err := server.persistRecordedBaseline("script-no-key", "browser_recording", []correlate.Observation{{RequestBody: `{"password":"secret-value"}`}}); err != nil {
+		t.Fatal(err)
+	}
+	record, err := store.GetScriptRecording("script-no-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.Sensitivity != scrub.SensitivityScrubbed || record.EncryptedCorrelationObservations != "" || strings.Contains(record.Observations[0].RequestBody, "secret-value") {
+		t.Fatalf("keyless recording retained raw detail: %#v", record)
 	}
 }

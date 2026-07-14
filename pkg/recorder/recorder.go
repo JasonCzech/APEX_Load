@@ -6,13 +6,13 @@ import (
 	"compress/gzip"
 	"compress/zlib"
 	"crypto/rsa"
-	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
 	"fmt"
 	"io"
 	"log/slog"
 	"mime"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -26,6 +26,11 @@ import (
 )
 
 const defaultBodyCaptureLimitBytes = 512 * 1024
+const maxBodyCaptureLimitBytes = 16 << 20
+const maxRecordedRequests = 10_000
+const maxRecordedBodyBytes = 256 << 20
+const maxRecordedWebSocketMessages = 10_000
+const maxRecordedWebSocketPayloadBytes = 64 << 20
 const streamingRecordDelay = 250 * time.Millisecond
 const maxMultipartRequestCaptureBytes = 50 << 20
 
@@ -94,11 +99,14 @@ type Session struct {
 	LastSeq      int               `json:"last_seq,omitempty"`
 	Filters      SessionFilters    `json:"filters"`
 
-	mu          sync.Mutex
-	seq         int
-	lastReqTime time.Time
-	lastReqEnd  time.Time
-	notify      func(SessionEvent)
+	mu                    sync.Mutex
+	seq                   int
+	lastReqTime           time.Time
+	lastReqEnd            time.Time
+	notify                func(SessionEvent)
+	storedBodyBytes       int
+	webSocketMessages     int
+	webSocketPayloadBytes int
 }
 
 type SessionFilters struct {
@@ -159,7 +167,7 @@ func NewWithCAFiles(proxyAddr, caCertPath, caKeyPath string) *Recorder {
 	}
 	transport := &http.Transport{
 		DialContext:         proxySafeDialer(30 * time.Second).DialContext,
-		TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
+		TLSClientConfig:     recorderUpstreamTLSConfig(""),
 		MaxIdleConns:        256,
 		MaxIdleConnsPerHost: 64,
 		IdleConnTimeout:     90 * time.Second,
@@ -213,6 +221,9 @@ func (r *Recorder) StartSessionForProject(id, name, projectID string, filters Se
 	if s.Filters.BodyCaptureLimitBytes <= 0 {
 		s.Filters.BodyCaptureLimitBytes = defaultBodyCaptureLimitBytes
 	}
+	if s.Filters.BodyCaptureLimitBytes > maxBodyCaptureLimitBytes {
+		return nil, fmt.Errorf("body_capture_limit_bytes must not exceed %d", maxBodyCaptureLimitBytes)
+	}
 
 	r.sessions[id] = s
 	r.active = s
@@ -256,44 +267,46 @@ func (r *Recorder) StopSession(id string) (*Session, error) {
 
 func (r *Recorder) PauseSession(id string) (*Session, error) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
-
 	s, ok := r.sessions[id]
 	if !ok {
+		r.mu.Unlock()
 		return nil, fmt.Errorf("session %q not found", id)
 	}
 	s.mu.Lock()
 	if s.Status != "recording" {
 		status := s.Status
 		s.mu.Unlock()
+		r.mu.Unlock()
 		return nil, fmt.Errorf("session %q is not recording (status: %s)", id, status)
 	}
 	s.Status = "paused"
 	s.mu.Unlock()
+	r.mu.Unlock()
 	if s.notify != nil {
-		s.notify(SessionEvent{Type: "recording_paused", SessionID: s.ID, Session: s})
+		s.notify(SessionEvent{Type: "recording_paused", SessionID: s.ID, Session: s.snapshot()})
 	}
 	return s, nil
 }
 
 func (r *Recorder) ResumeSession(id string) (*Session, error) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
-
 	s, ok := r.sessions[id]
 	if !ok {
+		r.mu.Unlock()
 		return nil, fmt.Errorf("session %q not found", id)
 	}
 	s.mu.Lock()
 	if s.Status != "paused" {
 		status := s.Status
 		s.mu.Unlock()
+		r.mu.Unlock()
 		return nil, fmt.Errorf("session %q is not paused (status: %s)", id, status)
 	}
 	s.Status = "recording"
 	s.mu.Unlock()
+	r.mu.Unlock()
 	if s.notify != nil {
-		s.notify(SessionEvent{Type: "recording_resumed", SessionID: s.ID, Session: s})
+		s.notify(SessionEvent{Type: "recording_resumed", SessionID: s.ID, Session: s.snapshot()})
 	}
 	return s, nil
 }
@@ -307,7 +320,6 @@ func (r *Recorder) UpdateRequest(sessionID string, seq int, update RequestUpdate
 	}
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	for i := range s.Requests {
 		if s.Requests[i].Seq != seq {
@@ -330,17 +342,21 @@ func (r *Recorder) UpdateRequest(sessionID string, seq int, update RequestUpdate
 		}
 		if update.ThinkTimeMs != nil {
 			if *update.ThinkTimeMs < 0 {
+				s.mu.Unlock()
 				return nil, fmt.Errorf("think_time_ms must be non-negative")
 			}
 			s.Requests[i].ThinkTimeMs = *update.ThinkTimeMs
 		}
 		updated := recordingEventRequest(s.Requests[i])
-		if s.notify != nil {
-			s.notify(SessionEvent{Type: "request_updated", SessionID: s.ID, Request: &updated})
+		notify := s.notify
+		s.mu.Unlock()
+		if notify != nil {
+			notify(SessionEvent{Type: "request_updated", SessionID: s.ID, Request: &updated})
 		}
 		return &updated, nil
 	}
 
+	s.mu.Unlock()
 	return nil, fmt.Errorf("request seq %d not found in session %q", seq, sessionID)
 }
 
@@ -482,16 +498,29 @@ func (r *Recorder) StartProxy() error {
 	if err := r.validateProxyStartup(); err != nil {
 		return err
 	}
-	r.proxy = &http.Server{
+	listener, err := net.Listen("tcp", r.addr)
+	if err != nil {
+		return fmt.Errorf("listen recording proxy on %s: %w", r.addr, err)
+	}
+	server := &http.Server{
 		Addr:         r.addr,
 		Handler:      http.HandlerFunc(r.handleProxy),
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 60 * time.Second,
 	}
+	r.mu.Lock()
+	if r.proxy != nil {
+		r.mu.Unlock()
+		_ = listener.Close()
+		return fmt.Errorf("recording proxy is already running")
+	}
+	r.proxy = server
+	r.addr = listener.Addr().String()
+	r.mu.Unlock()
 
 	slog.Info("recording proxy starting", "addr", r.addr)
 	go func() {
-		if err := r.proxy.ListenAndServe(); err != http.ErrServerClosed {
+		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
 			slog.Error("recording proxy error", "err", err)
 		}
 	}()
@@ -499,13 +528,19 @@ func (r *Recorder) StartProxy() error {
 }
 
 func (r *Recorder) StopProxy() error {
-	if r.proxy == nil {
+	r.mu.Lock()
+	server := r.proxy
+	r.proxy = nil
+	r.mu.Unlock()
+	if server == nil {
 		return nil
 	}
-	return r.proxy.Close()
+	return server.Close()
 }
 
 func (r *Recorder) ProxyAddr() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	return r.addr
 }
 
@@ -559,7 +594,7 @@ func (r *Recorder) handleProxy(w http.ResponseWriter, req *http.Request) {
 			proxyReq.Header.Add(k, v)
 		}
 	}
-	proxyReq.Header.Del("Proxy-Connection")
+	stripProxyRequestHeaders(proxyReq.Header, false)
 
 	resp, err := r.proxyClient.Do(proxyReq)
 	if err != nil {
@@ -858,7 +893,14 @@ type recordOptions struct {
 
 func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBody []byte, resp *http.Response, respBody []byte, elapsed time.Duration, opts recordOptions) int {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	var event *SessionEvent
+	notify := s.notify
+	defer func() {
+		s.mu.Unlock()
+		if event != nil && notify != nil {
+			notify(*event)
+		}
+	}()
 
 	if s.Status != "recording" {
 		return 0
@@ -897,6 +939,9 @@ func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBo
 		if strings.Contains(host, h) {
 			return 0
 		}
+	}
+	if len(s.Requests) >= maxRecordedRequests {
+		return 0
 	}
 
 	s.seq++
@@ -988,16 +1033,33 @@ func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBo
 		IsStatic:              isStaticResource(parsed),
 		ResourceType:          resourceType,
 	}
+	remainingBodyBytes := maxRecordedBodyBytes - s.storedBodyBytes
+	storedBodies := []struct {
+		body      *string
+		truncated *bool
+	}{
+		{body: &rec.Body, truncated: &rec.BodyTruncated},
+		{body: &rec.ResponseBody, truncated: &rec.ResponseBodyTruncated},
+	}
+	for _, stored := range storedBodies {
+		if len(*stored.body) > remainingBodyBytes {
+			*stored.body = ""
+			*stored.truncated = true
+			continue
+		}
+		remainingBodyBytes -= len(*stored.body)
+		s.storedBodyBytes += len(*stored.body)
+	}
 
 	s.Requests = append(s.Requests, rec)
 
 	if s.notify != nil {
 		eventRequest := recordingEventRequest(rec)
-		s.notify(SessionEvent{
+		event = &SessionEvent{
 			Type:      "request_recorded",
 			SessionID: s.ID,
 			Request:   &eventRequest,
-		})
+		}
 	}
 	return rec.Seq
 }
@@ -1008,21 +1070,30 @@ func (r *Recorder) appendWebSocketMessage(s *Session, seq int, msg RecordedWebSo
 	}
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.Status != "recording" {
+		s.mu.Unlock()
 		return
 	}
 	for i := range s.Requests {
 		if s.Requests[i].Seq != seq {
 			continue
 		}
+		if s.webSocketMessages >= maxRecordedWebSocketMessages || s.webSocketPayloadBytes+len(msg.Payload) > maxRecordedWebSocketPayloadBytes {
+			s.mu.Unlock()
+			return
+		}
 		s.Requests[i].WebSocketMessages = append(s.Requests[i].WebSocketMessages, msg)
+		s.webSocketMessages++
+		s.webSocketPayloadBytes += len(msg.Payload)
 		updated := recordingEventRequest(s.Requests[i])
-		if s.notify != nil {
-			s.notify(SessionEvent{Type: "request_updated", SessionID: s.ID, Request: &updated})
+		notify := s.notify
+		s.mu.Unlock()
+		if notify != nil {
+			notify(SessionEvent{Type: "request_updated", SessionID: s.ID, Request: &updated})
 		}
 		return
 	}
+	s.mu.Unlock()
 }
 
 func recordingEventRequest(request RecordedRequest) RecordedRequest {

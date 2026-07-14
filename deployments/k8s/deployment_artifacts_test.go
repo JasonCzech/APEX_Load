@@ -86,7 +86,7 @@ func TestKEDAScaledObjectsProtectActiveDemand(t *testing.T) {
 		"onprem/generator-keda-scaledobject.yaml",
 		"local/generator-keda-scaledobject.yaml",
 	} {
-		t.Run(path, func(t *testing.T) {
+			t.Run(path, func(t *testing.T) {
 			content := readTextFile(t, path)
 			checks := []string{
 				"metricName: apexload_active_vusers",
@@ -133,6 +133,9 @@ func TestGeneratorManifestsUseGRPCHealthProbes(t *testing.T) {
 			}
 			if strings.Contains(content, "sleep 15") {
 				t.Fatalf("%s must not use blind preStop sleep for generator drain", path)
+			}
+			if !strings.Contains(content, "name: health") || !strings.Contains(content, "containerPort: 9092") || strings.Count(content, "port: 9092") < 2 {
+				t.Fatalf("%s must probe the dedicated unauthenticated health-only listener on 9092", path)
 			}
 		})
 	}

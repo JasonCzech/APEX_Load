@@ -3,6 +3,7 @@ package api
 // library_bundle.go — split from library_federation.go (same package, behavior-preserving).
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -236,7 +237,8 @@ func (s *Server) libraryResultBundleItem(id string) (LibraryBundleItem, error) {
 	}
 	if record, ok := s.runner.GetRunArchive(id); ok && record != nil {
 		result.Archive = record
-		if err := ensureArchiveMaterialized(record); err == nil {
+		if lease, err := acquireArchiveMaterialized(context.Background(), record); err == nil {
+			defer lease.Release()
 			result.ArchiveTransfer = "stream"
 			result.ArchiveManifestHash = hashArchiveManifest(record)
 			result.ArchiveSizeBytes = archiveDirectorySize(record.ArchivePath)
@@ -264,8 +266,11 @@ func (s *Server) importLibraryBundleWithArchive(req LibraryImportRequest, remote
 	if bundle.SchemaVersion != libraryBundleSchemaVersion {
 		return nil, fmt.Errorf("unsupported library bundle schema %q", bundle.SchemaVersion)
 	}
+	projectID, err := validateLibraryImportDestination(req)
+	if err != nil {
+		return nil, err
+	}
 	response := &LibraryImportResponse{SchemaVersion: libraryBundleSchemaVersion, ImportedAt: time.Now().UTC()}
-	projectID := normalizeProjectID(req.ProjectID)
 	idMap := map[string]string{}
 	for _, item := range bundle.Items {
 		if normalizeLibraryKind(item.Kind) != "script" || item.Script == nil {
@@ -308,21 +313,27 @@ func (s *Server) importLibraryScript(item LibraryBundleItem, projectID string, r
 	action := "created"
 	if link != nil {
 		localID = link.LocalItemID
-		if local, ok := s.runner.GetScript(localID); ok && local != nil && hashLibraryScript(local.Script) != link.LocalContentHash && item.ContentHash != link.RemoteContentHash {
-			return "", "", &LibraryConflict{Kind: "script", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, LocalItemID: localID, Reason: "local and remote script changed since last sync"}
+		if local, ok := s.runner.GetScript(localID); ok && local != nil {
+			if normalizeProjectID(local.ProjectID) != projectID {
+				return "", "", &LibraryConflict{Kind: "script", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, LocalItemID: localID, Reason: "existing sync link belongs to a different destination project"}
+			}
+			if hashLibraryScript(local.Script) != link.LocalContentHash && item.ContentHash != link.RemoteContentHash {
+				return "", "", &LibraryConflict{Kind: "script", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, LocalItemID: localID, Reason: "local and remote script changed since last sync"}
+			}
 		}
 		action = "updated"
 	}
 	script := cloneScriptForLibrary(item.Script)
-	if projectID != "" {
-		script.ProjectID = projectID
-	}
+	script.ProjectID = projectID
 	if localID == "" {
 		script.ID = uuid.New().String()
 	} else {
 		script.ID = localID
 	}
-	stored := s.runner.StoreScript(script)
+	stored, err := s.runner.StoreScriptDurable(script)
+	if err != nil {
+		return "", "", &LibraryConflict{Kind: "script", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, LocalItemID: localID, Reason: "failed to persist imported script: " + err.Error()}
+	}
 	s.rememberLibraryLink(remoteID, item.Kind, item.SourceInstanceID, item.SourceItemID, stored.ID, item.SourceItemID, hashLibraryScript(stored.Script), item.ContentHash)
 	return stored.ID, action, nil
 }
@@ -336,8 +347,13 @@ func (s *Server) importLibraryScenario(item LibraryBundleItem, projectID string,
 	action := "created"
 	if link != nil {
 		localID = link.LocalItemID
-		if local, ok := s.runner.GetScenario(localID); ok && local != nil && hashLibraryScenario(local) != link.LocalContentHash && item.ContentHash != link.RemoteContentHash {
-			return "", "", &LibraryConflict{Kind: "scenario", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, LocalItemID: localID, Reason: "local and remote scenario changed since last sync"}
+		if local, ok := s.runner.GetScenario(localID); ok && local != nil {
+			if normalizeProjectID(local.ProjectID) != projectID {
+				return "", "", &LibraryConflict{Kind: "scenario", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, LocalItemID: localID, Reason: "existing sync link belongs to a different destination project"}
+			}
+			if hashLibraryScenario(local) != link.LocalContentHash && item.ContentHash != link.RemoteContentHash {
+				return "", "", &LibraryConflict{Kind: "scenario", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, LocalItemID: localID, Reason: "local and remote scenario changed since last sync"}
+			}
 		}
 		action = "updated"
 	}
@@ -351,10 +367,6 @@ func (s *Server) importLibraryScenario(item LibraryBundleItem, projectID string,
 		stored, err := s.runner.StoreScenario(req)
 		if err != nil {
 			return "", "", &LibraryConflict{Kind: "scenario", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: err.Error()}
-		}
-		if projectID != "" && stored.ProjectID != projectID {
-			// Scenario project comes from referenced scripts. The imported scripts above carry the mapped project.
-			stored.ProjectID = projectID
 		}
 		s.rememberLibraryLink(remoteID, item.Kind, item.SourceInstanceID, item.SourceItemID, stored.ID, item.SourceItemID, hashLibraryScenario(stored), item.ContentHash)
 		return stored.ID, action, nil
@@ -435,7 +447,7 @@ func (s *Server) importLibraryResult(item LibraryBundleItem, projectID string, r
 		ID:         importID,
 		Provider:   "apexload",
 		Name:       firstNonEmpty(strings.TrimSpace(item.Name), "APEX Load result import"),
-		ProjectID:  normalizeProjectID(firstNonEmpty(projectID, item.ProjectID)),
+		ProjectID:  projectID,
 		ScenarioID: "",
 		Source:     "library://" + item.SourceInstanceID + "/" + item.SourceItemID,
 		Summary:    item.Result.Summary,

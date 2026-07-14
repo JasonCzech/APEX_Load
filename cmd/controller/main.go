@@ -123,7 +123,11 @@ func main() {
 
 	<-ctx.Done()
 	slog.Info("shutting down")
-	server.Shutdown(context.Background())
+	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancelShutdown()
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		slog.Error("server shutdown did not complete cleanly", "err", err)
+	}
 }
 
 func logRuntimeTuning(settings runtimetuning.Settings) {

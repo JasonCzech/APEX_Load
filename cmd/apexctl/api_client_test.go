@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/api"
 )
@@ -23,6 +24,61 @@ func TestPollTestFailsFastOn404(t *testing.T) {
 		t.Fatal("expected error when test status returns 404")
 	} else if !strings.Contains(err.Error(), "not found") {
 		t.Fatalf("err = %v, want not found", err)
+	}
+}
+
+func TestApiClientStripsCredentialsOnCrossOriginRedirect(t *testing.T) {
+	var gotAPIKey, gotAuthorization string
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAPIKey = r.Header.Get("X-APEXLoad-API-Key")
+		gotAuthorization = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"test-1","status":"COMPLETE"}`))
+	}))
+	defer target.Close()
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL+r.URL.Path, http.StatusTemporaryRedirect)
+	}))
+	defer source.Close()
+
+	client := NewApiClientWithAuth(source.URL, "key-123", "token-456")
+	if _, err := client.GetTestStatus("test-1"); err != nil {
+		t.Fatalf("GetTestStatus: %v", err)
+	}
+	if gotAPIKey != "" || gotAuthorization != "" {
+		t.Fatalf("credentials leaked across origin: api-key=%q authorization=%q", gotAPIKey, gotAuthorization)
+	}
+}
+
+func TestApiClientRefusesHTTPSDowngradeRedirect(t *testing.T) {
+	targetHit := false
+	target := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { targetHit = true }))
+	defer target.Close()
+	source := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL+r.URL.Path, http.StatusTemporaryRedirect)
+	}))
+	defer source.Close()
+
+	client := NewApiClientWithAuth(source.URL, "key-123", "token-456")
+	client.Client = source.Client()
+	client.Client.Timeout = 2 * time.Second
+	if _, err := client.GetTestStatus("test-1"); err == nil || !strings.Contains(err.Error(), "HTTPS-to-HTTP") {
+		t.Fatalf("downgrade error = %v", err)
+	}
+	if targetHit {
+		t.Fatal("downgrade redirect reached the plaintext target")
+	}
+}
+
+func TestResolveTestResultFailsWhenSLAStatusUnavailable(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+	client := NewApiClient(server.URL)
+	result, err := client.resolveTestResult("test-1", &api.ManagedTest{Status: "COMPLETE"}, time.Second)
+	if result == nil || err == nil || !strings.Contains(err.Error(), "fetch SLA status") {
+		t.Fatalf("result=%#v error=%v, want explicit SLA retrieval failure", result, err)
 	}
 }
 

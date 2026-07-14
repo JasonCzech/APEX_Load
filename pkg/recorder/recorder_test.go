@@ -62,6 +62,74 @@ func TestProxyStartupHardening(t *testing.T) {
 			t.Fatalf("validateProxyStartup with token: %v", err)
 		}
 	})
+
+	t.Run("production rejects insecure upstream TLS", func(t *testing.T) {
+		t.Setenv("APEXLOAD_ENV", "production")
+		t.Setenv(envProxyAllowProduction, "true")
+		t.Setenv(envRecorderTLSInsecure, "true")
+		rec := New(defaultProxyAddr)
+		if err := rec.validateProxyStartup(); err == nil || !strings.Contains(err.Error(), envRecorderTLSInsecure) {
+			t.Fatalf("validateProxyStartup error = %v, want development-only TLS error", err)
+		}
+	})
+}
+
+func TestStartSessionRejectsExcessiveBodyCaptureLimit(t *testing.T) {
+	rec := New(defaultProxyAddr)
+	if _, err := rec.StartSession("project", "large", SessionFilters{BodyCaptureLimitBytes: maxBodyCaptureLimitBytes + 1}, nil); err == nil {
+		t.Fatal("StartSession accepted an excessive body capture limit")
+	}
+}
+
+func TestRecorderUpstreamTLSVerificationDefaultsSecure(t *testing.T) {
+	allowPrivateProxyTargets(t)
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
+	defer server.Close()
+
+	secure := New(defaultProxyAddr)
+	if _, err := secure.proxyClient.Get(server.URL); err == nil {
+		t.Fatal("self-signed upstream certificate was accepted by default")
+	}
+
+	t.Setenv(envRecorderTLSInsecure, "true")
+	insecureDev := New(defaultProxyAddr)
+	resp, err := insecureDev.proxyClient.Get(server.URL)
+	if err != nil {
+		t.Fatalf("explicit development TLS override failed: %v", err)
+	}
+	resp.Body.Close()
+}
+
+func TestStripProxyRequestHeaders(t *testing.T) {
+	header := http.Header{
+		"Connection":                  {"keep-alive, X-Internal-Hop"},
+		"X-Internal-Hop":              {"private"},
+		"Proxy-Authorization":         {"Bearer proxy-secret"},
+		"X-Apexload-Recorder-Token":   {"recorder-secret"},
+		"X-Apexload-Recorder-Private": {"internal"},
+		"Authorization":               {"Bearer origin-token"},
+	}
+	stripProxyRequestHeaders(header, false)
+	for _, name := range []string{"Connection", "X-Internal-Hop", "Proxy-Authorization", "X-Apexload-Recorder-Token", "X-Apexload-Recorder-Private"} {
+		if value := header.Get(name); value != "" {
+			t.Errorf("%s leaked upstream: %q", name, value)
+		}
+	}
+	if header.Get("Authorization") != "Bearer origin-token" {
+		t.Fatal("origin Authorization header should be preserved")
+	}
+}
+
+func TestStartProxyReportsBindFailureSynchronously(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer listener.Close()
+	rec := New(listener.Addr().String())
+	if err := rec.StartProxy(); err == nil {
+		t.Fatal("StartProxy returned success for an unavailable address")
+	}
 }
 
 func TestProxyAuthTokenEnforced(t *testing.T) {

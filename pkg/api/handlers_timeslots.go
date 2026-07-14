@@ -308,6 +308,15 @@ type reservationApprovalRequest struct {
 	Reason           string `json:"reason"`
 }
 
+type atomicCapacityApprovalStore interface {
+	ApproveCapacityReservationWithinLimit(
+		id string,
+		updatedAt time.Time,
+		capacity func(*storage.CapacityReservation) (envelope string, maxUnits int),
+		units func(*storage.CapacityReservation) int,
+	) (changed bool, overbooked bool, err error)
+}
+
 // decodeReservationApprovalRequest reads the optional approve-body override flag.
 // The approve endpoint historically took no body, so a missing/empty/invalid body
 // degrades to the zero value (no override).
@@ -330,12 +339,13 @@ func (s *Server) transitionReservationApproval(w http.ResponseWriter, r *http.Re
 		return
 	}
 	details := map[string]any{"approval_state": state}
+	approval := reservationApprovalRequest{}
 	// Guard approval against overbooking: approving a reservation whose reserved
 	// generators, combined with the already-approved reservations overlapping its
 	// window, exceed the configured pool would let two bound timeslots claim
 	// capacity that does not exist. An admin can override with an explicit reason.
 	if state == "approved" {
-		approval := decodeReservationApprovalRequest(r)
+		approval = decodeReservationApprovalRequest(r)
 		if approval.ConflictOverride {
 			if strings.TrimSpace(approval.Reason) == "" {
 				writeError(w, http.StatusBadRequest, "conflict_override requires a reason")
@@ -343,9 +353,11 @@ func (s *Server) transitionReservationApproval(w http.ResponseWriter, r *http.Re
 			}
 			details["conflict_override"] = true
 			details["override_reason"] = strings.TrimSpace(approval.Reason)
-		} else if msg := s.reservationOverbookingConflict(reservation); msg != "" {
-			writeError(w, http.StatusConflict, msg+"; pass conflict_override with a reason to approve anyway")
-			return
+		} else if _, atomic := s.store.(atomicCapacityApprovalStore); !atomic {
+			if msg := s.reservationOverbookingConflict(reservation); msg != "" {
+				writeError(w, http.StatusConflict, msg+"; pass conflict_override with a reason to approve anyway")
+				return
+			}
 		}
 	}
 	// Atomic compare-and-set instead of read-modify-write so two concurrent
@@ -357,7 +369,43 @@ func (s *Server) transitionReservationApproval(w http.ResponseWriter, r *http.Re
 		fromStates = []string{"pending"}
 	}
 	now := time.Now().UTC()
-	updated, err := s.store.UpdateCapacityReservationApprovalState(reservation.ID, fromStates, state, now)
+	var (
+		updated bool
+		err     error
+	)
+	if state == "approved" && !approval.ConflictOverride {
+		if atomicStore, ok := s.store.(atomicCapacityApprovalStore); ok {
+			settings := s.runner.GetSystemSettings()
+			poolEnvelopes, snapshotErr := s.runner.PoolGeneratorEnvelopeSnapshot()
+			if snapshotErr != nil {
+				writeError(w, http.StatusServiceUnavailable, "fleet capacity is temporarily unavailable")
+				return
+			}
+			var overbooked bool
+			updated, overbooked, err = atomicStore.ApproveCapacityReservationWithinLimit(
+				reservation.ID,
+				now,
+				func(candidate *storage.CapacityReservation) (string, int) {
+					poolID := timeslotPoolID(candidate)
+					if poolID != "" {
+						return poolID, poolEnvelopes[poolID]
+					}
+					return "", resolveCapacityAvailabilityAt(settings, candidate.StartAt.UTC()).EffectiveAvailableGenerators
+				},
+				func(candidate *storage.CapacityReservation) int {
+					return timeslotReservedGenerators(settings, candidate)
+				},
+			)
+			if err == nil && overbooked {
+				writeError(w, http.StatusConflict, "approving this timeslot would overbook its capacity envelope; pass conflict_override with a reason to approve anyway")
+				return
+			}
+		} else {
+			updated, err = s.store.UpdateCapacityReservationApprovalState(reservation.ID, fromStates, state, now)
+		}
+	} else {
+		updated, err = s.store.UpdateCapacityReservationApprovalState(reservation.ID, fromStates, state, now)
+	}
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

@@ -77,6 +77,14 @@ type scalableExecutionBackendSpy struct {
 	calls chan scaleBackendCall
 }
 
+type blockingScaleExecutionBackendSpy struct {
+	calls       chan scaleBackendCall
+	blockTarget int
+	blocked     chan struct{}
+	release     chan struct{}
+	blockOnce   sync.Once
+}
+
 func (provenanceInventoryBackend) Run(_ *TestRunner, _ *ManagedTest) {}
 
 func (provenanceInventoryBackend) SystemInventory(_ context.Context) []GeneratorInventoryEntry {
@@ -93,6 +101,17 @@ func (b *scalableExecutionBackendSpy) Run(_ *TestRunner, _ *ManagedTest) {}
 
 func (b *scalableExecutionBackendSpy) ScaleVUsers(_ *TestRunner, _ *ManagedTest, groupName string, targetVUsers int) error {
 	b.calls <- scaleBackendCall{group: groupName, target: targetVUsers}
+	return nil
+}
+
+func (b *blockingScaleExecutionBackendSpy) Run(_ *TestRunner, _ *ManagedTest) {}
+
+func (b *blockingScaleExecutionBackendSpy) ScaleVUsers(_ *TestRunner, _ *ManagedTest, groupName string, targetVUsers int) error {
+	b.calls <- scaleBackendCall{group: groupName, target: targetVUsers}
+	if targetVUsers == b.blockTarget {
+		b.blockOnce.Do(func() { close(b.blocked) })
+		<-b.release
+	}
 	return nil
 }
 
@@ -598,6 +617,9 @@ func (s *metricsStoreSpy) GetSetting(key string) (string, error) {
 func (s *metricsStoreSpy) SaveServiceAccount(account *storage.ServiceAccount) error {
 	return nil
 }
+func (s *metricsStoreSpy) UpdateServiceAccountMetadata(account *storage.ServiceAccount, expectedUpdatedAt time.Time) (bool, error) {
+	return true, nil
+}
 func (s *metricsStoreSpy) GetServiceAccount(id string) (*storage.ServiceAccount, error) {
 	return nil, nil
 }
@@ -618,6 +640,9 @@ func (s *metricsStoreSpy) UpdateServiceAccountActive(id string, active bool, upd
 }
 func (s *metricsStoreSpy) DeleteServiceAccount(id string) error { return nil }
 func (s *metricsStoreSpy) SaveUser(user *storage.User) error    { return nil }
+func (s *metricsStoreSpy) UpdateUserGuardLastAdmin(user *storage.User) (bool, error) {
+	return true, nil
+}
 func (s *metricsStoreSpy) UpdateUserIdentitySeen(id string, displayName string, email string, lastSeenAt time.Time, updatedAt time.Time) error {
 	return nil
 }
@@ -1567,6 +1592,36 @@ func TestRunArtifactsFinalizePersistsArchiveRecord(t *testing.T) {
 	}
 }
 
+func TestRunArtifactsPostFinalizeFailuresDoNotRewriteExecutionOutcome(t *testing.T) {
+	t.Run("recorder finalize failure", func(t *testing.T) {
+		record := &storage.RunArchiveRecord{TestID: "test-finalize-error", ArchivePath: "/tmp/archive"}
+		artifacts := &runArtifacts{recorder: &archiveRecorderStub{finalizeRecord: record, finalizeErr: errors.New("object upload unavailable")}}
+		gotRecord, status, runErr := artifacts.finalize(&ManagedTest{ID: record.TestID}, "COMPLETE", time.Now(), "")
+		if gotRecord != record || status != "COMPLETE" || runErr != "" {
+			t.Fatalf("finalize outcome = record:%p status:%q error:%q, want committed COMPLETE outcome", gotRecord, status, runErr)
+		}
+	})
+
+	t.Run("metadata persistence failure", func(t *testing.T) {
+		record := &storage.RunArchiveRecord{TestID: "test-metadata-error", ArchivePath: "/tmp/archive"}
+		attempts := 0
+		artifacts := &runArtifacts{
+			recorder: &archiveRecorderStub{finalizeRecord: record},
+			saveRecord: func(*storage.RunArchiveRecord) error {
+				attempts++
+				return errors.New("archive catalog unavailable")
+			},
+		}
+		gotRecord, status, runErr := artifacts.finalize(&ManagedTest{ID: record.TestID}, "COMPLETE", time.Now(), "")
+		if gotRecord != record || status != "COMPLETE" || runErr != "" {
+			t.Fatalf("finalize outcome = record:%p status:%q error:%q, want committed COMPLETE outcome", gotRecord, status, runErr)
+		}
+		if attempts != durableTransitionAttempts {
+			t.Fatalf("metadata persistence attempts = %d, want %d", attempts, durableTransitionAttempts)
+		}
+	})
+}
+
 func TestNormalizeCreateTestGroupsUsesSingleScriptFallback(t *testing.T) {
 	groups, err := normalizeCreateTestGroups(CreateTestRequest{
 		ScriptID: "script-1",
@@ -2304,17 +2359,21 @@ func TestPublishLiveMetricsUpdatesStatePersistsHistoryAndBroadcasts(t *testing.T
 
 	runner.publishLiveMetrics(testRun, live, nil)
 
-	if testRun.LiveMetrics != live {
-		t.Fatal("expected live metrics pointer to be stored on test")
+	if testRun.LiveMetrics == live {
+		t.Fatal("expected the test to retain an immutable live-metrics snapshot")
 	}
-	if len(testRun.History) != 1 || testRun.History[0] != live {
+	if len(testRun.History) != 1 || testRun.History[0] != testRun.LiveMetrics {
 		t.Fatalf("expected live metrics to be appended to history, got %#v", testRun.History)
 	}
 	if store.saveHistoryCalls != 1 {
 		t.Fatalf("expected SaveHistory to be called once, got %d", store.saveHistoryCalls)
 	}
-	if store.savedHistoryTestID != "test-1" || store.savedHistoryTimestamp != timestamp || store.savedHistoryMetrics != live {
+	if store.savedHistoryTestID != "test-1" || store.savedHistoryTimestamp != timestamp {
 		t.Fatalf("unexpected SaveHistory inputs: %+v %+v %#v", store.savedHistoryTestID, store.savedHistoryTimestamp, store.savedHistoryMetrics)
+	}
+	saved, ok := store.savedHistoryMetrics.(*LiveMetrics)
+	if !ok || saved == live || saved == testRun.LiveMetrics || saved.ActiveVUsers != live.ActiveVUsers || saved.TotalTx != live.TotalTx {
+		t.Fatalf("expected SaveHistory to receive an independent metrics snapshot, got %#v", store.savedHistoryMetrics)
 	}
 
 	select {
@@ -2413,8 +2472,8 @@ func TestPublishLiveMetricsTrimsInMemoryHistory(t *testing.T) {
 	if got := len(testRun.History); got != maxManagedTestHistory {
 		t.Fatalf("history length = %d, want %d", got, maxManagedTestHistory)
 	}
-	if testRun.History[len(testRun.History)-1] != newest {
-		t.Fatal("expected newest metrics to remain at tail of trimmed history")
+	if tail := testRun.History[len(testRun.History)-1]; tail == newest || tail == nil || !tail.Timestamp.Equal(newest.Timestamp) {
+		t.Fatal("expected an immutable snapshot of the newest metrics at the tail of trimmed history")
 	}
 	if oldest := testRun.History[0].Timestamp; !oldest.Equal(time.Unix(1, 0)) {
 		t.Fatalf("expected oldest retained timestamp %s, got %s", time.Unix(1, 0), oldest)
@@ -3279,6 +3338,73 @@ func TestRunStageScheduleDrivesRampHoldAndDrain(t *testing.T) {
 	}
 }
 
+func TestRunStageScheduleWaitsForRampCompletionBeforeAdvancing(t *testing.T) {
+	runner := NewTestRunner(1, NewHub(), nil)
+	backend := &blockingScaleExecutionBackendSpy{
+		calls:       make(chan scaleBackendCall, 8),
+		blockTarget: 2,
+		blocked:     make(chan struct{}),
+		release:     make(chan struct{}),
+	}
+	runner.setExecutionBackend(backend)
+	runner.tests["test-1"] = &ManagedTest{
+		ID:           "test-1",
+		Name:         "Blocked staged schedule test",
+		Status:       "RUNNING",
+		ScenarioMode: "vuser_driven",
+		ProjectID:    storage.DefaultProjectID,
+		TotalVUsers:  2,
+		Groups: []TestGroup{{
+			Name:          "buyers",
+			VUsers:        2,
+			stageDriven:   true,
+			initialVUsers: 0,
+			currentVUsers: 0,
+		}},
+	}
+
+	released := false
+	defer func() {
+		if !released {
+			close(backend.release)
+		}
+	}()
+	done := make(chan struct{})
+	go func() {
+		runner.runStageSchedule(context.Background(), "test-1", "buyers", []storage.LoadStage{
+			{Name: "Step", Type: "ramp_up", Duration: "20ms", TargetVUsers: 2},
+			{Name: "Hold", Type: "hold", Duration: "10ms", TargetVUsers: 2},
+			{Name: "Drain", Type: "ramp_down", Duration: "20ms", TargetVUsers: 0},
+		}, nil)
+		close(done)
+	}()
+
+	select {
+	case <-backend.blocked:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for final ramp-up step to block")
+	}
+	select {
+	case <-done:
+		t.Fatal("stage schedule advanced before the active ramp completed")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(backend.release)
+	released = true
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for stage schedule after ramp completion")
+	}
+
+	got := drainScaleCalls(t, backend.calls, 4)
+	want := []int{1, 2, 1, 0}
+	if !intSlicesEqual(got, want) {
+		t.Fatalf("stage scale targets = %v, want %v", got, want)
+	}
+}
+
 func TestStartStageSchedulesSkipsGoalOrientedGroups(t *testing.T) {
 	runner := NewTestRunner(1, NewHub(), nil)
 	backend := &scalableExecutionBackendSpy{calls: make(chan scaleBackendCall, 1)}
@@ -3959,11 +4085,16 @@ func TestNewTestRunnerLoadsPersistedScriptsAndTests(t *testing.T) {
 	if len(testRun.History) != 1 || testRun.LiveMetrics == nil {
 		t.Fatalf("expected persisted history to be loaded, got history=%#v live=%#v", testRun.History, testRun.LiveMetrics)
 	}
-	if testRun.Archive != archive {
+	if testRun.Archive == nil || testRun.Archive.TestID != archive.TestID {
 		t.Fatalf("expected persisted archive to be attached, got %#v", testRun.Archive)
 	}
-	if cachedArchive, ok := runner.GetRunArchive("test-1"); !ok || cachedArchive != archive {
-		t.Fatalf("expected archive cache lookup to return persisted archive, got %#v ok=%v", cachedArchive, ok)
+	if testRun.Archive == archive {
+		t.Fatal("managed-test read aliased the runner's archive record")
+	}
+	if cachedArchive, ok := runner.GetRunArchive("test-1"); !ok || cachedArchive == nil || cachedArchive.TestID != archive.TestID {
+		t.Fatalf("expected archive cache lookup to return a persisted archive copy, got %#v ok=%v", cachedArchive, ok)
+	} else if cachedArchive == archive {
+		t.Fatal("archive cache lookup returned the runner's mutable archive record")
 	}
 }
 
@@ -4599,7 +4730,8 @@ func TestStartTestQueuesWhenMaxConcurrentTestsReached(t *testing.T) {
 	}
 
 	runner.mu.Lock()
-	runner.tests[first.ID].Status = "RUNNING"
+	activeFirst := runner.tests[first.ID]
+	activeFirst.Status = "RUNNING"
 	runner.mu.Unlock()
 
 	err = runner.StartTest(second.ID)
@@ -5020,7 +5152,8 @@ func TestCompleteTestRunPromotesPendingTests(t *testing.T) {
 	}
 
 	runner.mu.Lock()
-	runner.tests[first.ID].Status = "RUNNING"
+	activeFirst := runner.tests[first.ID]
+	activeFirst.Status = "RUNNING"
 	runner.mu.Unlock()
 
 	if err := runner.StartTest(second.ID); err != nil {
@@ -5032,7 +5165,7 @@ func TestCompleteTestRunPromotesPendingTests(t *testing.T) {
 	}
 
 	endTime := time.Now()
-	runner.completeTestRun(first, "COMPLETE", endTime, "", nil)
+	runner.completeTestRun(activeFirst, "COMPLETE", endTime, "", nil)
 
 	promoted := waitForStatusAny(t, runner, second.ID, 5*time.Second, "INITIALIZING", "RUNNING", "COMPLETE")
 	if promoted.Status == "PENDING" || promoted.Status == "QUEUED" {
@@ -5101,7 +5234,7 @@ func TestGetTestRefreshesCapacityAdvisoryUsingCachedLiveAvailability(t *testing.
 func TestRunTestCreatesArchiveBundle(t *testing.T) {
 	archiveDir := t.TempDir()
 	t.Setenv("APEXLOAD_ARCHIVE_DIR", archiveDir)
-	t.Setenv("APEXLOAD_SAMPLE_FLAG", "enabled")
+	t.Setenv("APEXLOAD_VERSION", "test-version")
 	t.Setenv("APEXLOAD_SECRET_TOKEN", "hidden")
 
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
@@ -5177,8 +5310,8 @@ func TestRunTestCreatesArchiveBundle(t *testing.T) {
 	if manifest.Provenance.ExecutionSettings.General.MetricsIntervalSeconds != 1 {
 		t.Fatalf("manifest execution settings = %#v, want metrics interval 1", manifest.Provenance.ExecutionSettings)
 	}
-	if manifest.Provenance.ControllerEnv["APEXLOAD_SAMPLE_FLAG"] != "enabled" {
-		t.Fatalf("manifest controller env = %#v, want APEXLOAD_SAMPLE_FLAG", manifest.Provenance.ControllerEnv)
+	if manifest.Provenance.ControllerEnv["APEXLOAD_VERSION"] != "test-version" {
+		t.Fatalf("manifest controller env = %#v, want allowlisted APEXLOAD_VERSION", manifest.Provenance.ControllerEnv)
 	}
 	if _, found := manifest.Provenance.ControllerEnv["APEXLOAD_SECRET_TOKEN"]; found {
 		t.Fatalf("expected secret-like env vars to be excluded, got %#v", manifest.Provenance.ControllerEnv)
@@ -5195,7 +5328,7 @@ func TestRunTestCreatesArchiveBundle(t *testing.T) {
 }
 
 func TestBuildRunArchiveProvenanceCapturesExecutionSnapshots(t *testing.T) {
-	t.Setenv("APEXLOAD_SAMPLE_FLAG", "enabled")
+	t.Setenv("APEXLOAD_VERSION", "test-version")
 	t.Setenv("APEXLOAD_API_TOKEN", "hidden")
 
 	runner := NewTestRunner(2, NewHub(), nil)
@@ -5267,8 +5400,8 @@ func TestBuildRunArchiveProvenanceCapturesExecutionSnapshots(t *testing.T) {
 	if len(provenance.Groups) != 1 || provenance.Groups[0].RunLogicGoals == nil || provenance.Groups[0].RunLogicGoals.GlobalIterations != 4 || provenance.Groups[0].RunLogicGoals.MaxTransactions != 40 {
 		t.Fatalf("provenance groups = %#v, want run logic goal snapshot", provenance.Groups)
 	}
-	if provenance.ControllerEnv["APEXLOAD_SAMPLE_FLAG"] != "enabled" {
-		t.Fatalf("controller env = %#v, want APEXLOAD_SAMPLE_FLAG", provenance.ControllerEnv)
+	if provenance.ControllerEnv["APEXLOAD_VERSION"] != "test-version" {
+		t.Fatalf("controller env = %#v, want allowlisted APEXLOAD_VERSION", provenance.ControllerEnv)
 	}
 	if _, found := provenance.ControllerEnv["APEXLOAD_API_TOKEN"]; found {
 		t.Fatalf("expected secret-like env vars to be filtered, got %#v", provenance.ControllerEnv)
@@ -6772,7 +6905,10 @@ func TestRunnerCapturesUsageSnapshotOnCadenceTick(t *testing.T) {
 }
 
 func waitForTestStatus(t *testing.T, runner *TestRunner, testID string, want string) *ManagedTest {
-	return waitForTestStatusWithin(t, runner, testID, 12*time.Second, want)
+	// Several integration tests execute and archive a real high-throughput run.
+	// Keep the wait bounded, but allow enough scheduler/I/O headroom when the
+	// entire API package is exercising those paths concurrently.
+	return waitForTestStatusWithin(t, runner, testID, 30*time.Second, want)
 }
 
 func waitForTestStatusWithin(t *testing.T, runner *TestRunner, testID string, timeout time.Duration, want string) *ManagedTest {

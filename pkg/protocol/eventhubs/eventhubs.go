@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -34,6 +35,7 @@ func init() {
 	protocol.Register(eventHubsProtocolName, func() protocol.Protocol {
 		return &EventHubs{name: eventHubsProtocolName}
 	})
+	protocol.RegisterRuntimeNamespaceManager(eventHubsProtocolName, sharedBroker.acquire, sharedBroker.release)
 }
 
 type config struct {
@@ -86,7 +88,9 @@ func (e *EventHubs) Init(_ context.Context, cfg map[string]any) error {
 		e.cfg.Timeout = defaultTimeout
 	}
 	if e.cfg.Mock {
-		e.client = mockClient{broker: sharedBroker}
+		namespace := stringValue(cfg, "runtime_mock_namespace")
+		sharedBroker.acquire(namespace)
+		e.client = mockClient{broker: sharedBroker, namespace: namespace, release: &sync.Once{}}
 	} else {
 		e.client = newRealClient(e.cfg)
 	}

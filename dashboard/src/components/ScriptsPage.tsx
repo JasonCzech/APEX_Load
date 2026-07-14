@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ApplicationRepository, AuthoringCorrelationPreviewRequest, AuthoringCorrelationPreviewResponse, AuthoringSession, DashboardAuthEffectiveAccessResource, GitHubConfigResponse, GitHubPushResponse, GitHubScriptStatus, StoredScript } from '../types'
 import { useApi } from '../hooks/useApi'
 import { useGitHubApi } from '../hooks/api/useGitHubApi'
@@ -121,6 +121,7 @@ function cloneScriptDraft(source: ScriptDefinition, fallbackName: string, projec
 export default function ScriptsPage({ applicationRepository, initialMode = 'list', initialEditId, nativeImportRequest, onNativeImportRequestHandled, onSelectScenario, onNavigate, onAuthoringStateChange }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
+  const activeProjectId = activeProject?.id
   const hasTopbarContributionProvider = useHasTopbarContributionProvider()
   const [scripts, setScripts] = useState<StoredScript[]>([])
   const [authoringSessions, setAuthoringSessions] = useState<AuthoringSession[]>([])
@@ -132,6 +133,24 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
   const [effectiveAuthAccessResources, setEffectiveAuthAccessResources] = useState<DashboardAuthEffectiveAccessResource[]>([])
   const [effectiveAccessLoaded, setEffectiveAccessLoaded] = useState(false)
   const [libraryNotice, setLibraryNotice] = useState('')
+  const projectScopeRef = useRef({ id: activeProjectId, generation: 0 })
+  const scriptsRequestGenerationRef = useRef(0)
+  const authoringSessionsRequestGenerationRef = useRef(0)
+
+  if (projectScopeRef.current.id !== activeProjectId) {
+    projectScopeRef.current = {
+      id: activeProjectId,
+      generation: projectScopeRef.current.generation + 1,
+    }
+    scriptsRequestGenerationRef.current += 1
+    authoringSessionsRequestGenerationRef.current += 1
+  }
+
+  const isProjectScopeCurrent = useCallback((scope: { id: string | undefined; generation: number }) => (
+    projectScopeRef.current.id === scope.id
+    && projectScopeRef.current.generation === scope.generation
+  ), [])
+
   const appendLibraryNotice = useCallback((message: string) => {
     setLibraryNotice(prev => {
       if (!prev) return message
@@ -146,22 +165,55 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
   }, [onNavigate])
 
   const refresh = useCallback(async () => {
+    const projectId = activeProjectId
+    const scope = { ...projectScopeRef.current }
+    const requestGeneration = ++scriptsRequestGenerationRef.current
+    if (!projectId) {
+      setScripts([])
+      return
+    }
     try {
-      const res = await api.listScripts(activeProject?.id)
+      const res = await api.listScripts(projectId)
+      if (!isProjectScopeCurrent(scope) || scriptsRequestGenerationRef.current !== requestGeneration) return
       setScripts(res.scripts || [])
     } catch (error) {
+      if (!isProjectScopeCurrent(scope) || scriptsRequestGenerationRef.current !== requestGeneration) return
       appendLibraryNotice(getErrorMessage(error, 'Unable to load scripts.'))
     }
-  }, [api, activeProject?.id, appendLibraryNotice])
+  }, [activeProjectId, api, appendLibraryNotice, isProjectScopeCurrent])
 
   const refreshAuthoringSessions = useCallback(async () => {
+    const projectId = activeProjectId
+    const scope = { ...projectScopeRef.current }
+    const requestGeneration = ++authoringSessionsRequestGenerationRef.current
+    if (!projectId) {
+      setAuthoringSessions([])
+      return
+    }
     try {
-      const res = await api.listAuthoringSessions(activeProject?.id)
+      const res = await api.listAuthoringSessions(projectId)
+      if (!isProjectScopeCurrent(scope) || authoringSessionsRequestGenerationRef.current !== requestGeneration) return
       setAuthoringSessions(res.sessions || [])
     } catch (error) {
+      if (!isProjectScopeCurrent(scope) || authoringSessionsRequestGenerationRef.current !== requestGeneration) return
       appendLibraryNotice(getErrorMessage(error, 'Unable to load authoring sessions.'))
     }
-  }, [api, activeProject?.id, appendLibraryNotice])
+  }, [activeProjectId, api, appendLibraryNotice, isProjectScopeCurrent])
+
+  useLayoutEffect(() => {
+    scriptsRequestGenerationRef.current += 1
+    authoringSessionsRequestGenerationRef.current += 1
+    setScripts([])
+    setAuthoringSessions([])
+    setCorrelationPreviews({})
+    setCorrelationErrors({})
+    setEffectiveAuthAccessResources([])
+    setEffectiveAccessLoaded(false)
+    setLibraryNotice('')
+    setLibraryQuery('')
+    setHealthFilter('all')
+    setReleaseFilter('all')
+  }, [activeProjectId])
 
   const {
     authoringState,
@@ -177,6 +229,12 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
     initialMode,
     initialEditId,
   })
+  const authoringProjectIdRef = useRef(activeProjectId)
+  useLayoutEffect(() => {
+    if (authoringProjectIdRef.current === activeProjectId) return
+    authoringProjectIdRef.current = activeProjectId
+    openLibrary()
+  }, [activeProjectId, openLibrary])
   const openImportFiles = createOptionActions.openImportFiles
 
   useEffect(() => {
@@ -236,10 +294,10 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
   } = useScriptsLibraryModel({
     api,
     scripts: filteredScripts,
-    projectId: activeProject?.id,
+    projectId: activeProjectId,
   })
 
-  const federation = useLibraryFederation({ kind: 'script', projectId: activeProject?.id, onRefreshLocal: refresh })
+  const federation = useLibraryFederation({ kind: 'script', projectId: activeProjectId, onRefreshLocal: refresh })
 
   // --- GitHub script sync (config + connection gate + push/import modals) ---
   const githubApi = useGitHubApi()
@@ -250,6 +308,12 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
   const [githubNotice, setGithubNotice] = useState('')
   const [githubBulkRunning, setGithubBulkRunning] = useState(false)
   const [githubStatusByScript, setGithubStatusByScript] = useState<Record<string, GitHubScriptStatus>>({})
+
+  useLayoutEffect(() => {
+    setGithubNotice('')
+    setGithubBulkRunning(false)
+    setGithubStatusByScript({})
+  }, [activeProjectId])
 
   useEffect(() => {
     let cancelled = false
@@ -287,21 +351,24 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
   }, [handleSavedScript, refresh])
 
   const handleGithubBulkImport = useCallback(async () => {
-    if (!activeProject?.id) {
+    if (!activeProjectId) {
       setGithubNotice('Select a project before starting GitHub bulk import.')
       return
     }
+    const scope = { ...projectScopeRef.current }
     setGithubBulkRunning(true)
     try {
-      const job = await githubApi.createSyncJob({ project_id: activeProject.id, kind: 'import' })
+      const job = await githubApi.createSyncJob({ project_id: activeProjectId, kind: 'import' })
+      if (!isProjectScopeCurrent(scope)) return
       setGithubNotice(`GitHub bulk import ${job.status || 'queued'}: ${job.processed || 0}/${job.total || 0} processed, ${job.created || 0} imported.`)
       void refresh()
     } catch (error) {
+      if (!isProjectScopeCurrent(scope)) return
       setGithubNotice(getErrorMessage(error, 'Unable to start GitHub bulk import.'))
     } finally {
-      setGithubBulkRunning(false)
+      if (isProjectScopeCurrent(scope)) setGithubBulkRunning(false)
     }
-  }, [activeProject?.id, githubApi, refresh])
+  }, [activeProjectId, githubApi, isProjectScopeCurrent, refresh])
 
   const showScriptPageToggle = canManageScripts && (authoringState.subView === 'list' || authoringState.subView === 'create-options')
   const scriptPageControls = useMemo(() => (
@@ -407,21 +474,24 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
   useEffect(() => { refreshAuthoringSessions() }, [refreshAuthoringSessions])
   useEffect(() => {
     let cancelled = false
+    const scope = { ...projectScopeRef.current }
+    setEffectiveAuthAccessResources([])
+    setEffectiveAccessLoaded(false)
     const loadEffectiveAccess = async () => {
       try {
-        const response = await api.getAuthEffectiveAccess(activeProject?.id, {
+        const response = await api.getAuthEffectiveAccess(activeProjectId, {
           domain_id: activeProject?.domain_id,
           application_repository_id: applicationRepository?.id,
         })
-        if (!cancelled) {
+        if (!cancelled && isProjectScopeCurrent(scope)) {
           setEffectiveAuthAccessResources(response.resources || [])
         }
       } catch {
-        if (!cancelled) {
+        if (!cancelled && isProjectScopeCurrent(scope)) {
           setEffectiveAuthAccessResources([])
         }
       } finally {
-        if (!cancelled) {
+        if (!cancelled && isProjectScopeCurrent(scope)) {
           setEffectiveAccessLoaded(true)
         }
       }
@@ -430,7 +500,7 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
     return () => {
       cancelled = true
     }
-  }, [activeProject?.id, activeProject?.domain_id, api, applicationRepository?.id])
+  }, [activeProjectId, activeProject?.domain_id, api, applicationRepository?.id, isProjectScopeCurrent])
   useEffect(() => {
     // Only redirect away from a manage-only sub-view once effective access has
     // loaded; otherwise the brief default-DENY window before the access fetch
@@ -450,10 +520,13 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
   const handleDelete = async (id: string) => {
     if (!canManageScripts) return
     if (!confirm('Delete this script?')) return
+    const scope = { ...projectScopeRef.current }
     try {
       await api.deleteScript(id)
+      if (!isProjectScopeCurrent(scope)) return
       void refresh()
     } catch (error) {
+      if (!isProjectScopeCurrent(scope)) return
       appendLibraryNotice(getErrorMessage(error, 'Unable to delete script.'))
     }
   }
@@ -481,63 +554,79 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
   }, [handleDraftEdit])
 
   const handleStartExistingScript = useCallback(async (script: StoredScript) => {
+    const scope = { ...projectScopeRef.current }
     let source = script.script
     if (!source) {
       try {
         const response = await api.getScript(script.id)
+        if (!isProjectScopeCurrent(scope)) return
         source = response.script ?? undefined
       } catch (error) {
+        if (!isProjectScopeCurrent(scope)) return
         appendLibraryNotice(getErrorMessage(error, 'Unable to load script before cloning.'))
         return
       }
     }
+    if (!isProjectScopeCurrent(scope)) return
     if (!source) {
       appendLibraryNotice(`Unable to clone "${script.name}": the script body is unavailable.`)
       return
     }
-    handleDraftEdit(cloneScriptDraft(source, script.name, activeProject?.id))
-  }, [activeProject?.id, api, appendLibraryNotice, handleDraftEdit])
+    handleDraftEdit(cloneScriptDraft(source, script.name, activeProjectId))
+  }, [activeProjectId, api, appendLibraryNotice, handleDraftEdit, isProjectScopeCurrent])
 
   const handleApproveAuthoringSession = useCallback(async (session: AuthoringSession) => {
+    const scope = { ...projectScopeRef.current }
     try {
       const res = await api.approveAuthoringSession(session.id)
+      if (!isProjectScopeCurrent(scope)) return
       void refresh()
       void refreshAuthoringSessions()
       handleSavedScript(res.script, `Approved authoring session "${res.session.name}". Reviewing the promoted script.`)
     } catch (error) {
+      if (!isProjectScopeCurrent(scope)) return
       appendLibraryNotice(getErrorMessage(error, 'Unable to approve authoring session.'))
     }
-  }, [api, appendLibraryNotice, handleSavedScript, refresh, refreshAuthoringSessions])
+  }, [api, appendLibraryNotice, handleSavedScript, isProjectScopeCurrent, refresh, refreshAuthoringSessions])
 
   const handleDiscardAuthoringSession = useCallback(async (session: AuthoringSession) => {
+    const scope = { ...projectScopeRef.current }
     try {
       await api.deleteAuthoringSession(session.id)
+      if (!isProjectScopeCurrent(scope)) return
       await refreshAuthoringSessions()
     } catch (error) {
+      if (!isProjectScopeCurrent(scope)) return
       appendLibraryNotice(getErrorMessage(error, 'Unable to discard authoring session.'))
     }
-  }, [api, appendLibraryNotice, refreshAuthoringSessions])
+  }, [api, appendLibraryNotice, isProjectScopeCurrent, refreshAuthoringSessions])
 
   const handlePreviewAuthoringCorrelation = useCallback(async (session: AuthoringSession, payload: AuthoringCorrelationPreviewRequest) => {
+    const scope = { ...projectScopeRef.current }
     try {
       const res = await api.previewAuthoringCorrelation(session.id, { ...payload, apply: false })
+      if (!isProjectScopeCurrent(scope)) return
       setCorrelationPreviews(prev => ({ ...prev, [session.id]: res }))
       setCorrelationErrors(prev => ({ ...prev, [session.id]: '' }))
     } catch (error) {
+      if (!isProjectScopeCurrent(scope)) return
       setCorrelationErrors(prev => ({ ...prev, [session.id]: error instanceof Error ? error.message : 'Unable to preview repair.' }))
     }
-  }, [api])
+  }, [api, isProjectScopeCurrent])
 
   const handleApplyAuthoringCorrelation = useCallback(async (session: AuthoringSession, payload: AuthoringCorrelationPreviewRequest) => {
+    const scope = { ...projectScopeRef.current }
     try {
       const res = await api.previewAuthoringCorrelation(session.id, { ...payload, apply: true })
+      if (!isProjectScopeCurrent(scope)) return
       setCorrelationPreviews(prev => ({ ...prev, [session.id]: res }))
       setCorrelationErrors(prev => ({ ...prev, [session.id]: '' }))
       await refreshAuthoringSessions()
     } catch (error) {
+      if (!isProjectScopeCurrent(scope)) return
       setCorrelationErrors(prev => ({ ...prev, [session.id]: error instanceof Error ? error.message : 'Unable to apply repair.' }))
     }
-  }, [api, refreshAuthoringSessions])
+  }, [api, isProjectScopeCurrent, refreshAuthoringSessions])
 
   return (
     <>
@@ -674,6 +763,7 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
             onDelete={(id) => { void handleDelete(id) }}
             canManageScripts={canManageScripts}
             emptyMessage={libraryQuery.trim() || healthFilter !== 'all' || releaseFilter !== 'all' ? 'No scripts match these filters.' : 'No scripts yet.'}
+            onCreate={scripts.length === 0 && !libraryQuery.trim() && healthFilter === 'all' && releaseFilter === 'all' ? openCreateOptions : undefined}
             federation={scriptFederation}
             github={canManageScripts && githubReady ? { enabled: true, onPush: setGithubPushScript, statusByScript: githubStatusByScript } : undefined}
           />

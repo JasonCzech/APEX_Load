@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -82,6 +83,13 @@ type archiveAnalysisRun struct {
 	ID           string
 	Name         string
 	Transactions []TransactionEvent
+	Total        int
+	Paged        bool
+	PageOffset   int
+	nodeMeta     map[string]RunArchiveAnalysisNode
+	edgeMeta     map[string]RunArchiveAnalysisEdge
+	nodeAcc      map[string]*archiveAnalysisStatsAccumulator
+	edgeAcc      map[string]*archiveAnalysisStatsAccumulator
 }
 
 type archiveAnalysisStatsAccumulator struct {
@@ -93,7 +101,7 @@ type archiveAnalysisStatsAccumulator struct {
 	MinResponseMs float64
 	MaxResponseMs float64
 	BytesReceived int64
-	Durations     []float64
+	Quantiles     *archiveQuantileAccumulator
 }
 
 func buildRunArchiveAnalysis(current archiveAnalysisRun, baseline *archiveAnalysisRun, filter transactionEventFilter, page archivePage) RunArchiveAnalysisResponse {
@@ -102,10 +110,15 @@ func buildRunArchiveAnalysis(current archiveAnalysisRun, baseline *archiveAnalys
 		runs = append([]archiveAnalysisRun{*baseline}, runs...)
 	}
 	nodes, edges := buildRunArchiveAnalysisGraph(runs)
-	paged := pageArchiveItems(current.Transactions, page)
+	paged := current.Transactions
+	pageOffset := current.PageOffset
+	if !current.Paged {
+		paged = pageArchiveItems(current.Transactions, page)
+		pageOffset = page.Offset
+	}
 	drilldown := make([]RunArchiveTransactionDrilldown, 0, len(paged))
 	for index, tx := range paged {
-		drilldown = append(drilldown, archiveTransactionDrilldown(current.ID, page.Offset+index, tx))
+		drilldown = append(drilldown, archiveTransactionDrilldown(current.ID, pageOffset+index, tx))
 	}
 	response := RunArchiveAnalysisResponse{
 		SchemaVersion: runArchiveAnalysisSchemaVersion,
@@ -113,7 +126,7 @@ func buildRunArchiveAnalysis(current archiveAnalysisRun, baseline *archiveAnalys
 		Graph:         RunArchiveAnalysisGraph{Nodes: nodes, Edges: edges},
 		Transactions:  drilldown,
 		Count:         len(drilldown),
-		Total:         len(current.Transactions),
+		Total:         archiveAnalysisRunTotal(current),
 		Limit:         page.Limit,
 		Offset:        page.Offset,
 		Filters:       archiveAnalysisFilterSummary(filter),
@@ -124,6 +137,13 @@ func buildRunArchiveAnalysis(current archiveAnalysisRun, baseline *archiveAnalys
 	return response
 }
 
+func archiveAnalysisRunTotal(run archiveAnalysisRun) int {
+	if run.Total > 0 || len(run.Transactions) == 0 {
+		return run.Total
+	}
+	return len(run.Transactions)
+}
+
 func buildRunArchiveAnalysisGraph(runs []archiveAnalysisRun) ([]RunArchiveAnalysisNode, []RunArchiveAnalysisEdge) {
 	nodeAcc := map[string]map[string]*archiveAnalysisStatsAccumulator{}
 	edgeAcc := map[string]map[string]*archiveAnalysisStatsAccumulator{}
@@ -131,6 +151,23 @@ func buildRunArchiveAnalysisGraph(runs []archiveAnalysisRun) ([]RunArchiveAnalys
 	edgeMeta := map[string]RunArchiveAnalysisEdge{}
 
 	for _, run := range runs {
+		if run.nodeMeta != nil || run.edgeMeta != nil {
+			for id, node := range run.nodeMeta {
+				nodeMeta[id] = node
+				if nodeAcc[id] == nil {
+					nodeAcc[id] = map[string]*archiveAnalysisStatsAccumulator{}
+				}
+				nodeAcc[id][run.ID] = run.nodeAcc[id]
+			}
+			for id, edge := range run.edgeMeta {
+				edgeMeta[id] = edge
+				if edgeAcc[id] == nil {
+					edgeAcc[id] = map[string]*archiveAnalysisStatsAccumulator{}
+				}
+				edgeAcc[id][run.ID] = run.edgeAcc[id]
+			}
+			continue
+		}
 		for _, tx := range run.Transactions {
 			for _, node := range archiveAnalysisNodesForTransaction(tx) {
 				mergeArchiveAnalysisNode(nodeMeta, nodeAcc, node, run, tx)
@@ -266,7 +303,10 @@ func mergeArchiveAnalysisAccumulator(byKey map[string]map[string]*archiveAnalysi
 		acc.MaxResponseMs = tx.DurationMs
 	}
 	acc.BytesReceived += tx.BytesReceived
-	acc.Durations = append(acc.Durations, tx.DurationMs)
+	if acc.Quantiles == nil {
+		acc.Quantiles = &archiveQuantileAccumulator{}
+	}
+	acc.Quantiles.Add(tx.DurationMs)
 }
 
 func finalizeArchiveAnalysisRuns(byRun map[string]*archiveAnalysisStatsAccumulator) []RunArchiveAnalysisStats {
@@ -297,9 +337,10 @@ func finalizeArchiveAnalysisStats(acc *archiveAnalysisStatsAccumulator) RunArchi
 		stats.ErrorPct = float64(acc.Errors) / float64(acc.Transactions) * 100
 		stats.AvgResponseMs = acc.TotalDuration / float64(acc.Transactions)
 	}
-	sort.Float64s(acc.Durations)
-	stats.P95Ms = archiveAnalysisPercentile(acc.Durations, 0.95)
-	stats.P99Ms = archiveAnalysisPercentile(acc.Durations, 0.99)
+	if acc.Quantiles != nil {
+		stats.P95Ms = acc.Quantiles.Quantile(0.95)
+		stats.P99Ms = acc.Quantiles.Quantile(0.99)
+	}
 	return stats
 }
 
@@ -346,20 +387,155 @@ func filterArchiveAnalysisTransactions(transactions []TransactionEvent, filter t
 	return out
 }
 
-func archiveAnalysisRunFromRecord(id string, name string, record *storage.RunArchiveRecord, filter transactionEventFilter) (archiveAnalysisRun, error) {
-	transactions, err := readAllArchiveTransactions(record)
+func archiveAnalysisRunFromRecord(id string, name string, record *storage.RunArchiveRecord, filter transactionEventFilter, page *archivePage) (archiveAnalysisRun, error) {
+	run := archiveAnalysisRun{
+		ID:       id,
+		Name:     name,
+		nodeMeta: make(map[string]RunArchiveAnalysisNode),
+		edgeMeta: make(map[string]RunArchiveAnalysisEdge),
+		nodeAcc:  make(map[string]*archiveAnalysisStatsAccumulator),
+		edgeAcc:  make(map[string]*archiveAnalysisStatsAccumulator),
+	}
+	pageLimit := 0
+	pageOffset := 0
+	pageKeep := 0
+	pageSortBy := filter.SortBy
+	pageSortDir := filter.SortDir
+	if page != nil {
+		pageLimit = page.Limit
+		if pageLimit <= 0 {
+			pageLimit = 100
+		}
+		if pageLimit > maxArchivePageSize {
+			return archiveAnalysisRun{}, fmt.Errorf("archive page limit exceeds %d", maxArchivePageSize)
+		}
+		pageOffset = page.Offset
+		if pageOffset < 0 {
+			pageOffset = 0
+		}
+		pageKeep = pageOffset + pageLimit
+		if pageKeep < pageLimit || pageKeep > maxArchiveSortWindow {
+			return archiveAnalysisRun{}, fmt.Errorf("sorted archive window exceeds %d records", maxArchiveSortWindow)
+		}
+		if pageSortBy == "" {
+			// Analysis historically sorted by timestamp when sort_by was omitted.
+			pageSortBy = "time"
+			pageSortDir = "asc"
+		}
+		run.Transactions = make([]TransactionEvent, 0, min(pageKeep, pageLimit*2))
+		run.Paged = true
+		run.PageOffset = pageOffset
+	}
+	matched := 0
+	err := forEachArchiveTransaction(record, func(tx *TransactionEvent) error {
+		if !transactionMatchesArchiveFilter(tx, filter) {
+			return nil
+		}
+		matched++
+		if err := mergeArchiveAnalysisRunTransaction(&run, *tx); err != nil {
+			return err
+		}
+		if page != nil {
+			run.Transactions = append(run.Transactions, compactArchiveAnalysisTransaction(*tx))
+			if len(run.Transactions) >= pageKeep*2 {
+				sortArchiveTransactions(run.Transactions, pageSortBy, pageSortDir)
+				run.Transactions = run.Transactions[:pageKeep]
+			}
+		}
+		return nil
+	})
 	if err != nil {
 		return archiveAnalysisRun{}, err
 	}
-	filtered := filterArchiveAnalysisTransactions(transactions, filter)
+	run.Total = matched
+	if page != nil {
+		sortArchiveTransactions(run.Transactions, pageSortBy, pageSortDir)
+		if len(run.Transactions) > pageKeep {
+			run.Transactions = run.Transactions[:pageKeep]
+		}
+		if pageOffset >= len(run.Transactions) {
+			run.Transactions = []TransactionEvent{}
+		} else {
+			run.Transactions = run.Transactions[pageOffset:]
+		}
+	}
+	return run, nil
+}
+
+func sortArchiveAnalysisTransactions(transactions []TransactionEvent, filter transactionEventFilter) {
 	if filter.SortBy != "" {
-		sortArchiveTransactions(filtered, filter.SortBy, filter.SortDir)
+		sortArchiveTransactions(transactions, filter.SortBy, filter.SortDir)
 	} else {
-		sort.SliceStable(filtered, func(i, j int) bool {
-			return filtered[i].Timestamp.Before(filtered[j].Timestamp)
+		sort.SliceStable(transactions, func(i, j int) bool {
+			return transactions[i].Timestamp.Before(transactions[j].Timestamp)
 		})
 	}
-	return archiveAnalysisRun{ID: id, Name: name, Transactions: filtered}, nil
+}
+
+func mergeArchiveAnalysisRunTransaction(run *archiveAnalysisRun, tx TransactionEvent) error {
+	for _, node := range archiveAnalysisNodesForTransaction(tx) {
+		if _, exists := run.nodeMeta[node.ID]; !exists && len(run.nodeMeta) >= maxArchiveAnalysisDimensions {
+			return fmt.Errorf("archive analysis exceeds %d distinct nodes", maxArchiveAnalysisDimensions)
+		}
+		run.nodeMeta[node.ID] = node
+		mergeArchiveAnalysisRunAccumulator(run.nodeAcc, node.ID, run, tx)
+	}
+	for _, edge := range archiveAnalysisEdgesForTransaction(tx) {
+		if _, exists := run.edgeMeta[edge.ID]; !exists && len(run.edgeMeta) >= maxArchiveAnalysisDimensions {
+			return fmt.Errorf("archive analysis exceeds %d distinct edges", maxArchiveAnalysisDimensions)
+		}
+		run.edgeMeta[edge.ID] = edge
+		mergeArchiveAnalysisRunAccumulator(run.edgeAcc, edge.ID, run, tx)
+	}
+	return nil
+}
+
+func mergeArchiveAnalysisRunAccumulator(values map[string]*archiveAnalysisStatsAccumulator, key string, run *archiveAnalysisRun, tx TransactionEvent) {
+	acc := values[key]
+	if acc == nil {
+		acc = &archiveAnalysisStatsAccumulator{RunID: run.ID, RunName: run.Name}
+		values[key] = acc
+	}
+	acc.Transactions++
+	if !tx.Success {
+		acc.Errors++
+	}
+	acc.TotalDuration += tx.DurationMs
+	if acc.Transactions == 1 || tx.DurationMs < acc.MinResponseMs {
+		acc.MinResponseMs = tx.DurationMs
+	}
+	if tx.DurationMs > acc.MaxResponseMs {
+		acc.MaxResponseMs = tx.DurationMs
+	}
+	acc.BytesReceived += tx.BytesReceived
+	if acc.Quantiles == nil {
+		acc.Quantiles = &archiveQuantileAccumulator{}
+	}
+	acc.Quantiles.Add(tx.DurationMs)
+}
+
+// compactArchiveAnalysisTransaction drops request/response snapshots and other
+// nested diagnostic payloads that the graph/drilldown response never exposes.
+// This keeps the bounded sort window independent of archived body sizes.
+func compactArchiveAnalysisTransaction(tx TransactionEvent) TransactionEvent {
+	return TransactionEvent{
+		Timestamp:         tx.Timestamp,
+		Group:             tx.Group,
+		Region:            tx.Region,
+		ActionName:        tx.ActionName,
+		DependencyType:    tx.DependencyType,
+		DependencyTarget:  tx.DependencyTarget,
+		DurationMs:        tx.DurationMs,
+		StatusCode:        tx.StatusCode,
+		Success:           tx.Success,
+		ErrorMessage:      tx.ErrorMessage,
+		BytesReceived:     tx.BytesReceived,
+		TraceID:           tx.TraceID,
+		CorrelationID:     tx.CorrelationID,
+		SourceTransaction: tx.SourceTransaction,
+		SourceAction:      tx.SourceAction,
+		SourceActionName:  tx.SourceActionName,
+	}
 }
 
 func archiveAnalysisFilterSummary(filter transactionEventFilter) map[string]any {

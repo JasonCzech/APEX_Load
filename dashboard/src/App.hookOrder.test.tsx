@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 
-import { act } from 'react'
+import { act, type ReactNode } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import App from './App'
+import { readAppHistoryIndex, withAppHistoryIndex } from './appRouting'
+import { ApiProvider } from './hooks/useApi'
 
 // Regression guard for a reported React Rules-of-Hooks violation:
 //   "React has detected a change in the order of Hooks called by AppShell …
@@ -28,6 +30,32 @@ vi.mock('./hooks/useAuthStatus', () => ({
     status: 'ready',
     auth: { enabled: false, mode: 'dev', authenticated: false },
   }),
+}))
+
+const navigationGuardMock = vi.hoisted(() => {
+  const state = {
+    dirty: false,
+    pending: null as (() => void) | null,
+  }
+  return {
+    state,
+    runner: {
+      hasDirtyGuard: () => state.dirty,
+      runGuarded: (proceed: () => void) => {
+        if (state.dirty) {
+          state.pending = proceed
+        } else {
+          proceed()
+        }
+      },
+    },
+  }
+})
+
+vi.mock('./hooks/NavigationGuardProvider', () => ({
+  NavigationGuardProvider: ({ children }: { children: ReactNode }) => children,
+  useNavigationGuard: () => undefined,
+  useNavigationGuardRunner: () => navigationGuardMock.runner,
 }))
 
 class StubWebSocket {
@@ -128,8 +156,10 @@ describe('AppShell hook-order stability across navigation', () => {
 
   beforeEach(() => {
     hookOrderErrors.length = 0
+    navigationGuardMock.state.dirty = false
+    navigationGuardMock.state.pending = null
     window.localStorage.clear()
-    window.location.hash = ''
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`)
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -174,13 +204,15 @@ describe('AppShell hook-order stability across navigation', () => {
     animationGlobals.requestAnimationFrame = originalRaf
     animationGlobals.cancelAnimationFrame = originalCancelRaf
     window.localStorage.clear()
-    window.location.hash = ''
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`)
     vi.clearAllMocks()
+    navigationGuardMock.state.dirty = false
+    navigationGuardMock.state.pending = null
   })
 
   it('does not change hook order navigating between top-level pages via the left nav', async () => {
     await act(async () => {
-      root.render(<App />)
+      root.render(<ApiProvider><App /></ApiProvider>)
     })
     await flush()
 
@@ -210,5 +242,84 @@ describe('AppShell hook-order stability across navigation', () => {
     }
 
     expect(hookOrderErrors).toEqual([])
+  })
+
+  it('applies one history-index transition when browsers emit popstate followed by hashchange', async () => {
+    await act(async () => {
+      root.render(<ApiProvider><App /></ApiProvider>)
+    })
+    await flush()
+
+    expect(readAppHistoryIndex(window.history.state)).toBe(0)
+    await clickNav('Scenarios')
+    expect(currentPage()).toBe('page-tests')
+    expect(readAppHistoryIndex(window.history.state)).toBe(1)
+    expect(container.querySelector('main h1')?.textContent).toContain('Scenario Library')
+    expect(document.title).toBe('Scenario Library | APEX Load')
+    expect(document.activeElement).toBe(container.querySelector('main'))
+
+    const oldURL = window.location.href
+    const dashboardState = withAppHistoryIndex(window.history.state, 0)
+    window.history.replaceState(dashboardState, '', '#/dashboard')
+    const newURL = window.location.href
+    await act(async () => {
+      window.dispatchEvent(new PopStateEvent('popstate', { state: dashboardState }))
+      window.dispatchEvent(new HashChangeEvent('hashchange', { oldURL, newURL }))
+    })
+    await flush()
+
+    expect(currentPage()).toBe('page-dashboard')
+    expect(window.location.hash).toBe('#/dashboard')
+    expect(readAppHistoryIndex(window.history.state)).toBe(0)
+  })
+
+  it('restores an indexed browser Back before confirmation without creating duplicate entries', async () => {
+    await act(async () => {
+      root.render(<ApiProvider><App /></ApiProvider>)
+    })
+    await flush()
+    await clickNav('Scenarios')
+    expect(readAppHistoryIndex(window.history.state)).toBe(1)
+    const historyLength = window.history.length
+
+    navigationGuardMock.state.dirty = true
+    await act(async () => {
+      window.history.back()
+      await new Promise(resolve => setTimeout(resolve, 20))
+    })
+    await flush()
+
+    expect(currentPage()).toBe('page-tests')
+    expect(window.location.hash).toBe('#/tests')
+    expect(readAppHistoryIndex(window.history.state)).toBe(1)
+    expect(window.history.length).toBe(historyLength)
+    expect(navigationGuardMock.state.pending).not.toBeNull()
+
+    // Cancel leaves the restored origin as the current entry.
+    navigationGuardMock.state.pending = null
+    expect(window.history.length).toBe(historyLength)
+
+    // A second Back followed by discard/confirmation traverses to the existing
+    // target entry; it does not replace or push a duplicate target.
+    await act(async () => {
+      window.history.back()
+      await new Promise(resolve => setTimeout(resolve, 20))
+    })
+    await flush()
+    expect(navigationGuardMock.state.pending).not.toBeNull()
+
+    navigationGuardMock.state.dirty = false
+    const proceed = navigationGuardMock.state.pending as (() => void) | null
+    navigationGuardMock.state.pending = null
+    await act(async () => {
+      proceed?.()
+      await new Promise(resolve => setTimeout(resolve, 20))
+    })
+    await flush()
+
+    expect(currentPage()).toBe('page-dashboard')
+    expect(window.location.hash).toBe('#/dashboard')
+    expect(readAppHistoryIndex(window.history.state)).toBe(0)
+    expect(window.history.length).toBe(historyLength)
   })
 })

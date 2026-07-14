@@ -19,14 +19,15 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	GeneratorControl_AssignWork_FullMethodName         = "/apexload.v1.GeneratorControl/AssignWork"
-	GeneratorControl_AdjustVUsers_FullMethodName       = "/apexload.v1.GeneratorControl/AdjustVUsers"
-	GeneratorControl_AdjustDuration_FullMethodName     = "/apexload.v1.GeneratorControl/AdjustDuration"
-	GeneratorControl_StopTest_FullMethodName           = "/apexload.v1.GeneratorControl/StopTest"
-	GeneratorControl_StreamMetrics_FullMethodName      = "/apexload.v1.GeneratorControl/StreamMetrics"
-	GeneratorControl_Heartbeat_FullMethodName          = "/apexload.v1.GeneratorControl/Heartbeat"
-	GeneratorControl_DistributeScript_FullMethodName   = "/apexload.v1.GeneratorControl/DistributeScript"
-	GeneratorControl_GetArchiveArtifact_FullMethodName = "/apexload.v1.GeneratorControl/GetArchiveArtifact"
+	GeneratorControl_AssignWork_FullMethodName            = "/apexload.v1.GeneratorControl/AssignWork"
+	GeneratorControl_AdjustVUsers_FullMethodName          = "/apexload.v1.GeneratorControl/AdjustVUsers"
+	GeneratorControl_AdjustDuration_FullMethodName        = "/apexload.v1.GeneratorControl/AdjustDuration"
+	GeneratorControl_StopTest_FullMethodName              = "/apexload.v1.GeneratorControl/StopTest"
+	GeneratorControl_StreamMetrics_FullMethodName         = "/apexload.v1.GeneratorControl/StreamMetrics"
+	GeneratorControl_Heartbeat_FullMethodName             = "/apexload.v1.GeneratorControl/Heartbeat"
+	GeneratorControl_DistributeScript_FullMethodName      = "/apexload.v1.GeneratorControl/DistributeScript"
+	GeneratorControl_GetArchiveArtifact_FullMethodName    = "/apexload.v1.GeneratorControl/GetArchiveArtifact"
+	GeneratorControl_StreamArchiveArtifact_FullMethodName = "/apexload.v1.GeneratorControl/StreamArchiveArtifact"
 )
 
 // GeneratorControlClient is the client API for GeneratorControl service.
@@ -52,7 +53,13 @@ type GeneratorControlClient interface {
 	// DistributeScript sends a compiled script to a generator for caching.
 	DistributeScript(ctx context.Context, in *ScriptPayload, opts ...grpc.CallOption) (*ScriptAck, error)
 	// GetArchiveArtifact returns a generated archive artifact for a completed test.
+	// Deprecated for controller transfers: large artifacts should use
+	// StreamArchiveArtifact so they are not buffered into one protobuf message.
 	GetArchiveArtifact(ctx context.Context, in *ArchiveArtifactRequest, opts ...grpc.CallOption) (*ArchiveArtifact, error)
+	// StreamArchiveArtifact returns an archive artifact in bounded chunks. The
+	// first chunk declares total_size and every chunk carries its absolute offset
+	// so the controller can reject truncated, duplicated, or reordered streams.
+	StreamArchiveArtifact(ctx context.Context, in *ArchiveArtifactRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ArchiveArtifactChunk], error)
 }
 
 type generatorControlClient struct {
@@ -149,6 +156,25 @@ func (c *generatorControlClient) GetArchiveArtifact(ctx context.Context, in *Arc
 	return out, nil
 }
 
+func (c *generatorControlClient) StreamArchiveArtifact(ctx context.Context, in *ArchiveArtifactRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ArchiveArtifactChunk], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &GeneratorControl_ServiceDesc.Streams[2], GeneratorControl_StreamArchiveArtifact_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[ArchiveArtifactRequest, ArchiveArtifactChunk]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type GeneratorControl_StreamArchiveArtifactClient = grpc.ServerStreamingClient[ArchiveArtifactChunk]
+
 // GeneratorControlServer is the server API for GeneratorControl service.
 // All implementations must embed UnimplementedGeneratorControlServer
 // for forward compatibility.
@@ -172,7 +198,13 @@ type GeneratorControlServer interface {
 	// DistributeScript sends a compiled script to a generator for caching.
 	DistributeScript(context.Context, *ScriptPayload) (*ScriptAck, error)
 	// GetArchiveArtifact returns a generated archive artifact for a completed test.
+	// Deprecated for controller transfers: large artifacts should use
+	// StreamArchiveArtifact so they are not buffered into one protobuf message.
 	GetArchiveArtifact(context.Context, *ArchiveArtifactRequest) (*ArchiveArtifact, error)
+	// StreamArchiveArtifact returns an archive artifact in bounded chunks. The
+	// first chunk declares total_size and every chunk carries its absolute offset
+	// so the controller can reject truncated, duplicated, or reordered streams.
+	StreamArchiveArtifact(*ArchiveArtifactRequest, grpc.ServerStreamingServer[ArchiveArtifactChunk]) error
 	mustEmbedUnimplementedGeneratorControlServer()
 }
 
@@ -206,6 +238,9 @@ func (UnimplementedGeneratorControlServer) DistributeScript(context.Context, *Sc
 }
 func (UnimplementedGeneratorControlServer) GetArchiveArtifact(context.Context, *ArchiveArtifactRequest) (*ArchiveArtifact, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetArchiveArtifact not implemented")
+}
+func (UnimplementedGeneratorControlServer) StreamArchiveArtifact(*ArchiveArtifactRequest, grpc.ServerStreamingServer[ArchiveArtifactChunk]) error {
+	return status.Error(codes.Unimplemented, "method StreamArchiveArtifact not implemented")
 }
 func (UnimplementedGeneratorControlServer) mustEmbedUnimplementedGeneratorControlServer() {}
 func (UnimplementedGeneratorControlServer) testEmbeddedByValue()                          {}
@@ -350,6 +385,17 @@ func _GeneratorControl_GetArchiveArtifact_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
+func _GeneratorControl_StreamArchiveArtifact_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(ArchiveArtifactRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(GeneratorControlServer).StreamArchiveArtifact(m, &grpc.GenericServerStream[ArchiveArtifactRequest, ArchiveArtifactChunk]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type GeneratorControl_StreamArchiveArtifactServer = grpc.ServerStreamingServer[ArchiveArtifactChunk]
+
 // GeneratorControl_ServiceDesc is the grpc.ServiceDesc for GeneratorControl service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -394,6 +440,11 @@ var GeneratorControl_ServiceDesc = grpc.ServiceDesc{
 			Handler:       _GeneratorControl_Heartbeat_Handler,
 			ServerStreams: true,
 			ClientStreams: true,
+		},
+		{
+			StreamName:    "StreamArchiveArtifact",
+			Handler:       _GeneratorControl_StreamArchiveArtifact_Handler,
+			ServerStreams: true,
 		},
 	},
 	Metadata: "api/proto/generator.proto",

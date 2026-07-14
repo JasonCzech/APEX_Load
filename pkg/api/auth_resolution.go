@@ -199,9 +199,15 @@ func applyLocalUserBindings(upstream *AuthenticatedUser, store storage.Store) (*
 	local.Email = firstNonEmpty(upstream.Email, local.Email)
 	if shouldUpdateUserIdentitySeen(local.ID, previousDisplayName, previousEmail, local.DisplayName, local.Email, now) {
 		local.UpdatedAt = now
-		_ = store.UpdateUserIdentitySeen(local.ID, local.DisplayName, local.Email, now, now)
+		if err := store.UpdateUserIdentitySeen(local.ID, local.DisplayName, local.Email, now, now); err != nil {
+			slog.Warn("failed to persist user identity last-seen update", "user_id", local.ID, "error", err)
+		}
 	}
-	return authenticatedUserFromStoredUser(local), nil
+	resolved := authenticatedUserFromStoredUser(local)
+	resolved.SessionScoped = upstream.SessionScoped
+	resolved.SessionEpoch = upstream.SessionEpoch
+	resolved.SessionExpiresAt = upstream.SessionExpiresAt
+	return resolved, nil
 }
 
 func shouldUpdateUserIdentitySeen(userID string, previousDisplayName string, previousEmail string, nextDisplayName string, nextEmail string, now time.Time) bool {
@@ -338,7 +344,9 @@ func bootstrapFirstAdmin(upstream *AuthenticatedUser, store storage.Store) (*Aut
 		if err := store.SaveUserRoleBinding(binding); err != nil {
 			return nil, fmt.Errorf("bootstrap administrator provisioning failed")
 		}
-		_ = store.SaveAuditEvent(event)
+		if err := store.SaveAuditEvent(event); err != nil {
+			slog.Warn("failed to persist bootstrap administrator audit event", "user_id", user.ID, "error", err)
+		}
 	}
 	slog.Warn("granted bootstrap system administrator on empty user store", "subject", subject)
 	return &AuthenticatedUser{
@@ -425,12 +433,6 @@ func serviceAccountAllowsRequest(account *AuthenticatedServiceAccount, r *http.R
 		if scope == "*" || scope == "automation:*" || scope == required {
 			return true
 		}
-		if required == "read" && (scope == "results:read" || scope == "system:read" || scope == "audit:read") {
-			return true
-		}
-		if required == "write" && (scope == "scripts:write" || scope == "tests:run" || scope == "results:write" || scope == "settings:manage" || scope == "service_accounts:manage") {
-			return true
-		}
 	}
 	return false
 }
@@ -481,6 +483,21 @@ var serviceAccountScopeRules = []serviceAccountScopeRule{
 	{method: http.MethodGet, prefix: "/api/v1/scenarios", scope: "results:read"},
 	{method: http.MethodHead, prefix: "/api/v1/scenarios", scope: "results:read"},
 	{prefix: "/api/v1/scenarios", scope: "tests:run"},
+	{method: http.MethodGet, prefix: "/api/v1/execution-plans", scope: "results:read"},
+	{method: http.MethodHead, prefix: "/api/v1/execution-plans", scope: "results:read"},
+	{prefix: "/api/v1/execution-plans", scope: "tests:run"},
+	{method: http.MethodGet, prefix: "/api/v1/capacity/", scope: "results:read"},
+	{method: http.MethodHead, prefix: "/api/v1/capacity/", scope: "results:read"},
+	{prefix: "/api/v1/capacity/", scope: "tests:run"},
+	{method: http.MethodGet, prefix: "/api/v1/data-pools", scope: "read"},
+	{method: http.MethodHead, prefix: "/api/v1/data-pools", scope: "read"},
+	{prefix: "/api/v1/data-pools", scope: "scripts:write"},
+	{method: http.MethodGet, prefix: "/api/v1/object-repositories", scope: "read"},
+	{method: http.MethodHead, prefix: "/api/v1/object-repositories", scope: "read"},
+	{prefix: "/api/v1/object-repositories", scope: "scripts:write"},
+	{method: http.MethodGet, prefix: "/api/v1/correlation-rulesets", scope: "read"},
+	{method: http.MethodHead, prefix: "/api/v1/correlation-rulesets", scope: "read"},
+	{prefix: "/api/v1/correlation-rulesets", scope: "scripts:write"},
 }
 
 func requiredServiceAccountScope(r *http.Request) string {
@@ -518,7 +535,7 @@ func requiredLibraryServiceAccountScope(r *http.Request) string {
 	path := r.URL.Path
 	method := r.Method
 	if method == http.MethodGet || method == http.MethodHead || path == "/api/v1/library/export" || strings.HasSuffix(path, "/diff") {
-		return "read"
+		return "results:read"
 	}
 	if path == "/api/v1/library/import/archive" {
 		return "results:write"

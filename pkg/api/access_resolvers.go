@@ -484,6 +484,7 @@ func resolveDraftScriptProjectID(r *http.Request, _ storage.Store) (string, int,
 func resolveBrowserToHTTPPreviewProjectID(r *http.Request, _ storage.Store) (string, int, string) {
 	var req struct {
 		ProjectID           string `json:"project_id,omitempty"`
+		ReplaySessionID     string `json:"replay_session_id,omitempty"`
 		SourceBrowserScript *struct {
 			ProjectID string `json:"project_id,omitempty"`
 		} `json:"source_browser_script,omitempty"`
@@ -491,13 +492,18 @@ func resolveBrowserToHTTPPreviewProjectID(r *http.Request, _ storage.Store) (str
 	if err := decodeRequestBody(r, &req); err != nil {
 		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
 	}
-	if strings.TrimSpace(req.ProjectID) != "" {
-		return normalizeProjectID(req.ProjectID), 0, ""
-	}
+	sourceProjectID := ""
 	if req.SourceBrowserScript != nil {
-		return normalizeProjectID(req.SourceBrowserScript.ProjectID), 0, ""
+		sourceProjectID = req.SourceBrowserScript.ProjectID
 	}
-	return normalizeProjectID(""), 0, ""
+	if strings.TrimSpace(req.ReplaySessionID) != "" && strings.TrimSpace(req.ProjectID) == "" && strings.TrimSpace(sourceProjectID) == "" {
+		return "", http.StatusBadRequest, "project_id or source_browser_script.project_id is required with replay_session_id"
+	}
+	projectID, err := reconcileProjectIDCandidates(req.ProjectID, sourceProjectID)
+	if err != nil {
+		return "", http.StatusBadRequest, "project_id does not match source_browser_script.project_id"
+	}
+	return normalizeProjectID(projectID), 0, ""
 }
 
 func resolveAuthoringSessionRequestProjectID(r *http.Request, _ storage.Store) (string, int, string) {
@@ -510,13 +516,18 @@ func resolveAuthoringSessionRequestProjectID(r *http.Request, _ storage.Store) (
 	if err := decodeRequestBody(r, &req); err != nil {
 		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
 	}
-	if strings.TrimSpace(req.ProjectID) != "" {
-		return normalizeProjectID(req.ProjectID), 0, ""
-	}
+	requestProjectID := strings.TrimSpace(req.ProjectID)
+	draftProjectID := ""
 	if req.Draft != nil {
-		return normalizeProjectID(req.Draft.ProjectID), 0, ""
+		draftProjectID = strings.TrimSpace(req.Draft.ProjectID)
 	}
-	return normalizeProjectID(""), 0, ""
+	if requestProjectID != "" && draftProjectID != "" && normalizeProjectID(requestProjectID) != normalizeProjectID(draftProjectID) {
+		return "", http.StatusBadRequest, "project_id does not match draft.project_id"
+	}
+	if requestProjectID != "" {
+		return normalizeProjectID(requestProjectID), 0, ""
+	}
+	return normalizeProjectID(draftProjectID), 0, ""
 }
 
 func resolveAuthoringSessionProjectID(r *http.Request, store storage.Store) (string, int, string) {
@@ -989,36 +1000,151 @@ func resolveAIAssistanceProjectID(r *http.Request, store storage.Store) (string,
 		ProjectID        string `json:"project_id,omitempty"`
 		ExistingScriptID string `json:"existing_script_id,omitempty"`
 		ScriptID         string `json:"script_id,omitempty"`
+		SessionID        string `json:"session_id,omitempty"`
 		TargetType       string `json:"target_type,omitempty"`
 		TargetID         string `json:"target_id,omitempty"`
 		Script           *struct {
 			ProjectID string `json:"project_id,omitempty"`
 		} `json:"script,omitempty"`
+		Scenario *struct {
+			Groups []struct {
+				ScriptID string `json:"script_id,omitempty"`
+			} `json:"groups,omitempty"`
+		} `json:"scenario,omitempty"`
 	}
 	if err := decodeRequestBody(r, &req); err != nil {
 		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
 	}
-	if projectID := normalizeProjectID(req.ProjectID); projectID != "" {
-		return projectID, 0, ""
+	projectID := ""
+	merge := func(candidate string) bool {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			return true
+		}
+		candidate = normalizeProjectID(candidate)
+		if projectID != "" && projectID != candidate {
+			return false
+		}
+		projectID = candidate
+		return true
+	}
+	if !merge(req.ProjectID) {
+		return "", http.StatusBadRequest, "AI request references multiple projects"
 	}
 	if req.Script != nil {
-		return normalizeProjectID(req.Script.ProjectID), 0, ""
+		if !merge(req.Script.ProjectID) {
+			return "", http.StatusBadRequest, "AI request references multiple projects"
+		}
 	}
-	scriptID := firstNonEmpty(req.ScriptID, req.ExistingScriptID)
-	if scriptID == "" && strings.EqualFold(strings.TrimSpace(req.TargetType), "script") {
-		scriptID = strings.TrimSpace(req.TargetID)
+
+	needsStore := strings.TrimSpace(req.ExistingScriptID) != "" || strings.TrimSpace(req.ScriptID) != "" ||
+		strings.TrimSpace(req.SessionID) != "" || (req.Scenario != nil && len(req.Scenario.Groups) > 0) ||
+		(strings.TrimSpace(req.TargetID) != "" && normalizeAITargetType(req.TargetType) != "runtime_settings")
+	if needsStore && store == nil {
+		return "", http.StatusServiceUnavailable, "AI reference storage is not configured"
 	}
-	if scriptID != "" && store != nil {
-		script, err := store.GetScript(scriptID)
+
+	seenScripts := map[string]struct{}{}
+	mergeScript := func(id string) (int, string) {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			return 0, ""
+		}
+		if _, seen := seenScripts[id]; seen {
+			return 0, ""
+		}
+		seenScripts[id] = struct{}{}
+		script, err := store.GetScript(id)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
-				return "", http.StatusNotFound, "script not found"
+				return http.StatusNotFound, "script not found"
 			}
-			return "", http.StatusInternalServerError, "failed to load script"
+			return http.StatusInternalServerError, "failed to load script"
 		}
-		return normalizeProjectID(script.ProjectID), 0, ""
+		if !merge(script.ProjectID) {
+			return http.StatusNotFound, "script not found"
+		}
+		return 0, ""
 	}
-	return "", 0, ""
+	for _, id := range []string{req.ExistingScriptID, req.ScriptID} {
+		if status, msg := mergeScript(id); status != 0 {
+			return "", status, msg
+		}
+	}
+
+	if sessionID := strings.TrimSpace(req.SessionID); sessionID != "" {
+		sessionStore, ok := store.(interface {
+			GetAuthoringSession(id string) (*storage.AuthoringSession, error)
+		})
+		if !ok {
+			return "", http.StatusServiceUnavailable, "authoring session storage is not configured"
+		}
+		session, err := sessionStore.GetAuthoringSession(sessionID)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return "", http.StatusNotFound, "authoring session not found"
+			}
+			return "", http.StatusInternalServerError, "failed to load authoring session"
+		}
+		if session == nil {
+			return "", http.StatusNotFound, "authoring session not found"
+		}
+		if !merge(session.ProjectID) || (session.Draft != nil && !merge(session.Draft.ProjectID)) {
+			return "", http.StatusNotFound, "authoring session not found"
+		}
+	}
+
+	if req.Scenario != nil {
+		for _, group := range req.Scenario.Groups {
+			if status, msg := mergeScript(group.ScriptID); status != 0 {
+				return "", status, msg
+			}
+		}
+	}
+
+	targetID := strings.TrimSpace(req.TargetID)
+	switch normalizeAITargetType(req.TargetType) {
+	case "script":
+		if status, msg := mergeScript(targetID); status != 0 {
+			return "", status, msg
+		}
+	case "scenario":
+		if targetID != "" {
+			_, scripts, err := store.GetScenario(targetID)
+			if errors.Is(err, sql.ErrNoRows) {
+				return "", http.StatusNotFound, "scenario not found"
+			}
+			if err != nil {
+				return "", http.StatusInternalServerError, "failed to load scenario"
+			}
+			// Scenario ownership is normally derived from its stored script
+			// references. A legacy/corrupt zero-group scenario has no persisted
+			// project field, so require a declared scope for RBAC and let the
+			// handler reconcile it against the in-memory StoredScenario owner.
+			if len(scripts) == 0 && strings.TrimSpace(req.ProjectID) == "" {
+				return "", http.StatusBadRequest, "project_id is required for a scenario without stored script references"
+			}
+			for _, script := range scripts {
+				if status, msg := mergeScript(script.ScriptID); status != 0 {
+					return "", status, msg
+				}
+			}
+		}
+	case "report":
+		if targetID != "" {
+			test, err := store.GetTest(targetID)
+			if errors.Is(err, sql.ErrNoRows) {
+				return "", http.StatusNotFound, "test not found"
+			}
+			if err != nil {
+				return "", http.StatusInternalServerError, "failed to load test"
+			}
+			if !merge(test.ProjectID) {
+				return "", http.StatusNotFound, "test not found"
+			}
+		}
+	}
+	return normalizeProjectID(projectID), 0, ""
 }
 
 func resolveExternalResultImportProjectID(r *http.Request, store storage.Store) (string, int, string) {

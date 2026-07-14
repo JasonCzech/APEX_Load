@@ -796,6 +796,7 @@ type userOnboardingStore interface {
 }
 
 type guardedAuthMutationStore interface {
+	UpdateUserGuardLastAdmin(user *storage.User) (bool, error)
 	UpdateUserActiveGuardLastAdmin(id string, active bool, updatedAt time.Time) (bool, error)
 	DeleteUserGuardLastAdmin(id string) (bool, error)
 	DeleteUserRoleBindingGuardLastAdmin(id string) (bool, error)
@@ -976,25 +977,6 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		}
 		user.Subject = nextSubject
 	}
-	// The guardSystemAdminLockout check above is a non-atomic read-then-act fast
-	// path; enforce the last-admin invariant atomically at the storage layer so
-	// two concurrent disables of the last two admins cannot both succeed through
-	// this update route (the same guard setUserActive/DeleteUser already use).
-	// This is the first persisting step, and it runs only after every validation
-	// above has passed.
-	if deactivating {
-		if guardedStore, ok := s.store.(guardedAuthMutationStore); ok {
-			updated, err := guardedStore.UpdateUserActiveGuardLastAdmin(user.ID, false, time.Now().UTC())
-			if err != nil {
-				writeError(w, http.StatusInternalServerError, err.Error())
-				return
-			}
-			if !updated {
-				writeError(w, http.StatusConflict, "cannot disable the last active system administrator")
-				return
-			}
-		}
-	}
 	user.Email = strings.TrimSpace(req.Email)
 	user.DisplayName = strings.TrimSpace(req.DisplayName)
 	user.UpdatedAt = time.Now().UTC()
@@ -1007,11 +989,16 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 			user.DisabledAt = nil
 		}
 	}
-	if err := s.store.SaveUser(user); err != nil {
+	updated, err := s.store.UpdateUserGuardLastAdmin(user)
+	if err != nil {
 		if s.writeUserSubjectPersistenceError(w, user.Subject, user.ID, err) {
 			return
 		}
 		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !updated {
+		writeError(w, http.StatusConflict, "cannot update the last active system administrator")
 		return
 	}
 	s.recordAuditEvent(r, "auth.user.update", "success", "user", user.ID, "", map[string]any{"subject": user.Subject})
@@ -1818,9 +1805,14 @@ func (s *Server) handleExportUserActivity(w http.ResponseWriter, r *http.Request
 		return
 	}
 	for _, event := range events {
-		_ = writer.Write([]string{event.ID, event.CreatedAt.UTC().Format(time.RFC3339), event.Action, event.Status, event.ActorType, event.ActorSubject, event.ActorDisplayName, event.DomainID, event.ProjectID, event.ResourceType, event.ResourceID})
+		if err := writer.Write([]string{event.ID, event.CreatedAt.UTC().Format(time.RFC3339), event.Action, event.Status, event.ActorType, event.ActorSubject, event.ActorDisplayName, event.DomainID, event.ProjectID, event.ResourceType, event.ResourceID}); err != nil {
+			return
+		}
 	}
 	writer.Flush()
+	if writer.Error() != nil {
+		return
+	}
 }
 
 func (s *Server) handleListServiceAccounts(w http.ResponseWriter, _ *http.Request) {
@@ -1878,6 +1870,7 @@ func (s *Server) handleUpdateServiceAccount(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	before := serviceAccountAuditSummary(account)
+	expectedUpdatedAt := account.UpdatedAt
 	if !applyServiceAccountUpdate(w, account, req) {
 		return
 	}
@@ -1892,8 +1885,13 @@ func (s *Server) handleUpdateServiceAccount(w http.ResponseWriter, r *http.Reque
 	} else {
 		account.RotationDueAt = nil
 	}
-	if err := s.store.SaveServiceAccount(account); err != nil {
+	updated, err := s.store.UpdateServiceAccountMetadata(account, expectedUpdatedAt)
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !updated {
+		writeError(w, http.StatusConflict, "service account changed or was deleted; reload and retry")
 		return
 	}
 	s.recordAuditEvent(r, "auth.service_account.update", "success", "service_account", account.ID, "", map[string]any{"before": before, "after": serviceAccountAuditSummary(account)})

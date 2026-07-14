@@ -38,24 +38,7 @@ func (s *SQLiteStore) SaveServiceAccount(account *ServiceAccount) error {
 		return err
 	}
 	_, err = s.db.Exec(`INSERT INTO service_accounts (id, name, description, owner_id, contact_email, key_hash, active, global_roles_json, project_roles_json, domain_roles_json, repository_roles_json, scopes_json, created_at, updated_at, last_used_at, expires_at, key_rotated_at, rotation_interval_days)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET
-			name=excluded.name,
-			description=excluded.description,
-			owner_id=excluded.owner_id,
-			contact_email=excluded.contact_email,
-			key_hash=excluded.key_hash,
-			active=excluded.active,
-			global_roles_json=excluded.global_roles_json,
-			project_roles_json=excluded.project_roles_json,
-			domain_roles_json=excluded.domain_roles_json,
-			repository_roles_json=excluded.repository_roles_json,
-			scopes_json=excluded.scopes_json,
-			updated_at=excluded.updated_at,
-			last_used_at=excluded.last_used_at,
-			expires_at=excluded.expires_at,
-			key_rotated_at=excluded.key_rotated_at,
-			rotation_interval_days=excluded.rotation_interval_days`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		account.ID,
 		account.Name,
 		account.Description,
@@ -76,6 +59,63 @@ func (s *SQLiteStore) SaveServiceAccount(account *ServiceAccount) error {
 		account.RotationIntervalDays,
 	)
 	return err
+}
+
+// UpdateServiceAccountMetadata performs an optimistic metadata-only update.
+// Keeping key_hash, key_rotated_at, and last_used_at out of this statement is
+// intentional: a stale PATCH must never undo a concurrent rotation, restore a
+// deleted credential, or roll back authentication telemetry.
+func (s *SQLiteStore) UpdateServiceAccountMetadata(account *ServiceAccount, expectedUpdatedAt time.Time) (bool, error) {
+	if account == nil {
+		return false, fmt.Errorf("service account is required")
+	}
+	globalRolesJSON, err := json.Marshal(account.GlobalRoles)
+	if err != nil {
+		return false, err
+	}
+	projectRolesJSON, err := json.Marshal(account.ProjectRoles)
+	if err != nil {
+		return false, err
+	}
+	domainRolesJSON, err := json.Marshal(account.DomainRoles)
+	if err != nil {
+		return false, err
+	}
+	repositoryRolesJSON, err := json.Marshal(account.RepositoryRoles)
+	if err != nil {
+		return false, err
+	}
+	scopesJSON, err := json.Marshal(account.Scopes)
+	if err != nil {
+		return false, err
+	}
+	result, err := s.db.Exec(`UPDATE service_accounts SET
+		name = ?, description = ?, owner_id = ?, contact_email = ?, active = ?,
+		global_roles_json = ?, project_roles_json = ?, domain_roles_json = ?,
+		repository_roles_json = ?, scopes_json = ?, updated_at = ?, expires_at = ?,
+		rotation_interval_days = ?
+		WHERE id = ? AND updated_at = ?`,
+		account.Name,
+		account.Description,
+		account.OwnerID,
+		account.ContactEmail,
+		s.boolValue(account.Active),
+		string(globalRolesJSON),
+		string(projectRolesJSON),
+		string(domainRolesJSON),
+		string(repositoryRolesJSON),
+		string(scopesJSON),
+		account.UpdatedAt,
+		account.ExpiresAt,
+		account.RotationIntervalDays,
+		account.ID,
+		expectedUpdatedAt,
+	)
+	if err != nil {
+		return false, err
+	}
+	rows, err := result.RowsAffected()
+	return rows == 1, err
 }
 
 func (s *SQLiteStore) GetServiceAccount(id string) (*ServiceAccount, error) {
@@ -767,6 +807,51 @@ func (s *SQLiteStore) UpdateUserActiveGuardLastAdmin(id string, active bool, upd
 	})
 }
 
+// UpdateUserGuardLastAdmin updates only administrator-editable fields under the
+// same serialization lock used by role/deletion mutations. It intentionally
+// leaves last_seen_at and session_epoch untouched so a stale profile request
+// cannot undo a concurrent login observation or session revocation.
+func (s *SQLiteStore) UpdateUserGuardLastAdmin(user *User) (bool, error) {
+	if user == nil {
+		return false, fmt.Errorf("user is required")
+	}
+	user.Subject = strings.TrimSpace(user.Subject)
+	if user.Subject == "" {
+		return false, fmt.Errorf("user subject is required")
+	}
+	return s.withAuthMutationLock(func(tx authMutationTx) (bool, error) {
+		var currentSubject string
+		var currentActive any
+		if err := tx.QueryRow(`SELECT subject, active FROM users WHERE id = ?`, user.ID).Scan(&currentSubject, &currentActive); err != nil {
+			if err == sql.ErrNoRows {
+				return false, nil
+			}
+			return false, err
+		}
+		isAdmin, err := s.authMutationTargetIsActiveGlobalAdmin(tx, user.ID)
+		if err != nil {
+			return false, err
+		}
+		makesAdminUnreachable := !user.Active || user.Subject != strings.TrimSpace(currentSubject)
+		if isAdmin && sqlBool(currentActive) && makesAdminUnreachable {
+			count, err := s.authMutationActiveGlobalAdminCount(tx)
+			if err != nil {
+				return false, err
+			}
+			if count <= 1 {
+				return false, nil
+			}
+		}
+		result, err := tx.Exec(`UPDATE users SET subject = ?, email = ?, display_name = ?, active = ?, updated_at = ?, disabled_at = ? WHERE id = ?`,
+			user.Subject, user.Email, user.DisplayName, s.boolValue(user.Active), user.UpdatedAt, user.DisabledAt, user.ID)
+		if err != nil {
+			return false, err
+		}
+		rows, err := result.RowsAffected()
+		return rows == 1, err
+	})
+}
+
 func (s *SQLiteStore) CountActiveGlobalRoleHolders(role string) (int, error) {
 	normalized := strings.ToLower(strings.TrimSpace(role))
 	if normalized == "" {
@@ -799,10 +884,10 @@ func (s *SQLiteStore) DeleteUser(id string) error {
 		return err
 	}
 	defer tx.Rollback()
-	// The declared FK ON DELETE CASCADE is non-functional on both backends (SQLite
-	// FK enforcement is off; the Postgres schema rewriter strips FOREIGN KEY lines),
-	// so delete role bindings explicitly. Otherwise a deleted user leaves orphaned
-	// RBAC grants that a reused user id would silently inherit.
+	// Delete role bindings explicitly for backend parity. SQLite enforces the
+	// declared ON DELETE CASCADE, while the Postgres compatibility rewriter strips
+	// schema-level foreign keys; the explicit delete keeps both paths safe if a
+	// deleted user ID is later reused.
 	if _, err := tx.Exec(`DELETE FROM user_role_bindings WHERE user_id = ?`, id); err != nil {
 		return err
 	}
@@ -990,7 +1075,7 @@ func (s *SQLiteStore) DeleteAuditEventsBefore(cutoff time.Time) (int64, error) {
 	}
 	affected, err := result.RowsAffected()
 	if err != nil {
-		return 0, nil
+		return 0, err
 	}
 	return affected, nil
 }

@@ -75,6 +75,23 @@ describe('FleetGeneratorsCard', () => {
     expect(container.textContent).toContain('Add Metadata')
   })
 
+  it('exposes the metadata editor as a labelled modal and closes it with Escape', async () => {
+    fleetApiMock.listGeneratorMetadata.mockResolvedValue({ generators: [], count: 0 })
+    await act(async () => {
+      root.render(<FleetGeneratorsCard canManage />)
+    })
+    await flush()
+    const addButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Add Metadata')
+    await act(async () => addButton?.click())
+
+    const dialog = container.querySelector<HTMLElement>('[role="dialog"]')
+    expect(dialog?.getAttribute('aria-modal')).toBe('true')
+    expect(dialog?.getAttribute('aria-labelledby')).toBe('fleet-generator-dialog-title')
+
+    await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(container.querySelector('[role="dialog"]')).toBeNull()
+  })
+
   it('renders generators with schedulable / cordoned pills', async () => {
     fleetApiMock.listGeneratorMetadata.mockResolvedValue({
       generators: [meta({ cordoned: false, tags: { jvm: '17' } }), meta({ generator_id: 'gen-2', cordoned: true })],

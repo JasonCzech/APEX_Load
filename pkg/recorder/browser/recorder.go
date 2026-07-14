@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -116,12 +117,28 @@ type Recorder struct {
 	done     chan struct{}
 	doneOnce sync.Once
 	harTemp  bool
+	wsFrames int
+	wsBytes  int
 
 	// sidebarPush coalesces live-state pushes to the in-page sidebar. A single
 	// drainer goroutine (started in Start) debounces bursts of events into one
 	// page.Evaluate per open page so rapid capture never floods the browser.
 	sidebarPush chan struct{}
 }
+
+const (
+	maxBrowserHARBytes      = 100 << 20
+	maxBrowserPages         = 32
+	maxBrowserSteps         = 100_000
+	maxBrowserNetworkEvents = 100_000
+	maxBrowserWebSockets    = 1_000
+	maxBrowserWSFrames      = 10_000
+	maxBrowserAnnotations   = 10_000
+	maxBrowserAnnotationLen = 4_096
+	maxBrowserBindingBytes  = 64 << 10
+	maxBrowserWSPayload     = 64 << 10
+	maxBrowserWSBytes       = 64 << 20
+)
 
 // controlNoncePlaceholder is the literal in capture.js that newControlNonce's
 // value is substituted for at injection time, baking the secret into the
@@ -317,6 +334,9 @@ func (r *Recorder) Start() error {
 		return fmt.Errorf("create browser context: %w", err)
 	}
 	r.context = context
+	if r.opts.CaptureHAR {
+		go r.monitorHARSize(r.session.HARPath, context)
+	}
 
 	if err := context.ExposeBinding("__apexloadRecord", r.handleRecordBinding); err != nil {
 		r.cleanup()
@@ -363,6 +383,17 @@ func (r *Recorder) registerPage(page playwright.Page) {
 	isPanelURL := isRecorderControlPanelURL(page.URL())
 
 	r.mu.Lock()
+	if r.stopped {
+		r.mu.Unlock()
+		_ = page.Close()
+		return
+	}
+	if len(r.recordablePagesLocked()) >= maxBrowserPages {
+		r.session.Warnings = append(r.session.Warnings, "browser page limit reached; excess popup was closed")
+		r.mu.Unlock()
+		_ = page.Close()
+		return
+	}
 	if opener == nil && (r.openingControl || isPanelURL) {
 		r.markControlPageLocked(page)
 		r.openingControl = false
@@ -375,7 +406,7 @@ func (r *Recorder) registerPage(page playwright.Page) {
 	paused := r.paused
 	var recorded *Step
 	switchStepSeq := 0
-	if isPopup && !paused {
+	if isPopup && !paused && len(r.session.Steps) < maxBrowserSteps {
 		step := r.session.appendStep(Step{
 			Kind:      StepSwitchWindow,
 			Value:     page.URL(),
@@ -397,9 +428,11 @@ func (r *Recorder) registerPage(page playwright.Page) {
 		nav := NavEvent{Timestamp: time.Now(), URL: frame.URL()}
 		var updatedSwitchStep *Step
 		r.mu.Lock()
-		paused := r.paused
+		paused := r.paused || r.stopped
 		if !paused {
-			r.session.NavEvents = append(r.session.NavEvents, nav)
+			if len(r.session.NavEvents) < maxBrowserNetworkEvents {
+				r.session.NavEvents = append(r.session.NavEvents, nav)
+			}
 			if switchStepSeq > 0 {
 				updatedSwitchStep, _ = r.session.updateSwitchWindowStep(switchStepSeq, nav.URL)
 			}
@@ -420,14 +453,14 @@ func (r *Recorder) registerPage(page playwright.Page) {
 	})
 	page.OnRequest(func(playwright.Request) {
 		r.mu.Lock()
-		if !r.paused {
+		if !r.paused && !r.stopped && len(r.session.NetworkEvents) < maxBrowserNetworkEvents {
 			r.session.NetworkEvents = append(r.session.NetworkEvents, time.Now())
 		}
 		r.mu.Unlock()
 	})
 	page.OnWebSocket(func(ws playwright.WebSocket) {
 		r.mu.Lock()
-		if r.paused {
+		if r.paused || r.stopped || len(r.session.WebSockets) >= maxBrowserWebSockets {
 			r.mu.Unlock()
 			return
 		}
@@ -444,9 +477,9 @@ func (r *Recorder) registerPage(page playwright.Page) {
 		dialogType := dialog.Type()
 		_ = dialog.Accept()
 		r.mu.Lock()
-		paused := r.paused
+		paused := r.paused || r.stopped
 		var recorded *Step
-		if !paused {
+		if !paused && len(r.session.Steps) < maxBrowserSteps {
 			step := r.session.appendStep(Step{
 				Kind:          StepHandleDialog,
 				DialogType:    dialogType,
@@ -522,7 +555,7 @@ func (r *Recorder) handleRecordBinding(source *playwright.BindingSource, args ..
 		}
 	}
 	payload, ok := args[0].(string)
-	if !ok {
+	if !ok || len(payload) > maxBrowserBindingBytes {
 		return nil
 	}
 	// Control events from the in-page toolbar/sidebar round-trip through the
@@ -537,7 +570,7 @@ func (r *Recorder) handleRecordBinding(source *playwright.BindingSource, args ..
 		return nil
 	}
 	r.mu.Lock()
-	if r.paused {
+	if r.paused || r.stopped || len(r.session.Steps) >= maxBrowserSteps {
 		r.mu.Unlock()
 		return nil
 	}
@@ -559,6 +592,10 @@ func (r *Recorder) handleRecordBinding(source *playwright.BindingSource, args ..
 	}
 	step.Section = section
 	r.mu.Lock()
+	if r.paused || r.stopped || len(r.session.Steps) >= maxBrowserSteps {
+		r.mu.Unlock()
+		return nil
+	}
 	var switched *Step
 	if source != nil && source.Page != nil {
 		switched = r.recordPageSwitchIfNeededLocked(source.Page, step.Timestamp, section)
@@ -587,6 +624,10 @@ func (r *Recorder) recordPageSwitchIfNeededLocked(page playwright.Page, before t
 		return nil
 	}
 	r.activePage = page
+	// Reserve one slot for the event that triggered this page switch.
+	if len(r.session.Steps) >= maxBrowserSteps-1 {
+		return nil
+	}
 	targetURL := page.URL()
 	ts := time.Now()
 	if !before.IsZero() {
@@ -1031,7 +1072,7 @@ func (r *Recorder) Stop() (*Session, error) {
 	}
 	r.session.OpenTransactions = nil
 	if r.session.HARPath != "" {
-		data, err := os.ReadFile(r.session.HARPath)
+		data, err := readFileLimited(r.session.HARPath, maxBrowserHARBytes)
 		if err != nil {
 			r.session.Warnings = append(r.session.Warnings, fmt.Sprintf("side-car HAR unavailable: %v", err))
 		} else {
@@ -1405,11 +1446,14 @@ func (r *Recorder) SetStepMark(seq int, secret, param bool) (*Step, error) {
 // step, dropping it while paused.
 func (r *Recorder) recordAnnotation(annotation Annotation) {
 	r.mu.Lock()
-	if r.paused || r.stopped {
+	if r.paused || r.stopped || len(r.session.Annotations) >= maxBrowserAnnotations {
 		r.mu.Unlock()
 		return
 	}
 	annotation.Timestamp = time.Now()
+	if len(annotation.Text) > maxBrowserAnnotationLen {
+		annotation.Text = annotation.Text[:maxBrowserAnnotationLen]
+	}
 	annotation.NearStep = len(r.session.Steps)
 	r.session.Annotations = append(r.session.Annotations, annotation)
 	r.mu.Unlock()
@@ -1434,9 +1478,18 @@ func (r *Recorder) recordWSFrame(index int, direction string, payload []byte) {
 	if !r.opts.CaptureWSPayloads {
 		return
 	}
+	if r.wsFrames >= maxBrowserWSFrames || r.wsBytes >= maxBrowserWSBytes {
+		return
+	}
 	limit := r.opts.WSPayloadLimitBytes
 	if limit <= 0 {
 		limit = 4096
+	}
+	if limit > maxBrowserWSPayload {
+		limit = maxBrowserWSPayload
+	}
+	if remaining := maxBrowserWSBytes - r.wsBytes; limit > remaining {
+		limit = remaining
 	}
 	frame := WebSocketFrame{Direction: direction, SizeBytes: len(payload), Timestamp: time.Now(), Encoding: "text"}
 	body := payload
@@ -1457,7 +1510,65 @@ func (r *Recorder) recordWSFrame(index int, direction string, payload []byte) {
 		frame.Payload = base64.StdEncoding.EncodeToString([]byte(text))
 		frame.Encoding = "base64"
 	}
+	if len(frame.Payload) > maxBrowserWSBytes-r.wsBytes {
+		return
+	}
 	r.session.WebSockets[index].Frames = append(r.session.WebSockets[index].Frames, frame)
+	r.wsFrames++
+	r.wsBytes += len(frame.Payload)
+}
+
+func readFileLimited(path string, limit int64) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if info.Size() > limit {
+		return nil, fmt.Errorf("artifact is %d bytes; maximum is %d", info.Size(), limit)
+	}
+	data, err := io.ReadAll(io.LimitReader(file, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("artifact exceeds maximum of %d bytes", limit)
+	}
+	return data, nil
+}
+
+func (r *Recorder) monitorHARSize(path string, context playwright.BrowserContext) {
+	if strings.TrimSpace(path) == "" || context == nil {
+		return
+	}
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-r.done:
+			return
+		case <-ticker.C:
+			info, err := os.Stat(path)
+			if err != nil || info.Size() <= maxBrowserHARBytes {
+				continue
+			}
+			r.mu.Lock()
+			if r.stopped || r.context != context {
+				r.mu.Unlock()
+				return
+			}
+			r.context = nil
+			r.session.Warnings = append(r.session.Warnings, fmt.Sprintf("recording stopped because HAR exceeded %d bytes", maxBrowserHARBytes))
+			r.mu.Unlock()
+			_ = context.Close()
+			r.signalDone()
+			return
+		}
+	}
 }
 
 // captureThumbnailAsync screenshots the page and attaches a size-capped JPEG

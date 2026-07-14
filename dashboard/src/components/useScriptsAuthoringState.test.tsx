@@ -245,6 +245,60 @@ describe('useScriptsAuthoringState', () => {
     expect(readTestId('authoring-notice')).toBe('script lookup failed')
   })
 
+  it('ignores an edit response after the user returns to the library', async () => {
+    const pending = deferred<{ script: { id: string; name: string; protocol: string } }>()
+    const api = {
+      getScript: vi.fn().mockReturnValue(pending.promise),
+    }
+
+    await act(async () => {
+      root.render(<AuthoringStateHarness api={api} initialMode="list" />)
+    })
+
+    await click('load-edit')
+    expect(readTestId('subview')).toBe('list')
+    expect(readTestId('editing-name')).toBe('none')
+
+    await click('open-library')
+    await act(async () => {
+      pending.resolve({ script: { id: 'script-1', name: 'Late Script', protocol: 'http' } })
+    })
+    await flushPromises()
+
+    expect(readTestId('subview')).toBe('list')
+    expect(readTestId('editing-name')).toBe('none')
+  })
+
+  it('ignores a late initial edit response after the route requests another script', async () => {
+    const first = deferred<{ script: { id: string; name: string; protocol: string } }>()
+    const api = {
+      getScript: vi.fn().mockImplementation((id: string) => (
+        id === 'script-1'
+          ? first.promise
+          : Promise.resolve({ script: { id: 'script-2', name: 'Current Script', protocol: 'http' } })
+      )),
+    }
+
+    await act(async () => {
+      root.render(<AuthoringStateHarness api={api} initialMode="edit" initialEditId="script-1" />)
+    })
+    await act(async () => {
+      root.render(<AuthoringStateHarness api={api} initialMode="edit" initialEditId="script-2" />)
+    })
+    await flushPromises()
+
+    expect(readTestId('editing-id')).toBe('script-2')
+    expect(readTestId('editing-name')).toBe('Current Script')
+
+    await act(async () => {
+      first.resolve({ script: { id: 'script-1', name: 'Late Script', protocol: 'http' } })
+    })
+    await flushPromises()
+
+    expect(readTestId('editing-id')).toBe('script-2')
+    expect(readTestId('editing-name')).toBe('Current Script')
+  })
+
   it('prefers the persisted script payload when save returns one', async () => {
     const api = {
       getScript: vi.fn(),
@@ -370,4 +424,12 @@ async function flushPromises() {
     await Promise.resolve()
     await Promise.resolve()
   })
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>(next => {
+    resolve = next
+  })
+  return { promise, resolve }
 }

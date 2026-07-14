@@ -15,6 +15,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -336,7 +337,9 @@ func (s *Server) githubTokenForConnection(ctx context.Context, settings GitHubSe
 		exp := time.Now().UTC().Add(time.Duration(next.ExpiresIn) * time.Second)
 		conn.ExpiresAt = &exp
 	}
-	_ = store.SaveGitHubConnection(conn)
+	if err := store.SaveGitHubConnection(conn); err != nil {
+		slog.Warn("failed to persist refreshed GitHub OAuth token", "user_id", conn.UserID, "error", err)
+	}
 	return next.AccessToken, true
 }
 
@@ -759,7 +762,7 @@ func (s *Server) handlePublishGitHubCheckRun(w http.ResponseWriter, r *http.Requ
 	}
 	checkID := uuid.New().String()
 	if store, ok := s.githubEnterpriseStore(); ok {
-		_ = store.SaveGitHubCheckLink(&storage.GitHubCheckLink{
+		if err := store.SaveGitHubCheckLink(&storage.GitHubCheckLink{
 			ID:          checkID,
 			TestID:      testID,
 			ScriptID:    scriptID,
@@ -770,7 +773,10 @@ func (s *Server) handlePublishGitHubCheckRun(w http.ResponseWriter, r *http.Requ
 			CheckRunURL: check.HTMLURL,
 			Status:      check.Status,
 			Conclusion:  check.Conclusion,
-		})
+		}); err != nil {
+			writeError(w, http.StatusInternalServerError, "GitHub check was created but its APEX Load link could not be persisted")
+			return
+		}
 	}
 	s.recordAuditEvent(r, "github.check_run.publish", "success", "test", testID, test.ProjectID, map[string]any{"owner": req.Owner, "repo": req.Repo, "commit_sha": req.CommitSHA, "check_run_id": check.ID})
 	writeJSON(w, http.StatusOK, map[string]any{"id": checkID, "check_run": check, "auth_mode": resolved.AuthMode})

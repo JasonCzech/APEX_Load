@@ -14,11 +14,15 @@ export function SortHeader<T extends string>({
   onSort: (field: T) => void
   numeric?: boolean
 }) {
+  const active = sort.field === field
   return (
-    <th className={`sortable ${numeric ? 'num' : ''}`.trim()}>
+    <th
+      className={`sortable ${numeric ? 'num' : ''}`.trim()}
+      aria-sort={active ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}
+    >
       <button type="button" onClick={() => onSort(field)}>
         {label}
-        <SortIcon active={sort.field === field} direction={sort.direction} />
+        <SortIcon active={active} direction={sort.direction} />
       </button>
     </th>
   )

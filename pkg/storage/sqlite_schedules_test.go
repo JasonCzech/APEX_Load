@@ -12,6 +12,9 @@ func TestSQLiteStorePersistsScenarioSchedules(t *testing.T) {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
 	defer store.Close()
+	if err := store.SaveProject(&Project{ID: "checkout", Name: "Checkout", CreatedAt: time.Now()}); err != nil {
+		t.Fatalf("SaveProject returned error: %v", err)
+	}
 
 	scenario := &Scenario{ID: "scenario-1", Name: "Checkout", Duration: "5m", StartDelay: "30s", CreatedAt: time.Now(), UpdatedAt: time.Now()}
 	if err := store.SaveScenario(scenario, nil); err != nil {
@@ -74,6 +77,9 @@ func TestSQLiteStorePersistsScenarioSchedules(t *testing.T) {
 	}
 	if err := store.SaveScenarioSchedule(schedule); err != nil {
 		t.Fatalf("SaveScenarioSchedule returned error: %v", err)
+	}
+	if err := store.SaveTest(&TestRecord{ID: "test-1", Name: "Scheduled Run", Status: "COMPLETE", ScenarioID: scenario.ID, ProjectID: "checkout", StartTime: nextRun}); err != nil {
+		t.Fatal(err)
 	}
 
 	roundTrip, err := store.GetScenarioSchedule(schedule.ID)
@@ -212,6 +218,9 @@ func TestSQLiteStoreAcquiresSchedulerLease(t *testing.T) {
 	}
 	if acquired {
 		t.Fatal("expected second controller to be blocked by active lease")
+	}
+	if _, err := store.db.Exec(`UPDATE scheduler_leases SET expires_at = ? WHERE name = ?`, time.Now().UTC().Add(-time.Minute), "scenario-scheduler"); err != nil {
+		t.Fatalf("expire scheduler lease: %v", err)
 	}
 	acquired, err = store.TryAcquireSchedulerLease("scenario-scheduler", "controller-b", now.Add(2*time.Minute), time.Minute)
 	if err != nil {

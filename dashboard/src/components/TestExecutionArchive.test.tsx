@@ -1270,7 +1270,7 @@ describe('TestExecutionArchive', () => {
       await Promise.resolve()
     })
 
-    const dialog = document.body.querySelector('[role="dialog"][aria-label="Full text"]')
+    const dialog = document.body.querySelector('.snapshot-full-dialog[role="dialog"]')
     expect(dialog?.textContent).toContain('SOAP namespace conflict: undeclared prefixes: auth')
     expect(dialog?.textContent).toContain('Redirects: 2 hops / 31.0 ms')
     expect(dialog?.textContent).toContain('Message latency: 18.0 ms')

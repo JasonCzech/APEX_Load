@@ -634,6 +634,10 @@ func TestHandlePinAndUnpinComparisonBaselineWriteAuditEvents(t *testing.T) {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
 	defer store.Close()
+	seededAt := time.Now().UTC()
+	if err := store.SaveScenario(&storage.Scenario{ID: "scenario-1", Name: "Checkout", Duration: "1m", CreatedAt: seededAt, UpdatedAt: seededAt}, nil); err != nil {
+		t.Fatalf("SaveScenario returned error: %v", err)
+	}
 
 	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
 	completedAt := time.Date(2026, time.May, 12, 12, 0, 0, 0, time.UTC)

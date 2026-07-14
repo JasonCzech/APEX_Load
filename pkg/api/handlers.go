@@ -11,6 +11,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -88,36 +89,137 @@ func (s *Server) handlePreflightTest(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListTests(w http.ResponseWriter, r *http.Request) {
+	summary, activeOnly, limit, offset, ok := parseTestListOptions(w, r)
+	if !ok {
+		return
+	}
 	applicationID := r.URL.Query().Get("application_id")
 	releaseID := r.URL.Query().Get("release_id")
 	scenarioID := r.URL.Query().Get("scenario_id")
-	if applicationID != "" || releaseID != "" || scenarioID != "" {
-		tests := s.runner.ListTestsByContext(applicationID, releaseID, scenarioID)
-		writeJSON(w, http.StatusOK, map[string]any{
-			"tests": maskManagedTests(tests),
-			"count": len(tests),
-		})
-		return
-	}
-
 	projectID := r.URL.Query().Get("project_id")
 	var folderID *string
 	if r.URL.Query().Has("folder_id") {
 		value := r.URL.Query().Get("folder_id")
 		folderID = &value
 	}
-	if projectID == "" && folderID == nil {
-		tests := s.runner.ListTests()
+	if summary {
+		tests, total := s.runner.listTestSummaryPage(testSummaryListQuery{
+			projectID:     projectID,
+			folderID:      folderID,
+			applicationID: applicationID,
+			releaseID:     releaseID,
+			scenarioID:    scenarioID,
+			activeOnly:    activeOnly,
+			limit:         limit,
+			offset:        offset,
+		})
 		writeJSON(w, http.StatusOK, map[string]any{
-			"tests": maskManagedTests(tests),
-			"count": len(tests),
+			"tests":   maskManagedTests(tests),
+			"count":   len(tests),
+			"total":   total,
+			"limit":   limit,
+			"offset":  offset,
+			"summary": true,
 		})
 		return
 	}
-	tests := s.runner.ListTestsFiltered(projectID, folderID)
+	var tests []*ManagedTest
+	if applicationID != "" || releaseID != "" || scenarioID != "" {
+		tests = s.runner.ListTestsByContext(applicationID, releaseID, scenarioID)
+	} else {
+		if projectID == "" && folderID == nil {
+			tests = s.runner.ListTests()
+		} else {
+			tests = s.runner.ListTestsFiltered(projectID, folderID)
+		}
+	}
+
+	if activeOnly {
+		filtered := tests[:0]
+		for _, test := range tests {
+			if test != nil && isActiveTestListStatus(test.Status) {
+				filtered = append(filtered, test)
+			}
+		}
+		tests = filtered
+	}
+	sortTestList(tests, limit > 0)
+	total := len(tests)
+	start := offset
+	if start > total {
+		start = total
+	}
+	end := total
+	if limit > 0 && end > start+limit {
+		end = start + limit
+	}
+	tests = tests[start:end]
 	writeJSON(w, http.StatusOK, map[string]any{
-		"tests": maskManagedTests(tests),
-		"count": len(tests),
+		"tests":   maskManagedTests(tests),
+		"count":   len(tests),
+		"total":   total,
+		"limit":   limit,
+		"offset":  offset,
+		"summary": summary,
+	})
+}
+
+func parseTestListOptions(w http.ResponseWriter, r *http.Request) (summary bool, activeOnly bool, limit int, offset int, ok bool) {
+	query := r.URL.Query()
+	for name, target := range map[string]*bool{"summary": &summary, "active_only": &activeOnly} {
+		if raw := query.Get(name); raw != "" {
+			parsed, err := strconv.ParseBool(raw)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "invalid "+name)
+				return false, false, 0, 0, false
+			}
+			*target = parsed
+		}
+	}
+	if raw := query.Get("limit"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 2000 {
+			writeError(w, http.StatusBadRequest, "invalid limit")
+			return false, false, 0, 0, false
+		}
+		limit = parsed
+	}
+	if raw := query.Get("offset"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 0 {
+			writeError(w, http.StatusBadRequest, "invalid offset")
+			return false, false, 0, 0, false
+		}
+		offset = parsed
+	}
+	return summary, activeOnly, limit, offset, true
+}
+
+func isActiveTestListStatus(status string) bool {
+	switch strings.ToUpper(strings.TrimSpace(status)) {
+	case "QUEUED", "PENDING", "INITIALIZING", "SHAKEOUT", "SHAKEOUT_REVIEW", "RUNNING", "PAUSED", "STOPPING":
+		return true
+	default:
+		return false
+	}
+}
+
+func sortTestList(tests []*ManagedTest, activeFirst bool) {
+	sort.SliceStable(tests, func(i, j int) bool {
+		if tests[i] == nil {
+			return false
+		}
+		if tests[j] == nil {
+			return true
+		}
+		if activeFirst {
+			leftActive := isActiveTestListStatus(tests[i].Status)
+			rightActive := isActiveTestListStatus(tests[j].Status)
+			if leftActive != rightActive {
+				return leftActive
+			}
+		}
+		return tests[i].CreatedAt.After(tests[j].CreatedAt)
 	})
 }
 
@@ -394,7 +496,11 @@ func (s *Server) handleResumeTest(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteTest(w http.ResponseWriter, r *http.Request) {
+	if !s.requireExecutionLeader(w) {
+		return
+	}
 	id := r.PathValue("id")
+	canonicalID := s.runner.resolveTestID(id)
 	projectID := ""
 	name := ""
 	status := ""
@@ -403,7 +509,16 @@ func (s *Server) handleDeleteTest(w http.ResponseWriter, r *http.Request) {
 		name = test.Name
 		status = test.Status
 	}
-	if !s.runner.DeleteTest(id) {
+	deleted, err := s.runner.DeleteTestWithError(canonicalID)
+	if err != nil {
+		if deleted {
+			writeError(w, http.StatusInternalServerError, "test metadata was deleted but physical archive cleanup failed: "+err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to delete test: "+err.Error())
+		return
+	}
+	if !deleted {
 		writeError(w, http.StatusNotFound, "test not found or currently active")
 		return
 	}
@@ -545,7 +660,11 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stored := s.runner.StoreScript(script)
+	stored, err := s.runner.StoreScriptDurable(script)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to save script: "+err.Error())
+		return
+	}
 	s.captureRecordingBaseline(stored.ID, wrapper.SourceRecordingSessionID)
 	s.recordAuditEvent(r, "script.create", "success", "script", stored.ID, stored.ProjectID, map[string]any{"name": stored.Name, "folder_id": stored.FolderID})
 	writeJSON(w, http.StatusCreated, stored)
@@ -629,7 +748,12 @@ func (s *Server) handleMoveScript(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	if !s.runner.MoveScript(id, req.FolderID) {
+	moved, err := s.runner.MoveScriptDurable(id, req.FolderID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to move script: "+err.Error())
+		return
+	}
+	if !moved {
 		writeError(w, http.StatusNotFound, "script not found")
 		return
 	}
@@ -650,7 +774,12 @@ func (s *Server) handleMoveTest(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	if !s.runner.MoveTest(id, req.FolderID) {
+	moved, err := s.runner.MoveTestDurable(id, req.FolderID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to move test: "+err.Error())
+		return
+	}
+	if !moved {
 		writeError(w, http.StatusNotFound, "test not found")
 		return
 	}
@@ -896,17 +1025,19 @@ func (s *Server) handleUpdateSystemSettings(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
-	s.hub.serveWS(w, r, "", strings.TrimSpace(r.URL.Query().Get("project_id")))
+	projectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
+	s.hub.serveWS(w, r, "", projectID, s.websocketAuthorizer(r, projectID))
 }
 
 func (s *Server) handleTestStream(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	_, ok := s.runner.GetTest(id)
+	test, ok := s.runner.GetTest(id)
 	if !ok {
 		writeError(w, http.StatusNotFound, "test not found")
 		return
 	}
-	s.hub.serveWS(w, r, id, "")
+	projectID := normalizeProjectID(test.ProjectID)
+	s.hub.serveWS(w, r, id, "", s.websocketAuthorizer(r, projectID))
 }
 
 func validateScript(script *dsl.Script) []string {

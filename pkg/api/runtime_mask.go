@@ -143,7 +143,11 @@ func maskManagedTestWithOptions(test *ManagedTest, opts managedTestMaskOptions) 
 		masked.History = nil
 	}
 	if opts.IncludeSparkline {
-		masked.Sparkline = buildManagedTestSparkline(test.History, test.LiveMetrics, defaultManagedTestSparklinePoints)
+		if len(test.History) == 0 && len(test.Sparkline) > 0 {
+			masked.Sparkline = append([]TestSparklinePoint(nil), test.Sparkline...)
+		} else {
+			masked.Sparkline = buildManagedTestSparkline(test.History, test.LiveMetrics, defaultManagedTestSparklinePoints)
+		}
 	} else {
 		masked.Sparkline = nil
 	}

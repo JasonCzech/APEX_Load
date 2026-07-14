@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/api/testexec"
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
+	"github.com/jasonczech/apexload/pkg/storage"
 	grpcCodes "google.golang.org/grpc/codes"
 	grpcStatus "google.golang.org/grpc/status"
 )
@@ -27,8 +29,7 @@ func marshalDistributedScript(script any) ([]byte, string, error) {
 	return content, hex.EncodeToString(hash[:]), nil
 }
 
-func (b *distributedExecutionBackend) startDistributedTestRun(tr *TestRunner, test *ManagedTest, groupShards map[string][]GeneratorShardSummary, clientsByTarget map[string]generatorClient, streamsByTarget map[string]*generatorrpc.MetricsStream) {
-	ctx, cancel := context.WithCancel(context.Background())
+func (b *distributedExecutionBackend) startDistributedTestRun(tr *TestRunner, test *ManagedTest, groupShards map[string][]GeneratorShardSummary, clientsByTarget map[string]generatorClient, streamsByTarget map[string]*generatorrpc.MetricsStream) (bool, error) {
 	now := time.Now()
 	orderedTargets := orderedGeneratorTargets(clientsByTarget, b.configuredTargets())
 	firstTarget := ""
@@ -37,7 +38,13 @@ func (b *distributedExecutionBackend) startDistributedTestRun(tr *TestRunner, te
 	}
 
 	tr.mu.Lock()
-	test.cancel = cancel
+	ctx := test.executionCtx
+	if tr.shuttingDown || tr.tests[test.ID] != test || test.Status != "INITIALIZING" || ctx == nil || ctx.Err() != nil || !tr.isExecutionLeader() {
+		tr.mu.Unlock()
+		return false, nil
+	}
+	previousGoalControl := test.goalControl
+	previousControlGeneration := test.remoteControlGeneration
 	test.multiEngine = nil
 	test.executionBackend = b
 	test.remoteTarget = firstTarget
@@ -54,6 +61,7 @@ func (b *distributedExecutionBackend) startDistributedTestRun(tr *TestRunner, te
 	test.remoteMetricsLastPublishedAt = time.Time{}
 	test.remoteMetricsFlushScheduled = false
 	test.remoteGoalUpdateRunning = false
+	test.remoteControlGeneration++
 	// Goal-oriented distributed runs evaluate the goal controller from the
 	// per-target consumeMetrics goroutines (applyRemoteMetricsBatch). Initialize
 	// the controller state here, mirroring the local path (startManagedTestRun),
@@ -77,7 +85,34 @@ func (b *distributedExecutionBackend) startDistributedTestRun(tr *TestRunner, te
 	test.PendingReason = ""
 	test.QueuePosition = 0
 	test.Error = ""
-	tr.saveManagedTestRecord(test)
+	if err := tr.saveManagedTestRecord(test); err != nil {
+		// No metrics consumer has been launched yet. Restore the durable startup
+		// state and detach every remote handle so the caller can stop/close the
+		// accepted work before failTestBeforeRun persists FAILED.
+		test.multiEngine = nil
+		test.executionBackend = nil
+		test.remoteTarget = ""
+		test.remoteClient = nil
+		test.remoteMetricsStream = nil
+		test.remoteGroupTargets = nil
+		test.remoteGroupShards = nil
+		test.GeneratorShards = nil
+		test.remoteClientsByTarget = nil
+		test.remoteMetricsStreamsByTarget = nil
+		test.remoteMetricsBatchesByTarget = nil
+		test.remoteTargetStates = nil
+		test.remoteFinalizing = false
+		test.remoteMetricsLastPublishedAt = time.Time{}
+		test.remoteMetricsFlushScheduled = false
+		test.remoteGoalUpdateRunning = false
+		test.goalControl = previousGoalControl
+		test.remoteControlGeneration = previousControlGeneration
+		test.StartedAt = nil
+		test.EndedAt = nil
+		test.Status = "INITIALIZING"
+		tr.mu.Unlock()
+		return false, fmt.Errorf("persist distributed RUNNING transition: %w", err)
+	}
 	snapshot := buildRunLiveStateSnapshotLocked(test, now)
 	tr.mu.Unlock()
 
@@ -87,6 +122,7 @@ func (b *distributedExecutionBackend) startDistributedTestRun(tr *TestRunner, te
 		go b.consumeMetrics(ctx, tr, test, target, streamsByTarget[target])
 	}
 	tr.startStageSchedules(ctx, test, nil)
+	return true, nil
 }
 
 // snapshotRemoteClients copies, under tr.mu, the fields clientForTest reads.
@@ -199,6 +235,8 @@ func testGroupCurrentShardVUsers(test *ManagedTest, groupName string) int {
 }
 
 func (b *distributedExecutionBackend) closeRemoteResources(tr *TestRunner, test *ManagedTest) {
+	unlockControl := tr.lockDistributedTopologyControl(test.ID)
+	defer unlockControl()
 	// Snapshot the streams/clients and clear the fields under the lock, then do
 	// the blocking gRPC closes outside the lock (they must not be held under mu).
 	tr.mu.Lock()
@@ -214,6 +252,7 @@ func (b *distributedExecutionBackend) closeRemoteResources(tr *TestRunner, test 
 	test.remoteGroupShards = nil
 	test.remoteMetricsBatchesByTarget = nil
 	test.remoteTargetStates = nil
+	test.remoteControlGeneration++
 	tr.mu.Unlock()
 
 	if len(streamsByTarget) > 0 {
@@ -377,6 +416,9 @@ func (b *distributedExecutionBackend) storeRemoteMetricsBatchOnly(tr *TestRunner
 		return
 	}
 	test.remoteMetricsBatchesByTarget[target] = batch
+	if test.ScenarioMode == "goal_oriented" && test.GoalConfig != nil && !isTerminalRemoteLifecycle(batch.LifecycleState) && batch.TimestampUnixMs > 0 {
+		recordGoalErrorWindow(test.goalControl, target, time.UnixMilli(batch.TimestampUnixMs), distributedBatchErrorCount(batch))
+	}
 }
 
 func (b *distributedExecutionBackend) failDistributedTestOnStreamError(tr *TestRunner, test *ManagedTest, target string, err error) {
@@ -421,6 +463,7 @@ func remoteTargetStateDone(state string) bool {
 
 func (b *distributedExecutionBackend) applyRemoteMetricsBatch(tr *TestRunner, test *ManagedTest, target string, batch generatorrpc.MetricsBatch) (*LiveMetrics, string, string) {
 	tr.mu.Lock()
+	acceptedErrorWindow := false
 	if test.remoteMetricsBatchesByTarget == nil {
 		test.remoteMetricsBatchesByTarget = make(map[string]generatorrpc.MetricsBatch)
 	}
@@ -466,6 +509,7 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatch(tr *TestRunner, te
 		batch = prior
 	} else {
 		test.remoteMetricsBatchesByTarget[target] = batch
+		acceptedErrorWindow = batch.LifecycleState != "COMPLETE" && batch.LifecycleState != "FAILED" && batch.TimestampUnixMs > 0
 	}
 	batches := make(map[string]generatorrpc.MetricsBatch, len(test.remoteMetricsBatchesByTarget))
 	for key, value := range test.remoteMetricsBatchesByTarget {
@@ -524,6 +568,9 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatch(tr *TestRunner, te
 		goalUpdate      goalControllerUpdate
 	)
 	if test.ScenarioMode == "goal_oriented" && test.GoalConfig != nil {
+		if acceptedErrorWindow {
+			recordGoalErrorWindow(test.goalControl, target, time.UnixMilli(batch.TimestampUnixMs), distributedBatchErrorCount(batch))
+		}
 		goalGroupVUsers = liveGroupVUsers(test, live)
 		currentTotalVUsers := totalGroupVUsers(goalGroupVUsers)
 		goalUpdate = evaluateGoalController(live.Timestamp, currentTotalVUsers, live, test.GoalConfig, test.goalControl)
@@ -552,7 +599,7 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatch(tr *TestRunner, te
 				tr.mu.Unlock()
 			}()
 			applyGoalControllerUpdate(tr, test, &goalLive, goalGroupVUsers, goalUpdate, func(groupName string, target int) error {
-				return b.ScaleVUsers(tr, test, groupName, target)
+				return tr.scaleVUsersNow(test.ID, groupName, target, false)
 			})
 		}()
 	}
@@ -560,13 +607,69 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatch(tr *TestRunner, te
 	return live, finalStatus, finalError
 }
 
-func (b *distributedExecutionBackend) completeDistributedTestRun(tr *TestRunner, test *ManagedTest, finalStatus string, finalError string) {
-	if finalStatus == "FAILED" {
-		if err := b.stopRemainingRemoteTargets(tr, test); err != nil {
-			finalError = testexec.AppendRunError(finalError, "stop remote targets", err)
+func distributedBatchErrorCount(batch generatorrpc.MetricsBatch) int64 {
+	if batch.FleetMetrics != nil {
+		return batch.FleetMetrics.Errors
+	}
+	var errors int64
+	for _, tx := range batch.Transactions {
+		if !tx.Success {
+			errors++
 		}
 	}
-	archiveRecord, archiveErr := b.stageRemoteArchive(tr, test, finalStatus == "COMPLETE")
+	return errors
+}
+
+func (b *distributedExecutionBackend) completeDistributedTestRun(tr *TestRunner, test *ManagedTest, finalStatus string, finalError string) {
+	completedAt := time.Now()
+	if finalStatus == "FAILED" {
+		// Generator-loss cleanup and archive transfer are best effort and may be
+		// slow when a target is unreachable. Publish the already-derived FAILED
+		// outcome durably before attempting any remote cleanup so the run cannot
+		// remain visibly RUNNING behind transport or archive timeouts.
+		if test.cancel != nil {
+			test.cancel()
+		}
+		if err := tr.completeTestRun(test, finalStatus, completedAt, finalError, nil); err != nil {
+			slog.Error("distributed terminal transition remains retryable after bounded persistence retries", "test_id", test.ID, "status", finalStatus, "error", err)
+		}
+		if err := b.stopRemainingRemoteTargets(tr, test); err != nil {
+			slog.Warn("failed to stop remaining remote targets after distributed run failure", "test_id", test.ID, "error", err)
+		}
+		unlockArchiveCommit := tr.lockArchiveCommitFence(test.ID)
+		tr.mu.RLock()
+		owned := tr.tests[test.ID] == test
+		tr.mu.RUnlock()
+		var archiveRecord *storage.RunArchiveRecord
+		var archiveErr error
+		if owned {
+			archiveRecord, archiveErr = b.stageRemoteArchive(tr, test, finalStatus, finalError, completedAt, false)
+		}
+		b.closeRemoteResources(tr, test)
+		if archiveErr != nil {
+			unlockArchiveCommit()
+			slog.Error("failed to collect best-effort archive after distributed run failure", "test_id", test.ID, "error", archiveErr)
+			return
+		}
+		if archiveRecord != nil {
+			tr.persistAndAttachRunArchiveUnderFence(test, archiveRecord)
+		}
+		unlockArchiveCommit()
+		return
+	}
+	unlockArchiveCommit := tr.lockArchiveCommitFence(test.ID)
+	tr.mu.RLock()
+	owned := tr.tests[test.ID] == test
+	tr.mu.RUnlock()
+	if !owned {
+		unlockArchiveCommit()
+		b.closeRemoteResources(tr, test)
+		if test.cancel != nil {
+			test.cancel()
+		}
+		return
+	}
+	archiveRecord, archiveErr := b.stageRemoteArchive(tr, test, finalStatus, finalError, completedAt, finalStatus == "COMPLETE")
 	if archiveErr != nil {
 		finalStatus = "FAILED"
 		finalError = testexec.AppendRunError(finalError, "remote archive stage failed", archiveErr)
@@ -576,16 +679,78 @@ func (b *distributedExecutionBackend) completeDistributedTestRun(tr *TestRunner,
 		test.cancel()
 	}
 	if archiveRecord != nil {
-		if err := tr.saveRunArchiveRecord(archiveRecord); err != nil {
-			finalStatus = "FAILED"
-			finalError = testexec.AppendRunError(finalError, "archive metadata save failed", err)
+		// Commit terminality before creating/publishing the archive intent. If the
+		// controller crashes after staging, startup orphan recovery now sees the
+		// authoritative terminal row instead of reconciling the run as FAILED.
+		err := tr.persistStoredTestStatus(test.ID, finalStatus, &completedAt, finalError)
+		if err == nil {
+			publishCtx, cancel := context.WithTimeout(context.Background(), archiveFinalizationAttemptTimeout)
+			err = tr.finalizeRunArchiveDurablyUnderFence(publishCtx, test, archiveRecord, true)
+			cancel()
+		}
+		if err != nil {
+			// The archive manifest already contains the authoritative execution
+			// outcome. Publication/catalog failures remain in the durable outbox and
+			// must not rewrite that outcome.
+			slog.Error("distributed archive publication remains durably retryable", "test_id", test.ID, "error", err)
+			tr.enqueueRunArchiveFinalizationRetry(test, archiveRecord, true)
 			archiveRecord = nil
 		}
 	}
-	tr.completeTestRun(test, finalStatus, time.Now(), finalError, archiveRecord)
+	if err := tr.completeTestRunUnderArchiveFence(test, finalStatus, completedAt, finalError, archiveRecord); err != nil {
+		slog.Error("distributed terminal transition remains retryable after bounded persistence retries", "test_id", test.ID, "status", finalStatus, "error", err)
+	}
+	unlockArchiveCommit()
 }
 
+func (tr *TestRunner) persistAndAttachRunArchive(test *ManagedTest, archiveRecord *storage.RunArchiveRecord) {
+	if tr == nil || test == nil || archiveRecord == nil {
+		return
+	}
+	unlockArchiveCommit := tr.lockArchiveCommitFence(test.ID)
+	defer unlockArchiveCommit()
+	tr.persistAndAttachRunArchiveUnderFence(test, archiveRecord)
+}
+
+func (tr *TestRunner) persistAndAttachRunArchiveUnderFence(test *ManagedTest, archiveRecord *storage.RunArchiveRecord) {
+	tr.mu.RLock()
+	owned := tr.tests[test.ID] == test
+	tr.mu.RUnlock()
+	if !owned {
+		return
+	}
+	publishCtx, cancel := context.WithTimeout(context.Background(), archiveFinalizationAttemptTimeout)
+	err := tr.finalizeRunArchiveDurablyUnderFence(publishCtx, test, archiveRecord, true)
+	cancel()
+	if err != nil {
+		slog.Error("distributed archive publication remains durably retryable", "test_id", test.ID, "error", err)
+		tr.enqueueRunArchiveFinalizationRetry(test, archiveRecord, true)
+		return
+	}
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	if tr.tests[test.ID] != test {
+		return
+	}
+	test.Archive = archiveRecord
+	tr.archives[test.ID] = archiveRecord
+}
+
+const distributedFailureCleanupTimeout = time.Second
+
 func (b *distributedExecutionBackend) stopRemainingRemoteTargets(tr *TestRunner, test *ManagedTest) error {
+	cleanupTimeout := min(b.timeout, distributedFailureCleanupTimeout)
+	if cleanupTimeout <= 0 {
+		cleanupTimeout = distributedFailureCleanupTimeout
+	}
+	cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), cleanupTimeout)
+	defer cleanupCancel()
+	unlockControl, err := tr.lockTestLifecycleControl(cleanupCtx, test.ID)
+	if err != nil {
+		return fmt.Errorf("acquire remote stop lifecycle control: %w", err)
+	}
+	defer unlockControl()
+
 	tr.mu.RLock()
 	clientsByTarget, single, remoteTarget := cloneClientMap(test.remoteClientsByTarget), test.remoteClient, test.remoteTarget
 	states := make(map[string]string, len(test.remoteTargetStates))
@@ -602,9 +767,10 @@ func (b *distributedExecutionBackend) stopRemainingRemoteTargets(tr *TestRunner,
 		if state := states[target]; state == "COMPLETE" || state == "FAILED" {
 			continue
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
-		_, err := clients[target].StopTest(ctx, test.ID, true)
-		cancel()
+		if err := cleanupCtx.Err(); err != nil {
+			return errors.Join(stopErr, fmt.Errorf("remote stop cleanup deadline: %w", err))
+		}
+		_, err := clients[target].StopTest(cleanupCtx, test.ID, true)
 		if err != nil {
 			code := grpcStatus.Code(err)
 			if code == grpcCodes.Canceled || code == grpcCodes.Unavailable || code == grpcCodes.NotFound {

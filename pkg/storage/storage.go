@@ -233,6 +233,11 @@ type Store interface {
 	SaveSetting(key string, value string) error
 	GetSetting(key string) (string, error)
 	SaveServiceAccount(account *ServiceAccount) error
+	// UpdateServiceAccountMetadata atomically updates non-secret service-account
+	// fields only when the row still has expectedUpdatedAt. It deliberately never
+	// writes key material, key-rotation state, or last-used state. A false result
+	// means the account was deleted or changed concurrently.
+	UpdateServiceAccountMetadata(account *ServiceAccount, expectedUpdatedAt time.Time) (bool, error)
 	GetServiceAccount(id string) (*ServiceAccount, error)
 	GetServiceAccountByKeyHash(keyHash string) (*ServiceAccount, error)
 	ListServiceAccounts() ([]*ServiceAccount, error)
@@ -241,6 +246,10 @@ type Store interface {
 	UpdateServiceAccountActive(id string, active bool, updatedAt time.Time) error
 	DeleteServiceAccount(id string) error
 	SaveUser(user *User) error
+	// UpdateUserGuardLastAdmin atomically updates administrator-managed profile
+	// fields while refusing any change that would make the last active global
+	// system administrator unreachable or inactive.
+	UpdateUserGuardLastAdmin(user *User) (bool, error)
 	UpdateUserIdentitySeen(id string, displayName string, email string, lastSeenAt time.Time, updatedAt time.Time) error
 	GetUser(id string) (*User, error)
 	GetUserBySubject(subject string) (*User, error)
@@ -908,6 +917,70 @@ type RunArchiveRecord struct {
 	CompletedAt          time.Time `json:"completed_at"`
 }
 
+// ArchiveCleanupJob is a durable outbox entry for archive object deletion.
+// Test and project metadata can be removed transactionally, while the serialized
+// archive record remains available until physical backend/local cleanup succeeds.
+type ArchiveCleanupJob struct {
+	TestID        string           `json:"test_id"`
+	ProjectID     string           `json:"project_id"`
+	ArchiveRecord RunArchiveRecord `json:"archive_record"`
+	Attempts      int              `json:"attempts"`
+	LastError     string           `json:"last_error,omitempty"`
+	CreatedAt     time.Time        `json:"created_at"`
+	UpdatedAt     time.Time        `json:"updated_at"`
+}
+
+// ArchiveVersionCleanupJob durably retains a superseded immutable object-store
+// publication until its exact URI prefix has been removed. It is separate from
+// ArchiveCleanupJob because one test can accumulate several retired versions,
+// while test/project deletion has only one current catalog pointer.
+type ArchiveVersionCleanupJob struct {
+	ID            string           `json:"id"`
+	TestID        string           `json:"test_id"`
+	ProjectID     string           `json:"project_id"`
+	ArchiveRecord RunArchiveRecord `json:"archive_record"`
+	Attempts      int              `json:"attempts"`
+	LastError     string           `json:"last_error,omitempty"`
+	CreatedAt     time.Time        `json:"created_at"`
+	UpdatedAt     time.Time        `json:"updated_at"`
+}
+
+// ArchiveFinalizationJob is the durable intent to finish publishing an archive
+// and commit its catalog record. The local archive is already committed before
+// this row is written; retries may therefore safely repeat adjunct generation,
+// object upload, and the final RunArchiveRecord UPSERT after a restart.
+type ArchiveFinalizationJob struct {
+	TestID           string           `json:"test_id"`
+	ProjectID        string           `json:"project_id"`
+	ArchiveRecord    RunArchiveRecord `json:"archive_record"`
+	PersistArtifacts bool             `json:"persist_artifacts"`
+	Generation       int64            `json:"generation"`
+	// IntentToken is regenerated for every logical upsert. Unlike Generation,
+	// it cannot suffer ABA when a completed row is deleted and later recreated.
+	IntentToken string `json:"intent_token"`
+	// RefreshToken is the archive-refresh intent observed while this publication
+	// was created. Completion conditionally acknowledges only that token.
+	RefreshToken string    `json:"refresh_token,omitempty"`
+	Attempts     int       `json:"attempts"`
+	LastError    string    `json:"last_error,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+// ArchiveRefreshJob records that archive adjunct artifacts (currently test
+// notes and the generated manifest) must be rebuilt. It deliberately carries
+// no archive pointer: note CRUD can commit the dirty bit even before an archive
+// exists, and the leader resolves the current catalog/finalization record while
+// holding the per-test publication fence.
+type ArchiveRefreshJob struct {
+	TestID      string    `json:"test_id"`
+	ProjectID   string    `json:"project_id"`
+	Generation  int64     `json:"generation"`
+	IntentToken string    `json:"intent_token"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
 type TestNote struct {
 	ID        string    `json:"id"`
 	TestID    string    `json:"test_id"`
@@ -942,8 +1015,12 @@ type ScriptRecordingRecord struct {
 	RequestCount            int                          `json:"request_count"`
 	Observations            []ScriptRecordingObservation `json:"observations"`
 	CorrelationObservations []ScriptRecordingObservation `json:"correlation_observations,omitempty"`
-	CreatedAt               time.Time                    `json:"created_at"`
-	UpdatedAt               time.Time                    `json:"updated_at"`
+	// EncryptedCorrelationObservations is an opaque API-layer AES-GCM payload.
+	// Storage never decrypts it and never persists CorrelationObservations as
+	// plaintext. The field is intentionally excluded from API serialization.
+	EncryptedCorrelationObservations string    `json:"-"`
+	CreatedAt                        time.Time `json:"created_at"`
+	UpdatedAt                        time.Time `json:"updated_at"`
 }
 
 // TestRecord represents a persisted test run.

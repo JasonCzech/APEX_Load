@@ -365,6 +365,24 @@ describe('EnterpriseArchiveImport', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
+  it('opens the archive picker from the keyboard-accessible dropzone', async () => {
+    await act(async () => {
+      root.render(<EnterpriseArchiveImport />)
+    })
+
+    const dropzone = container.querySelector<HTMLElement>('.lr-dropzone')
+    const archiveInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')
+    expect(dropzone?.getAttribute('role')).toBe('button')
+    expect(dropzone?.tabIndex).toBe(0)
+    const clickSpy = archiveInput ? vi.spyOn(archiveInput, 'click') : null
+
+    await act(async () => {
+      dropzone?.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }))
+    })
+
+    expect(clickSpy).toHaveBeenCalledTimes(1)
+  })
+
   it('layers import modal dialogs above the sticky app chrome', async () => {
     // @ts-expect-error Vitest runs in Node, but the dashboard app tsconfig intentionally omits Node types.
     const { readFileSync } = await import('node:fs')
@@ -515,11 +533,16 @@ describe('EnterpriseArchiveImport', () => {
       return
     }
 
+    coverageButton.focus()
     await act(async () => {
       coverageButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
+    await act(async () => {
+      await new Promise(resolve => window.setTimeout(resolve, 0))
+    })
 
-    expect(container.querySelector('[role="dialog"]')).not.toBeNull()
+    const coverageDialog = container.querySelector<HTMLElement>('[role="dialog"]')
+    expect(coverageDialog).not.toBeNull()
     expect(container.textContent).toContain('Coverage Details')
     expect(container.textContent).toContain('Executed')
     expect(container.textContent).toContain('HTTP: Timeouts, redirects, and connection reuse')
@@ -527,18 +550,22 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.textContent).toContain('Known Caveats')
     expect(container.textContent).toContain('Streaming settings execute in the HTTP runtime for media-like responses')
 
-    const closeCoverageButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Close'))
+    const closeCoverageButton = coverageDialog?.querySelector<HTMLButtonElement>('.lr-modal-header button')
     expect(closeCoverageButton).toBeDefined()
-    if (!closeCoverageButton) {
-      return
-    }
+    expect(document.activeElement).toBe(closeCoverageButton)
 
     await act(async () => {
-      closeCoverageButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true }))
+    })
+    expect(coverageDialog?.contains(document.activeElement)).toBe(true)
+
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     })
 
     expect(container.querySelector('[role="dialog"]')).toBeNull()
     expect(container.textContent).not.toContain('HTTP: Timeouts, redirects, and connection reuse')
+    expect(document.activeElement).toBe(coverageButton)
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
     expect(fileInput).not.toBeNull()

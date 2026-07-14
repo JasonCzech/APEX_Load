@@ -216,7 +216,24 @@ func (d *Database) query(ctx context.Context, action *protocol.Action) (string, 
 	if query == "" {
 		return "", errors.New("database query SQL is required")
 	}
-	rows, err := d.queryContext(ctx, query, actionBinds(action)...)
+	if d.readOnly {
+		if err := validateReadOnlySQL(query); err != nil {
+			return "", err
+		}
+	}
+	standaloneTx, err := d.beginStandaloneReadOnly(ctx)
+	if err != nil {
+		return "", fmt.Errorf("begin driver read-only transaction: %w", err)
+	}
+	if standaloneTx != nil {
+		defer standaloneTx.Rollback()
+	}
+	var rows *sql.Rows
+	if standaloneTx != nil {
+		rows, err = standaloneTx.QueryContext(ctx, query, actionBinds(action)...)
+	} else {
+		rows, err = d.queryContext(ctx, query, actionBinds(action)...)
+	}
 	if err != nil {
 		return "", err
 	}
@@ -227,7 +244,9 @@ func (d *Database) query(ctx context.Context, action *protocol.Action) (string, 
 	}
 	maxRows := d.maxRows
 	if override := actionParamInt(action.Params, "max_rows"); override > 0 {
-		maxRows = override
+		if maxRows <= 0 || override < maxRows {
+			maxRows = override
+		}
 	}
 	values := make([]any, len(columns))
 	scanTargets := make([]any, len(columns))
@@ -262,7 +281,19 @@ func (d *Database) query(ctx context.Context, action *protocol.Action) (string, 
 			payload["scalar"] = outRows[0][columns[0]]
 		}
 	}
-	return encodeDatabasePayload(payload)
+	body, err := encodeDatabasePayload(payload)
+	if err != nil {
+		return "", err
+	}
+	if err := rows.Close(); err != nil {
+		return "", err
+	}
+	if standaloneTx != nil {
+		if err := standaloneTx.Commit(); err != nil {
+			return "", fmt.Errorf("commit driver read-only transaction: %w", err)
+		}
+	}
+	return body, nil
 }
 
 func (d *Database) exec(ctx context.Context, action *protocol.Action) (string, error) {
@@ -270,19 +301,49 @@ func (d *Database) exec(ctx context.Context, action *protocol.Action) (string, e
 	if statement == "" {
 		return "", errors.New("database exec SQL is required")
 	}
-	if d.readOnly && isMutatingSQL(statement) {
-		return "", errors.New("database read_only mode blocks mutating SQL")
+	if d.readOnly {
+		if err := validateReadOnlySQL(statement); err != nil {
+			return "", err
+		}
 	}
-	res, err := d.execContext(ctx, statement, actionBinds(action)...)
+	standaloneTx, err := d.beginStandaloneReadOnly(ctx)
+	if err != nil {
+		return "", fmt.Errorf("begin driver read-only transaction: %w", err)
+	}
+	if standaloneTx != nil {
+		defer standaloneTx.Rollback()
+	}
+	var res sql.Result
+	if standaloneTx != nil {
+		res, err = standaloneTx.ExecContext(ctx, statement, actionBinds(action)...)
+	} else {
+		res, err = d.execContext(ctx, statement, actionBinds(action)...)
+	}
 	if err != nil {
 		return "", err
 	}
 	rowsAffected, _ := res.RowsAffected()
 	lastInsertID, _ := res.LastInsertId()
-	return encodeDatabasePayload(map[string]any{
+	body, err := encodeDatabasePayload(map[string]any{
 		"rows_affected":  rowsAffected,
 		"last_insert_id": lastInsertID,
 	})
+	if err != nil {
+		return "", err
+	}
+	if standaloneTx != nil {
+		if err := standaloneTx.Commit(); err != nil {
+			return "", fmt.Errorf("commit driver read-only transaction: %w", err)
+		}
+	}
+	return body, nil
+}
+
+func (d *Database) beginStandaloneReadOnly(ctx context.Context) (*sql.Tx, error) {
+	if !d.readOnly || d.tx != nil {
+		return nil, nil
+	}
+	return d.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 }
 
 func (d *Database) queryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
@@ -519,17 +580,131 @@ func numericAssertionValue(value any) (int, bool) {
 	}
 }
 
-func isMutatingSQL(statement string) bool {
-	first := strings.Fields(strings.ToLower(strings.TrimSpace(statement)))
-	if len(first) == 0 {
-		return false
+func validateReadOnlySQL(statement string) error {
+	tokens, multiple, err := sqlTokens(statement)
+	if err != nil || multiple || len(tokens) == 0 {
+		return errors.New("database read_only mode requires one read-only SELECT statement")
 	}
-	switch first[0] {
-	case "insert", "update", "delete", "merge", "create", "alter", "drop", "truncate", "replace":
-		return true
-	default:
-		return false
+	if tokens[0] != "select" && tokens[0] != "with" {
+		return errors.New("database read_only mode blocks non-SELECT SQL")
 	}
+	blocked := map[string]struct{}{
+		"insert": {}, "update": {}, "delete": {}, "merge": {}, "create": {},
+		"into":  {},
+		"alter": {}, "drop": {}, "truncate": {}, "replace": {}, "attach": {},
+		"detach": {}, "vacuum": {}, "reindex": {}, "analyze": {}, "pragma": {},
+		"call": {}, "do": {}, "copy": {}, "grant": {}, "revoke": {}, "set": {},
+		"reset": {}, "begin": {}, "commit": {}, "rollback": {}, "savepoint": {},
+		"release": {}, "lock": {}, "refresh": {},
+	}
+	foundSelect := false
+	for _, token := range tokens {
+		if token == "select" {
+			foundSelect = true
+		}
+		if _, denied := blocked[token]; denied {
+			return errors.New("database read_only mode blocks mutating or administrative SQL")
+		}
+	}
+	if !foundSelect {
+		return errors.New("database read_only mode requires a SELECT statement")
+	}
+	return nil
+}
+
+// sqlTokens extracts unquoted identifiers while rejecting more than one SQL
+// statement. Comments and quoted strings are ignored so they cannot disguise a
+// mutating leading token or a statement separator.
+func sqlTokens(statement string) ([]string, bool, error) {
+	var tokens []string
+	var word strings.Builder
+	flush := func() {
+		if word.Len() > 0 {
+			tokens = append(tokens, strings.ToLower(word.String()))
+			word.Reset()
+		}
+	}
+	terminated := false
+	for i := 0; i < len(statement); {
+		c := statement[i]
+		if c == '-' && i+1 < len(statement) && statement[i+1] == '-' {
+			flush()
+			i += 2
+			for i < len(statement) && statement[i] != '\n' {
+				i++
+			}
+			continue
+		}
+		if c == '/' && i+1 < len(statement) && statement[i+1] == '*' {
+			flush()
+			// MySQL/MariaDB execute versioned comments (/*!...*/ and /*M!...*/)
+			// as SQL, and several dialects interpret /*+...*/ optimizer comments.
+			// Treat all of these as executable input rather than stripping them as
+			// ordinary comments, otherwise mutating clauses can bypass read_only.
+			if i+2 < len(statement) && (statement[i+2] == '!' || statement[i+2] == '+' ||
+				i+3 < len(statement) && (statement[i+2] == 'M' || statement[i+2] == 'm') && statement[i+3] == '!') {
+				return nil, false, errors.New("executable SQL comments are not allowed in database read_only mode")
+			}
+			end := strings.Index(statement[i+2:], "*/")
+			if end < 0 {
+				return nil, false, errors.New("unterminated SQL comment")
+			}
+			i += end + 4
+			continue
+		}
+		if c == '\'' || c == '"' || c == '`' || c == '[' {
+			flush()
+			if terminated {
+				return tokens, true, nil
+			}
+			closeChar := c
+			if c == '[' {
+				closeChar = ']'
+			}
+			i++
+			closed := false
+			for i < len(statement) {
+				if statement[i] == closeChar {
+					if closeChar != ']' && i+1 < len(statement) && statement[i+1] == closeChar {
+						i += 2
+						continue
+					}
+					i++
+					closed = true
+					break
+				}
+				i++
+			}
+			if !closed {
+				return nil, false, errors.New("unterminated SQL quote")
+			}
+			continue
+		}
+		if c == ';' {
+			flush()
+			if terminated {
+				return tokens, true, nil
+			}
+			terminated = true
+			i++
+			continue
+		}
+		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || (word.Len() > 0 && c >= '0' && c <= '9') {
+			if terminated {
+				return tokens, true, nil
+			}
+			word.WriteByte(c)
+			i++
+			continue
+		}
+		flush()
+		if terminated && c != ' ' && c != '\t' && c != '\r' && c != '\n' {
+			return tokens, true, nil
+		}
+		i++
+	}
+	flush()
+	return tokens, false, nil
 }
 
 func actionParamInt(params map[string]any, key string) int {

@@ -18,6 +18,10 @@ func newTimeslotServer(t *testing.T) (*Server, storage.Store) {
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
+	now := time.Now().UTC()
+	if err := store.SaveProject(&storage.Project{ID: "proj-a", Name: "Project A", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveProject(proj-a): %v", err)
+	}
 	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
 	return server, store
 }
@@ -292,8 +296,14 @@ func TestCapacityReservationGetNotFound(t *testing.T) {
 
 func TestCapacityReservationBindLifecycle(t *testing.T) {
 	server, store := newTimeslotServer(t)
-	if err := store.SaveProject(&storage.Project{ID: "proj-ts", Name: "TS", CreatedAt: time.Now(), UpdatedAt: time.Now()}); err != nil {
-		t.Fatalf("save project: %v", err)
+	now := time.Now().UTC()
+	for _, project := range []*storage.Project{
+		{ID: "proj-ts", Name: "TS", CreatedAt: now, UpdatedAt: now},
+		{ID: "proj-other", Name: "Other", CreatedAt: now, UpdatedAt: now},
+	} {
+		if err := store.SaveProject(project); err != nil {
+			t.Fatalf("save project %s: %v", project.ID, err)
+		}
 	}
 	start := time.Date(2026, 7, 1, 9, 0, 0, 0, time.UTC)
 	scheduled := start
@@ -533,12 +543,13 @@ func TestReservationBoundStatusRefreshedOnRead(t *testing.T) {
 		t.Fatalf("bound_test_status = %v, want COMPLETE (refreshed at read)", got)
 	}
 
-	// Deleting the bound test surfaces a DELETED binding rather than a dangling one.
+	// Deleting the bound test transactionally releases the timeslot rather than
+	// leaving a dangling binding for the read path to synthesize as DELETED.
 	if err := store.DeleteTest(boundID); err != nil {
 		t.Fatalf("delete test: %v", err)
 	}
-	if got := readStatus(); got == nil || *got != "DELETED" {
-		t.Fatalf("bound_test_status = %v, want DELETED after the bound test was deleted", got)
+	if got := readStatus(); got != nil {
+		t.Fatalf("bound_test_status = %v, want nil after deletion releases the binding", got)
 	}
 }
 

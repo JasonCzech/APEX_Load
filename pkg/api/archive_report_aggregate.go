@@ -5,7 +5,6 @@ package api
 import (
 	"fmt"
 	"os"
-	"sort"
 	"strings"
 	"time"
 
@@ -77,47 +76,67 @@ type networkPhaseAccumulator struct {
 }
 
 func buildRunArchiveNetworkPhaseSummary(transactions []TransactionEvent) RunArchiveNetworkPhaseSummary {
-	overall := &networkPhaseAccumulator{}
-	byAction := map[string]*networkPhaseAccumulator{}
-	byDependency := map[string]*networkPhaseAccumulator{}
+	accumulator := newRunArchiveNetworkPhaseAccumulator()
 	for _, tx := range transactions {
-		// Skip rows with no positive phase measurement. Using <= 0 also discards any
-		// negative "unmeasured" sentinel a future importer/protocol might emit, so it
-		// cannot pull the averages below the real values.
-		if tx.DNSMs <= 0 && tx.ConnectMs <= 0 && tx.TLSMs <= 0 && tx.TTFBMs <= 0 {
-			continue
-		}
-		mergeNetworkPhaseAccumulator(overall, tx)
-		if tx.ActionName != "" {
-			acc := byAction[tx.ActionName]
-			if acc == nil {
-				acc = &networkPhaseAccumulator{}
-				byAction[tx.ActionName] = acc
-			}
-			mergeNetworkPhaseAccumulator(acc, tx)
-		}
-		if tx.DependencyTarget != "" {
-			key := tx.DependencyTarget
-			if tx.DependencyType != "" {
-				key = tx.DependencyType + ":" + key
-			}
-			acc := byDependency[key]
-			if acc == nil {
-				acc = &networkPhaseAccumulator{}
-				byDependency[key] = acc
-			}
-			mergeNetworkPhaseAccumulator(acc, tx)
-		}
+		accumulator.merge(tx)
 	}
-	if overall.count == 0 {
+	return accumulator.finalize()
+}
+
+type runArchiveNetworkPhaseAccumulator struct {
+	overall      *networkPhaseAccumulator
+	byAction     map[string]*networkPhaseAccumulator
+	byDependency map[string]*networkPhaseAccumulator
+}
+
+func newRunArchiveNetworkPhaseAccumulator() *runArchiveNetworkPhaseAccumulator {
+	return &runArchiveNetworkPhaseAccumulator{
+		overall:      &networkPhaseAccumulator{},
+		byAction:     map[string]*networkPhaseAccumulator{},
+		byDependency: map[string]*networkPhaseAccumulator{},
+	}
+}
+
+func (a *runArchiveNetworkPhaseAccumulator) merge(tx TransactionEvent) {
+	// Skip rows with no positive phase measurement. Using <= 0 also discards any
+	// negative "unmeasured" sentinel a future importer/protocol might emit, so it
+	// cannot pull the averages below the real values.
+	if tx.DNSMs <= 0 && tx.ConnectMs <= 0 && tx.TLSMs <= 0 && tx.TTFBMs <= 0 {
+		return
+	}
+	mergeNetworkPhaseAccumulator(a.overall, tx)
+	if tx.ActionName != "" {
+		acc := a.byAction[tx.ActionName]
+		if acc == nil {
+			acc = &networkPhaseAccumulator{}
+			a.byAction[tx.ActionName] = acc
+		}
+		mergeNetworkPhaseAccumulator(acc, tx)
+	}
+	if tx.DependencyTarget != "" {
+		key := tx.DependencyTarget
+		if tx.DependencyType != "" {
+			key = tx.DependencyType + ":" + key
+		}
+		acc := a.byDependency[key]
+		if acc == nil {
+			acc = &networkPhaseAccumulator{}
+			a.byDependency[key] = acc
+		}
+		mergeNetworkPhaseAccumulator(acc, tx)
+	}
+}
+
+func (a *runArchiveNetworkPhaseAccumulator) finalize() RunArchiveNetworkPhaseSummary {
+	if a == nil || a.overall.count == 0 {
 		return RunArchiveNetworkPhaseSummary{}
 	}
 	summary := RunArchiveNetworkPhaseSummary{
-		Samples:  overall.count,
-		Overall:  finalizeNetworkPhaseAccumulator(overall),
-		ByAction: finalizeNetworkPhaseAccumulatorMap(byAction),
+		Samples:  a.overall.count,
+		Overall:  finalizeNetworkPhaseAccumulator(a.overall),
+		ByAction: finalizeNetworkPhaseAccumulatorMap(a.byAction),
 	}
-	if dependencies := finalizeNetworkPhaseAccumulatorMap(byDependency); len(dependencies) > 0 {
+	if dependencies := finalizeNetworkPhaseAccumulatorMap(a.byDependency); len(dependencies) > 0 {
 		summary.ByDependency = dependencies
 	}
 	return summary
@@ -427,10 +446,10 @@ func finalizeArchiveSOAPPayloadTimelineBucket(bucket RunArchiveSOAPPayloadTimeli
 	return bucket
 }
 
-func mergeRunArchiveActionStats(stats RunArchiveActionStats, tx TransactionEvent) RunArchiveActionStats {
+func mergeRunArchiveActionStats(stats RunArchiveActionStats, quantiles *archiveQuantileAccumulator, tx TransactionEvent) RunArchiveActionStats {
 	stats.Transactions++
 	stats.AvgResponseMs += tx.DurationMs
-	stats.durations = append(stats.durations, tx.DurationMs)
+	quantiles.Add(tx.DurationMs)
 	if !tx.Success {
 		stats.Errors++
 	}
@@ -443,16 +462,15 @@ func mergeRunArchiveActionStats(stats RunArchiveActionStats, tx TransactionEvent
 	return stats
 }
 
-func finalizeRunArchiveActionStats(stats RunArchiveActionStats) RunArchiveActionStats {
+func finalizeRunArchiveActionStats(stats RunArchiveActionStats, quantiles *archiveQuantileAccumulator) RunArchiveActionStats {
 	if stats.Transactions > 0 {
 		stats.ErrorPct = float64(stats.Errors) / float64(stats.Transactions) * 100
 		stats.AvgResponseMs = stats.AvgResponseMs / float64(stats.Transactions)
-		if len(stats.durations) > 0 {
-			sort.Float64s(stats.durations)
-			stats.P50Ms = archiveAnalysisPercentile(stats.durations, 0.50)
-			stats.P90Ms = archiveAnalysisPercentile(stats.durations, 0.90)
-			stats.P95Ms = archiveAnalysisPercentile(stats.durations, 0.95)
-			stats.P99Ms = archiveAnalysisPercentile(stats.durations, 0.99)
+		if quantiles != nil {
+			stats.P50Ms = quantiles.Quantile(0.50)
+			stats.P90Ms = quantiles.Quantile(0.90)
+			stats.P95Ms = quantiles.Quantile(0.95)
+			stats.P99Ms = quantiles.Quantile(0.99)
 		}
 	}
 	stats.durations = nil

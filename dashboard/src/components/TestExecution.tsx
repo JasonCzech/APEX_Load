@@ -153,6 +153,7 @@ export default function TestExecution({ testId, history, initialWorkspaceTabId, 
     test,
     history,
     localMetricsHistory,
+    archiveSummaryHistory,
     archiveResourceHistory,
   })
   const {

@@ -1595,6 +1595,21 @@ describe('RecordingStudio', () => {
     expect(Array.from(unavailable?.querySelectorAll('button') || []).some(b => b.textContent?.includes('Install Recording Browser'))).toBe(true)
   })
 
+  it('exposes proxy setup as a named disclosure button', async () => {
+    await act(async () => { root.render(<RecordingStudio />) })
+    await flushPromises()
+
+    const setupToggle = container.querySelector<HTMLButtonElement>('button.rec-setup-toggle')
+    expect(setupToggle).not.toBeNull()
+    expect(setupToggle?.getAttribute('aria-expanded')).toBe('false')
+    expect(setupToggle?.getAttribute('aria-controls')).toBe('recording-proxy-setup-steps')
+
+    await act(async () => { setupToggle?.click() })
+
+    expect(setupToggle?.getAttribute('aria-expanded')).toBe('true')
+    expect(container.querySelector('#recording-proxy-setup-steps')).not.toBeNull()
+  })
+
   it('does not offer install as a fix for no-display Docker controllers', async () => {
     apiMock.getRecorderStatus.mockResolvedValue({
       proxy_addr: ':8081',

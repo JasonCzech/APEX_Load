@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"net/url"
 	"strings"
@@ -16,7 +17,7 @@ func (s *Server) handleGetApplicationLoadComparison(w http.ResponseWriter, r *ht
 		return
 	}
 	selectedTestIDs := parseLoadComparisonTestIDFilter(r.URL.Query())
-	runs, err := s.collectApplicationLoadComparisonRuns(applicationID, selectedTestIDs)
+	runs, err := s.collectApplicationLoadComparisonRuns(r.Context(), applicationID, selectedTestIDs)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -53,7 +54,7 @@ func loadComparisonTestIDSelected(testID string, selectedTestIDs map[string]stru
 	return ok
 }
 
-func (s *Server) collectApplicationLoadComparisonRuns(applicationID string, selectedTestIDs map[string]struct{}) ([]loadComparisonRun, error) {
+func (s *Server) collectApplicationLoadComparisonRuns(ctx context.Context, applicationID string, selectedTestIDs map[string]struct{}) ([]loadComparisonRun, error) {
 	tests := s.runner.ListTestsByContext(applicationID, "", "")
 	runs := make([]loadComparisonRun, 0, len(tests))
 	releases := make(map[string]*storage.Release)
@@ -64,18 +65,21 @@ func (s *Server) collectApplicationLoadComparisonRuns(applicationID string, sele
 		if !loadComparisonTestIDSelected(test.ID, selectedTestIDs) {
 			continue
 		}
-		record, ok := s.runner.GetRunArchive(test.ID)
+		record, ok := s.runner.GetRunArchiveContext(ctx, test.ID)
 		if !ok {
 			continue
 		}
-		if err := ensureArchiveMaterialized(record); err != nil {
+		lease, err := acquireArchiveMaterialized(ctx, record)
+		if err != nil {
 			return nil, err
 		}
 		transactions, err := readAllArchiveTransactions(record)
 		if err != nil {
+			lease.Release()
 			return nil, err
 		}
 		summaries, err := readAllArchiveSummaries(record)
+		lease.Release()
 		if err != nil {
 			return nil, err
 		}

@@ -137,7 +137,13 @@ func (tr *TestRunner) buildTestManifest(id string, archiveOverride *storage.RunA
 	if !ok {
 		return nil, fmt.Errorf("test not found: %s", id)
 	}
+	return tr.buildTestManifestForManagedTest(test, id, archiveOverride, preferPersisted)
+}
 
+func (tr *TestRunner) buildTestManifestForManagedTest(test *ManagedTest, requestedID string, archiveOverride *storage.RunArchiveRecord, preferPersisted bool) (*TestRunManifest, error) {
+	if test == nil {
+		return nil, fmt.Errorf("test not found: %s", requestedID)
+	}
 	warnings := []string{}
 	var archiveRecord *storage.RunArchiveRecord
 	if archiveOverride != nil {
@@ -148,22 +154,37 @@ func (tr *TestRunner) buildTestManifest(id string, archiveOverride *storage.RunA
 
 	var archiveManifest *RunArchiveManifest
 	if archiveRecord != nil {
-		if err := ensureArchiveMaterialized(archiveRecord); err != nil {
-			warnings = append(warnings, "archive record exists but could not be materialized: "+err.Error())
-		} else {
-			loaded, err := loadRunArchiveManifest(archiveRecord.ManifestPath)
+		if archiveOverride != nil {
+			// Producer finalization owns a committed local directory that has not
+			// necessarily been uploaded yet. Reading it through the materializer
+			// would try to fetch the not-yet-published remote manifest and can add a
+			// false warning (or block until the remote timeout).
+			loaded, err := loadRunArchiveManifestFromRecord(archiveRecord)
 			if err != nil {
 				warnings = append(warnings, "archive manifest could not be loaded: "+err.Error())
 			} else {
 				archiveManifest = loaded
-				if preferPersisted && strings.TrimSpace(archiveManifest.TestManifestFile) != "" {
-					persisted, err := loadTestRunManifest(filepath.Join(archiveRecord.ArchivePath, archiveManifest.TestManifestFile))
-					if err == nil {
-						return persisted, nil
-					}
-					warnings = append(warnings, "persisted test manifest could not be loaded: "+err.Error())
+			}
+		} else {
+			lease, err := acquireArchiveMaterialized(context.Background(), archiveRecord)
+			if err != nil {
+				warnings = append(warnings, "archive record exists but could not be materialized: "+err.Error())
+			} else {
+				defer lease.Release()
+				loaded, err := loadRunArchiveManifestFromRecord(archiveRecord)
+				if err != nil {
+					warnings = append(warnings, "archive manifest could not be loaded: "+err.Error())
+				} else {
+					archiveManifest = loaded
 				}
 			}
+		}
+		if preferPersisted && archiveManifest != nil && strings.TrimSpace(archiveManifest.TestManifestFile) != "" {
+			persisted, err := loadTestRunManifest(filepath.Join(archiveRecord.ArchivePath, archiveManifest.TestManifestFile))
+			if err == nil {
+				return persisted, nil
+			}
+			warnings = append(warnings, "persisted test manifest could not be loaded: "+err.Error())
 		}
 	}
 
@@ -196,7 +217,7 @@ func (tr *TestRunner) buildTestManifest(id string, archiveOverride *storage.RunA
 		provenance = archiveManifest.Provenance
 	}
 
-	runtimeChanges, auditWarnings := tr.testManifestRuntimeChanges(test.ID, test.RefKey, id)
+	runtimeChanges, auditWarnings := tr.testManifestRuntimeChanges(test.ID, test.RefKey, requestedID)
 	warnings = append(warnings, auditWarnings...)
 
 	manifest := &TestRunManifest{
@@ -538,7 +559,14 @@ func (tr *TestRunner) persistTestManifestArtifact(test *ManagedTest, record *sto
 	if test == nil || record == nil || strings.TrimSpace(record.ArchivePath) == "" || strings.TrimSpace(record.ManifestPath) == "" {
 		return nil
 	}
-	manifest, err := tr.buildTestManifest(test.ID, record, false)
+	archiveManifest, err := loadRunArchiveManifestFromRecord(record)
+	if err != nil {
+		return err
+	}
+	if err := validateImmutableArchiveArtifactIntegrity(record.ArchivePath, archiveManifest); err != nil {
+		return err
+	}
+	manifest, err := tr.buildTestManifestForManagedTest(test, test.ID, record, false)
 	if err != nil {
 		return err
 	}
@@ -560,26 +588,65 @@ func (tr *TestRunner) persistTestManifestArtifact(test *ManagedTest, record *sto
 		manifest.Archive.TestManifestFile = testRunManifestFileName
 		manifest.Archive.TestNotesFile = testNotesFile
 	}
-	if err := writeIndentedJSONFile(filepath.Join(record.ArchivePath, testRunManifestFileName), manifest); err != nil {
-		return err
-	}
-	archiveManifest, err := loadRunArchiveManifest(record.ManifestPath)
-	if err != nil {
+	if err := writeArchiveJSONArtifactDurable(record.ArchivePath, testRunManifestFileName, manifest); err != nil {
 		return err
 	}
 	archiveManifest.TestManifestFile = testRunManifestFileName
 	archiveManifest.TestNotesFile = testNotesFile
-	if err := updateRunArchiveArtifactIntegrity(record.ArchivePath, archiveManifest); err != nil {
+	if err := updateRunArchiveSingleArtifactIntegrity(record.ArchivePath, archiveManifest, RunArchiveArtifact{
+		Name: testRunManifestFileName, Kind: "manifest", Format: "json", RecordType: "test_manifest",
+	}); err != nil {
 		return err
 	}
-	if err := writeIndentedJSONFile(record.ManifestPath, archiveManifest); err != nil {
+	if err := updateRunArchiveSingleArtifactIntegrity(record.ArchivePath, archiveManifest, RunArchiveArtifact{
+		Name: testNotesFile, Kind: "notes", Format: "json", RecordType: "test_notes",
+	}); err != nil {
+		return err
+	}
+	if err := writeArchiveJSONArtifactDurable(record.ArchivePath, runArchiveManifestFileName, archiveManifest); err != nil {
 		return err
 	}
 	if err := refreshRunArchiveManifestTrust(record); err != nil {
 		return err
 	}
-	if err := uploadArchiveDirectory(context.Background(), record.ArchivePath, record.TestID); err != nil {
+	return nil
+}
+
+func writeArchiveJSONArtifactDurable(rootPath string, name string, value any) error {
+	data, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
 		return err
+	}
+	return writeArchiveArtifactDurable(rootPath, name, data, 0o644)
+}
+
+// validateImmutableArchiveArtifactIntegrity prevents an adjunct refresh from
+// re-blessing modified telemetry. The two adjuncts are intentionally mutable;
+// every other recorded digest must still match before notes/manifest updates.
+func validateImmutableArchiveArtifactIntegrity(root string, manifest *RunArchiveManifest) error {
+	if manifest == nil {
+		return nil
+	}
+	for _, artifact := range manifest.Artifacts {
+		name := strings.TrimSpace(artifact.Name)
+		if name == "" || name == testRunManifestFileName || name == testNotesArchiveFileName || strings.TrimSpace(artifact.SHA256) == "" {
+			continue
+		}
+		file, _, err := openArchiveArtifactForRead(root, name)
+		if err != nil {
+			return fmt.Errorf("validate immutable archive artifact %q: %w", name, err)
+		}
+		actual, hashErr := sha256Reader(file)
+		closeErr := file.Close()
+		if hashErr != nil {
+			return fmt.Errorf("hash immutable archive artifact %q: %w", name, hashErr)
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+		if !strings.EqualFold(actual, strings.TrimSpace(artifact.SHA256)) {
+			return fmt.Errorf("immutable archive artifact %q failed SHA-256 validation", name)
+		}
 	}
 	return nil
 }

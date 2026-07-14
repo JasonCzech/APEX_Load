@@ -6,9 +6,12 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build --outDir ../pkg/api/static --emptyOutDir",
+    "bundle:check": "node ./scripts/run-bundle-budget.mjs",
     "preview": "vite preview",
     "lint": "eslint .",
-    "test": "vitest run"
+    "lint:a11y": "node ./scripts/lint-accessibility.mjs",
+    "test": "vitest run",
+    "test:bundle-budget": "node --test ./scripts/check-bundle-budget.node-test.mjs"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.2",
@@ -37,6 +40,7 @@
     "@types/three": "^0.184.1",
     "@vitejs/plugin-react": "^4.3.1",
     "eslint": "^9.27.0",
+    "eslint-plugin-jsx-a11y": "^6.10.2",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
     "globals": "^15.15.0",

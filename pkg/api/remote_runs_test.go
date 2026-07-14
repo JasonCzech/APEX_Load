@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -22,8 +23,15 @@ func TestRemoteRunProxyPushesDependenciesCreatesStartsAndPolls(t *testing.T) {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
 	defer store.Close()
+	now := time.Now().UTC()
+	if err := store.SaveProject(&storage.Project{ID: "local-project", Name: "Local Project", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveProject returned error: %v", err)
+	}
 	local := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: "127.0.0.1:8080", LibraryCredentials: NewMemoryLibraryCredentialStore()})
-	script := local.runner.StoreScript(libraryTestScript("script-local", "Checkout Script", "local-project", "/checkout"))
+	script, err := local.runner.StoreScriptDurable(libraryTestScript("script-local", "Checkout Script", "local-project", "/checkout"))
+	if err != nil {
+		t.Fatalf("StoreScriptDurable: %v", err)
+	}
 	scenario, err := local.runner.StoreScenario(CreateScenarioRequest{
 		Name:     "Checkout Scenario",
 		Duration: "30s",

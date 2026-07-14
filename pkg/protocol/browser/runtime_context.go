@@ -23,7 +23,17 @@ const browserNetworkBodyCaptureLimitBytes = 512 * 1024
 const (
 	browserNetworkEntryRingLimit  = 2048
 	browserNetworkBodyBudgetBytes = 32 * 1024 * 1024
+	browserConsoleEntryRingLimit  = 2048
+	browserConsoleTextLimitBytes  = 4096
+	browserPageLimit              = 32
+	browserNetworkWorkerCount     = 4
+	browserNetworkTaskQueueSize   = 256
 )
+
+type browserNetworkTask struct {
+	request  playwright.Request
+	finished bool
+}
 
 func (b *Browser) openBrowserContext() error {
 	pwBrowser, err := getBrowserInstance(b.engine, b.headless)
@@ -55,6 +65,7 @@ func (b *Browser) openBrowserContext() error {
 	}
 
 	b.pwContext = browserContext
+	b.startNetworkWorkers()
 	b.registerPage(page, true)
 	return nil
 }
@@ -133,9 +144,7 @@ func (b *Browser) installBrowserContextHandlers(browserContext playwright.Browse
 		if location := message.Location(); location != nil {
 			source = location.URL
 		}
-		b.mu.Lock()
-		defer b.mu.Unlock()
-		b.consoleEntries = append(b.consoleEntries, protocol.ConsoleEntry{
+		b.appendConsoleEntry(protocol.ConsoleEntry{
 			Level:     message.Type(),
 			Text:      strings.TrimSpace(message.Text()),
 			Source:    source,
@@ -170,11 +179,72 @@ func (b *Browser) installBrowserContextHandlers(browserContext playwright.Browse
 		b.rememberResourceValidator(response.URL(), safeResponseHeaders(response))
 	})
 	browserContext.OnRequestFinished(func(request playwright.Request) {
-		go b.recordNetworkRequest(request, true)
+		b.enqueueNetworkRequest(request, true)
 	})
 	browserContext.OnRequestFailed(func(request playwright.Request) {
-		go b.recordNetworkRequest(request, false)
+		b.enqueueNetworkRequest(request, false)
 	})
+}
+
+func (b *Browser) appendConsoleEntry(entry protocol.ConsoleEntry) {
+	if len(entry.Text) > browserConsoleTextLimitBytes {
+		entry.Text = entry.Text[:browserConsoleTextLimitBytes]
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.closing {
+		return
+	}
+	b.consoleEntries = append(b.consoleEntries, entry)
+	if excess := len(b.consoleEntries) - browserConsoleEntryRingLimit; excess > 0 {
+		retained := make([]protocol.ConsoleEntry, len(b.consoleEntries)-excess)
+		copy(retained, b.consoleEntries[excess:])
+		b.consoleEntries = retained
+		b.consoleDropped += excess
+	}
+}
+
+func (b *Browser) startNetworkWorkers() {
+	b.mu.Lock()
+	b.closing = false
+	b.networkTasks = make(chan browserNetworkTask, browserNetworkTaskQueueSize)
+	b.networkWorkerStop = make(chan struct{})
+	tasks := b.networkTasks
+	stop := b.networkWorkerStop
+	b.mu.Unlock()
+	for range browserNetworkWorkerCount {
+		b.networkWorkerWG.Add(1)
+		go func() {
+			defer b.networkWorkerWG.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				case task := <-tasks:
+					b.recordNetworkRequest(task.request, task.finished)
+				}
+			}
+		}()
+	}
+}
+
+func (b *Browser) enqueueNetworkRequest(request playwright.Request, finished bool) {
+	b.mu.Lock()
+	if b.closing || b.networkTasks == nil || b.networkWorkerStop == nil {
+		b.mu.Unlock()
+		return
+	}
+	tasks := b.networkTasks
+	stop := b.networkWorkerStop
+	b.mu.Unlock()
+	select {
+	case tasks <- browserNetworkTask{request: request, finished: finished}:
+	case <-stop:
+	default:
+		b.mu.Lock()
+		b.networkTasksDropped++
+		b.mu.Unlock()
+	}
 }
 
 func dialogMessageMatches(actual, expected, mode string) bool {
@@ -278,6 +348,11 @@ func (b *Browser) registerPage(page playwright.Page, activate bool) {
 		}
 	}
 	if !known {
+		if len(b.pages) >= browserPageLimit {
+			b.mu.Unlock()
+			_ = page.Close()
+			return
+		}
 		b.pages = append(b.pages, page)
 	}
 	if activate {
@@ -286,9 +361,28 @@ func (b *Browser) registerPage(page playwright.Page, activate bool) {
 	b.mu.Unlock()
 	if !known {
 		b.observePageWebSockets(page)
+		page.OnClose(func(closed playwright.Page) { b.removePage(closed) })
 	}
 	if activate {
 		b.installCDPSession(b.pwContext, page)
+	}
+}
+
+func (b *Browser) removePage(page playwright.Page) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for i, existing := range b.pages {
+		if existing != page {
+			continue
+		}
+		b.pages = append(b.pages[:i], b.pages[i+1:]...)
+		break
+	}
+	if b.pwPage == page {
+		b.pwPage = nil
+		if len(b.pages) > 0 {
+			b.pwPage = b.pages[len(b.pages)-1]
+		}
 	}
 }
 

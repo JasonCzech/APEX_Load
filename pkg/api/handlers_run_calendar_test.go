@@ -19,9 +19,13 @@ func TestHandleRunCalendarReturnsAdHocScheduledAndProjectedRuns(t *testing.T) {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
 	defer store.Close()
+	seededAt := time.Now().UTC()
+	if err := store.SaveProject(&storage.Project{ID: "project-calendar", Name: "Calendar", CreatedAt: seededAt, UpdatedAt: seededAt}); err != nil {
+		t.Fatalf("SaveProject returned error: %v", err)
+	}
 
 	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
-	server.runner.StoreScript(&dsl.Script{
+	if _, err := server.runner.StoreScriptDurable(&dsl.Script{
 		ID:        "script-calendar-checkout",
 		Name:      "Checkout API",
 		ProjectID: "project-calendar",
@@ -29,7 +33,9 @@ func TestHandleRunCalendarReturnsAdHocScheduledAndProjectedRuns(t *testing.T) {
 		Version:   "1.0.0",
 		Config:    dsl.ScriptConfig{BaseURL: "https://checkout.example.test"},
 		Actions:   []dsl.Action{{Name: "step", Type: "request", Target: "/checkout"}},
-	})
+	}); err != nil {
+		t.Fatalf("StoreScriptDurable returned error: %v", err)
+	}
 	scenario, err := server.runner.StoreScenario(CreateScenarioRequest{
 		Name:     "Checkout Scenario",
 		Duration: "30m",
@@ -64,9 +70,12 @@ func TestHandleRunCalendarReturnsAdHocScheduledAndProjectedRuns(t *testing.T) {
 	}
 	scheduledStart := plannedAt.Add(2 * time.Minute)
 	scheduledEnd := plannedAt.Add(22 * time.Minute)
-	scheduledTest.Status = "COMPLETE"
-	scheduledTest.StartedAt = &scheduledStart
-	scheduledTest.EndedAt = &scheduledEnd
+	server.runner.mu.Lock()
+	scheduledState := server.runner.tests[scheduledTest.ID]
+	scheduledState.Status = "COMPLETE"
+	scheduledState.StartedAt = &scheduledStart
+	scheduledState.EndedAt = &scheduledEnd
+	server.runner.mu.Unlock()
 	if err := store.SaveScenarioScheduleOccurrence(&storage.ScenarioScheduleOccurrence{
 		ID:               "occurrence-calendar-materialized",
 		ScheduleID:       schedule.ID,
@@ -94,11 +103,14 @@ func TestHandleRunCalendarReturnsAdHocScheduledAndProjectedRuns(t *testing.T) {
 		t.Fatalf("CreateTest(ad hoc) returned error: %v", err)
 	}
 	adHocStart := now.Add(-20 * time.Minute)
-	adHocTest.Status = "RUNNING"
-	adHocTest.StartedAt = &adHocStart
-	adHocTest.StartedBySubject = "dana@example.com"
-	adHocTest.StartedByDisplayName = "Dana Runner"
-	adHocTest.GeneratorShards = []GeneratorShardSummary{{Group: "default", Target: "generator-a", VUsers: 7, ShardStrategy: "capacity_weighted"}}
+	server.runner.mu.Lock()
+	adHocState := server.runner.tests[adHocTest.ID]
+	adHocState.Status = "RUNNING"
+	adHocState.StartedAt = &adHocStart
+	adHocState.StartedBySubject = "dana@example.com"
+	adHocState.StartedByDisplayName = "Dana Runner"
+	adHocState.GeneratorShards = []GeneratorShardSummary{{Group: "default", Target: "generator-a", VUsers: 7, ShardStrategy: "capacity_weighted"}}
+	server.runner.mu.Unlock()
 
 	values := url.Values{}
 	values.Set("from", now.Add(-2*time.Hour).Format(time.RFC3339))
@@ -155,9 +167,13 @@ func TestHandleRunCalendarProjectsExecutionPlanSchedules(t *testing.T) {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
 	defer store.Close()
+	seededAt := time.Now().UTC()
+	if err := store.SaveProject(&storage.Project{ID: "project-calendar", Name: "Calendar", CreatedAt: seededAt, UpdatedAt: seededAt}); err != nil {
+		t.Fatalf("SaveProject returned error: %v", err)
+	}
 
 	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
-	server.runner.StoreScript(&dsl.Script{
+	if _, err := server.runner.StoreScriptDurable(&dsl.Script{
 		ID:        "script-plan-calendar",
 		Name:      "Plan Checkout",
 		ProjectID: "project-calendar",
@@ -165,7 +181,9 @@ func TestHandleRunCalendarProjectsExecutionPlanSchedules(t *testing.T) {
 		Version:   "1.0.0",
 		Config:    dsl.ScriptConfig{BaseURL: "https://checkout.example.test"},
 		Actions:   []dsl.Action{{Name: "step", Type: "request", Target: "/checkout"}},
-	})
+	}); err != nil {
+		t.Fatalf("StoreScriptDurable returned error: %v", err)
+	}
 	scenario, err := server.runner.StoreScenario(CreateScenarioRequest{
 		Name:     "Plan Scenario",
 		Duration: "20m",
@@ -258,9 +276,13 @@ func TestHandleRunCalendarProjectsBlockedScheduleAsBlocked(t *testing.T) {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
 	defer store.Close()
+	seededAt := time.Now().UTC()
+	if err := store.SaveProject(&storage.Project{ID: "project-calendar", Name: "Calendar", CreatedAt: seededAt, UpdatedAt: seededAt}); err != nil {
+		t.Fatalf("SaveProject returned error: %v", err)
+	}
 
 	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
-	server.runner.StoreScript(&dsl.Script{
+	if _, err := server.runner.StoreScriptDurable(&dsl.Script{
 		ID:        "script-blocked-calendar",
 		Name:      "Blocked Checkout",
 		ProjectID: "project-calendar",
@@ -268,7 +290,9 @@ func TestHandleRunCalendarProjectsBlockedScheduleAsBlocked(t *testing.T) {
 		Version:   "1.0.0",
 		Config:    dsl.ScriptConfig{BaseURL: "https://checkout.example.test"},
 		Actions:   []dsl.Action{{Name: "step", Type: "request", Target: "/checkout"}},
-	})
+	}); err != nil {
+		t.Fatalf("StoreScriptDurable returned error: %v", err)
+	}
 	scenario, err := server.runner.StoreScenario(CreateScenarioRequest{
 		Name:     "Blocked Scenario",
 		Duration: "10m",

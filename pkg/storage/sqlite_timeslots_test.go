@@ -3,6 +3,7 @@ package storage
 import (
 	"fmt"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -137,8 +138,8 @@ func TestUpdateCapacityReservationDetailsDoesNotRewriteApprovalState(t *testing.
 		t.Fatalf("reject approved reservation = (%v, %v), want (true, nil)", ok, err)
 	}
 	stale.Timezone = "America/New_York"
-	if err := store.UpdateCapacityReservationDetails(stale, false); err != nil {
-		t.Fatalf("cosmetic update from stale copy: %v", err)
+	if err := store.UpdateCapacityReservationDetails(stale, false); err == nil {
+		t.Fatal("cosmetic update from stale copy succeeded; want revision conflict")
 	}
 	got, err := store.GetCapacityReservation("ts-race")
 	if err != nil {
@@ -147,8 +148,106 @@ func TestUpdateCapacityReservationDetailsDoesNotRewriteApprovalState(t *testing.
 	if got.ApprovalState != "rejected" {
 		t.Fatalf("approval_state = %q, want concurrently rejected state preserved", got.ApprovalState)
 	}
-	if got.Timezone != "America/New_York" {
-		t.Fatalf("timezone = %q, want cosmetic update applied", got.Timezone)
+	if got.Timezone != "UTC" {
+		t.Fatalf("timezone = %q, want stale edit rejected", got.Timezone)
+	}
+}
+
+func TestCapacityReservationOverlappingApprovalsAreSerialized(t *testing.T) {
+	store := openTimeslotStore(t)
+	base := time.Now().UTC().Add(time.Hour)
+	units := 2
+	for _, id := range []string{"approval-a", "approval-b"} {
+		if err := store.SaveCapacityReservation(&CapacityReservation{
+			ID: id, ProjectID: "proj-a", StartAt: base, EndAt: base.Add(time.Hour), ApprovalState: "pending",
+			RequestedCapacity: &CapacityReservationRequest{Generators: &units},
+		}); err != nil {
+			t.Fatalf("SaveCapacityReservation(%s): %v", id, err)
+		}
+	}
+	type result struct {
+		changed    bool
+		overbooked bool
+		err        error
+	}
+	results := make(chan result, 2)
+	var wg sync.WaitGroup
+	for _, id := range []string{"approval-a", "approval-b"} {
+		id := id
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			changed, overbooked, err := store.ApproveCapacityReservationWithinLimit(id, time.Now().UTC(), func(*CapacityReservation) (string, int) {
+				return "", 2
+			}, func(reservation *CapacityReservation) int {
+				if reservation.RequestedCapacity == nil || reservation.RequestedCapacity.Generators == nil {
+					return 0
+				}
+				return *reservation.RequestedCapacity.Generators
+			})
+			results <- result{changed: changed, overbooked: overbooked, err: err}
+		}()
+	}
+	wg.Wait()
+	close(results)
+	winners, conflicts := 0, 0
+	for result := range results {
+		if result.err != nil {
+			t.Fatalf("approval: %v", result.err)
+		}
+		if result.changed {
+			winners++
+		}
+		if result.overbooked {
+			conflicts++
+		}
+	}
+	if winners != 1 || conflicts != 1 {
+		t.Fatalf("winners=%d conflicts=%d, want 1 and 1", winners, conflicts)
+	}
+}
+
+func TestCapacityApprovalDerivesEnvelopeFromTransactionalTarget(t *testing.T) {
+	store := openTimeslotStore(t)
+	base := time.Now().UTC().Add(time.Hour)
+	units := 2
+	approved := &CapacityReservation{
+		ID: "approved-new-pool", ProjectID: "proj-a", StartAt: base, EndAt: base.Add(time.Hour), ApprovalState: "approved",
+		RequestedCapacity: &CapacityReservationRequest{PoolID: "new-pool", Generators: &units},
+	}
+	target := &CapacityReservation{
+		ID: "pending-moved-pool", ProjectID: "proj-a", StartAt: base, EndAt: base.Add(time.Hour), ApprovalState: "pending",
+		RequestedCapacity: &CapacityReservationRequest{PoolID: "old-pool", Generators: &units},
+	}
+	for _, reservation := range []*CapacityReservation{approved, target} {
+		if err := store.SaveCapacityReservation(reservation); err != nil {
+			t.Fatalf("save %s: %v", reservation.ID, err)
+		}
+	}
+	current, err := store.GetCapacityReservation(target.ID)
+	if err != nil {
+		t.Fatalf("load target: %v", err)
+	}
+	current.RequestedCapacity.PoolID = "new-pool"
+	if err := store.UpdateCapacityReservationDetails(current, false); err != nil {
+		t.Fatalf("move target to new pool: %v", err)
+	}
+
+	changed, overbooked, err := store.ApproveCapacityReservationWithinLimit(
+		target.ID,
+		time.Now().UTC(),
+		func(reservation *CapacityReservation) (string, int) {
+			return reservation.RequestedCapacity.PoolID, 2
+		},
+		func(reservation *CapacityReservation) int {
+			return *reservation.RequestedCapacity.Generators
+		},
+	)
+	if err != nil {
+		t.Fatalf("approve moved target: %v", err)
+	}
+	if changed || !overbooked {
+		t.Fatalf("changed=%v overbooked=%v, want false/true using target's current pool", changed, overbooked)
 	}
 }
 
@@ -255,8 +354,17 @@ func TestCapacityReservationListTimeRangeAndBinding(t *testing.T) {
 		t.Fatalf("bound_test_id = %v, want test-1", rebound.BoundTestID)
 	}
 
+	if err := store.DeleteCapacityReservation("ts-0"); err == nil {
+		t.Fatal("delete bound approved reservation succeeded")
+	}
+	if cleared, err := store.ClearCapacityReservationBinding("ts-0", testID, time.Now()); err != nil || !cleared {
+		t.Fatalf("clear binding = %v, %v", cleared, err)
+	}
+	if changed, err := store.UpdateCapacityReservationApprovalState("ts-0", []string{"approved"}, "rejected", time.Now()); err != nil || !changed {
+		t.Fatalf("reject before delete = %v, %v", changed, err)
+	}
 	if err := store.DeleteCapacityReservation("ts-0"); err != nil {
-		t.Fatalf("delete: %v", err)
+		t.Fatalf("delete rejected unbound reservation: %v", err)
 	}
 	if _, err := store.GetCapacityReservation("ts-0"); err == nil {
 		t.Fatal("expected error fetching a deleted reservation")

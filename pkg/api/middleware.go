@@ -45,6 +45,9 @@ type AuthenticatedUser struct {
 	// session-scoped and are unaffected by epoch bumps.
 	SessionScoped bool
 	SessionEpoch  int
+	// SessionExpiresAt is carried from a signed OIDC session into long-lived
+	// transports so they can close when the browser session expires.
+	SessionExpiresAt time.Time
 }
 
 type AuthenticatedServiceAccount struct {

@@ -67,7 +67,11 @@ func (s *Server) handleCommitAsyncAPIImport(w http.ResponseWriter, r *http.Reque
 			writeJSON(w, http.StatusOK, map[string]any{"dry_run": true, "diff": diff, "preflight": preflight})
 			return
 		}
-		stored := s.runner.StoreScript(script)
+		stored, err := s.runner.StoreScriptDurable(script)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to save imported script: "+err.Error())
+			return
+		}
 		s.recordAuditEvent(r, "script.import.asyncapi.create", "success", "script", stored.ID, stored.ProjectID, map[string]any{"name": stored.Name})
 		writeJSON(w, http.StatusCreated, map[string]any{
 			"scripts":       []*StoredScript{stored},
@@ -106,7 +110,11 @@ func (s *Server) handleCommitAsyncAPIImport(w http.ResponseWriter, r *http.Reque
 		writeJSON(w, http.StatusOK, map[string]any{"dry_run": true, "replaced": true, "diff": diff, "preflight": preflight})
 		return
 	}
-	updated, ok := s.runner.UpdateScript(targetID, next)
+	updated, ok, err := s.runner.UpdateScriptDurable(targetID, next)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to save imported script: "+err.Error())
+		return
+	}
 	if !ok {
 		writeError(w, http.StatusNotFound, "target script not found")
 		return

@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { createContext, createElement, type PropsWithChildren, useContext, useMemo } from 'react'
 
 import { ApiError } from './apiClient'
 import { useApplicationApi } from './api/useApplicationApi'
@@ -20,7 +20,7 @@ import { useEntitlementsApi } from './api/useEntitlementsApi'
 
 export { ApiError }
 
-export function useApi() {
+function useApiServices() {
   const tests = useTestApi()
   const applications = useApplicationApi()
   const projects = useProjectApi()
@@ -59,4 +59,21 @@ export function useApi() {
     }),
     [tests, applications, projects, repository, scripts, system, recorder, browserRecorder, library, capacity, fleet, executionPlans, monitoringCollectors, objectRepositories, correlationRulesets, entitlements],
   )
+}
+
+type ApiServices = ReturnType<typeof useApiServices>
+
+const ApiContext = createContext<ApiServices | null>(null)
+
+export function ApiProvider({ children }: PropsWithChildren) {
+  const services = useApiServices()
+  return createElement(ApiContext.Provider, { value: services }, children)
+}
+
+export function useApi(): ApiServices {
+  const services = useContext(ApiContext)
+  if (!services) {
+    throw new Error('useApi must be used within ApiProvider')
+  }
+  return services
 }

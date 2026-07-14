@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback, useMemo, type ReactNode, type MouseEvent as ReactMouseEvent } from 'react'
+import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef, type ReactNode, type MouseEvent as ReactMouseEvent } from 'react'
 import { formatDatetimeLocalValue } from './newTestScheduleFormat'
 import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
+import { useModalDialog } from '../hooks/useModalDialog'
 import { useHasTopbarContributionProvider, useTopbarContribution, type TopbarMetaTone } from '../hooks/TopbarContributionProvider'
 import { APMIntegrationProfilesResponse, DashboardAuditEvent, FleetAlert, FleetCapacityResponse, HealthResponse, InfrastructureMonitorPacksResponse, ProvisionerInfo, RunCalendarCapacityDay, RunCalendarEvent, RunCalendarResponse, ScenarioScheduleHealth, SystemInventoryGenerator, SystemInventoryResponse, SystemReadinessResponse, SystemRestartCapabilities, SystemRestartRequest, SystemServicesResponse, TelemetryDiagnosticEntry } from '../types'
 import { readStoredStringArray, writeStoredJSON } from '../utils/browserStorage'
@@ -21,6 +22,8 @@ interface Props {
   onSelectTest?: (id: string) => void
   canManageSystem?: boolean
   initialCategoryId?: MonitorCategoryId
+  activeCategoryId?: MonitorCategoryId
+  onCategoryChange?: (categoryId: MonitorCategoryId) => void
   onScheduleForDate?: (prefillStartLocal: string) => void
   fleetEventSignal?: number
 }
@@ -35,10 +38,12 @@ const MONITOR_CATEGORIES = [
   { id: 'schedules', label: 'Schedules', cardIds: ['run-calendar'] },
 ] as const
 
-type MonitorCategoryId = typeof MONITOR_CATEGORIES[number]['id']
+export type MonitorCategoryId = typeof MONITOR_CATEGORIES[number]['id']
 type RunCalendarView = 'month' | 'week' | 'day'
 type RunCalendarFilter = 'all' | 'cron' | 'ad_hoc' | 'execution_plan' | 'current'
 type MonitorSeverity = 'healthy' | 'unknown' | 'warning' | 'danger'
+type RefreshWork = () => Promise<void>
+type CardFreshnessResult = { cardId: string; ok: boolean }
 
 const FLEET_AUDIT_ACTION_PREFIXES = ['fleet.', 'generator.', 'provisioning.']
 const FLEET_AUDIT_RESOURCE_TYPES = new Set(['fleet_alert', 'fleet_pool', 'generator', 'provisioning_request'])
@@ -144,11 +149,15 @@ function groupedMonitorHeaderLabel(severity: MonitorSeverity): string {
   }
 }
 
-function safeApiCall<T>(request: () => Promise<T>, fallback: T): Promise<T> {
+type ApiCallResult<T> =
+  | { ok: true; value: T }
+  | { ok: false }
+
+async function settleApiCall<T>(request: () => Promise<T>): Promise<ApiCallResult<T>> {
   try {
-    return request().catch(() => fallback)
+    return { ok: true, value: await request() }
   } catch {
-    return Promise.resolve(fallback)
+    return { ok: false }
   }
 }
 
@@ -208,20 +217,6 @@ const STATIC_FRONTEND_BUILD_ROWS = [
   frontendBuildRow('ux', 'UX', frontendBuildMetadata.ux),
 ]
 
-function disabledRestartCapabilities(reason: string): SystemRestartCapabilities {
-  return {
-    enabled: false,
-    disabled_reason: reason,
-    execution_mode: 'unknown',
-    allow_force: false,
-    supports: {
-      controller_workload: false,
-      generator_workload: false,
-      generator_pod: false,
-    },
-  }
-}
-
 function restartErrorMessage(error: unknown): string {
   if (typeof error === 'object' && error !== null) {
     const payload = (error as { payload?: unknown }).payload
@@ -235,9 +230,17 @@ function restartErrorMessage(error: unknown): string {
   return 'Restart request failed.'
 }
 
-export default function MonitoringPage({ connectionState, telemetryDiagnostics = [], onSelectTest, canManageSystem = false, initialCategoryId = 'overview', onScheduleForDate, fleetEventSignal = 0 }: Props) {
+export default function MonitoringPage({ connectionState, telemetryDiagnostics = [], onSelectTest, canManageSystem = false, initialCategoryId = 'overview', activeCategoryId: controlledCategoryId, onCategoryChange, onScheduleForDate, fleetEventSignal = 0 }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
+  const activeProjectId = activeProject?.id
+  const refreshGenerationRef = useRef(0)
+  const refreshScopeRef = useRef(activeProjectId)
+  const refreshInFlightRef = useRef<Promise<void> | null>(null)
+  const queuedRefreshRef = useRef<RefreshWork | null>(null)
+  const fleetEventGenerationRef = useRef(0)
+  const renderedProjectScopeRef = useRef(activeProjectId)
+  refreshScopeRef.current = activeProjectId
   const [health, setHealth] = useState<HealthResponse | null>(null)
   const [scheduleHealth, setScheduleHealth] = useState<ScenarioScheduleHealth | null>(null)
   const [runCalendar, setRunCalendar] = useState<RunCalendarResponse | null>(null)
@@ -263,9 +266,75 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const [restartLoading, setRestartLoading] = useState(false)
   const [isTelemetryModalOpen, setIsTelemetryModalOpen] = useState(false)
   const [isGeneratorsModalOpen, setIsGeneratorsModalOpen] = useState(false)
-  const [activeCategoryId, setActiveCategoryId] = useState<MonitorCategoryId>(initialCategoryId)
+  const [internalCategoryId, setInternalCategoryId] = useState<MonitorCategoryId>(initialCategoryId)
+  const activeCategoryId = controlledCategoryId ?? internalCategoryId
   const [cardOrder, setCardOrder] = useState<string[]>(() => readStoredStringArray('apexload.monitoring.cardOrder'))
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
+  const [staleCardIds, setStaleCardIds] = useState<string[]>([])
+  const telemetryDialogRef = useRef<HTMLDivElement>(null)
+  const generatorsDialogRef = useRef<HTMLDivElement>(null)
+
+  useModalDialog({
+    dialogRef: telemetryDialogRef,
+    enabled: isTelemetryModalOpen,
+    onClose: () => setIsTelemetryModalOpen(false),
+  })
+  useModalDialog({
+    dialogRef: generatorsDialogRef,
+    enabled: isGeneratorsModalOpen,
+    onClose: () => setIsGeneratorsModalOpen(false),
+  })
+
+  const recordCardFreshness = useCallback((results: CardFreshnessResult[]) => {
+    setStaleCardIds(current => {
+      const next = new Set(current)
+      results.forEach(result => {
+        if (result.ok) next.delete(result.cardId)
+        else next.add(result.cardId)
+      })
+      return Array.from(next).sort()
+    })
+  }, [])
+
+  const runCoalescedRefresh = useCallback((work: RefreshWork): Promise<void> => {
+    if (refreshInFlightRef.current) {
+      // Keep only the newest requested refresh while one is running. The active
+      // request drains this slot before it resolves, preventing poll backlogs.
+      queuedRefreshRef.current = work
+      return refreshInFlightRef.current
+    }
+
+    const request = (async () => {
+      let nextWork: RefreshWork | null = work
+      while (nextWork) {
+        const currentWork = nextWork
+        queuedRefreshRef.current = null
+        await currentWork()
+        nextWork = queuedRefreshRef.current
+      }
+    })().finally(() => {
+      if (refreshInFlightRef.current === request) refreshInFlightRef.current = null
+    })
+    refreshInFlightRef.current = request
+    return request
+  }, [])
+
+  useLayoutEffect(() => {
+    if (renderedProjectScopeRef.current === activeProjectId) return
+    renderedProjectScopeRef.current = activeProjectId
+    refreshGenerationRef.current += 1
+    fleetEventGenerationRef.current += 1
+    setScheduleHealth(null)
+    setRunCalendar(null)
+    setSelectedCalendarEventId(null)
+    setFleetAlerts([])
+    setFleetAuditEvents([])
+    setFleetCapacity(null)
+    setProvisioner(null)
+    setLastRefreshed(null)
+    setStaleCardIds([])
+    queuedRefreshRef.current = null
+  }, [activeProjectId])
   const hasTopbarContributionProvider = useHasTopbarContributionProvider()
   const apiHealthSeverity = statusMonitorSeverity(health?.status)
   const websocketSeverity = websocketMonitorSeverity(connectionState)
@@ -394,110 +463,149 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       ? `${calendarEvents.length.toLocaleString()} shown`
       : `${calendarEvents.length.toLocaleString()} run${calendarEvents.length === 1 ? '' : 's'}`
 
-  const refresh = useCallback(async (categoryId: MonitorCategoryId = activeCategoryId) => {
-    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
-      return
-    }
-    try {
-      if (categoryId === 'overview') {
-        const [healthRes, inventoryRes, restartCapsRes, readinessRes, servicesRes] = await Promise.all([
-          api.getHealth(),
-          api.getSystemInventory().catch(() => null),
-          canManageSystem ? api.getRestartCapabilities().catch(() => disabledRestartCapabilities('Restart capability status is unavailable.')) : Promise.resolve(null),
-          api.getSystemReadiness().catch(() => null),
-          api.getSystemServices().catch(() => null),
-        ])
-        setHealth(healthRes)
-        setInventory(inventoryRes)
-        setRestartCapabilities(restartCapsRes)
-        setSystemReadiness(readinessRes)
-        setSystemServices(servicesRes)
-      } else if (categoryId === 'fleet') {
-        const [inventoryRes, restartCapsRes, fleetAlertsRes, fleetAuditRes, fleetCapacityRes, provisionerRes] = await Promise.all([
-          api.getSystemInventory().catch(() => null),
-          canManageSystem ? api.getRestartCapabilities().catch(() => disabledRestartCapabilities('Restart capability status is unavailable.')) : Promise.resolve(null),
-          api.getFleetAlerts().catch(() => ({ alerts: [], count: 0, unacknowledged_count: 0 })),
-          canManageSystem ? api.listAuthAuditEvents({ limit: 20 }).catch(() => ({ events: [], count: 0 })) : Promise.resolve(null),
-          api.getFleetCapacity(activeProject?.id ? { project_id: activeProject.id } : undefined).catch(() => null),
-          api.getFleetProvisioner().catch(() => null),
-        ])
-        setInventory(inventoryRes)
-        setRestartCapabilities(restartCapsRes)
-        setFleetAlerts(fleetAlertsRes.alerts || [])
-        setFleetAuditEvents(canManageSystem ? (fleetAuditRes?.events || []).filter(isFleetAuditEvent).slice(0, 8) : [])
-        setFleetCapacity(fleetCapacityRes)
-        setProvisioner(provisionerRes)
-      } else if (categoryId === 'telemetry') {
-        const [apmProfilesRes, monitorPacksRes] = await Promise.all([
-          safeApiCall(() => api.getAPMIntegrationProfiles(), null),
-          safeApiCall(() => api.getInfrastructureMonitorPacks(), null),
-        ])
-        setApmProfiles(apmProfilesRes)
-        setMonitorPacks(monitorPacksRes)
-      } else if (categoryId === 'schedules') {
-        const [scheduleHealthRes, runCalendarRes] = await Promise.all([
-          api.getScheduleHealth().catch(() => null),
-          api.getRunCalendar({
-            from: calendarRange.from.toISOString(),
-            to: calendarRange.to.toISOString(),
-            project_id: activeProject?.id,
-            capacity: true,
-            tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          }).catch(() => null),
-        ])
-        setScheduleHealth(scheduleHealthRes)
-        setRunCalendar(runCalendarRes)
-      }
-      setLastRefreshed(new Date())
-    } catch {
-      // API not available
-    }
-  }, [activeCategoryId, activeProject?.id, api, calendarRange.from, calendarRange.to, canManageSystem])
+  const refresh = useCallback((categoryId: MonitorCategoryId = activeCategoryId) => runCoalescedRefresh(async () => {
+    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
+    const generation = refreshGenerationRef.current
+    const projectScope = activeProjectId
+    const isCurrent = () => generation === refreshGenerationRef.current && projectScope === refreshScopeRef.current
 
-  const refreshAll = useCallback(async () => {
-    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+    if (categoryId === 'overview') {
+      const [healthRes, inventoryRes, restartCapsRes, readinessRes, servicesRes] = await Promise.all([
+        settleApiCall(() => api.getHealth()),
+        settleApiCall(() => api.getSystemInventory()),
+        canManageSystem ? settleApiCall(() => api.getRestartCapabilities()) : Promise.resolve({ ok: false } as const),
+        settleApiCall(() => api.getSystemReadiness()),
+        settleApiCall(() => api.getSystemServices()),
+      ])
+      if (!isCurrent()) return
+      if (healthRes.ok) setHealth(healthRes.value)
+      if (inventoryRes.ok) setInventory(inventoryRes.value)
+      if (restartCapsRes.ok) setRestartCapabilities(restartCapsRes.value)
+      if (readinessRes.ok) setSystemReadiness(readinessRes.value)
+      if (servicesRes.ok) setSystemServices(servicesRes.value)
+      recordCardFreshness([
+        { cardId: 'system-health', ok: healthRes.ok && inventoryRes.ok && (!canManageSystem || restartCapsRes.ok) },
+        { cardId: 'production-readiness', ok: readinessRes.ok && servicesRes.ok },
+      ])
+      if ([healthRes, inventoryRes, restartCapsRes, readinessRes, servicesRes].some(result => result.ok)) setLastRefreshed(new Date())
       return
     }
-    try {
-      const [healthRes, inventoryRes, restartCapsRes, readinessRes, servicesRes, scheduleHealthRes, runCalendarRes, apmProfilesRes, monitorPacksRes, fleetAlertsRes, fleetAuditRes, fleetCapacityRes, provisionerRes] = await Promise.all([
-        api.getHealth(),
-        api.getSystemInventory().catch(() => null),
-        canManageSystem ? api.getRestartCapabilities().catch(() => disabledRestartCapabilities('Restart capability status is unavailable.')) : Promise.resolve(null),
-        api.getSystemReadiness().catch(() => null),
-        api.getSystemServices().catch(() => null),
-        api.getScheduleHealth().catch(() => null),
-        api.getRunCalendar({
-          from: calendarRange.from.toISOString(),
-          to: calendarRange.to.toISOString(),
-          project_id: activeProject?.id,
-          capacity: true,
-          tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        }).catch(() => null),
-        safeApiCall(() => api.getAPMIntegrationProfiles(), null),
-        safeApiCall(() => api.getInfrastructureMonitorPacks(), null),
-        api.getFleetAlerts().catch(() => ({ alerts: [], count: 0, unacknowledged_count: 0 })),
-        canManageSystem ? api.listAuthAuditEvents({ limit: 20 }).catch(() => ({ events: [], count: 0 })) : Promise.resolve(null),
-        api.getFleetCapacity(activeProject?.id ? { project_id: activeProject.id } : undefined).catch(() => null),
-        api.getFleetProvisioner().catch(() => null),
+
+    if (categoryId === 'fleet') {
+      const [inventoryRes, restartCapsRes, fleetAlertsRes, fleetAuditRes, fleetCapacityRes, provisionerRes] = await Promise.all([
+        settleApiCall(() => api.getSystemInventory()),
+        canManageSystem ? settleApiCall(() => api.getRestartCapabilities()) : Promise.resolve({ ok: false } as const),
+        settleApiCall(() => api.getFleetAlerts()),
+        canManageSystem ? settleApiCall(() => api.listAuthAuditEvents({ limit: 20 })) : Promise.resolve({ ok: false } as const),
+        settleApiCall(() => api.getFleetCapacity(projectScope ? { project_id: projectScope } : undefined)),
+        settleApiCall(() => api.getFleetProvisioner()),
       ])
-      setHealth(healthRes)
-      setInventory(inventoryRes)
-      setRestartCapabilities(restartCapsRes)
-      setSystemReadiness(readinessRes)
-      setSystemServices(servicesRes)
-      setScheduleHealth(scheduleHealthRes)
-      setRunCalendar(runCalendarRes)
-      setApmProfiles(apmProfilesRes)
-      setMonitorPacks(monitorPacksRes)
-      setFleetAlerts(fleetAlertsRes.alerts || [])
-      setFleetAuditEvents(canManageSystem ? (fleetAuditRes?.events || []).filter(isFleetAuditEvent).slice(0, 8) : [])
-      setFleetCapacity(fleetCapacityRes)
-      setProvisioner(provisionerRes)
-      setLastRefreshed(new Date())
-    } catch {
-      // API not available
+      if (!isCurrent()) return
+      if (inventoryRes.ok) setInventory(inventoryRes.value)
+      if (restartCapsRes.ok) setRestartCapabilities(restartCapsRes.value)
+      if (fleetAlertsRes.ok) setFleetAlerts(fleetAlertsRes.value.alerts || [])
+      if (fleetAuditRes.ok) setFleetAuditEvents((fleetAuditRes.value.events || []).filter(isFleetAuditEvent).slice(0, 8))
+      else if (!canManageSystem) setFleetAuditEvents([])
+      if (fleetCapacityRes.ok) setFleetCapacity(fleetCapacityRes.value)
+      if (provisionerRes.ok) setProvisioner(provisionerRes.value)
+      recordCardFreshness([
+        { cardId: 'generators', ok: inventoryRes.ok && (!canManageSystem || restartCapsRes.ok) },
+        { cardId: 'fleet-alerts', ok: fleetAlertsRes.ok },
+        ...(canManageSystem ? [{ cardId: 'fleet-audit', ok: fleetAuditRes.ok }] : []),
+        { cardId: 'capacity', ok: fleetCapacityRes.ok },
+        { cardId: 'generator-metadata', ok: provisionerRes.ok },
+      ])
+      if ([inventoryRes, restartCapsRes, fleetAlertsRes, fleetAuditRes, fleetCapacityRes, provisionerRes].some(result => result.ok)) setLastRefreshed(new Date())
+      return
     }
-  }, [activeProject?.id, api, calendarRange.from, calendarRange.to, canManageSystem])
+
+    if (categoryId === 'telemetry') {
+      const [apmProfilesRes, monitorPacksRes] = await Promise.all([
+        settleApiCall(() => api.getAPMIntegrationProfiles()),
+        settleApiCall(() => api.getInfrastructureMonitorPacks()),
+      ])
+      if (!isCurrent()) return
+      if (apmProfilesRes.ok) setApmProfiles(apmProfilesRes.value)
+      if (monitorPacksRes.ok) setMonitorPacks(monitorPacksRes.value)
+      recordCardFreshness([
+        { cardId: 'apm-integrations', ok: apmProfilesRes.ok },
+        { cardId: 'monitor-packs', ok: monitorPacksRes.ok },
+      ])
+      if (apmProfilesRes.ok || monitorPacksRes.ok) setLastRefreshed(new Date())
+      return
+    }
+
+    const [scheduleHealthRes, runCalendarRes] = await Promise.all([
+      settleApiCall(() => api.getScheduleHealth()),
+      settleApiCall(() => api.getRunCalendar({
+        from: calendarRange.from.toISOString(),
+        to: calendarRange.to.toISOString(),
+        project_id: projectScope,
+        capacity: true,
+        tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      })),
+    ])
+    if (!isCurrent()) return
+    if (scheduleHealthRes.ok) setScheduleHealth(scheduleHealthRes.value)
+    if (runCalendarRes.ok) setRunCalendar(runCalendarRes.value)
+    recordCardFreshness([{ cardId: 'run-calendar', ok: scheduleHealthRes.ok && runCalendarRes.ok }])
+    if (scheduleHealthRes.ok || runCalendarRes.ok) setLastRefreshed(new Date())
+  }), [activeCategoryId, activeProjectId, api, calendarRange.from, calendarRange.to, canManageSystem, recordCardFreshness, runCoalescedRefresh])
+
+  const refreshAll = useCallback(() => runCoalescedRefresh(async () => {
+    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
+    const generation = refreshGenerationRef.current
+    const projectScope = activeProjectId
+    const [healthRes, inventoryRes, restartCapsRes, readinessRes, servicesRes, scheduleHealthRes, runCalendarRes, apmProfilesRes, monitorPacksRes, fleetAlertsRes, fleetAuditRes, fleetCapacityRes, provisionerRes] = await Promise.all([
+      settleApiCall(() => api.getHealth()),
+      settleApiCall(() => api.getSystemInventory()),
+      canManageSystem ? settleApiCall(() => api.getRestartCapabilities()) : Promise.resolve({ ok: false } as const),
+      settleApiCall(() => api.getSystemReadiness()),
+      settleApiCall(() => api.getSystemServices()),
+      settleApiCall(() => api.getScheduleHealth()),
+      settleApiCall(() => api.getRunCalendar({
+        from: calendarRange.from.toISOString(),
+        to: calendarRange.to.toISOString(),
+        project_id: projectScope,
+        capacity: true,
+        tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      })),
+      settleApiCall(() => api.getAPMIntegrationProfiles()),
+      settleApiCall(() => api.getInfrastructureMonitorPacks()),
+      settleApiCall(() => api.getFleetAlerts()),
+      canManageSystem ? settleApiCall(() => api.listAuthAuditEvents({ limit: 20 })) : Promise.resolve({ ok: false } as const),
+      settleApiCall(() => api.getFleetCapacity(projectScope ? { project_id: projectScope } : undefined)),
+      settleApiCall(() => api.getFleetProvisioner()),
+    ])
+    if (generation !== refreshGenerationRef.current || projectScope !== refreshScopeRef.current) return
+    if (healthRes.ok) setHealth(healthRes.value)
+    if (inventoryRes.ok) setInventory(inventoryRes.value)
+    if (restartCapsRes.ok) setRestartCapabilities(restartCapsRes.value)
+    if (readinessRes.ok) setSystemReadiness(readinessRes.value)
+    if (servicesRes.ok) setSystemServices(servicesRes.value)
+    if (scheduleHealthRes.ok) setScheduleHealth(scheduleHealthRes.value)
+    if (runCalendarRes.ok) setRunCalendar(runCalendarRes.value)
+    if (apmProfilesRes.ok) setApmProfiles(apmProfilesRes.value)
+    if (monitorPacksRes.ok) setMonitorPacks(monitorPacksRes.value)
+    if (fleetAlertsRes.ok) setFleetAlerts(fleetAlertsRes.value.alerts || [])
+    if (fleetAuditRes.ok) setFleetAuditEvents((fleetAuditRes.value.events || []).filter(isFleetAuditEvent).slice(0, 8))
+    else if (!canManageSystem) setFleetAuditEvents([])
+    if (fleetCapacityRes.ok) setFleetCapacity(fleetCapacityRes.value)
+    if (provisionerRes.ok) setProvisioner(provisionerRes.value)
+    recordCardFreshness([
+      { cardId: 'system-health', ok: healthRes.ok && inventoryRes.ok && (!canManageSystem || restartCapsRes.ok) },
+      { cardId: 'production-readiness', ok: readinessRes.ok && servicesRes.ok },
+      { cardId: 'generators', ok: inventoryRes.ok && (!canManageSystem || restartCapsRes.ok) },
+      { cardId: 'fleet-alerts', ok: fleetAlertsRes.ok },
+      ...(canManageSystem ? [{ cardId: 'fleet-audit', ok: fleetAuditRes.ok }] : []),
+      { cardId: 'capacity', ok: fleetCapacityRes.ok },
+      { cardId: 'generator-metadata', ok: provisionerRes.ok },
+      { cardId: 'apm-integrations', ok: apmProfilesRes.ok },
+      { cardId: 'monitor-packs', ok: monitorPacksRes.ok },
+      { cardId: 'run-calendar', ok: scheduleHealthRes.ok && runCalendarRes.ok },
+    ])
+    if ([healthRes, inventoryRes, restartCapsRes, readinessRes, servicesRes, scheduleHealthRes, runCalendarRes, apmProfilesRes, monitorPacksRes, fleetAlertsRes, fleetAuditRes, fleetCapacityRes, provisionerRes].some(result => result.ok)) setLastRefreshed(new Date())
+  }), [activeProjectId, api, calendarRange.from, calendarRange.to, canManageSystem, recordCardFreshness, runCoalescedRefresh])
 
   const toggleFleetAlertAck = useCallback(async (alert: FleetAlert) => {
     if (!alert.id) return
@@ -542,9 +650,11 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     if (fleetEventSignal <= 0) return
     if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
     let cancelled = false
+    const generation = ++fleetEventGenerationRef.current
+    const projectScope = activeProjectId
     void api.getFleetAlerts()
       .then(result => {
-        if (cancelled) return
+        if (cancelled || generation !== fleetEventGenerationRef.current || projectScope !== refreshScopeRef.current) return
         setFleetAlerts(result.alerts || [])
         setLastRefreshed(new Date())
       })
@@ -552,7 +662,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     return () => {
       cancelled = true
     }
-  }, [api, fleetEventSignal])
+  }, [activeProjectId, api, fleetEventSignal])
 
   useEffect(() => {
     if (!selectedCalendarEventId) return
@@ -1279,10 +1389,13 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       ),
       content: <FleetGeneratorsCard canManage={canManageSystem} />,
     },
-  ], [activeProject?.id, apiHealthSeverity, apmHeaderLabel, apmHeaderSeverity, apmProfiles, backendServices, calendarAnchor, calendarEvents, calendarFilter, calendarHeaderLabel, calendarHeaderSeverity, calendarModel, calendarView, canManageSystem, canRestart, componentBuildRows, controlPlaneHeaderLabel, controlPlaneHeaderSeverity, controllerGeneratorInventoryLabel, fleetAlertActionBusy, fleetAlertActionError, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlerts, fleetAuditEvents, fleetAuditHeaderLabel, fleetAuditHeaderSeverity, fleetCapacity, frontendServices, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, monitorPackContractCount, monitorPackCount, monitorPackHeaderLabel, monitorPackHeaderSeverity, monitorPackSupportedCount, monitorPacks, onSelectTest, openControllerRestart, openSelectedTest, provisioner, readinessBlockedCount, readinessDegradedCount, readinessReadyCount, readinessServicesHeaderLabel, readinessServicesHeaderSeverity, restartCapabilities?.supports.controller_workload, runCalendar, selectCalendarEvent, selectedCalendarEvent, servicesHeaderLabel, servicesHeaderSeverity, shiftCalendar, systemReadiness, systemServices, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, toggleFleetAlertAck, websocketLabel, websocketValueClass])
+  ], [activeProject?.id, apiHealthSeverity, apmHeaderLabel, apmHeaderSeverity, apmProfiles, backendServices, calendarAnchor, calendarEvents, calendarFilter, calendarHeaderLabel, calendarHeaderSeverity, calendarModel, calendarView, canManageSystem, canRestart, componentBuildRows, controlPlaneHeaderLabel, controlPlaneHeaderSeverity, controllerGeneratorInventoryLabel, fleetAlertActionBusy, fleetAlertActionError, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlerts, fleetAuditEvents, fleetAuditHeaderLabel, fleetAuditHeaderSeverity, fleetCapacity, frontendServices, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, monitorPackContractCount, monitorPackCount, monitorPackHeaderLabel, monitorPackHeaderSeverity, monitorPackSupportedCount, monitorPacks, onScheduleForDate, onSelectTest, openControllerRestart, openSelectedTest, provisioner, readinessBlockedCount, readinessDegradedCount, readinessReadyCount, readinessServicesHeaderLabel, readinessServicesHeaderSeverity, restartCapabilities?.supports.controller_workload, runCalendar, selectCalendarEvent, selectedCalendarEvent, servicesHeaderLabel, servicesHeaderSeverity, shiftCalendar, systemReadiness, systemServices, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, toggleFleetAlertAck, websocketLabel, websocketValueClass])
 
   useEffect(() => {
-    setCardOrder(prev => mergeOrder(prev, cards.map(card => card.id)))
+    setCardOrder(prev => {
+      const next = mergeOrder(prev, cards.map(card => card.id))
+      return next.length === prev.length && next.every((id, index) => id === prev[index]) ? prev : next
+    })
   }, [cards])
 
   useEffect(() => {
@@ -1301,8 +1414,11 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const activeVisibleCards = orderedCards.filter(card => activeCategoryCardIds.has(card.id))
 
   const selectCategory = useCallback((id: MonitorCategoryId) => {
-    setActiveCategoryId(id)
-  }, [])
+    if (controlledCategoryId === undefined) {
+      setInternalCategoryId(id)
+    }
+    onCategoryChange?.(id)
+  }, [controlledCategoryId, onCategoryChange])
 
   const monitorCategoryControls = useMemo(() => (
     <div className="monitor-tab-row topbar-page-section-toggle" role="tablist" aria-label="Monitor categories">
@@ -1407,9 +1523,9 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const monitoringTopbarContribution = useMemo(() => ({
     id: 'monitoring-page',
     priority: 10,
-    title: 'Monitoring',
+    title: activeCategoryId === 'overview' ? 'Monitoring' : activeCategory.label,
     controls: monitoringTopbarControls,
-  }), [monitoringTopbarControls])
+  }), [activeCategory.label, activeCategoryId, monitoringTopbarControls])
 
   useTopbarContribution(monitoringTopbarContribution)
 
@@ -1418,7 +1534,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       <div className="page-header">
         <div>
           <h2 className="monitor-page-title">
-            <span>Monitoring</span>
+            <span>{activeCategoryId === 'overview' ? 'Monitoring' : activeCategory.label}</span>
             {advisoryTone && (
               <span className={`monitor-title-advisory monitor-header-badge ${advisoryTone}`} title={advisorySummary}>
                 {overallLabel}
@@ -1441,12 +1557,14 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
           <div
             key={card.id}
             data-card-id={card.id}
-            className="monitor-card"
+            className={`monitor-card${staleCardIds.includes(card.id) ? ' stale' : ''}`}
           >
             <div className="monitor-header">
               {card.icon}
               <span>{card.title}</span>
-              {card.headerBadge}
+              {staleCardIds.includes(card.id)
+                ? <span className="monitor-header-badge warning" title="The latest refresh for this card failed; previously loaded values may be stale.">Stale</span>
+                : card.headerBadge}
             </div>
             {card.content}
           </div>
@@ -1455,9 +1573,10 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       </div>
 
       {lastRefreshed && (
-        <div className="monitor-update-footer">
+        <div className="monitor-update-footer" role="status">
           <span className="monitor-last-refreshed">
-            Updated {lastRefreshed.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })}
+            Updated available data {lastRefreshed.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })}
+            {staleCardIds.length > 0 ? ` · ${staleCardIds.length} stale card${staleCardIds.length === 1 ? '' : 's'}` : ''}
           </span>
         </div>
       )}
@@ -1470,7 +1589,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
 
       {isTelemetryModalOpen && telemetryDiagnostics.length > 0 && (
         <div className="modal-overlay" onClick={() => setIsTelemetryModalOpen(false)}>
-          <div className="modal modal-wide telemetry-modal" role="dialog" aria-modal="true" aria-labelledby="telemetry-diagnostics-title" onClick={(event) => event.stopPropagation()}>
+          <div ref={telemetryDialogRef} className="modal modal-wide telemetry-modal" role="dialog" aria-modal="true" aria-labelledby="telemetry-diagnostics-title" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header telemetry-modal-header">
               <div>
                 <h3 id="telemetry-diagnostics-title">Telemetry Diagnostics</h3>
@@ -1501,7 +1620,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
 
       {isGeneratorsModalOpen && generators.length > 0 && (
         <div className="modal-overlay" onClick={() => setIsGeneratorsModalOpen(false)}>
-          <div className="modal modal-wide telemetry-modal" role="dialog" aria-modal="true" aria-labelledby="generator-inventory-title" onClick={(event) => event.stopPropagation()}>
+          <div ref={generatorsDialogRef} className="modal modal-wide telemetry-modal" role="dialog" aria-modal="true" aria-labelledby="generator-inventory-title" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header telemetry-modal-header">
               <div>
                 <h3 id="generator-inventory-title">Generator Inventory</h3>

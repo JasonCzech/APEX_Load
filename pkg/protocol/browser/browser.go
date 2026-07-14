@@ -83,6 +83,7 @@ type Browser struct {
 
 	mu             sync.Mutex
 	consoleEntries []protocol.ConsoleEntry
+	consoleDropped int
 	networkEntries []protocol.NetworkEntry
 	// networkEntriesDropped counts entries evicted from the front of
 	// networkEntries by the ring/byte-budget cap, so absolute offset-based
@@ -102,6 +103,11 @@ type Browser struct {
 	resourceValidators    map[string]string
 	resourceValidatorKeys []string
 	pages                 []playwright.Page
+	closing               bool
+	networkTasks          chan browserNetworkTask
+	networkWorkerStop     chan struct{}
+	networkWorkerWG       sync.WaitGroup
+	networkTasksDropped   int64
 
 	dialogMu      sync.Mutex
 	pendingDialog *dialogPolicy

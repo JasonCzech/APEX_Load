@@ -1,6 +1,7 @@
 .script-editor {
   display: flex; flex-direction: column; gap: 0; height: 100%;
 }
+
 .editor-header {
   display: flex; flex-direction: column; gap: 8px; padding-bottom: 16px;
   border-bottom: 1px solid var(--border);
@@ -1299,8 +1300,8 @@
 .parameter-info-stats-table td.parameter-info-stat-value {
   font-weight: 700;
 }
-.btn.danger,
-.btn.btn-ghost.danger {
+.script-editor .btn.danger,
+.script-editor .btn.btn-ghost.danger {
   color: var(--danger);
 }
 .parameter-dialog-actions {
@@ -5558,23 +5559,23 @@
 }
 
 /* Buttons */
-.btn { padding: 8px 16px; border-radius: 6px; border: none; font-size: 13px; font-weight: 500; transition: all 0.15s; }
-.btn-primary { background: var(--accent); color: var(--accent-contrast); }
-.btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
-.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn-ghost { background: transparent; color: var(--text-secondary); border: 1px solid var(--border); }
-.btn-ghost:hover { background: var(--bg-hover); color: var(--text-primary); }
-.btn-accent { background: var(--accent); color: var(--accent-contrast); }
-.btn-accent:hover { background: var(--accent-hover); }
-.btn-sm { padding: 4px 10px; font-size: 12px; }
-.btn-icon {
+.script-editor .btn { padding: 8px 16px; border-radius: 6px; border: none; font-size: 13px; font-weight: 500; transition: all 0.15s; }
+.script-editor .btn-primary { background: var(--accent); color: var(--accent-contrast); }
+.script-editor .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+.script-editor .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.script-editor .btn-ghost { background: transparent; color: var(--text-secondary); border: 1px solid var(--border); }
+.script-editor .btn-ghost:hover:not(:disabled) { background: var(--bg-hover); color: var(--text-primary); }
+.script-editor .btn-accent { background: var(--accent); color: var(--accent-contrast); }
+.script-editor .btn-accent:hover:not(:disabled) { background: var(--accent-hover); }
+.script-editor .btn-sm { padding: 4px 10px; font-size: 12px; }
+.script-editor .btn-icon {
   width: 24px; height: 24px; border: none; background: transparent;
   color: var(--text-muted); border-radius: 4px; display: flex; align-items: center; justify-content: center;
   font-size: 12px; cursor: pointer;
 }
-.btn-icon:hover:not(:disabled), .btn-icon:focus-visible:not(:disabled) { background: var(--bg-hover); color: var(--text-primary); outline: none; }
-.btn-icon.danger:hover { color: var(--danger); background: rgba(239,68,68,0.1); }
-.btn-icon:disabled { opacity: 0.3; cursor: not-allowed; }
+.script-editor .btn-icon:hover:not(:disabled), .script-editor .btn-icon:focus-visible:not(:disabled) { background: var(--bg-hover); color: var(--text-primary); }
+.script-editor .btn-icon.danger:hover:not(:disabled) { color: var(--danger); background: rgba(239,68,68,0.1); }
+.script-editor .btn-icon:disabled { opacity: 0.3; cursor: not-allowed; }
 
 /* Runtime Settings Accordion */
 .runtime-settings {
@@ -7225,4 +7226,11 @@ button.debugger-problem-row:hover {
       "bottom";
   }
   .debugger-resizer { display: none; }
+}
+
+/* Component form rules historically removed native outlines. Preserve the
+   dashboard focus token even when those more-specific rules are active. */
+.script-editor :where(input, select, textarea):focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }

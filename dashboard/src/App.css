@@ -82,6 +82,7 @@
 }
 
 .topbar-page-title {
+  margin: 0;
   min-width: 0;
   overflow: hidden;
   color: var(--text-primary);
@@ -90,6 +91,18 @@
   line-height: 1.12;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.app-route-announcement {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .topbar-meta-strip,

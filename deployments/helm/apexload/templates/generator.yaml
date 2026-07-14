@@ -114,14 +114,16 @@ spec:
           ports:
             - name: grpc
               containerPort: 9090
+            - name: health
+              containerPort: 9092
           readinessProbe:
             grpc:
-              port: 9090
+              port: 9092
             initialDelaySeconds: 5
             periodSeconds: 10
           livenessProbe:
             grpc:
-              port: 9090
+              port: 9092
             initialDelaySeconds: 15
             periodSeconds: 20
           resources:

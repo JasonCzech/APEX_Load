@@ -286,7 +286,12 @@ func (s *Server) handleApplyCorrelationRulesetToScript(w http.ResponseWriter, r 
 
 	applied := false
 	if req.Apply && len(matched) > 0 {
-		if _, ok := s.runner.UpdateScript(scriptID, clone); ok {
+		_, ok, err := s.runner.UpdateScriptDurable(scriptID, clone)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to save parameterized script: "+err.Error())
+			return
+		}
+		if ok {
 			applied = true
 			s.recordAuditEvent(r, "correlation_ruleset.apply", "success", "script", scriptID, ruleset.ProjectID, map[string]any{
 				"ruleset_id": ruleset.ID, "matched": len(matched),

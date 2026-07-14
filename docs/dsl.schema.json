@@ -5664,7 +5664,7 @@
               "params": {
                 "properties": {
                   "read_bytes": {
-                    "description": "Bytes to read back; zero or greater.",
+                    "description": "Bytes to read back; 0 through 1048576.",
                     "type": "integer"
                   },
                   "timeout_ms": {
@@ -5709,7 +5709,7 @@
               "params": {
                 "properties": {
                   "read_bytes": {
-                    "description": "Bytes to read back; zero or greater.",
+                    "description": "Bytes to read back; 0 through 1048576.",
                     "type": "integer"
                   },
                   "timeout_ms": {

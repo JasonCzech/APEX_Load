@@ -19,6 +19,30 @@ import (
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
+const (
+	durableTransitionAttempts   = 3
+	durableTransitionRetryDelay = 10 * time.Millisecond
+)
+
+// retryDurableTransition absorbs short storage interruptions without allowing a
+// terminal state to become visible only in memory. The bound is intentionally
+// small: execution goroutines may wait briefly for durability, but cannot hang
+// indefinitely behind an unavailable database.
+func retryDurableTransition(operation func() error) error {
+	var lastErr error
+	for attempt := 0; attempt < durableTransitionAttempts; attempt++ {
+		if err := operation(); err != nil {
+			lastErr = err
+			if attempt+1 < durableTransitionAttempts {
+				time.Sleep(durableTransitionRetryDelay)
+			}
+			continue
+		}
+		return nil
+	}
+	return lastErr
+}
+
 func (tr *TestRunner) loadStoredScripts() {
 	if tr.scriptStore == nil {
 		return
@@ -222,6 +246,12 @@ func (tr *TestRunner) reconcileStoredActiveTest(test *ManagedTest) {
 	default:
 		return
 	}
+	previousStatus := test.Status
+	previousPendingSince := cloneTimePtr(test.PendingSince)
+	previousPendingReason := test.PendingReason
+	previousQueuePosition := test.QueuePosition
+	previousEndedAt := cloneTimePtr(test.EndedAt)
+	previousError := test.Error
 	now := time.Now().UTC()
 	test.Status = "FAILED"
 	test.PendingSince = nil
@@ -231,7 +261,26 @@ func (tr *TestRunner) reconcileStoredActiveTest(test *ManagedTest) {
 	if test.Error == "" {
 		test.Error = "controller restarted before the run completed"
 	}
-	tr.updateStoredTestStatus(test.ID, test.Status, &now, test.Error)
+	if err := tr.persistStoredTestStatus(test.ID, test.Status, &now, test.Error); err != nil {
+		test.Status = previousStatus
+		test.PendingSince = previousPendingSince
+		test.PendingReason = previousPendingReason
+		test.QueuePosition = previousQueuePosition
+		test.EndedAt = previousEndedAt
+		test.Error = previousError
+		slog.Error("failed to persist recovered test state", "test_id", test.ID, "status", test.Status, "error", err)
+		return
+	}
+	// The hydrated row is deliberately not in tr.tests yet. Release from the
+	// explicit durable binding and retain that slot ID for retry so startup
+	// reconciliation cannot leak capacity merely because map insertion happens
+	// later in the load loop.
+	if test.TimeslotID != nil {
+		slotID := strings.TrimSpace(*test.TimeslotID)
+		if err := tr.releaseCapacityReservationBinding(test.ID, slotID); err != nil {
+			tr.enqueueCapacityReservationReleaseRetry(test.ID, slotID)
+		}
+	}
 }
 
 func managedTestFromRecord(record *storage.TestRecord) *ManagedTest {
@@ -386,6 +435,10 @@ func cloneScenarioScriptRefs(in []ScenarioScriptRef) []ScenarioScriptRef {
 	copy(out, in)
 	for i := range out {
 		out[i].Stages = cloneLoadStages(in[i].Stages)
+		if in[i].Iterations != nil {
+			iterations := *in[i].Iterations
+			out[i].Iterations = &iterations
+		}
 		out[i].RuntimeSettings = cloneRuntimeSettings(in[i].RuntimeSettings)
 		out[i].Assignment = cloneGeneratorAssignmentSettings(in[i].Assignment)
 	}
@@ -569,16 +622,47 @@ func (tr *TestRunner) loadRunArchiveFromStore(id string) (*storage.RunArchiveRec
 	return record, true
 }
 
-func (tr *TestRunner) saveStoredScript(script *dsl.Script) {
-	if tr.scriptStore != nil {
-		tr.scriptStore.SaveScript(script)
+// forgetProject removes successfully deleted project data from the controller's
+// in-memory indexes so deleted assets are not served until the next restart.
+func (tr *TestRunner) forgetProject(projectID string) {
+	projectID = normalizeProjectID(projectID)
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	for id, script := range tr.scripts {
+		if script != nil && normalizeProjectID(script.ProjectID) == projectID {
+			tr.removeRefKeyLocked(script.RefKey)
+			delete(tr.scripts, id)
+		}
+	}
+	for id, scenario := range tr.scenarios {
+		if scenario != nil && normalizeProjectID(scenario.ProjectID) == projectID {
+			tr.removeRefKeyLocked(scenario.RefKey)
+			delete(tr.scenarios, id)
+		}
+	}
+	for id, test := range tr.tests {
+		if test != nil && normalizeProjectID(test.ProjectID) == projectID {
+			tr.removeRefKeyLocked(test.RefKey)
+			delete(tr.tests, id)
+			delete(tr.archives, id)
+			forgetRunArchiveCache(id)
+			deleteGroupMetricsHistoryCache(id)
+		}
 	}
 }
 
-func (tr *TestRunner) deleteStoredScript(id string) {
+func (tr *TestRunner) saveStoredScript(script *dsl.Script) error {
 	if tr.scriptStore != nil {
-		tr.scriptStore.DeleteScript(id)
+		return tr.scriptStore.SaveScript(script)
 	}
+	return nil
+}
+
+func (tr *TestRunner) deleteStoredScript(id string) error {
+	if tr.scriptStore != nil {
+		return tr.scriptStore.DeleteScript(id)
+	}
+	return nil
 }
 
 func buildManagedTestRecord(test *ManagedTest) *storage.TestRecord {
@@ -621,10 +705,11 @@ func buildManagedTestRecord(test *ManagedTest) *storage.TestRecord {
 	}
 }
 
-func (tr *TestRunner) saveManagedTestRecord(test *ManagedTest) {
+func (tr *TestRunner) saveManagedTestRecord(test *ManagedTest) error {
 	if tr.testStore != nil {
-		tr.testStore.SaveTest(buildManagedTestRecord(test))
+		return tr.testStore.SaveTest(buildManagedTestRecord(test))
 	}
+	return nil
 }
 
 func (tr *TestRunner) AttributeTestCreated(id string, subject string, displayName string) {
@@ -635,9 +720,15 @@ func (tr *TestRunner) AttributeTestCreated(id string, subject string, displayNam
 	if !ok {
 		return
 	}
+	previousSubject := test.CreatedBySubject
+	previousDisplayName := test.CreatedByDisplayName
 	test.CreatedBySubject = strings.TrimSpace(subject)
 	test.CreatedByDisplayName = strings.TrimSpace(displayName)
-	tr.saveManagedTestRecord(test)
+	if err := tr.saveManagedTestRecord(test); err != nil {
+		test.CreatedBySubject = previousSubject
+		test.CreatedByDisplayName = previousDisplayName
+		slog.Warn("failed to persist test creator attribution", "test_id", id, "error", err)
+	}
 }
 
 func (tr *TestRunner) AttributeTestStarted(id string, subject string, displayName string) {
@@ -648,9 +739,15 @@ func (tr *TestRunner) AttributeTestStarted(id string, subject string, displayNam
 	if !ok {
 		return
 	}
+	previousSubject := test.StartedBySubject
+	previousDisplayName := test.StartedByDisplayName
 	test.StartedBySubject = strings.TrimSpace(subject)
 	test.StartedByDisplayName = strings.TrimSpace(displayName)
-	tr.saveManagedTestRecord(test)
+	if err := tr.saveManagedTestRecord(test); err != nil {
+		test.StartedBySubject = previousSubject
+		test.StartedByDisplayName = previousDisplayName
+		slog.Warn("failed to persist test starter attribution", "test_id", id, "error", err)
+	}
 }
 
 func (tr *TestRunner) AttributeTestStopped(id string, subject string, displayName string) {
@@ -661,9 +758,15 @@ func (tr *TestRunner) AttributeTestStopped(id string, subject string, displayNam
 	if !ok {
 		return
 	}
+	previousSubject := test.StoppedBySubject
+	previousDisplayName := test.StoppedByDisplayName
 	test.StoppedBySubject = strings.TrimSpace(subject)
 	test.StoppedByDisplayName = strings.TrimSpace(displayName)
-	tr.saveManagedTestRecord(test)
+	if err := tr.saveManagedTestRecord(test); err != nil {
+		test.StoppedBySubject = previousSubject
+		test.StoppedByDisplayName = previousDisplayName
+		slog.Warn("failed to persist test stopper attribution", "test_id", id, "error", err)
+	}
 }
 
 func (tr *TestRunner) AttributeTestExecutionPlanApproval(id string, approval *storage.ExecutionPlanApproval) {
@@ -678,27 +781,57 @@ func (tr *TestRunner) AttributeTestExecutionPlanApproval(id string, approval *st
 	if !ok {
 		return
 	}
+	previousApproval := test.ExecutionPlanApproval
 	test.ExecutionPlanApproval = snapshot
-	tr.saveManagedTestRecord(test)
-}
-
-func (tr *TestRunner) deleteStoredTest(id string) {
-	if tr.testStore != nil {
-		tr.testStore.DeleteTest(id)
+	if err := tr.saveManagedTestRecord(test); err != nil {
+		test.ExecutionPlanApproval = previousApproval
+		slog.Warn("failed to persist execution-plan approval attribution", "test_id", id, "error", err)
 	}
 }
 
-func (tr *TestRunner) saveLiveMetricsHistory(testID string, timestamp time.Time, live *LiveMetrics) {
+func (tr *TestRunner) deleteStoredTest(id string) error {
+	if tr.testStore != nil {
+		return tr.testStore.DeleteTest(id)
+	}
+	return nil
+}
+
+func (tr *TestRunner) saveLiveMetricsHistory(testID string, timestamp time.Time, live *LiveMetrics) error {
 	if tr.historyStore != nil {
-		tr.historyStore.SaveHistory(testID, timestamp, live)
+		return tr.historyStore.SaveHistory(testID, timestamp, live)
 	}
+	return nil
 }
 
-func (tr *TestRunner) updateStoredTestStatus(testID string, status string, endTime *time.Time, errStr string) {
-	if tr.testStore != nil {
-		tr.testStore.UpdateTestStatus(testID, status, endTime, errStr)
+func (tr *TestRunner) updateStoredTestStatus(testID string, status string, endTime *time.Time, errStr string) error {
+	if err := tr.persistStoredTestStatus(testID, status, endTime, errStr); err != nil {
+		return err
 	}
-	tr.releaseCapacityReservationForTerminalStatus(testID, status)
+	// A terminal status is visible to admission only after the durable test row
+	// commits. Releasing the reservation first would let new work consume capacity
+	// while a failover controller still sees the run as active.
+	if err := tr.releaseCapacityReservationForTerminalStatus(testID, status); err != nil {
+		tr.mu.RLock()
+		slotID := ""
+		if test := tr.tests[testID]; test != nil && test.TimeslotID != nil {
+			slotID = strings.TrimSpace(*test.TimeslotID)
+		}
+		tr.mu.RUnlock()
+		tr.enqueueCapacityReservationReleaseRetry(testID, slotID)
+	}
+	return nil
+}
+
+// persistStoredTestStatus writes only the test transition. Callers that hold
+// tr.mu use this helper and release secondary resources after unlocking, avoiding
+// the recursive tr.mu read taken by releaseCapacityReservationForTerminalStatus.
+func (tr *TestRunner) persistStoredTestStatus(testID string, status string, endTime *time.Time, errStr string) error {
+	if tr.testStore == nil {
+		return nil
+	}
+	return retryDurableTransition(func() error {
+		return tr.testStore.UpdateTestStatus(testID, status, endTime, errStr)
+	})
 }
 
 func (tr *TestRunner) saveRunArchiveRecord(record *storage.RunArchiveRecord) error {

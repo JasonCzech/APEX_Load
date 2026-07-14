@@ -66,3 +66,53 @@ func TestHandleUpdateScenarioDataPoolsRejectsForeignProjectPools(t *testing.T) {
 		t.Fatalf("body = %q, want cross-project data pool error", resp.Body.String())
 	}
 }
+
+func TestHandleUpdateScenarioDataPoolsRefreshesRunnerSnapshot(t *testing.T) {
+	store, err := storage.NewSQLiteStore(t.TempDir() + "/apexload.db")
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	now := time.Now().UTC()
+	project := &storage.Project{ID: "project-live-bindings", Name: "Live bindings", CreatedAt: now, UpdatedAt: now}
+	if err := store.SaveProject(project); err != nil {
+		t.Fatal(err)
+	}
+	script := &dsl.Script{
+		ID: "script-live-bindings", Name: "Checkout", Protocol: "http", Version: "1.0.0", ProjectID: project.ID,
+		Config: dsl.ScriptConfig{BaseURL: "https://example.com"}, Actions: []dsl.Action{{Name: "Open", Type: "GET", Target: "/"}},
+	}
+	if err := store.SaveScript(script); err != nil {
+		t.Fatal(err)
+	}
+	scenario := &storage.Scenario{ID: "scenario-live-bindings", Name: "Checkout", Duration: "1m", CreatedAt: now, UpdatedAt: now}
+	if err := store.SaveScenario(scenario, []storage.ScenarioScript{{ScenarioID: scenario.ID, Order: 0, ScriptID: script.ID, VUsers: 1}}); err != nil {
+		t.Fatal(err)
+	}
+	pool := &storage.SharedDataPool{ID: "pool-live-bindings", Name: "Customers", ProjectID: project.ID, CreatedAt: now, UpdatedAt: now}
+	if err := store.SaveDataPool(pool); err != nil {
+		t.Fatal(err)
+	}
+
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	body := bytes.NewBufferString(`{"data_pools":[{"pool_id":"pool-live-bindings","alias":"customers","access_mode":"read_only","selection_strategy":"sequential"}]}`)
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/scenarios/"+scenario.ID+"/data-pools", body)
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	live, ok := server.runner.GetScenario(scenario.ID)
+	if !ok || len(live.DataPools) != 1 || live.DataPools[0].PoolID != pool.ID || live.DataPools[0].Alias != "customers" {
+		t.Fatalf("runner scenario did not refresh bindings: %+v", live)
+	}
+	// A consumer must not be able to mutate the runner through a returned slice.
+	live.DataPools[0].Alias = "tampered"
+	again, _ := server.runner.GetScenario(scenario.ID)
+	if again.DataPools[0].Alias != "customers" {
+		t.Fatalf("returned scenario aliases runner state: %+v", again.DataPools)
+	}
+}

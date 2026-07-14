@@ -403,6 +403,39 @@ func (s *Server) applyMetadataCordonOnReconnect(backend identityDrainableExecuti
 
 // ---- provisioning requests -----------------------------------------------
 
+type provisioningRequestCASStore interface {
+	CreateProvisioningRequestIfAbsent(req *storage.ProvisioningRequest) (bool, error)
+	TransitionProvisioningRequest(req *storage.ProvisioningRequest, expectedRevision int, expectedAttemptToken string) (bool, error)
+}
+
+func (s *Server) createProvisioningRequest(req *storage.ProvisioningRequest) error {
+	if cas, ok := s.store.(provisioningRequestCASStore); ok {
+		created, err := cas.CreateProvisioningRequestIfAbsent(req)
+		if err != nil {
+			return err
+		}
+		if !created {
+			return fmt.Errorf("provisioning request %s already exists", req.ID)
+		}
+		return nil
+	}
+	return s.store.SaveProvisioningRequest(req)
+}
+
+func (s *Server) transitionProvisioningRequest(req *storage.ProvisioningRequest, expectedRevision int, expectedAttemptToken string) error {
+	if cas, ok := s.store.(provisioningRequestCASStore); ok {
+		changed, err := cas.TransitionProvisioningRequest(req, expectedRevision, expectedAttemptToken)
+		if err != nil {
+			return err
+		}
+		if !changed {
+			return fmt.Errorf("provisioning request changed concurrently")
+		}
+		return nil
+	}
+	return s.store.SaveProvisioningRequest(req)
+}
+
 func (s *Server) handleCreateProvisioningRequest(w http.ResponseWriter, r *http.Request) {
 	if !s.requireExecutionLeader(w) {
 		return
@@ -438,6 +471,8 @@ func (s *Server) handleCreateProvisioningRequest(w http.ResponseWriter, r *http.
 		return
 	}
 	req.ID = uuid.New().String()
+	req.Revision = 1
+	req.AttemptToken = uuid.New().String()
 	req.ProjectID = normalizeProjectID(req.ProjectID)
 	_, req.RequestedBySubject, _ = s.resolveAuditActor(r)
 	now := time.Now()
@@ -446,7 +481,7 @@ func (s *Server) handleCreateProvisioningRequest(w http.ResponseWriter, r *http.
 		// A real provisioner is wired: actually scale the pool's workload and
 		// drive the request through its lifecycle.
 		req.Status = "provisioning"
-		if err := s.store.SaveProvisioningRequest(&req); err != nil {
+		if err := s.createProvisioningRequest(&req); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -454,15 +489,30 @@ func (s *Server) handleCreateProvisioningRequest(w http.ResponseWriter, r *http.
 		s.saveProvisioningEvent(req.ID, "provisioning", fmt.Sprintf("scaling pool %q toward %d generators", pool.Name, req.DesiredCount), now)
 
 		workload, scaledTo, perr := s.fleetScaler.ScalePool(r.Context(), pool, req.DesiredCount)
+		if s.runner == nil || !s.runner.isExecutionLeader() {
+			writeError(w, http.StatusConflict, "execution leadership changed while provisioning; result left for the active leader to reconcile")
+			return
+		}
 		done := time.Now()
+		expectedRevision := req.Revision
+		expectedAttemptToken := req.AttemptToken
+		req.Revision++
 		req.CompletedAt = &done
 		if perr != nil {
 			req.Status = "failed"
-			_ = s.store.SaveProvisioningRequest(&req)
+			if err := s.transitionProvisioningRequest(&req, expectedRevision, expectedAttemptToken); err != nil {
+				slog.Error("failed to persist failed provisioning request", "request_id", req.ID, "error", err)
+				writeError(w, http.StatusInternalServerError, "provisioning failed and its terminal state could not be persisted")
+				return
+			}
 			s.saveProvisioningEvent(req.ID, "failure", "provisioning failed: "+perr.Error(), done)
 		} else {
 			req.Status = "success"
-			_ = s.store.SaveProvisioningRequest(&req)
+			if err := s.transitionProvisioningRequest(&req, expectedRevision, expectedAttemptToken); err != nil {
+				slog.Error("failed to persist successful provisioning request", "request_id", req.ID, "error", err)
+				writeError(w, http.StatusInternalServerError, "fleet was scaled but the provisioning result could not be persisted")
+				return
+			}
 			s.saveProvisioningEvent(req.ID, "success", fmt.Sprintf("scaled %s to %d replicas", workload, scaledTo), done)
 			pool.DesiredSize = scaledTo
 			if err := s.store.SaveFleetPool(pool); err != nil {
@@ -488,7 +538,7 @@ func (s *Server) handleCreateProvisioningRequest(w http.ResponseWriter, r *http.
 	req.Status = "not_configured"
 	req.CompletedAt = &now
 	req.Events = nil
-	if err := s.store.SaveProvisioningRequest(&req); err != nil {
+	if err := s.createProvisioningRequest(&req); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -583,9 +633,13 @@ func (s *Server) handleCancelProvisioningRequest(w http.ResponseWriter, r *http.
 		return
 	}
 	now := time.Now()
+	expectedRevision := req.Revision
+	expectedAttemptToken := req.AttemptToken
 	req.Status = "cancelled"
+	req.Revision++
+	req.AttemptToken = uuid.New().String()
 	req.CompletedAt = &now
-	if err := s.store.SaveProvisioningRequest(req); err != nil {
+	if err := s.transitionProvisioningRequest(req, expectedRevision, expectedAttemptToken); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to cancel provisioning request")
 		return
 	}
@@ -633,19 +687,30 @@ func (s *Server) handleRetryProvisioningRequest(w http.ResponseWriter, r *http.R
 	}
 
 	now := time.Now()
+	expectedRevision := req.Revision
+	expectedAttemptToken := req.AttemptToken
 	req.CompletedAt = nil
 	req.Status = "provisioning"
-	if err := s.store.SaveProvisioningRequest(req); err != nil {
+	req.Revision++
+	req.AttemptToken = uuid.New().String()
+	if err := s.transitionProvisioningRequest(req, expectedRevision, expectedAttemptToken); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to retry provisioning request")
 		return
 	}
 	s.saveProvisioningEvent(req.ID, "retry", "provisioning retry requested", now)
 
 	status, workload, scaledTo, message := s.executeProvisioningScale(r.Context(), req, pool)
+	if s.runner == nil || !s.runner.isExecutionLeader() {
+		writeError(w, http.StatusConflict, "execution leadership changed while provisioning; result left for the active leader to reconcile")
+		return
+	}
 	done := time.Now()
+	expectedRevision = req.Revision
+	expectedAttemptToken = req.AttemptToken
 	req.Status = status
+	req.Revision++
 	req.CompletedAt = &done
-	if err := s.store.SaveProvisioningRequest(req); err != nil {
+	if err := s.transitionProvisioningRequest(req, expectedRevision, expectedAttemptToken); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to persist provisioning retry result")
 		return
 	}

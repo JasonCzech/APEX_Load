@@ -1,4 +1,4 @@
-import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { ApplicationRepository, DashboardAuthEffectiveAccessResource, DraftCapacityEstimate, GeneratorAssignmentSettings, GoalConfig, GoalSizingReport, LoadModelSupportEntry, LoadModelTemplate, LoadModelValidationReport, LoadStageDraft, RunArchiveActionStats, RunArchiveReport, RuntimeSettingsOverride, ScenarioDataPoolBinding, ScenarioMode, ScenarioRuntimeSettingsDraft, SharedDataPool, StoredScenario, StoredScript, SystemInventoryGenerator, TestSummary } from '../types'
 import { type ScriptConfig } from '../types/scripts'
@@ -10,7 +10,7 @@ import { formatTimeCompact, isValidDurationInput, parseDurationToSeconds } from 
 import './TestHub.css'
 import './CreateTestModal.css'
 import { buildCreateTestPayload, buildScenarioUpsertPayload } from './scenarioPayloadUtils'
-import { SortIndicator } from './SortIndicator'
+import { SortHeader } from './SortHeader'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
 import RuntimeSettingsGroupEditor from './RuntimeSettingsGroupEditor'
 import GroupPlacementEditor from './GroupPlacementEditor'
@@ -28,6 +28,7 @@ import ReferenceKeyBadge from './ReferenceKeyBadge'
 import { useHasTopbarContributionProvider, useTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { clearScenarioBuilderDraft, hasScenarioBuilderProgress } from './scenarioBuilderDraft'
 import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
+import { useModalDialog } from '../hooks/useModalDialog'
 
 interface Props {
   applicationRepository?: ApplicationRepository | null
@@ -1032,6 +1033,7 @@ function ScenarioModelPreviewPanel({
 function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, onNavigate, onScenarioViewChange, initialView = 'library' }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
+  const activeProjectId = activeProject?.id
   const [engineDefaults, setEngineDefaults] = useState<ScriptConfig | undefined>(undefined)
   const [scenarios, setScenarios] = useState<StoredScenario[]>([])
   const [scripts, setScripts] = useState<StoredScript[]>([])
@@ -1107,11 +1109,66 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   const scriptGroupRefs = useRef<Array<HTMLDivElement | null>>([])
   const goalBaselineTableRef = useRef<HTMLDivElement | null>(null)
   const goalSizingResultRef = useRef<HTMLDivElement | null>(null)
+  const deleteScenarioDialogRef = useRef<HTMLDivElement | null>(null)
+  const deleteScenarioInitialFocusRef = useRef<HTMLButtonElement | null>(null)
   const editingBaselineFormRef = useRef('')
   const persistScenarioRef = useRef<() => Promise<StoredScenario | null>>(async () => null)
   const resetScenarioBuilderRef = useRef<() => void>(() => undefined)
   const refreshRef = useRef<() => Promise<void>>(async () => undefined)
   const isScenarioBuilderDirtyRef = useRef<() => boolean>(() => false)
+  const currentProjectIdRef = useRef(activeProjectId)
+  const refreshGenerationRef = useRef(0)
+  const goalSizingScopeGenerationRef = useRef(0)
+  const goalBaselineSelectionGenerationRef = useRef(0)
+  const effectiveAccessScopeKey = `${activeProjectId || ''}\u0000${activeProject?.domain_id || ''}\u0000${applicationRepository?.id || ''}`
+  const effectiveAccessScopeKeyRef = useRef(effectiveAccessScopeKey)
+  effectiveAccessScopeKeyRef.current = effectiveAccessScopeKey
+  if (currentProjectIdRef.current !== activeProjectId) {
+    currentProjectIdRef.current = activeProjectId
+    refreshGenerationRef.current += 1
+    goalSizingScopeGenerationRef.current += 1
+    goalBaselineSelectionGenerationRef.current += 1
+  }
+  const closeDeleteScenarioDialog = useCallback(() => setConfirmDeleteScenarioId(null), [])
+  useModalDialog({
+    dialogRef: deleteScenarioDialogRef,
+    enabled: Boolean(confirmDeleteScenarioId),
+    initialFocusRef: deleteScenarioInitialFocusRef,
+    onClose: closeDeleteScenarioDialog,
+  })
+
+  useLayoutEffect(() => {
+    setScenarios([])
+    setScripts([])
+    setDataPools([])
+    setSelectedCloneScenarioId('')
+    setExpandedScenarioId(null)
+    setScenarioRuns({})
+    setLoadingRunsFor(null)
+    setConfirmDeleteScenarioId(null)
+    setGoalBaselineTests([])
+    setGoalBaselineId('')
+    setGoalBaselineQuery('')
+    setExpandedGoalBaselineId(null)
+    setGoalBaselineReports({})
+    setGoalBaselineReportErrors({})
+    setGoalBaselineLoadingId('')
+    setGoalBaselineGroups([])
+    setGoalTargetTps({})
+    setGoalSizingResult(null)
+    setGoalSizingError('')
+    setGoalSizingLoading(false)
+    setGoalSizingOpen(false)
+    setEffectiveAuthAccessResources([])
+    setEffectiveAccessLoaded(false)
+    setError('')
+    setForm(current => ({
+      ...current,
+      data_pool_id: undefined,
+      data_pool_alias: undefined,
+      groups: current.groups.map(group => ({ ...group, script_id: '' })),
+    }))
+  }, [activeProjectId])
   const resetGoalBaselineTableScroll = () => {
     if (goalBaselineTableRef.current) goalBaselineTableRef.current.scrollLeft = 0
   }
@@ -1229,14 +1286,18 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   }, [dataPools, form, showBrowserRuntimeSettings])
 
   const refresh = useCallback(async () => {
+    const projectId = activeProjectId
+    const requestGeneration = ++refreshGenerationRef.current
+    if (!projectId) return
     try {
       const [scenarioRes, scriptRes, dataPoolRes, templateRes, supportRes] = await Promise.all([
-        api.listScenarios(activeProject?.id),
-        api.listScripts(activeProject?.id),
-        api.listDataPools(activeProject?.id),
+        api.listScenarios(projectId),
+        api.listScripts(projectId),
+        api.listDataPools(projectId),
         api.listLoadModelTemplates(),
         api.getLoadModelSupportMatrix(),
       ])
+      if (requestGeneration !== refreshGenerationRef.current || currentProjectIdRef.current !== projectId) return
       const nextScenarios = scenarioRes.scenarios || []
       const nextScripts = scriptRes.scripts || []
       setScenarios(nextScenarios)
@@ -1252,11 +1313,13 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
         }))),
       }))
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Unable to load scenarios'))
+      if (requestGeneration === refreshGenerationRef.current && currentProjectIdRef.current === projectId) {
+        setError(getErrorMessage(err, 'Unable to load scenarios'))
+      }
     }
-  }, [activeProject?.id, api])
+  }, [activeProjectId, api])
 
-  useEffect(() => { refresh() }, [refresh])
+  useEffect(() => { void refresh() }, [refresh])
   // Engine config defaults are static app-wide; fetch once so the runtime editor can
   // show the actual inherited value (never a blank placeholder) for unset fields.
   useEffect(() => {
@@ -1266,21 +1329,27 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   }, [api])
   useEffect(() => {
     let cancelled = false
+    const projectId = activeProjectId
+    const requestScopeKey = effectiveAccessScopeKey
+    const isCurrentRequest = () => !cancelled && effectiveAccessScopeKeyRef.current === requestScopeKey
+    setEffectiveAuthAccessResources([])
+    setEffectiveAccessLoaded(false)
+    if (!projectId) return () => { cancelled = true }
     const loadEffectiveAccess = async () => {
       try {
-        const response = await api.getAuthEffectiveAccess(activeProject?.id, {
+        const response = await api.getAuthEffectiveAccess(projectId, {
           domain_id: activeProject?.domain_id,
           application_repository_id: applicationRepository?.id,
         })
-        if (!cancelled) {
+        if (isCurrentRequest()) {
           setEffectiveAuthAccessResources(response.resources || [])
         }
       } catch {
-        if (!cancelled) {
+        if (isCurrentRequest()) {
           setEffectiveAuthAccessResources([])
         }
       } finally {
-        if (!cancelled) {
+        if (isCurrentRequest()) {
           setEffectiveAccessLoaded(true)
         }
       }
@@ -1289,7 +1358,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     return () => {
       cancelled = true
     }
-  }, [activeProject?.id, activeProject?.domain_id, api, applicationRepository?.id])
+  }, [activeProjectId, activeProject?.domain_id, api, applicationRepository?.id, effectiveAccessScopeKey])
   useEffect(() => {
     // Only tear down manage-only views once access has loaded; the brief
     // default-DENY window before the access fetch resolves must not reset a
@@ -1381,7 +1450,12 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     })
   }, [scenarios, scenarioQuery, scenarioReleaseFilter, sortField, sortDirection])
 
-  const scenarioFederation = useLibraryFederation({ kind: 'scenario', projectId: activeProject?.id, onRefreshLocal: refresh })
+  const scenarioFederation = useLibraryFederation({
+    kind: 'scenario',
+    projectId: activeProjectId,
+    onRefreshLocal: refresh,
+    requireProjectScope: true,
+  })
 
   const knownScenarioIds = useMemo(() => new Set(scenarios.map(scenario => scenario.id)), [scenarios])
 
@@ -1740,10 +1814,23 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     setShowForm(true)
     setEditingId(null)
     editingBaselineFormRef.current = ''
+    const projectId = activeProjectId
+    const scopeGeneration = goalSizingScopeGenerationRef.current
+    const requestGeneration = ++goalBaselineSelectionGenerationRef.current
     try {
-      const response = await api.listTests({ project_id: activeProject?.id })
+      const response = await api.listTests({ project_id: projectId })
+      if (
+        currentProjectIdRef.current !== projectId
+        || goalSizingScopeGenerationRef.current !== scopeGeneration
+        || goalBaselineSelectionGenerationRef.current !== requestGeneration
+      ) return
       setGoalBaselineTests((response.tests || []).filter(test => test.status === 'COMPLETE'))
     } catch (err: unknown) {
+      if (
+        currentProjectIdRef.current !== projectId
+        || goalSizingScopeGenerationRef.current !== scopeGeneration
+        || goalBaselineSelectionGenerationRef.current !== requestGeneration
+      ) return
       setGoalSizingError(getErrorMessage(err, 'Unable to load completed runs'))
     }
   }
@@ -1751,22 +1838,44 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   const loadGoalBaselineReport = async (testId: string): Promise<RunArchiveReport> => {
     const cached = goalBaselineReports[testId]
     if (cached) return cached
-    setGoalBaselineLoadingId(testId)
-    setGoalBaselineReportErrors(prev => ({ ...prev, [testId]: '' }))
+    const projectId = activeProjectId
+    const scopeGeneration = goalSizingScopeGenerationRef.current
+    const isCurrentScope = () => (
+      currentProjectIdRef.current === projectId
+      && goalSizingScopeGenerationRef.current === scopeGeneration
+    )
+    if (isCurrentScope()) {
+      setGoalBaselineLoadingId(testId)
+      setGoalBaselineReportErrors(prev => ({ ...prev, [testId]: '' }))
+    }
     try {
       const report = await api.getTestArchiveReport(testId)
-      setGoalBaselineReports(prev => ({ ...prev, [testId]: report }))
+      if (isCurrentScope()) {
+        setGoalBaselineReports(prev => ({ ...prev, [testId]: report }))
+      }
       return report
     } catch (err: unknown) {
       const message = getErrorMessage(err, 'Unable to load the baseline run report')
-      setGoalBaselineReportErrors(prev => ({ ...prev, [testId]: message }))
+      if (isCurrentScope()) {
+        setGoalBaselineReportErrors(prev => ({ ...prev, [testId]: message }))
+      }
       throw new Error(message)
     } finally {
-      setGoalBaselineLoadingId(current => current === testId ? '' : current)
+      if (isCurrentScope()) {
+        setGoalBaselineLoadingId(current => current === testId ? '' : current)
+      }
     }
   }
 
   const selectGoalBaseline = async (testId: string) => {
+    const projectId = activeProjectId
+    const scopeGeneration = goalSizingScopeGenerationRef.current
+    const selectionGeneration = ++goalBaselineSelectionGenerationRef.current
+    const isCurrentSelection = () => (
+      currentProjectIdRef.current === projectId
+      && goalSizingScopeGenerationRef.current === scopeGeneration
+      && goalBaselineSelectionGenerationRef.current === selectionGeneration
+    )
     resetGoalBaselineTableScroll()
     setGoalBaselineId(testId)
     setExpandedGoalBaselineId(testId || null)
@@ -1777,6 +1886,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     if (!testId) return
     try {
       const report = await loadGoalBaselineReport(testId)
+      if (!isCurrentSelection()) return
       const options = baselineGroupOptions(report)
       if (options.length === 0) {
         setGoalSizingError('This run has no response-time data to size from.')
@@ -1785,11 +1895,18 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       setGoalBaselineGroups(options)
       setGoalTargetTps(Object.fromEntries(options.map(option => [option.group, ''])))
     } catch (err: unknown) {
+      if (!isCurrentSelection()) return
       setGoalSizingError(getErrorMessage(err, 'Unable to load the baseline run report'))
     }
   }
 
   const toggleGoalBaselineExpanded = async (testId: string) => {
+    const projectId = activeProjectId
+    const scopeGeneration = goalSizingScopeGenerationRef.current
+    const isCurrentScope = () => (
+      currentProjectIdRef.current === projectId
+      && goalSizingScopeGenerationRef.current === scopeGeneration
+    )
     resetGoalBaselineTableScroll()
     if (expandedGoalBaselineId === testId) {
       setExpandedGoalBaselineId(null)
@@ -1800,6 +1917,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     try {
       await loadGoalBaselineReport(testId)
     } catch (err: unknown) {
+      if (!isCurrentScope()) return
       setGoalSizingError(getErrorMessage(err, 'Unable to load the baseline run report'))
     }
   }
@@ -2286,21 +2404,11 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
             <table>
               <thead>
                 <tr>
-                  <th onClick={() => handleInnerSort('name')} className="sortable">
-                    Run Name <SortIndicator active={innerSortField === 'name'} direction={innerSortDirection} />
-                  </th>
-                  <th onClick={() => handleInnerSort('status')} className="sortable">
-                    Status <SortIndicator active={innerSortField === 'status'} direction={innerSortDirection} />
-                  </th>
-                  <th onClick={() => handleInnerSort('release_id')} className="sortable">
-                    Release ID <SortIndicator active={innerSortField === 'release_id'} direction={innerSortDirection} />
-                  </th>
-                  <th onClick={() => handleInnerSort('start_time')} className="sortable">
-                    Started <SortIndicator active={innerSortField === 'start_time'} direction={innerSortDirection} />
-                  </th>
-                  <th onClick={() => handleInnerSort('duration')} className="sortable">
-                    Duration <SortIndicator active={innerSortField === 'duration'} direction={innerSortDirection} />
-                  </th>
+                  <SortHeader label="Run Name" field="name" sort={{ field: innerSortField, direction: innerSortDirection }} onSort={handleInnerSort} />
+                  <SortHeader label="Status" field="status" sort={{ field: innerSortField, direction: innerSortDirection }} onSort={handleInnerSort} />
+                  <SortHeader label="Release ID" field="release_id" sort={{ field: innerSortField, direction: innerSortDirection }} onSort={handleInnerSort} />
+                  <SortHeader label="Started" field="start_time" sort={{ field: innerSortField, direction: innerSortDirection }} onSort={handleInnerSort} />
+                  <SortHeader label="Duration" field="duration" sort={{ field: innerSortField, direction: innerSortDirection }} onSort={handleInnerSort} />
                   <th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
@@ -2510,14 +2618,14 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
               <thead>
                 <tr>
                   <th>Scripts</th>
-                  <th onClick={() => handleGoalBaselineSort('name')} className="sortable">Run <SortIndicator active={goalBaselineSortField === 'name'} direction={goalBaselineSortDirection} /></th>
-                  <th onClick={() => handleGoalBaselineSort('id')} className="sortable">Run ID <SortIndicator active={goalBaselineSortField === 'id'} direction={goalBaselineSortDirection} /></th>
-                  <th onClick={() => handleGoalBaselineSort('started_at')} className="sortable">Run Date/Time <SortIndicator active={goalBaselineSortField === 'started_at'} direction={goalBaselineSortDirection} /></th>
-                  <th onClick={() => handleGoalBaselineSort('duration')} className="sortable">Overall Duration <SortIndicator active={goalBaselineSortField === 'duration'} direction={goalBaselineSortDirection} /></th>
-                  <th onClick={() => handleGoalBaselineSort('vusers')} className="sortable">VUsers <SortIndicator active={goalBaselineSortField === 'vusers'} direction={goalBaselineSortDirection} /></th>
-                  <th onClick={() => handleGoalBaselineSort('peak_tps')} className="sortable">Peak TPS <SortIndicator active={goalBaselineSortField === 'peak_tps'} direction={goalBaselineSortDirection} /></th>
-                  <th onClick={() => handleGoalBaselineSort('art')} className="sortable">ART <SortIndicator active={goalBaselineSortField === 'art'} direction={goalBaselineSortDirection} /></th>
-                  <th onClick={() => handleGoalBaselineSort('error_rate')} className="sortable">Error Rate <SortIndicator active={goalBaselineSortField === 'error_rate'} direction={goalBaselineSortDirection} /></th>
+                  <SortHeader label="Run" field="name" sort={{ field: goalBaselineSortField, direction: goalBaselineSortDirection }} onSort={handleGoalBaselineSort} />
+                  <SortHeader label="Run ID" field="id" sort={{ field: goalBaselineSortField, direction: goalBaselineSortDirection }} onSort={handleGoalBaselineSort} />
+                  <SortHeader label="Run Date/Time" field="started_at" sort={{ field: goalBaselineSortField, direction: goalBaselineSortDirection }} onSort={handleGoalBaselineSort} />
+                  <SortHeader label="Overall Duration" field="duration" sort={{ field: goalBaselineSortField, direction: goalBaselineSortDirection }} onSort={handleGoalBaselineSort} />
+                  <SortHeader label="VUsers" field="vusers" sort={{ field: goalBaselineSortField, direction: goalBaselineSortDirection }} onSort={handleGoalBaselineSort} numeric />
+                  <SortHeader label="Peak TPS" field="peak_tps" sort={{ field: goalBaselineSortField, direction: goalBaselineSortDirection }} onSort={handleGoalBaselineSort} numeric />
+                  <SortHeader label="ART" field="art" sort={{ field: goalBaselineSortField, direction: goalBaselineSortDirection }} onSort={handleGoalBaselineSort} numeric />
+                  <SortHeader label="Error Rate" field="error_rate" sort={{ field: goalBaselineSortField, direction: goalBaselineSortDirection }} onSort={handleGoalBaselineSort} numeric />
                   <th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
@@ -3532,12 +3640,12 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
             <table>
               <thead>
                 <tr>
-                  <th onClick={() => handleScriptLibrarySort('name')} className="sortable">Script <SortIndicator active={scriptLibrarySortField === 'name'} direction={scriptLibrarySortDirection} /></th>
-                  <th onClick={() => handleScriptLibrarySort('created_at')} className="sortable">Created <SortIndicator active={scriptLibrarySortField === 'created_at'} direction={scriptLibrarySortDirection} /></th>
-                  <th onClick={() => handleScriptLibrarySort('last_run_at')} className="sortable">Last Run <SortIndicator active={scriptLibrarySortField === 'last_run_at'} direction={scriptLibrarySortDirection} /></th>
-                  <th onClick={() => handleScriptLibrarySort('associated_scenarios')} className="sortable">Associated Scenarios <SortIndicator active={scriptLibrarySortField === 'associated_scenarios'} direction={scriptLibrarySortDirection} /></th>
-                  <th onClick={() => handleScriptLibrarySort('associated_releases')} className="sortable">Associated Releases <SortIndicator active={scriptLibrarySortField === 'associated_releases'} direction={scriptLibrarySortDirection} /></th>
-                  <th onClick={() => handleScriptLibrarySort('protocol')} className="sortable">Protocol(s) <SortIndicator active={scriptLibrarySortField === 'protocol'} direction={scriptLibrarySortDirection} /></th>
+                  <SortHeader label="Script" field="name" sort={{ field: scriptLibrarySortField, direction: scriptLibrarySortDirection }} onSort={handleScriptLibrarySort} />
+                  <SortHeader label="Created" field="created_at" sort={{ field: scriptLibrarySortField, direction: scriptLibrarySortDirection }} onSort={handleScriptLibrarySort} />
+                  <SortHeader label="Last Run" field="last_run_at" sort={{ field: scriptLibrarySortField, direction: scriptLibrarySortDirection }} onSort={handleScriptLibrarySort} />
+                  <SortHeader label="Associated Scenarios" field="associated_scenarios" sort={{ field: scriptLibrarySortField, direction: scriptLibrarySortDirection }} onSort={handleScriptLibrarySort} numeric />
+                  <SortHeader label="Associated Releases" field="associated_releases" sort={{ field: scriptLibrarySortField, direction: scriptLibrarySortDirection }} onSort={handleScriptLibrarySort} numeric />
+                  <SortHeader label="Protocol(s)" field="protocol" sort={{ field: scriptLibrarySortField, direction: scriptLibrarySortDirection }} onSort={handleScriptLibrarySort} />
                   <th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
@@ -3632,13 +3740,13 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
             <thead>
               <tr>
                 <th>Source</th>
-                <th onClick={() => handleSort('name')} className="sortable">Scenario <SortIndicator active={sortField === 'name'} direction={sortDirection} /></th>
-                <th onClick={() => handleSort('last_run_test_id')} className="sortable">Test ID <SortIndicator active={sortField === 'last_run_test_id'} direction={sortDirection} /></th>
-                <th onClick={() => handleSort('scripts')} className="sortable">Workload <SortIndicator active={sortField === 'scripts'} direction={sortDirection} /></th>
-                <th onClick={() => handleSort('associated_releases')} className="sortable">Associated Releases <SortIndicator active={sortField === 'associated_releases'} direction={sortDirection} /></th>
-                <th onClick={() => handleSort('created_at')} className="sortable">Create Date <SortIndicator active={sortField === 'created_at'} direction={sortDirection} /></th>
-                <th onClick={() => handleSort('last_run_at')} className="sortable">Start <SortIndicator active={sortField === 'last_run_at'} direction={sortDirection} /></th>
-                <th onClick={() => handleSort('last_run_ended_at')} className="sortable">Finish <SortIndicator active={sortField === 'last_run_ended_at'} direction={sortDirection} /></th>
+                <SortHeader label="Scenario" field="name" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} />
+                <SortHeader label="Test ID" field="last_run_test_id" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} />
+                <SortHeader label="Workload" field="scripts" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} numeric />
+                <SortHeader label="Associated Releases" field="associated_releases" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} numeric />
+                <SortHeader label="Create Date" field="created_at" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} />
+                <SortHeader label="Start" field="last_run_at" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} />
+                <SortHeader label="Finish" field="last_run_ended_at" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} />
                 <th style={{ textAlign: 'right' }}>Actions</th>
               </tr>
             </thead>
@@ -3785,17 +3893,25 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       )}
 
       {confirmDeleteScenarioId && (
-        <div className="modal-overlay" onClick={() => setConfirmDeleteScenarioId(null)}>
-          <div className="modal" role="dialog" aria-modal="true" onClick={event => event.stopPropagation()}>
+        <div className="modal-overlay" onClick={closeDeleteScenarioDialog}>
+          <div
+            ref={deleteScenarioDialogRef}
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-scenario-dialog-title"
+            aria-describedby="delete-scenario-dialog-description"
+            onClick={event => event.stopPropagation()}
+          >
             <div className="modal-header">
-              <h3>Delete Scenario</h3>
-              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setConfirmDeleteScenarioId(null)}>Cancel</button>
+              <h3 id="delete-scenario-dialog-title">Delete Scenario</h3>
+              <button ref={deleteScenarioInitialFocusRef} type="button" className="btn btn-secondary btn-sm" onClick={closeDeleteScenarioDialog}>Cancel</button>
             </div>
             <div className="monitor-body">
-              <p>Permanently delete <strong>{scenarios.find(s => s.id === confirmDeleteScenarioId)?.name || 'this scenario'}</strong>? Scenarios with linked results cannot be deleted.</p>
+              <p id="delete-scenario-dialog-description">Permanently delete <strong>{scenarios.find(s => s.id === confirmDeleteScenarioId)?.name || 'this scenario'}</strong>? Scenarios with linked results cannot be deleted.</p>
               <p style={{ color: 'var(--danger)', fontWeight: 600 }}>This action cannot be undone.</p>
               <div className="settings-inline-actions">
-                <button className="btn btn-secondary" type="button" onClick={() => setConfirmDeleteScenarioId(null)}>Cancel</button>
+                <button className="btn btn-secondary" type="button" onClick={closeDeleteScenarioDialog}>Cancel</button>
                 <button className="btn btn-danger" type="button" onClick={() => deleteScenario(confirmDeleteScenarioId)}>Delete Scenario</button>
               </div>
             </div>

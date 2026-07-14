@@ -81,6 +81,10 @@ describe('ResultsPage', () => {
           archive: { ref_key: 'LOC-RUN-20260512-002', transaction_count: 1100 },
         },
       ],
+      count: 2,
+      total: 1200,
+      limit: 1000,
+      offset: 0,
     })
     apiMock.getReleaseSLAGovernance.mockResolvedValue({
       generated_at: '2026-05-12T20:00:00Z',
@@ -1200,10 +1204,27 @@ describe('ResultsPage', () => {
     expect(container.textContent).toContain('Library Sources')
     expect(container.querySelectorAll('.library-source-panel')).toHaveLength(1)
     expect(container.querySelectorAll('.library-source-table')).toHaveLength(1)
+    expect(apiMock.listTests).toHaveBeenCalledWith(expect.objectContaining({
+      application_id: 'app-1',
+      limit: 1000,
+      release_id: 'rel-1',
+      summary: true,
+    }))
+    expect(container.querySelector('.results-truncation-status')?.textContent).toContain('Showing the newest 2 of 1,200 local results')
     expect(Array.from(container.querySelectorAll('h3.section-title')).map(header => header.textContent)).toEqual(['Library Sources'])
     const headerLabels = Array.from(container.querySelectorAll('.library-source-table thead th'))
       .map(header => (header.textContent || '').replace(/[↕↑↓]/g, '').trim())
     expect(headerLabels).toEqual(['Compare', 'Source', 'Scenario', 'Status', 'VUsers', 'Groups', 'Started', 'Duration', 'Archive', 'Actions'])
+    const sourceSortButton = Array.from(container.querySelectorAll<HTMLButtonElement>('.library-source-table thead th.sortable > button'))
+      .find(button => button.textContent?.includes('Source'))
+    const startedSortButton = Array.from(container.querySelectorAll<HTMLButtonElement>('.library-source-table thead th.sortable > button'))
+      .find(button => button.textContent?.includes('Started'))
+    expect(sourceSortButton?.closest('th')?.getAttribute('aria-sort')).toBe('none')
+    expect(startedSortButton?.closest('th')?.getAttribute('aria-sort')).toBe('descending')
+    await act(async () => {
+      sourceSortButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(sourceSortButton?.closest('th')?.getAttribute('aria-sort')).toBe('ascending')
     const sourceCell = sourceRowNamed(container, 'iPhone Checkout').querySelector('.results-source-cell')
     expect(sourceCell?.textContent?.trim()).toBe('Local')
     expect(container.textContent).not.toContain('local only')

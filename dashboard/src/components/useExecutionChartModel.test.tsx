@@ -13,17 +13,20 @@ function ChartHarness({
   test,
   history,
   localMetricsHistory,
+  archiveSummaryHistory = [],
   archiveResourceHistory = [],
 }: {
   test: unknown
   history: MetricsHistoryPoint[]
   localMetricsHistory: MetricsHistoryPoint[]
+  archiveSummaryHistory?: MetricsHistoryPoint[]
   archiveResourceHistory?: MetricsHistoryPoint[]
 }) {
   const model = useExecutionChartModel({
     test: test as never,
     history,
     localMetricsHistory,
+    archiveSummaryHistory,
     archiveResourceHistory,
   })
 
@@ -32,6 +35,7 @@ function ChartHarness({
       <span data-testid="time-range">{model.timeRange}</span>
       <span data-testid="filtered-count">{model.filteredData.length}</span>
       <span data-testid="avg-tps">{model.summary?.avgTps ?? 0}</span>
+      <span data-testid="avg-latency">{model.summary?.avgLatency ?? 0}</span>
       <span data-testid="latest-cpu">{model.filteredData[model.filteredData.length - 1]?.cpuProcess ?? 'none'}</span>
       <span data-testid="latest-net">{model.filteredData[model.filteredData.length - 1]?.netSent ?? 'none'}</span>
       <span data-testid="show-ref-area">{model.showRefArea ? 'yes' : 'no'}</span>
@@ -179,6 +183,87 @@ describe('useExecutionChartModel', () => {
     expect(readTestId('avg-tps')).toBe('5')
     expect(readTestId('latest-cpu')).toBe('42')
     expect(readTestId('latest-net')).toBe('128')
+  })
+
+  it('uses the full archived summary as the authoritative terminal series after live samples were collected', async () => {
+    await act(async () => {
+      root.render(
+        <ChartHarness
+          test={{ status: 'FAILED', history: [] }}
+          history={[]}
+          localMetricsHistory={[
+            {
+              time: '7:59:59 PM',
+              timestampMs: Date.parse('2026-05-12T19:59:59Z'),
+              vusers: 10,
+              tps: 999,
+              avgMs: 9999,
+              errorPct: 99,
+              p50: 9999,
+              p90: 9999,
+              p99: 9999,
+            },
+          ]}
+          archiveSummaryHistory={[
+            {
+              time: '8:00:00 PM',
+              timestampMs: Date.parse('2026-05-12T20:00:00Z'),
+              vusers: 10,
+              tps: 23,
+              avgMs: 145,
+              errorPct: 1.5,
+              p50: 100,
+              p90: 170,
+              p95: 190,
+              p99: 240,
+            },
+            {
+              time: '8:00:01 PM',
+              timestampMs: Date.parse('2026-05-12T20:00:01Z'),
+              vusers: 10,
+              tps: 27,
+              avgMs: 155,
+              errorPct: 0.5,
+              p50: 110,
+              p90: 180,
+              p95: 200,
+              p99: 250,
+            },
+          ]}
+          archiveResourceHistory={[
+            {
+              time: '8:00:00 PM',
+              timestampMs: Date.parse('2026-05-12T20:00:00Z'),
+              vusers: 10,
+              tps: 0,
+              avgMs: 0,
+              errorPct: 0,
+              p50: 0,
+              p90: 0,
+              p99: 0,
+              cpuProcess: 61,
+            },
+            {
+              time: '8:00:01 PM',
+              timestampMs: Date.parse('2026-05-12T20:00:01Z'),
+              vusers: 10,
+              tps: 0,
+              avgMs: 0,
+              errorPct: 0,
+              p50: 0,
+              p90: 0,
+              p99: 0,
+              cpuProcess: 62,
+            },
+          ]}
+        />,
+      )
+    })
+
+    expect(readTestId('filtered-count')).toBe('2')
+    expect(readTestId('avg-tps')).toBe('25')
+    expect(readTestId('avg-latency')).toBe('150')
+    expect(readTestId('latest-cpu')).toBe('62')
   })
 
   it('tracks drag selection and applies custom zoom', async () => {

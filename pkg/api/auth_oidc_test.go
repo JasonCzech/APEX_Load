@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -17,6 +18,30 @@ import (
 	"github.com/go-jose/go-jose/v3/jwt"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
+
+func TestSanitizeReturnToRejectsNetworkPathVariants(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{name: "local path", raw: "/results/run-1?tab=summary#latency", want: "/results/run-1?tab=summary#latency"},
+		{name: "empty", raw: "", want: "/"},
+		{name: "absolute", raw: "https://evil.test/", want: "/"},
+		{name: "network path", raw: "//evil.test/", want: "/"},
+		{name: "backslash network path", raw: "/\\\\evil.test/", want: "/"},
+		{name: "encoded backslash network path", raw: "/%5c%5cevil.test/", want: "/"},
+		{name: "encoded slash network path", raw: "/%2f%2fevil.test/", want: "/"},
+		{name: "control character", raw: "/safe\nLocation: https://evil.test", want: "/"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := sanitizeReturnTo(test.raw); got != test.want {
+				t.Fatalf("sanitizeReturnTo(%q) = %q, want %q", test.raw, got, test.want)
+			}
+		})
+	}
+}
 
 func TestHandleGetAuthStatusReturnsOIDCLoginAndLogoutURLs(t *testing.T) {
 	provider := newFakeOIDCProvider(t)
@@ -56,6 +81,37 @@ func TestHandleGetAuthStatusReturnsOIDCLoginAndLogoutURLs(t *testing.T) {
 	}
 	if payload.SessionStatus != "missing" {
 		t.Fatalf("session status = %q, want missing", payload.SessionStatus)
+	}
+}
+
+func TestOIDCLoginCachesProviderDiscoveryAndRateLimitsAnonymousRequests(t *testing.T) {
+	provider := newFakeOIDCProvider(t)
+	defer provider.Close()
+	t.Setenv("APEXLOAD_OIDC_CLIENT_SECRET", "test-client-secret")
+	t.Setenv("APEXLOAD_AUTH_SESSION_SECRET", "test-session-secret")
+	t.Setenv("APEXLOAD_OIDC_LOGIN_RATE_LIMIT_PER_MINUTE", "2")
+
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	enableOIDCAuth(t, server, provider.Issuer)
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest(http.MethodGet, oidcLoginPath, nil)
+		req.RemoteAddr = "203.0.113.7:1234"
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+		if resp.Code != http.StatusFound {
+			t.Fatalf("login %d status = %d, want %d body=%s", i+1, resp.Code, http.StatusFound, resp.Body.String())
+		}
+	}
+	if calls := provider.discoveryCalls.Load(); calls != 1 {
+		t.Fatalf("provider discovery calls = %d, want 1", calls)
+	}
+
+	limitedReq := httptest.NewRequest(http.MethodGet, oidcLoginPath, nil)
+	limitedReq.RemoteAddr = "203.0.113.7:1234"
+	limitedResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(limitedResp, limitedReq)
+	if limitedResp.Code != http.StatusTooManyRequests {
+		t.Fatalf("limited login status = %d, want %d body=%s", limitedResp.Code, http.StatusTooManyRequests, limitedResp.Body.String())
 	}
 }
 
@@ -495,10 +551,11 @@ func getenvOrFatal(t *testing.T, key string) string {
 }
 
 type fakeOIDCProvider struct {
-	Issuer string
-	server *httptest.Server
-	key    *rsa.PrivateKey
-	keyID  string
+	Issuer         string
+	server         *httptest.Server
+	key            *rsa.PrivateKey
+	keyID          string
+	discoveryCalls atomic.Int64
 }
 
 func newFakeOIDCProvider(t *testing.T) *fakeOIDCProvider {
@@ -513,6 +570,7 @@ func newFakeOIDCProvider(t *testing.T) *fakeOIDCProvider {
 	provider.Issuer = provider.server.URL
 
 	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
+		provider.discoveryCalls.Add(1)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"issuer":                                provider.Issuer,
 			"authorization_endpoint":                provider.Issuer + "/authorize",

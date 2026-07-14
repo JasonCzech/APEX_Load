@@ -31,14 +31,18 @@ func (s *SQLiteStore) SaveScriptRecording(record *ScriptRecordingRecord) error {
 	if len(record.Observations) > maxRecordingObservations {
 		record.Observations = record.Observations[:maxRecordingObservations]
 	}
-	if len(record.CorrelationObservations) > maxRecordingObservations {
-		record.CorrelationObservations = record.CorrelationObservations[:maxRecordingObservations]
-	}
 	if len(record.CorrelationObservations) > 0 {
 		record.RequestCount = len(record.CorrelationObservations)
-	} else {
+		if record.RequestCount > maxRecordingObservations {
+			record.RequestCount = maxRecordingObservations
+		}
+	} else if record.RequestCount <= 0 {
 		record.RequestCount = len(record.Observations)
 	}
+	// Raw correlation observations must be encrypted by the API layer. Silently
+	// discard a plaintext sidecar supplied by an older/internal caller so this
+	// persistence boundary can never write recorded credentials in cleartext.
+	record.CorrelationObservations = nil
 	now := time.Now().UTC()
 	if record.CreatedAt.IsZero() {
 		record.CreatedAt = now
@@ -49,9 +53,9 @@ func (s *SQLiteStore) SaveScriptRecording(record *ScriptRecordingRecord) error {
 	if err != nil {
 		return fmt.Errorf("marshal recording observations: %w", err)
 	}
-	correlationObservationsJSON, err := json.Marshal(record.CorrelationObservations)
-	if err != nil {
-		return fmt.Errorf("marshal recording correlation observations: %w", err)
+	correlationObservationsJSON := strings.TrimSpace(record.EncryptedCorrelationObservations)
+	if correlationObservationsJSON == "" {
+		correlationObservationsJSON = "[]"
 	}
 	_, err = s.db.Exec(`INSERT INTO script_recordings (script_id, schema_version, source, sensitivity, request_count, observations_json, correlation_observations_json, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -69,7 +73,7 @@ func (s *SQLiteStore) SaveScriptRecording(record *ScriptRecordingRecord) error {
 		record.Sensitivity,
 		record.RequestCount,
 		string(observationsJSON),
-		string(correlationObservationsJSON),
+		correlationObservationsJSON,
 		record.CreatedAt,
 		record.UpdatedAt,
 	)
@@ -110,11 +114,12 @@ func (s *SQLiteStore) GetScriptRecording(scriptID string) (*ScriptRecordingRecor
 			return nil, fmt.Errorf("unmarshal recording observations: %w", err)
 		}
 	}
-	if correlationObservationsJSON != "" {
-		if err := json.Unmarshal([]byte(correlationObservationsJSON), &record.CorrelationObservations); err != nil {
-			return nil, fmt.Errorf("unmarshal recording correlation observations: %w", err)
-		}
+	if strings.HasPrefix(correlationObservationsJSON, "enc:v1:") {
+		record.EncryptedCorrelationObservations = correlationObservationsJSON
 	}
+	// Deliberately ignore legacy plaintext correlation_observations_json. The
+	// scrubbed Observations view remains available, but old credentials are never
+	// re-exposed by current code.
 	return &record, nil
 }
 

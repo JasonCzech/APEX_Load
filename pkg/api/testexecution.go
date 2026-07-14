@@ -7,14 +7,15 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"github.com/jasonczech/apexload/pkg/api/testexec"
 	"log/slog"
 	"math"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/api/testexec"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -47,10 +48,22 @@ func (tr *TestRunner) StartTestWithOptions(id string, opts StartTestOptions) err
 		if !report.Passed {
 			return tr.markScriptShakeoutReview(id, report)
 		}
-		tr.markScriptShakeoutPassed(id, report)
+		if err := tr.markScriptShakeoutPassed(id, report); err != nil {
+			return err
+		}
+	}
+	// Shakeout can take tens of seconds. Revalidate the HA lease immediately
+	// before the durable INITIALIZING transition so a stale controller cannot
+	// overwrite takeover reconciliation.
+	if !tr.isExecutionLeader() {
+		return errNotExecutionLeader
 	}
 
 	tr.mu.Lock()
+	if !tr.isExecutionLeader() {
+		tr.mu.Unlock()
+		return errNotExecutionLeader
+	}
 	test, err := tr.prepareTestStartLocked(id, opts)
 	tr.mu.Unlock()
 	if err != nil {
@@ -67,7 +80,12 @@ func (tr *TestRunner) StartTestWithOptions(id string, opts StartTestOptions) err
 // markTestPendingLocked transitions test to PENDING with the given reason and
 // broadcasts the change. Shared by the start-gate evaluators so the pending
 // transition semantics live in one place. The caller must hold tr.mu.
-func (tr *TestRunner) markTestPendingLocked(test *ManagedTest, reason string) {
+func (tr *TestRunner) markTestPendingLocked(test *ManagedTest, reason string) error {
+	previousStatus := test.Status
+	previousPendingSince := cloneTimePtr(test.PendingSince)
+	previousPendingReason := test.PendingReason
+	previousQueuePosition := test.QueuePosition
+	previousError := test.Error
 	now := time.Now()
 	test.Status = "PENDING"
 	if test.PendingSince == nil || test.PendingSince.IsZero() {
@@ -76,14 +94,23 @@ func (tr *TestRunner) markTestPendingLocked(test *ManagedTest, reason string) {
 	test.PendingReason = reason
 	test.QueuePosition = 0
 	test.Error = ""
-	tr.saveManagedTestRecord(test)
+	if err := tr.saveManagedTestRecord(test); err != nil {
+		test.Status = previousStatus
+		test.PendingSince = previousPendingSince
+		test.PendingReason = previousPendingReason
+		test.QueuePosition = previousQueuePosition
+		test.Error = previousError
+		return fmt.Errorf("persist pending test state: %w", err)
+	}
 	tr.broadcastEvent("test_pending", test)
+	return nil
 }
 
 // markTestInitializingLocked transitions test to INITIALIZING, clears its pending
 // fields, and binds its execution backend. The caller persists the record because
 // the save timing differs (under the lock for prepare, after unlock for promote).
 func (tr *TestRunner) markTestInitializingLocked(test *ManagedTest) {
+	test.executionCtx, test.cancel = context.WithCancel(context.Background())
 	test.Status = "INITIALIZING"
 	test.PendingSince = nil
 	test.PendingReason = ""
@@ -117,19 +144,27 @@ func (tr *TestRunner) evaluateStartGatesLocked(id string, test *ManagedTest, opt
 		return false, err
 	}
 	if blocked, reason := tr.evaluateQuotaBlockLocked(test, ""); blocked {
-		tr.markTestPendingLocked(test, reason)
+		if err := tr.markTestPendingLocked(test, reason); err != nil {
+			return false, err
+		}
 		return true, nil
 	}
 	return false, nil
 }
 
 func (tr *TestRunner) preflightStartBlocksLocked(id string, opts StartTestOptions) (bool, error) {
+	if err := tr.shutdownErrorLocked(); err != nil {
+		return false, err
+	}
 	test, ok := tr.tests[id]
 	if !ok {
 		return false, fmt.Errorf("test not found: %s", id)
 	}
 	if !testexec.IsStartableTestStatus(test.Status) {
 		return false, testexec.StartableTestStatusError(test.Status)
+	}
+	if err := tr.projectDeletionErrorLocked(test.ProjectID); err != nil {
+		return false, err
 	}
 	return tr.evaluateStartGatesLocked(id, test, opts)
 }
@@ -140,6 +175,9 @@ func (tr *TestRunner) beginScriptShakeoutIfNeeded(id string, opts StartTestOptio
 	}
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
+	if err := tr.shutdownErrorLocked(); err != nil {
+		return nil, err
+	}
 
 	test, ok := tr.tests[id]
 	if !ok {
@@ -151,33 +189,55 @@ func (tr *TestRunner) beginScriptShakeoutIfNeeded(id string, opts StartTestOptio
 	if !testexec.IsStartableTestStatus(test.Status) {
 		return nil, testexec.StartableTestStatusError(test.Status)
 	}
+	if err := tr.projectDeletionErrorLocked(test.ProjectID); err != nil {
+		return nil, err
+	}
 
+	previousStatus := test.Status
+	previousPendingSince := cloneTimePtr(test.PendingSince)
+	previousPendingReason := test.PendingReason
+	previousQueuePosition := test.QueuePosition
+	previousError := test.Error
 	test.Status = "SHAKEOUT"
 	test.PendingSince = nil
 	test.PendingReason = ""
 	test.QueuePosition = 0
 	test.Error = ""
-	tr.saveManagedTestRecord(test)
+	if err := tr.saveManagedTestRecord(test); err != nil {
+		test.Status = previousStatus
+		test.PendingSince = previousPendingSince
+		test.PendingReason = previousPendingReason
+		test.QueuePosition = previousQueuePosition
+		test.Error = previousError
+		return nil, fmt.Errorf("persist script shakeout state: %w", err)
+	}
 	tr.broadcastEvent("script_shakeout_started", test)
 
 	return test, nil
 }
 
-func (tr *TestRunner) markScriptShakeoutPassed(id string, _ ScriptShakeoutReport) {
+func (tr *TestRunner) markScriptShakeoutPassed(id string, _ ScriptShakeoutReport) error {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 
 	test, ok := tr.tests[id]
 	if !ok {
-		return
+		return fmt.Errorf("test not found: %s", id)
 	}
 	if test.Status != "SHAKEOUT" {
-		return
+		return fmt.Errorf("test is %s, shakeout result no longer applies", test.Status)
 	}
+	previousStatus := test.Status
+	previousError := test.Error
 	test.Status = "QUEUED"
 	test.Error = ""
-	tr.saveManagedTestRecord(test)
+	if err := tr.saveManagedTestRecord(test); err != nil {
+		test.Status = previousStatus
+		test.Error = previousError
+		return fmt.Errorf("persist successful script shakeout: %w", err)
+	}
 	tr.broadcastEvent("script_shakeout_passed", test)
+	return nil
 }
 
 func (tr *TestRunner) markScriptShakeoutReview(id string, report ScriptShakeoutReport) error {
@@ -191,20 +251,32 @@ func (tr *TestRunner) markScriptShakeoutReview(id string, report ScriptShakeoutR
 	if test.Status != "SHAKEOUT" {
 		return fmt.Errorf("test is %s, shakeout review no longer applies", test.Status)
 	}
+	previousStatus := test.Status
+	previousError := test.Error
 	test.Status = "SHAKEOUT_REVIEW"
 	test.Error = formatScriptShakeoutEvidence(report)
-	tr.saveManagedTestRecord(test)
+	if err := tr.saveManagedTestRecord(test); err != nil {
+		test.Status = previousStatus
+		test.Error = previousError
+		return fmt.Errorf("persist script shakeout review: %w", err)
+	}
 	tr.broadcastEvent("script_shakeout_failed", test)
 	return &ScriptShakeoutGateError{TestID: id, Report: &report}
 }
 
 func (tr *TestRunner) prepareTestStartLocked(id string, opts StartTestOptions) (*ManagedTest, error) {
+	if err := tr.shutdownErrorLocked(); err != nil {
+		return nil, err
+	}
 	test, ok := tr.tests[id]
 	if !ok {
 		return nil, fmt.Errorf("test not found: %s", id)
 	}
 	if !testexec.IsStartableTestStatus(test.Status) {
 		return nil, testexec.StartableTestStatusError(test.Status)
+	}
+	if err := tr.projectDeletionErrorLocked(test.ProjectID); err != nil {
+		return nil, err
 	}
 
 	if blocked, err := tr.evaluateStartGatesLocked(id, test, opts); err != nil {
@@ -213,8 +285,32 @@ func (tr *TestRunner) prepareTestStartLocked(id string, opts StartTestOptions) (
 		return nil, nil
 	}
 
+	previousStatus := test.Status
+	previousPendingSince := cloneTimePtr(test.PendingSince)
+	previousPendingReason := test.PendingReason
+	previousQueuePosition := test.QueuePosition
+	previousError := test.Error
+	previousExecutionCtx := test.executionCtx
+	previousCancel := test.cancel
+	previousBackend := test.executionBackend
 	tr.markTestInitializingLocked(test)
-	tr.saveManagedTestRecord(test)
+	if err := tr.saveManagedTestRecord(test); err != nil {
+		if test.cancel != nil {
+			test.cancel()
+		}
+		test.Status = previousStatus
+		test.PendingSince = previousPendingSince
+		test.PendingReason = previousPendingReason
+		test.QueuePosition = previousQueuePosition
+		test.Error = previousError
+		test.executionCtx = previousExecutionCtx
+		test.cancel = previousCancel
+		test.executionBackend = previousBackend
+		return nil, fmt.Errorf("persist initializing test state: %w", err)
+	}
+	if previousCancel != nil {
+		previousCancel()
+	}
 	return test, nil
 }
 
@@ -222,6 +318,14 @@ func (tr *TestRunner) ReconcilePendingTests() {
 	// Only the execution leader reconciles. On a non-leader replica (HA) this is
 	// a no-op; the eventual leader runs it via reloadAndReconcile on acquisition.
 	if !tr.isExecutionLeader() {
+		return
+	}
+	// Rebuild sequential plan mappings before pending promotion. Otherwise a
+	// recovered plan-owned test could run to completion without its terminal hook
+	// knowing which durable sequence to advance.
+	if err := tr.recoverSequentialExecutionPlanRuns(); err != nil {
+		slog.Error("failed to recover sequential execution-plan runs", "error", err)
+		tr.enqueueSequentialExecutionPlanRecoveryRetry()
 		return
 	}
 	tr.promotePendingTests()
@@ -266,55 +370,171 @@ func (tr *TestRunner) lockedTestStatus(id string) (string, *ManagedTest, string,
 }
 
 func (tr *TestRunner) StopTest(id string) error {
-	if !tr.isExecutionLeader() {
+	return tr.stopTestWithContext(context.Background(), id, true)
+}
+
+func (tr *TestRunner) stopTest(id string, requireLeadership bool) error {
+	return tr.stopTestWithContext(context.Background(), id, requireLeadership)
+}
+
+func (tr *TestRunner) stopTestWithContext(ctx context.Context, id string, requireLeadership bool) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if requireLeadership && !tr.isExecutionLeader() {
 		return errNotExecutionLeader
 	}
-	id, test, status, err := tr.lockedTestStatus(id)
+	tr.mu.RLock()
+	id = tr.resolveRefKeyLocked(id)
+	tr.mu.RUnlock()
+	unlockControl, err := tr.lockTestLifecycleControl(ctx, id)
 	if err != nil {
 		return err
 	}
-	if status == "QUEUED" || status == "PENDING" || status == "RESERVED" || status == "SHAKEOUT" || status == "SHAKEOUT_REVIEW" {
-		tr.mu.Lock()
-		if current, ok := tr.tests[id]; ok {
-			now := time.Now().UTC()
-			current.Status = "ABORTED"
-			current.PendingSince = nil
-			current.PendingReason = ""
-			current.QueuePosition = 0
-			current.EndedAt = &now
-			if current.Error == "" {
-				current.Error = "test cancelled before start"
-			}
-			tr.saveManagedTestRecord(current)
-			tr.broadcastEvent("test_aborted", current)
-		}
+	defer unlockControl()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if requireLeadership && !tr.isExecutionLeader() {
+		return errNotExecutionLeader
+	}
+
+	tr.mu.Lock()
+	test, ok := tr.tests[id]
+	if !ok {
 		tr.mu.Unlock()
-		tr.advanceExecutionPlanForTest(test, "ABORTED")
-		return nil
+		return fmt.Errorf("test not found: %s", id)
 	}
-	tr.mu.Lock()
-	tr.cancelAllVUserScaleRampsLocked(test)
-	tr.mu.Unlock()
-	if test.multiEngine == nil {
-		backend := tr.resolveBackend(test)
-		if stoppable, ok := backend.(stoppableExecutionBackend); ok {
-			if err := stoppable.StopTest(tr, test); err != nil {
-				return err
-			}
-		} else if test.cancel == nil {
-			return fmt.Errorf("test backend does not support stop")
-		}
-	}
-	if test.cancel != nil {
-		test.cancel()
-	}
-	tr.mu.Lock()
-	if test.Status == "COMPLETE" || test.Status == "FAILED" {
+	if test.remoteFinalizing {
+		// The distributed completion path owns remote teardown once finalization
+		// starts. Treat a concurrent stop as already in progress so it cannot
+		// overlap the finalizer's StopTest fan-out.
 		tr.mu.Unlock()
 		return nil
 	}
-	test.Status = "STOPPING"
+	status := test.Status
+	switch status {
+	case "COMPLETE", "FAILED", "ABORTED":
+		tr.mu.Unlock()
+		return nil
+	case "STOPPING":
+		if requireLeadership {
+			tr.mu.Unlock()
+			return nil
+		}
+		tr.cancelAllVUserScaleRampsLocked(test)
+	case "QUEUED", "PENDING", "RESERVED", "SHAKEOUT", "SHAKEOUT_REVIEW", "INITIALIZING":
+		now := time.Now().UTC()
+		previousPendingSince := cloneTimePtr(test.PendingSince)
+		previousPendingReason := test.PendingReason
+		previousQueuePosition := test.QueuePosition
+		previousEndedAt := cloneTimePtr(test.EndedAt)
+		previousError := test.Error
+		test.Status = "ABORTED"
+		test.PendingSince = nil
+		test.PendingReason = ""
+		test.QueuePosition = 0
+		test.EndedAt = &now
+		if test.Error == "" {
+			test.Error = "test cancelled before start"
+		}
+		if err := tr.saveManagedTestRecord(test); err != nil {
+			test.Status = status
+			test.PendingSince = previousPendingSince
+			test.PendingReason = previousPendingReason
+			test.QueuePosition = previousQueuePosition
+			test.EndedAt = previousEndedAt
+			test.Error = previousError
+			tr.mu.Unlock()
+			return fmt.Errorf("persist aborted test state: %w", err)
+		}
+		tr.cancelAllVUserScaleRampsLocked(test)
+		if test.cancel != nil {
+			test.cancel()
+		}
+		tr.mu.Unlock()
+		tr.broadcastEvent("test_aborted", test)
+		if err := tr.advanceExecutionPlanForTest(test, "ABORTED"); err != nil {
+			return fmt.Errorf("persist aborted execution-plan transition: %w", err)
+		}
+		return nil
+	case "RUNNING", "PAUSED":
+		// Reserve the transition before any blocking backend call. Concurrent
+		// pause/resume/start requests now observe STOPPING and cannot overwrite it.
+		test.Status = "STOPPING"
+		if err := tr.saveManagedTestRecord(test); err != nil {
+			test.Status = status
+			tr.mu.Unlock()
+			return fmt.Errorf("persist stopping test state: %w", err)
+		}
+		tr.cancelAllVUserScaleRampsLocked(test)
+	default:
+		tr.mu.Unlock()
+		return fmt.Errorf("test is %s and cannot be stopped", status)
+	}
+	backend := tr.resolveBackend(test)
+	multiEngine := test.multiEngine
+	cancel := test.cancel
 	tr.mu.Unlock()
+
+	if multiEngine == nil {
+		var stopErr error
+		stopSupported := false
+		if stoppable, ok := backend.(contextStoppableExecutionBackend); ok {
+			stopSupported = true
+			stopErr = stoppable.StopTestContext(ctx, tr, test)
+		} else if stoppable, ok := backend.(stoppableExecutionBackend); ok {
+			stopSupported = true
+			if ctx.Done() == nil {
+				stopErr = stoppable.StopTest(tr, test)
+			} else if cancel == nil {
+				// A legacy stop has no cancellation contract. Bounded shutdown must
+				// not launch a call that can outlive the controller's deadline.
+				stopErr = fmt.Errorf("test backend does not support context-bounded stop")
+			}
+		} else if cancel == nil {
+			stopErr = fmt.Errorf("test backend does not support stop")
+		}
+		if stopErr != nil {
+			if ctx.Err() != nil || distributedStopMayHaveApplied(stopErr) {
+				if cancel != nil {
+					cancel()
+				}
+				tr.broadcastEvent("test_stopping", test)
+				if ctx.Err() != nil {
+					return errors.Join(stopErr, ctx.Err())
+				}
+				return stopErr
+			}
+			if stopSupported {
+				tr.mu.Lock()
+				if test.Status == "STOPPING" {
+					test.Status = status
+					if persistErr := tr.saveManagedTestRecord(test); persistErr != nil {
+						test.Status = "STOPPING"
+						tr.mu.Unlock()
+						return errors.Join(stopErr, fmt.Errorf("persist stop rollback: %w", persistErr))
+					}
+				}
+				tr.mu.Unlock()
+				return stopErr
+			}
+			tr.mu.Lock()
+			if test.Status == "STOPPING" {
+				test.Status = status
+				if persistErr := tr.saveManagedTestRecord(test); persistErr != nil {
+					test.Status = "STOPPING"
+					tr.mu.Unlock()
+					return errors.Join(stopErr, fmt.Errorf("persist stop rollback: %w", persistErr))
+				}
+			}
+			tr.mu.Unlock()
+			return stopErr
+		}
+	}
+	if cancel != nil {
+		cancel()
+	}
 	tr.broadcastEvent("test_stopping", test)
 	return nil
 }
@@ -350,11 +570,19 @@ func (tr *TestRunner) UpdateGoalTargetTPS(id string, groupName string, targetTPS
 
 	now := time.Now().UTC()
 	tr.mu.Lock()
+	if !tr.isExecutionLeader() {
+		tr.mu.Unlock()
+		return nil, errNotExecutionLeader
+	}
 	id = tr.resolveRefKeyLocked(id)
 	test, ok := tr.tests[id]
 	if !ok {
 		tr.mu.Unlock()
 		return nil, fmt.Errorf("test not found: %s", id)
+	}
+	if test.remoteFinalizing {
+		tr.mu.Unlock()
+		return nil, fmt.Errorf("test is finalizing and cannot adjust goal targets")
 	}
 	if test.Status != "RUNNING" && test.Status != "PAUSED" {
 		tr.mu.Unlock()
@@ -391,18 +619,27 @@ func (tr *TestRunner) UpdateGoalTargetTPS(id string, groupName string, targetTPS
 		return nil, fmt.Errorf("target_average_tps must be greater than zero")
 	}
 
+	previousGoalConfig := cloneGoalConfig(test.GoalConfig)
+	previousGoalTargets := cloneGoalTargetStatusMap(test.GoalTargets)
 	if test.GoalConfig == nil {
 		test.GoalConfig = &GoalConfig{}
 	}
 	test.GoalTargets = cloneGoalTargetStatusMap(targets)
 	test.GoalConfig.TargetAverageTPS = &totalTargetTPS
+	if err := tr.saveManagedTestRecord(test); err != nil {
+		test.GoalConfig = previousGoalConfig
+		test.GoalTargets = previousGoalTargets
+		tr.mu.Unlock()
+		return nil, fmt.Errorf("persist goal target adjustment: %w", err)
+	}
 	if test.goalControl != nil {
 		test.goalControl.lastScaleAt = nil
 	}
 	if test.LiveMetrics != nil {
-		applyRuntimeGoalTargetsToLiveMetrics(test, test.LiveMetrics)
+		updated := cloneLiveMetrics(test.LiveMetrics)
+		applyRuntimeGoalTargetsToLiveMetrics(test, updated)
+		replaceLiveMetricsLocked(test, updated)
 	}
-	tr.saveManagedTestRecord(test)
 	projectID := normalizeProjectID(test.ProjectID)
 	testName := test.Name
 	result := &GoalTargetUpdate{
@@ -431,34 +668,47 @@ func (tr *TestRunner) UpdateGoalTargetTPS(id string, groupName string, targetTPS
 }
 
 func (tr *TestRunner) scheduleVUserScaleRamp(id string, groupName string, targetVUsers int, rampDuration time.Duration) error {
+	_, err := tr.startVUserScaleRamp(context.Background(), id, groupName, targetVUsers, rampDuration)
+	return err
+}
+
+func (tr *TestRunner) startVUserScaleRamp(parent context.Context, id string, groupName string, targetVUsers int, rampDuration time.Duration) (*vuserScaleRamp, error) {
 	if targetVUsers < 0 {
-		return fmt.Errorf("target vusers must be non-negative")
+		return nil, fmt.Errorf("target vusers must be non-negative")
 	}
 	if rampDuration <= 0 {
-		return fmt.Errorf("ramp duration must be positive")
+		return nil, fmt.Errorf("ramp duration must be positive")
 	}
 
 	tr.mu.Lock()
+	if !tr.isExecutionLeader() {
+		tr.mu.Unlock()
+		return nil, errNotExecutionLeader
+	}
 	id = tr.resolveRefKeyLocked(id)
 	test, ok := tr.tests[id]
 	if !ok {
 		tr.mu.Unlock()
-		return fmt.Errorf("test not found: %s", id)
+		return nil, fmt.Errorf("test not found: %s", id)
+	}
+	if test.remoteFinalizing {
+		tr.mu.Unlock()
+		return nil, fmt.Errorf("test is finalizing and cannot be scaled")
 	}
 	if test.Status != "RUNNING" {
 		tr.mu.Unlock()
-		return fmt.Errorf("test is %s, must be RUNNING to scale", test.Status)
+		return nil, fmt.Errorf("test is %s, must be RUNNING to scale", test.Status)
 	}
 
 	currentVUsers, found := testGroupVUsers(test, groupName)
 	if !found {
 		tr.mu.Unlock()
-		return fmt.Errorf("group not found: %s", groupName)
+		return nil, fmt.Errorf("group not found: %s", groupName)
 	}
 	tr.cancelVUserScaleRampLocked(test, groupName)
 	if currentVUsers == targetVUsers {
 		tr.mu.Unlock()
-		return nil
+		return nil, nil
 	}
 
 	startedAt := time.Now()
@@ -470,8 +720,12 @@ func (tr *TestRunner) scheduleVUserScaleRamp(id string, groupName string, target
 		RampDuration:        rampDuration.String(),
 		RampDurationSeconds: int64(rampDuration / time.Second),
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	ramp := &vuserScaleRamp{cancel: cancel, status: rampStatus}
+	ctx, cancel := context.WithCancel(parent)
+	ramp := &vuserScaleRamp{
+		cancel: cancel,
+		status: rampStatus,
+		done:   make(chan error, 1),
+	}
 	if test.vuserScaleRamps == nil {
 		test.vuserScaleRamps = make(map[string]*vuserScaleRamp)
 	}
@@ -496,11 +750,16 @@ func (tr *TestRunner) scheduleVUserScaleRamp(id string, groupName string, target
 	})
 
 	go tr.runVUserScaleRamp(ctx, ramp, id, groupName, currentVUsers, targetVUsers, rampDuration)
-	return nil
+	return ramp, nil
 }
 
 func (tr *TestRunner) runVUserScaleRamp(ctx context.Context, ramp *vuserScaleRamp, id string, groupName string, currentVUsers int, targetVUsers int, rampDuration time.Duration) {
-	defer tr.finishVUserScaleRamp(id, groupName, ramp)
+	var result error
+	defer func() {
+		tr.finishVUserScaleRamp(id, groupName, ramp)
+		ramp.done <- result
+		close(ramp.done)
+	}()
 
 	delta := targetVUsers - currentVUsers
 	steps := testexec.AbsInt(delta)
@@ -521,12 +780,14 @@ func (tr *TestRunner) runVUserScaleRamp(ctx context.Context, ramp *vuserScaleRam
 	for step := 1; step <= steps; step++ {
 		select {
 		case <-ctx.Done():
+			result = ctx.Err()
 			return
 		case <-timer.C:
 		}
 
 		nextTarget := currentVUsers + direction*step
 		if err := tr.scaleVUsersNow(id, groupName, nextTarget, false); err != nil {
+			result = err
 			slog.Warn("gradual vuser scale stopped", "test_id", id, "group", groupName, "target_vusers", nextTarget, "error", err)
 			return
 		}
@@ -578,10 +839,31 @@ func (tr *TestRunner) runStageSchedule(ctx context.Context, testID string, group
 		}
 		switch stageType {
 		case "ramp_up", "ramp_down":
-			if err := tr.ScaleVUsersWithOptions(testID, groupName, stage.TargetVUsers, ScaleVUsersOptions{RampDuration: duration}); err != nil {
+			ramp, err := tr.startVUserScaleRamp(ctx, testID, groupName, stage.TargetVUsers, duration)
+			if err != nil {
 				slog.Warn("stage schedule scale failed", "test_id", testID, "group", groupName, "stage", index, "target_vusers", stage.TargetVUsers, "error", err)
 				return
 			}
+			if ramp == nil {
+				if !sleepStageDuration(ctx, duration) {
+					return
+				}
+				continue
+			}
+			select {
+			case <-ctx.Done():
+				ramp.cancel()
+				return
+			case err := <-ramp.done:
+				if err != nil {
+					if errors.Is(err, context.Canceled) {
+						return
+					}
+					slog.Warn("stage schedule ramp stopped", "test_id", testID, "group", groupName, "stage", index, "target_vusers", stage.TargetVUsers, "error", err)
+					return
+				}
+			}
+			continue
 		case "hold":
 			// The engine is already at the hold target: first holds are seeded by
 			// compilation, later holds inherit the preceding ramp target.
@@ -607,12 +889,25 @@ func sleepStageDuration(ctx context.Context, duration time.Duration) bool {
 }
 
 func (tr *TestRunner) scaleVUsersNow(id string, groupName string, targetVUsers int, cancelExistingRamp bool) error {
+	tr.mu.RLock()
+	resolvedID := tr.resolveRefKeyLocked(id)
+	tr.mu.RUnlock()
+	unlockControl := tr.lockDistributedGroupControl(resolvedID, groupName)
+	defer unlockControl()
+	if !tr.isExecutionLeader() {
+		return errNotExecutionLeader
+	}
+
 	tr.mu.Lock()
 	id = tr.resolveRefKeyLocked(id)
 	test, ok := tr.tests[id]
 	if !ok {
 		tr.mu.Unlock()
 		return fmt.Errorf("test not found: %s", id)
+	}
+	if test.remoteFinalizing {
+		tr.mu.Unlock()
+		return fmt.Errorf("test is finalizing and cannot be scaled")
 	}
 	if test.Status != "RUNNING" {
 		tr.mu.Unlock()
@@ -647,7 +942,13 @@ func (tr *TestRunner) scaleVUsersNow(id string, groupName string, targetVUsers i
 		}
 	}
 
-	totalVUsers, projectID := tr.updateTestGroupVUsers(id, groupName, targetVUsers)
+	if !tr.isExecutionLeader() {
+		return errNotExecutionLeader
+	}
+	totalVUsers, projectID, err := tr.updateTestGroupVUsers(id, groupName, targetVUsers)
+	if err != nil {
+		return err
+	}
 	tr.hub.BroadcastJSON(map[string]any{
 		"type":          "vusers_changed",
 		"test_id":       id,
@@ -661,13 +962,22 @@ func (tr *TestRunner) scaleVUsersNow(id string, groupName string, targetVUsers i
 	return nil
 }
 
-func (tr *TestRunner) updateTestGroupVUsers(id string, groupName string, targetVUsers int) (int, string) {
+func (tr *TestRunner) updateTestGroupVUsers(id string, groupName string, targetVUsers int) (int, string, error) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
+	if !tr.isExecutionLeader() {
+		return 0, "", errNotExecutionLeader
+	}
 
 	test, ok := tr.tests[id]
 	if !ok {
-		return 0, ""
+		return 0, "", fmt.Errorf("test not found: %s", id)
+	}
+	if test.remoteFinalizing {
+		return 0, "", fmt.Errorf("test is finalizing and cannot be scaled")
+	}
+	if test.Status != "RUNNING" {
+		return 0, "", fmt.Errorf("test is %s, must be RUNNING to scale", test.Status)
 	}
 	currentTotalVUsers := 0
 	capacityTotalVUsers := 0
@@ -683,7 +993,7 @@ func (tr *TestRunner) updateTestGroupVUsers(id string, groupName string, targetV
 		capacityTotalVUsers += test.Groups[i].VUsers
 	}
 	test.TotalVUsers = capacityTotalVUsers
-	return currentTotalVUsers, normalizeProjectID(test.ProjectID)
+	return currentTotalVUsers, normalizeProjectID(test.ProjectID), nil
 }
 
 func (tr *TestRunner) cancelVUserScaleRampLocked(test *ManagedTest, groupName string) {
@@ -780,35 +1090,109 @@ func groupCurrentVUsers(group TestGroup) int {
 	return group.VUsers
 }
 
+func (tr *TestRunner) applyDurationAdjustment(test *ManagedTest, multiEngine *engine.MultiGroupEngine, backend testExecutionBackend, duration time.Duration) error {
+	if multiEngine != nil {
+		return multiEngine.AdjustDuration(duration)
+	}
+	adjustable, ok := backend.(durationAdjustableExecutionBackend)
+	if !ok {
+		return fmt.Errorf("test backend does not support duration changes")
+	}
+	return adjustable.AdjustDuration(tr, test, duration)
+}
+
+func (tr *TestRunner) applyPause(test *ManagedTest, multiEngine *engine.MultiGroupEngine, backend testExecutionBackend) error {
+	if multiEngine != nil {
+		return multiEngine.Pause()
+	}
+	pausable, ok := backend.(pausableExecutionBackend)
+	if !ok {
+		return fmt.Errorf("test backend does not support pause")
+	}
+	return pausable.PauseTest(tr, test)
+}
+
+func (tr *TestRunner) applyResume(test *ManagedTest, multiEngine *engine.MultiGroupEngine, backend testExecutionBackend) error {
+	if multiEngine != nil {
+		return multiEngine.Resume()
+	}
+	pausable, ok := backend.(pausableExecutionBackend)
+	if !ok {
+		return fmt.Errorf("test backend does not support resume")
+	}
+	return pausable.ResumeTest(tr, test)
+}
+
 func (tr *TestRunner) AdjustDuration(id string, newDuration time.Duration) error {
 	if !tr.isExecutionLeader() {
 		return errNotExecutionLeader
 	}
-	id, test, status, err := tr.lockedTestStatus(id)
+	tr.mu.RLock()
+	id = tr.resolveRefKeyLocked(id)
+	tr.mu.RUnlock()
+	unlockControl, err := tr.lockTestLifecycleControl(context.Background(), id)
 	if err != nil {
 		return err
+	}
+	defer unlockControl()
+	if !tr.isExecutionLeader() {
+		return errNotExecutionLeader
+	}
+
+	tr.mu.RLock()
+	test, ok := tr.tests[id]
+	if !ok {
+		tr.mu.RUnlock()
+		return fmt.Errorf("test not found: %s", id)
+	}
+	status := test.Status
+	finalizing := test.remoteFinalizing
+	oldDuration := test.Duration
+	oldDurationStr := test.DurationStr
+	multiEngine := test.multiEngine
+	backend := tr.resolveBackend(test)
+	tr.mu.RUnlock()
+	if finalizing {
+		return fmt.Errorf("test is finalizing and cannot adjust duration")
 	}
 	if status != "RUNNING" {
 		return fmt.Errorf("test is %s, must be RUNNING to adjust duration", status)
 	}
-	if test.multiEngine == nil {
-		backend := tr.resolveBackend(test)
-		adjustable, ok := backend.(durationAdjustableExecutionBackend)
-		if !ok {
-			return fmt.Errorf("test backend does not support duration changes")
-		}
-		if err := adjustable.AdjustDuration(tr, test, newDuration); err != nil {
-			return err
-		}
-	} else {
-		if err := test.multiEngine.AdjustDuration(newDuration); err != nil {
-			return err
-		}
+	if err := tr.applyDurationAdjustment(test, multiEngine, backend, newDuration); err != nil {
+		return err
 	}
 
 	tr.mu.Lock()
+	if !tr.isExecutionLeader() {
+		tr.mu.Unlock()
+		if rollbackErr := tr.applyDurationAdjustment(test, multiEngine, backend, oldDuration); rollbackErr != nil {
+			return errors.Join(errNotExecutionLeader, fmt.Errorf("restore backend duration: %w", rollbackErr))
+		}
+		return errNotExecutionLeader
+	}
+	if test.Status != status || test.remoteFinalizing {
+		currentStatus := test.Status
+		finalizing := test.remoteFinalizing
+		tr.mu.Unlock()
+		if rollbackErr := tr.applyDurationAdjustment(test, multiEngine, backend, oldDuration); rollbackErr != nil {
+			return errors.Join(fmt.Errorf("test changed while duration was being adjusted"), fmt.Errorf("restore backend duration: %w", rollbackErr))
+		}
+		if finalizing {
+			return fmt.Errorf("test began finalizing while duration was being adjusted")
+		}
+		return fmt.Errorf("test changed from %s to %s while duration was being adjusted", status, currentStatus)
+	}
 	test.Duration = newDuration
 	test.DurationStr = newDuration.String()
+	if err := tr.saveManagedTestRecord(test); err != nil {
+		test.Duration = oldDuration
+		test.DurationStr = oldDurationStr
+		tr.mu.Unlock()
+		if rollbackErr := tr.applyDurationAdjustment(test, multiEngine, backend, oldDuration); rollbackErr != nil {
+			return errors.Join(fmt.Errorf("persist duration adjustment: %w", err), fmt.Errorf("restore backend duration: %w", rollbackErr))
+		}
+		return fmt.Errorf("persist duration adjustment: %w", err)
+	}
 	tr.mu.Unlock()
 
 	tr.hub.BroadcastJSON(map[string]any{
@@ -826,51 +1210,77 @@ func (tr *TestRunner) PauseTest(id string) error {
 	if !tr.isExecutionLeader() {
 		return errNotExecutionLeader
 	}
-	id, test, status, err := tr.lockedTestStatus(id)
+	tr.mu.RLock()
+	id = tr.resolveRefKeyLocked(id)
+	tr.mu.RUnlock()
+	unlockControl, err := tr.lockTestLifecycleControl(context.Background(), id)
 	if err != nil {
 		return err
+	}
+	defer unlockControl()
+	if !tr.isExecutionLeader() {
+		return errNotExecutionLeader
+	}
+
+	tr.mu.RLock()
+	test, ok := tr.tests[id]
+	if !ok {
+		tr.mu.RUnlock()
+		return fmt.Errorf("test not found: %s", id)
+	}
+	status := test.Status
+	finalizing := test.remoteFinalizing
+	multiEngine := test.multiEngine
+	backend := tr.resolveBackend(test)
+	tr.mu.RUnlock()
+	if finalizing {
+		return fmt.Errorf("test is finalizing and cannot be paused")
 	}
 	if status != "RUNNING" {
 		return fmt.Errorf("test is %s, must be RUNNING to pause", status)
 	}
-	if test.multiEngine == nil {
-		backend := tr.resolveBackend(test)
-		pausable, ok := backend.(pausableExecutionBackend)
-		if !ok {
-			return fmt.Errorf("test backend does not support pause")
-		}
-		if err := pausable.PauseTest(tr, test); err != nil {
-			return err
-		}
-	} else {
-		if err := test.multiEngine.Pause(); err != nil {
-			return err
-		}
+	if err := tr.applyPause(test, multiEngine, backend); err != nil {
+		return err
 	}
 
 	tr.mu.Lock()
-	test.Status = "PAUSED"
-	if test.LiveMetrics != nil {
-		// Pointer-swap a copy with the VUser counts zeroed rather than mutating
-		// the shared *LiveMetrics in place: the same object is the newest element
-		// of test.History and is handed (by pointer) to concurrent HTTP/websocket
-		// readers, so an in-place write both races those reads (a Go data race)
-		// and retroactively zeroes the VUser counts of the last recorded history
-		// interval. Every other LiveMetrics update swaps the pointer too.
-		paused := *test.LiveMetrics
-		paused.ActiveVUsers = 0
-		if len(paused.GroupMetrics) > 0 {
-			clonedGroups := make(map[string]*GroupLiveMetrics, len(paused.GroupMetrics))
-			for name, group := range paused.GroupMetrics {
-				cloned := cloneGroupLiveMetrics(group)
-				if cloned != nil {
-					cloned.VUsers = 0
-				}
-				clonedGroups[name] = cloned
-			}
-			paused.GroupMetrics = clonedGroups
+	if !tr.isExecutionLeader() {
+		tr.mu.Unlock()
+		if rollbackErr := tr.applyResume(test, multiEngine, backend); rollbackErr != nil {
+			return errors.Join(errNotExecutionLeader, fmt.Errorf("resume backend after leadership loss: %w", rollbackErr))
 		}
-		test.LiveMetrics = &paused
+		return errNotExecutionLeader
+	}
+	if test.Status != "RUNNING" || test.remoteFinalizing {
+		currentStatus := test.Status
+		finalizing := test.remoteFinalizing
+		tr.mu.Unlock()
+		if rollbackErr := tr.applyResume(test, multiEngine, backend); rollbackErr != nil {
+			return errors.Join(fmt.Errorf("test changed while pause was being applied"), fmt.Errorf("resume backend: %w", rollbackErr))
+		}
+		if finalizing {
+			return fmt.Errorf("test began finalizing while pause was being applied")
+		}
+		return fmt.Errorf("test changed from RUNNING to %s while pause was being applied", currentStatus)
+	}
+	test.Status = "PAUSED"
+	if err := tr.saveManagedTestRecord(test); err != nil {
+		test.Status = "RUNNING"
+		tr.mu.Unlock()
+		if rollbackErr := tr.applyResume(test, multiEngine, backend); rollbackErr != nil {
+			return errors.Join(fmt.Errorf("persist paused test state: %w", err), fmt.Errorf("resume backend after persistence failure: %w", rollbackErr))
+		}
+		return fmt.Errorf("persist paused test state: %w", err)
+	}
+	if test.LiveMetrics != nil {
+		updated := cloneLiveMetrics(test.LiveMetrics)
+		updated.ActiveVUsers = 0
+		for _, group := range updated.GroupMetrics {
+			if group != nil {
+				group.VUsers = 0
+			}
+		}
+		replaceLiveMetricsLocked(test, updated)
 	}
 	tr.mu.Unlock()
 
@@ -883,30 +1293,84 @@ func (tr *TestRunner) ResumeTest(id string) error {
 	if !tr.isExecutionLeader() {
 		return errNotExecutionLeader
 	}
-	id, test, status, err := tr.lockedTestStatus(id)
+	tr.mu.RLock()
+	id = tr.resolveRefKeyLocked(id)
+	tr.mu.RUnlock()
+	unlockControl, err := tr.lockTestLifecycleControl(context.Background(), id)
 	if err != nil {
 		return err
+	}
+	defer unlockControl()
+	if !tr.isExecutionLeader() {
+		return errNotExecutionLeader
+	}
+
+	tr.mu.RLock()
+	test, ok := tr.tests[id]
+	if !ok {
+		tr.mu.RUnlock()
+		return fmt.Errorf("test not found: %s", id)
+	}
+	status := test.Status
+	finalizing := test.remoteFinalizing
+	multiEngine := test.multiEngine
+	backend := tr.resolveBackend(test)
+	tr.mu.RUnlock()
+	if finalizing {
+		return fmt.Errorf("test is finalizing and cannot be resumed")
 	}
 	if status != "PAUSED" {
 		return fmt.Errorf("test is %s, must be PAUSED to resume", status)
 	}
-	if test.multiEngine == nil {
-		backend := tr.resolveBackend(test)
-		pausable, ok := backend.(pausableExecutionBackend)
-		if !ok {
-			return fmt.Errorf("test backend does not support resume")
-		}
-		if err := pausable.ResumeTest(tr, test); err != nil {
-			return err
-		}
-	} else {
-		if err := test.multiEngine.Resume(); err != nil {
-			return err
-		}
+	if err := tr.applyResume(test, multiEngine, backend); err != nil {
+		return err
 	}
 
 	tr.mu.Lock()
+	if !tr.isExecutionLeader() {
+		tr.mu.Unlock()
+		if rollbackErr := tr.applyPause(test, multiEngine, backend); rollbackErr != nil {
+			return errors.Join(errNotExecutionLeader, fmt.Errorf("pause backend after leadership loss: %w", rollbackErr))
+		}
+		return errNotExecutionLeader
+	}
+	if test.Status != "PAUSED" || test.remoteFinalizing {
+		currentStatus := test.Status
+		finalizing := test.remoteFinalizing
+		tr.mu.Unlock()
+		if rollbackErr := tr.applyPause(test, multiEngine, backend); rollbackErr != nil {
+			return errors.Join(fmt.Errorf("test changed while resume was being applied"), fmt.Errorf("pause backend: %w", rollbackErr))
+		}
+		if finalizing {
+			return fmt.Errorf("test began finalizing while resume was being applied")
+		}
+		return fmt.Errorf("test changed from PAUSED to %s while resume was being applied", currentStatus)
+	}
 	test.Status = "RUNNING"
+	if err := tr.saveManagedTestRecord(test); err != nil {
+		test.Status = "PAUSED"
+		tr.mu.Unlock()
+		if rollbackErr := tr.applyPause(test, multiEngine, backend); rollbackErr != nil {
+			return errors.Join(fmt.Errorf("persist resumed test state: %w", err), fmt.Errorf("pause backend after persistence failure: %w", rollbackErr))
+		}
+		return fmt.Errorf("persist resumed test state: %w", err)
+	}
+	// Pause publishes an immediate zero-VUser snapshot. Restore the configured
+	// live counts as part of the durable resume commit instead of leaving the API
+	// and dashboard at zero until the next generator/engine metrics interval.
+	if test.LiveMetrics != nil {
+		updated := cloneLiveMetrics(test.LiveMetrics)
+		activeVUsers := 0
+		for _, configuredGroup := range test.Groups {
+			vusers := groupCurrentVUsers(configuredGroup)
+			activeVUsers += vusers
+			if groupMetrics := updated.GroupMetrics[configuredGroup.Name]; groupMetrics != nil {
+				groupMetrics.VUsers = vusers
+			}
+		}
+		updated.ActiveVUsers = int64(activeVUsers)
+		replaceLiveMetricsLocked(test, updated)
+	}
 	tr.mu.Unlock()
 
 	tr.broadcastEvent("test_resumed", test)
@@ -917,6 +1381,13 @@ func (tr *TestRunner) ResumeTest(id string) error {
 func (tr *TestRunner) runTest(test *ManagedTest) {
 	// Defense in depth: a non-leader must never drive a generator fleet.
 	if !tr.isExecutionLeader() {
+		return
+	}
+	tr.mu.RLock()
+	current := tr.tests[test.ID]
+	startable := !tr.shuttingDown && current == test && test.Status == "INITIALIZING" && test.executionCtx != nil && test.executionCtx.Err() == nil
+	tr.mu.RUnlock()
+	if !startable || !tr.isExecutionLeader() {
 		return
 	}
 	backend := tr.resolveBackend(test)
@@ -1004,12 +1475,29 @@ func (tr *TestRunner) requestStopIfRunning(test *ManagedTest, warningMessage str
 	}
 }
 
-func (tr *TestRunner) startManagedTestRun(test *ManagedTest, mge *engine.MultiGroupEngine, artifacts *runArtifacts) (context.Context, chan struct{}, chan struct{}) {
-	ctx, cancel := context.WithCancel(context.Background())
-
+func (tr *TestRunner) startManagedTestRun(test *ManagedTest, mge *engine.MultiGroupEngine, artifacts *runArtifacts) (context.Context, chan struct{}, chan struct{}, bool, error) {
 	now := time.Now()
 	tr.mu.Lock()
-	test.cancel = cancel
+	previousExecutionCtx := test.executionCtx
+	previousCancel := test.cancel
+	ctx := test.executionCtx
+	if ctx == nil || test.cancel == nil {
+		ctx, test.cancel = context.WithCancel(context.Background())
+		test.executionCtx = ctx
+	}
+	if tr.shuttingDown || test.Status != "INITIALIZING" || ctx.Err() != nil || !tr.isExecutionLeader() {
+		tr.mu.Unlock()
+		return ctx, nil, nil, false, nil
+	}
+	previousMultiEngine := test.multiEngine
+	previousStartedAt := cloneTimePtr(test.StartedAt)
+	previousEndedAt := cloneTimePtr(test.EndedAt)
+	previousStatus := test.Status
+	previousPendingSince := cloneTimePtr(test.PendingSince)
+	previousPendingReason := test.PendingReason
+	previousQueuePosition := test.QueuePosition
+	previousError := test.Error
+	previousGoalControl := test.goalControl
 	test.multiEngine = mge
 	test.StartedAt = &now
 	test.EndedAt = nil
@@ -1019,7 +1507,24 @@ func (tr *TestRunner) startManagedTestRun(test *ManagedTest, mge *engine.MultiGr
 	test.QueuePosition = 0
 	test.Error = ""
 	test.goalControl = &goalControllerState{}
-	tr.saveManagedTestRecord(test)
+	if err := tr.saveManagedTestRecord(test); err != nil {
+		test.multiEngine = previousMultiEngine
+		test.StartedAt = previousStartedAt
+		test.EndedAt = previousEndedAt
+		test.Status = previousStatus
+		test.PendingSince = previousPendingSince
+		test.PendingReason = previousPendingReason
+		test.QueuePosition = previousQueuePosition
+		test.Error = previousError
+		test.goalControl = previousGoalControl
+		if previousExecutionCtx == nil || previousCancel == nil {
+			test.cancel()
+			test.executionCtx = previousExecutionCtx
+			test.cancel = previousCancel
+		}
+		tr.mu.Unlock()
+		return ctx, nil, nil, false, fmt.Errorf("persist running test state: %w", err)
+	}
 	snapshot := buildRunLiveStateSnapshotLocked(test, now)
 	tr.mu.Unlock()
 
@@ -1034,12 +1539,28 @@ func (tr *TestRunner) startManagedTestRun(test *ManagedTest, mge *engine.MultiGr
 		close(metricsStopped)
 	}()
 
-	return ctx, metricsDone, metricsStopped
+	return ctx, metricsDone, metricsStopped, true, nil
 }
 
-func (tr *TestRunner) failTestBeforeRun(test *ManagedTest, message string) {
+func (tr *TestRunner) failTestBeforeRun(test *ManagedTest, message string) error {
 	now := time.Now()
 	tr.mu.Lock()
+	// Startup work runs asynchronously. A stop or leadership-loss cleanup may
+	// have won while a backend was compiling scripts, dialing generators, or
+	// assigning shards. Never resurrect that terminal decision as FAILED.
+	if test == nil || tr.tests[test.ID] != test || test.Status != "INITIALIZING" {
+		tr.mu.Unlock()
+		return nil
+	}
+	if err := tr.persistStoredTestStatus(test.ID, "FAILED", &now, message); err != nil {
+		tr.mu.Unlock()
+		retryErr := fmt.Errorf("persist pre-run test failure: %w", err)
+		slog.Error("failed to persist pre-run test failure; terminal side effects deferred", "test_id", test.ID, "error", retryErr)
+		tr.enqueueTerminalRetry(test.ID, "FAILED before run", func() error {
+			return tr.failTestBeforeRun(test, message)
+		})
+		return retryErr
+	}
 	test.Status = "FAILED"
 	test.PendingSince = nil
 	test.PendingReason = ""
@@ -1047,14 +1568,62 @@ func (tr *TestRunner) failTestBeforeRun(test *ManagedTest, message string) {
 	test.Error = message
 	test.EndedAt = &now
 	tr.mu.Unlock()
-	tr.updateStoredTestStatus(test.ID, "FAILED", &now, message)
+	releaseErr := tr.releaseCapacityReservationForTerminalStatus(test.ID, "FAILED")
+	if releaseErr != nil && test.TimeslotID != nil {
+		tr.enqueueCapacityReservationReleaseRetry(test.ID, strings.TrimSpace(*test.TimeslotID))
+	}
 	tr.broadcastEvent("test_failed", test)
 	tr.promotePendingTests()
-	tr.advanceExecutionPlanForTest(test, "FAILED")
+	if err := tr.advanceExecutionPlanForTest(test, "FAILED"); err != nil {
+		slog.Error("failed to durably advance execution plan after pre-run failure", "test_id", test.ID, "error", err)
+		return errors.Join(releaseErr, err)
+	}
+	return releaseErr
 }
 
-func (tr *TestRunner) completeTestRun(test *ManagedTest, finalStatus string, endTime time.Time, finalError string, archiveRecord *storage.RunArchiveRecord) {
+func (tr *TestRunner) failTestBeforeRunAndLog(test *ManagedTest, message string) {
+	if err := tr.failTestBeforeRun(test, message); err != nil {
+		testID := ""
+		if test != nil {
+			testID = test.ID
+		}
+		slog.Error("pre-run terminal transition remains retryable after bounded persistence retries", "test_id", testID, "error", err)
+	}
+}
+
+func (tr *TestRunner) completeTestRun(test *ManagedTest, finalStatus string, endTime time.Time, finalError string, archiveRecord *storage.RunArchiveRecord) error {
+	if tr == nil || test == nil {
+		return nil
+	}
+	unlockArchiveCommit := tr.lockArchiveCommitFence(test.ID)
+	defer unlockArchiveCommit()
+	return tr.completeTestRunUnderArchiveFence(test, finalStatus, endTime, finalError, archiveRecord)
+}
+
+// completeTestRunUnderArchiveFence performs the terminal row and archive-map
+// commit while the caller owns test.ID's archive commit fence.
+func (tr *TestRunner) completeTestRunUnderArchiveFence(test *ManagedTest, finalStatus string, endTime time.Time, finalError string, archiveRecord *storage.RunArchiveRecord) error {
 	tr.mu.Lock()
+	if test == nil || tr.tests[test.ID] != test {
+		tr.mu.Unlock()
+		return nil
+	}
+	// Completion retries are responsible only for the terminal test row. Once a
+	// terminal transition committed, any execution-plan follow-up has its own
+	// idempotent retry worker; replaying terminal side effects here would duplicate
+	// WebSocket events, usage snapshots, and queue promotion.
+	switch test.Status {
+	case "COMPLETE", "FAILED", "ABORTED":
+		tr.mu.Unlock()
+		return nil
+	}
+	if err := tr.persistStoredTestStatus(test.ID, finalStatus, &endTime, finalError); err != nil {
+		tr.mu.Unlock()
+		retryErr := fmt.Errorf("persist terminal test state: %w", err)
+		slog.Error("failed to persist terminal test state; terminal side effects deferred", "test_id", test.ID, "status", finalStatus, "error", retryErr)
+		tr.enqueueTestCompletionRetry(test, finalStatus, endTime, finalError, archiveRecord)
+		return retryErr
+	}
 	tr.cancelAllVUserScaleRampsLocked(test)
 	test.Status = finalStatus
 	test.PendingSince = nil
@@ -1067,17 +1636,27 @@ func (tr *TestRunner) completeTestRun(test *ManagedTest, finalStatus string, end
 		tr.archives[test.ID] = archiveRecord
 	}
 	tr.mu.Unlock()
+	releaseErr := tr.releaseCapacityReservationForTerminalStatus(test.ID, finalStatus)
+	if releaseErr != nil && test.TimeslotID != nil {
+		tr.enqueueCapacityReservationReleaseRetry(test.ID, strings.TrimSpace(*test.TimeslotID))
+	}
 	tr.captureUsageSnapshotForTerminalRun(test.ID, test.ProjectID)
-	tr.updateStoredTestStatus(test.ID, finalStatus, &endTime, finalError)
 	if finalStatus == "FAILED" {
 		tr.broadcastEvent("test_failed", test)
 		tr.promotePendingTests()
-		tr.advanceExecutionPlanForTest(test, finalStatus)
-		return
+		if err := tr.advanceExecutionPlanForTest(test, finalStatus); err != nil {
+			slog.Error("failed to durably advance execution plan after terminal test failure", "test_id", test.ID, "error", err)
+			return errors.Join(releaseErr, err)
+		}
+		return releaseErr
 	}
 	tr.broadcastEvent("test_complete", test)
 	tr.promotePendingTests()
-	tr.advanceExecutionPlanForTest(test, finalStatus)
+	if err := tr.advanceExecutionPlanForTest(test, finalStatus); err != nil {
+		slog.Error("failed to durably advance execution plan after terminal test completion", "test_id", test.ID, "error", err)
+		return errors.Join(releaseErr, err)
+	}
+	return releaseErr
 }
 
 func (tr *TestRunner) promotePendingTests() {
@@ -1088,39 +1667,109 @@ func (tr *TestRunner) promotePendingTests() {
 	}
 	for {
 		tr.mu.Lock()
+		if tr.shuttingDown {
+			tr.mu.Unlock()
+			return
+		}
 		pending := tr.nextPromotablePendingTestLocked()
 		if pending == nil {
 			tr.mu.Unlock()
 			return
 		}
 		if pending.ScriptShakeout {
+			previousStatus := pending.Status
+			previousPendingSince := cloneTimePtr(pending.PendingSince)
+			previousPendingReason := pending.PendingReason
+			previousQueuePosition := pending.QueuePosition
+			previousError := pending.Error
 			pending.Status = "SHAKEOUT"
 			pending.PendingSince = nil
 			pending.PendingReason = ""
 			pending.QueuePosition = 0
 			pending.Error = ""
-			tr.saveManagedTestRecord(pending)
+			if err := tr.saveManagedTestRecord(pending); err != nil {
+				pending.Status = previousStatus
+				pending.PendingSince = previousPendingSince
+				pending.PendingReason = previousPendingReason
+				pending.QueuePosition = previousQueuePosition
+				pending.Error = previousError
+				tr.mu.Unlock()
+				slog.Warn("pending test promotion could not persist shakeout", "test_id", pending.ID, "error", err)
+				return
+			}
 			tr.broadcastEvent("script_shakeout_started", pending)
 			tr.mu.Unlock()
 
 			report := tr.runScriptShakeoutReport(pending)
 			if !report.Passed {
-				_ = tr.markScriptShakeoutReview(pending.ID, report)
+				if err := tr.markScriptShakeoutReview(pending.ID, report); err != nil {
+					var gateErr *ScriptShakeoutGateError
+					if !errors.As(err, &gateErr) {
+						slog.Warn("pending test promotion could not persist shakeout review", "test_id", pending.ID, "error", err)
+					}
+				}
 				tr.recordSystemTestAudit("test.script_shakeout.review", "blocked", pending, map[string]any{"report": report})
 				continue
 			}
 
 			tr.mu.Lock()
 			current, ok := tr.tests[pending.ID]
-			if !ok || current.Status != "SHAKEOUT" {
+			if !ok || current.Status != "SHAKEOUT" || !tr.isExecutionLeader() {
 				tr.mu.Unlock()
-				continue
+				return
 			}
 			pending = current
+			// Return to a durable retryable state before attempting INITIALIZING.
+			// If that second transition cannot be saved, a later reconciliation can
+			// safely rerun the deterministic shakeout instead of stranding SHAKEOUT.
+			shakeoutStatus := pending.Status
+			shakeoutError := pending.Error
+			now := time.Now()
+			pending.Status = "PENDING"
+			pending.PendingSince = &now
+			pending.PendingReason = "awaiting capacity after script shakeout"
+			pending.QueuePosition = 0
+			pending.Error = ""
+			if err := tr.saveManagedTestRecord(pending); err != nil {
+				pending.Status = shakeoutStatus
+				pending.PendingSince = nil
+				pending.PendingReason = ""
+				pending.Error = shakeoutError
+				tr.mu.Unlock()
+				slog.Warn("pending test promotion could not persist successful shakeout", "test_id", pending.ID, "error", err)
+				return
+			}
+			tr.broadcastEvent("script_shakeout_passed", pending)
 		}
+		previousStatus := pending.Status
+		previousPendingSince := cloneTimePtr(pending.PendingSince)
+		previousPendingReason := pending.PendingReason
+		previousQueuePosition := pending.QueuePosition
+		previousError := pending.Error
+		previousExecutionCtx := pending.executionCtx
+		previousCancel := pending.cancel
+		previousBackend := pending.executionBackend
 		tr.markTestInitializingLocked(pending)
+		if err := tr.saveManagedTestRecord(pending); err != nil {
+			if pending.cancel != nil {
+				pending.cancel()
+			}
+			pending.Status = previousStatus
+			pending.PendingSince = previousPendingSince
+			pending.PendingReason = previousPendingReason
+			pending.QueuePosition = previousQueuePosition
+			pending.Error = previousError
+			pending.executionCtx = previousExecutionCtx
+			pending.cancel = previousCancel
+			pending.executionBackend = previousBackend
+			tr.mu.Unlock()
+			slog.Warn("pending test promotion could not persist initializing state", "test_id", pending.ID, "error", err)
+			return
+		}
+		if previousCancel != nil {
+			previousCancel()
+		}
 		tr.mu.Unlock()
-		tr.saveManagedTestRecord(pending)
 		tr.recordSystemTestAudit("test.pending.promote", "success", pending, map[string]any{
 			"status": pending.Status,
 			"reason": "fair_share_capacity_available",
@@ -1133,7 +1782,7 @@ func (tr *TestRunner) recordSystemTestAudit(action string, status string, test *
 	if tr == nil || tr.scenarioStore == nil || test == nil {
 		return
 	}
-	_ = tr.scenarioStore.SaveAuditEvent(&storage.AuditEvent{
+	if err := tr.scenarioStore.SaveAuditEvent(&storage.AuditEvent{
 		ID:               uuid.New().String(),
 		Action:           action,
 		ActorType:        "system",
@@ -1145,7 +1794,9 @@ func (tr *TestRunner) recordSystemTestAudit(action string, status string, test *
 		Status:           status,
 		Details:          details,
 		CreatedAt:        time.Now().UTC(),
-	})
+	}); err != nil {
+		slog.Warn("failed to persist system test audit event", "test_id", test.ID, "action", action, "error", err)
+	}
 }
 
 func (tr *TestRunner) nextPromotablePendingTestLocked() *ManagedTest {
@@ -1160,6 +1811,9 @@ func (tr *TestRunner) nextPromotablePendingTestLocked() *ManagedTest {
 	}
 	tr.sortPendingTestsForFairShareLocked(pending)
 	for _, test := range pending {
+		if tr.projectDeletionErrorLocked(test.ProjectID) != nil {
+			continue
+		}
 		tr.refreshCapacityAdvisoryLocked(test)
 		if buildStartGovernanceError(test.ID, test.CapacityAdvisory, StartTestOptions{}) != nil {
 			continue

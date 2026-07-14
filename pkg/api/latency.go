@@ -26,7 +26,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
-func (tr *TestRunner) measureNetworkLatency(test *ManagedTest, live *LiveMetrics) {
+func (tr *TestRunner) measureNetworkLatency(test *ManagedTest, _ *LiveMetrics) {
 	// Identify unique base URLs across all groups
 	endpoints := tr.latencyEndpointsForTest(test)
 
@@ -53,21 +53,27 @@ func (tr *TestRunner) measureNetworkLatency(test *ManagedTest, live *LiveMetrics
 	wg.Wait()
 
 	tr.mu.Lock()
+	if test == nil || tr.tests[test.ID] != test {
+		tr.mu.Unlock()
+		return
+	}
 	tr.applyLatencyStabilityLocked(test, latency)
-	live.Latency = cloneNetworkLatency(latency)
 	test.lastNetworkLatency = cloneNetworkLatency(latency)
 	if test.LiveMetrics != nil {
-		test.LiveMetrics.Latency = cloneNetworkLatency(latency)
+		updated := cloneLiveMetrics(test.LiveMetrics)
+		updated.Latency = cloneNetworkLatency(latency)
+		replaceLiveMetricsLocked(test, updated)
 	}
+	testID := test.ID
+	projectID := normalizeProjectID(test.ProjectID)
 	tr.mu.Unlock()
 
 	// Broadcast the latency update specifically if needed,
 	// though it will be part of the next metrics broadcast too.
 	if tr.hub != nil {
-		projectID := normalizeProjectID(test.ProjectID)
-		tr.hub.BroadcastScopedJSON(test.ID, projectID, map[string]any{
+		tr.hub.BroadcastScopedJSON(testID, projectID, map[string]any{
 			"type":       "latency_update",
-			"test_id":    test.ID,
+			"test_id":    testID,
 			"project_id": projectID,
 			"latency":    latency,
 		})

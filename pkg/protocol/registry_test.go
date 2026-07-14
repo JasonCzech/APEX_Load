@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 )
 
@@ -11,6 +12,32 @@ func (m *mockProtocol) Name() string                                   { return 
 func (m *mockProtocol) Init(_ context.Context, _ map[string]any) error { return nil }
 func (m *mockProtocol) Execute(_ context.Context, _ *Action) (*Result, error) {
 	return &Result{Success: true}, nil
+}
+
+func TestRuntimeNamespaceLeaseHoldsAndReleasesManagers(t *testing.T) {
+	var acquired atomic.Int64
+	var released atomic.Int64
+	RegisterRuntimeNamespaceManager("test-runtime-namespace", func(namespace string) {
+		if namespace != "run-1" {
+			t.Errorf("acquire namespace = %q, want run-1", namespace)
+		}
+		acquired.Add(1)
+	}, func(namespace string) {
+		if namespace != "run-1" {
+			t.Errorf("release namespace = %q, want run-1", namespace)
+		}
+		released.Add(1)
+	})
+
+	release := AcquireRuntimeNamespace("run-1")
+	if got := acquired.Load(); got != 1 {
+		t.Fatalf("acquires = %d, want 1", got)
+	}
+	release()
+	release()
+	if got := released.Load(); got != 1 {
+		t.Fatalf("releases = %d, want idempotent single release", got)
+	}
 }
 func (m *mockProtocol) Teardown(_ context.Context) error    { return nil }
 func (m *mockProtocol) HealthCheck(_ context.Context) error { return nil }

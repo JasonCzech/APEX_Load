@@ -13,8 +13,8 @@ const apiMock = {
   getTestArchiveSummaries: vi.fn(),
 }
 
-vi.mock('../hooks/useApi', () => ({
-  useApi: () => apiMock,
+vi.mock('../hooks/api/useTestApi', () => ({
+  useTestApi: () => apiMock,
 }))
 
 function SummaryHistoryHarness({ test }: { test: TestSummary | null }) {
@@ -49,26 +49,18 @@ describe('useExecutionArchiveSummaryHistory', () => {
     vi.clearAllMocks()
   })
 
-  it('loads archived summary pages for completed runs', async () => {
-    apiMock.getTestArchiveSummaries
-      .mockResolvedValueOnce({
-        summaries: [
-          buildSummary('2026-05-12T20:00:00Z', 120, 150),
-        ],
-        total: 2,
-        count: 1,
-        limit: 1000,
-        offset: 0,
-      })
-      .mockResolvedValueOnce({
-        summaries: [
-          buildSummary('2026-05-12T20:00:01Z', 140, 180),
-        ],
-        total: 2,
-        count: 1,
-        limit: 1000,
-        offset: 1,
-      })
+  it('loads a bounded server-downsampled summary series for completed runs', async () => {
+    apiMock.getTestArchiveSummaries.mockResolvedValueOnce({
+      summaries: [
+        buildSummary('2026-05-12T20:00:00Z', 120, 150),
+        buildSummary('2026-05-12T20:00:01Z', 140, 180),
+      ],
+      total: 2,
+      count: 2,
+      limit: 5000,
+      offset: 0,
+      sampled: true,
+    })
 
     await act(async () => {
       root.render(<SummaryHistoryHarness test={buildArchivedTest()} />)
@@ -76,9 +68,8 @@ describe('useExecutionArchiveSummaryHistory', () => {
 
     await flushPromises()
 
-    expect(apiMock.getTestArchiveSummaries).toHaveBeenCalledTimes(2)
-    expect(apiMock.getTestArchiveSummaries).toHaveBeenNthCalledWith(1, 'test-1', { limit: 1000, offset: 0 })
-    expect(apiMock.getTestArchiveSummaries).toHaveBeenNthCalledWith(2, 'test-1', { limit: 1000, offset: 1 })
+    expect(apiMock.getTestArchiveSummaries).toHaveBeenCalledTimes(1)
+    expect(apiMock.getTestArchiveSummaries).toHaveBeenCalledWith('test-1', { sample_limit: 5000 })
     expect(readTestId('loading')).toBe('idle')
     expect(readTestId('count')).toBe('2')
     expect(readTestId('art')).toBe('120')

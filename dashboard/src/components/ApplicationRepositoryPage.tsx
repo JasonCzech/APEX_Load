@@ -17,6 +17,7 @@ import { useProjectApi } from '../hooks/api/useProjectApi'
 import { useScriptApi } from '../hooks/api/useScriptApi'
 import { useTestApi } from '../hooks/api/useTestApi'
 import StatusBadge from './StatusBadge'
+import { SortHeader } from './SortHeader'
 import {
   RepositoryAssetKind,
   RepositoryAssetRow,
@@ -158,11 +159,6 @@ function statusTone(status?: string) {
   if (/(running|complete|active|ready|passed|healthy)/.test(value)) return 'healthy'
   if (/(queued|pending|paused|warning|archived|shakeout)/.test(value)) return 'warning'
   return 'neutral'
-}
-
-function sortIndicator(sort: RepositoryCatalogSort, key: RepositorySortKey) {
-  if (sort.key !== key) return '↕'
-  return sort.direction === 'asc' ? '↑' : '↓'
 }
 
 function splitProtocols(value?: string) {
@@ -931,13 +927,13 @@ export default function ApplicationRepositoryPage({
                       onChange={toggleVisibleRowsSelection}
                     />
                   </th>
-                  <th className="sortable" onClick={() => updateSort('name')}>Asset <span className={`sort-icon ${sort.key === 'name' ? 'active' : ''}`}>{sortIndicator(sort, 'name')}</span></th>
-                  <th className="sortable" onClick={() => updateSort('kind')}>Type <span className={`sort-icon ${sort.key === 'kind' ? 'active' : ''}`}>{sortIndicator(sort, 'kind')}</span></th>
-                  <th className="sortable" onClick={() => updateSort('project')}>Project <span className={`sort-icon ${sort.key === 'project' ? 'active' : ''}`}>{sortIndicator(sort, 'project')}</span></th>
-                  <th className="sortable" onClick={() => updateSort('release')}>Release <span className={`sort-icon ${sort.key === 'release' ? 'active' : ''}`}>{sortIndicator(sort, 'release')}</span></th>
-                  <th className="sortable" onClick={() => updateSort('status')}>Status <span className={`sort-icon ${sort.key === 'status' ? 'active' : ''}`}>{sortIndicator(sort, 'status')}</span></th>
-                  <th className="sortable" onClick={() => updateSort('protocol')}>Protocol <span className={`sort-icon ${sort.key === 'protocol' ? 'active' : ''}`}>{sortIndicator(sort, 'protocol')}</span></th>
-                  <th className="sortable" onClick={() => updateSort('last_activity')}>Activity <span className={`sort-icon ${sort.key === 'last_activity' ? 'active' : ''}`}>{sortIndicator(sort, 'last_activity')}</span></th>
+                  <SortHeader label="Asset" field="name" sort={{ field: sort.key, direction: sort.direction }} onSort={updateSort} />
+                  <SortHeader label="Type" field="kind" sort={{ field: sort.key, direction: sort.direction }} onSort={updateSort} />
+                  <SortHeader label="Project" field="project" sort={{ field: sort.key, direction: sort.direction }} onSort={updateSort} />
+                  <SortHeader label="Release" field="release" sort={{ field: sort.key, direction: sort.direction }} onSort={updateSort} />
+                  <SortHeader label="Status" field="status" sort={{ field: sort.key, direction: sort.direction }} onSort={updateSort} />
+                  <SortHeader label="Protocol" field="protocol" sort={{ field: sort.key, direction: sort.direction }} onSort={updateSort} />
+                  <SortHeader label="Activity" field="last_activity" sort={{ field: sort.key, direction: sort.direction }} onSort={updateSort} />
                   <th>Action</th>
                 </tr>
               </thead>

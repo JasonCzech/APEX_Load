@@ -85,16 +85,28 @@ type TransportSecurity struct {
 
 func (t TransportSecurity) Insecure() bool { return !t.TLS && !t.Token }
 
-// productionEnv is the APEXLOAD_ENV value that arms the fail-closed posture.
+// productionEnv is the canonical APEXLOAD_ENV value that arms the fail-closed posture.
 const productionEnv = "production"
 
 // MustRefuseInsecure reports whether a process running in environment env must
-// refuse to start given this transport posture. The contract is fail-closed in
-// production only: a plaintext, tokenless channel (Insecure) in production is a
-// hard error, while any secured channel — or any non-production environment —
-// is permitted (at most warned about). This keeps local/kind dev permissive.
+// refuse to start given this transport posture. Production requires an
+// encrypted channel and authenticated clients: either mTLS or TLS plus the
+// bearer token. In particular, a token is never accepted over plaintext and a
+// server certificate alone is not client authentication.
 func (t TransportSecurity) MustRefuseInsecure(env string) bool {
-	return t.Insecure() && strings.TrimSpace(env) == productionEnv
+	if !isProductionEnvironment(env) {
+		return false
+	}
+	return !t.TLS || (!t.MutualTLS && !t.Token)
+}
+
+func isProductionEnvironment(env string) bool {
+	switch strings.ToLower(strings.TrimSpace(env)) {
+	case productionEnv, "prod":
+		return true
+	default:
+		return false
+	}
 }
 
 func (t TransportSecurity) String() string {
@@ -154,6 +166,10 @@ func ServerOptionsFromEnv() ([]grpc.ServerOption, error) {
 	if env.CAFile != "" && env.CertFile == "" {
 		return nil, fmt.Errorf("%s requires a server certificate (%s/%s)", grpcTLSCAEnvVar, grpcTLSCertEnvVar, grpcTLSKeyEnvVar)
 	}
+	security := TransportSecurity{TLS: env.CertFile != "", MutualTLS: env.CertFile != "" && env.CAFile != "", Token: env.Token != ""}
+	if security.MustRefuseInsecure(os.Getenv("APEXLOAD_ENV")) {
+		return nil, fmt.Errorf("production gRPC server requires mTLS or TLS plus %s; configured %s", grpcAuthTokenEnvVar, security.String())
+	}
 
 	var options []grpc.ServerOption
 	if env.CertFile != "" {
@@ -204,6 +220,10 @@ func DialOptionsFromEnv() ([]grpc.DialOption, error) {
 	}
 
 	useTLS := env.CAFile != "" || env.CertFile != ""
+	security := TransportSecurity{TLS: useTLS, MutualTLS: env.CertFile != "" && env.CAFile != "", Token: env.Token != ""}
+	if security.MustRefuseInsecure(os.Getenv("APEXLOAD_ENV")) {
+		return nil, fmt.Errorf("production gRPC client requires mTLS or verified TLS plus %s; configured %s", grpcAuthTokenEnvVar, security.String())
+	}
 	options := []grpc.DialOption{
 		grpc.WithConnectParams(grpc.ConnectParams{
 			Backoff: backoff.Config{
