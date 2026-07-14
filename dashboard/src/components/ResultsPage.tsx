@@ -8,7 +8,7 @@ import { Application, BrowserDeviceLiveMetrics, BrowserEngineLiveMetrics, Browse
 import { useApi } from '../hooks/useApi'
 import { getErrorMessage } from '../utils/errorUtils'
 import BrowserBreakdownChart from './BrowserBreakdownChart'
-import { SortIndicator as SortIcon } from './SortIndicator'
+import { SortHeader } from './SortHeader'
 import {
   BrowserBreakdown,
   BrowserBreakdownDatum,
@@ -38,6 +38,7 @@ import LibraryFederationControls from './LibraryFederationControls'
 import ReferenceKeyBadge from './ReferenceKeyBadge'
 import { libraryStatusTone, shortLibraryHash } from './libraryFederationUtils'
 import { useLibraryFederation, type LibraryAssetSourceKind } from './useLibraryFederation'
+import { useSharedTestList } from '../hooks/useSharedTestList'
 import type { NavPage } from './Sidebar'
 import type { LibraryCatalogItem } from '../types/library'
 
@@ -55,10 +56,6 @@ type SortField = 'source' | 'name' | 'status' | 'total_vusers' | 'groups' | 'sta
 type StatusFilter = 'all' | 'complete' | 'failed' | 'aborted'
 type ArchiveFilter = 'all' | 'ready' | 'pending'
 type ComparisonBreakdown = BrowserBreakdown
-type RefreshOptions = {
-  initial?: boolean
-}
-
 const MAX_COMPARISON_RUNS = 10
 const ALL_COMPARISON_ACTIONS = 'all'
 
@@ -355,7 +352,24 @@ function comparisonTableDeltaClass(delta: number | undefined, metric: Comparison
 
 function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTestArchive, onNavigate, activeApplication, activeRelease }: Props) {
   const api = useApi()
-  const [tests, setTests] = useState<TestSummary[]>([])
+  const testListParams = useMemo(() => activeApplication?.id && activeRelease?.id ? {
+    project_id: activeApplication.project_id,
+    application_id: activeApplication.id,
+    release_id: activeRelease.id,
+    summary: true,
+    limit: 1000,
+  } : null, [activeApplication?.id, activeApplication?.project_id, activeRelease?.id])
+  const {
+    tests,
+    count: resultListCount,
+    total: resultListTotal,
+    offset: resultListOffset,
+    error: listError,
+    loading: resultsLoading,
+    refreshing: resultsRefreshing,
+    refresh,
+  } = useSharedTestList(testListParams, { loader: api.listTests, pollIntervalMs: 10000 })
+  const resultsTruncated = resultListOffset + resultListCount < resultListTotal
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [comparisonTestIds, setComparisonTestIds] = useState<string[]>([])
   const [comparisonTestSnapshots, setComparisonTestSnapshots] = useState<TestSummary[]>([])
@@ -366,53 +380,18 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
   const [comparisonBreakdown, setComparisonBreakdown] = useState<ComparisonBreakdown>('device')
   const [comparisonChartMetric, setComparisonChartMetric] = useState<ComparisonChartMetric>('tps')
   const [comparisonActionFilter, setComparisonActionFilter] = useState(ALL_COMPARISON_ACTIONS)
-  const [error, setError] = useState('')
-  const [resultsLoading, setResultsLoading] = useState(true)
-  const [resultsRefreshing, setResultsRefreshing] = useState(false)
+  const [operationError, setError] = useState('')
   const [sortField, setSortField] = useState<SortField>('started')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [archiveFilter, setArchiveFilter] = useState<ArchiveFilter>('all')
   const [releaseFilter, setReleaseFilter] = useState('all')
-  const refreshRequestRef = useRef(0)
+  const error = operationError || listError
   const openRemoteSettings = useCallback(() => {
     try { window.localStorage.setItem('apexload.settings.focusSection', 'integrations') } catch { /* storage unavailable */ }
     onNavigate?.('settings')
   }, [onNavigate])
-
-  const refresh = useCallback(async (options: RefreshOptions = {}) => {
-    const requestId = ++refreshRequestRef.current
-    const initial = Boolean(options.initial)
-    if (!activeApplication?.id || !activeRelease?.id) {
-      setTests([])
-      setError('')
-      setResultsLoading(false)
-      setResultsRefreshing(false)
-      return
-    }
-    if (initial) {
-      setResultsLoading(true)
-      setResultsRefreshing(false)
-      setTests([])
-    } else {
-      setResultsRefreshing(true)
-    }
-    try {
-      const res = await api.listTests({ application_id: activeApplication.id })
-      if (requestId !== refreshRequestRef.current) return
-      setTests(res.tests || [])
-      setError('')
-    } catch (error: unknown) {
-      if (requestId !== refreshRequestRef.current) return
-      setError(getErrorMessage(error, 'Unable to load results'))
-    } finally {
-      if (requestId === refreshRequestRef.current) {
-        setResultsLoading(false)
-        setResultsRefreshing(false)
-      }
-    }
-  }, [api, activeApplication?.id, activeRelease?.id])
 
   const libraryProjectId = activeRelease?.project_id || activeApplication?.project_id
   const federation = useLibraryFederation({ kind: 'result', projectId: libraryProjectId, onRefreshLocal: () => refresh() })
@@ -429,12 +408,6 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
     syncStatusForLocal,
     remoteItemHref,
   } = federation
-
-  useEffect(() => {
-    refresh({ initial: true })
-    const interval = setInterval(() => refresh(), 10000)
-    return () => clearInterval(interval)
-  }, [refresh])
 
   useEffect(() => {
     setSelectedIds(new Set())
@@ -936,10 +909,6 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
     await refresh()
   }
 
-  const applyUpdatedTest = useCallback((updated: TestSummary) => {
-    setTests(prev => prev.map(test => (test.id === updated.id ? { ...test, ...updated } : test)))
-  }, [])
-
   const showResultsLoadStatus = resultsLoading || resultsRefreshing || comparisonCards.length >= 2
   const showComparisonLoadedHint = comparisonCards.length >= 2
   const showDeleteSelectedAction = selectedIds.size > 0
@@ -948,16 +917,15 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
   const toggleBaselinePin = useCallback(async (test: TestSummary, event: React.MouseEvent) => {
     event.stopPropagation()
     try {
-      const updated = test.baseline_pinned
-        ? await api.unpinComparisonBaseline(test.id)
-        : await api.pinComparisonBaseline(test.id)
-      applyUpdatedTest(updated)
+      await (test.baseline_pinned
+        ? api.unpinComparisonBaseline(test.id)
+        : api.pinComparisonBaseline(test.id))
       setError('')
       await refresh()
     } catch (error: unknown) {
       setError(getErrorMessage(error, 'Unable to update pinned comparison baseline'))
     }
-  }, [api, applyUpdatedTest, refresh])
+  }, [api, refresh])
 
   const renderResultRow = (row: ResultSourceRow, measureElement?: (element: HTMLTableRowElement | null) => void) => {
     const test = row.test
@@ -1509,6 +1477,11 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
               ? 'Loading local and remote result sources...'
               : `${filteredRows.length} result source${filteredRows.length === 1 ? '' : 's'} for ${activeRelease.name}.`}
           />
+          {resultsTruncated && (
+            <p className="results-truncation-status" role="status" aria-live="polite">
+              Showing the newest {resultListCount.toLocaleString()} of {resultListTotal.toLocaleString()} local results. Search and filters apply to this loaded set.
+            </p>
+          )}
           <div className="results-table-selection-toolbar">
             <div className="results-table-selection-summary">
               <span>{selectedIds.size} selected</span>
@@ -1561,14 +1534,14 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
                     <th className="results-compare-select-header">
                       <span>Compare</span>
                     </th>
-                    <th onClick={() => handleSort('source')} className="sortable">Source <SortIcon active={sortField === 'source'} direction={sortDirection} /></th>
-                    <th onClick={() => handleSort('name')} className="sortable">Scenario <SortIcon active={sortField === 'name'} direction={sortDirection} /></th>
-                    <th onClick={() => handleSort('status')} className="sortable">Status <SortIcon active={sortField === 'status'} direction={sortDirection} /></th>
-                    <th onClick={() => handleSort('total_vusers')} className="sortable">VUsers <SortIcon active={sortField === 'total_vusers'} direction={sortDirection} /></th>
-                    <th onClick={() => handleSort('groups')} className="sortable">Groups <SortIcon active={sortField === 'groups'} direction={sortDirection} /></th>
-                    <th onClick={() => handleSort('started')} className="sortable">Started <SortIcon active={sortField === 'started'} direction={sortDirection} /></th>
-                    <th onClick={() => handleSort('duration')} className="sortable">Duration <SortIcon active={sortField === 'duration'} direction={sortDirection} /></th>
-                    <th onClick={() => handleSort('archive')} className="sortable">Archive <SortIcon active={sortField === 'archive'} direction={sortDirection} /></th>
+                    <SortHeader label="Source" field="source" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} />
+                    <SortHeader label="Scenario" field="name" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} />
+                    <SortHeader label="Status" field="status" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} />
+                    <SortHeader label="VUsers" field="total_vusers" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} numeric />
+                    <SortHeader label="Groups" field="groups" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} numeric />
+                    <SortHeader label="Started" field="started" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} />
+                    <SortHeader label="Duration" field="duration" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} numeric />
+                    <SortHeader label="Archive" field="archive" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} />
                     <th className="results-actions-column">Actions</th>
                   </tr>
                 </thead>

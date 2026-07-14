@@ -56,7 +56,9 @@ func (svc *githubSyncService) Run(ctx context.Context, resolved *githubResolvedC
 		StartedBy: input.StartedBy,
 	}
 	if svc.store != nil {
-		_ = svc.store.SaveGitHubSyncJob(job)
+		if err := svc.store.SaveGitHubSyncJob(job); err != nil {
+			return nil, fmt.Errorf("persist GitHub sync job before execution: %w", err)
+		}
 	}
 
 	switch input.Kind {
@@ -73,7 +75,9 @@ func (svc *githubSyncService) Run(ctx context.Context, resolved *githubResolvedC
 		job.Status = "partial"
 	}
 	if svc.store != nil {
-		_ = svc.store.SaveGitHubSyncJob(job)
+		if err := svc.store.SaveGitHubSyncJob(job); err != nil {
+			return job, fmt.Errorf("persist completed GitHub sync job: %w", err)
+		}
 	}
 	return job, nil
 }
@@ -116,12 +120,16 @@ func (svc *githubSyncService) runImport(ctx context.Context, client *githubClien
 			continue
 		}
 		script.ProjectID = job.ProjectID
-		stored := svc.runner.StoreScript(script)
+		stored, err := svc.runner.StoreScriptDurable(script)
+		if err != nil {
+			job.Errors++
+			continue
+		}
 		job.Created++
 		job.Processed++
 		if svc.linkStore != nil {
 			_, contentHash, _ := githubScriptEnvelope(stored.Script)
-			_ = svc.linkStore.SaveGitHubScriptLink(&storage.GitHubScriptLink{
+			if err := svc.linkStore.SaveGitHubScriptLink(&storage.GitHubScriptLink{
 				ScriptID:        stored.ID,
 				RefKey:          stored.RefKey,
 				Owner:           job.Owner,
@@ -132,7 +140,9 @@ func (svc *githubSyncService) runImport(ctx context.Context, client *githubClien
 				RemoteBlobSHA:   fileContents.File.SHA,
 				RemoteCommitSHA: remoteCommitSHA,
 				ContentHash:     contentHash,
-			})
+			}); err != nil {
+				job.Errors++
+			}
 		}
 	}
 }
@@ -179,7 +189,7 @@ func (svc *githubSyncService) runPush(ctx context.Context, resolved *githubResol
 			continue
 		}
 		if svc.linkStore != nil {
-			_ = svc.linkStore.SaveGitHubScriptLink(&storage.GitHubScriptLink{
+			if err := svc.linkStore.SaveGitHubScriptLink(&storage.GitHubScriptLink{
 				ScriptID:        stored.ID,
 				RefKey:          stored.RefKey,
 				Owner:           job.Owner,
@@ -190,7 +200,9 @@ func (svc *githubSyncService) runPush(ctx context.Context, resolved *githubResol
 				RemoteBlobSHA:   result.Content.SHA,
 				RemoteCommitSHA: result.Commit.SHA,
 				ContentHash:     contentHash,
-			})
+			}); err != nil {
+				job.Errors++
+			}
 		}
 		job.Updated++
 		job.Processed++

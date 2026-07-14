@@ -2636,6 +2636,38 @@ describe('SettingsPage', () => {
     const saveButton = findButton('Save Changes')
     expect(saveButton?.disabled).toBe(true)
   })
+
+  it('names confirmation dialogs, moves focus inside, and closes with Escape', async () => {
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+
+    const resetButton = findButton('Reset All Settings to Defaults')
+    expect(resetButton).toBeTruthy()
+    if (!resetButton) return
+    resetButton.focus()
+
+    await act(async () => {
+      resetButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await act(async () => {
+      await new Promise(resolve => window.setTimeout(resolve, 0))
+    })
+
+    const dialog = container.querySelector<HTMLElement>('[role="dialog"]')
+    expect(dialog).toBeTruthy()
+    expect(dialog?.getAttribute('aria-labelledby')).toBeTruthy()
+    expect(document.activeElement?.textContent).toBe('Cancel')
+
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      await new Promise(resolve => window.setTimeout(resolve, 0))
+    })
+
+    expect(container.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.activeElement).toBe(resetButton)
+  })
 })
 
 function findButton(label: string) {

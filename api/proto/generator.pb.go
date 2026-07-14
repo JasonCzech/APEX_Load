@@ -2832,6 +2832,82 @@ func (x *ArchiveArtifact) GetContent() []byte {
 	return nil
 }
 
+type ArchiveArtifactChunk struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Content       []byte                 `protobuf:"bytes,2,opt,name=content,proto3" json:"content,omitempty"`
+	Offset        int64                  `protobuf:"varint,3,opt,name=offset,proto3" json:"offset,omitempty"`
+	TotalSize     int64                  `protobuf:"varint,4,opt,name=total_size,json=totalSize,proto3" json:"total_size,omitempty"`
+	Eof           bool                   `protobuf:"varint,5,opt,name=eof,proto3" json:"eof,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ArchiveArtifactChunk) Reset() {
+	*x = ArchiveArtifactChunk{}
+	mi := &file_api_proto_generator_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ArchiveArtifactChunk) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ArchiveArtifactChunk) ProtoMessage() {}
+
+func (x *ArchiveArtifactChunk) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_generator_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ArchiveArtifactChunk.ProtoReflect.Descriptor instead.
+func (*ArchiveArtifactChunk) Descriptor() ([]byte, []int) {
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *ArchiveArtifactChunk) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ArchiveArtifactChunk) GetContent() []byte {
+	if x != nil {
+		return x.Content
+	}
+	return nil
+}
+
+func (x *ArchiveArtifactChunk) GetOffset() int64 {
+	if x != nil {
+		return x.Offset
+	}
+	return 0
+}
+
+func (x *ArchiveArtifactChunk) GetTotalSize() int64 {
+	if x != nil {
+		return x.TotalSize
+	}
+	return 0
+}
+
+func (x *ArchiveArtifactChunk) GetEof() bool {
+	if x != nil {
+		return x.Eof
+	}
+	return false
+}
+
 var File_api_proto_generator_proto protoreflect.FileDescriptor
 
 const file_api_proto_generator_proto_rawDesc = "" +
@@ -3114,7 +3190,14 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x04name\x18\x02 \x01(\tR\x04name\"?\n" +
 	"\x0fArchiveArtifact\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
-	"\acontent\x18\x02 \x01(\fR\acontent2\xe2\x04\n" +
+	"\acontent\x18\x02 \x01(\fR\acontent\"\x8d\x01\n" +
+	"\x14ArchiveArtifactChunk\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
+	"\acontent\x18\x02 \x01(\fR\acontent\x12\x16\n" +
+	"\x06offset\x18\x03 \x01(\x03R\x06offset\x12\x1d\n" +
+	"\n" +
+	"total_size\x18\x04 \x01(\x03R\ttotalSize\x12\x10\n" +
+	"\x03eof\x18\x05 \x01(\bR\x03eof2\xc5\x05\n" +
 	"\x10GeneratorControl\x12E\n" +
 	"\n" +
 	"AssignWork\x12\x1b.apexload.v1.WorkAssignment\x1a\x1a.apexload.v1.AssignmentAck\x12H\n" +
@@ -3124,7 +3207,8 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\rStreamMetrics\x12\x1a.apexload.v1.ControlSignal\x1a\x19.apexload.v1.MetricsBatch(\x010\x01\x12G\n" +
 	"\tHeartbeat\x12\x1a.apexload.v1.HeartbeatPing\x1a\x1a.apexload.v1.HeartbeatPong(\x010\x01\x12F\n" +
 	"\x10DistributeScript\x12\x1a.apexload.v1.ScriptPayload\x1a\x16.apexload.v1.ScriptAck\x12W\n" +
-	"\x12GetArchiveArtifact\x12#.apexload.v1.ArchiveArtifactRequest\x1a\x1c.apexload.v1.ArchiveArtifactB*Z(github.com/jasonczech/apexload/api/protob\x06proto3"
+	"\x12GetArchiveArtifact\x12#.apexload.v1.ArchiveArtifactRequest\x1a\x1c.apexload.v1.ArchiveArtifact\x12a\n" +
+	"\x15StreamArchiveArtifact\x12#.apexload.v1.ArchiveArtifactRequest\x1a!.apexload.v1.ArchiveArtifactChunk0\x01B*Z(github.com/jasonczech/apexload/api/protob\x06proto3"
 
 var (
 	file_api_proto_generator_proto_rawDescOnce sync.Once
@@ -3138,7 +3222,7 @@ func file_api_proto_generator_proto_rawDescGZIP() []byte {
 	return file_api_proto_generator_proto_rawDescData
 }
 
-var file_api_proto_generator_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
+var file_api_proto_generator_proto_msgTypes = make([]protoimpl.MessageInfo, 31)
 var file_api_proto_generator_proto_goTypes = []any{
 	(*WorkAssignment)(nil),         // 0: apexload.v1.WorkAssignment
 	(*RedactionRule)(nil),          // 1: apexload.v1.RedactionRule
@@ -3169,10 +3253,11 @@ var file_api_proto_generator_proto_goTypes = []any{
 	(*ScriptAck)(nil),              // 26: apexload.v1.ScriptAck
 	(*ArchiveArtifactRequest)(nil), // 27: apexload.v1.ArchiveArtifactRequest
 	(*ArchiveArtifact)(nil),        // 28: apexload.v1.ArchiveArtifact
-	nil,                            // 29: apexload.v1.WorkAssignment.EnvironmentEntry
+	(*ArchiveArtifactChunk)(nil),   // 29: apexload.v1.ArchiveArtifactChunk
+	nil,                            // 30: apexload.v1.WorkAssignment.EnvironmentEntry
 }
 var file_api_proto_generator_proto_depIdxs = []int32{
-	29, // 0: apexload.v1.WorkAssignment.environment:type_name -> apexload.v1.WorkAssignment.EnvironmentEntry
+	30, // 0: apexload.v1.WorkAssignment.environment:type_name -> apexload.v1.WorkAssignment.EnvironmentEntry
 	2,  // 1: apexload.v1.WorkAssignment.data_files:type_name -> apexload.v1.DataFile
 	1,  // 2: apexload.v1.WorkAssignment.redaction_rules:type_name -> apexload.v1.RedactionRule
 	19, // 3: apexload.v1.MetricsBatch.transactions:type_name -> apexload.v1.TransactionMetric
@@ -3204,16 +3289,18 @@ var file_api_proto_generator_proto_depIdxs = []int32{
 	23, // 29: apexload.v1.GeneratorControl.Heartbeat:input_type -> apexload.v1.HeartbeatPing
 	25, // 30: apexload.v1.GeneratorControl.DistributeScript:input_type -> apexload.v1.ScriptPayload
 	27, // 31: apexload.v1.GeneratorControl.GetArchiveArtifact:input_type -> apexload.v1.ArchiveArtifactRequest
-	3,  // 32: apexload.v1.GeneratorControl.AssignWork:output_type -> apexload.v1.AssignmentAck
-	5,  // 33: apexload.v1.GeneratorControl.AdjustVUsers:output_type -> apexload.v1.AdjustmentAck
-	7,  // 34: apexload.v1.GeneratorControl.AdjustDuration:output_type -> apexload.v1.DurationAck
-	9,  // 35: apexload.v1.GeneratorControl.StopTest:output_type -> apexload.v1.StopAck
-	10, // 36: apexload.v1.GeneratorControl.StreamMetrics:output_type -> apexload.v1.MetricsBatch
-	24, // 37: apexload.v1.GeneratorControl.Heartbeat:output_type -> apexload.v1.HeartbeatPong
-	26, // 38: apexload.v1.GeneratorControl.DistributeScript:output_type -> apexload.v1.ScriptAck
-	28, // 39: apexload.v1.GeneratorControl.GetArchiveArtifact:output_type -> apexload.v1.ArchiveArtifact
-	32, // [32:40] is the sub-list for method output_type
-	24, // [24:32] is the sub-list for method input_type
+	27, // 32: apexload.v1.GeneratorControl.StreamArchiveArtifact:input_type -> apexload.v1.ArchiveArtifactRequest
+	3,  // 33: apexload.v1.GeneratorControl.AssignWork:output_type -> apexload.v1.AssignmentAck
+	5,  // 34: apexload.v1.GeneratorControl.AdjustVUsers:output_type -> apexload.v1.AdjustmentAck
+	7,  // 35: apexload.v1.GeneratorControl.AdjustDuration:output_type -> apexload.v1.DurationAck
+	9,  // 36: apexload.v1.GeneratorControl.StopTest:output_type -> apexload.v1.StopAck
+	10, // 37: apexload.v1.GeneratorControl.StreamMetrics:output_type -> apexload.v1.MetricsBatch
+	24, // 38: apexload.v1.GeneratorControl.Heartbeat:output_type -> apexload.v1.HeartbeatPong
+	26, // 39: apexload.v1.GeneratorControl.DistributeScript:output_type -> apexload.v1.ScriptAck
+	28, // 40: apexload.v1.GeneratorControl.GetArchiveArtifact:output_type -> apexload.v1.ArchiveArtifact
+	29, // 41: apexload.v1.GeneratorControl.StreamArchiveArtifact:output_type -> apexload.v1.ArchiveArtifactChunk
+	33, // [33:42] is the sub-list for method output_type
+	24, // [24:33] is the sub-list for method input_type
 	24, // [24:24] is the sub-list for extension type_name
 	24, // [24:24] is the sub-list for extension extendee
 	0,  // [0:24] is the sub-list for field type_name
@@ -3235,7 +3322,7 @@ func file_api_proto_generator_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_proto_generator_proto_rawDesc), len(file_api_proto_generator_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   30,
+			NumMessages:   31,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

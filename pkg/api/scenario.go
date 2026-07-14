@@ -7,6 +7,7 @@ package api
 
 import (
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -44,6 +45,11 @@ func (tr *TestRunner) storeScenarioLocked(id string, req CreateScenarioRequest) 
 	// clobbers a stored Env secret and never reaches the engine. Keyed by stable
 	// group identity, not array index (reorder-safe).
 	existing := tr.scenarios[id]
+	if existing != nil {
+		if err := tr.projectDeletionErrorLocked(existing.ProjectID); err != nil {
+			return nil, err
+		}
+	}
 	req.RuntimeSettings = reconcileGroupRuntimeSecrets(req.RuntimeSettings, existingRootRuntime(existing))
 	for i := range req.Groups {
 		req.Groups[i].RuntimeSettings = reconcileGroupRuntimeSecrets(req.Groups[i].RuntimeSettings, existingGroupRuntime(existing, req.Groups[i]))
@@ -113,16 +119,29 @@ func (tr *TestRunner) storeScenarioLocked(id string, req CreateScenarioRequest) 
 			Assignment:      generatorAssignmentForStorage(group.Assignment),
 		})
 	}
+	if projectID, singleProject := tr.scenarioProjectIDFromScriptsLocked(scripts); singleProject {
+		if err := tr.projectDeletionErrorLocked(projectID); err != nil {
+			return nil, err
+		}
+	}
 	dataPools, err := normalizeScenarioDataPoolBindings(id, req.DataPools)
 	if err != nil {
 		return nil, err
 	}
 	if tr.scenarioStore != nil {
-		if err := tr.scenarioStore.SaveScenario(scenario, scripts); err != nil {
-			return nil, err
-		}
-		if err := tr.scenarioStore.SaveScenarioDataPoolBindings(id, dataPools); err != nil {
-			return nil, err
+		if atomicStore, ok := tr.scenarioStore.(atomicScenarioPersistence); ok {
+			if err := atomicStore.SaveScenarioWithDataPoolBindings(scenario, scripts, dataPools); err != nil {
+				return nil, err
+			}
+		} else {
+			// Non-SQL test/adaptor stores retain the legacy two-call contract.
+			// Production SQLite/PostgreSQL stores implement the atomic interface.
+			if err := tr.scenarioStore.SaveScenario(scenario, scripts); err != nil {
+				return nil, err
+			}
+			if err := tr.scenarioStore.SaveScenarioDataPoolBindings(id, dataPools); err != nil {
+				return nil, err
+			}
 		}
 	}
 	stored := tr.buildStoredScenario(scenario, scripts)
@@ -218,24 +237,31 @@ func (tr *TestRunner) ListScenariosFiltered(projectID string) []*StoredScenario 
 }
 
 func (tr *TestRunner) DeleteScenario(id string) bool {
+	deleted, _ := tr.DeleteScenarioDurable(id)
+	return deleted
+}
+
+func (tr *TestRunner) DeleteScenarioDurable(id string) (bool, error) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	id = tr.resolveRefKeyLocked(id)
 	scenario, ok := tr.scenarios[id]
 	if !ok {
-		return false
+		return false, nil
 	}
 	for _, test := range tr.tests {
 		if test.ScenarioID == id {
-			return false
+			return false, nil
+		}
+	}
+	if tr.scenarioStore != nil {
+		if err := tr.scenarioStore.DeleteScenario(id); err != nil {
+			return false, err
 		}
 	}
 	tr.removeRefKeyLocked(scenario.RefKey)
 	delete(tr.scenarios, id)
-	if tr.scenarioStore != nil {
-		_ = tr.scenarioStore.DeleteScenario(id)
-	}
-	return true
+	return true, nil
 }
 
 func (tr *TestRunner) saveScenarioScheduleLocked(schedule *storage.ScenarioSchedule) error {
@@ -309,7 +335,7 @@ func (tr *TestRunner) recordScenarioScheduleOccurrenceAuditLocked(occurrence *st
 	if occurrence.ConflictSummary != "" {
 		details["conflict_summary"] = occurrence.ConflictSummary
 	}
-	_ = tr.scenarioStore.SaveAuditEvent(&storage.AuditEvent{
+	if err := tr.scenarioStore.SaveAuditEvent(&storage.AuditEvent{
 		ID:               uuid.New().String(),
 		Action:           action,
 		ActorType:        "system",
@@ -321,7 +347,9 @@ func (tr *TestRunner) recordScenarioScheduleOccurrenceAuditLocked(occurrence *st
 		Status:           status,
 		Details:          details,
 		CreatedAt:        time.Now().UTC(),
-	})
+	}); err != nil {
+		slog.Warn("failed to persist scenario-scheduler audit event", "occurrence_id", occurrence.ID, "action", action, "error", err)
+	}
 }
 
 func scenarioScheduleOccurrenceAuditAction(occurrenceStatus string) (string, string, bool) {

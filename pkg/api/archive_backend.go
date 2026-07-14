@@ -2,13 +2,18 @@ package api
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/config"
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -17,6 +22,19 @@ import (
 	_ "gocloud.dev/blob/fileblob"
 	_ "gocloud.dev/blob/gcsblob"
 	_ "gocloud.dev/blob/s3blob"
+)
+
+const (
+	maxArchiveManifestDownloadBytes         = 8 << 20
+	maxArchiveMaterializedArtifacts         = 256
+	defaultArchiveMaterializedBytes         = int64(64 << 30)
+	defaultArchiveMaterializeTimeout        = 30 * time.Minute
+	defaultArchiveMaterializationCacheBytes = int64(256 << 30)
+	defaultArchiveMaterializationCacheTTL   = 24 * time.Hour
+	envArchiveMaterializedMaxBytes          = "APEXLOAD_ARCHIVE_MATERIALIZATION_MAX_BYTES"
+	envArchiveMaterializeTimeout            = "APEXLOAD_ARCHIVE_MATERIALIZATION_TIMEOUT"
+	envArchiveMaterializationCacheMaxBytes  = "APEXLOAD_ARCHIVE_MATERIALIZATION_CACHE_MAX_BYTES"
+	envArchiveMaterializationCacheTTL       = "APEXLOAD_ARCHIVE_MATERIALIZATION_CACHE_TTL"
 )
 
 const (
@@ -35,6 +53,7 @@ type archiveBackendRuntime struct {
 	Prefix    string
 	Region    string
 	Endpoint  string
+	Account   string
 }
 
 func currentArchiveBackend() archiveBackendRuntime {
@@ -50,6 +69,7 @@ func currentArchiveBackend() archiveBackendRuntime {
 		Prefix:    prefix,
 		Region:    strings.TrimSpace(os.Getenv("APEXLOAD_ARCHIVE_REGION")),
 		Endpoint:  strings.TrimSpace(os.Getenv("APEXLOAD_ARCHIVE_ENDPOINT")),
+		Account:   strings.TrimSpace(os.Getenv("AZURE_STORAGE_ACCOUNT")),
 	}
 	switch backend {
 	case archiveBackendS3:
@@ -67,6 +87,9 @@ func currentArchiveBackend() archiveBackendRuntime {
 	default:
 		runtime.Backend = archiveBackendFilesystem
 	}
+	if runtime.Backend != archiveBackendFilesystem {
+		runtime.LocalRoot = archiveObjectNamespaceRoot(runtime.LocalRoot, runtime)
+	}
 	return runtime
 }
 
@@ -80,9 +103,28 @@ func resolveFilesystemArchiveRoot() string {
 
 func objectArchiveStagingRoot(filesystemRoot string, backend string) string {
 	if dir := strings.TrimSpace(os.Getenv("APEXLOAD_ARCHIVE_STAGING_DIR")); dir != "" {
-		return dir
+		return filepath.Join(dir, backend)
 	}
 	return filepath.Join(filesystemRoot, "_object_staging", backend)
+}
+
+func archiveObjectNamespaceRoot(stagingRoot string, backend archiveBackendRuntime) string {
+	return filepath.Join(stagingRoot, archiveObjectNamespace(backend))
+}
+
+func archiveObjectNamespace(backend archiveBackendRuntime) string {
+	target := backend.Bucket
+	if backend.Backend == archiveBackendAzureBlob {
+		target = backend.Container
+	}
+	identity := strings.Join([]string{
+		strings.ToLower(strings.TrimSpace(backend.Backend)),
+		strings.ToLower(strings.TrimSpace(target)),
+		strings.Trim(strings.TrimSpace(backend.Prefix), "/"),
+		strings.TrimRight(strings.ToLower(strings.TrimSpace(backend.Endpoint)), "/"),
+		strings.ToLower(strings.TrimSpace(backend.Account)),
+	}, "\x00")
+	return sha256BytesHex([]byte(identity))
 }
 
 func cleanArchivePrefix(prefix string) string {
@@ -166,35 +208,58 @@ func (b archiveBackendRuntime) openBucket(ctx context.Context) (*blob.Bucket, er
 }
 
 func uploadArchiveDirectory(ctx context.Context, localDir string, testID string) error {
+	if err := validateArchiveRunID(testID); err != nil {
+		return err
+	}
 	backend := currentArchiveBackend()
 	if backend.Backend == archiveBackendFilesystem {
 		return nil
 	}
+	root, err := openArchiveDirectoryNoSymlink(localDir)
+	if err != nil {
+		return fmt.Errorf("inspect archive upload root: %w", err)
+	}
+	_ = root.Close()
 	bucket, err := backend.openBucket(ctx)
 	if err != nil {
 		return err
 	}
 	defer bucket.Close()
-	return filepath.WalkDir(localDir, func(path string, entry os.DirEntry, walkErr error) error {
+	names := make([]string, 0)
+	err = filepath.WalkDir(localDir, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
 		if entry.IsDir() {
 			return nil
 		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("archive artifact %q is a symbolic link", path)
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("archive artifact %q is not a regular file", path)
+		}
 		relative, err := filepath.Rel(localDir, path)
 		if err != nil {
 			return err
 		}
-		key := backend.objectKey(testID, filepath.ToSlash(relative))
-		if err := uploadArchiveFileToBucket(ctx, bucket, key, path); err != nil {
-			return fmt.Errorf("upload archive object %s: %w", key, err)
-		}
+		names = append(names, filepath.ToSlash(relative))
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	return uploadArchiveObjectsToBucket(ctx, bucket, backend, localDir, testID, names...)
 }
 
 func uploadArchiveObjects(ctx context.Context, localDir string, testID string, names ...string) error {
+	if err := validateArchiveRunID(testID); err != nil {
+		return err
+	}
 	backend := currentArchiveBackend()
 	if backend.Backend == archiveBackendFilesystem {
 		return nil
@@ -208,30 +273,56 @@ func uploadArchiveObjects(ctx context.Context, localDir string, testID string, n
 }
 
 func uploadArchiveObjectsToBucket(ctx context.Context, bucket *blob.Bucket, backend archiveBackendRuntime, localDir string, testID string, names ...string) error {
+	if err := validateArchiveRunID(testID); err != nil {
+		return err
+	}
 	if bucket == nil {
 		return fmt.Errorf("archive object bucket is required")
 	}
+	root, err := openArchiveDirectoryNoSymlink(localDir)
+	if err != nil {
+		return fmt.Errorf("inspect archive upload root: %w", err)
+	}
+	_ = root.Close()
 	seen := map[string]bool{}
+	ordered := make([]string, 0, len(names))
+	manifestName := ""
 	for _, name := range names {
 		name = strings.TrimSpace(filepath.ToSlash(name))
 		if name == "" || seen[name] {
 			continue
 		}
-		seen[name] = true
-		localPath, err := archiveArtifactPath(localDir, name)
+		normalized, err := normalizeArchiveArtifactName(name)
 		if err != nil {
 			return err
 		}
+		name = normalized
+		seen[name] = true
+		if name == runArchiveManifestFileName {
+			manifestName = name
+			continue
+		}
+		ordered = append(ordered, name)
+	}
+	// Object storage has no directory transaction. Publish every data and
+	// adjunct artifact first, then manifest.json as the commit marker. A failed
+	// partial attempt therefore never advertises a manifest whose referenced
+	// objects were not all attempted successfully.
+	sort.Strings(ordered)
+	if manifestName != "" {
+		ordered = append(ordered, manifestName)
+	}
+	for _, name := range ordered {
 		key := backend.objectKey(testID, name)
-		if err := uploadArchiveFileToBucket(ctx, bucket, key, localPath); err != nil {
+		if err := uploadArchiveFileToBucket(ctx, bucket, key, localDir, name); err != nil {
 			return fmt.Errorf("upload archive object %s: %w", key, err)
 		}
 	}
 	return nil
 }
 
-func uploadArchiveFileToBucket(ctx context.Context, bucket *blob.Bucket, key string, localPath string) error {
-	file, err := os.Open(localPath)
+func uploadArchiveFileToBucket(ctx context.Context, bucket *blob.Bucket, key string, localRoot string, name string) error {
+	file, _, err := openArchiveArtifactForRead(localRoot, name)
 	if err != nil {
 		return err
 	}
@@ -247,84 +338,1257 @@ func uploadArchiveFileToBucket(ctx context.Context, bucket *blob.Bucket, key str
 	return writer.Close()
 }
 
-func ensureArchiveMaterialized(record *storage.RunArchiveRecord) error {
+// deleteArchiveBackendObjects removes every object belonging to a test run.
+// Object backends do not have directories, so deletion must enumerate the
+// complete run prefix instead of deleting only the manifest object.
+func deleteArchiveBackendObjects(ctx context.Context, record *storage.RunArchiveRecord) error {
 	if record == nil {
 		return nil
 	}
-	if strings.TrimSpace(record.ManifestPath) != "" {
-		if _, err := os.Stat(record.ManifestPath); err == nil {
-			return nil
-		}
+	if err := validateArchiveRunID(record.TestID); err != nil {
+		return err
 	}
 	backend := currentArchiveBackend()
+	recordedBackend := archiveRecordBackend(record)
+	if recordedBackend != "" && recordedBackend != backend.Backend {
+		return fmt.Errorf("archive backend %q is not configured (current backend %q)", recordedBackend, backend.Backend)
+	}
 	if backend.Backend == archiveBackendFilesystem {
 		return nil
 	}
-	ctx := context.Background()
+	testID := record.TestID
+	var err error
+	backend, err = archiveDeletionRuntime(backend, record)
+	if err != nil {
+		return err
+	}
 	bucket, err := backend.openBucket(ctx)
 	if err != nil {
 		return err
 	}
 	defer bucket.Close()
-	localRoot := strings.TrimSpace(record.ArchivePath)
-	if localRoot == "" {
-		localRoot = filepath.Join(backend.LocalRoot, record.TestID)
-		record.ArchivePath = localRoot
+	return deleteArchiveObjectsFromBucket(ctx, bucket, backend, testID)
+}
+
+func archiveDeletionRuntime(backend archiveBackendRuntime, record *storage.RunArchiveRecord) (archiveBackendRuntime, error) {
+	if record == nil {
+		return backend, nil
 	}
-	if err := os.MkdirAll(localRoot, 0o755); err != nil {
-		return err
+	if err := validateArchiveRunID(record.TestID); err != nil {
+		return backend, err
 	}
-	manifestData, err := bucket.ReadAll(ctx, backend.objectKey(record.TestID, "manifest.json"))
+	if backend.Backend == archiveBackendFilesystem {
+		return backend, nil
+	}
+	testID := record.TestID
+	runURI := strings.TrimSpace(record.ArchiveURI)
+	if runURI == "" && strings.TrimSpace(record.ManifestURI) != "" {
+		runURI = strings.TrimSuffix(strings.TrimSpace(record.ManifestURI), "/manifest.json")
+	}
+	if runURI == "" {
+		return backend, nil
+	}
+	parsed, err := url.Parse(runURI)
 	if err != nil {
-		return fmt.Errorf("download archive manifest: %w", err)
+		return backend, fmt.Errorf("parse archive URI: %w", err)
 	}
-	if strings.TrimSpace(record.ManifestPath) == "" {
-		record.ManifestPath = filepath.Join(localRoot, "manifest.json")
+	expectedTarget := backend.Bucket
+	expectedScheme := ""
+	switch backend.Backend {
+	case archiveBackendS3:
+		expectedScheme = "s3"
+	case archiveBackendGCS:
+		expectedScheme = "gs"
+	case archiveBackendAzureBlob:
+		expectedScheme = "azblob"
 	}
-	if err := os.WriteFile(record.ManifestPath, manifestData, 0o644); err != nil {
+	if backend.Backend == archiveBackendAzureBlob {
+		expectedTarget = backend.Container
+	}
+	if !strings.EqualFold(parsed.Scheme, expectedScheme) {
+		return backend, fmt.Errorf("archive URI scheme %q does not match backend %q", parsed.Scheme, backend.Backend)
+	}
+	if !strings.EqualFold(parsed.Host, expectedTarget) {
+		return backend, fmt.Errorf("archive URI target %q does not match configured target %q", parsed.Host, expectedTarget)
+	}
+	runPath := strings.Trim(parsed.Path, "/")
+	if testID == "" || (runPath != testID && !strings.HasSuffix(runPath, "/"+testID)) {
+		return backend, fmt.Errorf("archive URI %q is not scoped to test %q", runURI, testID)
+	}
+	backend.Prefix = strings.TrimSuffix(strings.TrimSuffix(runPath, testID), "/")
+	return backend, nil
+}
+
+func archiveRecordBackend(record *storage.RunArchiveRecord) string {
+	if record == nil {
+		return ""
+	}
+	if backend := strings.ToLower(strings.TrimSpace(record.ArchiveBackend)); backend != "" {
+		return backend
+	}
+	switch {
+	case strings.HasPrefix(strings.ToLower(strings.TrimSpace(record.ArchiveURI)), "s3://"):
+		return archiveBackendS3
+	case strings.HasPrefix(strings.ToLower(strings.TrimSpace(record.ArchiveURI)), "azblob://"):
+		return archiveBackendAzureBlob
+	case strings.HasPrefix(strings.ToLower(strings.TrimSpace(record.ArchiveURI)), "gs://"):
+		return archiveBackendGCS
+	case strings.TrimSpace(record.ArchiveURI) == "":
+		return archiveBackendFilesystem
+	default:
+		return ""
+	}
+}
+
+func deleteArchiveObjectsFromBucket(ctx context.Context, bucket *blob.Bucket, backend archiveBackendRuntime, testID string) error {
+	if err := validateArchiveRunID(testID); err != nil {
 		return err
 	}
-	var manifest RunArchiveManifest
-	if err := json.Unmarshal(manifestData, &manifest); err != nil {
-		return err
+	if bucket == nil {
+		return fmt.Errorf("archive object bucket is required")
 	}
-	artifacts, err := archiveManifestArtifactNames(&manifest)
-	if err != nil {
-		return err
-	}
-	for artifact := range artifacts {
-		if artifact == "manifest.json" {
+	prefix := strings.TrimSuffix(backend.objectKey(testID, ""), "/") + "/"
+	iterator := bucket.List(&blob.ListOptions{Prefix: prefix})
+	for {
+		object, err := iterator.Next(ctx)
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("list archive objects for %s: %w", testID, err)
+		}
+		if object == nil || !strings.HasPrefix(object.Key, prefix) {
 			continue
 		}
-		localPath, err := archiveArtifactPath(localRoot, artifact)
+		if err := bucket.Delete(ctx, object.Key); err != nil {
+			return fmt.Errorf("delete archive object %s: %w", object.Key, err)
+		}
+	}
+}
+
+// removeLocalArchiveDirectory refuses to recursively delete paths outside the
+// configured archive roots. Archive paths are persisted data and must be
+// treated as untrusted before passing them to os.RemoveAll.
+func removeLocalArchiveDirectory(path string) error {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil
+	}
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return err
+	}
+	allowedRoots := []string{resolveArchiveRoot(), resolveFilesystemArchiveRoot()}
+	if stagingRoot := strings.TrimSpace(os.Getenv("APEXLOAD_ARCHIVE_STAGING_DIR")); stagingRoot != "" {
+		allowedRoots = append(allowedRoots, stagingRoot)
+	}
+	matchedRoot := false
+	for _, root := range allowedRoots {
+		root = strings.TrimSpace(root)
+		if root == "" {
+			continue
+		}
+		absRoot, err := filepath.Abs(root)
 		if err != nil {
+			continue
+		}
+		lexicalRelative, err := filepath.Rel(absRoot, absPath)
+		if err != nil || lexicalRelative == "." || lexicalRelative == "" || lexicalRelative == ".." || strings.HasPrefix(lexicalRelative, ".."+string(filepath.Separator)) {
+			continue
+		}
+		matchedRoot = true
+		resolvedRoot, err := filepath.EvalSymlinks(absRoot)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return fmt.Errorf("resolve configured archive root %q: %w", root, err)
+		}
+		rootHandle, err := openArchiveDirectoryNoSymlink(resolvedRoot)
+		if err != nil {
+			return fmt.Errorf("inspect configured archive root %q: %w", root, err)
+		}
+		componentPath := ""
+		componentError := error(nil)
+		for _, component := range strings.Split(filepath.Clean(lexicalRelative), string(filepath.Separator)) {
+			if component == "" || component == "." || component == ".." {
+				componentError = fmt.Errorf("archive deletion path %q is not safe", path)
+				break
+			}
+			componentPath = filepath.Join(componentPath, component)
+			info, statErr := rootHandle.Lstat(componentPath)
+			if os.IsNotExist(statErr) {
+				componentError = os.ErrNotExist
+				break
+			}
+			if statErr != nil {
+				componentError = statErr
+				break
+			}
+			if info.Mode()&os.ModeSymlink != 0 {
+				componentError = fmt.Errorf("archive deletion path component %q is a symbolic link", componentPath)
+				break
+			}
+			if !info.IsDir() {
+				componentError = fmt.Errorf("archive deletion path component %q is not a directory", componentPath)
+				break
+			}
+		}
+		if componentError != nil {
+			_ = rootHandle.Close()
+			if componentError == os.ErrNotExist {
+				return nil
+			}
+			return componentError
+		}
+		resolvedPath, err := filepath.EvalSymlinks(absPath)
+		if err != nil {
+			_ = rootHandle.Close()
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return fmt.Errorf("resolve archive deletion path %q: %w", path, err)
+		}
+		realRelative, err := filepath.Rel(resolvedRoot, resolvedPath)
+		if err != nil || realRelative == "." || realRelative == "" || realRelative == ".." || strings.HasPrefix(realRelative, ".."+string(filepath.Separator)) {
+			_ = rootHandle.Close()
+			return fmt.Errorf("archive path %q resolves outside configured archive root %q", path, root)
+		}
+		if filepath.Clean(realRelative) != filepath.Clean(lexicalRelative) {
+			_ = rootHandle.Close()
+			return fmt.Errorf("archive path %q traverses a linked archive directory", path)
+		}
+		if err := rootHandle.RemoveAll(realRelative); err != nil {
+			_ = rootHandle.Close()
 			return err
 		}
-		if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
+		if err := rootHandle.Close(); err != nil {
 			return err
 		}
-		if err := downloadArchiveObjectToFile(ctx, bucket, backend.objectKey(record.TestID, artifact), localPath); err != nil {
-			return fmt.Errorf("download archive artifact %s: %w", artifact, err)
+		removeArchiveMaterializationCacheMarker(absPath)
+		return nil
+	}
+	if matchedRoot {
+		return fmt.Errorf("configured archive root for %q does not exist", path)
+	}
+	return fmt.Errorf("archive path %q is outside configured archive roots", path)
+}
+
+func ensureArchiveMaterialized(record *storage.RunArchiveRecord) error {
+	return ensureArchiveMaterializedContext(context.Background(), record)
+}
+
+func ensureArchiveMaterializedContext(ctx context.Context, record *storage.RunArchiveRecord) error {
+	lease, err := acquireArchiveMaterialized(ctx, record)
+	if err != nil {
+		return err
+	}
+	lease.Release()
+	return nil
+}
+
+func acquireArchiveMaterialized(ctx context.Context, record *storage.RunArchiveRecord) (*archiveMaterializationLease, error) {
+	if record == nil {
+		return noOpArchiveMaterializationLease(), nil
+	}
+	recordedBackend := archiveRecordBackend(record)
+	if recordedBackend == archiveBackendFilesystem {
+		return noOpArchiveMaterializationLease(), nil
+	}
+	if recordedBackend == "" {
+		return nil, fmt.Errorf("archive backend is missing or unsupported")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	backend, err := archiveMaterializationRuntime(currentArchiveBackend(), record)
+	if err != nil {
+		return nil, err
+	}
+	localRoot, err := archiveMaterializationLocalRoot(backend, record)
+	if err != nil {
+		return nil, err
+	}
+	key, err := canonicalArchiveMaterializationKey(localRoot)
+	if err != nil {
+		return nil, err
+	}
+	boundedCtx, cancel := context.WithTimeout(ctx, configuredArchiveMaterializationTimeout())
+	defer cancel()
+	entry, err := archiveMaterializations.reserve(boundedCtx, key)
+	if err != nil {
+		return nil, fmt.Errorf("wait to materialize archive %q: %w", record.TestID, err)
+	}
+	reservationActive := true
+	defer func() {
+		if reservationActive {
+			archiveMaterializations.failReservation(entry)
+		}
+	}()
+
+	manifestPath := filepath.Join(localRoot, runArchiveManifestFileName)
+	// Manifest presence is the materialization commit marker, but archives
+	// produced by older controllers wrote it before their artifacts. Validate an
+	// existing cache once more so a legacy partial download is repaired instead
+	// of being treated as permanently complete.
+	if _, err := os.Stat(manifestPath); err == nil {
+		cachedRecord := *record
+		cachedRecord.ArchivePath = localRoot
+		cachedRecord.ManifestPath = manifestPath
+		if err := validateMaterializedArchiveContext(boundedCtx, &cachedRecord, localRoot, manifestPath); err == nil {
+			setMaterializedArchiveRecordPaths(record, localRoot, manifestPath)
+			touchArchiveMaterializationCacheMarker(localRoot, archiveMaterializations.now().UTC())
+			lease := archiveMaterializations.promoteReservation(key, archiveMaterializationCacheScanRoot(backend.LocalRoot), localRoot, entry)
+			reservationActive = false
+			return lease, nil
+		} else if boundedCtx.Err() != nil {
+			return nil, boundedCtx.Err()
+		}
+	}
+	// Cache hits may be read concurrently, but replacing a missing, stale, or
+	// corrupt cache must wait for every active reader of the previous committed
+	// directory. The keyed gate prevents another materializer from overtaking us.
+	if err := archiveMaterializations.waitForNoReaders(boundedCtx, entry); err != nil {
+		return nil, fmt.Errorf("wait for archive %q readers before materialization: %w", record.TestID, err)
+	}
+	bucket, err := backend.openBucket(boundedCtx)
+	if err != nil {
+		return nil, err
+	}
+	if err := materializeArchiveFromBucket(boundedCtx, bucket, backend, record); err != nil {
+		_ = bucket.Close()
+		return nil, err
+	}
+	if err := bucket.Close(); err != nil {
+		return nil, fmt.Errorf("close archive object bucket: %w", err)
+	}
+	setMaterializedArchiveRecordPaths(record, localRoot, manifestPath)
+	lease := archiveMaterializations.promoteReservation(key, archiveMaterializationCacheScanRoot(backend.LocalRoot), localRoot, entry)
+	reservationActive = false
+	return lease, nil
+}
+
+func setMaterializedArchiveRecordPaths(record *storage.RunArchiveRecord, localRoot, manifestPath string) {
+	// Paths become immutable after the first successful materialization. Avoid
+	// same-value writes on later concurrent acquisitions so active readers of the
+	// shared archive record do not race with cache-hit bookkeeping.
+	if record.ArchivePath != localRoot {
+		record.ArchivePath = localRoot
+	}
+	if record.ManifestPath != manifestPath {
+		record.ManifestPath = manifestPath
+	}
+}
+
+// archiveMaterializationRuntime resolves the object namespace from persisted
+// archive metadata. The active controller configuration supplies credentials,
+// endpoint and local staging settings only; changing its bucket/prefix must not
+// silently redirect an old archive to a different object namespace.
+func archiveMaterializationRuntime(configured archiveBackendRuntime, record *storage.RunArchiveRecord) (archiveBackendRuntime, error) {
+	if record == nil {
+		return archiveBackendRuntime{}, fmt.Errorf("archive record is required")
+	}
+	testID := record.TestID
+	if err := validateArchiveRunID(testID); err != nil {
+		return archiveBackendRuntime{}, err
+	}
+	recordedBackend := archiveRecordBackend(record)
+	if recordedBackend == "" || recordedBackend == archiveBackendFilesystem {
+		return archiveBackendRuntime{}, fmt.Errorf("archive record does not identify an object backend")
+	}
+	runURI := strings.TrimSpace(record.ArchiveURI)
+	manifestURI := strings.TrimSpace(record.ManifestURI)
+	if runURI == "" && manifestURI != "" {
+		if !strings.HasSuffix(strings.TrimRight(manifestURI, "/"), "/manifest.json") {
+			return archiveBackendRuntime{}, fmt.Errorf("persisted manifest URI is not a manifest object")
+		}
+		runURI = strings.TrimSuffix(strings.TrimRight(manifestURI, "/"), "/manifest.json")
+	}
+	if runURI == "" {
+		return archiveBackendRuntime{}, fmt.Errorf("object archive %q has no persisted archive URI", testID)
+	}
+	parsed, err := url.Parse(runURI)
+	if err != nil {
+		return archiveBackendRuntime{}, fmt.Errorf("parse persisted archive URI: %w", err)
+	}
+	expectedScheme := map[string]string{
+		archiveBackendS3:        "s3",
+		archiveBackendAzureBlob: "azblob",
+		archiveBackendGCS:       "gs",
+	}[recordedBackend]
+	if expectedScheme == "" || !strings.EqualFold(parsed.Scheme, expectedScheme) {
+		return archiveBackendRuntime{}, fmt.Errorf("archive URI scheme %q does not match persisted backend %q", parsed.Scheme, recordedBackend)
+	}
+	if strings.TrimSpace(parsed.Host) == "" {
+		return archiveBackendRuntime{}, fmt.Errorf("persisted archive URI has no object target")
+	}
+	runPath := strings.Trim(parsed.Path, "/")
+	if runPath != testID && !strings.HasSuffix(runPath, "/"+testID) {
+		return archiveBackendRuntime{}, fmt.Errorf("archive URI %q is not scoped to test %q", runURI, testID)
+	}
+	if manifestURI != "" && strings.TrimRight(manifestURI, "/") != joinArchiveURI(strings.TrimRight(runURI, "/"), "manifest.json") {
+		return archiveBackendRuntime{}, fmt.Errorf("persisted manifest URI does not belong to archive URI")
+	}
+
+	backend := configured
+	backend.Backend = recordedBackend
+	backend.Bucket = ""
+	backend.Container = ""
+	if recordedBackend == archiveBackendAzureBlob {
+		backend.Container = parsed.Host
+	} else {
+		backend.Bucket = parsed.Host
+	}
+	backend.Prefix = strings.TrimSuffix(strings.TrimSuffix(runPath, testID), "/")
+	backend.URIPrefix = strings.TrimSuffix(runURI, "/"+testID)
+	backend.LocalRoot = archiveObjectNamespaceRoot(objectArchiveStagingRoot(resolveFilesystemArchiveRoot(), recordedBackend), backend)
+	return backend, nil
+}
+
+func validateArchiveRunID(testID string) error {
+	if testID == "" {
+		return fmt.Errorf("test id is required")
+	}
+	if testID != strings.TrimSpace(testID) || strings.ContainsRune(testID, 0) || strings.ContainsAny(testID, `/\\`) || testID == "." || testID == ".." || filepath.IsAbs(testID) || filepath.VolumeName(testID) != "" {
+		return fmt.Errorf("test id %q is not a safe archive namespace", testID)
+	}
+	for _, r := range testID {
+		if r < 0x20 || r == 0x7f {
+			return fmt.Errorf("test id %q is not a safe archive namespace", testID)
 		}
 	}
 	return nil
 }
 
-func downloadArchiveObjectToFile(ctx context.Context, bucket *blob.Bucket, key string, localPath string) error {
+// resolveArchiveDirectoryRoot returns a stable, absolute directory for an
+// operator-configured archive root. Existing configured roots must be real
+// directories rather than links. Missing tail components are created one at a
+// time after resolving the deepest existing ancestor, so MkdirAll can never
+// silently traverse a link planted inside the archive namespace.
+func resolveArchiveDirectoryRoot(root string, create bool) (string, error) {
+	root = strings.TrimSpace(root)
+	if root == "" {
+		return "", fmt.Errorf("archive root is empty")
+	}
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+
+	cursor := filepath.Clean(absRoot)
+	missing := make([]string, 0)
+	for {
+		info, statErr := os.Lstat(cursor)
+		if statErr == nil {
+			if cursor == absRoot && info.Mode()&os.ModeSymlink != 0 {
+				return "", fmt.Errorf("configured archive root %q is a symbolic link", root)
+			}
+			resolved, resolveErr := filepath.EvalSymlinks(cursor)
+			if resolveErr != nil {
+				return "", fmt.Errorf("resolve archive root %q: %w", root, resolveErr)
+			}
+			resolvedInfo, resolveErr := os.Lstat(resolved)
+			if resolveErr != nil {
+				return "", resolveErr
+			}
+			if resolvedInfo.Mode()&os.ModeSymlink != 0 || !resolvedInfo.IsDir() {
+				return "", fmt.Errorf("archive root component %q is not a regular directory", cursor)
+			}
+			rootHandle, openErr := openArchiveDirectoryNoSymlink(resolved)
+			if openErr != nil {
+				return "", openErr
+			}
+			currentRelative := ""
+			for index := len(missing) - 1; index >= 0; index-- {
+				currentRelative = filepath.Join(currentRelative, missing[index])
+				componentInfo, componentErr := rootHandle.Lstat(currentRelative)
+				switch {
+				case componentErr == nil:
+					if componentInfo.Mode()&os.ModeSymlink != 0 || !componentInfo.IsDir() {
+						_ = rootHandle.Close()
+						return "", fmt.Errorf("archive root component %q is not a regular directory", filepath.Join(resolved, currentRelative))
+					}
+				case os.IsNotExist(componentErr):
+					if !create {
+						_ = rootHandle.Close()
+						return "", componentErr
+					}
+					if mkdirErr := rootHandle.Mkdir(currentRelative, 0o755); mkdirErr != nil && !os.IsExist(mkdirErr) {
+						_ = rootHandle.Close()
+						return "", mkdirErr
+					}
+					componentInfo, componentErr = rootHandle.Lstat(currentRelative)
+					if componentErr != nil {
+						_ = rootHandle.Close()
+						return "", componentErr
+					}
+					if componentInfo.Mode()&os.ModeSymlink != 0 || !componentInfo.IsDir() {
+						_ = rootHandle.Close()
+						return "", fmt.Errorf("archive root component %q is not a regular directory", filepath.Join(resolved, currentRelative))
+					}
+				default:
+					_ = rootHandle.Close()
+					return "", componentErr
+				}
+			}
+			if closeErr := rootHandle.Close(); closeErr != nil {
+				return "", closeErr
+			}
+			if currentRelative == "" {
+				return resolved, nil
+			}
+			return filepath.Join(resolved, currentRelative), nil
+		}
+		if !os.IsNotExist(statErr) {
+			return "", statErr
+		}
+		parent := filepath.Dir(cursor)
+		if parent == cursor {
+			return "", statErr
+		}
+		missing = append(missing, filepath.Base(cursor))
+		cursor = parent
+	}
+}
+
+func openArchiveDirectoryNoSymlink(path string) (*os.Root, error) {
+	infoBefore, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if infoBefore.Mode()&os.ModeSymlink != 0 || !infoBefore.IsDir() {
+		return nil, fmt.Errorf("archive directory %q is not a non-symlink directory", path)
+	}
+	root, err := os.OpenRoot(path)
+	if err != nil {
+		return nil, err
+	}
+	openedInfo, err := root.Stat(".")
+	if err != nil {
+		_ = root.Close()
+		return nil, err
+	}
+	infoAfter, err := os.Lstat(path)
+	if err != nil || infoAfter.Mode()&os.ModeSymlink != 0 || !infoAfter.IsDir() || !os.SameFile(infoBefore, openedInfo) || !os.SameFile(infoAfter, openedInfo) {
+		_ = root.Close()
+		if err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("archive directory %q changed while it was opened", path)
+	}
+	return root, nil
+}
+
+func normalizeArchiveRelativeDirectory(relative string) (string, error) {
+	relative = filepath.Clean(strings.TrimSpace(relative))
+	if relative == "." || relative == "" {
+		return ".", nil
+	}
+	if filepath.IsAbs(relative) || filepath.VolumeName(relative) != "" || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("archive directory %q escapes its root", relative)
+	}
+	return relative, nil
+}
+
+func ensureArchiveRelativeDirectory(rootPath, relative string, perm os.FileMode) (string, error) {
+	relative, err := normalizeArchiveRelativeDirectory(relative)
+	if err != nil {
+		return "", err
+	}
+	root, err := openArchiveDirectoryNoSymlink(rootPath)
+	if err != nil {
+		return "", err
+	}
+	defer root.Close()
+	if relative == "." {
+		return rootPath, nil
+	}
+	current := ""
+	for _, component := range strings.Split(relative, string(filepath.Separator)) {
+		if component == "" || component == "." || component == ".." {
+			return "", fmt.Errorf("archive directory %q is not safe", relative)
+		}
+		current = filepath.Join(current, component)
+		info, statErr := root.Lstat(current)
+		switch {
+		case statErr == nil:
+			if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+				return "", fmt.Errorf("archive directory component %q is not a regular directory", current)
+			}
+		case os.IsNotExist(statErr):
+			if mkdirErr := root.Mkdir(current, perm); mkdirErr != nil && !os.IsExist(mkdirErr) {
+				return "", mkdirErr
+			}
+			info, statErr = root.Lstat(current)
+			if statErr != nil {
+				return "", statErr
+			}
+			if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+				return "", fmt.Errorf("archive directory component %q is not a regular directory", current)
+			}
+		default:
+			return "", statErr
+		}
+	}
+	return filepath.Join(rootPath, relative), nil
+}
+
+func inspectArchiveRelativeParents(root *os.Root, normalizedName string, create bool, perm os.FileMode) error {
+	parent := filepath.Dir(filepath.FromSlash(normalizedName))
+	if parent == "." {
+		return nil
+	}
+	current := ""
+	for _, component := range strings.Split(parent, string(filepath.Separator)) {
+		if component == "" || component == "." || component == ".." {
+			return fmt.Errorf("archive artifact parent %q is not safe", parent)
+		}
+		current = filepath.Join(current, component)
+		info, err := root.Lstat(current)
+		switch {
+		case err == nil:
+			if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+				return fmt.Errorf("archive artifact parent %q is not a regular directory", current)
+			}
+		case os.IsNotExist(err) && create:
+			if mkdirErr := root.Mkdir(current, perm); mkdirErr != nil && !os.IsExist(mkdirErr) {
+				return mkdirErr
+			}
+			info, err = root.Lstat(current)
+			if err != nil {
+				return err
+			}
+			if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+				return fmt.Errorf("archive artifact parent %q is not a regular directory", current)
+			}
+		default:
+			return err
+		}
+	}
+	return nil
+}
+
+func inspectArchiveArtifactTarget(root *os.Root, normalizedName string, allowMissing bool) (os.FileInfo, error) {
+	info, err := root.Lstat(filepath.FromSlash(normalizedName))
+	if os.IsNotExist(err) && allowMissing {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("archive artifact %q is not a regular file", normalizedName)
+	}
+	return info, nil
+}
+
+func archiveTemporaryName(parent, base string) (string, error) {
+	random := make([]byte, 12)
+	if _, err := rand.Read(random); err != nil {
+		return "", err
+	}
+	name := "." + base + ".tmp-" + hex.EncodeToString(random)
+	if parent == "." || parent == "" {
+		return name, nil
+	}
+	return filepath.Join(parent, name), nil
+}
+
+func createArchiveTemporaryDirectory(rootPath, prefix string, perm os.FileMode) (string, error) {
+	if strings.ContainsAny(prefix, `/\\`) || prefix == "" {
+		return "", fmt.Errorf("archive temporary directory prefix %q is not safe", prefix)
+	}
+	root, err := openArchiveDirectoryNoSymlink(rootPath)
+	if err != nil {
+		return "", err
+	}
+	defer root.Close()
+	for attempt := 0; attempt < 100; attempt++ {
+		name, err := archiveTemporaryName(".", prefix)
+		if err != nil {
+			return "", err
+		}
+		if err := root.Mkdir(name, perm); err != nil {
+			if os.IsExist(err) {
+				continue
+			}
+			return "", err
+		}
+		info, err := root.Lstat(name)
+		if err != nil {
+			return "", err
+		}
+		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+			return "", fmt.Errorf("archive temporary directory %q is not a regular directory", name)
+		}
+		return filepath.Join(rootPath, name), nil
+	}
+	return "", fmt.Errorf("create unique archive temporary directory in %q", rootPath)
+}
+
+func removeArchiveSubdirectory(rootPath, targetPath string) error {
+	absRoot, err := filepath.Abs(rootPath)
+	if err != nil {
+		return err
+	}
+	absTarget, err := filepath.Abs(targetPath)
+	if err != nil {
+		return err
+	}
+	relative, err := filepath.Rel(absRoot, absTarget)
+	if err != nil || relative == "." || relative == "" || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("archive staging path %q is outside %q", targetPath, rootPath)
+	}
+	root, err := openArchiveDirectoryNoSymlink(absRoot)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	info, err := root.Lstat(relative)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return fmt.Errorf("archive staging path %q is not a regular directory", targetPath)
+	}
+	return root.RemoveAll(relative)
+}
+
+// replaceArchiveArtifactForWrite creates a fresh inode and atomically places
+// it at name. It never opens the existing target with O_TRUNC, so a symlink
+// swap cannot redirect truncation to another file.
+func replaceArchiveArtifactForWrite(rootPath, name string, perm os.FileMode, createParents bool) (*os.File, error) {
+	normalized, err := normalizeArchiveArtifactName(name)
+	if err != nil {
+		return nil, err
+	}
+	root, err := openArchiveDirectoryNoSymlink(rootPath)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	if err := inspectArchiveRelativeParents(root, normalized, createParents, 0o755); err != nil {
+		return nil, err
+	}
+	if _, err := inspectArchiveArtifactTarget(root, normalized, true); err != nil {
+		return nil, err
+	}
+	tempName, err := archiveTemporaryName(filepath.Dir(filepath.FromSlash(normalized)), filepath.Base(normalized))
+	if err != nil {
+		return nil, err
+	}
+	file, err := root.OpenFile(tempName, os.O_CREATE|os.O_EXCL|os.O_WRONLY, perm)
+	if err != nil {
+		return nil, err
+	}
+	if err := root.Rename(tempName, filepath.FromSlash(normalized)); err != nil {
+		_ = file.Close()
+		_ = root.Remove(tempName)
+		return nil, err
+	}
+	return file, nil
+}
+
+func createArchiveArtifactExclusive(rootPath, name string, perm os.FileMode, createParents bool) (*os.File, error) {
+	normalized, err := normalizeArchiveArtifactName(name)
+	if err != nil {
+		return nil, err
+	}
+	root, err := openArchiveDirectoryNoSymlink(rootPath)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	if err := inspectArchiveRelativeParents(root, normalized, createParents, 0o755); err != nil {
+		return nil, err
+	}
+	if _, err := inspectArchiveArtifactTarget(root, normalized, true); err != nil {
+		return nil, err
+	}
+	return root.OpenFile(filepath.FromSlash(normalized), os.O_CREATE|os.O_EXCL|os.O_WRONLY, perm)
+}
+
+func openArchiveArtifactForRead(rootPath, name string) (*os.File, os.FileInfo, error) {
+	root, err := openArchiveDirectoryNoSymlink(rootPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer root.Close()
+	return openArchiveArtifactForReadAt(root, name)
+}
+
+func openArchiveArtifactForReadAt(root *os.Root, name string) (*os.File, os.FileInfo, error) {
+	if root == nil {
+		return nil, nil, fmt.Errorf("archive root is required")
+	}
+	normalized, err := normalizeArchiveArtifactName(name)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := inspectArchiveRelativeParents(root, normalized, false, 0); err != nil {
+		return nil, nil, err
+	}
+	info, err := inspectArchiveArtifactTarget(root, normalized, false)
+	if err != nil {
+		return nil, nil, err
+	}
+	file, err := root.Open(filepath.FromSlash(normalized))
+	if err != nil {
+		return nil, nil, err
+	}
+	openedInfo, err := file.Stat()
+	if err != nil {
+		_ = file.Close()
+		return nil, nil, err
+	}
+	after, err := root.Lstat(filepath.FromSlash(normalized))
+	if err != nil || after.Mode()&os.ModeSymlink != 0 || !after.Mode().IsRegular() || !os.SameFile(info, openedInfo) || !os.SameFile(after, openedInfo) {
+		_ = file.Close()
+		if err != nil {
+			return nil, nil, err
+		}
+		return nil, nil, fmt.Errorf("archive artifact %q changed while it was opened", normalized)
+	}
+	return file, openedInfo, nil
+}
+
+func validateArchiveArtifactTargets(rootPath string, names ...string) error {
+	root, err := openArchiveDirectoryNoSymlink(rootPath)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	for _, name := range names {
+		if strings.TrimSpace(name) == "" {
+			continue
+		}
+		normalized, err := normalizeArchiveArtifactName(name)
+		if err != nil {
+			return err
+		}
+		if err := inspectArchiveRelativeParents(root, normalized, false, 0); err != nil {
+			return err
+		}
+		if _, err := inspectArchiveArtifactTarget(root, normalized, true); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func materializeArchiveFromBucket(ctx context.Context, bucket *blob.Bucket, backend archiveBackendRuntime, record *storage.RunArchiveRecord) error {
+	if bucket == nil {
+		return fmt.Errorf("archive object bucket is required")
+	}
+	if record == nil {
+		return fmt.Errorf("archive record is required")
+	}
+	if err := validateArchiveRunID(record.TestID); err != nil {
+		return err
+	}
+	canonicalRoot, err := resolveArchiveDirectoryRoot(backend.LocalRoot, true)
+	if err != nil {
+		return fmt.Errorf("prepare archive cache root: %w", err)
+	}
+	backend.LocalRoot = canonicalRoot
+	localRoot, err := archiveMaterializationLocalRoot(backend, record)
+	if err != nil {
+		return err
+	}
+	parent := filepath.Dir(localRoot)
+	tempRoot, err := createArchiveTemporaryDirectory(parent, filepath.Base(localRoot)+".materializing", 0o755)
+	if err != nil {
+		return fmt.Errorf("create archive materialization temp dir: %w", err)
+	}
+	keepTemp := false
+	defer func() {
+		if !keepTemp {
+			_ = removeArchiveSubdirectory(parent, tempRoot)
+		}
+	}()
+
+	manifestData, err := readArchiveObjectLimited(ctx, bucket, backend.objectKey(record.TestID, runArchiveManifestFileName), maxArchiveManifestDownloadBytes)
+	if err != nil {
+		return fmt.Errorf("download archive manifest: %w", err)
+	}
+	if expected := strings.TrimSpace(record.ManifestSHA256); expected != "" && !strings.EqualFold(sha256BytesHex(manifestData), expected) {
+		return fmt.Errorf("downloaded archive manifest SHA-256 does not match persisted metadata")
+	}
+	manifest, artifacts, err := decodeMaterializationManifest(record, manifestData)
+	if err != nil {
+		return err
+	}
+	totalBytes := int64(len(manifestData))
+	maxBytes := configuredArchiveMaterializationMaxBytes()
+	if totalBytes > maxBytes {
+		return fmt.Errorf("archive manifest exceeds materialization byte limit %d", maxBytes)
+	}
+	for _, artifact := range artifacts {
+		if artifact == runArchiveManifestFileName {
+			continue
+		}
+		written, err := downloadArchiveObjectToFile(ctx, bucket, backend.objectKey(record.TestID, artifact), tempRoot, artifact, maxBytes-totalBytes)
+		if err != nil {
+			return fmt.Errorf("download archive artifact %s: %w", artifact, err)
+		}
+		totalBytes += written
+	}
+
+	// The manifest is intentionally the final file written. Its presence is the
+	// cache's commit marker, so a canceled or failed artifact download cannot make
+	// a partial directory look complete.
+	tempManifest := filepath.Join(tempRoot, runArchiveManifestFileName)
+	if err := writeSyncedArchiveFile(tempManifest, manifestData); err != nil {
+		return fmt.Errorf("write archive manifest: %w", err)
+	}
+	tempRecord := *record
+	tempRecord.ArchivePath = tempRoot
+	tempRecord.ManifestPath = tempManifest
+	if err := validateMaterializedArchiveWithManifest(&tempRecord, tempRoot, tempManifest, manifest); err != nil {
+		return fmt.Errorf("verify materialized archive: %w", err)
+	}
+	// Cache ownership metadata lives inside the staged directory so the archive
+	// and its retention marker commit in the same atomic rename. Producer archive
+	// directories never receive this marker and therefore remain non-evictable.
+	if err := writeArchiveMaterializationCacheMarker(tempRoot, totalBytes, time.Now().UTC()); err != nil {
+		return fmt.Errorf("record archive materialization cache entry: %w", err)
+	}
+	if err := syncArchiveDirectory(tempRoot); err != nil {
+		return fmt.Errorf("sync materialized archive: %w", err)
+	}
+	if err := atomicReplaceArchiveDirectory(tempRoot, localRoot); err != nil {
+		return err
+	}
+	keepTemp = true // tempRoot was renamed to localRoot.
+	record.ArchivePath = localRoot
+	record.ManifestPath = filepath.Join(localRoot, runArchiveManifestFileName)
+	return nil
+}
+
+func archiveMaterializationLocalRoot(backend archiveBackendRuntime, record *storage.RunArchiveRecord) (string, error) {
+	if record == nil {
+		return "", fmt.Errorf("archive record is required")
+	}
+	if err := validateArchiveRunID(record.TestID); err != nil {
+		return "", err
+	}
+	root := strings.TrimSpace(backend.LocalRoot)
+	if root == "" {
+		return "", fmt.Errorf("archive materialization root is empty")
+	}
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(rootAbs, record.TestID), nil
+}
+
+func readArchiveObjectLimited(ctx context.Context, bucket *blob.Bucket, key string, limit int64) ([]byte, error) {
 	reader, err := bucket.NewReader(ctx, key, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer reader.Close()
-	file, err := os.Create(localPath)
+	data, err := io.ReadAll(io.LimitReader(reader, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("archive manifest exceeds %d bytes", limit)
+	}
+	return data, nil
+}
+
+func decodeMaterializationManifest(record *storage.RunArchiveRecord, data []byte) (*RunArchiveManifest, []string, error) {
+	var manifest RunArchiveManifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return nil, nil, fmt.Errorf("decode archive manifest: %w", err)
+	}
+	if err := validateRunArchiveManifestArtifacts(&manifest); err != nil {
+		return nil, nil, err
+	}
+	if strings.TrimSpace(manifest.TestID) == "" || manifest.TestID != record.TestID {
+		return nil, nil, fmt.Errorf("archive manifest test id %q does not match record %q", manifest.TestID, record.TestID)
+	}
+	names, err := materializationArtifactNames(&manifest)
+	if err != nil {
+		return nil, nil, err
+	}
+	return &manifest, names, nil
+}
+
+func materializationArtifactNames(manifest *RunArchiveManifest) ([]string, error) {
+	named, err := archiveManifestArtifactNames(manifest)
+	if err != nil {
+		return nil, err
+	}
+	for _, descriptor := range manifest.Artifacts {
+		if descriptor.SizeBytes < 0 {
+			return nil, fmt.Errorf("archive artifact %q has a negative size", descriptor.Name)
+		}
+		name, err := requiredArchiveArtifactName("artifacts.name", descriptor.Name)
+		if err != nil {
+			return nil, err
+		}
+		named[name] = struct{}{}
+	}
+	if len(named) > maxArchiveMaterializedArtifacts {
+		return nil, fmt.Errorf("archive manifest declares %d artifacts, limit is %d", len(named), maxArchiveMaterializedArtifacts)
+	}
+	artifacts := make([]string, 0, len(named))
+	for name := range named {
+		artifacts = append(artifacts, name)
+	}
+	sort.Strings(artifacts)
+	return artifacts, nil
+}
+
+func validateMaterializedArchive(record *storage.RunArchiveRecord, root, manifestPath string) error {
+	return validateMaterializedArchiveContext(context.Background(), record, root, manifestPath)
+}
+
+func validateMaterializedArchiveContext(ctx context.Context, record *storage.RunArchiveRecord, root, manifestPath string) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	data, err := readLocalFileLimitedContext(ctx, manifestPath, maxArchiveManifestDownloadBytes)
 	if err != nil {
 		return err
 	}
-	defer file.Close()
-	if _, err := io.Copy(file, reader); err != nil {
+	manifest, _, err := decodeMaterializationManifest(record, data)
+	if err != nil {
 		return err
 	}
-	return file.Sync()
+	return validateMaterializedArchiveWithManifestContext(ctx, record, root, manifestPath, manifest)
+}
+
+func validateMaterializedArchiveWithManifest(record *storage.RunArchiveRecord, root, manifestPath string, manifest *RunArchiveManifest) error {
+	return validateMaterializedArchiveWithManifestContext(context.Background(), record, root, manifestPath, manifest)
+}
+
+func validateMaterializedArchiveWithManifestContext(ctx context.Context, record *storage.RunArchiveRecord, root, manifestPath string, manifest *RunArchiveManifest) error {
+	if strings.TrimSpace(root) == "" {
+		return fmt.Errorf("archive root is empty")
+	}
+	rootInfo, err := os.Lstat(root)
+	if err != nil {
+		return err
+	}
+	if rootInfo.Mode()&os.ModeSymlink != 0 || !rootInfo.IsDir() {
+		return fmt.Errorf("archive root is not a regular directory")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if expected := strings.TrimSpace(record.ManifestSHA256); expected != "" {
+		actual, err := sha256FileContext(ctx, manifestPath)
+		if err != nil {
+			return err
+		}
+		if !strings.EqualFold(actual, expected) {
+			return fmt.Errorf("archive manifest SHA-256 does not match persisted metadata")
+		}
+	}
+	names, err := materializationArtifactNames(manifest)
+	if err != nil {
+		return err
+	}
+	descriptors := make(map[string]RunArchiveArtifact, len(manifest.Artifacts))
+	for _, descriptor := range manifest.Artifacts {
+		name, err := requiredArchiveArtifactName("artifacts.name", descriptor.Name)
+		if err != nil {
+			return err
+		}
+		if _, duplicate := descriptors[name]; duplicate {
+			return fmt.Errorf("archive manifest contains duplicate artifact %q", name)
+		}
+		descriptor.Name = name
+		descriptors[name] = descriptor
+	}
+	for _, name := range names {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if name == runArchiveManifestFileName {
+			continue
+		}
+		path, err := archiveArtifactPath(root, name)
+		if err != nil {
+			return err
+		}
+		info, err := os.Lstat(path)
+		if err != nil {
+			return fmt.Errorf("archive artifact %s is missing: %w", name, err)
+		}
+		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+			return fmt.Errorf("archive artifact %s is not a regular file", name)
+		}
+		descriptor, described := descriptors[name]
+		if !described {
+			continue
+		}
+		if descriptor.SizeBytes > 0 || strings.TrimSpace(descriptor.SHA256) != "" {
+			if info.Size() != descriptor.SizeBytes {
+				return fmt.Errorf("archive artifact %s size %d does not match expected %d", name, info.Size(), descriptor.SizeBytes)
+			}
+		}
+		if expected := strings.TrimSpace(descriptor.SHA256); expected != "" {
+			actual, err := sha256FileContext(ctx, path)
+			if err != nil {
+				return err
+			}
+			if !strings.EqualFold(actual, expected) {
+				return fmt.Errorf("archive artifact %s SHA-256 does not match manifest", name)
+			}
+		}
+	}
+	return nil
+}
+
+func writeSyncedArchiveFile(path string, data []byte) error {
+	file, err := createArchiveArtifactExclusive(filepath.Dir(path), filepath.Base(path), 0o644, false)
+	if err != nil {
+		return err
+	}
+	if _, err := file.Write(data); err != nil {
+		_ = file.Close()
+		return err
+	}
+	if err := file.Sync(); err != nil {
+		_ = file.Close()
+		return err
+	}
+	return file.Close()
+}
+
+func syncArchiveDirectory(path string) error {
+	dir, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	return dir.Sync()
+}
+
+func atomicReplaceArchiveDirectory(tempRoot, finalRoot string) error {
+	absTemp, err := filepath.Abs(tempRoot)
+	if err != nil {
+		return err
+	}
+	absFinal, err := filepath.Abs(finalRoot)
+	if err != nil {
+		return err
+	}
+	parent := filepath.Dir(absFinal)
+	if filepath.Dir(absTemp) != parent {
+		return fmt.Errorf("archive staging directory must share the final archive parent")
+	}
+	root, err := openArchiveDirectoryNoSymlink(parent)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	tempName := filepath.Base(absTemp)
+	finalName := filepath.Base(absFinal)
+	tempInfo, err := root.Lstat(tempName)
+	if err != nil {
+		return err
+	}
+	if tempInfo.Mode()&os.ModeSymlink != 0 || !tempInfo.IsDir() {
+		return fmt.Errorf("archive staging root is not a regular directory")
+	}
+
+	backupName := ""
+	if finalInfo, statErr := root.Lstat(finalName); statErr == nil {
+		if finalInfo.Mode()&os.ModeSymlink != 0 || !finalInfo.IsDir() {
+			return fmt.Errorf("existing archive run root %q is not a non-symlink directory", finalRoot)
+		}
+		backupName, err = archiveTemporaryName(".", finalName+".previous")
+		if err != nil {
+			return err
+		}
+		if err := root.Rename(finalName, backupName); err != nil {
+			return fmt.Errorf("move previous archive cache: %w", err)
+		}
+	} else if !os.IsNotExist(statErr) {
+		return statErr
+	}
+	if err := root.Rename(tempName, finalName); err != nil {
+		if backupName != "" {
+			_ = root.Rename(backupName, finalName)
+		}
+		return fmt.Errorf("commit materialized archive: %w", err)
+	}
+	if backupName != "" {
+		_ = root.RemoveAll(backupName)
+	}
+	if err := syncArchiveDirectory(parent); err != nil {
+		return err
+	}
+	return nil
+}
+
+func downloadArchiveObjectToFile(ctx context.Context, bucket *blob.Bucket, key string, localRoot string, name string, limit int64) (int64, error) {
+	if limit < 0 {
+		return 0, fmt.Errorf("archive materialization byte limit exceeded")
+	}
+	reader, err := bucket.NewReader(ctx, key, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer reader.Close()
+	file, err := createArchiveArtifactExclusive(localRoot, name, 0o644, true)
+	if err != nil {
+		return 0, err
+	}
+	written, copyErr := io.Copy(file, io.LimitReader(reader, limit+1))
+	if copyErr != nil {
+		_ = file.Close()
+		return written, copyErr
+	}
+	if written > limit {
+		_ = file.Close()
+		return written, fmt.Errorf("archive materialization exceeds configured byte limit")
+	}
+	if err := file.Sync(); err != nil {
+		_ = file.Close()
+		return written, err
+	}
+	if err := file.Close(); err != nil {
+		return written, err
+	}
+	return written, nil
+}
+
+func configuredArchiveMaterializationMaxBytes() int64 {
+	raw := strings.TrimSpace(os.Getenv(envArchiveMaterializedMaxBytes))
+	if raw == "" {
+		return defaultArchiveMaterializedBytes
+	}
+	value, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || value <= 0 {
+		return defaultArchiveMaterializedBytes
+	}
+	return value
+}
+
+func configuredArchiveMaterializationTimeout() time.Duration {
+	raw := strings.TrimSpace(os.Getenv(envArchiveMaterializeTimeout))
+	if raw == "" {
+		return defaultArchiveMaterializeTimeout
+	}
+	value, err := time.ParseDuration(raw)
+	if err != nil || value <= 0 {
+		return defaultArchiveMaterializeTimeout
+	}
+	return value
 }
 
 func (b archiveBackendRuntime) validate() error {

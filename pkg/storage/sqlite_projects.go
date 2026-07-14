@@ -462,50 +462,228 @@ func (s *SQLiteStore) DeleteProject(id string) error {
 	if id == DefaultProjectID {
 		return errors.New("default project cannot be deleted")
 	}
+	id = normalizeProjectID(id)
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	rows, err := tx.Query(`SELECT id FROM tests WHERE project_id = ?`, id)
+	var exists int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM projects WHERE id = ?`, id).Scan(&exists); err != nil {
+		return err
+	}
+	if exists == 0 {
+		return sql.ErrNoRows
+	}
+	// Serialize every archive/finalization/note transition for the project in a
+	// deterministic order before snapshotting cleanup records. PostgreSQL's FK
+	// rewriting means the explicit row locks are the publication tombstone.
+	lockQuery := `SELECT id FROM tests WHERE project_id = ? ORDER BY id`
+	if s.db.dialect == storeDialectPostgres {
+		lockQuery += ` FOR UPDATE`
+	}
+	lockedRows, err := tx.Query(lockQuery, id)
 	if err != nil {
 		return err
 	}
-	var testIDs []string
-	for rows.Next() {
+	for lockedRows.Next() {
 		var testID string
-		if err := rows.Scan(&testID); err != nil {
-			rows.Close()
-			return err
-		}
-		testIDs = append(testIDs, testID)
-	}
-	rows.Close()
-	for _, testID := range testIDs {
-		if _, err := tx.Exec(`DELETE FROM test_history WHERE test_id = ?`, testID); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(`DELETE FROM test_notes WHERE test_id = ?`, testID); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(`DELETE FROM test_interval_summaries WHERE test_id = ?`, testID); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(`DELETE FROM run_archives WHERE test_id = ?`, testID); err != nil {
+		if err := lockedRows.Scan(&testID); err != nil {
+			lockedRows.Close()
 			return err
 		}
 	}
-	for _, q := range []string{
-		`DELETE FROM tests WHERE project_id = ?`,
-		`DELETE FROM scripts WHERE project_id = ?`,
-		`DELETE FROM folders WHERE project_id = ?`,
-		`DELETE FROM projects WHERE id = ?`,
-	} {
-		if _, err := tx.Exec(q, id); err != nil {
+	if err := lockedRows.Err(); err != nil {
+		lockedRows.Close()
+		return err
+	}
+	lockedRows.Close()
+	archiveRecords, err := listProjectRunArchivesTx(tx, id)
+	if err != nil {
+		return err
+	}
+	cataloged := make(map[string]struct{}, len(archiveRecords))
+	for _, record := range archiveRecords {
+		if err := enqueueArchiveCleanupTx(tx, id, record); err != nil {
+			return err
+		}
+		cataloged[record.TestID] = struct{}{}
+	}
+	archiveFinalizationJobs, err := listProjectArchiveFinalizationJobsTx(tx, id)
+	if err != nil {
+		return err
+	}
+	for _, job := range archiveFinalizationJobs {
+		if job == nil {
+			continue
+		}
+		if _, ok := cataloged[job.TestID]; ok {
+			continue
+		}
+		if err := enqueueArchiveCleanupTx(tx, id, &job.ArchiveRecord); err != nil {
+			return err
+		}
+	}
+
+	// Remove embedded service-account grants in the same transaction as the
+	// project and role-binding rows. These grants are JSON rather than rows, so
+	// a simple DELETE by project_id cannot cover them.
+	if err := deleteProjectServiceAccountGrants(tx, id); err != nil {
+		return err
+	}
+
+	// Scenario ownership is derived from its scripts. Select only scenarios
+	// whose scripts all belong to this project, avoiding deletion of malformed
+	// cross-project scenarios while still removing the normal project-owned case.
+	scenarioSubquery := `SELECT DISTINCT ss.scenario_id
+		FROM scenario_scripts ss
+		JOIN scripts sc ON sc.id = ss.script_id
+		WHERE sc.project_id = ?
+		AND NOT EXISTS (
+			SELECT 1 FROM scenario_scripts other_ss
+			JOIN scripts other_sc ON other_sc.id = other_ss.script_id
+			WHERE other_ss.scenario_id = ss.scenario_id AND other_sc.project_id <> ?
+		)`
+	ownedScenarioRows, err := tx.Query(scenarioSubquery, id, id)
+	if err != nil {
+		return err
+	}
+	ownedScenarioIDs := []string{}
+	for ownedScenarioRows.Next() {
+		var scenarioID string
+		if err := ownedScenarioRows.Scan(&scenarioID); err != nil {
+			ownedScenarioRows.Close()
+			return err
+		}
+		ownedScenarioIDs = append(ownedScenarioIDs, scenarioID)
+	}
+	if err := ownedScenarioRows.Err(); err != nil {
+		ownedScenarioRows.Close()
+		return err
+	}
+	ownedScenarioRows.Close()
+
+	type projectDelete struct {
+		query string
+		args  []any
+	}
+	deletes := []projectDelete{
+		// Children that can reference tests must be removed before tests.
+		{`UPDATE capacity_reservations SET bound_test_id = NULL, bound_test_status = NULL, updated_at = ? WHERE bound_test_id IN (SELECT id FROM tests WHERE project_id = ?)`, []any{time.Now().UTC(), id}},
+		{`DELETE FROM github_check_links WHERE test_id IN (SELECT id FROM tests WHERE project_id = ?) OR script_id IN (SELECT id FROM scripts WHERE project_id = ?)`, []any{id, id}},
+		{`DELETE FROM test_history WHERE test_id IN (SELECT id FROM tests WHERE project_id = ?)`, []any{id}},
+		{`DELETE FROM test_notes WHERE test_id IN (SELECT id FROM tests WHERE project_id = ?)`, []any{id}},
+		{`DELETE FROM test_interval_summaries WHERE test_id IN (SELECT id FROM tests WHERE project_id = ?)`, []any{id}},
+		{`DELETE FROM run_archives WHERE test_id IN (SELECT id FROM tests WHERE project_id = ?)`, []any{id}},
+		{`DELETE FROM archive_finalization_jobs WHERE project_id = ? OR test_id IN (SELECT id FROM tests WHERE project_id = ?)`, []any{id, id}},
+		{`DELETE FROM archive_refresh_jobs WHERE project_id = ? OR test_id IN (SELECT id FROM tests WHERE project_id = ?)`, []any{id, id}},
+		{`UPDATE scenario_schedules SET last_run_test_id = NULL WHERE last_run_test_id IN (SELECT id FROM tests WHERE project_id = ?)`, []any{id}},
+		{`DELETE FROM scenario_schedule_occurrences WHERE project_id = ? OR test_id IN (SELECT id FROM tests WHERE project_id = ?) OR schedule_id IN (SELECT id FROM scenario_schedules WHERE scenario_id IN (` + scenarioSubquery + `))`, []any{id, id, id, id}},
+		{`DELETE FROM tests WHERE project_id = ?`, []any{id}},
+
+		// Recurring scenario governance and the scenario itself.
+		{`DELETE FROM scenario_schedule_approvals WHERE project_id = ? OR schedule_id IN (SELECT id FROM scenario_schedules WHERE scenario_id IN (` + scenarioSubquery + `))`, []any{id, id, id}},
+		{`DELETE FROM scenario_schedules WHERE project_id = ? OR scenario_id IN (` + scenarioSubquery + `)`, []any{id, id, id}},
+		{`DELETE FROM scenario_data_pool_bindings WHERE scenario_id IN (` + scenarioSubquery + `) OR pool_id IN (SELECT id FROM shared_data_pools WHERE project_id = ?)`, []any{id, id, id}},
+		{`DELETE FROM scenario_scripts WHERE scenario_id IN (` + scenarioSubquery + `)`, []any{id, id}},
+
+		// Shared data and authoring assets.
+		{`DELETE FROM shared_data_pool_rows WHERE pool_id IN (SELECT id FROM shared_data_pools WHERE project_id = ?)`, []any{id}},
+		{`DELETE FROM shared_data_pools WHERE project_id = ?`, []any{id}},
+		{`DELETE FROM authoring_sessions WHERE project_id = ?`, []any{id}},
+		{`DELETE FROM reusable_blocks WHERE project_id = ?`, []any{id}},
+		{`DELETE FROM object_repositories WHERE project_id = ?`, []any{id}},
+		{`DELETE FROM correlation_rulesets WHERE project_id = ?`, []any{id}},
+		{`DELETE FROM monitoring_collectors WHERE project_id = ?`, []any{id}},
+
+		// Execution-plan schedules, approvals, occurrences, and run state.
+		{`DELETE FROM execution_plan_schedule_occurrences WHERE project_id = ? OR schedule_id IN (SELECT id FROM execution_plan_schedules WHERE project_id = ? OR plan_id IN (SELECT id FROM execution_plans WHERE project_id = ?))`, []any{id, id, id}},
+		{`DELETE FROM execution_plan_schedules WHERE project_id = ? OR plan_id IN (SELECT id FROM execution_plans WHERE project_id = ?)`, []any{id, id}},
+		{`DELETE FROM execution_plan_approvals WHERE project_id = ? OR plan_id IN (SELECT id FROM execution_plans WHERE project_id = ?)`, []any{id, id}},
+		{`DELETE FROM execution_plan_runs WHERE project_id = ? OR plan_id IN (SELECT id FROM execution_plans WHERE project_id = ?)`, []any{id, id}},
+		{`DELETE FROM execution_plans WHERE project_id = ?`, []any{id}},
+		{`DELETE FROM capacity_reservations WHERE project_id = ?`, []any{id}},
+
+		// Imports, accounting, fleet requests, and repository integration state.
+		{`DELETE FROM provisioning_events WHERE request_id IN (SELECT id FROM provisioning_requests WHERE project_id = ?)`, []any{id}},
+		{`DELETE FROM provisioning_requests WHERE project_id = ?`, []any{id}},
+		{`DELETE FROM github_sync_jobs WHERE project_id = ?`, []any{id}},
+		{`DELETE FROM external_result_imports WHERE project_id = ?`, []any{id}},
+		{`DELETE FROM usage_accounting_snapshots WHERE project_id = ?`, []any{id}},
+		// Audit history is intentionally retained after project deletion. It is an
+		// immutable governance trail, not project-owned mutable content.
+
+		// Application/release hierarchy and its governance records.
+		{`DELETE FROM release_sla_waivers WHERE project_id = ? OR release_id IN (SELECT id FROM releases WHERE project_id = ? OR application_id IN (SELECT id FROM applications WHERE project_id = ?))`, []any{id, id, id}},
+		{`DELETE FROM releases WHERE project_id = ? OR application_id IN (SELECT id FROM applications WHERE project_id = ?)`, []any{id, id}},
+		{`DELETE FROM applications WHERE project_id = ?`, []any{id}},
+
+		// Script-derived sensitive records and project repository contents.
+		{`DELETE FROM github_script_links WHERE script_id IN (SELECT id FROM scripts WHERE project_id = ?)`, []any{id}},
+		{`DELETE FROM script_recordings WHERE script_id IN (SELECT id FROM scripts WHERE project_id = ?)`, []any{id}},
+		{`DELETE FROM scripts WHERE project_id = ?`, []any{id}},
+		{`DELETE FROM folders WHERE project_id = ?`, []any{id}},
+		{`DELETE FROM user_role_bindings WHERE scope_type = 'project' AND scope_id = ?`, []any{id}},
+		{`DELETE FROM projects WHERE id = ?`, []any{id}},
+	}
+	for _, deletion := range deletes {
+		if _, err := tx.Exec(deletion.query, deletion.args...); err != nil {
+			return err
+		}
+	}
+	for _, scenarioID := range ownedScenarioIDs {
+		if _, err := tx.Exec(`DELETE FROM scenarios WHERE id = ?`, scenarioID); err != nil {
 			return err
 		}
 	}
 	return tx.Commit()
+}
+
+func deleteProjectServiceAccountGrants(tx *storeTx, projectID string) error {
+	rows, err := tx.Query(`SELECT id, COALESCE(project_roles_json, '') FROM service_accounts`)
+	if err != nil {
+		return err
+	}
+	type update struct {
+		id    string
+		roles string
+	}
+	updates := []update{}
+	for rows.Next() {
+		var id, encoded string
+		if err := rows.Scan(&id, &encoded); err != nil {
+			rows.Close()
+			return err
+		}
+		roles := map[string][]string{}
+		if strings.TrimSpace(encoded) != "" && strings.TrimSpace(encoded) != "null" {
+			if err := json.Unmarshal([]byte(encoded), &roles); err != nil {
+				rows.Close()
+				return fmt.Errorf("decode service account %s project grants: %w", id, err)
+			}
+		}
+		if _, exists := roles[projectID]; !exists {
+			continue
+		}
+		delete(roles, projectID)
+		data, err := json.Marshal(roles)
+		if err != nil {
+			rows.Close()
+			return err
+		}
+		updates = append(updates, update{id: id, roles: string(data)})
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+	for _, update := range updates {
+		if _, err := tx.Exec(`UPDATE service_accounts SET project_roles_json = ?, updated_at = ? WHERE id = ?`, update.roles, time.Now().UTC(), update.id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *SQLiteStore) SaveFolder(folder *Folder) error {

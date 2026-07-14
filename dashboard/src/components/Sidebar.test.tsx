@@ -5,6 +5,7 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { DevViewProvider } from '../hooks/DevViewProvider'
+import { resolveApiResourceUrl } from '../hooks/apiClient'
 import Sidebar from './Sidebar'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -87,7 +88,7 @@ describe('Sidebar', () => {
     expect(container.textContent).toContain('Alice Admin')
     expect(container.textContent).toContain('System Admin · Viewer')
     const logoutLink = container.querySelector('.sidebar-identity-action') as HTMLAnchorElement | null
-    expect(logoutLink?.getAttribute('href')).toBe('/logout')
+    expect(logoutLink?.getAttribute('href')).toBe(resolveApiResourceUrl('/logout'))
     expect(logoutLink?.textContent).toBe('Sign out')
   })
 
@@ -128,7 +129,7 @@ describe('Sidebar', () => {
     })
 
     expect(authApiMock.logout).toHaveBeenCalledWith('csrf-token')
-    expect(window.location.assign).toHaveBeenCalledWith('/')
+    expect(window.location.assign).toHaveBeenCalledWith(resolveApiResourceUrl('/'))
   })
 
   it('shows imminent native oidc session expiry without replacing identity metadata', async () => {
@@ -548,5 +549,24 @@ describe('Sidebar', () => {
     })
 
     expect(container.textContent).not.toContain('Dev View')
+  })
+
+  it('keeps navigation names and current-page state available when labels are visually collapsed', async () => {
+    await act(async () => {
+      root.render(
+        <Sidebar
+          active="new-test"
+          onNavigate={vi.fn()}
+          connectionState="connected"
+        />,
+      )
+    })
+
+    const navItems = Array.from(container.querySelectorAll<HTMLButtonElement>('.nav-item'))
+    expect(navItems.length).toBeGreaterThan(0)
+    expect(navItems.every(item => Boolean(item.getAttribute('aria-label')))).toBe(true)
+    expect(navItems.every(item => item.getAttribute('title') === item.getAttribute('aria-label'))).toBe(true)
+    expect(navItems.find(item => item.getAttribute('aria-label') === 'New Test')?.getAttribute('aria-current')).toBe('page')
+    expect(container.querySelector<HTMLButtonElement>('.sidebar-brand')?.getAttribute('aria-label')).toBe('APEX Load dashboard')
   })
 })

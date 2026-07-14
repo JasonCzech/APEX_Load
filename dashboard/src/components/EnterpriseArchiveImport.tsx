@@ -1485,12 +1485,22 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
         onDragOver={e => { e.preventDefault(); setDragOver(true) }}
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
-        onClick={handleBrowseArchives}>
-        <input ref={fileRef} type="file" accept=".zip" multiple onChange={handleFileSelect} hidden />
+        onClick={handleBrowseArchives}
+        role="button"
+        tabIndex={0}
+        aria-label={queuedFileCount > 0 ? `Add enterprise script archives. ${queuedFileCount} currently queued` : 'Choose one or more enterprise script archives'}
+        onKeyDown={event => {
+          if (event.currentTarget !== event.target) return
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault()
+            handleBrowseArchives()
+          }
+        }}>
+        <input ref={fileRef} type="file" accept=".zip" multiple onClick={event => event.stopPropagation()} onChange={handleFileSelect} hidden />
         {queuedFileCount > 0 ? (
           <div className="lr-file-queue">
             <div className="lr-file-info">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="2" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
               <div>
                 <span className="lr-filename">{queuedFileCount} ZIP file{queuedFileCount === 1 ? '' : 's'} queued</span>
                 <span className="lr-filesize">Click to add more, or remove individual scripts below.</span>
@@ -1550,7 +1560,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
           </div>
         ) : (
           <div className="lr-drop-content">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="1.5" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
             <p>Drop one or more enterprise script archive <code>.zip</code> files here</p>
             <span className="lr-drop-hint">or click to browse</span>
           </div>
@@ -2030,7 +2040,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
                   {replayValidationWarnings.length > 0 && (
                     <ul>{replayValidationWarnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>
                   )}
-                  {replayValidationError && <div className="lr-error">{replayValidationError}</div>}
+                  {replayValidationError && <div className="lr-error" role="alert">{replayValidationError}</div>}
                 </div>
               </div>
             )}

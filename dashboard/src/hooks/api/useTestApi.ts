@@ -60,6 +60,7 @@ type ArchiveTransactionsParams = {
 type ArchiveListParams = {
   limit?: number
   offset?: number
+  sample_limit?: number
   action?: string
   groups?: string[]
 }
@@ -79,6 +80,9 @@ type GetTestParams = {
 type TestListResponse = {
   tests: TestSummary[]
   count: number
+  total?: number
+  limit?: number
+  offset?: number
 }
 
 type TestNotesResponse = {
@@ -307,7 +311,7 @@ async function fetchBlob(path: string): Promise<Blob> {
 
 export function useTestApi() {
   const listTests = useCallback(
-    (params?: { project_id?: string; folder_id?: string | null; application_id?: string; release_id?: string; scenario_id?: string } | string, folderId?: string | null) => {
+    (params?: { project_id?: string; folder_id?: string | null; application_id?: string; release_id?: string; scenario_id?: string; summary?: boolean; active_only?: boolean; limit?: number; offset?: number } | string, folderId?: string | null) => {
       const queryParams = typeof params === 'string'
         ? { project_id: params, folder_id: folderId === undefined ? undefined : folderId || '' }
         : {
@@ -316,6 +320,10 @@ export function useTestApi() {
             scenario_id: params?.scenario_id,
             project_id: params?.project_id,
             folder_id: params?.folder_id === undefined ? undefined : params.folder_id || '',
+            summary: params?.summary,
+            active_only: params?.active_only,
+            limit: params?.limit,
+            offset: params?.offset,
           }
       return request<TestListResponse>(`/tests${buildQuery(queryParams)}`)
     },
@@ -542,7 +550,7 @@ export function useTestApi() {
 
   const getTestArchiveResources = useCallback(
     (id: string, params?: ArchiveListParams) => {
-      const suffix = buildQuery({ limit: params?.limit, offset: params?.offset })
+      const suffix = buildQuery({ limit: params?.limit, offset: params?.offset, sample_limit: params?.sample_limit })
       return request<ArchiveResourcesResponse>(`/tests/${id}/archive/resources${suffix}`)
     },
     [],
@@ -550,7 +558,7 @@ export function useTestApi() {
 
   const getTestArchiveSummaries = useCallback(
     (id: string, params?: ArchiveListParams) => {
-      const suffix = buildQuery({ limit: params?.limit, offset: params?.offset, action: params?.action, groups: params?.groups })
+      const suffix = buildQuery({ limit: params?.limit, offset: params?.offset, sample_limit: params?.sample_limit, action: params?.action, groups: params?.groups })
       return request<ArchiveSummariesResponse>(`/tests/${id}/archive/summaries${suffix}`)
     },
     [],

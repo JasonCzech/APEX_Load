@@ -3,6 +3,7 @@ package api
 // library_bundle.go — split from library_federation.go (same package, behavior-preserving).
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -236,7 +237,8 @@ func (s *Server) libraryResultBundleItem(id string) (LibraryBundleItem, error) {
 	}
 	if record, ok := s.runner.GetRunArchive(id); ok && record != nil {
 		result.Archive = record
-		if err := ensureArchiveMaterialized(record); err == nil {
+		if lease, err := acquireArchiveMaterialized(context.Background(), record); err == nil {
+			defer lease.Release()
 			result.ArchiveTransfer = "stream"
 			result.ArchiveManifestHash = hashArchiveManifest(record)
 			result.ArchiveSizeBytes = archiveDirectorySize(record.ArchivePath)
@@ -322,7 +324,10 @@ func (s *Server) importLibraryScript(item LibraryBundleItem, projectID string, r
 	} else {
 		script.ID = localID
 	}
-	stored := s.runner.StoreScript(script)
+	stored, err := s.runner.StoreScriptDurable(script)
+	if err != nil {
+		return "", "", &LibraryConflict{Kind: "script", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, LocalItemID: localID, Reason: "failed to persist imported script: " + err.Error()}
+	}
 	s.rememberLibraryLink(remoteID, item.Kind, item.SourceInstanceID, item.SourceItemID, stored.ID, item.SourceItemID, hashLibraryScript(stored.Script), item.ContentHash)
 	return stored.ID, action, nil
 }

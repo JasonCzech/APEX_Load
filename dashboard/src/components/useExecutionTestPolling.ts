@@ -34,6 +34,10 @@ export function useExecutionTestPolling(testId: string, options: ExecutionTestPo
       return
     }
 
+    setTest(null)
+    setError('')
+    lastPayloadSignatureRef.current = ''
+
     let stopped = false
     let inFlight = false
 
@@ -46,16 +50,19 @@ export function useExecutionTestPolling(testId: string, options: ExecutionTestPo
 
       try {
         const data = await api.getTest(testId)
+        if (stopped) return
         const signature = JSON.stringify(data)
         if (signature !== lastPayloadSignatureRef.current) {
           lastPayloadSignatureRef.current = signature
           setTest(data)
         }
+        setError('')
         if (stopOnTerminal && isCompletedTestStatus(data.status)) {
           stopped = true
           clearInterval(interval)
         }
       } catch (error: unknown) {
+        if (stopped) return
         setError(getErrorMessage(error, 'Unable to load test execution details'))
       } finally {
         inFlight = false

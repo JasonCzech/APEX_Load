@@ -71,6 +71,34 @@ describe('UnsavedChangesModal', () => {
     expect(button('Keep editing').disabled).toBe(true)
     expect(button('Discard changes').disabled).toBe(true)
     expect(button('Saving...').disabled).toBe(true)
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe('Save did not complete')
+  })
+
+  it('provides a labelled focus-trapped dialog and Escape cancellation', async () => {
+    const onCancel = vi.fn()
+    await act(async () => {
+      root.render(
+        <UnsavedChangesModal
+          label="Scenario Builder"
+          onSave={() => {}}
+          onDiscard={() => {}}
+          onCancel={onCancel}
+        />,
+      )
+    })
+    await act(async () => {
+      await new Promise(resolve => window.setTimeout(resolve, 0))
+    })
+
+    const dialog = container.querySelector<HTMLElement>('[role="dialog"]')
+    expect(dialog?.getAttribute('aria-modal')).toBe('true')
+    expect(document.getElementById(dialog?.getAttribute('aria-labelledby') || '')?.textContent).toBe('Unsaved Changes')
+    expect(document.activeElement).toBe(button('Keep editing'))
+
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    expect(onCancel).toHaveBeenCalledOnce()
   })
 
   function button(label: string) {

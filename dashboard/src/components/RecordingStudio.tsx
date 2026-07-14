@@ -1432,7 +1432,13 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
 
       {/* Proxy Setup */}
       <div className="rec-setup-section">
-        <div className="rec-setup-toggle" onClick={() => setShowSetup(!showSetup)}>
+        <button
+          type="button"
+          className="rec-setup-toggle"
+          aria-expanded={showSetup}
+          aria-controls="recording-proxy-setup-steps"
+          onClick={() => setShowSetup(!showSetup)}
+        >
           <div className="rec-proxy-header">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="10" />
@@ -1448,10 +1454,10 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
           >
             <polyline points="6 9 12 15 18 9" />
           </svg>
-        </div>
+        </button>
 
         {showSetup && (
-          <div className="rec-setup-steps">
+          <div className="rec-setup-steps" id="recording-proxy-setup-steps">
             <div className="rec-step">
               <div className="rec-step-number">1</div>
               <div className="rec-step-content">
@@ -1731,20 +1737,25 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
               <div
                 key={session.id}
                 className={`rec-session-card ${selectedSession?.id === session.id ? 'selected' : ''}`}
-                onClick={() => {
-                  handleSelectSession(session)
-                }}
               >
-                <div className="rec-session-header">
-                  <span className="rec-session-name">{session.name}</span>
-                  <span className="rec-session-count">{session.request_count ?? session.requests?.length ?? 0} requests</span>
-                </div>
-                <div className="rec-session-meta">
-                  <span>{session.base_url || 'No base URL'}</span>
-                  <span>{new Date(session.started_at).toLocaleString()}</span>
-                </div>
+                <button
+                  type="button"
+                  className="rec-session-select"
+                  aria-pressed={selectedSession?.id === session.id}
+                  onClick={() => handleSelectSession(session)}
+                >
+                  <span className="rec-session-header">
+                    <span className="rec-session-name">{session.name}</span>
+                    <span className="rec-session-count">{session.request_count ?? session.requests?.length ?? 0} requests</span>
+                  </span>
+                  <span className="rec-session-meta">
+                    <span>{session.base_url || 'No base URL'}</span>
+                    <span>{new Date(session.started_at).toLocaleString()}</span>
+                  </span>
+                </button>
                 <div className="rec-session-actions">
                   <button
+                    type="button"
                     className="btn btn-sm btn-primary"
                     onClick={(e) => { e.stopPropagation(); handleConvert(session) }}
                     disabled={converting}
@@ -1752,6 +1763,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
                     {converting ? 'Converting...' : 'Convert to Script'}
                   </button>
                   <button
+                    type="button"
                     className="btn btn-sm btn-secondary"
                     onClick={(e) => { e.stopPropagation(); handlePreviewConversion(session) }}
                     disabled={converting}
@@ -1760,6 +1772,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
                   </button>
                   {recordingLooksSalesforce(session) && (
                     <button
+                      type="button"
                       className="btn btn-sm btn-secondary"
                       onClick={(e) => { e.stopPropagation(); handleReviewSalesforceSession(session) }}
                       disabled={reviewingSalesforce}
@@ -1768,12 +1781,14 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
                     </button>
                   )}
                   <button
+                    type="button"
                     className="btn btn-sm btn-secondary"
                     onClick={(e) => { e.stopPropagation(); handleExportHAR(session) }}
                   >
                     Export HAR
                   </button>
                   <button
+                    type="button"
                     className="btn btn-sm btn-secondary"
                     style={{ color: 'var(--danger)' }}
                     onClick={(e) => { e.stopPropagation(); handleDelete(session.id) }}
@@ -1814,11 +1829,19 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
                   <tr
                     key={req.seq}
                     className={`${req.is_static ? 'static' : ''} ${req.excluded ? 'static' : ''} ${selectedRequest?.seq === req.seq ? 'selected' : ''}`}
-                    onClick={() => setSelectedRequest(req)}
                   >
                     <td className="cell-mono">{req.seq}</td>
                     <td><span className={`rec-method ${req.method.toLowerCase()}`}>{req.method}</span></td>
-                    <td className="cell-path" title={req.url}>{req.step_name || req.path}{req.query_string ? `?${req.query_string}` : ''}</td>
+                    <td className="cell-path" title={req.url}>
+                      <button
+                        type="button"
+                        className="rec-request-select"
+                        aria-pressed={selectedRequest?.seq === req.seq}
+                        onClick={() => setSelectedRequest(req)}
+                      >
+                        {req.step_name || req.path}{req.query_string ? `?${req.query_string}` : ''}
+                      </button>
+                    </td>
                     <td className={req.status_code >= 400 ? 'text-danger' : ''}>{req.status_code}</td>
                     <td className="cell-mono">{req.response_time_ms.toFixed(0)}ms</td>
                     <td className="cell-mono">{req.think_time_ms > 0 ? `${req.think_time_ms}ms` : '—'}</td>
@@ -1829,6 +1852,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
                     </td>
                     <td>
                       <button
+                        type="button"
                         className="btn btn-sm btn-secondary"
                         onClick={(e) => { e.stopPropagation(); handleToggleRequestExcluded(selectedSession, req) }}
                       >

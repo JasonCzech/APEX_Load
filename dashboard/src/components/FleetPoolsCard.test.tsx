@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import FleetPoolsCard from './FleetPoolsCard'
 import { FleetPool } from '../types'
+import { ApiError } from '../hooks/apiClient'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -80,6 +81,42 @@ describe('FleetPoolsCard', () => {
     expect(fleetApiMock.listFleetPools).toHaveBeenCalled()
     expect(container.textContent).toContain('No managed generator pools')
     expect(container.textContent).toContain('New Pool')
+  })
+
+  it('opens a labelled pool dialog, focuses the name, and restores focus on Escape', async () => {
+    fleetApiMock.listFleetPools.mockResolvedValue({ fleet_pools: [], count: 0 })
+    await act(async () => {
+      root.render(<FleetPoolsCard canManage />)
+    })
+    await flush()
+
+    const trigger = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(b => b.textContent === 'New Pool')
+    trigger?.focus()
+    await act(async () => {
+      trigger?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushFocus()
+
+    const dialog = container.querySelector<HTMLElement>('[role="dialog"]')
+    const name = container.querySelector<HTMLInputElement>('input[placeholder="e.g. east-http"]')
+    expect(dialog?.getAttribute('aria-modal')).toBe('true')
+    expect(document.getElementById(dialog?.getAttribute('aria-labelledby') || '')?.textContent).toBe('New Pool')
+    expect(document.activeElement).toBe(name)
+
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    expect(container.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.activeElement).toBe(trigger)
+  })
+
+  it('announces asynchronous loading errors', async () => {
+    fleetApiMock.listFleetPools.mockRejectedValue(new ApiError('fleet service unavailable', 503))
+    await act(async () => {
+      root.render(<FleetPoolsCard canManage />)
+    })
+    await flush()
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe('fleet service unavailable')
   })
 
   it('renders pools with status pill and member counts', async () => {
@@ -250,3 +287,9 @@ describe('FleetPoolsCard', () => {
     expect(container.textContent).toContain('operator cancelled')
   })
 })
+
+async function flushFocus() {
+  await act(async () => {
+    await new Promise(resolve => window.setTimeout(resolve, 0))
+  })
+}

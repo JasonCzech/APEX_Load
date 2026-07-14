@@ -136,11 +136,15 @@ func (s *Server) handleCreateRelease(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "release name is required")
 		return
 	}
-	projectID := normalizeProjectID(req.ProjectID)
-	if strings.TrimSpace(req.ProjectID) == "" {
-		if application, err := s.store.GetApplication(r.PathValue("id")); err == nil && application != nil {
-			projectID = application.ProjectID
-		}
+	application, err := s.store.GetApplication(r.PathValue("id"))
+	if err != nil || application == nil {
+		writeError(w, http.StatusNotFound, "application not found")
+		return
+	}
+	projectID := normalizeProjectID(application.ProjectID)
+	if requested := strings.TrimSpace(req.ProjectID); requested != "" && normalizeProjectID(requested) != projectID {
+		writeError(w, http.StatusBadRequest, "project_id does not match application project")
+		return
 	}
 	release := &storage.Release{ID: uuid.New().String(), ApplicationID: r.PathValue("id"), ProjectID: projectID, Name: strings.TrimSpace(req.Name), CreatedAt: time.Now()}
 	if err := s.store.SaveRelease(release); err != nil {

@@ -20,7 +20,7 @@ func TestSQLiteDSNAddsPerformancePragmas(t *testing.T) {
 	if strings.Count(dsn, "_pragma=busy_timeout") != 1 {
 		t.Fatalf("busy_timeout pragma count in %q = %d, want 1", dsn, strings.Count(dsn, "_pragma=busy_timeout"))
 	}
-	for _, want := range []string{"_pragma=journal_mode(WAL)", "_pragma=synchronous(NORMAL)"} {
+	for _, want := range []string{"_pragma=foreign_keys(ON)", "_pragma=journal_mode(WAL)", "_pragma=synchronous(NORMAL)"} {
 		if !strings.Contains(dsn, want) {
 			t.Fatalf("sqliteDSN(%q) missing %s", dsn, want)
 		}
@@ -179,6 +179,59 @@ func TestSQLiteStoreAuthoringSessionsRoundTrip(t *testing.T) {
 	}
 	if _, err := store.GetAuthoringSession(session.ID); err == nil {
 		t.Fatal("expected deleted authoring session lookup to fail")
+	}
+}
+
+func TestSQLiteStoreAuthoringSessionCompareAndSwapFencesStaleMutations(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+	now := time.Now().UTC()
+	session := &AuthoringSession{
+		ID: "authoring-cas", ProjectID: "project-1", Source: "test", Name: "Draft", Status: "ready",
+		Draft:     &dsl.Script{Name: "Draft", Protocol: "http", ProjectID: "project-1"},
+		CreatedAt: now, UpdatedAt: now, LastAccessedAt: now,
+	}
+	if err := store.SaveAuthoringSession(session); err != nil {
+		t.Fatalf("SaveAuthoringSession: %v", err)
+	}
+	first, err := store.GetAuthoringSession(session.ID)
+	if err != nil {
+		t.Fatalf("GetAuthoringSession(first): %v", err)
+	}
+	stale, err := store.GetAuthoringSession(session.ID)
+	if err != nil {
+		t.Fatalf("GetAuthoringSession(stale): %v", err)
+	}
+	first.Status = "approving"
+	first.Draft.ID = "approved-script"
+	won, err := store.CompareAndSwapAuthoringSession(first, first.UpdatedAt, "ready")
+	if err != nil || !won {
+		t.Fatalf("approval CAS: won=%v err=%v", won, err)
+	}
+	stale.Name = "Stale edit"
+	won, err = store.CompareAndSwapAuthoringSession(stale, stale.UpdatedAt, "ready")
+	if err != nil {
+		t.Fatalf("stale CAS: %v", err)
+	}
+	if won {
+		t.Fatal("stale authoring edit replaced durable approval intent")
+	}
+	deleted, err := store.DeleteAuthoringSessionUnlessApproving(session.ID)
+	if err != nil {
+		t.Fatalf("DeleteAuthoringSessionUnlessApproving: %v", err)
+	}
+	if deleted {
+		t.Fatal("approval intent was deleted while approving")
+	}
+	persisted, err := store.GetAuthoringSession(session.ID)
+	if err != nil {
+		t.Fatalf("GetAuthoringSession(persisted): %v", err)
+	}
+	if persisted.Status != "approving" || persisted.Draft.ID != "approved-script" {
+		t.Fatalf("persisted approval intent = %#v", persisted)
 	}
 }
 
@@ -1095,6 +1148,9 @@ func TestSQLiteStoreSaveHistoryUsesTypedIntervalSummaries(t *testing.T) {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
 	defer store.Close()
+	if err := store.SaveTest(&TestRecord{ID: "test-1", Name: "History", Status: "RUNNING", StartTime: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
 
 	timestamp := time.Date(2026, time.May, 13, 17, 0, 0, 0, time.UTC)
 	metrics := map[string]any{
@@ -1253,6 +1309,9 @@ func TestSQLiteStoreGetHistoryLimitReturnsNewestWindowAscending(t *testing.T) {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
 	defer store.Close()
+	if err := store.SaveTest(&TestRecord{ID: "test-window", Name: "Window", Status: "RUNNING", StartTime: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
 
 	base := time.Date(2026, time.May, 13, 18, 0, 0, 0, time.UTC)
 	for i := 0; i < 5; i++ {

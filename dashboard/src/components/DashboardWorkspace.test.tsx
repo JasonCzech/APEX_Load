@@ -101,8 +101,10 @@ describe('DashboardWorkspace', () => {
 
     await contextMenu(tabButton('Details'))
     await click(menuItem('Delete Tab'))
+    await act(async () => { await new Promise(resolve => window.setTimeout(resolve, 0)) })
 
     expect(tabLabels()).toEqual(['Overview'])
+    expect(document.activeElement).toBe(tabButton('Overview'))
     expect(libraryItem('beta').textContent).toContain('Beta Card')
 
     await click(libraryAddButton('beta'))
@@ -110,6 +112,27 @@ describe('DashboardWorkspace', () => {
     expect(container.textContent).toContain('Alpha body')
     expect(container.textContent).toContain('Beta body')
     expect(libraryItem('beta').textContent).toContain('Added')
+  })
+
+  it('opens tab actions with Shift+F10 and restores focus after Escape', async () => {
+    await renderWorkspace()
+    const detailsTab = tabButton('Details')
+    detailsTab.focus()
+
+    await keyDown(detailsTab, 'F10', { shiftKey: true })
+    await act(async () => { await new Promise(resolve => window.setTimeout(resolve, 0)) })
+
+    const deleteItem = menuItem('Delete Tab')
+    expect(deleteItem).toBeTruthy()
+    expect(document.activeElement).toBe(deleteItem)
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      await new Promise(resolve => window.setTimeout(resolve, 0))
+    })
+
+    expect(container.querySelector('[role="menu"]')).toBeNull()
+    expect(document.activeElement).toBe(detailsTab)
   })
 
   it('supports named profile creation, duplication, deletion, and reset', async () => {

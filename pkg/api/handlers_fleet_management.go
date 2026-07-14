@@ -458,11 +458,19 @@ func (s *Server) handleCreateProvisioningRequest(w http.ResponseWriter, r *http.
 		req.CompletedAt = &done
 		if perr != nil {
 			req.Status = "failed"
-			_ = s.store.SaveProvisioningRequest(&req)
+			if err := s.store.SaveProvisioningRequest(&req); err != nil {
+				slog.Error("failed to persist failed provisioning request", "request_id", req.ID, "error", err)
+				writeError(w, http.StatusInternalServerError, "provisioning failed and its terminal state could not be persisted")
+				return
+			}
 			s.saveProvisioningEvent(req.ID, "failure", "provisioning failed: "+perr.Error(), done)
 		} else {
 			req.Status = "success"
-			_ = s.store.SaveProvisioningRequest(&req)
+			if err := s.store.SaveProvisioningRequest(&req); err != nil {
+				slog.Error("failed to persist successful provisioning request", "request_id", req.ID, "error", err)
+				writeError(w, http.StatusInternalServerError, "fleet was scaled but the provisioning result could not be persisted")
+				return
+			}
 			s.saveProvisioningEvent(req.ID, "success", fmt.Sprintf("scaled %s to %d replicas", workload, scaledTo), done)
 			pool.DesiredSize = scaledTo
 			if err := s.store.SaveFleetPool(pool); err != nil {

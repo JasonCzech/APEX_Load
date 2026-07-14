@@ -7,7 +7,10 @@ package api
 // scenario scheduler and OUTSIDE tr.mu (materialize locks internally).
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -202,6 +205,9 @@ func (tr *TestRunner) ListExecutionPlanScheduleOccurrencesForPlan(planID, schedu
 // next_run_at has arrived. Called from the leader-gated scenario-scheduler sweep
 // (RunDueSchedules) AFTER tr.mu is released, since materialize locks internally.
 func (tr *TestRunner) sweepDueExecutionPlanSchedules(now time.Time) {
+	if !tr.isExecutionLeader() {
+		return
+	}
 	store := tr.execPlanScheduleStore
 	if store == nil {
 		return
@@ -211,27 +217,44 @@ func (tr *TestRunner) sweepDueExecutionPlanSchedules(now time.Time) {
 		return
 	}
 	for _, schedule := range schedules {
+		if !tr.isExecutionLeader() {
+			return
+		}
 		if schedule == nil || !schedule.Enabled || schedule.NextRunAt == nil || schedule.NextRunAt.After(now) {
 			continue
 		}
 		catchUpAll := normalizeScenarioScheduleMissedRunPolicy(schedule.MissedRunPolicy) == "catch_up_all"
 		for materialized := 0; schedule.NextRunAt != nil && !schedule.NextRunAt.After(now); materialized++ {
+			if !tr.isExecutionLeader() {
+				return
+			}
 			if materialized >= maxScheduleCatchUpAllPerSweep {
 				schedule.NextRequiredAction = "catch_up_limit_reached"
 				schedule.LastError = fmt.Sprintf("catch_up_all materialized %d occurrences; next sweep will continue", maxScheduleCatchUpAllPerSweep)
 				schedule.UpdatedAt = now
-				_ = store.SaveExecutionPlanSchedule(schedule)
+				if err := store.SaveExecutionPlanSchedule(schedule); err != nil {
+					slog.Warn("failed to persist execution-plan catch-up limit", "schedule_id", schedule.ID, "error", err)
+				}
 				break
 			}
 			if handled, err := tr.applyMissedExecutionPlanSchedulePolicy(schedule, now); err != nil {
 				schedule.LastError = err.Error()
 				schedule.UpdatedAt = now
-				_ = store.SaveExecutionPlanSchedule(schedule)
+				if saveErr := store.SaveExecutionPlanSchedule(schedule); saveErr != nil {
+					slog.Warn("failed to persist execution-plan schedule error", "schedule_id", schedule.ID, "error", saveErr)
+				}
 				break
 			} else if handled {
 				break
 			}
-			tr.runDueExecutionPlanScheduleOnce(schedule, now)
+			if err := tr.runDueExecutionPlanScheduleOnce(schedule, now); err != nil {
+				schedule.LastError = err.Error()
+				schedule.UpdatedAt = now
+				if saveErr := retryDurableTransition(func() error { return store.SaveExecutionPlanSchedule(schedule) }); saveErr != nil {
+					slog.Warn("failed to persist execution-plan schedule materialization error", "schedule_id", schedule.ID, "error", saveErr)
+				}
+				break
+			}
 			if !catchUpAll {
 				break
 			}
@@ -315,44 +338,34 @@ func (tr *TestRunner) applyMissedExecutionPlanSchedulePolicy(schedule *storage.E
 	}
 }
 
-func (tr *TestRunner) runDueExecutionPlanScheduleOnce(schedule *storage.ExecutionPlanSchedule, now time.Time) {
+func (tr *TestRunner) runDueExecutionPlanScheduleOnce(schedule *storage.ExecutionPlanSchedule, now time.Time) error {
+	if !tr.isExecutionLeader() {
+		return errNotExecutionLeader
+	}
 	store := tr.execPlanScheduleStore
 	plannedAt := schedule.NextRunAt.UTC()
 
-	advanceNextRun := func(lastErr string) {
-		if executionPlanSchedulePausedIndefinitely(schedule.DisabledFrom, schedule.DisabledUntil, now) {
-			schedule.NextRunAt = nil
-			schedule.LastError = lastErr
-			schedule.NextRequiredAction = "schedule_paused"
-			schedule.UpdatedAt = now
-			_ = store.SaveExecutionPlanSchedule(schedule)
-			return
+	// A terminal occurrence is already committed: only advance next_run_at
+	// (without re-stamping last-run, which belongs to the original
+	// materialization). A materializing occurrence is a restart/leadership
+	// recovery candidate. Its preassigned RunID lets us distinguish a committed
+	// run from a claim that never reached the run anchor without creating a
+	// duplicate plan run.
+	existing, err := store.GetExecutionPlanScheduleOccurrenceByScheduleAndPlannedAt(schedule.ID, plannedAt)
+	if err != nil {
+		return fmt.Errorf("load execution-plan schedule occurrence: %w", err)
+	}
+	if existing != nil {
+		if strings.TrimSpace(existing.Status) == "materializing" || strings.TrimSpace(existing.Status) == "" {
+			return tr.recoverExecutionPlanScheduleOccurrence(schedule, existing, now)
 		}
-		next, err := nextCronRun(schedule.CronExpr, schedule.Timezone, plannedAt, executionPlanScheduleAllows(schedule.DisabledFrom, schedule.DisabledUntil))
-		if err != nil {
-			schedule.NextRunAt = nil
-			schedule.LastError = err.Error()
-		} else {
-			schedule.NextRunAt = next
-			schedule.LastError = lastErr
-			schedule.NextRequiredAction = ""
-		}
-		schedule.UpdatedAt = now
-		_ = store.SaveExecutionPlanSchedule(schedule)
+		return tr.advanceExecutionPlanScheduleAfterOccurrence(schedule, existing, plannedAt, now, schedule.LastError)
 	}
 
-	// Idempotency: if this planned time already has an occurrence, do not
-	// re-materialize — only advance next_run_at (without re-stamping last-run,
-	// which belongs to the original materialization).
-	if existing, err := store.GetExecutionPlanScheduleOccurrenceByScheduleAndPlannedAt(schedule.ID, plannedAt); err == nil && existing != nil {
-		advanceNextRun(schedule.LastError)
-		return
-	}
-
-	// Crash-safe pre-claim: write the occurrence anchor BEFORE any side effects so
-	// a crash/leadership-loss mid-materialization cannot double-run the plan (the
-	// next sweep sees the occurrence and dedups). If the claim cannot be persisted,
-	// do not materialize or advance — retry on the next sweep.
+	// Crash-safe pre-claim: write both the occurrence and its deterministic run
+	// correlation BEFORE any side effects. There is deliberately no durable state
+	// in which new code can have launched tests for this occurrence while RunID is
+	// empty. If the claim cannot be persisted, do not materialize or advance.
 	occurrence := &storage.ExecutionPlanScheduleOccurrence{
 		ID:               uuid.New().String(),
 		ScheduleID:       schedule.ID,
@@ -362,51 +375,226 @@ func (tr *TestRunner) runDueExecutionPlanScheduleOnce(schedule *storage.Executio
 		PlannedAt:        plannedAt,
 		Status:           "materializing",
 		ReasonCode:       "due",
+		RunID:            "exec-plan-run-" + uuid.New().String(),
 		CreatedAt:        now,
 		UpdatedAt:        now,
 	}
 	claimed, err := store.CreateExecutionPlanScheduleOccurrenceIfAbsent(occurrence)
 	if err != nil {
-		schedule.LastError = err.Error()
-		schedule.UpdatedAt = now
-		_ = store.SaveExecutionPlanSchedule(schedule)
-		return
+		return fmt.Errorf("claim execution-plan schedule occurrence: %w", err)
 	}
 	if !claimed {
-		advanceNextRun(schedule.LastError)
-		return
+		existing, loadErr := store.GetExecutionPlanScheduleOccurrenceByScheduleAndPlannedAt(schedule.ID, plannedAt)
+		if loadErr != nil {
+			return fmt.Errorf("load concurrently claimed execution-plan occurrence: %w", loadErr)
+		}
+		if existing == nil {
+			return fmt.Errorf("execution-plan schedule occurrence was concurrently claimed but cannot be loaded")
+		}
+		if strings.TrimSpace(existing.Status) == "materializing" || strings.TrimSpace(existing.Status) == "" {
+			return tr.recoverExecutionPlanScheduleOccurrence(schedule, existing, now)
+		}
+		return tr.advanceExecutionPlanScheduleAfterOccurrence(schedule, existing, plannedAt, now, schedule.LastError)
+	}
+	return tr.materializeClaimedExecutionPlanScheduleOccurrence(schedule, occurrence, now)
+}
+
+// recoverExecutionPlanScheduleOccurrence resumes a materializing occurrence
+// after controller restart or leadership handoff. A persisted plan-run anchor is
+// proof that materialization crossed its durable side-effect boundary. If there
+// is no anchor, retrying with the exact preassigned ID is safe because every run
+// mode persists that anchor before creating a test.
+func (tr *TestRunner) recoverExecutionPlanScheduleOccurrence(schedule *storage.ExecutionPlanSchedule, occurrence *storage.ExecutionPlanScheduleOccurrence, now time.Time) error {
+	if occurrence == nil {
+		return fmt.Errorf("execution-plan schedule occurrence is required for recovery")
+	}
+	if strings.TrimSpace(occurrence.RunID) == "" {
+		// Occurrences written by older controllers did not persist correlation
+		// until after materialization. Re-running one could duplicate load. Fail
+		// closed and advance the schedule so this legacy row cannot wedge forever.
+		lastErr := "materializing occurrence has no durable run correlation; operator review is required before replay"
+		occurrence.ConflictSummary = lastErr
+		return tr.finalizeExecutionPlanScheduleOccurrence(schedule, occurrence, now, "blocked", "recovery_correlation_missing", "", lastErr)
+	}
+	if tr.execPlanRunStore == nil {
+		return fmt.Errorf("execution-plan run storage is not configured")
+	}
+	run, err := tr.execPlanRunStore.GetExecutionPlanRun(occurrence.RunID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("load execution-plan run %s while recovering occurrence: %w", occurrence.RunID, err)
+	}
+	if run == nil || errors.Is(err, sql.ErrNoRows) {
+		return tr.materializeClaimedExecutionPlanScheduleOccurrence(schedule, occurrence, now)
 	}
 
-	finalize := func(status, reasonCode, runID, lastErr string) {
-		occurrence.Status = status
-		occurrence.ReasonCode = reasonCode
-		occurrence.RunID = runID
-		occurrence.UpdatedAt = now
-		if status == "materialized" {
-			occurrence.MaterializedAt = &now
+	// A sequential running anchor is rehydrated independently from its persisted
+	// entry/policy snapshot. A parallel running row, however, is only the initial
+	// pre-materialization anchor: a crash may have happened between creating a
+	// test and recording its ID, so replay is not provably duplicate-free. Mark
+	// that interrupted attempt failed instead of creating a second set of tests.
+	if strings.EqualFold(run.RunMode, "parallel") && strings.EqualFold(run.Status, "running") {
+		failedAt := now.UTC()
+		run.Status = "failed"
+		run.UpdatedAt = failedAt
+		run.CompletedAt = &failedAt
+		for i := range run.Entries {
+			if run.Entries[i].Status == "pending" || run.Entries[i].Status == "running" {
+				run.Entries[i].Status = "failed"
+				run.Entries[i].Detail = "parallel materialization was interrupted before its final durable snapshot"
+			}
 		}
-		_ = store.SaveExecutionPlanScheduleOccurrence(occurrence)
-		if runID != "" {
-			schedule.LastRunRunID = runID
-			schedule.LastRunAt = &now
+		if err := tr.persistExecutionPlanRunDurable(run); err != nil {
+			return executionPlanPersistenceError("terminalize interrupted scheduled parallel materialization", err)
 		}
-		advanceNextRun(lastErr)
+		lastErr := "parallel execution-plan materialization was interrupted; replay was suppressed to avoid duplicate tests"
+		occurrence.ConflictSummary = lastErr
+		return tr.finalizeExecutionPlanScheduleOccurrence(schedule, occurrence, now, "failed", "materialization_interrupted", run.ID, lastErr)
 	}
+	return tr.finalizeExecutionPlanScheduleOccurrence(schedule, occurrence, now, "materialized", "recovered", run.ID, "")
+}
 
+func (tr *TestRunner) materializeClaimedExecutionPlanScheduleOccurrence(schedule *storage.ExecutionPlanSchedule, occurrence *storage.ExecutionPlanScheduleOccurrence, now time.Time) error {
+	if occurrence == nil || strings.TrimSpace(occurrence.RunID) == "" {
+		return fmt.Errorf("execution-plan schedule occurrence requires a preassigned run id")
+	}
+	store := tr.execPlanScheduleStore
 	plan, err := store.GetExecutionPlan(schedule.PlanID)
-	if err != nil || plan == nil {
-		finalize("blocked", "plan_not_found", "", "execution plan not found")
-		return
-	}
-	runName := renderExecutionPlanScheduleRunName(schedule, plan, plannedAt)
-	result, err := tr.materializeAndRunExecutionPlan(plan, "", "", runName)
 	if err != nil {
-		finalize("failed", "materialize_failed", "", err.Error())
-		return
+		return fmt.Errorf("load execution plan %s for scheduled materialization: %w", schedule.PlanID, err)
+	}
+	if plan == nil {
+		return tr.finalizeExecutionPlanScheduleOccurrence(schedule, occurrence, now, "blocked", "plan_not_found", "", "execution plan not found")
+	}
+	runName := renderExecutionPlanScheduleRunName(schedule, plan, occurrence.PlannedAt)
+	if !tr.isExecutionLeader() {
+		// Keep the correlated claim materializing. The next leader can safely
+		// inspect/resume it; declaring it blocked here would discard recoverable
+		// work merely because the lease changed between two durable boundaries.
+		return errNotExecutionLeader
+	}
+	result, err := tr.materializeAndRunExecutionPlanWithRunID(plan, "", "", runName, occurrence.RunID)
+	if err != nil {
+		persistedRunID := ""
+		if tr.execPlanRunStore != nil {
+			if persisted, loadErr := tr.execPlanRunStore.GetExecutionPlanRun(occurrence.RunID); loadErr == nil && persisted != nil {
+				persistedRunID = persisted.ID
+			}
+		}
+		return tr.finalizeExecutionPlanScheduleOccurrence(schedule, occurrence, now, "failed", "materialize_failed", persistedRunID, err.Error())
 	}
 	if result.Blocked {
-		finalize("blocked", "approval_required", "", "plan run requires approval (exceeds project quota)")
+		return tr.finalizeExecutionPlanScheduleOccurrence(schedule, occurrence, now, "blocked", "approval_required", "", "plan run requires approval (exceeds project quota)")
+	}
+	if result.RunID != occurrence.RunID {
+		lastErr := fmt.Sprintf("execution-plan materializer returned run %s for occurrence correlated to %s", result.RunID, occurrence.RunID)
+		return tr.finalizeExecutionPlanScheduleOccurrence(schedule, occurrence, now, "failed", "run_correlation_mismatch", result.RunID, lastErr)
+	}
+	return tr.finalizeExecutionPlanScheduleOccurrence(schedule, occurrence, now, "materialized", "started", result.RunID, "")
+}
+
+func (tr *TestRunner) finalizeExecutionPlanScheduleOccurrence(schedule *storage.ExecutionPlanSchedule, occurrence *storage.ExecutionPlanScheduleOccurrence, now time.Time, status, reasonCode, runID, lastErr string) error {
+	occurrence.Status = status
+	occurrence.ReasonCode = reasonCode
+	occurrence.RunID = runID
+	occurrence.UpdatedAt = now
+	if status == "materialized" {
+		materializedAt := now.UTC()
+		occurrence.MaterializedAt = &materializedAt
+	} else {
+		occurrence.MaterializedAt = nil
+	}
+	if err := retryDurableTransition(func() error { return tr.execPlanScheduleStore.SaveExecutionPlanScheduleOccurrence(occurrence) }); err != nil {
+		tr.enqueueExecutionPlanScheduleOccurrenceFinalizeRetry(occurrence, now, lastErr)
+		return fmt.Errorf("persist execution-plan schedule occurrence %s as %s: %w", occurrence.ID, status, err)
+	}
+	if err := tr.advanceExecutionPlanScheduleAfterOccurrence(schedule, occurrence, occurrence.PlannedAt, now, lastErr); err != nil {
+		tr.enqueueExecutionPlanScheduleOccurrenceFinalizeRetry(occurrence, now, lastErr)
+		return err
+	}
+	return nil
+}
+
+func (tr *TestRunner) advanceExecutionPlanScheduleAfterOccurrence(schedule *storage.ExecutionPlanSchedule, occurrence *storage.ExecutionPlanScheduleOccurrence, plannedAt, now time.Time, lastErr string) error {
+	if tr == nil || tr.execPlanScheduleStore == nil || schedule == nil {
+		return fmt.Errorf("execution-plan schedule storage is not configured")
+	}
+	previous := *schedule
+	if occurrence != nil && occurrence.RunID != "" {
+		schedule.LastRunRunID = occurrence.RunID
+		if occurrence.MaterializedAt != nil {
+			lastRunAt := occurrence.MaterializedAt.UTC()
+			schedule.LastRunAt = &lastRunAt
+		} else {
+			lastRunAt := now
+			schedule.LastRunAt = &lastRunAt
+		}
+	}
+	if executionPlanSchedulePausedIndefinitely(schedule.DisabledFrom, schedule.DisabledUntil, now) {
+		schedule.NextRunAt = nil
+		schedule.LastError = lastErr
+		schedule.NextRequiredAction = "schedule_paused"
+		schedule.UpdatedAt = now
+		if err := retryDurableTransition(func() error { return tr.execPlanScheduleStore.SaveExecutionPlanSchedule(schedule) }); err != nil {
+			*schedule = previous
+			return fmt.Errorf("persist paused execution-plan schedule: %w", err)
+		}
+		return nil
+	}
+	next, err := nextCronRun(schedule.CronExpr, schedule.Timezone, plannedAt, executionPlanScheduleAllows(schedule.DisabledFrom, schedule.DisabledUntil))
+	if err != nil {
+		schedule.NextRunAt = nil
+		schedule.LastError = err.Error()
+	} else {
+		schedule.NextRunAt = next
+		schedule.LastError = lastErr
+		schedule.NextRequiredAction = ""
+	}
+	schedule.UpdatedAt = now
+	if err := retryDurableTransition(func() error { return tr.execPlanScheduleStore.SaveExecutionPlanSchedule(schedule) }); err != nil {
+		*schedule = previous
+		return fmt.Errorf("persist advanced execution-plan schedule: %w", err)
+	}
+	return nil
+}
+
+func (tr *TestRunner) enqueueExecutionPlanScheduleOccurrenceFinalizeRetry(occurrence *storage.ExecutionPlanScheduleOccurrence, now time.Time, lastErr string) {
+	if tr == nil || occurrence == nil || tr.execPlanScheduleStore == nil {
 		return
 	}
-	finalize("materialized", "started", result.RunID, "")
+	snapshot := *occurrence
+	snapshot.MaterializedAt = cloneTimePtr(occurrence.MaterializedAt)
+	key := "schedule-occurrence:" + snapshot.ID
+	if !tr.beginExecutionPlanRetry(key) {
+		return
+	}
+	go func() {
+		defer tr.endExecutionPlanRetry(key)
+		delay := executionPlanRetryInitialDelay
+		for tr.executionPlanRetryAllowed() {
+			if !tr.waitExecutionPlanRetry(delay) {
+				return
+			}
+			err := retryDurableTransition(func() error {
+				return tr.execPlanScheduleStore.SaveExecutionPlanScheduleOccurrence(&snapshot)
+			})
+			if err == nil {
+				var schedule *storage.ExecutionPlanSchedule
+				schedule, err = tr.execPlanScheduleStore.GetExecutionPlanSchedule(snapshot.ScheduleID)
+				if err == nil && schedule == nil {
+					err = fmt.Errorf("execution-plan schedule %s no longer exists", snapshot.ScheduleID)
+				}
+				if err == nil && schedule.NextRunAt != nil && !schedule.NextRunAt.After(snapshot.PlannedAt) {
+					err = tr.advanceExecutionPlanScheduleAfterOccurrence(schedule, &snapshot, snapshot.PlannedAt, now, lastErr)
+				}
+			}
+			if err == nil {
+				return
+			}
+			slog.Warn("execution-plan schedule occurrence finalization retry failed", "schedule_id", snapshot.ScheduleID, "occurrence_id", snapshot.ID, "error", err)
+			if !durableBackgroundRetryable(err) {
+				return
+			}
+			delay = min(delay*2, executionPlanRetryMaxDelay)
+		}
+	}()
 }

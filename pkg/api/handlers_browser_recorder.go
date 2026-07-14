@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -752,7 +753,17 @@ func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Re
 		if sc == nil {
 			continue
 		}
-		storedScripts = append(storedScripts, s.runner.StoreScript(sc))
+		stored, err := s.runner.StoreScriptDurable(sc)
+		if err != nil {
+			for _, prior := range storedScripts {
+				if _, cleanupErr := s.runner.DeleteScriptDurable(prior.ID); cleanupErr != nil {
+					slog.Warn("failed to roll back converted browser script", "script_id", prior.ID, "error", cleanupErr)
+				}
+			}
+			writeError(w, http.StatusInternalServerError, "failed to save converted script: "+err.Error())
+			return
+		}
+		storedScripts = append(storedScripts, stored)
 	}
 	if len(storedScripts) == 0 {
 		writeError(w, http.StatusUnprocessableEntity, "conversion produced no scripts")
@@ -767,9 +778,14 @@ func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Re
 		if err != nil {
 			warnings = append(warnings, "HTTP script generation skipped: "+err.Error())
 		} else {
-			httpStored = s.runner.StoreScript(httpScript)
-			warnings = append(warnings, httpWarnings...)
-			warnings = append(warnings, fmt.Sprintf("also created HTTP script %q (%s) from the recorded HAR", httpStored.Name, httpStored.ID))
+			httpStored, err = s.runner.StoreScriptDurable(httpScript)
+			if err != nil {
+				warnings = append(warnings, "HTTP script persistence skipped: "+err.Error())
+				httpStored = nil
+			} else {
+				warnings = append(warnings, httpWarnings...)
+				warnings = append(warnings, fmt.Sprintf("also created HTTP script %q (%s) from the recorded HAR", httpStored.Name, httpStored.ID))
+			}
 		}
 	}
 

@@ -171,6 +171,11 @@ func cloneGroupLiveMetrics(metrics *GroupLiveMetrics) *GroupLiveMetrics {
 		return nil
 	}
 	clone := *metrics
+	if metrics.DurationDigest != nil {
+		digest := *metrics.DurationDigest
+		digest.Centroids = append([]engine.TDigestCentroidSnapshot(nil), metrics.DurationDigest.Centroids...)
+		clone.DurationDigest = &digest
+	}
 	return &clone
 }
 

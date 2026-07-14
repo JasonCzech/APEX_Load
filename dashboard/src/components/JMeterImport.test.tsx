@@ -112,6 +112,24 @@ describe('JMeterImport', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
+  it('opens the file picker from the keyboard-accessible dropzone', async () => {
+    await act(async () => {
+      root.render(<JMeterImport />)
+    })
+
+    const dropzone = container.querySelector<HTMLElement>('.lr-dropzone')
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')
+    expect(dropzone?.getAttribute('role')).toBe('button')
+    expect(dropzone?.tabIndex).toBe(0)
+    const clickSpy = fileInput ? vi.spyOn(fileInput, 'click') : null
+
+    await act(async () => {
+      dropzone?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    })
+
+    expect(clickSpy).toHaveBeenCalledTimes(1)
+  })
+
   it('renders inline coverage details and captured variables after validation', async () => {
     await act(async () => {
       root.render(<JMeterImport />)

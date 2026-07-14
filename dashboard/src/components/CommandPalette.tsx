@@ -46,7 +46,7 @@ export function CommandPalette({ shortcuts, onClose }: CommandPaletteProps) {
   const handleKeyDown = (event: ReactKeyboardEvent) => {
     if (event.key === 'ArrowDown') {
       event.preventDefault()
-      setActiveIndex(index => Math.min(index + 1, commands.length - 1))
+      setActiveIndex(index => commands.length === 0 ? 0 : Math.min(index + 1, commands.length - 1))
     } else if (event.key === 'ArrowUp') {
       event.preventDefault()
       setActiveIndex(index => Math.max(index - 1, 0))
@@ -74,16 +74,21 @@ export function CommandPalette({ shortcuts, onClose }: CommandPaletteProps) {
           value={query}
           onChange={event => setQuery(event.target.value)}
           onKeyDown={handleKeyDown}
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded="true"
           aria-label="Command search"
           aria-controls="command-palette-list"
+          aria-activedescendant={commands[activeIndex] ? `command-palette-option-${activeIndex}` : undefined}
         />
         <ul className="command-palette-list" id="command-palette-list" role="listbox">
           {commands.length === 0 ? (
-            <li className="command-palette-empty">No matching commands.</li>
+            <li className="command-palette-empty" role="presentation"><span role="status">No matching commands.</span></li>
           ) : (
             commands.map((command, index) => (
               <li
                 key={`${command.id}-${command.sequence}`}
+                id={`command-palette-option-${index}`}
                 role="option"
                 aria-selected={index === activeIndex}
                 className={`command-palette-item ${index === activeIndex ? 'active' : ''}`}

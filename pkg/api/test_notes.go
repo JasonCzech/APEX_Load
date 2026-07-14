@@ -2,11 +2,11 @@ package api
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
-	"path/filepath"
 	"strings"
-	"sync"
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -30,7 +30,7 @@ func writeTestNotesArtifact(archivePath string, testID string, notes []*storage.
 	if notes == nil {
 		notes = []*storage.TestNote{}
 	}
-	if err := writeIndentedJSONFile(filepath.Join(archivePath, testNotesArchiveFileName), testNotesArchiveArtifact{
+	if err := writeArchiveJSONArtifactDurable(archivePath, testNotesArchiveFileName, testNotesArchiveArtifact{
 		TestID: strings.TrimSpace(testID),
 		Notes:  notes,
 	}); err != nil {
@@ -39,75 +39,39 @@ func writeTestNotesArtifact(archivePath string, testID string, notes []*storage.
 	return testNotesArchiveFileName, nil
 }
 
-func (s *Server) testNotesArchiveLock(testID string) *sync.Mutex {
-	testID = strings.TrimSpace(testID)
-	s.testNotesArchiveMu.Lock()
-	defer s.testNotesArchiveMu.Unlock()
-	if s.testNotesArchiveLocks == nil {
-		s.testNotesArchiveLocks = make(map[string]*sync.Mutex)
-	}
-	lock := s.testNotesArchiveLocks[testID]
-	if lock == nil {
-		lock = &sync.Mutex{}
-		s.testNotesArchiveLocks[testID] = lock
-	}
-	return lock
-}
-
-func (s *Server) syncTestNotesToArchive(testID string) {
-	if s == nil || s.runner == nil || s.store == nil {
+func (s *Server) scheduleTestNotesArchiveRefresh(testID string) {
+	if s == nil || s.runner == nil {
 		return
 	}
-	lock := s.testNotesArchiveLock(testID)
-	lock.Lock()
-	defer lock.Unlock()
-
-	record, ok := s.runner.GetRunArchive(testID)
-	if !ok || record == nil {
-		// Running tests are not archived yet; persistTestManifestArtifact captures
-		// all current notes when the run archive is finalized.
+	outbox := s.runner.archiveRefreshOutbox()
+	if outbox == nil {
+		slog.Warn("test notes archive refresh is not durable with the configured store", "test_id", testID)
 		return
 	}
-	notes, err := s.store.ListTestNotes(testID)
+	job, err := outbox.GetArchiveRefreshJob(testID)
+	if errors.Is(err, sql.ErrNoRows) {
+		// Non-production/custom stores may not implement atomic note+dirty writes.
+		// Fill that compatibility gap synchronously; the SQLite/Postgres path has
+		// already committed this row with the note mutation.
+		job, err = outbox.BumpArchiveRefreshJob(testID)
+	}
 	if err != nil {
-		slog.Warn("failed to load test notes for archive sync", "test_id", testID, "err", err)
+		if !errors.Is(err, storage.ErrArchiveCleanupPending) && !errors.Is(err, sql.ErrNoRows) {
+			slog.Warn("failed to enqueue test notes archive refresh", "test_id", testID, "err", err)
+		}
 		return
 	}
-	testNotesFile, err := writeTestNotesArtifact(record.ArchivePath, testID, notes)
-	if err != nil {
-		slog.Warn("failed to write test notes archive artifact", "test_id", testID, "err", err)
+	if s.archiveFinalizationCancel != nil {
+		s.wakeArchiveFinalizationRetry()
 		return
 	}
-	manifest, err := loadRunArchiveManifest(record.ManifestPath)
-	if err != nil {
-		slog.Warn("failed to load archive manifest for test notes sync", "test_id", testID, "err", err)
+	if !s.runner.isExecutionLeader() || job == nil {
 		return
 	}
-	manifest.TestNotesFile = testNotesFile
-	if err := updateRunArchiveSingleArtifactIntegrity(record.ArchivePath, manifest, RunArchiveArtifact{
-		Name:       testNotesFile,
-		Kind:       "notes",
-		Format:     "json",
-		RecordType: "test_notes",
-		Count:      int64(len(notes)),
-	}); err != nil {
-		slog.Warn("failed to update archive artifact integrity for test notes sync", "test_id", testID, "err", err)
-		return
-	}
-	if err := writeIndentedJSONFile(record.ManifestPath, manifest); err != nil {
-		slog.Warn("failed to update archive manifest for test notes sync", "test_id", testID, "err", err)
-		return
-	}
-	// Publish the refreshed trust anchor via copy-and-swap rather than mutating the
-	// shared archive record in place: concurrent verify/report readers hold the
-	// record pointer lock-free (GetRunArchive returns the cached pointer), so an
-	// in-place ManifestSHA256 write would be a data race (RN-3).
-	if err := s.runner.replaceRunArchiveManifestTrust(testID); err != nil {
-		slog.Warn("failed to update archive manifest trust anchor for test notes sync", "test_id", testID, "err", err)
-		return
-	}
-	if err := uploadArchiveObjects(context.Background(), record.ArchivePath, record.TestID, testNotesFile, runArchiveManifestFileName); err != nil {
-		slog.Warn("failed to upload archive after test notes sync", "test_id", testID, "err", err)
+	ctx, cancel := context.WithTimeout(context.Background(), archiveFinalizationAttemptTimeout)
+	defer cancel()
+	if err := s.runner.processArchiveRefreshJob(ctx, job); err != nil {
+		slog.Warn("test notes archive refresh remains durably queued", "test_id", testID, "err", err)
 	}
 }
 
@@ -145,8 +109,4 @@ func (tr *TestRunner) replaceRunArchiveManifestTrust(testID string) error {
 	}
 	tr.mu.Unlock()
 	return tr.saveRunArchiveRecord(&updated)
-}
-
-func (s *Server) syncTestNotesToArchiveAsync(testID string) {
-	go s.syncTestNotesToArchive(testID)
 }

@@ -199,9 +199,15 @@ func applyLocalUserBindings(upstream *AuthenticatedUser, store storage.Store) (*
 	local.Email = firstNonEmpty(upstream.Email, local.Email)
 	if shouldUpdateUserIdentitySeen(local.ID, previousDisplayName, previousEmail, local.DisplayName, local.Email, now) {
 		local.UpdatedAt = now
-		_ = store.UpdateUserIdentitySeen(local.ID, local.DisplayName, local.Email, now, now)
+		if err := store.UpdateUserIdentitySeen(local.ID, local.DisplayName, local.Email, now, now); err != nil {
+			slog.Warn("failed to persist user identity last-seen update", "user_id", local.ID, "error", err)
+		}
 	}
-	return authenticatedUserFromStoredUser(local), nil
+	resolved := authenticatedUserFromStoredUser(local)
+	resolved.SessionScoped = upstream.SessionScoped
+	resolved.SessionEpoch = upstream.SessionEpoch
+	resolved.SessionExpiresAt = upstream.SessionExpiresAt
+	return resolved, nil
 }
 
 func shouldUpdateUserIdentitySeen(userID string, previousDisplayName string, previousEmail string, nextDisplayName string, nextEmail string, now time.Time) bool {
@@ -338,7 +344,9 @@ func bootstrapFirstAdmin(upstream *AuthenticatedUser, store storage.Store) (*Aut
 		if err := store.SaveUserRoleBinding(binding); err != nil {
 			return nil, fmt.Errorf("bootstrap administrator provisioning failed")
 		}
-		_ = store.SaveAuditEvent(event)
+		if err := store.SaveAuditEvent(event); err != nil {
+			slog.Warn("failed to persist bootstrap administrator audit event", "user_id", user.ID, "error", err)
+		}
 	}
 	slog.Warn("granted bootstrap system administrator on empty user store", "subject", subject)
 	return &AuthenticatedUser{

@@ -1,4 +1,4 @@
-import { ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
+import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { Application, Release } from '../types'
 import { useApplicationApi } from './api/useApplicationApi'
@@ -11,13 +11,33 @@ const RELEASE_STORAGE_KEY = 'apexload.activeReleaseId'
 export function ApplicationProvider({ children }: { children: ReactNode }) {
   const api = useApplicationApi()
   const { activeProject } = useProject()
+  const activeProjectId = activeProject?.id
   const [applications, setApplications] = useState<Application[]>([])
   const [releases, setReleases] = useState<Release[]>([])
   const [activeApplication, setActiveApplicationState] = useState<Application | null>(null)
   const [activeRelease, setActiveReleaseState] = useState<Release | null>(null)
+  const [stateProjectId, setStateProjectId] = useState(activeProjectId)
+  const projectScopeRef = useRef({ id: activeProjectId, generation: 0 })
+  const applicationsRequestGenerationRef = useRef(0)
+  const releasesRequestGenerationRef = useRef(0)
+  const activeApplicationIdRef = useRef<string | null>(null)
+
+  if (projectScopeRef.current.id !== activeProjectId) {
+    projectScopeRef.current = {
+      id: activeProjectId,
+      generation: projectScopeRef.current.generation + 1,
+    }
+    applicationsRequestGenerationRef.current += 1
+    releasesRequestGenerationRef.current += 1
+    activeApplicationIdRef.current = null
+  }
 
   const setActiveApplication = useCallback((application: Application) => {
+    activeApplicationIdRef.current = application.id
+    releasesRequestGenerationRef.current += 1
     setActiveApplicationState(application)
+    setReleases([])
+    setActiveReleaseState(null)
     localStorage.setItem(STORAGE_KEY, application.id)
   }, [])
 
@@ -27,105 +47,185 @@ export function ApplicationProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const refreshReleases = useCallback(async (applicationId?: string) => {
-    const appId = applicationId || activeApplication?.id
+    const appId = applicationId || activeApplicationIdRef.current
+    const scope = { ...projectScopeRef.current }
+    const requestGeneration = ++releasesRequestGenerationRef.current
     if (!appId) {
       setReleases([])
       setActiveReleaseState(null)
       return
     }
     const res = await api.listReleases(appId)
+    if (
+      projectScopeRef.current.id !== scope.id
+      || projectScopeRef.current.generation !== scope.generation
+      || releasesRequestGenerationRef.current !== requestGeneration
+      || activeApplicationIdRef.current !== appId
+    ) {
+      return
+    }
     const next = res.releases || []
     setReleases(next)
     const storedId = localStorage.getItem(RELEASE_STORAGE_KEY)
     const selected = next.find(release => release.id === storedId) || next[0] || null
     setActiveReleaseState(selected)
     if (selected) localStorage.setItem(RELEASE_STORAGE_KEY, selected.id)
-  }, [api, activeApplication?.id])
+  }, [api])
 
   const refreshApplications = useCallback(async () => {
-    if (!activeProject?.id) {
+    const projectId = activeProjectId
+    const scope = { ...projectScopeRef.current }
+    const requestGeneration = ++applicationsRequestGenerationRef.current
+    if (!projectId) {
       setApplications([])
       setActiveApplicationState(null)
+      activeApplicationIdRef.current = null
       setReleases([])
       setActiveReleaseState(null)
       return
     }
 
-    const res = await api.listApplications(activeProject.id)
+    const res = await api.listApplications(projectId)
+    if (
+      projectScopeRef.current.id !== scope.id
+      || projectScopeRef.current.generation !== scope.generation
+      || applicationsRequestGenerationRef.current !== requestGeneration
+    ) {
+      return
+    }
     let next = res.applications || []
     if (next.length === 0) {
-      const created = await api.createApplication({ name: 'Legacy', project_id: activeProject.id })
+      const created = await api.createApplication({ name: 'Legacy', project_id: projectId })
+      if (
+        projectScopeRef.current.id !== scope.id
+        || projectScopeRef.current.generation !== scope.generation
+        || applicationsRequestGenerationRef.current !== requestGeneration
+      ) {
+        return
+      }
       next = [created]
     }
     setApplications(next)
+    setStateProjectId(projectId)
     const storedId = localStorage.getItem(STORAGE_KEY)
     const selected = next.find(application => application.id === storedId) || next[0] || null
     if (selected) {
+      const applicationChanged = activeApplicationIdRef.current !== selected.id
+      activeApplicationIdRef.current = selected.id
       setActiveApplicationState(selected)
       localStorage.setItem(STORAGE_KEY, selected.id)
+      if (applicationChanged) {
+        releasesRequestGenerationRef.current += 1
+        setReleases([])
+        setActiveReleaseState(null)
+      }
       return
     }
+    activeApplicationIdRef.current = null
     setActiveApplicationState(null)
     setReleases([])
     setActiveReleaseState(null)
-  }, [activeProject?.id, api])
+  }, [activeProjectId, api])
 
   const createAndSelectApplication = useCallback(async (name: string) => {
-    const created = await api.createApplication({ name, project_id: activeProject?.id })
+    const projectId = activeProjectId
+    const scope = { ...projectScopeRef.current }
+    const created = await api.createApplication({ name, project_id: projectId })
+    if (
+      projectScopeRef.current.id !== scope.id
+      || projectScopeRef.current.generation !== scope.generation
+    ) {
+      return created
+    }
     setApplications(prev => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)))
     setActiveApplication(created)
-    setReleases([])
-    setActiveReleaseState(null)
     return created
-  }, [activeProject?.id, api, setActiveApplication])
+  }, [activeProjectId, api, setActiveApplication])
 
   const createAndSelectRelease = useCallback(async (name: string) => {
-    if (!activeApplication) return null
-    const created = await api.createRelease(activeApplication.id, { name })
+    const applicationId = activeApplicationIdRef.current
+    if (!applicationId) return null
+    const scope = { ...projectScopeRef.current }
+    const requestGeneration = ++releasesRequestGenerationRef.current
+    const created = await api.createRelease(applicationId, { name })
+    if (
+      projectScopeRef.current.id !== scope.id
+      || projectScopeRef.current.generation !== scope.generation
+      || releasesRequestGenerationRef.current !== requestGeneration
+      || activeApplicationIdRef.current !== applicationId
+    ) {
+      return created
+    }
     setReleases(prev => [created, ...prev])
     setActiveRelease(created)
     return created
-  }, [api, activeApplication, setActiveRelease])
+  }, [api, setActiveRelease])
 
   useEffect(() => {
-    if (!activeProject?.id) {
-      setApplications([])
-      setActiveApplicationState(null)
-      setReleases([])
-      setActiveReleaseState(null)
+    const projectId = activeProjectId
+    const scope = { ...projectScopeRef.current }
+    let cancelled = false
+
+    applicationsRequestGenerationRef.current += 1
+    releasesRequestGenerationRef.current += 1
+    activeApplicationIdRef.current = null
+    setStateProjectId(projectId)
+    setApplications([])
+    setActiveApplicationState(null)
+    setReleases([])
+    setActiveReleaseState(null)
+
+    if (!projectId) {
       return
     }
 
-    refreshApplications().catch(() => {
+    const refreshPromise = refreshApplications()
+    const requestGeneration = applicationsRequestGenerationRef.current
+    refreshPromise.catch(() => {
+      if (
+        cancelled
+        || projectScopeRef.current.id !== scope.id
+        || projectScopeRef.current.generation !== scope.generation
+        || applicationsRequestGenerationRef.current !== requestGeneration
+      ) {
+        return
+      }
       const fallback: Application = {
         id: 'legacy',
-        project_id: activeProject.id,
+        project_id: projectId,
         name: 'Legacy',
         created_at: new Date(0).toISOString(),
         updated_at: new Date(0).toISOString(),
       }
+      activeApplicationIdRef.current = fallback.id
       setApplications([fallback])
       setActiveApplicationState(fallback)
       setReleases([])
       setActiveReleaseState(null)
     })
-  }, [activeProject?.id, refreshApplications])
+    return () => {
+      cancelled = true
+    }
+  }, [activeProjectId, refreshApplications])
 
   useEffect(() => {
     if (activeApplication?.id) {
       refreshReleases(activeApplication.id).catch(() => undefined)
-      return
+      return () => {
+        releasesRequestGenerationRef.current += 1
+      }
     }
     setReleases([])
     setActiveReleaseState(null)
   }, [activeApplication?.id, refreshReleases])
 
+  const scopeIsCurrent = stateProjectId === activeProjectId
   const value = useMemo(
     () => ({
-      applications,
-      releases,
-      activeApplication,
-      activeRelease,
+      applications: scopeIsCurrent ? applications : [],
+      releases: scopeIsCurrent ? releases : [],
+      activeApplication: scopeIsCurrent ? activeApplication : null,
+      activeRelease: scopeIsCurrent ? activeRelease : null,
       setActiveApplication,
       setActiveRelease,
       refreshApplications,
@@ -133,7 +233,7 @@ export function ApplicationProvider({ children }: { children: ReactNode }) {
       createAndSelectApplication,
       createAndSelectRelease,
     }),
-    [applications, releases, activeApplication, activeRelease, setActiveApplication, setActiveRelease, refreshApplications, refreshReleases, createAndSelectApplication, createAndSelectRelease],
+    [scopeIsCurrent, applications, releases, activeApplication, activeRelease, setActiveApplication, setActiveRelease, refreshApplications, refreshReleases, createAndSelectApplication, createAndSelectRelease],
   )
 
   return <ApplicationContext.Provider value={value}>{children}</ApplicationContext.Provider>

@@ -16,8 +16,8 @@ vi.mock('../hooks/useApi', () => ({
   useApi: () => apiMock,
 }))
 
-function PollingHarness({ enabled = true }: { enabled?: boolean }) {
-  const model = useExecutionTestPolling('test-1', { enabled })
+function PollingHarness({ enabled = true, testId = 'test-1' }: { enabled?: boolean; testId?: string }) {
+  const model = useExecutionTestPolling(testId, { enabled })
 
   return (
     <div>
@@ -145,6 +145,56 @@ describe('useExecutionTestPolling', () => {
     await flushPromises()
 
     expect(apiMock.getTest).toHaveBeenCalledTimes(2)
+  })
+
+  it('clears a transient polling error after the next successful response', async () => {
+    apiMock.getTest
+      .mockRejectedValueOnce(new Error('controller unavailable'))
+      .mockResolvedValueOnce(buildTest('RUNNING'))
+
+    await act(async () => {
+      root.render(<PollingHarness />)
+    })
+    await flushPromises()
+
+    expect(readTestId('error')).toBe('controller unavailable')
+
+    await act(async () => {
+      vi.advanceTimersByTime(2000)
+    })
+    await flushPromises()
+
+    expect(readTestId('status')).toBe('RUNNING')
+    expect(readTestId('error')).toBe('none')
+  })
+
+  it('ignores a late response after the requested test changes', async () => {
+    let resolveFirst: (value: ReturnType<typeof buildTest>) => void = () => {}
+    apiMock.getTest
+      .mockReturnValueOnce(new Promise(resolve => {
+        resolveFirst = resolve
+      }))
+      .mockResolvedValueOnce({ ...buildTest('RUNNING'), id: 'test-2', name: 'Second Test' })
+
+    await act(async () => {
+      root.render(<PollingHarness testId="test-1" />)
+    })
+
+    await act(async () => {
+      root.render(<PollingHarness testId="test-2" />)
+    })
+    await flushPromises()
+
+    expect(apiMock.getTest).toHaveBeenNthCalledWith(1, 'test-1')
+    expect(apiMock.getTest).toHaveBeenNthCalledWith(2, 'test-2')
+    expect(readTestId('status')).toBe('RUNNING')
+
+    await act(async () => {
+      resolveFirst(buildTest('QUEUED'))
+    })
+    await flushPromises()
+
+    expect(readTestId('status')).toBe('RUNNING')
   })
 
   function readTestId(testId: string) {

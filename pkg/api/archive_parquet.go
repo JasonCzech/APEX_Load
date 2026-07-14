@@ -1,9 +1,9 @@
 package api
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -114,44 +114,70 @@ type parquetIntervalSummary struct {
 }
 
 func writeArchiveParquetFiles(rootDir string, manifest *RunArchiveManifest) error {
-	transactions, err := readAllJSONLRecords[TransactionEvent](filepath.Join(rootDir, manifest.TransactionsFile))
-	if err != nil {
-		return fmt.Errorf("read transaction jsonl for parquet export: %w", err)
-	}
-	resources, err := readAllJSONLRecords[ResourceSample](filepath.Join(rootDir, manifest.ResourceSamplesFile))
-	if err != nil {
-		return fmt.Errorf("read resource jsonl for parquet export: %w", err)
-	}
-	summaries, err := readAllJSONLRecords[IntervalSummaryRecord](filepath.Join(rootDir, manifest.IntervalSummariesFile))
-	if err != nil {
-		return fmt.Errorf("read summary jsonl for parquet export: %w", err)
-	}
-
-	if err := writeParquetFile(filepath.Join(rootDir, manifest.TransactionsParquetFile), toParquetTransactions(transactions)); err != nil {
+	if err := streamJSONLToParquet(
+		filepath.Join(rootDir, manifest.TransactionsFile),
+		filepath.Join(rootDir, manifest.TransactionsParquetFile),
+		func(item TransactionEvent) parquetTransactionEvent {
+			return toParquetTransactions([]TransactionEvent{item})[0]
+		},
+	); err != nil {
 		return fmt.Errorf("write transaction parquet: %w", err)
 	}
-	if err := writeParquetFile(filepath.Join(rootDir, manifest.ResourceSamplesParquetFile), toParquetResources(resources)); err != nil {
+	if err := streamJSONLToParquet(
+		filepath.Join(rootDir, manifest.ResourceSamplesFile),
+		filepath.Join(rootDir, manifest.ResourceSamplesParquetFile),
+		func(item ResourceSample) parquetResourceSample {
+			return toParquetResources([]ResourceSample{item})[0]
+		},
+	); err != nil {
 		return fmt.Errorf("write resource parquet: %w", err)
 	}
-	if err := writeParquetFile(filepath.Join(rootDir, manifest.IntervalSummariesParquetFile), toParquetSummaries(summaries)); err != nil {
+	if err := streamJSONLToParquet(
+		filepath.Join(rootDir, manifest.IntervalSummariesFile),
+		filepath.Join(rootDir, manifest.IntervalSummariesParquetFile),
+		func(item IntervalSummaryRecord) parquetIntervalSummary {
+			return toParquetSummaries([]IntervalSummaryRecord{item})[0]
+		},
+	); err != nil {
 		return fmt.Errorf("write summary parquet: %w", err)
 	}
 	return nil
 }
 
-func writeParquetFile[T any](path string, rows []T) error {
-	fw, err := local.NewLocalFileWriter(path)
+// streamJSONLToParquet keeps memory proportional to one archive record. A JSON
+// decoder is intentionally used instead of bufio.Scanner: error snapshots can
+// legitimately contain response bodies far larger than Scanner's default (or
+// the previous 2 MiB cap), and Decoder accepts a newline-delimited sequence of
+// JSON values without imposing a mismatched token limit.
+func streamJSONLToParquet[In any, Out any](inputPath string, outputPath string, convert func(In) Out) error {
+	input, err := os.Open(inputPath)
 	if err != nil {
 		return err
 	}
-	pw, err := writer.NewParquetWriter(fw, new(T), 4)
+	defer input.Close()
+
+	fw, err := local.NewLocalFileWriter(outputPath)
+	if err != nil {
+		return err
+	}
+	pw, err := writer.NewParquetWriter(fw, new(Out), 4)
 	if err != nil {
 		_ = fw.Close()
 		return err
 	}
 	pw.CompressionType = parquet.CompressionCodec_SNAPPY
-	for _, row := range rows {
-		if err := pw.Write(row); err != nil {
+	decoder := json.NewDecoder(input)
+	for {
+		var item In
+		if err := decoder.Decode(&item); err != nil {
+			if err == io.EOF {
+				break
+			}
+			_ = pw.WriteStop()
+			_ = fw.Close()
+			return err
+		}
+		if err := pw.Write(convert(item)); err != nil {
 			_ = pw.WriteStop()
 			_ = fw.Close()
 			return err
@@ -162,31 +188,6 @@ func writeParquetFile[T any](path string, rows []T) error {
 		return err
 	}
 	return fw.Close()
-}
-
-func readAllJSONLRecords[T any](path string) ([]T, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	buf := make([]byte, 0, 64*1024)
-	scanner.Buffer(buf, 2*1024*1024)
-
-	items := make([]T, 0)
-	for scanner.Scan() {
-		var item T
-		if err := json.Unmarshal(scanner.Bytes(), &item); err != nil {
-			return nil, err
-		}
-		items = append(items, item)
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 func toParquetTransactions(items []TransactionEvent) []parquetTransactionEvent {

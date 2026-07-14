@@ -29,6 +29,7 @@ describe('CommandCenterPrototype', () => {
       root.unmount()
     })
     vi.restoreAllMocks()
+    vi.useRealTimers()
     container.remove()
   })
 
@@ -169,7 +170,7 @@ describe('CommandCenterPrototype', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ tests: [], count: 0 }))
 
     await act(async () => {
-      root.render(<CommandCenterPrototype onOpenResults={openResults} />)
+      root.render(<CommandCenterPrototype projectId="project-1" onOpenResults={openResults} />)
     })
     await flush()
 
@@ -196,7 +197,7 @@ describe('CommandCenterPrototype', () => {
     })
 
     await act(async () => {
-      root.render(<CommandCenterPrototype />)
+      root.render(<CommandCenterPrototype projectId="project-1" />)
     })
     await flush()
 
@@ -241,7 +242,7 @@ describe('CommandCenterPrototype', () => {
     })
 
     await act(async () => {
-      root.render(<CommandCenterPrototype />)
+      root.render(<CommandCenterPrototype projectId="project-1" />)
     })
     await flush()
 
@@ -257,6 +258,78 @@ describe('CommandCenterPrototype', () => {
 
     expect(container.querySelector('[aria-label="No active command center run"]')).toBeNull()
     expect(container.textContent).toContain('Checkout Soak')
+  })
+
+  it('does not auto-discover runs until a project scope is available', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ tests: [], count: 0 }))
+
+    await act(async () => {
+      root.render(<CommandCenterPrototype />)
+    })
+    await flush()
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('No active run selected')
+  })
+
+  it('ignores discovery results from the previous project scope', async () => {
+    const runA: TestSummary = { ...buildLiveVuserTest(), id: 'run-a', name: 'Project A Run' }
+    const runB: TestSummary = { ...buildLiveVuserTest(), id: 'run-b', name: 'Project B Run' }
+    let resolveProjectA: ((response: Response) => void) | undefined
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = requestUrl(input)
+      if (url.includes('/tests/run-b')) return Promise.resolve(jsonResponse(runB))
+      if (url.includes('project_id=project-a')) {
+        return new Promise(resolve => { resolveProjectA = resolve })
+      }
+      if (url.includes('project_id=project-b')) {
+        return Promise.resolve(jsonResponse({ tests: [runB], count: 1 }))
+      }
+      return Promise.resolve(jsonResponse({}))
+    })
+
+    await act(async () => {
+      root.render(<CommandCenterPrototype projectId="project-a" />)
+      await Promise.resolve()
+    })
+    await act(async () => {
+      root.render(<CommandCenterPrototype projectId="project-b" />)
+    })
+    await flush()
+    expect(container.textContent).toContain('Project B Run')
+
+    await act(async () => {
+      resolveProjectA?.(jsonResponse({ tests: [runA], count: 1 }))
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(container.textContent).toContain('Project B Run')
+    expect(container.textContent).not.toContain('Project A Run')
+  })
+
+  it('returns to discovery when an auto-selected run becomes terminal', async () => {
+    const runA: TestSummary = { ...buildLiveVuserTest(), id: 'run-a', name: 'Finishing Run' }
+    const runB: TestSummary = { ...buildLiveVuserTest(), id: 'run-b', name: 'Replacement Run' }
+    let discoveryCalls = 0
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = requestUrl(input)
+      if (url.includes('/tests/run-a')) return Promise.resolve(jsonResponse({ ...runA, status: 'COMPLETE' }))
+      if (url.includes('/tests/run-b')) return Promise.resolve(jsonResponse(runB))
+      if (url.includes('/tests')) {
+        discoveryCalls += 1
+        return Promise.resolve(jsonResponse({ tests: [discoveryCalls === 1 ? runA : runB], count: 1 }))
+      }
+      return Promise.resolve(jsonResponse({}))
+    })
+
+    await act(async () => {
+      root.render(<CommandCenterPrototype projectId="project-1" />)
+    })
+    await flush(12)
+
+    expect(discoveryCalls).toBeGreaterThanOrEqual(2)
+    expect(container.textContent).toContain('Replacement Run')
+    expect(container.textContent).not.toContain('Finishing Run')
   })
 
   it('switches between the OPS View and Graph Wall variants from the sidebar', async () => {
@@ -696,6 +769,35 @@ describe('CommandCenterPrototype', () => {
     await click(vuserToggle)
 
     expect(window.localStorage.getItem('apexload.commandCenter.grafana.hiddenCharts')).toContain('vusers')
+  })
+
+  it('activates error and evidence rows with Enter and Space', async () => {
+    await renderPrototype()
+    await click(tabNamed('Error Details'))
+
+    let errorRows = Array.from(container.querySelectorAll<HTMLTableRowElement>('.command-error-table tbody tr'))
+    expect(errorRows.length).toBeGreaterThan(1)
+    expect(errorRows[1].tabIndex).toBe(0)
+    await act(async () => {
+      errorRows[1].focus()
+      errorRows[1].dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    })
+    expect(errorRows[1].classList.contains('selected')).toBe(true)
+    expect(errorRows[1].getAttribute('aria-selected')).toBe('true')
+
+    errorRows = Array.from(container.querySelectorAll<HTMLTableRowElement>('.command-error-table tbody tr'))
+    await act(async () => {
+      errorRows[0].focus()
+      errorRows[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    })
+    const evidenceRows = Array.from(container.querySelectorAll<HTMLTableRowElement>('.command-evidence-table tbody tr'))
+    expect(evidenceRows.length).toBeGreaterThan(1)
+    await act(async () => {
+      evidenceRows[1].focus()
+      evidenceRows[1].dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }))
+    })
+    expect(evidenceRows[1].classList.contains('selected')).toBe(true)
+    expect(evidenceRows[1].getAttribute('aria-selected')).toBe('true')
   })
 
   it('renders live command-center data when a test is selected', async () => {

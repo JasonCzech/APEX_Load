@@ -33,6 +33,10 @@ const libraryApiMock = {
   compareItems: vi.fn(),
 }
 
+const projectState = {
+  activeProject: { id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' },
+}
+
 vi.mock('../hooks/useApi', () => ({
   useApi: () => apiMock,
 }))
@@ -42,9 +46,7 @@ vi.mock('../hooks/api/useLibraryApi', () => ({
 }))
 
 vi.mock('../hooks/useProject', () => ({
-  useProject: () => ({
-    activeProject: { id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' },
-  }),
+  useProject: () => projectState,
 }))
 
 vi.mock('./ScriptEditor', () => ({
@@ -232,6 +234,7 @@ describe('ScriptsPage', () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
+    projectState.activeProject = { id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' }
 
     apiMock.listScripts.mockResolvedValue({
       scripts: [
@@ -329,9 +332,11 @@ describe('ScriptsPage', () => {
     if (!existingRow) {
       return
     }
+    const existingRowToggle = existingRow.querySelector<HTMLButtonElement>('.script-row-toggle')
+    expect(existingRowToggle).not.toBeNull()
 
     await act(async () => {
-      existingRow.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      existingRowToggle?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
     await flushPromises()
@@ -357,6 +362,10 @@ describe('ScriptsPage', () => {
     await act(async () => {
       sampleButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
+    await act(async () => {
+      await vi.dynamicImportSettled()
+    })
+    await flushPromises()
 
     expect(container.querySelector('[data-testid="sample-import"]')).not.toBeNull()
 
@@ -559,6 +568,9 @@ describe('ScriptsPage', () => {
     expect(container.textContent).not.toContain('Browser Recorder')
 
     await clickButton('Record Browser')
+    await act(async () => {
+      await vi.dynamicImportSettled()
+    })
     await flushPromises()
 
     expect(container.querySelector('[data-testid="recording-studio"]')).not.toBeNull()
@@ -651,6 +663,24 @@ describe('ScriptsPage', () => {
 
     expect(container.querySelector('[role="alert"]')?.textContent).toContain('script list unavailable')
     expect(container.textContent).toContain('No scripts yet.')
+  })
+
+  it('routes an empty library CTA into the start-new workflow', async () => {
+    apiMock.listScripts.mockResolvedValueOnce({ scripts: [], count: 0 })
+
+    await act(async () => {
+      root.render(<ScriptsPage />)
+    })
+    await flushPromises()
+
+    const createButton = Array.from(container.querySelectorAll('button'))
+      .find(button => button.textContent?.trim() === 'Create your first script')
+    expect(createButton).toBeDefined()
+    await act(async () => { createButton?.click() })
+    await flushPromises()
+
+    expect(container.textContent).toContain('New draft authoring')
+    expect(container.textContent).not.toContain('Model From Existing Script')
   })
 
   it('surfaces authoring-session load failures', async () => {
@@ -1677,6 +1707,37 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('sample-import:default')
   })
 
+  it('clears the script library and ignores a late response after the project changes', async () => {
+    const projectOne = deferred<{ scripts: Array<ReturnType<typeof scriptRecord>> }>()
+    apiMock.listScripts.mockImplementation((projectId: string) => {
+      if (projectId === 'project-1') return projectOne.promise
+      return Promise.resolve({ scripts: [scriptRecord('script-2', 'Catalog Script', 'project-2')] })
+    })
+
+    await act(async () => {
+      root.render(<ScriptsPage />)
+    })
+    expect(apiMock.listScripts).toHaveBeenCalledWith('project-1')
+
+    projectState.activeProject = { id: 'project-2', name: 'Catalog', created_at: '', updated_at: '' }
+    await act(async () => {
+      root.render(<ScriptsPage />)
+    })
+    await flushPromises()
+
+    expect(apiMock.listScripts).toHaveBeenCalledWith('project-2')
+    expect(container.textContent).toContain('Catalog Script')
+    expect(container.textContent).not.toContain('Checkout Late Script')
+
+    await act(async () => {
+      projectOne.resolve({ scripts: [scriptRecord('script-1', 'Checkout Late Script', 'project-1')] })
+    })
+    await flushPromises()
+
+    expect(container.textContent).toContain('Catalog Script')
+    expect(container.textContent).not.toContain('Checkout Late Script')
+  })
+
   it('renders the script library as read-only when manage_scripts is denied', async () => {
     apiMock.getAuthEffectiveAccess.mockResolvedValueOnce({
       enabled: false,
@@ -1734,6 +1795,29 @@ async function flushPromises() {
     await Promise.resolve()
     await Promise.resolve()
   })
+}
+
+function scriptRecord(id: string, name: string, projectId: string) {
+  return {
+    id,
+    name,
+    project_id: projectId,
+    protocol: 'http',
+    version: '1.0.0',
+    created_at: '2026-05-12T20:00:00Z',
+    scenario_count: 0,
+    associated_releases: [],
+    scenario_run_releases: [],
+    last_run_at: '',
+  }
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>(next => {
+    resolve = next
+  })
+  return { promise, resolve }
 }
 
 function setInputValue(input: HTMLInputElement, value: string) {

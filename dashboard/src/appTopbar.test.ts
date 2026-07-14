@@ -20,6 +20,7 @@ describe('app topbar helpers', () => {
     expect(pageTitleForView({ page: 'scripts', mode: 'create' })).toBe('Create Script')
     expect(pageTitleForView({ page: 'results' })).toBe('Results Library')
     expect(pageTitleForView({ page: 'fleet' })).toBe('Fleet')
+    expect(pageTitleForView({ page: 'monitoring', category: 'telemetry' })).toBe('Telemetry')
     expect(pageTitleForView({ page: 'repository' }, { repositoryName: 'Payments Repository' })).toBe('Payments Repository')
     expect(pageTitleForView({ page: 'test', testId: 'run-1' }, { testName: 'Checkout Peak' })).toBe('Checkout Peak')
   })

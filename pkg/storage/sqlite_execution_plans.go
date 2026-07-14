@@ -100,8 +100,24 @@ func (s *SQLiteStore) ListExecutionPlans(projectID string, limit int, offset int
 }
 
 func (s *SQLiteStore) DeleteExecutionPlan(id string) error {
-	_, err := s.db.Exec(`DELETE FROM execution_plans WHERE id = ?`, id)
-	return err
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM execution_plan_schedule_occurrences WHERE schedule_id IN (SELECT id FROM execution_plan_schedules WHERE plan_id = ?)`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM execution_plan_schedules WHERE plan_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM execution_plan_approvals WHERE plan_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM execution_plans WHERE id = ?`, id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *SQLiteStore) SaveExecutionPlanRun(run *ExecutionPlanRun) error {
@@ -182,6 +198,26 @@ func (s *SQLiteStore) ListExecutionPlanRuns(planID string, limit int, offset int
 		}
 	}
 	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	runs := make([]*ExecutionPlanRun, 0)
+	for rows.Next() {
+		run, err := scanExecutionPlanRun(rows)
+		if err != nil {
+			return nil, err
+		}
+		runs = append(runs, run)
+	}
+	return runs, rows.Err()
+}
+
+// ListRunningExecutionPlanRuns returns only non-terminal sequential plan runs.
+// Recovery uses this narrow query at boot/failover so its cost is proportional
+// to live orchestration rather than the complete retained run history.
+func (s *SQLiteStore) ListRunningExecutionPlanRuns() ([]*ExecutionPlanRun, error) {
+	rows, err := s.db.Query(executionPlanRunSelect+` WHERE run_mode = ? AND status = ? ORDER BY created_at ASC`, "sequential", "running")
 	if err != nil {
 		return nil, err
 	}

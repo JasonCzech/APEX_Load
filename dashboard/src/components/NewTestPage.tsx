@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Area, AreaChart, CartesianGrid, Line, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Application, ApplicationRepository, CapacityTimeslot, DashboardAuthEffectiveAccessResource, DashboardScheduleDefaultsSettings, DraftCapacityEstimate, GeneratorAssignmentSettings, LaunchPreflightResponse, Release, RuntimeSettingsOverride, ScenarioSchedule, ScenarioScheduleOccurrence, ScenarioScheduleWindow, StoredScenario, SystemInventoryGenerator } from '../types'
 import { useApi } from '../hooks/useApi'
@@ -67,6 +67,7 @@ import {
 import './CreateTestModal.css'
 import { useHasTopbarContributionProvider, useTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
+import { useModalDialog } from '../hooks/useModalDialog'
 
 interface Props {
   activeApplication: Application | null
@@ -115,6 +116,8 @@ const DEFAULT_SCHEDULE_DEFAULTS: Required<DashboardScheduleDefaultsSettings> = {
   availability_start_time: '',
   availability_end_time: '',
 }
+const EMPTY_SCENARIOS: StoredScenario[] = []
+const EMPTY_BINDABLE_TIMESLOTS: CapacityTimeslot[] = []
 
 type SortDirection = 'asc' | 'desc'
 type ScenarioSortField = 'name' | 'releases' | 'last_run_at' | 'vusers' | 'duration' | 'groups'
@@ -295,16 +298,16 @@ function ScheduleWindowListEditor({ title, description, windows, onChange, disab
         {windows.length === 0 && <span className="setting-desc schedule-window-empty">None configured.</span>}
         {windows.map((w, i) => (
           <div key={i} className="schedule-window-row">
-            <input className="settings-input schedule-window-name" placeholder="Name (optional)" value={w.name} disabled={disabled} onChange={e => update(i, { name: e.target.value })} />
-            <div className="schedule-window-days" role="group" aria-label={`${title} days of week`}>
+            <input aria-label={`${title} window ${i + 1} name`} className="settings-input schedule-window-name" placeholder="Name (optional)" value={w.name} disabled={disabled} onChange={e => update(i, { name: e.target.value })} />
+            <div className="schedule-window-days" role="group" aria-label={`${title} window ${i + 1} days of week`}>
               {SCHEDULE_WEEKDAYS.map(d => (
                 <button type="button" key={d.value} className={`schedule-day-toggle ${w.days_of_week.includes(d.value) ? 'active' : ''}`} disabled={disabled} aria-pressed={w.days_of_week.includes(d.value)} onClick={() => toggleDay(i, d.value)}>{d.label}</button>
               ))}
             </div>
-            <input type="time" className="settings-input schedule-window-time" value={w.start_time} disabled={disabled} onChange={e => update(i, { start_time: e.target.value })} />
+            <input aria-label={`${title} window ${i + 1} start time`} type="time" className="settings-input schedule-window-time" value={w.start_time} disabled={disabled} onChange={e => update(i, { start_time: e.target.value })} />
             <span className="schedule-window-sep">to</span>
-            <input type="time" className="settings-input schedule-window-time" value={w.end_time} disabled={disabled} onChange={e => update(i, { end_time: e.target.value })} />
-            <button type="button" className="btn btn-ghost btn-sm" disabled={disabled} onClick={() => remove(i)} aria-label="Remove window">Remove</button>
+            <input aria-label={`${title} window ${i + 1} end time`} type="time" className="settings-input schedule-window-time" value={w.end_time} disabled={disabled} onChange={e => update(i, { end_time: e.target.value })} />
+            <button type="button" className="btn btn-ghost btn-sm" disabled={disabled} onClick={() => remove(i)} aria-label={`Remove ${title.toLowerCase()} window ${i + 1}`}>Remove</button>
           </div>
         ))}
         <button type="button" className="btn btn-secondary btn-sm" disabled={disabled} onClick={add}>+ Add window</button>
@@ -415,10 +418,12 @@ function buildGroupEditChanges(draft: GroupEditDraft, baseline: GroupEditDraft):
 export default function NewTestPage({ activeApplication, applicationRepository, activeRelease, releases, initialScenarioId, initialPrefillStartLocal, onSelectTest, onOpenCommandCenter, onCreateRelease, onOpenScenarioBuilder }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
+  const activeProjectID = activeProject?.id || ''
   const [pageMode, setPageMode] = useState<'launch' | 'schedules'>('launch')
   const hasTopbarContributionProvider = useHasTopbarContributionProvider()
   const { runGuarded } = useNavigationGuardRunner()
-  const [scenarios, setScenarios] = useState<StoredScenario[]>([])
+  const [scenarioState, setScenarioState] = useState<{ projectID: string; scenarios: StoredScenario[] }>({ projectID: '', scenarios: [] })
+  const scenarios = scenarioState.projectID === activeProjectID ? scenarioState.scenarios : EMPTY_SCENARIOS
   const [scenarioId, setScenarioId] = useState(initialScenarioId || '')
   const [releaseId, setReleaseId] = useState(activeRelease?.id || '')
   const [schedules, setSchedules] = useState<ScenarioSchedule[]>([])
@@ -463,42 +468,101 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
   const [generatorInventory, setGeneratorInventory] = useState<SystemInventoryGenerator[]>([])
   const [generatorInventoryLoading, setGeneratorInventoryLoading] = useState(false)
   const [generatorInventoryError, setGeneratorInventoryError] = useState('')
-  const [bindableTimeslots, setBindableTimeslots] = useState<CapacityTimeslot[]>([])
+  const [timeslotState, setTimeslotState] = useState<{ projectID: string; timeslots: CapacityTimeslot[] }>({ projectID: '', timeslots: [] })
+  const bindableTimeslots = timeslotState.projectID === activeProjectID ? timeslotState.timeslots : EMPTY_BINDABLE_TIMESLOTS
   const [selectedTimeslotId, setSelectedTimeslotId] = useState('')
   const newTestDirtyRef = useRef(false)
   const createQueuedRunRef = useRef<() => Promise<boolean>>(async () => false)
   const resetRunSetupRef = useRef<() => void>(() => undefined)
+  const scenarioRequestGenerationRef = useRef(0)
+  const timeslotRequestGenerationRef = useRef(0)
+  const activeProjectIDRef = useRef(activeProjectID)
+  activeProjectIDRef.current = activeProjectID
+  const runDefaultDialogRef = useRef<HTMLDivElement>(null)
+  const runGroupDialogRef = useRef<HTMLDivElement>(null)
+  const deleteScheduleDialogRef = useRef<HTMLDivElement>(null)
+
+  useModalDialog({
+    dialogRef: runDefaultDialogRef,
+    enabled: Boolean(editingDefaultKey),
+    onClose: () => setEditingDefaultKey(null),
+  })
+  useModalDialog({
+    dialogRef: runGroupDialogRef,
+    enabled: Boolean(editingGroupKey),
+    onClose: () => setEditingGroupKey(null),
+  })
+  useModalDialog({
+    dialogRef: deleteScheduleDialogRef,
+    enabled: Boolean(confirmDeleteScheduleId),
+    onClose: () => setConfirmDeleteScheduleId(null),
+  })
+
+  useLayoutEffect(() => {
+    setScenarioState({ projectID: activeProjectID, scenarios: [] })
+    setTimeslotState({ projectID: activeProjectID, timeslots: [] })
+    setScenarioId('')
+    setSelectedTimeslotId('')
+    setEffectiveAuthAccessResources([])
+    setError('')
+  }, [activeProjectID])
 
   const refresh = useCallback(async () => {
+    const projectID = activeProjectID
+    const requestGeneration = ++scenarioRequestGenerationRef.current
+    if (!projectID) {
+      setScenarioState({ projectID: '', scenarios: [] })
+      setScenarioId('')
+      return
+    }
     try {
-      const res = await api.listScenarios(activeProject?.id)
+      const res = await api.listScenarios(projectID)
+      if (
+        scenarioRequestGenerationRef.current !== requestGeneration
+        || activeProjectIDRef.current !== projectID
+      ) return
       const next = res.scenarios || []
-      setScenarios(next)
+      setScenarioState({ projectID, scenarios: next })
       setScenarioId(prev => {
         if (next.some(item => item.id === prev)) return prev
         if (initialScenarioId && next.some(item => item.id === initialScenarioId)) return initialScenarioId
         return next[0]?.id || ''
       })
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Unable to load scenarios'))
+      if (
+        scenarioRequestGenerationRef.current === requestGeneration
+        && activeProjectIDRef.current === projectID
+      ) setError(getErrorMessage(err, 'Unable to load scenarios'))
     }
-  }, [activeProject?.id, api, initialScenarioId])
+  }, [activeProjectID, api, initialScenarioId])
 
   useEffect(() => { refresh() }, [refresh])
 
   // Approved, not-yet-bound capacity reservations the operator can attach this run to.
   const refreshBindableTimeslots = useCallback(async () => {
-    if (!activeProject?.id) {
-      setBindableTimeslots([])
+    const projectID = activeProjectID
+    const requestGeneration = ++timeslotRequestGenerationRef.current
+    if (!projectID) {
+      setTimeslotState({ projectID: '', timeslots: [] })
       return
     }
     try {
-      const res = await api.listTimeslots({ project_id: activeProject.id })
-      setBindableTimeslots((res.timeslots || []).filter(slot => slot.approval_state === 'approved' && !slot.bound_test_id))
+      const res = await api.listTimeslots({ project_id: projectID })
+      if (
+        timeslotRequestGenerationRef.current !== requestGeneration
+        || activeProjectIDRef.current !== projectID
+      ) return
+      setTimeslotState({
+        projectID,
+        timeslots: (res.timeslots || []).filter(slot => slot.approval_state === 'approved' && !slot.bound_test_id),
+      })
     } catch {
-      setBindableTimeslots([])
+      if (
+        timeslotRequestGenerationRef.current === requestGeneration
+        && activeProjectIDRef.current === projectID
+      ) setTimeslotState({ projectID, timeslots: [] })
     }
-  }, [activeProject?.id, api])
+  }, [activeProjectID, api])
 
   useEffect(() => { void refreshBindableTimeslots() }, [refreshBindableTimeslots])
   // Drop the selection if the chosen slot is no longer bindable (approved+unbound) for this project.
@@ -511,10 +575,10 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
     return () => window.clearInterval(timer)
   }, [])
   useEffect(() => {
-    if (!initialScenarioId) return
+    if (!initialScenarioId || !scenarios.some(item => item.id === initialScenarioId)) return
     setScenarioId(prev => prev === initialScenarioId ? prev : initialScenarioId)
     setRunName('')
-  }, [initialScenarioId])
+  }, [initialScenarioId, scenarios])
   useEffect(() => {
     setRunDefaultOverrides(buildEmptyRunDefaultOverrides())
     setGroupRunOverrides({})
@@ -529,8 +593,12 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
   useEffect(() => {
     let cancelled = false
     const loadEffectiveAccess = async () => {
+      if (!activeProject?.id) {
+        setEffectiveAuthAccessResources([])
+        return
+      }
       try {
-        const response = await api.getAuthEffectiveAccess(activeProject?.id, {
+        const response = await api.getAuthEffectiveAccess(activeProject.id, {
           domain_id: activeProject?.domain_id,
           application_repository_id: applicationRepository?.id,
         })
@@ -1525,7 +1593,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
       </div>
 
       {error && <ErrorDiagnostic error={error} fallback="Unable to create or load test setup" compact className="new-test-error-diagnostic" />}
-      {!canManageTests && <div className="settings-error-inline">Current session can view scenarios but cannot create runs or schedules for this project.</div>}
+      {!canManageTests && <div className="settings-error-inline" role="alert">Current session can view scenarios but cannot create runs or schedules for this project.</div>}
 
       {pageMode === 'schedules' ? (
         <div className="new-test-layout new-test-schedules-layout">
@@ -1558,20 +1626,20 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
               <div className="settings-group">
                 <div className="setting-row">
                   <div className="setting-info">
-                    <span className="setting-label">Scenario</span>
+                    <span className="setting-label" id="schedule-scenario-label">Scenario</span>
                     <span className="setting-desc">Recurring runs always execute one stored scenario</span>
                   </div>
-                  <select className="settings-input" value={scenarioId} onChange={(event) => { setScenarioId(event.target.value); setEditingScheduleId(null) }}>
+                  <select className="settings-input" aria-labelledby="schedule-scenario-label" value={scenarioId} onChange={(event) => { setScenarioId(event.target.value); setEditingScheduleId(null) }}>
                     <option value="">Select scenario</option>
                     {scenarios.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
                   </select>
                 </div>
                 <div className="setting-row">
                   <div className="setting-info">
-                    <span className="setting-label">Schedule Name</span>
+                    <span className="setting-label" id="schedule-name-label">Schedule Name</span>
                     <span className="setting-desc">Human-friendly label for the recurring trigger</span>
                   </div>
-                  <input className="settings-input" value={scheduleDraft.name} onChange={(event) => setScheduleDraft(prev => ({ ...prev, name: event.target.value }))} placeholder="Nightly smoke" />
+                  <input className="settings-input" aria-labelledby="schedule-name-label" value={scheduleDraft.name} onChange={(event) => setScheduleDraft(prev => ({ ...prev, name: event.target.value }))} placeholder="Nightly smoke" />
                 </div>
                 <div className="setting-row">
                   <div className="setting-info">
@@ -1586,7 +1654,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                     <input className="settings-input cron-raw-input" value={scheduleDraft.cron_expr} disabled={!canManageTests} onChange={(event) => setScheduleDraft(prev => ({ ...prev, cron_expr: event.target.value }))} placeholder="0 9 * * 1-5" aria-label="Raw cron expression" />
                     {schedulePreview && (
                       schedulePreview.error ? (
-                        <span className="setting-desc cron-preview-error">{schedulePreview.error}</span>
+                        <span className="setting-desc cron-preview-error" role="alert">{schedulePreview.error}</span>
                       ) : schedulePreview.occurrences.length > 0 ? (
                         <div className="cron-next-runs">
                           <span className="setting-desc">Next runs ({scheduleDraft.timezone || 'UTC'}):</span>
@@ -1609,40 +1677,40 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                 </div>
                 <div className="setting-row">
                   <div className="setting-info">
-                    <span className="setting-label">Timezone</span>
+                    <span className="setting-label" id="schedule-timezone-label">Timezone</span>
                     <span className="setting-desc">IANA timezone used for cron evaluation</span>
                     <span className="setting-desc schedule-current-utc">Current UTC: {formatUtcScheduleClock(scheduleClock)} UTC</span>
                   </div>
-                  <select className="settings-input" value={scheduleDraft.timezone} onChange={(event) => setScheduleDraft(prev => ({ ...prev, timezone: event.target.value }))}>
+                  <select className="settings-input" aria-labelledby="schedule-timezone-label" value={scheduleDraft.timezone} onChange={(event) => setScheduleDraft(prev => ({ ...prev, timezone: event.target.value }))}>
                     {COMMON_TIMEZONES.map(tz => <option key={tz} value={tz}>{formatTimeZoneOptionLabel(tz, scheduleClock)}</option>)}
                   </select>
                 </div>
                 <div className="setting-row">
                   <div className="setting-info">
-                    <span className="setting-label">Release Context</span>
+                    <span className="setting-label" id="schedule-release-label">Release Context</span>
                     <span className="setting-desc">Optional release to attach to scheduled runs</span>
                   </div>
-                  <select className="settings-input" value={scheduleDraft.release_id} onChange={(event) => setScheduleDraft(prev => ({ ...prev, release_id: event.target.value }))}>
+                  <select className="settings-input" aria-labelledby="schedule-release-label" value={scheduleDraft.release_id} onChange={(event) => setScheduleDraft(prev => ({ ...prev, release_id: event.target.value }))}>
                     <option value="">No release</option>
                     {releases.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
                   </select>
                 </div>
                 <div className="setting-row">
                   <div className="setting-info">
-                    <span className="setting-label">Default Timeslot</span>
+                    <span className="setting-label" id="schedule-timeslot-label">Default Timeslot</span>
                     <span className="setting-desc">Optional approved capacity timeslot each scheduled run binds at materialization. If the slot is unavailable, that run is recorded as blocked instead of launching unprotected.</span>
                   </div>
-                  <select className="settings-input" value={scheduleDraft.timeslot_id} onChange={(event) => setScheduleDraft(prev => ({ ...prev, timeslot_id: event.target.value }))}>
+                  <select className="settings-input" aria-labelledby="schedule-timeslot-label" value={scheduleDraft.timeslot_id} onChange={(event) => setScheduleDraft(prev => ({ ...prev, timeslot_id: event.target.value }))}>
                     <option value="">No timeslot</option>
                     {bindableTimeslots.map(slot => <option key={slot.id} value={slot.id}>{formatTimeslotLabel(slot)}</option>)}
                   </select>
                 </div>
                 <div className="setting-row">
                   <div className="setting-info">
-                    <span className="setting-label">Run Name Template</span>
+                    <span className="setting-label" id="schedule-run-name-label">Run Name Template</span>
                     <span className="setting-desc">Default run name used when the schedule fires</span>
                   </div>
-                  <input className="settings-input" value={scheduleDraft.run_name_template} onChange={(event) => setScheduleDraft(prev => ({ ...prev, run_name_template: event.target.value }))} placeholder={scenario?.name || 'Scheduled run'} />
+                  <input className="settings-input" aria-labelledby="schedule-run-name-label" value={scheduleDraft.run_name_template} onChange={(event) => setScheduleDraft(prev => ({ ...prev, run_name_template: event.target.value }))} placeholder={scenario?.name || 'Scheduled run'} />
                 </div>
                 <ScheduleWindowListEditor
                   title="Blackout windows"
@@ -1927,7 +1995,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                   {filteredScenarios.length > 0 ? (
                     <div className="new-test-table-wrap new-test-scenario-table-wrap">
                       <div className="data-table">
-                        <table className="new-test-scenario-table">
+                        <table className="new-test-scenario-table" aria-label="Available scenarios">
                           <thead>
                             <tr>
                               <th onClick={() => sortScenarios('name')} className="sortable">Scenario <SortIndicator active={scenarioSortField === 'name'} direction={scenarioSortDirection} /></th>
@@ -1949,7 +2017,18 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                                 <Fragment key={item.id}>
                                   <tr
                                     className={`new-test-scenario-table-row clickable-row ${selected ? 'selected' : ''}`}
+                                    tabIndex={0}
+                                    aria-selected={selected}
+                                    aria-expanded={expanded}
+                                    aria-controls={`new-test-scenario-groups-${item.id}`}
                                     onClick={() => selectScenario(item.id)}
+                                    onKeyDown={event => {
+                                      if (event.currentTarget !== event.target) return
+                                      if (event.key === 'Enter' || event.key === ' ') {
+                                        event.preventDefault()
+                                        selectScenario(item.id)
+                                      }
+                                    }}
                                   >
                                     <td className="cell-name">
                                       <div className="new-test-scenario-name-cell">
@@ -1978,7 +2057,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                                     </td>
                                   </tr>
                                   {expanded && (
-                                    <tr className="no-hover new-test-scenario-expanded-row">
+                                    <tr className="no-hover new-test-scenario-expanded-row" id={`new-test-scenario-groups-${item.id}`}>
                                       <td colSpan={7}>
                                         <div className="new-test-scenario-groups-panel">
                                           <div className="new-test-scenario-groups-header">
@@ -2023,7 +2102,20 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                                                   const runtimeValues = buildGroupRuntimeTableValues(sourceGroup, item, selected ? runDefaultOverrides : buildEmptyRunDefaultOverrides(), override)
                                                   const rowOverridden = selected && hasGroupOverrideValues(override)
                                                   return (
-                                                    <tr key={key} className={rowOverridden ? 'new-test-script-row overridden' : 'new-test-script-row'} onClick={() => { if (selected) openGroupEditor(sourceGroup) }}>
+                                                    <tr
+                                                      key={key}
+                                                      className={rowOverridden ? 'new-test-script-row overridden' : 'new-test-script-row'}
+                                                      tabIndex={selected ? 0 : undefined}
+                                                      aria-label={selected ? `Edit run settings for ${group.name || group.script_name || 'script group'}` : undefined}
+                                                      onClick={() => { if (selected) openGroupEditor(sourceGroup) }}
+                                                      onKeyDown={event => {
+                                                        if (!selected || event.currentTarget !== event.target) return
+                                                        if (event.key === 'Enter' || event.key === ' ') {
+                                                          event.preventDefault()
+                                                          openGroupEditor(sourceGroup)
+                                                        }
+                                                      }}
+                                                    >
                                                       <td className="cell-name">
                                                         <span>{group.name || group.script_name}</span>
                                                         {rowOverridden && <em className="new-test-override-pill">Run override</em>}
@@ -2089,23 +2181,23 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
               <div className="settings-group new-test-setup-grid">
                 <div className="setting-row">
                   <div className="setting-info">
-                    <span className="setting-label">Run Name</span>
+                    <span className="setting-label" id="new-test-run-name-label">Run Name</span>
                     <span className="setting-desc">Shown in results and monitoring</span>
                   </div>
-                  <input className="settings-input" value={runName} onChange={event => setRunName(event.target.value)} placeholder={scenario?.name || 'Run name'} />
+                  <input className="settings-input" aria-labelledby="new-test-run-name-label" value={runName} onChange={event => setRunName(event.target.value)} placeholder={scenario?.name || 'Run name'} />
                 </div>
                 <div className="setting-row new-test-release-row">
                   <div className="setting-info">
-                    <span className="setting-label">Release</span>
+                    <span className="setting-label" id="new-test-release-label">Release</span>
                     <span className="setting-desc">Required target for results</span>
                   </div>
-                  <select className="settings-input" value={releaseId} onChange={(event) => setReleaseId(event.target.value)}>
+                  <select className="settings-input" aria-labelledby="new-test-release-label" value={releaseId} onChange={(event) => setReleaseId(event.target.value)}>
                     <option value="">Select release</option>
                     {releases.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
                   </select>
                   {showNewRelease ? (
                     <div className="new-test-release-create-row">
-                      <input className="settings-input" value={newReleaseName} onChange={event => setNewReleaseName(event.target.value)} placeholder="Release name, e.g. PI30" autoFocus />
+                      <input className="settings-input" aria-label="New release name" value={newReleaseName} onChange={event => setNewReleaseName(event.target.value)} placeholder="Release name, e.g. PI30" autoFocus />
                       <button className="btn btn-secondary" onClick={createRelease} disabled={!newReleaseName.trim()}>Add</button>
                       <button className="btn btn-ghost btn-sm" onClick={() => { setShowNewRelease(false); setNewReleaseName('') }}>Cancel</button>
                     </div>
@@ -2116,10 +2208,10 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                 {bindableTimeslots.length > 0 && (
                   <div className="setting-row">
                     <div className="setting-info">
-                      <span className="setting-label">Reserved Timeslot</span>
+                      <span className="setting-label" id="new-test-timeslot-label">Reserved Timeslot</span>
                       <span className="setting-desc">Attach this run to an approved capacity reservation (optional)</span>
                     </div>
-                    <select className="settings-input" value={selectedTimeslotId} onChange={event => setSelectedTimeslotId(event.target.value)}>
+                    <select className="settings-input" aria-labelledby="new-test-timeslot-label" value={selectedTimeslotId} onChange={event => setSelectedTimeslotId(event.target.value)}>
                       <option value="">No reservation</option>
                       {bindableTimeslots.map(slot => (
                         <option key={slot.id} value={slot.id}>
@@ -2358,9 +2450,16 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
 
       {editingDefaultKey && editingDefaultCard && (
         <div className="modal-overlay" onClick={() => setEditingDefaultKey(null)}>
-          <div className="modal run-default-modal" role="dialog" aria-modal="true" onClick={event => event.stopPropagation()}>
+          <div
+            ref={runDefaultDialogRef}
+            className="modal run-default-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="new-test-run-default-dialog-title"
+            onClick={event => event.stopPropagation()}
+          >
             <div className="modal-header">
-              <h3>Edit {editingDefaultCard.label}</h3>
+              <h3 id="new-test-run-default-dialog-title">Edit {editingDefaultCard.label}</h3>
               <button type="button" className="btn btn-secondary btn-sm" onClick={() => setEditingDefaultKey(null)}>Close</button>
             </div>
             <div className="new-test-default-editor">
@@ -2382,9 +2481,16 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
 
       {editingGroupKey && editingGroup && scenario && (
         <div className="modal-overlay" onClick={() => setEditingGroupKey(null)}>
-          <div className="modal run-default-modal run-group-modal" role="dialog" aria-modal="true" onClick={event => event.stopPropagation()}>
+          <div
+            ref={runGroupDialogRef}
+            className="modal run-default-modal run-group-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="new-test-run-group-dialog-title"
+            onClick={event => event.stopPropagation()}
+          >
             <div className="modal-header">
-              <h3>Edit {editingGroup.name || editingGroup.script_name || 'Script Group'}</h3>
+              <h3 id="new-test-run-group-dialog-title">Edit {editingGroup.name || editingGroup.script_name || 'Script Group'}</h3>
               <button type="button" className="btn btn-secondary btn-sm" onClick={() => setEditingGroupKey(null)}>Close</button>
             </div>
             <div className="new-test-default-editor">
@@ -2546,9 +2652,16 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
 
       {confirmDeleteScheduleId && (
         <div className="modal-overlay" onClick={() => setConfirmDeleteScheduleId(null)}>
-          <div className="modal" role="dialog" aria-modal="true" onClick={event => event.stopPropagation()}>
+          <div
+            ref={deleteScheduleDialogRef}
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="new-test-delete-schedule-dialog-title"
+            onClick={event => event.stopPropagation()}
+          >
             <div className="modal-header">
-              <h3>Delete Schedule</h3>
+              <h3 id="new-test-delete-schedule-dialog-title">Delete Schedule</h3>
               <button type="button" className="btn btn-secondary btn-sm" onClick={() => setConfirmDeleteScheduleId(null)}>Cancel</button>
             </div>
             <div className="monitor-body">

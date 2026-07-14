@@ -1,7 +1,7 @@
-import { forwardRef, type CSSProperties, type MouseEventHandler, useEffect, useMemo, useState } from 'react'
+import { forwardRef, lazy, Suspense, type CSSProperties, type MouseEventHandler, useEffect, useMemo, useState } from 'react'
+import LazyLoadBoundary from './LazyLoadBoundary'
 
 import type { MetricsHistoryPoint } from '../types'
-import LoadImpact3DHeatmap from './LoadImpact3DHeatmap'
 import {
   LOAD_IMPACT_METRICS,
   buildLoadImpactModel,
@@ -13,6 +13,8 @@ import {
 import type { LoadImpactBucket, LoadImpactCell, LoadImpactRow } from './loadImpactModel'
 import { METRIC_SORT_KEY, sortLoadImpactRows, type LoadImpactSortState } from './loadImpactHeatmapUtils'
 import './LoadImpactHeatmap.css'
+
+const LoadImpact3DHeatmap = lazy(() => import('./LoadImpact3DHeatmap'))
 
 interface Props {
   points: MetricsHistoryPoint[]
@@ -286,11 +288,15 @@ const LoadImpactHeatmap = forwardRef<HTMLElement, Props>(function LoadImpactHeat
       ) : (
         <>
           {viewMode === '3d' ? (
-            <LoadImpact3DHeatmap
-              model={displayModel}
-              selectedCellKey={selectedCellKey}
-              onSelectedCellKeyChange={setSelectedCellKey}
-            />
+            <LazyLoadBoundary title="The 3D heatmap could not be loaded." className="load-impact-state lazy-load-error">
+              <Suspense fallback={<div className="load-impact-state" role="status">Loading 3D view…</div>}>
+                <LoadImpact3DHeatmap
+                  model={displayModel}
+                  selectedCellKey={selectedCellKey}
+                  onSelectedCellKeyChange={setSelectedCellKey}
+                />
+              </Suspense>
+            </LazyLoadBoundary>
           ) : (
             <div className="load-impact-table-wrap">
               <table className="load-impact-table">

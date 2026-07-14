@@ -1,7 +1,9 @@
 package api
 
 import (
+	"errors"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strconv"
 	"strings"
@@ -105,6 +107,9 @@ func (s *scenarioScheduler) RunDueSchedules() error {
 	toStart := make([]*ManagedTest, 0)
 	s.runner.mu.Lock()
 	for _, schedule := range s.runner.listAllScenarioSchedulesLocked() {
+		if !s.runner.isExecutionLeader() {
+			break
+		}
 		if schedule == nil || !schedule.Enabled || schedule.NextRunAt == nil || schedule.NextRunAt.After(now) {
 			continue
 		}
@@ -114,22 +119,31 @@ func (s *scenarioScheduler) RunDueSchedules() error {
 				schedule.NextRequiredAction = "catch_up_limit_reached"
 				schedule.LastError = fmt.Sprintf("catch_up_all materialized %d occurrences; next sweep will continue", maxScheduleCatchUpAllPerSweep)
 				schedule.UpdatedAt = now
-				_ = s.runner.saveScenarioScheduleLocked(schedule)
+				if err := s.runner.saveScenarioScheduleLocked(schedule); err != nil {
+					slog.Warn("failed to persist scenario catch-up limit", "schedule_id", schedule.ID, "error", err)
+				}
 				break
 			}
 			if handled, err := s.runner.applyMissedRunPolicyLocked(schedule, now); err != nil {
 				schedule.LastError = err.Error()
 				schedule.UpdatedAt = now
-				_ = s.runner.saveScenarioScheduleLocked(schedule)
+				if saveErr := s.runner.saveScenarioScheduleLocked(schedule); saveErr != nil {
+					slog.Warn("failed to persist scenario schedule error", "schedule_id", schedule.ID, "error", saveErr)
+				}
 				break
 			} else if handled {
+				break
+			}
+			if !s.runner.isExecutionLeader() {
 				break
 			}
 			test, err := s.runner.runScenarioScheduleLocked(schedule, now)
 			if err != nil {
 				schedule.LastError = err.Error()
 				schedule.UpdatedAt = now
-				_ = s.runner.saveScenarioScheduleLocked(schedule)
+				if saveErr := s.runner.saveScenarioScheduleLocked(schedule); saveErr != nil {
+					slog.Warn("failed to persist scenario materialization error", "schedule_id", schedule.ID, "error", saveErr)
+				}
 				break
 			}
 			if test != nil {
@@ -142,6 +156,9 @@ func (s *scenarioScheduler) RunDueSchedules() error {
 	}
 	dueOneTimeScheduled := s.runner.dueOneTimeScheduledTestIDsLocked(now)
 	s.runner.mu.Unlock()
+	if !s.runner.isExecutionLeader() {
+		return nil
+	}
 	for _, test := range toStart {
 		go s.runner.runTest(test)
 	}
@@ -152,6 +169,9 @@ func (s *scenarioScheduler) RunDueSchedules() error {
 	}
 	// Recurring execution-plan schedules share this leader-gated sweep + lease.
 	// Run lock-free (materialize takes tr.mu internally).
+	if !s.runner.isExecutionLeader() {
+		return nil
+	}
 	s.runner.sweepDueExecutionPlanSchedules(now)
 	return nil
 }
@@ -926,10 +946,11 @@ func (tr *TestRunner) runScenarioScheduleLocked(schedule *storage.ScenarioSchedu
 	if schedule.NextRunAt != nil {
 		plannedAt = *schedule.NextRunAt
 	}
-	if handled, err := tr.reconcileScenarioScheduleOccurrenceLocked(schedule, plannedAt, now); err != nil {
+	handled, resumeOccurrence, recoveredPrepared, err := tr.reconcileScenarioScheduleOccurrenceLocked(schedule, plannedAt, now)
+	if err != nil {
 		return nil, err
 	} else if handled {
-		return nil, nil
+		return recoveredPrepared, nil
 	}
 	if allowed, err := scheduleAllowsCandidate(schedule, plannedAt); err != nil {
 		return nil, err
@@ -955,7 +976,18 @@ func (tr *TestRunner) runScenarioScheduleLocked(schedule *storage.ScenarioSchedu
 		}
 		return nil, nil
 	}
-	occurrence := tr.buildScenarioScheduleOccurrence(schedule, plannedAt, "materializing", "due", "", nil, now)
+	occurrence := resumeOccurrence
+	if occurrence == nil {
+		occurrence = tr.buildScenarioScheduleOccurrence(schedule, plannedAt, "materializing", "due", "", nil, now)
+	}
+	occurrence.Status = "materializing"
+	occurrence.ReasonCode = "due"
+	occurrence.ConflictSummary = ""
+	occurrence.MaterializedAt = nil
+	occurrence.UpdatedAt = now
+	if strings.TrimSpace(occurrence.TestID) == "" {
+		occurrence.TestID = uuid.New().String()
+	}
 	if err := tr.saveScenarioScheduleOccurrenceLocked(occurrence); err != nil {
 		return nil, err
 	}
@@ -967,13 +999,15 @@ func (tr *TestRunner) runScenarioScheduleLocked(schedule *storage.ScenarioSchedu
 		Name:       runName,
 		ScenarioID: schedule.ScenarioID,
 		ReleaseID:  schedule.ReleaseID,
-	}, uuid.New().String(), "QUEUED")
+	}, occurrence.TestID, "QUEUED")
 	if err != nil {
 		occurrence.Status = "failed"
 		occurrence.ReasonCode = "create_failed"
 		occurrence.ConflictSummary = err.Error()
 		occurrence.UpdatedAt = now
-		_ = tr.saveScenarioScheduleOccurrenceLocked(occurrence)
+		if saveErr := tr.saveScenarioScheduleOccurrenceLocked(occurrence); saveErr != nil {
+			slog.Warn("failed to persist scenario occurrence creation failure", "occurrence_id", occurrence.ID, "error", saveErr)
+		}
 		return nil, err
 	}
 	// Recurring runs use the same launch-window evaluator as manual/scheduled
@@ -1004,7 +1038,25 @@ func (tr *TestRunner) runScenarioScheduleLocked(schedule *storage.ScenarioSchedu
 		}
 	}
 	tr.tests[test.ID] = test
-	tr.saveManagedTestRecord(test)
+	tr.indexRefKeyLocked(test.RefKey, test.ID)
+	if err := retryDurableTransition(func() error { return tr.saveManagedTestRecord(test) }); err != nil {
+		delete(tr.tests, test.ID)
+		tr.removeRefKeyLocked(test.RefKey)
+		if tr.reservationStore != nil && test.TimeslotID != nil {
+			if _, clearErr := tr.reservationStore.ClearCapacityReservationBinding(*test.TimeslotID, test.ID, time.Now().UTC()); clearErr != nil {
+				slog.Warn("failed to release scheduled test timeslot after persistence failure", "test_id", test.ID, "timeslot_id", *test.TimeslotID, "error", clearErr)
+				tr.enqueueCapacityReservationReleaseRetry(test.ID, strings.TrimSpace(*test.TimeslotID))
+			}
+		}
+		occurrence.Status = "failed"
+		occurrence.ReasonCode = "create_persist_failed"
+		occurrence.ConflictSummary = err.Error()
+		occurrence.UpdatedAt = now
+		if saveErr := tr.saveScenarioScheduleOccurrenceLocked(occurrence); saveErr != nil {
+			slog.Warn("failed to persist scheduled test creation failure", "occurrence_id", occurrence.ID, "error", saveErr)
+		}
+		return nil, fmt.Errorf("persist scheduled test: %w", err)
+	}
 	tr.broadcastEvent("test_created", test)
 	// The launch window was just evaluated above; skip the redundant re-check.
 	prepared, err := tr.prepareTestStartLocked(test.ID, StartTestOptions{SkipLaunchWindowPreflight: true})
@@ -1014,7 +1066,12 @@ func (tr *TestRunner) runScenarioScheduleLocked(schedule *storage.ScenarioSchedu
 		occurrence.TestID = test.ID
 		occurrence.ConflictSummary = err.Error()
 		occurrence.UpdatedAt = now
-		_ = tr.saveScenarioScheduleOccurrenceLocked(occurrence)
+		if saveErr := tr.saveScenarioScheduleOccurrenceLocked(occurrence); saveErr != nil {
+			slog.Warn("failed to persist scheduled test start failure", "occurrence_id", occurrence.ID, "error", saveErr)
+		}
+		if failErr := tr.failScheduledTestBeforeLaunchLocked(test, now, "prepare scheduled test: "+err.Error()); failErr != nil {
+			return nil, errors.Join(err, failErr)
+		}
 		return nil, err
 	}
 	occurrence.Status = "materialized"
@@ -1023,6 +1080,9 @@ func (tr *TestRunner) runScenarioScheduleLocked(schedule *storage.ScenarioSchedu
 	occurrence.MaterializedAt = &now
 	occurrence.UpdatedAt = now
 	if err := tr.saveScenarioScheduleOccurrenceLocked(occurrence); err != nil {
+		if failErr := tr.failScheduledTestBeforeLaunchLocked(test, now, "save materialized schedule occurrence: "+err.Error()); failErr != nil {
+			return nil, errors.Join(err, failErr)
+		}
 		return nil, err
 	}
 	schedule.LastRunTestID = test.ID
@@ -1036,30 +1096,173 @@ func (tr *TestRunner) runScenarioScheduleLocked(schedule *storage.ScenarioSchedu
 	}
 	next, err := nextScenarioScheduleRun(schedule, advanceFrom)
 	if err != nil {
+		occurrence.Status = "failed"
+		occurrence.ReasonCode = "schedule_calculation_failed"
+		occurrence.ConflictSummary = err.Error()
+		occurrence.UpdatedAt = now
+		if saveErr := tr.saveScenarioScheduleOccurrenceLocked(occurrence); saveErr != nil {
+			slog.Warn("failed to persist schedule calculation failure", "occurrence_id", occurrence.ID, "error", saveErr)
+		}
+		if failErr := tr.failScheduledTestBeforeLaunchLocked(test, now, "calculate next scheduled run: "+err.Error()); failErr != nil {
+			return nil, errors.Join(err, failErr)
+		}
 		return nil, err
 	}
 	schedule.NextRunAt = next
 	schedule.UpdatedAt = now
 	if err := tr.saveScenarioScheduleLocked(schedule); err != nil {
+		occurrence.Status = "failed"
+		occurrence.ReasonCode = "schedule_persist_failed"
+		occurrence.ConflictSummary = err.Error()
+		occurrence.UpdatedAt = now
+		if saveErr := tr.saveScenarioScheduleOccurrenceLocked(occurrence); saveErr != nil {
+			slog.Warn("failed to persist schedule persistence failure", "occurrence_id", occurrence.ID, "error", saveErr)
+		}
+		if failErr := tr.failScheduledTestBeforeLaunchLocked(test, now, "save updated schedule: "+err.Error()); failErr != nil {
+			return nil, errors.Join(err, failErr)
+		}
 		return nil, err
 	}
 	return prepared, nil
 }
 
-func (tr *TestRunner) reconcileScenarioScheduleOccurrenceLocked(schedule *storage.ScenarioSchedule, plannedAt time.Time, now time.Time) (bool, error) {
+func (tr *TestRunner) failScheduledTestBeforeLaunchLocked(test *ManagedTest, now time.Time, message string) error {
+	if test == nil {
+		return nil
+	}
+	previousStatus := test.Status
+	previousPendingSince := cloneTimePtr(test.PendingSince)
+	previousPendingReason := test.PendingReason
+	previousQueuePosition := test.QueuePosition
+	previousError := test.Error
+	previousEndedAt := cloneTimePtr(test.EndedAt)
+	test.Status = "FAILED"
+	test.PendingSince = nil
+	test.PendingReason = ""
+	test.QueuePosition = 0
+	test.Error = message
+	test.EndedAt = cloneTimePtr(&now)
+	if err := tr.saveManagedTestRecord(test); err != nil {
+		test.Status = previousStatus
+		test.PendingSince = previousPendingSince
+		test.PendingReason = previousPendingReason
+		test.QueuePosition = previousQueuePosition
+		test.Error = previousError
+		test.EndedAt = previousEndedAt
+		retryErr := fmt.Errorf("persist scheduled test failure: %w", err)
+		slog.Error("failed to persist scheduled test failure; cleanup and notification deferred", "test_id", test.ID, "error", retryErr)
+		tr.enqueueScheduledTestFailureRetry(test.ID, now, message)
+		return retryErr
+	}
+	if test.cancel != nil {
+		test.cancel()
+	}
+	var releaseErr error
+	if tr.reservationStore != nil && test.TimeslotID != nil {
+		if _, err := tr.reservationStore.ClearCapacityReservationBinding(*test.TimeslotID, test.ID, now.UTC()); err != nil {
+			slog.Warn("failed to release failed scheduled test timeslot", "test_id", test.ID, "timeslot_id", *test.TimeslotID, "error", err)
+			releaseErr = fmt.Errorf("release failed scheduled test timeslot: %w", err)
+			tr.enqueueCapacityReservationReleaseRetry(test.ID, strings.TrimSpace(*test.TimeslotID))
+		}
+	}
+	tr.broadcastEvent("test_failed", test)
+	return releaseErr
+}
+
+func (tr *TestRunner) enqueueScheduledTestFailureRetry(testID string, now time.Time, message string) {
+	tr.enqueueTerminalRetry(testID, "FAILED scheduled pre-launch", func() error {
+		tr.mu.Lock()
+		defer tr.mu.Unlock()
+		test := tr.tests[testID]
+		if test == nil {
+			return nil
+		}
+		if test.Status == "FAILED" || test.Status == "COMPLETE" || test.Status == "ABORTED" {
+			return nil
+		}
+		return tr.failScheduledTestBeforeLaunchLocked(test, now, message)
+	})
+}
+
+func (tr *TestRunner) reconcileScenarioScheduleOccurrenceLocked(schedule *storage.ScenarioSchedule, plannedAt time.Time, now time.Time) (bool, *storage.ScenarioScheduleOccurrence, *ManagedTest, error) {
 	if tr == nil || tr.scenarioStore == nil || schedule == nil {
-		return false, nil
+		return false, nil, nil, nil
 	}
 	existing, err := tr.scenarioStore.GetScenarioScheduleOccurrenceByScheduleAndPlannedAt(schedule.ID, plannedAt.UTC())
 	if err != nil || existing == nil {
-		return false, err
+		return false, nil, nil, err
 	}
-	status := strings.TrimSpace(existing.Status)
+	var recoveredPrepared *ManagedTest
+	status := strings.ToLower(strings.TrimSpace(existing.Status))
 	if status == "" || status == "materializing" {
-		return false, nil
+		// A correlated durable test means the prior controller crossed the test
+		// persistence boundary before crashing. Finalize this occurrence and
+		// advance the schedule instead of launching a duplicate. If no test row
+		// exists, resume materialization with the preassigned ID; this safely covers
+		// crashes between occurrence intent and test persistence.
+		if strings.TrimSpace(existing.TestID) == "" {
+			existing.TestID = uuid.NewSHA1(uuid.NameSpaceURL, []byte("apexload:scenario-schedule-occurrence:"+existing.ID)).String()
+			existing.UpdatedAt = now
+			if err := tr.saveScenarioScheduleOccurrenceLocked(existing); err != nil {
+				return false, nil, nil, err
+			}
+		}
+		if recovered := tr.tests[existing.TestID]; recovered == nil {
+			return false, cloneScenarioScheduleOccurrence(existing), nil, nil
+		} else if recovered.Status == "QUEUED" {
+			// The prior controller persisted the test but crashed before preparing
+			// its execution context. Resume that exact row and return it to the
+			// scheduler's normal post-lock launch path.
+			prepared, err := tr.prepareTestStartLocked(recovered.ID, StartTestOptions{SkipLaunchWindowPreflight: true})
+			if err != nil {
+				existing.Status = "failed"
+				existing.ReasonCode = "start_failed"
+				existing.ConflictSummary = err.Error()
+				existing.UpdatedAt = now
+				saveErr := tr.saveScenarioScheduleOccurrenceLocked(existing)
+				failErr := tr.failScheduledTestBeforeLaunchLocked(recovered, now, "resume correlated scheduled test: "+err.Error())
+				return true, nil, nil, errors.Join(fmt.Errorf("resume correlated scheduled test %s: %w", recovered.ID, err), saveErr, failErr)
+			}
+			recoveredPrepared = prepared
+		} else if recovered.Status == "INITIALIZING" {
+			// There is no safe commit point from which an INITIALIZING test can be
+			// resumed: after restart its execution context is gone, while in this
+			// process it may be the residue of a failed occurrence/schedule write.
+			// Fail it closed instead of converting the occurrence to materialized
+			// and either stranding or launching an ambiguously prepared run.
+			cause := fmt.Errorf("correlated scheduled test %s was left initializing before schedule recovery committed", recovered.ID)
+			return true, nil, nil, tr.failRecoveredScenarioSchedulePreparationLocked(schedule, existing, recovered, now, "recovery_initializing_test", cause.Error(), cause)
+		} else if recovered.Status == "FAILED" || recovered.Status == "ABORTED" {
+			// A prior recovery attempt may have durably failed the test but lost the
+			// occurrence update. Repair that half-written state idempotently.
+			existing.Status = "failed"
+			existing.ReasonCode = "recovered_test_failed"
+			existing.ConflictSummary = firstNonEmpty(recovered.Error, "correlated scheduled test is terminal")
+			existing.UpdatedAt = now
+			if err := tr.saveScenarioScheduleOccurrenceLocked(existing); err != nil {
+				return true, nil, nil, err
+			}
+			status = "failed"
+		}
+		if status != "failed" {
+			existing.Status = "materialized"
+			existing.ReasonCode = "recovered"
+			if existing.MaterializedAt == nil {
+				materializedAt := now
+				existing.MaterializedAt = &materializedAt
+			}
+			existing.UpdatedAt = now
+			if err := tr.saveScenarioScheduleOccurrenceLocked(existing); err != nil {
+				if recoveredPrepared != nil {
+					return true, nil, nil, tr.failRecoveredScenarioSchedulePreparationLocked(schedule, existing, recoveredPrepared, now, "recovery_occurrence_persist_failed", "save recovered materialized schedule occurrence: "+err.Error(), err)
+				}
+				return true, nil, nil, err
+			}
+			status = "materialized"
+		}
 	}
 	if existing.ScheduleRevision != schedule.Revision && (status == "blocked" || status == "failed") {
-		return false, nil
+		return false, nil, nil, nil
 	}
 	schedule.LastOccurrence = cloneScenarioScheduleOccurrence(existing)
 	schedule.UpdatedAt = now
@@ -1074,7 +1277,10 @@ func (tr *TestRunner) reconcileScenarioScheduleOccurrenceLocked(schedule *storag
 		}
 		next, err := nextScenarioScheduleRun(schedule, now)
 		if err != nil {
-			return true, err
+			if recoveredPrepared != nil {
+				return true, nil, nil, tr.failRecoveredScenarioSchedulePreparationLocked(schedule, existing, recoveredPrepared, now, "recovery_schedule_calculation_failed", "calculate next run for recovered schedule: "+err.Error(), err)
+			}
+			return true, nil, nil, err
 		}
 		schedule.NextRunAt = next
 		schedule.NextRequiredAction = ""
@@ -1082,7 +1288,7 @@ func (tr *TestRunner) reconcileScenarioScheduleOccurrenceLocked(schedule *storag
 	case "skipped":
 		next, err := nextScenarioScheduleRun(schedule, now)
 		if err != nil {
-			return true, err
+			return true, nil, nil, err
 		}
 		schedule.NextRunAt = next
 		schedule.NextRequiredAction = ""
@@ -1102,12 +1308,42 @@ func (tr *TestRunner) reconcileScenarioScheduleOccurrenceLocked(schedule *storag
 		schedule.LastError = firstNonEmpty(existing.ConflictSummary, existing.ReasonCode)
 		schedule.NextRequiredAction = "operator_decision_required"
 	default:
-		return false, nil
+		return false, nil, nil, nil
 	}
 	if err := tr.saveScenarioScheduleLocked(schedule); err != nil {
-		return true, err
+		if recoveredPrepared != nil {
+			return true, nil, nil, tr.failRecoveredScenarioSchedulePreparationLocked(schedule, existing, recoveredPrepared, now, "recovery_schedule_persist_failed", "save recovered schedule: "+err.Error(), err)
+		}
+		return true, nil, nil, err
 	}
-	return true, nil
+	return true, nil, recoveredPrepared, nil
+}
+
+// failRecoveredScenarioSchedulePreparationLocked closes every durable boundary
+// crossed while recovering a materializing occurrence. It makes the occurrence
+// and schedule operator-visible before failing the prepared test; each write is
+// independently retryable by a later sweep, so a partial failure converges on
+// the same terminal state without ever returning the test for launch.
+func (tr *TestRunner) failRecoveredScenarioSchedulePreparationLocked(schedule *storage.ScenarioSchedule, occurrence *storage.ScenarioScheduleOccurrence, test *ManagedTest, now time.Time, reasonCode, message string, cause error) error {
+	if occurrence == nil {
+		return errors.Join(cause, tr.failScheduledTestBeforeLaunchLocked(test, now, message))
+	}
+	occurrence.Status = "failed"
+	occurrence.ReasonCode = reasonCode
+	occurrence.ConflictSummary = message
+	occurrence.UpdatedAt = now
+	occurrenceErr := tr.saveScenarioScheduleOccurrenceLocked(occurrence)
+
+	var scheduleErr error
+	if schedule != nil {
+		schedule.LastOccurrence = cloneScenarioScheduleOccurrence(occurrence)
+		schedule.LastError = message
+		schedule.NextRequiredAction = "operator_decision_required"
+		schedule.UpdatedAt = now
+		scheduleErr = tr.saveScenarioScheduleLocked(schedule)
+	}
+	testErr := tr.failScheduledTestBeforeLaunchLocked(test, now, message)
+	return errors.Join(cause, occurrenceErr, scheduleErr, testErr)
 }
 
 // blockScheduleOccurrenceLocked records a "blocked" occurrence for schedule at
@@ -1143,7 +1379,7 @@ func (tr *TestRunner) buildScenarioScheduleOccurrence(schedule *storage.Scenario
 		MaterializedAt:   materializedAt,
 		Status:           status,
 		ReasonCode:       reasonCode,
-		TestID:           schedule.LastRunTestID,
+		TestID:           "",
 		ConflictSummary:  conflictSummary,
 		CreatedAt:        now,
 		UpdatedAt:        now,
@@ -1321,12 +1557,12 @@ func (tr *TestRunner) attachLatestScenarioScheduleOccurrenceLocked(schedule *sto
 	schedule.LastOccurrence = cloneScenarioScheduleOccurrence(occurrences[0])
 }
 
-func (tr *TestRunner) DeleteScenarioSchedule(scenarioID string, scheduleID string) bool {
+func (tr *TestRunner) DeleteScenarioSchedule(scenarioID string, scheduleID string) (bool, error) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	scenario, ok := tr.scenarios[scenarioID]
 	if !ok {
-		return false
+		return false, nil
 	}
 	filtered := scenario.Schedules[:0]
 	deleted := false
@@ -1338,13 +1574,15 @@ func (tr *TestRunner) DeleteScenarioSchedule(scenarioID string, scheduleID strin
 		filtered = append(filtered, schedule)
 	}
 	if !deleted {
-		return false
+		return false, nil
+	}
+	if tr.scenarioStore != nil {
+		if err := tr.scenarioStore.DeleteScenarioSchedule(scheduleID); err != nil {
+			return false, err
+		}
 	}
 	scenario.Schedules = append([]*storage.ScenarioSchedule(nil), filtered...)
-	if tr.scenarioStore != nil {
-		_ = tr.scenarioStore.DeleteScenarioSchedule(scheduleID)
-	}
-	return true
+	return true, nil
 }
 
 func (tr *TestRunner) upsertScenarioScheduleLocked(scenarioID string, scheduleID string, existing *storage.ScenarioSchedule, req CreateScenarioScheduleRequest) (*storage.ScenarioSchedule, error) {

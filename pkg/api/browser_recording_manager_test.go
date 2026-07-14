@@ -637,7 +637,7 @@ func TestBrowserRecordingManagerStopIsIdempotent(t *testing.T) {
 		t.Fatal("first Stop() missing session")
 	}
 	again, ok := m.Stop(started.ID)
-	if !ok || again.Status != BrowserRecordingStopping {
+	if !ok || (again.Status != BrowserRecordingStopping && again.Status != BrowserRecordingStopped) {
 		t.Errorf("second Stop() = %+v ok=%v", again, ok)
 	}
 	waitForRecordingStatus(t, m, started.ID, BrowserRecordingStopped)

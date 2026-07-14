@@ -6,11 +6,16 @@ package api
 // stays in runner.go. Extracted from the runner.go god-file.
 
 import (
+	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -165,11 +170,22 @@ func (tr *TestRunner) PinComparisonBaseline(id string) (*ManagedTest, error) {
 	if !canPinComparisonBaseline(test) {
 		return nil, fmt.Errorf("comparison baseline pinning requires a completed, failed, or aborted test")
 	}
+	type baselinePinSnapshot struct {
+		test     *ManagedTest
+		pinned   bool
+		pinnedAt *time.Time
+	}
+	snapshots := make([]baselinePinSnapshot, 0)
 	pinnedAt := time.Now().UTC()
 	for _, candidate := range tr.tests {
 		if !sharesComparisonScope(test, candidate) {
 			continue
 		}
+		snapshots = append(snapshots, baselinePinSnapshot{
+			test:     candidate,
+			pinned:   candidate.BaselinePinned,
+			pinnedAt: cloneTimePtr(candidate.BaselinePinnedAt),
+		})
 		if candidate.ID == test.ID {
 			candidate.BaselinePinned = true
 			candidate.BaselinePinnedAt = &pinnedAt
@@ -177,12 +193,24 @@ func (tr *TestRunner) PinComparisonBaseline(id string) (*ManagedTest, error) {
 			candidate.BaselinePinned = false
 			candidate.BaselinePinnedAt = nil
 		}
-		tr.saveManagedTestRecord(candidate)
 	}
-	cloned := *test
-	cloned.Groups = cloneArchiveTestGroups(test.Groups)
+	for index, snapshot := range snapshots {
+		if err := tr.saveManagedTestRecord(snapshot.test); err != nil {
+			for _, previous := range snapshots {
+				previous.test.BaselinePinned = previous.pinned
+				previous.test.BaselinePinnedAt = cloneTimePtr(previous.pinnedAt)
+			}
+			for rollbackIndex := 0; rollbackIndex < index; rollbackIndex++ {
+				if rollbackErr := tr.saveManagedTestRecord(snapshots[rollbackIndex].test); rollbackErr != nil {
+					slog.Error("failed to roll back comparison baseline persistence", "test_id", snapshots[rollbackIndex].test.ID, "error", rollbackErr)
+				}
+			}
+			return nil, fmt.Errorf("persist comparison baseline: %w", err)
+		}
+	}
+	cloned := cloneManagedTestForReadLocked(test)
 	cloned.ComparisonBaseline = tr.buildRunComparisonBaselineLocked(test)
-	return &cloned, nil
+	return cloned, nil
 }
 
 func (tr *TestRunner) UnpinComparisonBaseline(id string) (*ManagedTest, error) {
@@ -194,13 +222,18 @@ func (tr *TestRunner) UnpinComparisonBaseline(id string) (*ManagedTest, error) {
 	if !ok {
 		return nil, fmt.Errorf("test not found: %s", id)
 	}
+	previousPinned := test.BaselinePinned
+	previousPinnedAt := cloneTimePtr(test.BaselinePinnedAt)
 	test.BaselinePinned = false
 	test.BaselinePinnedAt = nil
-	tr.saveManagedTestRecord(test)
-	cloned := *test
-	cloned.Groups = cloneArchiveTestGroups(test.Groups)
+	if err := tr.saveManagedTestRecord(test); err != nil {
+		test.BaselinePinned = previousPinned
+		test.BaselinePinnedAt = previousPinnedAt
+		return nil, fmt.Errorf("persist comparison baseline removal: %w", err)
+	}
+	cloned := cloneManagedTestForReadLocked(test)
 	cloned.ComparisonBaseline = tr.buildRunComparisonBaselineLocked(test)
-	return &cloned, nil
+	return cloned, nil
 }
 
 func baselineCandidateCompletedAt(candidate *ManagedTest) (time.Time, bool) {
@@ -249,6 +282,7 @@ func cloneTxMetricsMap(in map[string]*TxMetrics) map[string]*TxMetrics {
 			telemetry.ResponseSizeClasses = cloneTelemetryClassCounts(tx.ServerTelemetry.ResponseSizeClasses)
 			telemetry.RequestPayloadHistogram = cloneTelemetryClassCounts(tx.ServerTelemetry.RequestPayloadHistogram)
 			telemetry.ResponsePayloadHistogram = cloneTelemetryClassCounts(tx.ServerTelemetry.ResponsePayloadHistogram)
+			telemetry.PartitionEvents = cloneTelemetryClassCounts(tx.ServerTelemetry.PartitionEvents)
 			clone.ServerTelemetry = &telemetry
 		}
 		if len(tx.CorrelationIDs) > 0 {
@@ -281,6 +315,96 @@ func (tr *TestRunner) ListTests() []*ManagedTest {
 	return out
 }
 
+func (tr *TestRunner) ListTestSummaries() []*ManagedTest {
+	tr.refreshReadMetadataForTestList()
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	out := make([]*ManagedTest, 0, len(tr.tests))
+	for _, t := range tr.tests {
+		out = append(out, cloneManagedTestSummaryForReadLocked(t))
+	}
+	return out
+}
+
+type testSummaryListQuery struct {
+	projectID     string
+	folderID      *string
+	applicationID string
+	releaseID     string
+	scenarioID    string
+	activeOnly    bool
+	limit         int
+	offset        int
+}
+
+// listTestSummaryPage filters and orders the lightweight list while holding
+// the runner read lock, then builds sparklines only for the requested window.
+// This keeps a bounded dashboard poll from walking every retained history.
+func (tr *TestRunner) listTestSummaryPage(query testSummaryListQuery) ([]*ManagedTest, int) {
+	tr.refreshReadMetadataForTestList()
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+
+	contextFiltered := query.applicationID != "" || query.releaseID != "" || query.scenarioID != ""
+	resolvedScenarioID := query.scenarioID
+	if resolvedScenarioID != "" {
+		resolvedScenarioID = tr.resolveRefKeyLocked(resolvedScenarioID)
+	}
+	projectFiltered := !contextFiltered && (query.projectID != "" || query.folderID != nil)
+	projectID := query.projectID
+	if projectFiltered {
+		projectID = normalizeProjectID(projectID)
+	}
+
+	matches := make([]*ManagedTest, 0, len(tr.tests))
+	for _, test := range tr.tests {
+		if test == nil {
+			continue
+		}
+		if contextFiltered {
+			if query.applicationID != "" && test.ApplicationID != query.applicationID {
+				continue
+			}
+			if query.releaseID != "" && test.ReleaseID != query.releaseID {
+				continue
+			}
+			if resolvedScenarioID != "" && test.ScenarioID != resolvedScenarioID {
+				continue
+			}
+		} else if projectFiltered {
+			if test.ProjectID != projectID {
+				continue
+			}
+			if query.folderID != nil {
+				if *query.folderID == "" {
+					if test.FolderID != nil && *test.FolderID != "" {
+						continue
+					}
+				} else if test.FolderID == nil || *test.FolderID != *query.folderID {
+					continue
+				}
+			}
+		}
+		if query.activeOnly && !isActiveTestListStatus(test.Status) {
+			continue
+		}
+		matches = append(matches, test)
+	}
+
+	sortTestList(matches, query.limit > 0)
+	total := len(matches)
+	start := min(query.offset, total)
+	end := total
+	if query.limit > 0 {
+		end = min(start+query.limit, total)
+	}
+	out := make([]*ManagedTest, 0, end-start)
+	for _, test := range matches[start:end] {
+		out = append(out, cloneManagedTestSummaryForReadLocked(test))
+	}
+	return out, total
+}
+
 func (tr *TestRunner) ListTestsFiltered(projectID string, folderID *string) []*ManagedTest {
 	projectID = normalizeProjectID(projectID)
 	tr.refreshReadMetadataForTestList()
@@ -305,6 +429,30 @@ func (tr *TestRunner) ListTestsFiltered(projectID string, folderID *string) []*M
 	return out
 }
 
+func (tr *TestRunner) ListTestSummariesFiltered(projectID string, folderID *string) []*ManagedTest {
+	projectID = normalizeProjectID(projectID)
+	tr.refreshReadMetadataForTestList()
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	out := make([]*ManagedTest, 0, len(tr.tests))
+	for _, t := range tr.tests {
+		if t.ProjectID != projectID {
+			continue
+		}
+		if folderID != nil {
+			if *folderID == "" {
+				if t.FolderID != nil && *t.FolderID != "" {
+					continue
+				}
+			} else if t.FolderID == nil || *t.FolderID != *folderID {
+				continue
+			}
+		}
+		out = append(out, cloneManagedTestSummaryForReadLocked(t))
+	}
+	return out
+}
+
 func (tr *TestRunner) ListTestsByContext(applicationID string, releaseID string, scenarioID string) []*ManagedTest {
 	tr.refreshReadMetadataForTestList()
 	tr.mu.RLock()
@@ -322,6 +470,27 @@ func (tr *TestRunner) ListTestsByContext(applicationID string, releaseID string,
 			continue
 		}
 		out = append(out, cloneManagedTestForReadLocked(t))
+	}
+	return out
+}
+
+func (tr *TestRunner) ListTestSummariesByContext(applicationID string, releaseID string, scenarioID string) []*ManagedTest {
+	tr.refreshReadMetadataForTestList()
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	scenarioID = tr.resolveRefKeyLocked(scenarioID)
+	out := make([]*ManagedTest, 0, len(tr.tests))
+	for _, t := range tr.tests {
+		if applicationID != "" && t.ApplicationID != applicationID {
+			continue
+		}
+		if releaseID != "" && t.ReleaseID != releaseID {
+			continue
+		}
+		if scenarioID != "" && t.ScenarioID != scenarioID {
+			continue
+		}
+		out = append(out, cloneManagedTestSummaryForReadLocked(t))
 	}
 	return out
 }
@@ -373,47 +542,252 @@ func cloneManagedTestForReadLocked(test *ManagedTest) *ManagedTest {
 	if test == nil {
 		return nil
 	}
-	cloned := *test
-	cloned.Groups = cloneArchiveTestGroups(test.Groups)
-	cloned.VUserRamps = cloneVUserRampStatusMap(test.VUserRamps)
-	cloned.GoalTargets = cloneGoalTargetStatusMap(test.GoalTargets)
+	cloned := cloneManagedTestFieldsLocked(test)
 	if len(test.History) > 0 {
-		cloned.History = append([]*LiveMetrics(nil), test.History...)
+		cloned.History = make([]*LiveMetrics, len(test.History))
+		for index, metrics := range test.History {
+			cloned.History[index] = cloneLiveMetrics(metrics)
+		}
 	}
-	if len(test.Sparkline) > 0 {
-		cloned.Sparkline = append([]TestSparklinePoint(nil), test.Sparkline...)
+	return cloned
+}
+
+func cloneManagedTestSummaryForReadLocked(test *ManagedTest) *ManagedTest {
+	if test == nil {
+		return nil
 	}
+	cloned := cloneManagedTestFieldsLocked(test)
+	cloned.History = nil
+	cloned.Sparkline = buildManagedTestSparkline(test.History, test.LiveMetrics, defaultManagedTestSparklinePoints)
+	return cloned
+}
+
+// cloneManagedTestFieldsLocked returns a serialization-safe snapshot of every
+// exported ManagedTest field. Callers hold tr.mu, but the returned value is used
+// after that lock is released (including by JSON encoders), so no mutable child
+// may still alias the live controller state.
+func cloneManagedTestFieldsLocked(test *ManagedTest) *ManagedTest {
+	cloned := *test
+	cloned.FolderID = cloneStringPtr(test.FolderID)
+	cloned.Groups = cloneArchiveTestGroups(test.Groups)
+	cloned.CapacityAdvisory = cloneCapacityAdvisory(test.CapacityAdvisory)
+	cloned.RuntimeSettingsReview = cloneRuntimeSettingsReview(test.RuntimeSettingsReview)
+	cloned.Assignment = cloneGeneratorAssignmentSettings(test.Assignment)
+	cloned.GoalConfig = cloneGoalConfig(test.GoalConfig)
+	cloned.GoalTargets = cloneGoalTargetStatusMap(test.GoalTargets)
+	cloned.RuntimeSettings = cloneRuntimeSettings(test.RuntimeSettings)
+	cloned.GeneratorShards = cloneGeneratorShardSummaries(test.GeneratorShards)
+	cloned.ScheduledStartAt = cloneTimePtr(test.ScheduledStartAt)
+	cloned.TimeslotID = cloneStringPtr(test.TimeslotID)
+	cloned.PendingSince = cloneTimePtr(test.PendingSince)
+	cloned.BaselinePinnedAt = cloneTimePtr(test.BaselinePinnedAt)
+	cloned.StartedAt = cloneTimePtr(test.StartedAt)
+	cloned.EndedAt = cloneTimePtr(test.EndedAt)
+	cloned.ExecutionPlanApproval = cloneRunArchiveExecutionPlanApprovalSnapshot(test.ExecutionPlanApproval)
+	cloned.VUserRamps = cloneVUserRampStatusMap(test.VUserRamps)
+	cloned.LiveMetrics = cloneLiveMetrics(test.LiveMetrics)
+	cloned.Sparkline = append([]TestSparklinePoint(nil), test.Sparkline...)
+	cloned.ComparisonBaseline = cloneRunComparisonBaseline(test.ComparisonBaseline)
+	cloned.Archive = cloneRunArchiveRecord(test.Archive)
+	cloned.TelemetryHealth = cloneTelemetryRunHealth(test.TelemetryHealth)
+	return &cloned
+}
+
+func cloneLiveMetrics(metrics *LiveMetrics) *LiveMetrics {
+	if metrics == nil {
+		return nil
+	}
+	cloned := *metrics
+	cloned.ErrorBreakdown = cloneStringInt64Map(metrics.ErrorBreakdown)
+	cloned.Transactions = cloneTxMetricsMap(metrics.Transactions)
+	cloned.DependencyHealth = cloneTxMetricsMap(metrics.DependencyHealth)
+	cloned.DependencyMap = cloneLiveDependencyMap(metrics.DependencyMap)
+	cloned.ErrorPatterns = cloneLiveErrorPatterns(metrics.ErrorPatterns)
+	cloned.SOAPOperations = cloneTxMetricsMap(metrics.SOAPOperations)
+	cloned.NetworkProfiles = cloneTxMetricsMap(metrics.NetworkProfiles)
+	cloned.GroupMetrics = cloneGroupLiveMetricsMap(metrics.GroupMetrics)
+	cloned.Browser = cloneBrowserLiveMetrics(metrics.Browser)
+	cloned.BrowserByDevice = cloneBrowserByDeviceMetrics(metrics.BrowserByDevice)
+	cloned.GoalStatus = cloneGoalStatus(metrics.GoalStatus)
+	cloned.CapacityStatus = cloneLiveCapacityStatus(metrics.CapacityStatus)
+	cloned.TelemetryStatus = cloneTelemetryRunHealth(metrics.TelemetryStatus)
+	cloned.Telemetry = cloneTelemetryHealth(metrics.Telemetry)
+	cloned.Resources = cloneSystemResources(metrics.Resources)
+	cloned.GeneratorResources = cloneGeneratorResourceSnapshots(metrics.GeneratorResources)
+	cloned.Latency = cloneNetworkLatency(metrics.Latency)
+	cloned.ErrorEvidence = cloneLiveErrorEvidence(metrics.ErrorEvidence)
+	return &cloned
+}
+
+func cloneStringInt64Map(values map[string]int64) map[string]int64 {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make(map[string]int64, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func cloneLiveDependencyMap(dependencies *LiveDependencyMap) *LiveDependencyMap {
+	if dependencies == nil {
+		return nil
+	}
+	return &LiveDependencyMap{
+		Nodes: append([]LiveDependencyNode(nil), dependencies.Nodes...),
+		Edges: append([]LiveDependencyEdge(nil), dependencies.Edges...),
+	}
+}
+
+func cloneLiveErrorPatterns(patterns []LiveErrorPattern) []LiveErrorPattern {
+	if len(patterns) == 0 {
+		return nil
+	}
+	cloned := make([]LiveErrorPattern, len(patterns))
+	for index, pattern := range patterns {
+		cloned[index] = pattern
+		cloned[index].Actions = append([]string(nil), pattern.Actions...)
+		cloned[index].AffectedGroups = append([]string(nil), pattern.AffectedGroups...)
+	}
+	return cloned
+}
+
+func cloneGoalStatus(status *GoalStatus) *GoalStatus {
+	if status == nil {
+		return nil
+	}
+	cloned := *status
+	cloned.TargetAverageTPS = cloneFloat64Ptr(status.TargetAverageTPS)
+	cloned.MaxErrorCount = cloneIntPtr(status.MaxErrorCount)
+	cloned.MinVUsers = cloneIntPtr(status.MinVUsers)
+	cloned.MaxVUsers = cloneIntPtr(status.MaxVUsers)
+	cloned.LastScaleAt = cloneTimePtr(status.LastScaleAt)
+	return &cloned
+}
+
+func cloneFloat64Ptr(value *float64) *float64 {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
+}
+
+func cloneLiveCapacityStatus(status *LiveCapacityStatus) *LiveCapacityStatus {
+	if status == nil {
+		return nil
+	}
+	cloned := *status
+	cloned.ByProtocol = cloneLiveCapacityBreakdowns(status.ByProtocol)
+	cloned.ByRegion = cloneLiveCapacityBreakdowns(status.ByRegion)
+	return &cloned
+}
+
+func cloneLiveCapacityBreakdowns(values map[string]*LiveCapacityBreakdown) map[string]*LiveCapacityBreakdown {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make(map[string]*LiveCapacityBreakdown, len(values))
+	for key, value := range values {
+		if value == nil {
+			cloned[key] = nil
+			continue
+		}
+		item := *value
+		cloned[key] = &item
+	}
+	return cloned
+}
+
+func cloneSystemResources(resources *engine.SystemResources) *engine.SystemResources {
+	if resources == nil {
+		return nil
+	}
+	cloned := *resources
+	return &cloned
+}
+
+func cloneGeneratorResourceSnapshots(values map[string]*GeneratorResourceSnapshot) map[string]*GeneratorResourceSnapshot {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make(map[string]*GeneratorResourceSnapshot, len(values))
+	for key, value := range values {
+		if value == nil {
+			cloned[key] = nil
+			continue
+		}
+		item := *value
+		item.ImpactReasons = append([]string(nil), value.ImpactReasons...)
+		item.Resources = cloneSystemResources(value.Resources)
+		cloned[key] = &item
+	}
+	return cloned
+}
+
+func cloneLiveErrorEvidence(values []LiveErrorEvidence) []LiveErrorEvidence {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make([]LiveErrorEvidence, len(values))
+	for index, value := range values {
+		cloned[index] = value
+		cloned[index].Snapshot = cloneProtocolErrorSnapshot(value.Snapshot)
+	}
+	return cloned
+}
+
+func cloneRunComparisonBaseline(baseline *RunComparisonBaseline) *RunComparisonBaseline {
+	if baseline == nil {
+		return nil
+	}
+	cloned := *baseline
+	cloned.Transactions = cloneTxMetricsMap(baseline.Transactions)
+	cloned.DependencyHealth = cloneTxMetricsMap(baseline.DependencyHealth)
 	return &cloned
 }
 
 func (tr *TestRunner) MoveTest(id string, folderID *string) bool {
+	moved, _ := tr.MoveTestDurable(id, folderID)
+	return moved
+}
+
+func (tr *TestRunner) MoveTestDurable(id string, folderID *string) (bool, error) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	id = tr.resolveRefKeyLocked(id)
 	test, ok := tr.tests[id]
 	if !ok {
-		return false
+		return false, nil
+	}
+	if tr.testStore != nil {
+		if err := tr.testStore.MoveTest(id, folderID); err != nil {
+			return false, err
+		}
 	}
 	test.FolderID = folderID
-	if tr.testStore != nil {
-		_ = tr.testStore.MoveTest(id, folderID)
-	}
-	return true
+	return true, nil
 }
 
 func (tr *TestRunner) GetRunArchive(id string) (*storage.RunArchiveRecord, bool) {
+	return tr.GetRunArchiveContext(context.Background(), id)
+}
+
+func (tr *TestRunner) GetRunArchiveContext(ctx context.Context, id string) (*storage.RunArchiveRecord, bool) {
 	tr.mu.RLock()
 	id = tr.resolveRefKeyLocked(id)
 	record, ok := tr.archives[id]
+	cloned := cloneRunArchiveRecord(record)
 	tr.mu.RUnlock()
 	if ok {
-		return record, true
+		return cloned, true
 	}
 	record, ok = tr.loadRunArchiveFromStore(id)
 	if !ok {
 		return nil, false
 	}
-	if !runArchiveRecordAvailable(record) {
+	if !runArchiveRecordAvailableContext(ctx, record) {
 		tr.mu.Lock()
 		if test, exists := tr.tests[id]; exists {
 			test.Archive = nil
@@ -427,17 +801,34 @@ func (tr *TestRunner) GetRunArchive(id string) (*storage.RunArchiveRecord, bool)
 		test.Archive = record
 	}
 	tr.mu.Unlock()
-	return record, true
+	return cloneRunArchiveRecord(record), true
+}
+
+func cloneRunArchiveRecord(record *storage.RunArchiveRecord) *storage.RunArchiveRecord {
+	if record == nil {
+		return nil
+	}
+	cloned := *record
+	return &cloned
 }
 
 func runArchiveRecordAvailable(record *storage.RunArchiveRecord) bool {
-	if record == nil || record.ManifestPath == "" {
+	return runArchiveRecordAvailableContext(context.Background(), record)
+}
+
+func runArchiveRecordAvailableContext(ctx context.Context, record *storage.RunArchiveRecord) bool {
+	if record == nil {
 		return false
 	}
-	if err := ensureArchiveMaterialized(record); err != nil {
+	if archiveRecordBackend(record) == archiveBackendFilesystem && strings.TrimSpace(record.ManifestPath) == "" {
 		return false
 	}
-	_, err := os.Stat(record.ManifestPath)
+	lease, err := acquireArchiveMaterialized(ctx, record)
+	if err != nil {
+		return false
+	}
+	defer lease.Release()
+	_, err = os.Stat(record.ManifestPath)
 	return err == nil
 }
 
@@ -456,31 +847,121 @@ func (tr *TestRunner) resolveTestID(id string) string {
 }
 
 func (tr *TestRunner) DeleteTest(id string) bool {
+	deleted, err := tr.DeleteTestWithError(id)
+	if err != nil {
+		slog.Warn("failed to delete test", "test_id", id, "metadata_deleted", deleted, "error", err)
+		return deleted
+	}
+	return deleted
+}
+
+// DeleteTestWithError is the error-preserving form of the legacy bool API.
+// Durable metadata (including an archive-cleanup outbox record) is committed
+// before any irreversible object-store or filesystem deletion.
+func (tr *TestRunner) DeleteTestWithError(id string) (bool, error) {
+	if tr == nil || !tr.isExecutionLeader() {
+		return false, errNotExecutionLeader
+	}
+	tr.mu.RLock()
+	canonicalID := tr.resolveRefKeyLocked(id)
+	tr.mu.RUnlock()
+
+	unlockArchiveCommit := tr.lockArchiveCommitFence(canonicalID)
+	defer unlockArchiveCommit()
+
+	tr.mu.RLock()
+	var archiveRecord *storage.RunArchiveRecord
+	if test := tr.tests[canonicalID]; test != nil {
+		switch test.Status {
+		case "RUNNING", "INITIALIZING", "PAUSED", "STOPPING", "SHAKEOUT":
+			tr.mu.RUnlock()
+			return false, nil
+		}
+	}
+	if archive := tr.archives[canonicalID]; archive != nil {
+		copy := *archive
+		archiveRecord = &copy
+	} else if test := tr.tests[canonicalID]; test != nil && test.Archive != nil {
+		copy := *test.Archive
+		archiveRecord = &copy
+	}
+	tr.mu.RUnlock()
+	if archiveRecord == nil && tr.archiveStore != nil {
+		record, err := tr.archiveStore.GetRunArchive(canonicalID)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return false, fmt.Errorf("load archive metadata before delete: %w", err)
+		}
+		if record != nil {
+			copy := *record
+			archiveRecord = &copy
+		}
+	}
+
+	deleted, err := tr.DeleteTestDurable(canonicalID)
+	if err != nil {
+		return false, fmt.Errorf("delete durable test metadata: %w", err)
+	}
+	if !deleted {
+		return false, nil
+	}
+
+	if archiveRecord != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), archiveCleanupAttemptTimeout)
+		defer cancel()
+		operationCtx, operationCancel := tr.archiveOperationContext(ctx)
+		defer operationCancel()
+		ctx = operationCtx
+		if err := deleteArchiveBackendObjects(ctx, archiveRecord); err != nil {
+			tr.markArchiveCleanupFailure(canonicalID, err)
+			return true, fmt.Errorf("remove archive objects: %w", err)
+		}
+		if err := removeLocalArchiveDirectory(archiveRecord.ArchivePath); err != nil {
+			tr.markArchiveCleanupFailure(canonicalID, err)
+			return true, fmt.Errorf("remove archive directory: %w", err)
+		}
+		if outbox, ok := tr.archiveStore.(interface{ DeleteArchiveCleanupJob(string) error }); ok {
+			if err := outbox.DeleteArchiveCleanupJob(canonicalID); err != nil {
+				tr.markArchiveCleanupFailure(canonicalID, err)
+				return true, fmt.Errorf("complete archive cleanup job: %w", err)
+			}
+		}
+	}
+	return true, nil
+}
+
+func (tr *TestRunner) markArchiveCleanupFailure(testID string, cleanupErr error) {
+	outbox, ok := tr.archiveStore.(interface {
+		MarkArchiveCleanupJobFailed(string, error, time.Time) error
+	})
+	if !ok {
+		return
+	}
+	if err := outbox.MarkArchiveCleanupJobFailed(testID, cleanupErr, time.Now().UTC()); err != nil {
+		slog.Warn("failed to annotate archive cleanup outbox", "test_id", testID, "cleanup_error", cleanupErr, "error", err)
+	}
+}
+
+func (tr *TestRunner) DeleteTestDurable(id string) (bool, error) {
+	if tr == nil || !tr.isExecutionLeader() {
+		return false, errNotExecutionLeader
+	}
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	id = tr.resolveRefKeyLocked(id)
 	test, ok := tr.tests[id]
 	if !ok {
-		return false
+		return false, nil
+	}
+	if test.Status == "RUNNING" || test.Status == "INITIALIZING" || test.Status == "PAUSED" || test.Status == "STOPPING" || test.Status == "SHAKEOUT" {
+		return false, nil // Can't delete active tests
+	}
+	if err := tr.deleteStoredTest(id); err != nil {
+		return false, err
 	}
 	deleteGroupMetricsHistoryCache(id)
-	if test.Status == "RUNNING" || test.Status == "INITIALIZING" || test.Status == "PAUSED" || test.Status == "STOPPING" {
-		return false // Can't delete active tests
-	}
-	archivePath := ""
-	if archive, exists := tr.archives[id]; exists {
-		archivePath = archive.ArchivePath
-	} else if test.Archive != nil {
-		archivePath = test.Archive.ArchivePath
-	}
 	tr.removeRefKeyLocked(test.RefKey)
 	delete(tr.tests, id)
 	delete(tr.archives, id)
-	tr.deleteStoredTest(id)
-	if archivePath != "" {
-		if err := os.RemoveAll(archivePath); err != nil {
-			slog.Warn("failed to remove archive directory", "test_id", id, "archive_path", archivePath, "error", err)
-		}
-	}
-	return true
+	forgetRunArchiveCache(id)
+	return true, nil
 }

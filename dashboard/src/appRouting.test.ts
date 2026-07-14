@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { handleGuardedRouteChange, normalizeReportViewForFeatureFlag, parseAppViewFromHash, viewToLocationHash, type AppView } from './appRouting'
+import { APP_HISTORY_INDEX_KEY, handleGuardedRouteChange, normalizeReportViewForFeatureFlag, parseAppViewFromHash, readAppHistoryIndex, viewToLocationHash, withAppHistoryIndex, type AppView } from './appRouting'
 
 describe('appRouting', () => {
   it('defaults empty and invalid hashes to the dashboard', () => {
@@ -11,6 +11,8 @@ describe('appRouting', () => {
   it('parses refreshable top-level app pages', () => {
     expect(parseAppViewFromHash('#/results')).toEqual({ page: 'results' })
     expect(parseAppViewFromHash('#/fleet')).toEqual({ page: 'fleet' })
+    expect(parseAppViewFromHash('#/monitoring?category=telemetry')).toEqual({ page: 'monitoring', category: 'telemetry' })
+    expect(parseAppViewFromHash('#/monitoring?category=not-real')).toEqual({ page: 'monitoring' })
     expect(parseAppViewFromHash('#/test/run-1?tab=archive')).toEqual({ page: 'test', testId: 'run-1', tab: 'archive' })
     expect(parseAppViewFromHash('#/test/run-1?tab=not-real')).toEqual({ page: 'test', testId: 'run-1' })
     expect(parseAppViewFromHash('#/command-center')).toEqual({ page: 'command-center' })
@@ -67,6 +69,7 @@ describe('appRouting', () => {
     expect(viewToLocationHash({ page: 'docs', guidePage: 'general' })).toBe('#/docs')
     expect(viewToLocationHash({ page: 'docs', guidePage: 'mcp' })).toBe('#/docs?guide=mcp')
     expect(viewToLocationHash({ page: 'fleet' })).toBe('#/fleet')
+    expect(viewToLocationHash({ page: 'monitoring', category: 'telemetry' })).toBe('#/monitoring?category=telemetry')
     expect(viewToLocationHash({ page: 'command-center' })).toBe('#/command-center')
     expect(viewToLocationHash({ page: 'test', testId: 'run/123', tab: 'archive' })).toBe('#/test/run%2F123?tab=archive')
     expect(viewToLocationHash({ page: 'command-center', testId: 'run/123' })).toBe('#/command-center/run%2F123')
@@ -78,7 +81,16 @@ describe('appRouting', () => {
       page: 'recorder-panel',
       sessionId: 'brec/1',
     })
-    expect(parseAppViewFromHash('#/recorder-panel')).toEqual({ page: 'recorder-panel' })
+    expect(parseAppViewFromHash('#/recorder-panel')).toEqual({ page: 'scripts' })
+  })
+
+  it('stores a bounded internal index without discarding other history state', () => {
+    const state = withAppHistoryIndex({ source: 'desktop' }, 3)
+
+    expect(state).toEqual({ source: 'desktop', [APP_HISTORY_INDEX_KEY]: 3 })
+    expect(readAppHistoryIndex(state)).toBe(3)
+    expect(readAppHistoryIndex(withAppHistoryIndex(null, -4))).toBe(0)
+    expect(readAppHistoryIndex({ [APP_HISTORY_INDEX_KEY]: 1.5 })).toBeNull()
   })
 
   it('falls direct report routes back to legacy archives when the report flag is disabled', () => {

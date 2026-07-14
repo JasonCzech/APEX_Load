@@ -533,12 +533,13 @@ func TestReservationBoundStatusRefreshedOnRead(t *testing.T) {
 		t.Fatalf("bound_test_status = %v, want COMPLETE (refreshed at read)", got)
 	}
 
-	// Deleting the bound test surfaces a DELETED binding rather than a dangling one.
+	// Deleting the bound test transactionally releases the timeslot rather than
+	// leaving a dangling binding for the read path to synthesize as DELETED.
 	if err := store.DeleteTest(boundID); err != nil {
 		t.Fatalf("delete test: %v", err)
 	}
-	if got := readStatus(); got == nil || *got != "DELETED" {
-		t.Fatalf("bound_test_status = %v, want DELETED after the bound test was deleted", got)
+	if got := readStatus(); got != nil {
+		t.Fatalf("bound_test_status = %v, want nil after deletion releases the binding", got)
 	}
 }
 

@@ -220,7 +220,12 @@ func (tr *TestRunner) backfillScriptRefKeysLocked() {
 		stored.RefKey = refkey.Script(tr.envCode, tr.nextScriptSeqLocked(), version)
 		if stored.Script != nil {
 			stored.Script.RefKey = stored.RefKey
-			tr.saveStoredScript(stored.Script)
+			if err := tr.saveStoredScript(stored.Script); err != nil {
+				slog.Warn("failed to persist script reference key", "script_id", stored.ID, "error", err)
+				stored.RefKey = ""
+				stored.Script.RefKey = ""
+				continue
+			}
 		}
 		tr.indexRefKeyLocked(stored.RefKey, stored.ID)
 	}
@@ -264,7 +269,11 @@ func (tr *TestRunner) backfillScenarioRefKeysLocked() {
 	for _, stored := range scenarios {
 		stored.RefKey = refkey.Scenario(tr.envCode, tr.nextScenarioSeqLocked())
 		if tr.scenarioStore != nil {
-			_ = tr.scenarioStore.SaveScenario(storedScenarioToStorage(stored), storedScenarioRefsToStorage(stored))
+			if err := tr.scenarioStore.SaveScenario(storedScenarioToStorage(stored), storedScenarioRefsToStorage(stored)); err != nil {
+				slog.Warn("failed to persist scenario reference key", "scenario_id", stored.ID, "error", err)
+				stored.RefKey = ""
+				continue
+			}
 		}
 		tr.indexRefKeyLocked(stored.RefKey, stored.ID)
 	}
@@ -290,7 +299,11 @@ func (tr *TestRunner) backfillTestRefKeysLocked() {
 	for _, test := range tests {
 		createdAt := refKeyTime(test.CreatedAt)
 		test.RefKey = refkey.Run(tr.envCode, createdAt, tr.nextRunSeqLocked(createdAt))
-		tr.saveManagedTestRecord(test)
+		if err := tr.saveManagedTestRecord(test); err != nil {
+			slog.Warn("failed to persist test reference key", "test_id", test.ID, "error", err)
+			test.RefKey = ""
+			continue
+		}
 		tr.indexRefKeyLocked(test.RefKey, test.ID)
 	}
 }
@@ -308,7 +321,13 @@ func (tr *TestRunner) backfillArchiveRefKeysLocked() {
 		if test.Archive == archive {
 			test.Archive.RefKey = archive.RefKey
 		}
-		_ = tr.saveRunArchiveRecord(archive)
+		if err := tr.saveRunArchiveRecord(archive); err != nil {
+			slog.Warn("failed to persist archive reference key", "test_id", testID, "error", err)
+			archive.RefKey = ""
+			if test.Archive == archive {
+				test.Archive.RefKey = ""
+			}
+		}
 	}
 }
 

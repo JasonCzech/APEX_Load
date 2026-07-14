@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { useApi } from '../hooks/useApi'
+import { useTestApi } from '../hooks/api/useTestApi'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { LiveMetrics, MetricsHistoryPoint, NetworkLatency, TelemetryHealth, TestStatus, WSMessage } from '../types'
 import { routeLatencySeriesValuesForTarget } from './latencySeries'
@@ -9,7 +9,7 @@ import { mapExecutionHistory, mapExecutionMetricToHistoryPoint, mergeMetricsHist
 export const EXECUTION_STREAM_HISTORY_LIMIT = 300
 
 function shouldStreamExecutionMetrics(status?: TestStatus): boolean {
-  return status === 'RUNNING' || status === 'INITIALIZING' || status === 'PAUSED' || status === 'STOPPING'
+  return status === 'SHAKEOUT' || status === 'RUNNING' || status === 'INITIALIZING' || status === 'PAUSED' || status === 'STOPPING'
 }
 
 function parseTimestamp(value?: string): number | undefined {
@@ -52,7 +52,7 @@ function applyLatencyTargets(point: MetricsHistoryPoint, latency?: NetworkLatenc
 }
 
 export function useExecutionMetricsStream(testId: string, status?: TestStatus) {
-  const { getTest } = useApi()
+  const { getTest } = useTestApi()
   const [localMetricsHistory, setLocalMetricsHistory] = useState<MetricsHistoryPoint[]>([])
   const [latestMetrics, setLatestMetrics] = useState<LiveMetrics>()
 

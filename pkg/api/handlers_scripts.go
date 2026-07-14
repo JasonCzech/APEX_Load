@@ -321,6 +321,11 @@ func (s *Server) handleDownloadScript(w http.ResponseWriter, r *http.Request) {
 // Updates an existing script in-place.
 func (s *Server) handleUpdateScript(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	stored, ok := s.runner.GetScript(id)
+	if !ok || stored == nil {
+		writeError(w, http.StatusNotFound, "script not found")
+		return
+	}
 
 	var wrapper struct {
 		Script dsl.Script `json:"script"`
@@ -329,13 +334,21 @@ func (s *Server) handleUpdateScript(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	script := &wrapper.Script
+	if err := bindStoredScriptProject(script, stored.ProjectID, ""); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	if issues := validateScript(script); len(issues) > 0 {
 		writeError(w, http.StatusBadRequest, strings.Join(issues, "; "))
 		return
 	}
 
-	updated, ok := s.runner.UpdateScript(id, script)
+	updated, ok, err := s.runner.UpdateScriptDurable(id, script)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update script: "+err.Error())
+		return
+	}
 	if !ok {
 		writeError(w, http.StatusNotFound, "script not found")
 		return
@@ -353,7 +366,12 @@ func (s *Server) handleDeleteScript(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "script not found")
 		return
 	}
-	if !s.runner.DeleteScript(id) {
+	deleted, err := s.runner.DeleteScriptDurable(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to delete script: "+err.Error())
+		return
+	}
+	if !deleted {
 		writeError(w, http.StatusNotFound, "script not found")
 		return
 	}

@@ -62,6 +62,10 @@ type scenarioPersistence interface {
 	SaveAuditEvent(event *storage.AuditEvent) error
 }
 
+type atomicScenarioPersistence interface {
+	SaveScenarioWithDataPoolBindings(scenario *storage.Scenario, scripts []storage.ScenarioScript, bindings []storage.ScenarioDataPoolBinding) error
+}
+
 type dataPoolPersistence interface {
 	ListDataPoolRows(poolID string) ([]*storage.SharedDataPoolRow, error)
 }
@@ -111,26 +115,31 @@ type reservationPersistence interface {
 }
 
 type TestRunner struct {
-	tests          map[string]*ManagedTest
-	scripts        map[string]*StoredScript
-	scenarios      map[string]*StoredScenario
-	archives       map[string]*storage.RunArchiveRecord
-	mu             sync.RWMutex
-	hub            *Hub
-	maxTests       int
-	settings       SystemSettings
-	scriptStore    scriptPersistence
-	testStore      testPersistence
-	scenarioStore  scenarioPersistence
-	dataPoolStore  dataPoolPersistence
-	projectStore   projectPersistence
-	releaseStore   releasePersistence
-	historyStore   historyPersistence
-	archiveStore   archivePersistence
-	testNotesStore testNotesPersistence
-	auditStore     auditPersistence
-	settingsStore  settingsPersistence
-	usageStore     usageSnapshotPersistence
+	tests              map[string]*ManagedTest
+	scripts            map[string]*StoredScript
+	scenarios          map[string]*StoredScenario
+	archives           map[string]*storage.RunArchiveRecord
+	deletingProjects   map[string]struct{}
+	shuttingDown       bool
+	mu                 sync.RWMutex
+	activeStopMu       sync.Mutex
+	remoteControlMu    sync.Mutex
+	remoteControlGates map[string]*distributedControlGate
+	hub                *Hub
+	maxTests           int
+	settings           SystemSettings
+	scriptStore        scriptPersistence
+	testStore          testPersistence
+	scenarioStore      scenarioPersistence
+	dataPoolStore      dataPoolPersistence
+	projectStore       projectPersistence
+	releaseStore       releasePersistence
+	historyStore       historyPersistence
+	archiveStore       archivePersistence
+	testNotesStore     testNotesPersistence
+	auditStore         auditPersistence
+	settingsStore      settingsPersistence
+	usageStore         usageSnapshotPersistence
 	// objectRepoStore resolves object_ref bindings into concrete selectors when a
 	// load run is compiled (generators have no store, so binding must resolve here).
 	objectRepoStore objectRepositoryReader
@@ -144,6 +153,13 @@ type TestRunner struct {
 	seqMu            sync.Mutex
 	seqPlanRuns      map[string]*seqPlanRunState
 	seqPlanByTest    map[string]string
+	seqPlanRetrying  map[string]struct{}
+	terminalRetryMu  sync.Mutex
+	terminalRetrying map[string]struct{}
+	// archiveCommitGates serialize archive publication with deletion per test.
+	// Entries are reference-counted and removed after their last waiter exits.
+	archiveCommitMu    sync.Mutex
+	archiveCommitGates map[string]*archiveCommitGate
 	// execPlanScheduleStore persists recurring execution-plan schedules and their
 	// occurrences; the leader-gated sweep materializes due plan schedules.
 	execPlanScheduleStore executionPlanSchedulePersistence
@@ -185,6 +201,36 @@ type TestRunner struct {
 	liveInventoryMu sync.RWMutex
 	liveInventory   []GeneratorInventoryEntry
 	liveInventoryAt time.Time
+}
+
+type archiveCommitGate struct {
+	mu   sync.Mutex
+	refs int
+}
+
+func (tr *TestRunner) lockArchiveCommitFence(testID string) func() {
+	tr.archiveCommitMu.Lock()
+	if tr.archiveCommitGates == nil {
+		tr.archiveCommitGates = make(map[string]*archiveCommitGate)
+	}
+	gate := tr.archiveCommitGates[testID]
+	if gate == nil {
+		gate = &archiveCommitGate{}
+		tr.archiveCommitGates[testID] = gate
+	}
+	gate.refs++
+	tr.archiveCommitMu.Unlock()
+
+	gate.mu.Lock()
+	return func() {
+		gate.mu.Unlock()
+		tr.archiveCommitMu.Lock()
+		gate.refs--
+		if gate.refs == 0 && tr.archiveCommitGates[testID] == gate {
+			delete(tr.archiveCommitGates, testID)
+		}
+		tr.archiveCommitMu.Unlock()
+	}
 }
 
 type ManagedTest struct {
@@ -243,6 +289,7 @@ type ManagedTest struct {
 	ScriptName string `json:"script_name,omitempty"`
 
 	multiEngine                  *engine.MultiGroupEngine
+	executionCtx                 context.Context
 	cancel                       context.CancelFunc
 	groupSpecs                   []engine.GroupConfig
 	goalControl                  *goalControllerState
@@ -263,6 +310,7 @@ type ManagedTest struct {
 	remoteMetricsLastPublishedAt time.Time
 	remoteMetricsFlushScheduled  bool
 	remoteGoalUpdateRunning      bool
+	remoteControlGeneration      uint64
 	telemetryDiagnostic          telemetryDiagnosticState
 	errorPatterns                map[string]*LiveErrorPattern
 	liveErrorEvidence            map[string][]LiveErrorEvidence
@@ -622,10 +670,13 @@ type DiagnosticSample struct {
 }
 
 type goalControllerState struct {
-	breachStartedAt    *time.Time
-	lastScaleAt        *time.Time
-	lastScaleDirection string
-	lastScaleReason    string
+	breachStartedAt         *time.Time
+	lastScaleAt             *time.Time
+	lastScaleDirection      string
+	lastScaleReason         string
+	cumulativeErrors        int64
+	errorWindowsTracked     bool
+	lastErrorWindowBySource map[string]time.Time
 }
 
 type telemetryDiagnosticState struct {
@@ -934,6 +985,7 @@ func NewTestRunner(maxTests int, hub *Hub, store storage.Store, opts ...TestRunn
 		scripts:               make(map[string]*StoredScript),
 		scenarios:             make(map[string]*StoredScenario),
 		archives:              make(map[string]*storage.RunArchiveRecord),
+		deletingProjects:      make(map[string]struct{}),
 		hub:                   hub,
 		maxTests:              maxTests,
 		scriptStore:           store,
@@ -954,6 +1006,8 @@ func NewTestRunner(maxTests int, hub *Hub, store storage.Store, opts ...TestRunn
 		execPlanScheduleStore: store,
 		seqPlanRuns:           make(map[string]*seqPlanRunState),
 		seqPlanByTest:         make(map[string]string),
+		seqPlanRetrying:       make(map[string]struct{}),
+		terminalRetrying:      make(map[string]struct{}),
 		fleetStore:            store,
 		execution:             localExecutionBackend{},
 		notifier:              newNotificationDispatcher(nil),

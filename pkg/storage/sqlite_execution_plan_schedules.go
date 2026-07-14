@@ -80,8 +80,18 @@ func (s *SQLiteStore) ListAllExecutionPlanSchedules() ([]*ExecutionPlanSchedule,
 }
 
 func (s *SQLiteStore) DeleteExecutionPlanSchedule(id string) error {
-	_, err := s.db.Exec(`DELETE FROM execution_plan_schedules WHERE id = ?`, id)
-	return err
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM execution_plan_schedule_occurrences WHERE schedule_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM execution_plan_schedules WHERE id = ?`, id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func scanExecutionPlanSchedule(row scanner) (*ExecutionPlanSchedule, error) {

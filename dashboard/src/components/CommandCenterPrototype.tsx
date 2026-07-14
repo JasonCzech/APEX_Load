@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import {
   Area,
   AreaChart,
@@ -12,7 +12,7 @@ import {
 
 import PageViewToggle from './PageViewToggle'
 import StatusBadge from './StatusBadge'
-import { useApi } from '../hooks/useApi'
+import { useTestApi } from '../hooks/api/useTestApi'
 import { isValidDurationInput, parseDurationToSeconds } from '../utils/timeUtils'
 import { isCompletedTestStatus, isLiveTestStatus } from '../utils/testStatusUtils'
 import type { BrowserReplaySnapshot, GroupLiveMetrics, IntervalSummaryRecord, LiveErrorEvidence, LiveMetrics, MetricsHistoryPoint, TestGroup, TestStatus, TestSummary, TransactionEvent, VUserRampStatus } from '../types'
@@ -122,6 +122,10 @@ const TEST_STATUSES: TestStatus[] = [
   'ABORTED',
   'PAUSED',
 ]
+
+function isCommandCenterDiscoverableStatus(status?: string): boolean {
+  return isLiveTestStatus(status) || status === 'SHAKEOUT' || status === 'SHAKEOUT_REVIEW' || status === 'PAUSED'
+}
 
 const VARIANT_OPTIONS: Array<{ value: VariantId; label: string }> = [
   { value: 'ops', label: 'OPS View' },
@@ -912,14 +916,25 @@ export default function CommandCenterPrototype({
   onOpenResults,
   prototypeMode = false,
 }: CommandCenterPrototypeProps = {}) {
-  const api = useApi()
+  const api = useTestApi()
   // When the Command Center is opened without an explicit run on the route
   // (e.g. via the sidebar nav rather than from a run chip), we discover the
   // live runs in scope and pick one. `testId` below is the effective run the
   // view renders: the routed run if present, otherwise the auto-selected one.
-  const [autoSelectedTestId, setAutoSelectedTestId] = useState<string | null>(null)
-  const [liveRunOptions, setLiveRunOptions] = useState<TestSummary[]>([])
-  const [discoveringRuns, setDiscoveringRuns] = useState(false)
+  const discoveryScopeKey = projectId ? `${projectId}\u001f${applicationId || ''}` : ''
+  const [autoSelection, setAutoSelection] = useState<{ scopeKey: string; testId: string } | null>(null)
+  const autoSelectedTestId = autoSelection?.scopeKey === discoveryScopeKey ? autoSelection.testId : null
+  const setAutoSelectedTestId = useCallback((nextTestID: string | null) => {
+    setAutoSelection(nextTestID && discoveryScopeKey ? { scopeKey: discoveryScopeKey, testId: nextTestID } : null)
+  }, [discoveryScopeKey])
+  const [runDiscoveryState, setRunDiscoveryState] = useState<{
+    scopeKey: string
+    runs: TestSummary[]
+    discovering: boolean
+  }>({ scopeKey: '', runs: [], discovering: false })
+  const liveRunOptions = runDiscoveryState.scopeKey === discoveryScopeKey ? runDiscoveryState.runs : []
+  const discoveringRuns = runDiscoveryState.scopeKey === discoveryScopeKey && runDiscoveryState.discovering
+  const discoveryGenerationRef = useRef(0)
   const testId = testIdProp || autoSelectedTestId || undefined
   const [variant, setVariant] = useState<VariantId>('ops')
   const [liveTest, setLiveTest] = useState<TestSummary | null>(() => initialTest || null)
@@ -962,7 +977,9 @@ export default function CommandCenterPrototype({
     let inFlight = false
     let stopped = false
     let lastSignature = ''
-    let interval: number | undefined
+    const interval = window.setInterval(() => {
+      void load()
+    }, 2000)
     const load = async () => {
       if (stopped || inFlight) return
       if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
@@ -981,6 +998,10 @@ export default function CommandCenterPrototype({
           if (isCompletedTestStatus(next.status)) {
             stopped = true
             if (interval !== undefined) window.clearInterval(interval)
+            if (!testIdProp && !initialTest) {
+              setAutoSelection(current => current?.testId === testId ? null : current)
+              setLiveTest(current => current?.id === testId ? null : current)
+            }
           }
         }
       } catch (error: unknown) {
@@ -993,9 +1014,6 @@ export default function CommandCenterPrototype({
     }
 
     void load()
-    interval = window.setInterval(() => {
-      void load()
-    }, 2000)
     const handleVisibilityChange = () => {
       if (!stopped && typeof document !== 'undefined' && document.visibilityState === 'visible') {
         void load()
@@ -1012,7 +1030,7 @@ export default function CommandCenterPrototype({
         document.removeEventListener('visibilitychange', handleVisibilityChange)
       }
     }
-  }, [api, initialTest, testId])
+  }, [api, initialTest, testId, testIdProp])
 
   // Auto-discover live runs when the view is opened without a selected run.
   // A single live run is selected automatically; multiple live runs surface a
@@ -1020,9 +1038,9 @@ export default function CommandCenterPrototype({
   // once a run is routed/selected. Polls so a run that starts while the empty
   // state is open gets picked up.
   useEffect(() => {
-    if (prototypeMode || testIdProp || initialTest || autoSelectedTestId) {
-      setLiveRunOptions([])
-      setDiscoveringRuns(false)
+    const requestGeneration = ++discoveryGenerationRef.current
+    if (prototypeMode || testIdProp || initialTest || autoSelectedTestId || !discoveryScopeKey) {
+      setRunDiscoveryState({ scopeKey: discoveryScopeKey, runs: [], discovering: false })
       return undefined
     }
     let cancelled = false
@@ -1033,22 +1051,32 @@ export default function CommandCenterPrototype({
         return
       }
       inFlight = true
-      setDiscoveringRuns(true)
+      setRunDiscoveryState(current => ({
+        scopeKey: discoveryScopeKey,
+        runs: current.scopeKey === discoveryScopeKey ? current.runs : [],
+        discovering: true,
+      }))
       try {
         const res = await api.listTests({ application_id: applicationId, project_id: projectId })
-        if (cancelled) return
-        const liveRuns = (res.tests || []).filter(test => isLiveTestStatus(test.status))
+        if (cancelled || discoveryGenerationRef.current !== requestGeneration) return
+        const liveRuns = (res.tests || []).filter(test => isCommandCenterDiscoverableStatus(test.status))
         if (liveRuns.length === 1) {
           setAutoSelectedTestId(liveRuns[0].id)
-          setLiveRunOptions([])
+          setRunDiscoveryState({ scopeKey: discoveryScopeKey, runs: [], discovering: false })
         } else {
-          setLiveRunOptions(liveRuns)
+          setRunDiscoveryState({ scopeKey: discoveryScopeKey, runs: liveRuns, discovering: false })
         }
       } catch {
-        if (!cancelled) setLiveRunOptions([])
+        if (!cancelled && discoveryGenerationRef.current === requestGeneration) {
+          setRunDiscoveryState({ scopeKey: discoveryScopeKey, runs: [], discovering: false })
+        }
       } finally {
         inFlight = false
-        if (!cancelled) setDiscoveringRuns(false)
+        if (!cancelled && discoveryGenerationRef.current === requestGeneration) {
+          setRunDiscoveryState(current => current.scopeKey === discoveryScopeKey
+            ? { ...current, discovering: false }
+            : current)
+        }
       }
     }
     void discover()
@@ -1057,17 +1085,18 @@ export default function CommandCenterPrototype({
       cancelled = true
       window.clearInterval(interval)
     }
-  }, [api, applicationId, autoSelectedTestId, initialTest, projectId, prototypeMode, testIdProp])
+  }, [api, applicationId, autoSelectedTestId, discoveryScopeKey, initialTest, projectId, prototypeMode, setAutoSelectedTestId, testIdProp])
 
-  const streamStatus = liveTest
-    ? coerceTestStatus(isHistoricalRunStatus(liveTest.status) ? liveTest.status : statusOverride || liveTest.status, liveTest.status)
+  const activeLiveTest = liveTest?.id === testId ? liveTest : null
+  const streamStatus = activeLiveTest
+    ? coerceTestStatus(isHistoricalRunStatus(activeLiveTest.status) ? activeLiveTest.status : statusOverride || activeLiveTest.status, activeLiveTest.status)
     : undefined
   const { localMetricsHistory, latestMetrics } = useExecutionMetricsStream(testId || '', streamStatus)
-  const liveMetrics = latestMetrics || liveTest?.live_metrics
+  const liveMetrics = latestMetrics || activeLiveTest?.live_metrics
   const hasLiveRoute = Boolean(testId)
-  const liveMode = Boolean(testId && liveTest)
-  const emptyMode = !prototypeMode && !hasLiveRoute && !liveTest
-  const loadingTest: TestSummary = {
+  const liveMode = Boolean(testId && activeLiveTest)
+  const emptyMode = !prototypeMode && !hasLiveRoute && !activeLiveTest
+  const loadingTest = useMemo<TestSummary>(() => ({
     ...MOCK_TEST,
     id: testId || MOCK_TEST.id,
     ref_key: testId || MOCK_TEST.ref_key,
@@ -1076,14 +1105,15 @@ export default function CommandCenterPrototype({
     groups: [],
     total_vusers: 0,
     live_metrics: undefined,
-  }
-  const displayTest: TestSummary = liveTest
+  }), [testId])
+  const displayTest = useMemo<TestSummary>(() => activeLiveTest
     ? {
-        ...liveTest,
-        status: streamStatus || liveTest.status,
-        live_metrics: liveMetrics || liveTest.live_metrics,
+        ...activeLiveTest,
+        status: streamStatus || activeLiveTest.status,
+        live_metrics: liveMetrics || activeLiveTest.live_metrics,
       }
-    : hasLiveRoute ? loadingTest : emptyMode ? EMPTY_COMMAND_CENTER_TEST : MOCK_TEST
+    : hasLiveRoute ? loadingTest : emptyMode ? EMPTY_COMMAND_CENTER_TEST : MOCK_TEST,
+  [activeLiveTest, emptyMode, hasLiveRoute, liveMetrics, loadingTest, streamStatus])
 
   useEffect(() => {
     if (!liveMode) return
@@ -1102,16 +1132,7 @@ export default function CommandCenterPrototype({
     })
     syncedTargetsRef.current = canonicalTargets
     syncedTargetTestIdRef.current = displayTest.id
-  }, [
-    displayTest.goal_config?.target_average_tps,
-    displayTest.goal_targets,
-    displayTest.groups,
-    displayTest.id,
-    displayTest.live_metrics?.groups,
-    displayTest.scenario_mode,
-    displayTest.vuser_ramps,
-    liveMode,
-  ])
+  }, [displayTest, liveMode])
 
   const runStatus = liveMode || hasLiveRoute || emptyMode ? displayTest.status : state.runStatus
   const groups = useMemo(
@@ -1327,7 +1348,7 @@ export default function CommandCenterPrototype({
     variant,
   ])
   const feedback = loadError
-    || (hasLiveRoute && !liveTest ? 'Loading live run data for the command center...' : '')
+    || (hasLiveRoute && !activeLiveTest ? 'Loading live run data for the command center...' : '')
     || (emptyMode ? 'No active run is selected for the command center.' : '')
     || (historicalRun ? DEFAULT_HISTORICAL_FEEDBACK : '')
     || (liveMode && state.feedback === DEFAULT_PROTOTYPE_FEEDBACK ? DEFAULT_LIVE_FEEDBACK : state.feedback)
@@ -2419,7 +2440,7 @@ function ErrorDetailsTable({
   return (
     <div className="command-error-table-layout" role="tabpanel" aria-label="Error details">
       <div className="command-data-table-wrap command-error-pattern-table-wrap">
-        <table className="command-data-table command-error-table">
+        <table className="command-data-table command-error-table" role="grid" aria-label="Error patterns">
           <thead>
             <tr>
               <SortableHeader label="Signature" sortKey="title" sort={sort} onSort={onSort} />
@@ -2438,7 +2459,10 @@ function ErrorDetailsTable({
               <tr
                 key={row.id}
                 className={selectedError?.id === row.id ? 'selected' : ''}
+                tabIndex={0}
+                aria-selected={selectedError?.id === row.id}
                 onClick={() => onErrorSelect(row.id)}
+                onKeyDown={event => activateSelectableRow(event, () => onErrorSelect(row.id))}
               >
                 <td><strong>{row.title}</strong><span className="command-table-subtext">{row.sample}</span></td>
                 <td className="numeric">{formatNumber(row.count)}</td>
@@ -2510,7 +2534,7 @@ function ErrorEvidencePanel({
       {evidence.length > 0 && (
         <>
           <div className="command-data-table-wrap command-evidence-table-wrap">
-            <table className="command-data-table command-evidence-table">
+            <table className="command-data-table command-evidence-table" role="grid" aria-label="Captured error evidence">
               <thead>
                 <tr>
                   <th>Time</th>
@@ -2526,7 +2550,10 @@ function ErrorEvidencePanel({
                   <tr
                     key={item.id}
                     className={activeEvidence?.id === item.id ? 'selected' : ''}
+                    tabIndex={0}
+                    aria-selected={activeEvidence?.id === item.id}
                     onClick={() => onEvidenceSelect(item.id)}
+                    onKeyDown={event => activateSelectableRow(event, () => onEvidenceSelect(item.id))}
                   >
                     <td>{formatTimeValue(item.timestamp)}</td>
                     <td>{item.action}</td>
@@ -2544,6 +2571,12 @@ function ErrorEvidencePanel({
       )}
     </div>
   )
+}
+
+function activateSelectableRow(event: ReactKeyboardEvent<HTMLElement>, activate: () => void) {
+  if (event.key !== 'Enter' && event.key !== ' ') return
+  event.preventDefault()
+  activate()
 }
 
 function EvidenceSnapshotDetail({ evidence }: { evidence: LiveErrorEvidence }) {

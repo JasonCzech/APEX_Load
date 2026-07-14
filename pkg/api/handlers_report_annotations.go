@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"time"
@@ -36,7 +37,7 @@ func (s *Server) handleGetReportAnnotations(w http.ResponseWriter, r *http.Reque
 	}
 	profile := r.URL.Query().Get("profile")
 
-	report := s.tryBuildRunArchiveReport(testID)
+	report := s.tryBuildRunArchiveReport(r.Context(), testID)
 	annotations, err := resolveReportAnnotations(s.store, report, testID, profile)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load report commentary: "+err.Error())
@@ -103,14 +104,16 @@ func (s *Server) handleSaveReportAnnotations(w http.ResponseWriter, r *http.Requ
 // tryBuildRunArchiveReport returns the archived report for a test when an
 // archive exists and materializes, otherwise nil (commentary defaults still
 // render from generic text in that case).
-func (s *Server) tryBuildRunArchiveReport(testID string) *RunArchiveReport {
-	record, ok := s.runner.GetRunArchive(testID)
+func (s *Server) tryBuildRunArchiveReport(ctx context.Context, testID string) *RunArchiveReport {
+	record, ok := s.runner.GetRunArchiveContext(ctx, testID)
 	if !ok {
 		return nil
 	}
-	if err := ensureArchiveMaterialized(record); err != nil {
+	lease, err := acquireArchiveMaterialized(ctx, record)
+	if err != nil {
 		return nil
 	}
+	defer lease.Release()
 	report, err := cachedRunArchiveReport(record)
 	if err != nil {
 		return nil

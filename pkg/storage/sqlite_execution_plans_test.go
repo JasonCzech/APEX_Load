@@ -9,6 +9,9 @@ import (
 func TestExecutionPlanApprovalAtomicCAS(t *testing.T) {
 	store := openTimeslotStore(t)
 	now := time.Now().UTC()
+	if err := store.SaveExecutionPlan(&ExecutionPlan{ID: "plan-1", ProjectID: "p", Name: "Plan", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
 	approval := &ExecutionPlanApproval{ID: "appr-1", PlanID: "plan-1", ProjectID: "p", Policy: "quota_burst", Status: "pending", PlanContentHash: "sha256:abc", RequestedAt: now, CreatedAt: now, UpdatedAt: now}
 	if err := store.SaveExecutionPlanApproval(approval); err != nil {
 		t.Fatalf("save: %v", err)

@@ -36,6 +36,15 @@ const libraryApiMock = {
   compareItems: vi.fn(),
 }
 
+const projectState = vi.hoisted(() => ({
+  activeProject: {
+    id: 'project-1',
+    name: 'Checkout',
+    created_at: '',
+    updated_at: '',
+  } as { id: string; name: string; created_at: string; updated_at: string; domain_id?: string } | null,
+}))
+
 vi.mock('../hooks/useApi', () => ({
   useApi: () => apiMock,
 }))
@@ -45,9 +54,7 @@ vi.mock('../hooks/api/useLibraryApi', () => ({
 }))
 
 vi.mock('../hooks/useProject', () => ({
-  useProject: () => ({
-    activeProject: { id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' },
-  }),
+  useProject: () => projectState,
 }))
 
 vi.mock('recharts', () => {
@@ -167,6 +174,8 @@ describe('TestHub', () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
+
+    projectState.activeProject = { id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' }
 
     apiMock.listScenarios.mockResolvedValue({ scenarios: [], count: 0 })
     apiMock.listScripts.mockResolvedValue({
@@ -1005,6 +1014,119 @@ describe('TestHub', () => {
 
     expect(apiMock.listScenarioResults).toHaveBeenCalledWith('scenario-1')
     expect(container.textContent).toContain('No runs for this scenario yet.')
+  })
+
+  it('waits for an active project and ignores a stale project response after switching', async () => {
+    const onSelectTest = vi.fn()
+    const projectAResponse = deferred<{ scenarios: Array<Record<string, unknown>>; count: number }>()
+    projectState.activeProject = null
+    apiMock.listScenarios.mockImplementation((projectId?: string) => {
+      if (projectId === 'project-a') return projectAResponse.promise
+      if (projectId === 'project-b') {
+        return Promise.resolve({
+          scenarios: [scenarioFixture('scenario-b', 'Project B Scenario')],
+          count: 1,
+        })
+      }
+      return Promise.resolve({ scenarios: [], count: 0 })
+    })
+    apiMock.listScripts.mockImplementation((projectId?: string) => Promise.resolve({
+      scripts: projectId ? [{ id: `script-${projectId}`, name: `${projectId} script`, protocol: 'http', version: '1.0.0', created_at: '' }] : [],
+      count: projectId ? 1 : 0,
+    }))
+
+    await act(async () => {
+      root.render(<TestHub testStatuses={{}} onSelectTest={onSelectTest} />)
+    })
+    await flushPromises()
+
+    expect(apiMock.listScenarios).not.toHaveBeenCalled()
+    expect(apiMock.listScripts).not.toHaveBeenCalled()
+    expect(apiMock.listDataPools).not.toHaveBeenCalled()
+    expect(apiMock.getAuthEffectiveAccess).not.toHaveBeenCalled()
+
+    await act(async () => {
+      projectState.activeProject = { id: 'project-a', name: 'Project A', created_at: '', updated_at: '' }
+      root.render(<TestHub testStatuses={{}} onSelectTest={onSelectTest} />)
+    })
+    await flushPromises()
+    expect(apiMock.listScenarios).toHaveBeenCalledWith('project-a')
+
+    await act(async () => {
+      projectState.activeProject = { id: 'project-b', name: 'Project B', created_at: '', updated_at: '' }
+      root.render(<TestHub testStatuses={{}} onSelectTest={onSelectTest} />)
+    })
+    await flushPromises()
+
+    expect(apiMock.listScenarios).toHaveBeenCalledWith('project-b')
+    expect(container.textContent).toContain('Project B Scenario')
+
+    await act(async () => {
+      projectAResponse.resolve({
+        scenarios: [scenarioFixture('scenario-a', 'Project A Scenario')],
+        count: 1,
+      })
+      await projectAResponse.promise
+    })
+    await flushPromises()
+
+    expect(container.textContent).toContain('Project B Scenario')
+    expect(container.textContent).not.toContain('Project A Scenario')
+  })
+
+  it('gives the delete confirmation dialog a trapped, dismissible focus lifecycle', async () => {
+    const onSelectTest = vi.fn()
+    apiMock.listScenarios.mockResolvedValue({
+      scenarios: [scenarioFixture('scenario-delete', 'Delete Me')],
+      count: 1,
+    })
+
+    await act(async () => {
+      root.render(<TestHub testStatuses={{}} onSelectTest={onSelectTest} />)
+    })
+    await flushPromises()
+
+    const deleteTrigger = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Delete')
+    expect(deleteTrigger).toBeDefined()
+    if (!deleteTrigger) return
+    deleteTrigger.focus()
+
+    await act(async () => {
+      deleteTrigger.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushTimeouts()
+
+    const dialog = container.querySelector('[role="dialog"]') as HTMLDivElement | null
+    expect(dialog).not.toBeNull()
+    expect(dialog?.getAttribute('aria-modal')).toBe('true')
+    expect(dialog?.getAttribute('aria-labelledby')).toBe('delete-scenario-dialog-title')
+    expect(dialog?.getAttribute('aria-describedby')).toBe('delete-scenario-dialog-description')
+    expect(dialog?.getAttribute('tabindex')).toBe('-1')
+    expect(document.activeElement?.textContent).toBe('Cancel')
+
+    const dialogButtons = Array.from(dialog?.querySelectorAll('button') || [])
+    const firstButton = dialogButtons[0]
+    const lastButton = dialogButtons[dialogButtons.length - 1]
+    expect(firstButton?.textContent).toBe('Cancel')
+    expect(lastButton?.textContent).toBe('Delete Scenario')
+
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true }))
+    })
+    expect(document.activeElement).toBe(lastButton)
+
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }))
+    })
+    expect(document.activeElement).toBe(firstButton)
+
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    })
+    await flushPromises()
+
+    expect(container.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.activeElement).toBe(deleteTrigger)
   })
 
   it('filters the scenario library by associated release', async () => {
@@ -2096,4 +2218,31 @@ function getDurationFieldByLabel(container: HTMLElement, label: string) {
     input: field.querySelector('input') as HTMLInputElement,
     select: field.querySelector('select') as HTMLSelectElement,
   }
+}
+
+function scenarioFixture(id: string, name: string) {
+  return {
+    id,
+    name,
+    duration: '5m',
+    assignment: { mode: 'auto' },
+    scripts: [],
+    data_pools: [],
+    associated_releases: [],
+    result_count: 0,
+    created_at: '2026-05-12T00:00:00Z',
+    updated_at: '2026-05-12T00:00:00Z',
+    last_run_at: '',
+    last_run_ended_at: '',
+  }
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
 }

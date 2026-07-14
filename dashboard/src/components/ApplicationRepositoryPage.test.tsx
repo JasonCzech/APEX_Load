@@ -224,6 +224,14 @@ describe('ApplicationRepositoryPage', () => {
     expect(container.textContent).toContain('Checkout Peak')
     expect(container.textContent).toContain('Checkout Run')
     expect(container.textContent).toContain('Checkout Users')
+    const assetSortButton = findButton(container, 'Asset', false)
+    const activitySortButton = findButton(container, 'Activity', false)
+    expect(assetSortButton?.closest('th')?.getAttribute('aria-sort')).toBe('none')
+    expect(activitySortButton?.closest('th')?.getAttribute('aria-sort')).toBe('descending')
+    await act(async () => {
+      assetSortButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(assetSortButton?.closest('th')?.getAttribute('aria-sort')).toBe('ascending')
 
     const filterSelects = Array.from(container.querySelectorAll('.repository-filter-row select')) as HTMLSelectElement[]
     expect(filterSelects.length).toBeGreaterThanOrEqual(5)

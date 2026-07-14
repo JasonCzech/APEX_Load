@@ -98,15 +98,17 @@ func (s *Server) handleLibraryResultArchive(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusNotFound, "result not found")
 		return
 	}
-	record, ok := s.runner.GetRunArchive(id)
+	record, ok := s.runner.GetRunArchiveContext(r.Context(), id)
 	if !ok || record == nil {
 		writeError(w, http.StatusNotFound, "archive not found")
 		return
 	}
-	if err := ensureArchiveMaterialized(record); err != nil {
+	lease, err := acquireArchiveMaterialized(r.Context(), record)
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to materialize archive: "+err.Error())
 		return
 	}
+	defer lease.Release()
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", "attachment; filename=\""+sanitizeFilename(test.Name)+"-"+id+".zip\"")
 	w.Header().Set("Last-Modified", record.CompletedAt.UTC().Format(http.TimeFormat))

@@ -217,6 +217,44 @@ describe('TestExecutionCharts context menu', () => {
     expect(container.querySelector('.chart-context-menu')).toBeNull()
   })
 
+  it('opens graph actions from a keyboard-focusable button and restores focus on Escape', async () => {
+    await renderCharts()
+    const actionsButton = container.querySelector<HTMLButtonElement>('button[aria-label="Virtual Users actions"]')
+    expect(actionsButton).not.toBeNull()
+    if (!actionsButton) return
+    actionsButton.focus()
+
+    await act(async () => {
+      actionsButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await act(async () => {
+      await new Promise(resolve => window.setTimeout(resolve, 0))
+    })
+
+    const resetZoom = menuButton('Reset Zoom')
+    expect(resetZoom).toBeDefined()
+    expect(document.activeElement).toBe(resetZoom)
+    expect(actionsButton.getAttribute('aria-expanded')).toBe('true')
+
+    const menuItems = Array.from(container.querySelectorAll<HTMLButtonElement>('.chart-context-menu [role="menuitem"]'))
+    await act(async () => {
+      resetZoom?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }))
+    })
+    expect(document.activeElement).toBe(menuItems[1])
+    await act(async () => {
+      menuItems[1]?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true }))
+    })
+    expect(document.activeElement).toBe(resetZoom)
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      await new Promise(resolve => window.setTimeout(resolve, 0))
+    })
+
+    expect(container.querySelector('.chart-context-menu')).toBeNull()
+    expect(document.activeElement).toBe(actionsButton)
+  })
+
   it('toggles a VUsers overlay line from the graph context menu', async () => {
     await renderCharts()
 

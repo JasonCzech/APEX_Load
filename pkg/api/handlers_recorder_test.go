@@ -250,7 +250,7 @@ func TestHandleRecordingSummariesAndDeltaRequests(t *testing.T) {
 		t.Fatalf("json.Unmarshal summary returned error: %v", err)
 	}
 	if len(summary.Requests) != 0 || summary.RequestCount != 2 {
-		t.Fatalf("summary = %#v, want no requests with full count", summary)
+		t.Fatalf("summary = %#v, want no requests with full count", &summary)
 	}
 
 	deltaReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/rec-delta?since=1", nil)
@@ -264,7 +264,7 @@ func TestHandleRecordingSummariesAndDeltaRequests(t *testing.T) {
 		t.Fatalf("json.Unmarshal delta returned error: %v", err)
 	}
 	if len(delta.Requests) != 1 || delta.Requests[0].Seq != 2 || delta.Requests[0].ResponseBody == "" {
-		t.Fatalf("delta = %#v, want full request after sequence 1", delta)
+		t.Fatalf("delta = %#v, want full request after sequence 1", &delta)
 	}
 
 	fullReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/rec-delta?include=requests", nil)
@@ -278,7 +278,7 @@ func TestHandleRecordingSummariesAndDeltaRequests(t *testing.T) {
 		t.Fatalf("json.Unmarshal full returned error: %v", err)
 	}
 	if len(full.Requests) != 2 || full.Requests[0].Body == "" {
-		t.Fatalf("full = %#v, want include=requests to return stored bodies", full)
+		t.Fatalf("full = %#v, want include=requests to return stored bodies", &full)
 	}
 }
 

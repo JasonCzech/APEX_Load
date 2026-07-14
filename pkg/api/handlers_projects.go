@@ -2,7 +2,9 @@ package api
 
 import (
 	"database/sql"
+	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -225,15 +227,128 @@ func (e *projectSettingsError) Error() string {
 }
 
 func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
+	if !s.requireExecutionLeader(w) {
+		return
+	}
 	if s.store == nil {
 		writeError(w, http.StatusServiceUnavailable, "project storage is not configured")
 		return
 	}
+	s.projectMutationMu.Lock()
+	defer s.projectMutationMu.Unlock()
 	id := r.PathValue("id")
+	project, err := s.store.GetProject(id)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	id = project.ID
+	domainID := project.DomainID
+	if s.runner != nil {
+		if err := s.runner.beginProjectDeletion(id); err != nil {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
+		defer s.runner.endProjectDeletion(id)
+	}
+	tests, err := s.store.ListTests(id, nil)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to enumerate project tests: "+err.Error())
+		return
+	}
+	testIDs := make(map[string]struct{}, len(tests))
+	archiveByTest := make(map[string]*storage.RunArchiveRecord, len(tests))
+	for _, test := range tests {
+		if test == nil {
+			continue
+		}
+		testIDs[test.ID] = struct{}{}
+		record, err := s.store.GetRunArchive(test.ID)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				continue
+			}
+			writeError(w, http.StatusInternalServerError, "failed to load project archive: "+err.Error())
+			return
+		}
+		if record != nil {
+			archiveByTest[test.ID] = record
+		}
+	}
+	if outbox := s.runner.archiveFinalizationOutbox(); outbox != nil {
+		jobs, err := outbox.ListArchiveFinalizationJobs(10000)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to enumerate project archive finalizations: "+err.Error())
+			return
+		}
+		for _, job := range jobs {
+			if job == nil || normalizeProjectID(job.ProjectID) != normalizeProjectID(id) {
+				continue
+			}
+			testIDs[job.TestID] = struct{}{}
+			if _, exists := archiveByTest[job.TestID]; !exists {
+				record := job.ArchiveRecord
+				archiveByTest[job.TestID] = &record
+			}
+		}
+	}
+	if outbox := s.runner.archiveRefreshOutbox(); outbox != nil {
+		jobs, err := outbox.ListArchiveRefreshJobs(10000)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to enumerate project archive refreshes: "+err.Error())
+			return
+		}
+		for _, job := range jobs {
+			if job != nil && normalizeProjectID(job.ProjectID) == normalizeProjectID(id) {
+				testIDs[job.TestID] = struct{}{}
+			}
+		}
+	}
+	orderedTestIDs := make([]string, 0, len(testIDs))
+	for testID := range testIDs {
+		orderedTestIDs = append(orderedTestIDs, testID)
+	}
+	sort.Strings(orderedTestIDs)
+	archiveUnlocks := make([]func(), 0, len(orderedTestIDs))
+	for _, testID := range orderedTestIDs {
+		archiveUnlocks = append(archiveUnlocks, s.runner.lockArchiveCommitFence(testID))
+	}
+	defer func() {
+		for index := len(archiveUnlocks) - 1; index >= 0; index-- {
+			archiveUnlocks[index]()
+		}
+	}()
+	if !s.runner.isExecutionLeader() {
+		writeError(w, http.StatusServiceUnavailable, errNotExecutionLeader.Error())
+		return
+	}
+	archiveRecords := make([]*storage.RunArchiveRecord, 0, len(archiveByTest))
+	for _, testID := range orderedTestIDs {
+		if record := archiveByTest[testID]; record != nil {
+			archiveRecords = append(archiveRecords, record)
+		}
+	}
+	// Delete the relational project graph atomically before making irreversible
+	// object-store changes. If the database transaction fails, every archive is
+	// still intact. Physical cleanup happens from the records captured above.
 	if err := s.store.DeleteProject(id); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	s.recordAuditEvent(r, "project.delete", "success", "project", id, id, nil)
+	if s.runner != nil {
+		s.runner.forgetProject(id)
+	}
+	cleanupErrors := make([]string, 0)
+	for _, record := range archiveRecords {
+		if err := s.cleanupQueuedArchiveUnderFence(record); err != nil {
+			cleanupErrors = append(cleanupErrors, fmt.Sprintf("%s: %v", record.TestID, err))
+		}
+	}
+	if len(cleanupErrors) > 0 {
+		s.recordAuditEventWithProjectSnapshot(r, "project.delete", "partial", "project", id, id, domainID, map[string]any{"archive_cleanup_errors": cleanupErrors})
+		writeError(w, http.StatusInternalServerError, "project metadata was deleted but physical archive cleanup was incomplete: "+strings.Join(cleanupErrors, "; "))
+		return
+	}
+	s.recordAuditEventWithProjectSnapshot(r, "project.delete", "success", "project", id, id, domainID, nil)
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
 }

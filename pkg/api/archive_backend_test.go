@@ -2,10 +2,13 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/jasonczech/apexload/pkg/storage"
 	"gocloud.dev/blob/fileblob"
 )
 
@@ -36,7 +39,7 @@ func TestCurrentArchiveBackendBuildsObjectURIAndStagingRoot(t *testing.T) {
 	if backend.Backend != archiveBackendS3 {
 		t.Fatalf("backend = %q, want s3", backend.Backend)
 	}
-	wantRoot := filepath.Join(root, "_object_staging", "s3")
+	wantRoot := archiveObjectNamespaceRoot(filepath.Join(root, "_object_staging", "s3"), backend)
 	if backend.LocalRoot != wantRoot {
 		t.Fatalf("local root = %q, want %q", backend.LocalRoot, wantRoot)
 	}
@@ -45,6 +48,33 @@ func TestCurrentArchiveBackendBuildsObjectURIAndStagingRoot(t *testing.T) {
 	}
 	if got := backend.manifestURI("run-1"); got != "s3://apexload-archives/prod/evidence/run-1/manifest.json" {
 		t.Fatalf("manifest uri = %q", got)
+	}
+}
+
+func TestObjectArchiveStagingAndNamespacesSeparateBackendsAndEndpoints(t *testing.T) {
+	customRoot := t.TempDir()
+	t.Setenv("APEXLOAD_ARCHIVE_STAGING_DIR", customRoot)
+	s3Root := objectArchiveStagingRoot("ignored", archiveBackendS3)
+	gcsRoot := objectArchiveStagingRoot("ignored", archiveBackendGCS)
+	if s3Root == gcsRoot {
+		t.Fatalf("custom staging root aliases S3 and GCS at %q", s3Root)
+	}
+	if s3Root != filepath.Join(customRoot, archiveBackendS3) || gcsRoot != filepath.Join(customRoot, archiveBackendGCS) {
+		t.Fatalf("backend staging roots = %q and %q, want backend-scoped children of %q", s3Root, gcsRoot, customRoot)
+	}
+	base := archiveBackendRuntime{Backend: archiveBackendS3, Bucket: "archives", Prefix: "prod/evidence"}
+	first := base
+	first.Endpoint = "https://objects-a.example.test/"
+	second := base
+	second.Endpoint = "https://objects-b.example.test"
+	if archiveObjectNamespace(first) == archiveObjectNamespace(second) {
+		t.Fatal("S3-compatible endpoints with the same bucket and prefix share a cache namespace")
+	}
+	azureA := archiveBackendRuntime{Backend: archiveBackendAzureBlob, Container: "archives", Prefix: "prod/evidence", Account: "account-a"}
+	azureB := azureA
+	azureB.Account = "account-b"
+	if archiveObjectNamespace(azureA) == archiveObjectNamespace(azureB) {
+		t.Fatal("Azure storage accounts with the same container and prefix share a cache namespace")
 	}
 }
 
@@ -87,5 +117,522 @@ func TestUploadArchiveObjectsUploadsOnlyNamedFiles(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(bucketDir, "prod", "evidence", "run-1", "transactions.jsonl")); !os.IsNotExist(err) {
 		t.Fatalf("transactions artifact upload err = %v, want not uploaded", err)
+	}
+}
+
+func TestUploadArchiveObjectsPublishesManifestOnlyAfterArtifacts(t *testing.T) {
+	localDir := t.TempDir()
+	bucketDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(localDir, runArchiveManifestFileName), []byte(`{"test_id":"run-partial"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bucket, err := fileblob.OpenBucket(bucketDir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer bucket.Close()
+	backend := archiveBackendRuntime{Prefix: "prod/evidence"}
+
+	// Deliberately provide manifest first. The missing dataset must fail the
+	// publication before manifest.json can become the remote commit marker.
+	err = uploadArchiveObjectsToBucket(
+		context.Background(), bucket, backend, localDir, "run-partial",
+		runArchiveManifestFileName, "transactions.jsonl",
+	)
+	if err == nil {
+		t.Fatal("expected missing artifact publication to fail")
+	}
+	manifestPath := filepath.Join(bucketDir, "prod", "evidence", "run-partial", runArchiveManifestFileName)
+	if _, statErr := os.Stat(manifestPath); !os.IsNotExist(statErr) {
+		t.Fatalf("manifest commit marker was published after partial failure: %v", statErr)
+	}
+}
+
+func TestDeleteArchiveObjectsFromBucketDeletesOnlyRunPrefix(t *testing.T) {
+	bucketDir := t.TempDir()
+	bucket, err := fileblob.OpenBucket(bucketDir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer bucket.Close()
+	ctx := context.Background()
+	backend := archiveBackendRuntime{Prefix: "prod/evidence"}
+	for _, object := range []string{
+		backend.objectKey("run-1", "manifest.json"),
+		backend.objectKey("run-1", "nested/transactions.jsonl"),
+		backend.objectKey("run-2", "manifest.json"),
+	} {
+		if err := bucket.WriteAll(ctx, object, []byte(object), nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := deleteArchiveObjectsFromBucket(ctx, bucket, backend, "run-1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bucket.ReadAll(ctx, backend.objectKey("run-1", "manifest.json")); err == nil {
+		t.Fatal("run-1 manifest still exists")
+	}
+	if _, err := bucket.ReadAll(ctx, backend.objectKey("run-2", "manifest.json")); err != nil {
+		t.Fatalf("neighboring run was deleted: %v", err)
+	}
+}
+
+func TestArchiveDeletionRuntimeUsesPersistedObjectPrefix(t *testing.T) {
+	backend := archiveBackendRuntime{Backend: archiveBackendS3, Bucket: "archives", Prefix: "new/prefix"}
+	resolved, err := archiveDeletionRuntime(backend, &storage.RunArchiveRecord{
+		TestID: "run-1", ArchiveBackend: archiveBackendS3, ArchiveURI: "s3://archives/old/prefix/run-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Prefix != "old/prefix" {
+		t.Fatalf("prefix = %q, want persisted old/prefix", resolved.Prefix)
+	}
+	if _, err := archiveDeletionRuntime(backend, &storage.RunArchiveRecord{
+		TestID: "run-1", ArchiveBackend: archiveBackendS3, ArchiveURI: "s3://other-bucket/old/prefix/run-1",
+	}); err == nil {
+		t.Fatal("expected configured bucket mismatch to be rejected")
+	}
+}
+
+func TestArchiveMaterializationRuntimeUsesPersistedBackendAndURI(t *testing.T) {
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	configured := archiveBackendRuntime{
+		Backend: archiveBackendGCS,
+		Bucket:  "current-bucket",
+		Prefix:  "current/prefix",
+		Region:  "us-east-1",
+	}
+	record := &storage.RunArchiveRecord{
+		TestID:         "run-1",
+		ArchiveBackend: archiveBackendS3,
+		ArchiveURI:     "s3://historic-bucket/retained/2025/run-1",
+		ManifestURI:    "s3://historic-bucket/retained/2025/run-1/manifest.json",
+	}
+
+	resolved, err := archiveMaterializationRuntime(configured, record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Backend != archiveBackendS3 || resolved.Bucket != "historic-bucket" || resolved.Prefix != "retained/2025" {
+		t.Fatalf("resolved runtime = %+v, want persisted S3 bucket/prefix", resolved)
+	}
+	if got := resolved.objectKey("run-1", "transactions.jsonl"); got != "retained/2025/run-1/transactions.jsonl" {
+		t.Fatalf("object key = %q", got)
+	}
+}
+
+func TestArchiveMaterializationRuntimeRejectsInconsistentPersistedURI(t *testing.T) {
+	configured := archiveBackendRuntime{Backend: archiveBackendS3}
+	for _, record := range []*storage.RunArchiveRecord{
+		{TestID: "run-1", ArchiveBackend: archiveBackendS3, ArchiveURI: "gs://bucket/prefix/run-1"},
+		{TestID: "run-1", ArchiveBackend: archiveBackendS3, ArchiveURI: "s3://bucket/prefix/another-run"},
+		{TestID: "run-1", ArchiveBackend: archiveBackendS3, ArchiveURI: "s3://bucket/prefix/run-1", ManifestURI: "s3://other/prefix/run-1/manifest.json"},
+	} {
+		if _, err := archiveMaterializationRuntime(configured, record); err == nil {
+			t.Fatalf("archiveMaterializationRuntime(%+v) unexpectedly succeeded", record)
+		}
+	}
+}
+
+func TestArchiveMaterializationLocalRootCannotTargetAnotherRun(t *testing.T) {
+	root := t.TempDir()
+	otherRun := filepath.Join(root, "run-b")
+	if err := os.MkdirAll(otherRun, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := archiveMaterializationLocalRoot(
+		archiveBackendRuntime{LocalRoot: root},
+		&storage.RunArchiveRecord{TestID: "run-a", ArchivePath: otherRun},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved != filepath.Join(root, "run-a") {
+		t.Fatalf("materialization root = %q, want run-scoped path", resolved)
+	}
+}
+
+func TestMaterializeArchiveFromBucketReplacesPoisonedCacheAtomically(t *testing.T) {
+	ctx := context.Background()
+	bucketDir := t.TempDir()
+	bucket, err := fileblob.OpenBucket(bucketDir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer bucket.Close()
+
+	backend := archiveBackendRuntime{Prefix: "historic/prefix", LocalRoot: t.TempDir()}
+	artifactName := "transactions.jsonl"
+	artifactData := []byte("{\"transaction\":1}\n")
+	manifest := RunArchiveManifest{
+		SchemaVersion:    archiveSchemaVersion,
+		TestID:           "run-atomic",
+		TransactionsFile: artifactName,
+		Artifacts: []RunArchiveArtifact{{
+			Name: artifactName, SizeBytes: int64(len(artifactData)), SHA256: sha256BytesHex(artifactData),
+		}},
+	}
+	manifestData, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string][]byte{runArchiveManifestFileName: manifestData, artifactName: artifactData} {
+		if err := bucket.WriteAll(ctx, backend.objectKey(manifest.TestID, name), data, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	finalRoot := filepath.Join(backend.LocalRoot, manifest.TestID)
+	if err := os.MkdirAll(finalRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Simulate an old manifest-first materializer that failed before the data
+	// artifact arrived. The new materializer must not accept this poisoned cache.
+	if err := os.WriteFile(filepath.Join(finalRoot, runArchiveManifestFileName), manifestData, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	record := &storage.RunArchiveRecord{
+		TestID: manifest.TestID, ArchiveBackend: archiveBackendS3,
+		ArchivePath: finalRoot, ManifestPath: filepath.Join(finalRoot, runArchiveManifestFileName),
+		ManifestSHA256: sha256BytesHex(manifestData),
+	}
+	if err := materializeArchiveFromBucket(ctx, bucket, backend, record); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(finalRoot, artifactName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(artifactData) {
+		t.Fatalf("materialized artifact = %q", got)
+	}
+	if err := validateMaterializedArchive(record, finalRoot, record.ManifestPath); err != nil {
+		t.Fatalf("materialized cache failed verification: %v", err)
+	}
+	if _, err := os.Stat(archiveMaterializationCacheMarkerPath(finalRoot)); err != nil {
+		t.Fatalf("materialized cache marker was not committed: %v", err)
+	}
+	entries, err := os.ReadDir(backend.LocalRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if strings.Contains(entry.Name(), ".materializing-") || strings.Contains(entry.Name(), ".previous-") {
+			t.Fatalf("temporary materialization directory was not cleaned up: %s", entry.Name())
+		}
+	}
+}
+
+func TestMaterializeArchiveFromBucketFailureCannotCommitPartialCache(t *testing.T) {
+	ctx := context.Background()
+	bucketDir := t.TempDir()
+	bucket, err := fileblob.OpenBucket(bucketDir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer bucket.Close()
+	backend := archiveBackendRuntime{Prefix: "archives", LocalRoot: t.TempDir()}
+	artifactData := []byte("expected")
+	manifest := RunArchiveManifest{
+		SchemaVersion: archiveSchemaVersion,
+		TestID:        "run-retry",
+		Artifacts: []RunArchiveArtifact{{
+			Name: "nested/data.jsonl", SizeBytes: int64(len(artifactData)), SHA256: sha256BytesHex(artifactData),
+		}},
+	}
+	manifestData, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := bucket.WriteAll(ctx, backend.objectKey(manifest.TestID, runArchiveManifestFileName), manifestData, nil); err != nil {
+		t.Fatal(err)
+	}
+	record := &storage.RunArchiveRecord{TestID: manifest.TestID, ManifestSHA256: sha256BytesHex(manifestData)}
+	if err := materializeArchiveFromBucket(ctx, bucket, backend, record); err == nil {
+		t.Fatal("expected missing artifact download to fail")
+	}
+	finalRoot := filepath.Join(backend.LocalRoot, manifest.TestID)
+	if _, err := os.Stat(filepath.Join(finalRoot, runArchiveManifestFileName)); !os.IsNotExist(err) {
+		t.Fatalf("partial cache exposed a manifest commit marker: %v", err)
+	}
+	if err := bucket.WriteAll(ctx, backend.objectKey(manifest.TestID, "nested/data.jsonl"), artifactData, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := materializeArchiveFromBucket(ctx, bucket, backend, record); err != nil {
+		t.Fatalf("retry after transient failure: %v", err)
+	}
+	if _, err := os.Stat(record.ManifestPath); err != nil {
+		t.Fatalf("successful retry did not commit manifest: %v", err)
+	}
+}
+
+func TestMaterializeArchiveFromBucketRejectsHashAndSizeMismatch(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		name       string
+		size       int64
+		hash       string
+		wantDetail string
+	}{
+		{name: "size", size: 99, hash: sha256BytesHex([]byte("actual")), wantDetail: "size"},
+		{name: "hash", size: int64(len("actual")), hash: sha256BytesHex([]byte("different")), wantDetail: "SHA-256"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			bucket, err := fileblob.OpenBucket(t.TempDir(), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer bucket.Close()
+			backend := archiveBackendRuntime{Prefix: "archives", LocalRoot: t.TempDir()}
+			manifest := RunArchiveManifest{SchemaVersion: archiveSchemaVersion, TestID: "run-bad-" + tc.name, Artifacts: []RunArchiveArtifact{{Name: "data.jsonl", SizeBytes: tc.size, SHA256: tc.hash}}}
+			manifestData, err := json.Marshal(manifest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := bucket.WriteAll(ctx, backend.objectKey(manifest.TestID, runArchiveManifestFileName), manifestData, nil); err != nil {
+				t.Fatal(err)
+			}
+			if err := bucket.WriteAll(ctx, backend.objectKey(manifest.TestID, "data.jsonl"), []byte("actual"), nil); err != nil {
+				t.Fatal(err)
+			}
+			record := &storage.RunArchiveRecord{TestID: manifest.TestID, ManifestSHA256: sha256BytesHex(manifestData)}
+			err = materializeArchiveFromBucket(ctx, bucket, backend, record)
+			if err == nil || !strings.Contains(err.Error(), tc.wantDetail) {
+				t.Fatalf("error = %v, want %q mismatch", err, tc.wantDetail)
+			}
+			if _, statErr := os.Stat(filepath.Join(backend.LocalRoot, manifest.TestID, runArchiveManifestFileName)); !os.IsNotExist(statErr) {
+				t.Fatalf("invalid archive was committed: %v", statErr)
+			}
+		})
+	}
+}
+
+func TestMaterializeArchiveFromBucketEnforcesTotalByteLimit(t *testing.T) {
+	ctx := context.Background()
+	bucket, err := fileblob.OpenBucket(t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer bucket.Close()
+	backend := archiveBackendRuntime{Prefix: "archives", LocalRoot: t.TempDir()}
+	manifest := RunArchiveManifest{SchemaVersion: archiveSchemaVersion, TestID: "run-byte-limit", Artifacts: []RunArchiveArtifact{{Name: "data.bin"}}}
+	manifestData, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(envArchiveMaterializedMaxBytes, "1024")
+	if int64(len(manifestData)) >= configuredArchiveMaterializationMaxBytes() {
+		t.Fatalf("test manifest unexpectedly exceeds configured limit: %d", len(manifestData))
+	}
+	for name, data := range map[string][]byte{
+		runArchiveManifestFileName: manifestData,
+		"data.bin":                 make([]byte, configuredArchiveMaterializationMaxBytes()),
+	} {
+		if err := bucket.WriteAll(ctx, backend.objectKey(manifest.TestID, name), data, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	record := &storage.RunArchiveRecord{TestID: manifest.TestID, ManifestSHA256: sha256BytesHex(manifestData)}
+	err = materializeArchiveFromBucket(ctx, bucket, backend, record)
+	if err == nil || !strings.Contains(err.Error(), "byte limit") {
+		t.Fatalf("materialization error = %v, want byte limit", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(backend.LocalRoot, manifest.TestID, runArchiveManifestFileName)); !os.IsNotExist(statErr) {
+		t.Fatalf("over-limit archive exposed a manifest: %v", statErr)
+	}
+}
+
+func TestValidateMaterializedArchiveRejectsSymlinksAndOversizedManifest(t *testing.T) {
+	record := &storage.RunArchiveRecord{TestID: "run-local-validation"}
+	root := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "outside.jsonl")
+	if err := os.WriteFile(outside, []byte("sensitive"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(root, "transactions.jsonl")); err != nil {
+		t.Fatal(err)
+	}
+	manifest := RunArchiveManifest{SchemaVersion: archiveSchemaVersion, TestID: record.TestID, TransactionsFile: "transactions.jsonl"}
+	manifestData, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(root, runArchiveManifestFileName)
+	if err := os.WriteFile(manifestPath, manifestData, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateMaterializedArchive(record, root, manifestPath); err == nil || !strings.Contains(err.Error(), "not a regular file") {
+		t.Fatalf("symlink artifact validation error = %v, want regular-file rejection", err)
+	}
+	symlinkRoot := filepath.Join(t.TempDir(), "linked-cache")
+	if err := os.Symlink(root, symlinkRoot); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateMaterializedArchive(record, symlinkRoot, filepath.Join(symlinkRoot, runArchiveManifestFileName)); err == nil || !strings.Contains(err.Error(), "root is not") {
+		t.Fatalf("symlink cache-root validation error = %v, want root rejection", err)
+	}
+	if err := os.Remove(filepath.Join(root, "transactions.jsonl")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifestPath, make([]byte, maxArchiveManifestDownloadBytes+1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateMaterializedArchive(record, root, manifestPath); err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("oversized local manifest validation error = %v, want bounded-read rejection", err)
+	}
+}
+
+func TestDecodeMaterializationManifestRequiresRunBinding(t *testing.T) {
+	data, err := json.Marshal(RunArchiveManifest{SchemaVersion: archiveSchemaVersion})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := decodeMaterializationManifest(&storage.RunArchiveRecord{TestID: "bound-run"}, data); err == nil {
+		t.Fatal("materialization accepted a manifest without a test id")
+	}
+}
+
+func TestAtomicReplaceArchiveDirectoryRestoresPreviousArchiveOnCommitFailure(t *testing.T) {
+	parent := t.TempDir()
+	finalRoot := filepath.Join(parent, "run-existing")
+	if err := os.MkdirAll(finalRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sentinel := filepath.Join(finalRoot, "manifest.json")
+	if err := os.WriteFile(sentinel, []byte("trusted-existing-archive"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	missingStagingRoot := filepath.Join(parent, "missing-staging-root")
+	if err := atomicReplaceArchiveDirectory(missingStagingRoot, finalRoot); err == nil {
+		t.Fatal("atomicReplaceArchiveDirectory succeeded with a missing staging directory")
+	}
+	content, err := os.ReadFile(sentinel)
+	if err != nil {
+		t.Fatalf("previous archive was not restored: %v", err)
+	}
+	if string(content) != "trusted-existing-archive" {
+		t.Fatalf("restored archive content = %q", content)
+	}
+}
+
+func TestUploadArchiveObjectsRejectsUnsafeRunIDAndLinkedArtifact(t *testing.T) {
+	bucketDir := t.TempDir()
+	bucket, err := fileblob.OpenBucket(bucketDir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer bucket.Close()
+	backend := archiveBackendRuntime{Prefix: "archives"}
+
+	missingRoot := filepath.Join(t.TempDir(), "missing-root")
+	if err := uploadArchiveObjectsToBucket(context.Background(), bucket, backend, missingRoot, "../escape", "manifest.json"); err == nil {
+		t.Fatal("upload accepted a traversal test id")
+	}
+	if _, err := os.Lstat(missingRoot); !os.IsNotExist(err) {
+		t.Fatalf("unsafe test id caused local filesystem I/O: %v", err)
+	}
+
+	localRoot := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "outside-manifest.json")
+	if err := os.WriteFile(outside, []byte("outside-sentinel"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(localRoot, runArchiveManifestFileName)); err != nil {
+		t.Fatal(err)
+	}
+	if err := uploadArchiveObjectsToBucket(context.Background(), bucket, backend, localRoot, "safe-run", runArchiveManifestFileName); err == nil {
+		t.Fatal("upload followed a linked archive artifact")
+	}
+	if _, err := bucket.ReadAll(context.Background(), backend.objectKey("safe-run", runArchiveManifestFileName)); err == nil {
+		t.Fatal("linked archive artifact was published")
+	}
+	content, err := os.ReadFile(outside)
+	if err != nil || string(content) != "outside-sentinel" {
+		t.Fatalf("linked upload source changed: %q, %v", content, err)
+	}
+}
+
+func TestRemoveLocalArchiveDirectoryRequiresRealContainedDirectory(t *testing.T) {
+	archiveRoot := t.TempDir()
+	t.Setenv("APEXLOAD_ARCHIVE_BACKEND", archiveBackendFilesystem)
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", archiveRoot)
+	outside := t.TempDir()
+	sentinel := filepath.Join(outside, "sentinel")
+	if err := os.WriteFile(sentinel, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	linkedRun := filepath.Join(archiveRoot, "linked-run")
+	if err := os.Symlink(outside, linkedRun); err != nil {
+		t.Fatal(err)
+	}
+	if err := removeLocalArchiveDirectory(linkedRun); err == nil {
+		t.Fatal("removeLocalArchiveDirectory accepted a linked run root")
+	}
+	if content, err := os.ReadFile(sentinel); err != nil || string(content) != "keep" {
+		t.Fatalf("linked deletion removed outside data: %q, %v", content, err)
+	}
+
+	linkedParent := filepath.Join(archiveRoot, "linked-parent")
+	if err := os.Symlink(outside, linkedParent); err != nil {
+		t.Fatal(err)
+	}
+	if err := removeLocalArchiveDirectory(filepath.Join(linkedParent, "nested-run")); err == nil {
+		t.Fatal("removeLocalArchiveDirectory accepted a linked intermediate directory")
+	}
+	if content, err := os.ReadFile(sentinel); err != nil || string(content) != "keep" {
+		t.Fatalf("linked intermediate deletion removed outside data: %q, %v", content, err)
+	}
+
+	realRun := filepath.Join(archiveRoot, "real-run")
+	neighbor := filepath.Join(archiveRoot, "neighbor")
+	if err := os.Mkdir(realRun, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(neighbor, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := removeLocalArchiveDirectory(realRun); err != nil {
+		t.Fatalf("remove contained archive: %v", err)
+	}
+	if _, err := os.Lstat(realRun); !os.IsNotExist(err) {
+		t.Fatalf("contained run was not removed: %v", err)
+	}
+	if info, err := os.Lstat(neighbor); err != nil || !info.IsDir() {
+		t.Fatalf("neighboring archive was affected: %v", err)
+	}
+}
+
+func TestAtomicReplaceArchiveDirectoryRejectsLinkedOrNonDirectoryFinalRoot(t *testing.T) {
+	for _, kind := range []string{"symlink", "file"} {
+		t.Run(kind, func(t *testing.T) {
+			parent := t.TempDir()
+			staging := filepath.Join(parent, "staging")
+			if err := os.Mkdir(staging, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			final := filepath.Join(parent, "run-final")
+			outside := t.TempDir()
+			sentinel := filepath.Join(outside, "sentinel")
+			if err := os.WriteFile(sentinel, []byte("keep"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if kind == "symlink" {
+				if err := os.Symlink(outside, final); err != nil {
+					t.Fatal(err)
+				}
+			} else if err := os.WriteFile(final, []byte("keep-file"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := atomicReplaceArchiveDirectory(staging, final); err == nil {
+				t.Fatalf("atomic replacement accepted %s final root", kind)
+			}
+			if content, err := os.ReadFile(sentinel); err != nil || string(content) != "keep" {
+				t.Fatalf("atomic replacement affected linked target: %q, %v", content, err)
+			}
+			if info, err := os.Lstat(staging); err != nil || !info.IsDir() {
+				t.Fatalf("rejected replacement consumed staging root: %v", err)
+			}
+		})
 	}
 }

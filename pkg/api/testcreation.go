@@ -62,6 +62,14 @@ func (tr *TestRunner) EstimateDraftCapacity(req CreateTestRequest) (*DraftCapaci
 }
 
 func (tr *TestRunner) CreateTest(req CreateTestRequest) (*ManagedTest, error) {
+	return tr.createTest(req, true)
+}
+
+// createTest can defer the externally visible creation event until a containing
+// execution-plan transition is durable. Ordinary API creation broadcasts
+// immediately; plan materialization passes false and publishes only after its
+// run entry (including the generated test ID) commits.
+func (tr *TestRunner) createTest(req CreateTestRequest, broadcast bool) (*ManagedTest, error) {
 	// Tests must be created on the execution leader so the in-memory queue stays
 	// coherent with the replica that will actually run them.
 	if !tr.isExecutionLeader() {
@@ -105,9 +113,20 @@ func (tr *TestRunner) CreateTest(req CreateTestRequest) (*ManagedTest, error) {
 	tr.tests[test.ID] = test
 	tr.indexRefKeyLocked(test.RefKey, test.ID)
 
-	tr.saveManagedTestRecord(test)
+	if err := tr.saveManagedTestRecord(test); err != nil {
+		delete(tr.tests, test.ID)
+		tr.removeRefKeyLocked(test.RefKey)
+		if tr.reservationStore != nil && test.TimeslotID != nil {
+			if _, clearErr := tr.reservationStore.ClearCapacityReservationBinding(*test.TimeslotID, test.ID, time.Now().UTC()); clearErr != nil {
+				slog.Warn("failed to release test timeslot after persistence failure", "test_id", test.ID, "timeslot_id", *test.TimeslotID, "error", clearErr)
+			}
+		}
+		return nil, fmt.Errorf("persist test: %w", err)
+	}
 
-	tr.broadcastEvent("test_created", test)
+	if broadcast {
+		tr.broadcastEvent("test_created", test)
+	}
 	return test, nil
 }
 
@@ -173,6 +192,9 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 
 	projectID, err := tr.resolveCreateTestProjectID(req.ProjectID, groups)
 	if err != nil {
+		return nil, err
+	}
+	if err := tr.projectDeletionErrorLocked(projectID); err != nil {
 		return nil, err
 	}
 	if err := tr.enforceTestQuotaLocked(projectID, totalVUsers, dur, status); err != nil {

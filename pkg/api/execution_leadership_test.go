@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -48,6 +49,8 @@ func TestExecutionLeadershipNilReceiverIsAlwaysLeader(t *testing.T) {
 	// Must not panic.
 	l.tick()
 	l.setOnAcquire(func() {})
+	l.setOnLoss(func() {})
+	l.relinquish()
 }
 
 func TestExecutionLeadershipAcquiresAndFiresOnAcquireOnce(t *testing.T) {
@@ -132,6 +135,8 @@ func TestExecutionLeadershipRelinquishesWhenLeaseLost(t *testing.T) {
 		{acquired: false},
 	}}
 	l := newExecutionLeadership(store, "owner-d")
+	lost := make(chan struct{}, 1)
+	l.setOnLoss(func() { lost <- struct{}{} })
 
 	l.tick()
 	if !l.IsLeader() {
@@ -140,6 +145,125 @@ func TestExecutionLeadershipRelinquishesWhenLeaseLost(t *testing.T) {
 	l.tick()
 	if l.IsLeader() {
 		t.Fatal("expected to relinquish leadership when lease no longer held")
+	}
+	select {
+	case <-lost:
+	case <-time.After(2 * time.Second):
+		t.Fatal("onLoss did not fire after lease loss")
+	}
+}
+
+func TestExecutionLeadershipLossCompletesBeforeReacquireReconcile(t *testing.T) {
+	store := &fakeLeaseStore{results: []leaseResult{
+		{acquired: true},
+		{acquired: false},
+		{acquired: true},
+	}}
+	l := newExecutionLeadership(store, "owner-ordered-callbacks")
+	events := make(chan string, 8)
+	releaseLoss := make(chan struct{})
+	l.setOnAcquire(func() {
+		if !l.IsLeader() {
+			events <- "acquire-not-admitted"
+			return
+		}
+		events <- "acquire"
+	})
+	l.setOnLoss(func() {
+		events <- "loss-start"
+		<-releaseLoss
+		events <- "loss-end"
+	})
+
+	waitEvent := func(want string) {
+		t.Helper()
+		select {
+		case got := <-events:
+			if got != want {
+				t.Fatalf("callback event = %q, want %q", got, want)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("timed out waiting for callback event %q", want)
+		}
+	}
+
+	l.tick()
+	waitEvent("acquire")
+	l.tick()
+	waitEvent("loss-start")
+
+	// Reacquire while the prior generation's loss cleanup is still blocked.
+	// The internal lease must renew, but public leadership and reconciliation
+	// for the new generation must not overtake that cleanup.
+	l.tick()
+	if !l.leader.Load() {
+		t.Fatal("expected the internal lease to be reacquired")
+	}
+	if l.IsLeader() {
+		t.Fatal("reacquired lease must not admit work while prior loss cleanup is pending")
+	}
+	select {
+	case got := <-events:
+		t.Fatalf("callback %q overtook blocked loss cleanup", got)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(releaseLoss)
+	waitEvent("loss-end")
+	waitEvent("acquire")
+	if !l.IsLeader() {
+		t.Fatal("leadership admission did not open after loss cleanup and reconciliation")
+	}
+}
+
+func TestExecutionLeadershipNilLossCallbackStillDrainsAdmissionGate(t *testing.T) {
+	store := &fakeLeaseStore{results: []leaseResult{
+		{acquired: true},
+		{acquired: false},
+		{acquired: true},
+	}}
+	l := newExecutionLeadership(store, "owner-nil-loss-callback")
+	initialAcquireStarted := make(chan struct{})
+	releaseInitialAcquire := make(chan struct{})
+	reacquired := make(chan bool, 1)
+	var acquireCalls atomic.Int32
+	l.setOnAcquire(func() {
+		if acquireCalls.Add(1) == 1 {
+			close(initialAcquireStarted)
+			<-releaseInitialAcquire
+			return
+		}
+		reacquired <- l.IsLeader()
+	})
+	// Deliberately leave onLoss nil. The loss event must still drain and release
+	// admission after it reaches the ordered callback worker.
+
+	l.tick()
+	select {
+	case <-initialAcquireStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("initial acquire callback did not start")
+	}
+	l.tick()
+	l.tick()
+	if !l.leader.Load() {
+		t.Fatal("expected the internal lease to be reacquired")
+	}
+	if l.IsLeader() {
+		t.Fatal("nil loss callback must still keep admission closed until its queued event drains")
+	}
+
+	close(releaseInitialAcquire)
+	select {
+	case admitted := <-reacquired:
+		if !admitted {
+			t.Fatal("reacquire reconciliation could not observe leadership after nil loss callback drained")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("reacquire reconciliation did not run after nil loss callback drained")
+	}
+	if !l.IsLeader() {
+		t.Fatal("leadership admission did not open after nil loss callback drained")
 	}
 }
 
@@ -169,6 +293,102 @@ func TestExecutionLeadershipStepsDownOnlyAfterTTLOfErrors(t *testing.T) {
 	l.tick()
 	if l.IsLeader() {
 		t.Fatal("must step down once renewal has failed for longer than the TTL")
+	}
+}
+
+func TestExecutionLeadershipStaleReadTriggersLossCleanup(t *testing.T) {
+	base := time.Date(2026, 6, 18, 12, 0, 0, 0, time.UTC)
+	current := base
+	l := newExecutionLeadership(&fakeLeaseStore{results: []leaseResult{{acquired: true}}}, "owner-stale-read")
+	l.now = func() time.Time { return current }
+	lost := make(chan struct{}, 1)
+	l.setOnLoss(func() { lost <- struct{}{} })
+	l.tick()
+	if !l.IsLeader() {
+		t.Fatal("expected leader after acquisition")
+	}
+
+	// Simulate a wedged renewal goroutine: no tick occurs after the lease TTL.
+	current = base.Add(l.ttl)
+	if l.IsLeader() {
+		t.Fatal("stale lease must fail closed")
+	}
+	if l.leader.Load() {
+		t.Fatal("stale lease check must clear the internal leader flag")
+	}
+	select {
+	case <-lost:
+	case <-time.After(2 * time.Second):
+		t.Fatal("stale lease check did not trigger loss cleanup")
+	}
+}
+
+func TestExecutionLeadershipConcurrentRenewalWinsBeforeStaleDecision(t *testing.T) {
+	base := time.Date(2026, 6, 18, 12, 0, 0, 0, time.UTC)
+	store := &fakeLeaseStore{dfltOK: true}
+	l := newExecutionLeadership(store, "owner-renewal-race")
+
+	var nowCalls atomic.Int32
+	staleCheckEntered := make(chan struct{})
+	releaseStaleCheck := make(chan struct{})
+	l.now = func() time.Time {
+		switch nowCalls.Add(1) {
+		case 1:
+			return base
+		case 2:
+			close(staleCheckEntered)
+			<-releaseStaleCheck
+			return base.Add(l.ttl)
+		default:
+			return base.Add(l.ttl)
+		}
+	}
+	lost := make(chan struct{}, 1)
+	l.setOnLoss(func() { lost <- struct{}{} })
+
+	l.tick()
+	if !l.leader.Load() {
+		t.Fatal("expected initial acquisition")
+	}
+
+	isLeaderResult := make(chan bool, 1)
+	go func() { isLeaderResult <- l.IsLeader() }()
+	select {
+	case <-staleCheckEntered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("stale IsLeader check did not reach its barrier")
+	}
+
+	// Complete a renewal while IsLeader is paused. IsLeader must evaluate the
+	// refreshed timestamp after the barrier, not act on the stale pre-renewal
+	// snapshot it observed before calling now.
+	renewed := make(chan struct{})
+	go func() {
+		l.tick()
+		close(renewed)
+	}()
+	select {
+	case <-renewed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("renewal was blocked by the IsLeader freshness check")
+	}
+	close(releaseStaleCheck)
+
+	select {
+	case leader := <-isLeaderResult:
+		if !leader {
+			t.Fatal("stale IsLeader snapshot stepped down after a successful concurrent renewal")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("IsLeader did not finish after releasing its barrier")
+	}
+	if !l.leader.Load() {
+		t.Fatal("concurrent renewal must preserve the internal leader flag")
+	}
+	select {
+	case <-lost:
+		t.Fatal("concurrent renewal must not trigger loss cleanup")
+	case <-time.After(100 * time.Millisecond):
 	}
 }
 
@@ -353,7 +573,9 @@ func TestReloadAndReconcileOnLeadershipAcquire(t *testing.T) {
 	}
 
 	// Simulate acquiring leadership, then the acquire-time reconcile runs.
+	follower.mu.Lock()
 	follower.leader.Store(true)
+	follower.mu.Unlock()
 	runner.reloadAndReconcile()
 	promoted := waitForStatusAny(t, runner, rec.ID, 5*time.Second, "INITIALIZING", "RUNNING", "COMPLETE")
 	if promoted.Status == "PENDING" {

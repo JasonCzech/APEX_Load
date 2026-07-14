@@ -260,8 +260,8 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
       </div>
 
       <div className="report-scroll">
-        {loading && <p className="report-status">Loading report…</p>}
-        {error && <p className="report-status report-error">{error}</p>}
+        {loading && <p className="report-status" role="status" aria-live="polite">Loading report…</p>}
+        {error && <p className="report-status report-error" role="alert">{error}</p>}
 
         {!loading && !error && report && (
           <article className="report-paper">

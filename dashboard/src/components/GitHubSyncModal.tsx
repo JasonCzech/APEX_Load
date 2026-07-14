@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import { useGitHubApi } from '../hooks/api/useGitHubApi'
 import { useScriptApi } from '../hooks/api/useScriptApi'
+import { useModalDialog } from '../hooks/useModalDialog'
 import {
   GitHubConfigResponse,
   GitHubContentEntry,
@@ -63,6 +64,11 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
 
   // Push-only status.
   const [status, setStatus] = useState<GitHubScriptStatus | null>(null)
+  const dialogRef = useRef<HTMLDivElement | null>(null)
+  const repositorySelectRef = useRef<HTMLSelectElement | null>(null)
+  const titleId = useId()
+
+  useModalDialog({ dialogRef, initialFocusRef: repositorySelectRef, onClose })
 
   const selectedRepo = useMemo(() => repos.find(repo => repo.full_name === repoFullName), [repos, repoFullName])
 
@@ -217,10 +223,16 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
   const title = mode === 'push' ? `Push "${script?.name || 'script'}" to GitHub` : 'Import script from GitHub'
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" role="dialog" aria-modal="true" onClick={event => event.stopPropagation()}>
+    <div
+      className="modal-overlay"
+      role="presentation"
+      onPointerDown={event => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+    >
+      <div ref={dialogRef} className="modal" role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <div className="modal-header">
-          <h3>{title}</h3>
+          <h3 id={titleId}>{title}</h3>
           <button type="button" className="btn btn-secondary btn-sm" onClick={onClose}>Cancel</button>
         </div>
         <div className="monitor-body">
@@ -236,7 +248,7 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
 
           <label className="project-redaction-rule-field">
             <span>Repository</span>
-            <select className="settings-select" value={repoFullName} onChange={event => setRepoFullName(event.target.value)}>
+            <select ref={repositorySelectRef} className="settings-select" value={repoFullName} onChange={event => setRepoFullName(event.target.value)}>
               {repos.length === 0 && <option value="">No repositories available</option>}
               {repos.map(repo => <option key={repo.full_name} value={repo.full_name}>{repo.full_name}</option>)}
             </select>
@@ -305,8 +317,8 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
             </div>
           )}
 
-          {notice && <p className="settings-notice">{notice}</p>}
-          {error && <p className="settings-error-inline">{error}</p>}
+          {notice && <p className="settings-notice" role="status" aria-live="polite">{notice}</p>}
+          {error && <p className="settings-error-inline" role="alert">{error}</p>}
 
           <div className="settings-inline-actions">
             <button className="btn btn-secondary" type="button" onClick={onClose}>Cancel</button>

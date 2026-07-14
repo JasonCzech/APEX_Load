@@ -1,5 +1,6 @@
 import { ReactNode, useState } from 'react'
 
+import { resolveApiResourceUrl } from '../hooks/apiClient'
 import { AuthStatusState } from '../hooks/useAuthStatus'
 import ErrorDiagnostic from './ErrorDiagnostic'
 import Logo from './Logo'
@@ -31,16 +32,18 @@ export default function AuthGate({ children, state }: { children: ReactNode; sta
 
   const signOutLocalSession = async () => {
     if (state.status !== 'ready' || !state.auth.logout_url || !state.auth.logout_csrf_token) return
+    const loginUrl = state.auth.login_url ? resolveApiResourceUrl(state.auth.login_url) : '/'
     setLogoutPending(true)
     try {
-      const response = await fetch(state.auth.logout_url, {
+      const response = await fetch(resolveApiResourceUrl(state.auth.logout_url), {
         method: 'POST',
+        credentials: 'include',
         headers: { 'X-APEXLoad-CSRF-Token': state.auth.logout_csrf_token },
       })
       const payload = await response.json().catch(() => null) as { redirect_url?: string } | null
-      window.location.assign(payload?.redirect_url || state.auth.login_url || '/')
+      window.location.assign(payload?.redirect_url ? resolveApiResourceUrl(payload.redirect_url) : loginUrl)
     } catch {
-      window.location.assign(state.auth.login_url || '/')
+      window.location.assign(loginUrl)
     }
   }
 
@@ -86,7 +89,7 @@ export default function AuthGate({ children, state }: { children: ReactNode; sta
           <p>{blockedMessage}</p>
           {state.auth.login_url && (
             <p>
-              <a className="auth-gate-action" href={state.auth.login_url}>Continue to {providerLabel}</a>
+              <a className="auth-gate-action" href={resolveApiResourceUrl(state.auth.login_url)}>Continue to {providerLabel}</a>
             </p>
           )}
           {state.auth.logout_url && state.auth.logout_csrf_token && (

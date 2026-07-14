@@ -30,7 +30,14 @@ service GeneratorControl {
   rpc DistributeScript(ScriptPayload) returns (ScriptAck);
 
   // GetArchiveArtifact returns a generated archive artifact for a completed test.
+  // Deprecated for controller transfers: large artifacts should use
+  // StreamArchiveArtifact so they are not buffered into one protobuf message.
   rpc GetArchiveArtifact(ArchiveArtifactRequest) returns (ArchiveArtifact);
+
+  // StreamArchiveArtifact returns an archive artifact in bounded chunks. The
+  // first chunk declares total_size and every chunk carries its absolute offset
+  // so the controller can reject truncated, duplicated, or reordered streams.
+  rpc StreamArchiveArtifact(ArchiveArtifactRequest) returns (stream ArchiveArtifactChunk);
 }
 
 message WorkAssignment {
@@ -344,4 +351,12 @@ message ArchiveArtifactRequest {
 message ArchiveArtifact {
   string name = 1;
   bytes content = 2;
+}
+
+message ArchiveArtifactChunk {
+  string name = 1;
+  bytes content = 2;
+  int64 offset = 3;
+  int64 total_size = 4;
+  bool eof = 5;
 }

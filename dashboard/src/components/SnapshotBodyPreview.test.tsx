@@ -55,7 +55,7 @@ describe('SnapshotBodyPreview', () => {
       button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    const dialog = document.body.querySelector('[role="dialog"][aria-label="Full body"]')
+    const dialog = document.body.querySelector('.snapshot-full-dialog[role="dialog"]')
     expect(dialog).not.toBeNull()
     expect(container.textContent).not.toContain('line-17')
     expect(dialog?.textContent).toContain('line-17')
@@ -84,7 +84,7 @@ describe('SnapshotBodyPreview', () => {
       closeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(document.body.querySelector('[role="dialog"][aria-label="Full body"]')).toBeNull()
+    expect(document.body.querySelector('.snapshot-full-dialog[role="dialog"]')).toBeNull()
   })
 
   it('renders short bodies with copy and full-body actions', async () => {
@@ -174,7 +174,7 @@ describe('SnapshotBodyPreview', () => {
       await new Promise(resolve => window.setTimeout(resolve, 0))
     })
 
-    const dialog = document.body.querySelector('[role="dialog"][aria-label="Full body"]')
+    const dialog = document.body.querySelector('.snapshot-full-dialog[role="dialog"]')
     const manualCopyText = dialog?.querySelector('textarea')
     expect(dialog?.textContent).toContain('Text selected')
     expect(manualCopyText).not.toBeNull()

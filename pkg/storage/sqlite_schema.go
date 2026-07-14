@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // schemaCreateTableStatements returns every CREATE TABLE statement in dependency
@@ -356,6 +358,42 @@ func schemaCreateTableStatements() []string {
 			interval_summary_count INTEGER,
 			created_at DATETIME,
 			completed_at DATETIME,
+			FOREIGN KEY(test_id) REFERENCES tests(id)
+		)`,
+		// Archive payloads live outside the relational store, so their deletion
+		// cannot participate in the test/project transaction. Persist the complete
+		// cleanup intent before removing run_archives/tests; a controller restart can
+		// then retry physical cleanup without needing metadata that no longer exists.
+		`CREATE TABLE IF NOT EXISTS archive_cleanup_jobs (
+			test_id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL,
+			archive_record_json TEXT NOT NULL,
+			attempts INTEGER NOT NULL DEFAULT 0,
+			last_error TEXT,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS archive_finalization_jobs (
+			test_id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL,
+			archive_record_json TEXT NOT NULL,
+			persist_artifacts INTEGER NOT NULL DEFAULT 1,
+			generation INTEGER NOT NULL DEFAULT 1,
+			intent_token TEXT NOT NULL DEFAULT '',
+			refresh_token TEXT NOT NULL DEFAULT '',
+			attempts INTEGER NOT NULL DEFAULT 0,
+			last_error TEXT,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			FOREIGN KEY(test_id) REFERENCES tests(id)
+		)`,
+		`CREATE TABLE IF NOT EXISTS archive_refresh_jobs (
+			test_id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL,
+			generation INTEGER NOT NULL DEFAULT 1,
+			intent_token TEXT NOT NULL,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
 			FOREIGN KEY(test_id) REFERENCES tests(id)
 		)`,
 		`CREATE TABLE IF NOT EXISTS app_settings (
@@ -801,6 +839,9 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "run_archives.archive_uri", query: `ALTER TABLE run_archives ADD COLUMN archive_uri TEXT`},
 		{name: "run_archives.manifest_uri", query: `ALTER TABLE run_archives ADD COLUMN manifest_uri TEXT`},
 		{name: "run_archives.manifest_sha256", query: `ALTER TABLE run_archives ADD COLUMN manifest_sha256 TEXT`},
+		{name: "archive_finalization_jobs.generation", query: `ALTER TABLE archive_finalization_jobs ADD COLUMN generation INTEGER NOT NULL DEFAULT 1`},
+		{name: "archive_finalization_jobs.intent_token", query: `ALTER TABLE archive_finalization_jobs ADD COLUMN intent_token TEXT NOT NULL DEFAULT ''`},
+		{name: "archive_finalization_jobs.refresh_token", query: `ALTER TABLE archive_finalization_jobs ADD COLUMN refresh_token TEXT NOT NULL DEFAULT ''`},
 		{name: "test_interval_summaries.generator_published_at", query: `ALTER TABLE test_interval_summaries ADD COLUMN generator_published_at DATETIME`},
 		{name: "test_interval_summaries.controller_received_at", query: `ALTER TABLE test_interval_summaries ADD COLUMN controller_received_at DATETIME`},
 		{name: "test_interval_summaries.generator_processing_lag_ms", query: `ALTER TABLE test_interval_summaries ADD COLUMN generator_processing_lag_ms REAL`},
@@ -870,6 +911,9 @@ var schemaIndexes = []schemaIndex{
 	{`CREATE UNIQUE INDEX IF NOT EXISTS idx_scenarios_ref_key ON scenarios(ref_key) WHERE ref_key IS NOT NULL AND ref_key != ''`, "idx_scenarios_ref_key"},
 	{`CREATE UNIQUE INDEX IF NOT EXISTS idx_tests_ref_key ON tests(ref_key) WHERE ref_key IS NOT NULL AND ref_key != ''`, "idx_tests_ref_key"},
 	{`CREATE UNIQUE INDEX IF NOT EXISTS idx_run_archives_ref_key ON run_archives(ref_key) WHERE ref_key IS NOT NULL AND ref_key != ''`, "idx_run_archives_ref_key"},
+	{`CREATE INDEX IF NOT EXISTS idx_archive_cleanup_jobs_updated ON archive_cleanup_jobs(updated_at)`, "idx_archive_cleanup_jobs_updated"},
+	{`CREATE INDEX IF NOT EXISTS idx_archive_finalization_jobs_updated ON archive_finalization_jobs(updated_at)`, "idx_archive_finalization_jobs_updated"},
+	{`CREATE INDEX IF NOT EXISTS idx_archive_refresh_jobs_updated ON archive_refresh_jobs(updated_at)`, "idx_archive_refresh_jobs_updated"},
 	{`CREATE INDEX IF NOT EXISTS idx_test_notes_test_id ON test_notes(test_id)`, "idx_test_notes_test_id"},
 	{`CREATE INDEX IF NOT EXISTS idx_test_history_test_time ON test_history(test_id, timestamp)`, "idx_test_history_test_time"},
 	{`CREATE INDEX IF NOT EXISTS idx_test_interval_summaries_test_time ON test_interval_summaries(test_id, timestamp)`, "idx_test_interval_summaries_test_time"},
@@ -913,6 +957,9 @@ func (s *SQLiteStore) init() error {
 	if err := s.applyOptionalSchemaMigrations(schemaColumnMigrations()); err != nil {
 		return err
 	}
+	if err := s.backfillArchiveFinalizationIntentTokens(); err != nil {
+		return err
+	}
 	if _, err := s.db.Exec(`UPDATE github_script_links SET remote_blob_sha = last_commit_sha WHERE (remote_blob_sha IS NULL OR remote_blob_sha = '') AND last_commit_sha IS NOT NULL AND last_commit_sha != ''`); err != nil {
 		return fmt.Errorf("failed to backfill github_script_links.remote_blob_sha: %w", err)
 	}
@@ -940,6 +987,34 @@ func (s *SQLiteStore) init() error {
 		return err
 	}
 	return s.applyTimescaleDB()
+}
+
+func (s *SQLiteStore) backfillArchiveFinalizationIntentTokens() error {
+	rows, err := s.db.Query(`SELECT test_id FROM archive_finalization_jobs WHERE intent_token IS NULL OR TRIM(intent_token) = ''`)
+	if err != nil {
+		return fmt.Errorf("list legacy archive finalization intents: %w", err)
+	}
+	ids := make([]string, 0)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+	for _, id := range ids {
+		if _, err := s.db.Exec(`UPDATE archive_finalization_jobs SET intent_token = ?, updated_at = ?
+			WHERE test_id = ? AND (intent_token IS NULL OR TRIM(intent_token) = '')`, uuid.NewString(), time.Now().UTC(), id); err != nil {
+			return fmt.Errorf("upgrade legacy archive finalization intent %s: %w", id, err)
+		}
+	}
+	return nil
 }
 
 func timescaleSetupStatements(tables []timescaleHypertable) []string {

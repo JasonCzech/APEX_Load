@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -11,7 +12,9 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 	"unicode/utf16"
 
 	"github.com/jasonczech/apexload/pkg/convert/enterprisearchive"
@@ -20,6 +23,48 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
+
+type authoringSessionFailureStore struct {
+	*storage.SQLiteStore
+	authoringSaveCalls int
+	failOnCall         int
+	failScriptSave     bool
+	err                error
+}
+
+func (s *authoringSessionFailureStore) SaveAuthoringSession(session *storage.AuthoringSession) error {
+	s.authoringSaveCalls++
+	if s.failOnCall > 0 && s.authoringSaveCalls == s.failOnCall {
+		return s.err
+	}
+	return s.SQLiteStore.SaveAuthoringSession(session)
+}
+
+func (s *authoringSessionFailureStore) CompareAndSwapAuthoringSession(session *storage.AuthoringSession, expectedUpdatedAt time.Time, expectedStatus string) (bool, error) {
+	s.authoringSaveCalls++
+	if s.failOnCall > 0 && s.authoringSaveCalls == s.failOnCall {
+		return false, s.err
+	}
+	return s.SQLiteStore.CompareAndSwapAuthoringSession(session, expectedUpdatedAt, expectedStatus)
+}
+
+func (s *authoringSessionFailureStore) DeleteAuthoringSessionUnlessApproving(id string) (bool, error) {
+	return s.SQLiteStore.DeleteAuthoringSessionUnlessApproving(id)
+}
+
+func (s *authoringSessionFailureStore) SaveScript(script *dsl.Script) error {
+	if s.failScriptSave {
+		return s.err
+	}
+	return s.SQLiteStore.SaveScript(script)
+}
+
+func (s *authoringSessionFailureStore) CreateScriptIfAbsent(script *dsl.Script) (bool, error) {
+	if s.failScriptSave {
+		return false, s.err
+	}
+	return s.SQLiteStore.CreateScriptIfAbsent(script)
+}
 
 const sampleEnterpriseArchiveActionC = `
 #include "web_api.h"
@@ -4217,6 +4262,545 @@ func TestApproveAuthoringSessionRejectsBlockedDraft(t *testing.T) {
 	}
 	if sessions[0].ApprovalReady || len(sessions[0].BlockingHealthInputs) == 0 || len(sessions[0].NextActions) == 0 {
 		t.Fatalf("session readiness = ready %v blockers %#v actions %#v, want blocked approval guidance", sessions[0].ApprovalReady, sessions[0].BlockingHealthInputs, sessions[0].NextActions)
+	}
+}
+
+func TestApproveAuthoringSessionFailsClosedWhenSessionPersistenceFails(t *testing.T) {
+	baseStore, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer baseStore.Close()
+	wantErr := errors.New("authoring database unavailable")
+	store := &authoringSessionFailureStore{SQLiteStore: baseStore, err: wantErr}
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+
+	t.Run("blocked review state", func(t *testing.T) {
+		session := &storage.AuthoringSession{
+			ID:        "blocked-save-failure",
+			ProjectID: "project-authoring",
+			Source:    "test",
+			Name:      "Blocked",
+			Status:    "ready",
+			Draft:     &dsl.Script{Name: "", Protocol: "http"},
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		}
+		if err := store.SQLiteStore.SaveAuthoringSession(session); err != nil {
+			t.Fatalf("seed session: %v", err)
+		}
+		store.authoringSaveCalls = 0
+		store.failOnCall = 1
+		request := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions/"+session.ID+"/approve", nil)
+		response := httptest.NewRecorder()
+		server.mux.ServeHTTP(response, request)
+		store.failOnCall = 0
+		if response.Code != http.StatusInternalServerError {
+			t.Fatalf("status = %d, want %d body=%s", response.Code, http.StatusInternalServerError, response.Body.String())
+		}
+		persisted, err := baseStore.GetAuthoringSession(session.ID)
+		if err != nil {
+			t.Fatalf("GetAuthoringSession: %v", err)
+		}
+		if _, exists := persisted.ReviewState["approval_health_status"]; exists {
+			t.Fatalf("failed review state was acknowledged durably: %#v", persisted.ReviewState)
+		}
+	})
+
+	t.Run("script promotion", func(t *testing.T) {
+		session := &storage.AuthoringSession{
+			ID:        "promotion-save-failure",
+			ProjectID: "project-authoring",
+			Source:    "test",
+			Name:      "Promotable",
+			Status:    "ready",
+			Draft: &dsl.Script{
+				Name:      "Promotable",
+				Version:   "1.0.0",
+				Protocol:  "http",
+				ProjectID: "project-authoring",
+				Config:    dsl.ScriptConfig{BaseURL: "https://example.test"},
+				Actions:   []dsl.Action{{Name: "Home", Type: "request", Target: "/"}},
+			},
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		}
+		if err := baseStore.SaveAuthoringSession(session); err != nil {
+			t.Fatalf("seed session: %v", err)
+		}
+		store.authoringSaveCalls = 0
+		store.failOnCall = 2
+		request := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions/"+session.ID+"/approve", nil)
+		response := httptest.NewRecorder()
+		server.mux.ServeHTTP(response, request)
+		store.failOnCall = 0
+		if response.Code != http.StatusInternalServerError {
+			t.Fatalf("status = %d, want %d body=%s", response.Code, http.StatusInternalServerError, response.Body.String())
+		}
+		scripts := server.runner.ListScripts()
+		if len(scripts) != 1 {
+			t.Fatalf("durable approval intent did not retain exactly one idempotent script: %#v", scripts)
+		}
+		persisted, err := baseStore.GetAuthoringSession(session.ID)
+		if err != nil {
+			t.Fatalf("GetAuthoringSession: %v", err)
+		}
+		if persisted.Status != "approving" || persisted.ReviewState["pending_script_id"] != scripts[0].ID {
+			t.Fatalf("session after interrupted finalization = %#v, want recoverable approval intent", persisted)
+		}
+
+		request = httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions/"+session.ID+"/approve", nil)
+		response = httptest.NewRecorder()
+		server.mux.ServeHTTP(response, request)
+		if response.Code != http.StatusOK {
+			t.Fatalf("retry status = %d, want %d body=%s", response.Code, http.StatusOK, response.Body.String())
+		}
+		if scripts := server.runner.ListScripts(); len(scripts) != 1 {
+			t.Fatalf("approval retry created duplicate scripts: %#v", scripts)
+		}
+		persisted, err = baseStore.GetAuthoringSession(session.ID)
+		if err != nil {
+			t.Fatalf("GetAuthoringSession after retry: %v", err)
+		}
+		if persisted.Status != "approved" {
+			t.Fatalf("session status after retry = %q, want approved", persisted.Status)
+		}
+	})
+
+	t.Run("script write rolls back intent", func(t *testing.T) {
+		session := &storage.AuthoringSession{
+			ID:        "script-save-failure",
+			ProjectID: "project-authoring",
+			Source:    "test",
+			Name:      "Promotable",
+			Status:    "ready",
+			Draft: &dsl.Script{
+				Name:      "Promotable",
+				Version:   "1.0.0",
+				Protocol:  "http",
+				ProjectID: "project-authoring",
+				Config:    dsl.ScriptConfig{BaseURL: "https://example.test"},
+				Actions:   []dsl.Action{{Name: "Home", Type: "request", Target: "/"}},
+			},
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		}
+		if err := baseStore.SaveAuthoringSession(session); err != nil {
+			t.Fatalf("seed session: %v", err)
+		}
+		beforeScripts := len(server.runner.ListScripts())
+		store.authoringSaveCalls = 0
+		store.failScriptSave = true
+		request := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions/"+session.ID+"/approve", nil)
+		response := httptest.NewRecorder()
+		server.mux.ServeHTTP(response, request)
+		store.failScriptSave = false
+		if response.Code != http.StatusInternalServerError {
+			t.Fatalf("status = %d, want %d body=%s", response.Code, http.StatusInternalServerError, response.Body.String())
+		}
+		persisted, err := baseStore.GetAuthoringSession(session.ID)
+		if err != nil {
+			t.Fatalf("GetAuthoringSession: %v", err)
+		}
+		if persisted.Status != "ready" {
+			t.Fatalf("session status = %q, want rolled-back ready", persisted.Status)
+		}
+		if scripts := server.runner.ListScripts(); len(scripts) != beforeScripts {
+			t.Fatalf("failed script write changed library contents: %#v", scripts)
+		}
+	})
+}
+
+func TestStoreScriptDurableRejectsCrossProjectOverwrite(t *testing.T) {
+	runner := NewTestRunner(1, NewHub(), nil)
+	original := &dsl.Script{ID: "shared-script-id", Name: "Original", Protocol: "http", ProjectID: "project-a"}
+	if _, err := runner.StoreScriptDurable(original); err != nil {
+		t.Fatalf("StoreScriptDurable(original): %v", err)
+	}
+	if _, err := runner.StoreScriptDurable(&dsl.Script{ID: original.ID, Name: "Forged", Protocol: "http", ProjectID: "project-b"}); err == nil {
+		t.Fatal("expected cross-project overwrite to be rejected")
+	}
+	stored, ok := runner.GetScript(original.ID)
+	if !ok || stored.ProjectID != "project-a" || stored.Name != "Original" {
+		t.Fatalf("stored script after rejected overwrite = %#v", stored)
+	}
+}
+
+func TestConcurrentAuthoringApprovalsConvergeOnOneScript(t *testing.T) {
+	baseStore, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer baseStore.Close()
+	server := NewServer(ServerConfig{Store: baseStore, MaxConcurrent: 2, Addr: ":8080"})
+	session := &storage.AuthoringSession{
+		ID:        "concurrent-approval",
+		ProjectID: "project-authoring",
+		Source:    "test",
+		Name:      "Concurrent",
+		Status:    "ready",
+		Draft: &dsl.Script{
+			Name:      "Concurrent",
+			Version:   "1.0.0",
+			Protocol:  "http",
+			ProjectID: "project-authoring",
+			Config:    dsl.ScriptConfig{BaseURL: "https://example.test"},
+			Actions:   []dsl.Action{{Name: "Home", Type: "request", Target: "/"}},
+		},
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := baseStore.SaveAuthoringSession(session); err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+
+	const requests = 8
+	start := make(chan struct{})
+	responses := make(chan *httptest.ResponseRecorder, requests)
+	var wg sync.WaitGroup
+	for range requests {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			request := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions/"+session.ID+"/approve", nil)
+			response := httptest.NewRecorder()
+			server.mux.ServeHTTP(response, request)
+			responses <- response
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(responses)
+	for response := range responses {
+		if response.Code != http.StatusOK {
+			t.Fatalf("concurrent approval status = %d body=%s", response.Code, response.Body.String())
+		}
+	}
+
+	scripts := server.runner.ListScripts()
+	if len(scripts) != 1 {
+		t.Fatalf("concurrent approvals created %d scripts: %#v", len(scripts), scripts)
+	}
+	wantID := authoringApprovalScriptID(session.ID)
+	if scripts[0].ID != wantID {
+		t.Fatalf("approved script ID = %q, want deterministic %q", scripts[0].ID, wantID)
+	}
+	persisted, err := baseStore.GetAuthoringSession(session.ID)
+	if err != nil {
+		t.Fatalf("GetAuthoringSession: %v", err)
+	}
+	if persisted.Status != "approved" || persisted.ReviewState["approved_script_id"] != wantID {
+		t.Fatalf("concurrent approval did not converge: %#v", persisted)
+	}
+}
+
+func TestAuthoringApprovalCannotOverwriteClientSelectedScriptID(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	victim := &dsl.Script{
+		ID: "existing-library-script", Name: "Existing", Version: "1.0.0", Protocol: "http", ProjectID: "project-authoring",
+		Config: dsl.ScriptConfig{BaseURL: "https://existing.test"}, Actions: []dsl.Action{{Name: "Existing", Type: "request", Target: "/existing"}},
+	}
+	if _, err := server.runner.StoreScriptDurable(victim); err != nil {
+		t.Fatalf("StoreScriptDurable(victim): %v", err)
+	}
+	session := &storage.AuthoringSession{
+		ID: "client-selected-script-id", ProjectID: victim.ProjectID, Source: "test", Name: "Draft", Status: "ready",
+		Draft: &dsl.Script{
+			ID: victim.ID, Name: "Approved Draft", Version: "1.0.0", Protocol: "http", ProjectID: victim.ProjectID,
+			Config: dsl.ScriptConfig{BaseURL: "https://draft.test"}, Actions: []dsl.Action{{Name: "Draft", Type: "request", Target: "/draft"}},
+		},
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	if err := store.SaveAuthoringSession(session); err != nil {
+		t.Fatalf("SaveAuthoringSession: %v", err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions/"+session.ID+"/approve", nil)
+	response := httptest.NewRecorder()
+	server.mux.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("approve status = %d body=%s", response.Code, response.Body.String())
+	}
+	unchanged, ok := server.runner.GetScript(victim.ID)
+	if !ok || unchanged.Name != victim.Name || unchanged.Script.Config.BaseURL != victim.Config.BaseURL {
+		t.Fatalf("client-selected ID overwrote existing script: %#v", unchanged)
+	}
+	approvedID := authoringApprovalScriptID(session.ID)
+	approved, ok := server.runner.GetScript(approvedID)
+	if !ok || approved.Name != "Approved Draft" {
+		t.Fatalf("session-owned approved script = %#v", approved)
+	}
+}
+
+func TestAuthoringApprovalCreateOnlyFenceProtectsDurableScriptFromStaleReplica(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	sessionID := "stale-replica-approval"
+	reservedID := authoringApprovalScriptID(sessionID)
+	victim := &dsl.Script{
+		ID: reservedID, Name: "Durable Existing", Version: "1.0.0", Protocol: "http", ProjectID: "another-project",
+		Config: dsl.ScriptConfig{BaseURL: "https://existing.test"}, Actions: []dsl.Action{{Name: "Existing", Type: "request", Target: "/existing"}},
+	}
+	// Write after server construction so its in-memory script cache is stale,
+	// matching a second HA replica that created the ID concurrently.
+	if err := store.SaveScript(victim); err != nil {
+		t.Fatalf("SaveScript(victim): %v", err)
+	}
+	session := &storage.AuthoringSession{
+		ID: sessionID, ProjectID: "project-authoring", Source: "test", Name: "Draft", Status: "ready",
+		Draft: &dsl.Script{
+			Name: "Approved Draft", Version: "1.0.0", Protocol: "http", ProjectID: "project-authoring",
+			Config: dsl.ScriptConfig{BaseURL: "https://draft.test"}, Actions: []dsl.Action{{Name: "Draft", Type: "request", Target: "/draft"}},
+		},
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	if err := store.SaveAuthoringSession(session); err != nil {
+		t.Fatalf("SaveAuthoringSession: %v", err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions/"+session.ID+"/approve", nil)
+	response := httptest.NewRecorder()
+	server.mux.ServeHTTP(response, request)
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("approve status = %d body=%s, want create-only conflict", response.Code, response.Body.String())
+	}
+	unchanged, err := store.GetScript(reservedID)
+	if err != nil {
+		t.Fatalf("GetScript(victim): %v", err)
+	}
+	if unchanged.ProjectID != victim.ProjectID || unchanged.Name != victim.Name || unchanged.Config.BaseURL != victim.Config.BaseURL {
+		t.Fatalf("stale replica overwrote durable script: %#v", unchanged)
+	}
+}
+
+func TestCreateScriptDurableAlwaysConsultsSharedStore(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+	runner := NewTestRunner(1, NewHub(), nil)
+	runner.scriptStore = store
+	original := &dsl.Script{
+		ID: "approval-owned-script", Name: "Approved Draft", Version: "1.0.0", Protocol: "http", ProjectID: "project-authoring",
+		Config: dsl.ScriptConfig{BaseURL: "https://draft.test"}, Actions: []dsl.Action{{Name: "Draft", Type: "request", Target: "/draft"}},
+	}
+	if _, err := runner.CreateScriptDurable(original); err != nil {
+		t.Fatalf("CreateScriptDurable(original): %v", err)
+	}
+
+	// Model a second replica editing the durable row while this runner retains
+	// the original equivalent value in its local cache.
+	edited := *original
+	edited.Name = "Edited Elsewhere"
+	edited.Config.BaseURL = "https://edited.test"
+	if err := store.SaveScript(&edited); err != nil {
+		t.Fatalf("SaveScript(edited): %v", err)
+	}
+	if _, err := runner.CreateScriptDurable(original); err == nil {
+		t.Fatal("stale equivalent cache bypassed the shared create-only fence")
+	}
+	persisted, err := store.GetScript(original.ID)
+	if err != nil {
+		t.Fatalf("GetScript: %v", err)
+	}
+	if persisted.Name != edited.Name || persisted.Config.BaseURL != edited.Config.BaseURL {
+		t.Fatalf("durable edit was overwritten: %#v", persisted)
+	}
+}
+
+func TestAuthoringSessionRejectsClientManagedApprovalStatuses(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	validDraft := `"draft":{"name":"Draft","version":"1.0.0","protocol":"http","project_id":"project-authoring","config":{"base_url":"https://example.test"},"actions":[{"name":"Home","type":"request","target":"/"}]}`
+	for _, status := range []string{"approving", "approved"} {
+		t.Run("create_"+status, func(t *testing.T) {
+			body := `{"project_id":"project-authoring","source":"test","name":"Draft","status":"` + status + `",` + validDraft + `}`
+			response := httptest.NewRecorder()
+			server.mux.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions", strings.NewReader(body)))
+			if response.Code != http.StatusBadRequest {
+				t.Fatalf("create status = %d body=%s, want 400", response.Code, response.Body.String())
+			}
+		})
+	}
+
+	session := &storage.AuthoringSession{
+		ID: "status-spoof-update", ProjectID: "project-authoring", Source: "test", Name: "Original", Status: "ready",
+		Draft:     &dsl.Script{Name: "Original", Version: "1.0.0", Protocol: "http", ProjectID: "project-authoring", Config: dsl.ScriptConfig{BaseURL: "https://example.test"}, Actions: []dsl.Action{{Name: "Home", Type: "request", Target: "/"}}},
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	if err := store.SaveAuthoringSession(session); err != nil {
+		t.Fatalf("SaveAuthoringSession: %v", err)
+	}
+	for _, status := range []string{"approving", "approved"} {
+		t.Run("update_"+status, func(t *testing.T) {
+			body := `{"project_id":"project-authoring","source":"test","name":"Forged","status":"` + status + `",` + validDraft + `}`
+			response := httptest.NewRecorder()
+			server.mux.ServeHTTP(response, httptest.NewRequest(http.MethodPut, "/api/v1/scripts/authoring/sessions/"+session.ID, strings.NewReader(body)))
+			if response.Code != http.StatusBadRequest {
+				t.Fatalf("update status = %d body=%s, want 400", response.Code, response.Body.String())
+			}
+			persisted, err := store.GetAuthoringSession(session.ID)
+			if err != nil {
+				t.Fatalf("GetAuthoringSession: %v", err)
+			}
+			if persisted.Status != "ready" || persisted.Name != "Original" {
+				t.Fatalf("rejected status changed session: %#v", persisted)
+			}
+		})
+	}
+}
+
+func TestApprovedAuthoringRetryReturnsCurrentDurableScriptWithoutRevertingEdits(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	session := &storage.AuthoringSession{
+		ID: "approved-retry-current-script", ProjectID: "project-authoring", Source: "test", Name: "Draft", Status: "ready",
+		Draft:     &dsl.Script{Name: "Draft", Version: "1.0.0", Protocol: "http", ProjectID: "project-authoring", Config: dsl.ScriptConfig{BaseURL: "https://draft.test"}, Actions: []dsl.Action{{Name: "Home", Type: "request", Target: "/"}}},
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	if err := store.SaveAuthoringSession(session); err != nil {
+		t.Fatalf("SaveAuthoringSession: %v", err)
+	}
+	approvePath := "/api/v1/scripts/authoring/sessions/" + session.ID + "/approve"
+	first := httptest.NewRecorder()
+	server.mux.ServeHTTP(first, httptest.NewRequest(http.MethodPost, approvePath, nil))
+	if first.Code != http.StatusOK {
+		t.Fatalf("first approve status = %d body=%s", first.Code, first.Body.String())
+	}
+	var approved authoringSessionApprovalResponse
+	if err := json.Unmarshal(first.Body.Bytes(), &approved); err != nil {
+		t.Fatalf("decode first approval: %v", err)
+	}
+	edited := *approved.Script.Script
+	edited.Name = "Edited After Approval"
+	edited.Config.BaseURL = "https://edited.test"
+	if err := store.SaveScript(&edited); err != nil {
+		t.Fatalf("SaveScript(edited): %v", err)
+	}
+
+	retry := httptest.NewRecorder()
+	server.mux.ServeHTTP(retry, httptest.NewRequest(http.MethodPost, approvePath, nil))
+	if retry.Code != http.StatusOK {
+		t.Fatalf("retry approve status = %d body=%s", retry.Code, retry.Body.String())
+	}
+	var retried authoringSessionApprovalResponse
+	if err := json.Unmarshal(retry.Body.Bytes(), &retried); err != nil {
+		t.Fatalf("decode retry approval: %v", err)
+	}
+	if retried.Script == nil || retried.Script.Name != edited.Name || retried.Script.Script.Config.BaseURL != edited.Config.BaseURL {
+		t.Fatalf("retry returned stale script: %#v", retried.Script)
+	}
+	persisted, err := store.GetScript(edited.ID)
+	if err != nil {
+		t.Fatalf("GetScript: %v", err)
+	}
+	if persisted.Name != edited.Name || persisted.Config.BaseURL != edited.Config.BaseURL {
+		t.Fatalf("retry reverted post-approval edits: %#v", persisted)
+	}
+}
+
+func TestAuthoringMutationsAreFencedWhileApprovalIsInProgress(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	session := &storage.AuthoringSession{
+		ID: "approval-in-progress", ProjectID: "project-authoring", Source: "test", Name: "Draft", Status: "approving",
+		Draft: &dsl.Script{
+			ID: authoringApprovalScriptID("approval-in-progress"), Name: "Draft", Version: "1.0.0", Protocol: "http", ProjectID: "project-authoring",
+			Config: dsl.ScriptConfig{BaseURL: "https://draft.test"}, Actions: []dsl.Action{{Name: "Draft", Type: "request", Target: "/"}},
+		},
+		ReviewState: map[string]any{"pending_script_id": authoringApprovalScriptID("approval-in-progress")},
+		CreatedAt:   time.Now(), UpdatedAt: time.Now(),
+	}
+	if err := store.SaveAuthoringSession(session); err != nil {
+		t.Fatalf("SaveAuthoringSession: %v", err)
+	}
+
+	requests := []*http.Request{
+		httptest.NewRequest(http.MethodPut, "/api/v1/scripts/authoring/sessions/"+session.ID, strings.NewReader(`{"source":"test","draft":{"name":"Changed","protocol":"http","project_id":"project-authoring"}}`)),
+		httptest.NewRequest(http.MethodDelete, "/api/v1/scripts/authoring/sessions/"+session.ID, nil),
+		httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions/"+session.ID+"/correlations/preview", strings.NewReader(`{"name":"token","type":"regex","expression":"(.*)","found_action_index":0,"apply":true}`)),
+	}
+	for _, request := range requests {
+		response := httptest.NewRecorder()
+		server.mux.ServeHTTP(response, request)
+		if response.Code != http.StatusConflict {
+			t.Errorf("%s %s status = %d body=%s, want 409", request.Method, request.URL.Path, response.Code, response.Body.String())
+		}
+	}
+	persisted, err := store.GetAuthoringSession(session.ID)
+	if err != nil {
+		t.Fatalf("GetAuthoringSession: %v", err)
+	}
+	if persisted.Status != "approving" || persisted.Draft.Name != "Draft" {
+		t.Fatalf("approval intent changed through fenced mutation: %#v", persisted)
+	}
+}
+
+func TestAuthoringCorrelationApplyCannotMutateApprovalStates(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+
+	applyBodies := map[string]string{
+		"single": `{"name":"token","type":"regex","expression":"(.*)","found_action_index":0,"apply":true}`,
+		"batch":  `{"apply":true,"auto_apply_high_confidence":true,"repairs":[{"name":"token","type":"regex","expression":"(.*)","found_action_index":0,"confidence":0.99}]}`,
+	}
+	for _, status := range []string{"approving", "approved"} {
+		for kind, body := range applyBodies {
+			t.Run(status+"_"+kind, func(t *testing.T) {
+				id := "correlation-fence-" + status + "-" + kind
+				now := time.Now().UTC()
+				session := &storage.AuthoringSession{
+					ID: id, ProjectID: "project-authoring", Source: "test", Name: "Immutable Draft", Status: status,
+					Draft: &dsl.Script{
+						ID: authoringApprovalScriptID(id), Name: "Immutable Draft", Version: "1.0.0", Protocol: "http", ProjectID: "project-authoring",
+						Config: dsl.ScriptConfig{BaseURL: "https://draft.test"}, Actions: []dsl.Action{{Name: "Home", Type: "request", Target: "/"}},
+					},
+					CreatedAt: now, UpdatedAt: now,
+				}
+				if err := store.SaveAuthoringSession(session); err != nil {
+					t.Fatalf("SaveAuthoringSession: %v", err)
+				}
+
+				response := httptest.NewRecorder()
+				request := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions/"+id+"/correlations/preview", strings.NewReader(body))
+				server.mux.ServeHTTP(response, request)
+				if response.Code != http.StatusConflict {
+					t.Fatalf("status = %d body=%s, want 409", response.Code, response.Body.String())
+				}
+				persisted, err := store.GetAuthoringSession(id)
+				if err != nil {
+					t.Fatalf("GetAuthoringSession: %v", err)
+				}
+				if persisted.Status != status || persisted.Draft == nil || persisted.Draft.Name != "Immutable Draft" || len(persisted.Draft.Actions[0].Extractors) != 0 {
+					t.Fatalf("correlation apply changed fenced session: %#v", persisted)
+				}
+			})
+		}
 	}
 }
 

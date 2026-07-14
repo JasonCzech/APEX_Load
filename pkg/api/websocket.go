@@ -20,6 +20,7 @@ type Hub struct {
 	register          chan *Client
 	unregister        chan *Client
 	done              chan struct{}
+	stopOnce          sync.Once
 	droppedBroadcasts atomic.Int64
 	droppedClientMsgs atomic.Int64
 	fanoutMu          sync.RWMutex
@@ -62,11 +63,12 @@ type HubStats struct {
 }
 
 type Client struct {
-	hub       *Hub
-	conn      *websocket.Conn
-	send      chan []byte
-	testID    string // empty = all tests, set = specific test
-	projectID string // empty = all projects, set = specific project
+	hub        *Hub
+	conn       *websocket.Conn
+	send       chan []byte
+	testID     string // empty = all tests, set = specific test
+	projectID  string // empty = all projects, set = specific project
+	authorized func() bool
 }
 
 type websocketFanoutEnvelope struct {
@@ -157,7 +159,10 @@ func (h *Hub) Run() {
 }
 
 func (h *Hub) Stop() {
-	close(h.done)
+	if h == nil {
+		return
+	}
+	h.stopOnce.Do(func() { close(h.done) })
 }
 
 func (h *Hub) Broadcast(msg []byte) {
@@ -264,7 +269,7 @@ func (h *Hub) Stats() HubStats {
 	}
 }
 
-func (h *Hub) serveWS(w http.ResponseWriter, r *http.Request, testID string, projectID string) {
+func (h *Hub) serveWS(w http.ResponseWriter, r *http.Request, testID string, projectID string, authorized ...func() bool) {
 	up := h.upgrader()
 	conn, err := up.Upgrade(w, r, nil)
 	if err != nil {
@@ -279,8 +284,20 @@ func (h *Hub) serveWS(w http.ResponseWriter, r *http.Request, testID string, pro
 		testID:    testID,
 		projectID: projectID,
 	}
+	if len(authorized) > 0 {
+		client.authorized = authorized[0]
+	}
 
-	h.register <- client
+	select {
+	case h.register <- client:
+	case <-h.done:
+		_ = conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseGoingAway, "server shutting down"), time.Now().Add(time.Second))
+		_ = conn.Close()
+		return
+	case <-r.Context().Done():
+		_ = conn.Close()
+		return
+	}
 
 	go client.writePump()
 	go client.readPump()
@@ -288,8 +305,11 @@ func (h *Hub) serveWS(w http.ResponseWriter, r *http.Request, testID string, pro
 
 func (c *Client) readPump() {
 	defer func() {
-		c.hub.unregister <- c
-		c.conn.Close()
+		select {
+		case c.hub.unregister <- c:
+		case <-c.hub.done:
+		}
+		_ = c.conn.Close()
 	}()
 
 	c.conn.SetReadLimit(4096)
@@ -316,6 +336,8 @@ func (c *Client) writePump() {
 
 	for {
 		select {
+		case <-c.hub.done:
+			return
 		case msg, ok := <-c.send:
 			c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 			if !ok {
@@ -327,6 +349,10 @@ func (c *Client) writePump() {
 			}
 
 		case <-ticker.C:
+			if c.authorized != nil && !c.authorized() {
+				_ = c.conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "authorization expired or revoked"), time.Now().Add(time.Second))
+				return
+			}
 			c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return

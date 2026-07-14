@@ -1,9 +1,12 @@
-import { type ComponentProps, type ReactNode, useState } from 'react'
+import { lazy, Suspense, type ReactNode, useEffect, useRef, useState } from 'react'
 
 import { type Project, type StoredScript } from '../types'
 import ScriptCreateOptions, { type CreateWorkflow } from './ScriptCreateOptions'
-import ScriptsAuthoringSurface from './ScriptsAuthoringSurface'
+import type { ScriptsAuthoringSurfaceProps } from './ScriptsAuthoringSurface'
 import { type AuthoringState, type ImportedSaveResult, type ScriptsCreateOptionActions } from './useScriptsAuthoringState'
+import LazyLoadBoundary from './LazyLoadBoundary'
+
+const ScriptsAuthoringSurface = lazy(() => import('./ScriptsAuthoringSurface'))
 
 interface Props {
   authoringState: AuthoringState
@@ -15,7 +18,7 @@ interface Props {
   onOpenLibrary: () => void
   onOpenCreateOptions: () => void
   onImported: (result: ImportedSaveResult) => void
-  onEditDraft: NonNullable<ComponentProps<typeof ScriptsAuthoringSurface>['onEditDraft']>
+  onEditDraft: ScriptsAuthoringSurfaceProps['onEditDraft']
   onReturnToDraftSource: () => void
   onStartExistingScript?: (script: StoredScript) => void
   canManageScripts?: boolean
@@ -39,6 +42,18 @@ export default function ScriptsAuthoringShell({
   children,
 }: Props) {
   const [createOptionsWorkflow, setCreateOptionsWorkflow] = useState<CreateWorkflow>('existing')
+  const workflowChosenByUserRef = useRef(false)
+
+  useEffect(() => {
+    if (authoringState.subView === 'create-options' && !workflowChosenByUserRef.current) {
+      setCreateOptionsWorkflow(scripts.length === 0 ? 'start-new' : 'existing')
+    }
+  }, [authoringState.subView, scripts.length])
+
+  const changeCreateOptionsWorkflow = (workflow: CreateWorkflow) => {
+    workflowChosenByUserRef.current = true
+    setCreateOptionsWorkflow(workflow)
+  }
 
   if (!canManageScripts) {
     return <>{children}</>
@@ -65,33 +80,37 @@ export default function ScriptsAuthoringShell({
         scripts={scripts}
         onStartExistingScript={onStartExistingScript}
         workflow={createOptionsWorkflow}
-        onWorkflowChange={setCreateOptionsWorkflow}
+        onWorkflowChange={changeCreateOptionsWorkflow}
       />
     )
   }
 
   if (authoringState.subView !== 'list') {
     return (
-      <ScriptsAuthoringSurface
-        subView={authoringState.subView}
-        importLauncher={authoringState.importLauncher}
-        importMode={authoringState.importMode}
-        importFiles={authoringState.importFiles}
-        draftScript={authoringState.draftScript}
-        draftEditorFocus={authoringState.draftEditorFocus}
-        draftReturnTarget={authoringState.draftReturnTarget}
-        authoringNotice={authoringState.authoringNotice}
-        editingId={authoringState.editingId}
-        editingScript={authoringState.editingScript}
-        projectId={projectId}
-        activeProject={activeProject}
-        onSaved={onSaved}
-        onOpenLibrary={onOpenLibrary}
-        onOpenCreateOptions={onOpenCreateOptions}
-        onImported={onImported}
-        onEditDraft={onEditDraft}
-        onReturnToDraftSource={onReturnToDraftSource}
-      />
+      <LazyLoadBoundary title="Authoring tools could not be loaded.">
+        <Suspense fallback={<div className="page-loading" role="status">Loading authoring tools…</div>}>
+          <ScriptsAuthoringSurface
+            subView={authoringState.subView}
+            importLauncher={authoringState.importLauncher}
+            importMode={authoringState.importMode}
+            importFiles={authoringState.importFiles}
+            draftScript={authoringState.draftScript}
+            draftEditorFocus={authoringState.draftEditorFocus}
+            draftReturnTarget={authoringState.draftReturnTarget}
+            authoringNotice={authoringState.authoringNotice}
+            editingId={authoringState.editingId}
+            editingScript={authoringState.editingScript}
+            projectId={projectId}
+            activeProject={activeProject}
+            onSaved={onSaved}
+            onOpenLibrary={onOpenLibrary}
+            onOpenCreateOptions={onOpenCreateOptions}
+            onImported={onImported}
+            onEditDraft={onEditDraft}
+            onReturnToDraftSource={onReturnToDraftSource}
+          />
+        </Suspense>
+      </LazyLoadBoundary>
     )
   }
 

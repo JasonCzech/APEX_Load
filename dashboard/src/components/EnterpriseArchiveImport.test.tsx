@@ -365,6 +365,24 @@ describe('EnterpriseArchiveImport', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
+  it('opens the archive picker from the keyboard-accessible dropzone', async () => {
+    await act(async () => {
+      root.render(<EnterpriseArchiveImport />)
+    })
+
+    const dropzone = container.querySelector<HTMLElement>('.lr-dropzone')
+    const archiveInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')
+    expect(dropzone?.getAttribute('role')).toBe('button')
+    expect(dropzone?.tabIndex).toBe(0)
+    const clickSpy = archiveInput ? vi.spyOn(archiveInput, 'click') : null
+
+    await act(async () => {
+      dropzone?.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }))
+    })
+
+    expect(clickSpy).toHaveBeenCalledTimes(1)
+  })
+
   it('layers import modal dialogs above the sticky app chrome', async () => {
     // @ts-expect-error Vitest runs in Node, but the dashboard app tsconfig intentionally omits Node types.
     const { readFileSync } = await import('node:fs')

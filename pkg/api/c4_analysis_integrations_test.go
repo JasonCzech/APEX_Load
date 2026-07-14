@@ -144,7 +144,11 @@ func TestReleaseSLAGovernancePersistsWaiversAndAuditEvents(t *testing.T) {
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
 	defer store.Close()
-	app := &storage.Application{ID: "app-c4", ProjectID: "project-c4", Name: "Checkout", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	now := time.Now()
+	if err := store.SaveProject(&storage.Project{ID: "project-c4", Name: "C4 Project", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+	app := &storage.Application{ID: "app-c4", ProjectID: "project-c4", Name: "Checkout", CreatedAt: now, UpdatedAt: now}
 	if err := store.SaveApplication(app); err != nil {
 		t.Fatalf("SaveApplication: %v", err)
 	}

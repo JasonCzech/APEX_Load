@@ -149,11 +149,12 @@ type IntervalSummaryRecord struct {
 	SampleAgeMs              float64                                `json:"sample_age_ms,omitempty"`
 }
 
-// sqliteDSN adds pragmas for the controller's high-read, single-writer shape.
-// busy_timeout waits out brief read/write overlap, WAL lets readers continue
-// while a writer commits, and synchronous=NORMAL avoids fsyncing every page while
-// keeping WAL recovery semantics. Existing query parameters on the path are
-// preserved and caller-provided pragmas win.
+// sqliteDSN adds pragmas for integrity and the controller's high-read,
+// single-writer shape. Foreign-key enforcement makes the declared ownership
+// graph real, busy_timeout waits out brief read/write overlap, WAL lets readers
+// continue while a writer commits, and synchronous=NORMAL avoids fsyncing every
+// page while keeping WAL recovery semantics. Existing query parameters on the
+// path are preserved and caller-provided pragmas win.
 func sqliteDSN(path string) string {
 	if strings.TrimSpace(path) == "" {
 		return path
@@ -162,6 +163,7 @@ func sqliteDSN(path string) string {
 		key   string
 		value string
 	}{
+		{key: "_pragma=foreign_keys", value: "_pragma=foreign_keys(ON)"},
 		{key: "_pragma=busy_timeout", value: "_pragma=busy_timeout(5000)"},
 		{key: "_pragma=journal_mode", value: "_pragma=journal_mode(WAL)"},
 		{key: "_pragma=synchronous", value: "_pragma=synchronous(NORMAL)"},
@@ -176,6 +178,14 @@ func sqliteDSN(path string) string {
 		path += sep + pragma.value
 	}
 	return path
+}
+
+func nullableString(value string) any {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return value
 }
 
 func NewSQLiteStore(path string) (*SQLiteStore, error) {

@@ -222,7 +222,12 @@ func (s *Server) handleObjectRepositoryFromScript(w http.ResponseWriter, r *http
 	if req.BindScript {
 		bindCopy := cloneScriptDefinition(stored.Script)
 		if bound := bindScriptToObjectRepository(bindCopy, repo); bound > 0 {
-			if _, ok := s.runner.UpdateScript(scriptID, bindCopy); ok {
+			_, ok, err := s.runner.UpdateScriptDurable(scriptID, bindCopy)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to save repository bindings: "+err.Error())
+				return
+			}
+			if ok {
 				s.recordAuditEvent(r, "object_repository.bind_script", "success", "script", scriptID, repo.ProjectID, map[string]any{
 					"object_repository_id": repo.ID, "bound": bound,
 				})

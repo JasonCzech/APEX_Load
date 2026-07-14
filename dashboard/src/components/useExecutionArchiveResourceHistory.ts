@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 
-import { useApi } from '../hooks/useApi'
+import { useTestApi } from '../hooks/api/useTestApi'
 import { MetricsHistoryPoint, ResourceSample, TestSummary } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
+import { ARCHIVE_CHART_MAX_SAMPLES } from './archiveHistorySampling'
 import { mapArchiveResourceSamples } from './testExecutionMetricsModel'
-
-const ARCHIVE_RESOURCE_PAGE_SIZE = 1000
 
 function isTerminalStatus(status?: string): boolean {
   return status === 'COMPLETE' || status === 'FAILED' || status === 'ABORTED'
@@ -16,7 +15,7 @@ export function useExecutionArchiveResourceHistory(test: TestSummary | null): {
   archiveResourceError: string
   archiveResourcesLoading: boolean
 } {
-  const api = useApi()
+  const { getTestArchiveResources } = useTestApi()
   const [samples, setSamples] = useState<ResourceSample[]>([])
   const [archiveResourceError, setArchiveResourceError] = useState('')
   const [archiveResourcesLoading, setArchiveResourcesLoading] = useState(false)
@@ -41,23 +40,8 @@ export function useExecutionArchiveResourceHistory(test: TestSummary | null): {
       setArchiveResourcesLoading(true)
       setArchiveResourceError('')
       try {
-        const loaded: ResourceSample[] = []
-        let offset = 0
-        let total = resourceSampleCount
-
-        while (!cancelled && loaded.length < total) {
-          const response = await api.getTestArchiveResources(testID, {
-            limit: ARCHIVE_RESOURCE_PAGE_SIZE,
-            offset,
-          })
-          const page = response.resources || []
-          loaded.push(...page)
-          total = response.total || loaded.length
-          if (page.length === 0) {
-            break
-          }
-          offset += page.length
-        }
+        const response = await getTestArchiveResources(testID, { sample_limit: ARCHIVE_CHART_MAX_SAMPLES })
+        const loaded = response.resources || []
 
         if (!cancelled) {
           setSamples(loaded)
@@ -79,7 +63,7 @@ export function useExecutionArchiveResourceHistory(test: TestSummary | null): {
     return () => {
       cancelled = true
     }
-  }, [api, archiveCompletedAt, resourceSampleCount, shouldLoadResources, testID])
+  }, [archiveCompletedAt, getTestArchiveResources, resourceSampleCount, shouldLoadResources, testID])
 
   const archiveResourceHistory = useMemo(() => mapArchiveResourceSamples(samples), [samples])
 

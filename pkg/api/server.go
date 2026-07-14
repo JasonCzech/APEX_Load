@@ -40,55 +40,71 @@ type Server struct {
 	cache            CacheBackend
 	controllerID     string
 	authoringMu      sync.Mutex
-	authoring        map[string]*storage.AuthoringSession
-	libraryMu        sync.Mutex
-	libraryRemotes   map[string]*LibraryRemote
-	libraryLinks     map[string]*librarySyncLink
-	libraryCreds     LibraryCredentialStore
-	c4Mu             sync.Mutex
-	slaWaivers       map[string][]*storage.ReleaseSLAWaiver
-	resultImports    map[string]*storage.ExternalResultImport
-	githubMu         sync.Mutex
-	githubTokens     map[string]githubCachedToken
+	// authoringMutationMu serializes session edits, deletion, correlation
+	// write-back, and approval within one controller. The storage CAS used by
+	// those handlers extends the same fence across HA replicas.
+	authoringMutationMu sync.Mutex
+	authoring           map[string]*storage.AuthoringSession
+	libraryMu           sync.Mutex
+	libraryRemotes      map[string]*LibraryRemote
+	libraryLinks        map[string]*librarySyncLink
+	libraryCreds        LibraryCredentialStore
+	c4Mu                sync.Mutex
+	slaWaivers          map[string][]*storage.ReleaseSLAWaiver
+	resultImports       map[string]*storage.ExternalResultImport
+	githubMu            sync.Mutex
+	githubTokens        map[string]githubCachedToken
+	// projectMutationMu prevents an acknowledged project-scoped HTTP mutation
+	// from being erased by a concurrent project graph deletion. Project deletion
+	// takes the write side; every other mutating request takes the read side.
+	projectMutationMu sync.RWMutex
+	oidcMu            sync.Mutex
+	oidcRuntimeKey    string
+	oidcRuntime       *oidcRuntime
 	// selfHealMu serializes replay/debug self-heal write-back. Both the browser
 	// replay and script debug managers fire completion hooks into the shared
 	// persistSelfHealToRepository, whose read-modify-write of the whole objects
 	// blob would otherwise lose a concurrently appended candidate.
-	selfHealMu               sync.Mutex
-	collectorMetrics         *collectorMetricStore
-	fleetScaler              fleetPoolScaler
-	leadership               *executionLeadership
-	mux                      *http.ServeMux
-	usageCancel              context.CancelFunc
-	auditRetentionCancel     context.CancelFunc
-	timeslotRetentionCancel  context.CancelFunc
-	accessReviewNotifyCancel context.CancelFunc
-	authAudit                auditThrottle
-	fanoutCancel             context.CancelFunc
-	fanoutSub                FanoutSubscription
-	generatorDiscovery       *generatorDiscovery
-	discoveryCancel          context.CancelFunc
-	k8sRestart               K8sRestartSettings
-	kubeRestarter            KubeRestarter
-	kubePodsCacheMu          sync.Mutex
-	kubePodsCache            generatorPodInventoryCache
-	restartMu                sync.Mutex
-	restartInFlight          map[string]struct{}
-	testNotesArchiveMu       sync.Mutex
-	testNotesArchiveLocks    map[string]*sync.Mutex
-	metricsAddr              string
-	metricsToken             string
-	metricsServer            *http.Server
-	metricsBoundAddr         string
-	desktopMode              bool
-	bridgeMode               bool
-	recordingBridge          *BrowserRecordingBridge
-	desktopAppData           string
-	desktopLogPath           string
-	importAssetDir           string
-	bindScope                string
-	boundAddr                string
-	boundAddrMu              sync.RWMutex
+	selfHealMu                sync.Mutex
+	collectorMetrics          *collectorMetricStore
+	fleetScaler               fleetPoolScaler
+	leadership                *executionLeadership
+	mux                       *http.ServeMux
+	usageCancel               context.CancelFunc
+	auditRetentionCancel      context.CancelFunc
+	timeslotRetentionCancel   context.CancelFunc
+	archiveCleanupCancel      context.CancelFunc
+	archiveCleanupDone        chan struct{}
+	archiveFinalizationCancel context.CancelFunc
+	archiveFinalizationWake   chan struct{}
+	archiveFinalizationDone   chan struct{}
+	accessReviewNotifyCancel  context.CancelFunc
+	authAudit                 auditThrottle
+	fanoutCancel              context.CancelFunc
+	fanoutSub                 FanoutSubscription
+	generatorDiscovery        *generatorDiscovery
+	discoveryCancel           context.CancelFunc
+	k8sRestart                K8sRestartSettings
+	kubeRestarter             KubeRestarter
+	kubePodsCacheMu           sync.Mutex
+	kubePodsCache             generatorPodInventoryCache
+	restartMu                 sync.Mutex
+	restartInFlight           map[string]struct{}
+	testNotesArchiveMu        sync.Mutex
+	testNotesArchiveLocks     map[string]*sync.Mutex
+	metricsAddr               string
+	metricsToken              string
+	metricsServer             *http.Server
+	metricsBoundAddr          string
+	desktopMode               bool
+	bridgeMode                bool
+	recordingBridge           *BrowserRecordingBridge
+	desktopAppData            string
+	desktopLogPath            string
+	importAssetDir            string
+	bindScope                 string
+	boundAddr                 string
+	boundAddrMu               sync.RWMutex
 	// staticFS is the dashboard asset filesystem probed by readiness checks.
 	// It defaults to the compile-time embedded StaticFS; tests override it so
 	// the readiness suite does not depend on a prior `npm run build`.
@@ -168,7 +184,13 @@ func NewServer(cfg ServerConfig) *Server {
 	}
 	runner := NewTestRunner(cfg.MaxConcurrent, hub, cfg.Store, runnerOpts...)
 	if leadership != nil {
-		leadership.setOnAcquire(runner.reloadAndReconcile)
+		leadership.setOnLoss(func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if err := runner.stopActiveTests(ctx); err != nil {
+				slog.Error("failed to stop active tests after execution leadership loss", "err", err)
+			}
+		})
 	}
 	runner.setLiveStateStore(cache)
 	staticTargets, discoverySpecs := splitGeneratorTargets(cfg.GeneratorTargets)
@@ -215,14 +237,21 @@ func NewServer(cfg ServerConfig) *Server {
 		importAssetDir:   resolveImportAssetDir(cfg),
 		bindScope:        cfg.BindScope,
 
-		generatorDiscovery:    discovery,
-		k8sRestart:            normalizeK8sRestartSettings(cfg.K8sRestart),
-		kubeRestarter:         cfg.KubeRestarter,
-		restartInFlight:       make(map[string]struct{}),
-		testNotesArchiveLocks: make(map[string]*sync.Mutex),
-		metricsAddr:           strings.TrimSpace(cfg.MetricsAddr),
-		metricsToken:          strings.TrimSpace(cfg.MetricsToken),
-		staticFS:              StaticFS,
+		generatorDiscovery:      discovery,
+		k8sRestart:              normalizeK8sRestartSettings(cfg.K8sRestart),
+		kubeRestarter:           cfg.KubeRestarter,
+		restartInFlight:         make(map[string]struct{}),
+		testNotesArchiveLocks:   make(map[string]*sync.Mutex),
+		metricsAddr:             strings.TrimSpace(cfg.MetricsAddr),
+		metricsToken:            strings.TrimSpace(cfg.MetricsToken),
+		archiveFinalizationWake: make(chan struct{}, 1),
+		staticFS:                StaticFS,
+	}
+	if leadership != nil {
+		leadership.setOnAcquire(func() {
+			runner.reloadAndReconcile()
+			s.wakeArchiveFinalizationRetry()
+		})
 	}
 	if err := fileasset.RegisterRoot(s.importAssetDir); err != nil {
 		slog.Warn("invalid import asset store; file assets will be unavailable", "dir", s.importAssetDir, "error", err)
@@ -249,7 +278,7 @@ func NewServer(cfg ServerConfig) *Server {
 
 	s.httpServer = &http.Server{
 		Addr:           cfg.Addr,
-		Handler:        securityHeadersMiddleware(bodyLimitMiddleware(s.mux)),
+		Handler:        securityHeadersMiddleware(bodyLimitMiddleware(s.projectMutationAdmission(s.mux))),
 		ReadTimeout:    15 * time.Second,
 		WriteTimeout:   60 * time.Second,
 		IdleTimeout:    120 * time.Second,
@@ -995,6 +1024,8 @@ func (s *Server) Start() error {
 	s.startUsageAccountingSnapshotCadence()
 	s.startAuditRetentionCadence()
 	s.startTimeslotRetentionCadence()
+	s.startArchiveCleanupRetry()
+	s.startArchiveFinalizationRetry()
 	s.startAccessReviewNotifierCadence()
 
 	if err := s.startMetricsListener(); err != nil {
@@ -1016,6 +1047,7 @@ func (s *Server) Start() error {
 func (s *Server) startBridge() error {
 	go s.hub.Run()
 	s.startReplayRetentionJanitors()
+	s.startArchiveCleanupRetry()
 	listener, err := net.Listen("tcp", s.httpServer.Addr)
 	if err != nil {
 		return err
@@ -1157,7 +1189,38 @@ func (s *Server) BrowserURL() string {
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {
-	// Stop background components before closing active HTTP listeners.
+	if s.runner != nil {
+		s.runner.beginShutdown()
+	}
+	// Stop accepting new requests first. WebSocket connections are hijacked and
+	// are closed by the hub below; ordinary in-flight handlers get the caller's
+	// bounded drain window.
+	var shutdownErr error
+	httpDone := make(chan error, 1)
+	if s.httpServer != nil {
+		go func() { httpDone <- s.httpServer.Shutdown(ctx) }()
+	} else {
+		httpDone <- nil
+	}
+	// Keep the hub, cache, and generator clients alive while active tests receive
+	// their stop request. This is also used by the HA lease-loss callback.
+	if s.runner != nil {
+		if err := s.runner.stopActiveTests(ctx); err != nil {
+			shutdownErr = err
+		}
+	}
+	select {
+	case err := <-httpDone:
+		if err != nil && shutdownErr == nil {
+			shutdownErr = err
+		}
+	case <-ctx.Done():
+		if shutdownErr == nil {
+			shutdownErr = ctx.Err()
+		}
+	}
+
+	// With listeners drained and load stopped, tear down background components.
 	if s.usageCancel != nil {
 		s.usageCancel()
 		s.usageCancel = nil
@@ -1169,6 +1232,28 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if s.timeslotRetentionCancel != nil {
 		s.timeslotRetentionCancel()
 		s.timeslotRetentionCancel = nil
+	}
+	if s.archiveCleanupCancel != nil {
+		s.archiveCleanupCancel()
+		s.archiveCleanupCancel = nil
+		if s.archiveCleanupDone != nil {
+			select {
+			case <-s.archiveCleanupDone:
+			case <-ctx.Done():
+			}
+			s.archiveCleanupDone = nil
+		}
+	}
+	if s.archiveFinalizationCancel != nil {
+		s.archiveFinalizationCancel()
+		s.archiveFinalizationCancel = nil
+		if s.archiveFinalizationDone != nil {
+			select {
+			case <-s.archiveFinalizationDone:
+			case <-ctx.Done():
+			}
+			s.archiveFinalizationDone = nil
+		}
 	}
 	if s.accessReviewNotifyCancel != nil {
 		s.accessReviewNotifyCancel()
@@ -1205,10 +1290,12 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		_ = s.cache.Close()
 	}
 	if s.metricsServer != nil {
-		_ = s.metricsServer.Shutdown(ctx)
+		if err := s.metricsServer.Shutdown(ctx); err != nil && shutdownErr == nil {
+			shutdownErr = err
+		}
 		s.metricsServer = nil
 	}
-	return s.httpServer.Shutdown(ctx)
+	return shutdownErr
 }
 
 func (s *Server) startCacheFanout() {

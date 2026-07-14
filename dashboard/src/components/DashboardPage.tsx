@@ -15,6 +15,7 @@ import { chartTooltipContentStyle } from './chartTooltipTheme'
 import { type NavPage } from './Sidebar'
 import StatusBadge from './StatusBadge'
 import { useHasTopbarContributionProvider, useTopbarContribution } from '../hooks/TopbarContributionProvider'
+import { useSharedTestList } from '../hooks/useSharedTestList'
 import './DashboardPage.css'
 
 interface Props {
@@ -534,7 +535,13 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
   const activeApplicationId = activeApplication?.id
   const activeProjectId = activeProject?.id
   const dashboardScopeReady = Boolean(activeProjectId && activeApplicationId)
-  const [tests, setTests] = useState<TestSummary[]>([])
+  const testListParams = useMemo(() => dashboardScopeReady ? {
+    project_id: activeProjectId,
+    application_id: activeApplicationId,
+    summary: true,
+    limit: 500,
+  } : null, [activeApplicationId, activeProjectId, dashboardScopeReady])
+  const { tests } = useSharedTestList(testListParams, { loader: api.listTests, pollIntervalMs: 3000 })
   const [health, setHealth] = useState<HealthData | null>(null)
   const [archiveReports, setArchiveReports] = useState<Record<string, RunArchiveReport | null>>({})
   const [releasePanelOpen, setReleasePanelOpen] = useState(true)
@@ -546,13 +553,19 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
   const performanceSelectAllRef = useRef<HTMLInputElement | null>(null)
   const previousPerformanceTestIdsRef = useRef<string[]>([])
 
+  useLayoutEffect(() => {
+    setArchiveReports({})
+    setSelectedPerformanceTestIds(new Set())
+    previousPerformanceTestIdsRef.current = []
+  }, [activeApplicationId, activeProjectId])
+
   useEffect(() => {
     if (!dashboardScopeReady) {
       return
     }
 
+    let cancelled = false
     let inFlight = false
-    let lastTestsSignature = ''
     const load = async () => {
       if (inFlight) {
         return
@@ -562,24 +575,16 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
       }
       inFlight = true
       try {
-        const [testRes, healthRes] = await Promise.all([
-          api.listTests({ application_id: activeApplicationId!, project_id: activeProjectId! }),
-          api.getHealth().catch(() => null),
-        ])
-        const nextTests = testRes.tests || []
-        const signature = JSON.stringify(nextTests)
-        if (signature !== lastTestsSignature) {
-          lastTestsSignature = signature
-          setTests(nextTests)
-        }
-        if (healthRes) setHealth(healthRes)
+        const healthRes = await api.getHealth()
+        if (cancelled) return
+        setHealth(healthRes)
       } catch { /* ignore */ } finally {
         inFlight = false
       }
     }
 
     load()
-    const interval = setInterval(load, 3000)
+    const interval = setInterval(load, 10000)
 
     const handleVisibilityChange = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
@@ -592,6 +597,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
     }
 
     return () => {
+      cancelled = true
       clearInterval(interval)
       if (typeof document !== 'undefined') {
         document.removeEventListener('visibilitychange', handleVisibilityChange)
@@ -1237,6 +1243,13 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                 </span>
                 <span>No tests currently running</span>
                 <span className="dash-empty-hint">{pendingTests.length > 0 ? `${pendingTests.length} test${pendingTests.length === 1 ? '' : 's'} waiting on project capacity.` : 'Start a scenario from the New Test page'}</span>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${pendingTests.length > 0 ? 'btn-secondary' : 'btn-primary'}`}
+                  onClick={pendingTests.length > 0 ? navigateToTests : navigateToNewTest}
+                >
+                  {pendingTests.length > 0 ? 'View queued tests' : 'Start New Test'}
+                </button>
               </div>
             ) : (
               <div className="dash-active-grid">
@@ -1254,7 +1267,15 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                     <div
                       key={test.id}
                       className="dash-active-card"
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Open live test ${test.name}`}
                       onClick={() => onSelectTest(test.id)}
+                      onKeyDown={event => {
+                        if (event.key !== 'Enter' && event.key !== ' ') return
+                        event.preventDefault()
+                        onSelectTest(test.id)
+                      }}
                     >
                       <div className="dac-header">
                         <div className="dac-title-wrap">
@@ -1370,8 +1391,10 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
           <section className="dash-section dash-activity">
             <h3 className="dash-section-title">Recent Activity</h3>
             {recentTests.length === 0 ? (
-              <div className="dash-empty small">
+              <div className="dash-empty compact">
                 <span>No completed tests yet</span>
+                <span className="dash-empty-hint">Start a test to build activity, performance, and release history.</span>
+                <button type="button" className="btn btn-primary btn-sm" onClick={navigateToNewTest}>Start New Test</button>
               </div>
             ) : (
               <div className="trend-table-wrap" ref={activityTableBounds.ref} style={activityTableBounds.style}>

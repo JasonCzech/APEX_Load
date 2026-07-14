@@ -47,6 +47,40 @@ func (s *SQLiteStore) SaveScript(script *dsl.Script) error {
 	return err
 }
 
+// CreateScriptIfAbsent atomically reserves a script ID without permitting an
+// UPSERT to rewrite an existing library row. Approval flows use this create-only
+// primitive because their deterministic ID is observable and may be targeted
+// by a concurrent controller or client.
+func (s *SQLiteStore) CreateScriptIfAbsent(script *dsl.Script) (bool, error) {
+	if script == nil {
+		return false, errors.New("script is required")
+	}
+	script.ProjectID = normalizeProjectID(script.ProjectID)
+	metadataJSON, _ := json.Marshal(script.Metadata)
+	configJSON, _ := json.Marshal(script.Config)
+	dataSourcesJSON, _ := json.Marshal(script.DataSources)
+	parametersJSON, _ := json.Marshal(script.Parameters)
+	initJSON, _ := json.Marshal(script.Init)
+	actionsJSON, _ := json.Marshal(script.Actions)
+	teardownJSON, _ := json.Marshal(script.Teardown)
+	if script.CreatedAt.IsZero() {
+		script.CreatedAt = time.Now()
+	}
+	script.UpdatedAt = time.Now()
+	result, err := s.db.Exec(`INSERT INTO scripts (id, ref_key, name, protocol, version, project_id, folder_id, generated_by, generated_from, metadata_json, config, data_sources, parameters, init, actions, teardown, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO NOTHING`,
+		script.ID, script.RefKey, script.Name, script.Protocol, script.Version, script.ProjectID, script.FolderID,
+		script.GeneratedBy, script.GeneratedFrom,
+		string(metadataJSON), string(configJSON), string(dataSourcesJSON), string(parametersJSON), string(initJSON), string(actionsJSON), string(teardownJSON),
+		script.CreatedAt, script.UpdatedAt)
+	if err != nil {
+		return false, err
+	}
+	rows, err := result.RowsAffected()
+	return rows == 1, err
+}
+
 func (s *SQLiteStore) GetScript(id string) (*dsl.Script, error) {
 	var script dsl.Script
 	var metadataJSON, configJSON, dataSourcesJSON, parametersJSON, initJSON, actionsJSON, teardownJSON string
@@ -152,13 +186,17 @@ func (s *SQLiteStore) SaveAuthoringSession(session *AuthoringSession) error {
 		return errors.New("authoring session is required")
 	}
 	session.ProjectID = normalizeProjectID(session.ProjectID)
-	now := time.Now()
+	now := authoringSessionTimestamp(time.Now())
 	if session.CreatedAt.IsZero() {
 		session.CreatedAt = now
+	} else {
+		session.CreatedAt = authoringSessionTimestamp(session.CreatedAt)
 	}
 	session.UpdatedAt = now
 	if session.LastAccessedAt.IsZero() {
 		session.LastAccessedAt = now
+	} else {
+		session.LastAccessedAt = authoringSessionTimestamp(session.LastAccessedAt)
 	}
 	draftJSON, err := json.Marshal(session.Draft)
 	if err != nil {
@@ -183,6 +221,64 @@ func (s *SQLiteStore) SaveAuthoringSession(session *AuthoringSession) error {
 	return err
 }
 
+// CompareAndSwapAuthoringSession persists a session only while the durable row
+// still has the version and status the caller read. Authoring approval is a
+// multi-step saga; this CAS prevents a concurrent edit, delete, or second
+// approval from replacing its durable intent with a stale session snapshot.
+func (s *SQLiteStore) CompareAndSwapAuthoringSession(session *AuthoringSession, expectedUpdatedAt time.Time, expectedStatus string) (bool, error) {
+	if session == nil {
+		return false, errors.New("authoring session is required")
+	}
+	session.ProjectID = normalizeProjectID(session.ProjectID)
+	now := authoringSessionTimestamp(time.Now())
+	if session.CreatedAt.IsZero() {
+		session.CreatedAt = now
+	} else {
+		session.CreatedAt = authoringSessionTimestamp(session.CreatedAt)
+	}
+	session.UpdatedAt = now
+	if session.LastAccessedAt.IsZero() {
+		session.LastAccessedAt = now
+	} else {
+		session.LastAccessedAt = authoringSessionTimestamp(session.LastAccessedAt)
+	}
+	draftJSON, err := json.Marshal(session.Draft)
+	if err != nil {
+		return false, fmt.Errorf("marshal authoring draft: %w", err)
+	}
+	reviewStateJSON, err := json.Marshal(session.ReviewState)
+	if err != nil {
+		return false, fmt.Errorf("marshal authoring review state: %w", err)
+	}
+	result, err := s.db.Exec(`UPDATE authoring_sessions SET
+		project_id = ?, source = ?, name = ?, status = ?, draft_json = ?, review_state_json = ?,
+		updated_at = ?, last_accessed_at = ?
+		WHERE id = ? AND updated_at = ? AND status = ?`,
+		session.ProjectID, session.Source, session.Name, session.Status, string(draftJSON), string(reviewStateJSON),
+		session.UpdatedAt, session.LastAccessedAt, session.ID, expectedUpdatedAt, expectedStatus)
+	if err != nil {
+		return false, err
+	}
+	rows, err := result.RowsAffected()
+	return rows == 1, err
+}
+
+func authoringSessionTimestamp(value time.Time) time.Time {
+	return value.UTC().Truncate(time.Microsecond)
+}
+
+// DeleteAuthoringSessionUnlessApproving fences deletion against the durable
+// approval intent. A caller that loses this race must retry after approval has
+// either completed or been rolled back.
+func (s *SQLiteStore) DeleteAuthoringSessionUnlessApproving(id string) (bool, error) {
+	result, err := s.db.Exec(`DELETE FROM authoring_sessions WHERE id = ? AND status <> 'approving'`, id)
+	if err != nil {
+		return false, err
+	}
+	rows, err := result.RowsAffected()
+	return rows == 1, err
+}
+
 func (s *SQLiteStore) GetAuthoringSession(id string) (*AuthoringSession, error) {
 	var session AuthoringSession
 	var draftJSON, reviewStateJSON string
@@ -192,7 +288,7 @@ func (s *SQLiteStore) GetAuthoringSession(id string) (*AuthoringSession, error) 
 		return nil, err
 	}
 	decodeAuthoringSessionJSON(&session, draftJSON, reviewStateJSON)
-	now := time.Now()
+	now := authoringSessionTimestamp(time.Now())
 	if _, err := s.db.Exec(`UPDATE authoring_sessions SET last_accessed_at = ? WHERE id = ?`, now, id); err == nil {
 		session.LastAccessedAt = now
 	}

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,15 +21,17 @@ import (
 )
 
 const (
-	oidcSessionCookieName = "apexload_auth_session"
-	oidcStateCookieName   = "apexload_auth_state"
-	oidcSessionTTL        = 12 * time.Hour
-	oidcStateTTL          = 10 * time.Minute
-	oidcLogoutCSRFPath    = "/api/v1/auth/logout"
-	oidcLogoutCSRFTTL     = 10 * time.Minute
-	oidcLoginPath         = "/api/v1/auth/login"
-	oidcLogoutPath        = "/api/v1/auth/logout"
-	defaultOIDCReturnTo   = "/"
+	oidcSessionCookieName         = "apexload_auth_session"
+	oidcStateCookieName           = "apexload_auth_state"
+	oidcSessionTTL                = 12 * time.Hour
+	oidcStateTTL                  = 10 * time.Minute
+	oidcLogoutCSRFPath            = "/api/v1/auth/logout"
+	oidcLogoutCSRFTTL             = 10 * time.Minute
+	oidcLoginPath                 = "/api/v1/auth/login"
+	oidcLogoutPath                = "/api/v1/auth/logout"
+	defaultOIDCReturnTo           = "/"
+	defaultOIDCDiscoveryTimeout   = 10 * time.Second
+	defaultOIDCLoginRatePerMinute = 30
 )
 
 type oidcSessionToken struct {
@@ -100,15 +103,16 @@ func resolveOIDCSession(r *http.Request, settings AuthSettings) oidcSessionResol
 		return oidcSessionResolution{Session: session, Status: "expired"}
 	}
 	return oidcSessionResolution{Status: "active", Session: session, User: &AuthenticatedUser{
-		Subject:         session.Subject,
-		DisplayName:     session.DisplayName,
-		Email:           session.Email,
-		GlobalRoles:     sliceToRoleSet(session.GlobalRoles),
-		ProjectRoles:    mapToProjectRoleSet(session.ProjectRoles),
-		DomainRoles:     mapToDomainRoleSet(session.DomainRoles),
-		RepositoryRoles: mapToRepositoryRoleSet(session.RepositoryRoles),
-		SessionScoped:   true,
-		SessionEpoch:    session.SessionEpoch,
+		Subject:          session.Subject,
+		DisplayName:      session.DisplayName,
+		Email:            session.Email,
+		GlobalRoles:      sliceToRoleSet(session.GlobalRoles),
+		ProjectRoles:     mapToProjectRoleSet(session.ProjectRoles),
+		DomainRoles:      mapToDomainRoleSet(session.DomainRoles),
+		RepositoryRoles:  mapToRepositoryRoleSet(session.RepositoryRoles),
+		SessionScoped:    true,
+		SessionEpoch:     session.SessionEpoch,
+		SessionExpiresAt: session.ExpiresAt,
 	}}
 }
 
@@ -118,7 +122,10 @@ func (s *Server) handleOIDCLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "oidc login is not enabled")
 		return
 	}
-	runtime, err := newOIDCRuntime(r.Context(), settings)
+	if !s.allowOIDCLoginAttempt(w, r) {
+		return
+	}
+	runtime, err := s.cachedOIDCRuntime(r.Context(), settings)
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, err.Error())
 		return
@@ -163,7 +170,7 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "oidc callback is not enabled")
 		return
 	}
-	runtime, err := newOIDCRuntime(r.Context(), settings)
+	runtime, err := s.cachedOIDCRuntime(r.Context(), settings)
 	if err != nil {
 		s.recordOIDCCallbackFailure(r, "runtime_initialization_failed", map[string]any{"error": err.Error()})
 		writeError(w, http.StatusServiceUnavailable, err.Error())
@@ -323,6 +330,73 @@ func newOIDCRuntime(ctx context.Context, settings AuthSettings) (*oidcRuntime, e
 	}, nil
 }
 
+func (s *Server) cachedOIDCRuntime(ctx context.Context, settings AuthSettings) (*oidcRuntime, error) {
+	if s == nil {
+		return nil, fmt.Errorf("oidc server is not configured")
+	}
+	key := oidcRuntimeConfigurationKey(settings)
+	s.oidcMu.Lock()
+	defer s.oidcMu.Unlock()
+	if s.oidcRuntime != nil && s.oidcRuntimeKey == key {
+		return s.oidcRuntime, nil
+	}
+	discoveryCtx, cancel := context.WithTimeout(ctx, defaultOIDCDiscoveryTimeout)
+	defer cancel()
+	runtime, err := newOIDCRuntime(discoveryCtx, settings)
+	if err != nil {
+		return nil, err
+	}
+	s.oidcRuntime = runtime
+	s.oidcRuntimeKey = key
+	return runtime, nil
+}
+
+func oidcRuntimeConfigurationKey(settings AuthSettings) string {
+	parts := []string{
+		settings.IssuerURL,
+		settings.ClientID,
+		settings.RedirectURL,
+		strings.Join(settings.Scopes, "\x00"),
+		settings.ClientSecretEnvVar,
+		settings.SessionSecretEnvVar,
+		os.Getenv(settings.ClientSecretEnvVar),
+		os.Getenv(settings.SessionSecretEnvVar),
+	}
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\x01")))
+	return fmt.Sprintf("%x", sum[:])
+}
+
+func (s *Server) allowOIDCLoginAttempt(w http.ResponseWriter, r *http.Request) bool {
+	if s == nil || s.cache == nil {
+		return true
+	}
+	limit := defaultOIDCLoginRatePerMinute
+	if raw := strings.TrimSpace(os.Getenv("APEXLOAD_OIDC_LOGIN_RATE_LIMIT_PER_MINUTE")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 {
+			writeError(w, http.StatusServiceUnavailable, "oidc login rate limit is misconfigured")
+			return false
+		}
+		limit = parsed
+	}
+	peer := "unknown"
+	if ip := requestSourceIP(r); ip != nil {
+		peer = ip.String()
+	}
+	allowed, remaining, err := s.cache.AllowRateLimit(r.Context(), "oidc-login:"+peer, limit, time.Minute)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "oidc login rate limit is unavailable")
+		return false
+	}
+	w.Header().Set("X-RateLimit-Limit", strconv.Itoa(limit))
+	w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(remaining))
+	if !allowed {
+		writeError(w, http.StatusTooManyRequests, "oidc login rate limit exceeded")
+		return false
+	}
+	return true
+}
+
 func newOIDCProvider(ctx context.Context, issuerURL string) (*oidc.Provider, error) {
 	return oidc.NewProvider(ctx, issuerURL)
 }
@@ -355,13 +429,15 @@ func authenticatedUserFromOIDCClaims(claims map[string]any, expiry time.Time, se
 		ExpiresAt:       expiry,
 	}
 	return &AuthenticatedUser{
-		Subject:         session.Subject,
-		DisplayName:     session.DisplayName,
-		Email:           session.Email,
-		GlobalRoles:     sliceToRoleSet(session.GlobalRoles),
-		ProjectRoles:    mapToProjectRoleSet(session.ProjectRoles),
-		DomainRoles:     mapToDomainRoleSet(session.DomainRoles),
-		RepositoryRoles: mapToRepositoryRoleSet(session.RepositoryRoles),
+		Subject:          session.Subject,
+		DisplayName:      session.DisplayName,
+		Email:            session.Email,
+		GlobalRoles:      sliceToRoleSet(session.GlobalRoles),
+		ProjectRoles:     mapToProjectRoleSet(session.ProjectRoles),
+		DomainRoles:      mapToDomainRoleSet(session.DomainRoles),
+		RepositoryRoles:  mapToRepositoryRoleSet(session.RepositoryRoles),
+		SessionScoped:    true,
+		SessionExpiresAt: session.ExpiresAt,
 	}, session, nil
 }
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useReducer, useRef, useState } from 'react'
 import { useApi } from '../hooks/useApi'
 import { useModalDialog } from '../hooks/useModalDialog'
 import { DraftCapacityEstimate, ScenarioDraft, ScenarioDraftGroup, StoredScript, SystemInventoryGenerator, TestSummary } from '../types'
@@ -98,6 +98,8 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
   const [loading, setLoading] = useState(false)
   const [generatorInventory, setGeneratorInventory] = useState<SystemInventoryGenerator[]>([])
   const dialogRef = useRef<HTMLDivElement | null>(null)
+  const scenarioNameRef = useRef<HTMLInputElement | null>(null)
+  const titleId = useId()
 
   const { name, duration, startDelay, scenarioMode, scriptShakeout, resourceBaseline, assignment, groups, goalConfig, runtimeSettings } = scenarioDraft
   const isReviseMode = mode === 'revise-queued-run'
@@ -114,7 +116,11 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
     runGuarded(onClose)
   }, [onClose, runGuarded])
 
-  useModalDialog({ dialogRef, onClose: loading ? undefined : handleGuardedClose })
+  useModalDialog({
+    dialogRef,
+    initialFocusRef: scenarioNameRef,
+    onClose: loading ? undefined : handleGuardedClose,
+  })
 
   const updateGroup = (idx: number, patch: Partial<ScenarioDraftGroup>) => {
     dispatchScenarioDraft({ type: 'updateGroup', index: idx, patch })
@@ -351,10 +357,16 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
   }
 
   return (
-    <div className="modal-overlay" onClick={loading ? undefined : handleGuardedClose}>
-      <div ref={dialogRef} className="modal modal-wide" role="dialog" aria-modal="true" aria-label={modalTitle} onClick={(e) => e.stopPropagation()}>
+    <div
+      className="modal-overlay"
+      role="presentation"
+      onPointerDown={event => {
+        if (event.target === event.currentTarget && !loading) handleGuardedClose()
+      }}
+    >
+      <div ref={dialogRef} className="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <div className="modal-header">
-          <h3>{modalTitle}</h3>
+          <h3 id={titleId}>{modalTitle}</h3>
           <span className="total-vusers">{totalVUsers} total VUsers</span>
         </div>
         <form onSubmit={handleSubmit} className="modal-form">
@@ -382,6 +394,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
               <label>
                 <span>Scenario Name</span>
                 <input
+                  ref={scenarioNameRef}
                   type="text"
                   value={name}
                   onChange={(e) => updateScenarioField('name', e.target.value)}
@@ -557,7 +570,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
             onRuntimeSettingChange={updateRuntimeSetting}
           />
 
-          {error && <p className="form-error">{error}</p>}
+          {error && <p className="form-error" role="alert">{error}</p>}
 
           <div className="modal-actions">
             <button type="button" className="btn btn-secondary" onClick={handleGuardedClose} disabled={loading}>

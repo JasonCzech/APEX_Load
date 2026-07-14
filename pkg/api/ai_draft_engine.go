@@ -88,49 +88,6 @@ func (s *Server) buildAIDraftScript(req AIDraftRequest, provider string, project
 	}, nil
 }
 
-func (s *Server) deriveAIDraftProjectID(req AIDraftRequest) string {
-	if projectID := normalizeProjectID(req.ProjectID); projectID != "" {
-		return projectID
-	}
-	if strings.TrimSpace(req.ExistingScriptID) == "" {
-		return ""
-	}
-	stored, ok := s.runner.GetScript(strings.TrimSpace(req.ExistingScriptID))
-	if !ok || stored == nil {
-		return ""
-	}
-	return normalizeProjectID(stored.ProjectID)
-}
-
-func (s *Server) deriveAIExplainProjectID(req AIExplainRequest) string {
-	if projectID := normalizeProjectID(req.ProjectID); projectID != "" {
-		return projectID
-	}
-	if req.Script != nil {
-		return normalizeProjectID(req.Script.ProjectID)
-	}
-	targetType := normalizeAITargetType(req.TargetType)
-	targetID := strings.TrimSpace(req.TargetID)
-	if targetID == "" {
-		return ""
-	}
-	switch targetType {
-	case "script":
-		if stored, ok := s.runner.GetScript(targetID); ok && stored != nil {
-			return normalizeProjectID(stored.ProjectID)
-		}
-	case "scenario":
-		if scenario, ok := s.runner.GetScenario(targetID); ok && scenario != nil {
-			return normalizeProjectID(scenario.ProjectID)
-		}
-	case "report":
-		if test, ok := s.runner.GetTest(targetID); ok && test != nil {
-			return normalizeProjectID(test.ProjectID)
-		}
-	}
-	return ""
-}
-
 func aiDraftEndpointFromRequest(sourceType string, req AIDraftRequest) (string, string, string, string) {
 	baseURL := "https://example.test"
 	method := "GET"

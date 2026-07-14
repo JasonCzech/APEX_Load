@@ -492,6 +492,8 @@ export default function TestExecutionCharts({
   const [chartCardSizes, setChartCardSizes] = useState<Record<string, ChartCardSize>>({})
   const chartCardRefs = useRef<Record<string, ChartCardElement>>({})
   const chartMenuRef = useRef<HTMLDivElement | null>(null)
+  const chartMenuFirstItemRef = useRef<HTMLButtonElement | null>(null)
+  const chartMenuTriggerRef = useRef<HTMLElement | null>(null)
   const axisLabelPopoverRef = useRef<HTMLDivElement | null>(null)
   const sharedCursorRef = useRef<GraphCursorState | null>(activeCursor ?? null)
   const pendingMouseMoveRef = useRef<{ activeLabel?: string | number; cursor: GraphCursorState | null } | null>(null)
@@ -650,23 +652,33 @@ export default function TestExecutionCharts({
 
   useEffect(() => {
     if (!chartMenu) return
-    const closeMenu = () => setChartMenu(null)
+    const restoreMenuTrigger = () => {
+      const trigger = chartMenuTriggerRef.current
+      if (trigger?.isConnected) window.setTimeout(() => trigger.focus(), 0)
+    }
+    const closeMenu = () => {
+      setChartMenu(null)
+      restoreMenuTrigger()
+    }
     const closeMenuOnOutsidePointerDown = (event: PointerEvent) => {
       const target = event.target
       if (target instanceof Node && chartMenuRef.current?.contains(target)) {
         return
       }
-      setChartMenu(null)
+      closeMenu()
     }
     const closeMenuOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        setChartMenu(null)
+        event.preventDefault()
+        closeMenu()
       }
     }
+    const focusTimer = window.setTimeout(() => chartMenuFirstItemRef.current?.focus(), 0)
     window.addEventListener('pointerdown', closeMenuOnOutsidePointerDown)
     window.addEventListener('resize', closeMenu)
     window.addEventListener('keydown', closeMenuOnEscape)
     return () => {
+      window.clearTimeout(focusTimer)
       window.removeEventListener('pointerdown', closeMenuOnOutsidePointerDown)
       window.removeEventListener('resize', closeMenu)
       window.removeEventListener('keydown', closeMenuOnEscape)
@@ -1166,6 +1178,7 @@ export default function TestExecutionCharts({
   const openChartMenu = (event: MouseEvent<HTMLElement>, chartId: string) => {
     event.preventDefault()
     event.stopPropagation()
+    chartMenuTriggerRef.current = event.currentTarget instanceof HTMLButtonElement ? event.currentTarget : null
     setAxisLabelPopover(null)
     const menuWidth = 224
     const menuHeight = 340
@@ -1175,6 +1188,23 @@ export default function TestExecutionCharts({
       chartId,
       x: Math.max(12, Math.min(event.clientX, viewportWidth - menuWidth - 12)),
       y: Math.max(12, Math.min(event.clientY, viewportHeight - menuHeight - 12)),
+    })
+  }
+
+  const openChartMenuFromButton = (event: MouseEvent<HTMLButtonElement>, chartId: string) => {
+    event.preventDefault()
+    event.stopPropagation()
+    chartMenuTriggerRef.current = event.currentTarget
+    setAxisLabelPopover(null)
+    const rect = event.currentTarget.getBoundingClientRect()
+    const menuWidth = 224
+    const menuHeight = 340
+    const viewportWidth = window.innerWidth || 1024
+    const viewportHeight = window.innerHeight || 768
+    setChartMenu({
+      chartId,
+      x: Math.max(12, Math.min(rect.right - menuWidth, viewportWidth - menuWidth - 12)),
+      y: Math.max(12, Math.min(rect.bottom + 4, viewportHeight - menuHeight - 12)),
     })
   }
 
@@ -1216,6 +1246,8 @@ export default function TestExecutionCharts({
   const runChartAction = (action: () => void) => {
     action()
     setChartMenu(null)
+    const trigger = chartMenuTriggerRef.current
+    if (trigger?.isConnected) window.setTimeout(() => trigger.focus(), 0)
   }
 
   const displayTitleForChart = (chart: ChartConfig) => {
@@ -2432,6 +2464,16 @@ export default function TestExecutionCharts({
                       </div>
                     )}
                     <button
+                      className="btn btn-sm btn-ghost chart-actions-button"
+                      type="button"
+                      aria-label={`${chartTitle} actions`}
+                      aria-haspopup="menu"
+                      aria-expanded={chartMenu?.chartId === chart.id}
+                      onClick={event => openChartMenuFromButton(event, chart.id)}
+                    >
+                      Actions
+                    </button>
+                    <button
                       className="btn-icon btn-expand"
                       type="button"
                       aria-label={expandedChart === chart.id ? `Collapse ${chartTitle}` : `Expand ${chartTitle}`}
@@ -2849,15 +2891,32 @@ export default function TestExecutionCharts({
           className="chart-context-menu"
           style={{ left: chartMenu.x, top: chartMenu.y }}
           role="menu"
+          tabIndex={-1}
           aria-label={`${contextChart.title} actions`}
-          onClick={event => event.stopPropagation()}
+          onKeyDown={event => {
+            const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)'))
+            const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement)
+            const targetIndex = event.key === 'Home'
+              ? 0
+              : event.key === 'End'
+                ? items.length - 1
+                : event.key === 'ArrowDown'
+                  ? (currentIndex + 1 + items.length) % items.length
+                  : event.key === 'ArrowUp'
+                    ? (currentIndex - 1 + items.length) % items.length
+                    : -1
+            if (targetIndex >= 0) {
+              event.preventDefault()
+              items[targetIndex]?.focus()
+            }
+          }}
           onContextMenu={event => {
             event.preventDefault()
             event.stopPropagation()
           }}
         >
           <div className="chart-context-menu-title">{displayTitleForChart(contextChart)}</div>
-          <button type="button" role="menuitem" onClick={() => runChartAction(onResetZoom)}>Reset Zoom</button>
+          <button ref={chartMenuFirstItemRef} type="button" role="menuitem" onClick={() => runChartAction(onResetZoom)}>Reset Zoom</button>
           {(['vusers', 'avgMs', 'tps'] as OverlayMetricKey[])
             .filter(key => isOverlayMetricAvailable(contextChart, key))
             .map(key => (
@@ -2886,11 +2945,6 @@ export default function TestExecutionCharts({
           style={{ left: axisLabelPopover.x, top: axisLabelPopover.y }}
           role="status"
           aria-live="polite"
-          onClick={event => event.stopPropagation()}
-          onContextMenu={event => {
-            event.preventDefault()
-            event.stopPropagation()
-          }}
         >
           <div className="chart-axis-label-popover-title">Y-axis</div>
           <div className="chart-axis-label-popover-value">{axisLabelPopover.label}</div>

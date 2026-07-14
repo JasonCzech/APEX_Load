@@ -193,6 +193,70 @@ describe('TimeslotsPanel', () => {
     expect(payload.requested_capacity?.pool_id).toBe('pool-1')
   })
 
+  it('opens a labelled reservation dialog, focuses the start field, and restores focus on Escape', async () => {
+    capacityApiMock.listTimeslots.mockResolvedValue({ timeslots: [], count: 0 })
+    await act(async () => {
+      root.render(<TimeslotsPanel projectId="proj-a" canManage />)
+    })
+    await flush()
+
+    const trigger = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(b => b.textContent === 'New Reservation')
+    trigger?.focus()
+    await act(async () => {
+      trigger?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushFocus()
+
+    const dialog = container.querySelector<HTMLElement>('[role="dialog"]')
+    const start = container.querySelector<HTMLInputElement>('input[type="datetime-local"]')
+    expect(dialog?.getAttribute('aria-modal')).toBe('true')
+    expect(document.getElementById(dialog?.getAttribute('aria-labelledby') || '')?.textContent).toBe('New Capacity Reservation')
+    expect(document.activeElement).toBe(start)
+
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    expect(container.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.activeElement).toBe(trigger)
+  })
+
+  it('announces asynchronous loading errors', async () => {
+    capacityApiMock.listTimeslots.mockRejectedValue(new ApiError('reservation service unavailable', 503))
+    await act(async () => {
+      root.render(<TimeslotsPanel projectId="proj-a" canManage />)
+    })
+    await flush()
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe('reservation service unavailable')
+  })
+
+  it('announces availability-check failures from inside the reservation dialog', async () => {
+    capacityApiMock.listTimeslots.mockResolvedValue({ timeslots: [], count: 0 })
+    capacityApiMock.checkTimeslotAvailability.mockRejectedValueOnce(new ApiError('capacity check unavailable', 503))
+    await act(async () => {
+      root.render(<TimeslotsPanel projectId="proj-a" canManage />)
+    })
+    await flush()
+    const trigger = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(b => b.textContent === 'New Reservation')
+    await act(async () => {
+      trigger?.click()
+    })
+    const setInput = (element: HTMLInputElement | undefined, value: string) => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+      setter?.call(element, value)
+      element?.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    const fields = container.querySelectorAll<HTMLInputElement>('input[type="datetime-local"]')
+    await act(async () => {
+      setInput(fields[0], '2026-07-01T10:00')
+      setInput(fields[1], '2026-07-01T12:00')
+    })
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(b => b.textContent === 'Check availability')?.click()
+    })
+    await flush()
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe('capacity check unavailable')
+  })
+
   it('disables reservation creation and hides row management actions without permission', async () => {
     capacityApiMock.listTimeslots.mockResolvedValue({ timeslots: [slot({ approval_state: 'pending' })], count: 1 })
     await act(async () => {
@@ -206,3 +270,9 @@ describe('TimeslotsPanel', () => {
     expect(container.textContent).not.toContain('Delete')
   })
 })
+
+async function flushFocus() {
+  await act(async () => {
+    await new Promise(resolve => window.setTimeout(resolve, 0))
+  })
+}

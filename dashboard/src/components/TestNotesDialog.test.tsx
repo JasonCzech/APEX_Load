@@ -13,8 +13,8 @@ const apiMock = vi.hoisted(() => ({
   deleteTestNote: vi.fn(),
 }))
 
-vi.mock('../hooks/useApi', () => ({
-  useApi: () => apiMock,
+vi.mock('../hooks/api/useTestApi', () => ({
+  useTestApi: () => apiMock,
 }))
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -65,6 +65,24 @@ describe('TestNotesDialog', () => {
     expect(container.querySelector('.test-notes-preview strong')?.textContent).toBe('bold')
     expect(container.textContent).toContain('Created')
     expect(container.textContent).toContain('Updated')
+  })
+
+  it('exposes a labelled modal and gives it a deterministic initial focus target', async () => {
+    apiMock.listTestNotes.mockResolvedValue({
+      test_id: 'test-1',
+      notes: [note('note-1', 'Existing note')],
+    })
+
+    await renderDialog()
+    await act(async () => {
+      await new Promise(resolve => window.setTimeout(resolve, 0))
+    })
+
+    const dialog = container.querySelector<HTMLElement>('[role="dialog"]')
+    expect(dialog?.getAttribute('aria-modal')).toBe('true')
+    expect(document.getElementById(dialog?.getAttribute('aria-labelledby') || '')?.textContent).toBe('Test Notes')
+    expect(document.getElementById(dialog?.getAttribute('aria-describedby') || '')?.textContent).toBe('Checkout Run')
+    expect(document.activeElement).toBe(button('Close'))
   })
 
   it('creates, edits, and deletes notes', async () => {

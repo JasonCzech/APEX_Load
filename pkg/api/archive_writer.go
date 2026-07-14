@@ -4,7 +4,6 @@ package api
 
 import (
 	"bufio"
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -21,14 +20,26 @@ import (
 )
 
 func newRunArchiveWriter(test *ManagedTest, provenance RunArchiveProvenance) (*runArchiveWriter, error) {
-	rootDir := resolveArchiveRoot()
-	archiveDir := filepath.Join(rootDir, test.ID)
-	if err := os.MkdirAll(archiveDir, 0o755); err != nil {
+	if test == nil {
+		return nil, fmt.Errorf("test is required")
+	}
+	if err := validateArchiveRunID(test.ID); err != nil {
+		return nil, err
+	}
+	rootDir, err := resolveArchiveDirectoryRoot(resolveArchiveRoot(), true)
+	if err != nil {
+		return nil, fmt.Errorf("prepare archive root: %w", err)
+	}
+	archiveDir, err := ensureArchiveRelativeDirectory(rootDir, test.ID, 0o755)
+	if err != nil {
 		return nil, fmt.Errorf("create archive dir: %w", err)
+	}
+	if err := validateArchiveArtifactTargets(archiveDir, "transactions.jsonl", "resources.jsonl", "interval_summaries.jsonl", runArchiveManifestFileName); err != nil {
+		return nil, fmt.Errorf("inspect archive targets: %w", err)
 	}
 
 	open := func(name string) (*os.File, *bufio.Writer, *json.Encoder, error) {
-		file, err := os.Create(filepath.Join(archiveDir, name))
+		file, err := replaceArchiveArtifactForWrite(archiveDir, name, 0o644, false)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -68,7 +79,7 @@ func newRunArchiveWriter(test *ManagedTest, provenance RunArchiveProvenance) (*r
 		},
 		region:          strings.TrimSpace(os.Getenv("APEXLOAD_REGION")),
 		rootDir:         archiveDir,
-		manifestPath:    filepath.Join(archiveDir, "manifest.json"),
+		manifestPath:    filepath.Join(archiveDir, runArchiveManifestFileName),
 		txFile:          txFile,
 		resourceFile:    resourceFile,
 		summaryFile:     summaryFile,
@@ -136,15 +147,44 @@ func (w *runArchiveWriter) RefreshProvenance(provenance RunArchiveProvenance) {
 }
 
 func captureAPEXLoadEnv() map[string]string {
+	// Archive manifests are readable by project viewers and may be retained or
+	// exported outside the controller. Capture only deployment descriptors that
+	// are useful when reproducing a run. In particular, do not try to identify
+	// credentials by name: connection URLs and provider-specific variables can
+	// carry credentials without containing words such as "secret" or "token".
+	allowed := map[string]struct{}{
+		"APEXLOAD_ARCHIVE_BACKEND": {},
+		"APEXLOAD_BUILD_TIME":      {},
+		"APEXLOAD_CACHE_BACKEND":   {},
+		"APEXLOAD_COMMIT":          {},
+		"APEXLOAD_CONTROLLER_HA":   {},
+		"APEXLOAD_ENV":             {},
+		"APEXLOAD_ENVIRONMENT":     {},
+		"APEXLOAD_PUBLIC_REGION":   {},
+		"APEXLOAD_REGION":          {},
+		"APEXLOAD_TIER":            {},
+		"APEXLOAD_VERSION":         {},
+	}
 	env := make(map[string]string)
 	for _, entry := range os.Environ() {
 		key, value, ok := strings.Cut(entry, "=")
-		if !ok || !strings.HasPrefix(key, "APEXLOAD_") {
+		if !ok {
 			continue
 		}
-		upper := strings.ToUpper(key)
-		if strings.Contains(upper, "SECRET") || strings.Contains(upper, "TOKEN") || strings.Contains(upper, "PASSWORD") || strings.Contains(upper, "KEY") {
+		if _, ok := allowed[key]; !ok {
 			continue
+		}
+		// Keep the manifest line-oriented and bounded even if a deployment
+		// descriptor was supplied from an untrusted environment source.
+		value = strings.Map(func(r rune) rune {
+			if r == '\n' || r == '\r' || r == 0 {
+				return -1
+			}
+			return r
+		}, value)
+		runes := []rune(value)
+		if len(runes) > 512 {
+			value = string(runes[:512])
 		}
 		env[key] = value
 	}
@@ -341,6 +381,14 @@ func (w *runArchiveWriter) Finalize(status string, completedAt time.Time, errStr
 			return nil, err
 		}
 	}
+	if err := validateArchiveArtifactTargets(w.rootDir,
+		w.manifest.TransactionsParquetFile,
+		w.manifest.ResourceSamplesParquetFile,
+		w.manifest.IntervalSummariesParquetFile,
+		filepath.Base(w.manifestPath),
+	); err != nil {
+		return nil, err
+	}
 	if err := writeArchiveParquetFiles(w.rootDir, &w.manifest); err != nil {
 		return nil, err
 	}
@@ -351,14 +399,13 @@ func (w *runArchiveWriter) Finalize(status string, completedAt time.Time, errStr
 	if err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(w.manifestPath, data, 0o644); err != nil {
+	if err := syncArchiveArtifacts(w.rootDir, w.manifestPath); err != nil {
+		return nil, err
+	}
+	if err := writeArchiveManifestDurable(w.manifestPath, data); err != nil {
 		return nil, err
 	}
 	manifestSHA256 := sha256BytesHex(data)
-	if err := uploadArchiveDirectory(context.Background(), w.rootDir, w.manifest.TestID); err != nil {
-		return nil, err
-	}
-
 	backend := currentArchiveBackend()
 	return &storage.RunArchiveRecord{
 		TestID:               w.manifest.TestID,
@@ -377,6 +424,123 @@ func (w *runArchiveWriter) Finalize(status string, completedAt time.Time, errStr
 	}, nil
 }
 
+func syncArchiveArtifacts(root, manifestPath string) error {
+	rootHandle, err := openArchiveDirectoryNoSymlink(root)
+	if err != nil {
+		return err
+	}
+	if err := rootHandle.Close(); err != nil {
+		return err
+	}
+	absManifest, err := filepath.Abs(manifestPath)
+	if err != nil {
+		return err
+	}
+	return filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		absPath, err := filepath.Abs(path)
+		if err != nil {
+			return err
+		}
+		if absPath == absManifest {
+			return nil
+		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("archive artifact %q is a symbolic link", path)
+		}
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		file, info, err := openArchiveArtifactForRead(root, filepath.ToSlash(relative))
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() {
+			_ = file.Close()
+			return fmt.Errorf("archive artifact %q is not a regular file", path)
+		}
+		syncErr := file.Sync()
+		closeErr := file.Close()
+		if syncErr != nil {
+			return syncErr
+		}
+		return closeErr
+	})
+}
+
+func writeArchiveManifestDurable(path string, data []byte) error {
+	return writeArchiveArtifactDurable(filepath.Dir(path), filepath.Base(path), data, 0o644)
+}
+
+// writeArchiveArtifactDurable atomically replaces a root-relative archive
+// artifact without following linked parents or a linked destination. Adjunct
+// writers use this boundary so publication cannot be redirected by persisted
+// or locally planted paths.
+func writeArchiveArtifactDurable(rootPath, name string, data []byte, perm os.FileMode) error {
+	normalized, err := normalizeArchiveArtifactName(name)
+	if err != nil {
+		return err
+	}
+	root, err := openArchiveDirectoryNoSymlink(rootPath)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	if err := inspectArchiveRelativeParents(root, normalized, false, 0); err != nil {
+		return err
+	}
+	if _, err := inspectArchiveArtifactTarget(root, normalized, true); err != nil {
+		return err
+	}
+	parent := filepath.Dir(filepath.FromSlash(normalized))
+	base := filepath.Base(filepath.FromSlash(normalized))
+	tempName, err := archiveTemporaryName(parent, base)
+	if err != nil {
+		return err
+	}
+	tmp, err := root.OpenFile(tempName, os.O_CREATE|os.O_EXCL|os.O_WRONLY, perm)
+	if err != nil {
+		return err
+	}
+	keepTemp := true
+	defer func() {
+		if keepTemp {
+			_ = root.Remove(tempName)
+		}
+	}()
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	// Re-check the target immediately before rename. Rename replaces a regular
+	// file or a link itself and never follows the destination, but rejecting a
+	// planted link keeps the archive namespace fail-closed and auditable.
+	if _, err := inspectArchiveArtifactTarget(root, normalized, true); err != nil {
+		return err
+	}
+	if err := root.Rename(tempName, filepath.FromSlash(normalized)); err != nil {
+		return err
+	}
+	keepTemp = false
+	if err := syncArchiveDirectory(rootPath); err != nil {
+		return fmt.Errorf("sync archive directory: %w", err)
+	}
+	return nil
+}
+
 func sha256BytesHex(data []byte) string {
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
@@ -386,7 +550,12 @@ func refreshRunArchiveManifestTrust(record *storage.RunArchiveRecord) error {
 	if record == nil || strings.TrimSpace(record.ManifestPath) == "" {
 		return nil
 	}
-	sum, err := sha256File(record.ManifestPath)
+	file, _, err := openArchiveArtifactForRead(filepath.Dir(record.ManifestPath), filepath.Base(record.ManifestPath))
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	sum, err := sha256Reader(file)
 	if err != nil {
 		return err
 	}
@@ -413,11 +582,7 @@ func updateRunArchiveArtifactIntegrity(root string, manifest *RunArchiveManifest
 		if strings.TrimSpace(artifact.Name) == "" {
 			continue
 		}
-		path, err := archiveArtifactPath(root, artifact.Name)
-		if err != nil {
-			return err
-		}
-		info, err := os.Stat(path)
+		file, info, err := openArchiveArtifactForRead(root, artifact.Name)
 		if err != nil {
 			if os.IsNotExist(err) {
 				continue
@@ -425,9 +590,13 @@ func updateRunArchiveArtifactIntegrity(root string, manifest *RunArchiveManifest
 			return err
 		}
 		artifact.SizeBytes = info.Size()
-		sum, err := sha256File(path)
+		sum, err := sha256Reader(file)
+		closeErr := file.Close()
 		if err != nil {
 			return err
+		}
+		if closeErr != nil {
+			return closeErr
 		}
 		artifact.SHA256 = sum
 		artifacts = append(artifacts, artifact)
@@ -443,17 +612,17 @@ func updateRunArchiveSingleArtifactIntegrity(root string, manifest *RunArchiveMa
 	if strings.TrimSpace(artifact.Name) == "" {
 		return fmt.Errorf("archive artifact name is required")
 	}
-	path, err := archiveArtifactPath(root, artifact.Name)
+	file, info, err := openArchiveArtifactForRead(root, artifact.Name)
 	if err != nil {
 		return err
 	}
-	info, err := os.Stat(path)
+	sum, err := sha256Reader(file)
+	closeErr := file.Close()
 	if err != nil {
 		return err
 	}
-	sum, err := sha256File(path)
-	if err != nil {
-		return err
+	if closeErr != nil {
+		return closeErr
 	}
 	artifact.SizeBytes = info.Size()
 	artifact.SHA256 = sum
@@ -473,8 +642,12 @@ func sha256File(path string) (string, error) {
 		return "", err
 	}
 	defer file.Close()
+	return sha256Reader(file)
+}
+
+func sha256Reader(reader io.Reader) (string, error) {
 	hash := sha256.New()
-	if _, err := io.Copy(hash, file); err != nil {
+	if _, err := io.Copy(hash, reader); err != nil {
 		return "", err
 	}
 	return hex.EncodeToString(hash.Sum(nil)), nil

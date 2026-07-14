@@ -44,6 +44,7 @@ interface Props {
   onDelete: (id: string) => void
   canManageScripts?: boolean
   emptyMessage?: string
+  onCreate?: () => void
   federation?: ScriptLibraryFederation
   github?: ScriptLibraryGitHub
 }
@@ -86,6 +87,30 @@ function authoringHealthClass(script: StoredScript) {
   if (status === 'needs_review') return 'warning'
   if (status === 'healthy' || status === 'ready') return 'healthy'
   return ''
+}
+
+function SortHeader<Field extends string>({
+  field,
+  activeField,
+  direction,
+  label,
+  onActivate,
+}: {
+  field: Field
+  activeField: Field
+  direction: 'asc' | 'desc'
+  label: string
+  onActivate: (field: Field) => void
+}) {
+  const active = field === activeField
+  return (
+    <th className="sortable" aria-sort={active ? (direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+      <button type="button" onClick={() => onActivate(field)}>
+        {label}
+        <SortIndicator active={active} direction={direction} />
+      </button>
+    </th>
+  )
 }
 
 function authoringHealthSummary(script: StoredScript) {
@@ -179,6 +204,7 @@ export default function ScriptsLibraryTable({
   onDelete,
   canManageScripts = true,
   emptyMessage = 'No scripts yet.',
+  onCreate,
   federation,
   github,
 }: Props) {
@@ -188,19 +214,18 @@ export default function ScriptsLibraryTable({
   const localScripts = showLocal ? scripts : []
   const remoteRows = federation && federation.sourceFilter !== 'local' ? federation.remoteRows : []
   const isEmpty = localScripts.length === 0 && remoteRows.length === 0
-
   return (
     <div className="data-table">
-      <table>
+      <table className="scripts-library-table">
         <thead>
           <tr>
             {showSource && <th>Source</th>}
-            <th onClick={() => onSort('name')} className="sortable">Script <SortIndicator active={sortField === 'name'} direction={sortDirection} /></th>
-            <th onClick={() => onSort('authoring_health')} className="sortable">Health <SortIndicator active={sortField === 'authoring_health'} direction={sortDirection} /></th>
-            <th onClick={() => onSort('scenario_count')} className="sortable">Usage <SortIndicator active={sortField === 'scenario_count'} direction={sortDirection} /></th>
-            <th onClick={() => onSort('associated_releases')} className="sortable">Associated Releases <SortIndicator active={sortField === 'associated_releases'} direction={sortDirection} /></th>
-            <th onClick={() => onSort('created_at')} className="sortable">Create Date <SortIndicator active={sortField === 'created_at'} direction={sortDirection} /></th>
-            <th onClick={() => onSort('last_run_at')} className="sortable">Last Run <SortIndicator active={sortField === 'last_run_at'} direction={sortDirection} /></th>
+            <SortHeader field="name" activeField={sortField} direction={sortDirection} label="Script" onActivate={onSort} />
+            <SortHeader field="authoring_health" activeField={sortField} direction={sortDirection} label="Health" onActivate={onSort} />
+            <SortHeader field="scenario_count" activeField={sortField} direction={sortDirection} label="Usage" onActivate={onSort} />
+            <SortHeader field="associated_releases" activeField={sortField} direction={sortDirection} label="Associated Releases" onActivate={onSort} />
+            <SortHeader field="created_at" activeField={sortField} direction={sortDirection} label="Create Date" onActivate={onSort} />
+            <SortHeader field="last_run_at" activeField={sortField} direction={sortDirection} label="Last Run" onActivate={onSort} />
             <th style={{ textAlign: 'right' }}>Actions</th>
           </tr>
         </thead>
@@ -212,14 +237,22 @@ export default function ScriptsLibraryTable({
             const conflict = syncStatus === 'conflict'
             return (
               <Fragment key={script.id}>
-                <tr key={script.id} className="clickable-row" onClick={() => onToggleScriptRuns(script)}>
+                <tr key={script.id}>
                   {showSource && (
                     <td>
                       <span className="script-health-token">Local</span>
                     </td>
                   )}
                   <td className="cell-name">
-                    <div>{script.name}</div>
+                    <button
+                      type="button"
+                      className="script-row-toggle"
+                      aria-expanded={expandedScriptId === script.id}
+                      aria-controls={`script-runs-${script.id}`}
+                      onClick={() => onToggleScriptRuns(script)}
+                    >
+                      {script.name}
+                    </button>
                     <div className="script-table-meta">
                       <span className="protocol-badge">{script.protocol}</span>
                       <span className="script-health-token">v{script.version || '—'}</span>
@@ -289,7 +322,7 @@ export default function ScriptsLibraryTable({
                   </td>
                 </tr>
                 {expandedScriptId === script.id && (
-                  <tr className="no-hover">
+                  <tr className="no-hover" id={`script-runs-${script.id}`}>
                     <td colSpan={columnCount} style={{ background: 'var(--bg-primary)' }}>
                       <div style={{ padding: '10px 4px' }}>
                         <div className="cell-muted" style={{ marginBottom: 8 }}>
@@ -312,34 +345,26 @@ export default function ScriptsLibraryTable({
                           <div className="cell-muted">No linked scenario runs for this script yet.</div>
                         ) : (
                           <div className="data-table">
-                            <table>
+                            <table className="scripts-library-runs-table">
                               <thead>
                                 <tr>
-                                  <th onClick={() => onInnerSort('name')} className="sortable">
-                                    Run Name <SortIndicator active={innerSortField === 'name'} direction={innerSortDirection} />
-                                  </th>
-                                  <th onClick={() => onInnerSort('status')} className="sortable">
-                                    Status <SortIndicator active={innerSortField === 'status'} direction={innerSortDirection} />
-                                  </th>
-                                  <th onClick={() => onInnerSort('scenario_id')} className="sortable">
-                                    Scenario ID <SortIndicator active={innerSortField === 'scenario_id'} direction={innerSortDirection} />
-                                  </th>
-                                  <th onClick={() => onInnerSort('release_id')} className="sortable">
-                                    Release ID <SortIndicator active={innerSortField === 'release_id'} direction={innerSortDirection} />
-                                  </th>
-                                  <th onClick={() => onInnerSort('start_time')} className="sortable">
-                                    Started <SortIndicator active={innerSortField === 'start_time'} direction={innerSortDirection} />
-                                  </th>
-                                  <th onClick={() => onInnerSort('duration')} className="sortable">
-                                    Duration <SortIndicator active={innerSortField === 'duration'} direction={innerSortDirection} />
-                                  </th>
+                                  <SortHeader field="name" activeField={innerSortField} direction={innerSortDirection} label="Run Name" onActivate={onInnerSort} />
+                                  <SortHeader field="status" activeField={innerSortField} direction={innerSortDirection} label="Status" onActivate={onInnerSort} />
+                                  <SortHeader field="scenario_id" activeField={innerSortField} direction={innerSortDirection} label="Scenario ID" onActivate={onInnerSort} />
+                                  <SortHeader field="release_id" activeField={innerSortField} direction={innerSortDirection} label="Release ID" onActivate={onInnerSort} />
+                                  <SortHeader field="start_time" activeField={innerSortField} direction={innerSortDirection} label="Started" onActivate={onInnerSort} />
+                                  <SortHeader field="duration" activeField={innerSortField} direction={innerSortDirection} label="Duration" onActivate={onInnerSort} />
                                 </tr>
                               </thead>
                               <tbody>
                                 {getSortedInnerRuns(scriptRuns[script.id] || []).map((run) => (
-                                  <tr key={run.id} className="clickable-row" onClick={(event) => { event.stopPropagation(); onSelectScenario?.(run.id) }}>
+                                  <tr key={run.id}>
                                     <td className="cell-name">
-                                      <div>{run.name}</div>
+                                      {onSelectScenario ? (
+                                        <button type="button" className="script-run-link" onClick={() => onSelectScenario(run.id)}>
+                                          {run.name}
+                                        </button>
+                                      ) : <div>{run.name}</div>}
                                       <div className="script-table-meta">
                                         <ReferenceKeyBadge value={run.ref_key} />
                                       </div>
@@ -409,7 +434,18 @@ export default function ScriptsLibraryTable({
               </tr>
             )
           })}
-          {isEmpty && <tr><td colSpan={columnCount} className="cell-muted">{emptyMessage}</td></tr>}
+          {isEmpty && (
+            <tr>
+              <td colSpan={columnCount}>
+                <div className="settings-inline-actions script-library-empty-actions">
+                  <span className="cell-muted">{emptyMessage}</span>
+                  {onCreate && canManageScripts && (
+                    <button type="button" className="btn btn-primary btn-sm" onClick={onCreate}>Create your first script</button>
+                  )}
+                </div>
+              </td>
+            </tr>
+          )}
         </tbody>
       </table>
     </div>

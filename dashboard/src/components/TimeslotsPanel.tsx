@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import { useCapacityApi } from '../hooks/api/useCapacityApi'
 import { useFleetApi } from '../hooks/api/useFleetApi'
 import { ApiError } from '../hooks/apiClient'
+import { useModalDialog } from '../hooks/useModalDialog'
 import { CapacityTimeslot, FleetPool } from '../types'
 import ConfirmDestructiveModal from './ConfirmDestructiveModal'
 import './parityPanels.css'
@@ -65,9 +66,31 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
   const [error, setError] = useState<string | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
   const [availability, setAvailability] = useState<string | null>(null)
+  const [availabilityError, setAvailabilityError] = useState(false)
   const [bindFor, setBindFor] = useState<{ slot: CapacityTimeslot; testId: string } | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<CapacityTimeslot | null>(null)
   const [busy, setBusy] = useState(false)
+  const draftDialogRef = useRef<HTMLDivElement | null>(null)
+  const startInputRef = useRef<HTMLInputElement | null>(null)
+  const bindDialogRef = useRef<HTMLDivElement | null>(null)
+  const bindTestInputRef = useRef<HTMLInputElement | null>(null)
+  const reservationTitleId = useId()
+  const bindTitleId = useId()
+
+  const closeDraft = useCallback(() => setDraft(null), [])
+  const closeBind = useCallback(() => setBindFor(null), [])
+  useModalDialog({
+    dialogRef: draftDialogRef,
+    enabled: Boolean(draft),
+    initialFocusRef: startInputRef,
+    onClose: closeDraft,
+  })
+  useModalDialog({
+    dialogRef: bindDialogRef,
+    enabled: Boolean(bindFor),
+    initialFocusRef: bindTestInputRef,
+    onClose: closeBind,
+  })
 
   const load = useCallback(async () => {
     if (!projectId) {
@@ -121,11 +144,13 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
     if (!draft || !projectId || !draftValid) return
     setBusy(true)
     setAvailability(null)
+    setAvailabilityError(false)
     try {
       const res = await api.checkTimeslotAvailability({ project_id: projectId, start_at: toISO(draft.start_local), end_at: toISO(draft.end_local) })
       setAvailability(res.available ? 'Window is available — no conflicting reservations.' : res.summary || `${res.count} conflicting reservation(s) in this window.`)
     } catch (err) {
       setAvailability(err instanceof ApiError ? err.message : 'Availability check failed.')
+      setAvailabilityError(true)
     } finally {
       setBusy(false)
     }
@@ -154,6 +179,7 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
       })
       setDraft(null)
       setAvailability(null)
+      setAvailabilityError(false)
       await load()
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to create timeslot.')
@@ -221,13 +247,13 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
           className="btn btn-primary btn-sm"
           disabled={reservationActionDisabled}
           title={reservationActionTitle}
-          onClick={() => { setDraft(emptyDraft()); setAvailability(null) }}
+          onClick={() => { setDraft(emptyDraft()); setAvailability(null); setAvailabilityError(false) }}
         >
           New Reservation
         </button>
       </div>
 
-      {error && <div className="pp-error">{error}</div>}
+      {error && <div className="pp-error" role="alert">{error}</div>}
 
       {!projectId ? (
         <div className="pp-empty">Select a project to view its capacity reservations.</div>
@@ -281,21 +307,27 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
       )}
 
       {draft && (
-        <div className="pp-modal-overlay" onClick={() => setDraft(null)}>
-          <div className="pp-modal" onClick={event => event.stopPropagation()}>
+        <div
+          className="pp-modal-overlay"
+          role="presentation"
+          onPointerDown={event => {
+            if (event.target === event.currentTarget) closeDraft()
+          }}
+        >
+          <div ref={draftDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby={reservationTitleId}>
             <div className="pp-modal-header">
-              <h3>New Capacity Reservation</h3>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setDraft(null)}>Close</button>
+              <h3 id={reservationTitleId}>New Capacity Reservation</h3>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={closeDraft}>Close</button>
             </div>
             <div className="pp-modal-form">
               <div className="pp-field-row">
                 <label className="pp-field">
                   <span>Start</span>
-                  <input type="datetime-local" value={draft.start_local} onChange={e => { setDraft(d => (d ? { ...d, start_local: e.target.value } : d)); setAvailability(null) }} />
+                  <input ref={startInputRef} type="datetime-local" value={draft.start_local} onChange={e => { setDraft(d => (d ? { ...d, start_local: e.target.value } : d)); setAvailability(null); setAvailabilityError(false) }} />
                 </label>
                 <label className="pp-field">
                   <span>End</span>
-                  <input type="datetime-local" value={draft.end_local} onChange={e => { setDraft(d => (d ? { ...d, end_local: e.target.value } : d)); setAvailability(null) }} />
+                  <input type="datetime-local" value={draft.end_local} onChange={e => { setDraft(d => (d ? { ...d, end_local: e.target.value } : d)); setAvailability(null); setAvailabilityError(false) }} />
                 </label>
               </div>
               <div className="pp-field-row">
@@ -333,11 +365,19 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
                 <button type="button" className="btn btn-ghost btn-sm" disabled={!draftValid || busy} onClick={() => void checkAvailability()}>
                   Check availability
                 </button>
-                {availability && <span className="pp-muted">{availability}</span>}
+                {availability && (
+                  <span
+                    className="pp-muted"
+                    role={availabilityError ? 'alert' : 'status'}
+                    aria-live={availabilityError ? undefined : 'polite'}
+                  >
+                    {availability}
+                  </span>
+                )}
               </div>
             </div>
             <div className="pp-modal-actions">
-              <button type="button" className="btn btn-secondary" onClick={() => setDraft(null)}>Cancel</button>
+              <button type="button" className="btn btn-secondary" onClick={closeDraft}>Cancel</button>
               <button type="button" className="btn btn-primary" disabled={!draftValid || busy} onClick={() => void submitDraft()}>
                 {busy ? 'Reserving…' : 'Reserve'}
               </button>
@@ -347,20 +387,26 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
       )}
 
       {bindFor && (
-        <div className="pp-modal-overlay" onClick={() => setBindFor(null)}>
-          <div className="pp-modal" onClick={event => event.stopPropagation()}>
+        <div
+          className="pp-modal-overlay"
+          role="presentation"
+          onPointerDown={event => {
+            if (event.target === event.currentTarget) closeBind()
+          }}
+        >
+          <div ref={bindDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby={bindTitleId}>
             <div className="pp-modal-header">
-              <h3>Bind a test to this reservation</h3>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setBindFor(null)}>Close</button>
+              <h3 id={bindTitleId}>Bind a test to this reservation</h3>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={closeBind}>Close</button>
             </div>
             <div className="pp-modal-form">
               <label className="pp-field">
                 <span>Test id</span>
-                <input value={bindFor.testId} autoFocus onChange={e => setBindFor(b => (b ? { ...b, testId: e.target.value } : b))} placeholder="test id to bind" />
+                <input ref={bindTestInputRef} value={bindFor.testId} onChange={e => setBindFor(b => (b ? { ...b, testId: e.target.value } : b))} placeholder="test id to bind" />
               </label>
             </div>
             <div className="pp-modal-actions">
-              <button type="button" className="btn btn-secondary" onClick={() => setBindFor(null)}>Cancel</button>
+              <button type="button" className="btn btn-secondary" onClick={closeBind}>Cancel</button>
               <button type="button" className="btn btn-primary" disabled={busy || !bindFor.testId.trim()} onClick={() => void submitBind()}>
                 {busy ? 'Binding…' : 'Bind'}
               </button>

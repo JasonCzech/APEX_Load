@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -678,8 +679,11 @@ func cloneArchiveTestGroups(groups []TestGroup) []TestGroup {
 	cloned := make([]TestGroup, len(groups))
 	copy(cloned, groups)
 	for i := range cloned {
+		cloned[i].Stages = cloneLoadStages(groups[i].Stages)
+		cloned[i].Iterations = cloneIntPtr(groups[i].Iterations)
 		cloned[i].RuntimeSettings = cloneRuntimeSettings(groups[i].RuntimeSettings)
 		cloned[i].Assignment = cloneGeneratorAssignmentSettings(groups[i].Assignment)
+		cloned[i].RunLogicGoals = cloneRunLogicGoalSnapshot(groups[i].RunLogicGoals)
 	}
 	return cloned
 }
@@ -764,9 +768,15 @@ func zipDirectory(sourceDir string, dst io.Writer) error {
 		if info.IsDir() {
 			return nil
 		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("archive contains symbolic link %s", path)
+		}
 		relPath, err := filepath.Rel(sourceDir, path)
 		if err != nil {
 			return err
+		}
+		if filepath.ToSlash(relPath) == archiveMaterializationCacheMarkerSuffix {
+			return nil
 		}
 		fileWriter, err := zipWriter.Create(filepath.ToSlash(relPath))
 		if err != nil {
@@ -776,8 +786,11 @@ func zipDirectory(sourceDir string, dst io.Writer) error {
 		if err != nil {
 			return err
 		}
-		defer file.Close()
-		_, err = io.Copy(fileWriter, file)
-		return err
+		_, copyErr := io.Copy(fileWriter, file)
+		closeErr := file.Close()
+		if copyErr != nil {
+			return copyErr
+		}
+		return closeErr
 	})
 }

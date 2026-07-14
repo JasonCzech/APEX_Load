@@ -1,0 +1,1 @@
+export const ARCHIVE_CHART_MAX_SAMPLES = 5000

@@ -1,10 +1,11 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useDashboardTheme } from './hooks/useDashboardTheme'
 import { useDashboardZoomShortcuts } from './hooks/useDashboardZoomShortcuts'
 import { KeyboardShortcutProvider, useKeyboardShortcuts } from './hooks/KeyboardShortcutProvider'
 import { useWebSocket } from './hooks/useWebSocket'
 import { ApplicationProvider } from './hooks/ApplicationProvider'
 import { useApplication } from './hooks/useApplication'
+import { ApplicationContext, type ApplicationContextValue } from './hooks/applicationContext'
 import { MetricsHistoryPoint, TelemetryDiagnostic, TelemetryDiagnosticEntry, WSMessage } from './types'
 import Sidebar, { type NavPage } from './components/Sidebar'
 import type { DashboardSnapshotAudience } from './components/DashboardPage'
@@ -14,21 +15,25 @@ import {
   handleGuardedRouteChange,
   normalizeReportViewForFeatureFlag,
   parseAppViewFromHash,
+  readAppHistoryIndex,
   type TestWorkspaceTabID,
   viewToLocationHash,
+  withAppHistoryIndex,
 } from './appRouting'
-import { appendTelemetryDiagnostic } from './components/monitoringTelemetryDiagnostics'
+import { appendBoundedMetricsHistory } from './appMetricsHistory'
 import { mapExecutionMetricToHistoryPoint } from './components/testExecutionMetricsModel'
 import AuthGate from './components/AuthGate'
 import { useAuthStatus } from './hooks/useAuthStatus'
 import { ProjectProvider } from './hooks/ProjectProvider'
 import { useProject } from './hooks/useProject'
+import { ProjectContext, type ProjectContextValue } from './hooks/projectContext'
 import { DevViewProvider } from './hooks/DevViewProvider'
 import { useDevView } from './hooks/useDevView'
 import { useSystemApi } from './hooks/api/useSystemApi'
 import { useRepositoryApi } from './hooks/api/useRepositoryApi'
 import { useLibraryApi } from './hooks/api/useLibraryApi'
 import { useTestApi } from './hooks/api/useTestApi'
+import { useSharedTestList } from './hooks/useSharedTestList'
 import {
   TopbarContributionProvider,
   useActiveTopbarContribution,
@@ -46,6 +51,7 @@ import { useKeepAwakeDuringRuns } from './desktop/useKeepAwake'
 import { useDockBadge } from './desktop/useDockBadge'
 import { filesFromDroppedPaths } from './desktop/desktopFiles'
 import AboutDialog from './components/AboutDialog'
+import LazyLoadBoundary from './components/LazyLoadBoundary'
 import DesktopHome, { type DesktopQuickAction } from './components/DesktopHome'
 import { addRecent, clearRecents, getRecents, toggleRecentPin, type RecentItem } from './desktop/desktopRecents'
 import ThemeToggle from './components/ThemeToggle'
@@ -62,7 +68,15 @@ import {
   type TopbarRunSummary,
 } from './appTopbar'
 import { buildNavigationShortcuts, focusCurrentPageSearch } from './appKeyboardShortcuts'
+import {
+  appendProjectTelemetryDiagnostic,
+  isCurrentRepositoryRequest,
+  isProjectScopedMessageCurrent,
+  projectForActiveDomain,
+  telemetryDiagnosticsForProject,
+} from './appProjectScope'
 import type { ScriptsAuthoringSubView } from './components/useScriptsAuthoringState'
+import type { MonitorCategoryId } from './components/MonitoringPage'
 import './App.css'
 import './components/Pages.css'
 
@@ -84,6 +98,14 @@ const SettingsPage = lazy(() => import('./components/SettingsPage'))
 const BrowserRecorderControlPanel = lazy(() => import('./components/BrowserRecorderControlPanel'))
 
 const getWailsDesktopBridge = getDesktopBridge
+const PROTECTED_METRICS_STATUSES = new Set([
+  'SHAKEOUT',
+  'SHAKEOUT_REVIEW',
+  'INITIALIZING',
+  'RUNNING',
+  'PAUSED',
+  'STOPPING',
+])
 
 type NativeImportTarget = {
   launcher: string
@@ -93,6 +115,14 @@ type NativeImportTarget = {
 type NativeImportRequest = NativeImportTarget & {
   id: number
   files: File[]
+}
+
+type PendingGuardedHistoryTraversal = {
+  originHash: string
+  originIndex: number
+  targetHash: string
+  targetIndex: number
+  targetView: AppView
 }
 
 function nativeImportTargetForFileName(fileName: string): NativeImportTarget {
@@ -192,6 +222,38 @@ function viewConsumesMetrics(view: AppView, testId: string) {
   return false
 }
 
+export function ScopedAppContextProviders({
+  projectValue,
+  applicationValue,
+  children,
+}: {
+  projectValue: ProjectContextValue
+  applicationValue: ApplicationContextValue
+  children: ReactNode
+}) {
+  return (
+    <ProjectContext.Provider value={projectValue}>
+      <ApplicationContext.Provider value={applicationValue}>
+        {children}
+      </ApplicationContext.Provider>
+    </ProjectContext.Provider>
+  )
+}
+
+function monitorCategoryForView(view: AppView): MonitorCategoryId {
+  if (view.page === 'fleet') return 'fleet'
+  if (view.page === 'schedules') return 'schedules'
+  if (view.page === 'monitoring' && view.category === 'telemetry') return 'telemetry'
+  return 'overview'
+}
+
+function viewForMonitorCategory(categoryId: MonitorCategoryId): AppView {
+  if (categoryId === 'fleet') return { page: 'fleet' }
+  if (categoryId === 'schedules') return { page: 'schedules' }
+  if (categoryId === 'telemetry') return { page: 'monitoring', category: 'telemetry' }
+  return { page: 'monitoring' }
+}
+
 function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuthStatus }) {
   useDashboardZoomShortcuts()
 
@@ -203,10 +265,22 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const viewRef = useRef(view)
   const routeSyncInitialized = useRef(false)
   const lastRouteRestored = useRef(false)
+  const appHistoryIndex = useRef(
+    typeof window === 'undefined' ? 0 : readAppHistoryIndex(window.history.state) ?? 0,
+  )
+  const popstateHashToIgnore = useRef<string | null>(null)
+  const guardedHistoryTraversal = useRef<{
+    phase: 'restoring' | 'proceeding'
+    pending: PendingGuardedHistoryTraversal
+  } | null>(null)
+  const mainContentRef = useRef<HTMLElement | null>(null)
   const metricsHistoryRef = useRef<Record<string, MetricsHistoryPoint[]>>({})
   const [, setMetricsHistoryVersion] = useState(0)
   const [testStatuses, setTestStatuses] = useState<Record<string, string>>({})
-  const [telemetryDiagnostics, setTelemetryDiagnostics] = useState<TelemetryDiagnosticEntry[]>([])
+  const testStatusesRef = useRef(testStatuses)
+  testStatusesRef.current = testStatuses
+  const protectedMetricsTestIDsRef = useRef<ReadonlySet<string>>(new Set())
+  const [telemetryDiagnosticsByProject, setTelemetryDiagnosticsByProject] = useState<Record<string, TelemetryDiagnosticEntry[]>>({})
   const { theme, setTheme } = useDashboardTheme()
   const { mode: devViewMode } = useDevView()
   const { getAuthEffectiveAccess } = useSystemApi()
@@ -222,11 +296,13 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const [effectiveAccessError, setEffectiveAccessError] = useState(false)
   const [domains, setDomains] = useState<import('./types').Domain[]>([])
   const [activeDomain, setActiveDomainState] = useState<import('./types').Domain | null>(null)
-  const [applicationRepository, setApplicationRepository] = useState<import('./types').ApplicationRepository | null>(null)
-  const [repositoryCategories, setRepositoryCategories] = useState<import('./types').RepositoryCategory[]>([])
+  const [loadedApplicationRepository, setApplicationRepository] = useState<import('./types').ApplicationRepository | null>(null)
+  const [loadedRepositoryCategories, setRepositoryCategories] = useState<import('./types').RepositoryCategory[]>([])
+  const repositoryRequestGenerationRef = useRef(0)
+  const activeDomainIDRef = useRef(activeDomain?.id || '')
+  activeDomainIDRef.current = activeDomain?.id || ''
   const [desktopStatus, setDesktopStatus] = useState<DesktopStatusResponse | null>(null)
   const [activeTopbarRuns, setActiveTopbarRuns] = useState<TopbarRunSummary[]>([])
-  const [desktopActiveRunCount, setDesktopActiveRunCount] = useState(0)
   const [nativeImportRequest, setNativeImportRequest] = useState<NativeImportRequest | null>(null)
   const [fleetEventSignal, setFleetEventSignal] = useState(0)
   // Bumped by the content-free `access_review_changed` WebSocket ping so the Access page
@@ -254,7 +330,9 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
     }
   }, [desktopSurface, reloadRecents])
 
-  const handleWSMessage = useCallback((msg: WSMessage) => {
+  const handleWSMessage = useCallback((msg: WSMessage, projectScopeID?: string) => {
+    if (!isProjectScopedMessageCurrent(msg.project_id, projectScopeID)) return
+
     if (msg.type === 'access_review_changed') {
       setAccessReviewSignal((n) => n + 1)
       return
@@ -268,27 +346,37 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
     if (msg.type === 'metrics_update' && msg.data && msg.test_id && msg.timestamp) {
       const testId = msg.test_id
       const point = mapExecutionMetricToHistoryPoint({ ...msg.data, timestamp: String(msg.timestamp) })
-      const existing = metricsHistoryRef.current[testId] || []
-      metricsHistoryRef.current = {
-        ...metricsHistoryRef.current,
-        [testId]: [...existing, point].slice(-300),
-      }
+      const protectedTestIDs = new Set(protectedMetricsTestIDsRef.current)
+      protectedTestIDs.add(testId)
+      metricsHistoryRef.current = appendBoundedMetricsHistory(
+        metricsHistoryRef.current,
+        testId,
+        point,
+        undefined,
+        undefined,
+        protectedTestIDs,
+      )
       if (viewConsumesMetrics(viewRef.current, testId)) {
         setMetricsHistoryVersion((version) => version + 1)
       }
     }
 
-    if (msg.type === 'telemetry_diagnostic' && msg.data && msg.test_id && msg.timestamp) {
+    if (msg.type === 'telemetry_diagnostic' && msg.data && msg.test_id && msg.timestamp && projectScopeID) {
+      if (msg.project_id && msg.project_id !== projectScopeID) return
       const diagnostic = msg.data as unknown as TelemetryDiagnostic
       if (diagnostic.summary && diagnostic.severity) {
         const testId = msg.test_id
         const timestamp = msg.timestamp
-        setTelemetryDiagnostics((prev) => appendTelemetryDiagnostic(prev, {
-          test_id: testId,
-          test_name: msg.test_name,
-          timestamp,
-          diagnostic,
-        }))
+        setTelemetryDiagnosticsByProject((prev) => appendProjectTelemetryDiagnostic(
+          prev,
+          projectScopeID,
+          {
+            test_id: testId,
+            test_name: msg.test_name,
+            timestamp,
+            diagnostic,
+          },
+        ))
       }
     }
 
@@ -306,13 +394,143 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   }, [notifyTestStatus])
   const metricsHistory = metricsHistoryRef.current
 
-  const { projects, activeProject, setActiveProject, createAndSelectProject, refreshProjects } = useProject()
+  const outerProjectContext = useProject()
+  const {
+    projects,
+    activeProject: selectedProject,
+    setActiveProject: setOuterActiveProject,
+    createAndSelectProject: createOuterProject,
+    refreshProjects,
+  } = outerProjectContext
   const domainProjects = useMemo(() => {
     const domainID = activeDomain?.id || 'default'
     return projects.filter(project => (project.domain_id || 'default') === domainID)
   }, [activeDomain?.id, projects])
-  const { connectionState } = useWebSocket({ onMessage: handleWSMessage, projectId: activeProject?.id })
-  const { applications, releases, activeApplication, activeRelease, setActiveApplication, setActiveRelease, createAndSelectApplication, createAndSelectRelease } = useApplication()
+  const activeProject = projectForActiveDomain(activeDomain, selectedProject)
+  const setActiveProject = useCallback<ProjectContextValue['setActiveProject']>((project) => {
+    if (projectForActiveDomain(activeDomain, project)) setOuterActiveProject(project)
+  }, [activeDomain, setOuterActiveProject])
+  const createAndSelectProject = useCallback<ProjectContextValue['createAndSelectProject']>((project) => {
+    const domainID = activeDomain?.id
+    const payload = typeof project === 'string'
+      ? { name: project, domain_id: domainID }
+      : { ...project, domain_id: project.domain_id || domainID }
+    return createOuterProject(payload)
+  }, [activeDomain?.id, createOuterProject])
+  const telemetryDiagnostics = telemetryDiagnosticsForProject(telemetryDiagnosticsByProject, activeProject?.id)
+  const handleProjectWSMessage = useCallback(
+    (message: WSMessage) => handleWSMessage(message, activeProject?.id),
+    [activeProject?.id, handleWSMessage],
+  )
+  const { connectionState } = useWebSocket({
+    onMessage: handleProjectWSMessage,
+    projectId: activeProject?.id,
+    enabled: Boolean(activeProject?.id),
+  })
+  const outerApplicationContext = useApplication()
+  const applications = useMemo(
+    () => activeProject
+      ? outerApplicationContext.applications.filter(application => !application.project_id || application.project_id === activeProject.id)
+      : [],
+    [activeProject, outerApplicationContext.applications],
+  )
+  const activeApplication = activeProject && outerApplicationContext.activeApplication
+    && (!outerApplicationContext.activeApplication.project_id || outerApplicationContext.activeApplication.project_id === activeProject.id)
+    ? outerApplicationContext.activeApplication
+    : null
+  const releases = useMemo(
+    () => activeApplication
+      ? outerApplicationContext.releases.filter(release => !release.application_id || release.application_id === activeApplication.id)
+      : [],
+    [activeApplication, outerApplicationContext.releases],
+  )
+  const activeRelease = activeApplication && outerApplicationContext.activeRelease
+    && (!outerApplicationContext.activeRelease.application_id || outerApplicationContext.activeRelease.application_id === activeApplication.id)
+    ? outerApplicationContext.activeRelease
+    : null
+  const setActiveApplication = useCallback<ApplicationContextValue['setActiveApplication']>((application) => {
+    if (activeProject && (!application.project_id || application.project_id === activeProject.id)) {
+      outerApplicationContext.setActiveApplication(application)
+    }
+  }, [activeProject, outerApplicationContext])
+  const setActiveRelease = useCallback<ApplicationContextValue['setActiveRelease']>((release) => {
+    if (activeApplication && (!release.application_id || release.application_id === activeApplication.id)) {
+      outerApplicationContext.setActiveRelease(release)
+    }
+  }, [activeApplication, outerApplicationContext])
+  const refreshApplications = useCallback(() => (
+    activeProject ? outerApplicationContext.refreshApplications() : Promise.resolve()
+  ), [activeProject, outerApplicationContext])
+  const refreshReleases = useCallback((applicationID?: string) => (
+    activeApplication && (!applicationID || applicationID === activeApplication.id)
+      ? outerApplicationContext.refreshReleases(applicationID)
+      : Promise.resolve()
+  ), [activeApplication, outerApplicationContext])
+  const createAndSelectApplication = useCallback<ApplicationContextValue['createAndSelectApplication']>(async (name) => {
+    if (!activeProject) throw new Error('Select a project before creating an application.')
+    return outerApplicationContext.createAndSelectApplication(name)
+  }, [activeProject, outerApplicationContext])
+  const createAndSelectRelease = useCallback<ApplicationContextValue['createAndSelectRelease']>((name) => {
+    if (!activeApplication) return Promise.resolve(null)
+    return outerApplicationContext.createAndSelectRelease(name)
+  }, [activeApplication, outerApplicationContext])
+  const scopedProjectContextValue = useMemo<ProjectContextValue>(() => ({
+    projects: domainProjects,
+    activeProject,
+    setActiveProject,
+    refreshProjects,
+    createAndSelectProject,
+  }), [activeProject, createAndSelectProject, domainProjects, refreshProjects, setActiveProject])
+  const scopedApplicationContextValue = useMemo<ApplicationContextValue>(() => ({
+    applications,
+    releases,
+    activeApplication,
+    activeRelease,
+    setActiveApplication,
+    setActiveRelease,
+    refreshApplications,
+    refreshReleases,
+    createAndSelectApplication,
+    createAndSelectRelease,
+  }), [activeApplication, activeRelease, applications, createAndSelectApplication, createAndSelectRelease, refreshApplications, refreshReleases, releases, setActiveApplication, setActiveRelease])
+  const scopedTestListParams = useMemo(() => activeProject?.id ? {
+    project_id: activeProject.id,
+    application_id: activeApplication?.id,
+    summary: true,
+    active_only: true,
+    limit: 100,
+  } : null, [activeApplication?.id, activeProject?.id])
+  const desktopTestListParams = useMemo(() => desktopSurface ? {
+    summary: true,
+    active_only: true,
+    limit: 100,
+  } : null, [desktopSurface])
+  const { tests: scopedTestSnapshots } = useSharedTestList(scopedTestListParams, {
+    loader: testApi.listTests,
+    pollIntervalMs: 10000,
+  })
+  const { tests: desktopTestSnapshots } = useSharedTestList(desktopTestListParams, {
+    loader: testApi.listTests,
+    pollIntervalMs: 10000,
+  })
+  protectedMetricsTestIDsRef.current = new Set([
+    ...activeTopbarRuns.map(run => run.id),
+    ...scopedTestSnapshots
+      .filter(test => PROTECTED_METRICS_STATUSES.has((test.status || '').trim().toUpperCase()))
+      .map(test => test.id),
+  ])
+  useEffect(() => {
+    if (!activeProject?.id) {
+      setActiveTopbarRuns([])
+      return
+    }
+    setActiveTopbarRuns(selectTopbarActiveRuns(scopedTestSnapshots, testStatusesRef.current))
+  }, [activeApplication?.id, activeProject?.id, scopedTestSnapshots])
+  const desktopActiveRunCount = useMemo(() => {
+    if (!desktopSurface) return activeTopbarRuns.length
+    const globalSnapshotCount = selectTopbarActiveRuns(desktopTestSnapshots, testStatuses).length
+    return Math.max(globalSnapshotCount, activeTopbarRuns.length)
+  }, [activeTopbarRuns.length, desktopSurface, desktopTestSnapshots, testStatuses])
   const canManageServiceAccounts = isEffectiveOperationAllowed(effectiveAccessResources, 'manage_service_accounts', false)
   const canManageUserLifecycle = isEffectiveOperationAllowed(effectiveAccessResources, 'manage_users', false)
   const canManageUserBindings = canManageUserLifecycle || isEffectiveOperationAllowed(effectiveAccessResources, 'manage_user_bindings', false)
@@ -362,7 +580,12 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
     setView({ page: 'new-test', scenarioId })
   }
 
-  const navigateToScheduleForDate = (prefillStartLocal: string) => setGuardedView({ page: 'new-test', prefillStartLocal })
+  const navigateToScheduleForDate = useCallback((prefillStartLocal: string) => {
+    setGuardedView({ page: 'new-test', prefillStartLocal })
+  }, [setGuardedView])
+  const navigateToMonitorCategory = useCallback((categoryId: MonitorCategoryId) => {
+    setGuardedView(viewForMonitorCategory(categoryId))
+  }, [setGuardedView])
 
   const performNavigate = useCallback((page: NavPage) => {
     if (page === 'scripts') {
@@ -486,13 +709,8 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
     }
   }, [view.page])
 
-  const appHistoryDepth = useRef(0)
-  useEffect(() => {
-    appHistoryDepth.current += 1
-  }, [view])
-
   const navigateBack = useCallback((fallbackPage: NavPage = 'dashboard') => {
-    if (appHistoryDepth.current > 1) {
+    if (appHistoryIndex.current > 0) {
       runGuarded(() => window.history.back())
     } else {
       setGuardedView({ page: fallbackPage })
@@ -561,20 +779,96 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   useEffect(() => {
     if (typeof window === 'undefined') return undefined
 
-    const handleRouteChange = () => {
+    const handleRouteChange = (event: PopStateEvent | HashChangeEvent) => {
+      const isPopState = event.type === 'popstate'
+      if (!isPopState && popstateHashToIgnore.current === window.location.hash) {
+        popstateHashToIgnore.current = null
+        return
+      }
+      if (!isPopState) {
+        popstateHashToIgnore.current = null
+      }
+      if (isPopState) {
+        popstateHashToIgnore.current = window.location.hash
+      }
+
+      const targetHistoryIndex = isPopState
+        ? readAppHistoryIndex((event as PopStateEvent).state)
+        : null
+
+      if (isPopState && targetHistoryIndex !== null && guardedHistoryTraversal.current) {
+        const traversal = guardedHistoryTraversal.current
+        if (traversal.phase === 'restoring') {
+          guardedHistoryTraversal.current = null
+          appHistoryIndex.current = traversal.pending.originIndex
+          runGuarded(() => {
+            if (
+              appHistoryIndex.current !== traversal.pending.originIndex
+              || viewToLocationHash(viewRef.current) !== traversal.pending.originHash
+            ) {
+              return
+            }
+            guardedHistoryTraversal.current = { phase: 'proceeding', pending: traversal.pending }
+            window.history.go(traversal.pending.targetIndex - traversal.pending.originIndex)
+          })
+          return
+        }
+
+        guardedHistoryTraversal.current = null
+        appHistoryIndex.current = traversal.pending.targetIndex
+        const normalizedTarget = normalizeReportViewForFeatureFlag(traversal.pending.targetView, runReportEnabled)
+        const normalizedHash = traversal.pending.targetHash
+        if (window.location.hash !== normalizedHash || readAppHistoryIndex(window.history.state) !== traversal.pending.targetIndex) {
+          popstateHashToIgnore.current = normalizedHash
+          window.history.replaceState(
+            withAppHistoryIndex(window.history.state, traversal.pending.targetIndex),
+            '',
+            normalizedHash,
+          )
+        }
+        setView(current => (viewToLocationHash(current) === normalizedHash ? current : normalizedTarget))
+        return
+      }
+
+      if (isPopState && targetHistoryIndex !== null && hasDirtyGuard()) {
+        const originIndex = appHistoryIndex.current
+        const restoreDelta = originIndex - targetHistoryIndex
+        if (restoreDelta !== 0) {
+          const targetView = normalizeReportViewForFeatureFlag(
+            parseAppViewFromHash(window.location.hash),
+            runReportEnabled,
+          )
+          guardedHistoryTraversal.current = {
+            phase: 'restoring',
+            pending: {
+              originHash: viewToLocationHash(viewRef.current),
+              originIndex,
+              targetHash: viewToLocationHash(targetView),
+              targetIndex: targetHistoryIndex,
+              targetView,
+            },
+          }
+          window.history.go(restoreDelta)
+          return
+        }
+      }
+
       handleGuardedRouteChange({
         currentView: viewRef.current,
         locationHash: window.location.hash,
         hasDirtyGuard,
         runGuarded,
         restoreHash: (hash) => {
-          window.history.pushState(null, '', hash)
+          window.history.pushState(withAppHistoryIndex(window.history.state, appHistoryIndex.current), '', hash)
         },
         applyView: (nextView) => {
           const normalizedView = normalizeReportViewForFeatureFlag(nextView, runReportEnabled)
           const nextHash = viewToLocationHash(normalizedView)
-          if (window.location.hash !== nextHash) {
-            window.history.replaceState(null, '', nextHash)
+          const nextHistoryIndex = targetHistoryIndex ?? appHistoryIndex.current + 1
+          appHistoryIndex.current = nextHistoryIndex
+          if (window.location.hash !== nextHash || readAppHistoryIndex(window.history.state) !== nextHistoryIndex) {
+            if (isPopState) popstateHashToIgnore.current = nextHash
+            window.history.replaceState(withAppHistoryIndex(window.history.state, nextHistoryIndex), '', nextHash)
           }
           setView(current => (viewToLocationHash(current) === nextHash ? current : normalizedView))
         },
@@ -586,6 +880,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
     return () => {
       window.removeEventListener('popstate', handleRouteChange)
       window.removeEventListener('hashchange', handleRouteChange)
+      popstateHashToIgnore.current = null
     }
   }, [hasDirtyGuard, runGuarded, runReportEnabled])
 
@@ -595,15 +890,25 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
     const nextHash = viewToLocationHash(view)
     if (!routeSyncInitialized.current) {
       routeSyncInitialized.current = true
-      if (!window.location.hash && view.page === 'dashboard') return
+      appHistoryIndex.current = readAppHistoryIndex(window.history.state) ?? appHistoryIndex.current
+      const indexedState = withAppHistoryIndex(window.history.state, appHistoryIndex.current)
+      if (!window.location.hash && view.page === 'dashboard') {
+        window.history.replaceState(indexedState, '', window.location.href)
+        return
+      }
       if (window.location.hash !== nextHash) {
-        window.history.replaceState(null, '', nextHash)
+        window.history.replaceState(indexedState, '', nextHash)
+      } else if (readAppHistoryIndex(window.history.state) !== appHistoryIndex.current) {
+        window.history.replaceState(indexedState, '', window.location.href)
       }
       return
     }
 
     if (window.location.hash !== nextHash) {
-      window.history.pushState(null, '', nextHash)
+      const nextHistoryIndex = appHistoryIndex.current + 1
+      appHistoryIndex.current = nextHistoryIndex
+      popstateHashToIgnore.current = null
+      window.history.pushState(withAppHistoryIndex(window.history.state, nextHistoryIndex), '', nextHash)
     }
   }, [view])
 
@@ -674,17 +979,38 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   }, [repositoryApi])
 
   const refreshRepository = useCallback(async () => {
-    if (!activeDomain?.id) {
+    const domainID = activeDomain?.id || ''
+    const requestGeneration = ++repositoryRequestGenerationRef.current
+    if (!domainID) {
       setApplicationRepository(null)
       setRepositoryCategories([])
       return
     }
-    const [repo, categoryResponse] = await Promise.all([
-      repositoryApi.getApplicationRepository(activeDomain.id),
-      repositoryApi.listRepositoryCategories(activeDomain.id),
-    ])
-    setApplicationRepository(repo)
-    setRepositoryCategories(categoryResponse.categories || [])
+    try {
+      const [repo, categoryResponse] = await Promise.all([
+        repositoryApi.getApplicationRepository(domainID),
+        repositoryApi.listRepositoryCategories(domainID),
+      ])
+      if (!isCurrentRepositoryRequest(
+        requestGeneration,
+        domainID,
+        repositoryRequestGenerationRef.current,
+        activeDomainIDRef.current,
+      )) return
+      setApplicationRepository(repo)
+      setRepositoryCategories(categoryResponse.categories || [])
+    } catch (error) {
+      if (isCurrentRepositoryRequest(
+        requestGeneration,
+        domainID,
+        repositoryRequestGenerationRef.current,
+        activeDomainIDRef.current,
+      )) {
+        setApplicationRepository(null)
+        setRepositoryCategories([])
+      }
+      throw error
+    }
   }, [activeDomain?.id, repositoryApi])
 
   useEffect(() => {
@@ -692,20 +1018,20 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   }, [refreshDomains])
 
   useEffect(() => {
-    refreshRepository().catch(() => {
-      setApplicationRepository(null)
-      setRepositoryCategories([])
-    })
+    void refreshRepository().catch(() => undefined)
   }, [refreshRepository])
 
   useEffect(() => {
-    if (!activeDomain || domainProjects.length === 0) {
-      return
-    }
-    if (!activeProject || (activeProject.domain_id || 'default') !== activeDomain.id) {
+    if (!activeDomain || domainProjects.length === 0) return
+    if (!selectedProject || (selectedProject.domain_id || 'default') !== activeDomain.id) {
       setActiveProject(domainProjects[0])
     }
-  }, [activeDomain, activeProject, domainProjects, setActiveProject])
+  }, [activeDomain, domainProjects, selectedProject, setActiveProject])
+
+  const applicationRepository = loadedApplicationRepository?.domain_id === activeDomain?.id
+    ? loadedApplicationRepository
+    : null
+  const repositoryCategories = loadedRepositoryCategories.filter(category => category.domain_id === activeDomain?.id)
 
   useEffect(() => {
     let cancelled = false
@@ -807,9 +1133,22 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   ), [activeTopbarContribution?.meta])
   const hasContextualTopbarActions = topbarPrimaryActions.length > 0 || topbarSecondaryActions.length > 0 || Boolean(activeTopbarContribution?.controls)
   const showTopbarRunChips = visibleTopbarRuns.length > 0 && !hasContextualTopbarActions
-  const effectiveTopbarTitle = activeTopbarContribution?.title || topbarPageTitle
+  // The route is the authoritative page identity. A lazily suspended previous
+  // page can keep its topbar contribution mounted briefly, so using a
+  // contribution title here would announce the old page after navigation.
+  const effectiveTopbarTitle = topbarPageTitle
   const showTopbarClientDownloads = shouldShowTopbarClientDownloads(view)
   const mainContentClassName = `main-content topbar-title-mode page-${view.page}`
+  const activeRouteHash = viewToLocationHash(view)
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    document.title = `${effectiveTopbarTitle} | APEX Load`
+  }, [effectiveTopbarTitle])
+
+  useEffect(() => {
+    mainContentRef.current?.focus({ preventScroll: true })
+  }, [activeRouteHash])
 
   const topbarActionShortcuts = useMemo(() => (
     [...topbarSecondaryActions, ...topbarPrimaryActions]
@@ -828,125 +1167,27 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   ), [activeTopbarContribution?.id, topbarPrimaryActions, topbarSecondaryActions])
   useKeyboardShortcuts(topbarActionShortcuts)
 
-  useEffect(() => {
-    let cancelled = false
-    let inFlight = false
-    let lastSignature = ''
-
-    const loadTopbarRuns = async () => {
-      if (!activeProject?.id) {
-        setActiveTopbarRuns([])
-        return
-      }
-      if (inFlight) return
-      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
-        return
-      }
-      inFlight = true
-
-      try {
-        const response = await testApi.listTests({
-          project_id: activeProject.id,
-          application_id: activeApplication?.id,
-        })
-        if (!cancelled) {
-          const nextRuns = selectTopbarActiveRuns(response.tests || [], testStatuses)
-          const signature = JSON.stringify(nextRuns)
-          if (signature !== lastSignature) {
-            lastSignature = signature
-            setActiveTopbarRuns(nextRuns)
-          }
-        }
-      } catch {
-        // WebSocket updates will keep the rail useful if the snapshot fetch fails.
-      } finally {
-        inFlight = false
-      }
-    }
-
-    void loadTopbarRuns()
-    const interval = window.setInterval(() => {
-      void loadTopbarRuns()
-    }, 10000)
-    const handleVisibilityChange = () => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        void loadTopbarRuns()
-      }
-    }
-    if (typeof document !== 'undefined') {
-      document.addEventListener('visibilitychange', handleVisibilityChange)
-    }
-
-    return () => {
-      cancelled = true
-      window.clearInterval(interval)
-      if (typeof document !== 'undefined') {
-        document.removeEventListener('visibilitychange', handleVisibilityChange)
-      }
-    }
-  }, [activeApplication?.id, activeProject?.id, testApi, testStatuses])
-
-  useEffect(() => {
-    if (!desktopSurface) {
-      setDesktopActiveRunCount(activeTopbarRuns.length)
-      return
-    }
-
-    let cancelled = false
-    let inFlight = false
-
-    const loadDesktopActiveRuns = async () => {
-      if (inFlight) return
-      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
-        return
-      }
-      inFlight = true
-      try {
-        const response = await testApi.listTests()
-        if (!cancelled) {
-          setDesktopActiveRunCount(selectTopbarActiveRuns(response.tests || [], testStatuses).length)
-        }
-      } catch {
-        // Keep the previous native-shell count if the global snapshot fetch fails.
-      } finally {
-        inFlight = false
-      }
-    }
-
-    void loadDesktopActiveRuns()
-    const interval = window.setInterval(() => {
-      void loadDesktopActiveRuns()
-    }, 10000)
-    const handleVisibilityChange = () => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        void loadDesktopActiveRuns()
-      }
-    }
-    if (typeof document !== 'undefined') {
-      document.addEventListener('visibilitychange', handleVisibilityChange)
-    }
-
-    return () => {
-      cancelled = true
-      window.clearInterval(interval)
-      if (typeof document !== 'undefined') {
-        document.removeEventListener('visibilitychange', handleVisibilityChange)
-      }
-    }
-  }, [activeTopbarRuns.length, desktopSurface, testApi, testStatuses])
-
   // The recorder control panel renders chrome-less so it works as a compact
   // companion popup window next to the recording browser.
   if (view.page === 'recorder-panel' && view.sessionId) {
     return (
-      <Suspense fallback={<div className="page-loading">Loading…</div>}>
-        <BrowserRecorderControlPanel sessionId={view.sessionId} standalone />
-      </Suspense>
+      <ScopedAppContextProviders
+        projectValue={scopedProjectContextValue}
+        applicationValue={scopedApplicationContextValue}
+      >
+        <Suspense fallback={<div className="page-loading">Loading…</div>}>
+          <BrowserRecorderControlPanel sessionId={view.sessionId} standalone />
+        </Suspense>
+      </ScopedAppContextProviders>
     )
   }
 
   return (
-    <div className="app-layout">
+    <ScopedAppContextProviders
+      projectValue={scopedProjectContextValue}
+      applicationValue={scopedApplicationContextValue}
+    >
+      <div className="app-layout">
       <Sidebar
         active={activePage}
         onNavigate={handleNavigate}
@@ -968,10 +1209,20 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
         onCreateApplication={createAndSelectApplication}
         showAccess={canUseAccessWorkspace}
       />
-      <main className={mainContentClassName}>
+      <main
+        ref={mainContentRef}
+        className={mainContentClassName}
+        tabIndex={-1}
+        aria-labelledby="app-page-title"
+      >
+        <span className="app-route-announcement" role="status" aria-live="polite" aria-atomic="true">
+          {effectiveTopbarTitle}
+        </span>
         <div className={`main-topbar${activeTopbarContribution ? ' contextual' : ''}`} aria-label="Dashboard controls">
           <div className="main-topbar-page">
-            {activeTopbarContribution?.titleNode || <strong className="topbar-page-title">{effectiveTopbarTitle}</strong>}
+            <h1 id="app-page-title" className="topbar-page-title">
+              {effectiveTopbarTitle}
+            </h1>
           </div>
           {topbarMeta.length > 0 && (
             <div className="topbar-meta-strip" aria-label="Current context">
@@ -1062,7 +1313,8 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
             {activeTopbarContribution.feedback}
           </div>
         )}
-        <Suspense fallback={<div className="page">Loading page...</div>}>
+        <LazyLoadBoundary key={activeRouteHash} title="This dashboard page could not be loaded.">
+          <Suspense fallback={<div className="page">Loading page...</div>}>
           {view.page === 'dashboard' && desktopSurface && (
             <DesktopHome
               status={desktopStatus}
@@ -1174,9 +1426,18 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
               activeRelease={activeRelease}
             />
           )}
-          {view.page === 'monitoring' && <MonitoringPage connectionState={connectionState} telemetryDiagnostics={telemetryDiagnostics} onSelectTest={navigateToTest} canManageSystem={canManageSystem} onScheduleForDate={navigateToScheduleForDate} fleetEventSignal={fleetEventSignal} />}
-          {view.page === 'fleet' && <MonitoringPage connectionState={connectionState} telemetryDiagnostics={telemetryDiagnostics} onSelectTest={navigateToTest} canManageSystem={canManageSystem} onScheduleForDate={navigateToScheduleForDate} initialCategoryId="fleet" fleetEventSignal={fleetEventSignal} />}
-          {view.page === 'schedules' && <MonitoringPage connectionState={connectionState} telemetryDiagnostics={telemetryDiagnostics} onSelectTest={navigateToTest} canManageSystem={canManageSystem} onScheduleForDate={navigateToScheduleForDate} initialCategoryId="schedules" fleetEventSignal={fleetEventSignal} />}
+          {(view.page === 'monitoring' || view.page === 'fleet' || view.page === 'schedules') && (
+            <MonitoringPage
+              connectionState={connectionState}
+              telemetryDiagnostics={telemetryDiagnostics}
+              onSelectTest={navigateToTest}
+              canManageSystem={canManageSystem}
+              onScheduleForDate={navigateToScheduleForDate}
+              activeCategoryId={monitorCategoryForView(view)}
+              onCategoryChange={navigateToMonitorCategory}
+              fleetEventSignal={fleetEventSignal}
+            />
+          )}
           {view.page === 'docs' && (
             <ApiGuidePage
               activePage={view.guidePage}
@@ -1242,9 +1503,11 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
               onDomainsRefresh={refreshDomains}
             />
           )}
-        </Suspense>
+          </Suspense>
+        </LazyLoadBoundary>
       </main>
-    </div>
+      </div>
+    </ScopedAppContextProviders>
   )
 }
 

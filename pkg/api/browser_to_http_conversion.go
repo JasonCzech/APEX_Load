@@ -149,6 +149,10 @@ func (s *Server) handlePreviewBrowserToHTTP(w http.ResponseWriter, r *http.Reque
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
+	if err := s.bindBrowserToHTTPProject(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	entries, skippedStatic, err := s.browserToHTTPNetworkEntries(req)
 	if err != nil {
@@ -204,6 +208,32 @@ func (s *Server) handlePreviewBrowserToHTTP(w http.ResponseWriter, r *http.Reque
 		ScenarioTemplate:    buildBrowserToHTTPScenarioTemplate(req.SourceBrowserScript, result.Script),
 	}
 	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *Server) bindBrowserToHTTPProject(req *BrowserToHTTPPreviewRequest) error {
+	if req == nil {
+		return nil
+	}
+	sourceProjectID := ""
+	if req.SourceBrowserScript != nil {
+		sourceProjectID = req.SourceBrowserScript.ProjectID
+	}
+	replayProjectID := ""
+	if replayID := strings.TrimSpace(req.ReplaySessionID); replayID != "" {
+		if session, ok := s.browserReplay.Get(replayID); ok && session != nil {
+			replayProjectID = session.ProjectID
+		}
+	}
+	projectID, err := reconcileProjectIDCandidates(req.ProjectID, sourceProjectID, replayProjectID)
+	if err != nil {
+		return fmt.Errorf("browser-to-HTTP project mismatch: %w", err)
+	}
+	projectID = normalizeProjectID(projectID)
+	req.ProjectID = projectID
+	if req.SourceBrowserScript != nil {
+		req.SourceBrowserScript.ProjectID = projectID
+	}
+	return nil
 }
 
 func (s *Server) browserToHTTPNetworkEntries(req BrowserToHTTPPreviewRequest) ([]protocol.NetworkEntry, int, error) {

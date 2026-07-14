@@ -5,6 +5,7 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import AuthGate from './AuthGate'
+import { API_ORIGIN, resolveApiResourceUrl } from '../hooks/apiClient'
 import { AuthStatusState } from '../hooks/useAuthStatus'
 import { diagnoseError } from '../utils/errorUtils'
 
@@ -27,7 +28,7 @@ describe('AuthGate', () => {
       root.unmount()
     })
     container.remove()
-    vi.clearAllMocks()
+    vi.restoreAllMocks()
   })
 
   it('renders children when authentication is disabled', async () => {
@@ -93,7 +94,7 @@ describe('AuthGate', () => {
     expect(container.textContent).toContain('native OIDC authentication')
     expect(container.textContent).toContain('Continue to Microsoft Entra ID')
     const link = container.querySelector('a') as HTMLAnchorElement | null
-    expect(link?.getAttribute('href')).toBe('/api/v1/auth/login')
+    expect(link?.getAttribute('href')).toBe(resolveApiResourceUrl('/api/v1/auth/login', API_ORIGIN))
     expect(container.textContent).not.toContain('Protected content')
   })
 
@@ -109,6 +110,39 @@ describe('AuthGate', () => {
     expect(container.textContent).toContain('session has expired')
     expect(container.textContent).toContain('Continue to Microsoft Entra ID')
     expect(container.textContent).not.toContain('Protected content')
+  })
+
+  it('posts logout to the configured API origin with credentials', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockReturnValue(new Promise(() => {}))
+    await act(async () => {
+      root.render(
+        <AuthGate state={readyState({
+          enabled: true,
+          mode: 'oidc',
+          authenticated: false,
+          login_url: '/api/v1/auth/login',
+          logout_url: '/api/v1/auth/logout',
+          logout_csrf_token: 'csrf-token',
+        })}>
+          <div>Protected content</div>
+        </AuthGate>,
+      )
+    })
+
+    const logout = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Sign out local session')
+    await act(async () => {
+      logout?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      resolveApiResourceUrl('/api/v1/auth/logout', API_ORIGIN),
+      {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'X-APEXLoad-CSRF-Token': 'csrf-token' },
+      },
+    )
+    expect(logout?.hasAttribute('disabled')).toBe(true)
   })
 
   it('shows diagnostic guidance when authentication status cannot be checked', async () => {

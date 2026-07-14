@@ -10,6 +10,8 @@ package api
 import (
 	"database/sql"
 	"errors"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strings"
@@ -204,8 +206,28 @@ func (tr *TestRunner) MaterializeAndRunExecutionPlan(plan *storage.ExecutionPlan
 }
 
 func (tr *TestRunner) materializeAndRunExecutionPlan(plan *storage.ExecutionPlan, attribSubject, attribDisplayName, runNameOverride string) (*ExecutionPlanMaterializeResult, error) {
+	return tr.materializeAndRunExecutionPlanWithRunID(plan, attribSubject, attribDisplayName, runNameOverride, "")
+}
+
+// materializeAndRunExecutionPlanWithRunID is the idempotent scheduler-facing
+// variant. A non-empty runIDOverride is anchored before test side effects and is
+// reused on occurrence replay after a controller crash.
+func (tr *TestRunner) materializeAndRunExecutionPlanWithRunID(plan *storage.ExecutionPlan, attribSubject, attribDisplayName, runNameOverride, runIDOverride string) (*ExecutionPlanMaterializeResult, error) {
 	if plan == nil {
 		return nil, errors.New("execution plan is required")
+	}
+	runIDOverride = strings.TrimSpace(runIDOverride)
+	if runIDOverride != "" && tr.execPlanRunStore != nil {
+		existing, err := tr.execPlanRunStore.GetExecutionPlanRun(runIDOverride)
+		switch {
+		case err == nil && existing != nil:
+			if existing.PlanID != plan.ID || existing.RunMode != plan.RunMode {
+				return nil, fmt.Errorf("execution-plan run id %q is already used by another materialization", runIDOverride)
+			}
+			return executionPlanMaterializeResultFromRun(existing), nil
+		case err != nil && !errors.Is(err, sql.ErrNoRows):
+			return nil, executionPlanPersistenceError("check preassigned execution-plan run id", err)
+		}
 	}
 	runName := strings.TrimSpace(runNameOverride)
 	if runName == "" {
@@ -213,7 +235,7 @@ func (tr *TestRunner) materializeAndRunExecutionPlan(plan *storage.ExecutionPlan
 	}
 	// Governance gate: a plan whose aggregate peak exceeds the project VUser quota
 	// requires a project-admin approval before it can run.
-	gateApproval, blocked, err := tr.executionPlanRunGate(plan, attribSubject)
+	gateApproval, blocked, err := tr.executionPlanRunGate(plan, attribSubject, runIDOverride)
 	if err != nil {
 		return nil, err
 	}
@@ -224,9 +246,30 @@ func (tr *TestRunner) materializeAndRunExecutionPlan(plan *storage.ExecutionPlan
 	// concurrent runs (e.g. a manual run racing the scheduler sweep) cannot both
 	// consume one approval and a run can never proceed on an unclaimed approval.
 	if gateApproval != nil {
-		claimed, err := tr.execPlanScheduleStore.ClaimExecutionPlanApproval(gateApproval.ID, "claim-"+uuid.New().String(), time.Now().UTC())
-		if err != nil {
-			return nil, err
+		claimRunID := runIDOverride
+		if claimRunID == "" {
+			claimRunID = "claim-" + uuid.New().String()
+		}
+		claimed := claimRunID != "" && gateApproval.RunID == claimRunID
+		if !claimed {
+			var err error
+			claimed, err = tr.execPlanScheduleStore.ClaimExecutionPlanApproval(gateApproval.ID, claimRunID, time.Now().UTC())
+			if err != nil {
+				return nil, err
+			}
+			if !claimed && runIDOverride != "" {
+				// A takeover can race the final claim write from the former
+				// leader. Treat an approval already stamped with this exact
+				// idempotency key as ours; it remains unusable by every other run.
+				fresh, loadErr := tr.execPlanScheduleStore.GetExecutionPlanApproval(gateApproval.ID)
+				if loadErr != nil {
+					return nil, loadErr
+				}
+				if fresh != nil && fresh.Status == "approved" && fresh.RunID == runIDOverride {
+					gateApproval = fresh
+					claimed = true
+				}
+			}
 		}
 		if !claimed {
 			return &ExecutionPlanMaterializeResult{Status: "blocked", RunMode: plan.RunMode, Blocked: true, Approval: gateApproval}, nil
@@ -235,7 +278,7 @@ func (tr *TestRunner) materializeAndRunExecutionPlan(plan *storage.ExecutionPlan
 
 	var result *ExecutionPlanMaterializeResult
 	if plan.RunMode == "sequential" {
-		run, err := tr.startExecutionPlanRun(plan, attribSubject, attribDisplayName, runName, gateApproval)
+		run, err := tr.startExecutionPlanRunWithID(plan, attribSubject, attribDisplayName, runName, runIDOverride, gateApproval)
 		if err != nil {
 			return nil, err
 		}
@@ -253,8 +296,34 @@ func (tr *TestRunner) materializeAndRunExecutionPlan(plan *storage.ExecutionPlan
 	sort.SliceStable(entries, func(i, j int) bool { return entries[i].Order < entries[j].Order })
 
 	now := time.Now().UTC()
+	runID := runIDOverride
+	if runID == "" {
+		runID = "exec-plan-run-" + uuid.New().String()
+	}
+	initialEntries := make([]storage.ExecutionPlanRunEntry, 0, len(entries))
+	for _, entry := range entries {
+		status := "pending"
+		detail := ""
+		if !entry.IsEnabled() {
+			status, detail = "skipped", "entry disabled"
+		}
+		initialEntries = append(initialEntries, storage.ExecutionPlanRunEntry{
+			Order: entry.Order, ScenarioID: entry.ScenarioID, ScenarioName: entry.ScenarioName,
+			Status: status, Detail: detail,
+		})
+	}
+	// Anchor the parallel materialization before creating any tests. If storage is
+	// unavailable the handler fails without emitting test-created side effects.
+	if err := tr.persistExecutionPlanRunDurable(&storage.ExecutionPlanRun{
+		ID: runID, PlanID: plan.ID, ProjectID: normalizeProjectID(plan.ProjectID),
+		RunMode: "parallel", Status: "running", Entries: initialEntries,
+		CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		return nil, executionPlanPersistenceError("persist parallel execution-plan run before materialization", err)
+	}
 	results := make([]executionPlanRunResult, 0, len(entries))
 	runEntries := make([]storage.ExecutionPlanRunEntry, 0, len(entries))
+	createdTests := make([]*ManagedTest, 0, len(entries))
 	created, failed := 0, 0
 	planTimeslotUsed := false
 	for _, entry := range entries {
@@ -272,13 +341,14 @@ func (tr *TestRunner) materializeAndRunExecutionPlan(plan *storage.ExecutionPlan
 			planTimeslot = plan.TimeslotID
 			planTimeslotUsed = true
 		}
-		test, err := tr.CreateTest(buildPlanEntryCreateRequest(runName, plan.ProjectID, planTimeslot, entry))
+		test, err := tr.createTest(buildPlanEntryCreateRequest(runName, plan.ProjectID, planTimeslot, entry), false)
 		if err != nil {
 			failed++
 			res.Status, res.Detail = "failed", err.Error()
 			runEntry.Status, runEntry.Detail = "failed", err.Error()
 		} else {
 			created++
+			createdTests = append(createdTests, test)
 			res.Status, res.TestID = "created", test.ID
 			runEntry.Status, runEntry.TestID = "created", test.ID
 			if strings.TrimSpace(attribSubject) != "" {
@@ -290,12 +360,11 @@ func (tr *TestRunner) materializeAndRunExecutionPlan(plan *storage.ExecutionPlan
 		runEntries = append(runEntries, runEntry)
 	}
 
-	runID := "exec-plan-run-" + uuid.New().String()
 	runStatus := "completed"
 	if failed > 0 {
 		runStatus = "failed"
 	}
-	tr.persistExecutionPlanRun(&storage.ExecutionPlanRun{
+	if err := tr.persistExecutionPlanRunDurable(&storage.ExecutionPlanRun{
 		ID:          runID,
 		PlanID:      plan.ID,
 		ProjectID:   normalizeProjectID(plan.ProjectID),
@@ -305,10 +374,58 @@ func (tr *TestRunner) materializeAndRunExecutionPlan(plan *storage.ExecutionPlan
 		CreatedAt:   now,
 		UpdatedAt:   now,
 		CompletedAt: &now,
-	})
+	}); err != nil {
+		persistErr := executionPlanPersistenceError("persist completed parallel execution-plan run", err)
+		for _, test := range createdTests {
+			if _, cleanupErr := tr.DeleteTestWithError(test.ID); cleanupErr != nil {
+				persistErr = errors.Join(persistErr, fmt.Errorf("clean up uncommitted plan test %s: %w", test.ID, cleanupErr))
+			}
+		}
+		failedAt := time.Now().UTC()
+		failedEntries := append([]storage.ExecutionPlanRunEntry(nil), runEntries...)
+		for i := range failedEntries {
+			if failedEntries[i].Status == "created" {
+				failedEntries[i].Status = "failed"
+				failedEntries[i].Detail = "materialization rolled back because the final execution-plan transition could not be persisted"
+			}
+		}
+		failedRun := &storage.ExecutionPlanRun{
+			ID: runID, PlanID: plan.ID, ProjectID: normalizeProjectID(plan.ProjectID), RunMode: "parallel", Status: "failed",
+			Entries: failedEntries, CreatedAt: now, UpdatedAt: failedAt, CompletedAt: &failedAt,
+		}
+		if terminalErr := tr.persistExecutionPlanRunDurable(failedRun); terminalErr != nil {
+			tr.enqueueExecutionPlanRunRecordRetry(failedRun)
+			persistErr = errors.Join(persistErr, executionPlanPersistenceError("terminalize rolled-back parallel execution-plan run", terminalErr))
+		}
+		return nil, persistErr
+	}
+	for _, test := range createdTests {
+		tr.broadcastEvent("test_created", test)
+	}
 	result = &ExecutionPlanMaterializeResult{RunID: runID, Status: runStatus, RunMode: "parallel", Created: created, Failed: failed, Results: results}
 	tr.consumeExecutionPlanApproval(gateApproval, result.RunID)
 	return result, nil
+}
+
+func executionPlanMaterializeResultFromRun(run *storage.ExecutionPlanRun) *ExecutionPlanMaterializeResult {
+	if run == nil {
+		return nil
+	}
+	result := &ExecutionPlanMaterializeResult{RunID: run.ID, Status: run.Status, RunMode: run.RunMode}
+	result.Results = make([]executionPlanRunResult, 0, len(run.Entries))
+	for _, entry := range run.Entries {
+		result.Results = append(result.Results, executionPlanRunResult{
+			Order: entry.Order, ScenarioID: entry.ScenarioID, TestID: entry.TestID,
+			Status: entry.Status, Detail: entry.Detail,
+		})
+		if entry.TestID != "" {
+			result.Created++
+		}
+		if entry.Status == "failed" {
+			result.Failed++
+		}
+	}
+	return result
 }
 
 func approvalID(a *storage.ExecutionPlanApproval) string {
@@ -327,7 +444,9 @@ func (tr *TestRunner) consumeExecutionPlanApproval(approval *storage.ExecutionPl
 	}
 	approval.RunID = runID
 	approval.UpdatedAt = time.Now().UTC()
-	_ = tr.execPlanScheduleStore.SaveExecutionPlanApproval(approval)
+	if err := tr.execPlanScheduleStore.SaveExecutionPlanApproval(approval); err != nil {
+		slog.Error("failed to attach execution-plan run to approval", "approval_id", approval.ID, "run_id", runID, "error", err)
+	}
 }
 
 func (s *Server) handleMaterializeAndRunExecutionPlan(w http.ResponseWriter, r *http.Request) {
@@ -354,6 +473,10 @@ func (s *Server) handleMaterializeAndRunExecutionPlan(w http.ResponseWriter, r *
 
 	result, err := s.runner.MaterializeAndRunExecutionPlan(plan, attribSubject, actorDisplayName)
 	if err != nil {
+		if errors.Is(err, errExecutionPlanRunPersistence) {
+			writeError(w, http.StatusServiceUnavailable, "execution-plan run persistence is temporarily unavailable")
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}

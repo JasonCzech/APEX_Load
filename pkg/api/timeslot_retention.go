@@ -61,7 +61,7 @@ func (s *Server) pruneTimeslotRetention(now time.Time) {
 		return
 	}
 	slog.Info("timeslot retention prune", "retention_days", days, "ended_pruned", endedPruned, "rejected_pruned", rejectedPruned)
-	_ = s.store.SaveAuditEvent(&storage.AuditEvent{
+	if err := s.store.SaveAuditEvent(&storage.AuditEvent{
 		ID:           uuid.New().String(),
 		Action:       "timeslot.retention_prune",
 		ActorType:    "system",
@@ -75,7 +75,9 @@ func (s *Server) pruneTimeslotRetention(now time.Time) {
 			"cutoff":          cutoff.Format(time.RFC3339),
 		},
 		CreatedAt: now.UTC(),
-	})
+	}); err != nil {
+		slog.Warn("failed to persist timeslot retention audit event", "error", err)
+	}
 }
 
 // startTimeslotRetentionCadence launches the leader-gated retention loop. It is a

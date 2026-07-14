@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jasonczech/apexload/pkg/api/testexec"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -19,6 +18,12 @@ type testExecutionBackend interface {
 
 type stoppableExecutionBackend interface {
 	StopTest(tr *TestRunner, test *ManagedTest) error
+}
+
+// contextStoppableExecutionBackend lets coordinated shutdown bound remote stop
+// fan-out by its own deadline instead of waiting for each backend timeout.
+type contextStoppableExecutionBackend interface {
+	StopTestContext(ctx context.Context, tr *TestRunner, test *ManagedTest) error
 }
 
 type scalableExecutionBackend interface {
@@ -74,16 +79,43 @@ type localExecutionBackend struct{}
 func (localExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 	artifacts, err := newRunArtifacts(tr, test, tr.saveRunArchiveRecord)
 	if err != nil {
-		tr.failTestBeforeRun(test, fmt.Sprintf("initialize archive writer: %v", err))
+		tr.failTestBeforeRunAndLog(test, fmt.Sprintf("initialize archive writer: %v", err))
 		return
 	}
 	mge, err := tr.buildRunEngine(test, artifacts.resultSink())
 	if err != nil {
-		tr.failTestBeforeRun(test, err.Error())
+		tr.failTestBeforeRunAndLog(test, err.Error())
 		return
 	}
 
-	ctx, metricsDone, metricsStopped := tr.startManagedTestRun(test, mge, artifacts)
+	ctx, metricsDone, metricsStopped, started, startErr := tr.startManagedTestRun(test, mge, artifacts)
+	if startErr != nil {
+		endTime := time.Now()
+		unlockArchiveCommit := tr.lockArchiveCommitFence(test.ID)
+		_, _, finalError := artifacts.finalize(test, "FAILED", endTime, startErr.Error())
+		tr.failTestBeforeRunAndLog(test, finalError)
+		unlockArchiveCommit()
+		return
+	}
+	if !started {
+		endTime := time.Now()
+		unlockArchiveCommit := tr.lockArchiveCommitFence(test.ID)
+		archiveRecord, finalStatus, finalError := artifacts.finalize(test, "ABORTED", endTime, "test cancelled before execution started")
+		tr.mu.Lock()
+		if test.Status == "ABORTED" {
+			test.Archive = archiveRecord
+			if archiveRecord != nil {
+				tr.archives[test.ID] = archiveRecord
+			}
+		} else if finalStatus == "FAILED" {
+			test.Status = finalStatus
+			test.Error = finalError
+			test.EndedAt = &endTime
+		}
+		tr.mu.Unlock()
+		unlockArchiveCommit()
+		return
+	}
 
 	result, err := mge.Run(ctx)
 
@@ -98,8 +130,12 @@ func (localExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		finalError = err.Error()
 	}
 
+	unlockArchiveCommit := tr.lockArchiveCommitFence(test.ID)
 	archiveRecord, finalStatus, finalError := artifacts.finalize(test, finalStatus, endTime, finalError)
-	tr.completeTestRun(test, finalStatus, endTime, finalError, archiveRecord)
+	if err := tr.completeTestRunUnderArchiveFence(test, finalStatus, endTime, finalError, archiveRecord); err != nil {
+		slog.Error("local terminal transition remains retryable after bounded persistence retries", "test_id", test.ID, "status", finalStatus, "error", err)
+	}
+	unlockArchiveCommit()
 
 	slog.Info("test finished",
 		"id", test.ID,
@@ -133,9 +169,9 @@ func buildRunArchiveProvenance(tr *TestRunner, test *ManagedTest) RunArchiveProv
 	snapshot := test
 	if tr != nil {
 		tr.mu.RLock()
-		copied := *test
+		copied := cloneManagedTestForReadLocked(test)
 		tr.mu.RUnlock()
-		snapshot = &copied
+		snapshot = copied
 	}
 	provenance.ApplicationID = snapshot.ApplicationID
 	provenance.ReleaseID = snapshot.ReleaseID
@@ -334,8 +370,18 @@ func (a *runArtifacts) finalize(test *ManagedTest, finalStatus string, endTime t
 	// Determine SLA Status
 	slaBreached := false
 	var slaDetails []string
-	if test != nil && test.LiveMetrics != nil && test.LiveMetrics.GoalStatus != nil {
-		gs := test.LiveMetrics.GoalStatus
+	var goalStatus *GoalStatus
+	if test != nil && a.runner != nil {
+		a.runner.mu.RLock()
+		if a.runner.tests[test.ID] == test && test.LiveMetrics != nil {
+			goalStatus = cloneGoalStatus(test.LiveMetrics.GoalStatus)
+		}
+		a.runner.mu.RUnlock()
+	} else if test != nil && test.LiveMetrics != nil {
+		goalStatus = cloneGoalStatus(test.LiveMetrics.GoalStatus)
+	}
+	if goalStatus != nil {
+		gs := goalStatus
 		if gs.LatencyBreached {
 			slaBreached = true
 			slaDetails = append(slaDetails, "Latency breached")
@@ -387,18 +433,75 @@ func (a *runArtifacts) finalize(test *ManagedTest, finalStatus string, endTime t
 	if archiveRecord != nil && test != nil && archiveRecord.RefKey == "" {
 		archiveRecord.RefKey = test.RefKey
 	}
-	if archiveErr != nil {
-		return archiveRecord, "FAILED", testexec.AppendRunError(finalError, "archive finalize failed", archiveErr)
-	}
-	if a.runner != nil && archiveRecord != nil {
-		if err := a.runner.persistTestManifestArtifact(test, archiveRecord); err != nil {
-			return archiveRecord, "FAILED", testexec.AppendRunError(finalError, "test manifest archive failed", err)
+	var publicationErr error
+	// Make the terminal row durable before the publication outbox or any remote
+	// side effect. A crash after the local manifest commit is then recoverable by
+	// the orphan scanner without startup reconciliation rewriting the run FAILED.
+	if a.runner != nil && test != nil && archiveRecord != nil {
+		if err := a.runner.persistStoredTestStatus(test.ID, finalStatus, &endTime, finalError); err != nil {
+			publicationErr = fmt.Errorf("persist terminal state before archive publication: %w", err)
 		}
 	}
-	if a.saveRecord != nil {
-		if err := a.saveRecord(archiveRecord); err != nil {
-			return archiveRecord, "FAILED", testexec.AppendRunError(finalError, "archive metadata save failed", err)
+	if publicationErr == nil && a.runner != nil && archiveRecord != nil {
+		publishCtx, cancel := context.WithTimeout(context.Background(), archiveFinalizationAttemptTimeout)
+		// Every production caller holds test.ID's archive commit fence across
+		// finalization and the terminal test transition. Use the under-fence form
+		// to keep that transaction boundary without recursively locking the stripe.
+		publicationErr = a.runner.finalizeRunArchiveDurablyUnderFence(publishCtx, test, archiveRecord, true)
+		cancel()
+	} else if publicationErr == nil && a.saveRecord != nil && archiveRecord != nil {
+		publicationErr = retryDurableTransition(func() error { return a.saveRecord(archiveRecord) })
+	}
+	if archiveErr != nil {
+		// Finalize may have already committed the manifest locally. The execution
+		// outcome encoded in that immutable evidence remains authoritative; archive
+		// availability is an operational concern, not a reason to rewrite it.
+		slog.Error("run archive finalization failed without changing the execution outcome", "test_id", test.ID, "error", archiveErr)
+	}
+	if publicationErr != nil {
+		slog.Error("run archive publication remains durably retryable without changing the execution outcome", "test_id", test.ID, "error", publicationErr)
+		a.enqueueArchivePersistenceRetry(test, archiveRecord, true)
+		// Keep the sole recoverable local source private while its durable outbox
+		// job is pending. Exposing it through test.Archive would let readers or
+		// retention treat an unpublished archive as committed and prune it.
+		if a.runner != nil {
+			archiveRecord = nil
 		}
 	}
 	return archiveRecord, finalStatus, finalError
+}
+
+func (a *runArtifacts) enqueueArchivePersistenceRetry(test *ManagedTest, archiveRecord *storage.RunArchiveRecord, persistArtifacts bool) {
+	if a == nil || a.runner == nil || test == nil || archiveRecord == nil {
+		return
+	}
+	record := *archiveRecord
+	a.runner.enqueueTerminalRetry("archive:"+test.ID, "archive_finalize", func() error {
+		unlockArchiveCommit := a.runner.lockArchiveCommitFence(test.ID)
+		defer unlockArchiveCommit()
+
+		a.runner.mu.RLock()
+		current := a.runner.tests[test.ID]
+		if current == nil || current != test {
+			a.runner.mu.RUnlock()
+			return nil
+		}
+		terminal := isTerminalTestStatus(current.Status)
+		a.runner.mu.RUnlock()
+		if !terminal {
+			return fmt.Errorf("test %s is not durably terminal yet", test.ID)
+		}
+		publishCtx, cancel := context.WithTimeout(context.Background(), archiveFinalizationAttemptTimeout)
+		defer cancel()
+		return a.runner.finalizeRunArchiveDurablyUnderFence(publishCtx, test, &record, persistArtifacts)
+	})
+}
+
+func isTerminalTestStatus(status string) bool {
+	switch strings.ToUpper(strings.TrimSpace(status)) {
+	case "COMPLETE", "FAILED", "ABORTED":
+		return true
+	default:
+		return false
+	}
 }

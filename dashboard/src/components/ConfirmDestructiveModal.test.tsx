@@ -91,6 +91,34 @@ describe('ConfirmDestructiveModal', () => {
     expect(container.textContent).toContain('Any in-flight runs will be marked FAILED.')
     expect(container.textContent).toContain('controller restart would fail active runs')
     expect(container.textContent).toContain('Active runs will be failed.')
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('controller restart would fail active runs')
+  })
+
+  it('labels the dialog, focuses the reason, and closes with Escape', async () => {
+    const onCancel = vi.fn()
+    await act(async () => {
+      root.render(
+        <ConfirmDestructiveModal
+          title="Delete pool"
+          description="This cannot be undone."
+          target="east-http"
+          onCancel={onCancel}
+          onConfirm={() => {}}
+        />,
+      )
+    })
+    await flushFocus()
+
+    const dialog = container.querySelector<HTMLElement>('[role="dialog"]')
+    const reason = container.querySelector<HTMLInputElement>('input[placeholder="Operational reason"]')
+    expect(dialog?.getAttribute('aria-modal')).toBe('true')
+    expect(document.getElementById(dialog?.getAttribute('aria-labelledby') || '')?.textContent).toBe('Delete pool')
+    expect(document.activeElement).toBe(reason)
+
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    expect(onCancel).toHaveBeenCalledOnce()
   })
 
   function button(label: string) {
@@ -113,5 +141,11 @@ describe('ConfirmDestructiveModal', () => {
   function setInputValue(input: HTMLInputElement, value: string) {
     const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
     setter?.call(input, value)
+  }
+
+  async function flushFocus() {
+    await act(async () => {
+      await new Promise(resolve => window.setTimeout(resolve, 0))
+    })
   }
 })

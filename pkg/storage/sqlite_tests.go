@@ -167,6 +167,43 @@ func (s *SQLiteStore) DeleteTest(id string) error {
 	}
 	defer tx.Rollback()
 
+	var projectID string
+	testQuery := `SELECT COALESCE(project_id, '') FROM tests WHERE id = ?`
+	if s.db.dialect == storeDialectPostgres {
+		testQuery += ` FOR UPDATE`
+	}
+	if err := tx.QueryRow(testQuery, id).Scan(&projectID); err != nil && err != sql.ErrNoRows {
+		return err
+	}
+	archive, err := getRunArchiveTx(tx, id)
+	if err != nil && err != sql.ErrNoRows {
+		return err
+	}
+	if archive != nil {
+		if err := enqueueArchiveCleanupTx(tx, projectID, archive); err != nil {
+			return err
+		}
+	} else {
+		job, jobErr := getArchiveFinalizationJobTx(tx, id)
+		if jobErr != nil && jobErr != sql.ErrNoRows {
+			return jobErr
+		}
+		if job != nil {
+			if err := enqueueArchiveCleanupTx(tx, projectID, &job.ArchiveRecord); err != nil {
+				return err
+			}
+		}
+	}
+
+	// A reservation is an independently durable capacity object. Clear both
+	// binding columns in this transaction so deleting a test cannot strand a
+	// timeslot (and a later failure rolls the release back with the test delete).
+	if _, err := tx.Exec(`UPDATE capacity_reservations
+		SET bound_test_id = NULL, bound_test_status = NULL, updated_at = ?
+		WHERE bound_test_id = ?`, time.Now().UTC(), id); err != nil {
+		return err
+	}
+
 	if _, err := tx.Exec(`DELETE FROM test_history WHERE test_id = ?`, id); err != nil {
 		return err
 	}
@@ -177,6 +214,12 @@ func (s *SQLiteStore) DeleteTest(id string) error {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM run_archives WHERE test_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM archive_finalization_jobs WHERE test_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM archive_refresh_jobs WHERE test_id = ?`, id); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM tests WHERE id = ?`, id); err != nil {

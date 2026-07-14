@@ -28,6 +28,15 @@ const apiMock = {
   listTimeslots: vi.fn(),
   bindTimeslot: vi.fn(),
 }
+const projectMock = vi.hoisted(() => ({
+  activeProject: { id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' } as {
+    id: string
+    name: string
+    domain_id?: string
+    created_at: string
+    updated_at: string
+  } | null,
+}))
 
 vi.mock('../hooks/useApi', () => ({
   useApi: () => apiMock,
@@ -35,7 +44,7 @@ vi.mock('../hooks/useApi', () => ({
 
 vi.mock('../hooks/useProject', () => ({
   useProject: () => ({
-    activeProject: { id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' },
+    activeProject: projectMock.activeProject,
   }),
 }))
 
@@ -61,6 +70,7 @@ describe('NewTestPage', () => {
   let consoleErrorSpy: ReturnType<typeof vi.spyOn>
 
   beforeEach(() => {
+    projectMock.activeProject = { id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' }
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -1498,6 +1508,168 @@ describe('NewTestPage', () => {
     expect(saveScheduleButton?.disabled).toBe(true)
     expect(apiMock.createTest).not.toHaveBeenCalled()
     expect(apiMock.createScenarioSchedule).not.toHaveBeenCalled()
+  })
+
+  it('waits for a project scope and ignores scenarios returned from the previous project', async () => {
+    let resolveProjectOne: ((value: { scenarios: Array<Record<string, unknown>> }) => void) | undefined
+    apiMock.listScenarios
+      .mockImplementationOnce(() => new Promise(resolve => { resolveProjectOne = resolve }))
+      .mockResolvedValueOnce({
+        scenarios: [{
+          id: 'scenario-project-2',
+          name: 'Project Two Scenario',
+          duration: '5m',
+          scenario_mode: 'vuser_driven',
+          scripts: [],
+          script_count: 0,
+          created_at: '',
+          updated_at: '',
+          associated_releases: [],
+        }],
+      })
+
+    const renderPage = () => root.render(
+      <NewTestPage
+        activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+        activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+        releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+        onSelectTest={vi.fn()}
+        onCreateRelease={vi.fn().mockResolvedValue(null)}
+      />,
+    )
+
+    await act(async () => {
+      renderPage()
+      await Promise.resolve()
+    })
+    expect(apiMock.listScenarios).toHaveBeenCalledWith('project-1')
+
+    projectMock.activeProject = { id: 'project-2', name: 'Project Two', created_at: '', updated_at: '' }
+    await act(async () => {
+      renderPage()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(apiMock.listScenarios).toHaveBeenCalledWith('project-2')
+    expect(container.textContent).toContain('Project Two Scenario')
+
+    await act(async () => {
+      resolveProjectOne?.({ scenarios: [{
+        id: 'scenario-project-1',
+        name: 'Stale Project One Scenario',
+        duration: '5m',
+        scenario_mode: 'vuser_driven',
+        scripts: [],
+        script_count: 0,
+        created_at: '',
+        updated_at: '',
+        associated_releases: [],
+      }] })
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(container.textContent).toContain('Project Two Scenario')
+    expect(container.textContent).not.toContain('Stale Project One Scenario')
+  })
+
+  it('does not issue project-scoped requests before a project is resolved', async () => {
+    projectMock.activeProject = null
+
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[]}
+          onSelectTest={vi.fn()}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+      await Promise.resolve()
+    })
+
+    expect(apiMock.listScenarios).not.toHaveBeenCalled()
+    expect(apiMock.listTimeslots).not.toHaveBeenCalled()
+    expect(apiMock.getAuthEffectiveAccess).not.toHaveBeenCalled()
+  })
+
+  it('traps focus in the run-default dialog, closes on Escape, and restores its opener', async () => {
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+    await flushPromises()
+
+    const runtimeDefaultsToggle = container.querySelector<HTMLElement>('.new-test-runtime-defaults summary')
+    await act(async () => runtimeDefaultsToggle?.click())
+    const opener = Array.from(container.querySelectorAll<HTMLButtonElement>('button.new-test-default-card'))
+      .find(button => button.textContent?.includes('Log Level'))
+    expect(opener).toBeDefined()
+    opener?.focus()
+    await act(async () => {
+      opener?.click()
+    })
+    await act(async () => {
+      await new Promise(resolve => window.setTimeout(resolve, 0))
+    })
+
+    const dialog = container.querySelector<HTMLElement>('.run-default-modal')
+    expect(dialog?.getAttribute('aria-labelledby')).toBe('new-test-run-default-dialog-title')
+    expect(dialog?.contains(document.activeElement)).toBe(true)
+    const focusable = Array.from(dialog?.querySelectorAll<HTMLButtonElement>('button:not([disabled])') || [])
+    focusable[focusable.length - 1]?.focus()
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }))
+    })
+    expect(document.activeElement).toBe(focusable[0])
+
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    expect(container.querySelector('.run-default-modal')).toBeNull()
+    expect(document.activeElement).toBe(opener)
+  })
+
+  it('programmatically labels run setup and repeated schedule-window controls', async () => {
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+    await flushPromises()
+
+    expect(container.querySelector('[aria-labelledby="new-test-run-name-label"]')).toBeInstanceOf(HTMLInputElement)
+    expect(container.querySelector('[aria-labelledby="new-test-release-label"]')).toBeInstanceOf(HTMLSelectElement)
+    const scenarioRow = container.querySelector<HTMLTableRowElement>('.new-test-scenario-table-row')
+    expect(scenarioRow?.tabIndex).toBe(0)
+
+    const schedulesButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Schedules')
+    await act(async () => schedulesButton?.click())
+
+    expect(container.querySelector('[aria-labelledby="schedule-scenario-label"]')).toBeInstanceOf(HTMLSelectElement)
+    expect(container.querySelector('[aria-labelledby="schedule-name-label"]')).toBeInstanceOf(HTMLInputElement)
+    expect(container.querySelector('[aria-labelledby="schedule-timezone-label"]')).toBeInstanceOf(HTMLSelectElement)
+    expect(container.querySelector('[aria-labelledby="schedule-release-label"]')).toBeInstanceOf(HTMLSelectElement)
+
+    const addWindowButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === '+ Add window')
+    await act(async () => addWindowButton?.click())
+    expect(container.querySelector('[aria-label="Blackout windows window 1 name"]')).toBeInstanceOf(HTMLInputElement)
+    expect(container.querySelector('[aria-label="Blackout windows window 1 start time"]')).toBeInstanceOf(HTMLInputElement)
+    expect(container.querySelector('[aria-label="Blackout windows window 1 end time"]')).toBeInstanceOf(HTMLInputElement)
+    expect(container.querySelector('[aria-label="Blackout windows window 1 days of week"]')).not.toBeNull()
   })
 })
 

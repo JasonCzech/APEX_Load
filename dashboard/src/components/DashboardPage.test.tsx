@@ -29,6 +29,10 @@ const applicationState = {
   setActiveRelease: vi.fn(),
 }
 
+const projectState = {
+  activeProject: { id: 'project-1', name: 'Checkout', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' },
+}
+
 vi.mock('../hooks/useApi', () => ({
   useApi: () => apiMock,
 }))
@@ -38,9 +42,7 @@ vi.mock('../hooks/useApplication', () => ({
 }))
 
 vi.mock('../hooks/useProject', () => ({
-  useProject: () => ({
-    activeProject: { id: 'project-1', name: 'Checkout', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' },
-  }),
+  useProject: () => projectState,
 }))
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -57,6 +59,7 @@ describe('DashboardPage', () => {
   const onNavigate = vi.fn()
 
   beforeEach(() => {
+    projectState.activeProject = { id: 'project-1', name: 'Checkout', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' }
     applicationState.activeApplication = { id: 'app-1', name: 'Storefront', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' }
     applicationState.activeRelease = { id: 'rel-1', application_id: 'app-1', name: 'Sprint 24', created_at: '2026-05-02T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' }
     applicationState.releases = [
@@ -292,7 +295,7 @@ describe('DashboardPage', () => {
 
     await flushDashboard()
 
-    expect(apiMock.listTests).toHaveBeenCalledWith({ application_id: 'app-1', project_id: 'project-1' })
+    expect(apiMock.listTests).toHaveBeenCalledWith({ application_id: 'app-1', limit: 500, project_id: 'project-1', summary: true })
     expect(container.textContent).not.toContain('API Guide')
     expect(container.textContent).not.toContain('Customize Cards')
 
@@ -846,6 +849,17 @@ describe('DashboardPage', () => {
 
     const card = container.querySelector<HTMLElement>('.dash-active-card')
     expect(card?.textContent).toContain('Checkout Multi')
+    expect(card?.getAttribute('role')).toBe('button')
+    expect(card?.getAttribute('aria-label')).toBe('Open live test Checkout Multi')
+    await act(async () => {
+      card?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    })
+    expect(onSelectTest).toHaveBeenCalledWith('test-active-groups')
+    onSelectTest.mockClear()
+    await act(async () => {
+      card?.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }))
+    })
+    expect(onSelectTest).toHaveBeenCalledWith('test-active-groups')
     const table = card?.querySelector<HTMLTableElement>('.dac-group-table')
     expect(table).toBeTruthy()
     expect(table?.getAttribute('aria-label')).toBe('Checkout Multi group metrics')
@@ -973,13 +987,61 @@ describe('DashboardPage', () => {
       })
 
       expect(apiMock.listTests).toHaveBeenCalledTimes(1)
-      expect(apiMock.listTests).toHaveBeenCalledWith({ application_id: 'app-1', project_id: 'project-1' })
+      expect(apiMock.listTests).toHaveBeenCalledWith({ application_id: 'app-1', limit: 500, project_id: 'project-1', summary: true })
       expect(apiMock.getHealth).toHaveBeenCalledTimes(1)
       expect(apiMock.getSystemInventory).not.toHaveBeenCalled()
     } finally {
       applicationState.activeApplication = previousApplication
       applicationState.activeRelease = previousRelease
     }
+  })
+
+  it('clears scoped test data and ignores a late response after the project changes', async () => {
+    const projectOne = deferred<{ tests: Array<ReturnType<typeof scopedTest>> }>()
+    apiMock.listTests.mockImplementation(({ project_id }: { project_id: string }) => {
+      if (project_id === 'project-1') return projectOne.promise
+      return Promise.resolve({ tests: [scopedTest('test-project-2', 'Catalog Run', 'app-2', 'rel-2')] })
+    })
+
+    await act(async () => {
+      root.render(
+        <DashboardPage
+          testStatuses={{}}
+          metricsHistory={{}}
+          connectionState="connected"
+          onSelectTest={onSelectTest}
+          onNavigate={onNavigate}
+        />,
+      )
+    })
+    expect(apiMock.listTests).toHaveBeenCalledWith({ application_id: 'app-1', limit: 500, project_id: 'project-1', summary: true })
+
+    projectState.activeProject = { id: 'project-2', name: 'Catalog', created_at: '', updated_at: '' }
+    applicationState.activeApplication = { id: 'app-2', name: 'Catalog', created_at: '', updated_at: '' }
+    applicationState.activeRelease = { id: 'rel-2', application_id: 'app-2', name: 'Catalog 1.0', created_at: '', updated_at: '' }
+    await act(async () => {
+      root.render(
+        <DashboardPage
+          testStatuses={{}}
+          metricsHistory={{}}
+          connectionState="connected"
+          onSelectTest={onSelectTest}
+          onNavigate={onNavigate}
+        />,
+      )
+    })
+    await flushDashboard()
+
+    expect(container.textContent).toContain('Catalog Run')
+    expect(container.textContent).not.toContain('Checkout Late Run')
+
+    await act(async () => {
+      projectOne.resolve({ tests: [scopedTest('test-project-1', 'Checkout Late Run', 'app-1', 'rel-1')] })
+    })
+    await flushDashboard()
+
+    expect(container.textContent).toContain('Catalog Run')
+    expect(container.textContent).not.toContain('Checkout Late Run')
   })
 
   it('uses the compact empty state when no tests are active', async () => {
@@ -1021,6 +1083,34 @@ describe('DashboardPage', () => {
 
     expect(activeTestsEmptyState).toBeDefined()
     expect(activeTestsEmptyState?.textContent).toContain('Start a scenario from the New Test page')
+    const startButton = Array.from(activeTestsEmptyState?.querySelectorAll('button') || [])
+      .find(button => button.textContent?.trim() === 'Start New Test')
+    expect(startButton).toBeDefined()
+    await act(async () => {
+      startButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(onNavigate).toHaveBeenCalledWith('new-test')
+  })
+
+  it('offers the primary next step from the default first-run activity view', async () => {
+    apiMock.listTests.mockResolvedValueOnce({ tests: [], count: 0, total: 0 })
+
+    await act(async () => {
+      root.render(
+        <DashboardPage
+          testStatuses={{}}
+          metricsHistory={{}}
+          connectionState="connected"
+          onSelectTest={onSelectTest}
+          onNavigate={onNavigate}
+        />,
+      )
+    })
+
+    await flushDashboard()
+    expect(container.textContent).toContain('Start a test to build activity, performance, and release history.')
+    clickButtonByText('Start New Test')
+    expect(onNavigate).toHaveBeenCalledWith('new-test')
   })
 
   it('keeps terminal tests out of active cards when websocket overrides are stale', async () => {
@@ -1164,3 +1254,26 @@ describe('DashboardPage', () => {
     return panel.textContent || ''
   }
 })
+
+function scopedTest(id: string, name: string, applicationId: string, releaseId: string) {
+  return {
+    id,
+    name,
+    status: 'COMPLETE' as const,
+    application_id: applicationId,
+    release_id: releaseId,
+    groups: [],
+    total_vusers: 1,
+    duration: '1m',
+    created_at: '2026-05-12T20:00:00Z',
+    ended_at: '2026-05-12T20:01:00Z',
+  }
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>(next => {
+    resolve = next
+  })
+  return { promise, resolve }
+}

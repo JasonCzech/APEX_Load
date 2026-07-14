@@ -93,6 +93,23 @@ describe('ExecutionPlansPanel', () => {
     expect(container.textContent).toContain('New Execution Plan')
   })
 
+  it('exposes the plan editor as a labelled modal and closes it with Escape', async () => {
+    plansApiMock.listExecutionPlans.mockResolvedValue({ execution_plans: [], count: 0 })
+    await act(async () => {
+      root.render(<ExecutionPlansPanel projectId="proj-a" canManage />)
+    })
+    await flush()
+    const newButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'New Execution Plan')
+    await act(async () => newButton?.click())
+
+    const dialog = container.querySelector<HTMLElement>('[role="dialog"]')
+    expect(dialog?.getAttribute('aria-labelledby')).toBe('execution-plan-editor-title')
+    expect(dialog?.getAttribute('aria-modal')).toBe('true')
+
+    await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(container.querySelector('[role="dialog"]')).toBeNull()
+  })
+
   it('renders plans with run-mode pill and enabled-entry count', async () => {
     plansApiMock.listExecutionPlans.mockResolvedValue({ execution_plans: [plan({})], count: 1 })
     await act(async () => {

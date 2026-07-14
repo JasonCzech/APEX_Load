@@ -1,16 +1,19 @@
-import { type ReactNode } from 'react'
+import { lazy, type ReactNode } from 'react'
 import { type ScriptDefinition } from '../types/scripts'
 import { Project, type StoredScript } from '../types'
-import ScriptEditor from './ScriptEditor'
-import EnterpriseArchiveImport from './EnterpriseArchiveImport'
-import JMeterImport from './JMeterImport'
-import RecordingStudio from './RecordingStudio'
-import SampleScriptImport from './SampleScriptImport'
-import ProtocolAssetImport, { type ImportKind } from './ProtocolAssetImport'
-import OracleEBusinessReviewImport from './OracleEBusinessReviewImport'
+import { type ImportKind } from './ProtocolAssetImport'
 import { type AuthoringReturnTarget, type DraftEditorFocus, type ImportedSaveResult, type ScriptsAuthoringSubView } from './useScriptsAuthoringState'
+import LazyLoadBoundary from './LazyLoadBoundary'
 
-interface Props {
+const ScriptEditor = lazy(() => import('./ScriptEditor'))
+const EnterpriseArchiveImport = lazy(() => import('./EnterpriseArchiveImport'))
+const JMeterImport = lazy(() => import('./JMeterImport'))
+const RecordingStudio = lazy(() => import('./RecordingStudio'))
+const SampleScriptImport = lazy(() => import('./SampleScriptImport'))
+const ProtocolAssetImport = lazy(() => import('./ProtocolAssetImport'))
+const OracleEBusinessReviewImport = lazy(() => import('./OracleEBusinessReviewImport'))
+
+export interface ScriptsAuthoringSurfaceProps {
   subView: ScriptsAuthoringSubView
   importLauncher?: string | null
   importMode?: string | null
@@ -70,7 +73,7 @@ function protocolKindForLauncher(launcher?: string | null): ImportKind {
   }
 }
 
-export default function ScriptsAuthoringSurface({
+function ScriptsAuthoringContent({
   subView,
   importLauncher,
   importMode,
@@ -89,7 +92,7 @@ export default function ScriptsAuthoringSurface({
   onImported,
   onEditDraft,
   onReturnToDraftSource,
-}: Props) {
+}: ScriptsAuthoringSurfaceProps) {
   const enterpriseArchiveEditReturnTarget: AuthoringReturnTarget = {
     subView: 'import',
     label: 'Back to Converted Script',
@@ -185,4 +188,12 @@ export default function ScriptsAuthoringSurface({
     default:
       return null
   }
+}
+
+export default function ScriptsAuthoringSurface(props: ScriptsAuthoringSurfaceProps) {
+  return (
+    <LazyLoadBoundary title="Authoring tools could not be loaded.">
+      <ScriptsAuthoringContent {...props} />
+    </LazyLoadBoundary>
+  )
 }

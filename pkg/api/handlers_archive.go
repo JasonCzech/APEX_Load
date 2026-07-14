@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -14,16 +15,20 @@ import (
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
-const maxArchiveComparisonRuns = 10
+const (
+	maxArchiveComparisonRuns = 10
+	maxArchivePageLimit      = 1000
+	maxArchiveSampleLimit    = 5000
+)
 const maxArchiveReportBatchIDs = 50
 
 func (s *Server) handleGetRunArchiveManifest(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if _, ok := s.runner.GetTest(id); !ok {
-		writeError(w, http.StatusNotFound, "test not found")
+	record, lease, ok := s.requireRunArchive(w, r)
+	if !ok {
 		return
 	}
-	manifest, err := s.runner.GetRunArchiveManifest(id)
+	defer lease.Release()
+	manifest, err := cachedRunArchiveManifest(record)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
@@ -42,15 +47,17 @@ func (s *Server) handleVerifyRunArchive(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusNotFound, "test not found")
 		return
 	}
-	record, ok := s.runner.GetRunArchive(id)
+	record, ok := s.runner.GetRunArchiveContext(r.Context(), id)
 	if !ok {
 		writeError(w, http.StatusNotFound, "archive not found")
 		return
 	}
-	if err := ensureArchiveMaterialized(record); err != nil {
+	lease, err := acquireArchiveMaterialized(r.Context(), record)
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to materialize archive: "+err.Error())
 		return
 	}
+	defer lease.Release()
 	manifest, err := s.runner.GetRunArchiveManifest(id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
@@ -66,15 +73,17 @@ func (s *Server) handleDownloadRunArchive(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusNotFound, "test not found")
 		return
 	}
-	record, ok := s.runner.GetRunArchive(id)
+	record, ok := s.runner.GetRunArchiveContext(r.Context(), id)
 	if !ok {
 		writeError(w, http.StatusNotFound, "archive not found")
 		return
 	}
-	if err := ensureArchiveMaterialized(record); err != nil {
+	lease, err := acquireArchiveMaterialized(r.Context(), record)
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to materialize archive: "+err.Error())
 		return
 	}
+	defer lease.Release()
 	filename := fmt.Sprintf("%s-%s.zip", sanitizeFilename(test.Name), id)
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
@@ -94,15 +103,17 @@ func (s *Server) handleDownloadRunArchiveArtifact(w http.ResponseWriter, r *http
 		writeError(w, http.StatusNotFound, "test not found")
 		return
 	}
-	record, ok := s.runner.GetRunArchive(id)
+	record, ok := s.runner.GetRunArchiveContext(r.Context(), id)
 	if !ok {
 		writeError(w, http.StatusNotFound, "archive not found")
 		return
 	}
-	if err := ensureArchiveMaterialized(record); err != nil {
+	lease, err := acquireArchiveMaterialized(r.Context(), record)
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to materialize archive: "+err.Error())
 		return
 	}
+	defer lease.Release()
 	manifest, err := s.runner.GetRunArchiveManifest(id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
@@ -148,15 +159,17 @@ func (s *Server) handleDownloadRunArchiveBrowserDiagnostics(w http.ResponseWrite
 		writeError(w, http.StatusNotFound, "test not found")
 		return
 	}
-	record, ok := s.runner.GetRunArchive(id)
+	record, ok := s.runner.GetRunArchiveContext(r.Context(), id)
 	if !ok {
 		writeError(w, http.StatusNotFound, "archive not found")
 		return
 	}
-	if err := ensureArchiveMaterialized(record); err != nil {
+	lease, err := acquireArchiveMaterialized(r.Context(), record)
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to materialize archive: "+err.Error())
 		return
 	}
+	defer lease.Release()
 	bundle, err := buildRunArchiveBrowserDiagnostics(record)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to build browser diagnostics bundle: "+err.Error())
@@ -174,10 +187,11 @@ func (s *Server) handleDownloadRunArchiveBrowserDiagnostics(w http.ResponseWrite
 }
 
 func (s *Server) handleGetRunArchiveTransactions(w http.ResponseWriter, r *http.Request) {
-	record, ok := s.requireRunArchive(w, r)
+	record, lease, ok := s.requireRunArchive(w, r)
 	if !ok {
 		return
 	}
+	defer lease.Release()
 	page, ok := parseArchivePage(w, r)
 	if !ok {
 		return
@@ -226,15 +240,32 @@ func (s *Server) handleGetRunArchiveTransactions(w http.ResponseWriter, r *http.
 }
 
 func (s *Server) handleGetRunArchiveResources(w http.ResponseWriter, r *http.Request) {
-	record, ok := s.requireRunArchive(w, r)
+	record, lease, ok := s.requireRunArchive(w, r)
 	if !ok {
 		return
 	}
+	defer lease.Release()
 	page, ok := parseArchivePage(w, r)
 	if !ok {
 		return
 	}
-	items, total, err := loadArchiveResourceSamples(record, page)
+	sampleLimit, ok := parseArchiveSampleLimit(w, r)
+	if !ok {
+		return
+	}
+	var (
+		items   []ResourceSample
+		total   int
+		err     error
+		sampled bool
+	)
+	if sampleLimit > 0 {
+		items, total, err = loadArchiveResourceSamplesDownsampled(record, sampleLimit)
+		page = archivePage{Limit: sampleLimit}
+		sampled = true
+	} else {
+		items, total, err = loadArchiveResourceSamples(record, page)
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to read archive resources: "+err.Error())
 		return
@@ -254,21 +285,43 @@ func (s *Server) handleGetRunArchiveResources(w http.ResponseWriter, r *http.Req
 		"total":     total,
 		"limit":     page.Limit,
 		"offset":    page.Offset,
+		"sampled":   sampled,
 	})
 }
 
 func (s *Server) handleGetRunArchiveSummaries(w http.ResponseWriter, r *http.Request) {
-	record, ok := s.requireRunArchive(w, r)
+	record, lease, ok := s.requireRunArchive(w, r)
 	if !ok {
 		return
 	}
+	defer lease.Release()
 	page, ok := parseArchivePage(w, r)
 	if !ok {
 		return
 	}
 	action := strings.TrimSpace(r.URL.Query().Get("action"))
 	groupFilter := parseGroupFilterQuery(r.URL.Query())
-	items, total, err := loadArchiveIntervalSummaries(record, page, action, groupFilter)
+	sampleLimit, ok := parseArchiveSampleLimit(w, r)
+	if !ok {
+		return
+	}
+	if sampleLimit > 0 && (action != "" || groupFilter.Explicit) {
+		writeError(w, http.StatusBadRequest, "sample_limit cannot be combined with summary filters")
+		return
+	}
+	var (
+		items   []IntervalSummaryRecord
+		total   int
+		err     error
+		sampled bool
+	)
+	if sampleLimit > 0 {
+		items, total, err = loadArchiveIntervalSummariesDownsampled(record, sampleLimit)
+		page = archivePage{Limit: sampleLimit}
+		sampled = true
+	} else {
+		items, total, err = loadArchiveIntervalSummaries(record, page, action, groupFilter)
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to read archive summaries: "+err.Error())
 		return
@@ -295,6 +348,7 @@ func (s *Server) handleGetRunArchiveSummaries(w http.ResponseWriter, r *http.Req
 		"total":     total,
 		"limit":     page.Limit,
 		"offset":    page.Offset,
+		"sampled":   sampled,
 		"filters": map[string]any{
 			"action": action,
 			"groups": groupFilter.Names,
@@ -303,10 +357,11 @@ func (s *Server) handleGetRunArchiveSummaries(w http.ResponseWriter, r *http.Req
 }
 
 func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Request) {
-	record, ok := s.requireRunArchive(w, r)
+	record, lease, ok := s.requireRunArchive(w, r)
 	if !ok {
 		return
 	}
+	defer lease.Release()
 	report, err := cachedRunArchiveReport(record)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to build archive report: "+err.Error())
@@ -402,12 +457,18 @@ func (s *Server) handleGetRunArchiveReportsBatch(w http.ResponseWriter, r *http.
 			errorsByID[id] = "test not found"
 			continue
 		}
-		record, ok := s.runner.GetRunArchive(id)
+		record, ok := s.runner.GetRunArchiveContext(r.Context(), id)
 		if !ok {
 			errorsByID[id] = "archive not found"
 			continue
 		}
+		lease, err := acquireArchiveMaterialized(r.Context(), record)
+		if err != nil {
+			errorsByID[id] = err.Error()
+			continue
+		}
 		report, err := cachedRunArchiveReport(record)
+		lease.Release()
 		if err != nil {
 			errorsByID[id] = err.Error()
 			continue
@@ -423,10 +484,11 @@ func (s *Server) handleGetRunArchiveReportsBatch(w http.ResponseWriter, r *http.
 }
 
 func (s *Server) handleGetRunArchiveAnalysis(w http.ResponseWriter, r *http.Request) {
-	currentRecord, ok := s.requireRunArchive(w, r)
+	currentRecord, lease, ok := s.requireRunArchive(w, r)
 	if !ok {
 		return
 	}
+	defer lease.Release()
 	page, ok := parseArchivePage(w, r)
 	if !ok {
 		return
@@ -437,10 +499,11 @@ func (s *Server) handleGetRunArchiveAnalysis(w http.ResponseWriter, r *http.Requ
 	}
 	currentID := r.PathValue("id")
 	currentName := currentID
-	if test, ok := s.runner.GetTest(currentID); ok {
-		currentName = test.Name
+	currentTest, currentTestOK := s.runner.GetTest(currentID)
+	if currentTestOK {
+		currentName = currentTest.Name
 	}
-	currentRun, err := archiveAnalysisRunFromRecord(currentID, currentName, currentRecord, filter)
+	currentRun, err := archiveAnalysisRunFromRecord(currentID, currentName, currentRecord, filter, &page)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to read archive transactions: "+err.Error())
 		return
@@ -448,20 +511,24 @@ func (s *Server) handleGetRunArchiveAnalysis(w http.ResponseWriter, r *http.Requ
 
 	var baselineRun *archiveAnalysisRun
 	if baselineID := strings.TrimSpace(r.URL.Query().Get("baseline_id")); baselineID != "" {
-		if _, ok := s.runner.GetTest(baselineID); !ok {
+		baselineTest, ok := s.runner.GetTest(baselineID)
+		if !ok || !currentTestOK || !testsShareProject(currentTest, baselineTest) {
 			writeError(w, http.StatusNotFound, "baseline test not found")
 			return
 		}
-		baselineRecord, ok := s.runner.GetRunArchive(baselineID)
+		baselineRecord, ok := s.runner.GetRunArchiveContext(r.Context(), baselineID)
 		if !ok {
 			writeError(w, http.StatusNotFound, "baseline archive not found")
 			return
 		}
-		baselineName := baselineID
-		if test, ok := s.runner.GetTest(baselineID); ok {
-			baselineName = test.Name
+		baselineLease, err := acquireArchiveMaterialized(r.Context(), baselineRecord)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to materialize baseline archive: "+err.Error())
+			return
 		}
-		run, err := archiveAnalysisRunFromRecord(baselineID, baselineName, baselineRecord, filter)
+		baselineName := baselineTest.Name
+		run, err := archiveAnalysisRunFromRecord(baselineID, baselineName, baselineRecord, filter, nil)
+		baselineLease.Release()
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to read baseline archive transactions: "+err.Error())
 			return
@@ -473,10 +540,11 @@ func (s *Server) handleGetRunArchiveAnalysis(w http.ResponseWriter, r *http.Requ
 }
 
 func (s *Server) handleGetRunArchiveComparison(w http.ResponseWriter, r *http.Request) {
-	currentRecord, ok := s.requireRunArchive(w, r)
+	currentRecord, lease, ok := s.requireRunArchive(w, r)
 	if !ok {
 		return
 	}
+	defer lease.Release()
 	if format := queryFormat(r); format != "" && format != "csv" {
 		writeError(w, http.StatusBadRequest, "unsupported comparison format")
 		return
@@ -496,23 +564,29 @@ func (s *Server) handleGetRunArchiveComparison(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusBadRequest, "baseline_id is required")
 		return
 	}
-	if _, ok := s.runner.GetTest(baselineID); !ok {
+	currentID := r.PathValue("id")
+	currentTest, currentOK := s.runner.GetTest(currentID)
+	baselineTest, baselineOK := s.runner.GetTest(baselineID)
+	if !currentOK || !baselineOK || !testsShareProject(currentTest, baselineTest) {
 		writeError(w, http.StatusNotFound, "baseline test not found")
 		return
 	}
-	baselineRecord, ok := s.runner.GetRunArchive(baselineID)
+	baselineRecord, ok := s.runner.GetRunArchiveContext(r.Context(), baselineID)
 	if !ok {
 		writeError(w, http.StatusNotFound, "baseline archive not found")
 		return
 	}
-	currentID := r.PathValue("id")
-	currentTest, _ := s.runner.GetTest(currentID)
+	baselineLease, err := acquireArchiveMaterialized(r.Context(), baselineRecord)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to materialize baseline archive: "+err.Error())
+		return
+	}
+	defer baselineLease.Release()
 	currentRun, err := s.archiveComparisonRunFromRecord(currentID, currentTest, currentRecord, action)
 	if err != nil {
 		s.writeArchiveComparisonRunError(w, err)
 		return
 	}
-	baselineTest, _ := s.runner.GetTest(baselineID)
 	baselineRun, err := s.archiveComparisonRunFromRecord(baselineID, baselineTest, baselineRecord, action)
 	if err != nil {
 		s.writeArchiveComparisonRunError(w, err)
@@ -556,7 +630,7 @@ func (s *Server) handleGetRunArchiveMultiComparison(w http.ResponseWriter, r *ht
 		return
 	}
 
-	runs, err := s.archiveComparisonRunsFromRecords(baselineID, baselineRecord, ids, action)
+	runs, err := s.archiveComparisonRunsFromRecords(r.Context(), baselineID, baselineRecord, ids, action)
 	if err != nil {
 		s.writeArchiveComparisonRunError(w, err)
 		return
@@ -608,7 +682,7 @@ func parseArchiveComparisonIDs(raw string) ([]string, bool) {
 	return ids, true
 }
 
-func (s *Server) archiveComparisonRunsFromRecords(baselineID string, baselineRecord *storage.RunArchiveRecord, comparisonIDs []string, action string) ([]archiveComparisonRunWithStart, error) {
+func (s *Server) archiveComparisonRunsFromRecords(ctx context.Context, baselineID string, baselineRecord *storage.RunArchiveRecord, comparisonIDs []string, action string) ([]archiveComparisonRunWithStart, error) {
 	baselineTest, ok := s.runner.GetTest(baselineID)
 	if !ok {
 		return nil, fmt.Errorf("baseline test not found")
@@ -622,23 +696,32 @@ func (s *Server) archiveComparisonRunsFromRecords(baselineID string, baselineRec
 
 	for _, id := range comparisonIDs {
 		test, ok := s.runner.GetTest(id)
-		if !ok {
+		if !ok || !testsShareProject(baselineTest, test) {
 			return nil, fmt.Errorf("comparison test not found: %s", id)
 		}
-		record, ok := s.runner.GetRunArchive(id)
+		record, ok := s.runner.GetRunArchiveContext(ctx, id)
 		if !ok {
 			return nil, fmt.Errorf("comparison archive not found: %s", id)
 		}
-		if err := ensureArchiveMaterialized(record); err != nil {
+		lease, err := acquireArchiveMaterialized(ctx, record)
+		if err != nil {
 			return nil, fmt.Errorf("failed to materialize comparison archive: %w", err)
 		}
 		run, err := s.archiveComparisonRunFromRecord(id, test, record, action)
+		lease.Release()
 		if err != nil {
 			return nil, fmt.Errorf("failed to build comparison archive report: %w", err)
 		}
 		runs = append(runs, run)
 	}
 	return runs, nil
+}
+
+func testsShareProject(left *ManagedTest, right *ManagedTest) bool {
+	if left == nil || right == nil {
+		return false
+	}
+	return normalizeProjectID(left.ProjectID) == normalizeProjectID(right.ProjectID)
 }
 
 func (s *Server) archiveComparisonRunFromRecord(id string, test *ManagedTest, record *storage.RunArchiveRecord, action string) (archiveComparisonRunWithStart, error) {
@@ -723,10 +806,11 @@ func archiveComparisonRunStartedAt(run archiveComparisonRunWithStart) time.Time 
 }
 
 func (s *Server) handleGetTestHTMLReport(w http.ResponseWriter, r *http.Request) {
-	record, ok := s.requireRunArchive(w, r)
+	record, lease, ok := s.requireRunArchive(w, r)
 	if !ok {
 		return
 	}
+	defer lease.Release()
 	report, err := cachedRunArchiveReport(record)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to build archive report: "+err.Error())
@@ -767,22 +851,23 @@ func (s *Server) handleGetTestHTMLReport(w http.ResponseWriter, r *http.Request)
 	_, _ = w.Write(html)
 }
 
-func (s *Server) requireRunArchive(w http.ResponseWriter, r *http.Request) (*storage.RunArchiveRecord, bool) {
+func (s *Server) requireRunArchive(w http.ResponseWriter, r *http.Request) (*storage.RunArchiveRecord, *archiveMaterializationLease, bool) {
 	id := r.PathValue("id")
 	if _, ok := s.runner.GetTest(id); !ok {
 		writeError(w, http.StatusNotFound, "test not found")
-		return nil, false
+		return nil, nil, false
 	}
-	record, ok := s.runner.GetRunArchive(id)
+	record, ok := s.runner.GetRunArchiveContext(r.Context(), id)
 	if !ok {
 		writeError(w, http.StatusNotFound, "archive not found")
-		return nil, false
+		return nil, nil, false
 	}
-	if err := ensureArchiveMaterialized(record); err != nil {
+	lease, err := acquireArchiveMaterialized(r.Context(), record)
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to materialize archive: "+err.Error())
-		return nil, false
+		return nil, nil, false
 	}
-	return record, true
+	return record, lease, true
 }
 
 func parseArchivePage(w http.ResponseWriter, r *http.Request) (archivePage, bool) {
@@ -790,7 +875,7 @@ func parseArchivePage(w http.ResponseWriter, r *http.Request) (archivePage, bool
 	offset := 0
 	if raw := r.URL.Query().Get("limit"); raw != "" {
 		parsed, err := strconv.Atoi(raw)
-		if err != nil || parsed < 0 {
+		if err != nil || parsed < 0 || parsed > maxArchivePageLimit {
 			writeError(w, http.StatusBadRequest, "invalid limit")
 			return archivePage{}, false
 		}
@@ -805,6 +890,19 @@ func parseArchivePage(w http.ResponseWriter, r *http.Request) (archivePage, bool
 		offset = parsed
 	}
 	return archivePage{Limit: limit, Offset: offset}, true
+}
+
+func parseArchiveSampleLimit(w http.ResponseWriter, r *http.Request) (int, bool) {
+	raw := strings.TrimSpace(r.URL.Query().Get("sample_limit"))
+	if raw == "" {
+		return 0, true
+	}
+	parsed, err := strconv.Atoi(raw)
+	if err != nil || parsed < 2 || parsed > maxArchiveSampleLimit {
+		writeError(w, http.StatusBadRequest, "invalid sample_limit")
+		return 0, false
+	}
+	return parsed, true
 }
 
 func parseTransactionEventFilter(w http.ResponseWriter, r *http.Request) (transactionEventFilter, bool) {

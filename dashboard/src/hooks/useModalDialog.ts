@@ -9,7 +9,6 @@ interface ModalDialogOptions {
 
 interface DialogStackEntry {
   id: number
-  onClose?: () => void
 }
 
 const dialogStack: DialogStackEntry[] = []
@@ -62,7 +61,11 @@ function trapTabKey(event: KeyboardEvent, dialog: HTMLElement) {
   const last = focusable[focusable.length - 1]
   const activeElement = document.activeElement
 
-  if (event.shiftKey && activeElement === first) {
+  if (activeElement === dialog || !dialog.contains(activeElement)) {
+    event.preventDefault()
+    const recoveryTarget = event.shiftKey ? last : first
+    recoveryTarget.focus()
+  } else if (event.shiftKey && activeElement === first) {
     event.preventDefault()
     last.focus()
   } else if (!event.shiftKey && activeElement === last) {
@@ -78,6 +81,8 @@ export function useModalDialog({
   onClose,
 }: ModalDialogOptions) {
   const idRef = useRef<number>(0)
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
 
   useEffect(() => {
     if (!enabled) return undefined
@@ -91,7 +96,7 @@ export function useModalDialog({
     const id = nextDialogId++
     idRef.current = id
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    dialogStack.push({ id, onClose })
+    dialogStack.push({ id })
 
     window.setTimeout(() => {
       if (!isTopDialog(id)) return
@@ -101,9 +106,10 @@ export function useModalDialog({
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (!isTopDialog(id)) return
-      if (event.key === 'Escape' && onClose) {
+      if (event.key === 'Escape') {
         event.preventDefault()
-        onClose()
+        event.stopImmediatePropagation()
+        onCloseRef.current?.()
         return
       }
       if (event.key === 'Tab') {
@@ -119,5 +125,5 @@ export function useModalDialog({
         previouslyFocused.focus()
       }
     }
-  }, [dialogRef, enabled, initialFocusRef, onClose])
+  }, [dialogRef, enabled, initialFocusRef])
 }

@@ -75,6 +75,9 @@ func TestSQLiteStorePersistsScenarioSchedules(t *testing.T) {
 	if err := store.SaveScenarioSchedule(schedule); err != nil {
 		t.Fatalf("SaveScenarioSchedule returned error: %v", err)
 	}
+	if err := store.SaveTest(&TestRecord{ID: "test-1", Name: "Scheduled Run", Status: "COMPLETE", ScenarioID: scenario.ID, ProjectID: "checkout", StartTime: nextRun}); err != nil {
+		t.Fatal(err)
+	}
 
 	roundTrip, err := store.GetScenarioSchedule(schedule.ID)
 	if err != nil {

@@ -81,6 +81,27 @@ describe('ReportComposer test notes source panel', () => {
     vi.clearAllMocks()
   })
 
+  it('announces loading and load failures to assistive technology', async () => {
+    apiMock.getTestArchiveReport.mockReturnValueOnce(new Promise(() => {}))
+    await act(async () => {
+      root.render(<ReportComposer testId="test-1" testName="Checkout Run" profile="executive" onClose={() => {}} />)
+    })
+
+    const loadingStatus = container.querySelector('[role="status"]')
+    expect(loadingStatus?.getAttribute('aria-live')).toBe('polite')
+    expect(loadingStatus?.textContent).toContain('Loading report')
+
+    await act(async () => {
+      root.unmount()
+    })
+    root = createRoot(container)
+    apiMock.getTestArchiveReport.mockRejectedValueOnce(new Error('Archive report unavailable'))
+    await renderComposer()
+
+    const alert = container.querySelector('[role="alert"]')
+    expect(alert?.textContent).toContain('Archive report unavailable')
+  })
+
   it('inserts selected notes into summary, commentary, and info findings', async () => {
     await renderComposer()
 

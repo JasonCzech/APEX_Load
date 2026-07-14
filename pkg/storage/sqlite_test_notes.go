@@ -33,6 +33,33 @@ func (s *SQLiteStore) CreateTestNote(note *TestNote) error {
 	return err
 }
 
+func (s *SQLiteStore) CreateTestNoteAndArchiveRefresh(note *TestNote) error {
+	if note == nil {
+		return errors.New("test note is nil")
+	}
+	now := time.Now().UTC()
+	if note.CreatedAt.IsZero() {
+		note.CreatedAt = now
+	}
+	if note.UpdatedAt.IsZero() {
+		note.UpdatedAt = note.CreatedAt
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := bumpArchiveRefreshJobTx(tx, s.db.dialect, note.TestID); err != nil && !errors.Is(err, ErrArchiveCleanupPending) {
+		return err
+	}
+	if _, err := tx.Exec(`INSERT INTO test_notes (id, test_id, body, created_at, updated_at, created_by, updated_by)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`, strings.TrimSpace(note.ID), strings.TrimSpace(note.TestID), note.Body,
+		note.CreatedAt, note.UpdatedAt, strings.TrimSpace(note.CreatedBy), strings.TrimSpace(note.UpdatedBy)); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 func (s *SQLiteStore) ListTestNotes(testID string) ([]*TestNote, error) {
 	rows, err := s.db.Query(`SELECT id, test_id, COALESCE(body, ''), created_at, updated_at, COALESCE(created_by, ''), COALESCE(updated_by, '')
 		FROM test_notes WHERE test_id = ? ORDER BY updated_at DESC`, strings.TrimSpace(testID))
@@ -81,6 +108,34 @@ func (s *SQLiteStore) UpdateTestNote(note *TestNote) error {
 	return nil
 }
 
+func (s *SQLiteStore) UpdateTestNoteAndArchiveRefresh(note *TestNote) error {
+	if note == nil {
+		return errors.New("test note is nil")
+	}
+	note.UpdatedAt = time.Now().UTC()
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := bumpArchiveRefreshJobTx(tx, s.db.dialect, note.TestID); err != nil && !errors.Is(err, ErrArchiveCleanupPending) {
+		return err
+	}
+	result, err := tx.Exec(`UPDATE test_notes SET body = ?, updated_at = ?, updated_by = ? WHERE id = ?`,
+		note.Body, note.UpdatedAt, strings.TrimSpace(note.UpdatedBy), strings.TrimSpace(note.ID))
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return tx.Commit()
+}
+
 func (s *SQLiteStore) DeleteTestNote(id string) error {
 	result, err := s.db.Exec(`DELETE FROM test_notes WHERE id = ?`, strings.TrimSpace(id))
 	if err != nil {
@@ -94,6 +149,29 @@ func (s *SQLiteStore) DeleteTestNote(id string) error {
 		return sql.ErrNoRows
 	}
 	return nil
+}
+
+func (s *SQLiteStore) DeleteTestNoteAndArchiveRefresh(id string, testID string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := bumpArchiveRefreshJobTx(tx, s.db.dialect, testID); err != nil && !errors.Is(err, ErrArchiveCleanupPending) {
+		return err
+	}
+	result, err := tx.Exec(`DELETE FROM test_notes WHERE id = ?`, strings.TrimSpace(id))
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return tx.Commit()
 }
 
 func scanTestNote(row rowScanner) (*TestNote, error) {

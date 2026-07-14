@@ -1786,9 +1786,14 @@ func (s *Server) handleExportUserActivity(w http.ResponseWriter, r *http.Request
 		return
 	}
 	for _, event := range events {
-		_ = writer.Write([]string{event.ID, event.CreatedAt.UTC().Format(time.RFC3339), event.Action, event.Status, event.ActorType, event.ActorSubject, event.ActorDisplayName, event.DomainID, event.ProjectID, event.ResourceType, event.ResourceID})
+		if err := writer.Write([]string{event.ID, event.CreatedAt.UTC().Format(time.RFC3339), event.Action, event.Status, event.ActorType, event.ActorSubject, event.ActorDisplayName, event.DomainID, event.ProjectID, event.ResourceType, event.ResourceID}); err != nil {
+			return
+		}
 	}
 	writer.Flush()
+	if writer.Error() != nil {
+		return
+	}
 }
 
 func (s *Server) handleListServiceAccounts(w http.ResponseWriter, _ *http.Request) {

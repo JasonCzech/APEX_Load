@@ -1028,6 +1028,7 @@ export interface ArchivePage<T> {
   total: number
   limit: number
   offset: number
+  sampled?: boolean
   filters?: Record<string, unknown>
   transactions?: T[]
   resources?: T[]

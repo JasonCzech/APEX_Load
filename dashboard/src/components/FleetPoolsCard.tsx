@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import { useFleetApi } from '../hooks/api/useFleetApi'
 import { ApiError } from '../hooks/apiClient'
+import { useModalDialog } from '../hooks/useModalDialog'
 import { FleetPool, FleetProvisioningRequest, ProvisionerInfo } from '../types'
 import ConfirmDestructiveModal from './ConfirmDestructiveModal'
 import './parityPanels.css'
@@ -82,6 +83,37 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
   const [provisionRequests, setProvisionRequests] = useState<FleetProvisioningRequest[]>([])
   const [provisioner, setProvisioner] = useState<ProvisionerInfo | null>(null)
   const [busy, setBusy] = useState(false)
+  const draftDialogRef = useRef<HTMLDivElement | null>(null)
+  const draftNameRef = useRef<HTMLInputElement | null>(null)
+  const provisionDialogRef = useRef<HTMLDivElement | null>(null)
+  const provisionCountRef = useRef<HTMLInputElement | null>(null)
+  const resultDialogRef = useRef<HTMLDivElement | null>(null)
+  const resultDoneRef = useRef<HTMLButtonElement | null>(null)
+  const draftTitleId = useId()
+  const provisionTitleId = useId()
+  const resultTitleId = useId()
+
+  const closeDraft = useCallback(() => setDraft(null), [])
+  const closeProvision = useCallback(() => setProvisionFor(null), [])
+  const closeResult = useCallback(() => setProvisionResult(null), [])
+  useModalDialog({
+    dialogRef: draftDialogRef,
+    enabled: Boolean(draft),
+    initialFocusRef: draftNameRef,
+    onClose: closeDraft,
+  })
+  useModalDialog({
+    dialogRef: provisionDialogRef,
+    enabled: Boolean(provisionFor),
+    initialFocusRef: provisionCountRef,
+    onClose: closeProvision,
+  })
+  useModalDialog({
+    dialogRef: resultDialogRef,
+    enabled: Boolean(provisionResult),
+    initialFocusRef: resultDoneRef,
+    onClose: closeResult,
+  })
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -204,7 +236,7 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
         )}
       </div>
 
-      {error && <div className="pp-error">{error}</div>}
+      {error && <div className="pp-error" role="alert">{error}</div>}
 
       {loading ? (
         <div className="pp-empty">Loading pools…</div>
@@ -291,17 +323,23 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
       </div>
 
       {draft && (
-        <div className="pp-modal-overlay" onClick={() => setDraft(null)}>
-          <div className="pp-modal" onClick={event => event.stopPropagation()}>
+        <div
+          className="pp-modal-overlay"
+          role="presentation"
+          onPointerDown={event => {
+            if (event.target === event.currentTarget) closeDraft()
+          }}
+        >
+          <div ref={draftDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby={draftTitleId}>
             <div className="pp-modal-header">
-              <h3>{draft.id ? 'Edit Pool' : 'New Pool'}</h3>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setDraft(null)}>Close</button>
+              <h3 id={draftTitleId}>{draft.id ? 'Edit Pool' : 'New Pool'}</h3>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={closeDraft}>Close</button>
             </div>
             <div className="pp-modal-form">
               <div className="pp-field-row">
                 <label className="pp-field">
                   <span>Name</span>
-                  <input value={draft.name} autoFocus onChange={e => setDraft(d => (d ? { ...d, name: e.target.value } : d))} placeholder="e.g. east-http" />
+                  <input ref={draftNameRef} value={draft.name} onChange={e => setDraft(d => (d ? { ...d, name: e.target.value } : d))} placeholder="e.g. east-http" />
                 </label>
                 <label className="pp-field">
                   <span>Cloud provider</span>
@@ -344,7 +382,7 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
               </div>
             </div>
             <div className="pp-modal-actions">
-              <button type="button" className="btn btn-secondary" onClick={() => setDraft(null)}>Cancel</button>
+              <button type="button" className="btn btn-secondary" onClick={closeDraft}>Cancel</button>
               <button type="button" className="btn btn-primary" disabled={!draftValid || busy} onClick={() => void submitDraft()}>
                 {busy ? 'Saving…' : draft.id ? 'Save' : 'Create'}
               </button>
@@ -354,16 +392,22 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
       )}
 
       {provisionFor && (
-        <div className="pp-modal-overlay" onClick={() => setProvisionFor(null)}>
-          <div className="pp-modal" onClick={event => event.stopPropagation()}>
+        <div
+          className="pp-modal-overlay"
+          role="presentation"
+          onPointerDown={event => {
+            if (event.target === event.currentTarget) closeProvision()
+          }}
+        >
+          <div ref={provisionDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby={provisionTitleId}>
             <div className="pp-modal-header">
-              <h3>Provision “{provisionFor.pool.name}”</h3>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setProvisionFor(null)}>Close</button>
+              <h3 id={provisionTitleId}>Provision “{provisionFor.pool.name}”</h3>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={closeProvision}>Close</button>
             </div>
             <div className="pp-modal-form">
               <label className="pp-field">
                 <span>Desired generator count</span>
-                <input type="number" min={1} value={provisionFor.count} onChange={e => setProvisionFor(p => (p ? { ...p, count: Number(e.target.value) } : p))} />
+                <input ref={provisionCountRef} type="number" min={1} value={provisionFor.count} onChange={e => setProvisionFor(p => (p ? { ...p, count: Number(e.target.value) } : p))} />
               </label>
               {provisioner?.can_provision ? (
                 <p className="pp-muted">Scales the pool&rsquo;s generator workload via the <code>{provisioner.name}</code> provisioner.</p>
@@ -372,7 +416,7 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
               )}
             </div>
             <div className="pp-modal-actions">
-              <button type="button" className="btn btn-secondary" onClick={() => setProvisionFor(null)}>Cancel</button>
+              <button type="button" className="btn btn-secondary" onClick={closeProvision}>Cancel</button>
               <button type="button" className="btn btn-primary" disabled={busy || provisionFor.count < 1} onClick={() => void submitProvision()}>
                 {busy ? 'Requesting…' : 'Request provisioning'}
               </button>
@@ -382,11 +426,17 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
       )}
 
       {provisionResult && (
-        <div className="pp-modal-overlay" onClick={() => setProvisionResult(null)}>
-          <div className="pp-modal" onClick={event => event.stopPropagation()}>
+        <div
+          className="pp-modal-overlay"
+          role="presentation"
+          onPointerDown={event => {
+            if (event.target === event.currentTarget) closeResult()
+          }}
+        >
+          <div ref={resultDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby={resultTitleId}>
             <div className="pp-modal-header">
-              <h3>Provisioning request</h3>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setProvisionResult(null)}>Close</button>
+              <h3 id={resultTitleId}>Provisioning request</h3>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={closeResult}>Close</button>
             </div>
             <div className="pp-modal-form">
               <div className="pp-row-title">
@@ -406,7 +456,7 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
               </div>
             </div>
             <div className="pp-modal-actions">
-              <button type="button" className="btn btn-primary" onClick={() => setProvisionResult(null)}>Done</button>
+              <button ref={resultDoneRef} type="button" className="btn btn-primary" onClick={closeResult}>Done</button>
             </div>
           </div>
         </div>

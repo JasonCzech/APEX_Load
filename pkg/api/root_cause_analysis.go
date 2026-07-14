@@ -43,10 +43,11 @@ type RootCauseFinding struct {
 }
 
 func (s *Server) handleGetRunArchiveRootCause(w http.ResponseWriter, r *http.Request) {
-	record, ok := s.requireRunArchive(w, r)
+	record, lease, ok := s.requireRunArchive(w, r)
 	if !ok {
 		return
 	}
+	defer lease.Release()
 	report, err := cachedRunArchiveReport(record)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to build root-cause summary: "+err.Error())

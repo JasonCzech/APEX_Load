@@ -62,13 +62,15 @@ func (s *Server) remoteLibraryImport(ctx context.Context, remote LibraryRemote, 
 }
 
 func (s *Server) remoteLibraryImportArchive(ctx context.Context, remote LibraryRemote, req LibraryImportRequest, resultID string) (*LibraryImportResponse, error) {
-	record, ok := s.runner.GetRunArchive(resultID)
+	record, ok := s.runner.GetRunArchiveContext(ctx, resultID)
 	if !ok || record == nil {
 		return s.remoteLibraryImport(ctx, remote, req)
 	}
-	if err := ensureArchiveMaterialized(record); err != nil {
+	lease, err := acquireArchiveMaterialized(ctx, record)
+	if err != nil {
 		return nil, fmt.Errorf("materialize local archive: %w", err)
 	}
+	defer lease.Release()
 	reader, writer := io.Pipe()
 	multipartWriter := multipart.NewWriter(writer)
 	errCh := make(chan error, 1)

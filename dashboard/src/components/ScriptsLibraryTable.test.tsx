@@ -177,4 +177,53 @@ describe('ScriptsLibraryTable federation', () => {
     expect(findButton('Pull')).toBeUndefined()
     expect(container.textContent).toContain('Read-only')
   })
+
+  it('supports keyboard sorting and exposes the active sort direction', async () => {
+    const onSort = vi.fn()
+    await act(async () => {
+      root.render(<ScriptsLibraryTable {...baseProps} onSort={onSort} />)
+    })
+
+    const scriptHeader = Array.from(container.querySelectorAll<HTMLTableCellElement>('th'))
+      .find(header => header.textContent?.includes('Script'))
+    const healthHeader = Array.from(container.querySelectorAll<HTMLTableCellElement>('th'))
+      .find(header => header.textContent?.includes('Health'))
+    expect(scriptHeader?.getAttribute('aria-sort')).toBe('ascending')
+    expect(healthHeader?.getAttribute('aria-sort')).toBe('none')
+    const healthSortButton = healthHeader?.querySelector('button')
+    expect(healthSortButton).toBeInstanceOf(HTMLButtonElement)
+
+    await act(async () => {
+      healthSortButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(onSort).toHaveBeenCalledWith('authoring_health')
+  })
+
+  it('expands script runs from the keyboard', async () => {
+    const onToggleScriptRuns = vi.fn()
+    await act(async () => {
+      root.render(<ScriptsLibraryTable {...baseProps} onToggleScriptRuns={onToggleScriptRuns} />)
+    })
+
+    const toggle = container.querySelector<HTMLButtonElement>('.script-row-toggle')
+    expect(toggle?.getAttribute('aria-expanded')).toBe('false')
+    expect(toggle?.textContent).toContain('Local Checkout')
+
+    await act(async () => {
+      toggle?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(onToggleScriptRuns).toHaveBeenCalledWith(script)
+  })
+
+  it('offers a create action when the script library is empty', async () => {
+    const onCreate = vi.fn()
+    await act(async () => {
+      root.render(<ScriptsLibraryTable {...baseProps} scripts={[]} onCreate={onCreate} />)
+    })
+
+    const createButton = findButton('Create your first script')
+    expect(createButton).toBeDefined()
+    await act(async () => { createButton?.click() })
+    expect(onCreate).toHaveBeenCalledTimes(1)
+  })
 })

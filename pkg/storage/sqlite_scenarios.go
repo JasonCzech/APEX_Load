@@ -10,27 +10,54 @@ import (
 )
 
 func (s *SQLiteStore) SaveScenario(scenario *Scenario, scripts []ScenarioScript) error {
-	if scenario.ID == "" {
-		return errors.New("scenario id is required")
+	assignmentJSON, goalJSON, runtimeJSON, err := prepareScenarioForSave(scenario)
+	if err != nil {
+		return err
 	}
-	if strings.TrimSpace(scenario.Name) == "" {
-		return errors.New("scenario name is required")
-	}
-	if strings.TrimSpace(scenario.Duration) == "" {
-		return errors.New("scenario duration is required")
-	}
-	if scenario.CreatedAt.IsZero() {
-		scenario.CreatedAt = time.Now()
-	}
-	scenario.UpdatedAt = time.Now()
-	assignmentJSON, _ := json.Marshal(scenario.Assignment)
-	goalJSON, _ := json.Marshal(scenario.GoalConfig)
-	runtimeJSON, _ := json.Marshal(scenario.RuntimeSettings)
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+	if err := saveScenarioTx(tx, scenario, scripts, assignmentJSON, goalJSON, runtimeJSON); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func prepareScenarioForSave(scenario *Scenario) ([]byte, []byte, []byte, error) {
+	if scenario == nil {
+		return nil, nil, nil, errors.New("scenario is required")
+	}
+	if scenario.ID == "" {
+		return nil, nil, nil, errors.New("scenario id is required")
+	}
+	if strings.TrimSpace(scenario.Name) == "" {
+		return nil, nil, nil, errors.New("scenario name is required")
+	}
+	if strings.TrimSpace(scenario.Duration) == "" {
+		return nil, nil, nil, errors.New("scenario duration is required")
+	}
+	if scenario.CreatedAt.IsZero() {
+		scenario.CreatedAt = time.Now()
+	}
+	scenario.UpdatedAt = time.Now()
+	assignmentJSON, err := json.Marshal(scenario.Assignment)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	goalJSON, err := json.Marshal(scenario.GoalConfig)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	runtimeJSON, err := json.Marshal(scenario.RuntimeSettings)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return assignmentJSON, goalJSON, runtimeJSON, nil
+}
+
+func saveScenarioTx(tx *storeTx, scenario *Scenario, scripts []ScenarioScript, assignmentJSON, goalJSON, runtimeJSON []byte) error {
 	if _, err := tx.Exec(`INSERT INTO scenarios (id, ref_key, name, duration, start_delay, scenario_mode, shakeout_enabled, resource_baseline_enabled, assignment_json, goal_config_json, runtime_settings_json, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET ref_key=excluded.ref_key, name=excluded.name, duration=excluded.duration, start_delay=excluded.start_delay, scenario_mode=excluded.scenario_mode,
@@ -56,6 +83,28 @@ func (s *SQLiteStore) SaveScenario(scenario *Scenario, scripts []ScenarioScript)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, script.ScenarioID, script.Order, script.Name, script.ScriptID, script.VUsers, script.RampUp, script.RampDown, string(stagesJSON), script.Initialization, script.Role, string(runtimeJSON), string(assignmentJSON)); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// SaveScenarioWithDataPoolBindings persists the scenario, script ordering, and
+// data-pool bindings in one transaction. This prevents a binding failure from
+// leaving a partially updated scenario visible after an error response.
+func (s *SQLiteStore) SaveScenarioWithDataPoolBindings(scenario *Scenario, scripts []ScenarioScript, bindings []ScenarioDataPoolBinding) error {
+	assignmentJSON, goalJSON, runtimeJSON, err := prepareScenarioForSave(scenario)
+	if err != nil {
+		return err
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := saveScenarioTx(tx, scenario, scripts, assignmentJSON, goalJSON, runtimeJSON); err != nil {
+		return err
+	}
+	if err := saveScenarioDataPoolBindingsTx(tx, scenario.ID, bindings); err != nil {
+		return err
 	}
 	return tx.Commit()
 }
@@ -154,6 +203,12 @@ func (s *SQLiteStore) DeleteScenario(id string) error {
 	if _, err := tx.Exec(`DELETE FROM scenario_scripts WHERE scenario_id = ?`, id); err != nil {
 		return err
 	}
+	if _, err := tx.Exec(`DELETE FROM scenario_schedule_approvals WHERE schedule_id IN (SELECT id FROM scenario_schedules WHERE scenario_id = ?)`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM scenario_schedule_occurrences WHERE schedule_id IN (SELECT id FROM scenario_schedules WHERE scenario_id = ?)`, id); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(`DELETE FROM scenario_schedules WHERE scenario_id = ?`, id); err != nil {
 		return err
 	}
@@ -167,14 +222,21 @@ func (s *SQLiteStore) DeleteScenario(id string) error {
 }
 
 func (s *SQLiteStore) SaveScenarioDataPoolBindings(scenarioID string, bindings []ScenarioDataPoolBinding) error {
-	if scenarioID == "" {
-		return errors.New("scenario id is required")
-	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+	if err := saveScenarioDataPoolBindingsTx(tx, scenarioID, bindings); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func saveScenarioDataPoolBindingsTx(tx *storeTx, scenarioID string, bindings []ScenarioDataPoolBinding) error {
+	if scenarioID == "" {
+		return errors.New("scenario id is required")
+	}
 	if _, err := tx.Exec(`DELETE FROM scenario_data_pool_bindings WHERE scenario_id = ?`, scenarioID); err != nil {
 		return err
 	}
@@ -204,7 +266,7 @@ func (s *SQLiteStore) SaveScenarioDataPoolBindings(scenarioID string, bindings [
 			return err
 		}
 	}
-	return tx.Commit()
+	return nil
 }
 
 func (s *SQLiteStore) ListScenarioDataPoolBindings(scenarioID string) ([]ScenarioDataPoolBinding, error) {

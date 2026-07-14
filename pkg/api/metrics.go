@@ -472,12 +472,17 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 	} else {
 		test.lastNetworkLatency = cloneNetworkLatency(live.Latency)
 	}
-	test.LiveMetrics = live
-	test.History = append(test.History, live)
+	historyPoints := len(test.History) + 1
+	if historyPoints > maxManagedTestHistory {
+		historyPoints = maxManagedTestHistory
+	}
+	live.Telemetry.HistoryPoints = historyPoints
+	installedLive := cloneLiveMetrics(live)
+	test.LiveMetrics = installedLive
+	test.History = append(test.History, installedLive)
 	if len(test.History) > maxManagedTestHistory {
 		test.History = append([]*LiveMetrics(nil), test.History[len(test.History)-maxManagedTestHistory:]...)
 	}
-	live.Telemetry.HistoryPoints = len(test.History)
 	if diagnostic != nil {
 		publishDiagnostic = shouldPublishTelemetryDiagnostic(&test.telemetryDiagnostic, diagnosticSignature, now)
 	}
@@ -492,27 +497,32 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 		sheddedArrivals = live.Telemetry.SheddedArrivals
 	}
 	snapshot := buildRunLiveStateSnapshotLocked(test, now)
+	publishedLive := cloneLiveMetrics(installedLive)
+	testID := test.ID
+	testName := test.Name
+	projectID := normalizeProjectID(test.ProjectID)
 	tr.mu.Unlock()
 
 	tr.cacheRunSnapshot(snapshot)
-	tr.saveLiveMetricsHistory(test.ID, live.Timestamp, live)
-	artifacts.recordLiveMetrics(test, live)
+	if err := tr.saveLiveMetricsHistory(testID, publishedLive.Timestamp, publishedLive); err != nil {
+		slog.Warn("failed to persist live metrics history", "test_id", testID, "timestamp", publishedLive.Timestamp, "error", err)
+	}
+	artifacts.recordLiveMetrics(test, publishedLive)
 
-	projectID := normalizeProjectID(test.ProjectID)
-	tr.hub.BroadcastScopedJSON(test.ID, projectID, map[string]any{
+	tr.hub.BroadcastScopedJSON(testID, projectID, map[string]any{
 		"type":       "metrics_update",
-		"test_id":    test.ID,
+		"test_id":    testID,
 		"project_id": projectID,
-		"test_name":  test.Name,
-		"timestamp":  live.Timestamp,
-		"data":       live,
+		"test_name":  testName,
+		"timestamp":  publishedLive.Timestamp,
+		"data":       publishedLive,
 	})
 	if publishDiagnostic {
-		tr.hub.BroadcastScopedJSON(test.ID, projectID, map[string]any{
+		tr.hub.BroadcastScopedJSON(testID, projectID, map[string]any{
 			"type":       "telemetry_diagnostic",
-			"test_id":    test.ID,
+			"test_id":    testID,
 			"project_id": projectID,
-			"test_name":  test.Name,
+			"test_name":  testName,
 			"timestamp":  now,
 			"data":       diagnostic,
 		})
@@ -554,10 +564,25 @@ func buildRunLiveStateSnapshotLocked(test *ManagedTest, updatedAt time.Time) Run
 		ProjectID:     normalizeProjectID(test.ProjectID),
 		Status:        test.Status,
 		UpdatedAt:     updatedAt.UTC(),
-		StartedAt:     test.StartedAt,
-		EndedAt:       test.EndedAt,
-		LiveMetrics:   test.LiveMetrics,
+		StartedAt:     cloneTimePtr(test.StartedAt),
+		EndedAt:       cloneTimePtr(test.EndedAt),
+		LiveMetrics:   cloneLiveMetrics(test.LiveMetrics),
 		HistoryPoints: len(test.History),
+	}
+}
+
+// replaceLiveMetricsLocked installs a copy-on-write replacement and keeps the
+// latest history slot aligned when it referred to the replaced live snapshot.
+// Installed snapshots are otherwise immutable so background encoders can use
+// them safely after tr.mu is released.
+func replaceLiveMetricsLocked(test *ManagedTest, replacement *LiveMetrics) {
+	if test == nil {
+		return
+	}
+	previous := test.LiveMetrics
+	test.LiveMetrics = replacement
+	if len(test.History) > 0 && test.History[len(test.History)-1] == previous {
+		test.History[len(test.History)-1] = replacement
 	}
 }
 
@@ -633,6 +658,7 @@ func (tr *TestRunner) evaluateGoalControllerLocked(test *ManagedTest, live *Live
 	defer tr.mu.Unlock()
 	applyRuntimeGoalTargetsToLiveMetrics(test, live)
 	if test.ScenarioMode == "goal_oriented" && test.GoalConfig != nil {
+		recordGoalErrorWindow(test.goalControl, "local", live.Timestamp, live.TotalErrors)
 		currentTotalVUsers := totalGroupVUsers(groupVUsers)
 		return evaluateGoalController(live.Timestamp, currentTotalVUsers, live, test.GoalConfig, test.goalControl), true
 	}

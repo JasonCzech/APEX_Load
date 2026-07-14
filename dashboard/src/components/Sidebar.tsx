@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { useAuthApi } from '../hooks/api/useAuthApi'
+import { resolveApiResourceUrl } from '../hooks/apiClient'
 import { useDevView } from '../hooks/useDevView'
 import { Application, DashboardAuthStatus, Domain, Project, Release } from '../types'
 import BuildBadge from './BuildBadge'
@@ -235,7 +236,8 @@ export default function Sidebar({
   const identityInitials = formatIdentityInitials(identityName)
   const identityMeta = formatIdentityMeta(authStatus)
   const identityTitle = formatIdentityTitle(authStatus, identityMeta)
-  const logoutURL = authStatus?.authenticated ? authStatus.logout_url?.trim() || '' : ''
+  const rawLogoutURL = authStatus?.authenticated ? authStatus.logout_url?.trim() || '' : ''
+  const logoutURL = rawLogoutURL ? resolveApiResourceUrl(rawLogoutURL) : ''
   const canPostLogout = authStatus?.authenticated && authStatus.mode === 'oidc' && Boolean(authStatus.logout_csrf_token?.trim())
   const sessionExpiryNotice = formatSessionExpiryNotice(authStatus)
   const closeWorkspaceMenus = useCallback(() => {
@@ -316,7 +318,7 @@ export default function Sidebar({
     try {
       const res = await logout(authStatus.logout_csrf_token)
       if (typeof window !== 'undefined') {
-        window.location.assign(res.redirect_url || logoutURL)
+        window.location.assign(res.redirect_url ? resolveApiResourceUrl(res.redirect_url) : logoutURL)
       }
     } catch (error) {
       setLogoutError(error instanceof Error ? error.message : 'Unable to sign out.')
@@ -326,18 +328,19 @@ export default function Sidebar({
 
   return (
     <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
-      <div className="sidebar-brand" onClick={() => onNavigate('dashboard')}>
+      <button type="button" className="sidebar-brand" onClick={() => onNavigate('dashboard')} aria-label="APEX Load dashboard">
         <Logo size={28} className="brand-icon" title="APEX Load" />
         {!collapsed && <span className="brand-name">APEX Load</span>}
-      </div>
+      </button>
 
       <div className="sidebar-project" ref={domainSelectorRef}>
         <button
           className="project-selector"
           onClick={toggleDomainMenu}
-          title={collapsed ? activeDomain?.name || 'Domain' : undefined}
+          title={activeDomain?.name || 'Domain'}
+          aria-label={`Select domain. Current domain: ${activeDomain?.name || 'none'}`}
           aria-expanded={domainOpen && !collapsed}
-          aria-haspopup="menu"
+          aria-controls="sidebar-domain-options"
         >
           <span className="project-icon">◇</span>
           {!collapsed && (
@@ -348,7 +351,7 @@ export default function Sidebar({
           )}
         </button>
         {domainOpen && !collapsed && (
-          <div className="project-menu">
+          <div className="project-menu" id="sidebar-domain-options" aria-label="Domain options">
             <div className="project-menu-list">
               {domains.map(domain => (
                 <button
@@ -380,9 +383,10 @@ export default function Sidebar({
         <button
           className="project-selector"
           onClick={toggleProjectMenu}
-          title={collapsed ? activeProject?.name || 'Project' : undefined}
+          title={activeProject?.name || 'Project'}
+          aria-label={`Select project. Current project: ${activeProject?.name || 'none'}`}
           aria-expanded={projectOpen && !collapsed}
-          aria-haspopup="menu"
+          aria-controls="sidebar-project-options"
         >
           <span className="project-icon">◫</span>
           {!collapsed && (
@@ -393,7 +397,7 @@ export default function Sidebar({
           )}
         </button>
         {projectOpen && !collapsed && (
-          <div className="project-menu">
+          <div className="project-menu" id="sidebar-project-options" aria-label="Project options">
             <div className="project-menu-list">
               {projects.map(project => (
                 <button
@@ -427,9 +431,10 @@ export default function Sidebar({
         <button
           className="project-selector"
           onClick={toggleApplicationMenu}
-          title={collapsed ? activeApplication?.name || 'Application' : undefined}
+          title={`${activeApplication?.name || 'Application'}${activeRelease ? ` / ${activeRelease.name}` : ''}`}
+          aria-label={`Select application and release. Current application: ${activeApplication?.name || 'none'}${activeRelease ? `. Current release: ${activeRelease.name}` : ''}`}
           aria-expanded={applicationOpen && !collapsed}
-          aria-haspopup="menu"
+          aria-controls="sidebar-application-options"
         >
           <span className="project-icon">▣</span>
           {!collapsed && (
@@ -440,7 +445,7 @@ export default function Sidebar({
           )}
         </button>
         {applicationOpen && !collapsed && (
-          <div className="project-menu">
+          <div className="project-menu" id="sidebar-application-options" aria-label="Application and release options">
             <div className="project-menu-list">
               {applications.map(application => (
                 <button
@@ -492,7 +497,9 @@ export default function Sidebar({
             key={item.id}
             className={`nav-item ${active === item.id ? 'active' : ''}`}
             onClick={() => onNavigate(item.id)}
-            title={collapsed ? item.label : undefined}
+            title={item.label}
+            aria-label={item.label}
+            aria-current={active === item.id ? 'page' : undefined}
           >
             <span className="nav-icon">{item.icon}</span>
             {!collapsed && <span className="nav-label">{item.label}</span>}
@@ -521,7 +528,7 @@ export default function Sidebar({
                 ) : (
                   <a className="sidebar-identity-action" href={logoutURL}>Sign out</a>
                 ))}
-                {logoutError && <span className="sidebar-identity-meta">{logoutError}</span>}
+                {logoutError && <span className="sidebar-identity-meta" role="alert">{logoutError}</span>}
               </div>
             </div>
           )}
@@ -563,6 +570,8 @@ export default function Sidebar({
           className="collapse-btn"
           onClick={() => setCollapsed(!collapsed)}
           title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-expanded={!collapsed}
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             {collapsed ? (

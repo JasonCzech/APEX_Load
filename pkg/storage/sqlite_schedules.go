@@ -63,8 +63,8 @@ func (s *SQLiteStore) SaveScenarioSchedule(schedule *ScenarioSchedule) error {
 		governance_json=excluded.governance_json, blackout_windows_json=excluded.blackout_windows_json,
 		maintenance_windows_json=excluded.maintenance_windows_json, availability_windows_json=excluded.availability_windows_json, last_run_test_id=excluded.last_run_test_id, last_run_at=excluded.last_run_at,
 		next_run_at=excluded.next_run_at, disabled_from=excluded.disabled_from, disabled_until=excluded.disabled_until, last_error=excluded.last_error, updated_at=excluded.updated_at`,
-		schedule.ID, schedule.ScenarioID, schedule.ProjectID, schedule.Revision, schedule.Name, schedule.CronExpr, schedule.Timezone, schedule.ReleaseID, schedule.TimeslotID, schedule.RunNameTemplate, schedule.Enabled, schedule.ApprovalPolicy, schedule.MissedRunPolicy, schedule.ConflictSummary, schedule.NextRequiredAction, schedule.PendingApprovalID, schedule.OwnerSubject, schedule.OwnerDisplayName, string(governanceJSON), string(blackoutWindowsJSON), string(maintenanceWindowsJSON), string(availabilityWindowsJSON),
-		schedule.LastRunTestID, schedule.LastRunAt, schedule.NextRunAt, schedule.DisabledFrom, schedule.DisabledUntil, schedule.LastError, schedule.CreatedAt, schedule.UpdatedAt)
+		schedule.ID, schedule.ScenarioID, schedule.ProjectID, schedule.Revision, schedule.Name, schedule.CronExpr, schedule.Timezone, nullableString(schedule.ReleaseID), schedule.TimeslotID, schedule.RunNameTemplate, schedule.Enabled, schedule.ApprovalPolicy, schedule.MissedRunPolicy, schedule.ConflictSummary, schedule.NextRequiredAction, schedule.PendingApprovalID, schedule.OwnerSubject, schedule.OwnerDisplayName, string(governanceJSON), string(blackoutWindowsJSON), string(maintenanceWindowsJSON), string(availabilityWindowsJSON),
+		nullableString(schedule.LastRunTestID), schedule.LastRunAt, schedule.NextRunAt, schedule.DisabledFrom, schedule.DisabledUntil, schedule.LastError, schedule.CreatedAt, schedule.UpdatedAt)
 	return err
 }
 
@@ -92,8 +92,21 @@ func (s *SQLiteStore) ListAllScenarioSchedules() ([]*ScenarioSchedule, error) {
 }
 
 func (s *SQLiteStore) DeleteScenarioSchedule(id string) error {
-	_, err := s.db.Exec(`DELETE FROM scenario_schedules WHERE id = ?`, id)
-	return err
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM scenario_schedule_approvals WHERE schedule_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM scenario_schedule_occurrences WHERE schedule_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM scenario_schedules WHERE id = ?`, id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *SQLiteStore) SaveScenarioScheduleOccurrence(occurrence *ScenarioScheduleOccurrence) error {
@@ -128,7 +141,7 @@ func (s *SQLiteStore) SaveScenarioScheduleOccurrence(occurrence *ScenarioSchedul
 		schedule_revision=excluded.schedule_revision, materialized_at=excluded.materialized_at, status=excluded.status,
 		reason_code=excluded.reason_code, test_id=excluded.test_id, approval_id=excluded.approval_id,
 		conflict_summary=excluded.conflict_summary, updated_at=excluded.updated_at`,
-		occurrence.ID, occurrence.ScheduleID, occurrence.ScenarioID, occurrence.ProjectID, occurrence.ScheduleRevision, occurrence.PlannedAt, occurrence.MaterializedAt, occurrence.Status, occurrence.ReasonCode, occurrence.TestID, occurrence.ApprovalID, occurrence.ConflictSummary, occurrence.CreatedAt, occurrence.UpdatedAt)
+		occurrence.ID, occurrence.ScheduleID, occurrence.ScenarioID, occurrence.ProjectID, occurrence.ScheduleRevision, occurrence.PlannedAt, occurrence.MaterializedAt, occurrence.Status, occurrence.ReasonCode, nullableString(occurrence.TestID), occurrence.ApprovalID, occurrence.ConflictSummary, occurrence.CreatedAt, occurrence.UpdatedAt)
 	return err
 }
 

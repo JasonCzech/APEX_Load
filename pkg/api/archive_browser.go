@@ -4,6 +4,7 @@ package api
 
 import (
 	"archive/zip"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,11 +17,12 @@ import (
 )
 
 func buildRunArchiveBrowserDiagnostics(record *storage.RunArchiveRecord) (*BrowserDiagnosticsBundle, error) {
-	manifest, err := loadRunArchiveManifest(record.ManifestPath)
+	lease, err := acquireArchiveMaterialized(context.Background(), record)
 	if err != nil {
 		return nil, err
 	}
-	transactions, err := readAllArchiveTransactions(record)
+	defer lease.Release()
+	manifest, err := loadRunArchiveManifest(record.ManifestPath)
 	if err != nil {
 		return nil, err
 	}
@@ -30,9 +32,18 @@ func buildRunArchiveBrowserDiagnostics(record *storage.RunArchiveRecord) (*Brows
 		Manifest:      manifest,
 		Events:        make([]BrowserDiagnosticsEvent, 0),
 	}
-	for _, tx := range transactions {
-		if !archiveTransactionHasBrowserDiagnostics(tx) {
-			continue
+	const maxBrowserDiagnosticEvents = 5_000
+	const maxBrowserDiagnosticPayloadBytes = 128 << 20
+	payloadBytes := 0
+	if err := forEachArchiveTransaction(record, func(tx *TransactionEvent) error {
+		if tx == nil {
+			return nil
+		}
+		if !archiveTransactionHasBrowserDiagnostics(*tx) {
+			return nil
+		}
+		if len(bundle.Events) >= maxBrowserDiagnosticEvents {
+			return fmt.Errorf("browser diagnostics exceed bounded event limit of %d", maxBrowserDiagnosticEvents)
 		}
 		event := BrowserDiagnosticsEvent{
 			Index:         len(bundle.Events) + 1,
@@ -100,9 +111,45 @@ func buildRunArchiveBrowserDiagnostics(record *storage.RunArchiveRecord) (*Brows
 			bundle.Overview.DOMSnapshots++
 		}
 		bundle.Overview.BrowserTransactions++
+		payloadBytes += browserDiagnosticEventPayloadBytes(&event)
+		if payloadBytes > maxBrowserDiagnosticPayloadBytes {
+			return fmt.Errorf("browser diagnostics exceed bounded payload limit of %d bytes", maxBrowserDiagnosticPayloadBytes)
+		}
 		bundle.Events = append(bundle.Events, event)
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 	return bundle, nil
+}
+
+func browserDiagnosticEventPayloadBytes(event *BrowserDiagnosticsEvent) int {
+	if event == nil {
+		return 0
+	}
+	size := len(event.ErrorMessage) + len(event.PageURL) + len(event.PageTitle) + len(event.screenshotBase64) + len(event.html)
+	if event.Snapshot != nil {
+		size += len(event.Snapshot.RequestURL) + len(event.Snapshot.RequestBody) + len(event.Snapshot.ResponseBody)
+		for key, value := range event.Snapshot.RequestHeaders {
+			size += len(key) + len(value)
+		}
+		for key, value := range event.Snapshot.ResponseHeaders {
+			size += len(key) + len(value)
+		}
+	}
+	for _, entry := range event.ConsoleEntries {
+		size += len(entry.Level) + len(entry.Text) + len(entry.Source)
+	}
+	for _, entry := range event.NetworkEntries {
+		size += len(entry.URL) + len(entry.Method) + len(entry.ResourceType) + len(entry.RequestBody)
+		for key, value := range entry.RequestHeaders {
+			size += len(key) + len(value)
+		}
+		for key, value := range entry.ResponseHeaders {
+			size += len(key) + len(value)
+		}
+	}
+	return size
 }
 
 func archiveTransactionHasBrowserDiagnostics(tx TransactionEvent) bool {

@@ -3,6 +3,7 @@ package storage
 // SQLite store — datapools. Split from sqlite.go (same package, behavior-preserving).
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -121,11 +122,33 @@ func (s *SQLiteStore) SaveDataPoolRow(row *SharedDataPoolRow) error {
 	if err != nil {
 		return fmt.Errorf("marshal data pool row: %w", err)
 	}
-	_, err = s.db.Exec(`INSERT INTO shared_data_pool_rows (id, pool_id, data_json, status, version, created_at, updated_at)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var existingPoolID string
+	err = tx.QueryRow(`SELECT pool_id FROM shared_data_pool_rows WHERE id = ?`, row.ID).Scan(&existingPoolID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if err == nil && existingPoolID != row.PoolID {
+		return fmt.Errorf("data pool row %q belongs to pool %q, not %q", row.ID, existingPoolID, row.PoolID)
+	}
+	result, err := tx.Exec(`INSERT INTO shared_data_pool_rows (id, pool_id, data_json, status, version, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET data_json=excluded.data_json, status=excluded.status, version=shared_data_pool_rows.version + 1, updated_at=excluded.updated_at`,
+		ON CONFLICT(id) DO UPDATE SET data_json=excluded.data_json, status=excluded.status, version=shared_data_pool_rows.version + 1, updated_at=excluded.updated_at
+		WHERE shared_data_pool_rows.pool_id = excluded.pool_id`,
 		row.ID, row.PoolID, string(dataJSON), row.Status, row.Version, row.CreatedAt, row.UpdatedAt)
-	return err
+	if err != nil {
+		return err
+	}
+	if affected, err := result.RowsAffected(); err != nil {
+		return err
+	} else if affected == 0 {
+		return fmt.Errorf("data pool row %q belongs to another pool", row.ID)
+	}
+	return tx.Commit()
 }
 
 func (s *SQLiteStore) ListDataPoolRows(poolID string) ([]*SharedDataPoolRow, error) {
@@ -152,7 +175,40 @@ func (s *SQLiteStore) ListDataPoolRows(poolID string) ([]*SharedDataPoolRow, err
 	return out, rows.Err()
 }
 
+// GetDataPoolRowFromPool resolves a row only within its authorized parent pool
+// without loading every row in a potentially large shared data set.
+func (s *SQLiteStore) GetDataPoolRowFromPool(poolID string, id string) (*SharedDataPoolRow, error) {
+	var row SharedDataPoolRow
+	var dataJSON string
+	err := s.db.QueryRow(`SELECT id, pool_id, data_json, COALESCE(status, ''), COALESCE(version, 1), created_at, updated_at
+		FROM shared_data_pool_rows WHERE pool_id = ? AND id = ?`, poolID, id).Scan(
+		&row.ID, &row.PoolID, &dataJSON, &row.Status, &row.Version, &row.CreatedAt, &row.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	if dataJSON != "" && dataJSON != "null" {
+		if err := json.Unmarshal([]byte(dataJSON), &row.Data); err != nil {
+			return nil, err
+		}
+	}
+	if row.Data == nil {
+		row.Data = map[string]string{}
+	}
+	return &row, nil
+}
+
 func (s *SQLiteStore) DeleteDataPoolRow(id string) error {
 	_, err := s.db.Exec(`DELETE FROM shared_data_pool_rows WHERE id = ?`, id)
 	return err
+}
+
+// DeleteDataPoolRowFromPool atomically scopes deletion to the authorized pool.
+// The bool distinguishes a missing/mismatched row from a successful delete.
+func (s *SQLiteStore) DeleteDataPoolRowFromPool(poolID string, id string) (bool, error) {
+	result, err := s.db.Exec(`DELETE FROM shared_data_pool_rows WHERE id = ? AND pool_id = ?`, id, poolID)
+	if err != nil {
+		return false, err
+	}
+	count, err := result.RowsAffected()
+	return count > 0, err
 }

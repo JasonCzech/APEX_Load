@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { useSystemApi } from '../hooks/api/useSystemApi'
+import { useModalDialog } from '../hooks/useModalDialog'
 import { getDesktopBridge } from '../desktop/desktopBridge'
 import { copyTextToClipboard } from '../utils/clipboardUtils'
 import type { VersionResponse } from '../types'
@@ -18,7 +19,9 @@ export default function AboutDialog({ open, onClose }: AboutDialogProps) {
   const { getVersion } = useSystemApi()
   const [version, setVersion] = useState<VersionResponse | null>(null)
   const [copied, setCopied] = useState(false)
+  const dialogRef = useRef<HTMLDivElement | null>(null)
   const bridge = getDesktopBridge()
+  useModalDialog({ dialogRef, enabled: open, onClose })
 
   useEffect(() => {
     if (!open) return
@@ -45,9 +48,17 @@ export default function AboutDialog({ open, onClose }: AboutDialogProps) {
   }
 
   return (
-    <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="About APEX Load" onClick={onClose}>
-      <div className="modal-content about-dialog" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
-        <h2 style={{ marginTop: 0 }}>APEX Load</h2>
+    <div className="modal-overlay" onClick={onClose}>
+      <div
+        ref={dialogRef}
+        className="modal-content about-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="about-dialog-title"
+        onClick={e => e.stopPropagation()}
+        style={{ maxWidth: 460 }}
+      >
+        <h2 id="about-dialog-title" style={{ marginTop: 0 }}>APEX Load</h2>
         <p style={{ color: 'var(--text-muted)', marginTop: '-8px' }}>Enterprise Performance Testing Platform</p>
         <dl className="about-grid">
           <dt>Version</dt><dd>{displayVersion}</dd>

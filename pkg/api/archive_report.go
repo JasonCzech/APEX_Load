@@ -3,6 +3,7 @@ package api
 // report — split from archive.go (same package, behavior-preserving).
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"os"
@@ -14,14 +15,12 @@ import (
 )
 
 func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport, error) {
-	if err := ensureArchiveMaterialized(record); err != nil {
-		return nil, err
-	}
-	manifest, err := loadRunArchiveManifest(record.ManifestPath)
+	lease, err := acquireArchiveMaterialized(context.Background(), record)
 	if err != nil {
 		return nil, err
 	}
-	transactions, err := readAllArchiveTransactions(record)
+	defer lease.Release()
+	manifest, err := loadRunArchiveManifest(record.ManifestPath)
 	if err != nil {
 		return nil, err
 	}
@@ -53,59 +52,134 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	actionSummaryBuckets := make(map[string][]archiveActionSummaryBucket)
 	errorPatterns := make(map[string]*RunArchiveErrorPattern)
 	errorPatternActions := make(map[string]map[string]struct{})
+	overallQuantiles := &archiveQuantileAccumulator{}
+	actionQuantiles := make(map[string]*archiveQuantileAccumulator)
+	groupQuantiles := make(map[string]*archiveQuantileAccumulator)
+	soapOperationQuantiles := make(map[string]*archiveQuantileAccumulator)
+	networkProfileQuantiles := make(map[string]*archiveQuantileAccumulator)
+	regionQuantiles := make(map[string]*archiveQuantileAccumulator)
+	networkPhases := newRunArchiveNetworkPhaseAccumulator()
+	web2Migration := newRunArchiveWeb2MigrationAccumulator()
+	var browserArtifactCount int64
+	var actionSummaryCells int
+	quantilesFor := func(values map[string]*archiveQuantileAccumulator, key, dimension string) (*archiveQuantileAccumulator, error) {
+		if quantiles := values[key]; quantiles != nil {
+			return quantiles, nil
+		}
+		if len(values) >= maxArchiveAnalysisDimensions {
+			return nil, fmt.Errorf("archive report exceeds %d distinct %s values", maxArchiveAnalysisDimensions, dimension)
+		}
+		quantiles := &archiveQuantileAccumulator{}
+		values[key] = quantiles
+		return quantiles, nil
+	}
 
 	var totalDuration float64
-	overallDurations := make([]float64, 0, len(transactions))
-	for index, tx := range transactions {
+	transactionIndex := 0
+	err = forEachArchiveTransaction(record, func(txPtr *TransactionEvent) error {
+		tx := *txPtr
+		normalizeArchiveTransactionSnapshot(&tx)
 		report.Overview.Transactions++
 		totalDuration += tx.DurationMs
-		overallDurations = append(overallDurations, tx.DurationMs)
+		overallQuantiles.Add(tx.DurationMs)
 		if !tx.Success {
 			report.Overview.Errors++
+			signature := normalizeArchiveErrorSignature(archiveErrorPatternSource(tx))
+			if _, exists := errorPatterns[signature]; !exists && len(errorPatterns) >= maxArchiveAnalysisDimensions {
+				return fmt.Errorf("archive report exceeds %d distinct error patterns", maxArchiveAnalysisDimensions)
+			}
 			mergeArchiveErrorPattern(errorPatterns, errorPatternActions, tx)
 		}
-		if index == 0 || tx.DurationMs < report.Overview.MinResponseMs {
+		if transactionIndex == 0 || tx.DurationMs < report.Overview.MinResponseMs {
 			report.Overview.MinResponseMs = tx.DurationMs
 		}
 		if tx.DurationMs > report.Overview.MaxResponseMs {
 			report.Overview.MaxResponseMs = tx.DurationMs
 		}
 
+		actionDigest, err := quantilesFor(actionQuantiles, tx.ActionName, "action")
+		if err != nil {
+			return err
+		}
 		stats := report.ByAction[tx.ActionName]
-		report.ByAction[tx.ActionName] = mergeRunArchiveActionStats(stats, tx)
+		report.ByAction[tx.ActionName] = mergeRunArchiveActionStats(stats, actionDigest, tx)
 		if len(summaries) > 0 {
 			index := archiveSummaryBucketIndex(summaries, tx.Timestamp)
 			if index >= 0 {
 				buckets := actionSummaryBuckets[tx.ActionName]
 				if len(buckets) == 0 {
+					if len(summaries) > maxArchiveReportAggregateCells-actionSummaryCells {
+						return fmt.Errorf("archive report exceeds %d action summary buckets", maxArchiveReportAggregateCells)
+					}
 					buckets = make([]archiveActionSummaryBucket, len(summaries))
+					actionSummaryCells += len(summaries)
 				}
 				buckets[index].transactions++
 				actionSummaryBuckets[tx.ActionName] = buckets
 			}
 		}
 		if tx.Group != "" {
-			report.ByGroup[tx.Group] = mergeRunArchiveActionStats(report.ByGroup[tx.Group], tx)
+			quantiles, err := quantilesFor(groupQuantiles, tx.Group, "group")
+			if err != nil {
+				return err
+			}
+			report.ByGroup[tx.Group] = mergeRunArchiveActionStats(report.ByGroup[tx.Group], quantiles, tx)
+		}
+		if bucketTime := archiveSOAPFaultBucketTimestamp(tx.Timestamp); !bucketTime.IsZero() && (archiveSOAPFaultCode(tx) != "" || archiveSOAPFaultCategory(tx) != "") {
+			if _, exists := faultTimelineBuckets[bucketTime]; !exists && len(faultTimelineBuckets) >= maxArchiveAnalysisDimensions {
+				return fmt.Errorf("archive report exceeds %d SOAP fault timeline buckets", maxArchiveAnalysisDimensions)
+			}
 		}
 		mergeArchiveSOAPFaultTimelineBucket(faultTimelineBuckets, tx)
+		if bucketTime := archiveSOAPPayloadBucketTimestamp(tx.Timestamp); !bucketTime.IsZero() {
+			requestKB, responseKB, overheadKB := archiveSOAPPayloadTelemetry(tx)
+			if requestKB != 0 || responseKB != 0 || overheadKB != 0 {
+				if _, exists := payloadTimelineBuckets[bucketTime]; !exists && len(payloadTimelineBuckets) >= maxArchiveAnalysisDimensions {
+					return fmt.Errorf("archive report exceeds %d SOAP payload timeline buckets", maxArchiveAnalysisDimensions)
+				}
+			}
+		}
 		mergeArchiveSOAPPayloadTimelineBucket(payloadTimelineBuckets, tx)
 		if operation := archiveSOAPOperation(tx); operation != "" {
-			report.BySOAPOperation[operation] = mergeRunArchiveActionStats(report.BySOAPOperation[operation], tx)
+			quantiles, err := quantilesFor(soapOperationQuantiles, operation, "SOAP operation")
+			if err != nil {
+				return err
+			}
+			report.BySOAPOperation[operation] = mergeRunArchiveActionStats(report.BySOAPOperation[operation], quantiles, tx)
 		}
 		if tx.NetworkProfile != "" {
-			report.ByNetworkProfile[tx.NetworkProfile] = mergeRunArchiveActionStats(report.ByNetworkProfile[tx.NetworkProfile], tx)
+			quantiles, err := quantilesFor(networkProfileQuantiles, tx.NetworkProfile, "network profile")
+			if err != nil {
+				return err
+			}
+			report.ByNetworkProfile[tx.NetworkProfile] = mergeRunArchiveActionStats(report.ByNetworkProfile[tx.NetworkProfile], quantiles, tx)
 		}
 		if tx.Region != "" {
-			report.ByRegion[tx.Region] = mergeRunArchiveActionStats(report.ByRegion[tx.Region], tx)
+			quantiles, err := quantilesFor(regionQuantiles, tx.Region, "region")
+			if err != nil {
+				return err
+			}
+			report.ByRegion[tx.Region] = mergeRunArchiveActionStats(report.ByRegion[tx.Region], quantiles, tx)
 		}
-		incrementArchiveCount(report.BySOAPFaultCode, archiveSOAPFaultCode(tx))
-		incrementArchiveCount(report.BySOAPFaultCategory, archiveSOAPFaultCategory(tx))
+		faultCode := archiveSOAPFaultCode(tx)
+		if _, exists := report.BySOAPFaultCode[faultCode]; faultCode != "" && !exists && len(report.BySOAPFaultCode) >= maxArchiveAnalysisDimensions {
+			return fmt.Errorf("archive report exceeds %d SOAP fault codes", maxArchiveAnalysisDimensions)
+		}
+		faultCategory := archiveSOAPFaultCategory(tx)
+		if _, exists := report.BySOAPFaultCategory[faultCategory]; faultCategory != "" && !exists && len(report.BySOAPFaultCategory) >= maxArchiveAnalysisDimensions {
+			return fmt.Errorf("archive report exceeds %d SOAP fault categories", maxArchiveAnalysisDimensions)
+		}
+		incrementArchiveCount(report.BySOAPFaultCode, faultCode)
+		incrementArchiveCount(report.BySOAPFaultCategory, faultCategory)
 		if tx.ClientMetrics != nil {
 			if report.Overview.Browser == nil {
 				report.Overview.Browser = &BrowserLiveMetrics{}
 			}
 			mergeReportBrowserMetrics(report.Overview.Browser, tx.ClientMetrics)
 			if engine := tx.ClientMetrics.BrowserEngine; engine != "" {
+				if _, exists := report.BrowserByEngine[engine]; !exists && len(report.BrowserByEngine) >= maxArchiveAnalysisDimensions {
+					return fmt.Errorf("archive report exceeds %d browser engines", maxArchiveAnalysisDimensions)
+				}
 				engineMetrics, ok := report.BrowserByEngine[engine]
 				if !ok {
 					engineMetrics = &BrowserEngineLiveMetrics{BrowserEngine: engine}
@@ -114,6 +188,9 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 				mergeReportBrowserEngineMetrics(engineMetrics, tx.ClientMetrics)
 			}
 			if platform := tx.ClientMetrics.DevicePlatform; platform != "" {
+				if _, exists := report.BrowserByPlatform[platform]; !exists && len(report.BrowserByPlatform) >= maxArchiveAnalysisDimensions {
+					return fmt.Errorf("archive report exceeds %d browser platforms", maxArchiveAnalysisDimensions)
+				}
 				platformMetrics, ok := report.BrowserByPlatform[platform]
 				if !ok {
 					platformMetrics = &BrowserPlatformLiveMetrics{
@@ -125,6 +202,9 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 				mergeReportBrowserPlatformMetrics(platformMetrics, tx.ClientMetrics)
 			}
 			if profile := tx.ClientMetrics.DeviceProfile; profile != "" {
+				if _, exists := report.BrowserByDevice[profile]; !exists && len(report.BrowserByDevice) >= maxArchiveAnalysisDimensions {
+					return fmt.Errorf("archive report exceeds %d browser device profiles", maxArchiveAnalysisDimensions)
+				}
 				deviceMetrics, ok := report.BrowserByDevice[profile]
 				if !ok {
 					deviceMetrics = &BrowserDeviceLiveMetrics{
@@ -139,15 +219,33 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 			}
 		}
 		report.BrowserResources = appendTopBrowserResourceTimingsFromTransaction(report.BrowserResources, tx, 50)
+		if tx.DNSMs > 0 || tx.ConnectMs > 0 || tx.TLSMs > 0 || tx.TTFBMs > 0 {
+			dependencyKey := tx.DependencyTarget
+			if tx.DependencyType != "" && dependencyKey != "" {
+				dependencyKey = tx.DependencyType + ":" + dependencyKey
+			}
+			if _, exists := networkPhases.byDependency[dependencyKey]; dependencyKey != "" && !exists && len(networkPhases.byDependency) >= maxArchiveAnalysisDimensions {
+				return fmt.Errorf("archive report exceeds %d network phase dependencies", maxArchiveAnalysisDimensions)
+			}
+		}
+		networkPhases.merge(tx)
+		if err := web2Migration.merge(tx); err != nil {
+			return err
+		}
+		browserArtifactCount += countBrowserArtifactsForTransaction(tx)
+		transactionIndex++
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	if report.Overview.Transactions > 0 {
 		report.Overview.AvgResponseMs = totalDuration / float64(report.Overview.Transactions)
 		report.Overview.ErrorPct = float64(report.Overview.Errors) / float64(report.Overview.Transactions) * 100
-		sort.Float64s(overallDurations)
-		report.Overview.P50Ms = archiveAnalysisPercentile(overallDurations, 0.50)
-		report.Overview.P90Ms = archiveAnalysisPercentile(overallDurations, 0.90)
-		report.Overview.P95Ms = archiveAnalysisPercentile(overallDurations, 0.95)
-		report.Overview.P99Ms = archiveAnalysisPercentile(overallDurations, 0.99)
+		report.Overview.P50Ms = overallQuantiles.Quantile(0.50)
+		report.Overview.P90Ms = overallQuantiles.Quantile(0.90)
+		report.Overview.P95Ms = overallQuantiles.Quantile(0.95)
+		report.Overview.P99Ms = overallQuantiles.Quantile(0.99)
 	}
 	if len(errorPatterns) > 0 {
 		report.ErrorPatterns = make([]RunArchiveErrorPattern, 0, len(errorPatterns))
@@ -191,31 +289,31 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		report.BrowserByDevice = nil
 	}
 	report.BrowserResources = finalizeBrowserResourceTimings(report.BrowserResources, 50)
-	report.Web2Migration = buildRunArchiveWeb2MigrationEvidence(transactions)
+	report.Web2Migration = web2Migration.finalize()
 	for action, stats := range report.ByAction {
 		stats.PeakTPS = archiveActionPeakTPSFromBuckets(summaries, actionSummaryBuckets[action])
-		report.ByAction[action] = finalizeRunArchiveActionStats(stats)
+		report.ByAction[action] = finalizeRunArchiveActionStats(stats, actionQuantiles[action])
 	}
 	for group, stats := range report.ByGroup {
-		report.ByGroup[group] = finalizeRunArchiveActionStats(stats)
+		report.ByGroup[group] = finalizeRunArchiveActionStats(stats, groupQuantiles[group])
 	}
 	if len(report.ByGroup) == 0 {
 		report.ByGroup = nil
 	}
 	for operation, stats := range report.BySOAPOperation {
-		report.BySOAPOperation[operation] = finalizeRunArchiveActionStats(stats)
+		report.BySOAPOperation[operation] = finalizeRunArchiveActionStats(stats, soapOperationQuantiles[operation])
 	}
 	if len(report.BySOAPOperation) == 0 {
 		report.BySOAPOperation = nil
 	}
 	for profile, stats := range report.ByNetworkProfile {
-		report.ByNetworkProfile[profile] = finalizeRunArchiveActionStats(stats)
+		report.ByNetworkProfile[profile] = finalizeRunArchiveActionStats(stats, networkProfileQuantiles[profile])
 	}
 	if len(report.ByNetworkProfile) == 0 {
 		report.ByNetworkProfile = nil
 	}
 	for region, stats := range report.ByRegion {
-		report.ByRegion[region] = finalizeRunArchiveActionStats(stats)
+		report.ByRegion[region] = finalizeRunArchiveActionStats(stats, regionQuantiles[region])
 	}
 	if len(report.ByRegion) == 0 {
 		report.ByRegion = nil
@@ -355,88 +453,121 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		report.Overview.Telemetry = finalizeRunArchiveTelemetrySummary(telemetrySummary)
 	}
 	report.Overview.LoadModelGoals, report.Overview.GoalCompletion = buildRunArchiveGoalCompletion(manifest.Provenance, report.Overview)
-	report.EvidenceTiers = buildRunArchiveEvidenceTiers(manifest, report, transactions, resources, summaries)
+	report.EvidenceTiers = buildRunArchiveEvidenceTiersFromCounts(manifest, report, browserArtifactCount, countExternalMetricSamples(resources), countOracleDBMetricSamples(resources))
 	report.Compatibility = buildRunArchiveReportCompatibility(record, manifest)
-	report.Completeness = buildRunArchiveCompletenessScore(manifest, report, transactions, resources, summaries)
+	report.Completeness = buildRunArchiveCompletenessScoreFromCounts(manifest, report, report.Overview.Transactions, int64(len(resources)), int64(len(summaries)))
 	report.ChangeAttribution = buildRunArchiveChangeAttribution(manifest)
 	report.ReportProfiles = buildRunArchiveReportProfiles()
-	report.NetworkPhases = buildRunArchiveNetworkPhaseSummary(transactions)
+	report.NetworkPhases = networkPhases.finalize()
 	report.ArtifactInventory = buildRunArchiveArtifactInventory(record, manifest)
 
 	return report, nil
 }
 
 func buildRunArchiveWeb2MigrationEvidence(transactions []TransactionEvent) *RunArchiveWeb2MigrationEvidence {
-	stepSet := make(map[string]struct{})
-	transactionSet := make(map[string]struct{})
-	profileSet := make(map[string]struct{})
-	evidence := map[string]int{
-		"screenshots":        0,
-		"dom_summaries":      0,
-		"console_entries":    0,
-		"network_entries":    0,
-		"client_metrics":     0,
-		"source_step_labels": 0,
-	}
-	var replayed int
-	var failed int
+	accumulator := newRunArchiveWeb2MigrationAccumulator()
 	for _, tx := range transactions {
-		stepKey := web2SourceStepKey(tx)
-		if stepKey == "" {
-			continue
-		}
-		stepSet[stepKey] = struct{}{}
-		replayed++
-		if !tx.Success {
-			failed++
-		}
-		evidence["source_step_labels"]++
-		if tx.SourceTransaction != "" {
-			transactionSet[tx.SourceTransaction] = struct{}{}
-		}
-		if tx.SourceProfile != "" {
-			profileSet[tx.SourceProfile] = struct{}{}
-		}
-		if tx.Snapshot != nil {
-			if tx.Snapshot.ScreenshotBase64 != "" {
-				evidence["screenshots"]++
-			}
-			if tx.Snapshot.DOMSummary != nil || tx.Snapshot.HTML != "" {
-				evidence["dom_summaries"]++
-			}
-			evidence["console_entries"] += len(tx.Snapshot.ConsoleEntries)
-			evidence["network_entries"] += len(tx.Snapshot.NetworkEntries)
-		}
-		if tx.DOMSummary != nil {
-			evidence["dom_summaries"]++
-		}
-		evidence["console_entries"] += len(tx.ConsoleEntries)
-		evidence["network_entries"] += len(tx.NetworkEntries)
-		if tx.ClientMetrics != nil {
-			evidence["client_metrics"]++
-		}
+		// A caller holding an in-memory slice already accepted its cardinality;
+		// retain the legacy helper's no-error contract.
+		_ = accumulator.merge(tx)
 	}
-	if replayed == 0 {
+	return accumulator.finalize()
+}
+
+type runArchiveWeb2MigrationAccumulator struct {
+	stepSet        map[string]struct{}
+	transactionSet map[string]struct{}
+	profileSet     map[string]struct{}
+	evidence       map[string]int
+	replayed       int
+	failed         int
+}
+
+func newRunArchiveWeb2MigrationAccumulator() *runArchiveWeb2MigrationAccumulator {
+	return &runArchiveWeb2MigrationAccumulator{
+		stepSet:        make(map[string]struct{}),
+		transactionSet: make(map[string]struct{}),
+		profileSet:     make(map[string]struct{}),
+		evidence: map[string]int{
+			"screenshots":        0,
+			"dom_summaries":      0,
+			"console_entries":    0,
+			"network_entries":    0,
+			"client_metrics":     0,
+			"source_step_labels": 0,
+		},
+	}
+}
+
+func (acc *runArchiveWeb2MigrationAccumulator) merge(tx TransactionEvent) error {
+	stepKey := web2SourceStepKey(tx)
+	if stepKey == "" {
+		return nil
+	}
+	if _, exists := acc.stepSet[stepKey]; !exists && len(acc.stepSet) >= maxArchiveAnalysisDimensions {
+		return fmt.Errorf("archive report exceeds %d Web 2.0 source steps", maxArchiveAnalysisDimensions)
+	}
+	acc.stepSet[stepKey] = struct{}{}
+	acc.replayed++
+	if !tx.Success {
+		acc.failed++
+	}
+	acc.evidence["source_step_labels"]++
+	if tx.SourceTransaction != "" {
+		if _, exists := acc.transactionSet[tx.SourceTransaction]; !exists && len(acc.transactionSet) >= maxArchiveAnalysisDimensions {
+			return fmt.Errorf("archive report exceeds %d Web 2.0 transaction groups", maxArchiveAnalysisDimensions)
+		}
+		acc.transactionSet[tx.SourceTransaction] = struct{}{}
+	}
+	if tx.SourceProfile != "" {
+		if _, exists := acc.profileSet[tx.SourceProfile]; !exists && len(acc.profileSet) >= maxArchiveAnalysisDimensions {
+			return fmt.Errorf("archive report exceeds %d Web 2.0 source profiles", maxArchiveAnalysisDimensions)
+		}
+		acc.profileSet[tx.SourceProfile] = struct{}{}
+	}
+	if tx.Snapshot != nil {
+		if tx.Snapshot.ScreenshotBase64 != "" {
+			acc.evidence["screenshots"]++
+		}
+		if tx.Snapshot.DOMSummary != nil || tx.Snapshot.HTML != "" {
+			acc.evidence["dom_summaries"]++
+		}
+		acc.evidence["console_entries"] += len(tx.Snapshot.ConsoleEntries)
+		acc.evidence["network_entries"] += len(tx.Snapshot.NetworkEntries)
+	}
+	if tx.DOMSummary != nil {
+		acc.evidence["dom_summaries"]++
+	}
+	acc.evidence["console_entries"] += len(tx.ConsoleEntries)
+	acc.evidence["network_entries"] += len(tx.NetworkEntries)
+	if tx.ClientMetrics != nil {
+		acc.evidence["client_metrics"]++
+	}
+	return nil
+}
+
+func (acc *runArchiveWeb2MigrationAccumulator) finalize() *RunArchiveWeb2MigrationEvidence {
+	if acc == nil || acc.replayed == 0 {
 		return nil
 	}
 	status := "ready_for_review"
 	nextActions := []string{"Review browser replay evidence, runtime parity, and selector stability before approval."}
-	if failed > 0 {
+	if acc.failed > 0 {
 		status = "needs_repair"
 		nextActions = append(nextActions, "Repair failed Web 2.0 replay steps and rerun browser replay.")
 	}
-	conversionReady := evidence["network_entries"] > 0 && failed == 0
+	conversionReady := acc.evidence["network_entries"] > 0 && acc.failed == 0
 	if !conversionReady {
 		nextActions = append(nextActions, "Capture replay network entries before generating a protocol-load HTTP draft.")
 	}
 	return &RunArchiveWeb2MigrationEvidence{
 		Status:                status,
-		ImportedSteps:         len(stepSet),
-		ReplayedSteps:         replayed,
-		FailedSteps:           failed,
-		TransactionGroups:     sortedArchiveStringSet(transactionSet),
-		SourceProfiles:        sortedArchiveStringSet(profileSet),
-		ReplayEvidence:        evidence,
+		ImportedSteps:         len(acc.stepSet),
+		ReplayedSteps:         acc.replayed,
+		FailedSteps:           acc.failed,
+		TransactionGroups:     sortedArchiveStringSet(acc.transactionSet),
+		SourceProfiles:        sortedArchiveStringSet(acc.profileSet),
+		ReplayEvidence:        acc.evidence,
 		ConversionToHTTPReady: conversionReady,
 		NextActions:           uniqueSortedStrings(nextActions),
 	}
@@ -681,6 +812,10 @@ func archiveFirstNonEmpty(values ...string) string {
 }
 
 func buildRunArchiveCompletenessScore(manifest *RunArchiveManifest, report *RunArchiveReport, transactions []TransactionEvent, resources []ResourceSample, summaries []IntervalSummaryRecord) RunArchiveCompletenessScore {
+	return buildRunArchiveCompletenessScoreFromCounts(manifest, report, int64(len(transactions)), int64(len(resources)), int64(len(summaries)))
+}
+
+func buildRunArchiveCompletenessScoreFromCounts(manifest *RunArchiveManifest, report *RunArchiveReport, transactionCount, resourceCount, summaryCount int64) RunArchiveCompletenessScore {
 	score := RunArchiveCompletenessScore{ScorePct: 100, Status: "complete"}
 	addFinding := func(dimension, severity string, penalty float64, message string) {
 		score.Findings = append(score.Findings, RunArchiveCompletenessFinding{
@@ -697,17 +832,17 @@ func buildRunArchiveCompletenessScore(manifest *RunArchiveManifest, report *RunA
 		if strings.TrimSpace(manifest.Error) != "" {
 			addFinding("archive_writer", "critical", 25, "Archive writer recorded an error: "+manifest.Error)
 		}
-		if manifest.TransactionCount > int64(len(transactions)) {
-			addFinding("artifact_truncation", "critical", 20, fmt.Sprintf("Transaction archive contains %d of %d expected events.", len(transactions), manifest.TransactionCount))
+		if manifest.TransactionCount > transactionCount {
+			addFinding("artifact_truncation", "critical", 20, fmt.Sprintf("Transaction archive contains %d of %d expected events.", transactionCount, manifest.TransactionCount))
 		}
-		if manifest.ResourceSampleCount > int64(len(resources)) {
-			addFinding("artifact_truncation", "warning", 10, fmt.Sprintf("Resource archive contains %d of %d expected samples.", len(resources), manifest.ResourceSampleCount))
+		if manifest.ResourceSampleCount > resourceCount {
+			addFinding("artifact_truncation", "warning", 10, fmt.Sprintf("Resource archive contains %d of %d expected samples.", resourceCount, manifest.ResourceSampleCount))
 		}
-		if manifest.IntervalSummaryCount > int64(len(summaries)) {
-			addFinding("missing_intervals", "critical", 20, fmt.Sprintf("Interval archive contains %d of %d expected summaries.", len(summaries), manifest.IntervalSummaryCount))
+		if manifest.IntervalSummaryCount > summaryCount {
+			addFinding("missing_intervals", "critical", 20, fmt.Sprintf("Interval archive contains %d of %d expected summaries.", summaryCount, manifest.IntervalSummaryCount))
 		}
 	}
-	if len(summaries) == 0 {
+	if summaryCount == 0 {
 		addFinding("missing_intervals", "warning", 15, "No interval summaries were archived for timeline or telemetry review.")
 	} else if report == nil || report.Overview.Telemetry == nil || report.Overview.Telemetry.Samples == 0 {
 		addFinding("telemetry_gaps", "warning", 15, "Interval summaries do not include telemetry health samples.")
@@ -868,17 +1003,19 @@ func manifestField(manifest *RunArchiveManifest, field string) string {
 }
 
 func buildRunArchiveEvidenceTiers(manifest *RunArchiveManifest, report *RunArchiveReport, transactions []TransactionEvent, resources []ResourceSample, summaries []IntervalSummaryRecord) []RunArchiveEvidenceTier {
+	return buildRunArchiveEvidenceTiersFromCounts(manifest, report, countBrowserArtifacts(transactions), countExternalMetricSamples(resources), countOracleDBMetricSamples(resources))
+}
+
+func buildRunArchiveEvidenceTiersFromCounts(manifest *RunArchiveManifest, report *RunArchiveReport, browserArtifactCount, externalMetricSamples, oracleDBMetricSamples int64) []RunArchiveEvidenceTier {
 	if report == nil {
 		return nil
 	}
-	externalMetricSamples := countExternalMetricSamples(resources)
-	oracleDBMetricSamples := countOracleDBMetricSamples(resources)
 	tiers := []RunArchiveEvidenceTier{
 		evidenceTier("summary", "Summary", report.Overview.Transactions+report.Overview.IntervalSummaries+report.Overview.ResourceSamples, "Aggregated run totals, response-time range, resource peaks, and headline telemetry."),
-		evidenceTier("intervals", "Intervals", int64(len(summaries)), "Per-interval live metric summaries used for timelines, throughput evidence, and telemetry SLA review."),
+		evidenceTier("intervals", "Intervals", report.Overview.IntervalSummaries, "Per-interval live metric summaries used for timelines, throughput evidence, and telemetry SLA review."),
 		evidenceTier("sampled_diagnostics", "Sampled Diagnostics", int64(len(report.ErrorPatterns)+len(report.BrowserResources)), "Grouped error signatures and sampled browser resource diagnostics for triage."),
-		evidenceTier("transaction_archive", "Transaction Archive", int64(len(transactions)), "Raw transaction events with action, timing, dependency, status, correlation, and snapshot fields."),
-		evidenceTier("browser_artifacts", "Browser Artifacts", countBrowserArtifacts(transactions), "Browser screenshots, HTML captures, DOM summaries, console entries, network entries, Core Web Vitals, and Web 2.0 source-step labels."),
+		evidenceTier("transaction_archive", "Transaction Archive", report.Overview.Transactions, "Raw transaction events with action, timing, dependency, status, correlation, and snapshot fields."),
+		evidenceTier("browser_artifacts", "Browser Artifacts", browserArtifactCount, "Browser screenshots, HTML captures, DOM summaries, console entries, network entries, Core Web Vitals, and Web 2.0 source-step labels."),
 		evidenceTier("provenance", "Provenance", provenanceEvidenceCount(manifest), "Execution inputs, scenario shape, runtime settings, controller environment, and generator inventory."),
 		evidenceTier("external_metrics", "External Metrics", externalMetricSamples, "Target-side or imported resource metrics carried on resource samples."),
 		evidenceTier("oracle_db_metrics", "Oracle DB Metrics", oracleDBMetricSamples, "Canonical oracle.db.* target-side metrics prepared for Oracle Database correlation."),
@@ -937,31 +1074,37 @@ func countExternalMetricSamples(resources []ResourceSample) int64 {
 func countBrowserArtifacts(transactions []TransactionEvent) int64 {
 	var count int64
 	for _, tx := range transactions {
-		if tx.Snapshot != nil {
-			if tx.Snapshot.ScreenshotBase64 != "" {
-				count++
-			}
-			if tx.Snapshot.HTML != "" {
-				count++
-			}
-			if tx.Snapshot.DOMSummary != nil {
-				count++
-			}
-			count += int64(len(tx.Snapshot.ConsoleEntries) + len(tx.Snapshot.NetworkEntries))
-		}
-		count += int64(len(tx.ConsoleEntries) + len(tx.NetworkEntries))
-		if tx.DOMSummary != nil {
+		count += countBrowserArtifactsForTransaction(tx)
+	}
+	return count
+}
+
+func countBrowserArtifactsForTransaction(tx TransactionEvent) int64 {
+	var count int64
+	if tx.Snapshot != nil {
+		if tx.Snapshot.ScreenshotBase64 != "" {
 			count++
 		}
-		if tx.ClientMetrics != nil {
+		if tx.Snapshot.HTML != "" {
 			count++
 		}
-		if tx.PageURL != "" || tx.PageTitle != "" {
+		if tx.Snapshot.DOMSummary != nil {
 			count++
 		}
-		if tx.SourceStepID != "" || tx.SourceStepIndex > 0 || tx.SourceTransaction != "" {
-			count++
-		}
+		count += int64(len(tx.Snapshot.ConsoleEntries) + len(tx.Snapshot.NetworkEntries))
+	}
+	count += int64(len(tx.ConsoleEntries) + len(tx.NetworkEntries))
+	if tx.DOMSummary != nil {
+		count++
+	}
+	if tx.ClientMetrics != nil {
+		count++
+	}
+	if tx.PageURL != "" || tx.PageTitle != "" {
+		count++
+	}
+	if tx.SourceStepID != "" || tx.SourceStepIndex > 0 || tx.SourceTransaction != "" {
+		count++
 	}
 	return count
 }

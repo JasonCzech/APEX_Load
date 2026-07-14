@@ -60,7 +60,7 @@ func (s *Server) pruneAuditRetention(now time.Time) {
 		return
 	}
 	slog.Info("audit retention prune", "retention_days", days, "audit_events_pruned", auditPruned, "usage_snapshots_pruned", usagePruned)
-	_ = s.store.SaveAuditEvent(&storage.AuditEvent{
+	if err := s.store.SaveAuditEvent(&storage.AuditEvent{
 		ID:           uuid.New().String(),
 		Action:       "auth.audit.retention_prune",
 		ActorType:    "system",
@@ -74,7 +74,9 @@ func (s *Server) pruneAuditRetention(now time.Time) {
 			"cutoff":                 cutoff.Format(time.RFC3339),
 		},
 		CreatedAt: now.UTC(),
-	})
+	}); err != nil {
+		slog.Warn("failed to persist audit retention event", "error", err)
+	}
 }
 
 // startAuditRetentionCadence launches the leader-gated retention loop. It is a no-op

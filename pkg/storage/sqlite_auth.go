@@ -799,10 +799,10 @@ func (s *SQLiteStore) DeleteUser(id string) error {
 		return err
 	}
 	defer tx.Rollback()
-	// The declared FK ON DELETE CASCADE is non-functional on both backends (SQLite
-	// FK enforcement is off; the Postgres schema rewriter strips FOREIGN KEY lines),
-	// so delete role bindings explicitly. Otherwise a deleted user leaves orphaned
-	// RBAC grants that a reused user id would silently inherit.
+	// Delete role bindings explicitly for backend parity. SQLite enforces the
+	// declared ON DELETE CASCADE, while the Postgres compatibility rewriter strips
+	// schema-level foreign keys; the explicit delete keeps both paths safe if a
+	// deleted user ID is later reused.
 	if _, err := tx.Exec(`DELETE FROM user_role_bindings WHERE user_id = ?`, id); err != nil {
 		return err
 	}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useLibraryApi } from '../hooks/api/useLibraryApi'
 import {
@@ -23,6 +23,8 @@ export const LIBRARY_SOURCE_OPTIONS: Array<{ value: LibrarySourceFilter; label: 
   { value: 'host', label: 'Remote Workspace' },
 ]
 
+const EMPTY_LIBRARY_CATALOG_ITEMS: LibraryCatalogItem[] = []
+
 function transferProjectMessage(projectMapping: string, remote?: LibraryRemote) {
   if (projectMapping.trim() || remote?.default_project_id) return ''
   return 'Set a project mapping before transferring assets.'
@@ -32,23 +34,46 @@ type UseLibraryFederationOptions = {
   kind: LibraryKind
   projectId?: string
   onRefreshLocal?: () => void | Promise<void>
+  requireProjectScope?: boolean
 }
 
 export type UseLibraryFederationResult = ReturnType<typeof useLibraryFederation>
 
-export function useLibraryFederation({ kind, projectId, onRefreshLocal }: UseLibraryFederationOptions) {
+export function useLibraryFederation({ kind, projectId, onRefreshLocal, requireProjectScope = false }: UseLibraryFederationOptions) {
   const libraryApi = useLibraryApi()
   const [remotes, setRemotes] = useState<LibraryRemote[]>([])
   const [selectedRemoteId, setSelectedRemoteId] = useState('')
   const [sourceFilter, setSourceFilter] = useState<LibrarySourceFilter>('all')
-  const [projectMapping, setProjectMapping] = useState(projectId || '')
+  const [projectMappingState, setProjectMappingState] = useState({ projectId, value: projectId || '' })
   const [includeDependencies, setIncludeDependencies] = useState(true)
-  const [localItems, setLocalItems] = useState<LibraryCatalogItem[]>([])
-  const [remoteItems, setRemoteItems] = useState<LibraryCatalogItem[]>([])
-  const [loading, setLoading] = useState(false)
+  const [catalogState, setCatalogState] = useState<{
+    scopeKey: string
+    localItems: LibraryCatalogItem[]
+    remoteItems: LibraryCatalogItem[]
+  }>({ scopeKey: '', localItems: [], remoteItems: [] })
+  const [loadingScopeKey, setLoadingScopeKey] = useState('')
   const [actionMessage, setActionMessage] = useState('')
   const [actionError, setActionError] = useState('')
   const [diffMessage, setDiffMessage] = useState('')
+  const mountedRef = useRef(true)
+  const remotesRequestGenerationRef = useRef(0)
+  const catalogRequestGenerationRef = useRef(0)
+
+  // A mapping entered by the user belongs to the project that was active when
+  // it was entered. Deriving the next project's mapping during render avoids a
+  // one-render window where project B could still issue requests for project A.
+  const projectMapping = projectMappingState.projectId === projectId
+    ? projectMappingState.value
+    : projectId || ''
+  const setProjectMapping = useCallback<Dispatch<SetStateAction<string>>>((nextValue) => {
+    setProjectMappingState(current => {
+      const currentValue = current.projectId === projectId ? current.value : projectId || ''
+      return {
+        projectId,
+        value: typeof nextValue === 'function' ? nextValue(currentValue) : nextValue,
+      }
+    })
+  }, [projectId])
 
   const selectedRemote = useMemo(
     () => remotes.find(remote => remote.id === selectedRemoteId),
@@ -56,11 +81,22 @@ export function useLibraryFederation({ kind, projectId, onRefreshLocal }: UseLib
   )
 
   const effectiveProjectID = projectMapping.trim() || selectedRemote?.default_project_id || ''
-  const projectBlockMessage = transferProjectMessage(projectMapping, selectedRemote)
+  const catalogScopeReady = !requireProjectScope || Boolean(projectId?.trim() || projectMapping.trim())
+  const catalogScopeKey = `${kind}\u0000${catalogScopeReady ? 'ready' : 'pending'}\u0000${effectiveProjectID}\u0000${selectedRemoteId}`
+  const catalogScopeKeyRef = useRef(catalogScopeKey)
+  catalogScopeKeyRef.current = catalogScopeKey
+  const localItems = catalogState.scopeKey === catalogScopeKey ? catalogState.localItems : EMPTY_LIBRARY_CATALOG_ITEMS
+  const remoteItems = catalogState.scopeKey === catalogScopeKey ? catalogState.remoteItems : EMPTY_LIBRARY_CATALOG_ITEMS
+  const loading = loadingScopeKey === catalogScopeKey
+  const projectBlockMessage = catalogScopeReady
+    ? transferProjectMessage(projectMapping, selectedRemote)
+    : 'Set a project mapping before transferring assets.'
   const credentialsReady = remoteCredentialReady(selectedRemote)
 
   const loadRemotes = useCallback(async () => {
+    const requestGeneration = ++remotesRequestGenerationRef.current
     const response = await libraryApi.listRemotes()
+    if (!mountedRef.current || requestGeneration !== remotesRequestGenerationRef.current) return
     const nextRemotes = response.remotes || []
     setRemotes(nextRemotes)
     setSelectedRemoteId(current => {
@@ -69,35 +105,82 @@ export function useLibraryFederation({ kind, projectId, onRefreshLocal }: UseLib
     })
   }, [libraryApi])
 
-  const loadLocalCatalog = useCallback(async () => {
-    const response = await libraryApi.localCatalog(kind, effectiveProjectID)
-    setLocalItems(response.items || [])
-  }, [effectiveProjectID, kind, libraryApi])
-
-  const loadRemoteCatalog = useCallback(async () => {
-    if (!selectedRemoteId) {
-      setRemoteItems([])
+  const refreshCatalogs = useCallback(async () => {
+    const requestGeneration = ++catalogRequestGenerationRef.current
+    const requestScopeKey = catalogScopeKey
+    setActionError('')
+    if (!catalogScopeReady || (requireProjectScope && !effectiveProjectID)) {
+      if (catalogScopeKeyRef.current === requestScopeKey) {
+        setCatalogState({ scopeKey: requestScopeKey, localItems: [], remoteItems: [] })
+        setLoadingScopeKey('')
+      }
       return
     }
-    const response = await libraryApi.remoteCatalog(selectedRemoteId, kind, effectiveProjectID)
-    setRemoteItems(response.catalog.items || [])
-  }, [effectiveProjectID, kind, libraryApi, selectedRemoteId])
-
-  const refreshCatalogs = useCallback(async () => {
-    setLoading(true)
-    setActionError('')
+    setLoadingScopeKey(requestScopeKey)
     try {
-      await Promise.all([loadLocalCatalog(), loadRemoteCatalog()])
+      const [localResponse, remoteResponse] = await Promise.all([
+        libraryApi.localCatalog(kind, effectiveProjectID),
+        selectedRemoteId
+          ? libraryApi.remoteCatalog(selectedRemoteId, kind, effectiveProjectID)
+          : Promise.resolve(null),
+      ])
+      if (
+        !mountedRef.current
+        || requestGeneration !== catalogRequestGenerationRef.current
+        || catalogScopeKeyRef.current !== requestScopeKey
+      ) return
+      setCatalogState({
+        scopeKey: requestScopeKey,
+        localItems: localResponse.items || [],
+        remoteItems: remoteResponse?.catalog.items || [],
+      })
     } catch (error) {
-      setActionError(getErrorMessage(error, 'Unable to load library catalogs'))
+      if (
+        mountedRef.current
+        && requestGeneration === catalogRequestGenerationRef.current
+        && catalogScopeKeyRef.current === requestScopeKey
+      ) {
+        setActionError(getErrorMessage(error, 'Unable to load library catalogs'))
+      }
     } finally {
-      setLoading(false)
+      if (
+        mountedRef.current
+        && requestGeneration === catalogRequestGenerationRef.current
+        && catalogScopeKeyRef.current === requestScopeKey
+      ) {
+        setLoadingScopeKey(current => current === requestScopeKey ? '' : current)
+      }
     }
-  }, [loadLocalCatalog, loadRemoteCatalog])
+  }, [catalogScopeKey, catalogScopeReady, effectiveProjectID, kind, libraryApi, requireProjectScope, selectedRemoteId])
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      remotesRequestGenerationRef.current += 1
+      catalogRequestGenerationRef.current += 1
+    }
+  }, [])
+
+  useEffect(() => {
+    setProjectMappingState(current => {
+      const nextValue = projectId || ''
+      return current.projectId === projectId && current.value === nextValue
+        ? current
+        : { projectId, value: nextValue }
+    })
+    setCatalogState({ scopeKey: '', localItems: [], remoteItems: [] })
+    setLoadingScopeKey('')
+    setActionMessage('')
+    setActionError('')
+    setDiffMessage('')
+  }, [projectId])
 
   useEffect(() => {
     void loadRemotes().catch(error => {
-      setActionError(getErrorMessage(error, 'Unable to load Remote Workspaces'))
+      if (mountedRef.current) {
+        setActionError(getErrorMessage(error, 'Unable to load Remote Workspaces'))
+      }
     })
   }, [loadRemotes])
 
@@ -106,10 +189,9 @@ export function useLibraryFederation({ kind, projectId, onRefreshLocal }: UseLib
   }, [refreshCatalogs])
 
   useEffect(() => {
-    if (projectId && !projectMapping) {
-      setProjectMapping(projectId)
-    }
-  }, [projectId, projectMapping])
+    setActionMessage('')
+    setDiffMessage('')
+  }, [catalogScopeKey])
 
   const localStatusById = useMemo(() => {
     const map = new Map<string, string>()
@@ -138,8 +220,9 @@ export function useLibraryFederation({ kind, projectId, onRefreshLocal }: UseLib
       ? 'Configure remote credentials in Settings first.'
       : projectBlockMessage
 
-  const refreshAfterTransfer = useCallback(async () => {
+  const refreshAfterTransfer = useCallback(async (actionScopeKey: string) => {
     await refreshCatalogs()
+    if (!mountedRef.current || catalogScopeKeyRef.current !== actionScopeKey) return
     await onRefreshLocal?.()
   }, [onRefreshLocal, refreshCatalogs])
 
@@ -151,6 +234,7 @@ export function useLibraryFederation({ kind, projectId, onRefreshLocal }: UseLib
     setActionMessage('')
     setActionError('')
     setDiffMessage('')
+    const actionScopeKey = catalogScopeKey
     try {
       const response = await libraryApi.pullRemoteItem(selectedRemoteId, {
         kind: item.kind,
@@ -159,12 +243,15 @@ export function useLibraryFederation({ kind, projectId, onRefreshLocal }: UseLib
         project_id: effectiveProjectID,
         include_dependencies: includeDependencies,
       })
+      if (!mountedRef.current || catalogScopeKeyRef.current !== actionScopeKey) return
       setActionMessage(libraryTransferSummary('pull', response))
-      await refreshAfterTransfer()
+      await refreshAfterTransfer(actionScopeKey)
     } catch (error) {
-      setActionError(getErrorMessage(error, 'Unable to pull remote item'))
+      if (mountedRef.current && catalogScopeKeyRef.current === actionScopeKey) {
+        setActionError(getErrorMessage(error, 'Unable to pull remote item'))
+      }
     }
-  }, [actionBlocked, actionBlockedReason, effectiveProjectID, includeDependencies, libraryApi, refreshAfterTransfer, selectedRemoteId])
+  }, [actionBlocked, actionBlockedReason, catalogScopeKey, effectiveProjectID, includeDependencies, libraryApi, refreshAfterTransfer, selectedRemoteId])
 
   const pushLocalItem = useCallback(async (item: LibraryCatalogItem) => {
     if (actionBlocked) {
@@ -174,6 +261,7 @@ export function useLibraryFederation({ kind, projectId, onRefreshLocal }: UseLib
     setActionMessage('')
     setActionError('')
     setDiffMessage('')
+    const actionScopeKey = catalogScopeKey
     try {
       const response = await libraryApi.pushLocalItem(selectedRemoteId, {
         kind: item.kind,
@@ -182,18 +270,22 @@ export function useLibraryFederation({ kind, projectId, onRefreshLocal }: UseLib
         project_id: effectiveProjectID,
         include_dependencies: includeDependencies,
       })
+      if (!mountedRef.current || catalogScopeKeyRef.current !== actionScopeKey) return
       setActionMessage(libraryTransferSummary('push', response))
-      await refreshAfterTransfer()
+      await refreshAfterTransfer(actionScopeKey)
     } catch (error) {
-      setActionError(getErrorMessage(error, 'Unable to push local item'))
+      if (mountedRef.current && catalogScopeKeyRef.current === actionScopeKey) {
+        setActionError(getErrorMessage(error, 'Unable to push local item'))
+      }
     }
-  }, [actionBlocked, actionBlockedReason, effectiveProjectID, includeDependencies, libraryApi, refreshAfterTransfer, selectedRemoteId])
+  }, [actionBlocked, actionBlockedReason, catalogScopeKey, effectiveProjectID, includeDependencies, libraryApi, refreshAfterTransfer, selectedRemoteId])
 
   const compareItems = useCallback(async (localItemID: string, remoteItem: LibraryCatalogItem) => {
     if (!selectedRemoteId) return
     setActionMessage('')
     setActionError('')
     setDiffMessage('')
+    const actionScopeKey = catalogScopeKey
     try {
       const diff = await libraryApi.compareItems(selectedRemoteId, {
         kind: remoteItem.kind,
@@ -202,11 +294,14 @@ export function useLibraryFederation({ kind, projectId, onRefreshLocal }: UseLib
         remote_id: remoteItem.remote_item_id || remoteItem.id,
         project_id: effectiveProjectID,
       })
+      if (!mountedRef.current || catalogScopeKeyRef.current !== actionScopeKey) return
       setDiffMessage(`${diff.kind} ${diff.status}: local ${shortLibraryHash(diff.local_hash)} / host ${shortLibraryHash(diff.remote_hash)}`)
     } catch (error) {
-      setActionError(getErrorMessage(error, 'Unable to compare items'))
+      if (mountedRef.current && catalogScopeKeyRef.current === actionScopeKey) {
+        setActionError(getErrorMessage(error, 'Unable to compare items'))
+      }
     }
-  }, [effectiveProjectID, libraryApi, selectedRemoteId])
+  }, [catalogScopeKey, effectiveProjectID, libraryApi, selectedRemoteId])
 
   const hostItemForLocal = useCallback(
     (localId: string) => hostByLocalID.get(localId),
