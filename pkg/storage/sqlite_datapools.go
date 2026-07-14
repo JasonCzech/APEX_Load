@@ -52,12 +52,29 @@ func (s *SQLiteStore) GetDataPool(id string) (*SharedDataPool, error) {
 }
 
 func (s *SQLiteStore) ListDataPools(includeArchived bool) ([]*SharedDataPool, error) {
+	return s.listDataPools(includeArchived, "")
+}
+
+func (s *SQLiteStore) ListDataPoolsForProject(includeArchived bool, projectID string) ([]*SharedDataPool, error) {
+	return s.listDataPools(includeArchived, normalizeProjectID(projectID))
+}
+
+func (s *SQLiteStore) listDataPools(includeArchived bool, projectID string) ([]*SharedDataPool, error) {
 	query := `SELECT id, name, COALESCE(description, ''), COALESCE(schema_json, ''), COALESCE(project_id, ''), created_at, updated_at, archived_at FROM shared_data_pools`
+	args := make([]any, 0, 2)
+	if projectID != "" {
+		query += ` WHERE project_id = ?`
+		args = append(args, projectID)
+	}
 	if !includeArchived {
-		query += ` WHERE archived_at IS NULL`
+		if projectID == "" {
+			query += ` WHERE archived_at IS NULL`
+		} else {
+			query += ` AND archived_at IS NULL`
+		}
 	}
 	query += ` ORDER BY updated_at DESC`
-	rows, err := s.db.Query(query)
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}

@@ -943,11 +943,20 @@ func (tr *TestRunner) persistExecutionPlanRunDurable(run *storage.ExecutionPlanR
 			return fmt.Errorf("%w: run %s expected revision %d", errExecutionPlanRunConflict, run.ID, expectedRevision)
 		}
 
+		current, reloadErr := tr.reloadExecutionPlanRunForTransition(run.ID)
+		if reloadErr == nil && executionPlanRunTransitionMatches(current, run, expectedRevision) {
+			run.Revision = current.Revision
+			run.UpdatedAt = current.UpdatedAt
+			run.CompletedAt = cloneTimePtr(current.CompletedAt)
+			return nil
+		}
 		run.Revision = expectedRevision
 		if err != nil {
+			if reloadErr != nil {
+				return fmt.Errorf("%w: reconcile run %s after CAS error %v: %v", errExecutionPlanRunCommitUnknown, run.ID, err, reloadErr)
+			}
 			return fmt.Errorf("%w: run %s CAS failed: %v", errExecutionPlanRunCommitUnknown, run.ID, err)
 		}
-		current, reloadErr := tr.reloadExecutionPlanRunForTransition(run.ID)
 		if reloadErr != nil {
 			return errors.Join(fmt.Errorf("%w: run %s expected revision %d", errExecutionPlanRunConflict, run.ID, expectedRevision), reloadErr)
 		}

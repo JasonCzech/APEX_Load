@@ -102,7 +102,7 @@ func readSSEResponse(ctx context.Context, body io.ReadCloser, params map[string]
 	if maxBodyBytes > 0 {
 		// Bound the reader before ReadString can allocate a complete unterminated
 		// SSE line. The outer limit is also the maximum retained stream body.
-		stream = io.LimitReader(body, maxBodyBytes)
+		stream = io.LimitReader(body, maxBodyBytes+1)
 	}
 	reader := bufio.NewReader(stream)
 	var out bytes.Buffer
@@ -151,12 +151,9 @@ func readSSEResponse(ctx context.Context, body io.ReadCloser, params map[string]
 			case strings.HasPrefix(line, "id:"):
 				current.ID = strings.TrimSpace(strings.TrimPrefix(line, "id:"))
 			}
-			if maxBodyBytes > 0 && result.BytesRead >= maxBodyBytes {
-				// Buffer bound reached: flush any in-progress event and stop
-				// reading so an unbounded stream cannot exhaust memory.
-				dispatch()
+			if maxBodyBytes > 0 && result.BytesRead > maxBodyBytes {
 				result.Body = out.Bytes()
-				return result, nil
+				return result, fmt.Errorf("SSE response exceeds %d byte limit", maxBodyBytes)
 			}
 		}
 		if err != nil {

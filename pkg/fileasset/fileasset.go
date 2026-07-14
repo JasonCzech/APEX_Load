@@ -19,10 +19,6 @@ var (
 
 func init() {
 	_ = RegisterRoot(DefaultImportAssetDir())
-	// Runtime-generated fixtures such as descriptor sets and browser uploads are
-	// commonly staged under the process temp directory. Keep that scope confined
-	// to the OS temp root rather than permitting arbitrary absolute paths.
-	_ = RegisterRoot(os.TempDir())
 }
 
 func DefaultImportAssetDir() string {

@@ -1,6 +1,7 @@
 package http
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"strings"
@@ -22,7 +23,11 @@ func TestReadSSEResponseBoundsBufferBytes(t *testing.T) {
 	// 500 small events, ~7500 bytes total, but a 150-byte cap should stop the
 	// read long before the stream ends so an unbounded stream cannot OOM.
 	payload := strings.Repeat("data: payload\n\n", 500)
-	res := readSSEFromString(t, payload, map[string]any{"max_body_bytes": 150})
+	body := io.NopCloser(strings.NewReader(payload))
+	res, err := readSSEResponse(context.Background(), body, map[string]any{"max_body_bytes": 150}, time.Now())
+	if err == nil || !strings.Contains(err.Error(), "exceeds 150 byte limit") {
+		t.Fatalf("readSSEResponse error = %v, want byte-limit error", err)
+	}
 
 	if res.BytesRead >= int64(len(payload)) {
 		t.Fatalf("BytesRead = %d, want bounded below full stream length %d", res.BytesRead, len(payload))
@@ -31,16 +36,30 @@ func TestReadSSEResponseBoundsBufferBytes(t *testing.T) {
 		t.Fatalf("BytesRead = %d, want close to the 150-byte cap", res.BytesRead)
 	}
 	if res.EventCount == 0 || res.EventCount >= 500 {
-		t.Fatalf("EventCount = %d, want a partial count below 500", res.EventCount)
+		t.Fatalf("EventCount = %d, want only complete events below 500", res.EventCount)
+	}
+	if !bytes.HasSuffix(res.Body, []byte("\n\n")) {
+		t.Fatalf("body ends with partial SSE event: %q", res.Body[len(res.Body)-minInt(len(res.Body), 32):])
 	}
 }
 
 func TestReadSSEResponseBoundsUnterminatedLine(t *testing.T) {
 	payload := "data: " + strings.Repeat("x", 1<<20)
-	res := readSSEFromString(t, payload, map[string]any{"max_body_bytes": 1024})
-	if res.BytesRead > 1024 {
-		t.Fatalf("BytesRead = %d, want <= 1024", res.BytesRead)
+	body := io.NopCloser(strings.NewReader(payload))
+	res, err := readSSEResponse(context.Background(), body, map[string]any{"max_body_bytes": 1024}, time.Now())
+	if err == nil || !strings.Contains(err.Error(), "exceeds 1024 byte limit") {
+		t.Fatalf("readSSEResponse error = %v, want byte-limit error", err)
 	}
+	if res.BytesRead > 1025 {
+		t.Fatalf("BytesRead = %d, want <= 1025 (cap plus overflow sentinel)", res.BytesRead)
+	}
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func TestReadSSEResponseMaxBodyBytesOptOut(t *testing.T) {

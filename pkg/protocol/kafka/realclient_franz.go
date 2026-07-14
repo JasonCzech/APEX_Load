@@ -29,12 +29,25 @@ func newRealClient(cfg config) kafkaClient {
 }
 
 type franzClient struct {
-	cfg       config
-	once      sync.Once
-	cl        *kgo.Client
-	err       error
-	pendingMu sync.Mutex
-	pending   []kafkaRecord
+	cfg          config
+	once         sync.Once
+	cl           *kgo.Client
+	err          error
+	pendingMu    sync.Mutex
+	pending      []pendingReply
+	pendingBytes int64
+}
+
+const (
+	maxPendingReplyRecords = 10_000
+	maxPendingReplyBytes   = 64 << 20
+	pendingReplyTTL        = 5 * time.Minute
+)
+
+type pendingReply struct {
+	record     kafkaRecord
+	receivedAt time.Time
+	bytes      int64
 }
 
 // handle lazily constructs the underlying *kgo.Client so Init never blocks or
@@ -197,12 +210,19 @@ func (c *franzClient) RequestReply(ctx context.Context, reqTopic, replyTopic str
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		c.pendingMu.Lock()
-		for i, pending := range c.pending {
-			if req.CorrelationID == "" || pending.CorrelationID == req.CorrelationID || pending.Headers["kafka_correlation_id"] == req.CorrelationID {
-				c.pending = append(c.pending[:i], c.pending[i+1:]...)
-				c.pendingMu.Unlock()
-				return meta, pending, nil
+		now := time.Now()
+		for i := 0; i < len(c.pending); {
+			pending := c.pending[i]
+			if now.Sub(pending.receivedAt) > pendingReplyTTL {
+				c.removePendingLocked(i)
+				continue
 			}
+			if pending.record.Topic == replyTopic && (req.CorrelationID == "" || pending.record.CorrelationID == req.CorrelationID || pending.record.Headers["kafka_correlation_id"] == req.CorrelationID) {
+				c.removePendingLocked(i)
+				c.pendingMu.Unlock()
+				return meta, pending.record, nil
+			}
+			i++
 		}
 		c.pendingMu.Unlock()
 		cctx, cancel := context.WithDeadline(ctx, deadline)
@@ -213,18 +233,45 @@ func (c *franzClient) RequestReply(ctx context.Context, reqTopic, replyTopic str
 		}
 		for _, rec := range fetches.Records() {
 			converted := fromKgoRecord(rec)
-			if req.CorrelationID == "" || converted.CorrelationID == req.CorrelationID || converted.Headers["kafka_correlation_id"] == req.CorrelationID {
+			if converted.Topic == replyTopic && (req.CorrelationID == "" || converted.CorrelationID == req.CorrelationID || converted.Headers["kafka_correlation_id"] == req.CorrelationID) {
 				return meta, converted, nil
 			}
 			c.pendingMu.Lock()
-			if len(c.pending) >= 10_000 {
-				c.pending = c.pending[1:]
-			}
-			c.pending = append(c.pending, converted)
+			c.addPendingLocked(converted)
 			c.pendingMu.Unlock()
 		}
 	}
 	return recordMeta{}, kafkaRecord{}, fmt.Errorf("no correlated kafka reply received from %q within %s", replyTopic, timeout)
+}
+
+func (c *franzClient) addPendingLocked(record kafkaRecord) {
+	bytes := pendingReplyBytes(record)
+	for len(c.pending) >= maxPendingReplyRecords || c.pendingBytes+bytes > maxPendingReplyBytes {
+		if len(c.pending) == 0 {
+			return
+		}
+		c.removePendingLocked(0)
+	}
+	c.pending = append(c.pending, pendingReply{record: record, receivedAt: time.Now(), bytes: bytes})
+	c.pendingBytes += bytes
+}
+
+func (c *franzClient) removePendingLocked(index int) {
+	if index < 0 || index >= len(c.pending) {
+		return
+	}
+	c.pendingBytes -= c.pending[index].bytes
+	copy(c.pending[index:], c.pending[index+1:])
+	clear(c.pending[len(c.pending)-1:])
+	c.pending = c.pending[:len(c.pending)-1]
+}
+
+func pendingReplyBytes(record kafkaRecord) int64 {
+	bytes := int64(len(record.Topic) + len(record.Key) + len(record.Value) + len(record.CorrelationID))
+	for key, value := range record.Headers {
+		bytes += int64(len(key) + len(value))
+	}
+	return bytes
 }
 
 func (c *franzClient) Commit(ctx context.Context) error {

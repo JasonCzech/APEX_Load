@@ -21,6 +21,9 @@ func acquireEnterpriseImportSlot(r *http.Request, w http.ResponseWriter) bool {
 	select {
 	case enterpriseImportGate <- struct{}{}:
 		return true
+	default:
+		writeError(w, http.StatusTooManyRequests, "enterprise archive conversion capacity is busy")
+		return false
 	case <-r.Context().Done():
 		writeError(w, http.StatusRequestTimeout, "enterprise archive conversion canceled")
 		return false

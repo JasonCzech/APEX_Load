@@ -19,7 +19,19 @@ func (s *Server) handleListDataPools(w http.ResponseWriter, r *http.Request) {
 	}
 	includeArchived := r.URL.Query().Get("include_archived") == "true"
 	projectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
-	pools, err := s.store.ListDataPools(includeArchived)
+	var pools []*storage.SharedDataPool
+	var err error
+	if projectID != "" {
+		if scoped, ok := s.store.(interface {
+			ListDataPoolsForProject(bool, string) ([]*storage.SharedDataPool, error)
+		}); ok {
+			pools, err = scoped.ListDataPoolsForProject(includeArchived, projectID)
+		} else {
+			pools, err = s.store.ListDataPools(includeArchived)
+		}
+	} else {
+		pools, err = s.store.ListDataPools(includeArchived)
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

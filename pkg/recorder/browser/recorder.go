@@ -113,15 +113,17 @@ type Recorder struct {
 	// constant, so it cannot forge them against the live recording.
 	controlNonce string
 
-	thumbWG        sync.WaitGroup
-	done           chan struct{}
-	doneOnce       sync.Once
-	harTemp        bool
-	wsFrames       int
-	wsBytes        int
-	bindingBytes   int64
-	thumbnailSlots chan struct{}
-	thumbnailBytes int64
+	thumbWG              sync.WaitGroup
+	done                 chan struct{}
+	doneOnce             sync.Once
+	harTemp              bool
+	wsFrames             int
+	wsBytes              int
+	bindingBytes         int64
+	bindingLimitWarned   bool
+	thumbnailSlots       chan struct{}
+	thumbnailBytes       int64
+	thumbnailLimitWarned bool
 
 	// sidebarPush coalesces live-state pushes to the in-page sidebar. A single
 	// drainer goroutine (started in Start) debounces bursts of events into one
@@ -583,7 +585,19 @@ func (r *Recorder) handleRecordBinding(source *playwright.BindingSource, args ..
 		return nil
 	}
 	r.mu.Lock()
-	if r.paused || r.stopped || len(r.session.Steps) >= maxBrowserSteps || r.bindingBytes+int64(len(payload)) > maxBrowserBindingTotalBytes {
+	if r.paused || r.stopped || len(r.session.Steps) >= maxBrowserSteps {
+		r.mu.Unlock()
+		return nil
+	}
+	if r.bindingBytes+int64(len(payload)) > maxBrowserBindingTotalBytes {
+		warning := "recording capture byte limit reached; subsequent events were dropped"
+		if !r.bindingLimitWarned {
+			r.bindingLimitWarned = true
+			r.appendWarningLocked(warning)
+			r.mu.Unlock()
+			r.emit(Event{Type: EventWarning, Warning: warning})
+			return nil
+		}
 		r.mu.Unlock()
 		return nil
 	}
@@ -1601,6 +1615,14 @@ func (r *Recorder) captureThumbnailAsync(page playwright.Page, seq int) {
 	select {
 	case r.thumbnailSlots <- struct{}{}:
 	default:
+		warning := "thumbnail capture concurrency limit reached; some step thumbnails were omitted"
+		if !r.thumbnailLimitWarned {
+			r.thumbnailLimitWarned = true
+			r.appendWarningLocked(warning)
+			r.mu.Unlock()
+			r.emit(Event{Type: EventWarning, Warning: warning})
+			return
+		}
 		r.mu.Unlock()
 		return
 	}
@@ -1622,11 +1644,22 @@ func (r *Recorder) captureThumbnailAsync(page playwright.Page, seq int) {
 		}
 		r.mu.Lock()
 		var updated *Step
-		if !r.stopped && r.thumbnailBytes+int64(len(thumb)) <= maxBrowserThumbnailBytes {
+		var warning string
+		if !r.stopped {
 			for i := range r.session.Steps {
 				if r.session.Steps[i].Seq == seq {
+					previousBytes := int64(len(r.session.Steps[i].Thumbnail))
+					delta := int64(len(thumb)) - previousBytes
+					if r.thumbnailBytes+delta > maxBrowserThumbnailBytes {
+						if !r.thumbnailLimitWarned {
+							r.thumbnailLimitWarned = true
+							warning = "thumbnail capture byte limit reached; some step thumbnails were omitted"
+							r.appendWarningLocked(warning)
+						}
+						break
+					}
 					r.session.Steps[i].Thumbnail = thumb
-					r.thumbnailBytes += int64(len(thumb))
+					r.thumbnailBytes += delta
 					s := r.session.Steps[i]
 					updated = &s
 					break
@@ -1634,6 +1667,9 @@ func (r *Recorder) captureThumbnailAsync(page playwright.Page, seq int) {
 			}
 		}
 		r.mu.Unlock()
+		if warning != "" {
+			r.emit(Event{Type: EventWarning, Warning: warning})
+		}
 		if updated != nil {
 			r.emit(Event{Type: EventStepUpdate, Step: updated})
 		}

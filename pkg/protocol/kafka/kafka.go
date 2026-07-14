@@ -463,7 +463,14 @@ func (k *Kafka) produce(ctx context.Context, action *protocol.Action, result *pr
 			recordBytes += int64(len(key) + len(value))
 		}
 		if len(k.txBuffer) >= kafkaMaxTransactionRecords || k.txBytes+recordBytes > kafkaMaxTransactionBytes {
-			return kafkaRecord{}, fmt.Errorf("kafka transaction buffer limit exceeded (records=%d bytes=%d)", len(k.txBuffer), k.txBytes)
+			limitErr := fmt.Errorf("kafka transaction buffer limit exceeded (records=%d bytes=%d)", len(k.txBuffer), k.txBytes)
+			abortErr := k.client.AbortTransaction(ctx)
+			k.txOpen, k.txBuffer, k.txBytes = false, nil, 0
+			k.session.Rollback()
+			if abortErr != nil {
+				return kafkaRecord{}, fmt.Errorf("%w; abort transaction: %v", limitErr, abortErr)
+			}
+			return kafkaRecord{}, limitErr
 		}
 		k.txBuffer = append(k.txBuffer, pendingProduce{topic: topic, rec: rec})
 		k.txBytes += recordBytes

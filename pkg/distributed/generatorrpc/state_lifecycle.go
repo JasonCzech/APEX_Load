@@ -432,12 +432,14 @@ func (s *Service) removeGeneratorArchiveRecords(records []generatorArchiveRemova
 		if record == nil {
 			continue
 		}
-		restore := func() {
+		restore := func(retain bool) {
 			s.mu.Lock()
-			if _, exists := s.archiveRecords[record.TestID]; !exists {
-				s.archiveRecords[record.TestID] = cloneRunArchiveRecord(record)
-				if removal.identity != nil {
-					s.archiveIdentities[record.TestID] = removal.identity
+			if retain {
+				if _, exists := s.archiveRecords[record.TestID]; !exists {
+					s.archiveRecords[record.TestID] = cloneRunArchiveRecord(record)
+					if removal.identity != nil {
+						s.archiveIdentities[record.TestID] = removal.identity
+					}
 				}
 			}
 			delete(s.archiveDeleting, record.TestID)
@@ -445,12 +447,12 @@ func (s *Service) removeGeneratorArchiveRecords(records []generatorArchiveRemova
 		}
 		if err := validateArchiveTestID(record.TestID); err != nil {
 			slog.Warn("generator archive retention rejected unsafe test id", "test_id", record.TestID, "error", err)
-			restore()
+			restore(true)
 			continue
 		}
 		if removal.identity == nil {
 			slog.Warn("generator archive retention refused archive without identity", "test_id", record.TestID, "path", record.ArchivePath)
-			restore()
+			restore(true)
 			continue
 		}
 		err := removeGeneratorArchiveRun(s.archiveNamespace, record.TestID, removal.identity)
@@ -460,7 +462,7 @@ func (s *Service) removeGeneratorArchiveRecords(records []generatorArchiveRemova
 		if err != nil {
 			slog.Warn("generator archive retention cleanup failed", "test_id", record.TestID, "path", record.ArchivePath, "error", err)
 		}
-		restore()
+		restore(err != nil)
 	}
 }
 

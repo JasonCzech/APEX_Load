@@ -524,6 +524,25 @@ func TestParseFileResolvesBodyFile(t *testing.T) {
 	}
 }
 
+func TestParseFileResolvesRelativeDataSourcePath(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "users.csv"), []byte("name\nalice\n"), 0o644); err != nil {
+		t.Fatalf("write data source: %v", err)
+	}
+	content := `{"script":{"name":"relative-data","protocol":"http","config":{"base_url":"https://example.test"},"data_sources":[{"name":"users","type":"csv","path":"users.csv","first_row_header":true}],"actions":[{"name":"get","type":"GET","target":"/"}]}}`
+	path := filepath.Join(dir, "script.json")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+	script, err := ParseFile(path)
+	if err != nil {
+		t.Fatalf("ParseFile: %v", err)
+	}
+	if got, want := script.DataSources[0].Path, filepath.Join(dir, "users.csv"); got != want {
+		t.Fatalf("data source path = %q, want %q", got, want)
+	}
+}
+
 func TestParseFileBodyFileExample(t *testing.T) {
 	script, err := ParseFile(filepath.Join("..", "..", "examples", "bodyrefs", "body-file-http.json"))
 	if err != nil {

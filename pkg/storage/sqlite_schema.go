@@ -1283,6 +1283,8 @@ func (s *SQLiteStore) ensureLegacyScenariosTx(tx *storeTx) error {
 	migratedScenarios := make(map[string]struct{}, len(candidates))
 	migratedReferences := make(map[string]struct{}, len(candidates))
 	oldScenarioIDs := make(map[string]struct{}, len(candidates))
+	legacyRefKeys := make(map[string]string, len(candidates))
+	legacyRefKeysUsed := make(map[string]struct{}, len(candidates))
 	for _, candidate := range candidates {
 		scenarioID := legacyScenarioID(candidate.projectID, candidate.name)
 		if _, migrated := migratedScenarios[scenarioID]; !migrated {
@@ -1295,6 +1297,23 @@ func (s *SQLiteStore) ensureLegacyScenariosTx(tx *storeTx) error {
 				duration = "1m"
 			}
 			if candidate.existingScenarioID != "" {
+				legacyRefKey, loaded := legacyRefKeys[candidate.existingScenarioID]
+				if !loaded {
+					if err := tx.QueryRow(`SELECT COALESCE(ref_key, '') FROM scenarios WHERE id = ?`, candidate.existingScenarioID).Scan(&legacyRefKey); err != nil {
+						return fmt.Errorf("read legacy scenario %s reference key: %w", candidate.existingScenarioID, err)
+					}
+					legacyRefKeys[candidate.existingScenarioID] = legacyRefKey
+					if legacyRefKey != "" {
+						if _, err := tx.Exec(`UPDATE scenarios SET ref_key = NULL WHERE id = ?`, candidate.existingScenarioID); err != nil {
+							return fmt.Errorf("release legacy scenario %s reference key: %w", candidate.existingScenarioID, err)
+						}
+					}
+				}
+				if _, used := legacyRefKeysUsed[candidate.existingScenarioID]; used {
+					legacyRefKey = ""
+				} else {
+					legacyRefKeysUsed[candidate.existingScenarioID] = struct{}{}
+				}
 				// Preserve edits made to the globally migrated scenario after its
 				// original import. The test snapshot remains the source for scripts,
 				// because the old global migration selected scripts from only one
@@ -1303,10 +1322,10 @@ func (s *SQLiteStore) ensureLegacyScenariosTx(tx *storeTx) error {
 					(id, ref_key, name, duration, start_delay, scenario_mode, shakeout_enabled,
 					 resource_baseline_enabled, assignment_json, goal_config_json,
 					 runtime_settings_json, created_at, updated_at)
-					SELECT ?, NULL, name, duration, start_delay, scenario_mode, shakeout_enabled,
+					SELECT ?, NULLIF(?, ''), name, duration, start_delay, scenario_mode, shakeout_enabled,
 						resource_baseline_enabled, assignment_json, goal_config_json,
 						runtime_settings_json, created_at, updated_at
-					FROM scenarios WHERE id = ?`, scenarioID, candidate.existingScenarioID); err != nil {
+					FROM scenarios WHERE id = ?`, scenarioID, legacyRefKey, candidate.existingScenarioID); err != nil {
 					return fmt.Errorf("clone legacy scenario %s for project %s: %w", candidate.existingScenarioID, candidate.projectID, err)
 				}
 			}

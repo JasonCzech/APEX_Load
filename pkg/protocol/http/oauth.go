@@ -36,7 +36,8 @@ const (
 	// error_description is echoed into a returned error message.
 	maxOAuthErrorDescriptionLen = 256
 	defaultOAuthTokenType       = "Bearer"
-	maxOAuthTokenCacheEntries   = 1024
+	maxOAuthTokenCacheEntries   = 10_000
+	maxOAuthTokenCacheBytes     = 64 << 20
 	maxOAuthTokenResponseBytes  = 1 << 20
 	oauthFormContentType        = "application/x-www-form-urlencoded"
 	oauthJSONAcceptMimeType     = "application/json"
@@ -81,7 +82,6 @@ func FetchOAuth2Token(ctx context.Context, req OAuthTokenRequest) (OAuthToken, e
 		if token.AccessToken != "" && time.Until(token.ExpiresAt) > tokenCacheExpirySlack {
 			return token, nil
 		}
-		oauthTokenCache.Delete(key)
 	}
 	value, err, _ := oauthTokenGroup.Do(key, func() (any, error) {
 		if cached, ok := oauthTokenCache.Load(key); ok {
@@ -107,6 +107,7 @@ func FetchOAuth2Token(ctx context.Context, req OAuthTokenRequest) (OAuthToken, e
 
 func boundOAuthTokenCache() {
 	count := 0
+	bytes := 0
 	now := time.Now()
 	oauthTokenCache.Range(func(key, value any) bool {
 		token, ok := value.(OAuthToken)
@@ -115,11 +116,16 @@ func boundOAuthTokenCache() {
 			return true
 		}
 		count++
-		if count > maxOAuthTokenCacheEntries {
+		bytes += oauthTokenApproxBytes(token)
+		if count > maxOAuthTokenCacheEntries || bytes > maxOAuthTokenCacheBytes {
 			oauthTokenCache.Delete(key)
 		}
 		return true
 	})
+}
+
+func oauthTokenApproxBytes(token OAuthToken) int {
+	return len(token.AccessToken) + len(token.TokenType) + len(token.InstanceURL) + 64
 }
 
 func normalizeOAuthGrant(grant string) string {
