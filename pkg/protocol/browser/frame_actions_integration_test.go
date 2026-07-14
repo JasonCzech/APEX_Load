@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/fileasset"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
@@ -141,7 +142,11 @@ func TestBrowserProtocolExecutesNestedFramePathActions(t *testing.T) {
 }
 
 func TestBrowserProtocolSetsHiddenFileInput(t *testing.T) {
-	uploadFile := filepath.Join(t.TempDir(), "receipt.txt")
+	uploadDir := t.TempDir()
+	if err := fileasset.RegisterRoot(uploadDir); err != nil {
+		t.Fatal(err)
+	}
+	uploadFile := filepath.Join(uploadDir, "receipt.txt")
 	if err := os.WriteFile(uploadFile, []byte("receipt"), 0o600); err != nil {
 		t.Fatalf("write upload fixture: %v", err)
 	}

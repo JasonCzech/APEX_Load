@@ -10,6 +10,7 @@ import (
 
 	pb "github.com/jasonczech/apexload/api/proto"
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
+	"github.com/jasonczech/apexload/pkg/fileasset"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	googlegrpc "google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
@@ -90,6 +91,9 @@ func TestGRPCUnaryWithDescriptorFile(t *testing.T) {
 	defer stop()
 
 	descriptorPath := writeGeneratorDescriptorSet(t)
+	if err := fileasset.RegisterRoot(filepath.Dir(descriptorPath)); err != nil {
+		t.Fatal(err)
+	}
 	client := &GRPC{}
 	err := client.Init(context.Background(), map[string]any{
 		"base_url":        addr,

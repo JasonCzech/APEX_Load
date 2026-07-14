@@ -126,14 +126,15 @@ func (s *SQLiteStore) SaveExecutionPlanRun(run *ExecutionPlanRun) error {
 		return err
 	}
 	_, err = s.db.Exec(`INSERT INTO execution_plan_runs (
-			id, plan_id, project_id, run_mode, status, entries_json, revision, created_at, updated_at, completed_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			id, plan_id, project_id, run_mode, status, entries_json, transition_token, revision, created_at, updated_at, completed_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
 			plan_id=excluded.plan_id, project_id=excluded.project_id, run_mode=excluded.run_mode,
 			status=excluded.status, entries_json=excluded.entries_json, updated_at=excluded.updated_at,
-			completed_at=excluded.completed_at, revision=execution_plan_runs.revision+1`,
+			completed_at=excluded.completed_at, transition_token=excluded.transition_token,
+			revision=execution_plan_runs.revision+1`,
 		run.ID, run.PlanID, run.ProjectID, run.RunMode, run.Status, string(entriesJSON),
-		run.Revision, run.CreatedAt, run.UpdatedAt, run.CompletedAt)
+		run.TransitionToken, run.Revision, run.CreatedAt, run.UpdatedAt, run.CompletedAt)
 	return err
 }
 
@@ -147,11 +148,11 @@ func (s *SQLiteStore) CreateExecutionPlanRunIfAbsent(run *ExecutionPlanRun) (boo
 	}
 	run.Revision = 1
 	result, err := s.db.Exec(`INSERT INTO execution_plan_runs (
-			id, plan_id, project_id, run_mode, status, entries_json, revision, created_at, updated_at, completed_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			id, plan_id, project_id, run_mode, status, entries_json, transition_token, revision, created_at, updated_at, completed_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO NOTHING`,
 		run.ID, run.PlanID, run.ProjectID, run.RunMode, run.Status, string(entriesJSON),
-		run.Revision, run.CreatedAt, run.UpdatedAt, run.CompletedAt)
+		run.TransitionToken, run.Revision, run.CreatedAt, run.UpdatedAt, run.CompletedAt)
 	if err != nil {
 		return false, err
 	}
@@ -174,9 +175,9 @@ func (s *SQLiteStore) CompareAndSwapExecutionPlanRun(run *ExecutionPlanRun, expe
 		return false, err
 	}
 	result, err := s.db.Exec(`UPDATE execution_plan_runs SET
-			status = ?, entries_json = ?, updated_at = ?, completed_at = ?, revision = revision + 1
+			status = ?, entries_json = ?, updated_at = ?, completed_at = ?, transition_token = ?, revision = revision + 1
 			WHERE id = ? AND revision = ?`,
-		run.Status, string(entriesJSON), run.UpdatedAt, run.CompletedAt, run.ID, expectedRevision)
+		run.Status, string(entriesJSON), run.UpdatedAt, run.CompletedAt, run.TransitionToken, run.ID, expectedRevision)
 	if err != nil {
 		return false, err
 	}
@@ -222,13 +223,13 @@ func prepareExecutionPlanRunForWrite(run *ExecutionPlanRun) ([]byte, error) {
 
 const executionPlanRunSelect = `SELECT id, COALESCE(plan_id, ''), COALESCE(project_id, ''),
 	COALESCE(run_mode, 'sequential'), COALESCE(status, 'running'), COALESCE(entries_json, ''),
-	COALESCE(revision, 1), created_at, updated_at, completed_at FROM execution_plan_runs`
+	COALESCE(transition_token, ''), COALESCE(revision, 1), created_at, updated_at, completed_at FROM execution_plan_runs`
 
 func scanExecutionPlanRun(row capacityRowScanner) (*ExecutionPlanRun, error) {
 	var run ExecutionPlanRun
 	var entriesJSON string
 	if err := row.Scan(&run.ID, &run.PlanID, &run.ProjectID, &run.RunMode, &run.Status,
-		&entriesJSON, &run.Revision, &run.CreatedAt, &run.UpdatedAt, &run.CompletedAt); err != nil {
+		&entriesJSON, &run.TransitionToken, &run.Revision, &run.CreatedAt, &run.UpdatedAt, &run.CompletedAt); err != nil {
 		return nil, err
 	}
 	if entriesJSON != "" && entriesJSON != "null" {

@@ -715,7 +715,7 @@ function ActionCoreFields({ action, index, protocol, isBrowserScript, isJmsScrip
         </label>
       )}
       {showValue && (
-        <label className="full-width"><span>{action.type === 'browser_set_files' ? 'File Path(s)' : action.type === 'browser_press_key' ? 'Key' : 'Value'}</span><input value={action.value || ''} onChange={e => onUpdate(index, 'value', e.target.value)} placeholder={action.type === 'browser_set_files' ? '/tmp/upload.pdf or {{data.files.path}}' : action.type === 'browser_press_key' ? 'Enter' : '{{data.users.email}}'} /></label>
+        <label className="full-width"><span>{action.type === 'browser_set_files' ? 'File Path(s)' : action.type === 'browser_press_key' ? 'Key' : 'Value'}</span><input value={action.value || ''} onChange={e => onUpdate(index, 'value', e.target.value)} placeholder={action.type === 'browser_set_files' ? 'governed asset path or {{data.files.path}}' : action.type === 'browser_press_key' ? 'Enter' : '{{data.users.email}}'} /></label>
       )}
     </div>
   )

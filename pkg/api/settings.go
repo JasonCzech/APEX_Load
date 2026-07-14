@@ -10,6 +10,8 @@ import (
 
 const systemSettingsStoreKey = "system_settings"
 
+const systemSettingsAuthRefreshInterval = 2 * time.Second
+
 const redactedSecretConfiguredField = "has_api_token"
 
 const (
@@ -1290,9 +1292,43 @@ func (tr *TestRunner) loadSystemSettings(defaultMaxConcurrent int) {
 }
 
 func (tr *TestRunner) GetSystemSettings() SystemSettings {
+	tr.refreshAuthSettingsFromStore()
 	tr.mu.RLock()
 	defer tr.mu.RUnlock()
 	return cloneSystemSettings(tr.settings)
+}
+
+// refreshAuthSettingsFromStore keeps authentication policy consistent across
+// HA replicas. Settings writes are shared, while each runner retains an
+// in-memory copy for fast access; refresh only the security-sensitive section
+// on reads so a policy change propagates without requiring a restart.
+func (tr *TestRunner) refreshAuthSettingsFromStore() {
+	if tr == nil || tr.settingsStore == nil {
+		return
+	}
+	tr.settingsRefreshMu.Lock()
+	now := time.Now()
+	if !tr.settingsAuthRefreshAt.IsZero() && now.Sub(tr.settingsAuthRefreshAt) < systemSettingsAuthRefreshInterval {
+		tr.settingsRefreshMu.Unlock()
+		return
+	}
+	tr.settingsAuthRefreshAt = now
+	defer tr.settingsRefreshMu.Unlock()
+	raw, err := tr.settingsStore.GetSetting(systemSettingsStoreKey)
+	if err != nil || strings.TrimSpace(raw) == "" {
+		return
+	}
+	var loaded SystemSettings
+	if err := json.Unmarshal([]byte(raw), &loaded); err != nil {
+		return
+	}
+	auth := normalizeAuthSettings(loaded.Auth)
+	if err := validateAuthSettings(auth); err != nil {
+		return
+	}
+	tr.mu.Lock()
+	tr.settings.Auth = auth
+	tr.mu.Unlock()
 }
 
 func redactedSystemSettingsResponse(settings SystemSettings) map[string]any {
@@ -1396,6 +1432,9 @@ func (tr *TestRunner) UpdateSystemSettings(settings SystemSettings) (SystemSetti
 	// configured reservations), so a settings change must invalidate the cache.
 	tr.invalidateCapacityAdvisoryCacheLocked()
 	tr.mu.Unlock()
+	tr.settingsRefreshMu.Lock()
+	tr.settingsAuthRefreshAt = time.Now()
+	tr.settingsRefreshMu.Unlock()
 	tr.setNotificationSettings(normalized.Notifications)
 
 	return normalized, nil

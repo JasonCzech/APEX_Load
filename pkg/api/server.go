@@ -251,6 +251,7 @@ func NewServer(cfg ServerConfig) *Server {
 	if leadership != nil {
 		leadership.setOnAcquire(func() {
 			runner.reloadAndReconcile()
+			s.reconcileProvisioningRequests()
 			s.wakeArchiveFinalizationRetry()
 		})
 	}

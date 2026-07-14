@@ -706,6 +706,7 @@ func schemaCreateTableStatements() []string {
 			run_mode TEXT NOT NULL DEFAULT 'sequential',
 			status TEXT NOT NULL DEFAULT 'running',
 			entries_json TEXT,
+			transition_token TEXT NOT NULL DEFAULT '',
 			revision INTEGER NOT NULL DEFAULT 1,
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL,
@@ -914,6 +915,7 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "github_script_links.remote_commit_sha", query: `ALTER TABLE github_script_links ADD COLUMN remote_commit_sha TEXT`},
 		{name: "execution_plan_approvals.plan_content_hash", query: `ALTER TABLE execution_plan_approvals ADD COLUMN plan_content_hash TEXT`},
 		{name: "execution_plan_runs.revision", query: `ALTER TABLE execution_plan_runs ADD COLUMN revision INTEGER NOT NULL DEFAULT 1`},
+		{name: "execution_plan_runs.transition_token", query: `ALTER TABLE execution_plan_runs ADD COLUMN transition_token TEXT NOT NULL DEFAULT ''`},
 		{name: "provisioning_requests.revision", query: `ALTER TABLE provisioning_requests ADD COLUMN revision INTEGER NOT NULL DEFAULT 1`},
 		{name: "provisioning_requests.attempt_token", query: `ALTER TABLE provisioning_requests ADD COLUMN attempt_token TEXT`},
 	}
@@ -1284,7 +1286,7 @@ func (s *SQLiteStore) ensureLegacyScenariosTx(tx *storeTx) error {
 	migratedReferences := make(map[string]struct{}, len(candidates))
 	oldScenarioIDs := make(map[string]struct{}, len(candidates))
 	legacyRefKeys := make(map[string]string, len(candidates))
-	legacyRefKeysUsed := make(map[string]struct{}, len(candidates))
+	legacyRefKeysTransferred := make(map[string]bool, len(candidates))
 	for _, candidate := range candidates {
 		scenarioID := legacyScenarioID(candidate.projectID, candidate.name)
 		if _, migrated := migratedScenarios[scenarioID]; !migrated {
@@ -1303,16 +1305,6 @@ func (s *SQLiteStore) ensureLegacyScenariosTx(tx *storeTx) error {
 						return fmt.Errorf("read legacy scenario %s reference key: %w", candidate.existingScenarioID, err)
 					}
 					legacyRefKeys[candidate.existingScenarioID] = legacyRefKey
-					if legacyRefKey != "" {
-						if _, err := tx.Exec(`UPDATE scenarios SET ref_key = NULL WHERE id = ?`, candidate.existingScenarioID); err != nil {
-							return fmt.Errorf("release legacy scenario %s reference key: %w", candidate.existingScenarioID, err)
-						}
-					}
-				}
-				if _, used := legacyRefKeysUsed[candidate.existingScenarioID]; used {
-					legacyRefKey = ""
-				} else {
-					legacyRefKeysUsed[candidate.existingScenarioID] = struct{}{}
 				}
 				// Preserve edits made to the globally migrated scenario after its
 				// original import. The test snapshot remains the source for scripts,
@@ -1322,10 +1314,10 @@ func (s *SQLiteStore) ensureLegacyScenariosTx(tx *storeTx) error {
 					(id, ref_key, name, duration, start_delay, scenario_mode, shakeout_enabled,
 					 resource_baseline_enabled, assignment_json, goal_config_json,
 					 runtime_settings_json, created_at, updated_at)
-					SELECT ?, NULLIF(?, ''), name, duration, start_delay, scenario_mode, shakeout_enabled,
+					SELECT ?, NULL, name, duration, start_delay, scenario_mode, shakeout_enabled,
 						resource_baseline_enabled, assignment_json, goal_config_json,
 						runtime_settings_json, created_at, updated_at
-					FROM scenarios WHERE id = ?`, scenarioID, legacyRefKey, candidate.existingScenarioID); err != nil {
+					FROM scenarios WHERE id = ?`, scenarioID, candidate.existingScenarioID); err != nil {
 					return fmt.Errorf("clone legacy scenario %s for project %s: %w", candidate.existingScenarioID, candidate.projectID, err)
 				}
 			}
@@ -1338,6 +1330,26 @@ func (s *SQLiteStore) ensureLegacyScenariosTx(tx *storeTx) error {
 			}
 			migratedScenarios[scenarioID] = struct{}{}
 		}
+		if candidate.existingScenarioID != "" && !legacyRefKeysTransferred[candidate.existingScenarioID] {
+			legacyRefKey := legacyRefKeys[candidate.existingScenarioID]
+			if legacyRefKey != "" {
+				var targetRefKey string
+				if err := tx.QueryRow(`SELECT COALESCE(ref_key, '') FROM scenarios WHERE id = ?`, scenarioID).Scan(&targetRefKey); err != nil {
+					return fmt.Errorf("read migrated scenario %s reference key: %w", scenarioID, err)
+				}
+				if targetRefKey == legacyRefKey {
+					legacyRefKeysTransferred[candidate.existingScenarioID] = true
+				} else if targetRefKey == "" {
+					if _, err := tx.Exec(`UPDATE scenarios SET ref_key = NULL WHERE id = ?`, candidate.existingScenarioID); err != nil {
+						return fmt.Errorf("release legacy scenario %s reference key: %w", candidate.existingScenarioID, err)
+					}
+					if _, err := tx.Exec(`UPDATE scenarios SET ref_key = ? WHERE id = ? AND (ref_key IS NULL OR ref_key = '')`, legacyRefKey, scenarioID); err != nil {
+						return fmt.Errorf("transfer legacy scenario %s reference key: %w", scenarioID, err)
+					}
+					legacyRefKeysTransferred[candidate.existingScenarioID] = true
+				}
+			}
+		}
 		if _, err := tx.Exec(`UPDATE tests SET scenario_id = ?
 			WHERE id = ? AND project_id = ?
 				AND (scenario_id IS NULL OR scenario_id = '' OR scenario_id = ?)`,
@@ -1345,6 +1357,12 @@ func (s *SQLiteStore) ensureLegacyScenariosTx(tx *storeTx) error {
 			return err
 		}
 		if candidate.existingScenarioID == "" {
+			continue
+		}
+		if legacyRefKeys[candidate.existingScenarioID] != "" && !legacyRefKeysTransferred[candidate.existingScenarioID] {
+			// Keep the old row as the stable ref-key owner when the scoped target
+			// already has a different key; deleting it would make the public key
+			// unreachable.
 			continue
 		}
 		oldScenarioIDs[candidate.existingScenarioID] = struct{}{}

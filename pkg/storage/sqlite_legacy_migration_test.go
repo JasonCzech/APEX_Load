@@ -133,8 +133,8 @@ func TestLegacyGlobalScenarioMigrationRepairsProjectScopedReferences(t *testing.
 		}
 	}
 	if _, err := store.db.Exec(`INSERT INTO scenarios
-		(id, name, duration, scenario_mode, runtime_settings_json, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`, oldScenarioID, scenarioName, "9m", "edited", `{"request_timeout":"45s"}`, now, now); err != nil {
+		(id, ref_key, name, duration, scenario_mode, runtime_settings_json, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, oldScenarioID, "legacy-ref-scenario", scenarioName, "9m", "edited", `{"request_timeout":"45s"}`, now, now); err != nil {
 		t.Fatalf("insert old global scenario: %v", err)
 	}
 	if _, err := store.db.Exec(`INSERT INTO scenario_scripts
@@ -273,5 +273,12 @@ func TestLegacyGlobalScenarioMigrationRepairsProjectScopedReferences(t *testing.
 	}
 	if _, _, err := store.GetScenario(oldScenarioID); err != sql.ErrNoRows {
 		t.Fatalf("old global scenario lookup error = %v, want sql.ErrNoRows", err)
+	}
+	var preservedRefKeys int
+	if err := store.db.QueryRow(`SELECT COUNT(*) FROM scenarios WHERE ref_key = ?`, "legacy-ref-scenario").Scan(&preservedRefKeys); err != nil {
+		t.Fatalf("read preserved legacy scenario ref key: %v", err)
+	}
+	if preservedRefKeys != 1 {
+		t.Fatalf("preserved legacy scenario ref key count = %d, want 1", preservedRefKeys)
 	}
 }

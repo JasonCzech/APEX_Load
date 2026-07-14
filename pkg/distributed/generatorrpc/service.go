@@ -445,6 +445,18 @@ type Service struct {
 	shutdown            chan struct{}
 	shutdownOnce        sync.Once
 	finalizerWG         sync.WaitGroup
+	finalizerMu         sync.Mutex
+	finalizerClosing    bool
+}
+
+func (s *Service) addFinalizer() bool {
+	s.finalizerMu.Lock()
+	defer s.finalizerMu.Unlock()
+	if s.finalizerClosing {
+		return false
+	}
+	s.finalizerWG.Add(1)
+	return true
 }
 
 func (s *Service) SetDraining(draining bool) {
@@ -534,6 +546,9 @@ func (s *Service) Shutdown(ctx context.Context) error {
 			break
 		}
 	}
+	s.finalizerMu.Lock()
+	s.finalizerClosing = true
+	s.finalizerMu.Unlock()
 	s.shutdownOnce.Do(func() { close(s.shutdown) })
 	done := make(chan struct{})
 	go func() { s.finalizerWG.Wait(); close(done) }()
@@ -950,7 +965,11 @@ func (s *Service) StopTest(ctx context.Context, request *pb.StopRequest) (*pb.St
 		exec.cancel()
 	}
 	if err := waitForGeneratorExecutions(ctx, executions); err != nil {
-		s.finalizerWG.Add(1)
+		if !s.addFinalizer() {
+			_ = waitForGeneratorExecutions(context.Background(), executions)
+			s.finishStoppedTest(request.GetTestId(), assignment, writer)
+			return nil, status.Errorf(codes.DeadlineExceeded, "wait for stopped execution: %v", err)
+		}
 		go func() {
 			defer s.finalizerWG.Done()
 			_ = waitForGeneratorExecutions(context.Background(), executions)
@@ -1302,7 +1321,11 @@ func (s *Service) FailTest(testID string, message string) {
 	waitErr := waitForGeneratorExecutions(waitCtx, executions)
 	cancel()
 	if waitErr != nil {
-		s.finalizerWG.Add(1)
+		if !s.addFinalizer() {
+			_ = waitForGeneratorExecutions(context.Background(), executions)
+			s.finishFailedTest(testID, assignment, writer, message)
+			return
+		}
 		go func() {
 			defer s.finalizerWG.Done()
 			_ = waitForGeneratorExecutions(context.Background(), executions)
@@ -1649,6 +1672,7 @@ func (s *Service) completeAssignment(testID string) {
 	s.stopCompletionTimerLocked(testID)
 	writer := s.archiveWriters[testID]
 	delete(s.archiveWriters, testID)
+	tracked := ok && writer != nil && s.addFinalizer()
 	s.mu.Unlock()
 	if !ok {
 		return
@@ -1656,6 +1680,9 @@ func (s *Service) completeAssignment(testID string) {
 	finalState := "COMPLETE"
 	finalError := ""
 	if writer != nil {
+		if tracked {
+			defer s.finalizerWG.Done()
+		}
 		err := s.finalizeArchiveWriter(writer, finalState, time.Now(), "")
 		if err != nil {
 			finalState = "FAILED"
@@ -1857,6 +1884,7 @@ func (s *Service) finishExecution(testID string, groupName string, err error) {
 	s.stopCompletionTimerLocked(testID)
 	writer := s.archiveWriters[testID]
 	delete(s.archiveWriters, testID)
+	tracked := writer != nil && s.addFinalizer()
 	s.mu.Unlock()
 	for _, cancel := range siblingCancels {
 		cancel()
@@ -1868,6 +1896,9 @@ func (s *Service) finishExecution(testID string, groupName string, err error) {
 		finalState = "FAILED"
 	}
 	if writer != nil {
+		if tracked {
+			defer s.finalizerWG.Done()
+		}
 		finalizeErr := s.finalizeArchiveWriter(writer, finalState, time.Now(), finalError)
 		if finalizeErr != nil {
 			finalState = "FAILED"

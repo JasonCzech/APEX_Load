@@ -376,7 +376,11 @@ func oauthTokenCacheKey(req OAuthTokenRequest) string {
 		secretFingerprint(req.PrivateKey),
 		secretFingerprint(req.Password),
 	}
-	return strings.Join(parts, "\x00")
+	// Keep the sync.Map key bounded even when data-driven client fields are
+	// unexpectedly large. The digest also avoids retaining those raw strings in
+	// the long-lived cache.
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
+	return hex.EncodeToString(sum[:])
 }
 
 func secretFingerprint(value string) string {

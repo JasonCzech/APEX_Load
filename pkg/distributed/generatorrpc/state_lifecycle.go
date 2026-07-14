@@ -543,6 +543,7 @@ func (s *Service) sweepGeneratorArchiveDirectories(now time.Time) {
 		if s.archiveTTL > 0 && now.Sub(dir.modTime) > s.archiveTTL {
 			if err := removeGeneratorArchiveRun(s.archiveNamespace, dir.testID, dir.identity); err != nil {
 				slog.Warn("remove expired generator archive directory", "path", dir.path, "error", err)
+				retained = append(retained, dir)
 			}
 			continue
 		}
@@ -558,12 +559,16 @@ func (s *Service) sweepGeneratorArchiveDirectories(now time.Time) {
 	if removeCount < 0 {
 		removeCount = 0
 	}
+	failedRemovals := make([]directory, 0)
 	for _, dir := range retained[:removeCount] {
 		if err := removeGeneratorArchiveRun(s.archiveNamespace, dir.testID, dir.identity); err != nil {
 			slog.Warn("remove excess generator archive directory", "path", dir.path, "error", err)
+			failedRemovals = append(failedRemovals, dir)
 		}
 	}
-	for _, dir := range retained[removeCount:] {
+	toLoad := append([]directory(nil), retained[removeCount:]...)
+	toLoad = append(toLoad, failedRemovals...)
+	for _, dir := range toLoad {
 		record, err := s.loadRetainedGeneratorArchive(dir.testID, dir.identity)
 		if err != nil {
 			slog.Warn("ignore incomplete retained generator archive", "path", dir.path, "error", err)

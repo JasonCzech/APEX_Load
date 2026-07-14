@@ -58,7 +58,8 @@ type executionLeadership struct {
 	renew   time.Duration
 	now     func() time.Time
 
-	leader atomic.Bool
+	leader      atomic.Bool
+	reconciling atomic.Bool
 
 	// callbackMu guards the ordered leadership-transition callback worker.
 	// Loss cleanup and acquire-time reconciliation share this queue so a loss
@@ -69,12 +70,12 @@ type executionLeadership struct {
 	callbackRunning bool
 	callbackQueue   []leadershipCallbackEvent
 
-	mu            sync.Mutex
-	onAcquire     func()
-	onLoss        func()
-	lastConfirmed time.Time // last time we positively held the lease
-	generation    uint64    // incremented on every leader/follower transition
-	pendingLoss   uint64    // queued or running loss callbacks blocking admission
+	mu              sync.Mutex
+	onAcquire       func()
+	onLoss          func()
+	lastConfirmed   time.Time // last time we positively held the lease
+	generation      uint64    // incremented on every leader/follower transition
+	pendingLoss     uint64    // queued or running loss callbacks blocking admission
 	operationCtx    context.Context
 	operationCancel context.CancelFunc
 }
@@ -83,12 +84,12 @@ func newExecutionLeadership(store executionLeaseStore, ownerID string) *executio
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	return &executionLeadership{
-		store:   store,
-		ownerID: ownerID,
-		ttl:     defaultExecutionLeaseTTL,
-		renew:   defaultExecutionLeaseRenew,
-		now:     time.Now,
-		operationCtx: ctx,
+		store:           store,
+		ownerID:         ownerID,
+		ttl:             defaultExecutionLeaseTTL,
+		renew:           defaultExecutionLeaseRenew,
+		now:             time.Now,
+		operationCtx:    ctx,
 		operationCancel: cancel,
 	}
 }
@@ -145,6 +146,12 @@ func (l *executionLeadership) IsLeader() bool {
 	}
 	l.mu.Unlock()
 	return true
+}
+
+// IsAdmitted reports whether this replica may mutate execution state. A newly
+// acquired lease is not admitted until durable recovery has completed.
+func (l *executionLeadership) IsAdmitted() bool {
+	return l != nil && l.IsLeader() && !l.reconciling.Load()
 }
 
 // Run renews the lease until ctx is cancelled. It acquires immediately, then
@@ -208,9 +215,24 @@ func (l *executionLeadership) tick() {
 			l.operationCancel()
 		}
 		l.operationCtx, l.operationCancel = context.WithCancel(context.Background())
+		l.reconciling.Store(onAcquire != nil)
 		l.leader.Store(true)
 		l.generation++
+		acquireGeneration := l.generation
 		acquiredLeadership = true
+		if onAcquire != nil {
+			acquireCallback := onAcquire
+			onAcquire = func() {
+				defer func() {
+					l.mu.Lock()
+					if l.generation == acquireGeneration && l.leader.Load() {
+						l.reconciling.Store(false)
+					}
+					l.mu.Unlock()
+				}()
+				acquireCallback()
+			}
+		}
 		// The ordered worker keeps the potentially long reconcile off the lease
 		// renewal goroutine while preserving transition order.
 		l.enqueueLeadershipCallback(leadershipCallbackEvent{
@@ -241,6 +263,7 @@ func (l *executionLeadership) transitionToFollowerLocked() bool {
 		return false
 	}
 	l.leader.Store(false)
+	l.reconciling.Store(false)
 	if l.operationCancel != nil {
 		// Cancel object-store publication/deletion synchronously with admission
 		// closing. A stale leader must not finish an in-flight catalog or outbox

@@ -48,6 +48,7 @@ const defaultMockPartitions = 4
 const kafkaExtractionBodyLimit = 64 << 10
 const kafkaMaxTransactionRecords = 10_000
 const kafkaMaxTransactionBytes = 64 << 20
+const kafkaTransactionAbortTimeout = 5 * time.Second
 
 // Kafka implements protocol.Protocol for Apache Kafka messaging.
 type Kafka struct {
@@ -59,6 +60,7 @@ type Kafka struct {
 	txOpen      bool             // a transaction is in progress (per-VUser)
 	txBuffer    []pendingProduce // records produced within the open transaction
 	txBytes     int64
+	txPoisoned  bool   // broker transaction outcome could not be confirmed
 	rrCounter   uint64 // round-robin partition counter
 	initialized bool
 }
@@ -287,6 +289,12 @@ func (k *Kafka) Execute(ctx context.Context, action *protocol.Action) (*protocol
 		DependencyType:   classifyKafkaDependencyType(action, k.cfg.ConsumerGroup),
 		DependencyTarget: topic,
 	}
+	if k.txPoisoned {
+		result.Success = false
+		result.StatusCode = 500
+		result.ErrorMessage = "kafka client transaction state is unresolved; recreate the VUser"
+		return result, nil
+	}
 
 	var err error
 	var requestRec kafkaRecord
@@ -464,10 +472,17 @@ func (k *Kafka) produce(ctx context.Context, action *protocol.Action, result *pr
 		}
 		if len(k.txBuffer) >= kafkaMaxTransactionRecords || k.txBytes+recordBytes > kafkaMaxTransactionBytes {
 			limitErr := fmt.Errorf("kafka transaction buffer limit exceeded (records=%d bytes=%d)", len(k.txBuffer), k.txBytes)
-			abortErr := k.client.AbortTransaction(ctx)
+			abortBase := ctx
+			if abortBase == nil {
+				abortBase = context.Background()
+			}
+			abortCtx, cancelAbort := context.WithTimeout(context.WithoutCancel(abortBase), kafkaTransactionAbortTimeout)
+			abortErr := k.client.AbortTransaction(abortCtx)
+			cancelAbort()
 			k.txOpen, k.txBuffer, k.txBytes = false, nil, 0
 			k.session.Rollback()
 			if abortErr != nil {
+				k.txPoisoned = true
 				return kafkaRecord{}, fmt.Errorf("%w; abort transaction: %v", limitErr, abortErr)
 			}
 			return kafkaRecord{}, limitErr

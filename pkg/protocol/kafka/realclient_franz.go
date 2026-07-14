@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/sasl"
 	"github.com/twmb/franz-go/pkg/sasl/oauth"
@@ -25,6 +26,20 @@ import (
 )
 
 func newRealClient(cfg config) kafkaClient {
+	if cfg.TransactionalID != "" {
+		// A transactional.id identifies one logical producer. The engine creates
+		// one franz client per VUser, so sharing the configured base ID would make
+		// Kafka fence all but the last VUser. Keep the configured prefix for
+		// operator visibility while giving each client a unique bounded ID.
+		suffix := "-" + uuid.NewString()
+		const maxTransactionalIDBytes = 249
+		baseLimit := maxTransactionalIDBytes - len(suffix)
+		base := cfg.TransactionalID
+		if len(base) > baseLimit {
+			base = base[:baseLimit]
+		}
+		cfg.TransactionalID = base + suffix
+	}
 	return &franzClient{cfg: cfg}
 }
 
@@ -33,6 +48,9 @@ type franzClient struct {
 	once         sync.Once
 	cl           *kgo.Client
 	err          error
+	replyOnce    sync.Once
+	replyCl      *kgo.Client
+	replyErr     error
 	pendingMu    sync.Mutex
 	pending      []pendingReply
 	pendingBytes int64
@@ -54,78 +72,90 @@ type pendingReply struct {
 // fails; connection problems surface on first use / HealthCheck instead.
 func (c *franzClient) handle() (*kgo.Client, error) {
 	c.once.Do(func() {
-		opts := []kgo.Opt{kgo.SeedBrokers(c.cfg.Brokers...)}
-		if c.cfg.ClientID != "" {
-			opts = append(opts, kgo.ClientID(c.cfg.ClientID))
-		}
-		if c.cfg.ConsumerGroup != "" {
-			opts = append(opts, kgo.ConsumerGroup(c.cfg.ConsumerGroup))
-		}
-		if strings.EqualFold(c.cfg.AutoOffsetReset, "earliest") {
-			opts = append(opts, kgo.ConsumeResetOffset(kgo.NewOffset().AtStart()))
-		} else {
-			opts = append(opts, kgo.ConsumeResetOffset(kgo.NewOffset().AtEnd()))
-		}
-		switch strings.ToLower(c.cfg.Acks) {
-		case "none":
-			// Idempotence requires acks=all; non-all acks must disable it.
-			opts = append(opts, kgo.RequiredAcks(kgo.NoAck()), kgo.DisableIdempotentWrite())
-		case "leader":
-			opts = append(opts, kgo.RequiredAcks(kgo.LeaderAck()), kgo.DisableIdempotentWrite())
-		default:
-			opts = append(opts, kgo.RequiredAcks(kgo.AllISRAcks()))
-			// franz enables idempotent writes by default at acks=all; honor an
-			// explicit opt-out (config.kafka.idempotence: disabled).
-			if c.cfg.Idempotence == "disabled" {
-				opts = append(opts, kgo.DisableIdempotentWrite())
-			}
-		}
-		if strings.EqualFold(c.cfg.IsolationLevel, "read_committed") {
-			opts = append(opts, kgo.FetchIsolationLevel(kgo.ReadCommitted()))
-		} else if strings.EqualFold(c.cfg.IsolationLevel, "read_uncommitted") {
-			opts = append(opts, kgo.FetchIsolationLevel(kgo.ReadUncommitted()))
-		}
-		if c.cfg.TransactionalID != "" {
-			// A transactional producer requires acks=all + idempotence, which
-			// franz enforces; the validator also requires acks=all.
-			opts = append(opts, kgo.TransactionalID(c.cfg.TransactionalID))
-		}
-		if codec, ok := compressionCodec(c.cfg.Compression); ok {
-			opts = append(opts, kgo.ProducerBatchCompression(codec))
-		}
-		if c.cfg.MaxMessageBytes > 0 {
-			// Authoritative client-side cap (e.g. Event Hubs' 1 MiB limit): franz
-			// rejects any record exceeding the batch-max, complementing the
-			// conservative pre-flight guard in kafka.go checkRecordSize.
-			opts = append(opts, kgo.ProducerBatchMaxBytes(int32(c.cfg.MaxMessageBytes)))
-		}
-		if strings.EqualFold(c.cfg.SASLMechanism, "oauthbearer") {
-			src, serr := c.oauthTokenSource()
-			if serr != nil {
-				c.err = serr
-				return
-			}
-			opts = append(opts, kgo.SASL(oauth.Oauth(func(ctx context.Context) (oauth.Auth, error) {
-				tok, terr := src.Token(ctx)
-				if terr != nil {
-					return oauth.Auth{}, terr
-				}
-				return oauth.Auth{Token: tok}, nil
-			})))
-		} else if mech := c.saslMechanism(); mech != nil {
-			opts = append(opts, kgo.SASL(mech))
-		}
-		if c.usesTLS() {
-			tlsCfg, terr := c.buildTLSConfig()
-			if terr != nil {
-				c.err = terr
-				return
-			}
-			opts = append(opts, kgo.DialTLSConfig(tlsCfg))
-		}
-		c.cl, c.err = kgo.NewClient(opts...)
+		c.cl, c.err = c.newClient(c.cfg.ConsumerGroup)
 	})
 	return c.cl, c.err
+}
+
+// replyHandle uses a dedicated non-group consumer. A shared consumer group can
+// assign a reply partition to a different VUser, whose private pending queue
+// cannot satisfy the original requester's correlation.
+func (c *franzClient) replyHandle() (*kgo.Client, error) {
+	c.replyOnce.Do(func() {
+		c.replyCl, c.replyErr = c.newClient("")
+	})
+	return c.replyCl, c.replyErr
+}
+
+func (c *franzClient) newClient(consumerGroup string) (*kgo.Client, error) {
+	opts := []kgo.Opt{kgo.SeedBrokers(c.cfg.Brokers...)}
+	if c.cfg.ClientID != "" {
+		opts = append(opts, kgo.ClientID(c.cfg.ClientID))
+	}
+	if consumerGroup != "" {
+		opts = append(opts, kgo.ConsumerGroup(consumerGroup))
+	}
+	if strings.EqualFold(c.cfg.AutoOffsetReset, "earliest") {
+		opts = append(opts, kgo.ConsumeResetOffset(kgo.NewOffset().AtStart()))
+	} else {
+		opts = append(opts, kgo.ConsumeResetOffset(kgo.NewOffset().AtEnd()))
+	}
+	switch strings.ToLower(c.cfg.Acks) {
+	case "none":
+		// Idempotence requires acks=all; non-all acks must disable it.
+		opts = append(opts, kgo.RequiredAcks(kgo.NoAck()), kgo.DisableIdempotentWrite())
+	case "leader":
+		opts = append(opts, kgo.RequiredAcks(kgo.LeaderAck()), kgo.DisableIdempotentWrite())
+	default:
+		opts = append(opts, kgo.RequiredAcks(kgo.AllISRAcks()))
+		// franz enables idempotent writes by default at acks=all; honor an
+		// explicit opt-out (config.kafka.idempotence: disabled).
+		if c.cfg.Idempotence == "disabled" {
+			opts = append(opts, kgo.DisableIdempotentWrite())
+		}
+	}
+	if strings.EqualFold(c.cfg.IsolationLevel, "read_committed") {
+		opts = append(opts, kgo.FetchIsolationLevel(kgo.ReadCommitted()))
+	} else if strings.EqualFold(c.cfg.IsolationLevel, "read_uncommitted") {
+		opts = append(opts, kgo.FetchIsolationLevel(kgo.ReadUncommitted()))
+	}
+	if c.cfg.TransactionalID != "" {
+		// A transactional producer requires acks=all + idempotence, which
+		// franz enforces; the validator also requires acks=all.
+		opts = append(opts, kgo.TransactionalID(c.cfg.TransactionalID))
+	}
+	if codec, ok := compressionCodec(c.cfg.Compression); ok {
+		opts = append(opts, kgo.ProducerBatchCompression(codec))
+	}
+	if c.cfg.MaxMessageBytes > 0 {
+		// Authoritative client-side cap (e.g. Event Hubs' 1 MiB limit): franz
+		// rejects any record exceeding the batch-max, complementing the
+		// conservative pre-flight guard in kafka.go checkRecordSize.
+		opts = append(opts, kgo.ProducerBatchMaxBytes(int32(c.cfg.MaxMessageBytes)))
+	}
+	if strings.EqualFold(c.cfg.SASLMechanism, "oauthbearer") {
+		src, serr := c.oauthTokenSource()
+		if serr != nil {
+			return nil, serr
+		}
+		opts = append(opts, kgo.SASL(oauth.Oauth(func(ctx context.Context) (oauth.Auth, error) {
+			tok, terr := src.Token(ctx)
+			if terr != nil {
+				return oauth.Auth{}, terr
+			}
+			return oauth.Auth{Token: tok}, nil
+		})))
+	} else if mech := c.saslMechanism(); mech != nil {
+		opts = append(opts, kgo.SASL(mech))
+	}
+	if c.usesTLS() {
+		tlsCfg, terr := c.buildTLSConfig()
+		if terr != nil {
+			return nil, terr
+		}
+		opts = append(opts, kgo.DialTLSConfig(tlsCfg))
+	}
+	return kgo.NewClient(opts...)
 }
 
 func (c *franzClient) Produce(ctx context.Context, topic string, rec kafkaRecord) (recordMeta, error) {
@@ -170,18 +200,40 @@ func (c *franzClient) Consume(ctx context.Context, topic string, group string, t
 		return kafkaRecord{}, 0, err
 	}
 	cl.AddConsumeTopics(topic)
+	c.pendingMu.Lock()
+	for i, pending := range c.pending {
+		if pending.record.Topic == topic {
+			record := pending.record
+			c.removePendingLocked(i)
+			c.pendingMu.Unlock()
+			return record, 0, nil
+		}
+	}
+	c.pendingMu.Unlock()
 
 	cctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	fetches := cl.PollRecords(cctx, 1)
+	fetches := cl.PollRecords(cctx, 10)
 	if errs := fetches.Errors(); len(errs) > 0 {
 		return kafkaRecord{}, 0, errs[0].Err
 	}
-	records := fetches.Records()
-	if len(records) == 0 {
+	var rec *kgo.Record
+	for _, candidate := range fetches.Records() {
+		if candidate.Topic == topic {
+			rec = candidate
+			break
+		}
+	}
+	for _, candidate := range fetches.Records() {
+		if rec == nil || candidate != rec {
+			c.pendingMu.Lock()
+			c.addPendingLocked(fromKgoRecord(candidate))
+			c.pendingMu.Unlock()
+		}
+	}
+	if rec == nil {
 		return kafkaRecord{}, 0, fmt.Errorf("no kafka record received from %q within %s", topic, timeout)
 	}
-	rec := records[0]
 
 	highWatermark := int64(-1)
 	fetches.EachPartition(func(p kgo.FetchTopicPartition) {
@@ -197,15 +249,15 @@ func (c *franzClient) Consume(ctx context.Context, topic string, group string, t
 }
 
 func (c *franzClient) RequestReply(ctx context.Context, reqTopic, replyTopic string, req kafkaRecord, timeout time.Duration) (recordMeta, kafkaRecord, error) {
-	meta, err := c.Produce(ctx, reqTopic, req)
-	if err != nil {
-		return recordMeta{}, kafkaRecord{}, err
-	}
-	cl, err := c.handle()
+	cl, err := c.replyHandle()
 	if err != nil {
 		return recordMeta{}, kafkaRecord{}, err
 	}
 	cl.AddConsumeTopics(replyTopic)
+	meta, err := c.Produce(ctx, reqTopic, req)
+	if err != nil {
+		return recordMeta{}, kafkaRecord{}, err
+	}
 
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
@@ -231,14 +283,20 @@ func (c *franzClient) RequestReply(ctx context.Context, reqTopic, replyTopic str
 		if errs := fetches.Errors(); len(errs) > 0 {
 			return recordMeta{}, kafkaRecord{}, errs[0].Err
 		}
+		var matched *kafkaRecord
 		for _, rec := range fetches.Records() {
 			converted := fromKgoRecord(rec)
-			if converted.Topic == replyTopic && (req.CorrelationID == "" || converted.CorrelationID == req.CorrelationID || converted.Headers["kafka_correlation_id"] == req.CorrelationID) {
-				return meta, converted, nil
+			if matched == nil && converted.Topic == replyTopic && (req.CorrelationID == "" || converted.CorrelationID == req.CorrelationID || converted.Headers["kafka_correlation_id"] == req.CorrelationID) {
+				candidate := converted
+				matched = &candidate
+				continue
 			}
 			c.pendingMu.Lock()
 			c.addPendingLocked(converted)
 			c.pendingMu.Unlock()
+		}
+		if matched != nil {
+			return meta, *matched, nil
 		}
 	}
 	return recordMeta{}, kafkaRecord{}, fmt.Errorf("no correlated kafka reply received from %q within %s", replyTopic, timeout)
@@ -336,6 +394,9 @@ func (c *franzClient) HealthCheck(ctx context.Context) error {
 func (c *franzClient) Teardown(context.Context) error {
 	if c.cl != nil {
 		c.cl.Close()
+	}
+	if c.replyCl != nil {
+		c.replyCl.Close()
 	}
 	return nil
 }

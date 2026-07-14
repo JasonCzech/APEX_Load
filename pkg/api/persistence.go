@@ -84,6 +84,34 @@ func (tr *TestRunner) loadStoredScenarios() {
 	}
 }
 
+// reloadStoredScenarios refreshes the in-memory scenario/schedule view from
+// shared storage so an HA leader observes CRUD performed by another replica.
+func (tr *TestRunner) reloadStoredScenarios() {
+	if tr == nil || tr.scenarioStore == nil {
+		return
+	}
+	scenarios, err := tr.scenarioStore.ListScenarios()
+	if err != nil {
+		return
+	}
+	loaded := make(map[string]*StoredScenario, len(scenarios))
+	tr.mu.RLock()
+	for _, scenario := range scenarios {
+		if scenario == nil {
+			continue
+		}
+		full, scripts, loadErr := tr.scenarioStore.GetScenario(scenario.ID)
+		if loadErr != nil {
+			full = scenario
+		}
+		loaded[scenario.ID] = tr.buildStoredScenario(full, scripts)
+	}
+	tr.mu.RUnlock()
+	tr.mu.Lock()
+	tr.scenarios = loaded
+	tr.mu.Unlock()
+}
+
 func (tr *TestRunner) buildStoredScenario(scenario *storage.Scenario, scripts []storage.ScenarioScript) *StoredScenario {
 	if scenario == nil {
 		return nil

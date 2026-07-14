@@ -129,6 +129,7 @@ type ExecutionPlanRun struct {
 	Status      string                  `json:"status"`   // running | completed | halted | failed
 	Entries     []ExecutionPlanRunEntry `json:"entries"`
 	Revision    int64                   `json:"revision,omitempty"`
+	TransitionToken string                `json:"transition_token,omitempty"`
 	CreatedAt   time.Time               `json:"created_at"`
 	UpdatedAt   time.Time               `json:"updated_at"`
 	CompletedAt *time.Time              `json:"completed_at,omitempty"`

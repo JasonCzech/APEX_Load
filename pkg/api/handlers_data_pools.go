@@ -27,7 +27,8 @@ func (s *Server) handleListDataPools(w http.ResponseWriter, r *http.Request) {
 		}); ok {
 			pools, err = scoped.ListDataPoolsForProject(includeArchived, projectID)
 		} else {
-			pools, err = s.store.ListDataPools(includeArchived)
+			writeError(w, http.StatusNotImplemented, "project-scoped data pool listing is not supported by this storage backend")
+			return
 		}
 	} else {
 		pools, err = s.store.ListDataPools(includeArchived)

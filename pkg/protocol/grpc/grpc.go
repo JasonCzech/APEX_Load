@@ -50,6 +50,11 @@ type GRPC struct {
 	mu           sync.Mutex
 }
 
+const (
+	maxGRPCStreamMessages = 10_000
+	maxGRPCStreamBytes    = 8 << 20
+)
+
 func (g *GRPC) Name() string { return "grpc" }
 
 func (g *GRPC) Init(ctx context.Context, config map[string]any) error {
@@ -425,7 +430,11 @@ func receiveStreamMessages(stream googlegrpc.ClientStream, output protoreflect.M
 	if maxMessages <= 0 {
 		maxMessages = 1
 	}
+	if maxMessages > maxGRPCStreamMessages {
+		return nil, 0, fmt.Errorf("grpc max_messages exceeds limit %d", maxGRPCStreamMessages)
+	}
 	messages := make([]json.RawMessage, 0, maxMessages)
+	var totalBytes int
 	for len(messages) < maxMessages {
 		response := dynamicpb.NewMessage(output)
 		err := stream.RecvMsg(response)
@@ -438,6 +447,10 @@ func receiveStreamMessages(stream googlegrpc.ClientStream, output protoreflect.M
 		encoded, err := (protojson.MarshalOptions{EmitUnpopulated: true}).Marshal(response)
 		if err != nil {
 			return nil, len(messages), fmt.Errorf("encode grpc response body: %w", err)
+		}
+		totalBytes += len(encoded)
+		if totalBytes > maxGRPCStreamBytes {
+			return nil, len(messages), fmt.Errorf("grpc streamed response exceeds %d byte limit", maxGRPCStreamBytes)
 		}
 		messages = append(messages, json.RawMessage(encoded))
 	}

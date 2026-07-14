@@ -1721,6 +1721,20 @@ func (tr *TestRunner) upsertScenarioScheduleLocked(scenarioID string, scheduleID
 	}
 	if approvalToSave != nil {
 		if err := tr.saveScenarioScheduleApprovalLocked(approvalToSave); err != nil {
+			// Creation has no prior schedule state to preserve. Compensate the
+			// schedule write so a transient approval-store failure cannot leave a
+			// durable PendingApprovalID that points at nothing.
+			if existing == nil && tr.scenarioStore != nil {
+				if deleteErr := tr.scenarioStore.DeleteScenarioSchedule(schedule.ID); deleteErr != nil {
+					return nil, errors.Join(err, fmt.Errorf("compensating schedule delete failed: %w", deleteErr))
+				}
+				for i, candidate := range scenario.Schedules {
+					if candidate != nil && candidate.ID == schedule.ID {
+						scenario.Schedules = append(scenario.Schedules[:i], scenario.Schedules[i+1:]...)
+						break
+					}
+				}
+			}
 			return nil, err
 		}
 	}

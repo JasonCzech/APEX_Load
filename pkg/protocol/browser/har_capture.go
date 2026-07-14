@@ -59,6 +59,38 @@ func (b *Browser) applyHARCaptureOptions(contextOptions *playwright.BrowserNewCo
 	contextOptions.RecordHarContent = playwright.HarContentPolicyEmbed
 }
 
+func (b *Browser) startHARMonitor() {
+	if b.harWorkingPath == "" {
+		return
+	}
+	b.harMonitorStop = make(chan struct{})
+	b.harMonitorWG.Add(1)
+	go func(path string, stop <-chan struct{}) {
+		defer b.harMonitorWG.Done()
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-ticker.C:
+				info, err := os.Stat(path)
+				if err != nil || info.Size() <= maxRuntimeHARBytes {
+					continue
+				}
+				b.mu.Lock()
+				b.harErrorSeen = true
+				context := b.pwContext
+				b.mu.Unlock()
+				if context != nil {
+					_ = context.Close()
+				}
+				return
+			}
+		}
+	}(b.harWorkingPath, b.harMonitorStop)
+}
+
 // noteHARError marks the session so an on_error policy keeps the recording.
 func (b *Browser) noteHARError() {
 	if b.harCapturePolicy == HARCaptureOnError {

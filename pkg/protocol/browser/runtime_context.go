@@ -65,6 +65,7 @@ func (b *Browser) openBrowserContext() error {
 	}
 
 	b.pwContext = browserContext
+	b.startHARMonitor()
 	b.startNetworkWorkers()
 	b.registerPage(page, true)
 	return nil

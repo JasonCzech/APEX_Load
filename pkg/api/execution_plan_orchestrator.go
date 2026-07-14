@@ -926,6 +926,9 @@ func (tr *TestRunner) persistExecutionPlanRunDurable(run *storage.ExecutionPlanR
 		return nil
 	}
 	if store, ok := tr.execPlanRunStore.(atomicExecutionPlanRunPersistence); ok && run.Revision > 0 {
+		if run.TransitionToken == "" {
+			run.TransitionToken = uuid.New().String()
+		}
 		expectedRevision := run.Revision
 		// A transport error does not establish whether the database committed:
 		// the write can still be in flight even if an immediate read observes the
@@ -987,6 +990,7 @@ func executionPlanRunTransitionMatches(current, intended *storage.ExecutionPlanR
 	if current == nil || intended == nil || current.ID != intended.ID || current.Revision != expectedRevision+1 ||
 		current.Status != intended.Status || current.PlanID != intended.PlanID ||
 		normalizeProjectID(current.ProjectID) != normalizeProjectID(intended.ProjectID) || current.RunMode != intended.RunMode ||
+		current.TransitionToken != intended.TransitionToken ||
 		!sameOptionalTime(current.CompletedAt, intended.CompletedAt) {
 		return false
 	}

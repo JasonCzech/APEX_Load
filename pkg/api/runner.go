@@ -116,31 +116,33 @@ type reservationPersistence interface {
 }
 
 type TestRunner struct {
-	tests              map[string]*ManagedTest
-	scripts            map[string]*StoredScript
-	scenarios          map[string]*StoredScenario
-	archives           map[string]*storage.RunArchiveRecord
-	deletingProjects   map[string]struct{}
-	shuttingDown       bool
-	mu                 sync.RWMutex
-	activeStopMu       sync.Mutex
-	remoteControlMu    sync.Mutex
-	remoteControlGates map[string]*distributedControlGate
-	hub                *Hub
-	maxTests           int
-	settings           SystemSettings
-	scriptStore        scriptPersistence
-	testStore          testPersistence
-	scenarioStore      scenarioPersistence
-	dataPoolStore      dataPoolPersistence
-	projectStore       projectPersistence
-	releaseStore       releasePersistence
-	historyStore       historyPersistence
-	archiveStore       archivePersistence
-	testNotesStore     testNotesPersistence
-	auditStore         auditPersistence
-	settingsStore      settingsPersistence
-	usageStore         usageSnapshotPersistence
+	tests                 map[string]*ManagedTest
+	scripts               map[string]*StoredScript
+	scenarios             map[string]*StoredScenario
+	archives              map[string]*storage.RunArchiveRecord
+	deletingProjects      map[string]struct{}
+	shuttingDown          bool
+	mu                    sync.RWMutex
+	activeStopMu          sync.Mutex
+	remoteControlMu       sync.Mutex
+	remoteControlGates    map[string]*distributedControlGate
+	hub                   *Hub
+	maxTests              int
+	settings              SystemSettings
+	settingsRefreshMu     sync.Mutex
+	settingsAuthRefreshAt time.Time
+	scriptStore           scriptPersistence
+	testStore             testPersistence
+	scenarioStore         scenarioPersistence
+	dataPoolStore         dataPoolPersistence
+	projectStore          projectPersistence
+	releaseStore          releasePersistence
+	historyStore          historyPersistence
+	archiveStore          archivePersistence
+	testNotesStore        testNotesPersistence
+	auditStore            auditPersistence
+	settingsStore         settingsPersistence
+	usageStore            usageSnapshotPersistence
 	// objectRepoStore resolves object_ref bindings into concrete selectors when a
 	// load run is compiled (generators have no store, so binding must resolve here).
 	objectRepoStore objectRepositoryReader
@@ -1063,7 +1065,10 @@ func (tr *TestRunner) isExecutionLeader() bool {
 	if tr == nil {
 		return true
 	}
-	return tr.leadership.IsLeader()
+	if tr.leadership == nil {
+		return true
+	}
+	return tr.leadership.IsAdmitted()
 }
 
 const (

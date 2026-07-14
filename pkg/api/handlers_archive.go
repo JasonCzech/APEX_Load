@@ -72,7 +72,8 @@ func (s *Server) handleVerifyRunArchive(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleDownloadRunArchive(w http.ResponseWriter, r *http.Request) {
-	clearArchiveWriteDeadline(w)
+	prepCtx, cancelPrep := context.WithTimeout(r.Context(), configuredArchiveMaterializationTimeout())
+	defer cancelPrep()
 	id := r.PathValue("id")
 	test, ok := s.runner.GetTest(id)
 	if !ok {
@@ -84,14 +85,14 @@ func (s *Server) handleDownloadRunArchive(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusNotFound, "archive not found")
 		return
 	}
-	lease, err := acquireArchiveMaterialized(r.Context(), record)
+	lease, err := acquireArchiveMaterialized(prepCtx, record)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to materialize archive: "+err.Error())
 		return
 	}
 	defer lease.Release()
-	staged, err := stageArchiveDownload(r.Context(), func(destination io.Writer) error {
-		return zipDirectoryContext(r.Context(), record.ArchivePath, destination)
+	staged, err := stageArchiveDownload(prepCtx, func(destination io.Writer) error {
+		return zipDirectoryContext(prepCtx, record.ArchivePath, destination)
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to build archive bundle: "+err.Error())
@@ -101,11 +102,13 @@ func (s *Server) handleDownloadRunArchive(w http.ResponseWriter, r *http.Request
 	filename := fmt.Sprintf("%s-%s.zip", sanitizeFilename(test.Name), id)
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+	clearArchiveWriteDeadline(w)
 	http.ServeContent(w, r, filename, record.CompletedAt.UTC(), staged.File)
 }
 
 func (s *Server) handleDownloadRunArchiveArtifact(w http.ResponseWriter, r *http.Request) {
-	clearArchiveWriteDeadline(w)
+	prepCtx, cancelPrep := context.WithTimeout(r.Context(), configuredArchiveMaterializationTimeout())
+	defer cancelPrep()
 	id := r.PathValue("id")
 	name := r.PathValue("name")
 	test, ok := s.runner.GetTest(id)
@@ -118,7 +121,7 @@ func (s *Server) handleDownloadRunArchiveArtifact(w http.ResponseWriter, r *http
 		writeError(w, http.StatusNotFound, "archive not found")
 		return
 	}
-	lease, err := acquireArchiveMaterialized(r.Context(), record)
+	lease, err := acquireArchiveMaterialized(prepCtx, record)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to materialize archive: "+err.Error())
 		return
@@ -156,11 +159,13 @@ func (s *Server) handleDownloadRunArchiveArtifact(w http.ResponseWriter, r *http
 	filename := fmt.Sprintf("%s-%s-%s", sanitizeFilename(test.Name), id, name)
 	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
 	w.Header().Set("Content-Type", artifactContentType(name))
+	clearArchiveWriteDeadline(w)
 	http.ServeContent(w, r, filename, info.ModTime(), artifact)
 }
 
 func (s *Server) handleDownloadRunArchiveBrowserDiagnostics(w http.ResponseWriter, r *http.Request) {
-	clearArchiveWriteDeadline(w)
+	prepCtx, cancelPrep := context.WithTimeout(r.Context(), configuredArchiveMaterializationTimeout())
+	defer cancelPrep()
 	id := r.PathValue("id")
 	test, ok := s.runner.GetTest(id)
 	if !ok {
@@ -172,18 +177,18 @@ func (s *Server) handleDownloadRunArchiveBrowserDiagnostics(w http.ResponseWrite
 		writeError(w, http.StatusNotFound, "archive not found")
 		return
 	}
-	lease, err := acquireArchiveMaterialized(r.Context(), record)
+	lease, err := acquireArchiveMaterialized(prepCtx, record)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to materialize archive: "+err.Error())
 		return
 	}
 	defer lease.Release()
-	staged, err := stageArchiveDownload(r.Context(), func(destination io.Writer) error {
-		bundle, err := buildRunArchiveBrowserDiagnosticsContext(r.Context(), record)
+	staged, err := stageArchiveDownload(prepCtx, func(destination io.Writer) error {
+		bundle, err := buildRunArchiveBrowserDiagnosticsContext(prepCtx, record)
 		if err != nil {
 			return fmt.Errorf("build browser diagnostics bundle: %w", err)
 		}
-		return writeRunArchiveBrowserDiagnosticsZipContext(r.Context(), bundle, destination)
+		return writeRunArchiveBrowserDiagnosticsZipContext(prepCtx, bundle, destination)
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to write browser diagnostics bundle: "+err.Error())
@@ -193,6 +198,7 @@ func (s *Server) handleDownloadRunArchiveBrowserDiagnostics(w http.ResponseWrite
 	filename := fmt.Sprintf("%s-%s-browser-diagnostics.zip", sanitizeFilename(test.Name), id)
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+	clearArchiveWriteDeadline(w)
 	http.ServeContent(w, r, filename, record.CompletedAt.UTC(), staged.File)
 }
 

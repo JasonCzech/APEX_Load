@@ -749,6 +749,51 @@ func (s *Server) executeProvisioningScale(ctx context.Context, req *storage.Prov
 	return "not_configured", "", 0, notConfiguredMessage
 }
 
+// reconcileProvisioningRequests resumes durable requests that were left in
+// provisioning state when a controller lost execution leadership. The CAS
+// transition makes this safe when a takeover races with another worker.
+func (s *Server) reconcileProvisioningRequests() {
+	if s.store == nil || s.fleetScaler == nil || !s.fleetScaler.CanProvision() || s.runner == nil || !s.runner.isExecutionLeader() {
+		return
+	}
+	requests, err := s.store.ListProvisioningRequests("", 1000, 0)
+	if err != nil {
+		slog.Warn("failed to list provisioning requests during leadership reconcile", "error", err)
+		return
+	}
+	for _, req := range requests {
+		if req == nil || strings.ToLower(strings.TrimSpace(req.Status)) != "provisioning" || !s.runner.isExecutionLeader() {
+			continue
+		}
+		pool, err := s.store.GetFleetPool(req.FleetPoolID)
+		if err != nil {
+			slog.Warn("failed to load fleet pool during provisioning reconcile", "request_id", req.ID, "error", err)
+			continue
+		}
+		expectedRevision, expectedToken := req.Revision, req.AttemptToken
+		status, workload, scaledTo, message := s.executeProvisioningScale(context.Background(), req, pool)
+		if !s.runner.isExecutionLeader() {
+			return
+		}
+		now := time.Now()
+		req.Status = status
+		req.Revision++
+		req.CompletedAt = &now
+		if err := s.transitionProvisioningRequest(req, expectedRevision, expectedToken); err != nil {
+			slog.Warn("provisioning reconcile lost race or failed to persist", "request_id", req.ID, "error", err)
+			continue
+		}
+		s.saveProvisioningEvent(req.ID, map[bool]string{true: "success", false: "failure"}[status == "success"], message, now)
+		if status == "success" {
+			pool.DesiredSize = scaledTo
+			if err := s.store.SaveFleetPool(pool); err != nil {
+				slog.Warn("failed to persist pool desired size after provisioning reconcile", "pool_id", pool.ID, "error", err)
+			}
+		}
+		s.broadcastFleetEvent("provisioning_request_updated", map[string]any{"request_id": req.ID, "fleet_pool_id": req.FleetPoolID, "status": req.Status, "desired_count": req.DesiredCount, "workload": workload})
+	}
+}
+
 func canCancelProvisioningStatus(status string) bool {
 	switch strings.ToLower(strings.TrimSpace(status)) {
 	case "", "pending", "accepted", "scaling", "waiting_ready", "provisioning":

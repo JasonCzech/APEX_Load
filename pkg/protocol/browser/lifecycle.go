@@ -11,6 +11,11 @@ func (b *Browser) close() {
 	if cdp != nil {
 		_ = cdp.Detach()
 	}
+	if b.harMonitorStop != nil {
+		close(b.harMonitorStop)
+		b.harMonitorStop = nil
+		b.harMonitorWG.Wait()
+	}
 	if page != nil {
 		_ = page.Close()
 	}

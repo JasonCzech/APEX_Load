@@ -343,6 +343,7 @@ func (tr *TestRunner) reloadAndReconcile() {
 		return
 	}
 	tr.reloadStoredTests()
+	tr.reloadStoredScenarios()
 	tr.ReconcilePendingTests()
 }
 

@@ -69,6 +69,11 @@ const regexOrdinalExpressionConfigPrefix = "__apexload_regex_ordinal__:"
 
 const boundaryExpressionConfigPrefix = "__apexload_boundary_config__:"
 
+const (
+	maxAllExtractorMatches = 10_000
+	maxAllExtractorBytes   = 8 << 20
+)
+
 type xpathExpressionConfig struct {
 	Expression string            `json:"expression"`
 	Fragment   bool              `json:"fragment,omitempty"`
@@ -142,6 +147,16 @@ func extractAll(ext protocol.Extractor, headers http.Header, body []byte) ([]str
 			return nil, err
 		}
 		values[i] = processed
+	}
+	if len(values) > maxAllExtractorMatches {
+		return nil, fmt.Errorf("all extractor match limit exceeded (%d)", maxAllExtractorMatches)
+	}
+	var totalBytes int64
+	for _, value := range values {
+		totalBytes += int64(len(value))
+		if totalBytes > maxAllExtractorBytes {
+			return nil, fmt.Errorf("all extractor output limit exceeded (%d bytes)", maxAllExtractorBytes)
+		}
 	}
 	return values, nil
 }
@@ -554,7 +569,10 @@ func extractRegexOrdinal(expr string, body []byte) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("invalid regex: %w", err)
 	}
-	matches := re.FindAllSubmatch(body, -1)
+	matches := re.FindAllSubmatch(body, maxAllExtractorMatches+1)
+	if len(matches) > maxAllExtractorMatches {
+		return "", fmt.Errorf("regex match limit exceeded (%d)", maxAllExtractorMatches)
+	}
 	if len(matches) < config.Ordinal {
 		return "", fmt.Errorf("regex %q match ordinal %d not found", config.Expression, config.Ordinal)
 	}
@@ -660,13 +678,22 @@ func extractAllRegex(expr string, body []byte) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid regex: %w", err)
 	}
-	matches := re.FindAllSubmatch(body, -1)
+	matches := re.FindAllSubmatch(body, maxAllExtractorMatches+1)
+	if len(matches) > maxAllExtractorMatches {
+		return nil, fmt.Errorf("regex match limit exceeded (%d)", maxAllExtractorMatches)
+	}
 	values := make([]string, 0, len(matches))
+	var totalBytes int64
 	for _, match := range matches {
 		if len(match) < 2 {
 			continue
 		}
-		values = append(values, string(match[1]))
+		value := string(match[1])
+		totalBytes += int64(len(value))
+		if totalBytes > maxAllExtractorBytes {
+			return nil, fmt.Errorf("regex output limit exceeded (%d bytes)", maxAllExtractorBytes)
+		}
+		values = append(values, value)
 	}
 	return values, nil
 }
@@ -701,6 +728,9 @@ func extractAllBoundary(expr string, body []byte) ([]string, error) {
 			}
 		}
 		values = append(values, s[start:start+ri])
+		if len(values) > maxAllExtractorMatches {
+			return nil, fmt.Errorf("boundary match limit exceeded (%d)", maxAllExtractorMatches)
+		}
 		if right == "" {
 			// An empty right boundary consumes the remainder; only one match
 			// is possible.
@@ -721,9 +751,18 @@ func extractAllJSONPath(expr string, body []byte) ([]string, error) {
 		return nil, err
 	}
 	if arr, ok := value.([]any); ok {
+		if len(arr) > maxAllExtractorMatches {
+			return nil, fmt.Errorf("JSONPath match limit exceeded (%d)", maxAllExtractorMatches)
+		}
 		values := make([]string, 0, len(arr))
+		var totalBytes int64
 		for _, item := range arr {
-			values = append(values, stringifyJSONLeaf(item))
+			value := stringifyJSONLeaf(item)
+			totalBytes += int64(len(value))
+			if totalBytes > maxAllExtractorBytes {
+				return nil, fmt.Errorf("JSONPath output limit exceeded (%d bytes)", maxAllExtractorBytes)
+			}
+			values = append(values, value)
 		}
 		return values, nil
 	}
@@ -745,13 +784,23 @@ func extractAllXPath(expr string, body []byte) ([]string, error) {
 
 	if doc, err := xmlquery.Parse(strings.NewReader(string(body))); err == nil {
 		nodes := xmlquery.QuerySelectorAll(doc, selector)
+		if len(nodes) > maxAllExtractorMatches {
+			return nil, fmt.Errorf("XPath match limit exceeded (%d)", maxAllExtractorMatches)
+		}
 		values := make([]string, 0, len(nodes))
+		var totalBytes int64
 		for _, node := range nodes {
+			var value string
 			if fragment {
-				values = append(values, node.OutputXMLWithOptions(xmlquery.WithOutputSelf(), xmlquery.WithoutPreserveSpace()))
+				value = node.OutputXMLWithOptions(xmlquery.WithOutputSelf(), xmlquery.WithoutPreserveSpace())
 			} else {
-				values = append(values, node.InnerText())
+				value = node.InnerText()
 			}
+			totalBytes += int64(len(value))
+			if totalBytes > maxAllExtractorBytes {
+				return nil, fmt.Errorf("XPath output limit exceeded (%d bytes)", maxAllExtractorBytes)
+			}
+			values = append(values, value)
 		}
 		return values, nil
 	}
@@ -761,13 +810,23 @@ func extractAllXPath(expr string, body []byte) ([]string, error) {
 		return nil, fmt.Errorf("invalid HTML/XML body: %w", err)
 	}
 	nodes := htmlquery.QuerySelectorAll(doc, selector)
+	if len(nodes) > maxAllExtractorMatches {
+		return nil, fmt.Errorf("XPath match limit exceeded (%d)", maxAllExtractorMatches)
+	}
 	values := make([]string, 0, len(nodes))
+	var totalBytes int64
 	for _, node := range nodes {
+		var value string
 		if fragment {
-			values = append(values, htmlquery.OutputHTML(node, true))
+			value = htmlquery.OutputHTML(node, true)
 		} else {
-			values = append(values, htmlquery.InnerText(node))
+			value = htmlquery.InnerText(node)
 		}
+		totalBytes += int64(len(value))
+		if totalBytes > maxAllExtractorBytes {
+			return nil, fmt.Errorf("XPath output limit exceeded (%d bytes)", maxAllExtractorBytes)
+		}
+		values = append(values, value)
 	}
 	return values, nil
 }

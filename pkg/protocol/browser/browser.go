@@ -53,28 +53,30 @@ type Browser struct {
 	// registered but not activated; scripts switch explicitly with
 	// browser_switch_window); scripts recorded against the old auto-switch
 	// behavior set browser_auto_activate_popups=true as a migration path.
-	autoActivatePopups         bool
-	experienceCanary           bool
-	traceparentEnabled         bool
-	selfHealMode               string
-	runMode                    string
-	harCapturePolicy           string
-	harDir                     string
-	harWorkingPath             string
-	harErrorSeen               bool
-	harSLABreachSeen           bool
-	harManualSeen              bool
-	harSLABreachThreshold      time.Duration
-	lastHARArtifactPath        string
-	mobile                     bool
-	touchMode                  bool
-	orientation                string
-	orientationExplicit        bool
-	deviceScaleFactor          float64
-	cpuThrottleRate            float64
-	cpuThrottleExplicit        bool
-	viewportW                  int
-	viewportH                  int
+	autoActivatePopups    bool
+	experienceCanary      bool
+	traceparentEnabled    bool
+	selfHealMode          string
+	runMode               string
+	harCapturePolicy      string
+	harDir                string
+	harWorkingPath        string
+	harErrorSeen          bool
+	harSLABreachSeen      bool
+	harManualSeen         bool
+	harSLABreachThreshold time.Duration
+	lastHARArtifactPath   string
+	harMonitorStop        chan struct{}
+	harMonitorWG          sync.WaitGroup
+	mobile                bool
+	touchMode             bool
+	orientation           string
+	orientationExplicit   bool
+	deviceScaleFactor     float64
+	cpuThrottleRate       float64
+	cpuThrottleExplicit   bool
+	viewportW             int
+	viewportH             int
 
 	pwContext            playwright.BrowserContext
 	pwPage               playwright.Page

@@ -135,6 +135,10 @@ func readSSEResponse(ctx context.Context, body io.ReadCloser, params map[string]
 		line, err := reader.ReadString('\n')
 		if len(line) > 0 {
 			result.BytesRead += int64(len(line))
+			if maxBodyBytes > 0 && result.BytesRead > maxBodyBytes {
+				result.Body = out.Bytes()
+				return result, fmt.Errorf("SSE response exceeds %d byte limit", maxBodyBytes)
+			}
 			line = strings.TrimRight(line, "\r\n")
 			switch {
 			case line == "":
@@ -150,10 +154,6 @@ func readSSEResponse(ctx context.Context, body io.ReadCloser, params map[string]
 				dataLines = append(dataLines, strings.TrimSpace(strings.TrimPrefix(line, "data:")))
 			case strings.HasPrefix(line, "id:"):
 				current.ID = strings.TrimSpace(strings.TrimPrefix(line, "id:"))
-			}
-			if maxBodyBytes > 0 && result.BytesRead > maxBodyBytes {
-				result.Body = out.Bytes()
-				return result, fmt.Errorf("SSE response exceeds %d byte limit", maxBodyBytes)
 			}
 		}
 		if err != nil {
