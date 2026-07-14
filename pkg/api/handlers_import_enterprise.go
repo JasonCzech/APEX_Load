@@ -15,12 +15,21 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
+var enterpriseImportGate = make(chan struct{}, 2)
+
 func (s *Server) handleImportEnterpriseArchive(w http.ResponseWriter, r *http.Request) {
 	importReq, ok := readEnterpriseArchiveImportRequest(w, r)
 	if !ok {
 		return
 	}
 
+	select {
+	case enterpriseImportGate <- struct{}{}:
+		defer func() { <-enterpriseImportGate }()
+	case <-r.Context().Done():
+		writeError(w, http.StatusRequestTimeout, "enterprise archive conversion canceled")
+		return
+	}
 	// Run the conversion
 	result, err := enterprisearchive.ConvertZip(importReq.Data, importReq.Opts)
 	if err != nil {

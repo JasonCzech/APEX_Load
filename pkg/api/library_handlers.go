@@ -92,6 +92,7 @@ func (s *Server) handleLibraryImportArchive(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) handleLibraryResultArchive(w http.ResponseWriter, r *http.Request) {
+	clearArchiveWriteDeadline(w)
 	id := strings.TrimSpace(r.PathValue("id"))
 	test, ok := s.runner.GetTest(id)
 	if !ok || test == nil {

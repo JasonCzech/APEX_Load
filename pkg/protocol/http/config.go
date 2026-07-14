@@ -454,14 +454,17 @@ func applyRedirectPolicy(client *http.Client, maxRedirects int) {
 		}
 		return
 	}
-
-	if maxRedirects != 10 {
-		client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-			if len(via) >= maxRedirects {
-				return fmt.Errorf("stopped after %d redirects", maxRedirects)
-			}
-			return nil
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) >= maxRedirects {
+			return fmt.Errorf("stopped after %d redirects", maxRedirects)
 		}
+		if len(via) > 0 {
+			previous := via[len(via)-1]
+			if strings.EqualFold(previous.URL.Scheme, "https") && strings.EqualFold(req.URL.Scheme, "http") {
+				return fmt.Errorf("refused HTTPS to HTTP redirect")
+			}
+		}
+		return nil
 	}
 }
 

@@ -349,6 +349,7 @@ func (s *Service) pruneArchivedRecordsLocked(now time.Time) []generatorArchiveRe
 				continue
 			}
 			removed = append(removed, generatorArchiveRemoval{record: cloneRunArchiveRecord(record), identity: s.archiveIdentities[testID]})
+			s.archiveDeleting[testID] = struct{}{}
 			delete(s.archiveRecords, testID)
 			delete(s.archiveIdentities, testID)
 		}
@@ -385,6 +386,7 @@ func (s *Service) pruneArchivedRecordsLocked(now time.Time) []generatorArchiveRe
 			continue
 		}
 		removed = append(removed, generatorArchiveRemoval{record: cloneRunArchiveRecord(candidate.record), identity: s.archiveIdentities[candidate.testID]})
+		s.archiveDeleting[candidate.testID] = struct{}{}
 		delete(s.archiveRecords, candidate.testID)
 		delete(s.archiveIdentities, candidate.testID)
 	}
@@ -430,6 +432,11 @@ func (s *Service) removeGeneratorArchiveRecords(records []generatorArchiveRemova
 		if record == nil {
 			continue
 		}
+		defer func(testID string) {
+			s.mu.Lock()
+			delete(s.archiveDeleting, testID)
+			s.mu.Unlock()
+		}(record.TestID)
 		if err := validateArchiveTestID(record.TestID); err != nil {
 			slog.Warn("generator archive retention rejected unsafe test id", "test_id", record.TestID, "error", err)
 			continue

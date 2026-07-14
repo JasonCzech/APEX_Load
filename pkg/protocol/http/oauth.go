@@ -78,6 +78,7 @@ func FetchOAuth2Token(ctx context.Context, req OAuthTokenRequest) (OAuthToken, e
 		if token.AccessToken != "" && time.Until(token.ExpiresAt) > tokenCacheExpirySlack {
 			return token, nil
 		}
+		oauthTokenCache.Delete(key)
 	}
 	value, err, _ := oauthTokenGroup.Do(key, func() (any, error) {
 		if cached, ok := oauthTokenCache.Load(key); ok {
@@ -85,6 +86,7 @@ func FetchOAuth2Token(ctx context.Context, req OAuthTokenRequest) (OAuthToken, e
 			if token.AccessToken != "" && time.Until(token.ExpiresAt) > tokenCacheExpirySlack {
 				return token, nil
 			}
+			oauthTokenCache.Delete(key)
 		}
 		token, fetchErr := fetchOAuth2TokenUncached(ctx, req)
 		if fetchErr != nil {
@@ -341,7 +343,7 @@ func oauthTokenCacheKey(req OAuthTokenRequest) string {
 		strings.TrimSpace(req.Audience),
 		strings.TrimSpace(req.Issuer),
 		strings.TrimSpace(req.Subject),
-		strings.TrimSpace(req.RefreshToken),
+		secretFingerprint(req.RefreshToken),
 		strings.TrimSpace(req.Username),
 		secretFingerprint(req.ClientSecret),
 		secretFingerprint(req.PrivateKey),

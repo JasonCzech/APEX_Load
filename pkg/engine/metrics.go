@@ -453,6 +453,7 @@ func (mc *MetricsCollector) aggregate(interval time.Duration) {
 			// don't emit leading/trailing zeros before ramp-up starts or after
 			// ramp-down completes.
 			if len(batch) == 0 && !mc.emitIdleSnapshots && mc.current.activeVUsers.Load() == 0 {
+				windowStart = windowEnd
 				continue
 			}
 			window := windowEnd.Sub(windowStart)

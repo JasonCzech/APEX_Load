@@ -113,12 +113,13 @@ type Recorder struct {
 	// constant, so it cannot forge them against the live recording.
 	controlNonce string
 
-	thumbWG  sync.WaitGroup
-	done     chan struct{}
-	doneOnce sync.Once
-	harTemp  bool
-	wsFrames int
-	wsBytes  int
+	thumbWG      sync.WaitGroup
+	done         chan struct{}
+	doneOnce     sync.Once
+	harTemp      bool
+	wsFrames     int
+	wsBytes      int
+	bindingBytes int64
 
 	// sidebarPush coalesces live-state pushes to the in-page sidebar. A single
 	// drainer goroutine (started in Start) debounces bursts of events into one
@@ -127,17 +128,19 @@ type Recorder struct {
 }
 
 const (
-	maxBrowserHARBytes      = 100 << 20
-	maxBrowserPages         = 32
-	maxBrowserSteps         = 100_000
-	maxBrowserNetworkEvents = 100_000
-	maxBrowserWebSockets    = 1_000
-	maxBrowserWSFrames      = 10_000
-	maxBrowserAnnotations   = 10_000
-	maxBrowserAnnotationLen = 4_096
-	maxBrowserBindingBytes  = 64 << 10
-	maxBrowserWSPayload     = 64 << 10
-	maxBrowserWSBytes       = 64 << 20
+	maxBrowserHARBytes          = 100 << 20
+	maxBrowserPages             = 32
+	maxBrowserSteps             = 100_000
+	maxBrowserNetworkEvents     = 100_000
+	maxBrowserWebSockets        = 1_000
+	maxBrowserWSFrames          = 10_000
+	maxBrowserAnnotations       = 10_000
+	maxBrowserAnnotationLen     = 4_096
+	maxBrowserBindingBytes      = 64 << 10
+	maxBrowserBindingTotalBytes = 64 << 20
+	maxBrowserWarnings          = 10_000
+	maxBrowserWSPayload         = 64 << 10
+	maxBrowserWSBytes           = 64 << 20
 )
 
 // controlNoncePlaceholder is the literal in capture.js that newControlNonce's
@@ -570,17 +573,20 @@ func (r *Recorder) handleRecordBinding(source *playwright.BindingSource, args ..
 		return nil
 	}
 	r.mu.Lock()
-	if r.paused || r.stopped || len(r.session.Steps) >= maxBrowserSteps {
+	if r.paused || r.stopped || len(r.session.Steps) >= maxBrowserSteps || r.bindingBytes+int64(len(payload)) > maxBrowserBindingTotalBytes {
 		r.mu.Unlock()
 		return nil
 	}
+	r.bindingBytes += int64(len(payload))
 	section := r.currentSection
 	r.mu.Unlock()
 	step, err := stepFromEvent(payload)
 	if err != nil {
 		warning := fmt.Sprintf("dropped capture event: %v", err)
 		r.mu.Lock()
-		r.session.Warnings = append(r.session.Warnings, warning)
+		if len(r.session.Warnings) < maxBrowserWarnings {
+			r.session.Warnings = append(r.session.Warnings, warning)
+		}
 		r.mu.Unlock()
 		r.emit(Event{Type: EventWarning, Warning: warning})
 		return nil
@@ -1576,7 +1582,13 @@ func (r *Recorder) monitorHARSize(path string, context playwright.BrowserContext
 // WaitGroup so Stop can drain in-flight screenshots before the session becomes
 // the final read-only artifact (no post-stop mutation of session.Steps).
 func (r *Recorder) captureThumbnailAsync(page playwright.Page, seq int) {
+	r.mu.Lock()
+	if r.stopped {
+		r.mu.Unlock()
+		return
+	}
 	r.thumbWG.Add(1)
+	r.mu.Unlock()
 	go func() {
 		defer r.thumbWG.Done()
 		raw, err := page.Screenshot(playwright.PageScreenshotOptions{

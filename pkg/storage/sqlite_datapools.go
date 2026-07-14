@@ -44,7 +44,9 @@ func (s *SQLiteStore) GetDataPool(id string) (*SharedDataPool, error) {
 	}
 	pool.ProjectID = normalizeProjectID(pool.ProjectID)
 	if schemaJSON != "" && schemaJSON != "null" {
-		_ = json.Unmarshal([]byte(schemaJSON), &pool.Schema)
+		if err := json.Unmarshal([]byte(schemaJSON), &pool.Schema); err != nil {
+			return nil, fmt.Errorf("decode data pool %s schema: %w", id, err)
+		}
 	}
 	return &pool, nil
 }
@@ -69,7 +71,9 @@ func (s *SQLiteStore) ListDataPools(includeArchived bool) ([]*SharedDataPool, er
 		}
 		pool.ProjectID = normalizeProjectID(pool.ProjectID)
 		if schemaJSON != "" && schemaJSON != "null" {
-			_ = json.Unmarshal([]byte(schemaJSON), &pool.Schema)
+			if err := json.Unmarshal([]byte(schemaJSON), &pool.Schema); err != nil {
+				return nil, fmt.Errorf("decode data pool %s schema: %w", pool.ID, err)
+			}
 		}
 		pools = append(pools, &pool)
 	}
@@ -165,7 +169,9 @@ func (s *SQLiteStore) ListDataPoolRows(poolID string) ([]*SharedDataPoolRow, err
 			return nil, err
 		}
 		if dataJSON != "" && dataJSON != "null" {
-			_ = json.Unmarshal([]byte(dataJSON), &row.Data)
+			if err := json.Unmarshal([]byte(dataJSON), &row.Data); err != nil {
+				return nil, fmt.Errorf("decode data pool row %s: %w", row.ID, err)
+			}
 		}
 		if row.Data == nil {
 			row.Data = map[string]string{}

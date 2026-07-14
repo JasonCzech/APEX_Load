@@ -224,6 +224,16 @@ func TestHTTP_Init_MaxRedirectsZeroDisablesRedirects(t *testing.T) {
 	}
 }
 
+func TestHTTP_RedirectPolicyRejectsHTTPSDowngrade(t *testing.T) {
+	client := &http.Client{}
+	applyRedirectPolicy(client, 10)
+	previous := httptest.NewRequest(http.MethodGet, "https://example.test/start", nil)
+	next := httptest.NewRequest(http.MethodGet, "http://example.test/cleartext", nil)
+	if err := client.CheckRedirect(next, []*http.Request{previous}); err == nil {
+		t.Fatal("expected HTTPS to HTTP redirect to be rejected")
+	}
+}
+
 func TestHTTP_Init_DisableCookies(t *testing.T) {
 	h := initHTTP(t, map[string]any{
 		"cookies_enabled": false,

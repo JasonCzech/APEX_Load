@@ -936,6 +936,12 @@ func (tr *TestRunner) persistExecutionPlanRunDurable(run *storage.ExecutionPlanR
 		if err == nil && updated {
 			return nil
 		}
+		if err == nil && !updated {
+			// A definitive CAS miss proves another writer owns this transition.
+			// Matching content is not sufficient to establish ownership because two
+			// controllers can submit the same claim concurrently.
+			return fmt.Errorf("%w: run %s expected revision %d", errExecutionPlanRunConflict, run.ID, expectedRevision)
+		}
 
 		current, reloadErr := tr.reloadExecutionPlanRunForTransition(run.ID)
 		if reloadErr == nil && executionPlanRunTransitionMatches(current, run, expectedRevision) {
