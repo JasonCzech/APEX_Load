@@ -563,12 +563,29 @@ func authCookieSecure(settings AuthSettings) bool {
 }
 
 func sanitizeReturnTo(raw string) string {
+	for _, character := range raw {
+		if character < 0x20 || character == 0x7f || character == '\\' {
+			return defaultOIDCReturnTo
+		}
+	}
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
 		return defaultOIDCReturnTo
 	}
 	if !strings.HasPrefix(trimmed, "/") || strings.HasPrefix(trimmed, "//") {
 		return defaultOIDCReturnTo
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil || parsed.IsAbs() || parsed.Scheme != "" || parsed.Host != "" || parsed.Opaque != "" || parsed.User != nil {
+		return defaultOIDCReturnTo
+	}
+	if !strings.HasPrefix(parsed.Path, "/") || strings.HasPrefix(parsed.Path, "//") || strings.Contains(parsed.Path, "\\") {
+		return defaultOIDCReturnTo
+	}
+	for _, character := range parsed.Path {
+		if character < 0x20 || character == 0x7f {
+			return defaultOIDCReturnTo
+		}
 	}
 	return trimmed
 }

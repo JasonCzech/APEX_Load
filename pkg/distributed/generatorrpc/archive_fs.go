@@ -317,7 +317,7 @@ func writeGeneratorArchiveFileDurable(root *os.Root, name string, data []byte, p
 		return err
 	}
 	keep = false
-	return nil
+	return syncGeneratorArchiveDirectory(root)
 }
 
 func openGeneratorArchiveRegularFile(root *os.Root, name string) (*os.File, os.FileInfo, error) {
@@ -325,11 +325,32 @@ func openGeneratorArchiveRegularFile(root *os.Root, name string) (*os.File, os.F
 	if err != nil {
 		return nil, nil, err
 	}
-	info, err := inspectGeneratorArchiveFileTarget(root, name, false)
+	parentRoot := root
+	closeParent := false
+	components := strings.Split(filepath.FromSlash(name), string(filepath.Separator))
+	for _, component := range components[:len(components)-1] {
+		child, openErr := openArchiveChildDirectory(parentRoot, component, false, 0)
+		if openErr != nil {
+			if closeParent {
+				_ = parentRoot.Close()
+			}
+			return nil, nil, openErr
+		}
+		if closeParent {
+			_ = parentRoot.Close()
+		}
+		parentRoot = child
+		closeParent = true
+	}
+	if closeParent {
+		defer parentRoot.Close()
+	}
+	base := components[len(components)-1]
+	info, err := inspectGeneratorArchiveFileTarget(parentRoot, base, false)
 	if err != nil {
 		return nil, nil, err
 	}
-	file, err := root.Open(filepath.FromSlash(name))
+	file, err := parentRoot.Open(base)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -338,7 +359,7 @@ func openGeneratorArchiveRegularFile(root *os.Root, name string) (*os.File, os.F
 		_ = file.Close()
 		return nil, nil, err
 	}
-	after, err := root.Lstat(filepath.FromSlash(name))
+	after, err := parentRoot.Lstat(base)
 	if err != nil || after.Mode()&os.ModeSymlink != 0 || !after.Mode().IsRegular() || !os.SameFile(info, opened) || !os.SameFile(after, opened) {
 		_ = file.Close()
 		if err != nil {
@@ -347,6 +368,18 @@ func openGeneratorArchiveRegularFile(root *os.Root, name string) (*os.File, os.F
 		return nil, nil, fmt.Errorf("archive artifact %q changed while opening", name)
 	}
 	return file, opened, nil
+}
+
+func syncGeneratorArchiveDirectory(root *os.Root) error {
+	if root == nil {
+		return fmt.Errorf("generator archive root is unavailable")
+	}
+	directory, err := root.Open(".")
+	if err != nil {
+		return err
+	}
+	defer directory.Close()
+	return directory.Sync()
 }
 
 func openGeneratorArchiveRun(namespace *generatorArchiveNamespace, testID string, create bool) (*os.Root, os.FileInfo, error) {
@@ -366,6 +399,26 @@ func openGeneratorArchiveRun(namespace *generatorArchiveNamespace, testID string
 		return nil, nil, err
 	}
 	return run, info, nil
+}
+
+func verifyGeneratorArchiveRun(namespace *generatorArchiveNamespace, testID string, identity os.FileInfo) error {
+	if namespace == nil || namespace.root == nil {
+		return fmt.Errorf("generator archive namespace is unavailable")
+	}
+	if identity == nil {
+		return fmt.Errorf("generator archive run identity is unavailable")
+	}
+	if err := validateArchiveTestID(testID); err != nil {
+		return err
+	}
+	info, err := namespace.root.Lstat(testID)
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() || !os.SameFile(identity, info) {
+		return fmt.Errorf("generator archive run %q was replaced", testID)
+	}
+	return nil
 }
 
 func removeGeneratorArchiveRun(namespace *generatorArchiveNamespace, testID string, identity os.FileInfo) error {

@@ -408,6 +408,7 @@ type Service struct {
 	executions          map[string]map[string]*groupExecution
 	archiveWriters      map[string]*archiveRecorder
 	archiveRecords      map[string]*storage.RunArchiveRecord
+	archiveIdentities   map[string]os.FileInfo
 	archiveLeases       map[string]int
 	scriptCacheMax      int
 	scriptCacheBytes    int64
@@ -464,6 +465,7 @@ func NewService(generatorID string, maxVUsers int, opts ...ServiceOption) *Servi
 		executions:          make(map[string]map[string]*groupExecution),
 		archiveWriters:      make(map[string]*archiveRecorder),
 		archiveRecords:      make(map[string]*storage.RunArchiveRecord),
+		archiveIdentities:   make(map[string]os.FileInfo),
 		archiveLeases:       make(map[string]int),
 		scriptCacheMax:      configuredGeneratorScriptCacheMax(),
 		scriptCacheLimit:    configuredGeneratorScriptCacheMaxBytes(),
@@ -881,13 +883,10 @@ func (s *Service) StopTest(_ context.Context, request *pb.StopRequest) (*pb.Stop
 	finalState := "COMPLETE"
 	finalError := ""
 	if writer := s.takeArchiveWriter(request.GetTestId()); writer != nil {
-		record, err := writer.Finalize("COMPLETE", time.Now(), "")
+		err := s.finalizeArchiveWriter(writer, "COMPLETE", time.Now(), "")
 		if err != nil {
-			_ = writer.Discard()
 			finalState = "FAILED"
 			finalError = "archive finalization failed: " + err.Error()
-		} else if record != nil {
-			s.storeArchiveRecord(record)
 		}
 	}
 
@@ -1199,15 +1198,12 @@ func (s *Service) FailTest(testID string, message string) {
 		return
 	}
 	if writer != nil {
-		record, err := writer.Finalize("FAILED", time.Now(), message)
+		err := s.finalizeArchiveWriter(writer, "FAILED", time.Now(), message)
 		if err != nil {
-			_ = writer.Discard()
 			if message != "" {
 				message += "; "
 			}
 			message += "archive finalization failed: " + err.Error()
-		} else if record != nil {
-			s.storeArchiveRecord(record)
 		}
 	}
 	s.broadcastMetrics(s.metricsBatchForState(testID, 0, false, assignment.groups, "FAILED", message))
@@ -1543,13 +1539,10 @@ func (s *Service) completeAssignment(testID string) {
 	finalState := "COMPLETE"
 	finalError := ""
 	if writer != nil {
-		record, err := writer.Finalize(finalState, time.Now(), "")
+		err := s.finalizeArchiveWriter(writer, finalState, time.Now(), "")
 		if err != nil {
-			_ = writer.Discard()
 			finalState = "FAILED"
 			finalError = "archive finalization failed: " + err.Error()
-		} else if record != nil {
-			s.storeArchiveRecord(record)
 		}
 	}
 	s.broadcastMetrics(s.metricsBatchForState(testID, 0, false, assignment.groups, finalState, finalError))
@@ -1749,16 +1742,13 @@ func (s *Service) finishExecution(testID string, groupName string, err error) {
 		finalState = "FAILED"
 	}
 	if writer != nil {
-		record, finalizeErr := writer.Finalize(finalState, time.Now(), finalError)
+		finalizeErr := s.finalizeArchiveWriter(writer, finalState, time.Now(), finalError)
 		if finalizeErr != nil {
-			_ = writer.Discard()
 			finalState = "FAILED"
 			if finalError != "" {
 				finalError += "; "
 			}
 			finalError += "archive finalization failed: " + finalizeErr.Error()
-		} else if record != nil {
-			s.storeArchiveRecord(record)
 		}
 	}
 	s.broadcastMetrics(s.metricsBatchForState(testID, 0, false, assignment.groups, finalState, finalError))
@@ -1774,6 +1764,20 @@ func (s *Service) takeArchiveWriter(testID string) *archiveRecorder {
 
 func (s *Service) storeArchiveRecord(record *storage.RunArchiveRecord) {
 	s.storeArchiveRecordWithLifecycle(record)
+}
+
+func (s *Service) finalizeArchiveWriter(writer *archiveRecorder, status string, completedAt time.Time, errText string) error {
+	if writer == nil {
+		return nil
+	}
+	record, err := writer.Finalize(status, completedAt, errText)
+	if err == nil && record != nil {
+		err = s.storeArchiveRecordWithIdentity(record, writer.runIdentity)
+	}
+	if err != nil {
+		_ = writer.Discard()
+	}
+	return err
 }
 
 func redactionRulesFromProto(rules []*pb.RedactionRule) []engine.RedactionRule {

@@ -26,6 +26,13 @@ func (s *failingArchiveCatalogStore) SaveRunArchive(record *storage.RunArchiveRe
 	return s.SQLiteStore.SaveRunArchive(record)
 }
 
+func (s *failingArchiveCatalogStore) CompleteArchiveFinalization(testID string, intentToken string, refreshToken string, record *storage.RunArchiveRecord) (bool, error) {
+	if s.failCatalog {
+		return false, errors.New("injected archive catalog failure")
+	}
+	return s.SQLiteStore.CompleteArchiveFinalization(testID, intentToken, refreshToken, record)
+}
+
 type archiveIntentOrderStore struct {
 	*storage.SQLiteStore
 	adjunctPath string
@@ -206,6 +213,99 @@ func TestProducerManifestBuildDoesNotMaterializeUnpublishedObjectArchive(t *test
 		if strings.Contains(warning, "materializ") {
 			t.Fatalf("producer manifest attempted remote materialization: %q", warning)
 		}
+	}
+}
+
+func TestArchiveFinalizationPersistsImmutableVersionBeforeObjectUpload(t *testing.T) {
+	filesystemRoot := t.TempDir()
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", filesystemRoot)
+	t.Setenv("APEXLOAD_ARCHIVE_STAGING_DIR", t.TempDir())
+	t.Setenv("APEXLOAD_ARCHIVE_BACKEND", archiveBackendS3)
+	t.Setenv("APEXLOAD_ARCHIVE_BUCKET", "unreachable-archive-bucket")
+	t.Setenv("APEXLOAD_ARCHIVE_PREFIX", "prod/evidence")
+	t.Setenv("APEXLOAD_ARCHIVE_ENDPOINT", "http://127.0.0.1:1")
+	t.Setenv("APEXLOAD_ARCHIVE_REGION", "us-east-1")
+	t.Setenv("AWS_ACCESS_KEY_ID", "test")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "test")
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	testID := "version-before-upload"
+	test, record := createArchiveFinalizationTest(t, store, testID, resolveArchiveRoot())
+	backend := currentArchiveBackend()
+	record.ArchiveBackend = archiveBackendS3
+	record.ArchiveURI = backend.runURI(testID)
+	record.ManifestURI = backend.manifestURI(testID)
+	runner := NewTestRunner(1, NewHub(), store)
+
+	err = runner.finalizeRunArchiveDurably(context.Background(), test, record, true)
+	if err == nil {
+		t.Fatal("unreachable object backend unexpectedly accepted publication")
+	}
+	job, loadErr := store.GetArchiveFinalizationJob(testID)
+	if loadErr != nil {
+		t.Fatal(loadErr)
+	}
+	wantURI := "s3://unreachable-archive-bucket/prod/evidence/_versions/v1/" + job.IntentToken + "/" + testID
+	if job.IntentToken == "" || job.ArchiveRecord.ArchiveURI != wantURI || job.ArchiveRecord.ManifestURI != wantURI+"/manifest.json" {
+		t.Fatalf("durable publication pointer = token:%q archive:%q manifest:%q", job.IntentToken, job.ArchiveRecord.ArchiveURI, job.ArchiveRecord.ManifestURI)
+	}
+	if record.ArchiveURI != job.ArchiveRecord.ArchiveURI || record.ManifestSHA256 != job.ArchiveRecord.ManifestSHA256 {
+		t.Fatalf("producer record did not retain durable finalization state: producer=%+v job=%+v", record, job.ArchiveRecord)
+	}
+}
+
+func TestArchiveRefreshRematerializesPersistedObjectVersionBeforeMutation(t *testing.T) {
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	t.Setenv("APEXLOAD_ARCHIVE_STAGING_DIR", t.TempDir())
+	t.Setenv("APEXLOAD_ARCHIVE_BACKEND", archiveBackendS3)
+	t.Setenv("APEXLOAD_ARCHIVE_BUCKET", "unreachable-refresh-bucket")
+	t.Setenv("APEXLOAD_ARCHIVE_PREFIX", "prod/evidence")
+	t.Setenv("APEXLOAD_ARCHIVE_ENDPOINT", "http://127.0.0.1:1")
+	t.Setenv("APEXLOAD_ARCHIVE_REGION", "us-east-1")
+	t.Setenv("AWS_ACCESS_KEY_ID", "test")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "test")
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	testID := "refresh-rematerializes-version"
+	test, record := createArchiveFinalizationTest(t, store, testID, resolveArchiveRoot())
+	record.ArchiveBackend = archiveBackendS3
+	record.ArchiveURI = currentArchiveBackend().runURI(testID)
+	record.ManifestURI = currentArchiveBackend().manifestURI(testID)
+	if err := bindArchiveRecordToFinalizationVersion(record, "66666666-6666-4666-8666-666666666666"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveRunArchive(record); err != nil {
+		t.Fatal(err)
+	}
+	refresh, err := store.BumpArchiveRefreshJob(testID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := NewTestRunner(1, NewHub(), store)
+	runner.mu.Lock()
+	runner.tests[test.ID] = test
+	runner.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	err = runner.processArchiveRefreshJob(ctx, refresh)
+	if err == nil || !strings.Contains(err.Error(), "materialize archive") {
+		t.Fatalf("refresh error = %v, want remote rematerialization failure", err)
+	}
+	if _, err := os.Stat(filepath.Join(record.ArchivePath, testNotesArchiveFileName)); !os.IsNotExist(err) {
+		t.Fatalf("stale local archive was mutated before rematerialization: %v", err)
+	}
+	pending, err := store.GetArchiveFinalizationJob(testID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pending.RefreshToken != refresh.IntentToken || pending.ArchiveRecord.ArchiveURI != record.ArchiveURI {
+		t.Fatalf("durable refresh finalization = %+v", pending)
 	}
 }
 

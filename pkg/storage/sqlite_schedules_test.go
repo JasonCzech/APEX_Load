@@ -12,6 +12,9 @@ func TestSQLiteStorePersistsScenarioSchedules(t *testing.T) {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
 	defer store.Close()
+	if err := store.SaveProject(&Project{ID: "checkout", Name: "Checkout", CreatedAt: time.Now()}); err != nil {
+		t.Fatalf("SaveProject returned error: %v", err)
+	}
 
 	scenario := &Scenario{ID: "scenario-1", Name: "Checkout", Duration: "5m", StartDelay: "30s", CreatedAt: time.Now(), UpdatedAt: time.Now()}
 	if err := store.SaveScenario(scenario, nil); err != nil {

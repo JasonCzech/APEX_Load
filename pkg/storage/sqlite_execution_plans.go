@@ -121,11 +121,82 @@ func (s *SQLiteStore) DeleteExecutionPlan(id string) error {
 }
 
 func (s *SQLiteStore) SaveExecutionPlanRun(run *ExecutionPlanRun) error {
+	entriesJSON, err := prepareExecutionPlanRunForWrite(run)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`INSERT INTO execution_plan_runs (
+			id, plan_id, project_id, run_mode, status, entries_json, revision, created_at, updated_at, completed_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(id) DO UPDATE SET
+			plan_id=excluded.plan_id, project_id=excluded.project_id, run_mode=excluded.run_mode,
+			status=excluded.status, entries_json=excluded.entries_json, updated_at=excluded.updated_at,
+			completed_at=excluded.completed_at, revision=execution_plan_runs.revision+1`,
+		run.ID, run.PlanID, run.ProjectID, run.RunMode, run.Status, string(entriesJSON),
+		run.Revision, run.CreatedAt, run.UpdatedAt, run.CompletedAt)
+	return err
+}
+
+// CreateExecutionPlanRunIfAbsent atomically establishes the durable side-effect
+// boundary for one materialization. Only the caller that inserts the RunID may
+// proceed to create tests; a conflicting caller must reload the existing row.
+func (s *SQLiteStore) CreateExecutionPlanRunIfAbsent(run *ExecutionPlanRun) (bool, error) {
+	entriesJSON, err := prepareExecutionPlanRunForWrite(run)
+	if err != nil {
+		return false, err
+	}
+	run.Revision = 1
+	result, err := s.db.Exec(`INSERT INTO execution_plan_runs (
+			id, plan_id, project_id, run_mode, status, entries_json, revision, created_at, updated_at, completed_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(id) DO NOTHING`,
+		run.ID, run.PlanID, run.ProjectID, run.RunMode, run.Status, string(entriesJSON),
+		run.Revision, run.CreatedAt, run.UpdatedAt, run.CompletedAt)
+	if err != nil {
+		return false, err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return rows == 1, nil
+}
+
+// CompareAndSwapExecutionPlanRun persists one progress transition without
+// allowing an older controller snapshot to overwrite a newer row. Identity and
+// creation time are immutable after the create-only anchor is established.
+func (s *SQLiteStore) CompareAndSwapExecutionPlanRun(run *ExecutionPlanRun, expectedRevision int64) (bool, error) {
+	if expectedRevision < 1 {
+		return false, fmt.Errorf("execution plan run expected revision must be positive")
+	}
+	entriesJSON, err := prepareExecutionPlanRunForWrite(run)
+	if err != nil {
+		return false, err
+	}
+	result, err := s.db.Exec(`UPDATE execution_plan_runs SET
+			status = ?, entries_json = ?, updated_at = ?, completed_at = ?, revision = revision + 1
+			WHERE id = ? AND revision = ?`,
+		run.Status, string(entriesJSON), run.UpdatedAt, run.CompletedAt, run.ID, expectedRevision)
+	if err != nil {
+		return false, err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	if rows == 1 {
+		run.Revision = expectedRevision + 1
+		return true, nil
+	}
+	return false, nil
+}
+
+func prepareExecutionPlanRunForWrite(run *ExecutionPlanRun) ([]byte, error) {
 	if run == nil {
-		return fmt.Errorf("execution plan run is required")
+		return nil, fmt.Errorf("execution plan run is required")
 	}
 	if run.ID == "" {
-		return fmt.Errorf("execution plan run id is required")
+		return nil, fmt.Errorf("execution plan run id is required")
 	}
 	run.ProjectID = normalizeProjectID(run.ProjectID)
 	if run.RunMode == "" {
@@ -138,32 +209,26 @@ func (s *SQLiteStore) SaveExecutionPlanRun(run *ExecutionPlanRun) error {
 	if run.CreatedAt.IsZero() {
 		run.CreatedAt = now
 	}
+	if run.Revision < 1 {
+		run.Revision = 1
+	}
 	run.UpdatedAt = now
 	entriesJSON, err := json.Marshal(run.Entries)
 	if err != nil {
-		return fmt.Errorf("marshal execution plan run entries: %w", err)
+		return nil, fmt.Errorf("marshal execution plan run entries: %w", err)
 	}
-	_, err = s.db.Exec(`INSERT INTO execution_plan_runs (
-			id, plan_id, project_id, run_mode, status, entries_json, created_at, updated_at, completed_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET
-			plan_id=excluded.plan_id, project_id=excluded.project_id, run_mode=excluded.run_mode,
-			status=excluded.status, entries_json=excluded.entries_json, updated_at=excluded.updated_at,
-			completed_at=excluded.completed_at`,
-		run.ID, run.PlanID, run.ProjectID, run.RunMode, run.Status, string(entriesJSON),
-		run.CreatedAt, run.UpdatedAt, run.CompletedAt)
-	return err
+	return entriesJSON, nil
 }
 
 const executionPlanRunSelect = `SELECT id, COALESCE(plan_id, ''), COALESCE(project_id, ''),
 	COALESCE(run_mode, 'sequential'), COALESCE(status, 'running'), COALESCE(entries_json, ''),
-	created_at, updated_at, completed_at FROM execution_plan_runs`
+	COALESCE(revision, 1), created_at, updated_at, completed_at FROM execution_plan_runs`
 
 func scanExecutionPlanRun(row capacityRowScanner) (*ExecutionPlanRun, error) {
 	var run ExecutionPlanRun
 	var entriesJSON string
 	if err := row.Scan(&run.ID, &run.PlanID, &run.ProjectID, &run.RunMode, &run.Status,
-		&entriesJSON, &run.CreatedAt, &run.UpdatedAt, &run.CompletedAt); err != nil {
+		&entriesJSON, &run.Revision, &run.CreatedAt, &run.UpdatedAt, &run.CompletedAt); err != nil {
 		return nil, err
 	}
 	if entriesJSON != "" && entriesJSON != "null" {

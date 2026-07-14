@@ -921,6 +921,21 @@ type ArchiveCleanupJob struct {
 	UpdatedAt     time.Time        `json:"updated_at"`
 }
 
+// ArchiveVersionCleanupJob durably retains a superseded immutable object-store
+// publication until its exact URI prefix has been removed. It is separate from
+// ArchiveCleanupJob because one test can accumulate several retired versions,
+// while test/project deletion has only one current catalog pointer.
+type ArchiveVersionCleanupJob struct {
+	ID            string           `json:"id"`
+	TestID        string           `json:"test_id"`
+	ProjectID     string           `json:"project_id"`
+	ArchiveRecord RunArchiveRecord `json:"archive_record"`
+	Attempts      int              `json:"attempts"`
+	LastError     string           `json:"last_error,omitempty"`
+	CreatedAt     time.Time        `json:"created_at"`
+	UpdatedAt     time.Time        `json:"updated_at"`
+}
+
 // ArchiveFinalizationJob is the durable intent to finish publishing an archive
 // and commit its catalog record. The local archive is already committed before
 // this row is written; retries may therefore safely repeat adjunct generation,

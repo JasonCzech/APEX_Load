@@ -24,6 +24,7 @@ import (
 )
 
 var errExecutionPlanRunPersistence = errors.New("execution-plan run persistence failed")
+var errExecutionPlanRunConflict = errors.New("execution-plan run revision conflict")
 
 func executionPlanPersistenceError(action string, err error) error {
 	return fmt.Errorf("%w: %s: %w", errExecutionPlanRunPersistence, action, err)
@@ -34,6 +35,11 @@ type executionPlanRunPersistence interface {
 	SaveExecutionPlanRun(run *storage.ExecutionPlanRun) error
 	GetExecutionPlanRun(id string) (*storage.ExecutionPlanRun, error)
 	ListExecutionPlanRuns(planID string, limit int, offset int) ([]*storage.ExecutionPlanRun, error)
+}
+
+type atomicExecutionPlanRunPersistence interface {
+	CreateExecutionPlanRunIfAbsent(run *storage.ExecutionPlanRun) (bool, error)
+	CompareAndSwapExecutionPlanRun(run *storage.ExecutionPlanRun, expectedRevision int64) (bool, error)
 }
 
 // executionPlanSchedulePersistence is the slice of storage.Store the
@@ -71,6 +77,7 @@ type seqPlanRunState struct {
 	cursor        int                             // index of the active entry; -1 before start
 	planID        string
 	status        string
+	revision      int64
 	createdAt     time.Time
 	attribSubject string
 	attribName    string
@@ -87,6 +94,7 @@ func (st *seqPlanRunState) toStorageRun() *storage.ExecutionPlanRun {
 		RunMode:   "sequential",
 		Status:    st.status,
 		Entries:   append([]storage.ExecutionPlanRunEntry(nil), st.statuses...),
+		Revision:  st.revision,
 		CreatedAt: st.createdAt,
 		UpdatedAt: time.Now().UTC(),
 	}
@@ -214,7 +222,7 @@ func (tr *TestRunner) startExecutionPlanRunWithID(plan *storage.ExecutionPlan, a
 		existing, err := tr.execPlanRunStore.GetExecutionPlanRun(runID)
 		switch {
 		case err == nil && existing != nil:
-			if existing.PlanID != plan.ID || existing.RunMode != "sequential" {
+			if existing.PlanID != plan.ID || normalizeProjectID(existing.ProjectID) != normalizeProjectID(plan.ProjectID) || existing.RunMode != "sequential" {
 				return nil, fmt.Errorf("execution-plan run id %q is already used by another materialization", runID)
 			}
 			return existing, nil
@@ -241,15 +249,26 @@ func (tr *TestRunner) startExecutionPlanRunWithID(plan *storage.ExecutionPlan, a
 	if len(enabled) == 0 {
 		st.status = "completed"
 		run := st.toStorageRun()
-		if err := tr.persistExecutionPlanRunDurable(run); err != nil {
+		created, err := tr.createExecutionPlanRunDurable(run)
+		if err != nil {
 			return nil, executionPlanPersistenceError("persist completed execution-plan run", err)
 		}
+		if !created {
+			return tr.loadExistingExecutionPlanRun(runID, plan.ID, plan.ProjectID, "sequential")
+		}
+		st.revision = run.Revision
 		return run, nil
 	}
 
-	if err := tr.persistExecutionPlanRunDurable(st.toStorageRun()); err != nil {
+	initialRun := st.toStorageRun()
+	created, err := tr.createExecutionPlanRunDurable(initialRun)
+	if err != nil {
 		return nil, executionPlanPersistenceError("persist execution-plan run before launch", err)
 	}
+	if !created {
+		return tr.loadExistingExecutionPlanRun(runID, plan.ID, plan.ProjectID, "sequential")
+	}
+	st.revision = initialRun.Revision
 	tr.seqMu.Lock()
 	if tr.seqPlanRuns == nil {
 		tr.seqPlanRuns = make(map[string]*seqPlanRunState)
@@ -316,6 +335,7 @@ func (tr *TestRunner) failExecutionPlanRunDurably(runID, detail string) error {
 		tr.seqMu.Unlock()
 		return executionPlanPersistenceError("persist failed execution-plan run after launch transition failure", err)
 	}
+	st.revision = run.Revision
 	delete(tr.seqPlanRuns, runID)
 	tr.seqMu.Unlock()
 	for _, testID := range createdTestIDs {
@@ -415,6 +435,7 @@ func (tr *TestRunner) launchNextPlanEntry(runID string) error {
 				tr.seqMu.Unlock()
 				return executionPlanPersistenceError("persist completed execution-plan transition", err)
 			}
+			st.revision = run.Revision
 			delete(tr.seqPlanRuns, runID)
 			tr.seqMu.Unlock()
 			tr.broadcastExecutionPlanEvent("execution_plan_run_finished", run, nil)
@@ -480,6 +501,7 @@ func (tr *TestRunner) launchNextPlanEntry(runID string) error {
 			_, cleanupErr := tr.DeleteTestWithError(test.ID)
 			return errors.Join(executionPlanPersistenceError("persist execution-plan entry before launch", err), cleanupErr)
 		}
+		st.revision = run.Revision
 		tr.seqMu.Unlock()
 
 		tr.broadcastEvent("test_created", test)
@@ -543,6 +565,7 @@ func (tr *TestRunner) recordPlanEntryFailure(runID string, idx int, entry storag
 		tr.seqMu.Unlock()
 		return halted, executionPlanPersistenceError("persist execution-plan entry failure", err)
 	}
+	st.revision = run.Revision
 	if halted {
 		delete(tr.seqPlanRuns, runID)
 	}
@@ -614,6 +637,7 @@ func (tr *TestRunner) advanceExecutionPlanForTest(test *ManagedTest, terminalSta
 		tr.enqueueExecutionPlanTestAdvanceRetry(test.ID, terminalStatus)
 		return retryErr
 	}
+	st.revision = run.Revision
 	delete(tr.seqPlanByTest, test.ID)
 	if halted {
 		delete(tr.seqPlanRuns, runID)
@@ -761,13 +785,71 @@ func (tr *TestRunner) persistExecutionPlanRun(run *storage.ExecutionPlanRun) {
 	}
 }
 
+// createExecutionPlanRunDurable is the only valid way to cross a plan
+// materialization's durable side-effect boundary. Production stores implement
+// the atomic extension; the Save fallback keeps focused in-memory test doubles
+// working but is never used by SQLite/PostgreSQL.
+func (tr *TestRunner) createExecutionPlanRunDurable(run *storage.ExecutionPlanRun) (bool, error) {
+	if tr == nil || tr.execPlanRunStore == nil || run == nil {
+		return true, nil
+	}
+	if run.Revision < 1 {
+		run.Revision = 1
+	}
+	if store, ok := tr.execPlanRunStore.(atomicExecutionPlanRunPersistence); ok {
+		created := false
+		err := retryDurableTransition(func() error {
+			var err error
+			created, err = store.CreateExecutionPlanRunIfAbsent(run)
+			return err
+		})
+		return created, err
+	}
+	if err := retryDurableTransition(func() error {
+		return tr.execPlanRunStore.SaveExecutionPlanRun(run)
+	}); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func (tr *TestRunner) persistExecutionPlanRunDurable(run *storage.ExecutionPlanRun) error {
 	if tr == nil || tr.execPlanRunStore == nil || run == nil {
 		return nil
 	}
+	if store, ok := tr.execPlanRunStore.(atomicExecutionPlanRunPersistence); ok && run.Revision > 0 {
+		expectedRevision := run.Revision
+		return retryDurableTransition(func() error {
+			updated, err := store.CompareAndSwapExecutionPlanRun(run, expectedRevision)
+			if err != nil {
+				return err
+			}
+			if !updated {
+				return fmt.Errorf("%w: run %s expected revision %d", errExecutionPlanRunConflict, run.ID, expectedRevision)
+			}
+			return nil
+		})
+	}
 	return retryDurableTransition(func() error {
 		return tr.execPlanRunStore.SaveExecutionPlanRun(run)
 	})
+}
+
+func (tr *TestRunner) loadExistingExecutionPlanRun(runID, planID, projectID, runMode string) (*storage.ExecutionPlanRun, error) {
+	if tr == nil || tr.execPlanRunStore == nil {
+		return nil, executionPlanPersistenceError("reload conflicting execution-plan run", fmt.Errorf("execution-plan run storage is not configured"))
+	}
+	existing, err := tr.execPlanRunStore.GetExecutionPlanRun(runID)
+	if err != nil {
+		return nil, executionPlanPersistenceError("reload conflicting execution-plan run", err)
+	}
+	if existing == nil {
+		return nil, executionPlanPersistenceError("reload conflicting execution-plan run", fmt.Errorf("run %s was not found after an atomic create conflict", runID))
+	}
+	if existing.PlanID != planID || normalizeProjectID(existing.ProjectID) != normalizeProjectID(projectID) || existing.RunMode != runMode {
+		return nil, fmt.Errorf("execution-plan run id %q is already used by another materialization", runID)
+	}
+	return existing, nil
 }
 
 func (tr *TestRunner) broadcastExecutionPlanEvent(eventType string, run *storage.ExecutionPlanRun, entry *storage.ExecutionPlanRunEntry) {

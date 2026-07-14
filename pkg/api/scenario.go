@@ -211,6 +211,18 @@ func (tr *TestRunner) GetScenario(id string) (*StoredScenario, bool) {
 	return tr.enrichScenarioSummaryLocked(scenario), true
 }
 
+func (tr *TestRunner) replaceScenarioDataPools(id string, bindings []storage.ScenarioDataPoolBinding) bool {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	id = tr.resolveRefKeyLocked(id)
+	scenario := tr.scenarios[id]
+	if scenario == nil {
+		return false
+	}
+	scenario.DataPools = append([]storage.ScenarioDataPoolBinding(nil), bindings...)
+	return true
+}
+
 func (tr *TestRunner) ListScenarios() []*StoredScenario {
 	tr.mu.RLock()
 	defer tr.mu.RUnlock()
@@ -515,8 +527,7 @@ func (tr *TestRunner) enrichScenarioSummaryLocked(scenario *StoredScenario) *Sto
 	if scenario == nil {
 		return nil
 	}
-	copy := *scenario
-	copy.Scripts = cloneScenarioScriptRefs(scenario.Scripts)
+	copy := cloneStoredScenarioForReadLocked(scenario)
 	releaseSet := map[string]ReleaseRef{}
 	var lastRunTestID string
 	var lastRunStartedAt *time.Time
@@ -548,5 +559,29 @@ func (tr *TestRunner) enrichScenarioSummaryLocked(scenario *StoredScenario) *Sto
 	copy.LastRunTestID = lastRunTestID
 	copy.LastRunAt = lastRunStartedAt
 	copy.LastRunEndedAt = lastRunEndedAt
-	return &copy
+	return copy
+}
+
+// cloneStoredScenarioForReadLocked returns a snapshot that shares no mutable
+// pointers, slices, or maps with the runner's canonical scenario. Callers hold
+// tr.mu while taking the snapshot, then may safely encode or mutate it after
+// the lock is released.
+func cloneStoredScenarioForReadLocked(scenario *StoredScenario) *StoredScenario {
+	if scenario == nil {
+		return nil
+	}
+	cloned := *scenario
+	cloned.Assignment = cloneGeneratorAssignmentSettings(scenario.Assignment)
+	cloned.GoalConfig = cloneGoalConfig(scenario.GoalConfig)
+	cloned.RuntimeSettings = cloneRuntimeSettings(scenario.RuntimeSettings)
+	cloned.Scripts = cloneScenarioScriptRefs(scenario.Scripts)
+	cloned.Schedules = make([]*storage.ScenarioSchedule, len(scenario.Schedules))
+	for index, schedule := range scenario.Schedules {
+		cloned.Schedules[index] = cloneScenarioSchedule(schedule)
+	}
+	cloned.DataPools = append([]storage.ScenarioDataPoolBinding(nil), scenario.DataPools...)
+	cloned.AssociatedReleases = append([]ReleaseRef(nil), scenario.AssociatedReleases...)
+	cloned.LastRunAt = cloneTimePtr(scenario.LastRunAt)
+	cloned.LastRunEndedAt = cloneTimePtr(scenario.LastRunEndedAt)
+	return &cloned
 }

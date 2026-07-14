@@ -128,6 +128,7 @@ type ExecutionPlanRun struct {
 	RunMode     string                  `json:"run_mode"` // parallel | sequential
 	Status      string                  `json:"status"`   // running | completed | halted | failed
 	Entries     []ExecutionPlanRunEntry `json:"entries"`
+	Revision    int64                   `json:"revision,omitempty"`
 	CreatedAt   time.Time               `json:"created_at"`
 	UpdatedAt   time.Time               `json:"updated_at"`
 	CompletedAt *time.Time              `json:"completed_at,omitempty"`

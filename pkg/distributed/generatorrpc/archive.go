@@ -530,6 +530,9 @@ func (w *archiveRecorder) Finalize(status string, completedAt time.Time, errStr 
 	if err := writeGeneratorArchiveFileDurable(w.runRoot, "manifest.json", data, 0o644); err != nil {
 		return nil, err
 	}
+	if err := verifyGeneratorArchiveRun(w.namespace, w.runName, w.runIdentity); err != nil {
+		return nil, fmt.Errorf("verify finalized archive directory: %w", err)
+	}
 	record := &storage.RunArchiveRecord{
 		TestID:               w.manifest.TestID,
 		SchemaVersion:        w.manifest.SchemaVersion,

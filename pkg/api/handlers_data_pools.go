@@ -330,9 +330,7 @@ func (s *Server) handleUpdateScenarioDataPools(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if scenario, ok := s.runner.GetScenario(scenarioID); ok {
-		scenario.DataPools = bindings
-	}
+	s.runner.replaceScenarioDataPools(scenarioID, bindings)
 	s.recordAuditEvent(r, "scenario.data_pools.update", "success", "scenario", scenarioID, scenario.ProjectID, map[string]any{"binding_count": len(bindings)})
 	writeJSON(w, http.StatusOK, map[string]any{"data_pools": bindings, "count": len(bindings)})
 }

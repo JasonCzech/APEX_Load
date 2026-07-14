@@ -116,6 +116,14 @@ func TestStageRemoteArchiveUsesControllerTerminalStateAndFinalManifestParity(t *
 	archiveRoot := t.TempDir()
 	t.Setenv("APEXLOAD_ARCHIVE_DIR", archiveRoot)
 	t.Setenv("APEXLOAD_REGION", "eastus-test")
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	if err := store.SaveProject(&storage.Project{ID: "project-a", Name: "Project A", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
 
 	sourceDir := t.TempDir()
 	testID := "distributed-final-parity"
@@ -187,7 +195,7 @@ func TestStageRemoteArchiveUsesControllerTerminalStateAndFinalManifestParity(t *
 		remoteClient:          client,
 		remoteClientsByTarget: map[string]generatorClient{"generator-a": client},
 	}
-	runner := NewTestRunner(1, nil, nil)
+	runner := NewTestRunner(1, nil, store)
 	runner.mu.Lock()
 	runner.tests[test.ID] = test
 	runner.mu.Unlock()
@@ -198,6 +206,19 @@ func TestStageRemoteArchiveUsesControllerTerminalStateAndFinalManifestParity(t *
 	}
 	if record == nil {
 		t.Fatal("stageRemoteArchive returned nil record")
+	}
+	test.Status = "FAILED"
+	test.Error = "controller-authoritative failure"
+	test.EndedAt = &completedAt
+	if err := store.SaveTest(&storage.TestRecord{
+		ID: test.ID, RefKey: test.RefKey, Name: test.Name, Status: test.Status,
+		ProjectID: test.ProjectID, StartTime: startedAt, EndTime: &completedAt,
+		Error: test.Error,
+	}); err != nil {
+		t.Fatalf("persist terminal test: %v", err)
+	}
+	if err := runner.finalizeRunArchiveDurably(context.Background(), test, record, true); err != nil {
+		t.Fatalf("durable archive finalization: %v", err)
 	}
 	manifest, err := loadRunArchiveManifest(record.ManifestPath)
 	if err != nil {
@@ -327,22 +348,25 @@ func TestDistributedArchiveMetadataRetryPreservesCommittedCompleteOutcome(t *tes
 	if test.Status != "COMPLETE" || test.Error != "" {
 		t.Fatalf("test outcome = %s/%q, want committed COMPLETE", test.Status, test.Error)
 	}
-	if test.Archive == nil {
-		t.Fatal("metadata outage discarded the committed archive")
-	}
-	manifest, err := loadRunArchiveManifest(test.Archive.ManifestPath)
-	if err != nil {
-		t.Fatalf("loadRunArchiveManifest: %v", err)
-	}
-	if manifest.Status != "COMPLETE" || manifest.Error != "" {
-		t.Fatalf("archive outcome = %s/%q, want COMPLETE", manifest.Status, manifest.Error)
+	runner.mu.RLock()
+	initialArchive := test.Archive
+	runner.mu.RUnlock()
+	if initialArchive != nil {
+		t.Fatal("unpublished archive was exposed before its catalog record committed")
 	}
 	deadline := time.Now().Add(2 * time.Second)
+	var attached *storage.RunArchiveRecord
 	for {
 		archiveStore.mu.Lock()
 		calls, persisted := archiveStore.calls, archiveStore.record
 		archiveStore.mu.Unlock()
-		if persisted != nil {
+		runner.mu.RLock()
+		if test.Archive != nil {
+			copy := *test.Archive
+			attached = &copy
+		}
+		runner.mu.RUnlock()
+		if persisted != nil && attached != nil {
 			if calls <= durableTransitionAttempts {
 				t.Fatalf("archive metadata calls = %d, want background retry", calls)
 			}
@@ -352,6 +376,13 @@ func TestDistributedArchiveMetadataRetryPreservesCommittedCompleteOutcome(t *tes
 			t.Fatalf("archive metadata did not retry after %d calls", calls)
 		}
 		time.Sleep(5 * time.Millisecond)
+	}
+	manifest, err := loadRunArchiveManifest(attached.ManifestPath)
+	if err != nil {
+		t.Fatalf("loadRunArchiveManifest: %v", err)
+	}
+	if manifest.Status != "COMPLETE" || manifest.Error != "" {
+		t.Fatalf("archive outcome = %s/%q, want COMPLETE", manifest.Status, manifest.Error)
 	}
 }
 

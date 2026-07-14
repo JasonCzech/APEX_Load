@@ -221,7 +221,7 @@ func (tr *TestRunner) materializeAndRunExecutionPlanWithRunID(plan *storage.Exec
 		existing, err := tr.execPlanRunStore.GetExecutionPlanRun(runIDOverride)
 		switch {
 		case err == nil && existing != nil:
-			if existing.PlanID != plan.ID || existing.RunMode != plan.RunMode {
+			if existing.PlanID != plan.ID || normalizeProjectID(existing.ProjectID) != normalizeProjectID(plan.ProjectID) || existing.RunMode != plan.RunMode {
 				return nil, fmt.Errorf("execution-plan run id %q is already used by another materialization", runIDOverride)
 			}
 			return executionPlanMaterializeResultFromRun(existing), nil
@@ -314,13 +314,23 @@ func (tr *TestRunner) materializeAndRunExecutionPlanWithRunID(plan *storage.Exec
 	}
 	// Anchor the parallel materialization before creating any tests. If storage is
 	// unavailable the handler fails without emitting test-created side effects.
-	if err := tr.persistExecutionPlanRunDurable(&storage.ExecutionPlanRun{
+	anchor := &storage.ExecutionPlanRun{
 		ID: runID, PlanID: plan.ID, ProjectID: normalizeProjectID(plan.ProjectID),
 		RunMode: "parallel", Status: "running", Entries: initialEntries,
 		CreatedAt: now, UpdatedAt: now,
-	}); err != nil {
+	}
+	createdAnchor, err := tr.createExecutionPlanRunDurable(anchor)
+	if err != nil {
 		return nil, executionPlanPersistenceError("persist parallel execution-plan run before materialization", err)
 	}
+	if !createdAnchor {
+		existing, err := tr.loadExistingExecutionPlanRun(runID, plan.ID, plan.ProjectID, "parallel")
+		if err != nil {
+			return nil, err
+		}
+		return executionPlanMaterializeResultFromRun(existing), nil
+	}
+	runRevision := anchor.Revision
 	results := make([]executionPlanRunResult, 0, len(entries))
 	runEntries := make([]storage.ExecutionPlanRunEntry, 0, len(entries))
 	createdTests := make([]*ManagedTest, 0, len(entries))
@@ -364,17 +374,19 @@ func (tr *TestRunner) materializeAndRunExecutionPlanWithRunID(plan *storage.Exec
 	if failed > 0 {
 		runStatus = "failed"
 	}
-	if err := tr.persistExecutionPlanRunDurable(&storage.ExecutionPlanRun{
+	finalRun := &storage.ExecutionPlanRun{
 		ID:          runID,
 		PlanID:      plan.ID,
 		ProjectID:   normalizeProjectID(plan.ProjectID),
 		RunMode:     "parallel",
 		Status:      runStatus,
 		Entries:     runEntries,
+		Revision:    runRevision,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 		CompletedAt: &now,
-	}); err != nil {
+	}
+	if err := tr.persistExecutionPlanRunDurable(finalRun); err != nil {
 		persistErr := executionPlanPersistenceError("persist completed parallel execution-plan run", err)
 		for _, test := range createdTests {
 			if _, cleanupErr := tr.DeleteTestWithError(test.ID); cleanupErr != nil {
@@ -391,7 +403,7 @@ func (tr *TestRunner) materializeAndRunExecutionPlanWithRunID(plan *storage.Exec
 		}
 		failedRun := &storage.ExecutionPlanRun{
 			ID: runID, PlanID: plan.ID, ProjectID: normalizeProjectID(plan.ProjectID), RunMode: "parallel", Status: "failed",
-			Entries: failedEntries, CreatedAt: now, UpdatedAt: failedAt, CompletedAt: &failedAt,
+			Entries: failedEntries, Revision: runRevision, CreatedAt: now, UpdatedAt: failedAt, CompletedAt: &failedAt,
 		}
 		if terminalErr := tr.persistExecutionPlanRunDurable(failedRun); terminalErr != nil {
 			tr.enqueueExecutionPlanRunRecordRetry(failedRun)

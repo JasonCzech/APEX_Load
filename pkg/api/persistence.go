@@ -431,6 +431,10 @@ func cloneScenarioScriptRefs(in []ScenarioScriptRef) []ScenarioScriptRef {
 	copy(out, in)
 	for i := range out {
 		out[i].Stages = cloneLoadStages(in[i].Stages)
+		if in[i].Iterations != nil {
+			iterations := *in[i].Iterations
+			out[i].Iterations = &iterations
+		}
 		out[i].RuntimeSettings = cloneRuntimeSettings(in[i].RuntimeSettings)
 		out[i].Assignment = cloneGeneratorAssignmentSettings(in[i].Assignment)
 	}

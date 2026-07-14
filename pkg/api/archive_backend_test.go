@@ -222,12 +222,192 @@ func TestArchiveMaterializationRuntimeUsesPersistedBackendAndURI(t *testing.T) {
 	}
 }
 
+func TestArchiveFinalizationVersionURIIsImmutableAndIdempotent(t *testing.T) {
+	const tokenA = "11111111-1111-4111-8111-111111111111"
+	const tokenB = "22222222-2222-4222-8222-222222222222"
+	record := &storage.RunArchiveRecord{
+		TestID:         "run-versioned",
+		ArchiveBackend: archiveBackendS3,
+		ArchiveURI:     "s3://archives/prod/evidence/run-versioned",
+		ManifestURI:    "s3://archives/prod/evidence/run-versioned/manifest.json",
+	}
+	if err := bindArchiveRecordToFinalizationVersion(record, tokenA); err != nil {
+		t.Fatal(err)
+	}
+	wantA := "s3://archives/prod/evidence/_versions/v1/" + tokenA + "/run-versioned"
+	if record.ArchiveURI != wantA || record.ManifestURI != wantA+"/manifest.json" {
+		t.Fatalf("version A URIs = %q / %q", record.ArchiveURI, record.ManifestURI)
+	}
+	if err := bindArchiveRecordToFinalizationVersion(record, tokenA); err != nil {
+		t.Fatal(err)
+	}
+	if record.ArchiveURI != wantA {
+		t.Fatalf("same-token retry changed URI to %q", record.ArchiveURI)
+	}
+	if err := bindArchiveRecordToFinalizationVersion(record, tokenB); err != nil {
+		t.Fatal(err)
+	}
+	wantB := "s3://archives/prod/evidence/_versions/v1/" + tokenB + "/run-versioned"
+	if record.ArchiveURI != wantB {
+		t.Fatalf("replacement intent URI = %q, want %q", record.ArchiveURI, wantB)
+	}
+	resolved, err := archiveMaterializationRuntime(archiveBackendRuntime{Backend: archiveBackendS3}, record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := resolved.objectKey(record.TestID, runArchiveManifestFileName); got != "prod/evidence/_versions/v1/"+tokenB+"/run-versioned/manifest.json" {
+		t.Fatalf("versioned object key = %q", got)
+	}
+	if err := bindArchiveRecordToFinalizationVersion(record, "../escape"); err == nil {
+		t.Fatal("unsafe intent token was accepted as an object namespace")
+	}
+}
+
+func TestArchivePublicationUsesOnlyManifestDeclaredArtifacts(t *testing.T) {
+	root := t.TempDir()
+	testID := "manifest-declared-upload"
+	data := []byte("declared\n")
+	if err := os.WriteFile(filepath.Join(root, "transactions.jsonl"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "rogue.secret"), []byte("must-not-upload"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manifest := RunArchiveManifest{
+		SchemaVersion:    archiveSchemaVersion,
+		TestID:           testID,
+		TransactionsFile: "transactions.jsonl",
+		Artifacts: []RunArchiveArtifact{{
+			Name: "transactions.jsonl", SizeBytes: int64(len(data)), SHA256: sha256BytesHex(data),
+		}},
+	}
+	manifestData, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(root, runArchiveManifestFileName)
+	if err := os.WriteFile(manifestPath, manifestData, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	record := &storage.RunArchiveRecord{
+		TestID: testID, ArchiveBackend: archiveBackendS3, ArchivePath: root,
+		ManifestPath: manifestPath, ManifestSHA256: sha256BytesHex(manifestData),
+	}
+	names, err := archivePublicationArtifactNames(context.Background(), record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := make(map[string]bool, len(names))
+	for _, name := range names {
+		got[name] = true
+	}
+	if !got["transactions.jsonl"] || !got[runArchiveManifestFileName] || got["rogue.secret"] || len(got) != 2 {
+		t.Fatalf("publication artifact set = %#v", names)
+	}
+}
+
+func TestMaterializedArchiveRefreshUsesPrivateWritableStage(t *testing.T) {
+	const refreshToken = "33333333-3333-4333-8333-333333333333"
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	t.Setenv("APEXLOAD_ARCHIVE_STAGING_DIR", t.TempDir())
+	t.Setenv("APEXLOAD_ARCHIVE_BACKEND", archiveBackendS3)
+	t.Setenv("APEXLOAD_ARCHIVE_BUCKET", "archives")
+	sourceRoot := t.TempDir()
+	testID := "private-refresh-stage"
+	artifactName := "transactions.jsonl"
+	original := []byte("immutable-cache\n")
+	if err := os.WriteFile(filepath.Join(sourceRoot, artifactName), original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manifest := RunArchiveManifest{
+		SchemaVersion: archiveSchemaVersion, TestID: testID, TransactionsFile: artifactName,
+		Artifacts: []RunArchiveArtifact{{Name: artifactName, SizeBytes: int64(len(original)), SHA256: sha256BytesHex(original)}},
+	}
+	manifestData, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(sourceRoot, runArchiveManifestFileName)
+	if err := os.WriteFile(manifestPath, manifestData, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	source := &storage.RunArchiveRecord{
+		TestID: testID, ArchiveBackend: archiveBackendS3, ArchivePath: sourceRoot,
+		ManifestPath: manifestPath, ManifestSHA256: sha256BytesHex(manifestData),
+	}
+	stagedRoot, stagedManifest, err := stageMaterializedArchiveForPublication(context.Background(), source, refreshToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stagedRoot == sourceRoot || filepath.Base(stagedRoot) != testID || !strings.Contains(stagedRoot, filepath.Join("_publication", refreshToken)) {
+		t.Fatalf("private stage root = %q", stagedRoot)
+	}
+	if stagedManifest != filepath.Join(stagedRoot, runArchiveManifestFileName) {
+		t.Fatalf("private stage manifest = %q", stagedManifest)
+	}
+	if err := os.WriteFile(filepath.Join(stagedRoot, artifactName), []byte("refreshed\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(sourceRoot, artifactName))
+	if err != nil || string(got) != string(original) {
+		t.Fatalf("materialization cache was changed through private stage: %q, %v", got, err)
+	}
+}
+
+func TestVersionedArchiveDeletionRemovesOnlyPersistedVersion(t *testing.T) {
+	const tokenA = "44444444-4444-4444-8444-444444444444"
+	const tokenB = "55555555-5555-4555-8555-555555555555"
+	bucket, err := fileblob.OpenBucket(t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer bucket.Close()
+	ctx := context.Background()
+	backend := archiveBackendRuntime{Backend: archiveBackendS3, Bucket: "archives", Prefix: "prod/evidence"}
+	versionA := &storage.RunArchiveRecord{TestID: "run-delete-version", ArchiveBackend: archiveBackendS3, ArchiveURI: "s3://archives/prod/evidence/run-delete-version"}
+	versionB := *versionA
+	if err := bindArchiveRecordToFinalizationVersion(versionA, tokenA); err != nil {
+		t.Fatal(err)
+	}
+	if err := bindArchiveRecordToFinalizationVersion(&versionB, tokenB); err != nil {
+		t.Fatal(err)
+	}
+	runtimeA, err := archiveDeletionRuntime(backend, versionA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeB, err := archiveDeletionRuntime(backend, &versionB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyA := runtimeA.objectKey(versionA.TestID, runArchiveManifestFileName)
+	keyB := runtimeB.objectKey(versionB.TestID, runArchiveManifestFileName)
+	if err := bucket.WriteAll(ctx, keyA, []byte("a"), nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := bucket.WriteAll(ctx, keyB, []byte("b"), nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := deleteArchiveObjectsFromBucket(ctx, bucket, runtimeA, versionA.TestID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bucket.ReadAll(ctx, keyA); err == nil {
+		t.Fatal("persisted version was not deleted")
+	}
+	if got, err := bucket.ReadAll(ctx, keyB); err != nil || string(got) != "b" {
+		t.Fatalf("neighboring version was deleted: %q, %v", got, err)
+	}
+}
+
 func TestArchiveMaterializationRuntimeRejectsInconsistentPersistedURI(t *testing.T) {
 	configured := archiveBackendRuntime{Backend: archiveBackendS3}
 	for _, record := range []*storage.RunArchiveRecord{
 		{TestID: "run-1", ArchiveBackend: archiveBackendS3, ArchiveURI: "gs://bucket/prefix/run-1"},
 		{TestID: "run-1", ArchiveBackend: archiveBackendS3, ArchiveURI: "s3://bucket/prefix/another-run"},
 		{TestID: "run-1", ArchiveBackend: archiveBackendS3, ArchiveURI: "s3://bucket/prefix/run-1", ManifestURI: "s3://other/prefix/run-1/manifest.json"},
+		{TestID: "run-1", ArchiveBackend: archiveBackendS3, ArchiveURI: "s3://bucket/prefix/../run-1"},
+		{TestID: "run-1", ArchiveBackend: archiveBackendS3, ArchiveURI: "s3://bucket/prefix//run-1"},
+		{TestID: "run-1", ArchiveBackend: archiveBackendS3, ArchiveURI: "s3://bucket/prefix%2Frun-1"},
 	} {
 		if _, err := archiveMaterializationRuntime(configured, record); err == nil {
 			t.Fatalf("archiveMaterializationRuntime(%+v) unexpectedly succeeded", record)

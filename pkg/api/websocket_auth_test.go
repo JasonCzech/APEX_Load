@@ -104,6 +104,46 @@ func TestWebSocketAuthorizerRejectsRotatedServiceAccountKey(t *testing.T) {
 	}
 }
 
+func TestWebSocketAuthorizerRechecksServiceAccountScopes(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Now().UTC()
+	account := &storage.ServiceAccount{
+		ID:           "svc-ws-scopes",
+		Name:         "Scoped WS",
+		KeyHash:      "unchanged-key-hash",
+		Active:       true,
+		ProjectRoles: map[string][]string{"project-ws": {RoleViewer}},
+		Scopes:       []string{"read"},
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+	if err := store.SaveServiceAccount(account); err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(ServerConfig{Store: store})
+	enableTrustedHeaderAuth(t, server)
+	serviceIdentity := &AuthenticatedServiceAccount{ID: account.ID, Name: account.Name, Scopes: account.Scopes}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/ws?project_id=project-ws", nil)
+	req = withAuthenticatedContext(req, authResolution{User: authenticatedUserFromServiceAccount(account), ServiceAccount: serviceIdentity})
+	authorized := server.websocketAuthorizer(req, "project-ws")
+	if !authorized() {
+		t.Fatal("read-scoped service account should authorize websocket")
+	}
+
+	account.Scopes = []string{"scripts:write"}
+	account.UpdatedAt = now.Add(time.Minute)
+	if err := store.SaveServiceAccount(account); err != nil {
+		t.Fatal(err)
+	}
+	if authorized() {
+		t.Fatal("removing the websocket read scope must revoke the existing socket")
+	}
+}
+
 func TestHubRejectsRegistrationAfterStop(t *testing.T) {
 	hub := NewHub()
 	hub.Stop()

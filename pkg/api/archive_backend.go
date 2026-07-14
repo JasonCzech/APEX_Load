@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/config"
 	"github.com/jasonczech/apexload/pkg/storage"
 	"gocloud.dev/blob"
@@ -42,6 +43,8 @@ const (
 	archiveBackendS3         = "s3"
 	archiveBackendAzureBlob  = "azure_blob"
 	archiveBackendGCS        = "gcs"
+	archiveVersionSegment    = "_versions"
+	archiveVersionSchema     = "v1"
 )
 
 type archiveBackendRuntime struct {
@@ -167,6 +170,112 @@ func (b archiveBackendRuntime) manifestURI(testID string) string {
 
 func (b archiveBackendRuntime) objectKey(testID string, name string) string {
 	return strings.Trim(joinArchiveURI(b.Prefix, testID, name), "/")
+}
+
+// bindArchiveRecordToFinalizationVersion gives each durable publication intent
+// an immutable object namespace. A stale worker may finish writing its own
+// token-scoped objects, but it can no longer overwrite bytes referenced by a
+// newer catalog record. The resulting URI is persisted with the outbox row
+// before upload begins.
+func bindArchiveRecordToFinalizationVersion(record *storage.RunArchiveRecord, intentToken string) error {
+	if record == nil {
+		return fmt.Errorf("archive record is required")
+	}
+	if archiveRecordBackend(record) == archiveBackendFilesystem {
+		return nil
+	}
+	if err := validateArchiveRunID(record.TestID); err != nil {
+		return err
+	}
+	intentToken = strings.TrimSpace(intentToken)
+	if err := validateArchiveIntentToken(intentToken); err != nil {
+		return err
+	}
+
+	runURI := strings.TrimRight(strings.TrimSpace(record.ArchiveURI), "/")
+	if runURI == "" && strings.TrimSpace(record.ManifestURI) != "" {
+		manifestURI := strings.TrimRight(strings.TrimSpace(record.ManifestURI), "/")
+		if !strings.HasSuffix(manifestURI, "/"+runArchiveManifestFileName) {
+			return fmt.Errorf("persisted manifest URI is not a manifest object")
+		}
+		runURI = strings.TrimSuffix(manifestURI, "/"+runArchiveManifestFileName)
+	}
+	if runURI == "" {
+		return fmt.Errorf("object archive %q has no publication URI", record.TestID)
+	}
+	parsed, err := url.Parse(runURI)
+	if err != nil {
+		return fmt.Errorf("parse archive publication URI: %w", err)
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" || strings.TrimSpace(parsed.Host) == "" {
+		return fmt.Errorf("archive publication URI is not an object namespace")
+	}
+	expectedScheme := map[string]string{
+		archiveBackendS3:        "s3",
+		archiveBackendAzureBlob: "azblob",
+		archiveBackendGCS:       "gs",
+	}[archiveRecordBackend(record)]
+	if expectedScheme == "" || !strings.EqualFold(parsed.Scheme, expectedScheme) {
+		return fmt.Errorf("archive publication URI scheme %q does not match backend %q", parsed.Scheme, archiveRecordBackend(record))
+	}
+	prefix, err := archiveObjectRunPathPrefix(parsed, record.TestID)
+	if err != nil {
+		return fmt.Errorf("archive publication URI %q: %w", runURI, err)
+	}
+	segments := []string{}
+	if prefix != "" {
+		segments = strings.Split(prefix, "/")
+	}
+	if len(segments) >= 3 && segments[len(segments)-3] == archiveVersionSegment && segments[len(segments)-2] == archiveVersionSchema && validateArchiveIntentToken(segments[len(segments)-1]) == nil {
+		segments = segments[:len(segments)-3]
+	}
+	base := parsed.Scheme + "://" + parsed.Host
+	if len(segments) > 0 {
+		base = joinArchiveURI(base, strings.Join(segments, "/"))
+	}
+	versionURI := joinArchiveURI(base, archiveVersionSegment, archiveVersionSchema, intentToken, record.TestID)
+	record.ArchiveURI = versionURI
+	record.ManifestURI = joinArchiveURI(versionURI, runArchiveManifestFileName)
+	return nil
+}
+
+func validateArchiveIntentToken(intentToken string) error {
+	if intentToken == "" || intentToken != strings.TrimSpace(intentToken) {
+		return fmt.Errorf("archive finalization intent token is invalid")
+	}
+	parsed, err := uuid.Parse(intentToken)
+	if err != nil || parsed.String() != strings.ToLower(intentToken) {
+		return fmt.Errorf("archive finalization intent token is invalid")
+	}
+	return nil
+}
+
+func archiveObjectRunPathPrefix(parsed *url.URL, testID string) (string, error) {
+	if parsed == nil {
+		return "", fmt.Errorf("object URI is required")
+	}
+	if parsed.RawPath != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", fmt.Errorf("object URI must use a canonical path without query or fragment")
+	}
+	runPath := strings.Trim(parsed.Path, "/")
+	if runPath == "" || parsed.Path != "/"+runPath {
+		return "", fmt.Errorf("object URI path is not canonical")
+	}
+	segments := strings.Split(runPath, "/")
+	for _, segment := range segments {
+		if segment == "" || segment == "." || segment == ".." || strings.ContainsRune(segment, 0) || strings.Contains(segment, `\`) {
+			return "", fmt.Errorf("object URI contains an unsafe path component")
+		}
+		for _, r := range segment {
+			if r < 0x20 || r == 0x7f {
+				return "", fmt.Errorf("object URI contains an unsafe path component")
+			}
+		}
+	}
+	if segments[len(segments)-1] != testID {
+		return "", fmt.Errorf("object URI is not scoped to test %q", testID)
+	}
+	return strings.Join(segments[:len(segments)-1], "/"), nil
 }
 
 func (b archiveBackendRuntime) bucketURL() string {
@@ -411,11 +520,11 @@ func archiveDeletionRuntime(backend archiveBackendRuntime, record *storage.RunAr
 	if !strings.EqualFold(parsed.Host, expectedTarget) {
 		return backend, fmt.Errorf("archive URI target %q does not match configured target %q", parsed.Host, expectedTarget)
 	}
-	runPath := strings.Trim(parsed.Path, "/")
-	if testID == "" || (runPath != testID && !strings.HasSuffix(runPath, "/"+testID)) {
-		return backend, fmt.Errorf("archive URI %q is not scoped to test %q", runURI, testID)
+	prefix, err := archiveObjectRunPathPrefix(parsed, testID)
+	if err != nil {
+		return backend, fmt.Errorf("archive URI %q: %w", runURI, err)
 	}
-	backend.Prefix = strings.TrimSuffix(strings.TrimSuffix(runPath, testID), "/")
+	backend.Prefix = prefix
 	return backend, nil
 }
 
@@ -492,81 +601,63 @@ func removeLocalArchiveDirectory(path string) error {
 		if err != nil {
 			continue
 		}
-		lexicalRelative, err := filepath.Rel(absRoot, absPath)
-		if err != nil || lexicalRelative == "." || lexicalRelative == "" || lexicalRelative == ".." || strings.HasPrefix(lexicalRelative, ".."+string(filepath.Separator)) {
-			continue
-		}
-		matchedRoot = true
-		resolvedRoot, err := filepath.EvalSymlinks(absRoot)
+		resolvedRoot, err := resolveArchiveDirectoryRoot(absRoot, false)
 		if err != nil {
 			if os.IsNotExist(err) {
 				continue
 			}
 			return fmt.Errorf("resolve configured archive root %q: %w", root, err)
 		}
+		relative, relErr := filepath.Rel(absRoot, absPath)
+		if relErr != nil || relative == "." || relative == "" || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			relative, relErr = filepath.Rel(resolvedRoot, absPath)
+		}
+		if relErr != nil || relative == "." || relative == "" || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			continue
+		}
+		matchedRoot = true
+		relative, err = normalizeArchiveRelativeDirectory(relative)
+		if err != nil || relative == "." {
+			return fmt.Errorf("archive deletion path %q is not safe", path)
+		}
 		rootHandle, err := openArchiveDirectoryNoSymlink(resolvedRoot)
 		if err != nil {
 			return fmt.Errorf("inspect configured archive root %q: %w", root, err)
 		}
-		componentPath := ""
-		componentError := error(nil)
-		for _, component := range strings.Split(filepath.Clean(lexicalRelative), string(filepath.Separator)) {
-			if component == "" || component == "." || component == ".." {
-				componentError = fmt.Errorf("archive deletion path %q is not safe", path)
-				break
+		components := strings.Split(relative, string(filepath.Separator))
+		for _, component := range components[:len(components)-1] {
+			child, openErr := openArchiveChildDirectoryAt(rootHandle, component, false, 0)
+			if openErr != nil {
+				_ = rootHandle.Close()
+				if os.IsNotExist(openErr) {
+					return nil
+				}
+				return openErr
 			}
-			componentPath = filepath.Join(componentPath, component)
-			info, statErr := rootHandle.Lstat(componentPath)
-			if os.IsNotExist(statErr) {
-				componentError = os.ErrNotExist
-				break
-			}
-			if statErr != nil {
-				componentError = statErr
-				break
-			}
-			if info.Mode()&os.ModeSymlink != 0 {
-				componentError = fmt.Errorf("archive deletion path component %q is a symbolic link", componentPath)
-				break
-			}
-			if !info.IsDir() {
-				componentError = fmt.Errorf("archive deletion path component %q is not a directory", componentPath)
-				break
-			}
-		}
-		if componentError != nil {
 			_ = rootHandle.Close()
-			if componentError == os.ErrNotExist {
+			rootHandle = child
+		}
+		targetName := components[len(components)-1]
+		targetRoot, openErr := openArchiveChildDirectoryAt(rootHandle, targetName, false, 0)
+		if openErr != nil {
+			_ = rootHandle.Close()
+			if os.IsNotExist(openErr) {
 				return nil
 			}
-			return componentError
+			return openErr
 		}
-		resolvedPath, err := filepath.EvalSymlinks(absPath)
-		if err != nil {
+		targetIdentity, identityErr := targetRoot.Stat(".")
+		_ = targetRoot.Close()
+		if identityErr != nil {
 			_ = rootHandle.Close()
-			if os.IsNotExist(err) {
-				return nil
-			}
-			return fmt.Errorf("resolve archive deletion path %q: %w", path, err)
+			return identityErr
 		}
-		realRelative, err := filepath.Rel(resolvedRoot, resolvedPath)
-		if err != nil || realRelative == "." || realRelative == "" || realRelative == ".." || strings.HasPrefix(realRelative, ".."+string(filepath.Separator)) {
-			_ = rootHandle.Close()
-			return fmt.Errorf("archive path %q resolves outside configured archive root %q", path, root)
+		removeErr := removeArchiveDirectoryAt(rootHandle, targetName, targetIdentity)
+		closeErr := rootHandle.Close()
+		if removeErr != nil {
+			return removeErr
 		}
-		if filepath.Clean(realRelative) != filepath.Clean(lexicalRelative) {
-			_ = rootHandle.Close()
-			return fmt.Errorf("archive path %q traverses a linked archive directory", path)
-		}
-		if err := rootHandle.RemoveAll(realRelative); err != nil {
-			_ = rootHandle.Close()
-			return err
-		}
-		if err := rootHandle.Close(); err != nil {
-			return err
-		}
-		removeArchiveMaterializationCacheMarker(absPath)
-		return nil
+		return closeErr
 	}
 	if matchedRoot {
 		return fmt.Errorf("configured archive root for %q does not exist", path)
@@ -723,9 +814,9 @@ func archiveMaterializationRuntime(configured archiveBackendRuntime, record *sto
 	if strings.TrimSpace(parsed.Host) == "" {
 		return archiveBackendRuntime{}, fmt.Errorf("persisted archive URI has no object target")
 	}
-	runPath := strings.Trim(parsed.Path, "/")
-	if runPath != testID && !strings.HasSuffix(runPath, "/"+testID) {
-		return archiveBackendRuntime{}, fmt.Errorf("archive URI %q is not scoped to test %q", runURI, testID)
+	prefix, err := archiveObjectRunPathPrefix(parsed, testID)
+	if err != nil {
+		return archiveBackendRuntime{}, fmt.Errorf("archive URI %q: %w", runURI, err)
 	}
 	if manifestURI != "" && strings.TrimRight(manifestURI, "/") != joinArchiveURI(strings.TrimRight(runURI, "/"), "manifest.json") {
 		return archiveBackendRuntime{}, fmt.Errorf("persisted manifest URI does not belong to archive URI")
@@ -740,7 +831,7 @@ func archiveMaterializationRuntime(configured archiveBackendRuntime, record *sto
 	} else {
 		backend.Bucket = parsed.Host
 	}
-	backend.Prefix = strings.TrimSuffix(strings.TrimSuffix(runPath, testID), "/")
+	backend.Prefix = prefix
 	backend.URIPrefix = strings.TrimSuffix(runURI, "/"+testID)
 	backend.LocalRoot = archiveObjectNamespaceRoot(objectArchiveStagingRoot(resolveFilesystemArchiveRoot(), recordedBackend), backend)
 	return backend, nil
@@ -799,46 +890,22 @@ func resolveArchiveDirectoryRoot(root string, create bool) (string, error) {
 			if openErr != nil {
 				return "", openErr
 			}
-			currentRelative := ""
+			currentPath := resolved
 			for index := len(missing) - 1; index >= 0; index-- {
-				currentRelative = filepath.Join(currentRelative, missing[index])
-				componentInfo, componentErr := rootHandle.Lstat(currentRelative)
-				switch {
-				case componentErr == nil:
-					if componentInfo.Mode()&os.ModeSymlink != 0 || !componentInfo.IsDir() {
-						_ = rootHandle.Close()
-						return "", fmt.Errorf("archive root component %q is not a regular directory", filepath.Join(resolved, currentRelative))
-					}
-				case os.IsNotExist(componentErr):
-					if !create {
-						_ = rootHandle.Close()
-						return "", componentErr
-					}
-					if mkdirErr := rootHandle.Mkdir(currentRelative, 0o755); mkdirErr != nil && !os.IsExist(mkdirErr) {
-						_ = rootHandle.Close()
-						return "", mkdirErr
-					}
-					componentInfo, componentErr = rootHandle.Lstat(currentRelative)
-					if componentErr != nil {
-						_ = rootHandle.Close()
-						return "", componentErr
-					}
-					if componentInfo.Mode()&os.ModeSymlink != 0 || !componentInfo.IsDir() {
-						_ = rootHandle.Close()
-						return "", fmt.Errorf("archive root component %q is not a regular directory", filepath.Join(resolved, currentRelative))
-					}
-				default:
+				component := missing[index]
+				child, componentErr := openArchiveChildDirectoryAt(rootHandle, component, create, 0o755)
+				if componentErr != nil {
 					_ = rootHandle.Close()
 					return "", componentErr
 				}
+				_ = rootHandle.Close()
+				rootHandle = child
+				currentPath = filepath.Join(currentPath, component)
 			}
 			if closeErr := rootHandle.Close(); closeErr != nil {
 				return "", closeErr
 			}
-			if currentRelative == "" {
-				return resolved, nil
-			}
-			return filepath.Join(resolved, currentRelative), nil
+			return currentPath, nil
 		}
 		if !os.IsNotExist(statErr) {
 			return "", statErr
@@ -852,13 +919,57 @@ func resolveArchiveDirectoryRoot(root string, create bool) (string, error) {
 	}
 }
 
+// openArchiveChildDirectoryAt opens one direct child through an already-held
+// parent descriptor and proves that the entry observed before and after the
+// open is the same directory. Callers can safely continue traversal through
+// the returned Root even if an ancestor is concurrently renamed.
+func openArchiveChildDirectoryAt(parent *os.Root, name string, create bool, perm os.FileMode) (*os.Root, error) {
+	if parent == nil {
+		return nil, fmt.Errorf("archive parent root is required")
+	}
+	if name == "" || name == "." || name == ".." || name != filepath.Base(name) || strings.ContainsAny(name, `/\\`) || strings.ContainsRune(name, 0) {
+		return nil, fmt.Errorf("archive directory component %q is not safe", name)
+	}
+	info, err := parent.Lstat(name)
+	if os.IsNotExist(err) && create {
+		if mkdirErr := parent.Mkdir(name, perm); mkdirErr != nil && !os.IsExist(mkdirErr) {
+			return nil, mkdirErr
+		}
+		info, err = parent.Lstat(name)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return nil, fmt.Errorf("archive directory component %q is not a regular directory", name)
+	}
+	child, err := parent.OpenRoot(name)
+	if err != nil {
+		return nil, err
+	}
+	opened, err := child.Stat(".")
+	if err != nil {
+		_ = child.Close()
+		return nil, err
+	}
+	after, err := parent.Lstat(name)
+	if err != nil || after.Mode()&os.ModeSymlink != 0 || !after.IsDir() || !os.SameFile(info, opened) || !os.SameFile(after, opened) {
+		_ = child.Close()
+		if err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("archive directory component %q changed while it was opened", name)
+	}
+	return child, nil
+}
+
 func openArchiveDirectoryNoSymlink(path string) (*os.Root, error) {
 	infoBefore, err := os.Lstat(path)
 	if err != nil {
 		return nil, err
 	}
 	if infoBefore.Mode()&os.ModeSymlink != 0 || !infoBefore.IsDir() {
-		return nil, fmt.Errorf("archive directory %q is not a non-symlink directory", path)
+		return nil, fmt.Errorf("archive root is not a non-symlink directory: %q", path)
 	}
 	root, err := os.OpenRoot(path)
 	if err != nil {

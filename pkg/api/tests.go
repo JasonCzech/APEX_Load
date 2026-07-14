@@ -780,7 +780,10 @@ func (tr *TestRunner) GetRunArchiveContext(ctx context.Context, id string) (*sto
 	record, ok := tr.archives[id]
 	cloned := cloneRunArchiveRecord(record)
 	tr.mu.RUnlock()
-	if ok {
+	// In HA, another controller may have replaced the durable archive pointer
+	// and scheduled this cached version for retirement. Re-read shared storage on
+	// every request so this replica cannot serve an indefinitely stale URI.
+	if ok && tr.leadership == nil {
 		return cloned, true
 	}
 	record, ok = tr.loadRunArchiveFromStore(id)

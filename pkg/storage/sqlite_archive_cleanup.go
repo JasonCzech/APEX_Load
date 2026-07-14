@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -33,6 +34,80 @@ func enqueueArchiveCleanupTx(tx *storeTx, projectID string, record *RunArchiveRe
 		return fmt.Errorf("enqueue archive cleanup for %s: %w", record.TestID, err)
 	}
 	return nil
+}
+
+func enqueueArchiveVersionCleanupTx(tx *storeTx, projectID string, record *RunArchiveRecord) error {
+	if tx == nil || record == nil || strings.TrimSpace(record.TestID) == "" {
+		return nil
+	}
+	if strings.TrimSpace(record.ArchiveURI) == "" && strings.TrimSpace(record.ManifestURI) == "" && strings.TrimSpace(record.ArchivePath) == "" {
+		return nil
+	}
+	encoded, err := json.Marshal(record)
+	if err != nil {
+		return fmt.Errorf("marshal superseded archive cleanup record for %s: %w", record.TestID, err)
+	}
+	now := time.Now().UTC()
+	jobID := archiveVersionCleanupID(record)
+	_, err = tx.Exec(`INSERT INTO archive_version_cleanup_jobs (
+			id, test_id, project_id, archive_record_json, attempts, last_error, created_at, updated_at)
+		VALUES (?, ?, ?, ?, 0, NULL, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			archive_record_json=excluded.archive_record_json,
+			updated_at=excluded.updated_at`,
+		jobID, record.TestID, normalizeProjectID(projectID), string(encoded), now, now)
+	if err != nil {
+		return fmt.Errorf("enqueue superseded archive cleanup for %s: %w", record.TestID, err)
+	}
+	return nil
+}
+
+func archiveVersionCleanupID(record *RunArchiveRecord) string {
+	if record == nil {
+		return ""
+	}
+	// URI-bound publications are already globally unique. Hashing keeps the
+	// primary key bounded and avoids embedding credentials or bucket names in it.
+	identity := strings.Join([]string{
+		strings.TrimSpace(record.ArchiveBackend),
+		strings.TrimSpace(record.ArchiveURI),
+		strings.TrimSpace(record.ManifestURI),
+		strings.TrimSpace(record.ArchivePath),
+		strings.TrimSpace(record.ManifestPath),
+	}, "\x00")
+	digest := sha256.Sum256([]byte(identity))
+	return fmt.Sprintf("archive-version-%x", digest[:])
+}
+
+func (s *SQLiteStore) SaveArchiveVersionCleanupJob(job *ArchiveVersionCleanupJob) error {
+	if job == nil || strings.TrimSpace(job.TestID) == "" {
+		return errors.New("archive version cleanup job is required")
+	}
+	if strings.TrimSpace(job.ArchiveRecord.TestID) == "" {
+		job.ArchiveRecord.TestID = strings.TrimSpace(job.TestID)
+	}
+	if job.ArchiveRecord.TestID != strings.TrimSpace(job.TestID) {
+		return fmt.Errorf("archive version cleanup record test id %q does not match job %q", job.ArchiveRecord.TestID, job.TestID)
+	}
+	if job.ID == "" {
+		job.ID = archiveVersionCleanupID(&job.ArchiveRecord)
+	}
+	encoded, err := json.Marshal(&job.ArchiveRecord)
+	if err != nil {
+		return fmt.Errorf("encode superseded archive cleanup record: %w", err)
+	}
+	now := time.Now().UTC()
+	if job.CreatedAt.IsZero() {
+		job.CreatedAt = now
+	}
+	job.UpdatedAt = now
+	_, err = s.db.Exec(`INSERT INTO archive_version_cleanup_jobs (
+			id, test_id, project_id, archive_record_json, attempts, last_error, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET archive_record_json=excluded.archive_record_json, updated_at=excluded.updated_at`,
+		job.ID, job.TestID, normalizeProjectID(job.ProjectID), string(encoded), job.Attempts,
+		strings.TrimSpace(job.LastError), job.CreatedAt, job.UpdatedAt)
+	return err
 }
 
 func getRunArchiveTx(tx *storeTx, testID string) (*RunArchiveRecord, error) {
@@ -224,5 +299,74 @@ func (s *SQLiteStore) DeleteArchiveCleanupJob(testID string) error {
 		return errors.New("test id is required")
 	}
 	_, err := s.db.Exec(`DELETE FROM archive_cleanup_jobs WHERE test_id = ?`, testID)
+	return err
+}
+
+func (s *SQLiteStore) ListArchiveVersionCleanupJobs(limit int) ([]*ArchiveVersionCleanupJob, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+	rows, err := s.db.Query(`SELECT id, test_id, project_id, archive_record_json, attempts,
+		COALESCE(last_error, ''), created_at, updated_at
+		FROM archive_version_cleanup_jobs ORDER BY updated_at ASC, id ASC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	jobs := make([]*ArchiveVersionCleanupJob, 0)
+	for rows.Next() {
+		var job ArchiveVersionCleanupJob
+		var encoded string
+		if err := rows.Scan(&job.ID, &job.TestID, &job.ProjectID, &encoded, &job.Attempts, &job.LastError, &job.CreatedAt, &job.UpdatedAt); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(encoded), &job.ArchiveRecord); err != nil {
+			return nil, fmt.Errorf("decode superseded archive cleanup job %s: %w", job.ID, err)
+		}
+		if strings.TrimSpace(job.ArchiveRecord.TestID) == "" {
+			job.ArchiveRecord.TestID = job.TestID
+		}
+		jobs = append(jobs, &job)
+	}
+	return jobs, rows.Err()
+}
+
+func (s *SQLiteStore) MarkArchiveVersionCleanupJobFailed(id string, cleanupErr error, updatedAt time.Time) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return errors.New("archive version cleanup id is required")
+	}
+	message := ""
+	if cleanupErr != nil {
+		message = cleanupErr.Error()
+		if len(message) > 4096 {
+			message = message[:4096]
+		}
+	}
+	result, err := s.db.Exec(`UPDATE archive_version_cleanup_jobs
+		SET attempts = attempts + 1, last_error = ?, updated_at = ? WHERE id = ?`,
+		message, updatedAt.UTC(), id)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (s *SQLiteStore) DeleteArchiveVersionCleanupJob(id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return errors.New("archive version cleanup id is required")
+	}
+	_, err := s.db.Exec(`DELETE FROM archive_version_cleanup_jobs WHERE id = ?`, id)
 	return err
 }

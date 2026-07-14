@@ -209,6 +209,9 @@ func TestExecutionPlanScheduleRecoveryReusesApprovalClaimedByPreassignedRun(t *t
 		ID: "plan-approval-recovery", ProjectID: "project-approval-recovery", Name: "Recovery", RunMode: "parallel",
 		Entries: []storage.ExecutionPlanEntry{{Order: 0, ScenarioID: scenario.ID}}, CreatedAt: now, UpdatedAt: now,
 	}
+	if err := store.SaveExecutionPlan(plan); err != nil {
+		t.Fatalf("SaveExecutionPlan: %v", err)
+	}
 	runID := "exec-plan-run-approval-recovery"
 	approval := &storage.ExecutionPlanApproval{
 		ID: "approval-recovery", PlanID: plan.ID, ProjectID: plan.ProjectID, Policy: "quota_burst", Status: "approved",

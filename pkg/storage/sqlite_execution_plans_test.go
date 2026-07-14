@@ -2,6 +2,7 @@ package storage
 
 import (
 	"encoding/json"
+	"sync"
 	"testing"
 	"time"
 )
@@ -39,6 +40,101 @@ func TestExecutionPlanApprovalAtomicCAS(t *testing.T) {
 	got, _ := store.GetExecutionPlanApproval("appr-1")
 	if got == nil || got.RunID != "run-A" || got.Status != "approved" || got.PlanContentHash != "sha256:abc" {
 		t.Fatalf("approval after claim = %+v, want run-A / approved / plan hash", got)
+	}
+}
+
+func TestExecutionPlanRunCreateIfAbsentHasSingleWinner(t *testing.T) {
+	store := openTimeslotStore(t)
+	const contenders = 16
+	start := make(chan struct{})
+	results := make(chan bool, contenders)
+	errs := make(chan error, contenders)
+	var wg sync.WaitGroup
+	for i := 0; i < contenders; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			created, err := store.CreateExecutionPlanRunIfAbsent(&ExecutionPlanRun{
+				ID: "atomic-run", PlanID: "plan-a", ProjectID: "project-a",
+				RunMode: "parallel", Status: "running",
+			})
+			if err != nil {
+				errs <- err
+				return
+			}
+			results <- created
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	close(errs)
+	for err := range errs {
+		t.Fatalf("CreateExecutionPlanRunIfAbsent: %v", err)
+	}
+	winners := 0
+	for created := range results {
+		if created {
+			winners++
+		}
+	}
+	if winners != 1 {
+		t.Fatalf("create winners = %d, want exactly 1", winners)
+	}
+	got, err := store.GetExecutionPlanRun("atomic-run")
+	if err != nil {
+		t.Fatalf("GetExecutionPlanRun: %v", err)
+	}
+	if got.Revision != 1 {
+		t.Fatalf("revision = %d, want 1", got.Revision)
+	}
+}
+
+func TestExecutionPlanRunCompareAndSwapRejectsStaleSnapshot(t *testing.T) {
+	store := openTimeslotStore(t)
+	initial := &ExecutionPlanRun{
+		ID: "cas-run", PlanID: "plan-a", ProjectID: "project-a",
+		RunMode: "sequential", Status: "running",
+		Entries: []ExecutionPlanRunEntry{{Order: 0, ScenarioID: "scenario-a", Status: "running"}},
+	}
+	created, err := store.CreateExecutionPlanRunIfAbsent(initial)
+	if err != nil || !created {
+		t.Fatalf("create = (%v, %v), want created", created, err)
+	}
+	first, err := store.GetExecutionPlanRun(initial.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale := *first
+	stale.Entries = append([]ExecutionPlanRunEntry(nil), first.Entries...)
+
+	first.Status = "completed"
+	first.Entries[0].Status = "complete"
+	completedAt := time.Now().UTC()
+	first.CompletedAt = &completedAt
+	updated, err := store.CompareAndSwapExecutionPlanRun(first, 1)
+	if err != nil || !updated {
+		t.Fatalf("fresh CAS = (%v, %v), want updated", updated, err)
+	}
+	if first.Revision != 2 {
+		t.Fatalf("fresh revision = %d, want 2", first.Revision)
+	}
+
+	stale.Status = "running"
+	updated, err = store.CompareAndSwapExecutionPlanRun(&stale, 1)
+	if err != nil {
+		t.Fatalf("stale CAS: %v", err)
+	}
+	if updated {
+		t.Fatal("stale CAS updated the row")
+	}
+	got, err := store.GetExecutionPlanRun(initial.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "completed" || got.Revision != 2 || got.CompletedAt == nil {
+		t.Fatalf("durable run regressed after stale CAS: %+v", got)
 	}
 }
 

@@ -623,18 +623,18 @@ func distributedBatchErrorCount(batch generatorrpc.MetricsBatch) int64 {
 func (b *distributedExecutionBackend) completeDistributedTestRun(tr *TestRunner, test *ManagedTest, finalStatus string, finalError string) {
 	completedAt := time.Now()
 	if finalStatus == "FAILED" {
-		if err := b.stopRemainingRemoteTargets(tr, test); err != nil {
-			finalError = testexec.AppendRunError(finalError, "stop remote targets", err)
-		}
 		// Generator-loss cleanup and archive transfer are best effort and may be
 		// slow when a target is unreachable. Publish the already-derived FAILED
-		// outcome durably before attempting archive collection so the run cannot
-		// remain visibly RUNNING behind a multi-minute network timeout.
+		// outcome durably before attempting any remote cleanup so the run cannot
+		// remain visibly RUNNING behind transport or archive timeouts.
 		if test.cancel != nil {
 			test.cancel()
 		}
 		if err := tr.completeTestRun(test, finalStatus, completedAt, finalError, nil); err != nil {
 			slog.Error("distributed terminal transition remains retryable after bounded persistence retries", "test_id", test.ID, "status", finalStatus, "error", err)
+		}
+		if err := b.stopRemainingRemoteTargets(tr, test); err != nil {
+			slog.Warn("failed to stop remaining remote targets after distributed run failure", "test_id", test.ID, "error", err)
 		}
 		unlockArchiveCommit := tr.lockArchiveCommitFence(test.ID)
 		tr.mu.RLock()

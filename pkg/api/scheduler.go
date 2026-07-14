@@ -1399,11 +1399,36 @@ func cloneScenarioSchedule(schedule *storage.ScenarioSchedule) *storage.Scenario
 		nextRun := *schedule.NextRunAt
 		cloned.NextRunAt = &nextRun
 	}
-	cloned.BlackoutWindows = append([]storage.ScenarioScheduleWindow(nil), schedule.BlackoutWindows...)
-	cloned.MaintenanceWindows = append([]storage.ScenarioScheduleWindow(nil), schedule.MaintenanceWindows...)
-	cloned.AvailabilityWindows = append([]storage.ScenarioScheduleWindow(nil), schedule.AvailabilityWindows...)
+	if schedule.DisabledFrom != nil {
+		disabledFrom := *schedule.DisabledFrom
+		cloned.DisabledFrom = &disabledFrom
+	}
+	if schedule.DisabledUntil != nil {
+		disabledUntil := *schedule.DisabledUntil
+		cloned.DisabledUntil = &disabledUntil
+	}
+	cloned.BlackoutWindows = cloneScenarioScheduleWindows(schedule.BlackoutWindows)
+	cloned.MaintenanceWindows = cloneScenarioScheduleWindows(schedule.MaintenanceWindows)
+	cloned.AvailabilityWindows = cloneScenarioScheduleWindows(schedule.AvailabilityWindows)
+	if schedule.Governance != nil {
+		governance := *schedule.Governance
+		governance.RBACReview.RequiredRoles = append([]string(nil), schedule.Governance.RBACReview.RequiredRoles...)
+		governance.QuotaReview.Findings = append([]string(nil), schedule.Governance.QuotaReview.Findings...)
+		cloned.Governance = &governance
+	}
 	cloned.LastOccurrence = cloneScenarioScheduleOccurrence(schedule.LastOccurrence)
 	return &cloned
+}
+
+func cloneScenarioScheduleWindows(windows []storage.ScenarioScheduleWindow) []storage.ScenarioScheduleWindow {
+	if len(windows) == 0 {
+		return nil
+	}
+	cloned := append([]storage.ScenarioScheduleWindow(nil), windows...)
+	for index := range cloned {
+		cloned[index].DaysOfWeek = append([]int(nil), windows[index].DaysOfWeek...)
+	}
+	return cloned
 }
 
 func cloneScenarioScheduleOccurrence(occurrence *storage.ScenarioScheduleOccurrence) *storage.ScenarioScheduleOccurrence {

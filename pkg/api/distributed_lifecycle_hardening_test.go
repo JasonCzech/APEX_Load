@@ -25,6 +25,13 @@ type startupLifecycleFakeClient struct {
 	closed    int
 }
 
+type blockingStopGeneratorClient struct {
+	startupLifecycleFakeClient
+	stopStarted chan struct{}
+	releaseStop chan struct{}
+	startOnce   sync.Once
+}
+
 type failingDistributedStartStore struct{ err error }
 
 func (s failingDistributedStartStore) SaveTest(*storage.TestRecord) error        { return s.err }
@@ -79,6 +86,16 @@ func (c *startupLifecycleFakeClient) GetArchiveArtifact(context.Context, generat
 	return nil, grpcStatus.Error(grpcCodes.NotFound, "archive missing")
 }
 
+func (c *blockingStopGeneratorClient) StopTest(ctx context.Context, _ string, _ bool) (generatorrpc.StopResult, error) {
+	c.startOnce.Do(func() { close(c.stopStarted) })
+	select {
+	case <-c.releaseStop:
+		return generatorrpc.StopResult{Acknowledged: true}, nil
+	case <-ctx.Done():
+		return generatorrpc.StopResult{}, ctx.Err()
+	}
+}
+
 func TestFetchRemoteArchiveBundlesRequireAllRejectsZeroBundles(t *testing.T) {
 	client := &startupLifecycleFakeClient{accept: true}
 	backend := newDistributedExecutionBackend([]string{"gen-a"}, time.Second, nil)
@@ -130,6 +147,64 @@ func TestStartDistributedTestRunFailsClosedOnPersistenceError(t *testing.T) {
 		t.Fatalf("remote state remained attached after failed persistence: client=%v clients=%v shards=%v", test.remoteClient, test.remoteClientsByTarget, test.remoteGroupShards)
 	}
 }
+
+func TestDistributedFailureIsVisibleBeforeRemoteStopCleanupCompletes(t *testing.T) {
+	runCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	blocking := &blockingStopGeneratorClient{
+		startupLifecycleFakeClient: startupLifecycleFakeClient{accept: true},
+		stopStarted:                make(chan struct{}),
+		releaseStop:                make(chan struct{}),
+	}
+	lost := &startupLifecycleFakeClient{accept: true}
+	test := &ManagedTest{
+		ID:           "run-generator-loss-cleanup-order",
+		Name:         "generator loss cleanup order",
+		Status:       "RUNNING",
+		executionCtx: runCtx,
+		cancel:       cancel,
+		remoteClientsByTarget: map[string]generatorClient{
+			"gen-lost":      lost,
+			"gen-surviving": blocking,
+		},
+		remoteTargetStates: map[string]string{
+			"gen-lost":      "FAILED",
+			"gen-surviving": "RUNNING",
+		},
+	}
+	runner := NewTestRunner(1, nil, nil)
+	runner.mu.Lock()
+	runner.tests[test.ID] = test
+	runner.mu.Unlock()
+	backend := newDistributedExecutionBackend([]string{"gen-lost", "gen-surviving"}, time.Second, nil)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		backend.completeDistributedTestRun(runner, test, "FAILED", "remote target gen-lost metrics stream stopped")
+	}()
+
+	select {
+	case <-blocking.stopStarted:
+	case <-time.After(time.Second):
+		t.Fatal("remote stop cleanup did not start")
+	}
+	updated, ok := runner.GetTest(test.ID)
+	if !ok {
+		t.Fatalf("expected managed test %q to remain available", test.ID)
+	}
+	if updated.Status != "FAILED" || updated.EndedAt == nil || !strings.Contains(updated.Error, "gen-lost") {
+		t.Fatalf("terminal state while cleanup is blocked = status:%q ended_at:%v error:%q", updated.Status, updated.EndedAt, updated.Error)
+	}
+
+	close(blocking.releaseStop)
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("distributed failure cleanup did not finish after remote stop was released")
+	}
+}
+
 func (c *startupLifecycleFakeClient) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()

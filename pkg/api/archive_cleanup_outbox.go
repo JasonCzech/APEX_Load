@@ -2,9 +2,11 @@ package api
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -13,6 +15,7 @@ import (
 
 const archiveCleanupAttemptTimeout = 2 * time.Minute
 const archiveCleanupRetryInterval = time.Minute
+const archiveVersionCleanupSafetyMargin = 5 * time.Minute
 
 type archiveCleanupOutbox interface {
 	SaveArchiveCleanupJob(job *storage.ArchiveCleanupJob) error
@@ -20,6 +23,13 @@ type archiveCleanupOutbox interface {
 	ListArchiveCleanupJobs(limit int) ([]*storage.ArchiveCleanupJob, error)
 	MarkArchiveCleanupJobFailed(testID string, cleanupErr error, updatedAt time.Time) error
 	DeleteArchiveCleanupJob(testID string) error
+}
+
+type archiveVersionCleanupOutbox interface {
+	SaveArchiveVersionCleanupJob(job *storage.ArchiveVersionCleanupJob) error
+	ListArchiveVersionCleanupJobs(limit int) ([]*storage.ArchiveVersionCleanupJob, error)
+	MarkArchiveVersionCleanupJobFailed(id string, cleanupErr error, updatedAt time.Time) error
+	DeleteArchiveVersionCleanupJob(id string) error
 }
 
 func (s *Server) archiveCleanupOutbox() archiveCleanupOutbox {
@@ -116,7 +126,135 @@ func (s *Server) retryArchiveCleanupJobs(ctx context.Context) error {
 			failures = append(failures, fmt.Errorf("complete %s: %w", job.TestID, err))
 		}
 	}
+	if versionOutbox, ok := s.store.(archiveVersionCleanupOutbox); ok {
+		versionFailures, err := s.retryArchiveVersionCleanupJobs(ctx, versionOutbox)
+		if err != nil {
+			failures = append(failures, err)
+		}
+		failures = append(failures, versionFailures...)
+	}
 	return errors.Join(failures...)
+}
+
+func (s *Server) retryArchiveVersionCleanupJobs(ctx context.Context, outbox archiveVersionCleanupOutbox) ([]error, error) {
+	jobs, err := outbox.ListArchiveVersionCleanupJobs(1000)
+	if err != nil {
+		return nil, fmt.Errorf("list superseded archive cleanup jobs: %w", err)
+	}
+	failures := make([]error, 0)
+	for _, job := range jobs {
+		if job == nil || strings.TrimSpace(job.ID) == "" {
+			continue
+		}
+		if err := ctx.Err(); err != nil {
+			return failures, err
+		}
+		// Other HA replicas may have begun materializing the old catalog pointer
+		// immediately before the replacement committed. Keep it for at least one
+		// complete materialization deadline before physical retirement.
+		if job.CreatedAt.Add(configuredArchiveMaterializationTimeout() + archiveVersionCleanupSafetyMargin).After(time.Now().UTC()) {
+			continue
+		}
+		attemptCtx, cancel := context.WithTimeout(ctx, archiveCleanupAttemptTimeout)
+		err := s.pruneSupersededArchiveVersion(attemptCtx, &job.ArchiveRecord)
+		cancel()
+		if err != nil {
+			if markErr := outbox.MarkArchiveVersionCleanupJobFailed(job.ID, err, time.Now().UTC()); markErr != nil {
+				slog.Warn("failed to annotate superseded archive cleanup outbox", "job_id", job.ID, "cleanup_error", err, "error", markErr)
+			}
+			failures = append(failures, fmt.Errorf("%s: %w", job.ID, err))
+			continue
+		}
+		if err := outbox.DeleteArchiveVersionCleanupJob(job.ID); err != nil {
+			_ = outbox.MarkArchiveVersionCleanupJobFailed(job.ID, err, time.Now().UTC())
+			failures = append(failures, fmt.Errorf("complete %s: %w", job.ID, err))
+		}
+	}
+	return failures, nil
+}
+
+func (tr *TestRunner) enqueueArchiveVersionCleanup(projectID string, record *storage.RunArchiveRecord) error {
+	if tr == nil || tr.archiveStore == nil || record == nil {
+		return nil
+	}
+	outbox, ok := tr.archiveStore.(archiveVersionCleanupOutbox)
+	if !ok {
+		return nil
+	}
+	copy := *record
+	return outbox.SaveArchiveVersionCleanupJob(&storage.ArchiveVersionCleanupJob{
+		TestID: record.TestID, ProjectID: normalizeProjectID(projectID), ArchiveRecord: copy,
+	})
+}
+
+// pruneSupersededArchiveVersion removes only the immutable object/local pointer
+// serialized in the version cleanup job. It never mutates run_archives or the
+// live test pointer, which now identify a newer publication.
+func (s *Server) pruneSupersededArchiveVersion(ctx context.Context, record *storage.RunArchiveRecord) error {
+	if record == nil || strings.TrimSpace(record.TestID) == "" {
+		return fmt.Errorf("superseded run archive record is required")
+	}
+	if s.runner != nil {
+		if !s.runner.isExecutionLeader() {
+			return errNotExecutionLeader
+		}
+		unlock := s.runner.lockArchiveCommitFence(record.TestID)
+		defer unlock()
+		operationCtx, cancel := s.runner.archiveOperationContext(ctx)
+		defer cancel()
+		ctx = operationCtx
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	var current *storage.RunArchiveRecord
+	if s.store != nil {
+		loaded, err := s.store.GetRunArchive(record.TestID)
+		if err == nil {
+			current = loaded
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("load current archive before superseded cleanup: %w", err)
+		}
+	}
+	if current != nil && sameArchivePublicationPointer(current, record) {
+		// A defensive no-op: never delete the version still named by the catalog.
+		return nil
+	}
+	if err := deleteArchiveBackendObjects(ctx, record); err != nil {
+		return err
+	}
+	if current == nil || !sameArchiveLocalPath(current.ArchivePath, record.ArchivePath) {
+		if err := removeLocalArchiveDirectory(record.ArchivePath); err != nil {
+			return err
+		}
+	}
+	return ctx.Err()
+}
+
+func sameArchivePublicationPointer(left, right *storage.RunArchiveRecord) bool {
+	if left == nil || right == nil {
+		return false
+	}
+	leftURI := strings.TrimSpace(left.ArchiveURI)
+	if leftURI == "" {
+		leftURI = strings.TrimSpace(left.ManifestURI)
+	}
+	rightURI := strings.TrimSpace(right.ArchiveURI)
+	if rightURI == "" {
+		rightURI = strings.TrimSpace(right.ManifestURI)
+	}
+	return leftURI != "" && leftURI == rightURI
+}
+
+func sameArchiveLocalPath(left, right string) bool {
+	left = strings.TrimSpace(left)
+	right = strings.TrimSpace(right)
+	if left == "" || right == "" {
+		return false
+	}
+	leftAbs, leftErr := filepath.Abs(left)
+	rightAbs, rightErr := filepath.Abs(right)
+	return leftErr == nil && rightErr == nil && filepath.Clean(leftAbs) == filepath.Clean(rightAbs)
 }
 
 func (s *Server) startArchiveCleanupRetry() {

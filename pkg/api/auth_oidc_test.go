@@ -19,6 +19,30 @@ import (
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
+func TestSanitizeReturnToRejectsNetworkPathVariants(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{name: "local path", raw: "/results/run-1?tab=summary#latency", want: "/results/run-1?tab=summary#latency"},
+		{name: "empty", raw: "", want: "/"},
+		{name: "absolute", raw: "https://evil.test/", want: "/"},
+		{name: "network path", raw: "//evil.test/", want: "/"},
+		{name: "backslash network path", raw: "/\\\\evil.test/", want: "/"},
+		{name: "encoded backslash network path", raw: "/%5c%5cevil.test/", want: "/"},
+		{name: "encoded slash network path", raw: "/%2f%2fevil.test/", want: "/"},
+		{name: "control character", raw: "/safe\nLocation: https://evil.test", want: "/"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := sanitizeReturnTo(test.raw); got != test.want {
+				t.Fatalf("sanitizeReturnTo(%q) = %q, want %q", test.raw, got, test.want)
+			}
+		})
+	}
+}
+
 func TestHandleGetAuthStatusReturnsOIDCLoginAndLogoutURLs(t *testing.T) {
 	provider := newFakeOIDCProvider(t)
 	defer provider.Close()

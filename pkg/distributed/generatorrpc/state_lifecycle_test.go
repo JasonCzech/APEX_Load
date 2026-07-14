@@ -2,6 +2,7 @@ package generatorrpc
 
 import (
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -346,5 +347,175 @@ func TestGeneratorArchiveNamespaceCannotEscapeRoot(t *testing.T) {
 		if got := sanitizeArchiveNamespace(unsafe); got == "." || got == ".." || got == "" || got == unsafe {
 			t.Fatalf("sanitizeArchiveNamespace(%q) = %q", unsafe, got)
 		}
+	}
+}
+
+func TestGeneratorArchiveReadRejectsRegisteredRunReplacement(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", root)
+	service := NewService("archive-replaced-read", 10, WithGeneratorStateLimits(10, 10, 0))
+	runPath := filepath.Join(service.generatorArchiveRoot(), "run-replaced")
+	if err := os.Mkdir(runPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(runPath, "manifest.json")
+	if err := os.WriteFile(manifestPath, []byte("original"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	service.storeArchiveRecord(&storage.RunArchiveRecord{TestID: "run-replaced", ArchivePath: runPath, ManifestPath: manifestPath})
+
+	originalPath := runPath + ".original"
+	if err := os.Rename(runPath, originalPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(runPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifestPath, []byte("replacement"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, release, err := service.acquireArchiveArtifact(&pb.ArchiveArtifactRequest{TestId: "run-replaced", Name: "manifest.json"})
+	if release != nil {
+		release()
+	}
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("replaced archive read error = %v, want FailedPrecondition", err)
+	}
+}
+
+func TestGeneratorArchiveRetentionDoesNotDeleteReplacement(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", root)
+	service := NewService("archive-replaced-retention", 10, WithGeneratorStateLimits(10, 1, 0))
+	base := time.Now().Add(-time.Hour)
+	oldPath := filepath.Join(service.generatorArchiveRoot(), "run-old")
+	if err := os.Mkdir(oldPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	oldManifest := filepath.Join(oldPath, "manifest.json")
+	if err := os.WriteFile(oldManifest, []byte("original"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	service.storeArchiveRecord(&storage.RunArchiveRecord{TestID: "run-old", ArchivePath: oldPath, ManifestPath: oldManifest, CompletedAt: base})
+
+	originalPath := oldPath + ".original"
+	if err := os.Rename(oldPath, originalPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(oldPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(oldManifest, []byte("replacement"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	newPath := filepath.Join(service.generatorArchiveRoot(), "run-new")
+	if err := os.Mkdir(newPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	service.storeArchiveRecord(&storage.RunArchiveRecord{TestID: "run-new", ArchivePath: newPath, CompletedAt: base.Add(time.Minute)})
+
+	got, err := os.ReadFile(oldManifest)
+	if err != nil {
+		t.Fatalf("replacement archive was deleted: %v", err)
+	}
+	if string(got) != "replacement" {
+		t.Fatalf("replacement archive changed: %q", got)
+	}
+	if _, err := os.Stat(originalPath); err != nil {
+		t.Fatalf("detached original archive was unexpectedly deleted: %v", err)
+	}
+}
+
+func TestGeneratorArchiveReadRejectsIntermediateSymlink(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", root)
+	service := NewService("archive-nested-link", 10, WithGeneratorStateLimits(10, 10, 0))
+	runPath := filepath.Join(service.generatorArchiveRoot(), "run-link")
+	if err := os.Mkdir(runPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	service.storeArchiveRecord(&storage.RunArchiveRecord{TestID: "run-link", ArchivePath: runPath})
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(runPath, "nested")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	_, release, err := service.acquireArchiveArtifact(&pb.ArchiveArtifactRequest{TestId: "run-link", Name: "nested/secret.txt"})
+	if release != nil {
+		release()
+	}
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("intermediate symlink read error = %v, want FailedPrecondition", err)
+	}
+}
+
+func TestGeneratorArchiveLeaseReadsOpenedInodeAcrossReplacement(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", root)
+	service := NewService("archive-open-inode", 10, WithGeneratorStateLimits(10, 10, 0))
+	runPath := filepath.Join(service.generatorArchiveRoot(), "run-open")
+	if err := os.Mkdir(runPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(runPath, "manifest.json")
+	if err := os.WriteFile(manifestPath, []byte("original"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	service.storeArchiveRecord(&storage.RunArchiveRecord{TestID: "run-open", ArchivePath: runPath, ManifestPath: manifestPath})
+	artifact, release, err := service.acquireArchiveArtifact(&pb.ArchiveArtifactRequest{TestId: "run-open", Name: "manifest.json"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	if err := os.Rename(runPath, runPath+".original"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(runPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifestPath, []byte("replacement"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := io.ReadAll(artifact.file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "original" {
+		t.Fatalf("leased descriptor read %q, want original", got)
+	}
+}
+
+func TestGeneratorArchiveFinalizeRejectsRunDirectoryReplacement(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", root)
+	writer, err := newArchiveRecorder("archive-finalize-swap", "run-finalize", "Finalize")
+	if err != nil {
+		t.Fatal(err)
+	}
+	detached := writer.rootDir + ".original"
+	if err := os.Rename(writer.rootDir, detached); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(writer.rootDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	replacementManifest := filepath.Join(writer.rootDir, "manifest.json")
+	if err := os.WriteFile(replacementManifest, []byte("replacement"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writer.Finalize("COMPLETE", time.Now(), ""); err == nil {
+		t.Fatal("finalization accepted a replaced run directory")
+	}
+	_ = writer.Discard() // Replacement-safe cleanup intentionally refuses this path.
+	got, err := os.ReadFile(replacementManifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "replacement" {
+		t.Fatalf("replacement manifest changed: %q", got)
 	}
 }

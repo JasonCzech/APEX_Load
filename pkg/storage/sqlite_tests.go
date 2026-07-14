@@ -35,7 +35,7 @@ func (s *SQLiteStore) SaveTest(test *TestRecord) error {
 			  runtime_settings_json=excluded.runtime_settings_json, goal_config_json=excluded.goal_config_json, execution_plan_approval_json=excluded.execution_plan_approval_json,
 			  timeslot_id=excluded.timeslot_id`
 
-	_, err := s.db.Exec(query, test.ID, test.RefKey, test.Name, test.Status, test.ApplicationID, test.ReleaseID, test.ScenarioID, test.ProjectID, test.FolderID, test.ScenarioMode, test.ScriptShakeout, test.ResourceBaseline, string(assignmentJSON), test.TotalVUsers, test.Duration, test.StartTime, test.ScheduledStartAt, test.PendingSince, test.BaselinePinned, test.BaselinePinnedAt, test.EndTime, test.Error, test.CreatedBySubject, test.CreatedByDisplayName, test.StartedBySubject, test.StartedByDisplayName, test.StoppedBySubject, test.StoppedByDisplayName, string(groupsJSON), string(runtimeSettingsJSON), string(goalConfigJSON), string(executionPlanApprovalJSON), test.TimeslotID)
+	_, err := s.db.Exec(query, test.ID, test.RefKey, test.Name, test.Status, test.ApplicationID, test.ReleaseID, nullableString(test.ScenarioID), test.ProjectID, test.FolderID, test.ScenarioMode, test.ScriptShakeout, test.ResourceBaseline, string(assignmentJSON), test.TotalVUsers, test.Duration, test.StartTime, test.ScheduledStartAt, test.PendingSince, test.BaselinePinned, test.BaselinePinnedAt, test.EndTime, test.Error, test.CreatedBySubject, test.CreatedByDisplayName, test.StartedBySubject, test.StartedByDisplayName, test.StoppedBySubject, test.StoppedByDisplayName, string(groupsJSON), string(runtimeSettingsJSON), string(goalConfigJSON), string(executionPlanApprovalJSON), test.TimeslotID)
 	return err
 }
 

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -20,6 +21,11 @@ import (
 // intent or recreate work after the archive catalog has committed.
 type orphanArchiveFinalizationStore interface {
 	SaveArchiveFinalizationJobIfOrphan(job *storage.ArchiveFinalizationJob) (bool, error)
+}
+
+type orphanArchiveCandidate struct {
+	path     string
+	identity os.FileInfo
 }
 
 // recoverOrphanedLocalRunArchives closes the crash window between committing a
@@ -45,14 +51,15 @@ func (tr *TestRunner) recoverOrphanedLocalRunArchives(ctx context.Context) error
 	if discoveryErr != nil {
 		failures = append(failures, discoveryErr)
 	}
-	for _, archivePath := range candidates {
+	for _, candidate := range candidates {
+		archivePath := candidate.path
 		if err := ctx.Err(); err != nil {
 			return errors.Join(append(failures, err)...)
 		}
 		if !tr.isExecutionLeader() {
 			return errors.Join(append(failures, errNotExecutionLeader)...)
 		}
-		record, manifest, err := orphanArchiveRecordFromDirectory(ctx, archivePath)
+		record, manifest, err := orphanArchiveRecordFromDirectoryWithIdentity(ctx, archivePath, candidate.identity)
 		if err != nil {
 			failures = append(failures, fmt.Errorf("inspect orphan archive %q: %w", archivePath, err))
 			continue
@@ -98,36 +105,34 @@ func (tr *TestRunner) recoverOrphanedLocalRunArchives(ctx context.Context) error
 	return errors.Join(failures...)
 }
 
-func discoverOrphanArchiveDirectories(ctx context.Context, root string) ([]string, error) {
+func discoverOrphanArchiveDirectories(ctx context.Context, root string) ([]orphanArchiveCandidate, error) {
 	root = strings.TrimSpace(root)
 	if root == "" {
 		return nil, nil
 	}
-	absRoot, err := filepath.Abs(root)
+	absRoot, err := resolveArchiveDirectoryRoot(root, false)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
 		return nil, fmt.Errorf("resolve archive recovery root: %w", err)
 	}
-	rootInfo, err := os.Lstat(absRoot)
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
+	rootHandle, err := openArchiveDirectoryNoSymlink(absRoot)
 	if err != nil {
 		return nil, fmt.Errorf("inspect archive recovery root: %w", err)
 	}
-	if !rootInfo.IsDir() || rootInfo.Mode()&os.ModeSymlink != 0 {
-		return nil, fmt.Errorf("archive recovery root is not a non-symlink directory")
-	}
+	defer rootHandle.Close()
 
-	seen := make(map[string]struct{})
+	seen := make(map[string]orphanArchiveCandidate)
 	failures := make([]error, 0)
-	inspectChildren := func(parent string) {
+	inspectChildren := func(parent *os.Root, parentPath string) {
 		if err := ctx.Err(); err != nil {
 			failures = append(failures, err)
 			return
 		}
-		entries, err := os.ReadDir(parent)
+		entries, err := fs.ReadDir(parent.FS(), ".")
 		if err != nil {
-			failures = append(failures, fmt.Errorf("read archive recovery directory %q: %w", parent, err))
+			failures = append(failures, fmt.Errorf("read archive recovery directory %q: %w", parentPath, err))
 			return
 		}
 		for _, entry := range entries {
@@ -138,30 +143,47 @@ func discoverOrphanArchiveDirectories(ctx context.Context, root string) ([]strin
 			if entry.Type()&os.ModeSymlink != 0 || !entry.IsDir() {
 				continue
 			}
-			candidate := filepath.Join(parent, entry.Name())
-			manifestInfo, err := os.Lstat(filepath.Join(candidate, runArchiveManifestFileName))
-			if err != nil || !manifestInfo.Mode().IsRegular() || manifestInfo.Mode()&os.ModeSymlink != 0 {
+			if err := validateArchiveRunID(entry.Name()); err != nil {
 				continue
 			}
-			seen[candidate] = struct{}{}
+			runRoot, err := openArchiveChildDirectoryAt(parent, entry.Name(), false, 0)
+			if err != nil {
+				continue
+			}
+			identity, identityErr := runRoot.Stat(".")
+			manifest, _, manifestErr := openArchiveArtifactForReadAt(runRoot, runArchiveManifestFileName)
+			if manifest != nil {
+				_ = manifest.Close()
+			}
+			_ = runRoot.Close()
+			if identityErr != nil || manifestErr != nil {
+				continue
+			}
+			candidatePath := filepath.Join(parentPath, entry.Name())
+			seen[candidatePath] = orphanArchiveCandidate{path: candidatePath, identity: identity}
 		}
 	}
 
-	inspectChildren(absRoot)
-	remoteRoot := filepath.Join(absRoot, "remote")
-	if remoteInfo, err := os.Lstat(remoteRoot); err == nil && remoteInfo.IsDir() && remoteInfo.Mode()&os.ModeSymlink == 0 {
-		inspectChildren(remoteRoot)
+	inspectChildren(rootHandle, absRoot)
+	remoteRoot, remoteErr := openArchiveChildDirectoryAt(rootHandle, "remote", false, 0)
+	if remoteErr == nil {
+		inspectChildren(remoteRoot, filepath.Join(absRoot, "remote"))
+		_ = remoteRoot.Close()
 	}
 
-	candidates := make([]string, 0, len(seen))
+	candidates := make([]orphanArchiveCandidate, 0, len(seen))
 	for candidate := range seen {
-		candidates = append(candidates, candidate)
+		candidates = append(candidates, seen[candidate])
 	}
-	sort.Strings(candidates)
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].path < candidates[j].path })
 	return candidates, errors.Join(failures...)
 }
 
 func orphanArchiveRecordFromDirectory(ctx context.Context, archivePath string) (*storage.RunArchiveRecord, *RunArchiveManifest, error) {
+	return orphanArchiveRecordFromDirectoryWithIdentity(ctx, archivePath, nil)
+}
+
+func orphanArchiveRecordFromDirectoryWithIdentity(ctx context.Context, archivePath string, expectedIdentity os.FileInfo) (*storage.RunArchiveRecord, *RunArchiveManifest, error) {
 	archivePath, err := filepath.Abs(strings.TrimSpace(archivePath))
 	if err != nil {
 		return nil, nil, err
@@ -169,6 +191,23 @@ func orphanArchiveRecordFromDirectory(ctx context.Context, archivePath string) (
 	testID := filepath.Base(archivePath)
 	if err := validateArchiveRunID(testID); err != nil {
 		return nil, nil, err
+	}
+	parent, err := openArchiveDirectoryNoSymlink(filepath.Dir(archivePath))
+	if err != nil {
+		return nil, nil, err
+	}
+	defer parent.Close()
+	runRoot, err := openArchiveChildDirectoryAt(parent, testID, false, 0)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer runRoot.Close()
+	runIdentity, err := runRoot.Stat(".")
+	if err != nil {
+		return nil, nil, err
+	}
+	if expectedIdentity != nil && !os.SameFile(expectedIdentity, runIdentity) {
+		return nil, nil, fmt.Errorf("orphan archive directory %q was replaced after discovery", archivePath)
 	}
 	manifestPath := filepath.Join(archivePath, runArchiveManifestFileName)
 	record := &storage.RunArchiveRecord{
@@ -179,7 +218,7 @@ func orphanArchiveRecordFromDirectory(ctx context.Context, archivePath string) (
 	if err := validateArchivePublicationPaths(record); err != nil {
 		return nil, nil, err
 	}
-	data, err := readLocalFileLimitedContext(ctx, manifestPath, maxArchiveManifestDownloadBytes)
+	data, _, err := readArchiveFileAtRootLimitedContext(ctx, runRoot, runArchiveManifestFileName, maxArchiveManifestDownloadBytes)
 	if err != nil {
 		return nil, nil, err
 	}

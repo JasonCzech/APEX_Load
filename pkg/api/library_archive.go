@@ -4,7 +4,7 @@ package api
 
 import (
 	"archive/zip"
-	"crypto/sha256"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -273,10 +273,9 @@ func hashArchiveManifestPath(path string) string {
 	if strings.TrimSpace(path) == "" {
 		return ""
 	}
-	payload, err := os.ReadFile(path)
+	digest, err := sha256FileContext(context.Background(), path)
 	if err != nil {
 		return ""
 	}
-	sum := sha256.Sum256(payload)
-	return fmt.Sprintf("sha256:%x", sum[:])
+	return "sha256:" + digest
 }

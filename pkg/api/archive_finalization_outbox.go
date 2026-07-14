@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -27,6 +28,8 @@ type archiveFinalizationOutbox interface {
 	SaveArchiveFinalizationJob(job *storage.ArchiveFinalizationJob) error
 	GetArchiveFinalizationJob(testID string) (*storage.ArchiveFinalizationJob, error)
 	ListArchiveFinalizationJobs(limit int) ([]*storage.ArchiveFinalizationJob, error)
+	UpdateArchiveFinalizationRecordIfToken(testID string, intentToken string, record *storage.RunArchiveRecord) (bool, error)
+	CompleteArchiveFinalization(testID string, intentToken string, refreshToken string, record *storage.RunArchiveRecord) (bool, error)
 	MarkArchiveFinalizationJobFailedIfToken(testID string, intentToken string, finalizationErr error, updatedAt time.Time) error
 	DeleteArchiveFinalizationJob(testID string) error
 }
@@ -138,7 +141,9 @@ func (tr *TestRunner) processArchiveFinalizationJob(ctx context.Context, job *st
 		if current == nil || current.IntentToken != job.IntentToken {
 			return nil
 		}
-		job = current
+		// Keep the caller-owned job synchronized. Producer finalization copies its
+		// ArchiveRecord back to the live run after this method returns.
+		*job = *current
 	}
 	return tr.processArchiveFinalizationJobUnderFence(ctx, job, nil)
 }
@@ -156,6 +161,25 @@ func (tr *TestRunner) processArchiveFinalizationJobUnderFence(ctx context.Contex
 	job.TestID = strings.TrimSpace(job.TestID)
 	if job.TestID == "" {
 		return fmt.Errorf("archive finalization test id is required")
+	}
+	outbox := tr.archiveFinalizationOutbox()
+	if outbox != nil {
+		if strings.TrimSpace(job.IntentToken) == "" {
+			return fmt.Errorf("archive finalization intent %s has no opaque token", job.TestID)
+		}
+		current, err := outbox.GetArchiveFinalizationJob(job.TestID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("reload archive finalization intent under fence: %w", err)
+		}
+		if current == nil || current.IntentToken != job.IntentToken {
+			return nil
+		}
+		// Keep the producer-owned job synchronized so its finalized record (trust
+		// anchor and immutable object URI) is copied back to the live run.
+		*job = *current
 	}
 
 	// The database is authoritative even if this replica still has a stale
@@ -207,8 +231,12 @@ func (tr *TestRunner) processArchiveFinalizationJobUnderFence(ctx context.Contex
 				}
 				materializationLease = lease
 				defer materializationLease.Release()
-				record.ArchivePath = catalogRecord.ArchivePath
-				record.ManifestPath = catalogRecord.ManifestPath
+				stagedRoot, stagedManifest, err := stageMaterializedArchiveForPublication(ctx, catalogRecord, job.IntentToken)
+				if err != nil {
+					return fmt.Errorf("stage materialized archive for adjunct refresh: %w", err)
+				}
+				record.ArchivePath = stagedRoot
+				record.ManifestPath = stagedManifest
 			} else if catalogErr != nil && !errors.Is(catalogErr, sql.ErrNoRows) {
 				return fmt.Errorf("load archive catalog for adjunct refresh: %w", catalogErr)
 			}
@@ -217,9 +245,23 @@ func (tr *TestRunner) processArchiveFinalizationJobUnderFence(ctx context.Contex
 	if err := validateArchivePublicationPaths(record); err != nil {
 		return err
 	}
+	if outbox != nil {
+		if err := bindArchiveRecordToFinalizationVersion(record, job.IntentToken); err != nil {
+			return fmt.Errorf("bind immutable archive publication version: %w", err)
+		}
+	}
 	if job.PersistArtifacts {
 		if err := tr.persistTestManifestArtifact(test, record); err != nil {
 			return fmt.Errorf("persist archive adjunct artifacts: %w", err)
+		}
+	}
+	if outbox != nil {
+		current, err := outbox.UpdateArchiveFinalizationRecordIfToken(job.TestID, job.IntentToken, record)
+		if err != nil {
+			return fmt.Errorf("persist archive publication version: %w", err)
+		}
+		if !current {
+			return tr.enqueueArchiveVersionCleanup(job.ProjectID, record)
 		}
 	}
 	if err := publishRunArchive(ctx, record); err != nil {
@@ -231,18 +273,15 @@ func (tr *TestRunner) processArchiveFinalizationJobUnderFence(ctx context.Contex
 	if !tr.isExecutionLeader() {
 		return errNotExecutionLeader
 	}
-	outbox := tr.archiveFinalizationOutbox()
-	if atomicStore, ok := outbox.(interface {
-		CompleteArchiveFinalization(testID string, intentToken string, refreshToken string, record *storage.RunArchiveRecord) (bool, error)
-	}); ok && strings.TrimSpace(job.IntentToken) != "" {
-		committed, err := atomicStore.CompleteArchiveFinalization(job.TestID, job.IntentToken, job.RefreshToken, record)
+	if outbox != nil {
+		committed, err := outbox.CompleteArchiveFinalization(job.TestID, job.IntentToken, job.RefreshToken, record)
 		if err != nil {
 			return fmt.Errorf("commit archive finalization: %w", err)
 		}
 		if !committed {
-			return nil
+			return tr.enqueueArchiveVersionCleanup(job.ProjectID, record)
 		}
-	} else if outbox == nil {
+	} else {
 		if err := tr.saveRunArchiveRecord(record); err != nil {
 			return fmt.Errorf("commit archive catalog record: %w", err)
 		}
@@ -252,8 +291,6 @@ func (tr *TestRunner) processArchiveFinalizationJobUnderFence(ctx context.Contex
 		if !tr.isExecutionLeader() {
 			return errNotExecutionLeader
 		}
-	} else {
-		return fmt.Errorf("archive finalization intent %s has no opaque token", job.TestID)
 	}
 	tr.attachFinalizedRunArchive(job.TestID, record)
 	return nil
@@ -415,45 +452,130 @@ func publishRunArchive(ctx context.Context, record *storage.RunArchiveRecord) er
 	if err != nil {
 		return err
 	}
+	names, err := archivePublicationArtifactNames(ctx, record)
+	if err != nil {
+		return err
+	}
 	bucket, err := backend.openBucket(ctx)
 	if err != nil {
 		return err
 	}
 	defer bucket.Close()
 
-	rootInfo, err := os.Lstat(record.ArchivePath)
-	if err != nil {
-		return err
-	}
-	if !rootInfo.IsDir() || rootInfo.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("archive publication root is not a regular directory")
-	}
-	names := make([]string, 0)
-	err = filepath.WalkDir(record.ArchivePath, func(path string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if entry.IsDir() {
-			return nil
-		}
-		info, err := entry.Info()
-		if err != nil {
-			return err
-		}
-		if !info.Mode().IsRegular() {
-			return fmt.Errorf("archive artifact %q is not a regular file", path)
-		}
-		relative, err := filepath.Rel(record.ArchivePath, path)
-		if err != nil {
-			return err
-		}
-		names = append(names, filepath.ToSlash(relative))
-		return nil
-	})
-	if err != nil {
-		return err
-	}
 	return uploadArchiveObjectsToBucket(ctx, bucket, backend, record.ArchivePath, record.TestID, names...)
+}
+
+func archivePublicationArtifactNames(ctx context.Context, record *storage.RunArchiveRecord) ([]string, error) {
+	if record == nil {
+		return nil, fmt.Errorf("archive record is required")
+	}
+	manifestData, err := readLocalFileLimitedContext(ctx, record.ManifestPath, maxArchiveManifestDownloadBytes)
+	if err != nil {
+		return nil, fmt.Errorf("read archive publication manifest: %w", err)
+	}
+	if expected := strings.TrimSpace(record.ManifestSHA256); expected != "" && !strings.EqualFold(sha256BytesHex(manifestData), expected) {
+		return nil, fmt.Errorf("local archive manifest SHA-256 does not match persisted finalization metadata")
+	}
+	_, names, err := decodeMaterializationManifest(record, manifestData)
+	if err != nil {
+		return nil, fmt.Errorf("validate archive publication manifest: %w", err)
+	}
+	names = append(names, runArchiveManifestFileName)
+	return names, nil
+}
+
+// stageMaterializedArchiveForPublication makes a token-private writable copy of
+// a downloaded archive. Materialization cache entries are immutable and may
+// have concurrent readers; an adjunct refresh must never edit that shared cache
+// in place.
+func stageMaterializedArchiveForPublication(ctx context.Context, source *storage.RunArchiveRecord, intentToken string) (string, string, error) {
+	if source == nil {
+		return "", "", fmt.Errorf("source archive record is required")
+	}
+	if err := validateArchiveIntentToken(intentToken); err != nil {
+		return "", "", err
+	}
+	names, err := archivePublicationArtifactNames(ctx, source)
+	if err != nil {
+		return "", "", err
+	}
+	publicationRoot := filepath.Join(resolveArchiveRoot(), "_publication", intentToken, source.TestID)
+	targetRoot, err := resolveArchiveDirectoryRoot(publicationRoot, true)
+	if err != nil {
+		return "", "", fmt.Errorf("prepare private publication directory: %w", err)
+	}
+	targetHandle, err := openArchiveDirectoryNoSymlink(targetRoot)
+	if err != nil {
+		return "", "", err
+	}
+	if err := targetHandle.Remove(runArchiveManifestFileName); err != nil && !os.IsNotExist(err) {
+		_ = targetHandle.Close()
+		return "", "", fmt.Errorf("clear prior publication commit marker: %w", err)
+	}
+	if err := targetHandle.Close(); err != nil {
+		return "", "", err
+	}
+
+	for _, name := range names {
+		if err := ctx.Err(); err != nil {
+			return "", "", err
+		}
+		sourceFile, _, err := openArchiveArtifactForRead(source.ArchivePath, name)
+		if err != nil {
+			return "", "", fmt.Errorf("open source archive artifact %s: %w", name, err)
+		}
+		destination, err := replaceArchiveArtifactForWrite(targetRoot, name, 0o644, true)
+		if err != nil {
+			_ = sourceFile.Close()
+			return "", "", fmt.Errorf("create private archive artifact %s: %w", name, err)
+		}
+		_, copyErr := copyArchiveArtifactContext(ctx, destination, sourceFile)
+		sourceCloseErr := sourceFile.Close()
+		if copyErr == nil {
+			copyErr = destination.Sync()
+		}
+		destinationCloseErr := destination.Close()
+		if copyErr != nil {
+			return "", "", fmt.Errorf("copy private archive artifact %s: %w", name, copyErr)
+		}
+		if sourceCloseErr != nil {
+			return "", "", sourceCloseErr
+		}
+		if destinationCloseErr != nil {
+			return "", "", destinationCloseErr
+		}
+	}
+	if err := syncArchiveDirectory(targetRoot); err != nil {
+		return "", "", err
+	}
+	return targetRoot, filepath.Join(targetRoot, runArchiveManifestFileName), nil
+}
+
+func copyArchiveArtifactContext(ctx context.Context, destination io.Writer, source io.Reader) (int64, error) {
+	buffer := make([]byte, 64<<10)
+	var copied int64
+	for {
+		if err := ctx.Err(); err != nil {
+			return copied, err
+		}
+		read, readErr := source.Read(buffer)
+		if read > 0 {
+			written, writeErr := destination.Write(buffer[:read])
+			copied += int64(written)
+			if writeErr != nil {
+				return copied, writeErr
+			}
+			if written != read {
+				return copied, io.ErrShortWrite
+			}
+		}
+		if readErr == io.EOF {
+			return copied, nil
+		}
+		if readErr != nil {
+			return copied, readErr
+		}
+	}
 }
 
 func validateArchivePublicationPaths(record *storage.RunArchiveRecord) error {

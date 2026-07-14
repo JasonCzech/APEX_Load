@@ -53,6 +53,15 @@ func (s *Server) websocketAuthorizer(r *http.Request, projectID string) func() b
 			if initialKeyHash == "" || subtle.ConstantTimeCompare([]byte(stored.KeyHash), []byte(initialKeyHash)) != 1 {
 				return false
 			}
+			currentAccount := &AuthenticatedServiceAccount{
+				ID:          stored.ID,
+				Name:        stored.Name,
+				Description: stored.Description,
+				Scopes:      normalizeAuthenticatedServiceAccountScopes(stored.Scopes),
+			}
+			if !serviceAccountAllowsRequest(currentAccount, r) {
+				return false
+			}
 			current = authenticatedUserFromServiceAccount(stored)
 		} else if s.store != nil && strings.TrimSpace(snapshot.Subject) != "" {
 			stored, err := s.store.GetUserBySubject(snapshot.Subject)

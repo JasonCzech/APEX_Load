@@ -207,6 +207,7 @@ func (s *Service) acquireArchiveArtifact(request *pb.ArchiveArtifactRequest) (*l
 		s.mu.Unlock()
 		return nil, nil, status.Error(codes.NotFound, "archive not found")
 	}
+	expectedIdentity := s.archiveIdentities[testID]
 	s.archiveLeases[testID]++
 	namespace := s.archiveNamespace
 	namespaceErr := s.archiveNamespaceErr
@@ -236,13 +237,18 @@ func (s *Service) acquireArchiveArtifact(request *pb.ArchiveArtifactRequest) (*l
 		}
 		return nil, nil, status.Errorf(codes.Internal, "open generator archive namespace: %v", namespaceErr)
 	}
-	runRoot, _, err := openGeneratorArchiveRun(namespace, testID, false)
+	runRoot, runIdentity, err := openGeneratorArchiveRun(namespace, testID, false)
 	if err != nil {
 		release()
 		if os.IsNotExist(err) {
 			return nil, nil, status.Error(codes.NotFound, "archive not found")
 		}
 		return nil, nil, status.Errorf(codes.FailedPrecondition, "open archive run: %v", err)
+	}
+	if expectedIdentity == nil || !os.SameFile(expectedIdentity, runIdentity) {
+		_ = runRoot.Close()
+		release()
+		return nil, nil, status.Error(codes.FailedPrecondition, "archive run was replaced")
 	}
 	file, info, err := openGeneratorArchiveRegularFile(runRoot, name)
 	_ = runRoot.Close()
@@ -257,15 +263,41 @@ func (s *Service) acquireArchiveArtifact(request *pb.ArchiveArtifactRequest) (*l
 }
 
 func (s *Service) storeArchiveRecordWithLifecycle(record *storage.RunArchiveRecord) {
+	if err := s.storeArchiveRecordWithIdentity(record, nil); err != nil {
+		slog.Warn("generator archive record rejected", "test_id", archiveRecordTestID(record), "error", err)
+	}
+}
+
+func archiveRecordTestID(record *storage.RunArchiveRecord) string {
 	if record == nil {
-		return
+		return ""
+	}
+	return record.TestID
+}
+
+func (s *Service) storeArchiveRecordWithIdentity(record *storage.RunArchiveRecord, expectedIdentity os.FileInfo) error {
+	if record == nil {
+		return nil
+	}
+	if err := validateArchiveTestID(record.TestID); err != nil {
+		return err
+	}
+	runRoot, runIdentity, err := openGeneratorArchiveRun(s.archiveNamespace, record.TestID, false)
+	if err != nil {
+		return fmt.Errorf("open finalized generator archive: %w", err)
+	}
+	_ = runRoot.Close()
+	if expectedIdentity != nil && !os.SameFile(expectedIdentity, runIdentity) {
+		return fmt.Errorf("generator archive run %q was replaced before registration", record.TestID)
 	}
 	s.mu.Lock()
 	clone := *record
 	s.archiveRecords[record.TestID] = &clone
+	s.archiveIdentities[record.TestID] = runIdentity
 	removed := s.pruneArchivedRecordsLocked(time.Now())
 	s.mu.Unlock()
 	s.removeGeneratorArchiveRecords(removed)
+	return nil
 }
 
 func (s *Service) sweepArchivedRecords(now time.Time) {
@@ -278,15 +310,21 @@ func (s *Service) sweepArchivedRecords(now time.Time) {
 // pruneArchivedRecordsLocked applies TTL first and then an oldest-first hard
 // cap. Leased records are temporarily skipped; their release immediately
 // triggers another pass. s.mu must be held.
-func (s *Service) pruneArchivedRecordsLocked(now time.Time) []*storage.RunArchiveRecord {
-	removed := make([]*storage.RunArchiveRecord, 0)
+type generatorArchiveRemoval struct {
+	record   *storage.RunArchiveRecord
+	identity os.FileInfo
+}
+
+func (s *Service) pruneArchivedRecordsLocked(now time.Time) []generatorArchiveRemoval {
+	removed := make([]generatorArchiveRemoval, 0)
 	if s.archiveTTL > 0 {
 		for testID, record := range s.archiveRecords {
 			if s.archiveLeases[testID] > 0 || !archiveRecordExpired(record, now, s.archiveTTL) {
 				continue
 			}
-			removed = append(removed, cloneRunArchiveRecord(record))
+			removed = append(removed, generatorArchiveRemoval{record: cloneRunArchiveRecord(record), identity: s.archiveIdentities[testID]})
 			delete(s.archiveRecords, testID)
+			delete(s.archiveIdentities, testID)
 		}
 	}
 	if len(s.archiveRecords) <= s.archiveRecordMax {
@@ -320,8 +358,9 @@ func (s *Service) pruneArchivedRecordsLocked(now time.Time) []*storage.RunArchiv
 		if _, keep := retained[candidate.testID]; keep {
 			continue
 		}
-		removed = append(removed, cloneRunArchiveRecord(candidate.record))
+		removed = append(removed, generatorArchiveRemoval{record: cloneRunArchiveRecord(candidate.record), identity: s.archiveIdentities[candidate.testID]})
 		delete(s.archiveRecords, candidate.testID)
+		delete(s.archiveIdentities, candidate.testID)
 	}
 	return removed
 }
@@ -359,8 +398,9 @@ func (s *Service) generatorArchiveRoot() string {
 	return filepath.Join(resolveArchiveRoot(), sanitizeArchiveNamespace(s.generatorID))
 }
 
-func (s *Service) removeGeneratorArchiveRecords(records []*storage.RunArchiveRecord) {
-	for _, record := range records {
+func (s *Service) removeGeneratorArchiveRecords(records []generatorArchiveRemoval) {
+	for _, removal := range records {
+		record := removal.record
 		if record == nil {
 			continue
 		}
@@ -368,11 +408,11 @@ func (s *Service) removeGeneratorArchiveRecords(records []*storage.RunArchiveRec
 			slog.Warn("generator archive retention rejected unsafe test id", "test_id", record.TestID, "error", err)
 			continue
 		}
-		runRoot, identity, err := openGeneratorArchiveRun(s.archiveNamespace, record.TestID, false)
-		if err == nil {
-			_ = runRoot.Close()
-			err = removeGeneratorArchiveRun(s.archiveNamespace, record.TestID, identity)
+		if removal.identity == nil {
+			slog.Warn("generator archive retention refused archive without identity", "test_id", record.TestID, "path", record.ArchivePath)
+			continue
 		}
+		err := removeGeneratorArchiveRun(s.archiveNamespace, record.TestID, removal.identity)
 		if os.IsNotExist(err) {
 			err = nil
 		}

@@ -342,24 +342,29 @@ func (s *SQLiteStore) DeleteArchiveFinalizationJobIfToken(testID string, intentT
 	return affected > 0, err
 }
 
-// CompleteArchiveFinalization atomically publishes the catalog pointer and
-// acknowledges exactly the generation that produced it. A newer note refresh,
-// retention cancellation, or test deletion makes the operation a no-op instead
-// of allowing a stale worker to resurrect/overwrite archive metadata.
-func (s *SQLiteStore) CompleteArchiveFinalization(testID string, intentToken string, refreshToken string, record *RunArchiveRecord) (bool, error) {
+// UpdateArchiveFinalizationRecordIfToken persists the exact publication
+// pointer and refreshed manifest trust anchor before object I/O starts. The
+// opaque token makes this a compare-and-swap: a stale leader cannot redirect a
+// replacement intent or restore an intent canceled by retention/deletion.
+func (s *SQLiteStore) UpdateArchiveFinalizationRecordIfToken(testID string, intentToken string, record *RunArchiveRecord) (bool, error) {
 	testID = strings.TrimSpace(testID)
 	intentToken = strings.TrimSpace(intentToken)
 	if testID == "" || intentToken == "" || record == nil {
-		return false, errors.New("valid archive finalization completion is required")
+		return false, errors.New("valid archive finalization record update is required")
 	}
 	if strings.TrimSpace(record.TestID) != testID {
-		return false, fmt.Errorf("archive record test id %q does not match completion %q", record.TestID, testID)
+		return false, fmt.Errorf("archive record test id %q does not match finalization %q", record.TestID, testID)
+	}
+	encoded, err := json.Marshal(record)
+	if err != nil {
+		return false, fmt.Errorf("encode archive finalization record: %w", err)
 	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return false, err
 	}
 	defer tx.Rollback()
+
 	testQuery := `SELECT 1 FROM tests WHERE id = ?`
 	jobQuery := `SELECT COALESCE(intent_token, '') FROM archive_finalization_jobs WHERE test_id = ?`
 	if s.db.dialect == storeDialectPostgres {
@@ -388,7 +393,82 @@ func (s *SQLiteStore) CompleteArchiveFinalization(testID string, intentToken str
 	if cleanupExists != 0 {
 		return false, nil
 	}
+	result, err := tx.Exec(`UPDATE archive_finalization_jobs
+		SET archive_record_json = ?, updated_at = ?
+		WHERE test_id = ? AND intent_token = ?`, string(encoded), time.Now().UTC(), testID, intentToken)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil || affected == 0 {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// CompleteArchiveFinalization atomically publishes the catalog pointer and
+// acknowledges exactly the generation that produced it. A newer note refresh,
+// retention cancellation, or test deletion makes the operation a no-op instead
+// of allowing a stale worker to resurrect/overwrite archive metadata.
+func (s *SQLiteStore) CompleteArchiveFinalization(testID string, intentToken string, refreshToken string, record *RunArchiveRecord) (bool, error) {
+	testID = strings.TrimSpace(testID)
+	intentToken = strings.TrimSpace(intentToken)
+	if testID == "" || intentToken == "" || record == nil {
+		return false, errors.New("valid archive finalization completion is required")
+	}
+	if strings.TrimSpace(record.TestID) != testID {
+		return false, fmt.Errorf("archive record test id %q does not match completion %q", record.TestID, testID)
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	testQuery := `SELECT COALESCE(project_id, '') FROM tests WHERE id = ?`
+	jobQuery := `SELECT COALESCE(intent_token, '') FROM archive_finalization_jobs WHERE test_id = ?`
+	if s.db.dialect == storeDialectPostgres {
+		testQuery += ` FOR UPDATE`
+		jobQuery += ` FOR UPDATE`
+	}
+	var durableProjectID string
+	if err := tx.QueryRow(testQuery, testID).Scan(&durableProjectID); errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	} else if err != nil {
+		return false, err
+	}
+	var currentToken string
+	if err := tx.QueryRow(jobQuery, testID).Scan(&currentToken); errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	} else if err != nil {
+		return false, err
+	}
+	if currentToken != intentToken {
+		return false, nil
+	}
+	var cleanupExists int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM archive_cleanup_jobs WHERE test_id = ?`, testID).Scan(&cleanupExists); err != nil {
+		return false, err
+	}
+	if cleanupExists != 0 {
+		return false, nil
+	}
+	var superseded *RunArchiveRecord
+	if current, err := getRunArchiveTx(tx, testID); err == nil {
+		if archivePublicationPointer(current) != "" && archivePublicationPointer(current) != archivePublicationPointer(record) {
+			superseded = current
+		}
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return false, err
+	}
 	record.SchemaVersion = normalizeTelemetrySchemaVersion(record.SchemaVersion, archiveRecordSchemaVersion)
+	if superseded != nil {
+		if err := enqueueArchiveVersionCleanupTx(tx, durableProjectID, superseded); err != nil {
+			return false, err
+		}
+	}
 	if _, err := tx.Exec(`INSERT INTO run_archives (test_id, ref_key, schema_version, archive_backend, archive_path, manifest_path, manifest_sha256, archive_uri, manifest_uri, transaction_count, resource_sample_count, interval_summary_count, created_at, completed_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(test_id) DO UPDATE SET
@@ -430,4 +510,17 @@ func (s *SQLiteStore) CompleteArchiveFinalization(testID string, intentToken str
 		return false, err
 	}
 	return true, nil
+}
+
+func archivePublicationPointer(record *RunArchiveRecord) string {
+	if record == nil {
+		return ""
+	}
+	if uri := strings.TrimSpace(record.ArchiveURI); uri != "" {
+		return uri
+	}
+	if uri := strings.TrimSpace(record.ManifestURI); uri != "" {
+		return uri
+	}
+	return strings.TrimSpace(record.ArchivePath)
 }

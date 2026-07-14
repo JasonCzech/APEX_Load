@@ -3,16 +3,16 @@ package api
 // manifest — split from archive.go (same package, behavior-preserving).
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"path"
 	"path/filepath"
 	"strings"
 )
 
 func loadRunArchiveManifest(manifestPath string) (*RunArchiveManifest, error) {
-	data, err := os.ReadFile(manifestPath)
+	data, err := readLocalFileLimitedContext(context.Background(), manifestPath, maxArchiveManifestDownloadBytes)
 	if err != nil {
 		return nil, err
 	}

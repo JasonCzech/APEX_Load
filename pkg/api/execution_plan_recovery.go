@@ -152,6 +152,7 @@ func (tr *TestRunner) rehydrateSequentialExecutionPlanRun(run *storage.Execution
 		statuses:   statuses,
 		cursor:     cursor,
 		status:     "running",
+		revision:   run.Revision,
 		createdAt:  run.CreatedAt,
 		rehydrated: true,
 		recovering: true,

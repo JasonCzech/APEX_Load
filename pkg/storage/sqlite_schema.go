@@ -248,8 +248,8 @@ func schemaCreateTableStatements() []string {
 			name TEXT,
 			protocol TEXT,
 			version TEXT,
-			project_id TEXT,
-			folder_id TEXT,
+			project_id TEXT REFERENCES projects(id),
+			folder_id TEXT REFERENCES folders(id),
 			generated_by TEXT,
 			generated_from TEXT,
 			metadata_json TEXT,
@@ -267,11 +267,11 @@ func schemaCreateTableStatements() []string {
 			ref_key TEXT,
 			name TEXT,
 			status TEXT,
-			application_id TEXT,
-			release_id TEXT,
-			scenario_id TEXT,
-			project_id TEXT,
-			folder_id TEXT,
+			application_id TEXT REFERENCES applications(id),
+			release_id TEXT REFERENCES releases(id),
+			scenario_id TEXT REFERENCES scenarios(id),
+			project_id TEXT REFERENCES projects(id),
+			folder_id TEXT REFERENCES folders(id),
 			scenario_mode TEXT,
 			shakeout_enabled INTEGER DEFAULT 0,
 			resource_baseline_enabled INTEGER DEFAULT 0,
@@ -366,6 +366,18 @@ func schemaCreateTableStatements() []string {
 		// then retry physical cleanup without needing metadata that no longer exists.
 		`CREATE TABLE IF NOT EXISTS archive_cleanup_jobs (
 			test_id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL,
+			archive_record_json TEXT NOT NULL,
+			attempts INTEGER NOT NULL DEFAULT 0,
+			last_error TEXT,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL
+		)`,
+		// Immutable object publications are replaced, never overwritten. Retain
+		// every superseded pointer independently until physical deletion succeeds.
+		`CREATE TABLE IF NOT EXISTS archive_version_cleanup_jobs (
+			id TEXT PRIMARY KEY,
+			test_id TEXT NOT NULL,
 			project_id TEXT NOT NULL,
 			archive_record_json TEXT NOT NULL,
 			attempts INTEGER NOT NULL DEFAULT 0,
@@ -688,6 +700,7 @@ func schemaCreateTableStatements() []string {
 			run_mode TEXT NOT NULL DEFAULT 'sequential',
 			status TEXT NOT NULL DEFAULT 'running',
 			entries_json TEXT,
+			revision INTEGER NOT NULL DEFAULT 1,
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL,
 			completed_at DATETIME
@@ -894,6 +907,7 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "github_script_links.remote_blob_sha", query: `ALTER TABLE github_script_links ADD COLUMN remote_blob_sha TEXT`},
 		{name: "github_script_links.remote_commit_sha", query: `ALTER TABLE github_script_links ADD COLUMN remote_commit_sha TEXT`},
 		{name: "execution_plan_approvals.plan_content_hash", query: `ALTER TABLE execution_plan_approvals ADD COLUMN plan_content_hash TEXT`},
+		{name: "execution_plan_runs.revision", query: `ALTER TABLE execution_plan_runs ADD COLUMN revision INTEGER NOT NULL DEFAULT 1`},
 	}
 }
 
@@ -912,6 +926,8 @@ var schemaIndexes = []schemaIndex{
 	{`CREATE UNIQUE INDEX IF NOT EXISTS idx_tests_ref_key ON tests(ref_key) WHERE ref_key IS NOT NULL AND ref_key != ''`, "idx_tests_ref_key"},
 	{`CREATE UNIQUE INDEX IF NOT EXISTS idx_run_archives_ref_key ON run_archives(ref_key) WHERE ref_key IS NOT NULL AND ref_key != ''`, "idx_run_archives_ref_key"},
 	{`CREATE INDEX IF NOT EXISTS idx_archive_cleanup_jobs_updated ON archive_cleanup_jobs(updated_at)`, "idx_archive_cleanup_jobs_updated"},
+	{`CREATE INDEX IF NOT EXISTS idx_archive_version_cleanup_jobs_updated ON archive_version_cleanup_jobs(updated_at)`, "idx_archive_version_cleanup_jobs_updated"},
+	{`CREATE INDEX IF NOT EXISTS idx_archive_version_cleanup_jobs_test ON archive_version_cleanup_jobs(test_id)`, "idx_archive_version_cleanup_jobs_test"},
 	{`CREATE INDEX IF NOT EXISTS idx_archive_finalization_jobs_updated ON archive_finalization_jobs(updated_at)`, "idx_archive_finalization_jobs_updated"},
 	{`CREATE INDEX IF NOT EXISTS idx_archive_refresh_jobs_updated ON archive_refresh_jobs(updated_at)`, "idx_archive_refresh_jobs_updated"},
 	{`CREATE INDEX IF NOT EXISTS idx_test_notes_test_id ON test_notes(test_id)`, "idx_test_notes_test_id"},
@@ -984,6 +1000,9 @@ func (s *SQLiteStore) init() error {
 		return err
 	}
 	if err := s.ensureLegacyApplication(); err != nil {
+		return err
+	}
+	if err := s.ensurePostgresForeignKeys(); err != nil {
 		return err
 	}
 	return s.applyTimescaleDB()
