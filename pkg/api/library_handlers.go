@@ -235,18 +235,19 @@ func (s *Server) handleLibraryDeleteRemote(w http.ResponseWriter, r *http.Reques
 		}
 	}
 	s.libraryMu.Unlock()
-	if s.libraryCreds != nil {
-		if err := s.libraryCreds.DeleteRemoteAPIKey(id); err != nil {
-			slog.Warn("failed to delete remote library credential", "remote_id", id, "err", err)
-		}
-	}
 	if err := s.persistLibraryRemotes(); err != nil {
+		s.loadLibraryState()
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if err := s.persistLibraryLinks(); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+		s.loadLibraryState()
+		slog.Warn("remote deleted but stale library links could not be cleaned up", "remote_id", id, "error", err)
+	}
+	if s.libraryCreds != nil {
+		if err := s.libraryCreds.DeleteRemoteAPIKey(id); err != nil {
+			slog.Warn("failed to delete remote library credential", "remote_id", id, "err", err)
+		}
 	}
 	s.recordAuditEvent(r, "library.remote.delete", "success", "library_remote", id, "", map[string]any{"name": remote.Name})
 	w.WriteHeader(http.StatusNoContent)

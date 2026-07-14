@@ -89,8 +89,10 @@ func (s *Server) rememberLibraryLink(remoteID string, kind string, sourceInstanc
 	if remoteID == "" {
 		remoteID = "direct"
 	}
+	key := libraryLinkKey(remoteID, kind, sourceInstanceID, sourceItemID)
 	s.libraryMu.Lock()
-	s.libraryLinks[libraryLinkKey(remoteID, kind, sourceInstanceID, sourceItemID)] = &librarySyncLink{
+	previous, hadPrevious := s.libraryLinks[key]
+	s.libraryLinks[key] = &librarySyncLink{
 		RemoteID:          remoteID,
 		Kind:              normalizeLibraryKind(kind),
 		SourceInstanceID:  sourceInstanceID,
@@ -102,7 +104,18 @@ func (s *Server) rememberLibraryLink(remoteID string, kind string, sourceInstanc
 		LastSyncedAt:      time.Now().UTC(),
 	}
 	s.libraryMu.Unlock()
-	return s.persistLibraryLinks()
+	if err := s.persistLibraryLinks(); err != nil {
+		s.libraryMu.Lock()
+		if hadPrevious {
+			s.libraryLinks[key] = previous
+		} else {
+			delete(s.libraryLinks, key)
+		}
+		s.libraryMu.Unlock()
+		s.loadLibraryLinksState()
+		return err
+	}
+	return nil
 }
 
 func libraryLinkKey(remoteID string, kind string, sourceInstanceID string, sourceItemID string) string {

@@ -51,7 +51,8 @@ type franzClient struct {
 	replyOnce         sync.Once
 	replyCl           *kgo.Client
 	replyErr          error
-	replyAssigned     chan string
+	replyAssignmentMu sync.RWMutex
+	replyAssigned     map[string]bool
 	pendingMu         sync.Mutex
 	pending           []pendingReply
 	pendingBytes      int64
@@ -85,14 +86,13 @@ func (c *franzClient) handle() (*kgo.Client, error) {
 // cannot satisfy the original requester's correlation.
 func (c *franzClient) replyHandle() (*kgo.Client, error) {
 	c.replyOnce.Do(func() {
-		c.replyAssigned = make(chan string, 64)
+		c.replyAssigned = make(map[string]bool)
 		c.replyCl, c.replyErr = c.newClient("", kgo.OnPartitionsAssigned(func(_ context.Context, _ *kgo.Client, partitions map[string][]int32) {
+			c.replyAssignmentMu.Lock()
 			for topic := range partitions {
-				select {
-				case c.replyAssigned <- topic:
-				default:
-				}
+				c.replyAssigned[topic] = true
 			}
+			c.replyAssignmentMu.Unlock()
 		}))
 	})
 	return c.replyCl, c.replyErr
@@ -320,6 +320,12 @@ func (c *franzClient) primeReplyConsumer(ctx context.Context, cl *kgo.Client, re
 	primeCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	for {
+		c.replyAssignmentMu.RLock()
+		assigned := c.replyAssigned[replyTopic]
+		c.replyAssignmentMu.RUnlock()
+		if assigned {
+			return nil
+		}
 		pollCtx, cancelPoll := context.WithTimeout(primeCtx, 100*time.Millisecond)
 		fetches := cl.PollRecords(pollCtx, 10)
 		cancelPoll()
@@ -331,17 +337,6 @@ func (c *franzClient) primeReplyConsumer(ctx context.Context, cl *kgo.Client, re
 		if errs := fetches.Errors(); len(errs) > 0 {
 			return fmt.Errorf("prime kafka reply consumer for %q: %w", replyTopic, errs[0].Err)
 		}
-		for {
-			select {
-			case topic := <-c.replyAssigned:
-				if topic == replyTopic {
-					return nil
-				}
-			default:
-				goto drained
-			}
-		}
-	drained:
 		if primeCtx.Err() != nil {
 			return fmt.Errorf("prime kafka reply consumer for %q: %w", replyTopic, primeCtx.Err())
 		}

@@ -102,6 +102,10 @@ type settingsPersistence interface {
 	GetSetting(key string) (string, error)
 }
 
+type settingsCompareAndSwapper interface {
+	CompareAndSwapSetting(key, expected, value string) (bool, error)
+}
+
 type usageSnapshotPersistence interface {
 	SaveUsageAccountingSnapshot(snapshot *storage.UsageAccountingSnapshot) error
 }
@@ -131,6 +135,7 @@ type TestRunner struct {
 	settings              SystemSettings
 	settingsRefreshMu     sync.Mutex
 	settingsAuthRefreshAt time.Time
+	systemSettingsRaw     string
 	scriptStore           scriptPersistence
 	testStore             testPersistence
 	scenarioStore         scenarioPersistence

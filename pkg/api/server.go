@@ -1417,6 +1417,7 @@ func (s *Server) startUsageAccountingSnapshotCadence() {
 				}
 				if _, err := s.runner.captureUsageSnapshotForCadence(""); err != nil {
 					slog.Warn("failed to save cadence usage accounting snapshot", "error", err)
+					lastCapture = now
 					continue
 				}
 				lastCapture = now

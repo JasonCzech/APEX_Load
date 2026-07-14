@@ -931,11 +931,14 @@ func peekMultipartProjectID(r *http.Request) (string, error) {
 		if part.FileName() != "" {
 			return "", nil
 		}
-		value, err := io.ReadAll(io.LimitReader(part, 64<<10))
+		value, err := io.ReadAll(io.LimitReader(part, (64<<10)+1))
 		if err != nil {
 			return "", err
 		}
 		if part.FormName() == "project_id" {
+			if len(value) > 64<<10 {
+				return "", errors.New("project_id multipart field is too large")
+			}
 			return strings.TrimSpace(string(value)), nil
 		}
 	}

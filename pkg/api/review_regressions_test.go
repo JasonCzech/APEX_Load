@@ -2,8 +2,13 @@ package api
 
 import (
 	"bytes"
+	"mime/multipart"
 	"net/http/httptest"
+	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 func TestPreserveWriteOnlyWebhookSecretsSurvivesReordering(t *testing.T) {
@@ -18,6 +23,68 @@ func TestPreserveWriteOnlyWebhookSecretsSurvivesReordering(t *testing.T) {
 	got := preserveWriteOnlySystemSettingsSecrets(next, current)
 	if got.Notifications.Webhooks[0].APIToken != "token-second" || got.Notifications.Webhooks[1].APIToken != "token-first" {
 		t.Fatalf("tokens followed array positions: %#v", got.Notifications.Webhooks)
+	}
+}
+
+func TestMultipartProjectResolverRejectsOversizedProjectField(t *testing.T) {
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	if err := writer.WriteField("project_id", strings.Repeat("p", (64<<10)+1)); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest("POST", "/import", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	if projectID, statusCode, _ := resolveImportProjectIDFromForm(req, nil); projectID != "" || statusCode != 400 {
+		t.Fatalf("resolver = %q, %d; want rejection", projectID, statusCode)
+	}
+}
+
+func TestSystemSettingsCASRejectsStaleReplica(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "settings.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	first := NewTestRunner(2, NewHub(), store)
+	initial := first.GetSystemSettings()
+	if _, err := first.UpdateSystemSettings(initial); err != nil {
+		t.Fatal(err)
+	}
+	stale := NewTestRunner(2, NewHub(), store)
+	firstSettings := first.GetSystemSettings()
+	firstSettings.General.MaxConcurrentTests = 3
+	if _, err := first.UpdateSystemSettings(firstSettings); err != nil {
+		t.Fatal(err)
+	}
+	staleSettings := stale.settings
+	staleSettings.General.MaxConcurrentTests = 4
+	if _, err := stale.UpdateSystemSettings(staleSettings); err == nil {
+		t.Fatal("stale replica update unexpectedly overwrote newer settings")
+	}
+}
+
+func TestMalformedLibrarySettingsDoNotEraseLoadedState(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "library.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	server := NewServer(ServerConfig{Store: store})
+	server.libraryMu.Lock()
+	server.libraryRemotes["kept"] = &LibraryRemote{ID: "kept", Name: "Kept"}
+	server.libraryRemotesRaw = `[{"id":"kept","name":"Kept"}]`
+	server.libraryMu.Unlock()
+	if err := store.SaveSetting(libraryRemotesSettingKey, "{"); err != nil {
+		t.Fatal(err)
+	}
+	server.loadLibraryState()
+	server.libraryMu.Lock()
+	defer server.libraryMu.Unlock()
+	if server.libraryRemotes["kept"] == nil {
+		t.Fatal("malformed durable JSON erased the last valid in-memory state")
 	}
 }
 

@@ -1289,6 +1289,7 @@ func (tr *TestRunner) loadSystemSettings(defaultMaxConcurrent int) {
 	}
 	tr.settings = cloneSystemSettings(loaded)
 	tr.maxTests = tr.settings.General.MaxConcurrentTests
+	tr.systemSettingsRaw = raw
 }
 
 func (tr *TestRunner) GetSystemSettings() SystemSettings {
@@ -1340,6 +1341,7 @@ func (tr *TestRunner) refreshSystemSettingsFromStore(force bool) {
 	tr.maxTests = loaded.General.MaxConcurrentTests
 	tr.invalidateCapacityAdvisoryCacheLocked()
 	tr.mu.Unlock()
+	tr.systemSettingsRaw = raw
 	tr.setNotificationSettings(loaded.Notifications)
 }
 
@@ -1446,9 +1448,19 @@ func (tr *TestRunner) UpdateSystemSettings(settings SystemSettings) (SystemSetti
 	tr.settingsRefreshMu.Lock()
 	defer tr.settingsRefreshMu.Unlock()
 	if tr.settingsStore != nil {
-		if err := tr.settingsStore.SaveSetting(systemSettingsStoreKey, string(encoded)); err != nil {
+		encodedString := string(encoded)
+		if cas, ok := tr.settingsStore.(settingsCompareAndSwapper); ok {
+			updated, err := cas.CompareAndSwapSetting(systemSettingsStoreKey, tr.systemSettingsRaw, encodedString)
+			if err != nil {
+				return SystemSettings{}, fmt.Errorf("persist settings: %w", err)
+			}
+			if !updated {
+				return SystemSettings{}, fmt.Errorf("system settings changed concurrently; refresh and retry")
+			}
+		} else if err := tr.settingsStore.SaveSetting(systemSettingsStoreKey, encodedString); err != nil {
 			return SystemSettings{}, fmt.Errorf("persist settings: %w", err)
 		}
+		tr.systemSettingsRaw = encodedString
 	}
 
 	tr.mu.Lock()

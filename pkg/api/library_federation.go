@@ -215,10 +215,12 @@ func (s *Server) loadLibraryState() {
 		slog.Warn("failed to load library remotes", "err", err)
 	} else {
 		loaded := make(map[string]*LibraryRemote)
+		valid := true
 		if strings.TrimSpace(raw) != "" {
 			var remotes []LibraryRemote
 			if err := json.Unmarshal([]byte(raw), &remotes); err != nil {
 				slog.Warn("failed to decode library remotes", "err", err)
+				valid = false
 			} else {
 				for i := range remotes {
 					remote := remotes[i]
@@ -231,19 +233,23 @@ func (s *Server) loadLibraryState() {
 				}
 			}
 		}
-		s.libraryMu.Lock()
-		s.libraryRemotes = loaded
-		s.libraryRemotesRaw = raw
-		s.libraryMu.Unlock()
+		if valid {
+			s.libraryMu.Lock()
+			s.libraryRemotes = loaded
+			s.libraryRemotesRaw = raw
+			s.libraryMu.Unlock()
+		}
 	}
 	if raw, err := s.store.GetSetting(librarySyncLinksSettingKey); err != nil {
 		slog.Warn("failed to load library sync links", "err", err)
 	} else {
 		loaded := make(map[string]*librarySyncLink)
+		valid := true
 		if strings.TrimSpace(raw) != "" {
 			var links []librarySyncLink
 			if err := json.Unmarshal([]byte(raw), &links); err != nil {
 				slog.Warn("failed to decode library sync links", "err", err)
+				valid = false
 			} else {
 				for i := range links {
 					link := links[i]
@@ -255,10 +261,12 @@ func (s *Server) loadLibraryState() {
 				}
 			}
 		}
-		s.libraryMu.Lock()
-		s.libraryLinks = loaded
-		s.libraryLinksRaw = raw
-		s.libraryMu.Unlock()
+		if valid {
+			s.libraryMu.Lock()
+			s.libraryLinks = loaded
+			s.libraryLinksRaw = raw
+			s.libraryMu.Unlock()
+		}
 	}
 }
 

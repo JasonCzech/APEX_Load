@@ -70,21 +70,35 @@ func (b *Browser) startHARMonitor() {
 	b.harObservedBytes = 0
 	b.harObservedEntries = 0
 	b.harMonitorWG.Add(1)
+	workingPath := b.harWorkingPath
 	go func(stop, exceeded <-chan struct{}) {
 		defer b.harMonitorWG.Done()
-		select {
-		case <-stop:
-			return
-		case <-exceeded:
-			b.mu.Lock()
-			b.harErrorSeen = true
-			context := b.pwContext
-			b.mu.Unlock()
-			if context != nil {
-				_ = context.Close()
+		ticker := time.NewTicker(250 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-exceeded:
+				b.closeOversizedHARContext()
+				return
+			case <-ticker.C:
+				if info, err := os.Stat(workingPath); err == nil && info.Size() > maxRuntimeHARBytes {
+					b.harLimitOnce.Do(func() { close(b.harLimitExceeded) })
+				}
 			}
 		}
 	}(b.harMonitorStop, b.harLimitExceeded)
+}
+
+func (b *Browser) closeOversizedHARContext() {
+	b.mu.Lock()
+	b.harErrorSeen = true
+	context := b.pwContext
+	b.mu.Unlock()
+	if context != nil {
+		_ = context.Close()
+	}
 }
 
 const maxRuntimeHAREntries = 100_000
@@ -96,13 +110,11 @@ func (b *Browser) noteHARRequest(request playwright.Request) {
 	if !active {
 		return
 	}
-	// Count synchronously in the Playwright callback so the separately bounded
-	// diagnostics queue cannot bypass the limiter. Do not call Request.Sizes
-	// here: Playwright delivers this callback on its protocol dispatcher and a
-	// nested protocol request deadlocks that dispatcher. A conservative fixed
-	// allowance covers HAR structure, headers, and embedded response content.
+	// Count entries synchronously in the Playwright callback so the separately
+	// bounded diagnostics queue cannot bypass the entry limiter. The monitor
+	// independently checks the actual HAR file size without calling Playwright.
 	_ = request
-	b.noteHARNetworkUsage(64 << 10)
+	b.noteHARNetworkUsage(0)
 }
 
 func (b *Browser) noteHARNetworkUsage(bytes int64) {

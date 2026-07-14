@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -339,7 +340,7 @@ func (s *Server) importLibraryScript(item LibraryBundleItem, projectID string, r
 		return "", "", &LibraryConflict{Kind: "script", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, LocalItemID: localID, Reason: "failed to persist imported script: " + err.Error()}
 	}
 	if err := s.rememberLibraryLink(remoteID, item.Kind, item.SourceInstanceID, item.SourceItemID, stored.ID, item.SourceItemID, hashLibraryScript(stored.Script), item.ContentHash); err != nil {
-		return "", "", &LibraryConflict{Kind: "script", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, LocalItemID: stored.ID, Reason: err.Error()}
+		slog.Warn("imported script but failed to persist library link", "script_id", stored.ID, "error", err)
 	}
 	return stored.ID, action, nil
 }
@@ -375,7 +376,7 @@ func (s *Server) importLibraryScenario(item LibraryBundleItem, projectID string,
 			return "", "", &LibraryConflict{Kind: "scenario", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: err.Error()}
 		}
 		if err := s.rememberLibraryLink(remoteID, item.Kind, item.SourceInstanceID, item.SourceItemID, stored.ID, item.SourceItemID, hashLibraryScenario(stored), item.ContentHash); err != nil {
-			return "", "", &LibraryConflict{Kind: "scenario", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, LocalItemID: stored.ID, Reason: err.Error()}
+			slog.Warn("imported scenario but failed to persist library link", "scenario_id", stored.ID, "error", err)
 		}
 		return stored.ID, action, nil
 	}
@@ -391,7 +392,7 @@ func (s *Server) importLibraryScenario(item LibraryBundleItem, projectID string,
 		action = "created"
 	}
 	if err := s.rememberLibraryLink(remoteID, item.Kind, item.SourceInstanceID, item.SourceItemID, stored.ID, item.SourceItemID, hashLibraryScenario(stored), item.ContentHash); err != nil {
-		return "", "", &LibraryConflict{Kind: "scenario", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, LocalItemID: stored.ID, Reason: err.Error()}
+		slog.Warn("imported scenario but failed to persist library link", "scenario_id", stored.ID, "error", err)
 	}
 	return stored.ID, action, nil
 }
@@ -482,7 +483,7 @@ func (s *Server) importLibraryResult(item LibraryBundleItem, projectID string, r
 	}
 	keepArchiveDir = true
 	if err := s.rememberLibraryLink(remoteID, item.Kind, item.SourceInstanceID, item.SourceItemID, imported.ID, resultID, item.ContentHash, item.ContentHash); err != nil {
-		return "", "", &LibraryConflict{Kind: "result", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, LocalItemID: imported.ID, Reason: err.Error()}
+		slog.Warn("imported result but failed to persist library link", "import_id", imported.ID, "error", err)
 	}
 	return imported.ID, "created", nil
 }
