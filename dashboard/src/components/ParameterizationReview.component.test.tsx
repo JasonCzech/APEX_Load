@@ -175,7 +175,7 @@ describe('ParameterizationReview', () => {
     }))
   })
 
-  it('resets stale applied state when the script changes', async () => {
+  it('keeps applied state on an apply-driven script change but resets on a new import', async () => {
     applyMock.mockResolvedValue({ script: { ...script, name: 'Parameterized' }, diffs: [{ kind: 'value_replaced', path: '/actions/0/target', suggestion_id: 'pz_auto' }], applied_count: 1 })
     const parameterization = buildParameterization([
       suggestion({ id: 'pz_auto', auto_apply: true }),
@@ -188,11 +188,26 @@ describe('ParameterizationReview', () => {
     })
     expect(container.textContent).toContain('Applied 1 change(s)')
 
+    // Re-rendering with only a new script object — which every call site does on
+    // a successful apply, lifting the parameterized script back into the prop —
+    // must NOT wipe the applied badge/diffs.
     act(() => {
       root.render(
         <ParameterizationReview
           parameterization={parameterization}
           script={{ ...script, name: 'Changed Script' }}
+          onApplied={vi.fn()}
+        />,
+      )
+    })
+    expect(container.textContent).toContain('Applied 1 change(s)')
+
+    // A genuinely new import (different suggestion set) DOES reset the state.
+    act(() => {
+      root.render(
+        <ParameterizationReview
+          parameterization={buildParameterization([suggestion({ id: 'pz_other', auto_apply: true })])}
+          script={script}
           onApplied={vi.fn()}
         />,
       )

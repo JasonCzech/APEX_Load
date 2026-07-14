@@ -78,6 +78,65 @@ func TestAuthDenialThrottleIgnoresPathAndSubjectRotation(t *testing.T) {
 	}
 }
 
+// TestAuthDenialThrottleDistinguishesResolvedUsersBehindProxy locks in that
+// denials for DIFFERENT resolved principals are recorded separately even when
+// they share a proxy RemoteAddr — otherwise per-insider forensic detail is lost
+// in the platform's primary trusted-header-behind-a-proxy deployment.
+func TestAuthDenialThrottleDistinguishesResolvedUsersBehindProxy(t *testing.T) {
+	store := auditEventStore(t)
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+
+	for _, tc := range []struct {
+		subject string
+		path    string
+	}{
+		{subject: "alice", path: "/api/v1/auth/users"},
+		{subject: "bob", path: "/api/v1/projects"},
+	} {
+		req := httptest.NewRequest(http.MethodDelete, tc.path, nil)
+		req.RemoteAddr = "203.0.113.10:12345" // shared proxy IP
+		resolution := authResolution{User: &AuthenticatedUser{ID: tc.subject, Subject: tc.subject}}
+		server.recordAuthDenial(req, resolution, http.StatusForbidden, "insufficient role")
+	}
+
+	if got := countAuditEvents(t, store, "auth.access.denied"); got != 2 {
+		t.Fatalf("auth.access.denied events = %d, want 2 (one per resolved user behind the proxy)", got)
+	}
+}
+
+// TestAuthDenialThrottleCoarsensPathForResolvedPrincipal locks in that a
+// resolved principal's denials on DISTINCT routes are recorded separately
+// (forensic route detail) while denials that differ only by an id in the path
+// collapse to one event (so id rotation cannot flood the audit log).
+func TestAuthDenialThrottleCoarsensPathForResolvedPrincipal(t *testing.T) {
+	store := auditEventStore(t)
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	resolution := authResolution{User: &AuthenticatedUser{ID: "insider", Subject: "insider"}}
+
+	// Two distinct routes -> two events.
+	for _, path := range []string{"/api/v1/auth/users", "/api/v1/projects/secret-ops"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.RemoteAddr = "203.0.113.10:12345"
+		server.recordAuthDenial(req, resolution, http.StatusForbidden, "insufficient role")
+	}
+	if got := countAuditEvents(t, store, "auth.access.denied"); got != 2 {
+		t.Fatalf("distinct routes = %d events, want 2", got)
+	}
+
+	// Same route, rotating a UUID id -> collapses to the existing bucket (no new
+	// events beyond the users route already recorded above).
+	for _, id := range []string{"11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222", "33333333-3333-3333-3333-333333333333"} {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+id, nil)
+		req.RemoteAddr = "203.0.113.10:12345"
+		server.recordAuthDenial(req, resolution, http.StatusForbidden, "insufficient role")
+	}
+	// 2 distinct routes above + 1 for the /tests/:id class = 3 total (the 3 id
+	// rotations do NOT each add an event).
+	if got := countAuditEvents(t, store, "auth.access.denied"); got != 3 {
+		t.Fatalf("after id rotation = %d events, want 3 (id rotation must not flood)", got)
+	}
+}
+
 // A4 — trusted-header logins are audited once per dedup window (not per request).
 func TestTrustedHeaderLoginAuditedAndDeduped(t *testing.T) {
 	store := auditEventStore(t)

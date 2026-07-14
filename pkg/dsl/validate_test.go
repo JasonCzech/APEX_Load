@@ -1449,6 +1449,40 @@ func TestValidateExtractorIssuesRejectsUnsupportedTypes(t *testing.T) {
 	assertIssueContains(t, issues, `extractors[1] source must be "", "body", or "header"`)
 }
 
+// TestValidateExtractorIssuesSkipsSourceTypeAllowlistForNonHTTPProtocols locks
+// in that non-HTTP protocol runtimes keep their own extractor source/type
+// vocabularies: the HTTP body/header allowlist must not reject Kafka key,
+// JMS property, database scalar/rows, network record_count, WebSocket/gRPC
+// json, etc. Regression guard for the DSL-wide allowlist over-reach.
+func TestValidateExtractorIssuesSkipsSourceTypeAllowlistForNonHTTPProtocols(t *testing.T) {
+	cases := []struct {
+		protocol string
+		ext      Extractor
+	}{
+		{"kafka", Extractor{Name: "k", Source: "key", Type: "", Expression: ""}},
+		{"kafka", Extractor{Name: "off", Source: "offset", Type: "", Expression: ""}},
+		{"jms-solace", Extractor{Name: "p", Source: "property", Type: "", Expression: "JMSXGroupID"}},
+		{"jms", Extractor{Name: "cid", Source: "correlation_id", Type: "", Expression: ""}},
+		{"database", Extractor{Name: "s", Source: "scalar", Type: "", Expression: "$.scalar"}},
+		{"database", Extractor{Name: "rows", Source: "rows", Type: "json", Expression: "$.rows[0].id"}},
+		{"network", Extractor{Name: "rc", Source: "record_count", Type: "", Expression: "$.record_count"}},
+		{"websocket", Extractor{Name: "m", Source: "message", Type: "json", Expression: "$.id"}},
+		{"grpc", Extractor{Name: "g", Source: "body", Type: "json", Expression: "$.id"}},
+	}
+	for _, tc := range cases {
+		action := Action{Name: "a", Extractors: []Extractor{tc.ext}}
+		if issues := validateExtractorIssues(tc.protocol, "actions[0]", action); len(issues) > 0 {
+			t.Errorf("protocol %s source %q type %q rejected: %v", tc.protocol, tc.ext.Source, tc.ext.Type, issues)
+		}
+	}
+
+	// HTTP still enforces the allowlist.
+	httpAction := Action{Name: "a", Extractors: []Extractor{{Name: "k", Source: "key", Type: "", Expression: ""}}}
+	if issues := validateExtractorIssues("http", "actions[0]", httpAction); len(issues) == 0 {
+		t.Errorf("http source %q should still be rejected by the allowlist", "key")
+	}
+}
+
 // TestValidateScriptIssues_NestedJMSHonorsConfigDestination locks in that a JMS
 // action nested inside a control block is NOT falsely flagged "missing target"
 // when config.jms.destination supplies the destination.

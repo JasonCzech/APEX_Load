@@ -808,7 +808,18 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
       })
     }
 
-    void loadReports()
+    void loadReports().catch(() => {
+      if (cancelled) return
+      // If report loading fails unexpectedly, mark these ids null so the
+      // release trend degrades gracefully instead of retrying every render.
+      setArchiveReports(prev => {
+        const next = { ...prev }
+        missingReports.forEach(test => {
+          if (!(test.id in next)) next[test.id] = null
+        })
+        return next
+      })
+    })
 
     return () => {
       cancelled = true

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTestApi } from '../hooks/api/useTestApi'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { LiveMetrics, MetricsHistoryPoint, NetworkLatency, TelemetryHealth, TestStatus, WSMessage } from '../types'
+import { isCompletedTestStatus } from '../utils/testStatusUtils'
 import { routeLatencySeriesValuesForTarget } from './latencySeries'
 import { mapExecutionHistory, mapExecutionMetricToHistoryPoint, mergeMetricsHistory } from './testExecutionMetricsModel'
 
@@ -73,6 +74,32 @@ export function useExecutionMetricsStream(testId: string, status?: TestStatus) {
     }
   }, [])
 
+  // A completed run never opens the metrics stream, so the stream's own history
+  // backfill (handleStreamOpen) never runs, and the normal test poll is
+  // intentionally history-free — leaving the charts of a past run empty on a
+  // fresh page load. Fetch a bounded history window once for a terminal run so
+  // the recorded timeline renders. Guarded to fire once per test id.
+  const completedBackfillTestIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!testId || !isCompletedTestStatus(status)) return
+    if (completedBackfillTestIdRef.current === testId) return
+    completedBackfillTestIdRef.current = testId
+    let cancelled = false
+    void getTest(testId, { includeHistory: true, limit: EXECUTION_STREAM_HISTORY_LIMIT })
+      .then((test) => {
+        if (cancelled || !mountedRef.current || activeTestIdRef.current !== testId) return
+        const backfill = mapExecutionHistory(test?.history)
+        if (backfill.length === 0) return
+        setLocalMetricsHistory((prev) => mergeMetricsHistory(prev, backfill).slice(-EXECUTION_STREAM_HISTORY_LIMIT))
+      })
+      .catch(() => {
+        // Best-effort backfill; other history sources still populate the charts.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [getTest, status, testId])
+
   // Clear accumulated stream state when switching tests so run B never shows run
   // A's history/last-metrics snapshot (the parent reuses this hook instance
   // without a key, and the next run may not stream, so nothing else clears it).
@@ -81,6 +108,11 @@ export function useExecutionMetricsStream(testId: string, status?: TestStatus) {
     setLatestMetrics(undefined)
     lastSeenTimestampRef.current = undefined
     hasConnectedRef.current = false
+    // Reset the completed-run backfill guard too: this effect just wiped the
+    // backfilled history, so revisiting a previously-backfilled completed run
+    // (e.g. B -> A -> B) must be allowed to fetch it again — otherwise its charts
+    // render empty until the component remounts.
+    completedBackfillTestIdRef.current = null
   }, [testId])
 
   const handleTestWSMessage = useCallback((msg: WSMessage) => {

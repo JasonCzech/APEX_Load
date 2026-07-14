@@ -470,6 +470,14 @@ func jsonPathValueString(value any) string {
 		return strconv.FormatFloat(typed, 'f', -1, 64)
 	case float32:
 		return strconv.FormatFloat(float64(typed), 'f', -1, 32)
+	case []any, map[string]any:
+		// A composite (e.g. the whole document for expression "$") must round-trip
+		// through JSON, not Go's fmt map[k:v] syntax, so a later template
+		// substitution injects valid JSON into a request body.
+		if encoded, err := json.Marshal(typed); err == nil {
+			return string(encoded)
+		}
+		return fmt.Sprintf("%v", value)
 	default:
 		return fmt.Sprintf("%v", value)
 	}

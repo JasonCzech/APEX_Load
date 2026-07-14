@@ -62,8 +62,8 @@ func TestValue(t *testing.T) {
 		},
 		{
 			name:  "json array and object secret fields",
-			input: `{"clientSecret":["alpha","beta"],"nested":{"apiKey":{"raw":"key-123"}},"csrf":"csrf-keep","largeId":9007199254740993}`,
-			want:  `{"clientSecret":["` + Redacted + `","` + Redacted + `"],"csrf":"csrf-keep","largeId":9007199254740993,"nested":{"apiKey":{"raw":"` + Redacted + `"}}}`,
+			input: `{"clientSecret":["alpha","beta"],"nested":{"apiKey":{"raw":"key-123"}},"csrf":"csrf-secret","largeId":9007199254740993}`,
+			want:  `{"clientSecret":["` + Redacted + `","` + Redacted + `"],"csrf":"` + Redacted + `","largeId":9007199254740993,"nested":{"apiKey":{"raw":"` + Redacted + `"}}}`,
 		},
 		{
 			name:  "form password field",
@@ -96,6 +96,13 @@ func TestValue(t *testing.T) {
 			want:  "token " + Redacted + " should not persist",
 		},
 		{
+			// A plain multi-label hostname structurally matches the JWT pattern
+			// (three 8+-char dotted labels) but is not a secret: it must survive.
+			name:  "multi-label hostname preserved",
+			input: "connecting to dashboard.internal.megacorp now",
+			want:  "connecting to dashboard.internal.megacorp now",
+		},
+		{
 			name:   "custom pattern",
 			input:  "ssn=123-45-6789 name=j",
 			policy: Policy{ExtraPatterns: []Rule{{Pattern: `\d{3}-\d{2}-\d{4}`}}},
@@ -119,6 +126,92 @@ func TestValue(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := Value(tt.input, tt.policy); got != tt.want {
 				t.Errorf("Value(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestHARPreservesURLHostAndHashedPaths locks in that scrubbing a HAR does not
+// corrupt request URLs: multi-label hosts and content-hashed asset paths (both
+// JWT/high-entropy look-alikes) must survive, while sensitive query params are
+// still redacted. Regression guard for the blanket-redaction-over-URLs bug.
+func TestHARPreservesURLHostAndHashedPaths(t *testing.T) {
+	input := []byte(`{
+	  "log": {
+	    "version": "1.2",
+	    "creator": {"name": "test", "version": "1"},
+	    "entries": [{
+	      "request": {"method": "GET", "url": "https://dashboard.internal.megacorp/assets/app.a1b2c3d4e5f6a7b8c9d0.js?token=secret-token-value-1234", "headers": []},
+	      "response": {"status": 200, "headers": []}
+	    }]
+	  }
+	}`)
+	scrubbed, err := HAR(input, Policy{})
+	if err != nil {
+		t.Fatalf("HAR: %v", err)
+	}
+	text := string(scrubbed)
+	for _, keep := range []string{"dashboard.internal.megacorp", "app.a1b2c3d4e5f6a7b8c9d0.js"} {
+		if !strings.Contains(text, keep) {
+			t.Fatalf("scrubbed HAR dropped non-secret URL part %q: %s", keep, text)
+		}
+	}
+	if strings.Contains(text, "secret-token-value-1234") {
+		t.Fatalf("scrubbed HAR leaked sensitive query token: %s", text)
+	}
+}
+
+// TestValueURLRedactsOpaqueQueryAndFragmentSecrets locks in that opaque
+// credentials in a URL's query and fragment — signed-URL signatures, OAuth
+// codes/tokens under param names outside the fixed sensitive list — are redacted,
+// while the scheme/host/path (including content-hashed asset filenames) survive.
+func TestValueURLRedactsOpaqueQueryAndFragmentSecrets(t *testing.T) {
+	cases := []struct {
+		name   string
+		in     string
+		keep   []string
+		redact []string
+	}{
+		{
+			name: "azure sas signature keeps param name",
+			in:   "https://storage.example/blob/app.a1b2c3d4e5f6a7b8.js?sig=AbCdEf0123456789GhIjKlMn0Z&se=2026",
+			// The param NAME must survive (not be swallowed into the redaction).
+			keep:   []string{"storage.example", "app.a1b2c3d4e5f6a7b8.js", "se=2026", "sig="},
+			redact: []string{"AbCdEf0123456789GhIjKlMn0Z"},
+		},
+		{
+			name:   "oauth implicit fragment token",
+			in:     "https://app.example/callback#access_token=AbCdEf0123456789GhIjKlMn0Z&state=xyz",
+			keep:   []string{"app.example", "/callback", "state=xyz"},
+			redact: []string{"AbCdEf0123456789GhIjKlMn0Z"},
+		},
+		{
+			name: "percent-encoded signature is decoded and caught",
+			// A base64 signature whose +,/ are percent-encoded (%2B/%2F) must still
+			// be detected via the decoded form, and the raw encoded run redacted.
+			in:     "https://x.example/dl?Signature=YWJjZGVm%2Bghijkl%2Fmnop0123456789QRS",
+			keep:   []string{"x.example", "Signature="},
+			redact: []string{"YWJjZGVm", "mnop0123456789QRS"},
+		},
+		{
+			name:   "low-entropy values preserved",
+			in:     "https://x.example/v2/orders?page=2&size=100&code=US&sort=name",
+			keep:   []string{"page=2", "size=100", "code=US", "sort=name", "/v2/orders"},
+			redact: []string{},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ValueURL(tc.in, Policy{})
+			for _, keep := range tc.keep {
+				if !strings.Contains(got, keep) {
+					t.Errorf("ValueURL dropped non-secret part %q: %s", keep, got)
+				}
+			}
+			for _, secret := range tc.redact {
+				if strings.Contains(got, secret) {
+					t.Errorf("ValueURL leaked opaque secret %q: %s", secret, got)
+				}
 			}
 		})
 	}
@@ -388,19 +481,29 @@ func TestValueRedactsAuthorizationJSONField(t *testing.T) {
 // correlation engine captures-and-replays (session/sessionid/csrf/xsrf) are NOT
 // redacted — the HAR/recorder pipelines scrub before correlation, so redacting
 // these would break replay parameterization (see pkg/convert/har TestConvertHAR).
-func TestValuePreservesCorrelationTargets(t *testing.T) {
+// TestValueRedactsSessionAndCSRFTokens locks in that live session/CSRF tokens in
+// JSON bodies are redacted. These were previously preserved for correlation, but
+// correlation-time replay reconstruction now runs against the raw server-side
+// recording sidecar and raw import content (not this scrubbed view), so leaving
+// them un-redacted only leaked live credentials into scrubbed artifacts.
+func TestValueRedactsSessionAndCSRFTokens(t *testing.T) {
 	cases := []struct {
-		in    string
-		value string
+		in     string
+		secret string
 	}{
 		{`{"sessionId":"abc12345"}`, "abc12345"},
 		{`{"session":"sid-123"}`, "sid-123"},
 		{`{"csrf":"csrf-tok"}`, "csrf-tok"},
+		{`{"csrf_token":"csrf-tok2"}`, "csrf-tok2"},
 		{`{"xsrf":"xsrf-tok"}`, "xsrf-tok"},
 	}
 	for _, tc := range cases {
-		if got := Value(tc.in, Policy{}); !strings.Contains(got, tc.value) {
-			t.Fatalf("correlation value %q was redacted (breaks replay): %s", tc.value, got)
+		got := Value(tc.in, Policy{})
+		if strings.Contains(got, tc.secret) {
+			t.Fatalf("session/csrf token %q leaked into scrubbed body: %s", tc.secret, got)
+		}
+		if !strings.Contains(got, Redacted) {
+			t.Fatalf("expected redaction marker for %q, got: %s", tc.in, got)
 		}
 	}
 }

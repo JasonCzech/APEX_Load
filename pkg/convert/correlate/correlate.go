@@ -406,11 +406,29 @@ func salesforceCandidates(responseBody string, responseHeaders map[string]string
 }
 
 func looksLikeFormEncodedBody(body string) bool {
-	if !strings.Contains(body, "=") {
+	trimmed := strings.TrimSpace(body)
+	if trimmed == "" || !strings.Contains(trimmed, "=") {
 		return false
 	}
-	values, err := url.ParseQuery(body)
-	return err == nil && len(values) > 0
+	// url.ParseQuery is far too permissive — it accepts almost any '%'-free text,
+	// so an ordinary JSON/XML body containing '=' (e.g. base64 padding like
+	// "token":"dGVzdA==") parses as a single key/value pair and would wrongly
+	// suppress Salesforce body scanning. Exclude obviously structured bodies, and
+	// require the parsed keys to look like real form field names.
+	switch trimmed[0] {
+	case '{', '[', '<':
+		return false
+	}
+	values, err := url.ParseQuery(trimmed)
+	if err != nil || len(values) == 0 {
+		return false
+	}
+	for key := range values {
+		if strings.TrimSpace(key) == "" || strings.ContainsAny(key, `{}[]"':<>`) {
+			return false
+		}
+	}
+	return true
 }
 
 func salesforceRegexCandidates(body string) []Candidate {

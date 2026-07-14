@@ -382,9 +382,18 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 		if profileID == "audit" {
 			report.Integrity = verifyRunArchiveIntegrity(record, report.Manifest)
 		}
+		annotations, err := resolveReportAnnotations(s.store, report, testID, profileID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to load report commentary: "+err.Error())
+			return
+		}
+		manifest, manifestErr := s.runner.GetTestManifest(testID)
+		if manifestErr != nil {
+			manifest = nil
+		}
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 		w.Header().Set("Content-Disposition", "attachment; filename=\"apexload-archive-report-"+testID+".csv\"")
-		if err := writeRunArchiveReportCSVWithProfile(report, w, profileID); err != nil {
+		if err := writeRunArchiveReportCSVWithProfileAndAnnotations(report, w, profileID, annotations, manifest); err != nil {
 			if strings.Contains(err.Error(), "unknown report profile") {
 				writeError(w, http.StatusBadRequest, err.Error())
 				return
@@ -410,9 +419,18 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 			report.Integrity = verifyRunArchiveIntegrity(record, report.Manifest)
 		}
 		testID := r.PathValue("id")
+		annotations, err := resolveReportAnnotations(s.store, report, testID, profile.ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to load report commentary: "+err.Error())
+			return
+		}
+		manifest, manifestErr := s.runner.GetTestManifest(testID)
+		if manifestErr != nil {
+			manifest = nil
+		}
 		w.Header().Set("Content-Type", "application/pdf")
 		w.Header().Set("Content-Disposition", "attachment; filename=\"apexload-archive-report-"+testID+"-"+profile.ID+".pdf\"")
-		if err := writeRunArchiveReportPDFWithProfile(report, w, profile.ID); err != nil {
+		if err := writeRunArchiveReportPDFWithProfileAndAnnotations(report, w, profile.ID, annotations, manifest); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to write archive report pdf: "+err.Error())
 		}
 		return

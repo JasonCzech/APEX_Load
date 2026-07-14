@@ -152,7 +152,8 @@ func validateHTTPSequenceRequestIssues(label string, requestIndex int, request m
 		if payload, err := json.Marshal(raw); err == nil {
 			var extractors []Extractor
 			if json.Unmarshal(payload, &extractors) == nil {
-				issues = append(issues, validateExtractorIssues(childLabel, Action{Extractors: extractors})...)
+				// http_sequence child requests are HTTP by construction.
+				issues = append(issues, validateExtractorIssues("http", childLabel, Action{Extractors: extractors})...)
 			}
 		}
 	}
@@ -270,7 +271,7 @@ func validateActionForProtocolAtPath(protocol string, path string, index int, ac
 	}
 	issues = append(issues, validateBodyFileIssues(path, action)...)
 	issues = append(issues, validateBase64BodyEncodingIssues(path, action)...)
-	issues = append(issues, validateExtractorIssues(path, action)...)
+	issues = append(issues, validateExtractorIssues(protocol, path, action)...)
 	if strings.TrimSpace(action.Type) == "" {
 		return append(issues, fmt.Sprintf("%s: missing type", actionLabel(path, action)))
 	}
@@ -533,11 +534,30 @@ func fileDataSourceHasContent(source DataSource) bool {
 		strings.TrimSpace(source.StorageRef) != ""
 }
 
+// extractorSourceTypeAllowlistApplies reports whether the HTTP body/header
+// source+type allowlist should be enforced for a protocol. The allowlist
+// vocabulary (body/header sources; jsonpath/css/xpath/regex/... types) is
+// HTTP-specific; other protocol runtimes support their own extractor sources
+// and types (Kafka key/partition/offset, JMS property/message_id, database
+// rows/scalar/row_count, network records/record_count, gRPC/WebSocket json,
+// ...), so enforcing the HTTP allowlist against them would reject extractors
+// those runtimes and the dashboard editor both support.
+func extractorSourceTypeAllowlistApplies(protocol string) bool {
+	switch ProtocolFamily(protocol) {
+	case "browser", "websocket", "grpc", "database", "network", "sap_gui", "java_vuser", "jms", "kafka", "eventhubs":
+		return false
+	}
+	return true
+}
+
 // validateExtractorIssues checks the optional extractor behavior fields so
-// typos fail validation instead of silently misbehaving at runtime.
-func validateExtractorIssues(path string, action Action) []string {
+// typos fail validation instead of silently misbehaving at runtime. The
+// source/type allowlist is HTTP-specific and only enforced for HTTP-family
+// protocols (see extractorSourceTypeAllowlistApplies).
+func validateExtractorIssues(protocol string, path string, action Action) []string {
 	var issues []string
 	label := actionLabel(path, action)
+	enforceSourceType := extractorSourceTypeAllowlistApplies(protocol)
 	for i, ext := range action.Extractors {
 		switch ext.OnMiss {
 		case "", "ignore", "fail", "empty":
@@ -554,17 +574,19 @@ func validateExtractorIssues(path string, action Action) []string {
 		default:
 			issues = append(issues, fmt.Sprintf("%s: extractors[%d] convert must be \"\", \"url_encode\", \"url_decode\", \"html_decode\", or \"html_url_encode\" (got %q)", label, i, ext.Convert))
 		}
-		switch strings.TrimSpace(ext.Source) {
-		case "", "body":
-			if !isAllowedValue(strings.TrimSpace(ext.Type), "jsonpath", "json_path", "jmespath", "css", "xpath", "regex", "regex_count", "regex_ordinal", "boundary", "sse_concat", "sse_event") {
-				issues = append(issues, fmt.Sprintf("%s: extractors[%d] type %q is not supported for body extraction", label, i, ext.Type))
+		if enforceSourceType {
+			switch strings.TrimSpace(ext.Source) {
+			case "", "body":
+				if !isAllowedValue(strings.TrimSpace(ext.Type), "jsonpath", "json_path", "jmespath", "css", "xpath", "regex", "regex_count", "regex_ordinal", "boundary", "sse_concat", "sse_event") {
+					issues = append(issues, fmt.Sprintf("%s: extractors[%d] type %q is not supported for body extraction", label, i, ext.Type))
+				}
+			case "header":
+				if !isAllowedValue(strings.TrimSpace(ext.Type), "", "header", "regex", "boundary") {
+					issues = append(issues, fmt.Sprintf("%s: extractors[%d] type %q is not supported for header extraction", label, i, ext.Type))
+				}
+			default:
+				issues = append(issues, fmt.Sprintf("%s: extractors[%d] source must be \"\", \"body\", or \"header\" (got %q)", label, i, ext.Source))
 			}
-		case "header":
-			if !isAllowedValue(strings.TrimSpace(ext.Type), "", "header", "regex", "boundary") {
-				issues = append(issues, fmt.Sprintf("%s: extractors[%d] type %q is not supported for header extraction", label, i, ext.Type))
-			}
-		default:
-			issues = append(issues, fmt.Sprintf("%s: extractors[%d] source must be \"\", \"body\", or \"header\" (got %q)", label, i, ext.Source))
 		}
 		if ext.SaveOffset < 0 {
 			issues = append(issues, fmt.Sprintf("%s: extractors[%d] save_offset must be zero or greater", label, i))

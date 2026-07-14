@@ -117,6 +117,63 @@ func (c *boundedArchiveCache[T]) len() int {
 var runArchiveReportCache = newBoundedArchiveCache[RunArchiveReport](runArchiveReportCacheEntries)
 var runArchiveManifestCache = newBoundedArchiveCache[RunArchiveManifest](runArchiveManifestCacheEntries)
 
+// boundedCache is the small untyped LRU shared by lightweight process caches
+// whose callers need explicit Load, Store, and Delete operations.
+type boundedCache struct {
+	mu      sync.Mutex
+	max     int
+	entries map[string]*list.Element
+	order   *list.List // front = most recently used
+}
+
+type boundedCacheEntry struct {
+	key   string
+	value any
+}
+
+func newBoundedCache(max int) *boundedCache {
+	return &boundedCache{max: max, entries: make(map[string]*list.Element), order: list.New()}
+}
+
+func (c *boundedCache) Load(key string) (any, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	element, ok := c.entries[key]
+	if !ok {
+		return nil, false
+	}
+	c.order.MoveToFront(element)
+	return element.Value.(*boundedCacheEntry).value, true
+}
+
+func (c *boundedCache) Delete(key string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if element, ok := c.entries[key]; ok {
+		c.order.Remove(element)
+		delete(c.entries, key)
+	}
+}
+
+func (c *boundedCache) Store(key string, value any) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if element, ok := c.entries[key]; ok {
+		element.Value.(*boundedCacheEntry).value = value
+		c.order.MoveToFront(element)
+		return
+	}
+	c.entries[key] = c.order.PushFront(&boundedCacheEntry{key: key, value: value})
+	for c.max > 0 && c.order.Len() > c.max {
+		oldest := c.order.Back()
+		if oldest == nil {
+			break
+		}
+		c.order.Remove(oldest)
+		delete(c.entries, oldest.Value.(*boundedCacheEntry).key)
+	}
+}
+
 func cachedRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport, error) {
 	key := runArchiveReportCacheKey(record)
 	report, err := runArchiveReportCache.getOrLoad(key, func() (*RunArchiveReport, error) {

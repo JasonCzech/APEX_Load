@@ -74,7 +74,13 @@ type sanitizedGeometry struct {
 }
 
 type virtualDesktopBounds struct {
-	MinX, MinY    int
+	MinX, MinY int
+	// MaxX/MaxY are the right/bottom edges of the usable virtual desktop. They
+	// are tracked separately from Width/Height (which clamp the window SIZE)
+	// because a multi-monitor arrangement is not symmetric: a secondary monitor
+	// may extend to the right/below the primary, so the position bound is not
+	// simply MinX+Width. Zero means "derive from MinX+Width / MinY+Height".
+	MaxX, MaxY    int
 	Width, Height int
 }
 
@@ -124,8 +130,14 @@ func sanitizeWindowGeometryInBounds(st windowState, desk virtualDesktopBounds) s
 	}
 
 	// Re-center if the window would be (almost) entirely off the usable desktop.
-	maxX := desk.MinX + desk.Width
-	maxY := desk.MinY + desk.Height
+	maxX := desk.MaxX
+	if maxX == 0 {
+		maxX = desk.MinX + desk.Width
+	}
+	maxY := desk.MaxY
+	if maxY == 0 {
+		maxY = desk.MinY + desk.Height
+	}
 	offRight := st.X > maxX-windowEdgeMargin
 	offBottom := st.Y > maxY-windowEdgeMargin
 	offLeft := st.X+w < desk.MinX+windowEdgeMargin

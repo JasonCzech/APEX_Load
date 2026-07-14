@@ -78,6 +78,7 @@ func TestHandlePreviewRecordingConversionDoesNotStoreScript(t *testing.T) {
 }
 
 func TestHandleConvertRecordingPersistsBaseline(t *testing.T) {
+	t.Setenv(recordingBaselineKeyEnvVar, "recorder-handler-test-key")
 	server := recordingTestServer(t)
 	session, err := server.recorder.StartSession("rec-baseline", "Checkout Recording", recorder.SessionFilters{}, nil)
 	if err != nil {
@@ -153,8 +154,19 @@ func TestHandleConvertRecordingPersistsBaseline(t *testing.T) {
 	if strings.Contains(obs.RequestBody, "hunter2") || strings.Contains(obs.RequestHeaders["Authorization"], "recorded-secret") {
 		t.Fatalf("request-side secrets were not redacted: body=%q headers=%v", obs.RequestBody, obs.RequestHeaders)
 	}
-	if !strings.Contains(obs.ResponseBody, "csrf-recorded") {
-		t.Fatalf("response body = %q, want dynamic response values preserved", obs.ResponseBody)
+	// The scrubbed persistence view redacts live session/CSRF tokens so they
+	// cannot leak from a persisted baseline; correlation uses the raw sidecar.
+	if strings.Contains(obs.ResponseBody, "csrf-recorded") {
+		t.Fatalf("scrubbed observation leaked csrf token: %q", obs.ResponseBody)
+	}
+	// The server-side encrypted correlation sidecar preserves the dynamic value
+	// without persisting plaintext credentials.
+	if len(record.CorrelationObservations) != 0 || record.EncryptedCorrelationObservations == "" {
+		t.Fatalf("correlation sidecar = plaintext:%d encrypted:%t, want encrypted only", len(record.CorrelationObservations), record.EncryptedCorrelationObservations != "")
+	}
+	correlationObservations := baselineObservations(record)
+	if len(correlationObservations) != 1 || !strings.Contains(correlationObservations[0].ResponseBody, "csrf-recorded") {
+		t.Fatalf("decrypted correlation observations = %#v, want dynamic response value preserved for correlation", correlationObservations)
 	}
 }
 

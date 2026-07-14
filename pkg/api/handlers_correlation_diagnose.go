@@ -55,10 +55,10 @@ func (s *Server) handleDiagnoseCorrelations(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	suggestions := correlate.DiagnoseReplay(
+	suggestions := scrubRepairSuggestions(correlate.DiagnoseReplay(
 		toObservations(req.Recorded),
 		toObservations(req.Replay),
-	)
+	))
 
 	counts := correlationDiagnoseCounts{}
 	for _, s := range suggestions {

@@ -430,7 +430,7 @@ func (b *BrowserRecordingBridge) recordPairFailure(key string, now time.Time) (t
 	return time.Time{}, false
 }
 
-func bridgePairLimitKey(r *http.Request, origin string) string {
+func bridgePairLimitKey(r *http.Request, _ string) string {
 	remote := strings.TrimSpace(r.RemoteAddr)
 	if host, _, err := net.SplitHostPort(remote); err == nil && host != "" {
 		remote = host
@@ -438,7 +438,11 @@ func bridgePairLimitKey(r *http.Request, origin string) string {
 	if remote == "" {
 		remote = "unknown"
 	}
-	return strings.TrimSpace(origin) + "|" + remote
+	// Key the pairing rate limit on the remote IP only. The Origin header is
+	// attacker-controlled for any non-browser client, so including it let a local
+	// process reset the 5-failures-per-minute budget for every invented Origin
+	// and brute-force the pairing token unthrottled from a single IP.
+	return remote
 }
 
 func writeRetryAfter(w http.ResponseWriter, retryAt, now time.Time) {

@@ -91,10 +91,24 @@ func browserRecordingAvailabilityFromStartError(err error) (browserRecordingAvai
 // where recording storage states are persisted and read back for login reuse.
 const browserStorageStateDir = "browser-recorder-state"
 
+// browserStorageStateProjectDir is the project-scoped directory segment used by
+// browserStorageStateExportLocation; a nil/empty project maps to "unassigned".
+func browserStorageStateProjectDir(projectID string) string {
+	dir := sanitizeDownloadName(normalizeProjectID(projectID))
+	if dir == "" {
+		return "unassigned"
+	}
+	return dir
+}
+
 // confineStorageStatePath resolves a client-supplied storage-state path to an
 // absolute path guaranteed to live under the export base dir, rejecting
-// traversal/absolute escapes. The file must already exist.
-func confineStorageStatePath(raw string) (string, error) {
+// traversal/absolute escapes. The file must already exist. It is also scoped to
+// the requesting recording's project: the persisted reuse copy contains a RAW,
+// unscrubbed Playwright storage state (live session cookies), so without this
+// check a user could seed a new recording with another project's live session by
+// pointing storage_state_path at that project's export subdirectory.
+func confineStorageStatePath(raw, projectID string) (string, error) {
 	cleaned := strings.ReplaceAll(strings.TrimSpace(raw), "\\", "/")
 	if cleaned == "" || strings.HasPrefix(cleaned, "/") || filepath.IsAbs(cleaned) {
 		return "", fmt.Errorf("storage_state_path is not allowed: absolute paths are not permitted")
@@ -105,6 +119,11 @@ func confineStorageStatePath(raw string) (string, error) {
 		if part == "" || part == "." || part == ".." {
 			return "", fmt.Errorf("storage_state_path is not allowed: path traversal is not permitted")
 		}
+	}
+	// Reject a storage state belonging to a different project (the path is
+	// project-scoped as browserStorageStateDir/<project>/<file>).
+	if segments := strings.Split(cleaned, "/"); len(segments) < 2 || segments[0] != browserStorageStateProjectDir(projectID) {
+		return "", fmt.Errorf("storage_state_path is not allowed: it must belong to this recording's project")
 	}
 	dir, file := filepathSplitForward(cleaned)
 	resolved, err := resolveConfinedExportPath(exportBaseDir(), filepath.Join(browserStorageStateDir, dir), file)
@@ -127,10 +146,7 @@ func filepathSplitForward(p string) (dir, file string) {
 }
 
 func browserStorageStateExportLocation(info *BrowserRecordingSession) (relativePath, stateFile string) {
-	projectDir := sanitizeDownloadName(normalizeProjectID(info.ProjectID))
-	if projectDir == "" {
-		projectDir = "unassigned"
-	}
+	projectDir := browserStorageStateProjectDir(info.ProjectID)
 	filename := sanitizeDownloadName(info.Name)
 	if filename == "" {
 		filename = "browser-recording"
@@ -260,7 +276,7 @@ func (s *Server) handleStartBrowserRecording(w http.ResponseWriter, r *http.Requ
 	// it to the export directory so a client cannot point it at arbitrary host
 	// files (path traversal / absolute paths).
 	if strings.TrimSpace(req.StorageStatePath) != "" {
-		confined, err := confineStorageStatePath(req.StorageStatePath)
+		confined, err := confineStorageStatePath(req.StorageStatePath, req.ProjectID)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
@@ -935,12 +951,16 @@ func (s *Server) handleExportBrowserRecordingStorageState(w http.ResponseWriter,
 	}
 	relativePath, stateFile := browserStorageStateExportLocation(info)
 	// Persist a confined copy under the export dir so it can be supplied as a
-	// storage_state_path on a later recording. Best effort; failures still
-	// allow the caller to download the scrubbed state.
+	// storage_state_path on a later recording. This copy MUST be the RAW storage
+	// state: it is read only server-side to seed a Playwright context (login
+	// reuse), never served to a client — seeding a context with the scrubbed
+	// [REDACTED] cookie values silently breaks session restore. The client
+	// download below still receives the scrubbed state. Best effort; failures
+	// still allow the caller to download the scrubbed state.
 	pruneBrowserStorageStateExports(time.Now())
 	if confined, err := resolveConfinedExportPath(exportBaseDir(), filepath.Dir(relativePath), filepath.Base(relativePath)); err == nil {
 		if mkErr := os.MkdirAll(filepath.Dir(confined), 0o755); mkErr == nil {
-			if writeErr := os.WriteFile(confined, data, 0o600); writeErr == nil {
+			if writeErr := os.WriteFile(confined, artifact.StorageState, 0o600); writeErr == nil {
 				w.Header().Set("X-APEXLoad-StorageState-Path", relativePath)
 			}
 		}

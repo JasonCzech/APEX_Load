@@ -482,14 +482,24 @@ export default function SampleScriptImport({ initialFiles, projectId, onImported
     }
   }, [convertTask.reset, format, saveTask.clearError])
 
+  // Load a set of externally-dropped files exactly ONCE, when that set changes —
+  // not on every format/preset change. initialFiles is held in authoring state
+  // for the whole import session, so depending on `format`/`handleFilesLoad`
+  // (which itself depends on format) re-ran this effect on every user format
+  // change, re-loading the dropped file over the user's edits and snapping the
+  // Format dropdown back to the file's inferred format.
+  const processedInitialFilesRef = useRef<typeof initialFiles | null>(null)
   useEffect(() => {
     if (!initialFiles || initialFiles.length === 0) return
+    if (processedInitialFilesRef.current === initialFiles) return
+    processedInitialFilesRef.current = initialFiles
     const nextFormat = inferSampleFormatFromFile(initialFiles[0], format)
     if (nextFormat !== format) {
       setFormat(nextFormat)
     }
     void handleFilesLoad(supportsMultiPrimary(nextFormat) ? initialFiles : [initialFiles[0]], 'primary', nextFormat)
-  }, [format, handleFilesLoad, initialFiles])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialFiles])
 
   const handleDragOver = (event: React.DragEvent, target: 'primary' | 'secondary') => {
     event.preventDefault()

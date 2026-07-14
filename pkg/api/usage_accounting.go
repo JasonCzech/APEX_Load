@@ -9,14 +9,20 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
-var usageArchiveBytesCache sync.Map // map[string]int64
+// usageArchiveBytesCache memoizes per-archive WalkDir byte totals. It is bounded
+// so entries for deleted tests/archives cannot accumulate without limit, and
+// entries are validated against the archive path's existence on read so a prune
+// (which os.RemoveAll's ArchivePath without touching this cache) does not keep
+// serving the pre-prune size.
+const maxUsageArchiveBytesCacheEntries = 512
+
+var usageArchiveBytesCache = newBoundedCache(maxUsageArchiveBytesCacheEntries) // int64
 
 type UsageAccountingResponse struct {
 	GeneratedAt time.Time               `json:"generated_at"`
@@ -446,7 +452,14 @@ func usageArchiveBytes(test *ManagedTest) int64 {
 	cacheKey := usageArchiveBytesCacheKey(test.Archive)
 	if cacheKey != "" {
 		if cached, ok := usageArchiveBytesCache.Load(cacheKey); ok {
-			return cached.(int64)
+			// Serve the cached total only if the archive still exists on disk;
+			// retention prune / test deletion removes ArchivePath without
+			// touching this cache, so a stale hit would report freed space as
+			// still occupied until process restart.
+			if _, statErr := os.Stat(test.Archive.ArchivePath); statErr == nil {
+				return cached.(int64)
+			}
+			usageArchiveBytesCache.Delete(cacheKey)
 		}
 	}
 	var total int64

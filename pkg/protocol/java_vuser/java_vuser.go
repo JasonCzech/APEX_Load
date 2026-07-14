@@ -379,6 +379,19 @@ func startRunnerCommand(ctx context.Context, cmd *exec.Cmd, startupTimeout time.
 	case err := <-errCh:
 		return err
 	case <-startCtx.Done():
+		// The start exceeded the timeout. cmd.Start() may still complete
+		// successfully after we return, and the caller then skips cmd.Wait(), so
+		// reap the child here: once Start() finishes, kill the process (if it
+		// started) and Wait() to release its process-table entry — otherwise it
+		// lingers as a zombie and repeated occurrences can exhaust PIDs.
+		go func() {
+			if err := <-errCh; err == nil {
+				if cmd.Process != nil {
+					_ = cmd.Process.Kill()
+				}
+				_ = cmd.Wait()
+			}
+		}()
 		return fmt.Errorf("java_vuser runner failed to start within %s", startupTimeout)
 	}
 }

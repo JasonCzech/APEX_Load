@@ -927,7 +927,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
     }
   }, [api, refresh])
 
-  const renderResultRow = (row: ResultSourceRow, measureElement?: (element: HTMLTableRowElement | null) => void) => {
+  const renderResultRow = (row: ResultSourceRow, measureElement?: (element: HTMLTableRowElement | null) => void, dataIndex?: number) => {
     const test = row.test
     const item = row.item
     const hostItem = test ? hostItemForLocal(test.id) : undefined
@@ -939,6 +939,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
       <tr
         key={row.rowKey}
         ref={measureElement}
+        data-index={dataIndex}
         className={`${test ? 'clickable-row' : 'no-hover'} ${test && selectedIds.has(test.id) ? 'selected' : ''}`}
         onClick={test ? () => onSelectTest(test.id) : undefined}
       >
@@ -1555,6 +1556,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
                     ? virtualRows.map(virtualRow => renderResultRow(
                       sortedRows[virtualRow.index],
                       rowVirtualizer.measureElement as (element: HTMLTableRowElement | null) => void,
+                      virtualRow.index,
                     ))
                     : sortedRows.map(row => renderResultRow(row))}
                   {shouldVirtualizeRows && virtualPaddingBottom > 0 && (

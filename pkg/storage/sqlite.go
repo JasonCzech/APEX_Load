@@ -200,6 +200,16 @@ func NewSQLiteStore(path string) (*SQLiteStore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open sqlite db: %w", err)
 	}
+	// Single connection: modernc.org/sqlite + WAL is serialized on one writer,
+	// and a single pooled connection avoids "database is locked" contention.
+	//
+	// INVARIANT: with one connection, an open *sql.Rows pins it, so no store
+	// method may run a SECOND query before it has closed the rows from the first
+	// (the pool wait has no deadline — the goroutine would block forever waiting
+	// for the connection it itself holds). Always drain/Close rows before issuing
+	// a nested query: collect the row values into a slice first, then run the
+	// per-row follow-up queries (see ListUsers, which reads all users before
+	// calling ListUserRoleBindings for each).
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
 

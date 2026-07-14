@@ -4,6 +4,7 @@ package api
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -846,6 +847,12 @@ func readJSONLPageFrom[T any](ctx context.Context, reader io.Reader, page archiv
 		if err := budget.Observe(scanner.Bytes()); err != nil {
 			return nil, 0, err
 		}
+		// Skip blank lines (e.g. a trailing newline): they are not records, and
+		// json.Valid("")/json.Unmarshal("") both report an error, which would
+		// otherwise fail every page over a stray empty line.
+		if len(bytes.TrimSpace(scanner.Bytes())) == 0 {
+			continue
+		}
 		if predicate == nil {
 			if matched >= page.Offset && len(items) < limit {
 				var item T
@@ -853,6 +860,13 @@ func readJSONLPageFrom[T any](ctx context.Context, reader io.Reader, page archiv
 					return nil, 0, err
 				}
 				items = append(items, item)
+			} else if !json.Valid(scanner.Bytes()) {
+				// Validate rows outside the requested page too (cheap syntactic
+				// check, no unmarshal), so a corrupt line anywhere in the file
+				// fails fast and consistently instead of being silently counted in
+				// the total and only surfacing when a client happens to page onto
+				// it — which made totals overstate and pagination 500 on one page.
+				return nil, 0, fmt.Errorf("invalid JSONL line %d", matched+1)
 			}
 			matched++
 			continue

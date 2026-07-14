@@ -366,12 +366,15 @@ func (s *SQLiteStore) GetHistoryLimit(testID string, limit int) ([]any, error) {
 	query := `SELECT metrics_json FROM test_history WHERE test_id = ? ORDER BY timestamp ASC`
 	args := []any{testID}
 	if limit > 0 {
+		// PostgreSQL requires an alias on a subquery in FROM; SQLite does not.
+		// rewriteSQL() does not synthesize one, so it must be written here or the
+		// Postgres dialect rejects the query.
 		query = `SELECT metrics_json FROM (
 			SELECT timestamp, metrics_json FROM test_history
 			WHERE test_id = ?
 			ORDER BY timestamp DESC
 			LIMIT ?
-		) ORDER BY timestamp ASC`
+		) AS recent ORDER BY timestamp ASC`
 		args = append(args, limit)
 	}
 	rows, err := s.db.Query(query, args...)
@@ -431,7 +434,9 @@ func (s *SQLiteStore) getTypedHistoryLimit(testID string, limit int) ([]any, err
 	FROM test_interval_summaries WHERE test_id = ?`
 	args := []any{testID}
 	if limit > 0 {
-		query = `SELECT * FROM (` + query + ` ORDER BY timestamp DESC LIMIT ?) ORDER BY timestamp ASC`
+		// Alias the derived table so the Postgres dialect accepts it (SQLite is
+		// lenient; rewriteSQL() does not add one). See GetHistoryLimit above.
+		query = `SELECT * FROM (` + query + ` ORDER BY timestamp DESC LIMIT ?) AS recent ORDER BY timestamp ASC`
 		args = append(args, limit)
 	} else {
 		query += ` ORDER BY timestamp ASC`

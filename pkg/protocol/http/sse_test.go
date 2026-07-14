@@ -83,7 +83,11 @@ func TestReadSSEResponseMaxEvents(t *testing.T) {
 	}
 }
 
-func TestReadSSEResponseTimeoutAfterPartialEventFails(t *testing.T) {
+func TestReadSSEResponseStreamTimeoutAfterEventsSucceeds(t *testing.T) {
+	// stream_timeout_ms is a bounded collection window: reaching it after
+	// collecting at least one event is a successful end-of-collection, not a
+	// failure (the standard SSE sampling pattern against an endpoint that
+	// streams indefinitely).
 	reader, writer := io.Pipe()
 	defer writer.Close()
 	go func() {
@@ -96,25 +100,52 @@ func TestReadSSEResponseTimeoutAfterPartialEventFails(t *testing.T) {
 		"stream_timeout_ms": float64(20),
 		"max_body_bytes":    float64(-1),
 	}, time.Now())
-	if err == nil || !strings.Contains(err.Error(), "timed out") {
-		t.Fatalf("readSSEResponse error = %v, want timeout", err)
+	if err != nil {
+		t.Fatalf("readSSEResponse error = %v, want success (window elapsed with events)", err)
 	}
 	if res.EventCount != 1 {
-		t.Fatalf("EventCount = %d, want partial event count retained", res.EventCount)
+		t.Fatalf("EventCount = %d, want collected event retained", res.EventCount)
 	}
 }
 
-func TestReadSSEResponseClientTimeoutAfterPartialEventFails(t *testing.T) {
+func TestReadSSEResponseStreamTimeoutWithNoEventsFails(t *testing.T) {
+	// A window that captured nothing is still reported as a timeout error.
+	reader, writer := io.Pipe()
+	defer writer.Close()
+	go func() {
+		// Send only a comment/keep-alive (no dispatchable event), then stall.
+		_, _ = writer.Write([]byte(": keep-alive\n"))
+		time.Sleep(150 * time.Millisecond)
+		_ = writer.Close()
+	}()
+
+	res, err := readSSEResponse(context.Background(), reader, map[string]any{
+		"stream_timeout_ms": float64(20),
+		"max_body_bytes":    float64(-1),
+	}, time.Now())
+	if err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("readSSEResponse error = %v, want timeout (no events collected)", err)
+	}
+	if res.EventCount != 0 {
+		t.Fatalf("EventCount = %d, want 0", res.EventCount)
+	}
+}
+
+func TestReadSSEResponseClientTimeoutAfterEventsFails(t *testing.T) {
+	// A premature CLIENT/transport read timeout (distinct from the intended
+	// stream_timeout_ms window, which is 1000ms here and never fires) truncates
+	// the sample unexpectedly and must surface as an error even though one event
+	// was already collected — otherwise a mid-stream reset masquerades as success.
 	body := &timeoutAfterPayloadReadCloser{reader: strings.NewReader("event: token\ndata: hello\n\n")}
 	res, err := readSSEResponse(context.Background(), body, map[string]any{
 		"stream_timeout_ms": float64(1000),
 		"max_body_bytes":    float64(-1),
 	}, time.Now())
-	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "deadline") {
-		t.Fatalf("readSSEResponse error = %v, want client/body deadline", err)
+	if err == nil {
+		t.Fatalf("readSSEResponse error = nil, want a client/transport read-timeout error")
 	}
 	if res.EventCount != 1 {
-		t.Fatalf("EventCount = %d, want partial event count retained", res.EventCount)
+		t.Fatalf("EventCount = %d, want the collected event retained on the result", res.EventCount)
 	}
 }
 

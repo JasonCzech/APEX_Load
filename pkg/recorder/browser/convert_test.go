@@ -411,6 +411,45 @@ func TestConvertTransactionsAndNotes(t *testing.T) {
 	}
 }
 
+// TestConvertTransactionStartAnchoredAtStepIncludesThatStep locks in that a
+// transaction-start marker sharing a step's exact timestamp (the shape produced
+// by anchoring a suggested transaction "at step #N") opens before that step, so
+// the anchor step falls inside the transaction rather than just ahead of it.
+func TestConvertTransactionStartAnchoredAtStepIncludesThatStep(t *testing.T) {
+	button := &selector.ElementMetadata{Tag: "button", ID: "go", CSSPath: "#go"}
+	session := &Session{ID: "rec_anchor", StartURL: "https://shop.example/", StartedAt: ts(0)}
+	session.appendStep(Step{Kind: StepClick, Timestamp: ts(1000), Element: button, Candidates: selector.Candidates(*button)})
+	anchor := Step{Kind: StepClick, Timestamp: ts(2000), Element: button, Candidates: selector.Candidates(*button)}
+	session.appendStep(anchor)
+	session.appendStep(Step{Kind: StepClick, Timestamp: ts(3000), Element: button, Candidates: selector.Candidates(*button)})
+	// Start marker anchored exactly at the second step's timestamp; end after it.
+	session.Markers = append(session.Markers,
+		Marker{Kind: MarkerTransactionStart, Name: "Checkout", Timestamp: ts(2000)},
+		Marker{Kind: MarkerTransactionEnd, Name: "Checkout", Timestamp: ts(3000)},
+	)
+
+	result := Convert(session, ConvertOptions{})
+	types := actionTypes(result.Script.Actions)
+	// navigate, click, start(Checkout), click(anchor), click, end(Checkout)
+	want := []string{"browser_navigate", "browser_click", "source_transaction", "browser_click", "browser_click", "source_transaction"}
+	if len(types) != len(want) {
+		t.Fatalf("actions = %v, want %v", types, want)
+	}
+	for i, typ := range want {
+		if types[i] != typ {
+			t.Fatalf("action[%d] = %q, want %q (all: %v)", i, types[i], typ, types)
+		}
+	}
+	start := result.Script.Actions[2]
+	if start.Name != "Checkout" || start.Params["function"] != "lr_start_transaction" {
+		t.Fatalf("action[2] = %+v, want Checkout start", start)
+	}
+	// The anchor step (action[3]) must be tagged inside the transaction.
+	if got := result.Script.Actions[3].Metadata["source_transaction"]; got != "Checkout" {
+		t.Errorf("anchor step transaction = %q, want Checkout (anchor step must be inside the transaction)", got)
+	}
+}
+
 func TestConvertTransactionEndWithoutStartWarns(t *testing.T) {
 	session := &Session{ID: "rec_bad", StartURL: "https://shop.example/", StartedAt: ts(0)}
 	session.Markers = append(session.Markers, Marker{Kind: MarkerTransactionEnd, Name: "Ghost", Timestamp: ts(100)})

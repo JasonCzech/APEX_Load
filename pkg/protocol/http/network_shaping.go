@@ -36,41 +36,53 @@ func newShapedDialContext(base func(context.Context, string, string) (net.Conn, 
 
 type shapedConn struct {
 	net.Conn
-	profile    networkSimulationProfile
-	readDelay  shapedDirectionDelay
-	writeDelay shapedDirectionDelay
+	profile networkSimulationProfile
+
+	mu sync.Mutex
+	// latency is amortized once per request/response exchange, not per byte:
+	// writeLatched/readLatched track whether the current request/response has
+	// already paid its latency. lastWasRead marks that a response completed, so
+	// the next Write re-arms both latches — otherwise every request after the
+	// first on a reused (keep-alive) connection would incur zero simulated
+	// latency, jitter, or packet loss.
+	writeLatched bool
+	readLatched  bool
+	lastWasRead  bool
 }
 
 func (c *shapedConn) Read(p []byte) (int, error) {
 	n, err := c.Conn.Read(p)
 	if n > 0 {
-		c.readDelay.apply(c.profile, n)
+		c.mu.Lock()
+		applyLatency := !c.readLatched
+		c.readLatched = true
+		c.lastWasRead = true
+		c.mu.Unlock()
+		if applyLatency {
+			c.profile.applyJitterAndLoss()
+		}
+		c.profile.applyBandwidth(n)
 	}
 	return n, err
 }
 
 func (c *shapedConn) Write(p []byte) (int, error) {
-	c.writeDelay.apply(c.profile, len(p))
+	c.mu.Lock()
+	if c.lastWasRead {
+		// A write after a completed response begins a new request on a reused
+		// connection: re-arm so this request pays latency again.
+		c.lastWasRead = false
+		c.readLatched = false
+		c.writeLatched = false
+	}
+	applyLatency := !c.writeLatched
+	c.writeLatched = true
+	c.mu.Unlock()
+	if applyLatency {
+		c.profile.applyJitterAndLoss()
+	}
+	c.profile.applyBandwidth(len(p))
 	return c.Conn.Write(p)
-}
-
-type shapedDirectionDelay struct {
-	mu             sync.Mutex
-	latencyApplied bool
-}
-
-func (d *shapedDirectionDelay) apply(profile networkSimulationProfile, bytes int) {
-	d.mu.Lock()
-	applyLatency := !d.latencyApplied
-	if applyLatency {
-		d.latencyApplied = true
-	}
-	d.mu.Unlock()
-
-	if applyLatency {
-		profile.applyJitterAndLoss()
-	}
-	profile.applyBandwidth(bytes)
 }
 
 func (p networkSimulationProfile) applyReadDelay(bytes int) {

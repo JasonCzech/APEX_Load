@@ -203,10 +203,11 @@ export default function RunReportPage({
     onNavigateReport({ lens: activeLens, compare: normalized || undefined })
   }
 
-  const saveOverride = async (status: string, explanation: string) => {
+  const saveOverride = async (status: string, explanation: string): Promise<boolean> => {
     const current = annotations
-    if (!current) return
+    if (!current) return false
     setSavingAnnotations(true)
+    setAnnotationsError('')
     try {
       const response = await api.saveTestReportAnnotations(testId, activeLens, {
         title: current.title,
@@ -218,6 +219,13 @@ export default function RunReportPage({
         findings: current.findings || [],
       })
       setAnnotations(response.annotations)
+      return true
+    } catch (error: unknown) {
+      // Never let a rejected save go unhandled and silently succeed: an
+      // audit-relevant verdict override must surface its failure so the analyst
+      // does not navigate away believing it was recorded.
+      setAnnotationsError(getErrorMessage(error, 'Unable to save the verdict override'))
+      return false
     } finally {
       setSavingAnnotations(false)
     }
@@ -225,8 +233,13 @@ export default function RunReportPage({
 
   const pinBaseline = async () => {
     if (!effectiveCompareId) return
-    const updated = await api.pinComparisonBaseline(effectiveCompareId)
-    if (updated.id === testId) setTest(updated)
+    try {
+      const updated = await api.pinComparisonBaseline(effectiveCompareId)
+      if (updated.id === testId) setTest(updated)
+      setBaselineError('')
+    } catch (error: unknown) {
+      setBaselineError(getErrorMessage(error, 'Unable to pin the comparison baseline'))
+    }
   }
 
   if (testError) {

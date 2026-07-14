@@ -134,7 +134,10 @@ func (b *Browser) browserViewport() *playwright.Size {
 
 func (b *Browser) installBrowserContextHandlers(browserContext playwright.BrowserContext) {
 	browserContext.OnPage(func(page playwright.Page) {
-		b.registerPage(page, false)
+		// Popups do not auto-activate by default; a script switches explicitly
+		// with browser_switch_window. browser_auto_activate_popups restores the
+		// old auto-switch behavior for scripts recorded against it.
+		b.registerPage(page, b.autoActivatePopups)
 	})
 	browserContext.OnConsole(func(message playwright.ConsoleMessage) {
 		source := ""
@@ -278,17 +281,17 @@ func (b *Browser) consumeDialogError() error {
 	return err
 }
 
-func (b *Browser) pendingDialogState() (bool, time.Duration) {
+func (b *Browser) pendingDialogState() (armed bool, wait time.Duration, expectImmediate bool) {
 	b.dialogMu.Lock()
 	defer b.dialogMu.Unlock()
 	if b.pendingDialog == nil {
-		return false, 0
+		return false, 0, false
 	}
-	wait := b.pendingDialog.wait
+	wait = b.pendingDialog.wait
 	if wait <= 0 {
 		wait = time.Second
 	}
-	return true, wait
+	return true, wait, b.pendingDialog.expectImmediate
 }
 
 func (b *Browser) waitForPendingDialog(ctx context.Context, timeout time.Duration) error {
@@ -300,7 +303,7 @@ func (b *Browser) waitForPendingDialog(ctx context.Context, timeout time.Duratio
 	ticker := time.NewTicker(25 * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		armed, _ := b.pendingDialogState()
+		armed, _, _ := b.pendingDialogState()
 		if !armed {
 			return nil
 		}
