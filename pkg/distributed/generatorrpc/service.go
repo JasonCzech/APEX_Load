@@ -424,6 +424,7 @@ type Service struct {
 	archiveRecords      map[string]*storage.RunArchiveRecord
 	archiveIdentities   map[string]os.FileInfo
 	archiveLeases       map[string]int
+	archiveDeleting     map[string]struct{}
 	scriptCacheMax      int
 	scriptCacheBytes    int64
 	scriptCacheLimit    int64
@@ -483,6 +484,7 @@ func NewService(generatorID string, maxVUsers int, opts ...ServiceOption) *Servi
 		archiveRecords:      make(map[string]*storage.RunArchiveRecord),
 		archiveIdentities:   make(map[string]os.FileInfo),
 		archiveLeases:       make(map[string]int),
+		archiveDeleting:     make(map[string]struct{}),
 		scriptCacheMax:      configuredGeneratorScriptCacheMax(),
 		scriptCacheLimit:    configuredGeneratorScriptCacheMaxBytes(),
 		archiveRecordMax:    configuredGeneratorArchiveMax(),
@@ -591,6 +593,9 @@ func (s *Service) AssignWork(_ context.Context, assignment *pb.WorkAssignment) (
 			ErrorMessage:      "generator is draining",
 			AvailableCapacity: s.availableCapacityLocked(),
 		}, nil
+	}
+	if _, deleting := s.archiveDeleting[assignment.GetTestId()]; deleting {
+		return &pb.AssignmentAck{Accepted: false, ErrorMessage: "test id archive is being retired", AvailableCapacity: s.availableCapacityLocked()}, nil
 	}
 	if _, active := s.assignments[assignment.GetTestId()]; !active && s.archiveRecords[assignment.GetTestId()] != nil {
 		return &pb.AssignmentAck{

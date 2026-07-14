@@ -13,6 +13,9 @@ import (
 
 func writeCSV(t *testing.T, dir, name, content string) string {
 	t.Helper()
+	if err := fileasset.RegisterRoot(dir); err != nil {
+		t.Fatalf("register data root: %v", err)
+	}
 	path := filepath.Join(dir, name)
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatalf("write %s: %v", name, err)
@@ -466,6 +469,18 @@ func TestDataProvider_MissingPathAndInlineData(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected error for missing path and inline_data")
+	}
+}
+
+func TestDataProvider_CSVRejectsPathOutsideAssetRoots(t *testing.T) {
+	// A separate unregistered directory is used because roots are process-wide.
+	outside := t.TempDir()
+	path := filepath.Join(outside, "secret.csv")
+	if err := os.WriteFile(path, []byte("value\nsecret\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewDataProvider([]dsl.DataSource{{Name: "secret", Type: "csv", Path: path, FirstRowHeader: true}}); err == nil {
+		t.Fatal("expected CSV path outside registered asset roots to fail")
 	}
 }
 

@@ -72,6 +72,7 @@ func (s *Server) handleVerifyRunArchive(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleDownloadRunArchive(w http.ResponseWriter, r *http.Request) {
+	clearArchiveWriteDeadline(w)
 	id := r.PathValue("id")
 	test, ok := s.runner.GetTest(id)
 	if !ok {
@@ -104,6 +105,7 @@ func (s *Server) handleDownloadRunArchive(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) handleDownloadRunArchiveArtifact(w http.ResponseWriter, r *http.Request) {
+	clearArchiveWriteDeadline(w)
 	id := r.PathValue("id")
 	name := r.PathValue("name")
 	test, ok := s.runner.GetTest(id)
@@ -158,6 +160,7 @@ func (s *Server) handleDownloadRunArchiveArtifact(w http.ResponseWriter, r *http
 }
 
 func (s *Server) handleDownloadRunArchiveBrowserDiagnostics(w http.ResponseWriter, r *http.Request) {
+	clearArchiveWriteDeadline(w)
 	id := r.PathValue("id")
 	test, ok := s.runner.GetTest(id)
 	if !ok {
@@ -191,6 +194,13 @@ func (s *Server) handleDownloadRunArchiveBrowserDiagnostics(w http.ResponseWrite
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
 	http.ServeContent(w, r, filename, record.CompletedAt.UTC(), staged.File)
+}
+
+// clearArchiveWriteDeadline allows large archive materialization and transfers
+// to outlive the server's short default WriteTimeout. Request cancellation and
+// the archive-specific context still bound the operation.
+func clearArchiveWriteDeadline(w http.ResponseWriter) {
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
 }
 
 func (s *Server) handleGetRunArchiveTransactions(w http.ResponseWriter, r *http.Request) {

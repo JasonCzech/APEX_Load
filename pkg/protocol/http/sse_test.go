@@ -35,6 +35,14 @@ func TestReadSSEResponseBoundsBufferBytes(t *testing.T) {
 	}
 }
 
+func TestReadSSEResponseBoundsUnterminatedLine(t *testing.T) {
+	payload := "data: " + strings.Repeat("x", 1<<20)
+	res := readSSEFromString(t, payload, map[string]any{"max_body_bytes": 1024})
+	if res.BytesRead > 1024 {
+		t.Fatalf("BytesRead = %d, want <= 1024", res.BytesRead)
+	}
+}
+
 func TestReadSSEResponseMaxBodyBytesOptOut(t *testing.T) {
 	payload := strings.Repeat("data: payload\n\n", 50)
 	// A non-positive cap disables bounding: the whole finite stream is read.

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
-	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -96,7 +95,7 @@ func loadDataSource(src dsl.DataSource) (*dataSource, error) {
 	}
 	defer readerSource.Close()
 
-	content, err := io.ReadAll(readerSource)
+	content, err := fileasset.ReadAllLimited(readerSource)
 	if err != nil {
 		return nil, fmt.Errorf("read data source: %w", err)
 	}
@@ -228,11 +227,7 @@ func openDataSourceReader(src dsl.DataSource) (io.ReadCloser, error) {
 	if strings.TrimSpace(src.Path) == "" {
 		return nil, fmt.Errorf("either path or inline_data is required")
 	}
-	f, err := os.Open(src.Path)
-	if err != nil {
-		return nil, fmt.Errorf("open file %s: %w", src.Path, err)
-	}
-	return f, nil
+	return fileasset.OpenPath(src.Path)
 }
 
 func openFileDataSourceReader(src dsl.DataSource) (io.ReadCloser, error) {

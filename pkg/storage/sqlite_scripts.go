@@ -349,7 +349,9 @@ func (s *SQLiteStore) GetAuthoringSession(id string) (*AuthoringSession, error) 
 	if err != nil {
 		return nil, err
 	}
-	decodeAuthoringSessionJSON(&session, draftJSON, reviewStateJSON)
+	if err := decodeAuthoringSessionJSON(&session, draftJSON, reviewStateJSON); err != nil {
+		return nil, fmt.Errorf("decode authoring session %s: %w", id, err)
+	}
 	now := authoringSessionTimestamp(time.Now())
 	if _, err := s.db.Exec(`UPDATE authoring_sessions SET last_accessed_at = ? WHERE id = ?`, now, id); err == nil {
 		session.LastAccessedAt = now
@@ -377,7 +379,9 @@ func (s *SQLiteStore) ListAuthoringSessions(projectID string) ([]*AuthoringSessi
 		if err := rows.Scan(&session.ID, &session.ProjectID, &session.Source, &session.Name, &session.Status, &draftJSON, &reviewStateJSON, &session.CreatedAt, &session.UpdatedAt, &session.LastAccessedAt); err != nil {
 			return nil, err
 		}
-		decodeAuthoringSessionJSON(&session, draftJSON, reviewStateJSON)
+		if err := decodeAuthoringSessionJSON(&session, draftJSON, reviewStateJSON); err != nil {
+			return nil, fmt.Errorf("decode authoring session %s: %w", session.ID, err)
+		}
 		sessions = append(sessions, &session)
 	}
 	return sessions, nil
@@ -388,14 +392,18 @@ func (s *SQLiteStore) DeleteAuthoringSession(id string) error {
 	return err
 }
 
-func decodeAuthoringSessionJSON(session *AuthoringSession, draftJSON string, reviewStateJSON string) {
+func decodeAuthoringSessionJSON(session *AuthoringSession, draftJSON string, reviewStateJSON string) error {
 	if draftJSON != "" && draftJSON != "null" {
 		var script dsl.Script
-		if err := json.Unmarshal([]byte(draftJSON), &script); err == nil {
-			session.Draft = &script
+		if err := json.Unmarshal([]byte(draftJSON), &script); err != nil {
+			return fmt.Errorf("decode draft: %w", err)
 		}
+		session.Draft = &script
 	}
 	if reviewStateJSON != "" && reviewStateJSON != "null" {
-		_ = json.Unmarshal([]byte(reviewStateJSON), &session.ReviewState)
+		if err := json.Unmarshal([]byte(reviewStateJSON), &session.ReviewState); err != nil {
+			return fmt.Errorf("decode review state: %w", err)
+		}
 	}
+	return nil
 }

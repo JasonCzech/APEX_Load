@@ -46,6 +46,8 @@ func init() {
 
 const defaultMockPartitions = 4
 const kafkaExtractionBodyLimit = 64 << 10
+const kafkaMaxTransactionRecords = 10_000
+const kafkaMaxTransactionBytes = 64 << 20
 
 // Kafka implements protocol.Protocol for Apache Kafka messaging.
 type Kafka struct {
@@ -56,7 +58,8 @@ type Kafka struct {
 	valueSerde  serde            // record-value (de)serializer; rawSerde by default
 	txOpen      bool             // a transaction is in progress (per-VUser)
 	txBuffer    []pendingProduce // records produced within the open transaction
-	rrCounter   uint64           // round-robin partition counter
+	txBytes     int64
+	rrCounter   uint64 // round-robin partition counter
 	initialized bool
 }
 
@@ -373,7 +376,7 @@ func (k *Kafka) Teardown(ctx context.Context) error {
 	// silently dropped and the rollback is accounted for.
 	if k.txOpen {
 		_ = k.client.AbortTransaction(ctx)
-		k.txOpen, k.txBuffer = false, nil
+		k.txOpen, k.txBuffer, k.txBytes = false, nil, 0
 		if k.session != nil {
 			k.session.Rollback()
 		}
@@ -455,7 +458,15 @@ func (k *Kafka) produce(ctx context.Context, action *protocol.Action, result *pr
 	if k.txOpen {
 		// Transactional produce: buffer until commit so consumers (read_committed)
 		// never see uncommitted records, and an abort discards them atomically.
+		recordBytes := int64(len(rec.Value) + len(rec.Key))
+		for key, value := range rec.Headers {
+			recordBytes += int64(len(key) + len(value))
+		}
+		if len(k.txBuffer) >= kafkaMaxTransactionRecords || k.txBytes+recordBytes > kafkaMaxTransactionBytes {
+			return kafkaRecord{}, fmt.Errorf("kafka transaction buffer limit exceeded (records=%d bytes=%d)", len(k.txBuffer), k.txBytes)
+		}
 		k.txBuffer = append(k.txBuffer, pendingProduce{topic: topic, rec: rec})
+		k.txBytes += recordBytes
 		result.BytesSent = int64(len(rec.Value))
 		result.CorrelationID = rec.CorrelationID
 		addRecordExtractions(result, rec)
@@ -492,6 +503,7 @@ func (k *Kafka) beginTransaction(ctx context.Context, result *protocol.Result) e
 	}
 	k.txOpen = true
 	k.txBuffer = nil
+	k.txBytes = 0
 	result.Extractions["kafka_operation"] = "begin_transaction"
 	return nil
 }
@@ -505,24 +517,24 @@ func (k *Kafka) commitTransaction(ctx context.Context, result *protocol.Result) 
 	if committer, ok := k.client.(atomicTransactionCommitter); ok {
 		if err := committer.CommitBufferedTransaction(ctx, k.txBuffer); err != nil {
 			_ = k.client.AbortTransaction(ctx)
-			k.txOpen, k.txBuffer = false, nil
+			k.txOpen, k.txBuffer, k.txBytes = false, nil, 0
 			return err
 		}
 	} else {
 		for _, p := range k.txBuffer {
 			if _, err := k.client.Produce(ctx, p.topic, p.rec); err != nil {
 				_ = k.client.AbortTransaction(ctx)
-				k.txOpen, k.txBuffer = false, nil
+				k.txOpen, k.txBuffer, k.txBytes = false, nil, 0
 				return err
 			}
 		}
 		if err := k.client.CommitTransaction(ctx); err != nil {
-			k.txOpen, k.txBuffer = false, nil
+			k.txOpen, k.txBuffer, k.txBytes = false, nil, 0
 			return err
 		}
 	}
 	n := len(k.txBuffer)
-	k.txOpen, k.txBuffer = false, nil
+	k.txOpen, k.txBuffer, k.txBytes = false, nil, 0
 	k.session.Commit()
 	result.Extractions["kafka_operation"] = "commit_transaction"
 	result.Extractions["kafka_tx_records"] = strconv.Itoa(n)
@@ -538,10 +550,10 @@ func (k *Kafka) abortTransaction(ctx context.Context, result *protocol.Result) e
 	}
 	n := len(k.txBuffer)
 	if err := k.client.AbortTransaction(ctx); err != nil {
-		k.txOpen, k.txBuffer = false, nil
+		k.txOpen, k.txBuffer, k.txBytes = false, nil, 0
 		return err
 	}
-	k.txOpen, k.txBuffer = false, nil
+	k.txOpen, k.txBuffer, k.txBytes = false, nil, 0
 	k.session.Rollback()
 	result.Extractions["kafka_operation"] = "abort_transaction"
 	result.Extractions["kafka_tx_records_discarded"] = strconv.Itoa(n)
