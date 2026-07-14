@@ -2,6 +2,7 @@ package browser
 
 import (
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 // and persisted on close according to the policy, always passing through
 // scrub-on-write first.
 const (
+	maxRuntimeHARBytes    = 100 << 20
 	HARCaptureOff         = "off"
 	HARCaptureOnError     = "on_error"
 	HARCaptureOnSLABreach = "on_sla_breach"
@@ -115,9 +117,26 @@ func (b *Browser) finalizeHARCapture() string {
 		return ""
 	}
 
-	data, err := os.ReadFile(workingPath)
+	info, err := os.Stat(workingPath)
 	if err != nil {
 		slog.Warn("browser HAR capture unavailable", "policy", b.harCapturePolicy, "error", err)
+		return ""
+	}
+	if info.Size() > maxRuntimeHARBytes {
+		slog.Warn("browser HAR capture exceeded size limit", "policy", b.harCapturePolicy, "bytes", info.Size())
+		_ = os.Remove(workingPath)
+		return ""
+	}
+	f, err := os.Open(workingPath)
+	if err != nil {
+		slog.Warn("browser HAR capture unavailable", "policy", b.harCapturePolicy, "error", err)
+		return ""
+	}
+	data, err := io.ReadAll(io.LimitReader(f, maxRuntimeHARBytes+1))
+	_ = f.Close()
+	if err != nil || int64(len(data)) > maxRuntimeHARBytes {
+		slog.Warn("browser HAR capture exceeded size limit", "policy", b.harCapturePolicy)
+		_ = os.Remove(workingPath)
 		return ""
 	}
 	_ = os.Remove(workingPath)

@@ -444,6 +444,7 @@ type Service struct {
 	droppedBatches      atomic.Int64
 	shutdown            chan struct{}
 	shutdownOnce        sync.Once
+	finalizerWG         sync.WaitGroup
 }
 
 func (s *Service) SetDraining(draining bool) {
@@ -534,6 +535,13 @@ func (s *Service) Shutdown(ctx context.Context) error {
 		}
 	}
 	s.shutdownOnce.Do(func() { close(s.shutdown) })
+	done := make(chan struct{})
+	go func() { s.finalizerWG.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-ctx.Done():
+		failures = append(failures, fmt.Errorf("wait for generator finalizers: %w", ctx.Err()))
+	}
 	return errors.Join(failures...)
 }
 
@@ -942,7 +950,9 @@ func (s *Service) StopTest(ctx context.Context, request *pb.StopRequest) (*pb.St
 		exec.cancel()
 	}
 	if err := waitForGeneratorExecutions(ctx, executions); err != nil {
+		s.finalizerWG.Add(1)
 		go func() {
+			defer s.finalizerWG.Done()
 			_ = waitForGeneratorExecutions(context.Background(), executions)
 			s.finishStoppedTest(request.GetTestId(), assignment, writer)
 		}()
@@ -1292,7 +1302,9 @@ func (s *Service) FailTest(testID string, message string) {
 	waitErr := waitForGeneratorExecutions(waitCtx, executions)
 	cancel()
 	if waitErr != nil {
+		s.finalizerWG.Add(1)
 		go func() {
+			defer s.finalizerWG.Done()
 			_ = waitForGeneratorExecutions(context.Background(), executions)
 			s.finishFailedTest(testID, assignment, writer, message)
 		}()

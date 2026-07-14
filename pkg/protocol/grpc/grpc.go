@@ -7,11 +7,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/fileasset"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jmespath/go-jmespath"
 	googlegrpc "google.golang.org/grpc"
@@ -547,7 +547,12 @@ func (g *GRPC) loadConfiguredDescriptorFiles(config map[string]any) error {
 }
 
 func readDescriptorSet(path string) (*descriptorpb.FileDescriptorSet, error) {
-	body, err := os.ReadFile(path)
+	f, err := fileasset.OpenPath(path)
+	if err != nil {
+		return nil, fmt.Errorf("read grpc descriptor set %q: %w", path, err)
+	}
+	defer f.Close()
+	body, err := fileasset.ReadAllLimited(f)
 	if err != nil {
 		return nil, fmt.Errorf("read grpc descriptor set %q: %w", path, err)
 	}

@@ -1303,7 +1303,7 @@ func (s *SQLiteStore) ensureLegacyScenariosTx(tx *storeTx) error {
 					(id, ref_key, name, duration, start_delay, scenario_mode, shakeout_enabled,
 					 resource_baseline_enabled, assignment_json, goal_config_json,
 					 runtime_settings_json, created_at, updated_at)
-					SELECT ?, ref_key, name, duration, start_delay, scenario_mode, shakeout_enabled,
+					SELECT ?, NULL, name, duration, start_delay, scenario_mode, shakeout_enabled,
 						resource_baseline_enabled, assignment_json, goal_config_json,
 						runtime_settings_json, created_at, updated_at
 					FROM scenarios WHERE id = ?`, scenarioID, candidate.existingScenarioID); err != nil {

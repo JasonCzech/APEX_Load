@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/fileasset"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	playwright "github.com/playwright-community/playwright-go"
 )
@@ -173,6 +174,13 @@ func (b *Browser) dispatchAction(ctx context.Context, action *protocol.Action, r
 		files := actionFiles(action)
 		if len(files) == 0 {
 			return nil, failBrowserAction(result, "browser_set_files requires value or params.files")
+		}
+		for i, path := range files {
+			validated, err := fileasset.ValidatePath(path)
+			if err != nil {
+				return nil, failBrowserAction(result, fmt.Sprintf("browser_set_files file %d: %v", i, err))
+			}
+			files[i] = validated
 		}
 		return b.runWithSelectorSelfHeal(ctx, action, result, selector, func(s string) error {
 			return b.setInputFilesAction(ctx, action, s, files)

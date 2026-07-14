@@ -113,13 +113,15 @@ type Recorder struct {
 	// constant, so it cannot forge them against the live recording.
 	controlNonce string
 
-	thumbWG      sync.WaitGroup
-	done         chan struct{}
-	doneOnce     sync.Once
-	harTemp      bool
-	wsFrames     int
-	wsBytes      int
-	bindingBytes int64
+	thumbWG        sync.WaitGroup
+	done           chan struct{}
+	doneOnce       sync.Once
+	harTemp        bool
+	wsFrames       int
+	wsBytes        int
+	bindingBytes   int64
+	thumbnailSlots chan struct{}
+	thumbnailBytes int64
 
 	// sidebarPush coalesces live-state pushes to the in-page sidebar. A single
 	// drainer goroutine (started in Start) debounces bursts of events into one
@@ -141,6 +143,8 @@ const (
 	maxBrowserWarnings          = 10_000
 	maxBrowserWSPayload         = 64 << 10
 	maxBrowserWSBytes           = 64 << 20
+	maxBrowserThumbnailWorkers  = 4
+	maxBrowserThumbnailBytes    = 64 << 20
 )
 
 // controlNoncePlaceholder is the literal in capture.js that newControlNonce's
@@ -167,6 +171,12 @@ func (r *Recorder) trustedControlNonce(got string) bool {
 		return false
 	}
 	return subtle.ConstantTimeCompare([]byte(got), []byte(r.controlNonce)) == 1
+}
+
+func (r *Recorder) appendWarningLocked(warning string) {
+	if len(r.session.Warnings) < maxBrowserWarnings {
+		r.session.Warnings = append(r.session.Warnings, warning)
+	}
 }
 
 // controlKindRequiresTrust reports whether a control kind mutates or terminates
@@ -392,7 +402,7 @@ func (r *Recorder) registerPage(page playwright.Page) {
 		return
 	}
 	if len(r.recordablePagesLocked()) >= maxBrowserPages {
-		r.session.Warnings = append(r.session.Warnings, "browser page limit reached; excess popup was closed")
+		r.appendWarningLocked("browser page limit reached; excess popup was closed")
 		r.mu.Unlock()
 		_ = page.Close()
 		return
@@ -584,9 +594,7 @@ func (r *Recorder) handleRecordBinding(source *playwright.BindingSource, args ..
 	if err != nil {
 		warning := fmt.Sprintf("dropped capture event: %v", err)
 		r.mu.Lock()
-		if len(r.session.Warnings) < maxBrowserWarnings {
-			r.session.Warnings = append(r.session.Warnings, warning)
-		}
+		r.appendWarningLocked(warning)
 		r.mu.Unlock()
 		r.emit(Event{Type: EventWarning, Warning: warning})
 		return nil
@@ -1073,23 +1081,23 @@ func (r *Recorder) Stop() (*Session, error) {
 			Timestamp: r.session.StoppedAt,
 			Auto:      true,
 		})
-		r.session.Warnings = append(r.session.Warnings, fmt.Sprintf(
+		r.appendWarningLocked(fmt.Sprintf(
 			"transaction %q was still open and was closed automatically when the recording stopped", name))
 	}
 	r.session.OpenTransactions = nil
 	if r.session.HARPath != "" {
 		data, err := readFileLimited(r.session.HARPath, maxBrowserHARBytes)
 		if err != nil {
-			r.session.Warnings = append(r.session.Warnings, fmt.Sprintf("side-car HAR unavailable: %v", err))
+			r.appendWarningLocked(fmt.Sprintf("side-car HAR unavailable: %v", err))
 		} else {
 			if !r.opts.HARFilters.empty() {
 				filtered, dropped, filterErr := filterHARByHost(data, r.opts.HARFilters)
 				if filterErr != nil {
-					r.session.Warnings = append(r.session.Warnings, fmt.Sprintf("HAR host filter skipped: %v", filterErr))
+					r.appendWarningLocked(fmt.Sprintf("HAR host filter skipped: %v", filterErr))
 				} else {
 					data = filtered
 					if dropped > 0 {
-						r.session.Warnings = append(r.session.Warnings, fmt.Sprintf(
+						r.appendWarningLocked(fmt.Sprintf(
 							"%d HAR entr(ies) dropped by host filters", dropped))
 					}
 				}
@@ -1568,7 +1576,7 @@ func (r *Recorder) monitorHARSize(path string, context playwright.BrowserContext
 				return
 			}
 			r.context = nil
-			r.session.Warnings = append(r.session.Warnings, fmt.Sprintf("recording stopped because HAR exceeded %d bytes", maxBrowserHARBytes))
+			r.appendWarningLocked(fmt.Sprintf("recording stopped because HAR exceeded %d bytes", maxBrowserHARBytes))
 			r.mu.Unlock()
 			_ = context.Close()
 			r.signalDone()
@@ -1587,10 +1595,20 @@ func (r *Recorder) captureThumbnailAsync(page playwright.Page, seq int) {
 		r.mu.Unlock()
 		return
 	}
+	if r.thumbnailSlots == nil {
+		r.thumbnailSlots = make(chan struct{}, maxBrowserThumbnailWorkers)
+	}
+	select {
+	case r.thumbnailSlots <- struct{}{}:
+	default:
+		r.mu.Unlock()
+		return
+	}
 	r.thumbWG.Add(1)
 	r.mu.Unlock()
 	go func() {
 		defer r.thumbWG.Done()
+		defer func() { <-r.thumbnailSlots }()
 		raw, err := page.Screenshot(playwright.PageScreenshotOptions{
 			Type:    playwright.ScreenshotTypeJpeg,
 			Quality: playwright.Int(45),
@@ -1604,10 +1622,11 @@ func (r *Recorder) captureThumbnailAsync(page playwright.Page, seq int) {
 		}
 		r.mu.Lock()
 		var updated *Step
-		if !r.stopped {
+		if !r.stopped && r.thumbnailBytes+int64(len(thumb)) <= maxBrowserThumbnailBytes {
 			for i := range r.session.Steps {
 				if r.session.Steps[i].Seq == seq {
 					r.session.Steps[i].Thumbnail = thumb
+					r.thumbnailBytes += int64(len(thumb))
 					s := r.session.Steps[i]
 					updated = &s
 					break

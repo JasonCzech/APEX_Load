@@ -17,17 +17,25 @@ import (
 
 var enterpriseImportGate = make(chan struct{}, 2)
 
-func (s *Server) handleImportEnterpriseArchive(w http.ResponseWriter, r *http.Request) {
-	importReq, ok := readEnterpriseArchiveImportRequest(w, r)
-	if !ok {
-		return
-	}
-
+func acquireEnterpriseImportSlot(r *http.Request, w http.ResponseWriter) bool {
 	select {
 	case enterpriseImportGate <- struct{}{}:
-		defer func() { <-enterpriseImportGate }()
+		return true
 	case <-r.Context().Done():
 		writeError(w, http.StatusRequestTimeout, "enterprise archive conversion canceled")
+		return false
+	}
+}
+
+func releaseEnterpriseImportSlot() { <-enterpriseImportGate }
+
+func (s *Server) handleImportEnterpriseArchive(w http.ResponseWriter, r *http.Request) {
+	if !acquireEnterpriseImportSlot(r, w) {
+		return
+	}
+	defer releaseEnterpriseImportSlot()
+	importReq, ok := readEnterpriseArchiveImportRequest(w, r)
+	if !ok {
 		return
 	}
 	// Run the conversion
@@ -50,6 +58,10 @@ func (s *Server) handleImportEnterpriseArchive(w http.ResponseWriter, r *http.Re
 }
 
 func (s *Server) handleValidateEnterpriseArchiveImport(w http.ResponseWriter, r *http.Request) {
+	if !acquireEnterpriseImportSlot(r, w) {
+		return
+	}
+	defer releaseEnterpriseImportSlot()
 	importReq, ok := readEnterpriseArchiveImportRequest(w, r)
 	if !ok {
 		return
