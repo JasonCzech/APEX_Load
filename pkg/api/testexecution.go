@@ -334,17 +334,38 @@ func (tr *TestRunner) ReconcilePendingTests() {
 	tr.refreshPendingQueueMetadataLocked()
 }
 
+func (tr *TestRunner) reconcilePendingTestsDuringAcquire() error {
+	if !tr.holdsExecutionLeadership() {
+		return errNotExecutionLeader
+	}
+	if err := tr.recoverSequentialExecutionPlanRuns(); err != nil {
+		return err
+	}
+	tr.promotePendingTestsAllowed()
+	tr.mu.Lock()
+	tr.refreshPendingQueueMetadataLocked()
+	tr.mu.Unlock()
+	return nil
+}
+
 // reloadAndReconcile refreshes in-memory test state from the database and then
 // reconciles. It runs when this replica acquires execution leadership — at boot
 // when it wins the lease, or after a failover takeover where the previous
 // leader's runs and any tests created elsewhere are not yet in memory.
-func (tr *TestRunner) reloadAndReconcile() {
-	if !tr.isExecutionLeader() {
-		return
+func (tr *TestRunner) reloadAndReconcile() error {
+	if !tr.holdsExecutionLeadership() {
+		return errNotExecutionLeader
 	}
-	tr.reloadStoredTests()
-	tr.reloadStoredScenarios()
-	tr.ReconcilePendingTests()
+	if err := tr.reloadStoredScripts(); err != nil {
+		return fmt.Errorf("reload scripts: %w", err)
+	}
+	if err := tr.reloadStoredTests(); err != nil {
+		return fmt.Errorf("reload tests: %w", err)
+	}
+	if err := tr.reloadStoredScenarios(); err != nil {
+		return fmt.Errorf("reload scenarios: %w", err)
+	}
+	return tr.reconcilePendingTestsDuringAcquire()
 }
 
 // resolveBackend returns the test's execution backend, falling back to the
@@ -1666,6 +1687,10 @@ func (tr *TestRunner) promotePendingTests() {
 	if !tr.isExecutionLeader() {
 		return
 	}
+	tr.promotePendingTestsAllowed()
+}
+
+func (tr *TestRunner) promotePendingTestsAllowed() {
 	for {
 		tr.mu.Lock()
 		if tr.shuttingDown {
@@ -1715,7 +1740,7 @@ func (tr *TestRunner) promotePendingTests() {
 
 			tr.mu.Lock()
 			current, ok := tr.tests[pending.ID]
-			if !ok || current.Status != "SHAKEOUT" || !tr.isExecutionLeader() {
+			if !ok || current.Status != "SHAKEOUT" || !tr.holdsExecutionLeadership() {
 				tr.mu.Unlock()
 				return
 			}

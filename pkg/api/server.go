@@ -250,9 +250,34 @@ func NewServer(cfg ServerConfig) *Server {
 	}
 	if leadership != nil {
 		leadership.setOnAcquire(func() {
-			runner.reloadAndReconcile()
-			s.reconcileProvisioningRequests()
-			s.wakeArchiveFinalizationRetry()
+			for leadership.IsLeader() {
+				if err := runner.reloadAndReconcile(); err == nil {
+					return
+				} else {
+					slog.Warn("execution leadership recovery failed; admission remains closed", "error", err)
+				}
+				ctx, cancel := leadership.operationContext(context.Background())
+				timer := time.NewTimer(250 * time.Millisecond)
+				select {
+				case <-ctx.Done():
+					timer.Stop()
+					cancel()
+					return
+				case <-timer.C:
+					cancel()
+				}
+			}
+		})
+		leadership.setOnAdmit(func() {
+			go func() {
+				runner.ReconcilePendingTests()
+				ctx, cancel := leadership.operationContext(context.Background())
+				defer cancel()
+				if err := s.reconcileProvisioningRequests(ctx); err != nil && ctx.Err() == nil {
+					slog.Warn("failed to reconcile provisioning requests", "error", err)
+				}
+				s.wakeArchiveFinalizationRetry()
+			}()
 		})
 	}
 	if err := fileasset.RegisterRoot(s.importAssetDir); err != nil {

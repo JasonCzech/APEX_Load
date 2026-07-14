@@ -44,16 +44,18 @@ func newRealClient(cfg config) kafkaClient {
 }
 
 type franzClient struct {
-	cfg          config
-	once         sync.Once
-	cl           *kgo.Client
-	err          error
-	replyOnce    sync.Once
-	replyCl      *kgo.Client
-	replyErr     error
-	pendingMu    sync.Mutex
-	pending      []pendingReply
-	pendingBytes int64
+	cfg               config
+	once              sync.Once
+	cl                *kgo.Client
+	err               error
+	replyOnce         sync.Once
+	replyCl           *kgo.Client
+	replyErr          error
+	pendingMu         sync.Mutex
+	pending           []pendingReply
+	pendingBytes      int64
+	replyPending      []pendingReply
+	replyPendingBytes int64
 }
 
 const (
@@ -213,39 +215,38 @@ func (c *franzClient) Consume(ctx context.Context, topic string, group string, t
 
 	cctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	fetches := cl.PollRecords(cctx, 10)
-	if errs := fetches.Errors(); len(errs) > 0 {
-		return kafkaRecord{}, 0, errs[0].Err
-	}
-	var rec *kgo.Record
-	for _, candidate := range fetches.Records() {
-		if candidate.Topic == topic {
-			rec = candidate
-			break
+	for {
+		fetches := cl.PollRecords(cctx, 10)
+		if errs := fetches.Errors(); len(errs) > 0 {
+			return kafkaRecord{}, 0, errs[0].Err
 		}
-	}
-	for _, candidate := range fetches.Records() {
-		if rec == nil || candidate != rec {
+		var rec *kgo.Record
+		for _, candidate := range fetches.Records() {
+			if rec == nil && candidate.Topic == topic {
+				rec = candidate
+				continue
+			}
 			c.pendingMu.Lock()
 			c.addPendingLocked(fromKgoRecord(candidate))
 			c.pendingMu.Unlock()
 		}
-	}
-	if rec == nil {
-		return kafkaRecord{}, 0, fmt.Errorf("no kafka record received from %q within %s", topic, timeout)
-	}
-
-	highWatermark := int64(-1)
-	fetches.EachPartition(func(p kgo.FetchTopicPartition) {
-		if p.Topic == topic && p.Partition == rec.Partition && p.HighWatermark > highWatermark {
-			highWatermark = p.HighWatermark
+		if rec != nil {
+			highWatermark := int64(-1)
+			fetches.EachPartition(func(p kgo.FetchTopicPartition) {
+				if p.Topic == topic && p.Partition == rec.Partition && p.HighWatermark > highWatermark {
+					highWatermark = p.HighWatermark
+				}
+			})
+			lag := int64(0)
+			if highWatermark > rec.Offset+1 {
+				lag = highWatermark - rec.Offset - 1
+			}
+			return fromKgoRecord(rec), lag, nil
 		}
-	})
-	lag := int64(0)
-	if highWatermark > rec.Offset+1 {
-		lag = highWatermark - rec.Offset - 1
+		if cctx.Err() != nil {
+			return kafkaRecord{}, 0, fmt.Errorf("no kafka record received from %q within %s: %w", topic, timeout, cctx.Err())
+		}
 	}
-	return fromKgoRecord(rec), lag, nil
 }
 
 func (c *franzClient) RequestReply(ctx context.Context, reqTopic, replyTopic string, req kafkaRecord, timeout time.Duration) (recordMeta, kafkaRecord, error) {
@@ -254,6 +255,24 @@ func (c *franzClient) RequestReply(ctx context.Context, reqTopic, replyTopic str
 		return recordMeta{}, kafkaRecord{}, err
 	}
 	cl.AddConsumeTopics(replyTopic)
+	// Force the non-group consumer to establish its end-offset cursor before
+	// publishing. Otherwise a fast reply can arrive before assignment and be
+	// skipped by the default latest-offset policy.
+	primeTimeout := time.Second
+	if timeout < primeTimeout {
+		primeTimeout = timeout
+	}
+	primeCtx, cancelPrime := context.WithTimeout(ctx, primeTimeout)
+	primed := cl.PollRecords(primeCtx, 10)
+	cancelPrime()
+	if errs := primed.Errors(); len(errs) > 0 && ctx.Err() != nil {
+		return recordMeta{}, kafkaRecord{}, ctx.Err()
+	}
+	c.pendingMu.Lock()
+	for _, record := range primed.Records() {
+		c.addReplyPendingLocked(fromKgoRecord(record))
+	}
+	c.pendingMu.Unlock()
 	meta, err := c.Produce(ctx, reqTopic, req)
 	if err != nil {
 		return recordMeta{}, kafkaRecord{}, err
@@ -263,14 +282,14 @@ func (c *franzClient) RequestReply(ctx context.Context, reqTopic, replyTopic str
 	for time.Now().Before(deadline) {
 		c.pendingMu.Lock()
 		now := time.Now()
-		for i := 0; i < len(c.pending); {
-			pending := c.pending[i]
+		for i := 0; i < len(c.replyPending); {
+			pending := c.replyPending[i]
 			if now.Sub(pending.receivedAt) > pendingReplyTTL {
-				c.removePendingLocked(i)
+				c.removeReplyPendingLocked(i)
 				continue
 			}
 			if pending.record.Topic == replyTopic && (req.CorrelationID == "" || pending.record.CorrelationID == req.CorrelationID || pending.record.Headers["kafka_correlation_id"] == req.CorrelationID) {
-				c.removePendingLocked(i)
+				c.removeReplyPendingLocked(i)
 				c.pendingMu.Unlock()
 				return meta, pending.record, nil
 			}
@@ -292,7 +311,7 @@ func (c *franzClient) RequestReply(ctx context.Context, reqTopic, replyTopic str
 				continue
 			}
 			c.pendingMu.Lock()
-			c.addPendingLocked(converted)
+			c.addReplyPendingLocked(converted)
 			c.pendingMu.Unlock()
 		}
 		if matched != nil {
@@ -322,6 +341,28 @@ func (c *franzClient) removePendingLocked(index int) {
 	copy(c.pending[index:], c.pending[index+1:])
 	clear(c.pending[len(c.pending)-1:])
 	c.pending = c.pending[:len(c.pending)-1]
+}
+
+func (c *franzClient) addReplyPendingLocked(record kafkaRecord) {
+	bytes := pendingReplyBytes(record)
+	for len(c.replyPending) >= maxPendingReplyRecords || c.replyPendingBytes+bytes > maxPendingReplyBytes {
+		if len(c.replyPending) == 0 {
+			return
+		}
+		c.removeReplyPendingLocked(0)
+	}
+	c.replyPending = append(c.replyPending, pendingReply{record: record, receivedAt: time.Now(), bytes: bytes})
+	c.replyPendingBytes += bytes
+}
+
+func (c *franzClient) removeReplyPendingLocked(index int) {
+	if index < 0 || index >= len(c.replyPending) {
+		return
+	}
+	c.replyPendingBytes -= c.replyPending[index].bytes
+	copy(c.replyPending[index:], c.replyPending[index+1:])
+	clear(c.replyPending[len(c.replyPending)-1:])
+	c.replyPending = c.replyPending[:len(c.replyPending)-1]
 }
 
 func pendingReplyBytes(record kafkaRecord) int64 {

@@ -899,12 +899,6 @@ func resolveImportProjectIDFromForm(r *http.Request, _ storage.Store) (string, i
 	if !strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
 		return reconcileImportProjectID(queryProjectID, "", "request body")
 	}
-	// Prefer the query binding when present. Besides avoiding an unnecessary
-	// multipart parse, this lets the auth middleware reject an unauthorized
-	// request before reading a potentially large upload body.
-	if queryProjectID != "" {
-		return reconcileImportProjectID(queryProjectID, "", "query parameter")
-	}
 	if err := r.ParseMultipartForm(50 << 20); err == nil {
 		if r.MultipartForm != nil {
 			if values := r.MultipartForm.Value["project_id"]; len(values) > 0 {

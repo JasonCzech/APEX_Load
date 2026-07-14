@@ -1071,6 +1071,17 @@ func (tr *TestRunner) isExecutionLeader() bool {
 	return tr.leadership.IsAdmitted()
 }
 
+// holdsExecutionLeadership reports whether this replica owns the current lease,
+// including the acquire-time recovery window before public mutation admission
+// opens. Recovery code must use this predicate; request paths must continue to
+// use isExecutionLeader so they remain closed until recovery succeeds.
+func (tr *TestRunner) holdsExecutionLeadership() bool {
+	if tr == nil || tr.leadership == nil {
+		return true
+	}
+	return tr.leadership.IsLeader()
+}
+
 const (
 	refRunDateLayout = "20060102"
 )

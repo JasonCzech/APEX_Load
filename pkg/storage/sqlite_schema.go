@@ -1359,13 +1359,14 @@ func (s *SQLiteStore) ensureLegacyScenariosTx(tx *storeTx) error {
 		if candidate.existingScenarioID == "" {
 			continue
 		}
-		if legacyRefKeys[candidate.existingScenarioID] != "" && !legacyRefKeysTransferred[candidate.existingScenarioID] {
+		keepLegacyRefOwner := legacyRefKeys[candidate.existingScenarioID] != "" && !legacyRefKeysTransferred[candidate.existingScenarioID]
+		if !keepLegacyRefOwner {
+			oldScenarioIDs[candidate.existingScenarioID] = struct{}{}
+		} else {
 			// Keep the old row as the stable ref-key owner when the scoped target
 			// already has a different key; deleting it would make the public key
 			// unreachable.
-			continue
 		}
-		oldScenarioIDs[candidate.existingScenarioID] = struct{}{}
 		referenceKey := candidate.existingScenarioID + "\x00" + scenarioID + "\x00" + candidate.projectID
 		if _, migrated := migratedReferences[referenceKey]; migrated {
 			continue

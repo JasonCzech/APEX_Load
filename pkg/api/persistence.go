@@ -67,6 +67,46 @@ func (tr *TestRunner) loadStoredScripts() {
 	}
 }
 
+func (tr *TestRunner) reloadStoredScripts() error {
+	if tr == nil || tr.scriptStore == nil {
+		return nil
+	}
+	scripts, err := tr.scriptStore.ListScripts("", nil)
+	if err != nil {
+		return err
+	}
+	loaded := make(map[string]*StoredScript, len(scripts))
+	for _, script := range scripts {
+		if script == nil {
+			continue
+		}
+		loaded[script.ID] = &StoredScript{
+			ID:              script.ID,
+			RefKey:          script.RefKey,
+			Name:            script.Name,
+			Protocol:        script.Protocol,
+			Version:         script.Version,
+			ProjectID:       script.ProjectID,
+			FolderID:        script.FolderID,
+			CreatedAt:       script.CreatedAt,
+			AuthoringHealth: buildStoredScriptAuthoringHealth(script),
+			Script:          script,
+		}
+	}
+	tr.mu.Lock()
+	for _, script := range tr.scripts {
+		if script != nil {
+			tr.removeRefKeyLocked(script.RefKey)
+		}
+	}
+	tr.scripts = loaded
+	for _, script := range loaded {
+		tr.observeAndIndexRefKeyLocked(script.RefKey, script.ID)
+	}
+	tr.mu.Unlock()
+	return nil
+}
+
 func (tr *TestRunner) loadStoredScenarios() {
 	if tr.scenarioStore == nil {
 		return
@@ -86,13 +126,13 @@ func (tr *TestRunner) loadStoredScenarios() {
 
 // reloadStoredScenarios refreshes the in-memory scenario/schedule view from
 // shared storage so an HA leader observes CRUD performed by another replica.
-func (tr *TestRunner) reloadStoredScenarios() {
+func (tr *TestRunner) reloadStoredScenarios() error {
 	if tr == nil || tr.scenarioStore == nil {
-		return
+		return nil
 	}
 	scenarios, err := tr.scenarioStore.ListScenarios()
 	if err != nil {
-		return
+		return err
 	}
 	loaded := make(map[string]*StoredScenario, len(scenarios))
 	tr.mu.RLock()
@@ -102,14 +142,24 @@ func (tr *TestRunner) reloadStoredScenarios() {
 		}
 		full, scripts, loadErr := tr.scenarioStore.GetScenario(scenario.ID)
 		if loadErr != nil {
-			full = scenario
+			tr.mu.RUnlock()
+			return loadErr
 		}
 		loaded[scenario.ID] = tr.buildStoredScenario(full, scripts)
 	}
 	tr.mu.RUnlock()
 	tr.mu.Lock()
+	for _, scenario := range tr.scenarios {
+		if scenario != nil {
+			tr.removeRefKeyLocked(scenario.RefKey)
+		}
+	}
 	tr.scenarios = loaded
+	for _, scenario := range loaded {
+		tr.observeAndIndexRefKeyLocked(scenario.RefKey, scenario.ID)
+	}
 	tr.mu.Unlock()
+	return nil
 }
 
 func (tr *TestRunner) buildStoredScenario(scenario *storage.Scenario, scripts []storage.ScenarioScript) *StoredScenario {
@@ -231,15 +281,17 @@ func (tr *TestRunner) loadStoredTests() {
 // threaded), it runs concurrently with API readers, so map mutation is locked.
 // Tests this replica is actively running are left untouched; everything else is
 // re-hydrated so a failover leader sees runs and queued work created elsewhere.
-func (tr *TestRunner) reloadStoredTests() {
+func (tr *TestRunner) reloadStoredTests() error {
 	if tr.testStore == nil {
-		return
+		return nil
 	}
 	records, err := tr.testStore.ListTests("", nil)
 	if err != nil {
-		return
+		return err
 	}
+	seen := make(map[string]struct{}, len(records))
 	for _, record := range records {
+		seen[record.ID] = struct{}{}
 		tr.mu.RLock()
 		existing, ok := tr.tests[record.ID]
 		liveLocally := ok && existing.cancel != nil
@@ -248,7 +300,7 @@ func (tr *TestRunner) reloadStoredTests() {
 			continue
 		}
 		managedTest := managedTestFromRecord(record)
-		if tr.isExecutionLeader() {
+		if tr.holdsExecutionLeadership() {
 			tr.reconcileStoredActiveTest(managedTest)
 		}
 		tr.loadStoredTestHistory(managedTest)
@@ -259,10 +311,26 @@ func (tr *TestRunner) reloadStoredTests() {
 		// the DB-hydrated copy (cancel == nil) would detach the running goroutine's
 		// cancel func, so a later Stop/Abort could never stop the run.
 		if current, ok := tr.tests[record.ID]; !ok || current.cancel == nil {
+			if ok && current != nil && current.RefKey != managedTest.RefKey {
+				tr.removeRefKeyLocked(current.RefKey)
+			}
 			tr.tests[record.ID] = managedTest
+			tr.observeAndIndexRefKeyLocked(managedTest.RefKey, managedTest.ID)
 		}
 		tr.mu.Unlock()
 	}
+	tr.mu.Lock()
+	for id, current := range tr.tests {
+		if _, ok := seen[id]; ok || (current != nil && current.cancel != nil) {
+			continue
+		}
+		if current != nil {
+			tr.removeRefKeyLocked(current.RefKey)
+		}
+		delete(tr.tests, id)
+	}
+	tr.mu.Unlock()
+	return nil
 }
 
 func (tr *TestRunner) reconcileStoredActiveTest(test *ManagedTest) {

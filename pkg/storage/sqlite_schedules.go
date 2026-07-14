@@ -68,6 +68,62 @@ func (s *SQLiteStore) SaveScenarioSchedule(schedule *ScenarioSchedule) error {
 	return err
 }
 
+// SaveScenarioScheduleWithApproval commits the schedule revision and its
+// pending approval as one durable unit. This prevents a crash or partial write
+// from leaving pending_approval_id dangling.
+func (s *SQLiteStore) SaveScenarioScheduleWithApproval(schedule *ScenarioSchedule, approval *ScenarioScheduleApproval, expectedRevision int) (bool, error) {
+	governanceJSON, blackoutJSON, maintenanceJSON, availabilityJSON, err := prepareScenarioSchedule(schedule)
+	if err != nil {
+		return false, err
+	}
+	if err := prepareScenarioScheduleApproval(approval); err != nil {
+		return false, err
+	}
+	if approval.ScheduleID != schedule.ID || schedule.PendingApprovalID != approval.ID {
+		return false, errors.New("schedule and approval identifiers do not match")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	var result sql.Result
+	if expectedRevision == 0 {
+		result, err = tx.Exec(`INSERT INTO scenario_schedules (id, scenario_id, project_id, revision, name, cron_expr, timezone, release_id, timeslot_id, run_name_template, enabled, approval_policy, missed_run_policy, conflict_summary, next_required_action, pending_approval_id, owner_subject, owner_display_name, governance_json, blackout_windows_json, maintenance_windows_json, availability_windows_json, last_run_test_id, last_run_at, next_run_at, disabled_from, disabled_until, last_error, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO NOTHING`,
+			schedule.ID, schedule.ScenarioID, schedule.ProjectID, schedule.Revision, schedule.Name, schedule.CronExpr, schedule.Timezone, nullableString(schedule.ReleaseID), schedule.TimeslotID, schedule.RunNameTemplate, schedule.Enabled, schedule.ApprovalPolicy, schedule.MissedRunPolicy, schedule.ConflictSummary, schedule.NextRequiredAction, schedule.PendingApprovalID, schedule.OwnerSubject, schedule.OwnerDisplayName, governanceJSON, blackoutJSON, maintenanceJSON, availabilityJSON,
+			nullableString(schedule.LastRunTestID), schedule.LastRunAt, schedule.NextRunAt, schedule.DisabledFrom, schedule.DisabledUntil, schedule.LastError, schedule.CreatedAt, schedule.UpdatedAt)
+	} else {
+		schedule.Revision = expectedRevision + 1
+		approval.ScheduleRevision = schedule.Revision
+		result, err = tx.Exec(`UPDATE scenario_schedules SET scenario_id=?, project_id=?, revision=?, name=?, cron_expr=?, timezone=?, release_id=?, timeslot_id=?, run_name_template=?, enabled=?, approval_policy=?, missed_run_policy=?, conflict_summary=?, next_required_action=?, pending_approval_id=?, owner_subject=?, owner_display_name=?, governance_json=?, blackout_windows_json=?, maintenance_windows_json=?, availability_windows_json=?, last_run_test_id=?, last_run_at=?, next_run_at=?, disabled_from=?, disabled_until=?, last_error=?, updated_at=? WHERE id=? AND COALESCE(revision, 1)=?`,
+			schedule.ScenarioID, schedule.ProjectID, schedule.Revision, schedule.Name, schedule.CronExpr, schedule.Timezone, nullableString(schedule.ReleaseID), schedule.TimeslotID, schedule.RunNameTemplate, schedule.Enabled, schedule.ApprovalPolicy, schedule.MissedRunPolicy, schedule.ConflictSummary, schedule.NextRequiredAction, schedule.PendingApprovalID, schedule.OwnerSubject, schedule.OwnerDisplayName, governanceJSON, blackoutJSON, maintenanceJSON, availabilityJSON, nullableString(schedule.LastRunTestID), schedule.LastRunAt, schedule.NextRunAt, schedule.DisabledFrom, schedule.DisabledUntil, schedule.LastError, schedule.UpdatedAt, schedule.ID, expectedRevision)
+	}
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil || affected != 1 {
+		return false, err
+	}
+	_, err = tx.Exec(`INSERT INTO scenario_schedule_approvals (id, schedule_id, scenario_id, project_id, schedule_revision, policy, status, requested_by, requested_at, resolved_by, resolved_at, decision_reason, required_role, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET scenario_id=excluded.scenario_id, project_id=excluded.project_id,
+		schedule_revision=excluded.schedule_revision, policy=excluded.policy, status=excluded.status,
+		requested_by=excluded.requested_by, requested_at=excluded.requested_at, resolved_by=excluded.resolved_by,
+		resolved_at=excluded.resolved_at, decision_reason=excluded.decision_reason, required_role=excluded.required_role,
+		updated_at=excluded.updated_at`,
+		approval.ID, approval.ScheduleID, approval.ScenarioID, approval.ProjectID, approval.ScheduleRevision, approval.Policy, approval.Status, approval.RequestedBy, approval.RequestedAt, approval.ResolvedBy, approval.ResolvedAt, approval.DecisionReason, approval.RequiredRole, approval.CreatedAt, approval.UpdatedAt)
+	if err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // CreateScenarioScheduleIfAbsent creates a schedule without replacing an
 // existing row. This is the create half of the schedule CAS contract.
 func (s *SQLiteStore) CreateScenarioScheduleIfAbsent(schedule *ScenarioSchedule) (bool, error) {
@@ -299,6 +355,21 @@ func (s *SQLiteStore) DeleteScenarioScheduleOccurrence(id string) error {
 }
 
 func (s *SQLiteStore) SaveScenarioScheduleApproval(approval *ScenarioScheduleApproval) error {
+	if err := prepareScenarioScheduleApproval(approval); err != nil {
+		return err
+	}
+	_, err := s.db.Exec(`INSERT INTO scenario_schedule_approvals (id, schedule_id, scenario_id, project_id, schedule_revision, policy, status, requested_by, requested_at, resolved_by, resolved_at, decision_reason, required_role, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET scenario_id=excluded.scenario_id, project_id=excluded.project_id,
+		schedule_revision=excluded.schedule_revision, policy=excluded.policy, status=excluded.status,
+		requested_by=excluded.requested_by, requested_at=excluded.requested_at, resolved_by=excluded.resolved_by,
+		resolved_at=excluded.resolved_at, decision_reason=excluded.decision_reason, required_role=excluded.required_role,
+		updated_at=excluded.updated_at`,
+		approval.ID, approval.ScheduleID, approval.ScenarioID, approval.ProjectID, approval.ScheduleRevision, approval.Policy, approval.Status, approval.RequestedBy, approval.RequestedAt, approval.ResolvedBy, approval.ResolvedAt, approval.DecisionReason, approval.RequiredRole, approval.CreatedAt, approval.UpdatedAt)
+	return err
+}
+
+func prepareScenarioScheduleApproval(approval *ScenarioScheduleApproval) error {
 	if approval == nil {
 		return errors.New("schedule approval is required")
 	}
@@ -327,15 +398,7 @@ func (s *SQLiteStore) SaveScenarioScheduleApproval(approval *ScenarioScheduleApp
 	if approval.ScheduleRevision < 1 {
 		approval.ScheduleRevision = 1
 	}
-	_, err := s.db.Exec(`INSERT INTO scenario_schedule_approvals (id, schedule_id, scenario_id, project_id, schedule_revision, policy, status, requested_by, requested_at, resolved_by, resolved_at, decision_reason, required_role, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET scenario_id=excluded.scenario_id, project_id=excluded.project_id,
-		schedule_revision=excluded.schedule_revision, policy=excluded.policy, status=excluded.status,
-		requested_by=excluded.requested_by, requested_at=excluded.requested_at, resolved_by=excluded.resolved_by,
-		resolved_at=excluded.resolved_at, decision_reason=excluded.decision_reason, required_role=excluded.required_role,
-		updated_at=excluded.updated_at`,
-		approval.ID, approval.ScheduleID, approval.ScenarioID, approval.ProjectID, approval.ScheduleRevision, approval.Policy, approval.Status, approval.RequestedBy, approval.RequestedAt, approval.ResolvedBy, approval.ResolvedAt, approval.DecisionReason, approval.RequiredRole, approval.CreatedAt, approval.UpdatedAt)
-	return err
+	return nil
 }
 
 func (s *SQLiteStore) GetScenarioScheduleApproval(id string) (*ScenarioScheduleApproval, error) {

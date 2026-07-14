@@ -68,6 +68,10 @@ type Browser struct {
 	lastHARArtifactPath   string
 	harMonitorStop        chan struct{}
 	harMonitorWG          sync.WaitGroup
+	harLimitExceeded      chan struct{}
+	harLimitOnce          sync.Once
+	harObservedBytes      int64
+	harObservedEntries    int
 	mobile                bool
 	touchMode             bool
 	orientation           string

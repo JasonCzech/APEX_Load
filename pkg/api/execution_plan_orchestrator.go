@@ -905,12 +905,33 @@ func (tr *TestRunner) createExecutionPlanRunDurable(run *storage.ExecutionPlanRu
 		run.Revision = 1
 	}
 	if store, ok := tr.execPlanRunStore.(atomicExecutionPlanRunPersistence); ok {
+		if run.TransitionToken == "" {
+			run.TransitionToken = uuid.NewString()
+		}
 		created := false
 		err := retryDurableTransition(func() error {
 			var err error
 			created, err = store.CreateExecutionPlanRunIfAbsent(run)
+			if err == nil && !created {
+				current, loadErr := tr.execPlanRunStore.GetExecutionPlanRun(run.ID)
+				if loadErr != nil {
+					return loadErr
+				}
+				if current != nil && current.TransitionToken == run.TransitionToken {
+					created = true
+					run.Revision = current.Revision
+					return nil
+				}
+			}
 			return err
 		})
+		if err != nil {
+			current, loadErr := tr.execPlanRunStore.GetExecutionPlanRun(run.ID)
+			if loadErr == nil && current != nil && current.TransitionToken == run.TransitionToken {
+				run.Revision = current.Revision
+				return true, nil
+			}
+		}
 		return created, err
 	}
 	if err := retryDurableTransition(func() error {
@@ -940,10 +961,21 @@ func (tr *TestRunner) persistExecutionPlanRunDurable(run *storage.ExecutionPlanR
 			return nil
 		}
 		if err == nil && !updated {
-			// A definitive CAS miss proves another writer owns this transition.
-			// Matching content is not sufficient to establish ownership because two
-			// controllers can submit the same claim concurrently.
-			return fmt.Errorf("%w: run %s expected revision %d", errExecutionPlanRunConflict, run.ID, expectedRevision)
+			// A retry can miss because its earlier, ambiguously acknowledged CAS
+			// committed after the first reconciliation read. The per-transition token
+			// distinguishes that case from another controller's otherwise identical
+			// transition.
+			current, reloadErr := tr.reloadExecutionPlanRunForTransition(run.ID)
+			if reloadErr == nil && executionPlanRunTransitionMatches(current, run, expectedRevision) {
+				run.Revision = current.Revision
+				run.UpdatedAt = current.UpdatedAt
+				run.CompletedAt = cloneTimePtr(current.CompletedAt)
+				return nil
+			}
+			if reloadErr != nil {
+				return errors.Join(fmt.Errorf("%w: run %s expected revision %d", errExecutionPlanRunConflict, run.ID, expectedRevision), reloadErr)
+			}
+			return fmt.Errorf("%w: run %s expected revision %d, durable revision is %d", errExecutionPlanRunConflict, run.ID, expectedRevision, current.Revision)
 		}
 
 		current, reloadErr := tr.reloadExecutionPlanRunForTransition(run.ID)

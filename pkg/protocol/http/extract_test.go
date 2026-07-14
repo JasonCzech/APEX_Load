@@ -1,6 +1,7 @@
 package http
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -503,6 +504,26 @@ func TestExtractRegexCount(t *testing.T) {
 	}
 	if val != "2" {
 		t.Fatalf("regex count = %q, want 2", val)
+	}
+}
+
+func TestExtractRegexCountRejectsExcessiveMatches(t *testing.T) {
+	body := bytes.Repeat([]byte("x"), maxAllExtractorMatches+1)
+	if _, err := extractRegexCount("x", body); err == nil {
+		t.Fatal("expected bounded regex count to reject excessive matches")
+	}
+}
+
+func TestExtractRegexOrdinalIgnoresLaterMatches(t *testing.T) {
+	body := bytes.Repeat([]byte("value=ok "), maxAllExtractorMatches+1)
+	payload, err := json.Marshal(regexOrdinalExpressionConfig{Expression: `value=(\w+)`, Ordinal: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expr := regexOrdinalExpressionConfigPrefix + string(payload)
+	got, err := extractRegexOrdinal(expr, body)
+	if err != nil || got != "ok" {
+		t.Fatalf("extract ordinal = %q, %v; want ok", got, err)
 	}
 }
 

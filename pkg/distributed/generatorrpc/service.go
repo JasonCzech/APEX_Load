@@ -957,6 +957,7 @@ func (s *Service) StopTest(ctx context.Context, request *pb.StopRequest) (*pb.St
 	delete(s.executions, request.GetTestId())
 	writer := s.archiveWriters[request.GetTestId()]
 	delete(s.archiveWriters, request.GetTestId())
+	trackedFinalizer := writer != nil && s.addFinalizer()
 	s.mu.Unlock()
 
 	executions := make([]*groupExecution, 0, len(execs))
@@ -965,7 +966,7 @@ func (s *Service) StopTest(ctx context.Context, request *pb.StopRequest) (*pb.St
 		exec.cancel()
 	}
 	if err := waitForGeneratorExecutions(ctx, executions); err != nil {
-		if !s.addFinalizer() {
+		if !trackedFinalizer {
 			_ = waitForGeneratorExecutions(context.Background(), executions)
 			s.finishStoppedTest(request.GetTestId(), assignment, writer)
 			return nil, status.Errorf(codes.DeadlineExceeded, "wait for stopped execution: %v", err)
@@ -976,6 +977,9 @@ func (s *Service) StopTest(ctx context.Context, request *pb.StopRequest) (*pb.St
 			s.finishStoppedTest(request.GetTestId(), assignment, writer)
 		}()
 		return nil, status.Errorf(codes.DeadlineExceeded, "wait for stopped execution: %v", err)
+	}
+	if trackedFinalizer {
+		defer s.finalizerWG.Done()
 	}
 	_, finalError := s.finishStoppedTest(request.GetTestId(), assignment, writer)
 	if finalError != "" {
@@ -1307,6 +1311,7 @@ func (s *Service) FailTest(testID string, message string) {
 	delete(s.executions, testID)
 	writer := s.archiveWriters[testID]
 	delete(s.archiveWriters, testID)
+	trackedFinalizer := writer != nil && s.addFinalizer()
 	s.stopCompletionTimerLocked(testID)
 	s.mu.Unlock()
 	executions := make([]*groupExecution, 0, len(execs))
@@ -1315,13 +1320,16 @@ func (s *Service) FailTest(testID string, message string) {
 		exec.cancel()
 	}
 	if !ok {
+		if trackedFinalizer {
+			s.finalizerWG.Done()
+		}
 		return
 	}
 	waitCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	waitErr := waitForGeneratorExecutions(waitCtx, executions)
 	cancel()
 	if waitErr != nil {
-		if !s.addFinalizer() {
+		if !trackedFinalizer {
 			_ = waitForGeneratorExecutions(context.Background(), executions)
 			s.finishFailedTest(testID, assignment, writer, message)
 			return
@@ -1332,6 +1340,9 @@ func (s *Service) FailTest(testID string, message string) {
 			s.finishFailedTest(testID, assignment, writer, message)
 		}()
 		return
+	}
+	if trackedFinalizer {
+		defer s.finalizerWG.Done()
 	}
 	s.finishFailedTest(testID, assignment, writer, message)
 }

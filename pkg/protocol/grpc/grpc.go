@@ -68,6 +68,12 @@ func (g *GRPC) Init(ctx context.Context, config map[string]any) error {
 	g.useReflect, _ = boolConfig(config, "grpc_use_reflection")
 	g.plainText, _ = boolConfig(config, "grpc_plain_text")
 	g.maxRecvBytes, _ = intConfig(config, "grpc_max_recv_msg_size")
+	if g.maxRecvBytes <= 0 {
+		g.maxRecvBytes = maxGRPCStreamBytes
+	}
+	if g.maxRecvBytes > maxGRPCStreamBytes {
+		return fmt.Errorf("grpc_max_recv_msg_size exceeds limit %d", maxGRPCStreamBytes)
+	}
 	g.callTimeout = durationConfig(config, "grpc_timeout_ms", defaultCallTimeout)
 	g.metadata = buildMetadata(config)
 	g.methods = make(map[string]protoreflect.MethodDescriptor)
@@ -84,9 +90,7 @@ func (g *GRPC) Init(ctx context.Context, config map[string]any) error {
 	} else {
 		opts = append(opts, googlegrpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{MinVersion: tls.VersionTLS12})))
 	}
-	if g.maxRecvBytes > 0 {
-		opts = append(opts, googlegrpc.WithDefaultCallOptions(googlegrpc.MaxCallRecvMsgSize(g.maxRecvBytes)))
-	}
+	opts = append(opts, googlegrpc.WithDefaultCallOptions(googlegrpc.MaxCallRecvMsgSize(g.maxRecvBytes)))
 	conn, err := googlegrpc.DialContext(ctx, g.target, opts...)
 	if err != nil {
 		return err
@@ -222,6 +226,9 @@ func (g *GRPC) invokeUnary(ctx context.Context, action *protocol.Action, result 
 	if err != nil {
 		return fmt.Errorf("encode grpc response body: %w", err)
 	}
+	if len(responseBody) > maxGRPCStreamBytes {
+		return fmt.Errorf("grpc response exceeds %d byte limit", maxGRPCStreamBytes)
+	}
 	result.ResponseBody = string(responseBody)
 	result.BytesReceived = int64(len(responseBody))
 	result.StatusCode = int(codes.OK)
@@ -297,6 +304,9 @@ func (g *GRPC) invokeClientStream(ctx context.Context, action *protocol.Action, 
 	responseBody, err := (protojson.MarshalOptions{EmitUnpopulated: true}).Marshal(response)
 	if err != nil {
 		return fmt.Errorf("encode grpc response body: %w", err)
+	}
+	if len(responseBody) > maxGRPCStreamBytes {
+		return fmt.Errorf("grpc response exceeds %d byte limit", maxGRPCStreamBytes)
 	}
 	result.BytesSent = int64(sentBytes)
 	result.ResponseBody = string(responseBody)

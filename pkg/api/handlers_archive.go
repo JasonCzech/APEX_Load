@@ -72,6 +72,7 @@ func (s *Server) handleVerifyRunArchive(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleDownloadRunArchive(w http.ResponseWriter, r *http.Request) {
+	clearArchiveWriteDeadline(w)
 	prepCtx, cancelPrep := context.WithTimeout(r.Context(), configuredArchiveMaterializationTimeout())
 	defer cancelPrep()
 	id := r.PathValue("id")
@@ -107,6 +108,7 @@ func (s *Server) handleDownloadRunArchive(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) handleDownloadRunArchiveArtifact(w http.ResponseWriter, r *http.Request) {
+	clearArchiveWriteDeadline(w)
 	prepCtx, cancelPrep := context.WithTimeout(r.Context(), configuredArchiveMaterializationTimeout())
 	defer cancelPrep()
 	id := r.PathValue("id")
@@ -164,6 +166,7 @@ func (s *Server) handleDownloadRunArchiveArtifact(w http.ResponseWriter, r *http
 }
 
 func (s *Server) handleDownloadRunArchiveBrowserDiagnostics(w http.ResponseWriter, r *http.Request) {
+	clearArchiveWriteDeadline(w)
 	prepCtx, cancelPrep := context.WithTimeout(r.Context(), configuredArchiveMaterializationTimeout())
 	defer cancelPrep()
 	id := r.PathValue("id")

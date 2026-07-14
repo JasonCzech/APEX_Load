@@ -557,7 +557,11 @@ func extractRegexCount(expr string, body []byte) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("invalid regex: %w", err)
 	}
-	return fmt.Sprintf("%d", len(re.FindAll(body, -1))), nil
+	matches := re.FindAllIndex(body, maxAllExtractorMatches+1)
+	if len(matches) > maxAllExtractorMatches {
+		return "", fmt.Errorf("regex match limit exceeded (%d)", maxAllExtractorMatches)
+	}
+	return fmt.Sprintf("%d", len(matches)), nil
 }
 
 func extractRegexOrdinal(expr string, body []byte) (string, error) {
@@ -569,10 +573,10 @@ func extractRegexOrdinal(expr string, body []byte) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("invalid regex: %w", err)
 	}
-	matches := re.FindAllSubmatch(body, maxAllExtractorMatches+1)
-	if len(matches) > maxAllExtractorMatches {
+	if config.Ordinal > maxAllExtractorMatches {
 		return "", fmt.Errorf("regex match limit exceeded (%d)", maxAllExtractorMatches)
 	}
+	matches := re.FindAllSubmatch(body, config.Ordinal)
 	if len(matches) < config.Ordinal {
 		return "", fmt.Errorf("regex %q match ordinal %d not found", config.Expression, config.Ordinal)
 	}

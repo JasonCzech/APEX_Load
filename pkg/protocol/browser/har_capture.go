@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -64,31 +65,44 @@ func (b *Browser) startHARMonitor() {
 		return
 	}
 	b.harMonitorStop = make(chan struct{})
+	b.harLimitExceeded = make(chan struct{})
+	b.harLimitOnce = sync.Once{}
+	b.harObservedBytes = 0
+	b.harObservedEntries = 0
 	b.harMonitorWG.Add(1)
-	go func(path string, stop <-chan struct{}) {
+	go func(stop, exceeded <-chan struct{}) {
 		defer b.harMonitorWG.Done()
-		ticker := time.NewTicker(100 * time.Millisecond)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-stop:
-				return
-			case <-ticker.C:
-				info, err := os.Stat(path)
-				if err != nil || info.Size() <= maxRuntimeHARBytes {
-					continue
-				}
-				b.mu.Lock()
-				b.harErrorSeen = true
-				context := b.pwContext
-				b.mu.Unlock()
-				if context != nil {
-					_ = context.Close()
-				}
-				return
+		select {
+		case <-stop:
+			return
+		case <-exceeded:
+			b.mu.Lock()
+			b.harErrorSeen = true
+			context := b.pwContext
+			b.mu.Unlock()
+			if context != nil {
+				_ = context.Close()
 			}
 		}
-	}(b.harWorkingPath, b.harMonitorStop)
+	}(b.harMonitorStop, b.harLimitExceeded)
+}
+
+const maxRuntimeHAREntries = 100_000
+
+func (b *Browser) noteHARNetworkUsage(bytes int64) {
+	b.mu.Lock()
+	if b.harLimitExceeded == nil {
+		b.mu.Unlock()
+		return
+	}
+	b.harObservedBytes += bytes
+	b.harObservedEntries++
+	exceeded := b.harObservedBytes > maxRuntimeHARBytes || b.harObservedEntries > maxRuntimeHAREntries
+	signal := b.harLimitExceeded
+	b.mu.Unlock()
+	if exceeded {
+		b.harLimitOnce.Do(func() { close(signal) })
+	}
 }
 
 // noteHARError marks the session so an on_error policy keeps the recording.

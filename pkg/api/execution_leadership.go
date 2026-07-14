@@ -72,6 +72,7 @@ type executionLeadership struct {
 
 	mu              sync.Mutex
 	onAcquire       func()
+	onAdmit         func()
 	onLoss          func()
 	lastConfirmed   time.Time // last time we positively held the lease
 	generation      uint64    // incremented on every leader/follower transition
@@ -103,6 +104,15 @@ func (l *executionLeadership) setOnAcquire(fn func()) {
 	}
 	l.mu.Lock()
 	l.onAcquire = fn
+	l.mu.Unlock()
+}
+
+func (l *executionLeadership) setOnAdmit(fn func()) {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	l.onAdmit = fn
 	l.mu.Unlock()
 }
 
@@ -223,14 +233,17 @@ func (l *executionLeadership) tick() {
 		if onAcquire != nil {
 			acquireCallback := onAcquire
 			onAcquire = func() {
-				defer func() {
-					l.mu.Lock()
-					if l.generation == acquireGeneration && l.leader.Load() {
-						l.reconciling.Store(false)
-					}
-					l.mu.Unlock()
-				}()
 				acquireCallback()
+				var onAdmit func()
+				l.mu.Lock()
+				if l.generation == acquireGeneration && l.leader.Load() {
+					l.reconciling.Store(false)
+					onAdmit = l.onAdmit
+				}
+				l.mu.Unlock()
+				if onAdmit != nil {
+					onAdmit()
+				}
 			}
 		}
 		// The ordered worker keeps the potentially long reconcile off the lease

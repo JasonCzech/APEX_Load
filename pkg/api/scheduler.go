@@ -41,6 +41,10 @@ type atomicScenarioScheduleApprovalStore interface {
 	ResolveScenarioScheduleApproval(approval *storage.ScenarioScheduleApproval, schedule *storage.ScenarioSchedule, expectedScheduleRevision int) (bool, error)
 }
 
+type atomicScenarioScheduleApprovalWriteStore interface {
+	SaveScenarioScheduleWithApproval(schedule *storage.ScenarioSchedule, approval *storage.ScenarioScheduleApproval, expectedRevision int) (bool, error)
+}
+
 type scenarioScheduler struct {
 	runner   *TestRunner
 	now      func() time.Time
@@ -99,6 +103,17 @@ func (s *scenarioScheduler) RunDueSchedules() error {
 	// scenario-scheduler lease below still guards against duplicate sweeps.
 	if !s.runner.isExecutionLeader() {
 		return nil
+	}
+	// Schedule/scenario CRUD may be served by any HA replica. Refresh the
+	// leader's durable view before each sweep so follower writes and deletes are
+	// observed without requiring another leadership transition.
+	if s.runner.leadership != nil {
+		if err := s.runner.reloadStoredScripts(); err != nil {
+			return fmt.Errorf("reload scripts before schedule sweep: %w", err)
+		}
+		if err := s.runner.reloadStoredScenarios(); err != nil {
+			return fmt.Errorf("reload scenarios before schedule sweep: %w", err)
+		}
 	}
 	now := s.now().UTC()
 	acquired, err := s.runner.acquireScenarioSchedulerLease(now, s.ownerID, s.leaseTTL)
@@ -1716,14 +1731,39 @@ func (tr *TestRunner) upsertScenarioScheduleLocked(scenarioID string, scheduleID
 			schedule.NextRunAt = existing.NextRunAt
 		}
 	}
+	if approvalToSave != nil {
+		if atomicStore, ok := tr.scenarioStore.(atomicScenarioScheduleApprovalWriteStore); ok {
+			expectedRevision := 0
+			if existing != nil {
+				expectedRevision = existing.Revision
+			}
+			changed, err := atomicStore.SaveScenarioScheduleWithApproval(schedule, approvalToSave, expectedRevision)
+			if err != nil {
+				return nil, err
+			}
+			if !changed {
+				return nil, fmt.Errorf("scenario schedule %q changed or was deleted; reload and retry", schedule.ID)
+			}
+			if existing == nil {
+				scenario.Schedules = append(scenario.Schedules, cloneScenarioSchedule(schedule))
+			} else {
+				for i, candidate := range scenario.Schedules {
+					if candidate != nil && candidate.ID == schedule.ID {
+						scenario.Schedules[i] = cloneScenarioSchedule(schedule)
+						break
+					}
+				}
+			}
+			return cloneScenarioSchedule(schedule), nil
+		}
+	}
 	if err := tr.saveScenarioScheduleLocked(schedule); err != nil {
 		return nil, err
 	}
 	if approvalToSave != nil {
 		if err := tr.saveScenarioScheduleApprovalLocked(approvalToSave); err != nil {
-			// Creation has no prior schedule state to preserve. Compensate the
-			// schedule write so a transient approval-store failure cannot leave a
-			// durable PendingApprovalID that points at nothing.
+			// Compensate the schedule write so a transient approval-store failure
+			// cannot leave a durable PendingApprovalID that points at nothing.
 			if existing == nil && tr.scenarioStore != nil {
 				if deleteErr := tr.scenarioStore.DeleteScenarioSchedule(schedule.ID); deleteErr != nil {
 					return nil, errors.Join(err, fmt.Errorf("compensating schedule delete failed: %w", deleteErr))
@@ -1733,6 +1773,12 @@ func (tr *TestRunner) upsertScenarioScheduleLocked(scenarioID string, scheduleID
 						scenario.Schedules = append(scenario.Schedules[:i], scenario.Schedules[i+1:]...)
 						break
 					}
+				}
+			} else if existing != nil {
+				rollback := cloneScenarioSchedule(existing)
+				rollback.UpdatedAt = time.Now().UTC()
+				if rollbackErr := tr.saveScenarioScheduleLocked(rollback); rollbackErr != nil {
+					return nil, errors.Join(err, fmt.Errorf("compensating schedule rollback failed: %w", rollbackErr))
 				}
 			}
 			return nil, err

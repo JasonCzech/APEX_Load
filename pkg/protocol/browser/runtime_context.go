@@ -398,15 +398,16 @@ func (b *Browser) recordNetworkRequest(request playwright.Request, finished bool
 	requestHeaders := safeRequestHeaders(request)
 	requestBody, requestBodyEncoding, requestBodyTruncated := browserRequestBody(request)
 	var bytesReceived int64
+	var harBytes int64
 	if sizes, err := request.Sizes(); err == nil && sizes != nil {
 		bytesReceived = int64(sizes.ResponseHeadersSize + sizes.ResponseBodySize)
+		harBytes = int64(sizes.RequestHeadersSize + sizes.RequestBodySize + sizes.ResponseHeadersSize + sizes.ResponseBodySize)
 	}
 	durationMs := requestDurationMs(request.Timing())
 	if !finished && durationMs < 0 {
 		durationMs = 0
 	}
 	b.mu.Lock()
-	defer b.mu.Unlock()
 	b.networkEntries = append(b.networkEntries, protocol.NetworkEntry{
 		URL:                  request.URL(),
 		Method:               request.Method(),
@@ -422,6 +423,8 @@ func (b *Browser) recordNetworkRequest(request playwright.Request, finished bool
 	})
 	b.networkBodyBytes += len(requestBody)
 	b.trimNetworkEntriesLocked()
+	b.mu.Unlock()
+	b.noteHARNetworkUsage(harBytes)
 }
 
 // trimNetworkEntriesLocked evicts the oldest network entries once the count or

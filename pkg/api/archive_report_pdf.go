@@ -281,9 +281,9 @@ var pdfASCIITransliterations = map[rune]string{
 	'–': "-", '—': "-", '−': "-", // en/em dash, minus
 	'‘': "'", '’': "'", '‚': "'", '′': "'", // single quotes / prime
 	'“': "\"", '”': "\"", '„': "\"", '″': "\"", // double quotes
-	'…': "...",     // ellipsis
-	' ': " ",       // non-breaking space
-	'•': "*",       // bullet
+	'…': "...",           // ellipsis
+	' ': " ",             // non-breaking space
+	'•': "*",             // bullet
 	'«': "<<", '»': ">>", // guillemets
 	// Latin letters NFD does not decompose.
 	'ß': "ss", 'ẞ': "SS",

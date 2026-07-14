@@ -3,6 +3,8 @@ package api
 // library_handlers.go — split from library_federation.go (same package, behavior-preserving).
 
 import (
+	"context"
+	"io"
 	"log/slog"
 	"net/http"
 	"sort"
@@ -93,6 +95,8 @@ func (s *Server) handleLibraryImportArchive(w http.ResponseWriter, r *http.Reque
 
 func (s *Server) handleLibraryResultArchive(w http.ResponseWriter, r *http.Request) {
 	clearArchiveWriteDeadline(w)
+	prepCtx, cancelPrep := context.WithTimeout(r.Context(), configuredArchiveMaterializationTimeout())
+	defer cancelPrep()
 	id := strings.TrimSpace(r.PathValue("id"))
 	test, ok := s.runner.GetTest(id)
 	if !ok || test == nil {
@@ -104,19 +108,25 @@ func (s *Server) handleLibraryResultArchive(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusNotFound, "archive not found")
 		return
 	}
-	lease, err := acquireArchiveMaterialized(r.Context(), record)
+	lease, err := acquireArchiveMaterialized(prepCtx, record)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to materialize archive: "+err.Error())
 		return
 	}
 	defer lease.Release()
-	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Disposition", "attachment; filename=\""+sanitizeFilename(test.Name)+"-"+id+".zip\"")
-	w.Header().Set("Last-Modified", record.CompletedAt.UTC().Format(http.TimeFormat))
-	w.WriteHeader(http.StatusOK)
-	if err := zipDirectory(record.ArchivePath, w); err != nil {
-		slog.Warn("failed to stream library result archive", "test_id", id, "err", err)
+	staged, err := stageArchiveDownload(prepCtx, func(destination io.Writer) error {
+		return zipDirectoryContext(prepCtx, record.ArchivePath, destination)
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to build archive bundle: "+err.Error())
+		return
 	}
+	defer removeStagedArchiveDownload(staged)
+	filename := sanitizeFilename(test.Name) + "-" + id + ".zip"
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+	clearArchiveWriteDeadline(w)
+	http.ServeContent(w, r, filename, record.CompletedAt.UTC(), staged.File)
 }
 
 func (s *Server) handleLibraryListRemotes(w http.ResponseWriter, r *http.Request) {

@@ -1299,9 +1299,8 @@ func (tr *TestRunner) GetSystemSettings() SystemSettings {
 }
 
 // refreshAuthSettingsFromStore keeps authentication policy consistent across
-// HA replicas. Settings writes are shared, while each runner retains an
-// in-memory copy for fast access; refresh only the security-sensitive section
-// on reads so a policy change propagates without requiring a restart.
+// HA replicas without replacing unrelated settings that require migration
+// defaults or local runtime derivation.
 func (tr *TestRunner) refreshAuthSettingsFromStore() {
 	if tr == nil || tr.settingsStore == nil {
 		return
@@ -1419,6 +1418,10 @@ func (tr *TestRunner) UpdateSystemSettings(settings SystemSettings) (SystemSetti
 		return SystemSettings{}, fmt.Errorf("encode settings: %w", err)
 	}
 
+	// Serialize the durable write and in-memory install with refresh so a refresh
+	// that read the prior blob cannot overwrite this update afterward.
+	tr.settingsRefreshMu.Lock()
+	defer tr.settingsRefreshMu.Unlock()
 	if tr.settingsStore != nil {
 		if err := tr.settingsStore.SaveSetting(systemSettingsStoreKey, string(encoded)); err != nil {
 			return SystemSettings{}, fmt.Errorf("persist settings: %w", err)
@@ -1432,9 +1435,7 @@ func (tr *TestRunner) UpdateSystemSettings(settings SystemSettings) (SystemSetti
 	// configured reservations), so a settings change must invalidate the cache.
 	tr.invalidateCapacityAdvisoryCacheLocked()
 	tr.mu.Unlock()
-	tr.settingsRefreshMu.Lock()
 	tr.settingsAuthRefreshAt = time.Now()
-	tr.settingsRefreshMu.Unlock()
 	tr.setNotificationSettings(normalized.Notifications)
 
 	return normalized, nil

@@ -16,8 +16,8 @@ type reloadRaceStore struct {
 	inject  func()
 }
 
-func (s *reloadRaceStore) SaveTest(*storage.TestRecord) error            { return nil }
-func (s *reloadRaceStore) GetTest(string) (*storage.TestRecord, error)   { return nil, nil }
+func (s *reloadRaceStore) SaveTest(*storage.TestRecord) error          { return nil }
+func (s *reloadRaceStore) GetTest(string) (*storage.TestRecord, error) { return nil, nil }
 func (s *reloadRaceStore) ListTests(string, *string) ([]*storage.TestRecord, error) {
 	return s.records, nil
 }
@@ -27,7 +27,7 @@ func (s *reloadRaceStore) ListTestsByContext(string, string, string) ([]*storage
 func (s *reloadRaceStore) UpdateTestStatus(string, string, *time.Time, string) error { return nil }
 func (s *reloadRaceStore) DeleteTest(string) error                                   { return nil }
 func (s *reloadRaceStore) MoveTest(string, *string) error                            { return nil }
-func (s *reloadRaceStore) SaveHistory(string, time.Time, any) error { return nil }
+func (s *reloadRaceStore) SaveHistory(string, time.Time, any) error                  { return nil }
 func (s *reloadRaceStore) GetHistory(string) ([]any, error) {
 	if s.inject != nil {
 		s.inject()

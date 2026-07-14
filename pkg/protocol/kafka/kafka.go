@@ -10,6 +10,7 @@ package kafka
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"regexp"
@@ -538,21 +539,27 @@ func (k *Kafka) commitTransaction(ctx context.Context, result *protocol.Result) 
 	}
 	if committer, ok := k.client.(atomicTransactionCommitter); ok {
 		if err := committer.CommitBufferedTransaction(ctx, k.txBuffer); err != nil {
-			_ = k.client.AbortTransaction(ctx)
+			abortErr := k.abortAfterTransactionFailure(ctx)
 			k.txOpen, k.txBuffer, k.txBytes = false, nil, 0
-			return err
+			k.txPoisoned = true
+			return errors.Join(err, abortErr)
 		}
 	} else {
 		for _, p := range k.txBuffer {
 			if _, err := k.client.Produce(ctx, p.topic, p.rec); err != nil {
-				_ = k.client.AbortTransaction(ctx)
+				abortErr := k.abortAfterTransactionFailure(ctx)
 				k.txOpen, k.txBuffer, k.txBytes = false, nil, 0
-				return err
+				if abortErr != nil {
+					k.txPoisoned = true
+				}
+				return errors.Join(err, abortErr)
 			}
 		}
 		if err := k.client.CommitTransaction(ctx); err != nil {
+			abortErr := k.abortAfterTransactionFailure(ctx)
 			k.txOpen, k.txBuffer, k.txBytes = false, nil, 0
-			return err
+			k.txPoisoned = true
+			return errors.Join(err, abortErr)
 		}
 	}
 	n := len(k.txBuffer)
@@ -573,6 +580,7 @@ func (k *Kafka) abortTransaction(ctx context.Context, result *protocol.Result) e
 	n := len(k.txBuffer)
 	if err := k.client.AbortTransaction(ctx); err != nil {
 		k.txOpen, k.txBuffer, k.txBytes = false, nil, 0
+		k.txPoisoned = true
 		return err
 	}
 	k.txOpen, k.txBuffer, k.txBytes = false, nil, 0
@@ -581,6 +589,15 @@ func (k *Kafka) abortTransaction(ctx context.Context, result *protocol.Result) e
 	result.Extractions["kafka_tx_records_discarded"] = strconv.Itoa(n)
 	result.ServerTelemetry = &protocol.ServerTelemetry{AbortCount: 1}
 	return nil
+}
+
+func (k *Kafka) abortAfterTransactionFailure(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	abortCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), kafkaTransactionAbortTimeout)
+	defer cancel()
+	return k.client.AbortTransaction(abortCtx)
 }
 
 // consumerGroup resolves the effective consumer group for an action: the

@@ -21,15 +21,26 @@ import (
 func (tr *TestRunner) GetTest(id string) (*ManagedTest, bool) {
 	tr.refreshReadMetadataForTest(id)
 	tr.mu.RLock()
-	defer tr.mu.RUnlock()
-	id = tr.resolveRefKeyLocked(id)
-	t, ok := tr.tests[id]
-	if !ok {
+	resolvedID := tr.resolveRefKeyLocked(id)
+	t, ok := tr.tests[resolvedID]
+	if ok {
+		cloned := cloneManagedTestForReadLocked(t)
+		cloned.ComparisonBaseline = tr.buildRunComparisonBaselineLocked(t)
+		tr.mu.RUnlock()
+		return cloned, true
+	}
+	tr.mu.RUnlock()
+	// HA reads may land on a replica that has not yet observed a test created by
+	// another replica. Fall back to the shared durable store instead of returning
+	// a replica-local false 404.
+	if tr.testStore == nil {
 		return nil, false
 	}
-	cloned := cloneManagedTestForReadLocked(t)
-	cloned.ComparisonBaseline = tr.buildRunComparisonBaselineLocked(t)
-	return cloned, true
+	record, err := tr.testStore.GetTest(resolvedID)
+	if err != nil || record == nil {
+		return nil, false
+	}
+	return managedTestFromRecord(record), true
 }
 
 func (tr *TestRunner) buildRunComparisonBaselineLocked(test *ManagedTest) *RunComparisonBaseline {

@@ -1,5 +1,7 @@
 package browser
 
+import "os"
+
 func (b *Browser) close() {
 	b.mu.Lock()
 	b.closing = true
@@ -11,17 +13,19 @@ func (b *Browser) close() {
 	if cdp != nil {
 		_ = cdp.Detach()
 	}
-	if b.harMonitorStop != nil {
-		close(b.harMonitorStop)
-		b.harMonitorStop = nil
-		b.harMonitorWG.Wait()
-	}
 	if page != nil {
 		_ = page.Close()
 	}
 	if b.pwContext != nil {
 		_ = b.pwContext.Close() // flushes the context HAR recording
 		b.pwContext = nil
+	}
+	// Keep the limiter active through Playwright's final HAR flush.
+	if b.harMonitorStop != nil {
+		close(b.harMonitorStop)
+		b.harMonitorStop = nil
+		b.harMonitorWG.Wait()
+		b.harLimitExceeded = nil
 	}
 	b.mu.Lock()
 	workerStop := b.networkWorkerStop
@@ -31,6 +35,9 @@ func (b *Browser) close() {
 	if workerStop != nil {
 		close(workerStop)
 		b.networkWorkerWG.Wait()
+	}
+	if b.lastHARArtifactPath != "" {
+		_ = os.Remove(b.lastHARArtifactPath)
 	}
 	b.lastHARArtifactPath = b.finalizeHARCapture()
 	b.currentURL = ""
