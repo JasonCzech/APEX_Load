@@ -220,7 +220,7 @@ export default function LibraryFederationPanel({ projectId }: LibraryFederationP
         </label>
         <label className="project-redaction-rule-field">
           <span>Credential Ref</span>
-          <input className="settings-input" value={draft.credential_ref} onChange={event => setDraft(prev => ({ ...prev, credential_ref: event.target.value }))} placeholder="env:APEXLOAD_REMOTE_TOKEN" />
+          <input className="settings-input" value={draft.credential_ref} onChange={event => setDraft(prev => ({ ...prev, credential_ref: event.target.value }))} placeholder="env:APEXLOAD_LIBRARY_REMOTE_TOKEN" />
         </label>
         <label className="project-redaction-rule-field">
           <span>Rotate API Key</span>

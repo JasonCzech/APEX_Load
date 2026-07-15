@@ -340,7 +340,7 @@ func validateLibraryRemoteTransport(remote LibraryRemote) error {
 	if err != nil {
 		return fmt.Errorf("invalid remote base_url: %w", err)
 	}
-	if parsed.Scheme == "http" && !strings.EqualFold(strings.TrimSpace(remote.AuthMethod), "none") && !envBool("APEXLOAD_LIBRARY_ALLOW_INSECURE_HTTP") && !envBool(remoteOutboundAllowPrivateHostsEnv) {
+	if parsed.Scheme == "http" && !strings.EqualFold(strings.TrimSpace(remote.AuthMethod), "none") && !envBool("APEXLOAD_LIBRARY_ALLOW_INSECURE_HTTP") {
 		return fmt.Errorf("authenticated remote libraries require https; set APEXLOAD_LIBRARY_ALLOW_INSECURE_HTTP only for isolated development")
 	}
 	return nil

@@ -50,6 +50,9 @@ type Server struct {
 	// remotes and synchronization links within one controller. Durable CAS still
 	// provides the cross-controller fence.
 	libraryStateMutationMu sync.Mutex
+	// libraryArchiveImportMu protects the staged archive swap that accompanies
+	// an external-result upsert so a failed retry cannot destroy the prior copy.
+	libraryArchiveImportMu sync.Mutex
 	libraryRemotes         map[string]*LibraryRemote
 	libraryLinks           map[string]*librarySyncLink
 	libraryRemotesRaw      string

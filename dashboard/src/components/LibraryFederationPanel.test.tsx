@@ -60,6 +60,8 @@ describe('LibraryFederationPanel', () => {
     expect(container.textContent).toContain('Team AKS')
     expect(container.textContent).toContain('credentials configured')
     expect(container.textContent).not.toContain('secret-token')
+    const credentialRef = Array.from(container.querySelectorAll('input')).find(input => input.placeholder.includes('APEXLOAD_LIBRARY_REMOTE_TOKEN'))
+    expect(credentialRef?.placeholder).toBe('env:APEXLOAD_LIBRARY_REMOTE_TOKEN')
 
     const probeButton = findButton('Probe Remote')
     expect(probeButton).toBeDefined()

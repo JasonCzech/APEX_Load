@@ -130,6 +130,7 @@ type TestRunner struct {
 	mu                    sync.RWMutex
 	contentRevision       uint64
 	contentReloadMu       sync.Mutex
+	testReloadMu          sync.Mutex
 	haScenarioRefreshMu   sync.Mutex
 	haScenarioRefreshAt   time.Time
 	activeStopMu          sync.Mutex

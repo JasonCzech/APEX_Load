@@ -104,7 +104,7 @@ func TestLibraryImportRequiresExplicitDestinationAndSingleSourceProject(t *testi
 	}
 }
 
-func TestLibrarySyncLinkCannotMoveAssetAcrossDestinationProjects(t *testing.T) {
+func TestLibrarySyncLinkCreatesIndependentAssetsAcrossDestinationProjects(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	script := libraryTestScript("remote-script", "Remote script", "source-project", "/before")
 	item := LibraryBundleItem{
@@ -127,12 +127,19 @@ func TestLibrarySyncLinkCannotMoveAssetAcrossDestinationProjects(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(second.Items) != 0 || len(second.Conflicts) != 1 || !strings.Contains(second.Conflicts[0].Reason, "different destination project") {
+	if len(second.Items) != 1 || len(second.Conflicts) != 0 {
 		t.Fatalf("cross-project sync result = %#v", second)
+	}
+	if second.Items[0].LocalItemID == localID {
+		t.Fatalf("cross-project imports reused local id %q", localID)
 	}
 	stored, ok := server.runner.GetScript(localID)
 	if !ok || stored.ProjectID != "destination-a" {
 		t.Fatalf("sync link moved the local asset: %#v", stored)
+	}
+	secondStored, ok := server.runner.GetScript(second.Items[0].LocalItemID)
+	if !ok || secondStored.ProjectID != "destination-b" {
+		t.Fatalf("second destination asset = %#v", secondStored)
 	}
 }
 

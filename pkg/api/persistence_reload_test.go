@@ -79,6 +79,29 @@ type reloadRaceStore struct {
 	inject  func()
 }
 
+type serialTestReloadStore struct {
+	reloadRaceStore
+	mu            sync.Mutex
+	calls         int
+	firstStarted  chan struct{}
+	secondStarted chan struct{}
+	releaseFirst  chan struct{}
+}
+
+func (s *serialTestReloadStore) ListTests(string, *string) ([]*storage.TestRecord, error) {
+	s.mu.Lock()
+	s.calls++
+	call := s.calls
+	s.mu.Unlock()
+	if call == 1 {
+		close(s.firstStarted)
+		<-s.releaseFirst
+	} else if call == 2 {
+		close(s.secondStarted)
+	}
+	return nil, nil
+}
+
 func (s *reloadRaceStore) SaveTest(*storage.TestRecord) error          { return nil }
 func (s *reloadRaceStore) GetTest(string) (*storage.TestRecord, error) { return nil, nil }
 func (s *reloadRaceStore) ListTests(string, *string) ([]*storage.TestRecord, error) {
@@ -130,6 +153,50 @@ func TestReloadStoredTestsPreservesConcurrentlyStartedRun(t *testing.T) {
 	}
 	if got.cancel == nil {
 		t.Fatal("live run lost its cancel func; Stop/Abort could no longer stop it")
+	}
+}
+
+func TestReloadStoredTestsDoesNotDowngradeTerminalState(t *testing.T) {
+	const id = "terminal"
+	current := &ManagedTest{ID: id, Status: "COMPLETE"}
+	record := &storage.TestRecord{ID: id, Status: "PENDING"}
+	store := &reloadRaceStore{records: []*storage.TestRecord{record}}
+	store.inject = nil
+	tr := &TestRunner{tests: map[string]*ManagedTest{id: current}, archives: map[string]*storage.RunArchiveRecord{}, testStore: store, historyStore: store}
+	if err := tr.reloadStoredTests(); err != nil {
+		t.Fatal(err)
+	}
+	if tr.tests[id] != current || tr.tests[id].Status != "COMPLETE" {
+		t.Fatalf("terminal test was downgraded: %+v", tr.tests[id])
+	}
+}
+
+func TestConcurrentStoredTestReloadsAreSerialized(t *testing.T) {
+	store := &serialTestReloadStore{
+		firstStarted: make(chan struct{}), secondStarted: make(chan struct{}), releaseFirst: make(chan struct{}),
+	}
+	tr := &TestRunner{tests: map[string]*ManagedTest{}, archives: map[string]*storage.RunArchiveRecord{}, testStore: store}
+	firstDone := make(chan error, 1)
+	secondDone := make(chan error, 1)
+	go func() { firstDone <- tr.reloadStoredTests() }()
+	<-store.firstStarted
+	go func() { secondDone <- tr.reloadStoredTests() }()
+	select {
+	case <-store.secondStarted:
+		t.Fatal("second test reload entered storage before the first completed")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(store.releaseFirst)
+	if err := <-firstDone; err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-store.secondStarted:
+	case <-time.After(time.Second):
+		t.Fatal("second test reload did not proceed")
+	}
+	if err := <-secondDone; err != nil {
+		t.Fatal(err)
 	}
 }
 

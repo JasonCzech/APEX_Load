@@ -330,7 +330,7 @@ func (s *Server) importLibraryScript(item LibraryBundleItem, projectID string, r
 	if strings.TrimSpace(item.ContentHash) == "" || item.ContentHash != computedHash {
 		return "", "", &LibraryConflict{Kind: "script", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: "declared content hash does not match script payload"}
 	}
-	link := s.libraryLink(remoteID, item.Kind, item.SourceInstanceID, item.SourceItemID)
+	link := s.libraryLink(remoteID, projectID, item.Kind, item.SourceInstanceID, item.SourceItemID)
 	localID := ""
 	action := "created"
 	if link != nil {
@@ -339,7 +339,8 @@ func (s *Server) importLibraryScript(item LibraryBundleItem, projectID string, r
 			if normalizeProjectID(local.ProjectID) != projectID {
 				return "", "", &LibraryConflict{Kind: "script", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, LocalItemID: localID, Reason: "existing sync link belongs to a different destination project"}
 			}
-			if hashLibraryScript(local.Script) != link.LocalContentHash && item.ContentHash != link.RemoteContentHash {
+			localHash := hashLibraryScript(local.Script)
+			if localHash != link.LocalContentHash && item.ContentHash != link.RemoteContentHash && localHash != item.ContentHash {
 				return "", "", &LibraryConflict{Kind: "script", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, LocalItemID: localID, Reason: "local and remote script changed since last sync"}
 			}
 		}
@@ -348,7 +349,11 @@ func (s *Server) importLibraryScript(item LibraryBundleItem, projectID string, r
 	script := cloneScriptForLibrary(item.Script)
 	script.ProjectID = projectID
 	if localID == "" {
-		script.ID = deterministicLibraryImportID(remoteID, item)
+		var err error
+		script.ID, err = deterministicLibraryImportID(remoteID, projectID, item)
+		if err != nil {
+			return "", "", &LibraryConflict{Kind: "script", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: err.Error()}
+		}
 	} else {
 		script.ID = localID
 	}
@@ -356,7 +361,7 @@ func (s *Server) importLibraryScript(item LibraryBundleItem, projectID string, r
 	if err != nil {
 		return "", "", &LibraryConflict{Kind: "script", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, LocalItemID: localID, Reason: "failed to persist imported script: " + err.Error()}
 	}
-	if err := s.rememberLibraryLink(remoteID, item.Kind, item.SourceInstanceID, item.SourceItemID, stored.ID, item.SourceItemID, hashLibraryScript(stored.Script), item.ContentHash); err != nil {
+	if err := s.rememberLibraryLink(remoteID, projectID, item.Kind, item.SourceInstanceID, item.SourceItemID, stored.ID, item.SourceItemID, hashLibraryScript(stored.Script), item.ContentHash); err != nil {
 		slog.Warn("imported script but failed to persist library link", "script_id", stored.ID, "error", err)
 		action += "_link_pending"
 	}
@@ -370,7 +375,7 @@ func (s *Server) importLibraryScenario(item LibraryBundleItem, projectID string,
 	if strings.TrimSpace(item.ContentHash) == "" || item.ContentHash != hashCanonical(item.Scenario.Request) {
 		return "", "", &LibraryConflict{Kind: "scenario", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: "declared content hash does not match scenario payload"}
 	}
-	link := s.libraryLink(remoteID, item.Kind, item.SourceInstanceID, item.SourceItemID)
+	link := s.libraryLink(remoteID, projectID, item.Kind, item.SourceInstanceID, item.SourceItemID)
 	localID := ""
 	action := "created"
 	if link != nil {
@@ -379,7 +384,8 @@ func (s *Server) importLibraryScenario(item LibraryBundleItem, projectID string,
 			if normalizeProjectID(local.ProjectID) != projectID {
 				return "", "", &LibraryConflict{Kind: "scenario", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, LocalItemID: localID, Reason: "existing sync link belongs to a different destination project"}
 			}
-			if hashLibraryScenario(local) != link.LocalContentHash && item.ContentHash != link.RemoteContentHash {
+			localHash := hashLibraryScenario(local)
+			if localHash != link.LocalContentHash && item.ContentHash != link.RemoteContentHash && localHash != item.ContentHash {
 				return "", "", &LibraryConflict{Kind: "scenario", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, LocalItemID: localID, Reason: "local and remote scenario changed since last sync"}
 			}
 		}
@@ -411,11 +417,15 @@ func (s *Server) importLibraryScenario(item LibraryBundleItem, projectID string,
 		}
 	}
 	if localID == "" {
-		stored, err := s.runner.StoreScenarioWithID(deterministicLibraryImportID(remoteID, item), req)
+		importID, err := deterministicLibraryImportID(remoteID, projectID, item)
 		if err != nil {
 			return "", "", &LibraryConflict{Kind: "scenario", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: err.Error()}
 		}
-		if err := s.rememberLibraryLink(remoteID, item.Kind, item.SourceInstanceID, item.SourceItemID, stored.ID, item.SourceItemID, hashLibraryScenario(stored), item.ContentHash); err != nil {
+		stored, err := s.runner.StoreScenarioWithID(importID, req)
+		if err != nil {
+			return "", "", &LibraryConflict{Kind: "scenario", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: err.Error()}
+		}
+		if err := s.rememberLibraryLink(remoteID, projectID, item.Kind, item.SourceInstanceID, item.SourceItemID, stored.ID, item.SourceItemID, hashLibraryScenario(stored), item.ContentHash); err != nil {
 			slog.Warn("imported scenario but failed to persist library link", "scenario_id", stored.ID, "error", err)
 			action += "_link_pending"
 		}
@@ -426,13 +436,17 @@ func (s *Server) importLibraryScenario(item LibraryBundleItem, projectID string,
 		return "", "", &LibraryConflict{Kind: "scenario", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, LocalItemID: localID, Reason: err.Error()}
 	}
 	if !ok {
-		stored, err = s.runner.StoreScenarioWithID(deterministicLibraryImportID(remoteID, item), req)
+		importID, idErr := deterministicLibraryImportID(remoteID, projectID, item)
+		if idErr != nil {
+			return "", "", &LibraryConflict{Kind: "scenario", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: idErr.Error()}
+		}
+		stored, err = s.runner.StoreScenarioWithID(importID, req)
 		if err != nil {
 			return "", "", &LibraryConflict{Kind: "scenario", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: err.Error()}
 		}
 		action = "created"
 	}
-	if err := s.rememberLibraryLink(remoteID, item.Kind, item.SourceInstanceID, item.SourceItemID, stored.ID, item.SourceItemID, hashLibraryScenario(stored), item.ContentHash); err != nil {
+	if err := s.rememberLibraryLink(remoteID, projectID, item.Kind, item.SourceInstanceID, item.SourceItemID, stored.ID, item.SourceItemID, hashLibraryScenario(stored), item.ContentHash); err != nil {
 		slog.Warn("imported scenario but failed to persist library link", "scenario_id", stored.ID, "error", err)
 		action += "_link_pending"
 	}
@@ -448,19 +462,23 @@ func (s *Server) importLibraryResult(item LibraryBundleItem, projectID string, r
 	}
 	contentHash := strings.TrimSpace(item.ContentHash)
 	fullHash := hashLibraryResultWithSummary(item.Result.Test, item.Result.Summary)
+	previousV1Hash := hashLibraryResultPreviousV1WithSummary(item.Result.Test, item.Result.Summary)
 	legacyHashWithExpectedSummary := contentHash == hashLibraryResultTestOnly(item.Result.Test) && hashCanonical(item.Result.Summary) == hashCanonical(libraryResultSummary(item.Result.Test))
-	if contentHash == "" || (contentHash != fullHash && !legacyHashWithExpectedSummary) {
+	if contentHash == "" || (contentHash != fullHash && contentHash != previousV1Hash && !legacyHashWithExpectedSummary) {
 		return "", "", &LibraryConflict{Kind: "result", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: "declared content hash does not match result payload"}
 	}
 	resultID := uuid.New().String()
 	if item.Result.Test != nil {
 		resultID = item.Result.Test.ID
 	}
-	importID := deterministicLibraryImportID(remoteID, item)
+	importID, err := deterministicLibraryImportID(remoteID, projectID, item)
+	if err != nil {
+		return "", "", &LibraryConflict{Kind: "result", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: err.Error()}
+	}
 	archiveDir := ""
-	keepArchiveDir := false
+	finalArchiveDir := ""
 	defer func() {
-		if !keepArchiveDir && archiveDir != "" {
+		if archiveDir != "" {
 			_ = os.RemoveAll(archiveDir)
 		}
 	}()
@@ -476,11 +494,10 @@ func (s *Server) importLibraryResult(item LibraryBundleItem, projectID string, r
 		"archive_size_bytes":    item.Result.ArchiveSizeBytes,
 	}
 	if archiveImport != nil && strings.TrimSpace(archiveImport.ZipPath) != "" {
-		dir := libraryImportedArchiveDir(importID)
+		finalDir := libraryImportedArchiveDir(importID)
+		dir := finalDir + ".staging-" + uuid.NewString()
 		archiveDir = dir
-		if err := os.RemoveAll(dir); err != nil {
-			return "", "", &LibraryConflict{Kind: "result", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: err.Error()}
-		}
+		finalArchiveDir = finalDir
 		if err := unzipArchiveFile(archiveImport.ZipPath, dir, libraryArchiveMaxBytes()); err != nil {
 			return "", "", &LibraryConflict{Kind: "result", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: err.Error()}
 		}
@@ -489,21 +506,20 @@ func (s *Server) importLibraryResult(item LibraryBundleItem, projectID string, r
 		if reason := validateLibraryArchiveMetadata(item.Result, manifestHash, sizeBytes); reason != "" {
 			return "", "", &LibraryConflict{Kind: "result", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: reason}
 		}
-		rawResult["archive_path"] = dir
+		rawResult["archive_path"] = finalDir
 		rawResult["imported_archive_manifest_hash"] = manifestHash
 		rawResult["imported_archive_size_bytes"] = sizeBytes
 		if item.Result.Archive != nil {
 			copied := *item.Result.Archive
-			copied.ArchivePath = dir
-			copied.ManifestPath = filepath.Join(dir, "manifest.json")
+			copied.ArchivePath = finalDir
+			copied.ManifestPath = filepath.Join(finalDir, "manifest.json")
 			rawResult["archive"] = &copied
 		}
 	} else if strings.TrimSpace(item.Result.ArchiveZipB64) != "" {
-		dir := libraryImportedArchiveDir(importID)
+		finalDir := libraryImportedArchiveDir(importID)
+		dir := finalDir + ".staging-" + uuid.NewString()
 		archiveDir = dir
-		if err := os.RemoveAll(dir); err != nil {
-			return "", "", &LibraryConflict{Kind: "result", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: err.Error()}
-		}
+		finalArchiveDir = finalDir
 		if err := importLegacyArchiveZipB64(item.Result.ArchiveZipB64, dir, libraryArchiveMaxBytes()); err != nil {
 			return "", "", &LibraryConflict{Kind: "result", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: err.Error()}
 		}
@@ -512,7 +528,7 @@ func (s *Server) importLibraryResult(item LibraryBundleItem, projectID string, r
 		if reason := validateLibraryArchiveMetadata(item.Result, manifestHash, sizeBytes); reason != "" {
 			return "", "", &LibraryConflict{Kind: "result", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: reason}
 		}
-		rawResult["archive_path"] = dir
+		rawResult["archive_path"] = finalDir
 		rawResult["imported_archive_manifest_hash"] = manifestHash
 		rawResult["imported_archive_size_bytes"] = sizeBytes
 	} else if item.Result.ArchiveManifestHash != "" || item.Result.ArchiveSizeBytes > 0 {
@@ -533,25 +549,77 @@ func (s *Server) importLibraryResult(item LibraryBundleItem, projectID string, r
 		imported.Summary = map[string]any{"status": "imported", "provider": "apexload"}
 	}
 	imported.Summary["provider"] = "apexload"
-	if err := s.saveExternalResultImport(imported); err != nil {
-		return "", "", &LibraryConflict{Kind: "result", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: err.Error()}
+	var saveErr error
+	if archiveDir != "" {
+		saveErr = s.commitLibraryResultImport(imported, archiveDir, finalArchiveDir)
+	} else {
+		saveErr = s.saveExternalResultImport(imported)
 	}
-	keepArchiveDir = true
-	if err := s.rememberLibraryLink(remoteID, item.Kind, item.SourceInstanceID, item.SourceItemID, imported.ID, resultID, item.ContentHash, item.ContentHash); err != nil {
+	if saveErr != nil {
+		return "", "", &LibraryConflict{Kind: "result", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: saveErr.Error()}
+	}
+	archiveDir = ""
+	if err := s.rememberLibraryLink(remoteID, projectID, item.Kind, item.SourceInstanceID, item.SourceItemID, imported.ID, resultID, item.ContentHash, item.ContentHash); err != nil {
 		slog.Warn("imported result but failed to persist library link", "import_id", imported.ID, "error", err)
 		return imported.ID, "created_link_pending", nil
 	}
 	return imported.ID, "created", nil
 }
 
-func deterministicLibraryImportID(remoteID string, item LibraryBundleItem) string {
-	source := strings.Join([]string{
-		firstNonEmpty(strings.TrimSpace(remoteID), "direct"),
-		normalizeLibraryKind(item.Kind),
-		strings.TrimSpace(item.SourceInstanceID),
-		strings.TrimSpace(item.SourceItemID),
-	}, "/")
-	return uuid.NewSHA1(uuid.NameSpaceURL, []byte("apexload-library-import/"+source)).String()
+func (s *Server) commitLibraryResultImport(imported *storage.ExternalResultImport, stagedDir string, finalDir string) error {
+	s.libraryArchiveImportMu.Lock()
+	defer s.libraryArchiveImportMu.Unlock()
+	if err := os.MkdirAll(filepath.Dir(finalDir), 0o750); err != nil {
+		return err
+	}
+	backupDir := finalDir + ".backup-" + uuid.NewString()
+	hadPrevious := false
+	if _, err := os.Stat(finalDir); err == nil {
+		if err := os.Rename(finalDir, backupDir); err != nil {
+			return fmt.Errorf("stage prior imported archive: %w", err)
+		}
+		hadPrevious = true
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("inspect prior imported archive: %w", err)
+	}
+	if err := os.Rename(stagedDir, finalDir); err != nil {
+		if hadPrevious {
+			_ = os.Rename(backupDir, finalDir)
+		}
+		return fmt.Errorf("activate imported archive: %w", err)
+	}
+	if err := s.saveExternalResultImport(imported); err != nil {
+		_ = os.RemoveAll(finalDir)
+		if hadPrevious {
+			_ = os.Rename(backupDir, finalDir)
+		}
+		return err
+	}
+	if hadPrevious {
+		_ = os.RemoveAll(backupDir)
+	}
+	return nil
+}
+
+func deterministicLibraryImportID(remoteID string, projectID string, item LibraryBundleItem) (string, error) {
+	kind := normalizeLibraryKind(item.Kind)
+	sourceInstanceID := strings.TrimSpace(item.SourceInstanceID)
+	sourceItemID := strings.TrimSpace(item.SourceItemID)
+	projectID = normalizeProjectID(strings.TrimSpace(projectID))
+	if kind == "" || sourceInstanceID == "" || sourceItemID == "" || projectID == "" {
+		return "", fmt.Errorf("library import identity requires kind, source_instance_id, source_item_id, and destination project_id")
+	}
+	identity, err := json.Marshal(struct {
+		RemoteID         string `json:"remote_id"`
+		ProjectID        string `json:"project_id"`
+		Kind             string `json:"kind"`
+		SourceInstanceID string `json:"source_instance_id"`
+		SourceItemID     string `json:"source_item_id"`
+	}{firstNonEmpty(strings.TrimSpace(remoteID), "direct"), projectID, kind, sourceInstanceID, sourceItemID})
+	if err != nil {
+		return "", fmt.Errorf("encode library import identity: %w", err)
+	}
+	return uuid.NewSHA1(uuid.NameSpaceURL, identity).String(), nil
 }
 
 func validateLibraryArchiveMetadata(result *LibraryResultPayload, manifestHash string, sizeBytes int64) string {

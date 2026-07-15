@@ -199,6 +199,7 @@ type LibraryRemoteTransferResponse struct {
 
 type librarySyncLink struct {
 	RemoteID          string
+	ProjectID         string
 	Kind              string
 	SourceInstanceID  string
 	SourceItemID      string
@@ -259,7 +260,7 @@ func (s *Server) loadLibraryState() {
 						continue
 					}
 					copied := link
-					loaded[libraryLinkKey(link.RemoteID, link.Kind, link.SourceInstanceID, link.SourceItemID)] = &copied
+					loaded[libraryLinkKey(link.RemoteID, link.ProjectID, link.Kind, link.SourceInstanceID, link.SourceItemID)] = &copied
 				}
 			}
 		}
@@ -294,7 +295,7 @@ func (s *Server) loadLibraryLinksState() {
 				continue
 			}
 			copied := link
-			loaded[libraryLinkKey(link.RemoteID, link.Kind, link.SourceInstanceID, link.SourceItemID)] = &copied
+			loaded[libraryLinkKey(link.RemoteID, link.ProjectID, link.Kind, link.SourceInstanceID, link.SourceItemID)] = &copied
 		}
 	}
 	s.libraryMu.Lock()
@@ -359,8 +360,8 @@ func (s *Server) persistLibraryLinks() error {
 		links = append(links, *link)
 	}
 	sort.SliceStable(links, func(i, j int) bool {
-		return libraryLinkKey(links[i].RemoteID, links[i].Kind, links[i].SourceInstanceID, links[i].SourceItemID) <
-			libraryLinkKey(links[j].RemoteID, links[j].Kind, links[j].SourceInstanceID, links[j].SourceItemID)
+		return libraryLinkKey(links[i].RemoteID, links[i].ProjectID, links[i].Kind, links[i].SourceInstanceID, links[i].SourceItemID) <
+			libraryLinkKey(links[j].RemoteID, links[j].ProjectID, links[j].Kind, links[j].SourceInstanceID, links[j].SourceItemID)
 	})
 	s.libraryMu.Unlock()
 	payload, err := json.Marshal(links)
@@ -457,11 +458,11 @@ func validateLibraryImportDestination(req LibraryImportRequest) (string, error) 
 	if strings.TrimSpace(req.ProjectID) == "" {
 		return "", fmt.Errorf("project_id is required as the library import destination")
 	}
-	destination := normalizeProjectID(req.ProjectID)
+	destination := normalizeProjectID(strings.TrimSpace(req.ProjectID))
 	sourceProjects := map[string]struct{}{}
 	addSourceProject := func(value string) {
 		if strings.TrimSpace(value) != "" {
-			sourceProjects[normalizeProjectID(value)] = struct{}{}
+			sourceProjects[normalizeProjectID(strings.TrimSpace(value))] = struct{}{}
 		}
 	}
 	addSourceProject(req.Bundle.Source.ProjectID)

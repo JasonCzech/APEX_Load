@@ -7,7 +7,9 @@ package api
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -328,12 +330,25 @@ func (tr *TestRunner) reloadStoredTests() error {
 	if tr.testStore == nil {
 		return nil
 	}
+	tr.testReloadMu.Lock()
+	defer tr.testReloadMu.Unlock()
+	leaderAtStart := tr.holdsExecutionLeadership()
 	records, err := tr.testStore.ListTests("", nil)
 	if err != nil {
 		return err
 	}
 	seen := make(map[string]struct{}, len(records))
 	for _, record := range records {
+		if tr.holdsExecutionLeadership() != leaderAtStart {
+			return fmt.Errorf("execution leadership changed while reloading tests")
+		}
+		if fresh, freshErr := tr.testStore.GetTest(record.ID); freshErr == nil && fresh != nil {
+			record = fresh
+		} else if errors.Is(freshErr, sql.ErrNoRows) {
+			continue
+		} else if freshErr != nil {
+			return fmt.Errorf("refresh test %s: %w", record.ID, freshErr)
+		}
 		seen[record.ID] = struct{}{}
 		tr.mu.RLock()
 		existing, ok := tr.tests[record.ID]
@@ -355,7 +370,11 @@ func (tr *TestRunner) reloadStoredTests() error {
 		// a run for this ID in the window since the RLock above. Overwriting it with
 		// the DB-hydrated copy (cancel == nil) would detach the running goroutine's
 		// cancel func, so a later Stop/Abort could never stop the run.
-		if current, ok := tr.tests[record.ID]; !ok || current.cancel == nil {
+		if tr.holdsExecutionLeadership() != leaderAtStart {
+			tr.mu.Unlock()
+			return fmt.Errorf("execution leadership changed while reloading tests")
+		}
+		if current, ok := tr.tests[record.ID]; !ok || (current.cancel == nil && !(isTerminalTestStatus(current.Status) && !isTerminalTestStatus(managedTest.Status))) {
 			if ok && current != nil && current.RefKey != managedTest.RefKey {
 				tr.removeRefKeyLocked(current.RefKey)
 			}
@@ -364,17 +383,36 @@ func (tr *TestRunner) reloadStoredTests() error {
 		}
 		tr.mu.Unlock()
 	}
-	tr.mu.Lock()
+	tr.mu.RLock()
+	deleteCandidates := make(map[string]*ManagedTest)
 	for id, current := range tr.tests {
 		if _, ok := seen[id]; ok || (current != nil && current.cancel != nil) {
+			continue
+		}
+		deleteCandidates[id] = current
+	}
+	tr.mu.RUnlock()
+	for id, candidate := range deleteCandidates {
+		if tr.holdsExecutionLeadership() != leaderAtStart {
+			return fmt.Errorf("execution leadership changed while reloading tests")
+		}
+		if durable, getErr := tr.testStore.GetTest(id); getErr == nil && durable != nil {
+			continue
+		} else if getErr != nil && !errors.Is(getErr, sql.ErrNoRows) {
+			return fmt.Errorf("confirm deleted test %s: %w", id, getErr)
+		}
+		tr.mu.Lock()
+		current := tr.tests[id]
+		if current != candidate || (current != nil && current.cancel != nil) {
+			tr.mu.Unlock()
 			continue
 		}
 		if current != nil {
 			tr.removeRefKeyLocked(current.RefKey)
 		}
 		delete(tr.tests, id)
+		tr.mu.Unlock()
 	}
-	tr.mu.Unlock()
 	return nil
 }
 
@@ -1024,7 +1062,7 @@ func (tr *TestRunner) captureUsageSnapshotForCadence(projectID string) (*storage
 	tr.mu.RLock()
 	tests := make([]*ManagedTest, 0, len(tr.tests))
 	for _, test := range tr.tests {
-		tests = append(tests, test)
+		tests = append(tests, cloneManagedTestForReadLocked(test))
 	}
 	tr.mu.RUnlock()
 	return tr.saveUsageAccountingSnapshotFromTests(projectID, tests)

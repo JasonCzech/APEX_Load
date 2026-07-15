@@ -81,6 +81,28 @@ func TestApplyDataFormattingTransformXMLToJSONRejectsInvalidXML(t *testing.T) {
 	}
 }
 
+func TestApplyDataFormattingTransformBoundsExpandingOutputs(t *testing.T) {
+	tests := []struct {
+		name      string
+		body      string
+		transform dataFormattingTransform
+		limit     int64
+	}{
+		{name: "url encode", body: "&&&&", transform: dataFormattingTransform{Type: "url_encode"}, limit: 8},
+		{name: "html escape", body: "<&&", transform: dataFormattingTransform{Type: "html_escape"}, limit: 8},
+		{name: "json to xml", body: `{"value":"<&"}`, transform: dataFormattingTransform{Type: "json_to_xml"}, limit: 16},
+		{name: "xml to json", body: `<root>value</root>`, transform: dataFormattingTransform{Type: "xml_to_json"}, limit: 8},
+		{name: "gzip encode", body: "small payload", transform: dataFormattingTransform{Type: "gzip", Options: map[string]string{"mode": "encode"}}, limit: 8},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got, err := applyDataFormattingTransformBounded([]byte(tt.body), tt.transform, tt.limit); err == nil {
+				t.Fatalf("bounded transform returned %d bytes without an error", len(got))
+			}
+		})
+	}
+}
+
 func TestApplyDataFormattingChainAutoDetectsGzipPayloads(t *testing.T) {
 	payload := []byte(`{"access_token":"abc123"}`)
 	compressed := gzipTestPayload(t, payload)

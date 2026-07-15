@@ -153,6 +153,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	req, err := http.NewRequestWithContext(ctx, method, targetURL, body)
 	if err != nil {
 		result.Duration = time.Since(result.StartTime)
+		result.Success = false
 		result.ErrorMessage = err.Error()
 		result.Snapshot = buildHTTPSnapshot(method, targetURL, nil, requestBody, action.RedactedTarget, action.RedactedHeaders, redactedRequestBody, 0, nil, nil)
 		return result, nil
@@ -416,6 +417,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	formattedBody, err := applyDataFormattingChain(respBody, h.dataFormattingAutoDetect, h.dataFormattingChain, maxBody)
 	if err != nil {
 		result.Duration = time.Since(result.StartTime)
+		result.Success = false
 		result.ErrorMessage = err.Error()
 		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, responseHeaders, respBody)
 		return result, nil

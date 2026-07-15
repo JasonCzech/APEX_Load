@@ -368,6 +368,28 @@ func TestGeneratorArchiveWriterEnforcesByteAndFreeSpaceBounds(t *testing.T) {
 	})
 }
 
+func TestGeneratorArchiveFreeBudgetResamplesAndReleasesReservations(t *testing.T) {
+	free := int64(20)
+	budget := &generatorArchiveFreeBudget{freeBytes: func(string) (int64, error) { return free, nil }}
+	if _, err := budget.reserve(15, 10); err == nil {
+		t.Fatal("reservation unexpectedly passed with insufficient free space")
+	}
+	free = 100
+	release, err := budget.reserve(60, 10)
+	if err != nil {
+		t.Fatalf("reservation did not resample recovered free space: %v", err)
+	}
+	if _, err := budget.reserve(35, 10); err == nil {
+		t.Fatal("concurrent reservation ignored reserved bytes")
+	}
+	release()
+	if releaseAgain, err := budget.reserve(35, 10); err != nil {
+		t.Fatalf("released reservation was not credited: %v", err)
+	} else {
+		releaseAgain()
+	}
+}
+
 func TestGeneratorArchiveFinalizeEnforcesParquetQuotaAndCleansFailure(t *testing.T) {
 	for _, testCase := range []struct {
 		name      string

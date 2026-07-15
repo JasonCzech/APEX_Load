@@ -34,7 +34,7 @@ func TestConcurrentLibraryLinkWritesPersistEveryLink(t *testing.T) {
 		go func(index int) {
 			defer wg.Done()
 			id := fmt.Sprintf("source-%d", index)
-			errs <- server.rememberLibraryLink("remote", "script", "instance", id, "local-"+id, id, "local-hash", "remote-hash")
+			errs <- server.rememberLibraryLink("remote", "project-a", "script", "instance", id, "local-"+id, id, "local-hash", "remote-hash")
 		}(i)
 	}
 	wg.Wait()
@@ -465,6 +465,76 @@ func TestLibraryResultArchiveStreamsAndImportsMultipart(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(archivePath, "manifest.json")); err != nil {
 		t.Fatalf("imported archive manifest missing: %v", err)
 	}
+	corruptBody, corruptType := multipartArchiveImportBody(t, bundle, "mapped-project", []byte("not-a-zip"))
+	corruptReq := httptest.NewRequest(http.MethodPost, "/api/v1/library/import/archive", corruptBody)
+	corruptReq.Header.Set("Content-Type", corruptType)
+	corruptResp := httptest.NewRecorder()
+	target.mux.ServeHTTP(corruptResp, corruptReq)
+	if corruptResp.Code != http.StatusConflict {
+		t.Fatalf("corrupt retry status = %d body=%s", corruptResp.Code, corruptResp.Body.String())
+	}
+	if _, err := os.Stat(filepath.Join(archivePath, "manifest.json")); err != nil {
+		t.Fatalf("corrupt retry destroyed prior imported archive: %v", err)
+	}
+}
+
+func TestDeterministicLibraryImportIDIncludesDestinationProjectAndStructuredIdentity(t *testing.T) {
+	item := LibraryBundleItem{Kind: "result", SourceInstanceID: "source/instance", SourceItemID: "item/id"}
+	first, err := deterministicLibraryImportID("remote", "project-a", item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := deterministicLibraryImportID("remote", "project-b", item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == second {
+		t.Fatalf("destination projects produced the same import id %q", first)
+	}
+	item.SourceItemID = ""
+	if _, err := deterministicLibraryImportID("remote", "project-a", item); err == nil {
+		t.Fatal("empty source identity was accepted")
+	}
+}
+
+func TestLibraryResultHashAcceptsPreviousV1PayloadWithSummary(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	testRun := &ManagedTest{ID: "run-v1", Name: "Prior Bundle", Status: "COMPLETE", ProjectID: "source", DurationStr: "1m", TotalVUsers: 1}
+	summary := libraryResultSummary(testRun)
+	item := LibraryBundleItem{
+		Kind:             "result",
+		SourceInstanceID: "source-instance",
+		SourceItemID:     testRun.ID,
+		Name:             testRun.Name,
+		ContentHash:      hashLibraryResultPreviousV1WithSummary(testRun, summary),
+		Result:           &LibraryResultPayload{Test: testRun, Summary: summary},
+	}
+	if _, _, conflict := server.importLibraryResult(item, "destination", "remote", nil); conflict != nil {
+		t.Fatalf("previous v1 result hash was rejected: %+v", conflict)
+	}
+}
+
+func TestLibraryCatalogTreatsEqualCurrentScenarioHashesAsSyncedAfterHashMigration(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	script := server.runner.StoreScript(libraryTestScript("hash-script", "Hash Script", "project-a", "/"))
+	scenario, err := server.runner.StoreScenarioWithID("hash-scenario", CreateScenarioRequest{
+		Name:     "Hash Scenario",
+		Duration: "1m",
+		Groups:   []CreateGroupEntry{{Name: "group", ScriptID: script.ID, VUsers: 1}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	currentHash := hashLibraryScenario(scenario)
+	if err := server.rememberLibraryLink("remote", "project-a", "scenario", "source", "scenario", scenario.ID, "remote-scenario", "legacy-local-hash", "legacy-remote-hash"); err != nil {
+		t.Fatal(err)
+	}
+	item := server.annotateRemoteCatalogItem("remote", "project-a", LibraryCatalogItem{
+		Kind: "scenario", SourceInstanceID: "source", SourceItemID: "scenario", ContentHash: currentHash,
+	})
+	if item.SyncStatus != "synced" {
+		t.Fatalf("sync status = %q, want synced", item.SyncStatus)
+	}
 }
 
 func TestLibraryRemotePullAndPushResultArchivesBetweenControllers(t *testing.T) {
@@ -545,6 +615,7 @@ func TestLibraryRemotePullAndPushResultArchivesBetweenControllers(t *testing.T) 
 
 func createLibraryRemoteForTest(t *testing.T, server *Server, baseURL string, projectID string) LibraryRemote {
 	t.Helper()
+	t.Setenv("APEXLOAD_LIBRARY_ALLOW_INSECURE_HTTP", "1")
 	server.libraryCreds = NewMemoryLibraryCredentialStore()
 	body := marshalLibraryTestJSON(t, LibraryRemoteRequest{
 		Name:             "K8s Host",

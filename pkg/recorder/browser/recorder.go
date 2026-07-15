@@ -1,6 +1,7 @@
 package browser
 
 import (
+	"archive/zip"
 	"crypto/rand"
 	"crypto/subtle"
 	_ "embed"
@@ -118,6 +119,7 @@ type Recorder struct {
 	done                 chan struct{}
 	doneOnce             sync.Once
 	harTemp              bool
+	harCapturePath       string
 	wsFrames             int
 	wsBytes              int
 	bindingBytes         int64
@@ -255,7 +257,14 @@ func managedHARTempPath(dir string, sessionID string) string {
 	if safeID == "" {
 		safeID = fmt.Sprintf("rec_%d", time.Now().UnixNano())
 	}
-	return filepath.Join(dir, "apexload_browser_"+safeID+".har.tmp")
+	return filepath.Join(dir, "apexload_browser_"+safeID+".har.zip")
+}
+
+func firstNonEmptyRecorderPath(primary string, fallback string) string {
+	if strings.TrimSpace(primary) != "" {
+		return primary
+	}
+	return fallback
 }
 
 func prepareHARPath(path string) error {
@@ -311,17 +320,21 @@ func (r *Recorder) Start() error {
 
 	contextOptions := playwright.BrowserNewContextOptions{}
 	if r.opts.CaptureHAR {
-		harPath := strings.TrimSpace(r.opts.HARPath)
-		if harPath == "" {
-			harPath = managedHARTempPath(r.opts.HARArtifactDir, r.session.ID)
+		requestedPath := strings.TrimSpace(r.opts.HARPath)
+		capturePath := requestedPath
+		if requestedPath == "" {
+			capturePath = managedHARTempPath(r.opts.HARArtifactDir, r.session.ID)
 			r.harTemp = true
+		} else if !strings.EqualFold(filepath.Ext(requestedPath), ".zip") {
+			capturePath = requestedPath + ".attachments.zip.tmp"
 		}
-		if err := prepareHARPath(harPath); err != nil {
+		if err := prepareHARPath(capturePath); err != nil {
 			r.cleanup()
 			return fmt.Errorf("prepare side-car HAR path: %w", err)
 		}
-		r.session.HARPath = harPath
-		contextOptions.RecordHarPath = playwright.String(harPath)
+		r.harCapturePath = capturePath
+		r.session.HARPath = firstNonEmptyRecorderPath(requestedPath, capturePath)
+		contextOptions.RecordHarPath = playwright.String(capturePath)
 		contextOptions.RecordHarContent = playwright.HarContentPolicyAttach
 	}
 	if d := r.opts.Device; d != nil {
@@ -351,7 +364,7 @@ func (r *Recorder) Start() error {
 	}
 	r.context = context
 	if r.opts.CaptureHAR {
-		go r.monitorHARSize(r.session.HARPath, context)
+		go r.monitorHARSize(r.harCapturePath, context)
 	}
 
 	if err := context.ExposeBinding("__apexloadRecord", r.handleRecordBinding); err != nil {
@@ -1100,8 +1113,8 @@ func (r *Recorder) Stop() (*Session, error) {
 			"transaction %q was still open and was closed automatically when the recording stopped", name))
 	}
 	r.session.OpenTransactions = nil
-	if r.session.HARPath != "" {
-		data, err := readFileLimited(r.session.HARPath, maxBrowserHARBytes)
+	if r.harCapturePath != "" {
+		data, err := readHARArtifact(r.harCapturePath, maxBrowserHARBytes)
 		if err != nil {
 			r.appendWarningLocked(fmt.Sprintf("side-car HAR unavailable: %v", err))
 		} else {
@@ -1118,11 +1131,19 @@ func (r *Recorder) Stop() (*Session, error) {
 				}
 			}
 			r.session.HAR = data
+			if !r.harTemp && r.session.HARPath != r.harCapturePath {
+				if writeErr := os.WriteFile(r.session.HARPath, data, 0o600); writeErr != nil {
+					r.appendWarningLocked(fmt.Sprintf("write side-car HAR: %v", writeErr))
+				}
+			}
 		}
 		if r.harTemp {
-			_ = os.Remove(r.session.HARPath)
+			_ = os.Remove(r.harCapturePath)
 			r.session.HARPath = ""
+		} else if r.harCapturePath != r.session.HARPath {
+			_ = os.Remove(r.harCapturePath)
 		}
+		r.harCapturePath = ""
 	}
 	return r.session, nil
 }
@@ -1141,12 +1162,23 @@ func (r *Recorder) ForceStop() {
 
 func (r *Recorder) discardManagedHARTemp() {
 	r.mu.Lock()
-	if !r.harTemp || r.session == nil || strings.TrimSpace(r.session.HARPath) == "" {
+	if r.session == nil {
 		r.mu.Unlock()
 		return
 	}
-	path := r.session.HARPath
-	r.session.HARPath = ""
+	capturePath := r.harCapturePath
+	if strings.TrimSpace(capturePath) == "" && r.harTemp {
+		capturePath = r.session.HARPath
+	}
+	if strings.TrimSpace(capturePath) == "" || (!r.harTemp && capturePath == r.session.HARPath) {
+		r.mu.Unlock()
+		return
+	}
+	path := capturePath
+	r.harCapturePath = ""
+	if r.harTemp {
+		r.session.HARPath = ""
+	}
 	r.mu.Unlock()
 	_ = os.Remove(path)
 }
@@ -1565,6 +1597,131 @@ func readFileLimited(path string, limit int64) ([]byte, error) {
 		return nil, err
 	}
 	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("artifact exceeds maximum of %d bytes", limit)
+	}
+	return data, nil
+}
+
+func readHARArtifact(path string, limit int64) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	header := make([]byte, 4)
+	_, readErr := io.ReadFull(file, header)
+	_ = file.Close()
+	if readErr != nil || string(header[:2]) != "PK" {
+		return readFileLimited(path, limit)
+	}
+	return readAttachedHARZip(path, limit)
+}
+
+func readAttachedHARZip(path string, limit int64) ([]byte, error) {
+	archive, err := zip.OpenReader(path)
+	if err != nil {
+		return nil, err
+	}
+	defer archive.Close()
+	files := make(map[string]*zip.File, len(archive.File))
+	var harFile *zip.File
+	for _, file := range archive.File {
+		name := strings.TrimPrefix(filepath.ToSlash(file.Name), "./")
+		files[name] = file
+		if name == "har.har" || (harFile == nil && strings.HasSuffix(strings.ToLower(name), ".har")) {
+			harFile = file
+		}
+	}
+	if harFile == nil {
+		return nil, fmt.Errorf("attached HAR archive does not contain a HAR document")
+	}
+	harData, err := readHARZipEntry(harFile, limit)
+	if err != nil {
+		return nil, err
+	}
+	var document any
+	if err := json.Unmarshal(harData, &document); err != nil {
+		return nil, fmt.Errorf("decode attached HAR document: %w", err)
+	}
+	remaining := limit - int64(len(harData))
+	if remaining < 0 {
+		return nil, fmt.Errorf("HAR document exceeds maximum of %d bytes", limit)
+	}
+	encodedCache := make(map[string]string)
+	var hydrate func(any) error
+	hydrate = func(value any) error {
+		switch typed := value.(type) {
+		case map[string]any:
+			if rawName, ok := typed["_file"].(string); ok && strings.TrimSpace(rawName) != "" {
+				name := strings.TrimPrefix(filepath.ToSlash(rawName), "./")
+				entry := files[name]
+				if entry == nil {
+					return fmt.Errorf("HAR attachment %q is missing", rawName)
+				}
+				encoded, cached := encodedCache[name]
+				if !cached {
+					content, readErr := readHARZipEntry(entry, limit)
+					if readErr != nil {
+						return fmt.Errorf("read HAR attachment %q: %w", rawName, readErr)
+					}
+					encoded = base64.StdEncoding.EncodeToString(content)
+					encodedCache[name] = encoded
+				}
+				if int64(len(encoded)) > remaining {
+					return fmt.Errorf("HAR attachments exceed maximum of %d bytes", limit)
+				}
+				remaining -= int64(len(encoded))
+				typed["text"] = encoded
+				typed["encoding"] = "base64"
+				delete(typed, "_file")
+			}
+			for _, child := range typed {
+				if err := hydrate(child); err != nil {
+					return err
+				}
+			}
+		case []any:
+			for _, child := range typed {
+				if err := hydrate(child); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+	if err := hydrate(document); err != nil {
+		return nil, err
+	}
+	data, err := json.Marshal(document)
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("hydrated HAR exceeds maximum of %d bytes", limit)
+	}
+	return data, nil
+}
+
+func readHARZipEntry(file *zip.File, limit int64) ([]byte, error) {
+	if file == nil {
+		return nil, fmt.Errorf("HAR zip entry is missing")
+	}
+	if limit > 0 && file.UncompressedSize64 > uint64(limit) {
+		return nil, fmt.Errorf("artifact exceeds maximum of %d bytes", limit)
+	}
+	reader, err := file.Open()
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+	var source io.Reader = reader
+	if limit > 0 {
+		source = io.LimitReader(reader, limit+1)
+	}
+	data, err := io.ReadAll(source)
+	if err != nil {
+		return nil, err
+	}
+	if limit > 0 && int64(len(data)) > limit {
 		return nil, fmt.Errorf("artifact exceeds maximum of %d bytes", limit)
 	}
 	return data, nil

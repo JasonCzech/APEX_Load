@@ -140,8 +140,24 @@ func applyAutoDetectedDataFormattingBounded(body []byte, allowBase64 bool, maxBy
 }
 
 func applyDataFormattingTransformBounded(body []byte, transform dataFormattingTransform, maxBytes int64) ([]byte, error) {
-	if transform.Type == "gzip" && strings.ToLower(strings.TrimSpace(transform.Options["mode"])) != "encode" {
-		return decodeGzipBody(body, maxBytes)
+	switch transform.Type {
+	case "gzip":
+		switch mode := strings.ToLower(strings.TrimSpace(transform.Options["mode"])); mode {
+		case "", "decode":
+			return decodeGzipBody(body, maxBytes)
+		case "encode":
+			return encodeGzipBodyBounded(body, maxBytes)
+		default:
+			return nil, fmt.Errorf("unsupported gzip mode %q", mode)
+		}
+	case "json_to_xml":
+		return jsonToXMLBounded(body, maxBytes)
+	case "xml_to_json":
+		return xmlToJSONBounded(body, maxBytes)
+	case "url_encode":
+		return transformStringChunksBounded(body, maxBytes, url.QueryEscape)
+	case "html_escape":
+		return transformStringChunksBounded(body, maxBytes, html.EscapeString)
 	}
 	return applyDataFormattingTransform(body, transform)
 }
@@ -246,8 +262,12 @@ func decodeGzipBody(body []byte, maxBytes int64) ([]byte, error) {
 }
 
 func encodeGzipBody(body []byte) ([]byte, error) {
-	var buf bytes.Buffer
-	writer := gzip.NewWriter(&buf)
+	return encodeGzipBodyBounded(body, 0)
+}
+
+func encodeGzipBodyBounded(body []byte, maxBytes int64) ([]byte, error) {
+	buf := newBoundedFormattingBuffer(maxBytes)
+	writer := gzip.NewWriter(buf)
 	if _, err := writer.Write(body); err != nil {
 		writer.Close()
 		return nil, err
@@ -256,6 +276,50 @@ func encodeGzipBody(body []byte) ([]byte, error) {
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+func transformStringChunksBounded(body []byte, maxBytes int64, transform func(string) string) ([]byte, error) {
+	buf := newBoundedFormattingBuffer(maxBytes)
+	const chunkSize = 4096
+	for offset := 0; offset < len(body); offset += chunkSize {
+		end := offset + chunkSize
+		if end > len(body) {
+			end = len(body)
+		}
+		if _, err := buf.WriteString(transform(string(body[offset:end]))); err != nil {
+			return nil, err
+		}
+	}
+	return buf.Bytes(), nil
+}
+
+type boundedFormattingBuffer struct {
+	buf bytes.Buffer
+	max int64
+}
+
+func newBoundedFormattingBuffer(maxBytes int64) *boundedFormattingBuffer {
+	return &boundedFormattingBuffer{max: maxBytes}
+}
+
+func (b *boundedFormattingBuffer) Write(content []byte) (int, error) {
+	if b.max > 0 && (int64(b.buf.Len()) > b.max || int64(len(content)) > b.max-int64(b.buf.Len())) {
+		return 0, fmt.Errorf("formatted output exceeds byte limit %d", b.max)
+	}
+	return b.buf.Write(content)
+}
+
+func (b *boundedFormattingBuffer) WriteString(content string) (int, error) {
+	return b.Write([]byte(content))
+}
+
+func (b *boundedFormattingBuffer) WriteByte(value byte) error {
+	_, err := b.Write([]byte{value})
+	return err
+}
+
+func (b *boundedFormattingBuffer) Bytes() []byte {
+	return b.buf.Bytes()
 }
 
 func detectBase64Payload(body []byte) ([]byte, bool) {
@@ -311,20 +375,32 @@ type xmlJSONNode struct {
 }
 
 func jsonToXML(body []byte) ([]byte, error) {
+	return jsonToXMLBounded(body, 0)
+}
+
+func jsonToXMLBounded(body []byte, maxBytes int64) ([]byte, error) {
 	var payload any
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return nil, err
 	}
-	var buf bytes.Buffer
-	buf.WriteString("<json>")
-	if err := writeXMLValue(&buf, "value", payload); err != nil {
+	buf := newBoundedFormattingBuffer(maxBytes)
+	if _, err := buf.WriteString("<json>"); err != nil {
 		return nil, err
 	}
-	buf.WriteString("</json>")
+	if err := writeXMLValue(buf, "value", payload); err != nil {
+		return nil, err
+	}
+	if _, err := buf.WriteString("</json>"); err != nil {
+		return nil, err
+	}
 	return buf.Bytes(), nil
 }
 
 func xmlToJSON(body []byte) ([]byte, error) {
+	return xmlToJSONBounded(body, 0)
+}
+
+func xmlToJSONBounded(body []byte, maxBytes int64) ([]byte, error) {
 	decoder := xml.NewDecoder(bytes.NewReader(body))
 	stack := make([]*xmlJSONNode, 0)
 	var root map[string]any
@@ -384,7 +460,11 @@ func xmlToJSON(body []byte) ([]byte, error) {
 	if root == nil {
 		return nil, fmt.Errorf("empty XML payload")
 	}
-	return json.Marshal(root)
+	buf := newBoundedFormattingBuffer(maxBytes)
+	if err := json.NewEncoder(buf).Encode(root); err != nil {
+		return nil, err
+	}
+	return bytes.TrimSuffix(buf.Bytes(), []byte{'\n'}), nil
 }
 
 func (node *xmlJSONNode) toJSONValue() any {
@@ -421,10 +501,12 @@ func (node *xmlJSONNode) toJSONValue() any {
 	return value
 }
 
-func writeXMLValue(buf *bytes.Buffer, name string, value any) error {
+func writeXMLValue(buf *boundedFormattingBuffer, name string, value any) error {
 	switch typed := value.(type) {
 	case map[string]any:
-		writeStartElement(buf, name)
+		if err := writeStartElement(buf, name); err != nil {
+			return err
+		}
 		keys := make([]string, 0, len(typed))
 		for key := range typed {
 			keys = append(keys, key)
@@ -435,48 +517,75 @@ func writeXMLValue(buf *bytes.Buffer, name string, value any) error {
 				return err
 			}
 		}
-		writeEndElement(buf, name)
+		return writeEndElement(buf, name)
 	case []any:
-		writeStartElement(buf, name)
+		if err := writeStartElement(buf, name); err != nil {
+			return err
+		}
 		for _, item := range typed {
 			if err := writeXMLValue(buf, "item", item); err != nil {
 				return err
 			}
 		}
-		writeEndElement(buf, name)
+		return writeEndElement(buf, name)
 	case nil:
-		writeStartElement(buf, name)
-		writeEndElement(buf, name)
+		if err := writeStartElement(buf, name); err != nil {
+			return err
+		}
+		return writeEndElement(buf, name)
 	case string:
-		writeStartElement(buf, name)
-		xml.EscapeText(buf, []byte(typed))
-		writeEndElement(buf, name)
+		if err := writeStartElement(buf, name); err != nil {
+			return err
+		}
+		if err := xml.EscapeText(buf, []byte(typed)); err != nil {
+			return err
+		}
+		return writeEndElement(buf, name)
 	case bool:
-		writeStartElement(buf, name)
-		xml.EscapeText(buf, []byte(fmt.Sprintf("%t", typed)))
-		writeEndElement(buf, name)
+		if err := writeStartElement(buf, name); err != nil {
+			return err
+		}
+		if err := xml.EscapeText(buf, []byte(fmt.Sprintf("%t", typed))); err != nil {
+			return err
+		}
+		return writeEndElement(buf, name)
 	case float64, float32, int, int32, int64, uint, uint32, uint64:
-		writeStartElement(buf, name)
-		xml.EscapeText(buf, []byte(fmt.Sprintf("%v", typed)))
-		writeEndElement(buf, name)
+		if err := writeStartElement(buf, name); err != nil {
+			return err
+		}
+		if err := xml.EscapeText(buf, []byte(fmt.Sprintf("%v", typed))); err != nil {
+			return err
+		}
+		return writeEndElement(buf, name)
 	default:
-		writeStartElement(buf, name)
-		xml.EscapeText(buf, []byte(fmt.Sprintf("%v", typed)))
-		writeEndElement(buf, name)
+		if err := writeStartElement(buf, name); err != nil {
+			return err
+		}
+		if err := xml.EscapeText(buf, []byte(fmt.Sprintf("%v", typed))); err != nil {
+			return err
+		}
+		return writeEndElement(buf, name)
 	}
-	return nil
 }
 
-func writeStartElement(buf *bytes.Buffer, name string) {
-	buf.WriteByte('<')
-	buf.WriteString(name)
-	buf.WriteByte('>')
+func writeStartElement(buf *boundedFormattingBuffer, name string) error {
+	if err := buf.WriteByte('<'); err != nil {
+		return err
+	}
+	if _, err := buf.WriteString(name); err != nil {
+		return err
+	}
+	return buf.WriteByte('>')
 }
 
-func writeEndElement(buf *bytes.Buffer, name string) {
-	buf.WriteString("</")
-	buf.WriteString(name)
-	buf.WriteByte('>')
+func writeEndElement(buf *boundedFormattingBuffer, name string) error {
+	if _, err := buf.WriteString("</"); err != nil {
+		return err
+	}
+	if _, err := buf.WriteString(name); err != nil {
+		return err
+	}
+	return buf.WriteByte('>')
 }
 
 func sanitizeXMLName(name string) string {

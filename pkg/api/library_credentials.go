@@ -11,6 +11,7 @@ import (
 const (
 	libraryCredentialRefEnvPrefix     = "env:"
 	libraryCredentialEnvNamePrefix    = "APEXLOAD_LIBRARY_REMOTE_"
+	libraryCredentialLegacyEnvPrefix  = "APEXLOAD_REMOTE_"
 	libraryCredentialRefKeyringPrefix = "keyring:"
 	libraryKeyringService             = "APEX Load"
 )
@@ -47,8 +48,8 @@ func (s *EnvLibraryCredentialStore) GetRemoteAPIKey(remote LibraryRemote) (strin
 	if name == "" {
 		return "", errors.New("credential_ref env variable name is empty")
 	}
-	if !strings.HasPrefix(name, libraryCredentialEnvNamePrefix) {
-		return "", fmt.Errorf("credential_ref environment variable must start with %s", libraryCredentialEnvNamePrefix)
+	if !strings.HasPrefix(name, libraryCredentialEnvNamePrefix) && !strings.HasPrefix(name, libraryCredentialLegacyEnvPrefix) {
+		return "", fmt.Errorf("credential_ref environment variable must start with %s (or legacy %s)", libraryCredentialEnvNamePrefix, libraryCredentialLegacyEnvPrefix)
 	}
 	value := strings.TrimSpace(os.Getenv(name))
 	if value == "" {

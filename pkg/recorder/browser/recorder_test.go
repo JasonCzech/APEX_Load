@@ -1,6 +1,7 @@
 package browser
 
 import (
+	"archive/zip"
 	"encoding/base64"
 	"os"
 	"path/filepath"
@@ -40,7 +41,7 @@ func TestManagedHARTempPathUsesArtifactPrefix(t *testing.T) {
 		t.Fatalf("dir = %q, want %q", filepath.Dir(path), dir)
 	}
 	name := filepath.Base(path)
-	if !strings.HasPrefix(name, "apexload_browser_rec_.._secret") || !strings.HasSuffix(name, ".har.tmp") {
+	if !strings.HasPrefix(name, "apexload_browser_rec_.._secret") || !strings.HasSuffix(name, ".har.zip") {
 		t.Fatalf("managed HAR temp name = %q, want managed browser artifact prefix and temp suffix", name)
 	}
 }
@@ -73,6 +74,36 @@ func TestReadFileLimitedRejectsOversizedHAR(t *testing.T) {
 	data, err := readFileLimited(path, 10)
 	if err != nil || string(data) != "0123456789" {
 		t.Fatalf("bounded read = %q, %v", data, err)
+	}
+}
+
+func TestReadHARArtifactRehydratesAttachedBodies(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "capture.har.zip")
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer := zip.NewWriter(file)
+	harEntry, _ := writer.Create("har.har")
+	_, _ = harEntry.Write([]byte(`{"log":{"entries":[{"response":{"content":{"mimeType":"application/octet-stream","_file":"resources/body.bin"}}}]}}`))
+	bodyEntry, _ := writer.Create("resources/body.bin")
+	_, _ = bodyEntry.Write([]byte{0x00, 0xff, 0x01})
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := readHARArtifact(path, 1<<20)
+	if err != nil {
+		t.Fatalf("readHARArtifact: %v", err)
+	}
+	if strings.Contains(string(data), `"_file"`) {
+		t.Fatalf("hydrated HAR retained detached reference: %s", data)
+	}
+	if !strings.Contains(string(data), `"encoding":"base64"`) || !strings.Contains(string(data), base64.StdEncoding.EncodeToString([]byte{0x00, 0xff, 0x01})) {
+		t.Fatalf("hydrated HAR did not embed binary body: %s", data)
 	}
 }
 

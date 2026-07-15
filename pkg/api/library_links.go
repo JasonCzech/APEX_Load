@@ -61,7 +61,18 @@ func hashLibraryResultTestOnly(test *ManagedTest) string {
 	if test == nil {
 		return hashCanonical(nil)
 	}
-	return hashCanonical(map[string]any{
+	return hashCanonical(libraryResultCompactHashPayload(test))
+}
+
+func hashLibraryResultPreviousV1WithSummary(test *ManagedTest, summary map[string]any) string {
+	if test == nil {
+		return hashCanonical(nil)
+	}
+	return hashCanonical(map[string]any{"test": libraryResultCompactHashPayload(test), "summary": summary})
+}
+
+func libraryResultCompactHashPayload(test *ManagedTest) map[string]any {
+	return map[string]any{
 		"name":         test.Name,
 		"status":       test.Status,
 		"project_id":   test.ProjectID,
@@ -72,7 +83,7 @@ func hashLibraryResultTestOnly(test *ManagedTest) string {
 		"ended_at":     test.EndedAt,
 		"archive":      test.Archive,
 		"error":        test.Error,
-	})
+	}
 }
 
 func libraryResultTestHashPayload(test *ManagedTest) any {
@@ -96,13 +107,17 @@ func hashCanonical(value any) string {
 	return fmt.Sprintf("sha256:%x", sum[:])
 }
 
-func (s *Server) libraryLink(remoteID string, kind string, sourceInstanceID string, sourceItemID string) *librarySyncLink {
+func (s *Server) libraryLink(remoteID string, projectID string, kind string, sourceInstanceID string, sourceItemID string) *librarySyncLink {
 	if remoteID == "" {
 		remoteID = "direct"
 	}
 	s.libraryMu.Lock()
 	defer s.libraryMu.Unlock()
-	link := s.libraryLinks[libraryLinkKey(remoteID, kind, sourceInstanceID, sourceItemID)]
+	link := s.libraryLinks[libraryLinkKey(remoteID, projectID, kind, sourceInstanceID, sourceItemID)]
+	if link == nil && strings.TrimSpace(projectID) != "" {
+		// Links written before project-aware synchronization are still readable.
+		link = s.libraryLinks[libraryLinkKey(remoteID, "", kind, sourceInstanceID, sourceItemID)]
+	}
 	if link == nil {
 		return nil
 	}
@@ -110,20 +125,21 @@ func (s *Server) libraryLink(remoteID string, kind string, sourceInstanceID stri
 	return &copied
 }
 
-func (s *Server) rememberLibraryLink(remoteID string, kind string, sourceInstanceID string, sourceItemID string, localItemID string, remoteItemID string, localHash string, remoteHash string) error {
+func (s *Server) rememberLibraryLink(remoteID string, projectID string, kind string, sourceInstanceID string, sourceItemID string, localItemID string, remoteItemID string, localHash string, remoteHash string) error {
 	s.libraryStateMutationMu.Lock()
 	defer s.libraryStateMutationMu.Unlock()
 	if remoteID == "" {
 		remoteID = "direct"
 	}
-	key := libraryLinkKey(remoteID, kind, sourceInstanceID, sourceItemID)
+	projectID = normalizeProjectID(strings.TrimSpace(projectID))
+	key := libraryLinkKey(remoteID, projectID, kind, sourceInstanceID, sourceItemID)
 	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
 		s.loadLibraryLinksState()
 		s.libraryMu.Lock()
 		previous, hadPrevious := s.libraryLinks[key]
 		s.libraryLinks[key] = &librarySyncLink{
-			RemoteID: remoteID, Kind: normalizeLibraryKind(kind), SourceInstanceID: sourceInstanceID,
+			RemoteID: remoteID, ProjectID: projectID, Kind: normalizeLibraryKind(kind), SourceInstanceID: sourceInstanceID,
 			SourceItemID: sourceItemID, LocalItemID: localItemID, RemoteItemID: remoteItemID,
 			LocalContentHash: localHash, RemoteContentHash: remoteHash, LastSyncedAt: time.Now().UTC(),
 		}
@@ -145,12 +161,12 @@ func (s *Server) rememberLibraryLink(remoteID string, kind string, sourceInstanc
 	return lastErr
 }
 
-func libraryLinkKey(remoteID string, kind string, sourceInstanceID string, sourceItemID string) string {
-	return strings.Join([]string{strings.TrimSpace(remoteID), normalizeLibraryKind(kind), strings.TrimSpace(sourceInstanceID), strings.TrimSpace(sourceItemID)}, "\x00")
+func libraryLinkKey(remoteID string, projectID string, kind string, sourceInstanceID string, sourceItemID string) string {
+	return strings.Join([]string{strings.TrimSpace(remoteID), normalizeProjectID(strings.TrimSpace(projectID)), normalizeLibraryKind(kind), strings.TrimSpace(sourceInstanceID), strings.TrimSpace(sourceItemID)}, "\x00")
 }
 
-func (s *Server) annotateRemoteCatalogItem(remoteID string, item LibraryCatalogItem) LibraryCatalogItem {
-	link := s.libraryLink(remoteID, item.Kind, item.SourceInstanceID, item.SourceItemID)
+func (s *Server) annotateRemoteCatalogItem(remoteID string, projectID string, item LibraryCatalogItem) LibraryCatalogItem {
+	link := s.libraryLink(remoteID, projectID, item.Kind, item.SourceInstanceID, item.SourceItemID)
 	if link == nil {
 		item.SyncStatus = "host only"
 		return item
@@ -162,6 +178,10 @@ func (s *Server) annotateRemoteCatalogItem(remoteID string, item LibraryCatalogI
 		item.SyncStatus = "stale"
 	}
 	if localHash, err := s.localLibraryItemHash(item.Kind, link.LocalItemID); err == nil && localHash != link.LocalContentHash {
+		if localHash == item.ContentHash {
+			item.SyncStatus = "synced"
+			return item
+		}
 		if item.SyncStatus == "stale" {
 			item.SyncStatus = "conflict"
 		} else {
@@ -213,7 +233,7 @@ func (s *Server) rememberRemoteImportLinks(remoteID string, bundle *LibraryBundl
 			continue
 		}
 		localHash, _ := s.localLibraryItemHash(item.Kind, localID)
-		if err := s.rememberLibraryLink(remoteID, item.Kind, s.controllerID, localID, localID, item.LocalItemID, localHash, item.ContentHash); err != nil {
+		if err := s.rememberLibraryLink(remoteID, bundle.Source.ProjectID, item.Kind, s.controllerID, localID, localID, item.LocalItemID, localHash, item.ContentHash); err != nil {
 			slog.Warn("failed to persist remote import link", "remote_id", remoteID, "error", err)
 		}
 	}

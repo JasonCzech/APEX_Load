@@ -81,6 +81,7 @@ type executionLeadership struct {
 	lastConfirmed   time.Time // last time we positively held the lease
 	generation      uint64    // incremented on every leader/follower transition
 	pendingLoss     uint64    // queued or running loss callbacks blocking admission
+	lossDone        *sync.Cond
 	operationCtx    context.Context
 	operationCancel context.CancelFunc
 }
@@ -88,7 +89,7 @@ type executionLeadership struct {
 func newExecutionLeadership(store executionLeaseStore, ownerID string) *executionLeadership {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	return &executionLeadership{
+	l := &executionLeadership{
 		store:           store,
 		ownerID:         ownerID,
 		ttl:             defaultExecutionLeaseTTL,
@@ -97,6 +98,8 @@ func newExecutionLeadership(store executionLeaseStore, ownerID string) *executio
 		operationCtx:    ctx,
 		operationCancel: cancel,
 	}
+	l.lossDone = sync.NewCond(&l.mu)
+	return l
 }
 
 // setOnAcquire registers the callback invoked once each time leadership is
@@ -295,6 +298,12 @@ func (l *executionLeadership) relinquish() {
 	}
 	l.mu.Lock()
 	l.transitionToFollowerLocked()
+	for l.pendingLoss > 0 {
+		if l.lossDone == nil {
+			l.lossDone = sync.NewCond(&l.mu)
+		}
+		l.lossDone.Wait()
+	}
 	l.mu.Unlock()
 	if store, ok := l.store.(executionLeaseReleaseStore); ok {
 		if err := store.ReleaseSchedulerLease(executionLeaseName, l.ownerID); err != nil {
@@ -338,7 +347,7 @@ func (l *executionLeadership) operationContext(parent context.Context) (context.
 		return context.WithCancel(parent)
 	}
 	l.mu.Lock()
-	if l.leader.Load() && l.pendingLoss == 0 && l.operationCtx == nil {
+	if l.leader.Load() && l.pendingLoss == 0 && (l.operationCtx == nil || l.operationCtx.Err() != nil) {
 		// Some recovery/bootstrap paths install an already-confirmed leadership
 		// state before Run begins. Materialize the epoch lazily so those operations
 		// still receive the same lease-loss cancellation semantics.
@@ -452,6 +461,9 @@ func (l *executionLeadership) completeLossCallback() {
 	l.mu.Lock()
 	if l.pendingLoss > 0 {
 		l.pendingLoss--
+	}
+	if l.lossDone != nil {
+		l.lossDone.Broadcast()
 	}
 	l.mu.Unlock()
 }

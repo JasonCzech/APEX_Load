@@ -159,29 +159,39 @@ type generatorArchiveByteBudget struct {
 type generatorArchiveFreeBudget struct {
 	mu        sync.Mutex
 	root      string
-	knownFree int64
-	known     bool
+	reserved  int64
+	freeBytes func(string) (int64, error)
 }
 
-func (b *generatorArchiveFreeBudget) allow(length int64, minFreeBytes int64) error {
+func (b *generatorArchiveFreeBudget) reserve(length int64, minFreeBytes int64) (func(), error) {
 	if b == nil {
-		return nil
+		return func() {}, nil
 	}
 	b.mu.Lock()
-	defer b.mu.Unlock()
-	if !b.known {
-		free, err := generatorArchiveFreeBytes(b.root)
-		if err != nil {
-			return err
+	freeBytes := b.freeBytes
+	if freeBytes == nil {
+		freeBytes = generatorArchiveFreeBytes
+	}
+	free, err := freeBytes(b.root)
+	if err != nil {
+		b.mu.Unlock()
+		return nil, err
+	}
+	available := free - b.reserved
+	if available < minFreeBytes || length > available-minFreeBytes {
+		b.mu.Unlock()
+		return nil, fmt.Errorf("generator archive free space would fall below reserve %d", minFreeBytes)
+	}
+	b.reserved += length
+	b.mu.Unlock()
+	return func() {
+		b.mu.Lock()
+		b.reserved -= length
+		if b.reserved < 0 {
+			b.reserved = 0
 		}
-		b.knownFree = free
-		b.known = true
-	}
-	if b.knownFree < minFreeBytes || length > b.knownFree-minFreeBytes {
-		return fmt.Errorf("generator archive free space would fall below reserve %d", minFreeBytes)
-	}
-	b.knownFree -= length
-	return nil
+		b.mu.Unlock()
+	}, nil
 }
 
 type generatorArchiveQuotaWriter struct {
@@ -207,9 +217,11 @@ func (b *generatorArchiveByteBudget) writeTo(destination io.Writer, content []by
 		return 0, fmt.Errorf("generator archive exceeds byte limit %d", b.maxBytes)
 	}
 	if b.sharedFree != nil {
-		if err := b.sharedFree.allow(length, b.minFreeBytes); err != nil {
+		release, err := b.sharedFree.reserve(length, b.minFreeBytes)
+		if err != nil {
 			return 0, err
 		}
+		defer release()
 	}
 	if !b.freeKnown || b.written >= b.nextFreeCheck {
 		free, err := generatorArchiveFreeBytes(b.root)

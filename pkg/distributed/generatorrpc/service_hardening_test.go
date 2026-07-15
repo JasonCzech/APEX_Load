@@ -186,6 +186,24 @@ func TestServiceConcurrentAdjustVUsersCannotExceedCapacity(t *testing.T) {
 	}
 }
 
+func TestServiceAdjustVUsersDoesNotFenceFutureAssignments(t *testing.T) {
+	service := NewService("generator-adjust-fence", 10)
+	if _, err := service.DistributeScript(context.Background(), &pb.ScriptPayload{ScriptId: "script-1", Content: []byte(`{"name":"demo"}`)}); err != nil {
+		t.Fatal(err)
+	}
+	first, err := service.AssignWork(context.Background(), &pb.WorkAssignment{TestId: "test", GroupName: "group-a", ScriptId: "script-1", VuserCount: 1})
+	if err != nil || !first.GetAccepted() {
+		t.Fatalf("initial assignment: ack=%v err=%v", first, err)
+	}
+	if _, err := service.AdjustVUsers(context.Background(), &pb.VUserAdjustment{TestId: "test", GroupName: "group-a", TargetVusers: 2}); err != nil {
+		t.Fatalf("AdjustVUsers: %v", err)
+	}
+	second, err := service.AssignWork(context.Background(), &pb.WorkAssignment{TestId: "test", GroupName: "group-b", ScriptId: "script-1", VuserCount: 1})
+	if err != nil || !second.GetAccepted() {
+		t.Fatalf("assignment after scale was fenced: ack=%v err=%v", second, err)
+	}
+}
+
 func TestServiceSerializesSameGroupEngineAdjustments(t *testing.T) {
 	mge, err := engine.NewMultiGroup(engine.MultiGroupConfig{
 		Groups: []engine.GroupConfig{{

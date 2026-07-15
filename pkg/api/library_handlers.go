@@ -221,11 +221,11 @@ func (s *Server) handleLibraryUpdateRemote(w http.ResponseWriter, r *http.Reques
 		updated.DefaultProjectID = normalizeProjectID(req.DefaultProjectID)
 	}
 	updated.UpdatedAt = time.Now().UTC()
-	if err := s.storeRemoteCredential(&updated, req.APIKey, req.CredentialRef); err != nil {
+	if err := validateLibraryRemoteTransport(updated); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := validateLibraryRemoteTransport(updated); err != nil {
+	if err := s.storeRemoteCredential(&updated, req.APIKey, req.CredentialRef); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -363,7 +363,7 @@ func (s *Server) handleLibraryRemoteCatalog(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	for i := range catalog.Items {
-		catalog.Items[i] = s.annotateRemoteCatalogItem(remote.ID, catalog.Items[i])
+		catalog.Items[i] = s.annotateRemoteCatalogItem(remote.ID, projectID, catalog.Items[i])
 	}
 	writeJSON(w, http.StatusOK, LibraryRemoteCatalogResponse{Remote: s.sanitizeLibraryRemote(&remote), Catalog: *catalog})
 }

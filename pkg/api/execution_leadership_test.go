@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -22,11 +23,62 @@ type leaseResult struct {
 }
 
 type fakeLeaseStore struct {
-	mu      sync.Mutex
-	calls   int
-	results []leaseResult
-	dfltOK  bool
-	dfltErr error
+	mu       sync.Mutex
+	calls    int
+	results  []leaseResult
+	dfltOK   bool
+	dfltErr  error
+	released chan struct{}
+}
+
+func (f *fakeLeaseStore) ReleaseSchedulerLease(string, string) error {
+	if f.released != nil {
+		close(f.released)
+	}
+	return nil
+}
+
+func TestExecutionLeadershipRelinquishWaitsForLossCleanup(t *testing.T) {
+	store := &fakeLeaseStore{dfltOK: true, released: make(chan struct{})}
+	l := newExecutionLeadership(store, "owner-release-order")
+	l.tick()
+	lossStarted := make(chan struct{})
+	allowLoss := make(chan struct{})
+	l.setOnLoss(func() {
+		close(lossStarted)
+		<-allowLoss
+	})
+	done := make(chan struct{})
+	go func() {
+		l.relinquish()
+		close(done)
+	}()
+	select {
+	case <-lossStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("loss cleanup did not start")
+	}
+	select {
+	case <-store.released:
+		t.Fatal("durable lease released before loss cleanup completed")
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(allowLoss)
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("relinquish did not finish after cleanup")
+	}
+}
+
+func TestExecutionLeadershipBootstrapOperationContextReplacesCanceledEpoch(t *testing.T) {
+	l := newExecutionLeadership(&fakeLeaseStore{}, "owner-bootstrap")
+	l.leader.Store(true)
+	ctx, cancel := l.operationContext(context.Background())
+	defer cancel()
+	if err := ctx.Err(); err != nil {
+		t.Fatalf("bootstrap operation context is canceled: %v", err)
+	}
 }
 
 func (f *fakeLeaseStore) TryAcquireSchedulerLease(name string, ownerID string, now time.Time, ttl time.Duration) (bool, error) {

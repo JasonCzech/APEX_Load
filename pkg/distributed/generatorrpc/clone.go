@@ -17,9 +17,27 @@ func snapshotJSON(snapshot *protocol.ErrorSnapshot) string {
 		return ""
 	}
 	if len(data) > maxMetricsSnapshotJSONBytes {
-		return `{"truncated":true,"reason":"snapshot exceeded metrics transport limit"}`
+		truncated := &protocol.ErrorSnapshot{
+			RequestMethod:  truncateSnapshotField(snapshot.RequestMethod, 256),
+			RequestURL:     truncateSnapshotField(snapshot.RequestURL, 2048),
+			ResponseStatus: snapshot.ResponseStatus,
+			ResponseBody:   "[snapshot truncated: exceeded metrics transport limit]",
+			PageURL:        truncateSnapshotField(snapshot.PageURL, 2048),
+			PageTitle:      truncateSnapshotField(snapshot.PageTitle, 1024),
+		}
+		data, err = json.Marshal(truncated)
+		if err != nil {
+			return ""
+		}
 	}
 	return string(data)
+}
+
+func truncateSnapshotField(value string, maxBytes int) string {
+	if maxBytes <= 0 || len(value) <= maxBytes {
+		return value
+	}
+	return value[:maxBytes]
 }
 
 func resultStartTimeUnixMs(startTime time.Time) int64 {

@@ -1248,6 +1248,28 @@ func TestHTTP_Execute_AppliesGzipDataFormattingBeforeExtractionAndAssertions(t *
 	}
 }
 
+func TestHTTP_Execute_DataFormattingFailureMarksResultFailed(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("not-gzip"))
+	}))
+	defer ts.Close()
+	h := initHTTP(t, map[string]any{
+		"base_url": ts.URL,
+		"web_data_formatting_chain": []map[string]any{{
+			"type":    "gzip",
+			"options": map[string]any{"mode": "decode"},
+		}},
+	})
+	result, err := h.Execute(context.Background(), &protocol.Action{Name: "bad-format", Method: http.MethodGet, Target: "/"})
+	if err != nil {
+		t.Fatalf("Execute returned transport error: %v", err)
+	}
+	if result.Success || result.ErrorMessage == "" {
+		t.Fatalf("formatting failure result = %+v", result)
+	}
+}
+
 func TestHTTP_Execute_DecodesContentEncodingForAssertionsAndSnapshots(t *testing.T) {
 	payload := `<soap:Envelope><soap:Body><Success>true</Success></soap:Body></soap:Envelope>`
 	var compressed bytes.Buffer

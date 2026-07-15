@@ -805,9 +805,6 @@ func (s *Service) AdjustVUsers(ctx context.Context, request *pb.VUserAdjustment)
 
 	s.mu.Lock()
 	assignment, ok := s.assignments[request.GetTestId()]
-	if ok {
-		s.stoppingTests[request.GetTestId()] = struct{}{}
-	}
 	if !ok {
 		s.mu.Unlock()
 		return nil, status.Error(codes.NotFound, "test assignment not found")
@@ -938,6 +935,9 @@ func (s *Service) StopTest(ctx context.Context, request *pb.StopRequest) (*pb.St
 	s.mu.Lock()
 
 	assignment, ok := s.assignments[request.GetTestId()]
+	if ok {
+		s.stoppingTests[request.GetTestId()] = struct{}{}
+	}
 	if request.GetGraceful() && ok {
 		execs := s.executions[request.GetTestId()]
 		if len(execs) > 0 {

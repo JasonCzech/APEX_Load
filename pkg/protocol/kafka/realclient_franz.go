@@ -287,7 +287,7 @@ func (c *franzClient) releaseConsumeTopic(cl *kgo.Client, topic string) {
 	refs := c.consumeTopicRefs[topic]
 	if refs <= 1 {
 		delete(c.consumeTopicRefs, topic)
-		cl.PurgeTopicsFromClient(topic)
+		cl.PurgeTopicsFromConsuming(topic)
 		return
 	}
 	c.consumeTopicRefs[topic] = refs - 1
