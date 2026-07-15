@@ -2356,7 +2356,7 @@
 }
 
 .chart-metrics-table tbody tr.metric-row {
-  cursor: pointer;
+  cursor: default;
 }
 
 .chart-metrics-table tbody tr.metric-row:hover {
@@ -2391,6 +2391,18 @@
   max-width: 100%;
   min-width: 0;
   color: var(--text-primary);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chart-metric-name:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 3px;
 }
 
 .chart-metric-name .dot {

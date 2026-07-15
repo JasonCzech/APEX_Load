@@ -2,7 +2,7 @@
 
 import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { DASHBOARD_ZOOM_STORAGE_KEY, useDashboardZoomShortcuts } from './useDashboardZoomShortcuts'
 
@@ -41,6 +41,7 @@ describe('useDashboardZoomShortcuts', () => {
     })
     container.remove()
     document.documentElement.style.removeProperty('--dashboard-zoom')
+    vi.restoreAllMocks()
   })
 
   it('applies and persists the default zoom on mount', async () => {
@@ -62,6 +63,22 @@ describe('useDashboardZoomShortcuts', () => {
 
     expect(container.querySelector('[data-testid="zoom"]')?.textContent).toBe('1.2')
     expect(document.documentElement.style.getPropertyValue('--dashboard-zoom')).toBe('1.2')
+  })
+
+  it('uses and applies the default zoom when browser storage is blocked', async () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('Storage disabled', 'SecurityError')
+    })
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('Storage disabled', 'SecurityError')
+    })
+
+    await act(async () => {
+      root.render(<ZoomHarness />)
+    })
+
+    expect(container.querySelector('[data-testid="zoom"]')?.textContent).toBe('1')
+    expect(document.documentElement.style.getPropertyValue('--dashboard-zoom')).toBe('1')
   })
 
   it('zooms in with Cmd plus or equals', async () => {

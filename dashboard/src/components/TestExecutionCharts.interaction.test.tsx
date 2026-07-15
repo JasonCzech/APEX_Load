@@ -436,6 +436,14 @@ describe('TestExecutionCharts context menu', () => {
     expect(responseChart?.textContent).toContain('Checkout')
     expect(responseChart?.textContent).toContain('Search')
 
+    const checkoutHighlight = Array.from(tpsChart?.querySelectorAll<HTMLButtonElement>('button.chart-metric-name') ?? [])
+      .find(button => button.textContent?.includes('Checkout'))
+    expect(checkoutHighlight?.getAttribute('aria-pressed')).toBe('false')
+    await act(async () => {
+      checkoutHighlight?.click()
+    })
+    expect(checkoutHighlight?.getAttribute('aria-pressed')).toBe('true')
+
     const checkoutToggle = Array.from(tpsChart?.querySelectorAll<HTMLInputElement>('input[type="checkbox"]') ?? [])
       .find(input => input.getAttribute('aria-label') === 'Show Checkout')
     expect(checkoutToggle).not.toBeUndefined()

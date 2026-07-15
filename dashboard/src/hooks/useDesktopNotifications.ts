@@ -1,6 +1,7 @@
 import { useCallback, useRef } from 'react'
 
 import { getDesktopBridge } from '../desktop/desktopBridge'
+import { readStoredString, writeStoredString } from '../utils/browserStorage'
 
 export const DESKTOP_NOTIFICATIONS_PREF_KEY = 'apexload.desktopNotifications'
 
@@ -40,9 +41,9 @@ export function buildTestNotification(status: string, testName?: string): Deskto
 
 function notificationsEnabled(): boolean {
   if (typeof window === 'undefined') return false
-  const stored = window.localStorage.getItem(DESKTOP_NOTIFICATIONS_PREF_KEY)
+  const stored = readStoredString(DESKTOP_NOTIFICATIONS_PREF_KEY)
   // Default on in the desktop shell.
-  return stored === null ? true : stored === 'true'
+  return stored === '' ? true : stored === 'true'
 }
 
 // isDesktopNotificationsEnabled / setDesktopNotificationsEnabled back the
@@ -53,7 +54,7 @@ export function isDesktopNotificationsEnabled(): boolean {
 
 export function setDesktopNotificationsEnabled(enabled: boolean): void {
   if (typeof window === 'undefined') return
-  window.localStorage.setItem(DESKTOP_NOTIFICATIONS_PREF_KEY, enabled ? 'true' : 'false')
+  writeStoredString(DESKTOP_NOTIFICATIONS_PREF_KEY, enabled ? 'true' : 'false')
 }
 
 function windowIsFocused(): boolean {
@@ -65,7 +66,6 @@ function sendWebNotification(notification: DesktopNotification) {
   // Only use the web fallback when permission was already granted; never prompt.
   if (window.Notification.permission !== 'granted') return
   try {
-    // eslint-disable-next-line no-new
     new window.Notification(notification.title, { body: notification.body })
   } catch {
     // best-effort

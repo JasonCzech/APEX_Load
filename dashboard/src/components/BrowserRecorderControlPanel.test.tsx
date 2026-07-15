@@ -235,6 +235,81 @@ describe('BrowserRecorderControlPanel', () => {
     expect(container.textContent).not.toContain('Save to Script Library')
   })
 
+  it('ignores a late response from the previously selected recording session', async () => {
+    let resolveFirst!: (value: { session: typeof recordingSession }) => void
+    const firstRequest = new Promise<{ session: typeof recordingSession }>(resolve => {
+      resolveFirst = resolve
+    })
+    const secondSession = {
+      ...recordingSession,
+      id: 'brec-2',
+      name: 'Second Recording',
+      current_url: 'https://second.example.test/',
+    }
+    apiMock.getBrowserRecording
+      .mockImplementationOnce(() => firstRequest)
+      .mockResolvedValueOnce({ session: secondSession })
+
+    await act(async () => {
+      root.render(<BrowserRecorderControlPanel sessionId="brec-1" />)
+      await Promise.resolve()
+    })
+    await act(async () => {
+      root.render(<BrowserRecorderControlPanel sessionId="brec-2" />)
+    })
+    await flushPromises()
+
+    expect(apiMock.getBrowserRecording).toHaveBeenCalledWith('brec-2')
+    expect(container.textContent).toContain('Second Recording')
+
+    await act(async () => {
+      resolveFirst({ session: recordingSession })
+      await Promise.resolve()
+    })
+    expect(container.textContent).toContain('Second Recording')
+    expect(container.textContent).not.toContain('Checkout Flow')
+  })
+
+  it('ignores late suggestions and action results from the previously selected session', async () => {
+    let resolveSuggestions!: (value: { suggestions: Array<{ name: string; at_step_seq: number; url: string }> }) => void
+    let resolveStop!: (value: { session: typeof stoppedSession }) => void
+    const suggestionsRequest = new Promise<{ suggestions: Array<{ name: string; at_step_seq: number; url: string }> }>(resolve => {
+      resolveSuggestions = resolve
+    })
+    const stopRequest = new Promise<{ session: typeof stoppedSession }>(resolve => {
+      resolveStop = resolve
+    })
+    const secondSession = {
+      ...recordingSession,
+      id: 'brec-2',
+      name: 'Second Recording',
+      navigation_count: 0,
+      current_url: 'https://second.example.test/',
+    }
+    apiMock.getBrowserRecording
+      .mockResolvedValueOnce({ session: recordingSession })
+      .mockResolvedValueOnce({ session: secondSession })
+    apiMock.suggestBrowserRecordingTransactions.mockImplementationOnce(() => suggestionsRequest)
+    apiMock.stopBrowserRecording.mockImplementationOnce(() => stopRequest)
+
+    await renderPanel()
+    await clickButton('Stop Recording')
+    await act(async () => {
+      root.render(<BrowserRecorderControlPanel sessionId="brec-2" />)
+    })
+    await flushPromises()
+
+    await act(async () => {
+      resolveSuggestions({ suggestions: [{ name: 'Old Cart', at_step_seq: 1, url: 'https://shop.example/cart' }] })
+      resolveStop({ session: stoppedSession })
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('Second Recording')
+    expect(container.textContent).not.toContain('Old Cart')
+    expect(container.textContent).not.toContain('Save as Script')
+  })
+
   it('caps the unfiltered live step feed at 25 rows', async () => {
     const steps = Array.from({ length: 30 }, (_, index) => ({
       seq: index + 1,

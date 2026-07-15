@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 
 import {
   MetricsHistoryPoint,
@@ -242,6 +242,27 @@ export default function TestExecution({ testId, history, initialWorkspaceTabId, 
     reloadManifest,
   } = useExecutionTestManifest(test)
 
+  const topbarActionHandlers = useRef({
+    onAbort,
+    onBack,
+    onDownloadArchive,
+    onPause,
+    onResume,
+    onStart,
+    onStop,
+    onStopAllVUsers,
+  })
+  topbarActionHandlers.current = {
+    onAbort,
+    onBack,
+    onDownloadArchive,
+    onPause,
+    onResume,
+    onStart,
+    onStop,
+    onStopAllVUsers,
+  }
+
   const executionPhase = test ? buildExecutionPhaseModel(test, hasArchive) : null
   const executionStatus = test ? buildExecutionStatusModel(test) : null
   const isRunning = executionPhase?.isRunning ?? false
@@ -302,7 +323,7 @@ export default function TestExecution({ testId, history, initialWorkspaceTabId, 
         label: 'Back',
         compactLabel: 'Back',
         tone: 'ghost',
-        onClick: onBack,
+        onClick: () => topbarActionHandlers.current.onBack(),
       },
       {
         id: 'revise',
@@ -319,7 +340,7 @@ export default function TestExecution({ testId, history, initialWorkspaceTabId, 
         tone: 'secondary',
         hidden: !showLiveControls,
         disabled: !hasActiveVUsers || rampInputMissing || isStopping,
-        onClick: () => { void onStopAllVUsers() },
+        onClick: () => { void topbarActionHandlers.current.onStopAllVUsers() },
       },
       {
         id: 'test-notes',
@@ -334,7 +355,7 @@ export default function TestExecution({ testId, history, initialWorkspaceTabId, 
         compactLabel: 'Archive',
         tone: 'secondary',
         hidden: !showArchiveDownload,
-        onClick: onDownloadArchive,
+        onClick: () => topbarActionHandlers.current.onDownloadArchive(),
       },
       {
         id: 'generate-report',
@@ -356,7 +377,7 @@ export default function TestExecution({ testId, history, initialWorkspaceTabId, 
         shortcutGroup: 'Test Run',
         tone: 'success',
         hidden: test.status !== 'QUEUED' && test.status !== 'RESERVED',
-        onClick: () => { void onStart() },
+        onClick: () => { void topbarActionHandlers.current.onStart() },
       },
       {
         id: 'pause-resume',
@@ -367,7 +388,11 @@ export default function TestExecution({ testId, history, initialWorkspaceTabId, 
         tone: isPaused ? 'success' : 'secondary',
         hidden: !showLiveControls,
         disabled: (!isRunning && !isPaused) || isStopping,
-        onClick: () => { void (isPaused ? onResume() : onPause()) },
+        onClick: () => {
+          void (isPaused
+            ? topbarActionHandlers.current.onResume()
+            : topbarActionHandlers.current.onPause())
+        },
       },
       {
         id: 'stop-test',
@@ -378,7 +403,7 @@ export default function TestExecution({ testId, history, initialWorkspaceTabId, 
         tone: 'secondary',
         hidden: !showLiveControls,
         disabled: isStopping,
-        onClick: () => { void onStop() },
+        onClick: () => { void topbarActionHandlers.current.onStop() },
       },
       {
         id: 'abort',
@@ -388,7 +413,7 @@ export default function TestExecution({ testId, history, initialWorkspaceTabId, 
         hidden: !showLiveControls,
         // Abort stays enabled during STOPPING so a wedged graceful stop can be escalated.
         disabled: false,
-        onClick: () => { void onAbort() },
+        onClick: () => { void topbarActionHandlers.current.onAbort() },
       },
     ],
   }) : null, [
@@ -400,7 +425,6 @@ export default function TestExecution({ testId, history, initialWorkspaceTabId, 
     isPaused,
     isRunning,
     isStopping,
-    onBack,
     rampInputMissing,
     remainingSeconds,
     showArchiveDownload,

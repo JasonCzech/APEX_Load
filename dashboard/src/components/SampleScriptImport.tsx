@@ -534,7 +534,7 @@ export default function SampleScriptImport({ initialFiles, projectId, onImported
       const allowMultiple = target === 'primary' ? supportsMultiPrimary(format) : supportsMultiSecondary(format)
       void handleFilesLoad(allowMultiple ? files : [files[0]], target)
     })
-  }, [format])
+  }, [format, handleFilesLoad])
   const handleNativePrimaryPaths = useCallback((paths: string[]) => handleNativeSamplePaths(paths, 'primary'), [handleNativeSamplePaths])
   const handleNativeSecondaryPaths = useCallback((paths: string[]) => handleNativeSamplePaths(paths, 'secondary'), [handleNativeSamplePaths])
   useDesktopFileDrop(primaryDropRef, handleNativePrimaryPaths, desktop)
@@ -556,7 +556,7 @@ export default function SampleScriptImport({ initialFiles, projectId, onImported
     } else {
       secondaryFileRef.current?.click()
     }
-  }, [format, nativeDialogs])
+  }, [format, handleFilesLoad, nativeDialogs])
 
   const buildScriptWithOptions = (baseScript?: ScriptDefinition) => {
     const script = JSON.parse(JSON.stringify(baseScript || {})) as ScriptDefinition

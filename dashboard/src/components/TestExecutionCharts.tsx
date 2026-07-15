@@ -1944,9 +1944,6 @@ export default function TestExecutionCharts({
                 <tr
                   key={row.key}
                   className={`metric-row${visible ? '' : ' muted'}${selected ? ' selected' : ''}`}
-                  aria-selected={selected}
-                  title="Click to highlight this line"
-                  onClick={() => toggleSelectedMetric(chart.id, row.key)}
                 >
                   {canFilter && (
                     <td className="metric-filter-col" onClick={event => event.stopPropagation()}>
@@ -1960,10 +1957,16 @@ export default function TestExecutionCharts({
                     </td>
                   )}
                   <td>
-                    <span className="chart-metric-name">
+                    <button
+                      type="button"
+                      className="chart-metric-name"
+                      aria-pressed={selected}
+                      title="Highlight this line"
+                      onClick={() => toggleSelectedMetric(chart.id, row.key)}
+                    >
                       <span className="dot" style={{ background: row.color }}></span>
                       <span>{row.label}</span>
-                    </span>
+                    </button>
                   </td>
                   <td>{formatMetricValue(summary.latest, row.unit)}</td>
                   <td>{formatMetricValue(summary.average, row.unit)}</td>

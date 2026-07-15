@@ -143,6 +143,34 @@ describe('BrowserReplayProgress', () => {
     }), [expect.objectContaining({ action_name: 'Click' })])
   })
 
+  it('includes the final event when event and completion messages arrive in one React batch', async () => {
+    const onComplete = vi.fn()
+    await act(async () => {
+      root.render(<BrowserReplayProgress replaySessionId="rep-batched" onComplete={onComplete} />)
+    })
+
+    await act(async () => {
+      lastOnMessage?.({
+        type: 'browser_replay_event',
+        replay_session_id: 'rep-batched',
+        event: {
+          event_index: 0,
+          action_name: 'Final click',
+          action_type: 'browser_click',
+          success: true,
+          started_at: '2026-06-22T00:00:00Z',
+          completed_at: '2026-06-22T00:00:01Z',
+        },
+      } as any)
+      lastOnMessage?.({ type: 'browser_replay_completed', replay_session_id: 'rep-batched' } as any)
+    })
+
+    expect(onComplete).toHaveBeenCalledWith(
+      expect.objectContaining({ events: [expect.objectContaining({ action_name: 'Final click' })] }),
+      [expect.objectContaining({ action_name: 'Final click' })],
+    )
+  })
+
   it('accepts and rejects replay repair suggestions', async () => {
     const onApplySuggestion = vi.fn()
     await act(async () => {

@@ -1610,6 +1610,97 @@ describe('RecordingStudio', () => {
     expect(container.querySelector('#recording-proxy-setup-steps')).not.toBeNull()
   })
 
+  it('starts the new project refresh immediately and ignores the previous project response', async () => {
+    let resolveOld!: (value: { sessions: any[] }) => void
+    const oldRequest = new Promise<{ sessions: any[] }>(resolve => {
+      resolveOld = resolve
+    })
+    apiMock.listRecordings.mockImplementation((projectId?: string) => {
+      if (projectId === 'proj-1') return oldRequest
+      return Promise.resolve({
+        sessions: [{
+          id: 'rec-new',
+          name: 'New Project Capture',
+          status: 'stopped',
+          started_at: '2026-05-12T20:00:00Z',
+          requests: [],
+          filters: { exclude_static: true },
+        }],
+      })
+    })
+
+    await act(async () => {
+      root.render(<RecordingStudio activeProject={{ id: 'proj-1', name: 'Old' } as any} />)
+      await Promise.resolve()
+    })
+    await act(async () => {
+      root.render(<RecordingStudio activeProject={{ id: 'proj-2', name: 'New' } as any} />)
+    })
+    await flushPromises()
+
+    expect(apiMock.listRecordings).toHaveBeenCalledWith('proj-2')
+    expect(container.textContent).toContain('New Project Capture')
+
+    await act(async () => {
+      resolveOld({
+        sessions: [{
+          id: 'rec-old',
+          name: 'Old Project Capture',
+          status: 'stopped',
+          started_at: '2026-05-12T20:00:00Z',
+          requests: [],
+          filters: { exclude_static: true },
+        }],
+      })
+      await Promise.resolve()
+    })
+    expect(container.textContent).toContain('New Project Capture')
+    expect(container.textContent).not.toContain('Old Project Capture')
+  })
+
+  it('ignores a recorder action that completes after the active project changes', async () => {
+    let resolveStart!: (value: { session: any; proxy_addr: string; ca_cert_path: string }) => void
+    const startRequest = new Promise<{ session: any; proxy_addr: string; ca_cert_path: string }>(resolve => {
+      resolveStart = resolve
+    })
+    apiMock.startRecording.mockImplementationOnce(() => startRequest)
+
+    await act(async () => {
+      root.render(<RecordingStudio activeProject={{ id: 'proj-1', name: 'Old' } as any} />)
+    })
+    await flushPromises()
+    await openProxyAdvanced(container)
+    const startButton = Array.from(container.querySelectorAll('button'))
+      .find(button => button.textContent?.trim() === 'Start Recording')
+    expect(startButton).toBeDefined()
+    await act(async () => {
+      startButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await act(async () => {
+      root.render(<RecordingStudio activeProject={{ id: 'proj-2', name: 'New' } as any} />)
+    })
+    await flushPromises()
+    await act(async () => {
+      resolveStart({
+        session: {
+          id: 'rec-old-project',
+          name: 'Old Project Recording',
+          status: 'recording',
+          started_at: '2026-05-12T20:00:00Z',
+          requests: [],
+          filters: { exclude_static: true },
+        },
+        proxy_addr: ':8081',
+        ca_cert_path: 'artifacts/recorder/ca-cert.pem',
+      })
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).not.toContain('Old Project Recording')
+    expect(container.textContent).toContain('New Recording')
+  })
+
   it('does not offer install as a fix for no-display Docker controllers', async () => {
     apiMock.getRecorderStatus.mockResolvedValue({
       proxy_addr: ':8081',

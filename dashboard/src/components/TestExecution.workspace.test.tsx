@@ -278,6 +278,22 @@ describe('TestExecution workspace layout', () => {
     expect(runningActions.onPause).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps the topbar registration stable while invoking the latest action callbacks', async () => {
+    const queuedTest = makeTest('QUEUED')
+    configureHooks(queuedTest)
+    await renderExecution()
+    const firstActions = latestActionBridge()
+
+    configureHooks(queuedTest)
+    await renderExecution()
+    const latestActions = latestActionBridge()
+
+    await clickTopbarButton('Start Test')
+
+    expect(firstActions.onStart).not.toHaveBeenCalled()
+    expect(latestActions.onStart).toHaveBeenCalledTimes(1)
+  })
+
   it('routes completed archive tabs to their dedicated archive views', async () => {
     configureHooks(makeTest('COMPLETE', {
       archive: {

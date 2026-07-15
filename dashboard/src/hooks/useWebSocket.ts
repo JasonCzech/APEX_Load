@@ -33,6 +33,21 @@ export function useWebSocket({ testId, projectId, enabled = true, onMessage, onO
   onMessageRef.current = onMessage
   const onOpenRef = useRef(onOpen)
   onOpenRef.current = onOpen
+  const connectionScopeKey = [
+    enabled ? 'enabled' : 'disabled',
+    testId || '',
+    projectId || '',
+    bridge?.origin || '',
+    bridge?.session_id || '',
+    bridge?.token || '',
+  ].join('\u0000')
+  const connectionScopeRef = useRef({ key: connectionScopeKey, generation: 0 })
+  if (connectionScopeRef.current.key !== connectionScopeKey) {
+    connectionScopeRef.current = {
+      key: connectionScopeKey,
+      generation: connectionScopeRef.current.generation + 1,
+    }
+  }
 
   const connect = useCallback(() => {
     // The hook may have been disabled (or torn down) between scheduling and
@@ -51,10 +66,14 @@ export function useWebSocket({ testId, projectId, enabled = true, onMessage, onO
     const url = bridge && !testId ? bridgeWsUrl(bridge, path) : wsUrl(path)
 
     setConnectionState('connecting')
+    const connectionGeneration = connectionScopeRef.current.generation
     const ws = new WebSocket(url)
     wsRef.current = ws
+    const isCurrentConnection = () => connectionScopeRef.current.generation === connectionGeneration
+      && wsRef.current === ws
 
     ws.onopen = () => {
+      if (!isCurrentConnection()) return
       setConnectionState('connected')
       if (reconnectTimer.current) {
         clearTimeout(reconnectTimer.current)
@@ -64,6 +83,7 @@ export function useWebSocket({ testId, projectId, enabled = true, onMessage, onO
     }
 
     ws.onmessage = (event) => {
+      if (!isCurrentConnection()) return
       try {
         const msg: WSMessage = JSON.parse(event.data)
         onMessageRef.current?.(msg)
@@ -73,10 +93,11 @@ export function useWebSocket({ testId, projectId, enabled = true, onMessage, onO
     }
 
     ws.onclose = () => {
-      setConnectionState('disconnected')
       if (wsRef.current === ws) {
         wsRef.current = null
       }
+      if (connectionScopeRef.current.generation !== connectionGeneration) return
+      setConnectionState('disconnected')
       if (!shouldReconnectRef.current) return
       reconnectTimer.current = window.setTimeout(() => {
         if (shouldReconnectRef.current) connect()
@@ -110,6 +131,9 @@ export function useWebSocket({ testId, projectId, enabled = true, onMessage, onO
       wsRef.current = null
       if (ws) {
         ws.onclose = null
+        ws.onopen = null
+        ws.onmessage = null
+        ws.onerror = null
         ws.close()
       }
     }

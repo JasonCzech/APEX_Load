@@ -89,6 +89,19 @@ describe('dev preview API headers', () => {
     expect(buildDevPreviewHeaders()['X-APEXLoad-Dev-View']).toBe('user')
   })
 
+  it('keeps API header construction usable when browser storage is blocked', () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('Storage disabled', 'SecurityError')
+    })
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('Storage disabled', 'SecurityError')
+    })
+
+    expect(() => writeStoredDevViewMode('user')).not.toThrow()
+    expect(readStoredDevViewMode()).toBe('admin')
+    expect(buildDevPreviewHeaders()).toEqual({ 'X-APEXLoad-Dev-View': 'admin' })
+  })
+
   it('attaches preview headers to FormData and blob-style fetches without forcing JSON content type', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', {
       status: 200,

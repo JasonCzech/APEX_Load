@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { useWebSocket } from '../hooks/useWebSocket'
 import { type BrowserRecorderBridgeConnection } from '../hooks/api/browserRecorderBridge'
@@ -38,19 +38,19 @@ export default function BrowserReplayProgress({ replaySessionId, projectId, onDi
   const eventsRef = useRef<BrowserReplayEvent[]>([])
   const completedRef = useRef(false)
 
-  const clearInactivityTimer = () => {
+  const clearInactivityTimer = useCallback(() => {
     if (timeoutRef.current !== null) {
       window.clearTimeout(timeoutRef.current)
       timeoutRef.current = null
     }
-  }
+  }, [])
 
-  const armInactivityTimer = () => {
+  const armInactivityTimer = useCallback(() => {
     clearInactivityTimer()
     timeoutRef.current = window.setTimeout(() => {
       setInactive(true)
     }, 30000)
-  }
+  }, [clearInactivityTimer])
 
   useEffect(() => {
     setEvents([])
@@ -63,9 +63,9 @@ export default function BrowserReplayProgress({ replaySessionId, projectId, onDi
     completedRef.current = false
     armInactivityTimer()
     return clearInactivityTimer
-  }, [replaySessionId])
+  }, [armInactivityTimer, clearInactivityTimer, replaySessionId])
 
-  const complete = (nextPhase: TerminalPhase, nextReport: BrowserReplayReport | null) => {
+  const complete = useCallback((nextPhase: TerminalPhase, nextReport: BrowserReplayReport | null) => {
     if (completedRef.current) return
     completedRef.current = true
     clearInactivityTimer()
@@ -73,9 +73,9 @@ export default function BrowserReplayProgress({ replaySessionId, projectId, onDi
     setPhase(nextPhase)
     if (nextReport) setReport(nextReport)
     onComplete?.(nextReport, eventsRef.current.filter(Boolean))
-  }
+  }, [clearInactivityTimer, onComplete])
 
-  const reportFromMessage = (msg: WSMessage, nextPhase: TerminalPhase): BrowserReplayReport | null => {
+  const reportFromMessage = useCallback((msg: WSMessage, nextPhase: TerminalPhase): BrowserReplayReport | null => {
     if (isBrowserReplayReport(msg.report)) return msg.report
     const sessionReport = typeof msg.session === 'object' && msg.session !== null
       ? (msg.session as { report?: unknown }).report
@@ -94,10 +94,10 @@ export default function BrowserReplayProgress({ replaySessionId, projectId, onDi
       success: nextPhase === 'completed' && currentEvents.every(event => event.success),
       events: currentEvents,
     }
-  }
+  }, [replaySessionId])
 
-  const handleMessage = useMemo(
-    () => (msg: WSMessage) => {
+  const handleMessage = useCallback(
+    (msg: WSMessage) => {
       if (msg.replay_session_id !== replaySessionId) return
       if (completedRef.current) return
       armInactivityTimer()
@@ -105,13 +105,13 @@ export default function BrowserReplayProgress({ replaySessionId, projectId, onDi
       if (msg.type === 'browser_replay_event' && msg.event) {
         if (!isBrowserReplayEvent(msg.event)) return
         const event = msg.event
-        setEvents(prev => {
-          const idx = event.event_index ?? prev.length
-          const next = prev.slice()
-          next[idx] = event
-          eventsRef.current = next.filter(Boolean)
-          return next
-        })
+        const idx = event.event_index ?? eventsRef.current.length
+        const next = eventsRef.current.slice()
+        next[idx] = event
+        // Update the ref before scheduling React state so a terminal WebSocket
+        // message in the same batch includes the final event in its report.
+        eventsRef.current = next
+        setEvents(next)
       } else if (msg.type === 'browser_replay_completed') {
         complete('completed', reportFromMessage(msg, 'completed'))
       } else if (msg.type === 'browser_replay_failed') {
@@ -120,7 +120,7 @@ export default function BrowserReplayProgress({ replaySessionId, projectId, onDi
         complete('stopped', reportFromMessage(msg, 'stopped'))
       }
     },
-    [replaySessionId, onComplete],
+    [armInactivityTimer, complete, replaySessionId, reportFromMessage],
   )
 
   useWebSocket({ projectId, onMessage: handleMessage, bridge })

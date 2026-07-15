@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, type MouseEvent } from 'react'
+import { useState, useEffect, useCallback, useLayoutEffect, useRef, type MouseEvent } from 'react'
 import { downloadBlob, downloadFilenameFromDisposition } from '../utils/fileUtils'
 import { useAsyncTask } from '../hooks/useAsyncTask'
 import { useApi } from '../hooks/useApi'
@@ -438,7 +438,20 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
   const [recordingAgentChecksumStatus, setRecordingAgentChecksumStatus] = useState('')
   const convertTask = useAsyncTask<RecorderImportResult>()
   const salesforceTask = useAsyncTask<SalesforceImportResult>()
-  const refreshInFlightRef = useRef(false)
+  const resetConvertTask = convertTask.reset
+  const resetSalesforceTask = salesforceTask.reset
+  const refreshInFlightRef = useRef<{ projectId?: string; request: Promise<void> } | null>(null)
+  const refreshScopeRef = useRef({ projectId: activeProject?.id, generation: 0 })
+  const feedbackTimerRef = useRef<number | null>(null)
+
+  if (refreshScopeRef.current.projectId !== activeProject?.id) {
+    refreshScopeRef.current = {
+      projectId: activeProject?.id,
+      generation: refreshScopeRef.current.generation + 1,
+    }
+  }
+  const renderedProjectScope = refreshScopeRef.current
+  const isCurrentProject = () => refreshScopeRef.current === renderedProjectScope
   const activeSessionRef = useRef<RecordingSession | null>(null)
 
   const proxyPort = recorderProxyPort(proxyAddr)
@@ -633,20 +646,30 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
   const showFeedback = (msg: string, type: 'success' | 'error' = 'success') => {
     setFeedback(msg)
     setFeedbackType(type)
-    setTimeout(() => setFeedback(''), 4000)
+    if (feedbackTimerRef.current !== null) window.clearTimeout(feedbackTimerRef.current)
+    feedbackTimerRef.current = window.setTimeout(() => {
+      feedbackTimerRef.current = null
+      setFeedback('')
+    }, 4000)
   }
 
   const refresh = useCallback(async () => {
-    if (refreshInFlightRef.current) return
+    const projectId = activeProject?.id
+    const inFlight = refreshInFlightRef.current
+    if (inFlight && inFlight.projectId === projectId) return inFlight.request
     if (typeof document !== 'undefined' && document.hidden) return
-    refreshInFlightRef.current = true
-    try {
-      const [listRes, statusRes, browserListRes] = await Promise.all([
-        api.listRecordings(activeProject?.id),
-        api.getRecorderStatus(),
-        api.listBrowserRecordings(activeProject?.id).catch(() => ({ sessions: [], count: 0 })),
-      ])
-      const recorderStatus = statusRes as RecorderStatus
+    const scope = { ...refreshScopeRef.current }
+    const isCurrentScope = () => refreshScopeRef.current.projectId === scope.projectId
+      && refreshScopeRef.current.generation === scope.generation
+    const request = (async () => {
+      try {
+        const [listRes, statusRes, browserListRes] = await Promise.all([
+          api.listRecordings(projectId),
+          api.getRecorderStatus(),
+          api.listBrowserRecordings(projectId).catch(() => ({ sessions: [], count: 0 })),
+        ])
+        if (!isCurrentScope()) return
+        const recorderStatus = statusRes as RecorderStatus
       setSessions(listRes.sessions || [])
       setBrowserSessions(browserListRes.sessions || [])
       setProxyAddr(recorderStatus.proxy_addr || '')
@@ -655,6 +678,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
       if (api.browserRecorderBridge) {
         try {
           const bridgeRes = await api.getBrowserRecorderBridgeStatus()
+          if (!isCurrentScope()) return
           if (bridgeRes?.bridge) {
             setBrowserAvailability(bridgeRes.bridge.availability)
             setInstallState(null)
@@ -662,6 +686,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
             setBridgeStatus(`Connected to ${api.browserRecorderBridge.origin}`)
           }
         } catch (e: any) {
+          if (!isCurrentScope()) return
           setBrowserAvailability({ available: false, reason: bridgePairingErrorMessage(e, api.browserRecorderBridge.origin) })
           setBridgeStatus('Local recording bridge is not responding')
         }
@@ -684,21 +709,46 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
         // filters those out, so an incremental fetch would leave the UI copy
         // permanently stale until the session is re-selected.
         const full = await api.getRecording(recorderStatus.active.id, { includeRequests: true })
+        if (!isCurrentScope()) return
         setActiveSession(prev => mergeRecordingSession(prev, full))
       } else {
         setActiveSession(null)
       }
-    } catch { /* API not ready */ }
-    finally {
-      refreshInFlightRef.current = false
+      } catch { /* API not ready */ }
+    })()
+    refreshInFlightRef.current = { projectId, request }
+    try {
+      await request
+    } finally {
+      if (refreshInFlightRef.current?.request === request) refreshInFlightRef.current = null
     }
   }, [api, activeProject?.id])
 
+  useLayoutEffect(() => {
+    if (feedbackTimerRef.current !== null) {
+      window.clearTimeout(feedbackTimerRef.current)
+      feedbackTimerRef.current = null
+    }
+    setSessions([])
+    setActiveSession(null)
+    setSelectedSession(null)
+    setSelectedRequest(null)
+    setBrowserSessions([])
+    setBrowserPanelSessionId(null)
+    setFeedback('')
+    resetConvertTask()
+    resetSalesforceTask()
+  }, [activeProject?.id, resetConvertTask, resetSalesforceTask])
+
   useEffect(() => {
-    refresh()
+    void refresh()
     const interval = setInterval(refresh, 2000)
     return () => clearInterval(interval)
   }, [refresh])
+
+  useEffect(() => () => {
+    if (feedbackTimerRef.current !== null) window.clearTimeout(feedbackTimerRef.current)
+  }, [])
 
   useEffect(() => {
     if (!selectedRequest) return
@@ -820,20 +870,23 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
           ? browserExcludeHosts.split(',').map(h => h.trim()).filter(Boolean)
           : undefined,
       })
+      if (!isCurrentProject()) return
       const sessionId = res.session.id
       setBrowserPanelSessionId(sessionId)
       const panelURL = browserRecorderPanelURL(sessionId)
       if (!isWailsShell()) {
         try {
           await api.openBrowserRecordingControlPanel(sessionId, panelURL)
+          if (!isCurrentProject()) return
           showFeedback('Recording browser launched — control panel opened beside it')
         } catch {
+          if (!isCurrentProject()) return
           // Older agents/controllers do not expose the same-browser companion
           // tab endpoint. Keep the separate popup as a fallback.
           window.open(
             panelURL,
             'apexload-browser-recorder',
-            'width=440,height=760',
+            'width=440,height=760,noopener,noreferrer',
           )
           showFeedback('Recording browser launched — interact with the page, then stop from the control panel')
         }
@@ -841,7 +894,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
         showFeedback('Recording browser launched — interact with the page, then stop from the control panel')
       }
     } catch (e: any) {
-      showFeedback(e.message, 'error')
+      if (isCurrentProject()) showFeedback(e.message, 'error')
     }
   }
 
@@ -857,14 +910,15 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
     }
     try {
       await api.deleteBrowserRecording(session.id)
+      if (!isCurrentProject()) return
       if (browserPanelSessionId === session.id) {
         setBrowserPanelSessionId(null)
       }
       setBrowserSessions(prev => prev.filter(item => item.id !== session.id))
       showFeedback(`Deleted browser recording "${session.name}"`)
-      refresh()
+      void refresh()
     } catch (e: any) {
-      showFeedback(e.message, 'error')
+      if (isCurrentProject()) showFeedback(e.message, 'error')
     }
   }
 
@@ -883,10 +937,11 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
         data.exclude_hosts = excludeHosts.split(',').map((h: string) => h.trim()).filter(Boolean)
       }
       const res = await api.startRecording(data)
+      if (!isCurrentProject()) return
       setActiveSession(res.session)
       showFeedback('Recording started — configure your browser proxy and navigate the target site')
     } catch (e: any) {
-      showFeedback(e.message, 'error')
+      if (isCurrentProject()) showFeedback(e.message, 'error')
     }
   }
 
@@ -894,11 +949,12 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
     if (!activeSession) return
     try {
       await api.stopRecording(activeSession.id)
+      if (!isCurrentProject()) return
       showFeedback(`Recording stopped — ${activeSession.request_count ?? activeSession.requests?.length ?? 0} requests captured`)
       setActiveSession(null)
-      refresh()
+      void refresh()
     } catch (e: any) {
-      showFeedback(e.message, 'error')
+      if (isCurrentProject()) showFeedback(e.message, 'error')
     }
   }
 
@@ -908,10 +964,11 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
       const next = activeSession.status === 'paused'
         ? await api.resumeRecording(activeSession.id)
         : await api.pauseRecording(activeSession.id)
+      if (!isCurrentProject()) return
       setActiveSession(next)
       showFeedback(next.status === 'paused' ? 'Recording paused' : 'Recording resumed')
     } catch (e: any) {
-      showFeedback(e.message, 'error')
+      if (isCurrentProject()) showFeedback(e.message, 'error')
     }
   }
 
@@ -943,18 +1000,20 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
     }
     try {
       const full = await api.getRecording(session.id, { includeRequests: true })
+      if (!isCurrentProject()) return
       setSelectedSession({ ...full, requests: full.requests || [] })
     } catch {
-      setSelectedSession(session)
+      if (isCurrentProject()) setSelectedSession(session)
     }
   }
 
   const handleToggleRequestExcluded = async (session: RecordingSession, req: RecordedRequest) => {
     try {
       const updated = await api.updateRecordedRequest(session.id, req.seq, { excluded: !req.excluded })
+      if (!isCurrentProject()) return
       replaceRequest(session.id, updated)
     } catch (e: any) {
-      showFeedback(e.message, 'error')
+      if (isCurrentProject()) showFeedback(e.message, 'error')
     }
   }
 
@@ -962,10 +1021,11 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
     if (!selectedSession || !selectedRequest) return
     try {
       const updated = await api.updateRecordedRequest(selectedSession.id, selectedRequest.seq, requestDraft)
+      if (!isCurrentProject()) return
       replaceRequest(selectedSession.id, updated)
       showFeedback(`Request #${updated.seq} updated`)
     } catch (e: any) {
-      showFeedback(e.message, 'error')
+      if (isCurrentProject()) showFeedback(e.message, 'error')
     }
   }
 
@@ -975,25 +1035,28 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
         () => api.previewRecordingConversion(session.id, session.name, parameterizeInputs),
         { clearValue: true },
       )
+      if (!isCurrentProject()) return
       showFeedback(`Preview generated with ${result.script?.actions?.length || 0} actions and ${result.correlations?.length || 0} correlations`)
     } catch (e: any) {
-      showFeedback(e.message, 'error')
+      if (isCurrentProject()) showFeedback(e.message, 'error')
     }
   }
 
   const handleExportHAR = async (session: RecordingSession) => {
     try {
       const res = await apiFetch(`/recorder/${session.id}/export?format=har`)
+      if (!isCurrentProject()) return
       if (!res.ok) {
         const payload = await res.json().catch(() => ({ error: 'Failed to export HAR' }))
         throw new Error(payload.error || 'Failed to export HAR')
       }
       const blob = await res.blob()
+      if (!isCurrentProject()) return
       const safeName = safeRecordingFileName(session.name)
       downloadBlob(blob, `${safeName}.har`)
       showFeedback(`Exported "${session.name}" as HAR`)
     } catch (e: any) {
-      showFeedback(e.message, 'error')
+      if (isCurrentProject()) showFeedback(e.message, 'error')
     }
   }
 
@@ -1013,9 +1076,10 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
           project_id: activeProject?.id,
         })
       }, { clearValue: true })
+      if (!isCurrentProject()) return
       showFeedback(`Salesforce HTTP draft generated with ${result.script?.actions?.length || 0} actions`)
     } catch (e: any) {
-      showFeedback(e.message, 'error')
+      if (isCurrentProject()) showFeedback(e.message, 'error')
     }
   }
 
@@ -1025,9 +1089,10 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
         () => api.convertRecording(session.id, session.name, parameterizeInputs),
         { clearValue: true },
       )
+      if (!isCurrentProject()) return
       showFeedback(`Script "${result.script?.name || session.name}" created with ${result.correlations?.length || 0} correlations detected`)
     } catch (e: any) {
-      showFeedback(e.message, 'error')
+      if (isCurrentProject()) showFeedback(e.message, 'error')
     }
   }
 
@@ -1065,10 +1130,11 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
         return
       }
       const savedScript = await api.createScript(script, activeProject?.id)
+      if (!isCurrentProject()) return
       showFeedback(`Script "${script.name}" created with ${convertTask.value?.correlations?.length || 0} correlations detected`)
       onImported?.({ scripts: [withFallbackPersistedScript(savedScript, script)] })
     } catch (e: any) {
-      showFeedback(e.message, 'error')
+      if (isCurrentProject()) showFeedback(e.message, 'error')
     }
   }
 
@@ -1086,10 +1152,11 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
     }
     try {
       const savedScript = await api.createScript(script, activeProject?.id)
+      if (!isCurrentProject()) return
       showFeedback(`Salesforce HTTP script "${script.name}" saved to the script library`)
       onImported?.({ scripts: [withFallbackPersistedScript(savedScript, script)] })
     } catch (e: any) {
-      showFeedback(e.message, 'error')
+      if (isCurrentProject()) showFeedback(e.message, 'error')
     }
   }
 
@@ -1099,10 +1166,11 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
     }
     try {
       await api.deleteRecording(id)
+      if (!isCurrentProject()) return
       if (selectedSession?.id === id) setSelectedSession(null)
-      refresh()
+      void refresh()
     } catch (e: any) {
-      showFeedback(e.message, 'error')
+      if (isCurrentProject()) showFeedback(e.message, 'error')
     }
   }
 

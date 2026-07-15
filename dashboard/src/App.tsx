@@ -43,6 +43,7 @@ import {
 import { NavigationGuardProvider, useNavigationGuardRunner } from './hooks/NavigationGuardProvider'
 import { isEffectiveOperationAllowed } from './utils/authAccessUtils'
 import { isRunReportEnabled } from './utils/featureFlags'
+import { readStoredString, removeStoredItem, writeStoredString } from './utils/browserStorage'
 import { DesktopStatusResponse } from './types/library'
 import { getDesktopBridge, isDesktopSurface, isMacDesktop } from './desktop/desktopBridge'
 import { useDesktopNotifications } from './hooks/useDesktopNotifications'
@@ -935,9 +936,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
 
   const setActiveDomain = useCallback((domain: import('./types').Domain) => {
     setActiveDomainState(domain)
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem('apexload.activeDomainId', domain.id)
-    }
+    writeStoredString('apexload.activeDomainId', domain.id)
   }, [])
 
   const refreshDomains = useCallback(async (preferredId?: string) => {
@@ -946,19 +945,14 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
       const next = response.domains || []
       setDomains(next)
       setActiveDomainState(prev => {
-        const storedId = typeof window !== 'undefined' ? window.localStorage.getItem('apexload.activeDomainId') : ''
+        const storedId = readStoredString('apexload.activeDomainId')
         const selected = next.find(domain => domain.id === preferredId)
           || next.find(domain => domain.id === storedId)
           || next.find(domain => domain.id === prev?.id)
           || next[0]
           || null
-        if (typeof window !== 'undefined') {
-          if (selected) {
-            window.localStorage.setItem('apexload.activeDomainId', selected.id)
-          } else {
-            window.localStorage.removeItem('apexload.activeDomainId')
-          }
-        }
+        if (selected) writeStoredString('apexload.activeDomainId', selected.id)
+        else removeStoredItem('apexload.activeDomainId')
         return selected
       })
       return next
@@ -971,9 +965,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
       }
       setDomains([fallback])
       setActiveDomainState(fallback)
-      if (typeof window !== 'undefined') {
-        window.localStorage.setItem('apexload.activeDomainId', fallback.id)
-      }
+      writeStoredString('apexload.activeDomainId', fallback.id)
       return [fallback]
     }
   }, [repositoryApi])

@@ -30,8 +30,8 @@ class MockWebSocket {
   }
 }
 
-function Harness({ projectId, bridge, onOpen }: { projectId?: string; bridge?: any; onOpen?: () => void }) {
-  const { connected, connectionState } = useWebSocket({ projectId, bridge, onOpen })
+function Harness({ projectId, bridge, onOpen, onMessage }: { projectId?: string; bridge?: any; onOpen?: () => void; onMessage?: (message: any) => void }) {
+  const { connected, connectionState } = useWebSocket({ projectId, bridge, onOpen, onMessage })
 
   return (
     <div
@@ -224,5 +224,29 @@ describe('useWebSocket', () => {
 
     expect(MockWebSocket.instances).toHaveLength(1)
     expect(MockWebSocket.instances[0]?.url).toContain('project_id=resolved-project')
+  })
+
+  it('drops already-queued messages from the previous project socket', async () => {
+    const onMessage = vi.fn()
+    await act(async () => {
+      root.render(<Harness projectId="project-1" onMessage={onMessage} />)
+    })
+    await openSocket()
+    const oldMessageHandler = MockWebSocket.instances[0]?.onmessage
+
+    await act(async () => {
+      root.render(<Harness projectId="project-2" onMessage={onMessage} />)
+    })
+    await act(async () => {
+      oldMessageHandler?.(new MessageEvent('message', { data: JSON.stringify({ type: 'test_update', test_id: 'old-test' }) }))
+    })
+    expect(onMessage).not.toHaveBeenCalled()
+
+    flushDebounce()
+    const currentSocket = MockWebSocket.instances[1]
+    await act(async () => {
+      currentSocket?.onmessage?.(new MessageEvent('message', { data: JSON.stringify({ type: 'test_update', test_id: 'new-test' }) }))
+    })
+    expect(onMessage).toHaveBeenCalledWith(expect.objectContaining({ test_id: 'new-test' }))
   })
 })

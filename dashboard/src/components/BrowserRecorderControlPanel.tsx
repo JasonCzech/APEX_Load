@@ -121,7 +121,8 @@ export default function BrowserRecorderControlPanel({
   onDismiss,
 }: BrowserRecorderControlPanelProps) {
   const api = useApi()
-  const [session, setSession] = useState<BrowserRecorderSession | null>(null)
+  const [loadedSession, setSession] = useState<BrowserRecorderSession | null>(null)
+  const session = loadedSession?.id === sessionId ? loadedSession : null
   const [loadError, setLoadError] = useState('')
   const [scriptName, setScriptName] = useState('')
   const [preview, setPreview] = useState<RecorderImportResult | null>(null)
@@ -141,31 +142,57 @@ export default function BrowserRecorderControlPanel({
   const [replaySessionId, setReplaySessionId] = useState<string | null>(null)
   const [lastVerifyReport, setLastVerifyReport] = useState<BrowserReplayReport | null>(null)
   const [stepSearch, setStepSearch] = useState('')
-  const refreshInFlightRef = useRef(false)
+  const refreshInFlightRef = useRef<{ sessionId: string; request: Promise<void> } | null>(null)
+  const sessionScopeRef = useRef({ sessionId, generation: 0 })
+  const feedbackTimerRef = useRef<number | null>(null)
+
+  if (sessionScopeRef.current.sessionId !== sessionId) {
+    sessionScopeRef.current = {
+      sessionId,
+      generation: sessionScopeRef.current.generation + 1,
+    }
+  }
+  const renderedSessionScope = sessionScopeRef.current
+  const isCurrentSession = () => sessionScopeRef.current === renderedSessionScope
 
   const showFeedback = (msg: string, type: 'success' | 'error' = 'success') => {
     setFeedback(msg)
     setFeedbackType(type)
-    setTimeout(() => setFeedback(''), 4000)
+    if (feedbackTimerRef.current !== null) window.clearTimeout(feedbackTimerRef.current)
+    feedbackTimerRef.current = window.setTimeout(() => {
+      feedbackTimerRef.current = null
+      setFeedback('')
+    }, 4000)
   }
 
   const refresh = useCallback(async () => {
-    if (refreshInFlightRef.current) return
-    refreshInFlightRef.current = true
+    const inFlight = refreshInFlightRef.current
+    if (inFlight?.sessionId === sessionId) return inFlight.request
+    const scope = { ...sessionScopeRef.current }
+    const request = (async () => {
+      try {
+        const res = await api.getBrowserRecording(sessionId)
+        if (sessionScopeRef.current.sessionId !== scope.sessionId || sessionScopeRef.current.generation !== scope.generation) return
+        setSession(res.session)
+        setLoadError('')
+      } catch (e: any) {
+        if (sessionScopeRef.current.sessionId !== scope.sessionId || sessionScopeRef.current.generation !== scope.generation) return
+        setLoadError(e.message || 'Failed to load browser recording session')
+      }
+    })()
+    refreshInFlightRef.current = { sessionId, request }
     try {
-      const res = await api.getBrowserRecording(sessionId)
-      setSession(res.session)
-      setLoadError('')
-    } catch (e: any) {
-      setLoadError(e.message || 'Failed to load browser recording session')
+      await request
     } finally {
-      refreshInFlightRef.current = false
+      if (refreshInFlightRef.current?.request === request) refreshInFlightRef.current = null
     }
   }, [api, sessionId])
 
   const loadSuggestions = useCallback(async () => {
+    const scope = { ...sessionScopeRef.current }
     try {
       const res = await api.suggestBrowserRecordingTransactions(sessionId)
+      if (sessionScopeRef.current.sessionId !== scope.sessionId || sessionScopeRef.current.generation !== scope.generation) return
       setSuggestions(res.suggestions || [])
     } catch {
       /* suggestions are best-effort */
@@ -173,8 +200,35 @@ export default function BrowserRecorderControlPanel({
   }, [api, sessionId])
 
   useEffect(() => {
-    refresh()
-  }, [refresh])
+    if (feedbackTimerRef.current !== null) {
+      window.clearTimeout(feedbackTimerRef.current)
+      feedbackTimerRef.current = null
+    }
+    setSession(null)
+    setLoadError('')
+    setScriptName('')
+    setPreview(null)
+    setSalesforceDraft(null)
+    setSavedScript(null)
+    setSuggestions([])
+    setReplaySessionId(null)
+    setLastVerifyReport(null)
+    setStepSearch('')
+    setBusy(false)
+    setFeedback('')
+    setNavigateScheme(DEFAULT_HTTP_URL_SCHEME)
+    setNavigateAddress('')
+    setTransactionName('')
+    setNoteText('')
+    setSplitAtTransactions(false)
+    setAlsoCreateHTTP(false)
+    setParameterizeInputs(false)
+    void refresh()
+  }, [refresh, sessionId])
+
+  useEffect(() => () => {
+    if (feedbackTimerRef.current !== null) window.clearTimeout(feedbackTimerRef.current)
+  }, [])
 
   const live = !!session && LIVE_STATUSES.has(session.status)
 
@@ -191,9 +245,8 @@ export default function BrowserRecorderControlPanel({
     if (session && !scriptName) {
       setScriptName(session.name)
     }
-    // Seed the script name once from the session; later renames stay manual.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.name])
+    // Seed from the session only while the field is empty; later renames stay manual.
+  }, [scriptName, session])
 
   useEffect(() => {
     if (standalone && session) {
@@ -202,16 +255,18 @@ export default function BrowserRecorderControlPanel({
   }, [standalone, session])
 
   // Refresh auto-transaction suggestions as navigations accumulate.
+  const navigationCount = session?.navigation_count || 0
   useEffect(() => {
-    if (session && (session.navigation_count || 0) > 0) {
+    if (navigationCount > 0) {
       loadSuggestions()
     }
-  }, [session?.navigation_count, loadSuggestions])
+  }, [navigationCount, loadSuggestions])
 
   const handleStop = async () => {
     setBusy(true)
     try {
       const res = await api.stopBrowserRecording(sessionId)
+      if (!isCurrentSession()) return
       setSession(res.session)
       if (res.session.status === 'stopping') {
         showFeedback('Stop requested — finalizing browser and HAR capture')
@@ -219,9 +274,9 @@ export default function BrowserRecorderControlPanel({
         showFeedback(`Recording stopped — ${res.session.step_count} steps captured`)
       }
     } catch (e: any) {
-      showFeedback(e.message, 'error')
+      if (isCurrentSession()) showFeedback(e.message, 'error')
     } finally {
-      setBusy(false)
+      if (isCurrentSession()) setBusy(false)
     }
   }
 
@@ -229,12 +284,13 @@ export default function BrowserRecorderControlPanel({
     setBusy(true)
     try {
       const res = await api.forceStopBrowserRecording(sessionId)
+      if (!isCurrentSession()) return
       setSession(res.session)
       showFeedback(`Recording force-finished — ${res.session.step_count} captured steps preserved`)
     } catch (e: any) {
-      showFeedback(e.message, 'error')
+      if (isCurrentSession()) showFeedback(e.message, 'error')
     } finally {
-      setBusy(false)
+      if (isCurrentSession()) setBusy(false)
     }
   }
 
@@ -245,23 +301,25 @@ export default function BrowserRecorderControlPanel({
       const res = session.status === 'paused'
         ? await api.resumeBrowserRecording(sessionId)
         : await api.pauseBrowserRecording(sessionId)
+      if (!isCurrentSession()) return
       setSession(res.session)
       showFeedback(res.session.status === 'paused'
         ? 'Recording paused — interactions and think time are not captured'
         : 'Recording resumed')
     } catch (e: any) {
-      showFeedback(e.message, 'error')
+      if (isCurrentSession()) showFeedback(e.message, 'error')
     } finally {
-      setBusy(false)
+      if (isCurrentSession()) setBusy(false)
     }
   }
 
   const handleFocus = async () => {
     try {
       await api.focusBrowserRecording(sessionId)
+      if (!isCurrentSession()) return
       showFeedback('Recording browser brought to the front')
     } catch (e: any) {
-      showFeedback(e.message, 'error')
+      if (isCurrentSession()) showFeedback(e.message, 'error')
     }
   }
 
@@ -280,13 +338,14 @@ export default function BrowserRecorderControlPanel({
     setBusy(true)
     try {
       const res = await api.navigateBrowserRecording(sessionId, url)
+      if (!isCurrentSession()) return
       setSession(res.session)
       setNavigateAddress('')
       showFeedback(`Recording browser navigated to ${url}`)
     } catch (e: any) {
-      showFeedback(e.message, 'error')
+      if (isCurrentSession()) showFeedback(e.message, 'error')
     } finally {
-      setBusy(false)
+      if (isCurrentSession()) setBusy(false)
     }
   }
 
@@ -298,21 +357,23 @@ export default function BrowserRecorderControlPanel({
     }
     try {
       const res = await api.startBrowserRecordingTransaction(sessionId, name)
+      if (!isCurrentSession()) return
       setSession(res.session)
       setTransactionName('')
       showFeedback(`Transaction "${name}" started`)
     } catch (e: any) {
-      showFeedback(e.message, 'error')
+      if (isCurrentSession()) showFeedback(e.message, 'error')
     }
   }
 
   const handleEndTransaction = async (name: string) => {
     try {
       const res = await api.endBrowserRecordingTransaction(sessionId, name)
+      if (!isCurrentSession()) return
       setSession(res.session)
       showFeedback(`Transaction "${res.marker.name || name}" ended`)
     } catch (e: any) {
-      showFeedback(e.message, 'error')
+      if (isCurrentSession()) showFeedback(e.message, 'error')
     }
   }
 
@@ -324,11 +385,12 @@ export default function BrowserRecorderControlPanel({
     }
     try {
       const res = await api.addBrowserRecordingNote(sessionId, text)
+      if (!isCurrentSession()) return
       setSession(res.session)
       setNoteText('')
       showFeedback('Note added — it will attach to the next recorded action')
     } catch (e: any) {
-      showFeedback(e.message, 'error')
+      if (isCurrentSession()) showFeedback(e.message, 'error')
     }
   }
 
@@ -354,13 +416,14 @@ export default function BrowserRecorderControlPanel({
     setBusy(true)
     try {
       const result = await api.previewBrowserRecordingConversion(sessionId, convertRequest())
+      if (!isCurrentSession()) return
       setPreview(result)
       const suggestions = result.parameterization?.summary?.total ?? 0
       showFeedback(`Preview generated with ${result.script?.actions?.length || 0} actions and ${suggestions} parameterization suggestions`)
     } catch (e: any) {
-      showFeedback(e.message, 'error')
+      if (isCurrentSession()) showFeedback(e.message, 'error')
     } finally {
-      setBusy(false)
+      if (isCurrentSession()) setBusy(false)
     }
   }
 
@@ -370,11 +433,13 @@ export default function BrowserRecorderControlPanel({
     try {
       if (api.browserRecorderBridge) {
         const result = await api.previewBrowserRecordingConversion(sessionId, convertRequest())
+        if (!isCurrentSession()) return
         const scripts = (result.scripts?.length ? result.scripts : result.script ? [result.script] : []) as ScriptDefinition[]
         if (scripts.length === 0) {
           throw new Error('Conversion produced no scripts to save')
         }
         const saved = await Promise.all(scripts.map(script => api.createScript(script, session?.project_id)))
+        if (!isCurrentSession()) return
         const primary = saved[0]
         setSavedScript(primary)
         setPreview(result)
@@ -384,6 +449,7 @@ export default function BrowserRecorderControlPanel({
       }
 
       const result = await api.convertBrowserRecording(sessionId, convertRequest())
+      if (!isCurrentSession()) return
       const stored = result.script as unknown as StoredScript | undefined
       if (stored) {
         setSavedScript(stored)
@@ -392,18 +458,19 @@ export default function BrowserRecorderControlPanel({
       const httpNote = result.http_script ? ` (plus HTTP script "${result.http_script.name}")` : ''
       showFeedback(`Script "${stored?.name || scriptName}" saved to the script library${httpNote}`)
     } catch (e: any) {
-      showFeedback(e.message, 'error')
+      if (isCurrentSession()) showFeedback(e.message, 'error')
     } finally {
-      setBusy(false)
+      if (isCurrentSession()) setBusy(false)
     }
   }
 
   const handleSection = async (section: string) => {
     try {
       const res = await api.setBrowserRecordingSection(sessionId, section)
+      if (!isCurrentSession()) return
       setSession(res.session)
     } catch (e: any) {
-      showFeedback(e.message, 'error')
+      if (isCurrentSession()) showFeedback(e.message, 'error')
     }
   }
 
@@ -411,52 +478,57 @@ export default function BrowserRecorderControlPanel({
     if (!session) return
     try {
       const res = await api.setBrowserRecordingPickMode(sessionId, !session.picking)
+      if (!isCurrentSession()) return
       setSession(res.session)
       showFeedback(res.session.picking
         ? 'Pick mode on — click an element in the recording browser to add a verification'
         : 'Pick mode off')
     } catch (e: any) {
-      showFeedback(e.message, 'error')
+      if (isCurrentSession()) showFeedback(e.message, 'error')
     }
   }
 
   const handleDeleteLastStep = async () => {
     try {
       const res = await api.deleteLastBrowserRecordingStep(sessionId)
+      if (!isCurrentSession()) return
       setSession(res.session)
       showFeedback('Last step removed')
     } catch (e: any) {
-      showFeedback(e.message, 'error')
+      if (isCurrentSession()) showFeedback(e.message, 'error')
     }
   }
 
   const handleToggleStepExcluded = async (seq: number, excluded: boolean) => {
     try {
       const res = await api.updateBrowserRecordingStep(sessionId, seq, { excluded })
+      if (!isCurrentSession()) return
       setSession(res.session)
     } catch (e: any) {
-      showFeedback(e.message, 'error')
+      if (isCurrentSession()) showFeedback(e.message, 'error')
     }
   }
 
   const handleMarkStep = async (seq: number, kind: 'secret' | 'param') => {
     try {
       const res = await api.updateBrowserRecordingStep(sessionId, seq, kind === 'secret' ? { mark_secret: true } : { mark_param: true })
+      if (!isCurrentSession()) return
       setSession(res.session)
       showFeedback(`Step #${seq} marked as ${kind === 'secret' ? 'a secret' : 'a data parameter'}`)
     } catch (e: any) {
-      showFeedback(e.message, 'error')
+      if (isCurrentSession()) showFeedback(e.message, 'error')
     }
   }
 
   const handleAcceptSuggestion = async (suggestion: BrowserRecorderTransactionSuggestion) => {
     try {
       const res = await api.startBrowserRecordingTransaction(sessionId, suggestion.name, suggestion.at_step_seq)
+      if (!isCurrentSession()) return
       setSession(res.session)
       setSuggestions(prev => prev.filter(s => s.name !== suggestion.name || s.at_step_seq !== suggestion.at_step_seq))
       showFeedback(`Transaction "${suggestion.name}" started`)
     } catch (e: any) {
-      showFeedback(e.message, 'error')
+      if (isCurrentSession()) showFeedback(e.message, 'error')
     }
   }
 
@@ -465,16 +537,18 @@ export default function BrowserRecorderControlPanel({
     try {
       setLastVerifyReport(null)
       const res = await api.verifyBrowserRecording(sessionId)
+      if (!isCurrentSession()) return
       setReplaySessionId(res.replay_session_id)
       showFeedback('Verifying — replaying the recorded script')
     } catch (e: any) {
-      showFeedback(e.message, 'error')
+      if (isCurrentSession()) showFeedback(e.message, 'error')
     } finally {
-      setBusy(false)
+      if (isCurrentSession()) setBusy(false)
     }
   }
 
   const handleReplayComplete = (report: BrowserReplayReport | null) => {
+    if (!isCurrentSession()) return
     setLastVerifyReport(report)
     if (!report) {
       showFeedback('Replay verification stopped before a final report was available', 'error')
@@ -501,9 +575,11 @@ export default function BrowserRecorderControlPanel({
       return
     }
     const patched = await api.updateBrowserRecordingStep(sessionId, seq, { promote_selector: selector })
+    if (!isCurrentSession()) return
     setSession(patched.session)
     setLastVerifyReport(null)
     const verify = await api.verifyBrowserRecording(sessionId)
+    if (!isCurrentSession()) return
     setReplaySessionId(verify.replay_session_id)
     showFeedback(`Selector promoted for step #${seq}; verifying again`)
   }
@@ -519,16 +595,18 @@ export default function BrowserRecorderControlPanel({
   const handleDownloadHAR = async () => {
     try {
       const res = await api.exportBrowserRecording(sessionId, 'har')
+      if (!isCurrentSession()) return
       if (!res.ok) {
         const payload = await res.json().catch(() => ({ error: 'Failed to export HAR' }))
         throw new Error(payload.error || 'Failed to export HAR')
       }
       const blob = await res.blob()
+      if (!isCurrentSession()) return
       const safeName = safeRecordingFileName(session?.name)
       downloadBlob(blob, `${safeName || 'browser-recording'}.har`)
       showFeedback('Side-car HAR downloaded')
     } catch (e: any) {
-      showFeedback(e.message, 'error')
+      if (isCurrentSession()) showFeedback(e.message, 'error')
     }
   }
 
@@ -537,23 +615,26 @@ export default function BrowserRecorderControlPanel({
     setBusy(true)
     try {
       const res = await api.exportBrowserRecording(sessionId, 'har')
+      if (!isCurrentSession()) return
       if (!res.ok) {
         const payload = await res.json().catch(() => ({ error: 'Failed to export HAR' }))
         throw new Error(payload.error || 'Failed to export HAR')
       }
       const blob = await res.blob()
+      if (!isCurrentSession()) return
       const file = new File([blob], `${safeRecordingFileName(session.name)}.har`, { type: blob.type || 'application/json' })
       const result = await api.importSalesforce(file, {
         name: scriptName || `${session.name} Salesforce HTTP`,
         project_id: session.project_id,
       })
+      if (!isCurrentSession()) return
       setSalesforceDraft(result)
       const script = result.script || result.scripts?.[0]
       showFeedback(`Salesforce HTTP draft ready with ${script?.actions?.length || 0} actions`)
     } catch (e: any) {
-      showFeedback(e.message, 'error')
+      if (isCurrentSession()) showFeedback(e.message, 'error')
     } finally {
-      setBusy(false)
+      if (isCurrentSession()) setBusy(false)
     }
   }
 
@@ -563,13 +644,14 @@ export default function BrowserRecorderControlPanel({
     setBusy(true)
     try {
       const saved = await api.createScript(script, session?.project_id)
+      if (!isCurrentSession()) return
       setSavedScript(saved)
       onImported?.({ scripts: [saved] })
       showFeedback(`Salesforce HTTP script "${saved.name}" saved to the script library`)
     } catch (e: any) {
-      showFeedback(e.message, 'error')
+      if (isCurrentSession()) showFeedback(e.message, 'error')
     } finally {
-      setBusy(false)
+      if (isCurrentSession()) setBusy(false)
     }
   }
 
@@ -906,8 +988,9 @@ export default function BrowserRecorderControlPanel({
         <div className="brp-convert">
           <div className="brp-convert-title">Save as Script</div>
           <div className="rec-form-row">
-            <label className="rec-label">Script Name</label>
+            <label className="rec-label" htmlFor="browser-recording-script-name">Script Name</label>
             <input
+              id="browser-recording-script-name"
               className="rec-input"
               value={scriptName}
               onChange={e => setScriptName(e.target.value)}

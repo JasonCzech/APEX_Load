@@ -92,4 +92,13 @@ describe('useDesktopNotifications', () => {
     act(() => { notify('test_complete', 'order-flow', 't1') })
     expect(notifySpy).not.toHaveBeenCalled()
   })
+
+  it('keeps the default enabled behavior when browser storage is blocked', () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('Storage disabled', 'SecurityError')
+    })
+
+    act(() => { notify('test_complete', 'order-flow', 'storage-blocked') })
+    expect(notifySpy).toHaveBeenCalledWith('Test complete', 'order-flow finished.')
+  })
 })

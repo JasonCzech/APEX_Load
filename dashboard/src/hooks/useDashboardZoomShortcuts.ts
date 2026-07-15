@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import { getWailsEventRuntime } from '../desktop/wailsRuntime'
+import { readStoredString, writeStoredString } from '../utils/browserStorage'
 
 export const DASHBOARD_ZOOM_STORAGE_KEY = 'apexload.dashboardZoom'
 
@@ -25,8 +26,8 @@ function readStoredDashboardZoom() {
     return DEFAULT_DASHBOARD_ZOOM
   }
 
-  const stored = window.localStorage.getItem(DASHBOARD_ZOOM_STORAGE_KEY)
-  if (stored === null) {
+  const stored = readStoredString(DASHBOARD_ZOOM_STORAGE_KEY)
+  if (!stored) {
     return DEFAULT_DASHBOARD_ZOOM
   }
 
@@ -76,7 +77,7 @@ export function useDashboardZoomShortcuts() {
   useEffect(() => {
     applyDashboardZoom(zoom)
     if (typeof window !== 'undefined') {
-      window.localStorage.setItem(DASHBOARD_ZOOM_STORAGE_KEY, String(zoom))
+      writeStoredString(DASHBOARD_ZOOM_STORAGE_KEY, String(zoom))
     }
   }, [zoom])
 

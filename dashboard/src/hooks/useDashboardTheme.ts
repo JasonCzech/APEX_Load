@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { readStoredString, writeStoredString } from '../utils/browserStorage'
 
 // Concrete themes that map to a data-theme attribute.
 export type DashboardTheme = 'dark' | 'light' | 'solarized-dark' | 'solarized-light' | 'monokai-dimmed'
@@ -21,7 +22,7 @@ function readStoredTheme(): DashboardThemePreference {
   if (typeof window === 'undefined') {
     return 'dark'
   }
-  const stored = window.localStorage.getItem(THEME_STORAGE_KEY)
+  const stored = readStoredString(THEME_STORAGE_KEY)
   return isThemePreference(stored) ? stored : 'dark'
 }
 
@@ -56,7 +57,7 @@ export function useDashboardTheme() {
 
     if (typeof window !== 'undefined') {
       // Persist the PREFERENCE ('system' included), never the resolved value.
-      window.localStorage.setItem(THEME_STORAGE_KEY, theme)
+      writeStoredString(THEME_STORAGE_KEY, theme)
     }
 
     // When following the OS, re-resolve live as the system setting changes.

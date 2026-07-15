@@ -4,6 +4,7 @@ import { Application, Release } from '../types'
 import { useApplicationApi } from './api/useApplicationApi'
 import { useProject } from './useProject'
 import { ApplicationContext } from './applicationContext'
+import { readStoredString, writeStoredString } from '../utils/browserStorage'
 
 const STORAGE_KEY = 'apexload.activeApplicationId'
 const RELEASE_STORAGE_KEY = 'apexload.activeReleaseId'
@@ -38,12 +39,12 @@ export function ApplicationProvider({ children }: { children: ReactNode }) {
     setActiveApplicationState(application)
     setReleases([])
     setActiveReleaseState(null)
-    localStorage.setItem(STORAGE_KEY, application.id)
+    writeStoredString(STORAGE_KEY, application.id)
   }, [])
 
   const setActiveRelease = useCallback((release: Release) => {
     setActiveReleaseState(release)
-    localStorage.setItem(RELEASE_STORAGE_KEY, release.id)
+    writeStoredString(RELEASE_STORAGE_KEY, release.id)
   }, [])
 
   const refreshReleases = useCallback(async (applicationId?: string) => {
@@ -66,10 +67,10 @@ export function ApplicationProvider({ children }: { children: ReactNode }) {
     }
     const next = res.releases || []
     setReleases(next)
-    const storedId = localStorage.getItem(RELEASE_STORAGE_KEY)
+    const storedId = readStoredString(RELEASE_STORAGE_KEY)
     const selected = next.find(release => release.id === storedId) || next[0] || null
     setActiveReleaseState(selected)
-    if (selected) localStorage.setItem(RELEASE_STORAGE_KEY, selected.id)
+    if (selected) writeStoredString(RELEASE_STORAGE_KEY, selected.id)
   }, [api])
 
   const refreshApplications = useCallback(async () => {
@@ -107,13 +108,13 @@ export function ApplicationProvider({ children }: { children: ReactNode }) {
     }
     setApplications(next)
     setStateProjectId(projectId)
-    const storedId = localStorage.getItem(STORAGE_KEY)
+    const storedId = readStoredString(STORAGE_KEY)
     const selected = next.find(application => application.id === storedId) || next[0] || null
     if (selected) {
       const applicationChanged = activeApplicationIdRef.current !== selected.id
       activeApplicationIdRef.current = selected.id
       setActiveApplicationState(selected)
-      localStorage.setItem(STORAGE_KEY, selected.id)
+      writeStoredString(STORAGE_KEY, selected.id)
       if (applicationChanged) {
         releasesRequestGenerationRef.current += 1
         setReleases([])

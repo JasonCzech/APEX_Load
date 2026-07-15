@@ -1,4 +1,5 @@
 import { isWailsLocation } from '../desktop/desktopBridge'
+import { readStoredString, writeStoredString } from '../utils/browserStorage'
 
 const DEFAULT_LOCAL_API_ORIGIN = 'http://127.0.0.1:8080'
 export const DEV_VIEW_STORAGE_KEY = 'apexload.devViewMode'
@@ -39,20 +40,12 @@ function getWindowLocation(): ApiLocation | undefined {
   return typeof window !== 'undefined' ? window.location : undefined
 }
 
-function getLocalStorage(): Storage | undefined {
-  try {
-    return typeof window !== 'undefined' ? window.localStorage : undefined
-  } catch {
-    return undefined
-  }
-}
-
 function isApiErrorPayload(value: unknown): value is ApiErrorPayload {
   return typeof value === 'object' && value !== null
 }
 
 function getStoredApiOrigin(): string {
-  return getLocalStorage()?.getItem(API_ORIGIN_STORAGE_KEY)?.trim() || ''
+  return readStoredString(API_ORIGIN_STORAGE_KEY).trim()
 }
 
 function getWailsAppBridge(): WailsAppBridge | undefined {
@@ -96,7 +89,7 @@ export function setApiOrigin(origin: string): void {
   if (!normalized) return
   API_ORIGIN = normalized
   BASE = `${API_ORIGIN}/api/v1`
-  getLocalStorage()?.setItem(API_ORIGIN_STORAGE_KEY, normalized)
+  writeStoredString(API_ORIGIN_STORAGE_KEY, normalized)
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent(API_ORIGIN_CHANGED_EVENT, { detail: normalized }))
   }
@@ -122,12 +115,12 @@ export function normalizeDevViewMode(value: unknown): DevViewMode {
 }
 
 export function readStoredDevViewMode(): DevViewMode {
-  return normalizeDevViewMode(getLocalStorage()?.getItem(DEV_VIEW_STORAGE_KEY))
+  return normalizeDevViewMode(readStoredString(DEV_VIEW_STORAGE_KEY))
 }
 
 export function writeStoredDevViewMode(mode: DevViewMode): void {
   const normalized = normalizeDevViewMode(mode)
-  getLocalStorage()?.setItem(DEV_VIEW_STORAGE_KEY, normalized)
+  writeStoredString(DEV_VIEW_STORAGE_KEY, normalized)
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent(DEV_VIEW_MODE_CHANGED_EVENT, { detail: normalized }))
   }
@@ -137,7 +130,7 @@ export function buildDevPreviewHeaders(): Record<string, string> {
   const headers: Record<string, string> = {
     [DEV_VIEW_HEADER]: readStoredDevViewMode(),
   }
-  const projectId = getLocalStorage()?.getItem(ACTIVE_PROJECT_STORAGE_KEY)?.trim()
+  const projectId = readStoredString(ACTIVE_PROJECT_STORAGE_KEY).trim()
   if (projectId) {
     headers[DEV_PROJECT_HEADER] = projectId
   }
