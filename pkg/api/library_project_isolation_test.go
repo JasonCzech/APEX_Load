@@ -7,7 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -26,6 +28,46 @@ func TestLibraryTransferResolverUsesObjectProject(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/library/export", bytes.NewReader(body))
 	if projectID, status, _ := resolveLibraryTransferProjectID(req, store); projectID != "" || status != http.StatusBadRequest {
 		t.Fatalf("resolver = %q, %d; want project mismatch rejection", projectID, status)
+	}
+}
+
+func TestLibraryTransferResolverUsesEndpointSpecificObjectAndDestination(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "library-scope.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Now().UTC()
+	if err := store.SaveProject(&storage.Project{ID: "project-b", Name: "Project B", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(ServerConfig{Store: store})
+	local := libraryTestScript("local", "Local", storage.DefaultProjectID, "/local")
+	foreign := libraryTestScript("foreign", "Foreign", "project-b", "/foreign")
+	for _, script := range []*dsl.Script{local, foreign} {
+		if _, err := server.runner.StoreScriptDurable(script); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for _, path := range []string{"/api/v1/library/export", "/api/v1/library/remotes/r/push"} {
+		body := marshalLibraryTestJSON(t, LibraryTransferRequest{Kind: "script", ID: foreign.ID, LocalID: local.ID})
+		req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body))
+		if projectID, status, message := resolveLibraryTransferProjectID(req, store); projectID != "project-b" || status != 0 || message != "" {
+			t.Fatalf("%s resolver = %q, %d, %q; want project-b", path, projectID, status, message)
+		}
+	}
+
+	diffBody := marshalLibraryTestJSON(t, LibraryTransferRequest{Kind: "script", LocalID: local.ID, RemoteID: foreign.ID})
+	diffReq := httptest.NewRequest(http.MethodPost, "/api/v1/library/remotes/r/diff", bytes.NewReader(diffBody))
+	if projectID, status, _ := resolveLibraryTransferProjectID(diffReq, store); projectID != storage.DefaultProjectID || status != 0 {
+		t.Fatalf("diff resolver = %q, %d; want local project", projectID, status)
+	}
+
+	pullBody := marshalLibraryTestJSON(t, LibraryTransferRequest{Kind: "script", ID: foreign.ID})
+	pullReq := httptest.NewRequest(http.MethodPost, "/api/v1/library/remotes/r/pull", bytes.NewReader(pullBody))
+	if projectID, status, message := resolveLibraryTransferProjectID(pullReq, store); projectID != "" || status != http.StatusBadRequest || !strings.Contains(message, "project_id is required") {
+		t.Fatalf("pull resolver = %q, %d, %q; want explicit destination rejection", projectID, status, message)
 	}
 }
 
@@ -107,6 +149,96 @@ func TestLibraryImportRejectsTamperedPayloadHash(t *testing.T) {
 	}
 	if len(result.Conflicts) != 1 || !strings.Contains(result.Conflicts[0].Reason, "content hash") {
 		t.Fatalf("tampered import result = %#v", result)
+	}
+}
+
+func TestLibraryImportRejectsMissingAndTamperedResultPayloads(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	missing, err := server.importLibraryBundle(LibraryImportRequest{ProjectID: "destination", Bundle: LibraryBundle{
+		SchemaVersion: libraryBundleSchemaVersion,
+		Items:         []LibraryBundleItem{{Kind: "script", SourceInstanceID: "remote", SourceItemID: "missing", ContentHash: hashCanonical(nil)}},
+	}}, "remote")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(missing.Conflicts) != 1 || !strings.Contains(missing.Conflicts[0].Reason, "payload is missing") {
+		t.Fatalf("missing script result = %#v", missing)
+	}
+
+	testRun := &ManagedTest{ID: "result", Name: "Result", Status: "COMPLETE", ProjectID: "source", TotalVUsers: 2, DurationStr: "1m"}
+	item := LibraryBundleItem{
+		Kind: "result", SourceInstanceID: "remote", SourceItemID: testRun.ID,
+		ContentHash: hashLibraryResult(testRun),
+		Result: &LibraryResultPayload{Test: testRun, Summary: map[string]any{
+			"status": "TAMPERED", "total_vusers": testRun.TotalVUsers, "duration": testRun.DurationStr,
+		}},
+	}
+	tampered, err := server.importLibraryBundle(LibraryImportRequest{ProjectID: "destination", Bundle: LibraryBundle{SchemaVersion: libraryBundleSchemaVersion, Items: []LibraryBundleItem{item}}}, "remote")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tampered.Conflicts) != 1 || !strings.Contains(tampered.Conflicts[0].Reason, "content hash") {
+		t.Fatalf("tampered result = %#v", tampered)
+	}
+
+	item.ContentHash = hashLibraryResultTestOnly(testRun)
+	item.Result.Summary = libraryResultSummary(testRun)
+	legacy, err := server.importLibraryBundle(LibraryImportRequest{ProjectID: "destination", Bundle: LibraryBundle{SchemaVersion: libraryBundleSchemaVersion, Items: []LibraryBundleItem{item}}}, "remote")
+	if err != nil || len(legacy.Conflicts) != 0 || len(legacy.Items) != 1 {
+		t.Fatalf("legacy result bundle was not accepted safely: %#v, %v", legacy, err)
+	}
+
+	item.Result.Test = nil
+	nilTest, err := server.importLibraryBundle(LibraryImportRequest{ProjectID: "destination", Bundle: LibraryBundle{SchemaVersion: libraryBundleSchemaVersion, Items: []LibraryBundleItem{item}}}, "remote")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(nilTest.Conflicts) != 1 || !strings.Contains(nilTest.Conflicts[0].Reason, "test payload is missing") {
+		t.Fatalf("nil result test = %#v", nilTest)
+	}
+}
+
+func TestLibraryScenarioImportClonesAndVerifiesDependencies(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	source := libraryTestScript("source-script", "Source", "source", "/source")
+	req := CreateScenarioRequest{Name: "Scenario", Duration: "1m", Groups: []CreateGroupEntry{{Name: "g", ScriptID: source.ID, VUsers: 1}}}
+	bundle := LibraryBundle{SchemaVersion: libraryBundleSchemaVersion, Items: []LibraryBundleItem{
+		{Kind: "script", SourceInstanceID: "remote", SourceItemID: source.ID, ProjectID: "source", Script: source, ContentHash: hashLibraryScript(source)},
+		{Kind: "scenario", SourceInstanceID: "remote", SourceItemID: "scenario", ProjectID: "source", ContentHash: hashCanonical(req), Scenario: &LibraryScenarioPayload{ID: "scenario", Request: req}, Dependencies: []LibraryDependency{{Kind: "script", ID: source.ID, ContentHash: hashLibraryScript(source)}}},
+	}}
+	result, err := server.importLibraryBundle(LibraryImportRequest{ProjectID: "destination", Bundle: bundle}, "remote")
+	if err != nil || len(result.Conflicts) != 0 || len(result.Items) != 2 {
+		t.Fatalf("scenario import = %#v, %v", result, err)
+	}
+	if got := bundle.Items[1].Scenario.Request.Groups[0].ScriptID; got != source.ID {
+		t.Fatalf("source bundle mutated to local script id %q", got)
+	}
+
+	wrong := libraryTestScript(source.ID, "Wrong", "destination", "/wrong")
+	server2 := NewServer(ServerConfig{})
+	if _, err := server2.runner.StoreScriptDurable(wrong); err != nil {
+		t.Fatal(err)
+	}
+	dependencyOnly := bundle.Items[1]
+	mismatch, err := server2.importLibraryBundle(LibraryImportRequest{ProjectID: "destination", Bundle: LibraryBundle{SchemaVersion: libraryBundleSchemaVersion, Items: []LibraryBundleItem{dependencyOnly}}}, "remote")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mismatch.Conflicts) != 1 || !strings.Contains(mismatch.Conflicts[0].Reason, "dependency hash") {
+		t.Fatalf("dependency mismatch = %#v", mismatch)
+	}
+}
+
+func TestLibraryArchiveMetadataRequiresDeclaredManifest(t *testing.T) {
+	result := &LibraryResultPayload{ArchiveManifestHash: "sha256:declared", ArchiveSizeBytes: 10}
+	if reason := validateLibraryArchiveMetadata(result, "", 10); !strings.Contains(reason, "manifest hash") {
+		t.Fatalf("missing manifest reason = %q", reason)
+	}
+}
+
+func TestLibraryRemoteJSONLimitMatchesServerEnvelope(t *testing.T) {
+	if libraryRemoteJSONMaxBytes != defaultMaxRequestBodyBytes {
+		t.Fatalf("remote JSON limit = %d, server envelope = %d", libraryRemoteJSONMaxBytes, defaultMaxRequestBodyBytes)
 	}
 }
 

@@ -35,7 +35,7 @@ func (s *KeyringLibraryCredentialStore) GetRemoteAPIKey(remote LibraryRemote) (s
 	if strings.TrimSpace(remote.ID) == "" {
 		return "", errors.New("remote id is required")
 	}
-	secret, err := keyring.Get(firstNonEmpty(s.Service, libraryKeyringService), libraryKeyringAccount(remote.ID))
+	secret, err := keyring.Get(firstNonEmpty(s.Service, libraryKeyringService), libraryKeyringAccountForRemote(remote))
 	if err != nil {
 		if errors.Is(err, keyring.ErrNotFound) {
 			return "", nil

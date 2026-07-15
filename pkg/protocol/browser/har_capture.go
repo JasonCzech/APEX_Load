@@ -152,15 +152,6 @@ func (b *Browser) noteHARBytes(bytes int64) {
 	}
 }
 
-func (b *Browser) failHARLimitConservatively() {
-	b.mu.Lock()
-	signal := b.harLimitExceeded
-	b.mu.Unlock()
-	if signal != nil {
-		b.harLimitOnce.Do(func() { close(signal) })
-	}
-}
-
 // noteHARError marks the session so an on_error policy keeps the recording.
 func (b *Browser) noteHARError() {
 	if b.harCapturePolicy == HARCaptureOnError {

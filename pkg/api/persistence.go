@@ -71,6 +71,8 @@ func (tr *TestRunner) reloadStoredScripts() error {
 	if tr == nil || tr.scriptStore == nil {
 		return nil
 	}
+	tr.contentReloadMu.Lock()
+	defer tr.contentReloadMu.Unlock()
 	tr.mu.RLock()
 	revision := tr.contentRevision
 	tr.mu.RUnlock()
@@ -137,6 +139,8 @@ func (tr *TestRunner) reloadStoredScenarios() error {
 	if tr == nil || tr.scenarioStore == nil {
 		return nil
 	}
+	tr.contentReloadMu.Lock()
+	defer tr.contentReloadMu.Unlock()
 	tr.mu.RLock()
 	revision := tr.contentRevision
 	tr.mu.RUnlock()
@@ -1036,6 +1040,29 @@ func (tr *TestRunner) UsageAccountingSnapshotInterval() time.Duration {
 		return 0
 	}
 	return time.Duration(seconds) * time.Second
+}
+
+func (tr *TestRunner) latestGlobalUsageSnapshotTime() (time.Time, error) {
+	if tr == nil || tr.usageStore == nil {
+		return time.Time{}, nil
+	}
+	// The storage API treats an empty project filter as all projects. Walk newest
+	// pages until the first global cadence row is found; a busy project must not
+	// push the durable cadence marker outside one bounded page during failover.
+	for offset := 0; ; offset += 500 {
+		snapshots, err := tr.usageStore.ListUsageAccountingSnapshots("", 500, offset)
+		if err != nil {
+			return time.Time{}, err
+		}
+		for _, snapshot := range snapshots {
+			if snapshot != nil && strings.TrimSpace(snapshot.ProjectID) == "" {
+				return snapshot.GeneratedAt.UTC(), nil
+			}
+		}
+		if len(snapshots) < 500 {
+			return time.Time{}, nil
+		}
+	}
 }
 
 func (tr *TestRunner) RunUsageAccountingSnapshotCadence(ctx context.Context, ticks <-chan time.Time) {

@@ -1356,9 +1356,12 @@ func (tr *TestRunner) refreshSystemSettingsFromStore(force bool) {
 	tr.maxTests = loaded.General.MaxConcurrentTests
 	tr.invalidateCapacityAdvisoryCacheLocked()
 	tr.mu.Unlock()
+	if tr.systemSettingsRaw != raw {
+		tr.settingsRevision++
+	}
 	tr.systemSettingsRaw = raw
-	tr.settingsRefreshMu.Unlock()
 	tr.setNotificationSettings(loaded.Notifications)
+	tr.settingsRefreshMu.Unlock()
 }
 
 func redactedSystemSettingsResponse(settings SystemSettings) map[string]any {
@@ -1506,8 +1509,8 @@ func (tr *TestRunner) updateSystemSettings(settings SystemSettings, expectedRevi
 	tr.invalidateCapacityAdvisoryCacheLocked()
 	tr.mu.Unlock()
 	tr.settingsAuthRefreshAt = time.Now()
-	tr.settingsRefreshMu.Unlock()
 	tr.setNotificationSettings(normalized.Notifications)
+	tr.settingsRefreshMu.Unlock()
 
 	return normalized, nil
 }

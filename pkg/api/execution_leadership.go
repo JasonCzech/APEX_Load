@@ -329,6 +329,12 @@ func (l *executionLeadership) operationContext(parent context.Context) (context.
 		return context.WithCancel(parent)
 	}
 	l.mu.Lock()
+	if l.leader.Load() && l.pendingLoss == 0 && l.operationCtx == nil {
+		// Some recovery/bootstrap paths install an already-confirmed leadership
+		// state before Run begins. Materialize the epoch lazily so those operations
+		// still receive the same lease-loss cancellation semantics.
+		l.operationCtx, l.operationCancel = context.WithCancel(context.Background())
+	}
 	epoch := l.operationCtx
 	active := l.leader.Load() && l.pendingLoss == 0 && epoch != nil
 	l.mu.Unlock()

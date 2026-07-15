@@ -110,7 +110,7 @@ func (tr *TestRunner) markTestPendingLocked(test *ManagedTest, reason string) er
 // fields, and binds its execution backend. The caller persists the record because
 // the save timing differs (under the lock for prepare, after unlock for promote).
 func (tr *TestRunner) markTestInitializingLocked(test *ManagedTest) {
-	test.executionCtx, test.cancel = context.WithCancel(context.Background())
+	test.executionCtx, test.cancel = tr.executionOperationContext(context.Background())
 	test.Status = "INITIALIZING"
 	test.PendingSince = nil
 	test.PendingReason = ""

@@ -2,6 +2,7 @@ package browser
 
 import (
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -30,10 +31,17 @@ func TestNetworkTaskQueueDropsInsteadOfSpawningUnboundedWorkers(t *testing.T) {
 	b := &Browser{
 		networkTasks:      make(chan browserNetworkTask, 1),
 		networkWorkerStop: make(chan struct{}),
+		harLimitExceeded:  make(chan struct{}),
+		harLimitOnce:      sync.Once{},
 	}
 	b.enqueueNetworkRequest(nil, true)
 	b.enqueueNetworkRequest(nil, true)
 	if b.networkTasksDropped != 1 {
 		t.Fatalf("network tasks dropped = %d, want 1", b.networkTasksDropped)
+	}
+	select {
+	case <-b.harLimitExceeded:
+		t.Fatal("diagnostics queue pressure incorrectly signaled a HAR limit breach")
+	default:
 	}
 }

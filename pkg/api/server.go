@@ -46,16 +46,20 @@ type Server struct {
 	authoringMutationMu sync.Mutex
 	authoring           map[string]*storage.AuthoringSession
 	libraryMu           sync.Mutex
-	libraryRemotes      map[string]*LibraryRemote
-	libraryLinks        map[string]*librarySyncLink
-	libraryRemotesRaw   string
-	libraryLinksRaw     string
-	libraryCreds        LibraryCredentialStore
-	c4Mu                sync.Mutex
-	slaWaivers          map[string][]*storage.ReleaseSLAWaiver
-	resultImports       map[string]*storage.ExternalResultImport
-	githubMu            sync.Mutex
-	githubTokens        map[string]githubCachedToken
+	// libraryStateMutationMu serializes the load/mutate/CAS transition for
+	// remotes and synchronization links within one controller. Durable CAS still
+	// provides the cross-controller fence.
+	libraryStateMutationMu sync.Mutex
+	libraryRemotes         map[string]*LibraryRemote
+	libraryLinks           map[string]*librarySyncLink
+	libraryRemotesRaw      string
+	libraryLinksRaw        string
+	libraryCreds           LibraryCredentialStore
+	c4Mu                   sync.Mutex
+	slaWaivers             map[string][]*storage.ReleaseSLAWaiver
+	resultImports          map[string]*storage.ExternalResultImport
+	githubMu               sync.Mutex
+	githubTokens           map[string]githubCachedToken
 	// projectMutationMu prevents an acknowledged project-scoped HTTP mutation
 	// from being erased by a concurrent project graph deletion. Project deletion
 	// takes the write side; every other mutating request takes the read side.
@@ -1400,13 +1404,25 @@ func (s *Server) startUsageAccountingSnapshotCadence() {
 		defer ticker.Stop()
 		var enabledAt time.Time
 		var lastCapture time.Time
+		wasLeader := false
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case now := <-ticker.C:
 				if !s.isExecutionLeader() {
+					wasLeader = false
 					continue
+				}
+				if !wasLeader {
+					wasLeader = true
+					enabledAt = now
+					var err error
+					lastCapture, err = s.runner.latestGlobalUsageSnapshotTime()
+					if err != nil {
+						lastCapture = time.Time{}
+						slog.Warn("failed to load latest usage accounting snapshot after leadership acquisition", "error", err)
+					}
 				}
 				interval := s.runner.UsageAccountingSnapshotInterval()
 				if interval <= 0 {

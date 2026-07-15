@@ -14,3 +14,15 @@ func TestPrimeReplyConsumerReturnsForExistingAssignment(t *testing.T) {
 		t.Fatalf("prime existing assignment: %v", err)
 	}
 }
+
+func TestReplyHandleBuildsValidDedicatedGroupConsumer(t *testing.T) {
+	client := &franzClient{cfg: config{Brokers: []string{"127.0.0.1:1"}}}
+	handle, err := client.replyHandle()
+	if err != nil {
+		t.Fatalf("replyHandle rejected its consumer configuration: %v", err)
+	}
+	if handle == nil {
+		t.Fatal("replyHandle returned a nil client")
+	}
+	handle.Close()
+}

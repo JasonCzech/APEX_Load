@@ -82,14 +82,16 @@ func (c *franzClient) handle() (*kgo.Client, error) {
 	return c.cl, c.err
 }
 
-// replyHandle uses a dedicated non-group consumer. A shared consumer group can
-// assign a reply partition to a different VUser, whose private pending queue
-// cannot satisfy the original requester's correlation.
+// replyHandle uses a dedicated, unique consumer group. Sharing the configured
+// group could assign a reply partition to a different VUser, while a direct
+// consumer cannot use the assignment callback needed to prime from the end
+// before producing the request.
 func (c *franzClient) replyHandle() (*kgo.Client, error) {
 	c.replyOnce.Do(func() {
 		c.replyAssigned = make(map[string]bool)
 		c.replyTopicRefs = make(map[string]int)
-		c.replyCl, c.replyErr = c.newClient("", kgo.OnPartitionsAssigned(func(_ context.Context, _ *kgo.Client, partitions map[string][]int32) {
+		replyGroup := "apexload-reply-" + uuid.NewString()
+		c.replyCl, c.replyErr = c.newClient(replyGroup, kgo.OnPartitionsAssigned(func(_ context.Context, _ *kgo.Client, partitions map[string][]int32) {
 			c.replyAssignmentMu.Lock()
 			for topic := range partitions {
 				c.replyAssigned[topic] = true

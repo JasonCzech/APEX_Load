@@ -46,10 +46,26 @@ func hashLibraryScenario(scenario *StoredScenario) string {
 }
 
 func hashLibraryResult(test *ManagedTest) string {
+	return hashLibraryResultWithSummary(test, libraryResultSummary(test))
+}
+
+func hashLibraryResultWithSummary(test *ManagedTest, summary map[string]any) string {
 	if test == nil {
 		return hashCanonical(nil)
 	}
-	payload := map[string]any{
+	payload := map[string]any{"test": libraryResultTestHashPayload(test), "summary": summary}
+	return hashCanonical(payload)
+}
+
+func hashLibraryResultTestOnly(test *ManagedTest) string {
+	if test == nil {
+		return hashCanonical(nil)
+	}
+	return hashCanonical(libraryResultTestHashPayload(test))
+}
+
+func libraryResultTestHashPayload(test *ManagedTest) map[string]any {
+	return map[string]any{
 		"name":         test.Name,
 		"status":       test.Status,
 		"project_id":   test.ProjectID,
@@ -61,7 +77,17 @@ func hashLibraryResult(test *ManagedTest) string {
 		"archive":      test.Archive,
 		"error":        test.Error,
 	}
-	return hashCanonical(payload)
+}
+
+func libraryResultSummary(test *ManagedTest) map[string]any {
+	if test == nil {
+		return nil
+	}
+	return map[string]any{
+		"status":       test.Status,
+		"total_vusers": test.TotalVUsers,
+		"duration":     test.DurationStr,
+	}
 }
 
 func hashCanonical(value any) string {
@@ -85,6 +111,8 @@ func (s *Server) libraryLink(remoteID string, kind string, sourceInstanceID stri
 }
 
 func (s *Server) rememberLibraryLink(remoteID string, kind string, sourceInstanceID string, sourceItemID string, localItemID string, remoteItemID string, localHash string, remoteHash string) error {
+	s.libraryStateMutationMu.Lock()
+	defer s.libraryStateMutationMu.Unlock()
 	if remoteID == "" {
 		remoteID = "direct"
 	}

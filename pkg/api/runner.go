@@ -108,6 +108,7 @@ type settingsCompareAndSwapper interface {
 
 type usageSnapshotPersistence interface {
 	SaveUsageAccountingSnapshot(snapshot *storage.UsageAccountingSnapshot) error
+	ListUsageAccountingSnapshots(projectID string, limit int, offset int) ([]*storage.UsageAccountingSnapshot, error)
 }
 
 // reservationPersistence is the slice of storage.Store used to bind a capacity
@@ -128,6 +129,9 @@ type TestRunner struct {
 	shuttingDown          bool
 	mu                    sync.RWMutex
 	contentRevision       uint64
+	contentReloadMu       sync.Mutex
+	haScenarioRefreshMu   sync.Mutex
+	haScenarioRefreshAt   time.Time
 	activeStopMu          sync.Mutex
 	remoteControlMu       sync.Mutex
 	remoteControlGates    map[string]*distributedControlGate

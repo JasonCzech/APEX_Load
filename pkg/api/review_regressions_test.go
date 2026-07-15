@@ -106,6 +106,34 @@ func TestSystemSettingsRevisionRejectsStaleLocalRequest(t *testing.T) {
 	}
 }
 
+func TestSystemSettingsRefreshAdvancesRevisionBeforeStaleWrite(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "settings-refresh.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	writer := NewTestRunner(2, NewHub(), store)
+	if _, err := writer.UpdateSystemSettings(writer.GetSystemSettings()); err != nil {
+		t.Fatal(err)
+	}
+	staleRunner := NewTestRunner(2, NewHub(), store)
+	stale, revision := staleRunner.systemSettingsSnapshot()
+	newer := writer.GetSystemSettings()
+	newer.General.MaxConcurrentTests = 3
+	if _, err := writer.UpdateSystemSettings(newer); err != nil {
+		t.Fatal(err)
+	}
+	staleRunner.refreshSystemSettingsFromStore(true)
+	_, refreshedRevision := staleRunner.systemSettingsSnapshot()
+	if refreshedRevision == revision {
+		t.Fatal("durable settings refresh did not advance the local revision")
+	}
+	stale.General.MaxConcurrentTests = 4
+	if _, err := staleRunner.updateSystemSettings(stale, revision, true); !errors.Is(err, errSystemSettingsConflict) {
+		t.Fatalf("stale post-refresh update error = %v, want conflict", err)
+	}
+}
+
 func TestSettingsRefreshDoesNotBlockBehindDurableWrite(t *testing.T) {
 	store := &blockingSettingsStore{saveStarted: make(chan struct{}), releaseSave: make(chan struct{})}
 	runner := NewTestRunner(2, NewHub(), nil)

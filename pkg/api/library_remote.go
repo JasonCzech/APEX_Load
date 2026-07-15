@@ -249,13 +249,12 @@ func (s *Server) remoteJSONAccepted(ctx context.Context, remote LibraryRemote, m
 	if out == nil {
 		return resp.StatusCode, nil
 	}
-	const maxRemoteJSONBytes = 32 << 20
-	payload, err := io.ReadAll(io.LimitReader(resp.Body, maxRemoteJSONBytes+1))
+	payload, err := io.ReadAll(io.LimitReader(resp.Body, libraryRemoteJSONMaxBytes+1))
 	if err != nil {
 		return resp.StatusCode, err
 	}
-	if len(payload) > maxRemoteJSONBytes {
-		return resp.StatusCode, fmt.Errorf("remote library JSON response exceeds %d bytes", maxRemoteJSONBytes)
+	if int64(len(payload)) > libraryRemoteJSONMaxBytes {
+		return resp.StatusCode, fmt.Errorf("remote library JSON response exceeds %d bytes", libraryRemoteJSONMaxBytes)
 	}
 	if len(bytes.TrimSpace(payload)) == 0 {
 		return resp.StatusCode, nil
@@ -370,7 +369,11 @@ func (s *Server) storeRemoteCredential(remote *LibraryRemote, apiKey string, cre
 		if s.libraryCreds == nil {
 			return fmt.Errorf("remote credential store is not configured")
 		}
-		ref, err := s.libraryCreds.PutRemoteAPIKey(remote.ID, apiKey)
+		// Stage rotations under a versioned account. The metadata CAS activates
+		// exactly one reference, so a losing replica can delete only its own staged
+		// secret without clobbering the winner.
+		credentialID := remote.ID + "-" + uuid.NewString()
+		ref, err := s.libraryCreds.PutRemoteAPIKey(credentialID, apiKey)
 		if err != nil {
 			return err
 		}
@@ -385,6 +388,17 @@ func (s *Server) storeRemoteCredential(remote *LibraryRemote, apiKey string, cre
 	remote.APIKey = ""
 	remote.CredentialConfigured = s.remoteCredentialConfigured(*remote)
 	return nil
+}
+
+func (s *Server) deleteRemoteCredential(remote LibraryRemote) error {
+	if s == nil || s.libraryCreds == nil {
+		return nil
+	}
+	ref := strings.TrimSpace(remote.CredentialRef)
+	if ref == "" || strings.HasPrefix(strings.ToLower(ref), libraryCredentialRefEnvPrefix) {
+		return nil
+	}
+	return s.libraryCreds.DeleteRemoteAPIKey(libraryCredentialStorageID(remote))
 }
 
 func (s *Server) remoteLibraryAPIKey(remote LibraryRemote) (string, error) {

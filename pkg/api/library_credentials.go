@@ -82,7 +82,7 @@ func (s *MemoryLibraryCredentialStore) PutRemoteAPIKey(remoteID string, apiKey s
 }
 
 func (s *MemoryLibraryCredentialStore) GetRemoteAPIKey(remote LibraryRemote) (string, error) {
-	remoteID := strings.TrimSpace(remote.ID)
+	remoteID := libraryCredentialStorageID(remote)
 	if remoteID == "" {
 		return "", errors.New("remote id is required")
 	}
@@ -100,4 +100,21 @@ func (s *MemoryLibraryCredentialStore) DeleteRemoteAPIKey(remoteID string) error
 
 func libraryKeyringAccount(remoteID string) string {
 	return "library-remote:" + strings.TrimSpace(remoteID)
+}
+
+func libraryCredentialStorageID(remote LibraryRemote) string {
+	ref := strings.TrimSpace(remote.CredentialRef)
+	keyringPrefix := libraryCredentialRefKeyringPrefix + "library-remote:"
+	if strings.HasPrefix(strings.ToLower(ref), keyringPrefix) {
+		return strings.TrimSpace(ref[len(keyringPrefix):])
+	}
+	return strings.TrimSpace(remote.ID)
+}
+
+func libraryKeyringAccountForRemote(remote LibraryRemote) string {
+	ref := strings.TrimSpace(remote.CredentialRef)
+	if strings.HasPrefix(strings.ToLower(ref), libraryCredentialRefKeyringPrefix) {
+		return strings.TrimSpace(ref[len(libraryCredentialRefKeyringPrefix):])
+	}
+	return libraryKeyringAccount(remote.ID)
 }

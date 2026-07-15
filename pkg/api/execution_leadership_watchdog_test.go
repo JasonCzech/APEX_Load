@@ -56,3 +56,25 @@ func TestExecutionLeadershipWatchdogExpiresBlockedRenewal(t *testing.T) {
 		t.Fatal("leadership loop did not stop")
 	}
 }
+
+func TestInitializingRunContextCancelsWithLeadershipEpoch(t *testing.T) {
+	leadership := newExecutionLeadership(&fakeLeaseStore{dfltOK: true}, "run-context")
+	leadership.tick()
+	if !leadership.IsLeader() {
+		t.Fatal("leadership was not acquired")
+	}
+	runner := NewTestRunner(1, NewHub(), nil, WithExecutionLeadership(leadership))
+	testRun := &ManagedTest{ID: "run"}
+	runner.mu.Lock()
+	runner.markTestInitializingLocked(testRun)
+	runner.mu.Unlock()
+	if err := testRun.executionCtx.Err(); err != nil {
+		t.Fatalf("initial execution context already canceled: %v", err)
+	}
+	leadership.relinquish()
+	select {
+	case <-testRun.executionCtx.Done():
+	case <-time.After(time.Second):
+		t.Fatal("leadership loss did not cancel the initializing run")
+	}
+}

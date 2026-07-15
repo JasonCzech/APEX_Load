@@ -24,6 +24,7 @@ type librarySettingsCASStore interface {
 const defaultLibraryArchiveMaxBytes int64 = 512 * 1024 * 1024
 const defaultLibraryRemoteJSONTimeout = 30 * time.Second
 const defaultLibraryRemoteArchiveTimeout = 5 * time.Minute
+const libraryRemoteJSONMaxBytes int64 = defaultMaxRequestBodyBytes
 
 type LibraryCapabilitiesResponse struct {
 	SchemaVersion string    `json:"schema_version"`
@@ -389,13 +390,20 @@ func resolveLibraryTransferProjectID(r *http.Request, store storage.Store) (stri
 	if err := decodeRequestBody(r, &req); err != nil {
 		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
 	}
-	if strings.HasSuffix(r.URL.Path, "/pull") {
+	path := r.URL.Path
+	if strings.HasSuffix(path, "/pull") {
+		if strings.TrimSpace(req.ProjectID) == "" {
+			return "", http.StatusBadRequest, "project_id is required as the library pull destination"
+		}
 		return normalizeProjectID(req.ProjectID), 0, ""
 	}
-	if store == nil || strings.TrimSpace(req.ID) == "" {
+	lookupID := strings.TrimSpace(req.ID)
+	if strings.HasSuffix(path, "/diff") {
+		lookupID = strings.TrimSpace(firstNonEmpty(req.LocalID, req.ID))
+	}
+	if store == nil || lookupID == "" {
 		return "", 0, ""
 	}
-	lookupID := firstNonEmpty(req.LocalID, req.ID)
 	var actualProjectID string
 	switch normalizeLibraryKind(req.Kind) {
 	case "script":
@@ -423,7 +431,7 @@ func resolveLibraryTransferProjectID(r *http.Request, store storage.Store) (stri
 	default:
 		return "", http.StatusBadRequest, "kind must be one of script, scenario, or result"
 	}
-	if strings.HasSuffix(r.URL.Path, "/export") && strings.TrimSpace(req.ProjectID) != "" && normalizeProjectID(req.ProjectID) != actualProjectID {
+	if strings.HasSuffix(path, "/export") && strings.TrimSpace(req.ProjectID) != "" && normalizeProjectID(req.ProjectID) != actualProjectID {
 		return "", http.StatusBadRequest, "project_id does not match the requested object's project"
 	}
 	return actualProjectID, 0, ""

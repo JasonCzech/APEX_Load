@@ -247,7 +247,6 @@ func (b *Browser) enqueueNetworkRequest(request playwright.Request, finished boo
 		b.mu.Lock()
 		b.networkTasksDropped++
 		b.mu.Unlock()
-		b.failHARLimitConservatively()
 	}
 }
 

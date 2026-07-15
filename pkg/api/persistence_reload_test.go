@@ -1,12 +1,38 @@
 package api
 
 import (
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
+
+type serialScriptReloadStore struct {
+	mu            sync.Mutex
+	calls         int
+	firstStarted  chan struct{}
+	secondStarted chan struct{}
+	releaseFirst  chan struct{}
+}
+
+func (s *serialScriptReloadStore) SaveScript(*dsl.Script) error     { return nil }
+func (s *serialScriptReloadStore) DeleteScript(string) error        { return nil }
+func (s *serialScriptReloadStore) MoveScript(string, *string) error { return nil }
+func (s *serialScriptReloadStore) ListScripts(string, *string) ([]*dsl.Script, error) {
+	s.mu.Lock()
+	s.calls++
+	call := s.calls
+	s.mu.Unlock()
+	if call == 1 {
+		close(s.firstStarted)
+		<-s.releaseFirst
+	} else if call == 2 {
+		close(s.secondStarted)
+	}
+	return []*dsl.Script{{ID: "script", Name: "script"}}, nil
+}
 
 type scriptReloadRaceStore struct {
 	listed []*dsl.Script
@@ -126,6 +152,37 @@ func TestReloadStoredScriptsDoesNotOverwriteConcurrentMutation(t *testing.T) {
 	}
 	if tr.scripts[concurrent.ID] != concurrent || tr.scripts["old"] != nil {
 		t.Fatalf("stale reload replaced concurrent mutation: %#v", tr.scripts)
+	}
+}
+
+func TestConcurrentScriptReloadsAreSerialized(t *testing.T) {
+	store := &serialScriptReloadStore{
+		firstStarted:  make(chan struct{}),
+		secondStarted: make(chan struct{}),
+		releaseFirst:  make(chan struct{}),
+	}
+	runner := &TestRunner{scripts: map[string]*StoredScript{}, refKeyIndex: map[string]string{}, scriptStore: store}
+	firstDone := make(chan error, 1)
+	secondDone := make(chan error, 1)
+	go func() { firstDone <- runner.reloadStoredScripts() }()
+	<-store.firstStarted
+	go func() { secondDone <- runner.reloadStoredScripts() }()
+	select {
+	case <-store.secondStarted:
+		t.Fatal("second reload entered storage before the first completed")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(store.releaseFirst)
+	if err := <-firstDone; err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-store.secondStarted:
+	case <-time.After(time.Second):
+		t.Fatal("second reload did not proceed after the first completed")
+	}
+	if err := <-secondDone; err != nil {
+		t.Fatal(err)
 	}
 }
 

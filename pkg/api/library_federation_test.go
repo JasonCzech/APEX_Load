@@ -11,12 +11,48 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
+
+func TestConcurrentLibraryLinkWritesPersistEveryLink(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "links.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	server := NewServer(ServerConfig{Store: store})
+	const count = 24
+	var wg sync.WaitGroup
+	errs := make(chan error, count)
+	for i := 0; i < count; i++ {
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+			id := fmt.Sprintf("source-%d", index)
+			errs <- server.rememberLibraryLink("remote", "script", "instance", id, "local-"+id, id, "local-hash", "remote-hash")
+		}(i)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	server.libraryStateMutationMu.Lock()
+	server.loadLibraryLinksState()
+	server.libraryStateMutationMu.Unlock()
+	server.libraryMu.Lock()
+	defer server.libraryMu.Unlock()
+	if len(server.libraryLinks) != count {
+		t.Fatalf("persisted links = %d, want %d", len(server.libraryLinks), count)
+	}
+}
 
 func TestLibraryExportImportScenarioIncludesScriptDependency(t *testing.T) {
 	source := NewServer(ServerConfig{})

@@ -230,11 +230,7 @@ func (s *Server) libraryResultBundleItem(id string) (LibraryBundleItem, error) {
 	result := &LibraryResultPayload{
 		Test:    test,
 		Archive: test.Archive,
-		Summary: map[string]any{
-			"status":       test.Status,
-			"total_vusers": test.TotalVUsers,
-			"duration":     test.DurationStr,
-		},
+		Summary: libraryResultSummary(test),
 	}
 	if record, ok := s.runner.GetRunArchive(id); ok && record != nil {
 		result.Archive = record
@@ -274,7 +270,11 @@ func (s *Server) importLibraryBundleWithArchive(req LibraryImportRequest, remote
 	response := &LibraryImportResponse{SchemaVersion: libraryBundleSchemaVersion, ImportedAt: time.Now().UTC()}
 	idMap := map[string]string{}
 	for _, item := range bundle.Items {
-		if normalizeLibraryKind(item.Kind) != "script" || item.Script == nil {
+		if normalizeLibraryKind(item.Kind) != "script" {
+			continue
+		}
+		if item.Script == nil {
+			response.Conflicts = append(response.Conflicts, LibraryConflict{Kind: "script", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: "script payload is missing"})
 			continue
 		}
 		localID, action, conflict := s.importLibraryScript(item, projectID, remoteID)
@@ -384,10 +384,19 @@ func (s *Server) importLibraryScenario(item LibraryBundleItem, projectID string,
 		}
 		action = "updated"
 	}
-	req := item.Scenario.Request
+	req := cloneScenarioRequestForLibrary(item.Scenario.Request)
+	dependencies := make(map[string]LibraryDependency, len(item.Dependencies))
+	for _, dependency := range item.Dependencies {
+		if normalizeLibraryKind(dependency.Kind) == "script" && strings.TrimSpace(dependency.ID) != "" {
+			dependencies[dependency.ID] = dependency
+		}
+	}
 	for i := range req.Groups {
-		if mapped := idMap[req.Groups[i].ScriptID]; mapped != "" {
+		sourceScriptID := req.Groups[i].ScriptID
+		mappedDependency := false
+		if mapped := idMap[sourceScriptID]; mapped != "" {
 			req.Groups[i].ScriptID = mapped
+			mappedDependency = true
 		}
 		stored, ok := s.runner.GetScript(req.Groups[i].ScriptID)
 		if !ok || stored == nil {
@@ -395,6 +404,9 @@ func (s *Server) importLibraryScenario(item LibraryBundleItem, projectID string,
 		}
 		if normalizeProjectID(stored.ProjectID) != projectID {
 			return "", "", &LibraryConflict{Kind: "scenario", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: "referenced script belongs to a different destination project"}
+		}
+		if dependency, ok := dependencies[sourceScriptID]; !mappedDependency && ok && strings.TrimSpace(dependency.ContentHash) != "" && hashLibraryScript(stored.Script) != dependency.ContentHash {
+			return "", "", &LibraryConflict{Kind: "scenario", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: "referenced script content does not match dependency hash: " + sourceScriptID}
 		}
 	}
 	if localID == "" {
@@ -430,7 +442,13 @@ func (s *Server) importLibraryResult(item LibraryBundleItem, projectID string, r
 	if item.Result == nil {
 		return "", "", &LibraryConflict{Kind: "result", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: "result payload is missing"}
 	}
-	if item.Result.Test != nil && (strings.TrimSpace(item.ContentHash) == "" || item.ContentHash != hashLibraryResult(item.Result.Test)) {
+	if item.Result.Test == nil {
+		return "", "", &LibraryConflict{Kind: "result", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: "result test payload is missing"}
+	}
+	contentHash := strings.TrimSpace(item.ContentHash)
+	fullHash := hashLibraryResultWithSummary(item.Result.Test, item.Result.Summary)
+	legacyHashWithExpectedSummary := contentHash == hashLibraryResultTestOnly(item.Result.Test) && hashCanonical(item.Result.Summary) == hashCanonical(libraryResultSummary(item.Result.Test))
+	if contentHash == "" || (contentHash != fullHash && !legacyHashWithExpectedSummary) {
 		return "", "", &LibraryConflict{Kind: "result", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: "declared content hash does not match result payload"}
 	}
 	resultID := uuid.New().String()
@@ -467,11 +485,8 @@ func (s *Server) importLibraryResult(item LibraryBundleItem, projectID string, r
 		}
 		manifestHash := hashArchiveManifestPath(filepath.Join(dir, "manifest.json"))
 		sizeBytes := archiveDirectorySize(dir)
-		if item.Result.ArchiveManifestHash != "" && manifestHash != "" && manifestHash != item.Result.ArchiveManifestHash {
-			return "", "", &LibraryConflict{Kind: "result", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: "archive manifest hash does not match bundle metadata"}
-		}
-		if item.Result.ArchiveSizeBytes > 0 && sizeBytes != item.Result.ArchiveSizeBytes {
-			return "", "", &LibraryConflict{Kind: "result", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: "archive size does not match bundle metadata"}
+		if reason := validateLibraryArchiveMetadata(item.Result, manifestHash, sizeBytes); reason != "" {
+			return "", "", &LibraryConflict{Kind: "result", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: reason}
 		}
 		rawResult["archive_path"] = dir
 		rawResult["imported_archive_manifest_hash"] = manifestHash
@@ -491,9 +506,16 @@ func (s *Server) importLibraryResult(item LibraryBundleItem, projectID string, r
 		if err := importLegacyArchiveZipB64(item.Result.ArchiveZipB64, dir, libraryArchiveMaxBytes()); err != nil {
 			return "", "", &LibraryConflict{Kind: "result", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: err.Error()}
 		}
+		manifestHash := hashArchiveManifestPath(filepath.Join(dir, "manifest.json"))
+		sizeBytes := archiveDirectorySize(dir)
+		if reason := validateLibraryArchiveMetadata(item.Result, manifestHash, sizeBytes); reason != "" {
+			return "", "", &LibraryConflict{Kind: "result", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: reason}
+		}
 		rawResult["archive_path"] = dir
-		rawResult["imported_archive_manifest_hash"] = hashArchiveManifestPath(filepath.Join(dir, "manifest.json"))
-		rawResult["imported_archive_size_bytes"] = archiveDirectorySize(dir)
+		rawResult["imported_archive_manifest_hash"] = manifestHash
+		rawResult["imported_archive_size_bytes"] = sizeBytes
+	} else if item.Result.ArchiveManifestHash != "" || item.Result.ArchiveSizeBytes > 0 {
+		return "", "", &LibraryConflict{Kind: "result", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: "archive payload is missing"}
 	}
 	imported := &storage.ExternalResultImport{
 		ID:         importID,
@@ -502,7 +524,7 @@ func (s *Server) importLibraryResult(item LibraryBundleItem, projectID string, r
 		ProjectID:  projectID,
 		ScenarioID: "",
 		Source:     "library://" + item.SourceInstanceID + "/" + item.SourceItemID,
-		Summary:    item.Result.Summary,
+		Summary:    cloneAnyMap(item.Result.Summary),
 		RawResult:  rawResult,
 		CreatedAt:  time.Now().UTC(),
 	}
@@ -519,6 +541,31 @@ func (s *Server) importLibraryResult(item LibraryBundleItem, projectID string, r
 		return imported.ID, "created_link_pending", nil
 	}
 	return imported.ID, "created", nil
+}
+
+func validateLibraryArchiveMetadata(result *LibraryResultPayload, manifestHash string, sizeBytes int64) string {
+	if result == nil {
+		return "archive metadata is missing"
+	}
+	if result.ArchiveManifestHash != "" && manifestHash != result.ArchiveManifestHash {
+		return "archive manifest hash does not match bundle metadata"
+	}
+	if result.ArchiveSizeBytes > 0 && sizeBytes != result.ArchiveSizeBytes {
+		return "archive size does not match bundle metadata"
+	}
+	return ""
+}
+
+func cloneScenarioRequestForLibrary(req CreateScenarioRequest) CreateScenarioRequest {
+	payload, err := json.Marshal(req)
+	if err != nil {
+		return req
+	}
+	var cloned CreateScenarioRequest
+	if err := json.Unmarshal(payload, &cloned); err != nil {
+		return req
+	}
+	return cloned
 }
 
 func cloneScriptForLibrary(script *dsl.Script) *dsl.Script {
