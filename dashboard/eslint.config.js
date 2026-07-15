@@ -27,6 +27,23 @@ const legacyA11yWarningRules = Object.fromEntries(
   }),
 )
 
+// Labels in the settings editors commonly wrap a descriptive span and a
+// reusable input component. Inspect deeply enough to recognize the resulting
+// native control instead of reporting those valid wrapped-label associations.
+legacyA11yWarningRules['jsx-a11y/label-has-associated-control'] = ['warn', {
+  labelComponents: [],
+  labelAttributes: [],
+  controlComponents: ['SecondsFromMillisecondsInput', 'ActionBodyTextarea'],
+  assert: 'either',
+  depth: 25,
+}]
+legacyA11yWarningRules['jsx-a11y/no-noninteractive-tabindex'] = ['warn', {
+  tags: [],
+  // Adjustable separators and keyboard-navigable regions intentionally enter
+  // the tab order and provide their own key handlers.
+  roles: ['tabpanel', 'separator', 'region'],
+}]
+
 const includeLegacyA11yWarnings = process.env.APEXLOAD_A11Y_LEGACY === '1'
 
 export default tseslint.config(
@@ -59,7 +76,18 @@ export default tseslint.config(
       ...blockingA11yRules,
       ...reactHooks.configs.recommended.rules,
       '@typescript-eslint/no-explicit-any': 'off',
-      'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
+      'react-refresh/only-export-components': ['warn', {
+        allowConstantExport: true,
+        // Pure model helpers are intentionally colocated with the prototype
+        // until that screen is decomposed; they do not hold React state.
+        allowExportNames: [
+          'historicalGroupSummaryQuery',
+          'selectedGroupHistoryHasFields',
+          'selectedGroupLoadImpactData',
+          'buildSelectedGroupChartHistoryFromTransactions',
+          'defaultImportSurfaces',
+        ],
+      }],
     },
   },
 )

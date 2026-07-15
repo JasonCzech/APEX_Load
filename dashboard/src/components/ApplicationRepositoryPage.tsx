@@ -949,7 +949,7 @@ export default function ApplicationRepositoryPage({
                         onChange={() => toggleRowSelection(row)}
                       />
                     </td>
-                    <td>
+                        <td aria-label="Repository asset">
                       <div className="repository-asset-name">
                         <strong>{row.name}</strong>
                         <span>{row.summary}</span>
@@ -957,7 +957,7 @@ export default function ApplicationRepositoryPage({
                       </div>
                     </td>
                     <td><span className="repository-kind-pill">{repositoryKindLabel(row.kind)}</span></td>
-                    <td>
+                        <td aria-label="Repository project and category">
                       <div className="repository-table-stack">
                         <strong>{row.projectName || 'None'}</strong>
                         <span>{row.categoryName || 'Uncategorized'}</span>

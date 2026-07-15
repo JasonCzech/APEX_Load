@@ -5,6 +5,7 @@ import { useModalDialog } from '../hooks/useModalDialog'
 import { getDesktopBridge } from '../desktop/desktopBridge'
 import { copyTextToClipboard } from '../utils/clipboardUtils'
 import type { VersionResponse } from '../types'
+import { dialogBackdropProps } from './dialogBackdropProps'
 
 interface AboutDialogProps {
   open: boolean
@@ -48,14 +49,13 @@ export default function AboutDialog({ open, onClose }: AboutDialogProps) {
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" {...dialogBackdropProps(onClose, 'Close About dialog')}>
       <div
         ref={dialogRef}
         className="modal-content about-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="about-dialog-title"
-        onClick={e => e.stopPropagation()}
         style={{ maxWidth: 460 }}
       >
         <h2 id="about-dialog-title" style={{ marginTop: 0 }}>APEX Load</h2>

@@ -759,8 +759,11 @@ export function ActionParameterMenu({
   return (
     <div
       className="action-parameter-menu"
+      role="toolbar"
+      aria-label="Parameter actions"
       style={{ left: selectionState.x, top: selectionState.y }}
       onClick={event => event.stopPropagation()}
+      onKeyDown={event => event.stopPropagation()}
     >
       <button type="button" className="btn btn-sm" onClick={() => onOpenParameterEditor(selectionState.existingName)}>
         {isJson ? 'Create new parameter' : 'Parameterize selection'}

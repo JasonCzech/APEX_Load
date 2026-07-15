@@ -20,7 +20,7 @@ import {
   CLIENT_DOWNLOAD_PLATFORMS,
   detectPlatformFromNavigator,
   platformLabel,
-} from './ClientDownloadsMenu'
+} from './clientDownloadPlatforms'
 import PageViewToggle from './PageViewToggle'
 import { attachImportCorrelationSuggestions } from './scriptEditorUtils'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
@@ -1247,7 +1247,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
                       <div className="rec-bridge-step-title">Download the Recording Agent</div>
                       {agentDownload.managed && (
                         <div className="rec-form-row rec-agent-platform-row">
-                          <label className="rec-label">Platform</label>
+                          <div className="rec-label">Platform</div>
                           <select
                             className="rec-input"
                             value={recordingAgentPlatform}
@@ -1292,7 +1292,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
                           </div>
                           <div className="rec-bridge-command-row">
                             <span className="rec-terminal-prompt">$</span>
-                            <code className="rec-command" data-testid="browser-recorder-bridge-command" tabIndex={0}>{bridgeCommand}</code>
+                            <code className="rec-command" data-testid="browser-recorder-bridge-command">{bridgeCommand}</code>
                           </div>
                         <div className="rec-bridge-command-actions">
                           <button type="button" className="btn btn-secondary btn-sm" onClick={handleCopyBridgeCommand}>
@@ -1308,7 +1308,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
                       </div>
                       <div className="rec-bridge-command-row">
                         <span className="rec-terminal-prompt">#</span>
-                        <code className="rec-command" data-testid="browser-recorder-bridge-token" tabIndex={0}>{bridgeToken}</code>
+                        <code className="rec-command" data-testid="browser-recorder-bridge-token">{bridgeToken}</code>
                       </div>
                       <div className="rec-bridge-command-actions">
                         <button type="button" className="btn btn-secondary btn-sm" onClick={handleCopyBridgeToken}>
@@ -1322,7 +1322,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
                     <div className="rec-bridge-step-content">
                       <div className="rec-bridge-step-title">Verify the agent</div>
                       <div className="rec-form-row">
-                        <label className="rec-label">Bridge URL</label>
+                        <div className="rec-label">Bridge URL</div>
                         <input
                           className="rec-input"
                           value={bridgeOrigin}
@@ -1357,7 +1357,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
                 </div>
               )}
               <div className="rec-form-row">
-                <label className="rec-label">Start URL</label>
+                <div className="rec-label">Start URL</div>
                 <div className="rec-url-input-group">
                   <select
                     className="rec-input rec-url-scheme-select"
@@ -1378,7 +1378,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
                 </div>
               </div>
               <div className="rec-form-row">
-                <label className="rec-label">Session Name</label>
+                <div className="rec-label">Session Name</div>
                 <input
                   className="rec-input"
                   value={browserName}
@@ -1387,7 +1387,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
                 />
               </div>
               <div className="rec-form-row">
-                <label className="rec-label">Device</label>
+                <div className="rec-label">Device</div>
                 <select className="rec-input" value={browserDevice} onChange={e => setBrowserDevice(e.target.value)} aria-label="Device preset">
                   <option value="">Desktop (default)</option>
                   {browserDevices.filter(d => d.name !== 'desktop_1080p').map(d => (
@@ -1422,17 +1422,18 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
                     <span>Capture WebSocket frame payloads (scrubbed)</span>
                   </label>
                   <div className="rec-form-row">
-                    <label className="rec-label">Exclude hosts <span className="rec-hint">(comma-separated, HAR noise filter)</span></label>
-                    <input className="rec-input" value={browserExcludeHosts} onChange={e => setBrowserExcludeHosts(e.target.value)} placeholder="analytics.google.com, cdn.example.com" />
+                    <div className="rec-label">Exclude hosts <span className="rec-hint">(comma-separated, HAR noise filter)</span></div>
+                    <input className="rec-input" aria-label="Exclude hosts" value={browserExcludeHosts} onChange={e => setBrowserExcludeHosts(e.target.value)} placeholder="analytics.google.com, cdn.example.com" />
                   </div>
                   <div className="rec-form-row">
-                    <label className="rec-label">Reuse session state <span className="rec-hint">(saved storage-state path, skip login)</span></label>
-                    <input className="rec-input" value={browserStorageState} onChange={e => setBrowserStorageState(e.target.value)} placeholder="/path/to/state.json" />
+                    <div className="rec-label">Reuse session state <span className="rec-hint">(saved storage-state path, skip login)</span></div>
+                    <input className="rec-input" aria-label="Reuse session state path" value={browserStorageState} onChange={e => setBrowserStorageState(e.target.value)} placeholder="/path/to/state.json" />
                   </div>
                 </div>
               )}
 
               <button
+                aria-label="Start browser recording"
                 className="btn btn-primary rec-start-btn"
                 onClick={handleStartBrowserRecording}
                 disabled={!!browserPanelSessionId}
@@ -1501,6 +1502,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
       {/* Proxy Setup */}
       <div className="rec-setup-section">
         <button
+          aria-label="Toggle proxy recorder setup"
           type="button"
           className="rec-setup-toggle"
           aria-expanded={showSetup}
@@ -1693,7 +1695,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
         {!activeSession ? (
           <div className="rec-start-form">
             <div className="rec-form-row">
-              <label className="rec-label">Session Name</label>
+                <div className="rec-label">Session Name</div>
               <input
                 className="rec-input"
                 value={sessionName}
@@ -1702,7 +1704,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
               />
             </div>
             <div className="rec-form-row">
-              <label className="rec-label">Include Hosts <span className="rec-hint">(comma-separated, optional)</span></label>
+                <div className="rec-label">Include Hosts <span className="rec-hint">(comma-separated, optional)</span></div>
               <input
                 className="rec-input"
                 value={includeHosts}
@@ -1711,7 +1713,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
               />
             </div>
             <div className="rec-form-row">
-              <label className="rec-label">Exclude Hosts <span className="rec-hint">(comma-separated, optional)</span></label>
+                <div className="rec-label">Exclude Hosts <span className="rec-hint">(comma-separated, optional)</span></div>
               <input
                 className="rec-input"
                 value={excludeHosts}
@@ -1807,6 +1809,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
                 className={`rec-session-card ${selectedSession?.id === session.id ? 'selected' : ''}`}
               >
                 <button
+                  aria-label={`Select recording session ${session.name}`}
                   type="button"
                   className="rec-session-select"
                   aria-pressed={selectedSession?.id === session.id}
@@ -1902,6 +1905,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
                     <td><span className={`rec-method ${req.method.toLowerCase()}`}>{req.method}</span></td>
                     <td className="cell-path" title={req.url}>
                       <button
+                        aria-label={`Select request ${req.seq}`}
                         type="button"
                         className="rec-request-select"
                         aria-pressed={selectedRequest?.seq === req.seq}

@@ -6,6 +6,8 @@ import type { BrowserToHTTPPreviewResponse } from '../hooks/api/useScriptApi'
 import { useKeyboardShortcuts } from '../hooks/KeyboardShortcutProvider'
 import { useHasTopbarContributionProvider, useTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
+import { dialogBackdropProps } from './dialogBackdropProps'
+import { interactiveElementProps } from './interactiveElementProps'
 import { useModalDialog } from '../hooks/useModalDialog'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useVirtualizer, type VirtualItem } from '@tanstack/react-virtual'
@@ -925,14 +927,13 @@ function MetadataJsonViewer({ metadata }: { metadata: ScriptImportMetadata }) {
 function MetadataJsonDialog({ metadata, onClose }: { metadata: ScriptImportMetadata; onClose: () => void }) {
   const dialogRef = useEditorDialogRef(onClose)
   return (
-    <div className="editor-dialog-backdrop" onClick={onClose}>
+    <div className="editor-dialog-backdrop" {...(onClose ? dialogBackdropProps(onClose) : {})}>
       <div
         ref={dialogRef}
         className="editor-dialog metadata-json-dialog"
         role="dialog"
         aria-modal="true"
         aria-label="Imported Metadata JSON"
-        onClick={event => event.stopPropagation()}
       >
         <div className="editor-dialog-header">
           <div>
@@ -6732,9 +6733,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   </button>
                 </div>
                 <span role="cell" className="action-list-center-type" style={{ color: methodColor(action.type) }}>{action.type}</span>
-                <button type="button" role="cell" className="action-list-center-name" title={actionRowLabel(action)} onClick={() => selectAuthorPhaseAction(row)}>
+                <div role="cell"><button type="button" className="action-list-center-name" title={actionRowLabel(action)} onClick={() => selectAuthorPhaseAction(row)}>
                   {actionRowLabel(action)}
-                </button>
+                </button></div>
                 <span role="cell" className="action-list-center-signals">
                   {issueBucket.length > 0 && (
                     <span className={`action-signal-pill ${issueBucket.some(issue => issue.severity === 'error') ? 'error' : 'warning'}`}>
@@ -7268,7 +7269,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   return (
     <div className="script-editor">
       <datalist id="object-ref-suggestions">
-        {objectRefSuggestions.map(name => <option key={name} value={name} />)}
+        {objectRefSuggestions.map(name => <option key={name} value={name} aria-label={name} />)}
       </datalist>
       {showImportedParameterMappingsDialog && importedParameterFileMappings.length > 0 && (
         <ImportedParameterMappingsDialog
@@ -7278,14 +7279,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         />
       )}
       {serverParameterization && (
-        <div className="editor-dialog-backdrop" onClick={closeServerParameterizationDialog}>
+        <div className="editor-dialog-backdrop" {...dialogBackdropProps(closeServerParameterizationDialog)}>
           <div
             ref={serverParameterizationDialogRef}
             className="editor-dialog server-parameterization-dialog"
             role="dialog"
             aria-modal="true"
             aria-label="Server parameterization scan"
-            onClick={event => event.stopPropagation()}
           >
             <div className="editor-dialog-header">
               <div>
@@ -7313,14 +7313,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         </div>
       )}
       {showSaveBlockModal && (
-        <div className="editor-dialog-backdrop" onClick={closeSaveBlockDialog}>
+        <div className="editor-dialog-backdrop" {...dialogBackdropProps(closeSaveBlockDialog)}>
           <div
             ref={saveBlockDialogRef}
             className="editor-dialog save-block-dialog"
             role="dialog"
             aria-modal="true"
             aria-label="Save selected actions as a reusable block"
-            onClick={event => event.stopPropagation()}
           >
             <div className="editor-dialog-header">
               <div>
@@ -7337,7 +7336,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 <input
                   type="text"
                   value={saveBlockName}
-                  autoFocus
                   placeholder="e.g. Login transaction"
                   onChange={event => setSaveBlockName(event.target.value)}
                 />
@@ -7671,8 +7669,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                       ) : (
                         <div
                           className="debugger-rail-list"
+                          role="region"
+                          aria-label="Debugger actions"
                           tabIndex={0}
-                          onKeyDown={e => {
+                          onKeyDownCapture={e => {
                             if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
                               e.preventDefault()
                               const dir = e.key === 'ArrowDown' ? 1 : -1
@@ -7993,8 +7993,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   </section>
                   <div
                     className={`debugger-resizer debugger-resizer-col ${activeDebuggerResize === 'rail' ? 'active' : ''}`}
-                    onKeyDown={e => handleDebuggerResizeKeyDown('rail', e)}
-                    onMouseDown={e => startDebuggerDrag('rail', e)}
+                    onKeyDownCapture={e => handleDebuggerResizeKeyDown('rail', e)}
+                    onPointerDown={e => startDebuggerDrag('rail', e)}
                     role="separator"
                     tabIndex={0}
                     title="Resize actions panel"
@@ -8012,8 +8012,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 <section className="debugger-center" aria-label="Debug detail">
                   <div
                     className={`debugger-resizer debugger-resizer-col debugger-resizer-vars ${activeDebuggerResize === 'vars' ? 'active' : ''}`}
-                    onKeyDown={e => handleDebuggerResizeKeyDown('vars', e)}
-                    onMouseDown={e => startDebuggerDrag('vars', e)}
+                    onKeyDownCapture={e => handleDebuggerResizeKeyDown('vars', e)}
+                    onPointerDown={e => startDebuggerDrag('vars', e)}
                     role="separator"
                     tabIndex={0}
                     title="Resize debug panel"
@@ -8448,8 +8448,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 <section className="debugger-bottom" aria-label="Debug dock">
                   <div
                     className={`debugger-resizer debugger-resizer-row ${activeDebuggerResize === 'bottom' ? 'active' : ''}`}
-                    onKeyDown={e => handleDebuggerResizeKeyDown('bottom', e)}
-                    onMouseDown={e => startDebuggerDrag('bottom', e)}
+                    onKeyDownCapture={e => handleDebuggerResizeKeyDown('bottom', e)}
+                    onPointerDown={e => startDebuggerDrag('bottom', e)}
                     role="separator"
                     tabIndex={0}
                     title="Resize bottom panel"
@@ -10513,7 +10513,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   aria-orientation="vertical"
                   aria-label="Resize outline panel (double-click to fit content)"
                   title="Drag to resize · double-click to fit content"
-                  onMouseDown={startAuthorRailDrag}
+                  onPointerDown={startAuthorRailDrag}
                   onDoubleClick={fitAuthorRailToContent}
                 />
               )}
@@ -10621,7 +10621,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                             </button>
                           </span>
                           <input
-                            autoFocus
                             className="txn-wrap-input"
                             value={txnWrapDraft}
                             placeholder="Transaction name"
@@ -10708,7 +10707,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                               key={item.key}
                               {...virtualRowProps}
                               className={`action-item action-item-nested ${leafActive ? 'active' : ''} ${leafBpActive ? 'has-breakpoint' : ''}`}
-                              onClick={() => selectAuthorNestedItem(item)}
+                              {...interactiveElementProps(() => selectAuthorNestedItem(item), `Select ${item.childAction.name || leafLabel}`)}
                             >
                               <div className="action-cell action-cell-gutter">
                                 <input
@@ -10744,7 +10743,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                           const containerSelected = authorCodeFocus?.key === item.key
                           const typeLabel = item.containerType === 'http_sequence' ? 'SEQ' : item.containerType === 'control_if' ? 'IF' : 'LOOP'
                           return (
-                            <div key={item.key} {...virtualRowProps} className={`action-item action-item-nested lifecycle-action ${containerSelected ? 'active' : ''}`} onClick={() => selectAuthorNestedItem(item)}>
+                            <div key={item.key} {...virtualRowProps} className={`action-item action-item-nested lifecycle-action ${containerSelected ? 'active' : ''}`} {...interactiveElementProps(() => selectAuthorNestedItem(item), `Select ${item.name}`)}>
                               <div className="action-cell action-cell-gutter">
                                 <input
                                   type="checkbox"
@@ -10809,7 +10808,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                             className={`action-item ${rowActive ? 'active' : ''} ${actionBreakpointActive ? 'has-breakpoint' : ''} ${phase !== 'action' ? 'lifecycle-action' : ''} ${txnBand ? 'in-txn-band' : ''} ${txnBand?.first ? 'txn-band-first' : ''} ${txnBand?.last ? 'txn-band-last' : ''}`}
                             title={txnBand ? `Transaction: ${txnBand.name}` : undefined}
                             style={virtualItem ? { position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${virtualItem.start}px)` } : undefined}
-                            onClick={() => selectAuthorPhaseAction(row)}
+                            {...interactiveElementProps(() => selectAuthorPhaseAction(row), `Select ${row.action.name || rowActionKind}`)}
                           >
                             <div className="action-cell action-cell-gutter">
                               {phase === 'action' && (
@@ -11754,14 +11753,13 @@ function ImportedParameterMappingsDialog({
 }: ImportedParameterMappingsDialogProps) {
   const dialogRef = useEditorDialogRef(onClose)
   return (
-    <div className="editor-dialog-backdrop" onClick={onClose}>
+    <div className="editor-dialog-backdrop" {...dialogBackdropProps(onClose)}>
       <div
         ref={dialogRef}
         className="editor-dialog imported-parameter-mappings-dialog"
         role="dialog"
         aria-modal="true"
         aria-label="Parameter File Mappings"
-        onClick={event => event.stopPropagation()}
       >
         <div className="editor-dialog-header">
           <div>
@@ -11812,14 +11810,13 @@ interface ReplayScreenshotDialogProps {
 function ReplayScreenshotDialog({ alt, onClose, src }: ReplayScreenshotDialogProps) {
   const dialogRef = useEditorDialogRef(onClose)
   return (
-    <div className="editor-dialog-backdrop" onClick={onClose}>
+    <div className="editor-dialog-backdrop" {...dialogBackdropProps(onClose)}>
       <div
         ref={dialogRef}
         className="editor-dialog replay-screenshot-dialog"
         role="dialog"
         aria-modal="true"
         aria-label="Replay Screenshot"
-        onClick={event => event.stopPropagation()}
       >
         <div className="editor-dialog-header">
           <div>
@@ -12006,8 +12003,8 @@ function ParameterDataDialog({
   if (variant === 'document') return dialog
 
   return (
-    <div className="editor-dialog-backdrop" onClick={onClose}>
-      <div onClick={event => event.stopPropagation()}>
+    <div className="editor-dialog-backdrop" {...(onClose ? dialogBackdropProps(onClose) : {})}>
+      <div>
         {dialog}
       </div>
     </div>
@@ -13566,7 +13563,7 @@ function ParameterDefinitionRow({
         />
       </td>
       <td className="cell-mono">{parameter.name ? `{{param.${parameter.name}}}` : '—'}</td>
-      <td style={{ textAlign: 'right' }}>
+              <td aria-label="Parameter actions" style={{ textAlign: 'right' }}>
         <button
           className="btn btn-sm btn-ghost"
           style={{ color: 'var(--danger)' }}
@@ -13808,14 +13805,13 @@ function ExistingParameterDialog({
   }), [normalizedQuery, parameters])
 
   return (
-    <div className="editor-dialog-backdrop parameter-choice-backdrop" onClick={onClose}>
+    <div className="editor-dialog-backdrop parameter-choice-backdrop" {...dialogBackdropProps(onClose)}>
       <div
         ref={dialogRef}
         className="editor-dialog parameter-choice-dialog parameter-existing-dialog"
         role="dialog"
         aria-modal="true"
         aria-label="Use Existing Parameter"
-        onClick={event => event.stopPropagation()}
       >
         <div className="editor-dialog-header">
           <div>
@@ -13912,14 +13908,13 @@ function JsonOccurrenceReviewDialog({
   }
 
   return (
-    <div className="editor-dialog-backdrop parameter-choice-backdrop" onClick={onClose}>
+    <div className="editor-dialog-backdrop parameter-choice-backdrop" {...dialogBackdropProps(onClose)}>
       <div
         ref={dialogRef}
         className="editor-dialog parameter-choice-dialog parameter-occurrence-dialog"
         role="dialog"
         aria-modal="true"
         aria-label="Review Matching Occurrences"
-        onClick={event => event.stopPropagation()}
       >
         <div className="editor-dialog-header">
           <div>
@@ -14013,14 +14008,13 @@ function ParameterizeDialog({ draft, onClose, onChooseFile, onConfirmBuiltin }: 
   }
 
   return (
-    <div className="editor-dialog-backdrop parameter-choice-backdrop" onClick={onClose}>
+    <div className="editor-dialog-backdrop parameter-choice-backdrop" {...dialogBackdropProps(onClose)}>
       <div
         ref={dialogRef}
         className="editor-dialog parameter-choice-dialog parameterize-dialog"
         role="dialog"
         aria-modal="true"
         aria-label="Parameterize Selection"
-        onClick={event => event.stopPropagation()}
       >
         <div className="editor-dialog-header">
           <div>
@@ -14095,14 +14089,13 @@ function ParameterChoiceDialog({
 }: ParameterChoiceDialogProps) {
   const dialogRef = useEditorDialogRef(onClose)
   return (
-    <div className="editor-dialog-backdrop parameter-choice-backdrop" onClick={onClose}>
+    <div className="editor-dialog-backdrop parameter-choice-backdrop" {...dialogBackdropProps(onClose)}>
       <div
         ref={dialogRef}
         className="editor-dialog parameter-choice-dialog"
         role="dialog"
         aria-modal="true"
         aria-label={definition.title}
-        onClick={event => event.stopPropagation()}
       >
         <div className="editor-dialog-header">
           <div>
@@ -14339,14 +14332,13 @@ function ParameterSettingsDialog({
   const hasOutputSettings = parameterType === 'counter' || parameterType === 'current_iteration' || parameterType === 'random_number' || parameter.seed !== undefined
 
   return (
-    <div className="editor-dialog-backdrop parameter-choice-backdrop" onClick={onClose}>
+    <div className="editor-dialog-backdrop parameter-choice-backdrop" {...dialogBackdropProps(onClose)}>
       <div
         ref={dialogRef}
         className="editor-dialog parameter-choice-dialog parameter-settings-dialog"
         role="dialog"
         aria-modal="true"
         aria-label={`Settings for ${parameterName}`}
-        onClick={event => event.stopPropagation()}
       >
         <div className="editor-dialog-header">
           <div>
@@ -14556,14 +14548,13 @@ function ParameterSelectionSettingsDialog({
   }
 
   return (
-    <div className="editor-dialog-backdrop parameter-choice-backdrop" onClick={onClose}>
+    <div className="editor-dialog-backdrop parameter-choice-backdrop" {...dialogBackdropProps(onClose)}>
       <div
         ref={dialogRef}
         className="editor-dialog parameter-choice-dialog parameter-selection-settings-dialog"
         role="dialog"
         aria-modal="true"
         aria-label={`Selection Settings for ${parameterName}`}
-        onClick={event => event.stopPropagation()}
       >
         <div className="editor-dialog-header">
           <div>
@@ -15236,7 +15227,7 @@ function ParameterDataSourceRows({
           />
         </td>
         {!isFocusedParameterView && (
-          <td style={{ textAlign: 'right' }}>
+          <td aria-label="Parameter actions" style={{ textAlign: 'right' }}>
             <div className="parameter-actions">
               <button className="btn btn-sm btn-ghost" onClick={() => onToggleOpenDataEditor(index)}>
                 {isEditorOpen ? 'Hide Data' : 'Edit Data'}

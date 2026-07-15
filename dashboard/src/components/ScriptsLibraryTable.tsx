@@ -267,7 +267,7 @@ export default function ScriptsLibraryTable({
                       )}
                     </div>
                   </td>
-                  <td>
+                  <td aria-label="Scenario usage">
                     <span className={`protocol-badge ${authoringHealthClass(script)}`}>{authoringHealthLabel(script)}</span>
                     {script.authoring_health && (
                       <div className="script-health-inline">
@@ -277,13 +277,13 @@ export default function ScriptsLibraryTable({
                       </div>
                     )}
                   </td>
-                  <td>
+                  <td aria-label="Scenario usage">
                     <div className="script-table-usage">
                       <strong>{formatScenarioCount(script)}</strong>
                       <span>{scenarioRunReleaseList(script)}</span>
                     </div>
                   </td>
-                  <td>
+                  <td aria-label="Associated releases">
                     <div className="script-table-usage">
                       <span>{releaseList(script)}</span>
                     </div>

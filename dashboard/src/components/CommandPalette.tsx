@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { useModalDialog } from '../hooks/useModalDialog'
 import { formatShortcutDisplay, type RegisteredKeyboardShortcut } from '../hooks/KeyboardShortcutProvider'
+import { dialogBackdropProps } from './dialogBackdropProps'
 import './CommandPalette.css'
 
 interface CommandPaletteProps {
@@ -57,14 +58,13 @@ export function CommandPalette({ shortcuts, onClose }: CommandPaletteProps) {
   }
 
   return (
-    <div className="command-palette-backdrop" role="presentation" onMouseDown={onClose}>
+    <div className="command-palette-backdrop" {...dialogBackdropProps(onClose, 'Close command palette')}>
       <div
         ref={dialogRef}
         className="command-palette"
         role="dialog"
         aria-modal="true"
         aria-label="Command palette"
-        onMouseDown={event => event.stopPropagation()}
       >
         <input
           ref={inputRef}

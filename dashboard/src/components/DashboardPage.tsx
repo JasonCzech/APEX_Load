@@ -1137,12 +1137,12 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
         : activitySortDefaults[field],
     }))
   }
-  const dashboardTabCounts: Record<DashboardTabKey, number> = {
+  const dashboardTabCounts = useMemo<Record<DashboardTabKey, number>>(() => ({
     activity: recentTests.length,
     active: stats.active,
     performance: performanceTrend.length,
     releaseTrend: performanceTrend.length,
-  }
+  }), [performanceTrend.length, recentTests.length, stats.active])
   const activeDashboardTabLabel = dashboardTabs.find(tab => tab.id === activeDashboardTab)?.label || 'Dashboard'
   const dashboardTabControls = useMemo(() => (
     <div className="dash-tab-row topbar-page-section-toggle" role="tablist" aria-label="Dashboard sections">
@@ -1160,7 +1160,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
         </button>
       ))}
     </div>
-  ), [activeDashboardTab, dashboardTabCounts.active, dashboardTabCounts.activity, dashboardTabCounts.performance, dashboardTabCounts.releaseTrend])
+  ), [activeDashboardTab, dashboardTabCounts])
   const dashboardTopbarContribution = useMemo(() => ({
     id: 'dashboard-page',
     title: 'Dashboard',
@@ -1303,7 +1303,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                               />
                             </label>
                           </td>
-                          <td>
+                          <td aria-label="Trend actions">
                             <button
                               type="button"
                               className="dash-source-link"
@@ -1328,7 +1328,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                           </td>
                           <td className="num">{formatOptionalNumber(report.completeness?.score_pct, 0)}%</td>
                           {onOpenTestArchive && (
-                            <td>
+                            <td aria-label="Trend actions">
                               <div className="trend-row-actions">
                                 <button
                                   type="button"

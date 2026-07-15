@@ -29,6 +29,7 @@ import { useHasTopbarContributionProvider, useTopbarContribution } from '../hook
 import { clearScenarioBuilderDraft, hasScenarioBuilderProgress } from './scenarioBuilderDraft'
 import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { useModalDialog } from '../hooks/useModalDialog'
+import { dialogBackdropProps } from './dialogBackdropProps'
 
 interface Props {
   applicationRepository?: ApplicationRepository | null
@@ -2890,14 +2891,14 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                             )}
                           </td>
                           <td className="cell-mono">{formatScenarioRunTestID(scenario)}</td>
-                          <td>
+                          <td aria-label="Scenario workload">
                             <div className="scenario-table-workload">
                               <strong>{formatScenarioScripts(scenario)}</strong>
                               <span>{formatScenarioDataPools(scenario)}</span>
                               <span>{formatScenarioResultCount(scenario)}</span>
                             </div>
                           </td>
-                          <td>
+                          <td aria-label="Scenario releases">
                             <div className="scenario-table-workload">
                               <strong>{releaseList(scenario)}</strong>
                             </div>
@@ -3446,7 +3447,6 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
             <input
               className="settings-input"
               value={form.name}
-              autoFocus
               placeholder="Scenario name"
               aria-label="Scenario name"
               onChange={event => setForm({ ...form, name: event.target.value })}
@@ -3661,7 +3661,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                       </td>
                       <td className="cell-muted">{formatDate(script.created_at)}</td>
                       <td className="cell-muted">{formatDate(script.last_run_at)}</td>
-                      <td>
+                      <td aria-label="Script scenario usage">
                         <div className="scenario-table-workload">
                           <strong>{formatScriptScenarioCount(script)}</strong>
                           <span>{associatedScenarioList(script)}</span>
@@ -3784,14 +3784,14 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                       )}
                     </td>
                     <td className="cell-mono">{formatScenarioRunTestID(scenario)}</td>
-                    <td>
+                    <td aria-label="Scenario workload">
                       <div className="scenario-table-workload">
                         <strong>{formatScenarioScripts(scenario)}</strong>
                         <span>{formatScenarioDataPools(scenario)}</span>
                         <span>{formatScenarioResultCount(scenario)}</span>
                       </div>
                     </td>
-                    <td>
+                    <td aria-label="Scenario releases">
                       <div className="scenario-table-workload">
                         <strong>{releaseList(scenario)}</strong>
                       </div>
@@ -3849,7 +3849,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                       <div className="scenario-table-assignment-detail">Project {item.project_id || 'unmapped'} · Hash {shortLibraryHash(item.content_hash)}</div>
                     </td>
                     <td className="cell-mono">—</td>
-                    <td>
+                    <td aria-label="Library dependencies">
                       <div className="scenario-table-workload">
                         <span>{item.dependencies?.length ? `${item.dependencies.length} dependencies` : 'No referenced scripts'}</span>
                       </div>
@@ -3893,7 +3893,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       )}
 
       {confirmDeleteScenarioId && (
-        <div className="modal-overlay" onClick={closeDeleteScenarioDialog}>
+        <div className="modal-overlay" {...dialogBackdropProps(closeDeleteScenarioDialog, 'Close scenario deletion dialog')}>
           <div
             ref={deleteScenarioDialogRef}
             className="modal"
@@ -3901,7 +3901,6 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
             aria-modal="true"
             aria-labelledby="delete-scenario-dialog-title"
             aria-describedby="delete-scenario-dialog-description"
-            onClick={event => event.stopPropagation()}
           >
             <div className="modal-header">
               <h3 id="delete-scenario-dialog-title">Delete Scenario</h3>

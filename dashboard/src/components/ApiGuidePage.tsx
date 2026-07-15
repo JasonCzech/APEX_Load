@@ -6,7 +6,8 @@ import { API_GUIDE_DEFAULT_PAGE, type ApiGuideContentPageID } from '../apiGuideN
 import { buildAllowedOperationSet, canShowEndpointForDocs, docsVisibilityOperationsForEndpoint } from '../apiGuideAccess'
 import { useHasTopbarContributionProvider } from '../hooks/TopbarContributionProvider'
 import type { DashboardAuthEffectiveAccessResource } from '../types'
-import { ApiGuideTopbarToggle, useApiGuideTopbarContribution } from './ApiGuideTopbarToggle'
+import { ApiGuideTopbarToggle } from './ApiGuideTopbarToggle'
+import { useApiGuideTopbarContribution } from './useApiGuideTopbarContribution'
 
 type EndpointDoc = ApiEndpointCatalogRoute & {
   operations: string[]
@@ -69,7 +70,7 @@ export default function ApiGuidePage({
   const [endpointCatalogError, setEndpointCatalogError] = useState('')
   const hasTopbarContributionProvider = useHasTopbarContributionProvider()
   const allowedOperations = useMemo(() => buildAllowedOperationSet(effectiveAccessResources), [effectiveAccessResources])
-  const endpointCatalogRoutes = endpointCatalog?.routes ?? []
+  const endpointCatalogRoutes = useMemo(() => endpointCatalog?.routes ?? [], [endpointCatalog])
   const endpointCatalogByKey = useMemo(() => buildEndpointCatalogMap(endpointCatalogRoutes), [endpointCatalogRoutes])
   const catalogEndpointDocs = useMemo(() => endpointCatalogRoutes.map(route => ({
     ...route,

@@ -69,13 +69,7 @@ export function usePrometheusGraphs(test: TestSummary | null, filteredData: Metr
       endMs: quantizeMs(window.endMs, bucketMs, 'ceil'),
       stepSeconds,
     }
-  }, [
-    filteredData,
-    test?.created_at,
-    test?.ended_at,
-    test?.start_time,
-    test?.started_at,
-  ])
+  }, [filteredData, test])
 
   // Depend the fetch effect on the quantized scalar values rather than the memoized object
   // identity, so it only re-runs when the window actually crosses a step boundary.

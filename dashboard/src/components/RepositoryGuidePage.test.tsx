@@ -4,7 +4,8 @@ import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { TopbarContributionProvider, useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
+import { useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
+import { TopbarContributionProvider } from '../hooks/TopbarContributionRoot'
 import RepositoryGuidePage from './RepositoryGuidePage'
 import { parseMarkdown } from './repositoryGuideMarkdown'
 

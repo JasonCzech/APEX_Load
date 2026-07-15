@@ -5,7 +5,8 @@ import { createRoot, Root } from 'react-dom/client'
 import { EditorView } from '@codemirror/view'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import LinkedCodePane, { routeLinkedCodePaneWheel } from './LinkedCodePane'
+import LinkedCodePane from './LinkedCodePane'
+import { routeLinkedCodePaneWheel } from './linkedCodePaneWheel'
 import { type LineRange } from './dslJsonPointers'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true

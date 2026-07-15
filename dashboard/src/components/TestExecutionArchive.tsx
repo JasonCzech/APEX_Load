@@ -1818,7 +1818,7 @@ export default function TestExecutionArchive({
                         <th>{renderArchiveSortButton('duration', 'Duration')}</th>
                         <th>{renderArchiveSortButton('bytes', 'Bytes')}</th>
                         <th>{renderArchiveSortButton('error', 'Error')}</th>
-                        <th></th>
+                    <th aria-label="Actions"></th>
                       </tr>
                       <tr className="archive-column-filter-row">
                         <th>

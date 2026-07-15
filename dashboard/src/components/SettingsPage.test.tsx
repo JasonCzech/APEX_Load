@@ -6,7 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import SettingsPage from './SettingsPage'
 import type { DashboardAuthEffectiveAccessResource, Domain, ProjectSettings } from '../types'
-import { TopbarContributionProvider, useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
+import { useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
+import { TopbarContributionProvider } from '../hooks/TopbarContributionRoot'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 

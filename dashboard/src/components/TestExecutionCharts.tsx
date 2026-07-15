@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import {
   Area,
@@ -787,17 +787,17 @@ export default function TestExecutionCharts({
     ? graphGroupTabs
     : graphGroupTabs.filter(tab => tab.id !== 'prometheus')
   const activeGraphGroupTab = activeGraphGroupTabProp ?? localActiveGraphGroupTab
-  const updateActiveGraphGroupTab = (tab: GraphGroupTabId) => {
+  const updateActiveGraphGroupTab = useCallback((tab: GraphGroupTabId) => {
     if (activeGraphGroupTabProp === undefined) {
       setLocalActiveGraphGroupTab(tab)
     }
     onActiveGraphGroupTabChange?.(tab)
-  }
+  }, [activeGraphGroupTabProp, onActiveGraphGroupTabChange])
   useEffect(() => {
     if (!enableGraphGroupTabs) return
     if (visibleGraphGroupTabs.some(tab => tab.id === activeGraphGroupTab)) return
     updateActiveGraphGroupTab('test_results')
-  }, [activeGraphGroupTab, enableGraphGroupTabs, visibleGraphGroupTabs])
+  }, [activeGraphGroupTab, enableGraphGroupTabs, updateActiveGraphGroupTab, visibleGraphGroupTabs])
   const visibleCharts = orderedCharts.filter(chart => !hiddenChartIds.includes(chart.id))
   const tabbedCharts = enableGraphGroupTabs
     ? visibleCharts.filter(chart => graphGroupForChart(chart) === activeGraphGroupTab)
@@ -839,7 +839,7 @@ export default function TestExecutionCharts({
       })
     })
 
-    displayedChartIds.forEach(chartId => {
+    displayedChartIdSignature.split('|').filter(Boolean).forEach(chartId => {
       const element = chartCardRefs.current[chartId]
       if (element) observer.observe(element)
     })
@@ -1956,7 +1956,7 @@ export default function TestExecutionCharts({
                       />
                     </td>
                   )}
-                  <td>
+                  <td aria-label="Chart metric">
                     <button
                       type="button"
                       className="chart-metric-name"
@@ -2108,7 +2108,7 @@ export default function TestExecutionCharts({
                   : undefined
                 return (
                   <tr key={row.id}>
-                    <td>
+                    <td aria-label="Generator impact">
                       <span className="generator-impact-generator">
                         <span className={`generator-impact-dot ${row.verdict}`}></span>
                         <span>

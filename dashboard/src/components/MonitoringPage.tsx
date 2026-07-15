@@ -13,6 +13,8 @@ import MonitoringCollectorsCard from './MonitoringCollectorsCard'
 import FleetPoolsCard from './FleetPoolsCard'
 import FleetGeneratorsCard from './FleetGeneratorsCard'
 import TimeslotsPanel from './TimeslotsPanel'
+import { dialogBackdropProps } from './dialogBackdropProps'
+import { interactiveElementProps } from './interactiveElementProps'
 import { frontendBuildMetadata, type FrontendBuildComponentInfo } from '../buildMetadata'
 import './CreateTestModal.css'
 
@@ -920,7 +922,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
           {telemetryDiagnostics.length === 0 ? (
             <p className="monitor-hint">No sampled telemetry diagnostics received. Compact metrics updates remain on the hot path until degradation occurs.</p>
           ) : (
-            <button type="button" className="telemetry-summary-card" onClick={() => setIsTelemetryModalOpen(true)}>
+          <button type="button" className="telemetry-summary-card" aria-label="Open telemetry diagnostics" onClick={() => setIsTelemetryModalOpen(true)}>
               <div className="telemetry-summary-metrics">
                 <div className="telemetry-summary-metric">
                   <span className={`telemetry-summary-value ${telemetryDangerCount > 0 ? 'text-danger' : ''}`}>{telemetryDangerCount}</span>
@@ -1175,7 +1177,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       content: (
         <div className="monitor-body">
           {generators.length ? (
-            <button type="button" className="telemetry-summary-card" onClick={() => setIsGeneratorsModalOpen(true)}>
+          <button type="button" className="telemetry-summary-card" aria-label="Open generator inventory" onClick={() => setIsGeneratorsModalOpen(true)}>
               <div className="telemetry-summary-metrics">
                 <div className="telemetry-summary-metric">
                   <span className={`telemetry-summary-value ${generatorConnectedCount > 0 ? 'text-success' : ''}`}>{generatorConnectedCount}</span>
@@ -1588,8 +1590,8 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       )}
 
       {isTelemetryModalOpen && telemetryDiagnostics.length > 0 && (
-        <div className="modal-overlay" onClick={() => setIsTelemetryModalOpen(false)}>
-          <div ref={telemetryDialogRef} className="modal modal-wide telemetry-modal" role="dialog" aria-modal="true" aria-labelledby="telemetry-diagnostics-title" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-overlay" {...dialogBackdropProps(() => setIsTelemetryModalOpen(false), 'Close telemetry diagnostics')}>
+          <div ref={telemetryDialogRef} className="modal modal-wide telemetry-modal" role="dialog" aria-modal="true" aria-labelledby="telemetry-diagnostics-title">
             <div className="modal-header telemetry-modal-header">
               <div>
                 <h3 id="telemetry-diagnostics-title">Telemetry Diagnostics</h3>
@@ -1619,8 +1621,8 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       )}
 
       {isGeneratorsModalOpen && generators.length > 0 && (
-        <div className="modal-overlay" onClick={() => setIsGeneratorsModalOpen(false)}>
-          <div ref={generatorsDialogRef} className="modal modal-wide telemetry-modal" role="dialog" aria-modal="true" aria-labelledby="generator-inventory-title" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-overlay" {...dialogBackdropProps(() => setIsGeneratorsModalOpen(false), 'Close generator inventory')}>
+          <div ref={generatorsDialogRef} className="modal modal-wide telemetry-modal" role="dialog" aria-modal="true" aria-labelledby="generator-inventory-title">
             <div className="modal-header telemetry-modal-header">
               <div>
                 <h3 id="generator-inventory-title">Generator Inventory</h3>
@@ -2040,7 +2042,7 @@ function RunCalendarPanel({
                   <div
                     key={day.key}
                     className={`run-calendar-day ${day.isOutsidePeriod ? 'outside' : ''} ${day.isToday ? 'today' : ''} ${scheduleForThisDay ? 'schedulable' : ''}`}
-                    onClick={scheduleForThisDay}
+                    {...(scheduleForThisDay ? interactiveElementProps(event => scheduleForThisDay(event as ReactMouseEvent<HTMLDivElement>), `Schedule a run on ${day.key}`) : {})}
                     title={scheduleForThisDay ? 'Schedule a run on this day' : undefined}
                   >
                     <div className="run-calendar-day-header">

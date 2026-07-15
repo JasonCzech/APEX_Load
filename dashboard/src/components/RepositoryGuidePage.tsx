@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import guideMarkdown from '../../../docs/API_USER_GUIDE.md?raw'
-import { useApiGuideTopbarContribution } from './ApiGuideTopbarToggle'
+import { useApiGuideTopbarContribution } from './useApiGuideTopbarContribution'
 import MarkdownRenderer from './MarkdownRenderer'
 import { parseMarkdown, type MarkdownBlock } from './repositoryGuideMarkdown'
 

@@ -409,7 +409,7 @@ export default function RuntimeSettingsGroupEditor({
                 <th>Setting</th>
                 <th>Effective value</th>
                 <th>Source</th>
-                <th />
+              <th aria-label="Actions" />
               </tr>
             </thead>
             <tbody>

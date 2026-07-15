@@ -1,7 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import './KeyboardShortcutProvider.css'
-import { useModalDialog } from './useModalDialog'
-import { CommandPalette } from '../components/CommandPalette'
+import { createContext, useContext, useEffect } from 'react'
 
 export type KeyboardShortcutGroup = 'Global' | 'Navigation' | 'Current Page' | 'Script Editor' | 'Test Run' | 'Workspace' | string
 
@@ -23,7 +20,7 @@ export interface RegisteredKeyboardShortcut extends KeyboardShortcut {
   sequence: number
 }
 
-interface KeyboardShortcutContextValue {
+export interface KeyboardShortcutContextValue {
   shortcuts: RegisteredKeyboardShortcut[]
   openHelp: () => void
   registerShortcuts: (shortcuts: KeyboardShortcut[]) => () => void
@@ -44,10 +41,10 @@ export interface ParsedShortcutSequence {
   steps: ParsedShortcutStep[]
 }
 
-const SEQUENCE_TIMEOUT_MS = 900
-const KeyboardShortcutContext = createContext<KeyboardShortcutContextValue | null>(null)
+export const SEQUENCE_TIMEOUT_MS = 900
+export const KeyboardShortcutContext = createContext<KeyboardShortcutContextValue | null>(null)
 
-const BUILT_IN_HELP_SHORTCUT: RegisteredKeyboardShortcut = {
+export const BUILT_IN_HELP_SHORTCUT: RegisteredKeyboardShortcut = {
   id: 'global.help',
   label: 'Show keyboard shortcuts',
   keys: '?',
@@ -57,7 +54,7 @@ const BUILT_IN_HELP_SHORTCUT: RegisteredKeyboardShortcut = {
   onTrigger: () => undefined,
 }
 
-const BUILT_IN_PALETTE_SHORTCUT: RegisteredKeyboardShortcut = {
+export const BUILT_IN_PALETTE_SHORTCUT: RegisteredKeyboardShortcut = {
   id: 'global.command-palette',
   label: 'Open command palette',
   keys: ['mod+k', 'ctrl+shift+p'],
@@ -68,9 +65,9 @@ const BUILT_IN_PALETTE_SHORTCUT: RegisteredKeyboardShortcut = {
   onTrigger: () => undefined,
 }
 
-const GROUP_ORDER = ['Global', 'Navigation', 'Current Page', 'Script Editor', 'Test Run', 'Workspace']
+export const GROUP_ORDER = ['Global', 'Navigation', 'Current Page', 'Script Editor', 'Test Run', 'Workspace']
 
-function noopUnregister() {
+export function noopUnregister() {
   return undefined
 }
 
@@ -167,7 +164,7 @@ function parseShortcutStep(step: string): ParsedShortcutStep {
   return parsed
 }
 
-function shortcutKeys(shortcut: KeyboardShortcut): string[] {
+export function shortcutKeys(shortcut: KeyboardShortcut): string[] {
   return (Array.isArray(shortcut.keys) ? shortcut.keys : [shortcut.keys]).filter(Boolean)
 }
 
@@ -212,7 +209,7 @@ function isShortcutEnabled(shortcut: RegisteredKeyboardShortcut, event: Keyboard
   return true
 }
 
-function sortShortcuts(left: RegisteredKeyboardShortcut, right: RegisteredKeyboardShortcut) {
+export function sortShortcuts(left: RegisteredKeyboardShortcut, right: RegisteredKeyboardShortcut) {
   const priorityDelta = (right.priority || 0) - (left.priority || 0)
   if (priorityDelta !== 0) return priorityDelta
   return right.sequence - left.sequence
@@ -250,105 +247,6 @@ export function matchingShortcutsForEvent(
   }
 }
 
-export function KeyboardShortcutProvider({ children }: { children: ReactNode }) {
-  const [registry, setRegistry] = useState<Record<string, RegisteredKeyboardShortcut>>({})
-  const [helpOpen, setHelpOpen] = useState(false)
-  const [paletteOpen, setPaletteOpen] = useState(false)
-  const sequenceRef = useRef(0)
-  const pendingStepsRef = useRef<ParsedShortcutStep[]>([])
-  const timeoutRef = useRef<number | null>(null)
-
-  const registeredShortcuts = useMemo(() => Object.values(registry).sort(sortShortcuts), [registry])
-  const allShortcuts = useMemo<RegisteredKeyboardShortcut[]>(() => [
-    { ...BUILT_IN_HELP_SHORTCUT, onTrigger: () => setHelpOpen(true) },
-    { ...BUILT_IN_PALETTE_SHORTCUT, onTrigger: () => setPaletteOpen(open => !open) },
-    ...registeredShortcuts,
-  ], [registeredShortcuts])
-
-  const clearPendingSequence = () => {
-    pendingStepsRef.current = []
-    if (timeoutRef.current !== null) {
-      window.clearTimeout(timeoutRef.current)
-      timeoutRef.current = null
-    }
-  }
-
-  const registerShortcuts = useMemo(() => (
-    (shortcuts: KeyboardShortcut[]) => {
-      if (shortcuts.length === 0) return noopUnregister
-      const registrationId = `shortcut-${++sequenceRef.current}`
-      setRegistry(current => {
-        const next = { ...current }
-        shortcuts.forEach((shortcut, index) => {
-          next[`${registrationId}-${shortcut.id}`] = {
-            ...shortcut,
-            sequence: sequenceRef.current * 1000 + index,
-          }
-        })
-        return next
-      })
-      return () => {
-        setRegistry(current => {
-          const next = { ...current }
-          for (const key of Object.keys(next)) {
-            if (key.startsWith(`${registrationId}-`)) {
-              delete next[key]
-            }
-          }
-          return next
-        })
-      }
-    }
-  ), [])
-
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented) return
-
-      const matches = matchingShortcutsForEvent(allShortcuts, event, pendingStepsRef.current)
-      const selected = matches.exact[0]
-      if (selected) {
-        if (selected.preventDefault !== false) event.preventDefault()
-        clearPendingSequence()
-        selected.onTrigger()
-        return
-      }
-
-      if (matches.prefixes.length > 0) {
-        const firstKeys = shortcutKeys(matches.prefixes[0])[0]
-        const nextStep = parseShortcutSequence(firstKeys).steps[pendingStepsRef.current.length]
-        pendingStepsRef.current = [...pendingStepsRef.current, nextStep]
-        if (timeoutRef.current !== null) window.clearTimeout(timeoutRef.current)
-        timeoutRef.current = window.setTimeout(clearPendingSequence, SEQUENCE_TIMEOUT_MS)
-        if (matches.prefixes[0].preventDefault !== false) event.preventDefault()
-        return
-      }
-
-      clearPendingSequence()
-    }
-
-    window.addEventListener('keydown', handleKeyDown)
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown)
-      clearPendingSequence()
-    }
-  }, [allShortcuts])
-
-  const value = useMemo<KeyboardShortcutContextValue>(() => ({
-    shortcuts: allShortcuts,
-    openHelp: () => setHelpOpen(true),
-    registerShortcuts,
-  }), [allShortcuts, registerShortcuts])
-
-  return (
-    <KeyboardShortcutContext.Provider value={value}>
-      {children}
-      {helpOpen && <ShortcutHelpDialog shortcuts={allShortcuts} onClose={() => setHelpOpen(false)} />}
-      {paletteOpen && <CommandPalette shortcuts={allShortcuts} onClose={() => setPaletteOpen(false)} />}
-    </KeyboardShortcutContext.Provider>
-  )
-}
-
 export function useKeyboardShortcuts(shortcuts: KeyboardShortcut[] | null | undefined) {
   const context = useContext(KeyboardShortcutContext)
   const registerShortcuts = context?.registerShortcuts
@@ -362,72 +260,4 @@ export function useKeyboardShortcuts(shortcuts: KeyboardShortcut[] | null | unde
 export function useKeyboardShortcutHelp() {
   const context = useContext(KeyboardShortcutContext)
   return context?.openHelp || (() => undefined)
-}
-
-function ShortcutHelpDialog({ shortcuts, onClose }: { shortcuts: RegisteredKeyboardShortcut[]; onClose: () => void }) {
-  const dialogRef = useRef<HTMLDivElement | null>(null)
-  useModalDialog({ dialogRef, onClose })
-  const visibleShortcuts = shortcuts.filter(shortcut => !shortcut.hidden)
-  const grouped = groupShortcuts(visibleShortcuts)
-
-  return (
-    <div className="keyboard-shortcut-backdrop" role="presentation" onMouseDown={onClose}>
-      <div
-        ref={dialogRef}
-        className="keyboard-shortcut-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="keyboard-shortcut-title"
-        onMouseDown={event => event.stopPropagation()}
-      >
-        <div className="keyboard-shortcut-header">
-          <div>
-            <h2 id="keyboard-shortcut-title">Keyboard Shortcuts</h2>
-            <p>Power controls for navigating APEX Load without leaving the keyboard.</p>
-          </div>
-          <button type="button" className="keyboard-shortcut-close" onClick={onClose} aria-label="Close keyboard shortcuts">
-            Close
-          </button>
-        </div>
-        <div className="keyboard-shortcut-groups">
-          {grouped.map(([group, groupShortcuts]) => (
-            <section key={group} className="keyboard-shortcut-group" aria-label={`${group} shortcuts`}>
-              <h3>{group}</h3>
-              <dl>
-                {groupShortcuts.map(shortcut => (
-                  <div key={`${shortcut.id}-${formatShortcutDisplay(shortcut.keys)}`} className={shortcut.disabled ? 'disabled' : ''}>
-                    <dt>{shortcut.label}</dt>
-                    <dd>
-                      <kbd>{formatShortcutDisplay(shortcut.keys)}</kbd>
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-            </section>
-          ))}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function groupShortcuts(shortcuts: RegisteredKeyboardShortcut[]): Array<[string, RegisteredKeyboardShortcut[]]> {
-  const groups = new Map<string, RegisteredKeyboardShortcut[]>()
-  for (const shortcut of shortcuts) {
-    const group = shortcut.group || 'Current Page'
-    const current = groups.get(group) || []
-    current.push(shortcut)
-    groups.set(group, current)
-  }
-
-  return Array.from(groups.entries())
-    .sort(([left], [right]) => {
-      const leftIndex = GROUP_ORDER.indexOf(left)
-      const rightIndex = GROUP_ORDER.indexOf(right)
-      if (leftIndex >= 0 || rightIndex >= 0) {
-        return (leftIndex >= 0 ? leftIndex : GROUP_ORDER.length) - (rightIndex >= 0 ? rightIndex : GROUP_ORDER.length)
-      }
-      return left.localeCompare(right)
-    })
-    .map(([group, groupShortcuts]) => [group, groupShortcuts.sort(sortShortcuts)])
 }

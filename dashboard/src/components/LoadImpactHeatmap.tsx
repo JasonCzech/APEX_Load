@@ -300,7 +300,7 @@ const LoadImpactHeatmap = forwardRef<HTMLElement, Props>(function LoadImpactHeat
               <table className="load-impact-table">
                 <thead>
                   <tr>
-                    <th scope="col" aria-sort={ariaSort(METRIC_SORT_KEY)}>
+            <th scope="col" aria-label="Sort by metric" aria-sort={ariaSort(METRIC_SORT_KEY)}>
                       <button
                         type="button"
                         className="load-impact-sort-header"
@@ -313,7 +313,8 @@ const LoadImpactHeatmap = forwardRef<HTMLElement, Props>(function LoadImpactHeat
                     {displayModel.buckets.map(bucket => {
                       const columnHighlighted = highlightedAxis?.bucketId === bucket.id
                       return (
-                        <th
+              <th
+                aria-label={`Sort by ${bucket.label}`}
                           key={bucket.id}
                           scope="col"
                           aria-sort={ariaSort(bucketSortKey(bucket.id))}

@@ -49,6 +49,7 @@ const domains = [
 async function flushPromises() {
   await act(async () => {
     await Promise.resolve()
+    await Promise.resolve()
   })
 }
 
@@ -88,15 +89,19 @@ async function clickSortHeader(container: HTMLElement, label: string) {
 }
 
 function changeInput(input: HTMLInputElement, value: string) {
-  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
-  setter?.call(input, value)
-  input.dispatchEvent(new Event('input', { bubbles: true }))
+  act(() => {
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+    setter?.call(input, value)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
 }
 
 function changeSelect(select: HTMLSelectElement, value: string) {
-  const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')?.set
-  setter?.call(select, value)
-  select.dispatchEvent(new Event('change', { bubbles: true }))
+  act(() => {
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')?.set
+    setter?.call(select, value)
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+  })
 }
 
 function tablePrimaryTexts(container: HTMLElement): string[] {

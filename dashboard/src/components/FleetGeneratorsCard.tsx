@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useFleetApi, GeneratorMetadataPatch } from '../hooks/api/useFleetApi'
 import { ApiError } from '../hooks/apiClient'
 import { useModalDialog } from '../hooks/useModalDialog'
+import { dialogBackdropProps } from './dialogBackdropProps'
 import { FleetGeneratorMetadata } from '../types'
 import './parityPanels.css'
 
@@ -193,14 +194,13 @@ export default function FleetGeneratorsCard({ canManage = false }: Props) {
       )}
 
       {draft && (
-        <div className="pp-modal-overlay" onClick={closeDraft}>
+        <div className="pp-modal-overlay" {...dialogBackdropProps(closeDraft, 'Close generator editor')}>
           <div
             ref={dialogRef}
             className="pp-modal"
             role="dialog"
             aria-modal="true"
             aria-labelledby="fleet-generator-dialog-title"
-            onClick={event => event.stopPropagation()}
           >
             <div className="pp-modal-header">
               <h3 id="fleet-generator-dialog-title">{draft.isNew ? 'Add Generator Metadata' : 'Edit Generator Metadata'}</h3>

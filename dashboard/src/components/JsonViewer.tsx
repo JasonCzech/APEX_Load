@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react'
 import { copyTextToClipboard } from '../utils/clipboardUtils'
+import { interactiveElementProps } from './interactiveElementProps'
 import './JsonViewer.css'
 
 interface JsonViewerProps {
@@ -205,7 +206,7 @@ function JsonNode({ name, value, path, depth, isLast, defaultExpandedDepth, visi
           {renderKey()}
           <span className="json-viewer-punctuation">{isArray ? '[' : '{'}</span>
           {!expanded && (
-            <span className="json-viewer-summary" onClick={() => setExpanded(true)}>
+            <span className="json-viewer-summary" {...interactiveElementProps(() => setExpanded(true), 'Expand JSON value')}>
               {isArray ? `${items.length} items` : `${Object.keys(actualValue as object).length} keys`}
             </span>
           )}

@@ -3,7 +3,7 @@ import { loadApiEndpointCatalog, loadSwaggerYaml } from '../apiDocsClient'
 import { buildEndpointCatalogMap, endpointCatalogKey, type ApiEndpointCatalog, type ApiEndpointCatalogRoute } from '../apiEndpointCatalog'
 import { buildAllowedOperationSet, canShowEndpointForDocs, classifyEndpointForDocs } from '../apiGuideAccess'
 import type { DashboardAuthEffectiveAccessResource } from '../types'
-import { useApiGuideTopbarContribution } from './ApiGuideTopbarToggle'
+import { useApiGuideTopbarContribution } from './useApiGuideTopbarContribution'
 import { parseSwaggerDocument, type SwaggerOperation } from './swaggerDocsParser'
 
 function stripMarkdown(value: string) {

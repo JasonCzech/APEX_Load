@@ -454,6 +454,8 @@ export default function SampleScriptImport({ initialFiles, projectId, onImported
     setAssetUploads({})
   }
 
+  const resetConvertTask = convertTask.reset
+  const clearSaveTaskError = saveTask.clearError
   const handleFilesLoad = useCallback(async (files: File[], target: 'primary' | 'secondary', formatOverride?: SampleFormat) => {
     const effectiveFormat = formatOverride || format
     try {
@@ -475,12 +477,12 @@ export default function SampleScriptImport({ initialFiles, projectId, onImported
         setSecondaryMergedCount(merged.mergedCount)
       }
       setMessageError('')
-      convertTask.reset()
-      saveTask.clearError()
+      resetConvertTask()
+      clearSaveTaskError()
     } catch (error: unknown) {
       setMessageError(getErrorMessage(error, `Failed to read ${files[0]?.name || 'sample file'}`))
     }
-  }, [convertTask.reset, format, saveTask.clearError])
+  }, [clearSaveTaskError, format, resetConvertTask])
 
   // Load a set of externally-dropped files exactly ONCE, when that set changes —
   // not on every format/preset change. initialFiles is held in authoring state

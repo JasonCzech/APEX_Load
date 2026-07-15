@@ -4,7 +4,8 @@ import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import GenerateReportModal, { buildReportTypeOptions } from './GenerateReportModal'
+import GenerateReportModal from './GenerateReportModal'
+import { buildReportTypeOptions } from './reportTypeOptions'
 import type { RunArchiveReportProfile } from '../types'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true

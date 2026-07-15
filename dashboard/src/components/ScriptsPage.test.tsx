@@ -4,7 +4,8 @@ import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { TopbarContributionProvider, useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
+import { useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
+import { TopbarContributionProvider } from '../hooks/TopbarContributionRoot'
 import ScriptsPage from './ScriptsPage'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true

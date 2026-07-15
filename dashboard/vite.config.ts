@@ -32,6 +32,10 @@ export default defineConfig({
     setupFiles: ['./src/test/codemirrorJsdomPolyfill.ts'],
   },
   build: {
+    // The largest lazy chunks are the editor and Three.js visualization. Their
+    // compressed transfer sizes remain well below this boundary; keep a tight
+    // ceiling that still reports meaningful growth beyond their current size.
+    chunkSizeWarningLimit: 550,
     rollupOptions: {
       output: {
         manualChunks(id) {
@@ -44,14 +48,14 @@ export default defineConfig({
           if (id.includes('/recharts/')) {
             return 'vendor-recharts'
           }
-          if (
-            id.includes('/@codemirror/') ||
-            id.includes('/@uiw/react-codemirror/') ||
-            id.includes('/@uiw/codemirror') ||
-            id.includes('/@lezer/') ||
-            id.includes('/codemirror/')
-          ) {
-            return 'vendor-codemirror'
+          if (id.includes('/@codemirror/lang-')) {
+            return 'vendor-codemirror-languages'
+          }
+          if (id.includes('/@lezer/')) {
+            return 'vendor-codemirror-parser'
+          }
+          if (id.includes('/@codemirror/') || id.includes('/@uiw/react-codemirror/') || id.includes('/@uiw/codemirror') || id.includes('/codemirror/')) {
+            return 'vendor-codemirror-core'
           }
           return 'vendor'
         },

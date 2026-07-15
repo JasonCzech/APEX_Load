@@ -8,7 +8,8 @@ import swaggerYamlFixture from '../../../docs/swagger.yaml?raw'
 
 import { loadApiEndpointCatalog, loadSwaggerYaml } from '../apiDocsClient'
 import { parseEndpointCatalog } from '../apiEndpointCatalog'
-import { TopbarContributionProvider, useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
+import { useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
+import { TopbarContributionProvider } from '../hooks/TopbarContributionRoot'
 import SwaggerDocsPage from './SwaggerDocsPage'
 import { parseSwaggerDocument } from './swaggerDocsParser'
 

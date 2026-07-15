@@ -13,6 +13,7 @@ import {
 import ConfirmDestructiveModal from './ConfirmDestructiveModal'
 import ExecutionPlanApprovalsModal from './ExecutionPlanApprovalsModal'
 import ExecutionPlanSchedulesModal from './ExecutionPlanSchedulesModal'
+import { dialogBackdropProps } from './dialogBackdropProps'
 import './parityPanels.css'
 
 interface Props {
@@ -412,8 +413,8 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, scen
 
       {/* Create / edit modal */}
       {draft && (
-        <div className="pp-modal-overlay" onClick={closeDraft}>
-          <div ref={draftDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby="execution-plan-editor-title" onClick={event => event.stopPropagation()}>
+        <div className="pp-modal-overlay" {...dialogBackdropProps(closeDraft, 'Close execution plan editor')}>
+          <div ref={draftDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby="execution-plan-editor-title">
             <div className="pp-modal-header">
               <h3 id="execution-plan-editor-title">{draft.id ? 'Edit Execution Plan' : 'New Execution Plan'}</h3>
               <button type="button" className="btn btn-ghost btn-sm" onClick={closeDraft}>
@@ -532,8 +533,8 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, scen
 
       {/* Run result modal */}
       {runResult && (
-        <div className="pp-modal-overlay" onClick={closeRunResult}>
-          <div ref={resultDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby="execution-plan-result-title" onClick={event => event.stopPropagation()}>
+        <div className="pp-modal-overlay" {...dialogBackdropProps(closeRunResult, 'Close execution plan result')}>
+          <div ref={resultDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby="execution-plan-result-title">
             <div className="pp-modal-header">
               <h3 id="execution-plan-result-title">Run “{runResult.plan}”</h3>
               <button type="button" className="btn btn-ghost btn-sm" onClick={closeRunResult}>
@@ -578,8 +579,8 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, scen
 
       {/* Sequential plan-run progress modal (dependency-gated, polled live) */}
       {planRun && (
-        <div className="pp-modal-overlay" onClick={closePlanRun}>
-          <div ref={progressDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby="execution-plan-progress-title" onClick={event => event.stopPropagation()}>
+        <div className="pp-modal-overlay" {...dialogBackdropProps(closePlanRun, 'Close execution plan progress')}>
+          <div ref={progressDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby="execution-plan-progress-title">
             <div className="pp-modal-header">
               <h3 id="execution-plan-progress-title">
                 Run “{planRun.planName}”

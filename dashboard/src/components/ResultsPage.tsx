@@ -671,7 +671,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
     return () => {
       cancelled = true
     }
-  }, [api, comparisonSummaryAction, comparisonTestIdKey, comparisonTests])
+  }, [api, comparisonSummaryAction, comparisonTestIdKey, comparisonTestIds.length, comparisonTests])
 
   const comparisonCards = useMemo(() => {
     if (comparisonTests.length < 2 || comparisonTests.length > MAX_COMPARISON_RUNS) return []
@@ -1549,7 +1549,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
                 <tbody>
                   {shouldVirtualizeRows && virtualPaddingTop > 0 && (
                     <tr aria-hidden="true" className="results-virtual-spacer-row">
-                      <td colSpan={10} style={{ height: virtualPaddingTop }} />
+                  <td colSpan={10} aria-hidden="true" style={{ height: virtualPaddingTop }} />
                     </tr>
                   )}
                   {shouldVirtualizeRows
@@ -1561,7 +1561,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
                     : sortedRows.map(row => renderResultRow(row))}
                   {shouldVirtualizeRows && virtualPaddingBottom > 0 && (
                     <tr aria-hidden="true" className="results-virtual-spacer-row">
-                      <td colSpan={10} style={{ height: virtualPaddingBottom }} />
+                  <td colSpan={10} aria-hidden="true" style={{ height: virtualPaddingBottom }} />
                     </tr>
                   )}
                 </tbody>

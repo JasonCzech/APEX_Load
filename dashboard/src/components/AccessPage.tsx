@@ -1632,7 +1632,7 @@ export default function AccessPage({
                         const selected = selectedUserID === user.id && !userInspectorCollapsed
                         return (
                           <tr key={user.id} className={selected ? 'selected' : ''} onClick={() => selectUser(user)}>
-                            <td>
+                        <td aria-label="User actions">
                               <button
                                 type="button"
                                 className="access-row-primary"
@@ -1653,7 +1653,7 @@ export default function AccessPage({
                             <td>{formatTimestamp(user.created_at)}</td>
                             <td>{formatTimestamp(user.updated_at)}</td>
                             <td className="num">{canViewUserActivity ? usageSummary(usage) : 'Unavailable'}</td>
-                            <td>
+                        <td aria-label="Service account actions">
                               <div className="access-table-actions">
                                 <button className="btn btn-secondary btn-sm" type="button" onClick={event => { event.stopPropagation(); selectUser(user) }}>Inspect</button>
                                 <button className="btn btn-secondary btn-sm" type="button" onClick={event => { event.stopPropagation(); editUser(user) }} disabled={!canManageUserBindings}>Edit</button>
@@ -1838,7 +1838,7 @@ export default function AccessPage({
                         const accessLabels = accountAccessLabels(account, projects, domains)
                         return (
                           <tr key={account.id} className={selected ? 'selected' : ''} onClick={() => selectAccount(account)}>
-                            <td>
+                            <td aria-label="Service account actions">
                               <button type="button" className="access-row-primary" onClick={event => { event.stopPropagation(); selectAccount(account) }}>
                                 {account.name}
                               </button>
@@ -1858,7 +1858,7 @@ export default function AccessPage({
                             <td>{formatTimestamp(account.rotation_due_at)}</td>
                             <td>{account.expires_at ? formatTimestamp(account.expires_at) : 'No expiration'}</td>
                             <td>{formatTimestamp(account.updated_at)}</td>
-                            <td>
+                            <td aria-label="Service account actions">
                               <div className="access-table-actions">
                                 <button className="btn btn-secondary btn-sm" type="button" onClick={event => { event.stopPropagation(); selectAccount(account) }}>Inspect</button>
                                 <button className="btn btn-secondary btn-sm" type="button" onClick={event => { event.stopPropagation(); rotateAccount(account) }}>Rotate Key</button>

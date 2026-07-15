@@ -1738,7 +1738,7 @@ export default function SettingsPage({
     setActiveSubsection: (id: SubsectionId) => void,
     summaries: Record<SubsectionId, string>,
   ) => (
-    <nav className="settings-subnav" role="tablist" aria-label={ariaLabel}>
+    <div className="settings-subnav" role="tablist" aria-label={ariaLabel}>
       {subsections.map(subsection => (
         <button
           key={subsection.id}
@@ -1754,7 +1754,7 @@ export default function SettingsPage({
           <span className="settings-subnav-meta">{summaries[subsection.id]}</span>
         </button>
       ))}
-    </nav>
+    </div>
   )
 
   const sectionMessages = useMemo(() => {
@@ -1860,7 +1860,7 @@ export default function SettingsPage({
           style={{ order: getSectionOrder('general') }}
         >
           <div className="settings-subsection-layout">
-            <nav className="settings-subnav" role="tablist" aria-label="General settings categories">
+            <div className="settings-subnav" role="tablist" aria-label="General settings categories">
               {GENERAL_SETTINGS_SUBSECTIONS.map(subsection => (
                 <button
                   key={subsection.id}
@@ -1876,7 +1876,7 @@ export default function SettingsPage({
                   <span className="settings-subnav-meta">{generalSubsectionSummaries[subsection.id]}</span>
                 </button>
               ))}
-            </nav>
+            </div>
 
             <section
               id="settings-general-panel-platform"
@@ -3642,7 +3642,6 @@ export default function SettingsPage({
                       value={renamingApplicationName}
                       onChange={e => setRenamingApplicationName(e.target.value)}
                       onKeyDown={e => { if (e.key === 'Enter') confirmRenameApplication(); if (e.key === 'Escape') setRenamingApplicationName(null); }}
-                      autoFocus
                     />
                     <button className="btn btn-primary" type="button" onClick={confirmRenameApplication}>Save</button>
                     <button className="btn btn-secondary" type="button" onClick={() => setRenamingApplicationName(null)}>Cancel</button>
@@ -3697,7 +3696,6 @@ export default function SettingsPage({
                               value={renamingReleaseName}
                               onChange={e => setRenamingReleaseName(e.target.value)}
                               onKeyDown={e => { if (e.key === 'Enter') confirmRenameRelease(); if (e.key === 'Escape') { setRenamingReleaseId(null); setRenamingReleaseName(''); } }}
-                              autoFocus
                             />
                             <button className="btn btn-primary" type="button" onClick={confirmRenameRelease}>Save</button>
                             <button className="btn btn-secondary" type="button" onClick={() => { setRenamingReleaseId(null); setRenamingReleaseName(''); }}>Cancel</button>
@@ -4306,7 +4304,7 @@ export default function SettingsPage({
                             <td>{row.status || 'active'}</td>
                             <td>{row.version}</td>
                             <td>{new Date(row.updated_at).toLocaleString()}</td>
-                            <td>
+                        <td aria-label="Data pool actions">
                               <div className="settings-inline-actions">
                                 <button className="btn btn-sm btn-secondary" type="button" onClick={() => editDataPoolRow(row)}>
                                   Edit

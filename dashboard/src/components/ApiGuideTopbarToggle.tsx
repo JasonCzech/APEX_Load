@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react'
+import { useCallback } from 'react'
 
 import {
   API_GUIDE_TOGGLE_OPTIONS,
@@ -7,7 +7,6 @@ import {
   type ApiGuideContentPageID,
   type ApiGuideToggleID,
 } from '../apiGuideNavigation'
-import { useTopbarContribution } from '../hooks/TopbarContributionProvider'
 import PageViewToggle from './PageViewToggle'
 
 type ApiGuideTopbarToggleProps = {
@@ -49,24 +48,4 @@ export function ApiGuideTopbarToggle({ active, onContentPageChange }: ApiGuideTo
       </label>
     </div>
   )
-}
-
-export function useApiGuideTopbarContribution(
-  active: ApiGuideToggleID,
-  title: string,
-  onContentPageChange?: (page: ApiGuideContentPageID) => void,
-) {
-  const controls = useMemo(() => (
-    <ApiGuideTopbarToggle active={active} onContentPageChange={onContentPageChange} />
-  ), [active, onContentPageChange])
-
-  const topbarContribution = useMemo(() => ({
-    id: 'api-guide-navigation',
-    title,
-    controls,
-    priority: 10,
-  }), [controls, title])
-
-  useTopbarContribution(topbarContribution)
-  return controls
 }

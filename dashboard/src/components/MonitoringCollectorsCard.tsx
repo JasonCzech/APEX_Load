@@ -5,6 +5,7 @@ import { ApiError } from '../hooks/apiClient'
 import { useModalDialog } from '../hooks/useModalDialog'
 import { CollectorMetricSnapshot, MonitoringCollector } from '../types'
 import ConfirmDestructiveModal from './ConfirmDestructiveModal'
+import { dialogBackdropProps } from './dialogBackdropProps'
 import './parityPanels.css'
 
 interface Props {
@@ -284,8 +285,8 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
 
       {/* Register modal */}
       {showCreate && (
-        <div className="pp-modal-overlay" onClick={closeCreate}>
-          <div ref={createDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby="collector-create-dialog-title" onClick={event => event.stopPropagation()}>
+        <div className="pp-modal-overlay" {...dialogBackdropProps(closeCreate, 'Close collector editor')}>
+          <div ref={createDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby="collector-create-dialog-title">
             <div className="pp-modal-header">
               <h3 id="collector-create-dialog-title">Register Monitoring Collector</h3>
               <button type="button" className="btn btn-ghost btn-sm" onClick={closeCreate}>
@@ -332,8 +333,8 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
 
       {/* Edit modal */}
       {edit && (
-        <div className="pp-modal-overlay" onClick={closeEdit}>
-          <div ref={editDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby="collector-edit-dialog-title" onClick={event => event.stopPropagation()}>
+        <div className="pp-modal-overlay" {...dialogBackdropProps(closeEdit, 'Close collector editor')}>
+          <div ref={editDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby="collector-edit-dialog-title">
             <div className="pp-modal-header">
               <h3 id="collector-edit-dialog-title">Edit Collector</h3>
               <button type="button" className="btn btn-ghost btn-sm" onClick={closeEdit}>
@@ -378,8 +379,8 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
 
       {/* One-time token reveal */}
       {oneTimeToken && (
-        <div className="pp-modal-overlay" onClick={closeToken}>
-          <div ref={tokenDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby="collector-token-dialog-title" onClick={event => event.stopPropagation()}>
+        <div className="pp-modal-overlay" {...dialogBackdropProps(closeToken, 'Close collector token dialog')}>
+          <div ref={tokenDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby="collector-token-dialog-title">
             <div className="pp-modal-header">
               <h3 id="collector-token-dialog-title">Collector token for “{oneTimeToken.name}”</h3>
               <button type="button" className="btn btn-ghost btn-sm" onClick={closeToken}>
@@ -406,8 +407,8 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
 
       {/* Latest ingested metrics snapshot */}
       {metrics && (
-        <div className="pp-modal-overlay" onClick={closeMetrics}>
-          <div ref={metricsDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby="collector-metrics-dialog-title" onClick={event => event.stopPropagation()}>
+        <div className="pp-modal-overlay" {...dialogBackdropProps(closeMetrics, 'Close collector metrics dialog')}>
+          <div ref={metricsDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby="collector-metrics-dialog-title">
             <div className="pp-modal-header">
               <h3 id="collector-metrics-dialog-title">
                 Live metrics — “{metrics.name}”

@@ -3,6 +3,7 @@ import { useVirtualizer, type VirtualItem } from '@tanstack/react-virtual'
 
 import { type ScriptDefinition, type SourceReview, type SourceReviewFile, type SourceReviewMapping } from '../types/scripts'
 import { canCopyTextToClipboard, copyTextToClipboard } from '../utils/clipboardUtils'
+import { scrollMappingRowIntoTableView } from './sourceMappingScroll'
 import { buildDslDocument, lineRangeForTargetPath } from './dslJsonPointers'
 import {
   type MappingCategory,
@@ -116,19 +117,6 @@ function excerptFromText(text: string, startLine?: number, endLine?: number) {
   const start = Math.max(1, startLine)
   const end = Math.max(start, endLine || startLine)
   return lines.slice(start - 1, end).join('\n')
-}
-
-export function scrollMappingRowIntoTableView(container: HTMLElement, row: HTMLElement) {
-  const rowTop = row.offsetTop
-  const rowBottom = rowTop + row.offsetHeight
-  const visibleTop = container.scrollTop
-  const visibleBottom = visibleTop + container.clientHeight
-
-  if (rowTop < visibleTop) {
-    container.scrollTop = Math.max(0, rowTop)
-  } else if (rowBottom > visibleBottom) {
-    container.scrollTop = Math.max(0, rowBottom - container.clientHeight)
-  }
 }
 
 function PaneFallback() {
@@ -288,7 +276,7 @@ export default function SourceMappingReview({
         scrollMappingRowIntoTableView(tableWrap, row)
       }
     })
-  }, [focusedMappingId, focusRequestId, isTableCollapsed, selectedMappingId, filteredMappings, rowVirtualizer])
+  }, [focusedMappingId, focusRequestId, isTableCollapsed, selectedMappingId, filteredMappings, rowVirtualizer, virtualizeRows])
 
   const selectMapping = (mapping: SourceReviewMapping | null) => {
     if (!mapping) return
@@ -481,7 +469,6 @@ export default function SourceMappingReview({
                 className={`source-map-status ${coverage.dslWithoutOrigin > 0 ? 'unsupported' : 'converted'}`}
                 title={COVERAGE_TOOLTIPS.dslWithoutOrigin}
                 data-tooltip={COVERAGE_TOOLTIPS.dslWithoutOrigin}
-                tabIndex={0}
               >
                 DSL without source origin: {coverage.dslWithoutOrigin}
               </span>
@@ -538,7 +525,7 @@ export default function SourceMappingReview({
         </div>
       </div>
 
-      <div ref={tableWrapRef} className="source-map-table-wrap" tabIndex={0} onKeyDown={handleTableKeyDown} style={{ display: isTableCollapsed ? 'none' : 'block' }}>
+      <div ref={tableWrapRef} className="source-map-table-wrap" role="region" aria-label="Source mapping table keyboard navigation" tabIndex={0} onKeyDownCapture={handleTableKeyDown} style={{ display: isTableCollapsed ? 'none' : 'block' }}>
         <table className="source-map-table" aria-label="Source conversion mappings">
           <colgroup>
             <col className="source-map-col-source" />
@@ -557,7 +544,7 @@ export default function SourceMappingReview({
           <tbody>
             {virtualizeRows && virtualPaddingTop > 0 && (
               <tr aria-hidden="true" className="source-map-virtual-spacer">
-                <td colSpan={4} style={{ height: virtualPaddingTop, padding: 0, border: 0 }} />
+              <td colSpan={4} aria-hidden="true" style={{ height: virtualPaddingTop, padding: 0, border: 0 }} />
               </tr>
             )}
             {mappingRowsToRender.map(({ mapping, virtualItem }) => (
@@ -598,7 +585,7 @@ export default function SourceMappingReview({
             ))}
             {virtualizeRows && virtualPaddingBottom > 0 && (
               <tr aria-hidden="true" className="source-map-virtual-spacer">
-                <td colSpan={4} style={{ height: virtualPaddingBottom, padding: 0, border: 0 }} />
+              <td colSpan={4} aria-hidden="true" style={{ height: virtualPaddingBottom, padding: 0, border: 0 }} />
               </tr>
             )}
             {filteredMappings.length === 0 && (

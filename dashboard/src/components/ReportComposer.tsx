@@ -9,7 +9,7 @@ import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } fr
 import { downloadBlob } from '../utils/fileUtils'
 import { getErrorMessage } from '../utils/errorUtils'
 import { ReportAnnotations, ReportCommentarySection, ReportFinding, RunArchiveIntegrityReport, RunArchiveReleaseTrendSummary, RunArchiveReport, RunArchiveReportProfile, TestNote } from '../types'
-import type { ReportProfileId } from './GenerateReportModal'
+import type { ReportProfileId } from './reportTypeOptions'
 import './ReportComposer.css'
 
 const PROFILE_LABEL: Record<string, string> = {

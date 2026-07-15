@@ -7,7 +7,8 @@ import endpointCatalogRaw from '../../../docs/api-endpoint-catalog.json?raw'
 
 import { loadApiEndpointCatalog } from '../apiDocsClient'
 import { parseEndpointCatalog } from '../apiEndpointCatalog'
-import { TopbarContributionProvider, useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
+import { useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
+import { TopbarContributionProvider } from '../hooks/TopbarContributionRoot'
 import ApiGuidePage from './ApiGuidePage'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true

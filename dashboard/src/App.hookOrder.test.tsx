@@ -53,9 +53,12 @@ const navigationGuardMock = vi.hoisted(() => {
 })
 
 vi.mock('./hooks/NavigationGuardProvider', () => ({
-  NavigationGuardProvider: ({ children }: { children: ReactNode }) => children,
   useNavigationGuard: () => undefined,
   useNavigationGuardRunner: () => navigationGuardMock.runner,
+}))
+
+vi.mock('./hooks/NavigationGuardRoot', () => ({
+  NavigationGuardProvider: ({ children }: { children: ReactNode }) => children,
 }))
 
 class StubWebSocket {

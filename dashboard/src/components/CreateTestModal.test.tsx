@@ -5,7 +5,7 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import CreateTestModal from './CreateTestModal'
-import { NavigationGuardProvider } from '../hooks/NavigationGuardProvider'
+import { NavigationGuardProvider } from '../hooks/NavigationGuardRoot'
 
 const apiMock = {
   estimateTest: vi.fn(),

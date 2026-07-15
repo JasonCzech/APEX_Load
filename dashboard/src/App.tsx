@@ -1,7 +1,8 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useDashboardTheme } from './hooks/useDashboardTheme'
 import { useDashboardZoomShortcuts } from './hooks/useDashboardZoomShortcuts'
-import { KeyboardShortcutProvider, useKeyboardShortcuts } from './hooks/KeyboardShortcutProvider'
+import { useKeyboardShortcuts } from './hooks/KeyboardShortcutProvider'
+import { KeyboardShortcutProvider } from './hooks/KeyboardShortcutRoot'
 import { useWebSocket } from './hooks/useWebSocket'
 import { ApplicationProvider } from './hooks/ApplicationProvider'
 import { useApplication } from './hooks/useApplication'
@@ -35,12 +36,13 @@ import { useLibraryApi } from './hooks/api/useLibraryApi'
 import { useTestApi } from './hooks/api/useTestApi'
 import { useSharedTestList } from './hooks/useSharedTestList'
 import {
-  TopbarContributionProvider,
   useActiveTopbarContribution,
   type TopbarAction,
   type TopbarMetaChip,
 } from './hooks/TopbarContributionProvider'
-import { NavigationGuardProvider, useNavigationGuardRunner } from './hooks/NavigationGuardProvider'
+import { TopbarContributionProvider } from './hooks/TopbarContributionRoot'
+import { useNavigationGuardRunner } from './hooks/NavigationGuardProvider'
+import { NavigationGuardProvider } from './hooks/NavigationGuardRoot'
 import { isEffectiveOperationAllowed } from './utils/authAccessUtils'
 import { isRunReportEnabled } from './utils/featureFlags'
 import { readStoredString, removeStoredItem, writeStoredString } from './utils/browserStorage'

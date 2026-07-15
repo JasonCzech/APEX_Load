@@ -143,11 +143,11 @@ export default function TransactionSlaScoreboard({
             </tr>
           </thead>
           <tbody>
-            {virtualizeRows && virtualPaddingTop > 0 && <tr aria-hidden="true"><td colSpan={6} style={{ height: virtualPaddingTop }} /></tr>}
+            {virtualizeRows && virtualPaddingTop > 0 && <tr aria-hidden="true"><td aria-hidden="true" colSpan={6} style={{ height: virtualPaddingTop }} /></tr>}
             {rowsToRender.map(({ row }) => (
               <ScoreboardRow key={row.name} row={row} selected={selectedAction === row.name} onSelect={onSelectAction} />
             ))}
-            {virtualizeRows && virtualPaddingBottom > 0 && <tr aria-hidden="true"><td colSpan={6} style={{ height: virtualPaddingBottom }} /></tr>}
+            {virtualizeRows && virtualPaddingBottom > 0 && <tr aria-hidden="true"><td aria-hidden="true" colSpan={6} style={{ height: virtualPaddingBottom }} /></tr>}
           </tbody>
         </table>
       </div>

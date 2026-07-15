@@ -29,7 +29,7 @@ function candidatesFromMetadata(value: unknown): SelectorCandidate[] {
     .filter(candidate => candidate.value !== '')
 }
 
-export function collectActionCandidates(script: ScriptDefinition | null): ActionCandidates[] {
+function collectActionCandidates(script: ScriptDefinition | null): ActionCandidates[] {
   if (!script?.actions) return []
   const out: ActionCandidates[] = []
   for (const [actionIndex, action] of script.actions.entries()) {

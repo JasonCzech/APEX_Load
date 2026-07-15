@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useModalDialog } from '../hooks/useModalDialog'
+import { dialogBackdropProps } from './dialogBackdropProps'
 import './ProjectModal.css'
 
 interface Props {
@@ -31,8 +32,8 @@ export default function ProjectModal({ title = 'New Project', initialName = '', 
   }
 
   return (
-    <div className="project-modal-backdrop" role="presentation" onMouseDown={onClose}>
-      <form ref={dialogRef} className="project-modal" role="dialog" aria-modal="true" aria-label={title} onSubmit={submit} onMouseDown={(event) => event.stopPropagation()}>
+    <div className="project-modal-backdrop" {...dialogBackdropProps(onClose, `Close ${title}`)}>
+      <form ref={dialogRef} className="project-modal" role="dialog" aria-modal="true" aria-label={title} onSubmit={submit}>
         <div className="project-modal-header">
           <h3>{title}</h3>
           <button type="button" className="project-modal-close" onClick={onClose}>×</button>

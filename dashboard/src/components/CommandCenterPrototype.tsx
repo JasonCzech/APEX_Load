@@ -2698,7 +2698,7 @@ function SortableHeader({
 }) {
   const active = sort.key === sortKey
   return (
-    <th className={align === 'right' ? 'numeric' : undefined} aria-sort={active ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+      <th className={align === 'right' ? 'numeric' : undefined} aria-label={`${label} sort`} aria-sort={active ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
       <button type="button" onClick={() => onSort(sortKey)}>
         <span>{label}</span>
         <small>{active ? (sort.direction === 'asc' ? '▲' : '▼') : '·'}</small>

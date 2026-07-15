@@ -68,6 +68,7 @@ import './CreateTestModal.css'
 import { useHasTopbarContributionProvider, useTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { useModalDialog } from '../hooks/useModalDialog'
+import { dialogBackdropProps } from './dialogBackdropProps'
 
 interface Props {
   activeApplication: Application | null
@@ -1824,7 +1825,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                               <td>{formatScheduleTimestamp(item.next_run_at)}</td>
                               <td>{formatScheduleTimestamp(item.last_run_at)}</td>
                               <td>{releases.find(releaseItem => releaseItem.id === item.release_id)?.name || 'None'}</td>
-                              <td>
+                          <td aria-label="Schedule governance">
                                 <div className="schedule-governance-chips">
                                   <span className="script-health-token">{formatScheduleToken(item.approval_policy || 'auto')}</span>
                                   <span className="script-health-token">{formatScheduleToken(item.missed_run_policy || 'skip')}</span>
@@ -2062,7 +2063,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                                   </tr>
                                   {expanded && (
                                     <tr className="no-hover new-test-scenario-expanded-row" id={`new-test-scenario-groups-${item.id}`}>
-                                      <td colSpan={7}>
+                              <td colSpan={7} aria-label="Scenario script groups">
                                         <div className="new-test-scenario-groups-panel">
                                           <div className="new-test-scenario-groups-header">
                                             <strong>Script Groups</strong>
@@ -2126,7 +2127,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                                                       </td>
                                                       <td>{group.script_name || group.script_id}</td>
                                                       <td><span className="protocol-badge">{group.protocol || 'http'}</span></td>
-                                                      <td>
+                                    <td aria-label="Group workload">
                                                         <div className="new-test-workload-stack">
                                                           <strong>{group.vusers} VUsers</strong>
                                                           <span>{group.ramp_up || 'No ramp up'} / {group.ramp_down || 'No ramp down'}</span>
@@ -2205,7 +2206,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                   </select>
                   {showNewRelease ? (
                     <div className="new-test-release-create-row">
-                      <input className="settings-input" aria-label="New release name" value={newReleaseName} onChange={event => setNewReleaseName(event.target.value)} placeholder="Release name, e.g. PI30" autoFocus />
+                      <input className="settings-input" aria-label="New release name" value={newReleaseName} onChange={event => setNewReleaseName(event.target.value)} placeholder="Release name, e.g. PI30" />
                       <button className="btn btn-secondary" onClick={createRelease} disabled={!newReleaseName.trim()}>Add</button>
                       <button className="btn btn-ghost btn-sm" onClick={() => { setShowNewRelease(false); setNewReleaseName('') }}>Cancel</button>
                     </div>
@@ -2457,14 +2458,13 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
       )}
 
       {editingDefaultKey && editingDefaultCard && (
-        <div className="modal-overlay" onClick={() => setEditingDefaultKey(null)}>
+        <div className="modal-overlay" {...dialogBackdropProps(() => setEditingDefaultKey(null), 'Close run default editor')}>
           <div
             ref={runDefaultDialogRef}
             className="modal run-default-modal"
             role="dialog"
             aria-modal="true"
             aria-labelledby="new-test-run-default-dialog-title"
-            onClick={event => event.stopPropagation()}
           >
             <div className="modal-header">
               <h3 id="new-test-run-default-dialog-title">Edit {editingDefaultCard.label}</h3>
@@ -2488,14 +2488,13 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
       )}
 
       {editingGroupKey && editingGroup && scenario && (
-        <div className="modal-overlay" onClick={() => setEditingGroupKey(null)}>
+        <div className="modal-overlay" {...dialogBackdropProps(() => setEditingGroupKey(null), 'Close run group editor')}>
           <div
             ref={runGroupDialogRef}
             className="modal run-default-modal run-group-modal"
             role="dialog"
             aria-modal="true"
             aria-labelledby="new-test-run-group-dialog-title"
-            onClick={event => event.stopPropagation()}
           >
             <div className="modal-header">
               <h3 id="new-test-run-group-dialog-title">Edit {editingGroup.name || editingGroup.script_name || 'Script Group'}</h3>
@@ -2659,14 +2658,13 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
       )}
 
       {confirmDeleteScheduleId && (
-        <div className="modal-overlay" onClick={() => setConfirmDeleteScheduleId(null)}>
+        <div className="modal-overlay" {...dialogBackdropProps(() => setConfirmDeleteScheduleId(null), 'Close schedule deletion dialog')}>
           <div
             ref={deleteScheduleDialogRef}
             className="modal"
             role="dialog"
             aria-modal="true"
             aria-labelledby="new-test-delete-schedule-dialog-title"
-            onClick={event => event.stopPropagation()}
           >
             <div className="modal-header">
               <h3 id="new-test-delete-schedule-dialog-title">Delete Schedule</h3>

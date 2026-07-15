@@ -315,7 +315,7 @@ export default function LibraryAssetSourcePanel({
                       </div>
                     </td>
                     <td style={{ textAlign: 'right' }}>
-                      <div className="settings-inline-actions" onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
+                      <div className="settings-inline-actions">
                         {source === 'Local' ? (
                           <>
                             {onViewLocalItem && (
@@ -355,7 +355,7 @@ export default function LibraryAssetSourcePanel({
                   </tr>
                   {canExpandRow && selected && (
                     <tr className="no-hover library-source-detail-row">
-                      <td colSpan={columnCount}>
+                  <td colSpan={columnCount} aria-label="Library asset details">
                         <div className="library-source-detail-card">
                           <div className="library-source-detail-header">
                             <strong>{item.name || item.id}</strong>

@@ -621,6 +621,8 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   const [postmanReplaceScriptId, setPostmanReplaceScriptId] = useState('')
   const [postmanScripts, setPostmanScripts] = useState<StoredScript[]>([])
   const labels = copy[kind]
+  const resetConvertTask = convertTask.reset
+  const resetSaveTask = saveTask.reset
   const supportsAgentforceTransform = kind === 'openapi' || kind === 'raml' || kind === 'postman' || kind === 'har'
   // Event Hubs Capture and Broker Config converters read neither a script name nor a
   // base URL, so do not render inputs that would silently do nothing.
@@ -631,9 +633,9 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
     if (!initialFile) return
     setFile(initialFile)
     setMessageError('')
-    convertTask.reset()
-    saveTask.reset()
-  }, [convertTask.reset, initialFile, saveTask.reset])
+    resetConvertTask()
+    resetSaveTask()
+  }, [initialFile, resetConvertTask, resetSaveTask])
 
   useEffect(() => {
     if (kind !== 'devweb') return

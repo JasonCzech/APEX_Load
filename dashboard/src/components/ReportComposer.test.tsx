@@ -5,7 +5,7 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import ReportComposer from './ReportComposer'
-import { NavigationGuardProvider } from '../hooks/NavigationGuardProvider'
+import { NavigationGuardProvider } from '../hooks/NavigationGuardRoot'
 
 const apiMock = vi.hoisted(() => ({
   getTestArchiveReport: vi.fn(),
