@@ -10,8 +10,70 @@ import (
 	"time"
 
 	recbrowser "github.com/jasonczech/apexload/pkg/recorder/browser"
+	"github.com/jasonczech/apexload/pkg/scrub"
 	"github.com/jasonczech/apexload/pkg/selector"
 )
+
+func TestBrowserRecordingSessionSnapshotsRedactCredentialURLs(t *testing.T) {
+	session := &BrowserRecordingSession{
+		StartURL:   "https://user:start-password@app.example/login?access_token=start-secret",
+		CurrentURL: "https://app.example/callback?session_id=current-secret",
+	}
+	snapshot := session.summary()
+	encoded, err := json.Marshal(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, leaked := range []string{"start-password", "start-secret", "current-secret"} {
+		if strings.Contains(string(encoded), leaked) {
+			t.Fatalf("browser recording snapshot leaked %q: %s", leaked, encoded)
+		}
+	}
+	if !strings.Contains(string(encoded), scrub.Redacted) {
+		t.Fatalf("browser recording snapshot has no redaction marker: %s", encoded)
+	}
+	if !strings.Contains(session.StartURL, "start-password") || !strings.Contains(session.CurrentURL, "current-secret") {
+		t.Fatal("snapshot redaction mutated the live browser navigation state")
+	}
+}
+
+func TestBrowserRecordingBroadcastScrubsSensitiveStepAndCarriesScope(t *testing.T) {
+	hub := NewHub()
+	manager := NewBrowserRecordingManager(hub)
+	session := &BrowserRecordingSession{
+		ID:        "browser-sensitive",
+		ProjectID: "project-a",
+		Status:    BrowserRecordingActive,
+		StartURL:  "https://user:password@app.example/start?access_token=start-token",
+	}
+	step := &recbrowser.Step{
+		Seq:       1,
+		Kind:      recbrowser.StepFill,
+		Value:     "short-password",
+		URL:       "https://app.example/form?session_id=step-token",
+		Thumbnail: "data:image/jpeg;base64,sensitive-screen-pixels",
+		Element:   &selector.ElementMetadata{Name: "password", Type: "password"},
+	}
+
+	manager.broadcast("browser_recording_step", session, map[string]any{"step": step})
+	select {
+	case message := <-hub.broadcast:
+		if message.projectID != "project-a" || message.testID != "" || message.broadcastAll {
+			t.Fatalf("broadcast scope = project:%q test:%q all:%t", message.projectID, message.testID, message.broadcastAll)
+		}
+		encoded := string(message.payload)
+		for _, leaked := range []string{"password@app.example", "start-token", "short-password", "step-token", "sensitive-screen-pixels"} {
+			if strings.Contains(encoded, leaked) {
+				t.Fatalf("browser broadcast leaked %q: %s", leaked, encoded)
+			}
+		}
+		if !strings.Contains(encoded, scrub.Redacted) {
+			t.Fatalf("browser broadcast has no redaction marker: %s", encoded)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for browser recording broadcast")
+	}
+}
 
 // fakeBrowserRecorderBackend stands in for the Playwright-driven recorder so
 // manager and handler tests never launch Chromium.

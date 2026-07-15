@@ -16,14 +16,7 @@ func cloneStringMap(input map[string]string) map[string]string {
 }
 
 func cloneAnyMap(input map[string]any) map[string]any {
-	if len(input) == 0 {
-		return nil
-	}
-	cloned := make(map[string]any, len(input))
-	for key, value := range input {
-		cloned[key] = value
-	}
-	return cloned
+	return protocol.BoundProtocolEvidence(input)
 }
 
 func cloneReplayDebugAction(action ReplayDebugAction) *ReplayDebugAction {
@@ -92,22 +85,25 @@ func cloneReplayReport(report *ReplayReport) *ReplayReport {
 	cloned.ArtifactManifest = cloneReplayArtifactManifest(report.ArtifactManifest)
 	cloned.DiagnosisSummary = cloneReplayDiagnosisSummary(report.DiagnosisSummary)
 	cloned.RepairSuggestions = cloneReplayRepairSuggestions(report.RepairSuggestions)
-	if len(report.Events) > 0 {
-		cloned.Events = make([]ReplayActionEvent, len(report.Events))
-		for i, event := range report.Events {
-			cloned.Events[i] = *cloneReplayActionEvent(event)
-		}
-	}
+	snapshotClones := make(map[*protocol.ErrorSnapshot]*protocol.ErrorSnapshot, len(report.Snapshots))
 	if len(report.Snapshots) > 0 {
 		cloned.Snapshots = make([]*protocol.ErrorSnapshot, len(report.Snapshots))
 		for i, snapshot := range report.Snapshots {
 			if snapshot == nil {
 				continue
 			}
-			copySnapshot := *snapshot
-			copySnapshot.RequestHeaders = cloneStringMap(snapshot.RequestHeaders)
-			copySnapshot.ResponseHeaders = cloneStringMap(snapshot.ResponseHeaders)
-			cloned.Snapshots[i] = &copySnapshot
+			bounded := BoundErrorSnapshot(snapshot, defaultErrorSnapshotMaxBytes)
+			cloned.Snapshots[i] = bounded
+			snapshotClones[snapshot] = bounded
+		}
+	}
+	if len(report.Events) > 0 {
+		cloned.Events = make([]ReplayActionEvent, len(report.Events))
+		for i, event := range report.Events {
+			cloned.Events[i] = *cloneReplayActionEvent(event)
+			if shared := snapshotClones[event.Snapshot]; shared != nil {
+				cloned.Events[i].Snapshot = shared
+			}
 		}
 	}
 	return &cloned

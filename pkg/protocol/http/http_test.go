@@ -52,6 +52,12 @@ func TestHTTP_Init_Defaults(t *testing.T) {
 	if h.transport.MaxConnsPerHost != 100 {
 		t.Errorf("MaxConnsPerHost = %d, want 100", h.transport.MaxConnsPerHost)
 	}
+	if h.transport.MaxIdleConns != defaultHTTPMaxIdleConns || h.transport.MaxIdleConnsPerHost != defaultHTTPMaxIdleConns {
+		t.Errorf("idle connection defaults = total %d/per-host %d, want %d", h.transport.MaxIdleConns, h.transport.MaxIdleConnsPerHost, defaultHTTPMaxIdleConns)
+	}
+	if h.transport.MaxResponseHeaderBytes != maxHTTPResponseHeaderBytes {
+		t.Errorf("MaxResponseHeaderBytes = %d, want %d", h.transport.MaxResponseHeaderBytes, maxHTTPResponseHeaderBytes)
+	}
 }
 
 func TestHTTP_Init_CustomTimeouts(t *testing.T) {
@@ -70,6 +76,32 @@ func TestHTTP_Init_CustomTimeouts(t *testing.T) {
 	}
 	if h.transport.IdleConnTimeout != 45*time.Second {
 		t.Errorf("IdleConnTimeout = %v, want 45s", h.transport.IdleConnTimeout)
+	}
+}
+
+func TestHTTPInitClampsResourceSettingsAndRejectsInvalidTLS(t *testing.T) {
+	h := initHTTP(t, map[string]any{
+		"max_conns_per_host": float64(MaxConfiguredConnsPerHost + 1),
+		"max_idle_conns":     float64(MaxConfiguredIdleConns + 1),
+		"request_timeout_ms": float64((MaxConfiguredTimeout / time.Millisecond) + 1),
+		"max_redirects":      float64(MaxConfiguredRedirects + 1),
+	})
+	if h.transport.MaxConnsPerHost != MaxConfiguredConnsPerHost || h.transport.MaxIdleConns != MaxConfiguredIdleConns {
+		t.Fatalf("connection clamps = %d/%d", h.transport.MaxConnsPerHost, h.transport.MaxIdleConns)
+	}
+	if h.requestTimeout != MaxConfiguredTimeout || h.maxRedirects != MaxConfiguredRedirects {
+		t.Fatalf("timeout/redirect clamps = %s/%d", h.requestTimeout, h.maxRedirects)
+	}
+
+	for name, config := range map[string]map[string]any{
+		"invalid minimum": {"tls_min_version": "9.9"},
+		"invalid range":   {"tls_min_version": "1.3", "tls_max_version": "1.2"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := (&HTTP{}).Init(context.Background(), config); err == nil {
+				t.Fatal("invalid TLS configuration was accepted")
+			}
+		})
 	}
 }
 
@@ -2116,7 +2148,8 @@ func TestHTTP_Execute_BoundsResponseBodySize(t *testing.T) {
 		t.Fatalf("ErrorMessage = %q, want limit error", capped.ErrorMessage)
 	}
 
-	// Opt out (<= 0) → full body read.
+	// A non-positive script value no longer disables buffering protection. The
+	// body is below the operator hard ceiling, so it is still read successfully.
 	full, _ := h.Execute(context.Background(), &protocol.Action{
 		Name:   "uncapped",
 		Method: http.MethodGet,
@@ -2127,7 +2160,84 @@ func TestHTTP_Execute_BoundsResponseBodySize(t *testing.T) {
 		t.Fatalf("uncapped request should succeed: %s", full.ErrorMessage)
 	}
 	if full.BytesReceived != int64(len(big)) {
-		t.Fatalf("uncapped BytesReceived = %d, want %d", full.BytesReceived, len(big))
+		t.Fatalf("hard-capped BytesReceived = %d, want %d", full.BytesReceived, len(big))
+	}
+}
+
+func TestHTTPMaxBodyBytesCannotBeDisabledOrRaisedByScript(t *testing.T) {
+	for _, raw := range []any{0, -1, hardHTTPMaxBodyBytes + 1, "999999999999"} {
+		if got := httpMaxBodyBytes(map[string]any{"max_body_bytes": raw}); got != hardHTTPMaxBodyBytes {
+			t.Fatalf("max_body_bytes=%v resolved to %d, want hard cap %d", raw, got, hardHTTPMaxBodyBytes)
+		}
+	}
+	if got := httpMaxBodyBytes(map[string]any{"max_body_bytes": 4096}); got != 4096 {
+		t.Fatalf("smaller action cap = %d, want 4096", got)
+	}
+}
+
+func TestHTTPBufferPoolIsCountAndCapacityBounded(t *testing.T) {
+	pool := newHTTPBufferPool()
+	for i := 0; i < maxPooledHTTPBuffers+10; i++ {
+		pool.put(bytes.NewBuffer(make([]byte, 0, 1024)))
+	}
+	if got := len(pool.buffers); got != maxPooledHTTPBuffers {
+		t.Fatalf("pooled buffer count = %d, want %d", got, maxPooledHTTPBuffers)
+	}
+
+	oversized := bytes.NewBuffer(make([]byte, 0, maxPooledHTTPBufferSize+1))
+	pool = newHTTPBufferPool()
+	pool.put(oversized)
+	if got := len(pool.buffers); got != 0 {
+		t.Fatalf("oversized buffer was retained; pool length = %d", got)
+	}
+
+	reusable := bytes.NewBuffer(make([]byte, 0, maxPooledHTTPBufferSize))
+	_, _ = reusable.WriteString("payload")
+	pool.put(reusable)
+	got := pool.get()
+	if got != reusable {
+		t.Fatal("eligible buffer was not reused")
+	}
+	if got.Len() != 0 {
+		t.Fatalf("reused buffer length = %d, want 0", got.Len())
+	}
+}
+
+func TestHTTPCanDiscardOnlySuccessfulResponseBodies(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/failure" {
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+		_, _ = w.Write([]byte("bounded evidence"))
+	}))
+	defer server.Close()
+
+	client := &HTTP{}
+	if err := client.Init(context.Background(), map[string]any{"base_url": server.URL}); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name     string
+		target   string
+		wantBody bool
+	}{
+		{name: "success discarded", target: "/success", wantBody: false},
+		{name: "failure retained", target: "/failure", wantBody: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			result, err := client.Execute(context.Background(), &protocol.Action{
+				Name:                         test.name,
+				Type:                         "request",
+				Target:                       test.target,
+				DiscardResponseBodyOnSuccess: true,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := result.ResponseBody != ""; got != test.wantBody {
+				t.Fatalf("response body present = %t, want %t", got, test.wantBody)
+			}
+		})
 	}
 }
 

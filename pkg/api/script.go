@@ -6,7 +6,9 @@ package api
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -23,12 +25,76 @@ type createOnlyScriptPersistence interface {
 	GetScript(id string) (*dsl.Script, error)
 }
 
+type conditionalScriptPersistence interface {
+	UpdateScriptIfUnchanged(script *dsl.Script, expectedUpdatedAt time.Time) (bool, error)
+}
+
+type conditionalScriptDeletePersistence interface {
+	DeleteScriptIfUnchanged(id string, expectedUpdatedAt time.Time) (bool, error)
+}
+
+var errScriptConcurrentChange = errors.New("script changed concurrently; reload and retry")
+
+func (tr *TestRunner) durableScriptForMutationLocked(id string) (*dsl.Script, error) {
+	if tr.scriptStore == nil {
+		stored := tr.scripts[id]
+		if stored == nil {
+			return nil, nil
+		}
+		return cloneScriptDefinition(stored.Script), nil
+	}
+	reader, ok := tr.scriptStore.(interface {
+		GetScript(string) (*dsl.Script, error)
+	})
+	if !ok {
+		// Lightweight test/adapter stores implement the historical Store surface
+		// only. Production SQLite/PostgreSQL implements the authoritative reader
+		// and CAS interfaces below; retain legacy behavior for those adapters.
+		stored := tr.scripts[id]
+		if stored == nil {
+			return nil, nil
+		}
+		return cloneScriptDefinition(stored.Script), nil
+	}
+	script, err := reader.GetScript(id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return script, nil
+}
+
+func expectedScriptMutationProject(explicit string, cached *StoredScript) string {
+	if strings.TrimSpace(explicit) != "" {
+		return normalizeProjectID(explicit)
+	}
+	if cached != nil {
+		return normalizeProjectID(cached.ProjectID)
+	}
+	return ""
+}
+
+func verifyScriptMutationOwnership(current *dsl.Script, expectedProjectID string) error {
+	if current == nil {
+		return nil
+	}
+	if expectedProjectID != "" && normalizeProjectID(current.ProjectID) != normalizeProjectID(expectedProjectID) {
+		return fmt.Errorf("%w: durable script belongs to a different project", errScriptConcurrentChange)
+	}
+	return nil
+}
+
 func (tr *TestRunner) StoreScript(script *dsl.Script) *StoredScript {
 	stored, _ := tr.StoreScriptDurable(script)
 	return stored
 }
 
 func (tr *TestRunner) StoreScriptDurable(script *dsl.Script) (*StoredScript, error) {
+	if script == nil {
+		return nil, fmt.Errorf("script is required")
+	}
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 
@@ -37,6 +103,13 @@ func (tr *TestRunner) StoreScriptDurable(script *dsl.Script) (*StoredScript, err
 	}
 	script.ProjectID = normalizeProjectID(script.ProjectID)
 	existing := tr.scripts[script.ID]
+	var prior *dsl.Script
+	if existing != nil {
+		prior = existing.Script
+	}
+	if err := reconcileMaskedScriptSecrets(script, prior); err != nil {
+		return nil, err
+	}
 	if existing != nil && normalizeProjectID(existing.ProjectID) != script.ProjectID {
 		return nil, fmt.Errorf("script %s belongs to project %s and cannot be overwritten from project %s", script.ID, normalizeProjectID(existing.ProjectID), script.ProjectID)
 	}
@@ -74,8 +147,54 @@ func (tr *TestRunner) StoreScriptDurable(script *dsl.Script) (*StoredScript, err
 		Script:          script,
 	}
 
-	if err := tr.saveStoredScript(script); err != nil {
-		return nil, err
+	if tr.scriptStore != nil {
+		_, supportsCreateOnly := tr.scriptStore.(createOnlyScriptPersistence)
+		_, supportsCAS := tr.scriptStore.(conditionalScriptPersistence)
+		if !supportsCreateOnly || !supportsCAS {
+			if err := tr.saveStoredScript(script); err != nil {
+				return nil, err
+			}
+		} else {
+			current, err := tr.durableScriptForMutationLocked(script.ID)
+			if err != nil {
+				return nil, err
+			}
+			if current == nil {
+				store, ok := tr.scriptStore.(createOnlyScriptPersistence)
+				if !ok {
+					return nil, fmt.Errorf("durable script store does not support atomic create-only persistence")
+				}
+				created, err := store.CreateScriptIfAbsent(script)
+				if err != nil {
+					return nil, err
+				}
+				if !created {
+					return nil, errScriptConcurrentChange
+				}
+			} else {
+				if existing == nil || existing.Script == nil ||
+					normalizeProjectID(current.ProjectID) != script.ProjectID ||
+					normalizeProjectID(existing.ProjectID) != script.ProjectID ||
+					!current.UpdatedAt.Equal(existing.Script.UpdatedAt) {
+					return nil, errScriptConcurrentChange
+				}
+				if err := reconcileMaskedScriptSecrets(script, current); err != nil {
+					return nil, err
+				}
+				script.CreatedAt = current.CreatedAt
+				store, ok := tr.scriptStore.(conditionalScriptPersistence)
+				if !ok {
+					return nil, fmt.Errorf("durable script store does not support conditional updates")
+				}
+				updated, err := store.UpdateScriptIfUnchanged(script, current.UpdatedAt)
+				if err != nil {
+					return nil, err
+				}
+				if !updated {
+					return nil, errScriptConcurrentChange
+				}
+			}
+		}
 	}
 	canonicalScript := cloneScriptDefinition(script)
 
@@ -101,6 +220,9 @@ func (tr *TestRunner) CreateScriptDurable(script *dsl.Script) (*StoredScript, er
 	defer tr.mu.Unlock()
 	if script.ID == "" {
 		script.ID = uuid.New().String()
+	}
+	if err := reconcileMaskedScriptSecrets(script, nil); err != nil {
+		return nil, err
 	}
 	script.ProjectID = normalizeProjectID(script.ProjectID)
 	if err := tr.projectDeletionErrorLocked(script.ProjectID); err != nil {
@@ -179,6 +301,116 @@ func (tr *TestRunner) CreateScriptDurable(script *dsl.Script) (*StoredScript, er
 	tr.contentRevision++
 	tr.observeAndIndexRefKeyLocked(stored.RefKey, stored.ID)
 	return cloneStoredScriptForReadLocked(stored), nil
+}
+
+// UpdateScriptDurableIfUnchanged applies a synchronized library update only if
+// the exact durable script observed during conflict detection still exists.
+// This closes the preflight-to-write race with concurrent editors and replicas.
+func (tr *TestRunner) UpdateScriptDurableIfUnchanged(script, expected *dsl.Script) (*StoredScript, bool, error) {
+	if script == nil || expected == nil {
+		return nil, false, fmt.Errorf("script and expected durable version are required")
+	}
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	if strings.TrimSpace(script.ID) == "" || script.ID != expected.ID {
+		return nil, false, fmt.Errorf("conditional script update requires a matching id")
+	}
+	script.ProjectID = normalizeProjectID(script.ProjectID)
+	if script.ProjectID != normalizeProjectID(expected.ProjectID) {
+		return nil, false, fmt.Errorf("script %s cannot move between projects during synchronization", script.ID)
+	}
+	if err := tr.projectDeletionErrorLocked(script.ProjectID); err != nil {
+		return nil, false, err
+	}
+	if err := reconcileMaskedScriptSecrets(script, expected); err != nil {
+		return nil, false, err
+	}
+	if strings.TrimSpace(script.Version) == "" {
+		script.Version = "1"
+	}
+	// Reference keys, folders, and creation timestamps belong to the local
+	// workspace and are never imported from the remote source on update.
+	script.RefKey = expected.RefKey
+	script.FolderID = cloneStringPtr(expected.FolderID)
+	script.CreatedAt = expected.CreatedAt
+
+	if store, ok := tr.scriptStore.(conditionalScriptPersistence); ok {
+		updated, err := store.UpdateScriptIfUnchanged(script, expected.UpdatedAt)
+		if err != nil || !updated {
+			return nil, updated, err
+		}
+	} else if tr.scriptStore != nil {
+		return nil, false, fmt.Errorf("durable script store does not support conditional updates")
+	} else {
+		current := tr.scripts[script.ID]
+		if current == nil || current.Script == nil || !equivalentCreateOnlyScript(current.Script, expected) {
+			return nil, false, nil
+		}
+		if err := tr.saveStoredScript(script); err != nil {
+			return nil, false, err
+		}
+	}
+
+	createdAt := script.CreatedAt
+	if createdAt.IsZero() {
+		createdAt = time.Now()
+	}
+	stored := &StoredScript{
+		ID:              script.ID,
+		RefKey:          script.RefKey,
+		Name:            script.Name,
+		Protocol:        script.Protocol,
+		Version:         script.Version,
+		ProjectID:       script.ProjectID,
+		FolderID:        cloneStringPtr(script.FolderID),
+		CreatedAt:       createdAt,
+		AuthoringHealth: buildStoredScriptAuthoringHealth(script),
+		Script:          cloneScriptDefinition(script),
+	}
+	if previous := tr.scripts[stored.ID]; previous != nil {
+		tr.removeRefKeyLocked(previous.RefKey)
+	}
+	tr.scripts[stored.ID] = stored
+	tr.contentRevision++
+	tr.observeAndIndexRefKeyLocked(stored.RefKey, stored.ID)
+	return cloneStoredScriptForReadLocked(stored), true, nil
+}
+
+// DeleteScriptDurableIfUnchanged removes a just-created library import only
+// while its durable version still matches the import journal. A concurrent
+// editor therefore wins over rollback instead of having their update erased.
+func (tr *TestRunner) DeleteScriptDurableIfUnchanged(id string, expectedUpdatedAt time.Time) (bool, error) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	id = strings.TrimSpace(id)
+	if id == "" || expectedUpdatedAt.IsZero() {
+		return false, fmt.Errorf("script id and expected updated_at are required")
+	}
+	deleted := false
+	if store, ok := tr.scriptStore.(conditionalScriptDeletePersistence); ok {
+		var err error
+		deleted, err = store.DeleteScriptIfUnchanged(id, expectedUpdatedAt)
+		if err != nil || !deleted {
+			return deleted, err
+		}
+	} else if tr.scriptStore != nil {
+		return false, fmt.Errorf("durable script store does not support conditional delete")
+	} else {
+		current := tr.scripts[id]
+		if current == nil || current.Script == nil || !current.Script.UpdatedAt.Equal(expectedUpdatedAt) {
+			return false, nil
+		}
+		if err := tr.deleteStoredScript(id); err != nil {
+			return false, err
+		}
+		deleted = true
+	}
+	if previous := tr.scripts[id]; previous != nil {
+		tr.removeRefKeyLocked(previous.RefKey)
+	}
+	delete(tr.scripts, id)
+	tr.contentRevision++
+	return true, nil
 }
 
 func equivalentCreateOnlyScript(existing, candidate *dsl.Script) bool {
@@ -312,24 +544,61 @@ func (tr *TestRunner) MoveScript(id string, folderID *string) bool {
 }
 
 func (tr *TestRunner) MoveScriptDurable(id string, folderID *string) (bool, error) {
+	return tr.MoveScriptDurableInProject(id, folderID, "")
+}
+
+// MoveScriptDurableInProject binds the mutation to the project scope resolved
+// by request authorization. The durable version is then updated with CAS, so a
+// delete/recreate or edit on another HA replica cannot be moved by a request
+// authorized against an older row with the same ID.
+func (tr *TestRunner) MoveScriptDurableInProject(id string, folderID *string, expectedProjectID string) (bool, error) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	id = tr.resolveRefKeyLocked(id)
-	script, ok := tr.scripts[id]
-	if !ok {
+	cached := tr.scripts[id]
+	if cached == nil {
 		return false, nil
 	}
-	if err := tr.projectDeletionErrorLocked(script.ProjectID); err != nil {
+	expectedProjectID = expectedScriptMutationProject(expectedProjectID, cached)
+	current, err := tr.durableScriptForMutationLocked(id)
+	if err != nil {
+		return false, err
+	}
+	if current == nil {
+		return false, nil
+	}
+	if err := verifyScriptMutationOwnership(current, expectedProjectID); err != nil {
+		return false, err
+	}
+	if err := tr.projectDeletionErrorLocked(current.ProjectID); err != nil {
 		return false, err
 	}
 	if tr.scriptStore != nil {
-		if err := tr.scriptStore.MoveScript(id, folderID); err != nil {
-			return false, err
+		store, ok := tr.scriptStore.(conditionalScriptPersistence)
+		if !ok {
+			if err := tr.scriptStore.MoveScript(id, folderID); err != nil {
+				return false, err
+			}
+			current.FolderID = cloneStringPtr(folderID)
+		} else {
+			candidate := cloneScriptDefinition(current)
+			candidate.FolderID = cloneStringPtr(folderID)
+			moved, err := store.UpdateScriptIfUnchanged(candidate, current.UpdatedAt)
+			if err != nil {
+				return false, err
+			}
+			if !moved {
+				return false, errScriptConcurrentChange
+			}
+			current = candidate
 		}
+	} else {
+		current.FolderID = cloneStringPtr(folderID)
 	}
-	script.FolderID = cloneStringPtr(folderID)
-	if script.Script != nil {
-		script.Script.FolderID = cloneStringPtr(folderID)
+	cached.FolderID = cloneStringPtr(current.FolderID)
+	if cached.Script != nil {
+		cached.Script.FolderID = cloneStringPtr(current.FolderID)
+		cached.Script.UpdatedAt = current.UpdatedAt
 	}
 	tr.contentRevision++
 	return true, nil
@@ -341,6 +610,17 @@ func (tr *TestRunner) UpdateScript(id string, script *dsl.Script) (*StoredScript
 }
 
 func (tr *TestRunner) UpdateScriptDurable(id string, script *dsl.Script) (*StoredScript, bool, error) {
+	return tr.UpdateScriptDurableInProject(id, script, "")
+}
+
+// UpdateScriptDurableInProject performs an ownership-bound, compare-and-swap
+// update against the authoritative row. It prevents stale HA caches and an
+// ID's delete/recreate window from turning a previously authorized request into
+// a cross-project overwrite.
+func (tr *TestRunner) UpdateScriptDurableInProject(id string, script *dsl.Script, expectedProjectID string) (*StoredScript, bool, error) {
+	if script == nil {
+		return nil, false, fmt.Errorf("script is required")
+	}
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	id = tr.resolveRefKeyLocked(id)
@@ -348,18 +628,32 @@ func (tr *TestRunner) UpdateScriptDurable(id string, script *dsl.Script) (*Store
 	if !ok {
 		return nil, false, nil
 	}
-	if err := tr.projectDeletionErrorLocked(existing.ProjectID); err != nil {
+	expectedProjectID = expectedScriptMutationProject(expectedProjectID, existing)
+	current, err := tr.durableScriptForMutationLocked(id)
+	if err != nil {
 		return nil, false, err
 	}
-	script.ID = existing.ID
+	if current == nil {
+		return nil, false, nil
+	}
+	if err := verifyScriptMutationOwnership(current, expectedProjectID); err != nil {
+		return nil, false, err
+	}
+	if err := reconcileMaskedScriptSecrets(script, current); err != nil {
+		return nil, false, err
+	}
+	if err := tr.projectDeletionErrorLocked(current.ProjectID); err != nil {
+		return nil, false, err
+	}
+	script.ID = current.ID
 	if strings.TrimSpace(script.Version) == "" {
-		script.Version = existing.Version
+		script.Version = current.Version
 	}
 	if strings.TrimSpace(script.Version) == "" {
 		script.Version = "1"
 	}
-	oldRefKey := existing.RefKey
-	parts, ok := refkey.Parse(normalizeRefKeyCandidate(existing.RefKey))
+	oldRefKey := current.RefKey
+	parts, ok := refkey.Parse(normalizeRefKeyCandidate(current.RefKey))
 	if ok && parts.Type == refkey.TypeScript {
 		script.RefKey = refkey.Script(parts.Env, parts.Seq, parts.Version+1)
 	} else {
@@ -372,15 +666,28 @@ func (tr *TestRunner) UpdateScriptDurable(id string, script *dsl.Script) (*Store
 	// Project ownership is immutable for an in-place update. Moving a script
 	// requires a dedicated operation that authorizes both source and destination;
 	// ordinary update callers must never be able to rewrite tenant ownership.
-	script.ProjectID = existing.ProjectID
+	script.ProjectID = current.ProjectID
 	if script.FolderID == nil {
-		script.FolderID = existing.FolderID
+		script.FolderID = current.FolderID
 	}
-	if script.CreatedAt.IsZero() && existing.Script != nil {
-		script.CreatedAt = existing.Script.CreatedAt
+	if script.CreatedAt.IsZero() {
+		script.CreatedAt = current.CreatedAt
 	}
-	if err := tr.saveStoredScript(script); err != nil {
-		return nil, false, err
+	if tr.scriptStore != nil {
+		store, ok := tr.scriptStore.(conditionalScriptPersistence)
+		if !ok {
+			if err := tr.saveStoredScript(script); err != nil {
+				return nil, false, err
+			}
+		} else {
+			updated, err := store.UpdateScriptIfUnchanged(script, current.UpdatedAt)
+			if err != nil {
+				return nil, false, err
+			}
+			if !updated {
+				return nil, false, errScriptConcurrentChange
+			}
+		}
 	}
 	existing.Name = script.Name
 	existing.Protocol = script.Protocol
@@ -390,7 +697,10 @@ func (tr *TestRunner) UpdateScriptDurable(id string, script *dsl.Script) (*Store
 	existing.FolderID = cloneStringPtr(script.FolderID)
 	existing.AuthoringHealth = buildStoredScriptAuthoringHealth(script)
 	existing.Script = cloneScriptDefinition(script)
-	tr.removeRefKeyLocked(oldRefKey)
+	tr.removeRefKeyLocked(existing.RefKey)
+	if oldRefKey != existing.RefKey {
+		tr.removeRefKeyLocked(oldRefKey)
+	}
 	tr.indexRefKeyLocked(existing.RefKey, existing.ID)
 	tr.contentRevision++
 	return cloneStoredScriptForReadLocked(existing), true, nil
@@ -402,20 +712,51 @@ func (tr *TestRunner) DeleteScript(id string) bool {
 }
 
 func (tr *TestRunner) DeleteScriptDurable(id string) (bool, error) {
+	return tr.DeleteScriptDurableInProject(id, "")
+}
+
+// DeleteScriptDurableInProject deletes only the exact authoritative script
+// version in the authorized project. A concurrent edit or same-ID replacement
+// wins and the caller must reload instead of deleting the newer row.
+func (tr *TestRunner) DeleteScriptDurableInProject(id string, expectedProjectID string) (bool, error) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	id = tr.resolveRefKeyLocked(id)
-	script, ok := tr.scripts[id]
-	if !ok {
+	cached := tr.scripts[id]
+	if cached == nil {
 		return false, nil
 	}
-	if err := tr.projectDeletionErrorLocked(script.ProjectID); err != nil {
+	expectedProjectID = expectedScriptMutationProject(expectedProjectID, cached)
+	current, err := tr.durableScriptForMutationLocked(id)
+	if err != nil {
 		return false, err
 	}
-	if err := tr.deleteStoredScript(id); err != nil {
+	if current == nil {
+		return false, nil
+	}
+	if err := verifyScriptMutationOwnership(current, expectedProjectID); err != nil {
 		return false, err
 	}
-	tr.removeRefKeyLocked(script.RefKey)
+	if err := tr.projectDeletionErrorLocked(current.ProjectID); err != nil {
+		return false, err
+	}
+	if tr.scriptStore != nil {
+		store, ok := tr.scriptStore.(conditionalScriptDeletePersistence)
+		if !ok {
+			if err := tr.deleteStoredScript(id); err != nil {
+				return false, err
+			}
+		} else {
+			deleted, err := store.DeleteScriptIfUnchanged(id, current.UpdatedAt)
+			if err != nil {
+				return false, err
+			}
+			if !deleted {
+				return false, errScriptConcurrentChange
+			}
+		}
+	}
+	tr.removeRefKeyLocked(cached.RefKey)
 	delete(tr.scripts, id)
 	tr.contentRevision++
 	return true, nil

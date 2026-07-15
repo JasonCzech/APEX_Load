@@ -2,8 +2,10 @@ package api
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -35,6 +37,9 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := validateProjectSettings(req.Settings); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !githubProjectPoliciesEqual(req.Settings.GitHub, storage.GitHubProjectPolicy{}) && !s.requireSystemAdminForGitHubPolicyMutation(w, r) {
 		return
 	}
 	domainID, categoryID, err := s.resolveProjectPlacement(stringPtrValue(req.DomainID), stringPtrValue(req.CategoryID))
@@ -127,6 +132,9 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if !githubProjectPoliciesEqual(project.Settings.GitHub, req.Settings.GitHub) && !s.requireSystemAdminForGitHubPolicyMutation(w, r) {
+		return
+	}
 	if req.DomainID != nil || req.CategoryID != nil {
 		domainID := project.DomainID
 		categoryID := project.CategoryID
@@ -141,18 +149,83 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid project placement: "+err.Error())
 			return
 		}
+		placementChanged := normalizeDomainID(project.DomainID) != resolvedDomainID || normalizeRepositoryCategoryID(project.CategoryID) != resolvedCategoryID
+		if placementChanged && !s.requireProjectPlacementAccess(w, r, resolvedDomainID, resolvedCategoryID) {
+			return
+		}
 		project.DomainID = resolvedDomainID
 		project.CategoryID = resolvedCategoryID
 	}
 	project.Name = strings.TrimSpace(req.Name)
 	project.Settings = req.Settings
-	if err := s.store.SaveProject(project); err != nil {
+	updater, supported := s.store.(interface {
+		UpdateProjectIfUnchanged(project *storage.Project, expectedUpdatedAt time.Time) (bool, error)
+	})
+	if !supported {
+		writeError(w, http.StatusNotImplemented, "optimistic project updates are not supported by this storage backend")
+		return
+	}
+	updated, err := updater.UpdateProjectIfUnchanged(project, project.UpdatedAt)
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !updated {
+		writeError(w, http.StatusConflict, "project changed while the update was in flight; reload and retry")
 		return
 	}
 	s.runner.ReconcilePendingTests()
 	s.recordAuditEvent(r, "project.update", "success", "project", project.ID, project.ID, map[string]any{"name": project.Name, "max_concurrent_tests": project.Settings.MaxConcurrentTests, "max_vusers": project.Settings.MaxVUsers})
 	writeJSON(w, http.StatusOK, project)
+}
+
+// requireProjectPlacementAccess is the second authorization gate for moving an
+// existing project into a different domain/repository. The route-level policy
+// proves the caller administers the source project; without this target check,
+// that caller could attach it to any repository they cannot otherwise modify.
+func (s *Server) requireProjectPlacementAccess(w http.ResponseWriter, r *http.Request, domainID, categoryID string) bool {
+	// Global administrators and explicit auth-bypass mode are intentionally not
+	// project-bound by middleware and retain cross-domain placement authority.
+	if _, scoped := authorizedProjectFromRequest(r); !scoped {
+		return true
+	}
+	user, ok := AuthenticatedUserFromContext(r.Context())
+	if !ok || user == nil {
+		writeError(w, http.StatusForbidden, "forbidden")
+		return false
+	}
+	if user.hasGlobalRole(RoleProjectAdmin, RoleSystemAdmin) || user.hasDomainRole(domainID, RoleEditor, RoleProjectAdmin) {
+		return true
+	}
+	category, err := s.store.GetRepositoryCategory(categoryID)
+	if err == nil && category != nil && user.hasRepositoryRole(category.RepositoryID, RoleEditor, RoleProjectAdmin) {
+		return true
+	}
+	writeError(w, http.StatusForbidden, "target project placement is forbidden")
+	return false
+}
+
+func githubProjectPoliciesEqual(left, right storage.GitHubProjectPolicy) bool {
+	return reflect.DeepEqual(normalizeGitHubProjectPolicy(left), normalizeGitHubProjectPolicy(right))
+}
+
+// requireSystemAdminForGitHubPolicyMutation protects controller-owned GitHub
+// App/PAT credentials from being remapped through generic project CRUD. Project
+// admins may administer ordinary project settings, but only a system admin may
+// define the repository/branch policy that grants use of controller authority.
+func (s *Server) requireSystemAdminForGitHubPolicyMutation(w http.ResponseWriter, r *http.Request) bool {
+	if user, ok := AuthenticatedUserFromContext(r.Context()); ok && user != nil {
+		if user.hasGlobalRole(RoleSystemAdmin) {
+			return true
+		}
+		writeError(w, http.StatusForbidden, "github project policy changes require system_admin access")
+		return false
+	}
+	if isAuthBypassMode(normalizeAuthSettings(s.runner.GetSystemSettings().Auth).Mode) {
+		return true
+	}
+	writeError(w, http.StatusForbidden, "github project policy changes require system_admin access")
+	return false
 }
 
 func stringPtrValue(value *string) string {
@@ -166,14 +239,26 @@ func validateProjectSettings(settings storage.ProjectSettings) error {
 	if settings.MaxConcurrentTests < 0 {
 		return errProjectSettings("max_concurrent_tests must be greater than or equal to 0")
 	}
+	if settings.MaxConcurrentTests > maxCapacityUnit {
+		return errProjectSettings(fmt.Sprintf("max_concurrent_tests must not exceed %d", maxCapacityUnit))
+	}
 	if settings.MaxVUsers < 0 {
 		return errProjectSettings("max_vusers must be greater than or equal to 0")
+	}
+	if settings.MaxVUsers > maxCapacityUnit {
+		return errProjectSettings(fmt.Sprintf("max_vusers must not exceed %d", maxCapacityUnit))
 	}
 	if settings.MaxVUsersPerTest < 0 {
 		return errProjectSettings("max_vusers_per_test must be greater than or equal to 0")
 	}
+	if settings.MaxVUsersPerTest > maxManagedTestVUsers {
+		return errProjectSettings(fmt.Sprintf("max_vusers_per_test must not exceed %d", maxManagedTestVUsers))
+	}
 	if settings.MaxTestDurationMinutes < 0 {
 		return errProjectSettings("max_test_duration_minutes must be greater than or equal to 0")
+	}
+	if _, ok := checkedDuration(settings.MaxTestDurationMinutes, time.Minute); !ok {
+		return errProjectSettings("max_test_duration_minutes is too large")
 	}
 	// Per-pool quotas mirror the project-wide caps: reject negatives (which would
 	// otherwise fall through the >0 admission guards and silently disable the cap —
@@ -185,8 +270,14 @@ func validateProjectSettings(settings storage.ProjectSettings) error {
 		if quota.MaxConcurrentTests < 0 {
 			return errProjectSettings("pool_quotas.max_concurrent_tests must be greater than or equal to 0")
 		}
+		if quota.MaxConcurrentTests > maxCapacityUnit {
+			return errProjectSettings(fmt.Sprintf("pool_quotas.max_concurrent_tests must not exceed %d", maxCapacityUnit))
+		}
 		if quota.MaxVUsers < 0 {
 			return errProjectSettings("pool_quotas.max_vusers must be greater than or equal to 0")
+		}
+		if quota.MaxVUsers > maxCapacityUnit {
+			return errProjectSettings(fmt.Sprintf("pool_quotas.max_vusers must not exceed %d", maxCapacityUnit))
 		}
 	}
 	if settings.GitHub.Enabled {
@@ -331,8 +422,26 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 	// Delete the relational project graph atomically before making irreversible
 	// object-store changes. If the database transaction fails, every archive is
 	// still intact. Physical cleanup happens from the records captured above.
-	if err := s.store.DeleteProject(id); err != nil {
+	deleteResult, err := s.deleteProjectDurably(id)
+	if err != nil {
+		if errors.Is(err, errNotExecutionLeader) {
+			writeError(w, http.StatusServiceUnavailable, err.Error())
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	switch deleteResult {
+	case storage.LeaseFencedDeleteActive:
+		writeError(w, http.StatusConflict, "project has active tests")
+		return
+	case storage.LeaseFencedDeleteMissing:
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	case storage.LeaseFencedDeleteDeleted:
+		// Continue with local-index and physical archive cleanup below.
+	default:
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("unexpected durable project delete result %q", deleteResult))
 		return
 	}
 	if s.runner != nil {
@@ -351,4 +460,35 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 	}
 	s.recordAuditEventWithProjectSnapshot(r, "project.delete", "success", "project", id, id, domainID, nil)
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
+}
+
+func (s *Server) deleteProjectDurably(id string) (storage.LeaseFencedDeleteResult, error) {
+	if s == nil || s.store == nil {
+		return storage.LeaseFencedDeleteFenced, fmt.Errorf("project storage is not configured")
+	}
+	if s.runner != nil && s.runner.durableExecutionFence {
+		leaseOwnerID := s.runner.currentExecutionFenceToken()
+		if leaseOwnerID == "" {
+			return storage.LeaseFencedDeleteFenced, errNotExecutionLeader
+		}
+		store, ok := s.store.(leaseFencedProjectDeletePersistence)
+		if !ok {
+			return storage.LeaseFencedDeleteFenced, fmt.Errorf("project persistence does not support execution-lease-fenced deletion")
+		}
+		result, err := store.DeleteProjectIfLeaseHeld(id, executionLeaseName, leaseOwnerID)
+		if err != nil {
+			return result, err
+		}
+		if result == storage.LeaseFencedDeleteFenced {
+			return result, errNotExecutionLeader
+		}
+		return result, nil
+	}
+	if err := s.store.DeleteProject(id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return storage.LeaseFencedDeleteMissing, nil
+		}
+		return storage.LeaseFencedDeleteFenced, err
+	}
+	return storage.LeaseFencedDeleteDeleted, nil
 }

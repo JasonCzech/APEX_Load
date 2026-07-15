@@ -19,6 +19,7 @@ Minimum production values:
 - `image.tag`
 - `dataPlatform.azureStorageAccount`
 - `dataPlatform.keyVaultUrl`
+- `dataPlatform.azureMessagingAllowedNamespaces` with exact namespace FQDNs when scripts use workload-identity Event Hubs or Service Bus auth
 - `workloadIdentity.controllerClientId`
 - `workloadIdentity.generatorClientId`
 - `dataPlatform.secretName` pointing at a Secret with `APEXLOAD_DATABASE_URL`,
@@ -26,6 +27,12 @@ Minimum production values:
 - `ingress.host`
 - `keda.azureMonitor.identityId` and `keda.azureMonitor.serverAddress` when
   `keda.azureMonitor.enabled=true`
+
+Each generator ordinal receives a retained PVC for its execution-fencing
+high-water and generator-side run evidence awaiting controller ingestion.
+Configure `generator.statePersistence.storageClassName` when the cluster has no
+default StorageClass, and size it with `generator.statePersistence.size` (the
+default is `10Gi`).
 
 Set `certManager.enabled=true` when the cluster uses cert-manager to issue the
 controller/generator mTLS secrets. If the platform syncs those secrets from Key

@@ -50,10 +50,10 @@ type scriptImportRepairSuggestion struct {
 }
 
 func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
-	scripts := opts.Scripts
+	scripts := maskScriptResponseValue(opts.Scripts)
 	if isNilImportValue(scripts) {
 		if !isNilImportValue(opts.Script) {
-			scripts = []any{opts.Script}
+			scripts = []any{maskScriptResponseValue(opts.Script)}
 		} else {
 			scripts = []any{}
 		}
@@ -98,7 +98,7 @@ func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
 
 	response := map[string]any{
 		"scripts":                   scripts,
-		"script":                    opts.Script,
+		"script":                    maskScriptResponseValue(opts.Script),
 		"warnings":                  warnings,
 		"stats":                     stats,
 		"correlations":              correlations,
@@ -118,7 +118,7 @@ func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
 		"preflight":                 opts.Preflight,
 	}
 	if opts.Result != nil {
-		response["result"] = opts.Result
+		response["result"] = maskScriptResponseValue(opts.Result)
 	}
 
 	return response

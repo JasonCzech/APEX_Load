@@ -1,13 +1,13 @@
 package api
 
 import (
+	"container/heap"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -21,6 +21,9 @@ const (
 	archiveMaterializationCacheMarkerSuffix      = ".apexload-materialized-cache.json"
 	archiveMaterializationCacheMarkerVersion     = 1
 	archiveMaterializationRetentionSweepInterval = time.Minute
+	archiveMaterializationScanReadBatch          = 256
+	archiveMaterializationScanMaxDepth           = 4
+	archiveMaterializationRetentionCandidates    = 10_000
 )
 
 // archiveMaterializationCoordinator serializes downloads per concrete cache
@@ -493,7 +496,7 @@ func (m *archiveMaterializationCoordinator) enforceRetention(scanRoot string) {
 	defer m.evictionMu.Unlock()
 
 	cleanupArchiveMaterializationOrphans(scanRoot, m.now().UTC())
-	candidates := scanArchiveMaterializationCache(scanRoot, m.now().UTC(), configuredArchiveMaterializationCacheTTL())
+	candidates, totalBytes := scanArchiveMaterializationCache(scanRoot, m.now().UTC(), configuredArchiveMaterializationCacheTTL())
 	if len(candidates) == 0 {
 		return
 	}
@@ -503,14 +506,6 @@ func (m *archiveMaterializationCoordinator) enforceRetention(scanRoot string) {
 		}
 		return candidates[i].lastAccess.Before(candidates[j].lastAccess)
 	})
-	totalBytes := int64(0)
-	for _, candidate := range candidates {
-		if candidate.sizeBytes > int64(^uint64(0)>>1)-totalBytes {
-			totalBytes = int64(^uint64(0) >> 1)
-		} else {
-			totalBytes += candidate.sizeBytes
-		}
-	}
 	maxBytes := configuredArchiveMaterializationCacheMaxBytes()
 	for _, candidate := range candidates {
 		if !candidate.expired && totalBytes <= maxBytes {
@@ -530,20 +525,15 @@ func cleanupArchiveMaterializationOrphans(scanRoot string, now time.Time) {
 		return
 	}
 	defer root.Close()
-	_ = fs.WalkDir(root.FS(), ".", func(relative string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil || entry == nil || relative == "." || !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
-			return nil
-		}
-		name := entry.Name()
+	_ = walkArchiveMaterializationDirectories(root, archiveMaterializationScanMaxDepth, func(relative, name string, info os.FileInfo) bool {
 		orphan := strings.Contains(name, ".materializing-") || strings.Contains(name, ".previous-") || strings.Contains(name, ".evicting-")
 		if !strings.HasPrefix(name, ".") || !orphan {
-			return nil
+			return true
 		}
-		info, err := entry.Info()
-		if err == nil && !info.ModTime().Add(maxAge).After(now) {
+		if !info.ModTime().Add(maxAge).After(now) {
 			_ = removeArchiveDirectoryAt(root, relative, info)
 		}
-		return filepath.SkipDir
+		return false
 	})
 }
 
@@ -677,55 +667,62 @@ func (m *archiveMaterializationCoordinator) tryEvict(candidate archiveMaterializ
 	return true
 }
 
-func scanArchiveMaterializationCache(scanRoot string, now time.Time, ttl time.Duration) []archiveMaterializationCacheCandidate {
-	candidates := make([]archiveMaterializationCacheCandidate, 0)
+func scanArchiveMaterializationCache(scanRoot string, now time.Time, ttl time.Duration) ([]archiveMaterializationCacheCandidate, int64) {
+	return scanArchiveMaterializationCacheLimit(scanRoot, now, ttl, archiveMaterializationRetentionCandidates)
+}
+
+func scanArchiveMaterializationCacheLimit(scanRoot string, now time.Time, ttl time.Duration, limit int) ([]archiveMaterializationCacheCandidate, int64) {
+	if limit <= 0 {
+		return nil, 0
+	}
 	root, err := openArchiveDirectoryNoSymlink(scanRoot)
 	if err != nil {
-		return candidates
+		return nil, 0
 	}
 	defer root.Close()
 	scanIdentity, err := root.Stat(".")
 	if err != nil {
-		return candidates
+		return nil, 0
 	}
 	absScanRoot, err := filepath.Abs(scanRoot)
 	if err != nil {
-		return candidates
+		return nil, 0
 	}
-	_ = fs.WalkDir(root.FS(), ".", func(relative string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil || entry == nil || entry.IsDir() {
-			return nil
-		}
-		if entry.Name() != archiveMaterializationCacheMarkerSuffix || entry.Type()&os.ModeSymlink != 0 {
-			return nil
-		}
-		relativeRoot := filepath.Dir(relative)
+	candidates := make(archiveMaterializationCandidateHeap, 0, min(limit, 128))
+	totalBytes := int64(0)
+	_ = walkArchiveMaterializationDirectories(root, archiveMaterializationScanMaxDepth, func(relativeRoot, name string, rootInfo os.FileInfo) bool {
 		base := filepath.Base(relativeRoot)
 		if err := validateArchiveRunID(base); err != nil {
-			return nil
+			return true
 		}
-		rootInfo, err := root.Lstat(relativeRoot)
-		if err != nil || !rootInfo.IsDir() || rootInfo.Mode()&os.ModeSymlink != 0 {
-			return nil
-		}
-		data, markerInfo, err := readArchiveFileAtRootLimitedContext(context.Background(), root, relative, 4<<10)
+		cacheRoot, err := openArchiveRelativeDirectoryRoot(root, relativeRoot)
 		if err != nil {
-			return nil
+			return false
+		}
+		data, markerInfo, err := readArchiveFileAtRootLimitedContext(context.Background(), cacheRoot, archiveMaterializationCacheMarkerSuffix, 4<<10)
+		_ = cacheRoot.Close()
+		if err != nil {
+			return true
 		}
 		var marker archiveMaterializationCacheMarker
 		if err := json.Unmarshal(data, &marker); err != nil || marker.Version != archiveMaterializationCacheMarkerVersion || marker.SizeBytes < 0 {
-			return nil
+			return false
 		}
 		candidateRoot := filepath.Join(absScanRoot, relativeRoot)
 		key, err := canonicalArchiveMaterializationKey(candidateRoot)
 		if err != nil {
-			return nil
+			return false
 		}
 		lastAccess := marker.AccessedAt.UTC()
 		if lastAccess.IsZero() {
 			lastAccess = markerInfo.ModTime().UTC()
 		}
-		candidates = append(candidates, archiveMaterializationCacheCandidate{
+		if marker.SizeBytes > int64(^uint64(0)>>1)-totalBytes {
+			totalBytes = int64(^uint64(0) >> 1)
+		} else {
+			totalBytes += marker.SizeBytes
+		}
+		candidate := archiveMaterializationCacheCandidate{
 			key:          key,
 			root:         candidateRoot,
 			markerPath:   filepath.Join(candidateRoot, archiveMaterializationCacheMarkerSuffix),
@@ -736,10 +733,133 @@ func scanArchiveMaterializationCache(scanRoot string, now time.Time, ttl time.Du
 			sizeBytes:    marker.SizeBytes,
 			lastAccess:   lastAccess,
 			expired:      ttl > 0 && !lastAccess.Add(ttl).After(now),
-		})
-		return nil
+		}
+		if len(candidates) < limit {
+			heap.Push(&candidates, candidate)
+		} else if archiveMaterializationCandidateOlder(candidate, candidates[0]) {
+			heap.Pop(&candidates)
+			heap.Push(&candidates, candidate)
+		}
+		// A valid cache marker identifies the cache root. Archive artifact
+		// subdirectories are not retention namespaces and need not be traversed.
+		return false
 	})
-	return candidates
+	return []archiveMaterializationCacheCandidate(candidates), totalBytes
+}
+
+// archiveMaterializationCandidateHeap keeps the newest retained candidate at
+// index zero, allowing a bounded scan to replace it whenever an older entry is
+// found. The final retention pass sorts the retained oldest candidates.
+type archiveMaterializationCandidateHeap []archiveMaterializationCacheCandidate
+
+func (h archiveMaterializationCandidateHeap) Len() int { return len(h) }
+func (h archiveMaterializationCandidateHeap) Less(left, right int) bool {
+	if h[left].lastAccess.Equal(h[right].lastAccess) {
+		return h[left].root > h[right].root
+	}
+	return h[left].lastAccess.After(h[right].lastAccess)
+}
+func (h archiveMaterializationCandidateHeap) Swap(left, right int) {
+	h[left], h[right] = h[right], h[left]
+}
+func (h *archiveMaterializationCandidateHeap) Push(value any) {
+	*h = append(*h, value.(archiveMaterializationCacheCandidate))
+}
+func (h *archiveMaterializationCandidateHeap) Pop() any {
+	old := *h
+	last := len(old) - 1
+	value := old[last]
+	*h = old[:last]
+	return value
+}
+
+func archiveMaterializationCandidateOlder(left, right archiveMaterializationCacheCandidate) bool {
+	if left.lastAccess.Equal(right.lastAccess) {
+		return left.root < right.root
+	}
+	return left.lastAccess.Before(right.lastAccess)
+}
+
+type archiveMaterializationDirectoryVisitor func(relative, name string, info os.FileInfo) bool
+
+// walkArchiveMaterializationDirectories traverses the fixed-depth staging
+// namespace with bounded ReadDir batches. fs.WalkDir sorts an entire directory
+// in memory, which makes a large cache root an avoidable availability hazard.
+func walkArchiveMaterializationDirectories(root *os.Root, maxDepth int, visit archiveMaterializationDirectoryVisitor) error {
+	if root == nil || maxDepth <= 0 || visit == nil {
+		return nil
+	}
+	var walk func(current *os.Root, prefix string, depth int) error
+	walk = func(current *os.Root, prefix string, depth int) error {
+		directory, err := current.Open(".")
+		if err != nil {
+			return err
+		}
+		defer directory.Close()
+		for {
+			entries, readErr := directory.ReadDir(archiveMaterializationScanReadBatch)
+			for _, entry := range entries {
+				if !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
+					continue
+				}
+				info, err := current.Lstat(entry.Name())
+				if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+					continue
+				}
+				relative := entry.Name()
+				if prefix != "" {
+					relative = filepath.Join(prefix, entry.Name())
+				}
+				if !visit(relative, entry.Name(), info) || depth >= maxDepth {
+					continue
+				}
+				child, err := openArchiveChildDirectoryAt(current, entry.Name(), false, 0)
+				if err != nil {
+					continue
+				}
+				err = walk(child, relative, depth+1)
+				_ = child.Close()
+				if err != nil {
+					return err
+				}
+			}
+			if readErr == io.EOF {
+				return nil
+			}
+			if readErr != nil {
+				return readErr
+			}
+		}
+	}
+	return walk(root, "", 1)
+}
+
+func openArchiveRelativeDirectoryRoot(root *os.Root, relative string) (*os.Root, error) {
+	normalized, err := normalizeArchiveRelativeDirectory(relative)
+	if err != nil || normalized == "." {
+		if err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("archive relative directory is required")
+	}
+	components := strings.Split(normalized, string(filepath.Separator))
+	current := root
+	var owned *os.Root
+	for _, component := range components {
+		child, err := openArchiveChildDirectoryAt(current, component, false, 0)
+		if err != nil {
+			if owned != nil {
+				_ = owned.Close()
+			}
+			return nil, err
+		}
+		if owned != nil {
+			_ = owned.Close()
+		}
+		owned = child
+		current = child
+	}
+	return owned, nil
 }
 
 func configuredArchiveMaterializationCacheMaxBytes() int64 {

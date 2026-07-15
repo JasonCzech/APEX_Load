@@ -2,10 +2,14 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 // executionLeaseName is the well-known scheduler-lease key used to elect the
@@ -19,15 +23,19 @@ const (
 	defaultExecutionLeaseRenew = 10 * time.Second
 )
 
-// executionLeaseStore is the subset of storage.Store used for leader election.
-// Reusing the scenario-scheduler lease primitive means no new storage method,
-// schema migration, or test double is required.
+// executionLeaseStore is the compatibility subset of storage.Store used for
+// leader election. Production stores also implement executionLeaseTermStore so
+// the scheduler lease's durable generation can fence generator execution.
 type executionLeaseStore interface {
 	TryAcquireSchedulerLease(name string, ownerID string, now time.Time, ttl time.Duration) (bool, error)
 }
 
 type executionLeaseReleaseStore interface {
 	ReleaseSchedulerLease(name string, ownerID string) error
+}
+
+type executionLeaseTermStore interface {
+	TryAcquireSchedulerLeaseTerm(name string, ownerID string, now time.Time, ttl time.Duration) (bool, *storage.SchedulerLease, error)
 }
 
 type leadershipCallbackKind uint8
@@ -74,16 +82,28 @@ type executionLeadership struct {
 	callbackRunning bool
 	callbackQueue   []leadershipCallbackEvent
 
-	mu              sync.Mutex
-	onAcquire       func()
-	onAdmit         func()
-	onLoss          func()
-	lastConfirmed   time.Time // last time we positively held the lease
-	generation      uint64    // incremented on every leader/follower transition
-	pendingLoss     uint64    // queued or running loss callbacks blocking admission
-	lossDone        *sync.Cond
-	operationCtx    context.Context
-	operationCancel context.CancelFunc
+	mu                 sync.Mutex
+	onAcquire          func()
+	onAdmit            func()
+	onLoss             func()
+	lastConfirmed      time.Time // last time we positively held the lease
+	leaseExpiresAt     time.Time // database-authored expiry retained as term metadata
+	localLeaseDeadline time.Time // conservative deadline anchored before the DB call
+	durableGeneration  uint64    // database-authored monotonic fencing generation
+	generation         uint64    // incremented on every leader/follower transition
+	pendingLoss        uint64    // queued or running loss callbacks blocking admission
+	lossDone           *sync.Cond
+	operationCtx       context.Context
+	operationCancel    context.CancelFunc
+
+	// leaseOwnerID identifies one acquisition epoch, not merely one process.
+	// Durable execution writes carry this token and the store verifies it against
+	// scheduler_leases in the same transaction. Rotating it before every
+	// acquisition prevents a callback from an older epoch being mistaken for the
+	// same process after it reacquires leadership.
+	leaseAttempt uint64
+	leaseOwnerID string
+	tickMu       sync.Mutex
 }
 
 func newExecutionLeadership(store executionLeaseStore, ownerID string) *executionLeadership {
@@ -155,7 +175,7 @@ func (l *executionLeadership) IsLeader() bool {
 	// step-down decision stay under the same lock used by successful renewals;
 	// this prevents a stale snapshot from stepping down after a concurrent tick
 	// has already renewed the lease.
-	if !l.lastConfirmed.IsZero() && now.Sub(l.lastConfirmed) >= l.ttl {
+	if l.leaseExpiredLocked(now) {
 		l.transitionToFollowerLocked()
 		l.mu.Unlock()
 		slog.Warn("execution leadership expired without a successful renewal", "owner", l.ownerID)
@@ -194,7 +214,7 @@ func (l *executionLeadership) Run(ctx context.Context) {
 			case <-ticker.C:
 				now := l.now().UTC()
 				l.mu.Lock()
-				stale := l.leader.Load() && !l.lastConfirmed.IsZero() && now.Sub(l.lastConfirmed) >= l.ttl
+				stale := l.leader.Load() && l.leaseExpiredLocked(now)
 				steppedDown := stale && l.transitionToFollowerLocked()
 				l.mu.Unlock()
 				if steppedDown {
@@ -221,21 +241,72 @@ func (l *executionLeadership) tick() {
 	if l == nil || l.store == nil {
 		return
 	}
-	now := l.now().UTC()
-	acquired, err := l.store.TryAcquireSchedulerLease(executionLeaseName, l.ownerID, now, l.ttl)
+	l.tickMu.Lock()
+	defer l.tickMu.Unlock()
+
+	requestStartedAt := l.now().UTC()
+	l.mu.Lock()
+	if !l.leader.Load() {
+		l.leaseAttempt++
+		l.leaseOwnerID = fmt.Sprintf("%s/%d", l.ownerID, l.leaseAttempt)
+	} else if l.leaseOwnerID == "" {
+		// Compatibility for tests/bootstrap paths that install leader state
+		// directly. Normal acquisitions always take the branch above.
+		l.leaseAttempt++
+		l.leaseOwnerID = fmt.Sprintf("%s/%d", l.ownerID, l.leaseAttempt)
+	}
+	leaseOwnerID := l.leaseOwnerID
+	transitionGeneration := l.generation
+	wasLeader := l.leader.Load()
+	l.mu.Unlock()
+
+	var leaseTerm *storage.SchedulerLease
+	var acquired bool
+	var err error
+	if termStore, ok := l.store.(executionLeaseTermStore); ok {
+		acquired, leaseTerm, err = termStore.TryAcquireSchedulerLeaseTerm(executionLeaseName, leaseOwnerID, requestStartedAt, l.ttl)
+	} else {
+		acquired, err = l.store.TryAcquireSchedulerLease(executionLeaseName, leaseOwnerID, requestStartedAt, l.ttl)
+		if acquired {
+			leaseTerm = &storage.SchedulerLease{
+				Name:      executionLeaseName,
+				OwnerID:   leaseOwnerID,
+				ExpiresAt: requestStartedAt.Add(l.ttl),
+				UpdatedAt: requestStartedAt,
+			}
+		}
+	}
+
+	// The lease call can outlive the local watchdog. Never let a delayed response
+	// re-admit an epoch that was already canceled while the database call was in
+	// flight. If that stale call did acquire the durable row, release only its
+	// exact owner token; the next tick will rotate to a fresh acquisition token.
+	l.mu.Lock()
+	staleResponse := l.generation != transitionGeneration || l.leaseOwnerID != leaseOwnerID || (wasLeader && !l.leader.Load())
+	l.mu.Unlock()
+	if staleResponse {
+		if acquired {
+			if store, ok := l.store.(executionLeaseReleaseStore); ok {
+				if releaseErr := store.ReleaseSchedulerLease(executionLeaseName, leaseOwnerID); releaseErr != nil {
+					slog.Warn("failed to release stale execution lease response", "owner", leaseOwnerID, "err", releaseErr)
+				}
+			}
+		}
+		return
+	}
 	if err != nil {
 		// A transient store error must not immediately surrender leadership
 		// (that would flap), but we must step down before the lease could be
 		// granted elsewhere. Step down only once our last confirmed hold is
 		// older than the TTL — bounding the split-brain window to the TTL.
 		l.mu.Lock()
-		stale := !l.lastConfirmed.IsZero() && now.Sub(l.lastConfirmed) >= l.ttl
+		stale := l.leaseExpiredLocked(l.now().UTC())
 		steppedDown := stale && l.transitionToFollowerLocked()
 		l.mu.Unlock()
 		if steppedDown {
-			slog.Warn("execution leadership lost after lease renewal errors", "owner", l.ownerID)
+			slog.Warn("execution leadership lost after lease renewal errors", "owner", leaseOwnerID)
 		}
-		slog.Warn("execution lease renewal failed", "owner", l.ownerID, "err", err)
+		slog.Warn("execution lease renewal failed", "owner", leaseOwnerID, "err", err)
 		return
 	}
 	if !acquired {
@@ -244,12 +315,33 @@ func (l *executionLeadership) tick() {
 		steppedDown := l.transitionToFollowerLocked()
 		l.mu.Unlock()
 		if steppedDown {
-			slog.Info("execution leadership relinquished to another replica", "owner", l.ownerID)
+			slog.Info("execution leadership relinquished to another replica", "owner", leaseOwnerID)
+		}
+		return
+	}
+	localLeaseDeadline := requestStartedAt.Add(l.ttl)
+	_, generationAwareStore := l.store.(executionLeaseTermStore)
+	invalidGeneration := generationAwareStore && leaseTerm != nil && leaseTerm.Generation == 0
+	if leaseTerm == nil || leaseTerm.OwnerID != leaseOwnerID || leaseTerm.ExpiresAt.IsZero() || invalidGeneration || !l.now().UTC().Before(localLeaseDeadline) {
+		if store, ok := l.store.(executionLeaseReleaseStore); ok {
+			_ = store.ReleaseSchedulerLease(executionLeaseName, leaseOwnerID)
+		}
+		l.mu.Lock()
+		steppedDown := l.transitionToFollowerLocked()
+		l.mu.Unlock()
+		if steppedDown {
+			slog.Warn("execution leadership response arrived after the conservative local deadline", "owner", leaseOwnerID)
 		}
 		return
 	}
 	l.mu.Lock()
-	l.lastConfirmed = now
+	// Never derive freshness from response arrival. The returned term was read in
+	// the acquisition transaction, but its database-clock timestamps are metadata
+	// only; delayed delivery cannot extend the request-anchored local deadline.
+	l.lastConfirmed = leaseTerm.UpdatedAt
+	l.leaseExpiresAt = leaseTerm.ExpiresAt
+	l.localLeaseDeadline = localLeaseDeadline
+	l.durableGeneration = leaseTerm.Generation
 	onAcquire := l.onAcquire
 	acquiredLeadership := false
 	if !l.leader.Load() {
@@ -288,7 +380,7 @@ func (l *executionLeadership) tick() {
 	}
 	l.mu.Unlock()
 	if acquiredLeadership {
-		slog.Info("execution leadership acquired", "owner", l.ownerID)
+		slog.Info("execution leadership acquired", "owner", leaseOwnerID)
 	}
 }
 
@@ -304,12 +396,76 @@ func (l *executionLeadership) relinquish() {
 		}
 		l.lossDone.Wait()
 	}
+	leaseOwnerID := l.leaseOwnerID
 	l.mu.Unlock()
 	if store, ok := l.store.(executionLeaseReleaseStore); ok {
-		if err := store.ReleaseSchedulerLease(executionLeaseName, l.ownerID); err != nil {
-			slog.Warn("failed to release execution leadership lease", "owner", l.ownerID, "err", err)
+		if err := store.ReleaseSchedulerLease(executionLeaseName, leaseOwnerID); err != nil {
+			slog.Warn("failed to release execution leadership lease", "owner", leaseOwnerID, "err", err)
 		}
 	}
+}
+
+// executionFenceToken returns the durable lease token for the current epoch.
+// It deliberately includes the acquire-time reconciliation window: recovery
+// owns the lease and may perform fenced repairs before public admission opens.
+func (l *executionLeadership) executionFenceToken() string {
+	token, _ := l.executionLeaseTerm()
+	return token
+}
+
+// executionLeaseTerm snapshots the exact durable owner token and monotonic
+// generation under one lock so callers cannot combine values from two terms.
+func (l *executionLeadership) executionLeaseTerm() (string, uint64) {
+	if l == nil {
+		return "", 0
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if !l.leader.Load() || l.pendingLoss > 0 || l.leaseOwnerID == "" {
+		return "", 0
+	}
+	if l.leaseExpiredLocked(l.now().UTC()) {
+		l.transitionToFollowerLocked()
+		return "", 0
+	}
+	return l.leaseOwnerID, l.durableGeneration
+}
+
+func (l *executionLeadership) executionGeneratorClaim() (uint64, string, time.Time, bool) {
+	if l == nil {
+		return 0, "", time.Time{}, true
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := l.now().UTC()
+	if !l.leader.Load() || l.pendingLoss > 0 || l.durableGeneration == 0 || l.leaseExpiredLocked(now) {
+		return 0, "", time.Time{}, false
+	}
+	if !now.Before(l.localLeaseDeadline) {
+		return 0, "", time.Time{}, false
+	}
+	return l.durableGeneration, l.leaseOwnerID, l.localLeaseDeadline, true
+}
+
+func (l *executionLeadership) leaseExpiredLocked(now time.Time) bool {
+	if !l.localLeaseDeadline.IsZero() {
+		return !now.Before(l.localLeaseDeadline)
+	}
+	return !l.lastConfirmed.IsZero() && now.Sub(l.lastConfirmed) >= l.ttl
+}
+
+// sameStoreInstance reports whether two persistence interfaces wrap the same
+// concrete pointer. Durable fencing is enabled only in that configuration so a
+// lease check and the protected write share one database transaction. This is
+// the production server shape; tests may intentionally use an independent fake
+// lease store.
+func sameStoreInstance(left, right any) bool {
+	if left == nil || right == nil {
+		return false
+	}
+	lv := reflect.ValueOf(left)
+	rv := reflect.ValueOf(right)
+	return lv.Kind() == reflect.Ptr && rv.Kind() == reflect.Ptr && lv.Type() == rv.Type() && lv.Pointer() == rv.Pointer()
 }
 
 // transitionToFollowerLocked records a leadership loss and enqueues its
@@ -421,17 +577,62 @@ func (l *executionLeadership) enqueueLeadershipCallback(event leadershipCallback
 			l.callbackMu.Unlock()
 
 			if event.kind == leadershipCallbackLoss {
-				if event.fn != nil {
-					event.fn()
-				}
-				l.completeLossCallback()
+				l.invokeLossCallback(event)
 				continue
 			}
 			if l.shouldRunLeadershipCallback(event) {
-				event.fn()
+				if panicValue := invokeLeadershipCallback(event.fn); panicValue != nil {
+					slog.Error("execution leadership acquire callback panicked", "generation", event.generation, "panic", panicValue)
+					l.failAcquireCallback(event)
+				}
 			}
 		}
 	}()
+}
+
+// invokeLossCallback guarantees that the admission gate is released even when
+// cleanup code panics. Panics in an asynchronous callback must not terminate the
+// controller process or wedge relinquish forever.
+func (l *executionLeadership) invokeLossCallback(event leadershipCallbackEvent) {
+	defer l.completeLossCallback()
+	if panicValue := invokeLeadershipCallback(event.fn); panicValue != nil {
+		slog.Error("execution leadership loss callback panicked", "generation", event.generation, "panic", panicValue)
+	}
+}
+
+func invokeLeadershipCallback(fn func()) (panicValue any) {
+	if fn == nil {
+		return nil
+	}
+	defer func() {
+		panicValue = recover()
+	}()
+	fn()
+	return nil
+}
+
+// failAcquireCallback keeps public admission closed after failed recovery,
+// cancels the epoch, and relinquishes the exact durable token so a later tick
+// can retry recovery under a new acquisition generation.
+func (l *executionLeadership) failAcquireCallback(event leadershipCallbackEvent) {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	leaseOwnerID := ""
+	if l.leader.Load() && (event.generation == 0 || l.generation == event.generation) {
+		leaseOwnerID = l.leaseOwnerID
+		l.transitionToFollowerLocked()
+	}
+	l.mu.Unlock()
+	if leaseOwnerID == "" {
+		return
+	}
+	if store, ok := l.store.(executionLeaseReleaseStore); ok {
+		if err := store.ReleaseSchedulerLease(executionLeaseName, leaseOwnerID); err != nil {
+			slog.Warn("failed to release execution lease after recovery callback panic", "owner", leaseOwnerID, "err", err)
+		}
+	}
 }
 
 // shouldRunLeadershipCallback drops acquire callbacks superseded before they

@@ -2,11 +2,26 @@ package kafka
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestSchemaRegistrySubjectCacheIsBounded(t *testing.T) {
+	client := newSchemaRegistryClient("https://registry.example", `{}`, "JSON")
+	for index := 0; index < maxSchemaRegistryCacheEntries+100; index++ {
+		client.cacheSchemaID(fmt.Sprintf("subject-%d", index), int32(index))
+	}
+	client.mu.Lock()
+	size := len(client.cache)
+	client.mu.Unlock()
+	if size > maxSchemaRegistryCacheEntries {
+		t.Fatalf("schema registry cache size = %d, max %d", size, maxSchemaRegistryCacheEntries)
+	}
+}
 
 // TestSchemaRegistryClientErrorPaths covers xcut-tests-1: the three distinct
 // schemaID failure branches (non-2xx status, undecodable body, transport error)
@@ -34,6 +49,18 @@ func TestSchemaRegistryClientErrorPaths(t *testing.T) {
 		c := newSchemaRegistryClient(srv.URL, `"string"`, "AVRO")
 		if _, err := c.schemaID(ctx, "subj"); err == nil {
 			t.Fatal("expected a decode error on a non-JSON registry body")
+		}
+	})
+
+	t.Run("oversized 2xx body", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id":1,"padding":"` + strings.Repeat("x", maxSchemaRegistryResponseBytes) + `"}`))
+		}))
+		defer srv.Close()
+		c := newSchemaRegistryClient(srv.URL, `"string"`, "AVRO")
+		if _, err := c.schemaID(ctx, "subj"); err == nil || !strings.Contains(err.Error(), "response exceeds") {
+			t.Fatalf("oversized registry response error = %v", err)
 		}
 	})
 

@@ -19,11 +19,13 @@ import (
 const defaultSSEStreamTimeout = 30 * time.Second
 
 // defaultSSEMaxBodyBytes bounds how much of an SSE stream is buffered when the
-// script sets neither max_events nor stop_on_event. Without a bound a long-lived
-// or never-terminating stream grows the in-memory buffer without limit, and a
-// VUser looping over such a read exhausts memory. Authors can raise it (or set
-// max_body_bytes <= 0 to opt out) via the action params.
-const defaultSSEMaxBodyBytes = 8 << 20 // 8 MiB
+// script sets neither max_events nor stop_on_event. The hard ceiling is not
+// script-controlled: an unterminated line must remain bounded even when a
+// script supplies zero, a negative value, or an arbitrarily large value.
+const (
+	defaultSSEMaxBodyBytes int64 = 8 << 20 // 8 MiB
+	hardSSEMaxBodyBytes    int64 = 8 << 20 // 8 MiB
+)
 
 type sseEvent struct {
 	Event string
@@ -66,7 +68,7 @@ func isSSEContentType(value string) bool {
 	return strings.EqualFold(mediaType, "text/event-stream")
 }
 
-func readSSEResponse(ctx context.Context, body io.ReadCloser, params map[string]any, start time.Time) (sseReadResult, error) {
+func readSSEResponse(ctx context.Context, body io.ReadCloser, params map[string]any, start time.Time, leases ...*responseCaptureLease) (sseReadResult, error) {
 	maxEvents := sseParamInt(params, "max_events", 0)
 	stopOnEvent := strings.TrimSpace(sseParamString(params, "stop_on_event"))
 	maxBodyBytes := sseMaxBodyBytes(params)
@@ -98,22 +100,35 @@ func readSSEResponse(ctx context.Context, body io.ReadCloser, params map[string]
 	}
 	defer close(done)
 
-	stream := io.Reader(body)
-	if maxBodyBytes > 0 {
-		// Bound the reader before ReadString can allocate a complete unterminated
-		// SSE line. The outer limit is also the maximum retained stream body.
-		stream = io.LimitReader(body, maxBodyBytes+1)
+	// Bound the reader before ReadString can allocate a complete unterminated
+	// SSE line. The normalized limit is always positive and is also the maximum
+	// retained stream body.
+	stream := io.Reader(io.LimitReader(body, maxBodyBytes+1))
+	var captureLease *responseCaptureLease
+	if len(leases) > 0 {
+		captureLease = leases[0]
+		stream = &responseCaptureReader{reader: stream, lease: captureLease}
 	}
 	reader := bufio.NewReader(stream)
 	var out bytes.Buffer
 	var result sseReadResult
 	var current sseEvent
 	var dataLines []string
+	var dispatchErr error
 	dispatch := func() bool {
 		if current.Event == "" && current.ID == "" && len(dataLines) == 0 {
 			return false
 		}
 		current.Data = strings.Join(dataLines, "\n")
+		encodedSize := sseEncodedEventSize(current)
+		if encodedSize > maxBodyBytes-int64(out.Len()) {
+			dispatchErr = fmt.Errorf("SSE retained event body exceeds %d byte limit", maxBodyBytes)
+			return true
+		}
+		if !captureLease.reserve(encodedSize) {
+			dispatchErr = captureLease.exhaustedError()
+			return true
+		}
 		writeSSEEvent(&out, current)
 		result.EventCount++
 		if result.FirstEvent == 0 {
@@ -135,7 +150,7 @@ func readSSEResponse(ctx context.Context, body io.ReadCloser, params map[string]
 		line, err := reader.ReadString('\n')
 		if len(line) > 0 {
 			result.BytesRead += int64(len(line))
-			if maxBodyBytes > 0 && result.BytesRead > maxBodyBytes {
+			if result.BytesRead > maxBodyBytes {
 				result.Body = out.Bytes()
 				return result, fmt.Errorf("SSE response exceeds %d byte limit", maxBodyBytes)
 			}
@@ -144,6 +159,9 @@ func readSSEResponse(ctx context.Context, body io.ReadCloser, params map[string]
 			case line == "":
 				if dispatch() {
 					result.Body = out.Bytes()
+					if dispatchErr != nil {
+						return result, dispatchErr
+					}
 					return result, nil
 				}
 			case strings.HasPrefix(line, ":"):
@@ -161,6 +179,9 @@ func readSSEResponse(ctx context.Context, body io.ReadCloser, params map[string]
 				dispatch()
 			}
 			result.Body = out.Bytes()
+			if dispatchErr != nil {
+				return result, dispatchErr
+			}
 			switch {
 			case errors.Is(err, io.EOF):
 				return result, nil
@@ -193,6 +214,22 @@ func readSSEResponse(ctx context.Context, body io.ReadCloser, params map[string]
 			}
 		}
 	}
+}
+
+func sseEncodedEventSize(event sseEvent) int64 {
+	size := int64(1) // terminating blank line
+	if event.Event != "" {
+		size += int64(len("event: ") + len(event.Event) + 1)
+	}
+	if event.ID != "" {
+		size += int64(len("id: ") + len(event.ID) + 1)
+	}
+	if event.Data != "" {
+		for _, line := range strings.Split(event.Data, "\n") {
+			size += int64(len("data: ") + len(line) + 1)
+		}
+	}
+	return size
 }
 
 func isSSEPrematureReadTimeout(err error) bool {
@@ -316,12 +353,16 @@ func parseSSEExtractorExpression(expr string) (string, int) {
 	return trimmed, ordinal
 }
 
-// sseMaxBodyBytes resolves the SSE buffer cap. When max_body_bytes is unset the
-// default cap applies; a value <= 0 disables the cap (unbounded, opt-in).
+// sseMaxBodyBytes resolves the SSE buffer cap. The action can lower the cap but
+// cannot disable or exceed the operator-owned hard ceiling.
 func sseMaxBodyBytes(params map[string]any) int64 {
 	if params != nil {
 		if _, ok := params["max_body_bytes"]; ok {
-			return int64(sseParamInt(params, "max_body_bytes", 0))
+			requested := int64(sseParamInt(params, "max_body_bytes", 0))
+			if requested > 0 && requested < hardSSEMaxBodyBytes {
+				return requested
+			}
+			return hardSSEMaxBodyBytes
 		}
 	}
 	return defaultSSEMaxBodyBytes

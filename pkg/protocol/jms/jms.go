@@ -5,7 +5,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"regexp"
@@ -15,29 +17,87 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/internal/boundedcache"
+	"github.com/jasonczech/apexload/pkg/internal/subprocessguard"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/protocol/messaging"
 )
 
-var extractorRegexCache sync.Map // map[string]*regexp.Regexp
+var extractorRegexCache = boundedcache.NewStringCache[*regexp.Regexp](0, 0, 0)
 
 func compileExtractorRegex(expr string) (*regexp.Regexp, error) {
 	if cached, ok := extractorRegexCache.Load(expr); ok {
-		return cached.(*regexp.Regexp), nil
+		return cached, nil
 	}
 	re, err := regexp.Compile(expr)
 	if err != nil {
 		return nil, err
 	}
 	actual, _ := extractorRegexCache.LoadOrStore(expr, re)
-	return actual.(*regexp.Regexp), nil
+	return actual, nil
 }
 
 // sidecarCommandEnv is the operator-owned environment variable that supplies the
 // JMS sidecar command line. The sidecar command is deliberately NOT sourced from
 // script-supplied properties: a script is user-controlled JSON, so honoring a
 // script-supplied command would allow arbitrary command execution on generators.
-const sidecarCommandEnv = "APEXLOAD_JMS_SIDECAR_COMMAND"
+const (
+	sidecarCommandEnv            = "APEXLOAD_JMS_SIDECAR_COMMAND"
+	sidecarMaxProcessesEnv       = "APEXLOAD_JMS_SIDECAR_MAX_PROCESSES"
+	defaultSidecarProcesses      = 25
+	maxSidecarProcesses          = 1_024
+	maxSidecarCaptureBytes       = 256 << 10
+	MaxConfiguredTimeout         = time.Hour
+	MaxConfiguredMessageDuration = 365 * 24 * time.Hour
+	MaxJMSDestinationBytes       = 4 << 10
+	MaxJMSIdentifierBytes        = 4 << 10
+	MaxJMSBrowseMessages         = 250
+	MaxJMSSequenceNumbers        = 100
+	MaxJMSSessionStateBytes      = 256 << 10
+	MaxJMSMessageBytes           = 64 << 20
+	maxJMSSelectorBytes          = 64 << 10
+	maxJMSPropertyEntries        = 256
+	maxJMSPropertyBytes          = 1 << 20
+)
+
+type sidecarProcessLimiter struct {
+	slots chan struct{}
+}
+
+func newSidecarProcessLimiter(limit int) *sidecarProcessLimiter {
+	if limit <= 0 {
+		limit = defaultSidecarProcesses
+	}
+	if limit > maxSidecarProcesses {
+		limit = maxSidecarProcesses
+	}
+	return &sidecarProcessLimiter{slots: make(chan struct{}, limit)}
+}
+
+func configuredSidecarMaxProcesses() int {
+	limit, err := strconv.Atoi(strings.TrimSpace(os.Getenv(sidecarMaxProcessesEnv)))
+	if err != nil || limit <= 0 {
+		return defaultSidecarProcesses
+	}
+	if limit > maxSidecarProcesses {
+		return maxSidecarProcesses
+	}
+	return limit
+}
+
+func (l *sidecarProcessLimiter) acquire(ctx context.Context) (func(), error) {
+	if l == nil {
+		return func() {}, nil
+	}
+	select {
+	case l.slots <- struct{}{}:
+		return func() { <-l.slots }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+var globalSidecarProcessLimiter = newSidecarProcessLimiter(configuredSidecarMaxProcesses())
 
 // redeliveredProperty marks a message that a transacted/client rollback requeued
 // onto the in-memory mock broker, so a later consume can count it as a
@@ -160,6 +220,9 @@ type settlementAdapter interface {
 	// SessionState gets (set=false) or sets (set=true) the session state for an
 	// accepted session token.
 	SessionState(ctx context.Context, sessionToken string, state []byte, set bool) ([]byte, error)
+	// CloseSession releases an accepted session receiver and invalidates any
+	// unsettled tokens tied to that session.
+	CloseSession(ctx context.Context, sessionToken string) error
 	// ReceiveDeferred fetches previously deferred messages by sequence number; the
 	// returned messages are peek-locked and carry settlement tokens.
 	ReceiveDeferred(ctx context.Context, destination string, sequenceNumbers []int64, timeout time.Duration) ([]message, error)
@@ -209,9 +272,11 @@ type topicAdapter interface {
 }
 
 var broker = &memoryBroker{
-	queues: make(map[string][]message),
-	topics: make(map[string]map[string][]message),
-	refs:   make(map[string]int),
+	queues:     make(map[string][]message),
+	topics:     make(map[string]map[string][]message),
+	refs:       make(map[string]int),
+	queueBytes: make(map[string]int64),
+	topicBytes: make(map[string]map[string]int64),
 }
 
 type memoryBroker struct {
@@ -221,7 +286,10 @@ type memoryBroker struct {
 	// subscription's independent message queue. A topic publish appends a copy to
 	// every registered subscription; each subscription consumes its own copy with
 	// an independent cursor.
-	topics map[string]map[string][]message
+	topics     map[string]map[string][]message
+	queueBytes map[string]int64
+	topicBytes map[string]map[string]int64
+	totalBytes int64
 	// seqLast is a monotonic broker sequence assigned to published messages that
 	// carry none, so consumers can detect duplicate / out-of-order delivery (real
 	// brokers assign sequence numbers; the mock mirrors that for fidelity). A
@@ -232,9 +300,12 @@ type memoryBroker struct {
 }
 
 const (
-	maxJMSDestinationKeys = 2048
-	maxJMSQueueDepth      = 10000
-	maxJMSQueueBytes      = 16 << 20
+	maxJMSDestinationKeys   = 2048
+	maxJMSQueueDepth        = 10000
+	maxJMSQueueBytes        = 16 << 20
+	maxJMSRetainedBytes     = 256 << 20
+	maxJMSResourceKeyBytes  = 1 << 20
+	maxJMSResourceKeyLength = 16 << 10
 )
 
 func mockJMSKey(namespace, destination string) string {
@@ -260,6 +331,7 @@ func (b *memoryBroker) release(namespace string) {
 	prefix := namespace + "\x00"
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.ensureAccountingLocked()
 	b.refs[namespace]--
 	if b.refs[namespace] > 0 {
 		return
@@ -267,17 +339,31 @@ func (b *memoryBroker) release(namespace string) {
 	delete(b.refs, namespace)
 	for destination := range b.queues {
 		if strings.HasPrefix(destination, prefix) {
+			b.totalBytes -= b.queueBytes[destination]
 			delete(b.queues, destination)
+			delete(b.queueBytes, destination)
 		}
 	}
 	for topic := range b.topics {
 		if strings.HasPrefix(topic, prefix) {
+			for _, retained := range b.topicBytes[topic] {
+				b.totalBytes -= retained
+			}
 			delete(b.topics, topic)
+			delete(b.topicBytes, topic)
 		}
+	}
+	if b.totalBytes < 0 {
+		b.totalBytes = 0
 	}
 }
 
 func boundedMessageQueue(queue []message) []message {
+	bounded, _ := boundedMessageQueueStats(queue)
+	return bounded
+}
+
+func boundedMessageQueueStats(queue []message) ([]message, int64) {
 	bytes := 0
 	keepFrom := len(queue)
 	for keepFrom > 0 && len(queue)-keepFrom < maxJMSQueueDepth {
@@ -289,20 +375,28 @@ func boundedMessageQueue(queue []message) []message {
 		keepFrom--
 	}
 	if keepFrom == 0 {
-		return queue
+		return queue, int64(bytes)
 	}
 	retained := make([]message, len(queue)-keepFrom)
 	copy(retained, queue[keepFrom:])
-	return retained
+	return retained, int64(bytes)
 }
 
 func messageSize(msg message) int {
-	size := len(msg.Body) + len(msg.ID) + len(msg.CorrelationID) + len(msg.Destination)
+	size := len(msg.Body) + len(msg.ID) + len(msg.CorrelationID) + len(msg.Destination) +
+		len(msg.SessionID) + len(msg.PartitionKey) + len(msg.SettlementToken) +
+		len(msg.Type) + len(msg.DeliveryMode) + len(msg.sourceTopic) + len(msg.sourceSubscription)
 	for key, value := range msg.Headers {
 		size += len(key) + len(value)
 	}
 	for key, value := range msg.Properties {
 		size += len(key) + len(value)
+	}
+	for key, value := range msg.MapBody {
+		size += len(key) + len(value)
+	}
+	for _, value := range msg.StreamBody {
+		size += len(value)
 	}
 	return size
 }
@@ -313,6 +407,76 @@ func (b *memoryBroker) resourceKeyCountLocked() int {
 		count += len(subscriptions)
 	}
 	return count
+}
+
+func (b *memoryBroker) resourceKeyBytesLocked() int {
+	total := 0
+	for destination := range b.queues {
+		total += len(destination)
+	}
+	for topic, subscriptions := range b.topics {
+		total += len(topic)
+		for subscription := range subscriptions {
+			total += len(subscription)
+		}
+	}
+	return total
+}
+
+func (b *memoryBroker) validateNewResourceKeysLocked(keys ...string) error {
+	additional := 0
+	for _, key := range keys {
+		if len(key) > maxJMSResourceKeyLength {
+			return fmt.Errorf("mock JMS resource key exceeds %d bytes", maxJMSResourceKeyLength)
+		}
+		additional += len(key)
+	}
+	if additional > maxJMSResourceKeyBytes-b.resourceKeyBytesLocked() {
+		return fmt.Errorf("mock JMS resource key capacity exceeded (%d bytes)", maxJMSResourceKeyBytes)
+	}
+	return nil
+}
+
+func (b *memoryBroker) ensureAccountingLocked() {
+	if b.queueBytes != nil && b.topicBytes != nil {
+		return
+	}
+	b.queueBytes = make(map[string]int64, len(b.queues))
+	b.topicBytes = make(map[string]map[string]int64, len(b.topics))
+	b.totalBytes = 0
+	for destination, queue := range b.queues {
+		bounded, retained := boundedMessageQueueStats(queue)
+		b.queues[destination] = bounded
+		b.queueBytes[destination] = retained
+		b.totalBytes += retained
+	}
+	for topic, subscriptions := range b.topics {
+		b.topicBytes[topic] = make(map[string]int64, len(subscriptions))
+		for subscription, queue := range subscriptions {
+			bounded, retained := boundedMessageQueueStats(queue)
+			b.topics[topic][subscription] = bounded
+			b.topicBytes[topic][subscription] = retained
+			b.totalBytes += retained
+		}
+	}
+}
+
+func (b *memoryBroker) setQueueLocked(destination string, queue []message, retained int64) {
+	b.totalBytes += retained - b.queueBytes[destination]
+	b.queues[destination] = queue
+	b.queueBytes[destination] = retained
+}
+
+func (b *memoryBroker) setTopicQueueLocked(topic, subscription string, queue []message, retained int64) {
+	if b.topics[topic] == nil {
+		b.topics[topic] = make(map[string][]message)
+	}
+	if b.topicBytes[topic] == nil {
+		b.topicBytes[topic] = make(map[string]int64)
+	}
+	b.totalBytes += retained - b.topicBytes[topic][subscription]
+	b.topics[topic][subscription] = queue
+	b.topicBytes[topic][subscription] = retained
 }
 
 // assignSequenceLocked stamps a monotonic sequence on a message that doesn't
@@ -345,28 +509,45 @@ func cloneMessageValue(msg message) message {
 func (b *memoryBroker) publish(destination string, msg message) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if _, exists := b.queues[destination]; !exists && b.resourceKeyCountLocked() >= maxJMSDestinationKeys {
-		return fmt.Errorf("mock JMS destination capacity exceeded (%d keys)", maxJMSDestinationKeys)
+	b.ensureAccountingLocked()
+	if _, exists := b.queues[destination]; !exists {
+		if b.resourceKeyCountLocked() >= maxJMSDestinationKeys {
+			return fmt.Errorf("mock JMS destination capacity exceeded (%d keys)", maxJMSDestinationKeys)
+		}
+		if err := b.validateNewResourceKeysLocked(destination); err != nil {
+			return err
+		}
 	}
-	if messageSize(msg) > maxJMSQueueBytes {
+	msgBytes := int64(messageSize(msg))
+	if msgBytes > maxJMSQueueBytes {
 		return fmt.Errorf("mock JMS message exceeds per-destination capacity (%d bytes)", maxJMSQueueBytes)
 	}
+	if msgBytes > maxJMSRetainedBytes-b.totalBytes {
+		return fmt.Errorf("mock JMS aggregate retention capacity exceeded (%d bytes)", maxJMSRetainedBytes)
+	}
 	b.assignSequenceLocked(&msg)
-	b.queues[destination] = boundedMessageQueue(append(b.queues[destination], msg))
+	queue, retained := boundedMessageQueueStats(append(b.queues[destination], msg))
+	delta := retained - b.queueBytes[destination]
+	if delta > maxJMSRetainedBytes-b.totalBytes {
+		return fmt.Errorf("mock JMS aggregate retention capacity exceeded (%d bytes)", maxJMSRetainedBytes)
+	}
+	b.setQueueLocked(destination, queue, retained)
 	return nil
 }
 
 func (b *memoryBroker) consume(destination string) (message, bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.ensureAccountingLocked()
 	queue := b.queues[destination]
 	if len(queue) == 0 {
 		return message{}, false
 	}
 	msg := queue[0]
 	copy(queue, queue[1:])
+	queue[len(queue)-1] = message{}
 	queue = queue[:len(queue)-1]
-	b.queues[destination] = queue
+	b.setQueueLocked(destination, queue, b.queueBytes[destination]-int64(messageSize(msg)))
 	return msg, true
 }
 
@@ -399,12 +580,14 @@ func (b *memoryBroker) consumeMatching(destination string, sel *selector) (messa
 func (b *memoryBroker) consumeWhere(destination string, match func(message) bool) (message, bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.ensureAccountingLocked()
 	queue := b.queues[destination]
 	for i, msg := range queue {
 		if match == nil || match(msg) {
-			// Three-index slice on the head keeps the backing array intact for the
-			// retained tail.
-			b.queues[destination] = append(queue[:i:i], queue[i+1:]...)
+			copy(queue[i:], queue[i+1:])
+			queue[len(queue)-1] = message{}
+			retainedQueue := queue[:len(queue)-1]
+			b.setQueueLocked(destination, retainedQueue, b.queueBytes[destination]-int64(messageSize(msg)))
 			return msg, true
 		}
 	}
@@ -444,6 +627,7 @@ func browseMatching(queue []message, sel *selector, max int) []message {
 func (b *memoryBroker) subscribe(topic, subscription string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.ensureAccountingLocked()
 	if subscriptions := b.topics[topic]; subscriptions != nil {
 		if _, exists := subscriptions[subscription]; exists {
 			return nil
@@ -451,14 +635,22 @@ func (b *memoryBroker) subscribe(topic, subscription string) error {
 		if b.resourceKeyCountLocked() >= maxJMSDestinationKeys {
 			return fmt.Errorf("mock JMS destination capacity exceeded (%d keys)", maxJMSDestinationKeys)
 		}
+		if err := b.validateNewResourceKeysLocked(subscription); err != nil {
+			return err
+		}
 		subscriptions[subscription] = nil
+		b.topicBytes[topic][subscription] = 0
 		return nil
 	}
 	// A new topic consumes one key and its first subscription consumes another.
 	if b.resourceKeyCountLocked()+2 > maxJMSDestinationKeys {
 		return fmt.Errorf("mock JMS destination capacity exceeded (%d keys)", maxJMSDestinationKeys)
 	}
+	if err := b.validateNewResourceKeysLocked(topic, subscription); err != nil {
+		return err
+	}
 	b.topics[topic] = map[string][]message{subscription: nil}
+	b.topicBytes[topic] = map[string]int64{subscription: 0}
 	return nil
 }
 
@@ -468,12 +660,19 @@ func (b *memoryBroker) subscribe(topic, subscription string) error {
 func (b *memoryBroker) publishTopic(topic string, msg message) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if messageSize(msg) > maxJMSQueueBytes {
+	b.ensureAccountingLocked()
+	msgBytes := int64(messageSize(msg))
+	if msgBytes > maxJMSQueueBytes {
 		return fmt.Errorf("mock JMS message exceeds per-destination capacity (%d bytes)", maxJMSQueueBytes)
+	}
+	subscriptionCount := int64(len(b.topics[topic]))
+	if subscriptionCount > 0 && msgBytes > (maxJMSRetainedBytes-b.totalBytes)/subscriptionCount {
+		return fmt.Errorf("mock JMS topic fanout exceeds aggregate retention capacity (%d bytes)", maxJMSRetainedBytes)
 	}
 	b.assignSequenceLocked(&msg)
 	for sub := range b.topics[topic] {
-		b.topics[topic][sub] = boundedMessageQueue(append(b.topics[topic][sub], cloneMessageValue(msg)))
+		queue, retained := boundedMessageQueueStats(append(b.topics[topic][sub], cloneMessageValue(msg)))
+		b.setTopicQueueLocked(topic, sub, queue, retained)
 	}
 	return nil
 }
@@ -482,13 +681,42 @@ func (b *memoryBroker) publishTopic(topic string, msg message) error {
 // queue for redelivery. Unlike publishTopic it targets only the subscription the
 // message was consumed from, so a transacted/client rollback redelivers to that
 // subscription rather than fanning out to every subscriber.
-func (b *memoryBroker) requeueTopic(topic, subscription string, msg message) {
+func (b *memoryBroker) requeueTopic(topic, subscription string, msg message) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.topics[topic] == nil {
-		b.topics[topic] = make(map[string][]message)
+	b.ensureAccountingLocked()
+	msgBytes := int64(messageSize(msg))
+	if msgBytes > maxJMSQueueBytes {
+		return fmt.Errorf("mock JMS message exceeds per-destination capacity (%d bytes)", maxJMSQueueBytes)
 	}
-	b.topics[topic][subscription] = boundedMessageQueue(append(b.topics[topic][subscription], cloneMessageValue(msg)))
+	if b.topics[topic] == nil {
+		if b.resourceKeyCountLocked()+2 > maxJMSDestinationKeys {
+			return fmt.Errorf("mock JMS destination capacity exceeded (%d keys)", maxJMSDestinationKeys)
+		}
+		if err := b.validateNewResourceKeysLocked(topic, subscription); err != nil {
+			return err
+		}
+	} else if _, exists := b.topics[topic][subscription]; !exists {
+		if b.resourceKeyCountLocked() >= maxJMSDestinationKeys {
+			return fmt.Errorf("mock JMS destination capacity exceeded (%d keys)", maxJMSDestinationKeys)
+		}
+		if err := b.validateNewResourceKeysLocked(subscription); err != nil {
+			return err
+		}
+	}
+	if msgBytes > maxJMSRetainedBytes-b.totalBytes {
+		return fmt.Errorf("mock JMS aggregate retention capacity exceeded (%d bytes)", maxJMSRetainedBytes)
+	}
+	queue, retained := boundedMessageQueueStats(append(b.topics[topic][subscription], cloneMessageValue(msg)))
+	delta := retained
+	if b.topicBytes[topic] != nil {
+		delta -= b.topicBytes[topic][subscription]
+	}
+	if delta > maxJMSRetainedBytes-b.totalBytes {
+		return fmt.Errorf("mock JMS aggregate retention capacity exceeded (%d bytes)", maxJMSRetainedBytes)
+	}
+	b.setTopicQueueLocked(topic, subscription, queue, retained)
+	return nil
 }
 
 // consumeTopic pops the first message matching the selector from a subscription's
@@ -496,13 +724,17 @@ func (b *memoryBroker) requeueTopic(topic, subscription string, msg message) {
 func (b *memoryBroker) consumeTopic(topic, subscription string, sel *selector) (message, bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.ensureAccountingLocked()
 	if b.topics[topic] == nil {
 		return message{}, false
 	}
 	queue := b.topics[topic][subscription]
 	for i, m := range queue {
 		if sel.matches(m.Headers, m.Properties) {
-			b.topics[topic][subscription] = append(queue[:i:i], queue[i+1:]...)
+			copy(queue[i:], queue[i+1:])
+			queue[len(queue)-1] = message{}
+			retainedQueue := queue[:len(queue)-1]
+			b.setTopicQueueLocked(topic, subscription, retainedQueue, b.topicBytes[topic][subscription]-int64(messageSize(m)))
 			return m, true
 		}
 	}
@@ -525,6 +757,10 @@ func (j *JMS) Name() string {
 }
 
 func (j *JMS) Init(_ context.Context, cfg map[string]any) error {
+	timeoutMS, err := boundedJMSInteger(cfg["jms_timeout_ms"], int((5*time.Second)/time.Millisecond), 0, int(MaxConfiguredTimeout/time.Millisecond))
+	if err != nil {
+		return fmt.Errorf("jms timeout_ms: %w", err)
+	}
 	j.cfg = config{
 		BrokerURL:              stringValue(cfg, "broker_url"),
 		MessageVPN:             stringValue(cfg, "jms_message_vpn"),
@@ -538,7 +774,7 @@ func (j *JMS) Init(_ context.Context, cfg map[string]any) error {
 		ReplyTo:                stringValue(cfg, "jms_reply_to"),
 		Acknowledgement:        stringValue(cfg, "jms_acknowledgement"),
 		DeliveryMode:           stringValue(cfg, "jms_delivery_mode"),
-		Timeout:                durationValue(cfg, "jms_timeout_ms", 5*time.Second),
+		Timeout:                time.Duration(timeoutMS) * time.Millisecond,
 		Properties:             stringMapValue(cfg, "jms_properties"),
 		TLS: jmsTLSConfig{
 			CACertSecret:       stringValue(cfg, "jms_tls_ca_cert_secret"),
@@ -561,6 +797,9 @@ func (j *JMS) Init(_ context.Context, cfg map[string]any) error {
 	}
 	if j.cfg.Timeout <= 0 {
 		j.cfg.Timeout = 5 * time.Second
+	}
+	if err := validateJMSConfigBounds(j.cfg); err != nil {
+		return err
 	}
 	j.session = messaging.New[message](messaging.ParseAckMode(j.cfg.Acknowledgement))
 	if !j.cfg.Mock && j.session.NeedsSettlement() {
@@ -626,6 +865,9 @@ func (j *JMS) selectAdapter() (brokerAdapter, error) {
 
 func (j *JMS) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
 	start := time.Now()
+	if action == nil {
+		return nil, fmt.Errorf("JMS action is required")
+	}
 	if j.session == nil {
 		j.session = messaging.New[message](messaging.ParseAckMode(j.cfg.Acknowledgement))
 	}
@@ -639,6 +881,14 @@ func (j *JMS) Execute(ctx context.Context, action *protocol.Action) (*protocol.R
 		Extractions:      make(map[string]string),
 		DependencyType:   classifyJMSDependencyType(j.cfg.DestinationType, action, isDeadLetter),
 		DependencyTarget: destination,
+	}
+	if err := j.validateActionBounds(action); err != nil {
+		result.Success = false
+		result.StatusCode = 400
+		result.ErrorMessage = err.Error()
+		result.Duration = time.Since(start)
+		result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
+		return result, nil
 	}
 	if isDeadLetter {
 		result.Extractions["jms_dead_letter"] = "true"
@@ -664,10 +914,10 @@ func (j *JMS) Execute(ctx context.Context, action *protocol.Action) (*protocol.R
 		hasRequestMsg = err == nil
 		hasResponseMsg = err == nil
 	case "jms_ack", "jms_commit", "jms_rollback":
-		j.settle(action, result)
+		err = j.settle(action, result)
 	case "jms_settle", "jms_renew_lock":
 		err = j.settleAdvanced(ctx, action, result)
-	case "jms_session_accept", "jms_session_state", "jms_receive_deferred", "jms_cancel_scheduled":
+	case "jms_session_accept", "jms_session_state", "jms_session_close", "jms_receive_deferred", "jms_cancel_scheduled":
 		responseMsg, hasResponseMsg, err = j.sessionAdvanced(ctx, action, result)
 	default:
 		err = fmt.Errorf("unsupported JMS action type %q", action.Type)
@@ -730,12 +980,212 @@ func (j *JMS) HealthCheck(ctx context.Context) error {
 	return j.adapter.HealthCheck(ctx)
 }
 
+func validateJMSConfigBounds(cfg config) error {
+	if len(cfg.BrokerURL) > 8<<10 {
+		return fmt.Errorf("JMS broker_url exceeds %d bytes", 8<<10)
+	}
+	for name, value := range map[string]string{
+		"destination": cfg.Destination, "reply_to": cfg.ReplyTo,
+		"subscription": cfg.Subscription,
+	} {
+		if len(value) > MaxJMSDestinationBytes {
+			return fmt.Errorf("JMS %s exceeds %d bytes", name, MaxJMSDestinationBytes)
+		}
+	}
+	for name, value := range map[string]string{
+		"message_vpn": cfg.MessageVPN, "username": cfg.Username, "client_id": cfg.ClientID,
+	} {
+		if len(value) > MaxJMSIdentifierBytes {
+			return fmt.Errorf("JMS %s exceeds %d bytes", name, MaxJMSIdentifierBytes)
+		}
+	}
+	if len(cfg.Password) > 64<<10 {
+		return fmt.Errorf("JMS password exceeds %d bytes", 64<<10)
+	}
+	for name, value := range map[string]string{"ca_cert_secret": cfg.TLS.CACertSecret, "trust_store_ref": cfg.TLS.TrustStoreRef} {
+		if len(value) > 8<<10 {
+			return fmt.Errorf("JMS %s exceeds %d bytes", name, 8<<10)
+		}
+	}
+	if len(cfg.DeadLetterDestinations) > MaxJMSSequenceNumbers {
+		return fmt.Errorf("JMS dead_letter_destinations exceed %d entries", MaxJMSSequenceNumbers)
+	}
+	for _, destination := range cfg.DeadLetterDestinations {
+		if len(destination) > MaxJMSDestinationBytes {
+			return fmt.Errorf("JMS dead-letter destination exceeds %d bytes", MaxJMSDestinationBytes)
+		}
+	}
+	if len(cfg.Properties) > maxJMSPropertyEntries {
+		return fmt.Errorf("JMS properties exceed %d entries", maxJMSPropertyEntries)
+	}
+	propertyBytes := 0
+	for key, value := range cfg.Properties {
+		propertyBytes += len(key) + len(value)
+	}
+	if propertyBytes > maxJMSPropertyBytes {
+		return fmt.Errorf("JMS properties exceed %d bytes", maxJMSPropertyBytes)
+	}
+	return nil
+}
+
+func (j *JMS) validateActionBounds(action *protocol.Action) error {
+	for name, value := range map[string]string{
+		"destination":         j.destination(action),
+		"consume destination": j.consumeDestination(action),
+		"reply_to":            paramString(action.Params, "reply_to", j.cfg.ReplyTo),
+		"subscription":        paramString(action.Params, "subscription", j.cfg.Subscription),
+	} {
+		if len(value) > MaxJMSDestinationBytes {
+			return fmt.Errorf("JMS %s exceeds %d bytes", name, MaxJMSDestinationBytes)
+		}
+	}
+	for _, field := range []string{
+		"correlation_id", "message_id", "session_id", "partition_key",
+		"settlement_token", "session_token", "dead_letter_reason", "dead_letter_description",
+	} {
+		if value := paramString(action.Params, field, ""); len(value) > MaxJMSIdentifierBytes {
+			return fmt.Errorf("JMS %s exceeds %d bytes", field, MaxJMSIdentifierBytes)
+		}
+	}
+	if selector := paramString(action.Params, "selector", ""); len(selector) > maxJMSSelectorBytes {
+		return fmt.Errorf("JMS selector exceeds %d bytes", maxJMSSelectorBytes)
+	}
+	if state := paramString(action.Params, "session_state", ""); len(state) > MaxJMSSessionStateBytes {
+		return fmt.Errorf("JMS session_state exceeds %d bytes", MaxJMSSessionStateBytes)
+	}
+	for _, limit := range []struct {
+		key string
+		max int
+	}{
+		{"timeout_ms", int(MaxConfiguredTimeout / time.Millisecond)},
+		{"scheduled_enqueue_ms", int(MaxConfiguredMessageDuration / time.Millisecond)},
+		{"time_to_live_ms", int(MaxConfiguredMessageDuration / time.Millisecond)},
+	} {
+		if raw, present := action.Params[limit.key]; present {
+			if _, err := boundedJMSInteger(raw, 0, 0, limit.max); err != nil {
+				return fmt.Errorf("JMS %s: %w", limit.key, err)
+			}
+		}
+	}
+	if raw, present := action.Params["max"]; present {
+		if _, err := boundedJMSInteger(raw, 0, 0, MaxJMSBrowseMessages); err != nil {
+			return fmt.Errorf("JMS browse max: %w", err)
+		}
+	}
+	if len(action.Headers) > maxJMSPropertyEntries {
+		return fmt.Errorf("JMS headers exceed %d entries", maxJMSPropertyEntries)
+	}
+	if len(action.Metadata) > maxJMSPropertyEntries {
+		return fmt.Errorf("JMS metadata properties exceed %d entries", maxJMSPropertyEntries)
+	}
+	if values, ok := action.Params["stream_body"].([]any); ok && len(values) > maxJMSPropertyEntries {
+		return fmt.Errorf("JMS stream_body exceeds %d entries", maxJMSPropertyEntries)
+	}
+	if values, ok := action.Params["stream_body"].([]string); ok && len(values) > maxJMSPropertyEntries {
+		return fmt.Errorf("JMS stream_body exceeds %d entries", maxJMSPropertyEntries)
+	}
+	if values, ok := action.Params["map_body"].(map[string]any); ok && len(values) > maxJMSPropertyEntries {
+		return fmt.Errorf("JMS map_body exceeds %d entries", maxJMSPropertyEntries)
+	}
+	if values, ok := action.Params["map_body"].(map[string]string); ok && len(values) > maxJMSPropertyEntries {
+		return fmt.Errorf("JMS map_body exceeds %d entries", maxJMSPropertyEntries)
+	}
+	headerBytes := 0
+	for key, value := range action.Headers {
+		headerBytes += len(key) + len(value)
+	}
+	for key, value := range action.Metadata {
+		headerBytes += len(key)
+		if text, ok := value.(string); ok {
+			headerBytes += len(text)
+		}
+	}
+	switch values := action.Params["stream_body"].(type) {
+	case []any:
+		for _, value := range values {
+			size, ok := jmsScalarValueSize(value)
+			if !ok {
+				return fmt.Errorf("JMS stream_body entries must be scalar values")
+			}
+			headerBytes += size
+		}
+	case []string:
+		for _, value := range values {
+			headerBytes += len(value)
+		}
+	}
+	switch values := action.Params["map_body"].(type) {
+	case map[string]any:
+		for key, value := range values {
+			size, ok := jmsScalarValueSize(value)
+			if !ok {
+				return fmt.Errorf("JMS map_body values must be scalar values")
+			}
+			headerBytes += len(key) + size
+		}
+	case map[string]string:
+		for key, value := range values {
+			headerBytes += len(key) + len(value)
+		}
+	}
+	if headerBytes > maxJMSPropertyBytes {
+		return fmt.Errorf("JMS message properties exceed %d bytes", maxJMSPropertyBytes)
+	}
+	if len(action.Body) > MaxJMSMessageBytes {
+		return fmt.Errorf("JMS body exceeds %d bytes", MaxJMSMessageBytes)
+	}
+	return nil
+}
+
+func jmsScalarValueSize(value any) (int, bool) {
+	switch typed := value.(type) {
+	case nil:
+		return 0, true
+	case string:
+		return len(typed), true
+	case []byte:
+		return len(typed), true
+	case json.Number:
+		return len(typed), true
+	case bool, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64:
+		return 32, true
+	default:
+		return 0, false
+	}
+}
+
+func validateJMSMessageBounds(msg message) error {
+	if len(msg.Headers) > maxJMSPropertyEntries || len(msg.Properties) > maxJMSPropertyEntries || len(msg.MapBody) > maxJMSPropertyEntries {
+		return fmt.Errorf("JMS message headers/properties/map fields exceed %d entries", maxJMSPropertyEntries)
+	}
+	propertyBytes := 0
+	for key, value := range msg.Headers {
+		propertyBytes += len(key) + len(value)
+	}
+	for key, value := range msg.Properties {
+		propertyBytes += len(key) + len(value)
+	}
+	for key, value := range msg.MapBody {
+		propertyBytes += len(key) + len(value)
+	}
+	if propertyBytes > maxJMSPropertyBytes {
+		return fmt.Errorf("JMS message headers/properties exceed %d bytes", maxJMSPropertyBytes)
+	}
+	if size := messageSize(msg); size > MaxJMSMessageBytes {
+		return fmt.Errorf("JMS message exceeds %d bytes", MaxJMSMessageBytes)
+	}
+	return nil
+}
+
 func (j *JMS) publish(ctx context.Context, action *protocol.Action, result *protocol.Result) (message, error) {
 	destination := j.destination(action)
 	if destination == "" {
 		return message{}, fmt.Errorf("JMS destination is required")
 	}
 	msg := j.buildMessage(action, destination)
+	if err := validateJMSMessageBounds(msg); err != nil {
+		return message{}, err
+	}
 	var published message
 	var err error
 	if topic, ok := j.adapter.(topicAdapter); ok && j.useTopicFanout(action) {
@@ -846,7 +1296,18 @@ func (j *JMS) consume(ctx context.Context, action *protocol.Action, result *prot
 	// The emitted RedeliveryCount telemetry is derived from the message marker in
 	// finalizeJMSServerTelemetry; the session retains the message only for
 	// settlement (ack/commit/rollback).
-	j.session.Track(msg)
+	if trackErr := j.session.TrackSized(msg, int64(messageSize(msg))); trackErr != nil {
+		// The broker delivery has already been removed from the mock queue. Put it
+		// back explicitly before returning the capacity error; silently forgetting
+		// an unsettled delivery would turn a memory bound into message loss.
+		if j.cfg.Mock {
+			if requeueErr := j.requeueForRedelivery([]message{msg}); requeueErr != nil {
+				trackErr = errors.Join(trackErr, fmt.Errorf("requeue rejected delivery: %w", requeueErr))
+			}
+		}
+		result.StatusCode = 429
+		return message{}, fmt.Errorf("retain JMS delivery for settlement: %w", trackErr)
+	}
 	// Reliability detection by broker sequence. A legitimate rollback-redelivery
 	// carries the same sequence; it is tracked as a redelivery, NOT a broker
 	// duplicate, so skip Observe for redelivered messages. Observe within the
@@ -886,6 +1347,9 @@ func (j *JMS) browse(ctx context.Context, action *protocol.Action, result *proto
 	max := 10
 	if m, ok := intParam(action.Params, "max"); ok && m > 0 {
 		max = m
+	}
+	if max > MaxJMSBrowseMessages {
+		return message{}, false, fmt.Errorf("jms_browse max must not exceed %d", MaxJMSBrowseMessages)
 	}
 	var (
 		msgs []message
@@ -932,7 +1396,7 @@ func (j *JMS) browse(ctx context.Context, action *protocol.Action, result *proto
 // and rollback requeues pending messages for redelivery on the in-memory mock
 // broker. Real-adapter broker settlement (Service Bus complete/abandon, Solace
 // client-ack) is wired per provider in later work; the accounting is shared.
-func (j *JMS) settle(action *protocol.Action, result *protocol.Result) {
+func (j *JMS) settle(action *protocol.Action, result *protocol.Result) error {
 	switch strings.ToLower(action.Type) {
 	case "jms_ack":
 		settled := j.session.Ack()
@@ -948,12 +1412,15 @@ func (j *JMS) settle(action *protocol.Action, result *protocol.Result) {
 	case "jms_rollback":
 		toRedeliver := j.session.Rollback()
 		if j.cfg.Mock {
-			j.requeueForRedelivery(toRedeliver)
+			if err := j.requeueForRedelivery(toRedeliver); err != nil {
+				return err
+			}
 		}
 		result.Extractions["jms_operation"] = "rollback"
 		result.Extractions["jms_redelivered_scheduled"] = strconv.Itoa(len(toRedeliver))
 		result.ServerTelemetry = &protocol.ServerTelemetry{AbortCount: 1}
 	}
+	return nil
 }
 
 // settleAdvanced handles the Service Bus client-settlement verbs (jms_settle,
@@ -1066,8 +1533,21 @@ func (j *JMS) sessionAdvanced(ctx context.Context, action *protocol.Action, resu
 		if set {
 			result.Extractions["jms_session_state_set"] = "true"
 		} else {
+			if len(got) > MaxJMSSessionStateBytes {
+				return message{}, false, fmt.Errorf("JMS session state response exceeds %d bytes", MaxJMSSessionStateBytes)
+			}
 			result.Extractions["jms_session_state"] = string(got)
 		}
+		return message{}, false, nil
+	case "jms_session_close":
+		token := paramString(action.Params, "session_token", "")
+		if token == "" {
+			return message{}, false, fmt.Errorf("jms_session_close requires params.session_token")
+		}
+		if err := sb.CloseSession(ctx, token); err != nil {
+			return message{}, false, err
+		}
+		result.Extractions["jms_operation"] = "session_close"
 		return message{}, false, nil
 	case "jms_receive_deferred":
 		destination := j.consumeDestination(action)
@@ -1125,8 +1605,14 @@ func parseSequenceNumbers(raw any) ([]int64, error) {
 	var out []int64
 	switch v := raw.(type) {
 	case []int64:
-		return v, nil
+		if len(v) > MaxJMSSequenceNumbers {
+			return nil, fmt.Errorf("sequence_numbers must not exceed %d entries", MaxJMSSequenceNumbers)
+		}
+		return append([]int64(nil), v...), nil
 	case []any:
+		if len(v) > MaxJMSSequenceNumbers {
+			return nil, fmt.Errorf("sequence_numbers must not exceed %d entries", MaxJMSSequenceNumbers)
+		}
 		for _, item := range v {
 			n, err := toInt64(item)
 			if err != nil {
@@ -1135,7 +1621,16 @@ func parseSequenceNumbers(raw any) ([]int64, error) {
 			out = append(out, n)
 		}
 	case string:
-		for _, part := range strings.Split(v, ",") {
+		if len(v) > 64<<10 {
+			return nil, fmt.Errorf("sequence_numbers string exceeds %d bytes", 64<<10)
+		}
+		for len(v) > 0 {
+			part := v
+			if before, after, found := strings.Cut(v, ","); found {
+				part, v = before, after
+			} else {
+				v = ""
+			}
 			part = strings.TrimSpace(part)
 			if part == "" {
 				continue
@@ -1145,6 +1640,9 @@ func parseSequenceNumbers(raw any) ([]int64, error) {
 				return nil, fmt.Errorf("invalid sequence_numbers entry %q: %w", part, err)
 			}
 			out = append(out, n)
+			if len(out) > MaxJMSSequenceNumbers {
+				return nil, fmt.Errorf("sequence_numbers must not exceed %d entries", MaxJMSSequenceNumbers)
+			}
 		}
 	default:
 		if n, err := toInt64(raw); err == nil {
@@ -1159,6 +1657,9 @@ func parseSequenceNumbers(raw any) ([]int64, error) {
 func toInt64(v any) (int64, error) {
 	switch n := v.(type) {
 	case float64:
+		if math.IsNaN(n) || math.IsInf(n, 0) || math.Trunc(n) != n || n < math.MinInt64 || n >= math.MaxInt64 {
+			return 0, fmt.Errorf("not an integer")
+		}
 		return int64(n), nil
 	case int:
 		return int64(n), nil
@@ -1175,7 +1676,7 @@ func toInt64(v any) (int64, error) {
 
 // requeueForRedelivery re-publishes rolled-back messages to the mock broker with
 // the redelivered marker set so the next consume reports a redelivery.
-func (j *JMS) requeueForRedelivery(msgs []message) {
+func (j *JMS) requeueForRedelivery(msgs []message) error {
 	for _, msg := range msgs {
 		if msg.Destination == "" {
 			continue
@@ -1191,11 +1692,16 @@ func (j *JMS) requeueForRedelivery(msgs []message) {
 			// broker.publish would land it in the unrelated queue map (keyed by the
 			// topic name), where the topic consume path never looks, so it would
 			// never be redelivered.
-			broker.requeueTopic(mockJMSKey(j.mockNamespace, msg.sourceTopic), msg.sourceSubscription, msg)
+			if err := broker.requeueTopic(mockJMSKey(j.mockNamespace, msg.sourceTopic), msg.sourceSubscription, msg); err != nil {
+				return err
+			}
 			continue
 		}
-		_ = broker.publish(mockJMSKey(j.mockNamespace, msg.Destination), msg)
+		if err := broker.publish(mockJMSKey(j.mockNamespace, msg.Destination), msg); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 func (j *JMS) requestReply(ctx context.Context, action *protocol.Action, result *protocol.Result) (message, message, error) {
@@ -1212,6 +1718,9 @@ func (j *JMS) requestReply(ctx context.Context, action *protocol.Action, result 
 	request := j.buildMessage(action, requestDestination)
 	if request.CorrelationID == "" {
 		request.CorrelationID = request.ID
+	}
+	if err := validateJMSMessageBounds(request); err != nil {
+		return message{}, message{}, err
 	}
 	sent, response, err := j.adapter.RequestReply(ctx, requestDestination, replyDestination, request, j.timeout(action))
 	if err != nil {
@@ -1412,6 +1921,7 @@ func (a memoryAdapter) BrowseTopic(_ context.Context, topic, subscription, selec
 type sidecarAdapter struct {
 	command string
 	cfg     config
+	limiter *sidecarProcessLimiter
 }
 
 type sidecarRequest struct {
@@ -1524,27 +2034,47 @@ func (a sidecarAdapter) run(ctx context.Context, req sidecarRequest, timeout tim
 	if len(fields) == 0 {
 		return sidecarResponse{}, fmt.Errorf("jms sidecar command is not configured")
 	}
+	if err := subprocessguard.ValidateAmbientCredentials(); err != nil {
+		return sidecarResponse{}, fmt.Errorf("JMS sidecar isolation check failed: %w", err)
+	}
 	if timeout <= 0 {
 		timeout = 5 * time.Second
 	}
 	runCtx, cancel := context.WithTimeout(ctx, timeout+time.Second)
 	defer cancel()
+	limiter := a.limiter
+	if limiter == nil {
+		limiter = globalSidecarProcessLimiter
+	}
+	release, err := limiter.acquire(runCtx)
+	if err != nil {
+		return sidecarResponse{}, fmt.Errorf("wait for JMS sidecar process slot: %w", err)
+	}
+	defer release()
 
 	payload, err := json.Marshal(req)
 	if err != nil {
 		return sidecarResponse{}, fmt.Errorf("marshal jms sidecar request: %w", err)
 	}
 	cmd := exec.CommandContext(runCtx, fields[0], fields[1:]...)
+	cmd.WaitDelay = 2 * time.Second
+	cmd.Env = subprocessguard.Environment(nil)
 	cmd.Stdin = bytes.NewReader(payload)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
+	stdout := &sidecarCappedBuffer{max: maxSidecarCaptureBytes}
+	stderr := &sidecarCappedBuffer{max: maxSidecarCaptureBytes}
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	err = cmd.Run()
 	if err != nil {
 		if runCtx.Err() != nil {
 			return sidecarResponse{}, fmt.Errorf("jms sidecar %s timed out: %w", req.Operation, runCtx.Err())
 		}
 		return sidecarResponse{}, fmt.Errorf("jms sidecar %s failed: %w", req.Operation, err)
 	}
+	if stdout.truncated {
+		return sidecarResponse{}, fmt.Errorf("jms sidecar %s stdout exceeded %d bytes", req.Operation, maxSidecarCaptureBytes)
+	}
+	out := stdout.buf.Bytes()
 	if len(bytes.TrimSpace(out)) == 0 {
 		return sidecarResponse{}, nil
 	}
@@ -1556,6 +2086,26 @@ func (a sidecarAdapter) run(ctx context.Context, req sidecarRequest, timeout tim
 		return sidecarResponse{}, fmt.Errorf("jms sidecar %s rejected request: %s", req.Operation, resp.Error)
 	}
 	return resp, nil
+}
+
+type sidecarCappedBuffer struct {
+	buf       bytes.Buffer
+	max       int
+	truncated bool
+}
+
+func (b *sidecarCappedBuffer) Write(content []byte) (int, error) {
+	if remaining := b.max - b.buf.Len(); remaining > 0 {
+		if len(content) > remaining {
+			_, _ = b.buf.Write(content[:remaining])
+			b.truncated = true
+		} else {
+			_, _ = b.buf.Write(content)
+		}
+	} else if len(content) > 0 {
+		b.truncated = true
+	}
+	return len(content), nil
 }
 
 func normalizeSidecarMessage(msg message, fallback message) message {
@@ -2134,6 +2684,17 @@ func stringValue(cfg map[string]any, key string) string {
 func boolValue(cfg map[string]any, key string) bool {
 	value, _ := cfg[key].(bool)
 	return value
+}
+
+func boundedJMSInteger(value any, fallback, minimum, maximum int) (int, error) {
+	if value == nil {
+		return fallback, nil
+	}
+	parsed, err := toInt64(value)
+	if err != nil || parsed < int64(minimum) || parsed > int64(maximum) {
+		return 0, fmt.Errorf("must be an integer between %d and %d", minimum, maximum)
+	}
+	return int(parsed), nil
 }
 
 func durationValue(cfg map[string]any, key string, fallback time.Duration) time.Duration {

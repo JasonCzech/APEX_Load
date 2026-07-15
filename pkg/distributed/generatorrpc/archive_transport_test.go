@@ -89,4 +89,17 @@ func TestStreamArchiveArtifactTransfersBeyondUnaryLimit(t *testing.T) {
 	if copied != 0 {
 		t.Fatalf("limited stream wrote %d bytes before rejecting declared size, want 0", copied)
 	}
+
+	// The application-level unary limit is 64 MiB of artifact content. Its
+	// protobuf envelope must not make that exact boundary fail at the client.
+	if err := os.Truncate(artifactPath, archiveArtifactUnaryMaxSize); err != nil {
+		t.Fatal(err)
+	}
+	content, err := client.GetArchiveArtifact(ctx, request)
+	if err != nil {
+		t.Fatalf("exact-limit unary artifact rejected by transport: %v", err)
+	}
+	if got := int64(len(content)); got != archiveArtifactUnaryMaxSize {
+		t.Fatalf("unary artifact bytes = %d, want %d", got, archiveArtifactUnaryMaxSize)
+	}
 }

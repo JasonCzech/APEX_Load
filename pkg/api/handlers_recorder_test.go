@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/recorder"
+	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 func TestHandlePreviewRecordingConversionDoesNotStoreScript(t *testing.T) {
@@ -459,7 +460,7 @@ func TestHandleExportRecordingHARScrubOption(t *testing.T) {
 	session.Requests = append(session.Requests, recorder.RecordedRequest{
 		Seq:    1,
 		Method: http.MethodPost,
-		URL:    "https://shop.example.com/login",
+		URL:    "https://user:url-password@shop.example.com/login?access_token=query-secret",
 		Path:   "/login",
 		HeadersMulti: map[string][]string{
 			"Authorization": {"Bearer top-secret-token"},
@@ -470,6 +471,36 @@ func TestHandleExportRecordingHARScrubOption(t *testing.T) {
 		ResponseHeadersMulti: map[string][]string{"Set-Cookie": {"sid=cookie-secret"}},
 		ResponseBody:         `{"ok":true}`,
 	})
+
+	// Session/delta APIs are disclosure-safe by default too; they must not
+	// provide an easier bypass around the scrubbed HAR export boundary.
+	sessionReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/rec-scrub?include=requests", nil)
+	sessionResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(sessionResp, sessionReq)
+	if sessionResp.Code != http.StatusOK {
+		t.Fatalf("session status = %d body=%s", sessionResp.Code, sessionResp.Body.String())
+	}
+	if got := sessionResp.Header().Get("X-APEXLoad-Sensitivity"); got != scrub.SensitivityScrubbed {
+		t.Fatalf("session sensitivity = %q, want %q", got, scrub.SensitivityScrubbed)
+	}
+	for _, secret := range []string{"url-password", "query-secret", "top-secret-token", "hunter2", "cookie-secret"} {
+		if strings.Contains(sessionResp.Body.String(), secret) {
+			t.Fatalf("scrubbed session still contains %q: %s", secret, sessionResp.Body.String())
+		}
+	}
+	if !strings.Contains(sessionResp.Body.String(), scrub.Redacted) {
+		t.Fatalf("scrubbed session has no redaction marker: %s", sessionResp.Body.String())
+	}
+
+	rawSessionReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/rec-scrub?include=requests&raw=true", nil)
+	rawSessionResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(rawSessionResp, rawSessionReq)
+	if rawSessionResp.Code != http.StatusOK || !strings.Contains(rawSessionResp.Body.String(), "hunter2") {
+		t.Fatalf("explicit privileged raw session = %d body=%s", rawSessionResp.Code, rawSessionResp.Body.String())
+	}
+	if got := rawSessionResp.Header().Get("X-APEXLoad-Sensitivity"); got != scrub.SensitivityRaw {
+		t.Fatalf("raw session sensitivity = %q, want %q", got, scrub.SensitivityRaw)
+	}
 
 	// Default export applies scrub-on-write for downloadable artifacts.
 	scrubReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/rec-scrub/export?format=har", nil)
@@ -546,5 +577,14 @@ func TestHandleExportRecordingRawRequiresEditorRole(t *testing.T) {
 	server.mux.ServeHTTP(rawResp, rawReq)
 	if rawResp.Code != http.StatusForbidden {
 		t.Fatalf("raw viewer export status = %d, want 403 body=%s", rawResp.Code, rawResp.Body.String())
+	}
+
+	rawSessionReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/rec-rbac?include=requests&raw=true", nil)
+	rawSessionReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	rawSessionReq.Header.Set("X-APEXLoad-Project-Roles", "proj-rbac="+RoleViewer)
+	rawSessionResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(rawSessionResp, rawSessionReq)
+	if rawSessionResp.Code != http.StatusForbidden {
+		t.Fatalf("raw viewer session status = %d, want 403 body=%s", rawSessionResp.Code, rawSessionResp.Body.String())
 	}
 }

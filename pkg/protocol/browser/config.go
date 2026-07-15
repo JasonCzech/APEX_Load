@@ -2,12 +2,23 @@ package browser
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/selector"
 	playwright "github.com/playwright-community/playwright-go"
+)
+
+const (
+	MaxConfiguredViewportDimension = 8192
+	MaxConfiguredViewportPixels    = 16 << 20
+	MaxConfiguredBrowserDelay      = time.Hour
+	MaxConfiguredNetworkKbps       = 100_000_000
+	maxBrowserDeviceScaleFactor    = 4
+	maxBrowserDevicePixels         = 32 << 20
+	maxBrowserCPUThrottleRate      = 100
 )
 
 func (b *Browser) applyConfig(config map[string]any) error {
@@ -20,6 +31,9 @@ func (b *Browser) applyConfig(config map[string]any) error {
 		return err
 	}
 	b.applyResolvedNetworkProfile()
+	if err := b.validateResourceConfig(); err != nil {
+		return err
+	}
 	if b.downloadResources == "recorded" && !b.recordedResourcesAvailable {
 		return fmt.Errorf("recorded resource metadata not available")
 	}
@@ -60,6 +74,7 @@ func (b *Browser) applyDefaultConfig() {
 	b.clientMetricsEnabled = false
 	b.autoActivatePopups = false
 	b.experienceCanary = false
+	b.traceparentEnabled = false
 	b.selfHealMode = browserSelfHealReplayOnly
 	b.runMode = browserRunModeReplay
 	b.mobile = false
@@ -72,8 +87,10 @@ func (b *Browser) applyDefaultConfig() {
 	b.viewportW = 1440
 	b.viewportH = 900
 	b.harCapturePolicy = HARCaptureOff
+	b.harDir = ""
 	b.harSLABreachThreshold = 0
 	b.resourceValidators = make(map[string]string)
+	b.resourceValidatorKeys = nil
 	b.pendingDialog = nil
 	b.dialogErr = nil
 	b.selfHealCache = make(map[string]selector.Candidate)
@@ -130,7 +147,7 @@ func (b *Browser) applyConfigOverrides(config map[string]any) {
 		b.downloadResources = strings.ToLower(strings.TrimSpace(downloadResources))
 	}
 	if slowMoMs := protocol.ConfigInt(config, "browser_slow_mo_ms"); slowMoMs > 0 {
-		b.slowMo = time.Duration(slowMoMs) * time.Millisecond
+		b.slowMo = configuredBrowserDuration(slowMoMs)
 	}
 	if userAgent, ok := config["browser_user_agent"].(string); ok {
 		b.userAgent = userAgent
@@ -191,7 +208,7 @@ func (b *Browser) applyConfigOverrides(config map[string]any) {
 		b.harCapturePolicy = normalizeHARCapturePolicy(harCapture)
 	}
 	if slaMs := protocol.ConfigInt(config, "browser_har_sla_breach_ms"); slaMs > 0 {
-		b.harSLABreachThreshold = time.Duration(slaMs) * time.Millisecond
+		b.harSLABreachThreshold = configuredBrowserDuration(slaMs)
 	}
 	if harDir, ok := config["browser_har_dir"].(string); ok && strings.TrimSpace(harDir) != "" {
 		b.harDir = strings.TrimSpace(harDir)
@@ -252,6 +269,50 @@ func (b *Browser) validateConfig() error {
 	}
 	if err := validateBrowserClientCertificates(b.clientCertificates); err != nil {
 		return err
+	}
+	if err := materializeBrowserClientCertificates(b.clientCertificates); err != nil {
+		return err
+	}
+	if err := b.validateResourceConfig(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func configuredBrowserDuration(milliseconds int) time.Duration {
+	if milliseconds > int(MaxConfiguredBrowserDelay/time.Millisecond) {
+		// Preserve an invalid sentinel for validateResourceConfig instead of
+		// overflowing time.Duration and accidentally turning the delay off.
+		return MaxConfiguredBrowserDelay + time.Millisecond
+	}
+	return time.Duration(milliseconds) * time.Millisecond
+}
+
+func (b *Browser) validateResourceConfig() error {
+	if b.viewportW <= 0 || b.viewportH <= 0 || b.viewportW > MaxConfiguredViewportDimension || b.viewportH > MaxConfiguredViewportDimension {
+		return fmt.Errorf("browser viewport dimensions must be between 1 and %d", MaxConfiguredViewportDimension)
+	}
+	viewportPixels := float64(b.viewportW) * float64(b.viewportH)
+	if viewportPixels > MaxConfiguredViewportPixels {
+		return fmt.Errorf("browser viewport exceeds %d-pixel limit", MaxConfiguredViewportPixels)
+	}
+	if math.IsNaN(b.deviceScaleFactor) || math.IsInf(b.deviceScaleFactor, 0) || b.deviceScaleFactor <= 0 || b.deviceScaleFactor > maxBrowserDeviceScaleFactor {
+		return fmt.Errorf("browser device scale factor must be greater than zero and at most %g", float64(maxBrowserDeviceScaleFactor))
+	}
+	if viewportPixels*b.deviceScaleFactor*b.deviceScaleFactor > maxBrowserDevicePixels {
+		return fmt.Errorf("browser scaled viewport exceeds %d-pixel limit", maxBrowserDevicePixels)
+	}
+	if math.IsNaN(b.cpuThrottleRate) || math.IsInf(b.cpuThrottleRate, 0) || b.cpuThrottleRate <= 0 || b.cpuThrottleRate > maxBrowserCPUThrottleRate {
+		return fmt.Errorf("browser CPU throttle rate must be greater than zero and at most %g", float64(maxBrowserCPUThrottleRate))
+	}
+	if b.slowMo > MaxConfiguredBrowserDelay || b.harSLABreachThreshold > MaxConfiguredBrowserDelay {
+		return fmt.Errorf("browser delays must not exceed %s", MaxConfiguredBrowserDelay)
+	}
+	if b.networkLatencyMS < 0 || b.networkLatencyMS > int(MaxConfiguredBrowserDelay/time.Millisecond) {
+		return fmt.Errorf("browser network latency must be between 0 and %d milliseconds", MaxConfiguredBrowserDelay/time.Millisecond)
+	}
+	if b.networkBandwidthKB < 0 || b.networkBandwidthKB > MaxConfiguredNetworkKbps {
+		return fmt.Errorf("browser network bandwidth must be between 0 and %d Kbps", MaxConfiguredNetworkKbps)
 	}
 	return nil
 }

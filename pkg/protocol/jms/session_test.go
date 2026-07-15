@@ -1,11 +1,49 @@
 package jms
 
 import (
+	"bytes"
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
+
+func TestJMSPendingByteAdmissionRequeuesRejectedDelivery(t *testing.T) {
+	ctx := context.Background()
+	p := &JMS{name: "jms-solace", provider: "solace"}
+	if err := p.Init(ctx, map[string]any{
+		"jms_destination":     "orders.pending-bytes.test",
+		"jms_mock":            true,
+		"jms_acknowledgement": "client",
+		"jms_timeout_ms":      float64(250),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	defer p.Teardown(ctx)
+	body := bytes.Repeat([]byte("x"), 5<<20)
+	for i := 0; i < 2; i++ {
+		result, err := p.Execute(ctx, &protocol.Action{Name: "publish", Type: "jms_publish", Body: body})
+		if err != nil || !result.Success {
+			t.Fatalf("publish %d = (%#v, %v)", i, result, err)
+		}
+	}
+	first, _ := p.Execute(ctx, &protocol.Action{Name: "consume-1", Type: "jms_consume"})
+	if !first.Success || p.session.Pending() != 1 {
+		t.Fatalf("first consume success=%v pending=%d", first.Success, p.session.Pending())
+	}
+	overflow, _ := p.Execute(ctx, &protocol.Action{Name: "consume-overflow", Type: "jms_consume"})
+	if overflow.Success || !strings.Contains(overflow.ErrorMessage, "capacity") || p.session.Pending() != 1 {
+		t.Fatalf("overflow consume = success %v error %q pending %d", overflow.Success, overflow.ErrorMessage, p.session.Pending())
+	}
+	if ack, _ := p.Execute(ctx, &protocol.Action{Name: "ack", Type: "jms_ack"}); !ack.Success {
+		t.Fatalf("ack failed: %s", ack.ErrorMessage)
+	}
+	retried, _ := p.Execute(ctx, &protocol.Action{Name: "consume-requeued", Type: "jms_consume"})
+	if !retried.Success || retried.BytesReceived != int64(len(body)) {
+		t.Fatalf("requeued consume = success %v bytes %d error %q", retried.Success, retried.BytesReceived, retried.ErrorMessage)
+	}
+}
 
 // TestJMSTransactedRollbackRedelivery exercises the P1.2 session: a transacted
 // consume that is rolled back requeues the message for redelivery (counted) and

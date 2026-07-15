@@ -31,6 +31,31 @@ type fakeLeaseStore struct {
 	released chan struct{}
 }
 
+type delayedSuccessfulRenewalStore struct {
+	mu            sync.Mutex
+	calls         int
+	renewStarted  chan struct{}
+	releaseRenew  chan struct{}
+	releasedOwner chan string
+}
+
+func (s *delayedSuccessfulRenewalStore) TryAcquireSchedulerLease(_ string, _ string, _ time.Time, _ time.Duration) (bool, error) {
+	s.mu.Lock()
+	s.calls++
+	call := s.calls
+	s.mu.Unlock()
+	if call == 2 {
+		close(s.renewStarted)
+		<-s.releaseRenew
+	}
+	return true, nil
+}
+
+func (s *delayedSuccessfulRenewalStore) ReleaseSchedulerLease(_ string, owner string) error {
+	s.releasedOwner <- owner
+	return nil
+}
+
 func (f *fakeLeaseStore) ReleaseSchedulerLease(string, string) error {
 	if f.released != nil {
 		close(f.released)
@@ -69,6 +94,123 @@ func TestExecutionLeadershipRelinquishWaitsForLossCleanup(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("relinquish did not finish after cleanup")
 	}
+}
+
+func TestExecutionLeadershipDiscardsSuccessfulRenewalAfterWatchdogLoss(t *testing.T) {
+	base := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
+	current := base
+	store := &delayedSuccessfulRenewalStore{
+		renewStarted:  make(chan struct{}),
+		releaseRenew:  make(chan struct{}),
+		releasedOwner: make(chan string, 1),
+	}
+	l := newExecutionLeadership(store, "delayed-renewal")
+	l.ttl = time.Minute
+	l.now = func() time.Time { return current }
+	l.tick()
+	oldToken := l.executionFenceToken()
+	if oldToken == "" {
+		t.Fatal("initial acquisition did not expose an execution token")
+	}
+	renewDone := make(chan struct{})
+	go func() {
+		l.tick()
+		close(renewDone)
+	}()
+	select {
+	case <-store.renewStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("renewal did not reach blocking store call")
+	}
+	current = base.Add(l.ttl)
+	if l.IsLeader() {
+		t.Fatal("watchdog-equivalent freshness check did not step down")
+	}
+	close(store.releaseRenew)
+	select {
+	case <-renewDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("delayed renewal did not return")
+	}
+	if l.leader.Load() || l.executionFenceToken() != "" {
+		t.Fatal("delayed successful response resurrected the expired epoch")
+	}
+	select {
+	case released := <-store.releasedOwner:
+		if released != oldToken {
+			t.Fatalf("released stale token = %q, want %q", released, oldToken)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("stale successful lease response was not released")
+	}
+}
+
+func TestExecutionLeadershipCallbackPanicsDoNotCrashOrWedgeAdmission(t *testing.T) {
+	t.Run("loss", func(t *testing.T) {
+		store := &fakeLeaseStore{results: []leaseResult{{acquired: true}, {acquired: false}}, dfltOK: true}
+		l := newExecutionLeadership(store, "loss-panic")
+		l.setOnLoss(func() { panic("loss callback") })
+		l.tick()
+		l.tick()
+		deadline := time.Now().Add(2 * time.Second)
+		for {
+			l.mu.Lock()
+			pending := l.pendingLoss
+			l.mu.Unlock()
+			if pending == 0 || time.Now().After(deadline) {
+				if pending != 0 {
+					t.Fatal("loss callback panic left admission permanently wedged")
+				}
+				break
+			}
+			time.Sleep(time.Millisecond)
+		}
+		l.tick()
+		if !l.IsLeader() {
+			t.Fatal("leadership could not recover after a panicking loss callback")
+		}
+	})
+
+	t.Run("acquire", func(t *testing.T) {
+		store := &fakeLeaseStore{dfltOK: true, released: make(chan struct{})}
+		l := newExecutionLeadership(store, "acquire-panic")
+		var calls atomic.Int32
+		recovered := make(chan struct{})
+		l.setOnAcquire(func() {
+			if calls.Add(1) == 1 {
+				panic("acquire callback")
+			}
+			close(recovered)
+		})
+		l.tick()
+		select {
+		case <-store.released:
+		case <-time.After(2 * time.Second):
+			t.Fatal("failed recovery callback did not relinquish its lease")
+		}
+		deadline := time.Now().Add(2 * time.Second)
+		for {
+			l.mu.Lock()
+			pending := l.pendingLoss
+			l.mu.Unlock()
+			if pending == 0 || time.Now().After(deadline) {
+				if pending != 0 {
+					t.Fatal("acquire callback panic left loss cleanup pending")
+				}
+				break
+			}
+			time.Sleep(time.Millisecond)
+		}
+		l.tick()
+		select {
+		case <-recovered:
+		case <-time.After(2 * time.Second):
+			t.Fatal("ordered callback worker did not survive acquire panic")
+		}
+		if !l.IsLeader() {
+			t.Fatal("leadership was not admitted after successful recovery retry")
+		}
+	})
 }
 
 func TestExecutionLeadershipBootstrapOperationContextReplacesCanceledEpoch(t *testing.T) {
@@ -380,20 +522,18 @@ func TestExecutionLeadershipConcurrentRenewalWinsBeforeStaleDecision(t *testing.
 	store := &fakeLeaseStore{dfltOK: true}
 	l := newExecutionLeadership(store, "owner-renewal-race")
 
-	var nowCalls atomic.Int32
+	var currentNanos atomic.Int64
+	currentNanos.Store(base.UnixNano())
+	var blockNextStaleCheck atomic.Bool
 	staleCheckEntered := make(chan struct{})
 	releaseStaleCheck := make(chan struct{})
 	l.now = func() time.Time {
-		switch nowCalls.Add(1) {
-		case 1:
-			return base
-		case 2:
+		if blockNextStaleCheck.CompareAndSwap(true, false) {
 			close(staleCheckEntered)
 			<-releaseStaleCheck
 			return base.Add(l.ttl)
-		default:
-			return base.Add(l.ttl)
 		}
+		return time.Unix(0, currentNanos.Load()).UTC()
 	}
 	lost := make(chan struct{}, 1)
 	l.setOnLoss(func() { lost <- struct{}{} })
@@ -403,6 +543,7 @@ func TestExecutionLeadershipConcurrentRenewalWinsBeforeStaleDecision(t *testing.
 		t.Fatal("expected initial acquisition")
 	}
 
+	blockNextStaleCheck.Store(true)
 	isLeaderResult := make(chan bool, 1)
 	go func() { isLeaderResult <- l.IsLeader() }()
 	select {
@@ -414,6 +555,7 @@ func TestExecutionLeadershipConcurrentRenewalWinsBeforeStaleDecision(t *testing.
 	// Complete a renewal while IsLeader is paused. IsLeader must evaluate the
 	// refreshed timestamp after the barrier, not act on the stale pre-renewal
 	// snapshot it observed before calling now.
+	currentNanos.Store(base.Add(l.ttl).UnixNano())
 	renewed := make(chan struct{})
 	go func() {
 		l.tick()

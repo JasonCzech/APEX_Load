@@ -1,11 +1,14 @@
 package api
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,6 +20,20 @@ type externalResultImportPersistence interface {
 	SaveExternalResultImport(result *storage.ExternalResultImport) error
 	ListExternalResultImports(filter storage.ExternalResultImportFilter) ([]*storage.ExternalResultImport, error)
 }
+
+type immutableExternalResultImportPersistence interface {
+	CreateExternalResultImportIfAbsent(result *storage.ExternalResultImport) (bool, error)
+	GetExternalResultImport(id string) (*storage.ExternalResultImport, error)
+	DeleteExternalResultImportIfUnchanged(expected *storage.ExternalResultImport) (bool, error)
+}
+
+const (
+	maxInMemoryExternalResultImports     = 1024
+	maxInMemoryExternalResultImportBytes = int64(64 << 20)
+)
+
+var errInMemoryExternalResultCapacity = errors.New("in-memory external result import capacity exceeded")
+
 type ExternalResultImportRequest struct {
 	Provider   string         `json:"provider"`
 	Name       string         `json:"name,omitempty"`
@@ -203,9 +220,17 @@ func deriveJMeterSummary(raw map[string]any) map[string]any {
 }
 
 func externalSummaryMap(transactions float64, errors float64, errorPct float64, avg float64, p95 float64) map[string]any {
+	transactions = nonnegativeFiniteExternalMetric(transactions)
+	errors = nonnegativeFiniteExternalMetric(errors)
+	errorPct = nonnegativeFiniteExternalMetric(errorPct)
+	if errorPct > 100 {
+		errorPct = 100
+	}
+	avg = nonnegativeFiniteExternalMetric(avg)
+	p95 = nonnegativeFiniteExternalMetric(p95)
 	summary := map[string]any{
-		"transactions":    int64(math.Round(transactions)),
-		"errors":          int64(math.Round(errors)),
+		"transactions":    externalMetricCount(transactions),
+		"errors":          externalMetricCount(errors),
 		"error_pct":       errorPct,
 		"avg_response_ms": avg,
 		"p95_response_ms": p95,
@@ -215,6 +240,21 @@ func externalSummaryMap(transactions float64, errors float64, errorPct float64, 
 		summary["status"] = "failed"
 	}
 	return summary
+}
+
+func nonnegativeFiniteExternalMetric(value float64) float64 {
+	if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 {
+		return 0
+	}
+	return value
+}
+
+func externalMetricCount(value float64) int64 {
+	value = nonnegativeFiniteExternalMetric(value)
+	if value >= float64(math.MaxInt64) {
+		return math.MaxInt64
+	}
+	return int64(math.Round(value))
 }
 
 func metricField(metrics map[string]any, metric string, fields ...string) (float64, bool) {
@@ -235,21 +275,27 @@ func numericFromMap(values map[string]any, field string) (float64, bool) {
 }
 
 func numberFromAny(value any) (float64, bool) {
+	finite := func(parsed float64, ok bool) (float64, bool) {
+		if !ok || math.IsNaN(parsed) || math.IsInf(parsed, 0) {
+			return 0, false
+		}
+		return parsed, true
+	}
 	switch typed := value.(type) {
 	case float64:
-		return typed, true
+		return finite(typed, true)
 	case float32:
-		return float64(typed), true
+		return finite(float64(typed), true)
 	case int:
 		return float64(typed), true
 	case int64:
 		return float64(typed), true
 	case json.Number:
 		parsed, err := typed.Float64()
-		return parsed, err == nil
+		return finite(parsed, err == nil)
 	case string:
 		parsed, err := json.Number(strings.TrimSpace(typed)).Float64()
-		return parsed, err == nil
+		return finite(parsed, err == nil)
 	default:
 		return 0, false
 	}
@@ -266,10 +312,140 @@ func (s *Server) saveExternalResultImport(result *storage.ExternalResultImport) 
 	if store, ok := s.store.(externalResultImportPersistence); ok {
 		return store.SaveExternalResultImport(result)
 	}
+	copied := cloneExternalResultImport(result)
+	weight, err := externalResultImportWeight(copied)
+	if err != nil {
+		return err
+	}
 	s.c4Mu.Lock()
 	defer s.c4Mu.Unlock()
-	copied := *result
-	s.resultImports[result.ID] = &copied
+	return s.storeExternalResultImportInMemoryLocked(copied, weight, false)
+}
+
+func (s *Server) createExternalResultImportIfAbsent(result *storage.ExternalResultImport) (bool, *storage.ExternalResultImport, error) {
+	if store, ok := s.store.(immutableExternalResultImportPersistence); ok {
+		created, err := store.CreateExternalResultImportIfAbsent(result)
+		if err != nil {
+			return false, nil, err
+		}
+		if created {
+			return true, cloneExternalResultImport(result), nil
+		}
+		existing, err := store.GetExternalResultImport(result.ID)
+		return false, cloneExternalResultImport(existing), err
+	}
+	if s.store != nil {
+		return false, nil, fmt.Errorf("durable external-result store does not support immutable create-only persistence")
+	}
+	s.c4Mu.Lock()
+	defer s.c4Mu.Unlock()
+	if existing := s.resultImports[result.ID]; existing != nil {
+		return false, cloneExternalResultImport(existing), nil
+	}
+	copied := cloneExternalResultImport(result)
+	weight, err := externalResultImportWeight(copied)
+	if err != nil {
+		return false, nil, err
+	}
+	if err := s.storeExternalResultImportInMemoryLocked(copied, weight, true); err != nil {
+		return false, nil, err
+	}
+	return true, cloneExternalResultImport(copied), nil
+}
+
+func (s *Server) getExternalResultImport(id string) (*storage.ExternalResultImport, bool, error) {
+	if store, ok := s.store.(immutableExternalResultImportPersistence); ok {
+		result, err := store.GetExternalResultImport(id)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, false, nil
+		}
+		if err != nil {
+			return nil, false, err
+		}
+		return cloneExternalResultImport(result), true, nil
+	}
+	if s.store != nil {
+		return nil, false, fmt.Errorf("durable external-result store does not support immutable lookup")
+	}
+	s.c4Mu.Lock()
+	defer s.c4Mu.Unlock()
+	result := s.resultImports[id]
+	return cloneExternalResultImport(result), result != nil, nil
+}
+
+func (s *Server) deleteExternalResultImportIfUnchanged(expected *storage.ExternalResultImport) (bool, error) {
+	if expected == nil {
+		return false, fmt.Errorf("expected external result import is required")
+	}
+	if store, ok := s.store.(immutableExternalResultImportPersistence); ok {
+		return store.DeleteExternalResultImportIfUnchanged(expected)
+	}
+	if s.store != nil {
+		return false, fmt.Errorf("durable external-result store does not support conditional delete")
+	}
+	s.c4Mu.Lock()
+	defer s.c4Mu.Unlock()
+	existing := s.resultImports[expected.ID]
+	if !equivalentExternalResultImport(existing, expected) || existing == nil || !existing.CreatedAt.Equal(expected.CreatedAt) {
+		return false, nil
+	}
+	weight, err := externalResultImportWeight(existing)
+	if err != nil {
+		return false, err
+	}
+	s.resultImportBytes -= weight
+	if s.resultImportBytes < 0 {
+		s.resultImportBytes = 0
+	}
+	delete(s.resultImports, expected.ID)
+	return true, nil
+}
+
+func externalResultImportWeight(result *storage.ExternalResultImport) (int64, error) {
+	if result == nil {
+		return 0, fmt.Errorf("external result import is required")
+	}
+	writer := &archiveJSONCountingWriter{}
+	if err := json.NewEncoder(writer).Encode(result); err != nil {
+		return 0, fmt.Errorf("measure external result import: %w", err)
+	}
+	return writer.bytes, nil
+}
+
+// storeExternalResultImportInMemoryLocked enforces both dimensions of the
+// fallback store's retention budget. Callers hold c4Mu and pass a deep copy so
+// later caller mutation cannot invalidate byte accounting.
+func (s *Server) storeExternalResultImportInMemoryLocked(result *storage.ExternalResultImport, weight int64, createOnly bool) error {
+	if result == nil || strings.TrimSpace(result.ID) == "" {
+		return fmt.Errorf("external result import id is required")
+	}
+	if weight < 0 || weight > maxInMemoryExternalResultImportBytes {
+		return errInMemoryExternalResultCapacity
+	}
+	if s.resultImports == nil {
+		s.resultImports = make(map[string]*storage.ExternalResultImport)
+	}
+	existing := s.resultImports[result.ID]
+	if createOnly && existing != nil {
+		return fmt.Errorf("external result import already exists")
+	}
+	if existing == nil && len(s.resultImports) >= maxInMemoryExternalResultImports {
+		return errInMemoryExternalResultCapacity
+	}
+	existingWeight := int64(0)
+	if existing != nil {
+		var err error
+		existingWeight, err = externalResultImportWeight(existing)
+		if err != nil {
+			return err
+		}
+	}
+	projectedBytes := s.resultImportBytes - existingWeight + weight
+	if projectedBytes < 0 || projectedBytes > maxInMemoryExternalResultImportBytes {
+		return errInMemoryExternalResultCapacity
+	}
+	s.resultImports[result.ID] = result
+	s.resultImportBytes = projectedBytes
 	return nil
 }
 
@@ -294,8 +470,7 @@ func (s *Server) listExternalResultImports(filter storage.ExternalResultImportFi
 		if filter.Provider != "" && result.Provider != filter.Provider {
 			continue
 		}
-		copied := *result
-		out = append(out, &copied)
+		out = append(out, cloneExternalResultImport(result))
 	}
 	sort.SliceStable(out, func(left, right int) bool {
 		return out[left].CreatedAt.After(out[right].CreatedAt)
@@ -335,8 +510,8 @@ func parsePositiveIntQuery(raw string) (int, error) {
 	if raw == "" {
 		return 0, nil
 	}
-	var value int
-	if _, err := fmt.Sscanf(raw, "%d", &value); err != nil {
+	value, err := strconv.Atoi(raw)
+	if err != nil {
 		return 0, err
 	}
 	if value < 0 {

@@ -27,7 +27,6 @@ type parameterState struct {
 	hasCached  bool
 	cached     string
 	nextIndex  int
-	used       map[int]bool
 	counter    int
 	seeded     bool
 	random     *rand.Rand
@@ -57,10 +56,7 @@ func NewParameterRuntime(parameters []dsl.Parameter, provider *DataProvider, vus
 		if param.Seed != nil {
 			seed = *param.Seed
 		}
-		runtime.states[param.Name] = &parameterState{
-			used:   make(map[int]bool),
-			random: rand.New(rand.NewSource(seed)),
-		}
+		runtime.states[param.Name] = &parameterState{random: rand.New(rand.NewSource(seed))}
 	}
 	return runtime
 }
@@ -199,7 +195,11 @@ func (pr *ParameterRuntime) generate(param dsl.Parameter, state *parameterState,
 		}
 		return value, ok
 	case "random_number":
-		return formatNumericValue(state.random.Intn(param.Max-param.Min+1)+param.Min, param), true
+		value, ok := randomIntInclusive(param.Min, param.Max, state.random.Uint64)
+		if !ok {
+			return "", false
+		}
+		return formatNumericValue(value, param), true
 	case "date_time":
 		now, ok := resolveParameterTime(pr.now, param)
 		if !ok {
@@ -324,7 +324,7 @@ func generateCounterValue(param dsl.Parameter, state *parameterState) (string, b
 		}
 		current = state.counter
 	}
-	state.counter += param.Step
+	state.counter = saturatingAddInt(state.counter, param.Step)
 	return formatNumericValue(current, param), true
 }
 
@@ -351,6 +351,9 @@ func resolveParameterTime(now func() time.Time, param dsl.Parameter) (time.Time,
 		current = current.In(loc)
 	}
 	if param.OffsetSeconds != 0 {
+		if param.OffsetSeconds < -dsl.MaxParameterOffsetSeconds || param.OffsetSeconds > dsl.MaxParameterOffsetSeconds {
+			return time.Time{}, false
+		}
 		current = current.Add(time.Duration(param.OffsetSeconds) * time.Second)
 	}
 	return current, true
@@ -363,12 +366,11 @@ func generateSelectedValue(values []string, param dsl.Parameter, state *paramete
 	switch effectiveParameterSelection(param) {
 	case "random":
 		index := state.random.Intn(len(values))
-		return values[index], index, true
+		return strings.TrimSpace(values[index]), index, true
 	case "unique":
-		if len(state.used) >= len(values) {
+		if state.nextIndex >= len(values) {
 			switch effectiveOnExhaustion(param) {
 			case "wrap":
-				state.used = make(map[int]bool)
 				state.nextIndex = 0
 			case "empty":
 				return "", -1, true
@@ -377,21 +379,14 @@ func generateSelectedValue(values []string, param dsl.Parameter, state *paramete
 				if state.hasRowPick && state.lastIndex >= 0 && state.lastIndex < len(values) {
 					index = state.lastIndex
 				}
-				return values[index], index, true
+				return strings.TrimSpace(values[index]), index, true
 			default:
 				return "", -1, false
 			}
 		}
-		for attempts := 0; attempts < len(values); attempts++ {
-			idx := (state.nextIndex + attempts) % len(values)
-			if state.used[idx] {
-				continue
-			}
-			state.used[idx] = true
-			state.nextIndex = idx + 1
-			return values[idx], idx, true
-		}
-		return "", -1, false
+		index := state.nextIndex
+		state.nextIndex++
+		return strings.TrimSpace(values[index]), index, true
 	default:
 		if state.nextIndex >= len(values) {
 			switch effectiveOnExhaustion(param) {
@@ -400,13 +395,13 @@ func generateSelectedValue(values []string, param dsl.Parameter, state *paramete
 			case "empty":
 				return "", -1, true
 			case "last":
-				return values[len(values)-1], len(values) - 1, true
+				return strings.TrimSpace(values[len(values)-1]), len(values) - 1, true
 			default:
 				return "", -1, false
 			}
 		}
 		index := state.nextIndex
-		value := values[index]
+		value := strings.TrimSpace(values[index])
 		state.nextIndex++
 		return value, index, true
 	}
@@ -441,7 +436,7 @@ func isCounterExhausted(current int, param dsl.Parameter) bool {
 
 func formatNumericValue(value int, param dsl.Parameter) string {
 	formatted := strconv.Itoa(value)
-	if param.PadWidth <= 0 {
+	if param.PadWidth <= 0 || param.PadWidth > dsl.MaxGeneratedParameterBytes {
 		return formatted
 	}
 	padChar := "0"
@@ -463,6 +458,9 @@ func generateRandomStringGlobal(length int, charset string) string {
 }
 
 func generateRandomStringWithIntn(intn func(int) int, length int, charset string) string {
+	if length <= 0 || length > dsl.MaxGeneratedParameterBytes || len(charset) > dsl.MaxParameterCharsetBytes {
+		return ""
+	}
 	letters := charset
 	if letters == "" {
 		letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -479,7 +477,7 @@ func (pr *ParameterRuntime) valuesForParameter(param dsl.Parameter, state *param
 		return state.values, len(state.values) > 0
 	}
 	if len(param.Values) > 0 {
-		state.values = pr.applyParameterRowAllocation(normalizeParameterValues(param.Values), param)
+		state.values = pr.applyParameterRowAllocation(param.Values, param)
 		state.loaded = true
 		return state.values, true
 	}
@@ -490,7 +488,7 @@ func (pr *ParameterRuntime) valuesForParameter(param dsl.Parameter, state *param
 	if !ok {
 		return nil, false
 	}
-	state.values = pr.applyParameterRowAllocation(normalizeParameterValues(values), param)
+	state.values = pr.applyParameterRowAllocation(values, param)
 	state.loaded = true
 	return state.values, true
 }
@@ -515,22 +513,31 @@ func (pr *ParameterRuntime) applyParameterRowAllocation(values []string, param d
 		return values
 	}
 	if param.BlockSize > 0 {
-		blockStart := pr.vuserID * param.BlockSize
-		if blockStart >= len(values) {
+		vuserID := pr.vuserID
+		if vuserID < 0 {
+			vuserID = 0
+		}
+		blockStart := 0
+		if vuserID <= (len(values)-1)/param.BlockSize {
+			blockStart = vuserID * param.BlockSize
+		} else {
 			if effectiveOnExhaustion(param) == "wrap" {
-				blockStart = blockStart % len(values)
+				blockStart = safePositiveMulMod(vuserID, param.BlockSize, len(values))
 			} else {
 				return nil
 			}
 		}
-		blockEnd := blockStart + param.BlockSize
-		if blockEnd > len(values) {
-			blockEnd = len(values)
+		blockEnd := len(values)
+		if param.BlockSize < len(values)-blockStart {
+			blockEnd = blockStart + param.BlockSize
 		}
 		values = values[blockStart:blockEnd]
 	}
 	if param.ValueForEachVUser && param.BlockSize == 0 {
 		index := pr.vuserID
+		if index < 0 {
+			index = 0
+		}
 		if index >= len(values) {
 			if effectiveOnExhaustion(param) == "wrap" {
 				index = index % len(values)
@@ -538,17 +545,35 @@ func (pr *ParameterRuntime) applyParameterRowAllocation(values []string, param d
 				return nil
 			}
 		}
-		return []string{values[index]}
+		return values[index : index+1]
 	}
 	return values
 }
 
-func normalizeParameterValues(values []string) []string {
-	normalized := make([]string, len(values))
-	for index, value := range values {
-		normalized[index] = strings.TrimSpace(value)
+func safePositiveMulMod(a, b, modulus int) int {
+	if a <= 0 || b <= 0 || modulus <= 1 {
+		return 0
 	}
-	return normalized
+	x := uint64(a % modulus)
+	y := uint64(b % modulus)
+	m := uint64(modulus)
+	var result uint64
+	addMod := func(left, right uint64) uint64 {
+		if left >= m-right {
+			return left - (m - right)
+		}
+		return left + right
+	}
+	for y > 0 {
+		if y&1 == 1 {
+			result = addMod(result, x)
+		}
+		y >>= 1
+		if y > 0 {
+			x = addMod(x, x)
+		}
+	}
+	return int(result)
 }
 
 func resolveBuiltinFunction(expr string, now func() time.Time, rng *rand.Rand) (string, bool) {
@@ -587,10 +612,15 @@ func resolveBuiltinFunction(expr string, now func() time.Time, rng *rand.Rand) (
 		if err != nil || min > max {
 			return "", false
 		}
+		next := rand.Uint64
 		if rng != nil {
-			return strconv.Itoa(rng.Intn(max-min+1) + min), true
+			next = rng.Uint64
 		}
-		return strconv.Itoa(rand.Intn(max-min+1) + min), true
+		value, ok := randomIntInclusive(min, max, next)
+		if !ok {
+			return "", false
+		}
+		return strconv.Itoa(value), true
 	}
 
 	if strings.HasPrefix(expr, "fn.random_string(") && strings.HasSuffix(expr, ")") {
@@ -599,7 +629,7 @@ func resolveBuiltinFunction(expr string, now func() time.Time, rng *rand.Rand) (
 			return "", false
 		}
 		length, err := strconv.Atoi(args[0])
-		if err != nil || length <= 0 {
+		if err != nil || length <= 0 || length > dsl.MaxGeneratedParameterBytes {
 			return "", false
 		}
 		if rng != nil {
@@ -609,6 +639,47 @@ func resolveBuiltinFunction(expr string, now func() time.Time, rng *rand.Rand) (
 	}
 
 	return "", false
+}
+
+func saturatingAddInt(value, delta int) int {
+	maxInt := int(^uint(0) >> 1)
+	minInt := -maxInt - 1
+	if delta > 0 && value > maxInt-delta {
+		return maxInt
+	}
+	if delta < 0 && value < minInt-delta {
+		return minInt
+	}
+	return value + delta
+}
+
+func randomIntInclusive(minimum, maximum int, next func() uint64) (int, bool) {
+	if minimum > maximum || next == nil {
+		return 0, false
+	}
+	if strconv.IntSize == 32 {
+		minBits := uint32(int32(minimum))
+		span := uint64(uint32(int32(maximum))-minBits) + 1
+		offset := randomUint64Below(span, next)
+		return int(int32(minBits + uint32(offset))), true
+	}
+	minBits := uint64(int64(minimum))
+	span := uint64(int64(maximum)) - minBits + 1
+	offset := randomUint64Below(span, next)
+	return int(int64(minBits + offset)), true
+}
+
+func randomUint64Below(span uint64, next func() uint64) uint64 {
+	if span == 0 { // the full uint64 range
+		return next()
+	}
+	threshold := -span % span
+	for {
+		value := next()
+		if value >= threshold {
+			return value % span
+		}
+	}
 }
 
 func splitFunctionArgs(raw string) []string {

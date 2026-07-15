@@ -7,8 +7,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/fileasset"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 )
 
 func TestValidateScriptIssues_RendezvousValidation(t *testing.T) {
@@ -164,6 +166,51 @@ func TestValidateScriptIssues_FileAssetReferences(t *testing.T) {
 			assertIssueContains(t, issues, tc.wantIssue)
 		})
 	}
+}
+
+func TestValidateScriptIssues_ProjectScopedFileAssetReferences(t *testing.T) {
+	assetRoot := t.TempDir()
+	if err := fileasset.RegisterProjectRoot(assetRoot); err != nil {
+		t.Fatalf("RegisterProjectRoot: %v", err)
+	}
+	projectDir, err := fileasset.ProjectAssetDir(assetRoot, "project-a")
+	if err != nil {
+		t.Fatalf("ProjectAssetDir: %v", err)
+	}
+	assetPath := filepath.Join(projectDir, "import-1", "capability", "upload.bin")
+	if err := os.MkdirAll(filepath.Dir(assetPath), 0o700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(assetPath, []byte("bytes"), 0o600); err != nil {
+		t.Fatalf("write asset: %v", err)
+	}
+	assetRef := (&url.URL{Scheme: "file", Path: assetPath}).String()
+	base := func(projectID string) *Script {
+		return &Script{
+			Name:      "project-file-assets",
+			Protocol:  "http",
+			ProjectID: projectID,
+			Config:    ScriptConfig{BaseURL: "https://example.test"},
+			DataSources: []DataSource{{
+				Name: "upload", Type: "file", StorageRef: assetRef, FileName: "upload.bin",
+			}},
+			Actions: []Action{{
+				Name: "Upload", Type: "request", Method: "POST", Target: "/upload", Body: "{{file.upload}}",
+			}},
+		}
+	}
+
+	if issues := ValidateScriptIssues(base("project-a")); len(issues) != 0 {
+		t.Fatalf("owner project issues = %v, want none", issues)
+	}
+	issues := ValidateScriptIssues(base("project-b"))
+	assertIssueContains(t, issues, `data_sources[0] "upload": file data source storage_ref is not an allowed file asset: file asset does not belong to project "project-b"`)
+
+	csvScript := base("project-b")
+	csvScript.DataSources[0] = DataSource{Name: "rows", Type: "csv", Path: assetPath, FirstRowHeader: true}
+	csvScript.Actions[0].Body = "payload"
+	issues = ValidateScriptIssues(csvScript)
+	assertIssueContains(t, issues, `data_sources[0] "rows": data source path is not an allowed file asset: file asset does not belong to project "project-b"`)
 }
 
 func TestValidateScriptIssues_ErrorMessageValidation(t *testing.T) {
@@ -539,6 +586,7 @@ func TestValidateScriptIssues_SOAPValidationAllowsSupportedFields(t *testing.T) 
 }
 
 func TestValidateScriptIssues_WebRuntimeValidation(t *testing.T) {
+	tooManyRedirects := httpprotocol.MaxConfiguredRedirects + 1
 	script := &Script{
 		Name:     "web-invalid",
 		Protocol: "http",
@@ -552,7 +600,16 @@ func TestValidateScriptIssues_WebRuntimeValidation(t *testing.T) {
 				ExtendedOptions: []string{"advanced_trace", "wiretap"},
 			},
 			HTTP: HTTPConfig{
-				ProxyMode: "corp",
+				Version:          "3",
+				MaxConnsPerHost:  httpprotocol.MaxConfiguredConnsPerHost + 1,
+				MaxIdleConns:     -1,
+				ConnectTimeoutMs: -1,
+				RequestTimeoutMs: int(httpprotocol.MaxConfiguredTimeout/time.Millisecond) + 1,
+				TLSTimeoutMs:     -1,
+				IdleTimeoutMs:    int(httpprotocol.MaxConfiguredTimeout/time.Millisecond) + 1,
+				TLS:              TLSConfig{MinVersion: "1.3", MaxVersion: "1.2"},
+				MaxRedirects:     &tooManyRedirects,
+				ProxyMode:        "corp",
 			},
 			Browser: BrowserConfig{
 				DownloadResources: "css_only",
@@ -601,6 +658,15 @@ func TestValidateScriptIssues_WebRuntimeValidation(t *testing.T) {
 	assertIssue(t, issues, "config.run_logic.block_scheduling must be sequential, random, or percentage")
 	assertIssue(t, issues, "config.run_logic.action_sequence[1] must be init, action, teardown, vuser_init, or vuser_end")
 	assertIssue(t, issues, "config.log.extended_options[1] must be parameter_substitution, data_returned, or advanced_trace")
+	assertIssue(t, issues, "config.http.version must be 1.0, 1.1, or 2")
+	assertIssue(t, issues, "config.http.max_conns_per_host must be between 0 and 256")
+	assertIssue(t, issues, "config.http.max_idle_conns must be between 0 and 32")
+	assertIssue(t, issues, "config.http.connect_timeout_ms must be between 0 and 3600000")
+	assertIssue(t, issues, "config.http.request_timeout_ms must be between 0 and 3600000")
+	assertIssue(t, issues, "config.http.tls_timeout_ms must be between 0 and 3600000")
+	assertIssue(t, issues, "config.http.idle_timeout_ms must be between 0 and 3600000")
+	assertIssue(t, issues, "config.http.max_redirects must be between -1 and 50")
+	assertIssue(t, issues, "config.http.tls.max_version must not be lower than min_version")
 	assertIssue(t, issues, "config.http.proxy_mode must be none, system, or custom")
 	assertIssue(t, issues, "config.browser.download_resources must be none, recorded, or all")
 	assertIssue(t, issues, "config.web_runtime.additional_attributes keys must be non-empty")
@@ -619,6 +685,41 @@ func TestValidateScriptIssues_WebRuntimeValidation(t *testing.T) {
 	assertIssue(t, issues, "config.observability.external_metrics[0].metric_name is required")
 	assertIssue(t, issues, "config.web_runtime.data_formatting.chain[0].type is required")
 	assertIssue(t, issues, "config.web_runtime.data_formatting.chain[1].type \"custom_dfe\" is not supported")
+}
+
+func TestValidateScriptIssues_HTTPRejectsUnsupportedTLSAndProxy(t *testing.T) {
+	script := &Script{
+		Name:     "http-invalid-security-config",
+		Protocol: "http",
+		Config: ScriptConfig{
+			BaseURL: "https://example.test",
+			HTTP: HTTPConfig{
+				TLS:       TLSConfig{MinVersion: "ssl3", MaxVersion: "tls-next"},
+				ProxyMode: "custom",
+				Proxy:     ProxyConfig{URL: "file:///tmp/proxy.sock"},
+			},
+		},
+		Actions: []Action{{Name: "home", Type: "request", Target: "/"}},
+	}
+
+	issues := ValidateScriptIssues(script)
+	assertIssue(t, issues, "config.http.tls.min_version must be 1.0, 1.1, 1.2, or 1.3")
+	assertIssue(t, issues, "config.http.tls.max_version must be 1.0, 1.1, 1.2, or 1.3")
+	assertIssue(t, issues, "config.http.proxy.url must be an absolute http, https, socks5, or socks5h URL")
+}
+
+func TestValidateScriptIssues_HTTPUsesRuntimeDefaultTLSMinimum(t *testing.T) {
+	script := &Script{
+		Name:     "http-invalid-default-tls-range",
+		Protocol: "http",
+		Config: ScriptConfig{
+			BaseURL: "https://example.test",
+			HTTP:    HTTPConfig{TLS: TLSConfig{MaxVersion: "1.1"}},
+		},
+		Actions: []Action{{Name: "home", Type: "request", Target: "/"}},
+	}
+
+	assertIssue(t, ValidateScriptIssues(script), "config.http.tls.max_version must not be lower than min_version")
 }
 
 func TestValidateScriptIssues_WebRuntimeValidationAllowsSupportedFields(t *testing.T) {
@@ -973,6 +1074,21 @@ func TestValidateScriptIssues_WebSocketValidation(t *testing.T) {
 	assertIssue(t, issues, `actions[2] "bad type": ws_send type must be text or binary`)
 	assertIssue(t, issues, `actions[3] "bad timeout": ws_receive timeout_ms must be zero or greater`)
 	assertIssue(t, issues, `actions[4] "unsupported": unsupported websocket action type "ws_subscribe"`)
+}
+
+func TestValidateScriptIssues_WebSocketRejectsOversizedMessageLimit(t *testing.T) {
+	script := &Script{
+		Name:     "websocket-oversized",
+		Protocol: "websocket",
+		Config: ScriptConfig{
+			BaseURL:   "wss://example.test",
+			WebSocket: WebSocketConfig{MaxMessageSize: MaxWebSocketMessageBytes + 1},
+		},
+		Actions: []Action{{Name: "connect", Type: "ws_connect", Target: "/ws"}},
+	}
+
+	issues := ValidateScriptIssues(script)
+	assertIssue(t, issues, fmt.Sprintf("config.websocket.max_message_size must not exceed %d", MaxWebSocketMessageBytes))
 }
 
 func TestValidateScriptIssues_WebSocketValidationAllowsSupportedFields(t *testing.T) {

@@ -80,6 +80,8 @@ describe('LibraryFederationPanel', () => {
     const updateCall = fetchMock.mock.calls.find(([input, init]) => String(input).includes('/api/v1/library/remotes/remote-1') && init?.method === 'PUT')
     expect(updateCall).toBeDefined()
     expect(String(updateCall?.[1]?.body || '')).not.toContain('secret-token')
+		const updateBody = JSON.parse(String(updateCall?.[1]?.body || '{}')) as { project_mappings?: Record<string, string> }
+		expect(updateBody.project_mappings).toEqual({ 'project-1': 'project-1' })
 
     const deleteButton = findButton('Delete')
     expect(deleteButton).toBeDefined()
@@ -120,6 +122,7 @@ function remotePayload() {
     name: 'Team AKS',
     base_url: 'https://apexload.example.test',
     default_project_id: 'project-1',
+	project_mappings: { 'project-1': 'project-1' },
     auth_method: 'service_account',
     credential_ref: 'keyring:library-remote:remote-1',
     credential_configured: true,

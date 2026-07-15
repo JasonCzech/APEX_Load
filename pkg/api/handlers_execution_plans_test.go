@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -13,13 +15,31 @@ import (
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
+type approvalSnapshotBlockingBackend struct {
+	started     chan string
+	release     chan struct{}
+	releaseOnce sync.Once
+	count       atomic.Int32
+}
+
+func (b *approvalSnapshotBlockingBackend) Run(_ *TestRunner, test *ManagedTest) {
+	b.started <- test.ID
+	if b.count.Add(1) == 1 {
+		<-b.release
+	}
+}
+
+func (b *approvalSnapshotBlockingBackend) unblock() {
+	b.releaseOnce.Do(func() { close(b.release) })
+}
+
 func TestExecutionPlanRunGovernanceGate(t *testing.T) {
 	server, store := newTimeslotServer(t)
 	if err := store.SaveProject(&storage.Project{ID: "proj-a", Name: "A", Settings: storage.ProjectSettings{MaxVUsers: 10}, CreatedAt: time.Now(), UpdatedAt: time.Now()}); err != nil {
 		t.Fatalf("SaveProject: %v", err)
 	}
 	server.runner.StoreScript(&dsl.Script{
-		ID: "s", Name: "S", Protocol: "http", Version: "1.0.0",
+		ID: "s", Name: "S", Protocol: "http", Version: "1.0.0", ProjectID: "proj-a",
 		Config:  dsl.ScriptConfig{BaseURL: "https://example.com"},
 		Actions: []dsl.Action{{Name: "a", Type: "request", Target: "/"}},
 	})
@@ -97,7 +117,7 @@ func TestExecutionPlanRunGovernanceIncludesStagesAndGoalMax(t *testing.T) {
 		t.Fatalf("SaveProject: %v", err)
 	}
 	server.runner.StoreScript(&dsl.Script{
-		ID: "s-peak", Name: "S", Protocol: "http", Version: "1.0.0",
+		ID: "s-peak", Name: "S", Protocol: "http", Version: "1.0.0", ProjectID: "proj-a",
 		Config:  dsl.ScriptConfig{BaseURL: "https://example.com"},
 		Actions: []dsl.Action{{Name: "a", Type: "request", Target: "/"}},
 	})
@@ -169,7 +189,7 @@ func TestExecutionPlanApprovalInvalidatedWhenPlanChanges(t *testing.T) {
 		t.Fatalf("SaveProject: %v", err)
 	}
 	server.runner.StoreScript(&dsl.Script{
-		ID: "s-stale", Name: "S", Protocol: "http", Version: "1.0.0",
+		ID: "s-stale", Name: "S", Protocol: "http", Version: "1.0.0", ProjectID: "proj-a",
 		Config:  dsl.ScriptConfig{BaseURL: "https://example.com"},
 		Actions: []dsl.Action{{Name: "a", Type: "request", Target: "/"}},
 	})
@@ -227,7 +247,7 @@ func TestApprovedSequentialExecutionPlanBypassesProjectVUserGate(t *testing.T) {
 	spy := &executionBackendSpy{called: make(chan string, 1)}
 	runner.setExecutionBackend(spy)
 	runner.StoreScript(&dsl.Script{
-		ID: "s-seq-approved", Name: "S", Protocol: "http", Version: "1.0.0",
+		ID: "s-seq-approved", ProjectID: "proj-a", Name: "S", Protocol: "http", Version: "1.0.0",
 		Config:  dsl.ScriptConfig{BaseURL: "https://example.com"},
 		Actions: []dsl.Action{{Name: "a", Type: "request", Target: "/"}},
 	})
@@ -264,7 +284,8 @@ func TestApprovedSequentialExecutionPlanBypassesProjectVUserGate(t *testing.T) {
 	}
 	startedID, ok := waitForStart(t, spy, 2*time.Second)
 	if !ok {
-		t.Fatal("approved over-quota sequential entry did not start")
+		persistedRun, _ := store.GetExecutionPlanRun(allowed.RunID)
+		t.Fatalf("approved over-quota sequential entry did not start; tests=%+v run=%+v", runner.ListTests(), persistedRun)
 	}
 	started, ok := runner.GetTest(startedID)
 	if !ok {
@@ -275,6 +296,98 @@ func TestApprovedSequentialExecutionPlanBypassesProjectVUserGate(t *testing.T) {
 	}
 	if started.ExecutionPlanApproval == nil || started.ExecutionPlanApproval.PlanContentHash == "" {
 		t.Fatalf("started test approval snapshot = %+v, want content hash", started.ExecutionPlanApproval)
+	}
+}
+
+func TestApprovedSequentialPlanRejectsScenarioChangeBeforeLaterEntry(t *testing.T) {
+	store, err := storage.NewSQLiteStore(t.TempDir() + "/approval-snapshot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Now().UTC()
+	if err := store.SaveProject(&storage.Project{ID: "proj-a", Name: "A", Settings: storage.ProjectSettings{MaxVUsers: 10}, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	runner := NewTestRunner(10, NewHub(), store)
+	backend := &approvalSnapshotBlockingBackend{started: make(chan string, 2), release: make(chan struct{})}
+	runner.setExecutionBackend(backend)
+	t.Cleanup(backend.unblock)
+	runner.StoreScript(&dsl.Script{
+		ID: "approval-snapshot-script", Name: "S", Protocol: "http", Version: "1.0.0", ProjectID: "proj-a",
+		Config: dsl.ScriptConfig{BaseURL: "https://example.com"}, Actions: []dsl.Action{{Name: "a", Type: "request", Target: "/"}},
+	})
+	makeScenario := func(name string, vusers int) *StoredScenario {
+		scenario, err := runner.StoreScenario(CreateScenarioRequest{Name: name, Duration: "5m", Groups: []CreateGroupEntry{{ScriptID: "approval-snapshot-script", VUsers: vusers}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return scenario
+	}
+	firstScenario := makeScenario("First", 100)
+	secondScenario := makeScenario("Second", 100)
+	plan := &storage.ExecutionPlan{
+		ID: "plan-approved-snapshot", ProjectID: "proj-a", Name: "Approved Snapshot", RunMode: "sequential",
+		Entries: []storage.ExecutionPlanEntry{{Order: 0, ScenarioID: firstScenario.ID}, {Order: 1, ScenarioID: secondScenario.ID}},
+	}
+	if err := store.SaveExecutionPlan(plan); err != nil {
+		t.Fatal(err)
+	}
+	blocked, err := runner.MaterializeAndRunExecutionPlan(plan, "user:alice", "Alice")
+	if err != nil || !blocked.Blocked || blocked.Approval == nil {
+		t.Fatalf("initial materialize = %+v, %v", blocked, err)
+	}
+	if _, ok, err := runner.ResolveExecutionPlanApproval(plan.ID, blocked.Approval.ID, true, "user:admin", "approved"); err != nil || !ok {
+		t.Fatalf("approve = %t, %v", ok, err)
+	}
+	started, err := runner.MaterializeAndRunExecutionPlan(plan, "user:alice", "Alice")
+	if err != nil || started.Blocked || started.RunID == "" {
+		t.Fatalf("approved materialize = %+v, %v", started, err)
+	}
+	var firstTestID string
+	select {
+	case firstTestID = <-backend.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first sequential entry did not start")
+	}
+	if _, found, err := runner.UpdateScenario(secondScenario.ID, CreateScenarioRequest{
+		Name: "Second expanded", Duration: "5m", Groups: []CreateGroupEntry{{ScriptID: "approval-snapshot-script", VUsers: 10_000}},
+	}); err != nil || !found {
+		t.Fatalf("update second scenario = %t, %v", found, err)
+	}
+	runner.mu.Lock()
+	firstTest := runner.tests[firstTestID]
+	if firstTest == nil {
+		runner.mu.Unlock()
+		t.Fatalf("first test %s disappeared", firstTestID)
+	}
+	firstTest.Status = "COMPLETE"
+	runner.mu.Unlock()
+	if err := runner.advanceExecutionPlanForTest(firstTest, "COMPLETE"); err != nil {
+		t.Fatalf("advance first entry: %v", err)
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		run, loadErr := store.GetExecutionPlanRun(started.RunID)
+		if loadErr != nil {
+			t.Fatal(loadErr)
+		}
+		if run.Status == "halted" || run.Status == "failed" {
+			if len(run.Entries) != 2 || !strings.Contains(run.Entries[1].Detail, "content changed after quota approval") {
+				t.Fatalf("terminal run = %+v", run)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("run did not reject changed scenario: %+v", run)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	select {
+	case id := <-backend.started:
+		t.Fatalf("changed second entry launched as %s", id)
+	case <-time.After(100 * time.Millisecond):
 	}
 }
 
@@ -341,7 +454,7 @@ func TestExecutionPlanScheduleRunNameTemplateNamesMaterializedTests(t *testing.T
 		t.Fatalf("SaveProject: %v", err)
 	}
 	server.runner.StoreScript(&dsl.Script{
-		ID: "script-template", Name: "Template", Protocol: "http", Version: "1.0.0",
+		ID: "script-template", Name: "Template", Protocol: "http", Version: "1.0.0", ProjectID: "proj-a",
 		Config:  dsl.ScriptConfig{BaseURL: "https://example.com"},
 		Actions: []dsl.Action{{Name: "Home", Type: "request", Target: "/"}},
 	})
@@ -561,7 +674,7 @@ func TestExecutionPlanCRUD(t *testing.T) {
 	}
 
 	upd := timeslotRequest(t, server, http.MethodPut, "/api/v1/execution-plans/"+plan.ID, map[string]any{
-		"name": "nightly-v2", "run_mode": "parallel",
+		"name": "nightly-v2", "run_mode": "parallel", "revision": plan.Revision,
 		"entries": []map[string]any{{"order": 0, "scenario_id": "scn-1"}, {"order": 1, "scenario_id": "scn-2"}},
 	})
 	if upd.Code != http.StatusOK {

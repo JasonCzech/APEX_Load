@@ -524,7 +524,7 @@ func shardVUsersForTarget(shards []GeneratorShardSummary, target string) int {
 	total := 0
 	for _, shard := range shards {
 		if shard.Target == target {
-			total += shard.VUsers
+			total = saturatingAddNonNegative(total, shard.VUsers)
 		}
 	}
 	return total

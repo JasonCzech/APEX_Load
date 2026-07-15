@@ -22,19 +22,14 @@ package api
 // secret-bearing sections (auth/proxy/TLS) added in Phase 2.
 
 import (
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/scrub"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
-
-// sensitiveEnvMarkers are case-insensitive substrings that mark a runtime Env
-// variable name as secret-bearing.
-var sensitiveEnvMarkers = []string{
-	"password", "passwd", "secret", "token",
-	"apikey", "api_key", "credential", "private_key", "client_secret",
-}
 
 const defaultManagedTestSparklinePoints = 60
 
@@ -48,13 +43,36 @@ type managedTestMaskOptions struct {
 // sensitiveEnvKey reports whether a runtime Env variable name looks secret-bearing
 // and so its value must be redacted before it leaves the server.
 func sensitiveEnvKey(name string) bool {
-	lower := strings.ToLower(name)
-	for _, marker := range sensitiveEnvMarkers {
-		if strings.Contains(lower, marker) {
+	if scrub.SensitiveName(name) {
+		return true
+	}
+	normalized := strings.NewReplacer("-", "_", ".", "_", " ", "_").Replace(strings.ToLower(strings.TrimSpace(name)))
+	// URL-shaped deployment variables frequently embed credentials while their
+	// names contain none of the traditional password/token markers. Mask these
+	// database/cache/broker DSN aliases as a class; public runtime projections do
+	// not need controller-internal connection topology even when a particular
+	// value happens to be passwordless.
+	for _, marker := range []string{
+		"database_url", "db_url", "jdbc_url", "redis_url", "cache_url",
+		"broker_url", "amqp_url", "dsn", "connection_string",
+	} {
+		if normalized == marker || strings.HasSuffix(normalized, "_"+marker) {
 			return true
 		}
 	}
 	return false
+}
+
+func sensitiveEnvValue(value string) bool {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return false
+	}
+	if scrub.Value(trimmed, scrub.Policy{}) != trimmed {
+		return true
+	}
+	parsed, err := url.Parse(trimmed)
+	return err == nil && parsed.User != nil
 }
 
 // maskRuntimeSettings returns a clone of the override with sensitive Env values
@@ -65,11 +83,13 @@ func maskRuntimeSettings(o *RuntimeSettingsOverride) *RuntimeSettingsOverride {
 	}
 	clone := cloneRuntimeSettings(o)
 	for key, value := range clone.Env {
-		if value != "" && sensitiveEnvKey(key) {
+		if value != "" && (sensitiveEnvKey(key) || sensitiveEnvValue(value)) {
 			clone.Env[key] = scrub.Redacted
 		}
 	}
+	clone.BaseURL = maskURLSecrets(clone.BaseURL)
 	maskHTTPSecrets(clone.HTTP)
+	maskBrowserSecrets(clone.BrowserConfig)
 	return clone
 }
 
@@ -91,6 +111,190 @@ func maskHTTPSecrets(http *dsl.HTTPConfig) {
 	if http.Proxy.Password != "" {
 		http.Proxy.Password = scrub.Redacted
 	}
+	http.Proxy.URL = maskURLSecrets(http.Proxy.URL)
+	policy := scrub.Policy{}
+	for name, value := range http.DefaultHeaders {
+		if value != "" && policy.SensitiveHeader(name) {
+			http.DefaultHeaders[name] = scrub.Redacted
+		}
+	}
+}
+
+func maskBrowserSecrets(browser *dsl.BrowserConfig) {
+	if browser == nil {
+		return
+	}
+	if browser.HTTPCredentials.Password != "" {
+		browser.HTTPCredentials.Password = scrub.Redacted
+	}
+	if browser.Proxy.Username != "" {
+		browser.Proxy.Username = scrub.Redacted
+	}
+	if browser.Proxy.Password != "" {
+		browser.Proxy.Password = scrub.Redacted
+	}
+	browser.Proxy.Server = maskURLSecrets(browser.Proxy.Server)
+	for index := range browser.ClientCertificates {
+		if browser.ClientCertificates[index].Passphrase != "" {
+			browser.ClientCertificates[index].Passphrase = scrub.Redacted
+		}
+	}
+}
+
+func maskURLUserinfo(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return raw
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil {
+		if strings.Contains(trimmed, "@") {
+			return scrub.Redacted
+		}
+		return raw
+	}
+	if parsed.User == nil {
+		if strings.Contains(trimmed, "@") {
+			return scrub.Redacted
+		}
+		return raw
+	}
+	parsed.User = url.User(scrub.Redacted)
+	return parsed.String()
+}
+
+// maskURLSecrets redacts both authority userinfo and credential-shaped query or
+// fragment values. Query credentials are common in generated service URLs, and
+// runtime overrides are returned to project viewers and persisted in archives.
+func maskURLSecrets(raw string) string {
+	masked := maskURLUserinfo(raw)
+	if masked == scrub.Redacted {
+		return masked
+	}
+	return scrub.ValueURL(masked, scrub.Policy{})
+}
+
+func isMaskedURLUserinfo(raw string) bool {
+	if raw == scrub.Redacted {
+		return true
+	}
+	parsed, err := parseURLWithMaskedUserinfo(strings.TrimSpace(raw))
+	return err == nil && parsed.User != nil && parsed.User.Username() == scrub.Redacted
+}
+
+// parseURLWithMaskedUserinfo accepts the display-safe raw sentinel emitted by
+// scrub.ValueURL in an authority. net/url correctly rejects raw '[' and ']'
+// inside userinfo, so encode only the authority sentinel before parsing; query
+// and fragment sentinels must remain byte-identical for component reconciliation.
+func parseURLWithMaskedUserinfo(raw string) (*url.URL, error) {
+	escapedUser := url.User(scrub.Redacted).String()
+	escapedPassword := url.UserPassword(scrub.Redacted, scrub.Redacted).String()
+	raw = strings.ReplaceAll(raw, scrub.Redacted+":"+scrub.Redacted+"@", escapedPassword+"@")
+	raw = strings.ReplaceAll(raw, scrub.Redacted+"@", escapedUser+"@")
+	return url.Parse(raw)
+}
+
+// reconcileMaskedURL restores only redacted URL components from the prior
+// stored value. Non-secret edits to the host, path, or other query parameters
+// survive an ordinary read/edit/write cycle, while an orphaned sentinel is
+// removed rather than persisted as a runnable credential.
+func reconcileMaskedURL(incoming, prior string) string {
+	if !strings.Contains(incoming, scrub.Redacted) && !isMaskedURLUserinfo(incoming) {
+		return incoming
+	}
+	if incoming == scrub.Redacted {
+		return prior
+	}
+	parsed, err := parseURLWithMaskedUserinfo(strings.TrimSpace(incoming))
+	if err != nil {
+		return prior
+	}
+	var previous *url.URL
+	if strings.TrimSpace(prior) != "" {
+		previous, err = url.Parse(strings.TrimSpace(prior))
+		if err != nil {
+			return prior
+		}
+	}
+	if parsed.User != nil && parsed.User.Username() == scrub.Redacted {
+		parsed.User = nil
+		if previous != nil {
+			parsed.User = previous.User
+		}
+	}
+	priorQuery := ""
+	priorFragment := ""
+	if previous != nil {
+		priorQuery = previous.RawQuery
+		priorFragment = previous.Fragment
+	}
+	parsed.RawQuery = reconcileMaskedURLSegment(parsed.RawQuery, priorQuery)
+	parsed.Fragment = reconcileMaskedURLSegment(parsed.Fragment, priorFragment)
+	parsed.RawFragment = ""
+	return parsed.String()
+}
+
+func reconcileMaskedURLSegment(incoming, prior string) string {
+	if !strings.Contains(incoming, scrub.Redacted) {
+		return incoming
+	}
+	priorValues := make(map[string][]string)
+	for _, part := range strings.Split(prior, "&") {
+		key, value, hasValue := strings.Cut(part, "=")
+		if !hasValue {
+			priorValues[""] = append(priorValues[""], part)
+			continue
+		}
+		priorValues[normalizedURLParamKey(key)] = append(priorValues[normalizedURLParamKey(key)], value)
+	}
+	occurrences := make(map[string]int)
+	parts := strings.Split(incoming, "&")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		key, value, hasValue := strings.Cut(part, "=")
+		lookupKey := ""
+		if hasValue {
+			lookupKey = normalizedURLParamKey(key)
+		}
+		index := occurrences[lookupKey]
+		occurrences[lookupKey] = index + 1
+		if (hasValue && value == scrub.Redacted) || (!hasValue && part == scrub.Redacted) {
+			values := priorValues[lookupKey]
+			if index >= len(values) {
+				continue
+			}
+			if hasValue {
+				out = append(out, key+"="+values[index])
+			} else {
+				out = append(out, values[index])
+			}
+			continue
+		}
+		out = append(out, part)
+	}
+	return strings.Join(out, "&")
+}
+
+func normalizedURLParamKey(raw string) string {
+	if decoded, err := url.QueryUnescape(raw); err == nil {
+		raw = decoded
+	}
+	return strings.ToLower(raw)
+}
+
+// maskRunArchiveRecord preserves portable run facts while removing controller
+// filesystem and object-store topology from viewer-facing test representations.
+func maskRunArchiveRecord(record *storage.RunArchiveRecord) *storage.RunArchiveRecord {
+	if record == nil {
+		return nil
+	}
+	masked := *record
+	masked.ArchiveBackend = ""
+	masked.ArchivePath = ""
+	masked.ManifestPath = ""
+	masked.ArchiveURI = ""
+	masked.ManifestURI = ""
+	return &masked
 }
 
 // maskStoredScenario returns a shallow copy of the scenario with root and
@@ -152,6 +356,7 @@ func maskManagedTestWithOptions(test *ManagedTest, opts managedTestMaskOptions) 
 		masked.Sparkline = nil
 	}
 	masked.RuntimeSettings = maskRuntimeSettings(test.RuntimeSettings)
+	masked.Archive = maskRunArchiveRecord(test.Archive)
 	if len(test.Groups) > 0 {
 		groups := make([]TestGroup, len(test.Groups))
 		copy(groups, test.Groups)
@@ -173,6 +378,35 @@ func maskManagedTests(tests []*ManagedTest) []*ManagedTest {
 		masked[i] = maskManagedTestWithOptions(t, managedTestMaskOptions{IncludeSparkline: true})
 	}
 	return masked
+}
+
+// maskTestGroupsRuntimeSettings clones test groups and redacts every runtime
+// secret-bearing field. Archive and manifest surfaces use this helper because
+// they serialize TestGroup directly instead of going through maskManagedTest.
+func maskTestGroupsRuntimeSettings(groups []TestGroup) []TestGroup {
+	masked := cloneArchiveTestGroups(groups)
+	for i := range masked {
+		masked[i].RuntimeSettings = maskRuntimeSettings(masked[i].RuntimeSettings)
+	}
+	return masked
+}
+
+// maskRunArchiveProvenance returns a copy safe to persist or return to readers.
+// Provenance is long-lived evidence and may be downloaded by project viewers,
+// so it must never retain runnable credentials.
+func maskRunArchiveProvenance(provenance RunArchiveProvenance) RunArchiveProvenance {
+	provenance.RuntimeSettings = maskRuntimeSettings(provenance.RuntimeSettings)
+	provenance.Groups = maskTestGroupsRuntimeSettings(provenance.Groups)
+	return provenance
+}
+
+func maskRunArchiveManifest(manifest *RunArchiveManifest) *RunArchiveManifest {
+	if manifest == nil {
+		return nil
+	}
+	masked := *manifest
+	masked.Provenance = maskRunArchiveProvenance(manifest.Provenance)
+	return &masked
 }
 
 func selectLiveMetricsHistory(history []*LiveMetrics, since *time.Time, limit int) []*LiveMetrics {
@@ -254,6 +488,18 @@ func reconcileGroupRuntimeSecrets(incoming, prior *RuntimeSettingsOverride) *Run
 		}
 		reconcileHTTPSecrets(result.HTTP, priorHTTP)
 	}
+	if result.BrowserConfig != nil {
+		var priorBrowser *dsl.BrowserConfig
+		if prior != nil {
+			priorBrowser = prior.BrowserConfig
+		}
+		reconcileBrowserSecrets(result.BrowserConfig, priorBrowser)
+	}
+	priorBaseURL := ""
+	if prior != nil {
+		priorBaseURL = prior.BaseURL
+	}
+	result.BaseURL = reconcileMaskedURL(result.BaseURL, priorBaseURL)
 	if len(result.Env) > 0 {
 		var priorEnv map[string]string
 		if prior != nil {
@@ -303,6 +549,102 @@ func reconcileHTTPSecrets(incoming, prior *dsl.HTTPConfig) {
 	if incoming.Proxy.Password == scrub.Redacted {
 		incoming.Proxy.Password = priorProxyPassword
 	}
+	priorProxyURL := ""
+	if prior != nil {
+		priorProxyURL = prior.Proxy.URL
+	}
+	incoming.Proxy.URL = reconcileMaskedURL(incoming.Proxy.URL, priorProxyURL)
+	policy := scrub.Policy{}
+	for name, value := range incoming.DefaultHeaders {
+		if !policy.SensitiveHeader(name) {
+			continue
+		}
+		switch value {
+		case scrub.Redacted:
+			if priorValue, ok := caseInsensitiveMapValue(priorDefaultHeaders(prior), name); ok {
+				incoming.DefaultHeaders[name] = priorValue
+			} else {
+				delete(incoming.DefaultHeaders, name)
+			}
+		case "":
+			delete(incoming.DefaultHeaders, name)
+		}
+	}
+	if len(incoming.DefaultHeaders) == 0 {
+		incoming.DefaultHeaders = nil
+	}
+}
+
+func priorDefaultHeaders(prior *dsl.HTTPConfig) map[string]string {
+	if prior == nil {
+		return nil
+	}
+	return prior.DefaultHeaders
+}
+
+func caseInsensitiveMapValue(values map[string]string, key string) (string, bool) {
+	for candidate, value := range values {
+		if strings.EqualFold(candidate, key) {
+			return value, true
+		}
+	}
+	return "", false
+}
+
+func reconcileBrowserSecrets(incoming, prior *dsl.BrowserConfig) {
+	if incoming == nil {
+		return
+	}
+	if incoming.HTTPCredentials.Password == scrub.Redacted {
+		incoming.HTTPCredentials.Password = ""
+		if prior != nil {
+			incoming.HTTPCredentials.Password = prior.HTTPCredentials.Password
+		}
+	}
+	if incoming.Proxy.Username == scrub.Redacted {
+		incoming.Proxy.Username = ""
+		if prior != nil {
+			incoming.Proxy.Username = prior.Proxy.Username
+		}
+	}
+	if incoming.Proxy.Password == scrub.Redacted {
+		incoming.Proxy.Password = ""
+		if prior != nil {
+			incoming.Proxy.Password = prior.Proxy.Password
+		}
+	}
+	priorProxyServer := ""
+	if prior != nil {
+		priorProxyServer = prior.Proxy.Server
+	}
+	incoming.Proxy.Server = reconcileMaskedURL(incoming.Proxy.Server, priorProxyServer)
+	for index := range incoming.ClientCertificates {
+		if incoming.ClientCertificates[index].Passphrase != scrub.Redacted {
+			continue
+		}
+		incoming.ClientCertificates[index].Passphrase = ""
+		if priorCertificate := matchingPriorBrowserCertificate(prior, incoming.ClientCertificates[index]); priorCertificate != nil {
+			incoming.ClientCertificates[index].Passphrase = priorCertificate.Passphrase
+		}
+	}
+}
+
+func matchingPriorBrowserCertificate(prior *dsl.BrowserConfig, incoming dsl.BrowserClientCertificate) *dsl.BrowserClientCertificate {
+	if prior == nil {
+		return nil
+	}
+	var match *dsl.BrowserClientCertificate
+	for index := range prior.ClientCertificates {
+		candidate := &prior.ClientCertificates[index]
+		if candidate.Origin != incoming.Origin || candidate.CertPath != incoming.CertPath || candidate.KeyPath != incoming.KeyPath || candidate.PfxPath != incoming.PfxPath {
+			continue
+		}
+		if match != nil {
+			return nil
+		}
+		match = candidate
+	}
+	return match
 }
 
 // existingRootRuntime returns the prior stored scenario-root runtime override.

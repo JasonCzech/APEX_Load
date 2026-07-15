@@ -29,9 +29,57 @@ func (s *SQLiteStore) SaveDataPool(pool *SharedDataPool) error {
 	}
 	_, err = s.db.Exec(`INSERT INTO shared_data_pools (id, name, description, schema_json, project_id, created_at, updated_at, archived_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET name=excluded.name, description=excluded.description, schema_json=excluded.schema_json, project_id=excluded.project_id, updated_at=excluded.updated_at, archived_at=excluded.archived_at`,
+		ON CONFLICT(id) DO UPDATE SET name=excluded.name, description=excluded.description, schema_json=excluded.schema_json, updated_at=excluded.updated_at, archived_at=excluded.archived_at`,
 		pool.ID, pool.Name, pool.Description, string(schemaJSON), pool.ProjectID, pool.CreatedAt, pool.UpdatedAt, pool.ArchivedAt)
 	return err
+}
+
+// UpdateDataPoolIfUnchanged updates editor-owned fields only when the durable
+// row still matches the snapshot loaded by the caller. Project ownership is an
+// immutable authorization boundary and is deliberately never rewritten.
+func (s *SQLiteStore) UpdateDataPoolIfUnchanged(pool *SharedDataPool, expectedUpdatedAt time.Time) (bool, error) {
+	if pool == nil || strings.TrimSpace(pool.ID) == "" {
+		return false, errors.New("data pool id is required")
+	}
+	if strings.TrimSpace(pool.Name) == "" {
+		return false, errors.New("data pool name is required")
+	}
+	if expectedUpdatedAt.IsZero() {
+		return false, errors.New("expected data pool updated_at is required")
+	}
+	schemaJSON, err := json.Marshal(pool.Schema)
+	if err != nil {
+		return false, fmt.Errorf("marshal data pool schema: %w", err)
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	var currentProjectID string
+	var currentUpdatedAt time.Time
+	var currentUpdatedRaw string
+	if err := tx.QueryRow(`SELECT COALESCE(project_id, ''), updated_at, CAST(updated_at AS TEXT) FROM shared_data_pools WHERE id = ?`, pool.ID).Scan(&currentProjectID, &currentUpdatedAt, &currentUpdatedRaw); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	if normalizeProjectID(currentProjectID) != normalizeProjectID(pool.ProjectID) || !currentUpdatedAt.Equal(expectedUpdatedAt) {
+		return false, nil
+	}
+	pool.ProjectID = normalizeProjectID(currentProjectID)
+	pool.UpdatedAt = time.Now()
+	result, err := tx.Exec(`UPDATE shared_data_pools SET name = ?, description = ?, schema_json = ?, archived_at = ?, updated_at = ?
+		WHERE id = ? AND CAST(updated_at AS TEXT) = ?`, pool.Name, pool.Description, string(schemaJSON), pool.ArchivedAt, pool.UpdatedAt, pool.ID, currentUpdatedRaw)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil || affected != 1 {
+		return false, err
+	}
+	return true, tx.Commit()
 }
 
 func (s *SQLiteStore) GetDataPool(id string) (*SharedDataPool, error) {
@@ -172,8 +220,69 @@ func (s *SQLiteStore) SaveDataPoolRow(row *SharedDataPoolRow) error {
 	return tx.Commit()
 }
 
+// UpdateDataPoolRowIfVersion performs an ownership-scoped optimistic update.
+// The row version is the public concurrency token; a stale editor cannot
+// silently overwrite a newer row or move it between pools.
+func (s *SQLiteStore) UpdateDataPoolRowIfVersion(poolID string, row *SharedDataPoolRow, expectedVersion int) (bool, error) {
+	if row == nil || strings.TrimSpace(row.ID) == "" {
+		return false, errors.New("data pool row id is required")
+	}
+	if strings.TrimSpace(poolID) == "" || strings.TrimSpace(row.PoolID) != strings.TrimSpace(poolID) {
+		return false, errors.New("data pool id is required")
+	}
+	if expectedVersion <= 0 {
+		return false, errors.New("expected data pool row version must be positive")
+	}
+	if row.Data == nil {
+		row.Data = map[string]string{}
+	}
+	if row.Status == "" {
+		row.Status = "active"
+	}
+	dataJSON, err := json.Marshal(row.Data)
+	if err != nil {
+		return false, fmt.Errorf("marshal data pool row: %w", err)
+	}
+	row.UpdatedAt = time.Now()
+	result, err := s.db.Exec(`UPDATE shared_data_pool_rows
+		SET data_json = ?, status = ?, version = version + 1, updated_at = ?
+		WHERE id = ? AND pool_id = ? AND version = ?`, string(dataJSON), row.Status, row.UpdatedAt, row.ID, poolID, expectedVersion)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil || affected != 1 {
+		return false, err
+	}
+	row.Version = expectedVersion + 1
+	return true, nil
+}
+
 func (s *SQLiteStore) ListDataPoolRows(poolID string) ([]*SharedDataPoolRow, error) {
-	rows, err := s.db.Query(`SELECT id, pool_id, data_json, COALESCE(status, ''), COALESCE(version, 1), created_at, updated_at FROM shared_data_pool_rows WHERE pool_id = ? ORDER BY created_at ASC`, poolID)
+	return s.listDataPoolRows(poolID, 0, 0)
+}
+
+// ListDataPoolRowsPage is the bounded API-facing projection. Internal load
+// execution keeps using ListDataPoolRows because it intentionally consumes the
+// complete pool.
+func (s *SQLiteStore) ListDataPoolRowsPage(poolID string, limit, offset int) ([]*SharedDataPoolRow, error) {
+	if limit <= 0 {
+		return []*SharedDataPoolRow{}, nil
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	return s.listDataPoolRows(poolID, limit, offset)
+}
+
+func (s *SQLiteStore) listDataPoolRows(poolID string, limit, offset int) ([]*SharedDataPoolRow, error) {
+	query := `SELECT id, pool_id, data_json, COALESCE(status, ''), COALESCE(version, 1), created_at, updated_at FROM shared_data_pool_rows WHERE pool_id = ? ORDER BY created_at ASC`
+	args := []any{poolID}
+	if limit > 0 {
+		query += ` LIMIT ? OFFSET ?`
+		args = append(args, limit, offset)
+	}
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}

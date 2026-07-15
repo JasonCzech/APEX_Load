@@ -11,6 +11,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
@@ -108,12 +109,26 @@ func (s *Server) handleUpdateCorrelationRuleset(w http.ResponseWriter, r *http.R
 	req.ID = existing.ID
 	req.ProjectID = existing.ProjectID
 	req.CreatedAt = existing.CreatedAt
+	// Source is immutable provenance, not an editor-owned field.
+	req.Source = existing.Source
 	if status, msg := validateCorrelationRuleset(&req); status != 0 {
 		writeError(w, status, msg)
 		return
 	}
-	if err := s.store.SaveCorrelationRuleset(&req); err != nil {
+	updater, supported := s.store.(interface {
+		UpdateCorrelationRulesetIfUnchanged(ruleset *storage.CorrelationRuleset, expectedUpdatedAt time.Time) (bool, error)
+	})
+	if !supported {
+		writeError(w, http.StatusNotImplemented, "optimistic correlation ruleset updates are not supported by this storage backend")
+		return
+	}
+	updated, err := updater.UpdateCorrelationRulesetIfUnchanged(&req, existing.UpdatedAt)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !updated {
+		writeError(w, http.StatusConflict, "correlation ruleset changed while the update was in flight; reload and retry")
 		return
 	}
 	s.recordAuditEvent(r, "correlation_ruleset.update", "success", "correlation_ruleset", req.ID, req.ProjectID, map[string]any{"rules": len(req.Rules)})
@@ -161,6 +176,9 @@ func (s *Server) handleDiscoverCorrelationRulesetFromScript(w http.ResponseWrite
 	stored, ok := s.runner.GetScript(scriptID)
 	if !ok || stored == nil {
 		writeError(w, http.StatusNotFound, "script not found")
+		return
+	}
+	if !requireAuthorizedProjectMatch(w, r, stored.ProjectID) {
 		return
 	}
 	record, err := s.store.GetScriptRecording(scriptID)
@@ -286,8 +304,12 @@ func (s *Server) handleApplyCorrelationRulesetToScript(w http.ResponseWriter, r 
 
 	applied := false
 	if req.Apply && len(matched) > 0 {
-		_, ok, err := s.runner.UpdateScriptDurable(scriptID, clone)
+		_, ok, err := s.runner.UpdateScriptDurableInProject(scriptID, clone, ruleset.ProjectID)
 		if err != nil {
+			if errors.Is(err, errScriptConcurrentChange) {
+				writeError(w, http.StatusConflict, err.Error())
+				return
+			}
 			writeError(w, http.StatusInternalServerError, "failed to save parameterized script: "+err.Error())
 			return
 		}

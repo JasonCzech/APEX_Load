@@ -5,10 +5,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
+)
+
+const (
+	maxSchemaRegistryResponseBytes = 64 << 10
+	maxSchemaRegistryCacheEntries  = 1024
 )
 
 // schemaRegistryClient is a minimal Confluent Schema Registry client: it
@@ -36,6 +43,9 @@ func newSchemaRegistryClient(baseURL, schema, schemaType string) *schemaRegistry
 }
 
 func (r *schemaRegistryClient) schemaID(ctx context.Context, subject string) (int32, error) {
+	if len(subject) > MaxConfiguredSubjectBytes {
+		return 0, fmt.Errorf("schema registry subject exceeds %d bytes", MaxConfiguredSubjectBytes)
+	}
 	r.mu.Lock()
 	if id, ok := r.cache[subject]; ok {
 		r.mu.Unlock()
@@ -52,8 +62,8 @@ func (r *schemaRegistryClient) schemaID(ctx context.Context, subject string) (in
 	if err != nil {
 		return 0, err
 	}
-	url := fmt.Sprintf("%s/subjects/%s/versions", r.baseURL, subject)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	endpoint := fmt.Sprintf("%s/subjects/%s/versions", r.baseURL, url.PathEscape(subject))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return 0, err
 	}
@@ -69,11 +79,28 @@ func (r *schemaRegistryClient) schemaID(ctx context.Context, subject string) (in
 	var out struct {
 		ID int32 `json:"id"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, maxSchemaRegistryResponseBytes+1))
+	if err != nil {
+		return 0, fmt.Errorf("schema registry register %q: read response: %w", subject, err)
+	}
+	if len(responseBody) > maxSchemaRegistryResponseBytes {
+		return 0, fmt.Errorf("schema registry register %q: response exceeds %d bytes", subject, maxSchemaRegistryResponseBytes)
+	}
+	if err := json.Unmarshal(responseBody, &out); err != nil {
 		return 0, fmt.Errorf("schema registry register %q: decode response: %w", subject, err)
 	}
-	r.mu.Lock()
-	r.cache[subject] = out.ID
-	r.mu.Unlock()
+	r.cacheSchemaID(subject, out.ID)
 	return out.ID, nil
+}
+
+func (r *schemaRegistryClient) cacheSchemaID(subject string, id int32) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, exists := r.cache[subject]; !exists && len(r.cache) >= maxSchemaRegistryCacheEntries {
+		// Subjects are commonly derived from data-driven topics. Resetting this
+		// inexpensive lookup cache keeps a long-lived VUser from retaining an
+		// attacker-controlled number of unique subject strings.
+		r.cache = make(map[string]int32)
+	}
+	r.cache[subject] = id
 }

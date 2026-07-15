@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -50,6 +51,11 @@ type Server struct {
 	// remotes and synchronization links within one controller. Durable CAS still
 	// provides the cross-controller fence.
 	libraryStateMutationMu sync.Mutex
+	// remoteConfigMu keeps remote transport/credential metadata stable for the
+	// full lifetime of an outbound operation. Updates/deletion take the write
+	// side so they cannot invalidate a cleanup intent created from an older
+	// credential snapshot.
+	remoteConfigMu sync.RWMutex
 	// libraryArchiveImportMu protects the staged archive swap that accompanies
 	// an external-result upsert so a failed retry cannot destroy the prior copy.
 	libraryArchiveImportMu sync.Mutex
@@ -58,9 +64,13 @@ type Server struct {
 	libraryRemotesRaw      string
 	libraryLinksRaw        string
 	libraryCreds           LibraryCredentialStore
+	remoteCleanupRetryMu   sync.Mutex
+	remoteCleanupCancel    context.CancelFunc
+	remoteCleanupDone      chan struct{}
 	c4Mu                   sync.Mutex
 	slaWaivers             map[string][]*storage.ReleaseSLAWaiver
 	resultImports          map[string]*storage.ExternalResultImport
+	resultImportBytes      int64
 	githubMu               sync.Mutex
 	githubTokens           map[string]githubCachedToken
 	// projectMutationMu prevents an acknowledged project-scoped HTTP mutation
@@ -77,8 +87,13 @@ type Server struct {
 	selfHealMu                sync.Mutex
 	collectorMetrics          *collectorMetricStore
 	fleetScaler               fleetPoolScaler
+	fleetProvisioningMu       sync.Mutex
+	fleetProvisioningActive   map[string]string
 	leadership                *executionLeadership
 	mux                       *http.ServeMux
+	backgroundMu              sync.Mutex
+	backgroundStopping        bool
+	backgroundWG              sync.WaitGroup
 	usageCancel               context.CancelFunc
 	auditRetentionCancel      context.CancelFunc
 	timeslotRetentionCancel   context.CancelFunc
@@ -104,7 +119,9 @@ type Server struct {
 	testNotesArchiveLocks     map[string]*sync.Mutex
 	metricsAddr               string
 	metricsToken              string
+	metricsServerMu           sync.Mutex
 	metricsServer             *http.Server
+	metricsServerStopped      bool
 	metricsBoundAddr          string
 	desktopMode               bool
 	bridgeMode                bool
@@ -204,8 +221,8 @@ func NewServer(cfg ServerConfig) *Server {
 		leadership.setOnLoss(func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
-			if err := runner.stopActiveTests(ctx); err != nil {
-				slog.Error("failed to stop active tests after execution leadership loss", "err", err)
+			if err := runner.teardownActiveTestsAfterLeadershipLoss(ctx); err != nil {
+				slog.Error("failed to tear down stale runtimes after execution leadership loss", "err", err)
 			}
 		})
 	}
@@ -219,33 +236,34 @@ func NewServer(cfg ServerConfig) *Server {
 	browserRecording.SetHARArtifactDir(runner.GetSystemSettings().ArchiveRetention.HARArtifactDir)
 
 	s := &Server{
-		hub:              hub,
-		runner:           runner,
-		scheduler:        newScenarioScheduler(runner),
-		browserReplay:    NewBrowserReplayManager(hub),
-		scriptDebug:      NewScriptDebugManager(hub),
-		browserRecording: browserRecording,
-		browserInstall:   newBrowserInstallState(),
-		recorder:         rec,
-		store:            cfg.Store,
-		cache:            cache,
-		controllerID:     controllerID,
-		authoring:        make(map[string]*storage.AuthoringSession),
-		libraryRemotes:   make(map[string]*LibraryRemote),
-		libraryLinks:     make(map[string]*librarySyncLink),
-		libraryCreds:     cfg.LibraryCredentials,
-		slaWaivers:       make(map[string][]*storage.ReleaseSLAWaiver),
-		resultImports:    make(map[string]*storage.ExternalResultImport),
-		githubTokens:     make(map[string]githubCachedToken),
-		collectorMetrics: newCollectorMetricStore(),
-		leadership:       leadership,
-		mux:              http.NewServeMux(),
-		desktopMode:      cfg.DesktopMode,
-		bridgeMode:       cfg.BridgeMode,
-		desktopAppData:   cfg.DesktopAppDataPath,
-		desktopLogPath:   cfg.DesktopLogPath,
-		importAssetDir:   resolveImportAssetDir(cfg),
-		bindScope:        cfg.BindScope,
+		hub:                     hub,
+		runner:                  runner,
+		scheduler:               newScenarioScheduler(runner),
+		browserReplay:           NewBrowserReplayManager(hub),
+		scriptDebug:             NewScriptDebugManager(hub),
+		browserRecording:        browserRecording,
+		browserInstall:          newBrowserInstallState(),
+		recorder:                rec,
+		store:                   cfg.Store,
+		cache:                   cache,
+		controllerID:            controllerID,
+		authoring:               make(map[string]*storage.AuthoringSession),
+		libraryRemotes:          make(map[string]*LibraryRemote),
+		libraryLinks:            make(map[string]*librarySyncLink),
+		libraryCreds:            cfg.LibraryCredentials,
+		slaWaivers:              make(map[string][]*storage.ReleaseSLAWaiver),
+		resultImports:           make(map[string]*storage.ExternalResultImport),
+		githubTokens:            make(map[string]githubCachedToken),
+		collectorMetrics:        newCollectorMetricStore(),
+		fleetProvisioningActive: make(map[string]string),
+		leadership:              leadership,
+		mux:                     http.NewServeMux(),
+		desktopMode:             cfg.DesktopMode,
+		bridgeMode:              cfg.BridgeMode,
+		desktopAppData:          cfg.DesktopAppDataPath,
+		desktopLogPath:          cfg.DesktopLogPath,
+		importAssetDir:          resolveImportAssetDir(cfg),
+		bindScope:               cfg.BindScope,
 
 		generatorDiscovery:      discovery,
 		k8sRestart:              normalizeK8sRestartSettings(cfg.K8sRestart),
@@ -289,13 +307,13 @@ func NewServer(cfg ServerConfig) *Server {
 			}
 		})
 		leadership.setOnAdmit(func() {
-			go func() {
+			s.launchBackground(func() {
 				runner.ReconcilePendingTests()
 				s.wakeArchiveFinalizationRetry()
-			}()
+			})
 		})
 	}
-	if err := fileasset.RegisterRoot(s.importAssetDir); err != nil {
+	if err := fileasset.RegisterProjectRoot(s.importAssetDir); err != nil {
 		slog.Warn("invalid import asset store; file assets will be unavailable", "dir", s.importAssetDir, "error", err)
 	}
 
@@ -1048,15 +1066,38 @@ func (s *Server) enforceAuthPosture() error {
 	return nil
 }
 
-func (s *Server) Start() error {
+func (s *Server) Start() (startErr error) {
+	// Start owns every component it launches. If any later bind or Serve step
+	// fails, tear the already-started listeners and background workers down
+	// before returning so an embedding process cannot retain a hidden metrics
+	// endpoint or orphaned janitor goroutines after a failed startup.
+	defer func() {
+		if startErr == nil {
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := s.Shutdown(ctx); err != nil {
+			startErr = errors.Join(startErr, fmt.Errorf("rollback failed server startup: %w", err))
+		}
+	}()
 	if s.bridgeMode {
 		return s.startBridge()
 	}
 	if err := s.enforceAuthPosture(); err != nil {
 		return err
 	}
+	// Import-claim recovery used to run in an untracked goroutine from
+	// NewServer. That goroutine could race an embedding caller immediately after
+	// construction and could continue using storage after Shutdown returned.
+	// Complete the bounded durable recovery before listeners and background
+	// workers start so startup owns its full lifetime.
+	if err := s.recoverExpiredLibraryImportClaims(); err != nil {
+		slog.Warn("failed to recover expired library import claims", "error", err)
+	}
+	s.startPendingRemoteRunCleanupRetry()
 	// Start websocket broadcast loop before serving HTTP requests.
-	go s.hub.Run()
+	s.launchBackground(s.hub.Run)
 	s.startReplayRetentionJanitors()
 	s.startBrowserRecordingRetentionJanitor()
 	s.startCacheFanout()
@@ -1088,7 +1129,7 @@ func (s *Server) Start() error {
 }
 
 func (s *Server) startBridge() error {
-	go s.hub.Run()
+	s.launchBackground(s.hub.Run)
 	s.startReplayRetentionJanitors()
 	s.startArchiveCleanupRetry()
 	listener, err := net.Listen("tcp", s.httpServer.Addr)
@@ -1139,7 +1180,7 @@ func (s *Server) startMetricsListener() error {
 	}
 	metricsMux := http.NewServeMux()
 	metricsMux.Handle("GET /metrics", loggingMiddleware(http.HandlerFunc(s.handlePrometheusMetricsWithAuth)))
-	s.metricsServer = &http.Server{
+	metricsServer := &http.Server{
 		Addr:         s.metricsAddr,
 		Handler:      metricsMux,
 		ReadTimeout:  15 * time.Second,
@@ -1150,15 +1191,23 @@ func (s *Server) startMetricsListener() error {
 	if err != nil {
 		return fmt.Errorf("metrics listener %s: %w", s.metricsAddr, err)
 	}
+	s.metricsServerMu.Lock()
+	if s.metricsServerStopped {
+		s.metricsServerMu.Unlock()
+		_ = listener.Close()
+		return http.ErrServerClosed
+	}
+	s.metricsServer = metricsServer
+	s.metricsServerMu.Unlock()
 	s.boundAddrMu.Lock()
 	s.metricsBoundAddr = listener.Addr().String()
 	s.boundAddrMu.Unlock()
 	slog.Info("metrics listener started", "addr", s.metricsAddr)
-	go func() {
-		if err := s.metricsServer.Serve(listener); err != nil && err != http.ErrServerClosed {
+	s.launchBackground(func() {
+		if err := metricsServer.Serve(listener); err != nil && err != http.ErrServerClosed {
 			slog.Error("metrics listener error", "err", err)
 		}
-	}()
+	})
 	return nil
 }
 
@@ -1188,6 +1237,16 @@ func (s *Server) setBoundAddr(addr string) {
 	s.boundAddrMu.Lock()
 	defer s.boundAddrMu.Unlock()
 	s.boundAddr = addr
+}
+
+func (s *Server) clearBoundAddrs() {
+	if s == nil {
+		return
+	}
+	s.boundAddrMu.Lock()
+	s.boundAddr = ""
+	s.metricsBoundAddr = ""
+	s.boundAddrMu.Unlock()
 }
 
 func (s *Server) BoundAddr() string {
@@ -1235,6 +1294,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if s.runner != nil {
 		s.runner.beginShutdown()
 	}
+	s.beginBackgroundShutdown()
 	// Stop accepting new requests first. WebSocket connections are hijacked and
 	// are closed by the hub below; ordinary in-flight handlers get the caller's
 	// bounded drain window.
@@ -1298,6 +1358,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 			s.archiveFinalizationDone = nil
 		}
 	}
+	s.stopRemoteRunCleanupRetry(ctx)
 	if s.accessReviewNotifyCancel != nil {
 		s.accessReviewNotifyCancel()
 		s.accessReviewNotifyCancel = nil
@@ -1321,6 +1382,9 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if s.hub != nil {
 		s.hub.Stop()
 	}
+	if s.runner != nil && s.runner.notifier != nil {
+		s.runner.notifier.Close()
+	}
 	if s.browserReplay != nil {
 		s.browserReplay.Close()
 	}
@@ -1336,13 +1400,68 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if s.cache != nil {
 		_ = s.cache.Close()
 	}
-	if s.metricsServer != nil {
-		if err := s.metricsServer.Shutdown(ctx); err != nil && shutdownErr == nil {
+	s.metricsServerMu.Lock()
+	s.metricsServerStopped = true
+	metricsServer := s.metricsServer
+	s.metricsServer = nil
+	s.metricsServerMu.Unlock()
+	if metricsServer != nil {
+		if err := metricsServer.Shutdown(ctx); err != nil && shutdownErr == nil {
 			shutdownErr = err
 		}
-		s.metricsServer = nil
 	}
+	if err := s.waitForBackground(ctx); err != nil && shutdownErr == nil {
+		shutdownErr = err
+	}
+	s.clearBoundAddrs()
 	return shutdownErr
+}
+
+// launchBackground starts a Server-owned goroutine and accounts for its full
+// lifetime. Once shutdown begins no new owned work is admitted, which makes the
+// WaitGroup safe to wait and prevents leadership callbacks from racing teardown.
+func (s *Server) launchBackground(run func()) bool {
+	if s == nil || run == nil {
+		return false
+	}
+	s.backgroundMu.Lock()
+	if s.backgroundStopping {
+		s.backgroundMu.Unlock()
+		return false
+	}
+	s.backgroundWG.Add(1)
+	s.backgroundMu.Unlock()
+	go func() {
+		defer s.backgroundWG.Done()
+		run()
+	}()
+	return true
+}
+
+func (s *Server) beginBackgroundShutdown() {
+	if s == nil {
+		return
+	}
+	s.backgroundMu.Lock()
+	s.backgroundStopping = true
+	s.backgroundMu.Unlock()
+}
+
+func (s *Server) waitForBackground(ctx context.Context) error {
+	if s == nil {
+		return nil
+	}
+	done := make(chan struct{})
+	go func() {
+		s.backgroundWG.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (s *Server) startCacheFanout() {
@@ -1362,7 +1481,7 @@ func (s *Server) startCacheFanout() {
 	}
 	s.fanoutCancel = cancel
 	s.fanoutSub = sub
-	go func() {
+	s.launchBackground(func() {
 		for payload := range sub.Messages() {
 			var envelope websocketFanoutEnvelope
 			if err := json.Unmarshal(payload, &envelope); err != nil {
@@ -1391,7 +1510,7 @@ func (s *Server) startCacheFanout() {
 			}
 			s.hub.broadcastLocal(broadcast)
 		}
-	}()
+	})
 }
 
 func (s *Server) startUsageAccountingSnapshotCadence() {
@@ -1400,7 +1519,7 @@ func (s *Server) startUsageAccountingSnapshotCadence() {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s.usageCancel = cancel
-	go func() {
+	s.launchBackground(func() {
 		// Poll settings at a small fixed cadence so enabling, disabling, or
 		// changing the snapshot interval takes effect without a restart.
 		ticker := time.NewTicker(time.Second)
@@ -1451,7 +1570,7 @@ func (s *Server) startUsageAccountingSnapshotCadence() {
 				lastCapture = now
 			}
 		}
-	}()
+	})
 }
 
 // generatorInventoryRefreshInterval keeps the cached fleet inventory well within
@@ -1485,7 +1604,7 @@ func (s *Server) startGeneratorInventoryRefreshCadence() {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s.generatorInventoryCancel = cancel
-	go func() {
+	s.launchBackground(func() {
 		// Prime the cache immediately so the first gate after startup sees live
 		// data, then refresh on the cadence.
 		s.refreshGeneratorInventory(ctx)
@@ -1499,7 +1618,7 @@ func (s *Server) startGeneratorInventoryRefreshCadence() {
 				s.refreshGeneratorInventory(ctx)
 			}
 		}
-	}()
+	})
 }
 
 // refreshGeneratorInventory performs one bounded, panic-safe inventory probe for
@@ -1538,7 +1657,26 @@ func (s *Server) RunExecutionLeadership(ctx context.Context) {
 	if s == nil || s.leadership == nil {
 		return
 	}
+	// A generator will not revive an expired execution generation. Keep the
+	// current durable term alive across the configured fleet even while no test
+	// is running, otherwise the first run after a long idle period would be
+	// rejected by every generator that had already observed this term.
+	var keeperDone chan struct{}
+	keeperCtx, keeperCancel := context.WithCancel(ctx)
+	if s.runner != nil {
+		if backend, ok := s.runner.getExecutionBackend().(*distributedExecutionBackend); ok {
+			keeperDone = make(chan struct{})
+			go func() {
+				defer close(keeperDone)
+				backend.maintainGeneratorExecutionEpoch(keeperCtx, s.runner)
+			}()
+		}
+	}
 	s.leadership.Run(ctx)
+	keeperCancel()
+	if keeperDone != nil {
+		<-keeperDone
+	}
 }
 
 // isExecutionLeader reports whether this replica may serve execution-mutating

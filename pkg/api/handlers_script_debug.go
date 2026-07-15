@@ -70,6 +70,9 @@ func (s *Server) handleStartScriptDebugScript(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusNotFound, "script not found")
 		return
 	}
+	if !requireAuthorizedProjectMatch(w, r, stored.ProjectID) {
+		return
+	}
 
 	var req ScriptDebugStartRequest
 	if r.Body != nil && r.ContentLength != 0 {
@@ -122,6 +125,9 @@ func (s *Server) handleStartReplaySessionScript(w http.ResponseWriter, r *http.R
 	stored, ok := s.runner.GetScript(id)
 	if !ok {
 		writeError(w, http.StatusNotFound, "script not found")
+		return
+	}
+	if !requireAuthorizedProjectMatch(w, r, stored.ProjectID) {
 		return
 	}
 

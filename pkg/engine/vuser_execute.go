@@ -22,8 +22,20 @@ func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingC
 	if result.NetworkProfile == "" && vu.Script != nil {
 		result.NetworkProfile = networkProfileLabel(vu.Script.Config.WebRuntime.NetworkSimulation)
 	}
-	vu.mergeExtractions(result)
-	scrubSensitiveResultWithOptions(result, vu.RedactionConfig, shouldRetainResultResponseBody(result, logCfg))
+	if err := vu.mergeExtractions(result); err != nil {
+		result.Success = false
+		result.Extractions = nil
+		if result.ErrorMessage == "" {
+			result.ErrorMessage = "extraction retention failed: " + err.Error()
+		} else {
+			result.ErrorMessage += "; extraction retention failed: " + err.Error()
+		}
+	}
+	retainResponseBody := shouldRetainResultResponseBody(result, logCfg)
+	scrubSensitiveStructuredResult(result, vu.RedactionConfig)
+	boundResultEvidence(result)
+	scrubSensitiveResultWithOptions(result, vu.RedactionConfig, retainResponseBody)
+	boundResultEvidence(result)
 	vu.Metrics.Record(result)
 	vu.handleSnapshot(result, errCfg)
 	if vu.ResultSink != nil {
@@ -38,6 +50,10 @@ func shouldRetainResultResponseBody(result *protocol.Result, logCfg dsl.LogConfi
 	if !result.Success || result.Snapshot != nil {
 		return true
 	}
+	return logConfigRetainsSuccessfulResponseBody(logCfg)
+}
+
+func logConfigRetainsSuccessfulResponseBody(logCfg dsl.LogConfig) bool {
 	if strings.ToLower(strings.TrimSpace(logCfg.Level)) != "extended" {
 		return false
 	}

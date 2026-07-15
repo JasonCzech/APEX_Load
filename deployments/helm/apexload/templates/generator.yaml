@@ -82,6 +82,10 @@ spec:
               value: production
             - name: APEXLOAD_GENERATOR_MAX_VUSERS
               value: {{ .Values.generator.maxVUsers | quote }}
+            - name: APEXLOAD_GENERATOR_STATE_DIR
+              value: /var/lib/apexload-generator
+            - name: APEXLOAD_ARCHIVE_DIR
+              value: /var/lib/apexload-generator/archives
             - name: APEXLOAD_GRPC_TLS_CERT
               value: /etc/apexload/grpc-tls/tls.crt
             - name: APEXLOAD_GRPC_TLS_KEY
@@ -105,9 +109,23 @@ spec:
                   name: {{ .Values.dataPlatform.configMapName }}
                   key: APEXLOAD_AZURE_KEY_VAULT_AUTH
                   optional: true
+            - name: APEXLOAD_AZURE_KEY_VAULT_ALLOWED_SECRETS
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Values.dataPlatform.configMapName }}
+                  key: APEXLOAD_AZURE_KEY_VAULT_ALLOWED_SECRETS
+                  optional: true
+            - name: APEXLOAD_AZURE_MESSAGING_ALLOWED_NAMESPACES
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Values.dataPlatform.configMapName }}
+                  key: APEXLOAD_AZURE_MESSAGING_ALLOWED_NAMESPACES
+                  optional: true
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            - name: generator-state
+              mountPath: /var/lib/apexload-generator
             - name: grpc-tls
               mountPath: /etc/apexload/grpc-tls
               readOnly: true
@@ -135,3 +153,18 @@ spec:
         - name: grpc-tls
           secret:
             secretName: {{ .Values.generator.grpcTlsSecretName }}
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  volumeClaimTemplates:
+    - metadata:
+        name: generator-state
+      spec:
+        accessModes:
+{{ toYaml .Values.generator.statePersistence.accessModes | indent 10 }}
+{{- with .Values.generator.statePersistence.storageClassName }}
+        storageClassName: {{ . | quote }}
+{{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.generator.statePersistence.size | quote }}

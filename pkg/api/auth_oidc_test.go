@@ -428,6 +428,46 @@ func TestHandleGetAuthStatusAppliesLocalOIDCAccess(t *testing.T) {
 	}
 }
 
+func TestOIDCSessionCannotTransferToReplacementUserWithReusedSubject(t *testing.T) {
+	provider := newFakeOIDCProvider(t)
+	defer provider.Close()
+	t.Setenv("APEXLOAD_OIDC_CLIENT_SECRET", "test-client-secret")
+	t.Setenv("APEXLOAD_AUTH_SESSION_SECRET", "test-session-secret")
+
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "subject-reuse.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Now().UTC()
+	original := &storage.User{ID: "original-user", Subject: "reused-subject", Active: true, CreatedAt: now, UpdatedAt: now}
+	if err := store.SaveUser(original); err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	enableOIDCAuth(t, server, provider.Issuer)
+	oldCookie := issueOIDCTestSessionCookie(t, server, original.Subject)
+
+	if err := store.DeleteUser(original.ID); err != nil {
+		t.Fatal(err)
+	}
+	replacement := &storage.User{ID: "replacement-user", Subject: original.Subject, Active: true, CreatedAt: now.Add(time.Minute), UpdatedAt: now.Add(time.Minute)}
+	if err := store.SaveUser(replacement); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveUserRoleBinding(&storage.UserRoleBinding{ID: "replacement-admin", UserID: replacement.ID, ScopeType: "global", Role: RoleSystemAdmin, CreatedAt: replacement.CreatedAt, UpdatedAt: replacement.UpdatedAt}); err != nil {
+		t.Fatal(err)
+	}
+
+	protectedReq := httptest.NewRequest(http.MethodGet, "/api/v1/system/settings", nil)
+	protectedReq.AddCookie(oldCookie)
+	protectedResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(protectedResp, protectedReq)
+	if protectedResp.Code != http.StatusUnauthorized {
+		t.Fatalf("replacement inherited prior user's session: status=%d body=%s", protectedResp.Code, protectedResp.Body.String())
+	}
+}
+
 func TestOIDCCallbackFailureIsAuditedWithoutSensitiveMaterial(t *testing.T) {
 	provider := newFakeOIDCProvider(t)
 	defer provider.Close()
@@ -533,6 +573,11 @@ func issueOIDCTestSessionCookieWithExpiry(t *testing.T, server *Server, subject 
 
 func issueOIDCTestSessionCookieForToken(t *testing.T, server *Server, session oidcSessionToken) *http.Cookie {
 	t.Helper()
+	if strings.TrimSpace(session.UserID) == "" && server.store != nil && strings.TrimSpace(session.Subject) != "" {
+		if local, err := server.store.GetUserBySubject(session.Subject); err == nil && local != nil {
+			session.UserID = local.ID
+		}
+	}
 	settings := normalizeAuthSettings(server.runner.GetSystemSettings().Auth)
 	encodedSession, err := encodeSignedCookieValue(session, strings.TrimSpace(getenvOrFatal(t, settings.SessionSecretEnvVar)))
 	if err != nil {

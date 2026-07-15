@@ -10,10 +10,13 @@ package api
 // written. Env and redaction rules are never copied across groups.
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 // ApplyRuntimeToGroupsRequest is the apply-to-groups request body.
@@ -66,7 +69,11 @@ func (s *Server) handleApplyScenarioRuntimeToGroups(w http.ResponseWriter, r *ht
 	}
 	resp, ok, err := s.runner.ApplyScenarioRuntimeToGroups(r.PathValue("id"), req)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		status := http.StatusBadRequest
+		if errors.Is(err, errScenarioConcurrentChange) {
+			status = http.StatusConflict
+		}
+		writeError(w, status, err.Error())
 		return
 	}
 	if !ok {
@@ -139,12 +146,29 @@ func (tr *TestRunner) ApplyScenarioRuntimeToGroups(id string, req ApplyRuntimeTo
 
 	updated := *stored
 	updated.Scripts = refs
-	updated.UpdatedAt = time.Now().UTC()
 
 	if tr.scenarioStore != nil {
-		if err := tr.scenarioStore.SaveScenario(storedScenarioToStorage(&updated), storedScenarioRefsToStorage(&updated)); err != nil {
+		toSave := storedScenarioToStorage(&updated)
+		scripts := storedScenarioRefsToStorage(&updated)
+		if store, ok := tr.scenarioStore.(conditionalScenarioPersistence); ok {
+			persisted, err := store.UpdateScenarioWithDataPoolBindingsIfUnchanged(
+				toSave,
+				scripts,
+				append([]storage.ScenarioDataPoolBinding(nil), stored.DataPools...),
+				stored.UpdatedAt,
+			)
+			if err != nil {
+				return nil, true, err
+			}
+			if !persisted {
+				return nil, true, errScenarioConcurrentChange
+			}
+		} else if err := tr.scenarioStore.SaveScenario(toSave, scripts); err != nil {
 			return nil, true, err
 		}
+		updated.UpdatedAt = toSave.UpdatedAt
+	} else {
+		updated.UpdatedAt = time.Now().UTC()
 	}
 	tr.scenarios[id] = &updated
 	tr.contentRevision++

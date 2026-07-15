@@ -28,7 +28,10 @@ import (
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
-const githubInstallationTokenSkew = 5 * time.Minute
+const (
+	githubInstallationTokenSkew            = 5 * time.Minute
+	githubInstallationTokenCacheMaxEntries = 1024
+)
 
 type githubCachedToken struct {
 	Token          string
@@ -126,12 +129,10 @@ func (s *Server) githubInstallationClient(ctx context.Context, settings GitHubSe
 		return nil, fmt.Errorf("github app installation id is not configured for this project")
 	}
 	cacheKey := fmt.Sprintf("%d:%s/%s", installationID, strings.ToLower(owner), strings.ToLower(repo))
-	s.githubMu.Lock()
-	if cached, ok := s.githubTokens[cacheKey]; ok && cached.Token != "" && time.Now().UTC().Before(cached.ExpiresAt.Add(-githubInstallationTokenSkew)) {
-		s.githubMu.Unlock()
+	now := time.Now().UTC()
+	if cached, ok := s.githubCachedInstallationToken(cacheKey, now); ok {
 		return newGitHubClient(settings, cached.Token, githubClientTimeout)
 	}
-	s.githubMu.Unlock()
 
 	appClient, err := s.githubAppClient(ctx, settings)
 	if err != nil {
@@ -145,10 +146,58 @@ func (s *Server) githubInstallationClient(ctx context.Context, settings GitHubSe
 	if err != nil {
 		return nil, err
 	}
-	s.githubMu.Lock()
-	s.githubTokens[cacheKey] = githubCachedToken{Token: token.Token, ExpiresAt: token.ExpiresAt, InstallationID: installationID, Repo: owner + "/" + repo}
-	s.githubMu.Unlock()
+	s.cacheGitHubInstallationToken(cacheKey, githubCachedToken{Token: token.Token, ExpiresAt: token.ExpiresAt, InstallationID: installationID, Repo: owner + "/" + repo}, time.Now().UTC())
 	return newGitHubClient(settings, token.Token, githubClientTimeout)
+}
+
+func (s *Server) githubCachedInstallationToken(cacheKey string, now time.Time) (githubCachedToken, bool) {
+	s.githubMu.Lock()
+	defer s.githubMu.Unlock()
+
+	s.pruneGitHubInstallationTokensLocked(now)
+	cached, ok := s.githubTokens[cacheKey]
+	return cached, ok
+}
+
+func (s *Server) cacheGitHubInstallationToken(cacheKey string, cached githubCachedToken, now time.Time) {
+	s.githubMu.Lock()
+	defer s.githubMu.Unlock()
+
+	s.pruneGitHubInstallationTokensLocked(now)
+	if cached.Token == "" || !now.Before(cached.ExpiresAt.Add(-githubInstallationTokenSkew)) {
+		return
+	}
+	if s.githubTokens == nil {
+		s.githubTokens = make(map[string]githubCachedToken)
+	}
+	if _, exists := s.githubTokens[cacheKey]; !exists {
+		for len(s.githubTokens) >= githubInstallationTokenCacheMaxEntries {
+			s.evictGitHubInstallationTokenLocked()
+		}
+	}
+	s.githubTokens[cacheKey] = cached
+}
+
+func (s *Server) pruneGitHubInstallationTokensLocked(now time.Time) {
+	for cacheKey, cached := range s.githubTokens {
+		if cached.Token == "" || !now.Before(cached.ExpiresAt.Add(-githubInstallationTokenSkew)) {
+			delete(s.githubTokens, cacheKey)
+		}
+	}
+}
+
+func (s *Server) evictGitHubInstallationTokenLocked() {
+	var evictKey string
+	var evictExpiry time.Time
+	for cacheKey, cached := range s.githubTokens {
+		if evictKey == "" || cached.ExpiresAt.Before(evictExpiry) || (cached.ExpiresAt.Equal(evictExpiry) && cacheKey < evictKey) {
+			evictKey = cacheKey
+			evictExpiry = cached.ExpiresAt
+		}
+	}
+	if evictKey != "" {
+		delete(s.githubTokens, evictKey)
+	}
 }
 
 func (s *Server) githubProjectPolicy(projectID string) storage.GitHubProjectPolicy {
@@ -233,6 +282,19 @@ func githubPolicyStaticPrefix(template string) string {
 }
 
 func enforceGitHubProjectPolicy(policy storage.GitHubProjectPolicy, operation, owner, repo, branch, filePath, strategy string) error {
+	if err := validateGitHubRepositoryCoordinates(owner, repo); err != nil {
+		return err
+	}
+	if strings.TrimSpace(branch) != "" {
+		if err := validateGitHubContentPath(branch, false); err != nil {
+			return fmt.Errorf("invalid github branch: %w", err)
+		}
+	}
+	if operation != "check" && strings.TrimSpace(filePath) != "" {
+		if err := validateGitHubContentPath(filePath, false); err != nil {
+			return err
+		}
+	}
 	if !policy.Enabled {
 		return nil
 	}
@@ -256,10 +318,12 @@ func enforceGitHubProjectPolicy(policy storage.GitHubProjectPolicy, operation, o
 	if !githubPolicyAllowsPattern(branch, policy.AllowedBranches, false) {
 		return fmt.Errorf("branch %s is not allowed by project policy", branch)
 	}
-	if prefix := githubPolicyStaticPrefix(policy.PathTemplate); prefix != "" {
-		normalized := strings.Trim(filePath, "/")
-		if normalized != prefix && !strings.HasPrefix(normalized, strings.TrimSuffix(prefix, "/")+"/") {
-			return fmt.Errorf("path %s is outside the project GitHub path policy", filePath)
+	if operation != "check" {
+		if prefix := githubPolicyStaticPrefix(policy.PathTemplate); prefix != "" {
+			normalized := strings.Trim(filePath, "/")
+			if normalized != prefix && !strings.HasPrefix(normalized, strings.TrimSuffix(prefix, "/")+"/") {
+				return fmt.Errorf("path %s is outside the project GitHub path policy", filePath)
+			}
 		}
 	}
 	return nil
@@ -275,9 +339,16 @@ func (s *Server) githubClientForProjectRequest(w http.ResponseWriter, r *http.Re
 	if mode == "" {
 		mode = defaultGitHubAutoMode
 	}
-	tryApp := mode == defaultGitHubAutoMode || mode == "app"
+	// App installation tokens and PATs are controller-owned credentials. They
+	// are available to project requests only when an administrator has enabled
+	// the project's repository/branch policy; otherwise a project editor could
+	// turn a broad controller credential into arbitrary GitHub access. Per-user
+	// OAuth remains available without a project policy because its authority is
+	// already bounded by the caller's own GitHub identity.
+	controllerCredentialAllowed := policy.Enabled
+	tryApp := controllerCredentialAllowed && (mode == defaultGitHubAutoMode || mode == "app")
 	tryOAuth := mode == defaultGitHubAutoMode || mode == "oauth"
-	tryPAT := mode == defaultGitHubAutoMode || mode == "pat"
+	tryPAT := controllerCredentialAllowed && (mode == defaultGitHubAutoMode || mode == "pat")
 
 	if tryApp && settings.appConfigured() && policy.AppInstallationID > 0 {
 		if client, err := s.githubInstallationClient(r.Context(), settings, policy.AppInstallationID, owner, repo); err == nil {
@@ -321,6 +392,7 @@ func (s *Server) githubTokenForConnection(ctx context.Context, settings GitHubSe
 	if err != nil {
 		return token, true
 	}
+	expectedUpdatedAt := conn.UpdatedAt
 	encAccess, err := encryptGitHubToken(next.AccessToken)
 	if err != nil {
 		return token, true
@@ -337,8 +409,31 @@ func (s *Server) githubTokenForConnection(ctx context.Context, settings GitHubSe
 		exp := time.Now().UTC().Add(time.Duration(next.ExpiresIn) * time.Second)
 		conn.ExpiresAt = &exp
 	}
-	if err := store.SaveGitHubConnection(conn); err != nil {
+	updater, supported := store.(interface {
+		UpdateGitHubConnectionIfUnchanged(conn *storage.GitHubConnection, expectedUpdatedAt time.Time) (bool, error)
+	})
+	if !supported {
+		slog.Warn("refusing refreshed GitHub OAuth token because storage lacks disconnect-safe compare-and-swap", "user_id", conn.UserID)
+		return "", false
+	}
+	updated, err := updater.UpdateGitHubConnectionIfUnchanged(conn, expectedUpdatedAt)
+	if err != nil {
 		slog.Warn("failed to persist refreshed GitHub OAuth token", "user_id", conn.UserID, "error", err)
+		return "", false
+	}
+	if !updated {
+		// A concurrent refresh may have won, or the user may have disconnected.
+		// Reloading distinguishes the safe winner from deletion without ever
+		// resurrecting the old row.
+		current, err := store.GetGitHubConnection(conn.UserID)
+		if err != nil || current == nil {
+			return "", false
+		}
+		currentToken, err := decryptGitHubToken(current.AccessTokenEnc)
+		if err != nil || strings.TrimSpace(currentToken) == "" {
+			return "", false
+		}
+		return currentToken, true
 	}
 	return next.AccessToken, true
 }
@@ -467,6 +562,9 @@ func (s *Server) handleGetProjectGitHubPolicy(w http.ResponseWriter, r *http.Req
 }
 
 func (s *Server) handleUpdateProjectGitHubPolicy(w http.ResponseWriter, r *http.Request) {
+	if !s.requireSystemAdminForGitHubPolicyMutation(w, r) {
+		return
+	}
 	project, err := s.store.GetProject(r.PathValue("id"))
 	if err != nil || project == nil {
 		writeError(w, http.StatusNotFound, "project not found")
@@ -482,8 +580,20 @@ func (s *Server) handleUpdateProjectGitHubPolicy(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := s.store.SaveProject(project); err != nil {
+	updater, supported := s.store.(interface {
+		UpdateProjectIfUnchanged(project *storage.Project, expectedUpdatedAt time.Time) (bool, error)
+	})
+	if !supported {
+		writeError(w, http.StatusNotImplemented, "optimistic project policy updates are not supported by this storage backend")
+		return
+	}
+	updated, err := updater.UpdateProjectIfUnchanged(project, project.UpdatedAt)
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to save project policy")
+		return
+	}
+	if !updated {
+		writeError(w, http.StatusConflict, "project changed while the policy update was in flight; reload and retry")
 		return
 	}
 	s.recordAuditEvent(r, "github.project_policy.update", "success", "project", project.ID, project.ID, map[string]any{"github_policy_enabled": project.Settings.GitHub.Enabled})
@@ -571,7 +681,11 @@ func (s *Server) handleListGitHubSyncJobs(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusServiceUnavailable, "github enterprise storage is unavailable")
 		return
 	}
-	jobs, err := store.ListGitHubSyncJobs(normalizeProjectID(r.URL.Query().Get("project_id")), 50)
+	projectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
+	if authorizedProjectID, scoped := authorizedProjectFromRequest(r); scoped {
+		projectID = authorizedProjectID
+	}
+	jobs, err := store.ListGitHubSyncJobs(projectID, 50)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list github sync jobs")
 		return
@@ -588,6 +702,9 @@ func (s *Server) handleGetGitHubSyncJob(w http.ResponseWriter, r *http.Request) 
 	job, err := store.GetGitHubSyncJob(r.PathValue("id"))
 	if err != nil || job == nil {
 		writeError(w, http.StatusNotFound, "github sync job not found")
+		return
+	}
+	if !requireAuthorizedProjectMatch(w, r, job.ProjectID) {
 		return
 	}
 	writeJSON(w, http.StatusOK, job)
@@ -652,7 +769,11 @@ func (s *Server) handleGitHubWebhook(w http.ResponseWriter, r *http.Request) {
 	delivery.Status = "processed"
 	linksUpdated := 0
 	if event == "push" && delivery.Owner != "" && delivery.Repo != "" {
-		linksUpdated = s.updateGitHubLinksFromWebhook(delivery.Owner, delivery.Repo, delivery.Ref, delivery.CommitSHA)
+		linksUpdated, err = s.updateGitHubLinksFromWebhook(delivery.Owner, delivery.Repo, delivery.Ref, delivery.CommitSHA)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to update github links")
+			return
+		}
 	}
 	delivery.SummaryJSON = fmt.Sprintf(`{"links_updated":%d}`, linksUpdated)
 	if err := store.SaveGitHubWebhookDelivery(delivery); err != nil {
@@ -670,28 +791,23 @@ func (s *Server) handleGitHubWebhook(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"delivery_id": deliveryID, "status": delivery.Status, "links_updated": linksUpdated})
 }
 
-func (s *Server) updateGitHubLinksFromWebhook(owner, repo, ref, commitSHA string) int {
-	// The existing link store is keyed by script id and has no list method; update
-	// visible script statuses opportunistically by checking every local script.
-	linkStore, ok := s.githubScriptLinkStore()
+type githubScriptLinkRemoteCommitStore interface {
+	UpdateGitHubScriptLinksRemoteCommit(owner, repo, branch, commitSHA string, updatedAt time.Time) (int64, error)
+}
+
+func (s *Server) updateGitHubLinksFromWebhook(owner, repo, ref, commitSHA string) (int, error) {
+	if _, ok := s.githubScriptLinkStore(); !ok {
+		return 0, nil
+	}
+	store, ok := s.store.(githubScriptLinkRemoteCommitStore)
 	if !ok {
-		return 0
+		return 0, fmt.Errorf("github link storage does not support atomic remote-commit updates")
 	}
-	branch := strings.TrimPrefix(ref, "refs/heads/")
-	count := 0
-	for _, script := range s.runner.ListScripts() {
-		link, err := linkStore.GetGitHubScriptLink(script.ID)
-		if err != nil || link == nil {
-			continue
-		}
-		if strings.EqualFold(link.Owner, owner) && strings.EqualFold(link.Repo, repo) && (branch == "" || link.Branch == branch) {
-			link.RemoteCommitSHA = commitSHA
-			if err := linkStore.SaveGitHubScriptLink(link); err == nil {
-				count++
-			}
-		}
-	}
-	return count
+	branch := strings.TrimPrefix(strings.TrimSpace(ref), "refs/heads/")
+	updated, err := store.UpdateGitHubScriptLinksRemoteCommit(
+		strings.TrimSpace(owner), strings.TrimSpace(repo), branch, strings.TrimSpace(commitSHA), time.Now().UTC(),
+	)
+	return int(updated), err
 }
 
 type githubCheckPublishRequest struct {
@@ -713,6 +829,9 @@ func (s *Server) handlePublishGitHubCheckRun(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusNotFound, "test not found")
 		return
 	}
+	if !requireAuthorizedProjectMatch(w, r, test.ProjectID) {
+		return
+	}
 	var req githubCheckPublishRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
@@ -721,6 +840,17 @@ func (s *Server) handlePublishGitHubCheckRun(w http.ResponseWriter, r *http.Requ
 	scriptID := firstNonEmpty(req.ScriptID, test.ScriptID)
 	if scriptID == "" && len(test.Groups) > 0 {
 		scriptID = test.Groups[0].ScriptID
+	}
+	if scriptID != "" {
+		scriptProjectID, found := s.githubScriptProjectID(scriptID)
+		if !found {
+			writeError(w, http.StatusBadRequest, "script not found")
+			return
+		}
+		if normalizeProjectID(scriptProjectID) != normalizeProjectID(test.ProjectID) {
+			writeError(w, http.StatusForbidden, "script does not belong to the test project")
+			return
+		}
 	}
 	linkStore, _ := s.githubScriptLinkStore()
 	if linkStore != nil && scriptID != "" {
@@ -733,6 +863,11 @@ func (s *Server) handlePublishGitHubCheckRun(w http.ResponseWriter, r *http.Requ
 	}
 	if req.Owner == "" || req.Repo == "" {
 		writeError(w, http.StatusBadRequest, "owner and repo are required")
+		return
+	}
+	policy := s.githubProjectPolicy(test.ProjectID)
+	if err := enforceGitHubProjectPolicy(policy, "check", req.Owner, req.Repo, req.Branch, "", ""); err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
 		return
 	}
 	resolved, ok := s.githubClientForProjectRequest(w, r, test.ProjectID, req.Owner, req.Repo)
@@ -804,7 +939,48 @@ func (s *Server) handleListGitHubCheckLinks(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusInternalServerError, "failed to list github check links")
 		return
 	}
+	if projectID, scoped := authorizedProjectFromRequest(r); scoped {
+		links = s.filterGitHubCheckLinksByProject(links, projectID)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"check_links": links, "count": len(links)})
+}
+
+func (s *Server) githubScriptProjectID(scriptID string) (string, bool) {
+	if s != nil && s.store != nil {
+		script, err := s.store.GetScript(strings.TrimSpace(scriptID))
+		if err == nil && script != nil {
+			return script.ProjectID, true
+		}
+		return "", false
+	}
+	if s != nil && s.runner != nil {
+		if script, ok := s.runner.GetScript(strings.TrimSpace(scriptID)); ok && script != nil {
+			return script.ProjectID, true
+		}
+	}
+	return "", false
+}
+
+func (s *Server) filterGitHubCheckLinksByProject(links []*storage.GitHubCheckLink, projectID string) []*storage.GitHubCheckLink {
+	projectID = normalizeProjectID(projectID)
+	visible := make([]*storage.GitHubCheckLink, 0, len(links))
+	for _, link := range links {
+		if link == nil {
+			continue
+		}
+		test, err := s.store.GetTest(strings.TrimSpace(link.TestID))
+		if err != nil || test == nil || normalizeProjectID(test.ProjectID) != projectID {
+			continue
+		}
+		if strings.TrimSpace(link.ScriptID) != "" {
+			script, err := s.store.GetScript(strings.TrimSpace(link.ScriptID))
+			if err != nil || script == nil || normalizeProjectID(script.ProjectID) != projectID {
+				continue
+			}
+		}
+		visible = append(visible, link)
+	}
+	return visible
 }
 
 func (s *Server) handleListGitHubWebhookDeliveries(w http.ResponseWriter, r *http.Request) {

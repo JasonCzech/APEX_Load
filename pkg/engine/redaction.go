@@ -1,15 +1,30 @@
 package engine
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"regexp"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 const redactedPayloadValue = "[REDACTED]"
+
+const (
+	// Custom redaction runs on every retained result field and therefore needs a
+	// hard runtime ceiling independent of API request limits. These limits are
+	// generous for enterprise PII policies while preventing a persisted or
+	// remotely assigned policy from multiplying per-transaction work without
+	// bound.
+	MaxRedactionRules            = 128
+	MaxRedactionRuleNameBytes    = 1 << 10
+	MaxRedactionPatternBytes     = 4 << 10
+	MaxRedactionReplacementBytes = 4 << 10
+	MaxRedactionPolicyBytes      = 256 << 10
+)
 
 type RedactionRule struct {
 	Name        string `json:"name,omitempty"`
@@ -69,6 +84,26 @@ func NewRedactionConfig(rules []RedactionRule) (*RedactionConfig, error) {
 	if len(rules) == 0 {
 		return nil, nil
 	}
+	if len(rules) > MaxRedactionRules {
+		return nil, fmt.Errorf("redaction policy exceeds %d rule limit", MaxRedactionRules)
+	}
+	totalBytes := 0
+	for i, rule := range rules {
+		if len(rule.Name) > MaxRedactionRuleNameBytes {
+			return nil, fmt.Errorf("redaction rule[%d] name exceeds %d byte limit", i, MaxRedactionRuleNameBytes)
+		}
+		if len(rule.Pattern) > MaxRedactionPatternBytes {
+			return nil, fmt.Errorf("redaction rule[%d] pattern exceeds %d byte limit", i, MaxRedactionPatternBytes)
+		}
+		if len(rule.Replacement) > MaxRedactionReplacementBytes {
+			return nil, fmt.Errorf("redaction rule[%d] replacement exceeds %d byte limit", i, MaxRedactionReplacementBytes)
+		}
+		ruleBytes := len(rule.Name) + len(rule.Pattern) + len(rule.Replacement)
+		if ruleBytes > MaxRedactionPolicyBytes-totalBytes {
+			return nil, fmt.Errorf("redaction policy exceeds %d byte limit", MaxRedactionPolicyBytes)
+		}
+		totalBytes += ruleBytes
+	}
 
 	config := &RedactionConfig{
 		Rules: make([]RedactionRule, len(rules)),
@@ -112,6 +147,7 @@ func scrubSensitiveResultWithOptions(result *protocol.Result, config *RedactionC
 		return
 	}
 
+	scrubSensitiveResultMetadata(result, config)
 	result.ErrorMessage = scrubSensitiveTextWithConfig(result.ErrorMessage, config)
 	if retainResponseBody {
 		result.ResponseBody = scrubSensitiveTextWithConfig(result.ResponseBody, config)
@@ -124,6 +160,7 @@ func scrubSensitiveResultWithOptions(result *protocol.Result, config *RedactionC
 	result.ConsoleEntries = scrubSensitiveConsoleEntries(result.ConsoleEntries, config)
 	result.NetworkEntries = scrubSensitiveNetworkEntries(result.NetworkEntries, config)
 	result.DOMSummary = scrubSensitiveDOMSummary(result.DOMSummary, config)
+	result.Extractions = scrubSensitiveExtractions(result.Extractions, config)
 	result.ProtocolEvidence = scrubSensitiveEvidenceMap(result.ProtocolEvidence, config)
 	if result.Snapshot == nil {
 		return
@@ -140,6 +177,69 @@ func scrubSensitiveResultWithOptions(result *protocol.Result, config *RedactionC
 	result.Snapshot.ConsoleEntries = scrubSensitiveConsoleEntries(result.Snapshot.ConsoleEntries, config)
 	result.Snapshot.NetworkEntries = scrubSensitiveNetworkEntries(result.Snapshot.NetworkEntries, config)
 	result.Snapshot.DOMSummary = scrubSensitiveDOMSummary(result.Snapshot.DOMSummary, config)
+}
+
+// scrubSensitiveResultMetadata covers the scalar dimensions copied into live
+// metrics and generator archives. These fields bypass response/snapshot
+// evidence handling, so leaving them untouched would let a resolved secret in
+// a correlation header, dependency label, adapter label, or imported source
+// identifier survive an otherwise valid custom redaction policy.
+func scrubSensitiveResultMetadata(result *protocol.Result, config *RedactionConfig) {
+	result.ActionName = scrubSensitiveTextWithConfig(result.ActionName, config)
+	result.Group = scrubSensitiveTextWithConfig(result.Group, config)
+	result.Region = scrubSensitiveTextWithConfig(result.Region, config)
+	result.CorrelationID = scrubSensitiveTextWithConfig(result.CorrelationID, config)
+	result.NetworkProfile = scrubSensitiveTextWithConfig(result.NetworkProfile, config)
+	result.DependencyType = scrubSensitiveTextWithConfig(result.DependencyType, config)
+	result.DependencyTarget = scrubSensitiveTextWithConfig(result.DependencyTarget, config)
+	result.SourceStepID = scrubSensitiveTextWithConfig(result.SourceStepID, config)
+	result.SourceAction = scrubSensitiveTextWithConfig(result.SourceAction, config)
+	result.SourceActionName = scrubSensitiveTextWithConfig(result.SourceActionName, config)
+	result.SourceTransaction = scrubSensitiveTextWithConfig(result.SourceTransaction, config)
+	result.SourceProfile = scrubSensitiveTextWithConfig(result.SourceProfile, config)
+
+	if result.ClientMetrics != nil {
+		result.ClientMetrics.DeviceProfile = scrubSensitiveTextWithConfig(result.ClientMetrics.DeviceProfile, config)
+		result.ClientMetrics.DevicePlatform = scrubSensitiveTextWithConfig(result.ClientMetrics.DevicePlatform, config)
+		result.ClientMetrics.DeviceTier = scrubSensitiveTextWithConfig(result.ClientMetrics.DeviceTier, config)
+		result.ClientMetrics.BrowserEngine = scrubSensitiveTextWithConfig(result.ClientMetrics.BrowserEngine, config)
+	}
+	if result.ServerTelemetry != nil {
+		result.ServerTelemetry.RequestSizeClass = scrubSensitiveTextWithConfig(result.ServerTelemetry.RequestSizeClass, config)
+		result.ServerTelemetry.ResponseSizeClass = scrubSensitiveTextWithConfig(result.ServerTelemetry.ResponseSizeClass, config)
+		result.ServerTelemetry.SOAPFaultCode = scrubSensitiveTextWithConfig(result.ServerTelemetry.SOAPFaultCode, config)
+		result.ServerTelemetry.SOAPFaultCategory = scrubSensitiveTextWithConfig(result.ServerTelemetry.SOAPFaultCategory, config)
+		result.ServerTelemetry.SOAPNamespaceConflict = scrubSensitiveTextWithConfig(result.ServerTelemetry.SOAPNamespaceConflict, config)
+		result.ServerTelemetry.PartitionID = scrubSensitiveTextWithConfig(result.ServerTelemetry.PartitionID, config)
+	}
+}
+
+// scrubSensitiveStructuredResult runs before the first bounded projection. It
+// handles key-aware extraction values and typed/heterogeneous adapter evidence
+// that the generic evidence bounder cannot otherwise preserve safely. Runtime
+// variables have already received the raw extraction values at this point.
+func scrubSensitiveStructuredResult(result *protocol.Result, config *RedactionConfig) {
+	if result == nil {
+		return
+	}
+	result.Extractions = boundedResultStringMap(result.Extractions, maxResultExtractions, maxResultExtractionBytes)
+	result.Extractions = scrubSensitiveExtractions(result.Extractions, config)
+	result.ProtocolEvidence = scrubSensitiveEvidenceMap(result.ProtocolEvidence, config)
+}
+
+func scrubSensitiveExtractions(values map[string]string, config *RedactionConfig) map[string]string {
+	if len(values) == 0 {
+		return values
+	}
+	out := make(map[string]string, len(values))
+	for key, value := range values {
+		if scrub.SensitiveName(key) {
+			out[key] = redactedPayloadValue
+			continue
+		}
+		out[key] = scrubSensitiveTextWithConfig(value, config)
+	}
+	return out
 }
 
 func scrubSensitiveNetworkEntries(entries []protocol.NetworkEntry, config *RedactionConfig) []protocol.NetworkEntry {
@@ -175,10 +275,14 @@ func scrubSensitiveEvidenceMap(input map[string]any, config *RedactionConfig) ma
 	if len(input) == 0 {
 		return input
 	}
-	for key, value := range input {
-		input[key] = scrubSensitiveEvidenceValue(value, config)
+	builtIn, _ := scrub.Structured(input, scrub.Policy{}).(map[string]any)
+	if len(builtIn) == 0 {
+		return nil
 	}
-	return input
+	for key, value := range builtIn {
+		builtIn[key] = scrubSensitiveEvidenceValue(value, config)
+	}
+	return builtIn
 }
 
 func scrubSensitiveEvidenceValue(value any, config *RedactionConfig) any {
@@ -195,7 +299,11 @@ func scrubSensitiveEvidenceValue(value any, config *RedactionConfig) any {
 	case map[string]string:
 		out := make(map[string]string, len(typed))
 		for key, value := range typed {
-			out[key] = scrubSensitiveTextWithConfig(value, config)
+			if scrub.SensitiveName(key) {
+				out[key] = redactedPayloadValue
+			} else {
+				out[key] = scrubSensitiveTextWithConfig(value, config)
+			}
 		}
 		return out
 	default:
@@ -234,6 +342,13 @@ func scrubSensitiveText(value string) string {
 	return scrubSensitiveTextWithConfig(value, nil)
 }
 
+func scrubSensitiveError(err error, config *RedactionConfig) error {
+	if err == nil {
+		return nil
+	}
+	return errors.New(scrubSensitiveTextWithConfig(err.Error(), config))
+}
+
 func scrubSensitiveTextWithConfig(value string, config *RedactionConfig) string {
 	if strings.TrimSpace(value) == "" {
 		return value
@@ -254,7 +369,7 @@ func scrubSensitiveTextWithConfig(value string, config *RedactionConfig) string 
 		}
 		return redactedPayloadValue
 	})
-	return redacted
+	return scrub.Value(redacted, scrub.Policy{})
 }
 
 func looksSensitiveToken(value string) bool {

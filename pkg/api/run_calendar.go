@@ -206,7 +206,11 @@ func clampRunCalendarRange(requestedFrom time.Time, requestedTo time.Time, now t
 	}
 	if settings.Enabled {
 		retentionDays := maxArchiveRetentionDays(settings)
-		historyFloor := now.Add(-time.Duration(retentionDays) * 24 * time.Hour).UTC()
+		retention, ok := checkedDuration(retentionDays, 24*time.Hour)
+		if !ok || retention <= 0 {
+			retention, _ = checkedDuration(defaultSystemSettings(0).ArchiveRetention.DefaultRetentionDays, 24*time.Hour)
+		}
+		historyFloor := now.Add(-retention).UTC()
 		calendarRange.HistoryFloor = &historyFloor
 		calendarRange.RetentionEnforced = true
 		if from.Before(historyFloor) {

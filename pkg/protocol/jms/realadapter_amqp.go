@@ -8,12 +8,12 @@ import (
 	"crypto/x509"
 	"fmt"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"time"
 
 	amqp "github.com/Azure/go-amqp"
+	"github.com/jasonczech/apexload/pkg/fileasset"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/protocol/messaging"
 )
@@ -27,12 +27,54 @@ func newSolaceAdapter(cfg config) brokerAdapter {
 }
 
 type solaceAMQPAdapter struct {
-	cfg       config
-	mu        sync.Mutex
-	conn      *amqp.Conn
-	session   *amqp.Session
-	senders   map[string]*amqp.Sender
-	receivers map[string]*amqp.Receiver
+	cfg            config
+	mu             sync.Mutex
+	conn           *amqp.Conn
+	session        *amqp.Session
+	senders        map[string]*amqp.Sender
+	receivers      map[string]*amqp.Receiver
+	transientLinks int
+	transientWG    sync.WaitGroup
+	closed         bool
+}
+
+const (
+	maxSolaceCachedLinks      = 128
+	maxSolaceLinkKeyBytes     = 64 << 10
+	maxSolaceTransientLinks   = 32
+	solaceSettlementTimeout   = 5 * time.Second
+	solaceCloseTimeout        = 5 * time.Second
+	solaceReplyBackoff        = 50 * time.Millisecond
+	solaceForeignReleaseLimit = 1
+	maxSolaceForeignReplies   = 64
+)
+
+type solaceReplyReceiver interface {
+	Receive(context.Context, *amqp.ReceiveOptions) (*amqp.Message, error)
+	AcceptMessage(context.Context, *amqp.Message) error
+	ReleaseMessage(context.Context, *amqp.Message) error
+}
+
+type solaceContextCloser interface {
+	Close(context.Context) error
+}
+
+func closeSolaceResource(parent context.Context, closer solaceContextCloser) error {
+	return closeSolaceResourceWithin(parent, closer, solaceCloseTimeout)
+}
+
+func closeSolaceResourceWithin(parent context.Context, closer solaceContextCloser, timeout time.Duration) error {
+	if closer == nil {
+		return nil
+	}
+	if deadline, ok := parent.Deadline(); ok {
+		if remaining := time.Until(deadline); remaining < timeout {
+			timeout = remaining
+		}
+	}
+	closeCtx, closeCancel := context.WithTimeout(context.WithoutCancel(parent), timeout)
+	defer closeCancel()
+	return closer.Close(closeCtx)
 }
 
 func (a *solaceAMQPAdapter) Publish(ctx context.Context, destination string, msg message) (message, error) {
@@ -91,7 +133,19 @@ func (a *solaceAMQPAdapter) RequestReply(ctx context.Context, requestDestination
 		return sent, message{}, err
 	}
 
+	reply, err := solaceAwaitCorrelatedReply(ctx, receiver, replyDestination, request, timeout)
+	if err != nil {
+		return sent, reply, err
+	}
+	return sent, reply, nil
+}
+
+func solaceAwaitCorrelatedReply(ctx context.Context, receiver solaceReplyReceiver, replyDestination string, request message, timeout time.Duration) (message, error) {
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
 	deadline := time.Now().Add(timeout)
+	releaseCounts := make(map[string]int)
 	for {
 		remaining := time.Until(deadline)
 		if remaining <= 0 {
@@ -103,23 +157,65 @@ func (a *solaceAMQPAdapter) RequestReply(ctx context.Context, requestDestination
 		if err != nil {
 			// Timeout/cancellation: stop waiting and report no correlated reply.
 			if ctx.Err() != nil {
-				return sent, message{}, ctx.Err()
+				return message{}, ctx.Err()
 			}
 			break
 		}
 		reply := fromAMQPMessage(replyDestination, amqpMsg)
 		if correlationMatches(request.CorrelationID, reply.CorrelationID) {
-			if err := receiver.AcceptMessage(ctx, amqpMsg); err != nil {
-				return sent, reply, fmt.Errorf("accept JMS reply from %q: %w", replyDestination, err)
+			settleCtx, settleCancel := context.WithTimeout(context.WithoutCancel(ctx), solaceSettlementTimeout)
+			err := receiver.AcceptMessage(settleCtx, amqpMsg)
+			settleCancel()
+			if err != nil {
+				return reply, fmt.Errorf("accept JMS reply from %q: %w", replyDestination, err)
 			}
-			return sent, reply, nil
+			return reply, nil
 		}
-		// Not ours: requeue so the owning VUser can claim it, then keep waiting.
-		if err := receiver.ReleaseMessage(ctx, amqpMsg); err != nil {
-			return sent, message{}, fmt.Errorf("release uncorrelated JMS reply from %q: %w", replyDestination, err)
+		key := solaceReplyMessageKey(amqpMsg)
+		if _, exists := releaseCounts[key]; !exists && len(releaseCounts) >= maxSolaceForeignReplies {
+			return message{}, fmt.Errorf("uncorrelated JMS reply budget exceeded while waiting on %q", replyDestination)
+		}
+		if releaseCounts[key] < solaceForeignReleaseLimit {
+			settleCtx, settleCancel := context.WithTimeout(context.WithoutCancel(ctx), solaceSettlementTimeout)
+			err := receiver.ReleaseMessage(settleCtx, amqpMsg)
+			settleCancel()
+			if err != nil {
+				return message{}, fmt.Errorf("release uncorrelated JMS reply from %q: %w", replyDestination, err)
+			}
+			releaseCounts[key]++
+			continue
+		}
+		// A broker may immediately redeliver the just-released queue head. Do not
+		// settle the same logical delivery repeatedly; leave the current lock alone
+		// and back off so the receiver can advance or its lock can expire.
+		sleep := solaceReplyBackoff
+		if remaining := time.Until(deadline); remaining < sleep {
+			sleep = remaining
+		}
+		if sleep > 0 {
+			select {
+			case <-ctx.Done():
+				return message{}, ctx.Err()
+			case <-time.After(sleep):
+			}
 		}
 	}
-	return sent, message{}, fmt.Errorf("no correlated JMS reply received from %q within %s", replyDestination, timeout)
+	return message{}, fmt.Errorf("no correlated JMS reply received from %q within %s", replyDestination, timeout)
+}
+
+func solaceReplyMessageKey(msg *amqp.Message) string {
+	if msg == nil {
+		return "nil"
+	}
+	if msg.Properties != nil {
+		if msg.Properties.MessageID != nil {
+			return "message_id:" + fmt.Sprint(msg.Properties.MessageID)
+		}
+		if msg.Properties.CorrelationID != nil {
+			return "correlation:" + fmt.Sprint(msg.Properties.CorrelationID)
+		}
+	}
+	return fmt.Sprintf("delivery:%p", msg)
 }
 
 // correlationMatches reports whether an observed reply correlation id satisfies a
@@ -139,33 +235,76 @@ func (a *solaceAMQPAdapter) HealthCheck(ctx context.Context) error {
 
 func (a *solaceAMQPAdapter) Teardown(ctx context.Context) error {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-	var firstErr error
-	for _, sender := range a.senders {
-		if err := sender.Close(ctx); err != nil && firstErr == nil {
-			firstErr = err
-		}
+	if a.closed {
+		a.mu.Unlock()
+		return nil
 	}
-	for _, receiver := range a.receivers {
-		if err := receiver.Close(ctx); err != nil && firstErr == nil {
-			firstErr = err
-		}
-	}
-	if a.session != nil {
-		if err := a.session.Close(ctx); err != nil && firstErr == nil {
-			firstErr = err
-		}
-	}
-	if a.conn != nil {
-		if err := a.conn.Close(); err != nil && firstErr == nil {
-			firstErr = err
-		}
-	}
+	a.closed = true
+	senders := a.senders
+	receivers := a.receivers
+	session := a.session
+	conn := a.conn
 	a.conn = nil
 	a.session = nil
 	a.senders = make(map[string]*amqp.Sender)
 	a.receivers = make(map[string]*amqp.Receiver)
+	a.mu.Unlock()
+
+	closeCtx, closeCancel := context.WithTimeout(context.WithoutCancel(ctx), solaceCloseTimeout)
+	defer closeCancel()
+	transientDone := make(chan struct{})
+	go func() {
+		a.transientWG.Wait()
+		close(transientDone)
+	}()
+	select {
+	case <-transientDone:
+	case <-closeCtx.Done():
+	}
+	var firstErr error
+	for _, sender := range senders {
+		if sender != nil {
+			if err := closeSolaceResource(closeCtx, sender); err != nil && firstErr == nil {
+				firstErr = err
+			}
+		}
+	}
+	for _, receiver := range receivers {
+		if receiver != nil {
+			if err := closeSolaceResource(closeCtx, receiver); err != nil && firstErr == nil {
+				firstErr = err
+			}
+		}
+	}
+	if session != nil {
+		if err := closeSolaceResource(closeCtx, session); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	if conn != nil {
+		if err := conn.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
 	return firstErr
+}
+
+func (a *solaceAMQPAdapter) cachedLinkAdmissionErrorLocked(key string) error {
+	if a.closed {
+		return fmt.Errorf("Solace AMQP adapter is closed")
+	}
+	count := len(a.senders) + len(a.receivers)
+	keyBytes := 0
+	for existing := range a.senders {
+		keyBytes += len(existing)
+	}
+	for existing := range a.receivers {
+		keyBytes += len(existing)
+	}
+	if count >= maxSolaceCachedLinks || len(key) > maxSolaceLinkKeyBytes-keyBytes {
+		return fmt.Errorf("Solace AMQP cached link capacity exceeded (%d handles, %d key bytes)", maxSolaceCachedLinks, maxSolaceLinkKeyBytes)
+	}
+	return nil
 }
 
 func (a *solaceAMQPAdapter) sender(ctx context.Context, destination string) (*amqp.Sender, error) {
@@ -173,6 +312,9 @@ func (a *solaceAMQPAdapter) sender(ctx context.Context, destination string) (*am
 	defer a.mu.Unlock()
 	if sender := a.senders[destination]; sender != nil {
 		return sender, nil
+	}
+	if err := a.cachedLinkAdmissionErrorLocked(destination); err != nil {
+		return nil, err
 	}
 	session, err := a.handleLocked(ctx)
 	if err != nil {
@@ -192,6 +334,9 @@ func (a *solaceAMQPAdapter) receiver(ctx context.Context, destination string) (*
 	if receiver := a.receivers[destination]; receiver != nil {
 		return receiver, nil
 	}
+	if err := a.cachedLinkAdmissionErrorLocked(destination); err != nil {
+		return nil, err
+	}
 	session, err := a.handleLocked(ctx)
 	if err != nil {
 		return nil, err
@@ -209,25 +354,58 @@ func (a *solaceAMQPAdapter) receiver(ctx context.Context, destination string) (*
 // parameterized selector produces a distinct filter string per VUser iteration,
 // so caching one link per string would leak broker links across a load test.
 // The caller must Close the receiver.
-func (a *solaceAMQPAdapter) openReceiver(ctx context.Context, destination string, opts *amqp.ReceiverOptions) (*amqp.Receiver, error) {
+func (a *solaceAMQPAdapter) openReceiver(ctx context.Context, destination string, opts *amqp.ReceiverOptions) (*amqp.Receiver, func() error, error) {
+	a.mu.Lock()
+	if a.closed {
+		a.mu.Unlock()
+		return nil, nil, fmt.Errorf("Solace AMQP adapter is closed")
+	}
+	if a.transientLinks >= maxSolaceTransientLinks {
+		a.mu.Unlock()
+		return nil, nil, fmt.Errorf("Solace AMQP transient link capacity exceeded (%d)", maxSolaceTransientLinks)
+	}
+	a.transientLinks++
+	a.transientWG.Add(1)
+	a.mu.Unlock()
+	releaseReservation := func() {
+		a.mu.Lock()
+		a.transientLinks--
+		a.mu.Unlock()
+		a.transientWG.Done()
+	}
 	session, err := a.handle(ctx)
 	if err != nil {
-		return nil, err
+		releaseReservation()
+		return nil, nil, err
 	}
-	return session.NewReceiver(ctx, destination, opts)
+	receiver, err := session.NewReceiver(ctx, destination, opts)
+	if err != nil {
+		releaseReservation()
+		return nil, nil, err
+	}
+	var once sync.Once
+	closeLink := func() error {
+		var closeErr error
+		once.Do(func() {
+			closeErr = closeSolaceResource(context.Background(), receiver)
+			releaseReservation()
+		})
+		return closeErr
+	}
+	return receiver, closeLink, nil
 }
 
 // ConsumeSelective consumes the next message matching a JMS selector via a
 // server-side AMQP selector-filter link (P2.3). The link is opened per call and
 // closed on return (selectors are often parameterized; a per-string cache leaks).
 func (a *solaceAMQPAdapter) ConsumeSelective(ctx context.Context, destination, selector string, timeout time.Duration) (message, error) {
-	receiver, err := a.openReceiver(ctx, destination, &amqp.ReceiverOptions{
+	receiver, closeReceiver, err := a.openReceiver(ctx, destination, &amqp.ReceiverOptions{
 		Filters: []amqp.LinkFilter{amqp.NewSelectorFilter(selector)},
 	})
 	if err != nil {
 		return message{}, err
 	}
-	defer receiver.Close(context.Background())
+	defer func() { _ = closeReceiver() }()
 	receiveCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	msg, err := receiver.Receive(receiveCtx, nil)
@@ -249,11 +427,11 @@ func (a *solaceAMQPAdapter) Browse(ctx context.Context, destination, selector st
 	if selector != "" {
 		opts.Filters = []amqp.LinkFilter{amqp.NewSelectorFilter(selector)}
 	}
-	receiver, err := a.openReceiver(ctx, destination, opts)
+	receiver, closeReceiver, err := a.openReceiver(ctx, destination, opts)
 	if err != nil {
 		return nil, err
 	}
-	defer receiver.Close(context.Background())
+	defer func() { _ = closeReceiver() }()
 	if max <= 0 {
 		max = 10
 	}
@@ -293,11 +471,11 @@ func (a *solaceAMQPAdapter) ConsumeTopic(ctx context.Context, topic, subscriptio
 	if selector != "" {
 		opts.Filters = []amqp.LinkFilter{amqp.NewSelectorFilter(selector)}
 	}
-	receiver, err := a.openReceiver(ctx, topic, opts)
+	receiver, closeReceiver, err := a.openReceiver(ctx, topic, opts)
 	if err != nil {
 		return message{}, err
 	}
-	defer receiver.Close(context.Background())
+	defer func() { _ = closeReceiver() }()
 	receiveCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	msg, err := receiver.Receive(receiveCtx, nil)
@@ -317,11 +495,11 @@ func (a *solaceAMQPAdapter) BrowseTopic(ctx context.Context, topic, subscription
 	if selector != "" {
 		opts.Filters = []amqp.LinkFilter{amqp.NewSelectorFilter(selector)}
 	}
-	receiver, err := a.openReceiver(ctx, topic, opts)
+	receiver, closeReceiver, err := a.openReceiver(ctx, topic, opts)
 	if err != nil {
 		return nil, err
 	}
-	defer receiver.Close(context.Background())
+	defer func() { _ = closeReceiver() }()
 	if max <= 0 {
 		max = 10
 	}
@@ -346,6 +524,9 @@ func (a *solaceAMQPAdapter) handle(ctx context.Context) (*amqp.Session, error) {
 }
 
 func (a *solaceAMQPAdapter) handleLocked(ctx context.Context) (*amqp.Session, error) {
+	if a.closed {
+		return nil, fmt.Errorf("Solace AMQP adapter is closed")
+	}
 	if a.session != nil {
 		return a.session, nil
 	}
@@ -360,6 +541,7 @@ func (a *solaceAMQPAdapter) handleLocked(ctx context.Context) (*amqp.Session, er
 	if strings.EqualFold(brokerURL.Scheme, "amqps") || strings.EqualFold(brokerURL.Scheme, "amqp+ssl") || a.cfg.TLS.InsecureSkipVerify {
 		tlsConfig := &tls.Config{
 			ServerName:         brokerURL.Hostname(),
+			MinVersion:         tls.VersionTLS12,
 			InsecureSkipVerify: a.cfg.TLS.InsecureSkipVerify, //nolint:gosec // operator-controlled adapter knob
 		}
 		rootCAs, err := buildTLSRootCAs(a.cfg.TLS.CACertSecret, a.cfg.TLS.TrustStoreRef)
@@ -432,9 +614,12 @@ func buildTLSRootCAs(caCertSecret string, trustStoreRef string) (*x509.CertPool,
 
 	var pemBytes []byte
 	if strings.Contains(caCertSecret, "BEGIN CERTIFICATE") {
+		if int64(len(caCertSecret)) > fileasset.MaxCredentialBytes {
+			return nil, fmt.Errorf("JMS TLS CA cert exceeds %d byte limit", fileasset.MaxCredentialBytes)
+		}
 		pemBytes = []byte(caCertSecret)
 	} else {
-		raw, err := os.ReadFile(caCertSecret)
+		raw, err := fileasset.ReadCredential(caCertSecret)
 		if err != nil {
 			return nil, fmt.Errorf("read JMS TLS CA cert file %q: %w", caCertSecret, err)
 		}

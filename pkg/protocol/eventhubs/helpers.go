@@ -2,27 +2,58 @@ package eventhubs
 
 import (
 	"fmt"
+	"math"
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/internal/boundedcache"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
-var extractorRegexCache sync.Map // map[string]*regexp.Regexp
+func boundedInteger(value any, fallback, minimum, maximum int) (int, error) {
+	if value == nil {
+		return fallback, nil
+	}
+	var parsed int64
+	switch typed := value.(type) {
+	case int:
+		parsed = int64(typed)
+	case int64:
+		parsed = typed
+	case float64:
+		if math.IsNaN(typed) || math.IsInf(typed, 0) || math.Trunc(typed) != typed || typed < math.MinInt64 || typed >= math.MaxInt64 {
+			return 0, fmt.Errorf("must be an integer between %d and %d", minimum, maximum)
+		}
+		parsed = int64(typed)
+	case string:
+		converted, err := strconv.ParseInt(strings.TrimSpace(typed), 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("must be an integer between %d and %d", minimum, maximum)
+		}
+		parsed = converted
+	default:
+		return 0, fmt.Errorf("must be an integer between %d and %d", minimum, maximum)
+	}
+	if parsed < int64(minimum) || parsed > int64(maximum) {
+		return 0, fmt.Errorf("must be an integer between %d and %d", minimum, maximum)
+	}
+	return int(parsed), nil
+}
+
+var extractorRegexCache = boundedcache.NewStringCache[*regexp.Regexp](0, 0, 0)
 
 func compileExtractorRegex(expr string) (*regexp.Regexp, error) {
 	if cached, ok := extractorRegexCache.Load(expr); ok {
-		return cached.(*regexp.Regexp), nil
+		return cached, nil
 	}
 	re, err := regexp.Compile(expr)
 	if err != nil {
 		return nil, err
 	}
 	actual, _ := extractorRegexCache.LoadOrStore(expr, re)
-	return actual.(*regexp.Regexp), nil
+	return actual, nil
 }
 
 // ---- config / param value helpers ----

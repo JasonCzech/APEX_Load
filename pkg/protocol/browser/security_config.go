@@ -6,7 +6,13 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/fileasset"
 	playwright "github.com/playwright-community/playwright-go"
+)
+
+const (
+	maxBrowserClientCertificates     = 16
+	maxBrowserClientCertificateBytes = 8 << 20
 )
 
 func browserHTTPCredentialsFromConfig(config map[string]any) *playwright.HttpCredentials {
@@ -139,6 +145,9 @@ func validateBrowserProxy(proxy *playwright.Proxy) error {
 }
 
 func validateBrowserClientCertificates(certificates []playwright.ClientCertificate) error {
+	if len(certificates) > maxBrowserClientCertificates {
+		return fmt.Errorf("browser client certificates exceed %d entry limit", maxBrowserClientCertificates)
+	}
 	for i, certificate := range certificates {
 		label := fmt.Sprintf("browser client certificate %d", i)
 		if !validBrowserOrigin(certificate.Origin, true) {
@@ -146,6 +155,9 @@ func validateBrowserClientCertificates(certificates []playwright.ClientCertifica
 		}
 		hasPEM := certificate.CertPath != nil || len(certificate.Cert) > 0 || certificate.KeyPath != nil || len(certificate.Key) > 0
 		hasPFX := certificate.PfxPath != nil || len(certificate.Pfx) > 0
+		if certificate.CertPath != nil && len(certificate.Cert) > 0 || certificate.KeyPath != nil && len(certificate.Key) > 0 || certificate.PfxPath != nil && len(certificate.Pfx) > 0 {
+			return fmt.Errorf("%s cannot combine a material path with inline bytes for the same field", label)
+		}
 		if hasPEM && hasPFX {
 			return fmt.Errorf("%s must use either cert/key or pfx, not both", label)
 		}
@@ -156,6 +168,39 @@ func validateBrowserClientCertificates(certificates []playwright.ClientCertifica
 		hasKey := certificate.KeyPath != nil || len(certificate.Key) > 0
 		if !hasCert || !hasKey {
 			return fmt.Errorf("%s requires cert_path and key_path, or pfx_path", label)
+		}
+	}
+	return nil
+}
+
+func materializeBrowserClientCertificates(certificates []playwright.ClientCertificate) error {
+	totalBytes := int64(0)
+	for i := range certificates {
+		certificate := &certificates[i]
+		for _, material := range []struct {
+			label  string
+			path   **string
+			inline *[]byte
+		}{
+			{label: "certificate", path: &certificate.CertPath, inline: &certificate.Cert},
+			{label: "key", path: &certificate.KeyPath, inline: &certificate.Key},
+			{label: "pfx", path: &certificate.PfxPath, inline: &certificate.Pfx},
+		} {
+			if *material.path != nil {
+				data, err := fileasset.ReadCredential(**material.path)
+				if err != nil {
+					return fmt.Errorf("browser client certificate %d %s: %w", i, material.label, err)
+				}
+				*material.inline = data
+				*material.path = nil
+			}
+			if int64(len(*material.inline)) > fileasset.MaxCredentialBytes {
+				return fmt.Errorf("browser client certificate %d %s exceeds %d byte limit", i, material.label, fileasset.MaxCredentialBytes)
+			}
+			if int64(len(*material.inline)) > maxBrowserClientCertificateBytes-totalBytes {
+				return fmt.Errorf("browser client certificate material exceeds %d byte aggregate limit", maxBrowserClientCertificateBytes)
+			}
+			totalBytes += int64(len(*material.inline))
 		}
 	}
 	return nil

@@ -3,6 +3,7 @@ package browser
 import (
 	"fmt"
 	"testing"
+	"time"
 )
 
 func TestNormalizeDownloadFilterHosts(t *testing.T) {
@@ -22,6 +23,24 @@ func TestNormalizeDownloadFilterHosts(t *testing.T) {
 		if hosts[idx] != expected {
 			t.Fatalf("normalizeDownloadFilterHosts[%d] = %q, want %q", idx, hosts[idx], expected)
 		}
+	}
+}
+
+func TestRouteNetworkLatencyWaitIsCanceledByBrowserShutdown(t *testing.T) {
+	b := &Browser{
+		networkLatencyMS:  60_000,
+		requestPolicyStop: make(chan struct{}),
+	}
+	done := make(chan bool, 1)
+	go func() { done <- b.waitRouteNetworkLatency() }()
+	b.stopRequestPolicyWaiters()
+	select {
+	case continued := <-done:
+		if continued {
+			t.Fatal("latency wait continued after browser shutdown")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("latency wait was not canceled by browser shutdown")
 	}
 }
 

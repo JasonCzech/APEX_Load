@@ -13,6 +13,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/config"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/storage"
 	local "github.com/xitongsys/parquet-go-source/local"
@@ -141,6 +142,8 @@ type archiveRecorder struct {
 	resourceEncoder *json.Encoder
 	summaryEncoder  *json.Encoder
 	byteBudget      *generatorArchiveByteBudget
+	recordErr       error
+	failureSignaled bool
 	closed          bool
 }
 
@@ -415,7 +418,23 @@ func newArchiveRecorderInNamespace(namespace *generatorArchiveNamespace, testID 
 		return nil, fmt.Errorf("generator archive namespace is unavailable")
 	}
 	_, existingErr := namespace.root.Lstat(testID)
-	createdRun := os.IsNotExist(existingErr)
+	if existingErr == nil {
+		// No indexed completed archive may reach recorder creation (AssignWork
+		// rejects those IDs). What remains is a crash orphan. Remove the complete
+		// identity-pinned directory before reuse so unknown stale artifacts cannot
+		// survive into, or be downloaded from, the replacement run.
+		staleRoot, staleIdentity, openErr := openGeneratorArchiveRun(namespace, testID, false)
+		if openErr != nil {
+			return nil, fmt.Errorf("open stale archive dir: %w", openErr)
+		}
+		_ = staleRoot.Close()
+		if removeErr := removeGeneratorArchiveRun(namespace, testID, staleIdentity); removeErr != nil {
+			return nil, fmt.Errorf("remove stale archive dir: %w", removeErr)
+		}
+	} else if !os.IsNotExist(existingErr) {
+		return nil, fmt.Errorf("inspect archive dir: %w", existingErr)
+	}
+	createdRun := true
 	runRoot, runIdentity, err := openGeneratorArchiveRun(namespace, testID, true)
 	if err != nil {
 		return nil, fmt.Errorf("create archive dir: %w", err)
@@ -481,7 +500,7 @@ func newArchiveRecorderInNamespace(namespace *generatorArchiveNamespace, testID 
 		manifest: archiveManifest{
 			SchemaVersion:                archiveSchemaVersion,
 			TestID:                       testID,
-			TestName:                     testName,
+			TestName:                     truncateSnapshotField(testName, 512),
 			CreatedAt:                    time.Now(),
 			TransactionsFile:             "transactions.jsonl",
 			TransactionsParquetFile:      "transactions.parquet",
@@ -578,9 +597,59 @@ func (w *archiveRecorder) Discard() error {
 	return cleanup.run()
 }
 
+// removeFinalizedRun removes a recorder's identity-pinned run even after
+// Finalize has closed its descriptors. It is used only when durable files were
+// produced but registration in the service archive index failed; leaving that
+// directory untracked would let a same-ID retry overwrite evidence in place.
+func (w *archiveRecorder) removeFinalizedRun() error {
+	if w == nil {
+		return nil
+	}
+	w.mu.Lock()
+	namespace := w.namespace
+	runName := w.runName
+	runIdentity := w.runIdentity
+	w.mu.Unlock()
+	if namespace == nil || strings.TrimSpace(namespace.path) == "" || runName == "" || runIdentity == nil {
+		return nil
+	}
+	if namespace.root != nil {
+		err := removeGeneratorArchiveRun(namespace, runName, runIdentity)
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	canonicalPath, root, err := openCanonicalArchiveDirectory(namespace.path, false)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	defer root.Close()
+	if filepath.Clean(canonicalPath) != filepath.Clean(namespace.path) {
+		return fmt.Errorf("generator archive namespace changed after finalization")
+	}
+	reopened := &generatorArchiveNamespace{path: canonicalPath, root: root}
+	err = removeGeneratorArchiveRun(reopened, runName, runIdentity)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	return err
+}
+
+const (
+	maxGeneratorArchiveNamespaceBytes = 255
+	maxGeneratorArchiveArtifactBytes  = 4 << 10
+)
+
 func validateArchiveTestID(testID string) error {
 	if testID == "" {
 		return fmt.Errorf("test id is empty")
+	}
+	if len(testID) > maxGeneratorArchiveNamespaceBytes {
+		return fmt.Errorf("test id exceeds %d bytes", maxGeneratorArchiveNamespaceBytes)
 	}
 	if testID != strings.TrimSpace(testID) || strings.ContainsRune(testID, 0) || strings.ContainsAny(testID, `/\\`) {
 		return fmt.Errorf("test id contains a path separator")
@@ -605,12 +674,15 @@ func (w *archiveRecorder) RecordResult(result *protocol.Result) error {
 	if w.closed || w.txEncoder == nil {
 		return fmt.Errorf("generator archive recorder is closed")
 	}
+	if w.recordErr != nil {
+		return w.recordErr
+	}
 	event := archiveTransactionEvent{
 		Timestamp:      result.StartTime,
 		TestID:         w.manifest.TestID,
 		TestName:       w.manifest.TestName,
-		Group:          result.Group,
-		ActionName:     result.ActionName,
+		Group:          truncateSnapshotField(result.Group, 512),
+		ActionName:     truncateSnapshotField(result.ActionName, 512),
 		DurationMs:     durationMillis(result.Duration),
 		DNSMs:          durationMillis(result.DNSTime),
 		ConnectMs:      durationMillis(result.ConnectTime),
@@ -620,17 +692,58 @@ func (w *archiveRecorder) RecordResult(result *protocol.Result) error {
 		BytesReceived:  result.BytesReceived,
 		StatusCode:     result.StatusCode,
 		Success:        result.Success,
-		ErrorMessage:   result.ErrorMessage,
-		NetworkProfile: result.NetworkProfile,
-		ClientMetrics:  result.ClientMetrics,
-		Extractions:    result.Extractions,
-		Snapshot:       result.Snapshot,
+		ErrorMessage:   truncateSnapshotField(result.ErrorMessage, 16<<10),
+		NetworkProfile: truncateSnapshotField(result.NetworkProfile, 512),
+		ClientMetrics:  cloneArchiveClientMetrics(result.ClientMetrics),
+		Extractions:    boundedArchiveExtractions(result.Extractions),
+		Snapshot:       engine.BoundErrorSnapshot(result.Snapshot, 1<<20),
 	}
 	if err := w.txEncoder.Encode(event); err != nil {
-		return err
+		w.recordErr = fmt.Errorf("record transaction: %w", err)
+		return w.recordErr
 	}
 	w.manifest.TransactionCount++
 	return nil
+}
+
+func cloneArchiveClientMetrics(metrics *protocol.ClientMetrics) *protocol.ClientMetrics {
+	if metrics == nil {
+		return nil
+	}
+	cloned := *metrics
+	cloned.DeviceProfile = truncateSnapshotField(cloned.DeviceProfile, 512)
+	cloned.DevicePlatform = truncateSnapshotField(cloned.DevicePlatform, 512)
+	cloned.DeviceTier = truncateSnapshotField(cloned.DeviceTier, 512)
+	cloned.BrowserEngine = truncateSnapshotField(cloned.BrowserEngine, 512)
+	return &cloned
+}
+
+func boundedArchiveExtractions(values map[string]string) map[string]string {
+	const (
+		maxEntries = 256
+		maxBytes   = 64 << 10
+	)
+	if len(values) == 0 {
+		return nil
+	}
+	out := make(map[string]string, min(len(values), maxEntries))
+	remaining := maxBytes
+	for _, originalKey := range boundedtext.SmallestStringKeys(values, maxEntries) {
+		if len(out) >= maxEntries || remaining <= 0 {
+			break
+		}
+		key := originalKey
+		value := values[originalKey]
+		key = truncateSnapshotField(key, min(4<<10, remaining))
+		remaining -= len(key)
+		if key == "" || remaining <= 0 {
+			continue
+		}
+		value = truncateSnapshotField(value, min(16<<10, remaining))
+		remaining -= len(value)
+		out[key] = value
+	}
+	return out
 }
 
 func (w *archiveRecorder) RecordResourceSample(timestamp time.Time, activeVUsers int64, resources *engine.SystemResources) error {
@@ -641,6 +754,9 @@ func (w *archiveRecorder) RecordResourceSample(timestamp time.Time, activeVUsers
 	defer w.mu.Unlock()
 	if w.closed || w.resourceEncoder == nil {
 		return fmt.Errorf("generator archive recorder is closed")
+	}
+	if w.recordErr != nil {
+		return w.recordErr
 	}
 	record := archiveResourceSample{
 		Timestamp:                         timestamp,
@@ -685,7 +801,8 @@ func (w *archiveRecorder) RecordResourceSample(timestamp time.Time, activeVUsers
 		DiskIOTimePct:                     resources.DiskIOTimePct,
 	}
 	if err := w.resourceEncoder.Encode(record); err != nil {
-		return err
+		w.recordErr = fmt.Errorf("record resource sample: %w", err)
+		return w.recordErr
 	}
 	w.manifest.ResourceSampleCount++
 	return nil
@@ -697,10 +814,14 @@ func (w *archiveRecorder) RecordIntervalSummary(summary archiveIntervalSummary) 
 	if w.closed || w.summaryEncoder == nil {
 		return fmt.Errorf("generator archive recorder is closed")
 	}
+	if w.recordErr != nil {
+		return w.recordErr
+	}
 	summary.TestID = w.manifest.TestID
 	summary.TestName = w.manifest.TestName
 	if err := w.summaryEncoder.Encode(summary); err != nil {
-		return err
+		w.recordErr = fmt.Errorf("record interval summary: %w", err)
+		return w.recordErr
 	}
 	w.manifest.IntervalSummaryCount++
 	return nil
@@ -727,6 +848,9 @@ func (w *archiveRecorder) Finalize(status string, completedAt time.Time, errStr 
 			err = errors.Join(err, fmt.Errorf("discard failed generator archive: %w", cleanupErr))
 		}
 	}()
+	if w.recordErr != nil {
+		return nil, fmt.Errorf("generator archive recording failed: %w", w.recordErr)
+	}
 	w.manifest.Status = status
 	w.manifest.CompletedAt = completedAt
 	w.manifest.Error = errStr
@@ -804,6 +928,23 @@ func (w *archiveRecorder) Finalize(status string, completedAt time.Time, errStr 
 	w.closed = true
 	cleanupOnError = false
 	return record, nil
+}
+
+// claimRecordingFailure returns the first asynchronous write failure once.
+// Result sinks are intentionally non-blocking and the engine does not consume
+// their returned errors, so the metrics publisher uses this edge-trigger to
+// fail and cancel the run instead of continuing to generate unarchived load.
+func (w *archiveRecorder) claimRecordingFailure() error {
+	if w == nil {
+		return nil
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.recordErr == nil || w.failureSignaled {
+		return nil
+	}
+	w.failureSignaled = true
+	return w.recordErr
 }
 
 func (w *archiveRecorder) ArtifactNames() []string {
@@ -1029,8 +1170,8 @@ func toParquetTransactions(items []archiveTransactionEvent) []parquetTransaction
 			ErrorMessage:      item.ErrorMessage,
 			NetworkProfile:    item.NetworkProfile,
 			ClientMetricsJSON: mustJSON(item.ClientMetrics),
-			ExtractionsJSON:   mustJSON(item.Extractions),
-			SnapshotJSON:      mustJSON(item.Snapshot),
+			ExtractionsJSON:   mustJSON(boundedArchiveExtractions(item.Extractions)),
+			SnapshotJSON:      mustJSON(engine.BoundErrorSnapshot(item.Snapshot, 1<<20)),
 		})
 	}
 	return rows

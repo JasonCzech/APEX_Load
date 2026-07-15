@@ -1,11 +1,13 @@
 package api
 
 import (
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/scrub"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 // Phase 2: full HTTP / WebRuntime / BrowserConfig override sections (section-replace),
@@ -127,29 +129,133 @@ func TestFieldApplicableForProtocolMatrix(t *testing.T) {
 
 func TestMaskRuntimeSettingsRedactsHTTPSecrets(t *testing.T) {
 	o := &RuntimeSettingsOverride{
+		BaseURL: "https://base-user:base-pass@example.test",
 		HTTP: &dsl.HTTPConfig{
 			Auth:  dsl.AuthConfig{Type: "basic", Username: "u", Password: "pw", Token: "tok"},
-			Proxy: dsl.ProxyConfig{URL: "http://p:8080", Username: "puser", Password: "ppw"},
+			Proxy: dsl.ProxyConfig{URL: "http://url-user:url-pass@p:8080", Username: "puser", Password: "ppw"},
+			DefaultHeaders: map[string]string{
+				"Authorization": "Bearer secret", "Cookie": "session=secret", "X-API-Key": "secret", "Accept": "application/json",
+			},
+		},
+		BrowserConfig: &dsl.BrowserConfig{
+			HTTPCredentials: dsl.BrowserHTTPCredentials{Username: "browser-user", Password: "browser-password"},
+			Proxy:           dsl.BrowserProxyConfig{Server: "http://url-user:url-pass@browser-proxy:8080", Username: "browser-proxy-user", Password: "browser-proxy-password"},
+			ClientCertificates: []dsl.BrowserClientCertificate{{
+				Origin: "https://example.test", PfxPath: "client.pfx", Passphrase: "certificate-passphrase",
+			}},
 		},
 	}
 	masked := maskRuntimeSettings(o)
 	if masked.HTTP.Auth.Password != scrub.Redacted || masked.HTTP.Auth.Token != scrub.Redacted || masked.HTTP.Proxy.Username != scrub.Redacted || masked.HTTP.Proxy.Password != scrub.Redacted {
 		t.Fatalf("http secrets not redacted: %#v", masked.HTTP)
 	}
-	if masked.HTTP.Auth.Username != "u" || masked.HTTP.Proxy.URL != "http://p:8080" {
+	if masked.HTTP.Auth.Username != "u" || masked.HTTP.DefaultHeaders["Accept"] != "application/json" {
 		t.Fatalf("non-secret http fields should survive: %#v", masked.HTTP)
+	}
+	for _, header := range []string{"Authorization", "Cookie", "X-API-Key"} {
+		if masked.HTTP.DefaultHeaders[header] != scrub.Redacted {
+			t.Fatalf("sensitive header %s was not redacted: %#v", header, masked.HTTP.DefaultHeaders)
+		}
+	}
+	for label, value := range map[string]string{"base_url": masked.BaseURL, "http_proxy_url": masked.HTTP.Proxy.URL, "browser_proxy_server": masked.BrowserConfig.Proxy.Server} {
+		if strings.Contains(value, "url-pass") || strings.Contains(value, "base-pass") || !strings.Contains(value, "REDACTED") {
+			t.Fatalf("%s userinfo was not safely redacted: %q", label, value)
+		}
+	}
+	if masked.BrowserConfig.HTTPCredentials.Password != scrub.Redacted || masked.BrowserConfig.Proxy.Username != scrub.Redacted || masked.BrowserConfig.Proxy.Password != scrub.Redacted || masked.BrowserConfig.ClientCertificates[0].Passphrase != scrub.Redacted {
+		t.Fatalf("browser secrets not redacted: %#v", masked.BrowserConfig)
 	}
 	if o.HTTP.Auth.Password != "pw" {
 		t.Fatalf("masking mutated the input: %q", o.HTTP.Auth.Password)
 	}
+	opaque := &RuntimeSettingsOverride{BaseURL: "user:password@example.test"}
+	if got := maskRuntimeSettings(opaque).BaseURL; got != scrub.Redacted {
+		t.Fatalf("opaque credential-like base URL = %q, want fail-closed redaction", got)
+	}
+	if got := reconcileGroupRuntimeSecrets(maskRuntimeSettings(opaque), opaque).BaseURL; got != opaque.BaseURL {
+		t.Fatalf("opaque masked URL echo = %q, want prior value %q", got, opaque.BaseURL)
+	}
+}
+
+func TestMaskRuntimeSettingsRedactsURLQuerySecretsAndReconcilesEcho(t *testing.T) {
+	const (
+		baseSecret    = "base-query-secret-0123456789"
+		proxySecret   = "proxy-query-secret-0123456789"
+		browserSecret = "browser-query-secret-0123456789"
+	)
+	prior := &RuntimeSettingsOverride{
+		BaseURL: "https://base-user:base-pass@old.example.test/v1?api%5Fkey=" + baseSecret + "&page=1#access_token=" + baseSecret,
+		HTTP: &dsl.HTTPConfig{Proxy: dsl.ProxyConfig{
+			URL: "https://proxy.example.test/connect?token=" + proxySecret + "&region=east",
+		}},
+		BrowserConfig: &dsl.BrowserConfig{Proxy: dsl.BrowserProxyConfig{
+			Server: "https://browser-proxy.example.test/connect?credential=" + browserSecret + "&pool=blue",
+		}},
+	}
+
+	masked := maskRuntimeSettings(prior)
+	for label, value := range map[string]string{
+		"base_url": masked.BaseURL, "http_proxy_url": masked.HTTP.Proxy.URL, "browser_proxy_server": masked.BrowserConfig.Proxy.Server,
+	} {
+		if strings.Contains(value, "query-secret") || !strings.Contains(value, scrub.Redacted) {
+			t.Fatalf("%s query credential was not redacted: %q", label, value)
+		}
+	}
+	if !strings.Contains(masked.BaseURL, "page=1") || !strings.Contains(masked.HTTP.Proxy.URL, "region=east") || !strings.Contains(masked.BrowserConfig.Proxy.Server, "pool=blue") {
+		t.Fatalf("non-secret URL parameters were not preserved: %#v", masked)
+	}
+
+	// Simulate a dashboard echo that also makes unrelated URL edits. Only the
+	// masked components should be restored from the prior stored override.
+	masked.BaseURL = strings.ReplaceAll(masked.BaseURL, "old.example.test/v1", "new.example.test/v2")
+	masked.BaseURL = strings.ReplaceAll(masked.BaseURL, "page=1", "page=2")
+	masked.HTTP.Proxy.URL = strings.ReplaceAll(masked.HTTP.Proxy.URL, "region=east", "region=west")
+	masked.BrowserConfig.Proxy.Server = strings.ReplaceAll(masked.BrowserConfig.Proxy.Server, "pool=blue", "pool=green")
+	reconciled := reconcileGroupRuntimeSecrets(masked, prior)
+	for label, value := range map[string]string{
+		"base_url": reconciled.BaseURL, "http_proxy_url": reconciled.HTTP.Proxy.URL, "browser_proxy_server": reconciled.BrowserConfig.Proxy.Server,
+	} {
+		if strings.Contains(value, scrub.Redacted) {
+			t.Fatalf("%s persisted a redaction sentinel: %q", label, value)
+		}
+	}
+	if !strings.Contains(reconciled.BaseURL, "base-user:base-pass@new.example.test/v2") || !strings.Contains(reconciled.BaseURL, "api%5Fkey="+baseSecret) || !strings.Contains(reconciled.BaseURL, "page=2") || !strings.Contains(reconciled.BaseURL, "access_token="+baseSecret) {
+		t.Fatalf("base URL masked echo was not merged safely: %q", reconciled.BaseURL)
+	}
+	if !strings.Contains(reconciled.HTTP.Proxy.URL, "token="+proxySecret) || !strings.Contains(reconciled.HTTP.Proxy.URL, "region=west") {
+		t.Fatalf("HTTP proxy masked echo was not merged safely: %q", reconciled.HTTP.Proxy.URL)
+	}
+	if !strings.Contains(reconciled.BrowserConfig.Proxy.Server, "credential="+browserSecret) || !strings.Contains(reconciled.BrowserConfig.Proxy.Server, "pool=green") {
+		t.Fatalf("browser proxy masked echo was not merged safely: %q", reconciled.BrowserConfig.Proxy.Server)
+	}
+
+	orphan := reconcileGroupRuntimeSecrets(&RuntimeSettingsOverride{BaseURL: "https://example.test/?api_key=" + scrub.Redacted + "&page=1"}, nil)
+	if strings.Contains(orphan.BaseURL, scrub.Redacted) || strings.Contains(orphan.BaseURL, "api_key=") || !strings.Contains(orphan.BaseURL, "page=1") {
+		t.Fatalf("orphaned URL sentinel was persisted instead of removed: %q", orphan.BaseURL)
+	}
 }
 
 func TestReconcileGroupRuntimeSecretsHTTP(t *testing.T) {
-	prior := &RuntimeSettingsOverride{HTTP: &dsl.HTTPConfig{Auth: dsl.AuthConfig{Password: "real", Token: "realtok"}, Proxy: dsl.ProxyConfig{Username: "realpuser", Password: "realppw"}}}
-	incoming := &RuntimeSettingsOverride{HTTP: &dsl.HTTPConfig{
-		Auth:  dsl.AuthConfig{Password: scrub.Redacted, Token: "newtok"}, // echoed mask -> keep; new -> persist
-		Proxy: dsl.ProxyConfig{Username: scrub.Redacted, Password: ""},   // username echoed mask -> keep; password cleared
-	}}
+	prior := &RuntimeSettingsOverride{
+		BaseURL: "https://base-user:base-password@example.test",
+		HTTP: &dsl.HTTPConfig{
+			Auth:           dsl.AuthConfig{Password: "real", Token: "realtok"},
+			Proxy:          dsl.ProxyConfig{URL: "http://proxy-user:proxy-password@proxy:8080", Username: "realpuser", Password: "realppw"},
+			DefaultHeaders: map[string]string{"Authorization": "Bearer real", "Cookie": "session=real", "Accept": "application/json"},
+		},
+		BrowserConfig: &dsl.BrowserConfig{
+			HTTPCredentials: dsl.BrowserHTTPCredentials{Password: "browser-real"},
+			Proxy:           dsl.BrowserProxyConfig{Server: "http://user:password@browser-proxy:8080", Username: "browser-user", Password: "browser-password"},
+			ClientCertificates: []dsl.BrowserClientCertificate{{
+				Origin: "https://example.test", PfxPath: "client.pfx", Passphrase: "certificate-real",
+			}},
+		},
+	}
+	incoming := maskRuntimeSettings(prior)
+	incoming.HTTP.Auth.Token = "newtok"
+	incoming.HTTP.Proxy.Password = ""
+	incoming.HTTP.DefaultHeaders["Cookie"] = ""
+	incoming.BrowserConfig.Proxy.Password = ""
 	result := reconcileGroupRuntimeSecrets(incoming, prior)
 	if result.HTTP.Auth.Password != "real" {
 		t.Fatalf("auth password should be restored from prior, got %q", result.HTTP.Auth.Password)
@@ -163,11 +269,30 @@ func TestReconcileGroupRuntimeSecretsHTTP(t *testing.T) {
 	if result.HTTP.Proxy.Password != "" {
 		t.Fatalf("proxy password should be cleared, got %q", result.HTTP.Proxy.Password)
 	}
+	if result.BaseURL != prior.BaseURL || result.HTTP.Proxy.URL != prior.HTTP.Proxy.URL || result.BrowserConfig.Proxy.Server != prior.BrowserConfig.Proxy.Server {
+		t.Fatalf("masked URL userinfo was not restored: %#v", result)
+	}
+	if result.HTTP.DefaultHeaders["Authorization"] != "Bearer real" {
+		t.Fatalf("authorization header was not restored: %#v", result.HTTP.DefaultHeaders)
+	}
+	if _, exists := result.HTTP.DefaultHeaders["Cookie"]; exists {
+		t.Fatalf("explicitly cleared cookie header persisted: %#v", result.HTTP.DefaultHeaders)
+	}
+	if result.BrowserConfig.HTTPCredentials.Password != "browser-real" || result.BrowserConfig.Proxy.Username != "browser-user" || result.BrowserConfig.ClientCertificates[0].Passphrase != "certificate-real" {
+		t.Fatalf("masked browser credentials were not restored: %#v", result.BrowserConfig)
+	}
+	if result.BrowserConfig.Proxy.Password != "" {
+		t.Fatalf("explicitly cleared browser proxy password persisted: %#v", result.BrowserConfig.Proxy)
+	}
 }
 
 func TestMaskManagedTestRedactsHTTPSecrets(t *testing.T) {
 	test := &ManagedTest{
 		RuntimeSettings: &RuntimeSettingsOverride{HTTP: &dsl.HTTPConfig{Auth: dsl.AuthConfig{Password: "pw"}}},
+		Archive: &storage.RunArchiveRecord{
+			ArchiveBackend: "private-backend", ArchivePath: "/private/archive", ManifestPath: "/private/archive/manifest.json",
+			ArchiveURI: "s3://private/archive", ManifestURI: "s3://private/archive/manifest.json", ManifestSHA256: "portable-integrity",
+		},
 		Groups: []TestGroup{
 			{RuntimeSettings: &RuntimeSettingsOverride{HTTP: &dsl.HTTPConfig{Auth: dsl.AuthConfig{Token: "tok"}}}},
 		},
@@ -181,6 +306,12 @@ func TestMaskManagedTestRedactsHTTPSecrets(t *testing.T) {
 	}
 	if test.RuntimeSettings.HTTP.Auth.Password != "pw" {
 		t.Fatalf("masking mutated the input test")
+	}
+	if masked.Archive == nil || masked.Archive.ArchiveBackend != "" || masked.Archive.ArchivePath != "" || masked.Archive.ManifestPath != "" || masked.Archive.ArchiveURI != "" || masked.Archive.ManifestURI != "" {
+		t.Fatalf("managed test archive location was not projected: %#v", masked.Archive)
+	}
+	if masked.Archive.ManifestSHA256 != "portable-integrity" || test.Archive.ArchivePath != "/private/archive" {
+		t.Fatalf("archive projection lost portable integrity or mutated the source: masked=%#v source=%#v", masked.Archive, test.Archive)
 	}
 }
 

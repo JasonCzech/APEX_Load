@@ -25,6 +25,7 @@ func TestSessionEpochRevocation(t *testing.T) {
 
 	emptyRoles := func() *AuthenticatedUser {
 		return &AuthenticatedUser{
+			ID:              user.ID,
 			Subject:         user.Subject,
 			GlobalRoles:     map[string]struct{}{},
 			ProjectRoles:    map[string]map[string]struct{}{},
@@ -106,6 +107,7 @@ func TestApplyLocalUserBindingsCannotResurrectRevokedEpoch(t *testing.T) {
 	user := seedAdmin(t, store, "epoch-race-user")
 
 	upstream := &AuthenticatedUser{
+		ID:              user.ID,
 		Subject:         user.Subject,
 		DisplayName:     "Updated Name",
 		Email:           "updated@example.test",

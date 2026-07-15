@@ -127,6 +127,11 @@ type RunArchiveExecutionPlanApprovalSnapshot struct {
 	DecisionReason  string     `json:"decision_reason,omitempty"`
 	RequiredRole    string     `json:"required_role,omitempty"`
 	PlanContentHash string     `json:"plan_content_hash,omitempty"`
+	// ApprovedPeakVUsers is the immutable per-test ceiling carried from the
+	// approved execution-plan snapshot. Quota-burst approval may exceed the
+	// normal project aggregate quota only up to this value; it is never an
+	// unlimited runtime scaling exemption.
+	ApprovedPeakVUsers int `json:"approved_peak_vusers,omitempty"`
 }
 
 type TransactionEvent struct {
@@ -764,6 +769,14 @@ func zipDirectory(sourceDir string, dst io.Writer) error {
 }
 
 func zipDirectoryContext(ctx context.Context, sourceDir string, dst io.Writer) error {
+	return zipDirectoryContextWithReplacements(ctx, sourceDir, dst, nil)
+}
+
+func zipDirectoryContextWithReplacements(ctx context.Context, sourceDir string, dst io.Writer, replacements map[string][]byte) error {
+	return zipDirectoryContextWithSanitizers(ctx, sourceDir, dst, replacements, nil, nil)
+}
+
+func zipDirectoryContextWithSanitizers(ctx context.Context, sourceDir string, dst io.Writer, replacements map[string][]byte, streamReplacements map[string]func(io.Writer) error, omit map[string]struct{}) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -773,7 +786,7 @@ func zipDirectoryContext(ctx context.Context, sourceDir string, dst io.Writer) e
 		_ = zipWriter.Close()
 		return err
 	}
-	err = zipArchiveDirectoryRoot(ctx, root, "", zipWriter)
+	err = zipArchiveDirectoryRoot(ctx, root, "", zipWriter, replacements, streamReplacements, omit)
 	rootCloseErr := root.Close()
 	zipCloseErr := zipWriter.Close()
 	if err != nil {
@@ -785,7 +798,7 @@ func zipDirectoryContext(ctx context.Context, sourceDir string, dst io.Writer) e
 	return zipCloseErr
 }
 
-func zipArchiveDirectoryRoot(ctx context.Context, root *os.Root, prefix string, zipWriter *zip.Writer) error {
+func zipArchiveDirectoryRoot(ctx context.Context, root *os.Root, prefix string, zipWriter *zip.Writer, replacements map[string][]byte, streamReplacements map[string]func(io.Writer) error, omit map[string]struct{}) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -818,12 +831,15 @@ func zipArchiveDirectoryRoot(ctx context.Context, root *os.Root, prefix string, 
 			return fmt.Errorf("archive contains symbolic link %s", filepath.Join(prefix, name))
 		}
 		archiveName := filepath.ToSlash(filepath.Join(prefix, name))
+		if _, omitted := omit[archiveName]; omitted {
+			continue
+		}
 		if info.IsDir() {
 			child, err := openArchiveChildDirectoryAt(root, name, false, 0)
 			if err != nil {
 				return err
 			}
-			err = zipArchiveDirectoryRoot(ctx, child, archiveName, zipWriter)
+			err = zipArchiveDirectoryRoot(ctx, child, archiveName, zipWriter, replacements, streamReplacements, omit)
 			closeErr := child.Close()
 			if err != nil {
 				return err
@@ -835,6 +851,26 @@ func zipArchiveDirectoryRoot(ctx context.Context, root *os.Root, prefix string, 
 		}
 		if !info.Mode().IsRegular() {
 			return fmt.Errorf("archive contains non-regular artifact %s", archiveName)
+		}
+		if replacement, ok := replacements[archiveName]; ok {
+			fileWriter, err := zipWriter.Create(archiveName)
+			if err != nil {
+				return err
+			}
+			if _, err := fileWriter.Write(replacement); err != nil {
+				return err
+			}
+			continue
+		}
+		if streamReplacement, ok := streamReplacements[archiveName]; ok {
+			fileWriter, err := zipWriter.Create(archiveName)
+			if err != nil {
+				return err
+			}
+			if err := streamReplacement(fileWriter); err != nil {
+				return err
+			}
+			continue
 		}
 		file, _, err := openArchiveArtifactForReadAt(root, name)
 		if err != nil {

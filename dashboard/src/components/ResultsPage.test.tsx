@@ -258,6 +258,7 @@ describe('ResultsPage', () => {
         name: 'Team AKS',
         base_url: 'https://apexload.example.test',
         default_project_id: 'project-1',
+		project_mappings: { 'project-1': 'project-1' },
         auth_method: 'service_account',
         credential_configured: true,
         status: 'healthy',
@@ -366,8 +367,8 @@ describe('ResultsPage', () => {
         <ResultsPage
           testStatuses={{}}
           onSelectTest={vi.fn()}
-          activeApplication={{ id: 'app-1', name: 'Storefront', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' }}
-          activeRelease={{ id: 'rel-1', application_id: 'app-1', name: 'Sprint 24', created_at: '2026-05-02T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' }}
+		  activeApplication={{ id: 'app-1', project_id: 'project-1', name: 'Storefront', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' }}
+		  activeRelease={{ id: 'rel-1', application_id: 'app-1', project_id: 'project-1', name: 'Sprint 24', created_at: '2026-05-02T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' }}
         />,
       )
     })
@@ -460,8 +461,8 @@ describe('ResultsPage', () => {
         <ResultsPage
           testStatuses={{}}
           onSelectTest={vi.fn()}
-          activeApplication={{ id: 'app-1', name: 'Storefront', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' }}
-          activeRelease={{ id: 'rel-1', application_id: 'app-1', name: 'Sprint 24', created_at: '2026-05-02T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' }}
+		  activeApplication={{ id: 'app-1', project_id: 'project-1', name: 'Storefront', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' }}
+		  activeRelease={{ id: 'rel-1', application_id: 'app-1', project_id: 'project-1', name: 'Sprint 24', created_at: '2026-05-02T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' }}
         />,
       )
       await Promise.resolve()
@@ -1305,8 +1306,8 @@ describe('ResultsPage', () => {
         <ResultsPage
           testStatuses={{}}
           onSelectTest={vi.fn()}
-          activeApplication={{ id: 'app-1', name: 'Storefront', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' }}
-          activeRelease={{ id: 'rel-1', application_id: 'app-1', name: 'Sprint 24', created_at: '2026-05-02T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' }}
+          activeApplication={{ id: 'app-1', project_id: 'project-1', name: 'Storefront', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' }}
+          activeRelease={{ id: 'rel-1', application_id: 'app-1', project_id: 'project-1', name: 'Sprint 24', created_at: '2026-05-02T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' }}
         />,
       )
     })

@@ -132,6 +132,86 @@ func TestCORSPreflightAllowsAllowListedWailsOrigin(t *testing.T) {
 	}
 }
 
+func TestCORSMiddlewareRejectsDisallowedMutationOrigins(t *testing.T) {
+	const (
+		apiHost       = "api.example.test"
+		trustedOrigin = "https://dashboard.example.test"
+		hostileOrigin = "https://attacker.example.test"
+	)
+
+	tests := []struct {
+		name           string
+		method         string
+		origin         string
+		allowedOrigins []string
+		wantStatus     int
+		wantCalled     bool
+	}{
+		{
+			name:       "same-site sibling post rejected",
+			method:     http.MethodPost,
+			origin:     hostileOrigin,
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name:       "same-origin post permitted",
+			method:     http.MethodPost,
+			origin:     "https://" + apiHost,
+			wantStatus: http.StatusNoContent,
+			wantCalled: true,
+		},
+		{
+			name:           "allow-listed desktop post permitted",
+			method:         http.MethodPost,
+			origin:         trustedOrigin,
+			allowedOrigins: []string{trustedOrigin},
+			wantStatus:     http.StatusNoContent,
+			wantCalled:     true,
+		},
+		{
+			name:       "non-browser post without origin permitted",
+			method:     http.MethodPost,
+			wantStatus: http.StatusNoContent,
+			wantCalled: true,
+		},
+		{
+			name:       "disallowed read remains available",
+			method:     http.MethodGet,
+			origin:     hostileOrigin,
+			wantStatus: http.StatusNoContent,
+			wantCalled: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			called := false
+			handler := corsMiddleware(tc.allowedOrigins)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				called = true
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			req := httptest.NewRequest(tc.method, "https://"+apiHost+"/api/v1/tests/test-a/start", strings.NewReader(`{"name":"changed"}`))
+			req.Host = apiHost
+			if tc.origin != "" {
+				req.Header.Set("Origin", tc.origin)
+			}
+			// text/plain is a CORS-safelisted content type and therefore reaches
+			// the server without a preflight even when the body contains JSON.
+			req.Header.Set("Content-Type", "text/plain")
+			resp := httptest.NewRecorder()
+
+			handler.ServeHTTP(resp, req)
+
+			if resp.Code != tc.wantStatus {
+				t.Fatalf("status = %d, want %d", resp.Code, tc.wantStatus)
+			}
+			if called != tc.wantCalled {
+				t.Fatalf("handler called = %v, want %v", called, tc.wantCalled)
+			}
+		})
+	}
+}
+
 func TestBoundAddrReady(t *testing.T) {
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: "127.0.0.1:0"})
 	if server.BoundAddrReady() {

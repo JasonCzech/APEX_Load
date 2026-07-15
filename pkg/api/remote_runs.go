@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -12,9 +13,18 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 const remoteRunLinksSettingKey = "remote.run_links.v1"
+
+const (
+	maxRemoteRunLinks          = 10_000
+	maxRemoteRunLinksRawBytes  = 16 << 20
+	remoteRunLinkCASMaxRetries = 32
+)
+
+var errRemoteRunLinkIdentityConflict = errors.New("remote run link identity conflicts with an existing authorization anchor")
 
 // remoteRunLinksMu serializes the read-modify-write of the remote-run links
 // settings blob (a single store key) so concurrent remote-run creates do not
@@ -75,7 +85,9 @@ type RemoteRunProxyResponse struct {
 }
 
 func (s *Server) handleCreateRemoteRun(w http.ResponseWriter, r *http.Request) {
-	remote, ok := s.libraryRemote(r.PathValue("id"))
+	s.remoteConfigMu.RLock()
+	defer s.remoteConfigMu.RUnlock()
+	remote, ok := s.freshLibraryRemote(r.PathValue("id"))
 	if !ok {
 		writeError(w, http.StatusNotFound, "remote workspace not found")
 		return
@@ -90,15 +102,86 @@ func (s *Server) handleCreateRemoteRun(w http.ResponseWriter, r *http.Request) {
 	}
 	prepared, pushed, localProjectID, localScenarioID, remoteProjectID, err := s.prepareRemoteRunCreateRequest(r.Context(), remote, createReq, req.RemoteProjectID)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		status := http.StatusBadRequest
+		if errors.Is(err, errServiceAccountLibraryBundleScope) {
+			status = http.StatusForbidden
+		}
+		writeError(w, status, err.Error())
+		return
+	}
+	// Preassign the remote identity and make the compensating delete durable
+	// before issuing the cross-controller create. If this process dies after the
+	// remote commit but before receiving/persisting its response, restart
+	// reconciliation can still address the exact orphan.
+	requestedRemoteTestID := uuid.NewString()
+	prepared.RequestedTestID = requestedRemoteTestID
+	cleanup := newRemoteRunCleanupRecord(remote, requestedRemoteTestID)
+	if err := s.enqueueRemoteRunCleanup(cleanup); err != nil {
+		writeError(w, http.StatusServiceUnavailable, "remote test was not created because its cleanup intent could not be persisted: "+err.Error())
 		return
 	}
 
 	var remoteTest ManagedTest
 	if err := s.remoteJSON(r.Context(), remote, http.MethodPost, "/api/v1/tests", prepared, &remoteTest); err != nil {
+		if cleanupErr := s.attemptRemoteRunCleanup(cleanup); cleanupErr != nil {
+			slog.Warn("remote create outcome is uncertain; cleanup remains pending", "remote_id", remote.ID, "remote_test_id", requestedRemoteTestID, "err", cleanupErr)
+			s.startRemoteRunCleanupRetry()
+		}
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
+	if strings.TrimSpace(remoteTest.ID) != requestedRemoteTestID {
+		// A peer that does not honor requested_test_id is unsafe for recoverable
+		// creation. Track any returned identity separately so both possible side
+		// effects are cleaned without ever starting either one.
+		if returnedID := strings.TrimSpace(remoteTest.ID); returnedID != "" {
+			returnedCleanup := newRemoteRunCleanupRecord(remote, returnedID)
+			if enqueueErr := s.enqueueRemoteRunCleanup(returnedCleanup); enqueueErr != nil {
+				slog.Error("failed to persist mismatched remote test cleanup", "remote_id", remote.ID, "remote_test_id", returnedID, "err", enqueueErr)
+				if cleanupErr := s.attemptRemoteRunCleanup(returnedCleanup); cleanupErr != nil {
+					slog.Error("failed to directly clean mismatched remote test without an outbox record", "remote_id", remote.ID, "remote_test_id", returnedID, "err", cleanupErr)
+				}
+			} else if cleanupErr := s.attemptRemoteRunCleanup(returnedCleanup); cleanupErr != nil {
+				slog.Warn("mismatched remote test cleanup remains pending", "remote_id", remote.ID, "remote_test_id", returnedID, "err", cleanupErr)
+				s.startRemoteRunCleanupRetry()
+			}
+		}
+		if cleanupErr := s.attemptRemoteRunCleanup(cleanup); cleanupErr != nil {
+			slog.Warn("requested remote test cleanup remains pending", "remote_id", remote.ID, "remote_test_id", requestedRemoteTestID, "err", cleanupErr)
+			s.startRemoteRunCleanupRetry()
+		}
+		writeError(w, http.StatusBadGateway, "remote library did not honor the requested recoverable test identity")
+		return
+	}
+	link, err := s.upsertRemoteRunLink(RemoteRunLink{
+		LocalRunID:      uuid.New().String(),
+		RemoteID:        remote.ID,
+		RemoteTestID:    remoteTest.ID,
+		RemoteURL:       remoteRunPageURL(remote.BaseURL, remoteTest.ID),
+		LocalProjectID:  localProjectID,
+		LocalScenarioID: localScenarioID,
+		RemoteProjectID: remoteProjectID,
+		Status:          remoteTest.Status,
+	})
+	if err != nil {
+		// A remotely-created test must never be started before its local,
+		// project-scoped authorization anchor is durable. The cleanup intent was
+		// committed before the remote call, so cancellation and process failure do
+		// not create an untracked side effect.
+		if cleanupErr := s.attemptRemoteRunCleanup(cleanup); cleanupErr != nil {
+			slog.Warn("unlinked remote test cleanup remains pending", "remote_id", remote.ID, "remote_test_id", remoteTest.ID, "err", cleanupErr)
+			s.startRemoteRunCleanupRetry()
+		}
+		writeError(w, http.StatusBadGateway, "remote test was not started because its local authorization link could not be persisted: "+err.Error())
+		return
+	}
+	if err := s.removeRemoteRunCleanup(cleanup.ID); err != nil {
+		// Reconciliation checks the durable project-scoped link before deleting a
+		// remote test, so a stale cleanup record can never remove this linked run.
+		slog.Warn("linked remote test cleanup intent remains pending", "remote_id", remote.ID, "remote_test_id", remoteTest.ID, "err", err)
+		s.startRemoteRunCleanupRetry()
+	}
+
 	var action map[string]any
 	if req.StartImmediately {
 		startOptions := StartTestOptions{}
@@ -117,18 +200,13 @@ func (s *Server) handleCreateRemoteRun(w http.ResponseWriter, r *http.Request) {
 		if refreshed, err := s.remoteRunStatus(r.Context(), remote, remoteTest.ID); err == nil {
 			remoteTest = *refreshed
 		}
+		link.Status = remoteTest.Status
+		if updated, updatedOK, updateErr := s.updateExistingRemoteRunLink(link); updateErr != nil {
+			slog.Warn("failed to persist remote run status after start", "remote_id", remote.ID, "remote_test_id", remoteTest.ID, "err", updateErr)
+		} else if updatedOK {
+			link = updated
+		}
 	}
-
-	link := s.upsertRemoteRunLink(RemoteRunLink{
-		LocalRunID:      uuid.New().String(),
-		RemoteID:        remote.ID,
-		RemoteTestID:    remoteTest.ID,
-		RemoteURL:       remoteRunPageURL(remote.BaseURL, remoteTest.ID),
-		LocalProjectID:  localProjectID,
-		LocalScenarioID: localScenarioID,
-		RemoteProjectID: remoteProjectID,
-		Status:          remoteTest.Status,
-	})
 	s.recordAuditEvent(r, "remote.run.create", "success", "remote_run", remoteTest.ID, localProjectID, map[string]any{
 		"remote_id":         remote.ID,
 		"remote_name":       remote.Name,
@@ -139,41 +217,59 @@ func (s *Server) handleCreateRemoteRun(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, RemoteRunProxyResponse{
 		Remote: s.sanitizeLibraryRemote(&remote),
 		Link:   link,
-		Test:   &remoteTest,
-		Action: action,
+		Test:   maskManagedTest(&remoteTest),
+		Action: maskRemoteRunAction(action),
 		Pushed: pushed,
 	})
 }
 
 func (s *Server) handleGetRemoteRun(w http.ResponseWriter, r *http.Request) {
-	remote, ok := s.libraryRemote(r.PathValue("id"))
+	s.remoteConfigMu.RLock()
+	defer s.remoteConfigMu.RUnlock()
+	remote, ok := s.freshLibraryRemote(r.PathValue("id"))
 	if !ok {
 		writeError(w, http.StatusNotFound, "remote workspace not found")
 		return
 	}
 	remoteTestID := strings.TrimSpace(r.PathValue("remote_test_id"))
+	link, ok := s.existingRemoteRunLink(remote.ID, remoteTestID)
+	if !ok || strings.TrimSpace(link.LocalProjectID) == "" {
+		// Remote credentials belong to the controller, not to the caller. Never
+		// use them to discover an arbitrary remote run or to manufacture an
+		// authorization anchor from a successful remote response.
+		writeError(w, http.StatusNotFound, "project-scoped remote run link not found")
+		return
+	}
 	test, err := s.remoteRunStatus(r.Context(), remote, remoteTestID)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	link := s.upsertRemoteRunLink(RemoteRunLink{
-		RemoteID:     remote.ID,
-		RemoteTestID: remoteTestID,
-		RemoteURL:    remoteRunPageURL(remote.BaseURL, remoteTestID),
-		Status:       test.Status,
-	})
-	writeJSON(w, http.StatusOK, RemoteRunProxyResponse{Remote: s.sanitizeLibraryRemote(&remote), Link: link, Test: test})
+	link.RemoteURL = remoteRunPageURL(remote.BaseURL, remoteTestID)
+	link.Status = test.Status
+	if updated, updatedOK, updateErr := s.updateExistingRemoteRunLink(link); updateErr != nil {
+		slog.Warn("failed to persist remote run status", "remote_id", remote.ID, "remote_test_id", remoteTestID, "err", updateErr)
+	} else if updatedOK {
+		link = updated
+	}
+	writeJSON(w, http.StatusOK, RemoteRunProxyResponse{Remote: s.sanitizeLibraryRemote(&remote), Link: link, Test: maskManagedTest(test)})
 }
 
 func (s *Server) handleRemoteRunAction(action string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		remote, ok := s.libraryRemote(r.PathValue("id"))
+		s.remoteConfigMu.RLock()
+		defer s.remoteConfigMu.RUnlock()
+		remote, ok := s.freshLibraryRemote(r.PathValue("id"))
 		if !ok {
 			writeError(w, http.StatusNotFound, "remote workspace not found")
 			return
 		}
 		remoteTestID := strings.TrimSpace(r.PathValue("remote_test_id"))
+		link, ok := s.existingRemoteRunLink(remote.ID, remoteTestID)
+		if !ok || strings.TrimSpace(link.LocalProjectID) == "" {
+			writeError(w, http.StatusNotFound, "project-scoped remote run link not found")
+			return
+		}
 		var body any
 		if action == "start" {
 			var req StartTestOptions
@@ -197,24 +293,57 @@ func (s *Server) handleRemoteRunAction(action string) http.HandlerFunc {
 		if test != nil && strings.TrimSpace(test.Status) != "" {
 			status = test.Status
 		}
-		link := s.upsertRemoteRunLink(RemoteRunLink{
-			RemoteID:     remote.ID,
-			RemoteTestID: remoteTestID,
-			RemoteURL:    remoteRunPageURL(remote.BaseURL, remoteTestID),
-			Status:       status,
-		})
+		link.RemoteURL = remoteRunPageURL(remote.BaseURL, remoteTestID)
+		link.Status = status
+		if updated, updatedOK, updateErr := s.updateExistingRemoteRunLink(link); updateErr != nil {
+			slog.Warn("failed to persist remote run action status", "remote_id", remote.ID, "remote_test_id", remoteTestID, "action", action, "err", updateErr)
+		} else if updatedOK {
+			link = updated
+		}
 		s.recordAuditEvent(r, "remote.run."+action, "success", "remote_run", remoteTestID, link.LocalProjectID, map[string]any{"remote_id": remote.ID, "remote_name": remote.Name})
-		writeJSON(w, http.StatusOK, RemoteRunProxyResponse{Remote: s.sanitizeLibraryRemote(&remote), Link: link, Test: test, Action: actionResponse})
+		writeJSON(w, http.StatusOK, RemoteRunProxyResponse{Remote: s.sanitizeLibraryRemote(&remote), Link: link, Test: maskManagedTest(test), Action: maskRemoteRunAction(actionResponse)})
 	}
 }
 
-func (s *Server) prepareRemoteRunCreateRequest(ctx context.Context, remote LibraryRemote, req CreateTestRequest, explicitRemoteProjectID string) (CreateTestRequest, []LibraryImportResultItem, string, string, string, error) {
-	localProjectID := normalizeProjectID(req.ProjectID)
-	localScenarioID := strings.TrimSpace(req.ScenarioID)
-	if localProjectID == "" {
-		localProjectID = s.localAssetProjectID("scenario", localScenarioID)
+func maskRemoteRunAction(action map[string]any) map[string]any {
+	if action == nil {
+		return nil
 	}
-	remoteProjectID := normalizeProjectID(firstNonEmpty(explicitRemoteProjectID, remote.DefaultProjectID, req.ProjectID))
+	masked := make(map[string]any, len(action))
+	for key, value := range action {
+		masked[key] = value
+	}
+	rawTest, ok := action["test"]
+	if !ok || rawTest == nil {
+		return masked
+	}
+	data, err := json.Marshal(rawTest)
+	if err != nil {
+		delete(masked, "test")
+		return masked
+	}
+	var test ManagedTest
+	if err := json.Unmarshal(data, &test); err != nil {
+		delete(masked, "test")
+		return masked
+	}
+	masked["test"] = maskManagedTest(&test)
+	return masked
+}
+
+func (s *Server) prepareRemoteRunCreateRequest(ctx context.Context, remote LibraryRemote, req CreateTestRequest, explicitRemoteProjectID string) (CreateTestRequest, []LibraryImportResultItem, string, string, string, error) {
+	localProjectID, err := s.remoteRunCreateLocalProject(req)
+	if err != nil {
+		return req, nil, "", "", "", err
+	}
+	localScenarioID := strings.TrimSpace(req.ScenarioID)
+	// The destination is an administrator-configured trust mapping. A project
+	// editor may select local assets, but must not be able to redirect the
+	// controller's broader remote credential into an arbitrary remote project.
+	remoteProjectID, err := allowedRemoteProjectID(remote, localProjectID, explicitRemoteProjectID)
+	if err != nil {
+		return req, nil, "", "", "", err
+	}
 	pushed := make([]LibraryImportResultItem, 0)
 	imported := map[string]string{}
 	push := func(kind string, id string, includeDependencies bool) (string, error) {
@@ -226,7 +355,7 @@ func (s *Server) prepareRemoteRunCreateRequest(ctx context.Context, remote Libra
 		if mapped := imported[key]; mapped != "" {
 			return mapped, nil
 		}
-		response, err := s.pushRemoteWorkspaceItem(ctx, remote, kind, id, remoteProjectID, includeDependencies)
+		response, err := s.pushRemoteWorkspaceItem(ctx, remote, kind, id, localProjectID, remoteProjectID, includeDependencies)
 		if err != nil {
 			return "", err
 		}
@@ -248,9 +377,6 @@ func (s *Server) prepareRemoteRunCreateRequest(ctx context.Context, remote Libra
 		req.ScenarioID = mapped
 	}
 	if req.ScriptID != "" {
-		if localProjectID == "" {
-			localProjectID = s.localAssetProjectID("script", req.ScriptID)
-		}
 		mapped, err := push("script", req.ScriptID, false)
 		if err != nil {
 			return req, nil, "", "", "", err
@@ -258,9 +384,6 @@ func (s *Server) prepareRemoteRunCreateRequest(ctx context.Context, remote Libra
 		req.ScriptID = mapped
 	}
 	for i := range req.Groups {
-		if localProjectID == "" {
-			localProjectID = s.localAssetProjectID("script", req.Groups[i].ScriptID)
-		}
 		mapped, err := push("script", req.Groups[i].ScriptID, false)
 		if err != nil {
 			return req, nil, "", "", "", err
@@ -273,9 +396,130 @@ func (s *Server) prepareRemoteRunCreateRequest(ctx context.Context, remote Libra
 	return req, pushed, localProjectID, localScenarioID, remoteProjectID, nil
 }
 
-func (s *Server) pushRemoteWorkspaceItem(ctx context.Context, remote LibraryRemote, kind string, id string, remoteProjectID string, includeDependencies bool) (*LibraryRemoteTransferResponse, error) {
-	bundle, err := s.buildLibraryBundle(kind, id, remoteProjectID, includeDependencies)
+func (s *Server) remoteRunCreateLocalProject(req CreateTestRequest) (string, error) {
+	if s != nil && s.store != nil {
+		return remoteRunCreateProjectFromStore(req, s.store)
+	}
+	projects := make(map[string]struct{})
+	add := func(projectID string) {
+		if strings.TrimSpace(projectID) != "" {
+			projects[normalizeProjectID(strings.TrimSpace(projectID))] = struct{}{}
+		}
+	}
+	add(req.ProjectID)
+	if strings.TrimSpace(req.ScenarioID) != "" {
+		scenario, ok := s.runner.GetScenario(strings.TrimSpace(req.ScenarioID))
+		if !ok || scenario == nil {
+			return "", fmt.Errorf("local scenario not found")
+		}
+		add(scenario.ProjectID)
+	}
+	for _, scriptID := range remoteRunCreateScriptIDs(req) {
+		script, ok := s.runner.GetScript(scriptID)
+		if !ok || script == nil {
+			return "", fmt.Errorf("local script %s not found", scriptID)
+		}
+		add(script.ProjectID)
+	}
+	return singleRemoteRunCreateProject(projects)
+}
+
+func remoteRunCreateProjectFromStore(req CreateTestRequest, store storage.Store) (string, error) {
+	if store == nil {
+		return "", fmt.Errorf("remote run project storage is not configured")
+	}
+	projects := make(map[string]struct{})
+	add := func(projectID string) {
+		if strings.TrimSpace(projectID) != "" {
+			projects[normalizeProjectID(strings.TrimSpace(projectID))] = struct{}{}
+		}
+	}
+	add(req.ProjectID)
+	seenScripts := make(map[string]struct{})
+	addScript := func(scriptID string) error {
+		scriptID = strings.TrimSpace(scriptID)
+		if scriptID == "" {
+			return nil
+		}
+		if _, seen := seenScripts[scriptID]; seen {
+			return nil
+		}
+		seenScripts[scriptID] = struct{}{}
+		script, err := store.GetScript(scriptID)
+		if err != nil || script == nil {
+			return fmt.Errorf("local script %s not found", scriptID)
+		}
+		add(script.ProjectID)
+		return nil
+	}
+	if strings.TrimSpace(req.ScenarioID) != "" {
+		_, scripts, err := store.GetScenario(strings.TrimSpace(req.ScenarioID))
+		if err != nil {
+			return "", fmt.Errorf("local scenario not found")
+		}
+		for _, script := range scripts {
+			if err := addScript(script.ScriptID); err != nil {
+				return "", err
+			}
+		}
+	}
+	for _, scriptID := range remoteRunCreateScriptIDs(req) {
+		if err := addScript(scriptID); err != nil {
+			return "", err
+		}
+	}
+	return singleRemoteRunCreateProject(projects)
+}
+
+func remoteRunCreateScriptIDs(req CreateTestRequest) []string {
+	ids := make([]string, 0, len(req.Groups)+1)
+	if id := strings.TrimSpace(req.ScriptID); id != "" {
+		ids = append(ids, id)
+	}
+	for _, group := range req.Groups {
+		if id := strings.TrimSpace(group.ScriptID); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+func singleRemoteRunCreateProject(projects map[string]struct{}) (string, error) {
+	if len(projects) == 0 {
+		return storage.DefaultProjectID, nil
+	}
+	if len(projects) != 1 {
+		return "", fmt.Errorf("remote run assets and project_id must belong to one local project")
+	}
+	for projectID := range projects {
+		return projectID, nil
+	}
+	return "", fmt.Errorf("remote run local project could not be resolved")
+}
+
+func resolveRemoteRunCreateProjectID(r *http.Request, store storage.Store) (string, int, string) {
+	var req RemoteRunCreateRequest
+	if err := decodeRequestBody(r, &req); err != nil {
+		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
+	}
+	createReq := req.CreateTestRequest
+	if req.Test != nil {
+		createReq = *req.Test
+	}
+	projectID, err := remoteRunCreateProjectFromStore(createReq, store)
 	if err != nil {
+		return "", http.StatusBadRequest, err.Error()
+	}
+	return projectID, 0, ""
+}
+
+func (s *Server) pushRemoteWorkspaceItem(ctx context.Context, remote LibraryRemote, kind string, id string, localProjectID string, remoteProjectID string, includeDependencies bool) (*LibraryRemoteTransferResponse, error) {
+	localProjectID = normalizeProjectID(localProjectID)
+	bundle, err := s.buildLibraryBundle(kind, id, localProjectID, includeDependencies)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireServiceAccountLibraryBundleScopesContext(ctx, bundle); err != nil {
 		return nil, err
 	}
 	imported, err := s.remoteLibraryImport(ctx, remote, LibraryImportRequest{Bundle: *bundle, ProjectID: remoteProjectID, Mode: "push"})
@@ -308,6 +552,10 @@ func (s *Server) localAssetProjectID(kind string, id string) string {
 		if scenario, ok := s.runner.GetScenario(strings.TrimSpace(id)); ok && scenario != nil {
 			return normalizeProjectID(scenario.ProjectID)
 		}
+	case "result":
+		if test, ok := s.runner.GetTest(strings.TrimSpace(id)); ok && test != nil {
+			return normalizeProjectID(test.ProjectID)
+		}
 	}
 	return ""
 }
@@ -334,72 +582,244 @@ func remoteRunStatusFromAction(action map[string]any) string {
 	return ""
 }
 
-func (s *Server) upsertRemoteRunLink(update RemoteRunLink) RemoteRunLink {
-	remoteRunLinksMu.Lock()
-	defer remoteRunLinksMu.Unlock()
-	now := time.Now().UTC()
-	links := s.loadRemoteRunLinks()
-	for i := range links {
-		if links[i].RemoteID == update.RemoteID && links[i].RemoteTestID == update.RemoteTestID {
-			if strings.TrimSpace(update.LocalRunID) != "" {
-				links[i].LocalRunID = update.LocalRunID
+func (s *Server) upsertRemoteRunLink(update RemoteRunLink) (RemoteRunLink, error) {
+	update.RemoteID = strings.TrimSpace(update.RemoteID)
+	update.RemoteTestID = strings.TrimSpace(update.RemoteTestID)
+	update.LocalRunID = strings.TrimSpace(update.LocalRunID)
+	update.LocalProjectID = normalizeOptionalProjectID(update.LocalProjectID)
+	update.RemoteProjectID = normalizeOptionalProjectID(update.RemoteProjectID)
+	if update.RemoteID == "" || update.RemoteTestID == "" {
+		return RemoteRunLink{}, fmt.Errorf("remote workspace and test IDs are required")
+	}
+	if update.LocalRunID == "" {
+		update.LocalRunID = uuid.New().String()
+	}
+	return s.mutateRemoteRunLinks(func(linkSet *[]RemoteRunLink) (RemoteRunLink, bool, error) {
+		links := *linkSet
+		now := time.Now().UTC()
+		for i := range links {
+			if links[i].RemoteID != update.RemoteID || links[i].RemoteTestID != update.RemoteTestID {
+				continue
 			}
+			if remoteRunLinkIdentityConflicts(links[i], update) {
+				return RemoteRunLink{}, false, errRemoteRunLinkIdentityConflict
+			}
+			// Authorization identity is immutable after creation. Only fill legacy
+			// empty identity fields; ordinary refreshes may update metadata only.
+			fillRemoteRunLinkIdentity(&links[i], update)
 			if strings.TrimSpace(update.RemoteURL) != "" {
 				links[i].RemoteURL = update.RemoteURL
-			}
-			if strings.TrimSpace(update.LocalProjectID) != "" {
-				links[i].LocalProjectID = update.LocalProjectID
-			}
-			if strings.TrimSpace(update.LocalScenarioID) != "" {
-				links[i].LocalScenarioID = update.LocalScenarioID
-			}
-			if strings.TrimSpace(update.RemoteProjectID) != "" {
-				links[i].RemoteProjectID = update.RemoteProjectID
 			}
 			if strings.TrimSpace(update.Status) != "" {
 				links[i].Status = update.Status
 			}
 			links[i].UpdatedAt = now
-			s.saveRemoteRunLinks(links)
-			return links[i]
+			return links[i], true, nil
+		}
+		if len(links) >= maxRemoteRunLinks {
+			return RemoteRunLink{}, false, fmt.Errorf("remote run link limit of %d reached", maxRemoteRunLinks)
+		}
+		update.CreatedAt = now
+		update.UpdatedAt = now
+		links = append(links, update)
+		*linkSet = links
+		return update, true, nil
+	})
+}
+
+func normalizeOptionalProjectID(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return ""
+	}
+	return normalizeProjectID(value)
+}
+
+func remoteRunLinkIdentityConflicts(existing, update RemoteRunLink) bool {
+	pairs := [][2]string{
+		{strings.TrimSpace(existing.LocalRunID), strings.TrimSpace(update.LocalRunID)},
+		{normalizeOptionalProjectID(existing.LocalProjectID), normalizeOptionalProjectID(update.LocalProjectID)},
+		{strings.TrimSpace(existing.LocalScenarioID), strings.TrimSpace(update.LocalScenarioID)},
+		{normalizeOptionalProjectID(existing.RemoteProjectID), normalizeOptionalProjectID(update.RemoteProjectID)},
+	}
+	for _, pair := range pairs {
+		if pair[0] != "" && pair[1] != "" && pair[0] != pair[1] {
+			return true
 		}
 	}
-	if strings.TrimSpace(update.LocalRunID) == "" {
-		update.LocalRunID = uuid.New().String()
+	return false
+}
+
+func fillRemoteRunLinkIdentity(existing *RemoteRunLink, update RemoteRunLink) {
+	if existing.LocalRunID == "" {
+		existing.LocalRunID = update.LocalRunID
 	}
-	update.CreatedAt = now
-	update.UpdatedAt = now
-	links = append(links, update)
-	s.saveRemoteRunLinks(links)
-	return update
+	if strings.TrimSpace(existing.LocalProjectID) == "" {
+		existing.LocalProjectID = update.LocalProjectID
+	}
+	if strings.TrimSpace(existing.LocalScenarioID) == "" {
+		existing.LocalScenarioID = update.LocalScenarioID
+	}
+	if strings.TrimSpace(existing.RemoteProjectID) == "" {
+		existing.RemoteProjectID = update.RemoteProjectID
+	}
+}
+
+// existingRemoteRunLink returns only a durable, project-scoped authorization
+// anchor created by the remote-run creation workflow. Legacy unscoped entries
+// intentionally fail closed and must be migrated by an administrator instead
+// of being claimed by the first caller who knows a remote test ID.
+func (s *Server) existingRemoteRunLink(remoteID, remoteTestID string) (RemoteRunLink, bool) {
+	remoteRunLinksMu.Lock()
+	defer remoteRunLinksMu.Unlock()
+	links, err := loadRemoteRunLinksFromStore(s.store)
+	if err != nil {
+		slog.Warn("failed to load remote run links", "err", err)
+		return RemoteRunLink{}, false
+	}
+	return findProjectScopedRemoteRunLink(links, remoteID, remoteTestID)
+}
+
+// updateExistingRemoteRunLink refreshes status metadata without ever creating
+// a link. This invariant prevents GET/action routes from turning a remote
+// credential lookup into a new local authorization record.
+func (s *Server) updateExistingRemoteRunLink(update RemoteRunLink) (RemoteRunLink, bool, error) {
+	updated, err := s.mutateRemoteRunLinks(func(linkSet *[]RemoteRunLink) (RemoteRunLink, bool, error) {
+		links := *linkSet
+		for i := range links {
+			if links[i].RemoteID != strings.TrimSpace(update.RemoteID) || links[i].RemoteTestID != strings.TrimSpace(update.RemoteTestID) || strings.TrimSpace(links[i].LocalProjectID) == "" {
+				continue
+			}
+			if strings.TrimSpace(update.RemoteURL) != "" {
+				links[i].RemoteURL = update.RemoteURL
+			}
+			if strings.TrimSpace(update.Status) != "" {
+				links[i].Status = update.Status
+			}
+			links[i].UpdatedAt = time.Now().UTC()
+			return links[i], true, nil
+		}
+		return RemoteRunLink{}, false, nil
+	})
+	if err != nil {
+		return RemoteRunLink{}, false, err
+	}
+	return updated, updated.RemoteID != "", nil
+}
+
+func findProjectScopedRemoteRunLink(links []RemoteRunLink, remoteID, remoteTestID string) (RemoteRunLink, bool) {
+	remoteID = strings.TrimSpace(remoteID)
+	remoteTestID = strings.TrimSpace(remoteTestID)
+	if remoteID == "" || remoteTestID == "" {
+		return RemoteRunLink{}, false
+	}
+	for _, link := range links {
+		if link.RemoteID == remoteID && link.RemoteTestID == remoteTestID && strings.TrimSpace(link.LocalProjectID) != "" {
+			link.LocalProjectID = normalizeProjectID(link.LocalProjectID)
+			return link, true
+		}
+	}
+	return RemoteRunLink{}, false
 }
 
 func (s *Server) loadRemoteRunLinks() []RemoteRunLink {
-	if s == nil || s.store == nil {
+	if s == nil {
 		return nil
 	}
-	raw, err := s.store.GetSetting(remoteRunLinksSettingKey)
-	if err != nil || strings.TrimSpace(raw) == "" {
-		return nil
-	}
-	var links []RemoteRunLink
-	if err := json.Unmarshal([]byte(raw), &links); err != nil {
+	links, err := loadRemoteRunLinksFromStore(s.store)
+	if err != nil {
 		slog.Warn("failed to decode remote run links", "err", err)
 		return nil
 	}
 	return links
 }
 
-func (s *Server) saveRemoteRunLinks(links []RemoteRunLink) {
-	if s == nil || s.store == nil {
-		return
+func loadRemoteRunLinksFromStore(store interface {
+	GetSetting(string) (string, error)
+}) ([]RemoteRunLink, error) {
+	if store == nil {
+		return nil, fmt.Errorf("remote run link storage is not configured")
 	}
-	payload, err := json.Marshal(links)
+	raw, err := store.GetSetting(remoteRunLinksSettingKey)
 	if err != nil {
-		slog.Warn("failed to encode remote run links", "err", err)
-		return
+		return nil, err
 	}
-	if err := s.store.SaveSetting(remoteRunLinksSettingKey, string(payload)); err != nil {
-		slog.Warn("failed to persist remote run links", "err", err)
+	return decodeRemoteRunLinks(raw)
+}
+
+func decodeRemoteRunLinks(raw string) ([]RemoteRunLink, error) {
+	if len(raw) > maxRemoteRunLinksRawBytes {
+		return nil, fmt.Errorf("remote run links exceed the %d-byte limit", maxRemoteRunLinksRawBytes)
 	}
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	var links []RemoteRunLink
+	if err := json.Unmarshal([]byte(raw), &links); err != nil {
+		return nil, err
+	}
+	if len(links) > maxRemoteRunLinks {
+		return nil, fmt.Errorf("remote run links exceed the %d-entry limit", maxRemoteRunLinks)
+	}
+	seen := make(map[string]struct{}, len(links))
+	for i := range links {
+		links[i].RemoteID = strings.TrimSpace(links[i].RemoteID)
+		links[i].RemoteTestID = strings.TrimSpace(links[i].RemoteTestID)
+		if links[i].RemoteID == "" || links[i].RemoteTestID == "" {
+			return nil, fmt.Errorf("remote run link %d has an empty identity", i)
+		}
+		key := links[i].RemoteID + "\x00" + links[i].RemoteTestID
+		if _, duplicate := seen[key]; duplicate {
+			return nil, fmt.Errorf("remote run links contain duplicate identity %q/%q", links[i].RemoteID, links[i].RemoteTestID)
+		}
+		seen[key] = struct{}{}
+	}
+	return links, nil
+}
+
+func (s *Server) mutateRemoteRunLinks(mutate func(*[]RemoteRunLink) (RemoteRunLink, bool, error)) (RemoteRunLink, error) {
+	if s == nil || s.store == nil {
+		return RemoteRunLink{}, fmt.Errorf("remote run link storage is not configured")
+	}
+	remoteRunLinksMu.Lock()
+	defer remoteRunLinksMu.Unlock()
+	for attempt := 0; attempt < remoteRunLinkCASMaxRetries; attempt++ {
+		raw, err := s.store.GetSetting(remoteRunLinksSettingKey)
+		if err != nil {
+			return RemoteRunLink{}, fmt.Errorf("load remote run links: %w", err)
+		}
+		links, err := decodeRemoteRunLinks(raw)
+		if err != nil {
+			return RemoteRunLink{}, fmt.Errorf("decode remote run links: %w", err)
+		}
+		result, changed, err := mutate(&links)
+		if err != nil || !changed {
+			return result, err
+		}
+		payload, err := json.Marshal(links)
+		if err != nil {
+			return RemoteRunLink{}, fmt.Errorf("encode remote run links: %w", err)
+		}
+		if len(payload) > maxRemoteRunLinksRawBytes {
+			return RemoteRunLink{}, fmt.Errorf("remote run links exceed the %d-byte limit", maxRemoteRunLinksRawBytes)
+		}
+		encoded := string(payload)
+		if cas, ok := s.store.(librarySettingsCASStore); ok {
+			updated, err := cas.CompareAndSwapSetting(remoteRunLinksSettingKey, raw, encoded)
+			if err != nil {
+				return RemoteRunLink{}, fmt.Errorf("persist remote run links: %w", err)
+			}
+			if !updated {
+				continue
+			}
+			return result, nil
+		}
+		if s.runner != nil && s.runner.leadership != nil {
+			return RemoteRunLink{}, fmt.Errorf("persist remote run links: HA storage must support compare-and-swap settings")
+		}
+		if err := s.store.SaveSetting(remoteRunLinksSettingKey, encoded); err != nil {
+			return RemoteRunLink{}, fmt.Errorf("persist remote run links: %w", err)
+		}
+		return result, nil
+	}
+	return RemoteRunLink{}, fmt.Errorf("persist remote run links: shared settings changed concurrently; retry the request")
 }

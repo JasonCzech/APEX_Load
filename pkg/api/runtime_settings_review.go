@@ -447,6 +447,9 @@ func (s *Server) handleGetScriptRuntimeSettingsReport(w http.ResponseWriter, r *
 		writeError(w, http.StatusNotFound, "script not found")
 		return
 	}
+	if !requireAuthorizedProjectMatch(w, r, stored.ProjectID) {
+		return
+	}
 	report := runtimeSettingsReportForScript(id, stored)
 	writeRuntimeSettingsReport(w, r, report)
 }

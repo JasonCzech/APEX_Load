@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"sync"
 	"testing"
 	"time"
@@ -127,7 +128,9 @@ func (s *reloadRaceStore) GetHistory(string) ([]any, error) {
 // the cancel func and could never stop the run.
 func TestReloadStoredTestsPreservesConcurrentlyStartedRun(t *testing.T) {
 	const id = "t1"
-	live := &ManagedTest{ID: id, Status: "RUNNING", cancel: func() {}}
+	liveCtx, liveCancel := context.WithCancel(context.Background())
+	defer liveCancel()
+	live := &ManagedTest{ID: id, Status: "RUNNING", executionCtx: liveCtx, cancel: liveCancel}
 
 	tr := &TestRunner{
 		tests:    map[string]*ManagedTest{},

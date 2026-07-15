@@ -37,6 +37,14 @@ import (
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
+const (
+	// MaxEngineVUsers is a defense-in-depth admission limit at the goroutine
+	// creation boundary. API/controller validation uses the same value, but the
+	// engine must remain safe for CLI and direct library callers as well.
+	MaxEngineVUsers = 1_000_000
+	MaxEngineGroups = 256
+)
+
 // Engine orchestrates VUser goroutines and metrics collection.
 //
 // The engine manages the full lifecycle of a load test:
@@ -54,6 +62,7 @@ type Engine struct {
 	duration time.Duration
 	rampUp   time.Duration
 	metrics  *MetricsCollector
+	data     *DataProvider
 	mu       sync.Mutex // guards cancel
 	cancel   context.CancelFunc
 	softStop context.CancelFunc
@@ -91,8 +100,15 @@ func New(cfg Config) (*Engine, error) {
 	if cfg.VUsers <= 0 {
 		return nil, fmt.Errorf("vusers must be positive")
 	}
+	if cfg.VUsers > MaxEngineVUsers {
+		return nil, fmt.Errorf("vusers must not exceed %d", MaxEngineVUsers)
+	}
 	if cfg.Duration <= 0 {
 		return nil, fmt.Errorf("duration must be positive")
+	}
+	dataProvider, err := NewDataProvider(cfg.Script.DataSources)
+	if err != nil {
+		return nil, fmt.Errorf("initialize data sources: %s", scrubSensitiveText(err.Error()))
 	}
 	return &Engine{
 		script:   cfg.Script,
@@ -100,7 +116,8 @@ func New(cfg Config) (*Engine, error) {
 		duration: cfg.Duration,
 		rampUp:   cfg.RampUp,
 		metrics:  NewMetricsCollector(10000),
-		secrets:  newDefaultSecretResolver(),
+		data:     dataProvider,
+		secrets:  newDefaultSecretResolverForProject(cfg.Script.ProjectID),
 	}, nil
 }
 
@@ -113,7 +130,7 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 
 	proto, err := protocol.Get(e.script.Protocol)
 	if err != nil {
-		return nil, fmt.Errorf("protocol init: %w", err)
+		return nil, fmt.Errorf("protocol init: %s", scrubSensitiveText(err.Error()))
 	}
 
 	protoConfig := buildProtoConfigForRunModeWithSecretResolver(e.script, "load", e.secrets)
@@ -122,7 +139,7 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 	releaseMockNamespace := protocol.AcquireRuntimeNamespace(mockNamespace)
 	defer releaseMockNamespace()
 	if err := proto.HealthCheck(ctx); err != nil {
-		slog.Warn("health check failed, proceeding anyway", "err", err)
+		slog.Warn("health check failed, proceeding anyway", "err", scrubSensitiveError(err, nil))
 	}
 
 	e.metrics.Start(time.Second)
@@ -178,6 +195,7 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 	rendezvous := NewRendezvousCoordinator()
 
 	rampDelay := e.rampDelay()
+	var startupErr error
 
 	for i := 0; i < e.vusers; i++ {
 		if loopCtx.Err() != nil {
@@ -193,14 +211,19 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 
 		vuProto, err := protocol.Get(e.script.Protocol)
 		if err != nil {
-			slog.Error("failed to create protocol for vuser", "vuser", vuserID, "err", err)
+			safeErr := scrubSensitiveError(err, nil)
+			slog.Error("failed to create protocol for vuser", "vuser", vuserID, "err", safeErr)
 			wg.Done()
-			continue
+			startupErr = safeErr
+			break
 		}
 		if err := vuProto.Init(ctx, vuserProtoConfig(protoConfig, vuserID)); err != nil {
-			slog.Error("failed to init protocol for vuser", "vuser", vuserID, "err", err)
+			safeErr := scrubSensitiveError(err, nil)
+			slog.Error("failed to init protocol for vuser", "vuser", vuserID, "err", safeErr)
+			runProtocolTeardown(vuProto)
 			wg.Done()
-			continue
+			startupErr = safeErr
+			break
 		}
 
 		e.metrics.SetActiveVUsers(activeVUsers.Add(1))
@@ -222,9 +245,15 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 				Rendezvous:           rendezvous,
 				ExecutionGoals:       executionGoals,
 				HardStopCtx:          ctx,
+				DataProvider:         e.data,
 			}
 			vu.Run(loopCtx)
 		}()
+	}
+	if startupErr != nil {
+		cancel()
+		wg.Wait()
+		return nil, fmt.Errorf("initialize configured vuser load: %w", startupErr)
 	}
 
 	wg.Wait()
@@ -288,6 +317,16 @@ func (e *Engine) runOpenWorkload(ctx context.Context, protoConfig map[string]any
 
 	var wg sync.WaitGroup
 	var activeWorkers atomic.Int64
+	var initializedWorkers atomic.Int64
+	var initErrMu sync.Mutex
+	var firstInitErr error
+	recordInitError := func(err error) {
+		initErrMu.Lock()
+		if firstInitErr == nil {
+			firstInitErr = err
+		}
+		initErrMu.Unlock()
+	}
 	setActive := func(delta int64) {
 		e.metrics.SetActiveVUsers(activeWorkers.Add(delta))
 	}
@@ -300,7 +339,7 @@ func (e *Engine) runOpenWorkload(ctx context.Context, protoConfig map[string]any
 			return arrivals
 		}
 		return 0
-	}(), nil, func(arrival int) {
+	}(), nil, nil, func(arrival int) {
 		// Shed the arrival when the in-flight set is saturated: the SUT cannot
 		// keep up, so dropping it protects the generator from unbounded
 		// goroutine growth instead of silently throttling to a closed model.
@@ -322,14 +361,20 @@ func (e *Engine) runOpenWorkload(ctx context.Context, protoConfig map[string]any
 
 			vuProto, err := protocol.Get(e.script.Protocol)
 			if err != nil {
-				slog.Error("failed to create protocol for arrival worker", "arrival", workerID, "err", err)
+				safeErr := scrubSensitiveError(err, nil)
+				slog.Error("failed to create protocol for arrival worker", "arrival", workerID, "err", safeErr)
+				recordInitError(safeErr)
 				return
 			}
 			if err := vuProto.Init(ctx, vuserProtoConfig(protoConfig, workerID)); err != nil {
-				slog.Error("failed to init protocol for arrival worker", "arrival", workerID, "err", err)
+				safeErr := scrubSensitiveError(err, nil)
+				slog.Error("failed to init protocol for arrival worker", "arrival", workerID, "err", safeErr)
+				recordInitError(safeErr)
+				runProtocolTeardown(vuProto)
 				return
 			}
 			defer runProtocolTeardown(vuProto)
+			initializedWorkers.Add(1)
 
 			vu := &VUser{
 				ID:             workerID,
@@ -339,6 +384,7 @@ func (e *Engine) runOpenWorkload(ctx context.Context, protoConfig map[string]any
 				SecretResolver: e.secrets,
 				ExecutionGoals: executionGoals,
 				HardStopCtx:    ctx,
+				DataProvider:   e.data,
 			}
 			vu.Run(loopCtx)
 		}(arrival)
@@ -349,6 +395,12 @@ func (e *Engine) runOpenWorkload(ctx context.Context, protoConfig map[string]any
 	}
 
 	wg.Wait()
+	initErrMu.Lock()
+	startupErr := firstInitErr
+	initErrMu.Unlock()
+	if initializedWorkers.Load() == 0 && startupErr != nil {
+		return nil, fmt.Errorf("open workload could not initialize any arrival worker: %w", startupErr)
+	}
 	elapsed := time.Since(start)
 	result := &RunResult{
 		Duration:          elapsed,

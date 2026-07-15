@@ -5,11 +5,16 @@ import "github.com/playwright-community/playwright-go"
 func (b *Browser) close() {
 	b.mu.Lock()
 	b.closing = true
+	requestPolicyStop := b.requestPolicyStop
+	b.requestPolicyStop = nil
 	cdp := b.pwCDP
 	b.pwCDP = nil
 	page := b.pwPage
 	b.pwPage = nil
 	b.mu.Unlock()
+	if requestPolicyStop != nil {
+		close(requestPolicyStop)
+	}
 	if cdp != nil {
 		_ = cdp.Detach()
 	}
@@ -55,8 +60,19 @@ func (b *Browser) close() {
 	b.networkEntries = nil
 	b.networkEntriesDropped = 0
 	b.networkBodyBytes = 0
+	b.networkMetadataBytes = 0
 	b.pages = nil
 	b.resetWSEvents()
+}
+
+func (b *Browser) stopRequestPolicyWaiters() {
+	b.mu.Lock()
+	stop := b.requestPolicyStop
+	b.requestPolicyStop = nil
+	b.mu.Unlock()
+	if stop != nil {
+		close(stop)
+	}
 }
 
 func (b *Browser) takeBrowserContext() playwright.BrowserContext {

@@ -98,6 +98,19 @@ func (tr *TestRunner) lockDistributedGroupControl(testID string, groupName strin
 	}
 }
 
+// lockDistributedTopologyReadControl keeps a whole-run fan-out (pause, resume,
+// or duration) on one stable generator set. Stop intentionally does not use
+// this gate: it must be able to mark STOPPING while evacuation is in flight so
+// the evacuation's stale-commit path can fail closed.
+func (tr *TestRunner) lockDistributedTopologyReadControl(testID string) func() {
+	gate := tr.retainDistributedControlGate(testID)
+	gate.topology.RLock()
+	return func() {
+		gate.topology.RUnlock()
+		tr.releaseDistributedControlGate(testID, gate)
+	}
+}
+
 // lockDistributedTopologyControl excludes every in-flight group scale while a
 // run's generator topology is replaced or detached.
 func (tr *TestRunner) lockDistributedTopologyControl(testID string) func() {

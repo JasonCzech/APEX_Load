@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 // IsStartableTestStatus reports whether a test in the given status may be started.
@@ -76,11 +77,11 @@ func StartDelayWindow(raw string) time.Duration {
 // returning existing unchanged when err is nil.
 func AppendRunError(existing string, prefix string, err error) string {
 	if err == nil {
-		return existing
+		return scrub.Value(existing, scrub.Policy{})
 	}
-	message := prefix + ": " + err.Error()
+	message := scrub.Value(prefix+": "+err.Error(), scrub.Policy{})
 	if existing == "" {
 		return message
 	}
-	return existing + "; " + message
+	return scrub.Value(existing, scrub.Policy{}) + "; " + message
 }

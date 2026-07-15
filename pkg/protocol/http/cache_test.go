@@ -63,6 +63,44 @@ func TestCacheEntryFromResponseRejectsNoStore(t *testing.T) {
 	}
 }
 
+func TestHTTPCacheProcessBudgetAndClear(t *testing.T) {
+	now := time.Now()
+	response := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Cache-Control": []string{"max-age=60"}},
+	}
+	body := []byte("cached-payload")
+	entry, ok := cacheEntryFromResponseView(response, body, now)
+	if !ok {
+		t.Fatal("test response was not cacheable")
+	}
+	budget := &responseCaptureBudget{limit: entry.size()}
+	cache := newHTTPResponseCacheWithBudget(budget)
+	requestA := httptest.NewRequest(http.MethodGet, "http://example.test/a", nil)
+	requestB := httptest.NewRequest(http.MethodGet, "http://example.test/b", nil)
+	cache.store(requestA, response, body, now)
+	cache.store(requestB, response, body, now)
+	if _, ok := cache.entries[httpCacheKey(requestA)]; !ok {
+		t.Fatal("first cache entry was not admitted")
+	}
+	if _, ok := cache.entries[httpCacheKey(requestB)]; ok {
+		t.Fatal("second cache entry exceeded the process budget")
+	}
+	if got := budget.used.Load(); got != entry.size() {
+		t.Fatalf("process cache bytes = %d, want %d", got, entry.size())
+	}
+
+	first, _ := cache.lookup(requestA, now)
+	second, _ := cache.lookup(requestA, now)
+	if len(first.body) == 0 || len(second.body) == 0 || &first.body[0] != &second.body[0] {
+		t.Fatal("cache hit cloned immutable response bytes")
+	}
+	cache.clear()
+	if got := budget.used.Load(); got != 0 {
+		t.Fatalf("cache clear leaked %d process bytes", got)
+	}
+}
+
 func TestHTTPExecuteCacheFreshHitSkipsNetwork(t *testing.T) {
 	var hits int32
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

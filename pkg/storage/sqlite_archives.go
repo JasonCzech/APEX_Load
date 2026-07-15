@@ -43,7 +43,7 @@ func (s *SQLiteStore) SaveRunArchive(record *RunArchiveRecord) error {
 	_, err = tx.Exec(`INSERT INTO run_archives (test_id, ref_key, schema_version, archive_backend, archive_path, manifest_path, manifest_sha256, archive_uri, manifest_uri, transaction_count, resource_sample_count, interval_summary_count, created_at, completed_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(test_id) DO UPDATE SET
-		ref_key=excluded.ref_key,
+		ref_key=CASE WHEN TRIM(COALESCE(excluded.ref_key, '')) = '' THEN run_archives.ref_key ELSE excluded.ref_key END,
 		schema_version=excluded.schema_version,
 		archive_backend=excluded.archive_backend,
 		archive_path=excluded.archive_path,
@@ -111,6 +111,50 @@ func (s *SQLiteStore) DeleteRunArchive(testID string) error {
 	}
 	_, err := s.db.Exec(`DELETE FROM run_archives WHERE test_id = ?`, testID)
 	return err
+}
+
+// DeleteRunArchiveIfUnchanged removes exactly the publication described by
+// expected. Retention and cleanup work can outlive the catalog read that
+// selected it, so deleting by test ID alone could erase a newer publication.
+func (s *SQLiteStore) DeleteRunArchiveIfUnchanged(expected *RunArchiveRecord) (bool, error) {
+	if expected == nil || strings.TrimSpace(expected.TestID) == "" {
+		return false, errors.New("expected run archive is required")
+	}
+	result, err := s.db.Exec(`DELETE FROM run_archives
+		WHERE test_id = ?
+		  AND COALESCE(ref_key, '') = ?
+		  AND schema_version = ?
+		  AND COALESCE(archive_backend, '') = ?
+		  AND archive_path = ?
+		  AND manifest_path = ?
+		  AND COALESCE(manifest_sha256, '') = ?
+		  AND COALESCE(archive_uri, '') = ?
+		  AND COALESCE(manifest_uri, '') = ?
+		  AND transaction_count = ?
+		  AND resource_sample_count = ?
+		  AND interval_summary_count = ?
+		  AND created_at = ?
+		  AND completed_at = ?`,
+		expected.TestID,
+		expected.RefKey,
+		normalizeTelemetrySchemaVersion(expected.SchemaVersion, archiveRecordSchemaVersion),
+		expected.ArchiveBackend,
+		expected.ArchivePath,
+		expected.ManifestPath,
+		expected.ManifestSHA256,
+		expected.ArchiveURI,
+		expected.ManifestURI,
+		expected.TransactionCount,
+		expected.ResourceSampleCount,
+		expected.IntervalSummaryCount,
+		expected.CreatedAt,
+		expected.CompletedAt,
+	)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	return affected > 0, err
 }
 
 func (s *SQLiteStore) SaveReleaseSLAWaiver(waiver *ReleaseSLAWaiver) error {

@@ -55,6 +55,17 @@ func TestReadSSEResponseBoundsUnterminatedLine(t *testing.T) {
 	}
 }
 
+func TestReadSSEResponseBoundsCanonicalizedEventOutput(t *testing.T) {
+	payload := strings.Repeat("data:x\n\n", 10)
+	result, err := readSSEResponse(context.Background(), io.NopCloser(strings.NewReader(payload)), map[string]any{"max_body_bytes": len(payload)}, time.Now())
+	if err == nil || !strings.Contains(err.Error(), "retained event body") {
+		t.Fatalf("canonical output error = %v", err)
+	}
+	if len(result.Body) > len(payload) {
+		t.Fatalf("retained body = %d bytes, cap %d", len(result.Body), len(payload))
+	}
+}
+
 func minInt(a, b int) int {
 	if a < b {
 		return a
@@ -62,9 +73,10 @@ func minInt(a, b int) int {
 	return b
 }
 
-func TestReadSSEResponseMaxBodyBytesOptOut(t *testing.T) {
+func TestReadSSEResponseNonPositiveBodyLimitUsesHardCap(t *testing.T) {
 	payload := strings.Repeat("data: payload\n\n", 50)
-	// A non-positive cap disables bounding: the whole finite stream is read.
+	// The finite stream fits below the hard cap. A negative script value cannot
+	// disable the cap, but otherwise preserves normal behavior.
 	res := readSSEFromString(t, payload, map[string]any{"max_body_bytes": -1})
 	if res.EventCount != 50 {
 		t.Fatalf("EventCount = %d, want all 50 events read when cap disabled", res.EventCount)
@@ -180,11 +192,14 @@ func TestSSEMaxBodyBytesDefault(t *testing.T) {
 	if got := sseMaxBodyBytes(nil); got != defaultSSEMaxBodyBytes {
 		t.Fatalf("default cap = %d, want %d", got, defaultSSEMaxBodyBytes)
 	}
-	if got := sseMaxBodyBytes(map[string]any{"max_body_bytes": 0}); got != 0 {
-		t.Fatalf("explicit 0 cap = %d, want 0 (unbounded opt-out)", got)
+	if got := sseMaxBodyBytes(map[string]any{"max_body_bytes": 0}); got != hardSSEMaxBodyBytes {
+		t.Fatalf("explicit 0 cap = %d, want hard cap %d", got, hardSSEMaxBodyBytes)
 	}
 	if got := sseMaxBodyBytes(map[string]any{"max_body_bytes": 4096}); got != 4096 {
 		t.Fatalf("explicit cap = %d, want 4096", got)
+	}
+	if got := sseMaxBodyBytes(map[string]any{"max_body_bytes": hardSSEMaxBodyBytes + 1}); got != hardSSEMaxBodyBytes {
+		t.Fatalf("oversized action cap = %d, want hard cap %d", got, hardSSEMaxBodyBytes)
 	}
 }
 

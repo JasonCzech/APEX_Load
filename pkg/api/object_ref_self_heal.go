@@ -8,8 +8,10 @@ package api
 // path (the controller has the store); distributed load runs cannot write back.
 
 import (
+	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
@@ -35,6 +37,15 @@ type objectRefBinding struct {
 	repoID      string
 }
 
+type objectRepositoryCASPersistence interface {
+	UpdateObjectRepositoryIfUnchanged(repo *storage.ObjectRepository, expectedUpdatedAt time.Time) (bool, error)
+}
+
+type pendingRepositoryHeal struct {
+	logicalName string
+	heal        selfHealRecord
+}
+
 // persistSelfHealToRepository inspects a finished replay report for selector
 // self-heals on object_ref-bound actions and appends the working locator back
 // onto the originating repository object. It is conservative: a healed locator
@@ -49,6 +60,11 @@ func (s *Server) persistSelfHealToRepository(projectID string, script *dsl.Scrip
 	if len(heals) == 0 {
 		return
 	}
+	casStore, ok := s.store.(objectRepositoryCASPersistence)
+	if !ok {
+		slog.Warn("persist self-heal skipped because storage lacks optimistic object repository updates")
+		return
+	}
 	bindings := objectRefBindingsByActionName(script)
 
 	// Serialize the load→mutate→save sequence: completion hooks from the browser
@@ -60,6 +76,7 @@ func (s *Server) persistSelfHealToRepository(projectID string, script *dsl.Scrip
 
 	loaded := map[string]*storage.ObjectRepository{}
 	changed := map[string]bool{}
+	pending := map[string][]pendingRepositoryHeal{}
 	for _, heal := range heals {
 		binding := objectRefBinding{logicalName: heal.logicalName, repoID: heal.repoID}
 		if binding.repoID == "" || binding.logicalName == "" {
@@ -83,16 +100,50 @@ func (s *Server) persistSelfHealToRepository(projectID string, script *dsl.Scrip
 		}
 		if applyHealToRepositoryObject(repo, binding.logicalName, heal, repo.AutoPromoteOnHeal) {
 			changed[binding.repoID] = true
+			pending[binding.repoID] = append(pending[binding.repoID], pendingRepositoryHeal{logicalName: binding.logicalName, heal: heal})
 		}
 	}
 	for repoID, repo := range loaded {
 		if !changed[repoID] {
 			continue
 		}
-		if err := s.store.SaveObjectRepository(repo); err != nil {
+		if err := s.persistRepositoryHealsCAS(casStore, repo, pending[repoID]); err != nil {
 			slog.Warn("persist self-heal to object repository failed", "repository", repoID, "error", err)
 		}
 	}
+}
+
+func (s *Server) persistRepositoryHealsCAS(store objectRepositoryCASPersistence, repo *storage.ObjectRepository, pending []pendingRepositoryHeal) error {
+	const maxAttempts = 5
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		expectedUpdatedAt := repo.UpdatedAt
+		updated, err := store.UpdateObjectRepositoryIfUnchanged(repo, expectedUpdatedAt)
+		if err != nil {
+			return err
+		}
+		if updated {
+			return nil
+		}
+		fresh, err := s.store.GetObjectRepository(repo.ID)
+		if err != nil {
+			return err
+		}
+		if fresh == nil {
+			return fmt.Errorf("object repository %q disappeared during self-heal", repo.ID)
+		}
+		changed := false
+		for _, mutation := range pending {
+			if applyHealToRepositoryObject(fresh, mutation.logicalName, mutation.heal, fresh.AutoPromoteOnHeal) {
+				changed = true
+			}
+		}
+		if !changed {
+			// A concurrent writer already persisted equivalent or stronger evidence.
+			return nil
+		}
+		repo = fresh
+	}
+	return fmt.Errorf("object repository %q kept changing during self-heal", repo.ID)
 }
 
 // collectSelfHeals extracts selector self-heal evidence from each replay event.

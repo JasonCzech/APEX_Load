@@ -2,7 +2,9 @@ package api
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -23,6 +25,61 @@ func projectSecurityScript(id string, projectID string) *dsl.Script {
 	}
 }
 
+func TestExecutionPlanValidationUsesDurableScenarioAndDataPoolOwnership(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+	now := time.Now().UTC()
+	for _, projectID := range []string{"plan-project-a", "plan-project-b"} {
+		if err := store.SaveProject(&storage.Project{ID: projectID, Name: projectID, CreatedAt: now}); err != nil {
+			t.Fatalf("SaveProject(%s): %v", projectID, err)
+		}
+	}
+	if err := store.SaveScript(projectSecurityScript("plan-script-b", "plan-project-b")); err != nil {
+		t.Fatalf("SaveScript: %v", err)
+	}
+	for _, pool := range []*storage.SharedDataPool{
+		{ID: "plan-pool-a", Name: "A", ProjectID: "plan-project-a", CreatedAt: now},
+		{ID: "plan-pool-b", Name: "B", ProjectID: "plan-project-b", CreatedAt: now},
+	} {
+		if err := store.SaveDataPool(pool); err != nil {
+			t.Fatalf("SaveDataPool(%s): %v", pool.ID, err)
+		}
+	}
+
+	// Construct the server before inserting the scenario so its local scenario
+	// cache is deliberately stale. Durable validation must still reject it.
+	server := NewServer(ServerConfig{Store: store})
+	scenario := &storage.Scenario{ID: "plan-scenario-b", Name: "B", Duration: "1m", CreatedAt: now}
+	if err := store.SaveScenario(scenario, []storage.ScenarioScript{{ScenarioID: scenario.ID, ScriptID: "plan-script-b"}}); err != nil {
+		t.Fatalf("SaveScenario: %v", err)
+	}
+
+	foreignScenario := &storage.ExecutionPlan{
+		ID: "plan-foreign-scenario", ProjectID: "plan-project-a", Name: "Foreign scenario", RunMode: "parallel",
+		Entries: []storage.ExecutionPlanEntry{{ScenarioID: scenario.ID}},
+	}
+	if status, _ := server.validateExecutionPlan(foreignScenario); status != http.StatusBadRequest {
+		t.Fatalf("foreign scenario validation status = %d, want %d", status, http.StatusBadRequest)
+	}
+	foreignPool := &storage.ExecutionPlan{
+		ID: "plan-foreign-pool", ProjectID: "plan-project-a", Name: "Foreign pool", RunMode: "parallel",
+		Entries: []storage.ExecutionPlanEntry{{ScenarioID: "future-scenario", DataPools: []storage.ScenarioDataPoolBinding{{PoolID: "plan-pool-b", Alias: "users"}}}},
+	}
+	if status, _ := server.validateExecutionPlan(foreignPool); status != http.StatusBadRequest {
+		t.Fatalf("foreign pool validation status = %d, want %d", status, http.StatusBadRequest)
+	}
+	ownedDraft := &storage.ExecutionPlan{
+		ID: "plan-owned-draft", ProjectID: "plan-project-a", Name: "Owned draft", RunMode: "parallel",
+		Entries: []storage.ExecutionPlanEntry{{ScenarioID: "future-scenario", DataPools: []storage.ScenarioDataPoolBinding{{PoolID: "plan-pool-a", Alias: "users"}}}},
+	}
+	if status, message := server.validateExecutionPlan(ownedDraft); status != 0 {
+		t.Fatalf("owned draft validation = %d %q, want success", status, message)
+	}
+}
+
 func TestScriptUpdateCannotChangeProjectOwnership(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	stored := server.runner.StoreScript(projectSecurityScript("script-a", "project-a"))
@@ -38,6 +95,102 @@ func TestScriptUpdateCannotChangeProjectOwnership(t *testing.T) {
 	got, ok := server.runner.GetScript(stored.ID)
 	if !ok || got.ProjectID != "project-a" || got.Script.ProjectID != "project-a" {
 		t.Fatalf("stored script ownership changed: %#v", got)
+	}
+}
+
+func TestScriptFolderProjectCannotAuthorizeOrPersistAnotherProject(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+	now := time.Now().UTC()
+	for _, projectID := range []string{"script-folder-project-a", "script-folder-project-b"} {
+		if err := store.SaveProject(&storage.Project{ID: projectID, Name: projectID, CreatedAt: now}); err != nil {
+			t.Fatalf("SaveProject(%s): %v", projectID, err)
+		}
+	}
+	foreignFolder := &storage.Folder{ID: "script-folder-project-b-folder", ProjectID: "script-folder-project-b", Name: "B", Category: "scripts", CreatedAt: now}
+	if err := store.SaveFolder(foreignFolder); err != nil {
+		t.Fatalf("SaveFolder: %v", err)
+	}
+
+	resolverBody := `{"folder_id":"` + foreignFolder.ID + `","script":{"name":"forged","project_id":"script-folder-project-a"}}`
+	resolverRequest := httptest.NewRequest(http.MethodPost, "/api/v1/scripts", strings.NewReader(resolverBody))
+	if _, status, _ := resolveScriptCreateProjectID(resolverRequest, store); status != http.StatusBadRequest {
+		t.Fatalf("resolveScriptCreateProjectID status = %d, want %d", status, http.StatusBadRequest)
+	}
+
+	server := NewServer(ServerConfig{Store: store})
+	forged := projectSecurityScript("forged-folder-script", "script-folder-project-a")
+	createBody, _ := json.Marshal(map[string]any{"folder_id": foreignFolder.ID, "script": forged})
+	createResponse := httptest.NewRecorder()
+	server.mux.ServeHTTP(createResponse, httptest.NewRequest(http.MethodPost, "/api/v1/scripts", bytes.NewReader(createBody)))
+	if createResponse.Code != http.StatusBadRequest {
+		t.Fatalf("cross-project folder create status = %d, want %d body=%s", createResponse.Code, http.StatusBadRequest, createResponse.Body.String())
+	}
+	if _, err := store.GetScript(forged.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("forged script persisted: %v", err)
+	}
+
+	owned, err := server.runner.StoreScriptDurable(projectSecurityScript("owned-folder-script", "script-folder-project-a"))
+	if err != nil {
+		t.Fatalf("StoreScriptDurable: %v", err)
+	}
+	update := projectSecurityScript(owned.ID, owned.ProjectID)
+	update.FolderID = &foreignFolder.ID
+	updateBody, _ := json.Marshal(map[string]any{"script": update})
+	updateResponse := httptest.NewRecorder()
+	server.mux.ServeHTTP(updateResponse, httptest.NewRequest(http.MethodPut, "/api/v1/scripts/"+owned.ID, bytes.NewReader(updateBody)))
+	if updateResponse.Code != http.StatusBadRequest {
+		t.Fatalf("cross-project folder update status = %d, want %d body=%s", updateResponse.Code, http.StatusBadRequest, updateResponse.Body.String())
+	}
+	unchanged, err := store.GetScript(owned.ID)
+	if err != nil {
+		t.Fatalf("GetScript: %v", err)
+	}
+	if unchanged.FolderID != nil {
+		t.Fatalf("rejected update changed folder to %#v", unchanged.FolderID)
+	}
+}
+
+func TestFolderOnlyListsUseTheFolderProject(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+	now := time.Now().UTC()
+	project := &storage.Project{ID: "folder-filter-project", Name: "Folder filter", CreatedAt: now}
+	if err := store.SaveProject(project); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+	folder := &storage.Folder{ID: "folder-filter", ProjectID: project.ID, Name: "Filter", Category: "general", CreatedAt: now}
+	if err := store.SaveFolder(folder); err != nil {
+		t.Fatalf("SaveFolder: %v", err)
+	}
+	script := projectSecurityScript("folder-filter-script", project.ID)
+	script.FolderID = &folder.ID
+	if err := store.SaveScript(script); err != nil {
+		t.Fatalf("SaveScript: %v", err)
+	}
+	if err := store.SaveTest(&storage.TestRecord{ID: "folder-filter-test", Name: "filtered", Status: "COMPLETE", ProjectID: project.ID, FolderID: &folder.ID, StartTime: now}); err != nil {
+		t.Fatalf("SaveTest: %v", err)
+	}
+	server := NewServer(ServerConfig{Store: store})
+
+	for _, endpoint := range []struct {
+		path string
+		id   string
+	}{
+		{path: "/api/v1/scripts?folder_id=" + folder.ID, id: script.ID},
+		{path: "/api/v1/tests?folder_id=" + folder.ID, id: "folder-filter-test"},
+	} {
+		response := httptest.NewRecorder()
+		server.mux.ServeHTTP(response, httptest.NewRequest(http.MethodGet, endpoint.path, nil))
+		if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), endpoint.id) {
+			t.Fatalf("GET %s status=%d body=%s, want %s", endpoint.path, response.Code, response.Body.String(), endpoint.id)
+		}
 	}
 }
 

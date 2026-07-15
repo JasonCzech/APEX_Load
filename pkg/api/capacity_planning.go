@@ -449,16 +449,16 @@ func capacityReservationTotalsAt(settings SystemSettings, projectID string, now 
 	for _, reservation := range normalizeCapacityReservations(settings.CapacityPlanning.Reservations) {
 		if strings.TrimSpace(reservation.PoolID) != "" {
 			if normalizedProjectID != "" && reservation.ProjectID == normalizedProjectID && reservation.ReservedGenerators > 0 && reservationActiveAt(reservation, now) {
-				projectReserved += reservation.ReservedGenerators
+				projectReserved = saturatingAddNonNegative(projectReserved, reservation.ReservedGenerators)
 			}
 			continue
 		}
 		if reservation.ReservedGenerators < 0 || !reservationActiveAt(reservation, now) {
 			continue
 		}
-		totalReserved += reservation.ReservedGenerators
+		totalReserved = saturatingAddNonNegative(totalReserved, reservation.ReservedGenerators)
 		if normalizedProjectID != "" && reservation.ProjectID == normalizedProjectID {
-			projectReserved += reservation.ReservedGenerators
+			projectReserved = saturatingAddNonNegative(projectReserved, reservation.ReservedGenerators)
 		}
 	}
 	return totalReserved, projectReserved
@@ -479,9 +479,9 @@ func poolCapacityReservationTotalsAt(settings SystemSettings, projectID, poolID 
 		if reservation.ReservedGenerators < 0 || !reservationActiveAt(reservation, now) {
 			continue
 		}
-		totalReserved += reservation.ReservedGenerators
+		totalReserved = saturatingAddNonNegative(totalReserved, reservation.ReservedGenerators)
 		if normalizedProjectID != "" && reservation.ProjectID == normalizedProjectID {
-			projectReserved += reservation.ReservedGenerators
+			projectReserved = saturatingAddNonNegative(projectReserved, reservation.ReservedGenerators)
 		}
 	}
 	return totalReserved, projectReserved
@@ -535,7 +535,7 @@ func calculateScenarioComplexity(groups []TestGroup, runtimeSettings *RuntimeSet
 func totalScenarioVUsers(groups []TestGroup) int {
 	total := 0
 	for _, group := range groups {
-		total += group.VUsers
+		total = saturatingAddNonNegative(total, group.VUsers)
 	}
 	if total < 1 {
 		return 1

@@ -19,12 +19,18 @@ const (
 	// ~512MiB per VUser (256 × 2MiB), which a fleet of VUsers caching multi-MB
 	// assets can multiply into an OOM.
 	httpCacheMaxTotalBytes = 32 * 1024 * 1024
+	// The cache is per VUser, so its local ceiling must be paired with a process
+	// ceiling or a large fleet can multiply it into hundreds of GiB.
+	httpCacheMaxProcessBytes int64 = 256 << 20
 )
+
+var processHTTPCacheBudget = responseCaptureBudget{limit: httpCacheMaxProcessBytes}
 
 type httpResponseCache struct {
 	mu         sync.Mutex
 	entries    map[string]httpCacheEntry
 	totalBytes int64
+	memory     *responseCaptureLease
 }
 
 type httpCacheEntry struct {
@@ -38,7 +44,11 @@ type httpCacheEntry struct {
 }
 
 func newHTTPResponseCache() *httpResponseCache {
-	return &httpResponseCache{entries: map[string]httpCacheEntry{}}
+	return newHTTPResponseCacheWithBudget(&processHTTPCacheBudget)
+}
+
+func newHTTPResponseCacheWithBudget(budget *responseCaptureBudget) *httpResponseCache {
+	return &httpResponseCache{entries: map[string]httpCacheEntry{}, memory: budget.lease()}
 }
 
 func parseHTTPCacheEnabled(config map[string]any) bool {
@@ -56,7 +66,11 @@ func (c *httpResponseCache) lookup(req *http.Request, now time.Time) (*httpCache
 	if !ok {
 		return nil, false
 	}
-	return entry.clone(), !entry.expiresAt.IsZero() && now.Before(entry.expiresAt)
+	// Cache entries are immutable after insertion. Return a shallow snapshot so
+	// a hit does not clone a multi-MiB body; response() clones the header map and
+	// bytes.Reader never mutates the shared body.
+	snapshot := entry
+	return &snapshot, !entry.expiresAt.IsZero() && now.Before(entry.expiresAt)
 }
 
 func (c *httpResponseCache) store(req *http.Request, resp *http.Response, body []byte, now time.Time) {
@@ -66,24 +80,44 @@ func (c *httpResponseCache) store(req *http.Request, resp *http.Response, body [
 	if len(body) > httpCacheMaxBodyBytes || requestHasAuthorization(req) && !responseAllowsAuthenticatedCache(resp.Header) {
 		return
 	}
-	entry, ok := cacheEntryFromResponse(resp, body, now)
+	entry, ok := cacheEntryFromResponseView(resp, body, now)
 	if !ok {
 		return
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.putLocked(httpCacheKey(req), entry)
+	c.put(httpCacheKey(req), entry, true)
 }
 
-// putLocked inserts/replaces an entry and enforces both the entry-count cap and
-// the aggregate-byte budget, evicting the oldest entries first. Caller holds mu.
-func (c *httpResponseCache) putLocked(key string, entry httpCacheEntry) {
-	if old, ok := c.entries[key]; ok {
-		c.totalBytes -= old.size()
+// put inserts/replaces an entry after reserving its net process-wide memory
+// growth. cloneBody is true for a network response whose pooled capture buffer
+// will be reused, and false for a 304 refresh that safely reuses immutable
+// cached bytes.
+func (c *httpResponseCache) put(key string, entry httpCacheEntry, cloneBody bool) bool {
+	if c == nil {
+		return false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	old, replacing := c.entries[key]
+	oldSize := int64(0)
+	if replacing {
+		oldSize = old.size()
+	}
+	newSize := entry.size()
+	if growth := newSize - oldSize; growth > 0 && !c.memory.reserve(growth) {
+		return false
+	}
+	if cloneBody {
+		entry.body = append([]byte(nil), entry.body...)
+	}
+	if replacing {
+		c.totalBytes -= oldSize
 		delete(c.entries, key)
 	}
 	c.entries[key] = entry
-	c.totalBytes += entry.size()
+	c.totalBytes += newSize
+	if released := oldSize - newSize; released > 0 {
+		c.memory.releaseBytes(released)
+	}
 	for len(c.entries) > 0 && (len(c.entries) > httpCacheMaxEntries || c.totalBytes > httpCacheMaxTotalBytes) {
 		oldestKey := ""
 		var oldest time.Time
@@ -95,9 +129,24 @@ func (c *httpResponseCache) putLocked(key string, entry httpCacheEntry) {
 		if oldestKey == "" {
 			break
 		}
-		c.totalBytes -= c.entries[oldestKey].size()
+		evictedSize := c.entries[oldestKey].size()
+		c.totalBytes -= evictedSize
 		delete(c.entries, oldestKey)
+		c.memory.releaseBytes(evictedSize)
 	}
+	return true
+}
+
+func (c *httpResponseCache) clear() {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	released := c.totalBytes
+	c.entries = make(map[string]httpCacheEntry)
+	c.totalBytes = 0
+	c.memory.releaseBytes(released)
+	c.mu.Unlock()
 }
 
 // size estimates the memory footprint of a cache entry: the body plus the
@@ -128,13 +177,11 @@ func (c *httpResponseCache) refresh(req *http.Request, stale *httpCacheEntry, re
 		StatusCode: stale.statusCode,
 		Header:     header,
 	}
-	entry, ok := cacheEntryFromResponse(synthetic, stale.body, now)
+	entry, ok := cacheEntryFromResponseView(synthetic, stale.body, now)
 	if !ok {
 		return
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.putLocked(httpCacheKey(req), entry)
+	c.put(httpCacheKey(req), entry, false)
 }
 
 func (e *httpCacheEntry) addConditionalHeaders(req *http.Request) {
@@ -162,20 +209,15 @@ func (e *httpCacheEntry) response(req *http.Request) *http.Response {
 	}
 }
 
-func (e httpCacheEntry) clone() *httpCacheEntry {
-	body := append([]byte(nil), e.body...)
-	return &httpCacheEntry{
-		statusCode:   e.statusCode,
-		header:       e.header.Clone(),
-		body:         body,
-		expiresAt:    e.expiresAt,
-		etag:         e.etag,
-		lastModified: e.lastModified,
-		storedAt:     e.storedAt,
+func cacheEntryFromResponse(resp *http.Response, body []byte, now time.Time) (httpCacheEntry, bool) {
+	entry, ok := cacheEntryFromResponseView(resp, body, now)
+	if ok {
+		entry.body = append([]byte(nil), body...)
 	}
+	return entry, ok
 }
 
-func cacheEntryFromResponse(resp *http.Response, body []byte, now time.Time) (httpCacheEntry, bool) {
+func cacheEntryFromResponseView(resp *http.Response, body []byte, now time.Time) (httpCacheEntry, bool) {
 	cacheControl := parseCacheControl(resp.Header.Get("Cache-Control"))
 	if _, noStore := cacheControl["no-store"]; noStore {
 		return httpCacheEntry{}, false
@@ -198,7 +240,7 @@ func cacheEntryFromResponse(resp *http.Response, body []byte, now time.Time) (ht
 	return httpCacheEntry{
 		statusCode:   resp.StatusCode,
 		header:       resp.Header.Clone(),
-		body:         append([]byte(nil), body...),
+		body:         body,
 		expiresAt:    expiresAt,
 		etag:         etag,
 		lastModified: lastModified,

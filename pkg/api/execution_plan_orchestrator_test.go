@@ -151,7 +151,7 @@ func TestBuildPlanEntryCreateRequest(t *testing.T) {
 }
 
 func TestSequentialPlanReconcilesLostCASResponseWithoutDeletingCommittedTest(t *testing.T) {
-	runner, backend, scenarioIDs := newPlanTestRunner(t, "lost-response")
+	runner, backend, scenarioIDs := newPlanTestRunnerForProject(t, "project-a", "lost-response")
 	base, ok := runner.execPlanRunStore.(*storage.SQLiteStore)
 	if !ok {
 		t.Fatalf("plan store type = %T, want *storage.SQLiteStore", runner.execPlanRunStore)
@@ -180,7 +180,7 @@ func TestSequentialPlanReconcilesLostCASResponseWithoutDeletingCommittedTest(t *
 }
 
 func TestParallelPlanReconcilesLostFinalCASResponse(t *testing.T) {
-	runner, _, scenarioIDs := newPlanTestRunner(t, "parallel-lost-response")
+	runner, _, scenarioIDs := newPlanTestRunnerForProject(t, "project-a", "parallel-lost-response")
 	base, ok := runner.execPlanRunStore.(*storage.SQLiteStore)
 	if !ok {
 		t.Fatalf("plan store type = %T, want *storage.SQLiteStore", runner.execPlanRunStore)
@@ -199,6 +199,142 @@ func TestParallelPlanReconcilesLostFinalCASResponse(t *testing.T) {
 	}
 	if _, ok := runner.GetTest(result.Results[0].TestID); !ok {
 		t.Fatalf("committed test %s was deleted after a lost response", result.Results[0].TestID)
+	}
+}
+
+func TestParallelPlanImmediatelyPromotesMaterializedTests(t *testing.T) {
+	runner, backend, scenarioIDs := newPlanTestRunner(t, "parallel-immediate-promotion")
+	plan := &storage.ExecutionPlan{
+		ID: "plan-parallel-immediate-promotion", Name: "Immediate", RunMode: "parallel",
+		Entries: []storage.ExecutionPlanEntry{{Order: 0, ScenarioID: scenarioIDs[0]}},
+	}
+
+	result, err := runner.MaterializeAndRunExecutionPlan(plan, "", "")
+	if err != nil {
+		t.Fatalf("MaterializeAndRunExecutionPlan: %v", err)
+	}
+	if result.Created != 1 || len(result.Results) != 1 {
+		t.Fatalf("materialization result = %+v, want one created test", result)
+	}
+	startedID, started := waitForStart(t, backend, time.Second)
+	if !started {
+		t.Fatal("idle controller did not immediately promote the parallel plan test")
+	}
+	if startedID != result.Results[0].TestID {
+		t.Fatalf("started test = %q, materialized test = %q", startedID, result.Results[0].TestID)
+	}
+	if events := hubEventTypes(runner.hub); !containsEvent(events, "execution_plan_run_finished") {
+		t.Fatalf("parallel plan did not broadcast terminal run event: %v", events)
+	}
+}
+
+func TestParallelPlanAdmissionRunsEntriesConcurrently(t *testing.T) {
+	runner, backend, scenarioIDs := newPlanTestRunner(t, "parallel-barrier-a", "parallel-barrier-b")
+	arrived := make(chan struct{}, 2)
+	release := make(chan struct{})
+	runner.beforeExecutionPlanStartMutation = func() {
+		arrived <- struct{}{}
+		<-release
+	}
+	plan := &storage.ExecutionPlan{
+		ID: "plan-parallel-admission-barrier", Name: "Barrier", RunMode: "parallel",
+		Entries: []storage.ExecutionPlanEntry{{Order: 0, ScenarioID: scenarioIDs[0]}, {Order: 1, ScenarioID: scenarioIDs[1]}},
+	}
+	type materializeResult struct {
+		result *ExecutionPlanMaterializeResult
+		err    error
+	}
+	done := make(chan materializeResult, 1)
+	go func() {
+		result, err := runner.MaterializeAndRunExecutionPlan(plan, "", "")
+		done <- materializeResult{result: result, err: err}
+	}()
+	for i := 0; i < 2; i++ {
+		select {
+		case <-arrived:
+		case <-time.After(time.Second):
+			close(release)
+			t.Fatalf("only %d parallel admission workers reached the barrier", i)
+		}
+	}
+	close(release)
+	outcome := <-done
+	if outcome.err != nil || outcome.result == nil || outcome.result.Created != 2 {
+		t.Fatalf("MaterializeAndRunExecutionPlan = (%+v, %v), want two created tests", outcome.result, outcome.err)
+	}
+	for i := 0; i < 2; i++ {
+		if _, started := waitForStart(t, backend, time.Second); !started {
+			t.Fatalf("parallel backend start %d did not arrive", i+1)
+		}
+	}
+}
+
+func TestParallelPlanDurablyFailsEntryWhenAdmissionRejectsQueuedTest(t *testing.T) {
+	runner, backend, scenarioIDs := newPlanTestRunner(t, "parallel-admission-rejected")
+	runner.beforeExecutionPlanStartMutation = func() {
+		runner.mu.Lock()
+		runner.shuttingDown = true
+		runner.mu.Unlock()
+	}
+	plan := &storage.ExecutionPlan{
+		ID: "plan-parallel-admission-rejected", Name: "Rejected", RunMode: "parallel",
+		Entries: []storage.ExecutionPlanEntry{{Order: 0, ScenarioID: scenarioIDs[0]}},
+	}
+
+	result, err := runner.MaterializeAndRunExecutionPlan(plan, "", "")
+	if err != nil {
+		t.Fatalf("MaterializeAndRunExecutionPlan: %v", err)
+	}
+	if result.Status != "failed" || result.Failed != 1 || len(result.Results) != 1 || result.Results[0].Status != "failed" {
+		t.Fatalf("materialization result = %+v, want durable failed admission", result)
+	}
+	test, ok := runner.GetTest(result.Results[0].TestID)
+	if !ok || test.Status != "FAILED" {
+		t.Fatalf("rejected staged test = %+v, exists=%v, want FAILED", test, ok)
+	}
+	select {
+	case startedID := <-backend.called:
+		t.Fatalf("admission-rejected test %s reached backend", startedID)
+	case <-time.After(100 * time.Millisecond):
+	}
+	runs, err := runner.execPlanRunStore.ListExecutionPlanRuns(plan.ID, 10, 0)
+	if err != nil {
+		t.Fatalf("ListExecutionPlanRuns: %v", err)
+	}
+	if len(runs) != 1 || runs[0].Status != "failed" || runs[0].Entries[0].Status != "failed" {
+		t.Fatalf("durable run = %+v, want failed entry/run", runs)
+	}
+}
+
+func TestScheduledParallelPlanImmediatelyPromotesMaterializedTests(t *testing.T) {
+	runner, backend, scenarioIDs := newPlanTestRunner(t, "scheduled-parallel-immediate-promotion")
+	store, ok := runner.execPlanScheduleStore.(*storage.SQLiteStore)
+	if !ok {
+		t.Fatalf("schedule store type = %T, want *storage.SQLiteStore", runner.execPlanScheduleStore)
+	}
+	now := time.Now().UTC()
+	plan := &storage.ExecutionPlan{
+		ID: "plan-scheduled-parallel-immediate-promotion", Name: "Scheduled immediate", RunMode: "parallel",
+		Entries:   []storage.ExecutionPlanEntry{{Order: 0, ScenarioID: scenarioIDs[0]}},
+		CreatedAt: now, UpdatedAt: now,
+	}
+	if err := store.SaveExecutionPlan(plan); err != nil {
+		t.Fatalf("SaveExecutionPlan: %v", err)
+	}
+	plannedAt := now.Add(-time.Second)
+	schedule := &storage.ExecutionPlanSchedule{
+		ID: "schedule-parallel-immediate-promotion", PlanID: plan.ID, ProjectID: plan.ProjectID,
+		Name: "Immediate", CronExpr: "*/5 * * * *", Timezone: "UTC", Enabled: true,
+		NextRunAt: &plannedAt, CreatedAt: now.Add(-time.Hour), UpdatedAt: now.Add(-time.Hour),
+	}
+	if err := store.SaveExecutionPlanSchedule(schedule); err != nil {
+		t.Fatalf("SaveExecutionPlanSchedule: %v", err)
+	}
+	if err := runner.runDueExecutionPlanScheduleOnce(schedule, now); err != nil {
+		t.Fatalf("runDueExecutionPlanScheduleOnce: %v", err)
+	}
+	if _, started := waitForStart(t, backend, time.Second); !started {
+		t.Fatal("scheduled parallel plan remained queued on an idle controller")
 	}
 }
 
@@ -221,7 +357,7 @@ func TestExecutionPlanCASMissWithReloadFailureRemainsRetryable(t *testing.T) {
 }
 
 func TestSequentialPlanRetriesAmbiguousEntryClaimBeforeMaterialization(t *testing.T) {
-	runner, backend, scenarioIDs := newPlanTestRunner(t, "ambiguous-claim")
+	runner, backend, scenarioIDs := newPlanTestRunnerForProject(t, "project-a", "ambiguous-claim")
 	base := runner.execPlanRunStore.(*storage.SQLiteStore)
 	runner.execPlanRunStore = &errorBeforeCommitExecutionPlanRunStore{base: base, failOnCAS: 1}
 	plan := &storage.ExecutionPlan{
@@ -250,7 +386,7 @@ func TestSequentialPlanRetriesAmbiguousEntryClaimBeforeMaterialization(t *testin
 }
 
 func TestParallelPlanRetainsTestsWhileAmbiguousFinalCASRetries(t *testing.T) {
-	runner, _, scenarioIDs := newPlanTestRunner(t, "ambiguous-parallel")
+	runner, _, scenarioIDs := newPlanTestRunnerForProject(t, "project-a", "ambiguous-parallel")
 	base := runner.execPlanRunStore.(*storage.SQLiteStore)
 	runner.execPlanRunStore = &errorBeforeCommitExecutionPlanRunStore{base: base, failOnCAS: 1}
 	plan := &storage.ExecutionPlan{
@@ -294,6 +430,10 @@ func TestParallelPlanRetainsTestsWhileAmbiguousFinalCASRetries(t *testing.T) {
 // auto-completes, plus one scenario per requested label. Returns the runner, the
 // backend spy, and the created scenario IDs.
 func newPlanTestRunner(t *testing.T, scenarioLabels ...string) (*TestRunner, *executionBackendSpy, []string) {
+	return newPlanTestRunnerForProject(t, storage.DefaultProjectID, scenarioLabels...)
+}
+
+func newPlanTestRunnerForProject(t *testing.T, projectID string, scenarioLabels ...string) (*TestRunner, *executionBackendSpy, []string) {
 	t.Helper()
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
@@ -317,7 +457,7 @@ func newPlanTestRunner(t *testing.T, scenarioLabels ...string) (*TestRunner, *ex
 	for _, label := range scenarioLabels {
 		scriptID := "script-" + label
 		runner.StoreScript(&dsl.Script{
-			ID: scriptID, Name: label, Protocol: "http", Version: "1.0.0",
+			ID: scriptID, Name: label, Protocol: "http", Version: "1.0.0", ProjectID: projectID,
 			Config:  dsl.ScriptConfig{BaseURL: "https://example.com", RunLogic: dsl.RunLogicConfig{Iterations: 1}},
 			Actions: []dsl.Action{{Name: "Home", Type: "GET", Target: "/"}},
 		})
@@ -427,7 +567,7 @@ func TestSequentialPlanRunHaltsWhenEntryFailsSynchronously(t *testing.T) {
 }
 
 func TestSequentialPlanRunGatesOnCompletion(t *testing.T) {
-	runner, spy, ids := newPlanTestRunner(t, "first", "second")
+	runner, spy, ids := newPlanTestRunnerForProject(t, "proj-a", "first", "second")
 	plan := &storage.ExecutionPlan{
 		ID: "exec-plan-seq", ProjectID: "proj-a", Name: "Gated", RunMode: "sequential",
 		Entries: []storage.ExecutionPlanEntry{
@@ -480,7 +620,7 @@ func TestSequentialPlanRunGatesOnCompletion(t *testing.T) {
 }
 
 func TestSequentialPlanRunHaltsOnFailure(t *testing.T) {
-	runner, spy, ids := newPlanTestRunner(t, "first", "second")
+	runner, spy, ids := newPlanTestRunnerForProject(t, "proj-a", "first", "second")
 	plan := &storage.ExecutionPlan{
 		ID: "exec-plan-halt", ProjectID: "proj-a", Name: "Halts", RunMode: "sequential",
 		Entries: []storage.ExecutionPlanEntry{
@@ -520,7 +660,7 @@ func TestSequentialPlanRunHaltsOnFailure(t *testing.T) {
 }
 
 func TestSequentialPlanRunSkipsFailedEntry(t *testing.T) {
-	runner, spy, ids := newPlanTestRunner(t, "first", "second")
+	runner, spy, ids := newPlanTestRunnerForProject(t, "proj-a", "first", "second")
 	plan := &storage.ExecutionPlan{
 		ID: "exec-plan-skip", ProjectID: "proj-a", Name: "Skips", RunMode: "sequential",
 		Entries: []storage.ExecutionPlanEntry{

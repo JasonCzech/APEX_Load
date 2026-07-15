@@ -23,6 +23,9 @@ func newReusableBlockServer(t *testing.T) *Server {
 
 func TestReusableBlockCreateListDelete(t *testing.T) {
 	server := newReusableBlockServer(t)
+	if err := server.store.SaveProject(&storage.Project{ID: "proj-test", Name: "Reusable blocks"}); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
 
 	create := map[string]any{
 		"project_id": "proj-test",

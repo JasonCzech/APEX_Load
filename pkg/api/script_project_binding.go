@@ -1,10 +1,13 @@
 package api
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 func bindDraftScriptProject(script *dsl.Script, projectID string) error {
@@ -38,6 +41,31 @@ func bindStoredScriptProject(script *dsl.Script, storedProjectID string, project
 		return fmt.Errorf("script.project_id does not match stored script project")
 	}
 	script.ProjectID = boundProjectID
+	return nil
+}
+
+// validateScriptFolderProject keeps the folder relationship inside the same
+// authorization boundary as the script. Route-level resolution is not enough:
+// update payloads can carry a folder_id that is different from the resource
+// used by middleware, and global callers do not receive a bound-project value.
+func validateScriptFolderProject(store storage.Store, script *dsl.Script) error {
+	if store == nil || script == nil || script.FolderID == nil {
+		return nil
+	}
+	folderID := strings.TrimSpace(*script.FolderID)
+	if folderID == "" {
+		return fmt.Errorf("folder_id must be a non-empty string or null")
+	}
+	folder, err := store.GetFolder(folderID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("script folder not found")
+		}
+		return fmt.Errorf("load script folder: %w", err)
+	}
+	if normalizeProjectID(folder.ProjectID) != normalizeProjectID(script.ProjectID) {
+		return fmt.Errorf("script folder belongs to a different project")
+	}
 	return nil
 }
 

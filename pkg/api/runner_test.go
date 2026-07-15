@@ -37,6 +37,7 @@ type metricsStoreSpy struct {
 	listedScripts         []*dsl.Script
 	listedTests           []*storage.TestRecord
 	projectsByID          map[string]*storage.Project
+	applicationsByID      map[string]*storage.Application
 	releasesByID          map[string]*storage.Release
 	historyByTestID       map[string][]any
 	limitedHistoryCalls   int
@@ -51,6 +52,7 @@ type metricsStoreSpy struct {
 	usageSnapshots        []*storage.UsageAccountingSnapshot
 	settings              map[string]string
 	statusUpdates         []testStatusUpdate
+	scheduleMu            sync.Mutex
 }
 
 var runnerTestProtocolCounter atomic.Uint64
@@ -119,7 +121,14 @@ func (s *metricsStoreSpy) SaveScript(script *dsl.Script) error {
 	s.savedScripts = append(s.savedScripts, script)
 	return nil
 }
-func (s *metricsStoreSpy) GetScript(id string) (*dsl.Script, error) { return nil, nil }
+func (s *metricsStoreSpy) GetScript(id string) (*dsl.Script, error) {
+	for i := len(s.savedScripts) - 1; i >= 0; i-- {
+		if s.savedScripts[i] != nil && s.savedScripts[i].ID == id {
+			return cloneScriptDefinition(s.savedScripts[i]), nil
+		}
+	}
+	return nil, nil
+}
 func (s *metricsStoreSpy) ListScripts(projectID string, folderID *string) ([]*dsl.Script, error) {
 	return s.listedScripts, nil
 }
@@ -184,6 +193,13 @@ func (s *metricsStoreSpy) ListRepositoryCategories(domainID string) ([]*storage.
 func (s *metricsStoreSpy) DeleteRepositoryCategory(id string) error               { return nil }
 func (s *metricsStoreSpy) SaveApplication(application *storage.Application) error { return nil }
 func (s *metricsStoreSpy) GetApplication(id string) (*storage.Application, error) {
+	if s.applicationsByID != nil {
+		application, ok := s.applicationsByID[id]
+		if !ok {
+			return nil, errors.New("application not found")
+		}
+		return application, nil
+	}
 	return nil, nil
 }
 func (s *metricsStoreSpy) ListApplications() ([]*storage.Application, error) { return nil, nil }
@@ -258,10 +274,16 @@ func (s *metricsStoreSpy) DeleteScenarioSchedule(id string) error {
 	return nil
 }
 func (s *metricsStoreSpy) SaveScenarioScheduleOccurrence(occurrence *storage.ScenarioScheduleOccurrence) error {
+	s.scheduleMu.Lock()
+	defer s.scheduleMu.Unlock()
 	if s.occurrencesByID == nil {
 		s.occurrencesByID = make(map[string]*storage.ScenarioScheduleOccurrence)
 	}
 	clone := *occurrence
+	if clone.Revision < 1 {
+		clone.Revision = 1
+		occurrence.Revision = 1
+	}
 	if occurrence.MaterializedAt != nil {
 		materializedAt := *occurrence.MaterializedAt
 		clone.MaterializedAt = &materializedAt
@@ -269,37 +291,91 @@ func (s *metricsStoreSpy) SaveScenarioScheduleOccurrence(occurrence *storage.Sce
 	s.occurrencesByID[occurrence.ID] = &clone
 	return nil
 }
+func (s *metricsStoreSpy) CreateScenarioScheduleOccurrenceIfAbsent(occurrence *storage.ScenarioScheduleOccurrence) (bool, error) {
+	s.scheduleMu.Lock()
+	defer s.scheduleMu.Unlock()
+	if s.occurrencesByID == nil {
+		s.occurrencesByID = make(map[string]*storage.ScenarioScheduleOccurrence)
+	}
+	for _, current := range s.occurrencesByID {
+		if current.ScheduleID == occurrence.ScheduleID && current.PlannedAt.Equal(occurrence.PlannedAt) {
+			return false, nil
+		}
+	}
+	clone := *occurrence
+	clone.Revision = 1
+	clone.MaterializedAt = cloneTimePtr(occurrence.MaterializedAt)
+	s.occurrencesByID[clone.ID] = &clone
+	occurrence.Revision = 1
+	return true, nil
+}
+func (s *metricsStoreSpy) CompareAndSwapScenarioScheduleOccurrence(occurrence *storage.ScenarioScheduleOccurrence, expectedRevision int64) (bool, error) {
+	s.scheduleMu.Lock()
+	defer s.scheduleMu.Unlock()
+	current := s.occurrencesByID[occurrence.ID]
+	if current == nil || current.ScheduleID != occurrence.ScheduleID || !current.PlannedAt.Equal(occurrence.PlannedAt) || current.Revision != expectedRevision {
+		return false, nil
+	}
+	clone := *occurrence
+	clone.Revision = expectedRevision + 1
+	clone.MaterializedAt = cloneTimePtr(occurrence.MaterializedAt)
+	s.occurrencesByID[clone.ID] = &clone
+	occurrence.Revision = clone.Revision
+	return true, nil
+}
 func (s *metricsStoreSpy) GetScenarioScheduleOccurrence(id string) (*storage.ScenarioScheduleOccurrence, error) {
+	s.scheduleMu.Lock()
+	defer s.scheduleMu.Unlock()
 	if s.occurrencesByID == nil {
 		return nil, nil
 	}
-	return s.occurrencesByID[id], nil
+	current := s.occurrencesByID[id]
+	if current == nil {
+		return nil, nil
+	}
+	clone := *current
+	clone.MaterializedAt = cloneTimePtr(current.MaterializedAt)
+	return &clone, nil
 }
 func (s *metricsStoreSpy) GetScenarioScheduleOccurrenceByScheduleAndPlannedAt(scheduleID string, plannedAt time.Time) (*storage.ScenarioScheduleOccurrence, error) {
+	s.scheduleMu.Lock()
+	defer s.scheduleMu.Unlock()
 	for _, occurrence := range s.occurrencesByID {
 		if occurrence.ScheduleID == scheduleID && occurrence.PlannedAt.Equal(plannedAt) {
-			return occurrence, nil
+			clone := *occurrence
+			clone.MaterializedAt = cloneTimePtr(occurrence.MaterializedAt)
+			return &clone, nil
 		}
 	}
 	return nil, nil
 }
 func (s *metricsStoreSpy) ListScenarioScheduleOccurrences(scheduleID string) ([]*storage.ScenarioScheduleOccurrence, error) {
+	s.scheduleMu.Lock()
+	defer s.scheduleMu.Unlock()
 	out := []*storage.ScenarioScheduleOccurrence{}
 	for _, occurrence := range s.occurrencesByID {
 		if occurrence.ScheduleID == scheduleID {
-			out = append(out, occurrence)
+			clone := *occurrence
+			clone.MaterializedAt = cloneTimePtr(occurrence.MaterializedAt)
+			out = append(out, &clone)
 		}
 	}
 	return out, nil
 }
 func (s *metricsStoreSpy) ListAllScenarioScheduleOccurrences() ([]*storage.ScenarioScheduleOccurrence, error) {
+	s.scheduleMu.Lock()
+	defer s.scheduleMu.Unlock()
 	out := make([]*storage.ScenarioScheduleOccurrence, 0, len(s.occurrencesByID))
 	for _, occurrence := range s.occurrencesByID {
-		out = append(out, occurrence)
+		clone := *occurrence
+		clone.MaterializedAt = cloneTimePtr(occurrence.MaterializedAt)
+		out = append(out, &clone)
 	}
 	return out, nil
 }
 func (s *metricsStoreSpy) DeleteScenarioScheduleOccurrence(id string) error {
+	s.scheduleMu.Lock()
+	defer s.scheduleMu.Unlock()
 	delete(s.occurrencesByID, id)
 	return nil
 }
@@ -1053,8 +1129,11 @@ func TestScenarioAndTestRejectStoredScriptWithoutActions(t *testing.T) {
 
 func TestListScriptsFilteredIncludesUsageMetadata(t *testing.T) {
 	store := &metricsStoreSpy{
+		applicationsByID: map[string]*storage.Application{
+			"app-1": {ID: "app-1", ProjectID: "project-1", Name: "Checkout"},
+		},
 		releasesByID: map[string]*storage.Release{
-			"release-1": {ID: "release-1", ApplicationID: "app-1", Name: "PI29"},
+			"release-1": {ID: "release-1", ApplicationID: "app-1", ProjectID: "project-1", Name: "PI29"},
 		},
 	}
 	runner := NewTestRunner(1, NewHub(), store)
@@ -2620,7 +2699,7 @@ func TestPublishLiveMetricsDispatchesTelemetryBreachNotifications(t *testing.T) 
 	// httptest binds to loopback; allow private outbound for the SSRF guard.
 	t.Setenv("APEXLOAD_ALLOW_PRIVATE_WEBHOOKS", "true")
 	received := make(chan map[string]any, 1)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 		var payload map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -3405,6 +3484,169 @@ func TestRunStageScheduleWaitsForRampCompletionBeforeAdvancing(t *testing.T) {
 	}
 }
 
+func TestVUserScaleRampSuspendsWhileTestPaused(t *testing.T) {
+	runner := NewTestRunner(1, NewHub(), nil)
+	backend := &scalableExecutionBackendSpy{calls: make(chan scaleBackendCall, 8)}
+	runner.setExecutionBackend(backend)
+	runner.tests["test-paused-ramp"] = &ManagedTest{
+		ID:           "test-paused-ramp",
+		Status:       "RUNNING",
+		ScenarioMode: "vuser_driven",
+		ProjectID:    storage.DefaultProjectID,
+		TotalVUsers:  2,
+		Groups: []TestGroup{{
+			Name:          "buyers",
+			VUsers:        2,
+			stageDriven:   true,
+			initialVUsers: 0,
+			currentVUsers: 0,
+		}},
+	}
+	ramp, err := runner.startVUserScaleRamp(context.Background(), "test-paused-ramp", "buyers", 2, 80*time.Millisecond)
+	if err != nil {
+		t.Fatalf("startVUserScaleRamp: %v", err)
+	}
+	select {
+	case call := <-backend.calls:
+		if call.target != 1 {
+			t.Fatalf("first ramp target = %d, want 1", call.target)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for first ramp step")
+	}
+	pausedAt := time.Now().UTC()
+	runner.mu.Lock()
+	runner.tests["test-paused-ramp"].Status = "PAUSED"
+	runner.tests["test-paused-ramp"].PausedAt = &pausedAt
+	runner.mu.Unlock()
+	select {
+	case call := <-backend.calls:
+		t.Fatalf("ramp advanced while paused: %+v", call)
+	case <-time.After(120 * time.Millisecond):
+	}
+	resumedAt := time.Now().UTC()
+	runner.mu.Lock()
+	test := runner.tests["test-paused-ramp"]
+	test.CumulativePause += resumedAt.Sub(pausedAt)
+	test.PausedAt = nil
+	test.Status = "RUNNING"
+	runner.mu.Unlock()
+	select {
+	case call := <-backend.calls:
+		if call.target != 2 {
+			t.Fatalf("second ramp target = %d, want 2", call.target)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for ramp after resume")
+	}
+	if err := <-ramp.done; err != nil {
+		t.Fatalf("ramp completion error: %v", err)
+	}
+}
+
+func TestStageHoldSuspendsWhileTestPaused(t *testing.T) {
+	runner := NewTestRunner(1, NewHub(), nil)
+	backend := &scalableExecutionBackendSpy{calls: make(chan scaleBackendCall, 8)}
+	runner.setExecutionBackend(backend)
+	runner.tests["test-paused-hold"] = &ManagedTest{
+		ID:           "test-paused-hold",
+		Status:       "RUNNING",
+		ScenarioMode: "vuser_driven",
+		ProjectID:    storage.DefaultProjectID,
+		TotalVUsers:  1,
+		Groups: []TestGroup{{
+			Name:          "buyers",
+			VUsers:        1,
+			stageDriven:   true,
+			initialVUsers: 0,
+			currentVUsers: 0,
+		}},
+	}
+	done := make(chan struct{})
+	go func() {
+		runner.runStageSchedule(context.Background(), "test-paused-hold", "buyers", []storage.LoadStage{
+			{Type: "ramp_up", Duration: "20ms", TargetVUsers: 1},
+			{Type: "hold", Duration: "80ms", TargetVUsers: 1},
+			{Type: "ramp_down", Duration: "20ms", TargetVUsers: 0},
+		}, nil)
+		close(done)
+	}()
+	select {
+	case call := <-backend.calls:
+		if call.target != 1 {
+			t.Fatalf("ramp-up target = %d, want 1", call.target)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for ramp-up")
+	}
+	pausedAt := time.Now().UTC()
+	runner.mu.Lock()
+	runner.tests["test-paused-hold"].Status = "PAUSED"
+	runner.tests["test-paused-hold"].PausedAt = &pausedAt
+	runner.mu.Unlock()
+	select {
+	case call := <-backend.calls:
+		t.Fatalf("hold advanced to ramp-down while paused: %+v", call)
+	case <-time.After(140 * time.Millisecond):
+	}
+	resumedAt := time.Now().UTC()
+	runner.mu.Lock()
+	test := runner.tests["test-paused-hold"]
+	test.CumulativePause += resumedAt.Sub(pausedAt)
+	test.PausedAt = nil
+	test.Status = "RUNNING"
+	runner.mu.Unlock()
+	select {
+	case call := <-backend.calls:
+		if call.target != 0 {
+			t.Fatalf("ramp-down target = %d, want 0", call.target)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for ramp-down after resume")
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("stage schedule did not finish after resume")
+	}
+}
+
+func TestDistributedStageScheduleWaitsForPreBaselineReadiness(t *testing.T) {
+	runner := NewTestRunner(1, NewHub(), nil)
+	backend := &scalableExecutionBackendSpy{calls: make(chan scaleBackendCall, 4)}
+	runner.setExecutionBackend(backend)
+	startedAt := time.Now().UTC().Add(20 * time.Millisecond)
+	test := &ManagedTest{
+		ID: "test-distributed-stage-readiness", Status: "RUNNING", StartedAt: &startedAt,
+		ScenarioMode: "vuser_driven", ProjectID: storage.DefaultProjectID, TotalVUsers: 1,
+		Groups: []TestGroup{{
+			Name: "buyers", VUsers: 1, stageDriven: true, initialVUsers: 0, currentVUsers: 0,
+			Stages: []storage.LoadStage{
+				{Type: "ramp_up", Duration: "20ms", TargetVUsers: 1},
+				{Type: "hold", Duration: "20ms", TargetVUsers: 1},
+			},
+		}},
+	}
+	runner.tests[test.ID] = test
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go runner.startDistributedStageSchedulesAfterBaseline(ctx, test, 120*time.Millisecond)
+
+	select {
+	case call := <-backend.calls:
+		t.Fatalf("distributed stage adjusted before pre-baseline readiness: %+v", call)
+	case <-time.After(100 * time.Millisecond):
+	}
+	select {
+	case call := <-backend.calls:
+		if call.target != 1 {
+			t.Fatalf("first post-baseline target = %d, want 1", call.target)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("distributed stage did not start after pre-baseline readiness")
+	}
+}
+
 func TestStartStageSchedulesSkipsGoalOrientedGroups(t *testing.T) {
 	runner := NewTestRunner(1, NewHub(), nil)
 	backend := &scalableExecutionBackendSpy{calls: make(chan scaleBackendCall, 1)}
@@ -3630,6 +3872,43 @@ func TestApplyGoalControllerUpdateInitializesNilGoalControl(t *testing.T) {
 	}
 	if testRun.goalControl.lastScaleAt == nil || !testRun.goalControl.lastScaleAt.Equal(timestamp) {
 		t.Fatalf("expected lastScaleAt %s, got %#v", timestamp, testRun.goalControl.lastScaleAt)
+	}
+}
+
+func TestApplyGoalControllerUpdateDoesNotStartCooldownAfterPartialFailure(t *testing.T) {
+	timestamp := time.Date(2026, time.May, 10, 11, 0, 0, 0, time.UTC)
+	testRun := &ManagedTest{
+		ID:          "test-partial-scale",
+		Groups:      []TestGroup{{Name: "buyers", VUsers: 20}, {Name: "admins", VUsers: 10}},
+		goalControl: &goalControllerState{},
+	}
+	live := &LiveMetrics{Timestamp: timestamp}
+	groupVUsers := map[string]int{"buyers": 20, "admins": 10}
+	update := goalControllerUpdate{
+		Status:         &GoalStatus{CurrentTotalVUsers: 30, SuggestedTotalVUsers: 45},
+		ShouldScale:    true,
+		TargetTotal:    45,
+		ScaleDirection: "up",
+		ScaleReason:    "tps below target",
+	}
+
+	calls := 0
+	applyGoalControllerUpdate(&TestRunner{}, testRun, live, groupVUsers, update, func(string, int) error {
+		calls++
+		if calls == 2 {
+			return errors.New("generator unavailable")
+		}
+		return nil
+	})
+
+	if testRun.goalControl.lastScaleAt != nil {
+		t.Fatalf("failed fan-out started goal cooldown at %v", testRun.goalControl.lastScaleAt)
+	}
+	if live.GoalStatus == nil || !strings.Contains(live.GoalStatus.LastScaleReason, "generator unavailable") {
+		t.Fatalf("goal status did not expose scale failure: %+v", live.GoalStatus)
+	}
+	if testRun.Groups[0].VUsers != groupVUsers["buyers"] || testRun.Groups[1].VUsers != groupVUsers["admins"] {
+		t.Fatalf("controller groups diverged from applied scale map: groups=%+v map=%v", testRun.Groups, groupVUsers)
 	}
 }
 
@@ -4504,6 +4783,72 @@ func TestValidateScenarioRequestRejectsInvalidStartDelay(t *testing.T) {
 
 	if err == nil {
 		t.Fatal("expected invalid start_delay to fail validation")
+	}
+}
+
+func TestValidateScenarioRequestRejectsNonPositiveDurations(t *testing.T) {
+	p95 := 100.0
+	tests := []struct {
+		name string
+		req  CreateTestRequest
+	}{
+		{name: "zero duration", req: CreateTestRequest{Duration: "0s"}},
+		{name: "negative duration", req: CreateTestRequest{Duration: "-1s"}},
+		{name: "zero start delay", req: CreateTestRequest{Duration: "1s", StartDelay: "0s"}},
+		{name: "negative start delay", req: CreateTestRequest{Duration: "1s", StartDelay: "-1s"}},
+		{name: "zero sla window", req: CreateTestRequest{Duration: "1s", ScenarioMode: "goal_oriented", GoalConfig: &GoalConfig{P95LatencyMs: &p95, SLABreachWindow: "0s"}}},
+		{name: "negative sla window", req: CreateTestRequest{Duration: "1s", ScenarioMode: "goal_oriented", GoalConfig: &GoalConfig{P95LatencyMs: &p95, SLABreachWindow: "-1s"}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := validateScenarioRequest(tt.req); err == nil {
+				t.Fatalf("validateScenarioRequest(%+v) unexpectedly succeeded", tt.req)
+			}
+		})
+	}
+	if _, err := validateScenarioRequest(CreateTestRequest{Duration: "1ns", StartDelay: "1ns"}); err != nil {
+		t.Fatalf("positive duration boundary rejected: %v", err)
+	}
+}
+
+func TestStoredScenarioValidatesDurationAndStartDelay(t *testing.T) {
+	runner := NewTestRunner(1, NewHub(), nil)
+	runner.StoreScript(&dsl.Script{
+		ID:       "scenario-positive-duration-script",
+		Name:     "Scenario validation",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.test"},
+		Actions:  []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+	base := CreateScenarioRequest{
+		Name:     "Validated scenario",
+		Duration: "1m",
+		Groups:   []CreateGroupEntry{{ScriptID: "scenario-positive-duration-script", VUsers: 1}},
+	}
+	for _, mutate := range []func(*CreateScenarioRequest){
+		func(req *CreateScenarioRequest) { req.Duration = "0s" },
+		func(req *CreateScenarioRequest) { req.Duration = "-1s" },
+		func(req *CreateScenarioRequest) { req.StartDelay = "0s" },
+		func(req *CreateScenarioRequest) { req.StartDelay = "-1s" },
+	} {
+		req := base
+		mutate(&req)
+		if _, err := runner.StoreScenario(req); err == nil {
+			t.Fatalf("StoreScenario(%+v) unexpectedly succeeded", req)
+		}
+	}
+}
+
+func TestParseOptionalGroupDurationRequiresNonNegativeValue(t *testing.T) {
+	if _, err := parseOptionalGroupDuration("-1s", 0, "ramp_up"); err == nil {
+		t.Fatal("parseOptionalGroupDuration(-1s) unexpectedly succeeded")
+	}
+	if got, err := parseOptionalGroupDuration("0s", 0, "ramp_up"); err != nil || got != 0 {
+		t.Fatalf("zero ramp boundary = %s, %v; want 0", got, err)
+	}
+	if got, err := parseOptionalGroupDuration("1ns", 0, "ramp_down"); err != nil || got != time.Nanosecond {
+		t.Fatalf("positive ramp boundary = %s, %v; want 1ns", got, err)
 	}
 }
 
@@ -6031,6 +6376,9 @@ func TestScenarioSchedulerBlocksRunOnLaunchWindowConflict(t *testing.T) {
 		t.Fatalf("ListScenarioScheduleOccurrences returned error: %v", err)
 	}
 	if len(occurrences) != 1 || occurrences[0].Status != "blocked" || occurrences[0].ReasonCode != "schedule_conflict" {
+		if len(occurrences) == 1 {
+			t.Fatalf("occurrence = %+v, want blocked schedule_conflict", *occurrences[0])
+		}
 		t.Fatalf("occurrences = %#v, want one blocked occurrence with schedule_conflict", occurrences)
 	}
 	if !strings.Contains(occurrences[0].ConflictSummary, "launch window conflict") {

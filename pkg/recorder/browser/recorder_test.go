@@ -3,9 +3,11 @@ package browser
 import (
 	"archive/zip"
 	"encoding/base64"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -46,6 +48,150 @@ func TestManagedHARTempPathUsesArtifactPrefix(t *testing.T) {
 	}
 }
 
+func TestPoliceHARFlushTruncatesAndAbortsOversizedArtifact(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "flush.har")
+	abort := make(chan struct{})
+	const limit = int64(32 << 10)
+	flush := func() error {
+		file, err := os.Create(path)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+		chunk := make([]byte, 4<<10)
+		for i := 0; i < 64; i++ {
+			select {
+			case <-abort:
+				return nil
+			default:
+			}
+			if _, err := file.Write(chunk); err != nil {
+				return err
+			}
+			time.Sleep(time.Millisecond)
+		}
+		return nil
+	}
+	exceeded, err := policeHARFlush(path, limit, flush, func() { close(abort) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !exceeded {
+		t.Fatal("oversized flush was not detected")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Size() > limit {
+		t.Fatalf("policed HAR size = %d, limit %d", info.Size(), limit)
+	}
+}
+
+func TestPoliceHARFlushBoundsPreOversizedArtifactThatGrowsDuringClose(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "pre-oversized-flush.har")
+	const limit = int64(16 << 10)
+	if err := os.WriteFile(path, make([]byte, limit+1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	abort := make(chan struct{})
+	flush := func() error {
+		file, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+		chunk := make([]byte, 4<<10)
+		for {
+			select {
+			case <-abort:
+				return nil
+			default:
+				if _, err := file.Write(chunk); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	exceeded, err := policeHARFlush(path, limit, flush, func() { close(abort) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !exceeded {
+		t.Fatal("pre-oversized HAR was not detected")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Size() > limit {
+		t.Fatalf("policed HAR size = %d, limit %d", info.Size(), limit)
+	}
+}
+
+func TestPoliceHARFlushReturnsWhenFlushAndAbortNeverReturn(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "stuck.har")
+	if err := os.WriteFile(path, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	abortCalled := make(chan struct{}, 1)
+	release := make(chan struct{})
+	defer close(release)
+	started := time.Now()
+	_, err := policeHARFlushUntil(path, 1024, func() error {
+		<-release
+		return nil
+	}, func() {
+		abortCalled <- struct{}{}
+		<-release
+	}, time.Now().Add(25*time.Millisecond))
+	if err == nil || !strings.Contains(err.Error(), "deadline") {
+		t.Fatalf("stuck flush error = %v", err)
+	}
+	if time.Since(started) > time.Second {
+		t.Fatalf("stuck flush blocked for %s", time.Since(started))
+	}
+	select {
+	case <-abortCalled:
+	case <-time.After(time.Second):
+		t.Fatal("stuck flush did not invoke abort")
+	}
+}
+
+func TestWaitGroupUntilBoundsStuckThumbnailWorker(t *testing.T) {
+	var group sync.WaitGroup
+	group.Add(1)
+	if waitGroupUntil(&group, time.Now().Add(20*time.Millisecond)) {
+		t.Fatal("waitGroupUntil reported completion for blocked worker")
+	}
+	group.Done()
+	if !waitGroupUntil(&group, time.Now().Add(time.Second)) {
+		t.Fatal("waitGroupUntil did not observe released worker")
+	}
+}
+
+func TestShutdownOperationsDoNotStartAfterDeadline(t *testing.T) {
+	called := false
+	err := runOperationUntil(time.Now().Add(-time.Millisecond), func() error {
+		called = true
+		return nil
+	}, nil)
+	if err == nil || !strings.Contains(err.Error(), "deadline") {
+		t.Fatalf("expired operation error = %v", err)
+	}
+	if called {
+		t.Fatal("operation started after the recorder shutdown deadline")
+	}
+
+	path := filepath.Join(t.TempDir(), "capture.har")
+	if err := os.WriteFile(path, []byte(`{"log":{"entries":[]}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := loadAndFilterHARUntil(path, maxBrowserHARBytes, HARFilters{}, time.Now().Add(-time.Millisecond)); err == nil || !strings.Contains(err.Error(), "deadline") {
+		t.Fatalf("expired HAR processing error = %v", err)
+	}
+}
+
 func TestPrepareHARPathCreatesPrivateFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nested", "apexload_browser_rec_123.har.tmp")
 	if err := prepareHARPath(path); err != nil {
@@ -74,6 +220,46 @@ func TestReadFileLimitedRejectsOversizedHAR(t *testing.T) {
 	data, err := readFileLimited(path, 10)
 	if err != nil || string(data) != "0123456789" {
 		t.Fatalf("bounded read = %q, %v", data, err)
+	}
+}
+
+func TestReadAttachedHARZipRejectsEntryFloodAndLongNames(t *testing.T) {
+	writeArchive := func(t *testing.T, names []string) string {
+		t.Helper()
+		path := filepath.Join(t.TempDir(), "attached.har.zip")
+		file, err := os.Create(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		writer := zip.NewWriter(file)
+		for _, name := range names {
+			entry, createErr := writer.Create(name)
+			if createErr != nil {
+				t.Fatal(createErr)
+			}
+			if name == "har.har" {
+				_, _ = entry.Write([]byte(`{"log":{"entries":[]}}`))
+			}
+		}
+		if err := writer.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if err := file.Close(); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+
+	names := make([]string, 0, maxAttachedHARZipEntries+1)
+	names = append(names, "har.har")
+	for index := 1; index <= maxAttachedHARZipEntries; index++ {
+		names = append(names, fmt.Sprintf("empty-%05d", index))
+	}
+	if _, err := readAttachedHARZip(writeArchive(t, names), maxBrowserHARBytes); err == nil || !strings.Contains(err.Error(), "entries") {
+		t.Fatalf("entry flood error = %v", err)
+	}
+	if _, err := readAttachedHARZip(writeArchive(t, []string{"har.har", strings.Repeat("x", maxAttachedHARZipNameBytes+1)}), maxBrowserHARBytes); err == nil || !strings.Contains(err.Error(), "name") {
+		t.Fatalf("long-name error = %v", err)
 	}
 }
 

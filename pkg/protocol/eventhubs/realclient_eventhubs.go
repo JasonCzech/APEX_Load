@@ -12,6 +12,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	azeventhubs "github.com/Azure/azure-sdk-for-go/sdk/messaging/azeventhubs/v2"
+	"github.com/jasonczech/apexload/pkg/identitypolicy"
 )
 
 // newRealClient returns the azeventhubs-backed adapter. It is the non-mock path
@@ -41,7 +42,16 @@ type realClient struct {
 	producers  map[string]*azeventhubs.ProducerClient  // keyed by event hub
 	consumers  map[string]*azeventhubs.ConsumerClient  // keyed by hub\x00group
 	partitions map[string]*azeventhubs.PartitionClient // keyed by hub\x00group\x00partition
+	closed     bool
 }
+
+const (
+	maxEventHubsProducers        = 64
+	maxEventHubsConsumers        = 128
+	maxEventHubsPartitionClients = 256
+	maxEventHubsResourceKeyBytes = 128 << 10
+	eventHubsCloseTimeout        = 5 * time.Second
+)
 
 func (c *realClient) Send(ctx context.Context, hub string, ev event) (eventMeta, error) {
 	prod, err := c.producer(ctx, hub)
@@ -142,27 +152,67 @@ func (c *realClient) HealthCheck(ctx context.Context) error {
 
 func (c *realClient) Teardown(ctx context.Context) error {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	var firstErr error
-	for _, pc := range c.partitions {
-		if err := pc.Close(ctx); err != nil && firstErr == nil {
-			firstErr = err
-		}
+	if c.closed {
+		c.mu.Unlock()
+		return nil
 	}
-	for _, cc := range c.consumers {
-		if err := cc.Close(ctx); err != nil && firstErr == nil {
-			firstErr = err
-		}
-	}
-	for _, p := range c.producers {
-		if err := p.Close(ctx); err != nil && firstErr == nil {
-			firstErr = err
-		}
-	}
+	c.closed = true
+	partitions := c.partitions
+	consumers := c.consumers
+	producers := c.producers
 	c.partitions = make(map[string]*azeventhubs.PartitionClient)
 	c.consumers = make(map[string]*azeventhubs.ConsumerClient)
 	c.producers = make(map[string]*azeventhubs.ProducerClient)
+	c.mu.Unlock()
+	closeCtx, closeCancel := context.WithTimeout(context.WithoutCancel(ctx), eventHubsCloseTimeout)
+	defer closeCancel()
+	var firstErr error
+	for _, pc := range partitions {
+		if pc != nil {
+			if err := pc.Close(closeCtx); err != nil && firstErr == nil {
+				firstErr = err
+			}
+		}
+	}
+	for _, cc := range consumers {
+		if cc != nil {
+			if err := cc.Close(closeCtx); err != nil && firstErr == nil {
+				firstErr = err
+			}
+		}
+	}
+	for _, p := range producers {
+		if p != nil {
+			if err := p.Close(closeCtx); err != nil && firstErr == nil {
+				firstErr = err
+			}
+		}
+	}
 	return firstErr
+}
+
+func (c *realClient) resourceKeyBytesLocked() int {
+	total := 0
+	for key := range c.producers {
+		total += len(key)
+	}
+	for key := range c.consumers {
+		total += len(key)
+	}
+	for key := range c.partitions {
+		total += len(key)
+	}
+	return total
+}
+
+func (c *realClient) resourceAdmissionErrorLocked(kind, key string, current, limit int) error {
+	if c.closed {
+		return fmt.Errorf("Event Hubs client is closed")
+	}
+	if current >= limit || len(key) > maxEventHubsResourceKeyBytes-c.resourceKeyBytesLocked() {
+		return fmt.Errorf("Event Hubs %s capacity exceeded (%d handles, %d key bytes)", kind, limit, maxEventHubsResourceKeyBytes)
+	}
+	return nil
 }
 
 // useConnString decides between SAS (connection string) and AAD (token
@@ -187,6 +237,9 @@ func (c *realClient) producer(_ context.Context, hub string) (*azeventhubs.Produ
 	defer c.mu.Unlock()
 	if p, ok := c.producers[hub]; ok {
 		return p, nil
+	}
+	if err := c.resourceAdmissionErrorLocked("producer", hub, len(c.producers), maxEventHubsProducers); err != nil {
+		return nil, err
 	}
 	var (
 		p   *azeventhubs.ProducerClient
@@ -223,6 +276,9 @@ func (c *realClient) consumer(hub, group string) (*azeventhubs.ConsumerClient, e
 	key := hub + "\x00" + group
 	if cc, ok := c.consumers[key]; ok {
 		return cc, nil
+	}
+	if err := c.resourceAdmissionErrorLocked("consumer", key, len(c.consumers), maxEventHubsConsumers); err != nil {
+		return nil, err
 	}
 	var (
 		cc  *azeventhubs.ConsumerClient
@@ -261,6 +317,9 @@ func (c *realClient) partitionClient(hub, group, partition string) (*azeventhubs
 	if pc, ok := c.partitions[key]; ok {
 		return pc, nil
 	}
+	if err := c.resourceAdmissionErrorLocked("partition client", key, len(c.partitions), maxEventHubsPartitionClients); err != nil {
+		return nil, err
+	}
 	// Start position for the observer probe. Default "latest" (the partition tail)
 	// suits a sustained-load observer sampling freshly-arriving events. A
 	// produce→consume round-trip in the SAME run must use "earliest" (from the
@@ -291,6 +350,11 @@ func (c *realClient) credentialLocked() (azcore.TokenCredential, error) {
 	if c.cred != nil {
 		return c.cred, nil
 	}
+	namespace, err := identitypolicy.ValidateAzureMessagingNamespace(c.cfg.Namespace)
+	if err != nil {
+		return nil, err
+	}
+	c.cfg.Namespace = namespace
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
 		return nil, err

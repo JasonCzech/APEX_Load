@@ -7,15 +7,19 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	pb "github.com/jasonczech/apexload/api/proto"
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
+	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/fileasset"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	googlegrpc "google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
+	reflectionpb "google.golang.org/grpc/reflection/grpc_reflection_v1alpha"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protodesc"
+	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/reflect/protoregistry"
 	"google.golang.org/protobuf/types/descriptorpb"
 )
@@ -83,6 +87,64 @@ func TestGRPCUnaryWithReflection(t *testing.T) {
 	}
 	if result.Extractions["hash"] != "hash-1" {
 		t.Fatalf("hash extraction = %q, want hash-1", result.Extractions["hash"])
+	}
+}
+
+func TestGRPCActionDeadlineIncludesBlockingReflection(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Listen: %v", err)
+	}
+	server := googlegrpc.NewServer()
+	reflectionpb.RegisterServerReflectionServer(server, blockingReflectionServer{})
+	go func() { _ = server.Serve(listener) }()
+	defer func() {
+		server.Stop()
+		_ = listener.Close()
+	}()
+
+	client := &GRPC{}
+	if err := client.Init(context.Background(), map[string]any{
+		"base_url": listener.Addr().String(), "grpc_plain_text": true, "grpc_use_reflection": true,
+	}); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	defer client.Teardown(context.Background())
+	started := time.Now()
+	result, err := client.Execute(context.Background(), &protocol.Action{
+		Name: "blocked", Type: "grpc_unary", Target: "example.Blocked/Call", Params: map[string]any{"timeout_ms": float64(25)},
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if result.Success || !strings.Contains(strings.ToLower(result.ErrorMessage), "deadline") {
+		t.Fatalf("result = %#v, want deadline failure", result)
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("reflection ignored action deadline: %s", elapsed)
+	}
+}
+
+type blockingReflectionServer struct {
+	reflectionpb.UnimplementedServerReflectionServer
+}
+
+func (blockingReflectionServer) ServerReflectionInfo(stream googlegrpc.BidiStreamingServer[reflectionpb.ServerReflectionRequest, reflectionpb.ServerReflectionResponse]) error {
+	<-stream.Context().Done()
+	return stream.Context().Err()
+}
+
+func TestGRPCStreamBodiesEnforceInputCountAndBytesBeforeCopy(t *testing.T) {
+	tooMany := make([]string, dsl.MaxGRPCStreamMessages+1)
+	if _, err := bodiesFromParam(tooMany); err == nil || !strings.Contains(err.Error(), "message limit") {
+		t.Fatalf("too-many input error = %v", err)
+	}
+	if _, err := bodiesFromParam([]string{strings.Repeat("x", dsl.MaxGRPCStreamBytes+1)}); err == nil || !strings.Contains(err.Error(), "byte limit") {
+		t.Fatalf("oversized input error = %v", err)
+	}
+	action := &protocol.Action{Body: []byte(strings.Repeat("x", dsl.MaxGRPCStreamBytes+1))}
+	if _, err := streamBodies(action); err == nil || !strings.Contains(err.Error(), "byte limit") {
+		t.Fatalf("oversized body error = %v", err)
 	}
 }
 
@@ -307,9 +369,27 @@ func writeGeneratorDescriptorSet(t testing.TB) string {
 	if err != nil {
 		t.Fatalf("FindFileByPath: %v", err)
 	}
-	set := &descriptorpb.FileDescriptorSet{
-		File: []*descriptorpb.FileDescriptorProto{protodesc.ToFileDescriptorProto(file)},
+	set := &descriptorpb.FileDescriptorSet{}
+	seen := make(map[string]struct{})
+	var appendWithDependencies func(protoreflect.FileDescriptor)
+	appendWithDependencies = func(descriptor protoreflect.FileDescriptor) {
+		path := descriptor.Path()
+		if _, ok := seen[path]; ok {
+			return
+		}
+		seen[path] = struct{}{}
+		imports := descriptor.Imports()
+		for i := 0; i < imports.Len(); i++ {
+			dependencyPath := imports.Get(i).Path()
+			dependency, findErr := protoregistry.GlobalFiles.FindFileByPath(dependencyPath)
+			if findErr != nil {
+				t.Fatalf("FindFileByPath(%q): %v", dependencyPath, findErr)
+			}
+			appendWithDependencies(dependency)
+		}
+		set.File = append(set.File, protodesc.ToFileDescriptorProto(descriptor))
 	}
+	appendWithDependencies(file)
 	body, err := proto.Marshal(set)
 	if err != nil {
 		t.Fatalf("Marshal descriptor set: %v", err)

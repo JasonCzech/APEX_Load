@@ -138,7 +138,7 @@ func compareNumeric(left, right, op string) bool {
 // controlLoopMaxPasses returns the effective pass cap for a control_loop block.
 func controlLoopMaxPasses(control *dsl.ControlFlow) int {
 	if control != nil && control.MaxIterations > 0 {
-		return control.MaxIterations
+		return min(control.MaxIterations, dsl.MaxControlLoopIterations)
 	}
 	return defaultControlLoopMaxIterations
 }
@@ -147,11 +147,11 @@ func controlLoopMaxPasses(control *dsl.ControlFlow) int {
 // are read-only column→value maps (raw column names) that never advance the
 // per-VUser data cursor, so foreach is independent of the per-iteration
 // {{data.src.col}} binding. A nil DataProvider or unknown source yields nil.
-func (vu *VUser) foreachRows(fe *dsl.ForEachLoop) []map[string]string {
+func (vu *VUser) foreachRows(fe *dsl.ForEachLoop) dataRowView {
 	if fe == nil || vu == nil || vu.DataProvider == nil {
-		return nil
+		return dataRowView{}
 	}
-	return vu.DataProvider.GetAllRows(strings.TrimSpace(fe.Source))
+	return vu.DataProvider.rowView(strings.TrimSpace(fe.Source))
 }
 
 // bindForEachRow binds one foreach row into the var namespace as
@@ -170,7 +170,7 @@ func (vu *VUser) bindForEachRow(varName string, row map[string]string) {
 // a foreach loop will overwrite (varName.<col> across all rows) and returns a
 // closure that restores them, mirroring the loop_index save/restore so nested
 // foreach blocks compose without clobbering an outer binding of the same name.
-func (vu *VUser) captureForEachRestore(varName string, rows []map[string]string) func() {
+func (vu *VUser) captureForEachRestore(varName string, rows dataRowView) func() {
 	varName = strings.TrimSpace(varName)
 	if varName == "" {
 		return func() {}
@@ -180,15 +180,10 @@ func (vu *VUser) captureForEachRestore(varName string, rows []map[string]string)
 		had   bool
 	}
 	prior := map[string]savedVar{}
-	for _, row := range rows {
-		for col := range row {
-			key := varName + "." + col
-			if _, seen := prior[key]; seen {
-				continue
-			}
-			v, ok := vu.Variables[key]
-			prior[key] = savedVar{value: v, had: ok}
-		}
+	for _, col := range rows.Columns() {
+		key := varName + "." + col
+		v, ok := vu.Variables[key]
+		prior[key] = savedVar{value: v, had: ok}
 	}
 	return func() {
 		for key, s := range prior {

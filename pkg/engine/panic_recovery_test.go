@@ -68,6 +68,18 @@ func TestSafeProtoExecute_RecoversPanic(t *testing.T) {
 	}
 }
 
+func TestRecoveredPanicLogTextScrubsAndBoundsAdapterValue(t *testing.T) {
+	secret := "client_secret=panic-log-secret"
+	value := secret + strings.Repeat("x", maxRecoveredPanicLogBytes*2)
+	got := recoveredPanicLogText(value)
+	if strings.Contains(got, "panic-log-secret") {
+		t.Fatalf("panic log value retained secret: %q", got)
+	}
+	if len(got) > maxRecoveredPanicLogBytes {
+		t.Fatalf("panic log value length = %d, want <= %d", len(got), maxRecoveredPanicLogBytes)
+	}
+}
+
 func TestEngine_Run_SurvivesProtocolExecutePanic(t *testing.T) {
 	before := panicExecuteCalls.Load()
 	script := &dsl.Script{

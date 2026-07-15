@@ -7,12 +7,19 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
+
+type losingServiceAccountRotationStore struct{ storage.Store }
+
+func (s *losingServiceAccountRotationStore) RotateServiceAccountKeyIfUnchanged(string, string, time.Time, time.Time) (bool, error) {
+	return false, nil
+}
 
 // A6 — a service account's scopes/roles/metadata can be edited in place (key unchanged);
 // invalid scopes are rejected.
@@ -65,6 +72,26 @@ func TestUpdateServiceAccountEditable(t *testing.T) {
 	}
 }
 
+func TestRotateServiceAccountReturnsConflictWhenCredentialChangedConcurrently(t *testing.T) {
+	base := phase1Store(t)
+	now := time.Now().UTC()
+	account := &storage.ServiceAccount{ID: "svc-rotation-loser", Name: "Loser", KeyHash: "old", Active: true, CreatedAt: now, UpdatedAt: now}
+	if err := base.SaveServiceAccount(account); err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(ServerConfig{Store: &losingServiceAccountRotationStore{Store: base}})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/service-accounts/"+account.ID+"/rotate", nil)
+	req.SetPathValue("id", account.ID)
+	resp := httptest.NewRecorder()
+	server.handleRotateServiceAccount(resp, req)
+	if resp.Code != http.StatusConflict {
+		t.Fatalf("rotation status = %d, want 409; body=%s", resp.Code, resp.Body.String())
+	}
+	if strings.Contains(resp.Body.String(), "api_key") {
+		t.Fatalf("losing rotation returned credential material: %s", resp.Body.String())
+	}
+}
+
 // A7 — a binding with an unknown role is rejected server-side.
 func TestCreateUserBindingRejectsUnknownRole(t *testing.T) {
 	store := phase1Store(t)
@@ -72,28 +99,6 @@ func TestCreateUserBindingRejectsUnknownRole(t *testing.T) {
 	user := &storage.User{ID: uuid.New().String(), Subject: "binding-role-target", Active: true, CreatedAt: now, UpdatedAt: now}
 	if err := store.SaveUser(user); err != nil {
 		t.Fatalf("SaveUser: %v", err)
-	}
-	if err := store.SaveGitHubConnection(&storage.GitHubConnection{
-		UserID:         user.Subject,
-		GitHubLogin:    "old-octocat",
-		GitHubUserID:   "100",
-		AccessTokenEnc: "enc-access-subject",
-		TokenType:      "bearer",
-		ConnectedAt:    now,
-		UpdatedAt:      now,
-	}); err != nil {
-		t.Fatalf("SaveGitHubConnection(subject): %v", err)
-	}
-	if err := store.SaveGitHubConnection(&storage.GitHubConnection{
-		UserID:         user.ID,
-		GitHubLogin:    "legacy-octocat",
-		GitHubUserID:   "101",
-		AccessTokenEnc: "enc-access-id",
-		TokenType:      "bearer",
-		ConnectedAt:    now,
-		UpdatedAt:      now,
-	}); err != nil {
-		t.Fatalf("SaveGitHubConnection(id): %v", err)
 	}
 	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"}) // dev bypass
 
@@ -112,6 +117,14 @@ func TestCreateUserBindingRejectsUnknownScopes(t *testing.T) {
 	user := &storage.User{ID: uuid.New().String(), Subject: "binding-scope-target", Active: true, CreatedAt: now, UpdatedAt: now}
 	if err := store.SaveUser(user); err != nil {
 		t.Fatalf("SaveUser: %v", err)
+	}
+	for _, connection := range []*storage.GitHubConnection{
+		{UserID: user.Subject, GitHubLogin: "old-octocat", AccessTokenEnc: "enc-access-subject", ConnectedAt: now, UpdatedAt: now},
+		{UserID: user.ID, GitHubLogin: "legacy-octocat", AccessTokenEnc: "enc-access-id", ConnectedAt: now, UpdatedAt: now},
+	} {
+		if err := store.SaveGitHubConnection(connection); err != nil {
+			t.Fatalf("SaveGitHubConnection(%s): %v", connection.UserID, err)
+		}
 	}
 	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"}) // dev bypass
 
@@ -187,6 +200,12 @@ func TestDeleteUserEndpoint(t *testing.T) {
 	}
 	if conn, err := store.GetGitHubConnection(user.ID); err != nil || conn != nil {
 		t.Fatalf("id GitHub connection = (%#v, %v), want deleted", conn, err)
+	}
+	for _, key := range []string{user.Subject, user.ID} {
+		saved, err := store.SaveGitHubConnectionIfNotRevokedSince(&storage.GitHubConnection{UserID: key, AccessTokenEnc: "stale-callback"}, now.Add(-time.Minute))
+		if err != nil || saved {
+			t.Fatalf("stale callback after deleting %s = %v, %v; want false, nil", key, saved, err)
+		}
 	}
 }
 

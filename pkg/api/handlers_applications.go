@@ -92,8 +92,20 @@ func (s *Server) handleUpdateApplication(w http.ResponseWriter, r *http.Request)
 	if strings.TrimSpace(req.Name) != "" {
 		application.Name = strings.TrimSpace(req.Name)
 	}
-	if err := s.store.SaveApplication(application); err != nil {
+	updater, supported := s.store.(interface {
+		UpdateApplicationIfUnchanged(application *storage.Application, expectedUpdatedAt time.Time) (bool, error)
+	})
+	if !supported {
+		writeError(w, http.StatusNotImplemented, "optimistic application updates are not supported by this storage backend")
+		return
+	}
+	updated, err := updater.UpdateApplicationIfUnchanged(application, application.UpdatedAt)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !updated {
+		writeError(w, http.StatusConflict, "application changed while the update was in flight; reload and retry")
 		return
 	}
 	s.recordAuditEvent(r, "application.update", "success", "application", application.ID, application.ProjectID, map[string]any{"name": application.Name})
@@ -239,9 +251,14 @@ func (s *Server) resolveReleaseApplicationID(projectID string, requestedApplicat
 			return application.ID, nil
 		}
 	}
+	// Project-scoped release creation may race across HTTP requests. Use a stable
+	// identifier for the implicit repository application so concurrent creators
+	// converge on the same row instead of fragmenting releases across duplicate
+	// default applications.
+	applicationID := uuid.NewSHA1(uuid.NameSpaceURL, []byte("apexload:project-application:"+normalizeProjectID(projectID))).String()
 	now := time.Now()
 	application := &storage.Application{
-		ID:        uuid.New().String(),
+		ID:        applicationID,
 		ProjectID: projectID,
 		Name:      "Application Repository",
 		CreatedAt: now,
@@ -250,7 +267,17 @@ func (s *Server) resolveReleaseApplicationID(projectID string, requestedApplicat
 	if err := s.store.SaveApplication(application); err != nil {
 		return "", err
 	}
-	return application.ID, nil
+	// SaveApplication deliberately keeps project ownership immutable on conflict.
+	// Reload and verify the deterministic row so a corrupted/pre-existing ID can
+	// never bind a release across projects.
+	persisted, err := s.store.GetApplication(applicationID)
+	if err != nil {
+		return "", err
+	}
+	if normalizeProjectID(persisted.ProjectID) != normalizeProjectID(projectID) {
+		return "", errApplicationProjectMismatch
+	}
+	return persisted.ID, nil
 }
 
 func (s *Server) handleGetRelease(w http.ResponseWriter, r *http.Request) {
@@ -285,8 +312,20 @@ func (s *Server) handleUpdateRelease(w http.ResponseWriter, r *http.Request) {
 	if strings.TrimSpace(req.Name) != "" {
 		release.Name = strings.TrimSpace(req.Name)
 	}
-	if err := s.store.SaveRelease(release); err != nil {
+	updater, supported := s.store.(interface {
+		UpdateReleaseIfUnchanged(release *storage.Release, expectedUpdatedAt time.Time) (bool, error)
+	})
+	if !supported {
+		writeError(w, http.StatusNotImplemented, "optimistic release updates are not supported by this storage backend")
+		return
+	}
+	updated, err := updater.UpdateReleaseIfUnchanged(release, release.UpdatedAt)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !updated {
+		writeError(w, http.StatusConflict, "release changed while the update was in flight; reload and retry")
 		return
 	}
 	projectID := normalizeProjectID(release.ProjectID)

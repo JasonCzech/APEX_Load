@@ -59,9 +59,23 @@ func (tr *TestRunner) refreshTestsForHARead() {
 	if tr == nil || tr.leadership == nil || tr.holdsExecutionLeadership() {
 		return
 	}
-	if err := tr.reloadStoredTests(); err != nil {
-		slog.Warn("failed to refresh tests for HA read", "error", err)
+	// A follower list/read used to reload every test, history, and archive for
+	// every request. Concurrent dashboard polls therefore queued one complete DB
+	// scan each behind testReloadMu even though the first scan had already made
+	// the others redundant. Serialize the freshness check with the reload itself
+	// and let a short, bounded staleness window collapse a request burst to one
+	// durable refresh. Leadership acquisition still calls reloadStoredTests
+	// directly and always forces a full reconciliation.
+	tr.testReloadMu.Lock()
+	defer tr.testReloadMu.Unlock()
+	if !tr.haTestRefreshAt.IsZero() && time.Since(tr.haTestRefreshAt) < haTestRefreshInterval {
+		return
 	}
+	if err := tr.reloadStoredTestsLocked(); err != nil {
+		slog.Warn("failed to refresh tests for HA read", "error", err)
+		return
+	}
+	tr.haTestRefreshAt = time.Now()
 }
 
 func (tr *TestRunner) buildRunComparisonBaselineLocked(test *ManagedTest) *RunComparisonBaseline {
@@ -144,6 +158,9 @@ func isComparableBaselineCandidate(current *ManagedTest, candidate *ManagedTest)
 	if current == nil || candidate == nil || current.ID == candidate.ID {
 		return false
 	}
+	if normalizeProjectID(current.ProjectID) != normalizeProjectID(candidate.ProjectID) {
+		return false
+	}
 	switch candidate.Status {
 	case "COMPLETE", "FAILED", "ABORTED":
 	default:
@@ -163,6 +180,9 @@ func isComparableBaselineCandidate(current *ManagedTest, candidate *ManagedTest)
 
 func sharesComparisonScope(left *ManagedTest, right *ManagedTest) bool {
 	if left == nil || right == nil {
+		return false
+	}
+	if normalizeProjectID(left.ProjectID) != normalizeProjectID(right.ProjectID) {
 		return false
 	}
 	if left.ScenarioID != "" || right.ScenarioID != "" {
@@ -193,6 +213,19 @@ type baselinePersistence interface {
 	UpdateTestBaselines(changes map[string]*time.Time) error
 }
 
+type scopedBaselinePersistence interface {
+	SetTestComparisonBaseline(id string, pinnedAt *time.Time) ([]storage.TestBaselineState, error)
+}
+
+func (tr *TestRunner) applyDurableBaselineStatesLocked(states []storage.TestBaselineState) {
+	for _, state := range states {
+		if test := tr.tests[state.ID]; test != nil {
+			test.BaselinePinned = state.Pinned
+			test.BaselinePinnedAt = cloneTimePtr(state.PinnedAt)
+		}
+	}
+}
+
 func (tr *TestRunner) persistBaselineChanges(changes map[string]*time.Time) error {
 	if store, ok := tr.testStore.(baselinePersistence); ok {
 		return store.UpdateTestBaselines(changes)
@@ -210,6 +243,7 @@ func (tr *TestRunner) persistBaselineChanges(changes map[string]*time.Time) erro
 }
 
 func (tr *TestRunner) PinComparisonBaseline(id string) (*ManagedTest, error) {
+	tr.refreshTestsForHARead()
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	id = tr.resolveRefKeyLocked(id)
@@ -221,13 +255,23 @@ func (tr *TestRunner) PinComparisonBaseline(id string) (*ManagedTest, error) {
 	if !canPinComparisonBaseline(test) {
 		return nil, fmt.Errorf("comparison baseline pinning requires a completed, failed, or aborted test")
 	}
+	pinnedAt := time.Now().UTC()
+	if store, ok := tr.testStore.(scopedBaselinePersistence); ok {
+		states, err := store.SetTestComparisonBaseline(test.ID, &pinnedAt)
+		if err != nil {
+			return nil, fmt.Errorf("persist comparison baseline: %w", err)
+		}
+		tr.applyDurableBaselineStatesLocked(states)
+		cloned := cloneManagedTestForReadLocked(test)
+		cloned.ComparisonBaseline = tr.buildRunComparisonBaselineLocked(test)
+		return cloned, nil
+	}
 	type baselinePinSnapshot struct {
 		test     *ManagedTest
 		pinned   bool
 		pinnedAt *time.Time
 	}
 	snapshots := make([]baselinePinSnapshot, 0)
-	pinnedAt := time.Now().UTC()
 	for _, candidate := range tr.tests {
 		if !sharesComparisonScope(test, candidate) {
 			continue
@@ -262,6 +306,7 @@ func (tr *TestRunner) PinComparisonBaseline(id string) (*ManagedTest, error) {
 }
 
 func (tr *TestRunner) UnpinComparisonBaseline(id string) (*ManagedTest, error) {
+	tr.refreshTestsForHARead()
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	id = tr.resolveRefKeyLocked(id)
@@ -269,6 +314,16 @@ func (tr *TestRunner) UnpinComparisonBaseline(id string) (*ManagedTest, error) {
 	test, ok := tr.tests[id]
 	if !ok {
 		return nil, fmt.Errorf("test not found: %s", id)
+	}
+	if store, ok := tr.testStore.(scopedBaselinePersistence); ok {
+		states, err := store.SetTestComparisonBaseline(test.ID, nil)
+		if err != nil {
+			return nil, fmt.Errorf("persist comparison baseline removal: %w", err)
+		}
+		tr.applyDurableBaselineStatesLocked(states)
+		cloned := cloneManagedTestForReadLocked(test)
+		cloned.ComparisonBaseline = tr.buildRunComparisonBaselineLocked(test)
+		return cloned, nil
 	}
 	previousPinned := test.BaselinePinned
 	previousPinnedAt := cloneTimePtr(test.BaselinePinnedAt)
@@ -377,20 +432,22 @@ func (tr *TestRunner) ListTestSummaries() []*ManagedTest {
 }
 
 type testSummaryListQuery struct {
-	projectID     string
-	folderID      *string
-	applicationID string
-	releaseID     string
-	scenarioID    string
-	activeOnly    bool
-	limit         int
-	offset        int
+	projectID        string
+	folderID         *string
+	applicationID    string
+	releaseID        string
+	scenarioID       string
+	activeOnly       bool
+	limit            int
+	offset           int
+	prioritizeActive bool
 }
 
 // listTestSummaryPage filters and orders the lightweight list while holding
 // the runner read lock, then builds sparklines only for the requested window.
 // This keeps a bounded dashboard poll from walking every retained history.
 func (tr *TestRunner) listTestSummaryPage(query testSummaryListQuery) ([]*ManagedTest, int) {
+	tr.refreshTestsForHARead()
 	tr.refreshReadMetadataForTestList()
 	tr.mu.RLock()
 	defer tr.mu.RUnlock()
@@ -441,7 +498,7 @@ func (tr *TestRunner) listTestSummaryPage(query testSummaryListQuery) ([]*Manage
 		matches = append(matches, test)
 	}
 
-	sortTestList(matches, query.limit > 0)
+	sortTestList(matches, query.prioritizeActive)
 	total := len(matches)
 	start := min(query.offset, total)
 	end := total
@@ -840,16 +897,28 @@ func (tr *TestRunner) GetRunArchiveContext(ctx context.Context, id string) (*sto
 	if ok && tr.leadership == nil {
 		return cloned, true
 	}
-	record, ok = tr.loadRunArchiveFromStore(id)
-	if !ok {
+	record, ok, err := tr.loadRunArchiveFromStore(id)
+	if err != nil {
 		return nil, false
 	}
-	if !runArchiveRecordAvailableContext(ctx, record) {
+	if !ok {
 		tr.mu.Lock()
+		delete(tr.archives, id)
 		if test, exists := tr.tests[id]; exists {
 			test.Archive = nil
 		}
 		tr.mu.Unlock()
+		forgetRunArchiveCache(id)
+		return nil, false
+	}
+	if !runArchiveRecordAvailableContext(ctx, record) {
+		tr.mu.Lock()
+		delete(tr.archives, id)
+		if test, exists := tr.tests[id]; exists {
+			test.Archive = nil
+		}
+		tr.mu.Unlock()
+		forgetRunArchiveCache(id)
 		return nil, false
 	}
 	tr.mu.Lock()
@@ -1012,10 +1081,20 @@ func (tr *TestRunner) DeleteTestDurable(id string) (bool, error) {
 	if test.Status == "RUNNING" || test.Status == "INITIALIZING" || test.Status == "PAUSED" || test.Status == "STOPPING" || test.Status == "SHAKEOUT" {
 		return false, nil // Can't delete active tests
 	}
-	if err := tr.deleteStoredTest(id); err != nil {
+	result, err := tr.deleteStoredTest(id)
+	if err != nil {
 		return false, err
 	}
+	switch result {
+	case storage.LeaseFencedDeleteMissing, storage.LeaseFencedDeleteActive:
+		return false, nil
+	case storage.LeaseFencedDeleteDeleted:
+		// Continue with replica-local index cleanup below.
+	default:
+		return false, fmt.Errorf("unexpected durable test delete result %q", result)
+	}
 	deleteGroupMetricsHistoryCache(id)
+	tr.forgetRunSnapshotWriteStateLocked(id)
 	tr.removeRefKeyLocked(test.RefKey)
 	delete(tr.tests, id)
 	delete(tr.archives, id)

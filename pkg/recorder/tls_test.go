@@ -13,8 +13,11 @@ import (
 	"net/url"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/internal/boundedcache"
 )
 
 func newTLSRecorder(t *testing.T) *Recorder {
@@ -142,6 +145,71 @@ func TestGenerateLeafCertCaching(t *testing.T) {
 	}
 	if cert1 == cert3 {
 		t.Fatal("expected different cert for different hostname")
+	}
+}
+
+func TestGenerateLeafCertCacheIsBoundedAndCoalescesConcurrentGeneration(t *testing.T) {
+	r := newTLSRecorder(t)
+	r.certCache = boundedcache.NewStringCache[*tls.Certificate](2, maxRecorderCertificateHostBytes, 1024)
+
+	first, err := r.generateLeafCert(" First.Example.Test. ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstAgain, err := r.generateLeafCert("first.example.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstAgain != first {
+		t.Fatal("normalized certificate hostname did not hit the cache")
+	}
+	if _, err := r.generateLeafCert("second.example.test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.generateLeafCert("third.example.test"); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.certCacheLenForTesting(); got != 2 {
+		t.Fatalf("leaf certificate cache entries = %d, want 2", got)
+	}
+
+	const callers = 8
+	results := make(chan *tls.Certificate, callers)
+	errs := make(chan error, callers)
+	var wg sync.WaitGroup
+	for range callers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			cert, err := r.generateLeafCert("concurrent.example.test")
+			results <- cert
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(results)
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	var expected *tls.Certificate
+	for cert := range results {
+		if expected == nil {
+			expected = cert
+		} else if cert != expected {
+			t.Fatal("concurrent generation returned distinct certificates for one hostname")
+		}
+	}
+}
+
+func TestGenerateLeafCertRejectsInvalidHostnameSize(t *testing.T) {
+	r := newTLSRecorder(t)
+	for _, hostname := range []string{" ", strings.Repeat("a", maxRecorderCertificateHostBytes+1)} {
+		if _, err := r.generateLeafCert(hostname); err == nil {
+			t.Fatalf("generateLeafCert accepted hostname length %d", len(hostname))
+		}
 	}
 }
 

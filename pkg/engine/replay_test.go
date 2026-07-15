@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -16,10 +17,11 @@ import (
 type replayTestProtocol struct {
 	execute    func(action *protocol.Action) (*protocol.Result, error)
 	executeCtx func(ctx context.Context, action *protocol.Action) (*protocol.Result, error)
+	initErr    error
 }
 
 func (p *replayTestProtocol) Name() string                                   { return "replay-test" }
-func (p *replayTestProtocol) Init(_ context.Context, _ map[string]any) error { return nil }
+func (p *replayTestProtocol) Init(_ context.Context, _ map[string]any) error { return p.initErr }
 func (p *replayTestProtocol) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
 	if p.executeCtx != nil {
 		return p.executeCtx(ctx, action)
@@ -45,6 +47,52 @@ func registerReplayProtocolWithContext(t *testing.T, execute func(ctx context.Co
 		return &replayTestProtocol{executeCtx: execute}
 	})
 	return name
+}
+
+func registerReplayProtocolWithInitError(t *testing.T, initErr error) string {
+	t.Helper()
+	name := "replay-" + strings.ReplaceAll(strings.ToLower(t.Name()), "/", "-")
+	protocol.Register(name, func() protocol.Protocol {
+		return &replayTestProtocol{initErr: initErr}
+	})
+	return name
+}
+
+func TestReplayAndShakeoutScrubProtocolInitializationErrors(t *testing.T) {
+	secret := "short-secret"
+	protocolName := registerReplayProtocolWithInitError(t, fmt.Errorf("dial https://user:%s@example.test failed", secret))
+	script := &dsl.Script{Name: "credential-error", Protocol: protocolName, Actions: []dsl.Action{{Name: "noop", Type: "noop"}}}
+
+	if _, err := ReplayScript(context.Background(), script, ReplayOptions{}); err == nil {
+		t.Fatal("ReplayScript returned nil error")
+	} else if strings.Contains(err.Error(), secret) {
+		t.Fatalf("ReplayScript leaked URL credential: %q", err)
+	}
+	if err := RunScriptShakeout(context.Background(), "shakeout", script); err == nil {
+		t.Fatal("RunScriptShakeout returned nil error")
+	} else if strings.Contains(err.Error(), secret) {
+		t.Fatalf("RunScriptShakeout leaked URL credential: %q", err)
+	}
+
+	load, err := New(Config{Script: script, VUsers: 1, Duration: time.Second})
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+	if _, err := load.Run(context.Background()); err == nil {
+		t.Fatal("Engine.Run returned nil error")
+	} else if strings.Contains(err.Error(), secret) {
+		t.Fatalf("Engine.Run leaked URL credential: %q", err)
+	}
+
+	multi, err := NewMultiGroup(MultiGroupConfig{Duration: time.Second, Groups: []GroupConfig{{Name: "g", Script: script, VUsers: 1}}})
+	if err != nil {
+		t.Fatalf("NewMultiGroup returned error: %v", err)
+	}
+	if _, err := multi.Run(context.Background()); err == nil {
+		t.Fatal("MultiGroupEngine.Run returned nil error")
+	} else if strings.Contains(err.Error(), secret) {
+		t.Fatalf("MultiGroupEngine.Run leaked URL credential: %q", err)
+	}
 }
 
 type replayDebugControllerFunc func(context.Context, ReplayDebugAction) error
@@ -159,6 +207,9 @@ func TestReplayScriptInterpolatesParametersInEventsAndSnapshots(t *testing.T) {
 	if len(report.Snapshots) != 1 || report.Snapshots[0].RequestURL != wantURL {
 		t.Fatalf("stored snapshots = %#v, want one snapshot for %q", report.Snapshots, wantURL)
 	}
+	if event.Snapshot != report.Snapshots[0] {
+		t.Fatal("event and report retained duplicate copies of the same error snapshot")
+	}
 }
 
 func TestReplayScriptPreservesSourceStepLabels(t *testing.T) {
@@ -230,6 +281,37 @@ func TestReplayScriptStopsAfterFailureWhenContinueOnErrorDisabled(t *testing.T) 
 	}
 	if report.Error != "boom" {
 		t.Fatalf("report.Error = %q, want boom", report.Error)
+	}
+}
+
+func TestReplayProjectionScrubsShortSecretInputsAndProtocolErrors(t *testing.T) {
+	t.Setenv("APEXLOAD_SECRET_REPLAY_SHORT", "x")
+	protocolName := registerReplayProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		if action.Value != "x" {
+			t.Fatalf("protocol value = %q, want resolved secret", action.Value)
+		}
+		return nil, errors.New(`unknown settlement_token "x"`)
+	})
+	report, err := ReplayScript(context.Background(), &dsl.Script{
+		Name:     "Secret Replay",
+		Protocol: protocolName,
+		Config:   dsl.ScriptConfig{ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: false}},
+		Actions: []dsl.Action{{
+			Name: "password", Type: "browser_type", Target: "/login", Value: "{{secret.replay_short}}",
+		}},
+	}, ReplayOptions{IgnoreThinkTime: true})
+	if err != nil {
+		t.Fatalf("ReplayScript: %v", err)
+	}
+	if len(report.Events) != 1 {
+		t.Fatalf("event count = %d, want 1", len(report.Events))
+	}
+	encoded, _ := json.Marshal(report)
+	if strings.Contains(string(encoded), `"value":"x"`) || strings.Contains(string(encoded), `token \"x\"`) {
+		t.Fatalf("replay report leaked short secret: %s", encoded)
+	}
+	if report.Events[0].Value != redactedPayloadValue || !strings.Contains(report.Events[0].ErrorMessage, redactedPayloadValue) {
+		t.Fatalf("replay event value/error = %q/%q", report.Events[0].Value, report.Events[0].ErrorMessage)
 	}
 }
 

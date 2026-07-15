@@ -13,6 +13,8 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"math"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -20,22 +22,23 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/internal/boundedcache"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/protocol/messaging"
 )
 
-var extractorRegexCache sync.Map // map[string]*regexp.Regexp
+var extractorRegexCache = boundedcache.NewStringCache[*regexp.Regexp](0, 0, 0)
 
 func compileExtractorRegex(expr string) (*regexp.Regexp, error) {
 	if cached, ok := extractorRegexCache.Load(expr); ok {
-		return cached.(*regexp.Regexp), nil
+		return cached, nil
 	}
 	re, err := regexp.Compile(expr)
 	if err != nil {
 		return nil, err
 	}
 	actual, _ := extractorRegexCache.LoadOrStore(expr, re)
-	return actual.(*regexp.Regexp), nil
+	return actual, nil
 }
 
 func init() {
@@ -50,6 +53,24 @@ const kafkaExtractionBodyLimit = 64 << 10
 const kafkaMaxTransactionRecords = 10_000
 const kafkaMaxTransactionBytes = 64 << 20
 const kafkaTransactionAbortTimeout = 5 * time.Second
+
+// Runtime configuration hard limits are exported so DSL validation and the
+// protocol boundary enforce the same contract. They remain deliberately above
+// normal Kafka values while preventing integer casts and data-driven identifiers
+// from becoming generator-sized allocations or long-lived map keys.
+const (
+	MaxConfiguredTimeout       = time.Hour
+	MaxConfiguredPartitions    = 1_000_000
+	MaxConfiguredMessageBytes  = 64 << 20
+	MaxConfiguredSchemaBytes   = 1 << 20
+	MaxConfiguredSubjectBytes  = 4 << 10
+	MaxConfiguredRegistryBytes = 8 << 10
+	MaxKafkaTopicBytes         = 249
+	MaxKafkaIdentifierBytes    = 4 << 10
+	maxKafkaBrokers            = 256
+	maxKafkaProperties         = 256
+	maxKafkaConfigMapBytes     = 1 << 20
+)
 
 // Kafka implements protocol.Protocol for Apache Kafka messaging.
 type Kafka struct {
@@ -125,10 +146,26 @@ func (c config) tlsConfigured() bool {
 func (k *Kafka) Name() string { return k.name }
 
 func (k *Kafka) Init(_ context.Context, cfg map[string]any) error {
+	partitions, err := boundedConfigInt(cfg, "kafka_partitions", defaultMockPartitions, 0, MaxConfiguredPartitions)
+	if err != nil {
+		return err
+	}
+	maxMessageBytes, err := boundedConfigInt(cfg, "kafka_max_message_bytes", 0, 0, MaxConfiguredMessageBytes)
+	if err != nil {
+		return err
+	}
+	timeoutMS, err := boundedConfigInt(cfg, "kafka_timeout_ms", int((5*time.Second)/time.Millisecond), 0, int(MaxConfiguredTimeout/time.Millisecond))
+	if err != nil {
+		return err
+	}
+	schemaID, err := boundedConfigInt(cfg, "kafka_schema_id", 0, 0, math.MaxInt32)
+	if err != nil {
+		return err
+	}
 	k.cfg = config{
 		Brokers:           stringSliceValue(cfg, "kafka_brokers"),
 		Profile:           strings.ToLower(strings.TrimSpace(stringValue(cfg, "kafka_profile"))),
-		MaxMessageBytes:   intValue(cfg, "kafka_max_message_bytes", 0),
+		MaxMessageBytes:   maxMessageBytes,
 		SecurityProtocol:  stringValue(cfg, "kafka_security_protocol"),
 		SASLMechanism:     stringValue(cfg, "kafka_sasl_mechanism"),
 		SASLUsername:      stringValue(cfg, "kafka_sasl_username"),
@@ -144,13 +181,13 @@ func (k *Kafka) Init(_ context.Context, cfg map[string]any) error {
 		PartitionStrategy: stringValue(cfg, "kafka_partition_strategy"),
 		AutoOffsetReset:   stringValue(cfg, "kafka_auto_offset_reset"),
 		IsolationLevel:    strings.ToLower(strings.TrimSpace(stringValue(cfg, "kafka_isolation_level"))),
-		Partitions:        int32(intValue(cfg, "kafka_partitions", defaultMockPartitions)),
-		Timeout:           durationValue(cfg, "kafka_timeout_ms", 5*time.Second),
+		Partitions:        int32(partitions),
+		Timeout:           time.Duration(timeoutMS) * time.Millisecond,
 		Serialization:     strings.ToLower(strings.TrimSpace(stringValue(cfg, "kafka_serialization"))),
 		SchemaRegistryURL: stringValue(cfg, "kafka_schema_registry_url"),
 		Subject:           stringValue(cfg, "kafka_subject"),
 		Schema:            stringValue(cfg, "kafka_schema"),
-		SchemaID:          intValue(cfg, "kafka_schema_id", 0),
+		SchemaID:          schemaID,
 		Properties:        stringMapValue(cfg, "kafka_properties"),
 		Mock:              boolValue(cfg, "kafka_mock"),
 
@@ -158,6 +195,9 @@ func (k *Kafka) Init(_ context.Context, cfg map[string]any) error {
 		TLSClientCertFile:     stringValue(cfg, "kafka_tls_client_cert_file"),
 		TLSClientKeyFile:      stringValue(cfg, "kafka_tls_client_key_file"),
 		TLSCACertFile:         stringValue(cfg, "kafka_tls_ca_cert_file"),
+	}
+	if err := validateKafkaConfigBounds(k.cfg); err != nil {
+		return err
 	}
 	// Secret references in either field are already interpolated by the engine
 	// (`{{secret.NAME}}`); honor the dedicated secret field as a fallback.
@@ -289,6 +329,14 @@ func (k *Kafka) Execute(ctx context.Context, action *protocol.Action) (*protocol
 		Extractions:      make(map[string]string),
 		DependencyType:   classifyKafkaDependencyType(action, k.cfg.ConsumerGroup),
 		DependencyTarget: topic,
+	}
+	if err := k.validateActionBounds(action); err != nil {
+		result.Success = false
+		result.StatusCode = 400
+		result.ErrorMessage = err.Error()
+		result.Duration = time.Since(start)
+		result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
+		return result, nil
 	}
 	if k.txPoisoned {
 		result.Success = false
@@ -437,15 +485,94 @@ func seekTarget(params map[string]any) string {
 // oversized records early. The franz adapter additionally enforces the cap
 // authoritatively via kgo.ProducerBatchMaxBytes on the real network path.
 func (k *Kafka) checkRecordSize(rec kafkaRecord) error {
-	if k.cfg.MaxMessageBytes <= 0 {
-		return nil
+	limit := k.cfg.MaxMessageBytes
+	if limit <= 0 || limit > MaxConfiguredMessageBytes {
+		limit = MaxConfiguredMessageBytes
 	}
-	size := len(rec.Value) + len(rec.Key)
+	size := int64(len(rec.Value)) + int64(len(rec.Key))
 	for hk, hv := range rec.Headers {
-		size += len(hk) + len(hv)
+		size += int64(len(hk)) + int64(len(hv))
 	}
-	if size > k.cfg.MaxMessageBytes {
-		return fmt.Errorf("record %d bytes (value+key+headers) exceeds max_message_bytes %d (broker message-size cap)", size, k.cfg.MaxMessageBytes)
+	if size > int64(limit) {
+		return fmt.Errorf("record %d bytes (value+key+headers) exceeds max_message_bytes %d (broker message-size cap)", size, limit)
+	}
+	return nil
+}
+
+func validateKafkaConfigBounds(cfg config) error {
+	if len(cfg.Brokers) > maxKafkaBrokers {
+		return fmt.Errorf("kafka brokers exceed %d entries", maxKafkaBrokers)
+	}
+	configBytes := 0
+	for _, broker := range cfg.Brokers {
+		if len(broker) > MaxKafkaIdentifierBytes {
+			return fmt.Errorf("kafka broker address exceeds %d bytes", MaxKafkaIdentifierBytes)
+		}
+		configBytes += len(broker)
+	}
+	if len(cfg.Properties) > maxKafkaProperties {
+		return fmt.Errorf("kafka properties exceed %d entries", maxKafkaProperties)
+	}
+	for key, value := range cfg.Properties {
+		configBytes += len(key) + len(value)
+	}
+	if configBytes > maxKafkaConfigMapBytes {
+		return fmt.Errorf("kafka broker/property configuration exceeds %d bytes", maxKafkaConfigMapBytes)
+	}
+	for name, value := range map[string]string{
+		"client_id": cfg.ClientID, "consumer_group": cfg.ConsumerGroup,
+		"transactional_id": cfg.TransactionalID, "oauth_scope": cfg.OAuthScope,
+	} {
+		if len(value) > MaxKafkaIdentifierBytes {
+			return fmt.Errorf("kafka %s exceeds %d bytes", name, MaxKafkaIdentifierBytes)
+		}
+	}
+	if len(cfg.Topic) > MaxKafkaTopicBytes {
+		return fmt.Errorf("kafka topic exceeds %d bytes", MaxKafkaTopicBytes)
+	}
+	if len(cfg.Subject) > MaxConfiguredSubjectBytes {
+		return fmt.Errorf("kafka schema subject exceeds %d bytes", MaxConfiguredSubjectBytes)
+	}
+	if len(cfg.Schema) > MaxConfiguredSchemaBytes {
+		return fmt.Errorf("kafka schema exceeds %d bytes", MaxConfiguredSchemaBytes)
+	}
+	if len(cfg.SchemaRegistryURL) > MaxConfiguredRegistryBytes {
+		return fmt.Errorf("kafka schema_registry_url exceeds %d bytes", MaxConfiguredRegistryBytes)
+	}
+	if cfg.SchemaRegistryURL != "" {
+		parsed, err := url.Parse(cfg.SchemaRegistryURL)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+			return fmt.Errorf("kafka schema_registry_url must be an absolute http(s) URL")
+		}
+	}
+	return nil
+}
+
+func (k *Kafka) validateActionBounds(action *protocol.Action) error {
+	if action == nil {
+		return fmt.Errorf("kafka action is required")
+	}
+	for name, value := range map[string]string{
+		"topic":    k.topic(action),
+		"reply_to": paramString(action.Params, "reply_to", ""),
+	} {
+		if len(value) > MaxKafkaTopicBytes {
+			return fmt.Errorf("kafka %s exceeds %d bytes", name, MaxKafkaTopicBytes)
+		}
+	}
+	for name, value := range map[string]string{
+		"consumer_group": paramString(action.Params, "consumer_group", k.cfg.ConsumerGroup),
+		"correlation_id": paramString(action.Params, "correlation_id", ""),
+	} {
+		if len(value) > MaxKafkaIdentifierBytes {
+			return fmt.Errorf("kafka %s exceeds %d bytes", name, MaxKafkaIdentifierBytes)
+		}
+	}
+	if _, _, err := optionalBoundedParamInt(action.Params, "timeout_ms", 0, int(MaxConfiguredTimeout/time.Millisecond)); err != nil {
+		return err
+	}
+	if _, _, err := optionalBoundedParamInt(action.Params, "partition", 0, math.MaxInt32); err != nil {
+		return err
 	}
 	return nil
 }
@@ -1099,6 +1226,51 @@ func intValue(cfg map[string]any, key string, fallback int) int {
 		return int(value)
 	default:
 		return fallback
+	}
+}
+
+func boundedConfigInt(cfg map[string]any, key string, fallback, minimum, maximum int) (int, error) {
+	value, exists := cfg[key]
+	if !exists {
+		return fallback, nil
+	}
+	parsed, err := numericInt64(value)
+	if err != nil || parsed < int64(minimum) || parsed > int64(maximum) {
+		return 0, fmt.Errorf("kafka %s must be an integer between %d and %d", strings.TrimPrefix(key, "kafka_"), minimum, maximum)
+	}
+	return int(parsed), nil
+}
+
+func optionalBoundedParamInt(params map[string]any, key string, minimum, maximum int) (int, bool, error) {
+	if params == nil {
+		return 0, false, nil
+	}
+	value, exists := params[key]
+	if !exists {
+		return 0, false, nil
+	}
+	parsed, err := numericInt64(value)
+	if err != nil || parsed < int64(minimum) || parsed > int64(maximum) {
+		return 0, true, fmt.Errorf("kafka %s must be an integer between %d and %d", key, minimum, maximum)
+	}
+	return int(parsed), true, nil
+}
+
+func numericInt64(value any) (int64, error) {
+	switch typed := value.(type) {
+	case int:
+		return int64(typed), nil
+	case int64:
+		return typed, nil
+	case float64:
+		if math.IsNaN(typed) || math.IsInf(typed, 0) || math.Trunc(typed) != typed || typed < math.MinInt64 || typed > math.MaxInt64 {
+			return 0, fmt.Errorf("not an integer")
+		}
+		return int64(typed), nil
+	case string:
+		return strconv.ParseInt(strings.TrimSpace(typed), 10, 64)
+	default:
+		return 0, fmt.Errorf("not an integer")
 	}
 }
 

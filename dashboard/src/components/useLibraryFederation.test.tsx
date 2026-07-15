@@ -177,6 +177,12 @@ function remoteFixture() {
     name: 'Team Remote',
     base_url: 'https://remote.example.test',
     default_project_id: 'remote-default',
+	project_mappings: {
+		'project-1': 'remote-project-1',
+		'project-a': 'remote-project-a',
+		'project-b': 'remote-project-b',
+		'custom-project': 'remote-custom-project',
+	},
     auth_method: 'none',
     credential_configured: false,
     status: 'healthy',

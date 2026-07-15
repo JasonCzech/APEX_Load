@@ -165,6 +165,32 @@ func TestHandleSetGeneratorDrainStateAcceptsGeneratorID(t *testing.T) {
 	}
 }
 
+func TestEvacuateGeneratorAuditPreservesOperatorReason(t *testing.T) {
+	store := auditEventStore(t)
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	backend := newDistributedExecutionBackend([]string{"gen-a:9090"}, time.Second, nil)
+	backend.recordGeneratorIdentity("gen-a:9090", "gen-a")
+	server.runner.setExecutionBackend(backend)
+
+	rec := timeslotRequest(t, server, http.MethodPost, "/api/v1/fleet/generators/gen-a/evacuate", map[string]any{
+		"dry_run": true,
+		"reason":  "node maintenance window",
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("evacuation dry-run status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	events, err := store.ListAuditEvents(storage.AuditEventFilter{Action: "generator.evacuate", Limit: 10})
+	if err != nil {
+		t.Fatalf("ListAuditEvents: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("evacuation audit events = %d, want 1", len(events))
+	}
+	if got := events[0].Details["reason"]; got != "node maintenance window" {
+		t.Fatalf("evacuation audit reason = %#v, want operator reason", got)
+	}
+}
+
 func TestTerminatingGeneratorPodWatcherMarksStableIDDraining(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
@@ -515,7 +541,7 @@ func TestFleetAlertNotificationsRouteOnceAndResetWhenResolved(t *testing.T) {
 	defer store.Close()
 
 	received := make(chan map[string]any, 3)
-	hook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	hook := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 		var payload map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {

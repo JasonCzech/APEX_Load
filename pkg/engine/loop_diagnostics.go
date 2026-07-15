@@ -12,12 +12,13 @@ package engine
 import (
 	"fmt"
 	"log/slog"
-	"sync"
+
+	"github.com/jasonczech/apexload/pkg/internal/boundedcache"
 )
 
 // loopTruncationWarned dedupes truncation warnings to once per process per
 // (action, requested, cap) so a high VUser count cannot flood the logs.
-var loopTruncationWarned sync.Map
+var loopTruncationWarned = boundedcache.NewStringCache[struct{}](0, 0, 0)
 
 // warnLoopTruncation emits a one-time warning that a control_loop's requested
 // pass count (a fixed Count or a foreach row count) exceeds the runtime safety
@@ -39,7 +40,7 @@ func warnLoopTruncation(logger *slog.Logger, actionName string, requested, capLi
 
 // conditionLoopSafetyCapWarned dedupes warnings for condition-driven loops that
 // never evaluated false before the default runtime cap.
-var conditionLoopSafetyCapWarned sync.Map
+var conditionLoopSafetyCapWarned = boundedcache.NewStringCache[struct{}](0, 0, 0)
 
 func warnConditionLoopSafetyCap(logger *slog.Logger, actionName string, capLimit int) {
 	key := fmt.Sprintf("%s|%d", actionName, capLimit)
@@ -57,7 +58,7 @@ func warnConditionLoopSafetyCap(logger *slog.Logger, actionName string, capLimit
 // strayControlFlowWarned dedupes the "break/continue outside a loop" warning to
 // once per process per (action, phase) so a high VUser/iteration count cannot
 // flood the logs (mirrors loopTruncationWarned).
-var strayControlFlowWarned sync.Map
+var strayControlFlowWarned = boundedcache.NewStringCache[struct{}](0, 0, 0)
 
 // warnStrayControlFlow emits a one-time warning that a control_break or
 // control_continue executed outside any enclosing control_loop, where it is a

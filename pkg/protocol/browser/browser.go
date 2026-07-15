@@ -105,7 +105,10 @@ type Browser struct {
 	waitResponseScanStart  int
 	// networkBodyBytes tracks the captured request-body bytes currently retained,
 	// used to enforce the byte budget.
-	networkBodyBytes      int
+	networkBodyBytes int
+	// networkMetadataBytes tracks URLs and request/response header maps, which
+	// need an independent aggregate bound even when requests have no body.
+	networkMetadataBytes  int
 	resourceValidators    map[string]string
 	resourceValidatorKeys []string
 	pages                 []playwright.Page
@@ -114,6 +117,7 @@ type Browser struct {
 	networkWorkerStop     chan struct{}
 	networkWorkerWG       sync.WaitGroup
 	networkTasksDropped   int64
+	requestPolicyStop     chan struct{}
 
 	dialogMu      sync.Mutex
 	pendingDialog *dialogPolicy

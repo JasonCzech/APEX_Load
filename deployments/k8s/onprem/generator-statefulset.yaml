@@ -61,6 +61,14 @@ spec:
               value: production
             - name: APEXLOAD_GENERATOR_MAX_VUSERS
               value: "10000"
+            # Persist the fencing high-water per StatefulSet ordinal so a pod
+            # replacement cannot revive work from a displaced controller.
+            - name: APEXLOAD_GENERATOR_STATE_DIR
+              value: /var/lib/apexload-generator
+            # Keep completed/per-crash generator evidence on the per-ordinal PVC
+            # until the controller has durably ingested it.
+            - name: APEXLOAD_ARCHIVE_DIR
+              value: /var/lib/apexload-generator/archives
             # Server certificate + client-CA: requires mTLS from controllers.
             - name: APEXLOAD_GRPC_TLS_CERT
               value: /etc/apexload/grpc-tls/tls.crt
@@ -76,6 +84,8 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            - name: generator-state
+              mountPath: /var/lib/apexload-generator
             - name: grpc-tls
               mountPath: /etc/apexload/grpc-tls
               readOnly: true
@@ -110,3 +120,15 @@ spec:
         - name: grpc-tls
           secret:
             secretName: apexload-generator-grpc-tls
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  volumeClaimTemplates:
+    - metadata:
+        name: generator-state
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 10Gi

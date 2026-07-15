@@ -3,6 +3,7 @@ package api
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -12,6 +13,10 @@ import (
 )
 
 var errCategoryDomainMismatch = errors.New("category does not belong to domain")
+
+type domainHierarchyCreator interface {
+	CreateDomainHierarchy(domain *storage.Domain, repository *storage.ApplicationRepository, category *storage.RepositoryCategory) error
+}
 
 type domainRequest struct {
 	Name        string `json:"name"`
@@ -63,10 +68,6 @@ func (s *Server) handleCreateDomain(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
-	if err := s.store.SaveDomain(domain); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
 	repository := &storage.ApplicationRepository{
 		ID:          uuid.New().String(),
 		DomainID:    domain.ID,
@@ -74,10 +75,6 @@ func (s *Server) handleCreateDomain(w http.ResponseWriter, r *http.Request) {
 		Description: "Default application repository for this domain.",
 		CreatedAt:   now,
 		UpdatedAt:   now,
-	}
-	if err := s.store.SaveApplicationRepository(repository); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
 	}
 	category := &storage.RepositoryCategory{
 		ID:           uuid.New().String(),
@@ -89,12 +86,36 @@ func (s *Server) handleCreateDomain(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
-	if err := s.store.SaveRepositoryCategory(category); err != nil {
+	if err := createDomainHierarchy(s.store, domain, repository, category); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	s.recordAuditEvent(r, "domain.create", "success", "domain", domain.ID, "", map[string]any{"name": domain.Name, "repository_id": repository.ID, "category_id": category.ID})
 	writeJSON(w, http.StatusCreated, map[string]any{"domain": domain, "application_repository": repository, "default_category": category})
+}
+
+func createDomainHierarchy(store storage.Store, domain *storage.Domain, repository *storage.ApplicationRepository, category *storage.RepositoryCategory) error {
+	if creator, ok := store.(domainHierarchyCreator); ok {
+		return creator.CreateDomainHierarchy(domain, repository, category)
+	}
+	// Lightweight adapters retain compatibility while compensating on failure.
+	// Production SQLite/PostgreSQL stores implement the atomic path above.
+	if err := store.SaveDomain(domain); err != nil {
+		return err
+	}
+	if err := store.SaveApplicationRepository(repository); err != nil {
+		if cleanupErr := store.DeleteDomain(domain.ID); cleanupErr != nil {
+			return errors.Join(err, fmt.Errorf("rollback domain hierarchy: %w", cleanupErr))
+		}
+		return err
+	}
+	if err := store.SaveRepositoryCategory(category); err != nil {
+		if cleanupErr := store.DeleteDomain(domain.ID); cleanupErr != nil {
+			return errors.Join(err, fmt.Errorf("rollback domain hierarchy: %w", cleanupErr))
+		}
+		return err
+	}
+	return nil
 }
 
 func (s *Server) handleGetDomain(w http.ResponseWriter, r *http.Request) {
@@ -132,8 +153,20 @@ func (s *Server) handleUpdateDomain(w http.ResponseWriter, r *http.Request) {
 		domain.Name = strings.TrimSpace(req.Name)
 	}
 	domain.Description = strings.TrimSpace(req.Description)
-	if err := s.store.SaveDomain(domain); err != nil {
+	updater, supported := s.store.(interface {
+		UpdateDomainIfUnchanged(domain *storage.Domain, expectedUpdatedAt time.Time) (bool, error)
+	})
+	if !supported {
+		writeError(w, http.StatusNotImplemented, "optimistic domain updates are not supported by this storage backend")
+		return
+	}
+	updated, err := updater.UpdateDomainIfUnchanged(domain, domain.UpdatedAt)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !updated {
+		writeError(w, http.StatusConflict, "domain changed while the update was in flight; reload and retry")
 		return
 	}
 	s.recordAuditEvent(r, "domain.update", "success", "domain", domain.ID, "", map[string]any{"name": domain.Name})
@@ -185,8 +218,20 @@ func (s *Server) handleUpdateApplicationRepository(w http.ResponseWriter, r *htt
 		repository.Name = strings.TrimSpace(req.Name)
 	}
 	repository.Description = strings.TrimSpace(req.Description)
-	if err := s.store.SaveApplicationRepository(repository); err != nil {
+	updater, supported := s.store.(interface {
+		UpdateApplicationRepositoryIfUnchanged(repository *storage.ApplicationRepository, expectedUpdatedAt time.Time) (bool, error)
+	})
+	if !supported {
+		writeError(w, http.StatusNotImplemented, "optimistic application repository updates are not supported by this storage backend")
+		return
+	}
+	updated, err := updater.UpdateApplicationRepositoryIfUnchanged(repository, repository.UpdatedAt)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !updated {
+		writeError(w, http.StatusConflict, "application repository changed while the update was in flight; reload and retry")
 		return
 	}
 	s.recordAuditEvent(r, "application_repository.update", "success", "application_repository", repository.ID, "", map[string]any{"domain_id": repository.DomainID, "name": repository.Name})
@@ -263,8 +308,20 @@ func (s *Server) handleUpdateRepositoryCategory(w http.ResponseWriter, r *http.R
 	}
 	category.Description = strings.TrimSpace(req.Description)
 	category.SortOrder = req.SortOrder
-	if err := s.store.SaveRepositoryCategory(category); err != nil {
+	updater, supported := s.store.(interface {
+		UpdateRepositoryCategoryIfUnchanged(category *storage.RepositoryCategory, expectedUpdatedAt time.Time) (bool, error)
+	})
+	if !supported {
+		writeError(w, http.StatusNotImplemented, "optimistic repository category updates are not supported by this storage backend")
+		return
+	}
+	updated, err := updater.UpdateRepositoryCategoryIfUnchanged(category, category.UpdatedAt)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !updated {
+		writeError(w, http.StatusConflict, "repository category changed while the update was in flight; reload and retry")
 		return
 	}
 	s.recordAuditEvent(r, "repository_category.update", "success", "repository_category", category.ID, "", map[string]any{"domain_id": category.DomainID, "name": category.Name})

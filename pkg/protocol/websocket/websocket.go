@@ -13,6 +13,8 @@ import (
 	"time"
 
 	gorillawebsocket "github.com/gorilla/websocket"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/internal/boundedcache"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jmespath/go-jmespath"
 )
@@ -51,6 +53,9 @@ func (w *WebSocket) Init(_ context.Context, config map[string]any) error {
 	w.readTimeout = durationConfig(config, "websocket_read_timeout_ms", defaultReadTimeout)
 	w.writeTimeout = durationConfig(config, "websocket_write_timeout_ms", defaultWriteTimeout)
 	w.maxMessageSize = int64Config(config, "websocket_max_message_size", defaultMaxMessageSize)
+	if w.maxMessageSize > dsl.MaxWebSocketMessageBytes {
+		return fmt.Errorf("websocket_max_message_size exceeds %d byte limit", dsl.MaxWebSocketMessageBytes)
+	}
 	w.origin, _ = stringConfig(config, "websocket_origin")
 	w.reconnect = boolConfigDefault(config, "websocket_reconnect", true)
 
@@ -300,6 +305,9 @@ func (w *WebSocket) currentConn() (*gorillawebsocket.Conn, error) {
 }
 
 func (w *WebSocket) writeMessage(conn *gorillawebsocket.Conn, messageType int, body []byte) error {
+	if len(body) > dsl.MaxWebSocketMessageBytes {
+		return fmt.Errorf("websocket message exceeds %d byte limit", dsl.MaxWebSocketMessageBytes)
+	}
 	if err := conn.SetWriteDeadline(time.Now().Add(w.writeTimeout)); err != nil {
 		return err
 	}
@@ -630,31 +638,31 @@ func extractRegex(expr string, body []byte) (string, error) {
 	return string(found[1]), nil
 }
 
-var regexCache sync.Map    // map[string]*regexp.Regexp
-var jmesPathCache sync.Map // map[string]*jmespath.JMESPath
+var regexCache = boundedcache.NewStringCache[*regexp.Regexp](0, 0, 0)
+var jmesPathCache = boundedcache.NewStringCache[*jmespath.JMESPath](0, 0, 0)
 
 func compileRegexCached(expr string) (*regexp.Regexp, error) {
 	if cached, ok := regexCache.Load(expr); ok {
-		return cached.(*regexp.Regexp), nil
+		return cached, nil
 	}
 	re, err := regexp.Compile(expr)
 	if err != nil {
 		return nil, err
 	}
 	actual, _ := regexCache.LoadOrStore(expr, re)
-	return actual.(*regexp.Regexp), nil
+	return actual, nil
 }
 
 func compileJMESPathCached(expr string) (*jmespath.JMESPath, error) {
 	if cached, ok := jmesPathCache.Load(expr); ok {
-		return cached.(*jmespath.JMESPath), nil
+		return cached, nil
 	}
 	compiled, err := jmespath.Compile(expr)
 	if err != nil {
 		return nil, err
 	}
 	actual, _ := jmesPathCache.LoadOrStore(expr, compiled)
-	return actual.(*jmespath.JMESPath), nil
+	return actual, nil
 }
 
 func extractBoundary(expr string, body []byte) (string, error) {

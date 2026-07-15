@@ -6,12 +6,30 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/protocol/jsonextract"
 	_ "modernc.org/sqlite"
+)
+
+const (
+	defaultDatabaseMaxRows         = 100
+	hardDatabaseMaxRows            = 1_000
+	hardDatabaseMaxColumns         = 256
+	hardDatabaseColumnNameBytes    = 1 << 10
+	hardDatabaseValueBytes         = 256 << 10
+	hardDatabaseRetainedValueBytes = 1 << 20
+	hardDatabaseResponseBytes      = 8 << 20
+	maxDatabaseEvidenceColumns     = 16
+	maxDatabaseEvidenceValueBytes  = 4 << 10
+	hardDatabaseDSNBytes           = 16 << 10
+	hardDatabaseSQLBytes           = 1 << 20
+	hardDatabaseBindCount          = 1_024
+	hardDatabaseBindValueBytes     = 1 << 20
+	hardDatabaseBindBytes          = 8 << 20
 )
 
 func init() {
@@ -42,6 +60,17 @@ func (d *Database) Init(ctx context.Context, config map[string]any) error {
 	if d.dsn == "" {
 		return errors.New("database dsn is required")
 	}
+	if err := validateDatabaseDriver(d.driver); err != nil {
+		return err
+	}
+	if len(d.dsn) > hardDatabaseDSNBytes {
+		return fmt.Errorf("database dsn exceeds %d byte limit", hardDatabaseDSNBytes)
+	}
+	if d.driver == "sqlite" {
+		if err := validateSQLiteMemoryDSN(d.dsn); err != nil {
+			return err
+		}
+	}
 	db, err := sql.Open(d.driver, d.dsn)
 	if err != nil {
 		return err
@@ -59,9 +88,9 @@ func (d *Database) Init(ctx context.Context, config map[string]any) error {
 	if timeoutMS := protocol.ConfigInt(config, "database_query_timeout_ms"); timeoutMS > 0 {
 		d.queryTimeout = time.Duration(timeoutMS) * time.Millisecond
 	}
-	d.maxRows = 100
+	d.maxRows = defaultDatabaseMaxRows
 	if maxRows := protocol.ConfigInt(config, "database_max_rows"); maxRows > 0 {
-		d.maxRows = maxRows
+		d.maxRows = min(maxRows, hardDatabaseMaxRows)
 	}
 	d.readOnly, _ = config["database_read_only"].(bool)
 	d.rollbackOnTeardown, _ = config["database_rollback_on_teardown"].(bool)
@@ -105,24 +134,31 @@ func (d *Database) Execute(ctx context.Context, action *protocol.Action) (*proto
 	}
 	defer cancel()
 
-	var err error
+	var (
+		err             error
+		evidencePayload map[string]any
+	)
 	switch actionType {
 	case "db_begin", "database_begin", "begin":
 		err = d.begin(actionCtx)
 		result.ResponseBody = `{"transaction":"begun"}`
+		evidencePayload = map[string]any{"transaction": "begun"}
 	case "db_commit", "database_commit", "commit":
 		err = d.commit()
 		result.ResponseBody = `{"transaction":"committed"}`
+		evidencePayload = map[string]any{"transaction": "committed"}
 	case "db_rollback", "database_rollback", "rollback":
 		err = d.rollback()
 		result.ResponseBody = `{"transaction":"rolled_back"}`
+		evidencePayload = map[string]any{"transaction": "rolled_back"}
 	case "db_health", "database_health", "ping":
 		err = d.db.PingContext(actionCtx)
 		result.ResponseBody = `{"status":"ok"}`
+		evidencePayload = map[string]any{"status": "ok"}
 	case "db_query", "database_query", "query", "select":
-		result.ResponseBody, err = d.query(actionCtx, action)
+		result.ResponseBody, evidencePayload, err = d.query(actionCtx, action)
 	case "db_exec", "database_exec", "exec", "execute", "insert", "update", "delete", "db_procedure", "stored_procedure":
-		result.ResponseBody, err = d.exec(actionCtx, action)
+		result.ResponseBody, evidencePayload, err = d.exec(actionCtx, action)
 	default:
 		err = fmt.Errorf("unsupported database action type: %s", action.Type)
 	}
@@ -155,7 +191,17 @@ func (d *Database) Execute(ctx context.Context, action *protocol.Action) (*proto
 		RequestPayloadKB:   float64(result.BytesSent) / 1024,
 		ResponsePayloadKB:  float64(result.BytesReceived) / 1024,
 	}
-	result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
+	evidenceResult := *result
+	if len(evidencePayload) > 0 {
+		if compact, marshalErr := json.Marshal(evidencePayload); marshalErr == nil {
+			evidenceResult.ResponseBody = string(compact)
+		} else {
+			evidenceResult.ResponseBody = ""
+		}
+	} else {
+		evidenceResult.ResponseBody = ""
+	}
+	result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, &evidenceResult)
 	return result, nil
 }
 
@@ -211,42 +257,62 @@ func (d *Database) rollback() error {
 	return err
 }
 
-func (d *Database) query(ctx context.Context, action *protocol.Action) (string, error) {
+func (d *Database) query(ctx context.Context, action *protocol.Action) (string, map[string]any, error) {
 	query := sqlText(action)
 	if query == "" {
-		return "", errors.New("database query SQL is required")
+		return "", nil, errors.New("database query SQL is required")
+	}
+	if err := d.validateStatement(query); err != nil {
+		return "", nil, err
 	}
 	if d.readOnly {
 		if err := validateReadOnlySQL(query); err != nil {
-			return "", err
+			return "", nil, err
 		}
 	}
 	standaloneTx, err := d.beginStandaloneReadOnly(ctx)
 	if err != nil {
-		return "", fmt.Errorf("begin driver read-only transaction: %w", err)
+		return "", nil, fmt.Errorf("begin driver read-only transaction: %w", err)
 	}
 	if standaloneTx != nil {
 		defer standaloneTx.Rollback()
 	}
+	binds, err := boundedActionBinds(action)
+	if err != nil {
+		return "", nil, err
+	}
 	var rows *sql.Rows
 	if standaloneTx != nil {
-		rows, err = standaloneTx.QueryContext(ctx, query, actionBinds(action)...)
+		rows, err = standaloneTx.QueryContext(ctx, query, binds...)
 	} else {
-		rows, err = d.queryContext(ctx, query, actionBinds(action)...)
+		rows, err = d.queryContext(ctx, query, binds...)
 	}
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	defer rows.Close()
 	columns, err := rows.Columns()
 	if err != nil {
-		return "", err
+		return "", nil, err
+	}
+	if len(columns) > hardDatabaseMaxColumns {
+		return "", nil, fmt.Errorf("database result has %d columns, hard limit is %d", len(columns), hardDatabaseMaxColumns)
+	}
+	var retainedBytes int64
+	for _, column := range columns {
+		if len(column) > hardDatabaseColumnNameBytes {
+			return "", nil, fmt.Errorf("database column name exceeds %d bytes", hardDatabaseColumnNameBytes)
+		}
+		retainedBytes += int64(len(column))
 	}
 	maxRows := d.maxRows
 	if override := actionParamInt(action.Params, "max_rows"); override > 0 {
 		if maxRows <= 0 || override < maxRows {
 			maxRows = override
 		}
+	}
+	if maxRows <= 0 || maxRows > hardDatabaseMaxRows {
+		maxRows = hardDatabaseMaxRows
 	}
 	values := make([]any, len(columns))
 	scanTargets := make([]any, len(columns))
@@ -259,16 +325,24 @@ func (d *Database) query(ctx context.Context, action *protocol.Action) (string, 
 			break
 		}
 		if err := rows.Scan(scanTargets...); err != nil {
-			return "", err
+			return "", nil, err
 		}
 		item := make(map[string]any, len(columns))
 		for i, column := range columns {
-			item[column] = normalizeSQLValue(values[i])
+			normalized, retained, err := normalizeSQLValueBounded(values[i])
+			if err != nil {
+				return "", nil, fmt.Errorf("database column %q: %w", column, err)
+			}
+			if retainedBytes > hardDatabaseRetainedValueBytes-retained {
+				return "", nil, fmt.Errorf("database result retained values exceed %d bytes", hardDatabaseRetainedValueBytes)
+			}
+			retainedBytes += retained
+			item[column] = normalized
 		}
 		outRows = append(outRows, item)
 	}
 	if err := rows.Err(); err != nil {
-		return "", err
+		return "", nil, err
 	}
 	payload := map[string]any{
 		"columns":   columns,
@@ -283,60 +357,68 @@ func (d *Database) query(ctx context.Context, action *protocol.Action) (string, 
 	}
 	body, err := encodeDatabasePayload(payload)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if err := rows.Close(); err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if standaloneTx != nil {
 		if err := standaloneTx.Commit(); err != nil {
-			return "", fmt.Errorf("commit driver read-only transaction: %w", err)
+			return "", nil, fmt.Errorf("commit driver read-only transaction: %w", err)
 		}
 	}
-	return body, nil
+	return body, compactDatabaseQueryEvidence(columns, outRows), nil
 }
 
-func (d *Database) exec(ctx context.Context, action *protocol.Action) (string, error) {
+func (d *Database) exec(ctx context.Context, action *protocol.Action) (string, map[string]any, error) {
 	statement := sqlText(action)
 	if statement == "" {
-		return "", errors.New("database exec SQL is required")
+		return "", nil, errors.New("database exec SQL is required")
+	}
+	if err := d.validateStatement(statement); err != nil {
+		return "", nil, err
 	}
 	if d.readOnly {
 		if err := validateReadOnlySQL(statement); err != nil {
-			return "", err
+			return "", nil, err
 		}
 	}
 	standaloneTx, err := d.beginStandaloneReadOnly(ctx)
 	if err != nil {
-		return "", fmt.Errorf("begin driver read-only transaction: %w", err)
+		return "", nil, fmt.Errorf("begin driver read-only transaction: %w", err)
 	}
 	if standaloneTx != nil {
 		defer standaloneTx.Rollback()
 	}
+	binds, err := boundedActionBinds(action)
+	if err != nil {
+		return "", nil, err
+	}
 	var res sql.Result
 	if standaloneTx != nil {
-		res, err = standaloneTx.ExecContext(ctx, statement, actionBinds(action)...)
+		res, err = standaloneTx.ExecContext(ctx, statement, binds...)
 	} else {
-		res, err = d.execContext(ctx, statement, actionBinds(action)...)
+		res, err = d.execContext(ctx, statement, binds...)
 	}
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	rowsAffected, _ := res.RowsAffected()
 	lastInsertID, _ := res.LastInsertId()
-	body, err := encodeDatabasePayload(map[string]any{
+	payload := map[string]any{
 		"rows_affected":  rowsAffected,
 		"last_insert_id": lastInsertID,
-	})
+	}
+	body, err := encodeDatabasePayload(payload)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if standaloneTx != nil {
 		if err := standaloneTx.Commit(); err != nil {
-			return "", fmt.Errorf("commit driver read-only transaction: %w", err)
+			return "", nil, fmt.Errorf("commit driver read-only transaction: %w", err)
 		}
 	}
-	return body, nil
+	return body, payload, nil
 }
 
 func (d *Database) beginStandaloneReadOnly(ctx context.Context) (*sql.Tx, error) {
@@ -370,6 +452,93 @@ func normalizeDriver(driver string) string {
 	}
 }
 
+func validateDatabaseDriver(driver string) error {
+	switch driver {
+	case "sqlite", "postgres", "mysql", "odbc", "oracle":
+		return nil
+	default:
+		return fmt.Errorf("unsupported database driver: %s", driver)
+	}
+}
+
+func validateSQLiteMemoryDSN(dsn string) error {
+	if dsn == ":memory:" {
+		return nil
+	}
+	parsed, err := url.Parse(dsn)
+	if err != nil || !strings.EqualFold(parsed.Scheme, "file") || parsed.Host != "" || parsed.User != nil || parsed.Fragment != "" {
+		return errors.New("SQLite database_dsn must be :memory: or a named in-memory file URI")
+	}
+	name := parsed.Opaque
+	if name == "" {
+		name = parsed.Path
+	}
+	name, err = url.PathUnescape(name)
+	if err != nil || name == "" || len(name) > 1<<10 || strings.ContainsAny(name, "/\\\x00") {
+		return errors.New("SQLite named in-memory database identifier is invalid")
+	}
+	query, err := url.ParseQuery(parsed.RawQuery)
+	if err != nil {
+		return fmt.Errorf("parse SQLite database_dsn query: %w", err)
+	}
+	for key, values := range query {
+		if key != "mode" && key != "cache" {
+			return fmt.Errorf("SQLite named in-memory database_dsn option %q is not allowed", key)
+		}
+		if len(values) != 1 {
+			return fmt.Errorf("SQLite named in-memory database_dsn option %q must appear once", key)
+		}
+	}
+	if name != ":memory:" {
+		if values := query["mode"]; len(values) != 1 || values[0] != "memory" {
+			return errors.New("SQLite file URIs must set mode=memory")
+		}
+	} else if values := query["mode"]; len(values) == 1 && values[0] != "memory" {
+		return errors.New("SQLite file URIs may only use mode=memory")
+	}
+	if values := query["cache"]; len(values) == 1 && values[0] != "shared" && values[0] != "private" {
+		return errors.New("SQLite in-memory cache must be shared or private")
+	}
+	return nil
+}
+
+func (d *Database) validateStatement(statement string) error {
+	if len(statement) > hardDatabaseSQLBytes {
+		return fmt.Errorf("database SQL exceeds %d byte limit", hardDatabaseSQLBytes)
+	}
+	if d.driver == "sqlite" {
+		return validateSQLiteSQLSafety(statement)
+	}
+	return nil
+}
+
+func validateSQLiteSQLSafety(statement string) error {
+	tokens, multiple, err := sqlTokens(statement)
+	if err != nil {
+		return fmt.Errorf("SQLite safety policy rejected SQL: %w", err)
+	}
+	if multiple || len(tokens) == 0 {
+		return errors.New("SQLite safety policy requires exactly one SQL statement")
+	}
+	quoted, err := sqlQuotedIdentifierTokens(statement)
+	if err != nil {
+		return fmt.Errorf("SQLite safety policy rejected SQL: %w", err)
+	}
+	tokens = append(tokens, quoted...)
+	blocked := map[string]struct{}{
+		"attach": {}, "detach": {}, "vacuum": {}, "pragma": {},
+		"load_extension": {}, "readfile": {}, "writefile": {}, "fsdir": {},
+		"fileio": {}, "zipfile": {}, "sqlite_dbpage": {}, "sqlite_dbdata": {},
+		"sqlite_dbptr": {}, "virtual": {},
+	}
+	for _, token := range tokens {
+		if _, denied := blocked[token]; denied || strings.HasPrefix(token, "pragma_") {
+			return fmt.Errorf("SQLite safety policy blocks filesystem-capable SQL token %q", token)
+		}
+	}
+	return nil
+}
+
 func sqlText(action *protocol.Action) string {
 	if action == nil {
 		return ""
@@ -380,24 +549,28 @@ func sqlText(action *protocol.Action) string {
 	return strings.TrimSpace(string(action.Body))
 }
 
-func actionBinds(action *protocol.Action) []any {
+func boundedActionBinds(action *protocol.Action) ([]any, error) {
 	if action == nil || action.Params == nil {
-		return nil
+		return nil, nil
 	}
 	value, ok := action.Params["binds"]
 	if !ok {
-		return nil
+		return nil, nil
 	}
+	var binds []any
 	switch typed := value.(type) {
 	case []any:
-		return typed
+		binds = typed
 	case []string:
 		out := make([]any, len(typed))
 		for i, item := range typed {
 			out[i] = item
 		}
-		return out
+		binds = out
 	case map[string]any:
+		if len(typed) > hardDatabaseBindCount {
+			return nil, fmt.Errorf("database bind count exceeds %d", hardDatabaseBindCount)
+		}
 		out := make([]any, 0, len(typed))
 		keys := make([]int, 0, len(typed))
 		indexed := make(map[int]any)
@@ -412,10 +585,31 @@ func actionBinds(action *protocol.Action) []any {
 		for _, key := range keys {
 			out = append(out, indexed[key])
 		}
-		return out
+		binds = out
 	default:
-		return []any{typed}
+		binds = []any{typed}
 	}
+	if len(binds) > hardDatabaseBindCount {
+		return nil, fmt.Errorf("database bind count exceeds %d", hardDatabaseBindCount)
+	}
+	retained := int64(0)
+	for i, bind := range binds {
+		size := int64(16)
+		switch typed := bind.(type) {
+		case string:
+			size = int64(len(typed))
+		case []byte:
+			size = int64(len(typed))
+		}
+		if size > hardDatabaseBindValueBytes {
+			return nil, fmt.Errorf("database bind %d exceeds %d byte limit", i, hardDatabaseBindValueBytes)
+		}
+		if size > hardDatabaseBindBytes-retained {
+			return nil, fmt.Errorf("database binds exceed %d byte aggregate limit", hardDatabaseBindBytes)
+		}
+		retained += size
+	}
+	return binds, nil
 }
 
 func normalizeSQLValue(value any) any {
@@ -429,12 +623,62 @@ func normalizeSQLValue(value any) any {
 	}
 }
 
+func normalizeSQLValueBounded(value any) (any, int64, error) {
+	switch typed := value.(type) {
+	case []byte:
+		if len(typed) > hardDatabaseValueBytes {
+			return nil, 0, fmt.Errorf("value exceeds %d bytes", hardDatabaseValueBytes)
+		}
+		return string(typed), int64(len(typed)), nil
+	case string:
+		if len(typed) > hardDatabaseValueBytes {
+			return nil, 0, fmt.Errorf("value exceeds %d bytes", hardDatabaseValueBytes)
+		}
+		return typed, int64(len(typed)), nil
+	case time.Time:
+		formatted := typed.Format(time.RFC3339Nano)
+		return formatted, int64(len(formatted)), nil
+	case nil:
+		return nil, 0, nil
+	default:
+		return normalizeSQLValue(value), 16, nil
+	}
+}
+
 func encodeDatabasePayload(value map[string]any) (string, error) {
 	data, err := json.Marshal(value)
 	if err != nil {
 		return "", err
 	}
+	if len(data) > hardDatabaseResponseBytes {
+		return "", fmt.Errorf("database response exceeds %d bytes", hardDatabaseResponseBytes)
+	}
 	return string(data), nil
+}
+
+func compactDatabaseQueryEvidence(columns []string, rows []map[string]any) map[string]any {
+	evidence := map[string]any{"row_count": len(rows)}
+	columnLimit := min(len(columns), maxDatabaseEvidenceColumns)
+	evidenceColumns := append([]string(nil), columns[:columnLimit]...)
+	evidence["columns"] = evidenceColumns
+	if len(rows) == 0 || columnLimit == 0 {
+		return evidence
+	}
+	first := make(map[string]any, columnLimit)
+	for _, column := range evidenceColumns {
+		first[column] = compactDatabaseEvidenceValue(rows[0][column])
+	}
+	evidence["first_row"] = first
+	evidence["scalar"] = compactDatabaseEvidenceValue(rows[0][columns[0]])
+	return evidence
+}
+
+func compactDatabaseEvidenceValue(value any) any {
+	text, ok := value.(string)
+	if !ok || len(text) <= maxDatabaseEvidenceValueBytes {
+		return value
+	}
+	return text[:maxDatabaseEvidenceValueBytes]
 }
 
 func runDatabaseExtractors(extractors []protocol.Extractor, result *protocol.Result) string {
@@ -705,6 +949,104 @@ func sqlTokens(statement string) ([]string, bool, error) {
 	}
 	flush()
 	return tokens, false, nil
+}
+
+// sqlQuotedIdentifierTokens extracts quoted identifiers so dangerous SQLite
+// functions cannot be hidden behind "...", `...`, or [...] quoting. String
+// literals and comments remain ignored.
+func sqlQuotedIdentifierTokens(statement string) ([]string, error) {
+	var tokens []string
+	appendWords := func(value string) {
+		var word strings.Builder
+		flush := func() {
+			if word.Len() > 0 {
+				tokens = append(tokens, strings.ToLower(word.String()))
+				word.Reset()
+			}
+		}
+		for i := 0; i < len(value); i++ {
+			c := value[i]
+			if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || (word.Len() > 0 && c >= '0' && c <= '9') {
+				word.WriteByte(c)
+			} else {
+				flush()
+			}
+		}
+		flush()
+	}
+	for i := 0; i < len(statement); {
+		switch statement[i] {
+		case '-':
+			if i+1 < len(statement) && statement[i+1] == '-' {
+				i += 2
+				for i < len(statement) && statement[i] != '\n' {
+					i++
+				}
+				continue
+			}
+		case '/':
+			if i+1 < len(statement) && statement[i+1] == '*' {
+				end := strings.Index(statement[i+2:], "*/")
+				if end < 0 {
+					return nil, errors.New("unterminated SQL comment")
+				}
+				i += end + 4
+				continue
+			}
+		case '\'':
+			i++
+			closed := false
+			for i < len(statement) {
+				if statement[i] == '\'' {
+					if i+1 < len(statement) && statement[i+1] == '\'' {
+						i += 2
+						continue
+					}
+					i++
+					closed = true
+					break
+				}
+				i++
+			}
+			if !closed {
+				return nil, errors.New("unterminated SQL string")
+			}
+			continue
+		case '"', '`', '[':
+			open := statement[i]
+			closeChar := open
+			if open == '[' {
+				closeChar = ']'
+			}
+			i++
+			start := i
+			var content strings.Builder
+			closed := false
+			for i < len(statement) {
+				if statement[i] == closeChar {
+					if closeChar != ']' && i+1 < len(statement) && statement[i+1] == closeChar {
+						content.WriteString(statement[start:i])
+						content.WriteByte(closeChar)
+						i += 2
+						start = i
+						continue
+					}
+					content.WriteString(statement[start:i])
+					i++
+					closed = true
+					break
+				}
+				i++
+			}
+			if !closed {
+				return nil, errors.New("unterminated SQL quoted identifier")
+			}
+			appendWords(content.String())
+			continue
+		}
+		i++
+	}
+	return tokens, nil
 }
 
 func actionParamInt(params map[string]any, key string) int {

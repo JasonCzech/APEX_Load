@@ -302,7 +302,7 @@ func (s *Server) handleStartBrowserRecording(w http.ResponseWriter, r *http.Requ
 	}
 
 	s.recordAuditEvent(r, "browser_recording.start", "success", "browser_recording", session.ID, session.ProjectID,
-		map[string]any{"name": session.Name, "start_url": session.StartURL, "capture_har": session.CaptureHAR})
+		map[string]any{"name": session.Name, "start_url": scrub.ValueURL(session.StartURL, scrub.Policy{}), "capture_har": session.CaptureHAR})
 	writeJSON(w, http.StatusCreated, map[string]any{"session": session})
 }
 
@@ -312,12 +312,27 @@ func (s *Server) handleGetBrowserRecording(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusNotFound, "browser recording session not found")
 		return
 	}
+	raw := rawRecordingExportRequested(r)
+	if raw && !s.canExportRawRecording(r, session.ProjectID) {
+		s.recordAuditEvent(r, "browser_recording.read_raw", "denied", "browser_recording", session.ID, session.ProjectID, map[string]any{"reason": "insufficient_role"})
+		writeError(w, http.StatusForbidden, "raw browser recording view requires editor, project_admin, or system_admin access")
+		return
+	}
+	if !raw {
+		session = sanitizeBrowserRecordingSessionForResponse(session)
+		w.Header().Set("X-APEXLoad-Sensitivity", scrub.SensitivityScrubbed)
+	} else {
+		w.Header().Set("X-APEXLoad-Sensitivity", scrub.SensitivityRaw)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"session": session})
 }
 
 func (s *Server) handleListBrowserRecordings(w http.ResponseWriter, r *http.Request) {
 	projectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
 	sessions := s.browserRecording.List(projectID)
+	for index := range sessions {
+		sessions[index] = sanitizeBrowserRecordingSessionForResponse(sessions[index])
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"sessions": sessions, "count": len(sessions)})
 }
 
@@ -392,7 +407,7 @@ func (s *Server) handleNavigateBrowserRecording(w http.ResponseWriter, r *http.R
 	session, ok, err := s.browserRecording.Navigate(id, req.URL)
 	if ok && err == nil {
 		s.recordAuditEvent(r, "browser_recording.navigate", "success", "browser_recording", id, session.ProjectID,
-			map[string]any{"url": req.URL})
+			map[string]any{"url": scrub.ValueURL(req.URL, scrub.Policy{})})
 	}
 	s.writeBrowserRecordingControlResult(w, session, ok, err)
 }
@@ -456,7 +471,7 @@ func (s *Server) handleOpenBrowserRecordingControlPanel(w http.ResponseWriter, r
 	session, ok, err := s.browserRecording.OpenControlPanel(id, req.URL, localStorage)
 	if ok && err == nil {
 		s.recordAuditEvent(r, "browser_recording.control_panel", "success", "browser_recording", id, session.ProjectID,
-			map[string]any{"url": req.URL})
+			map[string]any{"url": scrub.ValueURL(req.URL, scrub.Policy{})})
 	}
 	s.writeBrowserRecordingControlResult(w, session, ok, err)
 }
@@ -818,7 +833,7 @@ func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Re
 		Parameterization: buildImportParameterization(result.Script, nil),
 	})
 	if httpStored != nil {
-		response["http_script"] = httpStored
+		response["http_script"] = maskStoredScript(httpStored)
 	}
 	writeJSON(w, http.StatusCreated, response)
 }
@@ -826,10 +841,10 @@ func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Re
 func storedScriptsForResponse(scripts []*StoredScript, httpScript *StoredScript) []any {
 	out := make([]any, 0, len(scripts)+1)
 	for _, sc := range scripts {
-		out = append(out, sc)
+		out = append(out, maskStoredScript(sc))
 	}
 	if httpScript != nil {
-		out = append(out, httpScript)
+		out = append(out, maskStoredScript(httpScript))
 	}
 	return out
 }

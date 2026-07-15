@@ -164,12 +164,12 @@ func TestValidateKafkaScriptIssues(t *testing.T) {
 			wantHas: "oauthbearer requires a TLS",
 		},
 		{
-			name: "oauthbearer with sasl_ssl is fine",
+			name: "generic oauthbearer is rejected even with tls",
 			mutate: func(s *Script) {
 				s.Config.Kafka.SASLMechanism = "oauthbearer"
 				s.Config.Kafka.SecurityProtocol = "sasl_ssl"
 			},
-			wantClean: true,
+			wantHas: "requires profile eventhubs",
 		},
 		{
 			name: "eventhubs profile oauthbearer is fine",
@@ -178,6 +178,24 @@ func TestValidateKafkaScriptIssues(t *testing.T) {
 				s.Config.Kafka.SASLMechanism = "oauthbearer"
 			},
 			wantClean: true,
+		},
+		{
+			name: "eventhubs oauthbearer rejects arbitrary scope",
+			mutate: func(s *Script) {
+				s.Config.Kafka.Profile = "eventhubs"
+				s.Config.Kafka.SASLMechanism = "oauthbearer"
+				s.Config.Kafka.OAuthScope = "https://graph.microsoft.com/.default"
+			},
+			wantHas: "oauth_scope",
+		},
+		{
+			name: "eventhubs oauthbearer requires verified tls",
+			mutate: func(s *Script) {
+				s.Config.Kafka.Profile = "eventhubs"
+				s.Config.Kafka.SASLMechanism = "oauthbearer"
+				s.Config.Kafka.TLS = &KafkaTLSConfig{InsecureSkipVerify: true}
+			},
+			wantHas: "forbids tls.insecure_skip_verify",
 		},
 		{
 			name: "bad serialization",

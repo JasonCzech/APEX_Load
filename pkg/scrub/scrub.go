@@ -68,11 +68,17 @@ var sensitiveParamPattern = regexp.MustCompile(`(?i)((?:^|[&?;\s])(?:password|pa
 // is the fallback for JSON-ish bodies that do not parse strictly.
 var (
 	sensitiveJSONPattern = regexp.MustCompile(`(?i)("(?:authorization|password|passwd|secret|token|access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|apikey|client[_-]?secret|private[_-]?key|session[_-]?id|session|csrf[_-]?token|csrf|xsrf[_-]?token|xsrf)"\s*:\s*)("[^"]*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null)`)
-	sensitiveXMLPattern  = regexp.MustCompile(`(?is)(<(?:[\w.-]+:)?(?:authorization|password|passwd|secret|token|access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|apikey|client[_-]?secret|private[_-]?key)\b[^>]*>)(.*?)(</(?:[\w.-]+:)?(?:authorization|password|passwd|secret|token|access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|apikey|client[_-]?secret|private[_-]?key)>)`)
-	sensitiveXMLAttr     = regexp.MustCompile(`(?is)(^|[^\w-])((?:authorization|password|passwd|secret|token|access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|apikey|client[_-]?secret|private[_-]?key)\s*=\s*")([^"]*)(")`)
-	multipartSecretPart  = regexp.MustCompile(`(?is)(Content-Disposition:\s*form-data;[^\r\n]*\bname="(?:authorization|password|passwd|secret|token|access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|apikey|client[_-]?secret|private[_-]?key)"[^\r\n]*(?:\r?\nContent-Type:[^\r\n]*)?\r?\n\r?\n)(.*?)(\r?\n--)`)
+	encodedParamPattern  = regexp.MustCompile(`(?i)(^|[&?;\s])([A-Za-z0-9_.%+\[\]-]+)=([^&\s;#"']+)`)
+	sensitiveXMLPattern  = regexp.MustCompile(`(?is)(<(?:[\w.-]+:)?(?:authorization|password|passwd|secret|token|access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|apikey|client[_-]?secret|private[_-]?key|connection[_-]?string|account[_-]?key|session(?:[_-]?id|[_-]?token)?|csrf(?:[_-]?token)?|xsrf(?:[_-]?token)?|settlement[_-]?token|lock[_-]?token|receipt[_-]?handle|delivery[_-]?tag)\b[^>]*>)(.*?)(</(?:[\w.-]+:)?(?:authorization|password|passwd|secret|token|access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|apikey|client[_-]?secret|private[_-]?key|connection[_-]?string|account[_-]?key|session(?:[_-]?id|[_-]?token)?|csrf(?:[_-]?token)?|xsrf(?:[_-]?token)?|settlement[_-]?token|lock[_-]?token|receipt[_-]?handle|delivery[_-]?tag)>)`)
+	sensitiveXMLAttr     = regexp.MustCompile(`(?is)(^|[^\w-])((?:authorization|password|passwd|secret|token|access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|apikey|client[_-]?secret|private[_-]?key|connection[_-]?string|account[_-]?key|session(?:[_-]?id|[_-]?token)?|csrf(?:[_-]?token)?|xsrf(?:[_-]?token)?|settlement[_-]?token|lock[_-]?token|receipt[_-]?handle|delivery[_-]?tag)\s*=\s*")([^"]*)(")`)
+	multipartPartPattern = regexp.MustCompile(`(?is)(Content-Disposition:\s*form-data;[^\r\n]*\bname="([^"]+)"[^\r\n]*(?:\r?\nContent-Type:[^\r\n]*)?\r?\n\r?\n)(.*?)(\r?\n--)`)
+	namedSecretText      = regexp.MustCompile(`(?i)\b((?:jms[_-]?)?settlement[_-]?token|lock[_-]?token|receipt[_-]?handle|delivery[_-]?tag|session[_-]?token|csrf[_-]?token|xsrf[_-]?token)(\s*(?:=|:)\s*|\s+)(["']?)([^\s,;}\]"']+)(["']?)`)
 	jwtPattern           = regexp.MustCompile(`\b[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b`)
 	highEntropyToken     = regexp.MustCompile(`\b[A-Za-z0-9+/=_-]{24,}\b`)
+	// embeddedURLPattern lets Value redact URL/DSN userinfo inside error and log
+	// prose, not only when the whole input is a URL. Quotes and whitespace are
+	// excluded so common net/http errors retain their surrounding syntax.
+	embeddedURLPattern = regexp.MustCompile(`(?i)\b[a-z][a-z0-9+.-]{1,15}://[^\s<>"']+`)
 )
 
 // compiledRule is one ExtraPatterns rule with its regexp compiled exactly once.
@@ -133,6 +139,9 @@ func (p Policy) SensitiveHeader(name string) bool {
 	if !p.KeepCookies && cookieHeaders[lower] {
 		return true
 	}
+	if !cookieHeaders[lower] && SensitiveName(name) {
+		return true
+	}
 	for _, extra := range p.ExtraHeaders {
 		if strings.EqualFold(strings.TrimSpace(extra), lower) {
 			return true
@@ -187,14 +196,31 @@ func (cp compiledPolicy) value(value string) string {
 	if value == "" {
 		return value
 	}
+	value = embeddedURLPattern.ReplaceAllStringFunc(value, func(candidate string) string {
+		return cp.valueURL(candidate)
+	})
 	if redacted, ok := redactSensitiveJSON(value); ok {
 		value = redacted
 	}
 	value = sensitiveJSONPattern.ReplaceAllString(value, "${1}\""+Redacted+"\"")
 	value = sensitiveParamPattern.ReplaceAllString(value, "${1}"+Redacted)
+	value = encodedParamPattern.ReplaceAllStringFunc(value, func(parameter string) string {
+		matches := encodedParamPattern.FindStringSubmatch(parameter)
+		if len(matches) != 4 || !SensitiveName(matches[2]) {
+			return parameter
+		}
+		return matches[1] + matches[2] + "=" + Redacted
+	})
 	value = sensitiveXMLPattern.ReplaceAllString(value, "${1}"+Redacted+"${3}")
 	value = sensitiveXMLAttr.ReplaceAllString(value, "${1}${2}"+Redacted+"${4}")
-	value = multipartSecretPart.ReplaceAllString(value, "${1}"+Redacted+"${3}")
+	value = multipartPartPattern.ReplaceAllStringFunc(value, func(part string) string {
+		matches := multipartPartPattern.FindStringSubmatch(part)
+		if len(matches) != 5 || !SensitiveName(matches[2]) {
+			return part
+		}
+		return matches[1] + Redacted + matches[4]
+	})
+	value = namedSecretText.ReplaceAllString(value, "${1}${2}${3}"+Redacted+"${5}")
 	value = redactBareTokens(value)
 	for _, rule := range cp.rules {
 		value = rule.pattern.ReplaceAllString(value, rule.replacement)
@@ -221,7 +247,7 @@ func (cp compiledPolicy) valueURL(value string) string {
 	// asset filenames live — are left byte-for-byte intact.
 	base, fragment, hasFragment := strings.Cut(value, "#")
 	path, query, hasQuery := strings.Cut(base, "?")
-	out := path
+	out := redactURLUserinfo(path)
 	if hasQuery {
 		out += "?" + redactURLParams(query)
 	}
@@ -233,6 +259,31 @@ func (cp compiledPolicy) valueURL(value string) string {
 		out = rule.pattern.ReplaceAllString(out, rule.replacement)
 	}
 	return out
+}
+
+// redactURLUserinfo removes credentials from the authority without parsing and
+// re-serializing the rest of the URL (which would normalize evidence paths).
+func redactURLUserinfo(path string) string {
+	schemeEnd := strings.Index(path, "://")
+	if schemeEnd < 0 {
+		return path
+	}
+	authorityStart := schemeEnd + 3
+	authorityEnd := len(path)
+	if offset := strings.IndexAny(path[authorityStart:], "/\\"); offset >= 0 {
+		authorityEnd = authorityStart + offset
+	}
+	authority := path[authorityStart:authorityEnd]
+	at := strings.LastIndex(authority, "@")
+	if at < 0 {
+		return path
+	}
+	userinfo := authority[:at]
+	replacement := Redacted
+	if strings.Contains(userinfo, ":") {
+		replacement += ":" + Redacted
+	}
+	return path[:authorityStart] + replacement + "@" + authority[at+1:] + path[authorityEnd:]
 }
 
 // redactURLParams redacts secret-shaped VALUES in a URL query or fragment segment
@@ -254,7 +305,7 @@ func redactURLParams(segment string) string {
 			}
 			continue
 		}
-		if sensitiveParamName(key) || urlTokenLooksSensitive(val) {
+		if SensitiveName(key) || urlTokenLooksSensitive(val) {
 			parts[i] = key + "=" + Redacted
 		}
 	}
@@ -335,7 +386,7 @@ func redactSensitiveJSONNode(node any) bool {
 	switch typed := node.(type) {
 	case map[string]any:
 		for key, value := range typed {
-			if sensitiveJSONFieldName(key) {
+			if SensitiveName(key) {
 				redacted, valueChanged := redactSensitiveJSONSecretValue(value)
 				if valueChanged {
 					typed[key] = redacted
@@ -359,6 +410,11 @@ func redactSensitiveJSONNode(node any) bool {
 
 func redactSensitiveJSONSecretValue(node any) (any, bool) {
 	switch typed := node.(type) {
+	case string:
+		if typed == Redacted {
+			return typed, false
+		}
+		return Redacted, true
 	case map[string]any:
 		changed := false
 		for key, value := range typed {
@@ -382,37 +438,6 @@ func redactSensitiveJSONSecretValue(node any) (any, bool) {
 	default:
 		return Redacted, true
 	}
-}
-
-var sensitiveJSONFieldNames = map[string]bool{
-	"authorization": true,
-	"password":      true,
-	"passwd":        true,
-	"secret":        true,
-	"token":         true,
-	"accesstoken":   true,
-	"refreshtoken":  true,
-	"idtoken":       true,
-	"apikey":        true,
-	"clientsecret":  true,
-	"privatekey":    true,
-	// Live session/CSRF tokens: redacted here so a scrubbed body cannot leak
-	// them. Correlation-time replay reconstruction runs against the raw
-	// server-side sidecar / raw import content, not this scrubbed view, so
-	// redacting these no longer breaks parameterization.
-	"session":    true,
-	"sessionid":  true,
-	"csrf":       true,
-	"csrftoken":  true,
-	"xsrf":       true,
-	"xsrftoken":  true,
-}
-
-func sensitiveJSONFieldName(name string) bool {
-	normalized := strings.ToLower(strings.TrimSpace(name))
-	normalized = strings.ReplaceAll(normalized, "_", "")
-	normalized = strings.ReplaceAll(normalized, "-", "")
-	return sensitiveJSONFieldNames[normalized]
 }
 
 // HAR scrubs a HAR document: request/response headers and cookies, post data,
@@ -521,25 +546,13 @@ func (cp compiledPolicy) scrubNameValueList(parent map[string]any, key string) {
 				item["value"] = cp.value(value)
 			}
 		default: // queryString, params
-			if sensitiveParamName(name) {
+			if SensitiveName(name) {
 				item["value"] = Redacted
 			} else {
 				item["value"] = cp.value(value)
 			}
 		}
 	}
-}
-
-var sensitiveParamNames = map[string]bool{
-	"password": true, "passwd": true, "secret": true, "token": true,
-	"access_token": true, "refresh_token": true, "id_token": true,
-	"api_key": true, "apikey": true, "session": true, "session_id": true,
-	"sessionid": true, "auth": true, "csrf": true, "xsrf": true,
-	"client_secret": true, "csrf_token": true,
-}
-
-func sensitiveParamName(name string) bool {
-	return sensitiveParamNames[strings.ToLower(strings.TrimSpace(name))]
 }
 
 func (cp compiledPolicy) scrubWebSocketMessages(entry map[string]any, key string) {

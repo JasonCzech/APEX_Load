@@ -4,7 +4,9 @@ package storage
 // Same SQL serves the PostgreSQL backend via rewriteSQL.
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -59,6 +61,101 @@ func (s *SQLiteStore) SaveFleetPool(pool *FleetPool) error {
 		pool.ID, pool.Name, pool.Description, pool.CloudProvider, pool.Region, pool.MinSize, pool.MaxSize,
 		pool.DesiredSize, pool.Status, marshalTags(pool.Tags), pool.CreatedAt, pool.UpdatedAt)
 	return err
+}
+
+// CreateFleetPoolWithMembers creates the pool and its initial membership in a
+// single transaction so a bad member cannot leave an orphaned partial pool.
+func (s *SQLiteStore) CreateFleetPoolWithMembers(pool *FleetPool, members []*FleetPoolMember) error {
+	if pool == nil || strings.TrimSpace(pool.ID) == "" {
+		return errors.New("fleet pool id is required")
+	}
+	if strings.TrimSpace(pool.Name) == "" || strings.TrimSpace(pool.CloudProvider) == "" {
+		return errors.New("fleet pool name and cloud provider are required")
+	}
+	if pool.Status == "" {
+		pool.Status = "active"
+	}
+	now := time.Now()
+	if pool.CreatedAt.IsZero() {
+		pool.CreatedAt = now
+	}
+	pool.UpdatedAt = now
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`INSERT INTO fleet_pools (
+		id, name, description, cloud_provider, region, min_size, max_size, desired_size, status, tags_json, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, pool.ID, pool.Name, pool.Description, pool.CloudProvider, pool.Region,
+		pool.MinSize, pool.MaxSize, pool.DesiredSize, pool.Status, marshalTags(pool.Tags), pool.CreatedAt, pool.UpdatedAt); err != nil {
+		return err
+	}
+	if err := replaceFleetPoolMembersTx(tx, pool.ID, members); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// UpdateFleetPoolIfUnchanged applies pool fields and an optional full member
+// replacement under one optimistic transaction.
+func (s *SQLiteStore) UpdateFleetPoolIfUnchanged(pool *FleetPool, members []*FleetPoolMember, replaceMembers bool, expectedUpdatedAt time.Time) (bool, error) {
+	if pool == nil || strings.TrimSpace(pool.ID) == "" {
+		return false, errors.New("fleet pool id is required")
+	}
+	if expectedUpdatedAt.IsZero() {
+		return false, errors.New("expected fleet pool updated_at is required")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	var currentUpdatedAt time.Time
+	var currentUpdatedRaw string
+	if err := tx.QueryRow(`SELECT updated_at, CAST(updated_at AS TEXT) FROM fleet_pools WHERE id = ?`, pool.ID).Scan(&currentUpdatedAt, &currentUpdatedRaw); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	if !currentUpdatedAt.Equal(expectedUpdatedAt) {
+		return false, nil
+	}
+	pool.UpdatedAt = time.Now()
+	result, err := tx.Exec(`UPDATE fleet_pools SET name = ?, description = ?, cloud_provider = ?, region = ?, min_size = ?, max_size = ?, desired_size = ?, status = ?, tags_json = ?, updated_at = ?
+		WHERE id = ? AND CAST(updated_at AS TEXT) = ?`, pool.Name, pool.Description, pool.CloudProvider, pool.Region, pool.MinSize, pool.MaxSize,
+		pool.DesiredSize, pool.Status, marshalTags(pool.Tags), pool.UpdatedAt, pool.ID, currentUpdatedRaw)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil || affected != 1 {
+		return false, err
+	}
+	if replaceMembers {
+		if err := replaceFleetPoolMembersTx(tx, pool.ID, members); err != nil {
+			return false, err
+		}
+	}
+	return true, tx.Commit()
+}
+
+// UpdateFleetPoolDesiredSize updates only provisioner-owned state so a scaling
+// completion cannot restore stale administrator fields.
+func (s *SQLiteStore) UpdateFleetPoolDesiredSize(id string, desiredSize int, updatedAt time.Time) error {
+	result, err := s.db.Exec(`UPDATE fleet_pools SET desired_size = ?, updated_at = ? WHERE id = ?`, desiredSize, updatedAt, id)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 const fleetPoolSelect = `SELECT id, name, COALESCE(description, ''), cloud_provider, COALESCE(region, ''),
@@ -141,6 +238,29 @@ func (s *SQLiteStore) DeleteFleetPool(id string) error {
 		return err
 	}
 	defer tx.Rollback()
+	// Lock the pool row against CreateProvisioningRequestIfAbsent. Whichever
+	// operation wins first establishes the invariant: deletion either prevents
+	// the request from being created, or observes it and refuses to orphan an
+	// external scale attempt.
+	result, err := tx.Exec(`UPDATE fleet_pools SET updated_at = updated_at WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return sql.ErrNoRows
+	}
+	var activeRequests int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM provisioning_requests
+		WHERE fleet_pool_id = ? AND LOWER(TRIM(COALESCE(status, ''))) NOT IN ('success', 'failed', 'not_configured', 'cancelled', 'timed_out')`, id).Scan(&activeRequests); err != nil {
+		return err
+	}
+	if activeRequests > 0 {
+		return ErrFleetPoolHasActiveProvisioning
+	}
 	if _, err := tx.Exec(`UPDATE generator_metadata SET fleet_pool_id = NULL, updated_at = ? WHERE fleet_pool_id = ?`, time.Now(), id); err != nil {
 		return err
 	}
@@ -164,6 +284,13 @@ func (s *SQLiteStore) SaveFleetPoolMembers(poolID string, members []*FleetPoolMe
 		return err
 	}
 	defer tx.Rollback()
+	if err := replaceFleetPoolMembersTx(tx, poolID, members); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func replaceFleetPoolMembersTx(tx *storeTx, poolID string, members []*FleetPoolMember) error {
 	if _, err := tx.Exec(`DELETE FROM fleet_pool_members WHERE pool_id = ?`, poolID); err != nil {
 		return err
 	}
@@ -185,7 +312,7 @@ func (s *SQLiteStore) SaveFleetPoolMembers(poolID string, members []*FleetPoolMe
 			return err
 		}
 	}
-	return tx.Commit()
+	return nil
 }
 
 func (s *SQLiteStore) ListFleetPoolMembers(poolID string) ([]*FleetPoolMember, error) {
@@ -231,6 +358,80 @@ func (s *SQLiteStore) SaveGeneratorMetadata(metadata *GeneratorMetadata) error {
 		metadata.GeneratorID, metadata.Target, metadata.FleetPoolID, metadata.Region, metadata.ProviderID,
 		metadata.ProviderStatus, cordoned, marshalTags(metadata.Tags), metadata.CreatedAt, metadata.UpdatedAt)
 	return err
+}
+
+// PatchGeneratorMetadata applies only supplied fields in one SQL statement.
+// Concurrent PATCH requests therefore merge instead of restoring one another's
+// fields from stale read-modify-write snapshots.
+func (s *SQLiteStore) PatchGeneratorMetadata(generatorID string, patch GeneratorMetadataPatch) (*GeneratorMetadata, error) {
+	generatorID = strings.TrimSpace(generatorID)
+	if generatorID == "" {
+		return nil, errors.New("generator id is required")
+	}
+	now := time.Now()
+	flag := func(value bool) int {
+		if value {
+			return 1
+		}
+		return 0
+	}
+	value := func(input *string) any {
+		if input == nil {
+			return ""
+		}
+		return *input
+	}
+	var fleetPoolID any
+	if patch.FleetPoolID != nil {
+		fleetPoolID = *patch.FleetPoolID
+	}
+	cordoned := 0
+	if patch.Cordoned != nil && *patch.Cordoned {
+		cordoned = 1
+	}
+	tagsJSON := marshalTags(patch.Tags)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	if patch.FleetPoolIDSet && patch.FleetPoolID != nil {
+		// Take the pool row's write lock in the same transaction as the metadata
+		// upsert. A concurrent pool deletion will therefore either detach this row
+		// after commit or win first and make this patch fail, never leave a dangling
+		// membership reference.
+		result, err := tx.Exec(`UPDATE fleet_pools SET updated_at = updated_at WHERE id = ?`, *patch.FleetPoolID)
+		if err != nil {
+			return nil, err
+		}
+		affected, err := result.RowsAffected()
+		if err != nil {
+			return nil, err
+		}
+		if affected != 1 {
+			return nil, sql.ErrNoRows
+		}
+	}
+	if _, err := tx.Exec(`INSERT INTO generator_metadata (
+		generator_id, target, fleet_pool_id, region, provider_id, provider_status, cordoned, tags_json, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(generator_id) DO UPDATE SET
+			target=CASE WHEN ? = 1 THEN excluded.target ELSE generator_metadata.target END,
+			fleet_pool_id=CASE WHEN ? = 1 THEN excluded.fleet_pool_id ELSE generator_metadata.fleet_pool_id END,
+			region=CASE WHEN ? = 1 THEN excluded.region ELSE generator_metadata.region END,
+			provider_id=CASE WHEN ? = 1 THEN excluded.provider_id ELSE generator_metadata.provider_id END,
+			provider_status=CASE WHEN ? = 1 THEN excluded.provider_status ELSE generator_metadata.provider_status END,
+			cordoned=CASE WHEN ? = 1 THEN excluded.cordoned ELSE generator_metadata.cordoned END,
+			tags_json=CASE WHEN ? = 1 THEN excluded.tags_json ELSE generator_metadata.tags_json END,
+			updated_at=excluded.updated_at`,
+		generatorID, value(patch.Target), fleetPoolID, value(patch.Region), value(patch.ProviderID), value(patch.ProviderStatus), cordoned, tagsJSON, now, now,
+		flag(patch.Target != nil), flag(patch.FleetPoolIDSet), flag(patch.Region != nil), flag(patch.ProviderID != nil), flag(patch.ProviderStatus != nil), flag(patch.Cordoned != nil), flag(patch.TagsSet)); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return s.GetGeneratorMetadata(generatorID)
 }
 
 const generatorMetadataSelect = `SELECT generator_id, COALESCE(target, ''), fleet_pool_id, COALESCE(region, ''),
@@ -318,8 +519,11 @@ func (s *SQLiteStore) SaveProvisioningRequest(req *ProvisioningRequest) error {
 }
 
 func (s *SQLiteStore) CreateProvisioningRequestIfAbsent(req *ProvisioningRequest) (bool, error) {
-	if req == nil {
-		return false, fmt.Errorf("provisioning request is required")
+	if req == nil || strings.TrimSpace(req.ID) == "" {
+		return false, fmt.Errorf("provisioning request id is required")
+	}
+	if strings.TrimSpace(req.FleetPoolID) == "" {
+		return false, fmt.Errorf("provisioning request fleet pool id is required")
 	}
 	if req.Status == "" {
 		req.Status = "pending"
@@ -332,7 +536,33 @@ func (s *SQLiteStore) CreateProvisioningRequestIfAbsent(req *ProvisioningRequest
 		req.CreatedAt = now
 	}
 	req.UpdatedAt = now
-	result, err := s.db.Exec(`INSERT INTO provisioning_requests (id, revision, attempt_token, fleet_pool_id, project_id, status, desired_count, reason, requested_by_subject, created_at, updated_at, completed_at)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	// The no-op write is a portable row lock for both SQLite's serialized writer
+	// and PostgreSQL. It closes the handler's preflight race with pool suspension
+	// or deletion before the durable request becomes visible.
+	lockResult, err := tx.Exec(`UPDATE fleet_pools SET updated_at = updated_at WHERE id = ?`, req.FleetPoolID)
+	if err != nil {
+		return false, err
+	}
+	locked, err := lockResult.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	if locked != 1 {
+		return false, sql.ErrNoRows
+	}
+	var poolStatus string
+	if err := tx.QueryRow(`SELECT COALESCE(status, 'active') FROM fleet_pools WHERE id = ?`, req.FleetPoolID).Scan(&poolStatus); err != nil {
+		return false, err
+	}
+	if status := strings.ToLower(strings.TrimSpace(poolStatus)); status != "" && status != "active" {
+		return false, ErrFleetPoolNotActive
+	}
+	result, err := tx.Exec(`INSERT INTO provisioning_requests (id, revision, attempt_token, fleet_pool_id, project_id, status, desired_count, reason, requested_by_subject, created_at, updated_at, completed_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING`,
 		req.ID, req.Revision, req.AttemptToken, req.FleetPoolID, req.ProjectID, req.Status, req.DesiredCount, req.Reason,
 		req.RequestedBySubject, req.CreatedAt, req.UpdatedAt, req.CompletedAt)
@@ -343,7 +573,13 @@ func (s *SQLiteStore) CreateProvisioningRequestIfAbsent(req *ProvisioningRequest
 	if err != nil {
 		return false, err
 	}
-	return affected == 1, nil
+	if affected != 1 {
+		return false, nil
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (s *SQLiteStore) TransitionProvisioningRequest(req *ProvisioningRequest, expectedRevision int, expectedAttemptToken string) (bool, error) {

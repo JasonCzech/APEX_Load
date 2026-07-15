@@ -138,6 +138,14 @@ func jmsActionSpecs() []ActionSpec {
 			},
 		},
 		{
+			Type:      "jms_session_close",
+			Protocols: []string{"jms"},
+			Summary:   "Closes an accepted Azure Service Bus session and releases its receiver. Requires jms_servicebus_real.",
+			Fields: []FieldSpec{
+				{Name: "params.session_token", Kind: FieldKindString, Doc: "Token from jms_session_accept."},
+			},
+		},
+		{
 			Type:      "jms_receive_deferred",
 			Protocols: []string{"jms"},
 			Summary:   "Receives previously deferred Azure Service Bus messages by sequence number (peek-locked). Requires jms_servicebus_real.",

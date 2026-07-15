@@ -38,7 +38,7 @@ func (tr *TestRunner) executionPlanAggregatePeak(plan *storage.ExecutionPlan) in
 				peak = entryVUsers
 			}
 		} else {
-			peak += entryVUsers
+			peak = saturatingAddNonNegative(peak, entryVUsers)
 		}
 	}
 	return peak
@@ -56,7 +56,7 @@ func scenarioPeakVUsers(scenario *StoredScenario) int {
 				groupPeak = stage.TargetVUsers
 			}
 		}
-		peak += groupPeak
+		peak = saturatingAddNonNegative(peak, groupPeak)
 	}
 	if strings.EqualFold(scenario.ScenarioMode, "goal_oriented") && scenario.GoalConfig != nil && scenario.GoalConfig.MaxVUsers != nil && *scenario.GoalConfig.MaxVUsers > peak {
 		peak = *scenario.GoalConfig.MaxVUsers
@@ -71,8 +71,19 @@ func scenarioPeakVUsers(scenario *StoredScenario) int {
 //   - (approval, true, nil): blocked; approval is the pending approval to surface.
 //   - (nil, false, nil): no governance required (under quota / no quota set).
 func (tr *TestRunner) executionPlanRunGate(plan *storage.ExecutionPlan, actorSubject string, recoveryRunID ...string) (*storage.ExecutionPlanApproval, bool, error) {
+	leaseTerm, err := tr.captureExecutionLeaseTerm()
+	if err != nil {
+		return nil, false, err
+	}
+	return tr.executionPlanRunGateWithTerm(plan, actorSubject, leaseTerm, recoveryRunID...)
+}
+
+func (tr *TestRunner) executionPlanRunGateWithTerm(plan *storage.ExecutionPlan, actorSubject string, leaseTerm executionLeaseTerm, recoveryRunID ...string) (*storage.ExecutionPlanApproval, bool, error) {
 	if tr.execPlanScheduleStore == nil {
 		return nil, false, nil
+	}
+	if !tr.executionLeaseTermCurrent(leaseTerm) {
+		return nil, false, errNotExecutionLeader
 	}
 	projectID := normalizeProjectID(plan.ProjectID)
 	maxVUsers, err := tr.projectMaxVUsersStrict(projectID)
@@ -130,7 +141,7 @@ func (tr *TestRunner) executionPlanRunGate(plan *storage.ExecutionPlan, actorSub
 		CreatedAt:       now,
 		UpdatedAt:       now,
 	}
-	if err := tr.execPlanScheduleStore.SaveExecutionPlanApproval(approval); err != nil {
+	if err := tr.saveExecutionPlanApprovalWithTerm(approval, leaseTerm); err != nil {
 		return nil, false, err
 	}
 	return approval, true, nil
@@ -141,6 +152,10 @@ func (tr *TestRunner) executionPlanRunGate(plan *storage.ExecutionPlan, actorSub
 func (tr *TestRunner) ResolveExecutionPlanApproval(planID, approvalID string, approve bool, resolvedBy, reason string) (*storage.ExecutionPlanApproval, bool, error) {
 	if tr.execPlanScheduleStore == nil {
 		return nil, false, nil
+	}
+	leaseTerm, err := tr.captureExecutionLeaseTerm()
+	if err != nil {
+		return nil, false, err
 	}
 	approval, err := tr.execPlanScheduleStore.GetExecutionPlanApproval(approvalID)
 	if err != nil {
@@ -163,19 +178,13 @@ func (tr *TestRunner) ResolveExecutionPlanApproval(planID, approvalID string, ap
 	if approval.PlanContentHash != "" && approval.PlanContentHash != currentHash {
 		return approval, true, fmt.Errorf("approval no longer matches current execution plan content")
 	}
-	if approval.PlanContentHash == "" {
-		approval.PlanContentHash = currentHash
-		if err := tr.execPlanScheduleStore.SaveExecutionPlanApproval(approval); err != nil {
-			return nil, true, err
-		}
-	}
 	now := time.Now().UTC()
 	toStatus := "rejected"
 	if approve {
 		toStatus = "approved"
 	}
 	// Atomic compare-and-set so two concurrent resolutions cannot both win.
-	won, err := tr.execPlanScheduleStore.UpdateExecutionPlanApprovalResolution(approval.ID, toStatus, resolvedBy, reason, now)
+	won, err := tr.resolveExecutionPlanApprovalWithTerm(approval.ID, toStatus, resolvedBy, reason, currentHash, now, leaseTerm)
 	if err != nil {
 		return nil, true, err
 	}
@@ -199,6 +208,32 @@ func (tr *TestRunner) ListExecutionPlanApprovals(planID string) ([]*storage.Exec
 		return nil, nil
 	}
 	return tr.execPlanScheduleStore.ListExecutionPlanApprovals(planID)
+}
+
+func (tr *TestRunner) ListExecutionPlanApprovalsPage(planID string, limit, offset int) ([]*storage.ExecutionPlanApproval, error) {
+	if tr.execPlanScheduleStore == nil {
+		return nil, nil
+	}
+	if paged, ok := tr.execPlanScheduleStore.(interface {
+		ListExecutionPlanApprovalsPage(string, int, int) ([]*storage.ExecutionPlanApproval, error)
+	}); ok {
+		return paged.ListExecutionPlanApprovalsPage(planID, limit, offset)
+	}
+	approvals, err := tr.execPlanScheduleStore.ListExecutionPlanApprovals(planID)
+	if err != nil {
+		return nil, err
+	}
+	if limit <= 0 || offset >= len(approvals) {
+		return []*storage.ExecutionPlanApproval{}, nil
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	end := len(approvals)
+	if limit < len(approvals)-offset {
+		end = offset + limit
+	}
+	return approvals[offset:end], nil
 }
 
 type executionPlanApprovalFingerprint struct {
@@ -291,6 +326,41 @@ func (tr *TestRunner) executionPlanApprovalContentHash(plan *storage.ExecutionPl
 	data, _ := json.Marshal(fp)
 	sum := sha256.Sum256(data)
 	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+// validateExecutionPlanApprovalMaterialization rechecks the mutable plan and
+// scenario graph immediately around test creation. Approved quota bursts are
+// tied to that exact content hash; a later scenario edit must never inherit the
+// old approval merely because the run snapshotted only its scenario ID.
+func (tr *TestRunner) validateExecutionPlanApprovalMaterialization(planID, runID string, approval *storage.ExecutionPlanApproval) error {
+	if approval == nil {
+		return nil
+	}
+	if tr.execPlanScheduleStore == nil {
+		return fmt.Errorf("execution-plan approval storage is unavailable")
+	}
+	approvalID := strings.TrimSpace(approval.ID)
+	if approvalID == "" {
+		return fmt.Errorf("execution-plan approval identity is missing")
+	}
+	fresh, err := tr.execPlanScheduleStore.GetExecutionPlanApproval(approvalID)
+	if err != nil {
+		return fmt.Errorf("reload execution-plan approval: %w", err)
+	}
+	if fresh == nil || fresh.Status != "approved" || strings.TrimSpace(fresh.PlanID) != strings.TrimSpace(planID) || strings.TrimSpace(fresh.PlanContentHash) == "" {
+		return fmt.Errorf("execution-plan approval is no longer valid")
+	}
+	if claimedRunID := strings.TrimSpace(fresh.RunID); claimedRunID != "" && claimedRunID != strings.TrimSpace(runID) {
+		return fmt.Errorf("execution-plan approval is claimed by another run")
+	}
+	plan, err := tr.execPlanScheduleStore.GetExecutionPlan(planID)
+	if err != nil {
+		return fmt.Errorf("reload execution plan for approval validation: %w", err)
+	}
+	if plan == nil || tr.executionPlanApprovalContentHash(plan) != fresh.PlanContentHash {
+		return fmt.Errorf("execution-plan content changed after quota approval")
+	}
+	return nil
 }
 
 func executionPlanScenarioApprovalFingerprint(scenario *StoredScenario) *executionPlanScenarioFingerprint {

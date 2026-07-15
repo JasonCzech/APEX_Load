@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -20,6 +21,12 @@ func recordingTestServer(t *testing.T) *Server {
 	t.Cleanup(func() { store.Close() })
 	server := NewServer(ServerConfig{})
 	server.store = store
+	now := time.Now().UTC()
+	for _, projectID := range []string{"p1", "p2"} {
+		if err := store.SaveProject(&storage.Project{ID: projectID, Name: projectID, CreatedAt: now, UpdatedAt: now}); err != nil {
+			t.Fatalf("SaveProject(%s): %v", projectID, err)
+		}
+	}
 	return server
 }
 

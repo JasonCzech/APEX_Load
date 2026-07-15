@@ -2,10 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -21,6 +24,13 @@ import (
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	if err := runController(); err != nil {
+		slog.Error("controller stopped with an error", "err", err)
+		os.Exit(1)
+	}
+}
+
+func runController() error {
 	logRuntimeTuning(runtimetuning.ApplyFromCgroup(os.Getenv))
 
 	// Optional pprof debug server (disabled unless APEXLOAD_PPROF_ADDR is set).
@@ -34,15 +44,28 @@ func main() {
 	addr, bindScope := config.ResolveControllerBindAddr(os.Getenv)
 	slog.Info("controller bind address resolved", "addr", addr, "bind_scope", bindScope)
 
+	generatorTargets := parseGeneratorTargets(os.Getenv("APEXLOAD_GENERATORS"))
+	generatorTimeout := parseGeneratorTimeout(os.Getenv("APEXLOAD_GENERATOR_TIMEOUT"))
+	if len(generatorTargets) > 0 {
+		security := generatorrpc.TransportSecurityFromEnv()
+		if err := validateGeneratorTransportStartup(generatorTargets, os.Getenv("APEXLOAD_ENV"), security); err != nil {
+			return fmt.Errorf("refusing to start with unsafe generator gRPC transport: %w", err)
+		}
+		// Validate certificate/key files and token-only production requirements at
+		// startup rather than discovering a broken trust boundary when the first
+		// distributed run is already staging.
+		if _, err := generatorrpc.DialOptionsFromEnv(); err != nil {
+			return fmt.Errorf("invalid generator gRPC transport configuration: %w", err)
+		}
+		slog.Info("distributed execution enabled", "generators", generatorTargets, "timeout", generatorTimeout, "grpc_transport", security.String())
+	}
+
 	store, err := storage.NewStoreFromEnv()
 	if err != nil {
-		slog.Error("failed to initialize storage", "err", err)
-		os.Exit(1)
+		return fmt.Errorf("initialize storage: %w", err)
 	}
 	defer store.Close()
 
-	generatorTargets := parseGeneratorTargets(os.Getenv("APEXLOAD_GENERATORS"))
-	generatorTimeout := parseGeneratorTimeout(os.Getenv("APEXLOAD_GENERATOR_TIMEOUT"))
 	recorderProxyAddr := recorderProxyAddrFromEnv()
 	k8sRestartConfig := config.LoadK8sRestartOperatorConfig()
 	k8sRestartSettings := api.K8sRestartSettings{
@@ -66,14 +89,6 @@ func main() {
 			slog.Info("Kubernetes restart controls enabled", "namespace", k8sRestartConfig.Namespace, "generator_selector", k8sRestartConfig.GeneratorSelector)
 		}
 	}
-	if len(generatorTargets) > 0 {
-		security := generatorrpc.TransportSecurityFromEnv()
-		slog.Info("distributed execution enabled", "generators", generatorTargets, "timeout", generatorTimeout, "grpc_transport", security.String())
-		if security.Insecure() && os.Getenv("APEXLOAD_ENV") == "production" {
-			slog.Warn("generator gRPC is plaintext and unauthenticated in production; set APEXLOAD_GRPC_TLS_* and/or APEXLOAD_GRPC_AUTH_TOKEN")
-		}
-	}
-
 	haLeaderElection := envIsTruthy(os.Getenv("APEXLOAD_CONTROLLER_HA"))
 	if haLeaderElection {
 		slog.Info("HA execution leader election enabled; only the lease holder will run tests")
@@ -96,9 +111,18 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	go server.RunExecutionLeadership(ctx)
-	go server.RunGeneratorPodTerminationWatcher(ctx, 5*time.Second)
+	var background sync.WaitGroup
+	background.Add(3)
 	go func() {
+		defer background.Done()
+		server.RunExecutionLeadership(ctx)
+	}()
+	go func() {
+		defer background.Done()
+		server.RunGeneratorPodTerminationWatcher(ctx, 5*time.Second)
+	}()
+	go func() {
+		defer background.Done()
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
 		for {
@@ -113,21 +137,82 @@ func main() {
 		}
 	}()
 
-	// Run server in background so the main goroutine can handle shutdown signals.
+	runErr := serveController(ctx, server, 30*time.Second)
+	// A Serve failure is also a shutdown signal for the leadership, scheduler,
+	// and pod-watcher loops. Wait for them before the deferred storage close so
+	// none can continue using the database after cleanup.
+	stop()
+	workersDone := make(chan struct{})
 	go func() {
-		if err := server.Start(); err != nil {
-			slog.Error("server error", "err", err)
-			os.Exit(1)
-		}
+		background.Wait()
+		close(workersDone)
 	}()
-
-	<-ctx.Done()
-	slog.Info("shutting down")
-	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancelShutdown()
-	if err := server.Shutdown(shutdownCtx); err != nil {
-		slog.Error("server shutdown did not complete cleanly", "err", err)
+	select {
+	case <-workersDone:
+	case <-time.After(30 * time.Second):
+		runErr = errors.Join(runErr, fmt.Errorf("controller background workers did not stop within 30s"))
 	}
+	return runErr
+}
+
+type controllerLifecycle interface {
+	Start() error
+	Shutdown(context.Context) error
+}
+
+// serveController runs the blocking HTTP server until either a process signal
+// cancels ctx or Serve fails. Both paths converge on the same coordinated
+// shutdown, so fatal listener errors cannot bypass deferred storage/debug-server
+// cleanup via os.Exit from a child goroutine.
+func serveController(ctx context.Context, server controllerLifecycle, shutdownTimeout time.Duration) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if shutdownTimeout <= 0 {
+		shutdownTimeout = 30 * time.Second
+	}
+	startDone := make(chan error, 1)
+	go func() { startDone <- server.Start() }()
+
+	var startErr error
+	startObserved := false
+	select {
+	case <-ctx.Done():
+		slog.Info("shutting down")
+	case startErr = <-startDone:
+		startObserved = true
+		if startErr != nil {
+			startErr = fmt.Errorf("server: %w", startErr)
+		}
+	}
+
+	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancelShutdown()
+	shutdownErr := server.Shutdown(shutdownCtx)
+	if shutdownErr != nil {
+		shutdownErr = fmt.Errorf("server shutdown: %w", shutdownErr)
+	}
+	// When signal cancellation won, wait for Start to observe Shutdown. The
+	// buffered channel also lets a late Serve return exit without leaking a
+	// sender when the shutdown deadline expires.
+	if !startObserved {
+		select {
+		case err := <-startDone:
+			if err != nil {
+				startErr = fmt.Errorf("server: %w", err)
+			}
+		case <-shutdownCtx.Done():
+			startErr = shutdownCtx.Err()
+		}
+	}
+	return errors.Join(startErr, shutdownErr)
+}
+
+func validateGeneratorTransportStartup(targets []string, appEnv string, security generatorrpc.TransportSecurity) error {
+	if len(targets) == 0 || !security.MustRefuseInsecure(appEnv) {
+		return nil
+	}
+	return fmt.Errorf("production distributed execution requires mTLS or verified TLS plus %s; configured %s", "APEXLOAD_GRPC_AUTH_TOKEN", security.String())
 }
 
 func logRuntimeTuning(settings runtimetuning.Settings) {

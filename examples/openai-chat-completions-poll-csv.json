@@ -19,7 +19,7 @@
       {
         "name": "prompts",
         "type": "csv",
-        "path": "examples/openai-prompts.csv",
+        "inline_data": "system_prompt,user_prompt,max_tokens,temperature\n\"You are a terse assistant used for APEX Load load testing.\",\"Reply with the single word pong.\",16,0\n\"You are a concise assistant used for API polling tests.\",\"Return a JSON object with a single key named status and value ok.\",32,0\n\"You are a latency test assistant.\",\"Count from 1 to 3 using comma-separated values only.\",24,0\n",
         "strategy": "sequential",
         "first_row_header": true
       }

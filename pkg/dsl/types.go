@@ -114,7 +114,7 @@ type JavaVuserConfig struct {
 type WebSocketConfig struct {
 	ReadTimeoutMs  int    `json:"read_timeout_ms,omitempty"`
 	WriteTimeoutMs int    `json:"write_timeout_ms,omitempty"`
-	MaxMessageSize int64  `json:"max_message_size,omitempty"`
+	MaxMessageSize int64  `json:"max_message_size,omitempty" jsonschema:"minimum=0,maximum=16777216"`
 	Subprotocol    string `json:"subprotocol,omitempty"`
 	Origin         string `json:"origin,omitempty"`
 	Compression    bool   `json:"compression,omitempty"`
@@ -132,8 +132,9 @@ type GRPCConfig struct {
 }
 
 const (
-	MaxGRPCStreamMessages = 10_000
-	MaxGRPCStreamBytes    = 8 << 20
+	MaxWebSocketMessageBytes = 16 << 20
+	MaxGRPCStreamMessages    = 10_000
+	MaxGRPCStreamBytes       = 8 << 20
 )
 
 type SOAPConfig struct {
@@ -204,22 +205,22 @@ type SAPGUIConfig struct {
 
 // JMSConfig holds broker, destination, and reliability settings for JMS scripts.
 type JMSConfig struct {
-	Provider        string            `json:"provider,omitempty"`         // "solace"
-	BrokerURL       string            `json:"broker_url,omitempty"`       // e.g. tcp://broker:55555
-	MessageVPN      string            `json:"message_vpn,omitempty"`      // Solace message VPN
-	Username        string            `json:"username,omitempty"`         // broker username
-	Password        string            `json:"password,omitempty"`         // broker password
-	ClientID        string            `json:"client_id,omitempty"`        // durable client identifier
-	Destination     string            `json:"destination,omitempty"`      // default queue/topic
-	DestinationType string            `json:"destination_type,omitempty"` // "queue" or "topic"
-	Subscription    string            `json:"subscription,omitempty"`     // Service Bus topic subscription
-	ReplyTo         string            `json:"reply_to,omitempty"`         // default reply destination
-	Acknowledgement string            `json:"acknowledgement,omitempty"`  // "auto", "client", "transacted"
-	DeliveryMode    string            `json:"delivery_mode,omitempty"`    // "persistent", "non_persistent"
-	TimeoutMs       int               `json:"timeout_ms,omitempty"`       // default consume/request timeout
-	Properties      map[string]string `json:"properties,omitempty"`       // provider-specific connection properties
-	TLS             *JMSTLSConfig     `json:"tls,omitempty"`              // TLS material for real broker adapters
-	Mock            bool              `json:"mock,omitempty"`             // use in-memory broker for local shakeout
+	Provider        string            `json:"provider,omitempty"`                                          // "solace"
+	BrokerURL       string            `json:"broker_url,omitempty"`                                        // e.g. tcp://broker:55555
+	MessageVPN      string            `json:"message_vpn,omitempty"`                                       // Solace message VPN
+	Username        string            `json:"username,omitempty"`                                          // broker username
+	Password        string            `json:"password,omitempty"`                                          // broker password
+	ClientID        string            `json:"client_id,omitempty"`                                         // durable client identifier
+	Destination     string            `json:"destination,omitempty"`                                       // default queue/topic
+	DestinationType string            `json:"destination_type,omitempty"`                                  // "queue" or "topic"
+	Subscription    string            `json:"subscription,omitempty"`                                      // Service Bus topic subscription
+	ReplyTo         string            `json:"reply_to,omitempty"`                                          // default reply destination
+	Acknowledgement string            `json:"acknowledgement,omitempty"`                                   // "auto", "client", "transacted"
+	DeliveryMode    string            `json:"delivery_mode,omitempty"`                                     // "persistent", "non_persistent"
+	TimeoutMs       int               `json:"timeout_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"` // default consume/request timeout
+	Properties      map[string]string `json:"properties,omitempty"`                                        // provider-specific connection properties
+	TLS             *JMSTLSConfig     `json:"tls,omitempty"`                                               // TLS material for real broker adapters
+	Mock            bool              `json:"mock,omitempty"`                                              // use in-memory broker for local shakeout
 }
 
 type JMSTLSConfig struct {
@@ -230,35 +231,35 @@ type JMSTLSConfig struct {
 
 // KafkaConfig holds broker, security, and producer/consumer settings for Kafka scripts.
 type KafkaConfig struct {
-	Brokers            []string          `json:"brokers,omitempty"`              // bootstrap brokers, e.g. ["broker:9092"]
-	Profile            string            `json:"profile,omitempty"`              // ""|eventhubs — Azure Event Hubs Kafka-endpoint profile (forces sasl_ssl + $ConnectionString PLAIN, 1 MiB cap)
-	SecurityProtocol   string            `json:"security_protocol,omitempty"`    // plaintext|ssl|sasl_ssl|sasl_plaintext
-	SASLMechanism      string            `json:"sasl_mechanism,omitempty"`       // plain|scram-sha-256|scram-sha-512|oauthbearer
-	SASLUsername       string            `json:"sasl_username,omitempty"`        // SASL username
-	SASLPassword       string            `json:"sasl_password,omitempty"`        // SASL password (inline)
-	SASLPasswordSecret string            `json:"sasl_password_secret,omitempty"` // secret reference resolved at runtime
-	OAuthScope         string            `json:"oauth_scope,omitempty"`          // OAUTHBEARER token scope; defaults to https://<broker-host>/.default (Event Hubs / Entra ID). Credentials come from the Azure environment (DefaultAzureCredential), not the script.
-	TLS                *KafkaTLSConfig   `json:"tls,omitempty"`                  // TLS material for ssl/sasl_ssl
-	ClientID           string            `json:"client_id,omitempty"`            // Kafka client.id
-	ConsumerGroup      string            `json:"consumer_group,omitempty"`       // consumer group id for kafka_consume
-	Topic              string            `json:"topic,omitempty"`                // default topic
-	Acks               string            `json:"acks,omitempty"`                 // none|leader|all
-	Idempotence        string            `json:"idempotence,omitempty"`          // ""(default)|enabled|disabled — idempotent producer (requires acks=all)
-	TransactionalID    string            `json:"transactional_id,omitempty"`     // producer transactional.id; enables Kafka transactions / EOS (requires acks=all)
-	Compression        string            `json:"compression,omitempty"`          // none|gzip|snappy|lz4|zstd
-	PartitionStrategy  string            `json:"partition_strategy,omitempty"`   // key-hash|round-robin|explicit
-	AutoOffsetReset    string            `json:"auto_offset_reset,omitempty"`    // earliest|latest
-	IsolationLevel     string            `json:"isolation_level,omitempty"`      // ""(default)|read_uncommitted|read_committed (consumer)
-	Partitions         int               `json:"partitions,omitempty"`           // partition count hint for the mock broker
-	TimeoutMs          int               `json:"timeout_ms,omitempty"`           // default consume/request timeout
-	MaxMessageBytes    int               `json:"max_message_bytes,omitempty"`    // producer-side max record size; Event Hubs caps at 1 MiB (Std/Prem), 20 MiB (Dedicated)
-	Serialization      string            `json:"serialization,omitempty"`        // ""(raw)|json_schema|avro — Confluent Schema Registry wire-format serde
-	SchemaRegistryURL  string            `json:"schema_registry_url,omitempty"`  // Confluent Schema Registry base URL; registers the subject to obtain the schema id
-	Subject            string            `json:"subject,omitempty"`              // explicit registry subject; defaults to <topic>-value
-	Schema             string            `json:"schema,omitempty"`               // schema document registered for the record value
-	SchemaID           int               `json:"schema_id,omitempty"`            // static schema id to frame with (alternative to schema_registry_url)
-	Properties         map[string]string `json:"properties,omitempty"`           // additional client properties
-	Mock               bool              `json:"mock,omitempty"`                 // use in-memory broker for local shakeout
+	Brokers            []string          `json:"brokers,omitempty"`                                                   // bootstrap brokers, e.g. ["broker:9092"]
+	Profile            string            `json:"profile,omitempty"`                                                   // ""|eventhubs — Azure Event Hubs Kafka-endpoint profile (forces sasl_ssl + $ConnectionString PLAIN, 1 MiB cap)
+	SecurityProtocol   string            `json:"security_protocol,omitempty"`                                         // plaintext|ssl|sasl_ssl|sasl_plaintext
+	SASLMechanism      string            `json:"sasl_mechanism,omitempty"`                                            // plain|scram-sha-256|scram-sha-512|oauthbearer
+	SASLUsername       string            `json:"sasl_username,omitempty"`                                             // SASL username
+	SASLPassword       string            `json:"sasl_password,omitempty"`                                             // SASL password (inline)
+	SASLPasswordSecret string            `json:"sasl_password_secret,omitempty"`                                      // secret reference resolved at runtime
+	OAuthScope         string            `json:"oauth_scope,omitempty"`                                               // Managed-identity OAUTHBEARER is Event Hubs-only and fixed to https://eventhubs.azure.net/.default.
+	TLS                *KafkaTLSConfig   `json:"tls,omitempty"`                                                       // TLS material for ssl/sasl_ssl
+	ClientID           string            `json:"client_id,omitempty"`                                                 // Kafka client.id
+	ConsumerGroup      string            `json:"consumer_group,omitempty"`                                            // consumer group id for kafka_consume
+	Topic              string            `json:"topic,omitempty"`                                                     // default topic
+	Acks               string            `json:"acks,omitempty"`                                                      // none|leader|all
+	Idempotence        string            `json:"idempotence,omitempty"`                                               // ""(default)|enabled|disabled — idempotent producer (requires acks=all)
+	TransactionalID    string            `json:"transactional_id,omitempty"`                                          // producer transactional.id; enables Kafka transactions / EOS (requires acks=all)
+	Compression        string            `json:"compression,omitempty"`                                               // none|gzip|snappy|lz4|zstd
+	PartitionStrategy  string            `json:"partition_strategy,omitempty"`                                        // key-hash|round-robin|explicit
+	AutoOffsetReset    string            `json:"auto_offset_reset,omitempty"`                                         // earliest|latest
+	IsolationLevel     string            `json:"isolation_level,omitempty"`                                           // ""(default)|read_uncommitted|read_committed (consumer)
+	Partitions         int               `json:"partitions,omitempty" jsonschema:"minimum=0,maximum=1000000"`         // partition count hint for the mock broker
+	TimeoutMs          int               `json:"timeout_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`         // default consume/request timeout
+	MaxMessageBytes    int               `json:"max_message_bytes,omitempty" jsonschema:"minimum=0,maximum=67108864"` // producer-side max record size; Event Hubs caps at 1 MiB (Std/Prem), 20 MiB (Dedicated)
+	Serialization      string            `json:"serialization,omitempty"`                                             // ""(raw)|json_schema|avro — Confluent Schema Registry wire-format serde
+	SchemaRegistryURL  string            `json:"schema_registry_url,omitempty"`                                       // Confluent Schema Registry base URL; registers the subject to obtain the schema id
+	Subject            string            `json:"subject,omitempty"`                                                   // explicit registry subject; defaults to <topic>-value
+	Schema             string            `json:"schema,omitempty"`                                                    // schema document registered for the record value
+	SchemaID           int               `json:"schema_id,omitempty" jsonschema:"minimum=0,maximum=2147483647"`       // static schema id to frame with (alternative to schema_registry_url)
+	Properties         map[string]string `json:"properties,omitempty"`                                                // additional client properties
+	Mock               bool              `json:"mock,omitempty"`                                                      // use in-memory broker for local shakeout
 }
 
 // KafkaTLSConfig holds TLS material for ssl/sasl_ssl security protocols.
@@ -273,23 +274,23 @@ type KafkaTLSConfig struct {
 // the Kafka-endpoint profile under config.kafka). The real azeventhubs adapter is
 // opt-in (build -tags eventhubs_real); the default build uses the in-memory mock.
 type EventHubsConfig struct {
-	Namespace              string `json:"namespace,omitempty"`                // <ns>.servicebus.windows.net (AAD auth)
-	EventHub               string `json:"event_hub,omitempty"`                // default event hub (the "topic")
-	ConnectionString       string `json:"connection_string,omitempty"`        // SAS connection string (inline)
-	ConnectionStringSecret string `json:"connection_string_secret,omitempty"` // secret reference resolved at runtime
-	ConsumerGroup          string `json:"consumer_group,omitempty"`           // consumer group for the observer probe; defaults to $Default
-	PartitionKey           string `json:"partition_key,omitempty"`            // default partition key (hash routing)
-	PartitionID            string `json:"partition_id,omitempty"`             // default explicit partition id
-	StartPosition          string `json:"start_position,omitempty"`           // observer-probe start: latest (default, tail) | earliest (partition start, for produce→consume round-trips)
-	AuthType               string `json:"auth_type,omitempty"`                // connection_string | aad
-	TimeoutMs              int    `json:"timeout_ms,omitempty"`               // default send/receive timeout
-	Mock                   bool   `json:"mock,omitempty"`                     // use in-memory broker for local shakeout
+	Namespace              string `json:"namespace,omitempty"`                                         // <ns>.servicebus.windows.net (AAD auth)
+	EventHub               string `json:"event_hub,omitempty"`                                         // default event hub (the "topic")
+	ConnectionString       string `json:"connection_string,omitempty"`                                 // SAS connection string (inline)
+	ConnectionStringSecret string `json:"connection_string_secret,omitempty"`                          // secret reference resolved at runtime
+	ConsumerGroup          string `json:"consumer_group,omitempty"`                                    // consumer group for the observer probe; defaults to $Default
+	PartitionKey           string `json:"partition_key,omitempty"`                                     // default partition key (hash routing)
+	PartitionID            string `json:"partition_id,omitempty"`                                      // default explicit partition id
+	StartPosition          string `json:"start_position,omitempty"`                                    // observer-probe start: latest (default, tail) | earliest (partition start, for produce→consume round-trips)
+	AuthType               string `json:"auth_type,omitempty"`                                         // connection_string | aad
+	TimeoutMs              int    `json:"timeout_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"` // default send/receive timeout
+	Mock                   bool   `json:"mock,omitempty"`                                              // use in-memory broker for local shakeout
 }
 
 type BrowserConfig struct {
 	Engine           string `json:"engine,omitempty"`
 	Headless         *bool  `json:"headless,omitempty"`
-	SlowMoMs         int    `json:"slow_mo_ms,omitempty"`
+	SlowMoMs         int    `json:"slow_mo_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`
 	UserAgent        string `json:"user_agent,omitempty"`
 	Locale           string `json:"locale,omitempty"`
 	Timezone         string `json:"timezone,omitempty"`
@@ -308,7 +309,7 @@ type BrowserConfig struct {
 	// Captured HARs pass through scrub-on-write before persistence.
 	HARCapture         string                     `json:"har_capture,omitempty"`
 	HARCapturePolicy   string                     `json:"har_capture_policy,omitempty"`
-	HARSLAThresholdMs  int                        `json:"har_sla_threshold_ms,omitempty"`
+	HARSLAThresholdMs  int                        `json:"har_sla_threshold_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`
 	HARArtifactDir     string                     `json:"har_artifact_dir,omitempty"`
 	CaptureScreenshots string                     `json:"capture_screenshots,omitempty"`
 	CacheEnabled       *bool                      `json:"cache_enabled,omitempty"`
@@ -383,8 +384,8 @@ type ContentCheckConfig struct {
 type NetworkSimulationConfig struct {
 	Mode          string  `json:"mode,omitempty"`
 	Preset        string  `json:"preset,omitempty"`
-	BandwidthKbps int     `json:"bandwidth_kbps,omitempty"`
-	LatencyMs     int     `json:"latency_ms,omitempty"`
+	BandwidthKbps int     `json:"bandwidth_kbps,omitempty" jsonschema:"minimum=0,maximum=100000000"`
+	LatencyMs     int     `json:"latency_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`
 	JitterMs      int     `json:"jitter_ms,omitempty"`
 	PacketLossPct float64 `json:"packet_loss_pct,omitempty"`
 }
@@ -413,8 +414,8 @@ type DFETransform struct {
 }
 
 type BrowserViewport struct {
-	Width  int `json:"width,omitempty"`
-	Height int `json:"height,omitempty"`
+	Width  int `json:"width,omitempty" jsonschema:"minimum=0,maximum=8192"`
+	Height int `json:"height,omitempty" jsonschema:"minimum=0,maximum=8192"`
 }
 
 type WaitCondition struct {
@@ -563,9 +564,10 @@ type DataSource struct {
 	Encoding       string   `json:"encoding,omitempty"`    // for file inline_data: "text" (default) or "base64"
 	FileName       string   `json:"file_name,omitempty"`   // original asset filename for file data sources
 	ContentType    string   `json:"content_type,omitempty"`
-	StorageRef     string   `json:"storage_ref,omitempty"` // governed asset reference, e.g. file://...
-	Strategy       string   `json:"strategy"`              // "sequential", "random", "unique", "pop"
-	Delimiter      string   `json:"delimiter,omitempty"`   // default ","; accepts "auto", "comma", "tab"
+	StorageRef     string   `json:"storage_ref,omitempty"`  // governed asset reference, e.g. file://...
+	StagedAsset    string   `json:"staged_asset,omitempty"` // controller-staged distributed asset (internal execution boundary)
+	Strategy       string   `json:"strategy"`               // "sequential", "random", "unique", "pop"
+	Delimiter      string   `json:"delimiter,omitempty"`    // default ","; accepts "auto", "comma", "tab"
 	FirstRowHeader bool     `json:"first_row_header,omitempty"`
 	Columns        []string `json:"columns,omitempty"` // explicit column names if no header
 }

@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -9,6 +10,11 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/storage"
+)
+
+const (
+	defaultScheduleHistoryListLimit = 100
+	maxScheduleHistoryListLimit     = 250
 )
 
 func (s *Server) handleCreateScenario(w http.ResponseWriter, r *http.Request) {
@@ -66,7 +72,11 @@ func (s *Server) handleUpdateScenario(w http.ResponseWriter, r *http.Request) {
 	}
 	scenario, ok, err := s.runner.UpdateScenario(r.PathValue("id"), req)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		status := http.StatusBadRequest
+		if errors.Is(err, errScenarioConcurrentChange) {
+			status = http.StatusConflict
+		}
+		writeError(w, status, err.Error())
 		return
 	}
 	if !ok {
@@ -170,7 +180,7 @@ func (s *Server) handleDeleteScenario(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleScenarioResults(w http.ResponseWriter, r *http.Request) {
 	scenarioID := r.PathValue("id")
 	tests := s.runner.ListTestsByContext(r.URL.Query().Get("application_id"), r.URL.Query().Get("release_id"), scenarioID)
-	writeJSON(w, http.StatusOK, map[string]any{"tests": tests, "count": len(tests)})
+	writeJSON(w, http.StatusOK, map[string]any{"tests": maskManagedTests(tests), "count": len(tests)})
 }
 
 func (s *Server) handleScenarioSchedulePreview(w http.ResponseWriter, r *http.Request) {
@@ -264,6 +274,10 @@ func (s *Server) handleDeleteScenarioSchedule(w http.ResponseWriter, r *http.Req
 	}
 	deleted, err := s.runner.DeleteScenarioSchedule(r.PathValue("id"), r.PathValue("schedule_id"))
 	if err != nil {
+		if errors.Is(err, errScheduleHasActiveOccurrence) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "failed to delete scenario schedule")
 		return
 	}
@@ -276,21 +290,29 @@ func (s *Server) handleDeleteScenarioSchedule(w http.ResponseWriter, r *http.Req
 }
 
 func (s *Server) handleListScenarioScheduleOccurrences(w http.ResponseWriter, r *http.Request) {
-	occurrences, ok := s.runner.ListScenarioScheduleOccurrences(r.PathValue("id"), r.PathValue("schedule_id"))
+	limit, offset := parseLimitOffsetQuery(r, defaultScheduleHistoryListLimit)
+	if limit > maxScheduleHistoryListLimit {
+		limit = maxScheduleHistoryListLimit
+	}
+	occurrences, ok := s.runner.ListScenarioScheduleOccurrencesPage(r.PathValue("id"), r.PathValue("schedule_id"), limit, offset)
 	if !ok {
 		writeError(w, http.StatusNotFound, "scenario schedule not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"occurrences": occurrences, "count": len(occurrences)})
+	writeJSON(w, http.StatusOK, map[string]any{"occurrences": occurrences, "count": len(occurrences), "limit": limit, "offset": offset})
 }
 
 func (s *Server) handleListScenarioScheduleApprovals(w http.ResponseWriter, r *http.Request) {
-	approvals, ok := s.runner.ListScenarioScheduleApprovals(r.PathValue("id"), r.PathValue("schedule_id"))
+	limit, offset := parseLimitOffsetQuery(r, defaultScheduleHistoryListLimit)
+	if limit > maxScheduleHistoryListLimit {
+		limit = maxScheduleHistoryListLimit
+	}
+	approvals, ok := s.runner.ListScenarioScheduleApprovalsPage(r.PathValue("id"), r.PathValue("schedule_id"), limit, offset)
 	if !ok {
 		writeError(w, http.StatusNotFound, "scenario schedule not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"approvals": approvals, "count": len(approvals)})
+	writeJSON(w, http.StatusOK, map[string]any{"approvals": approvals, "count": len(approvals), "limit": limit, "offset": offset})
 }
 
 func (s *Server) handleDeleteScenarioScheduleOccurrence(w http.ResponseWriter, r *http.Request) {
@@ -298,7 +320,16 @@ func (s *Server) handleDeleteScenarioScheduleOccurrence(w http.ResponseWriter, r
 	if scenario, ok := s.runner.GetScenario(r.PathValue("id")); ok {
 		projectID = scenario.ProjectID
 	}
-	if !s.runner.DeleteScenarioScheduleOccurrence(r.PathValue("id"), r.PathValue("schedule_id"), r.PathValue("occurrence_id")) {
+	deleted, err := s.runner.DeleteScenarioScheduleOccurrence(r.PathValue("id"), r.PathValue("schedule_id"), r.PathValue("occurrence_id"))
+	if err != nil {
+		if errors.Is(err, errScheduleHasActiveOccurrence) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to delete scenario schedule occurrence")
+		return
+	}
+	if !deleted {
 		writeError(w, http.StatusNotFound, "scenario schedule occurrence not found")
 		return
 	}

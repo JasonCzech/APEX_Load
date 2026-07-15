@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -70,13 +71,43 @@ func (tr *TestRunner) CreateTest(req CreateTestRequest) (*ManagedTest, error) {
 // immediately; plan materialization passes false and publishes only after its
 // run entry (including the generated test ID) commits.
 func (tr *TestRunner) createTest(req CreateTestRequest, broadcast bool) (*ManagedTest, error) {
+	leaseTerm, err := tr.captureExecutionLeaseTerm()
+	if err != nil {
+		return nil, err
+	}
+	id := strings.TrimSpace(req.RequestedTestID)
+	if id == "" {
+		id = uuid.New().String()
+	} else if parsed, parseErr := uuid.Parse(id); parseErr != nil || parsed.String() != strings.ToLower(id) {
+		return nil, fmt.Errorf("requested_test_id must be a canonical UUID")
+	}
+	req.RequestedTestID = ""
+	return tr.createTestWithIDAndTerm(req, broadcast, id, leaseTerm)
+}
+
+// createTestWithIDAndTerm is the execution-plan materialization boundary. The
+// caller preassigns and durably correlates id before entering this method, and
+// the exact leadership term is retained throughout creation so an old goroutine
+// cannot adopt a newer term after same-process reacquisition.
+func (tr *TestRunner) createTestWithIDAndTerm(req CreateTestRequest, broadcast bool, id string, leaseTerm executionLeaseTerm) (*ManagedTest, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil, fmt.Errorf("preassigned test id is required")
+	}
 	// Tests must be created on the execution leader so the in-memory queue stays
 	// coherent with the replica that will actually run them.
-	if !tr.isExecutionLeader() {
+	if !tr.isExecutionLeader() || !tr.executionLeaseTermCurrent(leaseTerm) {
+		return nil, errNotExecutionLeader
+	}
+	executionFence := leaseTerm.ownerID
+	if tr.durableExecutionFence && !leaseTerm.valid() {
 		return nil, errNotExecutionLeader
 	}
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
+	if !tr.executionLeaseTermCurrent(leaseTerm) {
+		return nil, errNotExecutionLeader
+	}
 
 	now := time.Now()
 	status := "QUEUED"
@@ -91,10 +122,11 @@ func (tr *TestRunner) createTest(req CreateTestRequest, broadcast bool) (*Manage
 	} else if req.ScheduledStartAt != nil && req.ScheduledStartAt.After(now) {
 		status = "SCHEDULED"
 	}
-	test, err := tr.buildManagedTestLocked(req, uuid.New().String(), status)
+	test, err := tr.buildManagedTestLocked(req, id, status)
 	if err != nil {
 		return nil, err
 	}
+	test.executionFence = executionFence
 	if status == "RESERVED" && test.ScheduledStartAt != nil {
 		window := launchWindowForTest(test, test.ScheduledStartAt.UTC())
 		if conflicts := tr.launchWindowConflictsLocked(test, window, now.UTC(), "", ""); len(conflicts) > 0 {
@@ -110,19 +142,15 @@ func (tr *TestRunner) createTest(req CreateTestRequest, broadcast bool) (*Manage
 		}
 	}
 
-	tr.tests[test.ID] = test
-	tr.indexRefKeyLocked(test.RefKey, test.ID)
-
-	if err := tr.saveManagedTestRecord(test); err != nil {
-		delete(tr.tests, test.ID)
-		tr.removeRefKeyLocked(test.RefKey)
-		if tr.reservationStore != nil && test.TimeslotID != nil {
-			if _, clearErr := tr.reservationStore.ClearCapacityReservationBinding(*test.TimeslotID, test.ID, time.Now().UTC()); clearErr != nil {
-				slog.Warn("failed to release test timeslot after persistence failure", "test_id", test.ID, "timeslot_id", *test.TimeslotID, "error", clearErr)
-			}
-		}
+	if err := tr.saveNewManagedTestRecordWithTerm(test, leaseTerm); err != nil {
 		return nil, fmt.Errorf("persist test: %w", err)
 	}
+	if !tr.executionLeaseTermCurrent(leaseTerm) {
+		return nil, errNotExecutionLeader
+	}
+
+	tr.tests[test.ID] = test
+	tr.indexRefKeyLocked(test.RefKey, test.ID)
 
 	if broadcast {
 		tr.broadcastEvent("test_created", test)
@@ -143,12 +171,14 @@ func ceilToNextQuarterHour(value time.Time) time.Time {
 }
 
 func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, status string) (*ManagedTest, error) {
+	scenarioProjectID := ""
 	if req.ScenarioID != "" {
 		req.ScenarioID = tr.resolveRefKeyLocked(req.ScenarioID)
 		scenario, ok := tr.scenarios[req.ScenarioID]
 		if !ok {
 			return nil, fmt.Errorf("scenario not found: %s", req.ScenarioID)
 		}
+		scenarioProjectID = normalizeProjectID(scenario.ProjectID)
 		req = createTestRequestFromScenario(req, scenario)
 	}
 
@@ -163,6 +193,9 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	if err != nil {
 		return nil, fmt.Errorf("invalid duration: %w", err)
 	}
+	if dur <= 0 {
+		return nil, fmt.Errorf("duration must be greater than zero")
+	}
 
 	scenarioMode, err := validateScenarioRequest(req)
 	if err != nil {
@@ -176,6 +209,9 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	projectID, err := tr.resolveCreateTestProjectID(req.ProjectID, groups)
 	if err != nil {
 		return nil, err
+	}
+	if scenarioProjectID != "" && scenarioProjectID != projectID {
+		return nil, fmt.Errorf("scenario and test scripts must belong to one project")
 	}
 	if err := tr.validateDataPoolProjectsLocked(projectID, req.DataPools); err != nil {
 		return nil, err
@@ -208,18 +244,11 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 		return nil, err
 	}
 
-	if req.ReleaseID == "" && status != "DRAFT" {
-		req.ReleaseID = storage.LegacyReleaseID
+	applicationID, releaseID, err := tr.resolveCreateTestReleaseContext(projectID, req.ApplicationID, req.ReleaseID, status)
+	if err != nil {
+		return nil, err
 	}
-	applicationID := req.ApplicationID
-	if req.ReleaseID != "" && tr.releaseStore != nil {
-		if release, err := tr.releaseStore.GetRelease(req.ReleaseID); err == nil && release != nil {
-			applicationID = release.ApplicationID
-		}
-	}
-	if applicationID == "" && req.ReleaseID != "" {
-		applicationID = storage.LegacyApplicationID
-	}
+	req.ReleaseID = releaseID
 	now := time.Now()
 	refKey := ""
 	if status != "DRAFT" {
@@ -232,6 +261,7 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	test := &ManagedTest{
 		ID:                    id,
 		RefKey:                refKey,
+		MaterializationKey:    strings.TrimSpace(req.MaterializationKey),
 		Name:                  testName,
 		Status:                status,
 		ApplicationID:         applicationID,
@@ -255,6 +285,12 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 		CreatedAt:             now,
 		ScheduledStartAt:      cloneTimePtr(req.ScheduledStartAt),
 		groupSpecs:            engineGroups,
+	}
+	if req.ExecutionPlanApproval != nil {
+		test.ExecutionPlanApproval = runArchiveExecutionPlanApprovalSnapshot(req.ExecutionPlanApproval)
+		if test.ExecutionPlanApproval != nil {
+			test.ExecutionPlanApproval.ApprovedPeakVUsers = approvedExecutionPlanPeakForTest(test)
+		}
 	}
 
 	if len(testGroups) == 1 {
@@ -325,12 +361,25 @@ func createTestRequestFromScenario(req CreateTestRequest, scenario *StoredScenar
 
 func validateScenarioRequest(req CreateTestRequest) (string, error) {
 	scenarioMode := normalizeScenarioMode(req.ScenarioMode)
+	if strings.TrimSpace(req.Duration) != "" {
+		duration, err := time.ParseDuration(req.Duration)
+		if err != nil {
+			return "", fmt.Errorf("invalid duration: %w", err)
+		}
+		if duration <= 0 {
+			return "", fmt.Errorf("duration must be greater than zero")
+		}
+	}
 	if _, err := normalizeGeneratorAssignmentSettings(req.Assignment); err != nil {
 		return "", err
 	}
 	if req.StartDelay != "" {
-		if _, err := time.ParseDuration(req.StartDelay); err != nil {
+		startDelay, err := time.ParseDuration(req.StartDelay)
+		if err != nil {
 			return "", fmt.Errorf("invalid start_delay: %w", err)
+		}
+		if startDelay <= 0 {
+			return "", fmt.Errorf("start_delay must be greater than zero")
 		}
 	}
 	if scenarioMode != "goal_oriented" {
@@ -340,16 +389,19 @@ func validateScenarioRequest(req CreateTestRequest) (string, error) {
 	if req.GoalConfig == nil || !hasGoalConfig(req.GoalConfig) {
 		return "", fmt.Errorf("goal-oriented scenarios require at least one goal or guardrail setting")
 	}
-	if req.GoalConfig.P95LatencyMs != nil && *req.GoalConfig.P95LatencyMs <= 0 {
+	if req.GoalConfig.TargetAverageTPS != nil && (!finiteFloat(*req.GoalConfig.TargetAverageTPS) || *req.GoalConfig.TargetAverageTPS <= 0) {
+		return "", fmt.Errorf("goal-oriented scenarios require target_average_tps to be greater than 0")
+	}
+	if req.GoalConfig.P95LatencyMs != nil && (!finiteFloat(*req.GoalConfig.P95LatencyMs) || *req.GoalConfig.P95LatencyMs <= 0) {
 		return "", fmt.Errorf("goal-oriented scenarios require p95_latency_ms to be greater than 0")
 	}
-	if req.GoalConfig.MaxErrorPct != nil && (*req.GoalConfig.MaxErrorPct < 0 || *req.GoalConfig.MaxErrorPct > 100) {
+	if req.GoalConfig.MaxErrorPct != nil && (!finiteFloat(*req.GoalConfig.MaxErrorPct) || *req.GoalConfig.MaxErrorPct < 0 || *req.GoalConfig.MaxErrorPct > 100) {
 		return "", fmt.Errorf("goal-oriented scenarios require max_error_pct to be between 0 and 100")
 	}
-	if req.GoalConfig.MaxAvgServerProcessingMs != nil && *req.GoalConfig.MaxAvgServerProcessingMs <= 0 {
+	if req.GoalConfig.MaxAvgServerProcessingMs != nil && (!finiteFloat(*req.GoalConfig.MaxAvgServerProcessingMs) || *req.GoalConfig.MaxAvgServerProcessingMs <= 0) {
 		return "", fmt.Errorf("goal-oriented scenarios require max_avg_server_processing_ms to be greater than 0")
 	}
-	if req.GoalConfig.MaxAvgTransferMs != nil && *req.GoalConfig.MaxAvgTransferMs <= 0 {
+	if req.GoalConfig.MaxAvgTransferMs != nil && (!finiteFloat(*req.GoalConfig.MaxAvgTransferMs) || *req.GoalConfig.MaxAvgTransferMs <= 0) {
 		return "", fmt.Errorf("goal-oriented scenarios require max_avg_transfer_ms to be greater than 0")
 	}
 	if req.GoalConfig.MinVUsers != nil && *req.GoalConfig.MinVUsers < 1 {
@@ -358,19 +410,57 @@ func validateScenarioRequest(req CreateTestRequest) (string, error) {
 	if req.GoalConfig.MaxVUsers != nil && *req.GoalConfig.MaxVUsers < 1 {
 		return "", fmt.Errorf("goal-oriented scenarios require max_vusers to be greater than 0")
 	}
+	if req.GoalConfig.MinVUsers != nil && *req.GoalConfig.MinVUsers > maxManagedTestVUsers {
+		return "", fmt.Errorf("goal-oriented scenarios require min_vusers to be at most %d", maxManagedTestVUsers)
+	}
+	if req.GoalConfig.MaxVUsers != nil && *req.GoalConfig.MaxVUsers > maxManagedTestVUsers {
+		return "", fmt.Errorf("goal-oriented scenarios require max_vusers to be at most %d", maxManagedTestVUsers)
+	}
 	if req.GoalConfig.MinVUsers != nil && req.GoalConfig.MaxVUsers != nil && *req.GoalConfig.MinVUsers > *req.GoalConfig.MaxVUsers {
 		return "", fmt.Errorf("goal-oriented scenarios require min_vusers to be less than or equal to max_vusers")
 	}
 	if req.GoalConfig.MaxErrorCount != nil && *req.GoalConfig.MaxErrorCount < 1 {
 		return "", fmt.Errorf("goal-oriented scenarios require max_error_count to be greater than 0")
 	}
-	if req.GoalConfig.SLABreachWindow != "" {
-		if _, err := time.ParseDuration(req.GoalConfig.SLABreachWindow); err != nil {
-			return "", fmt.Errorf("invalid sla_breach_window: %w", err)
+	if req.GoalConfig.MaxLCPMs != nil && (!finiteFloat(*req.GoalConfig.MaxLCPMs) || *req.GoalConfig.MaxLCPMs <= 0) {
+		return "", fmt.Errorf("goal-oriented scenarios require max_lcp_ms to be greater than 0")
+	}
+	if req.GoalConfig.MaxINPMs != nil && (!finiteFloat(*req.GoalConfig.MaxINPMs) || *req.GoalConfig.MaxINPMs <= 0) {
+		return "", fmt.Errorf("goal-oriented scenarios require max_inp_ms to be greater than 0")
+	}
+	if req.GoalConfig.MaxCLS != nil && (!finiteFloat(*req.GoalConfig.MaxCLS) || *req.GoalConfig.MaxCLS <= 0) {
+		return "", fmt.Errorf("goal-oriented scenarios require max_cls to be greater than 0")
+	}
+	if req.GoalConfig.MaxThrottledRequests != nil && *req.GoalConfig.MaxThrottledRequests < 0 {
+		return "", fmt.Errorf("goal-oriented scenarios require max_throttled_requests to be zero or greater")
+	}
+	if req.GoalConfig.MaxEndToEndLatencyMs != nil && (!finiteFloat(*req.GoalConfig.MaxEndToEndLatencyMs) || *req.GoalConfig.MaxEndToEndLatencyMs <= 0) {
+		return "", fmt.Errorf("goal-oriented scenarios require max_end_to_end_latency_ms to be greater than 0")
+	}
+	percentageThresholds := []struct {
+		name  string
+		value *float64
+	}{
+		{name: "max_partition_skew_pct", value: req.GoalConfig.MaxPartitionSkewPct},
+		{name: "max_redelivery_rate_pct", value: req.GoalConfig.MaxRedeliveryRatePct},
+		{name: "max_dead_letter_rate_pct", value: req.GoalConfig.MaxDeadLetterRatePct},
+	}
+	for _, threshold := range percentageThresholds {
+		if threshold.value != nil && (!finiteFloat(*threshold.value) || *threshold.value < 0 || *threshold.value > 100) {
+			return "", fmt.Errorf("goal-oriented scenarios require %s to be between 0 and 100", threshold.name)
 		}
 	}
-	if req.GoalConfig.StopOnSLABreach && req.GoalConfig.P95LatencyMs == nil && req.GoalConfig.MaxErrorPct == nil && req.GoalConfig.MaxAvgServerProcessingMs == nil && req.GoalConfig.MaxAvgTransferMs == nil {
-		return "", fmt.Errorf("goal-oriented scenarios require a latency, error, server processing, or transfer threshold when stop_on_sla_breach is enabled")
+	if req.GoalConfig.SLABreachWindow != "" {
+		window, err := time.ParseDuration(req.GoalConfig.SLABreachWindow)
+		if err != nil {
+			return "", fmt.Errorf("invalid sla_breach_window: %w", err)
+		}
+		if window <= 0 {
+			return "", fmt.Errorf("sla_breach_window must be greater than zero")
+		}
+	}
+	if req.GoalConfig.StopOnSLABreach && !hasGoalSLAThreshold(req.GoalConfig) {
+		return "", fmt.Errorf("goal-oriented scenarios require an SLA threshold when stop_on_sla_breach is enabled")
 	}
 	if req.GoalConfig.StopOnMaxErrors && req.GoalConfig.MaxErrorCount == nil {
 		return "", fmt.Errorf("goal-oriented scenarios require max_error_count when stop_on_max_errors is enabled")
@@ -378,8 +468,30 @@ func validateScenarioRequest(req CreateTestRequest) (string, error) {
 	return scenarioMode, nil
 }
 
+func finiteFloat(value float64) bool {
+	return !math.IsNaN(value) && !math.IsInf(value, 0)
+}
+
+func hasGoalSLAThreshold(config *GoalConfig) bool {
+	return config != nil && (config.P95LatencyMs != nil ||
+		config.MaxErrorPct != nil ||
+		config.MaxAvgServerProcessingMs != nil ||
+		config.MaxAvgTransferMs != nil ||
+		config.MaxLCPMs != nil ||
+		config.MaxINPMs != nil ||
+		config.MaxCLS != nil ||
+		config.MaxThrottledRequests != nil ||
+		config.MaxEndToEndLatencyMs != nil ||
+		config.MaxPartitionSkewPct != nil ||
+		config.MaxRedeliveryRatePct != nil ||
+		config.MaxDeadLetterRatePct != nil)
+}
+
 func normalizeCreateTestGroups(req CreateTestRequest) ([]CreateGroupEntry, error) {
 	if len(req.Groups) > 0 {
+		if len(req.Groups) > maxManagedTestGroups {
+			return nil, fmt.Errorf("test contains %d groups; limit is %d", len(req.Groups), maxManagedTestGroups)
+		}
 		return req.Groups, nil
 	}
 	if req.ScriptID != "" {
@@ -401,6 +513,12 @@ func (tr *TestRunner) compileManagedTestGroupsWithDataSourcesLocked(groups []Cre
 }
 
 func (tr *TestRunner) compileManagedTestGroupsForModeWithDataSourcesLocked(groups []CreateGroupEntry, runtimeSettings *RuntimeSettingsOverride, sharedDataSources []dsl.DataSource, scenarioMode string) ([]TestGroup, []engine.GroupConfig, int, error) {
+	if len(groups) == 0 {
+		return nil, nil, 0, fmt.Errorf("at least one group is required")
+	}
+	if len(groups) > maxManagedTestGroups {
+		return nil, nil, 0, fmt.Errorf("test contains %d groups; limit is %d", len(groups), maxManagedTestGroups)
+	}
 	testGroups := make([]TestGroup, 0, len(groups))
 	engineGroups := make([]engine.GroupConfig, 0, len(groups))
 	totalVUsers := 0
@@ -412,6 +530,9 @@ func (tr *TestRunner) compileManagedTestGroupsForModeWithDataSourcesLocked(group
 		}
 		testGroups = append(testGroups, testGroup)
 		engineGroups = append(engineGroups, engineGroup)
+		if nonNegativeSumExceedsLimit(totalVUsers, testGroup.VUsers, maxManagedTestVUsers) {
+			return nil, nil, 0, fmt.Errorf("test exceeds the hard workload limit of %d VUsers", maxManagedTestVUsers)
+		}
 		totalVUsers += testGroup.VUsers
 	}
 
@@ -434,7 +555,14 @@ func (tr *TestRunner) compileManagedTestGroupForModeLocked(index int, totalGroup
 	}
 
 	vusers := group.VUsers
-	derivedRampUp, derivedRampDown, derivedVUsers, err := loadStageCompatibility(group.Stages, index)
+	if vusers < 0 {
+		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: vusers must be zero or greater", index)
+	}
+	if vusers > maxManagedTestVUsers {
+		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: vusers cannot exceed %d", index, maxManagedTestVUsers)
+	}
+	allowStageTargetTPS := normalizeScenarioMode(scenarioMode) != "vuser_driven"
+	derivedRampUp, derivedRampDown, derivedVUsers, err := loadStageCompatibility(group.Stages, index, allowStageTargetTPS)
 	if err != nil {
 		return TestGroup{}, engine.GroupConfig{}, err
 	}
@@ -446,6 +574,9 @@ func (tr *TestRunner) compileManagedTestGroupForModeLocked(index int, totalGroup
 		if role == GroupRoleObserver {
 			vusers = observerDefaultVUsers
 		}
+	}
+	if vusers > maxManagedTestVUsers {
+		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: vusers cannot exceed %d", index, maxManagedTestVUsers)
 	}
 	if role == GroupRoleObserver && vusers > observerMaxVUsers {
 		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf(
@@ -730,12 +861,18 @@ func parseOptionalGroupDuration(value string, index int, fieldName string) (time
 	if err != nil {
 		return 0, fmt.Errorf("group[%d]: invalid %s: %w", index, fieldName, err)
 	}
+	if duration < 0 {
+		return 0, fmt.Errorf("group[%d]: %s must be zero or greater", index, fieldName)
+	}
 	return duration, nil
 }
 
-func loadStageCompatibility(stages []storage.LoadStage, groupIndex int) (string, string, int, error) {
+func loadStageCompatibility(stages []storage.LoadStage, groupIndex int, allowTargetTPS bool) (string, string, int, error) {
 	if len(stages) == 0 {
 		return "", "", 0, nil
+	}
+	if len(stages) > maxManagedLoadStagesPerGroup {
+		return "", "", 0, fmt.Errorf("group[%d] contains %d stages; limit is %d", groupIndex, len(stages), maxManagedLoadStagesPerGroup)
 	}
 	var rampUp time.Duration
 	var rampDown time.Duration
@@ -758,8 +895,14 @@ func loadStageCompatibility(stages []storage.LoadStage, groupIndex int) (string,
 		if stage.TargetVUsers < 0 {
 			return "", "", 0, fmt.Errorf("group[%d].stages[%d]: target_vusers must be zero or greater", groupIndex, index)
 		}
+		if stage.TargetVUsers > maxManagedTestVUsers {
+			return "", "", 0, fmt.Errorf("group[%d].stages[%d]: target_vusers cannot exceed %d", groupIndex, index, maxManagedTestVUsers)
+		}
 		if stage.TargetTPS != nil && *stage.TargetTPS <= 0 {
 			return "", "", 0, fmt.Errorf("group[%d].stages[%d]: target_tps must be greater than zero", groupIndex, index)
+		}
+		if stage.TargetTPS != nil && !allowTargetTPS {
+			return "", "", 0, fmt.Errorf("group[%d].stages[%d]: target_tps is not supported for vuser-driven stages; use target_vusers or a goal-oriented scenario", groupIndex, index)
 		}
 		if stage.TargetVUsers == 0 && stage.TargetTPS == nil && stageType != "ramp_down" {
 			return "", "", 0, fmt.Errorf("group[%d].stages[%d]: target_vusers or target_tps is required", groupIndex, index)
@@ -769,8 +912,14 @@ func loadStageCompatibility(stages []storage.LoadStage, groupIndex int) (string,
 		}
 		switch stageType {
 		case "ramp_up":
+			if duration > time.Duration(math.MaxInt64)-rampUp {
+				return "", "", 0, fmt.Errorf("group[%d]: cumulative ramp_up duration is too large", groupIndex)
+			}
 			rampUp += duration
 		case "ramp_down":
+			if duration > time.Duration(math.MaxInt64)-rampDown {
+				return "", "", 0, fmt.Errorf("group[%d]: cumulative ramp_down duration is too large", groupIndex)
+			}
 			rampDown += duration
 		}
 	}
@@ -830,10 +979,10 @@ func deriveManagedTestName(requestName string, groups []TestGroup) string {
 }
 
 func (tr *TestRunner) resolveCreateTestProjectID(requestProjectID string, groups []CreateGroupEntry) (string, error) {
-	if requestProjectID != "" {
-		return normalizeProjectID(requestProjectID), nil
+	projectID := strings.TrimSpace(requestProjectID)
+	if projectID != "" {
+		projectID = normalizeProjectID(projectID)
 	}
-	projectID := ""
 	for _, group := range groups {
 		script, ok := tr.scripts[group.ScriptID]
 		if !ok {
@@ -845,10 +994,77 @@ func (tr *TestRunner) resolveCreateTestProjectID(requestProjectID string, groups
 			continue
 		}
 		if candidate != projectID {
-			return storage.DefaultProjectID, nil
+			return "", fmt.Errorf("test scripts and requested project must belong to one project")
 		}
 	}
 	return normalizeProjectID(projectID), nil
+}
+
+func (tr *TestRunner) resolveCreateTestReleaseContext(projectID, requestedApplicationID, requestedReleaseID, status string) (string, string, error) {
+	projectID = normalizeProjectID(projectID)
+	applicationID := strings.TrimSpace(requestedApplicationID)
+	releaseID := strings.TrimSpace(requestedReleaseID)
+	explicitRelease := releaseID != ""
+	legacyFallback := false
+
+	if !explicitRelease && status != "DRAFT" {
+		if applicationID != "" {
+			return "", "", fmt.Errorf("application_id requires an explicit release_id for a runnable test")
+		}
+		// Preserve the long-standing uncategorized-run fallback. It is an
+		// internal bucket rather than a caller-supplied cross-project reference.
+		releaseID = storage.LegacyReleaseID
+		applicationID = storage.LegacyApplicationID
+		legacyFallback = true
+	}
+
+	var release *storage.Release
+	if explicitRelease {
+		if tr.releaseStore != nil {
+			var err error
+			release, err = tr.releaseStore.GetRelease(releaseID)
+			if err != nil || release == nil {
+				return "", "", fmt.Errorf("release not found: %s", releaseID)
+			}
+			if release.ArchivedAt != nil {
+				return "", "", fmt.Errorf("release is archived: %s", releaseID)
+			}
+			if applicationID != "" && applicationID != strings.TrimSpace(release.ApplicationID) {
+				return "", "", fmt.Errorf("application_id does not match release")
+			}
+			applicationID = strings.TrimSpace(release.ApplicationID)
+		}
+	}
+
+	applicationProjectID := ""
+	if applicationID != "" && !legacyFallback {
+		if applicationStore, ok := tr.releaseStore.(interface {
+			GetApplication(id string) (*storage.Application, error)
+		}); ok {
+			application, err := applicationStore.GetApplication(applicationID)
+			if err != nil || application == nil {
+				return "", "", fmt.Errorf("application not found: %s", applicationID)
+			}
+			applicationProjectID = normalizeProjectID(application.ProjectID)
+		}
+	}
+
+	if release != nil {
+		releaseProjectID := strings.TrimSpace(release.ProjectID)
+		if releaseProjectID == "" {
+			releaseProjectID = applicationProjectID
+		}
+		if releaseProjectID != "" && normalizeProjectID(releaseProjectID) != projectID {
+			return "", "", fmt.Errorf("release and test scripts must belong to one project")
+		}
+	}
+	if applicationProjectID != "" && applicationProjectID != projectID {
+		return "", "", fmt.Errorf("application and test scripts must belong to one project")
+	}
+	if applicationID == "" && releaseID != "" {
+		applicationID = storage.LegacyApplicationID
+	}
+	return applicationID, releaseID, nil
 }
 
 func (tr *TestRunner) resolveEffectiveRuntimeSettings(projectID string, runtimeSettings *RuntimeSettingsOverride) (*RuntimeSettingsOverride, error) {

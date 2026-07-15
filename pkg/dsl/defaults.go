@@ -19,6 +19,7 @@ func DefaultScriptConfig() ScriptConfig {
 		Pacing:    PacingConfig{Type: "none"},    // duration-driven, no inter-iteration pacing
 		HTTP: HTTPConfig{
 			MaxConnsPerHost:  100,
+			MaxIdleConns:     4,
 			KeepAlive:        defaultBoolPtr(true),
 			ConnectTimeoutMs: 30000,
 			RequestTimeoutMs: 60000,

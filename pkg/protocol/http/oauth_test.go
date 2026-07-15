@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
@@ -21,7 +22,7 @@ import (
 )
 
 func resetOAuthTokenCacheForTest() {
-	oauthTokenCache = sync.Map{}
+	oauthTokenCache = newBoundedOAuthTokenCache()
 	oauthTokenGroup = singleflight.Group{}
 }
 
@@ -308,6 +309,164 @@ func TestFetchOAuth2TokenEndpointError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "invalid_client") {
 		t.Fatalf("error = %v, want invalid_client", err)
+	}
+}
+
+func TestValidateOAuthTokenRequestRequiresSecureRemoteEndpoint(t *testing.T) {
+	request := OAuthTokenRequest{
+		TokenURL:     "http://identity.example.test/oauth/token",
+		GrantType:    OAuthGrantClientCredentials,
+		ClientID:     "client",
+		ClientSecret: "secret",
+	}
+	if err := validateOAuthTokenRequest(request); err == nil || !strings.Contains(err.Error(), "https") {
+		t.Fatalf("remote plaintext token URL error = %v, want HTTPS rejection", err)
+	}
+	request.TokenURL = "http://127.0.0.1:8080/oauth/token"
+	if err := validateOAuthTokenRequest(request); err != nil {
+		t.Fatalf("loopback development token URL rejected: %v", err)
+	}
+	request.TokenURL = "file:///tmp/token"
+	if err := validateOAuthTokenRequest(request); err == nil {
+		t.Fatal("non-HTTP token URL was accepted")
+	}
+}
+
+func TestHardenedOAuthHTTPClientSeparatesCredentialTransport(t *testing.T) {
+	jar, err := newBoundedCookieJarWithBudget(&responseCaptureBudget{limit: 1024})
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseTransport := &http.Transport{TLSClientConfig: &tls.Config{
+		MinVersion:         tls.VersionTLS10,
+		InsecureSkipVerify: true,
+	}}
+	base := &http.Client{Transport: baseTransport, Jar: jar, Timeout: time.Second}
+	client := hardenedOAuthHTTPClient(base)
+	if client == nil || client.Jar != nil || client.CheckRedirect == nil {
+		t.Fatalf("hardened OAuth client = %#v", client)
+	}
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok || transport == baseTransport {
+		t.Fatalf("OAuth transport was not independently cloned: %#v", client.Transport)
+	}
+	if transport.TLSClientConfig == baseTransport.TLSClientConfig || transport.TLSClientConfig.InsecureSkipVerify {
+		t.Fatal("OAuth transport inherited insecure target TLS configuration")
+	}
+	if transport.MaxResponseHeaderBytes != maxOAuthResponseHeaderBytes {
+		t.Fatalf("OAuth response header limit = %d, want %d", transport.MaxResponseHeaderBytes, maxOAuthResponseHeaderBytes)
+	}
+	if !baseTransport.TLSClientConfig.InsecureSkipVerify {
+		t.Fatal("hardening mutated the ordinary load transport")
+	}
+}
+
+func TestHardenedOAuthHTTPClientRefusesCredentialRedirect(t *testing.T) {
+	resetOAuthTokenCacheForTest()
+	var receiverCalls atomic.Int32
+	receiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		receiverCalls.Add(1)
+		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "stolen"})
+	}))
+	defer receiver.Close()
+	redirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Location", receiver.URL)
+		w.WriteHeader(http.StatusTemporaryRedirect)
+	}))
+	defer redirector.Close()
+
+	_, err := FetchOAuth2Token(context.Background(), OAuthTokenRequest{
+		TokenURL: redirector.URL, GrantType: OAuthGrantClientCredentials, ClientID: "client", ClientSecret: "secret",
+	})
+	if err == nil || !strings.Contains(err.Error(), "307") {
+		t.Fatalf("redirecting token endpoint error = %v", err)
+	}
+	if receiverCalls.Load() != 0 {
+		t.Fatal("OAuth client forwarded credential-bearing request across a redirect")
+	}
+}
+
+func TestFetchOAuth2TokenBoundsResponseFieldsAndTTL(t *testing.T) {
+	for name, payload := range map[string]map[string]any{
+		"access token": {"access_token": strings.Repeat("a", maxOAuthAccessTokenBytes+1)},
+		"token type":   {"access_token": "token", "token_type": strings.Repeat("t", maxOAuthTokenTypeBytes+1)},
+		"instance URL": {"access_token": "token", "instance_url": strings.Repeat("u", maxOAuthInstanceURLBytes+1)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			resetOAuthTokenCacheForTest()
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_ = json.NewEncoder(w).Encode(payload)
+			}))
+			defer server.Close()
+			_, err := FetchOAuth2Token(context.Background(), OAuthTokenRequest{
+				TokenURL: server.URL, GrantType: OAuthGrantClientCredentials, ClientID: "client", ClientSecret: "secret",
+			})
+			if err == nil || !strings.Contains(err.Error(), "exceeds") {
+				t.Fatalf("oversized %s error = %v", name, err)
+			}
+		})
+	}
+
+	resetOAuthTokenCacheForTest()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"access_token":"token","padding":"` + strings.Repeat("x", maxOAuthTokenResponseBytes) + `"}`))
+	}))
+	defer server.Close()
+	_, err := FetchOAuth2Token(context.Background(), OAuthTokenRequest{
+		TokenURL: server.URL, GrantType: OAuthGrantClientCredentials, ClientID: "client", ClientSecret: "secret",
+	})
+	if err == nil || !strings.Contains(err.Error(), "response exceeds") {
+		t.Fatalf("oversized response error = %v", err)
+	}
+
+	resetOAuthTokenCacheForTest()
+	ttlServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "token", "expires_in": "999999999999999999999999"})
+	}))
+	defer ttlServer.Close()
+	token, err := FetchOAuth2Token(context.Background(), OAuthTokenRequest{
+		TokenURL: ttlServer.URL, GrantType: OAuthGrantClientCredentials, ClientID: "client", ClientSecret: "secret",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	remaining := time.Until(token.ExpiresAt)
+	if remaining <= maxOAuthTokenTTL-time.Minute || remaining > maxOAuthTokenTTL {
+		t.Fatalf("bounded token TTL = %s, want approximately %s", remaining, maxOAuthTokenTTL)
+	}
+}
+
+func TestOAuthTokenFetchSlotsHonorCancellation(t *testing.T) {
+	slots := make(chan struct{}, 1)
+	if err := acquireOAuthTokenFetchSlot(context.Background(), slots); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := acquireOAuthTokenFetchSlot(ctx, slots); err == nil {
+		t.Fatal("saturated OAuth acquisition gate ignored cancellation")
+	}
+	releaseOAuthTokenFetchSlot(slots)
+	if err := acquireOAuthTokenFetchSlot(context.Background(), slots); err != nil {
+		t.Fatalf("released OAuth acquisition slot was not reusable: %v", err)
+	}
+	releaseOAuthTokenFetchSlot(slots)
+}
+
+func TestBoundedOAuthTokenCacheEvictsLeastRecentlyUsed(t *testing.T) {
+	cache := newBoundedOAuthTokenCacheWithLimits(2, 1024)
+	expires := time.Now().Add(time.Hour)
+	cache.store("first", OAuthToken{AccessToken: "one", ExpiresAt: expires})
+	cache.store("second", OAuthToken{AccessToken: "two", ExpiresAt: expires})
+	if _, ok := cache.load("first", time.Now()); !ok {
+		t.Fatal("first cache entry was not available")
+	}
+	cache.store("third", OAuthToken{AccessToken: "three", ExpiresAt: expires})
+	if _, ok := cache.load("second", time.Now()); ok {
+		t.Fatal("least-recently-used OAuth token was not evicted")
+	}
+	if len(cache.entries) != 2 || cache.bytes > cache.maxBytes {
+		t.Fatalf("cache retained entries=%d bytes=%d", len(cache.entries), cache.bytes)
 	}
 }
 

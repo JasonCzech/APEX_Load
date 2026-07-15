@@ -64,3 +64,88 @@ func (s *SQLiteStore) CompareAndSwapSetting(key, expected, value string) (bool, 
 	rows, err := result.RowsAffected()
 	return rows == 1, err
 }
+
+// CompareAndSwapSettingWithCapacityFence performs a setting CAS while holding
+// the same durable fence used by capacity-reservation approval. The validator
+// sees the current value and a transactionally consistent snapshot of approved
+// timeslots, preventing settings and approval writes from each validating
+// against the other's pre-commit state.
+func (s *SQLiteStore) CompareAndSwapSettingWithCapacityFence(
+	key, expected, value string,
+	updatedAt time.Time,
+	validate func(current string, approved []*CapacityReservation) error,
+) (bool, error) {
+	if validate == nil {
+		return false, fmt.Errorf("capacity settings validator is required")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	if err := acquireCapacitySettingsFence(tx, updatedAt); err != nil {
+		return false, err
+	}
+	settingQuery := `SELECT value FROM app_settings WHERE key = ?`
+	if s.db.dialect == storeDialectPostgres {
+		settingQuery += ` FOR UPDATE`
+	}
+	var current string
+	err = tx.QueryRow(settingQuery, key).Scan(&current)
+	exists := err == nil
+	if err != nil && err != sql.ErrNoRows {
+		return false, err
+	}
+	if expected == "" {
+		if exists {
+			return false, nil
+		}
+	} else if !exists || current != expected {
+		return false, nil
+	}
+
+	rows, err := tx.Query(capacityReservationSelect + ` WHERE approval_state = 'approved'`)
+	if err != nil {
+		return false, err
+	}
+	approved := make([]*CapacityReservation, 0)
+	for rows.Next() {
+		reservation, scanErr := scanCapacityReservation(rows)
+		if scanErr != nil {
+			rows.Close()
+			return false, scanErr
+		}
+		approved = append(approved, reservation)
+	}
+	if err := rows.Close(); err != nil {
+		return false, err
+	}
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
+	if err := validate(current, approved); err != nil {
+		return false, err
+	}
+
+	var result sql.Result
+	if exists {
+		result, err = tx.Exec(`UPDATE app_settings SET value = ?, updated_at = ? WHERE key = ? AND value = ?`, value, updatedAt.UTC(), key, expected)
+	} else {
+		result, err = tx.Exec(`INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)
+			ON CONFLICT(key) DO NOTHING`, key, value, updatedAt.UTC())
+	}
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	if affected != 1 {
+		return false, nil
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
+}

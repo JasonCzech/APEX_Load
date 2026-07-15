@@ -25,6 +25,10 @@ type archiveCleanupOutbox interface {
 	DeleteArchiveCleanupJob(testID string) error
 }
 
+type conditionalArchiveCleanupOutbox interface {
+	SaveArchiveCleanupJobIfArchiveUnchanged(job *storage.ArchiveCleanupJob) (bool, error)
+}
+
 type archiveVersionCleanupOutbox interface {
 	SaveArchiveVersionCleanupJob(job *storage.ArchiveVersionCleanupJob) error
 	ListArchiveVersionCleanupJobs(limit int) ([]*storage.ArchiveVersionCleanupJob, error)

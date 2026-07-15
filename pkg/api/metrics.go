@@ -478,6 +478,7 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 	}
 	live.Telemetry.HistoryPoints = historyPoints
 	installedLive := cloneLiveMetrics(live)
+	normalizePausedLiveVUsers(test, installedLive)
 	test.LiveMetrics = installedLive
 	test.History = append(test.History, installedLive)
 	if len(test.History) > maxManagedTestHistory {
@@ -530,6 +531,22 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 	tr.broadcastTelemetryHealthTransition(test, previousTelemetryRunHealth, telemetryRunHealth, now)
 	if emitSheddingWarning {
 		tr.broadcastOpenWorkloadShedding(test, sheddedArrivals, now)
+	}
+}
+
+// normalizePausedLiveVUsers keeps API/history/WebSocket snapshots aligned with
+// the durable lifecycle state. Engines and generators can emit a buffered
+// nonzero sample after Pause has committed; capacity reservations remain on the
+// ManagedTest, while the user-facing active counts stay at zero until Resume.
+func normalizePausedLiveVUsers(test *ManagedTest, live *LiveMetrics) {
+	if test == nil || live == nil || test.Status != "PAUSED" {
+		return
+	}
+	live.ActiveVUsers = 0
+	for _, group := range live.GroupMetrics {
+		if group != nil {
+			group.VUsers = 0
+		}
 	}
 }
 
@@ -586,23 +603,114 @@ func replaceLiveMetricsLocked(test *ManagedTest, replacement *LiveMetrics) {
 	}
 }
 
+type runSnapshotWriteState struct {
+	latest  RunLiveStateSnapshot
+	dirty   bool
+	writing bool
+}
+
 func (tr *TestRunner) cacheRunSnapshot(snapshot RunLiveStateSnapshot) {
-	if tr == nil || strings.TrimSpace(snapshot.TestID) == "" {
+	testID := strings.TrimSpace(snapshot.TestID)
+	if tr == nil || testID == "" {
 		return
 	}
 	tr.mu.RLock()
 	store := tr.liveState
-	tr.mu.RUnlock()
-	if store == nil {
+	current := tr.tests[testID]
+	// A snapshot is derived under tr.mu, then queued after that lock is released.
+	// Reject it if a lifecycle transition or deletion won in between; otherwise
+	// a delayed RUNNING sample can overwrite a terminal cache record even after
+	// the per-run writer has drained.
+	if store == nil || current == nil || snapshot.Status != current.Status {
+		tr.mu.RUnlock()
 		return
 	}
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), defaultCacheWriteTimeout)
-		defer cancel()
-		if err := store.SetRunSnapshot(ctx, snapshot, defaultRunSnapshotTTL); err != nil {
-			slog.Warn("failed to cache live run snapshot", "test_id", snapshot.TestID, "err", err)
+	// Keep the lifecycle read lock through queue admission. A terminal mutation
+	// cannot otherwise win after the status check but before this snapshot is
+	// admitted as the newest per-run value.
+	tr.snapshotWriteMu.Lock()
+	tr.mu.RUnlock()
+	if tr.snapshotWrites == nil {
+		tr.snapshotWrites = make(map[string]*runSnapshotWriteState)
+	}
+	if pending := tr.snapshotWrites[testID]; pending != nil {
+		if pending.latest.UpdatedAt.IsZero() || snapshot.Status != pending.latest.Status || !snapshot.UpdatedAt.Before(pending.latest.UpdatedAt) {
+			pending.latest = snapshot
+			pending.dirty = true
 		}
-	}()
+		if !pending.writing && pending.dirty {
+			pending.writing = true
+			tr.snapshotWriteMu.Unlock()
+			go tr.runSnapshotWriter(testID, pending)
+			return
+		}
+		tr.snapshotWriteMu.Unlock()
+		return
+	}
+	state := &runSnapshotWriteState{latest: snapshot, dirty: true, writing: true}
+	tr.snapshotWrites[testID] = state
+	tr.snapshotWriteMu.Unlock()
+	go tr.runSnapshotWriter(testID, state)
+}
+
+// runSnapshotWriter serializes and coalesces cache writes for one run. Metrics
+// streams can publish concurrently; a goroutine-per-sample both grows without
+// bound during a cache stall and lets an older RUNNING write land after a newer
+// terminal snapshot. One short-lived writer per run preserves write order and
+// always drains the latest coalesced state.
+func (tr *TestRunner) runSnapshotWriter(testID string, state *runSnapshotWriteState) {
+	for {
+		tr.snapshotWriteMu.Lock()
+		current := tr.snapshotWrites[testID]
+		if current != state {
+			tr.snapshotWriteMu.Unlock()
+			return
+		}
+		if !state.dirty {
+			state.writing = false
+			tr.snapshotWriteMu.Unlock()
+			return
+		}
+		snapshot := state.latest
+		state.dirty = false
+		tr.snapshotWriteMu.Unlock()
+
+		tr.mu.RLock()
+		store := tr.liveState
+		tr.mu.RUnlock()
+		if store != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), defaultCacheWriteTimeout)
+			err := store.SetRunSnapshot(ctx, snapshot, defaultRunSnapshotTTL)
+			cancel()
+			if err != nil {
+				slog.Warn("failed to cache live run snapshot", "test_id", snapshot.TestID, "err", err)
+			}
+		}
+
+		tr.snapshotWriteMu.Lock()
+		if tr.snapshotWrites[testID] != state {
+			tr.snapshotWriteMu.Unlock()
+			return
+		}
+		if !state.dirty {
+			state.writing = false
+			tr.snapshotWriteMu.Unlock()
+			return
+		}
+		tr.snapshotWriteMu.Unlock()
+	}
+}
+
+// forgetRunSnapshotWriteStateLocked removes the per-run ordering watermark
+// when its owning ManagedTest is removed. Callers hold tr.mu, matching the
+// queue-admission lock order (tr.mu -> snapshotWriteMu).
+func (tr *TestRunner) forgetRunSnapshotWriteStateLocked(testID string) {
+	if tr == nil || strings.TrimSpace(testID) == "" {
+		return
+	}
+	tr.snapshotWriteMu.Lock()
+	delete(tr.snapshotWrites, testID)
+	tr.snapshotWriteMu.Unlock()
 }
 
 func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroupEngine, artifacts *runArtifacts, done chan struct{}) {
@@ -612,10 +720,11 @@ func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroup
 	}
 
 	intervalSec := tr.GetSystemSettings().General.MetricsIntervalSeconds
-	if intervalSec < 1 {
-		intervalSec = 1
+	interval, ok := checkedDuration(intervalSec, time.Second)
+	if !ok || interval <= 0 {
+		interval = time.Second
 	}
-	ticker := time.NewTicker(time.Duration(intervalSec) * time.Second)
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	lastLatencyCheck := time.Time{}
@@ -658,6 +767,12 @@ func (tr *TestRunner) evaluateGoalControllerLocked(test *ManagedTest, live *Live
 	defer tr.mu.Unlock()
 	applyRuntimeGoalTargetsToLiveMetrics(test, live)
 	if test.ScenarioMode == "goal_oriented" && test.GoalConfig != nil {
+		// Baseline snapshots are deliberately idle and paused snapshots do not
+		// represent controllable throughput. Neither may advance breach/cooldown
+		// state, accumulate error windows, or trigger an early scale.
+		if !tr.testLoadReadyLocked(test, time.Now().UTC()) {
+			return goalControllerUpdate{}, false
+		}
 		recordGoalErrorWindow(test.goalControl, "local", live.Timestamp, live.TotalErrors)
 		currentTotalVUsers := totalGroupVUsers(groupVUsers)
 		return evaluateGoalController(live.Timestamp, currentTotalVUsers, live, test.GoalConfig, test.goalControl), true

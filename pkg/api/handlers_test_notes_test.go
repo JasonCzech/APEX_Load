@@ -71,7 +71,7 @@ func TestTestNotesEndpointsRoundTrip(t *testing.T) {
 	}
 
 	time.Sleep(2 * time.Millisecond)
-	updateBody, _ := json.Marshal(testNoteRequest{Body: "Updated note body"})
+	updateBody, _ := json.Marshal(testNoteRequest{Body: "Updated note body", ExpectedUpdatedAt: &created.UpdatedAt})
 	updateReq := httptest.NewRequest(http.MethodPatch, "/api/v1/tests/"+testID+"/notes/"+created.ID, bytes.NewReader(updateBody))
 	updateResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(updateResp, updateReq)
@@ -87,6 +87,17 @@ func TestTestNotesEndpointsRoundTrip(t *testing.T) {
 	}
 	if !updated.CreatedAt.Equal(created.CreatedAt) || !updated.UpdatedAt.After(created.UpdatedAt) {
 		t.Fatalf("updated timestamps = created %s/%s updated %s/%s", created.CreatedAt, updated.CreatedAt, created.UpdatedAt, updated.UpdatedAt)
+	}
+	staleBody, _ := json.Marshal(testNoteRequest{Body: "Stale overwrite", ExpectedUpdatedAt: &created.UpdatedAt})
+	staleReq := httptest.NewRequest(http.MethodPatch, "/api/v1/tests/"+testID+"/notes/"+created.ID, bytes.NewReader(staleBody))
+	staleResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(staleResp, staleReq)
+	if staleResp.Code != http.StatusConflict {
+		t.Fatalf("stale PATCH status = %d, want 409 (body=%s)", staleResp.Code, staleResp.Body.String())
+	}
+	persistedAfterStale, err := store.GetTestNote(created.ID)
+	if err != nil || persistedAfterStale.Body != "Updated note body" {
+		t.Fatalf("stale PATCH changed durable note: %#v err=%v", persistedAfterStale, err)
 	}
 
 	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/v1/tests/"+testID+"/notes/"+created.ID, nil)
@@ -116,6 +127,30 @@ func TestTestNotesEndpointsRoundTrip(t *testing.T) {
 	}
 	if !hasAuditAction(events, "test.notes.create") || !hasAuditAction(events, "test.notes.update") || !hasAuditAction(events, "test.notes.delete") {
 		t.Fatalf("missing note audit events: %#v", events)
+	}
+}
+
+func TestTestNotesListPaginationIsBounded(t *testing.T) {
+	server, store, testID := newTestNotesAPIServer(t)
+	base := time.Now().UTC().Add(-time.Hour)
+	for i, id := range []string{"api-note-oldest", "api-note-middle", "api-note-newest"} {
+		stamp := base.Add(time.Duration(i) * time.Minute)
+		if err := store.CreateTestNote(&storage.TestNote{ID: id, TestID: testID, Body: id, CreatedAt: stamp, UpdatedAt: stamp}); err != nil {
+			t.Fatalf("CreateTestNote(%s): %v", id, err)
+		}
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testID+"/notes?limit=1&offset=1", nil)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("GET status = %d, want 200 body=%s", resp.Code, resp.Body.String())
+	}
+	var listed testNotesListResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	if listed.Limit != 1 || listed.Offset != 1 || len(listed.Notes) != 1 || listed.Notes[0].ID != "api-note-middle" {
+		t.Fatalf("paginated notes = %#v", listed)
 	}
 }
 

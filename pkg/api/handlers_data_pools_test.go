@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,6 +12,47 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
+
+func TestDataPoolRowResponsesArePaginated(t *testing.T) {
+	store, err := storage.NewSQLiteStore(t.TempDir() + "/apexload.db")
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+	pool := &storage.SharedDataPool{ID: "api-bounded-rows-pool", Name: "Bounded rows", ProjectID: storage.DefaultProjectID}
+	if err := store.SaveDataPool(pool); err != nil {
+		t.Fatalf("SaveDataPool: %v", err)
+	}
+	base := time.Now().UTC().Add(-time.Hour)
+	for i, id := range []string{"api-bounded-row-1", "api-bounded-row-2", "api-bounded-row-3"} {
+		if err := store.SaveDataPoolRow(&storage.SharedDataPoolRow{ID: id, PoolID: pool.ID, Data: map[string]string{"id": id}, CreatedAt: base.Add(time.Duration(i) * time.Minute)}); err != nil {
+			t.Fatalf("SaveDataPoolRow(%s): %v", id, err)
+		}
+	}
+	server := NewServer(ServerConfig{Store: store})
+	for _, path := range []string{
+		"/api/v1/data-pools/" + pool.ID + "/rows?limit=1&offset=1",
+		"/api/v1/data-pools/" + pool.ID + "?limit=1&offset=1",
+	} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+		if resp.Code != http.StatusOK {
+			t.Fatalf("GET %s status = %d, want 200 body=%s", path, resp.Code, resp.Body.String())
+		}
+		var payload struct {
+			Rows   []*storage.SharedDataPoolRow `json:"rows"`
+			Limit  int                          `json:"limit"`
+			Offset int                          `json:"offset"`
+		}
+		if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+			t.Fatalf("decode %s: %v", path, err)
+		}
+		if payload.Limit != 1 || payload.Offset != 1 || len(payload.Rows) != 1 || payload.Rows[0].ID != "api-bounded-row-2" {
+			t.Fatalf("GET %s payload = %#v", path, payload)
+		}
+	}
+}
 
 func TestHandleUpdateScenarioDataPoolsRejectsForeignProjectPools(t *testing.T) {
 	store, err := storage.NewSQLiteStore(t.TempDir() + "/apexload.db")

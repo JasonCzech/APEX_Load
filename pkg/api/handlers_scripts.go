@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -237,6 +238,9 @@ func (s *Server) handleExportScript(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "script not found")
 		return
 	}
+	if !requireAuthorizedProjectMatch(w, r, stored.ProjectID) {
+		return
+	}
 
 	// Optional: specify output directory via request body
 	var req struct {
@@ -263,7 +267,7 @@ func (s *Server) handleExportScript(w http.ResponseWriter, r *http.Request) {
 
 	// Wrap in the standard script envelope
 	envelope := map[string]any{
-		"script": stored.Script,
+		"script": maskScriptSecrets(stored.Script),
 	}
 
 	data, err := json.MarshalIndent(envelope, "", "  ")
@@ -277,7 +281,7 @@ func (s *Server) handleExportScript(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := os.WriteFile(fullPath, data, 0o644); err != nil {
+	if err := writePrivateScriptExport(fullPath, data); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to write script file")
 		return
 	}
@@ -290,6 +294,24 @@ func (s *Server) handleExportScript(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func writePrivateScriptExport(path string, data []byte) error {
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	// OpenFile does not tighten an existing file's mode. Do so before writing,
+	// keeping a prior permissive export from remaining world-readable.
+	if err := file.Chmod(0o600); err != nil {
+		_ = file.Close()
+		return err
+	}
+	if _, err := file.Write(data); err != nil {
+		_ = file.Close()
+		return err
+	}
+	return file.Close()
+}
+
 // handleDownloadScript handles GET /api/v1/scripts/{id}/download
 // Returns the script JSON as a downloadable file.
 func (s *Server) handleDownloadScript(w http.ResponseWriter, r *http.Request) {
@@ -299,9 +321,12 @@ func (s *Server) handleDownloadScript(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "script not found")
 		return
 	}
+	if !requireAuthorizedProjectMatch(w, r, stored.ProjectID) {
+		return
+	}
 
 	envelope := map[string]any{
-		"script": stored.Script,
+		"script": maskScriptSecrets(stored.Script),
 	}
 
 	data, err := json.MarshalIndent(envelope, "", "  ")
@@ -326,6 +351,9 @@ func (s *Server) handleUpdateScript(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "script not found")
 		return
 	}
+	if !requireAuthorizedProjectMatch(w, r, stored.ProjectID) {
+		return
+	}
 
 	var wrapper struct {
 		Script dsl.Script `json:"script"`
@@ -338,14 +366,26 @@ func (s *Server) handleUpdateScript(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if err := validateScriptFolderProject(s.store, script); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := reconcileMaskedScriptSecrets(script, stored.Script); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	if issues := validateScript(script); len(issues) > 0 {
 		writeError(w, http.StatusBadRequest, strings.Join(issues, "; "))
 		return
 	}
 
-	updated, ok, err := s.runner.UpdateScriptDurable(id, script)
+	updated, ok, err := s.runner.UpdateScriptDurableInProject(id, script, authorizedProjectOr(r, stored.ProjectID))
 	if err != nil {
+		if errors.Is(err, errScriptConcurrentChange) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "failed to update script: "+err.Error())
 		return
 	}
@@ -355,7 +395,7 @@ func (s *Server) handleUpdateScript(w http.ResponseWriter, r *http.Request) {
 	}
 	s.recordAuditEvent(r, "script.update", "success", "script", updated.ID, updated.ProjectID, map[string]any{"name": updated.Name, "folder_id": updated.FolderID})
 
-	writeJSON(w, http.StatusOK, updated)
+	writeJSON(w, http.StatusOK, maskStoredScript(updated))
 }
 
 // handleDeleteScript handles DELETE /api/v1/scripts/{id}
@@ -366,8 +406,15 @@ func (s *Server) handleDeleteScript(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "script not found")
 		return
 	}
-	deleted, err := s.runner.DeleteScriptDurable(id)
+	if !requireAuthorizedProjectMatch(w, r, stored.ProjectID) {
+		return
+	}
+	deleted, err := s.runner.DeleteScriptDurableInProject(id, authorizedProjectOr(r, stored.ProjectID))
 	if err != nil {
+		if errors.Is(err, errScriptConcurrentChange) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "failed to delete script: "+err.Error())
 		return
 	}

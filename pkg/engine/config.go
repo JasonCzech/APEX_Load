@@ -7,11 +7,11 @@ import (
 )
 
 func buildProtoConfig(script *dsl.Script) map[string]any {
-	return buildProtoConfigWithSecretResolver(script, newDefaultSecretResolver())
+	return buildProtoConfigWithSecretResolver(script, defaultSecretResolverForScript(script))
 }
 
 func buildProtoConfigForRunMode(script *dsl.Script, runMode string) map[string]any {
-	return buildProtoConfigForRunModeWithSecretResolver(script, runMode, newDefaultSecretResolver())
+	return buildProtoConfigForRunModeWithSecretResolver(script, runMode, defaultSecretResolverForScript(script))
 }
 
 func buildProtoConfigForRunModeWithSecretResolver(script *dsl.Script, runMode string, resolver SecretResolver) map[string]any {

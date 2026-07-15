@@ -36,7 +36,7 @@ func buildRunArchiveBrowserDiagnosticsContext(ctx context.Context, record *stora
 	bundle := &BrowserDiagnosticsBundle{
 		SchemaVersion: browserDiagnosticsSchemaVersion,
 		GeneratedAt:   time.Now().UTC(),
-		Manifest:      manifest,
+		Manifest:      maskRunArchiveManifest(manifest),
 		Events:        make([]BrowserDiagnosticsEvent, 0),
 	}
 	const maxBrowserDiagnosticEvents = 5_000

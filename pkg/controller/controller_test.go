@@ -21,6 +21,9 @@ func TestNew(t *testing.T) {
 	if c.maxTests != 5 {
 		t.Errorf("maxTests = %d, want 5", c.maxTests)
 	}
+	if c.maxRetained != defaultMaxRetainedTests {
+		t.Errorf("maxRetained = %d, want %d", c.maxRetained, defaultMaxRetainedTests)
+	}
 }
 
 func TestNew_DefaultMax(t *testing.T) {
@@ -103,6 +106,9 @@ func TestSetStatus(t *testing.T) {
 func TestSetStatus_Complete(t *testing.T) {
 	c := New(10)
 	id, _ := c.CreateTest(TestConfig{Name: "complete-test", Script: testScript(), VUsers: 1, Duration: time.Minute})
+	if err := c.SetCancel(id, func() {}); err != nil {
+		t.Fatal(err)
+	}
 
 	c.SetStatus(id, StatusRunning)
 	c.SetStatus(id, StatusComplete)
@@ -113,6 +119,44 @@ func TestSetStatus_Complete(t *testing.T) {
 	}
 	if test.EndedAt.IsZero() {
 		t.Error("EndedAt should be set when status is COMPLETE")
+	}
+	if c.tests[id].Cancel != nil {
+		t.Error("terminal test retained its cancellation closure")
+	}
+}
+
+func TestCreateTestBoundsHistoryAndEvictsOnlyTerminalRuns(t *testing.T) {
+	c := New(2)
+	c.maxRetained = 2
+	first, err := c.CreateTest(TestConfig{Name: "first", Script: testScript(), VUsers: 1, Duration: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := c.CreateTest(TestConfig{Name: "second", Script: testScript(), VUsers: 1, Duration: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.CreateTest(TestConfig{Name: "overflow", Script: testScript(), VUsers: 1, Duration: time.Minute}); err == nil {
+		t.Fatal("CreateTest exceeded the retained-test bound without a terminal eviction candidate")
+	}
+	if err := c.SetStatus(first, StatusFailed); err != nil {
+		t.Fatal(err)
+	}
+	third, err := c.CreateTest(TestConfig{Name: "third", Script: testScript(), VUsers: 1, Duration: time.Minute})
+	if err != nil {
+		t.Fatalf("CreateTest did not evict terminal history: %v", err)
+	}
+	if len(c.tests) != 2 {
+		t.Fatalf("retained tests = %d, want 2", len(c.tests))
+	}
+	if _, err := c.GetTest(first); err == nil {
+		t.Fatal("old terminal test was not evicted")
+	}
+	if _, err := c.GetTest(second); err != nil {
+		t.Fatal("queued test was evicted")
+	}
+	if _, err := c.GetTest(third); err != nil {
+		t.Fatal("new test was not retained")
 	}
 }
 
@@ -150,6 +194,89 @@ func TestAbortTest(t *testing.T) {
 	}
 	if test.EndedAt.IsZero() {
 		t.Error("EndedAt should be set after abort")
+	}
+	if c.tests[id].Cancel != nil {
+		t.Error("aborted test retained its cancellation closure")
+	}
+}
+
+func TestSetCancelCancelsLateAndDuplicateExecutions(t *testing.T) {
+	t.Run("abort before hook installation", func(t *testing.T) {
+		c := New(1)
+		id, err := c.CreateTest(TestConfig{Name: "late", Script: testScript(), VUsers: 1, Duration: time.Minute})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := c.AbortTest(id); err != nil {
+			t.Fatal(err)
+		}
+		canceled := false
+		if err := c.SetCancel(id, func() { canceled = true }); err == nil {
+			t.Fatal("late SetCancel succeeded for an aborted test")
+		}
+		if !canceled {
+			t.Fatal("late execution cancellation hook was not invoked")
+		}
+	})
+
+	t.Run("duplicate hook", func(t *testing.T) {
+		c := New(1)
+		id, err := c.CreateTest(TestConfig{Name: "duplicate", Script: testScript(), VUsers: 1, Duration: time.Minute})
+		if err != nil {
+			t.Fatal(err)
+		}
+		firstCanceled := false
+		if err := c.SetCancel(id, func() { firstCanceled = true }); err != nil {
+			t.Fatal(err)
+		}
+		secondCanceled := false
+		if err := c.SetCancel(id, func() { secondCanceled = true }); err == nil {
+			t.Fatal("duplicate SetCancel succeeded")
+		}
+		if !secondCanceled {
+			t.Fatal("rejected duplicate execution was not canceled")
+		}
+		if firstCanceled {
+			t.Fatal("rejected duplicate canceled the adopted execution")
+		}
+		if err := c.AbortTest(id); err != nil {
+			t.Fatal(err)
+		}
+		if !firstCanceled {
+			t.Fatal("adopted execution was not canceled on abort")
+		}
+	})
+
+	t.Run("nil hook", func(t *testing.T) {
+		c := New(1)
+		id, err := c.CreateTest(TestConfig{Name: "nil", Script: testScript(), VUsers: 1, Duration: time.Minute})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := c.SetCancel(id, nil); err == nil {
+			t.Fatal("SetCancel accepted a nil cancellation hook")
+		}
+	})
+}
+
+func TestCreateTestRejectsInvalidConfig(t *testing.T) {
+	valid := TestConfig{Name: "valid", Script: testScript(), VUsers: 1, Duration: time.Minute}
+	tests := map[string]TestConfig{
+		"missing name":     {Script: testScript(), VUsers: 1, Duration: time.Minute},
+		"missing script":   {Name: "missing", VUsers: 1, Duration: time.Minute},
+		"zero vusers":      {Name: "zero", Script: testScript(), Duration: time.Minute},
+		"zero duration":    {Name: "zero", Script: testScript(), VUsers: 1},
+		"negative ramp-up": {Name: "negative", Script: testScript(), VUsers: 1, Duration: time.Minute, RampUp: -time.Second},
+	}
+	for name, cfg := range tests {
+		t.Run(name, func(t *testing.T) {
+			if _, err := New(1).CreateTest(cfg); err == nil {
+				t.Fatal("CreateTest accepted invalid config")
+			}
+		})
+	}
+	if _, err := New(1).CreateTest(valid); err != nil {
+		t.Fatalf("valid config rejected: %v", err)
 	}
 }
 

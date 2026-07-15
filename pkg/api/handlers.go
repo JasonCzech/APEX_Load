@@ -20,6 +20,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/enterprisearchive"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
+	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 // requireExecutionLeader writes a 503 and returns false when this replica does
@@ -55,7 +56,7 @@ func (s *Server) handleCreateTest(w http.ResponseWriter, r *http.Request) {
 	}
 	s.recordAuditEvent(r, "test.create", "success", "test", test.ID, test.ProjectID, map[string]any{"name": test.Name, "status": test.Status})
 
-	writeJSON(w, http.StatusCreated, test)
+	writeJSON(w, http.StatusCreated, maskManagedTest(test))
 }
 
 func (s *Server) handleEstimateTest(w http.ResponseWriter, r *http.Request) {
@@ -93,6 +94,7 @@ func (s *Server) handleListTests(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	limitExplicit := strings.TrimSpace(r.URL.Query().Get("limit")) != ""
 	applicationID := r.URL.Query().Get("application_id")
 	releaseID := r.URL.Query().Get("release_id")
 	scenarioID := r.URL.Query().Get("scenario_id")
@@ -102,58 +104,23 @@ func (s *Server) handleListTests(w http.ResponseWriter, r *http.Request) {
 		value := r.URL.Query().Get("folder_id")
 		folderID = &value
 	}
-	if summary {
-		tests, total := s.runner.listTestSummaryPage(testSummaryListQuery{
-			projectID:     projectID,
-			folderID:      folderID,
-			applicationID: applicationID,
-			releaseID:     releaseID,
-			scenarioID:    scenarioID,
-			activeOnly:    activeOnly,
-			limit:         limit,
-			offset:        offset,
-		})
-		writeJSON(w, http.StatusOK, map[string]any{
-			"tests":   maskManagedTests(tests),
-			"count":   len(tests),
-			"total":   total,
-			"limit":   limit,
-			"offset":  offset,
-			"summary": true,
-		})
-		return
-	}
-	var tests []*ManagedTest
-	if applicationID != "" || releaseID != "" || scenarioID != "" {
-		tests = s.runner.ListTestsByContext(applicationID, releaseID, scenarioID)
-	} else {
-		if projectID == "" && folderID == nil {
-			tests = s.runner.ListTests()
-		} else {
-			tests = s.runner.ListTestsFiltered(projectID, folderID)
-		}
-	}
-
-	if activeOnly {
-		filtered := tests[:0]
-		for _, test := range tests {
-			if test != nil && isActiveTestListStatus(test.Status) {
-				filtered = append(filtered, test)
-			}
-		}
-		tests = filtered
-	}
-	sortTestList(tests, limit > 0)
-	total := len(tests)
-	start := offset
-	if start > total {
-		start = total
-	}
-	end := total
-	if limit > 0 && end > start+limit {
-		end = start + limit
-	}
-	tests = tests[start:end]
+	projectID = s.projectIDForFolderFilter(r, projectID, folderID)
+	// List responses have never exposed full interval history: maskManagedTests
+	// removes it after the runner snapshot is built. Always use the summary page
+	// path so a list request does not deep-clone thousands of rich history points
+	// per retained run only to discard them immediately. The bounded default also
+	// prevents an omitted limit from materializing every retained run at once.
+	tests, total := s.runner.listTestSummaryPage(testSummaryListQuery{
+		projectID:        projectID,
+		folderID:         folderID,
+		applicationID:    applicationID,
+		releaseID:        releaseID,
+		scenarioID:       scenarioID,
+		activeOnly:       activeOnly,
+		limit:            limit,
+		offset:           offset,
+		prioritizeActive: limitExplicit,
+	})
 	writeJSON(w, http.StatusOK, map[string]any{
 		"tests":   maskManagedTests(tests),
 		"count":   len(tests),
@@ -164,7 +131,13 @@ func (s *Server) handleListTests(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+const (
+	defaultTestListLimit = 200
+	maxTestListLimit     = 2000
+)
+
 func parseTestListOptions(w http.ResponseWriter, r *http.Request) (summary bool, activeOnly bool, limit int, offset int, ok bool) {
+	limit = defaultTestListLimit
 	query := r.URL.Query()
 	for name, target := range map[string]*bool{"summary": &summary, "active_only": &activeOnly} {
 		if raw := query.Get(name); raw != "" {
@@ -178,7 +151,7 @@ func parseTestListOptions(w http.ResponseWriter, r *http.Request) (summary bool,
 	}
 	if raw := query.Get("limit"); raw != "" {
 		parsed, err := strconv.Atoi(raw)
-		if err != nil || parsed < 1 || parsed > 2000 {
+		if err != nil || parsed < 1 || parsed > maxTestListLimit {
 			writeError(w, http.StatusBadRequest, "invalid limit")
 			return false, false, 0, 0, false
 		}
@@ -248,7 +221,7 @@ func (s *Server) handleGetTestManifest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, manifest)
+	writeJSON(w, http.StatusOK, maskTestRunManifest(manifest))
 }
 
 func (s *Server) handleStartTest(w http.ResponseWriter, r *http.Request) {
@@ -331,7 +304,7 @@ func (s *Server) handleStartTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.recordAuditEvent(r, "test.start", "success", "test", id, test.ProjectID, map[string]any{"status": test.Status})
-	writeJSON(w, http.StatusOK, map[string]any{"status": "started", "test_id": id, "test": test})
+	writeJSON(w, http.StatusOK, map[string]any{"status": "started", "test_id": id, "test": maskManagedTest(test)})
 }
 
 const startResponseStateTimeout = 750 * time.Millisecond
@@ -515,6 +488,10 @@ func (s *Server) handleDeleteTest(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "test metadata was deleted but physical archive cleanup failed: "+err.Error())
 			return
 		}
+		if errors.Is(err, errNotExecutionLeader) {
+			writeError(w, http.StatusServiceUnavailable, err.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "failed to delete test: "+err.Error())
 		return
 	}
@@ -542,6 +519,10 @@ func (s *Server) handleGetMetrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	groupFilter := parseGroupFilterQuery(r.URL.Query())
+	if groupFilter.Invalid {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("groups must contain at most %d names of at most %d bytes", maxGroupFilterNames, maxGroupFilterNameBytes))
+		return
+	}
 	historySince, historyLimit, ok := liveMetricsHistoryWindowFromQuery(w, r.URL.Query())
 	if !ok {
 		return
@@ -654,6 +635,20 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 	if wrapper.FolderID != nil {
 		script.FolderID = wrapper.FolderID
 	}
+	if authorizedProjectID, scoped := authorizedProjectFromRequest(r); scoped {
+		if err := bindDraftScriptProject(script, authorizedProjectID); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	if err := validateScriptFolderProject(s.store, script); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := reconcileMaskedScriptSecrets(script, nil); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	if issues := validateScript(script); len(issues) > 0 {
 		writeError(w, http.StatusBadRequest, strings.Join(issues, "; "))
@@ -667,7 +662,7 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 	}
 	s.captureRecordingBaseline(stored.ID, wrapper.SourceRecordingSessionID)
 	s.recordAuditEvent(r, "script.create", "success", "script", stored.ID, stored.ProjectID, map[string]any{"name": stored.Name, "folder_id": stored.FolderID})
-	writeJSON(w, http.StatusCreated, stored)
+	writeJSON(w, http.StatusCreated, maskStoredScript(stored))
 }
 
 func (s *Server) handleListScripts(w http.ResponseWriter, r *http.Request) {
@@ -677,19 +672,35 @@ func (s *Server) handleListScripts(w http.ResponseWriter, r *http.Request) {
 		value := r.URL.Query().Get("folder_id")
 		folderID = &value
 	}
+	projectID = s.projectIDForFolderFilter(r, projectID, folderID)
 	if projectID == "" && folderID == nil {
 		scripts := s.runner.ListScriptsWithUsage()
 		writeJSON(w, http.StatusOK, map[string]any{
-			"scripts": scripts,
+			"scripts": maskStoredScripts(scripts),
 			"count":   len(scripts),
 		})
 		return
 	}
 	scripts := s.runner.ListScriptsFiltered(projectID, folderID)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"scripts": scripts,
+		"scripts": maskStoredScripts(scripts),
 		"count":   len(scripts),
 	})
+}
+
+func (s *Server) projectIDForFolderFilter(r *http.Request, projectID string, folderID *string) string {
+	if strings.TrimSpace(projectID) != "" || folderID == nil || strings.TrimSpace(*folderID) == "" {
+		return projectID
+	}
+	if authorizedProjectID, scoped := authorizedProjectFromRequest(r); scoped {
+		return authorizedProjectID
+	}
+	if s.store != nil {
+		if folder, err := s.store.GetFolder(strings.TrimSpace(*folderID)); err == nil && folder != nil {
+			return normalizeProjectID(folder.ProjectID)
+		}
+	}
+	return projectID
 }
 
 func (s *Server) handleGetScript(w http.ResponseWriter, r *http.Request) {
@@ -699,7 +710,10 @@ func (s *Server) handleGetScript(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "script not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, script)
+	if !requireAuthorizedProjectMatch(w, r, script.ProjectID) {
+		return
+	}
+	writeJSON(w, http.StatusOK, maskStoredScript(script))
 }
 
 func (s *Server) handleValidateScript(w http.ResponseWriter, r *http.Request) {
@@ -707,6 +721,9 @@ func (s *Server) handleValidateScript(w http.ResponseWriter, r *http.Request) {
 	script, ok := s.runner.GetScript(id)
 	if !ok {
 		writeError(w, http.StatusNotFound, "script not found")
+		return
+	}
+	if !requireAuthorizedProjectMatch(w, r, script.ProjectID) {
 		return
 	}
 
@@ -742,14 +759,21 @@ func (s *Server) handleMoveScript(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "script not found")
 		return
 	}
+	if !requireAuthorizedProjectMatch(w, r, stored.ProjectID) {
+		return
+	}
 	var req struct {
 		FolderID *string `json:"folder_id"`
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	moved, err := s.runner.MoveScriptDurable(id, req.FolderID)
+	moved, err := s.runner.MoveScriptDurableInProject(id, req.FolderID, authorizedProjectOr(r, stored.ProjectID))
 	if err != nil {
+		if errors.Is(err, errScriptConcurrentChange) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "failed to move script: "+err.Error())
 		return
 	}
@@ -1236,19 +1260,20 @@ func wantsCSV(r *http.Request) bool {
 }
 
 func writeError(w http.ResponseWriter, status int, msg string) {
+	safeMessage := scrub.Value(msg, scrub.Policy{})
 	// Never leak internal error detail (DB errors, file paths, stack context) to
-	// clients on 5xx responses. Log the real message server-side under a
+	// clients on 5xx responses. Log a credential-scrubbed detail under a
 	// correlation ID and return a generic message referencing that ID.
 	if status >= http.StatusInternalServerError {
 		ref := newErrorReference()
-		slog.Error("internal server error", "ref", ref, "status", status, "detail", msg)
+		slog.Error("internal server error", "ref", ref, "status", status, "detail", safeMessage)
 		writeJSON(w, status, map[string]string{
 			"error": "internal server error",
 			"ref":   ref,
 		})
 		return
 	}
-	writeJSON(w, status, map[string]string{"error": msg})
+	writeJSON(w, status, map[string]string{"error": safeMessage})
 }
 
 // newErrorReference returns a short opaque ID correlating a client-visible 5xx

@@ -3,6 +3,7 @@ package engine
 // vuser_resolve.go — split from vuser.go (same package, behavior-preserving).
 
 import (
+	"fmt"
 	"io"
 	"log/slog"
 	"strconv"
@@ -153,43 +154,50 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 	vu.unresolvedSecretRefs = nil
 	vu.unresolvedFileRefs = nil
 	target, redactedTarget := vu.interpolateWithSecrets(action.Target)
-	selector, _ := vu.interpolateWithSecrets(action.Selector)
-	value, _ := vu.interpolateWithSecrets(action.Value)
+	selector, redactedSelector := vu.interpolateWithSecrets(action.Selector)
+	value, redactedValue := vu.interpolateWithSecrets(action.Value)
 	headers, redactedHeaders := vu.interpolateMapWithSecrets(action.Headers)
 	headerList, redactedHeaderList := vu.interpolateHeaderListWithSecrets(action.HeaderList)
 	body, redactedBody := vu.interpolateWithSecrets(action.Body)
 	auth, redactedAuth := toProtocolAuthConfig(action.Auth, vu)
 	soapAction, redactedSOAPAction := toProtocolSOAPActions(action.SOAP, vu)
 	params, redactedParams := vu.interpolateAnyMapWithSecrets(action.Params)
+	discardSuccessfulResponseBody := false
+	if vu.Script != nil {
+		discardSuccessfulResponseBody = !logConfigRetainsSuccessfulResponseBody(vu.Script.Config.Log)
+	}
 	return &protocol.Action{
-		Name:               action.Name,
-		Type:               action.Type,
-		Method:             action.Method,
-		Target:             target,
-		RedactedTarget:     redactedTarget,
-		Selector:           selector,
-		Value:              value,
-		Headers:            headers,
-		HeaderList:         headerList,
-		RedactedHeaders:    redactedHeaders,
-		RedactedHeaderList: redactedHeaderList,
-		Body:               []byte(body),
-		BodyEncoding:       action.BodyEncoding,
-		RedactedBody:       []byte(redactedBody),
-		Params:             params,
-		RedactedParams:     redactedParams,
-		WaitFor:            toProtocolWaitCondition(action.WaitFor, vu),
-		Sync:               toProtocolBrowserSyncPolicy(action.Sync, vu),
-		Capture:            toProtocolCaptureOptions(action.Capture),
-		Metadata:           vu.interpolateAnyMap(action.Metadata),
-		Extractors:         toProtocolExtractors(action.Extractors),
-		Assertions:         toProtocolAssertions(action.Assertions),
-		Auth:               auth,
-		RedactedAuth:       redactedAuth,
-		TimeoutMs:          action.TimeoutMs,
-		MaxRedirects:       cloneIntPtr(action.MaxRedirects),
-		SOAP:               soapAction,
-		RedactedSOAP:       redactedSOAPAction,
+		Name:                         action.Name,
+		Type:                         action.Type,
+		Method:                       action.Method,
+		Target:                       target,
+		RedactedTarget:               redactedTarget,
+		Selector:                     selector,
+		RedactedSelector:             redactedSelector,
+		Value:                        value,
+		RedactedValue:                redactedValue,
+		Headers:                      headers,
+		HeaderList:                   headerList,
+		RedactedHeaders:              redactedHeaders,
+		RedactedHeaderList:           redactedHeaderList,
+		Body:                         []byte(body),
+		BodyEncoding:                 action.BodyEncoding,
+		RedactedBody:                 []byte(redactedBody),
+		Params:                       params,
+		RedactedParams:               redactedParams,
+		WaitFor:                      toProtocolWaitCondition(action.WaitFor, vu),
+		Sync:                         toProtocolBrowserSyncPolicy(action.Sync, vu),
+		Capture:                      toProtocolCaptureOptions(action.Capture),
+		Metadata:                     vu.interpolateAnyMap(action.Metadata),
+		Extractors:                   toProtocolExtractors(action.Extractors),
+		Assertions:                   toProtocolAssertions(action.Assertions),
+		Auth:                         auth,
+		RedactedAuth:                 redactedAuth,
+		TimeoutMs:                    action.TimeoutMs,
+		MaxRedirects:                 cloneIntPtr(action.MaxRedirects),
+		SOAP:                         soapAction,
+		RedactedSOAP:                 redactedSOAPAction,
+		DiscardResponseBodyOnSuccess: discardSuccessfulResponseBody,
 	}
 }
 
@@ -463,15 +471,53 @@ func (vu *VUser) resolveTemplateValue(expr string) (string, bool) {
 
 func (vu *VUser) secretResolver() SecretResolver {
 	if vu.SecretResolver == nil {
-		vu.SecretResolver = newDefaultSecretResolver()
+		vu.SecretResolver = defaultSecretResolverForScript(vu.Script)
 	}
 	return vu.SecretResolver
 }
 
-func (vu *VUser) mergeExtractions(r *protocol.Result) {
-	for k, v := range r.Extractions {
-		vu.Variables[k] = v
+const (
+	maxVUserExtractedVariables = 4096
+	maxVUserExtractionBytes    = 4 << 20
+)
+
+func (vu *VUser) mergeExtractions(r *protocol.Result) error {
+	if vu == nil || r == nil || len(r.Extractions) == 0 {
+		return nil
 	}
+	if err := protocol.ValidateExtractions(r.Extractions); err != nil {
+		return err
+	}
+	if vu.Variables == nil {
+		vu.Variables = make(map[string]string)
+	}
+	if vu.extractedVariables == nil {
+		vu.extractedVariables = make(map[string]int)
+	}
+	additionalEntries := 0
+	additionalBytes := 0
+	for key, value := range r.Extractions {
+		newSize := len(key) + len(value)
+		oldSize, tracked := vu.extractedVariables[key]
+		if !tracked {
+			additionalEntries++
+		}
+		additionalBytes += newSize - oldSize
+	}
+	if additionalEntries > maxVUserExtractedVariables-len(vu.extractedVariables) {
+		return fmt.Errorf("VUser extracted variables exceed %d entries", maxVUserExtractedVariables)
+	}
+	if additionalBytes > maxVUserExtractionBytes-vu.extractedVariableBytes {
+		return fmt.Errorf("VUser extracted variables exceed %d bytes", maxVUserExtractionBytes)
+	}
+	for key, value := range r.Extractions {
+		size := len(key) + len(value)
+		oldSize := vu.extractedVariables[key]
+		vu.Variables[key] = value
+		vu.extractedVariables[key] = size
+		vu.extractedVariableBytes += size - oldSize
+	}
+	return nil
 }
 
 func replaceAll(s, old, new string) string {

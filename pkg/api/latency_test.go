@@ -1,15 +1,67 @@
 package api
 
 import (
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
+
+func TestCollectLatencyTargetsBoundsConcurrentProbes(t *testing.T) {
+	endpoints := make(map[string]string, maxLatencyProbeTargets)
+	for index := 0; index < maxLatencyProbeTargets; index++ {
+		endpoints[fmt.Sprintf("host-%d", index)] = fmt.Sprintf("https://host-%d.example.test", index)
+	}
+	var active atomic.Int32
+	var peak atomic.Int32
+	started := make(chan struct{}, maxConcurrentLatencyTargets)
+	release := make(chan struct{})
+	done := make(chan []LatencyTarget, 1)
+	go func() {
+		done <- collectLatencyTargets(endpoints, func(host, endpoint string) LatencyTarget {
+			current := active.Add(1)
+			for {
+				observed := peak.Load()
+				if current <= observed || peak.CompareAndSwap(observed, current) {
+					break
+				}
+			}
+			select {
+			case started <- struct{}{}:
+			default:
+			}
+			<-release
+			active.Add(-1)
+			return LatencyTarget{Name: host, Endpoint: endpoint}
+		})
+	}()
+	for range maxConcurrentLatencyTargets {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for bounded latency workers")
+		}
+	}
+	if got := peak.Load(); got != maxConcurrentLatencyTargets {
+		t.Fatalf("peak concurrent latency probes = %d, want %d", got, maxConcurrentLatencyTargets)
+	}
+	close(release)
+	select {
+	case targets := <-done:
+		if len(targets) != len(endpoints) {
+			t.Fatalf("collected targets = %d, want %d", len(targets), len(endpoints))
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("bounded latency probe collection did not complete")
+	}
+}
 
 func TestMeasureEndpointLatency(t *testing.T) {
 	// Start a local TCP listener to act as a target
@@ -39,6 +91,28 @@ func TestMeasureEndpointLatency(t *testing.T) {
 	targetUnreachable := tr.measureEndpointLatency("127.0.0.1:65535", "http://127.0.0.1:65535")
 	if targetUnreachable.LastSuccess {
 		t.Error("expected failure for unreachable port")
+	}
+}
+
+func TestLatencyRouteTargetRejectsTracerouteOptionInjection(t *testing.T) {
+	tests := []struct {
+		target string
+		valid  bool
+	}{
+		{target: "example.com", valid: true},
+		{target: "api-1.internal.example.", valid: true},
+		{target: "127.0.0.1", valid: true},
+		{target: "2001:db8::1", valid: true},
+		{target: "-m", valid: false},
+		{target: "--help", valid: false},
+		{target: "bad host.example", valid: false},
+		{target: "bad_label.example", valid: false},
+		{target: "-gateway.example", valid: false},
+	}
+	for _, tc := range tests {
+		if got := validLatencyRouteTarget(tc.target); got != tc.valid {
+			t.Errorf("validLatencyRouteTarget(%q) = %v, want %v", tc.target, got, tc.valid)
+		}
 	}
 }
 
@@ -243,6 +317,30 @@ func TestMeasureNetworkLatency(t *testing.T) {
 	}
 }
 
+func TestLatencyProbeAdmissionAllowsOnlyOneProbePerTest(t *testing.T) {
+	runner := &TestRunner{tests: make(map[string]*ManagedTest)}
+	test := &ManagedTest{ID: "bounded-latency-probe"}
+	runner.tests[test.ID] = test
+
+	if !runner.beginLatencyProbe(test) {
+		t.Fatal("first latency probe was not admitted")
+	}
+	if runner.beginLatencyProbe(test) {
+		t.Fatal("overlapping latency probe was admitted")
+	}
+	runner.endLatencyProbe(test)
+	if !runner.beginLatencyProbe(test) {
+		t.Fatal("latency probe was not admitted after prior probe completed")
+	}
+	runner.endLatencyProbe(test)
+
+	replacement := &ManagedTest{ID: test.ID}
+	runner.tests[test.ID] = replacement
+	if runner.beginLatencyProbe(test) {
+		t.Fatal("detached test pointer admitted a latency probe")
+	}
+}
+
 func TestLatencyEndpointsPreferParameterizedURL(t *testing.T) {
 	hub := NewHub()
 	tr := NewTestRunner(1, hub, nil)
@@ -315,6 +413,42 @@ func TestLatencyEndpointsForTestCachesDerivedEndpointMapDefensively(t *testing.T
 	}
 	if got := second["app.example.com"]; got != "https://app.example.com" {
 		t.Fatalf("cached endpoint = %q, want defensive cached value", got)
+	}
+}
+
+func TestLatencyEndpointDiscoveryBoundsConcurrentProbeTargets(t *testing.T) {
+	endpoints := make(map[string]string)
+	for index := 0; index < maxLatencyProbeTargets+100; index++ {
+		addLatencyEndpointValue(endpoints, fmt.Sprintf("https://target-%d.example.test/health", index))
+	}
+	if len(endpoints) != maxLatencyProbeTargets {
+		t.Fatalf("latency endpoints = %d, want hard cap %d", len(endpoints), maxLatencyProbeTargets)
+	}
+	// Updating an already-admitted target remains possible after the cap, while a
+	// new target cannot grow the fanout.
+	addLatencyEndpointValue(endpoints, "https://target-0.example.test/ready")
+	if got := endpoints["target-0.example.test"]; got != "https://target-0.example.test/ready" {
+		t.Fatalf("existing target update = %q", got)
+	}
+}
+
+func TestLatencyRouteCacheEvictsOldestAtHardLimit(t *testing.T) {
+	now := time.Now().UTC()
+	tr := &TestRunner{routeCache: make(map[string]latencyRouteCacheEntry)}
+	for index := 0; index < maxLatencyRouteCacheEntries; index++ {
+		tr.routeCache[fmt.Sprintf("cached-%d.example", index)] = latencyRouteCacheEntry{
+			status: "ok", checkedAt: now.Add(-time.Minute).Add(time.Duration(index) * time.Millisecond),
+		}
+	}
+	tr.storeLatencyRouteCacheEntry("new.example", latencyRouteCacheEntry{status: "ok", checkedAt: now})
+	if len(tr.routeCache) != maxLatencyRouteCacheEntries {
+		t.Fatalf("route cache size = %d, want %d", len(tr.routeCache), maxLatencyRouteCacheEntries)
+	}
+	if _, exists := tr.routeCache["cached-0.example"]; exists {
+		t.Fatal("oldest route cache entry was not evicted")
+	}
+	if _, exists := tr.routeCache["new.example"]; !exists {
+		t.Fatal("new route cache entry was not admitted")
 	}
 }
 
@@ -405,5 +539,20 @@ func TestMeasureNetworkLatencyHydratesScriptByGroupScriptID(t *testing.T) {
 
 	if live.Latency == nil || len(live.Latency.Targets) != 1 {
 		t.Fatalf("expected hydrated script to produce one latency target, got %#v", live.Latency)
+	}
+}
+
+func TestSanitizeLatencyTargetRemovesEndpointAndErrorCredentials(t *testing.T) {
+	secret := "latency-super-secret"
+	target := sanitizeLatencyTarget(LatencyTarget{
+		Endpoint: "https://user:" + secret + "@example.test/orders?access_token=" + secret + "&page=1",
+		Error:    "probe https://user:" + secret + "@example.test/orders?api_key=" + secret + " failed",
+	})
+	joined := target.Endpoint + "\n" + target.Error
+	if strings.Contains(joined, secret) || strings.Contains(joined, "user:"+secret) {
+		t.Fatalf("sanitized latency target leaked credentials: %#v", target)
+	}
+	if !strings.Contains(target.Endpoint, "page=1") {
+		t.Fatalf("sanitized endpoint discarded non-sensitive query state: %q", target.Endpoint)
 	}
 }

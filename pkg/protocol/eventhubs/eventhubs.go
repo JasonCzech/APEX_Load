@@ -21,8 +21,14 @@ import (
 )
 
 const (
-	eventHubsProtocolName = "eventhubs"
-	defaultTimeout        = 5 * time.Second
+	eventHubsProtocolName      = "eventhubs"
+	defaultTimeout             = 5 * time.Second
+	MaxConfiguredTimeout       = time.Hour
+	MaxEventHubNameBytes       = 256
+	MaxEventHubIdentifierBytes = 4 << 10
+	MaxEventHubsEventBytes     = 64 << 20
+	maxEventHubsProperties     = 256
+	maxEventHubsPropertyBytes  = 1 << 20
 )
 
 // errNoEvent signals that the read-only consume observer probe found no event
@@ -66,6 +72,10 @@ type EventHubs struct {
 func (e *EventHubs) Name() string { return e.name }
 
 func (e *EventHubs) Init(_ context.Context, cfg map[string]any) error {
+	timeoutMS, err := boundedInteger(cfg["eventhubs_timeout_ms"], int(defaultTimeout/time.Millisecond), 0, int(MaxConfiguredTimeout/time.Millisecond))
+	if err != nil {
+		return fmt.Errorf("eventhubs timeout_ms: %w", err)
+	}
 	e.cfg = config{
 		Namespace:        stringValue(cfg, "eventhubs_namespace"),
 		EventHub:         stringValue(cfg, "eventhubs_event_hub"),
@@ -75,11 +85,14 @@ func (e *EventHubs) Init(_ context.Context, cfg map[string]any) error {
 		PartitionID:      stringValue(cfg, "eventhubs_partition_id"),
 		StartPosition:    strings.ToLower(strings.TrimSpace(stringValue(cfg, "eventhubs_start_position"))),
 		AuthType:         strings.ToLower(strings.TrimSpace(stringValue(cfg, "eventhubs_auth_type"))),
-		Timeout:          durationValue(cfg, "eventhubs_timeout_ms", defaultTimeout),
+		Timeout:          time.Duration(timeoutMS) * time.Millisecond,
 		Mock:             boolValue(cfg, "eventhubs_mock"),
 	}
 	if e.cfg.ConnectionString == "" {
 		e.cfg.ConnectionString = stringValue(cfg, "eventhubs_connection_string_secret")
+	}
+	if err := validateEventHubsConfigBounds(e.cfg); err != nil {
+		return err
 	}
 	if e.cfg.ConsumerGroup == "" {
 		e.cfg.ConsumerGroup = "$Default" // the Event Hubs default consumer group
@@ -100,6 +113,9 @@ func (e *EventHubs) Init(_ context.Context, cfg map[string]any) error {
 
 func (e *EventHubs) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
 	start := time.Now()
+	if action == nil {
+		return nil, fmt.Errorf("eventhubs action is required")
+	}
 	if e.client == nil {
 		// Execute should never run before Init in the normal engine flow, but if
 		// it does we fail closed rather than silently substituting a working mock
@@ -115,6 +131,14 @@ func (e *EventHubs) Execute(ctx context.Context, action *protocol.Action) (*prot
 		Extractions:      make(map[string]string),
 		DependencyType:   eventHubsProtocolName,
 		DependencyTarget: hub,
+	}
+	if err := e.validateActionBounds(action); err != nil {
+		result.Success = false
+		result.StatusCode = 400
+		result.ErrorMessage = err.Error()
+		result.Duration = time.Since(start)
+		result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
+		return result, nil
 	}
 
 	var err error
@@ -181,6 +205,9 @@ func (e *EventHubs) produce(ctx context.Context, action *protocol.Action, result
 		return event{}, fmt.Errorf("event hub name is required")
 	}
 	ev := e.buildEvent(action)
+	if size := eventSize(ev); size > MaxEventHubsEventBytes {
+		return event{}, fmt.Errorf("event payload and properties exceed %d bytes", MaxEventHubsEventBytes)
+	}
 	meta, err := e.client.Send(ctx, hub, ev)
 	if err != nil {
 		return event{}, err
@@ -193,6 +220,58 @@ func (e *EventHubs) produce(ctx context.Context, action *protocol.Action, result
 	addEventExtractions(result, ev)
 	result.Extractions["eventhubs_operation"] = "produce"
 	return ev, evaluateAssertions(action.Assertions, result, ev)
+}
+
+func validateEventHubsConfigBounds(cfg config) error {
+	if len(cfg.EventHub) > MaxEventHubNameBytes {
+		return fmt.Errorf("eventhubs event_hub exceeds %d bytes", MaxEventHubNameBytes)
+	}
+	for name, value := range map[string]string{
+		"namespace": cfg.Namespace, "consumer_group": cfg.ConsumerGroup,
+		"partition_key": cfg.PartitionKey, "partition_id": cfg.PartitionID,
+	} {
+		if len(value) > MaxEventHubIdentifierBytes {
+			return fmt.Errorf("eventhubs %s exceeds %d bytes", name, MaxEventHubIdentifierBytes)
+		}
+	}
+	if len(cfg.ConnectionString) > 64<<10 {
+		return fmt.Errorf("eventhubs connection string exceeds %d bytes", 64<<10)
+	}
+	return nil
+}
+
+func (e *EventHubs) validateActionBounds(action *protocol.Action) error {
+	if len(e.hub(action)) > MaxEventHubNameBytes {
+		return fmt.Errorf("eventhubs event hub name exceeds %d bytes", MaxEventHubNameBytes)
+	}
+	for name, value := range map[string]string{
+		"consumer_group": paramString(action.Params, "consumer_group", e.cfg.ConsumerGroup),
+		"partition_key":  paramString(action.Params, "partition_key", e.cfg.PartitionKey),
+		"partition_id":   paramString(action.Params, "partition_id", e.cfg.PartitionID),
+	} {
+		if len(value) > MaxEventHubIdentifierBytes {
+			return fmt.Errorf("eventhubs %s exceeds %d bytes", name, MaxEventHubIdentifierBytes)
+		}
+	}
+	if _, present := action.Params["timeout_ms"]; present {
+		if _, err := boundedInteger(action.Params["timeout_ms"], 0, 0, int(MaxConfiguredTimeout/time.Millisecond)); err != nil {
+			return fmt.Errorf("eventhubs timeout_ms: %w", err)
+		}
+	}
+	if len(action.Headers) > maxEventHubsProperties {
+		return fmt.Errorf("eventhubs properties exceed %d entries", maxEventHubsProperties)
+	}
+	propertyBytes := 0
+	for key, value := range action.Headers {
+		propertyBytes += len(key) + len(value)
+	}
+	if propertyBytes > maxEventHubsPropertyBytes {
+		return fmt.Errorf("eventhubs properties exceed %d bytes", maxEventHubsPropertyBytes)
+	}
+	if len(action.Body) > MaxEventHubsEventBytes {
+		return fmt.Errorf("eventhubs body exceeds %d bytes", MaxEventHubsEventBytes)
+	}
+	return nil
 }
 
 func (e *EventHubs) consume(ctx context.Context, action *protocol.Action, result *protocol.Result) (event, error) {

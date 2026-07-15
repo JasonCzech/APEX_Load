@@ -1,6 +1,9 @@
 package storage
 
 import (
+	"database/sql"
+	"errors"
+	"sync"
 	"testing"
 	"time"
 )
@@ -66,6 +69,69 @@ func TestFleetPoolRoundTripAndDeleteClearsRefs(t *testing.T) {
 	}
 }
 
+func TestFleetPoolAtomicCreateAndOptimisticMemberUpdate(t *testing.T) {
+	store := openTimeslotStore(t)
+	bad := &FleetPool{ID: "pool-bad", Name: "bad", CloudProvider: "kubernetes"}
+	if err := store.CreateFleetPoolWithMembers(bad, []*FleetPoolMember{
+		{ID: "duplicate-member", GeneratorID: "gen-a"},
+		{ID: "duplicate-member", GeneratorID: "gen-b"},
+	}); err == nil {
+		t.Fatal("CreateFleetPoolWithMembers accepted duplicate member primary keys")
+	}
+	if _, err := store.GetFleetPool(bad.ID); err == nil {
+		t.Fatal("failed atomic create left a partial fleet pool")
+	}
+
+	pool := &FleetPool{ID: "pool-cas", Name: "original", CloudProvider: "kubernetes"}
+	if err := store.CreateFleetPoolWithMembers(pool, []*FleetPoolMember{{ID: "member-original", GeneratorID: "gen-original"}}); err != nil {
+		t.Fatalf("CreateFleetPoolWithMembers: %v", err)
+	}
+	first, err := store.GetFleetPool(pool.ID)
+	if err != nil {
+		t.Fatalf("GetFleetPool first: %v", err)
+	}
+	stale, err := store.GetFleetPool(pool.ID)
+	if err != nil {
+		t.Fatalf("GetFleetPool stale: %v", err)
+	}
+	first.Name = "first writer"
+	updated, err := store.UpdateFleetPoolIfUnchanged(first, []*FleetPoolMember{{ID: "member-first", GeneratorID: "gen-first"}}, true, first.UpdatedAt)
+	if err != nil || !updated {
+		t.Fatalf("first update = (%v, %v), want success", updated, err)
+	}
+	stale.Name = "stale writer"
+	updated, err = store.UpdateFleetPoolIfUnchanged(stale, nil, false, stale.UpdatedAt)
+	if err != nil || updated {
+		t.Fatalf("stale update = (%v, %v), want conflict", updated, err)
+	}
+	fresh, err := store.GetFleetPool(pool.ID)
+	if err != nil || fresh.Name != "first writer" || len(fresh.Members) != 1 || fresh.Members[0].GeneratorID != "gen-first" {
+		t.Fatalf("fresh fleet pool = %#v, err=%v", fresh, err)
+	}
+
+	expected := fresh.UpdatedAt
+	fresh.Name = "must roll back"
+	updated, err = store.UpdateFleetPoolIfUnchanged(fresh, []*FleetPoolMember{
+		{ID: "duplicate-update-member", GeneratorID: "gen-a"},
+		{ID: "duplicate-update-member", GeneratorID: "gen-b"},
+	}, true, expected)
+	if err == nil || updated {
+		t.Fatalf("invalid member update = (%v, %v), want atomic failure", updated, err)
+	}
+	fresh, err = store.GetFleetPool(pool.ID)
+	if err != nil || fresh.Name != "first writer" || len(fresh.Members) != 1 || fresh.Members[0].GeneratorID != "gen-first" {
+		t.Fatalf("failed member update changed pool = %#v, err=%v", fresh, err)
+	}
+
+	if err := store.UpdateFleetPoolDesiredSize(pool.ID, 7, time.Now().UTC()); err != nil {
+		t.Fatalf("UpdateFleetPoolDesiredSize: %v", err)
+	}
+	fresh, err = store.GetFleetPool(pool.ID)
+	if err != nil || fresh.DesiredSize != 7 || fresh.Name != "first writer" {
+		t.Fatalf("targeted desired-size update changed other fields: %#v, err=%v", fresh, err)
+	}
+}
+
 func TestGeneratorMetadataUpsert(t *testing.T) {
 	store := openTimeslotStore(t)
 	if err := store.SaveGeneratorMetadata(&GeneratorMetadata{
@@ -97,6 +163,61 @@ func TestGeneratorMetadataUpsert(t *testing.T) {
 	}
 	if _, err := store.GetGeneratorMetadata("gen-x"); err == nil {
 		t.Fatal("expected error after delete")
+	}
+}
+
+func TestGeneratorMetadataPatchesMergeConcurrentFields(t *testing.T) {
+	store := openTimeslotStore(t)
+	target := "host:7070"
+	if _, err := store.PatchGeneratorMetadata("gen-patch", GeneratorMetadataPatch{Target: &target}); err != nil {
+		t.Fatalf("initial PatchGeneratorMetadata: %v", err)
+	}
+	region := "eastus"
+	cordoned := true
+	var wg sync.WaitGroup
+	errs := make(chan error, 2)
+	for _, patch := range []GeneratorMetadataPatch{{Region: &region}, {Cordoned: &cordoned}} {
+		patch := patch
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := store.PatchGeneratorMetadata("gen-patch", patch)
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent PatchGeneratorMetadata: %v", err)
+		}
+	}
+	got, err := store.GetGeneratorMetadata("gen-patch")
+	if err != nil {
+		t.Fatalf("GetGeneratorMetadata: %v", err)
+	}
+	if got.Target != target || got.Region != region || !got.Cordoned {
+		t.Fatalf("merged metadata = %#v, want target, region, and cordon preserved", got)
+	}
+}
+
+func TestGeneratorMetadataPatchRejectsDeletedFleetPool(t *testing.T) {
+	store := openTimeslotStore(t)
+	pool := &FleetPool{ID: "pool-deleted-before-patch", Name: "deleted", CloudProvider: "static"}
+	if err := store.SaveFleetPool(pool); err != nil {
+		t.Fatalf("SaveFleetPool: %v", err)
+	}
+	if err := store.DeleteFleetPool(pool.ID); err != nil {
+		t.Fatalf("DeleteFleetPool: %v", err)
+	}
+	if _, err := store.PatchGeneratorMetadata("gen-dangling", GeneratorMetadataPatch{
+		FleetPoolIDSet: true,
+		FleetPoolID:    &pool.ID,
+	}); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("PatchGeneratorMetadata error = %v, want sql.ErrNoRows", err)
+	}
+	if _, err := store.GetGeneratorMetadata("gen-dangling"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("GetGeneratorMetadata error = %v, want no dangling metadata row", err)
 	}
 }
 

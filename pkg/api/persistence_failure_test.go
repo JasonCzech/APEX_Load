@@ -18,6 +18,9 @@ type failingScriptPersistence struct {
 
 func (s failingScriptPersistence) SaveScript(*dsl.Script) error { return s.err }
 func (s failingScriptPersistence) DeleteScript(string) error    { return s.err }
+func (s failingScriptPersistence) GetScript(string) (*dsl.Script, error) {
+	return nil, s.err
+}
 func (s failingScriptPersistence) ListScripts(string, *string) ([]*dsl.Script, error) {
 	return nil, nil
 }

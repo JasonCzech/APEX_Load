@@ -15,6 +15,11 @@ import (
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
+const (
+	defaultAuthoringSessionListLimit = 25
+	maxAuthoringSessionListLimit     = 100
+)
+
 type authoringSessionPersistence interface {
 	SaveAuthoringSession(session *storage.AuthoringSession) error
 	GetAuthoringSession(id string) (*storage.AuthoringSession, error)
@@ -55,6 +60,10 @@ func (s *Server) handleCreateAuthoringSession(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if err := reconcileMaskedScriptSecrets(&req.Draft, nil); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	now := time.Now()
 	session := &storage.AuthoringSession{
 		ID:             uuid.New().String(),
@@ -74,18 +83,22 @@ func (s *Server) handleCreateAuthoringSession(w http.ResponseWriter, r *http.Req
 	}
 	enrichAuthoringSession(session)
 	s.recordAuditEvent(r, "script.authoring_session.create", "success", "authoring_session", session.ID, session.ProjectID, map[string]any{"name": session.Name, "source": session.Source})
-	writeJSON(w, http.StatusCreated, session)
+	writeJSON(w, http.StatusCreated, maskAuthoringSession(session))
 }
 
 func (s *Server) handleListAuthoringSessions(w http.ResponseWriter, r *http.Request) {
 	projectID := r.URL.Query().Get("project_id")
-	sessions, err := s.listAuthoringSessions(projectID)
+	limit, offset := parseLimitOffsetQuery(r, defaultAuthoringSessionListLimit)
+	if limit > maxAuthoringSessionListLimit {
+		limit = maxAuthoringSessionListLimit
+	}
+	sessions, err := s.listAuthoringSessionsPage(projectID, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	enrichAuthoringSessions(sessions)
-	writeJSON(w, http.StatusOK, map[string]any{"sessions": sessions, "count": len(sessions)})
+	writeJSON(w, http.StatusOK, map[string]any{"sessions": maskAuthoringSessions(sessions), "count": len(sessions), "limit": limit, "offset": offset})
 }
 
 func (s *Server) handleGetAuthoringSession(w http.ResponseWriter, r *http.Request) {
@@ -94,7 +107,7 @@ func (s *Server) handleGetAuthoringSession(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	enrichAuthoringSession(session)
-	writeJSON(w, http.StatusOK, session)
+	writeJSON(w, http.StatusOK, maskAuthoringSession(session))
 }
 
 func (s *Server) handleUpdateAuthoringSession(w http.ResponseWriter, r *http.Request) {
@@ -127,6 +140,10 @@ func (s *Server) handleUpdateAuthoringSession(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if err := reconcileMaskedScriptSecrets(&req.Draft, existing.Draft); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	existing.Source = normalizeAuthoringSessionSource(firstNonEmpty(req.Source, existing.Source))
 	existing.Name = authoringSessionName(firstNonEmpty(req.Name, existing.Name), &req.Draft)
 	existing.Status = normalizeAuthoringSessionStatus(firstNonEmpty(req.Status, existing.Status))
@@ -145,7 +162,7 @@ func (s *Server) handleUpdateAuthoringSession(w http.ResponseWriter, r *http.Req
 	}
 	enrichAuthoringSession(existing)
 	s.recordAuditEvent(r, "script.authoring_session.update", "success", "authoring_session", existing.ID, existing.ProjectID, map[string]any{"name": existing.Name, "source": existing.Source, "status": existing.Status})
-	writeJSON(w, http.StatusOK, existing)
+	writeJSON(w, http.StatusOK, maskAuthoringSession(existing))
 }
 
 func (s *Server) handleDeleteAuthoringSession(w http.ResponseWriter, r *http.Request) {
@@ -205,7 +222,7 @@ func (s *Server) handleApproveAuthoringSession(w http.ResponseWriter, r *http.Re
 		}
 		validation := buildScriptValidationResponse("", session.Draft)
 		enrichAuthoringSession(session)
-		writeJSON(w, http.StatusOK, authoringSessionApprovalResponse{Session: session, Script: stored, AuthoringHealth: validation.AuthoringHealth})
+		writeJSON(w, http.StatusOK, authoringSessionApprovalResponse{Session: maskAuthoringSession(session), Script: maskStoredScript(stored), AuthoringHealth: validation.AuthoringHealth})
 		return
 	}
 
@@ -308,8 +325,8 @@ func (s *Server) handleApproveAuthoringSession(w http.ResponseWriter, r *http.Re
 
 	s.recordAuditEvent(r, "script.authoring_session.approve", "success", "authoring_session", session.ID, session.ProjectID, map[string]any{"script_id": stored.ID, "health_status": validation.AuthoringHealth.Status})
 	writeJSON(w, http.StatusOK, authoringSessionApprovalResponse{
-		Session:         session,
-		Script:          stored,
+		Session:         maskAuthoringSession(session),
+		Script:          maskStoredScript(stored),
 		AuthoringHealth: validation.AuthoringHealth,
 	})
 }
@@ -511,6 +528,26 @@ func (s *Server) listAuthoringSessions(projectID string) ([]*storage.AuthoringSe
 		return sessions[i].UpdatedAt.After(sessions[j].UpdatedAt)
 	})
 	return sessions, nil
+}
+
+func (s *Server) listAuthoringSessionsPage(projectID string, limit, offset int) ([]*storage.AuthoringSession, error) {
+	if store, ok := s.store.(interface {
+		ListAuthoringSessionsPage(string, int, int) ([]*storage.AuthoringSession, error)
+	}); ok {
+		return store.ListAuthoringSessionsPage(projectID, limit, offset)
+	}
+	sessions, err := s.listAuthoringSessions(projectID)
+	if err != nil {
+		return nil, err
+	}
+	if offset >= len(sessions) {
+		return []*storage.AuthoringSession{}, nil
+	}
+	end := len(sessions)
+	if limit < len(sessions)-offset {
+		end = offset + limit
+	}
+	return sessions[offset:end], nil
 }
 
 func (s *Server) deleteAuthoringSession(id string) error {

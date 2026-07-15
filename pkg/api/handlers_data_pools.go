@@ -12,6 +12,11 @@ import (
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
+const (
+	defaultDataPoolRowListLimit = 100
+	maxDataPoolRowListLimit     = 100
+)
+
 func (s *Server) handleListDataPools(w http.ResponseWriter, r *http.Request) {
 	if s.store == nil {
 		writeJSON(w, http.StatusOK, map[string]any{"data_pools": []*storage.SharedDataPool{}, "count": 0})
@@ -94,7 +99,11 @@ func (s *Server) handleGetDataPool(w http.ResponseWriter, r *http.Request) {
 		writeError(w, status, "data pool not found")
 		return
 	}
-	rows, err := s.store.ListDataPoolRows(pool.ID)
+	limit, offset := parseLimitOffsetQuery(r, defaultDataPoolRowListLimit)
+	if limit > maxDataPoolRowListLimit {
+		limit = maxDataPoolRowListLimit
+	}
+	rows, err := s.listDataPoolRowsPage(pool.ID, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -102,7 +111,7 @@ func (s *Server) handleGetDataPool(w http.ResponseWriter, r *http.Request) {
 	if rows == nil {
 		rows = []*storage.SharedDataPoolRow{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data_pool": pool, "rows": rows})
+	writeJSON(w, http.StatusOK, map[string]any{"data_pool": pool, "rows": rows, "count": len(rows), "limit": limit, "offset": offset})
 }
 
 func (s *Server) handleUpdateDataPool(w http.ResponseWriter, r *http.Request) {
@@ -128,8 +137,20 @@ func (s *Server) handleUpdateDataPool(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "data pool name is required")
 		return
 	}
-	if err := s.store.SaveDataPool(existing); err != nil {
+	updater, ok := s.store.(interface {
+		UpdateDataPoolIfUnchanged(pool *storage.SharedDataPool, expectedUpdatedAt time.Time) (bool, error)
+	})
+	if !ok {
+		writeError(w, http.StatusNotImplemented, "optimistic data pool updates are not supported by this storage backend")
+		return
+	}
+	updated, err := updater.UpdateDataPoolIfUnchanged(existing, existing.UpdatedAt)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !updated {
+		writeError(w, http.StatusConflict, "data pool changed while the update was in flight; reload and retry")
 		return
 	}
 	s.recordAuditEvent(r, "data_pool.update", "success", "data_pool", existing.ID, existing.ProjectID, map[string]any{"name": existing.Name})
@@ -157,11 +178,15 @@ func (s *Server) handleDeleteDataPool(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListDataPoolRows(w http.ResponseWriter, r *http.Request) {
+	limit, offset := parseLimitOffsetQuery(r, defaultDataPoolRowListLimit)
+	if limit > maxDataPoolRowListLimit {
+		limit = maxDataPoolRowListLimit
+	}
 	if s.store == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"rows": []*storage.SharedDataPoolRow{}, "count": 0})
+		writeJSON(w, http.StatusOK, map[string]any{"rows": []*storage.SharedDataPoolRow{}, "count": 0, "limit": limit, "offset": offset})
 		return
 	}
-	rows, err := s.store.ListDataPoolRows(r.PathValue("id"))
+	rows, err := s.listDataPoolRowsPage(r.PathValue("id"), limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -169,7 +194,27 @@ func (s *Server) handleListDataPoolRows(w http.ResponseWriter, r *http.Request) 
 	if rows == nil {
 		rows = []*storage.SharedDataPoolRow{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"rows": rows, "count": len(rows)})
+	writeJSON(w, http.StatusOK, map[string]any{"rows": rows, "count": len(rows), "limit": limit, "offset": offset})
+}
+
+func (s *Server) listDataPoolRowsPage(poolID string, limit, offset int) ([]*storage.SharedDataPoolRow, error) {
+	if paged, ok := s.store.(interface {
+		ListDataPoolRowsPage(string, int, int) ([]*storage.SharedDataPoolRow, error)
+	}); ok {
+		return paged.ListDataPoolRowsPage(poolID, limit, offset)
+	}
+	rows, err := s.store.ListDataPoolRows(poolID)
+	if err != nil {
+		return nil, err
+	}
+	if offset >= len(rows) {
+		return []*storage.SharedDataPoolRow{}, nil
+	}
+	end := len(rows)
+	if limit < len(rows)-offset {
+		end = offset + limit
+	}
+	return rows[offset:end], nil
 }
 
 func (s *Server) handleCreateDataPoolRow(w http.ResponseWriter, r *http.Request) {
@@ -216,8 +261,20 @@ func (s *Server) handleUpdateDataPoolRow(w http.ResponseWriter, r *http.Request)
 	req.ID = rowID
 	req.PoolID = poolID
 	req.CreatedAt = existing.CreatedAt
-	if err := s.store.SaveDataPoolRow(&req); err != nil {
+	updater, supported := s.store.(interface {
+		UpdateDataPoolRowIfVersion(poolID string, row *storage.SharedDataPoolRow, expectedVersion int) (bool, error)
+	})
+	if !supported {
+		writeError(w, http.StatusNotImplemented, "optimistic data pool row updates are not supported by this storage backend")
+		return
+	}
+	updated, err := updater.UpdateDataPoolRowIfVersion(poolID, &req, existing.Version)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !updated {
+		writeError(w, http.StatusConflict, "data pool row changed while the update was in flight; reload and retry")
 		return
 	}
 	projectID := ""
@@ -339,11 +396,26 @@ func (s *Server) handleUpdateScenarioDataPools(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := s.store.SaveScenarioDataPoolBindings(scenarioID, bindings); err != nil {
+	updater, ok := s.store.(interface {
+		UpdateScenarioDataPoolBindingsIfUnchanged(string, []storage.ScenarioDataPoolBinding, time.Time) (time.Time, bool, error)
+	})
+	if !ok {
+		writeError(w, http.StatusNotImplemented, "optimistic scenario data-pool updates are not supported by this storage backend")
+		return
+	}
+	updatedAt, updated, err := updater.UpdateScenarioDataPoolBindingsIfUnchanged(scenarioID, bindings, scenario.UpdatedAt)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	s.runner.replaceScenarioDataPools(scenarioID, bindings)
+	if !updated {
+		s.runner.refreshScenariosForHARead(true)
+		writeError(w, http.StatusConflict, "scenario changed while data-pool bindings were being updated; reload and retry")
+		return
+	}
+	if !s.runner.replaceScenarioDataPools(scenarioID, bindings, scenario.UpdatedAt, updatedAt) {
+		s.runner.refreshScenariosForHARead(true)
+	}
 	s.recordAuditEvent(r, "scenario.data_pools.update", "success", "scenario", scenarioID, scenario.ProjectID, map[string]any{"binding_count": len(bindings)})
 	writeJSON(w, http.StatusOK, map[string]any{"data_pools": bindings, "count": len(bindings)})
 }

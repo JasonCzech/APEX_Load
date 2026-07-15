@@ -19,6 +19,12 @@ import (
 
 const defaultMonitoringCollectorListLimit = 100
 
+type monitoringCollectorMutationStore interface {
+	PatchMonitoringCollector(id, projectID string, name, description, health *string, allowedMetricPacks *[]string) (bool, error)
+	UpdateMonitoringCollectorTokenHashIfUnchanged(id, projectID, tokenHash, expectedTokenHash string) (bool, error)
+	DeleteMonitoringCollectorFromProject(id, projectID string) (bool, error)
+}
+
 func (s *Server) handleCreateMonitoringCollector(w http.ResponseWriter, r *http.Request) {
 	if s.store == nil {
 		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
@@ -110,23 +116,34 @@ func (s *Server) handlePatchMonitoringCollector(w http.ResponseWriter, r *http.R
 			writeError(w, http.StatusBadRequest, "collector name cannot be empty")
 			return
 		}
-		collector.Name = name
-	}
-	if patch.Description != nil {
-		collector.Description = *patch.Description
+		patch.Name = &name
 	}
 	if patch.Health != nil {
 		if !validCollectorHealth(*patch.Health) {
 			writeError(w, http.StatusBadRequest, "health must be healthy, degraded, or unreachable")
 			return
 		}
-		collector.Health = *patch.Health
 	}
-	if patch.AllowedMetricPacks != nil {
-		collector.AllowedMetricPacks = *patch.AllowedMetricPacks
+	mutationStore, ok := s.store.(monitoringCollectorMutationStore)
+	if !ok {
+		writeError(w, http.StatusNotImplemented, "monitoring collector storage does not support safe partial updates")
+		return
 	}
-	if err := s.store.SaveMonitoringCollector(collector); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+	projectID := authorizedProjectOr(r, collector.ProjectID)
+	updated, err := mutationStore.PatchMonitoringCollector(collector.ID, projectID, patch.Name, patch.Description, patch.Health, patch.AllowedMetricPacks)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update monitoring collector")
+		return
+	}
+	if !updated {
+		writeError(w, http.StatusConflict, "monitoring collector changed concurrently")
+		return
+	}
+	collector, err = s.store.GetMonitoringCollector(collector.ID)
+	if err != nil || collector == nil || !requireAuthorizedProjectMatch(w, r, collector.ProjectID) {
+		if err != nil || collector == nil {
+			writeError(w, http.StatusInternalServerError, "failed to reload monitoring collector")
+		}
 		return
 	}
 	s.recordAuditEvent(r, "monitoring.collector.update", "success", "monitoring_collector", collector.ID, collector.ProjectID, nil)
@@ -138,17 +155,27 @@ func (s *Server) handleDeleteMonitoringCollector(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
 		return
 	}
-	id := r.PathValue("id")
-	projectID := ""
-	if c, err := s.store.GetMonitoringCollector(id); err == nil && c != nil {
-		projectID = c.ProjectID
-	}
-	if err := s.store.DeleteMonitoringCollector(id); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+	collector, ok := s.loadMonitoringCollector(w, r)
+	if !ok {
 		return
 	}
-	s.recordAuditEvent(r, "monitoring.collector.delete", "success", "monitoring_collector", id, projectID, nil)
-	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
+	mutationStore, ok := s.store.(monitoringCollectorMutationStore)
+	if !ok {
+		writeError(w, http.StatusNotImplemented, "monitoring collector storage does not support safe deletion")
+		return
+	}
+	projectID := authorizedProjectOr(r, collector.ProjectID)
+	deleted, err := mutationStore.DeleteMonitoringCollectorFromProject(collector.ID, projectID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to delete monitoring collector")
+		return
+	}
+	if !deleted {
+		writeError(w, http.StatusConflict, "monitoring collector changed concurrently")
+		return
+	}
+	s.recordAuditEvent(r, "monitoring.collector.delete", "success", "monitoring_collector", collector.ID, collector.ProjectID, nil)
+	writeJSON(w, http.StatusOK, map[string]string{"deleted": collector.ID})
 }
 
 func (s *Server) handleRotateMonitoringCollectorToken(w http.ResponseWriter, r *http.Request) {
@@ -165,9 +192,26 @@ func (s *Server) handleRotateMonitoringCollectorToken(w http.ResponseWriter, r *
 		writeError(w, http.StatusInternalServerError, "failed to generate collector token")
 		return
 	}
-	collector.TokenHash = hashAPIKey(token) // invalidates the previous token
-	if err := s.store.SaveMonitoringCollector(collector); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+	mutationStore, ok := s.store.(monitoringCollectorMutationStore)
+	if !ok {
+		writeError(w, http.StatusNotImplemented, "monitoring collector storage does not support safe token rotation")
+		return
+	}
+	projectID := authorizedProjectOr(r, collector.ProjectID)
+	updated, err := mutationStore.UpdateMonitoringCollectorTokenHashIfUnchanged(collector.ID, projectID, hashAPIKey(token), collector.TokenHash)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to rotate collector token")
+		return
+	}
+	if !updated {
+		writeError(w, http.StatusConflict, "monitoring collector changed concurrently")
+		return
+	}
+	collector, err = s.store.GetMonitoringCollector(collector.ID)
+	if err != nil || collector == nil || !requireAuthorizedProjectMatch(w, r, collector.ProjectID) {
+		if err != nil || collector == nil {
+			writeError(w, http.StatusInternalServerError, "failed to reload monitoring collector")
+		}
 		return
 	}
 	s.recordAuditEvent(r, "monitoring.collector.rotate-token", "success", "monitoring_collector", collector.ID, collector.ProjectID, nil)
@@ -190,6 +234,9 @@ func (s *Server) loadMonitoringCollector(w http.ResponseWriter, r *http.Request)
 			return nil, false
 		}
 		writeError(w, http.StatusInternalServerError, "failed to load monitoring collector")
+		return nil, false
+	}
+	if !requireAuthorizedProjectMatch(w, r, collector.ProjectID) {
 		return nil, false
 	}
 	return collector, true

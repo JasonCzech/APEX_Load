@@ -3,6 +3,7 @@ package api
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -29,6 +30,42 @@ var apiKeyRateLimitUnsetWarningLogged atomic.Bool
 
 type authUserContextKey struct{}
 type authServiceAccountContextKey struct{}
+type authorizedProjectContextKey struct{}
+
+func bindAuthorizedProjectToRequest(r *http.Request, projectID string) {
+	if r == nil {
+		return
+	}
+	projectID = normalizeProjectID(projectID)
+	*r = *r.WithContext(context.WithValue(r.Context(), authorizedProjectContextKey{}, projectID))
+}
+
+// authorizedProjectFromRequest reports the exact project resolved by the RBAC
+// lookup that granted a project-scoped request. Global administrators and auth
+// bypass mode intentionally have no bound project and remain unrestricted.
+func authorizedProjectFromRequest(r *http.Request) (string, bool) {
+	if r == nil {
+		return "", false
+	}
+	projectID, ok := r.Context().Value(authorizedProjectContextKey{}).(string)
+	return projectID, ok && strings.TrimSpace(projectID) != ""
+}
+
+func requireAuthorizedProjectMatch(w http.ResponseWriter, r *http.Request, actualProjectID string) bool {
+	expectedProjectID, scoped := authorizedProjectFromRequest(r)
+	if !scoped || normalizeProjectID(actualProjectID) == expectedProjectID {
+		return true
+	}
+	writeError(w, http.StatusForbidden, "forbidden")
+	return false
+}
+
+func authorizedProjectOr(r *http.Request, fallback string) string {
+	if projectID, scoped := authorizedProjectFromRequest(r); scoped {
+		return projectID
+	}
+	return normalizeProjectID(fallback)
+}
 
 type AuthenticatedUser struct {
 	ID              string
@@ -336,7 +373,11 @@ func authorizeAccessRequirement(w http.ResponseWriter, r *http.Request, store st
 			return false
 		}
 		if user.hasProjectRole(projectID, requirement.ProjectRoles...) {
-			return grantIfScopeAllows(w, r, resolution)
+			allowed := grantIfScopeAllows(w, r, resolution)
+			if allowed {
+				bindAuthorizedProjectToRequest(r, projectID)
+			}
+			return allowed
 		}
 	}
 
@@ -402,13 +443,16 @@ func corsMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			origin := strings.TrimSpace(r.Header.Get("Origin"))
+			originIsAllowed := originAllowed(allowedOrigins, r)
 
 			// Only ever reflect an Origin we have explicitly validated. When no
 			// allow-list is configured this permits same-origin requests only —
 			// never an arbitrary reflected origin.
-			if origin != "" && originAllowed(allowedOrigins, r) {
-				w.Header().Set("Access-Control-Allow-Origin", origin)
+			if origin != "" {
 				w.Header().Add("Vary", "Origin")
+				if originIsAllowed {
+					w.Header().Set("Access-Control-Allow-Origin", origin)
+				}
 			}
 
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
@@ -419,16 +463,35 @@ func corsMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
 				w.WriteHeader(http.StatusNoContent)
 				return
 			}
+			// CORS response headers only prevent a browser from exposing a
+			// response; they do not prevent a simple cross-origin request from
+			// mutating server state. SameSite=Lax cookies are also still sent
+			// between sibling origins in the same site. Reject such requests at
+			// the server boundary while continuing to permit clients that do not
+			// send Origin and explicitly allow-listed desktop/browser origins.
+			if origin != "" && !originIsAllowed && !isSafeRequestMethod(r.Method) {
+				writeError(w, http.StatusForbidden, "request origin is not allowed")
+				return
+			}
 
 			next.ServeHTTP(w, r)
 		})
 	}
 }
 
-// defaultMaxRequestBodyBytes is a global backstop for request body size. It is
-// set above the largest explicit per-handler http.MaxBytesReader limit (100 MiB
-// for Enterprise Script Archive imports) so handlers with their own, smaller limit always win,
-// while handlers that decode the body without any limit are still bounded.
+func isSafeRequestMethod(method string) bool {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return true
+	default:
+		return false
+	}
+}
+
+// defaultMaxRequestBodyBytes is the conservative backstop for ordinary JSON
+// mutations. Routes that intentionally accept larger imports must opt in via
+// accessRequirement.MaxBodyBytes; otherwise a small CRUD request must not be
+// allowed to make the server parse or buffer an import-sized payload.
 const (
 	k6ImportMaxBodyBytes                int64 = 10 << 20
 	recorderImportMaxBodyBytes          int64 = 10 << 20
@@ -437,7 +500,10 @@ const (
 	harImportMaxBodyBytes               int64 = 50 << 20
 	jmeterImportMaxBodyBytes            int64 = 50 << 20
 	enterpriseArchiveImportMaxBodyBytes int64 = 100 << 20
-	defaultMaxRequestBodyBytes          int64 = 128 << 20
+	defaultMaxRequestBodyBytes          int64 = 8 << 20
+	// Library bundle JSON can carry many scripts/results in one transfer. Keep
+	// its historical envelope explicit rather than inheriting the CRUD default.
+	libraryBundleImportMaxBodyBytes int64 = 128 << 20
 	// libraryArchiveImportMaxBodyBytes accommodates the streamed result archive
 	// (defaultLibraryArchiveMaxBytes, 512 MiB) plus the bundle JSON part and
 	// multipart framing, so the body limiter does not truncate large archives

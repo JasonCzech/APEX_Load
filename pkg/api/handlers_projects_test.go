@@ -58,6 +58,211 @@ func TestProjectAndFolderHandlers(t *testing.T) {
 	}
 }
 
+func TestProjectCRUDCannotBypassGitHubPolicySystemAdminBoundary(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "github-project-policy.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	server := NewServer(ServerConfig{Store: store})
+	projectAdmin := &AuthenticatedUser{
+		GlobalRoles:  map[string]struct{}{RoleProjectAdmin: {}},
+		ProjectRoles: map[string]map[string]struct{}{},
+	}
+
+	before, err := store.ListProjects()
+	if err != nil {
+		t.Fatal(err)
+	}
+	create := httptest.NewRequest(http.MethodPost, "/api/v1/projects", bytes.NewBufferString(`{"name":"Unsafe","settings":{"github":{"enabled":true,"allowed_repos":["any/repo"],"allowed_branches":["main"]}}}`))
+	create = withAuthenticatedContext(create, authResolution{User: projectAdmin})
+	createResponse := httptest.NewRecorder()
+	server.handleCreateProject(createResponse, create)
+	if createResponse.Code != http.StatusForbidden {
+		t.Fatalf("project-admin GitHub policy create status = %d, want 403 body=%s", createResponse.Code, createResponse.Body.String())
+	}
+	after, err := store.ListProjects()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(after) != len(before) {
+		t.Fatalf("denied project creation changed project count from %d to %d", len(before), len(after))
+	}
+
+	now := time.Now().UTC()
+	project := &storage.Project{ID: "project-a", Name: "A", CreatedAt: now, UpdatedAt: now}
+	if err := store.SaveProject(project); err != nil {
+		t.Fatal(err)
+	}
+	projectAdmin.ProjectRoles[project.ID] = map[string]struct{}{RoleProjectAdmin: {}}
+	updateRequest := func(user *AuthenticatedUser) *http.Request {
+		req := httptest.NewRequest(http.MethodPut, "/api/v1/projects/"+project.ID, bytes.NewBufferString(`{"name":"A","settings":{"github":{"enabled":true,"allowed_repos":["any/repo"],"allowed_branches":["main"]}}}`))
+		req.SetPathValue("id", project.ID)
+		return withAuthenticatedContext(req, authResolution{User: user})
+	}
+	denied := httptest.NewRecorder()
+	server.handleUpdateProject(denied, updateRequest(projectAdmin))
+	if denied.Code != http.StatusForbidden {
+		t.Fatalf("project-admin GitHub policy update status = %d, want 403 body=%s", denied.Code, denied.Body.String())
+	}
+	stored, err := store.GetProject(project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Settings.GitHub.Enabled {
+		t.Fatal("denied project update enabled the GitHub policy")
+	}
+
+	systemAdmin := &AuthenticatedUser{GlobalRoles: map[string]struct{}{RoleSystemAdmin: {}}, ProjectRoles: map[string]map[string]struct{}{}}
+	allowed := httptest.NewRecorder()
+	server.handleUpdateProject(allowed, updateRequest(systemAdmin))
+	if allowed.Code != http.StatusOK {
+		t.Fatalf("system-admin GitHub policy update status = %d, want 200 body=%s", allowed.Code, allowed.Body.String())
+	}
+}
+
+func TestFolderHandlersRejectCrossProjectParents(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+	now := time.Now().UTC()
+	for _, project := range []*storage.Project{
+		{ID: "folder-api-project-a", Name: "A", CreatedAt: now},
+		{ID: "folder-api-project-b", Name: "B", CreatedAt: now},
+	} {
+		if err := store.SaveProject(project); err != nil {
+			t.Fatalf("SaveProject(%s): %v", project.ID, err)
+		}
+	}
+	foreign := &storage.Folder{ID: "folder-api-foreign", ProjectID: "folder-api-project-b", Name: "Foreign", Category: "general", CreatedAt: now}
+	source := &storage.Folder{ID: "folder-api-source", ProjectID: "folder-api-project-a", Name: "Source", Category: "general", CreatedAt: now}
+	localParent := &storage.Folder{ID: "folder-api-local-parent", ProjectID: "folder-api-project-a", Name: "Local", Category: "general", CreatedAt: now}
+	for _, folder := range []*storage.Folder{foreign, source, localParent} {
+		if err := store.SaveFolder(folder); err != nil {
+			t.Fatalf("SaveFolder(%s): %v", folder.ID, err)
+		}
+	}
+	server := NewServer(ServerConfig{Store: store})
+
+	create := httptest.NewRequest(http.MethodPost, "/api/v1/projects/folder-api-project-a/folders", bytes.NewBufferString(`{"name":"Cross-project","category":"general","parent_id":"folder-api-foreign"}`))
+	create.Header.Set("Content-Type", "application/json")
+	createResponse := httptest.NewRecorder()
+	server.mux.ServeHTTP(createResponse, create)
+	if createResponse.Code != http.StatusBadRequest {
+		t.Fatalf("cross-project create status = %d, want 400 body=%s", createResponse.Code, createResponse.Body.String())
+	}
+
+	move := httptest.NewRequest(http.MethodPut, "/api/v1/folders/folder-api-source", bytes.NewBufferString(`{"name":"Mutated","parent_id":"folder-api-foreign"}`))
+	move.Header.Set("Content-Type", "application/json")
+	moveResponse := httptest.NewRecorder()
+	server.mux.ServeHTTP(moveResponse, move)
+	if moveResponse.Code != http.StatusBadRequest {
+		t.Fatalf("cross-project move status = %d, want 400 body=%s", moveResponse.Code, moveResponse.Body.String())
+	}
+	stored, err := store.GetFolder(source.ID)
+	if err != nil {
+		t.Fatalf("GetFolder(source): %v", err)
+	}
+	if stored.ParentID != nil || stored.Name != "Source" {
+		t.Fatalf("rejected atomic edit changed folder to name=%q parent=%#v", stored.Name, stored.ParentID)
+	}
+
+	validMove := httptest.NewRequest(http.MethodPut, "/api/v1/folders/folder-api-source", bytes.NewBufferString(`{"parent_id":"folder-api-local-parent"}`))
+	validMove.Header.Set("Content-Type", "application/json")
+	validMoveResponse := httptest.NewRecorder()
+	server.mux.ServeHTTP(validMoveResponse, validMove)
+	if validMoveResponse.Code != http.StatusOK {
+		t.Fatalf("valid move status = %d, want 200 body=%s", validMoveResponse.Code, validMoveResponse.Body.String())
+	}
+	moveToRoot := httptest.NewRequest(http.MethodPut, "/api/v1/folders/folder-api-source", bytes.NewBufferString(`{"parent_id":null}`))
+	moveToRoot.Header.Set("Content-Type", "application/json")
+	moveToRootResponse := httptest.NewRecorder()
+	server.mux.ServeHTTP(moveToRootResponse, moveToRoot)
+	if moveToRootResponse.Code != http.StatusOK {
+		t.Fatalf("move-to-root status = %d, want 200 body=%s", moveToRootResponse.Code, moveToRootResponse.Body.String())
+	}
+	stored, err = store.GetFolder(source.ID)
+	if err != nil {
+		t.Fatalf("GetFolder(source after root move): %v", err)
+	}
+	if stored.ParentID != nil {
+		t.Fatalf("move-to-root left parent %#v", stored.ParentID)
+	}
+}
+
+func TestProjectAdminCannotMoveProjectIntoUnauthorizedDomain(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+	now := time.Now().UTC()
+	for _, domainID := range []string{"placement-domain-a", "placement-domain-b"} {
+		if err := store.SaveDomain(&storage.Domain{ID: domainID, Name: domainID, CreatedAt: now}); err != nil {
+			t.Fatalf("SaveDomain(%s): %v", domainID, err)
+		}
+		repositoryID := domainID + "-repository"
+		if err := store.SaveApplicationRepository(&storage.ApplicationRepository{ID: repositoryID, DomainID: domainID, Name: repositoryID, CreatedAt: now}); err != nil {
+			t.Fatalf("SaveApplicationRepository(%s): %v", repositoryID, err)
+		}
+		if err := store.SaveRepositoryCategory(&storage.RepositoryCategory{ID: domainID + "-category", DomainID: domainID, RepositoryID: repositoryID, Name: "Default", CreatedAt: now}); err != nil {
+			t.Fatalf("SaveRepositoryCategory(%s): %v", domainID, err)
+		}
+	}
+	project := &storage.Project{
+		ID: "placement-project", DomainID: "placement-domain-a", CategoryID: "placement-domain-a-category",
+		Name: "Placement", CreatedAt: now,
+	}
+	if err := store.SaveProject(project); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+	server := NewServer(ServerConfig{Store: store})
+	user := &AuthenticatedUser{
+		GlobalRoles:     map[string]struct{}{},
+		ProjectRoles:    map[string]map[string]struct{}{project.ID: {RoleProjectAdmin: {}}},
+		DomainRoles:     map[string]map[string]struct{}{},
+		RepositoryRoles: map[string]map[string]struct{}{},
+	}
+
+	request := func() *http.Request {
+		req := httptest.NewRequest(http.MethodPut, "/api/v1/projects/"+project.ID, bytes.NewBufferString(`{"name":"Placement","domain_id":"placement-domain-b","category_id":"placement-domain-b-category"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.SetPathValue("id", project.ID)
+		req = withAuthenticatedContext(req, authResolution{User: user})
+		bindAuthorizedProjectToRequest(req, project.ID)
+		return req
+	}
+
+	denied := httptest.NewRecorder()
+	server.handleUpdateProject(denied, request())
+	if denied.Code != http.StatusForbidden {
+		t.Fatalf("unauthorized placement status = %d, want 403 body=%s", denied.Code, denied.Body.String())
+	}
+	stored, err := store.GetProject(project.ID)
+	if err != nil {
+		t.Fatalf("GetProject: %v", err)
+	}
+	if stored.DomainID != "placement-domain-a" || stored.CategoryID != "placement-domain-a-category" {
+		t.Fatalf("denied placement changed project to %s/%s", stored.DomainID, stored.CategoryID)
+	}
+
+	user.DomainRoles["placement-domain-b"] = map[string]struct{}{RoleEditor: {}}
+	allowed := httptest.NewRecorder()
+	server.handleUpdateProject(allowed, request())
+	if allowed.Code != http.StatusOK {
+		t.Fatalf("authorized placement status = %d, want 200 body=%s", allowed.Code, allowed.Body.String())
+	}
+	stored, err = store.GetProject(project.ID)
+	if err != nil {
+		t.Fatalf("GetProject(after move): %v", err)
+	}
+	if stored.DomainID != "placement-domain-b" || stored.CategoryID != "placement-domain-b-category" {
+		t.Fatalf("authorized placement = %s/%s", stored.DomainID, stored.CategoryID)
+	}
+}
+
 func TestDeleteProjectRetainsAndAttributesAuditHistory(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {

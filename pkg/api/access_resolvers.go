@@ -210,6 +210,71 @@ func resolveScriptProjectID(r *http.Request, store storage.Store) (string, int, 
 	return normalizeProjectID(script.ProjectID), 0, ""
 }
 
+func resolveRemoteRunLinkProjectID(r *http.Request, store storage.Store) (string, int, string) {
+	if store == nil {
+		return "", http.StatusServiceUnavailable, "remote run link storage is not configured"
+	}
+	links, err := loadRemoteRunLinksFromStore(store)
+	if err != nil {
+		return "", http.StatusServiceUnavailable, "remote run links are unavailable"
+	}
+	link, ok := findProjectScopedRemoteRunLink(links, r.PathValue("id"), r.PathValue("remote_test_id"))
+	if !ok {
+		return "", http.StatusNotFound, "project-scoped remote run link not found"
+	}
+	return normalizeProjectID(link.LocalProjectID), 0, ""
+}
+
+func resolveGitHubSyncJobProjectID(r *http.Request, store storage.Store) (string, int, string) {
+	if store == nil {
+		return "", http.StatusServiceUnavailable, "github sync job storage is not configured"
+	}
+	githubStore, ok := store.(storage.GitHubEnterpriseStore)
+	if !ok {
+		return "", http.StatusServiceUnavailable, "github sync job storage is not configured"
+	}
+	job, err := githubStore.GetGitHubSyncJob(strings.TrimSpace(r.PathValue("id")))
+	if err != nil || job == nil {
+		return "", http.StatusNotFound, "github sync job not found"
+	}
+	return normalizeProjectID(job.ProjectID), 0, ""
+}
+
+// resolveGitHubCheckLinksProjectID requires a durable project-scoped anchor for
+// check-link reads. A global viewer may omit both filters (global roles bypass
+// project lookup), while a project-scoped viewer must name a test or script that
+// belongs to the project they can view. When both are supplied they must agree.
+func resolveGitHubCheckLinksProjectID(r *http.Request, store storage.Store) (string, int, string) {
+	if store == nil {
+		return "", http.StatusServiceUnavailable, "github check link storage is not configured"
+	}
+	testID := strings.TrimSpace(r.URL.Query().Get("test_id"))
+	scriptID := strings.TrimSpace(r.URL.Query().Get("script_id"))
+	if testID == "" && scriptID == "" {
+		return "", http.StatusBadRequest, "test_id or script_id is required for project-scoped check link access"
+	}
+	projectID := ""
+	if testID != "" {
+		test, err := store.GetTest(testID)
+		if err != nil || test == nil {
+			return "", http.StatusNotFound, "test not found"
+		}
+		projectID = normalizeProjectID(test.ProjectID)
+	}
+	if scriptID != "" {
+		script, err := store.GetScript(scriptID)
+		if err != nil || script == nil {
+			return "", http.StatusNotFound, "script not found"
+		}
+		scriptProjectID := normalizeProjectID(script.ProjectID)
+		if projectID != "" && projectID != scriptProjectID {
+			return "", http.StatusNotFound, "test and script are not in the same project"
+		}
+		projectID = scriptProjectID
+	}
+	return projectID, 0, ""
+}
+
 func resolveProjectIDFromPath(r *http.Request, store storage.Store) (string, int, string) {
 	if store == nil {
 		return "", http.StatusServiceUnavailable, "project storage is not configured"
@@ -311,16 +376,31 @@ func resolveTestCreateProjectID(r *http.Request, store storage.Store) (string, i
 		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
 	}
 
-	requestedProjectID := normalizeProjectID(req.ProjectID)
-	folderProjectID := ""
+	resolvedProjectID := ""
+	mergeProjectID := func(candidate, mismatchMessage string) (int, string) {
+		candidate = normalizeProjectID(candidate)
+		if resolvedProjectID == "" {
+			resolvedProjectID = candidate
+			return 0, ""
+		}
+		if candidate != resolvedProjectID {
+			return http.StatusBadRequest, mismatchMessage
+		}
+		return 0, ""
+	}
+	if strings.TrimSpace(req.ProjectID) != "" {
+		if status, msg := mergeProjectID(req.ProjectID, "project_id does not match referenced test resources"); status != 0 {
+			return "", status, msg
+		}
+	}
+
 	if req.FolderID != nil {
 		projectID, status, msg := resolveFolderProjectIDValue(*req.FolderID, store)
 		if status != 0 {
 			return "", status, msg
 		}
-		folderProjectID = projectID
-		if req.ProjectID != "" && requestedProjectID != folderProjectID {
-			return "", http.StatusBadRequest, "project_id does not match folder project"
+		if status, msg := mergeProjectID(projectID, "folder project does not match referenced test resources"); status != 0 {
+			return "", status, msg
 		}
 	}
 
@@ -329,24 +409,55 @@ func resolveTestCreateProjectID(r *http.Request, store storage.Store) (string, i
 		return "", status, msg
 	}
 	if inferredProjectID != "" {
-		if req.ProjectID != "" && requestedProjectID != inferredProjectID {
-			return "", http.StatusBadRequest, "project_id does not match test scripts"
-		}
-		if folderProjectID != "" && folderProjectID != inferredProjectID {
-			return "", http.StatusBadRequest, "folder project does not match test scripts"
+		if status, msg := mergeProjectID(inferredProjectID, "test scripts do not match referenced test resources"); status != 0 {
+			return "", status, msg
 		}
 	}
 
-	if folderProjectID != "" {
-		return folderProjectID, 0, ""
+	if scenarioID := strings.TrimSpace(req.ScenarioID); scenarioID != "" {
+		scenarioReq := r.Clone(r.Context())
+		scenarioReq.SetPathValue("id", scenarioID)
+		scenarioProjectID, scenarioStatus, scenarioMsg := resolveScenarioProjectID(scenarioReq, store)
+		if scenarioStatus != 0 {
+			return "", scenarioStatus, scenarioMsg
+		}
+		if status, msg := mergeProjectID(scenarioProjectID, "scenario project does not match referenced test resources"); status != 0 {
+			return "", status, msg
+		}
 	}
-	if req.ProjectID != "" {
-		return requestedProjectID, 0, ""
+
+	if releaseID := strings.TrimSpace(req.ReleaseID); releaseID != "" {
+		release, err := store.GetRelease(releaseID)
+		if err != nil || release == nil {
+			return "", http.StatusNotFound, "release not found"
+		}
+		if applicationID := strings.TrimSpace(req.ApplicationID); applicationID != "" && applicationID != strings.TrimSpace(release.ApplicationID) {
+			return "", http.StatusBadRequest, "application_id does not match release"
+		}
+		releaseReq := r.Clone(r.Context())
+		releaseReq.SetPathValue("id", releaseID)
+		releaseProjectID, releaseStatus, releaseMsg := resolveReleaseProjectID(releaseReq, store)
+		if releaseStatus != 0 {
+			return "", releaseStatus, releaseMsg
+		}
+		if status, msg := mergeProjectID(releaseProjectID, "release project does not match referenced test resources"); status != 0 {
+			return "", status, msg
+		}
 	}
-	if inferredProjectID != "" {
-		return inferredProjectID, 0, ""
+
+	if applicationID := strings.TrimSpace(req.ApplicationID); applicationID != "" {
+		applicationReq := r.Clone(r.Context())
+		applicationReq.SetPathValue("id", applicationID)
+		applicationProjectID, applicationStatus, applicationMsg := resolveApplicationProjectID(applicationReq, store)
+		if applicationStatus != 0 {
+			return "", applicationStatus, applicationMsg
+		}
+		if status, msg := mergeProjectID(applicationProjectID, "application project does not match referenced test resources"); status != 0 {
+			return "", status, msg
+		}
 	}
-	return normalizeProjectID(""), 0, ""
+
+	return normalizeProjectID(resolvedProjectID), 0, ""
 }
 
 func resolveCreateTestScriptProjectID(req CreateTestRequest, store storage.Store) (string, int, string) {
@@ -1213,22 +1324,38 @@ func resolveScriptCreateProjectID(r *http.Request, store storage.Store) (string,
 		ProjectID string  `json:"project_id,omitempty"`
 		FolderID  *string `json:"folder_id,omitempty"`
 		Script    *struct {
-			ProjectID string `json:"project_id,omitempty"`
+			ProjectID string  `json:"project_id,omitempty"`
+			FolderID  *string `json:"folder_id,omitempty"`
 		} `json:"script,omitempty"`
 	}
 	if err := decodeRequestBody(r, &req); err != nil {
 		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
 	}
-	if req.FolderID != nil {
-		return resolveFolderProjectIDValue(*req.FolderID, store)
-	}
-	if strings.TrimSpace(req.ProjectID) != "" {
-		return normalizeProjectID(req.ProjectID), 0, ""
-	}
+	scriptProjectID := ""
+	var scriptFolderID *string
 	if req.Script != nil {
-		return normalizeProjectID(req.Script.ProjectID), 0, ""
+		scriptProjectID = req.Script.ProjectID
+		scriptFolderID = req.Script.FolderID
 	}
-	return normalizeProjectID(""), 0, ""
+	projectID, err := reconcileProjectIDCandidates(req.ProjectID, scriptProjectID)
+	if err != nil {
+		return "", http.StatusBadRequest, "project_id does not match script.project_id"
+	}
+	effectiveFolderID := scriptFolderID
+	if req.FolderID != nil {
+		effectiveFolderID = req.FolderID
+	}
+	if effectiveFolderID != nil {
+		folderProjectID, status, message := resolveFolderProjectIDValue(*effectiveFolderID, store)
+		if status != 0 {
+			return "", status, message
+		}
+		projectID, err = reconcileProjectIDCandidates(projectID, folderProjectID)
+		if err != nil {
+			return "", http.StatusBadRequest, "script folder belongs to a different project"
+		}
+	}
+	return normalizeProjectID(projectID), 0, ""
 }
 
 func resolveFolderProjectIDValue(folderID string, store storage.Store) (string, int, string) {

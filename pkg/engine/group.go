@@ -1,7 +1,9 @@
 package engine
 
 import (
+	"container/heap"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -21,12 +23,17 @@ type GroupConfig struct {
 	RampDown        time.Duration
 	AllowZeroVUsers bool
 	InitStrategy    string // "at_runtime", "at_once"
+	DataShard       DataShardConfig
+	StagedDataFiles map[string][]byte
+	VUserIDOffset   int
+	VUserIDSpan     int
 	ResultSink      ResultSink
 	RedactionConfig *RedactionConfig
 	SecretResolver  SecretResolver
 	rateLimiter     *TokenBucket
 	rendezvous      *RendezvousCoordinator
 	executionGoals  *ExecutionGoalLimiter
+	dataProvider    *DataProvider
 }
 
 type ResultSink interface {
@@ -42,6 +49,9 @@ type MultiGroupConfig struct {
 	Duration     time.Duration
 	PreBaseline  time.Duration
 	PostBaseline time.Duration
+	// StartPaused latches the execution gate before Run creates any VUsers.
+	// Distributed evacuation uses it when a replacement joins a paused run.
+	StartPaused bool
 }
 
 type MultiGroupEngine struct {
@@ -55,28 +65,38 @@ type MultiGroupEngine struct {
 	readyOnce    sync.Once
 
 	// Dynamic control state
-	mu             sync.Mutex
-	scaleMu        sync.Mutex
-	scalingOpen    bool
-	activeReserved int
-	totalCtx       context.Context
-	wg             *sync.WaitGroup
-	vuserCancels   map[int]context.CancelFunc
-	vuserGroups    map[int]string
-	vuserStopping  map[int]bool
-	nextVUserID    int
-	paused         bool
-	pauseCh        chan struct{}
-	pauseStartTime time.Time
-	targetDuration time.Duration
-	stopVUsers     context.CancelFunc
-	baseCtx        context.Context
-	loopCtx        context.Context
-	arrivalCtx     context.Context
-	arrivalStop    context.CancelFunc
-	softStop       context.CancelFunc
-	mockNamespace  string
-	scaleGuard     bool
+	mu                    sync.Mutex
+	scaleMu               sync.Mutex
+	scalingOpen           bool
+	activeReserved        int
+	totalCtx              context.Context
+	wg                    *sync.WaitGroup
+	vuserCancels          map[int]context.CancelFunc
+	vuserGroups           map[int]string
+	vuserStopping         map[int]bool
+	nextVUserID           int
+	freeVUserIDs          vuserIDHeap
+	vuserIDsInUse         map[int]struct{}
+	vuserIDSpan           int
+	paused                bool
+	pauseRequested        bool
+	pauseCh               chan struct{}
+	pauseChanged          chan struct{}
+	pauseStartTime        time.Time
+	runStartedAt          time.Time
+	baseTargetDuration    time.Duration
+	pauseCompensation     time.Duration
+	targetDuration        time.Duration
+	controlsReady         bool
+	stopVUsers            context.CancelFunc
+	baseCtx               context.Context
+	loopCtx               context.Context
+	arrivalCtx            context.Context
+	arrivalStop           context.CancelFunc
+	softStop              context.CancelFunc
+	gracefulStopRequested bool
+	mockNamespace         string
+	scaleGuard            bool
 }
 
 type GroupResult struct {
@@ -93,9 +113,26 @@ type MultiGroupRunResult struct {
 	Groups            []GroupResult
 }
 
+type vuserIDHeap []int
+
+func (h vuserIDHeap) Len() int           { return len(h) }
+func (h vuserIDHeap) Less(i, j int) bool { return h[i] < h[j] }
+func (h vuserIDHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+func (h *vuserIDHeap) Push(value any)    { *h = append(*h, value.(int)) }
+func (h *vuserIDHeap) Pop() any {
+	old := *h
+	last := len(old) - 1
+	value := old[last]
+	*h = old[:last]
+	return value
+}
+
 func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 	if len(cfg.Groups) == 0 {
 		return nil, fmt.Errorf("at least one group is required")
+	}
+	if len(cfg.Groups) > MaxEngineGroups {
+		return nil, fmt.Errorf("group count must not exceed %d", MaxEngineGroups)
 	}
 	if cfg.Duration <= 0 {
 		return nil, fmt.Errorf("duration must be positive")
@@ -106,6 +143,7 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 	if cfg.PostBaseline < 0 {
 		return nil, fmt.Errorf("post-baseline must be non-negative")
 	}
+	totalVUsers := int64(0)
 	for i, g := range cfg.Groups {
 		if g.Script == nil {
 			return nil, fmt.Errorf("group[%d] %q: script is required", i, g.Name)
@@ -113,29 +151,68 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 		if g.VUsers < 0 {
 			return nil, fmt.Errorf("group[%d] %q: vusers must be zero or greater", i, g.Name)
 		}
+		if g.VUsers > MaxEngineVUsers {
+			return nil, fmt.Errorf("group[%d] %q: vusers must not exceed %d", i, g.Name, MaxEngineVUsers)
+		}
+		totalVUsers += int64(g.VUsers)
+		if totalVUsers > MaxEngineVUsers {
+			return nil, fmt.Errorf("aggregate vusers must not exceed %d", MaxEngineVUsers)
+		}
 		if g.VUsers == 0 && !g.AllowZeroVUsers {
 			return nil, fmt.Errorf("group[%d] %q: vusers must be positive", i, g.Name)
 		}
 		if g.VUsers == 0 && isOpenWorkload(g.Script) {
 			return nil, fmt.Errorf("group[%d] %q: open workload groups require positive vusers", i, g.Name)
 		}
+		if g.VUserIDSpan < 0 {
+			return nil, fmt.Errorf("group[%d] %q: vuser id span must be non-negative", i, g.Name)
+		}
+		if g.VUserIDSpan > 0 && g.VUsers > g.VUserIDSpan {
+			return nil, fmt.Errorf("group[%d] %q: vusers exceed vuser id span", i, g.Name)
+		}
+		maxLocalID := g.VUsers
+		if g.VUserIDSpan > 0 {
+			maxLocalID = g.VUserIDSpan
+		}
+		if g.VUserIDOffset < 0 || (maxLocalID > 0 && g.VUserIDOffset > int(^uint(0)>>1)-(maxLocalID-1)) {
+			return nil, fmt.Errorf("group[%d] %q: vuser id offset overflows runtime int", i, g.Name)
+		}
 		if g.Name == "" {
 			cfg.Groups[i].Name = g.Script.Name
 		}
+		dataProvider, err := NewShardedDataProviderWithAssets(g.Script.DataSources, g.DataShard, g.StagedDataFiles)
+		if err != nil {
+			return nil, fmt.Errorf("group[%d] %q: initialize data sources: %s", i, cfg.Groups[i].Name, scrubSensitiveText(err.Error()))
+		}
+		cfg.Groups[i].dataProvider = dataProvider
 	}
-	sharedSecretResolver := newDefaultSecretResolver()
+	defaultSecretResolvers := make(map[string]SecretResolver)
 	for i := range cfg.Groups {
 		if cfg.Groups[i].SecretResolver == nil {
-			cfg.Groups[i].SecretResolver = sharedSecretResolver
+			projectID := strings.TrimSpace(cfg.Groups[i].Script.ProjectID)
+			resolver := defaultSecretResolvers[projectID]
+			if resolver == nil {
+				resolver = newDefaultSecretResolverForProject(projectID)
+				defaultSecretResolvers[projectID] = resolver
+			}
+			cfg.Groups[i].SecretResolver = resolver
 		}
 	}
 	mge := &MultiGroupEngine{
-		groups:       cfg.Groups,
-		duration:     cfg.Duration,
-		preBaseline:  cfg.PreBaseline,
-		postBaseline: cfg.PostBaseline,
-		metrics:      NewMetricsCollector(10000),
-		readyCh:      make(chan struct{}),
+		groups:         cfg.Groups,
+		duration:       cfg.Duration,
+		preBaseline:    cfg.PreBaseline,
+		postBaseline:   cfg.PostBaseline,
+		metrics:        NewMetricsCollector(10000),
+		readyCh:        make(chan struct{}),
+		vuserIDSpan:    int(^uint(0) >> 1),
+		paused:         cfg.StartPaused,
+		pauseRequested: cfg.StartPaused,
+	}
+	for _, group := range cfg.Groups {
+		if group.VUserIDSpan > 0 && group.VUserIDSpan < mge.vuserIDSpan {
+			mge.vuserIDSpan = group.VUserIDSpan
+		}
 	}
 	mge.metrics.SetGroupActiveVUsersProvider(mge.activeVUserCountByGroup)
 	return mge, nil
@@ -171,11 +248,25 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 	mge.vuserGroups = make(map[int]string)
 	mge.vuserStopping = make(map[int]bool)
 	mge.nextVUserID = 0
+	mge.freeVUserIDs = nil
+	mge.vuserIDsInUse = make(map[int]struct{})
+	mge.paused = mge.pauseRequested
+	if mge.paused {
+		mge.pauseStartTime = time.Now()
+	} else {
+		mge.pauseStartTime = time.Time{}
+	}
+	mge.pauseCompensation = 0
 	mge.pauseCh = make(chan struct{})
-	close(mge.pauseCh) // Start unpaused
+	if !mge.paused {
+		close(mge.pauseCh)
+	}
+	mge.pauseChanged = make(chan struct{})
+	mge.controlsReady = false
+	mge.baseTargetDuration = mge.duration
 	mge.targetDuration = mge.duration
 	mge.mockNamespace = newRuntimeMockNamespace()
-	mge.scalingOpen = true
+	mge.scalingOpen = false
 	mge.activeReserved = 0
 	mge.scaleGuard = mge.hasZeroCapableClosedGroup()
 
@@ -193,6 +284,12 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 	mge.arrivalStop = arrivalCancel
 	mge.cancel = baseCancel
 	mge.softStop = softStopAll
+	if mge.gracefulStopRequested {
+		// GracefulStop can race immediately after CommitWork marks an execution
+		// started but before this Run goroutine initializes its cancellation
+		// functions. Honor the latched request before any VUser can be spawned.
+		softStopAll()
+	}
 	// Publish mge.wg under the lock alongside baseCtx so any ScaleVUsers caller
 	// that observes a running baseCtx also sees a non-nil wg (avoids a nil-deref
 	// in spawnVUser's wg.Add and a data race on the field).
@@ -218,6 +315,7 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 		<-baseCtx.Done()
 		mge.mu.Lock()
 		mge.scalingOpen = false
+		mge.controlsReady = false
 		mge.mu.Unlock()
 	}()
 
@@ -232,6 +330,9 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 	}()
 
 	start := time.Now()
+	mge.mu.Lock()
+	mge.runStartedAt = start
+	mge.mu.Unlock()
 	groupResults := make([]GroupResult, len(mge.groups))
 
 	// Background goroutine manages the steady-state deadline and then performs
@@ -263,6 +364,11 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 	if err := waitForBaselineWindow(ctx, mge.preBaseline); err != nil {
 		return nil, err
 	}
+	mge.mu.Lock()
+	loadReady := mge.baseCtx.Err() == nil && mge.loopCtx.Err() == nil
+	mge.controlsReady = loadReady
+	mge.scalingOpen = loadReady
+	mge.mu.Unlock()
 	mge.readyOnce.Do(func() {
 		close(mge.readyCh)
 	})
@@ -274,6 +380,8 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 
 	totalTargetTPS := 0.0
 	atOnceGroups := make([]GroupConfig, 0)
+	openGroupErrors := make(chan error, len(runGroups))
+groupLoop:
 	for gi, group := range runGroups {
 		if group.Script.Config.Pacing.Type == "tps" && group.Script.Config.Pacing.TPS > 0 {
 			targetTPS := group.Script.Config.Pacing.TPS
@@ -285,6 +393,12 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 		protoConfig := buildProtoConfigForRunModeWithSecretResolver(group.Script, "load", group.SecretResolver)
 		applyRuntimeMockNamespace(protoConfig, mge.mockNamespace)
 		if groupLifecycleAtOnce(group) {
+			// A replacement joining a paused distributed run must not execute
+			// init-once protocol traffic before the execution gate opens. Use the
+			// soft-stop context so a graceful stop can still release this wait.
+			if err := mge.WaitIfPaused(mge.loopCtx); err != nil {
+				break groupLoop
+			}
 			if !mge.runGroupLifecycleBlock(mge.baseCtx, group, protoConfig, group.Script.Init, "init") {
 				baseCancel()
 				return nil, fmt.Errorf("group %q init-once failed", group.Name)
@@ -298,7 +412,9 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 			wg.Add(1)
 			go func(group GroupConfig, protoConfig map[string]any, totalArrivals int, limiter *inFlightLimiter, inFlightLimit int) {
 				defer wg.Done()
-				runArrivalScheduler(mge.arrivalCtx, group.Script.Config.Pacing.TPS, totalArrivals, mge.WaitIfPaused, func(int) {
+				var initializedWorkers int64
+				var firstInitErr error
+				runArrivalScheduler(mge.arrivalCtx, group.Script.Config.Pacing.TPS, totalArrivals, mge.WaitIfPaused, mge.SleepActive, func(int) {
 					// Shed the arrival when the in-flight set is saturated: the SUT
 					// cannot keep up, so dropping it protects the generator from
 					// unbounded goroutine growth instead of silently throttling to a
@@ -311,11 +427,25 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 						}
 						return
 					}
-					vuserID := mge.allocateVUserID()
-					mge.spawnOpenWorker(vuserID, group, protoConfig, &wg, limiter.release)
+					vuserID, err := mge.allocateVUserID()
+					if err != nil {
+						limiter.release()
+						mge.metrics.RecordSheddedArrival()
+						return
+					}
+					if err := mge.spawnOpenWorker(vuserID, group, protoConfig, &wg, limiter.release); err != nil {
+						if firstInitErr == nil {
+							firstInitErr = err
+						}
+						return
+					}
+					initializedWorkers++
 				})
 				if shed := limiter.Shed(); shed > 0 {
 					slog.Warn("open workload shed arrivals over the run (offered TPS exceeded achievable throughput)", "group", group.Name, "shed", shed, "max_in_flight", inFlightLimit)
+				}
+				if initializedWorkers == 0 && firstInitErr != nil {
+					openGroupErrors <- fmt.Errorf("group %q could not initialize any arrival worker: %w", group.Name, firstInitErr)
 				}
 			}(group, protoConfig, func() int {
 				if bounded {
@@ -335,13 +465,24 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 			if mge.loopCtx.Err() != nil {
 				break
 			}
-
-			if i > 0 && rampDelay > 0 && !sleepContext(mge.loopCtx, rampDelay) {
+			if err := mge.WaitIfPaused(mge.loopCtx); err != nil {
 				break
 			}
 
-			vuserID := mge.allocateVUserID()
-			mge.spawnVUser(vuserID, group, protoConfig, &wg, false)
+			if i > 0 && rampDelay > 0 && !mge.SleepActive(mge.loopCtx, rampDelay) {
+				break
+			}
+
+			vuserID, err := mge.allocateVUserID()
+			if err != nil {
+				baseCancel()
+				return nil, fmt.Errorf("group %q allocate vuser id: %w", group.Name, err)
+			}
+			if err := mge.spawnVUser(vuserID, group, protoConfig, &wg, false); err != nil {
+				baseCancel()
+				wg.Wait()
+				return nil, fmt.Errorf("group %q initialize vuser: %w", group.Name, err)
+			}
 		}
 	}
 	if totalTargetTPS > 0 {
@@ -349,6 +490,15 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 	}
 
 	wg.Wait()
+	close(openGroupErrors)
+	var openStartupErrors []error
+	for err := range openGroupErrors {
+		openStartupErrors = append(openStartupErrors, err)
+	}
+	if err := errors.Join(openStartupErrors...); err != nil {
+		baseCancel()
+		return nil, err
+	}
 	for _, group := range atOnceGroups {
 		protoConfig := buildProtoConfigForRunModeWithSecretResolver(group.Script, "load", group.SecretResolver)
 		applyRuntimeMockNamespace(protoConfig, mge.mockNamespace)
@@ -401,11 +551,11 @@ func (mge *MultiGroupEngine) runGroupLifecycleBlock(ctx context.Context, group G
 	}
 	vuProto, err := protocol.Get(group.Script.Protocol)
 	if err != nil {
-		slog.Error("failed to create lifecycle protocol", "group", group.Name, "phase", phase, "err", err)
+		slog.Error("failed to create lifecycle protocol", "group", group.Name, "phase", phase, "err", scrubSensitiveError(err, group.RedactionConfig))
 		return false
 	}
 	if err := vuProto.Init(ctx, protoConfig); err != nil {
-		slog.Error("failed to init lifecycle protocol", "group", group.Name, "phase", phase, "err", err)
+		slog.Error("failed to init lifecycle protocol", "group", group.Name, "phase", phase, "err", scrubSensitiveError(err, group.RedactionConfig))
 		return false
 	}
 	defer runProtocolTeardown(vuProto)
@@ -421,6 +571,10 @@ func (mge *MultiGroupEngine) runGroupLifecycleBlock(ctx context.Context, group G
 		RedactionConfig: group.RedactionConfig,
 		SecretResolver:  group.SecretResolver,
 		Rendezvous:      group.rendezvous,
+		DataProvider:    group.dataProvider,
+	}
+	if phase != "teardown" {
+		vu.PauseControl = mge
 	}
 	return vu.RunLifecycleBlock(ctx, actions, phase)
 }
@@ -437,7 +591,7 @@ func waitForBaselineWindow(ctx context.Context, duration time.Duration) error {
 	}
 }
 
-func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoConfig map[string]any, wg *sync.WaitGroup, reserved bool) {
+func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoConfig map[string]any, wg *sync.WaitGroup, reserved bool) error {
 	if !reserved {
 		mge.mu.Lock()
 		mge.activeReserved++
@@ -467,18 +621,22 @@ func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoCon
 	mge.vuserGroups[vuserID] = group.Name
 	mge.mu.Unlock()
 
+	runtimeVUserID := group.VUserIDOffset + vuserID
 	vuProto, err := protocol.Get(group.Script.Protocol)
 	if err != nil {
-		slog.Error("failed to create protocol", "group", group.Name, "vuser", vuserID, "err", err)
+		safeErr := scrubSensitiveError(err, group.RedactionConfig)
+		slog.Error("failed to create protocol", "group", group.Name, "vuser", runtimeVUserID, "err", safeErr)
 		cancelVUser()
 		mge.finishReservedVUser(vuserID, wg)
-		return
+		return safeErr
 	}
-	if err := vuProto.Init(vuCtx, vuserProtoConfig(protoConfig, vuserID)); err != nil {
-		slog.Error("failed to init protocol", "group", group.Name, "vuser", vuserID, "err", err)
+	if err := vuProto.Init(vuCtx, vuserProtoConfig(protoConfig, runtimeVUserID)); err != nil {
+		safeErr := scrubSensitiveError(err, group.RedactionConfig)
+		slog.Error("failed to init protocol", "group", group.Name, "vuser", runtimeVUserID, "err", safeErr)
 		cancelVUser()
+		runProtocolTeardown(vuProto)
 		mge.finishReservedVUser(vuserID, wg)
-		return
+		return safeErr
 	}
 
 	mge.mu.Lock()
@@ -487,7 +645,7 @@ func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoCon
 	mge.metrics.SetActiveVUsers(int64(activeVUsers))
 
 	go func() {
-		defer recoverVUserGoroutine(vuserID)
+		defer recoverVUserGoroutine(runtimeVUserID)
 		defer cancelVUser()
 		defer func() {
 			runProtocolTeardown(vuProto)
@@ -495,7 +653,7 @@ func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoCon
 		}()
 
 		vu := &VUser{
-			ID:                   vuserID,
+			ID:                   runtimeVUserID,
 			TotalVUsers:          group.VUsers,
 			Group:                group.Name,
 			Proto:                vuProto,
@@ -509,11 +667,13 @@ func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoCon
 			Rendezvous:           group.rendezvous,
 			ExecutionGoals:       group.executionGoals,
 			HardStopCtx:          shedCtx,
+			DataProvider:         group.dataProvider,
 			SkipInit:             groupLifecycleAtOnce(group),
 			SkipTeardown:         groupLifecycleAtOnce(group),
 		}
 		vu.Run(vuCtx)
 	}()
+	return nil
 }
 
 func (mge *MultiGroupEngine) finishReservedVUser(vuserID int, wg *sync.WaitGroup) {
@@ -521,6 +681,7 @@ func (mge *MultiGroupEngine) finishReservedVUser(vuserID int, wg *sync.WaitGroup
 	delete(mge.vuserCancels, vuserID)
 	delete(mge.vuserGroups, vuserID)
 	delete(mge.vuserStopping, vuserID)
+	mge.releaseVUserIDLocked(vuserID)
 	if mge.activeReserved > 0 {
 		mge.activeReserved--
 	}
@@ -573,7 +734,7 @@ func (mge *MultiGroupEngine) rampDownVUsers() {
 			}
 			delay := group.duration / time.Duration(len(group.cancels))
 			for _, cancel := range group.cancels {
-				if !sleepContext(mge.baseCtx, delay) {
+				if !mge.SleepActive(mge.baseCtx, delay) {
 					return
 				}
 				cancel()
@@ -603,15 +764,39 @@ func (mge *MultiGroupEngine) activeVUserCount() int {
 	return len(mge.vuserCancels)
 }
 
-func (mge *MultiGroupEngine) allocateVUserID() int {
+func (mge *MultiGroupEngine) allocateVUserID() (int, error) {
 	mge.mu.Lock()
 	defer mge.mu.Unlock()
-	id := mge.nextVUserID
-	mge.nextVUserID++
-	return id
+	return mge.allocateVUserIDLocked()
 }
 
-func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, protoConfig map[string]any, wg *sync.WaitGroup, release func()) {
+func (mge *MultiGroupEngine) allocateVUserIDLocked() (int, error) {
+	if len(mge.vuserIDsInUse) >= mge.vuserIDSpan {
+		return 0, fmt.Errorf("vuser id namespace exhausted (%d)", mge.vuserIDSpan)
+	}
+	if len(mge.freeVUserIDs) > 0 {
+		id := heap.Pop(&mge.freeVUserIDs).(int)
+		mge.vuserIDsInUse[id] = struct{}{}
+		return id, nil
+	}
+	if mge.nextVUserID >= mge.vuserIDSpan {
+		return 0, fmt.Errorf("vuser id namespace exhausted (%d)", mge.vuserIDSpan)
+	}
+	id := mge.nextVUserID
+	mge.nextVUserID++
+	mge.vuserIDsInUse[id] = struct{}{}
+	return id, nil
+}
+
+func (mge *MultiGroupEngine) releaseVUserIDLocked(id int) {
+	if _, allocated := mge.vuserIDsInUse[id]; !allocated {
+		return
+	}
+	delete(mge.vuserIDsInUse, id)
+	heap.Push(&mge.freeVUserIDs, id)
+}
+
+func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, protoConfig map[string]any, wg *sync.WaitGroup, release func()) error {
 	// release returns the in-flight slot reserved by the caller; it must run
 	// exactly once across every exit path (including the early protocol
 	// failures below) so the limiter does not leak capacity.
@@ -637,36 +822,42 @@ func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, pro
 	mge.metrics.SetActiveVUsers(int64(mge.activeVUserCount()))
 	mge.mu.Unlock()
 
+	runtimeVUserID := group.VUserIDOffset + vuserID
 	vuProto, err := protocol.Get(group.Script.Protocol)
 	if err != nil {
-		slog.Error("failed to create protocol for open workload worker", "group", group.Name, "worker", vuserID, "err", err)
+		safeErr := scrubSensitiveError(err, group.RedactionConfig)
+		slog.Error("failed to create protocol for open workload worker", "group", group.Name, "worker", runtimeVUserID, "err", safeErr)
 		cancelVUser()
 		mge.mu.Lock()
 		delete(mge.vuserCancels, vuserID)
 		delete(mge.vuserGroups, vuserID)
 		delete(mge.vuserStopping, vuserID)
+		mge.releaseVUserIDLocked(vuserID)
 		mge.metrics.SetActiveVUsers(int64(mge.activeVUserCount()))
 		mge.mu.Unlock()
 		release()
-		return
+		return safeErr
 	}
-	if err := vuProto.Init(vuCtx, vuserProtoConfig(protoConfig, vuserID)); err != nil {
-		slog.Error("failed to init protocol for open workload worker", "group", group.Name, "worker", vuserID, "err", err)
+	if err := vuProto.Init(vuCtx, vuserProtoConfig(protoConfig, runtimeVUserID)); err != nil {
+		safeErr := scrubSensitiveError(err, group.RedactionConfig)
+		slog.Error("failed to init protocol for open workload worker", "group", group.Name, "worker", runtimeVUserID, "err", safeErr)
 		cancelVUser()
 		mge.mu.Lock()
 		delete(mge.vuserCancels, vuserID)
 		delete(mge.vuserGroups, vuserID)
 		delete(mge.vuserStopping, vuserID)
+		mge.releaseVUserIDLocked(vuserID)
 		mge.metrics.SetActiveVUsers(int64(mge.activeVUserCount()))
 		mge.mu.Unlock()
+		runProtocolTeardown(vuProto)
 		release()
-		return
+		return safeErr
 	}
 
 	iterationScript := cloneSingleIterationScript(group.Script)
 	wg.Add(1)
 	go func() {
-		defer recoverVUserGoroutine(vuserID)
+		defer recoverVUserGoroutine(runtimeVUserID)
 		defer wg.Done()
 		defer release()
 		defer cancelVUser()
@@ -676,12 +867,13 @@ func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, pro
 			delete(mge.vuserCancels, vuserID)
 			delete(mge.vuserGroups, vuserID)
 			delete(mge.vuserStopping, vuserID)
+			mge.releaseVUserIDLocked(vuserID)
 			mge.metrics.SetActiveVUsers(int64(mge.activeVUserCount()))
 			mge.mu.Unlock()
 		}()
 
 		vu := &VUser{
-			ID:              vuserID,
+			ID:              runtimeVUserID,
 			Group:           group.Name,
 			Proto:           vuProto,
 			Script:          iterationScript,
@@ -692,11 +884,13 @@ func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, pro
 			PauseControl:    mge,
 			ExecutionGoals:  group.executionGoals,
 			HardStopCtx:     shedCtx,
+			DataProvider:    group.dataProvider,
 			SkipInit:        groupLifecycleAtOnce(group),
 			SkipTeardown:    groupLifecycleAtOnce(group),
 		}
 		vu.Run(vuCtx)
 	}()
+	return nil
 }
 
 // ScaleVUsers adds or removes VUsers for a specific group.
@@ -708,7 +902,7 @@ func (mge *MultiGroupEngine) ScaleVUsers(groupName string, targetVUsers int) err
 	mge.mu.Lock()
 	defer mge.mu.Unlock()
 
-	if mge.baseCtx == nil || mge.baseCtx.Err() != nil || mge.wg == nil || !mge.scalingOpen {
+	if mge.baseCtx == nil || mge.baseCtx.Err() != nil || mge.wg == nil || !mge.controlsReady || !mge.scalingOpen {
 		return fmt.Errorf("engine not running")
 	}
 
@@ -728,6 +922,24 @@ func (mge *MultiGroupEngine) ScaleVUsers(groupName string, targetVUsers int) err
 	if targetVUsers < 0 {
 		return fmt.Errorf("target vusers must be non-negative")
 	}
+	if targetVUsers > MaxEngineVUsers {
+		return fmt.Errorf("target vusers must not exceed %d", MaxEngineVUsers)
+	}
+	aggregateTarget := int64(targetVUsers)
+	for i := range mge.groups {
+		if &mge.groups[i] != group {
+			aggregateTarget += int64(mge.groups[i].VUsers)
+		}
+	}
+	if aggregateTarget > MaxEngineVUsers {
+		return fmt.Errorf("aggregate target vusers must not exceed %d", MaxEngineVUsers)
+	}
+	if group.VUserIDSpan > 0 && targetVUsers > group.VUserIDSpan {
+		return fmt.Errorf("target vusers %d exceed vuser id span %d", targetVUsers, group.VUserIDSpan)
+	}
+	if targetVUsers > 0 && group.VUserIDOffset > int(^uint(0)>>1)-targetVUsers {
+		return fmt.Errorf("target vusers overflow the configured vuser id offset")
+	}
 	if targetVUsers == 0 && !mge.scaleGuard {
 		// Keep Run's WaitGroup non-zero while the group is paused at zero so a
 		// later resume can safely Add VUsers. Installing the guard while at least
@@ -742,18 +954,41 @@ func (mge *MultiGroupEngine) ScaleVUsers(groupName string, targetVUsers int) err
 	group.VUsers = targetVUsers
 
 	if delta > 0 {
+		availableIDs := mge.vuserIDSpan - len(mge.vuserIDsInUse)
+		if delta > availableIDs {
+			group.VUsers = currentVUsers
+			return fmt.Errorf("vuser id namespace has %d available ids, need %d", availableIDs, delta)
+		}
 		protoConfig := buildProtoConfigForRunModeWithSecretResolver(group.Script, "load", group.SecretResolver)
 		applyRuntimeMockNamespace(protoConfig, mge.mockNamespace)
 
+		spawnedIDs := make([]int, 0, delta)
+		rollbackScaleUp := func() {
+			group.VUsers = currentVUsers
+			for _, id := range spawnedIDs {
+				if cancel := mge.vuserCancels[id]; cancel != nil {
+					mge.vuserStopping[id] = true
+					cancel()
+				}
+			}
+		}
 		for i := 0; i < delta; i++ {
-			vuserID := mge.nextVUserID
-			mge.nextVUserID++
+			vuserID, err := mge.allocateVUserIDLocked()
+			if err != nil {
+				rollbackScaleUp()
+				return err
+			}
 			mge.activeReserved++
 			mge.wg.Add(1)
 
 			mge.mu.Unlock()
-			mge.spawnVUser(vuserID, *group, protoConfig, mge.wg, true)
+			spawnErr := mge.spawnVUser(vuserID, *group, protoConfig, mge.wg, true)
 			mge.mu.Lock()
+			if spawnErr != nil {
+				rollbackScaleUp()
+				return fmt.Errorf("initialize scaled vuser: %w", spawnErr)
+			}
+			spawnedIDs = append(spawnedIDs, vuserID)
 		}
 	} else if delta < 0 {
 		toRemove := -delta
@@ -792,7 +1027,8 @@ func (mge *MultiGroupEngine) adjustDurationLocked(newDuration time.Duration) err
 		return fmt.Errorf("engine not running")
 	}
 
-	mge.targetDuration = newDuration
+	mge.baseTargetDuration = newDuration
+	mge.targetDuration = newDuration + mge.pauseCompensation
 
 	slog.Info("test duration adjusted", "new_duration", newDuration)
 	return nil
@@ -803,6 +1039,15 @@ func (mge *MultiGroupEngine) GetTargetDuration() time.Duration {
 	mge.mu.Lock()
 	defer mge.mu.Unlock()
 	return mge.targetDuration
+}
+
+// GetBaseTargetDuration returns the operator-controlled duration without pause
+// compensation. Control planes use it to restore a multi-engine adjustment if
+// one participant rejects the new duration.
+func (mge *MultiGroupEngine) GetBaseTargetDuration() time.Duration {
+	mge.mu.Lock()
+	defer mge.mu.Unlock()
+	return mge.baseTargetDuration
 }
 
 // GetGroupVUsers returns the current VUser count per group.
@@ -820,13 +1065,33 @@ func (mge *MultiGroupEngine) Pause() error {
 	mge.mu.Lock()
 	defer mge.mu.Unlock()
 
+	if mge.baseCtx == nil {
+		mge.pauseRequested = true
+		mge.paused = true
+		return nil
+	}
+	if mge.baseCtx.Err() != nil {
+		return fmt.Errorf("engine not running")
+	}
 	if mge.paused {
+		mge.pauseRequested = true
 		return nil
 	}
 
+	mge.pauseRequested = true
 	mge.paused = true
 	mge.pauseStartTime = time.Now()
 	mge.pauseCh = make(chan struct{}) // New channel blocks waiters
+	mge.notifyPauseChangedLocked()
+	for i := range mge.groups {
+		// Open-workload groups are arrival-scheduled and intentionally have no
+		// closed-model iteration rate limiter. Their scheduler observes the same
+		// execution gate through WaitIfPaused/SleepActive, so there is no limiter
+		// state to update here.
+		if mge.groups[i].rateLimiter != nil {
+			mge.groups[i].rateLimiter.SetPaused(true)
+		}
+	}
 
 	slog.Info("test execution paused")
 	return nil
@@ -836,6 +1101,12 @@ func (mge *MultiGroupEngine) Resume() error {
 	mge.mu.Lock()
 	defer mge.mu.Unlock()
 
+	if mge.baseCtx == nil {
+		mge.pauseRequested = false
+		mge.paused = false
+		return nil
+	}
+	mge.pauseRequested = false
 	if !mge.paused {
 		return nil
 	}
@@ -843,13 +1114,92 @@ func (mge *MultiGroupEngine) Resume() error {
 	pauseDuration := time.Since(mge.pauseStartTime)
 	mge.paused = false
 	close(mge.pauseCh) // Closing unblocks all waiters
+	mge.notifyPauseChangedLocked()
+	for i := range mge.groups {
+		if mge.groups[i].rateLimiter != nil {
+			mge.groups[i].rateLimiter.SetPaused(false)
+		}
+	}
 
-	// Adjust duration to account for time spent paused
-	newDuration := mge.targetDuration + pauseDuration
-	err := mge.adjustDurationLocked(newDuration)
+	// Keep the user-visible duration as the active-runtime base and retain pause
+	// compensation separately. A later AdjustDuration must replace only the base,
+	// not erase time already spent paused.
+	mge.pauseCompensation += pauseDuration
+	mge.targetDuration = mge.baseTargetDuration + mge.pauseCompensation
 
 	slog.Info("test execution resumed", "pause_duration", pauseDuration)
-	return err
+	return nil
+}
+
+func (mge *MultiGroupEngine) notifyPauseChangedLocked() {
+	if mge.pauseChanged != nil {
+		close(mge.pauseChanged)
+	}
+	mge.pauseChanged = make(chan struct{})
+}
+
+// SleepActive waits for delay units of unpaused execution time. A pause freezes
+// the remaining delay rather than allowing ramp, pacing, or arrival timers to
+// expire against wall time.
+func (mge *MultiGroupEngine) SleepActive(ctx context.Context, delay time.Duration) bool {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	remaining := delay
+	for remaining > 0 {
+		mge.mu.Lock()
+		paused := mge.paused
+		pauseCh := mge.pauseCh
+		changed := mge.pauseChanged
+		mge.mu.Unlock()
+		if paused {
+			select {
+			case <-ctx.Done():
+				return false
+			case <-pauseCh:
+				continue
+			}
+		}
+
+		startedActive := mge.ActiveElapsed()
+		timer := time.NewTimer(remaining)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return false
+		case <-changed:
+			if !timer.Stop() {
+				<-timer.C
+			}
+			elapsed := mge.ActiveElapsed() - startedActive
+			if elapsed > 0 {
+				remaining -= elapsed
+			}
+		case <-timer.C:
+			return true
+		}
+	}
+	return ctx.Err() == nil
+}
+
+// ActiveElapsed returns elapsed execution time excluding completed and current
+// pauses. It gives interval pacing an active-time clock instead of wall time.
+func (mge *MultiGroupEngine) ActiveElapsed() time.Duration {
+	mge.mu.Lock()
+	defer mge.mu.Unlock()
+	if mge.runStartedAt.IsZero() {
+		return 0
+	}
+	elapsed := time.Since(mge.runStartedAt) - mge.pauseCompensation
+	if mge.paused && !mge.pauseStartTime.IsZero() {
+		elapsed -= time.Since(mge.pauseStartTime)
+	}
+	if elapsed < 0 {
+		return 0
+	}
+	return elapsed
 }
 
 func (mge *MultiGroupEngine) WaitIfPaused(ctx context.Context) error {
@@ -883,6 +1233,7 @@ func (mge *MultiGroupEngine) Stop() {
 
 func (mge *MultiGroupEngine) GracefulStop() {
 	mge.mu.Lock()
+	mge.gracefulStopRequested = true
 	cancel := mge.softStop
 	mge.mu.Unlock()
 	if cancel != nil {

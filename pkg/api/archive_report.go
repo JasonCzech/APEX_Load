@@ -35,7 +35,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 
 	report := &RunArchiveReport{
 		SchemaVersion:       runArchiveReportSchemaVersion,
-		Manifest:            manifest,
+		Manifest:            maskRunArchiveManifest(manifest),
 		ByAction:            make(map[string]RunArchiveActionStats),
 		ByGroup:             make(map[string]RunArchiveActionStats),
 		BySOAPOperation:     make(map[string]RunArchiveActionStats),

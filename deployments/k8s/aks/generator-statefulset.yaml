@@ -66,6 +66,14 @@ spec:
               value: production
             - name: APEXLOAD_GENERATOR_MAX_VUSERS
               value: "10000"
+            # The durable generation high-water prevents a replaced pod from
+            # accepting work from a controller term that was already fenced.
+            - name: APEXLOAD_GENERATOR_STATE_DIR
+              value: /var/lib/apexload-generator
+            # Keep completed/per-crash generator evidence on the per-ordinal PVC
+            # until the controller has durably ingested it.
+            - name: APEXLOAD_ARCHIVE_DIR
+              value: /var/lib/apexload-generator/archives
             # Server certificate + client-CA: requires mTLS from controllers.
             # Mirrors deployments/k8s/onprem. The grpc-tls Secret is mounted
             # below; provision it via cert-manager or workload-identity tooling.
@@ -97,9 +105,23 @@ spec:
                   name: apexload-data-platform
                   key: APEXLOAD_AZURE_KEY_VAULT_AUTH
                   optional: true
+            - name: APEXLOAD_AZURE_KEY_VAULT_ALLOWED_SECRETS
+              valueFrom:
+                configMapKeyRef:
+                  name: apexload-data-platform
+                  key: APEXLOAD_AZURE_KEY_VAULT_ALLOWED_SECRETS
+                  optional: true
+            - name: APEXLOAD_AZURE_MESSAGING_ALLOWED_NAMESPACES
+              valueFrom:
+                configMapKeyRef:
+                  name: apexload-data-platform
+                  key: APEXLOAD_AZURE_MESSAGING_ALLOWED_NAMESPACES
+                  optional: true
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            - name: generator-state
+              mountPath: /var/lib/apexload-generator
             - name: grpc-tls
               mountPath: /etc/apexload/grpc-tls
               readOnly: true
@@ -134,3 +156,15 @@ spec:
         - name: grpc-tls
           secret:
             secretName: apexload-generator-grpc-tls
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  volumeClaimTemplates:
+    - metadata:
+        name: generator-state
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 10Gi

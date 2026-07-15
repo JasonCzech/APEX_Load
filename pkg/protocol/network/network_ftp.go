@@ -2,7 +2,6 @@ package network
 
 import (
 	"context"
-	"net/textproto"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
@@ -17,7 +16,7 @@ func (n *Network) runFTP(ctx context.Context, action *protocol.Action) (*operati
 		return nil, err
 	}
 	defer conn.Close()
-	tp := textproto.NewConn(conn)
+	tp := newBoundedTextProtoConn(conn)
 	defer tp.Close()
 
 	lines := []string{}

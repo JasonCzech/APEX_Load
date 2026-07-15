@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -30,10 +31,16 @@ func hashLibraryScript(script *dsl.Script) string {
 	if script == nil {
 		return hashCanonical(nil)
 	}
-	copied := cloneScriptForLibrary(script)
+	copied := maskScriptSecrets(script)
+	if copied == nil {
+		return hashCanonical(nil)
+	}
 	copied.ID = ""
+	copied.RefKey = ""
 	copied.ProjectID = ""
 	copied.FolderID = nil
+	copied.CreatedAt = time.Time{}
+	copied.UpdatedAt = time.Time{}
 	return hashCanonical(copied)
 }
 
@@ -87,7 +94,14 @@ func libraryResultCompactHashPayload(test *ManagedTest) map[string]any {
 }
 
 func libraryResultTestHashPayload(test *ManagedTest) any {
-	return maskManagedTestWithOptions(test, managedTestMaskOptions{IncludeHistory: true, IncludeSparkline: true})
+	portable := maskManagedTestWithOptions(test, managedTestMaskOptions{IncludeHistory: true, IncludeSparkline: true})
+	if portable != nil {
+		// Archive locations and backend trust anchors are instance-specific. They
+		// must neither leak nor make the same portable result hash differently in
+		// catalog, export, diff, and import paths.
+		portable.Archive = portableLibraryArchiveRecord(portable.Archive, "")
+	}
+	return portable
 }
 
 func libraryResultSummary(test *ManagedTest) map[string]any {
@@ -126,12 +140,20 @@ func (s *Server) libraryLink(remoteID string, projectID string, kind string, sou
 }
 
 func (s *Server) rememberLibraryLink(remoteID string, projectID string, kind string, sourceInstanceID string, sourceItemID string, localItemID string, remoteItemID string, localHash string, remoteHash string) error {
+	return s.rememberLibraryLinkWithMutation(remoteID, projectID, kind, sourceInstanceID, sourceItemID, localItemID, remoteItemID, localHash, remoteHash, "")
+}
+
+func (s *Server) rememberLibraryLinkWithMutation(remoteID string, projectID string, kind string, sourceInstanceID string, sourceItemID string, localItemID string, remoteItemID string, localHash string, remoteHash string, mutationID string) error {
 	s.libraryStateMutationMu.Lock()
 	defer s.libraryStateMutationMu.Unlock()
 	if remoteID == "" {
 		remoteID = "direct"
 	}
 	projectID = normalizeProjectID(strings.TrimSpace(projectID))
+	mutationID = strings.TrimSpace(mutationID)
+	if mutationID == "" {
+		mutationID = uuid.NewString()
+	}
 	key := libraryLinkKey(remoteID, projectID, kind, sourceInstanceID, sourceItemID)
 	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
@@ -141,7 +163,7 @@ func (s *Server) rememberLibraryLink(remoteID string, projectID string, kind str
 		s.libraryLinks[key] = &librarySyncLink{
 			RemoteID: remoteID, ProjectID: projectID, Kind: normalizeLibraryKind(kind), SourceInstanceID: sourceInstanceID,
 			SourceItemID: sourceItemID, LocalItemID: localItemID, RemoteItemID: remoteItemID,
-			LocalContentHash: localHash, RemoteContentHash: remoteHash, LastSyncedAt: time.Now().UTC(),
+			LocalContentHash: localHash, RemoteContentHash: remoteHash, LastSyncedAt: time.Now().UTC(), MutationID: mutationID,
 		}
 		s.libraryMu.Unlock()
 		if err := s.persistLibraryLinks(); err == nil {

@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 const systemSettingsStoreKey = "system_settings"
@@ -690,11 +692,20 @@ func validateSystemSettings(settings SystemSettings) error {
 	if settings.General.MaxConcurrentTests < 1 {
 		return fmt.Errorf("general.max_concurrent_tests must be >= 1")
 	}
+	if settings.General.MaxConcurrentTests > maxCapacityUnit {
+		return fmt.Errorf("general.max_concurrent_tests must not exceed %d", maxCapacityUnit)
+	}
 	if settings.General.MetricsIntervalSeconds < 1 {
 		return fmt.Errorf("general.metrics_interval_seconds must be >= 1")
 	}
+	if _, ok := checkedDuration(settings.General.MetricsIntervalSeconds, time.Second); !ok {
+		return fmt.Errorf("general.metrics_interval_seconds is too large")
+	}
 	if settings.General.UsageSnapshotIntervalSeconds < 0 {
 		return fmt.Errorf("general.usage_snapshot_interval_seconds must be >= 0")
+	}
+	if _, ok := checkedDuration(settings.General.UsageSnapshotIntervalSeconds, time.Second); !ok {
+		return fmt.Errorf("general.usage_snapshot_interval_seconds is too large")
 	}
 	if settings.Thresholds.MaxErrorRatePct != nil {
 		if *settings.Thresholds.MaxErrorRatePct < 0 || *settings.Thresholds.MaxErrorRatePct > 100 {
@@ -752,8 +763,14 @@ func validateSystemSettings(settings SystemSettings) error {
 	if settings.CapacityPlanning.Generator.MaxVUsers <= 0 {
 		return fmt.Errorf("capacity_planning.generator.max_vusers must be > 0")
 	}
+	if settings.CapacityPlanning.Generator.MaxVUsers > maxCapacityUnit {
+		return fmt.Errorf("capacity_planning.generator.max_vusers must not exceed %d", maxCapacityUnit)
+	}
 	if settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators <= 0 {
 		return fmt.Errorf("capacity_planning.availability.configured_available_generators must be > 0")
+	}
+	if settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators > maxCapacityUnit {
+		return fmt.Errorf("capacity_planning.availability.configured_available_generators must not exceed %d", maxCapacityUnit)
 	}
 	switch settings.CapacityPlanning.Availability.Source {
 	case capacityAvailabilityConfigured, capacityAvailabilityConfiguredPlusLive:
@@ -764,6 +781,9 @@ func validateSystemSettings(settings SystemSettings) error {
 	for _, reservation := range settings.CapacityPlanning.Reservations {
 		if reservation.ReservedGenerators < 0 {
 			return fmt.Errorf("capacity_planning.reservations.reserved_generators must be greater than or equal to 0")
+		}
+		if reservation.ReservedGenerators > maxCapacityUnit {
+			return fmt.Errorf("capacity_planning.reservations.reserved_generators must not exceed %d", maxCapacityUnit)
 		}
 		if reservation.StartsAt != nil && reservation.EndsAt != nil && reservation.EndsAt.Before(*reservation.StartsAt) {
 			return fmt.Errorf("capacity_planning.reservations.ends_at must not be before starts_at")
@@ -782,6 +802,10 @@ func validateSystemSettings(settings SystemSettings) error {
 		// non-overlapping windows; the admission path clamps active reservations
 		// to available capacity at runtime.
 		if reservation.StartsAt == nil && reservation.EndsAt == nil {
+			available := settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators
+			if nonNegativeSumExceedsLimit(totalReserved, reservation.ReservedGenerators, available) {
+				return fmt.Errorf("capacity_planning.reservations cannot exceed configured available generators")
+			}
 			totalReserved += reservation.ReservedGenerators
 		}
 	}
@@ -867,9 +891,8 @@ func validateGitHubSettings(settings GitHubSettings) error {
 		return fmt.Errorf("github.automation_mode must be one of app_oauth_pat, app, oauth, or pat")
 	}
 	for label, raw := range map[string]string{"github.api_base_url": settings.APIBaseURL, "github.web_base_url": settings.WebBaseURL} {
-		parsed, err := url.Parse(strings.TrimSpace(raw))
-		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" {
-			return fmt.Errorf("%s must be a valid http(s) URL", label)
+		if err := validateCredentialTransportURL(label, raw, githubAllowInsecureHTTPEnv); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -1049,9 +1072,21 @@ func validateArchiveRetentionSettings(settings ArchiveRetentionSettings) error {
 	if settings.DefaultRetentionDays < 1 {
 		return fmt.Errorf("archive_retention.default_retention_days must be greater than 0")
 	}
+	if _, ok := checkedDuration(settings.DefaultRetentionDays, 24*time.Hour); !ok {
+		return fmt.Errorf("archive_retention.default_retention_days is too large")
+	}
+	if settings.HARRetentionDays < 0 {
+		return fmt.Errorf("archive_retention.har_retention_days must be greater than or equal to 0")
+	}
+	if _, ok := checkedDuration(settings.HARRetentionDays, 24*time.Hour); !ok {
+		return fmt.Errorf("archive_retention.har_retention_days is too large")
+	}
 	for index, policy := range settings.Policies {
 		if policy.RetentionDays < 1 {
 			return fmt.Errorf("archive_retention.policies[%d].retention_days must be greater than 0", index)
+		}
+		if _, ok := checkedDuration(policy.RetentionDays, 24*time.Hour); !ok {
+			return fmt.Errorf("archive_retention.policies[%d].retention_days is too large", index)
 		}
 	}
 	return nil
@@ -1300,6 +1335,31 @@ func (tr *TestRunner) GetSystemSettings() SystemSettings {
 	return cloneSystemSettings(tr.settings)
 }
 
+// systemSettingsFromStoredValue decodes the durable value observed inside a
+// capacity-fenced transaction. It mirrors the HA refresh compatibility defaults
+// so the transaction evaluates exactly the settings snapshot that will govern
+// admission after it commits.
+func systemSettingsFromStoredValue(raw string, fallback SystemSettings) (SystemSettings, error) {
+	if strings.TrimSpace(raw) == "" {
+		return cloneSystemSettings(fallback), nil
+	}
+	var loaded SystemSettings
+	if err := json.Unmarshal([]byte(raw), &loaded); err != nil {
+		return SystemSettings{}, fmt.Errorf("decode durable system settings: %w", err)
+	}
+	if !rawJSONHasKey(raw, "prometheus") {
+		loaded.Prometheus = defaultPrometheusSettings()
+	}
+	if !rawJSONHasKey(raw, "client_downloads") {
+		loaded.ClientDownloads = defaultClientDownloadsSettings()
+	}
+	loaded = normalizeLoadedSystemSettings(loaded, fallback.General.MaxConcurrentTests)
+	if err := validateSystemSettings(loaded); err != nil {
+		return SystemSettings{}, fmt.Errorf("validate durable system settings: %w", err)
+	}
+	return loaded, nil
+}
+
 func (tr *TestRunner) systemSettingsSnapshot() (SystemSettings, uint64) {
 	tr.settingsRefreshMu.Lock()
 	defer tr.settingsRefreshMu.Unlock()
@@ -1480,10 +1540,40 @@ func (tr *TestRunner) updateSystemSettings(settings SystemSettings, expectedRevi
 		return SystemSettings{}, errSystemSettingsConflict
 	}
 	expectedRaw := tr.systemSettingsRaw
+	tr.mu.RLock()
+	currentFallback := cloneSystemSettings(tr.settings)
+	tr.mu.RUnlock()
 	tr.settingsRefreshMu.Unlock()
 	if tr.settingsStore != nil {
 		encodedString := string(encoded)
-		if cas, ok := tr.settingsStore.(settingsCompareAndSwapper); ok {
+		if fenced, ok := tr.settingsStore.(capacityFencedSettingsCompareAndSwapper); ok {
+			poolEnvelopes, snapshotErr := tr.PoolGeneratorEnvelopeSnapshot()
+			if snapshotErr != nil {
+				return SystemSettings{}, fmt.Errorf("resolve fleet capacity: %w", snapshotErr)
+			}
+			updated, err := fenced.CompareAndSwapSettingWithCapacityFence(
+				systemSettingsStoreKey,
+				expectedRaw,
+				encodedString,
+				time.Now().UTC(),
+				func(current string, approved []*storage.CapacityReservation) error {
+					before, err := systemSettingsFromStoredValue(current, currentFallback)
+					if err != nil {
+						return err
+					}
+					if conflict := capacityChangeOverbookingConflict(before, normalized, approved, approved, poolEnvelopes); conflict != "" {
+						return fmt.Errorf("capacity_planning update rejected: %s", conflict)
+					}
+					return nil
+				},
+			)
+			if err != nil {
+				return SystemSettings{}, fmt.Errorf("persist settings: %w", err)
+			}
+			if !updated {
+				return SystemSettings{}, errSystemSettingsConflict
+			}
+		} else if cas, ok := tr.settingsStore.(settingsCompareAndSwapper); ok {
 			updated, err := cas.CompareAndSwapSetting(systemSettingsStoreKey, expectedRaw, encodedString)
 			if err != nil {
 				return SystemSettings{}, fmt.Errorf("persist settings: %w", err)

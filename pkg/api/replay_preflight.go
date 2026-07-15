@@ -3,12 +3,12 @@ package api
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/engine"
 )
 
 type ReplayPreflight struct {
@@ -361,13 +361,13 @@ func replaySecretRefs(script *dsl.Script) ([]string, []string) {
 	for _, action := range replayOrderedActions(script) {
 		for _, ref := range replayTemplateRefs(action, "env") {
 			required[ref] = struct{}{}
-			if _, ok := os.LookupEnv(ref); !ok {
+			if !engine.ScriptEnvAvailable(ref) {
 				missing[ref] = struct{}{}
 			}
 		}
 		for _, ref := range replayTemplateRefs(action, "secret") {
 			required[ref] = struct{}{}
-			if !replaySecretAvailable(ref) {
+			if !replaySecretAvailable(script.ProjectID, ref) {
 				missing[ref] = struct{}{}
 			}
 		}
@@ -375,13 +375,8 @@ func replaySecretRefs(script *dsl.Script) ([]string, []string) {
 	return sortedSetKeys(required), sortedSetKeys(missing)
 }
 
-func replaySecretAvailable(name string) bool {
-	if _, ok := os.LookupEnv(name); ok {
-		return true
-	}
-	normalized := strings.NewReplacer(".", "_", "-", "_").Replace(strings.ToUpper(name))
-	_, ok := os.LookupEnv("APEXLOAD_SECRET_" + normalized)
-	return ok
+func replaySecretAvailable(projectID, name string) bool {
+	return engine.ProjectScriptSecretEnvAvailable(projectID, name)
 }
 
 func replayDataSourceWarnings(script *dsl.Script) []string {

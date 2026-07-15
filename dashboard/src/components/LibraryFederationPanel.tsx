@@ -15,17 +15,26 @@ type LibraryFederationPanelProps = {
 type RemoteDraft = {
   name: string
   base_url: string
+  local_project_id: string
   default_project_id: string
+  project_mappings: Record<string, string>
   auth_method: string
   credential_ref: string
   api_key: string
 }
 
 function remoteToDraft(remote?: LibraryRemote, projectId?: string): RemoteDraft {
+  const mappings = remote?.project_mappings || {}
+  const preferredLocalProject = projectId?.trim() || ''
+  const localProject = (preferredLocalProject && mappings[preferredLocalProject]
+    ? preferredLocalProject
+    : Object.keys(mappings)[0]) || preferredLocalProject
   return {
     name: remote?.name || '',
     base_url: remote?.base_url || '',
-    default_project_id: remote?.default_project_id || projectId || '',
+    local_project_id: localProject,
+    default_project_id: mappings[localProject] || remote?.default_project_id || '',
+    project_mappings: { ...mappings },
     auth_method: remote?.auth_method || 'service_account',
     credential_ref: remote?.credential_ref || '',
     api_key: '',
@@ -81,6 +90,10 @@ export default function LibraryFederationPanel({ projectId }: LibraryFederationP
         name: draft.name.trim(),
         base_url: draft.base_url.trim(),
         default_project_id: draft.default_project_id.trim(),
+        project_mappings: {
+          ...draft.project_mappings,
+          [draft.local_project_id.trim()]: draft.default_project_id.trim(),
+        },
         auth_method: draft.auth_method,
         credential_ref: draft.credential_ref.trim(),
         api_key: draft.api_key.trim(),
@@ -139,7 +152,7 @@ export default function LibraryFederationPanel({ projectId }: LibraryFederationP
     setActionError('')
   }
 
-  const canSave = draft.name.trim() && draft.base_url.trim()
+  const canSave = draft.name.trim() && draft.base_url.trim() && draft.local_project_id.trim() && draft.default_project_id.trim()
 
   return (
     <div className="settings-subsection library-federation-panel">
@@ -183,7 +196,7 @@ export default function LibraryFederationPanel({ projectId }: LibraryFederationP
                 <span>{remote.name}</span>
                 <small>{remote.base_url}</small>
                 <small>
-                  Project {remote.default_project_id || 'unmapped'} / checked {formatLibraryDateTime(remote.last_health_check)} / credentials {remoteCredentialLabel(remote)}
+                  Mappings {Object.entries(remote.project_mappings || {}).map(([local, target]) => `${local} → ${target}`).join(', ') || 'unmapped'} / checked {formatLibraryDateTime(remote.last_health_check)} / credentials {remoteCredentialLabel(remote)}
                 </small>
                 {remote.last_error && <small>{remote.last_error}</small>}
               </div>
@@ -208,8 +221,12 @@ export default function LibraryFederationPanel({ projectId }: LibraryFederationP
           <input className="settings-input" value={draft.base_url} onChange={event => setDraft(prev => ({ ...prev, base_url: event.target.value }))} placeholder="https://apexload.example.com" />
         </label>
         <label className="project-redaction-rule-field">
-          <span>Default Project Mapping</span>
-          <input className="settings-input" value={draft.default_project_id} onChange={event => setDraft(prev => ({ ...prev, default_project_id: event.target.value }))} placeholder="project-id" />
+          <span>Local Project</span>
+          <input className="settings-input" value={draft.local_project_id} onChange={event => setDraft(prev => ({ ...prev, local_project_id: event.target.value }))} placeholder="local-project-id" />
+        </label>
+        <label className="project-redaction-rule-field">
+          <span>Remote Project</span>
+          <input className="settings-input" value={draft.default_project_id} onChange={event => setDraft(prev => ({ ...prev, default_project_id: event.target.value }))} placeholder="remote-project-id" />
         </label>
         <label className="project-redaction-rule-field">
           <span>Auth Method</span>

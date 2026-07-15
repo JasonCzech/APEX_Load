@@ -4,17 +4,33 @@ package apexload.v1;
 
 option go_package = "github.com/jasonczech/apexload/api/proto";
 
+import "google/protobuf/duration.proto";
+
 // GeneratorControl is the gRPC service between the controller and generator pods.
 // Phase 1 uses direct in-process execution; this proto is defined for Phase 2 distribution.
 service GeneratorControl {
+  // ClaimExecutionEpoch establishes or renews the controller execution term on
+  // this generator. A higher generation fences all lower-generation work.
+  rpc ClaimExecutionEpoch(ExecutionEpochClaim) returns (ExecutionEpochAck);
+
   // AssignWork sends a test script and VUser allocation to a generator.
   rpc AssignWork(WorkAssignment) returns (AssignmentAck);
+
+  // CommitWork releases every successfully staged shard for one test on this
+  // generator. AssignWork performs admission/parsing/reservation only, so no
+  // protocol traffic can start before the controller finishes staging the
+  // complete fleet fan-out.
+  rpc CommitWork(WorkCommitRequest) returns (WorkCommitAck);
 
   // AdjustVUsers changes the VUser count for a running test on this generator.
   rpc AdjustVUsers(VUserAdjustment) returns (AdjustmentAck);
 
   // AdjustDuration changes the duration for a running test on this generator.
   rpc AdjustDuration(DurationAdjustment) returns (DurationAck);
+
+  // SetPaused applies an idempotent, execution-fenced pause transition and
+  // returns only after the generator engine has applied the requested state.
+  rpc SetPaused(PauseRequest) returns (PauseAck);
 
   // StopTest requests graceful shutdown of a test on this generator.
   rpc StopTest(StopRequest) returns (StopAck);
@@ -51,6 +67,61 @@ message WorkAssignment {
   map<string, string> environment = 6;
   repeated DataFile data_files = 7;
   repeated RedactionRule redaction_rules = 10;
+  uint64 execution_generation = 11;
+  string expected_script_hash = 12;
+  // Precise fields supersede the legacy whole-second fields above. Senders
+  // populate both during rolling upgrades; receivers prefer these fields.
+  google.protobuf.Duration target_duration = 13;
+  google.protobuf.Duration ramp_up = 14;
+  google.protobuf.Duration ramp_down = 15;
+  string init_strategy = 16;
+  google.protobuf.Duration pre_baseline = 17;
+  google.protobuf.Duration post_baseline = 18;
+  // Stable logical-shard identity. shard_ordinal is zero-based and must be
+  // smaller than shard_count. vuser_id_offset maps local VUser IDs into the
+  // one logical run so unique data rows do not restart on each generator.
+  uint32 shard_ordinal = 19;
+  uint32 shard_count = 20;
+  uint64 vuser_id_offset = 21;
+  // start_paused keeps a newly provisioned evacuation target behind the
+  // execution gate when the logical run is already paused. A replacement
+  // generator has no prior local assignment from which to infer this state.
+  bool start_paused = 22;
+  // duration_offset is active steady-test time completed before this shard was
+  // staged. It lets a fresh evacuation target translate later whole-run
+  // duration controls into its replacement-local deadline.
+  google.protobuf.Duration duration_offset = 23;
+}
+
+message WorkCommitRequest {
+  string test_id = 1;
+  uint64 execution_generation = 2;
+  // Common controller-selected release barrier for every generator in the
+  // fleet. A generator rejects a new commit received after this instant rather
+  // than starting late and skewing the distributed ramp.
+  int64 start_at_unix_nano = 3;
+}
+
+message WorkCommitAck {
+  bool accepted = 1;
+  string error_message = 2;
+}
+
+message ExecutionEpochClaim {
+  uint64 execution_generation = 1;
+  int64 lease_ttl_milliseconds = 2;
+  // execution_lease_owner_id is the controller scheduler lease's exact,
+  // acquisition-scoped owner token. Together with execution_generation it
+  // identifies one durable controller term and lets a replacement generator
+  // safely revalidate that same live term without admitting a different owner.
+  string execution_lease_owner_id = 3;
+}
+
+message ExecutionEpochAck {
+  bool accepted = 1;
+  uint64 current_generation = 2;
+  int64 expires_at_unix_ms = 3;
+  string error_message = 4;
 }
 
 message RedactionRule {
@@ -62,6 +133,7 @@ message RedactionRule {
 message DataFile {
   string name = 1;
   bytes content = 2;
+  string sha256 = 3;
 }
 
 message AssignmentAck {
@@ -75,6 +147,8 @@ message VUserAdjustment {
   string group_name = 4;
   int32 target_vusers = 2;
   int32 ramp_seconds = 3;
+  uint64 execution_generation = 5;
+  google.protobuf.Duration ramp_duration = 6;
 }
 
 message AdjustmentAck {
@@ -85,16 +159,20 @@ message AdjustmentAck {
 message DurationAdjustment {
   string test_id = 1;
   int64 target_duration_seconds = 2;
+  uint64 execution_generation = 3;
+  google.protobuf.Duration target_duration = 4;
 }
 
 message DurationAck {
   bool accepted = 1;
   int64 current_duration_seconds = 2;
+  google.protobuf.Duration current_duration = 3;
 }
 
 message StopRequest {
   string test_id = 1;
   bool graceful = 2;
+  uint64 execution_generation = 3;
 }
 
 message StopAck {
@@ -124,6 +202,7 @@ message MetricsBatch {
   MetricAggregate fleet_metrics = 15;
   BrowserMetrics browser_metrics = 16;
   repeated BrowserDeviceMetrics browser_device_metrics = 17;
+  uint64 execution_generation = 18;
 }
 
 message MetricsBatchTelemetry {
@@ -310,6 +389,17 @@ message ControlSignal {
 message PauseRequest {
   string test_id = 1;
   bool pause = 2;
+  uint64 execution_generation = 3;
+  string operation_id = 4;
+  uint64 operation_sequence = 5;
+}
+
+message PauseAck {
+  bool accepted = 1;
+  bool current_paused = 2;
+  string applied_operation_id = 3;
+  string error_message = 4;
+  uint64 applied_operation_sequence = 5;
 }
 
 message HeartbeatPing {
@@ -336,6 +426,7 @@ message ScriptPayload {
   string script_id = 1;
   bytes content = 2;
   string content_hash = 3;
+  uint64 execution_generation = 4;
 }
 
 message ScriptAck {

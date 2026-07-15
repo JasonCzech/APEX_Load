@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -25,7 +26,10 @@ const (
 	minArchiveSampleLimit = 16
 	maxArchiveSampleLimit = 5000
 )
-const maxArchiveReportBatchIDs = 50
+const (
+	maxArchiveReportBatchIDs   = 50
+	maxArchiveReportBatchBytes = int64(64 << 20)
+)
 
 func (s *Server) handleGetRunArchiveManifest(w http.ResponseWriter, r *http.Request) {
 	record, lease, ok := s.requireRunArchive(w, r)
@@ -36,6 +40,11 @@ func (s *Server) handleGetRunArchiveManifest(w http.ResponseWriter, r *http.Requ
 	manifest, err := cachedRunArchiveManifest(record)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	manifest, err = sanitizedRunArchiveManifest(r.Context(), record, manifest)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to prepare safe archive manifest: "+err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, manifest)
@@ -92,8 +101,13 @@ func (s *Server) handleDownloadRunArchive(w http.ResponseWriter, r *http.Request
 		return
 	}
 	defer lease.Release()
+	manifest, err := s.runner.GetRunArchiveManifest(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
 	staged, err := stageArchiveDownload(prepCtx, func(destination io.Writer) error {
-		return zipDirectoryContext(prepCtx, record.ArchivePath, destination)
+		return zipSanitizedRunArchiveContext(prepCtx, record, manifest, destination)
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to build archive bundle: "+err.Error())
@@ -146,6 +160,42 @@ func (s *Server) handleDownloadRunArchiveArtifact(w http.ResponseWriter, r *http
 	}
 	if _, allowed := artifacts[name]; !allowed {
 		writeError(w, http.StatusNotFound, "archive artifact not found")
+		return
+	}
+	if parquetName := strings.TrimSpace(manifest.TransactionsParquetFile); parquetName != "" && name == parquetName {
+		// Transaction parquet from legacy controllers may contain raw extraction
+		// and snapshot fields. It is omitted rather than served byte-for-byte;
+		// clients can regenerate it from the sanitized JSONL artifact.
+		writeError(w, http.StatusNotFound, "archive artifact has no safe legacy representation")
+		return
+	}
+	if name == strings.TrimSpace(manifest.TransactionsFile) {
+		staged, err := stageArchiveDownload(prepCtx, func(destination io.Writer) error {
+			_, err := writeSanitizedArchiveTransactions(prepCtx, record, manifest, destination)
+			return err
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to prepare safe archive artifact: "+err.Error())
+			return
+		}
+		defer removeStagedArchiveDownload(staged)
+		filename := fmt.Sprintf("%s-%s-%s", sanitizeFilename(test.Name), id, name)
+		w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+		w.Header().Set("Content-Type", artifactContentType(name))
+		clearArchiveWriteDeadline(w)
+		http.ServeContent(w, r, filename, record.CompletedAt.UTC(), staged.File)
+		return
+	}
+	if data, info, handled, err := sanitizedRunArchiveArtifact(prepCtx, record, manifest, name); handled {
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to prepare safe archive artifact: "+err.Error())
+			return
+		}
+		filename := fmt.Sprintf("%s-%s-%s", sanitizeFilename(test.Name), id, name)
+		w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+		w.Header().Set("Content-Type", artifactContentType(name))
+		clearArchiveWriteDeadline(w)
+		http.ServeContent(w, r, filename, info.ModTime(), bytes.NewReader(data))
 		return
 	}
 	artifact, info, err := openArchiveArtifactForRead(record.ArchivePath, name)
@@ -330,6 +380,10 @@ func (s *Server) handleGetRunArchiveSummaries(w http.ResponseWriter, r *http.Req
 	}
 	action := strings.TrimSpace(r.URL.Query().Get("action"))
 	groupFilter := parseGroupFilterQuery(r.URL.Query())
+	if groupFilter.Invalid {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("groups must contain at most %d names of at most %d bytes", maxGroupFilterNames, maxGroupFilterNameBytes))
+		return
+	}
 	sampleLimit, ok := parseArchiveSampleLimit(w, r)
 	if !ok {
 		return
@@ -486,6 +540,7 @@ func (s *Server) handleGetRunArchiveReportsBatch(w http.ResponseWriter, r *http.
 	reports := make(map[string]*RunArchiveReport, len(req.IDs))
 	errorsByID := make(map[string]string)
 	seen := make(map[string]struct{}, len(req.IDs))
+	var reportBytes int64
 	for _, rawID := range req.IDs {
 		id := strings.TrimSpace(rawID)
 		if id == "" {
@@ -522,6 +577,16 @@ func (s *Server) handleGetRunArchiveReportsBatch(w http.ResponseWriter, r *http.
 		}
 		attachReportVerdictAndSLA(report)
 		s.attachReleaseTrend(report)
+		encodedBytes := archiveJSONWeight(report)
+		if encodedBytes < 0 {
+			errorsByID[id] = "archive report could not be encoded"
+			continue
+		}
+		if encodedBytes > maxArchiveReportBatchBytes-reportBytes {
+			errorsByID[id] = "archive report batch exceeds response byte limit"
+			continue
+		}
+		reportBytes += encodedBytes
 		reports[id] = report
 	}
 	writeJSON(w, http.StatusOK, map[string]any{

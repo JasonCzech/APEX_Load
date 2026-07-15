@@ -53,9 +53,41 @@ const (
 	grpcTLSServerNameEnvVar = "APEXLOAD_GRPC_TLS_SERVER_NAME"
 	grpcAuthTokenEnvVar     = "APEXLOAD_GRPC_AUTH_TOKEN"
 
-	grpcAuthorizationHeader = "authorization"
-	grpcBearerPrefix        = "Bearer "
+	grpcAuthorizationHeader     = "authorization"
+	grpcBearerPrefix            = "Bearer "
+	minProductionAuthTokenBytes = 32
+
+	// gRPC enforces limits against the encoded protobuf message, not just the
+	// bytes field carrying a script or archive. Reserve explicit envelope space
+	// and one script-cache-sized allowance for WorkAssignment data files and
+	// metadata so an application-valid payload is not rejected by transport.
+	generatorRPCEnvelopeHeadroomBytes int64 = 1 << 20
 )
+
+func generatorRPCMaxReceiveBytes() int64 {
+	limit := configuredGeneratorScriptCacheMaxBytes()
+	maxInt64 := int64(^uint64(0) >> 1)
+	if limit > (maxInt64-generatorRPCEnvelopeHeadroomBytes)/2 {
+		return maxInt64
+	}
+	return 2*limit + generatorRPCEnvelopeHeadroomBytes
+}
+
+func generatorRPCAssignmentAncillaryLimit(scriptLimit int64) int64 {
+	maxInt64 := int64(^uint64(0) >> 1)
+	if scriptLimit > maxInt64-generatorRPCEnvelopeHeadroomBytes {
+		return maxInt64
+	}
+	return scriptLimit + generatorRPCEnvelopeHeadroomBytes
+}
+
+func grpcMessageSize(limit int64) int {
+	maxInt := int64(^uint(0) >> 1)
+	if limit > maxInt {
+		return int(maxInt)
+	}
+	return int(limit)
+}
 
 type transportEnv struct {
 	CertFile   string
@@ -144,6 +176,16 @@ func (e transportEnv) validate() error {
 	return nil
 }
 
+func validateProductionTokenStrength(env string, security TransportSecurity, token string) error {
+	if !isProductionEnvironment(env) || security.MutualTLS || !security.Token {
+		return nil
+	}
+	if len(token) < minProductionAuthTokenBytes {
+		return fmt.Errorf("production TLS-with-token generator authentication requires %s to contain at least %d bytes", grpcAuthTokenEnvVar, minProductionAuthTokenBytes)
+	}
+	return nil
+}
+
 func (e transportEnv) loadCertPool() (*x509.CertPool, error) {
 	pem, err := os.ReadFile(e.CAFile)
 	if err != nil {
@@ -170,12 +212,11 @@ func ServerOptionsFromEnv() ([]grpc.ServerOption, error) {
 	if security.MustRefuseInsecure(os.Getenv("APEXLOAD_ENV")) {
 		return nil, fmt.Errorf("production gRPC server requires mTLS or TLS plus %s; configured %s", grpcAuthTokenEnvVar, security.String())
 	}
-
-	maxReceiveBytes := configuredGeneratorScriptCacheMaxBytes()
-	if maxReceiveBytes > int64(^uint(0)>>1) {
-		maxReceiveBytes = int64(^uint(0) >> 1)
+	if err := validateProductionTokenStrength(os.Getenv("APEXLOAD_ENV"), security, env.Token); err != nil {
+		return nil, err
 	}
-	var options = []grpc.ServerOption{grpc.MaxRecvMsgSize(int(maxReceiveBytes))}
+
+	var options = []grpc.ServerOption{grpc.MaxRecvMsgSize(grpcMessageSize(generatorRPCMaxReceiveBytes()))}
 	if env.CertFile != "" {
 		loadConfig := func() (*tls.Config, error) {
 			cert, err := tls.LoadX509KeyPair(env.CertFile, env.KeyFile)
@@ -228,8 +269,11 @@ func DialOptionsFromEnv() ([]grpc.DialOption, error) {
 	if security.MustRefuseInsecure(os.Getenv("APEXLOAD_ENV")) {
 		return nil, fmt.Errorf("production gRPC client requires mTLS or verified TLS plus %s; configured %s", grpcAuthTokenEnvVar, security.String())
 	}
+	if err := validateProductionTokenStrength(os.Getenv("APEXLOAD_ENV"), security, env.Token); err != nil {
+		return nil, err
+	}
 	options := []grpc.DialOption{
-		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(64 << 20)),
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(grpcMessageSize(archiveArtifactUnaryReceiveMaxSize))),
 		grpc.WithConnectParams(grpc.ConnectParams{
 			Backoff: backoff.Config{
 				BaseDelay:  250 * time.Millisecond,
@@ -298,6 +342,9 @@ func tokenAuthInterceptors(token string) (grpc.UnaryServerInterceptor, grpc.Stre
 			return status.Error(codes.Unauthenticated, "missing authorization metadata")
 		}
 		for _, value := range md.Get(grpcAuthorizationHeader) {
+			if !strings.HasPrefix(value, grpcBearerPrefix) {
+				continue
+			}
 			candidate := strings.TrimPrefix(value, grpcBearerPrefix)
 			if subtle.ConstantTimeCompare([]byte(candidate), []byte(token)) == 1 {
 				return nil

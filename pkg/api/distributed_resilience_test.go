@@ -3,8 +3,15 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -17,14 +24,389 @@ import (
 )
 
 type evacuationFakeGeneratorClient struct {
+	target   string
+	mu       sync.Mutex
+	adjust   map[string]int32
+	stops    int
+	closes   int
+	stopHook func()
+}
+
+type faultEvacuationGeneratorClient struct {
+	*evacuationFakeGeneratorClient
+	muFault                   sync.Mutex
+	activeVUsers              int32
+	adjustCalls               int
+	stopCalls                 int
+	loseForwardAdjustResponse bool
+	failRollbackAdjustments   bool
+	loseInitialStopResponses  int
+	lostStopResponseApplies   bool
+}
+
+type commitFailingEvacuationClient struct {
+	generatorClient
+	commitCalls atomic.Int32
+}
+
+type stagedEvacuationFaultClient struct {
+	generatorClient
+	mu                  sync.Mutex
+	assignCalls         int
+	stopCalls           int
+	loseAssignResponses int
+	loseStopResponses   int
+}
+
+type setupRecordingEvacuationClient struct {
+	*generatorrpc.Client
+	setupTimeout atomic.Int64
+}
+
+type terminalObservingEvacuationClient struct {
+	*generatorrpc.Client
+	runner *TestRunner
+	testID string
 	target string
-	mu     sync.Mutex
-	adjust map[string]int32
-	stops  int
+}
+
+func (c *terminalObservingEvacuationClient) StopTest(ctx context.Context, testID string, graceful bool) (generatorrpc.StopResult, error) {
+	result, err := c.Client.StopTest(ctx, testID, graceful)
+	if err != nil {
+		return result, err
+	}
+	return result, c.waitForTerminalBatch(ctx)
+}
+
+func (c *terminalObservingEvacuationClient) StopTestAtGeneration(ctx context.Context, testID string, graceful bool, generation uint64) (generatorrpc.StopResult, error) {
+	result, err := c.Client.StopTestAtGeneration(ctx, testID, graceful, generation)
+	if err != nil {
+		return result, err
+	}
+	return result, c.waitForTerminalBatch(ctx)
+}
+
+func (c *terminalObservingEvacuationClient) waitForTerminalBatch(ctx context.Context) error {
+	for {
+		c.runner.mu.RLock()
+		managed := c.runner.tests[c.testID]
+		observed := managed != nil && isTerminalRemoteLifecycle(managed.remoteMetricsBatchesByTarget[c.target].LifecycleState)
+		c.runner.mu.RUnlock()
+		if observed {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("controller did not observe the source terminal batch before stop acknowledgement: %w", ctx.Err())
+		case <-time.After(time.Millisecond):
+		}
+	}
+}
+
+func (c *setupRecordingEvacuationClient) OpenMetricsStreamWithSetupTimeoutForTestGeneration(parent context.Context, timeout time.Duration, testID string, generation uint64) (*generatorrpc.MetricsStream, error) {
+	c.setupTimeout.Store(int64(timeout))
+	return c.Client.OpenMetricsStreamWithSetupTimeoutForTestGeneration(parent, timeout, testID, generation)
+}
+
+func (c *stagedEvacuationFaultClient) AssignWork(ctx context.Context, assignment generatorrpc.Assignment) (generatorrpc.AssignmentResult, error) {
+	result, err := c.generatorClient.AssignWork(ctx, assignment)
+	c.mu.Lock()
+	c.assignCalls++
+	call := c.assignCalls
+	c.mu.Unlock()
+	if err == nil && call <= c.loseAssignResponses {
+		return result, context.DeadlineExceeded
+	}
+	return result, err
+}
+
+func (c *stagedEvacuationFaultClient) StopTest(ctx context.Context, testID string, graceful bool) (generatorrpc.StopResult, error) {
+	c.mu.Lock()
+	c.stopCalls++
+	call := c.stopCalls
+	c.mu.Unlock()
+	if call <= c.loseStopResponses {
+		return generatorrpc.StopResult{}, context.DeadlineExceeded
+	}
+	return c.generatorClient.StopTest(ctx, testID, graceful)
+}
+
+func (c *stagedEvacuationFaultClient) CommitWorkAt(ctx context.Context, testID string, executionGeneration uint64, startAt time.Time) (generatorrpc.WorkCommitResult, error) {
+	committer, ok := c.generatorClient.(coordinatedWorkCommitClient)
+	if !ok {
+		return generatorrpc.WorkCommitResult{}, errors.New("wrapped generator does not support coordinated commit")
+	}
+	return committer.CommitWorkAt(ctx, testID, executionGeneration, startAt)
+}
+
+func (c *stagedEvacuationFaultClient) stops() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.stopCalls
+}
+
+func (c *commitFailingEvacuationClient) CommitWork(context.Context, string, uint64) (generatorrpc.WorkCommitResult, error) {
+	c.commitCalls.Add(1)
+	return generatorrpc.WorkCommitResult{}, context.DeadlineExceeded
+}
+
+func (c *commitFailingEvacuationClient) CommitWorkAt(context.Context, string, uint64, time.Time) (generatorrpc.WorkCommitResult, error) {
+	c.commitCalls.Add(1)
+	return generatorrpc.WorkCommitResult{}, context.DeadlineExceeded
+}
+
+func newFaultEvacuationGeneratorClient(target string, active int32) *faultEvacuationGeneratorClient {
+	return &faultEvacuationGeneratorClient{
+		evacuationFakeGeneratorClient: newEvacuationFakeGeneratorClient(target),
+		activeVUsers:                  active,
+	}
+}
+
+func (c *faultEvacuationGeneratorClient) AdjustVUsers(_ context.Context, adjustment generatorrpc.VUserAdjustment) (generatorrpc.AdjustmentResult, error) {
+	c.muFault.Lock()
+	defer c.muFault.Unlock()
+	c.adjustCalls++
+	if c.loseForwardAdjustResponse && c.adjustCalls == 1 {
+		c.activeVUsers = adjustment.TargetVUsers
+		return generatorrpc.AdjustmentResult{}, context.DeadlineExceeded
+	}
+	if c.failRollbackAdjustments && c.adjustCalls > 1 {
+		return generatorrpc.AdjustmentResult{}, context.DeadlineExceeded
+	}
+	c.activeVUsers = adjustment.TargetVUsers
+	return generatorrpc.AdjustmentResult{Accepted: true, CurrentVUsers: adjustment.TargetVUsers}, nil
+}
+
+func (c *faultEvacuationGeneratorClient) StopTest(context.Context, string, bool) (generatorrpc.StopResult, error) {
+	c.muFault.Lock()
+	defer c.muFault.Unlock()
+	c.stopCalls++
+	if c.stopCalls <= c.loseInitialStopResponses {
+		if c.lostStopResponseApplies {
+			c.activeVUsers = 0
+		}
+		return generatorrpc.StopResult{}, context.DeadlineExceeded
+	}
+	c.activeVUsers = 0
+	return generatorrpc.StopResult{Acknowledged: true}, nil
+}
+
+func (c *faultEvacuationGeneratorClient) active() int32 {
+	c.muFault.Lock()
+	defer c.muFault.Unlock()
+	return c.activeVUsers
+}
+
+func (c *faultEvacuationGeneratorClient) faultStops() int {
+	c.muFault.Lock()
+	defer c.muFault.Unlock()
+	return c.stopCalls
 }
 
 func newEvacuationFakeGeneratorClient(target string) *evacuationFakeGeneratorClient {
 	return &evacuationFakeGeneratorClient{target: target, adjust: make(map[string]int32)}
+}
+
+func TestDistributedEvacuationRemainingDurationExcludesStartupAndPauseTime(t *testing.T) {
+	now := time.Date(2026, time.July, 15, 12, 0, 0, 0, time.UTC)
+	started := now.Add(-12 * time.Minute)
+	test := &ManagedTest{
+		Duration:         10 * time.Minute,
+		StartedAt:        &started,
+		StartDelay:       "2m",
+		ResourceBaseline: true,
+		CumulativePause:  time.Minute,
+	}
+	// 12m wall - 2m delay - 5m resource baseline - 1m pause = 4m
+	// steady-state elapsed, leaving 6m of the requested target duration.
+	remaining, elapsed, preRemaining := distributedEvacuationTiming(test, now)
+	if want := 6 * time.Minute; remaining != want {
+		t.Fatalf("remaining duration = %s, want %s", remaining, want)
+	}
+	if elapsed != 4*time.Minute || preRemaining != 0 {
+		t.Fatalf("timing = elapsed:%s pre_remaining:%s, want 4m/0", elapsed, preRemaining)
+	}
+
+	started = now.Add(-30 * time.Minute)
+	remaining, _, _ = distributedEvacuationTiming(test, now)
+	if remaining != 0 {
+		t.Fatalf("exhausted duration = %s, want zero", remaining)
+	}
+
+	started = now.Add(-8 * time.Minute)
+	pausedAt := now.Add(-3 * time.Minute)
+	test.StartedAt = &started
+	test.CumulativePause = time.Minute
+	test.PausedAt = &pausedAt
+	// 8m wall - 2m delay - 5m resource baseline - 1m completed pause - 3m
+	// current pause leaves no active steady-state time and the full target.
+	remaining, elapsed, preRemaining = distributedEvacuationTiming(test, now)
+	if remaining != test.Duration || elapsed != 0 || preRemaining != 0 {
+		t.Fatalf("ongoing pause timing = remaining:%s elapsed:%s pre:%s, want %s/0/0", remaining, elapsed, preRemaining, test.Duration)
+	}
+}
+
+func TestGeneratorSupportsEvacuationAssignmentStateRequiresExplicitCapability(t *testing.T) {
+	tests := []struct {
+		name     string
+		snapshot generatorLoadSnapshot
+		want     bool
+	}{
+		{name: "healthy current generator", snapshot: generatorLoadSnapshot{HeartbeatOK: true, CompatibleFeatures: []string{"http", generatorrpc.FeatureEvacuationAssignmentStateV1}}, want: true},
+		{name: "rolling upgrade legacy generator", snapshot: generatorLoadSnapshot{HeartbeatOK: true, CompatibleFeatures: []string{"http"}}},
+		{name: "unhealthy current generator", snapshot: generatorLoadSnapshot{HeartbeatOK: false, CompatibleFeatures: []string{generatorrpc.FeatureEvacuationAssignmentStateV1}}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := generatorSupportsEvacuationAssignmentState(tc.snapshot); got != tc.want {
+				t.Fatalf("generatorSupportsEvacuationAssignmentState() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestDistributedShardRunGoalsRequireSingleGenerator(t *testing.T) {
+	twoShards := []GeneratorShardSummary{{Target: "gen-a"}, {Target: "gen-b"}}
+	tests := []struct {
+		name  string
+		group TestGroup
+		want  bool
+	}{
+		{name: "global iterations from effective snapshot", group: TestGroup{RunLogicGoals: &RunLogicGoalSnapshot{GlobalIterations: 10}}, want: true},
+		{name: "transaction cap from script", group: TestGroup{script: &dsl.Script{Config: dsl.ScriptConfig{RunLogic: dsl.RunLogicConfig{MaxTransactions: 10}}}}, want: true},
+		{name: "duration driven", group: TestGroup{}, want: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateDistributedShardRunGoals(tc.group, twoShards)
+			if (err != nil) != tc.want {
+				t.Fatalf("validateDistributedShardRunGoals() error = %v, want error %v", err, tc.want)
+			}
+			if err := validateDistributedShardRunGoals(tc.group, twoShards[:1]); err != nil {
+				t.Fatalf("single shard rejected: %v", err)
+			}
+		})
+	}
+}
+
+func TestDistributedEvacuationTimingReportsRemainingPreBaseline(t *testing.T) {
+	now := time.Date(2026, time.July, 15, 12, 0, 0, 0, time.UTC)
+	started := now.Add(-90 * time.Second)
+	test := &ManagedTest{Duration: 10 * time.Minute, StartedAt: &started, StartDelay: "2m"}
+	remaining, elapsed, preRemaining := distributedEvacuationTiming(test, now)
+	if remaining != test.Duration || elapsed != 0 || preRemaining != 30*time.Second {
+		t.Fatalf("timing = remaining:%s elapsed:%s pre:%s", remaining, elapsed, preRemaining)
+	}
+}
+
+func TestDistributedEvacuationRemainingRamp(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		elapsed time.Duration
+		want    time.Duration
+	}{
+		{name: "start", elapsed: 0, want: 5 * time.Minute},
+		{name: "mid-ramp", elapsed: 2 * time.Minute, want: 3 * time.Minute},
+		{name: "steady", elapsed: 7 * time.Minute, want: 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := distributedEvacuationRemainingRamp(5*time.Minute, tc.elapsed); got != tc.want {
+				t.Fatalf("remaining ramp = %s, want %s", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestDistributedEvacuationRefusesCursorStatefulDataSources(t *testing.T) {
+	for _, strategy := range []string{"", "sequential", "pop"} {
+		t.Run(firstNonEmpty(strategy, "default-sequential"), func(t *testing.T) {
+			script := &dsl.Script{DataSources: []dsl.DataSource{{
+				Name:       "accounts",
+				Type:       "csv",
+				InlineData: "id\n1\n2\n",
+				Strategy:   strategy,
+			}}}
+			allowed, reason := groupAllowsStatelessDataReshard(TestGroup{Name: "buyers", script: script})
+			if allowed || reason == "" {
+				t.Fatalf("strategy %q allowed=%v reason=%q", strategy, allowed, reason)
+			}
+		})
+	}
+
+	for _, strategy := range []string{"unique", "random"} {
+		script := &dsl.Script{DataSources: []dsl.DataSource{{Name: "accounts", Type: "csv", Strategy: strategy}}}
+		if allowed, reason := groupAllowsStatelessDataReshard(TestGroup{script: script}); !allowed {
+			t.Fatalf("strategy %q was refused: %s", strategy, reason)
+		}
+	}
+}
+
+func TestDistributedEvacuationRefusesUncheckpointedBoundedAndParameterState(t *testing.T) {
+	tests := []struct {
+		name   string
+		script *dsl.Script
+	}{
+		{name: "per-vuser iterations", script: &dsl.Script{Config: dsl.ScriptConfig{RunLogic: dsl.RunLogicConfig{Iterations: 2}}}},
+		{name: "global iterations", script: &dsl.Script{Config: dsl.ScriptConfig{RunLogic: dsl.RunLogicConfig{GlobalIterations: 20}}}},
+		{name: "transaction cap", script: &dsl.Script{Config: dsl.ScriptConfig{RunLogic: dsl.RunLogicConfig{MaxTransactions: 20}}}},
+		{name: "iteration counter parameter", script: &dsl.Script{Parameters: []dsl.Parameter{{Name: "iteration", Type: "current_iteration"}}}},
+		{name: "advancing list parameter", script: &dsl.Script{Parameters: []dsl.Parameter{{Name: "account", Type: "list", Values: []string{"a", "b"}}}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			allowed, reason := groupAllowsGeneratorLossReshard(TestGroup{Protocol: "http", script: tt.script})
+			if allowed || !strings.Contains(reason, "checkpoint") {
+				t.Fatalf("allowed=%v reason=%q, want checkpoint refusal", allowed, reason)
+			}
+		})
+	}
+
+	safe := &dsl.Script{Parameters: []dsl.Parameter{{
+		Name: "account", Type: "list", Values: []string{"a", "b"}, ValueForEachVUser: true,
+	}}}
+	if allowed, reason := groupAllowsGeneratorLossReshard(TestGroup{Protocol: "http", script: safe}); !allowed {
+		t.Fatalf("fixed per-VUser parameter was refused: %s", reason)
+	}
+}
+
+func TestDistributedEvacuationRefusesUnsafeLifecycleWindows(t *testing.T) {
+	now := time.Now()
+	for _, tc := range []struct {
+		name       string
+		started    time.Time
+		duration   time.Duration
+		startDelay string
+	}{
+		{name: "pre-baseline", started: now, duration: time.Minute, startDelay: "30s"},
+		{name: "steady-exhausted", started: now.Add(-2 * time.Minute), duration: time.Minute},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			backend := newDistributedExecutionBackend([]string{"gen-a"}, 50*time.Millisecond, nil)
+			source := newEvacuationFakeGeneratorClient("gen-a")
+			test := &ManagedTest{
+				ID:         "unsafe-" + tc.name,
+				Status:     "RUNNING",
+				Duration:   tc.duration,
+				StartDelay: tc.startDelay,
+				StartedAt:  &tc.started,
+				Assignment: &GeneratorAssignmentSettings{TolerateGeneratorLoss: true},
+				Groups:     []TestGroup{{Name: "buyers", Protocol: "http", VUsers: 1, script: &dsl.Script{Protocol: "http"}}},
+				remoteGroupShards: map[string][]GeneratorShardSummary{
+					"buyers": {{Group: "buyers", Target: "gen-a", VUsers: 1}},
+				},
+				remoteClientsByTarget: map[string]generatorClient{"gen-a": source},
+				remoteTargetStates:    map[string]string{"gen-a": "RUNNING"},
+			}
+			runner := &TestRunner{tests: map[string]*ManagedTest{test.ID: test}}
+			impacts, err := backend.EvacuateGenerator(runner, test, "gen-a", true, "review")
+			if err != nil {
+				t.Fatalf("dry-run evacuation: %v", err)
+			}
+			if len(impacts) != 1 || !impacts[0].Refused || impacts[0].RefusalReason == "" {
+				t.Fatalf("impacts = %#v, want lifecycle refusal", impacts)
+			}
+		})
+	}
 }
 
 func (c *evacuationFakeGeneratorClient) DistributeScript(context.Context, generatorrpc.Script) (generatorrpc.ScriptResult, error) {
@@ -49,6 +431,9 @@ func (c *evacuationFakeGeneratorClient) OpenHeartbeat(context.Context) (*generat
 	return nil, errors.New("heartbeat unavailable in test")
 }
 func (c *evacuationFakeGeneratorClient) StopTest(context.Context, string, bool) (generatorrpc.StopResult, error) {
+	if c.stopHook != nil {
+		c.stopHook()
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.stops++
@@ -57,7 +442,12 @@ func (c *evacuationFakeGeneratorClient) StopTest(context.Context, string, bool) 
 func (c *evacuationFakeGeneratorClient) GetArchiveArtifact(context.Context, generatorrpc.ArchiveArtifactRequest) ([]byte, error) {
 	return nil, nil
 }
-func (c *evacuationFakeGeneratorClient) Close() error { return nil }
+func (c *evacuationFakeGeneratorClient) Close() error {
+	c.mu.Lock()
+	c.closes++
+	c.mu.Unlock()
+	return nil
+}
 
 func (c *evacuationFakeGeneratorClient) adjusted(group string) int32 {
 	c.mu.Lock()
@@ -71,17 +461,26 @@ func (c *evacuationFakeGeneratorClient) stopCount() int {
 	return c.stops
 }
 
-func TestDistributedEvacuateGeneratorReshardsStatelessGroups(t *testing.T) {
+func (c *evacuationFakeGeneratorClient) closeCount() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.closes
+}
+
+func TestDistributedEvacuateGeneratorRefusesMergeOntoExistingGroupShard(t *testing.T) {
 	backend := newDistributedExecutionBackend([]string{"gen-a:9090", "gen-b:9090", "gen-c:9090"}, time.Second, nil)
 	clients := map[string]*evacuationFakeGeneratorClient{
 		"gen-a:9090": newEvacuationFakeGeneratorClient("gen-a:9090"),
 		"gen-b:9090": newEvacuationFakeGeneratorClient("gen-b:9090"),
 		"gen-c:9090": newEvacuationFakeGeneratorClient("gen-c:9090"),
 	}
+	started := time.Now()
 	test := &ManagedTest{
 		ID:         "run-1",
 		Name:       "Checkout",
 		Status:     "RUNNING",
+		Duration:   time.Minute,
+		StartedAt:  &started,
 		Assignment: &GeneratorAssignmentSettings{TolerateGeneratorLoss: true},
 		Groups:     []TestGroup{{Name: "buyers", Protocol: "http", VUsers: 9}},
 		remoteGroupShards: map[string][]GeneratorShardSummary{
@@ -108,33 +507,252 @@ func TestDistributedEvacuateGeneratorReshardsStatelessGroups(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dry-run evacuate returned error: %v", err)
 	}
-	if len(dryRun) != 1 || dryRun[0].VUsers != 3 || len(dryRun[0].ToShards) != 2 {
-		t.Fatalf("dry-run impacts = %+v, want one redistributed buyers shard", dryRun)
+	if len(dryRun) != 1 || dryRun[0].VUsers != 3 || !dryRun[0].Refused || !strings.Contains(dryRun[0].RefusalReason, "does not already participate in this run") {
+		t.Fatalf("dry-run impacts = %+v, want one refusal for an existing run participant", dryRun)
 	}
 	if got := clients["gen-b:9090"].adjusted("buyers") + clients["gen-c:9090"].adjusted("buyers"); got != 0 {
 		t.Fatalf("dry-run adjusted survivors, got %d total", got)
 	}
+}
 
-	impacts, err := backend.EvacuateGenerator(runner, test, "gen-a:9090", false, "operator_evacuate")
+func TestDistributedEvacuateGeneratorRefusesReplacementAlreadyHostingDifferentGroup(t *testing.T) {
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	t.Setenv("APEXLOAD_GENERATOR_ARCHIVE_MIN_FREE_BYTES", "1")
+	healthyParticipant, _ := newTestGeneratorRPCClient(t, "gen-b", 10)
+	backend := newDistributedExecutionBackend([]string{"gen-a", "gen-b"}, time.Second, nil)
+	started := time.Now()
+	test := &ManagedTest{
+		ID:         "run-cross-group-participant",
+		Name:       "Cross-group participant",
+		Status:     "RUNNING",
+		Duration:   time.Minute,
+		StartedAt:  &started,
+		Assignment: &GeneratorAssignmentSettings{TolerateGeneratorLoss: true},
+		Groups: []TestGroup{
+			{Name: "buyers", Protocol: "http", VUsers: 3},
+			{Name: "admins", Protocol: "http", VUsers: 2},
+		},
+		remoteGroupShards: map[string][]GeneratorShardSummary{
+			"buyers": {{Group: "buyers", Target: "gen-a", VUsers: 3}},
+			"admins": {{Group: "admins", Target: "gen-b", VUsers: 2}},
+		},
+		remoteClientsByTarget: map[string]generatorClient{
+			"gen-a": newEvacuationFakeGeneratorClient("gen-a"),
+			"gen-b": healthyParticipant,
+		},
+		remoteTargetStates: map[string]string{"gen-a": "RUNNING", "gen-b": "RUNNING"},
+	}
+	runner := &TestRunner{tests: map[string]*ManagedTest{test.ID: test}}
+
+	impacts, err := backend.EvacuateGenerator(runner, test, "gen-a", true, "dry_run")
 	if err != nil {
-		t.Fatalf("apply evacuate returned error: %v", err)
+		t.Fatalf("dry-run evacuation: %v", err)
 	}
-	if len(impacts) != 1 {
-		t.Fatalf("impacts = %+v, want one", impacts)
+	if len(impacts) != 1 || !impacts[0].Refused || !strings.Contains(impacts[0].RefusalReason, "already participate in this run") {
+		t.Fatalf("impacts = %+v, want refusal because gen-b already hosts a different group", impacts)
 	}
-	if got := clients["gen-b:9090"].adjusted("buyers") + clients["gen-c:9090"].adjusted("buyers"); got != 9 {
-		t.Fatalf("survivor adjusted VUsers = %d, want total 9", got)
+}
+
+func TestDistributedEvacuationResponseLossAndRollbackFailureStopsWholeRun(t *testing.T) {
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	t.Setenv("APEXLOAD_GENERATOR_ARCHIVE_MIN_FREE_BYTES", "1")
+	remote, remoteService := newTestGeneratorRPCClient(t, "gen-b", 10)
+	replacement := &stagedEvacuationFaultClient{
+		generatorClient:     remote,
+		loseAssignResponses: 1,
+		loseStopResponses:   durableTransitionAttempts,
 	}
-	if clients["gen-a:9090"].stopCount() != 1 {
-		t.Fatalf("evacuated target stop count = %d, want 1", clients["gen-a:9090"].stopCount())
+	backend := newDistributedExecutionBackend([]string{"gen-a", "gen-b"}, 250*time.Millisecond, func(context.Context, string) (generatorClient, error) {
+		return replacement, nil
+	})
+	source := newFaultEvacuationGeneratorClient("gen-a", 3)
+	started := time.Now()
+	script := &dsl.Script{ID: "buyers-script", Name: "Buyers", Protocol: "http"}
+	test := &ManagedTest{
+		ID:         "run-evacuation-rollback-uncertain",
+		Status:     "RUNNING",
+		Duration:   time.Minute,
+		StartedAt:  &started,
+		Assignment: &GeneratorAssignmentSettings{TolerateGeneratorLoss: true},
+		Groups:     []TestGroup{{Name: "buyers", ScriptID: script.ID, ScriptName: script.Name, Protocol: "http", VUsers: 3, script: script}},
+		remoteGroupShards: map[string][]GeneratorShardSummary{
+			"buyers": {{Group: "buyers", Target: "gen-a", VUsers: 3}},
+		},
+		remoteClientsByTarget: map[string]generatorClient{"gen-a": source},
+		remoteTargetStates:    map[string]string{"gen-a": "RUNNING"},
 	}
-	for _, shard := range test.remoteGroupShards["buyers"] {
-		if shard.Target == "gen-a:9090" {
-			t.Fatalf("evacuated target remains in shards: %+v", test.remoteGroupShards["buyers"])
+	runner := &TestRunner{tests: map[string]*ManagedTest{test.ID: test}}
+
+	_, err := backend.EvacuateGenerator(runner, test, "gen-a", false, "operator_evacuate")
+	var uncertain *distributedEvacuationUncertainError
+	if !errors.As(err, &uncertain) {
+		t.Fatalf("EvacuateGenerator error = %v, want distributedEvacuationUncertainError", err)
+	}
+	if test.Status == "RUNNING" {
+		t.Fatalf("status = %q after uncertain rollback, want fail-closed state", test.Status)
+	}
+	if source.active() != 0 || remoteService.ActiveVUsers() != 0 {
+		t.Fatalf("active VUsers after fail-closed cleanup = source:%d replacement:%d, want zero", source.active(), remoteService.ActiveVUsers())
+	}
+	if source.faultStops() == 0 || replacement.stops() <= durableTransitionAttempts {
+		t.Fatalf("whole-run cleanup did not stop every participant: source=%d replacement=%d", source.faultStops(), replacement.stops())
+	}
+}
+
+func TestFailClosedUncertainEvacuationPreservesStoppedParticipantArchive(t *testing.T) {
+	archiveRoot := t.TempDir()
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", archiveRoot)
+	t.Setenv("APEXLOAD_GENERATOR_ARCHIVE_MIN_FREE_BYTES", "1")
+	const testID = "fail-closed-archive"
+	sourceDir := t.TempDir()
+	write := func(name string, content []byte) string {
+		t.Helper()
+		path := filepath.Join(sourceDir, name)
+		if err := os.WriteFile(path, content, 0o600); err != nil {
+			t.Fatal(err)
 		}
+		return path
 	}
-	if _, ok := test.remoteClientsByTarget["gen-a:9090"]; ok {
-		t.Fatalf("evacuated target remains in remote client map")
+	manifestPath := filepath.Join(sourceDir, runArchiveManifestFileName)
+	if err := writeIndentedJSONFile(manifestPath, RunArchiveManifest{
+		SchemaVersion:         archiveSchemaVersion,
+		TestID:                testID,
+		TransactionsFile:      "transactions.jsonl",
+		ResourceSamplesFile:   "resources.jsonl",
+		IntervalSummariesFile: "summaries.jsonl",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	client := &archiveStreamingFakeClient{
+		startupLifecycleFakeClient: startupLifecycleFakeClient{accept: true},
+		artifacts: map[string]string{
+			runArchiveManifestFileName: manifestPath,
+			"transactions.jsonl":       write("transactions.jsonl", nil),
+			"resources.jsonl":          write("resources.jsonl", nil),
+			"summaries.jsonl":          write("summaries.jsonl", nil),
+		},
+	}
+	test := &ManagedTest{
+		ID:                    testID,
+		Name:                  "Fail-closed evidence",
+		Status:                "RUNNING",
+		CreatedAt:             time.Now().Add(-time.Minute),
+		remoteClientsByTarget: map[string]generatorClient{"gen-a": client},
+		remoteTargetStates:    map[string]string{"gen-a": "RUNNING"},
+	}
+	runner := NewTestRunner(1, nil, nil)
+	runner.mu.Lock()
+	runner.tests[test.ID] = test
+	runner.mu.Unlock()
+	backend := newDistributedExecutionBackend([]string{"gen-a"}, time.Second, nil)
+	uncertain := &distributedEvacuationUncertainError{
+		testID:             test.ID,
+		participantClients: map[string]generatorClient{"gen-a": client},
+		touchedTargets:     []string{"gen-a"},
+		err:                errors.New("replacement commit response was lost"),
+	}
+
+	if err := backend.failClosedUncertainEvacuation(runner, test, uncertain, nil, nil); err == nil {
+		t.Fatal("expected the evacuation uncertainty to be returned")
+	}
+	runner.mu.RLock()
+	status, archive := test.Status, test.Archive
+	runner.mu.RUnlock()
+	if status != "FAILED" {
+		t.Fatalf("status = %q, want FAILED", status)
+	}
+	if archive == nil {
+		t.Fatal("stopped participant archive was not attached")
+	}
+	if _, err := os.Stat(archive.ManifestPath); err != nil {
+		t.Fatalf("attached archive manifest: %v", err)
+	}
+	client.mu.Lock()
+	streamCalls := client.streamCalls
+	client.mu.Unlock()
+	client.startupLifecycleFakeClient.mu.Lock()
+	stopped, closed := client.stopped, client.closed
+	client.startupLifecycleFakeClient.mu.Unlock()
+	if streamCalls < 4 || stopped == 0 || closed == 0 {
+		t.Fatalf("archive lifecycle = streams:%d stopped:%d closed:%d, want fetch after stop before close", streamCalls, stopped, closed)
+	}
+}
+
+func TestDistributedEvacuationSourceStopResponseLossStopsWholeRun(t *testing.T) {
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	t.Setenv("APEXLOAD_GENERATOR_ARCHIVE_MIN_FREE_BYTES", "1")
+	replacement, replacementService := newTestGeneratorRPCClient(t, "gen-b", 10)
+	backend := newDistributedExecutionBackend([]string{"gen-a", "gen-b"}, 250*time.Millisecond, func(context.Context, string) (generatorClient, error) {
+		return replacement, nil
+	})
+	source := newFaultEvacuationGeneratorClient("gen-a", 3)
+	// Every source-fencing attempt loses its response. The first fail-closed
+	// retry then acknowledges the already-applied stop.
+	source.loseInitialStopResponses = durableTransitionAttempts
+	source.lostStopResponseApplies = true
+	started := time.Now()
+	script := &dsl.Script{ID: "buyers-script", Name: "Buyers", Protocol: "http"}
+	test := &ManagedTest{
+		ID:         "run-evacuation-source-timeout",
+		Status:     "RUNNING",
+		Duration:   time.Minute,
+		StartedAt:  &started,
+		Assignment: &GeneratorAssignmentSettings{TolerateGeneratorLoss: true},
+		Groups:     []TestGroup{{Name: "buyers", ScriptID: script.ID, ScriptName: script.Name, Protocol: "http", VUsers: 3, script: script}},
+		remoteGroupShards: map[string][]GeneratorShardSummary{
+			"buyers": {{Group: "buyers", Target: "gen-a", VUsers: 3}},
+		},
+		remoteClientsByTarget: map[string]generatorClient{"gen-a": source},
+		remoteTargetStates:    map[string]string{"gen-a": "RUNNING"},
+	}
+	runner := &TestRunner{tests: map[string]*ManagedTest{test.ID: test}}
+
+	_, err := backend.EvacuateGenerator(runner, test, "gen-a", false, "operator_evacuate")
+	var uncertain *distributedEvacuationUncertainError
+	if !errors.As(err, &uncertain) {
+		t.Fatalf("EvacuateGenerator error = %v, want distributedEvacuationUncertainError", err)
+	}
+	if test.Status == "RUNNING" {
+		t.Fatalf("status = %q after ambiguous source stop, want fail-closed state", test.Status)
+	}
+	if source.active() != 0 || replacementService.ActiveVUsers() != 0 {
+		t.Fatalf("active VUsers after source-stop timeout cleanup = source:%d replacement:%d, want zero", source.active(), replacementService.ActiveVUsers())
+	}
+	if source.faultStops() <= durableTransitionAttempts {
+		t.Fatalf("whole-run cleanup attempts = source:%d, want more than %d", source.faultStops(), durableTransitionAttempts)
+	}
+}
+
+func TestTerminalEvacuationUncertaintyStillRetriesUncommittedParticipantStop(t *testing.T) {
+	backend := newDistributedExecutionBackend([]string{"gen-c"}, 5*time.Millisecond, nil)
+	replacement := newFaultEvacuationGeneratorClient("gen-c", 4)
+	replacement.loseInitialStopResponses = durableTransitionAttempts
+	test := &ManagedTest{ID: "terminal-evacuation-race", Status: "FAILED", Duration: time.Minute}
+	runner := NewTestRunner(1, NewHub(), nil)
+	runner.tests[test.ID] = test
+	uncertain := &distributedEvacuationUncertainError{
+		testID:             test.ID,
+		participantClients: map[string]generatorClient{"gen-c": replacement},
+		touchedTargets:     []string{"gen-c"},
+		err:                errors.New("stale evacuation cleanup was not acknowledged"),
+	}
+
+	err := backend.failClosedUncertainEvacuation(runner, test, uncertain, nil, nil)
+	if err == nil {
+		t.Fatal("expected initial participant stop failure")
+	}
+	if got := replacement.active(); got != 4 {
+		t.Fatalf("replacement active VUsers after failed inline cleanup = %d, want 4 before retry", got)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for replacement.active() != 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := replacement.active(); got != 0 {
+		t.Fatalf("terminal evacuation cleanup left %d untracked VUsers", got)
+	}
+	if replacement.faultStops() <= durableTransitionAttempts {
+		t.Fatalf("participant stop attempts = %d, want background retry after %d inline attempts", replacement.faultStops(), durableTransitionAttempts)
 	}
 }
 
@@ -195,43 +813,44 @@ func TestFailDistributedTestOnStreamErrorIgnoresEvacuatedTarget(t *testing.T) {
 	}
 }
 
-// F13: an operator evacuation with a custom free-text reason must still mark the
-// target with a state recognized as an intentional evacuation, so the closing
-// metrics stream does not fail the run right after the API reported success.
-func TestDistributedEvacuateGeneratorUsesRecognizedSentinelForCustomReason(t *testing.T) {
-	backend := newDistributedExecutionBackend([]string{"gen-a:9090", "gen-b:9090"}, time.Second, nil)
+func TestFailDistributedTestOnStreamErrorDoesNotReenterEvacuationForTransitionalTarget(t *testing.T) {
+	backend := newDistributedExecutionBackend([]string{"gen-a", "gen-b"}, time.Second, nil)
 	test := &ManagedTest{
-		ID:         "run-evac",
-		Status:     "RUNNING",
-		Assignment: &GeneratorAssignmentSettings{TolerateGeneratorLoss: true},
-		Groups:     []TestGroup{{Name: "buyers", Protocol: "http", VUsers: 6}},
-		remoteGroupShards: map[string][]GeneratorShardSummary{
-			"buyers": {
-				{Group: "buyers", Target: "gen-a:9090", VUsers: 3},
-				{Group: "buyers", Target: "gen-b:9090", VUsers: 3},
-			},
-		},
-		remoteClientsByTarget: map[string]generatorClient{
-			"gen-a:9090": newEvacuationFakeGeneratorClient("gen-a:9090"),
-			"gen-b:9090": newEvacuationFakeGeneratorClient("gen-b:9090"),
-		},
-		remoteTargetStates: map[string]string{"gen-a:9090": "RUNNING", "gen-b:9090": "RUNNING"},
+		ID:                 "run-evacuating-stream",
+		Status:             "RUNNING",
+		Assignment:         &GeneratorAssignmentSettings{TolerateGeneratorLoss: true},
+		remoteTargetStates: map[string]string{"gen-a": remoteTargetStateEvacuating, "gen-b": "RUNNING"},
 	}
 	runner := &TestRunner{tests: map[string]*ManagedTest{test.ID: test}}
 
-	if _, err := backend.EvacuateGenerator(runner, test, "gen-a:9090", false, "node maintenance window"); err != nil {
-		t.Fatalf("evacuate returned error: %v", err)
+	// If stream loss recursively starts another evacuation, it blocks trying to
+	// reacquire this operation gate. Intentional transitional loss must return.
+	backend.evacuationMu.Lock()
+	done := make(chan struct{})
+	go func() {
+		backend.failDistributedTestOnStreamError(runner, test, "gen-a", errors.New("source stream closed during fence"))
+		close(done)
+	}()
+	select {
+	case <-done:
+		backend.evacuationMu.Unlock()
+	case <-time.After(250 * time.Millisecond):
+		backend.evacuationMu.Unlock()
+		t.Fatal("stream loss re-entered evacuation while the source was intentionally being removed")
 	}
-	if state := test.remoteTargetStates["gen-a:9090"]; !remoteTargetStateDone(state) {
-		t.Fatalf("evacuated target state %q is not recognized as done; the run would be failed", state)
+
+	if test.Status != "RUNNING" || test.remoteFinalizing {
+		t.Fatalf("transitional stream loss changed lifecycle: status=%q finalizing=%v", test.Status, test.remoteFinalizing)
 	}
 }
 
 func TestDistributedEvacuateGeneratorProvisionsPreviouslyUnassignedSurvivor(t *testing.T) {
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	t.Setenv("APEXLOAD_GENERATOR_ARCHIVE_MIN_FREE_BYTES", "1")
 	const bufSize = 1024 * 1024
 	listener := bufconn.Listen(bufSize)
 	server := grpc.NewServer()
-	service := generatorrpc.NewService("generator-b", 10)
+	service := generatorrpc.NewService("generator-b", 10, generatorrpc.WithExecution())
 	pb.RegisterGeneratorControlServer(server, service)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() {
@@ -239,35 +858,50 @@ func TestDistributedEvacuateGeneratorProvisionsPreviouslyUnassignedSurvivor(t *t
 		_ = listener.Close()
 	})
 
+	var replacementRequests atomic.Int64
+	sut := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		replacementRequests.Add(1)
+	}))
+	t.Cleanup(sut.Close)
 	failedClient := newEvacuationFakeGeneratorClient("gen-a")
-	backend := newDistributedExecutionBackend([]string{"gen-a", "gen-b"}, 2*time.Second, func(ctx context.Context, target string) (generatorClient, error) {
+	sourceStopped := make(chan int64, 1)
+	failedClient.stopHook = func() { sourceStopped <- replacementRequests.Load() }
+	var replacementClient *setupRecordingEvacuationClient
+	backend := newDistributedExecutionBackend([]string{"gen-a", "gen-b"}, 400*time.Millisecond, func(ctx context.Context, target string) (generatorClient, error) {
 		if target != "gen-b" {
 			return nil, errors.New("failed generator is unavailable")
 		}
-		return generatorrpc.Dial(
+		client, err := generatorrpc.Dial(
 			ctx,
 			target,
 			grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
 			grpc.WithBlock(),
 		)
+		if err != nil {
+			return nil, err
+		}
+		replacementClient = &setupRecordingEvacuationClient{Client: client}
+		return replacementClient, nil
 	})
 	script := &dsl.Script{
 		ID:       "buyers-script",
 		Name:     "Buyers",
 		Protocol: "http",
-		Config:   dsl.ScriptConfig{BaseURL: "http://127.0.0.1"},
+		Config:   dsl.ScriptConfig{BaseURL: sut.URL},
 		Actions:  []dsl.Action{{Name: "home", Type: "GET", Target: "/"}},
 	}
 	runCtx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	started := time.Now()
+	pausedAt := time.Now()
 	test := &ManagedTest{
 		ID:           "run-provision-survivor",
 		Name:         "provision survivor",
-		Status:       "RUNNING",
+		Status:       "PAUSED",
 		Duration:     time.Minute,
 		StartedAt:    &started,
+		PausedAt:     &pausedAt,
 		executionCtx: runCtx,
 		cancel:       cancel,
 		Assignment:   &GeneratorAssignmentSettings{TolerateGeneratorLoss: true},
@@ -286,12 +920,47 @@ func TestDistributedEvacuateGeneratorProvisionsPreviouslyUnassignedSurvivor(t *t
 	runner := NewTestRunner(1, hub, nil)
 	runner.tests[test.ID] = test
 
-	impacts, err := backend.EvacuateGenerator(runner, test, "gen-a", false, "generator_loss")
+	impacts, err := backend.EvacuateGenerator(runner, test, "gen-a", false, "node maintenance window")
 	if err != nil {
 		t.Fatalf("EvacuateGenerator: %v", err)
 	}
 	if len(impacts) != 1 || len(impacts[0].ToShards) != 1 || impacts[0].ToShards[0].Target != "gen-b" {
 		t.Fatalf("evacuation impacts = %+v, want replacement shard on gen-b", impacts)
+	}
+	select {
+	case requestsAtFence := <-sourceStopped:
+		if requestsAtFence != 0 {
+			t.Fatalf("replacement emitted %d requests before source fence ACK", requestsAtFence)
+		}
+	default:
+		t.Fatal("source was not fenced before evacuation completed")
+	}
+	// The controller is evacuating a logically paused run onto a generator that
+	// has never seen this test. Wait beyond the coordinated release barrier to
+	// prove the assignment carried that state across the wire and no replacement
+	// protocol traffic escaped merely because CommitWork released the shard.
+	time.Sleep(distributedCommitStartLead(400*time.Millisecond) + 100*time.Millisecond)
+	if got := replacementRequests.Load(); got != 0 {
+		t.Fatalf("paused replacement emitted %d requests after its commit barrier", got)
+	}
+	resumeCtx, resumeCancel := context.WithTimeout(context.Background(), time.Second)
+	resumeResult, resumeErr := replacementClient.SetPaused(resumeCtx, generatorrpc.PauseControl{
+		TestID:            test.ID,
+		Pause:             false,
+		OperationID:       "resume-paused-evacuation",
+		OperationSequence: 1,
+	})
+	resumeCancel()
+	if resumeErr != nil || !resumeResult.Accepted || resumeResult.CurrentPaused {
+		t.Fatalf("resume replacement = (%+v, %v)", resumeResult, resumeErr)
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	for replacementRequests.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if replacementRequests.Load() == 0 {
+		t.Fatal("replacement did not start after its paused gate was resumed")
 	}
 	if got := service.ActiveVUsers(); got != 4 {
 		t.Fatalf("new survivor active VUsers = %d, want 4", got)
@@ -299,13 +968,246 @@ func TestDistributedEvacuateGeneratorProvisionsPreviouslyUnassignedSurvivor(t *t
 	if test.remoteClientsByTarget["gen-b"] == nil || test.remoteMetricsStreamsByTarget["gen-b"] == nil {
 		t.Fatalf("new survivor was not retained with a metrics stream: clients=%v streams=%v", test.remoteClientsByTarget, test.remoteMetricsStreamsByTarget)
 	}
+	if replacementClient == nil {
+		t.Fatal("replacement client was not created")
+	}
+	if got := time.Duration(replacementClient.setupTimeout.Load()); got != 200*time.Millisecond {
+		t.Fatalf("replacement stream setup timeout = %v, want 200ms inside the commit barrier", got)
+	}
 	if _, exists := test.remoteClientsByTarget["gen-a"]; exists {
 		t.Fatal("failed target remains in run client set")
+	}
+	runner.mu.RLock()
+	archiveSource := test.remoteArchiveClientsByTarget["gen-a"]
+	runner.mu.RUnlock()
+	if archiveSource != failedClient {
+		t.Fatalf("stopped source was not retained for final archive merge: %T", archiveSource)
+	}
+	if state := test.remoteTargetStates["gen-a"]; !remoteTargetStateDone(state) {
+		t.Fatalf("custom evacuation reason left unrecognized target state %q", state)
 	}
 
 	cancel()
 	backend.closeRemoteResources(runner, test)
+	if got := failedClient.closeCount(); got != 1 {
+		t.Fatalf("archive-only source close count = %d, want 1", got)
+	}
 	if _, err := service.StopTest(context.Background(), &pb.StopRequest{TestId: test.ID}); err != nil {
 		t.Fatalf("cleanup StopTest: %v", err)
+	}
+}
+
+func TestDistributedEvacuationIgnoresSoleSourceTerminalUntilReplacementCommit(t *testing.T) {
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	t.Setenv("APEXLOAD_GENERATOR_ARCHIVE_MIN_FREE_BYTES", "1")
+	sourceClient, sourceService := newTestGeneratorRPCClient(t, "gen-a", 10)
+	replacementClient, replacementService := newTestGeneratorRPCClient(t, "gen-b", 10)
+
+	const testID = "run-source-terminal-race"
+	script := &dsl.Script{ID: "buyers-script", Name: "Buyers", Protocol: "http"}
+	scriptContent, contentHash, dataFiles, err := generatorrpc.PrepareDistributedScript(script)
+	if err != nil {
+		t.Fatalf("prepare source script: %v", err)
+	}
+	setupCtx, setupCancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer setupCancel()
+	if _, err := sourceClient.DistributeScript(setupCtx, generatorrpc.Script{ID: script.ID, Content: scriptContent, ContentHash: contentHash}); err != nil {
+		t.Fatalf("distribute source script: %v", err)
+	}
+	assignment, err := sourceClient.AssignWork(setupCtx, generatorrpc.Assignment{
+		TestID:             testID,
+		GroupName:          "buyers",
+		TargetDuration:     time.Minute,
+		ScriptID:           script.ID,
+		ExpectedScriptHash: contentHash,
+		VUserCount:         2,
+		ShardOrdinal:       0,
+		ShardCount:         1,
+		DataFiles:          dataFiles,
+	})
+	if err != nil || !assignment.Accepted {
+		t.Fatalf("assign source work = (%+v, %v)", assignment, err)
+	}
+	if commit, err := sourceClient.CommitWork(setupCtx, testID, 0); err != nil || !commit.Accepted {
+		t.Fatalf("commit source work = (%+v, %v)", commit, err)
+	}
+
+	runCtx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	sourceStream, err := sourceClient.OpenMetricsStreamWithSetupTimeoutForTestGeneration(runCtx, time.Second, testID, 0)
+	if err != nil {
+		t.Fatalf("open source metrics stream: %v", err)
+	}
+	hub := NewHub()
+	go hub.Run()
+	t.Cleanup(hub.Stop)
+	runner := NewTestRunner(1, hub, nil)
+	source := &terminalObservingEvacuationClient{Client: sourceClient, runner: runner, testID: testID, target: "gen-a"}
+	backend := newDistributedExecutionBackend([]string{"gen-a", "gen-b"}, 750*time.Millisecond, func(_ context.Context, target string) (generatorClient, error) {
+		if target != "gen-b" {
+			return nil, fmt.Errorf("unexpected evacuation dial target %q", target)
+		}
+		return replacementClient, nil
+	})
+	started := time.Now()
+	test := &ManagedTest{
+		ID:           testID,
+		Name:         "Source terminal race",
+		Status:       "RUNNING",
+		Duration:     time.Minute,
+		StartedAt:    &started,
+		executionCtx: runCtx,
+		cancel:       cancel,
+		Assignment:   &GeneratorAssignmentSettings{TolerateGeneratorLoss: true},
+		Groups:       []TestGroup{{Name: "buyers", ScriptID: script.ID, ScriptName: script.Name, Protocol: "http", VUsers: 2, script: script}},
+		remoteGroupShards: map[string][]GeneratorShardSummary{
+			"buyers": {{Group: "buyers", Target: "gen-a", VUsers: 2}},
+		},
+		remoteClientsByTarget:        map[string]generatorClient{"gen-a": source},
+		remoteMetricsStreamsByTarget: map[string]*generatorrpc.MetricsStream{"gen-a": sourceStream},
+		remoteMetricsBatchesByTarget: make(map[string]generatorrpc.MetricsBatch),
+		remoteTargetStates:           map[string]string{"gen-a": "RUNNING"},
+		remoteLifecycleCtx:           runCtx,
+		remoteActivated:              true,
+		executionBackend:             backend,
+	}
+	runner.mu.Lock()
+	runner.tests[test.ID] = test
+	runner.mu.Unlock()
+	go backend.consumeMetrics(runCtx, runner, test, "gen-a", sourceStream)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		runner.mu.RLock()
+		lifecycle := test.remoteMetricsBatchesByTarget["gen-a"].LifecycleState
+		runner.mu.RUnlock()
+		if lifecycle == "RUNNING" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("source lifecycle = %q, want RUNNING before evacuation", lifecycle)
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	impacts, err := backend.EvacuateGenerator(runner, test, "gen-a", false, "node maintenance")
+	if err != nil {
+		t.Fatalf("EvacuateGenerator: %v", err)
+	}
+	if len(impacts) != 1 || len(impacts[0].ToShards) != 1 || impacts[0].ToShards[0].Target != "gen-b" {
+		t.Fatalf("evacuation impacts = %+v, want source moved to gen-b", impacts)
+	}
+	runner.mu.RLock()
+	status := test.Status
+	finalizing := test.remoteFinalizing
+	sourceState := test.remoteTargetStates["gen-a"]
+	replacement := test.remoteClientsByTarget["gen-b"]
+	replacementStream := test.remoteMetricsStreamsByTarget["gen-b"]
+	_, sourceRetained := test.remoteClientsByTarget["gen-a"]
+	runner.mu.RUnlock()
+	if status != "RUNNING" || finalizing {
+		t.Fatalf("source terminal batch finalized the sole-source run: status=%q finalizing=%v", status, finalizing)
+	}
+	if !remoteTargetStateDone(sourceState) || sourceRetained {
+		t.Fatalf("source topology was not retired: state=%q retained=%v", sourceState, sourceRetained)
+	}
+	if replacement == nil || replacementStream == nil {
+		t.Fatalf("replacement topology incomplete: client=%v stream=%v", replacement, replacementStream)
+	}
+	if got := sourceService.ActiveVUsers(); got != 0 {
+		t.Fatalf("source active VUsers = %d, want 0 after positive fence", got)
+	}
+	if got := replacementService.ActiveVUsers(); got != 2 {
+		t.Fatalf("replacement active VUsers = %d, want 2", got)
+	}
+
+	cancel()
+	backend.closeRemoteResources(runner, test)
+}
+
+func TestDistributedEvacuationCommitFailureAfterSourceFenceFailsClosed(t *testing.T) {
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	t.Setenv("APEXLOAD_GENERATOR_ARCHIVE_MIN_FREE_BYTES", "1")
+	listener := bufconn.Listen(1024 * 1024)
+	grpcServer := grpc.NewServer()
+	service := generatorrpc.NewService("generator-b", 10, generatorrpc.WithExecution())
+	pb.RegisterGeneratorControlServer(grpcServer, service)
+	go func() { _ = grpcServer.Serve(listener) }()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_ = service.Shutdown(ctx)
+		grpcServer.Stop()
+		_ = listener.Close()
+	})
+
+	var replacement *commitFailingEvacuationClient
+	backend := newDistributedExecutionBackend([]string{"gen-a", "gen-b"}, 250*time.Millisecond, func(ctx context.Context, target string) (generatorClient, error) {
+		if target != "gen-b" {
+			return nil, errors.New("source is unavailable")
+		}
+		client, err := generatorrpc.Dial(
+			ctx,
+			target,
+			grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithBlock(),
+		)
+		if err != nil {
+			return nil, err
+		}
+		replacement = &commitFailingEvacuationClient{generatorClient: client}
+		return replacement, nil
+	})
+	source := newEvacuationFakeGeneratorClient("gen-a")
+	script := &dsl.Script{
+		ID:       "commit-failure-script",
+		Name:     "Commit failure",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: "http://127.0.0.1"},
+		Actions:  []dsl.Action{{Name: "home", Type: "GET", Target: "/"}},
+	}
+	runCtx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	started := time.Now()
+	test := &ManagedTest{
+		ID:           "evacuation-commit-failure",
+		Status:       "RUNNING",
+		Duration:     time.Minute,
+		StartedAt:    &started,
+		executionCtx: runCtx,
+		cancel:       cancel,
+		Assignment:   &GeneratorAssignmentSettings{TolerateGeneratorLoss: true},
+		Groups:       []TestGroup{{Name: "buyers", ScriptID: script.ID, ScriptName: script.Name, Protocol: "http", VUsers: 2, script: script}},
+		remoteGroupShards: map[string][]GeneratorShardSummary{
+			"buyers": {{Group: "buyers", Target: "gen-a", VUsers: 2}},
+		},
+		remoteClientsByTarget:        map[string]generatorClient{"gen-a": source},
+		remoteMetricsStreamsByTarget: make(map[string]*generatorrpc.MetricsStream),
+		remoteMetricsBatchesByTarget: make(map[string]generatorrpc.MetricsBatch),
+		remoteTargetStates:           map[string]string{"gen-a": "RUNNING"},
+	}
+	hub := NewHub()
+	go hub.Run()
+	t.Cleanup(hub.Stop)
+	runner := NewTestRunner(1, hub, nil)
+	runner.tests[test.ID] = test
+
+	_, err := backend.EvacuateGenerator(runner, test, "gen-a", false, "generator_loss")
+	var uncertain *distributedEvacuationUncertainError
+	if !errors.As(err, &uncertain) {
+		t.Fatalf("evacuation error = %v, want fail-closed uncertainty", err)
+	}
+	if source.stopCount() == 0 {
+		t.Fatal("source was not fenced before replacement commit")
+	}
+	if replacement == nil || replacement.commitCalls.Load() != 1 {
+		t.Fatalf("replacement commit calls = %#v", replacement)
+	}
+	if got := service.ActiveVUsers(); got != 0 {
+		t.Fatalf("fail-closed cleanup left %d reserved replacement VUsers", got)
+	}
+	if test.Status != "FAILED" {
+		t.Fatalf("test status = %q, want FAILED", test.Status)
 	}
 }

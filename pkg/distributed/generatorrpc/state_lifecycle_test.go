@@ -658,3 +658,141 @@ func TestGeneratorArchiveFinalizeRejectsRunDirectoryReplacement(t *testing.T) {
 		t.Fatalf("replacement manifest changed: %q", got)
 	}
 }
+
+func TestTerminalPathsReserveTestIDUntilArchiveFinalized(t *testing.T) {
+	tests := []struct {
+		name        string
+		preReserved bool
+		terminate   func(*Service, string)
+	}{
+		{name: "natural execution after graceful stop", preReserved: true, terminate: func(service *Service, testID string) { service.finishExecution(testID, "group", nil) }},
+		{name: "failed execution", terminate: func(service *Service, testID string) { service.FailTest(testID, "failed") }},
+		{name: "timer completion", terminate: func(service *Service, testID string) { service.completeAssignment(testID) }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			t.Setenv("APEXLOAD_ARCHIVE_DIR", root)
+			service := NewService("terminal-reservation-"+strings.ReplaceAll(tt.name, " ", "-"), 10)
+			testID := "run-terminal"
+			writer, err := newArchiveRecorderInNamespace(service.archiveNamespace, testID, tt.name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			service.mu.Lock()
+			service.assignments[testID] = assignedTest{
+				testID: testID,
+				groups: map[string]int32{"group": 1},
+			}
+			service.archiveWriters[testID] = writer
+			if tt.preReserved {
+				service.stoppingTests[testID] = struct{}{}
+			}
+			service.mu.Unlock()
+
+			writer.mu.Lock()
+			locked := true
+			defer func() {
+				if locked {
+					writer.mu.Unlock()
+				}
+			}()
+			done := make(chan struct{})
+			go func() {
+				tt.terminate(service, testID)
+				close(done)
+			}()
+			waitForGeneratorTestReservation(t, service, testID)
+
+			ack, err := service.AssignWork(context.Background(), &pb.WorkAssignment{
+				TestId: testID, GroupName: "retry", ScriptId: "script", VuserCount: 1,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if ack.GetAccepted() || !strings.Contains(ack.GetErrorMessage(), "stopping") {
+				t.Fatalf("same-ID retry during finalization = %#v", ack)
+			}
+
+			writer.mu.Unlock()
+			locked = false
+			select {
+			case <-done:
+			case <-time.After(10 * time.Second):
+				t.Fatal("terminal finalization did not complete")
+			}
+			service.mu.Lock()
+			_, stopping := service.stoppingTests[testID]
+			service.mu.Unlock()
+			if stopping {
+				t.Fatal("test-ID reservation survived completed finalization")
+			}
+		})
+	}
+}
+
+func TestDuplicateStopDoesNotClearFinalizerReservation(t *testing.T) {
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	service := NewService("duplicate-stop-reservation", 10)
+	const testID = "run-stop"
+	writer, err := newArchiveRecorderInNamespace(service.archiveNamespace, testID, "Stop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.mu.Lock()
+	service.assignments[testID] = assignedTest{testID: testID, vuserCount: 1, groups: map[string]int32{"group": 1}}
+	service.archiveWriters[testID] = writer
+	service.mu.Unlock()
+
+	writer.mu.Lock()
+	locked := true
+	defer func() {
+		if locked {
+			writer.mu.Unlock()
+		}
+	}()
+	firstDone := make(chan error, 1)
+	go func() {
+		_, stopErr := service.StopTest(context.Background(), &pb.StopRequest{TestId: testID})
+		firstDone <- stopErr
+	}()
+	waitForGeneratorTestReservation(t, service, testID)
+
+	second, err := service.StopTest(context.Background(), &pb.StopRequest{TestId: testID})
+	if err != nil || !second.GetAcknowledged() {
+		t.Fatalf("duplicate StopTest = (%#v, %v), want idempotent acknowledgement", second, err)
+	}
+	service.mu.Lock()
+	_, stillStopping := service.stoppingTests[testID]
+	service.mu.Unlock()
+	if !stillStopping {
+		t.Fatal("duplicate StopTest cleared the first stop's finalizer reservation")
+	}
+
+	writer.mu.Unlock()
+	locked = false
+	select {
+	case err := <-firstDone:
+		if err != nil {
+			t.Fatalf("first StopTest: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("first StopTest did not complete")
+	}
+}
+
+func waitForGeneratorTestReservation(t *testing.T, service *Service, testID string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		service.mu.Lock()
+		_, assigned := service.assignments[testID]
+		_, stopping := service.stoppingTests[testID]
+		service.mu.Unlock()
+		if !assigned && stopping {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("test %q was not reserved during finalization", testID)
+}

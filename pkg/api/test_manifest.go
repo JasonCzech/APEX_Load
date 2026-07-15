@@ -128,6 +128,43 @@ type TestRunManifestArchive struct {
 	Error                string    `json:"error,omitempty"`
 }
 
+func maskTestRunManifest(manifest *TestRunManifest) *TestRunManifest {
+	if manifest == nil {
+		return nil
+	}
+	masked := *manifest
+	masked.Archive = maskTestRunManifestArchive(manifest.Archive)
+	masked.InitialConfiguration = maskTestRunManifestConfiguration(manifest.InitialConfiguration)
+	masked.CurrentConfiguration = maskTestRunManifestConfiguration(manifest.CurrentConfiguration)
+	if len(manifest.Scripts) > 0 {
+		masked.Scripts = append([]TestRunManifestScript(nil), manifest.Scripts...)
+		for i := range masked.Scripts {
+			masked.Scripts[i].RuntimeSettings = maskRuntimeSettings(masked.Scripts[i].RuntimeSettings)
+		}
+	}
+	return &masked
+}
+
+func maskTestRunManifestArchive(archive *TestRunManifestArchive) *TestRunManifestArchive {
+	if archive == nil {
+		return nil
+	}
+	masked := *archive
+	masked.ArchiveBackend = ""
+	masked.ArchivePath = ""
+	masked.ManifestPath = ""
+	masked.ArchiveURI = ""
+	masked.ManifestURI = ""
+	masked.SLADetails = append([]string(nil), archive.SLADetails...)
+	return &masked
+}
+
+func maskTestRunManifestConfiguration(configuration TestRunManifestConfiguration) TestRunManifestConfiguration {
+	configuration.RuntimeSettings = maskRuntimeSettings(configuration.RuntimeSettings)
+	configuration.Groups = maskTestGroupsRuntimeSettings(configuration.Groups)
+	return configuration
+}
+
 func (tr *TestRunner) GetTestManifest(id string) (*TestRunManifest, error) {
 	return tr.buildTestManifest(id, nil, true)
 }
@@ -182,7 +219,7 @@ func (tr *TestRunner) buildTestManifestForManagedTest(test *ManagedTest, request
 		if preferPersisted && archiveManifest != nil && strings.TrimSpace(archiveManifest.TestManifestFile) != "" {
 			persisted, err := loadTestRunManifest(filepath.Join(archiveRecord.ArchivePath, archiveManifest.TestManifestFile))
 			if err == nil {
-				return persisted, nil
+				return maskTestRunManifest(persisted), nil
 			}
 			warnings = append(warnings, "persisted test manifest could not be loaded: "+err.Error())
 		}
@@ -306,9 +343,9 @@ func manifestConfigurationFromManagedTest(test *ManagedTest) TestRunManifestConf
 		Assignment:            cloneGeneratorAssignmentSettings(test.Assignment),
 		GeneratorShards:       cloneGeneratorShardSummaries(test.GeneratorShards),
 		GoalConfig:            cloneGoalConfig(test.GoalConfig),
-		RuntimeSettings:       cloneRuntimeSettings(test.RuntimeSettings),
+		RuntimeSettings:       maskRuntimeSettings(test.RuntimeSettings),
 		RuntimeSettingsReview: cloneRuntimeSettingsReview(test.RuntimeSettingsReview),
-		Groups:                cloneArchiveTestGroups(test.Groups),
+		Groups:                maskTestGroupsRuntimeSettings(test.Groups),
 		VUserRamps:            cloneVUserRampStatusMap(test.VUserRamps),
 		BaselinePinned:        test.BaselinePinned,
 		BaselinePinnedAt:      cloneTimePtr(test.BaselinePinnedAt),
@@ -331,8 +368,8 @@ func manifestConfigurationFromTestRecord(record *storage.TestRecord) TestRunMani
 		ResourceBaseline: record.ResourceBaseline,
 		Assignment:       decodeStoredGeneratorAssignment(record.Assignment),
 		GoalConfig:       decodeStoredGoalConfig(record.GoalConfig),
-		RuntimeSettings:  decodeStoredRuntimeSettings(record.RuntimeSettings),
-		Groups:           cloneArchiveTestGroups(decodeStoredGroups(record.Groups)),
+		RuntimeSettings:  maskRuntimeSettings(decodeStoredRuntimeSettings(record.RuntimeSettings)),
+		Groups:           maskTestGroupsRuntimeSettings(decodeStoredGroups(record.Groups)),
 		BaselinePinned:   record.BaselinePinned,
 		BaselinePinnedAt: cloneTimePtr(record.BaselinePinnedAt),
 		StartedAt:        cloneTimePtr(record.ScheduledStartAt),
@@ -356,9 +393,9 @@ func manifestConfigurationFromProvenance(provenance RunArchiveProvenance, status
 		Assignment:            cloneGeneratorAssignmentSettings(provenance.Assignment),
 		GeneratorShards:       cloneGeneratorShardSummaries(provenance.GeneratorShards),
 		GoalConfig:            cloneGoalConfig(provenance.GoalConfig),
-		RuntimeSettings:       cloneRuntimeSettings(provenance.RuntimeSettings),
+		RuntimeSettings:       maskRuntimeSettings(provenance.RuntimeSettings),
 		RuntimeSettingsReview: cloneRuntimeSettingsReview(provenance.RuntimeSettingsReview),
-		Groups:                cloneArchiveTestGroups(provenance.Groups),
+		Groups:                maskTestGroupsRuntimeSettings(provenance.Groups),
 		BaselinePinned:        provenance.BaselinePinned,
 		BaselinePinnedAt:      cloneTimePtr(provenance.BaselinePinnedAt),
 		StartedAt:             cloneTimePtr(provenance.StartedAt),
@@ -382,7 +419,7 @@ func manifestScriptsFromGroups(groups []TestGroup) []TestRunManifestScript {
 			RampDown:        group.RampDown,
 			Stages:          append([]storage.LoadStage(nil), group.Stages...),
 			Iterations:      cloneIntPtr(group.Iterations),
-			RuntimeSettings: cloneRuntimeSettings(group.RuntimeSettings),
+			RuntimeSettings: maskRuntimeSettings(group.RuntimeSettings),
 			Assignment:      cloneGeneratorAssignmentSettings(group.Assignment),
 			RunLogicGoals:   cloneRunLogicGoalSnapshot(group.RunLogicGoals),
 			Initialization:  group.Initialization,

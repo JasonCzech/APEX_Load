@@ -18,6 +18,22 @@ import (
 	"github.com/jasonczech/apexload/pkg/refkey"
 )
 
+type testRefKeyPersistence interface {
+	EnsureTestRefKey(id, proposedRefKey string) (string, error)
+}
+
+type scriptRefKeyPersistence interface {
+	EnsureScriptRefKey(id, proposedRefKey string) (string, time.Time, error)
+}
+
+type scenarioRefKeyPersistence interface {
+	EnsureScenarioRefKey(id, proposedRefKey string) (string, time.Time, error)
+}
+
+type archiveRefKeyPersistence interface {
+	EnsureRunArchiveRefKey(testID, proposedRefKey string) (string, error)
+}
+
 func refSeqSettingKey(envCode string, typ string) string {
 	return fmt.Sprintf("refseq:%s:%s", envCode, typ)
 }
@@ -249,16 +265,27 @@ func (tr *TestRunner) backfillScriptRefKeysLocked() {
 			slog.Warn("failed to allocate script reference key", "script_id", stored.ID, "error", err)
 			continue
 		}
-		stored.RefKey = refkey.Script(tr.envCode, sequence, version)
+		proposedRefKey := refkey.Script(tr.envCode, sequence, version)
+		durableRefKey := proposedRefKey
 		if stored.Script != nil {
-			stored.Script.RefKey = stored.RefKey
-			if err := tr.saveStoredScript(stored.Script); err != nil {
+			if store, ok := tr.scriptStore.(scriptRefKeyPersistence); ok {
+				var updatedAt time.Time
+				durableRefKey, updatedAt, err = store.EnsureScriptRefKey(stored.ID, proposedRefKey)
+				if err == nil {
+					stored.Script.UpdatedAt = updatedAt
+				}
+			} else {
+				stored.Script.RefKey = proposedRefKey
+				err = tr.saveStoredScript(stored.Script)
+			}
+			if err != nil {
 				slog.Warn("failed to persist script reference key", "script_id", stored.ID, "error", err)
-				stored.RefKey = ""
 				stored.Script.RefKey = ""
 				continue
 			}
+			stored.Script.RefKey = durableRefKey
 		}
+		stored.RefKey = durableRefKey
 		tr.indexRefKeyLocked(stored.RefKey, stored.ID)
 	}
 }
@@ -304,14 +331,29 @@ func (tr *TestRunner) backfillScenarioRefKeysLocked() {
 			slog.Warn("failed to allocate scenario reference key", "scenario_id", stored.ID, "error", err)
 			continue
 		}
-		stored.RefKey = refkey.Scenario(tr.envCode, sequence)
+		proposedRefKey := refkey.Scenario(tr.envCode, sequence)
+		durableRefKey := proposedRefKey
 		if tr.scenarioStore != nil {
-			if err := tr.scenarioStore.SaveScenario(storedScenarioToStorage(stored), storedScenarioRefsToStorage(stored)); err != nil {
+			if store, ok := tr.scenarioStore.(scenarioRefKeyPersistence); ok {
+				var updatedAt time.Time
+				durableRefKey, updatedAt, err = store.EnsureScenarioRefKey(stored.ID, proposedRefKey)
+				if err == nil {
+					stored.UpdatedAt = updatedAt
+				}
+			} else {
+				toSave := storedScenarioToStorage(stored)
+				toSave.RefKey = proposedRefKey
+				err = tr.scenarioStore.SaveScenario(toSave, storedScenarioRefsToStorage(stored))
+				if err == nil {
+					stored.UpdatedAt = toSave.UpdatedAt
+				}
+			}
+			if err != nil {
 				slog.Warn("failed to persist scenario reference key", "scenario_id", stored.ID, "error", err)
-				stored.RefKey = ""
 				continue
 			}
 		}
+		stored.RefKey = durableRefKey
 		tr.indexRefKeyLocked(stored.RefKey, stored.ID)
 	}
 }
@@ -340,13 +382,21 @@ func (tr *TestRunner) backfillTestRefKeysLocked() {
 			slog.Warn("failed to allocate test reference key", "test_id", test.ID, "error", err)
 			continue
 		}
-		test.RefKey = refkey.Run(tr.envCode, createdAt, sequence)
-		if err := tr.saveManagedTestRecord(test); err != nil {
+		proposedRefKey := refkey.Run(tr.envCode, createdAt, sequence)
+		durableRefKey := proposedRefKey
+		if store, ok := tr.testStore.(testRefKeyPersistence); ok {
+			durableRefKey, err = store.EnsureTestRefKey(test.ID, proposedRefKey)
+			test.RefKey = durableRefKey
+		} else {
+			test.RefKey = proposedRefKey
+			err = tr.saveManagedTestRecord(test)
+		}
+		if err != nil {
 			slog.Warn("failed to persist test reference key", "test_id", test.ID, "error", err)
 			test.RefKey = ""
 			continue
 		}
-		tr.indexRefKeyLocked(test.RefKey, test.ID)
+		tr.observeAndIndexRefKeyLocked(test.RefKey, test.ID)
 	}
 }
 
@@ -359,16 +409,26 @@ func (tr *TestRunner) backfillArchiveRefKeysLocked() {
 		if !ok || strings.TrimSpace(test.RefKey) == "" {
 			continue
 		}
-		archive.RefKey = test.RefKey
-		if test.Archive == archive {
-			test.Archive.RefKey = archive.RefKey
+		proposedRefKey := test.RefKey
+		durableRefKey := proposedRefKey
+		var err error
+		if store, ok := tr.archiveStore.(archiveRefKeyPersistence); ok {
+			durableRefKey, err = store.EnsureRunArchiveRefKey(testID, proposedRefKey)
+		} else {
+			archive.RefKey = proposedRefKey
+			err = tr.saveRunArchiveRecord(archive)
 		}
-		if err := tr.saveRunArchiveRecord(archive); err != nil {
+		if err != nil {
 			slog.Warn("failed to persist archive reference key", "test_id", testID, "error", err)
 			archive.RefKey = ""
 			if test.Archive == archive {
 				test.Archive.RefKey = ""
 			}
+			continue
+		}
+		archive.RefKey = durableRefKey
+		if test.Archive == archive {
+			test.Archive.RefKey = durableRefKey
 		}
 	}
 }

@@ -185,6 +185,12 @@ func applyLocalUserBindings(upstream *AuthenticatedUser, store storage.Store) (*
 	if local == nil || !local.Active {
 		return nil, fmt.Errorf("user is disabled")
 	}
+	if upstream.SessionScoped {
+		boundUserID := strings.TrimSpace(upstream.ID)
+		if boundUserID == "" || boundUserID != strings.TrimSpace(local.ID) {
+			return nil, fmt.Errorf("session revoked: local identity changed")
+		}
+	}
 	// Session revocation: an OIDC cookie minted before the user's epoch was bumped is
 	// rejected. Only applies to session-scoped identities (OIDC); trusted-header
 	// identities carry no epoch and are unaffected.
@@ -424,7 +430,13 @@ func serviceAccountAllowsRequest(account *AuthenticatedServiceAccount, r *http.R
 	if account == nil {
 		return true
 	}
-	required := requiredServiceAccountScopes(r)
+	return serviceAccountAllowsScopes(account, requiredServiceAccountScopes(r))
+}
+
+func serviceAccountAllowsScopes(account *AuthenticatedServiceAccount, required []string) bool {
+	if account == nil {
+		return true
+	}
 	if len(required) == 0 {
 		return true
 	}
@@ -448,15 +460,7 @@ func requiredServiceAccountScopes(r *http.Request) []string {
 	if r != nil && r.Method == http.MethodPost && r.URL.Path == "/api/v1/library/import" {
 		var req LibraryImportRequest
 		if err := decodeRequestBody(r, &req); err == nil {
-			seen := map[string]struct{}{}
-			var scopes []string
-			for _, item := range req.Bundle.Items {
-				scope := serviceAccountScopeForLibraryKind(item.Kind)
-				if _, ok := seen[scope]; !ok {
-					seen[scope] = struct{}{}
-					scopes = append(scopes, scope)
-				}
-			}
+			scopes := serviceAccountScopesForLibraryItems(req.Bundle.Items)
 			if len(scopes) > 0 {
 				return scopes
 			}
@@ -466,6 +470,20 @@ func requiredServiceAccountScopes(r *http.Request) []string {
 		return []string{scope}
 	}
 	return nil
+}
+
+func serviceAccountScopesForLibraryItems(items []LibraryBundleItem) []string {
+	seen := map[string]struct{}{}
+	scopes := make([]string, 0, len(items))
+	for _, item := range items {
+		scope := serviceAccountScopeForLibraryKind(item.Kind)
+		if _, ok := seen[scope]; ok {
+			continue
+		}
+		seen[scope] = struct{}{}
+		scopes = append(scopes, scope)
+	}
+	return scopes
 }
 
 type serviceAccountScopeRule struct {

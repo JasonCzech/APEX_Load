@@ -105,7 +105,7 @@ func newSequentialRecoveryFixture(t *testing.T, failurePolicy string) (*storage.
 	for i, label := range []string{"recover-first", "recover-second"} {
 		scriptID := "script-" + label
 		if _, err := runner.StoreScriptDurable(&dsl.Script{
-			ID: scriptID, Name: label, Protocol: "http", Version: "1.0.0",
+			ID: scriptID, Name: label, Protocol: "http", Version: "1.0.0", ProjectID: "proj-a",
 			Config:  dsl.ScriptConfig{BaseURL: "https://example.test", RunLogic: dsl.RunLogicConfig{Iterations: 1}},
 			Actions: []dsl.Action{{Name: "Home", Type: "GET", Target: "/"}},
 		}); err != nil {
@@ -220,8 +220,11 @@ func TestSequentialPlanRecoveryMaterializesClaimedEntryWithoutTest(t *testing.T)
 	if !started {
 		t.Fatal("recovery did not materialize the durably claimed entry")
 	}
-	if recoveredID == firstID {
-		t.Fatalf("recovery reused deleted test id %s", recoveredID)
+	// Test IDs are deterministic side-effect keys derived from the run and entry.
+	// Reusing the deleted ID is required so repeated recovery cannot create a
+	// second logical test for the same durably claimed entry.
+	if recoveredID != firstID {
+		t.Fatalf("recovery test id = %s, want deterministic id %s", recoveredID, firstID)
 	}
 	fresh, err := store.GetExecutionPlanRun(run.ID)
 	if err != nil {

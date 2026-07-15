@@ -3037,12 +3037,12 @@ paths:
       description: |-
         **Handler:** `handleListGitHubCheckLinks`
 
-        **Access Control:** Requires Authentication
+        **Access Control:** Requires Authentication (Role based on specific entity)
       operationId: handleListGitHubCheckLinks
       responses:
         "200":
           description: Successful operation
-      x-roles: Requires Authentication
+      x-roles: Requires Authentication (Role based on specific entity)
       tags:
         - Integrations
   /api/v1/integrations/github/config:
@@ -3106,12 +3106,12 @@ paths:
       description: |-
         **Handler:** `handleGitHubDiagnostics`
 
-        **Access Control:** Requires Authentication
+        **Access Control:** Roles: SystemAdmin
       operationId: handleGitHubDiagnostics
       responses:
         "200":
           description: Successful operation
-      x-roles: Requires Authentication
+      x-roles: 'Roles: SystemAdmin'
       tags:
         - Integrations
   /api/v1/integrations/github/installations:
@@ -3120,12 +3120,12 @@ paths:
       description: |-
         **Handler:** `handleGitHubInstallations`
 
-        **Access Control:** Requires Authentication
+        **Access Control:** Roles: SystemAdmin
       operationId: handleGitHubInstallations
       responses:
         "200":
           description: Successful operation
-      x-roles: Requires Authentication
+      x-roles: 'Roles: SystemAdmin'
       tags:
         - Integrations
   /api/v1/integrations/github/login:
@@ -3162,12 +3162,12 @@ paths:
       description: |-
         **Handler:** `handleListGitHubSyncJobs`
 
-        **Access Control:** Requires Authentication
+        **Access Control:** Requires Authentication (Role based on specific entity)
       operationId: handleListGitHubSyncJobs
       responses:
         "200":
           description: Successful operation
-      x-roles: Requires Authentication
+      x-roles: Requires Authentication (Role based on specific entity)
       tags:
         - Integrations
     post:
@@ -3189,12 +3189,12 @@ paths:
       description: |-
         **Handler:** `handleGetGitHubSyncJob`
 
-        **Access Control:** Requires Authentication
+        **Access Control:** Requires Authentication (Role based on specific entity)
       operationId: handleGetGitHubSyncJob
       responses:
         "200":
           description: Successful operation
-      x-roles: Requires Authentication
+      x-roles: Requires Authentication (Role based on specific entity)
       parameters:
         - name: id
           in: path
@@ -3224,12 +3224,12 @@ paths:
       description: |-
         **Handler:** `handleListGitHubWebhookDeliveries`
 
-        **Access Control:** Requires Authentication
+        **Access Control:** Roles: SystemAdmin
       operationId: handleListGitHubWebhookDeliveries
       responses:
         "200":
           description: Successful operation
-      x-roles: Requires Authentication
+      x-roles: 'Roles: SystemAdmin'
       tags:
         - Integrations
   /api/v1/library/capabilities:
@@ -3374,12 +3374,12 @@ paths:
       description: |-
         **Handler:** `handleLibraryRemoteCatalog`
 
-        **Access Control:** Roles: Viewer, Editor, ProjectAdmin, SystemAdmin
+        **Access Control:** Requires Authentication (Role based on specific entity)
       operationId: handleLibraryRemoteCatalog
       responses:
         "200":
           description: Successful operation
-      x-roles: 'Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      x-roles: Requires Authentication (Role based on specific entity)
       parameters:
         - name: id
           in: path
@@ -3891,12 +3891,12 @@ paths:
       description: |-
         **Handler:** `handleUpdateProjectGitHubPolicy`
 
-        **Access Control:** Requires Authentication (Role based on specific entity)
+        **Access Control:** Roles: SystemAdmin
       operationId: handleUpdateProjectGitHubPolicy
       responses:
         "200":
           description: Successful operation
-      x-roles: Requires Authentication (Role based on specific entity)
+      x-roles: 'Roles: SystemAdmin'
       parameters:
         - name: id
           in: path
@@ -4415,12 +4415,12 @@ paths:
       description: |-
         **Handler:** `handleCreateRemoteRun`
 
-        **Access Control:** Roles: Editor, ProjectAdmin, SystemAdmin
+        **Access Control:** Requires Authentication (Role based on specific entity)
       operationId: handleCreateRemoteRun
       responses:
         "200":
           description: Successful operation
-      x-roles: 'Roles: Editor, ProjectAdmin, SystemAdmin'
+      x-roles: Requires Authentication (Role based on specific entity)
       parameters:
         - name: id
           in: path
@@ -4435,12 +4435,12 @@ paths:
       description: |-
         **Handler:** `handleGetRemoteRun`
 
-        **Access Control:** Roles: Viewer, Editor, ProjectAdmin, SystemAdmin
+        **Access Control:** Requires Authentication (Role based on specific entity)
       operationId: handleGetRemoteRun
       responses:
         "200":
           description: Successful operation
-      x-roles: 'Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      x-roles: Requires Authentication (Role based on specific entity)
       parameters:
         - name: id
           in: path
@@ -4460,12 +4460,12 @@ paths:
       description: |-
         **Handler:** `handleRemoteRunAction("abort")`
 
-        **Access Control:** Roles: Editor, ProjectAdmin, SystemAdmin
+        **Access Control:** Requires Authentication (Role based on specific entity)
       operationId: handleRemoteRunActionAbort
       responses:
         "200":
           description: Successful operation
-      x-roles: 'Roles: Editor, ProjectAdmin, SystemAdmin'
+      x-roles: Requires Authentication (Role based on specific entity)
       parameters:
         - name: id
           in: path
@@ -4485,12 +4485,12 @@ paths:
       description: |-
         **Handler:** `handleRemoteRunAction("pause")`
 
-        **Access Control:** Roles: Editor, ProjectAdmin, SystemAdmin
+        **Access Control:** Requires Authentication (Role based on specific entity)
       operationId: handleRemoteRunActionPause
       responses:
         "200":
           description: Successful operation
-      x-roles: 'Roles: Editor, ProjectAdmin, SystemAdmin'
+      x-roles: Requires Authentication (Role based on specific entity)
       parameters:
         - name: id
           in: path
@@ -4510,12 +4510,12 @@ paths:
       description: |-
         **Handler:** `handleRemoteRunAction("resume")`
 
-        **Access Control:** Roles: Editor, ProjectAdmin, SystemAdmin
+        **Access Control:** Requires Authentication (Role based on specific entity)
       operationId: handleRemoteRunActionResume
       responses:
         "200":
           description: Successful operation
-      x-roles: 'Roles: Editor, ProjectAdmin, SystemAdmin'
+      x-roles: Requires Authentication (Role based on specific entity)
       parameters:
         - name: id
           in: path
@@ -4535,12 +4535,12 @@ paths:
       description: |-
         **Handler:** `handleRemoteRunAction("start")`
 
-        **Access Control:** Roles: Editor, ProjectAdmin, SystemAdmin
+        **Access Control:** Requires Authentication (Role based on specific entity)
       operationId: handleRemoteRunActionStart
       responses:
         "200":
           description: Successful operation
-      x-roles: 'Roles: Editor, ProjectAdmin, SystemAdmin'
+      x-roles: Requires Authentication (Role based on specific entity)
       parameters:
         - name: id
           in: path
@@ -4560,12 +4560,12 @@ paths:
       description: |-
         **Handler:** `handleRemoteRunAction("stop")`
 
-        **Access Control:** Roles: Editor, ProjectAdmin, SystemAdmin
+        **Access Control:** Requires Authentication (Role based on specific entity)
       operationId: handleRemoteRunActionStop
       responses:
         "200":
           description: Successful operation
-      x-roles: 'Roles: Editor, ProjectAdmin, SystemAdmin'
+      x-roles: Requires Authentication (Role based on specific entity)
       parameters:
         - name: id
           in: path

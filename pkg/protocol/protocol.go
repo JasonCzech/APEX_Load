@@ -97,7 +97,9 @@ type Action struct {
 	Target             string                 `json:"target"`
 	RedactedTarget     string                 `json:"-"`
 	Selector           string                 `json:"selector,omitempty"`
+	RedactedSelector   string                 `json:"-"`
 	Value              string                 `json:"value,omitempty"`
+	RedactedValue      string                 `json:"-"`
 	Headers            map[string]string      `json:"headers,omitempty"`
 	HeaderList         HeaderList             `json:"header_list,omitempty"`
 	RedactedHeaders    map[string]string      `json:"-"`
@@ -120,6 +122,10 @@ type Action struct {
 	MaxRedirects       *int                   `json:"max_redirects,omitempty"`
 	SOAP               *SOAPActionConfig      `json:"soap,omitempty"`
 	RedactedSOAP       *SOAPActionConfig      `json:"-"`
+	// DiscardResponseBodyOnSuccess lets high-volume engine callers avoid a
+	// second full payload copy after extractors/assertions have completed. Error
+	// responses still retain their bounded body evidence.
+	DiscardResponseBodyOnSuccess bool `json:"-"`
 }
 
 type AuthConfig struct {

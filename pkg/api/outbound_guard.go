@@ -6,12 +6,20 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
 // remoteOutboundAllowPrivateHostsEnv opts deployments that legitimately federate
 // to internal/in-cluster or on-prem services back into dialing private addresses.
 const remoteOutboundAllowPrivateHostsEnv = "APEXLOAD_LIBRARY_REMOTE_ALLOW_PRIVATE_HOSTS"
+
+type guardedHTTPClientCacheKey struct {
+	timeout      time.Duration
+	allowPrivate bool
+}
+
+var guardedHTTPClients sync.Map
 
 // remoteOutboundAllowsPrivateHosts reports whether outbound federation / remote-run
 // requests may target private, loopback, or link-local addresses. It is OFF by
@@ -64,6 +72,16 @@ func validateOutboundRemoteHost(host string) error {
 // Redirects are additionally bounded as defense-in-depth.
 func newGuardedHTTPClient(timeout time.Duration) *http.Client {
 	allowPrivate := remoteOutboundAllowsPrivateHosts()
+	key := guardedHTTPClientCacheKey{timeout: timeout, allowPrivate: allowPrivate}
+	if cached, ok := guardedHTTPClients.Load(key); ok {
+		return cached.(*http.Client)
+	}
+	client := buildGuardedHTTPClient(timeout, allowPrivate)
+	actual, _ := guardedHTTPClients.LoadOrStore(key, client)
+	return actual.(*http.Client)
+}
+
+func buildGuardedHTTPClient(timeout time.Duration, allowPrivate bool) *http.Client {
 	dialer := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
 	transport := &http.Transport{
 		// Deliberately NOT http.ProxyFromEnvironment: with an HTTP(S)_PROXY set,
@@ -108,13 +126,8 @@ func newGuardedHTTPClient(timeout time.Duration) *http.Client {
 		ExpectContinueTimeout: time.Second,
 	}
 	return &http.Client{
-		Timeout:   timeout,
-		Transport: transport,
-		CheckRedirect: func(_ *http.Request, via []*http.Request) error {
-			if len(via) >= 5 {
-				return fmt.Errorf("stopped after %d redirects", len(via))
-			}
-			return nil
-		},
+		Timeout:       timeout,
+		Transport:     transport,
+		CheckRedirect: sameOriginRedirectPolicy,
 	}
 }

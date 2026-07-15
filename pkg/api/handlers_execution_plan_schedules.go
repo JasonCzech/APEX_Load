@@ -1,6 +1,9 @@
 package api
 
-import "net/http"
+import (
+	"errors"
+	"net/http"
+)
 
 func (s *Server) handleCreateExecutionPlanSchedule(w http.ResponseWriter, r *http.Request) {
 	var req CreateExecutionPlanScheduleRequest
@@ -11,7 +14,9 @@ func (s *Server) handleCreateExecutionPlanSchedule(w http.ResponseWriter, r *htt
 	schedule, err := s.runner.CreateExecutionPlanSchedule(planID, req)
 	if err != nil {
 		status := http.StatusBadRequest
-		if err.Error() == "execution plan not found: "+planID {
+		if errors.Is(err, errNotExecutionLeader) {
+			status = http.StatusServiceUnavailable
+		} else if err.Error() == "execution plan not found: "+planID {
 			status = http.StatusNotFound
 		}
 		writeError(w, status, err.Error())
@@ -39,7 +44,13 @@ func (s *Server) handleUpdateExecutionPlanSchedule(w http.ResponseWriter, r *htt
 	scheduleID := r.PathValue("schedule_id")
 	schedule, ok, err := s.runner.UpdateExecutionPlanSchedule(planID, scheduleID, req)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		status := http.StatusBadRequest
+		if errors.Is(err, errNotExecutionLeader) {
+			status = http.StatusServiceUnavailable
+		} else if errors.Is(err, errScheduleHasActiveOccurrence) {
+			status = http.StatusConflict
+		}
+		writeError(w, status, err.Error())
 		return
 	}
 	if !ok {
@@ -55,7 +66,11 @@ func (s *Server) handleDeleteExecutionPlanSchedule(w http.ResponseWriter, r *htt
 	scheduleID := r.PathValue("schedule_id")
 	ok, err := s.runner.DeleteExecutionPlanScheduleForPlan(planID, scheduleID)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		status := http.StatusBadRequest
+		if errors.Is(err, errNotExecutionLeader) {
+			status = http.StatusServiceUnavailable
+		}
+		writeError(w, status, err.Error())
 		return
 	}
 	if !ok {
@@ -69,7 +84,11 @@ func (s *Server) handleDeleteExecutionPlanSchedule(w http.ResponseWriter, r *htt
 func (s *Server) handleListExecutionPlanScheduleOccurrences(w http.ResponseWriter, r *http.Request) {
 	planID := r.PathValue("id")
 	scheduleID := r.PathValue("schedule_id")
-	occurrences, ok, err := s.runner.ListExecutionPlanScheduleOccurrencesForPlan(planID, scheduleID)
+	limit, offset := parseLimitOffsetQuery(r, defaultScheduleHistoryListLimit)
+	if limit > maxScheduleHistoryListLimit {
+		limit = maxScheduleHistoryListLimit
+	}
+	occurrences, ok, err := s.runner.ListExecutionPlanScheduleOccurrencesPageForPlan(planID, scheduleID, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -78,5 +97,5 @@ func (s *Server) handleListExecutionPlanScheduleOccurrences(w http.ResponseWrite
 		writeError(w, http.StatusNotFound, "execution plan schedule not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"occurrences": occurrences, "count": len(occurrences)})
+	writeJSON(w, http.StatusOK, map[string]any{"occurrences": occurrences, "count": len(occurrences), "limit": limit, "offset": offset})
 }

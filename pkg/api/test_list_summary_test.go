@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -39,6 +40,15 @@ func TestParseTestListOptions(t *testing.T) {
 	summary, activeOnly, limit, offset, ok := parseTestListOptions(recorder, request)
 	if !ok || !summary || !activeOnly || limit != 250 || offset != 10 {
 		t.Fatalf("unexpected options: summary=%v activeOnly=%v limit=%d offset=%d ok=%v", summary, activeOnly, limit, offset, ok)
+	}
+}
+
+func TestParseTestListOptionsAppliesBoundedDefault(t *testing.T) {
+	request := httptest.NewRequest("GET", "/api/v1/tests", nil)
+	recorder := httptest.NewRecorder()
+	summary, activeOnly, limit, offset, ok := parseTestListOptions(recorder, request)
+	if !ok || summary || activeOnly || limit != defaultTestListLimit || offset != 0 {
+		t.Fatalf("unexpected defaults: summary=%v activeOnly=%v limit=%d offset=%d ok=%v", summary, activeOnly, limit, offset, ok)
 	}
 }
 
@@ -101,7 +111,7 @@ func TestListTestSummaryPageBuildsOnlyTheBoundedWindow(t *testing.T) {
 		},
 	}}
 
-	page, total := runner.listTestSummaryPage(testSummaryListQuery{releaseID: "release-1", limit: 1})
+	page, total := runner.listTestSummaryPage(testSummaryListQuery{releaseID: "release-1", limit: 1, prioritizeActive: true})
 
 	if total != 2 {
 		t.Fatalf("total = %d, want 2", total)
@@ -114,6 +124,45 @@ func TestListTestSummaryPageBuildsOnlyTheBoundedWindow(t *testing.T) {
 	}
 	if len(page[0].Sparkline) == 0 {
 		t.Fatal("summary page omitted the bounded sparkline")
+	}
+}
+
+func TestHandleListTestsUsesBoundedSummarySnapshotsByDefault(t *testing.T) {
+	history := make([]*LiveMetrics, 32)
+	for index := range history {
+		history[index] = &LiveMetrics{Timestamp: time.Unix(int64(index+1), 0), TPS: float64(index)}
+	}
+	runner := &TestRunner{tests: make(map[string]*ManagedTest, defaultTestListLimit+1)}
+	for index := 0; index <= defaultTestListLimit; index++ {
+		id := fmt.Sprintf("run-%03d", index)
+		runner.tests[id] = &ManagedTest{ID: id, Status: "COMPLETE", CreatedAt: time.Unix(int64(index+1), 0), History: history}
+	}
+	server := &Server{runner: runner}
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest("GET", "/api/v1/tests", nil)
+
+	server.handleListTests(recorder, request)
+
+	var response struct {
+		Tests   []*ManagedTest `json:"tests"`
+		Count   int            `json:"count"`
+		Total   int            `json:"total"`
+		Limit   int            `json:"limit"`
+		Summary bool           `json:"summary"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if recorder.Code != 200 || response.Count != defaultTestListLimit || response.Total != defaultTestListLimit+1 || response.Limit != defaultTestListLimit || response.Summary {
+		t.Fatalf("unexpected default list metadata: status=%d response=%+v", recorder.Code, response)
+	}
+	if len(response.Tests) != defaultTestListLimit || response.Tests[0].ID != "run-200" || response.Tests[len(response.Tests)-1].ID != "run-001" {
+		t.Fatalf("default bounded page changed newest-first ordering: first=%q last=%q", response.Tests[0].ID, response.Tests[len(response.Tests)-1].ID)
+	}
+	for _, test := range response.Tests {
+		if test.History != nil {
+			t.Fatalf("default list exposed history for %s", test.ID)
+		}
 	}
 }
 

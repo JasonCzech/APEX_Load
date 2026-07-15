@@ -1,6 +1,9 @@
 package protocol
 
-import "strings"
+import (
+	"math"
+	"strings"
+)
 
 // This file holds the small action/config coercion helpers shared by the
 // protocol implementations (network, database, http, jms, kafka, browser,
@@ -37,7 +40,13 @@ func ConfigStringSlice(config map[string]any, key string) []string {
 	}
 	switch value := config[key].(type) {
 	case []string:
-		return append([]string(nil), value...)
+		out := make([]string, 0, len(value))
+		for _, item := range value {
+			if trimmed := strings.TrimSpace(item); trimmed != "" {
+				out = append(out, trimmed)
+			}
+		}
+		return out
 	case []any:
 		out := make([]string, 0, len(value))
 		for _, item := range value {
@@ -61,11 +70,21 @@ func ConfigInt(config map[string]any, key string) int {
 	case int:
 		return value
 	case int64:
+		if value > int64(maxIntValue()) || value < int64(minIntValue()) {
+			return 0
+		}
 		return int(value)
 	case float64:
+		if math.IsNaN(value) || math.IsInf(value, 0) || value >= float64(maxIntValue()) || value < float64(minIntValue()) {
+			return 0
+		}
 		return int(value)
 	case float32:
-		return int(value)
+		converted := float64(value)
+		if math.IsNaN(converted) || math.IsInf(converted, 0) || converted >= float64(maxIntValue()) || converted < float64(minIntValue()) {
+			return 0
+		}
+		return int(converted)
 	default:
 		return 0
 	}
@@ -79,9 +98,16 @@ func ConfigFloat(config map[string]any, key string) float64 {
 	}
 	switch value := config[key].(type) {
 	case float64:
+		if math.IsNaN(value) || math.IsInf(value, 0) {
+			return 0
+		}
 		return value
 	case float32:
-		return float64(value)
+		converted := float64(value)
+		if math.IsNaN(converted) || math.IsInf(converted, 0) {
+			return 0
+		}
+		return converted
 	case int:
 		return float64(value)
 	case int64:
@@ -90,6 +116,10 @@ func ConfigFloat(config map[string]any, key string) float64 {
 		return 0
 	}
 }
+
+func maxIntValue() int { return int(^uint(0) >> 1) }
+
+func minIntValue() int { return -maxIntValue() - 1 }
 
 // FirstNonEmpty returns the first value that is non-empty after trimming
 // surrounding whitespace, or "" when every value is blank. The returned value is

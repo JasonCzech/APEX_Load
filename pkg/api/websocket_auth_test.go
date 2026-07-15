@@ -74,6 +74,9 @@ func TestWebSocketAuthorizerRejectsRotatedServiceAccountKey(t *testing.T) {
 	}
 	defer store.Close()
 	now := time.Now().UTC()
+	if err := store.SaveProject(&storage.Project{ID: "project-ws", Name: "WebSocket Project", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
 	account := &storage.ServiceAccount{
 		ID:           "svc-ws",
 		Name:         "WS",
@@ -111,6 +114,9 @@ func TestWebSocketAuthorizerRechecksServiceAccountScopes(t *testing.T) {
 	}
 	defer store.Close()
 	now := time.Now().UTC()
+	if err := store.SaveProject(&storage.Project{ID: "project-ws", Name: "WebSocket Project", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
 	account := &storage.ServiceAccount{
 		ID:           "svc-ws-scopes",
 		Name:         "Scoped WS",

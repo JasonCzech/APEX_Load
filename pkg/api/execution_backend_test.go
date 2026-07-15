@@ -31,6 +31,38 @@ func (s *executionBackendSpy) Run(_ *TestRunner, test *ManagedTest) {
 	s.called <- test.ID
 }
 
+func waitForDistributedLoadMetrics(t *testing.T, runner *TestRunner, testID string, wantActive int64) {
+	t.Helper()
+	deadline := time.Now().Add(4 * time.Second)
+	for {
+		now := time.Now().UTC()
+		runner.mu.RLock()
+		test := runner.tests[testID]
+		ready := test != nil && runner.testLoadReadyLocked(test, now)
+		active := int64(-1)
+		status := "missing"
+		detail := ""
+		if test != nil {
+			status = test.Status
+			detail = test.Error
+			if test.LiveMetrics != nil {
+				active = test.LiveMetrics.ActiveVUsers
+			}
+		}
+		runner.mu.RUnlock()
+		if ready && active == wantActive {
+			return
+		}
+		if test != nil && isTerminalTestStatus(status) {
+			t.Fatalf("distributed run became terminal before load readiness: status=%s error=%s", status, detail)
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("distributed load did not become ready: status=%s active=%d want=%d", status, active, wantActive)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func TestStartTestDispatchesThroughExecutionBackend(t *testing.T) {
 	hub := NewHub()
 	runner := NewTestRunner(1, hub, nil)
@@ -98,7 +130,7 @@ func TestDistributedExecutionBackendAssignsWorkToGenerator(t *testing.T) {
 	runner := NewTestRunner(1, hub, nil)
 	runner.setExecutionBackend(newDistributedExecutionBackend(
 		[]string{"bufnet"},
-		5*time.Second,
+		400*time.Millisecond,
 		func(ctx context.Context, target string) (generatorClient, error) {
 			return generatorrpc.Dial(
 				ctx,
@@ -158,6 +190,7 @@ func TestDistributedExecutionBackendAssignsWorkToGenerator(t *testing.T) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
+	waitForDistributedLoadMetrics(t, runner, testRun.ID, 5)
 
 	started, ok := runner.GetTest(testRun.ID)
 	if !ok {
@@ -382,7 +415,7 @@ func TestDistributedExecutionBackendStopTestClearsRemoteAssignment(t *testing.T)
 	runner := NewTestRunner(1, hub, nil)
 	runner.setExecutionBackend(newDistributedExecutionBackend(
 		[]string{"bufnet"},
-		5*time.Second,
+		400*time.Millisecond,
 		func(ctx context.Context, target string) (generatorClient, error) {
 			return generatorrpc.Dial(
 				ctx,
@@ -442,6 +475,7 @@ func TestDistributedExecutionBackendStopTestClearsRemoteAssignment(t *testing.T)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
+	waitForDistributedLoadMetrics(t, runner, testRun.ID, 5)
 
 	if err := runner.StopTest(testRun.ID); err != nil {
 		t.Fatalf("StopTest returned error: %v", err)
@@ -452,7 +486,7 @@ func TestDistributedExecutionBackendStopTestClearsRemoteAssignment(t *testing.T)
 		if !ok {
 			t.Fatalf("expected managed test %q to exist after stop", testRun.ID)
 		}
-		if stopped.Status == "COMPLETE" && stopped.EndedAt != nil {
+		if stopped.Status == "ABORTED" && stopped.EndedAt != nil {
 			break
 		}
 		if time.Now().After(deadline) {
@@ -465,8 +499,8 @@ func TestDistributedExecutionBackendStopTestClearsRemoteAssignment(t *testing.T)
 	if !ok {
 		t.Fatalf("expected managed test %q to exist after stop", testRun.ID)
 	}
-	if stopped.Status != "COMPLETE" {
-		t.Fatalf("status = %q, want COMPLETE", stopped.Status)
+	if stopped.Status != "ABORTED" {
+		t.Fatalf("status = %q, want ABORTED", stopped.Status)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -1821,7 +1855,7 @@ func TestDistributedExecutionBackendShardsGroupAcrossSpecificHostsAndRescales(t 
 	runner := NewTestRunner(1, hub, nil)
 	runner.setExecutionBackend(newDistributedExecutionBackend(
 		[]string{"bufnet-a", "bufnet-b"},
-		5*time.Second,
+		400*time.Millisecond,
 		func(ctx context.Context, target string) (generatorClient, error) {
 			return dialTarget(ctx, target)
 		},
@@ -1887,6 +1921,7 @@ func TestDistributedExecutionBackendShardsGroupAcrossSpecificHostsAndRescales(t 
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
+	waitForDistributedLoadMetrics(t, runner, testRun.ID, 30)
 
 	if err := runner.ScaleVUsers(testRun.ID, "Group A", 60); err != nil {
 		t.Fatalf("ScaleVUsers returned error: %v", err)
@@ -2662,7 +2697,7 @@ func TestDistributedExecutionBackendPausesAndResumesTest(t *testing.T) {
 	runner := NewTestRunner(1, hub, nil)
 	runner.setExecutionBackend(newDistributedExecutionBackend(
 		[]string{"bufnet"},
-		5*time.Second,
+		400*time.Millisecond,
 		func(ctx context.Context, target string) (generatorClient, error) {
 			return generatorrpc.Dial(
 				ctx,
@@ -2722,6 +2757,7 @@ func TestDistributedExecutionBackendPausesAndResumesTest(t *testing.T) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
+	waitForDistributedLoadMetrics(t, runner, testRun.ID, 5)
 
 	started, ok := runner.GetTest(testRun.ID)
 	if !ok {
@@ -2811,7 +2847,7 @@ func TestDistributedExecutionBackendScalesSingleGroupTest(t *testing.T) {
 	runner := NewTestRunner(1, hub, nil)
 	runner.setExecutionBackend(newDistributedExecutionBackend(
 		[]string{"bufnet"},
-		5*time.Second,
+		400*time.Millisecond,
 		func(ctx context.Context, target string) (generatorClient, error) {
 			return generatorrpc.Dial(
 				ctx,
@@ -2871,6 +2907,7 @@ func TestDistributedExecutionBackendScalesSingleGroupTest(t *testing.T) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
+	waitForDistributedLoadMetrics(t, runner, testRun.ID, 5)
 
 	if err := runner.ScaleVUsers(testRun.ID, "Group A", 7); err != nil {
 		t.Fatalf("ScaleVUsers returned error: %v", err)
@@ -2949,7 +2986,7 @@ func TestDistributedExecutionBackendScalesMultiGroupTest(t *testing.T) {
 	runner := NewTestRunner(1, hub, nil)
 	runner.setExecutionBackend(newDistributedExecutionBackend(
 		[]string{"bufnet"},
-		5*time.Second,
+		400*time.Millisecond,
 		func(ctx context.Context, target string) (generatorClient, error) {
 			return generatorrpc.Dial(
 				ctx,
@@ -3014,6 +3051,7 @@ func TestDistributedExecutionBackendScalesMultiGroupTest(t *testing.T) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
+	waitForDistributedLoadMetrics(t, runner, testRun.ID, 8)
 
 	if err := runner.ScaleVUsers(testRun.ID, "Group A", 7); err != nil {
 		t.Fatalf("ScaleVUsers returned error: %v", err)
@@ -3114,7 +3152,7 @@ func TestDistributedExecutionBackendScalesGroupOnOwningGenerator(t *testing.T) {
 	runner := NewTestRunner(1, hub, nil)
 	runner.setExecutionBackend(newDistributedExecutionBackend(
 		[]string{"bufnet-a", "bufnet-b"},
-		5*time.Second,
+		400*time.Millisecond,
 		func(ctx context.Context, target string) (generatorClient, error) {
 			switch target {
 			case "bufnet-a":
@@ -3189,6 +3227,7 @@ func TestDistributedExecutionBackendScalesGroupOnOwningGenerator(t *testing.T) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
+	waitForDistributedLoadMetrics(t, runner, testRun.ID, 8)
 
 	if err := runner.ScaleVUsers(testRun.ID, "Group B", 7); err != nil {
 		t.Fatalf("ScaleVUsers returned error: %v", err)
@@ -3351,5 +3390,46 @@ func TestApplyRemoteMetricsBatchIgnoresStaleWindow(t *testing.T) {
 	live, _, _ = b.applyRemoteMetricsBatch(tr, test, target, stale)
 	if live.TotalTx != 1 || live.Transactions["Checkout"] == nil || live.Transactions["Stale"] != nil {
 		t.Fatalf("stale batch overwrote live metrics: total=%d tx=%#v", live.TotalTx, live.Transactions)
+	}
+}
+
+func TestApplyRemoteMetricsBatchAcceptsEqualTimestampCommitTransition(t *testing.T) {
+	tr := NewTestRunner(1, NewHub(), nil)
+	b := &distributedExecutionBackend{}
+	target := "gen-a"
+	test := &ManagedTest{
+		ID:                    "t-equal-timestamp-commit",
+		Groups:                []TestGroup{{Name: "buyers", VUsers: 3}},
+		remoteClientsByTarget: map[string]generatorClient{target: nil},
+	}
+
+	staged := generatorrpc.MetricsBatch{
+		TestID:          test.ID,
+		LifecycleState:  "STAGED",
+		TimestampUnixMs: 2_000,
+		Stats:           generatorrpc.GeneratorStats{ActiveVUsers: 0},
+		Groups:          []generatorrpc.GroupMetric{{Name: "buyers", ActiveVUsers: 0}},
+	}
+	live, _, _ := b.applyRemoteMetricsBatch(tr, test, target, staged)
+	if live.ActiveVUsers != 0 {
+		t.Fatalf("staged active VUsers = %d, want 0", live.ActiveVUsers)
+	}
+
+	committed := generatorrpc.MetricsBatch{
+		TestID:          test.ID,
+		LifecycleState:  "RUNNING",
+		TimestampUnixMs: staged.TimestampUnixMs,
+		Stats:           generatorrpc.GeneratorStats{ActiveVUsers: 3},
+		Groups:          []generatorrpc.GroupMetric{{Name: "buyers", ActiveVUsers: 3}},
+	}
+	live, _, _ = b.applyRemoteMetricsBatch(tr, test, target, committed)
+	if live.ActiveVUsers != 3 {
+		t.Fatalf("committed active VUsers = %d, want 3", live.ActiveVUsers)
+	}
+
+	// A delayed staged broadcast must not regress a committed snapshot.
+	live, _, _ = b.applyRemoteMetricsBatch(tr, test, target, staged)
+	if live.ActiveVUsers != 3 {
+		t.Fatalf("delayed staged snapshot regressed active VUsers to %d", live.ActiveVUsers)
 	}
 }

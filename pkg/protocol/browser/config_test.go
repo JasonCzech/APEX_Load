@@ -1,10 +1,13 @@
 package browser
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/fileasset"
 	playwright "github.com/playwright-community/playwright-go"
 )
 
@@ -35,6 +38,18 @@ func TestBrowserApplyConfigDefaults(t *testing.T) {
 }
 
 func TestBrowserApplyConfigOverrides(t *testing.T) {
+	credentialDir := t.TempDir()
+	if err := fileasset.RegisterRoot(credentialDir); err != nil {
+		t.Fatal(err)
+	}
+	certPath := filepath.Join(credentialDir, "client.pem")
+	keyPath := filepath.Join(credentialDir, "client-key.pem")
+	if err := os.WriteFile(certPath, []byte("test certificate"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyPath, []byte("test key"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	var b Browser
 	err := b.applyConfig(map[string]any{
 		"base_url":                              " https://app.example/root ",
@@ -69,8 +84,8 @@ func TestBrowserApplyConfigOverrides(t *testing.T) {
 		"browser_proxy_password":                "proxy-pass",
 		"browser_client_certificates": []map[string]any{{
 			"origin":     "https://mtls.example",
-			"cert_path":  "/certs/client.pem",
-			"key_path":   "/certs/client-key.pem",
+			"cert_path":  certPath,
+			"key_path":   keyPath,
 			"passphrase": "cert-pass",
 		}},
 		"browser_touch_mode":          true,
@@ -115,7 +130,7 @@ func TestBrowserApplyConfigOverrides(t *testing.T) {
 	if b.proxy == nil || b.proxy.Server != "http://proxy.example:3128" || b.proxy.Bypass == nil || *b.proxy.Bypass != ".internal,localhost" || b.proxy.Username == nil || *b.proxy.Username != "proxy-user" || b.proxy.Password == nil || *b.proxy.Password != "proxy-pass" {
 		t.Fatalf("proxy = %+v", b.proxy)
 	}
-	if len(b.clientCertificates) != 1 || b.clientCertificates[0].Origin != "https://mtls.example" || b.clientCertificates[0].CertPath == nil || *b.clientCertificates[0].CertPath != "/certs/client.pem" || b.clientCertificates[0].KeyPath == nil || *b.clientCertificates[0].KeyPath != "/certs/client-key.pem" || b.clientCertificates[0].Passphrase == nil || *b.clientCertificates[0].Passphrase != "cert-pass" {
+	if len(b.clientCertificates) != 1 || b.clientCertificates[0].Origin != "https://mtls.example" || b.clientCertificates[0].CertPath != nil || string(b.clientCertificates[0].Cert) != "test certificate" || b.clientCertificates[0].KeyPath != nil || string(b.clientCertificates[0].Key) != "test key" || b.clientCertificates[0].Passphrase == nil || *b.clientCertificates[0].Passphrase != "cert-pass" {
 		t.Fatalf("client certificates = %+v", b.clientCertificates)
 	}
 	if !b.touchMode || b.orientation != "portrait" || !b.clientMetricsEnabled || b.captureScreenshots != "per_action" {
@@ -129,6 +144,35 @@ func TestBrowserApplyConfigOverrides(t *testing.T) {
 	}
 	if _, ok := b.recordedResources["cdn.example/app.js?x=1"]; !ok {
 		t.Fatalf("recordedResources = %v, want host-qualified resource key", b.recordedResources)
+	}
+}
+
+func TestBrowserClientCertificatePathsAreGovernedAndBounded(t *testing.T) {
+	outside := filepath.Join(t.TempDir(), "client.pfx")
+	if err := os.WriteFile(outside, []byte("pfx"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var browser Browser
+	err := browser.applyConfig(map[string]any{"browser_client_certificates": []map[string]any{{
+		"origin": "https://mtls.example", "pfx_path": outside,
+	}}})
+	if err == nil || !strings.Contains(err.Error(), "outside allowed roots") {
+		t.Fatalf("outside-root browser certificate error = %v", err)
+	}
+
+	dir := t.TempDir()
+	if err := fileasset.RegisterRoot(dir); err != nil {
+		t.Fatal(err)
+	}
+	oversized := filepath.Join(dir, "oversized.pfx")
+	if err := os.WriteFile(oversized, []byte(strings.Repeat("x", int(fileasset.MaxCredentialBytes)+1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err = browser.applyConfig(map[string]any{"browser_client_certificates": []map[string]any{{
+		"origin": "https://mtls.example", "pfx_path": oversized,
+	}}})
+	if err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("oversized browser certificate error = %v", err)
 	}
 }
 
@@ -316,6 +360,14 @@ func TestBrowserApplyConfigValidationErrors(t *testing.T) {
 		{name: "proxy password", config: map[string]any{"browser_proxy_server": "proxy.example:3128", "browser_proxy_password": "proxy-pass"}, wantErr: "browser proxy password requires username"},
 		{name: "client certificate origin", config: map[string]any{"browser_client_certificates": []map[string]any{{"origin": "http://mtls.example", "pfx_path": "/certs/client.p12"}}}, wantErr: "origin must be an HTTPS origin"},
 		{name: "client certificate material", config: map[string]any{"browser_client_certificates": []map[string]any{{"origin": "https://mtls.example", "cert_path": "/certs/client.pem"}}}, wantErr: "requires cert_path and key_path, or pfx_path"},
+		{name: "viewport dimension", config: map[string]any{"browser_viewport_width": MaxConfiguredViewportDimension + 1}, wantErr: "viewport dimensions"},
+		{name: "viewport area", config: map[string]any{"browser_viewport_width": MaxConfiguredViewportDimension, "browser_viewport_height": MaxConfiguredViewportDimension}, wantErr: "viewport exceeds"},
+		{name: "device scale", config: map[string]any{"browser_device_scale_factor": float64(maxBrowserDeviceScaleFactor + 1)}, wantErr: "device scale factor"},
+		{name: "scaled viewport", config: map[string]any{"browser_viewport_width": 4096, "browser_viewport_height": 4096, "browser_device_scale_factor": float64(2)}, wantErr: "scaled viewport"},
+		{name: "cpu throttle", config: map[string]any{"browser_cpu_throttle_rate": float64(maxBrowserCPUThrottleRate + 1)}, wantErr: "CPU throttle"},
+		{name: "slow motion delay", config: map[string]any{"browser_slow_mo_ms": int(MaxConfiguredBrowserDelay/time.Millisecond) + 1}, wantErr: "delays must not exceed"},
+		{name: "network latency", config: map[string]any{"web_network_simulation_latency_ms": int(MaxConfiguredBrowserDelay/time.Millisecond) + 1}, wantErr: "network latency"},
+		{name: "network bandwidth", config: map[string]any{"web_network_simulation_bandwidth_kbps": MaxConfiguredNetworkKbps + 1}, wantErr: "network bandwidth"},
 	}
 
 	for _, tt := range tests {
@@ -329,5 +381,17 @@ func TestBrowserApplyConfigValidationErrors(t *testing.T) {
 				t.Fatalf("error = %q, want substring %q", err.Error(), tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestBrowserApplyDefaultConfigClearsSecurityAndRetentionState(t *testing.T) {
+	b := &Browser{
+		traceparentEnabled:    true,
+		harDir:                "/tmp/previous",
+		resourceValidatorKeys: []string{"https://previous.example"},
+	}
+	b.applyDefaultConfig()
+	if b.traceparentEnabled || b.harDir != "" || len(b.resourceValidatorKeys) != 0 {
+		t.Fatalf("stale config survived reset: trace=%v harDir=%q validatorKeys=%v", b.traceparentEnabled, b.harDir, b.resourceValidatorKeys)
 	}
 }

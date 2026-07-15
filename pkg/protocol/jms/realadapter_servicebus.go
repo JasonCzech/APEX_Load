@@ -14,6 +14,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/messaging/azservicebus"
+	"github.com/jasonczech/apexload/pkg/identitypolicy"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/protocol/messaging"
 )
@@ -58,7 +59,24 @@ type serviceBusAdapter struct {
 	// (jms_session_accept), reused for session consume + session-state get/set.
 	sessions   map[string]*azservicebus.SessionReceiver
 	sessionSeq atomic.Uint64
+	// sessionReservations closes the race between the preflight limit check and
+	// the blocking SDK AcceptSession call.
+	sessionReservations int
+	inflightBytes       int64
+	closed              bool
 }
+
+const (
+	maxServiceBusReceivers        = 128
+	maxServiceBusReceiverKeyBytes = 64 << 10
+	maxServiceBusInflightMessages = 1024
+	maxServiceBusInflightBytes    = int64(8 << 20)
+	maxServiceBusSessions         = 64
+	maxServiceBusSenders          = 128
+	maxServiceBusSenderKeyBytes   = 64 << 10
+	maxServiceBusPoolEntries      = 256
+	maxServiceBusPoolKeyBytes     = 128 << 10
+)
 
 // sbMessageSettler is the message-settlement method set shared by *Receiver and
 // *SessionReceiver, so an in-flight message settles through whichever it came
@@ -93,7 +111,9 @@ type inflightMessage struct {
 	// lockedUntil is the broker-side peek-lock expiry. After it passes the lock is
 	// lost server-side and the token can never be settled, so the entry is evicted
 	// to avoid pinning the message (and its body) until VUser Teardown.
-	lockedUntil time.Time
+	lockedUntil  time.Time
+	retained     int64
+	sessionToken string
 }
 
 // lockedUntilOf returns a received message's peek-lock expiry, or the zero time
@@ -112,9 +132,94 @@ func lockedUntilOf(rm *azservicebus.ReceivedMessage) time.Time {
 func (a *serviceBusAdapter) evictExpiredInflightLocked(now time.Time) {
 	for tok, e := range a.inflight {
 		if !e.lockedUntil.IsZero() && now.After(e.lockedUntil) {
+			a.inflightBytes -= e.retained
 			delete(a.inflight, tok)
 		}
 	}
+	if a.inflightBytes < 0 {
+		a.inflightBytes = 0
+	}
+}
+
+func serviceBusReceivedMessageSize(rm *azservicebus.ReceivedMessage) int64 {
+	if rm == nil {
+		return 0
+	}
+	size := int64(len(rm.Body) + len(rm.MessageID))
+	if rm.CorrelationID != nil {
+		size += int64(len(*rm.CorrelationID))
+	}
+	for key, value := range rm.ApplicationProperties {
+		size += int64(len(key))
+		if text, ok := value.(string); ok {
+			size += int64(len(text))
+		}
+	}
+	return size
+}
+
+// admitInflightBatchLocked either retains the complete received batch or none
+// of it. The caller can then explicitly abandon every fetched lock on failure.
+func (a *serviceBusAdapter) admitInflightBatchLocked(entries map[string]inflightMessage, now time.Time) error {
+	if a.closed {
+		return fmt.Errorf("Service Bus adapter is closed")
+	}
+	if a.inflight == nil {
+		a.inflight = make(map[string]inflightMessage)
+	}
+	a.evictExpiredInflightLocked(now)
+	newCount := 0
+	newBytes := int64(0)
+	for token, entry := range entries {
+		if existing, ok := a.inflight[token]; ok {
+			newBytes += entry.retained - existing.retained
+			continue
+		}
+		newCount++
+		newBytes += entry.retained
+	}
+	if len(a.inflight)+newCount > maxServiceBusInflightMessages || newBytes > maxServiceBusInflightBytes-a.inflightBytes {
+		return fmt.Errorf("Service Bus unsettled delivery capacity exceeded (%d messages, %d bytes)", maxServiceBusInflightMessages, maxServiceBusInflightBytes)
+	}
+	for token, entry := range entries {
+		if existing, ok := a.inflight[token]; ok {
+			a.inflightBytes -= existing.retained
+		}
+		a.inflight[token] = entry
+		a.inflightBytes += entry.retained
+	}
+	return nil
+}
+
+func (a *serviceBusAdapter) deleteInflightLocked(token string) {
+	if entry, ok := a.inflight[token]; ok {
+		a.inflightBytes -= entry.retained
+		delete(a.inflight, token)
+	}
+	if a.inflightBytes < 0 {
+		a.inflightBytes = 0
+	}
+}
+
+func serviceBusMapKeyBytes[V any](values map[string]V) int {
+	total := 0
+	for key := range values {
+		total += len(key)
+	}
+	return total
+}
+
+func (a *serviceBusAdapter) receiverAdmissionErrorLocked(key string) error {
+	if a.closed {
+		return fmt.Errorf("Service Bus adapter is closed")
+	}
+	if _, exists := a.receivers[key]; exists {
+		return nil
+	}
+	if len(a.receivers) >= maxServiceBusReceivers || len(key) > maxServiceBusReceiverKeyBytes-serviceBusMapKeyBytes(a.receivers) {
+		return fmt.Errorf("Service Bus receiver capacity exceeded (%d handles, %d key bytes)", maxServiceBusReceivers, maxServiceBusReceiverKeyBytes)
+	}
+	return nil
 }
 
 func (a *serviceBusAdapter) Publish(ctx context.Context, destination string, msg message) (message, error) {
@@ -204,6 +309,8 @@ func (a *serviceBusAdapter) RequestReply(ctx context.Context, requestDestination
 const (
 	serviceBusReplyBackoff             = 50 * time.Millisecond
 	serviceBusForeignReplyAbandonLimit = 1
+	serviceBusSettlementTimeout        = 5 * time.Second
+	serviceBusCloseTimeout             = 5 * time.Second
 )
 
 func serviceBusAwaitCorrelatedReply(ctx context.Context, receiver sbReplyReceiver, replyDestination string, request message, timeout time.Duration) (message, error) {
@@ -229,25 +336,42 @@ func serviceBusAwaitCorrelatedReply(ctx context.Context, receiver sbReplyReceive
 		if len(messages) == 0 {
 			continue
 		}
+		matchIndex := -1
+		var reply message
+		for idx, sbMsg := range messages {
+			candidate := fromServiceBusMessage(replyDestination, sbMsg)
+			if messaging.CorrelationMatches(request.CorrelationID, candidate.CorrelationID) {
+				matchIndex, reply = idx, candidate
+				break
+			}
+		}
+		if matchIndex >= 0 {
+			settleCtx, settleCancel := context.WithTimeout(context.WithoutCancel(ctx), serviceBusSettlementTimeout)
+			var settleErrs []error
+			if err := receiver.CompleteMessage(settleCtx, messages[matchIndex], nil); err != nil {
+				settleErrs = append(settleErrs, fmt.Errorf("complete Service Bus reply from %q: %w", replyDestination, err))
+			}
+			for idx, other := range messages {
+				if idx == matchIndex {
+					continue
+				}
+				if _, err := serviceBusAbandonForeignReply(settleCtx, receiver, replyDestination, other, abandonCounts); err != nil {
+					settleErrs = append(settleErrs, err)
+				}
+			}
+			settleCancel()
+			if err := errors.Join(settleErrs...); err != nil {
+				return reply, err
+			}
+			return reply, nil
+		}
+
 		sawFreshForeign := false
 		sawForeignChurn := false
-		for idx, sbMsg := range messages {
-			reply := fromServiceBusMessage(replyDestination, sbMsg)
-			if messaging.CorrelationMatches(request.CorrelationID, reply.CorrelationID) {
-				if err := receiver.CompleteMessage(ctx, sbMsg, nil); err != nil {
-					return reply, fmt.Errorf("complete Service Bus reply from %q: %w", replyDestination, err)
-				}
-				for otherIdx, other := range messages {
-					if otherIdx == idx {
-						continue
-					}
-					if _, err := serviceBusAbandonForeignReply(ctx, receiver, replyDestination, other, abandonCounts); err != nil {
-						return reply, err
-					}
-				}
-				return reply, nil
-			}
-			fresh, err := serviceBusAbandonForeignReply(ctx, receiver, replyDestination, sbMsg, abandonCounts)
+		for _, sbMsg := range messages {
+			settleCtx, settleCancel := context.WithTimeout(context.WithoutCancel(ctx), serviceBusSettlementTimeout)
+			fresh, err := serviceBusAbandonForeignReply(settleCtx, receiver, replyDestination, sbMsg, abandonCounts)
+			settleCancel()
 			if err != nil {
 				return message{}, err
 			}
@@ -275,19 +399,20 @@ func serviceBusAwaitCorrelatedReply(ctx context.Context, receiver sbReplyReceive
 	return message{}, fmt.Errorf("no correlated JMS reply received from %q within %s", replyDestination, timeout)
 }
 
-// serviceBusAbandonForeignReply always abandons an uncorrelated (foreign) reply
-// so it is immediately redeliverable to its rightful requester — never holding
-// the peek-lock, which would starve that requester until the ~30–60s lock
-// expiry. The abandon count is used only to distinguish a fresh foreign message
-// from redelivery churn (fresh == count within the limit), so the caller can
-// back off on churn instead of busy-looping. The message is released either way.
+// serviceBusAbandonForeignReply abandons each logical foreign reply at most the
+// configured number of times. Repeatedly settling the same redelivery can starve
+// later messages and hammer the broker; once the hard budget is exhausted the
+// caller backs off and lets the current lock expire naturally.
 func serviceBusAbandonForeignReply(ctx context.Context, receiver sbReplyReceiver, replyDestination string, sbMsg *azservicebus.ReceivedMessage, abandonCounts map[string]int) (fresh bool, err error) {
 	key := serviceBusReplyMessageKey(sbMsg)
-	abandonCounts[key]++
+	if abandonCounts[key] >= serviceBusForeignReplyAbandonLimit {
+		return false, nil
+	}
 	if err := receiver.AbandonMessage(ctx, sbMsg, nil); err != nil {
 		return false, fmt.Errorf("abandon uncorrelated Service Bus reply from %q: %w", replyDestination, err)
 	}
-	return abandonCounts[key] <= serviceBusForeignReplyAbandonLimit, nil
+	abandonCounts[key]++
+	return true, nil
 }
 
 func serviceBusReplyMessageKey(sbMsg *azservicebus.ReceivedMessage) string {
@@ -319,27 +444,35 @@ func (a *serviceBusAdapter) HealthCheck(ctx context.Context) error {
 
 func (a *serviceBusAdapter) Teardown(ctx context.Context) error {
 	a.mu.Lock()
+	a.closed = true
 	receivers := a.receivers
 	a.receivers = make(map[string]*azservicebus.Receiver)
 	sessions := a.sessions
 	a.sessions = make(map[string]*azservicebus.SessionReceiver)
 	a.inflight = make(map[string]inflightMessage)
+	a.inflightBytes = 0
 	handle := a.handle
 	a.handle = nil
 	a.mu.Unlock()
 
+	closeCtx, closeCancel := context.WithTimeout(context.WithoutCancel(ctx), serviceBusCloseTimeout)
+	defer closeCancel()
 	var firstErr error
 	for _, receiver := range receivers {
-		if err := receiver.Close(ctx); err != nil && firstErr == nil {
-			firstErr = err
+		if receiver != nil {
+			if err := receiver.Close(closeCtx); err != nil && firstErr == nil {
+				firstErr = err
+			}
 		}
 	}
 	for _, sr := range sessions {
-		if err := sr.Close(ctx); err != nil && firstErr == nil {
-			firstErr = err
+		if sr != nil {
+			if err := sr.Close(closeCtx); err != nil && firstErr == nil {
+				firstErr = err
+			}
 		}
 	}
-	if err := serviceBusClients.release(ctx, handle); err != nil && firstErr == nil {
+	if err := serviceBusClients.release(closeCtx, handle); err != nil && firstErr == nil {
 		firstErr = err
 	}
 	return firstErr
@@ -359,6 +492,9 @@ func (a *serviceBusAdapter) peekLockReceiver(destination string) (*azservicebus.
 	key := destination + "|__peeklock"
 	if receiver := a.receivers[key]; receiver != nil {
 		return receiver, nil
+	}
+	if err := a.receiverAdmissionErrorLocked(key); err != nil {
+		return nil, err
 	}
 	options := &azservicebus.ReceiverOptions{ReceiveMode: azservicebus.ReceiveModePeekLock}
 	var (
@@ -443,6 +579,9 @@ func (a *serviceBusAdapter) receiverFor(destination, subQueue string) (*azservic
 	if receiver := a.receivers[key]; receiver != nil {
 		return receiver, nil
 	}
+	if err := a.receiverAdmissionErrorLocked(key); err != nil {
+		return nil, err
+	}
 	options := &azservicebus.ReceiverOptions{ReceiveMode: serviceBusAZReceiveMode(a.cfg.Acknowledgement, a.cfg.Properties)}
 	switch subQueue {
 	case "dead_letter":
@@ -512,10 +651,19 @@ func (a *serviceBusAdapter) ConsumeAdvanced(ctx context.Context, destination str
 		// Defer settlement: hand the caller a token to settle later.
 		rm := messages[0]
 		token := hex.EncodeToString(rm.LockToken[:])
+		entry := inflightMessage{received: rm, settler: src, lockedUntil: lockedUntilOf(rm), retained: serviceBusReceivedMessageSize(rm), sessionToken: opts.SessionToken, renew: func(ctx context.Context) error { return renewLock(ctx, rm) }}
 		a.mu.Lock()
-		a.evictExpiredInflightLocked(time.Now())
-		a.inflight[token] = inflightMessage{received: rm, settler: src, lockedUntil: lockedUntilOf(rm), renew: func(ctx context.Context) error { return renewLock(ctx, rm) }}
+		admitErr := a.admitInflightBatchLocked(map[string]inflightMessage{token: entry}, time.Now())
 		a.mu.Unlock()
+		if admitErr != nil {
+			settleCtx, settleCancel := context.WithTimeout(context.WithoutCancel(ctx), serviceBusSettlementTimeout)
+			abandonErr := src.AbandonMessage(settleCtx, rm, nil)
+			settleCancel()
+			if abandonErr != nil {
+				return converted, errors.Join(admitErr, fmt.Errorf("abandon unadmitted Service Bus delivery: %w", abandonErr))
+			}
+			return converted, admitErr
+		}
 		converted.SettlementToken = token
 		return converted, nil
 	}
@@ -530,6 +678,25 @@ func (a *serviceBusAdapter) ConsumeAdvanced(ctx context.Context, destination str
 // AcceptSession implements settlementAdapter: open a session receiver (specific
 // session, or the next available) and cache it under a returned token.
 func (a *serviceBusAdapter) AcceptSession(ctx context.Context, destination, sessionID string) (string, string, error) {
+	a.mu.Lock()
+	if a.closed {
+		a.mu.Unlock()
+		return "", "", fmt.Errorf("Service Bus adapter is closed")
+	}
+	if len(a.sessions)+a.sessionReservations >= maxServiceBusSessions {
+		a.mu.Unlock()
+		return "", "", fmt.Errorf("Service Bus session capacity exceeded (%d)", maxServiceBusSessions)
+	}
+	a.sessionReservations++
+	a.mu.Unlock()
+	reserved := true
+	defer func() {
+		if reserved {
+			a.mu.Lock()
+			a.sessionReservations--
+			a.mu.Unlock()
+		}
+	}()
 	var (
 		sr  *azservicebus.SessionReceiver
 		err error
@@ -552,6 +719,15 @@ func (a *serviceBusAdapter) AcceptSession(ctx context.Context, destination, sess
 	}
 	token := fmt.Sprintf("sbsession-%d", a.sessionSeq.Add(1))
 	a.mu.Lock()
+	a.sessionReservations--
+	reserved = false
+	if a.closed {
+		a.mu.Unlock()
+		closeCtx, closeCancel := context.WithTimeout(context.WithoutCancel(ctx), serviceBusCloseTimeout)
+		closeErr := sr.Close(closeCtx)
+		closeCancel()
+		return "", "", errors.Join(fmt.Errorf("Service Bus adapter closed while accepting session"), closeErr)
+	}
 	a.sessions[token] = sr
 	a.mu.Unlock()
 	return token, sr.SessionID(), nil
@@ -569,6 +745,26 @@ func (a *serviceBusAdapter) SessionState(ctx context.Context, sessionToken strin
 		return nil, sr.SetSessionState(ctx, state, nil)
 	}
 	return sr.GetSessionState(ctx, nil)
+}
+
+func (a *serviceBusAdapter) CloseSession(ctx context.Context, sessionToken string) error {
+	a.mu.Lock()
+	sr := a.sessions[sessionToken]
+	if sr != nil {
+		delete(a.sessions, sessionToken)
+		for token, entry := range a.inflight {
+			if entry.sessionToken == sessionToken {
+				a.deleteInflightLocked(token)
+			}
+		}
+	}
+	a.mu.Unlock()
+	if sr == nil {
+		return fmt.Errorf("unknown session token %q (already closed or never accepted)", sessionToken)
+	}
+	closeCtx, closeCancel := context.WithTimeout(context.WithoutCancel(ctx), serviceBusCloseTimeout)
+	defer closeCancel()
+	return sr.Close(closeCtx)
 }
 
 // ReceiveDeferred implements settlementAdapter: fetch deferred messages by
@@ -589,18 +785,32 @@ func (a *serviceBusAdapter) ReceiveDeferred(ctx context.Context, destination str
 	}
 	receiveAndDelete := serviceBusReceiveMode(a.cfg.Acknowledgement, a.cfg.Properties) == "receive_and_delete"
 	out := make([]message, 0, len(received))
+	entries := make(map[string]inflightMessage, len(received))
 	for _, rm := range received {
 		rm := rm
 		converted := fromServiceBusMessage(destination, rm)
 		if !receiveAndDelete {
 			token := hex.EncodeToString(rm.LockToken[:])
-			a.mu.Lock()
-			a.evictExpiredInflightLocked(time.Now())
-			a.inflight[token] = inflightMessage{received: rm, settler: receiver, lockedUntil: lockedUntilOf(rm), renew: func(ctx context.Context) error { return receiver.RenewMessageLock(ctx, rm, nil) }}
-			a.mu.Unlock()
+			entries[token] = inflightMessage{received: rm, settler: receiver, lockedUntil: lockedUntilOf(rm), retained: serviceBusReceivedMessageSize(rm), renew: func(ctx context.Context) error { return receiver.RenewMessageLock(ctx, rm, nil) }}
 			converted.SettlementToken = token
 		}
 		out = append(out, converted)
+	}
+	if len(entries) > 0 {
+		a.mu.Lock()
+		admitErr := a.admitInflightBatchLocked(entries, time.Now())
+		a.mu.Unlock()
+		if admitErr != nil {
+			settleCtx, settleCancel := context.WithTimeout(context.WithoutCancel(ctx), serviceBusSettlementTimeout)
+			var abandonErrs []error
+			for _, rm := range received {
+				if err := receiver.AbandonMessage(settleCtx, rm, nil); err != nil {
+					abandonErrs = append(abandonErrs, err)
+				}
+			}
+			settleCancel()
+			return nil, errors.Join(admitErr, errors.Join(abandonErrs...))
+		}
 	}
 	return out, nil
 }
@@ -617,8 +827,16 @@ func (a *serviceBusAdapter) CancelScheduled(ctx context.Context, destination str
 
 // Settle implements settlementAdapter: resolve a peek-locked message by token.
 func (a *serviceBusAdapter) Settle(ctx context.Context, token string, disposition string, opts settleOptions) error {
+	switch disposition {
+	case "abandon", "dead_letter", "defer", "complete":
+	default:
+		return fmt.Errorf("unknown settle disposition %q", disposition)
+	}
 	a.mu.Lock()
 	entry, ok := a.inflight[token]
+	if ok {
+		a.deleteInflightLocked(token)
+	}
 	a.mu.Unlock()
 	if !ok {
 		return fmt.Errorf("unknown settlement_token %q (already settled or never peek-locked)", token)
@@ -640,24 +858,10 @@ func (a *serviceBusAdapter) Settle(ctx context.Context, token string, dispositio
 		err = entry.settler.DeferMessage(ctx, entry.received, nil)
 	case "complete":
 		err = entry.settler.CompleteMessage(ctx, entry.received, nil)
-	default:
-		// Defensive: never silently complete (acknowledge+remove) on an unknown
-		// disposition. The caller normalizes, so this is unreachable in practice.
-		return fmt.Errorf("unknown settle disposition %q", disposition)
 	}
 	if err != nil {
-		// A terminal settle failure (typically the broker lock was already lost)
-		// means this token can never be settled by us again, so drop it rather than
-		// letting a permanently-unsettleable entry pin the message until Teardown.
-		a.mu.Lock()
-		delete(a.inflight, token)
-		a.mu.Unlock()
 		return fmt.Errorf("settle Service Bus message (%s): %w", disposition, err)
 	}
-	// Settled (or deferred): the token is no longer live.
-	a.mu.Lock()
-	delete(a.inflight, token)
-	a.mu.Unlock()
 	return nil
 }
 
@@ -725,6 +929,10 @@ func (a serviceBusConfigErrorAdapter) SessionState(context.Context, string, []by
 	return nil, a.err
 }
 
+func (a serviceBusConfigErrorAdapter) CloseSession(context.Context, string) error {
+	return a.err
+}
+
 func (a serviceBusConfigErrorAdapter) ReceiveDeferred(context.Context, string, []int64, time.Duration) ([]message, error) {
 	return nil, a.err
 }
@@ -745,6 +953,7 @@ type serviceBusPoolEntry struct {
 	refs    int
 	mu      sync.Mutex
 	senders map[string]*azservicebus.Sender
+	closed  bool
 }
 
 func newServiceBusClientPool() *serviceBusClientPool {
@@ -760,6 +969,9 @@ func (p *serviceBusClientPool) acquire(conn serviceBusConn, key string) (*servic
 	if entry := p.entries[key]; entry != nil {
 		entry.refs++
 		return entry, nil
+	}
+	if len(p.entries) >= maxServiceBusPoolEntries || len(key) > maxServiceBusPoolKeyBytes-serviceBusMapKeyBytes(p.entries) {
+		return nil, fmt.Errorf("Service Bus client pool capacity exceeded (%d clients, %d key bytes)", maxServiceBusPoolEntries, maxServiceBusPoolKeyBytes)
 	}
 	factory := p.newClient
 	if factory == nil {
@@ -805,6 +1017,12 @@ func (e *serviceBusPoolEntry) sender(destination string) (*azservicebus.Sender, 
 	if sender := e.senders[destination]; sender != nil {
 		return sender, nil
 	}
+	if e.closed {
+		return nil, fmt.Errorf("Service Bus client pool entry is closed")
+	}
+	if len(e.senders) >= maxServiceBusSenders || len(destination) > maxServiceBusSenderKeyBytes-serviceBusMapKeyBytes(e.senders) {
+		return nil, fmt.Errorf("Service Bus sender capacity exceeded (%d handles, %d key bytes)", maxServiceBusSenders, maxServiceBusSenderKeyBytes)
+	}
 	if e.client == nil {
 		return nil, fmt.Errorf("Service Bus client is not initialized")
 	}
@@ -818,16 +1036,34 @@ func (e *serviceBusPoolEntry) sender(destination string) (*azservicebus.Sender, 
 
 func (e *serviceBusPoolEntry) close(ctx context.Context) error {
 	e.mu.Lock()
-	defer e.mu.Unlock()
-	var firstErr error
-	for _, sender := range e.senders {
-		if err := sender.Close(ctx); err != nil && firstErr == nil {
-			firstErr = err
+	if e.closed {
+		e.mu.Unlock()
+		return nil
+	}
+	e.closed = true
+	senders := e.senders
+	e.senders = make(map[string]*azservicebus.Sender)
+	client := e.client
+	e.client = nil
+	e.mu.Unlock()
+	closeTimeout := serviceBusCloseTimeout
+	if deadline, ok := ctx.Deadline(); ok {
+		if remaining := time.Until(deadline); remaining < closeTimeout {
+			closeTimeout = remaining
 		}
 	}
-	e.senders = make(map[string]*azservicebus.Sender)
-	if e.client != nil {
-		if err := e.client.Close(ctx); err != nil && firstErr == nil {
+	closeCtx, closeCancel := context.WithTimeout(context.WithoutCancel(ctx), closeTimeout)
+	defer closeCancel()
+	var firstErr error
+	for _, sender := range senders {
+		if sender != nil {
+			if err := sender.Close(closeCtx); err != nil && firstErr == nil {
+				firstErr = err
+			}
+		}
+	}
+	if client != nil {
+		if err := client.Close(closeCtx); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}
@@ -838,11 +1074,15 @@ func newServiceBusClient(conn serviceBusConn) (*azservicebus.Client, error) {
 	if conn.ConnectionString != "" {
 		return azservicebus.NewClientFromConnectionString(conn.ConnectionString, nil)
 	}
+	namespace, err := identitypolicy.ValidateAzureMessagingNamespace(conn.FullyQualifiedNS)
+	if err != nil {
+		return nil, err
+	}
 	credential, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
 		return nil, err
 	}
-	return azservicebus.NewClient(conn.FullyQualifiedNS, credential, nil)
+	return azservicebus.NewClient(namespace, credential, nil)
 }
 
 func serviceBusAZReceiveMode(ack string, props map[string]string) azservicebus.ReceiveMode {

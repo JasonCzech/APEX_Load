@@ -2,20 +2,28 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
 
 const (
-	notificationFormatSlack     = "slack"
-	notificationFormatTeams     = "teams"
-	notificationFormatDynatrace = "dynatrace"
+	notificationFormatSlack           = "slack"
+	notificationFormatTeams           = "teams"
+	notificationFormatDynatrace       = "dynatrace"
+	notificationsAllowInsecureHTTPEnv = "APEXLOAD_NOTIFICATIONS_ALLOW_INSECURE_HTTP"
+	maxNotificationWebhooks           = 64
+	maxNotificationDeliveries         = 16
+	maxNotificationPerDestination     = 2
+	notificationDestinationStripes    = 64
 )
 
 var supportedNotificationEvents = map[string]struct{}{
@@ -39,6 +47,7 @@ var supportedNotificationEvents = map[string]struct{}{
 }
 
 var notificationDeliveryFailuresTotal atomic.Int64
+var notificationDeliveryDroppedTotal atomic.Int64
 
 type NotificationsSettings struct {
 	Webhooks []NotificationWebhookSettings `json:"webhooks,omitempty"`
@@ -68,14 +77,32 @@ type NotificationEvent struct {
 }
 
 type notificationDispatcher struct {
-	client *http.Client
+	client           *http.Client
+	deliverySlots    chan struct{}
+	destinationSlots []chan struct{}
+	closeOnce        sync.Once
+	closed           chan struct{}
+	ctx              context.Context
+	cancel           context.CancelFunc
 }
 
 func newNotificationDispatcher(client *http.Client) *notificationDispatcher {
 	if client == nil {
 		client = newSSRFSafeHTTPClient(5 * time.Second)
 	}
-	return &notificationDispatcher{client: client}
+	destinationSlots := make([]chan struct{}, notificationDestinationStripes)
+	for i := range destinationSlots {
+		destinationSlots[i] = make(chan struct{}, maxNotificationPerDestination)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	return &notificationDispatcher{
+		client:           client,
+		deliverySlots:    make(chan struct{}, maxNotificationDeliveries),
+		destinationSlots: destinationSlots,
+		closed:           make(chan struct{}),
+		ctx:              ctx,
+		cancel:           cancel,
+	}
 }
 
 func cloneNotificationsSettings(in NotificationsSettings) NotificationsSettings {
@@ -94,6 +121,9 @@ func cloneNotificationsSettings(in NotificationsSettings) NotificationsSettings 
 }
 
 func validateNotificationsSettings(settings NotificationsSettings) error {
+	if len(settings.Webhooks) > maxNotificationWebhooks {
+		return fmt.Errorf("notifications.webhooks contains %d entries, limit is %d", len(settings.Webhooks), maxNotificationWebhooks)
+	}
 	for index, webhook := range settings.Webhooks {
 		prefix := fmt.Sprintf("notifications.webhooks[%d]", index)
 		parsedURL, err := url.ParseRequestURI(webhook.URL)
@@ -102,6 +132,9 @@ func validateNotificationsSettings(settings NotificationsSettings) error {
 		}
 		if err := validateOutboundURL(webhook.URL); err != nil {
 			return fmt.Errorf("%s.url is not an allowed destination: %w", prefix, err)
+		}
+		if err := validateCredentialTransportURL(prefix+".url", webhook.URL, notificationsAllowInsecureHTTPEnv); err != nil {
+			return err
 		}
 		switch webhook.Format {
 		case notificationFormatSlack, notificationFormatTeams, notificationFormatDynatrace:
@@ -138,8 +171,72 @@ func (d *notificationDispatcher) Dispatch(settings NotificationsSettings, event 
 			slog.Warn("notification payload build failed", "event", event.Type, "format", webhook.Format, "err", err)
 			continue
 		}
-		go d.postJSON(webhook, payload, notificationDedupeKey(webhook, event))
+		if !d.tryDispatch(webhook, payload, notificationDedupeKey(webhook, event)) {
+			notificationDeliveryDroppedTotal.Add(1)
+			slog.Warn("notification delivery dropped by bounded dispatcher", "event", event.Type, "webhook", webhook.Name)
+		}
 	}
+}
+
+// tryDispatch is a zero-backlog bounded executor. It admits at most a fixed
+// number of deliveries process-wide per dispatcher and a smaller fixed number
+// per destination stripe. Saturation is observable and drops the new delivery
+// instead of retaining an unbounded goroutine/queue while a webhook is slow.
+func (d *notificationDispatcher) tryDispatch(webhook NotificationWebhookSettings, payload any, dedupeKey string) bool {
+	if d == nil || d.deliverySlots == nil || len(d.destinationSlots) == 0 {
+		return false
+	}
+	select {
+	case <-d.closed:
+		return false
+	default:
+	}
+	select {
+	case d.deliverySlots <- struct{}{}:
+	default:
+		return false
+	}
+	destination := d.destinationSlots[notificationDestinationStripe(webhook.URL, len(d.destinationSlots))]
+	select {
+	case destination <- struct{}{}:
+	case <-d.closed:
+		<-d.deliverySlots
+		return false
+	default:
+		<-d.deliverySlots
+		return false
+	}
+	go func() {
+		defer func() {
+			<-destination
+			<-d.deliverySlots
+		}()
+		d.postJSON(webhook, payload, dedupeKey)
+	}()
+	return true
+}
+
+func notificationDestinationStripe(rawURL string, stripes int) int {
+	if stripes <= 1 {
+		return 0
+	}
+	hash := fnv.New32a()
+	_, _ = hash.Write([]byte(strings.TrimSpace(rawURL)))
+	return int(hash.Sum32() % uint32(stripes))
+}
+
+// Close prevents new deliveries. No persistent workers are retained: admitted
+// goroutines are bounded and terminate under the HTTP client's finite timeout.
+func (d *notificationDispatcher) Close() {
+	if d == nil || d.closed == nil {
+		return
+	}
+	d.closeOnce.Do(func() {
+		close(d.closed)
+		if d.cancel != nil {
+			d.cancel()
+		}
+	})
 }
 
 func notificationWebhookMatchesEvent(webhook NotificationWebhookSettings, eventType string) bool {
@@ -330,6 +427,11 @@ func fallbackNotificationValue(value string) string {
 }
 
 func (d *notificationDispatcher) postJSON(webhook NotificationWebhookSettings, payload any, dedupeKey string) {
+	if err := validateCredentialTransportURL("notification webhook URL", webhook.URL, notificationsAllowInsecureHTTPEnv); err != nil {
+		slog.Warn("notification delivery rejected", "format", webhook.Format, "url", redactURL(webhook.URL), "err", err)
+		notificationDeliveryFailuresTotal.Add(1)
+		return
+	}
 	body, err := json.Marshal(payload)
 	if err != nil {
 		slog.Warn("notification marshal failed", "format", webhook.Format, "url", redactURL(webhook.URL), "err", err)
@@ -338,7 +440,11 @@ func (d *notificationDispatcher) postJSON(webhook NotificationWebhookSettings, p
 	}
 	const maxAttempts = 3
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		req, err := http.NewRequest(http.MethodPost, webhook.URL, bytes.NewReader(body))
+		ctx := d.ctx
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhook.URL, bytes.NewReader(body))
 		if err != nil {
 			slog.Warn("notification request build failed", "format", webhook.Format, "url", redactURL(webhook.URL), "err", err)
 			notificationDeliveryFailuresTotal.Add(1)
@@ -373,7 +479,15 @@ func (d *notificationDispatcher) postJSON(webhook NotificationWebhookSettings, p
 		if resp != nil {
 			_ = resp.Body.Close()
 		}
-		time.Sleep(delay)
+		if d.ctx == nil {
+			time.Sleep(delay)
+			continue
+		}
+		select {
+		case <-time.After(delay):
+		case <-d.ctx.Done():
+			return
+		}
 	}
 }
 

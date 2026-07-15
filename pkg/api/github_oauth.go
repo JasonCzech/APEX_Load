@@ -67,27 +67,22 @@ func (s *Server) githubCallbackURL(r *http.Request) string {
 func (s *Server) handleGitHubConfig(w http.ResponseWriter, r *http.Request) {
 	settings := s.currentGitHubSettings()
 	writeJSON(w, http.StatusOK, map[string]any{
-		"enabled":                  settings.Enabled,
-		"oauth_configured":         settings.oauthConfigured(),
-		"app_configured":           settings.appConfigured(),
-		"webhook_configured":       settings.webhookConfigured(),
-		"pat_configured":           settings.patConfigured(),
-		"encryption_available":     githubTokenEncryptionAvailable(),
-		"app_id":                   settings.AppID,
-		"app_slug":                 settings.AppSlug,
-		"app_private_key_env_var":  settings.AppPrivateKeyEnvVar,
-		"app_private_key_file":     settings.AppPrivateKeyFile,
-		"webhook_secret_env_var":   settings.WebhookSecretEnvVar,
-		"pat_env_var":              settings.PATEnvVar,
-		"automation_mode":          settings.AutomationMode,
-		"checks_enabled":           settings.ChecksEnabled,
-		"api_base_url":             settings.APIBaseURL,
-		"web_base_url":             settings.WebBaseURL,
-		"scopes":                   settings.Scopes,
-		"default_repo":             settings.DefaultRepo,
-		"default_branch":           settings.DefaultBranch,
-		"path_template":            settings.PathTemplate,
-		"tls_insecure_skip_verify": settings.TLSInsecureSkipVerify,
+		"enabled":              settings.Enabled,
+		"oauth_configured":     settings.oauthConfigured(),
+		"app_configured":       settings.appConfigured(),
+		"webhook_configured":   settings.webhookConfigured(),
+		"pat_configured":       settings.patConfigured(),
+		"encryption_available": githubTokenEncryptionAvailable(),
+		"app_id":               settings.AppID,
+		"app_slug":             settings.AppSlug,
+		"automation_mode":      settings.AutomationMode,
+		"checks_enabled":       settings.ChecksEnabled,
+		"api_base_url":         settings.APIBaseURL,
+		"web_base_url":         settings.WebBaseURL,
+		"scopes":               settings.Scopes,
+		"default_repo":         settings.DefaultRepo,
+		"default_branch":       settings.DefaultBranch,
+		"path_template":        settings.PathTemplate,
 	})
 }
 
@@ -173,12 +168,19 @@ func (s *Server) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	var state githubStateToken
 	if err := decodeSignedCookieValue(stateCookie.Value, githubCookieSecret(), &state); err != nil ||
-		state.State == "" || time.Now().UTC().After(state.ExpiresAt) {
+		state.State == "" || state.IssuedAt.IsZero() || time.Now().UTC().After(state.ExpiresAt) {
 		writeError(w, http.StatusUnauthorized, "github authentication state is invalid or expired")
 		return
 	}
 	if subtleQueryValue(r.URL.Query().Get("state")) != state.State {
 		writeError(w, http.StatusUnauthorized, "github authentication state mismatch")
+		return
+	}
+	// The signed state is bound to the local identity that initiated account
+	// linking. Refuse to attach the resulting GitHub credential if the local
+	// browser session changed accounts before the callback completed.
+	if currentUserID := githubUserKey(r); currentUserID != strings.TrimSpace(state.UserID) {
+		writeError(w, http.StatusUnauthorized, "github authentication state belongs to a different local user")
 		return
 	}
 	code := strings.TrimSpace(r.URL.Query().Get("code"))
@@ -220,7 +222,14 @@ func (s *Server) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	store, _ := s.githubConnectionStore()
-	if err := store.SaveGitHubConnection(&storage.GitHubConnection{
+	guardedStore, ok := store.(interface {
+		SaveGitHubConnectionIfNotRevokedSince(*storage.GitHubConnection, time.Time) (bool, error)
+	})
+	if !ok {
+		writeError(w, http.StatusServiceUnavailable, "github connection storage does not support revocation fencing")
+		return
+	}
+	saved, err := guardedStore.SaveGitHubConnectionIfNotRevokedSince(&storage.GitHubConnection{
 		UserID:          state.UserID,
 		GitHubLogin:     identity.Login,
 		GitHubUserID:    fmt.Sprint(identity.ID),
@@ -229,8 +238,14 @@ func (s *Server) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 		TokenType:       tokenResp.TokenType,
 		Scopes:          tokenResp.Scope,
 		ExpiresAt:       expiresAt,
-	}); err != nil {
+	}, state.IssuedAt)
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to persist github connection")
+		return
+	}
+	if !saved {
+		clearAuthCookie(w, normalizeAuthSettings(s.runner.GetSystemSettings().Auth), githubStateCookieName, "/api/v1/integrations/github")
+		writeError(w, http.StatusConflict, "github connection flow was canceled by a newer disconnect")
 		return
 	}
 	s.recordAuditEvent(r, "github.connection.create", "success", "github_connection", state.UserID, "", map[string]any{"login": identity.Login})
@@ -279,6 +294,9 @@ func (s *Server) handleGitHubDisconnect(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusInternalServerError, "failed to disconnect github")
 		return
 	}
+	// Cancel any not-yet-completed OAuth linking flow in this browser as part of
+	// the disconnect/revocation intent.
+	clearAuthCookie(w, normalizeAuthSettings(s.runner.GetSystemSettings().Auth), githubStateCookieName, "/api/v1/integrations/github")
 	s.recordAuditEvent(r, "github.connection.delete", "success", "github_connection", userKey, "", nil)
 	writeJSON(w, http.StatusOK, map[string]any{"disconnected": true})
 }

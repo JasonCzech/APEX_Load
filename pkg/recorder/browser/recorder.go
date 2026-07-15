@@ -6,10 +6,12 @@ import (
 	"crypto/subtle"
 	_ "embed"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -17,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
 	playwright "github.com/playwright-community/playwright-go"
 )
 
@@ -120,6 +123,7 @@ type Recorder struct {
 	doneOnce             sync.Once
 	harTemp              bool
 	harCapturePath       string
+	harLimitExceeded     bool
 	wsFrames             int
 	wsBytes              int
 	bindingBytes         int64
@@ -127,6 +131,10 @@ type Recorder struct {
 	thumbnailSlots       chan struct{}
 	thumbnailBytes       int64
 	thumbnailLimitWarned bool
+	nativeMetadataBytes  int64
+	warningBytes         int64
+	navigationSlots      chan struct{}
+	controlPanelSlots    chan struct{}
 
 	// sidebarPush coalesces live-state pushes to the in-page sidebar. A single
 	// drainer goroutine (started in Start) debounces bursts of events into one
@@ -137,6 +145,7 @@ type Recorder struct {
 const (
 	maxBrowserHARBytes          = 100 << 20
 	maxBrowserPages             = 32
+	maxBrowserControlPages      = 4
 	maxBrowserSteps             = 100_000
 	maxBrowserNetworkEvents     = 100_000
 	maxBrowserWebSockets        = 1_000
@@ -150,6 +159,24 @@ const (
 	maxBrowserWSBytes           = 64 << 20
 	maxBrowserThumbnailWorkers  = 4
 	maxBrowserThumbnailBytes    = 64 << 20
+	maxBrowserThumbnailRawBytes = 8 << 20
+	maxBrowserNativeMetadata    = 32 << 20
+	maxBrowserWarningBytes      = 4 << 20
+	maxBrowserNativeURLBytes    = 16 << 10
+	maxBrowserNativeTitleBytes  = 4 << 10
+	maxBrowserNativeTextBytes   = 16 << 10
+	maxBrowserNativeKindBytes   = 128
+	maxBrowserPauseIntervals    = 10_000
+	maxBrowserViewportDimension = 8192
+	maxBrowserViewportPixels    = 16 << 20
+	maxBrowserDevicePixels      = 32 << 20
+	maxBrowserDeviceScale       = 4
+	maxBrowserStopDuration      = 10 * time.Second
+	maxBrowserOperationDuration = 2 * time.Second
+	maxBrowserHARFlushDuration  = 3 * time.Second
+	maxAttachedHARZipEntries    = 4_096
+	maxAttachedHARZipNameBytes  = 1 << 10
+	maxAttachedHARCentralBytes  = 4 << 20
 )
 
 // controlNoncePlaceholder is the literal in capture.js that newControlNonce's
@@ -179,9 +206,16 @@ func (r *Recorder) trustedControlNonce(got string) bool {
 }
 
 func (r *Recorder) appendWarningLocked(warning string) {
-	if len(r.session.Warnings) < maxBrowserWarnings {
-		r.session.Warnings = append(r.session.Warnings, warning)
+	if len(r.session.Warnings) >= maxBrowserWarnings || r.warningBytes >= maxBrowserWarningBytes {
+		return
 	}
+	remaining := int64(maxBrowserWarningBytes) - r.warningBytes
+	warning = boundedtext.TruncateUTF8(warning, min(maxBrowserNativeTextBytes, int(remaining)))
+	if warning == "" {
+		return
+	}
+	r.session.Warnings = append(r.session.Warnings, warning)
+	r.warningBytes += int64(len(warning))
 }
 
 // controlKindRequiresTrust reports whether a control kind mutates or terminates
@@ -230,7 +264,7 @@ func CheckChromiumInstalled() error {
 func New(opts Options) *Recorder {
 	device := ""
 	if opts.Device != nil {
-		device = opts.Device.Name
+		device = boundedtext.TruncateUTF8(opts.Device.Name, maxBrowserNativeTitleBytes)
 	}
 	return &Recorder{
 		opts:           opts,
@@ -242,10 +276,25 @@ func New(opts Options) *Recorder {
 			StartedAt:     time.Now(),
 			DeviceProfile: device,
 		},
-		done:         make(chan struct{}),
-		controlPages: make(map[playwright.Page]struct{}),
-		sidebarPush:  make(chan struct{}, 1),
+		done:              make(chan struct{}),
+		controlPages:      make(map[playwright.Page]struct{}),
+		sidebarPush:       make(chan struct{}, 1),
+		navigationSlots:   make(chan struct{}, 1),
+		controlPanelSlots: make(chan struct{}, 1),
 	}
+}
+
+func (r *Recorder) retainNativeStringLocked(value string, perValueLimit int) string {
+	if perValueLimit <= 0 || r.nativeMetadataBytes >= maxBrowserNativeMetadata {
+		return ""
+	}
+	remaining := int64(maxBrowserNativeMetadata) - r.nativeMetadataBytes
+	value = boundedtext.TruncateUTF8(value, min(perValueLimit, int(remaining)))
+	if value == "" {
+		return ""
+	}
+	r.nativeMetadataBytes += int64(len(value))
+	return value
 }
 
 func managedHARTempPath(dir string, sessionID string) string {
@@ -290,11 +339,8 @@ func prepareHARPath(path string) error {
 // finishes the session.
 func (r *Recorder) Start() error {
 	startURL := r.session.StartURL
-	if startURL == "" {
-		return fmt.Errorf("browser recorder requires a start URL")
-	}
-	if parsed, err := url.Parse(startURL); err != nil || parsed.Scheme == "" || parsed.Host == "" {
-		return fmt.Errorf("browser recorder start URL %q must be absolute", startURL)
+	if err := validateRecorderOptions(r.opts, startURL); err != nil {
+		return err
 	}
 
 	pw, err := playwright.Run()
@@ -351,11 +397,12 @@ func (r *Recorder) Start() error {
 		contextOptions.HasTouch = playwright.Bool(d.HasTouch)
 	}
 	if path := strings.TrimSpace(r.opts.StorageStatePath); path != "" {
-		if _, statErr := os.Stat(path); statErr != nil {
+		state, stateErr := loadRecorderStorageState(path)
+		if stateErr != nil {
 			r.cleanup()
-			return fmt.Errorf("storage state %q unavailable: %w", path, statErr)
+			return fmt.Errorf("storage state %q unavailable: %w", path, stateErr)
 		}
-		contextOptions.StorageStatePath = playwright.String(path)
+		contextOptions.StorageState = state
 	}
 	context, err := browser.NewContext(contextOptions)
 	if err != nil {
@@ -400,6 +447,47 @@ func (r *Recorder) Start() error {
 	return nil
 }
 
+func validateRecorderOptions(opts Options, startURL string) error {
+	if strings.TrimSpace(startURL) == "" {
+		return fmt.Errorf("browser recorder requires a start URL")
+	}
+	if len(startURL) > maxBrowserNativeURLBytes {
+		return fmt.Errorf("browser recorder start URL exceeds %d bytes", maxBrowserNativeURLBytes)
+	}
+	if err := navigableURL(startURL); err != nil {
+		return fmt.Errorf("browser recorder start URL: %w", err)
+	}
+	if device := opts.Device; device != nil {
+		if (device.Width <= 0) != (device.Height <= 0) {
+			return fmt.Errorf("browser recorder device width and height must be configured together")
+		}
+		if device.Width > maxBrowserViewportDimension || device.Height > maxBrowserViewportDimension || (device.Width > 0 && int64(device.Width)*int64(device.Height) > maxBrowserViewportPixels) {
+			return fmt.Errorf("browser recorder device viewport exceeds capture limits")
+		}
+		scale := device.DeviceScaleFactor
+		if math.IsNaN(scale) || math.IsInf(scale, 0) || scale < 0 || scale > maxBrowserDeviceScale {
+			return fmt.Errorf("browser recorder device scale factor must be between 0 and %d", maxBrowserDeviceScale)
+		}
+		if scale > 0 && float64(device.Width)*float64(device.Height)*scale*scale > maxBrowserDevicePixels {
+			return fmt.Errorf("browser recorder scaled device viewport exceeds capture limits")
+		}
+	}
+	if (opts.WindowWidth <= 0) != (opts.WindowHeight <= 0) || opts.WindowWidth > maxBrowserViewportDimension || opts.WindowHeight > maxBrowserViewportDimension {
+		return fmt.Errorf("browser recorder window width and height must be configured together and not exceed %d", maxBrowserViewportDimension)
+	}
+	for label, patterns := range map[string][]string{"include": opts.HARFilters.IncludeHosts, "exclude": opts.HARFilters.ExcludeHosts} {
+		if len(patterns) > 128 {
+			return fmt.Errorf("browser recorder HAR %s filter exceeds 128 entries", label)
+		}
+		for _, pattern := range patterns {
+			if len(pattern) > 1024 {
+				return fmt.Errorf("browser recorder HAR %s filter entry exceeds 1024 bytes", label)
+			}
+		}
+	}
+	return nil
+}
+
 // registerPage wires capture listeners for the initial page and any popup.
 // New pages become the active page (the browser focuses them on open).
 func (r *Recorder) registerPage(page playwright.Page) {
@@ -436,11 +524,12 @@ func (r *Recorder) registerPage(page playwright.Page) {
 	var recorded *Step
 	switchStepSeq := 0
 	if isPopup && !paused && len(r.session.Steps) < maxBrowserSteps {
+		pageURL := r.retainNativeStringLocked(page.URL(), maxBrowserNativeURLBytes)
 		step := r.session.appendStep(Step{
 			Kind:      StepSwitchWindow,
-			Value:     page.URL(),
+			Value:     pageURL,
 			Timestamp: time.Now(),
-			URL:       page.URL(),
+			URL:       pageURL,
 		})
 		recorded = &step
 		switchStepSeq = step.Seq
@@ -454,12 +543,14 @@ func (r *Recorder) registerPage(page playwright.Page) {
 		if frame != page.MainFrame() {
 			return
 		}
-		nav := NavEvent{Timestamp: time.Now(), URL: frame.URL()}
+		rawURL := frame.URL()
+		nav := NavEvent{Timestamp: time.Now()}
 		var updatedSwitchStep *Step
 		r.mu.Lock()
 		paused := r.paused || r.stopped
 		if !paused {
 			if len(r.session.NavEvents) < maxBrowserNetworkEvents {
+				nav.URL = r.retainNativeStringLocked(rawURL, maxBrowserNativeURLBytes)
 				r.session.NavEvents = append(r.session.NavEvents, nav)
 			}
 			if switchStepSeq > 0 {
@@ -493,7 +584,8 @@ func (r *Recorder) registerPage(page playwright.Page) {
 			r.mu.Unlock()
 			return
 		}
-		r.session.WebSockets = append(r.session.WebSockets, WebSocketSummary{URL: ws.URL(), OpenedAt: time.Now()})
+		wsURL := r.retainNativeStringLocked(ws.URL(), maxBrowserNativeURLBytes)
+		r.session.WebSockets = append(r.session.WebSockets, WebSocketSummary{URL: wsURL, OpenedAt: time.Now()})
 		index := len(r.session.WebSockets) - 1
 		r.mu.Unlock()
 		ws.OnFrameSent(func(payload []byte) { r.recordWSFrame(index, "sent", payload) })
@@ -509,13 +601,16 @@ func (r *Recorder) registerPage(page playwright.Page) {
 		paused := r.paused || r.stopped
 		var recorded *Step
 		if !paused && len(r.session.Steps) < maxBrowserSteps {
+			message = r.retainNativeStringLocked(message, maxBrowserNativeTextBytes)
+			dialogType = r.retainNativeStringLocked(dialogType, maxBrowserNativeKindBytes)
+			pageURL := r.retainNativeStringLocked(page.URL(), maxBrowserNativeURLBytes)
 			step := r.session.appendStep(Step{
 				Kind:          StepHandleDialog,
 				DialogType:    dialogType,
 				DialogMessage: message,
 				Section:       r.currentSection,
 				Timestamp:     time.Now(),
-				URL:           page.URL(),
+				URL:           pageURL,
 			})
 			recorded = &step
 		}
@@ -670,7 +765,7 @@ func (r *Recorder) recordPageSwitchIfNeededLocked(page playwright.Page, before t
 	if len(r.session.Steps) >= maxBrowserSteps-1 {
 		return nil
 	}
-	targetURL := page.URL()
+	targetURL := r.retainNativeStringLocked(page.URL(), maxBrowserNativeURLBytes)
 	ts := time.Now()
 	if !before.IsZero() {
 		ts = before.Add(-time.Millisecond)
@@ -727,7 +822,9 @@ func (r *Recorder) setPaused(paused bool) {
 	r.paused = paused
 	now := time.Now()
 	if paused {
-		r.session.PauseIntervals = append(r.session.PauseIntervals, PauseInterval{From: now})
+		if len(r.session.PauseIntervals) < maxBrowserPauseIntervals {
+			r.session.PauseIntervals = append(r.session.PauseIntervals, PauseInterval{From: now})
+		}
 	} else if n := len(r.session.PauseIntervals); n > 0 && r.session.PauseIntervals[n-1].To.IsZero() {
 		r.session.PauseIntervals[n-1].To = now
 	}
@@ -817,6 +914,12 @@ func (r *Recorder) Navigate(targetURL string) error {
 	if err := navigableURL(targetURL); err != nil {
 		return err
 	}
+	select {
+	case r.navigationSlots <- struct{}{}:
+		defer func() { <-r.navigationSlots }()
+	default:
+		return fmt.Errorf("browser navigation already in progress")
+	}
 	page := r.currentPage()
 	if page == nil {
 		return fmt.Errorf("no open recording page to navigate")
@@ -847,11 +950,21 @@ func (r *Recorder) OpenControlPanel(targetURL string, localStorage map[string]st
 	if err := ValidateControlPanelURL(targetURL); err != nil {
 		return err
 	}
+	select {
+	case r.controlPanelSlots <- struct{}{}:
+		defer func() { <-r.controlPanelSlots }()
+	default:
+		return fmt.Errorf("browser control panel open already in progress")
+	}
 
 	r.mu.Lock()
 	if r.stopped {
 		r.mu.Unlock()
 		return fmt.Errorf("recording already stopped")
+	}
+	if len(r.controlPages) >= maxBrowserControlPages {
+		r.mu.Unlock()
+		return fmt.Errorf("browser control panel limit reached")
 	}
 	context := r.context
 	active := r.activePage
@@ -1050,7 +1163,7 @@ func frameSelectorFromURL(frameURL string) string {
 		return ""
 	}
 	match := parsed.Host + parsed.Path
-	return fmt.Sprintf(`iframe[src*="%s"]`, strings.ReplaceAll(match, `"`, `\"`))
+	return boundedtext.TruncateUTF8(fmt.Sprintf(`iframe[src*="%s"]`, strings.ReplaceAll(match, `"`, `\"`)), maxBrowserNativeURLBytes)
 }
 
 // Done is closed when the user closes the browser (or it disconnects).
@@ -1062,6 +1175,7 @@ func (r *Recorder) signalDone() { r.doneOnce.Do(func() { close(r.done) }) }
 // session, and returns the finished session. Safe to call after the user
 // already closed the window.
 func (r *Recorder) Stop() (*Session, error) {
+	stopDeadline := time.Now().Add(maxBrowserStopDuration)
 	r.mu.Lock()
 	if r.stopped {
 		session := r.session
@@ -1073,24 +1187,72 @@ func (r *Recorder) Stop() (*Session, error) {
 
 	// Drain in-flight screenshot goroutines; once they observe r.stopped they
 	// no-op, so the finished session is never mutated after we return it.
-	r.thumbWG.Wait()
+	if !waitGroupUntil(&r.thumbWG, stopDeadline) {
+		r.mu.Lock()
+		r.appendWarningLocked("thumbnail capture did not stop before the recorder shutdown deadline; unfinished thumbnails were omitted")
+		r.mu.Unlock()
+	}
 
 	r.mu.Lock()
 	context := r.context
+	pages := append([]playwright.Page(nil), r.recordablePagesLocked()...)
 	r.mu.Unlock()
 	if context != nil {
 		// Export storage state before closing so the user can reuse the
 		// authenticated session on a later recording.
-		if state, stateErr := context.StorageState(); stateErr == nil && state != nil {
-			if encoded, encErr := json.Marshal(state); encErr == nil {
+		stateResult := make(chan recorderStorageExport, 1)
+		go func() {
+			stateResult <- exportRecorderStorageState(context, pages)
+		}()
+		select {
+		case exported := <-stateResult:
+			if exported.err != nil {
 				r.mu.Lock()
-				r.session.StorageState = encoded
+				r.appendWarningLocked(fmt.Sprintf("browser storage-state export failed: %v", exported.err))
+				r.mu.Unlock()
+			} else if len(exported.data) > 0 {
+				r.mu.Lock()
+				r.session.StorageState = exported.data
+				if exported.truncated {
+					r.appendWarningLocked("browser storage-state export was truncated to safety limits")
+				}
+				r.mu.Unlock()
+			}
+		case <-time.After(durationUntil(stopDeadline, maxBrowserOperationDuration)):
+			r.mu.Lock()
+			r.appendWarningLocked("browser storage-state export timed out during recorder shutdown")
+			r.mu.Unlock()
+		}
+		if r.harCapturePath == "" {
+			if err := runOperationUntil(stopDeadline, func() error { return context.Close() }, r.closeBrowserAsync); err != nil {
+				r.mu.Lock()
+				r.appendWarningLocked("browser context close timed out during recorder shutdown")
+				r.mu.Unlock()
+			}
+		} else {
+			exceeded, flushErr := policeHARFlushUntil(r.harCapturePath, maxBrowserHARBytes, func() error {
+				return context.Close()
+			}, func() {
+				r.closeBrowserAsync()
+			}, minTime(stopDeadline, time.Now().Add(maxBrowserHARFlushDuration)))
+			if exceeded {
+				r.mu.Lock()
+				r.harLimitExceeded = true
+				r.appendWarningLocked(fmt.Sprintf("side-car HAR exceeded %d bytes during final flush and was discarded", maxBrowserHARBytes))
+				r.mu.Unlock()
+			}
+			if flushErr != nil {
+				r.mu.Lock()
+				r.appendWarningLocked(fmt.Sprintf("side-car HAR final flush did not complete cleanly: %v", flushErr))
 				r.mu.Unlock()
 			}
 		}
-		_ = context.Close() // flushes RecordHarPath
 	}
-	r.cleanup()
+	if !r.cleanupUntil(stopDeadline) {
+		r.mu.Lock()
+		r.appendWarningLocked("browser process cleanup exceeded the recorder shutdown deadline")
+		r.mu.Unlock()
+	}
 	r.signalDone()
 
 	r.mu.Lock()
@@ -1101,39 +1263,43 @@ func (r *Recorder) Stop() (*Session, error) {
 	if n := len(r.session.PauseIntervals); n > 0 && r.session.PauseIntervals[n-1].To.IsZero() {
 		r.session.PauseIntervals[n-1].To = r.session.StoppedAt
 	}
-	for i := len(r.session.OpenTransactions) - 1; i >= 0; i-- {
-		name := r.session.OpenTransactions[i]
-		r.session.Markers = append(r.session.Markers, Marker{
+	openTransactions := append([]string(nil), r.session.OpenTransactions...)
+	for i := len(openTransactions) - 1; i >= 0; i-- {
+		name := openTransactions[i]
+		_, markerErr := r.session.AddMarker(Marker{
 			Kind:      MarkerTransactionEnd,
 			Name:      name,
 			Timestamp: r.session.StoppedAt,
 			Auto:      true,
 		})
+		if markerErr != nil {
+			r.appendWarningLocked(fmt.Sprintf("transaction %q could not be auto-closed: %v", name, markerErr))
+			continue
+		}
 		r.appendWarningLocked(fmt.Sprintf(
 			"transaction %q was still open and was closed automatically when the recording stopped", name))
 	}
 	r.session.OpenTransactions = nil
 	if r.harCapturePath != "" {
-		data, err := readHARArtifact(r.harCapturePath, maxBrowserHARBytes)
-		if err != nil {
-			r.appendWarningLocked(fmt.Sprintf("side-car HAR unavailable: %v", err))
+		if r.harLimitExceeded {
+			_ = os.Remove(r.harCapturePath)
 		} else {
-			if !r.opts.HARFilters.empty() {
-				filtered, dropped, filterErr := filterHARByHost(data, r.opts.HARFilters)
+			data, dropped, filterErr, err := loadAndFilterHARUntil(r.harCapturePath, maxBrowserHARBytes, r.opts.HARFilters, stopDeadline)
+			if err != nil {
+				r.appendWarningLocked(fmt.Sprintf("side-car HAR unavailable: %v", err))
+			} else {
 				if filterErr != nil {
 					r.appendWarningLocked(fmt.Sprintf("HAR host filter skipped: %v", filterErr))
-				} else {
-					data = filtered
-					if dropped > 0 {
-						r.appendWarningLocked(fmt.Sprintf(
-							"%d HAR entr(ies) dropped by host filters", dropped))
-					}
+				} else if dropped > 0 {
+					r.appendWarningLocked(fmt.Sprintf(
+						"%d HAR entr(ies) dropped by host filters", dropped))
 				}
-			}
-			r.session.HAR = data
-			if !r.harTemp && r.session.HARPath != r.harCapturePath {
-				if writeErr := os.WriteFile(r.session.HARPath, data, 0o600); writeErr != nil {
-					r.appendWarningLocked(fmt.Sprintf("write side-car HAR: %v", writeErr))
+				r.session.HAR = data
+				if !r.harTemp && r.session.HARPath != r.harCapturePath {
+					path := r.session.HARPath
+					if writeErr := runOperationUntil(stopDeadline, func() error { return os.WriteFile(path, data, 0o600) }, nil); writeErr != nil {
+						r.appendWarningLocked(fmt.Sprintf("write side-car HAR: %v", writeErr))
+					}
 				}
 			}
 		}
@@ -1144,8 +1310,42 @@ func (r *Recorder) Stop() (*Session, error) {
 			_ = os.Remove(r.harCapturePath)
 		}
 		r.harCapturePath = ""
+		r.harLimitExceeded = false
 	}
 	return r.session, nil
+}
+
+type harShutdownLoadResult struct {
+	data      []byte
+	dropped   int
+	filterErr error
+	err       error
+}
+
+func loadAndFilterHARUntil(path string, limit int64, filters HARFilters, deadline time.Time) ([]byte, int, error, error) {
+	if !deadline.After(time.Now()) {
+		return nil, 0, nil, fmt.Errorf("HAR processing exceeded recorder shutdown deadline")
+	}
+	done := make(chan harShutdownLoadResult, 1)
+	go func() {
+		data, err := readHARArtifact(path, limit)
+		result := harShutdownLoadResult{data: data, err: err}
+		if err == nil && !filters.empty() {
+			filtered, dropped, filterErr := filterHARByHost(data, filters)
+			result.filterErr = filterErr
+			if filterErr == nil {
+				result.data = filtered
+				result.dropped = dropped
+			}
+		}
+		done <- result
+	}()
+	select {
+	case result := <-done:
+		return result.data, result.dropped, result.filterErr, result.err
+	case <-time.After(durationUntil(deadline, maxBrowserStopDuration)):
+		return nil, 0, nil, fmt.Errorf("HAR processing exceeded recorder shutdown deadline")
+	}
 }
 
 // ForceStop is the best-effort teardown path used when graceful Stop is stuck.
@@ -1156,7 +1356,7 @@ func (r *Recorder) ForceStop() {
 	r.stopped = true
 	r.mu.Unlock()
 	r.signalDone()
-	r.cleanup()
+	_ = r.cleanupUntil(time.Now().Add(maxBrowserOperationDuration))
 	r.discardManagedHARTemp()
 }
 
@@ -1512,9 +1712,9 @@ func (r *Recorder) recordAnnotation(annotation Annotation) {
 		return
 	}
 	annotation.Timestamp = time.Now()
-	if len(annotation.Text) > maxBrowserAnnotationLen {
-		annotation.Text = annotation.Text[:maxBrowserAnnotationLen]
-	}
+	annotation.Kind = r.retainNativeStringLocked(annotation.Kind, maxBrowserNativeKindBytes)
+	annotation.Text = r.retainNativeStringLocked(annotation.Text, maxBrowserAnnotationLen)
+	annotation.URL = r.retainNativeStringLocked(annotation.URL, maxBrowserNativeURLBytes)
 	annotation.NearStep = len(r.session.Steps)
 	r.session.Annotations = append(r.session.Annotations, annotation)
 	r.mu.Unlock()
@@ -1617,15 +1817,27 @@ func readHARArtifact(path string, limit int64) ([]byte, error) {
 }
 
 func readAttachedHARZip(path string, limit int64) ([]byte, error) {
+	if err := validateAttachedHARZipStructure(path, limit); err != nil {
+		return nil, err
+	}
 	archive, err := zip.OpenReader(path)
 	if err != nil {
 		return nil, err
 	}
 	defer archive.Close()
+	if len(archive.File) > maxAttachedHARZipEntries {
+		return nil, fmt.Errorf("attached HAR archive exceeds %d entries", maxAttachedHARZipEntries)
+	}
 	files := make(map[string]*zip.File, len(archive.File))
 	var harFile *zip.File
 	for _, file := range archive.File {
+		if len(file.Name) > maxAttachedHARZipNameBytes {
+			return nil, fmt.Errorf("attached HAR archive entry name exceeds %d bytes", maxAttachedHARZipNameBytes)
+		}
 		name := strings.TrimPrefix(filepath.ToSlash(file.Name), "./")
+		if _, duplicate := files[name]; duplicate {
+			return nil, fmt.Errorf("attached HAR archive contains duplicate entry %q", name)
+		}
 		files[name] = file
 		if name == "har.har" || (harFile == nil && strings.HasSuffix(strings.ToLower(name), ".har")) {
 			harFile = file
@@ -1701,6 +1913,91 @@ func readAttachedHARZip(path string, limit int64) ([]byte, error) {
 	return data, nil
 }
 
+func validateAttachedHARZipStructure(path string, limit int64) error {
+	if limit <= 0 || limit > maxBrowserHARBytes {
+		limit = maxBrowserHARBytes
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	if info.Size() < 22 {
+		return fmt.Errorf("attached HAR archive is truncated")
+	}
+	if limit > 0 && info.Size() > limit {
+		return fmt.Errorf("attached HAR archive is %d bytes; maximum is %d", info.Size(), limit)
+	}
+	tailSize := min(info.Size(), int64(22+0xffff))
+	tail := make([]byte, tailSize)
+	if _, err := file.ReadAt(tail, info.Size()-tailSize); err != nil {
+		return err
+	}
+	eocd := -1
+	for index := len(tail) - 22; index >= 0; index-- {
+		if binary.LittleEndian.Uint32(tail[index:index+4]) == 0x06054b50 {
+			eocd = index
+			break
+		}
+	}
+	if eocd < 0 {
+		return fmt.Errorf("attached HAR archive end record is missing")
+	}
+	disk := binary.LittleEndian.Uint16(tail[eocd+4 : eocd+6])
+	centralDisk := binary.LittleEndian.Uint16(tail[eocd+6 : eocd+8])
+	diskEntries := binary.LittleEndian.Uint16(tail[eocd+8 : eocd+10])
+	totalEntries := binary.LittleEndian.Uint16(tail[eocd+10 : eocd+12])
+	centralSize := binary.LittleEndian.Uint32(tail[eocd+12 : eocd+16])
+	centralOffset := binary.LittleEndian.Uint32(tail[eocd+16 : eocd+20])
+	if disk != 0 || centralDisk != 0 || diskEntries != totalEntries {
+		return fmt.Errorf("multi-disk attached HAR archives are not supported")
+	}
+	if totalEntries == 0xffff || centralSize == 0xffffffff || centralOffset == 0xffffffff {
+		return fmt.Errorf("ZIP64 attached HAR archives are not supported")
+	}
+	if int(totalEntries) > maxAttachedHARZipEntries {
+		return fmt.Errorf("attached HAR archive exceeds %d entries", maxAttachedHARZipEntries)
+	}
+	if centralSize > maxAttachedHARCentralBytes {
+		return fmt.Errorf("attached HAR central directory exceeds %d bytes", maxAttachedHARCentralBytes)
+	}
+	centralEnd := uint64(centralOffset) + uint64(centralSize)
+	if centralEnd > uint64(info.Size()) {
+		return fmt.Errorf("attached HAR central directory is outside the archive")
+	}
+	central := make([]byte, int(centralSize))
+	if len(central) > 0 {
+		if _, err := file.ReadAt(central, int64(centralOffset)); err != nil {
+			return err
+		}
+	}
+	offset := 0
+	for entry := 0; entry < int(totalEntries); entry++ {
+		if len(central)-offset < 46 || binary.LittleEndian.Uint32(central[offset:offset+4]) != 0x02014b50 {
+			return fmt.Errorf("attached HAR central directory entry %d is malformed", entry)
+		}
+		nameBytes := int(binary.LittleEndian.Uint16(central[offset+28 : offset+30]))
+		extraBytes := int(binary.LittleEndian.Uint16(central[offset+30 : offset+32]))
+		commentBytes := int(binary.LittleEndian.Uint16(central[offset+32 : offset+34]))
+		if nameBytes > maxAttachedHARZipNameBytes {
+			return fmt.Errorf("attached HAR archive entry name exceeds %d bytes", maxAttachedHARZipNameBytes)
+		}
+		next := offset + 46 + nameBytes + extraBytes + commentBytes
+		if next < offset || next > len(central) {
+			return fmt.Errorf("attached HAR central directory entry %d is truncated", entry)
+		}
+		offset = next
+	}
+	if offset != len(central) {
+		return fmt.Errorf("attached HAR central directory has trailing data")
+	}
+	return nil
+}
+
 func readHARZipEntry(file *zip.File, limit int64) ([]byte, error) {
 	if file == nil {
 		return nil, fmt.Errorf("HAR zip entry is missing")
@@ -1748,11 +2045,73 @@ func (r *Recorder) monitorHARSize(path string, context playwright.BrowserContext
 				return
 			}
 			r.context = nil
+			r.harLimitExceeded = true
 			r.appendWarningLocked(fmt.Sprintf("recording stopped because HAR exceeded %d bytes", maxBrowserHARBytes))
 			r.mu.Unlock()
-			_ = context.Close()
+			_, _ = policeHARFlush(path, maxBrowserHARBytes, func() error {
+				return context.Close()
+			}, func() {
+				r.mu.Lock()
+				browser := r.browser
+				r.mu.Unlock()
+				if browser != nil {
+					_ = browser.Close()
+				}
+			})
 			r.signalDone()
 			return
+		}
+	}
+}
+
+// policeHARFlush runs the Playwright context close asynchronously so the HAR
+// file remains observable while Playwright performs its final write. If the
+// file crosses the cap, it is truncated immediately and abort is invoked to
+// interrupt the browser flush. The final size check closes the race where the
+// flush completes between polling ticks.
+func policeHARFlush(path string, limit int64, flush func() error, abort func()) (bool, error) {
+	return policeHARFlushUntil(path, limit, flush, abort, time.Now().Add(maxBrowserHARFlushDuration))
+}
+
+func policeHARFlushUntil(path string, limit int64, flush func() error, abort func(), deadline time.Time) (bool, error) {
+	if flush == nil {
+		return false, nil
+	}
+	done := make(chan error, 1)
+	go func() { done <- flush() }()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	deadlineTimer := time.NewTimer(durationUntil(deadline, maxBrowserHARFlushDuration))
+	defer deadlineTimer.Stop()
+	exceeded := false
+	aborted := false
+	check := func() {
+		info, err := os.Stat(path)
+		if err != nil || info.Size() <= limit {
+			return
+		}
+		exceeded = true
+		_ = os.Truncate(path, limit)
+		if !aborted && abort != nil {
+			aborted = true
+			go abort()
+		}
+	}
+	check()
+	for {
+		select {
+		case err := <-done:
+			check()
+			return exceeded, err
+		case <-ticker.C:
+			check()
+		case <-deadlineTimer.C:
+			check()
+			if !aborted && abort != nil {
+				aborted = true
+				go abort()
+			}
+			return exceeded, fmt.Errorf("HAR flush exceeded shutdown deadline")
 		}
 	}
 }
@@ -1792,8 +2151,10 @@ func (r *Recorder) captureThumbnailAsync(page playwright.Page, seq int) {
 		raw, err := page.Screenshot(playwright.PageScreenshotOptions{
 			Type:    playwright.ScreenshotTypeJpeg,
 			Quality: playwright.Int(45),
+			Scale:   playwright.ScreenshotScaleCss,
+			Timeout: playwright.Float(float64(maxBrowserOperationDuration / time.Millisecond)),
 		})
-		if err != nil || len(raw) == 0 {
+		if err != nil || len(raw) == 0 || len(raw) > maxBrowserThumbnailRawBytes {
 			return
 		}
 		thumb, err := thumbnailDataURL(raw, 200)
@@ -1847,6 +2208,16 @@ func (r *Recorder) windowArgs() []string {
 }
 
 func (r *Recorder) cleanup() {
+	browser, pw := r.detachRuntime()
+	if browser != nil {
+		_ = browser.Close()
+	}
+	if pw != nil {
+		_ = pw.Stop()
+	}
+}
+
+func (r *Recorder) detachRuntime() (playwright.Browser, *playwright.Playwright) {
 	r.mu.Lock()
 	r.context = nil
 	browser := r.browser
@@ -1854,10 +2225,93 @@ func (r *Recorder) cleanup() {
 	pw := r.pw
 	r.pw = nil
 	r.mu.Unlock()
+	return browser, pw
+}
+
+func (r *Recorder) closeBrowserAsync() {
+	r.mu.Lock()
+	browser := r.browser
+	r.mu.Unlock()
 	if browser != nil {
-		_ = browser.Close()
+		go func() { _ = browser.Close() }()
+	}
+}
+
+func (r *Recorder) cleanupUntil(deadline time.Time) bool {
+	browser, pw := r.detachRuntime()
+	var group sync.WaitGroup
+	if browser != nil {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			_ = browser.Close()
+		}()
 	}
 	if pw != nil {
-		_ = pw.Stop()
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			_ = pw.Stop()
+		}()
 	}
+	done := make(chan struct{})
+	go func() {
+		group.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return true
+	case <-time.After(durationUntil(deadline, maxBrowserOperationDuration)):
+		return false
+	}
+}
+
+func waitGroupUntil(group *sync.WaitGroup, deadline time.Time) bool {
+	done := make(chan struct{})
+	go func() {
+		group.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return true
+	case <-time.After(durationUntil(deadline, maxBrowserOperationDuration)):
+		return false
+	}
+}
+
+func runOperationUntil(deadline time.Time, operation func() error, abort func()) error {
+	if !deadline.After(time.Now()) {
+		return fmt.Errorf("operation exceeded shutdown deadline")
+	}
+	done := make(chan error, 1)
+	go func() { done <- operation() }()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(durationUntil(deadline, maxBrowserOperationDuration)):
+		if abort != nil {
+			abort()
+		}
+		return fmt.Errorf("operation exceeded shutdown deadline")
+	}
+}
+
+func durationUntil(deadline time.Time, ceiling time.Duration) time.Duration {
+	remaining := time.Until(deadline)
+	if remaining <= 0 {
+		return time.Nanosecond
+	}
+	if ceiling > 0 && remaining > ceiling {
+		return ceiling
+	}
+	return remaining
+}
+
+func minTime(left, right time.Time) time.Time {
+	if left.Before(right) {
+		return left
+	}
+	return right
 }

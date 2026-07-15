@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"mime"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -175,15 +177,12 @@ func (b *Browser) dispatchAction(ctx context.Context, action *protocol.Action, r
 		if len(files) == 0 {
 			return nil, failBrowserAction(result, "browser_set_files requires value or params.files")
 		}
-		for i, path := range files {
-			validated, err := fileasset.ValidatePath(path)
-			if err != nil {
-				return nil, failBrowserAction(result, fmt.Sprintf("browser_set_files file %d: %v", i, err))
-			}
-			files[i] = validated
+		inputFiles, err := loadBrowserInputFiles(files)
+		if err != nil {
+			return nil, failBrowserAction(result, err.Error())
 		}
 		return b.runWithSelectorSelfHeal(ctx, action, result, selector, func(s string) error {
-			return b.setInputFilesAction(ctx, action, s, files)
+			return b.setInputFilesAction(ctx, action, s, inputFiles)
 		}), false
 	case "browser_press_key":
 		key := actionKey(action)
@@ -211,6 +210,32 @@ func (b *Browser) dispatchAction(ctx context.Context, action *protocol.Action, r
 	default:
 		return nil, failBrowserAction(result, fmt.Sprintf("unsupported browser action type: %s", action.Type))
 	}
+}
+
+const maxBrowserUploadFiles = 32
+
+func loadBrowserInputFiles(paths []string) ([]playwright.InputFile, error) {
+	if len(paths) > maxBrowserUploadFiles {
+		return nil, fmt.Errorf("browser_set_files exceeds %d file limit", maxBrowserUploadFiles)
+	}
+	files := make([]playwright.InputFile, 0, len(paths))
+	remaining := fileasset.MaxBytes
+	for i, path := range paths {
+		if remaining <= 0 {
+			return nil, fmt.Errorf("browser_set_files exceeds %d byte aggregate limit", fileasset.MaxBytes)
+		}
+		content, err := fileasset.ReadPathLimited(path, remaining)
+		if err != nil {
+			return nil, fmt.Errorf("browser_set_files file %d: %w", i, err)
+		}
+		remaining -= int64(len(content))
+		files = append(files, playwright.InputFile{
+			Name:     filepath.Base(path),
+			MimeType: mime.TypeByExtension(filepath.Ext(path)),
+			Buffer:   content,
+		})
+	}
+	return files, nil
 }
 
 func (b *Browser) dispatchOpenWindow(ctx context.Context, action *protocol.Action) error {

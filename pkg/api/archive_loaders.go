@@ -145,6 +145,7 @@ func readJSONLSortedTransactionPageFrom(ctx context.Context, reader io.Reader, p
 		if err := json.Unmarshal(scanner.Bytes(), &item); err != nil {
 			return nil, 0, err
 		}
+		sanitizeArchiveDecodedRecord(&item)
 		if predicate != nil && !predicate(&item) {
 			continue
 		}
@@ -500,6 +501,7 @@ func forEachArchiveRecordContext[T any](ctx context.Context, record *storage.Run
 		if err := json.Unmarshal(scanner.Bytes(), &item); err != nil {
 			return err
 		}
+		sanitizeArchiveDecodedRecord(&item)
 		if err := fn(&item); err != nil {
 			return err
 		}
@@ -751,6 +753,7 @@ func readAllArchiveRecordsContext[T any](ctx context.Context, record *storage.Ru
 		if err := json.Unmarshal(scanner.Bytes(), &item); err != nil {
 			return nil, err
 		}
+		sanitizeArchiveDecodedRecord(&item)
 		items = append(items, item)
 	}
 	if err := scanner.Err(); err != nil {
@@ -780,6 +783,7 @@ func readJSONLFiltered[T any](path string, predicate func(*T) bool) ([]T, int, e
 		if err := json.Unmarshal(scanner.Bytes(), &item); err != nil {
 			return nil, 0, err
 		}
+		sanitizeArchiveDecodedRecord(&item)
 		if predicate != nil && !predicate(&item) {
 			continue
 		}
@@ -859,6 +863,7 @@ func readJSONLPageFrom[T any](ctx context.Context, reader io.Reader, page archiv
 				if err := json.Unmarshal(scanner.Bytes(), &item); err != nil {
 					return nil, 0, err
 				}
+				sanitizeArchiveDecodedRecord(&item)
 				items = append(items, item)
 			} else if !json.Valid(scanner.Bytes()) {
 				// Validate rows outside the requested page too (cheap syntactic
@@ -875,6 +880,7 @@ func readJSONLPageFrom[T any](ctx context.Context, reader io.Reader, page archiv
 		if err := json.Unmarshal(scanner.Bytes(), &item); err != nil {
 			return nil, 0, err
 		}
+		sanitizeArchiveDecodedRecord(&item)
 		if !predicate(&item) {
 			continue
 		}
@@ -1037,6 +1043,7 @@ func readJSONLDownsampledFrom[T any](ctx context.Context, reader io.Reader, tota
 		if err := json.Unmarshal(scanner.Bytes(), &item); err != nil {
 			return nil, 0, err
 		}
+		sanitizeArchiveDecodedRecord(&item)
 		recordArchiveSample(buckets, totalHint, matched, item, boundedScores)
 		matched++
 	}

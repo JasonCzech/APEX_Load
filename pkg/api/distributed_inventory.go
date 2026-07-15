@@ -12,68 +12,103 @@ import (
 )
 
 func (b *distributedExecutionBackend) SystemInventory(ctx context.Context) []GeneratorInventoryEntry {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	specs := b.configuredTargetSpecs()
 	entries := make([]GeneratorInventoryEntry, len(specs))
-	var wg sync.WaitGroup
 	for index, target := range specs {
-		index, target := index, target
-		wg.Add(1)
+		entries[index] = GeneratorInventoryEntry{
+			Target:              target.Address,
+			GeneratorID:         target.Address,
+			Region:              target.Region,
+			Status:              "unreachable",
+			Version:             generatorSpecVersion(target),
+			SupportedProtocols:  generatorSpecProtocols(target),
+			DrainState:          b.generatorDrainState(target.Address),
+			CapacityState:       generatorCapacityState(0, 0, false),
+			HealthScore:         generatorHealthScore(false, "unavailable"),
+			CompatibilityState:  generatorCompatibilityState(target),
+			CompatibilityIssues: generatorCompatibilityIssues(target),
+		}
+	}
+	if len(specs) == 0 {
+		return entries
+	}
+	// Inventory is exposed by several HTTP surfaces and also refreshed by a
+	// background cadence. Bound the fleet-wide probe pass across invocations,
+	// not merely within one invocation, so concurrent dashboard requests cannot
+	// multiply the worker pool and outbound dials without limit. A waiting caller
+	// remains cancelable and receives the already-built unreachable snapshot.
+	b.inventoryProbeOnce.Do(func() {
+		b.inventoryProbeGate = make(chan struct{}, 1)
+	})
+	select {
+	case b.inventoryProbeGate <- struct{}{}:
+		defer func() { <-b.inventoryProbeGate }()
+	case <-ctx.Done():
+		return entries
+	}
+	jobs := make(chan int)
+	var wg sync.WaitGroup
+	workerCount := min(maxGeneratorEpochKeeperWorkers, len(specs))
+	wg.Add(workerCount)
+	for range workerCount {
 		go func() {
 			defer wg.Done()
-			entry := GeneratorInventoryEntry{
-				Target:              target.Address,
-				GeneratorID:         target.Address,
-				Region:              target.Region,
-				Status:              "unreachable",
-				Version:             generatorSpecVersion(target),
-				SupportedProtocols:  generatorSpecProtocols(target),
-				DrainState:          b.generatorDrainState(target.Address),
-				CapacityState:       generatorCapacityState(0, 0, false),
-				HealthScore:         generatorHealthScore(false, "unavailable"),
-				CompatibilityState:  generatorCompatibilityState(target),
-				CompatibilityIssues: generatorCompatibilityIssues(target),
-			}
-
-			probeCtx, cancel := context.WithTimeout(ctx, b.timeout)
-			client, err := b.dial(probeCtx, target.Address)
-			if err != nil {
-				cancel()
-				entries[index] = entry
-				return
-			}
-
-			snapshot := b.probeGeneratorLoad(probeCtx, target.Address, client)
-			_ = client.Close()
-			cancel()
-
-			if snapshot.GeneratorID != "" {
-				entry.GeneratorID = snapshot.GeneratorID
-				b.recordGeneratorIdentity(target.Address, snapshot.GeneratorID)
-			}
-			entry.DrainState = b.generatorDrainState(target.Address)
-			if snapshot.HeartbeatOK {
-				effectiveSpec := generatorEffectiveSpec(target, snapshot)
-				entry.Version = generatorSpecVersion(effectiveSpec)
-				entry.SupportedProtocols = generatorSpecProtocols(effectiveSpec)
-				entry.CompatibleFeatures = snapshot.CompatibleFeatures
-				if len(entry.CompatibleFeatures) == 0 {
-					entry.CompatibleFeatures = append([]string(nil), entry.SupportedProtocols...)
+			for index := range jobs {
+				target := specs[index]
+				entry := entries[index]
+				probeCtx, cancel := context.WithTimeout(ctx, b.timeout)
+				client, err := b.dial(probeCtx, target.Address)
+				if err != nil {
+					cancel()
+					continue
 				}
-				entry.CompatibilityState = generatorCompatibilityState(effectiveSpec)
-				entry.CompatibilityIssues = generatorCompatibilityIssues(effectiveSpec)
-				entry.Status = "connected"
-				entry.AvailableCapacity = snapshot.AvailableCapacity
-				applyGeneratorStatsToInventory(&entry, snapshot.Stats)
-				entry.CPULimitCores = snapshot.CPULimitCores
-				entry.MemoryLimitBytes = snapshot.MemoryLimitBytes
-				entry.MaxVUsers = snapshot.MaxVUsers
-				entry.CapacityState = generatorCapacityState(entry.AvailableCapacity, entry.MaxVUsers, true)
-				entry.HealthScore = generatorHealthScore(true, entry.CapacityState)
-			}
 
-			entries[index] = entry
+				snapshot := b.probeGeneratorLoad(probeCtx, target.Address, client)
+				_ = client.Close()
+				cancel()
+
+				if snapshot.GeneratorID != "" {
+					entry.GeneratorID = snapshot.GeneratorID
+					b.recordGeneratorIdentity(target.Address, snapshot.GeneratorID)
+				}
+				entry.DrainState = b.generatorDrainState(target.Address)
+				if snapshot.HeartbeatOK {
+					effectiveSpec := generatorEffectiveSpec(target, snapshot)
+					entry.Version = generatorSpecVersion(effectiveSpec)
+					entry.SupportedProtocols = generatorSpecProtocols(effectiveSpec)
+					entry.CompatibleFeatures = snapshot.CompatibleFeatures
+					if len(entry.CompatibleFeatures) == 0 {
+						entry.CompatibleFeatures = append([]string(nil), entry.SupportedProtocols...)
+					}
+					entry.CompatibilityState = generatorCompatibilityState(effectiveSpec)
+					entry.CompatibilityIssues = generatorCompatibilityIssues(effectiveSpec)
+					entry.Status = "connected"
+					entry.AvailableCapacity = snapshot.AvailableCapacity
+					applyGeneratorStatsToInventory(&entry, snapshot.Stats)
+					entry.CPULimitCores = snapshot.CPULimitCores
+					entry.MemoryLimitBytes = snapshot.MemoryLimitBytes
+					entry.MaxVUsers = snapshot.MaxVUsers
+					entry.CapacityState = generatorCapacityState(entry.AvailableCapacity, entry.MaxVUsers, true)
+					entry.HealthScore = generatorHealthScore(true, entry.CapacityState)
+				}
+
+				entries[index] = entry
+			}
 		}()
 	}
+
+enqueue:
+	for index := range specs {
+		select {
+		case jobs <- index:
+		case <-ctx.Done():
+			break enqueue
+		}
+	}
+	close(jobs)
 	wg.Wait()
 	return entries
 }

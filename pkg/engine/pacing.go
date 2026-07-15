@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 	"math/rand"
+	"sync"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -105,25 +106,25 @@ func applyIterationPacingCtx(ctx context.Context, cfg PacingRuntimeConfig, iterS
 
 	case "fixed_delay":
 		if cfg.DelayMs > 0 {
-			sleepCtx(ctx, time.Duration(cfg.DelayMs)*time.Millisecond)
+			pacingSleep(ctx, cfg, time.Duration(cfg.DelayMs)*time.Millisecond)
 		}
 
 	case "random_delay":
 		lo := cfg.MinDelayMs
 		hi := cfg.MaxDelayMs
 		if hi <= lo {
-			sleepCtx(ctx, time.Duration(lo)*time.Millisecond)
+			pacingSleep(ctx, cfg, time.Duration(lo)*time.Millisecond)
 			return
 		}
 		d := lo + rand.Intn(hi-lo+1)
-		sleepCtx(ctx, time.Duration(d)*time.Millisecond)
+		pacingSleep(ctx, cfg, time.Duration(d)*time.Millisecond)
 
 	case "fixed_interval":
 		if cfg.IntervalMs > 0 {
-			elapsed := time.Since(iterStart)
+			elapsed := pacingElapsed(cfg, iterStart)
 			target := time.Duration(cfg.IntervalMs) * time.Millisecond
 			if elapsed < target {
-				sleepCtx(ctx, target-elapsed)
+				pacingSleep(ctx, cfg, target-elapsed)
 			}
 		}
 
@@ -134,30 +135,56 @@ func applyIterationPacingCtx(ctx context.Context, cfg PacingRuntimeConfig, iterS
 			hi = lo + 1
 		}
 		target := time.Duration(lo+rand.Intn(hi-lo+1)) * time.Millisecond
-		elapsed := time.Since(iterStart)
+		elapsed := pacingElapsed(cfg, iterStart)
 		if elapsed < target {
-			sleepCtx(ctx, target-elapsed)
+			pacingSleep(ctx, cfg, target-elapsed)
 		}
 	}
 }
 
+func pacingSleep(ctx context.Context, cfg PacingRuntimeConfig, delay time.Duration) {
+	if cfg.activeSleep != nil {
+		cfg.activeSleep(ctx, delay)
+		return
+	}
+	sleepCtx(ctx, delay)
+}
+
+func pacingElapsed(cfg PacingRuntimeConfig, iterStart time.Time) time.Duration {
+	if cfg.activeClock != nil {
+		elapsed := cfg.activeClock() - cfg.iterStartActive
+		if elapsed < 0 {
+			return 0
+		}
+		return elapsed
+	}
+	return time.Since(iterStart)
+}
+
 // PacingRuntimeConfig is the engine-internal pacing config, mirroring dsl.PacingConfig.
 type PacingRuntimeConfig struct {
-	Type          string
-	DelayMs       int
-	MinDelayMs    int
-	MaxDelayMs    int
-	IntervalMs    int
-	MinIntervalMs int
-	MaxIntervalMs int
-	TPS           float64
-	RateLimiter   *TokenBucket
+	Type            string
+	DelayMs         int
+	MinDelayMs      int
+	MaxDelayMs      int
+	IntervalMs      int
+	MinIntervalMs   int
+	MaxIntervalMs   int
+	TPS             float64
+	RateLimiter     *TokenBucket
+	activeSleep     func(context.Context, time.Duration) bool
+	activeClock     func() time.Duration
+	iterStartActive time.Duration
 }
 
 type TokenBucket struct {
-	tokens   chan struct{}
-	interval time.Duration
-	done     chan struct{}
+	tokens          chan struct{}
+	interval        time.Duration
+	done            chan struct{}
+	mu              sync.Mutex
+	paused          bool
+	resumeNotBefore time.Time
+	stopOnce        sync.Once
 }
 
 // maxTokenBucketCapacity bounds the buffered token channel so a pathologically
@@ -194,13 +221,20 @@ func (tb *TokenBucket) WaitContext(ctx context.Context) bool {
 	if tb == nil {
 		return true
 	}
-	select {
-	case <-ctx.Done():
-		return false
-	case <-tb.done:
-		return false
-	case <-tb.tokens:
-		return true
+	for {
+		select {
+		case <-ctx.Done():
+			return false
+		case <-tb.done:
+			return false
+		case <-tb.tokens:
+			tb.mu.Lock()
+			paused := tb.paused
+			tb.mu.Unlock()
+			if !paused {
+				return true
+			}
+		}
 	}
 }
 
@@ -208,7 +242,29 @@ func (tb *TokenBucket) Stop() {
 	if tb == nil {
 		return
 	}
-	close(tb.done)
+	tb.stopOnce.Do(func() { close(tb.done) })
+}
+
+// SetPaused prevents token production while paused and discards buffered
+// credits so resuming cannot release a wall-time-accumulated burst.
+func (tb *TokenBucket) SetPaused(paused bool) {
+	if tb == nil {
+		return
+	}
+	tb.mu.Lock()
+	tb.paused = paused
+	if paused {
+		for {
+			select {
+			case <-tb.tokens:
+			default:
+				tb.mu.Unlock()
+				return
+			}
+		}
+	}
+	tb.resumeNotBefore = time.Now().Add(tb.interval)
+	tb.mu.Unlock()
 }
 
 func (tb *TokenBucket) fill() {
@@ -222,12 +278,27 @@ func (tb *TokenBucket) fill() {
 		case now := <-ticker.C:
 			elapsed := now.Sub(last)
 			last = now
-			tb.addTokensForElapsed(elapsed)
+			tb.addTokensForElapsedAt(elapsed, now)
 		}
 	}
 }
 
 func (tb *TokenBucket) addTokensForElapsed(elapsed time.Duration) {
+	tb.addTokensForElapsedAt(elapsed, time.Time{})
+}
+
+func (tb *TokenBucket) addTokensForElapsedAt(elapsed time.Duration, now time.Time) {
+	tb.mu.Lock()
+	defer tb.mu.Unlock()
+	if tb.paused {
+		return
+	}
+	if !now.IsZero() && !tb.resumeNotBefore.IsZero() {
+		if now.Before(tb.resumeNotBefore) {
+			return
+		}
+		tb.resumeNotBefore = time.Time{}
+	}
 	due := tokenBucketTokensForElapsed(elapsed, tb.interval)
 	for i := 0; i < due; i++ {
 		select {

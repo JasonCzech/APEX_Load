@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -64,6 +65,24 @@ func TestSchemaRegistryClientRegistersAndCaches(t *testing.T) {
 	}
 	if calls != 1 {
 		t.Fatalf("registry HTTP calls = %d, want 1 (second resolved from cache)", calls)
+	}
+}
+
+func TestSchemaRegistryEscapesSubjectAsOnePathSegment(t *testing.T) {
+	var escapedPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		escapedPath = r.URL.EscapedPath()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":42}`))
+	}))
+	defer srv.Close()
+
+	client := newSchemaRegistryClient(srv.URL, `{}`, "JSON")
+	if _, err := client.schemaID(context.Background(), "orders/../../admin?x=1"); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(escapedPath, "/../") || !strings.Contains(escapedPath, "orders%2F..%2F..%2Fadmin%3Fx=1") {
+		t.Fatalf("schema registry escaped path = %q", escapedPath)
 	}
 }
 

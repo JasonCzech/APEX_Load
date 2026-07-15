@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -124,6 +126,27 @@ func TestParseGroupFilterQueryBlankMeansNoFilter(t *testing.T) {
 	}
 }
 
+func TestParseGroupFilterQueryRejectsResourceAmplification(t *testing.T) {
+	tooMany := make([]string, 0, maxGroupFilterNames+1)
+	for index := 0; index <= maxGroupFilterNames; index++ {
+		tooMany = append(tooMany, "group-"+strconv.Itoa(index))
+	}
+	for name, values := range map[string]url.Values{
+		"too many names": {"groups": []string{strings.Join(tooMany, ",")}},
+		"name too long":  {"groups": []string{strings.Repeat("x", maxGroupFilterNameBytes+1)}},
+		"query too large": {"groups": []string{
+			strings.Repeat("x", maxGroupFilterQueryBytes),
+			"overflow",
+		}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if filter := parseGroupFilterQuery(values); !filter.Invalid {
+				t.Fatalf("filter = %#v, want invalid", filter)
+			}
+		})
+	}
+}
+
 func TestFilterLiveMetricsForGroupsHandlesEmptySelection(t *testing.T) {
 	filtered := filterLiveMetricsForGroups(liveMetricsForGroupFilterTest(), groupFilterQuery{Explicit: true})
 
@@ -165,6 +188,48 @@ func TestFilterLiveMetricsHistoryForGroupsCachedInvalidatesOnNewPoint(t *testing
 	}
 }
 
+func TestGroupMetricsHistoryCacheHasPerTestGlobalAndByteBounds(t *testing.T) {
+	cache := newGroupMetricsHistoryCacheManager()
+	point := []*LiveMetrics{{Timestamp: time.Now(), TPS: 1}}
+	for index := 0; index <= maxGroupMetricsHistoryCacheEntriesPerTest; index++ {
+		cache.put("one-test", strconv.Itoa(index), point)
+	}
+	if got := cache.perTest["one-test"]; got != maxGroupMetricsHistoryCacheEntriesPerTest {
+		t.Fatalf("per-test cache entries = %d, want %d", got, maxGroupMetricsHistoryCacheEntriesPerTest)
+	}
+	for index := 0; index <= maxGroupMetricsHistoryCacheEntriesGlobal; index++ {
+		cache.put("test-"+strconv.Itoa(index), "key", point)
+	}
+	if len(cache.entries) > maxGroupMetricsHistoryCacheEntriesGlobal || cache.total > maxGroupMetricsHistoryCacheBytes {
+		t.Fatalf("global cache retained entries=%d bytes=%d", len(cache.entries), cache.total)
+	}
+
+	oversized := []*LiveMetrics{{ErrorBreakdown: map[string]int64{strings.Repeat("x", maxGroupMetricsHistoryCacheEntryBytes/4): 1}}}
+	before := len(cache.entries)
+	cache.put("oversized", "key", oversized)
+	if len(cache.entries) != before {
+		t.Fatal("oversized filtered history was admitted to cache")
+	}
+}
+
+func TestGroupMetricsHistoryCacheDropsNonResponseEvidence(t *testing.T) {
+	const testID = "run-group-filter-evidence-cache"
+	deleteGroupMetricsHistoryCache(testID)
+	t.Cleanup(func() { deleteGroupMetricsHistoryCache(testID) })
+	original := liveMetricsForGroupFilterTest()
+	original.ErrorEvidence = []LiveErrorEvidence{{ID: "sensitive-evidence"}}
+	filtered := filterLiveMetricsHistoryForGroupsCached(testID, []*LiveMetrics{original}, groupFilterQuery{Names: []string{"Checkout"}, Explicit: true})
+	if len(filtered) != 1 || filtered[0] == nil {
+		t.Fatalf("filtered history = %#v", filtered)
+	}
+	if filtered[0].ErrorEvidence != nil || filtered[0].GroupMetrics["Checkout"].DurationDigest != nil {
+		t.Fatal("response cache retained non-serialized evidence")
+	}
+	if len(original.ErrorEvidence) != 1 || original.GroupMetrics["Checkout"].DurationDigest == nil {
+		t.Fatal("cache compaction mutated canonical live history")
+	}
+}
+
 func TestHandleGetMetricsAppliesGroupFilter(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	live := liveMetricsForGroupFilterTest()
@@ -197,6 +262,22 @@ func TestHandleGetMetricsAppliesGroupFilter(t *testing.T) {
 	}
 	if len(payload.History) != 1 || payload.History[0].ActiveVUsers != 12 {
 		t.Fatalf("filtered history = %#v, want Checkout-only history", payload.History)
+	}
+}
+
+func TestHandleGetMetricsRejectsOversizedGroupFilter(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	server.runner.mu.Lock()
+	server.runner.tests["run-group-filter-limit"] = &ManagedTest{
+		ID: "run-group-filter-limit", Name: "Group Filter Limit", Status: "RUNNING", LiveMetrics: liveMetricsForGroupFilterTest(),
+	}
+	server.runner.mu.Unlock()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/run-group-filter-limit/metrics?groups="+url.QueryEscape(strings.Repeat("x", maxGroupFilterNameBytes+1)), nil)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d: %s", resp.Code, http.StatusBadRequest, resp.Body.String())
 	}
 }
 

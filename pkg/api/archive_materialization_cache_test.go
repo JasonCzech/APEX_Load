@@ -368,6 +368,32 @@ func TestArchiveMaterializationCacheEnforcesAggregateByteCapAndPreservesProducer
 	}
 }
 
+func TestArchiveMaterializationCacheScanBoundsCandidatesAcrossReadBatches(t *testing.T) {
+	now := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
+	scanRoot := t.TempDir()
+	entryCount := archiveMaterializationScanReadBatch + 44
+	for index := 0; index < entryCount; index++ {
+		writeArchiveMaterializationCacheFixture(t, scanRoot, "cache-"+strconv.Itoa(index), 1, now.Add(-time.Duration(index)*time.Minute))
+	}
+
+	candidates, totalBytes := scanArchiveMaterializationCacheLimit(scanRoot, now, 24*time.Hour, 10)
+	if totalBytes != int64(entryCount) {
+		t.Fatalf("scanned bytes = %d, want %d across every marker", totalBytes, entryCount)
+	}
+	if len(candidates) != 10 {
+		t.Fatalf("retained candidates = %d, want hard cap 10", len(candidates))
+	}
+	oldest := make(map[string]struct{}, 10)
+	for index := entryCount - 10; index < entryCount; index++ {
+		oldest["cache-"+strconv.Itoa(index)] = struct{}{}
+	}
+	for _, candidate := range candidates {
+		if _, ok := oldest[filepath.Base(candidate.root)]; !ok {
+			t.Fatalf("bounded scan retained non-oldest candidate %q", candidate.root)
+		}
+	}
+}
+
 func TestArchiveMaterializationCacheProtectsActiveAndPendingLeases(t *testing.T) {
 	now := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
 	scanRoot := t.TempDir()

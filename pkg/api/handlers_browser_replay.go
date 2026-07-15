@@ -48,6 +48,9 @@ func (s *Server) handleStartBrowserReplayScript(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusNotFound, "script not found")
 		return
 	}
+	if !requireAuthorizedProjectMatch(w, r, stored.ProjectID) {
+		return
+	}
 
 	var req BrowserReplayStartRequest
 	if r.Body != nil && r.ContentLength != 0 {

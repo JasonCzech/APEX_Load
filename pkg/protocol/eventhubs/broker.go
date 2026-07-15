@@ -46,21 +46,24 @@ type eventMeta struct {
 // capped at maxBrokerLogPerHub records: the oldest are evicted and the per-hub
 // base offset advances (offsets stay absolute, so cursors/lag stay correct).
 type memoryBroker struct {
-	mu      sync.Mutex
-	logs    map[string][]event
-	base    map[string]int64 // absolute offset of logs[hub][0] (evicted count)
-	cursors map[string]int64
-	refs    map[string]int
-	bytes   map[string]int64
+	mu         sync.Mutex
+	logs       map[string][]event
+	base       map[string]int64 // absolute offset of logs[hub][0] (evicted count)
+	cursors    map[string]int64
+	refs       map[string]int
+	bytes      map[string]int64
+	totalBytes int64
 }
 
 // maxBrokerLogPerHub bounds retained events per hub in the in-memory mock. It is
 // generous enough that ordinary shakeout/CI runs never evict.
 const (
-	maxBrokerLogPerHub   = 50000
-	maxBrokerBytesPerHub = 64 << 20
-	maxBrokerHubKeys     = 1024
-	maxBrokerCursorKeys  = 4096
+	maxBrokerLogPerHub     = 50000
+	maxBrokerBytesPerHub   = 64 << 20
+	maxBrokerRetainedBytes = 256 << 20
+	maxBrokerHubKeys       = 1024
+	maxBrokerCursorKeys    = 4096
+	maxBrokerKeyBytes      = 16 << 10
 )
 
 func newMemoryBroker() *memoryBroker {
@@ -100,10 +103,14 @@ func (b *memoryBroker) release(namespace string) {
 	delete(b.refs, namespace)
 	for hub := range b.logs {
 		if strings.HasPrefix(hub, prefix) {
+			b.totalBytes -= b.bytes[hub]
 			delete(b.logs, hub)
 			delete(b.base, hub)
 			delete(b.bytes, hub)
 		}
+	}
+	if b.totalBytes < 0 {
+		b.totalBytes = 0
 	}
 	for key := range b.cursors {
 		if strings.HasPrefix(key, prefix) {
@@ -117,11 +124,18 @@ func cursorKey(hub, group string) string { return hub + "\x00" + group }
 func (b *memoryBroker) send(hub string, ev event) (eventMeta, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if len(hub) > maxBrokerKeyBytes {
+		return eventMeta{}, fmt.Errorf("mock event hubs key exceeds %d bytes", maxBrokerKeyBytes)
+	}
 	if _, exists := b.logs[hub]; !exists && len(b.logs) >= maxBrokerHubKeys {
 		return eventMeta{}, fmt.Errorf("mock event hubs capacity exceeded (%d hub keys)", maxBrokerHubKeys)
 	}
-	if size := eventSize(ev); size > maxBrokerBytesPerHub {
+	size := int64(eventSize(ev))
+	if size > maxBrokerBytesPerHub {
 		return eventMeta{}, fmt.Errorf("mock event exceeds per-hub capacity (%d bytes)", maxBrokerBytesPerHub)
+	}
+	if size > maxBrokerRetainedBytes-b.totalBytes {
+		return eventMeta{}, fmt.Errorf("mock event hubs aggregate retention capacity exceeded (%d bytes)", maxBrokerRetainedBytes)
 	}
 	offset := b.base[hub] + int64(len(b.logs[hub]))
 	ev.Offset = offset
@@ -130,11 +144,13 @@ func (b *memoryBroker) send(hub string, ev event) (eventMeta, error) {
 		ev.EnqueuedAt = time.Now()
 	}
 	b.logs[hub] = append(b.logs[hub], ev)
-	b.bytes[hub] += int64(eventSize(ev))
+	b.bytes[hub] += size
+	b.totalBytes += size
 	// Bound retained events: evict the oldest and advance the base offset.
 	drop := 0
 	for drop < len(b.logs[hub]) && (len(b.logs[hub])-drop > maxBrokerLogPerHub || b.bytes[hub] > maxBrokerBytesPerHub) {
 		b.bytes[hub] -= int64(eventSize(b.logs[hub][drop]))
+		b.totalBytes -= int64(eventSize(b.logs[hub][drop]))
 		drop++
 	}
 	if drop > 0 {
@@ -159,6 +175,9 @@ func (b *memoryBroker) receiveChecked(hub, group string) (event, int64, bool, er
 	base := b.base[hub]
 	end := base + int64(len(log))
 	key := cursorKey(hub, group)
+	if len(key) > maxBrokerKeyBytes {
+		return event{}, 0, false, fmt.Errorf("mock event hubs cursor key exceeds %d bytes", maxBrokerKeyBytes)
+	}
 	if _, exists := b.cursors[key]; !exists && len(b.cursors) >= maxBrokerCursorKeys {
 		return event{}, 0, false, fmt.Errorf("mock event hubs consumer cursor capacity exceeded (%d keys)", maxBrokerCursorKeys)
 	}

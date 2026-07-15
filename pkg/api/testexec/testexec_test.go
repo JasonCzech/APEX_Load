@@ -111,6 +111,11 @@ func TestAppendRunError(t *testing.T) {
 	if got := AppendRunError("first: a", "second", errors.New("b")); got != "first: a; second: b" {
 		t.Errorf("accumulate: got %q, want %q", got, "first: a; second: b")
 	}
+	secret := "short-secret"
+	got := AppendRunError("", "archive", errors.New("upload https://user:"+secret+"@archive.example/run failed"))
+	if contains(got, secret) {
+		t.Errorf("credential-bearing error was retained: %q", got)
+	}
 }
 
 func contains(s, sub string) bool {

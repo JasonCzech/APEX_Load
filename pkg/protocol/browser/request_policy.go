@@ -5,10 +5,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
 	playwright "github.com/playwright-community/playwright-go"
 )
 
-const maxBrowserResourceValidators = 1024
+const (
+	maxBrowserResourceValidators = 1024
+	maxBrowserResourceURLBytes   = browserNetworkURLLimitBytes
+	maxBrowserResourceETagBytes  = 8 << 10
+)
 
 func normalizeRecordedResources(urls []string) map[string]struct{} {
 	normalized := make(map[string]struct{})
@@ -115,7 +120,10 @@ func (b *Browser) installRequestPolicy(browserContext playwright.BrowserContext)
 			return
 		}
 		if b.routeNetworkLatencyEnabled() {
-			time.Sleep(time.Duration(b.networkLatencyMS) * time.Millisecond)
+			if !b.waitRouteNetworkLatency() {
+				_ = route.Abort()
+				return
+			}
 		}
 
 		headers := b.requestPolicyHeaders(request)
@@ -125,6 +133,28 @@ func (b *Browser) installRequestPolicy(browserContext playwright.BrowserContext)
 		}
 		_ = route.Continue()
 	})
+}
+
+func (b *Browser) waitRouteNetworkLatency() bool {
+	delay := time.Duration(b.networkLatencyMS) * time.Millisecond
+	if delay <= 0 {
+		return true
+	}
+	b.mu.Lock()
+	stop := b.requestPolicyStop
+	closing := b.closing
+	b.mu.Unlock()
+	if closing || stop == nil {
+		return false
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return true
+	case <-stop:
+		return false
+	}
 }
 
 func (b *Browser) requestPolicyEnabled() bool {
@@ -227,8 +257,9 @@ func cloneRequestHeaders(headers map[string]string) map[string]string {
 }
 
 func (b *Browser) rememberResourceValidator(rawURL string, headers map[string]string) {
-	etag := headerValue(headers, "etag")
-	if etag == "" {
+	rawURL = boundedtext.TruncateUTF8(strings.TrimSpace(rawURL), maxBrowserResourceURLBytes)
+	etag := boundedtext.TruncateUTF8(headerValue(headers, "etag"), maxBrowserResourceETagBytes)
+	if rawURL == "" || etag == "" {
 		return
 	}
 	b.mu.Lock()

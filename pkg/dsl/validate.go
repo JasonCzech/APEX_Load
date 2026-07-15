@@ -4,14 +4,21 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net"
 	"net/url"
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/jasonczech/apexload/pkg/fileasset"
+	"github.com/jasonczech/apexload/pkg/identitypolicy"
 	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
+	eventhubsprotocol "github.com/jasonczech/apexload/pkg/protocol/eventhubs"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
+	jmsprotocol "github.com/jasonczech/apexload/pkg/protocol/jms"
+	kafkaprotocol "github.com/jasonczech/apexload/pkg/protocol/kafka"
 )
 
 // ValidateScriptIssues returns all validation issues for a script definition.
@@ -19,17 +26,27 @@ func ValidateScriptIssues(script *Script) []string {
 	if script == nil {
 		return []string{"script is required"}
 	}
+	// Run this iterative structural preflight before any protocol-specific or
+	// recursive validators. Otherwise an API-sized but adversarial control tree
+	// can amplify CPU/stack use in each validation pass.
+	if issues := validateScriptStructureIssues(script); len(issues) != 0 {
+		return issues
+	}
+	fileDataSourceIssues := validateFileDataSourceReferenceIssues(script)
 
 	if strings.HasPrefix(strings.TrimSpace(script.Protocol), "jms-") {
-		return validateJMSScriptIssues(script)
+		issues := append(validateJMSScriptIssues(script), validateExecutionResourceIssues(script)...)
+		return append(issues, fileDataSourceIssues...)
 	}
 
 	if strings.TrimSpace(script.Protocol) == "kafka" {
-		return validateKafkaScriptIssues(script)
+		issues := append(validateKafkaScriptIssues(script), validateExecutionResourceIssues(script)...)
+		return append(issues, fileDataSourceIssues...)
 	}
 
 	if strings.TrimSpace(script.Protocol) == "eventhubs" {
-		return validateEventHubsScriptIssues(script)
+		issues := append(validateEventHubsScriptIssues(script), validateExecutionResourceIssues(script)...)
+		return append(issues, fileDataSourceIssues...)
 	}
 
 	var issues []string
@@ -77,15 +94,84 @@ func ValidateScriptIssues(script *Script) []string {
 
 	issues = append(issues, validateParameterIssues(script)...)
 	issues = append(issues, validateDataSourceIssues(script)...)
+	issues = append(issues, fileDataSourceIssues...)
 	issues = append(issues, validateFileReferenceIssues(script)...)
 	issues = append(issues, validateBrowserConfigIssues(script)...)
 	issues = append(issues, validateWebSocketConfigIssues(script)...)
 	issues = append(issues, validateGRPCConfigIssues(script)...)
 	issues = append(issues, validateWebRuntimeIssues(script)...)
 	issues = append(issues, validateRunLogicIssues(script.Config.RunLogic)...)
+	issues = append(issues, validatePacingResourceIssues(script.Config.Pacing)...)
 	issues = append(issues, validateGoalConfigIssues(script.GoalConfig)...)
 
 	return issues
+}
+
+// validateScriptStructureIssues walks all lifecycle action trees without
+// recursion and bounds both nesting and aggregate definitions. http_sequence
+// children are included because their untyped request maps receive their own
+// validation and runtime dispatch even though they are not Action values.
+func validateScriptStructureIssues(script *Script) []string {
+	type pendingAction struct {
+		action Action
+		depth  int
+	}
+
+	topLevelCount := len(script.Init) + len(script.Actions) + len(script.Teardown)
+	if topLevelCount > MaxScriptActionDefinitions {
+		return []string{fmt.Sprintf("script action/request definitions must not exceed %d", MaxScriptActionDefinitions)}
+	}
+	stack := make([]pendingAction, 0, topLevelCount)
+	appendTopLevel := func(actions []Action) {
+		for i := range actions {
+			stack = append(stack, pendingAction{action: actions[i], depth: 1})
+		}
+	}
+	appendTopLevel(script.Init)
+	appendTopLevel(script.Actions)
+	appendTopLevel(script.Teardown)
+
+	definitions := 0
+	for len(stack) > 0 {
+		last := len(stack) - 1
+		current := stack[last]
+		stack = stack[:last]
+		definitions++
+		if definitions > MaxScriptActionDefinitions {
+			return []string{fmt.Sprintf("script action/request definitions must not exceed %d", MaxScriptActionDefinitions)}
+		}
+		if current.depth > MaxScriptActionDepth {
+			return []string{fmt.Sprintf("script action tree nesting depth must not exceed %d", MaxScriptActionDepth)}
+		}
+
+		if current.action.Type == "http_sequence" {
+			requests := current.action.Params["requests"]
+			switch typed := requests.(type) {
+			case []any:
+				definitions += len(typed)
+			case []map[string]any:
+				definitions += len(typed)
+			}
+			if definitions > MaxScriptActionDefinitions {
+				return []string{fmt.Sprintf("script action/request definitions must not exceed %d", MaxScriptActionDefinitions)}
+			}
+		}
+
+		if current.action.Control == nil {
+			continue
+		}
+		nestedCount := len(current.action.Control.Steps) + len(current.action.Control.Else)
+		if definitions+len(stack)+nestedCount > MaxScriptActionDefinitions {
+			return []string{fmt.Sprintf("script action/request definitions must not exceed %d", MaxScriptActionDefinitions)}
+		}
+		for i := range current.action.Control.Steps {
+			stack = append(stack, pendingAction{action: current.action.Control.Steps[i], depth: current.depth + 1})
+		}
+		for i := range current.action.Control.Else {
+			stack = append(stack, pendingAction{action: current.action.Control.Else[i], depth: current.depth + 1})
+		}
+	}
+	return nil
 }
 
 var fileTemplateRefPattern = regexp.MustCompile(`\{\{\s*file\.([^{}\s]+)\s*\}\}`)
@@ -207,11 +293,72 @@ func protocolAllowsEmptyBaseURL(protocolName string) bool {
 
 func validateRunLogicIssues(runLogic RunLogicConfig) []string {
 	var issues []string
+	if runLogic.Iterations < 0 {
+		issues = append(issues, "config.run_logic.iterations must be zero or greater")
+	} else if runLogic.Iterations > MaxRunIterations {
+		issues = append(issues, fmt.Sprintf("config.run_logic.iterations must not exceed %d", MaxRunIterations))
+	}
 	if runLogic.GlobalIterations < 0 {
 		issues = append(issues, "config.run_logic.global_iterations must be zero or greater")
+	} else if runLogic.GlobalIterations > MaxRunIterations {
+		issues = append(issues, fmt.Sprintf("config.run_logic.global_iterations must not exceed %d", MaxRunIterations))
 	}
 	if runLogic.MaxTransactions < 0 {
 		issues = append(issues, "config.run_logic.max_transactions must be zero or greater")
+	}
+	if runLogic.MaxInFlight < 0 {
+		issues = append(issues, "config.run_logic.max_in_flight must be zero or greater")
+	} else if runLogic.MaxInFlight > MaxOpenWorkloadInFlight {
+		issues = append(issues, fmt.Sprintf("config.run_logic.max_in_flight must not exceed %d", MaxOpenWorkloadInFlight))
+	}
+	return issues
+}
+
+func validatePacingResourceIssues(pacing PacingConfig) []string {
+	if pacing.TPS < 0 {
+		return []string{"config.pacing.tps must be zero or greater"}
+	}
+	if math.IsNaN(pacing.TPS) || math.IsInf(pacing.TPS, 0) || pacing.TPS > MaxPacingTPS {
+		return []string{fmt.Sprintf("config.pacing.tps must be finite and must not exceed %d", MaxPacingTPS)}
+	}
+	return nil
+}
+
+func validateExecutionResourceIssues(script *Script) []string {
+	if script == nil {
+		return nil
+	}
+	issues := validateParameterIssues(script)
+	issues = append(issues, validateRunLogicIssues(script.Config.RunLogic)...)
+	issues = append(issues, validatePacingResourceIssues(script.Config.Pacing)...)
+	for i, action := range script.Init {
+		issues = append(issues, validateControlResourceIssues(fmt.Sprintf("init[%d]", i), action)...)
+	}
+	for i, action := range script.Actions {
+		issues = append(issues, validateControlResourceIssues(fmt.Sprintf("actions[%d]", i), action)...)
+	}
+	for i, action := range script.Teardown {
+		issues = append(issues, validateControlResourceIssues(fmt.Sprintf("teardown[%d]", i), action)...)
+	}
+	return issues
+}
+
+func validateControlResourceIssues(path string, action Action) []string {
+	if action.Control == nil {
+		return nil
+	}
+	var issues []string
+	if action.Control.Count > MaxControlLoopIterations {
+		issues = append(issues, fmt.Sprintf("%s: control count must not exceed %d", path, MaxControlLoopIterations))
+	}
+	if action.Control.MaxIterations > MaxControlLoopIterations {
+		issues = append(issues, fmt.Sprintf("%s: control max_iterations must not exceed %d", path, MaxControlLoopIterations))
+	}
+	for i, nested := range action.Control.Steps {
+		issues = append(issues, validateControlResourceIssues(fmt.Sprintf("%s.control.steps[%d]", path, i), nested)...)
+	}
+	for i, nested := range action.Control.Else {
+		issues = append(issues, validateControlResourceIssues(fmt.Sprintf("%s.control.else[%d]", path, i), nested)...)
 	}
 	return issues
 }
@@ -384,6 +531,14 @@ func validateDataSourceIssues(script *Script) []string {
 			seen[name] = struct{}{}
 		}
 		sourceType := strings.ToLower(strings.TrimSpace(source.Type))
+		if staged := strings.TrimSpace(source.StagedAsset); staged != "" {
+			if staged != source.StagedAsset || !validStagedDataAssetName(staged) {
+				issues = append(issues, fmt.Sprintf("%s %q: staged_asset must be an unpadded name of at most 256 bytes without path separators", label, name))
+			}
+			if strings.TrimSpace(source.InlineData) != "" || strings.TrimSpace(source.Path) != "" || strings.TrimSpace(source.StorageRef) != "" {
+				issues = append(issues, fmt.Sprintf("%s %q: staged_asset cannot be combined with inline_data, path, or storage_ref", label, name))
+			}
+		}
 		switch sourceType {
 		case "", "csv", "dat":
 			continue
@@ -391,7 +546,6 @@ func validateDataSourceIssues(script *Script) []string {
 			if !fileDataSourceHasContent(source) {
 				issues = append(issues, fmt.Sprintf("%s %q: file data source requires inline_data, path, or storage_ref", label, name))
 			}
-			issues = append(issues, validateFileDataSourceReferenceIssues(label, name, source)...)
 			switch strings.ToLower(strings.TrimSpace(source.Encoding)) {
 			case "", "text", "base64":
 			default:
@@ -404,16 +558,39 @@ func validateDataSourceIssues(script *Script) []string {
 	return issues
 }
 
-func validateFileDataSourceReferenceIssues(label string, name string, source DataSource) []string {
-	issues := make([]string, 0, 2)
-	if path := strings.TrimSpace(source.Path); path != "" {
-		if _, err := fileasset.ValidatePath(path); err != nil {
-			issues = append(issues, fmt.Sprintf("%s %q: file data source path is not an allowed file asset: %v", label, name, err))
+func validStagedDataAssetName(name string) bool {
+	if name == "" || len(name) > 256 || strings.ContainsAny(name, "/\\") {
+		return false
+	}
+	for _, r := range name {
+		if unicode.IsControl(r) {
+			return false
 		}
 	}
-	if ref := strings.TrimSpace(source.StorageRef); ref != "" {
-		if _, err := fileasset.ValidateStorageRef(ref); err != nil {
-			issues = append(issues, fmt.Sprintf("%s %q: file data source storage_ref is not an allowed file asset: %v", label, name, err))
+	return true
+}
+
+func validateFileDataSourceReferenceIssues(script *Script) []string {
+	if script == nil {
+		return nil
+	}
+	issues := make([]string, 0, 2)
+	for i, source := range script.DataSources {
+		label := fmt.Sprintf("data_sources[%d]", i)
+		name := strings.TrimSpace(source.Name)
+		sourceLabel := "data source"
+		if strings.EqualFold(strings.TrimSpace(source.Type), "file") {
+			sourceLabel = "file data source"
+		}
+		if path := strings.TrimSpace(source.Path); path != "" {
+			if _, err := fileasset.ValidatePathForProject(path, script.ProjectID); err != nil {
+				issues = append(issues, fmt.Sprintf("%s %q: %s path is not an allowed file asset: %v", label, name, sourceLabel, err))
+			}
+		}
+		if ref := strings.TrimSpace(source.StorageRef); ref != "" {
+			if _, err := fileasset.ValidateStorageRefForProject(ref, script.ProjectID); err != nil {
+				issues = append(issues, fmt.Sprintf("%s %q: %s storage_ref is not an allowed file asset: %v", label, name, sourceLabel, err))
+			}
 		}
 	}
 	return issues
@@ -533,7 +710,8 @@ func appendFileTemplateRefs(refs []string, value string) []string {
 func fileDataSourceHasContent(source DataSource) bool {
 	return strings.TrimSpace(source.InlineData) != "" ||
 		strings.TrimSpace(source.Path) != "" ||
-		strings.TrimSpace(source.StorageRef) != ""
+		strings.TrimSpace(source.StorageRef) != "" ||
+		strings.TrimSpace(source.StagedAsset) != ""
 }
 
 // extractorSourceTypeAllowlistApplies reports whether the HTTP body/header
@@ -559,6 +737,10 @@ func extractorSourceTypeAllowlistApplies(protocol string) bool {
 func validateExtractorIssues(protocol string, path string, action Action) []string {
 	var issues []string
 	label := actionLabel(path, action)
+	if len(action.Extractors) > MaxActionExtractors {
+		issues = append(issues, fmt.Sprintf("%s: extractors must not exceed %d", label, MaxActionExtractors))
+		return issues
+	}
 	enforceSourceType := extractorSourceTypeAllowlistApplies(protocol)
 	for i, ext := range action.Extractors {
 		switch ext.OnMiss {
@@ -629,8 +811,14 @@ func validateControlFlowIssues(protocol string, path string, action Action) []st
 	if action.Control.Count < 0 {
 		issues = append(issues, fmt.Sprintf("%s: control count must be zero or greater", label))
 	}
+	if action.Control.Count > MaxControlLoopIterations {
+		issues = append(issues, fmt.Sprintf("%s: control count must not exceed %d", label, MaxControlLoopIterations))
+	}
 	if action.Control.MaxIterations < 0 {
 		issues = append(issues, fmt.Sprintf("%s: control max_iterations must be zero or greater", label))
+	}
+	if action.Control.MaxIterations > MaxControlLoopIterations {
+		issues = append(issues, fmt.Sprintf("%s: control max_iterations must not exceed %d", label, MaxControlLoopIterations))
 	}
 	issues = append(issues, validateConditionIssues(label, action.Control.Condition)...)
 	switch action.Type {
@@ -739,6 +927,8 @@ func validateWebSocketConfigIssues(script *Script) []string {
 	}
 	if cfg.MaxMessageSize < 0 {
 		issues = append(issues, "config.websocket.max_message_size must be zero or greater")
+	} else if cfg.MaxMessageSize > MaxWebSocketMessageBytes {
+		issues = append(issues, fmt.Sprintf("config.websocket.max_message_size must not exceed %d", MaxWebSocketMessageBytes))
 	}
 	return issues
 }
@@ -824,9 +1014,23 @@ func validateBrowserConfigIssues(script *Script) []string {
 	}
 	if browser.Viewport.Width < 0 {
 		issues = append(issues, "config.browser.viewport.width must be zero or greater")
+	} else if browser.Viewport.Width > browserprotocol.MaxConfiguredViewportDimension {
+		issues = append(issues, fmt.Sprintf("config.browser.viewport.width must not exceed %d", browserprotocol.MaxConfiguredViewportDimension))
 	}
 	if browser.Viewport.Height < 0 {
 		issues = append(issues, "config.browser.viewport.height must be zero or greater")
+	} else if browser.Viewport.Height > browserprotocol.MaxConfiguredViewportDimension {
+		issues = append(issues, fmt.Sprintf("config.browser.viewport.height must not exceed %d", browserprotocol.MaxConfiguredViewportDimension))
+	}
+	if browser.Viewport.Width > 0 && browser.Viewport.Height > 0 && int64(browser.Viewport.Width)*int64(browser.Viewport.Height) > browserprotocol.MaxConfiguredViewportPixels {
+		issues = append(issues, fmt.Sprintf("config.browser.viewport must not exceed %d pixels", browserprotocol.MaxConfiguredViewportPixels))
+	}
+	maxBrowserDelayMS := int(browserprotocol.MaxConfiguredBrowserDelay / time.Millisecond)
+	if browser.SlowMoMs < 0 || browser.SlowMoMs > maxBrowserDelayMS {
+		issues = append(issues, fmt.Sprintf("config.browser.slow_mo_ms must be between 0 and %d", maxBrowserDelayMS))
+	}
+	if browser.HARSLAThresholdMs < 0 || browser.HARSLAThresholdMs > maxBrowserDelayMS {
+		issues = append(issues, fmt.Sprintf("config.browser.har_sla_threshold_ms must be between 0 and %d", maxBrowserDelayMS))
 	}
 	if strings.TrimSpace(browser.Timezone) != "" {
 		if _, err := time.LoadLocation(strings.TrimSpace(browser.Timezone)); err != nil {
@@ -1071,6 +1275,46 @@ func actionParamStringValue(params map[string]any, key string) (string, bool) {
 	return trimmed, true
 }
 
+func actionParamString(params map[string]any, key string) string {
+	value, _ := actionParamStringValue(params, key)
+	return value
+}
+
+func stringMapByteSize(values map[string]string) int {
+	total := 0
+	for key, value := range values {
+		total += len(key) + len(value)
+	}
+	return total
+}
+
+func jmsSequenceNumberCount(raw any) int {
+	switch values := raw.(type) {
+	case []any:
+		return len(values)
+	case []int64:
+		return len(values)
+	case string:
+		count := 0
+		for len(values) > 0 {
+			part := values
+			if before, after, found := strings.Cut(values, ","); found {
+				part, values = before, after
+			} else {
+				values = ""
+			}
+			if strings.TrimSpace(part) != "" {
+				count++
+			}
+		}
+		return count
+	case nil:
+		return 0
+	default:
+		return 1
+	}
+}
+
 // actionHasJMSDestination reports whether a JMS action carries a destination via
 // its target or the catalog-documented params.destination alternative (the
 // runtime resolves params.destination -> target -> config.jms.destination).
@@ -1128,6 +1372,19 @@ func validateJMSScriptIssues(script *Script) []string {
 	if jms.DestinationType != "" && !isAllowedValue(strings.ToLower(strings.TrimSpace(jms.DestinationType)), "queue", "topic") {
 		issues = append(issues, fmt.Sprintf("config.jms.destination_type %q is not supported", jms.DestinationType))
 	}
+	if jms.TimeoutMs < 0 || time.Duration(jms.TimeoutMs)*time.Millisecond > jmsprotocol.MaxConfiguredTimeout {
+		issues = append(issues, fmt.Sprintf("config.jms.timeout_ms must be between 0 and %d", jmsprotocol.MaxConfiguredTimeout/time.Millisecond))
+	}
+	for name, value := range map[string]string{
+		"destination": jms.Destination, "reply_to": jms.ReplyTo, "subscription": jms.Subscription,
+	} {
+		if len(value) > jmsprotocol.MaxJMSDestinationBytes {
+			issues = append(issues, fmt.Sprintf("config.jms.%s must not exceed %d bytes", name, jmsprotocol.MaxJMSDestinationBytes))
+		}
+	}
+	if len(jms.Properties) > 256 || stringMapByteSize(jms.Properties) > 1<<20 {
+		issues = append(issues, "config.jms.properties must not exceed 256 entries or 1048576 bytes")
+	}
 	if jms.Destination == "" {
 		usesActionDestinations := true
 		for _, action := range script.Actions {
@@ -1154,6 +1411,44 @@ func validateJMSScriptIssues(script *Script) []string {
 			issues = append(issues, validateEngineActionIssues(script.Protocol, fmt.Sprintf("actions[%d]", i), i, action)...)
 		} else if _, ok := protocolActionSpec("jms", action.Type); !ok {
 			issues = append(issues, fmt.Sprintf("actions[%d] %q: unsupported JMS action type %q", i, action.Name, action.Type))
+		}
+		for name, value := range map[string]string{
+			"target":       action.Target,
+			"destination":  actionParamString(action.Params, "destination"),
+			"reply_to":     actionParamString(action.Params, "reply_to"),
+			"subscription": actionParamString(action.Params, "subscription"),
+		} {
+			if len(value) > jmsprotocol.MaxJMSDestinationBytes {
+				issues = append(issues, fmt.Sprintf("actions[%d] %q: %s must not exceed %d bytes", i, action.Name, name, jmsprotocol.MaxJMSDestinationBytes))
+			}
+		}
+		if len(action.Body) > jmsprotocol.MaxJMSMessageBytes {
+			issues = append(issues, fmt.Sprintf("actions[%d] %q: body must not exceed %d bytes", i, action.Name, jmsprotocol.MaxJMSMessageBytes))
+		}
+		for _, bound := range []struct {
+			name string
+			max  int
+		}{
+			{"timeout_ms", int(jmsprotocol.MaxConfiguredTimeout / time.Millisecond)},
+			{"scheduled_enqueue_ms", int(jmsprotocol.MaxConfiguredMessageDuration / time.Millisecond)},
+			{"time_to_live_ms", int(jmsprotocol.MaxConfiguredMessageDuration / time.Millisecond)},
+		} {
+			if value, present := actionParamIntValue(action.Params, bound.name); present && (value < 0 || value > bound.max) {
+				issues = append(issues, fmt.Sprintf("actions[%d] %q: %s must be between 0 and %d", i, action.Name, bound.name, bound.max))
+			}
+		}
+		if action.Type == "jms_browse" {
+			if value, present := actionParamIntValue(action.Params, "max"); present && (value < 0 || value > jmsprotocol.MaxJMSBrowseMessages) {
+				issues = append(issues, fmt.Sprintf("actions[%d] %q: max must be between 0 and %d", i, action.Name, jmsprotocol.MaxJMSBrowseMessages))
+			}
+		}
+		if state := actionParamString(action.Params, "session_state"); len(state) > jmsprotocol.MaxJMSSessionStateBytes {
+			issues = append(issues, fmt.Sprintf("actions[%d] %q: session_state must not exceed %d bytes", i, action.Name, jmsprotocol.MaxJMSSessionStateBytes))
+		}
+		if action.Type == "jms_receive_deferred" || action.Type == "jms_cancel_scheduled" {
+			if count := jmsSequenceNumberCount(action.Params["sequence_numbers"]); count > jmsprotocol.MaxJMSSequenceNumbers {
+				issues = append(issues, fmt.Sprintf("actions[%d] %q: sequence_numbers must not exceed %d entries", i, action.Name, jmsprotocol.MaxJMSSequenceNumbers))
+			}
 		}
 		if (action.Type == "jms_publish" || action.Type == "jms_consume" || action.Type == "jms_request_reply" || action.Type == "jms_browse") && jms.Destination == "" && !actionHasJMSDestination(action) {
 			issues = append(issues, fmt.Sprintf("actions[%d] %q: missing destination", i, action.Name))
@@ -1383,6 +1678,15 @@ func validateKafkaScriptIssues(script *Script) []string {
 		if !eventHubsProfile && !strings.Contains(strings.ToLower(kafka.SecurityProtocol), "ssl") {
 			issues = append(issues, "config.kafka.sasl_mechanism oauthbearer requires a TLS security_protocol (e.g. sasl_ssl)")
 		}
+		if !eventHubsProfile {
+			issues = append(issues, "config.kafka managed-identity oauthbearer requires profile eventhubs")
+		}
+		if kafka.TLS != nil && kafka.TLS.InsecureSkipVerify {
+			issues = append(issues, "config.kafka managed-identity oauthbearer forbids tls.insecure_skip_verify")
+		}
+		if scope := strings.TrimSpace(kafka.OAuthScope); scope != "" && scope != identitypolicy.AzureEventHubsOAuthScope {
+			issues = append(issues, fmt.Sprintf("config.kafka.oauth_scope must be %q for managed-identity oauthbearer", identitypolicy.AzureEventHubsOAuthScope))
+		}
 	}
 	if kafka.SecurityProtocol != "" && !isAllowedValue(strings.ToLower(strings.TrimSpace(kafka.SecurityProtocol)), "plaintext", "ssl", "sasl_ssl", "sasl_plaintext") {
 		issues = append(issues, fmt.Sprintf("config.kafka.security_protocol %q is not supported", kafka.SecurityProtocol))
@@ -1445,12 +1749,41 @@ func validateKafkaScriptIssues(script *Script) []string {
 	}
 	if kafka.TimeoutMs < 0 {
 		issues = append(issues, "config.kafka.timeout_ms must be zero or greater")
+	} else if time.Duration(kafka.TimeoutMs)*time.Millisecond > kafkaprotocol.MaxConfiguredTimeout {
+		issues = append(issues, fmt.Sprintf("config.kafka.timeout_ms must not exceed %d", kafkaprotocol.MaxConfiguredTimeout/time.Millisecond))
 	}
 	if kafka.Partitions < 0 {
 		issues = append(issues, "config.kafka.partitions must be zero or greater")
+	} else if kafka.Partitions > kafkaprotocol.MaxConfiguredPartitions {
+		issues = append(issues, fmt.Sprintf("config.kafka.partitions must not exceed %d", kafkaprotocol.MaxConfiguredPartitions))
 	}
 	if kafka.MaxMessageBytes < 0 {
 		issues = append(issues, "config.kafka.max_message_bytes must be zero or greater")
+	} else if kafka.MaxMessageBytes > kafkaprotocol.MaxConfiguredMessageBytes {
+		issues = append(issues, fmt.Sprintf("config.kafka.max_message_bytes must not exceed %d", kafkaprotocol.MaxConfiguredMessageBytes))
+	}
+	if kafka.SchemaID < 0 || kafka.SchemaID > math.MaxInt32 {
+		issues = append(issues, fmt.Sprintf("config.kafka.schema_id must be between 0 and %d", math.MaxInt32))
+	}
+	if len(kafka.Topic) > kafkaprotocol.MaxKafkaTopicBytes {
+		issues = append(issues, fmt.Sprintf("config.kafka.topic must not exceed %d bytes", kafkaprotocol.MaxKafkaTopicBytes))
+	}
+	for name, value := range map[string]string{
+		"client_id": kafka.ClientID, "consumer_group": kafka.ConsumerGroup,
+		"transactional_id": kafka.TransactionalID, "oauth_scope": kafka.OAuthScope,
+	} {
+		if len(value) > kafkaprotocol.MaxKafkaIdentifierBytes {
+			issues = append(issues, fmt.Sprintf("config.kafka.%s must not exceed %d bytes", name, kafkaprotocol.MaxKafkaIdentifierBytes))
+		}
+	}
+	if len(kafka.Subject) > kafkaprotocol.MaxConfiguredSubjectBytes {
+		issues = append(issues, fmt.Sprintf("config.kafka.subject must not exceed %d bytes", kafkaprotocol.MaxConfiguredSubjectBytes))
+	}
+	if len(kafka.Schema) > kafkaprotocol.MaxConfiguredSchemaBytes {
+		issues = append(issues, fmt.Sprintf("config.kafka.schema must not exceed %d bytes", kafkaprotocol.MaxConfiguredSchemaBytes))
+	}
+	if len(kafka.SchemaRegistryURL) > kafkaprotocol.MaxConfiguredRegistryBytes {
+		issues = append(issues, fmt.Sprintf("config.kafka.schema_registry_url must not exceed %d bytes", kafkaprotocol.MaxConfiguredRegistryBytes))
 	}
 
 	for i, action := range script.Actions {
@@ -1462,6 +1795,27 @@ func validateKafkaScriptIssues(script *Script) []string {
 			issues = append(issues, fmt.Sprintf("actions[%d] %q: missing type", i, action.Name))
 		} else if _, ok := protocolActionSpec("kafka", action.Type); !ok {
 			issues = append(issues, fmt.Sprintf("actions[%d] %q: unsupported Kafka action type %q", i, action.Name, action.Type))
+		}
+		actionTopic := actionParamString(action.Params, "topic")
+		if actionTopic == "" {
+			actionTopic = action.Target
+		}
+		for name, value := range map[string]string{
+			"topic":    actionTopic,
+			"reply_to": actionParamString(action.Params, "reply_to"),
+		} {
+			if len(value) > kafkaprotocol.MaxKafkaTopicBytes {
+				issues = append(issues, fmt.Sprintf("actions[%d] %q: %s must not exceed %d bytes", i, action.Name, name, kafkaprotocol.MaxKafkaTopicBytes))
+			}
+		}
+		if value := actionParamString(action.Params, "consumer_group"); len(value) > kafkaprotocol.MaxKafkaIdentifierBytes {
+			issues = append(issues, fmt.Sprintf("actions[%d] %q: consumer_group must not exceed %d bytes", i, action.Name, kafkaprotocol.MaxKafkaIdentifierBytes))
+		}
+		if value, present := actionParamIntValue(action.Params, "timeout_ms"); present && (value < 0 || value > int(kafkaprotocol.MaxConfiguredTimeout/time.Millisecond)) {
+			issues = append(issues, fmt.Sprintf("actions[%d] %q: timeout_ms must be between 0 and %d", i, action.Name, kafkaprotocol.MaxConfiguredTimeout/time.Millisecond))
+		}
+		if value, present := actionParamIntValue(action.Params, "partition"); present && (value < 0 || int64(value) > math.MaxInt32) {
+			issues = append(issues, fmt.Sprintf("actions[%d] %q: partition must be between 0 and %d", i, action.Name, math.MaxInt32))
 		}
 		if (action.Type == "kafka_produce" || action.Type == "kafka_consume" || action.Type == "kafka_request_reply") && action.Target == "" && kafka.Topic == "" {
 			if topic, _ := action.Params["topic"].(string); strings.TrimSpace(topic) == "" {
@@ -1521,6 +1875,19 @@ func validateEventHubsScriptIssues(script *Script) []string {
 	}
 	if eh.TimeoutMs < 0 {
 		issues = append(issues, "config.eventhubs.timeout_ms must be zero or greater")
+	} else if time.Duration(eh.TimeoutMs)*time.Millisecond > eventhubsprotocol.MaxConfiguredTimeout {
+		issues = append(issues, fmt.Sprintf("config.eventhubs.timeout_ms must not exceed %d", eventhubsprotocol.MaxConfiguredTimeout/time.Millisecond))
+	}
+	if len(eh.EventHub) > eventhubsprotocol.MaxEventHubNameBytes {
+		issues = append(issues, fmt.Sprintf("config.eventhubs.event_hub must not exceed %d bytes", eventhubsprotocol.MaxEventHubNameBytes))
+	}
+	for name, value := range map[string]string{
+		"namespace": eh.Namespace, "consumer_group": eh.ConsumerGroup,
+		"partition_key": eh.PartitionKey, "partition_id": eh.PartitionID,
+	} {
+		if len(value) > eventhubsprotocol.MaxEventHubIdentifierBytes {
+			issues = append(issues, fmt.Sprintf("config.eventhubs.%s must not exceed %d bytes", name, eventhubsprotocol.MaxEventHubIdentifierBytes))
+		}
 	}
 
 	for i, action := range script.Actions {
@@ -1532,6 +1899,28 @@ func validateEventHubsScriptIssues(script *Script) []string {
 			issues = append(issues, fmt.Sprintf("actions[%d] %q: missing type", i, action.Name))
 		} else if _, ok := protocolActionSpec("eventhubs", action.Type); !ok {
 			issues = append(issues, fmt.Sprintf("actions[%d] %q: unsupported Event Hubs action type %q", i, action.Name, action.Type))
+		}
+		hub := actionParamString(action.Params, "event_hub")
+		if hub == "" {
+			hub = action.Target
+		}
+		if len(hub) > eventhubsprotocol.MaxEventHubNameBytes {
+			issues = append(issues, fmt.Sprintf("actions[%d] %q: event hub must not exceed %d bytes", i, action.Name, eventhubsprotocol.MaxEventHubNameBytes))
+		}
+		for name, value := range map[string]string{
+			"consumer_group": actionParamString(action.Params, "consumer_group"),
+			"partition_key":  actionParamString(action.Params, "partition_key"),
+			"partition_id":   actionParamString(action.Params, "partition_id"),
+		} {
+			if len(value) > eventhubsprotocol.MaxEventHubIdentifierBytes {
+				issues = append(issues, fmt.Sprintf("actions[%d] %q: %s must not exceed %d bytes", i, action.Name, name, eventhubsprotocol.MaxEventHubIdentifierBytes))
+			}
+		}
+		if value, present := actionParamIntValue(action.Params, "timeout_ms"); present && (value < 0 || value > int(eventhubsprotocol.MaxConfiguredTimeout/time.Millisecond)) {
+			issues = append(issues, fmt.Sprintf("actions[%d] %q: timeout_ms must be between 0 and %d", i, action.Name, eventhubsprotocol.MaxConfiguredTimeout/time.Millisecond))
+		}
+		if len(action.Body) > eventhubsprotocol.MaxEventHubsEventBytes {
+			issues = append(issues, fmt.Sprintf("actions[%d] %q: body must not exceed %d bytes", i, action.Name, eventhubsprotocol.MaxEventHubsEventBytes))
 		}
 		if action.Type == "eventhubs_produce" || action.Type == "eventhubs_consume" {
 			eventHub, _ := action.Params["event_hub"].(string)
@@ -1625,6 +2014,24 @@ func validateParameterIssues(script *Script) []string {
 		if param.OnExhaustion != "" && !isAllowedValue(param.OnExhaustion, "wrap", "empty", "error", "last") {
 			issues = append(issues, fmt.Sprintf("%s %q: on_exhaustion must be wrap, empty, error, or last", label, name))
 		}
+		if param.StartRow < 0 || param.StartRow > MaxParameterRowIndex {
+			issues = append(issues, fmt.Sprintf("%s %q: start_row must be between 0 and %d", label, name, MaxParameterRowIndex))
+		}
+		if param.BlockSize < 0 || param.BlockSize > MaxParameterRowIndex {
+			issues = append(issues, fmt.Sprintf("%s %q: block_size must be between 0 and %d", label, name, MaxParameterRowIndex))
+		}
+		if param.PadWidth < 0 || param.PadWidth > MaxGeneratedParameterBytes {
+			issues = append(issues, fmt.Sprintf("%s %q: pad_width must be between 0 and %d", label, name, MaxGeneratedParameterBytes))
+		}
+		if len(param.Charset) > MaxParameterCharsetBytes {
+			issues = append(issues, fmt.Sprintf("%s %q: charset must not exceed %d bytes", label, name, MaxParameterCharsetBytes))
+		}
+		if len(param.Values) > MaxParameterValues {
+			issues = append(issues, fmt.Sprintf("%s %q: values must not exceed %d entries", label, name, MaxParameterValues))
+		}
+		if param.OffsetSeconds < -MaxParameterOffsetSeconds || param.OffsetSeconds > MaxParameterOffsetSeconds {
+			issues = append(issues, fmt.Sprintf("%s %q: offset_seconds must be between %d and %d", label, name, -MaxParameterOffsetSeconds, MaxParameterOffsetSeconds))
+		}
 		if sameLineAs := strings.TrimSpace(param.SameLineAs); sameLineAs != "" {
 			reference, ok := parametersByName[strings.ToLower(sameLineAs)]
 			if !ok {
@@ -1671,6 +2078,9 @@ func validateParameterIssues(script *Script) []string {
 		case "random_string":
 			if param.Length <= 0 {
 				issues = append(issues, fmt.Sprintf("%s %q: length must be greater than zero for random_string parameters", label, name))
+			}
+			if param.Length > MaxGeneratedParameterBytes {
+				issues = append(issues, fmt.Sprintf("%s %q: length must not exceed %d", label, name, MaxGeneratedParameterBytes))
 			}
 		}
 	}
@@ -1729,11 +2139,56 @@ func validateWebRuntimeIssues(script *Script) []string {
 	}
 
 	httpCfg := script.Config.HTTP
+	if httpCfg.Version != "" && !isAllowedValue(httpCfg.Version, "1.0", "1.1", "2") {
+		issues = append(issues, "config.http.version must be 1.0, 1.1, or 2")
+	}
+	if httpCfg.MaxConnsPerHost < 0 || httpCfg.MaxConnsPerHost > httpprotocol.MaxConfiguredConnsPerHost {
+		issues = append(issues, fmt.Sprintf("config.http.max_conns_per_host must be between 0 and %d", httpprotocol.MaxConfiguredConnsPerHost))
+	}
+	if httpCfg.MaxIdleConns < 0 || httpCfg.MaxIdleConns > httpprotocol.MaxConfiguredIdleConns {
+		issues = append(issues, fmt.Sprintf("config.http.max_idle_conns must be between 0 and %d", httpprotocol.MaxConfiguredIdleConns))
+	}
+	maxHTTPTimeoutMillis := int(httpprotocol.MaxConfiguredTimeout / time.Millisecond)
+	for _, timeout := range []struct {
+		name  string
+		value int
+	}{
+		{name: "connect_timeout_ms", value: httpCfg.ConnectTimeoutMs},
+		{name: "request_timeout_ms", value: httpCfg.RequestTimeoutMs},
+		{name: "tls_timeout_ms", value: httpCfg.TLSTimeoutMs},
+		{name: "idle_timeout_ms", value: httpCfg.IdleTimeoutMs},
+	} {
+		if timeout.value < 0 || timeout.value > maxHTTPTimeoutMillis {
+			issues = append(issues, fmt.Sprintf("config.http.%s must be between 0 and %d", timeout.name, maxHTTPTimeoutMillis))
+		}
+	}
+	if httpCfg.MaxRedirects != nil && (*httpCfg.MaxRedirects < -1 || *httpCfg.MaxRedirects > httpprotocol.MaxConfiguredRedirects) {
+		issues = append(issues, fmt.Sprintf("config.http.max_redirects must be between -1 and %d", httpprotocol.MaxConfiguredRedirects))
+	}
+	if httpCfg.TLS.MinVersion != "" && !isAllowedValue(httpCfg.TLS.MinVersion, "1.0", "1.1", "1.2", "1.3") {
+		issues = append(issues, "config.http.tls.min_version must be 1.0, 1.1, 1.2, or 1.3")
+	}
+	if httpCfg.TLS.MaxVersion != "" && !isAllowedValue(httpCfg.TLS.MaxVersion, "1.0", "1.1", "1.2", "1.3") {
+		issues = append(issues, "config.http.tls.max_version must be 1.0, 1.1, 1.2, or 1.3")
+	}
+	minTLSVersionRank := httpTLSVersionRank(httpCfg.TLS.MinVersion)
+	if strings.TrimSpace(httpCfg.TLS.MinVersion) == "" {
+		minTLSVersionRank = httpTLSVersionRank("1.2")
+	}
+	maxTLSVersionRank := httpTLSVersionRank(httpCfg.TLS.MaxVersion)
+	if minTLSVersionRank > maxTLSVersionRank && maxTLSVersionRank != 0 {
+		issues = append(issues, "config.http.tls.max_version must not be lower than min_version")
+	}
 	if httpCfg.ProxyMode != "" && !isAllowedValue(httpCfg.ProxyMode, "none", "system", "custom") {
 		issues = append(issues, "config.http.proxy_mode must be none, system, or custom")
 	}
 	if httpCfg.ProxyMode == "custom" && strings.TrimSpace(httpCfg.Proxy.URL) == "" {
 		issues = append(issues, "config.http.proxy.url is required when config.http.proxy_mode is custom")
+	} else if httpCfg.ProxyMode == "custom" {
+		proxyURL, err := url.Parse(strings.TrimSpace(httpCfg.Proxy.URL))
+		if err != nil || proxyURL.Host == "" || !isAllowedValue(strings.ToLower(proxyURL.Scheme), "http", "https", "socks5", "socks5h") {
+			issues = append(issues, "config.http.proxy.url must be an absolute http, https, socks5, or socks5h URL")
+		}
 	}
 
 	browserCfg := script.Config.Browser
@@ -1770,6 +2225,13 @@ func validateWebRuntimeIssues(script *Script) []string {
 	}
 	if network.LatencyMs < 0 {
 		issues = append(issues, "config.web_runtime.network_simulation.latency_ms must be zero or greater")
+	} else if network.LatencyMs > int(browserprotocol.MaxConfiguredBrowserDelay/time.Millisecond) {
+		issues = append(issues, fmt.Sprintf("config.web_runtime.network_simulation.latency_ms must not exceed %d", browserprotocol.MaxConfiguredBrowserDelay/time.Millisecond))
+	}
+	if network.BandwidthKbps < 0 {
+		issues = append(issues, "config.web_runtime.network_simulation.bandwidth_kbps must be zero or greater")
+	} else if network.BandwidthKbps > browserprotocol.MaxConfiguredNetworkKbps {
+		issues = append(issues, fmt.Sprintf("config.web_runtime.network_simulation.bandwidth_kbps must not exceed %d", browserprotocol.MaxConfiguredNetworkKbps))
 	}
 	if network.JitterMs < 0 {
 		issues = append(issues, "config.web_runtime.network_simulation.jitter_ms must be zero or greater")
@@ -1823,6 +2285,21 @@ func validateWebRuntimeIssues(script *Script) []string {
 	}
 
 	return issues
+}
+
+func httpTLSVersionRank(version string) int {
+	switch strings.TrimSpace(version) {
+	case "1.0":
+		return 1
+	case "1.1":
+		return 2
+	case "1.2":
+		return 3
+	case "1.3":
+		return 4
+	default:
+		return 0
+	}
 }
 
 func validateJavaHTTPScriptIssues(script *Script) []string {

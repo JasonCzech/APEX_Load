@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -71,6 +72,106 @@ func TestLibraryTransferResolverUsesEndpointSpecificObjectAndDestination(t *test
 	}
 }
 
+func TestAllowedRemoteProjectIDRejectsCallerRedirect(t *testing.T) {
+	configured := LibraryRemote{ProjectMappings: map[string]string{"local-project": "remote-approved"}}
+	if got, err := allowedRemoteProjectID(configured, "local-project", ""); err != nil || got != "remote-approved" {
+		t.Fatalf("configured mapping = %q, %v; want remote-approved", got, err)
+	}
+	if got, err := allowedRemoteProjectID(configured, "local-project", "remote-approved"); err != nil || got != "remote-approved" {
+		t.Fatalf("matching compatibility override = %q, %v; want remote-approved", got, err)
+	}
+	if _, err := allowedRemoteProjectID(configured, "local-project", "remote-forbidden"); err == nil {
+		t.Fatal("caller-controlled remote project redirect was accepted")
+	}
+
+	if _, err := allowedRemoteProjectID(LibraryRemote{DefaultProjectID: "remote-approved"}, "local-project", ""); err == nil {
+		t.Fatal("legacy default_project_id implicitly authorized an unmapped local project")
+	}
+	if _, err := allowedRemoteProjectID(LibraryRemote{}, "local-project", "local-project"); err == nil {
+		t.Fatal("unconfigured remote accepted an implicit identity mapping")
+	}
+	if _, err := allowedRemoteProjectID(configured, "", ""); err == nil {
+		t.Fatal("remote catalog access without an authorized local project was accepted")
+	}
+}
+
+func TestLibraryTransfersRejectStaleCrossProjectReplicaObjects(t *testing.T) {
+	t.Setenv(remoteOutboundAllowPrivateHostsEnv, "1")
+	t.Setenv("APEXLOAD_LIBRARY_ALLOW_INSECURE_HTTP", "1")
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stale-library.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Now().UTC()
+	for _, projectID := range []string{"project-a", "project-b"} {
+		if err := store.SaveProject(&storage.Project{ID: projectID, Name: projectID, CreatedAt: now, UpdatedAt: now}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	server := NewServer(ServerConfig{Store: store, LibraryCredentials: NewMemoryLibraryCredentialStore()})
+	stale := libraryTestScript("reused-script", "Stale A", "project-a", "/stale-a")
+	if _, err := server.runner.StoreScriptDurable(stale); err != nil {
+		t.Fatal(err)
+	}
+	// Simulate another replica deleting/recreating or moving the durable ID while
+	// this replica still has the prior project-A object in memory.
+	current := libraryTestScript(stale.ID, "Current B", "project-b", "/current-b")
+	if err := store.DeleteScript(stale.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveScript(current); err != nil {
+		t.Fatal(err)
+	}
+
+	remoteCalls := 0
+	remoteHTTP := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		remoteCalls++
+		writeError(w, http.StatusInternalServerError, "stale object escaped local validation")
+	}))
+	defer remoteHTTP.Close()
+	server.libraryMu.Lock()
+	server.libraryRemotes["workspace"] = &LibraryRemote{
+		ID:         "workspace",
+		Name:       "Workspace",
+		BaseURL:    remoteHTTP.URL,
+		AuthMethod: "none",
+		ProjectMappings: map[string]string{
+			"project-a": "remote-a",
+			"project-b": "remote-b",
+		},
+	}
+	server.libraryMu.Unlock()
+	if err := server.persistLibraryRemotes(); err != nil {
+		t.Fatal(err)
+	}
+
+	requests := []struct {
+		name string
+		path string
+		body any
+	}{
+		{name: "direct export", path: "/api/v1/library/export", body: LibraryTransferRequest{Kind: "script", ID: stale.ID}},
+		{name: "remote push", path: "/api/v1/library/remotes/workspace/push", body: LibraryTransferRequest{Kind: "script", ID: stale.ID}},
+		{name: "remote diff", path: "/api/v1/library/remotes/workspace/diff", body: LibraryTransferRequest{Kind: "script", LocalID: stale.ID, RemoteID: stale.ID}},
+		{name: "remote run", path: "/api/v1/remotes/workspace/runs", body: RemoteRunCreateRequest{CreateTestRequest: CreateTestRequest{Name: "stale", Duration: "30s", ScriptID: stale.ID, VUsers: 1}}},
+	}
+	for _, tc := range requests {
+		t.Run(tc.name, func(t *testing.T) {
+			before := remoteCalls
+			response := httptest.NewRecorder()
+			server.mux.ServeHTTP(response, httptest.NewRequest(http.MethodPost, tc.path, bytes.NewReader(marshalLibraryTestJSON(t, tc.body))))
+			if response.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d; body=%s", response.Code, http.StatusBadRequest, response.Body.String())
+			}
+			if remoteCalls != before {
+				t.Fatalf("stale cross-project object caused %d outbound request(s)", remoteCalls-before)
+			}
+		})
+	}
+}
+
 func TestLibraryImportRequiresExplicitDestinationAndSingleSourceProject(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	scriptA := libraryTestScript("source-a", "Source A", "source-project-a", "/a")
@@ -101,6 +202,177 @@ func TestLibraryImportRequiresExplicitDestinationAndSingleSourceProject(t *testi
 	}
 	if len(server.runner.ListScripts()) != 0 {
 		t.Fatal("invalid mixed-project bundle wrote assets")
+	}
+}
+
+func TestLibraryImportRejectsAmbiguousCrossSourceScriptIdentity(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	first := libraryTestScript("shared", "First", "source-project", "/first")
+	second := libraryTestScript("shared", "Second", "source-project", "/second")
+	bundle := LibraryBundle{SchemaVersion: libraryBundleSchemaVersion, Items: []LibraryBundleItem{
+		{Kind: "script", SourceInstanceID: "source-a", SourceItemID: "shared", ProjectID: "source-project", Script: first, ContentHash: hashLibraryScript(first)},
+		{Kind: "script", SourceInstanceID: "source-b", SourceItemID: "shared", ProjectID: "source-project", Script: second, ContentHash: hashLibraryScript(second)},
+	}}
+	result, err := server.importLibraryBundle(LibraryImportRequest{ProjectID: "destination", Bundle: bundle}, "remote")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Conflicts) == 0 || !strings.Contains(result.Conflicts[0].Reason+result.Conflicts[len(result.Conflicts)-1].Reason, "ambiguous script source_item_id") {
+		t.Fatalf("conflicts = %#v, want ambiguous script identity", result.Conflicts)
+	}
+	if got := server.runner.ListScripts(); len(got) != 0 {
+		t.Fatalf("ambiguous bundle wrote scripts: %#v", got)
+	}
+}
+
+type concurrentLibraryScriptEditStore struct {
+	storage.Store
+	once sync.Once
+}
+
+func (s *concurrentLibraryScriptEditStore) CreateScriptIfAbsent(script *dsl.Script) (bool, error) {
+	return s.Store.(interface {
+		CreateScriptIfAbsent(*dsl.Script) (bool, error)
+	}).CreateScriptIfAbsent(script)
+}
+
+func (s *concurrentLibraryScriptEditStore) UpdateScriptIfUnchanged(script *dsl.Script, expected time.Time) (bool, error) {
+	s.once.Do(func() {
+		current, err := s.Store.GetScript(script.ID)
+		if err != nil {
+			return
+		}
+		current.Name = "concurrent local edit"
+		_ = s.Store.SaveScript(current)
+	})
+	return s.Store.(interface {
+		UpdateScriptIfUnchanged(*dsl.Script, time.Time) (bool, error)
+	}).UpdateScriptIfUnchanged(script, expected)
+}
+
+func TestLibraryScriptUpdateDoesNotOverwriteConcurrentLocalEdit(t *testing.T) {
+	baseStore, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "library-cas.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer baseStore.Close()
+	now := time.Now().UTC()
+	if err := baseStore.SaveProject(&storage.Project{ID: "destination", Name: "Destination", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	store := &concurrentLibraryScriptEditStore{Store: baseStore}
+	server := NewServer(ServerConfig{Store: store})
+	source := libraryTestScript("source", "initial", "source-project", "/initial")
+	source.RefKey = "SOURCE-REF-MUST-NOT-BE-COPIED"
+	item := LibraryBundleItem{Kind: "script", SourceInstanceID: "remote", SourceItemID: source.ID, ProjectID: source.ProjectID, Script: source, ContentHash: hashLibraryScript(source)}
+	bundle := LibraryBundle{SchemaVersion: libraryBundleSchemaVersion, Items: []LibraryBundleItem{item}}
+	first, err := server.importLibraryBundle(LibraryImportRequest{ProjectID: "destination", Bundle: bundle}, "remote")
+	if err != nil || len(first.Conflicts) != 0 || len(first.Items) != 1 {
+		t.Fatalf("initial import = %#v, %v", first, err)
+	}
+	localID := first.Items[0].LocalItemID
+	created, err := baseStore.GetScript(localID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.RefKey == source.RefKey || created.RefKey == "" {
+		t.Fatalf("destination ref_key = %q, want fresh local reference", created.RefKey)
+	}
+
+	updatedSource := cloneScriptForLibrary(source)
+	updatedSource.Name = "remote update"
+	bundle.Items[0].Script = updatedSource
+	bundle.Items[0].ContentHash = hashLibraryScript(updatedSource)
+	second, err := server.importLibraryBundle(LibraryImportRequest{ProjectID: "destination", Bundle: bundle}, "remote")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second.Conflicts) != 1 || !strings.Contains(second.Conflicts[0].Reason, "changed concurrently") {
+		t.Fatalf("concurrent update result = %#v", second)
+	}
+	current, err := baseStore.GetScript(localID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Name != "concurrent local edit" {
+		t.Fatalf("concurrent local edit was overwritten: %#v", current)
+	}
+}
+
+type concurrentLibraryScenarioEditStore struct {
+	storage.Store
+	once sync.Once
+}
+
+func (s *concurrentLibraryScenarioEditStore) CreateScenarioWithDataPoolBindingsIfAbsent(scenario *storage.Scenario, scripts []storage.ScenarioScript, bindings []storage.ScenarioDataPoolBinding) (bool, error) {
+	return s.Store.(interface {
+		CreateScenarioWithDataPoolBindingsIfAbsent(*storage.Scenario, []storage.ScenarioScript, []storage.ScenarioDataPoolBinding) (bool, error)
+	}).CreateScenarioWithDataPoolBindingsIfAbsent(scenario, scripts, bindings)
+}
+
+func (s *concurrentLibraryScenarioEditStore) UpdateScenarioWithDataPoolBindingsIfUnchanged(scenario *storage.Scenario, scripts []storage.ScenarioScript, bindings []storage.ScenarioDataPoolBinding, expected time.Time) (bool, error) {
+	s.once.Do(func() {
+		current, currentScripts, err := s.Store.GetScenario(scenario.ID)
+		if err != nil {
+			return
+		}
+		current.Name = "concurrent local scenario edit"
+		_ = s.Store.SaveScenario(current, currentScripts)
+	})
+	return s.Store.(interface {
+		UpdateScenarioWithDataPoolBindingsIfUnchanged(*storage.Scenario, []storage.ScenarioScript, []storage.ScenarioDataPoolBinding, time.Time) (bool, error)
+	}).UpdateScenarioWithDataPoolBindingsIfUnchanged(scenario, scripts, bindings, expected)
+}
+
+func (s *concurrentLibraryScenarioEditStore) DeleteScenarioIfUnchanged(id string, expected time.Time) (bool, error) {
+	return s.Store.(interface {
+		DeleteScenarioIfUnchanged(string, time.Time) (bool, error)
+	}).DeleteScenarioIfUnchanged(id, expected)
+}
+
+func TestLibraryScenarioUpdateDoesNotOverwriteConcurrentLocalEdit(t *testing.T) {
+	baseStore, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "library-scenario-cas.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer baseStore.Close()
+	now := time.Now().UTC()
+	if err := baseStore.SaveProject(&storage.Project{ID: "destination", Name: "Destination", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	localScript := libraryTestScript("destination-script", "Destination Script", "destination", "/")
+	if err := baseStore.SaveScript(localScript); err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(ServerConfig{Store: &concurrentLibraryScenarioEditStore{Store: baseStore}})
+	req := CreateScenarioRequest{Name: "initial remote scenario", Duration: "1m", Groups: []CreateGroupEntry{{Name: "group", ScriptID: localScript.ID, VUsers: 1}}}
+	item := LibraryBundleItem{
+		Kind: "scenario", SourceInstanceID: "remote", SourceItemID: "scenario", ProjectID: "source-project",
+		Scenario: &LibraryScenarioPayload{ID: "scenario", Request: req}, ContentHash: hashCanonical(req),
+		Dependencies: []LibraryDependency{{Kind: "script", ID: localScript.ID, ContentHash: hashLibraryScript(localScript)}},
+	}
+	bundle := LibraryBundle{SchemaVersion: libraryBundleSchemaVersion, Items: []LibraryBundleItem{item}}
+	first, err := server.importLibraryBundle(LibraryImportRequest{ProjectID: "destination", Bundle: bundle}, "remote")
+	if err != nil || len(first.Conflicts) != 0 || len(first.Items) != 1 {
+		t.Fatalf("initial scenario import = %#v, %v", first, err)
+	}
+	localID := first.Items[0].LocalItemID
+	req.Name = "remote scenario update"
+	bundle.Items[0].Scenario = &LibraryScenarioPayload{ID: "scenario", Request: req}
+	bundle.Items[0].ContentHash = hashCanonical(req)
+	second, err := server.importLibraryBundle(LibraryImportRequest{ProjectID: "destination", Bundle: bundle}, "remote")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second.Conflicts) != 1 || !strings.Contains(second.Conflicts[0].Reason, "changed concurrently") {
+		t.Fatalf("concurrent scenario result = %#v", second)
+	}
+	current, _, err := baseStore.GetScenario(localID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Name != "concurrent local scenario edit" {
+		t.Fatalf("concurrent local scenario edit was overwritten: %#v", current)
 	}
 }
 
@@ -190,6 +462,14 @@ func TestLibraryImportRejectsMissingAndTamperedResultPayloads(t *testing.T) {
 
 	item.ContentHash = hashLibraryResultTestOnly(testRun)
 	item.Result.Summary = libraryResultSummary(testRun)
+	unversionedLegacy, err := server.importLibraryBundle(LibraryImportRequest{ProjectID: "destination", Bundle: LibraryBundle{SchemaVersion: libraryBundleSchemaVersion, Items: []LibraryBundleItem{item}}}, "remote")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(unversionedLegacy.Conflicts) != 1 || !strings.Contains(unversionedLegacy.Conflicts[0].Reason, "content hash") {
+		t.Fatalf("unversioned legacy hash was not rejected clearly: %#v", unversionedLegacy)
+	}
+	item.ContentHashVersion = libraryResultHashVersionLegacyV1
 	legacy, err := server.importLibraryBundle(LibraryImportRequest{ProjectID: "destination", Bundle: LibraryBundle{SchemaVersion: libraryBundleSchemaVersion, Items: []LibraryBundleItem{item}}}, "remote")
 	if err != nil || len(legacy.Conflicts) != 0 || len(legacy.Items) != 1 {
 		t.Fatalf("legacy result bundle was not accepted safely: %#v, %v", legacy, err)
@@ -237,15 +517,38 @@ func TestLibraryScenarioImportClonesAndVerifiesDependencies(t *testing.T) {
 }
 
 func TestLibraryArchiveMetadataRequiresDeclaredManifest(t *testing.T) {
-	result := &LibraryResultPayload{ArchiveManifestHash: "sha256:declared", ArchiveSizeBytes: 10}
-	if reason := validateLibraryArchiveMetadata(result, "", 10); !strings.Contains(reason, "manifest hash") {
-		t.Fatalf("missing manifest reason = %q", reason)
+	declared := "sha256:" + strings.Repeat("a", 64)
+	tests := []struct {
+		name       string
+		result     *LibraryResultPayload
+		actualHash string
+		actualSize int64
+		want       string
+	}{
+		{name: "missing declaration", result: &LibraryResultPayload{ArchiveSizeBytes: 10}, actualSize: 10, want: "archive_manifest_hash is required"},
+		{name: "unversioned hash", result: &LibraryResultPayload{ArchiveManifestHash: strings.Repeat("a", 64), ArchiveSizeBytes: 10}, actualHash: strings.Repeat("a", 64), actualSize: 10, want: "64 hex characters"},
+		{name: "missing actual hash", result: &LibraryResultPayload{ArchiveManifestHash: declared, ArchiveSizeBytes: 10}, actualSize: 10, want: "manifest hash"},
+		{name: "missing size", result: &LibraryResultPayload{ArchiveManifestHash: declared}, actualHash: declared, actualSize: 10, want: "archive_size_bytes is required"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if reason := validateLibraryArchiveMetadata(tt.result, tt.actualHash, tt.actualSize); !strings.Contains(reason, tt.want) {
+				t.Fatalf("reason = %q, want %q", reason, tt.want)
+			}
+		})
+	}
+	mixedCase := &LibraryResultPayload{ArchiveManifestHash: "Sha256:" + strings.Repeat("A", 64), ArchiveSizeBytes: 10}
+	if reason := validateLibraryArchiveMetadata(mixedCase, declared, 10); reason != "" {
+		t.Fatalf("mixed-case SHA-256 declaration was not normalized: %q", reason)
 	}
 }
 
-func TestLibraryRemoteJSONLimitMatchesServerEnvelope(t *testing.T) {
-	if libraryRemoteJSONMaxBytes != defaultMaxRequestBodyBytes {
-		t.Fatalf("remote JSON limit = %d, server envelope = %d", libraryRemoteJSONMaxBytes, defaultMaxRequestBodyBytes)
+func TestLibraryRemoteJSONLimitIsIndependentFromCRUDEnvelope(t *testing.T) {
+	if libraryRemoteJSONMaxBytes != 128<<20 {
+		t.Fatalf("remote JSON limit = %d, want 128 MiB", libraryRemoteJSONMaxBytes)
+	}
+	if libraryRemoteJSONMaxBytes <= defaultMaxRequestBodyBytes {
+		t.Fatalf("remote JSON limit = %d, want larger than CRUD envelope %d", libraryRemoteJSONMaxBytes, defaultMaxRequestBodyBytes)
 	}
 }
 

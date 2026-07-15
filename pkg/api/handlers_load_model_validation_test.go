@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -53,8 +54,10 @@ func TestHandleValidateScenarioLoadModelReturnsCapacityAndDataPoolFindings(t *te
 
 	targetTPS := 12.5
 	body, _ := json.Marshal(CreateScenarioRequest{
-		Name:     "Browser Validation",
-		Duration: "10m",
+		Name:         "Browser Validation",
+		Duration:     "10m",
+		ScenarioMode: "goal_oriented",
+		GoalConfig:   &GoalConfig{TargetAverageTPS: &targetTPS},
 		Groups: []CreateGroupEntry{{
 			Name:     "browser canary",
 			ScriptID: "script-browser-validate",
@@ -100,6 +103,37 @@ func TestHandleValidateScenarioLoadModelReturnsCapacityAndDataPoolFindings(t *te
 	assertLoadModelValidationItem(t, report.Items, "data_pool_rows", "ready")
 	assertLoadModelValidationItem(t, report.Items, "data_source_fit", "blocked")
 	assertLoadModelValidationItem(t, report.Items, "modeled_demand", "ready")
+}
+
+func TestVUserDrivenStagesRejectUnsupportedTargetTPS(t *testing.T) {
+	runner := NewTestRunner(1, NewHub(), nil)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-stage-target-tps",
+		Name:     "Stage target TPS",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.test"},
+		Actions:  []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+	targetTPS := 10.0
+	for _, targetVUsers := range []int{0, 5} {
+		_, err := runner.CreateTest(CreateTestRequest{
+			Name:     "Unsupported staged TPS",
+			Duration: "1m",
+			Groups: []CreateGroupEntry{{
+				ScriptID: "script-stage-target-tps",
+				Stages: []storage.LoadStage{{
+					Type:         "hold",
+					Duration:     "30s",
+					TargetVUsers: targetVUsers,
+					TargetTPS:    &targetTPS,
+				}},
+			}},
+		})
+		if err == nil || !strings.Contains(err.Error(), "target_tps is not supported for vuser-driven stages") {
+			t.Fatalf("target_vusers=%d err=%v, want unsupported target_tps error", targetVUsers, err)
+		}
+	}
 }
 
 func TestCreateTestRequestFromScenarioPreservesStages(t *testing.T) {

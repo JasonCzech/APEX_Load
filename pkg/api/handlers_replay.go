@@ -45,6 +45,9 @@ func (s *Server) handleReplayScript(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "script not found")
 		return
 	}
+	if !requireAuthorizedProjectMatch(w, r, stored.ProjectID) {
+		return
+	}
 
 	var req ReplayScriptRequest
 	if r.Body != nil && r.ContentLength != 0 {

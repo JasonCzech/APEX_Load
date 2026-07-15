@@ -91,6 +91,62 @@ func TestSQLiteTestNotesUnknownUpdateDelete(t *testing.T) {
 	}
 }
 
+func TestSQLiteTestNoteConditionalUpdateAndScopedDelete(t *testing.T) {
+	store := newTestNotesStore(t)
+	saveTestNotesRun(t, store, "notes-cas-run-a", DefaultProjectID)
+	saveTestNotesRun(t, store, "notes-cas-run-b", DefaultProjectID)
+	note := &TestNote{ID: "notes-cas-note", TestID: "notes-cas-run-a", Body: "original"}
+	if err := store.CreateTestNote(note); err != nil {
+		t.Fatalf("CreateTestNote: %v", err)
+	}
+	expected := note.UpdatedAt
+	winner := *note
+	winner.Body = "winner"
+	updated, err := store.UpdateTestNoteAndArchiveRefreshIfUnchanged(&winner, expected)
+	if err != nil || !updated {
+		t.Fatalf("conditional winner = (%v, %v), want true, nil", updated, err)
+	}
+	stale := *note
+	stale.Body = "stale"
+	if updated, err := store.UpdateTestNoteAndArchiveRefreshIfUnchanged(&stale, expected); err != nil || updated {
+		t.Fatalf("conditional stale update = (%v, %v), want false, nil", updated, err)
+	}
+	foreignParent := winner
+	foreignParent.TestID = "notes-cas-run-b"
+	if updated, err := store.UpdateTestNoteAndArchiveRefreshIfUnchanged(&foreignParent, winner.UpdatedAt); err != nil || updated {
+		t.Fatalf("cross-test conditional update = (%v, %v), want false, nil", updated, err)
+	}
+	if err := store.DeleteTestNoteAndArchiveRefresh(note.ID, "notes-cas-run-b"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("cross-test delete error = %v, want sql.ErrNoRows", err)
+	}
+	got, err := store.GetTestNote(note.ID)
+	if err != nil {
+		t.Fatalf("GetTestNote: %v", err)
+	}
+	if got.Body != "winner" || got.TestID != "notes-cas-run-a" {
+		t.Fatalf("rejected mutations changed note: %#v", got)
+	}
+}
+
+func TestSQLiteTestNotesPageIsBounded(t *testing.T) {
+	store := newTestNotesStore(t)
+	saveTestNotesRun(t, store, "notes-page-run", DefaultProjectID)
+	base := time.Now().UTC().Add(-time.Hour)
+	for i, id := range []string{"notes-page-oldest", "notes-page-middle", "notes-page-newest"} {
+		stamp := base.Add(time.Duration(i) * time.Minute)
+		if err := store.CreateTestNote(&TestNote{ID: id, TestID: "notes-page-run", Body: id, CreatedAt: stamp, UpdatedAt: stamp}); err != nil {
+			t.Fatalf("CreateTestNote(%s): %v", id, err)
+		}
+	}
+	page, err := store.ListTestNotesPage("notes-page-run", 1, 1)
+	if err != nil {
+		t.Fatalf("ListTestNotesPage: %v", err)
+	}
+	if len(page) != 1 || page[0].ID != "notes-page-middle" {
+		t.Fatalf("page = %#v, want middle note only", page)
+	}
+}
+
 func TestSQLiteTestNotesCleanupWithTestAndProject(t *testing.T) {
 	store := newTestNotesStore(t)
 	project := &Project{ID: "notes-project", Name: "Notes Project"}

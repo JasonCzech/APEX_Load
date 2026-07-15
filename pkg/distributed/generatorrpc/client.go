@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"time"
 
@@ -12,21 +13,42 @@ import (
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/durationpb"
 )
 
 type DataFile struct {
 	Name    string
 	Content []byte
+	SHA256  string
 }
+
+// DistributedVUserIDNamespaceSize is the durable, disjoint ID range reserved
+// for each logical generator shard. It matches the generator's maximum int32
+// VUser capacity and leaves every shard free to scale without entering another
+// shard's namespace.
+const DistributedVUserIDNamespaceSize = uint64(^uint32(0) >> 1)
 
 type Assignment struct {
 	TestID                string
+	ExecutionGeneration   uint64
 	GroupName             string
+	TargetDuration        time.Duration
 	TargetDurationSeconds int64
+	DurationOffset        time.Duration
 	ScriptID              string
+	ExpectedScriptHash    string
 	ScriptContent         []byte
 	VUserCount            int32
+	RampUp                time.Duration
 	RampUpSeconds         int32
+	RampDown              time.Duration
+	InitStrategy          string
+	PreBaseline           time.Duration
+	PostBaseline          time.Duration
+	ShardOrdinal          uint32
+	ShardCount            uint32
+	VUserIDOffset         uint64
+	StartPaused           bool
 	Environment           map[string]string
 	DataFiles             []DataFile
 	RedactionRules        []engine.RedactionRule
@@ -38,11 +60,18 @@ type AssignmentResult struct {
 	AvailableCapacity int32
 }
 
+type WorkCommitResult struct {
+	Accepted     bool
+	ErrorMessage string
+}
+
 type VUserAdjustment struct {
-	TestID       string
-	GroupName    string
-	TargetVUsers int32
-	RampSeconds  int32
+	TestID              string
+	ExecutionGeneration uint64
+	GroupName           string
+	TargetVUsers        int32
+	RampDuration        time.Duration
+	RampSeconds         int32
 }
 
 type AdjustmentResult struct {
@@ -52,21 +81,36 @@ type AdjustmentResult struct {
 
 type DurationAdjustment struct {
 	TestID                string
+	ExecutionGeneration   uint64
+	TargetDuration        time.Duration
 	TargetDurationSeconds int64
 }
 
 type DurationResult struct {
 	Accepted               bool
+	CurrentDuration        time.Duration
 	CurrentDurationSeconds int64
 }
 
 type PauseControl struct {
-	TestID string
-	Pause  bool
+	TestID              string
+	ExecutionGeneration uint64
+	Pause               bool
+	OperationID         string
+	OperationSequence   uint64
+}
+
+type PauseResult struct {
+	Accepted                 bool
+	CurrentPaused            bool
+	AppliedOperationID       string
+	AppliedOperationSequence uint64
+	ErrorMessage             string
 }
 
 type MetricsBatch struct {
 	TestID                string
+	ExecutionGeneration   uint64
 	GeneratorID           string
 	TimestampUnixMs       int64
 	WindowMs              int64
@@ -215,14 +259,22 @@ type ArchiveArtifactRequest struct {
 }
 
 type Script struct {
-	ID          string
-	Content     []byte
-	ContentHash string
+	ID                  string
+	ExecutionGeneration uint64
+	Content             []byte
+	ContentHash         string
 }
 
 type ScriptResult struct {
 	Cached      bool
 	ContentHash string
+}
+
+type ExecutionEpochResult struct {
+	Accepted          bool
+	CurrentGeneration uint64
+	ExpiresAt         time.Time
+	ErrorMessage      string
 }
 
 type Heartbeat struct {
@@ -244,6 +296,13 @@ type HeartbeatResponse struct {
 	SupportedProtocols []string
 	CompatibleFeatures []string
 }
+
+// FeatureEvacuationAssignmentStateV1 means AssignWork understands the
+// evacuation-only StartPaused and DurationOffset fields. Controllers must not
+// reshard a live run onto a generator that does not advertise this capability:
+// protobuf's unknown-field compatibility would otherwise make an older
+// generator silently start paused traffic or restart the full logical duration.
+const FeatureEvacuationAssignmentStateV1 = "evacuation_assignment_state_v1"
 
 type GeneratorStats struct {
 	ActiveVUsers int32
@@ -338,9 +397,10 @@ func (c *Client) Close() error {
 
 func (c *Client) DistributeScript(ctx context.Context, script Script) (ScriptResult, error) {
 	ack, err := c.rpc.DistributeScript(ctx, &pb.ScriptPayload{
-		ScriptId:    script.ID,
-		Content:     script.Content,
-		ContentHash: script.ContentHash,
+		ScriptId:            script.ID,
+		Content:             script.Content,
+		ContentHash:         script.ContentHash,
+		ExecutionGeneration: script.ExecutionGeneration,
 	})
 	if err != nil {
 		return ScriptResult{}, err
@@ -349,6 +409,35 @@ func (c *Client) DistributeScript(ctx context.Context, script Script) (ScriptRes
 	return ScriptResult{
 		Cached:      ack.GetCached(),
 		ContentHash: ack.GetContentHash(),
+	}, nil
+}
+
+// ClaimExecutionEpoch establishes or renews the controller's execution term
+// on a generator. A generator accepts test mutations only for the exact active
+// generation until ttl expires.
+func (c *Client) ClaimExecutionEpoch(ctx context.Context, generation uint64, leaseOwnerID string, ttl time.Duration) (ExecutionEpochResult, error) {
+	if ttl <= 0 {
+		return ExecutionEpochResult{}, fmt.Errorf("execution epoch ttl must be positive")
+	}
+	if err := validateExecutionLeaseOwner(generation, leaseOwnerID, true); err != nil {
+		return ExecutionEpochResult{}, fmt.Errorf("execution lease owner: %w", err)
+	}
+	if ttl > time.Duration(^uint64(0)>>1) {
+		return ExecutionEpochResult{}, fmt.Errorf("execution epoch ttl is too large")
+	}
+	ack, err := c.rpc.ClaimExecutionEpoch(ctx, &pb.ExecutionEpochClaim{
+		ExecutionGeneration:   generation,
+		LeaseTtlMilliseconds:  ttl.Milliseconds(),
+		ExecutionLeaseOwnerId: strings.TrimSpace(leaseOwnerID),
+	})
+	if err != nil {
+		return ExecutionEpochResult{}, err
+	}
+	return ExecutionEpochResult{
+		Accepted:          ack.GetAccepted(),
+		CurrentGeneration: ack.GetCurrentGeneration(),
+		ExpiresAt:         time.UnixMilli(ack.GetExpiresAtUnixMs()),
+		ErrorMessage:      ack.GetErrorMessage(),
 	}, nil
 }
 
@@ -365,12 +454,30 @@ func (c *Client) AssignWork(ctx context.Context, assignment Assignment) (Assignm
 	}, nil
 }
 
+func (c *Client) CommitWork(ctx context.Context, testID string, generation uint64) (WorkCommitResult, error) {
+	return c.CommitWorkAt(ctx, testID, generation, time.Time{})
+}
+
+func (c *Client) CommitWorkAt(ctx context.Context, testID string, generation uint64, startAt time.Time) (WorkCommitResult, error) {
+	request := &pb.WorkCommitRequest{TestId: testID, ExecutionGeneration: generation}
+	if !startAt.IsZero() {
+		request.StartAtUnixNano = startAt.UnixNano()
+	}
+	ack, err := c.rpc.CommitWork(ctx, request)
+	if err != nil {
+		return WorkCommitResult{}, err
+	}
+	return WorkCommitResult{Accepted: ack.GetAccepted(), ErrorMessage: ack.GetErrorMessage()}, nil
+}
+
 func (c *Client) AdjustVUsers(ctx context.Context, adjustment VUserAdjustment) (AdjustmentResult, error) {
 	ack, err := c.rpc.AdjustVUsers(ctx, &pb.VUserAdjustment{
-		TestId:       adjustment.TestID,
-		GroupName:    adjustment.GroupName,
-		TargetVusers: adjustment.TargetVUsers,
-		RampSeconds:  adjustment.RampSeconds,
+		TestId:              adjustment.TestID,
+		ExecutionGeneration: adjustment.ExecutionGeneration,
+		GroupName:           adjustment.GroupName,
+		TargetVusers:        adjustment.TargetVUsers,
+		RampSeconds:         adjustment.RampSeconds,
+		RampDuration:        preciseDurationProto(adjustment.RampDuration, int64(adjustment.RampSeconds)),
 	})
 	if err != nil {
 		return AdjustmentResult{}, err
@@ -383,9 +490,12 @@ func (c *Client) AdjustVUsers(ctx context.Context, adjustment VUserAdjustment) (
 }
 
 func (c *Client) AdjustDuration(ctx context.Context, adjustment DurationAdjustment) (DurationResult, error) {
+	targetDuration := resolvedPreciseDuration(adjustment.TargetDuration, adjustment.TargetDurationSeconds)
 	ack, err := c.rpc.AdjustDuration(ctx, &pb.DurationAdjustment{
 		TestId:                adjustment.TestID,
-		TargetDurationSeconds: adjustment.TargetDurationSeconds,
+		ExecutionGeneration:   adjustment.ExecutionGeneration,
+		TargetDurationSeconds: compatibilityDurationSeconds(targetDuration),
+		TargetDuration:        preciseDurationProto(targetDuration, 0),
 	})
 	if err != nil {
 		return DurationResult{}, err
@@ -394,13 +504,54 @@ func (c *Client) AdjustDuration(ctx context.Context, adjustment DurationAdjustme
 	return DurationResult{
 		Accepted:               ack.GetAccepted(),
 		CurrentDurationSeconds: ack.GetCurrentDurationSeconds(),
+		CurrentDuration:        durationFromProtoOrSeconds(ack.GetCurrentDuration(), ack.GetCurrentDurationSeconds()),
+	}, nil
+}
+
+// SetPaused is the acknowledged control path. Unlike the legacy metrics-stream
+// signal, a successful return proves the generator applied the engine state.
+// OperationID makes retries after a lost response idempotent.
+func (c *Client) SetPaused(ctx context.Context, control PauseControl) (PauseResult, error) {
+	ack, err := c.rpc.SetPaused(ctx, &pb.PauseRequest{
+		TestId:              control.TestID,
+		ExecutionGeneration: control.ExecutionGeneration,
+		Pause:               control.Pause,
+		OperationId:         control.OperationID,
+		OperationSequence:   control.OperationSequence,
+	})
+	if err != nil {
+		return PauseResult{}, err
+	}
+	return PauseResult{
+		Accepted:                 ack.GetAccepted(),
+		CurrentPaused:            ack.GetCurrentPaused(),
+		AppliedOperationID:       ack.GetAppliedOperationId(),
+		AppliedOperationSequence: ack.GetAppliedOperationSequence(),
+		ErrorMessage:             ack.GetErrorMessage(),
 	}, nil
 }
 
 func (c *Client) OpenMetricsStream(ctx context.Context) (*MetricsStream, error) {
+	return c.OpenMetricsStreamForGeneration(ctx, 0)
+}
+
+func (c *Client) OpenMetricsStreamForGeneration(ctx context.Context, generation uint64) (*MetricsStream, error) {
+	return c.openMetricsStreamForTestGeneration(ctx, "", generation)
+}
+
+func (c *Client) OpenMetricsStreamForTestGeneration(ctx context.Context, testID string, generation uint64) (*MetricsStream, error) {
+	if strings.TrimSpace(testID) == "" {
+		return nil, fmt.Errorf("metrics stream test id is required")
+	}
+	return c.openMetricsStreamForTestGeneration(ctx, testID, generation)
+}
+
+func (c *Client) openMetricsStreamForTestGeneration(ctx context.Context, testID string, generation uint64) (*MetricsStream, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	ctx = outgoingExecutionGenerationContext(ctx, generation)
+	ctx = outgoingMetricsTestContext(ctx, testID)
 	lifetimeCtx, cancel := context.WithCancel(ctx)
 	stream, err := c.rpc.StreamMetrics(lifetimeCtx)
 	if err != nil {
@@ -416,13 +567,30 @@ func (c *Client) OpenMetricsStream(ctx context.Context) (*MetricsStream, error) 
 // the stream remains live until its parent context is canceled or CloseSend is
 // called.
 func (c *Client) OpenMetricsStreamWithSetupTimeout(parent context.Context, setupTimeout time.Duration) (*MetricsStream, error) {
+	return c.OpenMetricsStreamWithSetupTimeoutForGeneration(parent, setupTimeout, 0)
+}
+
+func (c *Client) OpenMetricsStreamWithSetupTimeoutForGeneration(parent context.Context, setupTimeout time.Duration, generation uint64) (*MetricsStream, error) {
+	return c.openMetricsStreamWithSetupTimeoutForTestGeneration(parent, setupTimeout, "", generation)
+}
+
+func (c *Client) OpenMetricsStreamWithSetupTimeoutForTestGeneration(parent context.Context, setupTimeout time.Duration, testID string, generation uint64) (*MetricsStream, error) {
+	if strings.TrimSpace(testID) == "" {
+		return nil, fmt.Errorf("metrics stream test id is required")
+	}
+	return c.openMetricsStreamWithSetupTimeoutForTestGeneration(parent, setupTimeout, testID, generation)
+}
+
+func (c *Client) openMetricsStreamWithSetupTimeoutForTestGeneration(parent context.Context, setupTimeout time.Duration, testID string, generation uint64) (*MetricsStream, error) {
 	if parent == nil {
 		parent = context.Background()
 	}
 	if setupTimeout <= 0 {
-		return c.OpenMetricsStream(parent)
+		return c.openMetricsStreamForTestGeneration(parent, testID, generation)
 	}
 
+	parent = outgoingExecutionGenerationContext(parent, generation)
+	parent = outgoingMetricsTestContext(parent, testID)
 	lifetimeCtx, cancel := context.WithCancel(parent)
 	type openResult struct {
 		stream pb.GeneratorControl_StreamMetricsClient
@@ -453,7 +621,11 @@ func (c *Client) OpenMetricsStreamWithSetupTimeout(parent context.Context, setup
 }
 
 func (c *Client) StopTest(ctx context.Context, testID string, graceful bool) (StopResult, error) {
-	ack, err := c.rpc.StopTest(ctx, &pb.StopRequest{TestId: testID, Graceful: graceful})
+	return c.StopTestAtGeneration(ctx, testID, graceful, 0)
+}
+
+func (c *Client) StopTestAtGeneration(ctx context.Context, testID string, graceful bool, generation uint64) (StopResult, error) {
+	ack, err := c.rpc.StopTest(ctx, &pb.StopRequest{TestId: testID, Graceful: graceful, ExecutionGeneration: generation})
 	if err != nil {
 		return StopResult{}, err
 	}
@@ -468,7 +640,7 @@ func (c *Client) GetArchiveArtifact(ctx context.Context, request ArchiveArtifact
 	artifact, err := c.rpc.GetArchiveArtifact(
 		ctx,
 		&pb.ArchiveArtifactRequest{TestId: request.TestID, Name: request.Name},
-		grpc.MaxCallRecvMsgSize(64<<20),
+		grpc.MaxCallRecvMsgSize(grpcMessageSize(archiveArtifactUnaryReceiveMaxSize)),
 	)
 	if err != nil {
 		return nil, err
@@ -596,8 +768,11 @@ func (s *MetricsStream) SendPause(control PauseControl) error {
 	return s.stream.Send(&pb.ControlSignal{
 		Signal: &pb.ControlSignal_Pause{
 			Pause: &pb.PauseRequest{
-				TestId: control.TestID,
-				Pause:  control.Pause,
+				TestId:              control.TestID,
+				ExecutionGeneration: control.ExecutionGeneration,
+				Pause:               control.Pause,
+				OperationId:         control.OperationID,
+				OperationSequence:   control.OperationSequence,
 			},
 		},
 	})
@@ -716,6 +891,7 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 
 	return MetricsBatch{
 		TestID:                batch.GetTestId(),
+		ExecutionGeneration:   batch.GetExecutionGeneration(),
 		GeneratorID:           batch.GetGeneratorId(),
 		TimestampUnixMs:       batch.GetTimestampUnixMs(),
 		WindowMs:              batch.GetWindowMs(),
@@ -738,7 +914,7 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 func toProtoAssignment(assignment Assignment) *pb.WorkAssignment {
 	dataFiles := make([]*pb.DataFile, 0, len(assignment.DataFiles))
 	for _, dataFile := range assignment.DataFiles {
-		dataFiles = append(dataFiles, &pb.DataFile{Name: dataFile.Name, Content: dataFile.Content})
+		dataFiles = append(dataFiles, &pb.DataFile{Name: dataFile.Name, Content: dataFile.Content, Sha256: dataFile.SHA256})
 	}
 
 	environment := assignment.Environment
@@ -746,18 +922,78 @@ func toProtoAssignment(assignment Assignment) *pb.WorkAssignment {
 		environment = map[string]string{}
 	}
 
+	targetDuration := resolvedPreciseDuration(assignment.TargetDuration, assignment.TargetDurationSeconds)
+	rampUp := resolvedPreciseDuration(assignment.RampUp, int64(assignment.RampUpSeconds))
 	return &pb.WorkAssignment{
 		TestId:                assignment.TestID,
+		ExecutionGeneration:   assignment.ExecutionGeneration,
 		GroupName:             assignment.GroupName,
-		TargetDurationSeconds: assignment.TargetDurationSeconds,
+		TargetDurationSeconds: compatibilityDurationSeconds(targetDuration),
+		TargetDuration:        preciseDurationProto(targetDuration, 0),
+		DurationOffset:        preciseDurationProto(assignment.DurationOffset, 0),
 		ScriptId:              assignment.ScriptID,
+		ExpectedScriptHash:    assignment.ExpectedScriptHash,
 		ScriptContent:         assignment.ScriptContent,
 		VuserCount:            assignment.VUserCount,
-		RampUpSeconds:         assignment.RampUpSeconds,
+		RampUpSeconds:         compatibilityDurationSecondsInt32(rampUp),
+		RampUp:                preciseDurationProto(rampUp, 0),
+		RampDown:              preciseDurationProto(assignment.RampDown, 0),
+		InitStrategy:          assignment.InitStrategy,
+		PreBaseline:           preciseDurationProto(assignment.PreBaseline, 0),
+		PostBaseline:          preciseDurationProto(assignment.PostBaseline, 0),
+		ShardOrdinal:          assignment.ShardOrdinal,
+		ShardCount:            assignment.ShardCount,
+		VuserIdOffset:         assignment.VUserIDOffset,
+		StartPaused:           assignment.StartPaused,
 		Environment:           environment,
 		DataFiles:             dataFiles,
 		RedactionRules:        redactionRulesToProto(assignment.RedactionRules),
 	}
+}
+
+func resolvedPreciseDuration(precise time.Duration, legacySeconds int64) time.Duration {
+	if precise != 0 {
+		return precise
+	}
+	if legacySeconds <= 0 || legacySeconds > maxGeneratorDurationSeconds {
+		return 0
+	}
+	return time.Duration(legacySeconds) * time.Second
+}
+
+func preciseDurationProto(precise time.Duration, legacySeconds int64) *durationpb.Duration {
+	duration := resolvedPreciseDuration(precise, legacySeconds)
+	if duration <= 0 {
+		return nil
+	}
+	return durationpb.New(duration)
+}
+
+func compatibilityDurationSeconds(duration time.Duration) int64 {
+	if duration <= 0 {
+		return 0
+	}
+	seconds := int64(duration / time.Second)
+	if duration%time.Second != 0 {
+		seconds++
+	}
+	return seconds
+}
+
+func compatibilityDurationSecondsInt32(duration time.Duration) int32 {
+	seconds := compatibilityDurationSeconds(duration)
+	const maxInt32 = int64(^uint32(0) >> 1)
+	if seconds > maxInt32 {
+		return int32(maxInt32)
+	}
+	return int32(seconds)
+}
+
+func durationFromProtoOrSeconds(precise *durationpb.Duration, legacySeconds int64) time.Duration {
+	if precise != nil && precise.CheckValid() == nil {
+		return precise.AsDuration()
+	}
+	return resolvedPreciseDuration(0, legacySeconds)
 }
 
 func redactionRulesToProto(rules []engine.RedactionRule) []*pb.RedactionRule {

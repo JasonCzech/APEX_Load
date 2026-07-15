@@ -19,9 +19,12 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	GeneratorControl_ClaimExecutionEpoch_FullMethodName   = "/apexload.v1.GeneratorControl/ClaimExecutionEpoch"
 	GeneratorControl_AssignWork_FullMethodName            = "/apexload.v1.GeneratorControl/AssignWork"
+	GeneratorControl_CommitWork_FullMethodName            = "/apexload.v1.GeneratorControl/CommitWork"
 	GeneratorControl_AdjustVUsers_FullMethodName          = "/apexload.v1.GeneratorControl/AdjustVUsers"
 	GeneratorControl_AdjustDuration_FullMethodName        = "/apexload.v1.GeneratorControl/AdjustDuration"
+	GeneratorControl_SetPaused_FullMethodName             = "/apexload.v1.GeneratorControl/SetPaused"
 	GeneratorControl_StopTest_FullMethodName              = "/apexload.v1.GeneratorControl/StopTest"
 	GeneratorControl_StreamMetrics_FullMethodName         = "/apexload.v1.GeneratorControl/StreamMetrics"
 	GeneratorControl_Heartbeat_FullMethodName             = "/apexload.v1.GeneratorControl/Heartbeat"
@@ -37,12 +40,23 @@ const (
 // GeneratorControl is the gRPC service between the controller and generator pods.
 // Phase 1 uses direct in-process execution; this proto is defined for Phase 2 distribution.
 type GeneratorControlClient interface {
+	// ClaimExecutionEpoch establishes or renews the controller execution term on
+	// this generator. A higher generation fences all lower-generation work.
+	ClaimExecutionEpoch(ctx context.Context, in *ExecutionEpochClaim, opts ...grpc.CallOption) (*ExecutionEpochAck, error)
 	// AssignWork sends a test script and VUser allocation to a generator.
 	AssignWork(ctx context.Context, in *WorkAssignment, opts ...grpc.CallOption) (*AssignmentAck, error)
+	// CommitWork releases every successfully staged shard for one test on this
+	// generator. AssignWork performs admission/parsing/reservation only, so no
+	// protocol traffic can start before the controller finishes staging the
+	// complete fleet fan-out.
+	CommitWork(ctx context.Context, in *WorkCommitRequest, opts ...grpc.CallOption) (*WorkCommitAck, error)
 	// AdjustVUsers changes the VUser count for a running test on this generator.
 	AdjustVUsers(ctx context.Context, in *VUserAdjustment, opts ...grpc.CallOption) (*AdjustmentAck, error)
 	// AdjustDuration changes the duration for a running test on this generator.
 	AdjustDuration(ctx context.Context, in *DurationAdjustment, opts ...grpc.CallOption) (*DurationAck, error)
+	// SetPaused applies an idempotent, execution-fenced pause transition and
+	// returns only after the generator engine has applied the requested state.
+	SetPaused(ctx context.Context, in *PauseRequest, opts ...grpc.CallOption) (*PauseAck, error)
 	// StopTest requests graceful shutdown of a test on this generator.
 	StopTest(ctx context.Context, in *StopRequest, opts ...grpc.CallOption) (*StopAck, error)
 	// StreamMetrics is a bidirectional stream: controller sends control signals
@@ -70,10 +84,30 @@ func NewGeneratorControlClient(cc grpc.ClientConnInterface) GeneratorControlClie
 	return &generatorControlClient{cc}
 }
 
+func (c *generatorControlClient) ClaimExecutionEpoch(ctx context.Context, in *ExecutionEpochClaim, opts ...grpc.CallOption) (*ExecutionEpochAck, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ExecutionEpochAck)
+	err := c.cc.Invoke(ctx, GeneratorControl_ClaimExecutionEpoch_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *generatorControlClient) AssignWork(ctx context.Context, in *WorkAssignment, opts ...grpc.CallOption) (*AssignmentAck, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(AssignmentAck)
 	err := c.cc.Invoke(ctx, GeneratorControl_AssignWork_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *generatorControlClient) CommitWork(ctx context.Context, in *WorkCommitRequest, opts ...grpc.CallOption) (*WorkCommitAck, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(WorkCommitAck)
+	err := c.cc.Invoke(ctx, GeneratorControl_CommitWork_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -94,6 +128,16 @@ func (c *generatorControlClient) AdjustDuration(ctx context.Context, in *Duratio
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(DurationAck)
 	err := c.cc.Invoke(ctx, GeneratorControl_AdjustDuration_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *generatorControlClient) SetPaused(ctx context.Context, in *PauseRequest, opts ...grpc.CallOption) (*PauseAck, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PauseAck)
+	err := c.cc.Invoke(ctx, GeneratorControl_SetPaused_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -182,12 +226,23 @@ type GeneratorControl_StreamArchiveArtifactClient = grpc.ServerStreamingClient[A
 // GeneratorControl is the gRPC service between the controller and generator pods.
 // Phase 1 uses direct in-process execution; this proto is defined for Phase 2 distribution.
 type GeneratorControlServer interface {
+	// ClaimExecutionEpoch establishes or renews the controller execution term on
+	// this generator. A higher generation fences all lower-generation work.
+	ClaimExecutionEpoch(context.Context, *ExecutionEpochClaim) (*ExecutionEpochAck, error)
 	// AssignWork sends a test script and VUser allocation to a generator.
 	AssignWork(context.Context, *WorkAssignment) (*AssignmentAck, error)
+	// CommitWork releases every successfully staged shard for one test on this
+	// generator. AssignWork performs admission/parsing/reservation only, so no
+	// protocol traffic can start before the controller finishes staging the
+	// complete fleet fan-out.
+	CommitWork(context.Context, *WorkCommitRequest) (*WorkCommitAck, error)
 	// AdjustVUsers changes the VUser count for a running test on this generator.
 	AdjustVUsers(context.Context, *VUserAdjustment) (*AdjustmentAck, error)
 	// AdjustDuration changes the duration for a running test on this generator.
 	AdjustDuration(context.Context, *DurationAdjustment) (*DurationAck, error)
+	// SetPaused applies an idempotent, execution-fenced pause transition and
+	// returns only after the generator engine has applied the requested state.
+	SetPaused(context.Context, *PauseRequest) (*PauseAck, error)
 	// StopTest requests graceful shutdown of a test on this generator.
 	StopTest(context.Context, *StopRequest) (*StopAck, error)
 	// StreamMetrics is a bidirectional stream: controller sends control signals
@@ -215,14 +270,23 @@ type GeneratorControlServer interface {
 // pointer dereference when methods are called.
 type UnimplementedGeneratorControlServer struct{}
 
+func (UnimplementedGeneratorControlServer) ClaimExecutionEpoch(context.Context, *ExecutionEpochClaim) (*ExecutionEpochAck, error) {
+	return nil, status.Error(codes.Unimplemented, "method ClaimExecutionEpoch not implemented")
+}
 func (UnimplementedGeneratorControlServer) AssignWork(context.Context, *WorkAssignment) (*AssignmentAck, error) {
 	return nil, status.Error(codes.Unimplemented, "method AssignWork not implemented")
+}
+func (UnimplementedGeneratorControlServer) CommitWork(context.Context, *WorkCommitRequest) (*WorkCommitAck, error) {
+	return nil, status.Error(codes.Unimplemented, "method CommitWork not implemented")
 }
 func (UnimplementedGeneratorControlServer) AdjustVUsers(context.Context, *VUserAdjustment) (*AdjustmentAck, error) {
 	return nil, status.Error(codes.Unimplemented, "method AdjustVUsers not implemented")
 }
 func (UnimplementedGeneratorControlServer) AdjustDuration(context.Context, *DurationAdjustment) (*DurationAck, error) {
 	return nil, status.Error(codes.Unimplemented, "method AdjustDuration not implemented")
+}
+func (UnimplementedGeneratorControlServer) SetPaused(context.Context, *PauseRequest) (*PauseAck, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetPaused not implemented")
 }
 func (UnimplementedGeneratorControlServer) StopTest(context.Context, *StopRequest) (*StopAck, error) {
 	return nil, status.Error(codes.Unimplemented, "method StopTest not implemented")
@@ -263,6 +327,24 @@ func RegisterGeneratorControlServer(s grpc.ServiceRegistrar, srv GeneratorContro
 	s.RegisterService(&GeneratorControl_ServiceDesc, srv)
 }
 
+func _GeneratorControl_ClaimExecutionEpoch_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ExecutionEpochClaim)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GeneratorControlServer).ClaimExecutionEpoch(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GeneratorControl_ClaimExecutionEpoch_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GeneratorControlServer).ClaimExecutionEpoch(ctx, req.(*ExecutionEpochClaim))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _GeneratorControl_AssignWork_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(WorkAssignment)
 	if err := dec(in); err != nil {
@@ -277,6 +359,24 @@ func _GeneratorControl_AssignWork_Handler(srv interface{}, ctx context.Context, 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(GeneratorControlServer).AssignWork(ctx, req.(*WorkAssignment))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GeneratorControl_CommitWork_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WorkCommitRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GeneratorControlServer).CommitWork(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GeneratorControl_CommitWork_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GeneratorControlServer).CommitWork(ctx, req.(*WorkCommitRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -313,6 +413,24 @@ func _GeneratorControl_AdjustDuration_Handler(srv interface{}, ctx context.Conte
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(GeneratorControlServer).AdjustDuration(ctx, req.(*DurationAdjustment))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GeneratorControl_SetPaused_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PauseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GeneratorControlServer).SetPaused(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GeneratorControl_SetPaused_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GeneratorControlServer).SetPaused(ctx, req.(*PauseRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -404,8 +522,16 @@ var GeneratorControl_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*GeneratorControlServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
+			MethodName: "ClaimExecutionEpoch",
+			Handler:    _GeneratorControl_ClaimExecutionEpoch_Handler,
+		},
+		{
 			MethodName: "AssignWork",
 			Handler:    _GeneratorControl_AssignWork_Handler,
+		},
+		{
+			MethodName: "CommitWork",
+			Handler:    _GeneratorControl_CommitWork_Handler,
 		},
 		{
 			MethodName: "AdjustVUsers",
@@ -414,6 +540,10 @@ var GeneratorControl_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "AdjustDuration",
 			Handler:    _GeneratorControl_AdjustDuration_Handler,
+		},
+		{
+			MethodName: "SetPaused",
+			Handler:    _GeneratorControl_SetPaused_Handler,
 		},
 		{
 			MethodName: "StopTest",

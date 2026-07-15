@@ -8,17 +8,21 @@ package api
 // active, the contribution is zero and admission behaves exactly as before.
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
-// validateAndBindTimeslotLocked binds a test to an approved capacity timeslot as
-// part of creation. It is strict: any validation failure (or a lost atomic bind)
-// returns an error so the run is never created unprotected. Caller holds tr.mu.
+// validateAndBindTimeslotLocked performs an early, user-friendly validation and
+// records the requested slot on the in-memory test. The authoritative validation
+// and both durable writes happen later in saveNewManagedTestRecord's single
+// transaction. Caller holds tr.mu.
 func (tr *TestRunner) validateAndBindTimeslotLocked(timeslotID string, test *ManagedTest) error {
 	if tr.reservationStore == nil {
 		return fmt.Errorf("capacity timeslots are not available")
@@ -30,6 +34,9 @@ func (tr *TestRunner) validateAndBindTimeslotLocked(timeslotID string, test *Man
 	if reservation.ApprovalState != "approved" {
 		return fmt.Errorf("timeslot must be approved before it can be bound")
 	}
+	if reservation.BoundTestID != nil && strings.TrimSpace(*reservation.BoundTestID) != "" {
+		return fmt.Errorf("timeslot is no longer bindable (already bound or not approved)")
+	}
 	if normalizeProjectID(reservation.ProjectID) != normalizeProjectID(test.ProjectID) {
 		return fmt.Errorf("timeslot belongs to a different project than the test")
 	}
@@ -37,19 +44,292 @@ func (tr *TestRunner) validateAndBindTimeslotLocked(timeslotID string, test *Man
 	if test.ScheduledStartAt != nil && !test.ScheduledStartAt.IsZero() {
 		start = *test.ScheduledStartAt
 	}
-	end := start.Add(test.Duration)
-	if err := reservationFitError(reservation, start, end, test.TotalVUsers); err != nil {
+	window := launchWindowForTest(test, start)
+	if err := reservationFitError(reservation, window.StartAt, window.EndAt, test.TotalVUsers); err != nil {
 		return err
 	}
-	status := test.Status
-	bound, err := tr.reservationStore.UpdateCapacityReservationBinding(reservation.ID, &test.ID, &status, time.Now())
-	if err != nil {
-		return fmt.Errorf("bind timeslot: %w", err)
-	}
-	if !bound {
-		return fmt.Errorf("timeslot is no longer bindable (already bound or not approved)")
-	}
+	test.CapacityWindowStartAt = cloneTimePtr(&window.StartAt)
+	test.CapacityWindowEndAt = cloneTimePtr(&window.EndAt)
 	test.TimeslotID = &reservation.ID
+	return nil
+}
+
+func capacityBindingResultError(result storage.CapacityBindingResult) error {
+	switch result {
+	case storage.CapacityBindingBound:
+		return nil
+	case storage.CapacityBindingFenced:
+		return errNotExecutionLeader
+	case storage.CapacityBindingReservationMissing:
+		return fmt.Errorf("timeslot not found")
+	case storage.CapacityBindingTestMissing:
+		return fmt.Errorf("test not found")
+	case storage.CapacityBindingReservationUnapproved:
+		return fmt.Errorf("timeslot must be approved before it can be bound")
+	case storage.CapacityBindingReservationBound:
+		return fmt.Errorf("timeslot is no longer bindable (already bound or not approved)")
+	case storage.CapacityBindingTestBound:
+		return fmt.Errorf("test is already bound to a capacity timeslot")
+	case storage.CapacityBindingProjectMismatch:
+		return fmt.Errorf("test belongs to a different project than the timeslot")
+	case storage.CapacityBindingWindowMismatch:
+		return fmt.Errorf("the run window does not fit within the reserved timeslot")
+	case storage.CapacityBindingCapacityExceeded:
+		return fmt.Errorf("the run requests more VUsers than the timeslot allows (the slot reserves only its approved VUser capacity)")
+	case storage.CapacityBindingTestNotBindable:
+		return fmt.Errorf("test status cannot be bound to a capacity timeslot")
+	case storage.CapacityBindingTestExists:
+		return fmt.Errorf("test already exists")
+	default:
+		return fmt.Errorf("capacity timeslot binding failed (%s)", result)
+	}
+}
+
+// saveNewManagedTestRecord is the create-only persistence path. Tests without a
+// timeslot use the normal fenced save; tests with a timeslot require a unified
+// store capable of committing the test row and reservation binding together.
+func (tr *TestRunner) saveNewManagedTestRecord(test *ManagedTest) error {
+	leaseTerm, err := tr.captureExecutionLeaseTerm()
+	if err != nil {
+		return err
+	}
+	return tr.saveNewManagedTestRecordWithTerm(test, leaseTerm)
+}
+
+var errTestIdentityCollision = errors.New("test identity is already owned by another materialization")
+
+func (tr *TestRunner) saveNewManagedTestRecordWithTerm(test *ManagedTest, leaseTerm executionLeaseTerm) error {
+	if test == nil {
+		return fmt.Errorf("test is required")
+	}
+	if !tr.executionLeaseTermCurrent(leaseTerm) {
+		return errNotExecutionLeader
+	}
+	if test.TimeslotID == nil || strings.TrimSpace(*test.TimeslotID) == "" {
+		if tr.testStore == nil {
+			return nil
+		}
+		record := buildManagedTestRecord(test)
+		if store, ok := tr.testStore.(createOnlyTestPersistence); ok {
+			var lastErr error
+			for attempt := 0; attempt < durableTransitionAttempts; attempt++ {
+				var created bool
+				if tr.durableExecutionFence {
+					termStore, termOK := tr.testStore.(leaseTermCreateOnlyTestPersistence)
+					if !termOK {
+						return fmt.Errorf("test persistence does not support create-only lease-term fencing")
+					}
+					created, lastErr = termStore.CreateTestIfAbsentIfLeaseTermHeld(record, executionLeaseName, leaseTerm.ownerID, leaseTerm.generation)
+				} else {
+					created, lastErr = store.CreateTestIfAbsent(record)
+				}
+				if lastErr == nil && created {
+					return nil
+				}
+				stored, lookupErr := tr.testStore.GetTest(test.ID)
+				if lookupErr == nil && sameTestMaterialization(stored, record) {
+					return nil
+				}
+				if lookupErr == nil && stored != nil {
+					return fmt.Errorf("%w: test %s", errTestIdentityCollision, test.ID)
+				}
+				if lastErr == nil && errors.Is(lookupErr, sql.ErrNoRows) && !tr.executionLeaseTermCurrent(leaseTerm) {
+					return errNotExecutionLeader
+				}
+				if lastErr == nil {
+					lastErr = lookupErr
+				}
+				if attempt+1 < durableTransitionAttempts {
+					time.Sleep(durableTransitionRetryDelay)
+				}
+			}
+			return lastErr
+		}
+		if tr.durableExecutionFence {
+			return fmt.Errorf("test persistence does not support atomic create-only insertion")
+		}
+		// Compatibility for lightweight, single-controller test stores. tr.mu
+		// serializes this fallback; production SQLite/PostgreSQL stores implement
+		// the atomic interface above. Several narrow test doubles deliberately do
+		// not implement durable lookup semantics, so retain their historical save.
+		return tr.testStore.SaveTest(record)
+	}
+	store, ok := tr.reservationStore.(atomicCapacityBindingPersistence)
+	if !ok || tr.testStore == nil || !sameStoreInstance(store, tr.testStore) {
+		return fmt.Errorf("capacity reservation persistence does not support atomic test creation")
+	}
+	record := buildManagedTestRecord(test)
+	now := time.Now().UTC()
+	start := now
+	if test.ScheduledStartAt != nil && test.ScheduledStartAt.After(start) {
+		start = test.ScheduledStartAt.UTC()
+	}
+	window := launchWindowForTest(test, start)
+	test.CapacityWindowStartAt = cloneTimePtr(&window.StartAt)
+	test.CapacityWindowEndAt = cloneTimePtr(&window.EndAt)
+	record.CapacityWindowStartAt = cloneTimePtr(&window.StartAt)
+	record.CapacityWindowEndAt = cloneTimePtr(&window.EndAt)
+	slotID := strings.TrimSpace(*test.TimeslotID)
+	var lastErr error
+	for attempt := 0; attempt < durableTransitionAttempts; attempt++ {
+		var result storage.CapacityBindingResult
+		if tr.durableExecutionFence {
+			termStore, termOK := tr.reservationStore.(leaseTermAtomicCapacityBindingPersistence)
+			if !termOK {
+				return fmt.Errorf("capacity reservation persistence does not support create lease-term fencing")
+			}
+			result, lastErr = termStore.CreateTestAndBindCapacityReservationIfLeaseTermHeld(record, slotID, now, executionLeaseName, leaseTerm.ownerID, leaseTerm.generation)
+		} else {
+			result, lastErr = store.CreateTestAndBindCapacityReservation(record, slotID, now)
+		}
+		if lastErr == nil && result == storage.CapacityBindingBound {
+			stored, storedErr := tr.testStore.GetTest(test.ID)
+			reservation, reservationErr := tr.reservationStore.GetCapacityReservation(slotID)
+			if storedErr == nil && reservationErr == nil && sameTestMaterialization(stored, record) && reservation != nil &&
+				reservation.BoundTestID != nil && strings.TrimSpace(*reservation.BoundTestID) == test.ID {
+				return nil
+			}
+			if storedErr == nil && stored != nil && !sameTestMaterialization(stored, record) {
+				return fmt.Errorf("%w: test %s", errTestIdentityCollision, test.ID)
+			}
+			lastErr = errors.Join(storedErr, reservationErr)
+		} else if lastErr == nil && result == storage.CapacityBindingTestExists {
+			stored, lookupErr := tr.testStore.GetTest(test.ID)
+			if lookupErr == nil && !sameTestMaterialization(stored, record) {
+				return fmt.Errorf("%w: test %s", errTestIdentityCollision, test.ID)
+			}
+			lastErr = capacityBindingResultError(result)
+		} else if lastErr == nil {
+			lastErr = capacityBindingResultError(result)
+		}
+		if attempt+1 < durableTransitionAttempts {
+			time.Sleep(durableTransitionRetryDelay)
+		}
+	}
+	return fmt.Errorf("bind timeslot and persist test: %w", lastErr)
+}
+
+func sameTestMaterialization(stored, intended *storage.TestRecord) bool {
+	if stored == nil || intended == nil || stored.ID != intended.ID {
+		return false
+	}
+	if key := strings.TrimSpace(intended.MaterializationKey); key != "" {
+		return strings.TrimSpace(stored.MaterializationKey) == key
+	}
+	return strings.TrimSpace(intended.RefKey) != "" && strings.TrimSpace(stored.RefKey) == strings.TrimSpace(intended.RefKey)
+}
+
+// BindCapacityTimeslot is the standalone bind operation used by the REST
+// endpoint. It serializes with local test deletion under tr.mu and delegates the
+// authoritative test/reservation locks and lease check to one store transaction.
+func (tr *TestRunner) BindCapacityTimeslot(timeslotID, requestedTestID string) (*storage.CapacityReservation, storage.CapacityBindingResult, error) {
+	if !tr.isExecutionLeader() {
+		return nil, storage.CapacityBindingFenced, errNotExecutionLeader
+	}
+	token := tr.currentExecutionFenceToken()
+	if tr.durableExecutionFence && token == "" {
+		return nil, storage.CapacityBindingFenced, errNotExecutionLeader
+	}
+	store, ok := tr.reservationStore.(atomicCapacityBindingPersistence)
+	if !ok || tr.testStore == nil || !sameStoreInstance(store, tr.testStore) {
+		return nil, storage.CapacityBindingFenced, fmt.Errorf("capacity reservation persistence does not support atomic binding")
+	}
+	windowStore, ok := tr.reservationStore.(fullWindowAtomicCapacityBindingPersistence)
+	if !ok {
+		return nil, storage.CapacityBindingFenced, fmt.Errorf("capacity reservation persistence does not support full-window atomic binding")
+	}
+	timeslotID = strings.TrimSpace(timeslotID)
+	requestedTestID = strings.TrimSpace(requestedTestID)
+
+	tr.mu.Lock()
+	resolvedID := tr.resolveRefKeyLocked(requestedTestID)
+	record, err := tr.testStore.GetTest(resolvedID)
+	if err != nil {
+		tr.mu.Unlock()
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, storage.CapacityBindingTestMissing, nil
+		}
+		return nil, storage.CapacityBindingFenced, err
+	}
+	if record == nil {
+		tr.mu.Unlock()
+		return nil, storage.CapacityBindingTestMissing, nil
+	}
+	resolvedID = record.ID
+	now := time.Now().UTC()
+	managed := managedTestFromRecord(record)
+	start := now
+	if managed.ScheduledStartAt != nil && managed.ScheduledStartAt.After(start) {
+		start = managed.ScheduledStartAt.UTC()
+	}
+	window := launchWindowForTest(managed, start)
+	var result storage.CapacityBindingResult
+	if tr.durableExecutionFence {
+		result, err = windowStore.BindCapacityReservationToTestWithWindowIfLeaseHeld(timeslotID, resolvedID, now, window.StartAt, window.EndAt, executionLeaseName, token)
+	} else {
+		result, err = windowStore.BindCapacityReservationToTestWithWindow(timeslotID, resolvedID, now, window.StartAt, window.EndAt)
+	}
+	if err != nil || result != storage.CapacityBindingBound {
+		tr.mu.Unlock()
+		if err == nil && result == storage.CapacityBindingFenced {
+			err = errNotExecutionLeader
+		}
+		return nil, result, err
+	}
+	slotID := timeslotID
+	record.TimeslotID = &slotID
+	record.CapacityWindowStartAt = cloneTimePtr(&window.StartAt)
+	record.CapacityWindowEndAt = cloneTimePtr(&window.EndAt)
+	if current := tr.tests[resolvedID]; current != nil {
+		current.TimeslotID = &slotID
+		current.CapacityWindowStartAt = cloneTimePtr(&window.StartAt)
+		current.CapacityWindowEndAt = cloneTimePtr(&window.EndAt)
+	} else {
+		managed := managedTestFromRecord(record)
+		managed.TimeslotID = &slotID
+		tr.tests[resolvedID] = managed
+		tr.observeAndIndexRefKeyLocked(managed.RefKey, managed.ID)
+	}
+	tr.mu.Unlock()
+
+	reservation, err := tr.reservationStore.GetCapacityReservation(timeslotID)
+	if err != nil {
+		return nil, storage.CapacityBindingBound, err
+	}
+	return reservation, storage.CapacityBindingBound, nil
+}
+
+func (tr *TestRunner) repairCapacityReservationBindings() error {
+	if tr == nil || tr.reservationStore == nil {
+		return nil
+	}
+	store, ok := tr.reservationStore.(atomicCapacityBindingPersistence)
+	if !ok || tr.testStore == nil || !sameStoreInstance(store, tr.testStore) {
+		return nil
+	}
+	var (
+		changed int64
+		err     error
+	)
+	if tr.durableExecutionFence {
+		token := tr.currentExecutionFenceToken()
+		if token == "" {
+			return errNotExecutionLeader
+		}
+		var held bool
+		held, changed, err = store.RepairCapacityReservationBindingsIfLeaseHeld(executionLeaseName, token)
+		if err == nil && !held {
+			return errNotExecutionLeader
+		}
+	} else {
+		changed, err = store.RepairCapacityReservationBindings()
+	}
+	if err != nil {
+		return err
+	}
+	if changed > 0 {
+		slog.Info("repaired legacy capacity timeslot bindings", "changed_rows", changed)
+	}
 	return nil
 }
 
@@ -79,11 +359,16 @@ func (tr *TestRunner) launchTimeslotRevalidationErrorLocked(test *ManagedTest, n
 		return fmt.Errorf("bound capacity timeslot %q is no longer bound to this run", slotID)
 	}
 	launchStart := now.UTC()
-	if test.ScheduledStartAt != nil {
+	if test.StartedAt != nil && !test.StartedAt.IsZero() && (test.Status == "RUNNING" || test.Status == "PAUSED" || test.Status == "STOPPING") {
+		launchStart = test.StartedAt.UTC()
+	} else if test.ScheduledStartAt != nil && test.ScheduledStartAt.After(launchStart) {
+		// A future schedule still starts at its requested instant. A delayed
+		// schedule starts now; trusting its stale timestamp could admit a run whose
+		// actual end extends past the reservation.
 		launchStart = test.ScheduledStartAt.UTC()
 	}
-	launchEnd := launchStart.Add(test.Duration)
-	if err := reservationFitError(reservation, launchStart, launchEnd, test.TotalVUsers); err != nil {
+	window := launchWindowForTest(test, launchStart)
+	if err := reservationFitError(reservation, window.StartAt, window.EndAt, test.TotalVUsers); err != nil {
 		return fmt.Errorf("bound capacity timeslot %q no longer fits this run: %w", slotID, err)
 	}
 	return nil
@@ -124,10 +409,45 @@ func (tr *TestRunner) releaseCapacityReservationBinding(testID, slotID string) e
 	if testID == "" || slotID == "" {
 		return nil
 	}
-	if released, err := tr.reservationStore.ClearCapacityReservationBinding(slotID, testID, time.Now().UTC()); err != nil {
-		slog.Warn("release capacity timeslot binding failed", "timeslot_id", slotID, "test_id", testID, "error", err)
-		return fmt.Errorf("release capacity timeslot %s for test %s: %w", slotID, testID, err)
-	} else if released {
+	updatedAt := time.Now().UTC()
+	released := false
+	if tr.durableExecutionFence {
+		token := tr.currentExecutionFenceToken()
+		if token == "" {
+			return errNotExecutionLeader
+		}
+		store, ok := tr.reservationStore.(atomicCapacityBindingPersistence)
+		if !ok || tr.testStore == nil || !sameStoreInstance(store, tr.testStore) {
+			return fmt.Errorf("capacity reservation persistence does not support execution-lease-fenced release")
+		}
+		result, err := store.ClearCapacityReservationBindingAndTestIfLeaseHeld(slotID, testID, updatedAt, executionLeaseName, token)
+		if err != nil {
+			slog.Warn("release capacity timeslot binding failed", "timeslot_id", slotID, "test_id", testID, "error", err)
+			return fmt.Errorf("release capacity timeslot %s for test %s: %w", slotID, testID, err)
+		}
+		if result == storage.CapacityBindingReleaseFenced {
+			return errNotExecutionLeader
+		}
+		released = result == storage.CapacityBindingReleased
+	} else {
+		var err error
+		released, err = tr.reservationStore.ClearCapacityReservationBinding(slotID, testID, updatedAt)
+		if err != nil {
+			slog.Warn("release capacity timeslot binding failed", "timeslot_id", slotID, "test_id", testID, "error", err)
+			return fmt.Errorf("release capacity timeslot %s for test %s: %w", slotID, testID, err)
+		}
+	}
+	// A prior retry or takeover may already have cleared the durable pair. Once
+	// the store confirms there was no error/fence, refresh local state even when
+	// this call was an idempotent no-op.
+	tr.mu.Lock()
+	if test := tr.tests[testID]; test != nil && test.TimeslotID != nil && strings.TrimSpace(*test.TimeslotID) == slotID {
+		test.TimeslotID = nil
+		test.CapacityWindowStartAt = nil
+		test.CapacityWindowEndAt = nil
+	}
+	tr.mu.Unlock()
+	if released {
 		slog.Debug("released capacity timeslot binding", "timeslot_id", slotID, "test_id", testID)
 	}
 	return nil
@@ -148,7 +468,7 @@ func (tr *TestRunner) enqueueCapacityReservationReleaseRetry(testID, slotID stri
 			if !tr.waitExecutionPlanRetry(delay) {
 				return
 			}
-			_, err := tr.reservationStore.ClearCapacityReservationBinding(slotID, testID, time.Now().UTC())
+			err := tr.releaseCapacityReservationBinding(testID, slotID)
 			if err == nil {
 				return
 			}
@@ -236,7 +556,7 @@ func reservationTotalsWithTimeslots(settings SystemSettings, projectID string, a
 		if timeslotPoolID(ts) != "" {
 			g := timeslotReservedGenerators(settings, ts)
 			if g > 0 && normalizeProjectID(ts.ProjectID) == normalizeProjectID(projectID) {
-				projectReserved += g
+				projectReserved = saturatingAddNonNegative(projectReserved, g)
 			}
 			continue
 		}
@@ -244,9 +564,9 @@ func reservationTotalsWithTimeslots(settings SystemSettings, projectID string, a
 		if g <= 0 {
 			continue
 		}
-		totalReserved += g
+		totalReserved = saturatingAddNonNegative(totalReserved, g)
 		if normalizeProjectID(ts.ProjectID) == normalizeProjectID(projectID) {
-			projectReserved += g
+			projectReserved = saturatingAddNonNegative(projectReserved, g)
 		}
 	}
 	return totalReserved, projectReserved
@@ -273,9 +593,9 @@ func poolReservationTotalsWithTimeslots(settings SystemSettings, projectID, pool
 		if g <= 0 {
 			continue
 		}
-		totalReserved += g
+		totalReserved = saturatingAddNonNegative(totalReserved, g)
 		if normalizeProjectID(ts.ProjectID) == normalizeProjectID(projectID) {
-			projectReserved += g
+			projectReserved = saturatingAddNonNegative(projectReserved, g)
 		}
 	}
 	return totalReserved, projectReserved
@@ -296,7 +616,133 @@ func timeslotReservedGenerators(settings SystemSettings, ts *storage.CapacityRes
 		if perGen <= 0 {
 			perGen = 10000
 		}
-		return (*v + perGen - 1) / perGen // ceil
+		// 1+(v-1)/n is the same ceiling division without overflowing when a
+		// client supplies an int near the platform maximum.
+		return 1 + (*v-1)/perGen
 	}
 	return 0
+}
+
+// capacityChangeOverbookingConflict compares two complete capacity states and
+// reports a conflict only when the proposed state increases overbooking while an
+// approved timeslot is active. This preserves an explicit prior override (and
+// the historical settings-only clamping behavior) while preventing either a new
+// approval or a settings edit from making the combined promises less feasible.
+func capacityChangeOverbookingConflict(
+	beforeSettings, afterSettings SystemSettings,
+	beforeSlots, afterSlots []*storage.CapacityReservation,
+	poolEnvelopes map[string]int,
+) string {
+	envelopes := make(map[string]struct{})
+	boundaries := make(map[time.Time]struct{})
+	collectSettings := func(settings SystemSettings) {
+		for _, reservation := range normalizeCapacityReservations(settings.CapacityPlanning.Reservations) {
+			envelopes[strings.TrimSpace(reservation.PoolID)] = struct{}{}
+			if reservation.StartsAt != nil {
+				boundaries[reservation.StartsAt.UTC()] = struct{}{}
+			}
+			if reservation.EndsAt != nil {
+				boundaries[reservation.EndsAt.UTC()] = struct{}{}
+			}
+		}
+	}
+	collectSlots := func(slots []*storage.CapacityReservation) {
+		for _, slot := range slots {
+			if slot == nil {
+				continue
+			}
+			envelopes[timeslotPoolID(slot)] = struct{}{}
+			boundaries[slot.StartAt.UTC()] = struct{}{}
+			boundaries[slot.EndAt.UTC()] = struct{}{}
+		}
+	}
+	collectSettings(beforeSettings)
+	collectSettings(afterSettings)
+	collectSlots(beforeSlots)
+	collectSlots(afterSlots)
+
+	times := make([]time.Time, 0, len(boundaries))
+	for at := range boundaries {
+		times = append(times, at)
+	}
+	sort.Slice(times, func(i, j int) bool { return times[i].Before(times[j]) })
+	poolIDs := make([]string, 0, len(envelopes))
+	for poolID := range envelopes {
+		poolIDs = append(poolIDs, poolID)
+	}
+	sort.Strings(poolIDs)
+
+	for _, poolID := range poolIDs {
+		for _, at := range times {
+			beforeTotal, _ := capacityEnvelopeUsageAt(beforeSettings, beforeSlots, poolID, at)
+			afterTotal, afterDynamic := capacityEnvelopeUsageAt(afterSettings, afterSlots, poolID, at)
+			// Settings-only oversubscription has historically been clamped at
+			// admission. This fence is specifically for promises shared with
+			// approved timeslots, so do not make an unrelated cosmetic settings
+			// edit fail solely because of that pre-existing condition.
+			if afterDynamic <= 0 {
+				continue
+			}
+			beforeLimit, beforeKnown := capacityEnvelopeLimit(beforeSettings, poolEnvelopes, poolID)
+			afterLimit, afterKnown := capacityEnvelopeLimit(afterSettings, poolEnvelopes, poolID)
+			if !afterKnown {
+				continue
+			}
+			beforeExcess := 0
+			if beforeKnown {
+				beforeExcess = maxInt(0, beforeTotal-beforeLimit)
+			}
+			afterExcess := maxInt(0, afterTotal-afterLimit)
+			if afterExcess <= beforeExcess {
+				continue
+			}
+			if poolID != "" {
+				return fmt.Sprintf("capacity change would reserve %d generators in fleet pool %q at %s but the pool has only %d", afterTotal, poolID, at.Format(time.RFC3339), afterLimit)
+			}
+			return fmt.Sprintf("capacity change would reserve %d generators at %s but only %d are available", afterTotal, at.Format(time.RFC3339), afterLimit)
+		}
+	}
+	return ""
+}
+
+func capacityEnvelopeLimit(settings SystemSettings, poolEnvelopes map[string]int, poolID string) (int, bool) {
+	if poolID != "" {
+		limit, known := poolEnvelopes[poolID]
+		return limit, known
+	}
+	return settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators, true
+}
+
+func capacityEnvelopeUsageAt(settings SystemSettings, slots []*storage.CapacityReservation, poolID string, at time.Time) (total, dynamic int) {
+	poolID = strings.TrimSpace(poolID)
+	for _, reservation := range normalizeCapacityReservations(settings.CapacityPlanning.Reservations) {
+		if reservation.ReservedGenerators <= 0 || strings.TrimSpace(reservation.PoolID) != poolID || !capacitySettingsReservationActiveAt(reservation, at) {
+			continue
+		}
+		total = saturatingAddNonNegative(total, reservation.ReservedGenerators)
+	}
+	for _, slot := range slots {
+		if slot == nil || timeslotPoolID(slot) != poolID || at.Before(slot.StartAt) || !at.Before(slot.EndAt) {
+			continue
+		}
+		units := timeslotReservedGenerators(settings, slot)
+		if units <= 0 {
+			continue
+		}
+		total = saturatingAddNonNegative(total, units)
+		dynamic = saturatingAddNonNegative(dynamic, units)
+	}
+	return total, dynamic
+}
+
+func capacitySettingsReservationActiveAt(reservation CapacityReservation, at time.Time) bool {
+	if reservation.StartsAt != nil && at.Before(*reservation.StartsAt) {
+		return false
+	}
+	// Capacity windows are half-open: an ending reservation does not overlap one
+	// that starts at the same instant.
+	if reservation.EndsAt != nil && !at.Before(*reservation.EndsAt) {
+		return false
+	}
+	return true
 }

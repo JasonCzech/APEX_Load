@@ -4,10 +4,13 @@ package api
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -29,14 +32,44 @@ func (s *Server) handleLibraryCatalog(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "kind must be one of script, scenario, or result")
 		return
 	}
-	items := s.libraryCatalogItems(projectID, kind)
+	limit, offset, ok := parseLibraryCatalogPage(w, r)
+	if !ok {
+		return
+	}
+	items, total := s.libraryCatalogPage(projectID, kind, offset, limit)
 	writeJSON(w, http.StatusOK, LibraryCatalogResponse{
 		SchemaVersion: libraryBundleSchemaVersion,
 		InstanceID:    s.controllerID,
 		GeneratedAt:   time.Now().UTC(),
 		Items:         items,
 		Count:         len(items),
+		Total:         total,
+		Limit:         limit,
+		Offset:        offset,
+		HasMore:       offset+len(items) < total,
 	})
+}
+
+func parseLibraryCatalogPage(w http.ResponseWriter, r *http.Request) (limit int, offset int, ok bool) {
+	limit = defaultLibraryCatalogPageSize
+	query := r.URL.Query()
+	if raw := strings.TrimSpace(query.Get("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed <= 0 || parsed > maxLibraryCatalogPageSize {
+			writeError(w, http.StatusBadRequest, "limit must be an integer between 1 and "+strconv.Itoa(maxLibraryCatalogPageSize))
+			return 0, 0, false
+		}
+		limit = parsed
+	}
+	if raw := strings.TrimSpace(query.Get("offset")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 0 || parsed > maxLibraryCatalogOffset {
+			writeError(w, http.StatusBadRequest, "offset must be an integer between 0 and "+strconv.Itoa(maxLibraryCatalogOffset))
+			return 0, 0, false
+		}
+		offset = parsed
+	}
+	return limit, offset, true
 }
 
 func (s *Server) handleLibraryExport(w http.ResponseWriter, r *http.Request) {
@@ -44,9 +77,17 @@ func (s *Server) handleLibraryExport(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	bundle, err := s.buildLibraryBundle(req.Kind, req.ID, req.ProjectID, req.IncludeDependencies)
+	projectID, status, message := s.resolveLibraryTransferHandlerProject(req, r.URL.Path)
+	if status != 0 {
+		writeError(w, status, message)
+		return
+	}
+	bundle, err := s.buildLibraryBundle(req.Kind, req.ID, projectID, req.IncludeDependencies)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !requireServiceAccountLibraryBundleScopes(w, r, bundle) {
 		return
 	}
 	s.recordAuditEvent(r, "library.export", "success", "library_bundle", bundle.BundleID, bundle.Source.ProjectID, map[string]any{"kind": normalizeLibraryKind(req.Kind), "source_item_id": req.ID})
@@ -120,8 +161,13 @@ func (s *Server) handleLibraryResultArchive(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	defer lease.Release()
+	manifest, err := s.runner.GetRunArchiveManifest(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
 	staged, err := stageArchiveDownload(prepCtx, func(destination io.Writer) error {
-		return zipDirectoryContext(prepCtx, record.ArchivePath, destination)
+		return zipSanitizedRunArchiveContext(prepCtx, record, manifest, destination)
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to build archive bundle: "+err.Error())
@@ -185,6 +231,8 @@ func (s *Server) handleLibraryCreateRemote(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) handleLibraryUpdateRemote(w http.ResponseWriter, r *http.Request) {
+	s.remoteConfigMu.Lock()
+	defer s.remoteConfigMu.Unlock()
 	id := strings.TrimSpace(r.PathValue("id"))
 	var req LibraryRemoteRequest
 	if !decodeJSONBody(w, r, &req) {
@@ -201,8 +249,20 @@ func (s *Server) handleLibraryUpdateRemote(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	previous := *remote
+	previous.ProjectMappings = cloneLibraryRemoteProjectMappings(remote.ProjectMappings)
 	updated := previous
 	s.libraryMu.Unlock()
+	if strings.TrimSpace(req.BaseURL) != "" || strings.TrimSpace(req.AuthMethod) != "" || strings.TrimSpace(req.CredentialRef) != "" || strings.TrimSpace(req.APIKey) != "" {
+		pending, pendingErr := s.hasPendingRemoteRunCleanup(id)
+		if pendingErr != nil {
+			writeError(w, http.StatusServiceUnavailable, "remote cleanup state is unavailable: "+pendingErr.Error())
+			return
+		}
+		if pending {
+			writeError(w, http.StatusConflict, "remote transport and credentials cannot change while run cleanup is pending")
+			return
+		}
+	}
 	if strings.TrimSpace(req.Name) != "" {
 		updated.Name = strings.TrimSpace(req.Name)
 	}
@@ -219,6 +279,14 @@ func (s *Server) handleLibraryUpdateRemote(w http.ResponseWriter, r *http.Reques
 	}
 	if req.DefaultProjectID != "" {
 		updated.DefaultProjectID = normalizeProjectID(req.DefaultProjectID)
+	}
+	if req.ProjectMappings != nil {
+		projectMappings, err := normalizeLibraryRemoteProjectMappings(req.ProjectMappings)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		updated.ProjectMappings = projectMappings
 	}
 	updated.UpdatedAt = time.Now().UTC()
 	if err := validateLibraryRemoteTransport(updated); err != nil {
@@ -253,6 +321,8 @@ func (s *Server) handleLibraryUpdateRemote(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) handleLibraryDeleteRemote(w http.ResponseWriter, r *http.Request) {
+	s.remoteConfigMu.Lock()
+	defer s.remoteConfigMu.Unlock()
 	s.libraryStateMutationMu.Lock()
 	defer s.libraryStateMutationMu.Unlock()
 	s.loadLibraryState()
@@ -265,6 +335,18 @@ func (s *Server) handleLibraryDeleteRemote(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	previousRemote := *remote
+	previousRemote.ProjectMappings = cloneLibraryRemoteProjectMappings(remote.ProjectMappings)
+	pending, pendingErr := s.hasPendingRemoteRunCleanup(id)
+	if pendingErr != nil {
+		s.libraryMu.Unlock()
+		writeError(w, http.StatusServiceUnavailable, "remote cleanup state is unavailable: "+pendingErr.Error())
+		return
+	}
+	if pending {
+		s.libraryMu.Unlock()
+		writeError(w, http.StatusConflict, "remote workspace cannot be deleted while run cleanup is pending")
+		return
+	}
 	removedLinks := make(map[string]*librarySyncLink)
 	delete(s.libraryRemotes, id)
 	for key, link := range s.libraryLinks {
@@ -298,6 +380,8 @@ func (s *Server) handleLibraryDeleteRemote(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) handleLibraryProbeRemote(w http.ResponseWriter, r *http.Request) {
+	s.remoteConfigMu.RLock()
+	defer s.remoteConfigMu.RUnlock()
 	s.libraryStateMutationMu.Lock()
 	s.loadLibraryState()
 	remote, ok := s.libraryRemote(r.PathValue("id"))
@@ -350,14 +434,25 @@ func (s *Server) handleLibraryProbeRemote(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) handleLibraryRemoteCatalog(w http.ResponseWriter, r *http.Request) {
+	s.remoteConfigMu.RLock()
+	defer s.remoteConfigMu.RUnlock()
 	remote, ok := s.freshLibraryRemote(r.PathValue("id"))
 	if !ok {
 		writeError(w, http.StatusNotFound, "remote library not found")
 		return
 	}
-	projectID := strings.TrimSpace(firstNonEmpty(r.URL.Query().Get("project_id"), remote.DefaultProjectID))
+	localProjectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
+	projectID, err := allowedRemoteProjectID(remote, localProjectID, "")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	kind := normalizeLibraryKind(r.URL.Query().Get("kind"))
-	catalog, err := s.remoteLibraryCatalog(r.Context(), remote, projectID, kind)
+	limit, offset, pageOK := parseLibraryCatalogPage(w, r)
+	if !pageOK {
+		return
+	}
+	catalog, err := s.remoteLibraryCatalog(r.Context(), remote, projectID, kind, offset, limit)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
@@ -369,6 +464,8 @@ func (s *Server) handleLibraryRemoteCatalog(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) handleLibraryRemotePull(w http.ResponseWriter, r *http.Request) {
+	s.remoteConfigMu.RLock()
+	defer s.remoteConfigMu.RUnlock()
 	remote, ok := s.freshLibraryRemote(r.PathValue("id"))
 	if !ok {
 		writeError(w, http.StatusNotFound, "remote library not found")
@@ -379,11 +476,26 @@ func (s *Server) handleLibraryRemotePull(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if strings.TrimSpace(req.ProjectID) == "" {
-		req.ProjectID = remote.DefaultProjectID
+		writeError(w, http.StatusBadRequest, "project_id is required as the library pull destination")
+		return
 	}
-	bundle, err := s.remoteLibraryExport(r.Context(), remote, req)
+	remoteProjectID, err := allowedRemoteProjectID(remote, req.ProjectID, req.RemoteProjectID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	remoteReq := req
+	remoteReq.ProjectID = remoteProjectID
+	bundle, err := s.remoteLibraryExport(r.Context(), remote, remoteReq)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	if err := validateLibraryBundleProject(bundle, remoteReq.ProjectID); err != nil {
+		writeError(w, http.StatusBadGateway, "remote library returned a cross-project bundle")
+		return
+	}
+	if !requireServiceAccountLibraryBundleScopes(w, r, bundle) {
 		return
 	}
 	var archiveImport *libraryArchiveImport
@@ -419,6 +531,8 @@ func (s *Server) handleLibraryRemotePull(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) handleLibraryRemotePush(w http.ResponseWriter, r *http.Request) {
+	s.remoteConfigMu.RLock()
+	defer s.remoteConfigMu.RUnlock()
 	remote, ok := s.freshLibraryRemote(r.PathValue("id"))
 	if !ok {
 		writeError(w, http.StatusNotFound, "remote library not found")
@@ -428,19 +542,30 @@ func (s *Server) handleLibraryRemotePush(w http.ResponseWriter, r *http.Request)
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	if strings.TrimSpace(req.ProjectID) == "" {
-		req.ProjectID = remote.DefaultProjectID
+	localProjectID, resolveStatus, message := s.resolveLibraryTransferHandlerProject(req, r.URL.Path)
+	if resolveStatus != 0 {
+		writeError(w, resolveStatus, message)
+		return
 	}
-	bundle, err := s.buildLibraryBundle(req.Kind, req.ID, req.ProjectID, true)
+	req.ProjectID = localProjectID
+	remoteProjectID, err := allowedRemoteProjectID(remote, localProjectID, req.RemoteProjectID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	bundle, err := s.buildLibraryBundle(req.Kind, req.ID, localProjectID, true)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !requireServiceAccountLibraryBundleScopes(w, r, bundle) {
+		return
+	}
 	var imported *LibraryImportResponse
 	if normalizeLibraryKind(req.Kind) == "result" && libraryBundleHasStreamedArchive(bundle) {
-		imported, err = s.remoteLibraryImportArchive(r.Context(), remote, LibraryImportRequest{Bundle: *bundle, ProjectID: req.ProjectID, Mode: "push"}, req.ID)
+		imported, err = s.remoteLibraryImportArchive(r.Context(), remote, LibraryImportRequest{Bundle: *bundle, ProjectID: remoteProjectID, Mode: "push"}, req.ID)
 	} else {
-		imported, err = s.remoteLibraryImport(r.Context(), remote, LibraryImportRequest{Bundle: *bundle, ProjectID: req.ProjectID, Mode: "push"})
+		imported, err = s.remoteLibraryImport(r.Context(), remote, LibraryImportRequest{Bundle: *bundle, ProjectID: remoteProjectID, Mode: "push"})
 	}
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
@@ -462,7 +587,30 @@ func (s *Server) handleLibraryRemotePush(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, status, LibraryRemoteTransferResponse{Remote: s.sanitizeLibraryRemote(&remote), Bundle: bundle, Import: imported})
 }
 
+func requireServiceAccountLibraryBundleScopes(w http.ResponseWriter, r *http.Request, bundle *LibraryBundle) bool {
+	if err := requireServiceAccountLibraryBundleScopesContext(r.Context(), bundle); err == nil {
+		return true
+	}
+	writeError(w, http.StatusForbidden, errServiceAccountLibraryBundleScope.Error())
+	return false
+}
+
+var errServiceAccountLibraryBundleScope = errors.New("service account token scope does not allow every item in the expanded library bundle")
+
+func requireServiceAccountLibraryBundleScopesContext(ctx context.Context, bundle *LibraryBundle) error {
+	account, ok := AuthenticatedServiceAccountFromContext(ctx)
+	if !ok || account == nil {
+		return nil
+	}
+	if bundle != nil && serviceAccountAllowsScopes(account, serviceAccountScopesForLibraryItems(bundle.Items)) {
+		return nil
+	}
+	return errServiceAccountLibraryBundleScope
+}
+
 func (s *Server) handleLibraryRemoteDiff(w http.ResponseWriter, r *http.Request) {
+	s.remoteConfigMu.RLock()
+	defer s.remoteConfigMu.RUnlock()
 	remote, ok := s.freshLibraryRemote(r.PathValue("id"))
 	if !ok {
 		writeError(w, http.StatusNotFound, "remote library not found")
@@ -474,18 +622,37 @@ func (s *Server) handleLibraryRemoteDiff(w http.ResponseWriter, r *http.Request)
 	}
 	localID := firstNonEmpty(req.LocalID, req.ID)
 	remoteItemID := firstNonEmpty(req.RemoteID, req.ID)
-	localHash, err := s.localLibraryItemHash(req.Kind, localID)
+	localProjectID, resolveStatus, message := s.resolveLibraryTransferHandlerProject(req, r.URL.Path)
+	if resolveStatus != 0 {
+		writeError(w, resolveStatus, message)
+		return
+	}
+	req.ProjectID = localProjectID
+	localBundle, err := s.buildLibraryBundle(req.Kind, localID, localProjectID, false)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if strings.TrimSpace(req.ProjectID) == "" {
-		req.ProjectID = remote.DefaultProjectID
+	localHash := libraryBundleItemHash(localBundle, req.Kind, localID)
+	if localHash == "" {
+		writeError(w, http.StatusBadRequest, "local library item hash is unavailable")
+		return
 	}
-	req.ID = remoteItemID
-	bundle, err := s.remoteLibraryExport(r.Context(), remote, req)
+	remoteReq := req
+	remoteReq.ID = remoteItemID
+	remoteProjectID, err := allowedRemoteProjectID(remote, localProjectID, req.RemoteProjectID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	remoteReq.ProjectID = remoteProjectID
+	bundle, err := s.remoteLibraryExport(r.Context(), remote, remoteReq)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	if err := validateLibraryBundleProject(bundle, remoteReq.ProjectID); err != nil {
+		writeError(w, http.StatusBadGateway, "remote library returned a cross-project bundle")
 		return
 	}
 	remoteHash := ""
@@ -508,4 +675,100 @@ func (s *Server) handleLibraryRemoteDiff(w http.ResponseWriter, r *http.Request)
 		"remote_hash": remoteHash,
 		"status":      status,
 	})
+}
+
+func (s *Server) resolveLibraryTransferHandlerProject(req LibraryTransferRequest, path string) (string, int, string) {
+	if normalizeLibraryKind(req.Kind) == "" {
+		return "", http.StatusBadRequest, "kind must be one of script, scenario, or result"
+	}
+	if s != nil && s.store != nil {
+		return resolveLibraryTransferRequestProjectID(req, path, s.store)
+	}
+	if strings.HasSuffix(path, "/pull") {
+		if strings.TrimSpace(req.ProjectID) == "" {
+			return "", http.StatusBadRequest, "project_id is required as the library pull destination"
+		}
+		return normalizeProjectID(req.ProjectID), 0, ""
+	}
+	lookupID := strings.TrimSpace(req.ID)
+	if strings.HasSuffix(path, "/diff") {
+		lookupID = strings.TrimSpace(firstNonEmpty(req.LocalID, req.ID))
+	}
+	projectID := s.localAssetProjectID(req.Kind, lookupID)
+	if projectID == "" {
+		return "", http.StatusNotFound, "local library item not found"
+	}
+	if strings.TrimSpace(req.ProjectID) != "" && normalizeProjectID(req.ProjectID) != projectID {
+		return "", http.StatusBadRequest, "project_id does not match the requested object's project"
+	}
+	return projectID, 0, ""
+}
+
+func libraryBundleItemHash(bundle *LibraryBundle, kind, id string) string {
+	if bundle == nil {
+		return ""
+	}
+	kind = normalizeLibraryKind(kind)
+	id = strings.TrimSpace(id)
+	for _, item := range bundle.Items {
+		if normalizeLibraryKind(item.Kind) == kind && strings.TrimSpace(item.SourceItemID) == id {
+			return strings.TrimSpace(item.ContentHash)
+		}
+	}
+	return ""
+}
+
+// allowedRemoteProjectID resolves the only remote project that a non-admin
+// transfer request may target. The mapping is configured by a system
+// administrator on the same remote object as its credential. There is no
+// implicit/default mapping: a broad controller credential must never turn
+// possession of an unrelated local project role into remote-project access.
+func allowedRemoteProjectID(remote LibraryRemote, localProjectID, requestedRemoteProjectID string) (string, error) {
+	if strings.TrimSpace(localProjectID) == "" {
+		return "", fmt.Errorf("local project_id is required for remote workspace access")
+	}
+	localProjectID = normalizeProjectID(localProjectID)
+	remoteProjectID, mapped := remote.ProjectMappings[localProjectID]
+	remoteProjectID = strings.TrimSpace(remoteProjectID)
+	if !mapped || remoteProjectID == "" {
+		return "", fmt.Errorf("local project %q has no administrator-configured mapping for this remote workspace", localProjectID)
+	}
+	remoteProjectID = normalizeProjectID(remoteProjectID)
+	if requested := strings.TrimSpace(requestedRemoteProjectID); requested != "" && normalizeProjectID(requested) != remoteProjectID {
+		return "", fmt.Errorf("remote_project_id is not allowed by the remote workspace project mapping")
+	}
+	return remoteProjectID, nil
+}
+
+func normalizeLibraryRemoteProjectMappings(mappings map[string]string) (map[string]string, error) {
+	if mappings == nil {
+		return nil, nil
+	}
+	if len(mappings) > 1000 {
+		return nil, fmt.Errorf("project_mappings exceeds the 1000-entry limit")
+	}
+	normalized := make(map[string]string, len(mappings))
+	for localProjectID, remoteProjectID := range mappings {
+		if strings.TrimSpace(localProjectID) == "" || strings.TrimSpace(remoteProjectID) == "" {
+			return nil, fmt.Errorf("project_mappings keys and values must be non-empty")
+		}
+		localProjectID = normalizeProjectID(localProjectID)
+		remoteProjectID = normalizeProjectID(remoteProjectID)
+		if existing, ok := normalized[localProjectID]; ok && existing != remoteProjectID {
+			return nil, fmt.Errorf("project_mappings contains conflicting normalized local project %q", localProjectID)
+		}
+		normalized[localProjectID] = remoteProjectID
+	}
+	return normalized, nil
+}
+
+func cloneLibraryRemoteProjectMappings(mappings map[string]string) map[string]string {
+	if mappings == nil {
+		return nil
+	}
+	cloned := make(map[string]string, len(mappings))
+	for localProjectID, remoteProjectID := range mappings {
+		cloned[localProjectID] = remoteProjectID
+	}
+	return cloned
 }

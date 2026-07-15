@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -149,7 +150,7 @@ func TestLibraryRemotePullAndPushScriptBetweenControllers(t *testing.T) {
 	defer hostHTTP.Close()
 	remote := createLibraryRemoteForTest(t, local, hostHTTP.URL, "team-project")
 
-	pullBody := marshalLibraryTestJSON(t, LibraryTransferRequest{Kind: "script", ID: hostScript.ID})
+	pullBody := marshalLibraryTestJSON(t, LibraryTransferRequest{Kind: "script", ID: hostScript.ID, ProjectID: "team-project"})
 	pullResp := httptest.NewRecorder()
 	local.mux.ServeHTTP(pullResp, httptest.NewRequest(http.MethodPost, "/api/v1/library/remotes/"+remote.ID+"/pull", bytes.NewReader(pullBody)))
 	if pullResp.Code != http.StatusCreated {
@@ -255,7 +256,7 @@ func TestLibraryPullDetectsLocalAndRemoteConflict(t *testing.T) {
 	defer hostHTTP.Close()
 	remote := createLibraryRemoteForTest(t, local, hostHTTP.URL, "team-project")
 
-	pullBody := marshalLibraryTestJSON(t, LibraryTransferRequest{Kind: "script", ID: hostScript.ID})
+	pullBody := marshalLibraryTestJSON(t, LibraryTransferRequest{Kind: "script", ID: hostScript.ID, ProjectID: "team-project"})
 	pullResp := httptest.NewRecorder()
 	local.mux.ServeHTTP(pullResp, httptest.NewRequest(http.MethodPost, "/api/v1/library/remotes/"+remote.ID+"/pull", bytes.NewReader(pullBody)))
 	if pullResp.Code != http.StatusCreated {
@@ -306,6 +307,7 @@ func TestLibraryRemoteStatePersistsThroughSettingsStore(t *testing.T) {
 		Name:             "Team Host",
 		BaseURL:          "https://host.example.test",
 		DefaultProjectID: "team-project",
+		ProjectMappings:  map[string]string{"local-team": "team-project"},
 		AuthMethod:       "service_account",
 		APIKey:           "secret-token",
 	})
@@ -348,8 +350,11 @@ func TestLibraryRemoteStatePersistsThroughSettingsStore(t *testing.T) {
 	if listed.Remotes[0].ID != created.ID || !listed.Remotes[0].CredentialConfigured {
 		t.Fatalf("listed remote = %#v, want persisted remote with credential configured", listed.Remotes[0])
 	}
-	if listed.Remotes[0].APIKey != "" {
-		t.Fatal("remote list response leaked api key")
+	if listed.Remotes[0].ProjectMappings["local-team"] != "team-project" {
+		t.Fatalf("listed project mappings = %#v, want persisted local-team mapping", listed.Remotes[0].ProjectMappings)
+	}
+	if listed.Remotes[0].APIKey != "" || listed.Remotes[0].CredentialRef != "" {
+		t.Fatalf("remote list response leaked credential material: %#v", listed.Remotes[0])
 	}
 }
 
@@ -372,6 +377,9 @@ func TestLibraryResultArchiveStreamsAndImportsMultipart(t *testing.T) {
 		t.Fatalf("CreateTest: %v", err)
 	}
 	record := attachLibraryArchiveFixture(t, host, testRun)
+	record.ArchiveBackend = archiveBackendFilesystem
+	record.ArchiveURI = "azblob://internal-container/private-prefix/" + testRun.ID
+	record.ManifestURI = record.ArchiveURI + "/manifest.json"
 
 	exportBody := marshalLibraryTestJSON(t, LibraryTransferRequest{Kind: "result", ID: testRun.ID})
 	exportResp := httptest.NewRecorder()
@@ -386,18 +394,37 @@ func TestLibraryResultArchiveStreamsAndImportsMultipart(t *testing.T) {
 	if len(bundle.Items) != 1 || bundle.Items[0].Result == nil {
 		t.Fatalf("bundle items = %#v, want one result item", bundle.Items)
 	}
+	if bundle.Items[0].ContentHashVersion != libraryResultHashVersionCurrent {
+		t.Fatalf("result content_hash_version = %q, want %q", bundle.Items[0].ContentHashVersion, libraryResultHashVersionCurrent)
+	}
 	result := bundle.Items[0].Result
+	for label, archive := range map[string]*storage.RunArchiveRecord{"result.archive": result.Archive, "result.test.archive": result.Test.Archive} {
+		if archive == nil {
+			t.Fatalf("%s is nil", label)
+		}
+		if archive.ArchivePath != "" || archive.ManifestPath != "" || archive.ArchiveURI != "" || archive.ManifestURI != "" || archive.ArchiveBackend != "" {
+			t.Fatalf("%s leaked internal archive location: %#v", label, archive)
+		}
+	}
 	if result.ArchiveTransfer != "stream" {
 		t.Fatalf("archive_transfer = %q, want stream", result.ArchiveTransfer)
 	}
 	if result.ArchiveZipB64 != "" {
 		t.Fatal("streaming result export should not populate legacy archive_zip_b64")
 	}
-	if result.ArchiveManifestHash != hashArchiveManifest(record) {
-		t.Fatalf("manifest hash = %q, want %q", result.ArchiveManifestHash, hashArchiveManifest(record))
+	manifest, err := loadRunArchiveManifestFromRecord(record)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if result.ArchiveSizeBytes != archiveDirectorySize(record.ArchivePath) {
-		t.Fatalf("archive size = %d, want %d", result.ArchiveSizeBytes, archiveDirectorySize(record.ArchivePath))
+	wantManifestHash, wantArchiveSize, err := sanitizedRunArchiveMetadata(context.Background(), record, manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ArchiveManifestHash != wantManifestHash {
+		t.Fatalf("manifest hash = %q, want %q", result.ArchiveManifestHash, wantManifestHash)
+	}
+	if result.ArchiveSizeBytes != wantArchiveSize {
+		t.Fatalf("archive size = %d, want %d", result.ArchiveSizeBytes, wantArchiveSize)
 	}
 
 	catalogResp := httptest.NewRecorder()
@@ -411,6 +438,9 @@ func TestLibraryResultArchiveStreamsAndImportsMultipart(t *testing.T) {
 	}
 	if len(catalog.Items) != 1 || catalog.Items[0].ReleaseID != "release-archive" {
 		t.Fatalf("catalog items = %#v, want result release metadata", catalog.Items)
+	}
+	if catalog.Items[0].ContentHash != bundle.Items[0].ContentHash {
+		t.Fatalf("catalog result hash = %q, export hash = %q", catalog.Items[0].ContentHash, bundle.Items[0].ContentHash)
 	}
 	wantRunDate := time.Date(2026, 6, 1, 11, 55, 0, 0, time.UTC)
 	if catalog.Items[0].Status != "COMPLETE" || !catalog.Items[0].ExecutionRunDate.Equal(wantRunDate) {
@@ -458,12 +488,22 @@ func TestLibraryResultArchiveStreamsAndImportsMultipart(t *testing.T) {
 	if raw["imported_archive_manifest_hash"] != result.ArchiveManifestHash {
 		t.Fatalf("imported manifest hash = %#v, want %q", raw["imported_archive_manifest_hash"], result.ArchiveManifestHash)
 	}
-	archivePath, _ := raw["archive_path"].(string)
-	if archivePath == "" {
-		t.Fatal("imported raw result did not record archive_path")
+	if _, exists := raw["archive_path"]; exists {
+		t.Fatalf("imported raw result exposed internal archive_path: %#v", raw["archive_path"])
 	}
+	archivePath := libraryImportedArchiveDir(imports[0].ID)
 	if _, err := os.Stat(filepath.Join(archivePath, "manifest.json")); err != nil {
 		t.Fatalf("imported archive manifest missing: %v", err)
+	}
+	listResp := httptest.NewRecorder()
+	target.mux.ServeHTTP(listResp, httptest.NewRequest(http.MethodGet, "/api/v1/results/imports?project_id=mapped-project", nil))
+	if listResp.Code != http.StatusOK {
+		t.Fatalf("list imported results status = %d body=%s", listResp.Code, listResp.Body.String())
+	}
+	for _, forbidden := range []string{archivePath, `"archive_path"`, `"manifest_path"`, `"archive_backend"`, `"archive_uri"`, `"manifest_uri"`} {
+		if strings.Contains(listResp.Body.String(), forbidden) {
+			t.Fatalf("list imported results exposed internal archive location %q: %s", forbidden, listResp.Body.String())
+		}
 	}
 	corruptBody, corruptType := multipartArchiveImportBody(t, bundle, "mapped-project", []byte("not-a-zip"))
 	corruptReq := httptest.NewRequest(http.MethodPost, "/api/v1/library/import/archive", corruptBody)
@@ -502,15 +542,20 @@ func TestLibraryResultHashAcceptsPreviousV1PayloadWithSummary(t *testing.T) {
 	testRun := &ManagedTest{ID: "run-v1", Name: "Prior Bundle", Status: "COMPLETE", ProjectID: "source", DurationStr: "1m", TotalVUsers: 1}
 	summary := libraryResultSummary(testRun)
 	item := LibraryBundleItem{
-		Kind:             "result",
-		SourceInstanceID: "source-instance",
-		SourceItemID:     testRun.ID,
-		Name:             testRun.Name,
-		ContentHash:      hashLibraryResultPreviousV1WithSummary(testRun, summary),
-		Result:           &LibraryResultPayload{Test: testRun, Summary: summary},
+		Kind:               "result",
+		SourceInstanceID:   "source-instance",
+		SourceItemID:       testRun.ID,
+		Name:               testRun.Name,
+		ContentHash:        hashLibraryResultPreviousV1WithSummary(testRun, summary),
+		ContentHashVersion: libraryResultHashVersionLegacyV1,
+		Result:             &LibraryResultPayload{Test: testRun, Summary: summary},
 	}
 	if _, _, conflict := server.importLibraryResult(item, "destination", "remote", nil); conflict != nil {
 		t.Fatalf("previous v1 result hash was rejected: %+v", conflict)
+	}
+	item.ContentHashVersion = "apexload.library_result_hash.v999"
+	if _, _, conflict := server.importLibraryResult(item, "destination", "remote", nil); conflict == nil || !strings.Contains(conflict.Reason, "unsupported result content_hash_version") {
+		t.Fatalf("unsupported result hash version conflict = %+v", conflict)
 	}
 }
 
@@ -557,13 +602,13 @@ func TestLibraryRemotePullAndPushResultArchivesBetweenControllers(t *testing.T) 
 	if err != nil {
 		t.Fatalf("CreateTest host: %v", err)
 	}
-	hostRecord := attachLibraryArchiveFixture(t, host, hostTest)
+	attachLibraryArchiveFixture(t, host, hostTest)
 
 	hostHTTP := httptest.NewServer(host.mux)
 	defer hostHTTP.Close()
 	remote := createLibraryRemoteForTest(t, local, hostHTTP.URL, "team-project")
 
-	pullBody := marshalLibraryTestJSON(t, LibraryTransferRequest{Kind: "result", ID: hostTest.ID})
+	pullBody := marshalLibraryTestJSON(t, LibraryTransferRequest{Kind: "result", ID: hostTest.ID, ProjectID: "team-project"})
 	pullResp := httptest.NewRecorder()
 	local.mux.ServeHTTP(pullResp, httptest.NewRequest(http.MethodPost, "/api/v1/library/remotes/"+remote.ID+"/pull", bytes.NewReader(pullBody)))
 	if pullResp.Code != http.StatusCreated {
@@ -576,7 +621,7 @@ func TestLibraryRemotePullAndPushResultArchivesBetweenControllers(t *testing.T) 
 	if pulled.Bundle == nil || len(pulled.Bundle.Items) != 1 || pulled.Bundle.Items[0].Result == nil {
 		t.Fatalf("pulled bundle = %#v, want one result item", pulled.Bundle)
 	}
-	assertLibraryArchiveImport(t, local, "team-project", hashArchiveManifest(hostRecord), 1)
+	assertLibraryArchiveImport(t, local, "team-project", pulled.Bundle.Items[0].Result.ArchiveManifestHash, 1)
 
 	localScript := local.runner.StoreScript(libraryTestScript("local-archive-script", "Local Archive Script", "team-project", "/local-archive"))
 	localTest, err := local.runner.CreateTest(CreateTestRequest{
@@ -592,7 +637,7 @@ func TestLibraryRemotePullAndPushResultArchivesBetweenControllers(t *testing.T) 
 	if err != nil {
 		t.Fatalf("CreateTest local: %v", err)
 	}
-	localRecord := attachLibraryArchiveFixture(t, local, localTest)
+	attachLibraryArchiveFixture(t, local, localTest)
 
 	pushBody := marshalLibraryTestJSON(t, LibraryTransferRequest{Kind: "result", ID: localTest.ID})
 	pushResp := httptest.NewRecorder()
@@ -610,7 +655,7 @@ func TestLibraryRemotePullAndPushResultArchivesBetweenControllers(t *testing.T) 
 	if pushed.Bundle.Items[0].Result.ArchiveZipB64 != "" {
 		t.Fatal("remote result push should stream archives instead of base64 encoding them")
 	}
-	assertLibraryArchiveImport(t, host, "team-project", hashArchiveManifest(localRecord), 1)
+	assertLibraryArchiveImport(t, host, "team-project", pushed.Bundle.Items[0].Result.ArchiveManifestHash, 1)
 }
 
 func createLibraryRemoteForTest(t *testing.T, server *Server, baseURL string, projectID string) LibraryRemote {
@@ -621,6 +666,7 @@ func createLibraryRemoteForTest(t *testing.T, server *Server, baseURL string, pr
 		Name:             "K8s Host",
 		BaseURL:          baseURL,
 		DefaultProjectID: projectID,
+		ProjectMappings:  map[string]string{projectID: projectID},
 		AuthMethod:       "service_account",
 		APIKey:           "test-key",
 	})
@@ -659,10 +705,10 @@ func assertLibraryArchiveImport(t *testing.T, server *Server, projectID string, 
 	if raw["imported_archive_manifest_hash"] != manifestHash {
 		t.Fatalf("imported manifest hash = %#v, want %q", raw["imported_archive_manifest_hash"], manifestHash)
 	}
-	archivePath, _ := raw["archive_path"].(string)
-	if archivePath == "" {
-		t.Fatal("imported raw result did not record archive_path")
+	if _, exists := raw["archive_path"]; exists {
+		t.Fatalf("imported raw result exposed internal archive_path: %#v", raw["archive_path"])
 	}
+	archivePath := libraryImportedArchiveDir(lastImport.ID)
 	if _, err := os.Stat(filepath.Join(archivePath, "manifest.json")); err != nil {
 		t.Fatalf("imported archive manifest missing: %v", err)
 	}
@@ -716,10 +762,13 @@ func attachLibraryArchiveFixture(t *testing.T, server *Server, testRun *ManagedT
 		IntervalSummaryCount:  0,
 		SLABreached:           false,
 	}
-	writeLibraryArchiveFile(t, filepath.Join(archiveDir, "manifest.json"), manifest)
 	writeLibraryArchiveText(t, filepath.Join(archiveDir, "transactions.jsonl"), `{"action_name":"archive","duration_ms":42}`+"\n")
 	writeLibraryArchiveText(t, filepath.Join(archiveDir, "resources.jsonl"), "")
 	writeLibraryArchiveText(t, filepath.Join(archiveDir, "interval_summaries.jsonl"), "")
+	if err := updateRunArchiveArtifactIntegrity(archiveDir, &manifest); err != nil {
+		t.Fatalf("update archive integrity: %v", err)
+	}
+	writeLibraryArchiveFile(t, filepath.Join(archiveDir, "manifest.json"), manifest)
 
 	record := &storage.RunArchiveRecord{
 		TestID:           testRun.ID,
@@ -729,6 +778,7 @@ func attachLibraryArchiveFixture(t *testing.T, server *Server, testRun *ManagedT
 		TransactionCount: 1,
 		CreatedAt:        now,
 		CompletedAt:      now,
+		ManifestSHA256:   hashArchiveManifestPath(filepath.Join(archiveDir, "manifest.json"))[len("sha256:"):],
 	}
 	server.runner.mu.Lock()
 	stored := server.runner.tests[testRun.ID]

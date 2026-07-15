@@ -26,8 +26,10 @@ export const LIBRARY_SOURCE_OPTIONS: Array<{ value: LibrarySourceFilter; label: 
 const EMPTY_LIBRARY_CATALOG_ITEMS: LibraryCatalogItem[] = []
 
 function transferProjectMessage(projectMapping: string, remote?: LibraryRemote) {
-  if (projectMapping.trim() || remote?.default_project_id) return ''
-  return 'Set a project mapping before transferring assets.'
+  const localProjectID = projectMapping.trim()
+  if (!localProjectID) return 'Select a local project before transferring assets.'
+  if (remote?.project_mappings?.[localProjectID]) return ''
+  return `Ask an administrator to map local project ${localProjectID} for this Remote Workspace.`
 }
 
 type UseLibraryFederationOptions = {
@@ -80,9 +82,10 @@ export function useLibraryFederation({ kind, projectId, onRefreshLocal, requireP
     [remotes, selectedRemoteId],
   )
 
-  const effectiveProjectID = projectMapping.trim() || selectedRemote?.default_project_id || ''
+  const effectiveProjectID = projectMapping.trim() || projectId?.trim() || ''
+  const mappedRemoteProjectID = selectedRemote?.project_mappings?.[effectiveProjectID] || ''
   const catalogScopeReady = !requireProjectScope || Boolean(projectId?.trim() || projectMapping.trim())
-  const catalogScopeKey = `${kind}\u0000${catalogScopeReady ? 'ready' : 'pending'}\u0000${effectiveProjectID}\u0000${selectedRemoteId}`
+  const catalogScopeKey = `${kind}\u0000${catalogScopeReady ? 'ready' : 'pending'}\u0000${effectiveProjectID}\u0000${mappedRemoteProjectID}\u0000${selectedRemoteId}`
   const catalogScopeKeyRef = useRef(catalogScopeKey)
   catalogScopeKeyRef.current = catalogScopeKey
   const localItems = catalogState.scopeKey === catalogScopeKey ? catalogState.localItems : EMPTY_LIBRARY_CATALOG_ITEMS
@@ -120,7 +123,7 @@ export function useLibraryFederation({ kind, projectId, onRefreshLocal, requireP
     try {
       const [localResponse, remoteResponse] = await Promise.all([
         libraryApi.localCatalog(kind, effectiveProjectID),
-        selectedRemoteId
+        selectedRemoteId && mappedRemoteProjectID
           ? libraryApi.remoteCatalog(selectedRemoteId, kind, effectiveProjectID)
           : Promise.resolve(null),
       ])
@@ -151,7 +154,7 @@ export function useLibraryFederation({ kind, projectId, onRefreshLocal, requireP
         setLoadingScopeKey(current => current === requestScopeKey ? '' : current)
       }
     }
-  }, [catalogScopeKey, catalogScopeReady, effectiveProjectID, kind, libraryApi, requireProjectScope, selectedRemoteId])
+  }, [catalogScopeKey, catalogScopeReady, effectiveProjectID, kind, libraryApi, mappedRemoteProjectID, requireProjectScope, selectedRemoteId])
 
   useEffect(() => {
     mountedRef.current = true

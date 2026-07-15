@@ -4,6 +4,7 @@ import (
 	"container/list"
 	"context"
 	"encoding/json"
+	"io"
 	"strconv"
 	"strings"
 	"sync"
@@ -14,11 +15,14 @@ import (
 const (
 	runArchiveReportCacheEntries   = 16
 	runArchiveManifestCacheEntries = 128
+	runArchiveReportCacheBytes     = int64(128 << 20)
+	runArchiveManifestCacheBytes   = int64(64 << 20)
 )
 
 type boundedArchiveCacheEntry[T any] struct {
 	key   string
 	value *T
+	size  int64
 }
 
 type boundedArchiveCacheCall[T any] struct {
@@ -26,6 +30,7 @@ type boundedArchiveCacheCall[T any] struct {
 	value *T
 	err   error
 	cache bool
+	size  int64
 }
 
 // boundedArchiveCache is a small LRU with per-key singleflight. Reports can be
@@ -34,17 +39,26 @@ type boundedArchiveCacheCall[T any] struct {
 type boundedArchiveCache[T any] struct {
 	mu       sync.Mutex
 	max      int
+	maxBytes int64
+	bytes    int64
+	weigh    func(*T) int64
 	items    map[string]*list.Element
 	lru      list.List
 	inFlight map[string]*boundedArchiveCacheCall[T]
 }
 
 func newBoundedArchiveCache[T any](max int) *boundedArchiveCache[T] {
+	return newWeightedBoundedArchiveCache[T](max, 0, nil)
+}
+
+func newWeightedBoundedArchiveCache[T any](max int, maxBytes int64, weigh func(*T) int64) *boundedArchiveCache[T] {
 	if max < 1 {
 		max = 1
 	}
 	return &boundedArchiveCache[T]{
 		max:      max,
+		maxBytes: maxBytes,
+		weigh:    weigh,
 		items:    make(map[string]*list.Element),
 		inFlight: make(map[string]*boundedArchiveCacheCall[T]),
 	}
@@ -71,15 +85,28 @@ func (c *boundedArchiveCache[T]) getOrLoad(key string, load func() (*T, error)) 
 	c.mu.Unlock()
 
 	call.value, call.err = load()
+	loadedSize := int64(0)
+	cacheEligible := true
+	if call.err == nil && call.value != nil && c.weigh != nil {
+		loadedSize = c.weigh(call.value)
+		if loadedSize < 0 || (c.maxBytes > 0 && loadedSize > c.maxBytes) {
+			cacheEligible = false
+		}
+	}
 
 	c.mu.Lock()
 	delete(c.inFlight, key)
+	call.size = loadedSize
+	call.cache = call.cache && cacheEligible
 	if call.cache && call.err == nil && call.value != nil {
-		element := c.lru.PushFront(&boundedArchiveCacheEntry[T]{key: key, value: call.value})
+		element := c.lru.PushFront(&boundedArchiveCacheEntry[T]{key: key, value: call.value, size: call.size})
 		c.items[key] = element
-		for c.lru.Len() > c.max {
+		c.bytes += call.size
+		for c.lru.Len() > c.max || (c.maxBytes > 0 && c.bytes > c.maxBytes) {
 			oldest := c.lru.Back()
-			delete(c.items, oldest.Value.(*boundedArchiveCacheEntry[T]).key)
+			entry := oldest.Value.(*boundedArchiveCacheEntry[T])
+			delete(c.items, entry.key)
+			c.bytes -= entry.size
 			c.lru.Remove(oldest)
 		}
 	}
@@ -97,6 +124,7 @@ func (c *boundedArchiveCache[T]) deleteTest(testID string) {
 	defer c.mu.Unlock()
 	for key, element := range c.items {
 		if strings.HasPrefix(key, prefix) {
+			c.bytes -= element.Value.(*boundedArchiveCacheEntry[T]).size
 			delete(c.items, key)
 			c.lru.Remove(element)
 		}
@@ -114,8 +142,31 @@ func (c *boundedArchiveCache[T]) len() int {
 	return c.lru.Len()
 }
 
-var runArchiveReportCache = newBoundedArchiveCache[RunArchiveReport](runArchiveReportCacheEntries)
-var runArchiveManifestCache = newBoundedArchiveCache[RunArchiveManifest](runArchiveManifestCacheEntries)
+type archiveJSONCountingWriter struct {
+	bytes int64
+}
+
+func (w *archiveJSONCountingWriter) Write(data []byte) (int, error) {
+	if int64(len(data)) > int64(^uint64(0)>>1)-w.bytes {
+		return 0, io.ErrShortWrite
+	}
+	w.bytes += int64(len(data))
+	return len(data), nil
+}
+
+func archiveJSONWeight[T any](value *T) int64 {
+	if value == nil {
+		return 0
+	}
+	writer := &archiveJSONCountingWriter{}
+	if err := json.NewEncoder(writer).Encode(value); err != nil {
+		return -1
+	}
+	return writer.bytes
+}
+
+var runArchiveReportCache = newWeightedBoundedArchiveCache(runArchiveReportCacheEntries, runArchiveReportCacheBytes, archiveJSONWeight[RunArchiveReport])
+var runArchiveManifestCache = newWeightedBoundedArchiveCache(runArchiveManifestCacheEntries, runArchiveManifestCacheBytes, archiveJSONWeight[RunArchiveManifest])
 
 // boundedCache is the small untyped LRU shared by lightweight process caches
 // whose callers need explicit Load, Store, and Delete operations.

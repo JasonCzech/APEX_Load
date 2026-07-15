@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -30,6 +31,23 @@ type testPersistence interface {
 	UpdateTestStatus(id string, status string, endTime *time.Time, errStr string) error
 	DeleteTest(id string) error
 	MoveTest(id string, folderID *string) error
+}
+
+type createOnlyTestPersistence interface {
+	CreateTestIfAbsent(test *storage.TestRecord) (bool, error)
+	CreateTestIfAbsentIfLeaseHeld(test *storage.TestRecord, leaseName, leaseOwnerID string) (bool, error)
+}
+
+type leaseTermCreateOnlyTestPersistence interface {
+	CreateTestIfAbsentIfLeaseTermHeld(test *storage.TestRecord, leaseName, leaseOwnerID string, leaseGeneration uint64) (bool, error)
+}
+
+type leaseFencedTestDeletePersistence interface {
+	DeleteTestIfLeaseHeld(id, leaseName, leaseOwnerID string) (storage.LeaseFencedDeleteResult, error)
+}
+
+type leaseFencedProjectDeletePersistence interface {
+	DeleteProjectIfLeaseHeld(id, leaseName, leaseOwnerID string) (storage.LeaseFencedDeleteResult, error)
 }
 
 type auditPersistence interface {
@@ -106,6 +124,14 @@ type settingsCompareAndSwapper interface {
 	CompareAndSwapSetting(key, expected, value string) (bool, error)
 }
 
+type capacityFencedSettingsCompareAndSwapper interface {
+	CompareAndSwapSettingWithCapacityFence(
+		key, expected, value string,
+		updatedAt time.Time,
+		validate func(current string, approved []*storage.CapacityReservation) error,
+	) (bool, error)
+}
+
 type usageSnapshotPersistence interface {
 	SaveUsageAccountingSnapshot(snapshot *storage.UsageAccountingSnapshot) error
 	ListUsageAccountingSnapshots(projectID string, limit int, offset int) ([]*storage.UsageAccountingSnapshot, error)
@@ -120,6 +146,25 @@ type reservationPersistence interface {
 	ListCapacityReservationsByTimeRange(projectID string, startAt, endAt time.Time) ([]*storage.CapacityReservation, error)
 }
 
+type atomicCapacityBindingPersistence interface {
+	CreateTestAndBindCapacityReservation(*storage.TestRecord, string, time.Time) (storage.CapacityBindingResult, error)
+	CreateTestAndBindCapacityReservationIfLeaseHeld(*storage.TestRecord, string, time.Time, string, string) (storage.CapacityBindingResult, error)
+	BindCapacityReservationToTest(string, string, time.Time) (storage.CapacityBindingResult, error)
+	BindCapacityReservationToTestIfLeaseHeld(string, string, time.Time, string, string) (storage.CapacityBindingResult, error)
+	ClearCapacityReservationBindingAndTestIfLeaseHeld(string, string, time.Time, string, string) (storage.CapacityBindingReleaseResult, error)
+	RepairCapacityReservationBindings() (int64, error)
+	RepairCapacityReservationBindingsIfLeaseHeld(string, string) (bool, int64, error)
+}
+
+type leaseTermAtomicCapacityBindingPersistence interface {
+	CreateTestAndBindCapacityReservationIfLeaseTermHeld(*storage.TestRecord, string, time.Time, string, string, uint64) (storage.CapacityBindingResult, error)
+}
+
+type fullWindowAtomicCapacityBindingPersistence interface {
+	BindCapacityReservationToTestWithWindow(string, string, time.Time, time.Time, time.Time) (storage.CapacityBindingResult, error)
+	BindCapacityReservationToTestWithWindowIfLeaseHeld(string, string, time.Time, time.Time, time.Time, string, string) (storage.CapacityBindingResult, error)
+}
+
 type TestRunner struct {
 	tests                 map[string]*ManagedTest
 	scripts               map[string]*StoredScript
@@ -131,6 +176,7 @@ type TestRunner struct {
 	contentRevision       uint64
 	contentReloadMu       sync.Mutex
 	testReloadMu          sync.Mutex
+	haTestRefreshAt       time.Time
 	haScenarioRefreshMu   sync.Mutex
 	haScenarioRefreshAt   time.Time
 	activeStopMu          sync.Mutex
@@ -184,12 +230,19 @@ type TestRunner struct {
 	// leadership gates live test-execution mutations to a single replica when
 	// HA leader election is enabled. nil means "always leader" (single-node /
 	// test default), so behavior is unchanged unless election is wired in.
-	leadership    *executionLeadership
-	liveState     LiveStateStore
-	execution     testExecutionBackend
-	notifier      *notificationDispatcher
-	notifications atomic.Value
-	routeCache    map[string]latencyRouteCacheEntry
+	leadership            *executionLeadership
+	durableExecutionFence bool
+	// beforeExecutionPlanStartMutation is a deterministic test barrier between
+	// an execution-plan caller's outer term check and the term-aware StartTest
+	// mutation. Production leaves it nil.
+	beforeExecutionPlanStartMutation func()
+	liveState                        LiveStateStore
+	snapshotWriteMu                  sync.Mutex
+	snapshotWrites                   map[string]*runSnapshotWriteState
+	execution                        testExecutionBackend
+	notifier                         *notificationDispatcher
+	notifications                    atomic.Value
+	routeCache                       map[string]latencyRouteCacheEntry
 
 	// Reference-key state (all guarded by mu). envCode is the short,
 	// environment-aware prefix resolved once at startup; the seq counters are
@@ -252,6 +305,7 @@ func (tr *TestRunner) lockArchiveCommitFence(testID string) func() {
 type ManagedTest struct {
 	ID                    string                                   `json:"id"`
 	RefKey                string                                   `json:"ref_key,omitempty"`
+	MaterializationKey    string                                   `json:"-"`
 	Name                  string                                   `json:"name"`
 	Status                string                                   `json:"status"`
 	ApplicationID         string                                   `json:"application_id,omitempty"`
@@ -283,6 +337,10 @@ type ManagedTest struct {
 	BaselinePinned        bool                                     `json:"baseline_pinned,omitempty"`
 	BaselinePinnedAt      *time.Time                               `json:"baseline_pinned_at,omitempty"`
 	StartedAt             *time.Time                               `json:"started_at,omitempty"`
+	PausedAt              *time.Time                               `json:"paused_at,omitempty"`
+	CumulativePause       time.Duration                            `json:"cumulative_pause_ns,omitempty"`
+	CapacityWindowStartAt *time.Time                               `json:"capacity_window_start_at,omitempty"`
+	CapacityWindowEndAt   *time.Time                               `json:"capacity_window_end_at,omitempty"`
 	EndedAt               *time.Time                               `json:"ended_at,omitempty"`
 	CreatedBySubject      string                                   `json:"created_by_subject,omitempty"`
 	CreatedByDisplayName  string                                   `json:"created_by_display_name,omitempty"`
@@ -304,34 +362,56 @@ type ManagedTest struct {
 	ScriptID   string `json:"script_id,omitempty"`
 	ScriptName string `json:"script_name,omitempty"`
 
-	multiEngine                  *engine.MultiGroupEngine
-	executionCtx                 context.Context
-	cancel                       context.CancelFunc
-	groupSpecs                   []engine.GroupConfig
-	goalControl                  *goalControllerState
-	executionBackend             testExecutionBackend
-	lastNetworkLatency           *NetworkLatency
-	latencyEndpointsCache        latencyEndpointCache
-	latencyProbeSamples          map[string][]latencyProbeSample
-	remoteTarget                 string
-	remoteClient                 generatorClient
-	remoteMetricsStream          *generatorrpc.MetricsStream
-	remoteGroupTargets           map[string]string
-	remoteGroupShards            map[string][]GeneratorShardSummary
-	remoteClientsByTarget        map[string]generatorClient
+	multiEngine                *engine.MultiGroupEngine
+	executionCtx               context.Context
+	executionGeneration        uint64
+	durationAdjustmentPrevious time.Duration
+	scaleAdjustmentPrevious    map[string]int
+	cancel                     context.CancelFunc
+	groupSpecs                 []engine.GroupConfig
+	goalControl                *goalControllerState
+	executionBackend           testExecutionBackend
+	lastNetworkLatency         *NetworkLatency
+	latencyProbeInFlight       bool
+	latencyEndpointsCache      latencyEndpointCache
+	latencyProbeSamples        map[string][]latencyProbeSample
+	remoteTarget               string
+	remoteClient               generatorClient
+	remoteMetricsStream        *generatorrpc.MetricsStream
+	remoteGroupTargets         map[string]string
+	remoteGroupShards          map[string][]GeneratorShardSummary
+	remoteClientsByTarget      map[string]generatorClient
+	// remoteArchiveClientsByTarget retains positively stopped evacuation
+	// sources for the final archive merge. They are deliberately excluded from
+	// active topology and every mutable-control fan-out.
+	remoteArchiveClientsByTarget map[string]generatorClient
 	remoteMetricsStreamsByTarget map[string]*generatorrpc.MetricsStream
 	remoteMetricsBatchesByTarget map[string]generatorrpc.MetricsBatch
 	remoteTargetStates           map[string]string
 	remoteFinalizing             bool
+	remoteLifecycleCtx           context.Context
+	remoteLifecycleCancel        context.CancelFunc
+	remoteStopFinalizerRunning   bool
 	remoteMetricsLastPublishedAt time.Time
 	remoteMetricsFlushScheduled  bool
 	remoteGoalUpdateRunning      bool
+	// remoteActivated is set only after every assigned generator acknowledges
+	// CommitWork. The durable RUNNING transition intentionally precedes those
+	// acknowledgements, so non-stop controls must remain closed while this is
+	// false to avoid mutating a partially committed fleet.
+	remoteActivated              bool
+	remoteActivationPending      bool
 	remoteControlGeneration      uint64
-	telemetryDiagnostic          telemetryDiagnosticState
-	errorPatterns                map[string]*LiveErrorPattern
-	liveErrorEvidence            map[string][]LiveErrorEvidence
-	vuserScaleRamps              map[string]*vuserScaleRamp
-	openWorkloadSheddingWarned   bool
+	remotePauseOperationSequence uint64
+	// executionFence is the scheduler-lease owner token captured by the epoch
+	// that created/claimed this run. It is intentionally process-private and is
+	// checked transactionally for every production full-row save.
+	executionFence             string
+	telemetryDiagnostic        telemetryDiagnosticState
+	errorPatterns              map[string]*LiveErrorPattern
+	liveErrorEvidence          map[string][]LiveErrorEvidence
+	vuserScaleRamps            map[string]*vuserScaleRamp
+	openWorkloadSheddingWarned bool
 }
 
 type TestSparklinePoint struct {
@@ -395,6 +475,9 @@ type GeneratorShardSummary struct {
 	Target        string `json:"target"`
 	VUsers        int    `json:"vusers"`
 	ShardStrategy string `json:"shard_strategy,omitempty"`
+	ShardOrdinal  uint32 `json:"shard_ordinal,omitempty"`
+	ShardCount    uint32 `json:"shard_count,omitempty"`
+	VUserIDOffset uint64 `json:"vuser_id_offset,omitempty"`
 }
 
 type RunLogicGoalSnapshot struct {
@@ -994,6 +1077,7 @@ type TestRunnerOption func(*TestRunner)
 func WithExecutionLeadership(leadership *executionLeadership) TestRunnerOption {
 	return func(tr *TestRunner) {
 		tr.leadership = leadership
+		tr.durableExecutionFence = leadership != nil && sameStoreInstance(leadership.store, tr.testStore)
 	}
 }
 
@@ -1044,6 +1128,11 @@ func NewTestRunner(maxTests int, hub *Hub, store storage.Store, opts ...TestRunn
 	for _, opt := range opts {
 		if opt != nil {
 			opt(tr)
+		}
+	}
+	if !tr.durableExecutionFence || tr.holdsExecutionLeadership() {
+		if err := tr.repairCapacityReservationBindings(); err != nil {
+			slog.Warn("capacity timeslot binding repair failed during startup", "error", err)
 		}
 	}
 	tr.loadSystemSettings(maxTests)
@@ -1118,6 +1207,50 @@ func (tr *TestRunner) executionOperationContext(parent context.Context) (context
 	return tr.leadership.operationContext(parent)
 }
 
+func (tr *TestRunner) currentExecutionFenceToken() string {
+	if tr == nil || !tr.durableExecutionFence || tr.leadership == nil {
+		return ""
+	}
+	return tr.leadership.executionFenceToken()
+}
+
+func (tr *TestRunner) claimTestExecutionFence(test *ManagedTest) error {
+	if tr == nil || test == nil || !tr.durableExecutionFence {
+		return nil
+	}
+	token := tr.currentExecutionFenceToken()
+	if token == "" {
+		return errNotExecutionLeader
+	}
+	// A non-empty token belongs to the operation that created or previously
+	// claimed this in-memory runtime. Never let an old goroutine adopt a later
+	// term after same-process leadership reacquisition. Rehydrated durable tests
+	// start with an empty process-private token and may be claimed normally.
+	if test.executionFence != "" && test.executionFence != token {
+		return errNotExecutionLeader
+	}
+	test.executionFence = token
+	return nil
+}
+
+// claimTestExecutionFenceWithTerm binds a test to one immutable execution
+// lease term. Unlike claimTestExecutionFence it never reads and adopts whatever
+// term happens to be current after a same-process leadership reacquisition.
+// Callers that use this for a start transition must hold tr.mu.
+func (tr *TestRunner) claimTestExecutionFenceWithTerm(test *ManagedTest, term executionLeaseTerm) error {
+	if tr == nil || test == nil || !tr.durableExecutionFence {
+		return nil
+	}
+	if !tr.executionLeaseTermCurrent(term) {
+		return errNotExecutionLeader
+	}
+	if test.executionFence != "" && test.executionFence != term.ownerID {
+		return errNotExecutionLeader
+	}
+	test.executionFence = term.ownerID
+	return nil
+}
+
 const (
 	refRunDateLayout = "20060102"
 )
@@ -1125,16 +1258,22 @@ const (
 // Helper to convert map back to LiveMetrics (since GetHistory returns any)
 
 type CreateTestRequest struct {
-	Name                string     `json:"name"`
-	Duration            string     `json:"duration"`
-	StartDelay          string     `json:"start_delay,omitempty"`
-	ReserveLaunchWindow bool       `json:"reserve_launch_window,omitempty"`
-	ApplicationID       string     `json:"application_id,omitempty"`
-	ReleaseID           string     `json:"release_id,omitempty"`
-	ScenarioID          string     `json:"scenario_id,omitempty"`
-	ProjectID           string     `json:"project_id,omitempty"`
-	FolderID            *string    `json:"folder_id,omitempty"`
-	ScheduledStartAt    *time.Time `json:"scheduled_start_at,omitempty"`
+	Name string `json:"name"`
+	// RequestedTestID is used by controller-to-controller run creation to make
+	// the remote side effect recoverable across a lost response. It must be a
+	// UUID and is always persisted through the create-only test path.
+	RequestedTestID       string                         `json:"requested_test_id,omitempty"`
+	MaterializationKey    string                         `json:"-"`
+	ExecutionPlanApproval *storage.ExecutionPlanApproval `json:"-"`
+	Duration              string                         `json:"duration"`
+	StartDelay            string                         `json:"start_delay,omitempty"`
+	ReserveLaunchWindow   bool                           `json:"reserve_launch_window,omitempty"`
+	ApplicationID         string                         `json:"application_id,omitempty"`
+	ReleaseID             string                         `json:"release_id,omitempty"`
+	ScenarioID            string                         `json:"scenario_id,omitempty"`
+	ProjectID             string                         `json:"project_id,omitempty"`
+	FolderID              *string                        `json:"folder_id,omitempty"`
+	ScheduledStartAt      *time.Time                     `json:"scheduled_start_at,omitempty"`
 	// TimeslotID, when set, binds the run to an approved capacity timeslot as part
 	// of creation; if the timeslot can't be bound the create fails (strict).
 	TimeslotID       *string                           `json:"timeslot_id,omitempty"`

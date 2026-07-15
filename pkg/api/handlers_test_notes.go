@@ -11,15 +11,22 @@ import (
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
-const testNoteBodyMaxCharacters = 64000
+const (
+	testNoteBodyMaxCharacters = 64000
+	defaultTestNoteListLimit  = 100
+	maxTestNoteListLimit      = 250
+)
 
 type testNotesListResponse struct {
 	TestID string              `json:"test_id"`
 	Notes  []*storage.TestNote `json:"notes"`
+	Limit  int                 `json:"limit"`
+	Offset int                 `json:"offset"`
 }
 
 type testNoteRequest struct {
-	Body string `json:"body"`
+	Body              string     `json:"body"`
+	ExpectedUpdatedAt *time.Time `json:"expected_updated_at,omitempty"`
 }
 
 type atomicTestNoteArchiveStore interface {
@@ -29,6 +36,10 @@ type atomicTestNoteArchiveStore interface {
 }
 
 func (s *Server) handleListTestNotes(w http.ResponseWriter, r *http.Request) {
+	limit, offset := parseLimitOffsetQuery(r, defaultTestNoteListLimit)
+	if limit > maxTestNoteListLimit {
+		limit = maxTestNoteListLimit
+	}
 	testID := r.PathValue("id")
 	test, ok := s.runner.GetTest(testID)
 	if !ok {
@@ -40,7 +51,26 @@ func (s *Server) handleListTestNotes(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "storage backend unavailable")
 		return
 	}
-	notes, err := s.store.ListTestNotes(testID)
+	var notes []*storage.TestNote
+	var err error
+	if paged, ok := s.store.(interface {
+		ListTestNotesPage(string, int, int) ([]*storage.TestNote, error)
+	}); ok {
+		notes, err = paged.ListTestNotesPage(testID, limit, offset)
+	} else {
+		notes, err = s.store.ListTestNotes(testID)
+		if err == nil {
+			if offset >= len(notes) {
+				notes = []*storage.TestNote{}
+			} else {
+				end := len(notes)
+				if limit < len(notes)-offset {
+					end = offset + limit
+				}
+				notes = notes[offset:end]
+			}
+		}
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load test notes: "+err.Error())
 		return
@@ -48,7 +78,7 @@ func (s *Server) handleListTestNotes(w http.ResponseWriter, r *http.Request) {
 	if notes == nil {
 		notes = []*storage.TestNote{}
 	}
-	writeJSON(w, http.StatusOK, testNotesListResponse{TestID: testID, Notes: notes})
+	writeJSON(w, http.StatusOK, testNotesListResponse{TestID: testID, Notes: notes, Limit: limit, Offset: offset})
 }
 
 func (s *Server) handleCreateTestNote(w http.ResponseWriter, r *http.Request) {
@@ -63,7 +93,7 @@ func (s *Server) handleCreateTestNote(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "storage backend unavailable")
 		return
 	}
-	body, ok := decodeTestNoteBody(w, r)
+	body, _, ok := decodeTestNoteBody(w, r)
 	if !ok {
 		return
 	}
@@ -110,7 +140,7 @@ func (s *Server) handleUpdateTestNote(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "storage backend unavailable")
 		return
 	}
-	body, ok := decodeTestNoteBody(w, r)
+	body, requestedUpdatedAt, ok := decodeTestNoteBody(w, r)
 	if !ok {
 		return
 	}
@@ -123,11 +153,32 @@ func (s *Server) handleUpdateTestNote(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to load test note: "+err.Error())
 		return
 	}
+	expectedUpdatedAt := note.UpdatedAt
+	if requestedUpdatedAt != nil {
+		if requestedUpdatedAt.IsZero() {
+			writeError(w, http.StatusBadRequest, "expected_updated_at must be a valid timestamp")
+			return
+		}
+		if !note.UpdatedAt.Equal(*requestedUpdatedAt) {
+			writeError(w, http.StatusConflict, "test note changed since it was loaded; reload and retry")
+			return
+		}
+		expectedUpdatedAt = *requestedUpdatedAt
+	}
 	_, actorSubject, actorDisplay := s.resolveAuditActor(r)
 	note.Body = body
 	note.UpdatedAt = time.Now().UTC()
 	note.UpdatedBy = firstNonEmpty(actorDisplay, actorSubject)
-	if atomicStore, ok := s.store.(atomicTestNoteArchiveStore); ok {
+	if conditionalStore, ok := s.store.(interface {
+		UpdateTestNoteAndArchiveRefreshIfUnchanged(*storage.TestNote, time.Time) (bool, error)
+	}); ok {
+		var updated bool
+		updated, err = conditionalStore.UpdateTestNoteAndArchiveRefreshIfUnchanged(note, expectedUpdatedAt)
+		if err == nil && !updated {
+			writeError(w, http.StatusConflict, "test note changed while the update was in flight; reload and retry")
+			return
+		}
+	} else if atomicStore, ok := s.store.(atomicTestNoteArchiveStore); ok {
 		err = atomicStore.UpdateTestNoteAndArchiveRefresh(note)
 	} else {
 		err = s.store.UpdateTestNote(note)
@@ -191,19 +242,19 @@ func (s *Server) handleDeleteTestNote(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": noteID})
 }
 
-func decodeTestNoteBody(w http.ResponseWriter, r *http.Request) (string, bool) {
+func decodeTestNoteBody(w http.ResponseWriter, r *http.Request) (string, *time.Time, bool) {
 	var req testNoteRequest
 	if !decodeJSONBody(w, r, &req) {
-		return "", false
+		return "", nil, false
 	}
 	body := strings.TrimSpace(req.Body)
 	if body == "" {
 		writeError(w, http.StatusBadRequest, "note body cannot be empty")
-		return "", false
+		return "", nil, false
 	}
 	if utf8.RuneCountInString(body) > testNoteBodyMaxCharacters {
 		writeError(w, http.StatusBadRequest, "note too long (max 64000 characters)")
-		return "", false
+		return "", nil, false
 	}
-	return body, true
+	return body, req.ExpectedUpdatedAt, true
 }

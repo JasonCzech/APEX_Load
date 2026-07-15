@@ -1,6 +1,9 @@
 package messaging
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestParseAckMode(t *testing.T) {
 	cases := map[string]AckMode{
@@ -23,8 +26,11 @@ func TestParseAckMode(t *testing.T) {
 func TestSessionTrackBoundsPending(t *testing.T) {
 	s := New[int](AckClient)
 	const extra = 500
+	rejected := 0
 	for i := 0; i < maxPendingItems+extra; i++ {
-		s.Track(i)
+		if err := s.Track(i); err != nil {
+			rejected++
+		}
 	}
 	if s.Pending() != maxPendingItems {
 		t.Fatalf("pending = %d, want capped at %d", s.Pending(), maxPendingItems)
@@ -32,13 +38,16 @@ func TestSessionTrackBoundsPending(t *testing.T) {
 	if s.DroppedPending() != extra {
 		t.Fatalf("dropped = %d, want %d", s.DroppedPending(), extra)
 	}
-	// The oldest items are evicted and the most recent ones retained.
+	if rejected != extra {
+		t.Fatalf("rejected = %d, want %d", rejected, extra)
+	}
+	// Existing unsettled items remain intact; later deliveries are rejected.
 	settled := s.Ack()
 	if len(settled) != maxPendingItems {
 		t.Fatalf("Ack returned %d, want %d", len(settled), maxPendingItems)
 	}
-	if settled[len(settled)-1] != maxPendingItems+extra-1 {
-		t.Fatalf("newest retained item = %d, want %d", settled[len(settled)-1], maxPendingItems+extra-1)
+	if settled[len(settled)-1] != maxPendingItems-1 {
+		t.Fatalf("last retained item = %d, want %d", settled[len(settled)-1], maxPendingItems-1)
 	}
 
 	// auto mode never retains and therefore never evicts.
@@ -48,6 +57,23 @@ func TestSessionTrackBoundsPending(t *testing.T) {
 	}
 	if a.Pending() != 0 || a.DroppedPending() != 0 {
 		t.Fatalf("auto: pending=%d dropped=%d, want 0/0", a.Pending(), a.DroppedPending())
+	}
+}
+
+func TestSessionTrackSizedRejectsBeforeByteOverflow(t *testing.T) {
+	s := New[string](AckTransacted)
+	if err := s.TrackSized("first", maxPendingBytes-1); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.TrackSized("overflow", 2); err == nil {
+		t.Fatal("TrackSized unexpectedly exceeded aggregate byte budget")
+	}
+	if s.Pending() != 1 || s.PendingBytes() != maxPendingBytes-1 {
+		t.Fatalf("pending after rejection = %d/%d bytes, want 1/%d", s.Pending(), s.PendingBytes(), maxPendingBytes-1)
+	}
+	settled := s.Rollback()
+	if len(settled) != 1 || settled[0] != "first" || s.PendingBytes() != 0 {
+		t.Fatalf("rollback after rejection = %v, bytes=%d", settled, s.PendingBytes())
 	}
 }
 
@@ -128,6 +154,43 @@ func TestSessionObserveKeyedIsolatesStreams(t *testing.T) {
 	}
 	if _, ooo := s.ObserveKeyed("topic/2", 3); !ooo {
 		t.Fatal("seq3 after seq5 within the same stream should be out-of-order")
+	}
+}
+
+func TestSessionObserveHasAggregateStreamAndEntryBounds(t *testing.T) {
+	s := New[int](AckAuto)
+	for stream := 0; stream < maxObserveStreams+50; stream++ {
+		s.ObserveKeyed(string(rune(stream+1)), int64(stream))
+	}
+	if got := s.ObservedStreams(); got != maxObserveStreams {
+		t.Fatalf("observed streams = %d, want %d", got, maxObserveStreams)
+	}
+	for round := 0; round < maxObserveEntries; round++ {
+		stream := string(rune((round % maxObserveStreams) + 1_000))
+		s.ObserveKeyed(stream, int64(round))
+	}
+	if got := s.ObservedStreams(); got > maxObserveStreams {
+		t.Fatalf("observed streams = %d, exceeds %d", got, maxObserveStreams)
+	}
+	if got := s.ObservedEntries(); got > maxObserveEntries {
+		t.Fatalf("observed entries = %d, exceeds %d", got, maxObserveEntries)
+	}
+}
+
+func TestObserveKeyedDoesNotRetainOversizedStreamKeys(t *testing.T) {
+	s := New[int](AckAuto)
+	oversized := strings.Repeat("destination", maxObserveStreamKeyBytes)
+	s.ObserveKeyed(oversized, 1)
+	if _, retained := s.streams[oversized]; retained {
+		t.Fatal("observer retained the oversized provider-controlled stream key")
+	}
+	if len(s.streams) != 1 {
+		t.Fatalf("observed streams = %d, want 1", len(s.streams))
+	}
+	for key := range s.streams {
+		if !strings.HasPrefix(key, "sha256:") || len(key) != len("sha256:")+64 {
+			t.Fatalf("bounded stream key = %q", key)
+		}
 	}
 }
 

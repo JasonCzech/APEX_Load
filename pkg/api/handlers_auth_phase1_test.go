@@ -436,6 +436,12 @@ func TestUpdateUserRejectsLastAdminSubjectRename(t *testing.T) {
 		t.Fatalf("last admin subject rename status = %d, want 409 body=%s", resp.Code, resp.Body.String())
 	}
 
+	flowStartedAt := time.Now().UTC()
+	for _, identityKey := range []string{admin.Subject, "renamed-last-admin", admin.ID} {
+		if err := store.SaveGitHubConnection(&storage.GitHubConnection{UserID: identityKey, GitHubLogin: "prior-user", AccessTokenEnc: "encrypted-prior-token"}); err != nil {
+			t.Fatalf("SaveGitHubConnection(%s): %v", identityKey, err)
+		}
+	}
 	seedAdmin(t, store, "backup-rename-admin")
 	req = httptest.NewRequest(http.MethodPatch, "/api/v1/auth/users/"+admin.ID, bytes.NewReader([]byte(`{"subject":"renamed-last-admin"}`)))
 	req.Header.Set("X-APEXLoad-API-Key", key)
@@ -443,6 +449,15 @@ func TestUpdateUserRejectsLastAdminSubjectRename(t *testing.T) {
 	server.mux.ServeHTTP(resp, req)
 	if resp.Code != http.StatusOK {
 		t.Fatalf("non-last admin subject rename status = %d, want 200 body=%s", resp.Code, resp.Body.String())
+	}
+	for _, identityKey := range []string{admin.Subject, "renamed-last-admin", admin.ID} {
+		if connection, err := store.GetGitHubConnection(identityKey); err != nil || connection != nil {
+			t.Fatalf("GitHub connection %s after rename = %#v, %v; want revoked", identityKey, connection, err)
+		}
+		saved, err := store.SaveGitHubConnectionIfNotRevokedSince(&storage.GitHubConnection{UserID: identityKey, AccessTokenEnc: "stale-callback"}, flowStartedAt)
+		if err != nil || saved {
+			t.Fatalf("stale OAuth callback for %s after rename = %v, %v; want false, nil", identityKey, saved, err)
+		}
 	}
 }
 

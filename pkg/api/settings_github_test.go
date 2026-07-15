@@ -58,6 +58,14 @@ func TestValidateGitHubSettings(t *testing.T) {
 	if err := validateGitHubSettings(bad); err == nil {
 		t.Fatal("invalid api base url should fail")
 	}
+	insecure := GitHubSettings{Enabled: true, PATEnvVar: "GH_PAT", APIBaseURL: "http://ghe/api/v3", WebBaseURL: "http://ghe"}
+	if err := validateGitHubSettings(insecure); err == nil {
+		t.Fatal("cleartext github credential transport should fail")
+	}
+	userinfo := GitHubSettings{Enabled: true, PATEnvVar: "GH_PAT", APIBaseURL: "https://token@ghe/api/v3", WebBaseURL: "https://ghe"}
+	if err := validateGitHubSettings(userinfo); err == nil {
+		t.Fatal("github URL userinfo should fail")
+	}
 	ok := GitHubSettings{Enabled: true, ClientID: "x", ClientSecretEnvVar: "S", APIBaseURL: "https://ghe/api/v3", WebBaseURL: "https://ghe"}
 	if err := validateGitHubSettings(ok); err != nil {
 		t.Fatalf("valid enabled github should pass, got: %v", err)

@@ -28,6 +28,7 @@ const (
 
 	maxWebSocketFramePayloadBytes = 16 * 1024 * 1024
 	webSocketTunnelIdleTimeout    = 30 * time.Minute
+	webSocketHandshakeTimeout     = 30 * time.Second
 )
 
 type webSocketFrame struct {
@@ -84,17 +85,18 @@ func (r *Recorder) handleWebSocketProxy(w http.ResponseWriter, req *http.Request
 
 	upstreamReq := cloneWebSocketUpstreamRequest(req, targetURL)
 	if err := upstreamReq.Write(upstreamConn); err != nil {
-		slog.Debug("websocket upstream request write failed", "url", targetURL.String(), "err", err)
+		slog.Debug("websocket upstream request write failed", "url", recorderLogURL(targetURL.String()), "err", recorderLogError(err))
 		writeHTTPError(clientConn, http.StatusBadGateway, "websocket upstream error: "+err.Error())
 		_ = upstreamConn.Close()
 		_ = clientConn.Close()
 		return
 	}
 
-	upstreamReader := bufio.NewReader(upstreamConn)
-	resp, err := http.ReadResponse(upstreamReader, upstreamReq)
+	_ = upstreamConn.SetReadDeadline(time.Now().Add(webSocketHandshakeTimeout))
+	resp, upstreamReader, err := readRecorderHTTPResponse(upstreamConn, upstreamReq)
+	_ = upstreamConn.SetReadDeadline(time.Time{})
 	if err != nil {
-		slog.Debug("websocket upstream response read failed", "url", targetURL.String(), "err", err)
+		slog.Debug("websocket upstream response read failed", "url", recorderLogURL(targetURL.String()), "err", recorderLogError(err))
 		writeHTTPError(clientConn, http.StatusBadGateway, "websocket upstream error: "+err.Error())
 		_ = upstreamConn.Close()
 		_ = clientConn.Close()
@@ -143,16 +145,17 @@ func (r *Recorder) forwardWebSocketHTTPS(tlsConn net.Conn, clientReader *bufio.R
 
 	upstreamReq := cloneWebSocketUpstreamRequest(clientReq, targetURL)
 	if err := upstreamReq.Write(upstreamConn); err != nil {
-		slog.Debug("websocket TLS upstream request write failed", "url", targetURL.String(), "err", err)
+		slog.Debug("websocket TLS upstream request write failed", "url", recorderLogURL(targetURL.String()), "err", recorderLogError(err))
 		writeHTTPError(tlsConn, http.StatusBadGateway, "websocket upstream error: "+err.Error())
 		_ = upstreamConn.Close()
 		return
 	}
 
-	upstreamReader := bufio.NewReader(upstreamConn)
-	resp, err := http.ReadResponse(upstreamReader, upstreamReq)
+	_ = upstreamConn.SetReadDeadline(time.Now().Add(webSocketHandshakeTimeout))
+	resp, upstreamReader, err := readRecorderHTTPResponse(upstreamConn, upstreamReq)
+	_ = upstreamConn.SetReadDeadline(time.Time{})
 	if err != nil {
-		slog.Debug("websocket TLS upstream response read failed", "url", targetURL.String(), "err", err)
+		slog.Debug("websocket TLS upstream response read failed", "url", recorderLogURL(targetURL.String()), "err", recorderLogError(err))
 		writeHTTPError(tlsConn, http.StatusBadGateway, "websocket upstream error: "+err.Error())
 		_ = upstreamConn.Close()
 		return
@@ -198,16 +201,17 @@ func (r *Recorder) forwardWebSocketPlainConnect(clientConn net.Conn, clientReade
 
 	upstreamReq := cloneWebSocketUpstreamRequest(clientReq, targetURL)
 	if err := upstreamReq.Write(upstreamConn); err != nil {
-		slog.Debug("websocket CONNECT upstream request write failed", "url", targetURL.String(), "err", err)
+		slog.Debug("websocket CONNECT upstream request write failed", "url", recorderLogURL(targetURL.String()), "err", recorderLogError(err))
 		writeHTTPError(clientConn, http.StatusBadGateway, "websocket upstream error: "+err.Error())
 		_ = upstreamConn.Close()
 		return
 	}
 
-	upstreamReader := bufio.NewReader(upstreamConn)
-	resp, err := http.ReadResponse(upstreamReader, upstreamReq)
+	_ = upstreamConn.SetReadDeadline(time.Now().Add(webSocketHandshakeTimeout))
+	resp, upstreamReader, err := readRecorderHTTPResponse(upstreamConn, upstreamReq)
+	_ = upstreamConn.SetReadDeadline(time.Time{})
 	if err != nil {
-		slog.Debug("websocket CONNECT upstream response read failed", "url", targetURL.String(), "err", err)
+		slog.Debug("websocket CONNECT upstream response read failed", "url", recorderLogURL(targetURL.String()), "err", recorderLogError(err))
 		writeHTTPError(clientConn, http.StatusBadGateway, "websocket upstream error: "+err.Error())
 		_ = upstreamConn.Close()
 		return

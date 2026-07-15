@@ -9,8 +9,28 @@ import (
 	"time"
 
 	gorillawebsocket "github.com/gorilla/websocket"
+	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
+
+func TestWebSocketInitRejectsOversizedMessageLimit(t *testing.T) {
+	ws := &WebSocket{}
+	err := ws.Init(context.Background(), map[string]any{
+		"base_url":                   "ws://example.test",
+		"websocket_max_message_size": int64(dsl.MaxWebSocketMessageBytes + 1),
+	})
+	if err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("Init error = %v, want hard message limit rejection", err)
+	}
+}
+
+func TestWebSocketWriteMessageRejectsOversizedRuntimePayload(t *testing.T) {
+	ws := &WebSocket{writeTimeout: time.Second}
+	err := ws.writeMessage(nil, gorillawebsocket.BinaryMessage, make([]byte, dsl.MaxWebSocketMessageBytes+1))
+	if err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("writeMessage error = %v, want hard message limit rejection", err)
+	}
+}
 
 func TestWebSocketExecuteConnectSendReceiveClose(t *testing.T) {
 	server := newEchoServer(t, "")

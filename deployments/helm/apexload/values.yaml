@@ -33,10 +33,15 @@ dataPlatform:
   redisFanoutChannel: telemetry:fanout
   keyVaultUrl: https://change-me.vault.azure.net
   keyVaultAuth: azure_identity
-  # Azure Event Hubs is configured per-script (config.eventhubs), not via these
-  # platform values. Provision a namespace with the terraform module
+  # Exact comma-separated script-safe Key Vault secret names. Empty disables
+  # Key Vault interpolation even when the workload identity can read the vault.
+  keyVaultAllowedSecrets: ""
+  # Exact comma-separated Service Bus/Event Hubs namespaces allowed to receive
+  # this workload identity's bearer tokens. Empty disables AAD messaging auth.
+  azureMessagingAllowedNamespaces: ""
+  # Azure Event Hubs connection details remain per-script. Provision a namespace with the terraform module
   # (eventhubs_enabled=true), then either set config.eventhubs.auth_type=aad with
-  # the granted workload identity, or reference the Key Vault SAS secrets from
+  # the granted workload identity (and add its exact FQDN above), or reference the Key Vault SAS secrets from
   # config.eventhubs.connection_string_secret. The native eventhubs adapter needs
   # images built with -tags eventhubs_real (image.tag); the default image
   # fail-closes on non-mock Event Hubs scripts.
@@ -96,6 +101,13 @@ generator:
       ephemeral-storage: 6Gi
   scratch:
     tmpSizeLimit: 4Gi
+  # Durable per-ordinal fencing state and generator-side run evidence share this
+  # PVC. Leave storageClassName empty to use the cluster default.
+  statePersistence:
+    accessModes:
+      - ReadWriteOnce
+    storageClassName: ""
+    size: 10Gi
 
 ingress:
   enabled: true

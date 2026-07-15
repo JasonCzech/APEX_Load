@@ -4040,6 +4040,34 @@
             "properties": {
               "type": {
                 "enum": [
+                  "jms_session_close"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Closes an accepted Azure Service Bus session and releases its receiver. Requires jms_servicebus_real.",
+            "properties": {
+              "params": {
+                "properties": {
+                  "session_token": {
+                    "description": "Token from jms_session_accept.",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
                   "jms_session_state"
                 ]
               }
@@ -6052,6 +6080,7 @@
             "jms_request_reply",
             "jms_rollback",
             "jms_session_accept",
+            "jms_session_close",
             "jms_session_state",
             "jms_settle",
             "kafka_abort_transaction",
@@ -6263,6 +6292,8 @@
           "type": "string"
         },
         "har_sla_threshold_ms": {
+          "maximum": 3600000,
+          "minimum": 0,
           "type": "integer"
         },
         "headless": {
@@ -6287,6 +6318,8 @@
           "$ref": "#/$defs/BrowserReviewPolicy"
         },
         "slow_mo_ms": {
+          "maximum": 3600000,
+          "minimum": 0,
           "type": "integer"
         },
         "timezone": {
@@ -6392,9 +6425,13 @@
       "additionalProperties": false,
       "properties": {
         "height": {
+          "maximum": 8192,
+          "minimum": 0,
           "type": "integer"
         },
         "width": {
+          "maximum": 8192,
+          "minimum": 0,
           "type": "integer"
         }
       },
@@ -6532,6 +6569,9 @@
         "path": {
           "type": "string"
         },
+        "staged_asset": {
+          "type": "string"
+        },
         "storage_ref": {
           "type": "string"
         },
@@ -6650,6 +6690,8 @@
           "type": "string"
         },
         "timeout_ms": {
+          "maximum": 3600000,
+          "minimum": 0,
           "type": "integer"
         }
       },
@@ -6955,6 +6997,8 @@
           "type": "string"
         },
         "timeout_ms": {
+          "maximum": 3600000,
+          "minimum": 0,
           "type": "integer"
         },
         "tls": {
@@ -7087,6 +7131,8 @@
           "type": "string"
         },
         "max_message_bytes": {
+          "maximum": 67108864,
+          "minimum": 0,
           "type": "integer"
         },
         "mock": {
@@ -7099,6 +7145,8 @@
           "type": "string"
         },
         "partitions": {
+          "maximum": 1000000,
+          "minimum": 0,
           "type": "integer"
         },
         "profile": {
@@ -7126,6 +7174,8 @@
           "type": "string"
         },
         "schema_id": {
+          "maximum": 2147483647,
+          "minimum": 0,
           "type": "integer"
         },
         "schema_registry_url": {
@@ -7141,6 +7191,8 @@
           "type": "string"
         },
         "timeout_ms": {
+          "maximum": 3600000,
+          "minimum": 0,
           "type": "integer"
         },
         "tls": {
@@ -7237,12 +7289,16 @@
       "additionalProperties": false,
       "properties": {
         "bandwidth_kbps": {
+          "maximum": 100000000,
+          "minimum": 0,
           "type": "integer"
         },
         "jitter_ms": {
           "type": "integer"
         },
         "latency_ms": {
+          "maximum": 3600000,
+          "minimum": 0,
           "type": "integer"
         },
         "mode": {
@@ -7267,12 +7323,16 @@
       "additionalProperties": false,
       "properties": {
         "bandwidth_kbps": {
+          "maximum": 100000000,
+          "minimum": 0,
           "type": "integer"
         },
         "jitter_ms": {
           "type": "integer"
         },
         "latency_ms": {
+          "maximum": 3600000,
+          "minimum": 0,
           "type": "integer"
         },
         "mode": {
@@ -7883,6 +7943,8 @@
           "type": "boolean"
         },
         "max_message_size": {
+          "maximum": 16777216,
+          "minimum": 0,
           "type": "integer"
         },
         "origin": {

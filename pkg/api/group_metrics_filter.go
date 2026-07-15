@@ -1,6 +1,8 @@
 package api
 
 import (
+	"container/list"
+	"encoding/json"
 	"net/url"
 	"sort"
 	"strconv"
@@ -10,18 +12,43 @@ import (
 	"github.com/jasonczech/apexload/pkg/engine"
 )
 
-const maxGroupMetricsHistoryCacheEntries = 32
+const maxGroupFilterNames = 64
+const maxGroupFilterNameBytes = 256
+const maxGroupFilterQueryBytes = 16 << 10
+const maxGroupMetricsHistoryCacheEntriesPerTest = 4
+const maxGroupMetricsHistoryCacheEntriesGlobal = 64
+const maxGroupMetricsHistoryCacheEntryBytes = 8 << 20
+const maxGroupMetricsHistoryCacheBytes = 64 << 20
 
-var groupMetricsHistoryCaches sync.Map // map[testID]*groupMetricsHistoryCache
+var groupMetricsHistoryCaches = newGroupMetricsHistoryCacheManager()
 
 type groupFilterQuery struct {
 	Names    []string
 	Explicit bool
+	Invalid  bool
 }
 
-type groupMetricsHistoryCache struct {
+type groupMetricsHistoryCacheEntry struct {
+	testID  string
+	key     string
+	history []*LiveMetrics
+	bytes   int
+}
+
+type groupMetricsHistoryCacheManager struct {
 	mu      sync.Mutex
-	entries map[string][]*LiveMetrics
+	entries map[string]*list.Element
+	perTest map[string]int
+	order   *list.List
+	total   int
+}
+
+func newGroupMetricsHistoryCacheManager() *groupMetricsHistoryCacheManager {
+	return &groupMetricsHistoryCacheManager{
+		entries: make(map[string]*list.Element),
+		perTest: make(map[string]int),
+		order:   list.New(),
+	}
 }
 
 func parseGroupFilterQuery(query url.Values) groupFilterQuery {
@@ -31,14 +58,25 @@ func parseGroupFilterQuery(query url.Values) groupFilterQuery {
 	}
 	seen := make(map[string]struct{})
 	names := make([]string, 0)
+	totalBytes := 0
 	for _, value := range values {
+		totalBytes += len(value)
+		if totalBytes > maxGroupFilterQueryBytes {
+			return groupFilterQuery{Invalid: true}
+		}
 		for _, part := range strings.Split(value, ",") {
 			name := strings.TrimSpace(part)
 			if name == "" {
 				continue
 			}
+			if len(name) > maxGroupFilterNameBytes {
+				return groupFilterQuery{Invalid: true}
+			}
 			if _, exists := seen[name]; exists {
 				continue
+			}
+			if len(names) >= maxGroupFilterNames {
+				return groupFilterQuery{Invalid: true}
 			}
 			seen[name] = struct{}{}
 			names = append(names, name)
@@ -109,41 +147,161 @@ func filterLiveMetricsHistoryForGroupsCached(testID string, history []*LiveMetri
 	if !filter.Explicit {
 		return history
 	}
-	cache := getGroupMetricsHistoryCache(testID)
 	key := groupMetricsHistoryCacheKey(history, filter)
-	cache.mu.Lock()
-	if cached := cache.entries[key]; cached != nil {
-		out := append([]*LiveMetrics(nil), cached...)
-		cache.mu.Unlock()
-		return out
+	if cached, ok := groupMetricsHistoryCaches.get(testID, key); ok {
+		return cached
 	}
-	cache.mu.Unlock()
 
 	filtered := filterLiveMetricsHistoryForGroups(history, filter)
-
-	cache.mu.Lock()
-	if len(cache.entries) >= maxGroupMetricsHistoryCacheEntries {
-		cache.entries = make(map[string][]*LiveMetrics)
+	for _, point := range filtered {
+		compactGroupFilteredMetricsForCache(point)
 	}
-	cache.entries[key] = append([]*LiveMetrics(nil), filtered...)
-	cache.mu.Unlock()
+	groupMetricsHistoryCaches.put(testID, key, filtered)
 	return filtered
 }
 
-func getGroupMetricsHistoryCache(testID string) *groupMetricsHistoryCache {
+func (c *groupMetricsHistoryCacheManager) get(testID, key string) ([]*LiveMetrics, bool) {
+	if c == nil {
+		return nil, false
+	}
+	composite := groupMetricsHistoryCompositeKey(testID, key)
+	c.mu.Lock()
+	element := c.entries[composite]
+	if element == nil {
+		c.mu.Unlock()
+		return nil, false
+	}
+	entry := element.Value.(*groupMetricsHistoryCacheEntry)
+	c.order.MoveToBack(element)
+	out := append([]*LiveMetrics(nil), entry.history...)
+	c.mu.Unlock()
+	return out, true
+}
+
+func (c *groupMetricsHistoryCacheManager) put(testID, key string, history []*LiveMetrics) {
+	if c == nil || len(history) == 0 {
+		return
+	}
+	weight := groupMetricsHistoryCacheWeight(history)
+	if weight <= 0 || weight > maxGroupMetricsHistoryCacheEntryBytes {
+		return
+	}
+	composite := groupMetricsHistoryCompositeKey(testID, key)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if existing := c.entries[composite]; existing != nil {
+		c.removeLocked(composite, existing)
+	}
+	for c.perTest[testID] >= maxGroupMetricsHistoryCacheEntriesPerTest {
+		if !c.removeOldestForTestLocked(testID) {
+			break
+		}
+	}
+	for len(c.entries) >= maxGroupMetricsHistoryCacheEntriesGlobal || c.total > maxGroupMetricsHistoryCacheBytes-weight {
+		oldest := c.order.Front()
+		if oldest == nil {
+			return
+		}
+		oldestEntry := oldest.Value.(*groupMetricsHistoryCacheEntry)
+		c.removeLocked(groupMetricsHistoryCompositeKey(oldestEntry.testID, oldestEntry.key), oldest)
+	}
+	entry := &groupMetricsHistoryCacheEntry{
+		testID:  testID,
+		key:     key,
+		history: append([]*LiveMetrics(nil), history...),
+		bytes:   weight,
+	}
+	element := c.order.PushBack(entry)
+	c.entries[composite] = element
+	c.perTest[testID]++
+	c.total += weight
+}
+
+func (c *groupMetricsHistoryCacheManager) deleteTest(testID string) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	for element := c.order.Front(); element != nil; {
+		next := element.Next()
+		entry := element.Value.(*groupMetricsHistoryCacheEntry)
+		if entry.testID == testID {
+			c.removeLocked(groupMetricsHistoryCompositeKey(entry.testID, entry.key), element)
+		}
+		element = next
+	}
+	c.mu.Unlock()
+}
+
+func (c *groupMetricsHistoryCacheManager) removeOldestForTestLocked(testID string) bool {
+	for element := c.order.Front(); element != nil; element = element.Next() {
+		entry := element.Value.(*groupMetricsHistoryCacheEntry)
+		if entry.testID == testID {
+			c.removeLocked(groupMetricsHistoryCompositeKey(entry.testID, entry.key), element)
+			return true
+		}
+	}
+	return false
+}
+
+func (c *groupMetricsHistoryCacheManager) removeLocked(composite string, element *list.Element) {
+	if element == nil {
+		return
+	}
+	entry := element.Value.(*groupMetricsHistoryCacheEntry)
+	delete(c.entries, composite)
+	c.order.Remove(element)
+	c.total -= entry.bytes
+	if c.total < 0 {
+		c.total = 0
+	}
+	c.perTest[entry.testID]--
+	if c.perTest[entry.testID] <= 0 {
+		delete(c.perTest, entry.testID)
+	}
+}
+
+func groupMetricsHistoryCompositeKey(testID, key string) string {
 	if testID == "" {
 		testID = "unknown"
 	}
-	if value, ok := groupMetricsHistoryCaches.Load(testID); ok {
-		return value.(*groupMetricsHistoryCache)
-	}
-	cache := &groupMetricsHistoryCache{entries: make(map[string][]*LiveMetrics)}
-	actual, _ := groupMetricsHistoryCaches.LoadOrStore(testID, cache)
-	return actual.(*groupMetricsHistoryCache)
+	return testID + "\x00" + key
 }
 
 func deleteGroupMetricsHistoryCache(testID string) {
-	groupMetricsHistoryCaches.Delete(testID)
+	groupMetricsHistoryCaches.deleteTest(testID)
+}
+
+func groupMetricsHistoryCacheWeight(history []*LiveMetrics) int {
+	encoded, err := json.Marshal(history)
+	if err != nil || len(encoded) == 0 {
+		return 0
+	}
+	// JSON bytes undercount Go map/slice headers and allocator overhead. A 4x
+	// multiplier plus one KiB per point is intentionally conservative, keeping
+	// retained heap comfortably below the configured logical budget.
+	if len(encoded) > maxGroupMetricsHistoryCacheEntryBytes/4 {
+		return maxGroupMetricsHistoryCacheEntryBytes + 1
+	}
+	weight := len(encoded)*4 + len(history)*1024
+	if weight < 0 {
+		return maxGroupMetricsHistoryCacheEntryBytes + 1
+	}
+	return weight
+}
+
+func compactGroupFilteredMetricsForCache(point *LiveMetrics) {
+	if point == nil {
+		return
+	}
+	// Error evidence is explicitly excluded from the metrics JSON response and
+	// can carry snapshots. Do not retain it through a response-only cache.
+	point.ErrorEvidence = nil
+	for _, group := range point.GroupMetrics {
+		if group != nil {
+			group.DurationDigest = nil
+		}
+	}
 }
 
 func groupMetricsHistoryCacheKey(history []*LiveMetrics, filter groupFilterQuery) string {
@@ -151,9 +309,17 @@ func groupMetricsHistoryCacheKey(history []*LiveMetrics, filter groupFilterQuery
 	sort.Strings(names)
 	firstUnixNano := int64(0)
 	lastUnixNano := int64(0)
-	if len(history) > 0 {
-		firstUnixNano = history[0].Timestamp.UnixNano()
-		lastUnixNano = history[len(history)-1].Timestamp.UnixNano()
+	for _, point := range history {
+		if point != nil {
+			firstUnixNano = point.Timestamp.UnixNano()
+			break
+		}
+	}
+	for index := len(history) - 1; index >= 0; index-- {
+		if history[index] != nil {
+			lastUnixNano = history[index].Timestamp.UnixNano()
+			break
+		}
 	}
 	var builder strings.Builder
 	builder.WriteString(strconv.Itoa(len(history)))

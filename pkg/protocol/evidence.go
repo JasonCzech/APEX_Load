@@ -4,6 +4,17 @@ import (
 	"encoding/json"
 	"strings"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
+)
+
+const (
+	maxEvidencePayloadBytes = 64 << 10
+	maxEvidenceBytes        = 128 << 10
+	maxEvidenceStringBytes  = 8 << 10
+	maxEvidenceEntries      = 1024
+	maxEvidenceCollection   = 128
+	maxEvidenceDepth        = 6
 )
 
 func BuildProtocolEvidence(action *Action, result *Result) map[string]any {
@@ -39,7 +50,7 @@ func BuildProtocolEvidence(action *Action, result *Result) map[string]any {
 	if transcript := evidenceTranscript(payload, result.ResponseBody); len(transcript) > 0 {
 		evidence["transcript"] = transcript
 	}
-	return evidence
+	return BoundProtocolEvidence(evidence)
 }
 
 func inferEvidenceProtocol(action *Action, result *Result) string {
@@ -224,7 +235,7 @@ func evidenceMetadata(action *Action, result *Result) map[string]any {
 }
 
 func parseEvidencePayload(body string) map[string]any {
-	if strings.TrimSpace(body) == "" {
+	if len(body) > maxEvidencePayloadBytes || strings.TrimSpace(body) == "" {
 		return nil
 	}
 	var payload map[string]any
@@ -279,23 +290,104 @@ func evidenceTranscript(payload map[string]any, body string) []any {
 }
 
 func cloneEvidenceStringMap(input map[string]string) map[string]string {
-	if len(input) == 0 {
-		return nil
-	}
-	out := make(map[string]string, len(input))
-	for key, value := range input {
-		out[key] = value
-	}
-	return out
+	bounded := BoundProtocolEvidence(map[string]any{"values": input})
+	values, _ := bounded["values"].(map[string]string)
+	return values
 }
 
 func cloneEvidenceAnyMap(input map[string]any) map[string]any {
+	return BoundProtocolEvidence(input)
+}
+
+// BoundProtocolEvidence returns a detached, recursively bounded projection of
+// protocol evidence. Arbitrary adapter/action maps are user-controlled and may
+// otherwise retain very large payload graphs in replay reports and archives.
+func BoundProtocolEvidence(input map[string]any) map[string]any {
 	if len(input) == 0 {
 		return nil
 	}
-	out := make(map[string]any, len(input))
-	for key, value := range input {
-		out[key] = value
+	budget := evidenceBudget{bytes: maxEvidenceBytes, entries: maxEvidenceEntries}
+	value, ok := boundEvidenceValue(input, &budget, 0)
+	if !ok {
+		return nil
 	}
+	out, _ := value.(map[string]any)
 	return out
+}
+
+type evidenceBudget struct {
+	bytes   int
+	entries int
+}
+
+func boundEvidenceValue(value any, budget *evidenceBudget, depth int) (any, bool) {
+	if budget == nil || budget.bytes <= 0 || budget.entries <= 0 || depth > maxEvidenceDepth {
+		return nil, false
+	}
+	switch typed := value.(type) {
+	case nil, bool, float64, float32, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, json.Number:
+		budget.entries--
+		return typed, true
+	case string:
+		limit := min(maxEvidenceStringBytes, budget.bytes)
+		if limit <= 0 {
+			return nil, false
+		}
+		typed = boundedtext.TruncateUTF8(typed, limit)
+		budget.bytes -= len(typed)
+		budget.entries--
+		return typed, true
+	case map[string]string:
+		keys := boundedtext.SmallestStringKeys(typed, maxEvidenceCollection)
+		out := make(map[string]string, len(keys))
+		for _, key := range keys {
+			boundedKey, ok := boundEvidenceValue(key, budget, depth+1)
+			if !ok {
+				break
+			}
+			boundedValue, ok := boundEvidenceValue(typed[key], budget, depth+1)
+			if !ok {
+				continue
+			}
+			out[boundedKey.(string)] = boundedValue.(string)
+		}
+		return out, len(out) > 0
+	case map[string]any:
+		keys := boundedtext.SmallestStringKeys(typed, maxEvidenceCollection)
+		out := make(map[string]any, len(keys))
+		for _, key := range keys {
+			if budget.entries <= 0 || budget.bytes <= 0 {
+				break
+			}
+			boundedKey, ok := boundEvidenceValue(key, budget, depth+1)
+			if !ok {
+				break
+			}
+			boundedValue, ok := boundEvidenceValue(typed[key], budget, depth+1)
+			if !ok {
+				continue
+			}
+			out[boundedKey.(string)] = boundedValue
+		}
+		return out, len(out) > 0
+	case []string:
+		values := make([]any, min(len(typed), maxEvidenceCollection))
+		for index := range values {
+			values[index] = typed[index]
+		}
+		return boundEvidenceValue(values, budget, depth)
+	case []any:
+		limit := min(len(typed), maxEvidenceCollection)
+		out := make([]any, 0, limit)
+		for _, item := range typed[:limit] {
+			bounded, ok := boundEvidenceValue(item, budget, depth+1)
+			if !ok {
+				continue
+			}
+			out = append(out, bounded)
+		}
+		return out, len(out) > 0
+	default:
+		return nil, false
+	}
 }

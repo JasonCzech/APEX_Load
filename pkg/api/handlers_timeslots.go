@@ -47,6 +47,25 @@ func validateReservationWindow(start, end time.Time) error {
 	return nil
 }
 
+func validateReservationCapacity(capacity *storage.CapacityReservationRequest) error {
+	if capacity == nil {
+		return nil
+	}
+	if capacity.Generators != nil && *capacity.Generators <= 0 {
+		return errors.New("requested_capacity.generators must be greater than zero")
+	}
+	if capacity.Generators != nil && *capacity.Generators > maxCapacityUnit {
+		return fmt.Errorf("requested_capacity.generators must not exceed %d", maxCapacityUnit)
+	}
+	if capacity.VUsers != nil && *capacity.VUsers <= 0 {
+		return errors.New("requested_capacity.vusers must be greater than zero")
+	}
+	if capacity.VUsers != nil && *capacity.VUsers > maxManagedTestVUsers {
+		return fmt.Errorf("requested_capacity.vusers must not exceed %d", maxManagedTestVUsers)
+	}
+	return nil
+}
+
 // reservationCapacityEqual reports whether two requested-capacity envelopes
 // reserve the same generators/VUsers from the same pool (the admission-relevant
 // terms). The PoolID is included because it selects which capacity envelope the
@@ -113,6 +132,10 @@ func (s *Server) handleCreateCapacityReservation(w http.ResponseWriter, r *http.
 		return
 	}
 	if err := validateReservationTimezone(req.Timezone); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := validateReservationCapacity(req.RequestedCapacity); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -229,6 +252,10 @@ func (s *Server) handleUpdateCapacityReservation(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if err := validateReservationCapacity(req.RequestedCapacity); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	// Same guard as create: an edit must not repoint the reservation at a
 	// non-existent fleet pool (which would silently protect no capacity).
 	if req.RequestedCapacity != nil {
@@ -317,6 +344,15 @@ type atomicCapacityApprovalStore interface {
 	) (changed bool, overbooked bool, err error)
 }
 
+type capacityFencedApprovalStore interface {
+	ApproveCapacityReservationWithCapacityFence(
+		id string,
+		updatedAt time.Time,
+		settingKey string,
+		evaluate func(target *storage.CapacityReservation, approved []*storage.CapacityReservation, settingValue string) (bool, error),
+	) (changed bool, overbooked bool, err error)
+}
+
 // decodeReservationApprovalRequest reads the optional approve-body override flag.
 // The approve endpoint historically took no body, so a missing/empty/invalid body
 // degrades to the zero value (no override).
@@ -353,10 +389,14 @@ func (s *Server) transitionReservationApproval(w http.ResponseWriter, r *http.Re
 			}
 			details["conflict_override"] = true
 			details["override_reason"] = strings.TrimSpace(approval.Reason)
-		} else if _, atomic := s.store.(atomicCapacityApprovalStore); !atomic {
-			if msg := s.reservationOverbookingConflict(reservation); msg != "" {
-				writeError(w, http.StatusConflict, msg+"; pass conflict_override with a reason to approve anyway")
-				return
+		} else {
+			_, atomic := s.store.(atomicCapacityApprovalStore)
+			_, fenced := s.store.(capacityFencedApprovalStore)
+			if !atomic && !fenced {
+				if msg := s.reservationOverbookingConflict(reservation); msg != "" {
+					writeError(w, http.StatusConflict, msg+"; pass conflict_override with a reason to approve anyway")
+					return
+				}
 			}
 		}
 	}
@@ -374,7 +414,39 @@ func (s *Server) transitionReservationApproval(w http.ResponseWriter, r *http.Re
 		err     error
 	)
 	if state == "approved" && !approval.ConflictOverride {
-		if atomicStore, ok := s.store.(atomicCapacityApprovalStore); ok {
+		// Approval is a settings-dependent mutation. Bypass the normal HA read
+		// throttle before taking a snapshot; the capacity-fenced store path below
+		// then re-reads the same durable value while holding the cross-write lock.
+		s.runner.refreshSystemSettingsFromStore(true)
+		if _, fenced := s.store.(capacityFencedApprovalStore); fenced {
+			settings := s.runner.GetSystemSettings()
+			poolEnvelopes, snapshotErr := s.runner.PoolGeneratorEnvelopeSnapshot()
+			if snapshotErr != nil {
+				writeError(w, http.StatusServiceUnavailable, "fleet capacity is temporarily unavailable")
+				return
+			}
+			fencedStore := s.store.(capacityFencedApprovalStore)
+			var overbooked bool
+			updated, overbooked, err = fencedStore.ApproveCapacityReservationWithCapacityFence(
+				reservation.ID,
+				now,
+				systemSettingsStoreKey,
+				func(target *storage.CapacityReservation, approved []*storage.CapacityReservation, settingValue string) (bool, error) {
+					durableSettings, err := systemSettingsFromStoredValue(settingValue, settings)
+					if err != nil {
+						return false, err
+					}
+					after := make([]*storage.CapacityReservation, 0, len(approved)+1)
+					after = append(after, approved...)
+					after = append(after, target)
+					return capacityChangeOverbookingConflict(durableSettings, durableSettings, approved, after, poolEnvelopes) != "", nil
+				},
+			)
+			if err == nil && overbooked {
+				writeError(w, http.StatusConflict, "approving this timeslot would overbook its capacity envelope; pass conflict_override with a reason to approve anyway")
+				return
+			}
+		} else if atomicStore, ok := s.store.(atomicCapacityApprovalStore); ok {
 			settings := s.runner.GetSystemSettings()
 			poolEnvelopes, snapshotErr := s.runner.PoolGeneratorEnvelopeSnapshot()
 			if snapshotErr != nil {
@@ -388,12 +460,28 @@ func (s *Server) transitionReservationApproval(w http.ResponseWriter, r *http.Re
 				func(candidate *storage.CapacityReservation) (string, int) {
 					poolID := timeslotPoolID(candidate)
 					if poolID != "" {
-						return poolID, poolEnvelopes[poolID]
+						if limit, known := poolEnvelopes[poolID]; known {
+							return poolID, limit
+						}
+						return poolID, -1
 					}
 					return "", resolveCapacityAvailabilityAt(settings, candidate.StartAt.UTC()).EffectiveAvailableGenerators
 				},
 				func(candidate *storage.CapacityReservation) int {
-					return timeslotReservedGenerators(settings, candidate)
+					units := timeslotReservedGenerators(settings, candidate)
+					// The storage transaction sums approved timeslots. Add the
+					// settings-backed reservations once, on the target row, so the
+					// same atomic comparison also protects capacity already promised
+					// outside the timeslot table.
+					if candidate != nil && candidate.ID == reservation.ID {
+						units = saturatingAddNonNegative(units, settingsReservedGeneratorsOverlapping(
+							settings,
+							timeslotPoolID(candidate),
+							candidate.StartAt,
+							candidate.EndAt,
+						))
+					}
+					return units
 				},
 			)
 			if err == nil && overbooked {
@@ -424,6 +512,31 @@ func (s *Server) transitionReservationApproval(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusOK, reservation)
 }
 
+// settingsReservedGeneratorsOverlapping returns the settings-backed generator
+// reservations that draw from poolID and overlap [start, end). Settings
+// reservations and persisted timeslots protect the same finite envelope, so an
+// approval must account for both. Capacity envelopes are intentionally isolated:
+// global reservations do not consume a fleet pool and reservations for one fleet
+// pool do not consume another.
+func settingsReservedGeneratorsOverlapping(settings SystemSettings, poolID string, start, end time.Time) int {
+	poolID = strings.TrimSpace(poolID)
+	total := 0
+	for _, reservation := range normalizeCapacityReservations(settings.CapacityPlanning.Reservations) {
+		if reservation.ReservedGenerators <= 0 || strings.TrimSpace(reservation.PoolID) != poolID {
+			continue
+		}
+		// Half-open interval overlap. Nil bounds are unbounded.
+		if reservation.EndsAt != nil && !reservation.EndsAt.After(start) {
+			continue
+		}
+		if reservation.StartsAt != nil && !reservation.StartsAt.Before(end) {
+			continue
+		}
+		total = saturatingAddNonNegative(total, reservation.ReservedGenerators)
+	}
+	return total
+}
+
 // reservationOverbookingConflict returns a non-empty message when approving the
 // reservation would over-commit the configured generator pool across the
 // approved reservations overlapping its window. A storage failure fails closed so
@@ -440,22 +553,30 @@ func (s *Server) reservationOverbookingConflict(reservation *storage.CapacityRes
 	// accounting, which keeps the two envelopes separate — without it a pool slot is
 	// checked against the wrong pool and cross-counts unrelated envelopes.
 	poolID := timeslotPoolID(reservation)
-	var pool int
+	var (
+		pool  int
+		known bool
+	)
 	if poolID != "" {
-		pool = s.runner.PoolGeneratorEnvelope(poolID)
+		poolEnvelopes, err := s.runner.PoolGeneratorEnvelopeSnapshot()
+		if err != nil {
+			return "reservation capacity state is temporarily unavailable; try again"
+		}
+		pool, known = poolEnvelopes[poolID]
 	} else {
 		pool = resolveCapacityAvailabilityAt(settings, reservation.StartAt.UTC()).EffectiveAvailableGenerators
+		known = true
 	}
-	if pool <= 0 {
-		// No envelope to enforce against: no configured global pool, or an empty/
-		// unknown fleet pool (the run-time admission gate re-validates either way).
+	if !known {
+		// A custom/no-fleet compatibility store cannot size this envelope. The
+		// run-time assignment path will still reject an unusable pool.
 		return ""
 	}
 	overlaps, err := s.store.ListCapacityReservationsByTimeRange("", reservation.StartAt, reservation.EndAt)
 	if err != nil {
 		return "reservation capacity state is temporarily unavailable; try again"
 	}
-	total := required
+	total := saturatingAddNonNegative(required, settingsReservedGeneratorsOverlapping(settings, poolID, reservation.StartAt, reservation.EndAt))
 	for _, o := range overlaps {
 		if o == nil || o.ID == reservation.ID || o.ApprovalState != "approved" {
 			continue
@@ -463,7 +584,7 @@ func (s *Server) reservationOverbookingConflict(reservation *storage.CapacityRes
 		if timeslotPoolID(o) != poolID {
 			continue // different capacity envelope — don't cross-count
 		}
-		total += timeslotReservedGenerators(settings, o)
+		total = saturatingAddNonNegative(total, timeslotReservedGenerators(settings, o))
 	}
 	if total > pool {
 		if poolID != "" {
@@ -510,8 +631,7 @@ func (s *Server) handleBindCapacityTimeslot(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
 		return
 	}
-	reservation, ok := s.loadCapacityReservation(w, r)
-	if !ok {
+	if !s.requireExecutionLeader(w) {
 		return
 	}
 	var req struct {
@@ -525,54 +645,33 @@ func (s *Server) handleBindCapacityTimeslot(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusBadRequest, "test_id is required")
 		return
 	}
-	// Fast, clearly-messaged rejection for the common case; the binding update
-	// re-checks the approved state atomically to close the TOCTOU window.
-	if reservation.ApprovalState != "approved" {
-		writeError(w, http.StatusConflict, "timeslot must be approved before it can be bound")
-		return
-	}
-	test, err := s.store.GetTest(req.TestID)
-	if err != nil || test == nil {
-		writeError(w, http.StatusNotFound, "test not found")
-		return
-	}
-	if normalizeProjectID(test.ProjectID) != normalizeProjectID(reservation.ProjectID) {
-		writeError(w, http.StatusBadRequest, "test belongs to a different project than the timeslot")
-		return
-	}
-	// Enforce the same window-fit and VUser-capacity invariants the create-time
-	// bind applies, so a test cannot be bound to a timeslot it overflows or runs
-	// outside of.
-	start := time.Now()
-	if test.ScheduledStartAt != nil && !test.ScheduledStartAt.IsZero() {
-		start = *test.ScheduledStartAt
-	}
-	end := start.Add(time.Duration(test.Duration))
-	if err := reservationFitError(reservation, start, end, test.TotalVUsers); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	status := test.Status
-	bound, err := s.store.UpdateCapacityReservationBinding(reservation.ID, &req.TestID, &status, time.Now())
+	reservation, result, err := s.runner.BindCapacityTimeslot(r.PathValue("id"), req.TestID)
 	if err != nil {
+		if errors.Is(err, errNotExecutionLeader) {
+			writeError(w, http.StatusServiceUnavailable, "this controller is not the execution leader")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if !bound {
-		// The atomic update binds only an approved, not-yet-bound reservation, so a
-		// miss here means it was concurrently bound or its approval was revoked.
-		writeError(w, http.StatusConflict, "timeslot is no longer bindable (already bound or not approved)")
+	if result != storage.CapacityBindingBound {
+		status := http.StatusConflict
+		switch result {
+		case storage.CapacityBindingReservationMissing, storage.CapacityBindingTestMissing:
+			status = http.StatusNotFound
+		case storage.CapacityBindingProjectMismatch, storage.CapacityBindingWindowMismatch,
+			storage.CapacityBindingCapacityExceeded, storage.CapacityBindingTestNotBindable:
+			status = http.StatusBadRequest
+		case storage.CapacityBindingFenced:
+			status = http.StatusServiceUnavailable
+		}
+		writeError(w, status, capacityBindingResultError(result).Error())
 		return
 	}
 	s.recordAuditEvent(r, "timeslot.bind", "success", "timeslot", reservation.ID, reservation.ProjectID, map[string]any{
 		"test_id": req.TestID,
 	})
-	updated, err := s.store.GetCapacityReservation(reservation.ID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, updated)
+	writeJSON(w, http.StatusOK, reservation)
 }
 
 // loadCapacityReservation fetches the {id} reservation, writing the appropriate

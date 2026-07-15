@@ -62,6 +62,26 @@ func WithGeneratorScriptCacheByteLimit(maxBytes int64) ServiceOption {
 	}
 }
 
+// WithGeneratorObjectLimits overrides the hard active-object admission limits.
+// It is primarily useful for constrained deployments and deterministic tests.
+// Non-positive arguments retain the corresponding production default.
+func WithGeneratorObjectLimits(tests, groups, executions, writers int) ServiceOption {
+	return func(service *Service) {
+		if tests > 0 {
+			service.maxAssignedTests = tests
+		}
+		if groups > 0 {
+			service.maxAssignedGroups = groups
+		}
+		if executions > 0 {
+			service.maxExecutions = executions
+		}
+		if writers > 0 {
+			service.maxArchiveWriters = writers
+		}
+	}
+}
+
 func configuredGeneratorScriptCacheMax() int {
 	return positiveGeneratorIntEnv(envGeneratorScriptCacheMax, defaultGeneratorScriptCacheMax)
 }

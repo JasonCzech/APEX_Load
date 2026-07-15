@@ -2,7 +2,10 @@ package engine
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -12,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 type SecretResolver interface {
@@ -25,12 +29,26 @@ func (fn SecretResolverFunc) Resolve(name string) (string, bool) {
 }
 
 type cachingSecretResolver struct {
-	delegate SecretResolver
-	mu       sync.Mutex
-	values   map[string]string
-	missing  map[string]struct{}
-	inflight map[string]*secretResolutionFlight
+	delegate    SecretResolver
+	mu          sync.Mutex
+	values      map[string]string
+	missing     map[string]time.Time
+	inflight    map[string]*secretResolutionFlight
+	order       []string
+	bytes       int
+	now         func() time.Time
+	negativeTTL time.Duration
 }
+
+const (
+	maxSecretNameBytes            = 256
+	maxResolvedSecretValueBytes   = 64 << 10
+	maxCachedSecrets              = 1024
+	maxCachedSecretBytes          = 4 << 20
+	maxAzureKeyVaultResponseBytes = 1 << 20
+	maxAzureKeyVaultAllowedNames  = 1024
+	secretNegativeCacheTTL        = 5 * time.Second
+)
 
 type secretResolutionFlight struct {
 	done  chan struct{}
@@ -43,46 +61,112 @@ func newCachingSecretResolver(delegate SecretResolver) SecretResolver {
 		return nil
 	}
 	return &cachingSecretResolver{
-		delegate: delegate,
-		values:   make(map[string]string),
-		missing:  make(map[string]struct{}),
-		inflight: make(map[string]*secretResolutionFlight),
+		delegate:    delegate,
+		values:      make(map[string]string),
+		missing:     make(map[string]time.Time),
+		inflight:    make(map[string]*secretResolutionFlight),
+		now:         time.Now,
+		negativeTTL: secretNegativeCacheTTL,
 	}
 }
 
 func (r *cachingSecretResolver) Resolve(name string) (string, bool) {
+	name = strings.TrimSpace(name)
+	if name == "" || len(name) > maxSecretNameBytes {
+		return "", false
+	}
 	r.mu.Lock()
 	if value, ok := r.values[name]; ok {
 		r.mu.Unlock()
 		return value, true
 	}
-	if _, ok := r.missing[name]; ok {
-		r.mu.Unlock()
-		return "", false
+	if expiresAt, ok := r.missing[name]; ok {
+		if r.nowTime().Before(expiresAt) {
+			r.mu.Unlock()
+			return "", false
+		}
+		delete(r.missing, name)
+		r.bytes -= len(name)
+		r.removeOrderLocked(name)
 	}
 	if flight := r.inflight[name]; flight != nil {
 		r.mu.Unlock()
 		<-flight.done
 		return flight.value, flight.ok
 	}
+	if len(r.inflight) >= maxCachedSecrets {
+		r.mu.Unlock()
+		return "", false
+	}
 	flight := &secretResolutionFlight{done: make(chan struct{})}
 	r.inflight[name] = flight
 	r.mu.Unlock()
 
 	value, ok := r.delegate.Resolve(name)
+	if len(value) > maxResolvedSecretValueBytes {
+		value = ""
+		ok = false
+	}
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if ok {
-		r.values[name] = value
-	} else {
-		r.missing[name] = struct{}{}
-	}
+	r.admitLocked(name, value, ok)
 	flight.value = value
 	flight.ok = ok
 	delete(r.inflight, name)
 	close(flight.done)
 	return value, ok
+}
+
+func (r *cachingSecretResolver) admitLocked(name, value string, ok bool) {
+	entryBytes := len(name)
+	if ok {
+		entryBytes += len(value)
+	}
+	if entryBytes > maxCachedSecretBytes {
+		return
+	}
+	for len(r.values)+len(r.missing) >= maxCachedSecrets || r.bytes+entryBytes > maxCachedSecretBytes {
+		if len(r.order) == 0 {
+			return
+		}
+		victim := r.order[0]
+		r.order[0] = ""
+		r.order = r.order[1:]
+		if cached, exists := r.values[victim]; exists {
+			delete(r.values, victim)
+			r.bytes -= len(victim) + len(cached)
+		} else if _, exists := r.missing[victim]; exists {
+			delete(r.missing, victim)
+			r.bytes -= len(victim)
+		}
+	}
+	if ok {
+		r.values[name] = value
+	} else {
+		r.missing[name] = r.nowTime().Add(r.negativeTTL)
+	}
+	r.order = append(r.order, name)
+	r.bytes += entryBytes
+}
+
+func (r *cachingSecretResolver) nowTime() time.Time {
+	if r.now != nil {
+		return r.now()
+	}
+	return time.Now()
+}
+
+func (r *cachingSecretResolver) removeOrderLocked(name string) {
+	for index := 0; index < len(r.order); {
+		if r.order[index] != name {
+			index++
+			continue
+		}
+		copy(r.order[index:], r.order[index+1:])
+		r.order[len(r.order)-1] = ""
+		r.order = r.order[:len(r.order)-1]
+	}
 }
 
 type chainedSecretResolver struct {
@@ -114,15 +198,81 @@ func (r chainedSecretResolver) Resolve(name string) (string, bool) {
 type envSecretResolver struct{}
 
 func (envSecretResolver) Resolve(name string) (string, bool) {
+	name = strings.TrimSpace(name)
 	if name == "" {
 		return "", false
 	}
-	if value, ok := os.LookupEnv(name); ok {
-		return value, true
-	}
-	normalized := strings.NewReplacer(".", "_", "-", "_").Replace(strings.ToUpper(name))
-	value, ok := os.LookupEnv("APEXLOAD_SECRET_" + normalized)
+	// Uploaded scripts must not be able to turn {{secret.NAME}} into an
+	// arbitrary process-environment lookup. The generator environment also
+	// contains platform credentials (gRPC bearer tokens, OIDC secrets, cloud
+	// identity settings, database DSNs, and projected-token paths). Operators
+	// expose a value to the script secret store only by placing it in the
+	// dedicated APEXLOAD_SECRET_* namespace.
+	value, ok := os.LookupEnv(scriptSecretEnvironmentName(name))
 	return value, ok
+}
+
+func scriptSecretEnvironmentName(name string) string {
+	normalized := strings.NewReplacer(".", "_", "-", "_").Replace(strings.ToUpper(strings.TrimSpace(name)))
+	return "APEXLOAD_SECRET_" + normalized
+}
+
+type projectScopedSecretResolver struct {
+	projectID string
+	delegate  SecretResolver
+}
+
+func (r projectScopedSecretResolver) Resolve(name string) (string, bool) {
+	if r.delegate == nil {
+		return "", false
+	}
+	boundName := ProjectSecretBindingName(r.projectID, name)
+	if boundName == "" {
+		return "", false
+	}
+	return r.delegate.Resolve(boundName)
+}
+
+// ProjectSecretBindingName returns the operator-facing logical binding used by
+// both the environment and Azure Key Vault resolvers. Project-bound scripts
+// never fall back to the legacy global name. Projectless local CLI scripts keep
+// the legacy binding for backwards compatibility.
+func ProjectSecretBindingName(projectID, name string) string {
+	name = strings.TrimSpace(name)
+	projectID = strings.TrimSpace(projectID)
+	if name == "" || projectID == "" {
+		return name
+	}
+	projectHash := sha256.Sum256([]byte(projectID))
+	prefix := fmt.Sprintf("apexload-p-%x-", projectHash[:10])
+	normalizedName := normalizeAzureKeyVaultSecretName(name)
+	if validAzureKeyVaultSecretName(normalizedName) && len(prefix)+len(normalizedName) <= 127 {
+		return prefix + normalizedName
+	}
+	nameHash := sha256.Sum256([]byte(name))
+	return fmt.Sprintf("%ssecret-%x", prefix, nameHash[:16])
+}
+
+// ProjectSecretEnvironmentName returns the exact environment-variable name an
+// operator must configure for a project-bound script secret.
+func ProjectSecretEnvironmentName(projectID, name string) string {
+	return scriptSecretEnvironmentName(ProjectSecretBindingName(projectID, name))
+}
+
+// ScriptSecretEnvAvailable reports whether name is bound in the dedicated
+// environment-backed script secret namespace. It does not consult arbitrary
+// process environment variables and does not return the credential value.
+func ScriptSecretEnvAvailable(name string) bool {
+	_, ok := (envSecretResolver{}).Resolve(name)
+	return ok
+}
+
+// ProjectScriptSecretEnvAvailable is the project-aware counterpart used by
+// controller preflight checks. A non-empty project never probes the legacy
+// global secret namespace.
+func ProjectScriptSecretEnvAvailable(projectID, name string) bool {
+	_, ok := (envSecretResolver{}).Resolve(ProjectSecretBindingName(projectID, name))
+	return ok
 }
 
 type azureKeyVaultSecretResolver struct {
@@ -136,9 +286,66 @@ type azureKeyVaultSecretResponse struct {
 	Value string `json:"value"`
 }
 
+type allowlistedAzureKeyVaultSecretResolver struct {
+	delegate SecretResolver
+	allowed  map[string]struct{}
+}
+
+func (r allowlistedAzureKeyVaultSecretResolver) Resolve(name string) (string, bool) {
+	secretName := normalizeAzureKeyVaultSecretName(name)
+	if !validAzureKeyVaultSecretName(secretName) {
+		return "", false
+	}
+	if _, ok := r.allowed[secretName]; !ok {
+		return "", false
+	}
+	return r.delegate.Resolve(secretName)
+}
+
+func azureKeyVaultAllowedSecretNamesFromEnv() (map[string]struct{}, error) {
+	raw := strings.TrimSpace(os.Getenv("APEXLOAD_AZURE_KEY_VAULT_ALLOWED_SECRETS"))
+	if raw == "" {
+		return nil, nil
+	}
+	allowed := make(map[string]struct{})
+	for _, configuredName := range strings.Split(raw, ",") {
+		configuredName = strings.TrimSpace(configuredName)
+		if configuredName == "" {
+			continue
+		}
+		secretName := normalizeAzureKeyVaultSecretName(configuredName)
+		if !validAzureKeyVaultSecretName(secretName) {
+			return nil, fmt.Errorf("invalid Azure Key Vault secret name %q", configuredName)
+		}
+		allowed[secretName] = struct{}{}
+		if len(allowed) > maxAzureKeyVaultAllowedNames {
+			return nil, fmt.Errorf("too many Azure Key Vault secret names (maximum %d)", maxAzureKeyVaultAllowedNames)
+		}
+	}
+	return allowed, nil
+}
+
 func newAzureKeyVaultSecretResolverFromEnv() SecretResolver {
 	baseURL := strings.TrimRight(strings.TrimSpace(os.Getenv("APEXLOAD_AZURE_KEY_VAULT_URL")), "/")
 	if baseURL == "" {
+		return nil
+	}
+	allowed, err := azureKeyVaultAllowedSecretNamesFromEnv()
+	if err != nil {
+		slog.Warn("azure key vault resolver disabled: invalid secret allowlist", "error", scrubSensitiveError(err, nil))
+		return nil
+	}
+	// A workload identity is commonly authorized for an entire shared vault.
+	// Uploaded scripts are not allowed to turn that identity into a generic
+	// secret-reading oracle: operators must explicitly expose each script-safe
+	// name. Environment-backed APEXLOAD_SECRET_* values remain an independently
+	// explicit, deployment-local secret namespace.
+	if len(allowed) == 0 {
+		return nil
+	}
+	validatedBaseURL, err := validateAzureKeyVaultBaseURL(baseURL)
+	if err != nil {
+		slog.Warn("azure key vault resolver disabled: invalid vault URL", "error", scrubSensitiveError(err, nil))
 		return nil
 	}
 	tokens := azureKeyVaultTokenSourceFromEnv()
@@ -149,12 +356,36 @@ func newAzureKeyVaultSecretResolverFromEnv() SecretResolver {
 	if apiVersion == "" {
 		apiVersion = "7.4"
 	}
-	return &azureKeyVaultSecretResolver{
-		baseURL:    baseURL,
+	resolver := &azureKeyVaultSecretResolver{
+		baseURL:    validatedBaseURL,
 		tokens:     tokens,
 		apiVersion: apiVersion,
-		client:     &http.Client{Timeout: 5 * time.Second},
+		client:     &http.Client{Timeout: 5 * time.Second, CheckRedirect: refuseAzureKeyVaultRedirect},
 	}
+	return allowlistedAzureKeyVaultSecretResolver{delegate: resolver, allowed: allowed}
+}
+
+func validateAzureKeyVaultBaseURL(raw string) (string, error) {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return "", fmt.Errorf("parse URL: %w", err)
+	}
+	if !strings.EqualFold(parsed.Scheme, "https") || parsed.Hostname() == "" {
+		return "", fmt.Errorf("vault URL must use HTTPS and include a host")
+	}
+	if parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", fmt.Errorf("vault URL must not contain userinfo, query, or fragment")
+	}
+	if parsed.EscapedPath() != "" && parsed.EscapedPath() != "/" {
+		return "", fmt.Errorf("vault URL must not contain a path")
+	}
+	parsed.Path = ""
+	parsed.RawPath = ""
+	return strings.TrimRight(parsed.String(), "/"), nil
+}
+
+func refuseAzureKeyVaultRedirect(_ *http.Request, _ []*http.Request) error {
+	return http.ErrUseLastResponse
 }
 
 // azureKeyVaultTokenSourceFromEnv picks the Key Vault auth mode:
@@ -199,7 +430,7 @@ func newAzureIdentityKeyVaultTokenSource() azureTokenSource {
 	}
 	credential, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
-		slog.Warn("azure key vault resolver disabled: DefaultAzureCredential init failed", "error", err)
+		slog.Warn("azure key vault resolver disabled: DefaultAzureCredential init failed", "error", scrubSensitiveError(err, nil))
 		return nil
 	}
 	return newAzureCredentialTokenSource(credential, scope)
@@ -209,7 +440,11 @@ func (r *azureKeyVaultSecretResolver) Resolve(name string) (string, bool) {
 	if r == nil || name == "" {
 		return "", false
 	}
-	endpoint, err := url.Parse(r.baseURL + "/secrets/" + url.PathEscape(normalizeAzureKeyVaultSecretName(name)))
+	secretName := normalizeAzureKeyVaultSecretName(name)
+	if !validAzureKeyVaultSecretName(secretName) {
+		return "", false
+	}
+	endpoint, err := url.Parse(r.baseURL + "/secrets/" + url.PathEscape(secretName))
 	if err != nil {
 		return "", false
 	}
@@ -221,7 +456,7 @@ func (r *azureKeyVaultSecretResolver) Resolve(name string) (string, bool) {
 	defer cancel()
 	token, err := r.tokens.Token(ctx)
 	if err != nil {
-		slog.Warn("azure key vault token acquisition failed", "error", err)
+		slog.Warn("azure key vault token acquisition failed", "error", scrubSensitiveError(err, nil))
 		return "", false
 	}
 
@@ -231,7 +466,13 @@ func (r *azureKeyVaultSecretResolver) Resolve(name string) (string, bool) {
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 
-	resp, err := r.client.Do(req)
+	client := r.client
+	if client == nil {
+		client = &http.Client{Timeout: 5 * time.Second}
+	}
+	boundedClient := *client
+	boundedClient.CheckRedirect = refuseAzureKeyVaultRedirect
+	resp, err := boundedClient.Do(req)
 	if err != nil {
 		return "", false
 	}
@@ -243,25 +484,56 @@ func (r *azureKeyVaultSecretResolver) Resolve(name string) (string, bool) {
 		return "", false
 	}
 
-	var payload azureKeyVaultSecretResponse
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxAzureKeyVaultResponseBytes+1))
+	if err != nil || len(body) > maxAzureKeyVaultResponseBytes {
 		return "", false
 	}
-	if payload.Value == "" {
+	var payload azureKeyVaultSecretResponse
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return "", false
+	}
+	if payload.Value == "" || len(payload.Value) > maxResolvedSecretValueBytes {
 		return "", false
 	}
 	return payload.Value, true
 }
 
 func normalizeAzureKeyVaultSecretName(name string) string {
-	return strings.NewReplacer("_", "-", ".", "-").Replace(name)
+	return strings.NewReplacer("_", "-", ".", "-").Replace(strings.TrimSpace(name))
+}
+
+func validAzureKeyVaultSecretName(name string) bool {
+	if name == "" || len(name) > 127 {
+		return false
+	}
+	for _, r := range name {
+		if r != '-' && !(r >= 'a' && r <= 'z') && !(r >= 'A' && r <= 'Z') && !(r >= '0' && r <= '9') {
+			return false
+		}
+	}
+	return true
 }
 
 func newDefaultSecretResolver() SecretResolver {
-	return newCachingSecretResolver(newChainedSecretResolver(
+	return newDefaultSecretResolverForProject("")
+}
+
+func newDefaultSecretResolverForProject(projectID string) SecretResolver {
+	var delegate SecretResolver = newChainedSecretResolver(
 		envSecretResolver{},
 		newAzureKeyVaultSecretResolverFromEnv(),
-	))
+	)
+	if strings.TrimSpace(projectID) != "" {
+		delegate = projectScopedSecretResolver{projectID: projectID, delegate: delegate}
+	}
+	return newCachingSecretResolver(delegate)
+}
+
+func defaultSecretResolverForScript(script *dsl.Script) SecretResolver {
+	if script == nil {
+		return newDefaultSecretResolver()
+	}
+	return newDefaultSecretResolverForProject(script.ProjectID)
 }
 
 func resolveSecretTemplateValue(name string, resolver SecretResolver) (string, bool) {

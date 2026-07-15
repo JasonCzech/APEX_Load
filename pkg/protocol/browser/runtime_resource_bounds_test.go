@@ -11,7 +11,11 @@ import (
 func TestConsoleEntriesAreByteAndCountBounded(t *testing.T) {
 	b := &Browser{}
 	for i := 0; i < browserConsoleEntryRingLimit+10; i++ {
-		b.appendConsoleEntry(protocol.ConsoleEntry{Text: strings.Repeat("x", browserConsoleTextLimitBytes+100)})
+		b.appendConsoleEntry(protocol.ConsoleEntry{
+			Level:  strings.Repeat("l", browserConsoleLevelLimitBytes+100),
+			Text:   strings.Repeat("x", browserConsoleTextLimitBytes+100),
+			Source: strings.Repeat("s", browserConsoleSourceLimitBytes+100),
+		})
 	}
 	if len(b.consoleEntries) != browserConsoleEntryRingLimit {
 		t.Fatalf("console entries = %d, want %d", len(b.consoleEntries), browserConsoleEntryRingLimit)
@@ -21,6 +25,9 @@ func TestConsoleEntriesAreByteAndCountBounded(t *testing.T) {
 	}
 	if len(b.consoleEntries[0].Text) != browserConsoleTextLimitBytes {
 		t.Fatalf("console text = %d bytes, want %d", len(b.consoleEntries[0].Text), browserConsoleTextLimitBytes)
+	}
+	if len(b.consoleEntries[0].Source) != browserConsoleSourceLimitBytes || len(b.consoleEntries[0].Level) != browserConsoleLevelLimitBytes {
+		t.Fatalf("console metadata = %d/%d bytes, want %d/%d", len(b.consoleEntries[0].Source), len(b.consoleEntries[0].Level), browserConsoleSourceLimitBytes, browserConsoleLevelLimitBytes)
 	}
 	if got := b.consoleEntriesSince(0); len(got) != browserConsoleEntryRingLimit {
 		t.Fatalf("entries since evicted offset = %d, want retained ring", len(got))

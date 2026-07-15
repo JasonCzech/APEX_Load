@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"compress/zlib"
 	"crypto/rsa"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
 	"fmt"
@@ -17,12 +18,14 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
 
 	"github.com/andybalholm/brotli"
+	"github.com/jasonczech/apexload/pkg/internal/boundedcache"
 )
 
 const defaultBodyCaptureLimitBytes = 512 * 1024
@@ -31,8 +34,25 @@ const maxRecordedRequests = 10_000
 const maxRecordedBodyBytes = 256 << 20
 const maxRecordedWebSocketMessages = 10_000
 const maxRecordedWebSocketPayloadBytes = 64 << 20
+const maxRecordedSessionBytes = 512 << 20
+const maxRetainedRecorderBytes = 1 << 30
+const maxRetainedRecorderSessions = 32
+const maxRecorderSessionIDBytes = 256
+const maxRecorderSessionNameBytes = 4 << 10
+const maxRecorderProjectIDBytes = 512
+const maxRecorderFilterEntries = 256
+const maxRecorderFilterValueBytes = 4 << 10
+const maxRecorderFilterBytes = 256 << 10
+const maxRecorderStepNameBytes = 4 << 10
+const maxRecorderTransactionNameBytes = 4 << 10
+const maxRecorderNoteBytes = 64 << 10
 const streamingRecordDelay = 250 * time.Millisecond
 const maxMultipartRequestCaptureBytes = 50 << 20
+const maxRecorderLeafCertificates = 256
+const maxRecorderCertificateHostBytes = 253
+const maxRecorderCertificateCacheKeyBytes = 64 << 10
+const maxRecorderHeaderBytes = 64 << 10
+const maxConcurrentRecorderProxyRequests = 256
 
 const (
 	defaultRecorderCADir  = "artifacts/recorder"
@@ -107,6 +127,7 @@ type Session struct {
 	storedBodyBytes       int
 	webSocketMessages     int
 	webSocketPayloadBytes int
+	retainedBytes         int64
 }
 
 type SessionFilters struct {
@@ -147,13 +168,15 @@ type Recorder struct {
 	caKeyPath      string
 
 	// TLS interception fields
-	caOnce    sync.Once
-	caErr     error
-	caCert    *x509.Certificate
-	caKey     *rsa.PrivateKey
-	caCertPEM []byte
-	certCache sync.Map // map[string]*tls.Certificate
-	tunnels   sync.Map // map[*recorderTunnel]struct{}
+	caOnce     sync.Once
+	caErr      error
+	caCert     *x509.Certificate
+	caKey      *rsa.PrivateKey
+	caCertPEM  []byte
+	certMu     sync.Mutex
+	certCache  *boundedcache.StringCache[*tls.Certificate]
+	tunnels    sync.Map // map[*recorderTunnel]struct{}
+	proxySlots chan struct{}
 }
 
 func New(proxyAddr string) *Recorder {
@@ -166,14 +189,17 @@ func NewWithCAFiles(proxyAddr, caCertPath, caKeyPath string) *Recorder {
 		proxyAddr = defaultProxyAddr
 	}
 	transport := &http.Transport{
-		DialContext:         proxySafeDialer(30 * time.Second).DialContext,
-		TLSClientConfig:     recorderUpstreamTLSConfig(""),
-		MaxIdleConns:        256,
-		MaxIdleConnsPerHost: 64,
-		IdleConnTimeout:     90 * time.Second,
+		DialContext:            proxySafeDialer(30 * time.Second).DialContext,
+		TLSClientConfig:        recorderUpstreamTLSConfig(""),
+		MaxIdleConns:           256,
+		MaxIdleConnsPerHost:    64,
+		IdleConnTimeout:        90 * time.Second,
+		MaxResponseHeaderBytes: maxRecorderHeaderBytes,
 	}
 	return &Recorder{
 		sessions:       make(map[string]*Session),
+		certCache:      boundedcache.NewStringCache[*tls.Certificate](maxRecorderLeafCertificates, maxRecorderCertificateHostBytes, maxRecorderCertificateCacheKeyBytes),
+		proxySlots:     make(chan struct{}, maxConcurrentRecorderProxyRequests),
 		proxyClient:    &http.Client{Timeout: 30 * time.Second, Transport: transport, CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }},
 		addr:           proxyAddr,
 		proxyAuthToken: os.Getenv(envProxyAuthToken),
@@ -205,6 +231,12 @@ func (r *Recorder) StartSessionForProject(id, name, projectID string, filters Se
 	if r.active != nil {
 		return nil, fmt.Errorf("session %q is already active, stop it first", r.active.ID)
 	}
+	if err := validateRecorderSessionConfig(id, name, projectID, filters); err != nil {
+		return nil, err
+	}
+	if err := r.pruneRetainedSessionsLocked(maxRecordedSessionBytes, id); err != nil {
+		return nil, err
+	}
 
 	s := &Session{
 		ID:        id,
@@ -224,12 +256,124 @@ func (r *Recorder) StartSessionForProject(id, name, projectID string, filters Se
 	if s.Filters.BodyCaptureLimitBytes > maxBodyCaptureLimitBytes {
 		return nil, fmt.Errorf("body_capture_limit_bytes must not exceed %d", maxBodyCaptureLimitBytes)
 	}
+	s.retainedBytes = estimateRecorderSessionBaseBytes(s)
 
 	r.sessions[id] = s
 	r.active = s
 
 	slog.Info("recording session started", "id", id, "name", name)
 	return s, nil
+}
+
+func validateRecorderSessionConfig(id, name, projectID string, filters SessionFilters) error {
+	if strings.TrimSpace(id) == "" {
+		return fmt.Errorf("recording session id is required")
+	}
+	if len(id) > maxRecorderSessionIDBytes {
+		return fmt.Errorf("recording session id exceeds %d bytes", maxRecorderSessionIDBytes)
+	}
+	if len(name) > maxRecorderSessionNameBytes {
+		return fmt.Errorf("recording session name exceeds %d bytes", maxRecorderSessionNameBytes)
+	}
+	if len(projectID) > maxRecorderProjectIDBytes {
+		return fmt.Errorf("recording project id exceeds %d bytes", maxRecorderProjectIDBytes)
+	}
+	if filters.BodyCaptureLimitBytes > maxBodyCaptureLimitBytes {
+		return fmt.Errorf("body_capture_limit_bytes must not exceed %d", maxBodyCaptureLimitBytes)
+	}
+	entries := 0
+	bytes := 0
+	for _, values := range [][]string{filters.ExcludeHosts, filters.IncludeHosts, filters.RedactHeaders} {
+		entries += len(values)
+		for _, value := range values {
+			if len(value) > maxRecorderFilterValueBytes {
+				return fmt.Errorf("recording filter value exceeds %d bytes", maxRecorderFilterValueBytes)
+			}
+			bytes += len(value)
+		}
+	}
+	if entries > maxRecorderFilterEntries {
+		return fmt.Errorf("recording filters exceed %d entries", maxRecorderFilterEntries)
+	}
+	if bytes > maxRecorderFilterBytes {
+		return fmt.Errorf("recording filters exceed %d bytes", maxRecorderFilterBytes)
+	}
+	return nil
+}
+
+func estimateRecorderSessionBaseBytes(session *Session) int64 {
+	if session == nil {
+		return 0
+	}
+	bytes := int64(1024 + len(session.ID) + len(session.Name) + len(session.ProjectID) + len(session.BaseURL))
+	for _, values := range [][]string{session.Filters.ExcludeHosts, session.Filters.IncludeHosts, session.Filters.RedactHeaders} {
+		bytes += int64(len(values) * 32)
+		for _, value := range values {
+			bytes += int64(len(value))
+		}
+	}
+	return bytes
+}
+
+// pruneRetainedSessionsLocked evicts oldest stopped sessions before admitting
+// a new active session. The reservedBytes argument leaves enough space for the
+// incoming recording to reach its own hard cap without pushing the controller
+// above the aggregate in-memory recorder budget. A session with replacingID is
+// excluded because successful admission overwrites it. Caller holds r.mu.
+func (r *Recorder) pruneRetainedSessionsLocked(reservedBytes int64, replacingID string) error {
+	if r == nil {
+		return fmt.Errorf("recorder is nil")
+	}
+	type retainedSession struct {
+		id      string
+		stopped time.Time
+		bytes   int64
+	}
+	candidates := make([]retainedSession, 0, len(r.sessions))
+	totalBytes := int64(0)
+	retainedCount := 0
+	for id, session := range r.sessions {
+		if id == replacingID {
+			continue
+		}
+		retainedCount++
+		if session == nil {
+			candidates = append(candidates, retainedSession{id: id})
+			continue
+		}
+		session.mu.Lock()
+		status := session.Status
+		stopped := session.StartedAt
+		if session.StoppedAt != nil {
+			stopped = *session.StoppedAt
+		}
+		bytes := session.retainedBytes
+		session.mu.Unlock()
+		totalBytes += bytes
+		if status != "recording" && status != "paused" {
+			candidates = append(candidates, retainedSession{id: id, stopped: stopped, bytes: bytes})
+		}
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].stopped.Equal(candidates[j].stopped) {
+			return candidates[i].id < candidates[j].id
+		}
+		return candidates[i].stopped.Before(candidates[j].stopped)
+	})
+	if reservedBytes < 0 || reservedBytes > maxRetainedRecorderBytes {
+		return fmt.Errorf("recording session reservation exceeds %d byte retention limit", maxRetainedRecorderBytes)
+	}
+	for retainedCount+1 > maxRetainedRecorderSessions || totalBytes+reservedBytes > maxRetainedRecorderBytes {
+		if len(candidates) == 0 {
+			return fmt.Errorf("recording retention limit reached (%d sessions, %d bytes)", maxRetainedRecorderSessions, maxRetainedRecorderBytes)
+		}
+		oldest := candidates[0]
+		candidates = candidates[1:]
+		delete(r.sessions, oldest.id)
+		retainedCount--
+		totalBytes -= oldest.bytes
+	}
+	return nil
 }
 
 func (r *Recorder) StopSession(id string) (*Session, error) {
@@ -325,35 +469,60 @@ func (r *Recorder) UpdateRequest(sessionID string, seq int, update RequestUpdate
 		if s.Requests[i].Seq != seq {
 			continue
 		}
+		updated := s.Requests[i]
 		if update.StepName != nil {
-			s.Requests[i].StepName = strings.TrimSpace(*update.StepName)
+			value := strings.TrimSpace(*update.StepName)
+			if len(value) > maxRecorderStepNameBytes {
+				s.mu.Unlock()
+				return nil, fmt.Errorf("step_name exceeds %d bytes", maxRecorderStepNameBytes)
+			}
+			updated.StepName = value
 		}
 		if update.TransactionName != nil {
-			s.Requests[i].TransactionName = strings.TrimSpace(*update.TransactionName)
+			value := strings.TrimSpace(*update.TransactionName)
+			if len(value) > maxRecorderTransactionNameBytes {
+				s.mu.Unlock()
+				return nil, fmt.Errorf("transaction_name exceeds %d bytes", maxRecorderTransactionNameBytes)
+			}
+			updated.TransactionName = value
 		}
 		if update.Note != nil {
-			s.Requests[i].Note = strings.TrimSpace(*update.Note)
+			value := strings.TrimSpace(*update.Note)
+			if len(value) > maxRecorderNoteBytes {
+				s.mu.Unlock()
+				return nil, fmt.Errorf("note exceeds %d bytes", maxRecorderNoteBytes)
+			}
+			updated.Note = value
 		}
 		if update.Excluded != nil {
-			s.Requests[i].Excluded = *update.Excluded
+			updated.Excluded = *update.Excluded
 		}
 		if update.Included != nil {
-			s.Requests[i].Excluded = !*update.Included
+			updated.Excluded = !*update.Included
 		}
 		if update.ThinkTimeMs != nil {
 			if *update.ThinkTimeMs < 0 {
 				s.mu.Unlock()
 				return nil, fmt.Errorf("think_time_ms must be non-negative")
 			}
-			s.Requests[i].ThinkTimeMs = *update.ThinkTimeMs
+			updated.ThinkTimeMs = *update.ThinkTimeMs
 		}
-		updated := recordingEventRequest(s.Requests[i])
+		oldBytes := estimateRecordedRequestBytes(s.Requests[i])
+		newBytes := estimateRecordedRequestBytes(updated)
+		baseBytes := s.retainedBytes - min(s.retainedBytes, oldBytes)
+		if newBytes > maxRecordedSessionBytes-baseBytes {
+			s.mu.Unlock()
+			return nil, fmt.Errorf("recording session exceeds %d byte retention limit", maxRecordedSessionBytes)
+		}
+		s.retainedBytes = baseBytes + newBytes
+		s.Requests[i] = updated
+		eventRequest := recordingEventRequest(updated)
 		notify := s.notify
 		s.mu.Unlock()
 		if notify != nil {
-			notify(SessionEvent{Type: "request_updated", SessionID: s.ID, Request: &updated})
+			notify(SessionEvent{Type: "request_updated", SessionID: s.ID, Request: &eventRequest})
 		}
-		return &updated, nil
+		return &eventRequest, nil
 	}
 
 	s.mu.Unlock()
@@ -503,10 +672,11 @@ func (r *Recorder) StartProxy() error {
 		return fmt.Errorf("listen recording proxy on %s: %w", r.addr, err)
 	}
 	server := &http.Server{
-		Addr:         r.addr,
-		Handler:      http.HandlerFunc(r.handleProxy),
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 60 * time.Second,
+		Addr:           r.addr,
+		Handler:        http.HandlerFunc(r.handleProxy),
+		ReadTimeout:    30 * time.Second,
+		WriteTimeout:   60 * time.Second,
+		MaxHeaderBytes: maxRecorderHeaderBytes,
 	}
 	r.mu.Lock()
 	if r.proxy != nil {
@@ -554,6 +724,11 @@ func (r *Recorder) handleProxy(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "proxy authentication required", http.StatusProxyAuthRequired)
 		return
 	}
+	if !r.acquireProxySlot() {
+		http.Error(w, "recording proxy concurrency limit reached", http.StatusServiceUnavailable)
+		return
+	}
+	defer r.releaseProxySlot()
 	if req.Method == http.MethodConnect {
 		r.handleConnect(w, req)
 		return
@@ -644,6 +819,28 @@ func (r *Recorder) handleProxy(w http.ResponseWriter, req *http.Request) {
 			responseBodySizeBytes:     boundedInt(respBodySize),
 			responseBodySizeKnown:     true,
 		})
+	}
+}
+
+func (r *Recorder) acquireProxySlot() bool {
+	if r == nil || r.proxySlots == nil {
+		return true
+	}
+	select {
+	case r.proxySlots <- struct{}{}:
+		return true
+	default:
+		return false
+	}
+}
+
+func (r *Recorder) releaseProxySlot() {
+	if r == nil || r.proxySlots == nil {
+		return
+	}
+	select {
+	case <-r.proxySlots:
+	default:
 	}
 }
 
@@ -912,7 +1109,13 @@ func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBo
 		elapsed = 0
 	}
 
-	parsed, _ := url.Parse(req.URL.String())
+	parsed, parseErr := url.Parse(req.URL.String())
+	if parseErr != nil || parsed == nil {
+		parsed = req.URL
+	}
+	if parsed == nil {
+		parsed = &url.URL{}
+	}
 	host := req.Host
 	if parsed != nil && parsed.Host != "" {
 		host = parsed.Host
@@ -944,8 +1147,6 @@ func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBo
 		return 0
 	}
 
-	s.seq++
-
 	var thinkMs int64
 	if !s.lastReqEnd.IsZero() {
 		thinkMs = opts.requestStartedAt.Sub(s.lastReqEnd).Milliseconds()
@@ -953,13 +1154,7 @@ func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBo
 			thinkMs = 0
 		}
 	}
-	if s.lastReqTime.IsZero() || opts.requestStartedAt.After(s.lastReqTime) {
-		s.lastReqTime = opts.requestStartedAt
-	}
 	responseEndedAt := opts.requestStartedAt.Add(elapsed)
-	if s.lastReqEnd.IsZero() || responseEndedAt.After(s.lastReqEnd) {
-		s.lastReqEnd = responseEndedAt
-	}
 
 	rawHeadersMulti := correlationHeaders(req.Header, s.Filters.RedactHeaders, true, s.Filters.CaptureCookies)
 	rawHeaders := firstHeaderValues(rawHeadersMulti)
@@ -998,13 +1193,9 @@ func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBo
 		responseBodySizeBytes = opts.responseBodySizeBytes
 	}
 
-	if s.BaseURL == "" && parsed != nil {
-		s.BaseURL = parsed.Scheme + "://" + parsed.Host
-	}
-
 	resourceType := classifyResource(parsed, ct)
 	rec := RecordedRequest{
-		Seq:                   s.seq,
+		Seq:                   s.seq + 1,
 		Timestamp:             opts.requestStartedAt,
 		Method:                req.Method,
 		URL:                   req.URL.String(),
@@ -1041,6 +1232,7 @@ func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBo
 		{body: &rec.Body, truncated: &rec.BodyTruncated},
 		{body: &rec.ResponseBody, truncated: &rec.ResponseBodyTruncated},
 	}
+	bodyBytesAdded := 0
 	for _, stored := range storedBodies {
 		if len(*stored.body) > remainingBodyBytes {
 			*stored.body = ""
@@ -1048,9 +1240,26 @@ func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBo
 			continue
 		}
 		remainingBodyBytes -= len(*stored.body)
-		s.storedBodyBytes += len(*stored.body)
+		bodyBytesAdded += len(*stored.body)
+	}
+	requestBytes := estimateRecordedRequestBytes(rec)
+	if requestBytes > maxRecordedSessionBytes-s.retainedBytes {
+		return 0
 	}
 
+	s.seq++
+	rec.Seq = s.seq
+	if s.lastReqTime.IsZero() || opts.requestStartedAt.After(s.lastReqTime) {
+		s.lastReqTime = opts.requestStartedAt
+	}
+	if s.lastReqEnd.IsZero() || responseEndedAt.After(s.lastReqEnd) {
+		s.lastReqEnd = responseEndedAt
+	}
+	if s.BaseURL == "" && parsed != nil {
+		s.BaseURL = parsed.Scheme + "://" + parsed.Host
+	}
+	s.storedBodyBytes += bodyBytesAdded
+	s.retainedBytes += requestBytes
 	s.Requests = append(s.Requests, rec)
 
 	if s.notify != nil {
@@ -1078,13 +1287,15 @@ func (r *Recorder) appendWebSocketMessage(s *Session, seq int, msg RecordedWebSo
 		if s.Requests[i].Seq != seq {
 			continue
 		}
-		if s.webSocketMessages >= maxRecordedWebSocketMessages || s.webSocketPayloadBytes+len(msg.Payload) > maxRecordedWebSocketPayloadBytes {
+		messageBytes := estimateRecordedWebSocketMessageBytes(msg) + 32
+		if s.webSocketMessages >= maxRecordedWebSocketMessages || s.webSocketPayloadBytes+len(msg.Payload) > maxRecordedWebSocketPayloadBytes || messageBytes > maxRecordedSessionBytes-s.retainedBytes {
 			s.mu.Unlock()
 			return
 		}
 		s.Requests[i].WebSocketMessages = append(s.Requests[i].WebSocketMessages, msg)
 		s.webSocketMessages++
 		s.webSocketPayloadBytes += len(msg.Payload)
+		s.retainedBytes += messageBytes
 		updated := recordingEventRequest(s.Requests[i])
 		notify := s.notify
 		s.mu.Unlock()
@@ -1094,6 +1305,52 @@ func (r *Recorder) appendWebSocketMessage(s *Session, seq int, msg RecordedWebSo
 		return
 	}
 	s.mu.Unlock()
+}
+
+func estimateRecordedRequestBytes(request RecordedRequest) int64 {
+	bytes := int64(1024)
+	for _, value := range []string{
+		request.Method, request.URL, request.Scheme, request.Path, request.QueryString,
+		request.Host, request.Body, request.BodyEncoding, request.ContentType,
+		request.ResponseBody, request.ResponseBodyEncoding, request.StepName,
+		request.TransactionName, request.Note, request.ResourceType,
+	} {
+		bytes += int64(len(value))
+	}
+	bytes += estimateRecorderStringMapBytes(request.Headers)
+	bytes += estimateRecorderStringMapBytes(request.RawHeaders)
+	bytes += estimateRecorderStringMapBytes(request.ResponseHeaders)
+	bytes += estimateRecorderStringSliceMapBytes(request.HeadersMulti)
+	bytes += estimateRecorderStringSliceMapBytes(request.RawHeadersMulti)
+	bytes += estimateRecorderStringSliceMapBytes(request.ResponseHeadersMulti)
+	bytes += int64(len(request.WebSocketMessages)) * 32
+	for _, message := range request.WebSocketMessages {
+		bytes += estimateRecordedWebSocketMessageBytes(message)
+	}
+	return bytes
+}
+
+func estimateRecordedWebSocketMessageBytes(message RecordedWebSocketMessage) int64 {
+	return int64(256 + len(message.Direction) + len(message.Payload) + len(message.PayloadEncoding))
+}
+
+func estimateRecorderStringMapBytes(values map[string]string) int64 {
+	bytes := int64(len(values) * 64)
+	for key, value := range values {
+		bytes += int64(len(key) + len(value))
+	}
+	return bytes
+}
+
+func estimateRecorderStringSliceMapBytes(values map[string][]string) int64 {
+	bytes := int64(len(values) * 64)
+	for key, entries := range values {
+		bytes += int64(len(key) + len(entries)*32)
+		for _, value := range entries {
+			bytes += int64(len(value))
+		}
+	}
+	return bytes
 }
 
 func recordingEventRequest(request RecordedRequest) RecordedRequest {

@@ -18,15 +18,33 @@ type scenarioRecoveryFaultStore struct {
 	err                    error
 }
 
-func (s *scenarioRecoveryFaultStore) SaveScenarioScheduleOccurrence(occurrence *storage.ScenarioScheduleOccurrence) error {
+func (s *scenarioRecoveryFaultStore) consumeOccurrenceFailure() bool {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	fail := s.failNextOccurrenceSave
 	s.failNextOccurrenceSave = false
-	s.mu.Unlock()
-	if fail {
+	return fail
+}
+
+func (s *scenarioRecoveryFaultStore) SaveScenarioScheduleOccurrence(occurrence *storage.ScenarioScheduleOccurrence) error {
+	if s.consumeOccurrenceFailure() {
 		return s.err
 	}
 	return s.metricsStoreSpy.SaveScenarioScheduleOccurrence(occurrence)
+}
+
+func (s *scenarioRecoveryFaultStore) CreateScenarioScheduleOccurrenceIfAbsent(occurrence *storage.ScenarioScheduleOccurrence) (bool, error) {
+	if s.consumeOccurrenceFailure() {
+		return false, s.err
+	}
+	return s.metricsStoreSpy.CreateScenarioScheduleOccurrenceIfAbsent(occurrence)
+}
+
+func (s *scenarioRecoveryFaultStore) CompareAndSwapScenarioScheduleOccurrence(occurrence *storage.ScenarioScheduleOccurrence, expectedRevision int64) (bool, error) {
+	if s.consumeOccurrenceFailure() {
+		return false, s.err
+	}
+	return s.metricsStoreSpy.CompareAndSwapScenarioScheduleOccurrence(occurrence, expectedRevision)
 }
 
 func (s *scenarioRecoveryFaultStore) SaveScenarioSchedule(schedule *storage.ScenarioSchedule) error {
@@ -223,6 +241,140 @@ func TestScenarioSchedulerRecoversMaterializingOccurrenceByPreassignedTestID(t *
 			t.Fatalf("stored schedule after recovery = %#v, want advanced next run", storedSchedules)
 		}
 	})
+}
+
+func TestScenarioSchedulerDoesNotPromoteMaterializedOccurrenceWhoseTestFailedBeforeLaunch(t *testing.T) {
+	store := &metricsStoreSpy{}
+	runner := NewTestRunner(2, NewHub(), store)
+	backend := &scheduleExecutionBackend{started: make(chan string, 1)}
+	runner.setExecutionBackend(backend)
+	runner.StoreScript(&dsl.Script{
+		ID: "script-materialized-failed", Name: "Scheduled", Protocol: "http", Version: "1.0.0",
+		Config: dsl.ScriptConfig{BaseURL: "https://example.test"}, Actions: []dsl.Action{{Name: "Home", Type: "request", Target: "/"}},
+	})
+	scenario, err := runner.StoreScenario(CreateScenarioRequest{
+		Name: "Materialized crash", Duration: "1m", Groups: []CreateGroupEntry{{ScriptID: "script-materialized-failed", VUsers: 1}},
+	})
+	if err != nil {
+		t.Fatalf("StoreScenario: %v", err)
+	}
+	now := time.Date(2026, time.July, 14, 12, 0, 0, 0, time.UTC)
+	due := now.Add(-time.Minute)
+	schedule := &storage.ScenarioSchedule{
+		ID: "schedule-materialized-failed", ScenarioID: scenario.ID, Revision: 1,
+		Name: "Materialized crash", CronExpr: "*/5 * * * *", Enabled: true, NextRunAt: &due,
+		CreatedAt: now.Add(-time.Hour), UpdatedAt: now.Add(-time.Hour),
+	}
+	testID := "test-materialized-failed"
+	materializedAt := now.Add(-30 * time.Second)
+	occurrence := &storage.ScenarioScheduleOccurrence{
+		ID: "occurrence-materialized-failed", ScheduleID: schedule.ID, ScenarioID: scenario.ID,
+		ScheduleRevision: schedule.Revision, PlannedAt: due, Status: "materialized", ReasonCode: "started",
+		TestID: testID, MaterializedAt: &materializedAt, CreatedAt: due, UpdatedAt: materializedAt,
+	}
+	runner.mu.Lock()
+	if err := runner.saveScenarioScheduleLocked(schedule); err != nil {
+		runner.mu.Unlock()
+		t.Fatalf("save schedule: %v", err)
+	}
+	failed, err := runner.buildManagedTestLocked(CreateTestRequest{Name: "Interrupted", ScenarioID: scenario.ID}, testID, "FAILED")
+	if err != nil {
+		runner.mu.Unlock()
+		t.Fatalf("build failed correlated test: %v", err)
+	}
+	failed.Error = "controller restarted before scheduled launch"
+	runner.tests[testID] = failed
+	runner.mu.Unlock()
+	if err := store.SaveScenarioScheduleOccurrence(occurrence); err != nil {
+		t.Fatalf("SaveScenarioScheduleOccurrence: %v", err)
+	}
+
+	scheduler := newScenarioScheduler(runner)
+	scheduler.now = func() time.Time { return now }
+	if err := scheduler.RunDueSchedules(); err != nil {
+		t.Fatalf("RunDueSchedules: %v", err)
+	}
+	select {
+	case started := <-backend.started:
+		t.Fatalf("failed correlated test was launched: %s", started)
+	default:
+	}
+	occurrences, err := store.ListScenarioScheduleOccurrences(schedule.ID)
+	if err != nil {
+		t.Fatalf("ListScenarioScheduleOccurrences: %v", err)
+	}
+	if len(occurrences) != 1 || occurrences[0].Status != "failed" || occurrences[0].ReasonCode != "recovery_interrupted" || occurrences[0].MaterializedAt != nil {
+		t.Fatalf("recovered occurrence = %+v, want failed/recovery_interrupted", occurrences)
+	}
+	stored, ok := runner.ListScenarioSchedules(scenario.ID)
+	if !ok || len(stored) != 1 || stored[0].NextRequiredAction != "operator_decision_required" || stored[0].LastError == "" {
+		if len(stored) == 1 {
+			t.Fatalf("recovered schedule = %+v, want operator-visible failure", *stored[0])
+		}
+		t.Fatalf("recovered schedules = %+v, want one operator-visible failure", stored)
+	}
+}
+
+func TestScenarioSchedulerRecoveryCatchUpAllRetainsBacklogAnchor(t *testing.T) {
+	store := &metricsStoreSpy{}
+	runner := NewTestRunner(20, NewHub(), store)
+	backend := &scheduleExecutionBackend{started: make(chan string, 16)}
+	runner.setExecutionBackend(backend)
+	runner.StoreScript(&dsl.Script{
+		ID: "script-recovered-catch-up-all", Name: "Catch up", Protocol: "http", Version: "1.0.0",
+		Config: dsl.ScriptConfig{BaseURL: "https://example.test"}, Actions: []dsl.Action{{Name: "Home", Type: "request", Target: "/"}},
+	})
+	scenario, err := runner.StoreScenario(CreateScenarioRequest{
+		Name: "Recovered catch up", Duration: "1m", Groups: []CreateGroupEntry{{ScriptID: "script-recovered-catch-up-all", VUsers: 1}},
+	})
+	if err != nil {
+		t.Fatalf("StoreScenario: %v", err)
+	}
+	now := time.Date(2026, time.July, 14, 12, 0, 0, 0, time.UTC)
+	plannedAt := now.Add(-20 * time.Minute)
+	schedule := &storage.ScenarioSchedule{
+		ID: "schedule-recovered-catch-up-all", ScenarioID: scenario.ID, Revision: 1,
+		Name: "Recovered catch up", CronExpr: "*/5 * * * *", Enabled: true, MissedRunPolicy: "catch_up_all",
+		NextRunAt: &plannedAt, CreatedAt: now.Add(-time.Hour), UpdatedAt: now.Add(-time.Hour),
+	}
+	testID := "test-recovered-catch-up-all"
+	materializedAt := plannedAt.Add(time.Minute)
+	runner.mu.Lock()
+	if err := runner.saveScenarioScheduleLocked(schedule); err != nil {
+		runner.mu.Unlock()
+		t.Fatalf("save schedule: %v", err)
+	}
+	recovered, err := runner.buildManagedTestLocked(CreateTestRequest{Name: "Recovered", ScenarioID: scenario.ID}, testID, "RUNNING")
+	if err != nil {
+		runner.mu.Unlock()
+		t.Fatalf("build recovered test: %v", err)
+	}
+	runner.tests[testID] = recovered
+	runner.mu.Unlock()
+	if err := store.SaveScenarioScheduleOccurrence(&storage.ScenarioScheduleOccurrence{
+		ID: "occurrence-recovered-catch-up-all", ScheduleID: schedule.ID, ScenarioID: scenario.ID,
+		ScheduleRevision: schedule.Revision, PlannedAt: plannedAt, Status: "materialized", ReasonCode: "started",
+		TestID: testID, MaterializedAt: &materializedAt, CreatedAt: plannedAt, UpdatedAt: materializedAt,
+	}); err != nil {
+		t.Fatalf("SaveScenarioScheduleOccurrence: %v", err)
+	}
+
+	scheduler := newScenarioScheduler(runner)
+	scheduler.now = func() time.Time { return now }
+	if err := scheduler.RunDueSchedules(); err != nil {
+		t.Fatalf("RunDueSchedules: %v", err)
+	}
+	occurrences, err := store.ListScenarioScheduleOccurrences(schedule.ID)
+	if err != nil {
+		t.Fatalf("ListScenarioScheduleOccurrences: %v", err)
+	}
+	if len(occurrences) < 2 {
+		t.Fatalf("occurrences = %+v, want recovered row plus retained backlog materialization", occurrences)
+	}
+	stored, ok := runner.ListScenarioSchedules(scenario.ID)
+	if !ok || len(stored) != 1 || stored[0].NextRunAt == nil || !stored[0].NextRunAt.After(now) {
+		t.Fatalf("schedule = %+v, want catch_up_all to drain backlog through now", stored)
+	}
 }
 
 func TestScenarioSchedulerRecoveryFailsPreparedTestAcrossPersistenceBoundaries(t *testing.T) {

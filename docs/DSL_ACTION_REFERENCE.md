@@ -1195,6 +1195,14 @@ Accepts an Azure Service Bus session (specific or next available), returning a s
 | `params.session_id` | string |  | Specific session id to accept; empty accepts the next available session. |
 | `params.subscription` | string |  | Topic subscription when the destination is a topic. |
 
+### `jms_session_close`
+
+Closes an accepted Azure Service Bus session and releases its receiver. Requires jms_servicebus_real.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `params.session_token` | string |  | Token from jms_session_accept. |
+
 ### `jms_session_state`
 
 Gets or sets the session state for an accepted Azure Service Bus session. Requires jms_servicebus_real.

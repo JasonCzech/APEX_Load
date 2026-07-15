@@ -3,11 +3,33 @@ package browser
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/selector"
 )
+
+func TestSelectorSelfHealCacheIsBounded(t *testing.T) {
+	b := &Browser{}
+	b.applyDefaultConfig()
+	for index := 0; index < maxSelfHealCacheEntries+100; index++ {
+		b.storeSelfHealCandidate(fmt.Sprintf("action-%d", index), selector.Candidate{Kind: "css", Value: "#fallback"})
+	}
+	b.selfHealMu.Lock()
+	size := len(b.selfHealCache)
+	b.selfHealMu.Unlock()
+	if size > maxSelfHealCacheEntries {
+		t.Fatalf("self-heal cache size = %d, max %d", size, maxSelfHealCacheEntries)
+	}
+
+	oversized := strings.Repeat("x", maxSelfHealCacheKeyBytes+1)
+	b.storeSelfHealCandidate(oversized, selector.Candidate{Kind: "css", Value: "#oversized"})
+	if _, ok := b.cachedSelfHealCandidate(oversized); ok {
+		t.Fatal("oversized self-heal cache key was retained")
+	}
+}
 
 func TestSelectorSelfHealSkipsNonSelectorErrors(t *testing.T) {
 	b := &Browser{}

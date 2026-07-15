@@ -377,7 +377,12 @@ func browserDensityReleaseGateMessage(advisory *CapacityAdvisory) string {
 }
 
 func launchWindowForTest(test *ManagedTest, start time.Time) LaunchWindow {
+	return launchWindowForTestAt(test, start, time.Now().UTC())
+}
+
+func launchWindowForTestAt(test *ManagedTest, start time.Time, now time.Time) LaunchWindow {
 	start = start.UTC()
+	now = now.UTC()
 	preBaseline, postBaseline := testexec.ResourceBaselineWindows(test != nil && test.ResourceBaseline)
 	startDelay := time.Duration(0)
 	duration := time.Minute
@@ -389,7 +394,14 @@ func launchWindowForTest(test *ManagedTest, start time.Time) LaunchWindow {
 		}
 		maxRampDown = maxGroupRampDown(test.Groups)
 	}
-	end := start.Add(startDelay + preBaseline + duration + maxRampDown + postBaseline).UTC()
+	pauseExtension := time.Duration(0)
+	if test != nil {
+		pauseExtension = test.CumulativePause
+		if test.PausedAt != nil && !test.PausedAt.IsZero() {
+			pauseExtension += max(time.Duration(0), now.Sub(*test.PausedAt))
+		}
+	}
+	end := start.Add(startDelay + preBaseline + duration + pauseExtension + maxRampDown + postBaseline).UTC()
 	if !end.After(start) {
 		end = start.Add(time.Minute)
 	}
@@ -438,24 +450,37 @@ func (tr *TestRunner) launchWindowConflictsLocked(test *ManagedTest, window Laun
 
 	events := tr.launchCapacityEventsLocked(window, now, excludeTestID, excludeScheduleID)
 	sampleTimes := launchSampleTimes(window, events, tr.settings.CapacityPlanning.Reservations, tr.boundTimeslotBoundariesInWindowLocked(window))
+	ignoredImmediateConflicts := map[string]struct{}{}
+	if excludeScheduleID == "" && !window.StartAt.After(now.Add(time.Second)) {
+		for _, conflict := range tr.launchCapacityConflictsAtLocked(proposal, overlappingLaunchEvents(events, window.StartAt), window.StartAt) {
+			ignoredImmediateConflicts[launchConflictProjectionKey(conflict)] = struct{}{}
+		}
+	}
 	for _, sample := range sampleTimes {
 		overlapping := overlappingLaunchEvents(events, sample)
-		if conflict := tr.launchCapacityConflictAtLocked(proposal, overlapping, sample); conflict != nil {
-			conflicts = append(conflicts, *conflict)
-			break
+		for _, conflict := range tr.launchCapacityConflictsAtLocked(proposal, overlapping, sample) {
+			// Immediate launches use the authoritative current-capacity gate to
+			// decide start-versus-queue. Suppress only an unchanged projection of
+			// that baseline conflict; continue evaluating later checks so a new
+			// reservation or availability change is still surfaced.
+			if _, ignored := ignoredImmediateConflicts[launchConflictProjectionKey(conflict)]; ignored {
+				continue
+			}
+			conflicts = append(conflicts, conflict)
+			return conflicts
 		}
 	}
 	return conflicts
 }
 
+func launchConflictProjectionKey(conflict LaunchConflict) string {
+	return fmt.Sprintf("%s|%s|%s|%d|%d", conflict.Code, conflict.Source, conflict.ResourceID, conflict.RequiredGenerators, conflict.AvailableGenerators)
+}
+
 func (tr *TestRunner) launchCapacityEventsLocked(window LaunchWindow, now time.Time, excludeTestID string, excludeScheduleID string) []launchCapacityEvent {
 	events := make([]launchCapacityEvent, 0)
-	includeActiveTests := window.StartAt.After(now.Add(time.Minute))
 	for id, test := range tr.tests {
 		if test == nil || id == excludeTestID {
-			continue
-		}
-		if !includeActiveTests && launchTestStatusOccupiesCurrentCapacity(test.Status) {
 			continue
 		}
 		event, ok := tr.launchCapacityEventForTestLocked(test, now)
@@ -530,10 +555,9 @@ func (tr *TestRunner) launchCapacityEventForTestLocked(test *ManagedTest, now ti
 	} else if test.Status != "RUNNING" && test.Status != "INITIALIZING" && test.Status != "PAUSED" {
 		return launchCapacityEvent{}, false
 	}
-	end := calendarTestEnd(test, start, now)
-	if test.Status == "SCHEDULED" || test.Status == "RESERVED" {
-		window := launchWindowForTest(test, start)
-		end = window.EndAt
+	end := launchWindowForTestAt(test, start, now).EndAt
+	if launchTestStatusOccupiesCurrentCapacity(test.Status) && end.Before(now.Add(time.Minute)) {
+		end = now.Add(time.Minute)
 	}
 	generators := recommendedGeneratorCountForTest(test)
 	if generators < 1 && test.TotalVUsers > 0 {
@@ -555,7 +579,7 @@ func (tr *TestRunner) launchCapacityEventForScenarioLocked(schedule *storage.Sce
 	groups := make([]TestGroup, 0, len(scenario.Scripts))
 	totalVUsers := 0
 	for _, script := range scenario.Scripts {
-		totalVUsers += script.VUsers
+		totalVUsers = saturatingAddNonNegative(totalVUsers, script.VUsers)
 		groups = append(groups, TestGroup{
 			Name:           script.Name,
 			ScriptID:       script.ScriptID,
@@ -654,6 +678,15 @@ func overlappingLaunchEvents(events []launchCapacityEvent, sample time.Time) []l
 }
 
 func (tr *TestRunner) launchCapacityConflictAtLocked(proposal launchCapacityEvent, existing []launchCapacityEvent, sample time.Time) *LaunchConflict {
+	conflicts := tr.launchCapacityConflictsAtLocked(proposal, existing, sample)
+	if len(conflicts) == 0 {
+		return nil
+	}
+	conflict := conflicts[0]
+	return &conflict
+}
+
+func (tr *TestRunner) launchCapacityConflictsAtLocked(proposal launchCapacityEvent, existing []launchCapacityEvent, sample time.Time) []LaunchConflict {
 	availability := resolveCapacityAvailabilityAt(tr.settings, sample).EffectiveAvailableGenerators
 	if availability < 1 {
 		availability = tr.settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators
@@ -665,31 +698,33 @@ func (tr *TestRunner) launchCapacityConflictAtLocked(proposal launchCapacityEven
 	projectVUsers := proposal.VUsers
 	byProject := map[string]int{proposal.ProjectID: proposal.Generators}
 	for _, event := range existing {
-		totalGenerators += event.Generators
-		existingGenerators += event.Generators
-		globalTests++
-		byProject[normalizeProjectID(event.ProjectID)] += event.Generators
+		totalGenerators = saturatingAddNonNegative(totalGenerators, event.Generators)
+		existingGenerators = saturatingAddNonNegative(existingGenerators, event.Generators)
+		globalTests = saturatingAddNonNegative(globalTests, 1)
+		existingProjectID := normalizeProjectID(event.ProjectID)
+		byProject[existingProjectID] = saturatingAddNonNegative(byProject[existingProjectID], event.Generators)
 		if normalizeProjectID(event.ProjectID) == proposal.ProjectID {
-			projectTests++
-			projectVUsers += event.VUsers
+			projectTests = saturatingAddNonNegative(projectTests, 1)
+			projectVUsers = saturatingAddNonNegative(projectVUsers, event.VUsers)
 		}
 	}
+	conflicts := make([]LaunchConflict, 0, 5)
 	if tr.settings.General.MaxConcurrentTests > 0 && globalTests > tr.settings.General.MaxConcurrentTests {
-		return launchConflictAt("global_concurrency_window", "controller", "", fmt.Sprintf("Window would exceed global max concurrent tests (%d).", tr.settings.General.MaxConcurrentTests), sample, totalGenerators, availability)
+		conflicts = append(conflicts, *launchConflictAt("global_concurrency_window", "controller", "", fmt.Sprintf("Window would exceed global max concurrent tests (%d).", tr.settings.General.MaxConcurrentTests), sample, totalGenerators, availability))
 	}
 	if maxConcurrent := tr.projectMaxConcurrentTests(proposal.ProjectID); maxConcurrent > 0 && projectTests > maxConcurrent {
-		return launchConflictAt("project_concurrency_window", "project", proposal.ProjectID, fmt.Sprintf("Window would exceed project max concurrent tests (%d).", maxConcurrent), sample, totalGenerators, availability)
+		conflicts = append(conflicts, *launchConflictAt("project_concurrency_window", "project", proposal.ProjectID, fmt.Sprintf("Window would exceed project max concurrent tests (%d).", maxConcurrent), sample, totalGenerators, availability))
 	}
 	if maxVUsers := tr.projectMaxVUsers(proposal.ProjectID); maxVUsers > 0 && projectVUsers > maxVUsers && !proposal.ApprovedQuotaBurst {
-		return launchConflictAt("project_vuser_window", "project", proposal.ProjectID, fmt.Sprintf("Window would exceed project VUser capacity (%d max VUsers).", maxVUsers), sample, totalGenerators, availability)
+		conflicts = append(conflicts, *launchConflictAt("project_vuser_window", "project", proposal.ProjectID, fmt.Sprintf("Window would exceed project VUser capacity (%d max VUsers).", maxVUsers), sample, totalGenerators, availability))
 	}
 	if existingGenerators > 0 && totalGenerators > availability {
-		return launchConflictAt("generator_capacity_window", "controller", "", fmt.Sprintf("Window needs %d generators but only %d are available at %s.", totalGenerators, availability, sample.Format(time.RFC3339)), sample, totalGenerators, availability)
+		conflicts = append(conflicts, *launchConflictAt("generator_capacity_window", "controller", "", fmt.Sprintf("Window needs %d generators but only %d are available at %s.", totalGenerators, availability, sample.Format(time.RFC3339)), sample, totalGenerators, availability))
 	}
 	if conflict := tr.launchReservationConflictAtLocked(proposal, byProject, sample, availability); conflict != nil {
-		return conflict
+		conflicts = append(conflicts, *conflict)
 	}
-	return nil
+	return conflicts
 }
 
 func (tr *TestRunner) launchReservationConflictAtLocked(proposal launchCapacityEvent, byProject map[string]int, sample time.Time, availability int) *LaunchConflict {
@@ -711,7 +746,7 @@ func (tr *TestRunner) launchReservationConflictAtLocked(proposal launchCapacityE
 	sharedAfter := 0
 	for projectID, active := range byProject {
 		_, projectReserved := reservationTotalsWithTimeslots(tr.settings, projectID, sample, activeSlots)
-		sharedAfter += maxInt(0, active-projectReserved)
+		sharedAfter = saturatingAddNonNegative(sharedAfter, maxInt(0, active-projectReserved))
 	}
 	if sharedAfter > shared {
 		return launchConflictAt("reservation_window", "capacity_reservation", proposal.ProjectID, fmt.Sprintf("A capacity reservation reduces the shared pool at %s.", sample.Format(time.RFC3339)), sample, sharedAfter, shared)
@@ -779,8 +814,16 @@ func launchScheduleAvailabilityAllows(schedule *storage.ScenarioSchedule, start 
 	if schedule == nil || len(schedule.AvailabilityWindows) == 0 {
 		return true
 	}
-	return launchScheduleWindowAllowedAt(schedule.AvailabilityWindows, schedule.Timezone, start) &&
-		launchScheduleWindowAllowedAt(schedule.AvailabilityWindows, schedule.Timezone, end.Add(-time.Second))
+	boundaries, err := launchScheduleWindowBoundaries(schedule.AvailabilityWindows, schedule.Timezone, start, end)
+	if err != nil {
+		return false
+	}
+	for index := 0; index+1 < len(boundaries); index++ {
+		if boundaries[index+1].After(boundaries[index]) && !launchScheduleWindowAllowedAt(schedule.AvailabilityWindows, schedule.Timezone, boundaries[index]) {
+			return false
+		}
+	}
+	return true
 }
 
 func launchScheduleWindowAllowedAt(windows []storage.ScenarioScheduleWindow, fallbackTimezone string, candidate time.Time) bool {
@@ -796,15 +839,144 @@ func launchScheduleWindowOverlaps(window storage.ScenarioScheduleWindow, fallbac
 	if !end.After(start) {
 		return false
 	}
-	step := 5 * time.Minute
-	for cursor := start.UTC(); cursor.Before(end); cursor = cursor.Add(step) {
-		if matches, err := scheduleWindowContains(window, fallbackTimezone, cursor); err == nil && matches {
+	boundaries, err := launchScheduleWindowBoundaries([]storage.ScenarioScheduleWindow{window}, fallbackTimezone, start, end)
+	if err != nil {
+		return false
+	}
+	for index := 0; index+1 < len(boundaries); index++ {
+		if !boundaries[index+1].After(boundaries[index]) {
+			continue
+		}
+		matches, matchErr := scheduleWindowContains(window, fallbackTimezone, boundaries[index])
+		if matchErr == nil && matches {
 			return true
 		}
 	}
-	last := end.Add(-time.Second)
-	matches, err := scheduleWindowContains(window, fallbackTimezone, last)
-	return err == nil && matches
+	return false
+}
+
+// launchScheduleWindowBoundaries returns every instant at which the union of
+// recurring minute-resolution schedule windows can change over [start, end).
+// Evaluating each resulting half-open segment is exact, unlike fixed-interval
+// sampling: it catches one-minute windows, disjoint availability gaps, overnight
+// windows, and timezone offset changes.
+func launchScheduleWindowBoundaries(windows []storage.ScenarioScheduleWindow, fallbackTimezone string, start time.Time, end time.Time) ([]time.Time, error) {
+	start = start.UTC()
+	end = end.UTC()
+	if !end.After(start) {
+		return []time.Time{start, end}, nil
+	}
+	values := []time.Time{start, end}
+	locations := make(map[string]*time.Location)
+	for _, window := range windows {
+		timezone := firstNonEmpty(strings.TrimSpace(window.Timezone), strings.TrimSpace(fallbackTimezone), "UTC")
+		location, ok := locations[timezone]
+		if !ok {
+			var err error
+			location, err = cachedScheduleLocation(timezone)
+			if err != nil {
+				return nil, fmt.Errorf("invalid schedule window timezone %q: %w", timezone, err)
+			}
+			locations[timezone] = location
+		}
+		startMinute, err := parseScheduleWindowMinute(window.StartTime)
+		if err != nil {
+			return nil, err
+		}
+		endMinute, err := parseScheduleWindowMinute(window.EndTime)
+		if err != nil {
+			return nil, err
+		}
+		localStart := start.In(location)
+		localEnd := end.In(location)
+		day := time.Date(localStart.Year(), localStart.Month(), localStart.Day(), 12, 0, 0, 0, location).AddDate(0, 0, -2)
+		lastDay := time.Date(localEnd.Year(), localEnd.Month(), localEnd.Day(), 12, 0, 0, 0, location).AddDate(0, 0, 2)
+		for !day.After(lastDay) {
+			for _, minute := range []int{0, startMinute, endMinute} {
+				for _, instant := range launchWallClockInstants(location, day.Year(), day.Month(), day.Day(), minute) {
+					if instant.After(start) && instant.Before(end) {
+						values = append(values, instant)
+					}
+				}
+			}
+			day = day.AddDate(0, 0, 1)
+		}
+	}
+	for _, location := range locations {
+		values = append(values, launchTimezoneTransitions(location, start, end)...)
+	}
+	sort.Slice(values, func(i, j int) bool { return values[i].Before(values[j]) })
+	out := values[:0]
+	for _, value := range values {
+		value = value.UTC()
+		if len(out) == 0 || !value.Equal(out[len(out)-1]) {
+			out = append(out, value)
+		}
+	}
+	return out, nil
+}
+
+// launchWallClockInstants resolves both occurrences of an ambiguous wall clock
+// during a fall-back transition and resolves none for a nonexistent spring-gap
+// clock. Offset-transition boundaries below cover the latter discontinuity.
+func launchWallClockInstants(location *time.Location, year int, month time.Month, day int, minuteOfDay int) []time.Time {
+	hour := minuteOfDay / 60
+	minute := minuteOfDay % 60
+	wallUTC := time.Date(year, month, day, hour, minute, 0, 0, time.UTC)
+	probe := time.Date(year, month, day, hour, minute, 0, 0, location)
+	offsets := make(map[int]struct{})
+	for _, delta := range []time.Duration{-48 * time.Hour, -24 * time.Hour, 0, 24 * time.Hour, 48 * time.Hour} {
+		_, offset := probe.Add(delta).Zone()
+		offsets[offset] = struct{}{}
+	}
+	out := make([]time.Time, 0, len(offsets))
+	for offset := range offsets {
+		candidate := wallUTC.Add(-time.Duration(offset) * time.Second)
+		local := candidate.In(location)
+		if local.Year() == year && local.Month() == month && local.Day() == day && local.Hour() == hour && local.Minute() == minute {
+			out = append(out, candidate.UTC())
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Before(out[j]) })
+	return out
+}
+
+func launchTimezoneTransitions(location *time.Location, start time.Time, end time.Time) []time.Time {
+	if location == nil || !end.After(start) {
+		return nil
+	}
+	const step = 6 * time.Hour
+	cursor := start.Add(-step).UTC()
+	limit := end.Add(step).UTC()
+	_, previousOffset := cursor.In(location).Zone()
+	out := make([]time.Time, 0)
+	for cursor.Before(limit) {
+		next := cursor.Add(step)
+		if next.After(limit) {
+			next = limit
+		}
+		_, nextOffset := next.In(location).Zone()
+		if nextOffset != previousOffset {
+			lowUnix := cursor.Unix()
+			highUnix := next.Unix()
+			for highUnix-lowUnix > 1 {
+				midUnix := lowUnix + (highUnix-lowUnix)/2
+				_, offset := time.Unix(midUnix, 0).In(location).Zone()
+				if offset == previousOffset {
+					lowUnix = midUnix
+				} else {
+					highUnix = midUnix
+				}
+			}
+			transition := time.Unix(highUnix, 0).UTC()
+			if transition.After(start) && transition.Before(end) {
+				out = append(out, transition)
+			}
+		}
+		cursor = next
+		previousOffset = nextOffset
+	}
+	return out
 }
 
 func launchIntervalsOverlap(leftStart time.Time, leftEnd time.Time, rightStart time.Time, rightEnd time.Time) bool {
@@ -827,7 +999,7 @@ func (tr *TestRunner) launchStartWindowErrorLocked(test *ManagedTest, start time
 	return fmt.Errorf("launch window conflict: %s", conflicts[0].Message)
 }
 
-func (tr *TestRunner) dueOneTimeScheduledTestIDsLocked(now time.Time) []string {
+func (tr *TestRunner) dueOneTimeScheduledTestIDsLocked(now time.Time, limit int) []string {
 	ids := make([]string, 0)
 	for id, test := range tr.tests {
 		if test == nil || test.Status != "SCHEDULED" || test.ScheduledStartAt == nil {
@@ -839,6 +1011,9 @@ func (tr *TestRunner) dueOneTimeScheduledTestIDsLocked(now time.Time) []string {
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
+	if limit > 0 && len(ids) > limit {
+		ids = ids[:limit]
+	}
 	return ids
 }
 

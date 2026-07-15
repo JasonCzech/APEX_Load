@@ -197,6 +197,9 @@ func openArchiveChildDirectory(parent *os.Root, name string, create bool, perm o
 }
 
 func validateArchiveNamespace(value string) error {
+	if len(value) > maxGeneratorArchiveNamespaceBytes {
+		return fmt.Errorf("archive namespace exceeds %d bytes", maxGeneratorArchiveNamespaceBytes)
+	}
 	if value == "" || value != strings.TrimSpace(value) || value == "." || value == ".." || strings.ContainsAny(value, `/\\`) || filepath.IsAbs(value) || filepath.VolumeName(value) != "" {
 		return fmt.Errorf("archive namespace %q is not safe", value)
 	}
@@ -213,11 +216,14 @@ func normalizeGeneratorArchiveArtifactName(name string) (string, error) {
 	if trimmed == "" || trimmed != name {
 		return "", fmt.Errorf("artifact name is empty or padded")
 	}
+	if len(trimmed) > maxGeneratorArchiveArtifactBytes {
+		return "", fmt.Errorf("artifact name exceeds %d bytes", maxGeneratorArchiveArtifactBytes)
+	}
 	if strings.ContainsRune(trimmed, 0) || strings.ContainsRune(trimmed, '\\') || filepath.IsAbs(trimmed) || filepath.VolumeName(trimmed) != "" {
 		return "", fmt.Errorf("artifact name is not a safe relative path")
 	}
 	for _, component := range strings.Split(trimmed, "/") {
-		if component == "" || component == "." || component == ".." {
+		if component == "" || component == "." || component == ".." || len(component) > maxGeneratorArchiveNamespaceBytes {
 			return "", fmt.Errorf("artifact name contains an unsafe path component")
 		}
 	}

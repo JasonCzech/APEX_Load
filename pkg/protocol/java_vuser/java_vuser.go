@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/config"
+	"github.com/jasonczech/apexload/pkg/internal/subprocessguard"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
@@ -145,6 +146,10 @@ func (j *JavaVuser) Execute(ctx context.Context, action *protocol.Action) (*prot
 		finalizeResult(result, start, action, err, "", "", "")
 		return result, nil
 	}
+	if err := subprocessguard.ValidateAmbientCredentials(); err != nil {
+		finalizeResult(result, start, action, fmt.Errorf("java_vuser runner isolation check failed: %w", err), "", "", "")
+		return result, nil
+	}
 
 	release, err := acquireProcessSlot(ctx)
 	if err != nil {
@@ -183,9 +188,11 @@ func (j *JavaVuser) Execute(ctx context.Context, action *protocol.Action) (*prot
 	if cleanupEventFile != nil {
 		defer cleanupEventFile()
 	}
+	extraEnvironment := map[string]string{}
 	if eventFile != "" {
-		cmd.Env = append(os.Environ(), "APEXLOAD_JAVA_VUSER_EVENT_FILE="+eventFile)
+		extraEnvironment["APEXLOAD_JAVA_VUSER_EVENT_FILE"] = eventFile
 	}
+	cmd.Env = subprocessguard.Environment(extraEnvironment)
 	cmd.Stdin = bytes.NewReader(append(payload, '\n'))
 	// Cap stdout/stderr capture so a chatty or runaway runner cannot OOM the
 	// generator: the action timeout bounds wall-clock, not bytes, and up to
@@ -253,6 +260,9 @@ func (j *JavaVuser) HealthCheck(context.Context) error {
 	}
 	if _, err := exec.LookPath(j.cfg.RunnerCommand); err != nil {
 		return fmt.Errorf("java_vuser runner command %q is not available: %w", j.cfg.RunnerCommand, err)
+	}
+	if err := subprocessguard.ValidateAmbientCredentials(); err != nil {
+		return fmt.Errorf("java_vuser runner isolation check failed: %w", err)
 	}
 	return nil
 }

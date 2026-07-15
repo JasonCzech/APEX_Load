@@ -12,12 +12,12 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/fileasset"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/sasl"
 	"github.com/twmb/franz-go/pkg/sasl/oauth"
@@ -44,35 +44,85 @@ func newRealClient(cfg config) kafkaClient {
 }
 
 type franzClient struct {
-	cfg               config
-	once              sync.Once
-	cl                *kgo.Client
-	err               error
-	replyOnce         sync.Once
-	replyCl           *kgo.Client
-	replyErr          error
-	replyAssignmentMu sync.RWMutex
-	replyAssigned     map[string]bool
-	replyTopicRefs    map[string]int
-	consumeTopicMu    sync.Mutex
-	consumeTopicRefs  map[string]int
-	pendingMu         sync.Mutex
-	pending           []pendingReply
-	pendingBytes      int64
-	replyPending      []pendingReply
-	replyPendingBytes int64
+	cfg                  config
+	once                 sync.Once
+	cl                   *kgo.Client
+	err                  error
+	replyOnce            sync.Once
+	replyCl              *kgo.Client
+	replyErr             error
+	replyAssignmentMu    sync.RWMutex
+	replyPollMu          sync.Mutex
+	replyAssigned        map[string]bool
+	replyTopicRefs       map[string]int
+	consumeTopicMu       sync.Mutex
+	consumePollMu        sync.Mutex
+	consumeTopicRefs     map[string]int
+	assignmentMu         sync.RWMutex
+	assignmentGeneration uint64
+	ownedPartitions      map[string]map[int32]uint64
+	consumedMu           sync.Mutex
+	consumedOffsets      map[string]map[int32]trackedConsumedRecord
+	pendingMu            sync.Mutex
+	pending              []pendingReply
+	pendingBytes         int64
+	replyPending         []pendingReply
+	replyPendingBytes    int64
 }
 
 const (
-	maxPendingReplyRecords = 10_000
-	maxPendingReplyBytes   = 64 << 20
-	pendingReplyTTL        = 5 * time.Minute
+	maxPendingReplyRecords      = 256
+	maxPendingReplyBytes        = 4 << 20
+	pendingReplyTTL             = 5 * time.Minute
+	maxTrackedConsumeTopics     = 256
+	maxTrackedConsumeTopicBytes = 64 << 10
+	maxTrackedConsumePartitions = 1024
+	maxGlobalPendingRecords     = 16_384
+	maxGlobalPendingBytes       = int64(256 << 20)
 )
 
 type pendingReply struct {
 	record     kafkaRecord
 	receivedAt time.Time
 	bytes      int64
+	generation uint64
+}
+
+type trackedConsumedRecord struct {
+	record     kafkaRecord
+	generation uint64
+}
+
+type kafkaPendingBudget struct {
+	mu      sync.Mutex
+	records int
+	bytes   int64
+}
+
+var globalKafkaPending kafkaPendingBudget
+
+func (b *kafkaPendingBudget) reserve(bytes int64) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.records >= maxGlobalPendingRecords || bytes > maxGlobalPendingBytes-b.bytes {
+		return false
+	}
+	b.records++
+	b.bytes += bytes
+	return true
+}
+
+func (b *kafkaPendingBudget) release(bytes int64) {
+	b.mu.Lock()
+	b.records--
+	b.bytes -= bytes
+	if b.records < 0 {
+		b.records = 0
+	}
+	if b.bytes < 0 {
+		b.bytes = 0
+	}
+	b.mu.Unlock()
 }
 
 // handle lazily constructs the underlying *kgo.Client so Init never blocks or
@@ -80,6 +130,7 @@ type pendingReply struct {
 func (c *franzClient) handle() (*kgo.Client, error) {
 	c.once.Do(func() {
 		c.consumeTopicRefs = make(map[string]int)
+		c.ownedPartitions = make(map[string]map[int32]uint64)
 		c.cl, c.err = c.newClient(c.cfg.ConsumerGroup)
 	})
 	return c.cl, c.err
@@ -113,8 +164,25 @@ func (c *franzClient) newClient(consumerGroup string, extra ...kgo.Opt) (*kgo.Cl
 		opts = append(opts, kgo.ClientID(c.cfg.ClientID))
 	}
 	if consumerGroup != "" {
-		opts = append(opts, kgo.ConsumerGroup(consumerGroup))
+		// The DSL exposes kafka_commit as the explicit delivery boundary. Leaving
+		// franz-go auto-commit enabled would commit on its timer or on the rebalance
+		// caused by removing a dynamically consumed topic, before that action runs.
+		opts = append(opts, kgo.ConsumerGroup(consumerGroup), kgo.DisableAutoCommit())
+		if consumerGroup == c.cfg.ConsumerGroup {
+			opts = append(opts,
+				kgo.OnPartitionsAssigned(func(_ context.Context, _ *kgo.Client, partitions map[string][]int32) {
+					c.onPartitionsAssigned(partitions)
+				}),
+				kgo.OnPartitionsRevoked(func(_ context.Context, _ *kgo.Client, partitions map[string][]int32) {
+					c.onPartitionsRevoked(partitions)
+				}),
+				kgo.OnPartitionsLost(func(_ context.Context, _ *kgo.Client, partitions map[string][]int32) {
+					c.onPartitionsRevoked(partitions)
+				}),
+			)
+		}
 	}
+	opts = append(opts, kgo.FetchMaxBytes(int32(maxPendingReplyBytes)), kgo.FetchMaxPartitionBytes(int32(maxPendingReplyBytes)))
 	if strings.EqualFold(c.cfg.AutoOffsetReset, "earliest") {
 		opts = append(opts, kgo.ConsumeResetOffset(kgo.NewOffset().AtStart()))
 	} else {
@@ -182,6 +250,102 @@ func (c *franzClient) newClient(consumerGroup string, extra ...kgo.Opt) (*kgo.Cl
 	return kgo.NewClient(opts...)
 }
 
+func (c *franzClient) onPartitionsAssigned(partitions map[string][]int32) {
+	c.assignmentMu.Lock()
+	c.assignmentGeneration++
+	generation := c.assignmentGeneration
+	if c.ownedPartitions == nil {
+		c.ownedPartitions = make(map[string]map[int32]uint64)
+	}
+	for topic, assigned := range partitions {
+		owned := c.ownedPartitions[topic]
+		if owned == nil {
+			owned = make(map[int32]uint64)
+			c.ownedPartitions[topic] = owned
+		}
+		for _, partition := range assigned {
+			owned[partition] = generation
+		}
+	}
+	c.assignmentMu.Unlock()
+	// Any buffered state for a newly assigned partition predates this assignment
+	// and must not be returned or committed under the new owner generation.
+	c.discardPartitionState(partitions)
+}
+
+func (c *franzClient) onPartitionsRevoked(partitions map[string][]int32) {
+	c.assignmentMu.Lock()
+	c.assignmentGeneration++
+	for topic, revoked := range partitions {
+		owned := c.ownedPartitions[topic]
+		for _, partition := range revoked {
+			delete(owned, partition)
+		}
+		if len(owned) == 0 {
+			delete(c.ownedPartitions, topic)
+		}
+	}
+	c.assignmentMu.Unlock()
+	c.discardPartitionState(partitions)
+}
+
+func (c *franzClient) discardPartitionState(partitions map[string][]int32) {
+	contains := func(topic string, partition int32) bool {
+		for _, candidate := range partitions[topic] {
+			if candidate == partition {
+				return true
+			}
+		}
+		return false
+	}
+	c.pendingMu.Lock()
+	for i := 0; i < len(c.pending); {
+		record := c.pending[i].record
+		if contains(record.Topic, record.Partition) {
+			c.removePendingLocked(i)
+			continue
+		}
+		i++
+	}
+	c.pendingMu.Unlock()
+	c.consumedMu.Lock()
+	for topic, tracked := range c.consumedOffsets {
+		for partition := range tracked {
+			if contains(topic, partition) {
+				delete(tracked, partition)
+			}
+		}
+		if len(tracked) == 0 {
+			delete(c.consumedOffsets, topic)
+		}
+	}
+	c.consumedMu.Unlock()
+}
+
+func (c *franzClient) ownershipGeneration(topic string, partition int32) (uint64, bool) {
+	if c.cfg.ConsumerGroup == "" {
+		return 0, true
+	}
+	c.assignmentMu.RLock()
+	defer c.assignmentMu.RUnlock()
+	generation, owned := c.ownedPartitions[topic][partition]
+	return generation, owned
+}
+
+func (c *franzClient) pendingStillOwned(pending pendingReply) bool {
+	generation, owned := c.ownershipGeneration(pending.record.Topic, pending.record.Partition)
+	return owned && generation == pending.generation
+}
+
+func rewindKafkaRecord(cl *kgo.Client, record kafkaRecord) {
+	if cl == nil {
+		return
+	}
+	cl.SetOffsets(map[string]map[int32]kgo.EpochOffset{
+		record.Topic: {record.Partition: {Epoch: record.LeaderEpoch, Offset: record.Offset}},
+	})
+}
+
 func (c *franzClient) Produce(ctx context.Context, topic string, rec kafkaRecord) (recordMeta, error) {
 	cl, err := c.handle()
 	if err != nil {
@@ -223,32 +387,53 @@ func (c *franzClient) Consume(ctx context.Context, topic string, group string, t
 	if err != nil {
 		return kafkaRecord{}, 0, err
 	}
-	c.addConsumeTopic(cl, topic)
+	c.consumePollMu.Lock()
+	defer c.consumePollMu.Unlock()
+	if err := c.addConsumeTopic(cl, topic); err != nil {
+		return kafkaRecord{}, 0, err
+	}
 	defer c.releaseConsumeTopic(cl, topic)
 	c.pendingMu.Lock()
-	for i, pending := range c.pending {
+	for i := 0; i < len(c.pending); {
+		pending := c.pending[i]
 		if pending.record.Topic == topic {
+			if !c.pendingStillOwned(pending) {
+				c.removePendingLocked(i)
+				continue
+			}
 			record := pending.record
 			c.removePendingLocked(i)
 			c.pendingMu.Unlock()
+			if err := c.trackConsumedRecord(record); err != nil {
+				rewindKafkaRecord(cl, record)
+				return kafkaRecord{}, 0, err
+			}
 			return record, 0, nil
 		}
+		i++
 	}
 	c.pendingMu.Unlock()
+	restorePaused := c.pauseOtherConsumeTopics(cl, topic)
+	defer restorePaused()
 
 	cctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	for {
-		fetches := cl.PollRecords(cctx, 10)
+		fetches := cl.PollRecords(cctx, 1)
 		var rec *kgo.Record
 		for _, candidate := range fetches.Records() {
 			if rec == nil && candidate.Topic == topic {
 				rec = candidate
 				continue
 			}
+			pendingRecord := fromKgoRecord(candidate)
 			c.pendingMu.Lock()
-			c.addPendingLocked(fromKgoRecord(candidate))
+			pendingErr := c.addPendingLocked(pendingRecord)
 			c.pendingMu.Unlock()
+			if pendingErr != nil {
+				rewindKafkaRecord(cl, pendingRecord)
+				return kafkaRecord{}, 0, pendingErr
+			}
 		}
 		if rec != nil {
 			highWatermark := int64(-1)
@@ -261,7 +446,12 @@ func (c *franzClient) Consume(ctx context.Context, topic string, group string, t
 			if highWatermark > rec.Offset+1 {
 				lag = highWatermark - rec.Offset - 1
 			}
-			return fromKgoRecord(rec), lag, nil
+			record := fromKgoRecord(rec)
+			if err := c.trackConsumedRecord(record); err != nil {
+				rewindKafkaRecord(cl, record)
+				return kafkaRecord{}, 0, err
+			}
+			return record, lag, nil
 		}
 		if errs := fetches.Errors(); len(errs) > 0 {
 			return kafkaRecord{}, 0, errs[0].Err
@@ -272,13 +462,53 @@ func (c *franzClient) Consume(ctx context.Context, topic string, group string, t
 	}
 }
 
-func (c *franzClient) addConsumeTopic(cl *kgo.Client, topic string) {
+func (c *franzClient) pauseOtherConsumeTopics(cl *kgo.Client, active string) func() {
+	c.consumeTopicMu.Lock()
+	others := make([]string, 0, len(c.consumeTopicRefs))
+	for topic := range c.consumeTopicRefs {
+		if topic != active {
+			others = append(others, topic)
+		}
+	}
+	c.consumeTopicMu.Unlock()
+	if len(others) == 0 {
+		return func() {}
+	}
+	alreadyPaused := cl.PauseFetchTopics()
+	wasPaused := make(map[string]struct{}, len(alreadyPaused))
+	for _, topic := range alreadyPaused {
+		wasPaused[topic] = struct{}{}
+	}
+	cl.PauseFetchTopics(others...)
+	return func() {
+		resume := others[:0]
+		for _, topic := range others {
+			if _, existed := wasPaused[topic]; !existed {
+				resume = append(resume, topic)
+			}
+		}
+		if len(resume) > 0 {
+			cl.ResumeFetchTopics(resume...)
+		}
+	}
+}
+
+func (c *franzClient) addConsumeTopic(cl *kgo.Client, topic string) error {
 	c.consumeTopicMu.Lock()
 	defer c.consumeTopicMu.Unlock()
-	if c.consumeTopicRefs[topic] == 0 {
+	refs, tracked := c.consumeTopicRefs[topic]
+	if !tracked {
+		keyBytes := 0
+		for trackedTopic := range c.consumeTopicRefs {
+			keyBytes += len(trackedTopic)
+		}
+		if len(c.consumeTopicRefs) >= maxTrackedConsumeTopics || len(topic) > maxTrackedConsumeTopicBytes-keyBytes {
+			return fmt.Errorf("kafka consumer topic capacity exceeded (%d topics, %d key bytes)", maxTrackedConsumeTopics, maxTrackedConsumeTopicBytes)
+		}
 		cl.AddConsumeTopics(topic)
 	}
-	c.consumeTopicRefs[topic]++
+	c.consumeTopicRefs[topic] = refs + 1
+	return nil
 }
 
 func (c *franzClient) releaseConsumeTopic(cl *kgo.Client, topic string) {
@@ -286,6 +516,13 @@ func (c *franzClient) releaseConsumeTopic(cl *kgo.Client, topic string) {
 	defer c.consumeTopicMu.Unlock()
 	refs := c.consumeTopicRefs[topic]
 	if refs <= 1 {
+		if c.cfg.ConsumerGroup != "" {
+			// Keep the topic assignment and its uncommitted offsets until the
+			// script reaches kafka_commit. A zero ref count means no Consume call
+			// is currently polling it, not that its offset is safe to discard.
+			c.consumeTopicRefs[topic] = 0
+			return
+		}
 		delete(c.consumeTopicRefs, topic)
 		cl.PurgeTopicsFromConsuming(topic)
 		return
@@ -293,12 +530,125 @@ func (c *franzClient) releaseConsumeTopic(cl *kgo.Client, topic string) {
 	c.consumeTopicRefs[topic] = refs - 1
 }
 
+func (c *franzClient) purgeCommittedConsumeTopics(cl *kgo.Client) {
+	// Keep the delivered-offset check and topic removal atomic with respect to
+	// trackConsumedRecord. Otherwise a Consume returning between the snapshot
+	// and the map deletion could lose the topic before its offset is committed.
+	c.consumedMu.Lock()
+	c.consumeTopicMu.Lock()
+	topics := make([]string, 0, len(c.consumeTopicRefs))
+	for topic, refs := range c.consumeTopicRefs {
+		if refs != 0 {
+			continue
+		}
+		if len(c.consumedOffsets[topic]) > 0 {
+			continue
+		}
+		topics = append(topics, topic)
+		delete(c.consumeTopicRefs, topic)
+	}
+	c.consumeTopicMu.Unlock()
+	c.consumedMu.Unlock()
+	if len(topics) > 0 {
+		cl.PurgeTopicsFromConsuming(topics...)
+	}
+}
+
+func (c *franzClient) trackConsumedRecord(record kafkaRecord) error {
+	generation, owned := c.ownershipGeneration(record.Topic, record.Partition)
+	if !owned {
+		return fmt.Errorf("kafka partition %s/%d was revoked before delivery", record.Topic, record.Partition)
+	}
+	c.consumedMu.Lock()
+	defer c.consumedMu.Unlock()
+	if c.consumedOffsets == nil {
+		c.consumedOffsets = make(map[string]map[int32]trackedConsumedRecord)
+	}
+	partitions := c.consumedOffsets[record.Topic]
+	if partitions == nil {
+		trackedPartitions := 0
+		for _, existing := range c.consumedOffsets {
+			trackedPartitions += len(existing)
+		}
+		if trackedPartitions >= maxTrackedConsumePartitions {
+			return fmt.Errorf("kafka delivered partition capacity exceeded (%d)", maxTrackedConsumePartitions)
+		}
+		partitions = make(map[int32]trackedConsumedRecord)
+		c.consumedOffsets[record.Topic] = partitions
+	} else if _, exists := partitions[record.Partition]; !exists {
+		trackedPartitions := 0
+		for _, existing := range c.consumedOffsets {
+			trackedPartitions += len(existing)
+		}
+		if trackedPartitions >= maxTrackedConsumePartitions {
+			return fmt.Errorf("kafka delivered partition capacity exceeded (%d)", maxTrackedConsumePartitions)
+		}
+	}
+	if current, ok := partitions[record.Partition]; !ok || record.Offset > current.record.Offset || (record.Offset == current.record.Offset && record.LeaderEpoch > current.record.LeaderEpoch) {
+		partitions[record.Partition] = trackedConsumedRecord{record: record, generation: generation}
+	}
+	return nil
+}
+
+func (c *franzClient) consumedRecordsSnapshot() []*kgo.Record {
+	c.assignmentMu.RLock()
+	defer c.assignmentMu.RUnlock()
+	return c.consumedRecordsSnapshotAssignmentLocked()
+}
+
+func (c *franzClient) consumedRecordsSnapshotAssignmentLocked() []*kgo.Record {
+	c.consumedMu.Lock()
+	defer c.consumedMu.Unlock()
+	records := make([]*kgo.Record, 0)
+	for topic, partitions := range c.consumedOffsets {
+		for partition, tracked := range partitions {
+			if c.cfg.ConsumerGroup != "" {
+				generation, owned := c.ownedPartitions[topic][partition]
+				if !owned || generation != tracked.generation {
+					continue
+				}
+			}
+			record := tracked.record
+			records = append(records, &kgo.Record{
+				Topic:       topic,
+				Partition:   partition,
+				Offset:      record.Offset,
+				LeaderEpoch: record.LeaderEpoch,
+			})
+		}
+	}
+	return records
+}
+
+func (c *franzClient) clearCommittedRecords(committed []*kgo.Record) {
+	c.consumedMu.Lock()
+	defer c.consumedMu.Unlock()
+	for _, record := range committed {
+		if record == nil {
+			continue
+		}
+		partitions := c.consumedOffsets[record.Topic]
+		current, ok := partitions[record.Partition]
+		if !ok || current.record.Offset > record.Offset || (current.record.Offset == record.Offset && current.record.LeaderEpoch > record.LeaderEpoch) {
+			continue
+		}
+		delete(partitions, record.Partition)
+		if len(partitions) == 0 {
+			delete(c.consumedOffsets, record.Topic)
+		}
+	}
+}
+
 func (c *franzClient) RequestReply(ctx context.Context, reqTopic, replyTopic string, req kafkaRecord, timeout time.Duration) (recordMeta, kafkaRecord, error) {
+	c.replyPollMu.Lock()
+	defer c.replyPollMu.Unlock()
 	cl, err := c.replyHandle()
 	if err != nil {
 		return recordMeta{}, kafkaRecord{}, err
 	}
-	c.addReplyTopic(cl, replyTopic)
+	if err := c.addReplyTopic(cl, replyTopic); err != nil {
+		return recordMeta{}, kafkaRecord{}, err
+	}
 	defer c.releaseReplyTopic(cl, replyTopic)
 	deadline := time.Now().Add(timeout)
 	if err := c.primeReplyConsumer(ctx, cl, replyTopic, time.Until(deadline)); err != nil {
@@ -315,8 +665,10 @@ func (c *franzClient) RequestReply(ctx context.Context, reqTopic, replyTopic str
 		for i := 0; i < len(c.replyPending); {
 			pending := c.replyPending[i]
 			if now.Sub(pending.receivedAt) > pendingReplyTTL {
+				rewindKafkaRecord(cl, pending.record)
 				c.removeReplyPendingLocked(i)
-				continue
+				c.pendingMu.Unlock()
+				return recordMeta{}, kafkaRecord{}, fmt.Errorf("expired buffered kafka reply was rewound before reuse")
 			}
 			if pending.record.Topic == replyTopic && (req.CorrelationID == "" || pending.record.CorrelationID == req.CorrelationID || pending.record.Headers["kafka_correlation_id"] == req.CorrelationID) {
 				c.removeReplyPendingLocked(i)
@@ -327,7 +679,7 @@ func (c *franzClient) RequestReply(ctx context.Context, reqTopic, replyTopic str
 		}
 		c.pendingMu.Unlock()
 		cctx, cancel := context.WithDeadline(ctx, deadline)
-		fetches := cl.PollRecords(cctx, 10)
+		fetches := cl.PollRecords(cctx, 1)
 		cancel()
 		var matched *kafkaRecord
 		for _, rec := range fetches.Records() {
@@ -338,8 +690,12 @@ func (c *franzClient) RequestReply(ctx context.Context, reqTopic, replyTopic str
 				continue
 			}
 			c.pendingMu.Lock()
-			c.addReplyPendingLocked(converted)
+			pendingErr := c.addReplyPendingLocked(converted)
 			c.pendingMu.Unlock()
+			if pendingErr != nil {
+				rewindKafkaRecord(cl, converted)
+				return recordMeta{}, kafkaRecord{}, pendingErr
+			}
 		}
 		if matched != nil {
 			return meta, *matched, nil
@@ -351,13 +707,25 @@ func (c *franzClient) RequestReply(ctx context.Context, reqTopic, replyTopic str
 	return recordMeta{}, kafkaRecord{}, fmt.Errorf("no correlated kafka reply received from %q within %s", replyTopic, timeout)
 }
 
-func (c *franzClient) addReplyTopic(cl *kgo.Client, topic string) {
+func (c *franzClient) addReplyTopic(cl *kgo.Client, topic string) error {
 	c.replyAssignmentMu.Lock()
+	if _, tracked := c.replyTopicRefs[topic]; !tracked {
+		keyBytes := 0
+		for trackedTopic := range c.replyTopicRefs {
+			keyBytes += len(trackedTopic)
+		}
+		if len(c.replyTopicRefs) >= maxTrackedConsumeTopics || len(topic) > maxTrackedConsumeTopicBytes-keyBytes {
+			c.replyAssignmentMu.Unlock()
+			return fmt.Errorf("kafka reply topic capacity exceeded (%d topics, %d key bytes)", maxTrackedConsumeTopics, maxTrackedConsumeTopicBytes)
+		}
+	}
 	c.replyTopicRefs[topic]++
-	if c.replyTopicRefs[topic] == 1 {
+	first := c.replyTopicRefs[topic] == 1
+	c.replyAssignmentMu.Unlock()
+	if first {
 		cl.AddConsumeTopics(topic)
 	}
-	c.replyAssignmentMu.Unlock()
+	return nil
 }
 
 func (c *franzClient) releaseReplyTopic(cl *kgo.Client, topic string) {
@@ -369,8 +737,8 @@ func (c *franzClient) releaseReplyTopic(cl *kgo.Client, topic string) {
 	}
 	delete(c.replyTopicRefs, topic)
 	delete(c.replyAssigned, topic)
-	cl.PurgeTopicsFromConsuming(topic)
 	c.replyAssignmentMu.Unlock()
+	cl.PurgeTopicsFromConsuming(topic)
 	c.pendingMu.Lock()
 	for i := 0; i < len(c.replyPending); {
 		if c.replyPending[i].record.Topic == topic {
@@ -393,11 +761,16 @@ func (c *franzClient) primeReplyConsumer(ctx context.Context, cl *kgo.Client, re
 			return nil
 		}
 		pollCtx, cancelPoll := context.WithTimeout(primeCtx, 100*time.Millisecond)
-		fetches := cl.PollRecords(pollCtx, 10)
+		fetches := cl.PollRecords(pollCtx, 1)
 		cancelPoll()
 		c.pendingMu.Lock()
 		for _, record := range fetches.Records() {
-			c.addReplyPendingLocked(fromKgoRecord(record))
+			converted := fromKgoRecord(record)
+			if err := c.addReplyPendingLocked(converted); err != nil {
+				c.pendingMu.Unlock()
+				rewindKafkaRecord(cl, converted)
+				return err
+			}
 		}
 		c.pendingMu.Unlock()
 		if errs := fetches.Errors(); len(errs) > 0 {
@@ -409,16 +782,21 @@ func (c *franzClient) primeReplyConsumer(ctx context.Context, cl *kgo.Client, re
 	}
 }
 
-func (c *franzClient) addPendingLocked(record kafkaRecord) {
+func (c *franzClient) addPendingLocked(record kafkaRecord) error {
 	bytes := pendingReplyBytes(record)
-	for len(c.pending) >= maxPendingReplyRecords || c.pendingBytes+bytes > maxPendingReplyBytes {
-		if len(c.pending) == 0 {
-			return
-		}
-		c.removePendingLocked(0)
+	generation, owned := c.ownershipGeneration(record.Topic, record.Partition)
+	if !owned {
+		return fmt.Errorf("kafka partition %s/%d was revoked before buffering", record.Topic, record.Partition)
 	}
-	c.pending = append(c.pending, pendingReply{record: record, receivedAt: time.Now(), bytes: bytes})
+	if len(c.pending)+len(c.replyPending) >= maxPendingReplyRecords || bytes > int64(maxPendingReplyBytes)-c.pendingBytes-c.replyPendingBytes {
+		return fmt.Errorf("kafka per-VUser pending capacity exceeded (%d records, %d bytes)", maxPendingReplyRecords, maxPendingReplyBytes)
+	}
+	if !globalKafkaPending.reserve(bytes) {
+		return fmt.Errorf("kafka generator-wide pending capacity exceeded (%d records, %d bytes)", maxGlobalPendingRecords, maxGlobalPendingBytes)
+	}
+	c.pending = append(c.pending, pendingReply{record: record, receivedAt: time.Now(), bytes: bytes, generation: generation})
 	c.pendingBytes += bytes
+	return nil
 }
 
 func (c *franzClient) removePendingLocked(index int) {
@@ -426,21 +804,26 @@ func (c *franzClient) removePendingLocked(index int) {
 		return
 	}
 	c.pendingBytes -= c.pending[index].bytes
+	globalKafkaPending.release(c.pending[index].bytes)
 	copy(c.pending[index:], c.pending[index+1:])
 	clear(c.pending[len(c.pending)-1:])
 	c.pending = c.pending[:len(c.pending)-1]
+	if c.pendingBytes < 0 {
+		c.pendingBytes = 0
+	}
 }
 
-func (c *franzClient) addReplyPendingLocked(record kafkaRecord) {
+func (c *franzClient) addReplyPendingLocked(record kafkaRecord) error {
 	bytes := pendingReplyBytes(record)
-	for len(c.replyPending) >= maxPendingReplyRecords || c.replyPendingBytes+bytes > maxPendingReplyBytes {
-		if len(c.replyPending) == 0 {
-			return
-		}
-		c.removeReplyPendingLocked(0)
+	if len(c.pending)+len(c.replyPending) >= maxPendingReplyRecords || bytes > int64(maxPendingReplyBytes)-c.pendingBytes-c.replyPendingBytes {
+		return fmt.Errorf("kafka per-VUser pending capacity exceeded (%d records, %d bytes)", maxPendingReplyRecords, maxPendingReplyBytes)
+	}
+	if !globalKafkaPending.reserve(bytes) {
+		return fmt.Errorf("kafka generator-wide pending capacity exceeded (%d records, %d bytes)", maxGlobalPendingRecords, maxGlobalPendingBytes)
 	}
 	c.replyPending = append(c.replyPending, pendingReply{record: record, receivedAt: time.Now(), bytes: bytes})
 	c.replyPendingBytes += bytes
+	return nil
 }
 
 func (c *franzClient) removeReplyPendingLocked(index int) {
@@ -448,9 +831,13 @@ func (c *franzClient) removeReplyPendingLocked(index int) {
 		return
 	}
 	c.replyPendingBytes -= c.replyPending[index].bytes
+	globalKafkaPending.release(c.replyPending[index].bytes)
 	copy(c.replyPending[index:], c.replyPending[index+1:])
 	clear(c.replyPending[len(c.replyPending)-1:])
 	c.replyPending = c.replyPending[:len(c.replyPending)-1]
+	if c.replyPendingBytes < 0 {
+		c.replyPendingBytes = 0
+	}
 }
 
 func pendingReplyBytes(record kafkaRecord) int64 {
@@ -470,7 +857,20 @@ func (c *franzClient) Commit(ctx context.Context) error {
 		return err
 	}
 	if c.cfg.ConsumerGroup != "" {
-		return cl.CommitUncommittedOffsets(ctx)
+		// Keep ownership callbacks fenced from snapshot through broker commit and
+		// local clear. If the broker has already advanced the generation, Kafka
+		// rejects the commit; otherwise every included partition is still ours.
+		c.assignmentMu.RLock()
+		records := c.consumedRecordsSnapshotAssignmentLocked()
+		if len(records) > 0 {
+			if err := cl.CommitRecords(ctx, records...); err != nil {
+				c.assignmentMu.RUnlock()
+				return err
+			}
+			c.clearCommittedRecords(records)
+		}
+		c.assignmentMu.RUnlock()
+		c.purgeCommittedConsumeTopics(cl)
 	}
 	return nil
 }
@@ -521,6 +921,14 @@ func (c *franzClient) HealthCheck(ctx context.Context) error {
 }
 
 func (c *franzClient) Teardown(context.Context) error {
+	c.pendingMu.Lock()
+	for len(c.pending) > 0 {
+		c.removePendingLocked(len(c.pending) - 1)
+	}
+	for len(c.replyPending) > 0 {
+		c.removeReplyPendingLocked(len(c.replyPending) - 1)
+	}
+	c.pendingMu.Unlock()
 	if c.cl != nil {
 		c.cl.Close()
 	}
@@ -549,22 +957,35 @@ func (c *franzClient) usesTLS() bool {
 }
 
 func (c *franzClient) buildTLSConfig() (*tls.Config, error) {
-	tlsCfg := &tls.Config{InsecureSkipVerify: c.cfg.TLSInsecureSkipVerify} //nolint:gosec // operator-controlled, mirrors HTTP/database TLS knobs
-	if c.cfg.TLSClientCertFile != "" && c.cfg.TLSClientKeyFile != "" {
-		cert, err := tls.LoadX509KeyPair(c.cfg.TLSClientCertFile, c.cfg.TLSClientKeyFile)
+	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: c.cfg.TLSInsecureSkipVerify} //nolint:gosec // operator-controlled, mirrors HTTP/database TLS knobs
+	certFile := strings.TrimSpace(c.cfg.TLSClientCertFile)
+	keyFile := strings.TrimSpace(c.cfg.TLSClientKeyFile)
+	if (certFile == "") != (keyFile == "") {
+		return nil, fmt.Errorf("kafka TLS client certificate and key files must be configured together")
+	}
+	if certFile != "" {
+		certPEM, err := fileasset.ReadCredential(certFile)
+		if err != nil {
+			return nil, fmt.Errorf("kafka tls client cert: %w", err)
+		}
+		keyPEM, err := fileasset.ReadCredential(keyFile)
+		if err != nil {
+			return nil, fmt.Errorf("kafka tls client key: %w", err)
+		}
+		cert, err := tls.X509KeyPair(certPEM, keyPEM)
 		if err != nil {
 			return nil, fmt.Errorf("kafka tls client cert/key: %w", err)
 		}
 		tlsCfg.Certificates = []tls.Certificate{cert}
 	}
-	if c.cfg.TLSCACertFile != "" {
-		caPEM, err := os.ReadFile(c.cfg.TLSCACertFile)
+	if caFile := strings.TrimSpace(c.cfg.TLSCACertFile); caFile != "" {
+		caPEM, err := fileasset.ReadCredential(caFile)
 		if err != nil {
 			return nil, fmt.Errorf("kafka tls ca cert: %w", err)
 		}
 		pool := x509.NewCertPool()
 		if !pool.AppendCertsFromPEM(caPEM) {
-			return nil, fmt.Errorf("kafka tls ca cert %q contained no valid certificates", c.cfg.TLSCACertFile)
+			return nil, fmt.Errorf("kafka tls ca cert %q contained no valid certificates", caFile)
 		}
 		tlsCfg.RootCAs = pool
 	}
@@ -598,6 +1019,7 @@ func fromKgoRecord(rec *kgo.Record) kafkaRecord {
 		Topic:         rec.Topic,
 		Partition:     rec.Partition,
 		Offset:        rec.Offset,
+		LeaderEpoch:   rec.LeaderEpoch,
 		Timestamp:     rec.Timestamp,
 		CorrelationID: headers["kafka_correlation_id"],
 	}

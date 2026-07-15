@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -88,6 +89,57 @@ func TestApplyHARArtifactRetention(t *testing.T) {
 	}
 	if _, err := os.Stat(kept); err != nil {
 		t.Error("fresh artifact must survive the sweep")
+	}
+}
+
+func TestApplyHARArtifactRetentionRejectsReplacedCandidate(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now().UTC()
+	path := writeAgedFile(t, dir, "apexload_browser_replaced_scrubbed.har", 10*24*time.Hour)
+	candidates := planHARArtifactRetention(now, ArchiveRetentionSettings{Enabled: true, HARArtifactDir: dir})
+	if len(candidates) != 1 {
+		t.Fatalf("candidates = %+v, want one", candidates)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("replacement"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	results, pruned, failed := applyHARArtifactRetention(candidates)
+	if pruned != 0 || failed != 1 || len(results) != 1 || results[0].Status != "failed" {
+		t.Fatalf("apply replaced candidate = pruned %d failed %d results %+v", pruned, failed, results)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("replacement was removed: %v", err)
+	}
+	if string(data) != "replacement" {
+		t.Fatalf("replacement content = %q", data)
+	}
+}
+
+func TestPlanHARArtifactRetentionBoundsCandidateMemory(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now().UTC()
+	for index := 0; index < 5; index++ {
+		writeAgedFile(t, dir, fmt.Sprintf("apexload_browser_%d_scrubbed.har", index), 10*24*time.Hour)
+	}
+	candidates := planHARArtifactRetentionLimit(now, ArchiveRetentionSettings{Enabled: true, HARArtifactDir: dir}, 3)
+	if len(candidates) != 3 {
+		t.Fatalf("candidate count = %d, want hard cap 3", len(candidates))
+	}
+}
+
+func TestPlanHARArtifactRetentionIgnoresSymlinks(t *testing.T) {
+	dir := t.TempDir()
+	target := writeAgedFile(t, dir, "unrelated-target", 10*24*time.Hour)
+	link := filepath.Join(dir, "apexload_browser_link_scrubbed.har")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	if candidates := planHARArtifactRetention(time.Now().UTC(), ArchiveRetentionSettings{Enabled: true, HARArtifactDir: dir}); len(candidates) != 0 {
+		t.Fatalf("symlink was admitted as HAR retention candidate: %+v", candidates)
 	}
 }
 

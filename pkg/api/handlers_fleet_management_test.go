@@ -22,6 +22,28 @@ type fakeFleetScaler struct {
 	lastN    int
 }
 
+type blockingFleetScaler struct {
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (f *blockingFleetScaler) CanProvision() bool { return true }
+func (f *blockingFleetScaler) Describe() ProvisionerInfo {
+	return ProvisionerInfo{Name: "blocking-test", CanProvision: true}
+}
+func (f *blockingFleetScaler) ScalePool(ctx context.Context, _ *storage.FleetPool, desiredCount int) (string, int, error) {
+	select {
+	case f.entered <- struct{}{}:
+	default:
+	}
+	select {
+	case <-f.release:
+		return "apexload-generator", desiredCount, nil
+	case <-ctx.Done():
+		return "apexload-generator", 0, ctx.Err()
+	}
+}
+
 func (f *fakeFleetScaler) CanProvision() bool { return f.can }
 func (f *fakeFleetScaler) Describe() ProvisionerInfo {
 	return ProvisionerInfo{Name: "kubernetes", CanProvision: f.can, Description: "fake k8s scaler"}
@@ -79,6 +101,60 @@ func TestProvisioningRequestWithKubernetesScaler(t *testing.T) {
 	_ = json.Unmarshal(prov.Body.Bytes(), &info)
 	if info.Name != "kubernetes" || !info.CanProvision {
 		t.Fatalf("provisioner = %+v, want kubernetes/can_provision", info)
+	}
+}
+
+func TestActiveProvisioningCannotBeCancelledOrLoseItsPool(t *testing.T) {
+	server, store := newTimeslotServer(t)
+	scaler := &blockingFleetScaler{entered: make(chan struct{}, 1), release: make(chan struct{})}
+	server.fleetScaler = scaler
+
+	createPool := timeslotRequest(t, server, http.MethodPost, "/api/v1/fleet/pools",
+		map[string]any{"name": "race-safe", "cloud_provider": "kubernetes"})
+	if createPool.Code != http.StatusCreated {
+		t.Fatalf("create pool = %d body=%s", createPool.Code, createPool.Body.String())
+	}
+	var pool storage.FleetPool
+	if err := json.Unmarshal(createPool.Body.Bytes(), &pool); err != nil {
+		t.Fatal(err)
+	}
+
+	created := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		created <- timeslotRequest(t, server, http.MethodPost, "/api/v1/fleet/provision-requests",
+			map[string]any{"fleet_pool_id": pool.ID, "desired_count": 3})
+	}()
+	select {
+	case <-scaler.entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("provisioning scale did not start")
+	}
+	requests, err := store.ListProvisioningRequests(pool.ID, 10, 0)
+	if err != nil || len(requests) != 1 {
+		t.Fatalf("ListProvisioningRequests = %d, %v", len(requests), err)
+	}
+
+	cancel := timeslotRequest(t, server, http.MethodPost, "/api/v1/fleet/provision-requests/"+requests[0].ID+"/cancel", nil)
+	if cancel.Code != http.StatusConflict {
+		t.Fatalf("cancel active scale = %d body=%s, want 409", cancel.Code, cancel.Body.String())
+	}
+	deletePool := timeslotRequest(t, server, http.MethodDelete, "/api/v1/fleet/pools/"+pool.ID, nil)
+	if deletePool.Code != http.StatusConflict {
+		t.Fatalf("delete pool during scale = %d body=%s, want 409", deletePool.Code, deletePool.Body.String())
+	}
+
+	close(scaler.release)
+	select {
+	case rec := <-created:
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("provision response = %d body=%s", rec.Code, rec.Body.String())
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("provisioning request did not finish")
+	}
+	updated, err := store.GetFleetPool(pool.ID)
+	if err != nil || updated.DesiredSize != 3 {
+		t.Fatalf("completed pool = %#v, %v; want desired size 3", updated, err)
 	}
 }
 
@@ -298,6 +374,14 @@ func TestGeneratorLifecycleEndpointsUpdateEnforcedStateAndMetadata(t *testing.T)
 	backend := newDistributedExecutionBackend([]string{"gen-a:9090", "gen-b:9090"}, time.Second, nil)
 	backend.recordGeneratorIdentity("gen-a:9090", "gen-a")
 	server.runner.setExecutionBackend(backend)
+	if err := store.SaveGeneratorMetadata(&storage.GeneratorMetadata{
+		GeneratorID: "gen-a",
+		Region:      "eastus",
+		ProviderID:  "provider/gen-a",
+		Tags:        map[string]string{"role": "soak"},
+	}); err != nil {
+		t.Fatalf("seed generator metadata: %v", err)
+	}
 
 	rec := timeslotRequest(t, server, http.MethodPost, "/api/v1/fleet/generators/gen-a/cordon", nil)
 	if rec.Code != http.StatusOK {
@@ -324,7 +408,7 @@ func TestGeneratorLifecycleEndpointsUpdateEnforcedStateAndMetadata(t *testing.T)
 	if err != nil {
 		t.Fatalf("metadata after cordon: %v", err)
 	}
-	if !meta.Cordoned || meta.Target != "gen-a:9090" {
+	if !meta.Cordoned || meta.Target != "gen-a:9090" || meta.Region != "eastus" || meta.ProviderID != "provider/gen-a" || meta.Tags["role"] != "soak" {
 		t.Fatalf("metadata after cordon = %+v", meta)
 	}
 

@@ -90,7 +90,11 @@ func coerceStringMap(raw any) map[string]string {
 }
 
 func applyDataFormattingChain(body []byte, autoDetect bool, chain []dataFormattingTransform, maxBytes int64) ([]byte, error) {
-	formatted := append([]byte(nil), body...)
+	// Formatting transforms return new byte slices and never mutate their
+	// inputs. Keep the original view until a transform actually changes it so
+	// the ordinary (formatting-disabled) HTTP hot path does not clone every
+	// response body.
+	formatted := body
 	for _, transform := range chain {
 		var err error
 		formatted, err = applyDataFormattingTransformBounded(formatted, transform, maxBytes)
@@ -112,7 +116,7 @@ func applyDataFormattingChain(body []byte, autoDetect bool, chain []dataFormatti
 }
 
 func applyAutoDetectedDataFormattingBounded(body []byte, allowBase64 bool, maxBytes int64) ([]byte, error) {
-	formatted := append([]byte(nil), body...)
+	formatted := body
 	if bytes.HasPrefix(bytes.TrimSpace(formatted), []byte{0x1f, 0x8b}) {
 		decoded, err := decodeGzipBody(bytes.TrimSpace(formatted), maxBytes)
 		if err != nil {
@@ -163,7 +167,7 @@ func applyDataFormattingTransformBounded(body []byte, transform dataFormattingTr
 }
 
 func applyAutoDetectedDataFormatting(body []byte, allowBase64 bool) []byte {
-	formatted := append([]byte(nil), body...)
+	formatted := body
 	if decoded, ok := detectGzipPayload(formatted); ok {
 		formatted = decoded
 	}
@@ -252,13 +256,17 @@ func decodeBase64Body(body []byte) ([]byte, error) {
 // decodeGzipBody decompresses body. maxBytes > 0 bounds the decoded size
 // (decompression-bomb guard); maxBytes <= 0 is unbounded (request-side callers
 // pass 0 since those payloads are operator-authored, not remote).
-func decodeGzipBody(body []byte, maxBytes int64) ([]byte, error) {
+func decodeGzipBody(body []byte, maxBytes int64, leases ...*responseCaptureLease) ([]byte, error) {
 	reader, err := gzip.NewReader(bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
 	defer reader.Close()
-	return readAllLimited(reader, maxBytes)
+	var lease *responseCaptureLease
+	if len(leases) > 0 {
+		lease = leases[0]
+	}
+	return readAllLimitedWithLease(reader, maxBytes, lease)
 }
 
 func encodeGzipBody(body []byte) ([]byte, error) {
@@ -368,32 +376,173 @@ func isLikelyAutoDecodedPayload(body []byte) bool {
 }
 
 type xmlJSONNode struct {
-	name     string
-	attrs    map[string]string
-	text     []string
-	children map[string][]any
+	name      string
+	attrs     map[string]string
+	text      []string
+	textBytes int64
+	children  map[string][]any
 }
+
+const (
+	maxXMLJSONNodes             = 100_000
+	maxXMLJSONStructuralEntries = 100_000
+	maxXMLJSONDepth             = 256
+	maxXMLJSONAttributesPerNode = 4_096
+	maxXMLJSONTextPartsPerNode  = 4_096
+	maxXMLJSONNameBytes         = 4 << 10
+	maxXMLJSONTextSegmentBytes  = 1 << 20
+	maxXMLJSONRetainedTextBytes = 64 << 20
+	maxJSONXMLNodes             = 100_000
+	maxJSONXMLDepth             = 256
+	maxJSONXMLNameBytes         = 4 << 10
+	maxJSONXMLScalarBytes       = 1 << 20
+	maxJSONXMLRetainedBytes     = 64 << 20
+)
 
 func jsonToXML(body []byte) ([]byte, error) {
 	return jsonToXMLBounded(body, 0)
 }
 
 func jsonToXMLBounded(body []byte, maxBytes int64) ([]byte, error) {
-	var payload any
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return nil, err
+	outputLimit := maxBytes
+	if outputLimit <= 0 || outputLimit > maxJSONXMLRetainedBytes {
+		outputLimit = maxJSONXMLRetainedBytes
 	}
-	buf := newBoundedFormattingBuffer(maxBytes)
+	buf := newBoundedFormattingBuffer(outputLimit)
 	if _, err := buf.WriteString("<json>"); err != nil {
 		return nil, err
 	}
-	if err := writeXMLValue(buf, "value", payload); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.UseNumber()
+	budget := jsonXMLBudget{retainedLimit: maxJSONXMLRetainedBytes}
+	if maxBytes > 0 && maxBytes < budget.retainedLimit {
+		budget.retainedLimit = maxBytes
+	}
+	if err := writeJSONTokenXMLValue(decoder, buf, "value", 0, &budget); err != nil {
 		return nil, err
+	}
+	if token, err := decoder.Token(); err != io.EOF {
+		if err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("unexpected trailing JSON token %v", token)
 	}
 	if _, err := buf.WriteString("</json>"); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+type jsonXMLBudget struct {
+	nodes         int
+	retainedBytes int64
+	retainedLimit int64
+}
+
+func (budget *jsonXMLBudget) retain(size int, kind string) error {
+	if size < 0 || int64(size) > budget.retainedLimit-budget.retainedBytes {
+		return fmt.Errorf("JSON-to-XML retained %s exceeds %d bytes", kind, budget.retainedLimit)
+	}
+	budget.retainedBytes += int64(size)
+	return nil
+}
+
+// writeJSONTokenXMLValue converts directly from the decoder token stream. It
+// never materializes a map/slice tree, so deeply nested or very wide JSON
+// cannot multiply the input into an unbounded intermediate object graph before
+// the formatted-output limit is enforced.
+func writeJSONTokenXMLValue(decoder *json.Decoder, buf *boundedFormattingBuffer, name string, depth int, budget *jsonXMLBudget) error {
+	if depth >= maxJSONXMLDepth {
+		return fmt.Errorf("JSON-to-XML depth limit exceeded (%d)", maxJSONXMLDepth)
+	}
+	budget.nodes++
+	if budget.nodes > maxJSONXMLNodes {
+		return fmt.Errorf("JSON-to-XML node limit exceeded (%d)", maxJSONXMLNodes)
+	}
+	if len(name) > maxJSONXMLNameBytes {
+		return fmt.Errorf("JSON-to-XML element name exceeds %d bytes", maxJSONXMLNameBytes)
+	}
+	if err := budget.retain(len(name), "names"); err != nil {
+		return err
+	}
+
+	token, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	if err := writeStartElement(buf, name); err != nil {
+		return err
+	}
+	switch typed := token.(type) {
+	case json.Delim:
+		switch typed {
+		case '{':
+			for decoder.More() {
+				keyToken, err := decoder.Token()
+				if err != nil {
+					return err
+				}
+				key, ok := keyToken.(string)
+				if !ok {
+					return fmt.Errorf("JSON object key is not a string")
+				}
+				if len(key) > maxJSONXMLNameBytes {
+					return fmt.Errorf("JSON-to-XML object key exceeds %d bytes", maxJSONXMLNameBytes)
+				}
+				if err := writeJSONTokenXMLValue(decoder, buf, sanitizeXMLName(key), depth+1, budget); err != nil {
+					return err
+				}
+			}
+			end, err := decoder.Token()
+			if err != nil {
+				return err
+			}
+			if end != json.Delim('}') {
+				return fmt.Errorf("malformed JSON object")
+			}
+		case '[':
+			for decoder.More() {
+				if err := writeJSONTokenXMLValue(decoder, buf, "item", depth+1, budget); err != nil {
+					return err
+				}
+			}
+			end, err := decoder.Token()
+			if err != nil {
+				return err
+			}
+			if end != json.Delim(']') {
+				return fmt.Errorf("malformed JSON array")
+			}
+		default:
+			return fmt.Errorf("unexpected JSON delimiter %q", typed)
+		}
+	case string:
+		if len(typed) > maxJSONXMLScalarBytes {
+			return fmt.Errorf("JSON-to-XML scalar exceeds %d bytes", maxJSONXMLScalarBytes)
+		}
+		if err := budget.retain(len(typed), "scalars"); err != nil {
+			return err
+		}
+		if err := xml.EscapeText(buf, []byte(typed)); err != nil {
+			return err
+		}
+	case json.Number:
+		value := typed.String()
+		if err := budget.retain(len(value), "scalars"); err != nil {
+			return err
+		}
+		if err := xml.EscapeText(buf, []byte(value)); err != nil {
+			return err
+		}
+	case bool:
+		if _, err := buf.WriteString(fmt.Sprintf("%t", typed)); err != nil {
+			return err
+		}
+	case nil:
+	default:
+		return fmt.Errorf("unsupported JSON token %T", token)
+	}
+	return writeEndElement(buf, name)
 }
 
 func xmlToJSON(body []byte) ([]byte, error) {
@@ -404,6 +553,34 @@ func xmlToJSONBounded(body []byte, maxBytes int64) ([]byte, error) {
 	decoder := xml.NewDecoder(bytes.NewReader(body))
 	stack := make([]*xmlJSONNode, 0)
 	var root map[string]any
+	rootSeen := false
+	nodeLimit := maxXMLJSONNodes
+	retainedLimit := int64(maxXMLJSONRetainedTextBytes)
+	if maxBytes > 0 {
+		if byOutput := maxBytes / 8; byOutput < int64(nodeLimit) {
+			nodeLimit = int(max(1, byOutput))
+		}
+		if maxBytes < retainedLimit {
+			retainedLimit = maxBytes
+		}
+	}
+	nodes := 0
+	structuralEntries := 0
+	var retainedBytes int64
+	retainStructure := func(entries int) error {
+		if entries < 0 || structuralEntries > maxXMLJSONStructuralEntries-entries {
+			return fmt.Errorf("XML-to-JSON structural entry limit exceeded (%d)", maxXMLJSONStructuralEntries)
+		}
+		structuralEntries += entries
+		return nil
+	}
+	retain := func(size int) error {
+		if size < 0 || int64(size) > retainedLimit-retainedBytes {
+			return fmt.Errorf("XML-to-JSON retained text exceeds %d bytes", retainedLimit)
+		}
+		retainedBytes += int64(size)
+		return nil
+	}
 
 	for {
 		token, err := decoder.Token()
@@ -416,12 +593,46 @@ func xmlToJSONBounded(body []byte, maxBytes int64) ([]byte, error) {
 
 		switch typed := token.(type) {
 		case xml.StartElement:
+			if len(stack) == 0 {
+				if rootSeen {
+					return nil, fmt.Errorf("XML payload must contain exactly one root element")
+				}
+				rootSeen = true
+			}
+			nodes++
+			if nodes > nodeLimit {
+				return nil, fmt.Errorf("XML-to-JSON node limit exceeded (%d)", nodeLimit)
+			}
+			if err := retainStructure(1); err != nil {
+				return nil, err
+			}
+			if len(stack) >= maxXMLJSONDepth {
+				return nil, fmt.Errorf("XML-to-JSON depth limit exceeded (%d)", maxXMLJSONDepth)
+			}
+			if len(typed.Name.Local) > maxXMLJSONNameBytes {
+				return nil, fmt.Errorf("XML element name exceeds %d bytes", maxXMLJSONNameBytes)
+			}
+			if err := retain(len(typed.Name.Local)); err != nil {
+				return nil, err
+			}
 			node := &xmlJSONNode{
 				name:     sanitizeXMLName(typed.Name.Local),
 				attrs:    make(map[string]string),
 				children: make(map[string][]any),
 			}
+			if len(typed.Attr) > maxXMLJSONAttributesPerNode {
+				return nil, fmt.Errorf("XML element attribute limit exceeded (%d)", maxXMLJSONAttributesPerNode)
+			}
 			for _, attr := range typed.Attr {
+				if err := retainStructure(1); err != nil {
+					return nil, err
+				}
+				if len(attr.Name.Local) > maxXMLJSONNameBytes || len(attr.Value) > maxXMLJSONTextSegmentBytes {
+					return nil, fmt.Errorf("XML attribute exceeds name/value limits (%d/%d bytes)", maxXMLJSONNameBytes, maxXMLJSONTextSegmentBytes)
+				}
+				if err := retain(len(attr.Name.Local) + len(attr.Value)); err != nil {
+					return nil, err
+				}
 				key := sanitizeXMLName(attr.Name.Local)
 				if key != "" {
 					node.attrs[key] = attr.Value
@@ -433,10 +644,34 @@ func xmlToJSONBounded(body []byte, maxBytes int64) ([]byte, error) {
 			stack = append(stack, node)
 		case xml.CharData:
 			if len(stack) == 0 {
+				if strings.TrimSpace(string(typed)) != "" {
+					return nil, fmt.Errorf("non-whitespace text outside XML root element")
+				}
 				continue
 			}
+			if len(typed) > maxXMLJSONTextSegmentBytes {
+				return nil, fmt.Errorf("XML text segment exceeds %d bytes", maxXMLJSONTextSegmentBytes)
+			}
 			if text := strings.TrimSpace(string(typed)); text != "" {
-				stack[len(stack)-1].text = append(stack[len(stack)-1].text, text)
+				node := stack[len(stack)-1]
+				if len(node.text) >= maxXMLJSONTextPartsPerNode {
+					return nil, fmt.Errorf("XML element text-part limit exceeded (%d)", maxXMLJSONTextPartsPerNode)
+				}
+				if err := retainStructure(1); err != nil {
+					return nil, err
+				}
+				additional := int64(len(text))
+				if len(node.text) > 0 {
+					additional++
+				}
+				if node.textBytes+additional > maxXMLJSONTextSegmentBytes {
+					return nil, fmt.Errorf("XML element text exceeds %d bytes", maxXMLJSONTextSegmentBytes)
+				}
+				if err := retain(int(additional)); err != nil {
+					return nil, err
+				}
+				node.textBytes += additional
+				node.text = append(node.text, text)
 			}
 		case xml.EndElement:
 			if len(stack) == 0 {
@@ -461,10 +696,10 @@ func xmlToJSONBounded(body []byte, maxBytes int64) ([]byte, error) {
 		return nil, fmt.Errorf("empty XML payload")
 	}
 	buf := newBoundedFormattingBuffer(maxBytes)
-	if err := json.NewEncoder(buf).Encode(root); err != nil {
+	if err := writeBoundedJSONValue(buf, root); err != nil {
 		return nil, err
 	}
-	return bytes.TrimSuffix(buf.Bytes(), []byte{'\n'}), nil
+	return buf.Bytes(), nil
 }
 
 func (node *xmlJSONNode) toJSONValue() any {
@@ -475,11 +710,7 @@ func (node *xmlJSONNode) toJSONValue() any {
 
 	value := make(map[string]any)
 	if len(node.attrs) > 0 {
-		attrs := make(map[string]string, len(node.attrs))
-		for key, attrValue := range node.attrs {
-			attrs[key] = attrValue
-		}
-		value["@attributes"] = attrs
+		value["@attributes"] = node.attrs
 	}
 	if text != "" {
 		value["#text"] = text
@@ -499,6 +730,96 @@ func (node *xmlJSONNode) toJSONValue() any {
 		value[key] = children
 	}
 	return value
+}
+
+func writeBoundedJSONValue(buf *boundedFormattingBuffer, value any) error {
+	switch typed := value.(type) {
+	case map[string]any:
+		if err := buf.WriteByte('{'); err != nil {
+			return err
+		}
+		keys := make([]string, 0, len(typed))
+		for key := range typed {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for index, key := range keys {
+			if index > 0 {
+				if err := buf.WriteByte(','); err != nil {
+					return err
+				}
+			}
+			if err := writeBoundedJSONString(buf, key); err != nil {
+				return err
+			}
+			if err := buf.WriteByte(':'); err != nil {
+				return err
+			}
+			if err := writeBoundedJSONValue(buf, typed[key]); err != nil {
+				return err
+			}
+		}
+		return buf.WriteByte('}')
+	case map[string]string:
+		if err := buf.WriteByte('{'); err != nil {
+			return err
+		}
+		keys := make([]string, 0, len(typed))
+		for key := range typed {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for index, key := range keys {
+			if index > 0 {
+				if err := buf.WriteByte(','); err != nil {
+					return err
+				}
+			}
+			if err := writeBoundedJSONString(buf, key); err != nil {
+				return err
+			}
+			if err := buf.WriteByte(':'); err != nil {
+				return err
+			}
+			if err := writeBoundedJSONString(buf, typed[key]); err != nil {
+				return err
+			}
+		}
+		return buf.WriteByte('}')
+	case []any:
+		if err := buf.WriteByte('['); err != nil {
+			return err
+		}
+		for index, item := range typed {
+			if index > 0 {
+				if err := buf.WriteByte(','); err != nil {
+					return err
+				}
+			}
+			if err := writeBoundedJSONValue(buf, item); err != nil {
+				return err
+			}
+		}
+		return buf.WriteByte(']')
+	case string:
+		return writeBoundedJSONString(buf, typed)
+	default:
+		encoded, err := json.Marshal(typed)
+		if err != nil {
+			return err
+		}
+		_, err = buf.Write(encoded)
+		return err
+	}
+}
+
+func writeBoundedJSONString(buf *boundedFormattingBuffer, value string) error {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	_, err = buf.Write(encoded)
+	return err
 }
 
 func writeXMLValue(buf *boundedFormattingBuffer, name string, value any) error {

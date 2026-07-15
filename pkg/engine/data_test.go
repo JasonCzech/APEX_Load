@@ -2,9 +2,11 @@ package engine
 
 import (
 	"encoding/base64"
+	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -101,6 +103,84 @@ func TestDataProvider_Unique(t *testing.T) {
 	row3 := dp.GetRow("data", 3)
 	if row3["data.id"] != "1" {
 		t.Errorf("vuser 3 should wrap to row 0, got id=%q", row3["data.id"])
+	}
+}
+
+func TestDataProvider_DistributedShardPartitionsDoNotOverlap(t *testing.T) {
+	const assetName = "sha256-users.csv"
+	source := dsl.DataSource{
+		Name:           "data",
+		Type:           "csv",
+		StagedAsset:    assetName,
+		FirstRowHeader: true,
+	}
+	assets := map[string][]byte{assetName: []byte("id\n0\n1\n2\n3\n4\n5\n")}
+
+	for _, strategy := range []string{"sequential", "unique", "pop"} {
+		t.Run(strategy, func(t *testing.T) {
+			source.Strategy = strategy
+			providers := make([]*DataProvider, 2)
+			for ordinal := range providers {
+				provider, err := NewShardedDataProviderWithAssets(
+					[]dsl.DataSource{source},
+					DataShardConfig{Ordinal: uint32(ordinal), Count: 2},
+					assets,
+				)
+				if err != nil {
+					t.Fatalf("new shard %d: %v", ordinal, err)
+				}
+				providers[ordinal] = provider
+			}
+
+			seen := [2]map[string]struct{}{{}, {}}
+			for ordinal, provider := range providers {
+				for localID := 0; localID < 3; localID++ {
+					// Exercise the large disjoint runtime namespaces used by the
+					// controller instead of assuming compact IDs.
+					vuserID := ordinal*int(1<<31-1) + localID
+					row := provider.GetRow("data", vuserID)
+					if row == nil {
+						t.Fatalf("shard %d row %d is nil", ordinal, localID)
+					}
+					seen[ordinal][row["data.id"]] = struct{}{}
+				}
+			}
+			for value := range seen[0] {
+				if _, duplicate := seen[1][value]; duplicate {
+					t.Fatalf("row %q was selected by both shards: %#v", value, seen)
+				}
+			}
+
+			if strategy == "pop" {
+				if row := providers[0].GetRow("data", 99); row != nil {
+					t.Fatalf("pop shard returned row after its partition was exhausted: %#v", row)
+				}
+			}
+			for ordinal, provider := range providers {
+				rows := provider.GetAllRows("data")
+				values, ok := provider.GetColumnValues("data", "id")
+				if !ok || len(rows) != 3 || len(values) != 3 {
+					t.Fatalf("shard %d views = rows:%#v values:%#v ok:%v", ordinal, rows, values, ok)
+				}
+				for index := range rows {
+					if rows[index]["id"] != values[index] {
+						t.Fatalf("shard %d row/column view mismatch at %d: %#v vs %#v", ordinal, index, rows, values)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestDataProvider_StagedAssetMustBePresent(t *testing.T) {
+	_, err := NewShardedDataProviderWithAssets([]dsl.DataSource{{
+		Name:           "data",
+		Type:           "csv",
+		StagedAsset:    "missing.csv",
+		FirstRowHeader: true,
+	}}, DataShardConfig{}, nil)
+	if err == nil {
+		t.Fatal("missing staged asset was accepted")
 	}
 }
 
@@ -497,5 +577,35 @@ func TestDataProvider_RejectsUnsupportedStrategy(t *testing.T) {
 	}})
 	if err == nil {
 		t.Fatal("expected unsupported strategy to fail")
+	}
+}
+
+func TestDataProviderRejectsDuplicateAndExcessiveSources(t *testing.T) {
+	if _, err := NewDataProvider([]dsl.DataSource{
+		{Name: "shared", Type: "csv", InlineData: "value\none\n", FirstRowHeader: true},
+		{Name: " shared ", Type: "file", InlineData: "two"},
+	}); err == nil || !strings.Contains(err.Error(), "duplicate data source") {
+		t.Fatalf("duplicate source error = %v", err)
+	}
+
+	sources := make([]dsl.DataSource, maxDataProviderSources+1)
+	for index := range sources {
+		sources[index] = dsl.DataSource{Name: fmt.Sprintf("source-%d", index), Type: "file", InlineData: "x"}
+	}
+	if _, err := NewDataProvider(sources); err == nil || !strings.Contains(err.Error(), "source limit") {
+		t.Fatalf("source cardinality error = %v", err)
+	}
+}
+
+func TestDataProviderRejectsCSVColumnExpansion(t *testing.T) {
+	header := strings.Repeat("column,", maxDataSourceColumns) + "last\n"
+	_, err := NewDataProvider([]dsl.DataSource{{
+		Name:           "wide",
+		Type:           "csv",
+		InlineData:     header,
+		FirstRowHeader: true,
+	}})
+	if err == nil || !strings.Contains(err.Error(), "column limit") {
+		t.Fatalf("wide CSV error = %v", err)
 	}
 }

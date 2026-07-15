@@ -5,14 +5,26 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/api/testexec"
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	grpcCodes "google.golang.org/grpc/codes"
 	grpcStatus "google.golang.org/grpc/status"
 )
+
+const maxDistributedTargetsPerRun = 256
+
+func validateDistributedRunTargetCount(targets []string) error {
+	if len(targets) > maxDistributedTargetsPerRun {
+		return fmt.Errorf("distributed run targets %d generators; limit is %d", len(targets), maxDistributedTargetsPerRun)
+	}
+	return nil
+}
 
 type generatorDial func(ctx context.Context, target string) (generatorClient, error)
 
@@ -31,6 +43,45 @@ type generatorClient interface {
 type setupTimeoutMetricsClient interface {
 	OpenMetricsStreamWithSetupTimeout(parent context.Context, setupTimeout time.Duration) (*generatorrpc.MetricsStream, error)
 }
+
+type coordinatedWorkCommitClient interface {
+	CommitWorkAt(ctx context.Context, testID string, executionGeneration uint64, startAt time.Time) (generatorrpc.WorkCommitResult, error)
+}
+
+// acknowledgedPauseClient is implemented by the production generator RPC
+// client. It is optional so older in-process test adapters can continue to use
+// the legacy stream signal; real distributed clients always take the unary ACK
+// path below.
+type acknowledgedPauseClient interface {
+	SetPaused(context.Context, generatorrpc.PauseControl) (generatorrpc.PauseResult, error)
+}
+
+type distributedPauseUncertainError struct {
+	testID            string
+	unresolvedTargets []string
+	err               error
+}
+
+func (e *distributedPauseUncertainError) Error() string { return e.err.Error() }
+func (e *distributedPauseUncertainError) Unwrap() error { return e.err }
+
+type distributedDurationUncertainError struct {
+	testID            string
+	unresolvedTargets []string
+	err               error
+}
+
+func (e *distributedDurationUncertainError) Error() string { return e.err.Error() }
+func (e *distributedDurationUncertainError) Unwrap() error { return e.err }
+
+type distributedVUserUncertainError struct {
+	testID            string
+	unresolvedTargets []string
+	err               error
+}
+
+func (e *distributedVUserUncertainError) Error() string { return e.err.Error() }
+func (e *distributedVUserUncertainError) Unwrap() error { return e.err }
 
 // distributedStopFanoutError reports that a remote stop failed after at least
 // one StopTest RPC was dispatched. A transport failure cannot prove that the
@@ -67,13 +118,38 @@ func distributedStopMayHaveApplied(err error) bool {
 	return errors.As(err, &mutationErr) && mutationErr.MayHaveApplied()
 }
 
-func (b *distributedExecutionBackend) openMetricsStream(client generatorClient) (*generatorrpc.MetricsStream, error) {
+func (b *distributedExecutionBackend) openMetricsStream(ctx context.Context, client generatorClient, testID string, executionGeneration uint64) (*generatorrpc.MetricsStream, error) {
+	return b.openMetricsStreamWithSetupTimeout(ctx, client, testID, executionGeneration, b.timeout)
+}
+
+func (b *distributedExecutionBackend) openMetricsStreamWithSetupTimeout(ctx context.Context, client generatorClient, testID string, executionGeneration uint64, setupTimeout time.Duration) (*generatorrpc.MetricsStream, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if setupTimeout <= 0 {
+		setupTimeout = b.timeout
+	}
+	if bounded, ok := client.(executionTestSetupMetricsClient); ok {
+		return bounded.OpenMetricsStreamWithSetupTimeoutForTestGeneration(ctx, setupTimeout, testID, executionGeneration)
+	}
+	if scoped, ok := client.(executionTestMetricsClient); ok {
+		return scoped.OpenMetricsStreamForTestGeneration(ctx, testID, executionGeneration)
+	}
+	if executionGeneration > 0 {
+		if bounded, ok := client.(executionGenerationSetupMetricsClient); ok {
+			return bounded.OpenMetricsStreamWithSetupTimeoutForGeneration(ctx, setupTimeout, executionGeneration)
+		}
+		if generationClient, ok := client.(executionGenerationMetricsClient); ok {
+			return generationClient.OpenMetricsStreamForGeneration(ctx, executionGeneration)
+		}
+		return nil, fmt.Errorf("generator client does not support execution-fenced metrics streams")
+	}
 	if bounded, ok := client.(setupTimeoutMetricsClient); ok {
-		return bounded.OpenMetricsStreamWithSetupTimeout(context.Background(), b.timeout)
+		return bounded.OpenMetricsStreamWithSetupTimeout(ctx, setupTimeout)
 	}
 	// Test adapters and legacy clients do not expose the bounded setup method.
 	// Production generatorrpc clients always take the bounded path above.
-	return client.OpenMetricsStream(context.Background())
+	return client.OpenMetricsStream(ctx)
 }
 
 type generatorLoadSnapshot struct {
@@ -98,17 +174,44 @@ type generatorTargetSpec struct {
 	Labels    map[string]string
 }
 
+func validateDistributedShardRunGoals(group TestGroup, peakShards []GeneratorShardSummary) error {
+	if len(peakShards) <= 1 {
+		return nil
+	}
+	var globalIterations int
+	var maxTransactions int64
+	if group.RunLogicGoals != nil {
+		globalIterations = group.RunLogicGoals.GlobalIterations
+		maxTransactions = group.RunLogicGoals.MaxTransactions
+	}
+	if group.script != nil {
+		if globalIterations <= 0 {
+			globalIterations = group.script.Config.RunLogic.GlobalIterations
+		}
+		if maxTransactions <= 0 {
+			maxTransactions = group.script.Config.RunLogic.MaxTransactions
+		}
+	}
+	if globalIterations > 0 || maxTransactions > 0 {
+		return fmt.Errorf("global iteration/transaction goals require a single generator shard because cross-generator goal coordination is unavailable")
+	}
+	return nil
+}
+
 type distributedExecutionBackend struct {
-	targetsMu    sync.RWMutex
-	targets      []generatorTargetSpec
-	timeout      time.Duration
-	dial         generatorDial
-	drainMu      sync.RWMutex
-	drainStates  map[string]string
-	identityMu   sync.RWMutex
-	targetIDs    map[string]string
-	idTargets    map[string]string
-	evacuationMu sync.Mutex
+	targetsMu          sync.RWMutex
+	targets            []generatorTargetSpec
+	timeout            time.Duration
+	stopGrace          time.Duration
+	dial               generatorDial
+	drainMu            sync.RWMutex
+	drainStates        map[string]string
+	identityMu         sync.RWMutex
+	targetIDs          map[string]string
+	idTargets          map[string]string
+	evacuationMu       sync.Mutex
+	inventoryProbeOnce sync.Once
+	inventoryProbeGate chan struct{}
 	// onIdentityRecorded, if set, is invoked (outside all backend locks) the first
 	// time a generator's id↔target mapping is established or changes — i.e. when a
 	// generator (re)connects. The Server uses it to apply a persisted metadata
@@ -144,6 +247,7 @@ func newDistributedExecutionBackend(targets []string, timeout time.Duration, dia
 	return &distributedExecutionBackend{
 		targets:     clonedTargets,
 		timeout:     timeout,
+		stopGrace:   max(2*timeout, 5*time.Second),
 		dial:        dial,
 		drainStates: make(map[string]string),
 		targetIDs:   make(map[string]string),
@@ -550,7 +654,23 @@ func (tr *TestRunner) enrichGeneratorTargetSpecsWithLabels(specs []generatorTarg
 }
 
 func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
+	executionGeneration, executionLeaseOwnerID, _, termErr := tr.generatorExecutionClaim()
+	if termErr != nil {
+		tr.failTestBeforeRunAndLog(test, fmt.Sprintf("capture generator execution term: %v", termErr))
+		return
+	}
 	tr.mu.Lock()
+	if err := validateManagedTestWorkloadBounds(test); err != nil {
+		tr.mu.Unlock()
+		tr.failTestBeforeRunAndLog(test, fmt.Sprintf("invalid workload: %v", err))
+		return
+	}
+	if test.executionGeneration > 0 && test.executionGeneration != executionGeneration {
+		expected := test.executionGeneration
+		tr.mu.Unlock()
+		tr.failTestBeforeRunAndLog(test, fmt.Sprintf("generator execution term changed before launch (expected %d, current %d)", expected, executionGeneration))
+		return
+	}
 	assignment, err := normalizeGeneratorAssignmentSettings(test.Assignment)
 	if err != nil {
 		tr.mu.Unlock()
@@ -558,6 +678,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		return
 	}
 	test.Assignment = assignment
+	test.executionGeneration = executionGeneration
 	tr.mu.Unlock()
 	targetSpecs := tr.enrichGeneratorTargetSpecsWithLabels(b.configuredTargetSpecs())
 	if len(targetSpecs) == 0 {
@@ -580,10 +701,17 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 	}
 	allTargets = append(allTargets, groupTargets...)
 	allTargets = orderedUniqueTargets(allTargets)
+	if err := validateDistributedRunTargetCount(allTargets); err != nil {
+		tr.failTestBeforeRunAndLog(test, err.Error())
+		return
+	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
-	defer cancel()
-
+	tr.mu.RLock()
+	executionCtx := test.executionCtx
+	tr.mu.RUnlock()
+	if executionCtx == nil {
+		executionCtx = context.Background()
+	}
 	clientsByTarget := make(map[string]generatorClient)
 	streamsByTarget := make(map[string]*generatorrpc.MetricsStream)
 	distributedScripts := make(map[string]map[string]struct{})
@@ -597,7 +725,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 					continue
 				}
 				stopCtx, stopCancel := context.WithTimeout(context.Background(), b.timeout)
-				_, _ = client.StopTest(stopCtx, test.ID, false)
+				_, _ = stopGeneratorTest(stopCtx, client, test.ID, false, executionGeneration)
 				stopCancel()
 			}
 		}
@@ -612,14 +740,80 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		cleanup(true)
 		tr.failTestBeforeRunAndLog(test, message)
 	}
+	type discoveryResult struct {
+		target   string
+		client   generatorClient
+		load     generatorLoadSnapshot
+		err      error
+		fatalErr error
+	}
+	discoveryCtx, discoveryCancel := context.WithCancel(executionCtx)
+	jobs := make(chan string, len(allTargets))
+	results := make(chan discoveryResult, len(allTargets))
+	workerCount := min(len(allTargets), maxGeneratorEpochKeeperWorkers)
+	var discoveryWorkers sync.WaitGroup
+	discoveryWorkers.Add(workerCount)
+	for range workerCount {
+		go func() {
+			defer discoveryWorkers.Done()
+			for target := range jobs {
+				targetCtx, targetCancel := context.WithTimeout(discoveryCtx, b.timeout)
+				client, dialErr := b.dial(targetCtx, target)
+				if dialErr != nil {
+					targetCancel()
+					results <- discoveryResult{target: target, err: dialErr}
+					continue
+				}
+				currentGeneration, currentLeaseOwnerID, claimDeadline, claimErr := tr.generatorExecutionClaim()
+				if claimErr != nil || currentGeneration != executionGeneration || currentLeaseOwnerID != executionLeaseOwnerID {
+					targetCancel()
+					_ = client.Close()
+					results <- discoveryResult{target: target, fatalErr: fmt.Errorf("execution leadership changed during generator discovery")}
+					continue
+				}
+				if claimErr := claimGeneratorExecutionEpoch(targetCtx, client, executionGeneration, executionLeaseOwnerID, claimDeadline, b.timeout); claimErr != nil {
+					targetCancel()
+					_ = client.Close()
+					results <- discoveryResult{target: target, err: claimErr}
+					continue
+				}
+				load := b.probeGeneratorLoad(targetCtx, target, client)
+				targetCancel()
+				if !load.HeartbeatOK {
+					_ = client.Close()
+					results <- discoveryResult{target: target, err: fmt.Errorf("generator heartbeat probe failed")}
+					continue
+				}
+				results <- discoveryResult{target: target, client: client, load: load}
+			}
+		}()
+	}
 	for _, target := range allTargets {
-		client, err := b.dial(ctx, target)
-		if err != nil {
-			slog.Warn("distributed generator unavailable during placement", "target", target, "error", err)
+		jobs <- target
+	}
+	close(jobs)
+	go func() {
+		discoveryWorkers.Wait()
+		close(results)
+	}()
+	var discoveryFatal error
+	for result := range results {
+		if result.fatalErr != nil && discoveryFatal == nil {
+			discoveryFatal = result.fatalErr
+		}
+		if result.err != nil {
+			slog.Warn("distributed generator unavailable during placement", "target", result.target, "error", result.err)
 			continue
 		}
-		clientsByTarget[target] = client
-		loadByTarget[target] = b.probeGeneratorLoad(ctx, target, client)
+		if result.client != nil {
+			clientsByTarget[result.target] = result.client
+			loadByTarget[result.target] = result.load
+		}
+	}
+	discoveryCancel()
+	if discoveryFatal != nil {
+		failStartup(discoveryFatal.Error())
+		return
 	}
 	if len(clientsByTarget) == 0 {
 		tr.failTestBeforeRunAndLog(test, "no reachable generator targets configured")
@@ -627,7 +821,10 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 	}
 	defaultLoadByTarget := loadSnapshotsForTargets(loadByTarget, allowedTargets)
 	peakGroupShards := planDistributedGroupShardsForCandidates(test.Groups, loadByTarget, defaultLoadByTarget, allTargets, allowedTargets, assignment, targetSpecs)
+	preBaseline, postBaseline := testexec.ResourceBaselineWindows(test.ResourceBaseline)
+	preBaseline += testexec.StartDelayWindow(test.StartDelay)
 	activeGroupShards := make(map[string][]GeneratorShardSummary, len(peakGroupShards))
+	var shardNamespaceBase uint64
 	for _, group := range test.Groups {
 		if group.script == nil {
 			failStartup(fmt.Sprintf("group %q has no compiled script", group.Name))
@@ -639,14 +836,29 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			failStartup(generatorPlacementRejectionMessage(group, loadByTarget, targetSpecs, assignment))
 			return
 		}
-		shards := initialGroupShardsForRun(group, peakShards, loadByTarget)
-		activeGroupShards[group.Name] = cloneGeneratorShardSummaries(shards)
-
-		scriptContent, contentHash, err := marshalDistributedScript(group.script)
-		if err != nil {
-			failStartup(fmt.Sprintf("serialize script %q: %v", group.ScriptName, err))
+		if err := validateDistributedShardRunGoals(group, peakShards); err != nil {
+			failStartup(fmt.Sprintf("prepare distributed group %q: %v", group.Name, err))
 			return
 		}
+		shards := initialGroupShardsForRun(group, peakShards, loadByTarget)
+		if uint64(len(peakShards)) > ^uint64(0)-shardNamespaceBase {
+			failStartup(fmt.Sprintf("prepare shard coordinates for group %q: namespace index overflow", group.Name))
+			return
+		}
+		shards, err = decorateDistributedShardCoordinates(shards, peakShards, shardNamespaceBase)
+		if err != nil {
+			failStartup(fmt.Sprintf("prepare shard coordinates for group %q: %v", group.Name, err))
+			return
+		}
+		shardNamespaceBase += uint64(len(peakShards))
+		activeGroupShards[group.Name] = cloneGeneratorShardSummaries(shards)
+
+		scriptContent, contentHash, dataFiles, err := generatorrpc.PrepareDistributedScript(group.script)
+		if err != nil {
+			failStartup(fmt.Sprintf("stage script %q: %v", group.ScriptName, err))
+			return
+		}
+		rampUp, rampDown, initStrategy := distributedGroupRuntimeConfig(test, group)
 
 		for _, shard := range shards {
 			if shard.Target == "" {
@@ -667,12 +879,16 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			}
 
 			if _, ok := distributedScripts[target][group.ScriptID]; !ok {
-				if _, err := client.DistributeScript(ctx, generatorrpc.Script{
-					ID:          group.ScriptID,
-					Content:     scriptContent,
-					ContentHash: contentHash,
-				}); err != nil {
-					failStartup(fmt.Sprintf("distribute script %q: %v", group.ScriptName, err))
+				rpcCtx, rpcCancel := context.WithTimeout(executionCtx, b.timeout)
+				_, distributeErr := client.DistributeScript(rpcCtx, generatorrpc.Script{
+					ID:                  group.ScriptID,
+					ExecutionGeneration: executionGeneration,
+					Content:             scriptContent,
+					ContentHash:         contentHash,
+				})
+				rpcCancel()
+				if distributeErr != nil {
+					failStartup(fmt.Sprintf("distribute script %q: %v", group.ScriptName, distributeErr))
 					return
 				}
 				distributedScripts[target][group.ScriptID] = struct{}{}
@@ -687,15 +903,27 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			// target before the RPC so startup cleanup always issues an idempotent
 			// StopTest and cannot orphan load on an ambiguous result.
 			startedTargets[target] = struct{}{}
-			assignment, err := client.AssignWork(ctx, generatorrpc.Assignment{
-				TestID:                test.ID,
-				GroupName:             group.Name,
-				TargetDurationSeconds: int64(test.Duration / time.Second),
-				ScriptID:              group.ScriptID,
-				VUserCount:            int32(shard.VUsers),
-				RampUpSeconds:         int32(group.rampUpDur / time.Second),
-				RedactionRules:        cloneRedactionRules(group.redactionRules),
+			rpcCtx, rpcCancel := context.WithTimeout(executionCtx, b.timeout)
+			assignment, err := client.AssignWork(rpcCtx, generatorrpc.Assignment{
+				TestID:              test.ID,
+				ExecutionGeneration: executionGeneration,
+				GroupName:           group.Name,
+				TargetDuration:      test.Duration,
+				ScriptID:            group.ScriptID,
+				ExpectedScriptHash:  contentHash,
+				VUserCount:          int32(shard.VUsers),
+				RampUp:              rampUp,
+				RampDown:            rampDown,
+				InitStrategy:        initStrategy,
+				PreBaseline:         preBaseline,
+				PostBaseline:        postBaseline,
+				ShardOrdinal:        shard.ShardOrdinal,
+				ShardCount:          shard.ShardCount,
+				VUserIDOffset:       shard.VUserIDOffset,
+				DataFiles:           dataFiles,
+				RedactionRules:      cloneRedactionRules(group.redactionRules),
 			})
+			rpcCancel()
 			if err != nil {
 				failStartup(fmt.Sprintf("assign work for group %q on %q: %v", group.Name, target, err))
 				return
@@ -728,7 +956,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		if _, ok := streamsByTarget[target]; ok {
 			continue
 		}
-		stream, err := b.openMetricsStream(assignedClients[target])
+		stream, err := b.openMetricsStream(executionCtx, assignedClients[target], test.ID, executionGeneration)
 		if err != nil {
 			failStartup(fmt.Sprintf("open generator metrics stream for %q: %v", target, err))
 			return
@@ -736,14 +964,35 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		streamsByTarget[target] = stream
 	}
 
-	started, startErr := b.startDistributedTestRun(tr, test, activeGroupShards, assignedClients, streamsByTarget)
+	started, activate, startErr := b.prepareDistributedTestRun(tr, test, activeGroupShards, assignedClients, streamsByTarget)
 	if startErr != nil {
 		failStartup(startErr.Error())
 		return
 	}
 	if !started {
 		cleanup(true)
+		return
 	}
+	// Choose and durably persist the exact barrier only after the initial RUNNING
+	// transition. If persistence consumes its safety window, regenerate a later
+	// barrier before any generator is allowed to commit.
+	commitStartAt, barrierErr := persistFreshDistributedScheduledStart(tr, test, b.timeout)
+	if barrierErr != nil {
+		message := fmt.Sprintf("persist coordinated distributed start: %v", barrierErr)
+		if terminalErr := b.failClosedDistributedCommit(tr, test, message); terminalErr != nil {
+			slog.Error("distributed start persistence failure teardown remains retryable", "test_id", test.ID, "error", terminalErr)
+		}
+		return
+	}
+	if err := b.commitDistributedWork(executionCtx, test.ID, executionGeneration, commitStartAt, assignedClients); err != nil {
+		message := fmt.Sprintf("commit distributed work: %v", err)
+		if terminalErr := b.failClosedDistributedCommit(tr, test, message); terminalErr != nil {
+			slog.Error("distributed commit failure teardown remains retryable", "test_id", test.ID, "error", terminalErr)
+		}
+		return
+	}
+	activate()
+	go b.renewGeneratorExecutionEpoch(executionCtx, tr, test, executionGeneration)
 }
 
 func distributedRunStartable(tr *TestRunner, test *ManagedTest) bool {
@@ -754,6 +1003,190 @@ func distributedRunStartable(tr *TestRunner, test *ManagedTest) bool {
 	defer tr.mu.RUnlock()
 	current := tr.tests[test.ID]
 	return !tr.shuttingDown && current == test && test.Status == "INITIALIZING" && test.executionCtx != nil && test.executionCtx.Err() == nil
+}
+
+func decorateDistributedShardCoordinates(active []GeneratorShardSummary, peak []GeneratorShardSummary, namespaceBaseOption ...uint64) ([]GeneratorShardSummary, error) {
+	namespaceBase := uint64(0)
+	if len(namespaceBaseOption) > 0 {
+		namespaceBase = namespaceBaseOption[0]
+	}
+	if len(active) == 0 {
+		return nil, nil
+	}
+	if len(peak) == 0 || uint64(len(peak)) > uint64(^uint32(0)) {
+		return nil, fmt.Errorf("invalid peak shard count %d", len(peak))
+	}
+	for index, shard := range peak {
+		if shard.VUsers < 0 {
+			return nil, fmt.Errorf("peak shard %d has negative vuser count", index)
+		}
+	}
+	used := make([]bool, len(peak))
+	decorated := cloneGeneratorShardSummaries(active)
+	for activeIndex := range decorated {
+		peakIndex := -1
+		for candidate := range peak {
+			if !used[candidate] && peak[candidate].Target == decorated[activeIndex].Target {
+				peakIndex = candidate
+				break
+			}
+		}
+		if peakIndex < 0 {
+			return nil, fmt.Errorf("active target %q is absent from peak placement", decorated[activeIndex].Target)
+		}
+		used[peakIndex] = true
+		namespaceIndex := namespaceBase + uint64(peakIndex)
+		if namespaceIndex > ^uint64(0)/generatorrpc.DistributedVUserIDNamespaceSize {
+			return nil, fmt.Errorf("shard vuser id namespace offset overflows uint64")
+		}
+		decorated[activeIndex].ShardOrdinal = uint32(peakIndex)
+		decorated[activeIndex].ShardCount = uint32(len(peak))
+		decorated[activeIndex].VUserIDOffset = namespaceIndex * generatorrpc.DistributedVUserIDNamespaceSize
+	}
+	return decorated, nil
+}
+
+func distributedGroupRuntimeConfig(test *ManagedTest, group TestGroup) (time.Duration, time.Duration, string) {
+	rampUp := group.rampUpDur
+	rampDown := time.Duration(0)
+	initStrategy := strings.TrimSpace(group.Initialization)
+	if test != nil {
+		for _, spec := range test.groupSpecs {
+			if spec.Name != group.Name {
+				continue
+			}
+			rampUp = spec.RampUp
+			rampDown = spec.RampDown
+			if strings.TrimSpace(spec.InitStrategy) != "" {
+				initStrategy = spec.InitStrategy
+			}
+			break
+		}
+	}
+	if initStrategy == "" {
+		initStrategy = "at_runtime"
+	}
+	return rampUp, rampDown, initStrategy
+}
+
+func distributedEvacuationRemainingRamp(configuredRamp, steadyElapsed time.Duration) time.Duration {
+	return max(configuredRamp-steadyElapsed, time.Duration(0))
+}
+
+func distributedCommitStartLead(rpcTimeout time.Duration) time.Duration {
+	// Commit is a local staged-state transition and gets a dedicated bounded ACK
+	// window. The common barrier must be strictly later than that entire window:
+	// otherwise a fast generator can start while a slow peer is still able to
+	// time out or reject, producing partial fleet load before fail-closed cleanup.
+	ackWindow := distributedCommitAckTimeout(rpcTimeout)
+	margin := ackWindow / 10
+	if margin < 500*time.Millisecond {
+		margin = 500 * time.Millisecond
+	}
+	if margin > time.Second {
+		margin = time.Second
+	}
+	return ackWindow + margin
+}
+
+func distributedCommitAckTimeout(rpcTimeout time.Duration) time.Duration {
+	if rpcTimeout <= 0 {
+		rpcTimeout = 10 * time.Second
+	}
+	// A commit only flips already-validated staged state. Bounding this phase
+	// avoids making every run wait the generic (often 10s) generator RPC timeout
+	// while retaining a barrier that provably covers its complete failure window.
+	return min(rpcTimeout, 2*time.Second)
+}
+
+func (b *distributedExecutionBackend) commitDistributedWork(parent context.Context, testID string, executionGeneration uint64, startAt time.Time, clients map[string]generatorClient) error {
+	if parent == nil {
+		parent = context.Background()
+	}
+	if err := parent.Err(); err != nil {
+		return err
+	}
+	targets := orderedGeneratorTargets(clients, b.configuredTargets())
+	if len(targets) == 0 {
+		return fmt.Errorf("no assigned generator clients")
+	}
+	committers := make(map[string]coordinatedWorkCommitClient, len(targets))
+	for _, target := range targets {
+		client := clients[target]
+		if client == nil {
+			return fmt.Errorf("generator client %q is unavailable", target)
+		}
+		committer, ok := client.(coordinatedWorkCommitClient)
+		if !ok {
+			return fmt.Errorf("generator client %q does not support coordinated staged work commit", target)
+		}
+		committers[target] = committer
+	}
+
+	type commitResult struct {
+		target string
+		err    error
+	}
+	results := make(chan commitResult, len(targets))
+	for _, target := range targets {
+		target := target
+		go func() {
+			ctx, cancel := context.WithTimeout(parent, distributedCommitAckTimeout(b.timeout))
+			result, err := committers[target].CommitWorkAt(ctx, testID, executionGeneration, startAt)
+			cancel()
+			if err == nil && !result.Accepted {
+				err = fmt.Errorf("generator rejected commit: %s", strings.TrimSpace(result.ErrorMessage))
+			}
+			results <- commitResult{target: target, err: err}
+		}()
+	}
+	failures := make([]error, 0)
+	for range targets {
+		result := <-results
+		if result.err != nil {
+			failures = append(failures, fmt.Errorf("commit work on %s: %w", result.target, result.err))
+		}
+	}
+	return errors.Join(failures...)
+}
+
+func (b *distributedExecutionBackend) failClosedDistributedCommit(tr *TestRunner, test *ManagedTest, message string) error {
+	if tr == nil || test == nil {
+		return fmt.Errorf("distributed commit failure has no managed test")
+	}
+	tr.mu.Lock()
+	if tr.tests[test.ID] != test || isTerminalTestStatus(test.Status) {
+		tr.mu.Unlock()
+		return nil
+	}
+	test.Status = "STOPPING"
+	test.Error = message
+	test.remoteFinalizing = true
+	persistErr := retryDurableTransition(func() error { return tr.saveManagedTestRecord(test) })
+	tr.cancelAllVUserScaleRampsLocked(test)
+	cancel := test.cancel
+	tr.mu.Unlock()
+
+	stopAndFinalize := func() error {
+		if err := b.StopTestContext(context.Background(), tr, test); err != nil {
+			return err
+		}
+		b.closeRemoteResources(tr, test)
+		return tr.completeTestRun(test, "FAILED", time.Now(), message, nil)
+	}
+	stopErr := stopAndFinalize()
+	if cancel != nil {
+		cancel()
+	}
+	tr.broadcastEvent("test_stopping", test)
+	if stopErr != nil {
+		tr.enqueueTerminalRetry("commit-stop:"+test.ID, "distributed startup commit teardown", stopAndFinalize)
+	}
+	var persistWrapped error
+	if persistErr != nil {
+		persistWrapped = fmt.Errorf("persist distributed commit failure STOPPING state: %w", persistErr)
+	}
+	return errors.Join(persistWrapped, stopErr)
 }
 
 func (b *distributedExecutionBackend) StopTest(tr *TestRunner, test *ManagedTest) error {
@@ -767,7 +1200,24 @@ func (b *distributedExecutionBackend) StopTestContext(parent context.Context, tr
 	tr.mu.RLock()
 	clientsByTarget, single, remoteTarget := cloneClientMap(test.remoteClientsByTarget), test.remoteClient, test.remoteTarget
 	status := test.Status
+	executionGeneration := test.executionGeneration
+	executionCtx := test.executionCtx
 	tr.mu.RUnlock()
+	// Stop work is canceled by either the caller's deadline (shutdown/API) or
+	// the run/leadership epoch. Using executionCtx alone would silently ignore a
+	// bounded parent whenever a live run context was present.
+	stopBase, stopBaseCancel := context.WithCancel(parent)
+	defer stopBaseCancel()
+	// Once STOPPING is durable, executionCtx is intentionally canceled to halt
+	// local run work. Teardown retries must nevertheless reach the exact remote
+	// generation; binding them to that already-canceled context would make every
+	// retry fail before dialing or dispatching a Stop RPC. The caller supplies the
+	// bounded teardown context and the generation fence prevents stopping a newer
+	// incarnation of the same test.
+	if executionCtx != nil && status != "STOPPING" {
+		stopExecutionCancel := context.AfterFunc(executionCtx, stopBaseCancel)
+		defer stopExecutionCancel()
+	}
 	clients := clientsByTarget
 	var dialed generatorClient
 	if len(clients) == 0 {
@@ -777,7 +1227,7 @@ func (b *distributedExecutionBackend) StopTestContext(parent context.Context, tr
 			if remoteTarget == "" {
 				return fmt.Errorf("distributed generator target is not recorded")
 			}
-			ctx, cancel := context.WithTimeout(parent, b.timeout)
+			ctx, cancel := context.WithTimeout(stopBase, b.timeout)
 			client, err := b.dial(ctx, remoteTarget)
 			cancel()
 			if err != nil {
@@ -790,26 +1240,41 @@ func (b *distributedExecutionBackend) StopTestContext(parent context.Context, tr
 	}
 	targets := orderedGeneratorTargets(clients, b.configuredTargets())
 	type stopResult struct {
-		target string
-		err    error
+		target    string
+		attempted bool
+		pending   int32
+		err       error
 	}
 	results := make(chan stopResult, len(targets))
 	for _, target := range targets {
 		target := target
 		go func() {
-			ctx, cancel := context.WithTimeout(parent, b.timeout)
-			defer cancel()
-			stop, err := clients[target].StopTest(ctx, test.ID, true)
+			if err := stopBase.Err(); err != nil {
+				results <- stopResult{target: target, err: err}
+				return
+			}
+			client := clients[target]
+			if client == nil {
+				results <- stopResult{target: target, err: fmt.Errorf("generator client is unavailable")}
+				return
+			}
+			ctx, cancel := context.WithTimeout(stopBase, b.timeout)
+			stop, err := stopGeneratorTest(ctx, client, test.ID, true, executionGeneration)
+			cancel()
 			if err == nil && !stop.Acknowledged {
 				err = fmt.Errorf("generator did not acknowledge stop for %s", test.ID)
 			}
-			results <- stopResult{target: target, err: err}
+			results <- stopResult{target: target, attempted: true, pending: stop.PendingVUsers, err: err}
 		}()
 	}
 	var stopErrs []error
+	attemptedTargets := make([]string, 0, len(targets))
 	acknowledgedTargets := make([]string, 0, len(targets))
 	for range targets {
 		result := <-results
+		if result.attempted {
+			attemptedTargets = append(attemptedTargets, result.target)
+		}
 		err := result.err
 		if err != nil {
 			code := grpcStatus.Code(err)
@@ -823,12 +1288,15 @@ func (b *distributedExecutionBackend) StopTestContext(parent context.Context, tr
 		}
 		acknowledgedTargets = append(acknowledgedTargets, result.target)
 	}
+	sort.Strings(attemptedTargets)
+	sort.Strings(acknowledgedTargets)
 	stopErr := errors.Join(stopErrs...)
 	if stopErr == nil {
+		b.startDistributedStopFinalizer(tr, test, executionGeneration)
 		return nil
 	}
 	return &distributedStopFanoutError{
-		attemptedTargets:    append([]string(nil), targets...),
+		attemptedTargets:    attemptedTargets,
 		acknowledgedTargets: acknowledgedTargets,
 		err:                 stopErr,
 	}
@@ -843,6 +1311,9 @@ func initialGroupShardsForRun(group TestGroup, peakShards []GeneratorShardSummar
 }
 
 func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedTest, groupName string, targetVUsers int) error {
+	if targetVUsers < 0 || targetVUsers > maxManagedTestVUsers {
+		return fmt.Errorf("target vusers must be between 0 and %d", maxManagedTestVUsers)
+	}
 	tr.mu.RLock()
 	if tr.tests[test.ID] != test || test.Status != "RUNNING" || test.remoteFinalizing {
 		status := test.Status
@@ -850,6 +1321,8 @@ func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedT
 		return fmt.Errorf("distributed test is %s and cannot be scaled", status)
 	}
 	controlGeneration := test.remoteControlGeneration
+	executionGeneration := test.executionGeneration
+	executionCtx := test.executionCtx
 	groupExists := false
 	for _, group := range test.Groups {
 		if group.Name == groupName {
@@ -859,16 +1332,30 @@ func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedT
 	}
 	shards := cloneGeneratorShardSummaries(test.remoteGroupShards[groupName])
 	groupTarget, groupTargetOK := test.remoteGroupTargets[groupName]
-	currentShardVUsers := testGroupCurrentShardVUsers(test, groupName)
+	previousGroupVUsers, hasPreviousGroupVUsers := test.scaleAdjustmentPrevious[groupName]
+	if !hasPreviousGroupVUsers {
+		previousGroupVUsers = testGroupCurrentShardVUsers(test, groupName)
+	}
 	clientsByTarget, single, remoteTarget := cloneClientMap(test.remoteClientsByTarget), test.remoteClient, test.remoteTarget
 	tr.mu.RUnlock()
+	if previousGroupVUsers < 0 || previousGroupVUsers > maxManagedTestVUsers {
+		return fmt.Errorf("stored group VUser count must be between 0 and %d", maxManagedTestVUsers)
+	}
+	for _, shard := range shards {
+		if shard.VUsers < 0 || shard.VUsers > maxManagedTestVUsers {
+			return fmt.Errorf("stored shard VUser count must be between 0 and %d", maxManagedTestVUsers)
+		}
+	}
+	if executionCtx == nil {
+		executionCtx = context.Background()
+	}
 
 	if !groupExists {
 		return fmt.Errorf("test group not found: %s", groupName)
 	}
 	if len(shards) == 0 {
 		if groupTargetOK && groupTarget != "" {
-			shards = []GeneratorShardSummary{{Group: groupName, Target: groupTarget, VUsers: currentShardVUsers}}
+			shards = []GeneratorShardSummary{{Group: groupName, Target: groupTarget, VUsers: previousGroupVUsers}}
 		}
 	}
 	if len(shards) == 0 {
@@ -876,35 +1363,42 @@ func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedT
 		if err != nil {
 			return err
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
+		ctx, cancel := context.WithTimeout(executionCtx, b.timeout)
 		defer cancel()
 		adjustment, err := client.AdjustVUsers(ctx, generatorrpc.VUserAdjustment{
-			TestID:       test.ID,
-			GroupName:    groupName,
-			TargetVUsers: int32(targetVUsers),
+			TestID:              test.ID,
+			ExecutionGeneration: executionGeneration,
+			GroupName:           groupName,
+			TargetVUsers:        int32(targetVUsers),
 		})
-		if err != nil {
-			return fmt.Errorf("adjust remote vusers: %w", err)
-		}
-		if !adjustment.Accepted {
-			return fmt.Errorf("generator did not accept vuser adjustment for %s", test.ID)
+		if err != nil || !adjustment.Accepted {
+			forwardErr := err
+			if forwardErr != nil {
+				forwardErr = fmt.Errorf("adjust remote vusers: %w", forwardErr)
+			} else {
+				forwardErr = fmt.Errorf("generator did not accept vuser adjustment for %s", test.ID)
+			}
+			rollbackErr := b.rollbackSingleShardVUsers(test.ID, executionGeneration, groupName, client, previousGroupVUsers)
+			if rollbackErr != nil {
+				return &distributedVUserUncertainError{
+					testID:            test.ID,
+					unresolvedTargets: []string{firstNonEmpty(groupTarget, remoteTarget, "generator")},
+					err:               errors.Join(forwardErr, fmt.Errorf("restore remote vusers after ambiguous adjustment: %w", rollbackErr)),
+				}
+			}
+			return forwardErr
 		}
 		tr.mu.Lock()
 		current := distributedControlCommitCurrentLocked(tr, test, "RUNNING", controlGeneration)
 		tr.mu.Unlock()
 		if !current {
-			rollbackCtx, rollbackCancel := context.WithTimeout(context.Background(), b.timeout)
-			rollback, rollbackErr := client.AdjustVUsers(rollbackCtx, generatorrpc.VUserAdjustment{
-				TestID:       test.ID,
-				GroupName:    groupName,
-				TargetVUsers: int32(currentShardVUsers),
-			})
-			rollbackCancel()
+			rollbackErr := b.rollbackSingleShardVUsers(test.ID, executionGeneration, groupName, client, previousGroupVUsers)
 			if rollbackErr != nil {
-				return fmt.Errorf("distributed scale became stale; rollback vusers: %w", rollbackErr)
-			}
-			if !rollback.Accepted {
-				return fmt.Errorf("distributed scale became stale; generator did not accept vuser rollback for %s", test.ID)
+				return &distributedVUserUncertainError{
+					testID:            test.ID,
+					unresolvedTargets: []string{firstNonEmpty(groupTarget, remoteTarget, "generator")},
+					err:               fmt.Errorf("distributed scale became stale; rollback vusers: %w", rollbackErr),
+				}
 			}
 			return fmt.Errorf("distributed scale became stale before commit")
 		}
@@ -930,7 +1424,7 @@ func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedT
 			return fmt.Errorf("selected generator %q is not connected", target)
 		}
 		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
+			ctx, cancel := context.WithTimeout(executionCtx, b.timeout)
 			defer cancel()
 			snapshot := b.probeGeneratorLoad(ctx, target, client)
 			snapshot.AvailableCapacity += int32(shardVUsersForTarget(shards, target))
@@ -945,6 +1439,10 @@ func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedT
 		loadByTarget[result.target] = result.snapshot
 	}
 	nextShards := capacityWeightedShardsIncludingZero(groupName, targetVUsers, targets, loadByTarget, shardStrategyForGroupShards(shards))
+	nextShards, err = preserveShardCoordinatesByTarget(nextShards, shards)
+	if err != nil {
+		return fmt.Errorf("preserve distributed shard coordinates: %w", err)
+	}
 	previousByTarget := make(map[string]int, len(shards))
 	for _, shard := range shards {
 		previousByTarget[shard.Target] = shard.VUsers
@@ -962,12 +1460,13 @@ func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedT
 			continue
 		}
 		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
+			ctx, cancel := context.WithTimeout(executionCtx, b.timeout)
 			defer cancel()
 			adjustment, err := client.AdjustVUsers(ctx, generatorrpc.VUserAdjustment{
-				TestID:       test.ID,
-				GroupName:    groupName,
-				TargetVUsers: int32(shard.VUsers),
+				TestID:              test.ID,
+				ExecutionGeneration: executionGeneration,
+				GroupName:           groupName,
+				TargetVUsers:        int32(shard.VUsers),
 			})
 			if err != nil {
 				adjustCh <- adjustResult{shard: shard, err: fmt.Errorf("adjust remote vusers on %s: %w", shard.Target, err)}
@@ -980,29 +1479,40 @@ func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedT
 			adjustCh <- adjustResult{shard: shard}
 		}()
 	}
-	successes := make([]GeneratorShardSummary, 0, len(nextShards))
+	attempted := make([]GeneratorShardSummary, 0, len(nextShards))
 	var adjustErr error
 	for range nextShards {
 		result := <-adjustCh
+		if clients[result.shard.Target] != nil {
+			// A transport error is ambiguous: the generator may have applied the
+			// adjustment before its response was lost. Compensate every dispatched
+			// RPC, not merely the requests whose acknowledgements arrived.
+			attempted = append(attempted, result.shard)
+		}
 		if result.err != nil && adjustErr == nil {
 			adjustErr = result.err
 			continue
 		}
-		if result.err == nil {
-			successes = append(successes, result.shard)
-		}
 	}
 	if adjustErr != nil {
-		if rollbackErr := b.rollbackShardVUsers(test.ID, groupName, clients, successes, previousByTarget); rollbackErr != nil {
-			return fmt.Errorf("%w; rollback shard vusers: %v", adjustErr, rollbackErr)
+		if rollbackErr := b.rollbackShardVUsers(executionCtx, test.ID, executionGeneration, groupName, clients, attempted, previousByTarget); rollbackErr != nil {
+			return &distributedVUserUncertainError{
+				testID:            test.ID,
+				unresolvedTargets: shardTargets(attempted),
+				err:               errors.Join(adjustErr, fmt.Errorf("rollback shard vusers: %w", rollbackErr)),
+			}
 		}
 		return adjustErr
 	}
 	tr.mu.Lock()
 	if !distributedControlCommitCurrentLocked(tr, test, "RUNNING", controlGeneration) {
 		tr.mu.Unlock()
-		if rollbackErr := b.rollbackShardVUsers(test.ID, groupName, clients, successes, previousByTarget); rollbackErr != nil {
-			return fmt.Errorf("distributed scale became stale before commit; rollback shard vusers: %v", rollbackErr)
+		if rollbackErr := b.rollbackShardVUsers(executionCtx, test.ID, executionGeneration, groupName, clients, attempted, previousByTarget); rollbackErr != nil {
+			return &distributedVUserUncertainError{
+				testID:            test.ID,
+				unresolvedTargets: shardTargets(attempted),
+				err:               fmt.Errorf("distributed scale became stale before commit; rollback shard vusers: %w", rollbackErr),
+			}
 		}
 		return fmt.Errorf("distributed scale became stale before commit")
 	}
@@ -1016,10 +1526,39 @@ func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedT
 	return nil
 }
 
+func preserveShardCoordinatesByTarget(next []GeneratorShardSummary, previous []GeneratorShardSummary) ([]GeneratorShardSummary, error) {
+	previousByTarget := make(map[string]GeneratorShardSummary, len(previous))
+	for _, shard := range previous {
+		if _, duplicate := previousByTarget[shard.Target]; duplicate {
+			return nil, fmt.Errorf("duplicate previous shard target %q", shard.Target)
+		}
+		previousByTarget[shard.Target] = shard
+	}
+	out := cloneGeneratorShardSummaries(next)
+	for index := range out {
+		prior, ok := previousByTarget[out[index].Target]
+		if !ok {
+			return nil, fmt.Errorf("new shard target %q has no stable coordinate", out[index].Target)
+		}
+		out[index].ShardOrdinal = prior.ShardOrdinal
+		out[index].ShardCount = prior.ShardCount
+		out[index].VUserIDOffset = prior.VUserIDOffset
+	}
+	return out, nil
+}
+
 func (b *distributedExecutionBackend) AdjustDuration(tr *TestRunner, test *ManagedTest, newDuration time.Duration) error {
 	tr.mu.RLock()
-	previousDuration := test.Duration
+	previousDuration := test.durationAdjustmentPrevious
+	if previousDuration <= 0 {
+		previousDuration = test.Duration
+	}
+	executionGeneration := test.executionGeneration
+	executionCtx := test.executionCtx
 	tr.mu.RUnlock()
+	if executionCtx == nil {
+		executionCtx = context.Background()
+	}
 	clients, err := b.resolveClientsLocked(tr, test)
 	if err != nil {
 		return err
@@ -1028,70 +1567,234 @@ func (b *distributedExecutionBackend) AdjustDuration(tr *TestRunner, test *Manag
 	attempted := make([]string, 0, len(targets))
 	for _, target := range targets {
 		attempted = append(attempted, target)
-		ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
+		ctx, cancel := context.WithTimeout(executionCtx, b.timeout)
 		result, err := clients[target].AdjustDuration(ctx, generatorrpc.DurationAdjustment{
 			TestID:                test.ID,
-			TargetDurationSeconds: int64(newDuration / time.Second),
+			ExecutionGeneration:   executionGeneration,
+			TargetDuration:        newDuration,
+			TargetDurationSeconds: distributedCompatibilityDurationSeconds(newDuration),
 		})
 		cancel()
 		if err != nil {
 			forwardErr := fmt.Errorf("adjust remote duration on %s: %w", target, err)
-			return errors.Join(append([]error{forwardErr}, b.rollbackDurations(test.ID, clients, attempted, previousDuration)...)...)
+			rollbackErrs, unresolved := b.rollbackDurations(test.ID, executionGeneration, clients, attempted, previousDuration)
+			joined := errors.Join(append([]error{forwardErr}, rollbackErrs...)...)
+			if len(unresolved) > 0 {
+				return &distributedDurationUncertainError{testID: test.ID, unresolvedTargets: unresolved, err: joined}
+			}
+			return joined
 		}
 		if !result.Accepted {
 			forwardErr := fmt.Errorf("generator %s did not accept duration adjustment for %s", target, test.ID)
-			return errors.Join(append([]error{forwardErr}, b.rollbackDurations(test.ID, clients, attempted, previousDuration)...)...)
+			rollbackErrs, unresolved := b.rollbackDurations(test.ID, executionGeneration, clients, attempted, previousDuration)
+			joined := errors.Join(append([]error{forwardErr}, rollbackErrs...)...)
+			if len(unresolved) > 0 {
+				return &distributedDurationUncertainError{testID: test.ID, unresolvedTargets: unresolved, err: joined}
+			}
+			return joined
 		}
 	}
 	return nil
 }
 
-func (b *distributedExecutionBackend) rollbackDurations(testID string, clients map[string]generatorClient, attempted []string, previousDuration time.Duration) []error {
+func (b *distributedExecutionBackend) rollbackDurations(testID string, executionGeneration uint64, clients map[string]generatorClient, attempted []string, previousDuration time.Duration) ([]error, []string) {
 	rollbackErrs := make([]error, 0)
+	unresolved := make([]string, 0)
 	for i := len(attempted) - 1; i >= 0; i-- {
 		target := attempted[i]
 		client := clients[target]
 		if client == nil {
 			rollbackErrs = append(rollbackErrs, fmt.Errorf("restore remote duration on %s: generator is not connected", target))
+			unresolved = append(unresolved, target)
 			continue
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
-		result, err := client.AdjustDuration(ctx, generatorrpc.DurationAdjustment{
-			TestID:                testID,
-			TargetDurationSeconds: int64(previousDuration / time.Second),
-		})
-		cancel()
-		if err != nil {
-			rollbackErrs = append(rollbackErrs, fmt.Errorf("restore remote duration on %s: %w", target, err))
-			continue
+		var rollbackErr error
+		for attempt := 0; attempt < durableTransitionAttempts; attempt++ {
+			ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
+			result, err := client.AdjustDuration(ctx, generatorrpc.DurationAdjustment{
+				TestID:                testID,
+				ExecutionGeneration:   executionGeneration,
+				TargetDuration:        previousDuration,
+				TargetDurationSeconds: distributedCompatibilityDurationSeconds(previousDuration),
+			})
+			cancel()
+			if err == nil && result.Accepted {
+				rollbackErr = nil
+				break
+			}
+			if err != nil {
+				rollbackErr = err
+			} else {
+				rollbackErr = fmt.Errorf("generator did not accept duration rollback for %s", testID)
+			}
+			if attempt+1 < durableTransitionAttempts {
+				time.Sleep(durableTransitionRetryDelay)
+			}
 		}
-		if !result.Accepted {
-			rollbackErrs = append(rollbackErrs, fmt.Errorf("generator %s did not accept duration rollback for %s", target, testID))
+		if rollbackErr != nil {
+			rollbackErrs = append(rollbackErrs, fmt.Errorf("restore remote duration on %s: %w", target, rollbackErr))
+			unresolved = append(unresolved, target)
 		}
 	}
-	return rollbackErrs
+	sort.Strings(unresolved)
+	return rollbackErrs, unresolved
+}
+
+func distributedCompatibilityDurationSeconds(duration time.Duration) int64 {
+	if duration <= 0 {
+		return 0
+	}
+	seconds := int64(duration / time.Second)
+	if duration%time.Second != 0 {
+		seconds++
+	}
+	return seconds
 }
 
 func (b *distributedExecutionBackend) PauseTest(tr *TestRunner, test *ManagedTest) error {
+	if used, err := b.applyAcknowledgedPauseControl(tr, test, true); used {
+		return err
+	}
 	streams := b.snapshotMetricsStreams(tr, test)
 	if len(streams) == 0 {
 		return fmt.Errorf("distributed metrics stream is not initialized")
 	}
 	targets := orderedMetricsTargets(streams, b.configuredTargets())
+	tr.mu.RLock()
+	executionGeneration := test.executionGeneration
+	tr.mu.RUnlock()
 	return applyPauseControlFanout(test.ID, true, targets, func(target string, pause bool) error {
-		return streams[target].SendPause(generatorrpc.PauseControl{TestID: test.ID, Pause: pause})
+		return streams[target].SendPause(generatorrpc.PauseControl{TestID: test.ID, ExecutionGeneration: executionGeneration, Pause: pause})
 	})
 }
 
 func (b *distributedExecutionBackend) ResumeTest(tr *TestRunner, test *ManagedTest) error {
+	if used, err := b.applyAcknowledgedPauseControl(tr, test, false); used {
+		return err
+	}
 	streams := b.snapshotMetricsStreams(tr, test)
 	if len(streams) == 0 {
 		return fmt.Errorf("distributed metrics stream is not initialized")
 	}
 	targets := orderedMetricsTargets(streams, b.configuredTargets())
+	tr.mu.RLock()
+	executionGeneration := test.executionGeneration
+	tr.mu.RUnlock()
 	return applyPauseControlFanout(test.ID, false, targets, func(target string, pause bool) error {
-		return streams[target].SendPause(generatorrpc.PauseControl{TestID: test.ID, Pause: pause})
+		return streams[target].SendPause(generatorrpc.PauseControl{TestID: test.ID, ExecutionGeneration: executionGeneration, Pause: pause})
 	})
+}
+
+func (b *distributedExecutionBackend) applyAcknowledgedPauseControl(tr *TestRunner, test *ManagedTest, pause bool) (bool, error) {
+	clients, err := b.resolveClientsLocked(tr, test)
+	if err != nil {
+		return true, err
+	}
+	targets := orderedGeneratorTargets(clients, b.configuredTargets())
+	if len(targets) == 0 {
+		return true, fmt.Errorf("distributed generator clients are not initialized")
+	}
+	for _, target := range targets {
+		if _, ok := clients[target].(acknowledgedPauseClient); !ok {
+			// Legacy/unit-test adapters predate the acknowledged unary method.
+			return false, nil
+		}
+	}
+
+	tr.mu.Lock()
+	executionGeneration := test.executionGeneration
+	executionCtx := test.executionCtx
+	test.remotePauseOperationSequence++
+	if test.remotePauseOperationSequence == 0 {
+		test.remotePauseOperationSequence++
+	}
+	operationSequence := test.remotePauseOperationSequence
+	tr.mu.Unlock()
+	if executionCtx == nil {
+		executionCtx = context.Background()
+	}
+	operationID := uuid.NewString()
+	attempted := make([]string, 0, len(targets))
+	for _, target := range targets {
+		attempted = append(attempted, target)
+		client := clients[target].(acknowledgedPauseClient)
+		if err := b.applyPauseControlWithRetry(executionCtx, client, generatorrpc.PauseControl{
+			TestID:              test.ID,
+			ExecutionGeneration: executionGeneration,
+			Pause:               pause,
+			OperationID:         operationID,
+			OperationSequence:   operationSequence,
+		}); err != nil {
+			forwardErr := fmt.Errorf("apply acknowledged remote %s on %s: %w", pauseOperationName(pause), target, err)
+			compensationID := uuid.NewString()
+			tr.mu.Lock()
+			test.remotePauseOperationSequence++
+			if test.remotePauseOperationSequence == 0 {
+				test.remotePauseOperationSequence++
+			}
+			compensationSequence := test.remotePauseOperationSequence
+			tr.mu.Unlock()
+			unresolved := make([]string, 0)
+			compensationErrs := []error{forwardErr}
+			for i := len(attempted) - 1; i >= 0; i-- {
+				rollbackTarget := attempted[i]
+				rollbackClient := clients[rollbackTarget].(acknowledgedPauseClient)
+				rollbackErr := b.applyPauseControlWithRetry(context.Background(), rollbackClient, generatorrpc.PauseControl{
+					TestID:              test.ID,
+					ExecutionGeneration: executionGeneration,
+					Pause:               !pause,
+					OperationID:         compensationID,
+					OperationSequence:   compensationSequence,
+				})
+				if rollbackErr != nil {
+					unresolved = append(unresolved, rollbackTarget)
+					compensationErrs = append(compensationErrs, fmt.Errorf("compensate remote %s on %s: %w", pauseOperationName(!pause), rollbackTarget, rollbackErr))
+				}
+			}
+			joined := errors.Join(compensationErrs...)
+			if len(unresolved) > 0 {
+				sort.Strings(unresolved)
+				return true, &distributedPauseUncertainError{testID: test.ID, unresolvedTargets: unresolved, err: joined}
+			}
+			return true, joined
+		}
+	}
+	return true, nil
+}
+
+func pauseOperationName(pause bool) string {
+	if pause {
+		return "pause"
+	}
+	return "resume"
+}
+
+func (b *distributedExecutionBackend) applyPauseControlWithRetry(parent context.Context, client acknowledgedPauseClient, control generatorrpc.PauseControl) error {
+	var lastErr error
+	for attempt := 0; attempt < durableTransitionAttempts; attempt++ {
+		ctx, cancel := context.WithTimeout(parent, b.timeout)
+		result, err := client.SetPaused(ctx, control)
+		cancel()
+		if err == nil && result.Accepted && result.CurrentPaused == control.Pause && result.AppliedOperationID == control.OperationID && result.AppliedOperationSequence == control.OperationSequence {
+			return nil
+		}
+		switch {
+		case err != nil:
+			lastErr = err
+		case !result.Accepted:
+			lastErr = fmt.Errorf("generator rejected operation %s: %s", control.OperationID, result.ErrorMessage)
+		case result.AppliedOperationID != control.OperationID:
+			lastErr = fmt.Errorf("generator acknowledged operation %q, want %q", result.AppliedOperationID, control.OperationID)
+		case result.AppliedOperationSequence != control.OperationSequence:
+			lastErr = fmt.Errorf("generator acknowledged operation sequence %d, want %d", result.AppliedOperationSequence, control.OperationSequence)
+		default:
+			lastErr = fmt.Errorf("generator pause state is %t, want %t", result.CurrentPaused, control.Pause)
+		}
+		if attempt+1 < durableTransitionAttempts {
+			time.Sleep(durableTransitionRetryDelay)
+		}
+	}
+	return lastErr
 }
 
 func applyPauseControlFanout(testID string, pause bool, targets []string, send func(target string, pause bool) error) error {

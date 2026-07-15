@@ -158,6 +158,69 @@ func TestExecutionPlanScheduleRecoveryFailsClosedForInterruptedParallelAnchor(t 
 	}
 }
 
+func TestExecutionPlanScheduleRecoveryReconstructsAndStartsCompleteParallelSnapshot(t *testing.T) {
+	store, plan, schedule, now := newExecutionPlanScheduleRecoveryFixture(t, "parallel")
+	if err := store.SaveProject(&storage.Project{ID: plan.ProjectID, Name: "Recovery", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+	runner := NewTestRunner(2, NewHub(), store)
+	backend := &executionBackendSpy{called: make(chan string, 1)}
+	runner.setExecutionBackend(backend)
+	if _, err := runner.StoreScriptDurable(&dsl.Script{
+		ID: "script-recovered-parallel", ProjectID: plan.ProjectID, Name: "Recovered", Protocol: "http", Version: "1.0.0",
+		Config:  dsl.ScriptConfig{BaseURL: "https://example.test", RunLogic: dsl.RunLogicConfig{Iterations: 1}},
+		Actions: []dsl.Action{{Name: "Home", Type: "GET", Target: "/"}},
+	}); err != nil {
+		t.Fatalf("StoreScriptDurable: %v", err)
+	}
+	scenario, err := runner.StoreScenario(CreateScenarioRequest{
+		Name: "Recovered", Duration: "30s",
+		Groups: []CreateGroupEntry{{Name: "G", ScriptID: "script-recovered-parallel", VUsers: 1, RampUp: "1s"}},
+	})
+	if err != nil {
+		t.Fatalf("StoreScenario: %v", err)
+	}
+	plan.Entries = []storage.ExecutionPlanEntry{{Order: 0, ScenarioID: scenario.ID}}
+	if err := store.SaveExecutionPlan(plan); err != nil {
+		t.Fatalf("SaveExecutionPlan(entries): %v", err)
+	}
+	runID := "exec-plan-run-reconstructable-parallel"
+	testID := executionPlanEntryTestID(runID, 0, 0)
+	runEntry := executionPlanRunEntrySnapshot(plan.Entries[0], plan.Name, "", "", nil, nil)
+	runEntry.TestID = testID
+	runEntry.MaterializationKey = executionPlanEntryMaterializationKey(runID, 0, 0)
+	runEntry.Status = "pending"
+	occurrence := saveMaterializingExecutionPlanOccurrence(t, store, schedule, runID, now)
+	if err := store.SaveExecutionPlanRun(&storage.ExecutionPlanRun{
+		ID: runID, PlanID: plan.ID, ProjectID: plan.ProjectID, RunMode: "parallel", Status: "running",
+		Entries: []storage.ExecutionPlanRunEntry{runEntry}, CreatedAt: now.Add(-time.Minute), UpdatedAt: now.Add(-time.Minute),
+	}); err != nil {
+		t.Fatalf("SaveExecutionPlanRun: %v", err)
+	}
+
+	if err := runner.runDueExecutionPlanScheduleOnce(schedule, now); err != nil {
+		t.Fatalf("runDueExecutionPlanScheduleOnce: %v", err)
+	}
+	startedID, started := waitForStart(t, backend, time.Second)
+	if !started || startedID != testID {
+		t.Fatalf("recovered backend start = (%q, %v), want %q", startedID, started, testID)
+	}
+	recoveredRun, err := store.GetExecutionPlanRun(runID)
+	if err != nil {
+		t.Fatalf("GetExecutionPlanRun: %v", err)
+	}
+	if recoveredRun.Status != "completed" || recoveredRun.Entries[0].Status != "created" {
+		t.Fatalf("recovered run = %+v, want completed reconstructed entry", recoveredRun)
+	}
+	recoveredOccurrence, err := store.GetExecutionPlanScheduleOccurrenceByScheduleAndPlannedAt(schedule.ID, occurrence.PlannedAt)
+	if err != nil {
+		t.Fatalf("GetExecutionPlanScheduleOccurrenceByScheduleAndPlannedAt: %v", err)
+	}
+	if recoveredOccurrence.Status != "materialized" || recoveredOccurrence.ReasonCode != "recovered" {
+		t.Fatalf("recovered occurrence = %+v, want materialized/recovered", recoveredOccurrence)
+	}
+}
+
 func TestExecutionPlanScheduleRecoveryBlocksLegacyUncorrelatedOccurrence(t *testing.T) {
 	store, _, schedule, now := newExecutionPlanScheduleRecoveryFixture(t, "parallel")
 	occurrence := saveMaterializingExecutionPlanOccurrence(t, store, schedule, "", now)
@@ -179,6 +242,163 @@ func TestExecutionPlanScheduleRecoveryBlocksLegacyUncorrelatedOccurrence(t *test
 	}
 	if persistedSchedule.NextRunAt == nil || !persistedSchedule.NextRunAt.After(occurrence.PlannedAt) {
 		t.Fatalf("legacy occurrence left schedule wedged: %+v", persistedSchedule)
+	}
+}
+
+func TestExecutionPlanScheduleOutcomeMergePreservesConcurrentPUTAndFailure(t *testing.T) {
+	store, _, original, now := newExecutionPlanScheduleRecoveryFixture(t, "parallel")
+	plannedAt := original.NextRunAt.UTC()
+
+	// Model a concurrent operator PUT that changes user-owned recurrence fields
+	// and advances next_run_at before occurrence finalization links its outcome.
+	latest, err := store.GetExecutionPlanSchedule(original.ID)
+	if err != nil {
+		t.Fatalf("GetExecutionPlanSchedule: %v", err)
+	}
+	latest.CronExpr = "0 * * * *"
+	latest.Timezone = "America/New_York"
+	latest.MissedRunPolicy = "catch_up_once"
+	advanced := plannedAt.Add(2 * time.Hour)
+	latest.NextRunAt = &advanced
+	latest.UpdatedAt = now.Add(-time.Second)
+	if err := store.SaveExecutionPlanSchedule(latest); err != nil {
+		t.Fatalf("SaveExecutionPlanSchedule(concurrent PUT): %v", err)
+	}
+	latest, err = store.GetExecutionPlanSchedule(original.ID)
+	if err != nil {
+		t.Fatalf("reload latest schedule: %v", err)
+	}
+	latestRevision := latest.Revision
+
+	runner := NewTestRunner(1, NewHub(), store)
+	term, err := runner.captureExecutionLeaseTerm()
+	if err != nil {
+		t.Fatalf("captureExecutionLeaseTerm: %v", err)
+	}
+	occurrence := &storage.ExecutionPlanScheduleOccurrence{
+		ID: "occurrence-failed-after-put", ScheduleID: latest.ID, PlanID: latest.PlanID,
+		ProjectID: latest.ProjectID, PlannedAt: plannedAt, Status: "failed",
+		ReasonCode: "materialization_interrupted", RunID: "run-failed-after-put",
+		ConflictSummary: "materialization failed after durable claim",
+	}
+	if err := runner.advanceExecutionPlanScheduleAfterOccurrence(latest, occurrence, plannedAt, now, occurrence.ConflictSummary, term); err != nil {
+		t.Fatalf("advanceExecutionPlanScheduleAfterOccurrence: %v", err)
+	}
+
+	persisted, err := store.GetExecutionPlanSchedule(original.ID)
+	if err != nil {
+		t.Fatalf("GetExecutionPlanSchedule(persisted): %v", err)
+	}
+	if persisted.CronExpr != "0 * * * *" || persisted.Timezone != "America/New_York" || persisted.MissedRunPolicy != "catch_up_once" || persisted.NextRunAt == nil || !persisted.NextRunAt.Equal(advanced) {
+		t.Fatalf("concurrent PUT fields regressed: %+v", persisted)
+	}
+	if persisted.Revision != latestRevision+1 {
+		t.Fatalf("revision = %d, want %d", persisted.Revision, latestRevision+1)
+	}
+	if persisted.LastRunRunID != occurrence.RunID || persisted.LastError != occurrence.ConflictSummary || persisted.NextRequiredAction != "operator_decision_required" {
+		t.Fatalf("occurrence outcome was not merged: %+v", persisted)
+	}
+}
+
+func TestExecutionPlanSchedulePausedAdvanceUsesOccurrenceOutcome(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		status           string
+		conflictSummary  string
+		wantLastError    string
+		materializedTime bool
+	}{
+		{name: "materialized clears stale error", status: "materialized", materializedTime: true},
+		{name: "failed replaces stale error", status: "failed", conflictSummary: "materialization interrupted", wantLastError: "materialization interrupted"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store, _, schedule, now := newExecutionPlanScheduleRecoveryFixture(t, "parallel")
+			plannedAt := schedule.NextRunAt.UTC()
+			disabledFrom := now.Add(-time.Minute)
+			schedule.DisabledFrom = &disabledFrom
+			schedule.DisabledUntil = nil
+			schedule.LastError = "stale transient scheduler failure"
+			if err := store.SaveExecutionPlanSchedule(schedule); err != nil {
+				t.Fatalf("SaveExecutionPlanSchedule: %v", err)
+			}
+			schedule, err := store.GetExecutionPlanSchedule(schedule.ID)
+			if err != nil {
+				t.Fatalf("GetExecutionPlanSchedule: %v", err)
+			}
+			occurrence := &storage.ExecutionPlanScheduleOccurrence{
+				ID: "paused-outcome-" + tc.status, ScheduleID: schedule.ID, PlanID: schedule.PlanID,
+				ProjectID: schedule.ProjectID, PlannedAt: plannedAt, Status: tc.status,
+				RunID: "paused-run-" + tc.status, ConflictSummary: tc.conflictSummary,
+			}
+			if tc.materializedTime {
+				materializedAt := now.Add(-30 * time.Second)
+				occurrence.MaterializedAt = &materializedAt
+			}
+			runner := NewTestRunner(1, NewHub(), store)
+			term, err := runner.captureExecutionLeaseTerm()
+			if err != nil {
+				t.Fatalf("captureExecutionLeaseTerm: %v", err)
+			}
+			if err := runner.advanceExecutionPlanScheduleAfterOccurrence(schedule, occurrence, plannedAt, now, schedule.LastError, term); err != nil {
+				t.Fatalf("advanceExecutionPlanScheduleAfterOccurrence: %v", err)
+			}
+			persisted, err := store.GetExecutionPlanSchedule(schedule.ID)
+			if err != nil {
+				t.Fatalf("GetExecutionPlanSchedule(persisted): %v", err)
+			}
+			if persisted.NextRunAt != nil || persisted.NextRequiredAction != "schedule_paused" || persisted.LastError != tc.wantLastError {
+				t.Fatalf("paused schedule outcome = %+v, want last_error=%q and schedule_paused", persisted, tc.wantLastError)
+			}
+		})
+	}
+}
+
+func TestExecutionPlanScheduleCatchUpAdvanceUsesPolicyAnchor(t *testing.T) {
+	for _, tc := range []struct {
+		policy string
+		want   time.Time
+	}{
+		{policy: "catch_up_all", want: time.Date(2026, time.July, 14, 11, 45, 0, 0, time.UTC)},
+		{policy: "catch_up_once", want: time.Date(2026, time.July, 14, 12, 5, 0, 0, time.UTC)},
+	} {
+		t.Run(tc.policy, func(t *testing.T) {
+			store, _, schedule, now := newExecutionPlanScheduleRecoveryFixture(t, "parallel")
+			plannedAt := now.Add(-20 * time.Minute)
+			schedule.NextRunAt = &plannedAt
+			schedule.MissedRunPolicy = tc.policy
+			schedule.LastError = "stale transient error"
+			if err := store.SaveExecutionPlanSchedule(schedule); err != nil {
+				t.Fatalf("SaveExecutionPlanSchedule: %v", err)
+			}
+			schedule, err := store.GetExecutionPlanSchedule(schedule.ID)
+			if err != nil {
+				t.Fatalf("GetExecutionPlanSchedule: %v", err)
+			}
+			materializedAt := now.Add(-time.Minute)
+			occurrence := &storage.ExecutionPlanScheduleOccurrence{
+				ID: "occurrence-" + tc.policy, ScheduleID: schedule.ID, PlanID: schedule.PlanID,
+				ProjectID: schedule.ProjectID, PlannedAt: plannedAt, Status: "materialized",
+				ReasonCode: "recovered", RunID: "run-" + tc.policy, MaterializedAt: &materializedAt,
+			}
+			runner := NewTestRunner(1, NewHub(), store)
+			term, err := runner.captureExecutionLeaseTerm()
+			if err != nil {
+				t.Fatalf("captureExecutionLeaseTerm: %v", err)
+			}
+			if err := runner.advanceExecutionPlanScheduleAfterOccurrence(schedule, occurrence, plannedAt, now, schedule.LastError, term); err != nil {
+				t.Fatalf("advanceExecutionPlanScheduleAfterOccurrence: %v", err)
+			}
+			persisted, err := store.GetExecutionPlanSchedule(schedule.ID)
+			if err != nil {
+				t.Fatalf("GetExecutionPlanSchedule(persisted): %v", err)
+			}
+			if persisted.NextRunAt == nil || !persisted.NextRunAt.Equal(tc.want) {
+				t.Fatalf("next_run_at = %v, want %v", persisted.NextRunAt, tc.want)
+			}
+			if persisted.LastError != "" || persisted.NextRequiredAction != "" {
+				t.Fatalf("successful occurrence retained stale outcome: %+v", persisted)
+			}
+		})
 	}
 }
 

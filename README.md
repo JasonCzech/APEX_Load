@@ -203,10 +203,10 @@ Controller runtime configuration:
 - `APEXLOAD_GENERATOR_DISCOVERY_INTERVAL`: re-resolve interval for `dns://` generator entries (default `15s`)
 - `APEXLOAD_GENERATOR_TIMEOUT`: timeout for controller-to-generator RPCs (default `10s`)
 - `APEXLOAD_GRPC_TLS_CERT`/`APEXLOAD_GRPC_TLS_KEY`/`APEXLOAD_GRPC_TLS_CA`: TLS/mTLS for the controller↔generator gRPC channel (symmetric contract: cert/key = this process's identity, CA = trust for the peer; setting the CA on the generator requires verified client certs). `APEXLOAD_GRPC_TLS_SERVER_NAME` overrides certificate verification when targets are pod IPs from `dns://` discovery
-- `APEXLOAD_GRPC_AUTH_TOKEN`: shared bearer token required on every generator RPC — application-layer auth that holds even when the CNI does not enforce NetworkPolicies
+- `APEXLOAD_GRPC_AUTH_TOKEN`: shared bearer token required on every generator RPC — application-layer auth that holds even when the CNI does not enforce NetworkPolicies. When distributed targets are configured in `production`/`prod`, controller and generator startup fail closed unless the channel uses mTLS or verified TLS plus this token; token-only client authentication requires at least 32 bytes (generate 32 random bytes, commonly encoded as 64 hex characters).
 - `APEXLOAD_METRICS_ADDR`: when set (e.g. `:9091`), serves `GET /metrics` on a dedicated listener instead of the API port, so network policy can scope Prometheus access separately from API access
 - `APEXLOAD_METRICS_TOKEN`: optional bearer token required for `GET /metrics` on either the API port or the dedicated metrics listener
-- `APEXLOAD_PPROF_ADDR`: optional Go pprof bind address for controller runtime debugging
+- `APEXLOAD_PPROF_ADDR`: optional unauthenticated Go pprof bind address for controller/generator runtime debugging. In production it must be an explicit loopback address (for example `127.0.0.1:6060`); use port forwarding for remote access
 - `APEXLOAD_PROMETHEUS_URL`: Prometheus base URL used by dashboard graph overlays; independent from the controller `/metrics` scrape endpoint
 - `APEXLOAD_BROWSER_EXECUTABLE`: path to a system Chromium/Chrome for browser-protocol runs (set to `/usr/bin/google-chrome` in the generator image, where Playwright's managed glibc Chromium cannot run on musl)
 - `APEXLOAD_BROWSER_SANDBOX`: set `true` to drop `--no-sandbox` and use Chromium's own sandbox where the environment supports it (unprivileged user namespaces); default keeps `--no-sandbox` because hardened pod securityContexts cannot start the sandbox

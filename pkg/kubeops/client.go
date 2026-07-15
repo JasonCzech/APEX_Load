@@ -21,6 +21,10 @@ import (
 const (
 	DefaultTokenFile = "/var/run/secrets/kubernetes.io/serviceaccount/token"
 	DefaultCAFile    = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+
+	maxKubernetesAPIResponseBytes int64 = 8 << 20
+	maxServiceAccountTokenBytes   int64 = 1 << 20
+	maxServiceAccountCABytes      int64 = 4 << 20
 )
 
 var (
@@ -236,15 +240,21 @@ func (c *Client) doOnce(ctx context.Context, method, path, contentType string, b
 		return nil, 0, err
 	}
 	defer resp.Body.Close()
-	payload, err := io.ReadAll(resp.Body)
+	if resp.ContentLength > maxKubernetesAPIResponseBytes {
+		return nil, 0, fmt.Errorf("kubernetes API response exceeds %d bytes", maxKubernetesAPIResponseBytes)
+	}
+	payload, err := io.ReadAll(io.LimitReader(resp.Body, maxKubernetesAPIResponseBytes+1))
 	if err != nil {
 		return nil, 0, err
+	}
+	if int64(len(payload)) > maxKubernetesAPIResponseBytes {
+		return nil, 0, fmt.Errorf("kubernetes API response exceeds %d bytes", maxKubernetesAPIResponseBytes)
 	}
 	return payload, resp.StatusCode, nil
 }
 
 func (c *Client) readToken() (string, error) {
-	raw, err := os.ReadFile(c.cfg.TokenFile)
+	raw, err := readBoundedFile(c.cfg.TokenFile, maxServiceAccountTokenBytes)
 	if err != nil {
 		return "", fmt.Errorf("read Kubernetes service-account token: %w", err)
 	}
@@ -282,7 +292,7 @@ func (c *Client) resolveHTTPClient() (*http.Client, error) {
 
 func buildInClusterHTTPClient(caFile string) (*http.Client, error) {
 	roots := x509.NewCertPool()
-	ca, err := os.ReadFile(caFile)
+	ca, err := readBoundedFile(caFile, maxServiceAccountCABytes)
 	if err != nil {
 		return nil, fmt.Errorf("read Kubernetes service-account CA: %w", err)
 	}
@@ -295,6 +305,27 @@ func buildInClusterHTTPClient(caFile string) (*http.Client, error) {
 			TLSClientConfig: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12},
 		},
 	}, nil
+}
+
+func readBoundedFile(path string, limit int64) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	if info, statErr := file.Stat(); statErr != nil {
+		return nil, statErr
+	} else if info.Size() > limit {
+		return nil, fmt.Errorf("file exceeds %d bytes", limit)
+	}
+	data, err := io.ReadAll(io.LimitReader(file, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("file exceeds %d bytes", limit)
+	}
+	return data, nil
 }
 
 func workloadPlural(kind string) (string, error) {

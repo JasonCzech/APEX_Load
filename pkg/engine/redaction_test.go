@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -10,6 +12,17 @@ import (
 
 type captureResultSink struct {
 	result *protocol.Result
+}
+
+type typedSecretEvidence struct {
+	SettlementToken string                     `json:"settlement_token"`
+	Safe            string                     `json:"safe"`
+	Events          []typedSecretEvidenceEvent `json:"events"`
+}
+
+type typedSecretEvidenceEvent struct {
+	CSRFToken string `json:"csrf_token"`
+	Message   string `json:"message"`
 }
 
 func (s *captureResultSink) RecordResult(result *protocol.Result) error {
@@ -59,6 +72,14 @@ func TestScrubSensitiveText(t *testing.T) {
 	}
 }
 
+func TestScrubSensitiveErrorRemovesEmbeddedURLCredentials(t *testing.T) {
+	secret := "short-secret"
+	err := scrubSensitiveError(errors.New("dial https://user:"+secret+"@example.test failed"), nil)
+	if err == nil || strings.Contains(err.Error(), secret) {
+		t.Fatalf("scrubSensitiveError returned %q", err)
+	}
+}
+
 func TestNewRedactionConfig_ScrubsCustomRules(t *testing.T) {
 	config, err := NewRedactionConfig([]RedactionRule{{
 		Name:    "customer id",
@@ -78,6 +99,54 @@ func TestNewRedactionConfig_ScrubsCustomRules(t *testing.T) {
 func TestNewRedactionConfig_RejectsInvalidPattern(t *testing.T) {
 	if _, err := NewRedactionConfig([]RedactionRule{{Pattern: `[`}}); err == nil {
 		t.Fatal("expected invalid pattern to fail")
+	}
+}
+
+func TestNewRedactionConfigEnforcesRuntimePolicyBounds(t *testing.T) {
+	tests := []struct {
+		name  string
+		rules []RedactionRule
+		want  string
+	}{
+		{
+			name:  "rule count",
+			rules: make([]RedactionRule, MaxRedactionRules+1),
+			want:  "rule limit",
+		},
+		{
+			name:  "name bytes",
+			rules: []RedactionRule{{Name: strings.Repeat("n", MaxRedactionRuleNameBytes+1), Pattern: "x"}},
+			want:  "name exceeds",
+		},
+		{
+			name:  "pattern bytes",
+			rules: []RedactionRule{{Pattern: strings.Repeat("x", MaxRedactionPatternBytes+1)}},
+			want:  "pattern exceeds",
+		},
+		{
+			name:  "replacement bytes",
+			rules: []RedactionRule{{Pattern: "x", Replacement: strings.Repeat("r", MaxRedactionReplacementBytes+1)}},
+			want:  "replacement exceeds",
+		},
+		{
+			name: "aggregate bytes",
+			rules: func() []RedactionRule {
+				rules := make([]RedactionRule, 65)
+				for index := range rules {
+					rules[index] = RedactionRule{Pattern: strings.Repeat("x", MaxRedactionPatternBytes)}
+				}
+				return rules
+			}(),
+			want: "policy exceeds",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := NewRedactionConfig(tt.rules)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("NewRedactionConfig error = %v, want %q", err, tt.want)
+			}
+		})
 	}
 }
 
@@ -209,6 +278,126 @@ func TestVUser_RecordResultScrubsSensitivePayloads(t *testing.T) {
 	}
 	if snapshots[0].RequestHeaders["Authorization"] != redactedPayloadValue {
 		t.Fatalf("stored snapshot authorization = %q, want %q", snapshots[0].RequestHeaders["Authorization"], redactedPayloadValue)
+	}
+}
+
+func TestVUserRecordResultScrubsMetricAndArchiveMetadata(t *testing.T) {
+	const secret = "customer-secret-42"
+	config, err := NewRedactionConfig([]RedactionRule{{Pattern: secret}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink := &captureResultSink{}
+	vu := &VUser{
+		Group:           "group-" + secret,
+		Metrics:         NewMetricsCollector(2),
+		ResultSink:      sink,
+		Variables:       map[string]string{},
+		RedactionConfig: config,
+	}
+	result := &protocol.Result{
+		ActionName:        "action-" + secret,
+		Region:            "region-" + secret,
+		CorrelationID:     "correlation-" + secret,
+		NetworkProfile:    "network-" + secret,
+		DependencyType:    "dependency-" + secret,
+		DependencyTarget:  "target-" + secret,
+		SourceStepID:      "step-" + secret,
+		SourceAction:      "source-action-" + secret,
+		SourceActionName:  "source-name-" + secret,
+		SourceTransaction: "transaction-" + secret,
+		SourceProfile:     "profile-" + secret,
+		Success:           true,
+		ClientMetrics: &protocol.ClientMetrics{
+			DeviceProfile:  "device-" + secret,
+			DevicePlatform: "platform-" + secret,
+			DeviceTier:     "tier-" + secret,
+			BrowserEngine:  "browser-" + secret,
+		},
+		ServerTelemetry: &protocol.ServerTelemetry{
+			RequestSizeClass:      "request-" + secret,
+			ResponseSizeClass:     "response-" + secret,
+			SOAPFaultCode:         "fault-" + secret,
+			SOAPFaultCategory:     "category-" + secret,
+			SOAPNamespaceConflict: "namespace-" + secret,
+			PartitionID:           "partition-" + secret,
+		},
+	}
+
+	vu.recordResult(result, dsl.ErrorHandlingConfig{}, dsl.LogConfig{})
+	if sink.result == nil {
+		t.Fatal("result did not reach archive/metrics sink")
+	}
+	values := []string{
+		sink.result.ActionName, sink.result.Group, sink.result.Region,
+		sink.result.CorrelationID, sink.result.NetworkProfile,
+		sink.result.DependencyType, sink.result.DependencyTarget,
+		sink.result.SourceStepID, sink.result.SourceAction,
+		sink.result.SourceActionName, sink.result.SourceTransaction,
+		sink.result.SourceProfile,
+		sink.result.ClientMetrics.DeviceProfile,
+		sink.result.ClientMetrics.DevicePlatform,
+		sink.result.ClientMetrics.DeviceTier,
+		sink.result.ClientMetrics.BrowserEngine,
+		sink.result.ServerTelemetry.RequestSizeClass,
+		sink.result.ServerTelemetry.ResponseSizeClass,
+		sink.result.ServerTelemetry.SOAPFaultCode,
+		sink.result.ServerTelemetry.SOAPFaultCategory,
+		sink.result.ServerTelemetry.SOAPNamespaceConflict,
+		sink.result.ServerTelemetry.PartitionID,
+	}
+	for index, value := range values {
+		if strings.Contains(value, secret) || !strings.Contains(value, redactedPayloadValue) {
+			t.Fatalf("metadata value[%d] = %q, want custom secret redacted", index, value)
+		}
+	}
+}
+
+func TestVUserRecordResultKeepsRawVariablesButScrubsNamedExtractionsAndTypedEvidence(t *testing.T) {
+	sink := &captureResultSink{}
+	vu := &VUser{
+		Metrics:    NewMetricsCollector(2),
+		ResultSink: sink,
+		Variables:  map[string]string{},
+	}
+	result := &protocol.Result{
+		Success: true,
+		Extractions: map[string]string{
+			"jms_settlement_token": "x",
+			"client%5Fsecret":      "y",
+			"soap_operation":       "CreateOrder",
+		},
+		ProtocolEvidence: map[string]any{
+			"network": typedSecretEvidence{
+				SettlementToken: "z",
+				Safe:            "delivered",
+				Events:          []typedSecretEvidenceEvent{{CSRFToken: "c", Message: "ok"}},
+			},
+		},
+	}
+	vu.recordResult(result, dsl.ErrorHandlingConfig{}, dsl.LogConfig{})
+	if vu.Variables["jms_settlement_token"] != "x" || vu.Variables["client%5Fsecret"] != "y" {
+		t.Fatalf("runtime variables lost raw values: %#v", vu.Variables)
+	}
+	if sink.result.Extractions["jms_settlement_token"] != redactedPayloadValue ||
+		sink.result.Extractions["client%5Fsecret"] != redactedPayloadValue ||
+		sink.result.Extractions["soap_operation"] != "CreateOrder" {
+		t.Fatalf("projected extractions = %#v", sink.result.Extractions)
+	}
+	encoded, err := json.Marshal(sink.result.ProtocolEvidence)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(encoded)
+	for _, secret := range []string{`"settlement_token":"z"`, `"csrf_token":"c"`} {
+		if strings.Contains(text, secret) {
+			t.Fatalf("typed evidence leaked %s in %s", secret, text)
+		}
+	}
+	for _, safe := range []string{"delivered", "ok"} {
+		if !strings.Contains(text, safe) {
+			t.Fatalf("typed evidence lost safe value %q: %s", safe, text)
+		}
 	}
 }
 

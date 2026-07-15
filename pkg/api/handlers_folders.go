@@ -2,6 +2,7 @@ package api
 
 import (
 	"database/sql"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
@@ -77,8 +78,8 @@ func (s *Server) handleUpdateFolder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Name     *string `json:"name,omitempty"`
-		ParentID *string `json:"parent_id,omitempty"`
+		Name     *string         `json:"name,omitempty"`
+		ParentID json.RawMessage `json:"parent_id,omitempty"`
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
@@ -89,17 +90,36 @@ func (s *Server) handleUpdateFolder(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		folder.Name = strings.TrimSpace(*req.Name)
-		if err := s.store.SaveFolder(folder); err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return
-		}
 	}
 	if req.ParentID != nil {
-		if err := s.store.MoveFolder(folder.ID, req.ParentID); err != nil {
+		var parentID *string
+		if err := json.Unmarshal(req.ParentID, &parentID); err != nil {
+			writeError(w, http.StatusBadRequest, "parent_id must be a string or null")
+			return
+		}
+		folder.ParentID = parentID
+	}
+	// Persist the complete edit once so an invalid parent cannot leave a name
+	// change committed behind a failed request. The storage update validates
+	// ownership and cycles transactionally, and a JSON null deliberately moves
+	// to root.
+	if req.Name != nil || req.ParentID != nil {
+		updater, supported := s.store.(interface {
+			UpdateFolderIfUnchanged(folder *storage.Folder, expectedUpdatedAt time.Time) (bool, error)
+		})
+		if !supported {
+			writeError(w, http.StatusNotImplemented, "optimistic folder updates are not supported by this storage backend")
+			return
+		}
+		updated, err := updater.UpdateFolderIfUnchanged(folder, folder.UpdatedAt)
+		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		folder.ParentID = req.ParentID
+		if !updated {
+			writeError(w, http.StatusConflict, "folder changed while the update was in flight; reload and retry")
+			return
+		}
 	}
 	s.recordAuditEvent(r, "folder.update", "success", "folder", folder.ID, folder.ProjectID, map[string]any{"name": folder.Name, "parent_id": folder.ParentID})
 	writeJSON(w, http.StatusOK, folder)

@@ -18,8 +18,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/internal/boundedcache"
 )
 
 // initCA generates a self-signed root CA certificate and key pair.
@@ -218,8 +219,20 @@ func (r *Recorder) HandleCACert(w http.ResponseWriter, req *http.Request) {
 // generateLeafCert creates a TLS certificate for the given hostname, signed by the CA.
 // Certificates are cached in r.certCache keyed by hostname.
 func (r *Recorder) generateLeafCert(hostname string) (*tls.Certificate, error) {
+	hostname = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(hostname)), ".")
+	if hostname == "" || len(hostname) > maxRecorderCertificateHostBytes {
+		return nil, fmt.Errorf("certificate hostname must contain between 1 and %d bytes", maxRecorderCertificateHostBytes)
+	}
 	if cached, ok := r.certCache.Load(hostname); ok {
-		return cached.(*tls.Certificate), nil
+		return cached, nil
+	}
+	r.certMu.Lock()
+	defer r.certMu.Unlock()
+	if r.certCache == nil {
+		r.certCache = boundedcache.NewStringCache[*tls.Certificate](maxRecorderLeafCertificates, maxRecorderCertificateHostBytes, maxRecorderCertificateCacheKeyBytes)
+	}
+	if cached, ok := r.certCache.Load(hostname); ok {
+		return cached, nil
 	}
 
 	if err := r.initCA(); err != nil {
@@ -266,7 +279,7 @@ func (r *Recorder) generateLeafCert(hostname string) (*tls.Certificate, error) {
 		PrivateKey:  key,
 	}
 
-	r.certCache.Store(hostname, leafCert)
+	leafCert, _ = r.certCache.LoadOrStore(hostname, leafCert)
 	slog.Debug("generated leaf certificate", "hostname", hostname)
 	return leafCert, nil
 }
@@ -330,6 +343,7 @@ func (r *Recorder) handleConnectMITM(w http.ResponseWriter, req *http.Request) {
 	// Wrap the raw connection with TLS using the leaf cert.
 	tlsConfig := &tls.Config{
 		Certificates: []tls.Certificate{*leafCert},
+		MinVersion:   tls.VersionTLS12,
 	}
 	tlsConn := tls.Server(&readBufferedConn{Conn: clientConn, reader: clientReader}, tlsConfig)
 	if err := tlsConn.Handshake(); err != nil {
@@ -340,8 +354,12 @@ func (r *Recorder) handleConnectMITM(w http.ResponseWriter, req *http.Request) {
 
 	// Create an HTTP client for upstream requests.
 	transport := &http.Transport{
-		DialContext:     proxySafeDialer(30 * time.Second).DialContext,
-		TLSClientConfig: recorderUpstreamTLSConfig(hostname),
+		DialContext:            proxySafeDialer(30 * time.Second).DialContext,
+		TLSClientConfig:        recorderUpstreamTLSConfig(hostname),
+		TLSHandshakeTimeout:    30 * time.Second,
+		ResponseHeaderTimeout:  30 * time.Second,
+		IdleConnTimeout:        90 * time.Second,
+		MaxResponseHeaderBytes: maxRecorderHeaderBytes,
 	}
 	client := &http.Client{
 		Transport: transport,
@@ -357,13 +375,14 @@ func (r *Recorder) handleConnectMITM(w http.ResponseWriter, req *http.Request) {
 	reader := bufio.NewReader(tlsConn)
 	for {
 		_ = tlsConn.SetReadDeadline(time.Now().Add(connectTunnelIdleTimeout))
-		clientReq, err := http.ReadRequest(reader)
+		clientReq, nextReader, err := readRecorderHTTPRequest(reader)
 		if err != nil {
 			if err != io.EOF {
 				slog.Debug("error reading request from TLS connection", "hostname", hostname, "err", err)
 			}
 			return
 		}
+		reader = nextReader
 		// Clear the idle deadline while the request is actively forwarded (it may
 		// be a long upload/download); the next iteration re-arms it.
 		_ = tlsConn.SetReadDeadline(time.Time{})
@@ -389,13 +408,14 @@ func peekConnectTunnelByte(conn net.Conn, reader *bufio.Reader) (byte, error) {
 func (r *Recorder) forwardPlainConnect(clientConn net.Conn, clientReader *bufio.Reader, hostname, host string) {
 	for {
 		_ = clientConn.SetReadDeadline(time.Now().Add(connectTunnelIdleTimeout))
-		clientReq, err := http.ReadRequest(clientReader)
+		clientReq, nextReader, err := readRecorderHTTPRequest(clientReader)
 		if err != nil {
 			if err != io.EOF {
 				slog.Debug("error reading plaintext CONNECT request", "hostname", hostname, "err", err)
 			}
 			return
 		}
+		clientReader = nextReader
 		_ = clientConn.SetReadDeadline(time.Time{})
 
 		r.mu.RLock()
@@ -462,7 +482,7 @@ func (r *Recorder) forwardHTTPS(tlsConn net.Conn, clientReader *bufio.Reader, cl
 
 	upstreamReq, err := http.NewRequest(clientReq.Method, targetURL, upstreamBody)
 	if err != nil {
-		slog.Debug("failed to create upstream request", "err", err)
+		slog.Debug("failed to create upstream request", "err", recorderLogError(err))
 		writeHTTPError(tlsConn, http.StatusBadGateway, "proxy error: "+err.Error())
 		return
 	}
@@ -478,7 +498,7 @@ func (r *Recorder) forwardHTTPS(tlsConn net.Conn, clientReader *bufio.Reader, cl
 
 	resp, err := client.Do(upstreamReq)
 	if err != nil {
-		slog.Debug("upstream request failed", "url", targetURL, "err", err)
+		slog.Debug("upstream request failed", "url", recorderLogURL(targetURL), "err", recorderLogError(err))
 		writeHTTPError(tlsConn, http.StatusBadGateway, "upstream error: "+err.Error())
 		return
 	}
@@ -591,8 +611,11 @@ func writeHTTPError(conn net.Conn, statusCode int, message string) {
 		statusCode, http.StatusText(statusCode), len(message), message)
 }
 
-// certCacheForTesting is a helper to expose the cert cache in tests.
-// It returns the underlying sync.Map.
-func (r *Recorder) certCacheForTesting() *sync.Map {
-	return &r.certCache
+// certCacheLenForTesting exposes only the bounded cache size, keeping the
+// synchronization and eviction implementation private.
+func (r *Recorder) certCacheLenForTesting() int {
+	if r == nil || r.certCache == nil {
+		return 0
+	}
+	return r.certCache.Len()
 }

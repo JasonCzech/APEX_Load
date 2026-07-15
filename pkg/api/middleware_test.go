@@ -1578,6 +1578,51 @@ func TestImportMultipartProjectLookupHonorsRouteBodyLimits(t *testing.T) {
 	}
 }
 
+func TestRequestBodyLimitsUseSmallDefaultAndExplicitImportEnvelopes(t *testing.T) {
+	tests := []struct {
+		name   string
+		method string
+		path   string
+		want   int64
+	}{
+		{name: "ordinary settings mutation", method: http.MethodPut, path: "/api/v1/system/settings", want: defaultMaxRequestBodyBytes},
+		{name: "library bundle import", method: http.MethodPost, path: "/api/v1/library/import", want: libraryBundleImportMaxBodyBytes},
+		{name: "library archive import", method: http.MethodPost, path: "/api/v1/library/import/archive", want: libraryArchiveImportMaxBodyBytes},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, tt.path, nil)
+			if got := requestMaxBodyBytes(req); got != tt.want {
+				t.Fatalf("requestMaxBodyBytes() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+	if defaultMaxRequestBodyBytes != 8<<20 {
+		t.Fatalf("default request envelope = %d, want 8 MiB", defaultMaxRequestBodyBytes)
+	}
+}
+
+func TestBodyLimitMiddlewareRejectsOversizedOrdinaryMutation(t *testing.T) {
+	readAll := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, err := io.Copy(io.Discard, r.Body); err != nil {
+			writeError(w, http.StatusRequestEntityTooLarge, "request body too large")
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	req := httptest.NewRequest(
+		http.MethodPut,
+		"/api/v1/system/settings",
+		io.LimitReader(zeroReader{}, defaultMaxRequestBodyBytes+1),
+	)
+	resp := httptest.NewRecorder()
+	bodyLimitMiddleware(readAll).ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusRequestEntityTooLarge, resp.Body.String())
+	}
+}
+
 func oversizedMultipartImportRequest(t *testing.T, path string, projectID string, fileBytes int64) *http.Request {
 	t.Helper()
 	prefix := &bytes.Buffer{}

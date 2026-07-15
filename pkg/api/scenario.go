@@ -6,6 +6,8 @@ package api
 // follow its locking contract ("Locked" suffix = caller holds tr.mu).
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -19,6 +21,53 @@ import (
 type scenarioScheduleCASPersistence interface {
 	CreateScenarioScheduleIfAbsent(schedule *storage.ScenarioSchedule) (bool, error)
 	UpdateScenarioScheduleIfRevision(schedule *storage.ScenarioSchedule, expectedRevision int) (bool, error)
+}
+
+type conditionalScenarioPersistence interface {
+	CreateScenarioWithDataPoolBindingsIfAbsent(*storage.Scenario, []storage.ScenarioScript, []storage.ScenarioDataPoolBinding) (bool, error)
+	UpdateScenarioWithDataPoolBindingsIfUnchanged(*storage.Scenario, []storage.ScenarioScript, []storage.ScenarioDataPoolBinding, time.Time) (bool, error)
+}
+
+type conditionalScenarioDeletePersistence interface {
+	DeleteScenarioIfUnchanged(string, time.Time) (bool, error)
+}
+
+var errScenarioConcurrentChange = fmt.Errorf("scenario changed concurrently after conflict preflight")
+var errScheduleHasActiveOccurrence = errors.New("schedule has an active materializing occurrence")
+
+type executionFencedScenarioSchedulePersistence interface {
+	CreateScenarioScheduleIfAbsentAndLeaseHeld(schedule *storage.ScenarioSchedule, leaseName, leaseOwnerID string) (bool, error)
+	UpdateScenarioScheduleIfRevisionAndLeaseHeld(schedule *storage.ScenarioSchedule, expectedRevision int, leaseName, leaseOwnerID string) (bool, error)
+	SaveScenarioScheduleOccurrenceIfLeaseHeld(occurrence *storage.ScenarioScheduleOccurrence, leaseName, leaseOwnerID string) (bool, error)
+}
+
+type leaseTermFencedScenarioSchedulePersistence interface {
+	CreateScenarioScheduleIfAbsentAndLeaseTermHeld(schedule *storage.ScenarioSchedule, leaseName, leaseOwnerID string, leaseGeneration uint64) (bool, error)
+	UpdateScenarioScheduleIfRevisionAndLeaseTermHeld(schedule *storage.ScenarioSchedule, expectedRevision int, leaseName, leaseOwnerID string, leaseGeneration uint64) (bool, error)
+	CreateScenarioScheduleOccurrenceIfAbsentAndLeaseTermHeld(occurrence *storage.ScenarioScheduleOccurrence, leaseName, leaseOwnerID string, leaseGeneration uint64) (bool, error)
+	CompareAndSwapScenarioScheduleOccurrenceIfLeaseTermHeld(occurrence *storage.ScenarioScheduleOccurrence, expectedRevision int64, leaseName, leaseOwnerID string, leaseGeneration uint64) (bool, error)
+}
+
+type guardedScenarioScheduleDeletePersistence interface {
+	DeleteScenarioScheduleGuarded(id string) (storage.ScheduleDeleteResult, error)
+	DeleteScenarioScheduleOccurrenceGuarded(id string) (storage.ScheduleOccurrenceDeleteResult, error)
+}
+
+type leaseTermFencedScenarioScheduleDeletePersistence interface {
+	DeleteScenarioScheduleGuardedIfLeaseTermHeld(id, leaseName, leaseOwnerID string, leaseGeneration uint64) (storage.ScheduleDeleteResult, error)
+}
+
+type scenarioScheduleOccurrenceCASPersistence interface {
+	CreateScenarioScheduleOccurrenceIfAbsent(occurrence *storage.ScenarioScheduleOccurrence) (bool, error)
+	CompareAndSwapScenarioScheduleOccurrence(occurrence *storage.ScenarioScheduleOccurrence, expectedRevision int64) (bool, error)
+}
+
+type scenarioScheduleOccurrenceClaimPersistence interface {
+	ClaimScenarioScheduleOccurrenceIfCurrent(occurrence *storage.ScenarioScheduleOccurrence) (bool, error)
+}
+
+type leaseTermFencedScenarioScheduleOccurrenceClaimPersistence interface {
+	ClaimScenarioScheduleOccurrenceIfCurrentAndLeaseTermHeld(occurrence *storage.ScenarioScheduleOccurrence, leaseName, leaseOwnerID string, leaseGeneration uint64) (bool, error)
 }
 
 func (tr *TestRunner) StoreScenario(req CreateScenarioRequest) (*StoredScenario, error) {
@@ -43,14 +92,129 @@ func (tr *TestRunner) UpdateScenario(id string, req CreateScenarioRequest) (*Sto
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	id = tr.resolveRefKeyLocked(id)
-	if _, ok := tr.scenarios[id]; !ok {
+	current, ok := tr.scenarios[id]
+	if !ok {
 		return nil, false, nil
 	}
-	scenario, err := tr.storeScenarioLocked(id, req)
+	var scenario *StoredScenario
+	var err error
+	if store, supported := tr.scenarioStore.(conditionalScenarioPersistence); supported {
+		expectedUpdatedAt := current.UpdatedAt
+		scenario, err = tr.storeScenarioLockedWithWriter(id, req, func(scenario *storage.Scenario, scripts []storage.ScenarioScript, bindings []storage.ScenarioDataPoolBinding) error {
+			updated, updateErr := store.UpdateScenarioWithDataPoolBindingsIfUnchanged(scenario, scripts, bindings, expectedUpdatedAt)
+			if updateErr != nil {
+				return updateErr
+			}
+			if !updated {
+				return errScenarioConcurrentChange
+			}
+			return nil
+		})
+	} else {
+		// Lightweight adapters retain the legacy writer contract. Production
+		// SQLite/PostgreSQL stores implement the aggregate CAS above.
+		scenario, err = tr.storeScenarioLocked(id, req)
+	}
 	return cloneStoredScenarioForReadLocked(scenario), true, err
 }
 
 func (tr *TestRunner) storeScenarioLocked(id string, req CreateScenarioRequest) (*StoredScenario, error) {
+	return tr.storeScenarioLockedWithWriter(id, req, nil)
+}
+
+// StoreScenarioWithIDCreateOnly materializes a deterministic imported scenario
+// without permitting a concurrent replica or client to be overwritten.
+func (tr *TestRunner) StoreScenarioWithIDCreateOnly(id string, req CreateScenarioRequest) (*StoredScenario, error) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil, fmt.Errorf("scenario id is required")
+	}
+	return tr.storeScenarioLockedWithWriter(id, req, func(scenario *storage.Scenario, scripts []storage.ScenarioScript, bindings []storage.ScenarioDataPoolBinding) error {
+		if store, ok := tr.scenarioStore.(conditionalScenarioPersistence); ok {
+			created, err := store.CreateScenarioWithDataPoolBindingsIfAbsent(scenario, scripts, bindings)
+			if err != nil {
+				return err
+			}
+			if !created {
+				return errScenarioConcurrentChange
+			}
+			return nil
+		}
+		if tr.scenarioStore != nil {
+			return fmt.Errorf("durable scenario store does not support atomic create-only persistence")
+		}
+		if tr.scenarios[id] != nil {
+			return errScenarioConcurrentChange
+		}
+		return nil
+	})
+}
+
+// UpdateScenarioIfUnchanged applies a library synchronization update only when
+// the durable scenario version observed during conflict detection is current.
+func (tr *TestRunner) UpdateScenarioIfUnchanged(id string, req CreateScenarioRequest, expectedUpdatedAt time.Time) (*StoredScenario, error) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	id = strings.TrimSpace(id)
+	if id == "" || expectedUpdatedAt.IsZero() {
+		return nil, fmt.Errorf("scenario id and expected updated_at are required")
+	}
+	return tr.storeScenarioLockedWithWriter(id, req, func(scenario *storage.Scenario, scripts []storage.ScenarioScript, bindings []storage.ScenarioDataPoolBinding) error {
+		if store, ok := tr.scenarioStore.(conditionalScenarioPersistence); ok {
+			updated, err := store.UpdateScenarioWithDataPoolBindingsIfUnchanged(scenario, scripts, bindings, expectedUpdatedAt)
+			if err != nil {
+				return err
+			}
+			if !updated {
+				return errScenarioConcurrentChange
+			}
+			return nil
+		}
+		if tr.scenarioStore != nil {
+			return fmt.Errorf("durable scenario store does not support conditional updates")
+		}
+		current := tr.scenarios[id]
+		if current == nil || !current.UpdatedAt.Equal(expectedUpdatedAt) {
+			return errScenarioConcurrentChange
+		}
+		return nil
+	})
+}
+
+func (tr *TestRunner) DeleteScenarioIfUnchanged(id string, expectedUpdatedAt time.Time) (bool, error) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	id = strings.TrimSpace(id)
+	if id == "" || expectedUpdatedAt.IsZero() {
+		return false, fmt.Errorf("scenario id and expected updated_at are required")
+	}
+	deleted := false
+	if store, ok := tr.scenarioStore.(conditionalScenarioDeletePersistence); ok {
+		var err error
+		deleted, err = store.DeleteScenarioIfUnchanged(id, expectedUpdatedAt)
+		if err != nil || !deleted {
+			return deleted, err
+		}
+	} else if tr.scenarioStore != nil {
+		return false, fmt.Errorf("durable scenario store does not support conditional delete")
+	} else {
+		current := tr.scenarios[id]
+		if current == nil || !current.UpdatedAt.Equal(expectedUpdatedAt) || len(current.Schedules) != 0 || current.ResultCount != 0 {
+			return false, nil
+		}
+		deleted = true
+	}
+	if current := tr.scenarios[id]; current != nil {
+		tr.removeRefKeyLocked(current.RefKey)
+	}
+	delete(tr.scenarios, id)
+	tr.contentRevision++
+	return true, nil
+}
+
+func (tr *TestRunner) storeScenarioLockedWithWriter(id string, req CreateScenarioRequest, writer func(*storage.Scenario, []storage.ScenarioScript, []storage.ScenarioDataPoolBinding) error) (*StoredScenario, error) {
 	if strings.TrimSpace(req.Name) == "" {
 		return nil, fmt.Errorf("scenario name is required")
 	}
@@ -73,6 +237,8 @@ func (tr *TestRunner) storeScenarioLocked(id string, req CreateScenarioRequest) 
 	}
 	if _, err := validateScenarioRequest(CreateTestRequest{
 		ScenarioMode: req.ScenarioMode,
+		Duration:     req.Duration,
+		StartDelay:   req.StartDelay,
 		Assignment:   req.Assignment,
 		GoalConfig:   req.GoalConfig,
 	}); err != nil {
@@ -154,7 +320,11 @@ func (tr *TestRunner) storeScenarioLocked(id string, req CreateScenarioRequest) 
 	if err := tr.validateDataPoolProjectsLocked(projectID, dataPools); err != nil {
 		return nil, err
 	}
-	if tr.scenarioStore != nil {
+	if writer != nil {
+		if err := writer(scenario, scripts, dataPools); err != nil {
+			return nil, err
+		}
+	} else if tr.scenarioStore != nil {
 		if atomicStore, ok := tr.scenarioStore.(atomicScenarioPersistence); ok {
 			if err := atomicStore.SaveScenarioWithDataPoolBindings(scenario, scripts, dataPools); err != nil {
 				return nil, err
@@ -239,13 +409,14 @@ func (tr *TestRunner) GetScenario(id string) (*StoredScenario, bool) {
 	return tr.enrichScenarioSummaryLocked(scenario), true
 }
 
-func (tr *TestRunner) refreshScenariosForHARead() {
+func (tr *TestRunner) refreshScenariosForHARead(force ...bool) {
 	if tr == nil || tr.leadership == nil {
 		return
 	}
 	tr.haScenarioRefreshMu.Lock()
 	defer tr.haScenarioRefreshMu.Unlock()
-	if !tr.haScenarioRefreshAt.IsZero() && time.Since(tr.haScenarioRefreshAt) < 250*time.Millisecond {
+	forceRefresh := len(force) > 0 && force[0]
+	if !forceRefresh && !tr.haScenarioRefreshAt.IsZero() && time.Since(tr.haScenarioRefreshAt) < 250*time.Millisecond {
 		return
 	}
 	if err := tr.reloadStoredScripts(); err != nil {
@@ -259,15 +430,16 @@ func (tr *TestRunner) refreshScenariosForHARead() {
 	tr.haScenarioRefreshAt = time.Now()
 }
 
-func (tr *TestRunner) replaceScenarioDataPools(id string, bindings []storage.ScenarioDataPoolBinding) bool {
+func (tr *TestRunner) replaceScenarioDataPools(id string, bindings []storage.ScenarioDataPoolBinding, expectedUpdatedAt, updatedAt time.Time) bool {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	id = tr.resolveRefKeyLocked(id)
 	scenario := tr.scenarios[id]
-	if scenario == nil {
+	if scenario == nil || !scenario.UpdatedAt.Equal(expectedUpdatedAt) {
 		return false
 	}
 	scenario.DataPools = append([]storage.ScenarioDataPoolBinding(nil), bindings...)
+	scenario.UpdatedAt = updatedAt
 	tr.contentRevision++
 	return true
 }
@@ -455,6 +627,7 @@ func scenarioScheduleOccurrenceAuditAction(occurrenceStatus string) (string, str
 }
 
 func (tr *TestRunner) ListScenarioScheduleOccurrences(scenarioID string, scheduleID string) ([]*storage.ScenarioScheduleOccurrence, bool) {
+	tr.refreshScenariosForHARead(true)
 	tr.mu.RLock()
 	defer tr.mu.RUnlock()
 	scenario, ok := tr.scenarios[scenarioID]
@@ -485,11 +658,72 @@ func (tr *TestRunner) ListScenarioScheduleOccurrences(scenarioID string, schedul
 	return out, true
 }
 
+// ListScenarioScheduleOccurrencesPage is the controller-facing bounded history
+// read. Production storage applies LIMIT/OFFSET in SQL; compatibility stores
+// are sliced after their legacy read.
+func (tr *TestRunner) ListScenarioScheduleOccurrencesPage(scenarioID, scheduleID string, limit, offset int) ([]*storage.ScenarioScheduleOccurrence, bool) {
+	tr.refreshScenariosForHARead(true)
+	tr.mu.RLock()
+	scenario, ok := tr.scenarios[scenarioID]
+	found := false
+	if ok {
+		for _, schedule := range scenario.Schedules {
+			if schedule != nil && schedule.ID == scheduleID {
+				found = true
+				break
+			}
+		}
+	}
+	store := tr.scenarioStore
+	tr.mu.RUnlock()
+	if !ok || !found {
+		return nil, false
+	}
+	if store == nil {
+		return []*storage.ScenarioScheduleOccurrence{}, true
+	}
+	var occurrences []*storage.ScenarioScheduleOccurrence
+	var err error
+	if paged, ok := store.(interface {
+		ListScenarioScheduleOccurrencesPage(string, int, int) ([]*storage.ScenarioScheduleOccurrence, error)
+	}); ok {
+		occurrences, err = paged.ListScenarioScheduleOccurrencesPage(scheduleID, limit, offset)
+	} else {
+		occurrences, err = store.ListScenarioScheduleOccurrences(scheduleID)
+		if err == nil {
+			occurrences = pageScenarioScheduleOccurrences(occurrences, limit, offset)
+		}
+	}
+	if err != nil {
+		return []*storage.ScenarioScheduleOccurrence{}, true
+	}
+	out := make([]*storage.ScenarioScheduleOccurrence, 0, len(occurrences))
+	for _, occurrence := range occurrences {
+		out = append(out, cloneScenarioScheduleOccurrence(occurrence))
+	}
+	return out, true
+}
+
+func pageScenarioScheduleOccurrences(items []*storage.ScenarioScheduleOccurrence, limit, offset int) []*storage.ScenarioScheduleOccurrence {
+	if limit <= 0 || offset >= len(items) {
+		return []*storage.ScenarioScheduleOccurrence{}
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	end := len(items)
+	if limit < len(items)-offset {
+		end = offset + limit
+	}
+	return items[offset:end]
+}
+
 // ListScenarioScheduleApprovals returns the approval history (pending + resolved)
 // for a schedule, scoped to its scenario. ok=false when the scenario or schedule
 // is unknown. Mirrors ListScenarioScheduleOccurrences. The approvals come straight
 // from a store query (not shared in-memory state), so they are returned as-is.
 func (tr *TestRunner) ListScenarioScheduleApprovals(scenarioID string, scheduleID string) ([]*storage.ScenarioScheduleApproval, bool) {
+	tr.refreshScenariosForHARead(true)
 	tr.mu.RLock()
 	defer tr.mu.RUnlock()
 	scenario, ok := tr.scenarios[scenarioID]
@@ -519,19 +753,72 @@ func (tr *TestRunner) ListScenarioScheduleApprovals(scenarioID string, scheduleI
 	return approvals, true
 }
 
+// ListScenarioScheduleApprovalsPage is the bounded API counterpart of the
+// complete approval-history reader used by scheduler internals.
+func (tr *TestRunner) ListScenarioScheduleApprovalsPage(scenarioID, scheduleID string, limit, offset int) ([]*storage.ScenarioScheduleApproval, bool) {
+	tr.refreshScenariosForHARead(true)
+	tr.mu.RLock()
+	scenario, ok := tr.scenarios[scenarioID]
+	found := false
+	if ok {
+		for _, schedule := range scenario.Schedules {
+			if schedule != nil && schedule.ID == scheduleID {
+				found = true
+				break
+			}
+		}
+	}
+	store := tr.scenarioStore
+	tr.mu.RUnlock()
+	if !ok || !found {
+		return nil, false
+	}
+	if store == nil {
+		return []*storage.ScenarioScheduleApproval{}, true
+	}
+	var approvals []*storage.ScenarioScheduleApproval
+	var err error
+	if paged, ok := store.(interface {
+		ListScenarioScheduleApprovalsPage(string, int, int) ([]*storage.ScenarioScheduleApproval, error)
+	}); ok {
+		approvals, err = paged.ListScenarioScheduleApprovalsPage(scheduleID, limit, offset)
+	} else {
+		approvals, err = store.ListScenarioScheduleApprovals(scheduleID)
+		if err == nil {
+			if limit <= 0 || offset >= len(approvals) {
+				approvals = []*storage.ScenarioScheduleApproval{}
+			} else {
+				if offset < 0 {
+					offset = 0
+				}
+				end := len(approvals)
+				if limit < len(approvals)-offset {
+					end = offset + limit
+				}
+				approvals = approvals[offset:end]
+			}
+		}
+	}
+	if err != nil || approvals == nil {
+		return []*storage.ScenarioScheduleApproval{}, true
+	}
+	return approvals, true
+}
+
 // DeleteScenarioScheduleOccurrence removes a single occurrence record for a
 // schedule, scoped to its scenario. Returns false (→ 404) when the scenario,
 // schedule, or occurrence is unknown or the occurrence belongs to a different
-// schedule. Removing a non-terminal (blocked/failed) occurrence lets the
-// scheduler re-attempt that slot on the next sweep; removing a terminal one
-// prunes history. The schedule's cached LastOccurrence is cleared if it pointed
-// at the deleted record.
-func (tr *TestRunner) DeleteScenarioScheduleOccurrence(scenarioID string, scheduleID string, occurrenceID string) bool {
+// schedule. Only terminal history whose parent schedule has durably advanced
+// past the occurrence may be pruned; active or cross-row-commit-window records
+// remain the scheduler's duplicate-prevention anchor. The schedule's cached
+// LastOccurrence is cleared if it pointed at the deleted record.
+func (tr *TestRunner) DeleteScenarioScheduleOccurrence(scenarioID string, scheduleID string, occurrenceID string) (bool, error) {
+	tr.refreshScenariosForHARead(true)
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	scenario, ok := tr.scenarios[scenarioID]
 	if !ok {
-		return false
+		return false, nil
 	}
 	var target *storage.ScenarioSchedule
 	for _, schedule := range scenario.Schedules {
@@ -541,22 +828,44 @@ func (tr *TestRunner) DeleteScenarioScheduleOccurrence(scenarioID string, schedu
 		}
 	}
 	if target == nil || tr.scenarioStore == nil {
-		return false
+		return false, nil
 	}
 	occurrence, err := tr.scenarioStore.GetScenarioScheduleOccurrence(occurrenceID)
-	if err != nil || occurrence == nil || occurrence.ScheduleID != scheduleID {
-		return false
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
 	}
-	if err := tr.scenarioStore.DeleteScenarioScheduleOccurrence(occurrenceID); err != nil {
-		return false
+	if err != nil || occurrence == nil || occurrence.ScheduleID != scheduleID {
+		return false, err
+	}
+	if store, ok := tr.scenarioStore.(guardedScenarioScheduleDeletePersistence); ok {
+		result, deleteErr := store.DeleteScenarioScheduleOccurrenceGuarded(occurrenceID)
+		if deleteErr != nil {
+			return true, deleteErr
+		}
+		switch result {
+		case storage.ScheduleOccurrenceDeleteBlockedByStatus:
+			return true, errScheduleHasActiveOccurrence
+		case storage.ScheduleOccurrenceDeleteMissing:
+			return false, nil
+		}
+	} else {
+		switch strings.ToLower(strings.TrimSpace(occurrence.Status)) {
+		case "materialized", "failed", "blocked", "skipped":
+		default:
+			return true, errScheduleHasActiveOccurrence
+		}
+		if err := tr.scenarioStore.DeleteScenarioScheduleOccurrence(occurrenceID); err != nil {
+			return true, err
+		}
 	}
 	if target.LastOccurrence != nil && target.LastOccurrence.ID == occurrenceID {
 		target.LastOccurrence = nil
 	}
-	return true
+	return true, nil
 }
 
 func (tr *TestRunner) ScenarioScheduleHealth(now time.Time) ScenarioScheduleHealth {
+	tr.refreshScenariosForHARead(true)
 	tr.mu.RLock()
 	health := ScenarioScheduleHealth{StatusCounts: map[string]int{}}
 	for _, schedule := range tr.listAllScenarioSchedulesLocked() {

@@ -7,11 +7,69 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
+
+func TestResolveReleaseApplicationIDConvergesConcurrentImplicitCreates(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+	project := &storage.Project{ID: "project-concurrent-release", Name: "Concurrent releases"}
+	if err := store.SaveProject(project); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+	server := NewServer(ServerConfig{Store: store})
+
+	const callers = 8
+	ids := make(chan string, callers)
+	errs := make(chan error, callers)
+	var wg sync.WaitGroup
+	for i := 0; i < callers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			id, err := server.resolveReleaseApplicationID(project.ID, "")
+			ids <- id
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(ids)
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("resolveReleaseApplicationID: %v", err)
+		}
+	}
+	want := ""
+	for id := range ids {
+		if want == "" {
+			want = id
+		}
+		if id != want {
+			t.Fatalf("implicit application ids diverged: got %q and %q", want, id)
+		}
+	}
+	applications, err := store.ListApplications()
+	if err != nil {
+		t.Fatalf("ListApplications: %v", err)
+	}
+	count := 0
+	for _, application := range applications {
+		if application.ProjectID == project.ID {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("project applications = %d, want exactly one implicit application", count)
+	}
+}
 
 func TestApplicationReleaseAndScenarioHandlers(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))

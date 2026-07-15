@@ -15,6 +15,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/fileasset"
 )
 
 func TestCorrelationMatches(t *testing.T) {
@@ -106,7 +108,11 @@ func TestToAMQPMessageSetsReplyToProperty(t *testing.T) {
 
 func TestBuildTLSRootCAs(t *testing.T) {
 	pemCert := generateSelfSignedPEM(t)
-	pemFile := filepath.Join(t.TempDir(), "ca.pem")
+	assetDir := t.TempDir()
+	if err := fileasset.RegisterRoot(assetDir); err != nil {
+		t.Fatal(err)
+	}
+	pemFile := filepath.Join(assetDir, "ca.pem")
 	if err := os.WriteFile(pemFile, []byte(pemCert), 0o600); err != nil {
 		t.Fatalf("WriteFile(ca.pem) returned error: %v", err)
 	}
@@ -145,6 +151,12 @@ func TestBuildTLSRootCAs(t *testing.T) {
 			caCertSecret:  filepath.Join(t.TempDir(), "does-not-exist.pem"),
 			wantErr:       true,
 			wantErrSubstr: "read JMS TLS CA cert file",
+		},
+		{
+			name:          "oversized inline PEM errors",
+			caCertSecret:  "-----BEGIN CERTIFICATE-----\n" + strings.Repeat("x", int(fileasset.MaxCredentialBytes)) + "\n-----END CERTIFICATE-----",
+			wantErr:       true,
+			wantErrSubstr: "byte limit",
 		},
 		{
 			name:          "JKS truststore-only is rejected",

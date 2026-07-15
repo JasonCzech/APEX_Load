@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
@@ -12,7 +14,7 @@ func snapshotJSON(snapshot *protocol.ErrorSnapshot) string {
 	if snapshot == nil {
 		return ""
 	}
-	data, err := json.Marshal(snapshot)
+	data, err := json.Marshal(engine.BoundErrorSnapshot(snapshot, maxMetricsSnapshotJSONBytes))
 	if err != nil {
 		return ""
 	}
@@ -34,10 +36,10 @@ func snapshotJSON(snapshot *protocol.ErrorSnapshot) string {
 }
 
 func truncateSnapshotField(value string, maxBytes int) string {
-	if maxBytes <= 0 || len(value) <= maxBytes {
-		return value
+	if maxBytes <= 0 {
+		return ""
 	}
-	return value[:maxBytes]
+	return boundedtext.TruncateUTF8(value, maxBytes)
 }
 
 func resultStartTimeUnixMs(startTime time.Time) int64 {
@@ -48,20 +50,7 @@ func resultStartTimeUnixMs(startTime time.Time) int64 {
 }
 
 func cloneErrorSnapshot(snapshot *protocol.ErrorSnapshot) *protocol.ErrorSnapshot {
-	if snapshot == nil {
-		return nil
-	}
-	cloned := *snapshot
-	cloned.RequestHeaders = cloneStringMap(snapshot.RequestHeaders)
-	cloned.ResponseHeaders = cloneStringMap(snapshot.ResponseHeaders)
-	cloned.ConsoleEntries = append([]protocol.ConsoleEntry(nil), snapshot.ConsoleEntries...)
-	cloned.NetworkEntries = append([]protocol.NetworkEntry(nil), snapshot.NetworkEntries...)
-	if snapshot.DOMSummary != nil {
-		domSummary := *snapshot.DOMSummary
-		domSummary.VisibleText = append([]string(nil), snapshot.DOMSummary.VisibleText...)
-		cloned.DOMSummary = &domSummary
-	}
-	return &cloned
+	return engine.BoundErrorSnapshot(snapshot, 32<<10)
 }
 
 func cloneStringMap(values map[string]string) map[string]string {

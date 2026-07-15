@@ -18,6 +18,13 @@ import (
 	"fmt"
 	"log/slog"
 	"runtime/debug"
+
+	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
+)
+
+const (
+	maxRecoveredPanicLogBytes = 4 << 10
+	maxRecoveredStackLogBytes = 64 << 10
 )
 
 // recoverVUserGoroutine recovers a panic that escaped per-action recovery and
@@ -29,7 +36,16 @@ func recoverVUserGoroutine(vuserID int) {
 	if r := recover(); r != nil {
 		slog.Error("vuser goroutine panicked; recovered to protect the process",
 			"vuser", vuserID,
-			"panic", fmt.Sprintf("%v", r),
-			"stack", string(debug.Stack()))
+			"panic", recoveredPanicLogText(r),
+			"stack", boundedtext.TruncateUTF8(string(debug.Stack()), maxRecoveredStackLogBytes))
 	}
+}
+
+// recoveredPanicLogText treats panic values as untrusted adapter output. A
+// protocol may panic with a URL, response, or error containing resolved
+// credentials; emitting that value verbatim would bypass normal result/error
+// redaction and persist the secret in generator logs.
+func recoveredPanicLogText(value any) string {
+	raw := boundedtext.TruncateUTF8(fmt.Sprintf("%v", value), maxRecoveredPanicLogBytes)
+	return scrubSensitiveText(raw)
 }

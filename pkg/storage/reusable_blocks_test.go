@@ -3,6 +3,7 @@ package storage
 import (
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func newReusableBlockTestStore(t *testing.T) *SQLiteStore {
@@ -17,6 +18,11 @@ func newReusableBlockTestStore(t *testing.T) *SQLiteStore {
 
 func TestReusableBlockCRUD(t *testing.T) {
 	store := newReusableBlockTestStore(t)
+	for _, id := range []string{"proj-a", "proj-b"} {
+		if err := store.SaveProject(&Project{ID: id, Name: id, CreatedAt: time.Now(), UpdatedAt: time.Now()}); err != nil {
+			t.Fatalf("SaveProject(%s): %v", id, err)
+		}
+	}
 
 	block := &ReusableBlock{
 		ID:        "block-1",
@@ -61,5 +67,32 @@ func TestReusableBlockCRUD(t *testing.T) {
 	}
 	if len(listA) != 0 {
 		t.Errorf("expected proj-a empty after delete, got %+v", listA)
+	}
+}
+
+func TestReusableBlockRejectsMissingProjectAndOwnershipRelocation(t *testing.T) {
+	store := newReusableBlockTestStore(t)
+	if err := store.SaveReusableBlock(&ReusableBlock{ID: "missing-project-block", ProjectID: "missing-project", Name: "bad", Component: "{}"}); err == nil {
+		t.Fatal("SaveReusableBlock accepted a missing project")
+	}
+	for _, id := range []string{"block-project-a", "block-project-b"} {
+		if err := store.SaveProject(&Project{ID: id, Name: id}); err != nil {
+			t.Fatalf("SaveProject(%s): %v", id, err)
+		}
+	}
+	block := &ReusableBlock{ID: "owned-block", ProjectID: "block-project-a", Name: "owned", Component: "{}"}
+	if err := store.SaveReusableBlock(block); err != nil {
+		t.Fatalf("initial SaveReusableBlock: %v", err)
+	}
+	block.ProjectID = "block-project-b"
+	if err := store.SaveReusableBlock(block); err == nil {
+		t.Fatal("SaveReusableBlock relocated project ownership")
+	}
+	persisted, err := store.GetReusableBlock(block.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted.ProjectID != "block-project-a" {
+		t.Fatalf("persisted project = %q, want block-project-a", persisted.ProjectID)
 	}
 }

@@ -54,6 +54,227 @@ type lifecycleTransitionBackend struct {
 	pauseHook    func(*TestRunner, *ManagedTest)
 	resumeHook   func(*TestRunner, *ManagedTest)
 	durationHook func(*TestRunner, *ManagedTest)
+	pauseErr     error
+	resumeErr    error
+	durationErr  error
+	scaleErr     error
+	stopErrs     []error
+}
+
+func TestUncertainRemoteMutationsStillStopWhenFailClosedPersistenceFails(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		invoke func(*TestRunner, *ManagedTest, testExecutionBackend) error
+	}{
+		{
+			name: "pause",
+			invoke: func(runner *TestRunner, test *ManagedTest, backend testExecutionBackend) error {
+				return runner.failClosedUncertainPauseControl(test, "RUNNING", backend, errors.New("pause compensation unresolved"))
+			},
+		},
+		{
+			name: "duration",
+			invoke: func(runner *TestRunner, test *ManagedTest, backend testExecutionBackend) error {
+				return runner.failClosedUncertainDurationAdjustment(test, backend, 2*time.Minute, errors.New("duration compensation unresolved"))
+			},
+		},
+		{
+			name: "vusers",
+			invoke: func(runner *TestRunner, test *ManagedTest, backend testExecutionBackend) error {
+				return runner.failClosedUncertainVUserScale(&vuserScaleReservation{
+					test: test, groupIndex: 0,
+					oldGroup: TestGroup{Name: "group", VUsers: 5},
+					newGroup: TestGroup{Name: "group", VUsers: 10},
+				}, backend, errors.New("scale compensation unresolved"))
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := NewTestRunner(1, NewHub(), nil)
+			runner.testStore = &failingLifecycleStore{metricsStoreSpy: &metricsStoreSpy{}, err: errors.New("database unavailable")}
+			backend := &lifecycleTransitionBackend{}
+			ctx, cancel := context.WithCancel(context.Background())
+			test := &ManagedTest{
+				ID: "uncertain-" + tc.name, Status: "RUNNING", Duration: time.Minute,
+				Groups: []TestGroup{{Name: "group", VUsers: 10}}, TotalVUsers: 10,
+				cancel: cancel, executionCtx: ctx,
+			}
+			runner.tests[test.ID] = test
+
+			if err := tc.invoke(runner, test, backend); err == nil || !strings.Contains(err.Error(), "database unavailable") {
+				t.Fatalf("fail-closed error = %v, want persistence failure", err)
+			}
+			if test.Status != "STOPPING" {
+				t.Fatalf("status = %s, want STOPPING", test.Status)
+			}
+			if ctx.Err() == nil {
+				t.Fatal("execution context was not canceled")
+			}
+			_, stopCalls := backend.counts()
+			if stopCalls != 1 {
+				t.Fatalf("stop calls = %d, want 1", stopCalls)
+			}
+		})
+	}
+}
+
+func TestUncertainRemoteMutationsRetryFailedTeardown(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		invoke func(*TestRunner, *ManagedTest, testExecutionBackend) error
+	}{
+		{
+			name: "pause",
+			invoke: func(runner *TestRunner, test *ManagedTest, backend testExecutionBackend) error {
+				return runner.failClosedUncertainPauseControl(test, "RUNNING", backend, errors.New("pause compensation unresolved"))
+			},
+		},
+		{
+			name: "duration",
+			invoke: func(runner *TestRunner, test *ManagedTest, backend testExecutionBackend) error {
+				return runner.failClosedUncertainDurationAdjustment(test, backend, 2*time.Minute, errors.New("duration compensation unresolved"))
+			},
+		},
+		{
+			name: "vusers",
+			invoke: func(runner *TestRunner, test *ManagedTest, backend testExecutionBackend) error {
+				return runner.failClosedUncertainVUserScale(&vuserScaleReservation{
+					test: test, groupIndex: 0,
+					oldGroup: TestGroup{Name: "group", VUsers: 5},
+					newGroup: TestGroup{Name: "group", VUsers: 10},
+				}, backend, errors.New("scale compensation unresolved"))
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			wantStopErr := errors.New("temporary stop failure")
+			backend := &lifecycleTransitionBackend{stopErrs: []error{wantStopErr}}
+			runner := NewTestRunner(1, NewHub(), nil)
+			ctx, cancel := context.WithCancel(context.Background())
+			test := &ManagedTest{
+				ID: "uncertain-stop-retry-" + tc.name, Status: "RUNNING", Duration: time.Minute,
+				Groups: []TestGroup{{Name: "group", VUsers: 10}}, TotalVUsers: 10,
+				cancel: cancel, executionCtx: ctx, executionBackend: backend,
+			}
+			runner.tests[test.ID] = test
+
+			if err := tc.invoke(runner, test, backend); !errors.Is(err, wantStopErr) {
+				t.Fatalf("fail-closed error = %v, want stop failure", err)
+			}
+			deadline := time.Now().Add(time.Second)
+			for {
+				_, stopCalls := backend.counts()
+				if stopCalls >= 2 {
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatalf("backend stop calls = %d, want automatic retry", stopCalls)
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+		})
+	}
+}
+
+func TestCompensatedAdjustmentRollbackPersistenceFailureStopsFailClosed(t *testing.T) {
+	wantBackendErr := errors.New("remote adjustment failed after compensation")
+	wantStoreErr := errors.New("database unavailable")
+	for _, tc := range []struct {
+		name      string
+		configure func(*lifecycleTransitionBackend)
+		invoke    func(*TestRunner, string) error
+		newTest   func(context.Context, context.CancelFunc, *lifecycleTransitionBackend) *ManagedTest
+		assertMax func(*testing.T, *ManagedTest, *storage.TestRecord)
+	}{
+		{
+			name:      "downscale",
+			configure: func(backend *lifecycleTransitionBackend) { backend.scaleErr = wantBackendErr },
+			invoke: func(runner *TestRunner, id string) error {
+				return runner.ScaleVUsers(id, "group", 10)
+			},
+			newTest: func(ctx context.Context, cancel context.CancelFunc, backend *lifecycleTransitionBackend) *ManagedTest {
+				return &ManagedTest{
+					ID: "rollback-persist-downscale", Status: "RUNNING", Duration: time.Hour,
+					Groups: []TestGroup{{Name: "group", VUsers: 100}}, TotalVUsers: 100,
+					executionCtx: ctx, cancel: cancel, executionBackend: backend,
+				}
+			},
+			assertMax: func(t *testing.T, test *ManagedTest, saved *storage.TestRecord) {
+				t.Helper()
+				if test.TotalVUsers != 100 || test.Groups[0].VUsers != 100 {
+					t.Fatalf("fail-closed VUser reservation = total:%d group:%d, want 100", test.TotalVUsers, test.Groups[0].VUsers)
+				}
+				if saved.TotalVUsers != 100 {
+					t.Fatalf("durable fail-closed VUser reservation = %d, want 100", saved.TotalVUsers)
+				}
+			},
+		},
+		{
+			name:      "shorten duration",
+			configure: func(backend *lifecycleTransitionBackend) { backend.durationErr = wantBackendErr },
+			invoke: func(runner *TestRunner, id string) error {
+				return runner.AdjustDuration(id, 5*time.Minute)
+			},
+			newTest: func(ctx context.Context, cancel context.CancelFunc, backend *lifecycleTransitionBackend) *ManagedTest {
+				return &ManagedTest{
+					ID: "rollback-persist-duration", Status: "RUNNING", Duration: time.Hour, DurationStr: time.Hour.String(),
+					Groups: []TestGroup{{Name: "group", VUsers: 1}}, TotalVUsers: 1,
+					executionCtx: ctx, cancel: cancel, executionBackend: backend,
+				}
+			},
+			assertMax: func(t *testing.T, test *ManagedTest, saved *storage.TestRecord) {
+				t.Helper()
+				if test.Duration != time.Hour {
+					t.Fatalf("fail-closed duration reservation = %s, want 1h", test.Duration)
+				}
+				if time.Duration(saved.Duration) != time.Hour {
+					t.Fatalf("durable fail-closed duration reservation = %s, want 1h", time.Duration(saved.Duration))
+				}
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			baseStore := &metricsStoreSpy{}
+			runner := NewTestRunner(1, NewHub(), nil)
+			runner.testStore = &scriptedTestPersistence{
+				testPersistence: baseStore,
+				err:             wantStoreErr,
+				// Call 1 reserves the proposed value. Calls 2-4 are the
+				// failed durable rollback. The fail-closed max reservation on
+				// call 5 must still be attempted and succeeds.
+				failSaveCalls: failCalls(2, durableTransitionAttempts),
+			}
+			backend := &lifecycleTransitionBackend{}
+			tc.configure(backend)
+			runner.setExecutionBackend(backend)
+			ctx, cancel := context.WithCancel(context.Background())
+			test := tc.newTest(ctx, cancel, backend)
+			runner.tests[test.ID] = test
+
+			err := tc.invoke(runner, test.ID)
+			if !errors.Is(err, wantBackendErr) || !errors.Is(err, wantStoreErr) {
+				t.Fatalf("adjustment error = %v, want backend and rollback persistence failures", err)
+			}
+			if test.Status != "STOPPING" {
+				t.Fatalf("status = %s, want STOPPING", test.Status)
+			}
+			if ctx.Err() == nil {
+				t.Fatal("execution context was not canceled")
+			}
+			_, stopCalls := backend.counts()
+			if stopCalls != 1 {
+				t.Fatalf("backend stop calls = %d, want 1", stopCalls)
+			}
+			if len(baseStore.savedTests) < 2 {
+				t.Fatalf("successful durable saves = %d, want reservation and fail-closed state", len(baseStore.savedTests))
+			}
+			last := baseStore.savedTests[len(baseStore.savedTests)-1]
+			if last.Status != "STOPPING" {
+				t.Fatalf("last durable status = %s, want STOPPING", last.Status)
+			}
+			tc.assertMax(t, test, last)
+		})
+	}
 }
 
 func (b *lifecycleTransitionBackend) Run(_ *TestRunner, _ *ManagedTest) {
@@ -64,9 +285,14 @@ func (b *lifecycleTransitionBackend) Run(_ *TestRunner, _ *ManagedTest) {
 
 func (b *lifecycleTransitionBackend) StopTest(_ *TestRunner, _ *ManagedTest) error {
 	b.mu.Lock()
+	var err error
+	if len(b.stopErrs) > 0 {
+		err = b.stopErrs[0]
+		b.stopErrs = b.stopErrs[1:]
+	}
 	b.stopCalls++
 	b.mu.Unlock()
-	return nil
+	return err
 }
 
 func (b *lifecycleTransitionBackend) StopTestContext(_ context.Context, tr *TestRunner, test *ManagedTest) error {
@@ -77,21 +303,73 @@ func (b *lifecycleTransitionBackend) PauseTest(tr *TestRunner, test *ManagedTest
 	if b.pauseHook != nil {
 		b.pauseHook(tr, test)
 	}
-	return nil
+	return b.pauseErr
 }
 
 func (b *lifecycleTransitionBackend) ResumeTest(tr *TestRunner, test *ManagedTest) error {
 	if b.resumeHook != nil {
 		b.resumeHook(tr, test)
 	}
-	return nil
+	return b.resumeErr
+}
+
+func TestPauseResumePersistenceRollbackFailureStopsFailClosed(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		status     string
+		failStatus string
+		configure  func(*lifecycleTransitionBackend)
+		invoke     func(*TestRunner, string) error
+	}{
+		{
+			name: "pause", status: "RUNNING", failStatus: "PAUSED",
+			configure: func(backend *lifecycleTransitionBackend) { backend.resumeErr = errors.New("resume rollback failed") },
+			invoke:    func(runner *TestRunner, id string) error { return runner.PauseTest(id) },
+		},
+		{
+			name: "resume", status: "PAUSED", failStatus: "RUNNING",
+			configure: func(backend *lifecycleTransitionBackend) { backend.pauseErr = errors.New("pause rollback failed") },
+			invoke:    func(runner *TestRunner, id string) error { return runner.ResumeTest(id) },
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := NewTestRunner(1, NewHub(), nil)
+			runner.testStore = &statusFailingLifecycleStore{
+				metricsStoreSpy: &metricsStoreSpy{}, status: tc.failStatus, err: errors.New("database unavailable"),
+			}
+			backend := &lifecycleTransitionBackend{}
+			tc.configure(backend)
+			runner.setExecutionBackend(backend)
+			test := &ManagedTest{ID: "persist-rollback-" + tc.name, Status: tc.status, Duration: time.Minute}
+			if tc.status == "PAUSED" {
+				pausedAt := time.Now().Add(-time.Second)
+				test.PausedAt = &pausedAt
+			}
+			runner.tests[test.ID] = test
+
+			if err := tc.invoke(runner, test.ID); err == nil || !strings.Contains(err.Error(), "rollback failed") {
+				t.Fatalf("control error = %v, want rollback failure", err)
+			}
+			if test.Status != "STOPPING" {
+				t.Fatalf("status = %s, want STOPPING", test.Status)
+			}
+			_, stopCalls := backend.counts()
+			if stopCalls != 1 {
+				t.Fatalf("stop calls = %d, want 1", stopCalls)
+			}
+		})
+	}
 }
 
 func (b *lifecycleTransitionBackend) AdjustDuration(tr *TestRunner, test *ManagedTest, _ time.Duration) error {
 	if b.durationHook != nil {
 		b.durationHook(tr, test)
 	}
-	return nil
+	return b.durationErr
+}
+
+func (b *lifecycleTransitionBackend) ScaleVUsers(_ *TestRunner, _ *ManagedTest, _ string, _ int) error {
+	return b.scaleErr
 }
 
 func (b *lifecycleTransitionBackend) counts() (int, int) {
@@ -161,7 +439,7 @@ func TestStopTestDoesNotCancelInitializingRunWhenAbortPersistenceFails(t *testin
 	}
 }
 
-func TestPauseAndDurationCompensateWhenPersistenceFails(t *testing.T) {
+func TestPauseCompensatesAndDurationAvoidsRemoteMutationWhenPersistenceFails(t *testing.T) {
 	runner := NewTestRunner(1, NewHub(), nil)
 	wantErr := errors.New("database unavailable")
 	runner.testStore = &failingLifecycleStore{metricsStoreSpy: &metricsStoreSpy{}, err: wantErr}
@@ -186,8 +464,8 @@ func TestPauseAndDurationCompensateWhenPersistenceFails(t *testing.T) {
 	if err := runner.AdjustDuration(test.ID, 2*time.Minute); !errors.Is(err, wantErr) {
 		t.Fatalf("AdjustDuration error = %v, want %v", err, wantErr)
 	}
-	if test.Duration != time.Minute || test.DurationStr != "1m0s" || durationCalls != 2 {
-		t.Fatalf("duration compensation = %s/%q with %d backend calls", test.Duration, test.DurationStr, durationCalls)
+	if test.Duration != time.Minute || test.DurationStr != "1m0s" || durationCalls != 0 {
+		t.Fatalf("duration reservation failure left %s/%q with %d backend calls, want original state and no remote mutation", test.Duration, test.DurationStr, durationCalls)
 	}
 }
 
@@ -612,4 +890,50 @@ func TestStopActiveTestsStopsBackendAndCancelsRun(t *testing.T) {
 	if test.Status != "STOPPING" {
 		t.Fatalf("status = %s, want STOPPING", test.Status)
 	}
+}
+
+func TestSecondStopRetriesFailClosedStoppingTeardown(t *testing.T) {
+	wantStopErr := errors.New("backend stop was not applied")
+	wantStoreErr := errors.New("database unavailable")
+	runner := NewTestRunner(1, NewHub(), nil)
+	runner.testStore = &statusFailingLifecycleStore{
+		metricsStoreSpy: &metricsStoreSpy{},
+		status:          "RUNNING",
+		err:             wantStoreErr,
+	}
+	backend := &lifecycleTransitionBackend{stopErrs: []error{wantStopErr}}
+	runner.setExecutionBackend(backend)
+	ctx, cancel := context.WithCancel(context.Background())
+	test := &ManagedTest{
+		ID: "retry-fail-closed-stop", Status: "RUNNING", Duration: time.Minute,
+		executionCtx: ctx, cancel: cancel, executionBackend: backend,
+	}
+	runner.tests[test.ID] = test
+
+	err := runner.StopTest(test.ID)
+	if !errors.Is(err, wantStopErr) || !errors.Is(err, wantStoreErr) {
+		t.Fatalf("first StopTest error = %v, want backend and rollback persistence failures", err)
+	}
+	if test.Status != "STOPPING" {
+		t.Fatalf("status after failed rollback persistence = %s, want STOPPING", test.Status)
+	}
+	if ctx.Err() != nil {
+		t.Fatal("known-not-applied first stop unexpectedly canceled execution before teardown retry")
+	}
+
+	if err := runner.StopTest(test.ID); err != nil {
+		t.Fatalf("second StopTest did not retry teardown: %v", err)
+	}
+	if ctx.Err() == nil {
+		t.Fatal("successful second stop did not cancel execution")
+	}
+	_, stopCalls := backend.counts()
+	if stopCalls != 2 {
+		t.Fatalf("backend stop calls = %d, want 2", stopCalls)
+	}
+	// Prevent the already-enqueued safety worker from issuing an unnecessary
+	// third call after this synchronous retry proved teardown succeeded.
+	runner.mu.Lock()
+	runner.shuttingDown = true
+	runner.mu.Unlock()
 }

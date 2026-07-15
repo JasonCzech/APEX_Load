@@ -83,6 +83,7 @@ type seqPlanRunState struct {
 	attribSubject string
 	attribName    string
 	approval      *storage.ExecutionPlanApproval
+	leaseTerm     executionLeaseTerm
 	rehydrated    bool // restored from durable storage rather than materialized in this process
 	recovering    bool // one recovery/resume action is currently claimed
 }
@@ -182,6 +183,16 @@ func executionPlanEntryFromRunEntry(entry storage.ExecutionPlanRunEntry) storage
 	}
 }
 
+func executionPlanEntryTestID(runID string, entryIndex, entryOrder int) string {
+	seed := fmt.Sprintf("apexload:execution-plan-run:%s:entry:%d:order:%d", strings.TrimSpace(runID), entryIndex, entryOrder)
+	return uuid.NewSHA1(uuid.NameSpaceURL, []byte(seed)).String()
+}
+
+func executionPlanEntryMaterializationKey(runID string, entryIndex, entryOrder int) string {
+	seed := fmt.Sprintf("apexload:execution-plan-materialization:%s:entry:%d:order:%d", strings.TrimSpace(runID), entryIndex, entryOrder)
+	return uuid.NewSHA1(uuid.NameSpaceURL, []byte(seed)).String()
+}
+
 // StartExecutionPlanRun launches a sequential execution plan as a gated run and
 // returns the initial run snapshot. The plan's enabled entries are snapshotted so
 // a mid-run edit to the plan does not change an in-flight run.
@@ -194,8 +205,19 @@ func (tr *TestRunner) startExecutionPlanRun(plan *storage.ExecutionPlan, attribS
 }
 
 func (tr *TestRunner) startExecutionPlanRunWithID(plan *storage.ExecutionPlan, attribSubject, attribName, runNameOverride, runIDOverride string, approval ...*storage.ExecutionPlanApproval) (*storage.ExecutionPlanRun, error) {
+	leaseTerm, err := tr.captureExecutionLeaseTerm()
+	if err != nil {
+		return nil, err
+	}
+	return tr.startExecutionPlanRunWithIDAndTerm(plan, attribSubject, attribName, runNameOverride, runIDOverride, leaseTerm, approval...)
+}
+
+func (tr *TestRunner) startExecutionPlanRunWithIDAndTerm(plan *storage.ExecutionPlan, attribSubject, attribName, runNameOverride, runIDOverride string, leaseTerm executionLeaseTerm, approval ...*storage.ExecutionPlanApproval) (*storage.ExecutionPlanRun, error) {
 	if plan == nil {
 		return nil, fmt.Errorf("execution plan is required")
+	}
+	if !tr.executionLeaseTermCurrent(leaseTerm) {
+		return nil, errNotExecutionLeader
 	}
 	runName := strings.TrimSpace(runNameOverride)
 	if runName == "" {
@@ -232,6 +254,9 @@ func (tr *TestRunner) startExecutionPlanRunWithID(plan *storage.ExecutionPlan, a
 			return nil, executionPlanPersistenceError("check preassigned execution-plan run id", err)
 		}
 	}
+	for i := range statuses {
+		statuses[i].MaterializationKey = executionPlanEntryMaterializationKey(runID, i, statuses[i].Order)
+	}
 	st := &seqPlanRunState{
 		runID:         runID,
 		planID:        plan.ID,
@@ -245,13 +270,14 @@ func (tr *TestRunner) startExecutionPlanRunWithID(plan *storage.ExecutionPlan, a
 		createdAt:     now,
 		attribSubject: attribSubject,
 		attribName:    attribName,
+		leaseTerm:     leaseTerm,
 	}
 	st.approval = runApproval
 
 	if len(enabled) == 0 {
 		st.status = "completed"
 		run := st.toStorageRun()
-		created, err := tr.createExecutionPlanRunDurable(run)
+		created, err := tr.createExecutionPlanRunDurableWithTerm(run, leaseTerm)
 		if err != nil {
 			return nil, executionPlanPersistenceError("persist completed execution-plan run", err)
 		}
@@ -263,7 +289,7 @@ func (tr *TestRunner) startExecutionPlanRunWithID(plan *storage.ExecutionPlan, a
 	}
 
 	initialRun := st.toStorageRun()
-	created, err := tr.createExecutionPlanRunDurable(initialRun)
+	created, err := tr.createExecutionPlanRunDurableWithTerm(initialRun, leaseTerm)
 	if err != nil {
 		return nil, executionPlanPersistenceError("persist execution-plan run before launch", err)
 	}
@@ -287,10 +313,11 @@ func (tr *TestRunner) startExecutionPlanRunWithID(plan *storage.ExecutionPlan, a
 			// The queued entry is deliberately retained while its CAS outcome is
 			// reconciled in the background. Terminalizing or deleting it here could
 			// destroy a transition that the database actually committed.
+			tr.enqueueExecutionPlanRunAdvanceRetryWithTerm(st.runID, leaseTerm)
 			return nil, err
 		}
-		if reconcileErr := tr.failExecutionPlanRunDurably(st.runID, err.Error()); reconcileErr != nil {
-			tr.enqueueFailedExecutionPlanRunRetry(st.runID, err.Error())
+		if reconcileErr := tr.failExecutionPlanRunDurablyWithTerm(st.runID, err.Error(), leaseTerm); reconcileErr != nil {
+			tr.enqueueFailedExecutionPlanRunRetryWithTerm(st.runID, err.Error(), leaseTerm)
 			slog.Error("failed to durably terminalize execution-plan run after launch transition failure", "run_id", st.runID, "error", reconcileErr)
 		}
 		return nil, err
@@ -311,11 +338,23 @@ func (tr *TestRunner) startExecutionPlanRunWithID(plan *storage.ExecutionPlan, a
 }
 
 func (tr *TestRunner) failExecutionPlanRunDurably(runID, detail string) error {
+	leaseTerm, ok := tr.executionPlanRunLeaseTerm(runID)
+	if !ok {
+		return errNotExecutionLeader
+	}
+	return tr.failExecutionPlanRunDurablyWithTerm(runID, detail, leaseTerm)
+}
+
+func (tr *TestRunner) failExecutionPlanRunDurablyWithTerm(runID, detail string, leaseTerm executionLeaseTerm) error {
 	tr.seqMu.Lock()
 	st := tr.seqPlanRuns[runID]
 	if st == nil {
 		tr.seqMu.Unlock()
 		return nil
+	}
+	if st.leaseTerm != leaseTerm || !tr.executionLeaseTermCurrent(leaseTerm) {
+		tr.seqMu.Unlock()
+		return errNotExecutionLeader
 	}
 	previousStatus := st.status
 	previousEntries := append([]storage.ExecutionPlanRunEntry(nil), st.statuses...)
@@ -332,7 +371,7 @@ func (tr *TestRunner) failExecutionPlanRunDurably(runID, detail string) error {
 		}
 	}
 	run := st.toStorageRun()
-	if err := tr.persistExecutionPlanRunDurable(run); err != nil {
+	if err := tr.persistExecutionPlanRunDurableWithTerm(run, st.leaseTerm); err != nil {
 		st.status = previousStatus
 		st.statuses = previousEntries
 		for _, entry := range previousEntries {
@@ -356,6 +395,17 @@ func (tr *TestRunner) failExecutionPlanRunDurably(runID, detail string) error {
 }
 
 func (tr *TestRunner) enqueueFailedExecutionPlanRunRetry(runID, detail string) {
+	leaseTerm, ok := tr.executionPlanRunLeaseTerm(runID)
+	if !ok {
+		return
+	}
+	tr.enqueueFailedExecutionPlanRunRetryWithTerm(runID, detail, leaseTerm)
+}
+
+func (tr *TestRunner) enqueueFailedExecutionPlanRunRetryWithTerm(runID, detail string, leaseTerm executionLeaseTerm) {
+	if !tr.executionLeaseTermCurrent(leaseTerm) {
+		return
+	}
 	key := "failed-run:" + runID
 	if !tr.beginExecutionPlanRetry(key) {
 		return
@@ -363,11 +413,11 @@ func (tr *TestRunner) enqueueFailedExecutionPlanRunRetry(runID, detail string) {
 	go func() {
 		defer tr.endExecutionPlanRetry(key)
 		delay := executionPlanRetryInitialDelay
-		for tr.executionPlanRetryAllowed() {
-			if !tr.waitExecutionPlanRetry(delay) {
+		for tr.executionPlanRetryAllowed(leaseTerm) {
+			if !tr.waitExecutionPlanRetry(delay, leaseTerm) {
 				return
 			}
-			if err := tr.failExecutionPlanRunDurably(runID, detail); err == nil {
+			if err := tr.failExecutionPlanRunDurablyWithTerm(runID, detail, leaseTerm); err == nil {
 				return
 			} else {
 				slog.Warn("failed execution-plan run terminalization retry failed", "run_id", runID, "error", err)
@@ -388,6 +438,17 @@ func (tr *TestRunner) enqueueExecutionPlanRunRecordRetryAfter(run *storage.Execu
 	if run == nil {
 		return
 	}
+	leaseTerm, err := tr.captureExecutionLeaseTerm()
+	if err != nil {
+		return
+	}
+	tr.enqueueExecutionPlanRunRecordRetryAfterWithTerm(run, afterCommit, leaseTerm)
+}
+
+func (tr *TestRunner) enqueueExecutionPlanRunRecordRetryAfterWithTerm(run *storage.ExecutionPlanRun, afterCommit func(), leaseTerm executionLeaseTerm) {
+	if run == nil || !tr.executionLeaseTermCurrent(leaseTerm) {
+		return
+	}
 	snapshot := cloneExecutionPlanRunRecord(run)
 	key := "run-record:" + snapshot.ID
 	if !tr.beginExecutionPlanRetry(key) {
@@ -396,11 +457,11 @@ func (tr *TestRunner) enqueueExecutionPlanRunRecordRetryAfter(run *storage.Execu
 	go func() {
 		defer tr.endExecutionPlanRetry(key)
 		delay := executionPlanRetryInitialDelay
-		for tr.executionPlanRetryAllowed() {
-			if !tr.waitExecutionPlanRetry(delay) {
+		for tr.executionPlanRetryAllowed(leaseTerm) {
+			if !tr.waitExecutionPlanRetry(delay, leaseTerm) {
 				return
 			}
-			if err := tr.persistExecutionPlanRunDurable(snapshot); err == nil {
+			if err := tr.persistExecutionPlanRunDurableWithTerm(snapshot, leaseTerm); err == nil {
 				if afterCommit != nil {
 					afterCommit()
 				}
@@ -430,12 +491,24 @@ func cloneExecutionPlanRunRecord(run *storage.ExecutionPlanRun) *storage.Executi
 // past entries that fail to even create when the policy is skip. It returns once
 // an entry is launched (waiting for completion to advance) or the run finishes.
 func (tr *TestRunner) launchNextPlanEntry(runID string) error {
+	leaseTerm, ok := tr.executionPlanRunLeaseTerm(runID)
+	if !ok {
+		return errNotExecutionLeader
+	}
+	return tr.launchNextPlanEntryWithTerm(runID, leaseTerm)
+}
+
+func (tr *TestRunner) launchNextPlanEntryWithTerm(runID string, leaseTerm executionLeaseTerm) error {
 	for {
 		tr.seqMu.Lock()
 		st, ok := tr.seqPlanRuns[runID]
 		if !ok {
 			tr.seqMu.Unlock()
 			return nil
+		}
+		if st.leaseTerm != leaseTerm || !tr.executionLeaseTermCurrent(leaseTerm) {
+			tr.seqMu.Unlock()
+			return errNotExecutionLeader
 		}
 		previousCursor := st.cursor
 		previousTimeslotUsed := st.timeslotUsed
@@ -444,7 +517,7 @@ func (tr *TestRunner) launchNextPlanEntry(runID string) error {
 			previousStatus := st.status
 			st.status = "completed"
 			run := st.toStorageRun()
-			if err := tr.persistExecutionPlanRunDurable(run); err != nil {
+			if err := tr.persistExecutionPlanRunDurableWithTerm(run, st.leaseTerm); err != nil {
 				st.cursor = previousCursor
 				st.status = previousStatus
 				tr.seqMu.Unlock()
@@ -460,7 +533,10 @@ func (tr *TestRunner) launchNextPlanEntry(runID string) error {
 		entry := st.entries[idx]
 		previousEntry := st.statuses[idx]
 		st.statuses[idx].Status = "running"
-		planName, projectID := st.planName, st.projectID
+		st.statuses[idx].TestID = executionPlanEntryTestID(runID, idx, entry.Order)
+		testID := st.statuses[idx].TestID
+		materializationKey := st.statuses[idx].MaterializationKey
+		planID, planName, projectID := st.planID, st.planName, st.projectID
 		var timeslot *string
 		if trimPtr(entry.TimeslotID) == "" && !st.timeslotUsed && trimPtr(st.timeslot) != "" {
 			timeslot = st.timeslot
@@ -471,29 +547,42 @@ func (tr *TestRunner) launchNextPlanEntry(runID string) error {
 		// side-effect fence for HA recovery: only the controller that advances the
 		// run revision from pending to running may materialize the entry.
 		claimRun := st.toStorageRun()
-		if err := tr.persistExecutionPlanRunDurable(claimRun); err != nil {
+		if err := tr.persistExecutionPlanRunDurableWithTerm(claimRun, st.leaseTerm); err != nil {
 			st.cursor = previousCursor
 			st.timeslotUsed = previousTimeslotUsed
 			st.statuses[idx] = previousEntry
 			tr.seqMu.Unlock()
-			if errors.Is(err, errExecutionPlanRunCommitUnknown) {
-				// The claim may still commit after the response was lost. Retrying the
-				// same transition is side-effect free and will reconcile an already
-				// committed claim before materializing the test.
-				tr.enqueueExecutionPlanRunAdvanceRetry(runID)
-			}
 			return executionPlanPersistenceError("claim execution-plan entry before materialization", err)
 		}
 		st.revision = claimRun.Revision
 		tr.seqMu.Unlock()
 
-		req, err := buildPlanEntryCreateRequest(planName, projectID, timeslot, entry)
+		err := tr.validateExecutionPlanApprovalMaterialization(planID, runID, approval)
+		var req CreateTestRequest
+		if err == nil {
+			req, err = buildPlanEntryCreateRequest(planName, projectID, timeslot, entry)
+			if err == nil {
+				req.MaterializationKey = materializationKey
+				req.ExecutionPlanApproval = approval
+			}
+		}
 		var test *ManagedTest
 		if err == nil {
-			test, err = tr.createTest(req, false)
+			test, err = tr.createTestWithIDAndTerm(req, false, testID, leaseTerm)
+		}
+		if err == nil {
+			err = tr.validateExecutionPlanApprovalMaterialization(planID, runID, approval)
 		}
 		if err != nil {
-			halted, recordErr := tr.recordPlanEntryFailure(runID, idx, entry, err.Error())
+			if errors.Is(err, errNotExecutionLeader) || !tr.executionLeaseTermCurrent(leaseTerm) {
+				return errNotExecutionLeader
+			}
+			if test != nil {
+				if failErr := tr.failExecutionPlanStagedTestWithTerm(testID, err.Error(), leaseTerm, test.MaterializationKey); failErr != nil {
+					return errors.Join(err, failErr)
+				}
+			}
+			halted, recordErr := tr.recordPlanEntryFailureWithTerm(runID, idx, entry, err.Error(), leaseTerm)
 			if recordErr != nil {
 				tr.seqMu.Lock()
 				if current := tr.seqPlanRuns[runID]; current != nil && idx < len(current.statuses) {
@@ -521,28 +610,18 @@ func (tr *TestRunner) launchNextPlanEntry(runID string) error {
 		st, ok = tr.seqPlanRuns[runID]
 		if !ok {
 			tr.seqMu.Unlock()
-			_, cleanupErr := tr.DeleteTestWithError(test.ID)
+			if !tr.executionLeaseTermCurrent(leaseTerm) {
+				return errNotExecutionLeader
+			}
+			cleanupErr := tr.failExecutionPlanStagedTestWithTerm(test.ID, "execution-plan run is no longer active", leaseTerm, test.MaterializationKey)
 			return errors.Join(fmt.Errorf("execution-plan run %s is no longer active", runID), cleanupErr)
 		}
-		st.statuses[idx].TestID = test.ID
-		st.statuses[idx].Status = "running"
+		if st.leaseTerm != leaseTerm || st.statuses[idx].TestID != test.ID || !tr.executionLeaseTermCurrent(leaseTerm) {
+			tr.seqMu.Unlock()
+			return errNotExecutionLeader
+		}
 		tr.seqPlanByTest[test.ID] = runID
 		run := st.toStorageRun()
-		if err := tr.persistExecutionPlanRunDurable(run); err != nil {
-			if errors.Is(err, errExecutionPlanRunCommitUnknown) {
-				tr.seqMu.Unlock()
-				tr.enqueueExecutionPlanEntryCommitRetry(runID, idx, test, run, subject, displayName, approval)
-				return executionPlanPersistenceError("reconcile execution-plan entry before launch", err)
-			}
-			delete(tr.seqPlanByTest, test.ID)
-			st.cursor = previousCursor
-			st.timeslotUsed = previousTimeslotUsed
-			st.statuses[idx] = previousEntry
-			tr.seqMu.Unlock()
-			_, cleanupErr := tr.DeleteTestWithError(test.ID)
-			return errors.Join(executionPlanPersistenceError("persist execution-plan entry before launch", err), cleanupErr)
-		}
-		st.revision = run.Revision
 		tr.seqMu.Unlock()
 
 		tr.broadcastEvent("test_created", test)
@@ -552,21 +631,26 @@ func (tr *TestRunner) launchNextPlanEntry(runID string) error {
 		}
 		tr.AttributeTestExecutionPlanApproval(test.ID, approval)
 
-		if err := tr.StartTest(test.ID); err != nil {
+		if !tr.executionLeaseTermCurrent(leaseTerm) {
+			return errNotExecutionLeader
+		}
+		if err := tr.startExecutionPlanTestWithTerm(test.ID, leaseTerm); err != nil {
+			if errors.Is(err, errNotExecutionLeader) || !tr.executionLeaseTermCurrent(leaseTerm) {
+				return errNotExecutionLeader
+			}
 			// StartTest errors only before spawning the run goroutine, so no
-			// terminal hook can have consumed the mapping yet. Unwind the
-			// pre-registration and apply the entry's failure policy.
+			// terminal hook can have consumed the mapping yet. Keep the durable
+			// TestID correlation, terminalize the queued row, and apply policy.
 			tr.seqMu.Lock()
 			delete(tr.seqPlanByTest, test.ID)
-			if cur, ok := tr.seqPlanRuns[runID]; ok && idx < len(cur.statuses) {
-				cur.statuses[idx].TestID = ""
-			}
 			tr.seqMu.Unlock()
-			halted, recordErr := tr.recordPlanEntryFailure(runID, idx, entry, err.Error())
+			if failErr := tr.failExecutionPlanStagedTestWithTerm(test.ID, err.Error(), leaseTerm, test.MaterializationKey); failErr != nil {
+				return errors.Join(err, failErr)
+			}
+			halted, recordErr := tr.recordPlanEntryFailureWithTerm(runID, idx, entry, err.Error(), leaseTerm)
 			if recordErr != nil {
 				tr.seqMu.Lock()
 				if current := tr.seqPlanRuns[runID]; current != nil && idx < len(current.statuses) {
-					current.statuses[idx].TestID = test.ID
 					tr.seqPlanByTest[test.ID] = runID
 				}
 				tr.seqMu.Unlock()
@@ -581,81 +665,26 @@ func (tr *TestRunner) launchNextPlanEntry(runID string) error {
 	}
 }
 
-// enqueueExecutionPlanEntryCommitRetry resolves an indeterminate CAS without
-// deleting or launching the queued test. Once the intended transition is
-// durably observable, it performs the same post-commit launch steps as the
-// synchronous path.
-func (tr *TestRunner) enqueueExecutionPlanEntryCommitRetry(runID string, idx int, test *ManagedTest, run *storage.ExecutionPlanRun, subject, displayName string, approval *storage.ExecutionPlanApproval) {
-	if test == nil || run == nil {
-		return
-	}
-	key := "entry-commit:" + test.ID
-	if !tr.beginExecutionPlanRetry(key) {
-		return
-	}
-	snapshot := cloneExecutionPlanRunRecord(run)
-	go func() {
-		defer tr.endExecutionPlanRetry(key)
-		delay := executionPlanRetryInitialDelay
-		for tr.executionPlanRetryAllowed() {
-			if !tr.waitExecutionPlanRetry(delay) {
-				return
-			}
-			if err := tr.persistExecutionPlanRunDurable(snapshot); err != nil {
-				slog.Warn("execution-plan entry commit reconciliation failed", "run_id", runID, "test_id", test.ID, "error", err)
-				if !durableBackgroundRetryable(err) {
-					return
-				}
-				delay = min(delay*2, executionPlanRetryMaxDelay)
-				continue
-			}
-
-			tr.seqMu.Lock()
-			state := tr.seqPlanRuns[runID]
-			if state == nil || idx < 0 || idx >= len(state.statuses) || state.statuses[idx].TestID != test.ID {
-				tr.seqMu.Unlock()
-				return
-			}
-			state.revision = snapshot.Revision
-			tr.seqMu.Unlock()
-
-			tr.broadcastEvent("test_created", test)
-			tr.broadcastExecutionPlanEvent("execution_plan_entry_started", snapshot, &snapshot.Entries[idx])
-			if subject != "" {
-				tr.AttributeTestCreated(test.ID, subject, displayName)
-			}
-			tr.AttributeTestExecutionPlanApproval(test.ID, approval)
-			if err := tr.StartTest(test.ID); err != nil {
-				tr.seqMu.Lock()
-				delete(tr.seqPlanByTest, test.ID)
-				if current := tr.seqPlanRuns[runID]; current != nil && idx < len(current.statuses) {
-					current.statuses[idx].TestID = ""
-				}
-				tr.seqMu.Unlock()
-				halted, recordErr := tr.recordPlanEntryFailure(runID, idx, executionPlanEntryFromRunEntry(snapshot.Entries[idx]), err.Error())
-				if recordErr != nil {
-					slog.Error("failed to persist execution-plan entry launch failure after reconciliation", "run_id", runID, "test_id", test.ID, "error", recordErr)
-					return
-				}
-				if !halted {
-					if err := tr.launchNextPlanEntry(runID); err != nil {
-						tr.enqueueExecutionPlanRunAdvanceRetry(runID)
-					}
-				}
-			}
-			return
-		}
-	}()
-}
-
 // recordPlanEntryFailure marks entry idx failed and applies its failure policy.
 // Returns true if the run halted (caller should stop), false to continue (skip).
 func (tr *TestRunner) recordPlanEntryFailure(runID string, idx int, entry storage.ExecutionPlanEntry, detail string) (bool, error) {
+	leaseTerm, ok := tr.executionPlanRunLeaseTerm(runID)
+	if !ok {
+		return true, errNotExecutionLeader
+	}
+	return tr.recordPlanEntryFailureWithTerm(runID, idx, entry, detail, leaseTerm)
+}
+
+func (tr *TestRunner) recordPlanEntryFailureWithTerm(runID string, idx int, entry storage.ExecutionPlanEntry, detail string, leaseTerm executionLeaseTerm) (bool, error) {
 	tr.seqMu.Lock()
 	st, ok := tr.seqPlanRuns[runID]
 	if !ok {
 		tr.seqMu.Unlock()
 		return true, nil
+	}
+	if st.leaseTerm != leaseTerm || !tr.executionLeaseTermCurrent(leaseTerm) {
+		tr.seqMu.Unlock()
+		return true, errNotExecutionLeader
 	}
 	previousStatus := st.status
 	previousEntries := append([]storage.ExecutionPlanRunEntry(nil), st.statuses...)
@@ -667,7 +696,7 @@ func (tr *TestRunner) recordPlanEntryFailure(runID string, idx int, entry storag
 		markRemainingSkipped(st, idx+1)
 	}
 	run := st.toStorageRun()
-	if err := tr.persistExecutionPlanRunDurable(run); err != nil {
+	if err := tr.persistExecutionPlanRunDurableWithTerm(run, st.leaseTerm); err != nil {
 		st.status = previousStatus
 		st.statuses = previousEntries
 		tr.seqMu.Unlock()
@@ -693,6 +722,24 @@ func (tr *TestRunner) advanceExecutionPlanForTest(test *ManagedTest, terminalSta
 	if test == nil {
 		return nil
 	}
+	// Most tests are not owned by an execution plan. Preserve the terminal hook's
+	// documented cheap no-op for those tests; failure to obtain a term matters
+	// only after a durable plan mapping has actually been established.
+	tr.seqMu.Lock()
+	runID, mapped := tr.seqPlanByTest[test.ID]
+	state := tr.seqPlanRuns[runID]
+	tr.seqMu.Unlock()
+	if !mapped || state == nil {
+		return nil
+	}
+	leaseTerm, ok := tr.executionPlanTestLeaseTerm(test.ID)
+	if !ok {
+		return errNotExecutionLeader
+	}
+	return tr.advanceExecutionPlanForTestWithTerm(test, terminalStatus, leaseTerm)
+}
+
+func (tr *TestRunner) advanceExecutionPlanForTestWithTerm(test *ManagedTest, terminalStatus string, leaseTerm executionLeaseTerm) error {
 	tr.seqMu.Lock()
 	runID, ok := tr.seqPlanByTest[test.ID]
 	if !ok {
@@ -703,6 +750,10 @@ func (tr *TestRunner) advanceExecutionPlanForTest(test *ManagedTest, terminalSta
 	if !ok {
 		tr.seqMu.Unlock()
 		return nil
+	}
+	if st.leaseTerm != leaseTerm || !tr.executionLeaseTermCurrent(leaseTerm) {
+		tr.seqMu.Unlock()
+		return errNotExecutionLeader
 	}
 	idx := st.cursor
 	if idx < 0 || idx >= len(st.statuses) || st.statuses[idx].TestID != test.ID {
@@ -737,12 +788,12 @@ func (tr *TestRunner) advanceExecutionPlanForTest(test *ManagedTest, terminalSta
 		markRemainingSkipped(st, idx+1)
 	}
 	run := st.toStorageRun()
-	if err := tr.persistExecutionPlanRunDurable(run); err != nil {
+	if err := tr.persistExecutionPlanRunDurableWithTerm(run, st.leaseTerm); err != nil {
 		st.status = previousStatus
 		st.statuses = previousEntries
 		tr.seqMu.Unlock()
 		retryErr := executionPlanPersistenceError("persist execution-plan terminal entry transition", err)
-		tr.enqueueExecutionPlanTestAdvanceRetry(test.ID, terminalStatus)
+		tr.enqueueExecutionPlanTestAdvanceRetryWithTerm(test.ID, terminalStatus, leaseTerm)
 		return retryErr
 	}
 	st.revision = run.Revision
@@ -757,7 +808,7 @@ func (tr *TestRunner) advanceExecutionPlanForTest(test *ManagedTest, terminalSta
 		return nil
 	}
 	if err := tr.launchNextPlanEntry(runID); err != nil {
-		tr.enqueueExecutionPlanRunAdvanceRetry(runID)
+		tr.enqueueExecutionPlanRunAdvanceRetryWithTerm(runID, leaseTerm)
 		return err
 	}
 	return nil
@@ -774,6 +825,17 @@ const (
 // idempotent. One worker per test runs while this controller remains leader and
 // stops promptly once shutdown admission closes.
 func (tr *TestRunner) enqueueExecutionPlanTestAdvanceRetry(testID, terminalStatus string) {
+	leaseTerm, ok := tr.executionPlanTestLeaseTerm(testID)
+	if !ok {
+		return
+	}
+	tr.enqueueExecutionPlanTestAdvanceRetryWithTerm(testID, terminalStatus, leaseTerm)
+}
+
+func (tr *TestRunner) enqueueExecutionPlanTestAdvanceRetryWithTerm(testID, terminalStatus string, leaseTerm executionLeaseTerm) {
+	if !tr.executionLeaseTermCurrent(leaseTerm) {
+		return
+	}
 	key := "test:" + testID
 	if !tr.beginExecutionPlanRetry(key) {
 		return
@@ -781,8 +843,8 @@ func (tr *TestRunner) enqueueExecutionPlanTestAdvanceRetry(testID, terminalStatu
 	go func() {
 		defer tr.endExecutionPlanRetry(key)
 		delay := executionPlanRetryInitialDelay
-		for tr.executionPlanRetryAllowed() {
-			if !tr.waitExecutionPlanRetry(delay) {
+		for tr.executionPlanRetryAllowed(leaseTerm) {
+			if !tr.waitExecutionPlanRetry(delay, leaseTerm) {
 				return
 			}
 			tr.mu.RLock()
@@ -791,7 +853,7 @@ func (tr *TestRunner) enqueueExecutionPlanTestAdvanceRetry(testID, terminalStatu
 			if test == nil {
 				return
 			}
-			if err := tr.advanceExecutionPlanForTest(test, terminalStatus); err == nil {
+			if err := tr.advanceExecutionPlanForTestWithTerm(test, terminalStatus, leaseTerm); err == nil {
 				return
 			} else {
 				slog.Warn("execution-plan terminal transition retry failed", "test_id", testID, "status", terminalStatus, "error", err)
@@ -807,6 +869,17 @@ func (tr *TestRunner) enqueueExecutionPlanTestAdvanceRetry(testID, terminalStatu
 // enqueueExecutionPlanRunAdvanceRetry resumes cursor advancement after the
 // preceding entry transition committed but materializing the next entry did not.
 func (tr *TestRunner) enqueueExecutionPlanRunAdvanceRetry(runID string) {
+	leaseTerm, ok := tr.executionPlanRunLeaseTerm(runID)
+	if !ok {
+		return
+	}
+	tr.enqueueExecutionPlanRunAdvanceRetryWithTerm(runID, leaseTerm)
+}
+
+func (tr *TestRunner) enqueueExecutionPlanRunAdvanceRetryWithTerm(runID string, leaseTerm executionLeaseTerm) {
+	if !tr.executionLeaseTermCurrent(leaseTerm) {
+		return
+	}
 	key := "run:" + runID
 	if !tr.beginExecutionPlanRetry(key) {
 		return
@@ -814,14 +887,63 @@ func (tr *TestRunner) enqueueExecutionPlanRunAdvanceRetry(runID string) {
 	go func() {
 		defer tr.endExecutionPlanRetry(key)
 		delay := executionPlanRetryInitialDelay
-		for tr.executionPlanRetryAllowed() {
-			if !tr.waitExecutionPlanRetry(delay) {
+		for tr.executionPlanRetryAllowed(leaseTerm) {
+			if !tr.waitExecutionPlanRetry(delay, leaseTerm) {
 				return
 			}
-			if err := tr.launchNextPlanEntry(runID); err == nil {
+			if err := tr.launchNextPlanEntryWithTerm(runID, leaseTerm); err == nil {
 				return
 			} else {
 				slog.Warn("execution-plan run advancement retry failed", "run_id", runID, "error", err)
+				if !durableBackgroundRetryable(err) {
+					return
+				}
+			}
+			delay = min(delay*2, executionPlanRetryMaxDelay)
+		}
+	}()
+}
+
+// enqueueParallelExecutionPlanPromotionRetryWithTerm retries the queue handoff
+// after a parallel plan has durably committed its materialization snapshot. The
+// queued tests are already recoverable at this point, so the retry is limited to
+// the same immutable lease term; a successor promotes them during ordinary
+// pending-test reconciliation instead of an old goroutine adopting a new term.
+func (tr *TestRunner) enqueueParallelExecutionPlanPromotionRetryWithTerm(runID string, leaseTerm executionLeaseTerm) {
+	if strings.TrimSpace(runID) == "" || !tr.executionLeaseTermCurrent(leaseTerm) {
+		return
+	}
+	key := "parallel-promotion:" + runID
+	if !tr.beginExecutionPlanRetry(key) {
+		return
+	}
+	go func() {
+		defer tr.endExecutionPlanRetry(key)
+		delay := executionPlanRetryInitialDelay
+		for tr.executionPlanRetryAllowed(leaseTerm) {
+			if !tr.waitExecutionPlanRetry(delay, leaseTerm) {
+				return
+			}
+			if tr.execPlanRunStore == nil {
+				return
+			}
+			run, loadErr := tr.execPlanRunStore.GetExecutionPlanRun(runID)
+			if loadErr != nil {
+				slog.Warn("parallel execution-plan queue promotion retry could not load run", "run_id", runID, "error", loadErr)
+				if !durableBackgroundRetryable(loadErr) {
+					return
+				}
+				delay = min(delay*2, executionPlanRetryMaxDelay)
+				continue
+			}
+			previousRevision := run.Revision
+			if err := tr.handoffParallelExecutionPlanTestsOnceWithTerm(run, leaseTerm); err == nil {
+				if run.Revision != previousRevision {
+					tr.broadcastExecutionPlanEvent("execution_plan_run_finished", run, nil)
+				}
+				return
+			} else {
+				slog.Warn("parallel execution-plan queue promotion retry failed", "run_id", runID, "error", err)
 				if !durableBackgroundRetryable(err) {
 					return
 				}
@@ -850,8 +972,11 @@ func (tr *TestRunner) endExecutionPlanRetry(key string) {
 	tr.seqMu.Unlock()
 }
 
-func (tr *TestRunner) executionPlanRetryAllowed() bool {
+func (tr *TestRunner) executionPlanRetryAllowed(leaseTerms ...executionLeaseTerm) bool {
 	if tr == nil || !tr.isExecutionLeader() {
+		return false
+	}
+	if len(leaseTerms) > 0 && !tr.executionLeaseTermCurrent(leaseTerms[0]) {
 		return false
 	}
 	tr.mu.RLock()
@@ -860,11 +985,32 @@ func (tr *TestRunner) executionPlanRetryAllowed() bool {
 	return !shuttingDown
 }
 
-func (tr *TestRunner) waitExecutionPlanRetry(delay time.Duration) bool {
+func (tr *TestRunner) waitExecutionPlanRetry(delay time.Duration, leaseTerms ...executionLeaseTerm) bool {
 	timer := time.NewTimer(delay)
 	defer timer.Stop()
 	<-timer.C
-	return tr.executionPlanRetryAllowed()
+	return tr.executionPlanRetryAllowed(leaseTerms...)
+}
+
+func (tr *TestRunner) executionPlanRunLeaseTerm(runID string) (executionLeaseTerm, bool) {
+	tr.seqMu.Lock()
+	defer tr.seqMu.Unlock()
+	state := tr.seqPlanRuns[runID]
+	if state == nil || !tr.executionLeaseTermCurrent(state.leaseTerm) {
+		return executionLeaseTerm{}, false
+	}
+	return state.leaseTerm, true
+}
+
+func (tr *TestRunner) executionPlanTestLeaseTerm(testID string) (executionLeaseTerm, bool) {
+	tr.seqMu.Lock()
+	defer tr.seqMu.Unlock()
+	runID := tr.seqPlanByTest[testID]
+	state := tr.seqPlanRuns[runID]
+	if state == nil || !tr.executionLeaseTermCurrent(state.leaseTerm) {
+		return executionLeaseTerm{}, false
+	}
+	return state.leaseTerm, true
 }
 
 // markRemainingSkipped marks entries from index `from` onward as skipped (caller
@@ -898,8 +1044,19 @@ func (tr *TestRunner) persistExecutionPlanRun(run *storage.ExecutionPlanRun) {
 // the atomic extension; the Save fallback keeps focused in-memory test doubles
 // working but is never used by SQLite/PostgreSQL.
 func (tr *TestRunner) createExecutionPlanRunDurable(run *storage.ExecutionPlanRun) (bool, error) {
+	leaseTerm, err := tr.captureExecutionLeaseTerm()
+	if err != nil {
+		return false, err
+	}
+	return tr.createExecutionPlanRunDurableWithTerm(run, leaseTerm)
+}
+
+func (tr *TestRunner) createExecutionPlanRunDurableWithTerm(run *storage.ExecutionPlanRun, leaseTerm executionLeaseTerm) (bool, error) {
 	if tr == nil || tr.execPlanRunStore == nil || run == nil {
 		return true, nil
+	}
+	if !tr.executionLeaseTermCurrent(leaseTerm) {
+		return false, errNotExecutionLeader
 	}
 	if run.Revision < 1 {
 		run.Revision = 1
@@ -910,8 +1067,22 @@ func (tr *TestRunner) createExecutionPlanRunDurable(run *storage.ExecutionPlanRu
 		}
 		created := false
 		err := retryDurableTransition(func() error {
+			if !tr.executionLeaseTermCurrent(leaseTerm) {
+				return errNotExecutionLeader
+			}
 			var err error
-			created, err = store.CreateExecutionPlanRunIfAbsent(run)
+			if tr.durableExecutionFence {
+				fencedStore, fenced := tr.execPlanRunStore.(leaseTermFencedExecutionPlanRunPersistence)
+				if !fenced {
+					return fmt.Errorf("execution-plan run storage does not support lease-term fencing")
+				}
+				created, err = fencedStore.CreateExecutionPlanRunIfAbsentAndLeaseTermHeld(run, executionLeaseName, leaseTerm.ownerID, leaseTerm.generation)
+			} else {
+				created, err = store.CreateExecutionPlanRunIfAbsent(run)
+			}
+			if err == nil && !created && !tr.executionLeaseTermCurrent(leaseTerm) {
+				return errNotExecutionLeader
+			}
 			if err == nil && !created {
 				current, loadErr := tr.execPlanRunStore.GetExecutionPlanRun(run.ID)
 				if loadErr != nil {
@@ -934,7 +1105,13 @@ func (tr *TestRunner) createExecutionPlanRunDurable(run *storage.ExecutionPlanRu
 		}
 		return created, err
 	}
+	if tr.durableExecutionFence {
+		return false, fmt.Errorf("execution-plan run storage does not support atomic lease-term fencing")
+	}
 	if err := retryDurableTransition(func() error {
+		if !tr.executionLeaseTermCurrent(leaseTerm) {
+			return errNotExecutionLeader
+		}
 		return tr.execPlanRunStore.SaveExecutionPlanRun(run)
 	}); err != nil {
 		return false, err
@@ -943,8 +1120,19 @@ func (tr *TestRunner) createExecutionPlanRunDurable(run *storage.ExecutionPlanRu
 }
 
 func (tr *TestRunner) persistExecutionPlanRunDurable(run *storage.ExecutionPlanRun) error {
+	leaseTerm, err := tr.captureExecutionLeaseTerm()
+	if err != nil {
+		return err
+	}
+	return tr.persistExecutionPlanRunDurableWithTerm(run, leaseTerm)
+}
+
+func (tr *TestRunner) persistExecutionPlanRunDurableWithTerm(run *storage.ExecutionPlanRun, leaseTerm executionLeaseTerm) error {
 	if tr == nil || tr.execPlanRunStore == nil || run == nil {
 		return nil
+	}
+	if !tr.executionLeaseTermCurrent(leaseTerm) {
+		return errNotExecutionLeader
 	}
 	if store, ok := tr.execPlanRunStore.(atomicExecutionPlanRunPersistence); ok && run.Revision > 0 {
 		if run.TransitionToken == "" {
@@ -956,11 +1144,24 @@ func (tr *TestRunner) persistExecutionPlanRunDurable(run *storage.ExecutionPlanR
 		// old revision. Submit once, then reconcile; background workers retry the
 		// idempotent CAS only after this call reports an unknown outcome.
 		run.Revision = expectedRevision
-		updated, err := store.CompareAndSwapExecutionPlanRun(run, expectedRevision)
+		var updated bool
+		var err error
+		if tr.durableExecutionFence {
+			fencedStore, ok := tr.execPlanRunStore.(leaseTermFencedExecutionPlanRunPersistence)
+			if !ok {
+				return fmt.Errorf("execution-plan run storage does not support lease-term fencing")
+			}
+			updated, err = fencedStore.CompareAndSwapExecutionPlanRunIfLeaseTermHeld(run, expectedRevision, executionLeaseName, leaseTerm.ownerID, leaseTerm.generation)
+		} else {
+			updated, err = store.CompareAndSwapExecutionPlanRun(run, expectedRevision)
+		}
 		if err == nil && updated {
 			return nil
 		}
 		if err == nil && !updated {
+			if !tr.executionLeaseTermCurrent(leaseTerm) {
+				return errNotExecutionLeader
+			}
 			// A retry can miss because its earlier, ambiguously acknowledged CAS
 			// committed after the first reconciliation read. The per-transition token
 			// distinguishes that case from another controller's otherwise identical
@@ -997,7 +1198,13 @@ func (tr *TestRunner) persistExecutionPlanRunDurable(run *storage.ExecutionPlanR
 		}
 		return fmt.Errorf("%w: run %s expected revision %d, durable revision is %d", errExecutionPlanRunConflict, run.ID, expectedRevision, current.Revision)
 	}
+	if tr.durableExecutionFence {
+		return fmt.Errorf("execution-plan run storage does not support atomic lease-term fencing")
+	}
 	return retryDurableTransition(func() error {
+		if !tr.executionLeaseTermCurrent(leaseTerm) {
+			return errNotExecutionLeader
+		}
 		return tr.execPlanRunStore.SaveExecutionPlanRun(run)
 	})
 }

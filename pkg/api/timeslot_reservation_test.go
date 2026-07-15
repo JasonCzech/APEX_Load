@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"math"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -34,6 +35,19 @@ func (f failingReservationStore) ListCapacityReservationsByTimeRange(string, tim
 func reservedInt(v int) *int       { return &v }
 func reservedStr(v string) *string { return &v }
 
+func TestTimeslotReservedGeneratorsAvoidsCeilingOverflow(t *testing.T) {
+	settings := defaultSystemSettings(1)
+	settings.CapacityPlanning.Generator.MaxVUsers = 10000
+	vusers := math.MaxInt
+	reservation := &storage.CapacityReservation{
+		RequestedCapacity: &storage.CapacityReservationRequest{VUsers: &vusers},
+	}
+	want := 1 + (math.MaxInt-1)/settings.CapacityPlanning.Generator.MaxVUsers
+	if got := timeslotReservedGenerators(settings, reservation); got != want {
+		t.Fatalf("reserved generators = %d, want %d", got, want)
+	}
+}
+
 func storeBackedRunner(t *testing.T) (*TestRunner, *storage.SQLiteStore) {
 	t.Helper()
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
@@ -47,7 +61,7 @@ func storeBackedRunner(t *testing.T) (*TestRunner, *storage.SQLiteStore) {
 	}
 	runner := NewTestRunner(100, NewHub(), store)
 	runner.StoreScript(&dsl.Script{
-		ID: "script-1", Name: "S", Protocol: "http", Version: "1",
+		ID: "script-1", Name: "S", Protocol: "http", Version: "1", ProjectID: "proj-a",
 		Actions: []dsl.Action{{Name: "Home", Type: "GET", Target: "/"}},
 	})
 	return runner, store

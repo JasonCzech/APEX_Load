@@ -90,12 +90,19 @@ func TestCountActiveGlobalRoleHolders(t *testing.T) {
 	defer store.Close()
 
 	now := time.Now().UTC()
+	if err := store.SaveProject(&Project{ID: "admin-project", Name: "Admin Project", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
 	addAdmin := func(subject string, active bool, scopeType string) {
 		user := &User{ID: uuid.New().String(), Subject: subject, Active: active, CreatedAt: now, UpdatedAt: now}
 		if err := store.SaveUser(user); err != nil {
 			t.Fatalf("SaveUser(%s): %v", subject, err)
 		}
-		if err := store.SaveUserRoleBinding(&UserRoleBinding{ID: uuid.New().String(), UserID: user.ID, ScopeType: scopeType, Role: "system_admin", CreatedAt: now, UpdatedAt: now}); err != nil {
+		scopeID := ""
+		if scopeType == "project" {
+			scopeID = "admin-project"
+		}
+		if err := store.SaveUserRoleBinding(&UserRoleBinding{ID: uuid.New().String(), UserID: user.ID, ScopeType: scopeType, ScopeID: scopeID, Role: "system_admin", CreatedAt: now, UpdatedAt: now}); err != nil {
 			t.Fatalf("SaveUserRoleBinding(%s): %v", subject, err)
 		}
 	}

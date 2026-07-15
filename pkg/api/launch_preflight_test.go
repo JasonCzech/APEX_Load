@@ -519,7 +519,7 @@ func TestPreflightLaunchBlocksFutureCronCapacityOverlap(t *testing.T) {
 
 func TestPreflightLaunchBlocksReservationStartingMidRun(t *testing.T) {
 	runner := NewTestRunner(10, NewHub(), nil)
-	storePreflightScript(runner, "script-preflight-reservation", "")
+	storePreflightScript(runner, "script-preflight-reservation", "project-a")
 	now := time.Now().UTC()
 	settings := runner.GetSystemSettings()
 	settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators = 2
@@ -548,6 +548,127 @@ func TestPreflightLaunchBlocksReservationStartingMidRun(t *testing.T) {
 	if len(preflight.BlockingConflicts) == 0 || preflight.BlockingConflicts[0].Code != "reservation_window" {
 		t.Fatalf("preflight conflicts = %#v, want reservation_window", preflight.BlockingConflicts)
 	}
+}
+
+func TestPreflightLaunchProjectsActiveRunAtFutureReservationBoundary(t *testing.T) {
+	runner := NewTestRunner(10, NewHub(), nil)
+	storePreflightScript(runner, "script-preflight-active-projection", "project-a")
+	now := time.Now().UTC()
+	settings := runner.GetSystemSettings()
+	settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators = 2
+	settings.CapacityPlanning.Generator.MaxVUsers = 10000
+	settings.CapacityPlanning.HeadroomPct = 0
+	settings.CapacityPlanning.Reservations = []CapacityReservation{{
+		ProjectID:          "project-b",
+		ReservedGenerators: 1,
+		StartsAt:           ptr(now.Add(2 * time.Minute)),
+		EndsAt:             ptr(now.Add(20 * time.Minute)),
+	}}
+	if _, err := runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatalf("UpdateSystemSettings returned error: %v", err)
+	}
+
+	active, err := runner.CreateTest(CreateTestRequest{
+		Name:       "Active delayed run",
+		Duration:   "1m",
+		StartDelay: "5m",
+		ProjectID:  "project-a",
+		ScriptID:   "script-preflight-active-projection",
+		VUsers:     1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest(active) returned error: %v", err)
+	}
+	runner.mu.Lock()
+	runner.tests[active.ID].Status = "RUNNING"
+	runner.tests[active.ID].StartedAt = ptr(now)
+	runner.mu.Unlock()
+
+	preflight, err := runner.PreflightLaunch(LaunchPreflightRequest{CreateTestRequest: CreateTestRequest{
+		Name:      "Overlapping proposal",
+		Duration:  "10m",
+		ProjectID: "project-a",
+		ScriptID:  "script-preflight-active-projection",
+		VUsers:    1,
+	}})
+	if err != nil {
+		t.Fatalf("PreflightLaunch returned error: %v", err)
+	}
+	found := false
+	for _, conflict := range preflight.BlockingConflicts {
+		if conflict.Code == "reservation_window" {
+			found = true
+			break
+		}
+	}
+	if !found || preflight.StartNowAllowed || preflight.QueueAllowed {
+		t.Fatalf("preflight = %#v, want active-load reservation_window conflict", preflight)
+	}
+}
+
+func TestLaunchScheduleWindowOverlapsNarrowWindowBetweenFormerSamples(t *testing.T) {
+	start := time.Date(2026, time.July, 15, 12, 0, 30, 0, time.UTC)
+	end := start.Add(10 * time.Minute)
+	window := storage.ScenarioScheduleWindow{
+		Name:      "one-minute maintenance",
+		StartTime: "12:02",
+		EndTime:   "12:03",
+		Timezone:  "UTC",
+	}
+	if !launchScheduleWindowOverlaps(window, "UTC", start, end) {
+		t.Fatal("one-minute maintenance window inside launch interval was not detected")
+	}
+}
+
+func TestLaunchScheduleAvailabilityRequiresContinuousUnionCoverage(t *testing.T) {
+	start := time.Date(2026, time.July, 15, 12, 1, 0, 0, time.UTC)
+	end := time.Date(2026, time.July, 15, 12, 9, 0, 0, time.UTC)
+	schedule := &storage.ScenarioSchedule{
+		Timezone: "UTC",
+		AvailabilityWindows: []storage.ScenarioScheduleWindow{
+			{Name: "first", StartTime: "12:00", EndTime: "12:03"},
+			{Name: "second", StartTime: "12:04", EndTime: "12:10"},
+		},
+	}
+	if launchScheduleAvailabilityAllows(schedule, start, end) {
+		t.Fatal("availability union with a one-minute gap allowed the launch")
+	}
+	schedule.AvailabilityWindows[0].EndTime = "12:04"
+	if !launchScheduleAvailabilityAllows(schedule, start, end) {
+		t.Fatal("adjacent availability windows did not continuously cover the launch")
+	}
+}
+
+func TestLaunchScheduleAvailabilityHandlesOvernightAndDSTWindows(t *testing.T) {
+	t.Run("overnight", func(t *testing.T) {
+		schedule := &storage.ScenarioSchedule{
+			Timezone: "UTC",
+			AvailabilityWindows: []storage.ScenarioScheduleWindow{{
+				StartTime: "22:00",
+				EndTime:   "02:00",
+			}},
+		}
+		start := time.Date(2026, time.July, 15, 23, 30, 0, 0, time.UTC)
+		if !launchScheduleAvailabilityAllows(schedule, start, start.Add(2*time.Hour)) {
+			t.Fatal("overnight availability did not cover a launch spanning midnight")
+		}
+	})
+
+	t.Run("spring-forward", func(t *testing.T) {
+		schedule := &storage.ScenarioSchedule{
+			Timezone: "America/New_York",
+			AvailabilityWindows: []storage.ScenarioScheduleWindow{{
+				StartTime: "01:00",
+				EndTime:   "04:00",
+			}},
+		}
+		// 01:30 EST through 03:30 EDT on the 2026 spring-forward day.
+		start := time.Date(2026, time.March, 8, 6, 30, 0, 0, time.UTC)
+		end := time.Date(2026, time.March, 8, 7, 30, 0, 0, time.UTC)
+		if !launchScheduleAvailabilityAllows(schedule, start, end) {
+			t.Fatal("availability window did not remain continuous across DST spring-forward")
+		}
+	})
 }
 
 func TestPreflightLaunchBlocksMaintenanceWindow(t *testing.T) {

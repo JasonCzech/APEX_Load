@@ -1,7 +1,6 @@
 package api
 
 import (
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -111,21 +110,22 @@ func (s *Server) handleEvacuateGenerator(w http.ResponseWriter, r *http.Request)
 		ImpactedTests: len(tests),
 		Impacts:       []GeneratorEvacuationImpact{},
 	}
+	reason := firstNonEmpty(strings.TrimSpace(req.Reason), "operator_evacuate")
 	for _, test := range tests {
-		impacts, err := backend.EvacuateGenerator(s.runner, test, target, req.DryRun, firstNonEmpty(strings.TrimSpace(req.Reason), "operator_evacuate"))
+		impacts, err := backend.EvacuateGenerator(s.runner, test, target, req.DryRun, reason)
 		response.Impacts = append(response.Impacts, impacts...)
 		if err != nil {
 			response.Applied = false
 			response.Error = err.Error()
 			s.recordAuditEvent(r, "generator.evacuate", "failure", "generator", firstNonEmpty(generatorID, target), "", map[string]any{
-				"target": target, "dry_run": req.DryRun, "error": err.Error(),
+				"target": target, "dry_run": req.DryRun, "reason": reason, "error": err.Error(),
 			})
 			writeJSON(w, http.StatusConflict, response)
 			return
 		}
 	}
 	s.recordAuditEvent(r, "generator.evacuate", "success", "generator", firstNonEmpty(generatorID, target), "", map[string]any{
-		"target": target, "dry_run": req.DryRun, "impacted_tests": response.ImpactedTests,
+		"target": target, "dry_run": req.DryRun, "reason": reason, "impacted_tests": response.ImpactedTests,
 	})
 	s.broadcastFleetEvent("generator_evacuated", map[string]any{
 		"target": target, "generator_id": generatorID, "dry_run": req.DryRun, "impacted_tests": response.ImpactedTests,
@@ -232,18 +232,18 @@ func (s *Server) syncGeneratorMetadataCordon(generatorID string, target string, 
 	if generatorID == "" {
 		return nil
 	}
-	metadata, err := s.store.GetGeneratorMetadata(generatorID)
-	if err != nil {
-		if !errors.Is(err, sql.ErrNoRows) {
-			return err
-		}
-		metadata = &storage.GeneratorMetadata{GeneratorID: generatorID}
+	patcher, ok := s.store.(interface {
+		PatchGeneratorMetadata(generatorID string, patch storage.GeneratorMetadataPatch) (*storage.GeneratorMetadata, error)
+	})
+	if !ok {
+		return errors.New("atomic generator metadata patches are not supported by this storage backend")
 	}
+	patch := storage.GeneratorMetadataPatch{Cordoned: &cordoned}
 	if target != "" {
-		metadata.Target = target
+		patch.Target = &target
 	}
-	metadata.Cordoned = cordoned
-	return s.store.SaveGeneratorMetadata(metadata)
+	_, err := patcher.PatchGeneratorMetadata(generatorID, patch)
+	return err
 }
 
 func (s *Server) activeTestsUsingGeneratorTarget(target string) []*ManagedTest {

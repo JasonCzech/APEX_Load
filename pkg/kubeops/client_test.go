@@ -1,6 +1,7 @@
 package kubeops
 
 import (
+	"bytes"
 	"context"
 	"crypto/x509"
 	"encoding/json"
@@ -275,6 +276,41 @@ func TestClientReportsInvalidCA(t *testing.T) {
 	_, err = client.ListPods(context.Background(), "apex", "app=generator")
 	if err == nil || !strings.Contains(err.Error(), "PEM certificate") {
 		t.Fatalf("ListPods() error = %v, want PEM certificate error", err)
+	}
+}
+
+func TestClientRejectsOversizedAPIResponse(t *testing.T) {
+	client, cleanup := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(bytes.Repeat([]byte("x"), int(maxKubernetesAPIResponseBytes+1)))
+	}))
+	defer cleanup()
+
+	_, err := client.ListPods(context.Background(), "apex", "app=generator")
+	if err == nil || !strings.Contains(err.Error(), "response exceeds") {
+		t.Fatalf("ListPods oversized response error = %v", err)
+	}
+}
+
+func TestClientRejectsOversizedCredentialFiles(t *testing.T) {
+	dir := t.TempDir()
+	tokenFile := dir + "/token"
+	if err := os.WriteFile(tokenFile, bytes.Repeat([]byte("t"), int(maxServiceAccountTokenBytes+1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	client, err := NewInClusterClient(Config{Namespace: "apex", APIServerURL: "https://127.0.0.1", TokenFile: tokenFile})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.readToken(); err == nil || !strings.Contains(err.Error(), "file exceeds") {
+		t.Fatalf("readToken oversized error = %v", err)
+	}
+
+	caFile := dir + "/ca.crt"
+	if err := os.WriteFile(caFile, bytes.Repeat([]byte("c"), int(maxServiceAccountCABytes+1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := buildInClusterHTTPClient(caFile); err == nil || !strings.Contains(err.Error(), "file exceeds") {
+		t.Fatalf("buildInClusterHTTPClient oversized error = %v", err)
 	}
 }
 

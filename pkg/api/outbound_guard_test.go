@@ -65,6 +65,9 @@ func TestValidateOutboundRemoteHost(t *testing.T) {
 }
 
 func TestNormalizeLibraryRemoteBaseURLBlocksPrivateHosts(t *testing.T) {
+	if _, err := normalizeLibraryRemoteBaseURL("https://token@library.example.com/library"); err == nil {
+		t.Error("normalizeLibraryRemoteBaseURL accepted URL userinfo, want error")
+	}
 	if _, err := normalizeLibraryRemoteBaseURL("http://10.0.0.1:8080/library"); err == nil {
 		t.Error("normalizeLibraryRemoteBaseURL accepted a private IP base URL, want error")
 	}
@@ -78,6 +81,33 @@ func TestNormalizeLibraryRemoteBaseURLBlocksPrivateHosts(t *testing.T) {
 	t.Setenv(remoteOutboundAllowPrivateHostsEnv, "1")
 	if _, err := normalizeLibraryRemoteBaseURL("http://10.0.0.1:8080/library"); err != nil {
 		t.Errorf("with allow-private, normalizeLibraryRemoteBaseURL rejected internal host: %v", err)
+	}
+}
+
+func TestSameOriginRedirectPolicyRejectsSensitiveRedirects(t *testing.T) {
+	original := httptest.NewRequest(http.MethodPost, "https://api.example.test/start", nil)
+	tests := []struct {
+		name   string
+		target string
+		wantOK bool
+	}{
+		{name: "same origin", target: "https://api.example.test/next", wantOK: true},
+		{name: "different host", target: "https://attacker.example/next"},
+		{name: "different port", target: "https://api.example.test:8443/next"},
+		{name: "https downgrade", target: "http://api.example.test/next"},
+		{name: "userinfo", target: "https://token@api.example.test/next"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			target := httptest.NewRequest(http.MethodPost, tt.target, nil)
+			err := sameOriginRedirectPolicy(target, []*http.Request{original})
+			if tt.wantOK && err != nil {
+				t.Fatalf("sameOriginRedirectPolicy() = %v, want nil", err)
+			}
+			if !tt.wantOK && err == nil {
+				t.Fatal("sameOriginRedirectPolicy() = nil, want error")
+			}
+		})
 	}
 }
 
@@ -107,6 +137,24 @@ func TestGuardedHTTPClientBlocksLoopbackByDefault(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+}
+
+func TestGuardedHTTPClientReusesOnlyMatchingPolicy(t *testing.T) {
+	t.Setenv(remoteOutboundAllowPrivateHostsEnv, "")
+	blockedA := newGuardedHTTPClient(3 * time.Second)
+	blockedB := newGuardedHTTPClient(3 * time.Second)
+	if blockedA != blockedB {
+		t.Fatal("matching guarded HTTP policy created duplicate connection pools")
+	}
+
+	t.Setenv(remoteOutboundAllowPrivateHostsEnv, "1")
+	allowed := newGuardedHTTPClient(3 * time.Second)
+	if allowed == blockedA {
+		t.Fatal("allow-private and blocked policies shared one HTTP client")
+	}
+	if differentTimeout := newGuardedHTTPClient(4 * time.Second); differentTimeout == allowed {
+		t.Fatal("different client timeouts shared one HTTP client")
 	}
 }
 

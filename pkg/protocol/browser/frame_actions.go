@@ -175,7 +175,7 @@ func (b *Browser) dragAndDropAction(ctx context.Context, action *protocol.Action
 	})
 }
 
-func (b *Browser) setInputFilesAction(ctx context.Context, action *protocol.Action, selector string, files []string) error {
+func (b *Browser) setInputFilesAction(ctx context.Context, action *protocol.Action, selector string, files []playwright.InputFile) error {
 	if locator, ok := b.actionLocator(action, selector); ok {
 		return locator.SetInputFiles(files, playwright.LocatorSetInputFilesOptions{
 			Timeout: playwright.Float(b.timeoutMS(ctx, b.actionTimeout(action))),

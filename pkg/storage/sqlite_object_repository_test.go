@@ -3,6 +3,9 @@ package storage
 import (
 	"path/filepath"
 	"testing"
+	"time"
+
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 func TestObjectRepositoryRoundTrip(t *testing.T) {
@@ -11,6 +14,7 @@ func TestObjectRepositoryRoundTrip(t *testing.T) {
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
 	defer store.Close()
+	requireProjectFixtures(t, store, "proj-1")
 
 	// Absent repo returns sql.ErrNoRows from Get.
 	if _, err := store.GetObjectRepository("missing"); err == nil {
@@ -73,5 +77,115 @@ func TestObjectRepositoryRoundTrip(t *testing.T) {
 	}
 	if repos, _ := store.ListObjectRepositories("proj-1", 100, 0); len(repos) != 0 {
 		t.Errorf("expected 0 repos after delete, got %d", len(repos))
+	}
+}
+
+func TestObjectRepositoryDeleteAndScriptBindingsPreserveReferences(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+	now := time.Now().UTC()
+	for _, projectID := range []string{"object-ref-project-a", "object-ref-project-b"} {
+		if err := store.SaveProject(&Project{ID: projectID, Name: projectID, CreatedAt: now}); err != nil {
+			t.Fatalf("SaveProject(%s): %v", projectID, err)
+		}
+	}
+	for _, repo := range []*ObjectRepository{
+		{ID: "object-repo-ref-a", ProjectID: "object-ref-project-a", Name: "A", Objects: []RepositoryObject{{LogicalName: "login", CSS: "#login"}}},
+		{ID: "object-repo-ref-b", ProjectID: "object-ref-project-b", Name: "B", Objects: []RepositoryObject{{LogicalName: "login", CSS: "#login"}}},
+	} {
+		if err := store.SaveObjectRepository(repo); err != nil {
+			t.Fatalf("SaveObjectRepository(%s): %v", repo.ID, err)
+		}
+	}
+	script := &dsl.Script{
+		ID: "object-ref-script-a", Name: "A", Protocol: "browser", ProjectID: "object-ref-project-a", CreatedAt: now,
+		Actions: []dsl.Action{{Name: "Login", Type: "browser_click", ObjectRef: "object-repo-ref-a:login"}},
+	}
+	if err := store.SaveScript(script); err != nil {
+		t.Fatalf("SaveScript owned binding: %v", err)
+	}
+	if err := store.DeleteObjectRepository("object-repo-ref-a"); err == nil {
+		t.Fatal("DeleteObjectRepository removed a referenced repository")
+	}
+	if _, err := store.GetObjectRepository("object-repo-ref-a"); err != nil {
+		t.Fatalf("referenced repository disappeared: %v", err)
+	}
+	forged := *script
+	forged.Actions = []dsl.Action{{Name: "Login", Type: "browser_click", ObjectRef: "object-repo-ref-b:login"}}
+	if err := store.SaveScript(&forged); err == nil {
+		t.Fatal("SaveScript accepted a foreign-project object repository")
+	}
+	missing := *script
+	missing.ID = "object-ref-script-missing"
+	missing.Actions = []dsl.Action{{Name: "Login", Type: "browser_click", ObjectRef: "object-repo-ref-missing:login"}}
+	if err := store.SaveScript(&missing); err == nil {
+		t.Fatal("SaveScript accepted a missing qualified object repository")
+	}
+	script.Actions[0].ObjectRef = ""
+	script.Actions[0].Selector = "#login"
+	if err := store.SaveScript(script); err != nil {
+		t.Fatalf("SaveScript remove binding: %v", err)
+	}
+	if err := store.DeleteObjectRepository("object-repo-ref-a"); err != nil {
+		t.Fatalf("DeleteObjectRepository after unbind: %v", err)
+	}
+}
+
+func TestObjectRepositoryOptimisticUpdateRejectsStaleAndOwnershipChanges(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+	requireProjectFixtures(t, store, "project-a", "project-b")
+
+	repo := &ObjectRepository{ID: "object-repo-cas", ProjectID: "project-a", Name: "original"}
+	if err := store.SaveObjectRepository(repo); err != nil {
+		t.Fatalf("SaveObjectRepository: %v", err)
+	}
+	first, err := store.GetObjectRepository(repo.ID)
+	if err != nil {
+		t.Fatalf("GetObjectRepository first: %v", err)
+	}
+	stale, err := store.GetObjectRepository(repo.ID)
+	if err != nil {
+		t.Fatalf("GetObjectRepository stale: %v", err)
+	}
+
+	first.Name = "first writer"
+	if updated, err := store.UpdateObjectRepositoryIfUnchanged(first, first.UpdatedAt); err != nil || !updated {
+		t.Fatalf("first update = (%v, %v), want success", updated, err)
+	}
+	stale.Name = "stale writer"
+	if updated, err := store.UpdateObjectRepositoryIfUnchanged(stale, stale.UpdatedAt); err != nil || updated {
+		t.Fatalf("stale update = (%v, %v), want conflict", updated, err)
+	}
+	fresh, err := store.GetObjectRepository(repo.ID)
+	if err != nil {
+		t.Fatalf("GetObjectRepository fresh: %v", err)
+	}
+	if fresh.Name != "first writer" || fresh.ProjectID != "project-a" {
+		t.Fatalf("fresh repository = %#v, want first writer in project-a", fresh)
+	}
+
+	expected := fresh.UpdatedAt
+	fresh.ProjectID = "project-b"
+	if updated, err := store.UpdateObjectRepositoryIfUnchanged(fresh, expected); err != nil || updated {
+		t.Fatalf("ownership-changing update = (%v, %v), want rejection", updated, err)
+	}
+	// Even the legacy upsert primitive must not mutate an existing row through a
+	// different project scope.
+	if err := store.SaveObjectRepository(&ObjectRepository{ID: repo.ID, ProjectID: "project-b", Name: "legacy update"}); err == nil {
+		t.Fatal("SaveObjectRepository accepted a cross-project update")
+	}
+	fresh, err = store.GetObjectRepository(repo.ID)
+	if err != nil || fresh.ProjectID != "project-a" || fresh.Name != "first writer" {
+		t.Fatalf("repository ownership after upsert = %#v, err=%v", fresh, err)
+	}
+	if err := store.SaveObjectRepository(&ObjectRepository{ID: "missing-owner", ProjectID: "missing-project", Name: "bad"}); err == nil {
+		t.Fatal("SaveObjectRepository accepted a missing owner project")
 	}
 }

@@ -36,6 +36,7 @@ func newGitHubStub(t *testing.T) *httptest.Server {
 
 func newGitHubTestServer(t *testing.T, stubURL string) *Server {
 	t.Helper()
+	t.Setenv(githubAllowInsecureHTTPEnv, "true")
 	t.Setenv("APEXLOAD_GITHUB_TOKEN_KEY", "unit-test-encryption-key")
 	t.Setenv("APEXLOAD_TEST_GH_SECRET", "client-secret")
 
@@ -136,6 +137,46 @@ func TestGitHubOAuthConnectFlow(t *testing.T) {
 	}
 }
 
+func TestGitHubOAuthCallbackCannotUndoNewerDisconnect(t *testing.T) {
+	stub := newGitHubStub(t)
+	defer stub.Close()
+	server := newGitHubTestServer(t, stub.URL)
+
+	loginReq := httptest.NewRequest(http.MethodGet, "/api/v1/integrations/github/login", nil)
+	loginResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(loginResp, loginReq)
+	location, err := url.Parse(loginResp.Header().Get("Location"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := location.Query().Get("state")
+	var stateCookie *http.Cookie
+	for _, cookie := range loginResp.Result().Cookies() {
+		if cookie.Name == githubStateCookieName {
+			stateCookie = cookie
+			break
+		}
+	}
+	if state == "" || stateCookie == nil {
+		t.Fatal("login did not issue github oauth state")
+	}
+	if err := server.store.(storage.GitHubConnectionStore).DeleteGitHubConnection("local"); err != nil {
+		t.Fatal(err)
+	}
+
+	callbackReq := httptest.NewRequest(http.MethodGet, "/api/v1/integrations/github/callback?code=abc123&state="+state, nil)
+	callbackReq.AddCookie(stateCookie)
+	callbackResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(callbackResp, callbackReq)
+	if callbackResp.Code != http.StatusConflict {
+		t.Fatalf("callback after disconnect = %d, want %d; body=%s", callbackResp.Code, http.StatusConflict, callbackResp.Body.String())
+	}
+	connection, err := server.store.(storage.GitHubConnectionStore).GetGitHubConnection("local")
+	if err != nil || connection != nil {
+		t.Fatalf("callback recreated disconnected connection: %#v, %v", connection, err)
+	}
+}
+
 func TestGitHubLoginRequiresConfiguration(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
@@ -164,9 +205,40 @@ func TestGitHubConfigEndpointHidesSecret(t *testing.T) {
 	if _, leaked := cfg["client_secret"]; leaked {
 		t.Fatal("config endpoint must never expose the client secret")
 	}
+	for _, internalField := range []string{"app_private_key_env_var", "app_private_key_file", "webhook_secret_env_var", "pat_env_var", "tls_insecure_skip_verify"} {
+		if _, leaked := cfg[internalField]; leaked {
+			t.Fatalf("config endpoint exposed internal field %q", internalField)
+		}
+	}
 	body, _ := json.Marshal(cfg)
 	if string(body) == "" {
 		t.Fatal("empty config")
+	}
+}
+
+func TestGitHubOAuthCallbackRejectsChangedLocalIdentity(t *testing.T) {
+	stub := newGitHubStub(t)
+	defer stub.Close()
+	server := newGitHubTestServer(t, stub.URL)
+
+	now := time.Now().UTC()
+	encoded, err := encodeSignedCookieValue(githubStateToken{
+		State: "state-token", UserID: "victim", ReturnTo: "/", IssuedAt: now, ExpiresAt: now.Add(time.Minute),
+	}, githubCookieSecret())
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/integrations/github/callback?code=unused&state=state-token", nil)
+	req.AddCookie(&http.Cookie{Name: githubStateCookieName, Value: encoded})
+	req = withAuthenticatedContext(req, authResolution{User: &AuthenticatedUser{Subject: "attacker"}})
+	resp := httptest.NewRecorder()
+	server.handleGitHubCallback(resp, req)
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("callback status = %d, want 401; body=%s", resp.Code, resp.Body.String())
+	}
+	connection, err := server.store.(storage.GitHubConnectionStore).GetGitHubConnection("victim")
+	if err != nil || connection != nil {
+		t.Fatalf("callback persisted victim connection = %#v, %v", connection, err)
 	}
 }
 

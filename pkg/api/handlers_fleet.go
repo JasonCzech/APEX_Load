@@ -546,8 +546,8 @@ func buildFleetCapacity(inventory SystemInventoryResponse, settings SystemSettin
 			continue
 		}
 		out.TotalGenerators++
-		out.ActiveSlots += int(generator.ActiveVUsers)
-		out.MaxSlots += int(generator.MaxVUsers)
+		out.ActiveSlots = saturatingAddNonNegative(out.ActiveSlots, int(generator.ActiveVUsers))
+		out.MaxSlots = saturatingAddNonNegative(out.MaxSlots, int(generator.MaxVUsers))
 		features := generator.CompatibleFeatures
 		if len(features) == 0 {
 			features = generator.SupportedProtocols
@@ -564,7 +564,7 @@ func buildFleetCapacity(inventory SystemInventoryResponse, settings SystemSettin
 			continue
 		}
 		out.EligibleGenerators++
-		out.AvailableSlots += int(generator.AvailableCapacity)
+		out.AvailableSlots = saturatingAddNonNegative(out.AvailableSlots, int(generator.AvailableCapacity))
 	}
 	if out.TotalGenerators == 0 {
 		if region != "" {
@@ -580,7 +580,7 @@ func buildFleetCapacity(inventory SystemInventoryResponse, settings SystemSettin
 		_, projectReserved := capacityReservationTotals(settings, projectID)
 		out.ProjectID = normalizeProjectID(projectID)
 		out.ReservedGenerators = projectReserved
-		out.ReservedSlots = projectReserved * settings.CapacityPlanning.Generator.MaxVUsers
+		out.ReservedSlots = saturatingMultiplyNonNegative(projectReserved, settings.CapacityPlanning.Generator.MaxVUsers)
 	}
 	out.ProjectSlots = buildFleetProjectSlotAccounting(settings, tests)
 	if out.ProjectID != "" {
@@ -628,9 +628,9 @@ func buildFleetLoadZones(inventory SystemInventoryResponse, tests []*ManagedTest
 			protocols[zoneID] = map[string]struct{}{}
 		}
 		zone.TotalGenerators++
-		zone.ActiveSlots += int(generator.ActiveVUsers)
-		zone.AvailableSlots += int(generator.AvailableCapacity)
-		zone.MaxSlots += int(generator.MaxVUsers)
+		zone.ActiveSlots = saturatingAddNonNegative(zone.ActiveSlots, int(generator.ActiveVUsers))
+		zone.AvailableSlots = saturatingAddNonNegative(zone.AvailableSlots, int(generator.AvailableCapacity))
+		zone.MaxSlots = saturatingAddNonNegative(zone.MaxSlots, int(generator.MaxVUsers))
 		for _, protocol := range generator.SupportedProtocols {
 			protocol = strings.TrimSpace(protocol)
 			if protocol != "" {
@@ -759,8 +759,8 @@ func buildFleetProjectSlotAccounting(settings SystemSettings, tests []*ManagedTe
 			continue
 		}
 		entry := fleetProjectSlotEntry(byProject, projectID)
-		entry.ReservedGenerators += reservation.ReservedGenerators
-		entry.ReservedSlots += reservation.ReservedGenerators * settings.CapacityPlanning.Generator.MaxVUsers
+		entry.ReservedGenerators = saturatingAddNonNegative(entry.ReservedGenerators, reservation.ReservedGenerators)
+		entry.ReservedSlots = saturatingAddNonNegative(entry.ReservedSlots, saturatingMultiplyNonNegative(reservation.ReservedGenerators, settings.CapacityPlanning.Generator.MaxVUsers))
 	}
 	for _, test := range tests {
 		if test == nil {
@@ -770,10 +770,10 @@ func buildFleetProjectSlotAccounting(settings SystemSettings, tests []*ManagedTe
 		entry := fleetProjectSlotEntry(byProject, projectID)
 		switch test.Status {
 		case "RUNNING", "INITIALIZING", "PAUSED":
-			entry.ActiveSlots += test.TotalVUsers
+			entry.ActiveSlots = saturatingAddNonNegative(entry.ActiveSlots, test.TotalVUsers)
 			entry.RunningTests++
 		case "PENDING", "RESERVED":
-			entry.PendingSlots += test.TotalVUsers
+			entry.PendingSlots = saturatingAddNonNegative(entry.PendingSlots, test.TotalVUsers)
 			entry.PendingTests++
 		}
 	}

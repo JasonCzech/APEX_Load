@@ -2,11 +2,33 @@ package api
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/storage"
 )
+
+type countingLibraryCredentialStore struct {
+	gets atomic.Int64
+}
+
+func (s *countingLibraryCredentialStore) PutRemoteAPIKey(string, string) (string, error) {
+	return "", nil
+}
+
+func (s *countingLibraryCredentialStore) GetRemoteAPIKey(LibraryRemote) (string, error) {
+	s.gets.Add(1)
+	return "must-not-be-read", nil
+}
+
+func (s *countingLibraryCredentialStore) DeleteRemoteAPIKey(string) error { return nil }
 
 func TestEnvLibraryCredentialStoreResolvesServerSideRefs(t *testing.T) {
 	t.Setenv("APEXLOAD_LIBRARY_REMOTE_TEST_KEY", "secret-from-env")
@@ -74,9 +96,11 @@ func TestRemoteCredentialRotationsUseIndependentVersionedReferences(t *testing.T
 func TestPrivateHostOptInDoesNotPermitAuthenticatedHTTP(t *testing.T) {
 	t.Setenv(remoteOutboundAllowPrivateHostsEnv, "1")
 	t.Setenv("APEXLOAD_LIBRARY_ALLOW_INSECURE_HTTP", "")
-	err := validateLibraryRemoteTransport(LibraryRemote{BaseURL: "http://127.0.0.1:8080", AuthMethod: "service_account"})
-	if err == nil {
-		t.Fatal("private-host opt-in bypassed authenticated HTTPS enforcement")
+	for _, baseURL := range []string{"http://127.0.0.1:8080", "HTTP://127.0.0.1:8080"} {
+		err := validateLibraryRemoteTransport(LibraryRemote{BaseURL: baseURL, AuthMethod: "service_account"})
+		if err == nil {
+			t.Fatalf("private-host opt-in bypassed authenticated HTTPS enforcement for %q", baseURL)
+		}
 	}
 }
 
@@ -99,5 +123,48 @@ func TestLibraryRemoteUpdateValidatesTransportBeforeStagingCredential(t *testing
 	defer credentials.mu.Unlock()
 	if len(credentials.secrets) != 0 {
 		t.Fatalf("invalid transport left staged credentials: %#v", credentials.secrets)
+	}
+}
+
+func TestPersistedLegacyHTTPRemoteFailsBeforeCredentialLookupOrNetwork(t *testing.T) {
+	t.Setenv("APEXLOAD_LIBRARY_ALLOW_INSECURE_HTTP", "")
+	var requests atomic.Int64
+	remoteHTTP := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(remoteHTTP.Close)
+
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "legacy-library.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	legacy := []LibraryRemote{{
+		ID: "legacy-http", Name: "Legacy HTTP", BaseURL: remoteHTTP.URL,
+		AuthMethod: "service_account", CredentialRef: "keyring:library-remote:legacy-http",
+	}}
+	payload, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveSetting(libraryRemotesSettingKey, string(payload)); err != nil {
+		t.Fatal(err)
+	}
+	credentials := &countingLibraryCredentialStore{}
+	server := NewServer(ServerConfig{Store: store, LibraryCredentials: credentials})
+	remote, ok := server.libraryRemote("legacy-http")
+	if !ok {
+		t.Fatal("persisted legacy remote was not loaded")
+	}
+	_, err = server.remoteLibraryCapabilities(context.Background(), remote)
+	if err == nil || !strings.Contains(err.Error(), "require https") {
+		t.Fatalf("legacy authenticated HTTP request error = %v, want HTTPS policy rejection", err)
+	}
+	if got := credentials.gets.Load(); got != 0 {
+		t.Fatalf("credential resolver calls = %d, want 0", got)
+	}
+	if got := requests.Load(); got != 0 {
+		t.Fatalf("network requests = %d, want 0", got)
 	}
 }

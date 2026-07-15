@@ -5,48 +5,107 @@ package storage
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 )
 
 func (s *SQLiteStore) SaveTest(test *TestRecord) error {
+	return s.saveTestWithExecutor(s.db, test)
+}
+
+// CreateTestIfAbsent persists a newly materialized test without allowing a
+// deterministic/requested ID to replace an existing lifecycle row.
+func (s *SQLiteStore) CreateTestIfAbsent(test *TestRecord) (bool, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	created, err := s.createTestIfAbsentWithExecutor(tx, test)
+	if err != nil || !created {
+		return created, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// CreateTestIfAbsentIfLeaseHeld combines the create-only identity fence with
+// the controller execution lease. A stale controller can neither insert a new
+// row nor turn an ID collision into an update of a successor-owned run.
+func (s *SQLiteStore) CreateTestIfAbsentIfLeaseHeld(test *TestRecord, leaseName, leaseOwnerID string) (bool, error) {
+	leaseName = strings.TrimSpace(leaseName)
+	leaseOwnerID = strings.TrimSpace(leaseOwnerID)
 	if test == nil {
-		return fmt.Errorf("test is required")
+		return false, fmt.Errorf("test is required")
 	}
-	test.ApplicationID = normalizeApplicationID(test.ApplicationID)
-	test.ReleaseID = normalizeReleaseID(test.ReleaseID)
-	test.ProjectID = normalizeProjectID(test.ProjectID)
-	groupsJSON, err := marshalTestField("groups_json", test.Groups)
+	if leaseName == "" || leaseOwnerID == "" {
+		return false, errors.New("lease name and owner token are required")
+	}
+	tx, err := s.db.Begin()
 	if err != nil {
-		return err
+		return false, err
 	}
-	assignmentJSON, err := marshalTestField("assignment_json", test.Assignment)
+	defer tx.Rollback()
+	held, err := schedulerLeaseHeldInTransaction(tx, s.db.dialect, leaseName, leaseOwnerID)
+	if err != nil || !held {
+		return false, err
+	}
+	created, err := s.createTestIfAbsentWithExecutor(tx, test)
+	if err != nil || !created {
+		return created, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (s *SQLiteStore) CreateTestIfAbsentIfLeaseTermHeld(test *TestRecord, leaseName, leaseOwnerID string, leaseGeneration uint64) (bool, error) {
+	if test == nil {
+		return false, fmt.Errorf("test is required")
+	}
+	tx, err := s.beginExecutionLeaseTermTransaction(leaseName, leaseOwnerID, leaseGeneration)
+	if err != nil || tx == nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	created, err := s.createTestIfAbsentWithExecutor(tx, test)
 	if err != nil {
-		return err
+		return false, err
 	}
-	runtimeSettingsJSON, err := marshalTestField("runtime_settings_json", test.RuntimeSettings)
-	if err != nil {
-		return err
+	if err := tx.Commit(); err != nil {
+		return false, err
 	}
-	goalConfigJSON, err := marshalTestField("goal_config_json", test.GoalConfig)
-	if err != nil {
-		return err
-	}
-	executionPlanApprovalJSON, err := marshalTestField("execution_plan_approval_json", test.ExecutionPlanApproval)
+	return created, nil
+}
+
+type testSaveExecutor interface {
+	Exec(query string, args ...any) (sql.Result, error)
+	QueryRow(query string, args ...any) *sql.Row
+}
+
+func (s *SQLiteStore) saveTestWithExecutor(executor testSaveExecutor, test *TestRecord) error {
+	args, err := prepareTestSaveArgs(test)
 	if err != nil {
 		return err
 	}
 
-	query := `INSERT INTO tests (id, ref_key, name, status, application_id, release_id, scenario_id, project_id, folder_id, scenario_mode, shakeout_enabled, resource_baseline_enabled, assignment_json, total_vusers, duration_ns, start_time, scheduled_start_at, pending_since, baseline_pinned, baseline_pinned_at, end_time, error, created_by_subject, created_by_display_name, started_by_subject, started_by_display_name, stopped_by_subject, stopped_by_display_name, groups_json, runtime_settings_json, goal_config_json, execution_plan_approval_json, timeslot_id)
-			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	query := `INSERT INTO tests (id, ref_key, materialization_key, name, status, application_id, release_id, scenario_id, project_id, folder_id, scenario_mode, shakeout_enabled, resource_baseline_enabled, start_delay, assignment_json, total_vusers, duration_ns, start_time, scheduled_start_at, pending_since, paused_at, cumulative_pause_ns, capacity_window_start_at, capacity_window_end_at, baseline_pinned, baseline_pinned_at, end_time, error, created_by_subject, created_by_display_name, started_by_subject, started_by_display_name, stopped_by_subject, stopped_by_display_name, groups_json, runtime_settings_json, goal_config_json, execution_plan_approval_json, timeslot_id)
+			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			  ON CONFLICT(id) DO UPDATE SET
 			  ref_key=excluded.ref_key,
+			  materialization_key=excluded.materialization_key,
 			  name=excluded.name, status=excluded.status, application_id=excluded.application_id, release_id=excluded.release_id, scenario_id=excluded.scenario_id,
 			  project_id=excluded.project_id, folder_id=excluded.folder_id,
 			  scenario_mode=excluded.scenario_mode, shakeout_enabled=excluded.shakeout_enabled,
-			  resource_baseline_enabled=excluded.resource_baseline_enabled, assignment_json=excluded.assignment_json, total_vusers=excluded.total_vusers,
+			  resource_baseline_enabled=excluded.resource_baseline_enabled, start_delay=excluded.start_delay, assignment_json=excluded.assignment_json, total_vusers=excluded.total_vusers,
 			  duration_ns=excluded.duration_ns, start_time=excluded.start_time, scheduled_start_at=excluded.scheduled_start_at, pending_since=excluded.pending_since,
+			  paused_at=excluded.paused_at, cumulative_pause_ns=excluded.cumulative_pause_ns,
+			  capacity_window_start_at=excluded.capacity_window_start_at, capacity_window_end_at=excluded.capacity_window_end_at,
 			  baseline_pinned=excluded.baseline_pinned, baseline_pinned_at=excluded.baseline_pinned_at, end_time=excluded.end_time,
 			  error=excluded.error, created_by_subject=excluded.created_by_subject, created_by_display_name=excluded.created_by_display_name,
 			  started_by_subject=excluded.started_by_subject, started_by_display_name=excluded.started_by_display_name,
@@ -54,8 +113,155 @@ func (s *SQLiteStore) SaveTest(test *TestRecord) error {
 			  runtime_settings_json=excluded.runtime_settings_json, goal_config_json=excluded.goal_config_json, execution_plan_approval_json=excluded.execution_plan_approval_json,
 			  timeslot_id=excluded.timeslot_id`
 
-	_, err = s.db.Exec(query, test.ID, test.RefKey, test.Name, test.Status, test.ApplicationID, test.ReleaseID, nullableString(test.ScenarioID), test.ProjectID, nullableStringPointer(test.FolderID), test.ScenarioMode, test.ScriptShakeout, test.ResourceBaseline, assignmentJSON, test.TotalVUsers, test.Duration, test.StartTime, test.ScheduledStartAt, test.PendingSince, test.BaselinePinned, test.BaselinePinnedAt, test.EndTime, test.Error, test.CreatedBySubject, test.CreatedByDisplayName, test.StartedBySubject, test.StartedByDisplayName, test.StoppedBySubject, test.StoppedByDisplayName, groupsJSON, runtimeSettingsJSON, goalConfigJSON, executionPlanApprovalJSON, nullableStringPointer(test.TimeslotID))
+	_, err = executor.Exec(query, args...)
 	return err
+}
+
+func (s *SQLiteStore) createTestIfAbsentWithExecutor(executor testSaveExecutor, test *TestRecord) (bool, error) {
+	args, err := prepareTestSaveArgs(test)
+	if err != nil {
+		return false, err
+	}
+	if err := lockActiveReleaseForNewTest(executor, test); err != nil {
+		return false, err
+	}
+	result, err := executor.Exec(`INSERT INTO tests (id, ref_key, materialization_key, name, status, application_id, release_id, scenario_id, project_id, folder_id, scenario_mode, shakeout_enabled, resource_baseline_enabled, start_delay, assignment_json, total_vusers, duration_ns, start_time, scheduled_start_at, pending_since, paused_at, cumulative_pause_ns, capacity_window_start_at, capacity_window_end_at, baseline_pinned, baseline_pinned_at, end_time, error, created_by_subject, created_by_display_name, started_by_subject, started_by_display_name, stopped_by_subject, stopped_by_display_name, groups_json, runtime_settings_json, goal_config_json, execution_plan_approval_json, timeslot_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO NOTHING`, args...)
+	if err != nil {
+		return false, err
+	}
+	rows, err := result.RowsAffected()
+	return rows == 1, err
+}
+
+// lockActiveReleaseForNewTest serializes explicit-release test creation with
+// release archival. Both paths take the same harmless row write before checking
+// their invariant, so either the test commits first and blocks archival or the
+// archive commits first and makes the test creation fail.
+func lockActiveReleaseForNewTest(executor testSaveExecutor, test *TestRecord) error {
+	if test == nil {
+		return errors.New("test is required")
+	}
+	releaseID := normalizeReleaseID(test.ReleaseID)
+	if releaseID == LegacyReleaseID {
+		return nil
+	}
+	result, err := executor.Exec(`UPDATE releases SET updated_at = updated_at WHERE id = ?`, releaseID)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return fmt.Errorf("release not found: %s", releaseID)
+	}
+	var archivedAt sql.NullTime
+	if err := executor.QueryRow(`SELECT archived_at FROM releases WHERE id = ?`, releaseID).Scan(&archivedAt); err != nil {
+		return err
+	}
+	if archivedAt.Valid {
+		return fmt.Errorf("release is archived: %s", releaseID)
+	}
+	return nil
+}
+
+func prepareTestSaveArgs(test *TestRecord) ([]any, error) {
+	if test == nil {
+		return nil, fmt.Errorf("test is required")
+	}
+	test.ApplicationID = normalizeApplicationID(test.ApplicationID)
+	test.ReleaseID = normalizeReleaseID(test.ReleaseID)
+	test.ProjectID = normalizeProjectID(test.ProjectID)
+	groupsJSON, err := marshalTestField("groups_json", test.Groups)
+	if err != nil {
+		return nil, err
+	}
+	assignmentJSON, err := marshalTestField("assignment_json", test.Assignment)
+	if err != nil {
+		return nil, err
+	}
+	runtimeSettingsJSON, err := marshalTestField("runtime_settings_json", test.RuntimeSettings)
+	if err != nil {
+		return nil, err
+	}
+	goalConfigJSON, err := marshalTestField("goal_config_json", test.GoalConfig)
+	if err != nil {
+		return nil, err
+	}
+	executionPlanApprovalJSON, err := marshalTestField("execution_plan_approval_json", test.ExecutionPlanApproval)
+	if err != nil {
+		return nil, err
+	}
+	return []any{test.ID, test.RefKey, test.MaterializationKey, test.Name, test.Status, test.ApplicationID, test.ReleaseID, nullableString(test.ScenarioID), test.ProjectID, nullableStringPointer(test.FolderID), test.ScenarioMode, test.ScriptShakeout, test.ResourceBaseline, test.StartDelay, assignmentJSON, test.TotalVUsers, test.Duration, test.StartTime, test.ScheduledStartAt, test.PendingSince, test.PausedAt, test.CumulativePause, test.CapacityWindowStartAt, test.CapacityWindowEndAt, test.BaselinePinned, test.BaselinePinnedAt, test.EndTime, test.Error, test.CreatedBySubject, test.CreatedByDisplayName, test.StartedBySubject, test.StartedByDisplayName, test.StoppedBySubject, test.StoppedByDisplayName, groupsJSON, runtimeSettingsJSON, goalConfigJSON, executionPlanApprovalJSON, nullableStringPointer(test.TimeslotID)}, nil
+}
+
+// SaveTestIfLeaseHeld performs the lease check and the test upsert in one
+// database transaction. leaseOwnerID is an acquisition-epoch token (not merely
+// a process name), so a late callback cannot write after another epoch takes
+// over or after the same process reacquires leadership.
+func (s *SQLiteStore) SaveTestIfLeaseHeld(test *TestRecord, leaseName, leaseOwnerID string) (bool, error) {
+	leaseName = strings.TrimSpace(leaseName)
+	leaseOwnerID = strings.TrimSpace(leaseOwnerID)
+	if test == nil {
+		return false, fmt.Errorf("test is required")
+	}
+	if leaseName == "" || leaseOwnerID == "" {
+		return false, errors.New("lease name and owner token are required")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	held, err := schedulerLeaseHeldInTransaction(tx, s.db.dialect, leaseName, leaseOwnerID)
+	if err != nil {
+		return false, err
+	}
+	if !held {
+		return false, nil
+	}
+	if err := s.saveTestWithExecutor(tx, test); err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// EnsureTestRefKey fills only an empty ref_key column and returns the durable
+// winner. It deliberately avoids a full-row upsert: reference-key backfill runs
+// during controller boot, before an HA replica has acquired an execution epoch,
+// and must not overwrite lifecycle fields owned by the active replica.
+func (s *SQLiteStore) EnsureTestRefKey(id, proposedRefKey string) (string, error) {
+	id = strings.TrimSpace(id)
+	proposedRefKey = strings.TrimSpace(proposedRefKey)
+	if id == "" || proposedRefKey == "" {
+		return "", errors.New("test id and proposed reference key are required")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`UPDATE tests SET ref_key = ? WHERE id = ? AND (ref_key IS NULL OR TRIM(ref_key) = '')`, proposedRefKey, id); err != nil {
+		return "", err
+	}
+	var durableRefKey string
+	if err := tx.QueryRow(`SELECT COALESCE(ref_key, '') FROM tests WHERE id = ?`, id).Scan(&durableRefKey); err != nil {
+		return "", err
+	}
+	durableRefKey = strings.TrimSpace(durableRefKey)
+	if durableRefKey == "" {
+		return "", fmt.Errorf("test %q still has an empty reference key", id)
+	}
+	if err := tx.Commit(); err != nil {
+		return "", err
+	}
+	return durableRefKey, nil
 }
 
 func marshalTestField(name string, value any) (string, error) {
@@ -76,7 +282,7 @@ func (s *SQLiteStore) GetTest(id string) (*TestRecord, error) {
 }
 
 func testSelectColumns() string {
-	return `SELECT id, COALESCE(ref_key, ''), name, status, COALESCE(application_id, ''), COALESCE(release_id, ''), COALESCE(scenario_id, ''), COALESCE(project_id, ''), folder_id, COALESCE(scenario_mode, ''), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(assignment_json, ''), total_vusers, duration_ns, start_time, scheduled_start_at, pending_since, COALESCE(baseline_pinned, 0), baseline_pinned_at, end_time, error, COALESCE(created_by_subject, ''), COALESCE(created_by_display_name, ''), COALESCE(started_by_subject, ''), COALESCE(started_by_display_name, ''), COALESCE(stopped_by_subject, ''), COALESCE(stopped_by_display_name, ''), groups_json, COALESCE(runtime_settings_json, ''), COALESCE(goal_config_json, ''), COALESCE(execution_plan_approval_json, ''), timeslot_id`
+	return `SELECT id, COALESCE(ref_key, ''), COALESCE(materialization_key, ''), name, status, COALESCE(application_id, ''), COALESCE(release_id, ''), COALESCE(scenario_id, ''), COALESCE(project_id, ''), folder_id, COALESCE(scenario_mode, ''), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(start_delay, ''), COALESCE(assignment_json, ''), total_vusers, duration_ns, start_time, scheduled_start_at, pending_since, paused_at, COALESCE(cumulative_pause_ns, 0), capacity_window_start_at, capacity_window_end_at, COALESCE(baseline_pinned, 0), baseline_pinned_at, end_time, error, COALESCE(created_by_subject, ''), COALESCE(created_by_display_name, ''), COALESCE(started_by_subject, ''), COALESCE(started_by_display_name, ''), COALESCE(stopped_by_subject, ''), COALESCE(stopped_by_display_name, ''), groups_json, COALESCE(runtime_settings_json, ''), COALESCE(goal_config_json, ''), COALESCE(execution_plan_approval_json, ''), timeslot_id`
 }
 
 // rowScanner abstracts *sql.Row and *sql.Rows so scan helpers work with both
@@ -90,7 +296,7 @@ type rowScanner interface {
 func scanTest(scanner rowScanner) (TestRecord, error) {
 	var test TestRecord
 	var groupsJSON, assignmentJSON, runtimeSettingsJSON, goalConfigJSON, executionPlanApprovalJSON string
-	if err := scanner.Scan(&test.ID, &test.RefKey, &test.Name, &test.Status, &test.ApplicationID, &test.ReleaseID, &test.ScenarioID, &test.ProjectID, &test.FolderID, &test.ScenarioMode, &test.ScriptShakeout, &test.ResourceBaseline, &assignmentJSON, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.ScheduledStartAt, &test.PendingSince, &test.BaselinePinned, &test.BaselinePinnedAt, &test.EndTime, &test.Error, &test.CreatedBySubject, &test.CreatedByDisplayName, &test.StartedBySubject, &test.StartedByDisplayName, &test.StoppedBySubject, &test.StoppedByDisplayName, &groupsJSON, &runtimeSettingsJSON, &goalConfigJSON, &executionPlanApprovalJSON, &test.TimeslotID); err != nil {
+	if err := scanner.Scan(&test.ID, &test.RefKey, &test.MaterializationKey, &test.Name, &test.Status, &test.ApplicationID, &test.ReleaseID, &test.ScenarioID, &test.ProjectID, &test.FolderID, &test.ScenarioMode, &test.ScriptShakeout, &test.ResourceBaseline, &test.StartDelay, &assignmentJSON, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.ScheduledStartAt, &test.PendingSince, &test.PausedAt, &test.CumulativePause, &test.CapacityWindowStartAt, &test.CapacityWindowEndAt, &test.BaselinePinned, &test.BaselinePinnedAt, &test.EndTime, &test.Error, &test.CreatedBySubject, &test.CreatedByDisplayName, &test.StartedBySubject, &test.StartedByDisplayName, &test.StoppedBySubject, &test.StoppedByDisplayName, &groupsJSON, &runtimeSettingsJSON, &goalConfigJSON, &executionPlanApprovalJSON, &test.TimeslotID); err != nil {
 		return test, err
 	}
 	if err := json.Unmarshal([]byte(groupsJSON), &test.Groups); err != nil {
@@ -197,24 +403,160 @@ func (s *SQLiteStore) UpdateTestStatus(id string, status string, endTime *time.T
 	return err
 }
 
-func (s *SQLiteStore) UpdateTestStatusIfActive(id string, status string, endTime *time.Time, errStr string) (bool, error) {
+func (s *SQLiteStore) UpdateTestStatusIfActive(id string, status string, endTime *time.Time, errStr string) (TestStatusTransitionResult, error) {
 	result, err := s.db.Exec(`UPDATE tests SET status = ?, end_time = ?, error = ?
 		WHERE id = ? AND (status = ? OR status IN ('INITIALIZING', 'STARTING', 'RUNNING', 'PAUSED', 'STOPPING', 'RESERVED', 'PENDING', 'SCHEDULED', 'SHAKEOUT', 'SHAKEOUT_REVIEW', 'QUEUED'))`, status, endTime, errStr, id, status)
 	if err != nil {
-		return false, err
+		return "", err
 	}
 	affected, err := result.RowsAffected()
-	if err != nil || affected == 1 {
-		return affected == 1, err
+	if err != nil {
+		return "", err
+	}
+	if affected == 1 {
+		return TestStatusTransitionUpdated, nil
 	}
 	var current string
 	if err := s.db.QueryRow(`SELECT status FROM tests WHERE id = ?`, id).Scan(&current); err != nil {
 		if err == sql.ErrNoRows {
-			return true, nil
+			return TestStatusTransitionMissing, nil
+		}
+		return "", err
+	}
+	if current == status {
+		return TestStatusTransitionUnchanged, nil
+	}
+	return TestStatusTransitionFenced, nil
+}
+
+// UpdateTestStatusIfActiveAndLeaseHeld changes a lifecycle row only while the
+// supplied acquisition-epoch token still owns a live scheduler lease. The
+// lease row and test row are checked and changed in one transaction so a
+// callback from an older controller epoch cannot terminalize a successor's
+// active run.
+func (s *SQLiteStore) UpdateTestStatusIfActiveAndLeaseHeld(id string, status string, endTime *time.Time, errStr, leaseName, leaseOwnerID string) (TestStatusTransitionResult, error) {
+	leaseName = strings.TrimSpace(leaseName)
+	leaseOwnerID = strings.TrimSpace(leaseOwnerID)
+	if leaseName == "" || leaseOwnerID == "" {
+		return TestStatusTransitionFenced, nil
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback()
+
+	held, err := schedulerLeaseHeldInTransaction(tx, s.db.dialect, leaseName, leaseOwnerID)
+	if err != nil {
+		return "", err
+	}
+	if !held {
+		return TestStatusTransitionFenced, nil
+	}
+
+	result, err := tx.Exec(`UPDATE tests SET status = ?, end_time = ?, error = ?
+		WHERE id = ? AND (status = ? OR status IN ('INITIALIZING', 'STARTING', 'RUNNING', 'PAUSED', 'STOPPING', 'RESERVED', 'PENDING', 'SCHEDULED', 'SHAKEOUT', 'SHAKEOUT_REVIEW', 'QUEUED'))`, status, endTime, errStr, id, status)
+	if err != nil {
+		return "", err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return "", err
+	}
+	if affected == 1 {
+		if err := tx.Commit(); err != nil {
+			return "", err
+		}
+		return TestStatusTransitionUpdated, nil
+	}
+	var current string
+	if err := tx.QueryRow(`SELECT status FROM tests WHERE id = ?`, id).Scan(&current); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return TestStatusTransitionMissing, nil
+		}
+		return "", err
+	}
+	if current == status {
+		return TestStatusTransitionUnchanged, nil
+	}
+	return TestStatusTransitionFenced, nil
+}
+
+// preciseDatabaseTime keeps lease expiry checks on the database clock without
+// truncating to whole seconds. PostgreSQL returns its native timestamp; SQLite
+// strftime provides millisecond precision, which matches the timestamp
+// precision used by its persisted lease rows.
+func preciseDatabaseTime(tx *storeTx, dialect storeDialect) (time.Time, error) {
+	if dialect == storeDialectPostgres {
+		var now time.Time
+		if err := tx.QueryRow(`SELECT clock_timestamp()`).Scan(&now); err != nil {
+			return time.Time{}, err
+		}
+		return now.UTC(), nil
+	}
+	var raw string
+	if err := tx.QueryRow(`SELECT strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`).Scan(&raw); err != nil {
+		return time.Time{}, err
+	}
+	now, err := time.Parse(time.RFC3339Nano, raw)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("parse SQLite clock %q: %w", raw, err)
+	}
+	return now.UTC(), nil
+}
+
+func schedulerLeaseHeldInTransaction(tx *storeTx, dialect storeDialect, leaseName, leaseOwnerID string) (bool, error) {
+	leaseQuery := `SELECT owner_id, expires_at FROM scheduler_leases WHERE name = ?`
+	if dialect == storeDialectPostgres {
+		leaseQuery += ` FOR UPDATE`
+	}
+	var owner string
+	var expiresAt time.Time
+	if err := tx.QueryRow(leaseQuery, leaseName).Scan(&owner, &expiresAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
 		}
 		return false, err
 	}
-	return current == status, nil
+	databaseNow, err := preciseDatabaseTime(tx, dialect)
+	if err != nil {
+		return false, fmt.Errorf("read scheduler-lease database clock: %w", err)
+	}
+	return owner == leaseOwnerID && expiresAt.After(databaseNow), nil
+}
+
+// schedulerLeaseTermHeldInTransaction validates the complete durable fencing
+// term while holding the lease row in the same transaction as the protected
+// mutation. Owner tokens prevent callbacks from an older acquisition attempt
+// from committing; the monotonic generation also fences a controller identity
+// that is accidentally reused after a later owner has taken over.
+func schedulerLeaseTermHeldInTransaction(tx *storeTx, dialect storeDialect, leaseName, leaseOwnerID string, leaseGeneration uint64) (bool, error) {
+	if leaseGeneration == 0 {
+		return false, fmt.Errorf("scheduler lease generation must be positive")
+	}
+	leaseQuery := `SELECT owner_id, generation, expires_at FROM scheduler_leases WHERE name = ?`
+	if dialect == storeDialectPostgres {
+		leaseQuery += ` FOR UPDATE`
+	}
+	var (
+		owner      string
+		generation int64
+		expiresAt  time.Time
+	)
+	if err := tx.QueryRow(leaseQuery, leaseName).Scan(&owner, &generation, &expiresAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	if generation <= 0 {
+		return false, fmt.Errorf("scheduler lease %q has invalid generation %d", leaseName, generation)
+	}
+	databaseNow, err := preciseDatabaseTime(tx, dialect)
+	if err != nil {
+		return false, fmt.Errorf("read scheduler-lease database clock: %w", err)
+	}
+	return owner == leaseOwnerID && uint64(generation) == leaseGeneration && expiresAt.After(databaseNow), nil
 }
 
 // UpdateTestBaselines atomically updates only baseline-owned columns. A nil
@@ -235,12 +577,111 @@ func (s *SQLiteStore) UpdateTestBaselines(changes map[string]*time.Time) error {
 	return tx.Commit()
 }
 
+// SetTestComparisonBaseline applies baseline selection from durable scope
+// fields, rather than from a replica-local map. Pinning unpins every other row
+// in the same comparison scope and pins the target in one transaction. A nil
+// pinnedAt unpins only the target.
+func (s *SQLiteStore) SetTestComparisonBaseline(id string, pinnedAt *time.Time) ([]TestBaselineState, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil, fmt.Errorf("test id is required")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	targetQuery := `SELECT COALESCE(project_id, ''), COALESCE(scenario_id, ''), COALESCE(release_id, ''), COALESCE(application_id, ''), name, status FROM tests WHERE id = ?`
+	if s.db.dialect == storeDialectPostgres {
+		targetQuery += ` FOR UPDATE`
+	}
+	var projectID, scenarioID, releaseID, applicationID, name, status string
+	if err := tx.QueryRow(targetQuery, id).Scan(&projectID, &scenarioID, &releaseID, &applicationID, &name, &status); err != nil {
+		return nil, err
+	}
+	if pinnedAt != nil {
+		switch strings.ToUpper(strings.TrimSpace(status)) {
+		case "COMPLETE", "FAILED", "ABORTED":
+		default:
+			return nil, fmt.Errorf("comparison baseline pinning requires a completed, failed, or aborted test")
+		}
+	}
+
+	predicate, predicateArgs := comparisonBaselineScopePredicate(normalizeProjectID(projectID), scenarioID, releaseID, applicationID, name)
+	if pinnedAt == nil {
+		if _, err := tx.Exec(`UPDATE tests SET baseline_pinned = ?, baseline_pinned_at = NULL WHERE id = ?`, false, id); err != nil {
+			return nil, err
+		}
+		predicate = `id = ?`
+		predicateArgs = []any{id}
+	} else {
+		pinTime := pinnedAt.UTC()
+		args := []any{id, true, false, id, pinTime}
+		args = append(args, predicateArgs...)
+		if _, err := tx.Exec(`UPDATE tests
+			SET baseline_pinned = CASE WHEN id = ? THEN ? ELSE ? END,
+				baseline_pinned_at = CASE WHEN id = ? THEN ? ELSE NULL END
+			WHERE `+predicate, args...); err != nil {
+			return nil, err
+		}
+	}
+
+	rows, err := tx.Query(`SELECT id, COALESCE(baseline_pinned, 0), baseline_pinned_at FROM tests WHERE `+predicate+` ORDER BY id`, predicateArgs...)
+	if err != nil {
+		return nil, err
+	}
+	states := make([]TestBaselineState, 0)
+	for rows.Next() {
+		var state TestBaselineState
+		if err := rows.Scan(&state.ID, &state.Pinned, &state.PinnedAt); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		states = append(states, state)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return states, nil
+}
+
+func comparisonBaselineScopePredicate(projectID, scenarioID, releaseID, applicationID, name string) (string, []any) {
+	projectPredicate := `COALESCE(NULLIF(project_id, ''), ?) = ? AND `
+	projectArgs := []any{DefaultProjectID, normalizeProjectID(projectID)}
+	if scenarioID != "" {
+		return projectPredicate + `COALESCE(scenario_id, '') = ?`, append(projectArgs, scenarioID)
+	}
+	if releaseID != "" {
+		return projectPredicate + `COALESCE(scenario_id, '') = '' AND COALESCE(release_id, '') = ? AND name = ?`, append(projectArgs, releaseID, name)
+	}
+	if applicationID != "" {
+		return projectPredicate + `COALESCE(scenario_id, '') = '' AND COALESCE(release_id, '') = '' AND COALESCE(application_id, '') = ? AND name = ?`, append(projectArgs, applicationID, name)
+	}
+	return projectPredicate + `COALESCE(scenario_id, '') = '' AND COALESCE(release_id, '') = '' AND COALESCE(application_id, '') = '' AND name = ?`, append(projectArgs, name)
+}
+
 func (s *SQLiteStore) DeleteTest(id string) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+	if s.db.dialect == storeDialectPostgres {
+		var timeslotID *string
+		if err := tx.QueryRow(`SELECT timeslot_id FROM tests WHERE id = ?`, id).Scan(&timeslotID); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		if err := lockCapacityReservationsForTestMutation(tx, id, timeslotID); err != nil {
+			return err
+		}
+	}
 
 	var projectID string
 	testQuery := `SELECT COALESCE(project_id, '') FROM tests WHERE id = ?`
@@ -250,6 +691,97 @@ func (s *SQLiteStore) DeleteTest(id string) error {
 	if err := tx.QueryRow(testQuery, id).Scan(&projectID); err != nil && err != sql.ErrNoRows {
 		return err
 	}
+	if err := deleteTestGraphTx(tx, id, projectID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// DeleteTestIfLeaseHeld deletes a non-active test and all owned metadata only
+// while leaseOwnerID still owns an unexpired execution lease. The lease row and
+// test row are checked under the same transaction as the delete, closing the
+// gap between a replica-local leader/status check and destructive persistence.
+func (s *SQLiteStore) DeleteTestIfLeaseHeld(id, leaseName, leaseOwnerID string) (LeaseFencedDeleteResult, error) {
+	leaseName, leaseOwnerID, err := validateLeaseFencedDelete(leaseName, leaseOwnerID)
+	if err != nil {
+		return LeaseFencedDeleteFenced, err
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return LeaseFencedDeleteFenced, err
+	}
+	defer tx.Rollback()
+
+	held, err := schedulerLeaseHeldInTransaction(tx, s.db.dialect, leaseName, leaseOwnerID)
+	if err != nil {
+		return LeaseFencedDeleteFenced, err
+	}
+	if !held {
+		return LeaseFencedDeleteFenced, nil
+	}
+	if s.db.dialect == storeDialectPostgres {
+		var timeslotID *string
+		if err := tx.QueryRow(`SELECT timeslot_id FROM tests WHERE id = ?`, id).Scan(&timeslotID); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return LeaseFencedDeleteMissing, nil
+			}
+			return LeaseFencedDeleteFenced, err
+		}
+		if err := lockCapacityReservationsForTestMutation(tx, id, timeslotID); err != nil {
+			return LeaseFencedDeleteFenced, err
+		}
+	}
+
+	query := `SELECT COALESCE(project_id, ''), COALESCE(status, '') FROM tests WHERE id = ?`
+	if s.db.dialect == storeDialectPostgres {
+		query += ` FOR UPDATE`
+	}
+	var projectID, testStatus string
+	if err := tx.QueryRow(query, id).Scan(&projectID, &testStatus); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return LeaseFencedDeleteMissing, nil
+		}
+		return LeaseFencedDeleteFenced, err
+	}
+	if activeTestStatusForDeletion(testStatus) {
+		return LeaseFencedDeleteActive, nil
+	}
+	if err := deleteTestGraphTx(tx, id, projectID); err != nil {
+		return LeaseFencedDeleteFenced, err
+	}
+	if err := tx.Commit(); err != nil {
+		return LeaseFencedDeleteFenced, err
+	}
+	return LeaseFencedDeleteDeleted, nil
+}
+
+// lockCapacityReservationsForTestMutation preserves the global PostgreSQL row
+// lock order (lease -> reservation -> test) shared with bind/release. SQLite
+// serializes writers at the database level and does not support FOR UPDATE, so
+// callers invoke this helper only for PostgreSQL transactions.
+func lockCapacityReservationsForTestMutation(tx *storeTx, testID string, timeslotID *string) error {
+	query := `SELECT id FROM capacity_reservations WHERE bound_test_id = ?`
+	args := []any{testID}
+	if timeslotID != nil && strings.TrimSpace(*timeslotID) != "" {
+		query += ` OR id = ?`
+		args = append(args, strings.TrimSpace(*timeslotID))
+	}
+	query += ` ORDER BY id FOR UPDATE`
+	rows, err := tx.Query(query, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var ignored string
+		if err := rows.Scan(&ignored); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
+}
+
+func deleteTestGraphTx(tx *storeTx, id, projectID string) error {
 	archive, err := getRunArchiveTx(tx, id)
 	if err != nil && err != sql.ErrNoRows {
 		return err
@@ -288,6 +820,9 @@ func (s *SQLiteStore) DeleteTest(id string) error {
 	if _, err := tx.Exec(`DELETE FROM test_interval_summaries WHERE test_id = ?`, id); err != nil {
 		return err
 	}
+	if _, err := tx.Exec(`DELETE FROM github_check_links WHERE test_id = ?`, id); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(`DELETE FROM run_archives WHERE test_id = ?`, id); err != nil {
 		return err
 	}
@@ -300,8 +835,7 @@ func (s *SQLiteStore) DeleteTest(id string) error {
 	if _, err := tx.Exec(`DELETE FROM tests WHERE id = ?`, id); err != nil {
 		return err
 	}
-
-	return tx.Commit()
+	return nil
 }
 
 func (s *SQLiteStore) MoveTest(id string, folderID *string) error {
@@ -377,7 +911,10 @@ func (s *SQLiteStore) SaveHistory(testID string, timestamp time.Time, metrics an
 			record.ControllerFanoutLagMs,
 			record.SampleAgeMs,
 		)
-		return err
+		if err != nil {
+			return err
+		}
+		return s.trimPersistedTestHistory("test_interval_summaries", testID, maxPersistedTestHistoryPoints)
 	}
 
 	metricsJSON, err := json.Marshal(metrics)
@@ -385,6 +922,51 @@ func (s *SQLiteStore) SaveHistory(testID string, timestamp time.Time, metrics an
 		return fmt.Errorf("marshal test history metrics for %s: %w", testID, err)
 	}
 	_, err = s.db.Exec(`INSERT INTO test_history (test_id, timestamp, metrics_json) VALUES (?, ?, ?)`, testID, timestamp, string(metricsJSON))
+	if err != nil {
+		return err
+	}
+	return s.trimPersistedTestHistory("test_history", testID, maxPersistedTestHistoryPoints)
+}
+
+const maxPersistedTestHistoryPoints = 3600
+
+// trimPersistedTestHistory keeps the controller's restart/live-history window
+// bounded. Complete interval history is already streamed into the run archive;
+// retaining every one-second controller snapshot in the database as well grows
+// without limit on long-running tests.
+func (s *SQLiteStore) trimPersistedTestHistory(table string, testID string, limit int) error {
+	if limit <= 0 {
+		return nil
+	}
+	var sqliteQuery string
+	var postgresQuery string
+	switch table {
+	case "test_interval_summaries":
+		sqliteQuery = `DELETE FROM test_interval_summaries WHERE rowid IN (
+			SELECT rowid FROM test_interval_summaries WHERE test_id = ?
+			ORDER BY timestamp DESC, rowid DESC LIMIT -1 OFFSET ?
+		)`
+		postgresQuery = `DELETE FROM test_interval_summaries WHERE ctid IN (
+			SELECT ctid FROM test_interval_summaries WHERE test_id = ?
+			ORDER BY timestamp DESC, ctid DESC OFFSET ?
+		)`
+	case "test_history":
+		sqliteQuery = `DELETE FROM test_history WHERE rowid IN (
+			SELECT rowid FROM test_history WHERE test_id = ?
+			ORDER BY timestamp DESC, rowid DESC LIMIT -1 OFFSET ?
+		)`
+		postgresQuery = `DELETE FROM test_history WHERE ctid IN (
+			SELECT ctid FROM test_history WHERE test_id = ?
+			ORDER BY timestamp DESC, ctid DESC OFFSET ?
+		)`
+	default:
+		return fmt.Errorf("unsupported test history table %q", table)
+	}
+	query := sqliteQuery
+	if s.db.dialect == storeDialectPostgres {
+		query = postgresQuery
+	}
+	_, err := s.db.Exec(query, testID, limit)
 	return err
 }
 

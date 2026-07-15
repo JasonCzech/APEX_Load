@@ -37,6 +37,7 @@ type kafkaRecord struct {
 	Topic         string
 	Partition     int32
 	Offset        int64
+	LeaderEpoch   int32
 	Timestamp     time.Time
 	CorrelationID string
 }
@@ -68,12 +69,13 @@ type brokerProduce struct {
 // lag, and seek stay correct across eviction. Mock mode is for shakeout/CI only
 // (real load uses the kafka_real adapter); do not use it for sustained runs.
 type memoryBroker struct {
-	mu      sync.Mutex
-	logs    map[string][]kafkaRecord // per topic; logs[topic][i] has offset base[topic]+i
-	base    map[string]int64         // per topic: absolute offset of logs[topic][0] (evicted count)
-	cursors map[string]int64         // per cursorKey(topic, group): next read offset (absolute)
-	refs    map[string]int
-	bytes   map[string]int64
+	mu         sync.Mutex
+	logs       map[string][]kafkaRecord // per topic; logs[topic][i] has offset base[topic]+i
+	base       map[string]int64         // per topic: absolute offset of logs[topic][0] (evicted count)
+	cursors    map[string]int64         // per cursorKey(topic, group): next read offset (absolute)
+	refs       map[string]int
+	bytes      map[string]int64
+	totalBytes int64
 }
 
 // maxBrokerLogPerTopic bounds retained records per topic in the in-memory mock so
@@ -82,8 +84,10 @@ type memoryBroker struct {
 const (
 	maxBrokerLogPerTopic   = 50000
 	maxBrokerBytesPerTopic = 64 << 20
+	maxBrokerRetainedBytes = 256 << 20
 	maxBrokerTopicKeys     = 1024
 	maxBrokerCursorKeys    = 4096
+	maxBrokerKeyBytes      = 16 << 10
 )
 
 func newMemoryBroker() *memoryBroker {
@@ -132,10 +136,14 @@ func (b *memoryBroker) release(namespace string) {
 	delete(b.refs, namespace)
 	for topic := range b.logs {
 		if strings.HasPrefix(topic, prefix) {
+			b.totalBytes -= b.bytes[topic]
 			delete(b.logs, topic)
 			delete(b.base, topic)
 			delete(b.bytes, topic)
 		}
+	}
+	if b.totalBytes < 0 {
+		b.totalBytes = 0
 	}
 	for key := range b.cursors {
 		if strings.HasPrefix(key, prefix) {
@@ -147,12 +155,19 @@ func (b *memoryBroker) release(namespace string) {
 func (b *memoryBroker) produce(topic string, rec kafkaRecord) (recordMeta, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if len(topic) > maxBrokerKeyBytes {
+		return recordMeta{}, fmt.Errorf("mock kafka topic key exceeds %d bytes", maxBrokerKeyBytes)
+	}
 	if _, exists := b.logs[topic]; !exists && len(b.logs) >= maxBrokerTopicKeys {
 		return recordMeta{}, fmt.Errorf("mock kafka topic capacity exceeded (%d keys)", maxBrokerTopicKeys)
 	}
 	rec.Topic = topic
-	if size := kafkaRecordSize(rec); size > maxBrokerBytesPerTopic {
+	size := int64(kafkaRecordSize(rec))
+	if size > maxBrokerBytesPerTopic {
 		return recordMeta{}, fmt.Errorf("mock kafka record exceeds per-topic capacity (%d bytes)", maxBrokerBytesPerTopic)
+	}
+	if size > maxBrokerRetainedBytes-b.totalBytes {
+		return recordMeta{}, fmt.Errorf("mock kafka aggregate retention capacity exceeded (%d bytes)", maxBrokerRetainedBytes)
 	}
 	return b.appendLocked(topic, rec), nil
 }
@@ -166,17 +181,29 @@ func (b *memoryBroker) produceBatch(batch []brokerProduce) error {
 	defer b.mu.Unlock()
 
 	newTopics := make(map[string]struct{})
+	batchBytes := int64(0)
 	for i := range batch {
+		if len(batch[i].topic) > maxBrokerKeyBytes {
+			return fmt.Errorf("mock kafka topic key exceeds %d bytes", maxBrokerKeyBytes)
+		}
 		batch[i].rec.Topic = batch[i].topic
-		if size := kafkaRecordSize(batch[i].rec); size > maxBrokerBytesPerTopic {
+		size := int64(kafkaRecordSize(batch[i].rec))
+		if size > maxBrokerBytesPerTopic {
 			return fmt.Errorf("mock kafka record exceeds per-topic capacity (%d bytes)", maxBrokerBytesPerTopic)
 		}
+		if size > maxBrokerRetainedBytes-batchBytes {
+			return fmt.Errorf("mock kafka transaction exceeds aggregate retention capacity (%d bytes)", maxBrokerRetainedBytes)
+		}
+		batchBytes += size
 		if _, exists := b.logs[batch[i].topic]; !exists {
 			newTopics[batch[i].topic] = struct{}{}
 		}
 	}
 	if len(b.logs)+len(newTopics) > maxBrokerTopicKeys {
 		return fmt.Errorf("mock kafka topic capacity exceeded (%d keys)", maxBrokerTopicKeys)
+	}
+	if batchBytes > maxBrokerRetainedBytes-b.totalBytes {
+		return fmt.Errorf("mock kafka aggregate retention capacity exceeded (%d bytes)", maxBrokerRetainedBytes)
 	}
 	for _, pending := range batch {
 		b.appendLocked(pending.topic, pending.rec)
@@ -193,13 +220,16 @@ func (b *memoryBroker) appendLocked(topic string, rec kafkaRecord) recordMeta {
 		rec.Timestamp = time.Now()
 	}
 	b.logs[topic] = append(b.logs[topic], rec)
-	b.bytes[topic] += int64(kafkaRecordSize(rec))
+	retained := int64(kafkaRecordSize(rec))
+	b.bytes[topic] += retained
+	b.totalBytes += retained
 	// Bound retained records: evict the oldest and advance the base offset so a
 	// long-lived process does not grow unbounded. Offsets are absolute, so this is
 	// transparent to cursors/lag/seek.
 	drop := 0
 	for drop < len(b.logs[topic]) && (len(b.logs[topic])-drop > maxBrokerLogPerTopic || b.bytes[topic] > maxBrokerBytesPerTopic) {
 		b.bytes[topic] -= int64(kafkaRecordSize(b.logs[topic][drop]))
+		b.totalBytes -= int64(kafkaRecordSize(b.logs[topic][drop]))
 		drop++
 	}
 	if drop > 0 {
@@ -210,6 +240,9 @@ func (b *memoryBroker) appendLocked(topic string, rec kafkaRecord) recordMeta {
 }
 
 func (b *memoryBroker) ensureCursorCapacityLocked(key string) error {
+	if len(key) > maxBrokerKeyBytes {
+		return fmt.Errorf("mock kafka consumer cursor key exceeds %d bytes", maxBrokerKeyBytes)
+	}
 	if _, exists := b.cursors[key]; exists || len(b.cursors) < maxBrokerCursorKeys {
 		return nil
 	}

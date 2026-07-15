@@ -31,6 +31,9 @@ func (s *Server) handleSuggestScriptParameterization(w http.ResponseWriter, r *h
 		writeError(w, http.StatusNotFound, "script not found")
 		return
 	}
+	if !requireAuthorizedProjectMatch(w, r, stored.ProjectID) {
+		return
+	}
 
 	result := paramize.Suggest(stored.Script, paramize.Options{
 		EnableDataParams: true,

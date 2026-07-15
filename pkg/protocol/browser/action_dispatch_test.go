@@ -2,11 +2,13 @@ package browser
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/fileasset"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
@@ -62,6 +64,36 @@ func TestDispatchActionValidationFailures(t *testing.T) {
 				t.Fatalf("Duration = %v, want > 0", result.Duration)
 			}
 		})
+	}
+}
+
+func TestLoadBrowserInputFilesUsesGovernedBoundedContent(t *testing.T) {
+	dir := t.TempDir()
+	if err := fileasset.RegisterRoot(dir); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "receipt.txt")
+	if err := os.WriteFile(path, []byte("receipt"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	files, err := loadBrowserInputFiles([]string{path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 1 || files[0].Name != "receipt.txt" || string(files[0].Buffer) != "receipt" {
+		t.Fatalf("input files = %#v", files)
+	}
+
+	outside := filepath.Join(t.TempDir(), "secret.txt")
+	if err := os.WriteFile(outside, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadBrowserInputFiles([]string{outside}); err == nil || !strings.Contains(err.Error(), "outside allowed roots") {
+		t.Fatalf("outside-root upload error = %v", err)
+	}
+	tooMany := make([]string, maxBrowserUploadFiles+1)
+	if _, err := loadBrowserInputFiles(tooMany); err == nil || !strings.Contains(err.Error(), "file limit") {
+		t.Fatalf("file-count error = %v", err)
 	}
 }
 

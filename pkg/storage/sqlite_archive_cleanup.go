@@ -233,6 +233,84 @@ func (s *SQLiteStore) SaveArchiveCleanupJob(job *ArchiveCleanupJob) error {
 	return tx.Commit()
 }
 
+// SaveArchiveCleanupJobIfArchiveUnchanged installs a retention tombstone only
+// when the durable catalog still names the exact publication selected by the
+// caller. The test-row lock is shared with archive publication, which closes
+// the read-to-tombstone race on PostgreSQL; SQLite's write transaction provides
+// the corresponding serialization there.
+func (s *SQLiteStore) SaveArchiveCleanupJobIfArchiveUnchanged(job *ArchiveCleanupJob) (bool, error) {
+	if job == nil || strings.TrimSpace(job.TestID) == "" {
+		return false, errors.New("archive cleanup job is required")
+	}
+	if strings.TrimSpace(job.ArchiveRecord.TestID) == "" {
+		job.ArchiveRecord.TestID = strings.TrimSpace(job.TestID)
+	}
+	if job.ArchiveRecord.TestID != strings.TrimSpace(job.TestID) {
+		return false, fmt.Errorf("archive cleanup record test id %q does not match job %q", job.ArchiveRecord.TestID, job.TestID)
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	testQuery := `SELECT COALESCE(project_id, '') FROM tests WHERE id = ?`
+	if s.db.dialect == storeDialectPostgres {
+		testQuery += ` FOR UPDATE`
+	}
+	var durableProjectID string
+	if err := tx.QueryRow(testQuery, job.TestID).Scan(&durableProjectID); errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	} else if err != nil {
+		return false, err
+	}
+	if normalizeProjectID(durableProjectID) != normalizeProjectID(job.ProjectID) {
+		return false, fmt.Errorf("archive cleanup project %q does not match durable test project %q", job.ProjectID, durableProjectID)
+	}
+	current, err := getRunArchiveTx(tx, job.TestID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if !sameRunArchivePublicationVersion(current, &job.ArchiveRecord) {
+		return false, nil
+	}
+	if err := enqueueArchiveCleanupTx(tx, job.ProjectID, &job.ArchiveRecord); err != nil {
+		return false, err
+	}
+	if _, err := tx.Exec(`DELETE FROM archive_finalization_jobs WHERE test_id = ?`, job.TestID); err != nil {
+		return false, err
+	}
+	if _, err := tx.Exec(`DELETE FROM archive_refresh_jobs WHERE test_id = ?`, job.TestID); err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func sameRunArchivePublicationVersion(left, right *RunArchiveRecord) bool {
+	if left == nil || right == nil {
+		return false
+	}
+	return left.TestID == right.TestID &&
+		left.RefKey == right.RefKey &&
+		normalizeTelemetrySchemaVersion(left.SchemaVersion, archiveRecordSchemaVersion) == normalizeTelemetrySchemaVersion(right.SchemaVersion, archiveRecordSchemaVersion) &&
+		left.ArchiveBackend == right.ArchiveBackend &&
+		left.ArchivePath == right.ArchivePath &&
+		left.ManifestPath == right.ManifestPath &&
+		left.ManifestSHA256 == right.ManifestSHA256 &&
+		left.ArchiveURI == right.ArchiveURI &&
+		left.ManifestURI == right.ManifestURI &&
+		left.TransactionCount == right.TransactionCount &&
+		left.ResourceSampleCount == right.ResourceSampleCount &&
+		left.IntervalSummaryCount == right.IntervalSummaryCount &&
+		left.CreatedAt.Equal(right.CreatedAt) &&
+		left.CompletedAt.Equal(right.CompletedAt)
+}
+
 func (s *SQLiteStore) ListArchiveCleanupJobs(limit int) ([]*ArchiveCleanupJob, error) {
 	if limit <= 0 {
 		limit = 100

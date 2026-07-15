@@ -294,7 +294,7 @@ func (s *Server) githubScriptLinkStore() (storage.GitHubScriptLinkStore, bool) {
 // {"script": …} envelope (matching the download/export handlers) and returns the
 // bytes plus a stable content hash for drift detection.
 func githubScriptEnvelope(script *dsl.Script) ([]byte, string, error) {
-	data, err := json.MarshalIndent(map[string]any{"script": script}, "", "  ")
+	data, err := json.MarshalIndent(map[string]any{"script": maskScriptSecrets(script)}, "", "  ")
 	if err != nil {
 		return nil, "", err
 	}
@@ -343,6 +343,13 @@ func (s *Server) handlePushScriptGitHub(w http.ResponseWriter, r *http.Request) 
 	stored, ok := s.runner.GetScript(id)
 	if !ok {
 		writeError(w, http.StatusNotFound, "script not found")
+		return
+	}
+	if !requireAuthorizedProjectMatch(w, r, stored.ProjectID) {
+		return
+	}
+	if stored.Script == nil || normalizeProjectID(stored.Script.ProjectID) != normalizeProjectID(stored.ProjectID) {
+		writeError(w, http.StatusConflict, "script has inconsistent project ownership")
 		return
 	}
 
@@ -519,6 +526,13 @@ func (s *Server) handleScriptGitHubStatus(w http.ResponseWriter, r *http.Request
 	stored, ok := s.runner.GetScript(id)
 	if !ok {
 		writeError(w, http.StatusNotFound, "script not found")
+		return
+	}
+	if !requireAuthorizedProjectMatch(w, r, stored.ProjectID) {
+		return
+	}
+	if stored.Script == nil || normalizeProjectID(stored.Script.ProjectID) != normalizeProjectID(stored.ProjectID) {
+		writeError(w, http.StatusConflict, "script has inconsistent project ownership")
 		return
 	}
 	linkStore, ok := s.githubScriptLinkStore()

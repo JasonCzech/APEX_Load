@@ -639,11 +639,17 @@ func TestHandlePinAndUnpinComparisonBaselineWriteAuditEvents(t *testing.T) {
 		t.Fatalf("SaveScenario returned error: %v", err)
 	}
 
-	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
 	completedAt := time.Date(2026, time.May, 12, 12, 0, 0, 0, time.UTC)
 	pinnedAt := completedAt.Add(-time.Minute)
-	server.runner.tests["baseline-a"] = &ManagedTest{ID: "baseline-a", Name: "Checkout", Status: "COMPLETE", ScenarioID: "scenario-1", ProjectID: storage.DefaultProjectID, CreatedAt: completedAt.Add(-5 * time.Minute), EndedAt: &completedAt}
-	server.runner.tests["baseline-b"] = &ManagedTest{ID: "baseline-b", Name: "Checkout", Status: "FAILED", ScenarioID: "scenario-1", ProjectID: storage.DefaultProjectID, CreatedAt: completedAt.Add(-15 * time.Minute), EndedAt: &completedAt, BaselinePinned: true, BaselinePinnedAt: &pinnedAt}
+	for _, record := range []*storage.TestRecord{
+		{ID: "baseline-a", Name: "Checkout", Status: "COMPLETE", ScenarioID: "scenario-1", ProjectID: storage.DefaultProjectID, StartTime: completedAt.Add(-5 * time.Minute), EndTime: &completedAt, Groups: []any{}},
+		{ID: "baseline-b", Name: "Checkout", Status: "FAILED", ScenarioID: "scenario-1", ProjectID: storage.DefaultProjectID, StartTime: completedAt.Add(-15 * time.Minute), EndTime: &completedAt, BaselinePinned: true, BaselinePinnedAt: &pinnedAt, Groups: []any{}},
+	} {
+		if err := store.SaveTest(record); err != nil {
+			t.Fatalf("SaveTest(%s) returned error: %v", record.ID, err)
+		}
+	}
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
 
 	pinReq := httptest.NewRequest(http.MethodPost, "/api/v1/tests/baseline-a/comparison-baseline/pin", nil)
 	pinResp := httptest.NewRecorder()

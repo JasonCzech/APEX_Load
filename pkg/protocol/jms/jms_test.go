@@ -249,6 +249,25 @@ printf '{}'
 	}
 }
 
+func TestJMSSidecarRejectsAmbientPlatformCredentials(t *testing.T) {
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "executed")
+	sidecarPath := filepath.Join(dir, "sidecar.sh")
+	if err := os.WriteFile(sidecarPath, []byte("#!/bin/sh\ntouch "+marker+"\nprintf '{}'"), 0o700); err != nil {
+		t.Fatalf("WriteFile(sidecar): %v", err)
+	}
+	t.Setenv("APEXLOAD_GRPC_AUTH_TOKEN", "generator-secret")
+
+	adapter := sidecarAdapter{command: sidecarPath}
+	_, err := adapter.run(context.Background(), sidecarRequest{Operation: "health"}, time.Second)
+	if err == nil || !strings.Contains(err.Error(), "ambient platform credentials") {
+		t.Fatalf("sidecar error = %v, want isolation rejection", err)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("sidecar executed despite ambient credential; marker stat error = %v", err)
+	}
+}
+
 func TestJMSSidecarCommandGovernance(t *testing.T) {
 	ctx := context.Background()
 

@@ -170,9 +170,15 @@ type Annotation struct {
 
 // Marker kinds inserted from the control panel (or in-page toolbar).
 const (
-	MarkerTransactionStart = "transaction_start"
-	MarkerTransactionEnd   = "transaction_end"
-	MarkerNote             = "note"
+	MarkerTransactionStart     = "transaction_start"
+	MarkerTransactionEnd       = "transaction_end"
+	MarkerNote                 = "note"
+	maxBrowserUserMarkers      = 10_000
+	maxBrowserTotalMarkers     = 20_000
+	maxBrowserMarkerName       = 4 << 10
+	maxBrowserMarkerText       = 16 << 10
+	maxBrowserUserMarkerBytes  = 16 << 20
+	maxBrowserTotalMarkerBytes = 32 << 20
 )
 
 // Marker is a user-inserted annotation in the recording timeline: transaction
@@ -260,8 +266,9 @@ type Session struct {
 	HAR           []byte `json:"-"`
 	// StorageState is the Playwright storage state (cookies/localStorage)
 	// exported at stop, available for login reuse on a later recording.
-	StorageState []byte   `json:"-"`
-	Warnings     []string `json:"warnings,omitempty"`
+	StorageState        []byte   `json:"-"`
+	Warnings            []string `json:"warnings,omitempty"`
+	retainedMarkerBytes int
 }
 
 var validStepKinds = map[string]bool{
@@ -549,6 +556,28 @@ func promotedSelectorKind(sel string) string {
 // state. Not goroutine-safe: the Recorder calls it under its mutex; other
 // callers (test fakes) must synchronize themselves.
 func (s *Session) AddMarker(marker Marker) (Marker, error) {
+	marker.Kind = strings.TrimSpace(marker.Kind)
+	marker.Name = strings.TrimSpace(marker.Name)
+	marker.Text = strings.TrimSpace(marker.Text)
+	entryLimit := maxBrowserUserMarkers
+	byteLimit := maxBrowserUserMarkerBytes
+	if marker.Auto {
+		entryLimit = maxBrowserTotalMarkers
+		byteLimit = maxBrowserTotalMarkerBytes
+	}
+	if len(s.Markers) >= entryLimit {
+		return Marker{}, fmt.Errorf("recording marker limit reached")
+	}
+	if len(marker.Name) > maxBrowserMarkerName {
+		return Marker{}, fmt.Errorf("marker name exceeds %d bytes", maxBrowserMarkerName)
+	}
+	if len(marker.Text) > maxBrowserMarkerText {
+		return Marker{}, fmt.Errorf("marker text exceeds %d bytes", maxBrowserMarkerText)
+	}
+	markerBytes := len(marker.Kind) + len(marker.Name) + len(marker.Text)
+	if markerBytes > byteLimit-s.retainedMarkerBytes {
+		return Marker{}, fmt.Errorf("recording marker byte limit reached")
+	}
 	switch marker.Kind {
 	case MarkerTransactionStart:
 		if marker.Name == "" {
@@ -588,6 +617,7 @@ func (s *Session) AddMarker(marker Marker) (Marker, error) {
 		marker.Timestamp = time.Now()
 	}
 	s.Markers = append(s.Markers, marker)
+	s.retainedMarkerBytes += markerBytes
 	return marker, nil
 }
 

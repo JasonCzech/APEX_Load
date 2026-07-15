@@ -685,11 +685,11 @@ func TestHandleImportSamplePreservedSourceReviewRedactsSecrets(t *testing.T) {
 	if len(result.Script.Actions) != 1 {
 		t.Fatalf("action count = %d, want 1", len(result.Script.Actions))
 	}
-	if got := result.Script.Actions[0].Headers["Authorization"]; got != authValue {
-		t.Fatalf("authorization header = %q, want raw value preserved when sanitize_sensitive=false", got)
+	if got := result.Script.Actions[0].Headers["Authorization"]; got != "[REDACTED]" {
+		t.Fatalf("authorization header = %q, want disclosure-safe redaction even when sanitize_sensitive=false", got)
 	}
-	if !strings.Contains(result.Script.Actions[0].Body, passwordValue) {
-		t.Fatalf("body = %q, want raw password preserved when sanitize_sensitive=false", result.Script.Actions[0].Body)
+	if strings.Contains(result.Script.Actions[0].Body, passwordValue) || !strings.Contains(result.Script.Actions[0].Body, "[REDACTED]") {
+		t.Fatalf("body = %q, want password redacted even when sanitize_sensitive=false", result.Script.Actions[0].Body)
 	}
 
 	preservedReview, ok := result.Script.Metadata.Import.Preserved["source_review"]
@@ -2129,8 +2129,8 @@ func TestHandleImportEnterpriseArchiveReturnsReviewArtifactForExternalRunnerProt
 	if len(result.Scripts) != 1 || result.Script == nil || result.Script.Protocol != "sap_gui" {
 		t.Fatalf("scripts/script = %d/%#v, want SAP GUI external-runner draft", len(result.Scripts), result.Script)
 	}
-	if result.Script.Config.SAPGUI.ConnectionString != "ASHOST=server" || result.Script.Config.SAPGUI.Password != "{{secret.sapgui_password}}" {
-		t.Fatalf("sapgui config = %#v, want source connection string and governed password", result.Script.Config.SAPGUI)
+	if result.Script.Config.SAPGUI.ConnectionString != "[REDACTED]" || result.Script.Config.SAPGUI.Password != "{{secret.sapgui_password}}" {
+		t.Fatalf("sapgui config = %#v, want redacted connection string and governed password", result.Script.Config.SAPGUI)
 	}
 	if result.DetectedProtocol.Canonical != "sap_gui" || result.DetectedProtocol.Mode != "external_runner_required" {
 		t.Fatalf("detected_protocol = %#v, want SAP GUI external runner", result.DetectedProtocol)

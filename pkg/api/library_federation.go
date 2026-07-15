@@ -14,6 +14,8 @@ import (
 )
 
 const libraryBundleSchemaVersion = "apexload.library_bundle.v1"
+const libraryResultHashVersionCurrent = "apexload.library_result_hash.v2"
+const libraryResultHashVersionLegacyV1 = "apexload.library_result_hash.v1"
 const libraryRemotesSettingKey = "library.remotes.v1"
 const librarySyncLinksSettingKey = "library.sync_links.v1"
 
@@ -24,7 +26,11 @@ type librarySettingsCASStore interface {
 const defaultLibraryArchiveMaxBytes int64 = 512 * 1024 * 1024
 const defaultLibraryRemoteJSONTimeout = 30 * time.Second
 const defaultLibraryRemoteArchiveTimeout = 5 * time.Minute
-const libraryRemoteJSONMaxBytes int64 = defaultMaxRequestBodyBytes
+
+// Remote bundle responses are intentionally allowed to be larger than ordinary
+// controller CRUD requests. Keep this outbound trust boundary independent of
+// the inbound global request-body backstop.
+const libraryRemoteJSONMaxBytes int64 = 128 << 20
 
 type LibraryCapabilitiesResponse struct {
 	SchemaVersion string    `json:"schema_version"`
@@ -40,6 +46,10 @@ type LibraryCatalogResponse struct {
 	GeneratedAt   time.Time            `json:"generated_at"`
 	Items         []LibraryCatalogItem `json:"items"`
 	Count         int                  `json:"count"`
+	Total         int                  `json:"total"`
+	Limit         int                  `json:"limit"`
+	Offset        int                  `json:"offset"`
+	HasMore       bool                 `json:"has_more"`
 }
 
 type LibraryCatalogItem struct {
@@ -68,6 +78,7 @@ type LibraryDependency struct {
 	Kind        string `json:"kind"`
 	ID          string `json:"id"`
 	Name        string `json:"name,omitempty"`
+	ProjectID   string `json:"project_id,omitempty"`
 	ContentHash string `json:"content_hash,omitempty"`
 }
 
@@ -86,18 +97,20 @@ type LibraryBundleSource struct {
 }
 
 type LibraryBundleItem struct {
-	Kind             string                  `json:"kind"`
-	SourceInstanceID string                  `json:"source_instance_id"`
-	SourceItemID     string                  `json:"source_item_id"`
-	ProjectID        string                  `json:"project_id,omitempty"`
-	Name             string                  `json:"name"`
-	ContentHash      string                  `json:"content_hash"`
-	CreatedAt        time.Time               `json:"created_at,omitempty"`
-	UpdatedAt        time.Time               `json:"updated_at,omitempty"`
-	Script           *dsl.Script             `json:"script,omitempty"`
-	Scenario         *LibraryScenarioPayload `json:"scenario,omitempty"`
-	Result           *LibraryResultPayload   `json:"result,omitempty"`
-	Dependencies     []LibraryDependency     `json:"dependencies,omitempty"`
+	Kind               string                  `json:"kind"`
+	SourceInstanceID   string                  `json:"source_instance_id"`
+	SourceItemID       string                  `json:"source_item_id"`
+	ProjectID          string                  `json:"project_id,omitempty"`
+	Name               string                  `json:"name"`
+	ContentHash        string                  `json:"content_hash"`
+	ContentHashVersion string                  `json:"content_hash_version,omitempty"`
+	CreatedAt          time.Time               `json:"created_at,omitempty"`
+	UpdatedAt          time.Time               `json:"updated_at,omitempty"`
+	Script             *dsl.Script             `json:"script,omitempty"`
+	Scenario           *LibraryScenarioPayload `json:"scenario,omitempty"`
+	Result             *LibraryResultPayload   `json:"result,omitempty"`
+	Dependencies       []LibraryDependency     `json:"dependencies,omitempty"`
+	importMutationID   string
 }
 
 type LibraryScenarioPayload struct {
@@ -151,6 +164,7 @@ type LibraryRemote struct {
 	Name                 string                       `json:"name"`
 	BaseURL              string                       `json:"base_url"`
 	DefaultProjectID     string                       `json:"default_project_id,omitempty"`
+	ProjectMappings      map[string]string            `json:"project_mappings,omitempty"`
 	AuthMethod           string                       `json:"auth_method"`
 	CredentialRef        string                       `json:"credential_ref,omitempty"`
 	CredentialConfigured bool                         `json:"credential_configured"`
@@ -164,12 +178,13 @@ type LibraryRemote struct {
 }
 
 type LibraryRemoteRequest struct {
-	Name             string `json:"name"`
-	BaseURL          string `json:"base_url"`
-	DefaultProjectID string `json:"default_project_id,omitempty"`
-	AuthMethod       string `json:"auth_method,omitempty"`
-	CredentialRef    string `json:"credential_ref,omitempty"`
-	APIKey           string `json:"api_key,omitempty"`
+	Name             string            `json:"name"`
+	BaseURL          string            `json:"base_url"`
+	DefaultProjectID string            `json:"default_project_id,omitempty"`
+	ProjectMappings  map[string]string `json:"project_mappings,omitempty"`
+	AuthMethod       string            `json:"auth_method,omitempty"`
+	CredentialRef    string            `json:"credential_ref,omitempty"`
+	APIKey           string            `json:"api_key,omitempty"`
 }
 
 type LibraryRemoteListResponse struct {
@@ -187,7 +202,8 @@ type LibraryTransferRequest struct {
 	ID                  string `json:"id"`
 	LocalID             string `json:"local_id,omitempty"`
 	RemoteID            string `json:"remote_id,omitempty"`
-	ProjectID           string `json:"project_id,omitempty"`
+	ProjectID           string `json:"project_id,omitempty"`        // local authorized project (pull: local destination)
+	RemoteProjectID     string `json:"remote_project_id,omitempty"` // optional source/destination project on the remote controller
 	IncludeDependencies bool   `json:"include_dependencies,omitempty"`
 }
 
@@ -208,6 +224,7 @@ type librarySyncLink struct {
 	LocalContentHash  string
 	RemoteContentHash string
 	LastSyncedAt      time.Time
+	MutationID        string `json:",omitempty"`
 }
 
 func (s *Server) loadLibraryState() {
@@ -229,6 +246,12 @@ func (s *Server) loadLibraryState() {
 					remote := remotes[i]
 					remote.APIKey = ""
 					remote.CredentialConfigured = false
+					projectMappings, mappingErr := normalizeLibraryRemoteProjectMappings(remote.ProjectMappings)
+					if mappingErr != nil {
+						slog.Warn("discarding invalid library remote project mappings", "remote_id", remote.ID, "err", mappingErr)
+						projectMappings = nil
+					}
+					remote.ProjectMappings = projectMappings
 					if remote.ID != "" {
 						copied := remote
 						loaded[remote.ID] = &copied
@@ -318,6 +341,7 @@ func (s *Server) persistLibraryRemotes() error {
 		copied := *remote
 		copied.APIKey = ""
 		copied.CredentialConfigured = false
+		copied.ProjectMappings = cloneLibraryRemoteProjectMappings(remote.ProjectMappings)
 		remotes = append(remotes, copied)
 	}
 	sort.SliceStable(remotes, func(i, j int) bool {
@@ -391,7 +415,16 @@ func resolveLibraryTransferProjectID(r *http.Request, store storage.Store) (stri
 	if err := decodeRequestBody(r, &req); err != nil {
 		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
 	}
-	path := r.URL.Path
+	return resolveLibraryTransferRequestProjectID(req, r.URL.Path, store)
+}
+
+// resolveLibraryTransferRequestProjectID binds a decoded transfer to the
+// object's durable project identity. Handlers call this again after decoding so
+// the exact identity used for authorization is also supplied to cache-backed
+// bundle construction; otherwise an HA replica with a stale object cache could
+// authorize the current durable project and export an older object with the
+// same ID from another project.
+func resolveLibraryTransferRequestProjectID(req LibraryTransferRequest, path string, store storage.Store) (string, int, string) {
 	if strings.HasSuffix(path, "/pull") {
 		if strings.TrimSpace(req.ProjectID) == "" {
 			return "", http.StatusBadRequest, "project_id is required as the library pull destination"
@@ -432,7 +465,7 @@ func resolveLibraryTransferProjectID(r *http.Request, store storage.Store) (stri
 	default:
 		return "", http.StatusBadRequest, "kind must be one of script, scenario, or result"
 	}
-	if strings.HasSuffix(path, "/export") && strings.TrimSpace(req.ProjectID) != "" && normalizeProjectID(req.ProjectID) != actualProjectID {
+	if strings.TrimSpace(req.ProjectID) != "" && normalizeProjectID(req.ProjectID) != actualProjectID {
 		return "", http.StatusBadRequest, "project_id does not match the requested object's project"
 	}
 	return actualProjectID, 0, ""
@@ -468,6 +501,9 @@ func validateLibraryImportDestination(req LibraryImportRequest) (string, error) 
 	addSourceProject(req.Bundle.Source.ProjectID)
 	for _, item := range req.Bundle.Items {
 		addSourceProject(item.ProjectID)
+		for _, dependency := range item.Dependencies {
+			addSourceProject(dependency.ProjectID)
+		}
 		if item.Script != nil {
 			addSourceProject(item.Script.ProjectID)
 		}

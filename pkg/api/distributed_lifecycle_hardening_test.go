@@ -16,13 +16,14 @@ import (
 )
 
 type startupLifecycleFakeClient struct {
-	mu        sync.Mutex
-	accept    bool
-	assignErr error
-	assigned  int
-	active    int
-	stopped   int
-	closed    int
+	mu              sync.Mutex
+	accept          bool
+	assignErr       error
+	heartbeatClient generatorClient
+	assigned        int
+	active          int
+	stopped         int
+	closed          int
 }
 
 type blockingStopGeneratorClient struct {
@@ -72,7 +73,11 @@ func (c *startupLifecycleFakeClient) AdjustDuration(context.Context, generatorrp
 func (c *startupLifecycleFakeClient) OpenMetricsStream(context.Context) (*generatorrpc.MetricsStream, error) {
 	return nil, errors.New("not expected")
 }
-func (c *startupLifecycleFakeClient) OpenHeartbeat(context.Context) (*generatorrpc.HeartbeatStream, error) {
+
+func (c *startupLifecycleFakeClient) OpenHeartbeat(ctx context.Context) (*generatorrpc.HeartbeatStream, error) {
+	if c.heartbeatClient != nil {
+		return c.heartbeatClient.OpenHeartbeat(ctx)
+	}
 	return nil, errors.New("probe unavailable")
 }
 func (c *startupLifecycleFakeClient) StopTest(context.Context, string, bool) (generatorrpc.StopResult, error) {
@@ -215,6 +220,8 @@ func (c *startupLifecycleFakeClient) Close() error {
 func TestDistributedStartupRollsBackEveryAttemptedShard(t *testing.T) {
 	clientA := &startupLifecycleFakeClient{accept: true}
 	clientB := &startupLifecycleFakeClient{accept: false}
+	clientA.heartbeatClient, _ = newTestGeneratorRPCClient(t, "gen-a", 10)
+	clientB.heartbeatClient, _ = newTestGeneratorRPCClient(t, "gen-b", 10)
 	backend := newDistributedExecutionBackend([]string{"gen-a", "gen-b"}, time.Second, func(_ context.Context, target string) (generatorClient, error) {
 		if target == "gen-a" {
 			return clientA, nil
@@ -263,6 +270,7 @@ func TestDistributedStartupRollsBackEveryAttemptedShard(t *testing.T) {
 func TestDistributedStartupCleansUpAmbiguousAssignWorkError(t *testing.T) {
 	wantErr := errors.New("assignment response lost")
 	client := &startupLifecycleFakeClient{accept: true, assignErr: wantErr}
+	client.heartbeatClient, _ = newTestGeneratorRPCClient(t, "gen-a", 10)
 	backend := newDistributedExecutionBackend([]string{"gen-a"}, time.Second, func(context.Context, string) (generatorClient, error) {
 		return client, nil
 	})

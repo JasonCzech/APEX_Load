@@ -314,6 +314,9 @@ func TestNotifyAccessReviewChange(t *testing.T) {
 func TestEffectiveAccessSimulatorScopedRoles(t *testing.T) {
 	store := phase1Store(t)
 	now := time.Now().UTC()
+	if err := store.SaveProject(&storage.Project{ID: "project-1", Name: "Project 1", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
 	user := &storage.User{ID: "u-proj", Subject: "proj-editor", Active: true, CreatedAt: now, UpdatedAt: now,
 		Bindings: []*storage.UserRoleBinding{{ID: "b-proj", UserID: "u-proj", ScopeType: "project", ScopeID: "project-1", Role: RoleEditor, CreatedAt: now, UpdatedAt: now}}}
 	if err := store.SaveUser(user); err != nil {

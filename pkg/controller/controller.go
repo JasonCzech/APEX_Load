@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -13,10 +14,13 @@ import (
 )
 
 type Controller struct {
-	tests    map[string]*TestRun
-	testsMu  sync.RWMutex
-	maxTests int
+	tests       map[string]*TestRun
+	testsMu     sync.RWMutex
+	maxTests    int
+	maxRetained int
 }
+
+const defaultMaxRetainedTests = 1024
 
 type TestRun struct {
 	ID        string
@@ -51,18 +55,35 @@ func New(maxConcurrent int) *Controller {
 	if maxConcurrent <= 0 {
 		maxConcurrent = 10
 	}
+	maxRetained := defaultMaxRetainedTests
+	// A caller that intentionally permits a larger concurrent fleet must still
+	// be able to retain every live run. Keep an equally sized history allowance
+	// without overflowing int for an unrealistic MaxInt configuration.
+	if maxConcurrent > maxRetained {
+		maxRetained = maxConcurrent
+		if maxConcurrent <= int(^uint(0)>>1)/2 {
+			maxRetained = maxConcurrent * 2
+		}
+	}
 	return &Controller{
-		tests:    make(map[string]*TestRun),
-		maxTests: maxConcurrent,
+		tests:       make(map[string]*TestRun),
+		maxTests:    maxConcurrent,
+		maxRetained: maxRetained,
 	}
 }
 
 func (c *Controller) CreateTest(cfg TestConfig) (string, error) {
+	if err := validateTestConfig(cfg); err != nil {
+		return "", err
+	}
 	c.testsMu.Lock()
 	defer c.testsMu.Unlock()
 
 	if c.activeTestsLocked("") >= c.maxTests {
 		return "", fmt.Errorf("max concurrent tests (%d) reached", c.maxTests)
+	}
+	if len(c.tests) >= c.maxRetained && !c.evictOldestTerminalTestLocked() {
+		return "", fmt.Errorf("max retained tests (%d) reached; no terminal test is available for eviction", c.maxRetained)
 	}
 
 	id := uuid.New().String()
@@ -112,6 +133,9 @@ func (c *Controller) SetStatus(id string, status TestStatus) error {
 	}
 	if status == StatusComplete || status == StatusFailed || status == StatusAborted {
 		t.EndedAt = time.Now()
+		// Terminal runs must not retain execution closures (and everything those
+		// closures capture) for the lifetime of the controller history.
+		t.Cancel = nil
 	}
 	slog.Info("test status changed", "id", id, "status", status)
 	return nil
@@ -131,6 +155,7 @@ func (c *Controller) AbortTest(id string) error {
 	cancel := t.Cancel
 	t.Status = StatusAborted
 	t.EndedAt = time.Now()
+	t.Cancel = nil
 	c.testsMu.Unlock()
 	// A cancel callback is external code. It must not run while the controller
 	// mutex is held because it may synchronously call back into the controller.
@@ -143,13 +168,50 @@ func (c *Controller) AbortTest(id string) error {
 // SetCancel installs the execution cancellation hook without exposing the
 // controller's canonical mutable TestRun pointer.
 func (c *Controller) SetCancel(id string, cancel context.CancelFunc) error {
+	if cancel == nil {
+		return fmt.Errorf("test cancellation hook is required")
+	}
 	c.testsMu.Lock()
-	defer c.testsMu.Unlock()
 	t, ok := c.tests[id]
 	if !ok {
+		c.testsMu.Unlock()
 		return fmt.Errorf("test not found: %s", id)
 	}
-	t.Cancel = cancel
+	var installErr error
+	if isTerminalStatus(t.Status) {
+		installErr = fmt.Errorf("test %s is already terminal (%s)", id, t.Status)
+	} else if t.Cancel != nil {
+		installErr = fmt.Errorf("test %s already has a cancellation hook", id)
+	} else {
+		t.Cancel = cancel
+	}
+	c.testsMu.Unlock()
+	// A late or duplicate hook belongs to an execution the controller cannot
+	// safely adopt. Cancel it outside the mutex so abort-before-install and
+	// duplicate-start races cannot leave untracked load running or deadlock via a
+	// reentrant callback.
+	if installErr != nil && cancel != nil {
+		cancel()
+	}
+	return installErr
+}
+
+func validateTestConfig(cfg TestConfig) error {
+	if strings.TrimSpace(cfg.Name) == "" {
+		return fmt.Errorf("test name is required")
+	}
+	if cfg.Script == nil {
+		return fmt.Errorf("test script is required")
+	}
+	if cfg.VUsers <= 0 {
+		return fmt.Errorf("test vusers must be greater than zero")
+	}
+	if cfg.Duration <= 0 {
+		return fmt.Errorf("test duration must be greater than zero")
+	}
+	if cfg.RampUp < 0 {
+		return fmt.Errorf("test ramp-up must not be negative")
+	}
 	return nil
 }
 
@@ -171,6 +233,27 @@ func (c *Controller) activeTestsLocked(excludeID string) int {
 		}
 	}
 	return active
+}
+
+// evictOldestTerminalTestLocked frees one history slot without ever removing a
+// queued or active run. The caller must hold testsMu for writing.
+func (c *Controller) evictOldestTerminalTestLocked() bool {
+	oldestID := ""
+	var oldestEnd time.Time
+	for id, test := range c.tests {
+		if test == nil || !isTerminalStatus(test.Status) {
+			continue
+		}
+		if oldestID == "" || test.EndedAt.Before(oldestEnd) || (test.EndedAt.Equal(oldestEnd) && id < oldestID) {
+			oldestID = id
+			oldestEnd = test.EndedAt
+		}
+	}
+	if oldestID == "" {
+		return false
+	}
+	delete(c.tests, oldestID)
+	return true
 }
 
 func isActiveStatus(status TestStatus) bool {

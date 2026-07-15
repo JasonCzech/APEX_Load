@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -186,9 +189,28 @@ func TestValidateNotificationsAllowsTelemetryEvents(t *testing.T) {
 	}
 }
 
+func TestValidateNotificationsRequiresHTTPSAndRejectsUserinfo(t *testing.T) {
+	for _, format := range []string{notificationFormatSlack, notificationFormatTeams, notificationFormatDynatrace} {
+		t.Run(format, func(t *testing.T) {
+			webhook := NotificationWebhookSettings{URL: "http://hooks.example.test/secret-path", Format: format}
+			if format == notificationFormatDynatrace {
+				webhook.APIToken = "token"
+			}
+			if err := validateNotificationsSettings(NotificationsSettings{Webhooks: []NotificationWebhookSettings{webhook}}); err == nil || !strings.Contains(err.Error(), "must use https") {
+				t.Fatalf("cleartext %s webhook validation = %v, want HTTPS error", format, err)
+			}
+		})
+	}
+	userinfo := NotificationWebhookSettings{URL: "https://token@hooks.example.test/path", Format: notificationFormatSlack}
+	if err := validateNotificationsSettings(NotificationsSettings{Webhooks: []NotificationWebhookSettings{userinfo}}); err == nil || !strings.Contains(err.Error(), "userinfo") {
+		t.Fatalf("userinfo webhook validation = %v, want rejection", err)
+	}
+}
+
 func TestBroadcastEventDispatchesConfiguredNotificationWebhook(t *testing.T) {
 	// httptest binds to loopback; allow private outbound for the SSRF guard.
 	t.Setenv("APEXLOAD_ALLOW_PRIVATE_WEBHOOKS", "true")
+	t.Setenv(notificationsAllowInsecureHTTPEnv, "true")
 	received := make(chan map[string]any, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
@@ -239,6 +261,7 @@ func TestBroadcastEventDispatchesConfiguredNotificationWebhook(t *testing.T) {
 func TestBroadcastEventDispatchesDynatraceWebhookWithAPIToken(t *testing.T) {
 	// httptest binds to loopback; allow private outbound for the SSRF guard.
 	t.Setenv("APEXLOAD_ALLOW_PRIVATE_WEBHOOKS", "true")
+	t.Setenv(notificationsAllowInsecureHTTPEnv, "true")
 	received := make(chan map[string]any, 1)
 	headers := make(chan string, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -303,6 +326,7 @@ func TestBroadcastEventDispatchesDynatraceWebhookWithAPIToken(t *testing.T) {
 }
 
 func TestNotificationDispatcherRetriesRetryableStatus(t *testing.T) {
+	t.Setenv(notificationsAllowInsecureHTTPEnv, "true")
 	notificationDeliveryFailuresTotal.Store(0)
 	attempts := 0
 	var dedupeHeader string
@@ -332,6 +356,7 @@ func TestNotificationDispatcherRetriesRetryableStatus(t *testing.T) {
 }
 
 func TestNotificationDispatcherCountsFinalFailure(t *testing.T) {
+	t.Setenv(notificationsAllowInsecureHTTPEnv, "true")
 	notificationDeliveryFailuresTotal.Store(0)
 	attempts := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -348,5 +373,72 @@ func TestNotificationDispatcherCountsFinalFailure(t *testing.T) {
 	}
 	if got := notificationDeliveryFailures(); got != 1 {
 		t.Fatalf("delivery failures = %d, want 1", got)
+	}
+}
+
+func TestNotificationDispatcherBoundsBurstAndPerDestinationConcurrency(t *testing.T) {
+	t.Setenv(notificationsAllowInsecureHTTPEnv, "true")
+	notificationDeliveryDroppedTotal.Store(0)
+	var active atomic.Int64
+	var maximum atomic.Int64
+	started := make(chan struct{}, maxNotificationDeliveries)
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		current := active.Add(1)
+		defer active.Add(-1)
+		for {
+			previous := maximum.Load()
+			if current <= previous || maximum.CompareAndSwap(previous, current) {
+				break
+			}
+		}
+		started <- struct{}{}
+		<-release
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	defer releaseOnce.Do(func() { close(release) })
+
+	dispatcher := newNotificationDispatcher(server.Client())
+	settings := NotificationsSettings{Webhooks: []NotificationWebhookSettings{{
+		Name: "slow", Enabled: true, URL: server.URL, Format: notificationFormatSlack,
+	}}}
+	for i := 0; i < 100; i++ {
+		dispatcher.Dispatch(settings, NotificationEvent{Type: "test_failed", TestID: "run", Timestamp: time.Now()})
+	}
+	for i := 0; i < maxNotificationPerDestination; i++ {
+		select {
+		case <-started:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("started %d deliveries, want %d", i, maxNotificationPerDestination)
+		}
+	}
+	if got := maximum.Load(); got > maxNotificationPerDestination {
+		t.Fatalf("per-destination concurrency = %d, limit %d", got, maxNotificationPerDestination)
+	}
+	if got := len(dispatcher.deliverySlots); got > maxNotificationDeliveries {
+		t.Fatalf("global delivery concurrency = %d, limit %d", got, maxNotificationDeliveries)
+	}
+	if got := notificationDeliveryDroppedTotal.Load(); got < 100-maxNotificationPerDestination {
+		t.Fatalf("dropped deliveries = %d, want at least %d", got, 100-maxNotificationPerDestination)
+	}
+
+	dispatcher.Close()
+	dispatcher.Dispatch(settings, NotificationEvent{Type: "test_failed", TestID: "after-close", Timestamp: time.Now()})
+	releaseOnce.Do(func() { close(release) })
+	deadline := time.Now().Add(2 * time.Second)
+	for active.Load() != 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if got := active.Load(); got != 0 {
+		t.Fatalf("active deliveries after release = %d", got)
+	}
+}
+
+func TestValidateNotificationsSettingsCapsWebhookCount(t *testing.T) {
+	settings := NotificationsSettings{Webhooks: make([]NotificationWebhookSettings, maxNotificationWebhooks+1)}
+	if err := validateNotificationsSettings(settings); err == nil || !strings.Contains(err.Error(), "limit") {
+		t.Fatalf("webhook cardinality error = %v", err)
 	}
 }

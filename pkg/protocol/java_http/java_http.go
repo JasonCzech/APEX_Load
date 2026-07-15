@@ -6,27 +6,27 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/internal/boundedcache"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	httpproto "github.com/jasonczech/apexload/pkg/protocol/http"
 )
 
 const supportedCodec = "java_serialized_object_base64"
 
-var responseMappingRegexCache sync.Map // map[string]*regexp.Regexp
+var responseMappingRegexCache = boundedcache.NewStringCache[*regexp.Regexp](0, 0, 0)
 
 func compileResponseMappingRegex(expr string) *regexp.Regexp {
 	if cached, ok := responseMappingRegexCache.Load(expr); ok {
-		return cached.(*regexp.Regexp)
+		return cached
 	}
 	re, err := regexp.Compile(expr)
 	if err != nil {
 		re = regexp.MustCompile(regexp.QuoteMeta(expr))
 	}
 	actual, _ := responseMappingRegexCache.LoadOrStore(expr, re)
-	return actual.(*regexp.Regexp)
+	return actual
 }
 
 func init() {

@@ -102,7 +102,7 @@ func (s *Server) startAccessReviewNotifierCadence() {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s.accessReviewNotifyCancel = cancel
-	go func() {
+	s.launchBackground(func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		lastSignature := ""
@@ -116,5 +116,5 @@ func (s *Server) startAccessReviewNotifierCadence() {
 				}
 			}
 		}
-	}()
+	})
 }

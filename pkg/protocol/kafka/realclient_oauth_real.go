@@ -5,7 +5,6 @@ package kafka
 import (
 	"context"
 	"fmt"
-	"net"
 	"strings"
 	"sync"
 	"time"
@@ -13,6 +12,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/jasonczech/apexload/pkg/identitypolicy"
 )
 
 // oauthTokenRefreshSkew refreshes a cached token this long before expiry so it
@@ -34,9 +34,23 @@ type oauthTokenSource struct {
 }
 
 func (c *franzClient) oauthTokenSource() (*oauthTokenSource, error) {
-	scope := eventHubsOAuthScope(c.cfg.Brokers, c.cfg.OAuthScope)
-	if scope == "" {
-		return nil, fmt.Errorf("kafka oauthbearer requires config.kafka.oauth_scope (could not derive it from config.kafka.brokers)")
+	if !strings.EqualFold(strings.TrimSpace(c.cfg.Profile), "eventhubs") {
+		return nil, fmt.Errorf("kafka managed-identity oauthbearer is restricted to config.kafka.profile=eventhubs")
+	}
+	if c.cfg.TLSInsecureSkipVerify {
+		return nil, fmt.Errorf("kafka managed-identity oauthbearer forbids tls_insecure_skip_verify")
+	}
+	if len(c.cfg.Brokers) == 0 {
+		return nil, fmt.Errorf("kafka managed-identity oauthbearer requires at least one broker")
+	}
+	for _, broker := range c.cfg.Brokers {
+		if _, err := identitypolicy.ValidateAzureMessagingNamespace(broker); err != nil {
+			return nil, fmt.Errorf("kafka oauthbearer broker: %w", err)
+		}
+	}
+	scope, err := eventHubsOAuthScope(c.cfg.Brokers, c.cfg.OAuthScope)
+	if err != nil {
+		return nil, err
 	}
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
@@ -64,21 +78,9 @@ func (s *oauthTokenSource) Token(ctx context.Context) (string, error) {
 // explicit config.kafka.oauth_scope wins; otherwise it is derived from the first
 // bootstrap broker host (e.g. ns.servicebus.windows.net:9093 ->
 // https://ns.servicebus.windows.net/.default), the Event Hubs convention.
-func eventHubsOAuthScope(brokers []string, explicit string) string {
-	if s := strings.TrimSpace(explicit); s != "" {
-		return s
+func eventHubsOAuthScope(_ []string, explicit string) (string, error) {
+	if scope := strings.TrimSpace(explicit); scope != "" && scope != identitypolicy.AzureEventHubsOAuthScope {
+		return "", fmt.Errorf("kafka managed-identity oauth_scope must be %q", identitypolicy.AzureEventHubsOAuthScope)
 	}
-	for _, b := range brokers {
-		host := strings.TrimSpace(b)
-		if host == "" {
-			continue
-		}
-		if h, _, err := net.SplitHostPort(host); err == nil {
-			host = h
-		}
-		if host != "" {
-			return "https://" + host + "/.default"
-		}
-	}
-	return ""
+	return identitypolicy.AzureEventHubsOAuthScope, nil
 }

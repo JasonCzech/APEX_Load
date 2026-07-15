@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 func TestSQLiteStorePersistsScenarioSchedules(t *testing.T) {
@@ -16,8 +18,12 @@ func TestSQLiteStorePersistsScenarioSchedules(t *testing.T) {
 		t.Fatalf("SaveProject returned error: %v", err)
 	}
 
+	script := &dsl.Script{ID: "scenario-1-script", Name: "Checkout", Protocol: "http", ProjectID: "checkout"}
+	if err := store.SaveScript(script); err != nil {
+		t.Fatalf("SaveScript returned error: %v", err)
+	}
 	scenario := &Scenario{ID: "scenario-1", Name: "Checkout", Duration: "5m", StartDelay: "30s", CreatedAt: time.Now(), UpdatedAt: time.Now()}
-	if err := store.SaveScenario(scenario, nil); err != nil {
+	if err := store.SaveScenario(scenario, []ScenarioScript{{ScriptID: script.ID, VUsers: 1}}); err != nil {
 		t.Fatalf("SaveScenario returned error: %v", err)
 	}
 	nextRun := time.Date(2026, time.May, 17, 1, 0, 0, 0, time.UTC)
@@ -195,6 +201,101 @@ func TestSQLiteStorePersistsScenarioSchedules(t *testing.T) {
 	}
 	if len(listed) != 0 {
 		t.Fatalf("listed schedules after delete = %#v, want empty", listed)
+	}
+}
+
+func TestScenarioScheduleDeletionPreservesActiveOccurrenceAnchor(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "delete-guard.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Now().UTC()
+	if err := store.SaveScenario(&Scenario{ID: "scenario-delete-guard", Name: "Guard", Duration: "1m", CreatedAt: now, UpdatedAt: now}, nil); err != nil {
+		t.Fatal(err)
+	}
+	schedule := &ScenarioSchedule{ID: "scenario-schedule-delete-guard", ScenarioID: "scenario-delete-guard", Name: "Guard", CronExpr: "* * * * *", Enabled: true, NextRunAt: &now, CreatedAt: now, UpdatedAt: now}
+	if err := store.SaveScenarioSchedule(schedule); err != nil {
+		t.Fatal(err)
+	}
+	occurrence := &ScenarioScheduleOccurrence{ID: "scenario-occurrence-delete-guard", ScheduleID: schedule.ID, ScenarioID: schedule.ScenarioID, PlannedAt: now, Status: "materializing", CreatedAt: now, UpdatedAt: now}
+	if err := store.SaveScenarioScheduleOccurrence(occurrence); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := store.DeleteScenarioScheduleOccurrenceGuarded(occurrence.ID); err != nil || got != ScheduleOccurrenceDeleteBlockedByStatus {
+		t.Fatalf("active occurrence delete = (%q, %v), want blocked", got, err)
+	}
+	if got, err := store.DeleteScenarioScheduleGuarded(schedule.ID); err != nil || got != ScheduleDeleteBlockedByActiveOccurrence {
+		t.Fatalf("active schedule delete = (%q, %v), want blocked", got, err)
+	}
+
+	occurrence.Status = "materialized"
+	materializedAt := now.Add(time.Second)
+	occurrence.MaterializedAt = &materializedAt
+	if err := store.SaveScenarioScheduleOccurrence(occurrence); err != nil {
+		t.Fatal(err)
+	}
+	// The occurrence transition can commit before the parent schedule advance.
+	// It remains the current idempotency anchor throughout that cross-row gap.
+	if got, err := store.DeleteScenarioScheduleOccurrenceGuarded(occurrence.ID); err != nil || got != ScheduleOccurrenceDeleteBlockedByStatus {
+		t.Fatalf("current materialized occurrence delete = (%q, %v), want blocked", got, err)
+	}
+	advanced := now.Add(time.Minute)
+	if _, err := store.db.Exec(`UPDATE scenario_schedules SET next_run_at = ? WHERE id = ?`, advanced, schedule.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := store.DeleteScenarioScheduleOccurrenceGuarded(occurrence.ID); err != nil || got != ScheduleOccurrenceDeleteDeleted {
+		t.Fatalf("advanced terminal occurrence delete = (%q, %v), want deleted", got, err)
+	}
+	if got, err := store.DeleteScenarioScheduleGuarded(schedule.ID); err != nil || got != ScheduleDeleteDeleted {
+		t.Fatalf("terminal schedule delete = (%q, %v), want deleted", got, err)
+	}
+}
+
+func TestScenarioScheduleOccurrenceClaimRejectsStaleParent(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "stale-occurrence.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Date(2026, 7, 1, 9, 0, 0, 0, time.UTC)
+	if err := store.SaveScenario(&Scenario{ID: "scenario-stale-claim", Name: "Scenario", Duration: "1m", CreatedAt: now, UpdatedAt: now}, nil); err != nil {
+		t.Fatal(err)
+	}
+	schedule := &ScenarioSchedule{
+		ID: "schedule-stale-claim", ScenarioID: "scenario-stale-claim", ProjectID: "proj-a", Revision: 1,
+		Name: "Schedule", CronExpr: "0 * * * *", Enabled: true, NextRunAt: &now, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := store.SaveScenarioSchedule(schedule); err != nil {
+		t.Fatal(err)
+	}
+	staleOccurrence := &ScenarioScheduleOccurrence{
+		ID: "occurrence-stale-claim", ScheduleID: schedule.ID, ScenarioID: schedule.ScenarioID, ProjectID: schedule.ProjectID,
+		ScheduleRevision: schedule.Revision, PlannedAt: now, Status: "materializing", ReasonCode: "due", CreatedAt: now, UpdatedAt: now,
+	}
+
+	disabled := *schedule
+	disabled.Enabled = false
+	disabled.NextRunAt = nil
+	disabled.UpdatedAt = now.Add(time.Second)
+	changed, err := store.UpdateScenarioScheduleIfRevision(&disabled, schedule.Revision)
+	if err != nil || !changed {
+		t.Fatalf("disable schedule = (%v, %v), want (true, nil)", changed, err)
+	}
+
+	inserted, err := store.ClaimScenarioScheduleOccurrenceIfCurrent(staleOccurrence)
+	if err != nil {
+		t.Fatalf("claim stale occurrence: %v", err)
+	}
+	if inserted {
+		t.Fatal("stale occurrence was inserted after the parent schedule was disabled")
+	}
+	stored, err := store.GetScenarioScheduleOccurrenceByScheduleAndPlannedAt(schedule.ID, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored != nil {
+		t.Fatalf("stale occurrence persisted: %+v", stored)
 	}
 }
 

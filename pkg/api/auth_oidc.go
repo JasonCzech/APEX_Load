@@ -35,6 +35,7 @@ const (
 )
 
 type oidcSessionToken struct {
+	UserID          string              `json:"uid,omitempty"`
 	Subject         string              `json:"sub"`
 	DisplayName     string              `json:"name,omitempty"`
 	Email           string              `json:"email,omitempty"`
@@ -103,6 +104,7 @@ func resolveOIDCSession(r *http.Request, settings AuthSettings) oidcSessionResol
 		return oidcSessionResolution{Session: session, Status: "expired"}
 	}
 	return oidcSessionResolution{Status: "active", Session: session, User: &AuthenticatedUser{
+		ID:               strings.TrimSpace(session.UserID),
 		Subject:          session.Subject,
 		DisplayName:      session.DisplayName,
 		Email:            session.Email,
@@ -234,11 +236,23 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, err.Error())
 		return
 	}
-	// Stamp the user's current session epoch into the cookie so a later
-	// revoke-sessions (which bumps the stored epoch) invalidates this cookie.
+	// Bind the cookie to the immutable local user id as well as the current
+	// session epoch. A subject can be renamed and later reused by a different
+	// principal; subject-only cookies would otherwise transfer to that new user.
 	if s.store != nil {
 		if local, lookupErr := s.store.GetUserBySubject(user.Subject); lookupErr == nil && local != nil {
+			session.UserID = strings.TrimSpace(local.ID)
 			session.SessionEpoch = local.SessionEpoch
+			user.ID = session.UserID
+			user.SessionEpoch = local.SessionEpoch
+		} else if resolved, resolveErr := applyLocalUserBindings(user, s.store); resolveErr == nil && resolved != nil {
+			// The production first-admin path provisions on first authentication.
+			// Doing that before signing the cookie lets the initial session carry
+			// the same immutable binding as every later login. Dev/no-store flows
+			// intentionally continue to operate without a persisted local id.
+			session.UserID = strings.TrimSpace(resolved.ID)
+			session.SessionEpoch = resolved.SessionEpoch
+			user = resolved
 		}
 	}
 	encodedSession, err := encodeSignedCookieValue(session, runtime.sessionSecret)

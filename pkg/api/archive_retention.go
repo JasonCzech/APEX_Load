@@ -73,7 +73,13 @@ func planArchiveRetentionPrune(now time.Time, settings ArchiveRetentionSettings,
 			continue
 		}
 		policy := matchingArchiveRetentionPolicy(settings, test)
-		expiredAt := completedAt.Add(time.Duration(policy.RetentionDays) * 24 * time.Hour)
+		retention, ok := checkedDuration(policy.RetentionDays, 24*time.Hour)
+		if !ok || retention <= 0 {
+			// Invalid legacy settings must fail closed: never turn integer wrap into
+			// an immediate destructive prune.
+			continue
+		}
+		expiredAt := completedAt.Add(retention)
 		if now.Before(expiredAt) {
 			continue
 		}
@@ -230,9 +236,11 @@ func (s *Server) handleApplyArchiveRetention(w http.ResponseWriter, r *http.Requ
 	})
 }
 
-type runArchiveMetadataDeleter interface {
-	DeleteRunArchive(testID string) error
+type conditionalRunArchiveMetadataDeleter interface {
+	DeleteRunArchiveIfUnchanged(expected *storage.RunArchiveRecord) (bool, error)
 }
+
+var errArchivePublicationChanged = errors.New("archive publication changed while retention was pending")
 
 // pruneRunArchive deletes durable object data first, then the local staging
 // directory, and finally the database pointer. That ordering prevents a
@@ -270,6 +278,10 @@ func (s *Server) pruneRunArchiveUnderFence(ctx context.Context, record *storage.
 	if err := s.ensureArchiveCleanupIntent(record); err != nil {
 		return err
 	}
+	deleter, supportsConditionalDelete := s.store.(conditionalRunArchiveMetadataDeleter)
+	if s.store != nil && !supportsConditionalDelete {
+		return fmt.Errorf("conditional archive metadata deletion is not supported by the configured store")
+	}
 	if s.runner != nil {
 		if !s.runner.isExecutionLeader() {
 			return errNotExecutionLeader
@@ -300,13 +312,19 @@ func (s *Server) pruneRunArchiveUnderFence(ctx context.Context, record *storage.
 	if s.runner != nil && !s.runner.isExecutionLeader() {
 		return errNotExecutionLeader
 	}
-	deleter, ok := s.store.(runArchiveMetadataDeleter)
-	if s.store != nil && !ok {
-		return fmt.Errorf("archive metadata deletion is not supported by the configured store")
-	}
-	if ok {
-		if err := deleter.DeleteRunArchive(record.TestID); err != nil {
+	if supportsConditionalDelete {
+		deleted, err := deleter.DeleteRunArchiveIfUnchanged(record)
+		if err != nil {
 			return fmt.Errorf("delete archive metadata: %w", err)
+		}
+		if !deleted {
+			current, loadErr := s.store.GetRunArchive(record.TestID)
+			if loadErr != nil && !errors.Is(loadErr, sql.ErrNoRows) {
+				return fmt.Errorf("confirm archive metadata deletion: %w", loadErr)
+			}
+			if current != nil || loadErr == nil {
+				return errArchivePublicationChanged
+			}
 		}
 	}
 	forgetRunArchiveCache(record.TestID)
@@ -326,7 +344,10 @@ func (s *Server) ensureArchiveCleanupIntent(record *storage.RunArchiveRecord) er
 	if outbox == nil {
 		return fmt.Errorf("archive cleanup durability is not supported by the configured store")
 	}
-	if _, err := outbox.GetArchiveCleanupJob(record.TestID); err == nil {
+	if existing, err := outbox.GetArchiveCleanupJob(record.TestID); err == nil {
+		if !sameRunArchiveRecordVersion(&existing.ArchiveRecord, record) {
+			return errArchivePublicationChanged
+		}
 		return nil
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("load archive cleanup intent: %w", err)
@@ -342,13 +363,41 @@ func (s *Server) ensureArchiveCleanupIntent(record *storage.RunArchiveRecord) er
 	if test != nil {
 		projectID = normalizeProjectID(test.ProjectID)
 	}
+	conditionalOutbox, ok := s.store.(conditionalArchiveCleanupOutbox)
+	if !ok {
+		return fmt.Errorf("conditional archive cleanup intent is not supported by the configured store")
+	}
 	copy := *record
-	if err := outbox.SaveArchiveCleanupJob(&storage.ArchiveCleanupJob{
+	created, err := conditionalOutbox.SaveArchiveCleanupJobIfArchiveUnchanged(&storage.ArchiveCleanupJob{
 		TestID: record.TestID, ProjectID: projectID, ArchiveRecord: copy,
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("save archive cleanup intent: %w", err)
 	}
+	if !created {
+		return errArchivePublicationChanged
+	}
 	return nil
+}
+
+func sameRunArchiveRecordVersion(left, right *storage.RunArchiveRecord) bool {
+	if left == nil || right == nil {
+		return false
+	}
+	return left.TestID == right.TestID &&
+		left.RefKey == right.RefKey &&
+		left.SchemaVersion == right.SchemaVersion &&
+		left.ArchiveBackend == right.ArchiveBackend &&
+		left.ArchivePath == right.ArchivePath &&
+		left.ManifestPath == right.ManifestPath &&
+		left.ManifestSHA256 == right.ManifestSHA256 &&
+		left.ArchiveURI == right.ArchiveURI &&
+		left.ManifestURI == right.ManifestURI &&
+		left.TransactionCount == right.TransactionCount &&
+		left.ResourceSampleCount == right.ResourceSampleCount &&
+		left.IntervalSummaryCount == right.IntervalSummaryCount &&
+		left.CreatedAt.Equal(right.CreatedAt) &&
+		left.CompletedAt.Equal(right.CompletedAt)
 }
 
 func (s *Server) completeArchiveCleanupIntent(testID string) error {

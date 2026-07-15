@@ -492,6 +492,9 @@ func TestSQLiteStoreServiceAccountsAndAuditEvents(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	expiresAt := now.Add(24 * time.Hour)
 	keyRotatedAt := now.Add(-24 * time.Hour)
+	if err := store.SaveProject(&Project{ID: "project-a", Name: "Project A", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveProject returned error: %v", err)
+	}
 	account := &ServiceAccount{
 		ID:          "svc-1",
 		Name:        "CI Pipeline",
@@ -702,6 +705,9 @@ func TestSQLiteStoreUsersRoleBindingsAndAuditFilters(t *testing.T) {
 	defer store.Close()
 
 	now := time.Now().UTC().Truncate(time.Second)
+	if err := store.SaveProject(&Project{ID: "project-a", Name: "Project A", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveProject returned error: %v", err)
+	}
 	user := &User{
 		ID:          "user-1",
 		Subject:     "oidc|alice",

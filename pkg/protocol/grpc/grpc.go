@@ -31,7 +31,14 @@ import (
 	"google.golang.org/protobuf/types/dynamicpb"
 )
 
-const defaultCallTimeout = 30 * time.Second
+const (
+	defaultCallTimeout               = 30 * time.Second
+	maxGRPCMethodCacheEntries        = 256
+	maxGRPCMethodCacheKeyBytes       = 4 << 10
+	maxGRPCReflectionFiles           = 64
+	maxGRPCReflectionDescriptorBytes = 2 << 20
+	maxGRPCConfiguredDescriptorBytes = 8 << 20
+)
 
 func init() {
 	protocol.Register("grpc", func() protocol.Protocol {
@@ -48,6 +55,7 @@ type GRPC struct {
 	maxRecvBytes int
 	callTimeout  time.Duration
 	methods      map[string]protoreflect.MethodDescriptor
+	methodOrder  []string
 	mu           sync.Mutex
 }
 
@@ -73,6 +81,7 @@ func (g *GRPC) Init(ctx context.Context, config map[string]any) error {
 	g.callTimeout = durationConfig(config, "grpc_timeout_ms", defaultCallTimeout)
 	g.metadata = buildMetadata(config)
 	g.methods = make(map[string]protoreflect.MethodDescriptor)
+	g.methodOrder = nil
 	if err := g.loadConfiguredDescriptorFiles(config); err != nil {
 		return err
 	}
@@ -97,23 +106,32 @@ func (g *GRPC) Init(ctx context.Context, config map[string]any) error {
 
 func (g *GRPC) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
 	result := &protocol.Result{
-		ActionName:       action.Name,
+		ActionName:       protocol.ActionName(action),
 		StartTime:        time.Now(),
 		Extractions:      make(map[string]string),
 		DependencyType:   "grpc",
 		DependencyTarget: g.target,
 	}
+	if action == nil {
+		result.Duration = time.Since(result.StartTime)
+		result.Success = false
+		result.StatusCode = int(codes.InvalidArgument)
+		result.ErrorMessage = "grpc action is required"
+		return result, nil
+	}
+	callCtx, cancel := context.WithTimeout(ctx, actionTimeout(action, g.callTimeout))
+	defer cancel()
 
 	var err error
 	switch action.Type {
 	case "grpc_unary":
-		err = g.invokeUnary(ctx, action, result)
+		err = g.invokeUnary(callCtx, action, result)
 	case "grpc_server_stream":
-		err = g.invokeServerStream(ctx, action, result)
+		err = g.invokeServerStream(callCtx, action, result)
 	case "grpc_client_stream":
-		err = g.invokeClientStream(ctx, action, result)
+		err = g.invokeClientStream(callCtx, action, result)
 	case "grpc_bidi_stream":
-		err = g.invokeBidiStream(ctx, action, result)
+		err = g.invokeBidiStream(callCtx, action, result)
 	default:
 		err = fmt.Errorf("unsupported grpc action type: %s", action.Type)
 	}
@@ -199,12 +217,13 @@ func (g *GRPC) invokeUnary(ctx context.Context, action *protocol.Action, result 
 	if method.IsStreamingClient() || method.IsStreamingServer() {
 		return fmt.Errorf("grpc_unary requires a unary method, got streaming method %q", action.Target)
 	}
-	callCtx, cancel := context.WithTimeout(ctx, actionTimeout(action, g.callTimeout))
-	defer cancel()
-	callCtx = metadata.NewOutgoingContext(callCtx, g.callMetadata(action))
+	callCtx := metadata.NewOutgoingContext(ctx, g.callMetadata(action))
 
 	request := dynamicpb.NewMessage(method.Input())
 	if len(action.Body) > 0 {
+		if len(action.Body) > dsl.MaxGRPCStreamBytes {
+			return fmt.Errorf("grpc request body exceeds %d byte limit", dsl.MaxGRPCStreamBytes)
+		}
 		if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(action.Body, request); err != nil {
 			return fmt.Errorf("decode grpc request body: %w", err)
 		}
@@ -239,9 +258,7 @@ func (g *GRPC) invokeServerStream(ctx context.Context, action *protocol.Action, 
 	if !method.IsStreamingServer() || method.IsStreamingClient() {
 		return fmt.Errorf("grpc_server_stream requires a server-streaming method, got %q", action.Target)
 	}
-	callCtx, cancel := context.WithTimeout(ctx, actionTimeout(action, g.callTimeout))
-	defer cancel()
-	callCtx = metadata.NewOutgoingContext(callCtx, g.callMetadata(action))
+	callCtx := metadata.NewOutgoingContext(ctx, g.callMetadata(action))
 
 	stream, err := g.conn.NewStream(callCtx, streamDesc(method), fullMethodName(method))
 	if err != nil {
@@ -278,15 +295,17 @@ func (g *GRPC) invokeClientStream(ctx context.Context, action *protocol.Action, 
 	if !method.IsStreamingClient() || method.IsStreamingServer() {
 		return fmt.Errorf("grpc_client_stream requires a client-streaming method, got %q", action.Target)
 	}
-	callCtx, cancel := context.WithTimeout(ctx, actionTimeout(action, g.callTimeout))
-	defer cancel()
-	callCtx = metadata.NewOutgoingContext(callCtx, g.callMetadata(action))
+	callCtx := metadata.NewOutgoingContext(ctx, g.callMetadata(action))
+	bodies, err := streamBodies(action)
+	if err != nil {
+		return err
+	}
 
 	stream, err := g.conn.NewStream(callCtx, streamDesc(method), fullMethodName(method))
 	if err != nil {
 		return err
 	}
-	sent, sentBytes, err := sendStreamMessages(stream, method.Input(), streamBodies(action))
+	sent, sentBytes, err := sendStreamMessages(stream, method.Input(), bodies)
 	if err != nil {
 		return err
 	}
@@ -320,15 +339,16 @@ func (g *GRPC) invokeBidiStream(ctx context.Context, action *protocol.Action, re
 	if !method.IsStreamingClient() || !method.IsStreamingServer() {
 		return fmt.Errorf("grpc_bidi_stream requires a bidirectional streaming method, got %q", action.Target)
 	}
-	callCtx, cancel := context.WithTimeout(ctx, actionTimeout(action, g.callTimeout))
-	defer cancel()
-	callCtx = metadata.NewOutgoingContext(callCtx, g.callMetadata(action))
+	callCtx := metadata.NewOutgoingContext(ctx, g.callMetadata(action))
+	bodies, err := streamBodies(action)
+	if err != nil {
+		return err
+	}
 
 	stream, err := g.conn.NewStream(callCtx, streamDesc(method), fullMethodName(method))
 	if err != nil {
 		return err
 	}
-	bodies := streamBodies(action)
 	sent, sentBytes, err := sendStreamMessages(stream, method.Input(), bodies)
 	if err != nil {
 		return err
@@ -368,6 +388,9 @@ func (g *GRPC) applyResponseChecks(action *protocol.Action, result *protocol.Res
 }
 
 func buildDynamicMessage(desc protoreflect.MessageDescriptor, body []byte) (*dynamicpb.Message, int, error) {
+	if len(body) > dsl.MaxGRPCStreamBytes {
+		return nil, 0, fmt.Errorf("grpc request message exceeds %d byte limit", dsl.MaxGRPCStreamBytes)
+	}
 	message := dynamicpb.NewMessage(desc)
 	if len(body) == 0 {
 		return message, 0, nil
@@ -378,46 +401,104 @@ func buildDynamicMessage(desc protoreflect.MessageDescriptor, body []byte) (*dyn
 	return message, len(body), nil
 }
 
-func streamBodies(action *protocol.Action) [][]byte {
+func streamBodies(action *protocol.Action) ([][]byte, error) {
+	if action == nil {
+		return nil, fmt.Errorf("grpc action is required")
+	}
 	if raw, ok := action.Params["messages"]; ok {
-		if messages := bodiesFromParam(raw); len(messages) > 0 {
-			return messages
+		messages, err := bodiesFromParam(raw)
+		if err != nil {
+			return nil, err
+		}
+		if len(messages) > 0 {
+			return messages, nil
 		}
 	}
 	if len(action.Body) > 0 {
-		return [][]byte{action.Body}
+		if len(action.Body) > dsl.MaxGRPCStreamBytes {
+			return nil, fmt.Errorf("grpc stream input exceeds %d byte limit", dsl.MaxGRPCStreamBytes)
+		}
+		return [][]byte{action.Body}, nil
 	}
-	return [][]byte{[]byte(`{}`)}
+	return [][]byte{[]byte(`{}`)}, nil
 }
 
-func bodiesFromParam(raw any) [][]byte {
+func bodiesFromParam(raw any) ([][]byte, error) {
+	var count int
+	switch typed := raw.(type) {
+	case []string:
+		count = len(typed)
+	case []any:
+		count = len(typed)
+	default:
+		return nil, nil
+	}
+	if count > dsl.MaxGRPCStreamMessages {
+		return nil, fmt.Errorf("grpc stream input exceeds %d message limit", dsl.MaxGRPCStreamMessages)
+	}
+	totalBytes := 0
+	retain := func(body []byte) error {
+		if len(body) > dsl.MaxGRPCStreamBytes-totalBytes {
+			return fmt.Errorf("grpc stream input exceeds %d byte limit", dsl.MaxGRPCStreamBytes)
+		}
+		totalBytes += len(body)
+		return nil
+	}
 	switch typed := raw.(type) {
 	case []string:
 		out := make([][]byte, 0, len(typed))
 		for _, value := range typed {
-			out = append(out, []byte(value))
+			if len(value) > dsl.MaxGRPCStreamBytes-totalBytes {
+				return nil, fmt.Errorf("grpc stream input exceeds %d byte limit", dsl.MaxGRPCStreamBytes)
+			}
+			body := []byte(value)
+			if err := retain(body); err != nil {
+				return nil, err
+			}
+			out = append(out, body)
 		}
-		return out
+		return out, nil
 	case []any:
 		out := make([][]byte, 0, len(typed))
 		for _, value := range typed {
 			switch item := value.(type) {
 			case string:
-				out = append(out, []byte(item))
+				if len(item) > dsl.MaxGRPCStreamBytes-totalBytes {
+					return nil, fmt.Errorf("grpc stream input exceeds %d byte limit", dsl.MaxGRPCStreamBytes)
+				}
+				body := []byte(item)
+				if err := retain(body); err != nil {
+					return nil, err
+				}
+				out = append(out, body)
 			default:
 				encoded, err := json.Marshal(item)
-				if err == nil {
-					out = append(out, encoded)
+				if err != nil {
+					return nil, fmt.Errorf("encode grpc stream input: %w", err)
 				}
+				if err := retain(encoded); err != nil {
+					return nil, err
+				}
+				out = append(out, encoded)
 			}
 		}
-		return out
+		return out, nil
 	default:
-		return nil
+		return nil, nil
 	}
 }
 
 func sendStreamMessages(stream googlegrpc.ClientStream, input protoreflect.MessageDescriptor, bodies [][]byte) (int, int, error) {
+	if len(bodies) > dsl.MaxGRPCStreamMessages {
+		return 0, 0, fmt.Errorf("grpc stream input exceeds %d message limit", dsl.MaxGRPCStreamMessages)
+	}
+	totalBytes := 0
+	for _, body := range bodies {
+		if len(body) > dsl.MaxGRPCStreamBytes-totalBytes {
+			return 0, 0, fmt.Errorf("grpc stream input exceeds %d byte limit", dsl.MaxGRPCStreamBytes)
+		}
+		totalBytes += len(body)
+	}
 	sentBytes := 0
 	for _, body := range bodies {
 		message, size, err := buildDynamicMessage(input, body)
@@ -481,6 +562,9 @@ func (g *GRPC) resolveMethod(ctx context.Context, target string) (protoreflect.M
 	if err != nil {
 		return nil, err
 	}
+	if len(normalized) > maxGRPCMethodCacheKeyBytes {
+		return nil, fmt.Errorf("grpc method target exceeds %d bytes", maxGRPCMethodCacheKeyBytes)
+	}
 	g.mu.Lock()
 	if method, ok := g.methods[normalized]; ok {
 		g.mu.Unlock()
@@ -508,7 +592,21 @@ func (g *GRPC) resolveMethod(ctx context.Context, target string) (protoreflect.M
 		return nil, fmt.Errorf("grpc method %q not found on service %q", methodName, serviceName)
 	}
 	g.mu.Lock()
+	if existing, ok := g.methods[normalized]; ok {
+		g.mu.Unlock()
+		return existing, nil
+	}
+	for len(g.methods) >= maxGRPCMethodCacheEntries && len(g.methodOrder) > 0 {
+		oldest := g.methodOrder[0]
+		g.methodOrder = g.methodOrder[1:]
+		delete(g.methods, oldest)
+	}
+	if len(g.methods) >= maxGRPCMethodCacheEntries {
+		g.mu.Unlock()
+		return nil, fmt.Errorf("grpc configured method cache exceeds %d entries", maxGRPCMethodCacheEntries)
+	}
 	g.methods[normalized] = method
+	g.methodOrder = append(g.methodOrder, normalized)
 	g.mu.Unlock()
 	return method, nil
 }
@@ -534,9 +632,17 @@ func (g *GRPC) loadReflectionFiles(ctx context.Context, serviceName string) (*pr
 	if fileResponse == nil {
 		return nil, fmt.Errorf("grpc reflection did not return descriptors for %q", serviceName)
 	}
+	if len(fileResponse.FileDescriptorProto) > maxGRPCReflectionFiles {
+		return nil, fmt.Errorf("grpc reflection returned more than %d descriptor files", maxGRPCReflectionFiles)
+	}
 
 	set := &descriptorpb.FileDescriptorSet{}
+	totalDescriptorBytes := 0
 	for _, raw := range fileResponse.FileDescriptorProto {
+		if len(raw) > maxGRPCReflectionDescriptorBytes-totalDescriptorBytes {
+			return nil, fmt.Errorf("grpc reflection descriptors exceed %d bytes", maxGRPCReflectionDescriptorBytes)
+		}
+		totalDescriptorBytes += len(raw)
 		file := &descriptorpb.FileDescriptorProto{}
 		if err := proto.Unmarshal(raw, file); err != nil {
 			return nil, fmt.Errorf("decode reflected descriptor: %w", err)
@@ -557,10 +663,14 @@ func (g *GRPC) loadConfiguredDescriptorFiles(config map[string]any) error {
 		if err != nil {
 			return fmt.Errorf("load grpc descriptor set %q: %w", path, err)
 		}
+		var registerErr error
 		files.RangeFiles(func(file protoreflect.FileDescriptor) bool {
-			registerFileMethods(g.methods, file)
-			return true
+			registerErr = registerFileMethodsBounded(g.methods, file)
+			return registerErr == nil
 		})
+		if registerErr != nil {
+			return registerErr
+		}
 	}
 	return nil
 }
@@ -571,9 +681,12 @@ func readDescriptorSet(path string) (*descriptorpb.FileDescriptorSet, error) {
 		return nil, fmt.Errorf("read grpc descriptor set %q: %w", path, err)
 	}
 	defer f.Close()
-	body, err := fileasset.ReadAllLimited(f)
+	body, err := io.ReadAll(io.LimitReader(f, maxGRPCConfiguredDescriptorBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("read grpc descriptor set %q: %w", path, err)
+	}
+	if len(body) > maxGRPCConfiguredDescriptorBytes {
+		return nil, fmt.Errorf("grpc descriptor set %q exceeds %d bytes", path, maxGRPCConfiguredDescriptorBytes)
 	}
 	set := &descriptorpb.FileDescriptorSet{}
 	if err := proto.Unmarshal(body, set); err == nil {
@@ -585,16 +698,24 @@ func readDescriptorSet(path string) (*descriptorpb.FileDescriptorSet, error) {
 	return set, nil
 }
 
-func registerFileMethods(methods map[string]protoreflect.MethodDescriptor, file protoreflect.FileDescriptor) {
+func registerFileMethodsBounded(methods map[string]protoreflect.MethodDescriptor, file protoreflect.FileDescriptor) error {
 	services := file.Services()
 	for i := 0; i < services.Len(); i++ {
 		service := services.Get(i)
 		serviceName := string(service.FullName())
 		for j := 0; j < service.Methods().Len(); j++ {
 			method := service.Methods().Get(j)
-			methods[serviceName+"/"+string(method.Name())] = method
+			key := serviceName + "/" + string(method.Name())
+			if len(key) > maxGRPCMethodCacheKeyBytes {
+				return fmt.Errorf("grpc configured method target exceeds %d bytes", maxGRPCMethodCacheKeyBytes)
+			}
+			if _, exists := methods[key]; !exists && len(methods) >= maxGRPCMethodCacheEntries {
+				return fmt.Errorf("grpc configured method cache exceeds %d entries", maxGRPCMethodCacheEntries)
+			}
+			methods[key] = method
 		}
 	}
+	return nil
 }
 
 func (g *GRPC) callMetadata(action *protocol.Action) metadata.MD {

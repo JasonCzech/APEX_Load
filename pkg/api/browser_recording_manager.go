@@ -1109,7 +1109,7 @@ func (m *BrowserRecordingManager) broadcast(messageType string, session *Browser
 	if m.hub == nil || session == nil {
 		return
 	}
-	summary := session.summary()
+	summary := sanitizeBrowserRecordingSessionForResponse(session.summary())
 	message := map[string]any{
 		"type":                 messageType,
 		"recording_session_id": summary.ID,
@@ -1117,10 +1117,10 @@ func (m *BrowserRecordingManager) broadcast(messageType string, session *Browser
 		"timestamp":            time.Now(),
 		"session":              summary,
 	}
-	for key, value := range extra {
+	for key, value := range sanitizeBrowserRecordingBroadcastExtra(extra) {
 		message[key] = value
 	}
-	m.hub.BroadcastJSON(message)
+	m.hub.BroadcastScopedJSON("", summary.ProjectID, message)
 }
 
 func (s *BrowserRecordingSession) isLive() bool {
@@ -1179,13 +1179,13 @@ func (s *BrowserRecordingSession) summaryLocked() *BrowserRecordingSession {
 		Name:                s.Name,
 		ProjectID:           s.ProjectID,
 		Status:              s.Status,
-		StartURL:            s.StartURL,
+		StartURL:            scrub.ValueURL(s.StartURL, scrub.Policy{}),
 		CaptureHAR:          s.CaptureHAR,
 		StartedAt:           s.StartedAt,
 		StoppedAt:           s.StoppedAt,
 		StopReason:          s.StopReason,
 		Error:               s.Error,
-		CurrentURL:          s.CurrentURL,
+		CurrentURL:          scrub.ValueURL(s.CurrentURL, scrub.Policy{}),
 		StepCount:           s.StepCount,
 		NavigationCount:     s.NavigationCount,
 		NetworkRequestCount: s.NetworkRequestCount,

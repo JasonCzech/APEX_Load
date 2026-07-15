@@ -17,7 +17,11 @@ import (
 const healProbeTimeout = 2 * time.Second
 
 // maxHealAttempts caps how many ranked fallbacks one action will try.
-const maxHealAttempts = 3
+const (
+	maxHealAttempts          = 3
+	maxSelfHealCacheEntries  = 1024
+	maxSelfHealCacheKeyBytes = 4096
+)
 
 const (
 	browserSelfHealOff        = "off"
@@ -271,7 +275,7 @@ func selfHealActionIdentity(action *protocol.Action, primary string) string {
 }
 
 func (b *Browser) cachedSelfHealCandidate(key string) (selector.Candidate, bool) {
-	if strings.TrimSpace(key) == "" {
+	if strings.TrimSpace(key) == "" || len(key) > maxSelfHealCacheKeyBytes {
 		return selector.Candidate{}, false
 	}
 	b.selfHealMu.Lock()
@@ -284,7 +288,7 @@ func (b *Browser) cachedSelfHealCandidate(key string) (selector.Candidate, bool)
 }
 
 func (b *Browser) storeSelfHealCandidate(key string, candidate selector.Candidate) {
-	if strings.TrimSpace(key) == "" {
+	if strings.TrimSpace(key) == "" || len(key) > maxSelfHealCacheKeyBytes {
 		return
 	}
 	b.selfHealMu.Lock()
@@ -292,11 +296,14 @@ func (b *Browser) storeSelfHealCandidate(key string, candidate selector.Candidat
 	if b.selfHealCache == nil {
 		b.selfHealCache = make(map[string]selector.Candidate)
 	}
+	if _, exists := b.selfHealCache[key]; !exists && len(b.selfHealCache) >= maxSelfHealCacheEntries {
+		b.selfHealCache = make(map[string]selector.Candidate)
+	}
 	b.selfHealCache[key] = candidate
 }
 
 func (b *Browser) forgetSelfHealCandidate(key string) {
-	if strings.TrimSpace(key) == "" {
+	if strings.TrimSpace(key) == "" || len(key) > maxSelfHealCacheKeyBytes {
 		return
 	}
 	b.selfHealMu.Lock()

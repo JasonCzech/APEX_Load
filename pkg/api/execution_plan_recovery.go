@@ -21,18 +21,22 @@ type runningExecutionPlanRunPersistence interface {
 
 var errUnrecoverableSequentialPlanRun = errors.New("sequential execution-plan recovery requires operator review")
 
+const interruptedParallelExecutionPlanTransitionToken = "parallel-materialization-interrupted"
+
 func unrecoverableSequentialPlanRunError(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", errUnrecoverableSequentialPlanRun, fmt.Sprintf(format, args...))
 }
 
 type sequentialPlanRecoveryAction struct {
-	runID  string
-	entry  storage.ExecutionPlanEntry
-	idx    int
-	testID string
-	test   *ManagedTest
-	launch bool
-	start  bool
+	runID     string
+	entry     storage.ExecutionPlanEntry
+	snapshot  storage.ExecutionPlanRunEntry
+	idx       int
+	testID    string
+	test      *ManagedTest
+	leaseTerm executionLeaseTerm
+	launch    bool
+	start     bool
 }
 
 // recoverSequentialExecutionPlanRuns rehydrates every durable sequential run
@@ -43,19 +47,41 @@ func (tr *TestRunner) recoverSequentialExecutionPlanRuns() error {
 	if tr == nil || tr.execPlanRunStore == nil || !tr.holdsExecutionLeadership() {
 		return nil
 	}
+	leaseTerm, err := tr.captureExecutionLeaseTerm()
+	if err != nil {
+		return err
+	}
+	return tr.recoverSequentialExecutionPlanRunsWithTerm(leaseTerm)
+}
+
+func (tr *TestRunner) recoverSequentialExecutionPlanRunsWithTerm(leaseTerm executionLeaseTerm) error {
+	if tr == nil || tr.execPlanRunStore == nil {
+		return nil
+	}
+	if !tr.holdsExecutionLeadership() || !tr.executionLeaseTermCurrent(leaseTerm) {
+		return errNotExecutionLeader
+	}
 	runs, err := tr.runningSequentialExecutionPlanRuns()
 	if err != nil {
 		return executionPlanPersistenceError("load running execution-plan runs for recovery", err)
 	}
 	var recoveryErr error
 	for _, run := range runs {
+		if run == nil || run.RunMode != "parallel" || run.Status != "running" {
+			continue
+		}
+		if err := tr.failInterruptedParallelExecutionPlanRun(run, leaseTerm); err != nil {
+			recoveryErr = errors.Join(recoveryErr, err)
+		}
+	}
+	for _, run := range runs {
 		if run == nil || run.RunMode != "sequential" || run.Status != "running" {
 			continue
 		}
-		action, claimed, err := tr.rehydrateSequentialExecutionPlanRun(run)
+		action, claimed, err := tr.rehydrateSequentialExecutionPlanRun(run, leaseTerm)
 		if err != nil {
 			if errors.Is(err, errUnrecoverableSequentialPlanRun) {
-				if haltErr := tr.haltUnrecoverableSequentialExecutionPlanRun(run, err); haltErr != nil {
+				if haltErr := tr.haltUnrecoverableSequentialExecutionPlanRun(run, err, leaseTerm); haltErr != nil {
 					recoveryErr = errors.Join(recoveryErr, haltErr)
 				}
 				continue
@@ -99,6 +125,134 @@ func (tr *TestRunner) recoverSequentialExecutionPlanRuns() error {
 	return recoveryErr
 }
 
+func (tr *TestRunner) failInterruptedParallelExecutionPlanRun(run *storage.ExecutionPlanRun, leaseTerm executionLeaseTerm) error {
+	if run == nil {
+		return nil
+	}
+	if !tr.executionLeaseTermCurrent(leaseTerm) {
+		return errNotExecutionLeader
+	}
+	recovered := *run
+	recovered.Entries = cloneExecutionPlanRunEntries(run.Entries)
+	var approval *storage.ExecutionPlanApproval
+	for _, entry := range recovered.Entries {
+		if approvalID := strings.TrimSpace(entry.ApprovalID); approvalID != "" {
+			if tr.execPlanScheduleStore == nil {
+				return executionPlanPersistenceError("reload parallel execution-plan approval", fmt.Errorf("approval storage is not configured"))
+			}
+			loaded, err := tr.execPlanScheduleStore.GetExecutionPlanApproval(approvalID)
+			if err != nil || loaded == nil {
+				return executionPlanPersistenceError("reload parallel execution-plan approval", firstNonNilError(err, fmt.Errorf("approval %s was not found", approvalID)))
+			}
+			approval = loaded
+			break
+		}
+	}
+	createdTests := make([]*ManagedTest, 0)
+	failedCount := 0
+	legacyIncomplete := false
+	for i := range recovered.Entries {
+		entry := &recovered.Entries[i]
+		if entry.Status == "skipped" || entry.Status == "complete" || entry.Status == "failed" {
+			if entry.Status == "failed" {
+				failedCount++
+			}
+			continue
+		}
+		if strings.TrimSpace(entry.TestID) == "" || strings.TrimSpace(entry.MaterializationKey) == "" || strings.TrimSpace(entry.RunName) == "" {
+			legacyIncomplete = true
+			if strings.TrimSpace(entry.TestID) != "" && strings.TrimSpace(entry.MaterializationKey) != "" {
+				if err := tr.failExecutionPlanStagedTestWithTerm(entry.TestID, "parallel execution-plan materialization was interrupted before its final durable snapshot", leaseTerm, entry.MaterializationKey); err != nil && !errors.Is(err, errExecutionPlanTestOwnership) {
+					return executionPlanPersistenceError("terminalize correlated interrupted parallel plan test "+entry.TestID, err)
+				}
+			}
+			entry.Status = "failed"
+			entry.Detail = "parallel recovery cannot replay an incomplete immutable materialization snapshot"
+			failedCount++
+			continue
+		}
+		tr.mu.RLock()
+		test := tr.tests[entry.TestID]
+		tr.mu.RUnlock()
+		if test != nil && strings.TrimSpace(test.MaterializationKey) != strings.TrimSpace(entry.MaterializationKey) {
+			entry.Status = "failed"
+			entry.Detail = "deterministic test id is owned by another materialization"
+			failedCount++
+			continue
+		}
+		newlyCreated := false
+		if test == nil {
+			if err := tr.validateExecutionPlanApprovalMaterialization(run.PlanID, run.ID, approval); err != nil {
+				entry.Status, entry.Detail = "failed", err.Error()
+				failedCount++
+				continue
+			}
+			req, err := buildPlanEntryCreateRequest(entry.RunName, run.ProjectID, nil, executionPlanEntryFromRunEntry(*entry))
+			if err == nil {
+				req.MaterializationKey = entry.MaterializationKey
+				req.ExecutionPlanApproval = approval
+				test, err = tr.createTestWithIDAndTerm(req, false, entry.TestID, leaseTerm)
+			}
+			if err != nil {
+				if errors.Is(err, errNotExecutionLeader) {
+					return err
+				}
+				entry.Status, entry.Detail = "failed", err.Error()
+				failedCount++
+				continue
+			}
+			newlyCreated = true
+		}
+		// Recovery is the continuation of the original materialization
+		// transaction. Re-run the post-create governance check even when the
+		// deterministic staged row already existed before takeover.
+		if err := tr.validateExecutionPlanApprovalMaterialization(run.PlanID, run.ID, approval); err != nil {
+			if failErr := tr.failExecutionPlanStagedTestWithTerm(test.ID, err.Error(), leaseTerm, entry.MaterializationKey); failErr != nil && !errors.Is(failErr, errExecutionPlanTestOwnership) {
+				return executionPlanPersistenceError("terminalize governance-invalid recovered parallel test "+test.ID, failErr)
+			}
+			entry.Status, entry.Detail = "failed", err.Error()
+			failedCount++
+			continue
+		}
+		if newlyCreated {
+			createdTests = append(createdTests, test)
+		}
+		entry.Status = "created"
+		entry.Detail = ""
+		if entry.AttribSubject != "" {
+			tr.AttributeTestCreated(test.ID, entry.AttribSubject, entry.AttribName)
+		}
+		tr.AttributeTestExecutionPlanApproval(test.ID, approval)
+	}
+	now := time.Now().UTC()
+	recovered.Status = "completed"
+	if failedCount > 0 {
+		recovered.Status = "failed"
+	}
+	recovered.UpdatedAt = now
+	recovered.CompletedAt = &now
+	recovered.TransitionToken = ""
+	if legacyIncomplete {
+		recovered.TransitionToken = interruptedParallelExecutionPlanTransitionToken
+	}
+	if err := tr.persistExecutionPlanRunDurableWithTerm(&recovered, leaseTerm); err != nil {
+		if errors.Is(err, errExecutionPlanRunConflict) && tr.execPlanRunStore != nil {
+			current, loadErr := tr.execPlanRunStore.GetExecutionPlanRun(run.ID)
+			if loadErr == nil && current != nil && current.Status != "running" {
+				return nil
+			}
+		}
+		return executionPlanPersistenceError("complete recovered parallel execution-plan run "+run.ID, err)
+	}
+	for _, test := range createdTests {
+		tr.broadcastEvent("test_created", test)
+	}
+	tr.consumeExecutionPlanApprovalWithTerm(approval, run.ID, leaseTerm)
+	tr.handoffParallelExecutionPlanTestsWithTerm(&recovered, leaseTerm)
+	tr.broadcastExecutionPlanEvent("execution_plan_run_finished", &recovered, nil)
+	return nil
+}
+
 func (tr *TestRunner) runningSequentialExecutionPlanRuns() ([]*storage.ExecutionPlanRun, error) {
 	if store, ok := tr.execPlanRunStore.(runningExecutionPlanRunPersistence); ok {
 		return store.ListRunningExecutionPlanRuns()
@@ -109,14 +263,14 @@ func (tr *TestRunner) runningSequentialExecutionPlanRuns() ([]*storage.Execution
 	}
 	filtered := make([]*storage.ExecutionPlanRun, 0, len(runs))
 	for _, run := range runs {
-		if run != nil && run.RunMode == "sequential" && run.Status == "running" {
+		if run != nil && run.Status == "running" {
 			filtered = append(filtered, run)
 		}
 	}
 	return filtered, nil
 }
 
-func (tr *TestRunner) rehydrateSequentialExecutionPlanRun(run *storage.ExecutionPlanRun) (sequentialPlanRecoveryAction, bool, error) {
+func (tr *TestRunner) rehydrateSequentialExecutionPlanRun(run *storage.ExecutionPlanRun, leaseTerm executionLeaseTerm) (sequentialPlanRecoveryAction, bool, error) {
 	if run == nil {
 		return sequentialPlanRecoveryAction{}, false, nil
 	}
@@ -172,6 +326,7 @@ func (tr *TestRunner) rehydrateSequentialExecutionPlanRun(run *storage.Execution
 		status:     "running",
 		revision:   run.Revision,
 		createdAt:  run.CreatedAt,
+		leaseTerm:  leaseTerm,
 		rehydrated: true,
 		recovering: true,
 	}
@@ -218,12 +373,13 @@ func (tr *TestRunner) rehydrateSequentialExecutionPlanRun(run *storage.Execution
 	}
 	tr.seqMu.Unlock()
 
-	action := sequentialPlanRecoveryAction{runID: run.ID, idx: activeIdx}
+	action := sequentialPlanRecoveryAction{runID: run.ID, idx: activeIdx, leaseTerm: leaseTerm}
 	if activeIdx < 0 || claimedWithoutTest {
 		action.launch = true
 		return action, true, nil
 	}
 	action.entry = entries[activeIdx]
+	action.snapshot = statuses[activeIdx]
 	testID := strings.TrimSpace(statuses[activeIdx].TestID)
 	action.testID = testID
 	if testID == "" {
@@ -237,7 +393,7 @@ func (tr *TestRunner) rehydrateSequentialExecutionPlanRun(run *storage.Execution
 // row instead of returning an error that blocks all pending-test promotion. The
 // terminal row and entry detail are the operator-review artifact; once saved it
 // is excluded from subsequent running-run scans.
-func (tr *TestRunner) haltUnrecoverableSequentialExecutionPlanRun(run *storage.ExecutionPlanRun, cause error) error {
+func (tr *TestRunner) haltUnrecoverableSequentialExecutionPlanRun(run *storage.ExecutionPlanRun, cause error, leaseTerm executionLeaseTerm) error {
 	if run == nil {
 		return nil
 	}
@@ -270,7 +426,7 @@ func (tr *TestRunner) haltUnrecoverableSequentialExecutionPlanRun(run *storage.E
 	halted.UpdatedAt = now
 	halted.CompletedAt = &now
 	halted.TransitionToken = ""
-	if err := tr.persistExecutionPlanRunDurable(&halted); err != nil {
+	if err := tr.persistExecutionPlanRunDurableWithTerm(&halted, leaseTerm); err != nil {
 		return executionPlanPersistenceError("halt unrecoverable execution-plan run "+run.ID, err)
 	}
 	tr.discardRehydratedSequentialPlanRun(run.ID)
@@ -338,25 +494,46 @@ func (tr *TestRunner) recoveredSequentialEntries(run *storage.ExecutionPlanRun, 
 }
 
 func (tr *TestRunner) resumeRecoveredSequentialPlanRun(action sequentialPlanRecoveryAction) error {
-	if !tr.isExecutionLeader() {
+	if !tr.isExecutionLeader() || !tr.executionLeaseTermCurrent(action.leaseTerm) {
 		return errNotExecutionLeader
 	}
 	if action.launch {
-		if err := tr.launchNextPlanEntry(action.runID); err != nil {
-			tr.enqueueExecutionPlanRunAdvanceRetry(action.runID)
+		if err := tr.launchNextPlanEntryWithTerm(action.runID, action.leaseTerm); err != nil {
+			tr.enqueueExecutionPlanRunAdvanceRetryWithTerm(action.runID, action.leaseTerm)
 			return err
 		}
 		return nil
 	}
 	if action.test == nil {
-		return tr.failRecoveredSequentialEntry(action, "persisted execution-plan entry references a missing test")
+		test, err := tr.materializeRecoveredSequentialTest(action)
+		if err != nil {
+			if errors.Is(err, errNotExecutionLeader) {
+				return err
+			}
+			return tr.failRecoveredSequentialEntry(action, "recovered test could not be materialized: "+err.Error())
+		}
+		action.test = test
+		action.start = testexec.IsStartableTestStatus(test.Status)
 	}
 	switch action.test.Status {
 	case "COMPLETE", "FAILED", "ABORTED":
-		return tr.advanceExecutionPlanForTest(action.test, action.test.Status)
+		return tr.advanceExecutionPlanForTestWithTerm(action.test, action.test.Status, action.leaseTerm)
 	}
 	if action.start {
-		if err := tr.StartTest(action.test.ID); err != nil {
+		tr.seqMu.Lock()
+		state := tr.seqPlanRuns[action.runID]
+		if state == nil || state.leaseTerm != action.leaseTerm {
+			tr.seqMu.Unlock()
+			return errNotExecutionLeader
+		}
+		planID, approval := state.planID, state.approval
+		tr.seqMu.Unlock()
+		if validationErr := tr.validateExecutionPlanApprovalMaterialization(planID, action.runID, approval); validationErr != nil {
+			cleanupErr := tr.failExecutionPlanStagedTestWithTerm(action.test.ID, validationErr.Error(), action.leaseTerm, action.snapshot.MaterializationKey)
+			recoveryErr := tr.failRecoveredSequentialEntry(action, "recovered test governance validation failed: "+validationErr.Error())
+			return errors.Join(cleanupErr, recoveryErr)
+		}
+		if err := tr.startExecutionPlanTestWithTerm(action.test.ID, action.leaseTerm); err != nil {
 			if errors.Is(err, errNotExecutionLeader) {
 				return err
 			}
@@ -372,8 +549,55 @@ func (tr *TestRunner) resumeRecoveredSequentialPlanRun(action sequentialPlanReco
 	}
 }
 
+func (tr *TestRunner) materializeRecoveredSequentialTest(action sequentialPlanRecoveryAction) (*ManagedTest, error) {
+	snapshot := action.snapshot
+	if strings.TrimSpace(action.testID) == "" || strings.TrimSpace(snapshot.MaterializationKey) == "" || strings.TrimSpace(snapshot.RunName) == "" {
+		return nil, fmt.Errorf("persisted execution-plan entry references a missing test and its immutable materialization snapshot is incomplete")
+	}
+	if snapshot.TestID != action.testID || snapshot.ScenarioID != action.entry.ScenarioID {
+		return nil, fmt.Errorf("immutable materialization snapshot correlation does not match the claimed entry")
+	}
+
+	tr.seqMu.Lock()
+	st := tr.seqPlanRuns[action.runID]
+	if st == nil || st.leaseTerm != action.leaseTerm || action.idx < 0 || action.idx >= len(st.statuses) || st.statuses[action.idx].TestID != action.testID {
+		tr.seqMu.Unlock()
+		return nil, errNotExecutionLeader
+	}
+	planID := st.planID
+	projectID := st.projectID
+	approval := st.approval
+	tr.seqMu.Unlock()
+	if err := tr.validateExecutionPlanApprovalMaterialization(planID, action.runID, approval); err != nil {
+		return nil, err
+	}
+	req, err := buildPlanEntryCreateRequest(snapshot.RunName, projectID, nil, executionPlanEntryFromRunEntry(snapshot))
+	if err != nil {
+		return nil, err
+	}
+	req.MaterializationKey = snapshot.MaterializationKey
+	req.ExecutionPlanApproval = approval
+	test, err := tr.createTestWithIDAndTerm(req, false, action.testID, action.leaseTerm)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(test.MaterializationKey) != strings.TrimSpace(snapshot.MaterializationKey) {
+		return nil, errExecutionPlanTestOwnership
+	}
+	if err := tr.validateExecutionPlanApprovalMaterialization(planID, action.runID, approval); err != nil {
+		cleanupErr := tr.failExecutionPlanStagedTestWithTerm(test.ID, err.Error(), action.leaseTerm, snapshot.MaterializationKey)
+		return nil, errors.Join(err, cleanupErr)
+	}
+	tr.broadcastEvent("test_created", test)
+	if snapshot.AttribSubject != "" {
+		tr.AttributeTestCreated(test.ID, snapshot.AttribSubject, snapshot.AttribName)
+	}
+	tr.AttributeTestExecutionPlanApproval(test.ID, approval)
+	return test, nil
+}
+
 func (tr *TestRunner) failRecoveredSequentialEntry(action sequentialPlanRecoveryAction, detail string) error {
-	halted, err := tr.recordPlanEntryFailure(action.runID, action.idx, action.entry, detail)
+	halted, err := tr.recordPlanEntryFailureWithTerm(action.runID, action.idx, action.entry, detail, action.leaseTerm)
 	if err != nil {
 		return err
 	}
@@ -387,8 +611,8 @@ func (tr *TestRunner) failRecoveredSequentialEntry(action sequentialPlanRecovery
 	if halted {
 		return nil
 	}
-	if err := tr.launchNextPlanEntry(action.runID); err != nil {
-		tr.enqueueExecutionPlanRunAdvanceRetry(action.runID)
+	if err := tr.launchNextPlanEntryWithTerm(action.runID, action.leaseTerm); err != nil {
+		tr.enqueueExecutionPlanRunAdvanceRetryWithTerm(action.runID, action.leaseTerm)
 		return err
 	}
 	return nil
@@ -401,6 +625,12 @@ func (tr *TestRunner) populateSequentialRecoveryTest(action *sequentialPlanRecov
 	tr.mu.RLock()
 	action.test = tr.tests[action.testID]
 	tr.mu.RUnlock()
+	if action.test != nil && strings.TrimSpace(action.snapshot.MaterializationKey) != "" &&
+		strings.TrimSpace(action.test.MaterializationKey) != strings.TrimSpace(action.snapshot.MaterializationKey) {
+		// Never attach a deterministic execution-plan claim to an unrelated test
+		// that later reused/squatted the same UUID.
+		action.test = nil
+	}
 	action.start = action.test != nil && testexec.IsStartableTestStatus(action.test.Status)
 }
 
@@ -468,6 +698,17 @@ func cloneExecutionPlanRunEntries(entries []storage.ExecutionPlanRunEntry) []sto
 }
 
 func (tr *TestRunner) enqueueSequentialExecutionPlanRecoveryRetry() {
+	leaseTerm, err := tr.captureExecutionLeaseTerm()
+	if err != nil {
+		return
+	}
+	tr.enqueueSequentialExecutionPlanRecoveryRetryWithTerm(leaseTerm)
+}
+
+func (tr *TestRunner) enqueueSequentialExecutionPlanRecoveryRetryWithTerm(leaseTerm executionLeaseTerm) {
+	if !tr.executionLeaseTermCurrent(leaseTerm) {
+		return
+	}
 	const key = "recovery"
 	if !tr.beginExecutionPlanRetry(key) {
 		return
@@ -475,11 +716,11 @@ func (tr *TestRunner) enqueueSequentialExecutionPlanRecoveryRetry() {
 	go func() {
 		defer tr.endExecutionPlanRetry(key)
 		delay := executionPlanRetryInitialDelay
-		for tr.executionPlanRetryAllowed() {
-			if !tr.waitExecutionPlanRetry(delay) {
+		for tr.executionPlanRetryAllowed(leaseTerm) {
+			if !tr.waitExecutionPlanRetry(delay, leaseTerm) {
 				return
 			}
-			if err := tr.recoverSequentialExecutionPlanRuns(); err == nil {
+			if err := tr.recoverSequentialExecutionPlanRunsWithTerm(leaseTerm); err == nil {
 				tr.promotePendingTests()
 				return
 			} else {

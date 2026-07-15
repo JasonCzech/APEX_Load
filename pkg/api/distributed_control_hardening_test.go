@@ -244,13 +244,27 @@ func (c *blockingAssignClient) AssignWork(ctx context.Context, assignment genera
 	}
 }
 
+func (c *blockingAssignClient) CommitWorkAt(ctx context.Context, testID string, executionGeneration uint64, startAt time.Time) (generatorrpc.WorkCommitResult, error) {
+	committer, ok := c.generatorClient.(coordinatedWorkCommitClient)
+	if !ok {
+		return generatorrpc.WorkCommitResult{}, errors.New("wrapped generator does not support coordinated commit")
+	}
+	return committer.CommitWorkAt(ctx, testID, executionGeneration, startAt)
+}
+
 func TestDistributedEvacuationRollsBackNewCandidateWhenStopWinsCommit(t *testing.T) {
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
 	listener := bufconn.Listen(1024 * 1024)
 	grpcServer := grpc.NewServer()
 	service := generatorrpc.NewService("generator-b", 10)
 	pb.RegisterGeneratorControlServer(grpcServer, service)
 	go func() { _ = grpcServer.Serve(listener) }()
 	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := service.Shutdown(ctx); err != nil {
+			t.Errorf("generator service shutdown: %v", err)
+		}
 		grpcServer.Stop()
 		_ = listener.Close()
 	})
@@ -313,6 +327,8 @@ func TestDistributedEvacuationRollsBackNewCandidateWhenStopWinsCommit(t *testing
 	}()
 	select {
 	case <-assigned:
+	case err := <-evacuated:
+		t.Fatalf("evacuation stopped before assigning the replacement generator: %v", err)
 	case <-time.After(2 * time.Second):
 		t.Fatal("evacuation did not assign the replacement generator")
 	}
@@ -370,7 +386,9 @@ func TestDistributedStopTestContextFansOutWithinParentDeadline(t *testing.T) {
 		}
 	}
 	backend := newDistributedExecutionBackend(targets, 5*time.Second, nil)
-	test := &ManagedTest{ID: "parallel-stop", Status: "STOPPING", remoteClientsByTarget: clients}
+	// A live run context must not hide the caller's shorter shutdown/API
+	// deadline.
+	test := &ManagedTest{ID: "parallel-stop", Status: "STOPPING", executionCtx: context.Background(), remoteClientsByTarget: clients}
 	runner := &TestRunner{tests: map[string]*ManagedTest{test.ID: test}}
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
@@ -388,5 +406,91 @@ func TestDistributedStopTestContextFansOutWithinParentDeadline(t *testing.T) {
 	state.mu.Unlock()
 	if maxActive != len(targets) {
 		t.Fatalf("maximum concurrent remote stops = %d, want %d", maxActive, len(targets))
+	}
+}
+
+func TestWholeRunControlsHoldStableDistributedTopology(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		status    string
+		configure func(*lifecycleTransitionBackend, chan struct{}, <-chan struct{})
+		invoke    func(*TestRunner, string) error
+	}{
+		{
+			name:   "pause",
+			status: "RUNNING",
+			configure: func(backend *lifecycleTransitionBackend, entered chan struct{}, release <-chan struct{}) {
+				backend.pauseHook = func(*TestRunner, *ManagedTest) { close(entered); <-release }
+			},
+			invoke: func(runner *TestRunner, id string) error { return runner.PauseTest(id) },
+		},
+		{
+			name:   "resume",
+			status: "PAUSED",
+			configure: func(backend *lifecycleTransitionBackend, entered chan struct{}, release <-chan struct{}) {
+				backend.resumeHook = func(*TestRunner, *ManagedTest) { close(entered); <-release }
+			},
+			invoke: func(runner *TestRunner, id string) error { return runner.ResumeTest(id) },
+		},
+		{
+			name:   "duration",
+			status: "RUNNING",
+			configure: func(backend *lifecycleTransitionBackend, entered chan struct{}, release <-chan struct{}) {
+				backend.durationHook = func(*TestRunner, *ManagedTest) { close(entered); <-release }
+			},
+			invoke: func(runner *TestRunner, id string) error { return runner.AdjustDuration(id, 2*time.Minute) },
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := NewTestRunner(1, NewHub(), nil)
+			backend := &lifecycleTransitionBackend{}
+			entered := make(chan struct{})
+			release := make(chan struct{})
+			tc.configure(backend, entered, release)
+			runner.setExecutionBackend(backend)
+			test := &ManagedTest{
+				ID: "topology-control-" + tc.name, Status: tc.status,
+				Duration: time.Minute, DurationStr: time.Minute.String(),
+				executionBackend: backend,
+			}
+			if tc.status == "PAUSED" {
+				pausedAt := time.Now().UTC()
+				test.PausedAt = &pausedAt
+			}
+			runner.tests[test.ID] = test
+
+			controlDone := make(chan error, 1)
+			go func() { controlDone <- tc.invoke(runner, test.ID) }()
+			select {
+			case <-entered:
+			case <-time.After(time.Second):
+				t.Fatal("control fan-out did not start")
+			}
+
+			topologyAcquired := make(chan struct{})
+			topologyRelease := make(chan struct{})
+			go func() {
+				unlock := runner.lockDistributedTopologyControl(test.ID)
+				close(topologyAcquired)
+				<-topologyRelease
+				unlock()
+			}()
+			select {
+			case <-topologyAcquired:
+				t.Fatal("topology replacement overlapped whole-run control fan-out")
+			case <-time.After(50 * time.Millisecond):
+			}
+
+			close(release)
+			if err := <-controlDone; err != nil {
+				t.Fatalf("control returned error: %v", err)
+			}
+			select {
+			case <-topologyAcquired:
+			case <-time.After(time.Second):
+				t.Fatal("topology replacement did not proceed after control commit")
+			}
+			close(topologyRelease)
+		})
 	}
 }

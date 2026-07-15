@@ -15,6 +15,7 @@ import (
 
 	recbrowser "github.com/jasonczech/apexload/pkg/recorder/browser"
 	"github.com/jasonczech/apexload/pkg/scrub"
+	"github.com/jasonczech/apexload/pkg/selector"
 )
 
 func newBrowserRecorderTestServer(t *testing.T, fake *fakeBrowserRecorderBackend) *Server {
@@ -319,6 +320,77 @@ func TestHandleGetAndStopBrowserRecording(t *testing.T) {
 	server.mux.ServeHTTP(missingResp, missing)
 	if missingResp.Code != http.StatusNotFound {
 		t.Errorf("missing session status = %d, want 404", missingResp.Code)
+	}
+}
+
+func TestHandleGetBrowserRecordingScrubsViewerAndGatesRawView(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	now := time.Now().UTC()
+	artifact := &recbrowser.Session{
+		ID:       "browser-sensitive",
+		StartURL: "https://start-user:start-password@app.example/login?access_token=start-token",
+		Steps: []recbrowser.Step{{
+			Seq:       1,
+			Kind:      recbrowser.StepFill,
+			Value:     "short-password",
+			URL:       "https://app.example/form?session_id=step-token",
+			Thumbnail: "data:image/jpeg;base64,sensitive-screen-pixels",
+			Element:   &selector.ElementMetadata{Name: "password", Type: "password"},
+		}},
+		NavEvents:   []recbrowser.NavEvent{{URL: "https://app.example/callback?token=navigation-token"}},
+		Annotations: []recbrowser.Annotation{{Text: "authorization=annotation-token", URL: "https://app.example/error?api_key=annotation-key"}},
+	}
+	info := &BrowserRecordingSession{
+		ID:        artifact.ID,
+		Name:      "Sensitive",
+		ProjectID: "project-a",
+		Status:    BrowserRecordingStopped,
+		StartURL:  artifact.StartURL,
+		StartedAt: now,
+		final:     artifact,
+	}
+	server.browserRecording.mu.Lock()
+	server.browserRecording.sessions[info.ID] = info
+	server.browserRecording.mu.Unlock()
+
+	viewer := &AuthenticatedUser{
+		GlobalRoles:  map[string]struct{}{},
+		ProjectRoles: map[string]map[string]struct{}{"project-a": {RoleViewer: {}}},
+	}
+	request := func(target string, user *AuthenticatedUser) *http.Request {
+		req := httptest.NewRequest(http.MethodGet, target, nil)
+		req.SetPathValue("id", info.ID)
+		return withAuthenticatedContext(req, authResolution{User: user})
+	}
+
+	resp := httptest.NewRecorder()
+	server.handleGetBrowserRecording(resp, request("/api/v1/browser-recorder/sessions/"+info.ID, viewer))
+	if resp.Code != http.StatusOK {
+		t.Fatalf("viewer session status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	if got := resp.Header().Get("X-APEXLoad-Sensitivity"); got != scrub.SensitivityScrubbed {
+		t.Fatalf("viewer sensitivity = %q, want %q", got, scrub.SensitivityScrubbed)
+	}
+	for _, leaked := range []string{"start-password", "start-token", "short-password", "step-token", "sensitive-screen-pixels", "navigation-token", "annotation-token", "annotation-key"} {
+		if strings.Contains(resp.Body.String(), leaked) {
+			t.Fatalf("viewer session leaked %q: %s", leaked, resp.Body.String())
+		}
+	}
+	if !strings.Contains(resp.Body.String(), scrub.Redacted) {
+		t.Fatalf("viewer response has no redaction marker: %s", resp.Body.String())
+	}
+
+	denied := httptest.NewRecorder()
+	server.handleGetBrowserRecording(denied, request("/api/v1/browser-recorder/sessions/"+info.ID+"?raw=true", viewer))
+	if denied.Code != http.StatusForbidden {
+		t.Fatalf("viewer raw session status = %d, want 403 body=%s", denied.Code, denied.Body.String())
+	}
+
+	editor := &AuthenticatedUser{GlobalRoles: map[string]struct{}{RoleEditor: {}}, ProjectRoles: map[string]map[string]struct{}{}}
+	raw := httptest.NewRecorder()
+	server.handleGetBrowserRecording(raw, request("/api/v1/browser-recorder/sessions/"+info.ID+"?raw=true", editor))
+	if raw.Code != http.StatusOK || !strings.Contains(raw.Body.String(), "short-password") {
+		t.Fatalf("editor raw session status/body = %d %s", raw.Code, raw.Body.String())
 	}
 }
 
@@ -695,8 +767,8 @@ func TestHandleOpenBrowserRecordingControlPanel(t *testing.T) {
 	mismatchReq.Header.Set("Origin", "http://127.0.0.1:3000")
 	mismatchResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(mismatchResp, mismatchReq)
-	if mismatchResp.Code != http.StatusBadRequest {
-		t.Errorf("mismatched origin status = %d, want 400 body=%s", mismatchResp.Code, mismatchResp.Body.String())
+	if mismatchResp.Code != http.StatusForbidden {
+		t.Errorf("mismatched origin status = %d, want 403 body=%s", mismatchResp.Code, mismatchResp.Body.String())
 	}
 
 	for _, tc := range []struct {

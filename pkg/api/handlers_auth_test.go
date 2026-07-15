@@ -580,8 +580,12 @@ func TestHandleServiceAccountCRUD(t *testing.T) {
 	}
 	defer store.Close()
 
+	now := time.Now().UTC()
+	if err := store.SaveProject(&storage.Project{ID: "project-a", Name: "Project A", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveProject returned error: %v", err)
+	}
 	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
-	expiresAt := time.Now().UTC().Add(24 * time.Hour).Truncate(time.Second)
+	expiresAt := now.Add(24 * time.Hour).Truncate(time.Second)
 	body, _ := json.Marshal(map[string]any{
 		"name":                   "Nightly CI",
 		"description":            "Runs automation",
@@ -1018,6 +1022,40 @@ func TestCanManageBindingAllowsScopedDelegationAcrossSupportedScopes(t *testing.
 				t.Fatalf("canManageBinding() = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestCanManageBindingAllowsRepositoryAdminForDescendantProject(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "repository-binding.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Now().UTC()
+	domain := &storage.Domain{ID: "binding-domain", Name: "Binding Domain", CreatedAt: now}
+	repository := &storage.ApplicationRepository{ID: "binding-repository", DomainID: domain.ID, Name: "Binding Repository", CreatedAt: now}
+	category := &storage.RepositoryCategory{ID: "binding-category", DomainID: domain.ID, RepositoryID: repository.ID, Name: "Binding Category", CreatedAt: now}
+	project := &storage.Project{ID: "binding-project", DomainID: domain.ID, CategoryID: category.ID, Name: "Binding Project", CreatedAt: now}
+	if err := store.CreateDomainHierarchy(domain, repository, category); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveProject(project); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/users/user-id/bindings", nil)
+	user := &AuthenticatedUser{
+		RepositoryRoles: map[string]map[string]struct{}{repository.ID: {RoleProjectAdmin: {}}},
+		GlobalRoles:     map[string]struct{}{},
+	}
+	req = req.WithContext(context.WithValue(req.Context(), authUserContextKey{}, user))
+	binding := &storage.UserRoleBinding{ScopeType: "project", ScopeID: project.ID, Role: RoleEditor}
+	if !canManageBinding(req, store, binding) {
+		t.Fatal("repository project_admin was denied management of a descendant project binding")
+	}
+	binding.ScopeID = storage.DefaultProjectID
+	if canManageBinding(req, store, binding) {
+		t.Fatal("repository project_admin managed a project outside its repository")
 	}
 }
 

@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/internal/zipbounds"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -25,6 +26,14 @@ type libraryArchiveImport struct {
 }
 
 const libraryArchiveMultipartMetadataBytes = int64(20 << 20)
+
+const (
+	maxLibraryArchiveEntries               = 4_096
+	maxLibraryArchiveCentralDirectoryBytes = 8 << 20
+	maxLibraryArchiveEntryNameBytes        = 1 << 10
+	maxLibraryArchiveEntryExtraBytes       = 4 << 10
+	maxLibraryArchiveEntryCommentBytes     = 1 << 10
+)
 
 type libraryArchiveRequestReader struct {
 	reader    io.Reader
@@ -237,7 +246,19 @@ func copyWithMaxBytes(dst io.Writer, src io.Reader, maxBytes int64) (int64, erro
 }
 
 func unzipArchiveFile(zipPath string, destination string, maxBytes int64) error {
-	const maxLibraryArchiveEntries = 10_000
+	if maxBytes <= 0 {
+		maxBytes = defaultLibraryArchiveMaxBytes
+	}
+	if err := zipbounds.ValidateFile(zipPath, zipbounds.Limits{
+		MaxArchiveBytes:          maxBytes,
+		MaxEntries:               maxLibraryArchiveEntries,
+		MaxCentralDirectoryBytes: maxLibraryArchiveCentralDirectoryBytes,
+		MaxNameBytes:             maxLibraryArchiveEntryNameBytes,
+		MaxExtraBytes:            maxLibraryArchiveEntryExtraBytes,
+		MaxCommentBytes:          maxLibraryArchiveEntryCommentBytes,
+	}); err != nil {
+		return fmt.Errorf("validate archive zip structure: %w", err)
+	}
 	reader, err := zip.OpenReader(zipPath)
 	if err != nil {
 		return fmt.Errorf("open archive zip: %w", err)
@@ -246,30 +267,35 @@ func unzipArchiveFile(zipPath string, destination string, maxBytes int64) error 
 	if len(reader.File) > maxLibraryArchiveEntries {
 		return fmt.Errorf("archive contains %d entries, limit is %d", len(reader.File), maxLibraryArchiveEntries)
 	}
-	if err := os.MkdirAll(destination, 0o755); err != nil {
+	if err := os.MkdirAll(destination, 0o700); err != nil {
 		return err
 	}
 	var total int64
+	seen := make(map[string]struct{}, len(reader.File))
 	for _, file := range reader.File {
 		cleanName := filepath.Clean(file.Name)
-		if cleanName == "." || strings.HasPrefix(cleanName, ".."+string(filepath.Separator)) || filepath.IsAbs(cleanName) {
+		if cleanName == "." || strings.Contains(file.Name, "\\") || strings.HasPrefix(cleanName, ".."+string(filepath.Separator)) || filepath.IsAbs(cleanName) {
 			return fmt.Errorf("archive contains unsafe path %q", file.Name)
 		}
+		if _, duplicate := seen[cleanName]; duplicate {
+			return fmt.Errorf("archive contains duplicate path %q", file.Name)
+		}
+		seen[cleanName] = struct{}{}
 		target := filepath.Join(destination, cleanName)
 		if file.FileInfo().IsDir() {
-			if err := os.MkdirAll(target, file.Mode()); err != nil {
+			if err := os.MkdirAll(target, 0o700); err != nil {
 				return err
 			}
 			continue
 		}
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
 			return err
 		}
 		src, err := file.Open()
 		if err != nil {
 			return err
 		}
-		dst, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, file.Mode())
+		dst, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 		if err != nil {
 			_ = src.Close()
 			return err

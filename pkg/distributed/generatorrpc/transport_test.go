@@ -12,6 +12,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -135,6 +136,76 @@ func TestTransport_PlaintextDefault(t *testing.T) {
 	security := TransportSecurityFromEnv()
 	if !security.Insecure() || security.String() != "plaintext+no-token" {
 		t.Fatalf("expected insecure posture, got %s", security.String())
+	}
+}
+
+func TestTransportAcceptsScriptAtConfiguredContentLimit(t *testing.T) {
+	clearTransportEnv(t)
+	const scriptLimit = 1024
+	t.Setenv(envGeneratorScriptMaxBytes, "1024")
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	target := startTestServer(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	client, err := Dial(ctx, target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+
+	result, err := client.DistributeScript(ctx, Script{
+		ID:          "exact-limit",
+		Content:     make([]byte, scriptLimit),
+		ContentHash: "hash",
+	})
+	if err != nil {
+		t.Fatalf("exact-limit script rejected by transport: %v", err)
+	}
+	if result.ContentHash != "hash" {
+		t.Fatalf("exact-limit script hash = %q, want service acknowledgement", result.ContentHash)
+	}
+	if got := generatorRPCMaxReceiveBytes(); got <= scriptLimit {
+		t.Fatalf("transport receive limit = %d, want protobuf envelope headroom above %d", got, scriptLimit)
+	}
+
+	assignment, err := client.AssignWork(ctx, Assignment{
+		TestID:        "exact-limit-assignment",
+		GroupName:     "group",
+		ScriptID:      "inline",
+		ScriptContent: make([]byte, scriptLimit),
+		VUserCount:    1,
+		DataFiles: []DataFile{{
+			Name:    "input.bin",
+			Content: make([]byte, 1<<20),
+		}},
+	})
+	if err != nil {
+		t.Fatalf("application-valid assignment rejected by transport: %v", err)
+	}
+	if !assignment.Accepted {
+		t.Fatalf("application-valid assignment rejected by service: %s", assignment.ErrorMessage)
+	}
+}
+
+func TestAssignWorkRejectsAncillaryBytesBeyondTransportBudget(t *testing.T) {
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	service := NewService("ancillary-limit", 10, WithGeneratorScriptCacheByteLimit(1024))
+	ack, err := service.AssignWork(context.Background(), &pb.WorkAssignment{
+		TestId:     "oversized-assignment",
+		GroupName:  "group",
+		ScriptId:   "script",
+		VuserCount: 1,
+		DataFiles: []*pb.DataFile{{
+			Name:    "input.bin",
+			Content: make([]byte, (1<<20)+2048),
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ack.GetAccepted() || !strings.Contains(ack.GetErrorMessage(), "data and metadata") {
+		t.Fatalf("oversized assignment acknowledgement = %#v", ack)
 	}
 }
 

@@ -17,18 +17,18 @@ func RunScriptShakeout(ctx context.Context, groupName string, script *dsl.Script
 
 	proto, err := protocol.Get(script.Protocol)
 	if err != nil {
-		return fmt.Errorf("protocol init: %w", err)
+		return fmt.Errorf("protocol init: %s", scrubSensitiveText(err.Error()))
 	}
 
-	secretResolver := newDefaultSecretResolver()
+	secretResolver := defaultSecretResolverForScript(script)
 	if err := proto.Init(ctx, buildProtoConfigForRunModeWithSecretResolver(script, "replay", secretResolver)); err != nil {
-		return fmt.Errorf("protocol init: %w", err)
+		return fmt.Errorf("protocol init: %s", scrubSensitiveText(err.Error()))
 	}
 	defer proto.Teardown(context.Background())
 
 	dataProvider, err := NewDataProvider(script.DataSources)
 	if err != nil {
-		return fmt.Errorf("data source init: %w", err)
+		return fmt.Errorf("data source init: %s", scrubSensitiveText(err.Error()))
 	}
 
 	vu := &VUser{
@@ -64,12 +64,15 @@ func RunScriptShakeout(ctx context.Context, groupName string, script *dsl.Script
 
 func runShakeoutAction(ctx context.Context, vu *VUser, action dsl.Action, phase string) error {
 	if handled, err := vu.handleEngineAction(ctx, action); handled {
-		return err
+		if err == nil {
+			return nil
+		}
+		return fmt.Errorf("%s", scrubSensitiveTextWithConfig(err.Error(), vu.RedactionConfig))
 	}
 	resolved := vu.resolveAction(action)
 	result, err := vu.executeWithRetry(ctx, resolved, vu.Script.Config.ErrorHandling)
 	if err != nil {
-		return fmt.Errorf("%s %q error: %w", phase, action.Name, err)
+		return fmt.Errorf("%s", scrubSensitiveTextWithConfig(fmt.Sprintf("%s %q error: %s", phase, action.Name, err), vu.RedactionConfig))
 	}
 	if result == nil {
 		return fmt.Errorf("%s %q returned no result", phase, action.Name)
@@ -80,7 +83,7 @@ func runShakeoutAction(ctx context.Context, vu *VUser, action dsl.Action, phase 
 		if reason == "" {
 			reason = fmt.Sprintf("status %d", result.StatusCode)
 		}
-		return fmt.Errorf("%s %q failed: %s", phase, action.Name, reason)
+		return fmt.Errorf("%s", scrubSensitiveTextWithConfig(fmt.Sprintf("%s %q failed: %s", phase, action.Name, reason), vu.RedactionConfig))
 	}
 	return nil
 }

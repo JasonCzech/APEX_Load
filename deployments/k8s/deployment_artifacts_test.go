@@ -86,7 +86,7 @@ func TestKEDAScaledObjectsProtectActiveDemand(t *testing.T) {
 		"onprem/generator-keda-scaledobject.yaml",
 		"local/generator-keda-scaledobject.yaml",
 	} {
-			t.Run(path, func(t *testing.T) {
+		t.Run(path, func(t *testing.T) {
 			content := readTextFile(t, path)
 			checks := []string{
 				"metricName: apexload_active_vusers",
@@ -138,6 +138,42 @@ func TestGeneratorManifestsUseGRPCHealthProbes(t *testing.T) {
 				t.Fatalf("%s must probe the dedicated unauthenticated health-only listener on 9092", path)
 			}
 		})
+	}
+}
+
+func TestProductionGeneratorManifestsPersistExecutionFenceState(t *testing.T) {
+	for _, path := range []string{
+		"onprem/generator-statefulset.yaml",
+		"aks/generator-statefulset.yaml",
+		"../helm/apexload/templates/generator.yaml",
+	} {
+		t.Run(path, func(t *testing.T) {
+			content := readTextFile(t, path)
+			for _, required := range []string{
+				"APEXLOAD_GENERATOR_STATE_DIR",
+				"APEXLOAD_ARCHIVE_DIR",
+				"/var/lib/apexload-generator",
+				"/var/lib/apexload-generator/archives",
+				"name: generator-state",
+				"persistentVolumeClaimRetentionPolicy:",
+				"whenDeleted: Retain",
+				"whenScaled: Retain",
+				"volumeClaimTemplates:",
+			} {
+				if !strings.Contains(content, required) {
+					t.Fatalf("%s missing durable generator fencing state setting %q", path, required)
+				}
+			}
+			if !strings.Contains(path, "../helm/") && !strings.Contains(content, "ReadWriteOnce") {
+				t.Fatalf("%s must request a per-ordinal ReadWriteOnce volume", path)
+			}
+		})
+	}
+	values := readTextFile(t, "../helm/apexload/values.yaml")
+	for _, required := range []string{"statePersistence:", "ReadWriteOnce", "storageClassName:", "size: 10Gi"} {
+		if !strings.Contains(values, required) {
+			t.Fatalf("Helm values missing generator state persistence setting %q", required)
+		}
 	}
 }
 

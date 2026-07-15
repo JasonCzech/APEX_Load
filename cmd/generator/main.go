@@ -22,14 +22,31 @@ import (
 )
 
 const (
-	activeVUserDrainTimeout = 100 * time.Second
-	serviceShutdownTimeout  = 10 * time.Second
-	grpcShutdownTimeout     = 5 * time.Second
+	generatorTerminationBudget = 120 * time.Second
+	shutdownSafetyMargin       = 10 * time.Second
+	serviceShutdownTimeout     = 10 * time.Second
+	grpcShutdownTimeout        = 5 * time.Second
+	activeVUserDrainTimeout    = generatorTerminationBudget - shutdownSafetyMargin - serviceShutdownTimeout - 2*grpcShutdownTimeout
 )
 
 type grpcStopper interface {
 	GracefulStop()
 	Stop()
+}
+
+type generatorReadinessSource interface {
+	ReadinessError() error
+	ReadinessChanges() <-chan struct{}
+}
+
+type generatorShutdownService interface {
+	SetDraining(bool)
+	ActiveVUsers() int32
+	Shutdown(context.Context) error
+}
+
+type healthStatusSetter interface {
+	SetServingStatus(string, healthpb.HealthCheckResponse_ServingStatus)
 }
 
 func main() {
@@ -80,7 +97,7 @@ func main() {
 
 	grpcServer := grpc.NewServer(serverOptions...)
 	healthServer := health.NewServer()
-	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
+	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_NOT_SERVING)
 	// Keep health on a dedicated service-only listener. Kubernetes native gRPC
 	// probes cannot present the production mTLS certificate or bearer token, so
 	// probing the secured control listener makes every healthy pod unready.
@@ -97,7 +114,13 @@ func main() {
 	healthGRPCServer := grpc.NewServer()
 	healthpb.RegisterHealthServer(healthGRPCServer, healthServer)
 	controlService := generatorrpc.NewService(generatorID, cfg.MaxVUsers, generatorrpc.WithExecution())
+	if err := controlService.ReadinessError(); err != nil {
+		slog.Error("refusing to start without durable generator execution fencing", "generator_id", generatorID, "err", err)
+		os.Exit(1)
+	}
 	pb.RegisterGeneratorControlServer(grpcServer, controlService)
+	publishGeneratorHealth(controlService, healthServer)
+	go monitorGeneratorHealth(ctx, controlService, healthServer)
 
 	errCh := make(chan error, 2)
 	go func() {
@@ -109,38 +132,87 @@ func main() {
 
 	slog.Info("apexload generator starting", "addr", cfg.ListenAddr, "health_addr", healthAddr, "generator_id", generatorID, "max_vusers", cfg.MaxVUsers, "grpc_transport", security.String())
 
+	waitForNaturalDrain := false
+	serverFailed := false
 	select {
 	case <-ctx.Done():
 		slog.Info("generator shutting down")
-		controlService.SetDraining(true)
-		healthServer.SetServingStatus("", healthpb.HealthCheckResponse_NOT_SERVING)
+		waitForNaturalDrain = true
+	case err := <-errCh:
+		slog.Error("generator server error", "err", err)
+		serverFailed = true
+	}
+
+	// A fatal Serve error must take the same archive-safe shutdown path as a
+	// signal. Skipping directly to os.Exit can leave open run manifests and the
+	// durable terminal evidence needed by the replacement controller. Do not
+	// wait for a natural drain when one listener is already unavailable.
+	shutdownGeneratorRuntime(controlService, healthServer, grpcServer, healthGRPCServer, waitForNaturalDrain)
+	if serverFailed {
+		os.Exit(1)
+	}
+}
+
+func shutdownGeneratorRuntime(service generatorShutdownService, health healthStatusSetter, controlServer grpcStopper, healthServer grpcStopper, waitForNaturalDrain bool) {
+	if service == nil {
+		return
+	}
+	service.SetDraining(true)
+	if health != nil {
+		health.SetServingStatus("", healthpb.HealthCheckResponse_NOT_SERVING)
+	}
+	if waitForNaturalDrain {
 		deadline := time.NewTimer(activeVUserDrainTimeout)
-		defer deadline.Stop()
 		ticker := time.NewTicker(500 * time.Millisecond)
-		defer ticker.Stop()
-		for controlService.ActiveVUsers() > 0 {
+		for service.ActiveVUsers() > 0 {
 			select {
 			case <-deadline.C:
-				slog.Warn("generator drain deadline reached", "active_vusers", controlService.ActiveVUsers())
-				goto stop
+				slog.Warn("generator drain deadline reached", "active_vusers", service.ActiveVUsers())
+				goto drained
 			case <-ticker.C:
 			}
 		}
-	stop:
-		drainCtx, drainCancel := context.WithTimeout(context.Background(), serviceShutdownTimeout)
-		if err := controlService.Shutdown(drainCtx); err != nil {
-			slog.Warn("generator service shutdown incomplete", "err", err)
+	drained:
+		ticker.Stop()
+		deadline.Stop()
+	}
+
+	drainCtx, drainCancel := context.WithTimeout(context.Background(), serviceShutdownTimeout)
+	if err := service.Shutdown(drainCtx); err != nil {
+		slog.Warn("generator service shutdown incomplete", "err", err)
+	}
+	drainCancel()
+	if controlServer != nil && !gracefulStopWithTimeout(controlServer, grpcShutdownTimeout) {
+		slog.Warn("generator control gRPC graceful shutdown timed out; forced stop")
+	}
+	if healthServer != nil && !gracefulStopWithTimeout(healthServer, grpcShutdownTimeout) {
+		slog.Warn("generator health gRPC graceful shutdown timed out; forced stop")
+	}
+}
+
+func publishGeneratorHealth(source generatorReadinessSource, health healthStatusSetter) {
+	if health == nil {
+		return
+	}
+	if source == nil || source.ReadinessError() != nil {
+		health.SetServingStatus("", healthpb.HealthCheckResponse_NOT_SERVING)
+		return
+	}
+	health.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
+}
+
+func monitorGeneratorHealth(ctx context.Context, source generatorReadinessSource, health healthStatusSetter) {
+	if ctx == nil || source == nil || health == nil {
+		return
+	}
+	changes := source.ReadinessChanges()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-changes:
+			publishGeneratorHealth(source, health)
 		}
-		drainCancel()
-		if !gracefulStopWithTimeout(grpcServer, grpcShutdownTimeout) {
-			slog.Warn("generator control gRPC graceful shutdown timed out; forced stop")
-		}
-		if !gracefulStopWithTimeout(healthGRPCServer, grpcShutdownTimeout) {
-			slog.Warn("generator health gRPC graceful shutdown timed out; forced stop")
-		}
-	case err := <-errCh:
-		slog.Error("generator server error", "err", err)
-		os.Exit(1)
 	}
 }
 

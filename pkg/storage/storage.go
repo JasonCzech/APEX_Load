@@ -74,8 +74,8 @@ type Store interface {
 	// without rewriting approval/binding state from a stale read. When resetApproval
 	// is true, approval and binding are deliberately cleared for changed terms.
 	UpdateCapacityReservationDetails(reservation *CapacityReservation, resetApproval bool) error
-	// UpdateCapacityReservationBinding atomically binds a reservation to a test
-	// only if it is not already bound; the bool reports whether the bind happened.
+	// UpdateCapacityReservationBinding atomically binds both the reservation and
+	// test rows only if neither side is already bound; the bool reports success.
 	UpdateCapacityReservationBinding(id string, testID *string, testStatus *string, updatedAt time.Time) (bool, error)
 	// ClearCapacityReservationBinding releases a reservation only if it is still
 	// bound to the supplied test id.
@@ -345,16 +345,16 @@ type ServiceAccount struct {
 // already-encrypted ciphertext — the storage layer never sees plaintext tokens;
 // encryption/decryption happens in the API layer.
 type GitHubConnection struct {
-	UserID          string
-	GitHubLogin     string
-	GitHubUserID    string
-	AccessTokenEnc  string
-	RefreshTokenEnc string
-	TokenType       string
-	Scopes          string
-	ExpiresAt       *time.Time
-	ConnectedAt     time.Time
-	UpdatedAt       time.Time
+	UserID          string     `json:"user_id"`
+	GitHubLogin     string     `json:"github_login"`
+	GitHubUserID    string     `json:"github_user_id"`
+	AccessTokenEnc  string     `json:"-"`
+	RefreshTokenEnc string     `json:"-"`
+	TokenType       string     `json:"token_type,omitempty"`
+	Scopes          string     `json:"scopes,omitempty"`
+	ExpiresAt       *time.Time `json:"expires_at,omitempty"`
+	ConnectedAt     time.Time  `json:"connected_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
 }
 
 // GitHubConnectionStore is an optional capability (type-asserted from Store,
@@ -747,21 +747,47 @@ type ScenarioScheduleWindow struct {
 }
 
 type ScenarioScheduleOccurrence struct {
-	ID               string     `json:"id"`
-	ScheduleID       string     `json:"schedule_id"`
-	ScenarioID       string     `json:"scenario_id"`
-	ProjectID        string     `json:"project_id,omitempty"`
-	ScheduleRevision int        `json:"schedule_revision,omitempty"`
-	PlannedAt        time.Time  `json:"planned_at"`
-	MaterializedAt   *time.Time `json:"materialized_at,omitempty"`
-	Status           string     `json:"status"`
-	ReasonCode       string     `json:"reason_code,omitempty"`
-	TestID           string     `json:"test_id,omitempty"`
-	ApprovalID       string     `json:"approval_id,omitempty"`
-	ConflictSummary  string     `json:"conflict_summary,omitempty"`
-	CreatedAt        time.Time  `json:"created_at"`
-	UpdatedAt        time.Time  `json:"updated_at"`
+	ID               string `json:"id"`
+	ScheduleID       string `json:"schedule_id"`
+	ScenarioID       string `json:"scenario_id"`
+	ProjectID        string `json:"project_id,omitempty"`
+	ScheduleRevision int    `json:"schedule_revision,omitempty"`
+	Revision         int64  `json:"revision,omitempty"`
+	// TransitionToken is an internal compare-and-swap fence. It must never be
+	// exposed through the REST representations that marshal this storage type.
+	TransitionToken string     `json:"-"`
+	PlannedAt       time.Time  `json:"planned_at"`
+	MaterializedAt  *time.Time `json:"materialized_at,omitempty"`
+	Status          string     `json:"status"`
+	ReasonCode      string     `json:"reason_code,omitempty"`
+	TestID          string     `json:"test_id,omitempty"`
+	ApprovalID      string     `json:"approval_id,omitempty"`
+	ConflictSummary string     `json:"conflict_summary,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
 }
+
+// ScheduleDeleteResult distinguishes a missing schedule from a schedule whose
+// durable occurrence anchor is still in flight. Callers must surface the latter
+// as a conflict; cascading it would erase the scheduler's idempotency fence.
+type ScheduleDeleteResult string
+
+const (
+	ScheduleDeleteDeleted                   ScheduleDeleteResult = "deleted"
+	ScheduleDeleteMissing                   ScheduleDeleteResult = "missing"
+	ScheduleDeleteBlockedByActiveOccurrence ScheduleDeleteResult = "blocked_active_occurrence"
+)
+
+// ScheduleOccurrenceDeleteResult permits pruning only terminal history. An
+// active occurrence is the durable correlation boundary for materialization and
+// cannot be removed safely while a test/run side effect may still be pending.
+type ScheduleOccurrenceDeleteResult string
+
+const (
+	ScheduleOccurrenceDeleteDeleted         ScheduleOccurrenceDeleteResult = "deleted"
+	ScheduleOccurrenceDeleteMissing         ScheduleOccurrenceDeleteResult = "missing"
+	ScheduleOccurrenceDeleteBlockedByStatus ScheduleOccurrenceDeleteResult = "blocked_nonterminal_status"
+)
 
 type ScenarioScheduleApproval struct {
 	ID               string     `json:"id"`
@@ -817,6 +843,7 @@ type CapacityReservationRequest struct {
 type SchedulerLease struct {
 	Name       string    `json:"name"`
 	OwnerID    string    `json:"owner_id"`
+	Generation uint64    `json:"generation"`
 	AcquiredAt time.Time `json:"acquired_at"`
 	ExpiresAt  time.Time `json:"expires_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
@@ -957,10 +984,10 @@ type ArchiveFinalizationJob struct {
 	Generation       int64            `json:"generation"`
 	// IntentToken is regenerated for every logical upsert. Unlike Generation,
 	// it cannot suffer ABA when a completed row is deleted and later recreated.
-	IntentToken string `json:"intent_token"`
+	IntentToken string `json:"-"`
 	// RefreshToken is the archive-refresh intent observed while this publication
 	// was created. Completion conditionally acknowledges only that token.
-	RefreshToken string    `json:"refresh_token,omitempty"`
+	RefreshToken string    `json:"-"`
 	Attempts     int       `json:"attempts"`
 	LastError    string    `json:"last_error,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
@@ -976,7 +1003,7 @@ type ArchiveRefreshJob struct {
 	TestID      string    `json:"test_id"`
 	ProjectID   string    `json:"project_id"`
 	Generation  int64     `json:"generation"`
-	IntentToken string    `json:"intent_token"`
+	IntentToken string    `json:"-"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
@@ -1027,6 +1054,7 @@ type ScriptRecordingRecord struct {
 type TestRecord struct {
 	ID                    string     `json:"id"`
 	RefKey                string     `json:"ref_key,omitempty"`
+	MaterializationKey    string     `json:"materialization_key,omitempty"`
 	Name                  string     `json:"name"`
 	Status                string     `json:"status"`
 	ApplicationID         string     `json:"application_id,omitempty"`
@@ -1044,6 +1072,10 @@ type TestRecord struct {
 	StartTime             time.Time  `json:"start_time"`
 	ScheduledStartAt      *time.Time `json:"scheduled_start_at,omitempty"`
 	PendingSince          *time.Time `json:"pending_since,omitempty"`
+	PausedAt              *time.Time `json:"paused_at,omitempty"`
+	CumulativePause       int64      `json:"cumulative_pause_ns,omitempty"`
+	CapacityWindowStartAt *time.Time `json:"capacity_window_start_at,omitempty"`
+	CapacityWindowEndAt   *time.Time `json:"capacity_window_end_at,omitempty"`
 	BaselinePinned        bool       `json:"baseline_pinned,omitempty"`
 	BaselinePinnedAt      *time.Time `json:"baseline_pinned_at,omitempty"`
 	EndTime               *time.Time `json:"end_time,omitempty"`
@@ -1063,3 +1095,20 @@ type TestRecord struct {
 	// at launch time.
 	TimeslotID *string `json:"timeslot_id,omitempty"`
 }
+
+// TestBaselineState is the durable baseline projection returned after an
+// atomic comparison-scope pin/unpin operation.
+type TestBaselineState struct {
+	ID       string
+	Pinned   bool
+	PinnedAt *time.Time
+}
+
+type TestStatusTransitionResult string
+
+const (
+	TestStatusTransitionUpdated   TestStatusTransitionResult = "updated"
+	TestStatusTransitionUnchanged TestStatusTransitionResult = "unchanged"
+	TestStatusTransitionFenced    TestStatusTransitionResult = "fenced"
+	TestStatusTransitionMissing   TestStatusTransitionResult = "missing"
+)

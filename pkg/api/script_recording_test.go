@@ -92,8 +92,8 @@ func TestRedactBaselineObservationRedactsXMLAndMultipartCredentials(t *testing.T
 					t.Fatalf("request credential %q leaked into baseline: %q", secret, got.RequestBody)
 				}
 			}
-			if !strings.Contains(got.RequestBody, "csrf-keep") {
-				t.Fatalf("request correlation token was not preserved: %q", got.RequestBody)
+			if strings.Contains(got.RequestBody, "csrf-keep") || !strings.Contains(got.RequestBody, scrub.Redacted) {
+				t.Fatalf("request CSRF token was not redacted from persisted view: %q", got.RequestBody)
 			}
 		})
 	}

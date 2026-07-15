@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -119,18 +120,17 @@ func (s *Server) handleUpdateObjectRepository(w http.ResponseWriter, r *http.Req
 	req.ID = existing.ID
 	req.ProjectID = existing.ProjectID
 	req.CreatedAt = existing.CreatedAt
-	// SaveObjectRepository UPSERTs the whole row, so any field the caller omits
+	// Source is immutable provenance, not an editor-owned field.
+	req.Source = existing.Source
+	// The update replaces editor-owned fields, so any field the caller omits
 	// would be reset to its zero value. Preserve omitted optional fields from the
-	// existing record: `source` (provenance, set once at creation) and
-	// `auto_promote_on_heal` (a heal preference toggled from a separate control).
+	// existing record: `auto_promote_on_heal` (a heal preference toggled from a
+	// separate control).
 	// This stops a partial update — e.g. a candidate promotion that sends only
 	// name/description/objects — from silently wiping them, while an explicit
 	// toggle (which does send the key) still takes effect.
 	var present map[string]json.RawMessage
 	if json.Unmarshal(raw, &present) == nil {
-		if _, sent := present["source"]; !sent {
-			req.Source = existing.Source
-		}
 		if _, sent := present["auto_promote_on_heal"]; !sent {
 			req.AutoPromoteOnHeal = existing.AutoPromoteOnHeal
 		}
@@ -139,8 +139,20 @@ func (s *Server) handleUpdateObjectRepository(w http.ResponseWriter, r *http.Req
 		writeError(w, status, msg)
 		return
 	}
-	if err := s.store.SaveObjectRepository(&req); err != nil {
+	updater, supported := s.store.(interface {
+		UpdateObjectRepositoryIfUnchanged(repo *storage.ObjectRepository, expectedUpdatedAt time.Time) (bool, error)
+	})
+	if !supported {
+		writeError(w, http.StatusNotImplemented, "optimistic object repository updates are not supported by this storage backend")
+		return
+	}
+	updated, err := updater.UpdateObjectRepositoryIfUnchanged(&req, existing.UpdatedAt)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !updated {
+		writeError(w, http.StatusConflict, "object repository changed while the update was in flight; reload and retry")
 		return
 	}
 	s.recordAuditEvent(r, "object_repository.update", "success", "object_repository", req.ID, req.ProjectID, map[string]any{"objects": len(req.Objects)})
@@ -153,16 +165,38 @@ func (s *Server) handleDeleteObjectRepository(w http.ResponseWriter, r *http.Req
 		return
 	}
 	id := r.PathValue("id")
-	projectID := ""
-	if repo, err := s.store.GetObjectRepository(id); err == nil && repo != nil {
-		projectID = repo.ProjectID
+	repo, err := s.store.GetObjectRepository(id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "object repository not found")
+		} else {
+			writeError(w, http.StatusInternalServerError, err.Error())
+		}
+		return
 	}
-	if err := s.store.DeleteObjectRepository(id); err != nil {
+	deleted, err := s.deleteObjectRepositoryIfUnreferenced(repo)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	s.recordAuditEvent(r, "object_repository.delete", "success", "object_repository", id, projectID, nil)
+	if !deleted {
+		writeError(w, http.StatusConflict, "object repository changed or is referenced by one or more scripts")
+		return
+	}
+	s.recordAuditEvent(r, "object_repository.delete", "success", "object_repository", id, repo.ProjectID, nil)
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
+}
+
+func (s *Server) deleteObjectRepositoryIfUnreferenced(repo *storage.ObjectRepository) (bool, error) {
+	if repo == nil {
+		return false, nil
+	}
+	if guarded, ok := s.store.(interface {
+		DeleteObjectRepositoryIfUnreferencedAndUnchanged(string, time.Time) (bool, error)
+	}); ok {
+		return guarded.DeleteObjectRepositoryIfUnreferencedAndUnchanged(repo.ID, repo.UpdatedAt)
+	}
+	return false, errors.New("guarded object repository deletion is not supported by this storage backend")
 }
 
 // handleObjectRepositoryFromScript seeds a new repository from a script's
@@ -193,6 +227,9 @@ func (s *Server) handleObjectRepositoryFromScript(w http.ResponseWriter, r *http
 		writeError(w, http.StatusNotFound, "script not found")
 		return
 	}
+	if !requireAuthorizedProjectMatch(w, r, stored.ProjectID) {
+		return
+	}
 	objects := objectRepositoryObjectsFromScript(stored.Script, scriptID)
 	if len(objects) == 0 {
 		writeError(w, http.StatusBadRequest, "script has no element selectors to import")
@@ -213,27 +250,52 @@ func (s *Server) handleObjectRepositoryFromScript(w http.ResponseWriter, r *http
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	s.recordAuditEvent(r, "object_repository.from_script", "success", "object_repository", repo.ID, repo.ProjectID, map[string]any{
-		"name": repo.Name, "objects": len(repo.Objects), "source_script_id": scriptID,
-	})
-
 	// Optionally bind the source script's actions to the new repository so the
 	// authoring loop (seed → bind → maintain centrally) closes in one call.
 	if req.BindScript {
 		bindCopy := cloneScriptDefinition(stored.Script)
 		if bound := bindScriptToObjectRepository(bindCopy, repo); bound > 0 {
-			_, ok, err := s.runner.UpdateScriptDurable(scriptID, bindCopy)
+			_, ok, err := s.runner.UpdateScriptDurableInProject(scriptID, bindCopy, repo.ProjectID)
 			if err != nil {
+				cleaned, cleanupErr := s.deleteObjectRepositoryIfUnreferenced(repo)
+				if cleanupErr == nil && !cleaned {
+					cleanupErr = errors.New("repository was changed or adopted by another script")
+				}
+				if errors.Is(err, errScriptConcurrentChange) {
+					if cleanupErr != nil {
+						writeError(w, http.StatusInternalServerError, "script changed while repository bindings were in flight and repository cleanup failed: "+cleanupErr.Error())
+						return
+					}
+					writeError(w, http.StatusConflict, err.Error())
+					return
+				}
+				if cleanupErr != nil {
+					writeError(w, http.StatusInternalServerError, "failed to save repository bindings and repository cleanup failed: "+cleanupErr.Error())
+					return
+				}
 				writeError(w, http.StatusInternalServerError, "failed to save repository bindings: "+err.Error())
 				return
 			}
-			if ok {
-				s.recordAuditEvent(r, "object_repository.bind_script", "success", "script", scriptID, repo.ProjectID, map[string]any{
-					"object_repository_id": repo.ID, "bound": bound,
-				})
+			if !ok {
+				cleaned, cleanupErr := s.deleteObjectRepositoryIfUnreferenced(repo)
+				if cleanupErr == nil && !cleaned {
+					cleanupErr = errors.New("repository was changed or adopted by another script")
+				}
+				if cleanupErr != nil {
+					writeError(w, http.StatusInternalServerError, "source script disappeared while repository bindings were in flight and repository cleanup failed: "+cleanupErr.Error())
+					return
+				}
+				writeError(w, http.StatusConflict, "source script changed while repository bindings were in flight; reload and retry")
+				return
 			}
+			s.recordAuditEvent(r, "object_repository.bind_script", "success", "script", scriptID, repo.ProjectID, map[string]any{
+				"object_repository_id": repo.ID, "bound": bound,
+			})
 		}
 	}
+	s.recordAuditEvent(r, "object_repository.from_script", "success", "object_repository", repo.ID, repo.ProjectID, map[string]any{
+		"name": repo.Name, "objects": len(repo.Objects), "source_script_id": scriptID,
+	})
 
 	writeJSON(w, http.StatusCreated, repo)
 }

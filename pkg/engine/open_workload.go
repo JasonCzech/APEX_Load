@@ -14,7 +14,8 @@ func isOpenWorkload(script *dsl.Script) bool {
 	if script == nil {
 		return false
 	}
-	return strings.EqualFold(script.Config.RunLogic.WorkloadModel, "open") && script.Config.Pacing.Type == "tps" && script.Config.Pacing.TPS > 0
+	tps := script.Config.Pacing.TPS
+	return strings.EqualFold(script.Config.RunLogic.WorkloadModel, "open") && script.Config.Pacing.Type == "tps" && tps > 0 && !math.IsNaN(tps) && !math.IsInf(tps, 0)
 }
 
 // defaultOpenWorkloadInFlightPerTPS bounds the live arrival-worker set, in the
@@ -36,15 +37,22 @@ func openWorkloadInFlightLimit(script *dsl.Script) int {
 		return 0
 	}
 	if explicit := script.Config.RunLogic.MaxInFlight; explicit > 0 {
-		return explicit
+		return min(explicit, dsl.MaxOpenWorkloadInFlight)
 	}
 	tps := script.Config.Pacing.TPS
 	if tps <= 0 {
 		return 0
 	}
+	maxDerivedTPS := float64(dsl.MaxOpenWorkloadInFlight / defaultOpenWorkloadInFlightPerTPS)
+	if tps >= maxDerivedTPS {
+		return dsl.MaxOpenWorkloadInFlight
+	}
 	limit := int(math.Ceil(tps)) * defaultOpenWorkloadInFlightPerTPS
 	if limit < defaultOpenWorkloadInFlightPerTPS {
 		limit = defaultOpenWorkloadInFlightPerTPS
+	}
+	if limit > dsl.MaxOpenWorkloadInFlight {
+		return dsl.MaxOpenWorkloadInFlight
 	}
 	return limit
 }
@@ -68,6 +76,7 @@ func newInFlightLimiter(max int) *inFlightLimiter {
 	if max <= 0 {
 		return nil
 	}
+	max = min(max, dsl.MaxOpenWorkloadInFlight)
 	return &inFlightLimiter{tokens: make(chan struct{}, max)}
 }
 
@@ -114,6 +123,10 @@ func openWorkloadArrivalLimit(iterationsPerWorker, workers int) (int, bool) {
 	if iterationsPerWorker <= 0 || workers <= 0 {
 		return 0, false
 	}
+	maxInt := int(^uint(0) >> 1)
+	if iterationsPerWorker > maxInt/workers {
+		return maxInt, true
+	}
 	return iterationsPerWorker * workers, true
 }
 
@@ -129,23 +142,23 @@ func cloneSingleIterationScript(script *dsl.Script) *dsl.Script {
 	return &clone
 }
 
-func runArrivalScheduler(ctx context.Context, tps float64, totalArrivals int, waitIfPaused func(context.Context) error, dispatch func(arrivalIndex int)) {
-	if tps <= 0 {
+func runArrivalScheduler(ctx context.Context, tps float64, totalArrivals int, waitIfPaused func(context.Context) error, sleepActive func(context.Context, time.Duration) bool, dispatch func(arrivalIndex int)) {
+	if tps <= 0 || math.IsNaN(tps) || math.IsInf(tps, 0) {
 		return
 	}
+	tps = min(tps, float64(dsl.MaxPacingTPS))
 	interval := time.Duration(float64(time.Second) / tps)
 	if interval <= 0 {
 		interval = time.Nanosecond
 	}
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
 	for arrival := 0; totalArrivals <= 0 || arrival < totalArrivals; arrival++ {
 		if arrival > 0 {
-			select {
-			case <-ctx.Done():
+			if sleepActive != nil {
+				if !sleepActive(ctx, interval) {
+					return
+				}
+			} else if !sleepContext(ctx, interval) {
 				return
-			case <-ticker.C:
 			}
 		}
 		if waitIfPaused != nil {

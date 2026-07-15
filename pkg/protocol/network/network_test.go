@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-ldap/ldap/v3"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
@@ -242,6 +243,77 @@ func TestNetworkProtocolFTPCommand(t *testing.T) {
 	}
 	if result.DependencyType != "network_ftp" || !strings.Contains(result.ResponseBody, "fake ftp ready") {
 		t.Fatalf("result = %#v, want ftp diagnostics", result)
+	}
+}
+
+func TestNetworkTextProtocolsRejectOversizedServerLine(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer listener.Close()
+	go func() {
+		conn, acceptErr := listener.Accept()
+		if acceptErr != nil {
+			return
+		}
+		defer conn.Close()
+		_, _ = conn.Write([]byte("220 " + strings.Repeat("x", hardNetworkTextLineBytes+1)))
+	}()
+
+	netProto := &Network{}
+	if err := netProto.Init(context.Background(), map[string]any{"network_timeout_ms": float64(1000)}); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	result, err := netProto.Execute(context.Background(), &protocol.Action{Name: "ftp", Type: "ftp_noop", Target: listener.Addr().String()})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if result.Success || !strings.Contains(result.ErrorMessage, "line exceeds") {
+		t.Fatalf("result = %#v, want bounded line error", result)
+	}
+}
+
+func TestBoundedProtocolReaderRejectsLineAndAggregateFloods(t *testing.T) {
+	for name, payload := range map[string]string{
+		"line count": strings.Repeat("x\n", hardNetworkTextLines+1),
+		"aggregate":  strings.Repeat("0123456789\n", hardNetworkTextResponseBytes/11+1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := io.ReadAll(newBoundedProtocolReader(strings.NewReader(payload)))
+			if err == nil {
+				t.Fatal("ReadAll returned nil error for response flood")
+			}
+		})
+	}
+}
+
+func TestBoundedLDAPEntriesRejectsLargeValuesAndCardinality(t *testing.T) {
+	entry := ldap.NewEntry("cn=test", map[string][]string{"payload": {strings.Repeat("x", hardLDAPValueBytes+1)}})
+	if _, err := boundedLDAPEntries([]*ldap.Entry{entry}); err == nil || !strings.Contains(err.Error(), "value exceeds") {
+		t.Fatalf("large LDAP value error = %v", err)
+	}
+	entries := make([]*ldap.Entry, hardLDAPMaxEntries+1)
+	if _, err := boundedLDAPEntries(entries); err == nil || !strings.Contains(err.Error(), "entries") {
+		t.Fatalf("LDAP entry cardinality error = %v", err)
+	}
+}
+
+func TestBoundedLDAPConnectionRejectsOversizedWireResponse(t *testing.T) {
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+	go func() {
+		chunk := make([]byte, 64<<10)
+		for written := 0; written <= hardLDAPWireResponseBytes; written += len(chunk) {
+			if _, err := server.Write(chunk); err != nil {
+				return
+			}
+		}
+	}()
+	_, err := io.ReadAll(&boundedLDAPNetConn{Conn: client, remaining: hardLDAPWireResponseBytes})
+	if err == nil || !strings.Contains(err.Error(), "LDAP response exceeds") {
+		t.Fatalf("oversized LDAP wire error = %v", err)
 	}
 }
 

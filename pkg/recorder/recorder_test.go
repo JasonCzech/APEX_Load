@@ -31,6 +31,24 @@ func TestNewRecorder(t *testing.T) {
 	if r2.addr != defaultProxyAddr {
 		t.Fatalf("expected default %s, got %s", defaultProxyAddr, r2.addr)
 	}
+	transport, ok := r.proxyClient.Transport.(*http.Transport)
+	if !ok || transport.MaxResponseHeaderBytes != maxRecorderHeaderBytes {
+		t.Fatalf("upstream response header limit = %#v, want %d", transport, maxRecorderHeaderBytes)
+	}
+}
+
+func TestStartProxyBoundsInboundHeaders(t *testing.T) {
+	rec := New("127.0.0.1:0")
+	if err := rec.StartProxy(); err != nil {
+		t.Fatal(err)
+	}
+	defer rec.StopProxy()
+	rec.mu.RLock()
+	server := rec.proxy
+	rec.mu.RUnlock()
+	if server == nil || server.MaxHeaderBytes != maxRecorderHeaderBytes {
+		t.Fatalf("proxy MaxHeaderBytes = %#v, want %d", server, maxRecorderHeaderBytes)
+	}
 }
 
 func allowPrivateProxyTargets(t *testing.T) {
@@ -78,6 +96,82 @@ func TestStartSessionRejectsExcessiveBodyCaptureLimit(t *testing.T) {
 	rec := New(defaultProxyAddr)
 	if _, err := rec.StartSession("project", "large", SessionFilters{BodyCaptureLimitBytes: maxBodyCaptureLimitBytes + 1}, nil); err == nil {
 		t.Fatal("StartSession accepted an excessive body capture limit")
+	}
+}
+
+func TestStartSessionBoundsRetainedInputs(t *testing.T) {
+	tests := []struct {
+		name      string
+		id        string
+		session   string
+		projectID string
+		filters   SessionFilters
+	}{
+		{name: "id", id: strings.Repeat("i", maxRecorderSessionIDBytes+1)},
+		{name: "name", id: "session", session: strings.Repeat("n", maxRecorderSessionNameBytes+1)},
+		{name: "project", id: "session", projectID: strings.Repeat("p", maxRecorderProjectIDBytes+1)},
+		{name: "filter entries", id: "session", filters: SessionFilters{ExcludeHosts: make([]string, maxRecorderFilterEntries+1)}},
+		{name: "filter value", id: "session", filters: SessionFilters{IncludeHosts: []string{strings.Repeat("h", maxRecorderFilterValueBytes+1)}}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := New(defaultProxyAddr)
+			if _, err := rec.StartSessionForProject(tc.id, tc.session, tc.projectID, tc.filters, nil); err == nil {
+				t.Fatal("StartSessionForProject accepted an oversized retained input")
+			}
+		})
+	}
+}
+
+func TestStartSessionEvictsOldestStoppedSessionAtCountLimit(t *testing.T) {
+	rec := New(defaultProxyAddr)
+	base := time.Now().Add(-time.Hour)
+	for index := 0; index < maxRetainedRecorderSessions; index++ {
+		stopped := base.Add(time.Duration(index) * time.Second)
+		id := fmt.Sprintf("old-%02d", index)
+		rec.sessions[id] = &Session{
+			ID:            id,
+			Status:        "stopped",
+			StartedAt:     stopped,
+			StoppedAt:     &stopped,
+			retainedBytes: 1024,
+		}
+	}
+
+	if _, err := rec.StartSession("new", "new", SessionFilters{}, nil); err != nil {
+		t.Fatalf("StartSession: %v", err)
+	}
+	if _, ok := rec.sessions["old-00"]; ok {
+		t.Fatal("oldest stopped session was not evicted")
+	}
+	if len(rec.sessions) != maxRetainedRecorderSessions {
+		t.Fatalf("retained sessions = %d, want %d", len(rec.sessions), maxRetainedRecorderSessions)
+	}
+}
+
+func TestStartSessionEvictsStoppedSessionsToReserveByteBudget(t *testing.T) {
+	rec := New(defaultProxyAddr)
+	base := time.Now().Add(-time.Hour)
+	for index := 0; index < 2; index++ {
+		stopped := base.Add(time.Duration(index) * time.Second)
+		id := fmt.Sprintf("old-%d", index)
+		rec.sessions[id] = &Session{
+			ID:            id,
+			Status:        "stopped",
+			StartedAt:     stopped,
+			StoppedAt:     &stopped,
+			retainedBytes: 300 << 20,
+		}
+	}
+
+	if _, err := rec.StartSession("new", "new", SessionFilters{}, nil); err != nil {
+		t.Fatalf("StartSession: %v", err)
+	}
+	if _, ok := rec.sessions["old-0"]; ok {
+		t.Fatal("oldest stopped session was not evicted to reserve the byte budget")
+	}
+	if _, ok := rec.sessions["old-1"]; !ok {
+		t.Fatal("newer stopped session was unnecessarily evicted")
 	}
 }
 
@@ -144,6 +238,28 @@ func TestProxyAuthTokenEnforced(t *testing.T) {
 	if !rec.authorizeProxyRequest(req) {
 		t.Fatal("Bearer proxy auth token should be accepted")
 	}
+}
+
+func TestProxyConcurrencyLimitFailsFast(t *testing.T) {
+	rec := New(defaultProxyAddr)
+	for index := 0; index < maxConcurrentRecorderProxyRequests; index++ {
+		if !rec.acquireProxySlot() {
+			t.Fatalf("proxy slot %d was rejected before the configured limit", index)
+		}
+	}
+	req := httptest.NewRequest(http.MethodGet, "http://example.test/", nil)
+	resp := httptest.NewRecorder()
+	rec.handleProxy(resp, req)
+	if resp.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", resp.Code, http.StatusServiceUnavailable)
+	}
+	for index := 0; index < maxConcurrentRecorderProxyRequests; index++ {
+		rec.releaseProxySlot()
+	}
+	if !rec.acquireProxySlot() {
+		t.Fatal("released proxy capacity was not reusable")
+	}
+	rec.releaseProxySlot()
 }
 
 func TestProxyRejectsPrivateTargetsByDefault(t *testing.T) {
@@ -413,6 +529,88 @@ func TestUpdateRequestCurationFields(t *testing.T) {
 	if updated.ThinkTimeMs != think {
 		t.Fatalf("expected think time %d, got %d", think, updated.ThinkTimeMs)
 	}
+}
+
+func TestUpdateRequestRejectsOversizedCurationFields(t *testing.T) {
+	rec := New(":0")
+	session, err := rec.StartSession("test", "Curation Limits", SessionFilters{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, _ := http.NewRequest(http.MethodGet, "http://example.com/api/users", nil)
+	resp := &http.Response{StatusCode: http.StatusOK, Header: make(http.Header)}
+	if seq := rec.recordRequest(session, req, nil, resp, nil, time.Millisecond); seq != 1 {
+		t.Fatalf("recorded seq = %d, want 1", seq)
+	}
+	retainedBefore := session.retainedBytes
+
+	tests := []struct {
+		name   string
+		update RequestUpdate
+	}{
+		{name: "step name", update: RequestUpdate{StepName: recorderStringPointer(strings.Repeat("s", maxRecorderStepNameBytes+1))}},
+		{name: "transaction name", update: RequestUpdate{TransactionName: recorderStringPointer(strings.Repeat("t", maxRecorderTransactionNameBytes+1))}},
+		{name: "note", update: RequestUpdate{Note: recorderStringPointer(strings.Repeat("n", maxRecorderNoteBytes+1))}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := rec.UpdateRequest("test", 1, tc.update); err == nil {
+				t.Fatal("UpdateRequest accepted an oversized curation field")
+			}
+			if session.retainedBytes != retainedBefore {
+				t.Fatalf("retained bytes changed after rejected update: %d -> %d", retainedBefore, session.retainedBytes)
+			}
+			if got := session.Requests[0]; got.StepName != "" || got.TransactionName != "" || got.Note != "" {
+				t.Fatalf("request changed after rejected update: %+v", got)
+			}
+		})
+	}
+}
+
+func TestRecordRequestRetentionRejectionHasNoPartialMutation(t *testing.T) {
+	rec := New(":0")
+	session, err := rec.StartSession("test", "Retention Limit", SessionFilters{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session.retainedBytes = maxRecordedSessionBytes - 512
+	req, _ := http.NewRequest(http.MethodPost, "http://example.com/api/users", strings.NewReader("payload"))
+	req.Header.Set("Content-Type", "text/plain")
+	resp := &http.Response{StatusCode: http.StatusOK, Header: make(http.Header)}
+
+	if seq := rec.recordRequest(session, req, []byte("payload"), resp, []byte("response"), time.Second); seq != 0 {
+		t.Fatalf("recorded seq = %d, want rejection", seq)
+	}
+	if session.seq != 0 || len(session.Requests) != 0 || session.storedBodyBytes != 0 {
+		t.Fatalf("rejected request mutated session: seq=%d requests=%d bodies=%d", session.seq, len(session.Requests), session.storedBodyBytes)
+	}
+	if session.BaseURL != "" || !session.lastReqTime.IsZero() || !session.lastReqEnd.IsZero() {
+		t.Fatalf("rejected request mutated timing/base URL: base=%q request=%v end=%v", session.BaseURL, session.lastReqTime, session.lastReqEnd)
+	}
+}
+
+func TestAppendWebSocketMessageHonorsSessionRetentionLimit(t *testing.T) {
+	rec := New(":0")
+	session, err := rec.StartSession("test", "WebSocket Retention Limit", SessionFilters{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, _ := http.NewRequest(http.MethodGet, "http://example.com/socket", nil)
+	resp := &http.Response{StatusCode: http.StatusSwitchingProtocols, Header: make(http.Header)}
+	if seq := rec.recordRequest(session, req, nil, resp, nil, time.Millisecond); seq != 1 {
+		t.Fatalf("recorded seq = %d, want 1", seq)
+	}
+	message := RecordedWebSocketMessage{Direction: "client_to_server", Payload: "payload", Timestamp: time.Now()}
+	session.retainedBytes = maxRecordedSessionBytes - estimateRecordedWebSocketMessageBytes(message) - 31
+
+	rec.appendWebSocketMessage(session, 1, message)
+	if len(session.Requests[0].WebSocketMessages) != 0 || session.webSocketMessages != 0 || session.webSocketPayloadBytes != 0 {
+		t.Fatalf("rejected websocket message mutated session: %+v", session.Requests[0].WebSocketMessages)
+	}
+}
+
+func recorderStringPointer(value string) *string {
+	return &value
 }
 
 func TestProxyIntegration(t *testing.T) {

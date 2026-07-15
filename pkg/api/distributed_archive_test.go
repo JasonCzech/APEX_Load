@@ -347,7 +347,11 @@ func TestFetchRemoteArchivesStartsTargetsInParallelAndCancelsAsAGroup(t *testing
 	clientA := &parallelArchiveClient{archiveStreamingFakeClient: &archiveStreamingFakeClient{artifacts: artifacts}, started: started, release: release}
 	clientB := &parallelArchiveClient{archiveStreamingFakeClient: &archiveStreamingFakeClient{artifacts: artifacts}, started: started, release: release}
 	backend := newDistributedExecutionBackend([]string{"generator-a", "generator-b"}, time.Second, nil)
-	test := &ManagedTest{ID: testID, remoteClientsByTarget: map[string]generatorClient{"generator-a": clientA, "generator-b": clientB}}
+	test := &ManagedTest{
+		ID:                           testID,
+		remoteClientsByTarget:        map[string]generatorClient{"generator-a": clientA},
+		remoteArchiveClientsByTarget: map[string]generatorClient{"generator-b": clientB},
+	}
 	done := make(chan error, 1)
 	go func() {
 		bundles, err := backend.fetchRemoteArchiveBundlesContext(context.Background(), &TestRunner{}, test, true)

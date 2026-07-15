@@ -150,6 +150,9 @@ func validateOutboundURLAllowingHosts(raw string, allowed map[string]struct{}) e
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
 		return fmt.Errorf("url scheme must be http or https")
 	}
+	if parsed.User != nil {
+		return fmt.Errorf("url must not contain userinfo credentials")
+	}
 	host := parsed.Hostname()
 	if host == "" {
 		return fmt.Errorf("url is missing a host")
@@ -169,6 +172,43 @@ func validateOutboundURLAllowingHosts(raw string, allowed map[string]struct{}) e
 	lower := strings.ToLower(host)
 	if lower == "localhost" || strings.HasSuffix(lower, ".localhost") {
 		return fmt.Errorf("url host %q is not an allowed destination", host)
+	}
+	return nil
+}
+
+// validateCredentialTransportURL rejects cleartext credential transport by
+// default. The opt-in is intentionally caller-specific so enabling an isolated
+// development integration cannot weaken unrelated outbound clients.
+func validateCredentialTransportURL(label, raw, insecureHTTPEnv string) error {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Hostname() == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return fmt.Errorf("%s must be a valid http(s) URL", label)
+	}
+	if parsed.User != nil {
+		return fmt.Errorf("%s must not contain userinfo credentials", label)
+	}
+	if parsed.Scheme != "https" && !envBool(insecureHTTPEnv) {
+		return fmt.Errorf("%s must use https; set %s only for isolated development", label, insecureHTTPEnv)
+	}
+	return nil
+}
+
+// sameOriginRedirectPolicy prevents credential-bearing clients from forwarding
+// a request body or headers to a different origin, and also blocks HTTPS to HTTP
+// downgrade redirects. Same-origin path redirects remain supported.
+func sameOriginRedirectPolicy(req *http.Request, via []*http.Request) error {
+	if len(via) >= 5 {
+		return fmt.Errorf("stopped after %d redirects", len(via))
+	}
+	if req == nil || req.URL == nil || len(via) == 0 || via[len(via)-1] == nil || via[len(via)-1].URL == nil {
+		return fmt.Errorf("refusing redirect with an invalid origin")
+	}
+	if req.URL.User != nil {
+		return fmt.Errorf("refusing redirect target containing userinfo credentials")
+	}
+	previous := via[len(via)-1].URL
+	if !strings.EqualFold(req.URL.Scheme, previous.Scheme) || !strings.EqualFold(req.URL.Host, previous.Host) {
+		return fmt.Errorf("refusing cross-origin or scheme-changing redirect from %s://%s to %s://%s", previous.Scheme, previous.Host, req.URL.Scheme, req.URL.Host)
 	}
 	return nil
 }
@@ -251,5 +291,5 @@ func newHostAllowlistedHTTPClientWithTLS(allowedHosts []string, tlsConfig *tls.C
 		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: time.Second,
 	}
-	return &http.Client{Timeout: timeout, Transport: transport}
+	return &http.Client{Timeout: timeout, Transport: transport, CheckRedirect: sameOriginRedirectPolicy}
 }

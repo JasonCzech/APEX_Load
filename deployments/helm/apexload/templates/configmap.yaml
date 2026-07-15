@@ -23,6 +23,8 @@ data:
   APEXLOAD_REDIS_FANOUT_CHANNEL: {{ .Values.dataPlatform.redisFanoutChannel | quote }}
   APEXLOAD_AZURE_KEY_VAULT_URL: {{ include "apexload.requiredCleanValue" (list "dataPlatform.keyVaultUrl" .Values.dataPlatform.keyVaultUrl) | quote }}
   APEXLOAD_AZURE_KEY_VAULT_AUTH: {{ .Values.dataPlatform.keyVaultAuth | quote }}
+  APEXLOAD_AZURE_KEY_VAULT_ALLOWED_SECRETS: {{ .Values.dataPlatform.keyVaultAllowedSecrets | quote }}
+  APEXLOAD_AZURE_MESSAGING_ALLOWED_NAMESPACES: {{ .Values.dataPlatform.azureMessagingAllowedNamespaces | quote }}
   APEXLOAD_GENERATORS: {{ .Values.dataPlatform.generators | quote }}
   APEXLOAD_GENERATOR_DISCOVERY_INTERVAL: {{ .Values.dataPlatform.generatorDiscoveryInterval | quote }}
   APEXLOAD_GENERATOR_TIMEOUT: {{ .Values.dataPlatform.generatorTimeout | quote }}

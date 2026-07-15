@@ -26,13 +26,17 @@ func (s *Server) remoteLibraryCapabilities(ctx context.Context, remote LibraryRe
 	return &caps, nil
 }
 
-func (s *Server) remoteLibraryCatalog(ctx context.Context, remote LibraryRemote, projectID string, kind string) (*LibraryCatalogResponse, error) {
+func (s *Server) remoteLibraryCatalog(ctx context.Context, remote LibraryRemote, projectID string, kind string, offset int, limit int) (*LibraryCatalogResponse, error) {
 	values := url.Values{}
 	if projectID != "" {
 		values.Set("project_id", projectID)
 	}
 	if kind != "" {
 		values.Set("kind", kind)
+	}
+	values.Set("limit", fmt.Sprintf("%d", limit))
+	if offset > 0 {
+		values.Set("offset", fmt.Sprintf("%d", offset))
 	}
 	path := "/api/v1/library/catalog"
 	if encoded := values.Encode(); encoded != "" {
@@ -71,6 +75,10 @@ func (s *Server) remoteLibraryImportArchive(ctx context.Context, remote LibraryR
 		return nil, fmt.Errorf("materialize local archive: %w", err)
 	}
 	defer lease.Release()
+	manifest, err := loadRunArchiveManifestFromRecord(record)
+	if err != nil {
+		return nil, fmt.Errorf("load local archive manifest: %w", err)
+	}
 	reader, writer := io.Pipe()
 	multipartWriter := multipart.NewWriter(writer)
 	errCh := make(chan error, 1)
@@ -100,7 +108,7 @@ func (s *Server) remoteLibraryImportArchive(ctx context.Context, remote LibraryR
 			_ = multipartWriter.Close()
 			return
 		}
-		if err := zipDirectory(record.ArchivePath, archivePart); err != nil {
+		if err := zipSanitizedRunArchiveContext(ctx, record, manifest, archivePart); err != nil {
 			errCh <- err
 			_ = multipartWriter.Close()
 			return
@@ -293,6 +301,13 @@ func ctxOrBackground(ctx context.Context) context.Context {
 }
 
 func (s *Server) authorizeRemoteRequest(req *http.Request, remote LibraryRemote) error {
+	// Revalidate at the last point before credential retrieval/header mutation.
+	// Persisted remotes may have been written by an older controller version that
+	// allowed authenticated plaintext HTTP, so create/update validation alone is
+	// not an upgrade-safe transport boundary.
+	if err := validateLibraryRemoteTransport(remote); err != nil {
+		return err
+	}
 	apiKey, err := s.remoteLibraryAPIKey(remote)
 	if err != nil {
 		return err
@@ -316,12 +331,17 @@ func buildLibraryRemote(req LibraryRemoteRequest) (*LibraryRemote, error) {
 	if authMethod == "" {
 		authMethod = "service_account"
 	}
+	projectMappings, err := normalizeLibraryRemoteProjectMappings(req.ProjectMappings)
+	if err != nil {
+		return nil, err
+	}
 	now := time.Now().UTC()
 	remote := &LibraryRemote{
 		ID:               uuid.New().String(),
 		Name:             name,
 		BaseURL:          baseURL,
 		DefaultProjectID: normalizeProjectID(req.DefaultProjectID),
+		ProjectMappings:  projectMappings,
 		AuthMethod:       authMethod,
 		CredentialRef:    strings.TrimSpace(req.CredentialRef),
 		Status:           "unknown",
@@ -336,11 +356,18 @@ func buildLibraryRemote(req LibraryRemoteRequest) (*LibraryRemote, error) {
 }
 
 func validateLibraryRemoteTransport(remote LibraryRemote) error {
-	parsed, err := url.Parse(remote.BaseURL)
-	if err != nil {
-		return fmt.Errorf("invalid remote base_url: %w", err)
+	parsed, err := url.Parse(strings.TrimSpace(remote.BaseURL))
+	if err != nil || parsed.Host == "" {
+		return fmt.Errorf("invalid remote base_url")
 	}
-	if parsed.Scheme == "http" && !strings.EqualFold(strings.TrimSpace(remote.AuthMethod), "none") && !envBool("APEXLOAD_LIBRARY_ALLOW_INSECURE_HTTP") {
+	scheme := strings.ToLower(parsed.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return fmt.Errorf("remote base_url must use http or https")
+	}
+	if parsed.User != nil {
+		return fmt.Errorf("remote base_url must not contain userinfo credentials")
+	}
+	if scheme == "http" && !strings.EqualFold(strings.TrimSpace(remote.AuthMethod), "none") && !envBool("APEXLOAD_LIBRARY_ALLOW_INSECURE_HTTP") {
 		return fmt.Errorf("authenticated remote libraries require https; set APEXLOAD_LIBRARY_ALLOW_INSECURE_HTTP only for isolated development")
 	}
 	return nil
@@ -354,6 +381,9 @@ func normalizeLibraryRemoteBaseURL(raw string) (string, error) {
 	}
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
 		return "", fmt.Errorf("remote base_url must use http or https")
+	}
+	if parsed.User != nil {
+		return "", fmt.Errorf("remote base_url must not contain userinfo credentials")
 	}
 	if err := validateOutboundRemoteHost(parsed.Hostname()); err != nil {
 		return "", fmt.Errorf("remote base_url rejected: %w", err)
@@ -467,6 +497,11 @@ func (s *Server) sanitizeLibraryRemote(remote *LibraryRemote) LibraryRemote {
 	}
 	copied := *remote
 	copied.APIKey = ""
-	copied.CredentialConfigured = s.remoteCredentialConfigured(copied)
+	// Credential references are write-only operational metadata. Environment
+	// variable names and keyring account identifiers reveal controller internals
+	// and are not needed once CredentialConfigured is reported.
+	copied.CredentialRef = ""
+	copied.ProjectMappings = cloneLibraryRemoteProjectMappings(remote.ProjectMappings)
+	copied.CredentialConfigured = s.remoteCredentialConfigured(*remote)
 	return copied
 }

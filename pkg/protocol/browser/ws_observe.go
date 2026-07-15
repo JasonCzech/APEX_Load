@@ -9,6 +9,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/scrub"
 	playwright "github.com/playwright-community/playwright-go"
@@ -17,6 +18,7 @@ import (
 const (
 	browserWSRingLimit          = 256
 	browserWSPayloadLimitBytes  = 4096
+	browserWSURLLimitBytes      = browserNetworkURLLimitBytes
 	defaultBrowserWSWaitTimeout = 10 * time.Second
 )
 
@@ -45,7 +47,7 @@ func (b *Browser) observePageWebSockets(page playwright.Page) {
 
 func (b *Browser) recordWSEvent(url, direction string, payload []byte) {
 	event := browserWSEvent{
-		URL:       strings.TrimSpace(url),
+		URL:       boundedtext.TruncateUTF8(strings.TrimSpace(url), browserWSURLLimitBytes),
 		Direction: strings.ToLower(strings.TrimSpace(direction)),
 		Timestamp: time.Now(),
 	}

@@ -260,25 +260,25 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 	if groupName == "" {
 		groupName = "replay"
 	}
+	redactionConfig, err := NewRedactionConfig(opts.RedactionRules)
+	if err != nil {
+		return nil, fmt.Errorf("redaction config: %s", scrubSensitiveText(err.Error()))
+	}
 
 	proto, err := protocol.Get(script.Protocol)
 	if err != nil {
-		return nil, fmt.Errorf("protocol init: %w", err)
+		return nil, fmt.Errorf("protocol init: %s", scrubSensitiveTextWithConfig(err.Error(), redactionConfig))
 	}
 
-	secretResolver := newDefaultSecretResolver()
+	secretResolver := defaultSecretResolverForScript(script)
 	if err := proto.Init(ctx, buildProtoConfigForRunModeWithSecretResolver(script, "replay", secretResolver)); err != nil {
-		return nil, fmt.Errorf("protocol init: %w", err)
+		return nil, fmt.Errorf("protocol init: %s", scrubSensitiveTextWithConfig(err.Error(), redactionConfig))
 	}
 	defer runProtocolTeardown(proto)
 
 	dataProvider, err := NewDataProvider(script.DataSources)
 	if err != nil {
-		return nil, fmt.Errorf("data source init: %w", err)
-	}
-	redactionConfig, err := NewRedactionConfig(opts.RedactionRules)
-	if err != nil {
-		return nil, fmt.Errorf("redaction config: %w", err)
+		return nil, fmt.Errorf("data source init: %s", scrubSensitiveTextWithConfig(err.Error(), redactionConfig))
 	}
 
 	startedAt := time.Now()
@@ -578,10 +578,8 @@ func expandReplayAction(
 			restoreRows := vu.captureForEachRestore(loop.ForEach.Var, rows)
 			defer restoreRows()
 			defer restoreLoopIndex()
-			for pass, row := range rows {
-				if pass >= maxPasses {
-					break
-				}
+			for pass := 0; pass < rows.Len() && pass < maxPasses; pass++ {
+				row := rows.Row(pass)
 				if ctx.Err() != nil {
 					return replayStop, true
 				}
@@ -723,7 +721,7 @@ func runReplayUnit(
 		if err := debugController.BeforeAction(ctx, debugAction); err != nil {
 			report.Success = false
 			if report.Error == "" {
-				report.Error = err.Error()
+				report.Error = scrubSensitiveTextWithConfig(err.Error(), vu.RedactionConfig)
 			}
 			return ReplayActionEvent{}, false, true
 		}
@@ -751,13 +749,14 @@ func runReplayUnit(
 			StartedAt:    now,
 			CompletedAt:  now,
 			Success:      false,
-			ErrorMessage: unit.synthErr.Error(),
+			ErrorMessage: scrubSensitiveTextWithConfig(unit.synthErr.Error(), vu.RedactionConfig),
 		}
 		applyReplaySourceMetadata(&event, unit.action.Metadata)
 		attachReplayDiagnosis(&event)
 	} else {
 		event, shouldContinue = runReplayAction(ctx, vu, unit.action, unit.phase, unit.actionIndex, eventIndex, eventID, ignoreThinkTime, globalThinkCfg, report)
 	}
+	scrubReplayActionEvent(&event, vu.RedactionConfig)
 	applyReplayUnitIdentityEvent(&event, unit)
 	report.Events = append(report.Events, event)
 
@@ -786,8 +785,9 @@ func runReplayUnit(
 		if err := after.AfterAction(ctx, debugAction, &event); err != nil {
 			report.Success = false
 			if report.Error == "" {
-				report.Error = err.Error()
+				report.Error = scrubSensitiveTextWithConfig(err.Error(), vu.RedactionConfig)
 			}
+			scrubReplayActionEvent(&event, vu.RedactionConfig)
 			return event, shouldContinue, true
 		}
 	}
@@ -908,8 +908,8 @@ func runReplayAction(
 		ActionType:  action.Type,
 		Method:      resolved.Method,
 		Target:      scrubReplayTarget(resolved, vu.RedactionConfig),
-		Selector:    resolved.Selector,
-		Value:       resolved.Value,
+		Selector:    scrubReplaySelector(resolved, vu.RedactionConfig),
+		Value:       scrubReplayValue(resolved, vu.RedactionConfig),
 		Headers:     scrubReplayHeaders(resolved, vu.RedactionConfig),
 		Body:        scrubReplayBody(resolved, vu.RedactionConfig),
 		StartedAt:   start,
@@ -920,7 +920,7 @@ func runReplayAction(
 
 	if err != nil {
 		event.Success = false
-		event.ErrorMessage = err.Error()
+		event.ErrorMessage = scrubSensitiveTextWithConfig(err.Error(), vu.RedactionConfig)
 		if event.ErrorMessage == "" {
 			event.ErrorMessage = fmt.Sprintf("%s %q failed", phase, action.Name)
 		}
@@ -961,6 +961,14 @@ func runReplayAction(
 		event.ProtocolEvidence = protocol.BuildProtocolEvidence(resolved, result)
 	}
 	event.Snapshot = result.Snapshot
+	if !result.Success && result.Snapshot != nil && vu.SnapshotStore != nil {
+		if retained := vu.SnapshotStore.Snapshots(); len(retained) > 0 {
+			// Reuse the store's detached bounded copy so ReplayReport.Events and
+			// ReplayReport.Snapshots do not retain two copies of the same evidence.
+			event.Snapshot = retained[len(retained)-1]
+		}
+	}
+	deduplicateReplayBrowserSnapshot(&event)
 	if result.Duration > 0 {
 		event.DurationMs = float64(result.Duration.Microseconds()) / 1000
 	}
@@ -1002,6 +1010,34 @@ func runReplayAction(
 	}
 
 	return event, true
+}
+
+func deduplicateReplayBrowserSnapshot(event *ReplayActionEvent) {
+	if event == nil || event.Snapshot == nil {
+		return
+	}
+	snapshot := event.Snapshot
+	if event.PageURL != "" {
+		snapshot.PageURL = ""
+	}
+	if event.PageTitle != "" {
+		snapshot.PageTitle = ""
+	}
+	if event.HTML != "" {
+		snapshot.HTML = ""
+	}
+	if event.Screenshot != "" {
+		snapshot.ScreenshotBase64 = ""
+	}
+	if len(event.Console) > 0 {
+		snapshot.ConsoleEntries = nil
+	}
+	if len(event.Network) > 0 {
+		snapshot.NetworkEntries = nil
+	}
+	if event.DOMSummary != nil {
+		snapshot.DOMSummary = nil
+	}
 }
 
 func normalizeReplaySessionID(input string, startedAt time.Time) string {
@@ -1230,6 +1266,58 @@ func scrubReplayTarget(action *protocol.Action, config *RedactionConfig) string 
 		target = action.RedactedTarget
 	}
 	return scrubSensitiveTextWithConfig(target, config)
+}
+
+func scrubReplaySelector(action *protocol.Action, config *RedactionConfig) string {
+	if action == nil {
+		return ""
+	}
+	value := action.Selector
+	if action.RedactedSelector != "" {
+		value = action.RedactedSelector
+	}
+	return scrubSensitiveTextWithConfig(value, config)
+}
+
+func scrubReplayValue(action *protocol.Action, config *RedactionConfig) string {
+	if action == nil {
+		return ""
+	}
+	value := action.Value
+	if action.RedactedValue != "" {
+		value = action.RedactedValue
+	}
+	return scrubSensitiveTextWithConfig(value, config)
+}
+
+func scrubReplayActionEvent(event *ReplayActionEvent, config *RedactionConfig) {
+	if event == nil {
+		return
+	}
+	event.ErrorMessage = scrubSensitiveTextWithConfig(event.ErrorMessage, config)
+	event.Target = scrubSensitiveTextWithConfig(event.Target, config)
+	event.Selector = scrubSensitiveTextWithConfig(event.Selector, config)
+	event.Value = scrubSensitiveTextWithConfig(event.Value, config)
+	event.Headers = scrubSensitiveHeaders(event.Headers, config)
+	event.Body = scrubSensitiveTextWithConfig(event.Body, config)
+	event.PageURL = scrubSensitiveTextWithConfig(event.PageURL, config)
+	event.PageTitle = scrubSensitiveTextWithConfig(event.PageTitle, config)
+	event.HTML = scrubSensitiveTextWithConfig(event.HTML, config)
+	event.Extractions = scrubSensitiveExtractions(event.Extractions, config)
+	event.Console = scrubSensitiveConsoleEntries(event.Console, config)
+	event.Network = scrubSensitiveNetworkEntries(event.Network, config)
+	event.DOMSummary = scrubSensitiveDOMSummary(event.DOMSummary, config)
+	event.ProtocolEvidence = scrubSensitiveEvidenceMap(event.ProtocolEvidence, config)
+	if event.Snapshot != nil {
+		projection := &protocol.Result{Snapshot: event.Snapshot}
+		scrubSensitiveResultWithOptions(projection, config, false)
+		event.Snapshot = projection.Snapshot
+	}
+	event.SourceStepID = scrubSensitiveTextWithConfig(event.SourceStepID, config)
+	event.SourceAction = scrubSensitiveTextWithConfig(event.SourceAction, config)
+	event.SourceActionName = scrubSensitiveTextWithConfig(event.SourceActionName, config)
+	event.SourceTransaction = scrubSensitiveTextWithConfig(event.SourceTransaction, config)
+	event.SourceProfile = scrubSensitiveTextWithConfig(event.SourceProfile, config)
 }
 
 func scrubReplayHeaders(action *protocol.Action, config *RedactionConfig) map[string]string {

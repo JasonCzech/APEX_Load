@@ -68,6 +68,14 @@ func lookupScriptEnv(key string) (string, bool) {
 	return os.LookupEnv(key)
 }
 
+// ScriptEnvAvailable reports whether an uploaded script may resolve key through
+// the {{env.*}} namespace. It intentionally exposes only availability so API
+// preflight checks can mirror runtime policy without reading the value.
+func ScriptEnvAvailable(key string) bool {
+	_, ok := lookupScriptEnv(key)
+	return ok
+}
+
 // scriptVisibleEnvMap returns the process environment filtered to what scripts
 // are permitted to read, for binding into the CEL condition `env` variable.
 func scriptVisibleEnvMap() map[string]any {

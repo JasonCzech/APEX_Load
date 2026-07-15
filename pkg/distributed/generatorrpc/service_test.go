@@ -22,6 +22,14 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 )
 
+func commitTestWork(t *testing.T, service *Service, testID string, generation uint64) {
+	t.Helper()
+	ack, err := service.CommitWork(context.Background(), &pb.WorkCommitRequest{TestId: testID, ExecutionGeneration: generation})
+	if err != nil || !ack.GetAccepted() {
+		t.Fatalf("CommitWork %s = (%#v, %v)", testID, ack, err)
+	}
+}
+
 func TestServiceAssignWorkRejectsMissingCachedScript(t *testing.T) {
 	service := NewService("generator-1", 50)
 
@@ -59,12 +67,15 @@ func TestAssignmentProtoCarriesRedactionRules(t *testing.T) {
 
 func TestBroadcastMetricsCountsSubscriberDrops(t *testing.T) {
 	service := NewService("generator-1", 50)
-	_, ch, _ := service.registerSubscriber()
-	for i := 0; i < cap(ch); i++ {
-		ch <- &pb.MetricsBatch{TestId: "queued"}
+	_, subscriber, _, err := service.registerSubscriber(0)
+	if err != nil {
+		t.Fatalf("register subscriber: %v", err)
+	}
+	for i := 0; i < cap(subscriber.updates); i++ {
+		subscriber.updates <- &pb.MetricsBatch{TestId: "queued"}
 	}
 
-	service.broadcastMetrics(&pb.MetricsBatch{TestId: "dropped"})
+	service.broadcastMetrics(&pb.MetricsBatch{TestId: "dropped", ExecutionGeneration: 0})
 
 	if got := service.droppedBatches.Load(); got != 1 {
 		t.Fatalf("dropped batches = %d, want 1", got)
@@ -163,6 +174,9 @@ func TestClientRoundTripDistributeAssignAndHeartbeat(t *testing.T) {
 	}
 	if assignmentAck.AvailableCapacity != 40 {
 		t.Fatalf("available capacity = %d, want 40", assignmentAck.AvailableCapacity)
+	}
+	if commit, err := client.CommitWork(ctx, "test-1", 0); err != nil || !commit.Accepted {
+		t.Fatalf("CommitWork = (%#v, %v)", commit, err)
 	}
 
 	metrics, err := client.OpenMetricsStream(ctx)
@@ -304,6 +318,9 @@ func TestClientRoundTripDistributeAssignAndHeartbeat(t *testing.T) {
 	if !hasString(pong.CompatibleFeatures, "http") {
 		t.Fatalf("compatible features = %v, want http", pong.CompatibleFeatures)
 	}
+	if !hasString(pong.CompatibleFeatures, FeatureEvacuationAssignmentStateV1) {
+		t.Fatalf("compatible features = %v, want %s", pong.CompatibleFeatures, FeatureEvacuationAssignmentStateV1)
+	}
 	if pong.Stats.ActiveVUsers != 12 {
 		t.Fatalf("heartbeat active vusers = %d, want 12", pong.Stats.ActiveVUsers)
 	}
@@ -406,6 +423,9 @@ func TestServiceFailTestBroadcastsFailedLifecycle(t *testing.T) {
 	if _, err := client.AssignWork(ctx, Assignment{TestID: "test-1", GroupName: "Group A", ScriptID: "script-1", VUserCount: 10}); err != nil {
 		t.Fatalf("AssignWork: %v", err)
 	}
+	if commit, err := client.CommitWork(ctx, "test-1", 0); err != nil || !commit.Accepted {
+		t.Fatalf("CommitWork = (%#v, %v)", commit, err)
+	}
 
 	metrics, err := client.OpenMetricsStream(ctx)
 	if err != nil {
@@ -495,6 +515,9 @@ func TestServicePublishMetricsBroadcastsTransactions(t *testing.T) {
 	}
 	if _, err := client.AssignWork(ctx, Assignment{TestID: "test-1", GroupName: "Group A", ScriptID: "script-1", VUserCount: 10}); err != nil {
 		t.Fatalf("AssignWork: %v", err)
+	}
+	if commit, err := client.CommitWork(ctx, "test-1", 0); err != nil || !commit.Accepted {
+		t.Fatalf("CommitWork = (%#v, %v)", commit, err)
 	}
 
 	metrics, err := client.OpenMetricsStream(ctx)
@@ -644,6 +667,9 @@ func TestServiceWithExecutionRunsAssignedScript(t *testing.T) {
 	if _, err := client.AssignWork(ctx, Assignment{TestID: "test-1", GroupName: "Group A", TargetDurationSeconds: 2, ScriptID: "script-1", VUserCount: 1}); err != nil {
 		t.Fatalf("AssignWork: %v", err)
 	}
+	if commit, err := client.CommitWork(ctx, "test-1", 0); err != nil || !commit.Accepted {
+		t.Fatalf("CommitWork = (%#v, %v)", commit, err)
+	}
 
 	metrics, err := client.OpenMetricsStream(ctx)
 	if err != nil {
@@ -673,6 +699,7 @@ func TestServiceWithExecutionRunsAssignedScript(t *testing.T) {
 func TestServiceWithExecutionExposesArchiveArtifacts(t *testing.T) {
 	const bufSize = 1024 * 1024
 
+	t.Setenv(envGeneratorArchiveMinFree, "1")
 	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -731,6 +758,9 @@ func TestServiceWithExecutionExposesArchiveArtifacts(t *testing.T) {
 	}
 	if _, err := client.AssignWork(ctx, Assignment{TestID: "test-archive", GroupName: "Group A", TargetDurationSeconds: 2, ScriptID: "script-1", VUserCount: 1}); err != nil {
 		t.Fatalf("AssignWork: %v", err)
+	}
+	if commit, err := client.CommitWork(ctx, "test-archive", 0); err != nil || !commit.Accepted {
+		t.Fatalf("CommitWork = (%#v, %v)", commit, err)
 	}
 
 	metrics, err := client.OpenMetricsStream(ctx)

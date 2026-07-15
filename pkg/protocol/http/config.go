@@ -9,13 +9,12 @@ import (
 	"math"
 	"net"
 	"net/http"
-	"net/http/cookiejar"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/fileasset"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
@@ -33,35 +32,48 @@ type transportConfig struct {
 	sourceIP net.IP
 }
 
+const (
+	defaultHTTPMaxConnsPerHost = 100
+	defaultHTTPMaxIdleConns    = 4
+	// MaxConfigured* are shared with DSL validation so authored scripts fail
+	// explicitly instead of being silently clamped by the runtime.
+	MaxConfiguredConnsPerHost = 256
+	MaxConfiguredIdleConns    = 32
+	MaxConfiguredTimeout      = time.Hour
+	MaxConfiguredRedirects    = 50
+	// Protocol instances are per VUser. Keep this deliberately small so the
+	// TLS session cache cannot multiply into hundreds of thousands of retained
+	// sessions at generator scale while still covering ordinary multi-host flows.
+	maxTLSClientSessionsPerVUser = 8
+)
+
 func parseTransportConfig(config map[string]any) transportConfig {
 	settings := transportConfig{
-		maxConnsPerHost: 100,
+		maxConnsPerHost: defaultHTTPMaxConnsPerHost,
+		maxIdleConns:    defaultHTTPMaxIdleConns,
 		connectTimeout:  30 * time.Second,
 		tlsTimeout:      10 * time.Second,
 		idleTimeout:     90 * time.Second,
 		requestTimeout:  60 * time.Second,
 		keepAlive:       30 * time.Second,
 	}
-	settings.maxIdleConns = settings.maxConnsPerHost
-
-	if value, ok := config["max_conns_per_host"].(float64); ok {
-		settings.maxConnsPerHost = int(value)
-		settings.maxIdleConns = int(value)
+	if value := protocol.ConfigInt(config, "max_conns_per_host"); value > 0 {
+		settings.maxConnsPerHost = min(value, MaxConfiguredConnsPerHost)
 	}
-	if value, ok := config["max_idle_conns"].(float64); ok {
-		settings.maxIdleConns = int(value)
+	if value := protocol.ConfigInt(config, "max_idle_conns"); value > 0 {
+		settings.maxIdleConns = min(value, MaxConfiguredIdleConns)
 	}
-	if value, ok := config["connect_timeout_ms"].(float64); ok {
-		settings.connectTimeout = time.Duration(value) * time.Millisecond
+	if value := boundedHTTPTimeout(config, "connect_timeout_ms"); value > 0 {
+		settings.connectTimeout = value
 	}
-	if value, ok := config["tls_timeout_ms"].(float64); ok {
-		settings.tlsTimeout = time.Duration(value) * time.Millisecond
+	if value := boundedHTTPTimeout(config, "tls_timeout_ms"); value > 0 {
+		settings.tlsTimeout = value
 	}
-	if value, ok := config["idle_timeout_ms"].(float64); ok {
-		settings.idleTimeout = time.Duration(value) * time.Millisecond
+	if value := boundedHTTPTimeout(config, "idle_timeout_ms"); value > 0 {
+		settings.idleTimeout = value
 	}
-	if value, ok := config["request_timeout_ms"].(float64); ok {
-		settings.requestTimeout = time.Duration(value) * time.Millisecond
+	if value := boundedHTTPTimeout(config, "request_timeout_ms"); value > 0 {
+		settings.requestTimeout = value
 	}
 	if value, ok := config["keep_alive"].(bool); ok && !value {
 		settings.disableKeepAlive = true
@@ -76,21 +88,40 @@ func parseTransportConfig(config map[string]any) transportConfig {
 	return settings
 }
 
+func boundedHTTPTimeout(config map[string]any, key string) time.Duration {
+	milliseconds := protocol.ConfigInt(config, key)
+	if milliseconds <= 0 {
+		return 0
+	}
+	if milliseconds > int(MaxConfiguredTimeout/time.Millisecond) {
+		return MaxConfiguredTimeout
+	}
+	duration := time.Duration(milliseconds) * time.Millisecond
+	return duration
+}
+
 func buildTLSConfig(config map[string]any) (*tls.Config, error) {
 	tlsCfg := &tls.Config{
 		MinVersion:         tls.VersionTLS12,
-		ClientSessionCache: tls.NewLRUClientSessionCache(1024),
+		ClientSessionCache: tls.NewLRUClientSessionCache(maxTLSClientSessionsPerVUser),
 	}
 
-	if value, ok := config["tls_min_version"].(string); ok {
-		if version, err := parseTLSVersion(value); err == nil {
-			tlsCfg.MinVersion = version
+	if value, ok := config["tls_min_version"].(string); ok && strings.TrimSpace(value) != "" {
+		version, err := parseTLSVersion(strings.TrimSpace(value))
+		if err != nil {
+			return nil, err
 		}
+		tlsCfg.MinVersion = version
 	}
-	if value, ok := config["tls_max_version"].(string); ok {
-		if version, err := parseTLSVersion(value); err == nil {
-			tlsCfg.MaxVersion = version
+	if value, ok := config["tls_max_version"].(string); ok && strings.TrimSpace(value) != "" {
+		version, err := parseTLSVersion(strings.TrimSpace(value))
+		if err != nil {
+			return nil, err
 		}
+		tlsCfg.MaxVersion = version
+	}
+	if tlsCfg.MaxVersion != 0 && tlsCfg.MaxVersion < tlsCfg.MinVersion {
+		return nil, fmt.Errorf("TLS maximum version must not be lower than minimum version")
 	}
 	if value, ok := config["tls_insecure_skip_verify"].(bool); ok {
 		tlsCfg.InsecureSkipVerify = value
@@ -98,16 +129,30 @@ func buildTLSConfig(config map[string]any) (*tls.Config, error) {
 
 	certFile, _ := config["tls_client_cert_file"].(string)
 	keyFile, _ := config["tls_client_key_file"].(string)
-	if certFile != "" && keyFile != "" {
-		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	certFile = strings.TrimSpace(certFile)
+	keyFile = strings.TrimSpace(keyFile)
+	if (certFile == "") != (keyFile == "") {
+		return nil, fmt.Errorf("TLS client certificate and key files must be configured together")
+	}
+	if certFile != "" {
+		certPEM, err := fileasset.ReadCredential(certFile)
+		if err != nil {
+			return nil, fmt.Errorf("read client certificate: %w", err)
+		}
+		keyPEM, err := fileasset.ReadCredential(keyFile)
+		if err != nil {
+			return nil, fmt.Errorf("read client key: %w", err)
+		}
+		cert, err := tls.X509KeyPair(certPEM, keyPEM)
 		if err != nil {
 			return nil, fmt.Errorf("load client certificate: %w", err)
 		}
 		tlsCfg.Certificates = []tls.Certificate{cert}
 	}
 
-	if caFile, ok := config["tls_ca_cert_file"].(string); ok && caFile != "" {
-		caCert, err := os.ReadFile(caFile)
+	if caFile, ok := config["tls_ca_cert_file"].(string); ok && strings.TrimSpace(caFile) != "" {
+		caFile = strings.TrimSpace(caFile)
+		caCert, err := fileasset.ReadCredential(caFile)
 		if err != nil {
 			return nil, fmt.Errorf("read CA certificate: %w", err)
 		}
@@ -131,15 +176,17 @@ func newTransport(settings transportConfig, tlsCfg *tls.Config) *http.Transport 
 		// presents many distinct source addresses to the target.
 		dialer.LocalAddr = &net.TCPAddr{IP: settings.sourceIP}
 	}
+	maxIdlePerHost := min(settings.maxConnsPerHost, settings.maxIdleConns)
 	return &http.Transport{
-		DialContext:         dialer.DialContext,
-		MaxIdleConns:        settings.maxIdleConns,
-		MaxIdleConnsPerHost: settings.maxConnsPerHost,
-		MaxConnsPerHost:     settings.maxConnsPerHost,
-		IdleConnTimeout:     settings.idleTimeout,
-		TLSHandshakeTimeout: settings.tlsTimeout,
-		TLSClientConfig:     tlsCfg,
-		DisableKeepAlives:   settings.disableKeepAlive,
+		DialContext:            dialer.DialContext,
+		MaxIdleConns:           settings.maxIdleConns,
+		MaxIdleConnsPerHost:    maxIdlePerHost,
+		MaxConnsPerHost:        settings.maxConnsPerHost,
+		IdleConnTimeout:        settings.idleTimeout,
+		TLSHandshakeTimeout:    settings.tlsTimeout,
+		TLSClientConfig:        tlsCfg,
+		DisableKeepAlives:      settings.disableKeepAlive,
+		MaxResponseHeaderBytes: maxHTTPResponseHeaderBytes,
 	}
 }
 
@@ -240,6 +287,14 @@ func applyProxy(transport *http.Transport, config map[string]any) error {
 	parsedProxy, err := url.Parse(proxyURL)
 	if err != nil {
 		return fmt.Errorf("parse proxy URL: %w", err)
+	}
+	if parsedProxy.Host == "" {
+		return fmt.Errorf("proxy URL must be absolute and include a host")
+	}
+	switch strings.ToLower(parsedProxy.Scheme) {
+	case "http", "https", "socks5", "socks5h":
+	default:
+		return fmt.Errorf("unsupported proxy URL scheme %q", parsedProxy.Scheme)
 	}
 
 	proxyUser, _ := config["proxy_username"].(string)
@@ -374,7 +429,7 @@ func buildCookieJar(config map[string]any) http.CookieJar {
 		return nil
 	}
 
-	jar, _ := cookiejar.New(nil)
+	jar, _ := newBoundedCookieJar()
 	return jar
 }
 
@@ -431,7 +486,10 @@ func (h *HTTP) ClearCookies(ctx context.Context) error {
 	if h.client == nil || h.client.Jar == nil {
 		return nil
 	}
-	jar, err := cookiejar.New(nil)
+	if jar, ok := h.client.Jar.(*boundedCookieJar); ok {
+		return jar.clear()
+	}
+	jar, err := newBoundedCookieJar()
 	if err != nil {
 		return err
 	}
@@ -441,8 +499,11 @@ func (h *HTTP) ClearCookies(ctx context.Context) error {
 
 func parseMaxRedirects(config map[string]any) int {
 	maxRedirects := 10
-	if value, ok := config["max_redirects"].(float64); ok {
-		maxRedirects = int(value)
+	if _, configured := config["max_redirects"]; configured {
+		maxRedirects = protocol.ConfigInt(config, "max_redirects")
+		if maxRedirects > MaxConfiguredRedirects {
+			maxRedirects = MaxConfiguredRedirects
+		}
 	}
 	return maxRedirects
 }

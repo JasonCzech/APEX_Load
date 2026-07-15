@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/buildinfo"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -206,10 +207,11 @@ func (s *Server) enrichGeneratorRestartability(ctx context.Context, entries []Ge
 }
 
 func controllerInstanceID() string {
+	instance := uuid.NewString()
 	if hostname, err := os.Hostname(); err == nil && hostname != "" {
-		return hostname
+		return hostname + "/" + instance
 	}
-	return "controller"
+	return "controller/" + instance
 }
 
 func (s *Server) dataPlatformInventory() DataPlatformInventory {

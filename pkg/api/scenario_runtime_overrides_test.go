@@ -267,7 +267,7 @@ func TestScenarioUpdatePreservesMaskedSecretsAcrossReorder(t *testing.T) {
 // fields not applicable to a target group's protocol, never copies Env, and masks
 // secrets in the response.
 func TestApplyScenarioRuntimeToGroupsSkipsIncompatibleAndNeverLeaksSecrets(t *testing.T) {
-	server, _ := newRuntimeOverrideTestServer(t)
+	server, store := newRuntimeOverrideTestServer(t)
 	// Scripts exist only to satisfy the scenario_scripts foreign key.
 	server.runner.StoreScript(httpScript("script-a", "Group A"))
 	server.runner.StoreScript(httpScript("script-b", "Group B"))
@@ -293,6 +293,11 @@ func TestApplyScenarioRuntimeToGroupsSkipsIncompatibleAndNeverLeaksSecrets(t *te
 		},
 		ScriptCount: 2,
 	}
+	persisted := storedScenarioToStorage(server.runner.scenarios["scn-apply"])
+	if err := store.SaveScenario(persisted, storedScenarioRefsToStorage(server.runner.scenarios["scn-apply"])); err != nil {
+		t.Fatalf("SaveScenario: %v", err)
+	}
+	server.runner.scenarios["scn-apply"].UpdatedAt = persisted.UpdatedAt
 
 	body, _ := json.Marshal(ApplyRuntimeToGroupsRequest{
 		SourceGroup:  0,
@@ -342,5 +347,57 @@ func TestApplyScenarioRuntimeToGroupsSkipsIncompatibleAndNeverLeaksSecrets(t *te
 				t.Fatalf("stored target env %q == [REDACTED]; sentinel must never be persisted", k)
 			}
 		}
+	}
+}
+
+func TestApplyScenarioRuntimeToGroupsRejectsStaleHASnapshot(t *testing.T) {
+	server, store := newRuntimeOverrideTestServer(t)
+	server.runner.StoreScript(httpScript("script-ha-source", "Source"))
+	server.runner.StoreScript(httpScript("script-ha-target", "Target"))
+
+	scenario, err := server.runner.StoreScenario(CreateScenarioRequest{
+		Name:     "HA runtime scenario",
+		Duration: "1m",
+		Groups: []CreateGroupEntry{
+			{
+				Name: "Source", ScriptID: "script-ha-source", VUsers: 1,
+				RuntimeSettings: &RuntimeSettingsOverride{Pacing: &dsl.PacingConfig{Type: "fixed_delay", DelayMs: 250}},
+			},
+			{Name: "Target", ScriptID: "script-ha-target", VUsers: 1},
+		},
+	})
+	if err != nil {
+		t.Fatalf("StoreScenario: %v", err)
+	}
+
+	external, children, err := store.GetScenario(scenario.ID)
+	if err != nil {
+		t.Fatalf("GetScenario: %v", err)
+	}
+	external.Name = "Concurrent editor wins"
+	if err := store.SaveScenario(external, children); err != nil {
+		t.Fatalf("external SaveScenario: %v", err)
+	}
+
+	body, _ := json.Marshal(ApplyRuntimeToGroupsRequest{
+		SourceGroup: 0, TargetGroups: []int{1}, Fields: []string{"pacing"},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scenarios/"+scenario.ID+"/runtime/apply-to-groups", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409 body=%s", resp.Code, resp.Body.String())
+	}
+
+	durable, durableChildren, err := store.GetScenario(scenario.ID)
+	if err != nil {
+		t.Fatalf("GetScenario after conflict: %v", err)
+	}
+	if durable.Name != "Concurrent editor wins" {
+		t.Fatalf("concurrent scenario edit was overwritten: %+v", durable)
+	}
+	if len(durableChildren) != 2 || durableChildren[1].RuntimeSettings != nil {
+		t.Fatalf("stale runtime update changed durable children: %+v", durableChildren)
 	}
 }

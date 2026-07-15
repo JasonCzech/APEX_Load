@@ -138,7 +138,7 @@ func (s *Server) handlePreviewAuthoringCorrelation(w http.ResponseWriter, r *htt
 		SessionID:       session.ID,
 		Applied:         req.Apply,
 		Extractor:       extractor,
-		Draft:           draft,
+		Draft:           maskScriptSecrets(draft),
 		Changes:         changes,
 		AuthoringHealth: validation.AuthoringHealth,
 	})
@@ -247,7 +247,7 @@ func (s *Server) handleBatchAuthoringCorrelationPreview(w http.ResponseWriter, r
 	writeJSON(w, http.StatusOK, authoringCorrelationPreviewResponse{
 		SessionID:       session.ID,
 		Applied:         req.Apply && appliedCount > 0,
-		Draft:           draft,
+		Draft:           maskScriptSecrets(draft),
 		Changes:         allChanges,
 		AuthoringHealth: validation.AuthoringHealth,
 		Items:           items,

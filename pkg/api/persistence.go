@@ -26,6 +26,17 @@ const (
 	durableTransitionRetryDelay = 10 * time.Millisecond
 )
 
+var (
+	errStoredTestMissing          = errors.New("durable test row no longer exists")
+	errStoredTestTransitionFenced = errors.New("durable test lifecycle transition was fenced")
+)
+
+func isStoredTestTransitionCancelled(err error) bool {
+	return errors.Is(err, errStoredTestMissing) ||
+		errors.Is(err, errStoredTestTransitionFenced) ||
+		errors.Is(err, errNotExecutionLeader)
+}
+
 // retryDurableTransition absorbs short storage interruptions without allowing a
 // terminal state to become visible only in memory. The bound is intentionally
 // small: execution goroutines may wait briefly for durability, but cannot hang
@@ -326,20 +337,40 @@ func (tr *TestRunner) loadStoredTests() {
 // threaded), it runs concurrently with API readers, so map mutation is locked.
 // Tests this replica is actively running are left untouched; everything else is
 // re-hydrated so a failover leader sees runs and queued work created elsewhere.
+const haTestRefreshInterval = 250 * time.Millisecond
+
 func (tr *TestRunner) reloadStoredTests() error {
 	if tr.testStore == nil {
 		return nil
 	}
 	tr.testReloadMu.Lock()
 	defer tr.testReloadMu.Unlock()
+	return tr.reloadStoredTestsLocked()
+}
+
+// reloadStoredTestsLocked performs the durable reconciliation while the caller
+// holds testReloadMu. Keeping the implementation separate lets follower reads
+// make their freshness decision and perform the refresh atomically, preventing
+// a burst of waiters from each repeating the same full scan.
+func (tr *TestRunner) reloadStoredTestsLocked() error {
+	if tr.testStore == nil {
+		return nil
+	}
 	leaderAtStart := tr.holdsExecutionLeadership()
+	executionFenceAtStart := tr.currentExecutionFenceToken()
+	sameExecutionEpoch := func() bool {
+		if tr.holdsExecutionLeadership() != leaderAtStart {
+			return false
+		}
+		return !tr.durableExecutionFence || tr.currentExecutionFenceToken() == executionFenceAtStart
+	}
 	records, err := tr.testStore.ListTests("", nil)
 	if err != nil {
 		return err
 	}
 	seen := make(map[string]struct{}, len(records))
 	for _, record := range records {
-		if tr.holdsExecutionLeadership() != leaderAtStart {
+		if !sameExecutionEpoch() {
 			return fmt.Errorf("execution leadership changed while reloading tests")
 		}
 		if fresh, freshErr := tr.testStore.GetTest(record.ID); freshErr == nil && fresh != nil {
@@ -352,13 +383,13 @@ func (tr *TestRunner) reloadStoredTests() error {
 		seen[record.ID] = struct{}{}
 		tr.mu.RLock()
 		existing, ok := tr.tests[record.ID]
-		liveLocally := ok && existing.cancel != nil
+		liveLocally := ok && liveTestRuntimeForExecutionEpoch(existing, tr.durableExecutionFence, executionFenceAtStart)
 		tr.mu.RUnlock()
 		if liveLocally {
 			continue
 		}
 		managedTest := managedTestFromRecord(record)
-		if tr.holdsExecutionLeadership() {
+		if leaderAtStart && sameExecutionEpoch() {
 			if err := tr.reconcileStoredActiveTest(managedTest); err != nil {
 				return fmt.Errorf("reconcile stored active test %s: %w", managedTest.ID, err)
 			}
@@ -370,11 +401,11 @@ func (tr *TestRunner) reloadStoredTests() error {
 		// a run for this ID in the window since the RLock above. Overwriting it with
 		// the DB-hydrated copy (cancel == nil) would detach the running goroutine's
 		// cancel func, so a later Stop/Abort could never stop the run.
-		if tr.holdsExecutionLeadership() != leaderAtStart {
+		if !sameExecutionEpoch() {
 			tr.mu.Unlock()
 			return fmt.Errorf("execution leadership changed while reloading tests")
 		}
-		if current, ok := tr.tests[record.ID]; !ok || (current.cancel == nil && !(isTerminalTestStatus(current.Status) && !isTerminalTestStatus(managedTest.Status))) {
+		if current, ok := tr.tests[record.ID]; !ok || current == nil || (!liveTestRuntimeForExecutionEpoch(current, tr.durableExecutionFence, executionFenceAtStart) && !(isTerminalTestStatus(current.Status) && !isTerminalTestStatus(managedTest.Status))) {
 			if ok && current != nil && current.RefKey != managedTest.RefKey {
 				tr.removeRefKeyLocked(current.RefKey)
 			}
@@ -386,14 +417,14 @@ func (tr *TestRunner) reloadStoredTests() error {
 	tr.mu.RLock()
 	deleteCandidates := make(map[string]*ManagedTest)
 	for id, current := range tr.tests {
-		if _, ok := seen[id]; ok || (current != nil && current.cancel != nil) {
+		if _, ok := seen[id]; ok || liveTestRuntimeForExecutionEpoch(current, tr.durableExecutionFence, executionFenceAtStart) {
 			continue
 		}
 		deleteCandidates[id] = current
 	}
 	tr.mu.RUnlock()
 	for id, candidate := range deleteCandidates {
-		if tr.holdsExecutionLeadership() != leaderAtStart {
+		if !sameExecutionEpoch() {
 			return fmt.Errorf("execution leadership changed while reloading tests")
 		}
 		if durable, getErr := tr.testStore.GetTest(id); getErr == nil && durable != nil {
@@ -403,17 +434,25 @@ func (tr *TestRunner) reloadStoredTests() error {
 		}
 		tr.mu.Lock()
 		current := tr.tests[id]
-		if current != candidate || (current != nil && current.cancel != nil) {
+		if current != candidate || liveTestRuntimeForExecutionEpoch(current, tr.durableExecutionFence, executionFenceAtStart) {
 			tr.mu.Unlock()
 			continue
 		}
 		if current != nil {
 			tr.removeRefKeyLocked(current.RefKey)
 		}
+		tr.forgetRunSnapshotWriteStateLocked(id)
 		delete(tr.tests, id)
 		tr.mu.Unlock()
 	}
 	return nil
+}
+
+func liveTestRuntimeForExecutionEpoch(test *ManagedTest, requireFence bool, executionFence string) bool {
+	if test == nil || test.cancel == nil || test.executionCtx == nil || test.executionCtx.Err() != nil {
+		return false
+	}
+	return !requireFence || (executionFence != "" && test.executionFence == executionFence)
 }
 
 func (tr *TestRunner) reconcileStoredActiveTest(test *ManagedTest) error {
@@ -424,6 +463,9 @@ func (tr *TestRunner) reconcileStoredActiveTest(test *ManagedTest) error {
 	case "INITIALIZING", "RUNNING", "PAUSED", "STOPPING", "SHAKEOUT":
 	default:
 		return nil
+	}
+	if err := tr.claimTestExecutionFence(test); err != nil {
+		return err
 	}
 	previousStatus := test.Status
 	previousPendingSince := cloneTimePtr(test.PendingSince)
@@ -440,7 +482,7 @@ func (tr *TestRunner) reconcileStoredActiveTest(test *ManagedTest) error {
 	if test.Error == "" {
 		test.Error = "controller restarted before the run completed"
 	}
-	if err := tr.persistStoredTestStatus(test.ID, test.Status, &now, test.Error); err != nil {
+	if err := tr.persistStoredTestStatus(test.ID, test.executionFence, test.Status, &now, test.Error); err != nil {
 		test.Status = previousStatus
 		test.PendingSince = previousPendingSince
 		test.PendingReason = previousPendingReason
@@ -467,6 +509,7 @@ func managedTestFromRecord(record *storage.TestRecord) *ManagedTest {
 	managedTest := &ManagedTest{
 		ID:                    record.ID,
 		RefKey:                record.RefKey,
+		MaterializationKey:    record.MaterializationKey,
 		Name:                  record.Name,
 		Status:                record.Status,
 		ApplicationID:         record.ApplicationID,
@@ -489,6 +532,10 @@ func managedTestFromRecord(record *storage.TestRecord) *ManagedTest {
 		ScheduledStartAt:      cloneTimePtr(record.ScheduledStartAt),
 		TimeslotID:            cloneStringPtr(record.TimeslotID),
 		PendingSince:          record.PendingSince,
+		PausedAt:              cloneTimePtr(record.PausedAt),
+		CumulativePause:       time.Duration(record.CumulativePause),
+		CapacityWindowStartAt: cloneTimePtr(record.CapacityWindowStartAt),
+		CapacityWindowEndAt:   cloneTimePtr(record.CapacityWindowEndAt),
 		BaselinePinned:        record.BaselinePinned,
 		BaselinePinnedAt:      record.BaselinePinnedAt,
 		CreatedBySubject:      record.CreatedBySubject,
@@ -793,15 +840,18 @@ func scenarioRefsFromSet(set map[string]ScenarioRef) []ScenarioRef {
 	return out
 }
 
-func (tr *TestRunner) loadRunArchiveFromStore(id string) (*storage.RunArchiveRecord, bool) {
+func (tr *TestRunner) loadRunArchiveFromStore(id string) (*storage.RunArchiveRecord, bool, error) {
 	if tr.archiveStore == nil {
-		return nil, false
+		return nil, false, nil
 	}
 	record, err := tr.archiveStore.GetRunArchive(id)
-	if err != nil {
-		return nil, false
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, false, nil
 	}
-	return record, true
+	if err != nil {
+		return nil, false, err
+	}
+	return record, record != nil, nil
 }
 
 // forgetProject removes successfully deleted project data from the controller's
@@ -831,6 +881,7 @@ func (tr *TestRunner) forgetProject(projectID string) {
 	for id, test := range tr.tests {
 		if test != nil && normalizeProjectID(test.ProjectID) == projectID {
 			tr.removeRefKeyLocked(test.RefKey)
+			tr.forgetRunSnapshotWriteStateLocked(id)
 			delete(tr.tests, id)
 			delete(tr.archives, id)
 			forgetRunArchiveCache(id)
@@ -860,6 +911,7 @@ func buildManagedTestRecord(test *ManagedTest) *storage.TestRecord {
 	return &storage.TestRecord{
 		ID:                    test.ID,
 		RefKey:                test.RefKey,
+		MaterializationKey:    test.MaterializationKey,
 		Name:                  test.Name,
 		Status:                test.Status,
 		ApplicationID:         test.ApplicationID,
@@ -878,8 +930,14 @@ func buildManagedTestRecord(test *ManagedTest) *storage.TestRecord {
 		ScheduledStartAt:      cloneTimePtr(test.ScheduledStartAt),
 		TimeslotID:            cloneStringPtr(test.TimeslotID),
 		PendingSince:          test.PendingSince,
+		PausedAt:              cloneTimePtr(test.PausedAt),
+		CumulativePause:       int64(test.CumulativePause),
+		CapacityWindowStartAt: cloneTimePtr(test.CapacityWindowStartAt),
+		CapacityWindowEndAt:   cloneTimePtr(test.CapacityWindowEndAt),
 		BaselinePinned:        test.BaselinePinned,
 		BaselinePinnedAt:      test.BaselinePinnedAt,
+		EndTime:               cloneTimePtr(test.EndedAt),
+		Error:                 test.Error,
 		CreatedBySubject:      test.CreatedBySubject,
 		CreatedByDisplayName:  test.CreatedByDisplayName,
 		StartedBySubject:      test.StartedBySubject,
@@ -895,7 +953,30 @@ func buildManagedTestRecord(test *ManagedTest) *storage.TestRecord {
 
 func (tr *TestRunner) saveManagedTestRecord(test *ManagedTest) error {
 	if tr.testStore != nil {
-		return tr.testStore.SaveTest(buildManagedTestRecord(test))
+		record := buildManagedTestRecord(test)
+		if tr.durableExecutionFence {
+			if test == nil {
+				return fmt.Errorf("test is required")
+			}
+			if test.executionFence == "" {
+				return fmt.Errorf("%w: test %s has no claimed execution epoch", errNotExecutionLeader, test.ID)
+			}
+			store, ok := tr.testStore.(interface {
+				SaveTestIfLeaseHeld(*storage.TestRecord, string, string) (bool, error)
+			})
+			if !ok {
+				return fmt.Errorf("test persistence does not support execution-lease fencing")
+			}
+			saved, err := store.SaveTestIfLeaseHeld(record, executionLeaseName, test.executionFence)
+			if err != nil {
+				return err
+			}
+			if !saved {
+				return fmt.Errorf("%w: test %s belongs to an expired execution epoch", errNotExecutionLeader, test.ID)
+			}
+			return nil
+		}
+		return tr.testStore.SaveTest(record)
 	}
 	return nil
 }
@@ -970,6 +1051,9 @@ func (tr *TestRunner) AttributeTestExecutionPlanApproval(id string, approval *st
 		return
 	}
 	previousApproval := test.ExecutionPlanApproval
+	if snapshot.ApprovedPeakVUsers <= 0 {
+		snapshot.ApprovedPeakVUsers = approvedExecutionPlanPeakForTest(test)
+	}
 	test.ExecutionPlanApproval = snapshot
 	if err := tr.saveManagedTestRecord(test); err != nil {
 		test.ExecutionPlanApproval = previousApproval
@@ -977,11 +1061,32 @@ func (tr *TestRunner) AttributeTestExecutionPlanApproval(id string, approval *st
 	}
 }
 
-func (tr *TestRunner) deleteStoredTest(id string) error {
-	if tr.testStore != nil {
-		return tr.testStore.DeleteTest(id)
+func (tr *TestRunner) deleteStoredTest(id string) (storage.LeaseFencedDeleteResult, error) {
+	if tr.testStore == nil {
+		return storage.LeaseFencedDeleteDeleted, nil
 	}
-	return nil
+	if tr.durableExecutionFence {
+		leaseOwnerID := tr.currentExecutionFenceToken()
+		if leaseOwnerID == "" {
+			return storage.LeaseFencedDeleteFenced, errNotExecutionLeader
+		}
+		store, ok := tr.testStore.(leaseFencedTestDeletePersistence)
+		if !ok {
+			return storage.LeaseFencedDeleteFenced, fmt.Errorf("test persistence does not support execution-lease-fenced deletion")
+		}
+		result, err := store.DeleteTestIfLeaseHeld(id, executionLeaseName, leaseOwnerID)
+		if err != nil {
+			return result, err
+		}
+		if result == storage.LeaseFencedDeleteFenced {
+			return result, errNotExecutionLeader
+		}
+		return result, nil
+	}
+	if err := tr.testStore.DeleteTest(id); err != nil {
+		return storage.LeaseFencedDeleteFenced, err
+	}
+	return storage.LeaseFencedDeleteDeleted, nil
 }
 
 func (tr *TestRunner) saveLiveMetricsHistory(testID string, timestamp time.Time, live *LiveMetrics) error {
@@ -992,7 +1097,15 @@ func (tr *TestRunner) saveLiveMetricsHistory(testID string, timestamp time.Time,
 }
 
 func (tr *TestRunner) updateStoredTestStatus(testID string, status string, endTime *time.Time, errStr string) error {
-	if err := tr.persistStoredTestStatus(testID, status, endTime, errStr); err != nil {
+	executionFence := ""
+	if tr.durableExecutionFence {
+		tr.mu.RLock()
+		if test := tr.tests[testID]; test != nil {
+			executionFence = test.executionFence
+		}
+		tr.mu.RUnlock()
+	}
+	if err := tr.persistStoredTestStatus(testID, executionFence, status, endTime, errStr); err != nil {
 		return err
 	}
 	// A terminal status is visible to admission only after the durable test row
@@ -1013,23 +1126,58 @@ func (tr *TestRunner) updateStoredTestStatus(testID string, status string, endTi
 // persistStoredTestStatus writes only the test transition. Callers that hold
 // tr.mu use this helper and release secondary resources after unlocking, avoiding
 // the recursive tr.mu read taken by releaseCapacityReservationForTerminalStatus.
-func (tr *TestRunner) persistStoredTestStatus(testID string, status string, endTime *time.Time, errStr string) error {
+func (tr *TestRunner) persistStoredTestStatus(testID string, executionFence string, status string, endTime *time.Time, errStr string) error {
 	if tr.testStore == nil {
 		return nil
 	}
-	return retryDurableTransition(func() error {
-		if store, ok := tr.testStore.(interface {
-			UpdateTestStatusIfActive(string, string, *time.Time, string) (bool, error)
-		}); ok {
-			updated, err := store.UpdateTestStatusIfActive(testID, status, endTime, errStr)
-			if err != nil {
-				return err
-			}
-			if !updated {
-				return fmt.Errorf("durable lifecycle transition for test %s was fenced by a newer state", testID)
-			}
-			return nil
+	if tr.durableExecutionFence {
+		if strings.TrimSpace(executionFence) == "" {
+			return errNotExecutionLeader
 		}
+		store, ok := tr.testStore.(interface {
+			UpdateTestStatusIfActiveAndLeaseHeld(string, string, *time.Time, string, string, string) (storage.TestStatusTransitionResult, error)
+		})
+		if !ok {
+			return fmt.Errorf("test persistence does not support execution-lease-fenced lifecycle transitions")
+		}
+		var result storage.TestStatusTransitionResult
+		if err := retryDurableTransition(func() error {
+			var err error
+			result, err = store.UpdateTestStatusIfActiveAndLeaseHeld(testID, status, endTime, errStr, executionLeaseName, executionFence)
+			return err
+		}); err != nil {
+			return err
+		}
+		switch result {
+		case storage.TestStatusTransitionUpdated, storage.TestStatusTransitionUnchanged:
+			return nil
+		case storage.TestStatusTransitionMissing:
+			return fmt.Errorf("%w: %s", errStoredTestMissing, testID)
+		default:
+			return fmt.Errorf("%w: test %s belongs to an expired execution epoch", errNotExecutionLeader, testID)
+		}
+	}
+	if store, ok := tr.testStore.(interface {
+		UpdateTestStatusIfActive(string, string, *time.Time, string) (storage.TestStatusTransitionResult, error)
+	}); ok {
+		var result storage.TestStatusTransitionResult
+		if err := retryDurableTransition(func() error {
+			var err error
+			result, err = store.UpdateTestStatusIfActive(testID, status, endTime, errStr)
+			return err
+		}); err != nil {
+			return err
+		}
+		switch result {
+		case storage.TestStatusTransitionUpdated, storage.TestStatusTransitionUnchanged:
+			return nil
+		case storage.TestStatusTransitionMissing:
+			return fmt.Errorf("%w: %s", errStoredTestMissing, testID)
+		default:
+			return fmt.Errorf("%w: test %s has a newer state", errStoredTestTransitionFenced, testID)
+		}
+	}
+	return retryDurableTransition(func() error {
 		return tr.testStore.UpdateTestStatus(testID, status, endTime, errStr)
 	})
 }
@@ -1096,18 +1244,31 @@ func (tr *TestRunner) UsageAccountingSnapshotInterval() time.Duration {
 	if seconds <= 0 {
 		return 0
 	}
-	return time.Duration(seconds) * time.Second
+	interval, ok := checkedDuration(seconds, time.Second)
+	if !ok {
+		return 0
+	}
+	return interval
 }
+
+const (
+	usageSnapshotLookupPageSize = 500
+	maxUsageSnapshotLookupPages = 20
+)
 
 func (tr *TestRunner) latestGlobalUsageSnapshotTime() (time.Time, error) {
 	if tr == nil || tr.usageStore == nil {
 		return time.Time{}, nil
 	}
 	// The storage API treats an empty project filter as all projects. Walk newest
-	// pages until the first global cadence row is found; a busy project must not
-	// push the durable cadence marker outside one bounded page during failover.
-	for offset := 0; ; offset += 500 {
-		snapshots, err := tr.usageStore.ListUsageAccountingSnapshots("", 500, offset)
+	// pages until the first global cadence row is found. Bound the fallback scan:
+	// a compatibility store that ignores offset (or a database containing only a
+	// very large project history) must not trap leadership acquisition in an
+	// infinite/full-table walk. If the marker is older than the scan window the
+	// cadence safely treats it as absent and writes a fresh global marker.
+	for page := 0; page < maxUsageSnapshotLookupPages; page++ {
+		offset := page * usageSnapshotLookupPageSize
+		snapshots, err := tr.usageStore.ListUsageAccountingSnapshots("", usageSnapshotLookupPageSize, offset)
 		if err != nil {
 			return time.Time{}, err
 		}
@@ -1116,10 +1277,11 @@ func (tr *TestRunner) latestGlobalUsageSnapshotTime() (time.Time, error) {
 				return snapshot.GeneratedAt.UTC(), nil
 			}
 		}
-		if len(snapshots) < 500 {
+		if len(snapshots) < usageSnapshotLookupPageSize {
 			return time.Time{}, nil
 		}
 	}
+	return time.Time{}, nil
 }
 
 func (tr *TestRunner) RunUsageAccountingSnapshotCadence(ctx context.Context, ticks <-chan time.Time) {

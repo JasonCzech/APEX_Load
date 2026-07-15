@@ -60,19 +60,23 @@ type ExecutionPlanSchedule struct {
 // an execution-plan schedule. UNIQUE(schedule_id, planned_at) makes the sweep
 // idempotent. RunID points at the ExecutionPlanRun that was started.
 type ExecutionPlanScheduleOccurrence struct {
-	ID               string     `json:"id"`
-	ScheduleID       string     `json:"schedule_id"`
-	PlanID           string     `json:"plan_id"`
-	ProjectID        string     `json:"project_id,omitempty"`
-	ScheduleRevision int        `json:"schedule_revision,omitempty"`
-	PlannedAt        time.Time  `json:"planned_at"`
-	MaterializedAt   *time.Time `json:"materialized_at,omitempty"`
-	Status           string     `json:"status"`
-	ReasonCode       string     `json:"reason_code,omitempty"`
-	RunID            string     `json:"run_id,omitempty"`
-	ConflictSummary  string     `json:"conflict_summary,omitempty"`
-	CreatedAt        time.Time  `json:"created_at"`
-	UpdatedAt        time.Time  `json:"updated_at"`
+	ID               string `json:"id"`
+	ScheduleID       string `json:"schedule_id"`
+	PlanID           string `json:"plan_id"`
+	ProjectID        string `json:"project_id,omitempty"`
+	ScheduleRevision int    `json:"schedule_revision,omitempty"`
+	Revision         int64  `json:"revision,omitempty"`
+	// TransitionToken is an internal compare-and-swap fence. It must never be
+	// exposed through the REST representations that marshal this storage type.
+	TransitionToken string     `json:"-"`
+	PlannedAt       time.Time  `json:"planned_at"`
+	MaterializedAt  *time.Time `json:"materialized_at,omitempty"`
+	Status          string     `json:"status"`
+	ReasonCode      string     `json:"reason_code,omitempty"`
+	RunID           string     `json:"run_id,omitempty"`
+	ConflictSummary string     `json:"conflict_summary,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
 }
 
 // ExecutionPlan is an ordered collection of scenario runs — the LoadRunner
@@ -82,6 +86,7 @@ type ExecutionPlanScheduleOccurrence struct {
 type ExecutionPlan struct {
 	ID          string               `json:"id"`
 	ProjectID   string               `json:"project_id,omitempty"`
+	Revision    int64                `json:"revision"`
 	Name        string               `json:"name"`
 	Description string               `json:"description,omitempty"`
 	Entries     []ExecutionPlanEntry `json:"entries"`
@@ -91,6 +96,15 @@ type ExecutionPlan struct {
 	CreatedAt   time.Time            `json:"created_at"`
 	UpdatedAt   time.Time            `json:"updated_at"`
 }
+
+type ExecutionPlanDeleteResult string
+
+const (
+	ExecutionPlanDeleteDeleted                          ExecutionPlanDeleteResult = "deleted"
+	ExecutionPlanDeleteMissing                          ExecutionPlanDeleteResult = "missing"
+	ExecutionPlanDeleteBlockedByActiveRun               ExecutionPlanDeleteResult = "blocked_active_run"
+	ExecutionPlanDeleteBlockedByMaterializingOccurrence ExecutionPlanDeleteResult = "blocked_materializing_occurrence"
+)
 
 // ExecutionPlanEntry references a scenario to run, with optional runtime
 // overrides. RuntimeOverrides is opaque JSON so the storage layer stays
@@ -122,17 +136,19 @@ func (e ExecutionPlanEntry) IsEnabled() bool {
 // row is persisted at every transition so progress survives both dashboard
 // reloads and controller/leadership failover.
 type ExecutionPlanRun struct {
-	ID          string                  `json:"id"`
-	PlanID      string                  `json:"plan_id"`
-	ProjectID   string                  `json:"project_id,omitempty"`
-	RunMode     string                  `json:"run_mode"` // parallel | sequential
-	Status      string                  `json:"status"`   // running | completed | halted | failed
-	Entries     []ExecutionPlanRunEntry `json:"entries"`
-	Revision    int64                   `json:"revision,omitempty"`
-	TransitionToken string                `json:"transition_token,omitempty"`
-	CreatedAt   time.Time               `json:"created_at"`
-	UpdatedAt   time.Time               `json:"updated_at"`
-	CompletedAt *time.Time              `json:"completed_at,omitempty"`
+	ID        string                  `json:"id"`
+	PlanID    string                  `json:"plan_id"`
+	ProjectID string                  `json:"project_id,omitempty"`
+	RunMode   string                  `json:"run_mode"` // parallel | sequential
+	Status    string                  `json:"status"`   // running | completed | halted | failed
+	Entries   []ExecutionPlanRunEntry `json:"entries"`
+	Revision  int64                   `json:"revision,omitempty"`
+	// TransitionToken is an internal compare-and-swap fence. It must never be
+	// exposed through the REST representations that marshal this storage type.
+	TransitionToken string     `json:"-"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+	CompletedAt     *time.Time `json:"completed_at,omitempty"`
 }
 
 // ExecutionPlanRunEntry is the per-entry status within a plan run.
@@ -148,12 +164,13 @@ type ExecutionPlanRunEntry struct {
 	// resume a sequential run after a controller restart. They live inside the
 	// existing entries_json column, so adding them requires no SQL migration and
 	// old rows remain readable (their zero values use the safe halt policy).
-	FailurePolicy    string                    `json:"failure_policy,omitempty"`
-	RuntimeOverrides json.RawMessage           `json:"runtime_overrides,omitempty"`
-	DataPools        []ScenarioDataPoolBinding `json:"data_pools,omitempty"`
-	TimeslotID       *string                   `json:"timeslot_id,omitempty"`
-	RunName          string                    `json:"run_name,omitempty"`
-	AttribSubject    string                    `json:"attrib_subject,omitempty"`
-	AttribName       string                    `json:"attrib_name,omitempty"`
-	ApprovalID       string                    `json:"approval_id,omitempty"`
+	FailurePolicy      string                    `json:"failure_policy,omitempty"`
+	RuntimeOverrides   json.RawMessage           `json:"runtime_overrides,omitempty"`
+	DataPools          []ScenarioDataPoolBinding `json:"data_pools,omitempty"`
+	TimeslotID         *string                   `json:"timeslot_id,omitempty"`
+	RunName            string                    `json:"run_name,omitempty"`
+	AttribSubject      string                    `json:"attrib_subject,omitempty"`
+	AttribName         string                    `json:"attrib_name,omitempty"`
+	ApprovalID         string                    `json:"approval_id,omitempty"`
+	MaterializationKey string                    `json:"materialization_key,omitempty"`
 }

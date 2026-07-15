@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"net/textproto"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -21,7 +20,7 @@ func (n *Network) runSMTP(ctx context.Context, action *protocol.Action) (*operat
 		return nil, err
 	}
 	defer conn.Close()
-	tp := textproto.NewConn(conn)
+	tp := newBoundedTextProtoConn(conn)
 	defer tp.Close()
 
 	lines := []string{}
@@ -91,7 +90,7 @@ func (n *Network) runPOP3(ctx context.Context, action *protocol.Action) (*operat
 		return nil, err
 	}
 	defer conn.Close()
-	tp := textproto.NewConn(conn)
+	tp := newBoundedTextProtoConn(conn)
 	defer tp.Close()
 
 	lines := []string{}
@@ -137,7 +136,7 @@ func (n *Network) runIMAP(ctx context.Context, action *protocol.Action) (*operat
 		return nil, err
 	}
 	defer conn.Close()
-	tp := textproto.NewConn(conn)
+	tp := newBoundedTextProtoConn(conn)
 	defer tp.Close()
 
 	lines := []string{}

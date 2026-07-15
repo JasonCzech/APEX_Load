@@ -11,9 +11,9 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/internal/boundedcache"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	httpproto "github.com/jasonczech/apexload/pkg/protocol/http"
 )
@@ -50,15 +50,15 @@ var envelopePrefixPattern = regexp.MustCompile(`<([A-Za-z_][A-Za-z0-9_.-]*):Enve
 var soapNamespaceDeclPattern = regexp.MustCompile(`xmlns:([A-Za-z_][A-Za-z0-9_.-]*)\s*=\s*['"][^'"]+['"]`)
 var soapElementPrefixPattern = regexp.MustCompile(`</?([A-Za-z_][A-Za-z0-9_.-]*):[A-Za-z_][A-Za-z0-9_.-]*\b`)
 var soapAttributePrefixPattern = regexp.MustCompile(`\s([A-Za-z_][A-Za-z0-9_.-]*):[A-Za-z_][A-Za-z0-9_.-]*\s*=`)
-var soapGeneratedPatternCache sync.Map // map[string]*regexp.Regexp
+var soapGeneratedPatternCache = boundedcache.NewStringCache[*regexp.Regexp](0, 0, 0)
 
 func compileGeneratedSOAPPattern(key string, pattern string) *regexp.Regexp {
 	if cached, ok := soapGeneratedPatternCache.Load(key); ok {
-		return cached.(*regexp.Regexp)
+		return cached
 	}
 	re := regexp.MustCompile(pattern)
 	actual, _ := soapGeneratedPatternCache.LoadOrStore(key, re)
-	return actual.(*regexp.Regexp)
+	return actual
 }
 
 func (s *SOAP) Name() string { return "soap" }

@@ -207,6 +207,128 @@ func TestCapacityReservationOverlappingApprovalsAreSerialized(t *testing.T) {
 	}
 }
 
+func TestCapacityApprovalFailsClosedOnUnknownInvalidAndOverflowingUnits(t *testing.T) {
+	maxInt := int(^uint(0) >> 1)
+	tests := []struct {
+		name          string
+		maxUnits      int
+		targetUnits   int
+		approvedUnits int
+		wantConflict  bool
+		wantError     bool
+	}{
+		{name: "unknown envelope", maxUnits: -1, targetUnits: 1, wantConflict: true},
+		{name: "negative callback units", maxUnits: 10, targetUnits: -1, wantError: true},
+		{name: "aggregate overflow", maxUnits: maxInt, targetUnits: maxInt, approvedUnits: 1, wantConflict: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			store := openTimeslotStore(t)
+			base := time.Now().UTC().Add(time.Hour)
+			for _, reservation := range []*CapacityReservation{
+				{ID: "approved", ProjectID: "proj-a", StartAt: base, EndAt: base.Add(time.Hour), ApprovalState: "approved"},
+				{ID: "target", ProjectID: "proj-a", StartAt: base, EndAt: base.Add(time.Hour), ApprovalState: "pending"},
+			} {
+				if err := store.SaveCapacityReservation(reservation); err != nil {
+					t.Fatalf("SaveCapacityReservation(%s): %v", reservation.ID, err)
+				}
+			}
+
+			changed, conflict, err := store.ApproveCapacityReservationWithinLimit(
+				"target",
+				time.Now().UTC(),
+				func(*CapacityReservation) (string, int) { return "", test.maxUnits },
+				func(reservation *CapacityReservation) int {
+					if reservation.ID == "target" {
+						return test.targetUnits
+					}
+					return test.approvedUnits
+				},
+			)
+			if changed || conflict != test.wantConflict || (err != nil) != test.wantError {
+				t.Fatalf("approval = changed:%v conflict:%v err:%v, want false/%v/error:%v", changed, conflict, err, test.wantConflict, test.wantError)
+			}
+			stored, loadErr := store.GetCapacityReservation("target")
+			if loadErr != nil {
+				t.Fatal(loadErr)
+			}
+			if stored.ApprovalState != "pending" {
+				t.Fatalf("target state = %q, want pending", stored.ApprovalState)
+			}
+		})
+	}
+}
+
+func TestCapacityFencedApprovalUsesDurableSettingAndApprovedSnapshot(t *testing.T) {
+	store := openTimeslotStore(t)
+	if err := store.SaveSetting("capacity-settings", "durable-new"); err != nil {
+		t.Fatalf("SaveSetting: %v", err)
+	}
+	base := time.Now().UTC().Add(time.Hour)
+	units := 2
+	for _, reservation := range []*CapacityReservation{
+		{ID: "already-approved", ProjectID: "proj-a", StartAt: base, EndAt: base.Add(time.Hour), ApprovalState: "approved", RequestedCapacity: &CapacityReservationRequest{Generators: &units}},
+		{ID: "pending-target", ProjectID: "proj-a", StartAt: base, EndAt: base.Add(time.Hour), ApprovalState: "pending", RequestedCapacity: &CapacityReservationRequest{Generators: &units}},
+	} {
+		if err := store.SaveCapacityReservation(reservation); err != nil {
+			t.Fatalf("SaveCapacityReservation(%s): %v", reservation.ID, err)
+		}
+	}
+	changed, overbooked, err := store.ApproveCapacityReservationWithCapacityFence(
+		"pending-target",
+		time.Now().UTC(),
+		"capacity-settings",
+		func(target *CapacityReservation, approved []*CapacityReservation, settingValue string) (bool, error) {
+			if target.ID != "pending-target" || settingValue != "durable-new" {
+				t.Fatalf("callback target=%q setting=%q", target.ID, settingValue)
+			}
+			if len(approved) != 1 || approved[0].ID != "already-approved" {
+				t.Fatalf("approved snapshot = %+v", approved)
+			}
+			return true, nil
+		},
+	)
+	if err != nil || changed || !overbooked {
+		t.Fatalf("approval = changed:%v overbooked:%v err:%v, want false/true/nil", changed, overbooked, err)
+	}
+	stored, err := store.GetCapacityReservation("pending-target")
+	if err != nil {
+		t.Fatalf("GetCapacityReservation: %v", err)
+	}
+	if stored.ApprovalState != "pending" {
+		t.Fatalf("rejected target state = %q, want pending", stored.ApprovalState)
+	}
+}
+
+func TestCapacityFencedSettingCASRollsBackValidationFailure(t *testing.T) {
+	store := openTimeslotStore(t)
+	if err := store.SaveSetting("capacity-settings", "old"); err != nil {
+		t.Fatalf("SaveSetting: %v", err)
+	}
+	base := time.Now().UTC().Add(time.Hour)
+	if err := store.SaveCapacityReservation(&CapacityReservation{
+		ID: "approved-for-settings", ProjectID: "proj-a", StartAt: base, EndAt: base.Add(time.Hour), ApprovalState: "approved",
+	}); err != nil {
+		t.Fatalf("SaveCapacityReservation: %v", err)
+	}
+	wantErr := fmt.Errorf("capacity conflict")
+	updated, err := store.CompareAndSwapSettingWithCapacityFence(
+		"capacity-settings", "old", "new", time.Now().UTC(),
+		func(current string, approved []*CapacityReservation) error {
+			if current != "old" || len(approved) != 1 || approved[0].ID != "approved-for-settings" {
+				t.Fatalf("validator current=%q approved=%+v", current, approved)
+			}
+			return wantErr
+		},
+	)
+	if updated || err == nil || err.Error() != wantErr.Error() {
+		t.Fatalf("setting CAS = updated:%v err:%v, want false/%v", updated, err, wantErr)
+	}
+	if raw, err := store.GetSetting("capacity-settings"); err != nil || raw != "old" {
+		t.Fatalf("setting after rollback = %q, %v; want old, nil", raw, err)
+	}
+}
+
 func TestCapacityApprovalDerivesEnvelopeFromTransactionalTarget(t *testing.T) {
 	store := openTimeslotStore(t)
 	base := time.Now().UTC().Add(time.Hour)
@@ -330,16 +452,27 @@ func TestCapacityReservationListTimeRangeAndBinding(t *testing.T) {
 		}
 	}
 
-	// Atomic check-and-set: the first bind wins, the second is rejected.
-	testID, status := "test-1", "RUNNING"
-	bound, err := store.UpdateCapacityReservationBinding("ts-0", &testID, &status, time.Now())
+	// Atomic reciprocal check-and-set: the first bind updates both rows and the
+	// second is rejected.
+	testID, status := "test-1", "QUEUED"
+	bindAt := base.Add(5 * time.Minute)
+	if err := store.SaveProject(&Project{ID: "proj-a", Name: "Project A", CreatedAt: bindAt, UpdatedAt: bindAt}); err != nil {
+		t.Fatalf("save bind project: %v", err)
+	}
+	if err := store.SaveTest(&TestRecord{
+		ID: testID, Name: testID, Status: status, ProjectID: "proj-a",
+		StartTime: bindAt, Duration: int64(time.Minute), Groups: []any{},
+	}); err != nil {
+		t.Fatalf("save bind test: %v", err)
+	}
+	bound, err := store.UpdateCapacityReservationBinding("ts-0", &testID, &status, bindAt)
 	if err != nil {
 		t.Fatalf("first bind: %v", err)
 	}
 	if !bound {
 		t.Fatal("first bind should succeed")
 	}
-	bound2, err := store.UpdateCapacityReservationBinding("ts-0", &testID, &status, time.Now())
+	bound2, err := store.UpdateCapacityReservationBinding("ts-0", &testID, &status, bindAt)
 	if err != nil {
 		t.Fatalf("second bind: %v", err)
 	}
@@ -352,6 +485,10 @@ func TestCapacityReservationListTimeRangeAndBinding(t *testing.T) {
 	}
 	if rebound.BoundTestID == nil || *rebound.BoundTestID != "test-1" {
 		t.Fatalf("bound_test_id = %v, want test-1", rebound.BoundTestID)
+	}
+	boundTest, err := store.GetTest(testID)
+	if err != nil || boundTest.TimeslotID == nil || *boundTest.TimeslotID != "ts-0" {
+		t.Fatalf("test-side binding = (%#v, %v), want ts-0", boundTest, err)
 	}
 
 	if err := store.DeleteCapacityReservation("ts-0"); err == nil {

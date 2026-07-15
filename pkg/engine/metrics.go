@@ -7,12 +7,15 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 type MetricsCollector struct {
 	ch                chan *protocol.Result
 	snapshots         []MetricsSnapshot
+	snapshotSizes     []int
+	snapshotBytes     int
 	snapshotsMu       sync.RWMutex
 	targetsMu         sync.RWMutex
 	current           *liveCounters
@@ -290,15 +293,20 @@ func (mc *MetricsCollector) SetGroupTargetTPS(group string, target float64) {
 		mc.groupTargetTPS = make(map[string]float64)
 	}
 	if target <= 0 {
-		delete(mc.groupTargetTPS, group)
+		delete(mc.groupTargetTPS, boundedMetricString(strings.TrimSpace(group), maxMetricLabelBytes))
 		return
 	}
+	group = boundedDimensionKey(group, mc.groupTargetTPS)
 	mc.groupTargetTPS[group] = target
 }
 
 func (mc *MetricsCollector) Record(r *protocol.Result) {
+	metric := compactMetricsResult(r)
+	if metric == nil {
+		return
+	}
 	select {
-	case mc.ch <- r:
+	case mc.ch <- metric:
 	default:
 		mc.current.droppedResults.Add(1)
 		// channel full — drop metric rather than blocking the hot path
@@ -399,8 +407,9 @@ func (mc *MetricsCollector) RecordTransactionResult(r *protocol.Result) {
 	} else {
 		mc.current.totalErrors.Add(1)
 	}
+	metric := compactMetricsResult(r)
 	select {
-	case mc.ch <- r:
+	case mc.ch <- metric:
 	default:
 		mc.current.droppedResults.Add(1)
 	}
@@ -413,6 +422,19 @@ func (mc *MetricsCollector) aggregate(interval time.Duration) {
 
 	var batch []*protocol.Result
 	windowStart := mc.startedAt
+	publishBatch := func(windowEnd time.Time) {
+		if len(batch) == 0 {
+			return
+		}
+		window := windowEnd.Sub(windowStart)
+		if window <= 0 {
+			window = time.Nanosecond
+		}
+		mc.publishSnapshot(batch, window)
+		clear(batch)
+		batch = batch[:0]
+		windowStart = windowEnd
+	}
 
 	for {
 		select {
@@ -421,21 +443,18 @@ func (mc *MetricsCollector) aggregate(interval time.Duration) {
 				select {
 				case r := <-mc.ch:
 					batch = append(batch, r)
-				default:
-					if len(batch) > 0 {
-						window := time.Since(windowStart)
-						if window <= 0 {
-							window = time.Nanosecond
-						}
-						mc.publishSnapshot(batch, window)
+					if len(batch) >= maxMetricsBatchSize {
+						publishBatch(time.Now())
 					}
+				default:
+					publishBatch(time.Now())
 					return
 				}
 			}
 		case <-ticker.C:
 			windowEnd := time.Now()
 			// drain channel
-			for {
+			for len(batch) < maxMetricsBatchSize {
 				select {
 				case r := <-mc.ch:
 					batch = append(batch, r)
@@ -462,6 +481,7 @@ func (mc *MetricsCollector) aggregate(interval time.Duration) {
 			}
 			mc.publishSnapshot(batch, window)
 			windowStart = windowEnd
+			clear(batch)
 			batch = batch[:0]
 		}
 	}
@@ -470,24 +490,24 @@ func (mc *MetricsCollector) aggregate(interval time.Duration) {
 func (mc *MetricsCollector) publishSnapshot(batch []*protocol.Result, window time.Duration) {
 	snap := mc.computeSnapshot(batch, window)
 	if mc.resCollector != nil {
-		snap.Resources = &SystemResources{}
-	}
-	mc.snapshotsMu.Lock()
-	mc.snapshots = append(mc.snapshots, snap)
-	if len(mc.snapshots) > 3600 {
-		mc.snapshots = mc.snapshots[len(mc.snapshots)-3600:]
-	}
-	snapshotIndex := len(mc.snapshots) - 1
-	mc.snapshotsMu.Unlock()
-	if mc.resCollector != nil {
-		if resources := mc.resCollector.Collect(); resources != nil {
-			mc.snapshotsMu.Lock()
-			if snapshotIndex >= 0 && snapshotIndex < len(mc.snapshots) {
-				mc.snapshots[snapshotIndex].Resources = resources
-			}
-			mc.snapshotsMu.Unlock()
+		snap.Resources = mc.resCollector.Collect()
+		if snap.Resources != nil {
+			snap.Resources.External = boundExternalMetrics(snap.Resources.External)
 		}
 	}
+	snapshotSize := estimateMetricsSnapshotBytes(snap)
+	mc.snapshotsMu.Lock()
+	mc.snapshots = append(mc.snapshots, snap)
+	mc.snapshotSizes = append(mc.snapshotSizes, snapshotSize)
+	mc.snapshotBytes += snapshotSize
+	for (len(mc.snapshots) > 3600 || mc.snapshotBytes > maxMetricsSnapshotBytes) && len(mc.snapshots) > 1 {
+		mc.snapshotBytes -= mc.snapshotSizes[0]
+		mc.snapshots[0] = MetricsSnapshot{}
+		mc.snapshotSizes[0] = 0
+		mc.snapshots = mc.snapshots[1:]
+		mc.snapshotSizes = mc.snapshotSizes[1:]
+	}
+	mc.snapshotsMu.Unlock()
 }
 
 func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window time.Duration) MetricsSnapshot {
@@ -553,51 +573,55 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 				totalWaitMs += waitMs
 			}
 
-			tm, ok := snap.ByTransaction[r.ActionName]
+			transactionName := boundedDimensionKey(r.ActionName, snap.ByTransaction)
+			tm, ok := snap.ByTransaction[transactionName]
 			if !ok {
 				tm = &ActionMetrics{
-					Name:        r.ActionName,
+					Name:        transactionName,
 					MinDuration: r.Duration,
 					MaxDuration: r.Duration,
 				}
-				snap.ByTransaction[r.ActionName] = tm
+				snap.ByTransaction[transactionName] = tm
 			}
 			mergeActionResult(tm, r)
-			recordDurationSample(transactionDigests, transactionDurationSum, r.ActionName, r.Duration)
+			recordDurationSample(transactionDigests, transactionDurationSum, transactionName, r.Duration)
 
 			if r.Group != "" {
-				gm, ok := snap.ByGroup[r.Group]
+				groupName := boundedDimensionKey(r.Group, snap.ByGroup)
+				gm, ok := snap.ByGroup[groupName]
 				if !ok {
-					gm = &GroupMetrics{Name: r.Group}
-					snap.ByGroup[r.Group] = gm
+					gm = &GroupMetrics{Name: groupName}
+					snap.ByGroup[groupName] = gm
 				}
 				if r.Success {
 					gm.Transactions++
 				} else {
 					gm.Errors++
 				}
-				groupDurationSum[r.Group] += r.Duration
-				if _, ok := groupDigests[r.Group]; !ok {
-					groupDigests[r.Group] = NewTDigest(200)
+				groupDurationSum[groupName] += r.Duration
+				if _, ok := groupDigests[groupName]; !ok {
+					groupDigests[groupName] = NewTDigest(200)
 				}
-				groupDigests[r.Group].Add(float64(r.Duration))
+				groupDigests[groupName].Add(float64(r.Duration))
 			}
 		}
 
 		if !r.BusinessTransaction {
-			am, ok := snap.ByAction[r.ActionName]
+			actionName := boundedDimensionKey(r.ActionName, snap.ByAction)
+			am, ok := snap.ByAction[actionName]
 			if !ok {
 				am = &ActionMetrics{
-					Name:        r.ActionName,
+					Name:        actionName,
 					MinDuration: r.Duration,
 					MaxDuration: r.Duration,
 				}
-				snap.ByAction[r.ActionName] = am
+				snap.ByAction[actionName] = am
 			}
 			mergeActionResult(am, r)
-			recordDurationSample(actionDigests, actionDurationSum, r.ActionName, r.Duration)
+			recordDurationSample(actionDigests, actionDurationSum, actionName, r.Duration)
 
 			if dependencyTarget := strings.TrimSpace(r.DependencyTarget); dependencyTarget != "" {
+				dependencyTarget = boundedDimensionKey(dependencyTarget, snap.ByDependencyTarget)
 				dm, ok := snap.ByDependencyTarget[dependencyTarget]
 				if !ok {
 					dm = &ActionMetrics{
@@ -612,6 +636,7 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 			}
 
 			if operation := soapOperationFromResult(r); operation != "" {
+				operation = boundedDimensionKey(operation, snap.BySOAPOperation)
 				om, ok := snap.BySOAPOperation[operation]
 				if !ok {
 					om = &ActionMetrics{
@@ -626,6 +651,7 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 			}
 
 			if profile := strings.TrimSpace(r.NetworkProfile); profile != "" {
+				profile = boundedDimensionKey(profile, snap.ByNetworkProfile)
 				pm, ok := snap.ByNetworkProfile[profile]
 				if !ok {
 					pm = &ActionMetrics{
@@ -645,6 +671,7 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 				}
 				mergeBrowserMetricsSummary(snap.Browser, r.ClientMetrics)
 				if profile := r.ClientMetrics.DeviceProfile; profile != "" {
+					profile = boundedDimensionKey(profile, snap.BrowserByDevice)
 					metrics, ok := snap.BrowserByDevice[profile]
 					if !ok {
 						metrics = &BrowserDeviceMetrics{
@@ -700,13 +727,16 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 	// static configured counts. Adds active groups that produced no results in
 	// this window so they are still counted when selected.
 	if groupActiveFn != nil {
-		for name, active := range groupActiveFn() {
+		activeGroups := groupActiveFn()
+		for _, name := range boundedtext.SmallestStringKeys(activeGroups, maxMetricDimensionEntries) {
+			active := activeGroups[name]
+			name = boundedDimensionKey(name, snap.ByGroup)
 			gm, ok := snap.ByGroup[name]
 			if !ok {
 				gm = &GroupMetrics{Name: name}
 				snap.ByGroup[name] = gm
 			}
-			gm.ActiveVUsers = int64(active)
+			gm.ActiveVUsers += int64(active)
 		}
 	}
 	for name, am := range snap.ByAction {
@@ -939,7 +969,8 @@ func mergeServerTelemetrySummary(summary *ServerTelemetrySummary, telemetry *pro
 		if summary.PartitionEvents == nil {
 			summary.PartitionEvents = make(map[string]int64)
 		}
-		summary.PartitionEvents[telemetry.PartitionID] += int64(telemetry.MessagesSent)
+		partitionID := boundedDimensionKey(telemetry.PartitionID, summary.PartitionEvents)
+		summary.PartitionEvents[partitionID] += int64(telemetry.MessagesSent)
 	}
 	incrementTelemetryClassCount(&summary.RequestSizeClasses, telemetry.RequestSizeClass)
 	incrementTelemetryClassCount(&summary.ResponseSizeClasses, telemetry.ResponseSizeClass)
@@ -1034,6 +1065,7 @@ func incrementTelemetryClassCount(values *map[string]int64, key string) {
 	if *values == nil {
 		*values = make(map[string]int64)
 	}
+	key = boundedDimensionKey(key, *values)
 	(*values)[key]++
 }
 

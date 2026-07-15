@@ -29,6 +29,10 @@ func timeslotRetentionDays() int {
 	if err != nil || days < 0 {
 		return 0
 	}
+	if _, ok := checkedDuration(days, 24*time.Hour); !ok {
+		slog.Warn("invalid APEXLOAD_TIMESLOT_RETENTION_DAYS; retention disabled", "value", raw)
+		return 0
+	}
 	return days
 }
 
@@ -48,7 +52,11 @@ func (s *Server) pruneTimeslotRetention(now time.Time) {
 	if days <= 0 {
 		return
 	}
-	cutoff := now.UTC().Add(-time.Duration(days) * 24 * time.Hour)
+	retention, ok := checkedDuration(days, 24*time.Hour)
+	if !ok || retention <= 0 {
+		return
+	}
+	cutoff := now.UTC().Add(-retention)
 	endedPruned, err := s.store.DeleteCapacityReservationsEndedBefore(cutoff)
 	if err != nil {
 		slog.Warn("timeslot retention prune failed", "table", "capacity_reservations", "reason", "ended", "error", err)
@@ -96,7 +104,7 @@ func (s *Server) startTimeslotRetentionCadence() {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s.timeslotRetentionCancel = cancel
-	go func() {
+	s.launchBackground(func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
@@ -109,5 +117,5 @@ func (s *Server) startTimeslotRetentionCadence() {
 				}
 			}
 		}
-	}()
+	})
 }

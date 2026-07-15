@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -110,6 +111,29 @@ func TestTokenBucketAddsTokensForElapsedIntervals(t *testing.T) {
 			}
 			return
 		}
+	}
+}
+
+func TestTokenBucketDoesNotAccumulatePausedCredits(t *testing.T) {
+	tb := NewTokenBucket(20) // one token every 50ms
+	defer tb.Stop()
+	time.Sleep(70 * time.Millisecond)
+	tb.SetPaused(true)
+	time.Sleep(120 * time.Millisecond)
+	if got := len(tb.tokens); got != 0 {
+		t.Fatalf("paused token bucket buffered %d credits, want 0", got)
+	}
+	tb.SetPaused(false)
+
+	immediateCtx, immediateCancel := context.WithTimeout(context.Background(), 15*time.Millisecond)
+	defer immediateCancel()
+	if tb.WaitContext(immediateCtx) {
+		t.Fatal("token bucket released an accumulated credit immediately after resume")
+	}
+	eventualCtx, eventualCancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer eventualCancel()
+	if !tb.WaitContext(eventualCtx) {
+		t.Fatal("token bucket did not issue a newly earned credit after resume")
 	}
 }
 

@@ -18,6 +18,7 @@
 package debugserver
 
 import (
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -28,6 +29,8 @@ import (
 
 // PprofAddrEnv is the environment variable that enables the pprof listener.
 const PprofAddrEnv = "APEXLOAD_PPROF_ADDR"
+
+const appEnvVar = "APEXLOAD_ENV"
 
 // StartPprof starts an HTTP server exposing net/http/pprof on addr in a
 // background goroutine. A blank addr disables it and returns (nil, nil). A
@@ -53,7 +56,35 @@ func StartPprofFromEnv(getenv func(string) string) (*http.Server, error) {
 	if getenv == nil {
 		return nil, nil
 	}
-	return StartPprof(getenv(PprofAddrEnv))
+	addr := strings.TrimSpace(getenv(PprofAddrEnv))
+	if addr == "" {
+		return nil, nil
+	}
+	if isProductionEnvironment(getenv(appEnvVar)) && !isExplicitLoopbackBind(addr) {
+		return nil, fmt.Errorf("refusing unauthenticated pprof bind %q in production: %s must use an explicit loopback address", addr, PprofAddrEnv)
+	}
+	return StartPprof(addr)
+}
+
+func isProductionEnvironment(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "production", "prod":
+		return true
+	default:
+		return false
+	}
+}
+
+func isExplicitLoopbackBind(addr string) bool {
+	host, _, err := net.SplitHostPort(strings.TrimSpace(addr))
+	if err != nil || strings.TrimSpace(host) == "" {
+		return false
+	}
+	if strings.EqualFold(strings.TrimSuffix(host, "."), "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // serve runs an http.Server bound to ln serving the default mux (where pprof is

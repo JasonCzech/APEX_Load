@@ -67,6 +67,78 @@ func TestServiceAccountMetadataCASDoesNotRestoreOrUndoCredentialState(t *testing
 	}
 }
 
+func TestServiceAccountRotationCASReturnsOnlyWinningCredential(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	account := &ServiceAccount{ID: "svc-rotate-cas", Name: "rotate", KeyHash: "old", Active: true, CreatedAt: now, UpdatedAt: now}
+	if err := store.SaveServiceAccount(account); err != nil {
+		t.Fatal(err)
+	}
+
+	firstAt := now.Add(time.Minute)
+	if rotated, err := store.RotateServiceAccountKeyIfUnchanged(account.ID, "winner", now, firstAt); err != nil || !rotated {
+		t.Fatalf("first rotation = %v, %v; want true, nil", rotated, err)
+	}
+	if rotated, err := store.RotateServiceAccountKeyIfUnchanged(account.ID, "stale-loser", now, now.Add(2*time.Minute)); err != nil || rotated {
+		t.Fatalf("stale rotation = %v, %v; want false, nil", rotated, err)
+	}
+	loaded, err := store.GetServiceAccount(account.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.KeyHash != "winner" {
+		t.Fatalf("winning key hash was replaced by stale rotation: %#v", loaded)
+	}
+
+	if err := store.DeleteServiceAccount(account.ID); err != nil {
+		t.Fatal(err)
+	}
+	if rotated, err := store.RotateServiceAccountKeyIfUnchanged(account.ID, "resurrected", firstAt, now.Add(3*time.Minute)); err != nil || rotated {
+		t.Fatalf("post-delete rotation = %v, %v; want false, nil", rotated, err)
+	}
+}
+
+func TestServiceAccountLastUsedDoesNotInvalidateMutationsOrWriteEveryRequest(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	account := &ServiceAccount{ID: "svc-last-used", Name: "last used", KeyHash: "old", Active: true, CreatedAt: now, UpdatedAt: now}
+	if err := store.SaveServiceAccount(account); err != nil {
+		t.Fatal(err)
+	}
+	firstUse := now.Add(time.Hour)
+	if err := store.UpdateServiceAccountLastUsed(account.ID, firstUse); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := store.GetServiceAccount(account.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.LastUsedAt == nil || !loaded.LastUsedAt.Equal(firstUse) || !loaded.UpdatedAt.Equal(now) {
+		t.Fatalf("last-used update changed administrative version: %#v", loaded)
+	}
+	if err := store.UpdateServiceAccountLastUsed(account.ID, firstUse.Add(30*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err = store.GetServiceAccount(account.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.LastUsedAt == nil || !loaded.LastUsedAt.Equal(firstUse) {
+		t.Fatalf("last-used write was not throttled: %#v", loaded.LastUsedAt)
+	}
+	if rotated, err := store.RotateServiceAccountKeyIfUnchanged(account.ID, "new", now, now.Add(2*time.Hour)); err != nil || !rotated {
+		t.Fatalf("last-used telemetry invalidated key rotation: %v, %v", rotated, err)
+	}
+}
+
 func TestSaveServiceAccountIsCreateOnly(t *testing.T) {
 	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
@@ -170,9 +242,10 @@ func TestUpdateUserGuardLastAdminPreservesConcurrentSessionEpoch(t *testing.T) {
 	if _, err := store.BumpUserSessionEpoch(user.ID, now.Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}
+	expected := *stale
 	stale.DisplayName = "Updated profile"
 	stale.UpdatedAt = now.Add(2 * time.Minute)
-	updated, err := store.UpdateUserGuardLastAdmin(stale)
+	updated, err := store.UpdateUserGuardLastAdminIfUnchanged(stale, &expected)
 	if err != nil || !updated {
 		t.Fatalf("profile update = %v, %v", updated, err)
 	}
@@ -182,5 +255,91 @@ func TestUpdateUserGuardLastAdminPreservesConcurrentSessionEpoch(t *testing.T) {
 	}
 	if loaded.SessionEpoch != 1 || loaded.DisplayName != "Updated profile" {
 		t.Fatalf("profile update rolled back session state: %#v", loaded)
+	}
+}
+
+func TestUserSubjectRenameAdvancesSessionEpoch(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Now().UTC()
+	user := &User{ID: "renamed-session-user", Subject: "old-subject", Active: true, SessionEpoch: 3, CreatedAt: now, UpdatedAt: now}
+	if err := store.SaveUser(user); err != nil {
+		t.Fatal(err)
+	}
+
+	current, err := store.GetUser(user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := *current
+	current.Subject = "new-subject"
+	current.UpdatedAt = now.Add(time.Minute)
+	updated, err := store.UpdateUserGuardLastAdminIfUnchanged(current, &expected)
+	if err != nil || !updated {
+		t.Fatalf("guarded subject rename = %v, %v", updated, err)
+	}
+	loaded, err := store.GetUser(user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.SessionEpoch != 4 {
+		t.Fatalf("guarded rename session epoch = %d, want 4", loaded.SessionEpoch)
+	}
+
+	loaded.Subject = "third-subject"
+	loaded.SessionEpoch = 0 // A stale caller must not reset the durable epoch.
+	loaded.UpdatedAt = now.Add(2 * time.Minute)
+	if err := store.SaveUser(loaded); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err = store.GetUser(user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.SessionEpoch != 5 {
+		t.Fatalf("upsert rename session epoch = %d, want 5", loaded.SessionEpoch)
+	}
+}
+
+func TestUpdateUserGuardLastAdminRejectsStaleAdministratorFields(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Now().UTC()
+	user := &User{ID: "stale-admin-edit", Subject: "stale-admin-edit", Email: "old@example.test", DisplayName: "Old", Active: true, CreatedAt: now, UpdatedAt: now}
+	if err := store.SaveUser(user); err != nil {
+		t.Fatal(err)
+	}
+	first, err := store.GetUser(user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale, err := store.GetUser(user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstExpected := *first
+	first.DisplayName = "First writer"
+	first.UpdatedAt = now.Add(time.Minute)
+	if updated, err := store.UpdateUserGuardLastAdminIfUnchanged(first, &firstExpected); err != nil || !updated {
+		t.Fatalf("first update = %t, %v", updated, err)
+	}
+	staleExpected := *stale
+	stale.Email = "stale@example.test"
+	stale.UpdatedAt = now.Add(2 * time.Minute)
+	if updated, err := store.UpdateUserGuardLastAdminIfUnchanged(stale, &staleExpected); !errors.Is(err, ErrUserConcurrentChange) || updated {
+		t.Fatalf("stale update = %t, %v, want concurrency rejection", updated, err)
+	}
+	loaded, err := store.GetUser(user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.DisplayName != "First writer" || loaded.Email != "old@example.test" {
+		t.Fatalf("stale update overwrote administrator fields: %#v", loaded)
 	}
 }

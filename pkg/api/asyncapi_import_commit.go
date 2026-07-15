@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
@@ -74,9 +75,9 @@ func (s *Server) handleCommitAsyncAPIImport(w http.ResponseWriter, r *http.Reque
 		}
 		s.recordAuditEvent(r, "script.import.asyncapi.create", "success", "script", stored.ID, stored.ProjectID, map[string]any{"name": stored.Name})
 		writeJSON(w, http.StatusCreated, map[string]any{
-			"scripts":       []*StoredScript{stored},
-			"script":        stored.Script,
-			"stored_script": stored,
+			"scripts":       maskStoredScripts([]*StoredScript{stored}),
+			"script":        maskScriptSecrets(stored.Script),
+			"stored_script": maskStoredScript(stored),
 			"replaced":      false,
 			"dry_run":       false,
 			"diff":          diff,
@@ -98,6 +99,9 @@ func (s *Server) handleCommitAsyncAPIImport(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusNotFound, "target script not found")
 		return
 	}
+	if !requireAuthorizedProjectMatch(w, r, existing.ProjectID) {
+		return
+	}
 	next := script
 	diff := diffAsyncAPIImport(existing.Script, script, replaceMode)
 	diff.Mode = "replace"
@@ -110,8 +114,12 @@ func (s *Server) handleCommitAsyncAPIImport(w http.ResponseWriter, r *http.Reque
 		writeJSON(w, http.StatusOK, map[string]any{"dry_run": true, "replaced": true, "diff": diff, "preflight": preflight})
 		return
 	}
-	updated, ok, err := s.runner.UpdateScriptDurable(targetID, next)
+	updated, ok, err := s.runner.UpdateScriptDurableInProject(targetID, next, authorizedProjectOr(r, existing.ProjectID))
 	if err != nil {
+		if errors.Is(err, errScriptConcurrentChange) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "failed to save imported script: "+err.Error())
 		return
 	}
@@ -121,9 +129,9 @@ func (s *Server) handleCommitAsyncAPIImport(w http.ResponseWriter, r *http.Reque
 	}
 	s.recordAuditEvent(r, "script.import.asyncapi.replace", "success", "script", updated.ID, updated.ProjectID, map[string]any{"name": updated.Name, "replace_mode": replaceMode})
 	writeJSON(w, http.StatusOK, map[string]any{
-		"scripts":       []*StoredScript{updated},
-		"script":        updated.Script,
-		"stored_script": updated,
+		"scripts":       maskStoredScripts([]*StoredScript{updated}),
+		"script":        maskScriptSecrets(updated.Script),
+		"stored_script": maskStoredScript(updated),
 		"replaced":      true,
 		"dry_run":       false,
 		"diff":          diff,

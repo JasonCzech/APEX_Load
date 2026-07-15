@@ -16,21 +16,33 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
-const defaultExecutionPlanListLimit = 100
+const (
+	defaultExecutionPlanListLimit        = 100
+	maxExecutionPlanEntries              = 256
+	maxExecutionPlanDataPoolsPerEntry    = 64
+	maxExecutionPlanRuntimeOverrideBytes = 256 << 10
+)
 
 func validExecutionRunMode(mode string) bool {
 	return mode == "parallel" || mode == "sequential"
 }
 
 func (s *Server) validateExecutionPlan(plan *storage.ExecutionPlan) (int, string) {
+	if plan == nil {
+		return http.StatusBadRequest, "execution plan is required"
+	}
 	if strings.TrimSpace(plan.Name) == "" {
 		return http.StatusBadRequest, "execution plan name is required"
+	}
+	if len(plan.Entries) > maxExecutionPlanEntries {
+		return http.StatusBadRequest, fmt.Sprintf("execution plan contains %d entries; limit is %d", len(plan.Entries), maxExecutionPlanEntries)
 	}
 	if plan.RunMode != "" && !validExecutionRunMode(plan.RunMode) {
 		return http.StatusBadRequest, "run_mode must be parallel or sequential"
@@ -44,10 +56,16 @@ func (s *Server) validateExecutionPlan(plan *storage.ExecutionPlan) (int, string
 			return http.StatusBadRequest, "entry failure_policy must be halt or skip"
 		}
 		if len(entry.RuntimeOverrides) > 0 {
+			if len(entry.RuntimeOverrides) > maxExecutionPlanRuntimeOverrideBytes {
+				return http.StatusBadRequest, fmt.Sprintf("entry runtime_overrides exceeds the %d-byte limit", maxExecutionPlanRuntimeOverrideBytes)
+			}
 			var runtimeOverrides *RuntimeSettingsOverride
 			if err := json.Unmarshal(entry.RuntimeOverrides, &runtimeOverrides); err != nil {
 				return http.StatusBadRequest, "entry runtime_overrides must be a valid runtime settings object"
 			}
+		}
+		if len(entry.DataPools) > maxExecutionPlanDataPoolsPerEntry {
+			return http.StatusBadRequest, fmt.Sprintf("execution plan entry contains %d data pools; limit is %d", len(entry.DataPools), maxExecutionPlanDataPoolsPerEntry)
 		}
 		for _, binding := range entry.DataPools {
 			if strings.TrimSpace(binding.PoolID) == "" {
@@ -57,10 +75,30 @@ func (s *Server) validateExecutionPlan(plan *storage.ExecutionPlan) (int, string
 				return http.StatusBadRequest, "every execution plan entry data pool requires an alias"
 			}
 		}
-		// Cross-tenant guard: an entry that references an existing scenario must
-		// reference one in the plan's own project. Unknown scenarios are allowed
-		// (they fail per-entry at materialize) so plans can be drafted early.
-		if s.runner != nil {
+		// Cross-tenant guards use durable ownership, not the controller's
+		// eventually-consistent HA cache. Unknown scenarios remain valid draft
+		// references and fail per-entry at materialization, but an existing
+		// scenario or data pool can never be attached across projects.
+		if s.store != nil {
+			_, scripts, err := s.store.GetScenario(entry.ScenarioID)
+			switch {
+			case err == nil:
+				scenarioProject, status, message := resolveProjectIDFromScenarioScripts(scripts, s.store)
+				if status != 0 {
+					return status, message
+				}
+				if normalizeProjectID(scenarioProject) != planProject {
+					return http.StatusBadRequest, "an execution plan entry references a scenario in a different project"
+				}
+			case errors.Is(err, sql.ErrNoRows):
+				// Draft plans may intentionally name a scenario that will be created later.
+			case err != nil:
+				return http.StatusInternalServerError, "failed to validate execution plan scenario ownership"
+			}
+			if err := s.validateScenarioDataPoolProjects(planProject, entry.DataPools); err != nil {
+				return http.StatusBadRequest, err.Error()
+			}
+		} else if s.runner != nil {
 			if scenario, ok := s.runner.GetScenario(entry.ScenarioID); ok && normalizeProjectID(scenario.ProjectID) != planProject {
 				return http.StatusBadRequest, "an execution plan entry references a scenario in a different project"
 			}
@@ -72,6 +110,11 @@ func (s *Server) validateExecutionPlan(plan *storage.ExecutionPlan) (int, string
 func (s *Server) handleCreateExecutionPlan(w http.ResponseWriter, r *http.Request) {
 	if s.store == nil {
 		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
+		return
+	}
+	leaseTerm, err := s.runner.captureExecutionLeaseTerm()
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "execution leader is unavailable")
 		return
 	}
 	var plan storage.ExecutionPlan
@@ -88,7 +131,11 @@ func (s *Server) handleCreateExecutionPlan(w http.ResponseWriter, r *http.Reques
 		plan.RunMode = "parallel"
 	}
 	plan.Status = "draft"
-	if err := s.store.SaveExecutionPlan(&plan); err != nil {
+	if err := s.runner.createExecutionPlanWithTerm(&plan, leaseTerm); err != nil {
+		if errors.Is(err, errNotExecutionLeader) {
+			writeError(w, http.StatusServiceUnavailable, "execution leader is unavailable")
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -133,12 +180,22 @@ func (s *Server) handleUpdateExecutionPlan(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
 		return
 	}
+	leaseTerm, err := s.runner.captureExecutionLeaseTerm()
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "execution leader is unavailable")
+		return
+	}
 	existing, ok := s.loadExecutionPlan(w, r)
 	if !ok {
 		return
 	}
 	var req storage.ExecutionPlan
 	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	expectedRevision := req.Revision
+	if expectedRevision <= 0 {
+		writeError(w, http.StatusBadRequest, "execution plan revision is required and must be positive")
 		return
 	}
 	req.ID = existing.ID
@@ -154,7 +211,15 @@ func (s *Server) handleUpdateExecutionPlan(w http.ResponseWriter, r *http.Reques
 	if req.Status == "" {
 		req.Status = existing.Status
 	}
-	if err := s.store.SaveExecutionPlan(&req); err != nil {
+	if err := s.runner.updateExecutionPlanWithTerm(&req, expectedRevision, leaseTerm); err != nil {
+		if errors.Is(err, errNotExecutionLeader) {
+			writeError(w, http.StatusServiceUnavailable, "execution leader is unavailable")
+			return
+		}
+		if errors.Is(err, errExecutionPlanRevisionConflict) {
+			writeError(w, http.StatusConflict, "execution plan was modified by another request; reload and retry")
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -167,13 +232,38 @@ func (s *Server) handleDeleteExecutionPlan(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
 		return
 	}
+	leaseTerm, err := s.runner.captureExecutionLeaseTerm()
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "execution leader is unavailable")
+		return
+	}
 	id := r.PathValue("id")
 	projectID := ""
 	if plan, err := s.store.GetExecutionPlan(id); err == nil && plan != nil {
 		projectID = plan.ProjectID
 	}
-	if err := s.store.DeleteExecutionPlan(id); err != nil {
+	result, err := s.runner.deleteExecutionPlanWithTerm(id, leaseTerm)
+	if err != nil {
+		if errors.Is(err, errNotExecutionLeader) {
+			writeError(w, http.StatusServiceUnavailable, "execution leader is unavailable")
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	switch result {
+	case storage.ExecutionPlanDeleteMissing:
+		writeError(w, http.StatusNotFound, "execution plan not found")
+		return
+	case storage.ExecutionPlanDeleteBlockedByActiveRun:
+		writeError(w, http.StatusConflict, "execution plan has a non-terminal run and cannot be deleted")
+		return
+	case storage.ExecutionPlanDeleteBlockedByMaterializingOccurrence:
+		writeError(w, http.StatusConflict, "execution plan has a materializing schedule occurrence and cannot be deleted")
+		return
+	case storage.ExecutionPlanDeleteDeleted:
+	default:
+		writeError(w, http.StatusInternalServerError, "execution plan delete returned an unknown result")
 		return
 	}
 	s.recordAuditEvent(r, "execution_plan.delete", "success", "execution_plan", id, projectID, nil)
@@ -220,10 +310,35 @@ func (tr *TestRunner) materializeAndRunExecutionPlan(plan *storage.ExecutionPlan
 // variant. A non-empty runIDOverride is anchored before test side effects and is
 // reused on occurrence replay after a controller crash.
 func (tr *TestRunner) materializeAndRunExecutionPlanWithRunID(plan *storage.ExecutionPlan, attribSubject, attribDisplayName, runNameOverride, runIDOverride string) (*ExecutionPlanMaterializeResult, error) {
+	leaseTerm, err := tr.captureExecutionLeaseTerm()
+	if err != nil {
+		return nil, err
+	}
+	return tr.materializeAndRunExecutionPlanWithRunIDAndTerm(plan, attribSubject, attribDisplayName, runNameOverride, runIDOverride, leaseTerm)
+}
+
+func (tr *TestRunner) materializeAndRunExecutionPlanWithRunIDAndTerm(plan *storage.ExecutionPlan, attribSubject, attribDisplayName, runNameOverride, runIDOverride string, leaseTerm executionLeaseTerm) (*ExecutionPlanMaterializeResult, error) {
 	if plan == nil {
 		return nil, errors.New("execution plan is required")
 	}
+	if !tr.executionLeaseTermCurrent(leaseTerm) {
+		return nil, errNotExecutionLeader
+	}
 	runIDOverride = strings.TrimSpace(runIDOverride)
+	if runIDOverride == "" {
+		// If a former leader committed the approval claim but stopped before the
+		// run anchor, resume that exact final run ID. Two concurrent rescuers are
+		// still serialized by the create-only run anchor, so this closes the
+		// claim/anchor crash window without allowing one approval to fund two runs.
+		recoveryRunID, err := tr.executionPlanApprovalRunIDAwaitingAnchor(plan)
+		if err != nil {
+			return nil, executionPlanPersistenceError("recover execution-plan approval claim", err)
+		}
+		runIDOverride = recoveryRunID
+		if runIDOverride == "" {
+			runIDOverride = "exec-plan-run-" + uuid.New().String()
+		}
+	}
 	if runIDOverride != "" && tr.execPlanRunStore != nil {
 		existing, err := tr.execPlanRunStore.GetExecutionPlanRun(runIDOverride)
 		switch {
@@ -231,6 +346,7 @@ func (tr *TestRunner) materializeAndRunExecutionPlanWithRunID(plan *storage.Exec
 			if existing.PlanID != plan.ID || normalizeProjectID(existing.ProjectID) != normalizeProjectID(plan.ProjectID) || existing.RunMode != plan.RunMode {
 				return nil, fmt.Errorf("execution-plan run id %q is already used by another materialization", runIDOverride)
 			}
+			tr.handoffParallelExecutionPlanTestsWithTerm(existing, leaseTerm)
 			return executionPlanMaterializeResultFromRun(existing), nil
 		case err != nil && !errors.Is(err, sql.ErrNoRows):
 			return nil, executionPlanPersistenceError("check preassigned execution-plan run id", err)
@@ -242,7 +358,7 @@ func (tr *TestRunner) materializeAndRunExecutionPlanWithRunID(plan *storage.Exec
 	}
 	// Governance gate: a plan whose aggregate peak exceeds the project VUser quota
 	// requires a project-admin approval before it can run.
-	gateApproval, blocked, err := tr.executionPlanRunGate(plan, attribSubject, runIDOverride)
+	gateApproval, blocked, err := tr.executionPlanRunGateWithTerm(plan, attribSubject, leaseTerm, runIDOverride)
 	if err != nil {
 		return nil, err
 	}
@@ -254,17 +370,14 @@ func (tr *TestRunner) materializeAndRunExecutionPlanWithRunID(plan *storage.Exec
 	// consume one approval and a run can never proceed on an unclaimed approval.
 	if gateApproval != nil {
 		claimRunID := runIDOverride
-		if claimRunID == "" {
-			claimRunID = "claim-" + uuid.New().String()
-		}
 		claimed := claimRunID != "" && gateApproval.RunID == claimRunID
 		if !claimed {
 			var err error
-			claimed, err = tr.execPlanScheduleStore.ClaimExecutionPlanApproval(gateApproval.ID, claimRunID, time.Now().UTC())
+			claimed, err = tr.claimExecutionPlanApprovalWithTerm(gateApproval.ID, claimRunID, time.Now().UTC(), leaseTerm)
 			if err != nil {
 				return nil, err
 			}
-			if !claimed && runIDOverride != "" {
+			if !claimed {
 				// A takeover can race the final claim write from the former
 				// leader. Treat an approval already stamped with this exact
 				// idempotency key as ours; it remains unusable by every other run.
@@ -285,7 +398,7 @@ func (tr *TestRunner) materializeAndRunExecutionPlanWithRunID(plan *storage.Exec
 
 	var result *ExecutionPlanMaterializeResult
 	if plan.RunMode == "sequential" {
-		run, err := tr.startExecutionPlanRunWithID(plan, attribSubject, attribDisplayName, runName, runIDOverride, gateApproval)
+		run, err := tr.startExecutionPlanRunWithIDAndTerm(plan, attribSubject, attribDisplayName, runName, runIDOverride, leaseTerm, gateApproval)
 		if err != nil {
 			return nil, err
 		}
@@ -294,7 +407,7 @@ func (tr *TestRunner) materializeAndRunExecutionPlanWithRunID(plan *storage.Exec
 			results = append(results, executionPlanRunResult{Order: e.Order, ScenarioID: e.ScenarioID, TestID: e.TestID, Status: e.Status, Detail: e.Detail})
 		}
 		result = &ExecutionPlanMaterializeResult{RunID: run.ID, Status: run.Status, RunMode: "sequential", Results: results}
-		tr.consumeExecutionPlanApproval(gateApproval, result.RunID)
+		tr.consumeExecutionPlanApprovalWithTerm(gateApproval, result.RunID, leaseTerm)
 		return result, nil
 	}
 
@@ -304,20 +417,28 @@ func (tr *TestRunner) materializeAndRunExecutionPlanWithRunID(plan *storage.Exec
 
 	now := time.Now().UTC()
 	runID := runIDOverride
-	if runID == "" {
-		runID = "exec-plan-run-" + uuid.New().String()
-	}
 	initialEntries := make([]storage.ExecutionPlanRunEntry, 0, len(entries))
-	for _, entry := range entries {
+	anchorTimeslotUsed := false
+	for entryIndex, entry := range entries {
 		status := "pending"
 		detail := ""
+		testID := ""
+		effectiveTimeslot := entry.TimeslotID
 		if !entry.IsEnabled() {
 			status, detail = "skipped", "entry disabled"
+		} else {
+			testID = executionPlanEntryTestID(runID, entryIndex, entry.Order)
+			if trimPtr(effectiveTimeslot) == "" && !anchorTimeslotUsed && trimPtr(plan.TimeslotID) != "" {
+				effectiveTimeslot = plan.TimeslotID
+				anchorTimeslotUsed = true
+			}
 		}
-		initialEntries = append(initialEntries, storage.ExecutionPlanRunEntry{
-			Order: entry.Order, ScenarioID: entry.ScenarioID, ScenarioName: entry.ScenarioName,
-			Status: status, Detail: detail,
-		})
+		snapshot := executionPlanRunEntrySnapshot(entry, runName, attribSubject, attribDisplayName, effectiveTimeslot, gateApproval)
+		snapshot.TestID = testID
+		snapshot.Status = status
+		snapshot.Detail = detail
+		snapshot.MaterializationKey = executionPlanEntryMaterializationKey(runID, entryIndex, entry.Order)
+		initialEntries = append(initialEntries, snapshot)
 	}
 	// Anchor the parallel materialization before creating any tests. If storage is
 	// unavailable the handler fails without emitting test-created side effects.
@@ -326,7 +447,7 @@ func (tr *TestRunner) materializeAndRunExecutionPlanWithRunID(plan *storage.Exec
 		RunMode: "parallel", Status: "running", Entries: initialEntries,
 		CreatedAt: now, UpdatedAt: now,
 	}
-	createdAnchor, err := tr.createExecutionPlanRunDurable(anchor)
+	createdAnchor, err := tr.createExecutionPlanRunDurableWithTerm(anchor, leaseTerm)
 	if err != nil {
 		return nil, executionPlanPersistenceError("persist parallel execution-plan run before materialization", err)
 	}
@@ -335,6 +456,7 @@ func (tr *TestRunner) materializeAndRunExecutionPlanWithRunID(plan *storage.Exec
 		if err != nil {
 			return nil, err
 		}
+		tr.handoffParallelExecutionPlanTestsWithTerm(existing, leaseTerm)
 		return executionPlanMaterializeResultFromRun(existing), nil
 	}
 	runRevision := anchor.Revision
@@ -343,12 +465,13 @@ func (tr *TestRunner) materializeAndRunExecutionPlanWithRunID(plan *storage.Exec
 	createdTests := make([]*ManagedTest, 0, len(entries))
 	created, failed := 0, 0
 	planTimeslotUsed := false
-	for _, entry := range entries {
+	for entryIndex, entry := range entries {
 		res := executionPlanRunResult{Order: entry.Order, ScenarioID: entry.ScenarioID}
-		runEntry := storage.ExecutionPlanRunEntry{Order: entry.Order, ScenarioID: entry.ScenarioID, ScenarioName: entry.ScenarioName}
+		testID := executionPlanEntryTestID(runID, entryIndex, entry.Order)
+		runEntry := initialEntries[entryIndex]
 		if !entry.IsEnabled() {
 			res.Status, res.Detail = "skipped", "entry disabled"
-			runEntry.Status, runEntry.Detail = "skipped", "entry disabled"
+			runEntry.TestID, runEntry.Status, runEntry.Detail = "", "skipped", "entry disabled"
 			results = append(results, res)
 			runEntries = append(runEntries, runEntry)
 			continue
@@ -358,16 +481,38 @@ func (tr *TestRunner) materializeAndRunExecutionPlanWithRunID(plan *storage.Exec
 			planTimeslot = plan.TimeslotID
 			planTimeslotUsed = true
 		}
-		createRequest, err := buildPlanEntryCreateRequest(runName, plan.ProjectID, planTimeslot, entry)
+		err := tr.validateExecutionPlanApprovalMaterialization(plan.ID, runID, gateApproval)
+		var createRequest CreateTestRequest
+		if err == nil {
+			createRequest, err = buildPlanEntryCreateRequest(runName, plan.ProjectID, planTimeslot, entry)
+			if err == nil {
+				createRequest.MaterializationKey = runEntry.MaterializationKey
+				createRequest.ExecutionPlanApproval = gateApproval
+			}
+		}
 		var test *ManagedTest
 		if err == nil {
-			test, err = tr.createTest(createRequest, false)
+			test, err = tr.createTestWithIDAndTerm(createRequest, false, testID, leaseTerm)
+		}
+		if err == nil {
+			err = tr.validateExecutionPlanApprovalMaterialization(plan.ID, runID, gateApproval)
 		}
 		if err != nil {
+			if errors.Is(err, errNotExecutionLeader) || !tr.executionLeaseTermCurrent(leaseTerm) {
+				return nil, errNotExecutionLeader
+			}
+			if test != nil {
+				if failErr := tr.failExecutionPlanStagedTestWithTerm(testID, err.Error(), leaseTerm, test.MaterializationKey); failErr != nil {
+					return nil, errors.Join(err, failErr)
+				}
+			}
 			failed++
 			res.Status, res.Detail = "failed", err.Error()
 			runEntry.Status, runEntry.Detail = "failed", err.Error()
 		} else {
+			if !tr.executionLeaseTermCurrent(leaseTerm) {
+				return nil, errNotExecutionLeader
+			}
 			created++
 			createdTests = append(createdTests, test)
 			res.Status, res.TestID = "created", test.ID
@@ -397,23 +542,28 @@ func (tr *TestRunner) materializeAndRunExecutionPlanWithRunID(plan *storage.Exec
 		UpdatedAt:   now,
 		CompletedAt: &now,
 	}
-	if err := tr.persistExecutionPlanRunDurable(finalRun); err != nil {
+	if err := tr.persistExecutionPlanRunDurableWithTerm(finalRun, leaseTerm); err != nil {
 		persistErr := executionPlanPersistenceError("persist completed parallel execution-plan run", err)
+		if errors.Is(err, errNotExecutionLeader) || !tr.executionLeaseTermCurrent(leaseTerm) {
+			return nil, persistErr
+		}
 		if errors.Is(err, errExecutionPlanRunCommitUnknown) {
 			// A lost commit response is not proof that the final transition failed.
 			// Keep the silently staged tests intact and reconcile the exact snapshot;
 			// deleting them could corrupt a run the database already accepted.
-			tr.enqueueExecutionPlanRunRecordRetryAfter(finalRun, func() {
+			tr.enqueueExecutionPlanRunRecordRetryAfterWithTerm(finalRun, func() {
 				for _, test := range createdTests {
 					tr.broadcastEvent("test_created", test)
 				}
-				tr.consumeExecutionPlanApproval(gateApproval, finalRun.ID)
-			})
+				tr.consumeExecutionPlanApprovalWithTerm(gateApproval, finalRun.ID, leaseTerm)
+				tr.handoffParallelExecutionPlanTestsWithTerm(finalRun, leaseTerm)
+				tr.broadcastExecutionPlanEvent("execution_plan_run_finished", finalRun, nil)
+			}, leaseTerm)
 			return nil, persistErr
 		}
 		for _, test := range createdTests {
-			if _, cleanupErr := tr.DeleteTestWithError(test.ID); cleanupErr != nil {
-				persistErr = errors.Join(persistErr, fmt.Errorf("clean up uncommitted plan test %s: %w", test.ID, cleanupErr))
+			if cleanupErr := tr.failExecutionPlanStagedTestWithTerm(test.ID, "parallel execution-plan final transition was not persisted", leaseTerm, test.MaterializationKey); cleanupErr != nil {
+				persistErr = errors.Join(persistErr, fmt.Errorf("terminalize uncommitted plan test %s: %w", test.ID, cleanupErr))
 			}
 		}
 		failedAt := time.Now().UTC()
@@ -428,8 +578,8 @@ func (tr *TestRunner) materializeAndRunExecutionPlanWithRunID(plan *storage.Exec
 			ID: runID, PlanID: plan.ID, ProjectID: normalizeProjectID(plan.ProjectID), RunMode: "parallel", Status: "failed",
 			Entries: failedEntries, Revision: runRevision, CreatedAt: now, UpdatedAt: failedAt, CompletedAt: &failedAt,
 		}
-		if terminalErr := tr.persistExecutionPlanRunDurable(failedRun); terminalErr != nil {
-			tr.enqueueExecutionPlanRunRecordRetry(failedRun)
+		if terminalErr := tr.persistExecutionPlanRunDurableWithTerm(failedRun, leaseTerm); terminalErr != nil {
+			tr.enqueueExecutionPlanRunRecordRetryAfterWithTerm(failedRun, nil, leaseTerm)
 			persistErr = errors.Join(persistErr, executionPlanPersistenceError("terminalize rolled-back parallel execution-plan run", terminalErr))
 		}
 		return nil, persistErr
@@ -437,9 +587,178 @@ func (tr *TestRunner) materializeAndRunExecutionPlanWithRunID(plan *storage.Exec
 	for _, test := range createdTests {
 		tr.broadcastEvent("test_created", test)
 	}
-	result = &ExecutionPlanMaterializeResult{RunID: runID, Status: runStatus, RunMode: "parallel", Created: created, Failed: failed, Results: results}
-	tr.consumeExecutionPlanApproval(gateApproval, result.RunID)
+	tr.consumeExecutionPlanApprovalWithTerm(gateApproval, finalRun.ID, leaseTerm)
+	tr.handoffParallelExecutionPlanTestsWithTerm(finalRun, leaseTerm)
+	tr.broadcastExecutionPlanEvent("execution_plan_run_finished", finalRun, nil)
+	result = executionPlanMaterializeResultFromRun(finalRun)
 	return result, nil
+}
+
+// handoffParallelExecutionPlanTestsWithTerm moves a durably materialized
+// parallel plan into the ordinary fair-share queue immediately. Before this
+// handoff, an idle controller could leave every staged test queued until an
+// unrelated completion or leadership event happened to trigger promotion.
+func (tr *TestRunner) handoffParallelExecutionPlanTestsWithTerm(run *storage.ExecutionPlanRun, leaseTerm executionLeaseTerm) {
+	if run == nil || run.RunMode != "parallel" {
+		return
+	}
+	if err := tr.handoffParallelExecutionPlanTestsOnceWithTerm(run, leaseTerm); err != nil {
+		if errors.Is(err, errNotExecutionLeader) {
+			return
+		}
+		slog.Warn("parallel execution-plan queue handoff failed", "run_id", run.ID, "error", err)
+		tr.enqueueParallelExecutionPlanPromotionRetryWithTerm(run.ID, leaseTerm)
+	}
+}
+
+func (tr *TestRunner) handoffParallelExecutionPlanTestsOnceWithTerm(run *storage.ExecutionPlanRun, leaseTerm executionLeaseTerm) error {
+	if run == nil || run.RunMode != "parallel" {
+		return nil
+	}
+	if !tr.executionLeaseTermCurrent(leaseTerm) {
+		return errNotExecutionLeader
+	}
+	type admissionCandidate struct {
+		index  int
+		entry  storage.ExecutionPlanRunEntry
+		testID string
+		status string
+	}
+	type admissionOutcome struct {
+		admissionCandidate
+		err error
+	}
+	candidates := make([]admissionCandidate, 0, len(run.Entries))
+	for i, entry := range run.Entries {
+		testID := strings.TrimSpace(entry.TestID)
+		if entry.Status != "created" || testID == "" {
+			continue
+		}
+		tr.mu.RLock()
+		test := tr.tests[testID]
+		status := ""
+		if test != nil {
+			status = test.Status
+		}
+		tr.mu.RUnlock()
+		if test == nil {
+			return fmt.Errorf("materialized parallel execution-plan test %s is not loaded", testID)
+		}
+		candidates = append(candidates, admissionCandidate{index: i, entry: entry, testID: testID, status: status})
+	}
+
+	// Start admission concurrently so synchronous script shakeout in one entry
+	// does not serialize a nominally parallel plan. The worker cap bounds CPU,
+	// browser, and persistence pressure for very large plans.
+	const maxParallelPlanAdmissionWorkers = 8
+	outcomes := make(chan admissionOutcome, len(candidates))
+	semaphore := make(chan struct{}, maxParallelPlanAdmissionWorkers)
+	var wait sync.WaitGroup
+	for _, candidate := range candidates {
+		if candidate.status != "QUEUED" {
+			outcomes <- admissionOutcome{admissionCandidate: candidate}
+			continue
+		}
+		candidate := candidate
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			semaphore <- struct{}{}
+			err := tr.startExecutionPlanTestWithTerm(candidate.testID, leaseTerm)
+			<-semaphore
+			tr.mu.RLock()
+			if current := tr.tests[candidate.testID]; current != nil {
+				candidate.status = current.Status
+			}
+			tr.mu.RUnlock()
+			outcomes <- admissionOutcome{admissionCandidate: candidate, err: err}
+		}()
+	}
+	wait.Wait()
+	close(outcomes)
+
+	hasPending := false
+	reconciled := cloneExecutionPlanRunRecord(run)
+	changed := false
+	for outcome := range outcomes {
+		if errors.Is(outcome.err, errNotExecutionLeader) {
+			return outcome.err
+		}
+		if outcome.err != nil {
+			// Admission errors are terminal for this materialization. Otherwise a
+			// QUEUED/PENDING row could run later even though the plan snapshot was
+			// already returned as completed.
+			if !isTerminalTestStatus(outcome.status) && outcome.status != "SHAKEOUT_REVIEW" {
+				if failErr := tr.failExecutionPlanStagedTestWithTerm(outcome.testID, outcome.err.Error(), leaseTerm, outcome.entry.MaterializationKey); failErr != nil {
+					return errors.Join(fmt.Errorf("start materialized parallel execution-plan test %s: %w", outcome.testID, outcome.err), failErr)
+				}
+			}
+			reconciled.Entries[outcome.index].Status = "failed"
+			reconciled.Entries[outcome.index].Detail = outcome.err.Error()
+			changed = true
+			continue
+		}
+		switch outcome.status {
+		case "PENDING":
+			hasPending = true
+		case "FAILED", "ABORTED":
+			tr.mu.RLock()
+			current := tr.tests[outcome.testID]
+			detail := ""
+			if current != nil {
+				detail = strings.TrimSpace(current.Error)
+			}
+			tr.mu.RUnlock()
+			reconciled.Entries[outcome.index].Status = "failed"
+			reconciled.Entries[outcome.index].Detail = firstNonEmpty(detail, "materialized test failed before execution admission")
+			changed = true
+		}
+	}
+	if changed {
+		now := time.Now().UTC()
+		reconciled.Status = "failed"
+		reconciled.UpdatedAt = now
+		reconciled.CompletedAt = &now
+		reconciled.TransitionToken = ""
+		if err := tr.persistExecutionPlanRunDurableWithTerm(reconciled, leaseTerm); err != nil {
+			return executionPlanPersistenceError("persist parallel execution-plan admission failure", err)
+		}
+		*run = *reconciled
+	}
+	if hasPending {
+		return tr.promotePendingTestsWithTerm(leaseTerm)
+	}
+	return nil
+}
+
+func (tr *TestRunner) executionPlanApprovalRunIDAwaitingAnchor(plan *storage.ExecutionPlan) (string, error) {
+	if tr == nil || plan == nil || tr.execPlanScheduleStore == nil || tr.execPlanRunStore == nil {
+		return "", nil
+	}
+	contentHash := tr.executionPlanApprovalContentHash(plan)
+	approvals, err := tr.execPlanScheduleStore.ListExecutionPlanApprovals(plan.ID)
+	if err != nil {
+		return "", err
+	}
+	for _, approval := range approvals {
+		if approval == nil || approval.Status != "approved" || approval.PlanContentHash != contentHash {
+			continue
+		}
+		runID := strings.TrimSpace(approval.RunID)
+		// Legacy claim-* values were not final run identities and cannot be safely
+		// resumed. New claims always carry the final exec-plan-run-* ID.
+		if !strings.HasPrefix(runID, "exec-plan-run-") {
+			continue
+		}
+		run, loadErr := tr.execPlanRunStore.GetExecutionPlanRun(runID)
+		if loadErr != nil && !errors.Is(loadErr, sql.ErrNoRows) {
+			return "", loadErr
+		}
+		if run == nil || errors.Is(loadErr, sql.ErrNoRows) {
+			return runID, nil
+		}
+	}
+	return "", nil
 }
 
 func executionPlanMaterializeResultFromRun(run *storage.ExecutionPlanRun) *ExecutionPlanMaterializeResult {
@@ -470,16 +789,23 @@ func approvalID(a *storage.ExecutionPlanApproval) string {
 	return a.ID
 }
 
-// consumeExecutionPlanApproval records the real run id on an approval that was
-// already atomically claimed before the run (see ClaimExecutionPlanApproval),
-// replacing the claim token for audit accuracy.
+// consumeExecutionPlanApproval refreshes the approval audit record after a run
+// whose final ID was already atomically claimed before its anchor was created.
 func (tr *TestRunner) consumeExecutionPlanApproval(approval *storage.ExecutionPlanApproval, runID string) {
+	leaseTerm, err := tr.captureExecutionLeaseTerm()
+	if err != nil {
+		return
+	}
+	tr.consumeExecutionPlanApprovalWithTerm(approval, runID, leaseTerm)
+}
+
+func (tr *TestRunner) consumeExecutionPlanApprovalWithTerm(approval *storage.ExecutionPlanApproval, runID string, leaseTerm executionLeaseTerm) {
 	if approval == nil || runID == "" || tr.execPlanScheduleStore == nil {
 		return
 	}
 	approval.RunID = runID
 	approval.UpdatedAt = time.Now().UTC()
-	if err := tr.execPlanScheduleStore.SaveExecutionPlanApproval(approval); err != nil {
+	if err := tr.saveExecutionPlanApprovalWithTerm(approval, leaseTerm); err != nil {
 		slog.Error("failed to attach execution-plan run to approval", "approval_id", approval.ID, "run_id", runID, "error", err)
 	}
 }
@@ -508,6 +834,10 @@ func (s *Server) handleMaterializeAndRunExecutionPlan(w http.ResponseWriter, r *
 
 	result, err := s.runner.MaterializeAndRunExecutionPlan(plan, attribSubject, actorDisplayName)
 	if err != nil {
+		if errors.Is(err, errNotExecutionLeader) {
+			writeError(w, http.StatusServiceUnavailable, "execution leader is unavailable")
+			return
+		}
 		if errors.Is(err, errExecutionPlanRunPersistence) {
 			writeError(w, http.StatusServiceUnavailable, "execution-plan run persistence is temporarily unavailable")
 			return

@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-	"sync"
 
 	"github.com/google/cel-go/cel"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/internal/boundedcache"
 )
 
-var conditionExprPrograms sync.Map
+var conditionExprPrograms = boundedcache.NewStringCache[*conditionExprProgramCache](0, 0, 0)
 
 type conditionExprProgramCache struct {
 	program   cel.Program
@@ -22,7 +22,7 @@ type conditionExprProgramCache struct {
 func conditionExprProgram(expr string) (*conditionExprProgramCache, error) {
 	expr = dsl.NormalizeConditionExpression(expr)
 	if cached, ok := conditionExprPrograms.Load(expr); ok {
-		return cached.(*conditionExprProgramCache), nil
+		return cached, nil
 	}
 	env, err := dsl.NewConditionCELEnv()
 	if err != nil {
@@ -46,7 +46,7 @@ func conditionExprProgram(expr string) (*conditionExprProgramCache, error) {
 		needsEnv:  conditionExprUsesNamespace(expr, "env"),
 	}
 	actual, _ := conditionExprPrograms.LoadOrStore(expr, entry)
-	return actual.(*conditionExprProgramCache), nil
+	return actual, nil
 }
 
 // conditionNamespacePatterns matches a namespace referenced as a whole

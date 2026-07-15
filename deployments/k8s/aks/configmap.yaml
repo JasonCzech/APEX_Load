@@ -38,8 +38,14 @@ data:
   # the pod's federated identity is exchanged for Key Vault tokens automatically.
   APEXLOAD_AZURE_KEY_VAULT_URL: https://change-me.vault.azure.net # CHANGE-ME: terraform output key_vault_url
   APEXLOAD_AZURE_KEY_VAULT_AUTH: azure_identity
+  # Exact script-safe Key Vault names. Empty disables Key Vault interpolation;
+  # never expose platform credentials such as gRPC, OIDC, or database secrets.
+  APEXLOAD_AZURE_KEY_VAULT_ALLOWED_SECRETS: "" # e.g. orders-api-key,test-user-password
 
   # --- Azure Event Hubs (optional; terraform eventhubs_enabled=true) ---
+  # Exact comma-separated namespaces that may receive workload-identity tokens.
+  # Keep empty to disable AAD messaging auth; SAS connection strings still work.
+  APEXLOAD_AZURE_MESSAGING_ALLOWED_NAMESPACES: "" # e.g. namespace.servicebus.windows.net
   # Event Hubs connectivity is per-script (config.eventhubs), not controller env.
   # Two supported auth modes once the terraform module provisions a namespace:
   #   1. AAD / workload identity (recommended): set config.eventhubs.auth_type=aad

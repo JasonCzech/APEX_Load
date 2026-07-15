@@ -45,6 +45,7 @@ export type LibraryRemote = {
   name: string
   base_url: string
   default_project_id?: string
+  project_mappings?: Record<string, string>
   auth_method?: string
   credential_ref?: string
   credential_configured?: boolean
@@ -60,6 +61,7 @@ export type LibraryRemoteRequest = {
   name?: string
   base_url?: string
   default_project_id?: string
+  project_mappings?: Record<string, string>
   auth_method?: string
   credential_ref?: string
   api_key?: string

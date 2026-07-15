@@ -2,10 +2,41 @@ package api
 
 import (
 	"context"
+	"errors"
+	"net"
 	"net/http"
 	"testing"
 	"time"
 )
+
+func TestServerBackgroundLifecycleRejectsNewWorkAndWaitsForOwnedWorker(t *testing.T) {
+	server := &Server{}
+	started := make(chan struct{})
+	release := make(chan struct{})
+	if !server.launchBackground(func() {
+		close(started)
+		<-release
+	}) {
+		t.Fatal("initial background worker was rejected")
+	}
+	<-started
+	server.beginBackgroundShutdown()
+	if server.launchBackground(func() {}) {
+		t.Fatal("background worker was admitted after shutdown began")
+	}
+
+	shortCtx, shortCancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer shortCancel()
+	if err := server.waitForBackground(shortCtx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("waitForBackground before release = %v, want deadline exceeded", err)
+	}
+	close(release)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := server.waitForBackground(ctx); err != nil {
+		t.Fatalf("waitForBackground after release: %v", err)
+	}
+}
 
 func TestNewServerDoesNotStartReplayRetentionJanitors(t *testing.T) {
 	server := NewServer(ServerConfig{})
@@ -88,6 +119,62 @@ func TestStartContinuesWhenRecorderProxyDisabledInProduction(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("server did not stop after shutdown")
+	}
+}
+
+func TestStartBindFailureRollsBackStartedComponents(t *testing.T) {
+	occupied, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve API address: %v", err)
+	}
+	defer occupied.Close()
+
+	server := NewServer(ServerConfig{
+		Addr:        occupied.Addr().String(),
+		MetricsAddr: "127.0.0.1:0",
+	})
+	if err := server.Start(); err == nil {
+		t.Fatal("Start succeeded despite occupied API address")
+	}
+
+	if server.metricsServer != nil {
+		t.Fatal("failed Start retained the dedicated metrics server")
+	}
+	if got := server.MetricsBoundAddr(); got != "" {
+		t.Fatalf("MetricsBoundAddr after failed Start = %q, want empty", got)
+	}
+	if server.BoundAddrReady() {
+		t.Fatalf("BoundAddrReady after failed Start = true, address %q", server.BoundAddr())
+	}
+	if browserRunning, scriptRunning, recordingRunning := retentionJanitorsRunning(server); browserRunning || scriptRunning || recordingRunning {
+		t.Fatalf("failed Start retained janitors = browser:%v script:%v recording:%v", browserRunning, scriptRunning, recordingRunning)
+	}
+}
+
+func TestStartBindFailureDoesNotRaceMetricsServeShutdown(t *testing.T) {
+	occupied, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve API address: %v", err)
+	}
+	defer occupied.Close()
+
+	// A failed API bind starts and then immediately rolls back the dedicated
+	// metrics listener. Repeat the boundary so the race detector exercises the
+	// Serve goroutine both before and after shutdown detaches the shared field.
+	for i := 0; i < 32; i++ {
+		server := NewServer(ServerConfig{
+			Addr:        occupied.Addr().String(),
+			MetricsAddr: "127.0.0.1:0",
+		})
+		if err := server.Start(); err == nil {
+			t.Fatalf("iteration %d: Start succeeded despite occupied API address", i)
+		}
+		server.metricsServerMu.Lock()
+		metricsServer := server.metricsServer
+		server.metricsServerMu.Unlock()
+		if metricsServer != nil {
+			t.Fatalf("iteration %d: failed Start retained the dedicated metrics server", i)
+		}
 	}
 }
 

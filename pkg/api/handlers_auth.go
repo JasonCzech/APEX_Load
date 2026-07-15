@@ -953,6 +953,8 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
+	expected := *user
+	expected.DisabledAt = cloneTimePtr(user.DisabledAt)
 	deactivating := req.Active != nil && !*req.Active && user.Active
 	if deactivating && !s.guardSystemAdminLockout(w, r, user, "disable") {
 		return
@@ -989,8 +991,19 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 			user.DisabledAt = nil
 		}
 	}
-	updated, err := s.store.UpdateUserGuardLastAdmin(user)
+	updater, supported := s.store.(interface {
+		UpdateUserGuardLastAdminIfUnchanged(user *storage.User, expected *storage.User) (bool, error)
+	})
+	if !supported {
+		writeError(w, http.StatusNotImplemented, "optimistic user updates are not supported by this storage backend")
+		return
+	}
+	updated, err := updater.UpdateUserGuardLastAdminIfUnchanged(user, &expected)
 	if err != nil {
+		if errors.Is(err, storage.ErrUserConcurrentChange) {
+			writeError(w, http.StatusConflict, "user changed while the update was in flight; reload and retry")
+			return
+		}
 		if s.writeUserSubjectPersistenceError(w, user.Subject, user.ID, err) {
 			return
 		}
@@ -1046,6 +1059,10 @@ func (s *Server) handleCreateUserBinding(w http.ResponseWriter, r *http.Request)
 	}
 	binding.UpdatedAt = now
 	if err := s.store.SaveUserRoleBinding(binding); err != nil {
+		if errors.Is(err, storage.ErrUserNotFound) {
+			writeError(w, http.StatusConflict, "user was deleted while the binding was being saved")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -1523,7 +1540,8 @@ func canManageBinding(r *http.Request, store storage.Store, binding *storage.Use
 		}
 		if store != nil {
 			if project, err := store.GetProject(binding.ScopeID); err == nil && project != nil {
-				return user.hasDomainRole(project.DomainID, RoleProjectAdmin)
+				return user.hasDomainRole(project.DomainID, RoleProjectAdmin) ||
+					user.hasRepositoryRole(repositoryIDForProject(store, project), RoleProjectAdmin)
 			}
 		}
 		return false
@@ -1533,6 +1551,24 @@ func canManageBinding(r *http.Request, store storage.Store, binding *storage.Use
 		return user.hasRepositoryRole(binding.ScopeID, RoleProjectAdmin)
 	}
 	return false
+}
+
+// repositoryIDForProject resolves the repository that owns a project's
+// category. The category is authoritative when present; the domain repository
+// fallback keeps legacy projects without category placement manageable.
+func repositoryIDForProject(store storage.Store, project *storage.Project) string {
+	if store == nil || project == nil {
+		return ""
+	}
+	if categoryID := strings.TrimSpace(project.CategoryID); categoryID != "" {
+		if category, err := store.GetRepositoryCategory(categoryID); err == nil && category != nil {
+			return strings.TrimSpace(category.RepositoryID)
+		}
+	}
+	if repository, err := store.GetApplicationRepository(normalizeDomainID(project.DomainID)); err == nil && repository != nil {
+		return strings.TrimSpace(repository.ID)
+	}
+	return ""
 }
 
 // administeredProjectScope returns the set of project IDs whose user-activity and
@@ -1561,22 +1597,6 @@ func (s *Server) administeredProjectScope(r *http.Request) (map[string]struct{},
 	if err != nil {
 		return scope, false
 	}
-	repoIDByDomain := map[string]string{}
-	repoIDForDomain := func(domainID string) string {
-		domainID = normalizeDomainID(domainID)
-		if domainID == "" {
-			return ""
-		}
-		if cached, ok := repoIDByDomain[domainID]; ok {
-			return cached
-		}
-		id := ""
-		if repo, err := s.store.GetApplicationRepository(domainID); err == nil && repo != nil {
-			id = strings.TrimSpace(repo.ID)
-		}
-		repoIDByDomain[domainID] = id
-		return id
-	}
 	for _, project := range projects {
 		if project == nil {
 			continue
@@ -1584,7 +1604,7 @@ func (s *Server) administeredProjectScope(r *http.Request) (map[string]struct{},
 		pid := normalizeProjectID(project.ID)
 		if user.hasProjectRole(pid, RoleProjectAdmin) ||
 			user.hasDomainRole(project.DomainID, RoleProjectAdmin) ||
-			user.hasRepositoryRole(repoIDForDomain(project.DomainID), RoleProjectAdmin) {
+			user.hasRepositoryRole(repositoryIDForProject(s.store, project), RoleProjectAdmin) {
 			scope[pid] = struct{}{}
 		}
 	}
@@ -1843,6 +1863,10 @@ func (s *Server) handleCreateServiceAccount(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if err := s.store.SaveServiceAccount(account); err != nil {
+		if errors.Is(err, storage.ErrRoleScopeNotFound) {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -1887,6 +1911,10 @@ func (s *Server) handleUpdateServiceAccount(w http.ResponseWriter, r *http.Reque
 	}
 	updated, err := s.store.UpdateServiceAccountMetadata(account, expectedUpdatedAt)
 	if err != nil {
+		if errors.Is(err, storage.ErrRoleScopeNotFound) {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -2037,8 +2065,20 @@ func (s *Server) handleRotateServiceAccount(w http.ResponseWriter, r *http.Reque
 	}
 	updatedAt := time.Now().UTC()
 	hashedKey := hashAPIKey(apiKey)
-	if err := s.store.RotateServiceAccountKey(account.ID, hashedKey, updatedAt); err != nil {
+	rotator, ok := s.store.(interface {
+		RotateServiceAccountKeyIfUnchanged(id, keyHash string, expectedUpdatedAt, updatedAt time.Time) (bool, error)
+	})
+	if !ok {
+		writeError(w, http.StatusNotImplemented, "optimistic service account key rotation is not supported by this storage backend")
+		return
+	}
+	rotated, err := rotator.RotateServiceAccountKeyIfUnchanged(account.ID, hashedKey, account.UpdatedAt, updatedAt)
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !rotated {
+		writeError(w, http.StatusConflict, "service account changed or was deleted; reload and retry rotation")
 		return
 	}
 	account.KeyHash = hashedKey

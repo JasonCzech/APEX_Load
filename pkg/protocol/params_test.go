@@ -1,6 +1,9 @@
 package protocol
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 func TestConfigStringTrims(t *testing.T) {
 	cfg := map[string]any{"host": "  example.com  ", "n": 5}
@@ -30,6 +33,9 @@ func TestConfigIntCoercions(t *testing.T) {
 		{"float32", float32(10), 10},
 		{"string", "11", 0},
 		{"nil", nil, 0},
+		{"nan", math.NaN(), 0},
+		{"positive infinity", math.Inf(1), 0},
+		{"negative infinity", math.Inf(-1), 0},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -52,6 +58,11 @@ func TestConfigFloatCoercions(t *testing.T) {
 	}
 	if got := ConfigFloat(map[string]any{"k": "x"}, "k"); got != 0 {
 		t.Fatalf("ConfigFloat non-numeric: got %v, want 0", got)
+	}
+	for _, value := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
+		if got := ConfigFloat(map[string]any{"k": value}, "k"); got != 0 {
+			t.Fatalf("ConfigFloat non-finite %v: got %v, want 0", value, got)
+		}
 	}
 }
 
@@ -78,7 +89,7 @@ func TestActionNameNilSafe(t *testing.T) {
 
 func TestConfigStringSlice(t *testing.T) {
 	cfg := map[string]any{
-		"a": []string{"x", "y"},
+		"a": []string{" x ", "", "  ", "y"},
 		"b": []any{"  p  ", "", "q", 3},
 		"c": "scalar",
 	}

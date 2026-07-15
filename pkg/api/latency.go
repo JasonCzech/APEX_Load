@@ -24,9 +24,25 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
+const (
+	maxLatencyProbeTargets      = 64
+	maxConcurrentLatencyTargets = 8
+	maxConcurrentRouteProbes    = 16
+	maxLatencyRouteCacheEntries = 1024
+	latencyDNSLookupTimeout     = 2 * time.Second
+)
+
+var latencyRouteProbeSlots = make(chan struct{}, maxConcurrentRouteProbes)
+
 func (tr *TestRunner) measureNetworkLatency(test *ManagedTest, _ *LiveMetrics) {
+	if !tr.beginLatencyProbe(test) {
+		return
+	}
+	defer tr.endLatencyProbe(test)
+
 	// Identify unique base URLs across all groups
 	endpoints := tr.latencyEndpointsForTest(test)
 
@@ -34,23 +50,7 @@ func (tr *TestRunner) measureNetworkLatency(test *ManagedTest, _ *LiveMetrics) {
 		return
 	}
 
-	latency := &NetworkLatency{
-		Targets: make([]LatencyTarget, 0, len(endpoints)),
-	}
-
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-	for host, raw := range endpoints {
-		wg.Add(1)
-		go func(h, r string) {
-			defer wg.Done()
-			target := tr.measureEndpointLatency(h, r)
-			mu.Lock()
-			latency.Targets = append(latency.Targets, target)
-			mu.Unlock()
-		}(host, raw)
-	}
-	wg.Wait()
+	latency := &NetworkLatency{Targets: collectLatencyTargets(endpoints, tr.measureEndpointLatency)}
 
 	tr.mu.Lock()
 	if test == nil || tr.tests[test.ID] != test {
@@ -78,6 +78,69 @@ func (tr *TestRunner) measureNetworkLatency(test *ManagedTest, _ *LiveMetrics) {
 			"latency":    latency,
 		})
 	}
+}
+
+type latencyProbeJob struct {
+	host     string
+	endpoint string
+}
+
+// collectLatencyTargets uses a fixed worker pool. A script may legitimately
+// reference dozens of hosts, but one metrics tick must not create a goroutine,
+// resolver call, HTTP connection, and traceroute subprocess for every host at
+// once.
+func collectLatencyTargets(endpoints map[string]string, probe func(host, endpoint string) LatencyTarget) []LatencyTarget {
+	if len(endpoints) == 0 || probe == nil {
+		return nil
+	}
+	jobs := make(chan latencyProbeJob)
+	results := make(chan LatencyTarget, len(endpoints))
+	workerCount := min(len(endpoints), maxConcurrentLatencyTargets)
+	var workers sync.WaitGroup
+	workers.Add(workerCount)
+	for range workerCount {
+		go func() {
+			defer workers.Done()
+			for job := range jobs {
+				results <- probe(job.host, job.endpoint)
+			}
+		}()
+	}
+	for host, endpoint := range endpoints {
+		jobs <- latencyProbeJob{host: host, endpoint: endpoint}
+	}
+	close(jobs)
+	workers.Wait()
+	close(results)
+	targets := make([]LatencyTarget, 0, len(endpoints))
+	for target := range results {
+		targets = append(targets, target)
+	}
+	return targets
+}
+
+func (tr *TestRunner) beginLatencyProbe(test *ManagedTest) bool {
+	if tr == nil || test == nil {
+		return false
+	}
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	if tr.tests[test.ID] != test || test.latencyProbeInFlight {
+		return false
+	}
+	test.latencyProbeInFlight = true
+	return true
+}
+
+func (tr *TestRunner) endLatencyProbe(test *ManagedTest) {
+	if tr == nil || test == nil {
+		return
+	}
+	tr.mu.Lock()
+	if tr.tests[test.ID] == test {
+		test.latencyProbeInFlight = false
+	}
+	tr.mu.Unlock()
 }
 
 func (tr *TestRunner) latencyEndpointsForTest(test *ManagedTest) map[string]string {
@@ -257,6 +320,9 @@ func addLatencyEndpointValue(endpoints map[string]string, raw string) {
 	raw = normalizeLatencyEndpointValue(raw)
 	host, ok := latencyHostFromEndpoint(raw)
 	if !ok {
+		return
+	}
+	if _, exists := endpoints[host]; !exists && len(endpoints) >= maxLatencyProbeTargets {
 		return
 	}
 	endpoints[host] = raw
@@ -484,7 +550,7 @@ func (tr *TestRunner) measureEndpointLatency(host, endpoint string) LatencyTarge
 		target, err := tr.measureEndpointHTTPLatency(host, endpoint)
 		if err == nil {
 			tr.applyLatencyRouteMetadata(&target)
-			return target
+			return sanitizeLatencyTarget(target)
 		}
 
 		target = tr.measureEndpointTCPLatency(host, endpoint)
@@ -494,11 +560,21 @@ func (tr *TestRunner) measureEndpointLatency(host, endpoint string) LatencyTarge
 			target.Error = err.Error()
 		}
 		tr.applyLatencyRouteMetadata(&target)
-		return target
+		return sanitizeLatencyTarget(target)
 	}
 
 	target := tr.measureEndpointTCPLatency(host, endpoint)
 	tr.applyLatencyRouteMetadata(&target)
+	return sanitizeLatencyTarget(target)
+}
+
+// sanitizeLatencyTarget is the publication boundary for controller-generated
+// probe data. Script endpoints can legitimately contain inline credentials or
+// secret query values; those must not be copied into metrics, persistence, or
+// project-wide WebSocket events.
+func sanitizeLatencyTarget(target LatencyTarget) LatencyTarget {
+	target.Endpoint = scrub.ValueURL(target.Endpoint, scrub.Policy{})
+	target.Error = scrub.Value(target.Error, scrub.Policy{})
 	return target
 }
 
@@ -717,17 +793,46 @@ func (tr *TestRunner) routeMetadataForLatencyTarget(target string) (int, string)
 	}
 
 	hops, status := measureLatencyRoute(target)
+	if status != "busy" {
+		tr.storeLatencyRouteCacheEntry(target, latencyRouteCacheEntry{
+			hops:      hops,
+			status:    status,
+			checkedAt: now,
+		})
+	}
+	return hops, status
+}
+
+func (tr *TestRunner) storeLatencyRouteCacheEntry(target string, entry latencyRouteCacheEntry) {
 	tr.mu.Lock()
+	defer tr.mu.Unlock()
 	if tr.routeCache == nil {
 		tr.routeCache = make(map[string]latencyRouteCacheEntry)
 	}
-	tr.routeCache[target] = latencyRouteCacheEntry{
-		hops:      hops,
-		status:    status,
-		checkedAt: now,
+	if _, exists := tr.routeCache[target]; !exists && len(tr.routeCache) >= maxLatencyRouteCacheEntries {
+		cutoff := entry.checkedAt.Add(-latencyRouteCacheTTL)
+		for key, cached := range tr.routeCache {
+			if cached.checkedAt.Before(cutoff) {
+				delete(tr.routeCache, key)
+			}
+		}
 	}
-	tr.mu.Unlock()
-	return hops, status
+	if _, exists := tr.routeCache[target]; !exists {
+		for len(tr.routeCache) >= maxLatencyRouteCacheEntries {
+			var oldestKey string
+			var oldestTime time.Time
+			for key, cached := range tr.routeCache {
+				if oldestKey == "" || cached.checkedAt.Before(oldestTime) {
+					oldestKey, oldestTime = key, cached.checkedAt
+				}
+			}
+			if oldestKey == "" {
+				break
+			}
+			delete(tr.routeCache, oldestKey)
+		}
+	}
+	tr.routeCache[target] = entry
 }
 
 func isLatencyLoopbackTarget(target string) bool {
@@ -737,12 +842,14 @@ func isLatencyLoopbackTarget(target string) bool {
 	if ip := net.ParseIP(target); ip != nil {
 		return ip.IsLoopback()
 	}
-	ips, err := net.LookupIP(target)
+	ctx, cancel := context.WithTimeout(context.Background(), latencyDNSLookupTimeout)
+	defer cancel()
+	addresses, err := net.DefaultResolver.LookupIPAddr(ctx, target)
 	if err != nil {
 		return false
 	}
-	for _, ip := range ips {
-		if ip.IsLoopback() {
+	for _, address := range addresses {
+		if address.IP.IsLoopback() {
 			return true
 		}
 	}
@@ -750,6 +857,15 @@ func isLatencyLoopbackTarget(target string) bool {
 }
 
 func measureLatencyRoute(target string) (int, string) {
+	if !validLatencyRouteTarget(target) {
+		return 0, "unavailable"
+	}
+	select {
+	case latencyRouteProbeSlots <- struct{}{}:
+		defer func() { <-latencyRouteProbeSlots }()
+	default:
+		return 0, "busy"
+	}
 	traceroutePath, err := exec.LookPath("traceroute")
 	if err != nil {
 		return 0, "unavailable"
@@ -768,6 +884,27 @@ func measureLatencyRoute(target string) (int, string) {
 		return 0, "unavailable"
 	}
 	return 0, "unavailable"
+}
+
+func validLatencyRouteTarget(target string) bool {
+	target = strings.TrimSuffix(strings.TrimSpace(target), ".")
+	if target == "" || len(target) > 253 || strings.HasPrefix(target, "-") {
+		return false
+	}
+	if net.ParseIP(target) != nil {
+		return true
+	}
+	for _, label := range strings.Split(target, ".") {
+		if label == "" || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for _, char := range label {
+			if (char < 'a' || char > 'z') && (char < 'A' || char > 'Z') && (char < '0' || char > '9') && char != '-' {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func parseTracerouteHopCount(output string) int {

@@ -205,5 +205,5 @@ func (s *Server) startGeneratorDiscovery() {
 	slog.Info("generator DNS discovery enabled",
 		"services", len(s.generatorDiscovery.specs),
 		"interval", s.generatorDiscovery.interval)
-	go s.generatorDiscovery.loop(ctx)
+	s.launchBackground(func() { s.generatorDiscovery.loop(ctx) })
 }

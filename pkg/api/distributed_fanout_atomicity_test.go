@@ -106,10 +106,13 @@ func TestRunnerKeepsStoppingAfterPartialDistributedStop(t *testing.T) {
 	clientA := &fanoutAtomicityClient{stopResult: generatorrpc.StopResult{Acknowledged: true}}
 	clientB := &fanoutAtomicityClient{stopErr: errors.New("stop response lost")}
 	backend := newDistributedExecutionBackend([]string{"gen-a", "gen-b"}, time.Second, nil)
+	executionCtx, cancelExecution := context.WithCancel(context.Background())
 	test := &ManagedTest{
 		ID:                    "runner-partial-stop",
 		Status:                "RUNNING",
 		executionBackend:      backend,
+		executionCtx:          executionCtx,
+		cancel:                cancelExecution,
 		remoteClientsByTarget: map[string]generatorClient{"gen-a": clientA, "gen-b": clientB},
 	}
 	runner := &TestRunner{
@@ -125,9 +128,77 @@ func TestRunnerKeepsStoppingAfterPartialDistributedStop(t *testing.T) {
 	if test.Status != "STOPPING" {
 		t.Fatalf("test status = %q, want fail-closed STOPPING", test.Status)
 	}
+	if executionCtx.Err() == nil {
+		t.Fatal("ambiguous stop did not cancel the run execution context")
+	}
+	clientB.mu.Lock()
+	clientB.stopErr = nil
+	clientB.stopResult = generatorrpc.StopResult{Acknowledged: true}
+	clientB.mu.Unlock()
+	deadline := time.Now().Add(time.Second)
+	for {
+		clientA.mu.Lock()
+		callsA := clientA.stopCalls
+		clientA.mu.Unlock()
+		clientB.mu.Lock()
+		callsB := clientB.stopCalls
+		clientB.mu.Unlock()
+		if callsA >= 2 && callsB >= 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("automatic teardown retry calls = (%d, %d), want both >= 2", callsA, callsB)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	runner.mu.Lock()
+	runner.shuttingDown = true
+	runner.mu.Unlock()
 }
 
-func TestDistributedAdjustDurationCompensatesEveryAttemptedTarget(t *testing.T) {
+func TestAcknowledgedDistributedStopEscalatesAndLeavesStopping(t *testing.T) {
+	client := &fanoutAtomicityClient{stopResult: generatorrpc.StopResult{Acknowledged: true, PendingVUsers: 1}}
+	backend := newDistributedExecutionBackend([]string{"gen-a"}, 20*time.Millisecond, nil)
+	backend.stopGrace = 10 * time.Millisecond
+	executionCtx, cancelExecution := context.WithCancel(context.Background())
+	lifecycleCtx, cancelLifecycle := context.WithCancel(context.Background())
+	defer cancelLifecycle()
+	test := &ManagedTest{
+		ID: "acked-stop-finalizes", Status: "RUNNING", executionBackend: backend,
+		executionCtx: executionCtx, cancel: cancelExecution,
+		remoteLifecycleCtx: lifecycleCtx, remoteLifecycleCancel: cancelLifecycle,
+		remoteClientsByTarget: map[string]generatorClient{"gen-a": client},
+	}
+	runner := &TestRunner{tests: map[string]*ManagedTest{test.ID: test}, execution: backend, hub: NewHub()}
+
+	if err := runner.StopTest(test.ID); err != nil {
+		t.Fatalf("StopTest: %v", err)
+	}
+	if executionCtx.Err() == nil {
+		t.Fatal("acknowledged graceful stop did not cancel active execution work")
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		runner.mu.RLock()
+		status := test.Status
+		runner.mu.RUnlock()
+		if isTerminalTestStatus(status) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("status = %s, want bounded terminal transition after forced stop", status)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	client.mu.Lock()
+	stopCalls := client.stopCalls
+	client.mu.Unlock()
+	if stopCalls < 2 {
+		t.Fatalf("stop RPC calls = %d, want graceful request plus forced escalation", stopCalls)
+	}
+}
+
+func TestDistributedAdjustDurationRetriesCompensationForEveryAttemptedTarget(t *testing.T) {
 	forwardErr := errors.New("duration response lost")
 	rollbackErr := errors.New("duration rollback failed")
 	clientA := &fanoutAtomicityClient{
@@ -156,11 +227,11 @@ func TestDistributedAdjustDurationCompensatesEveryAttemptedTarget(t *testing.T) 
 	runner := &TestRunner{}
 
 	err := backend.AdjustDuration(runner, test, 2*time.Minute)
-	if !errors.Is(err, forwardErr) || !errors.Is(err, rollbackErr) {
-		t.Fatalf("AdjustDuration error = %v, want joined forward and rollback errors", err)
+	if !errors.Is(err, forwardErr) || errors.Is(err, rollbackErr) {
+		t.Fatalf("AdjustDuration error = %v, want forward error after rollback retry recovered", err)
 	}
-	if got := clientA.durations(); !reflect.DeepEqual(got, []int64{120, 60}) {
-		t.Fatalf("gen-a duration calls = %v, want [120 60]", got)
+	if got := clientA.durations(); !reflect.DeepEqual(got, []int64{120, 60, 60}) {
+		t.Fatalf("gen-a duration calls = %v, want [120 60 60]", got)
 	}
 	if got := clientB.durations(); !reflect.DeepEqual(got, []int64{120, 60}) {
 		t.Fatalf("gen-b duration calls = %v, want [120 60]", got)

@@ -45,6 +45,9 @@ func TestExecutionPlanApprovalAtomicCAS(t *testing.T) {
 
 func TestExecutionPlanRunCreateIfAbsentHasSingleWinner(t *testing.T) {
 	store := openTimeslotStore(t)
+	if err := store.SaveExecutionPlan(&ExecutionPlan{ID: "plan-a", ProjectID: "project-a", Name: "Plan A", RunMode: "parallel"}); err != nil {
+		t.Fatal(err)
+	}
 	const contenders = 16
 	start := make(chan struct{})
 	results := make(chan bool, contenders)
@@ -93,6 +96,9 @@ func TestExecutionPlanRunCreateIfAbsentHasSingleWinner(t *testing.T) {
 
 func TestExecutionPlanRunCompareAndSwapRejectsStaleSnapshot(t *testing.T) {
 	store := openTimeslotStore(t)
+	if err := store.SaveExecutionPlan(&ExecutionPlan{ID: "plan-a", ProjectID: "project-a", Name: "Plan A", RunMode: "sequential"}); err != nil {
+		t.Fatal(err)
+	}
 	initial := &ExecutionPlanRun{
 		ID: "cas-run", PlanID: "plan-a", ProjectID: "project-a",
 		RunMode: "sequential", Status: "running",
@@ -228,6 +234,14 @@ func TestExecutionPlanEntryDataPoolAndTimeslot(t *testing.T) {
 
 func TestExecutionPlanRunRoundTrip(t *testing.T) {
 	store := openTimeslotStore(t)
+	for _, plan := range []*ExecutionPlan{
+		{ID: "exec-plan-1", ProjectID: "proj-a", Name: "Plan 1", RunMode: "sequential"},
+		{ID: "other-plan", ProjectID: "proj-a", Name: "Other", RunMode: "sequential"},
+	} {
+		if err := store.SaveExecutionPlan(plan); err != nil {
+			t.Fatalf("save plan %s: %v", plan.ID, err)
+		}
+	}
 	run := &ExecutionPlanRun{
 		ID:        "epr-1",
 		PlanID:    "exec-plan-1",

@@ -3,9 +3,11 @@ package storage
 // SQLite store — scripts. Split from sqlite.go (same package, behavior-preserving).
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -16,6 +18,9 @@ func (s *SQLiteStore) SaveScript(script *dsl.Script) error {
 	if script == nil {
 		return errors.New("script is required")
 	}
+	if strings.TrimSpace(script.ID) == "" {
+		return errors.New("script id is required")
+	}
 	script.ProjectID = normalizeProjectID(script.ProjectID)
 	encoded, err := marshalScriptForStorage(script)
 	if err != nil {
@@ -23,28 +28,55 @@ func (s *SQLiteStore) SaveScript(script *dsl.Script) error {
 	}
 
 	if script.CreatedAt.IsZero() {
-		script.CreatedAt = time.Now()
+		script.CreatedAt = time.Now().UTC()
 	}
-	script.UpdatedAt = time.Now()
+	script.UpdatedAt = time.Now().UTC()
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := validateScriptFolderProjectTx(tx, script.ProjectID, script.FolderID); err != nil {
+		return err
+	}
+	if err := validateScriptObjectRepositoryProjectsTx(tx, script.ProjectID, script); err != nil {
+		return err
+	}
+	var existingProjectID string
+	if err := tx.QueryRow(`SELECT COALESCE(project_id, '') FROM scripts WHERE id = ?`, script.ID).Scan(&existingProjectID); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	} else if err == nil && normalizeProjectID(existingProjectID) != script.ProjectID {
+		return fmt.Errorf("script %q belongs to another project", script.ID)
+	}
 
 	query := `INSERT INTO scripts (id, ref_key, name, protocol, version, project_id, folder_id, generated_by, generated_from, metadata_json, config, data_sources, parameters, init, actions, teardown, created_at, updated_at)
 			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			  ON CONFLICT(id) DO UPDATE SET
-			  ref_key=excluded.ref_key,
+			  ref_key=CASE WHEN TRIM(COALESCE(excluded.ref_key, '')) = '' THEN scripts.ref_key ELSE excluded.ref_key END,
 			  name=excluded.name, protocol=excluded.protocol, version=excluded.version,
-			  project_id=excluded.project_id, folder_id=excluded.folder_id,
+			  folder_id=excluded.folder_id,
 			  generated_by=excluded.generated_by, generated_from=excluded.generated_from,
 			  metadata_json=excluded.metadata_json,
 			  config=excluded.config, data_sources=excluded.data_sources, parameters=excluded.parameters,
 			  init=excluded.init, actions=excluded.actions, teardown=excluded.teardown,
-			  updated_at=excluded.updated_at`
+			  updated_at=excluded.updated_at
+			  WHERE scripts.project_id=excluded.project_id`
 
-	_, err = s.db.Exec(query,
+	result, err := tx.Exec(query,
 		script.ID, script.RefKey, script.Name, script.Protocol, script.Version, script.ProjectID, script.FolderID,
 		script.GeneratedBy, script.GeneratedFrom,
 		encoded.metadata, encoded.config, encoded.dataSources, encoded.parameters, encoded.init, encoded.actions, encoded.teardown,
 		script.CreatedAt, script.UpdatedAt)
-	return err
+	if err != nil {
+		return err
+	}
+	if affected, err := result.RowsAffected(); err != nil {
+		return err
+	} else if affected != 1 {
+		return fmt.Errorf("script %q changed concurrently", script.ID)
+	}
+	return tx.Commit()
 }
 
 // CreateScriptIfAbsent atomically reserves a script ID without permitting an
@@ -55,22 +87,206 @@ func (s *SQLiteStore) CreateScriptIfAbsent(script *dsl.Script) (bool, error) {
 	if script == nil {
 		return false, errors.New("script is required")
 	}
+	if strings.TrimSpace(script.ID) == "" {
+		return false, errors.New("script id is required")
+	}
 	script.ProjectID = normalizeProjectID(script.ProjectID)
 	encoded, err := marshalScriptForStorage(script)
 	if err != nil {
 		return false, err
 	}
 	if script.CreatedAt.IsZero() {
-		script.CreatedAt = time.Now()
+		script.CreatedAt = time.Now().UTC()
 	}
-	script.UpdatedAt = time.Now()
-	result, err := s.db.Exec(`INSERT INTO scripts (id, ref_key, name, protocol, version, project_id, folder_id, generated_by, generated_from, metadata_json, config, data_sources, parameters, init, actions, teardown, created_at, updated_at)
+	script.UpdatedAt = time.Now().UTC()
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	if err := validateScriptFolderProjectTx(tx, script.ProjectID, script.FolderID); err != nil {
+		return false, err
+	}
+	if err := validateScriptObjectRepositoryProjectsTx(tx, script.ProjectID, script); err != nil {
+		return false, err
+	}
+	result, err := tx.Exec(`INSERT INTO scripts (id, ref_key, name, protocol, version, project_id, folder_id, generated_by, generated_from, metadata_json, config, data_sources, parameters, init, actions, teardown, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO NOTHING`,
 		script.ID, script.RefKey, script.Name, script.Protocol, script.Version, script.ProjectID, script.FolderID,
 		script.GeneratedBy, script.GeneratedFrom,
 		encoded.metadata, encoded.config, encoded.dataSources, encoded.parameters, encoded.init, encoded.actions, encoded.teardown,
 		script.CreatedAt, script.UpdatedAt)
+	if err != nil {
+		return false, err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil || rows != 1 {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// UpdateScriptIfUnchanged atomically replaces a script only when the caller's
+// durable version is still current. Library synchronization uses this boundary
+// to avoid overwriting an editor's concurrent update after conflict preflight.
+func (s *SQLiteStore) UpdateScriptIfUnchanged(script *dsl.Script, expectedUpdatedAt time.Time) (bool, error) {
+	if script == nil {
+		return false, errors.New("script is required")
+	}
+	if strings.TrimSpace(script.ID) == "" || expectedUpdatedAt.IsZero() {
+		return false, errors.New("script id and expected updated_at are required")
+	}
+	script.ProjectID = normalizeProjectID(script.ProjectID)
+	encoded, err := marshalScriptForStorage(script)
+	if err != nil {
+		return false, err
+	}
+	if script.CreatedAt.IsZero() {
+		return false, errors.New("script created_at is required for conditional update")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	if err := validateScriptFolderProjectTx(tx, script.ProjectID, script.FolderID); err != nil {
+		return false, err
+	}
+	if err := validateScriptObjectRepositoryProjectsTx(tx, script.ProjectID, script); err != nil {
+		return false, err
+	}
+	var currentUpdatedAt time.Time
+	var currentUpdatedRaw, currentProjectID string
+	if err := tx.QueryRow(`SELECT updated_at, CAST(updated_at AS TEXT), project_id FROM scripts WHERE id = ?`, script.ID).Scan(&currentUpdatedAt, &currentUpdatedRaw, &currentProjectID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	if normalizeProjectID(currentProjectID) != script.ProjectID || !currentUpdatedAt.Equal(expectedUpdatedAt) {
+		return false, nil
+	}
+	script.UpdatedAt = time.Now().UTC()
+	result, err := tx.Exec(`UPDATE scripts SET
+		ref_key = ?, name = ?, protocol = ?, version = ?, folder_id = ?,
+		generated_by = ?, generated_from = ?, metadata_json = ?, config = ?, data_sources = ?, parameters = ?, init = ?, actions = ?, teardown = ?, updated_at = ?
+		WHERE id = ? AND project_id = ? AND CAST(updated_at AS TEXT) = ?`,
+		script.RefKey, script.Name, script.Protocol, script.Version, script.FolderID,
+		script.GeneratedBy, script.GeneratedFrom,
+		encoded.metadata, encoded.config, encoded.dataSources, encoded.parameters, encoded.init, encoded.actions, encoded.teardown,
+		script.UpdatedAt, script.ID, script.ProjectID, currentUpdatedRaw)
+	if err != nil {
+		return false, err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil || rows != 1 {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func validateScriptFolderProjectTx(queryer interface {
+	QueryRow(query string, args ...any) *sql.Row
+}, projectID string, folderID *string) error {
+	if folderID == nil {
+		return nil
+	}
+	id := strings.TrimSpace(*folderID)
+	if id == "" {
+		return errors.New("script folder id must be non-empty when set")
+	}
+	var folderProjectID string
+	if err := queryer.QueryRow(`SELECT project_id FROM folders WHERE id = ?`, id).Scan(&folderProjectID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("script folder %q not found", id)
+		}
+		return err
+	}
+	if normalizeProjectID(folderProjectID) != normalizeProjectID(projectID) {
+		return fmt.Errorf("script folder %q belongs to another project", id)
+	}
+	return nil
+}
+
+func validateScriptObjectRepositoryProjectsTx(tx *storeTx, projectID string, script *dsl.Script) error {
+	if script == nil {
+		return nil
+	}
+	repositoryIDs := qualifiedObjectRepositoryIDs(script)
+	orderedIDs := make([]string, 0, len(repositoryIDs))
+	for repositoryID := range repositoryIDs {
+		orderedIDs = append(orderedIDs, repositoryID)
+	}
+	sort.Strings(orderedIDs)
+	for _, repositoryID := range orderedIDs {
+		query := `SELECT COALESCE(project_id, '') FROM object_repositories WHERE id = ?`
+		if tx.dialect == storeDialectPostgres {
+			query += ` FOR UPDATE`
+		}
+		var repositoryProjectID string
+		if err := tx.QueryRow(query, repositoryID).Scan(&repositoryProjectID); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return fmt.Errorf("object repository %q referenced by script does not exist", repositoryID)
+			}
+			return err
+		}
+		if normalizeProjectID(repositoryProjectID) != normalizeProjectID(projectID) {
+			return fmt.Errorf("object repository %q belongs to another project", repositoryID)
+		}
+	}
+	return nil
+}
+
+func qualifiedObjectRepositoryIDs(script *dsl.Script) map[string]struct{} {
+	out := map[string]struct{}{}
+	var visit func([]dsl.Action)
+	visit = func(actions []dsl.Action) {
+		for i := range actions {
+			ref := strings.TrimSpace(actions[i].ObjectRef)
+			if repositoryID, _, qualified := strings.Cut(ref, ":"); qualified {
+				repositoryID = strings.TrimSpace(repositoryID)
+				if strings.HasPrefix(repositoryID, "object-repo-") {
+					out[repositoryID] = struct{}{}
+				}
+			}
+			if actions[i].Control != nil {
+				visit(actions[i].Control.Steps)
+				visit(actions[i].Control.Else)
+			}
+		}
+	}
+	visit(script.Init)
+	visit(script.Actions)
+	visit(script.Teardown)
+	return out
+}
+
+// DeleteScriptIfUnchanged conditionally removes a script and its dependent
+// rows. It is used only to compensate a failed multi-item library import.
+func (s *SQLiteStore) DeleteScriptIfUnchanged(id string, expectedUpdatedAt time.Time) (bool, error) {
+	id = strings.TrimSpace(id)
+	if id == "" || expectedUpdatedAt.IsZero() {
+		return false, errors.New("script id and expected updated_at are required")
+	}
+	var currentUpdatedAt time.Time
+	var currentUpdatedRaw string
+	if err := s.db.QueryRow(`SELECT updated_at, CAST(updated_at AS TEXT) FROM scripts WHERE id = ?`, id).Scan(&currentUpdatedAt, &currentUpdatedRaw); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	if !currentUpdatedAt.Equal(expectedUpdatedAt) {
+		return false, nil
+	}
+	result, err := s.db.Exec(`DELETE FROM scripts WHERE id = ? AND CAST(updated_at AS TEXT) = ?`, id, currentUpdatedRaw)
 	if err != nil {
 		return false, err
 	}
@@ -196,6 +412,20 @@ func (s *SQLiteStore) DeleteScript(id string) error {
 		return err
 	}
 	defer tx.Rollback()
+	// Lock the parent before removing dependent integration rows. A concurrent
+	// GitHub link save takes the same row lock, so it cannot insert a new link
+	// after this transaction has already passed its dependent-row cleanup.
+	lockQuery := `SELECT id FROM scripts WHERE id = ?`
+	if s.db.dialect == storeDialectPostgres {
+		lockQuery += ` FOR UPDATE`
+	}
+	var lockedID string
+	if err := tx.QueryRow(lockQuery, id).Scan(&lockedID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
 	for _, query := range []string{
 		`DELETE FROM github_check_links WHERE script_id = ?`,
 		`DELETE FROM github_script_links WHERE script_id = ?`,
@@ -239,8 +469,28 @@ func decodeStoredScriptJSON(script *dsl.Script, metadataJSON, configJSON, dataSo
 }
 
 func (s *SQLiteStore) MoveScript(id string, folderID *string) error {
-	_, err := s.db.Exec(`UPDATE scripts SET folder_id = ?, updated_at = ? WHERE id = ?`, folderID, time.Now(), id)
-	return err
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var projectID string
+	if err := tx.QueryRow(`SELECT COALESCE(project_id, '') FROM scripts WHERE id = ?`, id).Scan(&projectID); err != nil {
+		return err
+	}
+	if err := validateScriptFolderProjectTx(tx, projectID, folderID); err != nil {
+		return err
+	}
+	result, err := tx.Exec(`UPDATE scripts SET folder_id = ?, updated_at = ? WHERE id = ? AND project_id = ?`, folderID, time.Now(), id, projectID)
+	if err != nil {
+		return err
+	}
+	if affected, err := result.RowsAffected(); err != nil {
+		return err
+	} else if affected != 1 {
+		return sql.ErrNoRows
+	}
+	return tx.Commit()
 }
 
 func (s *SQLiteStore) SaveAuthoringSession(session *AuthoringSession) error {
@@ -248,6 +498,13 @@ func (s *SQLiteStore) SaveAuthoringSession(session *AuthoringSession) error {
 		return errors.New("authoring session is required")
 	}
 	session.ProjectID = normalizeProjectID(session.ProjectID)
+	if session.Draft != nil {
+		if strings.TrimSpace(session.Draft.ProjectID) == "" {
+			session.Draft.ProjectID = session.ProjectID
+		} else if normalizeProjectID(session.Draft.ProjectID) != session.ProjectID {
+			return errors.New("authoring session draft belongs to another project")
+		}
+	}
 	now := authoringSessionTimestamp(time.Now())
 	if session.CreatedAt.IsZero() {
 		session.CreatedAt = now
@@ -268,19 +525,29 @@ func (s *SQLiteStore) SaveAuthoringSession(session *AuthoringSession) error {
 	if err != nil {
 		return fmt.Errorf("marshal authoring review state: %w", err)
 	}
-	_, err = s.db.Exec(`INSERT INTO authoring_sessions (id, project_id, source, name, status, draft_json, review_state_json, created_at, updated_at, last_accessed_at)
+	result, err := s.db.Exec(`INSERT INTO authoring_sessions (id, project_id, source, name, status, draft_json, review_state_json, created_at, updated_at, last_accessed_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
-			project_id=excluded.project_id,
 			source=excluded.source,
 			name=excluded.name,
 			status=excluded.status,
 			draft_json=excluded.draft_json,
 			review_state_json=excluded.review_state_json,
 			updated_at=excluded.updated_at,
-			last_accessed_at=excluded.last_accessed_at`,
-		session.ID, session.ProjectID, session.Source, session.Name, session.Status, string(draftJSON), string(reviewStateJSON), session.CreatedAt, session.UpdatedAt, session.LastAccessedAt)
-	return err
+			last_accessed_at=excluded.last_accessed_at
+		WHERE COALESCE(NULLIF(authoring_sessions.project_id, ''), ?) = excluded.project_id`,
+		session.ID, session.ProjectID, session.Source, session.Name, session.Status, string(draftJSON), string(reviewStateJSON), session.CreatedAt, session.UpdatedAt, session.LastAccessedAt, DefaultProjectID)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return fmt.Errorf("authoring session %q belongs to another project", session.ID)
+	}
+	return nil
 }
 
 // CompareAndSwapAuthoringSession persists a session only while the durable row
@@ -292,6 +559,13 @@ func (s *SQLiteStore) CompareAndSwapAuthoringSession(session *AuthoringSession, 
 		return false, errors.New("authoring session is required")
 	}
 	session.ProjectID = normalizeProjectID(session.ProjectID)
+	if session.Draft != nil {
+		if strings.TrimSpace(session.Draft.ProjectID) == "" {
+			session.Draft.ProjectID = session.ProjectID
+		} else if normalizeProjectID(session.Draft.ProjectID) != session.ProjectID {
+			return false, errors.New("authoring session draft belongs to another project")
+		}
+	}
 	now := authoringSessionTimestamp(time.Now())
 	if session.CreatedAt.IsZero() {
 		session.CreatedAt = now
@@ -313,11 +587,12 @@ func (s *SQLiteStore) CompareAndSwapAuthoringSession(session *AuthoringSession, 
 		return false, fmt.Errorf("marshal authoring review state: %w", err)
 	}
 	result, err := s.db.Exec(`UPDATE authoring_sessions SET
-		project_id = ?, source = ?, name = ?, status = ?, draft_json = ?, review_state_json = ?,
+		source = ?, name = ?, status = ?, draft_json = ?, review_state_json = ?,
 		updated_at = ?, last_accessed_at = ?
-		WHERE id = ? AND updated_at = ? AND status = ?`,
-		session.ProjectID, session.Source, session.Name, session.Status, string(draftJSON), string(reviewStateJSON),
-		session.UpdatedAt, session.LastAccessedAt, session.ID, expectedUpdatedAt, expectedStatus)
+		WHERE id = ? AND updated_at = ? AND status = ?
+		AND COALESCE(NULLIF(project_id, ''), ?) = ?`,
+		session.Source, session.Name, session.Status, string(draftJSON), string(reviewStateJSON),
+		session.UpdatedAt, session.LastAccessedAt, session.ID, expectedUpdatedAt, expectedStatus, DefaultProjectID, session.ProjectID)
 	if err != nil {
 		return false, err
 	}
@@ -360,6 +635,20 @@ func (s *SQLiteStore) GetAuthoringSession(id string) (*AuthoringSession, error) 
 }
 
 func (s *SQLiteStore) ListAuthoringSessions(projectID string) ([]*AuthoringSession, error) {
+	return s.listAuthoringSessions(projectID, 0, 0)
+}
+
+func (s *SQLiteStore) ListAuthoringSessionsPage(projectID string, limit, offset int) ([]*AuthoringSession, error) {
+	if limit <= 0 {
+		return []*AuthoringSession{}, nil
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	return s.listAuthoringSessions(projectID, limit, offset)
+}
+
+func (s *SQLiteStore) listAuthoringSessions(projectID string, limit, offset int) ([]*AuthoringSession, error) {
 	args := []any{}
 	query := `SELECT id, COALESCE(project_id, ''), source, name, status, COALESCE(draft_json, ''), COALESCE(review_state_json, ''), created_at, updated_at, last_accessed_at FROM authoring_sessions`
 	if projectID != "" {
@@ -367,6 +656,10 @@ func (s *SQLiteStore) ListAuthoringSessions(projectID string) ([]*AuthoringSessi
 		args = append(args, normalizeProjectID(projectID))
 	}
 	query += ` ORDER BY updated_at DESC`
+	if limit > 0 {
+		query += ` LIMIT ? OFFSET ?`
+		args = append(args, limit, offset)
+	}
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, err

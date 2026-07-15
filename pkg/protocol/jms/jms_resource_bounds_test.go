@@ -2,6 +2,8 @@ package jms
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -9,6 +11,69 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
+
+func TestJMSSidecarCaptureBufferIsBounded(t *testing.T) {
+	buffer := &sidecarCappedBuffer{max: 8}
+	content := []byte("0123456789abcdef")
+	if written, err := buffer.Write(content); err != nil || written != len(content) {
+		t.Fatalf("Write = (%d, %v), want (%d, nil)", written, err, len(content))
+	}
+	if got := buffer.buf.String(); got != "01234567" || !buffer.truncated {
+		t.Fatalf("buffer = %q truncated=%v", got, buffer.truncated)
+	}
+}
+
+func TestJMSSidecarProcessLimiterHonorsContext(t *testing.T) {
+	limiter := newSidecarProcessLimiter(1)
+	release, err := limiter.acquire(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	if _, err := limiter.acquire(ctx); err == nil {
+		t.Fatal("second process slot acquisition unexpectedly succeeded")
+	}
+	release()
+	releaseAgain, err := limiter.acquire(context.Background())
+	if err != nil {
+		t.Fatalf("slot was not released: %v", err)
+	}
+	releaseAgain()
+}
+
+func TestJMSSidecarMaxProcessesComesFromOperatorEnv(t *testing.T) {
+	t.Setenv(sidecarMaxProcessesEnv, "3")
+	if got := configuredSidecarMaxProcesses(); got != 3 {
+		t.Fatalf("configured max processes = %d, want 3", got)
+	}
+	t.Setenv(sidecarMaxProcessesEnv, "0")
+	if got := configuredSidecarMaxProcesses(); got != defaultSidecarProcesses {
+		t.Fatalf("invalid configured max processes = %d, want default %d", got, defaultSidecarProcesses)
+	}
+	t.Setenv(sidecarMaxProcessesEnv, strconv.Itoa(maxSidecarProcesses+1_000_000))
+	if got := configuredSidecarMaxProcesses(); got != maxSidecarProcesses {
+		t.Fatalf("oversized configured max processes = %d, want hard cap %d", got, maxSidecarProcesses)
+	}
+}
+
+func TestJMSSidecarRejectsOversizedStdout(t *testing.T) {
+	dir := t.TempDir()
+	scriptPath := filepath.Join(dir, "oversized-sidecar.sh")
+	script := "#!/bin/sh\ncat >/dev/null\ndd if=/dev/zero bs=" + strconv.Itoa(maxSidecarCaptureBytes+1) + " count=1 2>/dev/null\n"
+	if err := os.WriteFile(scriptPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	adapter := sidecarAdapter{
+		command: scriptPath,
+		cfg:     config{Timeout: time.Second},
+		limiter: newSidecarProcessLimiter(1),
+	}
+	_, err := adapter.run(context.Background(), sidecarRequest{Operation: "health"}, time.Second)
+	if err == nil || !strings.Contains(err.Error(), "stdout exceeded") {
+		t.Fatalf("oversized sidecar output error = %v", err)
+	}
+}
 
 func TestJMSRealAdapterRejectsUnsupportedSettlementModes(t *testing.T) {
 	p := &JMS{name: "jms-solace", provider: "solace"}
@@ -83,6 +148,75 @@ func TestJMSMemoryQueueIsCountAndByteBounded(t *testing.T) {
 	}
 	if total > maxJMSQueueBytes {
 		t.Fatalf("queue bytes = %d, cap = %d", total, maxJMSQueueBytes)
+	}
+}
+
+func TestJMSMemoryBrokerHasAggregateRetentionBudget(t *testing.T) {
+	b := &memoryBroker{
+		queues: map[string][]message{}, topics: map[string]map[string][]message{}, refs: map[string]int{},
+		queueBytes: map[string]int64{}, topicBytes: map[string]map[string]int64{}, totalBytes: maxJMSRetainedBytes,
+	}
+	if err := b.publish("orders", message{Body: []byte("x")}); err == nil || !strings.Contains(err.Error(), "aggregate") {
+		t.Fatalf("publish at aggregate cap error = %v", err)
+	}
+	if len(b.queues) != 0 {
+		t.Fatal("aggregate-cap rejection mutated broker queues")
+	}
+}
+
+func TestJMSTopicFanoutRejectsBeforeAggregateAmplification(t *testing.T) {
+	b := &memoryBroker{
+		queues: map[string][]message{},
+		topics: map[string]map[string][]message{"events": {"a": nil, "b": nil}}, refs: map[string]int{},
+		queueBytes: map[string]int64{}, topicBytes: map[string]map[string]int64{"events": {"a": 0, "b": 0}},
+		totalBytes: maxJMSRetainedBytes - 1,
+	}
+	if err := b.publishTopic("events", message{Body: []byte("xx")}); err == nil || !strings.Contains(err.Error(), "fanout") {
+		t.Fatalf("fanout at aggregate cap error = %v", err)
+	}
+	if len(b.topics["events"]["a"]) != 0 || len(b.topics["events"]["b"]) != 0 {
+		t.Fatal("rejected fanout mutated subscription queues")
+	}
+}
+
+func TestJMSConsumeClearsRemovedBackingArrayReference(t *testing.T) {
+	backing := []message{{Body: []byte("first")}, {Body: []byte("second")}}
+	b := &memoryBroker{queues: map[string][]message{"q": backing}, topics: map[string]map[string][]message{}, refs: map[string]int{}}
+	if _, ok := b.consume("q"); !ok {
+		t.Fatal("consume returned no message")
+	}
+	if backing[1].Body != nil {
+		t.Fatal("consumed queue left a message body reachable in spare backing-array capacity")
+	}
+}
+
+func TestJMSRejectsUnboundedBrowseAndSequenceBatches(t *testing.T) {
+	values := make([]any, MaxJMSSequenceNumbers+1)
+	if _, err := parseSequenceNumbers(values); err == nil {
+		t.Fatal("parseSequenceNumbers accepted an oversized batch")
+	}
+	p := &JMS{name: "jms-solace", provider: "solace"}
+	if err := p.Init(context.Background(), map[string]any{"jms_mock": true, "jms_destination": "orders"}); err != nil {
+		t.Fatal(err)
+	}
+	defer p.Teardown(context.Background())
+	result, err := p.Execute(context.Background(), &protocol.Action{
+		Name: "browse", Type: "jms_browse", Params: map[string]any{"max": MaxJMSBrowseMessages + 1},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Success || result.StatusCode != 400 || !strings.Contains(result.ErrorMessage, "browse max") {
+		t.Fatalf("oversized browse result = %#v", result)
+	}
+}
+
+func TestJMSInitRejectsOverflowingTimeout(t *testing.T) {
+	p := &JMS{name: "jms-solace", provider: "solace"}
+	if err := p.Init(context.Background(), map[string]any{
+		"jms_mock": true, "jms_destination": "orders", "jms_timeout_ms": float64(MaxConfiguredTimeout.Milliseconds() + 1),
+	}); err == nil {
+		t.Fatal("Init accepted a timeout above the runtime hard limit")
 	}
 }
 

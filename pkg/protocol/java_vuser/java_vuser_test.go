@@ -46,7 +46,8 @@ func TestJavaVuserRunnerInvokesConfiguredCommand(t *testing.T) {
 	dir := t.TempDir()
 	runnerPath := filepath.Join(dir, "java-vuser-runner")
 	stdinCapture := filepath.Join(dir, "stdin-capture")
-	script := "#!/bin/sh\ncat >" + stdinCapture + "\nprintf '{\"type\":\"transaction_start\",\"name\":\"Checkout\",\"message\":\"\"}\\n' >&2\nprintf '{\"type\":\"log\",\"name\":\"\",\"message\":\"checkpoint\"}\\n' >&2\nprintf '{\"success\":true,\"class_name\":\"Actions\",\"method\":\"full_lifecycle\",\"duration_ms\":42}\\n'\n"
+	privateEnvCapture := filepath.Join(dir, "private-env-capture")
+	script := "#!/bin/sh\ncat >" + stdinCapture + "\nif [ -n \"$UNRELATED_PRIVATE_DATA\" ]; then touch " + privateEnvCapture + "; fi\nprintf '{\"type\":\"transaction_start\",\"name\":\"Checkout\",\"message\":\"\"}\\n' >&2\nprintf '{\"type\":\"log\",\"name\":\"\",\"message\":\"checkpoint\"}\\n' >&2\nprintf '{\"success\":true,\"class_name\":\"Actions\",\"method\":\"full_lifecycle\",\"duration_ms\":42}\\n'\n"
 	if err := os.WriteFile(runnerPath, []byte(script), 0o755); err != nil {
 		t.Fatalf("write runner: %v", err)
 	}
@@ -55,6 +56,7 @@ func TestJavaVuserRunnerInvokesConfiguredCommand(t *testing.T) {
 	// never from the uploaded script config.
 	t.Setenv(config.EnvJavaVuserRunnerEnabled, "true")
 	t.Setenv(config.EnvJavaVuserRunnerCommand, runnerPath)
+	t.Setenv("UNRELATED_PRIVATE_DATA", "must-not-be-inherited")
 
 	var runner JavaVuser
 	if err := runner.Init(context.Background(), map[string]any{
@@ -108,6 +110,39 @@ func TestJavaVuserRunnerInvokesConfiguredCommand(t *testing.T) {
 	}
 	if !strings.Contains(string(captured), `"startup_timeout_ms":3000`) {
 		t.Fatalf("runner stdin = %s, want startup_timeout_ms forwarded to sidecar command", captured)
+	}
+	if _, err := os.Stat(privateEnvCapture); !os.IsNotExist(err) {
+		t.Fatalf("runner inherited private parent environment; marker stat error = %v", err)
+	}
+}
+
+func TestJavaVuserRunnerRejectsAmbientPlatformCredentials(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture uses POSIX sh")
+	}
+	dir := t.TempDir()
+	runnerPath := filepath.Join(dir, "java-vuser-runner")
+	marker := filepath.Join(dir, "executed")
+	if err := os.WriteFile(runnerPath, []byte("#!/bin/sh\ntouch "+marker+"\nprintf '{\"success\":true}\\n'\n"), 0o755); err != nil {
+		t.Fatalf("write runner: %v", err)
+	}
+	t.Setenv(config.EnvJavaVuserRunnerEnabled, "true")
+	t.Setenv(config.EnvJavaVuserRunnerCommand, runnerPath)
+	t.Setenv("APEXLOAD_GRPC_AUTH_TOKEN", "generator-secret")
+
+	var runner JavaVuser
+	if err := runner.Init(context.Background(), map[string]any{}); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	result, err := runner.Execute(context.Background(), &protocol.Action{Name: "Run", Type: "java_vuser_run", Target: "Actions"})
+	if err != nil {
+		t.Fatalf("Execute returned protocol error: %v", err)
+	}
+	if result.Success || !strings.Contains(result.ErrorMessage, "ambient platform credentials") {
+		t.Fatalf("result = %#v, want isolation rejection", result)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("runner executed despite ambient credential; marker stat error = %v", err)
 	}
 }
 

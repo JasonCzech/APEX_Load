@@ -6,11 +6,21 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/storage"
 )
+
+type losingCollectorRotationStore struct {
+	*storage.SQLiteStore
+}
+
+func (s *losingCollectorRotationStore) UpdateMonitoringCollectorTokenHashIfUnchanged(_, _, _, _ string) (bool, error) {
+	return false, nil
+}
 
 func TestCollectorHeartbeatRejectsOversizedPayload(t *testing.T) {
 	server, _ := newTimeslotServer(t)
@@ -144,6 +154,37 @@ func TestMonitoringCollectorLifecycle(t *testing.T) {
 
 	if del := timeslotRequest(t, server, http.MethodDelete, "/api/v1/monitoring/collectors/"+id, nil); del.Code != http.StatusOK {
 		t.Fatalf("delete status = %d", del.Code)
+	}
+}
+
+func TestMonitoringCollectorRotationConflictDoesNotReturnPlaintextToken(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "collector-rotation.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	project := &storage.Project{ID: "project-a", Name: "Project A", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := store.SaveProject(project); err != nil {
+		t.Fatal(err)
+	}
+	collector := &storage.MonitoringCollector{
+		ID: "collector-a", ProjectID: project.ID, Name: "Collector A", TokenHash: hashAPIKey("old-token"), Health: "unreachable",
+	}
+	if err := store.SaveMonitoringCollector(collector); err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(ServerConfig{Store: &losingCollectorRotationStore{SQLiteStore: store}})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/monitoring/collectors/"+collector.ID+"/rotate-token", nil)
+	req.SetPathValue("id", collector.ID)
+	resp := httptest.NewRecorder()
+
+	server.handleRotateMonitoringCollectorToken(resp, req)
+
+	if resp.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusConflict, resp.Body.String())
+	}
+	if strings.Contains(resp.Body.String(), `"token"`) {
+		t.Fatalf("conflict response returned plaintext credential: %s", resp.Body.String())
 	}
 }
 

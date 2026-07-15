@@ -137,13 +137,20 @@ func (localExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 	}
 	unlockArchiveCommit()
 
+	var totalTransactions, totalErrors int64
+	var resultDuration time.Duration
+	if result != nil {
+		totalTransactions = result.TotalTransactions
+		totalErrors = result.TotalErrors
+		resultDuration = result.Duration
+	}
 	slog.Info("test finished",
 		"id", test.ID,
 		"status", test.Status,
 		"groups", len(test.Groups),
-		"transactions", result.TotalTransactions,
-		"errors", result.TotalErrors,
-		"duration", result.Duration,
+		"transactions", totalTransactions,
+		"errors", totalErrors,
+		"duration", resultDuration,
 	)
 }
 
@@ -189,9 +196,9 @@ func buildRunArchiveProvenance(tr *TestRunner, test *ManagedTest) RunArchiveProv
 	provenance.Assignment = cloneGeneratorAssignmentSettings(snapshot.Assignment)
 	provenance.GeneratorShards = cloneGeneratorShardSummaries(snapshot.GeneratorShards)
 	provenance.GoalConfig = cloneGoalConfig(snapshot.GoalConfig)
-	provenance.RuntimeSettings = cloneRuntimeSettings(snapshot.RuntimeSettings)
+	provenance.RuntimeSettings = maskRuntimeSettings(snapshot.RuntimeSettings)
 	provenance.RuntimeSettingsReview = cloneRuntimeSettingsReview(snapshot.RuntimeSettingsReview)
-	provenance.Groups = cloneArchiveTestGroups(snapshot.Groups)
+	provenance.Groups = maskTestGroupsRuntimeSettings(snapshot.Groups)
 	provenance.BaselinePinned = snapshot.BaselinePinned
 	provenance.BaselinePinnedAt = snapshot.BaselinePinnedAt
 	provenance.ControllerEnv = captureAPEXLoadEnv()
@@ -438,8 +445,14 @@ func (a *runArtifacts) finalize(test *ManagedTest, finalStatus string, endTime t
 	// side effect. A crash after the local manifest commit is then recoverable by
 	// the orphan scanner without startup reconciliation rewriting the run FAILED.
 	if a.runner != nil && test != nil && archiveRecord != nil {
-		if err := a.runner.persistStoredTestStatus(test.ID, finalStatus, &endTime, finalError); err != nil {
-			publicationErr = fmt.Errorf("persist terminal state before archive publication: %w", err)
+		if err := a.runner.persistStoredTestStatus(test.ID, test.executionFence, finalStatus, &endTime, finalError); err != nil {
+			if isStoredTestTransitionCancelled(err) {
+				// A deleted durable row is a tombstone. Keep the locally staged artifact
+				// unpublished and suppress every downstream terminal side effect.
+				archiveRecord = nil
+			} else {
+				publicationErr = fmt.Errorf("persist terminal state before archive publication: %w", err)
+			}
 		}
 	}
 	if publicationErr == nil && a.runner != nil && archiveRecord != nil {

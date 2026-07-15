@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
 
+	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	playwright "github.com/playwright-community/playwright-go"
 )
@@ -21,13 +23,21 @@ const browserNetworkBodyCaptureLimitBytes = 512 * 1024
 // evicting the oldest entries first (the sibling wsEvents buffer is similarly
 // ring-bounded).
 const (
-	browserNetworkEntryRingLimit  = 2048
-	browserNetworkBodyBudgetBytes = 32 * 1024 * 1024
-	browserConsoleEntryRingLimit  = 2048
-	browserConsoleTextLimitBytes  = 4096
-	browserPageLimit              = 32
-	browserNetworkWorkerCount     = 4
-	browserNetworkTaskQueueSize   = 256
+	browserNetworkEntryRingLimit      = 2048
+	browserNetworkBodyBudgetBytes     = 32 * 1024 * 1024
+	browserNetworkMetadataBudgetBytes = 16 * 1024 * 1024
+	browserNetworkURLLimitBytes       = 16 * 1024
+	browserNetworkHeaderEntriesLimit  = 128
+	browserNetworkHeaderBytesLimit    = 64 * 1024
+	browserNetworkHeaderNameLimit     = 1024
+	browserNetworkHeaderValueLimit    = 16 * 1024
+	browserConsoleEntryRingLimit      = 2048
+	browserConsoleTextLimitBytes      = 4096
+	browserConsoleSourceLimitBytes    = 16 * 1024
+	browserConsoleLevelLimitBytes     = 128
+	browserPageLimit                  = 32
+	browserNetworkWorkerCount         = 4
+	browserNetworkTaskQueueSize       = 256
 )
 
 type browserNetworkTask struct {
@@ -45,12 +55,18 @@ func (b *Browser) openBrowserContext() error {
 	if err != nil {
 		return err
 	}
+	b.mu.Lock()
+	b.closing = false
+	b.requestPolicyStop = make(chan struct{})
+	b.mu.Unlock()
 	if err := b.installRequestPolicy(browserContext); err != nil {
+		b.stopRequestPolicyWaiters()
 		_ = browserContext.Close()
 		return err
 	}
 	if b.clientMetricsEnabled {
 		if err := browserContext.AddInitScript(playwright.Script{Content: playwright.String(browserMetricsBootstrapScript)}); err != nil {
+			b.stopRequestPolicyWaiters()
 			_ = browserContext.Close()
 			return err
 		}
@@ -60,6 +76,7 @@ func (b *Browser) openBrowserContext() error {
 
 	page, err := browserContext.NewPage()
 	if err != nil {
+		b.stopRequestPolicyWaiters()
 		_ = browserContext.Close()
 		return err
 	}
@@ -191,8 +208,10 @@ func (b *Browser) installBrowserContextHandlers(browserContext playwright.Browse
 
 func (b *Browser) appendConsoleEntry(entry protocol.ConsoleEntry) {
 	if len(entry.Text) > browserConsoleTextLimitBytes {
-		entry.Text = entry.Text[:browserConsoleTextLimitBytes]
+		entry.Text = boundedtext.TruncateUTF8(entry.Text, browserConsoleTextLimitBytes)
 	}
+	entry.Source = boundedtext.TruncateUTF8(entry.Source, browserConsoleSourceLimitBytes)
+	entry.Level = boundedtext.TruncateUTF8(entry.Level, browserConsoleLevelLimitBytes)
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.closing {
@@ -409,8 +428,7 @@ func (b *Browser) recordNetworkRequest(request playwright.Request, finished bool
 	if !finished && durationMs < 0 {
 		durationMs = 0
 	}
-	b.mu.Lock()
-	b.networkEntries = append(b.networkEntries, protocol.NetworkEntry{
+	entry := boundBrowserNetworkEntry(protocol.NetworkEntry{
 		URL:                  request.URL(),
 		Method:               request.Method(),
 		StatusCode:           statusCode,
@@ -423,9 +441,16 @@ func (b *Browser) recordNetworkRequest(request playwright.Request, finished bool
 		RequestBodyTruncated: requestBodyTruncated,
 		ResponseHeaders:      responseHeaders,
 	})
-	b.networkBodyBytes += len(requestBody)
-	b.trimNetworkEntriesLocked()
+	b.mu.Lock()
+	b.appendNetworkEntryLocked(entry)
 	b.mu.Unlock()
+}
+
+func (b *Browser) appendNetworkEntryLocked(entry protocol.NetworkEntry) {
+	b.networkEntries = append(b.networkEntries, entry)
+	b.networkBodyBytes += len(entry.RequestBody)
+	b.networkMetadataBytes += browserNetworkEntryMetadataBytes(entry)
+	b.trimNetworkEntriesLocked()
 }
 
 // trimNetworkEntriesLocked evicts the oldest network entries once the count or
@@ -438,11 +463,13 @@ func (b *Browser) trimNetworkEntriesLocked() {
 	keepFrom := 0
 	for keepFrom < len(b.networkEntries) {
 		overCount := len(b.networkEntries)-keepFrom > browserNetworkEntryRingLimit
-		overBytes := b.networkBodyBytes > browserNetworkBodyBudgetBytes && len(b.networkEntries)-keepFrom > 1
-		if !overCount && !overBytes {
+		overBodyBytes := b.networkBodyBytes > browserNetworkBodyBudgetBytes && len(b.networkEntries)-keepFrom > 1
+		overMetadataBytes := b.networkMetadataBytes > browserNetworkMetadataBudgetBytes && len(b.networkEntries)-keepFrom > 1
+		if !overCount && !overBodyBytes && !overMetadataBytes {
 			break
 		}
 		b.networkBodyBytes -= len(b.networkEntries[keepFrom].RequestBody)
+		b.networkMetadataBytes -= browserNetworkEntryMetadataBytes(b.networkEntries[keepFrom])
 		keepFrom++
 	}
 	if keepFrom == 0 {
@@ -455,6 +482,67 @@ func (b *Browser) trimNetworkEntriesLocked() {
 	b.networkEntriesDropped += keepFrom
 }
 
+func boundBrowserNetworkEntry(entry protocol.NetworkEntry) protocol.NetworkEntry {
+	entry.URL = boundedtext.TruncateUTF8(entry.URL, browserNetworkURLLimitBytes)
+	entry.Method = boundedtext.TruncateUTF8(entry.Method, 128)
+	entry.ResourceType = boundedtext.TruncateUTF8(entry.ResourceType, 128)
+	entry.RequestBodyEncoding = boundedtext.TruncateUTF8(entry.RequestBodyEncoding, 64)
+	entry.RequestHeaders = boundedBrowserNetworkHeaders(entry.RequestHeaders)
+	entry.ResponseHeaders = boundedBrowserNetworkHeaders(entry.ResponseHeaders)
+	return entry
+}
+
+func boundedBrowserNetworkHeaders(headers map[string]string) map[string]string {
+	if len(headers) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(headers))
+	for key := range headers {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	if len(keys) > browserNetworkHeaderEntriesLimit {
+		keys = keys[:browserNetworkHeaderEntriesLimit]
+	}
+	bounded := make(map[string]string, len(keys))
+	remaining := browserNetworkHeaderBytesLimit
+	for _, originalKey := range keys {
+		const entryOverhead = 64
+		if remaining <= entryOverhead {
+			break
+		}
+		key := boundedtext.TruncateUTF8(originalKey, min(browserNetworkHeaderNameLimit, remaining-entryOverhead))
+		if key == "" {
+			continue
+		}
+		remaining -= entryOverhead + len(key)
+		if remaining <= 0 {
+			break
+		}
+		value := boundedtext.TruncateUTF8(headers[originalKey], min(browserNetworkHeaderValueLimit, remaining))
+		remaining -= len(value)
+		if _, exists := bounded[key]; exists {
+			continue
+		}
+		bounded[key] = value
+	}
+	if len(bounded) == 0 {
+		return nil
+	}
+	return bounded
+}
+
+func browserNetworkEntryMetadataBytes(entry protocol.NetworkEntry) int {
+	bytes := 256 + len(entry.URL) + len(entry.Method) + len(entry.ResourceType) + len(entry.RequestBodyEncoding)
+	for key, value := range entry.RequestHeaders {
+		bytes += 64 + len(key) + len(value)
+	}
+	for key, value := range entry.ResponseHeaders {
+		bytes += 64 + len(key) + len(value)
+	}
+	return bytes
+}
+
 func safeRequestHeaders(request playwright.Request) (headers map[string]string) {
 	defer func() {
 		if recover() != nil {
@@ -464,7 +552,7 @@ func safeRequestHeaders(request playwright.Request) (headers map[string]string) 
 	if request == nil {
 		return nil
 	}
-	return request.Headers()
+	return boundedBrowserNetworkHeaders(request.Headers())
 }
 
 func safeResponseHeaders(response playwright.Response) (headers map[string]string) {
@@ -476,7 +564,7 @@ func safeResponseHeaders(response playwright.Response) (headers map[string]strin
 	if response == nil {
 		return nil
 	}
-	return response.Headers()
+	return boundedBrowserNetworkHeaders(response.Headers())
 }
 
 func browserRequestBody(request playwright.Request) (string, string, bool) {

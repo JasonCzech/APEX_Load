@@ -32,9 +32,10 @@ func init() {
 
 type HTTP struct {
 	client                   *http.Client
+	oauthClient              *http.Client
 	transport                *http.Transport
 	baseURL                  string
-	bufPool                  sync.Pool
+	bufPool                  *httpBufferPool
 	contentChecks            []contentCheck
 	dataFormattingAutoDetect bool
 	dataFormattingChain      []dataFormattingTransform
@@ -49,6 +50,49 @@ type HTTP struct {
 	traceparentSampled       bool
 	authConfig               *protocol.AuthConfig
 	cache                    *httpResponseCache
+}
+
+const (
+	maxPooledHTTPBuffers             = 32
+	maxPooledHTTPBufferSize          = 256 << 10
+	maxHTTPResponseHeaderBytes int64 = 64 << 10
+)
+
+// httpBufferPool is deliberately count- and capacity-bounded. sync.Pool can
+// retain every buffer returned between garbage collections; under thousands of
+// VUsers a burst of near-limit responses could therefore retain gigabytes of
+// backing arrays after the samples finished.
+type httpBufferPool struct {
+	buffers chan *bytes.Buffer
+}
+
+var processHTTPBufferPool = newHTTPBufferPool()
+
+func newHTTPBufferPool() *httpBufferPool {
+	return &httpBufferPool{buffers: make(chan *bytes.Buffer, maxPooledHTTPBuffers)}
+}
+
+func (p *httpBufferPool) get() *bytes.Buffer {
+	if p != nil {
+		select {
+		case buffer := <-p.buffers:
+			buffer.Reset()
+			return buffer
+		default:
+		}
+	}
+	return new(bytes.Buffer)
+}
+
+func (p *httpBufferPool) put(buffer *bytes.Buffer) {
+	if p == nil || buffer == nil || buffer.Cap() > maxPooledHTTPBufferSize {
+		return
+	}
+	buffer.Reset()
+	select {
+	case p.buffers <- buffer:
+	default:
+	}
 }
 
 var (
@@ -87,6 +131,7 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 		Timeout:   h.requestTimeout,
 	}
 	applyRedirectPolicy(h.client, h.maxRedirects)
+	h.oauthClient = hardenedOAuthHTTPClient(h.client)
 
 	h.defaultHeaders = buildDefaultHeaders(config)
 	h.contentChecks = parseContentChecks(config)
@@ -104,9 +149,10 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 	h.authType, h.authHeader = buildAuthHeader(config)
 	h.authConfig = buildAuthConfig(config)
 
-	h.bufPool = sync.Pool{
-		New: func() any { return new(bytes.Buffer) },
-	}
+	// Protocol instances are per-VUser, so the bounded pool must be shared at
+	// process scope; a per-instance pool would still retain one backing array per
+	// VUser and multiply the apparent bound by the fleet size.
+	h.bufPool = processHTTPBufferPool
 
 	return nil
 }
@@ -329,9 +375,11 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		cacheHit = true
 	}
 
-	buf := h.bufPool.Get().(*bytes.Buffer)
+	buf := h.bufPool.get()
 	buf.Reset()
-	defer h.bufPool.Put(buf)
+	defer h.bufPool.put(buf)
+	captureLease := processHTTPResponseCaptureBudget.lease()
+	defer captureLease.release()
 
 	bodyReadStart := time.Now()
 	var (
@@ -343,17 +391,19 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	maxBody := httpMaxBodyBytes(action.Params)
 	isEventStream := shouldReadSSE(resp.Header.Get("Content-Type"), action.Params)
 	if isEventStream {
-		sseResult, err := readSSEResponse(ctx, resp.Body, action.Params, result.StartTime)
-		_, _ = buf.Write(sseResult.Body)
+		sseResult, err := readSSEResponse(ctx, resp.Body, action.Params, result.StartTime, captureLease)
+		_, writeErr := (&responseCaptureWriter{buffer: buf, lease: captureLease}).Write(sseResult.Body)
 		n = sseResult.BytesRead
 		sseFirstEvent = sseResult.FirstEvent
 		sseEventCount = sseResult.EventCount
 		bodyReadErr = err
+		if bodyReadErr == nil {
+			bodyReadErr = writeErr
+		}
 	} else if maxBody > 0 {
 		// Bound the buffered body so a giant (or pathologically compressible)
 		// response becomes a failed sample instead of OOM-ing the generator.
-		// max_body_bytes <= 0 opts out (legitimate streaming/download tests).
-		n, bodyReadErr = io.Copy(buf, io.LimitReader(resp.Body, maxBody+1))
+		n, bodyReadErr = io.Copy(&responseCaptureWriter{buffer: buf, lease: captureLease}, io.LimitReader(resp.Body, maxBody+1))
 		if bodyReadErr == nil && n > maxBody {
 			buf.Truncate(int(maxBody))
 			n = maxBody
@@ -406,7 +456,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		h.cache.store(req, resp, rawResponseBody, time.Now())
 	}
 	respBody := rawResponseBody
-	respBody, responseHeaders, err = decodeHTTPResponseContent(respBody, resp.Header, responseHeaders, maxBody)
+	respBody, responseHeaders, err = decodeHTTPResponseContent(respBody, resp.Header, responseHeaders, maxBody, captureLease)
 	if err != nil {
 		result.Duration = time.Since(result.StartTime)
 		result.Success = false
@@ -426,7 +476,6 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	if !result.Success && bodyReadErr == nil && result.ErrorMessage == "" && responseStatusExplicitlyAccepted(action.Assertions, result) {
 		result.Success = true
 	}
-	result.ResponseBody = string(respBody)
 	for _, ext := range action.Extractors {
 		if ext.Mode == "all" {
 			values, err := extractAll(ext, resp.Header, respBody)
@@ -505,6 +554,9 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	if !result.Success {
 		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, action.Body, action.RedactedTarget, redactedRequestHeaders, action.RedactedBody, resp.StatusCode, responseHeaders, respBody)
 	}
+	if !result.Success || !action.DiscardResponseBodyOnSuccess {
+		result.ResponseBody = string(respBody)
+	}
 
 	return result, nil
 }
@@ -533,36 +585,51 @@ func isKnownHTTPMethod(method string) bool {
 }
 
 // defaultHTTPMaxBodyBytes bounds the buffered+decoded response body when the
-// caller does not specify max_body_bytes. A value <= 0 (via the action param)
-// disables the cap for legitimate streaming/large-download tests.
-const defaultHTTPMaxBodyBytes = 64 << 20 // 64 MiB
+// caller does not specify max_body_bytes. hardHTTPMaxBodyBytes is deliberately
+// not script-controlled: one action must never turn response buffering into an
+// unbounded allocation on every VUser. Authors may select a smaller capture
+// limit; zero, negative, or oversized values resolve to the hard ceiling.
+const (
+	defaultHTTPMaxBodyBytes int64 = 64 << 20 // 64 MiB
+	hardHTTPMaxBodyBytes    int64 = 64 << 20 // 64 MiB
+)
 
 func httpMaxBodyBytes(params map[string]any) int64 {
 	if params != nil {
 		if _, ok := params["max_body_bytes"]; ok {
-			return int64(sseParamInt(params, "max_body_bytes", 0))
+			requested := int64(sseParamInt(params, "max_body_bytes", 0))
+			if requested > 0 && requested < hardHTTPMaxBodyBytes {
+				return requested
+			}
+			return hardHTTPMaxBodyBytes
 		}
 	}
 	return defaultHTTPMaxBodyBytes
 }
 
-// readAllLimited reads all of r, rejecting payloads larger than maxBytes when
-// maxBytes > 0 (bounds decompression bombs). maxBytes <= 0 reads unbounded.
+// readAllLimited reads all of r, rejecting payloads larger than maxBytes.
+// Internal callers must pass the already-normalized, positive operator cap.
 func readAllLimited(r io.Reader, maxBytes int64) ([]byte, error) {
+	return readAllLimitedWithLease(r, maxBytes, nil)
+}
+
+func readAllLimitedWithLease(r io.Reader, maxBytes int64, lease *responseCaptureLease) ([]byte, error) {
 	if maxBytes <= 0 {
-		return io.ReadAll(r)
+		maxBytes = hardHTTPMaxBodyBytes
 	}
-	data, err := io.ReadAll(io.LimitReader(r, maxBytes+1))
+	var buffer bytes.Buffer
+	_, err := io.Copy(&responseCaptureWriter{buffer: &buffer, lease: lease}, io.LimitReader(r, maxBytes+1))
 	if err != nil {
 		return nil, err
 	}
+	data := buffer.Bytes()
 	if int64(len(data)) > maxBytes {
 		return nil, fmt.Errorf("decoded response body exceeded %d-byte limit", maxBytes)
 	}
 	return data, nil
 }
 
-func decodeHTTPResponseContent(body []byte, headers http.Header, snapshotHeaders map[string]string, maxBytes int64) ([]byte, map[string]string, error) {
+func decodeHTTPResponseContent(body []byte, headers http.Header, snapshotHeaders map[string]string, maxBytes int64, leases ...*responseCaptureLease) ([]byte, map[string]string, error) {
 	if len(body) == 0 {
 		return body, snapshotHeaders, nil
 	}
@@ -573,6 +640,10 @@ func decodeHTTPResponseContent(body []byte, headers http.Header, snapshotHeaders
 
 	decoded := body
 	decodedAny := false
+	var lease *responseCaptureLease
+	if len(leases) > 0 {
+		lease = leases[0]
+	}
 	for i := len(encodings) - 1; i >= 0; i-- {
 		encoding := encodings[i]
 		if encoding == "identity" {
@@ -581,13 +652,13 @@ func decodeHTTPResponseContent(body []byte, headers http.Header, snapshotHeaders
 		var err error
 		switch encoding {
 		case "gzip", "x-gzip":
-			decoded, err = decodeGzipBody(decoded, maxBytes)
+			decoded, err = decodeGzipBody(decoded, maxBytes, lease)
 		case "deflate":
-			decoded, err = decodeDeflateBody(decoded, maxBytes)
+			decoded, err = decodeDeflateBody(decoded, maxBytes, lease)
 		case "br":
-			decoded, err = decodeBrotliBody(decoded, maxBytes)
+			decoded, err = decodeBrotliBody(decoded, maxBytes, lease)
 		case "zstd", "zstandard":
-			decoded, err = decodeZstdBody(decoded, maxBytes)
+			decoded, err = decodeZstdBody(decoded, maxBytes, lease)
 		default:
 			return body, snapshotHeaders, fmt.Errorf("unsupported response content encoding %q", encoding)
 		}
@@ -619,29 +690,41 @@ func responseContentEncodings(headers http.Header) []string {
 	return encodings
 }
 
-func decodeDeflateBody(body []byte, maxBytes int64) ([]byte, error) {
+func decodeDeflateBody(body []byte, maxBytes int64, leases ...*responseCaptureLease) ([]byte, error) {
+	var lease *responseCaptureLease
+	if len(leases) > 0 {
+		lease = leases[0]
+	}
 	zlibReader, err := zlib.NewReader(bytes.NewReader(body))
 	if err == nil {
 		defer zlibReader.Close()
-		return readAllLimited(zlibReader, maxBytes)
+		return readAllLimitedWithLease(zlibReader, maxBytes, lease)
 	}
 
 	flateReader := flate.NewReader(bytes.NewReader(body))
 	defer flateReader.Close()
-	return readAllLimited(flateReader, maxBytes)
+	return readAllLimitedWithLease(flateReader, maxBytes, lease)
 }
 
-func decodeBrotliBody(body []byte, maxBytes int64) ([]byte, error) {
-	return readAllLimited(brotli.NewReader(bytes.NewReader(body)), maxBytes)
+func decodeBrotliBody(body []byte, maxBytes int64, leases ...*responseCaptureLease) ([]byte, error) {
+	var lease *responseCaptureLease
+	if len(leases) > 0 {
+		lease = leases[0]
+	}
+	return readAllLimitedWithLease(brotli.NewReader(bytes.NewReader(body)), maxBytes, lease)
 }
 
-func decodeZstdBody(body []byte, maxBytes int64) ([]byte, error) {
+func decodeZstdBody(body []byte, maxBytes int64, leases ...*responseCaptureLease) ([]byte, error) {
+	var lease *responseCaptureLease
+	if len(leases) > 0 {
+		lease = leases[0]
+	}
 	reader, err := zstd.NewReader(bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
 	defer reader.Close()
-	return readAllLimited(reader, maxBytes)
+	return readAllLimitedWithLease(reader, maxBytes, lease)
 }
 
 func decodedResponseHeaders(headers map[string]string) map[string]string {
@@ -673,10 +756,10 @@ func ensureTraceparentHeader(headers http.Header, sampled bool) string {
 }
 
 func (h *HTTP) OAuthHTTPClient() *http.Client {
-	if h == nil || h.client == nil {
+	if h == nil || h.oauthClient == nil {
 		return nil
 	}
-	client := *h.client
+	client := *h.oauthClient
 	return &client
 }
 
@@ -737,7 +820,22 @@ func deleteRequestHeaders(req *http.Request, names map[string]struct{}) {
 }
 
 func (h *HTTP) Teardown(_ context.Context) error {
-	h.transport.CloseIdleConnections()
+	if h.cache != nil {
+		h.cache.clear()
+	}
+	if h.client != nil {
+		if jar, ok := h.client.Jar.(*boundedCookieJar); ok {
+			_ = jar.clear()
+		}
+	}
+	if h.transport != nil {
+		h.transport.CloseIdleConnections()
+	}
+	if h.oauthClient != nil {
+		if transport, ok := h.oauthClient.Transport.(*http.Transport); ok && transport != h.transport {
+			transport.CloseIdleConnections()
+		}
+	}
 	return nil
 }
 

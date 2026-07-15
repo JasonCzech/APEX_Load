@@ -149,6 +149,65 @@ func TestDatabaseQueryMaxRowsOverrideCannotExceedConfiguredCap(t *testing.T) {
 	}
 }
 
+func TestDatabaseQueryHardBoundsRowsColumnsAndValues(t *testing.T) {
+	t.Run("configured rows are clamped", func(t *testing.T) {
+		db := &Database{}
+		if err := db.Init(context.Background(), map[string]any{
+			"database_driver": "sqlite", "database_dsn": ":memory:", "database_max_rows": float64(hardDatabaseMaxRows + 1),
+		}); err != nil {
+			t.Fatalf("Init: %v", err)
+		}
+		defer db.Teardown(context.Background())
+		if db.maxRows != hardDatabaseMaxRows {
+			t.Fatalf("maxRows = %d, want hard cap %d", db.maxRows, hardDatabaseMaxRows)
+		}
+	})
+
+	t.Run("large blob fails before response retention", func(t *testing.T) {
+		db := &Database{}
+		if err := db.Init(context.Background(), map[string]any{"database_driver": "sqlite", "database_dsn": ":memory:"}); err != nil {
+			t.Fatalf("Init: %v", err)
+		}
+		defer db.Teardown(context.Background())
+		result, err := db.Execute(context.Background(), &protocol.Action{
+			Name: "large", Type: "db_query", Target: "SELECT zeroblob(?) AS payload", Params: map[string]any{"binds": []any{hardDatabaseValueBytes + 1}},
+		})
+		if err != nil {
+			t.Fatalf("Execute: %v", err)
+		}
+		if result.Success || !strings.Contains(result.ErrorMessage, "value exceeds") {
+			t.Fatalf("result = %#v, want deterministic value-size failure", result)
+		}
+		if result.ResponseBody != "" {
+			t.Fatalf("oversized result retained response body of %d bytes", len(result.ResponseBody))
+		}
+	})
+}
+
+func TestDatabaseProtocolEvidenceSamplesRatherThanDuplicatesRows(t *testing.T) {
+	db := &Database{}
+	if err := db.Init(context.Background(), map[string]any{"database_driver": "sqlite", "database_dsn": ":memory:"}); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	defer db.Teardown(context.Background())
+	result, err := db.Execute(context.Background(), &protocol.Action{
+		Name: "sample", Type: "db_query", Target: "SELECT ? AS payload UNION ALL SELECT ?", Params: map[string]any{"binds": []any{strings.Repeat("x", maxDatabaseEvidenceValueBytes+100), "second"}},
+	})
+	if err != nil || !result.Success {
+		t.Fatalf("Execute = success %v error %v message %s", result.Success, err, result.ErrorMessage)
+	}
+	rows, ok := result.ProtocolEvidence["rows"].(map[string]any)
+	if !ok {
+		t.Fatalf("evidence rows = %#v", result.ProtocolEvidence["rows"])
+	}
+	if _, retainedAllRows := rows["rows"]; retainedAllRows {
+		t.Fatalf("protocol evidence duplicated all result rows: %#v", rows)
+	}
+	if scalar, _ := rows["scalar"].(string); len(scalar) != maxDatabaseEvidenceValueBytes {
+		t.Fatalf("sampled scalar length = %d, want %d", len(scalar), maxDatabaseEvidenceValueBytes)
+	}
+}
+
 func TestDatabaseProtocolTransactionsAndRollback(t *testing.T) {
 	db := &Database{}
 	if err := db.Init(context.Background(), map[string]any{
@@ -173,6 +232,101 @@ func TestDatabaseProtocolTransactionsAndRollback(t *testing.T) {
 	result, _ := db.Execute(context.Background(), &protocol.Action{Name: "query", Type: "db_query", Target: "select id from items"})
 	if !result.Success || !strings.Contains(result.ResponseBody, `"row_count":0`) {
 		t.Fatalf("query after rollback = success %v body %s err %s, want zero rows", result.Success, result.ResponseBody, result.ErrorMessage)
+	}
+}
+
+func TestDatabaseInitRestrictsSQLiteToSafeInMemoryDSNs(t *testing.T) {
+	tests := []struct {
+		name   string
+		driver string
+		dsn    string
+		ok     bool
+	}{
+		{name: "anonymous memory", driver: "sqlite", dsn: ":memory:", ok: true},
+		{name: "named memory", driver: "sqlite", dsn: "file:bounded_test?mode=memory&cache=shared", ok: true},
+		{name: "memory alias", driver: "sqlite", dsn: "file::memory:?cache=shared", ok: true},
+		{name: "absolute disk path", driver: "sqlite", dsn: "/tmp/apexload-untrusted.db"},
+		{name: "relative disk path", driver: "sqlite", dsn: "untrusted.db"},
+		{name: "disk file URI", driver: "sqlite", dsn: "file:untrusted.db"},
+		{name: "URI pragma", driver: "sqlite", dsn: "file:bounded?mode=memory&_pragma=journal_mode(WAL)"},
+		{name: "path-like memory name", driver: "sqlite", dsn: "file:/tmp/bounded?mode=memory"},
+		{name: "registered internal pgx driver", driver: "pgx", dsn: "postgres://example.invalid/db"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			db := &Database{}
+			err := db.Init(context.Background(), map[string]any{"database_driver": tc.driver, "database_dsn": tc.dsn})
+			if tc.ok {
+				if err != nil {
+					t.Fatalf("Init: %v", err)
+				}
+				_ = db.Teardown(context.Background())
+				return
+			}
+			if err == nil {
+				_ = db.Teardown(context.Background())
+				t.Fatal("Init accepted an unsafe database configuration")
+			}
+		})
+	}
+}
+
+func TestSQLiteSafetyPolicyBlocksFilesystemCapableSQL(t *testing.T) {
+	db := &Database{}
+	if err := db.Init(context.Background(), map[string]any{"database_driver": "sqlite", "database_dsn": ":memory:"}); err != nil {
+		t.Fatal(err)
+	}
+	defer db.Teardown(context.Background())
+
+	blocked := []struct {
+		name       string
+		actionType string
+		statement  string
+	}{
+		{name: "attach", actionType: "db_exec", statement: "ATTACH DATABASE '/tmp/escape.db' AS escaped"},
+		{name: "vacuum into", actionType: "db_exec", statement: "VACUUM INTO '/tmp/escape.db'"},
+		{name: "pragma", actionType: "db_query", statement: "PRAGMA database_list"},
+		{name: "pragma table function", actionType: "db_query", statement: "SELECT * FROM pragma_database_list"},
+		{name: "extension", actionType: "db_query", statement: "SELECT load_extension('/tmp/escape.so')"},
+		{name: "quoted extension", actionType: "db_query", statement: "SELECT \"load_extension\"('/tmp/escape.so')"},
+		{name: "file writer", actionType: "db_query", statement: "SELECT writefile('/tmp/escape', 'data')"},
+		{name: "virtual table", actionType: "db_exec", statement: "CREATE VIRTUAL TABLE escaped USING fsdir('/tmp')"},
+		{name: "multiple statements", actionType: "db_query", statement: "SELECT 1; ATTACH DATABASE '/tmp/escape.db' AS escaped"},
+	}
+	for _, tc := range blocked {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := db.Execute(context.Background(), &protocol.Action{Name: tc.name, Type: tc.actionType, Target: tc.statement})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Success || !strings.Contains(result.ErrorMessage, "SQLite safety policy") {
+				t.Fatalf("result = success:%v error:%q", result.Success, result.ErrorMessage)
+			}
+		})
+	}
+
+	result, err := db.Execute(context.Background(), &protocol.Action{Name: "literal", Type: "db_query", Target: "SELECT 'attach' AS value"})
+	if err != nil || !result.Success {
+		t.Fatalf("safe quoted literal = result:%#v error:%v", result, err)
+	}
+}
+
+func TestDatabaseStatementAndBindLimits(t *testing.T) {
+	db := &Database{}
+	if err := db.Init(context.Background(), map[string]any{"database_driver": "sqlite", "database_dsn": ":memory:"}); err != nil {
+		t.Fatal(err)
+	}
+	defer db.Teardown(context.Background())
+
+	result, err := db.Execute(context.Background(), &protocol.Action{Name: "large sql", Type: "db_query", Target: "SELECT 1 -- " + strings.Repeat("x", hardDatabaseSQLBytes)})
+	if err != nil || result.Success || !strings.Contains(result.ErrorMessage, "SQL exceeds") {
+		t.Fatalf("large SQL = result:%#v error:%v", result, err)
+	}
+	result, err = db.Execute(context.Background(), &protocol.Action{
+		Name: "large bind", Type: "db_query", Target: "SELECT ?", Params: map[string]any{"binds": []any{strings.Repeat("x", hardDatabaseBindValueBytes+1)}},
+	})
+	if err != nil || result.Success || !strings.Contains(result.ErrorMessage, "bind 0 exceeds") {
+		t.Fatalf("large bind = result:%#v error:%v", result, err)
 	}
 }
 

@@ -10,6 +10,9 @@ func TestDefaultScriptConfig(t *testing.T) {
 	if c.HTTP.KeepAlive == nil || !*c.HTTP.KeepAlive {
 		t.Fatal("keep_alive default should be true")
 	}
+	if c.HTTP.MaxConnsPerHost != 100 || c.HTTP.MaxIdleConns != 4 {
+		t.Fatalf("http connection defaults wrong: %+v", c.HTTP)
+	}
 	if c.HTTP.MaxRedirects == nil || *c.HTTP.MaxRedirects != 10 {
 		t.Fatal("max_redirects default should be 10")
 	}

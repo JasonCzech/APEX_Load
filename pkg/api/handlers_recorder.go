@@ -33,12 +33,19 @@ func (s *Server) handleStartRecording(w http.ResponseWriter, r *http.Request) {
 
 	id := uuid.New().String()
 
+	projectID := normalizeProjectID(req.ProjectID)
 	notify := func(evt recorder.SessionEvent) {
-		s.hub.BroadcastJSON(map[string]any{
+		var safeRequest *recorder.RecordedRequest
+		if evt.Request != nil {
+			request := sanitizeRecordedRequestForResponse(*evt.Request)
+			safeRequest = &request
+		}
+		s.hub.BroadcastScopedJSON("", projectID, map[string]any{
 			"type":       evt.Type,
+			"project_id": projectID,
 			"session_id": evt.SessionID,
-			"request":    evt.Request,
-			"session":    evt.Session,
+			"request":    safeRequest,
+			"session":    sanitizeRecorderSessionForResponse(evt.Session),
 		})
 	}
 
@@ -54,14 +61,14 @@ func (s *Server) handleStartRecording(w http.ResponseWriter, r *http.Request) {
 		filters.ExcludeStaticSet = true
 	}
 
-	session, err := s.recorder.StartSessionForProject(id, req.Name, normalizeProjectID(req.ProjectID), filters, notify)
+	session, err := s.recorder.StartSessionForProject(id, req.Name, projectID, filters, notify)
 	if err != nil {
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
 
 	resp := map[string]any{
-		"session":      session,
+		"session":      sanitizeRecorderSessionForResponse(session),
 		"proxy_addr":   s.recorder.ProxyAddr(),
 		"ca_cert_path": s.recorder.CACertPath(),
 	}
@@ -75,7 +82,7 @@ func (s *Server) handlePauseRecording(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, session)
+	writeJSON(w, http.StatusOK, sanitizeRecorderSessionForResponse(session))
 }
 
 func (s *Server) handleResumeRecording(w http.ResponseWriter, r *http.Request) {
@@ -85,7 +92,7 @@ func (s *Server) handleResumeRecording(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, session)
+	writeJSON(w, http.StatusOK, sanitizeRecorderSessionForResponse(session))
 }
 
 func (s *Server) handleStopRecording(w http.ResponseWriter, r *http.Request) {
@@ -95,7 +102,7 @@ func (s *Server) handleStopRecording(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, session)
+	writeJSON(w, http.StatusOK, sanitizeRecorderSessionForResponse(session))
 }
 
 func (s *Server) handleGetRecording(w http.ResponseWriter, r *http.Request) {
@@ -116,12 +123,30 @@ func (s *Server) handleGetRecording(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "recording session not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, session)
+	raw := rawRecordingExportRequested(r)
+	if raw && !s.canExportRawRecording(r, session.ProjectID) {
+		s.recordAuditEvent(r, "recording.session_raw", "denied", "recording", id, session.ProjectID, map[string]any{"reason": "insufficient_role"})
+		writeError(w, http.StatusForbidden, "raw recording session access requires editor, project_admin, or system_admin access")
+		return
+	}
+	if raw {
+		w.Header().Set("X-APEXLoad-Sensitivity", scrub.SensitivityRaw)
+		writeJSON(w, http.StatusOK, session)
+		return
+	}
+	w.Header().Set("X-APEXLoad-Sensitivity", scrub.SensitivityScrubbed)
+	writeJSON(w, http.StatusOK, sanitizeRecorderSessionForResponse(session))
 }
 
 func (s *Server) handleListRecordings(w http.ResponseWriter, r *http.Request) {
 	projectID := r.URL.Query().Get("project_id")
 	includeRequests := queryIncludes(r.URL.Query(), "requests") || strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("include_requests")), "true")
+	raw := rawRecordingExportRequested(r)
+	if raw && !s.canExportRawRecording(r, projectID) {
+		s.recordAuditEvent(r, "recording.session_list_raw", "denied", "recording", "", projectID, map[string]any{"reason": "insufficient_role"})
+		writeError(w, http.StatusForbidden, "raw recording session access requires editor, project_admin, or system_admin access")
+		return
+	}
 	sessions := s.recorder.ListSessionSummaries()
 	if includeRequests {
 		sessions = s.recorder.ListSessions()
@@ -135,10 +160,20 @@ func (s *Server) handleListRecordings(w http.ResponseWriter, r *http.Request) {
 		}
 		sessions = filtered
 	}
+	active := s.recorder.ActiveSessionSummary()
+	if raw {
+		w.Header().Set("X-APEXLoad-Sensitivity", scrub.SensitivityRaw)
+	} else {
+		w.Header().Set("X-APEXLoad-Sensitivity", scrub.SensitivityScrubbed)
+		for index := range sessions {
+			sessions[index] = sanitizeRecorderSessionForResponse(sessions[index])
+		}
+		active = sanitizeRecorderSessionForResponse(active)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"sessions": sessions,
 		"count":    len(sessions),
-		"active":   s.recorder.ActiveSessionSummary(),
+		"active":   active,
 	})
 }
 
@@ -169,7 +204,88 @@ func (s *Server) handleUpdateRecordedRequest(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, req)
+	writeJSON(w, http.StatusOK, sanitizeRecordedRequestForResponse(*req))
+}
+
+func sanitizeRecorderSessionForResponse(session *recorder.Session) *recorder.Session {
+	if session == nil {
+		return nil
+	}
+	clone := &recorder.Session{
+		ID:           session.ID,
+		Name:         session.Name,
+		ProjectID:    session.ProjectID,
+		Status:       session.Status,
+		StartedAt:    session.StartedAt,
+		BaseURL:      scrub.ValueURL(session.BaseURL, scrub.Policy{}),
+		RequestCount: session.RequestCount,
+		LastSeq:      session.LastSeq,
+		Filters: recorder.SessionFilters{
+			ExcludeStatic:         session.Filters.ExcludeStatic,
+			ExcludeStaticSet:      session.Filters.ExcludeStaticSet,
+			ExcludeHosts:          append([]string(nil), session.Filters.ExcludeHosts...),
+			IncludeHosts:          append([]string(nil), session.Filters.IncludeHosts...),
+			BodyCaptureLimitBytes: session.Filters.BodyCaptureLimitBytes,
+			RedactHeaders:         append([]string(nil), session.Filters.RedactHeaders...),
+			CaptureCookies:        session.Filters.CaptureCookies,
+		},
+	}
+	if session.StoppedAt != nil {
+		stoppedAt := *session.StoppedAt
+		clone.StoppedAt = &stoppedAt
+	}
+	if len(session.Requests) > 0 {
+		clone.Requests = make([]recorder.RecordedRequest, len(session.Requests))
+		for index, request := range session.Requests {
+			clone.Requests[index] = sanitizeRecordedRequestForResponse(request)
+		}
+	}
+	return clone
+}
+
+func sanitizeRecordedRequestForResponse(request recorder.RecordedRequest) recorder.RecordedRequest {
+	policy := scrub.Policy{}
+	request.URL = scrub.ValueURL(request.URL, policy)
+	request.QueryString = scrub.Value(request.QueryString, policy)
+	request.Headers = scrub.Headers(request.Headers, policy)
+	request.HeadersMulti = sanitizeRecordedHeaderValues(request.HeadersMulti, policy)
+	request.RawHeaders = nil
+	request.RawHeadersMulti = nil
+	request.Body = scrub.Value(request.Body, policy)
+	request.ResponseHeaders = scrub.Headers(request.ResponseHeaders, policy)
+	request.ResponseHeadersMulti = sanitizeRecordedHeaderValues(request.ResponseHeadersMulti, policy)
+	request.ResponseBody = scrub.Value(request.ResponseBody, policy)
+	request.StepName = scrub.Value(request.StepName, policy)
+	request.TransactionName = scrub.Value(request.TransactionName, policy)
+	request.Note = scrub.Value(request.Note, policy)
+	if len(request.WebSocketMessages) > 0 {
+		messages := make([]recorder.RecordedWebSocketMessage, len(request.WebSocketMessages))
+		copy(messages, request.WebSocketMessages)
+		for index := range messages {
+			messages[index].Payload = scrub.Value(messages[index].Payload, policy)
+		}
+		request.WebSocketMessages = messages
+	}
+	return request
+}
+
+func sanitizeRecordedHeaderValues(headers map[string][]string, policy scrub.Policy) map[string][]string {
+	if len(headers) == 0 {
+		return headers
+	}
+	result := make(map[string][]string, len(headers))
+	for name, values := range headers {
+		redacted := make([]string, len(values))
+		for index, value := range values {
+			if policy.SensitiveHeader(name) {
+				redacted[index] = scrub.Redacted
+			} else {
+				redacted[index] = scrub.Value(value, policy)
+			}
+		}
+		result[name] = redacted
+	}
+	return result
 }
 
 func (s *Server) handleConvertRecording(w http.ResponseWriter, r *http.Request) {
@@ -203,7 +319,7 @@ func (s *Server) handleConvertRecording(w http.ResponseWriter, r *http.Request) 
 	}
 
 	writeJSON(w, http.StatusCreated, map[string]any{
-		"script":       stored,
+		"script":       maskStoredScript(stored),
 		"correlations": result.Correlations,
 		"warnings":     result.Warnings,
 	})

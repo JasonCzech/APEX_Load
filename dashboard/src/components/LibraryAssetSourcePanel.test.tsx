@@ -51,6 +51,7 @@ describe('LibraryAssetSourcePanel', () => {
             name: 'Team AKS',
             base_url: 'https://apexload.example.test',
             default_project_id: 'project-1',
+			project_mappings: { 'project-1': 'project-1' },
             auth_method: 'service_account',
             credential_configured: true,
             status: 'healthy',
@@ -247,19 +248,19 @@ describe('LibraryAssetSourcePanel', () => {
     await renderPanel(root, <LibraryAssetSourcePanel kind="script" projectId="project-1" />)
 
     expect(container.textContent).toContain('Credentials Missing')
-    expect(container.textContent).toContain('Configure remote credentials in Settings first.')
-    expect(findButton('Pull')?.disabled).toBe(true)
-    expect(findButton('Push')?.disabled).toBe(true)
+		expect(container.textContent).toContain('Configure remote credentials in Settings first.')
+		expect(findButton('Pull')?.disabled).toBe(true)
+		expect(findButton('Push')?.disabled).toBe(true)
     expect(transferCalls(fetchMock)).toHaveLength(0)
   })
 
   it('requires an explicit project mapping when the remote has no default project', async () => {
-    remoteOverride = { default_project_id: '' }
+		remoteOverride = { default_project_id: '', project_mappings: {} }
     await renderPanel(root, <LibraryAssetSourcePanel kind="script" />)
 
-    expect(container.textContent).toContain('Set a project mapping before transferring assets.')
-    expect(findButton('Pull')?.disabled).toBe(true)
-    expect(findButton('Push')?.disabled).toBe(true)
+		expect(container.textContent).toContain('Select a local project before transferring assets.')
+		expect(findButton('Pull')).toBeUndefined()
+		expect(findButton('Push')?.disabled).toBe(true)
     expect(transferCalls(fetchMock)).toHaveLength(0)
   })
 

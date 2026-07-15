@@ -30,6 +30,10 @@ func auditRetentionDays() int {
 	if err != nil || days < 0 {
 		return 0
 	}
+	if _, ok := checkedDuration(days, 24*time.Hour); !ok {
+		slog.Warn("invalid APEXLOAD_AUDIT_RETENTION_DAYS; retention disabled", "value", raw)
+		return 0
+	}
 	return days
 }
 
@@ -47,7 +51,11 @@ func (s *Server) pruneAuditRetention(now time.Time) {
 	if days <= 0 {
 		return
 	}
-	cutoff := now.UTC().Add(-time.Duration(days) * 24 * time.Hour)
+	retention, ok := checkedDuration(days, 24*time.Hour)
+	if !ok || retention <= 0 {
+		return
+	}
+	cutoff := now.UTC().Add(-retention)
 	auditPruned, err := s.store.DeleteAuditEventsBefore(cutoff)
 	if err != nil {
 		slog.Warn("audit retention prune failed", "table", "audit_events", "error", err)
@@ -94,7 +102,7 @@ func (s *Server) startAuditRetentionCadence() {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s.auditRetentionCancel = cancel
-	go func() {
+	s.launchBackground(func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
@@ -107,5 +115,5 @@ func (s *Server) startAuditRetentionCadence() {
 				}
 			}
 		}
-	}()
+	})
 }

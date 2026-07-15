@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -471,7 +472,7 @@ func TestScenarioSchedulerTerminalPersistenceFailureReconcilesPreparedRun(t *tes
 	}
 }
 
-func TestScenarioSchedulerRetriesTimeslotReleaseAfterTestPersistenceFailure(t *testing.T) {
+func TestScenarioSchedulerRejectsSplitTimeslotPersistence(t *testing.T) {
 	store := &metricsStoreSpy{}
 	runner := NewTestRunner(2, NewHub(), store)
 	runner.StoreScript(&dsl.Script{
@@ -502,26 +503,19 @@ func TestScenarioSchedulerRetriesTimeslotReleaseAfterTestPersistenceFailure(t *t
 	runner.mu.Lock()
 	_, err = runner.runScenarioScheduleLocked(schedule, now)
 	runner.mu.Unlock()
-	if !errors.Is(err, wantErr) {
-		t.Fatalf("runScenarioScheduleLocked error = %v, want test persistence error", err)
+	if err == nil || !strings.Contains(err.Error(), "does not support atomic test creation") {
+		t.Fatalf("runScenarioScheduleLocked error = %v, want atomic-persistence rejection", err)
 	}
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		release.mu.Lock()
-		calls := release.clearCalls
-		release.mu.Unlock()
-		if calls >= 2 {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("timeslot release calls = %d, want background retry", calls)
-		}
-		time.Sleep(5 * time.Millisecond)
+	release.mu.Lock()
+	clearCalls := release.clearCalls
+	release.mu.Unlock()
+	if clearCalls != 0 {
+		t.Fatalf("split-write compensation ran %d times; atomic create must leave nothing to release", clearCalls)
 	}
 }
 
 func TestSequentialPlanTransitionPersistenceFailurePreventsEntryLaunch(t *testing.T) {
-	runner, backend, scenarioIDs := newPlanTestRunner(t, "first")
+	runner, backend, scenarioIDs := newPlanTestRunnerForProject(t, "project-a", "first")
 	wantErr := errors.New("plan store unavailable")
 	planStore := &scriptedExecutionPlanRunStore{err: wantErr, failCalls: failCalls(2, durableTransitionAttempts)}
 	runner.execPlanRunStore = planStore
@@ -557,7 +551,7 @@ func TestSequentialPlanTransitionPersistenceFailurePreventsEntryLaunch(t *testin
 }
 
 func TestSequentialPlanAdvancePersistenceFailureRetriesAutomatically(t *testing.T) {
-	runner, backend, scenarioIDs := newPlanTestRunner(t, "first", "second")
+	runner, backend, scenarioIDs := newPlanTestRunnerForProject(t, "project-a", "first", "second")
 	wantErr := errors.New("plan store unavailable")
 	// Save 1 anchors the run, save 2 claims the first entry before creating its
 	// test, and save 3 attaches the queued test. Fail the subsequent terminal
@@ -624,7 +618,7 @@ func TestParallelPlanPersistenceFailureReturns503BeforeMaterialization(t *testin
 }
 
 func TestParallelPlanFinalPersistenceFailureCleansUpSilentMaterialization(t *testing.T) {
-	runner, _, scenarioIDs := newPlanTestRunner(t, "parallel")
+	runner, _, scenarioIDs := newPlanTestRunnerForProject(t, "project-a", "parallel")
 	_ = hubEventTypes(runner.hub)
 	planStore := &scriptedExecutionPlanRunStore{
 		err: errors.New("plan store unavailable"), failCalls: failCalls(2, durableTransitionAttempts),
@@ -640,9 +634,13 @@ func TestParallelPlanFinalPersistenceFailureCleansUpSilentMaterialization(t *tes
 	}
 	runner.mu.RLock()
 	testCount := len(runner.tests)
+	var staged *ManagedTest
+	for _, candidate := range runner.tests {
+		staged = candidate
+	}
 	runner.mu.RUnlock()
-	if testCount != 0 {
-		t.Fatalf("failed final plan persistence left %d staged tests, want 0", testCount)
+	if testCount != 1 || staged == nil || staged.Status != "FAILED" || staged.EndedAt == nil {
+		t.Fatalf("failed final plan persistence staged test = %+v (count %d), want one terminal FAILED row", staged, testCount)
 	}
 	if events := hubEventTypes(runner.hub); containsEvent(events, "test_created") {
 		t.Fatalf("silent materialization broadcast before final plan persistence: %v", events)
@@ -676,6 +674,22 @@ func (s *failingOccurrenceScheduleStore) SaveExecutionPlanScheduleOccurrence(occ
 		return s.err
 	}
 	return s.executionPlanSchedulePersistence.SaveExecutionPlanScheduleOccurrence(occurrence)
+}
+
+func (s *failingOccurrenceScheduleStore) CompareAndSwapExecutionPlanScheduleOccurrence(occurrence *storage.ExecutionPlanScheduleOccurrence, expectedRevision int64) (bool, error) {
+	s.mu.Lock()
+	s.saveCalls++
+	call := s.saveCalls
+	fail := s.failCalls[call]
+	s.mu.Unlock()
+	if fail {
+		return false, s.err
+	}
+	store, ok := s.executionPlanSchedulePersistence.(executionPlanScheduleOccurrenceCASPersistence)
+	if !ok {
+		return false, errors.New("embedded occurrence store does not support revision CAS")
+	}
+	return store.CompareAndSwapExecutionPlanScheduleOccurrence(occurrence, expectedRevision)
 }
 
 func TestExecutionPlanScheduleOccurrenceFinalizeRetriesBeforeAdvancing(t *testing.T) {

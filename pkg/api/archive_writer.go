@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -69,7 +70,7 @@ func newRunArchiveWriter(test *ManagedTest, provenance RunArchiveProvenance) (*r
 			TestID:                       test.ID,
 			TestName:                     test.Name,
 			CreatedAt:                    time.Now(),
-			Provenance:                   provenance,
+			Provenance:                   maskRunArchiveProvenance(provenance),
 			TransactionsFile:             "transactions.jsonl",
 			TransactionsParquetFile:      "transactions.parquet",
 			ResourceSamplesFile:          "resources.jsonl",
@@ -126,15 +127,16 @@ func (w *runArchiveWriter) stopFlushLoop() {
 }
 
 func (w *runArchiveWriter) flushBuffersLocked() error {
+	var failures []error
 	for _, writer := range []*bufio.Writer{w.txBuf, w.resourceBuf, w.summaryBuf} {
 		if writer == nil {
 			continue
 		}
 		if err := writer.Flush(); err != nil {
-			return err
+			failures = append(failures, err)
 		}
 	}
-	return nil
+	return errors.Join(failures...)
 }
 
 func (w *runArchiveWriter) RefreshProvenance(provenance RunArchiveProvenance) {
@@ -143,7 +145,7 @@ func (w *runArchiveWriter) RefreshProvenance(provenance RunArchiveProvenance) {
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	w.manifest.Provenance = provenance
+	w.manifest.Provenance = maskRunArchiveProvenance(provenance)
 }
 
 func captureAPEXLoadEnv() map[string]string {
@@ -243,6 +245,10 @@ func (w *runArchiveWriter) RecordResult(result *protocol.Result) error {
 		SourceTransaction: result.SourceTransaction,
 		SourceProfile:     result.SourceProfile,
 	}
+	// Defense in depth for callers that record protocol results without going
+	// through the VUser projection seam. This also detaches nested evidence from
+	// the live result before the encoder observes it.
+	sanitizeArchivedTransaction(&event)
 	if err := w.txEncoder.Encode(event); err != nil {
 		return err
 	}
@@ -359,7 +365,7 @@ func (w *runArchiveWriter) Finalize(status string, completedAt time.Time, errStr
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.flushErr != nil {
-		return nil, w.flushErr
+		return nil, errors.Join(w.flushErr, w.syncAndCloseDataFilesLocked())
 	}
 	w.manifest.Status = status
 	w.manifest.CompletedAt = completedAt
@@ -367,19 +373,8 @@ func (w *runArchiveWriter) Finalize(status string, completedAt time.Time, errStr
 	w.manifest.SLABreached = slaBreached
 	w.manifest.SLADetails = slaDetails
 
-	if err := w.flushBuffersLocked(); err != nil {
+	if err := errors.Join(w.flushBuffersLocked(), w.syncAndCloseDataFilesLocked()); err != nil {
 		return nil, err
-	}
-	for _, file := range []*os.File{w.txFile, w.resourceFile, w.summaryFile} {
-		if file == nil {
-			continue
-		}
-		if err := file.Sync(); err != nil {
-			return nil, err
-		}
-		if err := file.Close(); err != nil {
-			return nil, err
-		}
 	}
 	if err := validateArchiveArtifactTargets(w.rootDir,
 		w.manifest.TransactionsParquetFile,
@@ -422,6 +417,29 @@ func (w *runArchiveWriter) Finalize(status string, completedAt time.Time, errStr
 		CreatedAt:            w.manifest.CreatedAt,
 		CompletedAt:          w.manifest.CompletedAt,
 	}, nil
+}
+
+func (w *runArchiveWriter) syncAndCloseDataFilesLocked() error {
+	if w == nil {
+		return nil
+	}
+	files := []*os.File{w.txFile, w.resourceFile, w.summaryFile}
+	w.txFile = nil
+	w.resourceFile = nil
+	w.summaryFile = nil
+	var failures []error
+	for _, file := range files {
+		if file == nil {
+			continue
+		}
+		if err := file.Sync(); err != nil {
+			failures = append(failures, err)
+		}
+		if err := file.Close(); err != nil {
+			failures = append(failures, err)
+		}
+	}
+	return errors.Join(failures...)
 }
 
 func syncArchiveArtifacts(root, manifestPath string) error {

@@ -15,7 +15,11 @@ import (
 	"time"
 )
 
-const githubAcceptHeader = "application/vnd.github+json"
+const (
+	githubAcceptHeader         = "application/vnd.github+json"
+	githubAllowInsecureHTTPEnv = "APEXLOAD_GITHUB_ALLOW_INSECURE_HTTP"
+	githubRemoteJSONMaxBytes   = 8 << 20
+)
 
 // githubTLSConfig builds the TLS config for the GitHub transport, honoring an
 // optional internal CA bundle and skip-verify (for self-hosted GHES with private
@@ -49,6 +53,11 @@ func githubAllowSet(settings GitHubSettings) map[string]struct{} {
 }
 
 func newGitHubHTTPClient(settings GitHubSettings, timeout time.Duration) (*http.Client, error) {
+	for label, raw := range map[string]string{"github.api_base_url": settings.APIBaseURL, "github.web_base_url": settings.WebBaseURL} {
+		if err := validateCredentialTransportURL(label, raw, githubAllowInsecureHTTPEnv); err != nil {
+			return nil, err
+		}
+	}
 	tlsCfg, err := githubTLSConfig(settings)
 	if err != nil {
 		return nil, err
@@ -120,7 +129,16 @@ func (c *githubClient) doJSON(ctx context.Context, method, apiPath string, query
 		return &githubAPIError{StatusCode: resp.StatusCode, Message: strings.TrimSpace(string(snippet)), URL: redactURL(endpoint)}
 	}
 	if out != nil {
-		return json.NewDecoder(resp.Body).Decode(out)
+		payload, err := io.ReadAll(io.LimitReader(resp.Body, githubRemoteJSONMaxBytes+1))
+		if err != nil {
+			return fmt.Errorf("read github response: %w", err)
+		}
+		if len(payload) > githubRemoteJSONMaxBytes {
+			return fmt.Errorf("github response exceeded the %d-byte limit", githubRemoteJSONMaxBytes)
+		}
+		if err := json.Unmarshal(payload, out); err != nil {
+			return fmt.Errorf("decode github response: %w", err)
+		}
 	}
 	return nil
 }
@@ -261,6 +279,9 @@ type githubBranch struct {
 // ListBranches returns the branches of a repository (bounded to a single large
 // page, sufficient for the branch picker).
 func (c *githubClient) ListBranches(ctx context.Context, owner, repo string) ([]githubBranch, error) {
+	if err := validateGitHubRepositoryCoordinates(owner, repo); err != nil {
+		return nil, err
+	}
 	q := url.Values{}
 	q.Set("per_page", "100")
 	var branches []githubBranch
@@ -306,6 +327,17 @@ type githubContents struct {
 // GetContents fetches a path in a repository at an optional ref (branch, tag, or
 // sha). It transparently handles both the file and directory response shapes.
 func (c *githubClient) GetContents(ctx context.Context, owner, repo, path, ref string) (*githubContents, error) {
+	if err := validateGitHubRepositoryCoordinates(owner, repo); err != nil {
+		return nil, err
+	}
+	if err := validateGitHubContentPath(path, true); err != nil {
+		return nil, err
+	}
+	if ref != "" {
+		if err := validateGitHubContentPath(ref, false); err != nil {
+			return nil, fmt.Errorf("invalid github ref: %w", err)
+		}
+	}
 	apiPath := fmt.Sprintf("/repos/%s/%s/contents/%s", url.PathEscape(owner), url.PathEscape(repo), githubEscapeContentPath(path))
 	q := url.Values{}
 	if strings.TrimSpace(ref) != "" {
@@ -345,6 +377,17 @@ type githubPutResult struct {
 // commit on the given branch). sha must be the current blob sha when updating an
 // existing file (GitHub optimistic concurrency); pass "" to create a new file.
 func (c *githubClient) PutFile(ctx context.Context, owner, repo, path, branch, message string, content []byte, sha string) (*githubPutResult, error) {
+	if err := validateGitHubRepositoryCoordinates(owner, repo); err != nil {
+		return nil, err
+	}
+	if err := validateGitHubContentPath(path, false); err != nil {
+		return nil, err
+	}
+	if branch != "" {
+		if err := validateGitHubContentPath(branch, false); err != nil {
+			return nil, fmt.Errorf("invalid github branch: %w", err)
+		}
+	}
 	body := map[string]any{
 		"message": message,
 		"content": base64.StdEncoding.EncodeToString(content),
@@ -366,6 +409,12 @@ func (c *githubClient) PutFile(ctx context.Context, owner, repo, path, branch, m
 // GetBranchHeadSHA returns the commit sha at the tip of a branch, or ("", nil)
 // when the branch does not exist.
 func (c *githubClient) GetBranchHeadSHA(ctx context.Context, owner, repo, branch string) (string, error) {
+	if err := validateGitHubRepositoryCoordinates(owner, repo); err != nil {
+		return "", err
+	}
+	if err := validateGitHubContentPath(branch, false); err != nil {
+		return "", fmt.Errorf("invalid github branch: %w", err)
+	}
 	apiPath := fmt.Sprintf("/repos/%s/%s/git/ref/heads/%s", url.PathEscape(owner), url.PathEscape(repo), githubEscapeContentPath(branch))
 	var ref struct {
 		Object struct {
@@ -383,6 +432,12 @@ func (c *githubClient) GetBranchHeadSHA(ctx context.Context, owner, repo, branch
 
 // CreateBranch creates a new branch ref pointing at fromSHA.
 func (c *githubClient) CreateBranch(ctx context.Context, owner, repo, branch, fromSHA string) error {
+	if err := validateGitHubRepositoryCoordinates(owner, repo); err != nil {
+		return err
+	}
+	if err := validateGitHubContentPath(branch, false); err != nil {
+		return fmt.Errorf("invalid github branch: %w", err)
+	}
 	apiPath := fmt.Sprintf("/repos/%s/%s/git/refs", url.PathEscape(owner), url.PathEscape(repo))
 	body := map[string]any{"ref": "refs/heads/" + branch, "sha": fromSHA}
 	return c.doJSON(ctx, http.MethodPost, apiPath, nil, body, nil)
@@ -396,6 +451,9 @@ type githubPullResult struct {
 
 // CreatePull opens a pull request from head into base.
 func (c *githubClient) CreatePull(ctx context.Context, owner, repo, title, head, base, body string) (*githubPullResult, error) {
+	if err := validateGitHubRepositoryCoordinates(owner, repo); err != nil {
+		return nil, err
+	}
 	apiPath := fmt.Sprintf("/repos/%s/%s/pulls", url.PathEscape(owner), url.PathEscape(repo))
 	payload := map[string]any{"title": title, "head": head, "base": base, "body": body}
 	var result githubPullResult
@@ -413,6 +471,9 @@ type githubCheckRun struct {
 }
 
 func (c *githubClient) CreateCheckRun(ctx context.Context, owner, repo, name, headSHA, status, conclusion, summary, detailsURL string) (*githubCheckRun, error) {
+	if err := validateGitHubRepositoryCoordinates(owner, repo); err != nil {
+		return nil, err
+	}
 	body := map[string]any{
 		"name":     name,
 		"head_sha": headSHA,
@@ -444,6 +505,56 @@ func githubEscapeContentPath(path string) string {
 		segments[i] = url.PathEscape(segment)
 	}
 	return strings.Join(segments, "/")
+}
+
+func validateGitHubRepositoryCoordinates(owner, repo string) error {
+	if err := validateGitHubResourceSegment("owner", owner); err != nil {
+		return err
+	}
+	return validateGitHubResourceSegment("repository", repo)
+}
+
+func validateGitHubResourceSegment(label, value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fmt.Errorf("github %s is required", label)
+	}
+	if value == "." || value == ".." || strings.ContainsAny(value, `/\\?#`) {
+		return fmt.Errorf("github %s %q is not a safe path segment", label, value)
+	}
+	for _, char := range value {
+		if char < 0x20 || char == 0x7f {
+			return fmt.Errorf("github %s contains control characters", label)
+		}
+	}
+	return nil
+}
+
+// validateGitHubContentPath prevents dot-segment and backslash traversal from
+// escaping the intended Contents/refs API route after an intermediary performs
+// URL normalization. Ordinary dotfiles (for example .github) remain valid.
+func validateGitHubContentPath(value string, allowEmpty bool) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		if allowEmpty {
+			return nil
+		}
+		return fmt.Errorf("github path is required")
+	}
+	if strings.HasPrefix(value, "/") || strings.HasSuffix(value, "/") || strings.Contains(value, `\`) {
+		return fmt.Errorf("github path %q is not a safe relative path", value)
+	}
+	for _, segment := range strings.Split(value, "/") {
+		if segment == "" || segment == "." || segment == ".." {
+			return fmt.Errorf("github path %q contains an unsafe segment", value)
+		}
+		for _, char := range segment {
+			if char < 0x20 || char == 0x7f {
+				return fmt.Errorf("github path contains control characters")
+			}
+		}
+	}
+	return nil
 }
 
 type githubTokenResponse struct {

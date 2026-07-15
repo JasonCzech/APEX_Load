@@ -66,5 +66,5 @@ Messaging metrics are emitted only for non-terminal tests whose dependency telem
 
 - If `apexload_up` is absent, verify the ServiceMonitor points at the `metrics` service port and that NetworkPolicy allows Prometheus to reach it.
 - If telemetry lag or drops alert, compare `apexload_telemetry_*` series with dashboard telemetry-health banners and controller logs.
-- `APEXLOAD_PPROF_ADDR` can expose Go pprof for controller CPU/memory investigation when enabled by the operator.
+- `APEXLOAD_PPROF_ADDR` can expose unauthenticated Go pprof for CPU/memory investigation when enabled by the operator. Production startup rejects non-loopback pprof binds; use an explicit loopback address plus port forwarding.
 - `APEXLOAD_PROMETHEUS_URL` configures the controller's Prometheus query client for dashboard graph overlays; it is separate from the `/metrics` scrape endpoint.

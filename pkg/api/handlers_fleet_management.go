@@ -55,15 +55,17 @@ func (s *Server) handleCreateFleetPool(w http.ResponseWriter, r *http.Request) {
 	if req.Status == "" {
 		req.Status = "active"
 	}
-	if err := s.store.SaveFleetPool(&req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+	prepareFleetPoolMembers(req.ID, req.Members)
+	creator, supported := s.store.(interface {
+		CreateFleetPoolWithMembers(pool *storage.FleetPool, members []*storage.FleetPoolMember) error
+	})
+	if !supported {
+		writeError(w, http.StatusNotImplemented, "atomic fleet pool creation is not supported by this storage backend")
 		return
 	}
-	if len(req.Members) > 0 {
-		if err := s.saveFleetPoolMembers(req.ID, req.Members); err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return
-		}
+	if err := creator.CreateFleetPoolWithMembers(&req, req.Members); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
 	}
 	s.recordAuditEvent(r, "fleet.pool.create", "success", "fleet_pool", req.ID, "", map[string]any{
 		"name": req.Name, "cloud_provider": req.CloudProvider,
@@ -143,15 +145,22 @@ func (s *Server) handleUpdateFleetPool(w http.ResponseWriter, r *http.Request) {
 		existing.Status = req.Status
 	}
 	existing.Tags = req.Tags
-	if err := s.store.SaveFleetPool(existing); err != nil {
+	prepareFleetPoolMembers(existing.ID, req.Members)
+	updater, supported := s.store.(interface {
+		UpdateFleetPoolIfUnchanged(pool *storage.FleetPool, members []*storage.FleetPoolMember, replaceMembers bool, expectedUpdatedAt time.Time) (bool, error)
+	})
+	if !supported {
+		writeError(w, http.StatusNotImplemented, "optimistic fleet pool updates are not supported by this storage backend")
+		return
+	}
+	updated, err := updater.UpdateFleetPoolIfUnchanged(existing, req.Members, req.Members != nil, existing.UpdatedAt)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if req.Members != nil {
-		if err := s.saveFleetPoolMembers(existing.ID, req.Members); err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return
-		}
+	if !updated {
+		writeError(w, http.StatusConflict, "fleet pool changed while the update was in flight; reload and retry")
+		return
 	}
 	s.recordAuditEvent(r, "fleet.pool.update", "success", "fleet_pool", existing.ID, "", map[string]any{"name": existing.Name})
 	s.broadcastFleetEvent("pool_updated", map[string]any{"pool_id": existing.ID, "name": existing.Name, "status": existing.Status})
@@ -173,6 +182,14 @@ func (s *Server) handleDeleteFleetPool(w http.ResponseWriter, r *http.Request) {
 	}
 	id := r.PathValue("id")
 	if err := s.store.DeleteFleetPool(id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "fleet pool not found")
+			return
+		}
+		if errors.Is(err, storage.ErrFleetPoolHasActiveProvisioning) {
+			writeError(w, http.StatusConflict, "fleet pool has an active provisioning request")
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -182,6 +199,11 @@ func (s *Server) handleDeleteFleetPool(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) saveFleetPoolMembers(poolID string, members []*storage.FleetPoolMember) error {
+	prepareFleetPoolMembers(poolID, members)
+	return s.store.SaveFleetPoolMembers(poolID, members)
+}
+
+func prepareFleetPoolMembers(poolID string, members []*storage.FleetPoolMember) {
 	for _, m := range members {
 		if m == nil {
 			continue
@@ -191,7 +213,16 @@ func (s *Server) saveFleetPoolMembers(poolID string, members []*storage.FleetPoo
 		}
 		m.PoolID = poolID
 	}
-	return s.store.SaveFleetPoolMembers(poolID, members)
+}
+
+func updateFleetPoolDesiredSize(store storage.Store, poolID string, desiredSize int) error {
+	updater, ok := store.(interface {
+		UpdateFleetPoolDesiredSize(id string, desiredSize int, updatedAt time.Time) error
+	})
+	if !ok {
+		return errors.New("targeted fleet desired-size updates are not supported by this storage backend")
+	}
+	return updater.UpdateFleetPoolDesiredSize(poolID, desiredSize, time.Now())
 }
 
 func (s *Server) loadFleetPool(w http.ResponseWriter, r *http.Request) (*storage.FleetPool, bool) {
@@ -240,14 +271,6 @@ func (s *Server) handlePatchGeneratorMetadata(w http.ResponseWriter, r *http.Req
 		return
 	}
 	generatorID := r.PathValue("id")
-	metadata, err := s.store.GetGeneratorMetadata(generatorID)
-	if err != nil {
-		if !errors.Is(err, sql.ErrNoRows) {
-			writeError(w, http.StatusInternalServerError, "failed to load generator metadata")
-			return
-		}
-		metadata = &storage.GeneratorMetadata{GeneratorID: generatorID}
-	}
 	var patch struct {
 		Target         *string           `json:"target"`
 		FleetPoolID    *string           `json:"fleet_pool_id"`
@@ -260,12 +283,11 @@ func (s *Server) handlePatchGeneratorMetadata(w http.ResponseWriter, r *http.Req
 	if !decodeJSONBody(w, r, &patch) {
 		return
 	}
-	if patch.Target != nil {
-		metadata.Target = *patch.Target
-	}
+	metadataPatch := storage.GeneratorMetadataPatch{Target: patch.Target, Region: patch.Region, ProviderID: patch.ProviderID, ProviderStatus: patch.ProviderStatus, Cordoned: patch.Cordoned, Tags: patch.Tags, TagsSet: patch.Tags != nil}
 	if patch.FleetPoolID != nil {
+		metadataPatch.FleetPoolIDSet = true
 		if strings.TrimSpace(*patch.FleetPoolID) == "" {
-			metadata.FleetPoolID = nil
+			metadataPatch.FleetPoolID = nil
 		} else {
 			poolID := strings.TrimSpace(*patch.FleetPoolID)
 			if _, err := s.store.GetFleetPool(poolID); err != nil {
@@ -276,25 +298,22 @@ func (s *Server) handlePatchGeneratorMetadata(w http.ResponseWriter, r *http.Req
 				writeError(w, http.StatusInternalServerError, "failed to load fleet pool")
 				return
 			}
-			metadata.FleetPoolID = &poolID
+			metadataPatch.FleetPoolID = &poolID
 		}
 	}
-	if patch.Region != nil {
-		metadata.Region = *patch.Region
+	patcher, supported := s.store.(interface {
+		PatchGeneratorMetadata(generatorID string, patch storage.GeneratorMetadataPatch) (*storage.GeneratorMetadata, error)
+	})
+	if !supported {
+		writeError(w, http.StatusNotImplemented, "atomic generator metadata patches are not supported by this storage backend")
+		return
 	}
-	if patch.ProviderID != nil {
-		metadata.ProviderID = *patch.ProviderID
-	}
-	if patch.ProviderStatus != nil {
-		metadata.ProviderStatus = *patch.ProviderStatus
-	}
-	if patch.Cordoned != nil {
-		metadata.Cordoned = *patch.Cordoned
-	}
-	if patch.Tags != nil {
-		metadata.Tags = patch.Tags
-	}
-	if err := s.store.SaveGeneratorMetadata(metadata); err != nil {
+	metadata, err := patcher.PatchGeneratorMetadata(generatorID, metadataPatch)
+	if err != nil {
+		if metadataPatch.FleetPoolIDSet && metadataPatch.FleetPoolID != nil && errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "fleet pool not found")
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -408,6 +427,45 @@ type provisioningRequestCASStore interface {
 	TransitionProvisioningRequest(req *storage.ProvisioningRequest, expectedRevision int, expectedAttemptToken string) (bool, error)
 }
 
+func (s *Server) beginFleetProvisioningAttempt(requestID, attemptToken string) bool {
+	s.fleetProvisioningMu.Lock()
+	defer s.fleetProvisioningMu.Unlock()
+	if s.fleetProvisioningActive == nil {
+		s.fleetProvisioningActive = make(map[string]string)
+	}
+	if _, active := s.fleetProvisioningActive[requestID]; active {
+		return false
+	}
+	s.fleetProvisioningActive[requestID] = attemptToken
+	return true
+}
+
+func (s *Server) endFleetProvisioningAttempt(requestID, attemptToken string) {
+	s.fleetProvisioningMu.Lock()
+	defer s.fleetProvisioningMu.Unlock()
+	if s.fleetProvisioningActive[requestID] == attemptToken {
+		delete(s.fleetProvisioningActive, requestID)
+	}
+}
+
+func (s *Server) fleetProvisioningAttemptActive(requestID string) bool {
+	s.fleetProvisioningMu.Lock()
+	defer s.fleetProvisioningMu.Unlock()
+	_, active := s.fleetProvisioningActive[requestID]
+	return active
+}
+
+func writeProvisioningCreateError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		writeError(w, http.StatusNotFound, "fleet pool not found")
+	case errors.Is(err, storage.ErrFleetPoolNotActive):
+		writeError(w, http.StatusConflict, "fleet pool is not active")
+	default:
+		writeError(w, http.StatusBadRequest, err.Error())
+	}
+}
+
 func (s *Server) createProvisioningRequest(req *storage.ProvisioningRequest) error {
 	if cas, ok := s.store.(provisioningRequestCASStore); ok {
 		created, err := cas.CreateProvisioningRequestIfAbsent(req)
@@ -481,8 +539,13 @@ func (s *Server) handleCreateProvisioningRequest(w http.ResponseWriter, r *http.
 		// A real provisioner is wired: actually scale the pool's workload and
 		// drive the request through its lifecycle.
 		req.Status = "provisioning"
+		if !s.beginFleetProvisioningAttempt(req.ID, req.AttemptToken) {
+			writeError(w, http.StatusConflict, "provisioning request already has an active scale attempt")
+			return
+		}
+		defer s.endFleetProvisioningAttempt(req.ID, req.AttemptToken)
 		if err := s.createProvisioningRequest(&req); err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
+			writeProvisioningCreateError(w, err)
 			return
 		}
 		s.saveProvisioningEvent(req.ID, "requested", "provisioning requested", now)
@@ -516,8 +579,7 @@ func (s *Server) handleCreateProvisioningRequest(w http.ResponseWriter, r *http.
 				return
 			}
 			s.saveProvisioningEvent(req.ID, "success", fmt.Sprintf("scaled %s to %d replicas", workload, scaledTo), done)
-			pool.DesiredSize = scaledTo
-			if err := s.store.SaveFleetPool(pool); err != nil {
+			if err := updateFleetPoolDesiredSize(s.store, pool.ID, scaledTo); err != nil {
 				slog.Warn("failed to persist pool desired size after provisioning", "pool_id", pool.ID, "err", err)
 			}
 		}
@@ -541,7 +603,7 @@ func (s *Server) handleCreateProvisioningRequest(w http.ResponseWriter, r *http.
 	req.CompletedAt = &now
 	req.Events = nil
 	if err := s.createProvisioningRequest(&req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeProvisioningCreateError(w, err)
 		return
 	}
 	s.saveProvisioningEvent(req.ID, "requested", "provisioning requested", now)
@@ -634,6 +696,10 @@ func (s *Server) handleCancelProvisioningRequest(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusConflict, fmt.Sprintf("provisioning request is %s and cannot be cancelled", req.Status))
 		return
 	}
+	if s.fleetProvisioningAttemptActive(req.ID) {
+		writeError(w, http.StatusConflict, "provisioning request is currently applying an external scale and cannot be cancelled safely")
+		return
+	}
 	now := time.Now()
 	expectedRevision := req.Revision
 	expectedAttemptToken := req.AttemptToken
@@ -695,6 +761,11 @@ func (s *Server) handleRetryProvisioningRequest(w http.ResponseWriter, r *http.R
 	req.Status = "provisioning"
 	req.Revision++
 	req.AttemptToken = uuid.New().String()
+	if !s.beginFleetProvisioningAttempt(req.ID, req.AttemptToken) {
+		writeError(w, http.StatusConflict, "provisioning request already has an active scale attempt")
+		return
+	}
+	defer s.endFleetProvisioningAttempt(req.ID, req.AttemptToken)
 	if err := s.transitionProvisioningRequest(req, expectedRevision, expectedAttemptToken); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to retry provisioning request")
 		return
@@ -724,8 +795,7 @@ func (s *Server) handleRetryProvisioningRequest(w http.ResponseWriter, r *http.R
 	}
 	s.saveProvisioningEvent(req.ID, eventType, message, done)
 	if status == "success" {
-		pool.DesiredSize = scaledTo
-		if err := s.store.SaveFleetPool(pool); err != nil {
+		if err := updateFleetPoolDesiredSize(s.store, pool.ID, scaledTo); err != nil {
 			slog.Warn("failed to persist pool desired size after provisioning retry", "pool_id", pool.ID, "err", err)
 		}
 	}
@@ -773,6 +843,9 @@ func (s *Server) reconcileProvisioningRequests(ctx context.Context) error {
 			if req == nil || strings.ToLower(strings.TrimSpace(req.Status)) != "provisioning" || !s.runner.holdsExecutionLeadership() {
 				continue
 			}
+			if s.fleetProvisioningAttemptActive(req.ID) {
+				continue
+			}
 			pool, err := s.store.GetFleetPool(req.FleetPoolID)
 			if err != nil {
 				slog.Warn("failed to load fleet pool during provisioning reconcile", "request_id", req.ID, "error", err)
@@ -782,11 +855,16 @@ func (s *Server) reconcileProvisioningRequests(ctx context.Context) error {
 			expectedRevision, expectedToken := req.Revision, req.AttemptToken
 			req.Revision++
 			req.AttemptToken = uuid.New().String()
+			if !s.beginFleetProvisioningAttempt(req.ID, req.AttemptToken) {
+				continue
+			}
 			if err := s.transitionProvisioningRequest(req, expectedRevision, expectedToken); err != nil {
+				s.endFleetProvisioningAttempt(req.ID, req.AttemptToken)
 				continue
 			}
 			expectedRevision, expectedToken = req.Revision, req.AttemptToken
 			status, workload, scaledTo, message := s.executeProvisioningScale(ctx, req, pool)
+			s.endFleetProvisioningAttempt(req.ID, req.AttemptToken)
 			if ctx.Err() != nil || !s.runner.holdsExecutionLeadership() {
 				return firstNonNilError(ctx.Err(), errNotExecutionLeader)
 			}
@@ -800,8 +878,7 @@ func (s *Server) reconcileProvisioningRequests(ctx context.Context) error {
 			}
 			s.saveProvisioningEvent(req.ID, map[bool]string{true: "success", false: "failure"}[status == "success"], message, now)
 			if status == "success" {
-				pool.DesiredSize = scaledTo
-				if err := s.store.SaveFleetPool(pool); err != nil {
+				if err := updateFleetPoolDesiredSize(s.store, pool.ID, scaledTo); err != nil {
 					slog.Warn("failed to persist pool desired size after provisioning reconcile", "pool_id", pool.ID, "error", err)
 				}
 			}

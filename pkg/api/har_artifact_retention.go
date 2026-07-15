@@ -1,6 +1,8 @@
 package api
 
 import (
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,9 +19,11 @@ const defaultHARRetentionDays = 7
 // browser protocol's har_capture policies, including orphaned working files
 // from crashed sessions.
 const (
-	harArtifactPrefix     = "apexload_browser_"
-	harArtifactSuffix     = ".har"
-	harArtifactTempSuffix = ".har.tmp"
+	harArtifactPrefix                 = "apexload_browser_"
+	harArtifactSuffix                 = ".har"
+	harArtifactTempSuffix             = ".har.tmp"
+	maxHARArtifactRetentionCandidates = 10_000
+	harArtifactRetentionReadBatch     = 256
 )
 
 type HARArtifactPruneCandidate struct {
@@ -29,6 +33,7 @@ type HARArtifactPruneCandidate struct {
 	RetentionDays int       `json:"retention_days"`
 	ModifiedAt    time.Time `json:"modified_at"`
 	ExpiredAt     time.Time `json:"expired_at"`
+	identity      os.FileInfo
 }
 
 type HARArtifactRetentionResult struct {
@@ -42,44 +47,74 @@ type HARArtifactRetentionResult struct {
 // browser-protocol artifact naming are considered — the sweep never touches
 // other files in the directory.
 func planHARArtifactRetention(now time.Time, settings ArchiveRetentionSettings) []HARArtifactPruneCandidate {
+	return planHARArtifactRetentionLimit(now, settings, maxHARArtifactRetentionCandidates)
+}
+
+func planHARArtifactRetentionLimit(now time.Time, settings ArchiveRetentionSettings, limit int) []HARArtifactPruneCandidate {
 	if !settings.Enabled {
+		return nil
+	}
+	if limit <= 0 {
 		return nil
 	}
 	retentionDays := settings.HARRetentionDays
 	if retentionDays <= 0 {
 		retentionDays = defaultHARRetentionDays
 	}
+	retention, ok := checkedDuration(retentionDays, 24*time.Hour)
+	if !ok || retention <= 0 {
+		return nil
+	}
 	dir := strings.TrimSpace(settings.HARArtifactDir)
 	if dir == "" {
 		dir = os.TempDir()
 	}
-	entries, err := os.ReadDir(dir)
+	root, err := openArchiveDirectoryNoSymlink(dir)
 	if err != nil {
 		return nil
 	}
+	defer root.Close()
+	directory, err := root.Open(".")
+	if err != nil {
+		return nil
+	}
+	defer directory.Close()
 
 	candidates := make([]HARArtifactPruneCandidate, 0)
-	for _, entry := range entries {
-		if entry.IsDir() || !isHARArtifactName(entry.Name()) {
-			continue
+	for len(candidates) < limit {
+		entries, readErr := directory.ReadDir(harArtifactRetentionReadBatch)
+		for _, entry := range entries {
+			if len(candidates) >= limit {
+				break
+			}
+			if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 || !isHARArtifactName(entry.Name()) {
+				continue
+			}
+			info, err := root.Lstat(entry.Name())
+			if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+				continue
+			}
+			expiredAt := info.ModTime().Add(retention)
+			if now.Before(expiredAt) {
+				continue
+			}
+			path := filepath.Join(dir, entry.Name())
+			candidates = append(candidates, HARArtifactPruneCandidate{
+				Path:          path,
+				Sensitivity:   harArtifactSensitivity(entry.Name()),
+				SizeBytes:     info.Size(),
+				RetentionDays: retentionDays,
+				ModifiedAt:    info.ModTime().UTC(),
+				ExpiredAt:     expiredAt.UTC(),
+				identity:      info,
+			})
 		}
-		info, err := entry.Info()
-		if err != nil {
-			continue
+		if readErr == io.EOF {
+			break
 		}
-		expiredAt := info.ModTime().Add(time.Duration(retentionDays) * 24 * time.Hour)
-		if now.Before(expiredAt) {
-			continue
+		if readErr != nil {
+			break
 		}
-		path := filepath.Join(dir, entry.Name())
-		candidates = append(candidates, HARArtifactPruneCandidate{
-			Path:          path,
-			Sensitivity:   harArtifactSensitivity(entry.Name()),
-			SizeBytes:     info.Size(),
-			RetentionDays: retentionDays,
-			ModifiedAt:    info.ModTime().UTC(),
-			ExpiredAt:     expiredAt.UTC(),
-		})
 	}
 	return candidates
 }
@@ -104,7 +139,7 @@ func applyHARArtifactRetention(candidates []HARArtifactPruneCandidate) ([]HARArt
 	pruned, failed := 0, 0
 	for _, candidate := range candidates {
 		result := HARArtifactRetentionResult{Path: candidate.Path, Status: "pruned"}
-		if err := os.Remove(candidate.Path); err != nil {
+		if err := removeHARArtifactCandidate(candidate); err != nil {
 			result.Status = "failed"
 			result.Error = err.Error()
 			failed++
@@ -114,4 +149,44 @@ func applyHARArtifactRetention(candidates []HARArtifactPruneCandidate) ([]HARArt
 		results = append(results, result)
 	}
 	return results, pruned, failed
+}
+
+func removeHARArtifactCandidate(candidate HARArtifactPruneCandidate) error {
+	path := filepath.Clean(strings.TrimSpace(candidate.Path))
+	name := filepath.Base(path)
+	if path == "." || !isHARArtifactName(name) || candidate.identity == nil {
+		return fmt.Errorf("HAR retention candidate is incomplete")
+	}
+	root, err := openArchiveDirectoryNoSymlink(filepath.Dir(path))
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	current, err := root.Lstat(name)
+	if err != nil {
+		return err
+	}
+	if current.Mode()&os.ModeSymlink != 0 || !current.Mode().IsRegular() || !os.SameFile(candidate.identity, current) {
+		return fmt.Errorf("HAR artifact %q changed after retention planning", name)
+	}
+	tombstone, err := archiveTemporaryName(".", name+".retention")
+	if err != nil {
+		return err
+	}
+	if err := root.Rename(name, tombstone); err != nil {
+		return err
+	}
+	tombstoneInfo, err := root.Lstat(tombstone)
+	if err != nil || tombstoneInfo.Mode()&os.ModeSymlink != 0 || !tombstoneInfo.Mode().IsRegular() || !os.SameFile(candidate.identity, tombstoneInfo) {
+		_ = root.Rename(tombstone, name)
+		if err != nil {
+			return err
+		}
+		return fmt.Errorf("HAR artifact %q changed during retention deletion", name)
+	}
+	if err := root.Remove(tombstone); err != nil {
+		_ = root.Rename(tombstone, name)
+		return err
+	}
+	return syncOpenedArchiveDirectory(root)
 }

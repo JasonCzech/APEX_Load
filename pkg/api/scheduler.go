@@ -1,10 +1,13 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
 	"regexp"
+	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -52,7 +55,18 @@ type scenarioScheduler struct {
 	leaseTTL time.Duration
 }
 
-const maxScheduleCatchUpAllPerSweep = 25
+const (
+	maxScheduleCatchUpAllPerSweep     = 25
+	maxScheduledOccurrencesPerSweep   = 256
+	maxOneTimeScheduledStartsPerSweep = 256
+)
+
+const (
+	maxCronExpressionBytes              = 512
+	maxCronEligibleCandidateEvaluations = 100_000
+	maxScenarioScheduleWindows          = 64
+	maxScenarioScheduleWindowNameBytes  = 256
+)
 
 type CreateScenarioScheduleRequest struct {
 	Name                string                           `json:"name"`
@@ -104,6 +118,10 @@ func (s *scenarioScheduler) RunDueSchedules() error {
 	if !s.runner.isExecutionLeader() {
 		return nil
 	}
+	leaseTerm, err := s.runner.captureExecutionLeaseTerm()
+	if err != nil {
+		return err
+	}
 	// Schedule/scenario CRUD may be served by any HA replica. Refresh the
 	// leader's durable view before each sweep so follower writes and deletes are
 	// observed without requiring another leadership transition.
@@ -115,6 +133,9 @@ func (s *scenarioScheduler) RunDueSchedules() error {
 			return fmt.Errorf("reload scenarios before schedule sweep: %w", err)
 		}
 	}
+	if !s.runner.executionLeaseTermCurrent(leaseTerm) {
+		return errNotExecutionLeader
+	}
 	now := s.now().UTC()
 	acquired, err := s.runner.acquireScenarioSchedulerLease(now, s.ownerID, s.leaseTTL)
 	if err != nil {
@@ -123,10 +144,15 @@ func (s *scenarioScheduler) RunDueSchedules() error {
 	if !acquired {
 		return nil
 	}
+	if !s.runner.executionLeaseTermCurrent(leaseTerm) {
+		return errNotExecutionLeader
+	}
 	toStart := make([]*ManagedTest, 0)
 	s.runner.mu.Lock()
+	processedOccurrences := 0
+	scheduleSweepExhausted := false
 	for _, schedule := range s.runner.listAllScenarioSchedulesLocked() {
-		if !s.runner.isExecutionLeader() {
+		if !s.runner.executionLeaseTermCurrent(leaseTerm) {
 			break
 		}
 		if schedule == nil || !schedule.Enabled || schedule.NextRunAt == nil || schedule.NextRunAt.After(now) {
@@ -134,33 +160,55 @@ func (s *scenarioScheduler) RunDueSchedules() error {
 		}
 		catchUpAll := normalizeScenarioScheduleMissedRunPolicy(schedule.MissedRunPolicy) == "catch_up_all"
 		for materialized := 0; schedule.NextRunAt != nil && !schedule.NextRunAt.After(now); materialized++ {
+			if processedOccurrences >= maxScheduledOccurrencesPerSweep {
+				scheduleSweepExhausted = true
+				break
+			}
+			processedOccurrences++
 			if materialized >= maxScheduleCatchUpAllPerSweep {
 				schedule.NextRequiredAction = "catch_up_limit_reached"
 				schedule.LastError = fmt.Sprintf("catch_up_all materialized %d occurrences; next sweep will continue", maxScheduleCatchUpAllPerSweep)
 				schedule.UpdatedAt = now
-				if err := s.runner.saveScenarioScheduleLocked(schedule); err != nil {
+				if err := s.runner.saveScenarioScheduleForSweepLocked(schedule, leaseTerm); err != nil {
 					slog.Warn("failed to persist scenario catch-up limit", "schedule_id", schedule.ID, "error", err)
 				}
 				break
 			}
-			if handled, err := s.runner.applyMissedRunPolicyLocked(schedule, now); err != nil {
-				schedule.LastError = err.Error()
-				schedule.UpdatedAt = now
-				if saveErr := s.runner.saveScenarioScheduleLocked(schedule); saveErr != nil {
-					slog.Warn("failed to persist scenario schedule error", "schedule_id", schedule.ID, "error", saveErr)
+			plannedAt := schedule.NextRunAt.UTC()
+			var existing *storage.ScenarioScheduleOccurrence
+			var loadErr error
+			if s.runner.scenarioStore != nil {
+				s.runner.mu.Unlock()
+				existing, loadErr = s.runner.scenarioStore.GetScenarioScheduleOccurrenceByScheduleAndPlannedAt(schedule.ID, plannedAt)
+				s.runner.mu.Lock()
+			}
+			if loadErr != nil {
+				schedule.LastError = loadErr.Error()
+				break
+			}
+			// A durable occurrence always wins over missed-run policy. It may
+			// represent a crash between the occurrence/test/schedule commits and
+			// must be reconciled before skip/operator policy considers a new slot.
+			if existing == nil {
+				if handled, err := s.runner.applyMissedRunPolicyLocked(schedule, now, leaseTerm); err != nil {
+					schedule.LastError = err.Error()
+					schedule.UpdatedAt = now
+					if saveErr := s.runner.saveScenarioScheduleForSweepLocked(schedule, leaseTerm); saveErr != nil {
+						slog.Warn("failed to persist scenario schedule error", "schedule_id", schedule.ID, "error", saveErr)
+					}
+					break
+				} else if handled {
+					break
 				}
-				break
-			} else if handled {
+			}
+			if !s.runner.executionLeaseTermCurrent(leaseTerm) {
 				break
 			}
-			if !s.runner.isExecutionLeader() {
-				break
-			}
-			test, err := s.runner.runScenarioScheduleLocked(schedule, now)
+			test, err := s.runner.runScenarioScheduleLocked(schedule, now, leaseTerm)
 			if err != nil {
 				schedule.LastError = err.Error()
 				schedule.UpdatedAt = now
-				if saveErr := s.runner.saveScenarioScheduleLocked(schedule); saveErr != nil {
+				if saveErr := s.runner.saveScenarioScheduleForSweepLocked(schedule, leaseTerm); saveErr != nil {
 					slog.Warn("failed to persist scenario materialization error", "schedule_id", schedule.ID, "error", saveErr)
 				}
 				break
@@ -168,34 +216,37 @@ func (s *scenarioScheduler) RunDueSchedules() error {
 			if test != nil {
 				toStart = append(toStart, test)
 			}
-			if !catchUpAll || test == nil {
+			if !catchUpAll || schedule.NextRunAt == nil || !schedule.NextRunAt.After(plannedAt) {
 				break
 			}
 		}
+		if scheduleSweepExhausted {
+			break
+		}
 	}
-	dueOneTimeScheduled := s.runner.dueOneTimeScheduledTestIDsLocked(now)
+	dueOneTimeScheduled := s.runner.dueOneTimeScheduledTestIDsLocked(now, maxOneTimeScheduledStartsPerSweep)
 	s.runner.mu.Unlock()
-	if !s.runner.isExecutionLeader() {
+	if !s.runner.executionLeaseTermCurrent(leaseTerm) {
 		return nil
 	}
 	for _, test := range toStart {
-		go s.runner.runTest(test)
+		go s.runner.runScenarioScheduledTestWithTerm(test, leaseTerm)
 	}
 	for _, testID := range dueOneTimeScheduled {
-		if err := s.runner.StartTestWithOptions(testID, StartTestOptions{}); err != nil {
+		if err := s.runner.startTestWithOptionsAndExpectedTerm(testID, StartTestOptions{}, &leaseTerm); err != nil {
 			s.runner.markScheduledStartError(testID, err.Error())
 		}
 	}
 	// Recurring execution-plan schedules share this leader-gated sweep + lease.
 	// Run lock-free (materialize takes tr.mu internally).
-	if !s.runner.isExecutionLeader() {
+	if !s.runner.executionLeaseTermCurrent(leaseTerm) {
 		return nil
 	}
-	s.runner.sweepDueExecutionPlanSchedules(now)
+	s.runner.sweepDueExecutionPlanSchedulesWithTerm(now, leaseTerm)
 	return nil
 }
 
-func (tr *TestRunner) applyMissedRunPolicyLocked(schedule *storage.ScenarioSchedule, now time.Time) (bool, error) {
+func (tr *TestRunner) applyMissedRunPolicyLocked(schedule *storage.ScenarioSchedule, now time.Time, leaseTerm executionLeaseTerm) (bool, error) {
 	if schedule == nil || schedule.NextRunAt == nil || now.Sub(*schedule.NextRunAt) <= time.Minute {
 		return false, nil
 	}
@@ -204,7 +255,7 @@ func (tr *TestRunner) applyMissedRunPolicyLocked(schedule *storage.ScenarioSched
 		return false, nil
 	case "skip":
 		occurrence := tr.buildScenarioScheduleOccurrence(schedule, *schedule.NextRunAt, "skipped", "missed_run_skipped", "Missed scheduled occurrence skipped by policy.", nil, now)
-		if err := tr.saveScenarioScheduleOccurrenceLocked(occurrence); err != nil {
+		if err := tr.saveScenarioScheduleOccurrenceForSweepLocked(occurrence, leaseTerm); err != nil {
 			return true, err
 		}
 		next, err := nextScenarioScheduleRun(schedule, now)
@@ -215,12 +266,12 @@ func (tr *TestRunner) applyMissedRunPolicyLocked(schedule *storage.ScenarioSched
 		schedule.LastOccurrence = cloneScenarioScheduleOccurrence(occurrence)
 		schedule.LastError = ""
 		schedule.UpdatedAt = now
-		if err := tr.saveScenarioScheduleLocked(schedule); err != nil {
+		if err := tr.saveScenarioScheduleForSweepLocked(schedule, leaseTerm); err != nil {
 			return true, err
 		}
 		return true, nil
 	case "require_operator_decision":
-		if err := tr.blockScheduleOccurrenceLocked(schedule, *schedule.NextRunAt, "missed_run_requires_decision", "Missed scheduled occurrence requires an operator decision.", "operator_decision_required", "missed scheduled occurrence requires operator decision", now, nil); err != nil {
+		if err := tr.blockScheduleOccurrenceLocked(schedule, *schedule.NextRunAt, "missed_run_requires_decision", "Missed scheduled occurrence requires operator decision.", "operator_decision_required", "missed scheduled occurrence requires operator decision", now, nil, leaseTerm); err != nil {
 			return true, err
 		}
 		return true, nil
@@ -251,8 +302,8 @@ func nextScenarioScheduleRun(schedule *storage.ScenarioSchedule, from time.Time)
 // (window/blackout/pause gating). `allows` may be nil (no extra gating).
 func nextCronRun(cronExpr, timezone string, from time.Time, allows func(candidate time.Time) (bool, error)) (*time.Time, error) {
 	from = from.UTC()
-	if strings.TrimSpace(cronExpr) == "" {
-		return nil, fmt.Errorf("cron expression is required")
+	if err := validateCronExpr(cronExpr); err != nil {
+		return nil, err
 	}
 	fields := strings.Fields(expandCronMacro(cronExpr))
 	if len(fields) != 5 {
@@ -270,29 +321,66 @@ func nextCronRun(cronExpr, timezone string, from time.Time, allows func(candidat
 	if !cronHasPossibleCalendarDate(fields[2], fields[3], fields[4], from, limit, location) {
 		return nil, fmt.Errorf("could not find a matching run within %d years — check for an impossible day/month combination (e.g. Feb 30, or Feb 29 outside a leap year)", maxCronSearchHorizonYears)
 	}
-	for candidate := from.Truncate(time.Minute).Add(time.Minute); !candidate.After(limit); candidate = candidate.Add(time.Minute) {
+	evaluatedCandidates := 0
+	for candidate := from.Truncate(time.Minute).Add(time.Minute); !candidate.After(limit); {
 		// Match cron fields in the schedule's declared timezone so a schedule
 		// fires at its local wall-clock time; iteration and the returned
 		// next_run_at stay in UTC. During a DST spring-forward the skipped local
 		// hour simply never matches (the desired skip); during fall-back the
 		// earliest matching UTC instant wins.
 		local := candidate.In(location)
-		if cronFieldMatches(fields[0], int(local.Minute()), 0, 59) &&
-			cronFieldMatches(fields[1], int(local.Hour()), 0, 23) &&
-			cronFieldMatches(fields[3], int(local.Month()), 1, 12) &&
-			cronMatchesDayOfMonthAndWeek(fields[2], fields[4], local) {
-			if allows != nil {
-				if allowed, err := allows(candidate); err != nil {
-					return nil, err
-				} else if !allowed {
-					continue
-				}
-			}
-			next := candidate.UTC()
-			return &next, nil
+		if !cronFieldMatches(fields[3], int(local.Month()), 1, 12) || !cronMatchesDayOfMonthAndWeek(fields[2], fields[4], local) {
+			candidate = nextCronLocalDateBoundary(candidate, local, location)
+			continue
 		}
+		if !cronFieldMatches(fields[1], int(local.Hour()), 0, 23) {
+			// Re-evaluate on each local-hour boundary rather than walking every
+			// minute. Advancing in UTC keeps repeated/skipped DST hours correct.
+			candidate = candidate.Add(time.Duration(60-local.Minute()) * time.Minute)
+			continue
+		}
+		if !cronFieldMatches(fields[0], int(local.Minute()), 0, 59) {
+			candidate = candidate.Add(time.Duration(nextCronMinuteDelta(fields[0], local.Minute())) * time.Minute)
+			continue
+		}
+		evaluatedCandidates++
+		if evaluatedCandidates > maxCronEligibleCandidateEvaluations {
+			return nil, fmt.Errorf("cron eligibility filters rejected more than %d matching candidates; narrow the cron expression or schedule windows", maxCronEligibleCandidateEvaluations)
+		}
+		if allows != nil {
+			if allowed, err := allows(candidate); err != nil {
+				return nil, err
+			} else if !allowed {
+				candidate = candidate.Add(time.Minute)
+				continue
+			}
+		}
+		next := candidate.UTC()
+		return &next, nil
 	}
 	return nil, fmt.Errorf("could not find a matching run within %d years — check for an impossible day/month combination (e.g. Feb 30, or Feb 29 outside a leap year)", maxCronSearchHorizonYears)
+}
+
+// nextCronLocalDateBoundary skips a calendar date that cannot satisfy the
+// month/day fields. Constructing the following local midnight avoids the
+// previous 1,440 checks per rejected day while preserving timezone/DST rules.
+func nextCronLocalDateBoundary(candidate time.Time, local time.Time, location *time.Location) time.Time {
+	next := time.Date(local.Year(), local.Month(), local.Day()+1, 0, 0, 0, 0, location).UTC()
+	if next.After(candidate) {
+		return next
+	}
+	// Defensive fallback for an exotic timezone transition normalized across
+	// midnight in an unexpected direction. Always make forward progress.
+	return candidate.Add(time.Hour)
+}
+
+func nextCronMinuteDelta(expr string, minute int) int {
+	for delta := 1; delta <= 60; delta++ {
+		if cronFieldMatches(expr, (minute+delta)%60, 0, 59) {
+			return delta
+		}
+	}
+	return 1
 }
 
 func cronHasPossibleCalendarDate(domField, monthField, dowField string, from time.Time, limit time.Time, location *time.Location) bool {
@@ -411,6 +499,9 @@ func validateCronExpr(expr string) error {
 	if expr == "" {
 		return fmt.Errorf("cron expression is required")
 	}
+	if len(expr) > maxCronExpressionBytes {
+		return fmt.Errorf("cron expression exceeds the %d-byte limit", maxCronExpressionBytes)
+	}
 	fields := strings.Fields(expandCronMacro(expr))
 	if len(fields) != 5 {
 		return fmt.Errorf("cron expression must have 5 space-separated fields (minute hour day-of-month month day-of-week), got %d", len(fields))
@@ -467,7 +558,9 @@ func validateCronDayMonthFeasible(domField, monthField string) error {
 
 func validateCronPart(part string, min, max int, fieldName string) error {
 	base := part
+	hasStep := false
 	if slash := strings.Index(part, "/"); slash >= 0 {
+		hasStep = true
 		base = part[:slash]
 		if base == "" {
 			base = "*"
@@ -481,11 +574,17 @@ func validateCronPart(part string, min, max int, fieldName string) error {
 	}
 	if fieldName == "day-of-month" {
 		if handled, err := validateDomSpecialToken(base, part, fieldName); handled {
+			if err == nil && hasStep {
+				return fmt.Errorf("steps are not supported on special cron %s token %q", fieldName, part)
+			}
 			return err
 		}
 	}
 	if fieldName == "day-of-week" {
 		if handled, err := validateDowSpecialToken(base, part, fieldName); handled {
+			if err == nil && hasStep {
+				return fmt.Errorf("steps are not supported on special cron %s token %q", fieldName, part)
+			}
 			return err
 		}
 	}
@@ -575,7 +674,9 @@ func cronFieldMatches(expr string, value int, min int, max int) bool {
 func cronPartMatches(part string, value int, min int, max int) bool {
 	step := 1
 	base := part
+	hasStep := false
 	if slash := strings.Index(part, "/"); slash >= 0 {
+		hasStep = true
 		base = part[:slash]
 		if base == "" {
 			base = "*"
@@ -612,6 +713,9 @@ func cronPartMatches(part string, value int, min int, max int) bool {
 	if !ok {
 		return false
 	}
+	if hasStep {
+		return value >= number && (value-number)%step == 0
+	}
 	return value == number
 }
 
@@ -624,7 +728,13 @@ func parseCronNumber(raw string, min int, max int) (int, bool) {
 		if ch < '0' || ch > '9' {
 			return 0, false
 		}
-		value = value*10 + int(ch-'0')
+		digit := int(ch - '0')
+		// All cron fields have a small positive maximum. Stop before integer
+		// overflow (or needlessly scanning a megabyte-long numeric token).
+		if value > (max-digit)/10 {
+			return 0, false
+		}
+		value = value*10 + digit
 	}
 	if value < min || value > max {
 		return 0, false
@@ -664,6 +774,62 @@ func cachedScheduleLocation(timezone string) (*time.Location, error) {
 	}
 	actual, _ := scheduleLocationCache.LoadOrStore(timezone, location)
 	return actual.(*time.Location), nil
+}
+
+func validateScheduleTimezone(timezone string) error {
+	timezone = strings.TrimSpace(timezone)
+	if timezone == "" {
+		return fmt.Errorf("schedule timezone is required")
+	}
+	if len(timezone) > 253 {
+		return fmt.Errorf("schedule timezone exceeds the 253-byte limit")
+	}
+	if _, err := cachedScheduleLocation(timezone); err != nil {
+		return fmt.Errorf("invalid schedule timezone %q: %w", timezone, err)
+	}
+	return nil
+}
+
+func validateScenarioScheduleWindowSets(blackout, maintenance, availability []storage.ScenarioScheduleWindow, fallbackTimezone string) error {
+	total := len(blackout) + len(maintenance) + len(availability)
+	if total > maxScenarioScheduleWindows {
+		return fmt.Errorf("schedule contains %d windows, limit is %d", total, maxScenarioScheduleWindows)
+	}
+	sets := []struct {
+		kind    string
+		windows []storage.ScenarioScheduleWindow
+	}{
+		{kind: "blackout", windows: blackout},
+		{kind: "maintenance", windows: maintenance},
+		{kind: "availability", windows: availability},
+	}
+	for _, set := range sets {
+		for index, window := range set.windows {
+			prefix := fmt.Sprintf("%s window %d", set.kind, index)
+			if len(window.Name) > maxScenarioScheduleWindowNameBytes {
+				return fmt.Errorf("%s name exceeds the %d-byte limit", prefix, maxScenarioScheduleWindowNameBytes)
+			}
+			if _, err := parseScheduleWindowMinute(window.StartTime); err != nil {
+				return fmt.Errorf("%s start_time: %w", prefix, err)
+			}
+			if _, err := parseScheduleWindowMinute(window.EndTime); err != nil {
+				return fmt.Errorf("%s end_time: %w", prefix, err)
+			}
+			timezone := firstNonEmpty(strings.TrimSpace(window.Timezone), fallbackTimezone)
+			if err := validateScheduleTimezone(timezone); err != nil {
+				return fmt.Errorf("%s: %w", prefix, err)
+			}
+			if len(window.DaysOfWeek) > 7 {
+				return fmt.Errorf("%s days_of_week contains %d entries, limit is 7", prefix, len(window.DaysOfWeek))
+			}
+			for _, day := range window.DaysOfWeek {
+				if day < 0 || day > 6 {
+					return fmt.Errorf("%s days_of_week contains %d; allowed values are 0 through 6", prefix, day)
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // cronMatchesDayOfMonthAndWeek applies POSIX cron semantics for the
@@ -950,12 +1116,226 @@ func (tr *TestRunner) listAllScenarioSchedulesLocked() []*storage.ScenarioSchedu
 			out = append(out, cloneScenarioSchedule(schedule))
 		}
 	}
+	sort.Slice(out, func(i, j int) bool {
+		left, right := out[i], out[j]
+		if left == nil {
+			return false
+		}
+		if right == nil {
+			return true
+		}
+		if left.NextRunAt == nil {
+			return false
+		}
+		if right.NextRunAt == nil {
+			return true
+		}
+		if !left.NextRunAt.Equal(*right.NextRunAt) {
+			return left.NextRunAt.Before(*right.NextRunAt)
+		}
+		return left.ID < right.ID
+	})
 	return out
 }
 
-func (tr *TestRunner) runScenarioScheduleLocked(schedule *storage.ScenarioSchedule, now time.Time) (*ManagedTest, error) {
+// saveScenarioScheduleOccurrenceForSweepLocked keeps the scheduler's global
+// state lock out of storage I/O. The caller owns tr.mu on entry and regains it
+// before return; occurrence persistence itself does not consult runner maps.
+func (tr *TestRunner) scenarioScheduleSweepTerm(terms []executionLeaseTerm) (executionLeaseTerm, error) {
+	if len(terms) > 0 {
+		return terms[0], nil
+	}
+	return tr.captureExecutionLeaseTerm()
+}
+
+func (tr *TestRunner) saveScenarioScheduleOccurrenceForSweepLocked(occurrence *storage.ScenarioScheduleOccurrence, leaseTerms ...executionLeaseTerm) error {
+	if occurrence == nil {
+		return fmt.Errorf("schedule occurrence is required")
+	}
+	leaseTerm, termErr := tr.scenarioScheduleSweepTerm(leaseTerms)
+	if termErr != nil {
+		return termErr
+	}
+	if !tr.executionLeaseTermCurrent(leaseTerm) {
+		return errNotExecutionLeader
+	}
+	expectedRevision := occurrence.Revision
+	occurrence.TransitionToken = uuid.NewString()
+	store := tr.scenarioStore
+	tr.mu.Unlock()
+	var err error
+	if store != nil {
+		var changed bool
+		if expectedRevision < 1 {
+			if tr.durableExecutionFence {
+				fencedStore, ok := store.(leaseTermFencedScenarioScheduleOccurrenceClaimPersistence)
+				if !ok {
+					err = fmt.Errorf("scenario schedule persistence does not support current-parent lease-term-fenced occurrence claims")
+				} else {
+					changed, err = fencedStore.ClaimScenarioScheduleOccurrenceIfCurrentAndLeaseTermHeld(occurrence, executionLeaseName, leaseTerm.ownerID, leaseTerm.generation)
+				}
+			} else if claimStore, ok := store.(scenarioScheduleOccurrenceClaimPersistence); ok {
+				changed, err = claimStore.ClaimScenarioScheduleOccurrenceIfCurrent(occurrence)
+			} else if casStore, ok := store.(scenarioScheduleOccurrenceCASPersistence); ok {
+				// Compatibility for lightweight in-memory test stores. Production
+				// persistence implements the parent-conditional claim above.
+				changed, err = casStore.CreateScenarioScheduleOccurrenceIfAbsent(occurrence)
+			} else {
+				err = fmt.Errorf("scenario schedule persistence does not support occurrence create-only insertion")
+			}
+		} else {
+			if tr.durableExecutionFence {
+				fencedStore, ok := store.(leaseTermFencedScenarioSchedulePersistence)
+				if !ok {
+					err = fmt.Errorf("scenario schedule persistence does not support execution lease-term fencing")
+				} else {
+					changed, err = fencedStore.CompareAndSwapScenarioScheduleOccurrenceIfLeaseTermHeld(occurrence, expectedRevision, executionLeaseName, leaseTerm.ownerID, leaseTerm.generation)
+				}
+			} else if casStore, ok := store.(scenarioScheduleOccurrenceCASPersistence); ok {
+				changed, err = casStore.CompareAndSwapScenarioScheduleOccurrence(occurrence, expectedRevision)
+			} else {
+				err = fmt.Errorf("scenario schedule persistence does not support occurrence revision CAS")
+			}
+		}
+		if err == nil && !changed {
+			current, reloadErr := store.GetScenarioScheduleOccurrenceByScheduleAndPlannedAt(occurrence.ScheduleID, occurrence.PlannedAt)
+			if reloadErr != nil {
+				err = reloadErr
+			} else if scenarioScheduleOccurrenceTransitionMatches(current, occurrence, expectedRevision) {
+				*occurrence = *current
+				occurrence.MaterializedAt = cloneTimePtr(current.MaterializedAt)
+				changed = true
+			} else if !tr.executionLeaseTermCurrent(leaseTerm) {
+				err = errNotExecutionLeader
+			} else if current == nil {
+				err = fmt.Errorf("scenario schedule occurrence %q was deleted or not created", occurrence.ID)
+			} else {
+				err = fmt.Errorf("scenario schedule occurrence %q changed concurrently (expected revision %d, durable revision %d)", occurrence.ID, expectedRevision, current.Revision)
+			}
+		}
+		if err == nil && changed && tr.executionLeaseTermCurrent(leaseTerm) {
+			tr.recordScenarioScheduleOccurrenceAuditLocked(occurrence)
+		} else if err == nil {
+			err = errNotExecutionLeader
+		}
+	}
+	tr.mu.Lock()
+	return err
+}
+
+func scenarioScheduleOccurrenceTransitionMatches(current, intended *storage.ScenarioScheduleOccurrence, expectedRevision int64) bool {
+	if current == nil || intended == nil || current.ID != intended.ID || current.ScheduleID != intended.ScheduleID ||
+		current.ScenarioID != intended.ScenarioID || normalizeProjectID(current.ProjectID) != normalizeProjectID(intended.ProjectID) ||
+		!current.PlannedAt.Equal(intended.PlannedAt) || current.TransitionToken != intended.TransitionToken ||
+		current.Status != intended.Status || current.ReasonCode != intended.ReasonCode || current.TestID != intended.TestID ||
+		current.ApprovalID != intended.ApprovalID || current.ConflictSummary != intended.ConflictSummary ||
+		!sameOptionalTime(current.MaterializedAt, intended.MaterializedAt) {
+		return false
+	}
+	if expectedRevision < 1 {
+		return current.Revision == 1
+	}
+	return current.Revision == expectedRevision+1
+}
+
+// saveScenarioScheduleForSweepLocked is the schedule-CAS equivalent of the
+// occurrence helper above. It snapshots the expected in-memory revision, does
+// the durable CAS without tr.mu, then applies the result only if the same
+// in-memory revision is still current.
+func (tr *TestRunner) saveScenarioScheduleForSweepLocked(schedule *storage.ScenarioSchedule, leaseTerms ...executionLeaseTerm) error {
+	if schedule == nil {
+		return fmt.Errorf("schedule is required")
+	}
+	leaseTerm, termErr := tr.scenarioScheduleSweepTerm(leaseTerms)
+	if termErr != nil {
+		return termErr
+	}
+	scenario, ok := tr.scenarios[schedule.ScenarioID]
+	if !ok {
+		return fmt.Errorf("scenario not found: %s", schedule.ScenarioID)
+	}
+	existingIndex := -1
+	expectedRevision := 0
+	for index, existing := range scenario.Schedules {
+		if existing != nil && existing.ID == schedule.ID {
+			existingIndex = index
+			expectedRevision = existing.Revision
+			break
+		}
+	}
+	if !tr.executionLeaseTermCurrent(leaseTerm) {
+		return errNotExecutionLeader
+	}
+	if tr.scenarioStore != nil {
+		tr.mu.Unlock()
+		changed := true
+		var err error
+		if tr.durableExecutionFence {
+			fencedStore, ok := tr.scenarioStore.(leaseTermFencedScenarioSchedulePersistence)
+			if !ok {
+				err = fmt.Errorf("scenario schedule persistence does not support execution lease-term fencing")
+			} else if existingIndex < 0 {
+				changed, err = fencedStore.CreateScenarioScheduleIfAbsentAndLeaseTermHeld(schedule, executionLeaseName, leaseTerm.ownerID, leaseTerm.generation)
+			} else {
+				changed, err = fencedStore.UpdateScenarioScheduleIfRevisionAndLeaseTermHeld(schedule, expectedRevision, executionLeaseName, leaseTerm.ownerID, leaseTerm.generation)
+			}
+		} else if casStore, ok := tr.scenarioStore.(scenarioScheduleCASPersistence); ok {
+			if existingIndex < 0 {
+				changed, err = casStore.CreateScenarioScheduleIfAbsent(schedule)
+			} else {
+				changed, err = casStore.UpdateScenarioScheduleIfRevision(schedule, expectedRevision)
+			}
+		} else {
+			err = tr.scenarioStore.SaveScenarioSchedule(schedule)
+		}
+		tr.mu.Lock()
+		if err != nil {
+			return err
+		}
+		if !changed {
+			if tr.durableExecutionFence {
+				return fmt.Errorf("%w: scenario schedule %q changed, was deleted, or belongs to an expired execution epoch", errNotExecutionLeader, schedule.ID)
+			}
+			return fmt.Errorf("scenario schedule %q changed or was deleted; reload and retry", schedule.ID)
+		}
+		if !tr.executionLeaseTermCurrent(leaseTerm) {
+			return errNotExecutionLeader
+		}
+	}
+
+	scenario, ok = tr.scenarios[schedule.ScenarioID]
+	if !ok {
+		return fmt.Errorf("scenario %q changed or was deleted; reload and retry", schedule.ScenarioID)
+	}
+	currentIndex := -1
+	for index, existing := range scenario.Schedules {
+		if existing != nil && existing.ID == schedule.ID {
+			currentIndex = index
+			if existingIndex >= 0 && existing.Revision != expectedRevision {
+				return fmt.Errorf("scenario schedule %q changed while persistence was in flight; reload and retry", schedule.ID)
+			}
+			break
+		}
+	}
+	if existingIndex >= 0 && currentIndex < 0 {
+		return fmt.Errorf("scenario schedule %q was deleted while persistence was in flight", schedule.ID)
+	}
+	if currentIndex >= 0 {
+		scenario.Schedules[currentIndex] = cloneScenarioSchedule(schedule)
+	} else {
+		scenario.Schedules = append(scenario.Schedules, cloneScenarioSchedule(schedule))
+	}
+	tr.contentRevision++
+	return nil
+}
+
+func (tr *TestRunner) runScenarioScheduleLocked(schedule *storage.ScenarioSchedule, now time.Time, leaseTerms ...executionLeaseTerm) (*ManagedTest, error) {
 	if schedule == nil {
 		return nil, fmt.Errorf("schedule is required")
+	}
+	leaseTerm, termErr := tr.scenarioScheduleSweepTerm(leaseTerms)
+	if termErr != nil {
+		return nil, termErr
 	}
 	scenario, ok := tr.scenarios[schedule.ScenarioID]
 	if !ok {
@@ -965,7 +1345,7 @@ func (tr *TestRunner) runScenarioScheduleLocked(schedule *storage.ScenarioSchedu
 	if schedule.NextRunAt != nil {
 		plannedAt = *schedule.NextRunAt
 	}
-	handled, resumeOccurrence, recoveredPrepared, err := tr.reconcileScenarioScheduleOccurrenceLocked(schedule, plannedAt, now)
+	handled, resumeOccurrence, recoveredPrepared, err := tr.reconcileScenarioScheduleOccurrenceLocked(schedule, plannedAt, now, leaseTerm)
 	if err != nil {
 		return nil, err
 	} else if handled {
@@ -975,14 +1355,18 @@ func (tr *TestRunner) runScenarioScheduleLocked(schedule *storage.ScenarioSchedu
 		return nil, err
 	} else if !allowed {
 		schedule.ConflictSummary = "Environment availability conflict: planned occurrence falls outside allowed schedule windows."
-		if err := tr.blockScheduleOccurrenceLocked(schedule, plannedAt, "environment_unavailable", schedule.ConflictSummary, "resolve_conflict", schedule.ConflictSummary, now, nil); err != nil {
+		if err := tr.blockScheduleOccurrenceLocked(schedule, plannedAt, "environment_unavailable", schedule.ConflictSummary, "resolve_conflict", schedule.ConflictSummary, now, nil, leaseTerm); err != nil {
 			return nil, err
 		}
 		return nil, nil
 	}
-	schedule.ConflictSummary = tr.scenarioScheduleConflictSummaryLocked(schedule, scenario)
+	conflictSummary, err := tr.scenarioScheduleConflictSummaryForSweepLocked(schedule, scenario, leaseTerm)
+	if err != nil {
+		return nil, err
+	}
+	schedule.ConflictSummary = conflictSummary
 	if strings.TrimSpace(schedule.ConflictSummary) != "" {
-		if err := tr.blockScheduleOccurrenceLocked(schedule, plannedAt, "schedule_conflict", schedule.ConflictSummary, "resolve_conflict", schedule.ConflictSummary, now, nil); err != nil {
+		if err := tr.blockScheduleOccurrenceLocked(schedule, plannedAt, "schedule_conflict", schedule.ConflictSummary, "resolve_conflict", schedule.ConflictSummary, now, nil, leaseTerm); err != nil {
 			return nil, err
 		}
 		return nil, nil
@@ -990,7 +1374,7 @@ func (tr *TestRunner) runScenarioScheduleLocked(schedule *storage.ScenarioSchedu
 	if schedule.NextRequiredAction == "approval_required" && schedule.PendingApprovalID != "" {
 		if err := tr.blockScheduleOccurrenceLocked(schedule, plannedAt, "approval_required", "Schedule requires approval before materialization.", "", "schedule requires approval", now, func(occurrence *storage.ScenarioScheduleOccurrence) {
 			occurrence.ApprovalID = schedule.PendingApprovalID
-		}); err != nil {
+		}, leaseTerm); err != nil {
 			return nil, err
 		}
 		return nil, nil
@@ -1007,24 +1391,27 @@ func (tr *TestRunner) runScenarioScheduleLocked(schedule *storage.ScenarioSchedu
 	if strings.TrimSpace(occurrence.TestID) == "" {
 		occurrence.TestID = uuid.New().String()
 	}
-	if err := tr.saveScenarioScheduleOccurrenceLocked(occurrence); err != nil {
+	if err := tr.saveScenarioScheduleOccurrenceForSweepLocked(occurrence, leaseTerm); err != nil {
 		return nil, err
 	}
 	runName := strings.TrimSpace(schedule.RunNameTemplate)
 	if runName == "" {
 		runName = fmt.Sprintf("Scheduled Run %s", now.Format(time.RFC3339))
 	}
-	test, err := tr.buildManagedTestLocked(CreateTestRequest{
+	test, err := tr.buildManagedTestForScheduleSweepLockedWithTerm(CreateTestRequest{
 		Name:       runName,
 		ScenarioID: schedule.ScenarioID,
 		ReleaseID:  schedule.ReleaseID,
-	}, occurrence.TestID, "QUEUED")
+	}, occurrence.TestID, "QUEUED", leaseTerm)
+	if err == nil {
+		err = tr.claimTestExecutionFenceWithTerm(test, leaseTerm)
+	}
 	if err != nil {
 		occurrence.Status = "failed"
 		occurrence.ReasonCode = "create_failed"
 		occurrence.ConflictSummary = err.Error()
 		occurrence.UpdatedAt = now
-		if saveErr := tr.saveScenarioScheduleOccurrenceLocked(occurrence); saveErr != nil {
+		if saveErr := tr.saveScenarioScheduleOccurrenceForSweepLocked(occurrence, leaseTerm); saveErr != nil {
 			slog.Warn("failed to persist scenario occurrence creation failure", "occurrence_id", occurrence.ID, "error", saveErr)
 		}
 		return nil, err
@@ -1035,57 +1422,56 @@ func (tr *TestRunner) runScenarioScheduleLocked(schedule *storage.ScenarioSchedu
 	// the run calendar) instead of being launched anyway. The test is built but
 	// not yet registered, so it does not self-conflict; the "materializing"
 	// occurrence already dedups this schedule's own projection.
-	if windowErr := tr.launchStartWindowErrorLocked(test, now, test.ID, schedule.ID); windowErr != nil {
+	if windowErr := tr.launchStartWindowErrorForScheduleSweepLockedWithTerm(test, now, test.ID, schedule.ID, leaseTerm); windowErr != nil {
 		schedule.ConflictSummary = windowErr.Error()
-		if err := tr.blockScheduleOccurrenceLocked(schedule, plannedAt, "schedule_conflict", schedule.ConflictSummary, "resolve_conflict", schedule.ConflictSummary, now, nil); err != nil {
+		if err := tr.blockScheduleOccurrenceLocked(schedule, plannedAt, "schedule_conflict", schedule.ConflictSummary, "resolve_conflict", schedule.ConflictSummary, now, nil, leaseTerm); err != nil {
 			return nil, err
 		}
 		return nil, nil
 	}
-	// Bind the schedule's default capacity timeslot, if configured, to this
-	// occurrence's run (same atomic bind ad-hoc runs use). Lenient: if the slot is
+	// Validate the schedule's default capacity timeslot, if configured, for this
+	// occurrence's run. The actual bind and test insert commit atomically below.
+	// Lenient: if the slot is
 	// missing, unapproved, already bound, or doesn't fit, block this occurrence
 	// with a clear reason rather than failing the whole schedule — schedules are
 	// long-lived and the slot may be transiently unavailable.
 	if strings.TrimSpace(schedule.TimeslotID) != "" {
-		if bindErr := tr.validateAndBindTimeslotLocked(strings.TrimSpace(schedule.TimeslotID), test); bindErr != nil {
+		tr.mu.Unlock()
+		bindErr := tr.validateAndBindTimeslotLocked(strings.TrimSpace(schedule.TimeslotID), test)
+		tr.mu.Lock()
+		if bindErr != nil {
 			schedule.ConflictSummary = bindErr.Error()
-			if err := tr.blockScheduleOccurrenceLocked(schedule, plannedAt, "timeslot_unavailable", bindErr.Error(), "resolve_conflict", bindErr.Error(), now, nil); err != nil {
+			if err := tr.blockScheduleOccurrenceLocked(schedule, plannedAt, "timeslot_unavailable", bindErr.Error(), "resolve_conflict", bindErr.Error(), now, nil, leaseTerm); err != nil {
 				return nil, err
 			}
 			return nil, nil
 		}
 	}
-	tr.tests[test.ID] = test
-	tr.indexRefKeyLocked(test.RefKey, test.ID)
-	if err := retryDurableTransition(func() error { return tr.saveManagedTestRecord(test) }); err != nil {
-		delete(tr.tests, test.ID)
-		tr.removeRefKeyLocked(test.RefKey)
-		if tr.reservationStore != nil && test.TimeslotID != nil {
-			if _, clearErr := tr.reservationStore.ClearCapacityReservationBinding(*test.TimeslotID, test.ID, time.Now().UTC()); clearErr != nil {
-				slog.Warn("failed to release scheduled test timeslot after persistence failure", "test_id", test.ID, "timeslot_id", *test.TimeslotID, "error", clearErr)
-				tr.enqueueCapacityReservationReleaseRetry(test.ID, strings.TrimSpace(*test.TimeslotID))
-			}
-		}
+	tr.mu.Unlock()
+	saveTestErr := tr.saveNewManagedTestRecordWithTerm(test, leaseTerm)
+	tr.mu.Lock()
+	if saveTestErr != nil {
 		occurrence.Status = "failed"
 		occurrence.ReasonCode = "create_persist_failed"
-		occurrence.ConflictSummary = err.Error()
+		occurrence.ConflictSummary = saveTestErr.Error()
 		occurrence.UpdatedAt = now
-		if saveErr := tr.saveScenarioScheduleOccurrenceLocked(occurrence); saveErr != nil {
+		if saveErr := tr.saveScenarioScheduleOccurrenceForSweepLocked(occurrence, leaseTerm); saveErr != nil {
 			slog.Warn("failed to persist scheduled test creation failure", "occurrence_id", occurrence.ID, "error", saveErr)
 		}
-		return nil, fmt.Errorf("persist scheduled test: %w", err)
+		return nil, fmt.Errorf("persist scheduled test: %w", saveTestErr)
 	}
+	tr.tests[test.ID] = test
+	tr.indexRefKeyLocked(test.RefKey, test.ID)
 	tr.broadcastEvent("test_created", test)
 	// The launch window was just evaluated above; skip the redundant re-check.
-	prepared, err := tr.prepareTestStartLocked(test.ID, StartTestOptions{SkipLaunchWindowPreflight: true})
+	prepared, err := tr.prepareTestStartForScheduleSweepLockedWithTerm(test.ID, StartTestOptions{SkipLaunchWindowPreflight: true}, leaseTerm)
 	if err != nil {
 		occurrence.Status = "failed"
 		occurrence.ReasonCode = "start_failed"
 		occurrence.TestID = test.ID
 		occurrence.ConflictSummary = err.Error()
 		occurrence.UpdatedAt = now
-		if saveErr := tr.saveScenarioScheduleOccurrenceLocked(occurrence); saveErr != nil {
+		if saveErr := tr.saveScenarioScheduleOccurrenceForSweepLocked(occurrence, leaseTerm); saveErr != nil {
 			slog.Warn("failed to persist scheduled test start failure", "occurrence_id", occurrence.ID, "error", saveErr)
 		}
 		if failErr := tr.failScheduledTestBeforeLaunchLocked(test, now, "prepare scheduled test: "+err.Error()); failErr != nil {
@@ -1098,7 +1484,7 @@ func (tr *TestRunner) runScenarioScheduleLocked(schedule *storage.ScenarioSchedu
 	occurrence.TestID = test.ID
 	occurrence.MaterializedAt = &now
 	occurrence.UpdatedAt = now
-	if err := tr.saveScenarioScheduleOccurrenceLocked(occurrence); err != nil {
+	if err := tr.saveScenarioScheduleOccurrenceForSweepLocked(occurrence, leaseTerm); err != nil {
 		if failErr := tr.failScheduledTestBeforeLaunchLocked(test, now, "save materialized schedule occurrence: "+err.Error()); failErr != nil {
 			return nil, errors.Join(err, failErr)
 		}
@@ -1119,7 +1505,7 @@ func (tr *TestRunner) runScenarioScheduleLocked(schedule *storage.ScenarioSchedu
 		occurrence.ReasonCode = "schedule_calculation_failed"
 		occurrence.ConflictSummary = err.Error()
 		occurrence.UpdatedAt = now
-		if saveErr := tr.saveScenarioScheduleOccurrenceLocked(occurrence); saveErr != nil {
+		if saveErr := tr.saveScenarioScheduleOccurrenceForSweepLocked(occurrence, leaseTerm); saveErr != nil {
 			slog.Warn("failed to persist schedule calculation failure", "occurrence_id", occurrence.ID, "error", saveErr)
 		}
 		if failErr := tr.failScheduledTestBeforeLaunchLocked(test, now, "calculate next scheduled run: "+err.Error()); failErr != nil {
@@ -1129,12 +1515,12 @@ func (tr *TestRunner) runScenarioScheduleLocked(schedule *storage.ScenarioSchedu
 	}
 	schedule.NextRunAt = next
 	schedule.UpdatedAt = now
-	if err := tr.saveScenarioScheduleLocked(schedule); err != nil {
+	if err := tr.saveScenarioScheduleForSweepLocked(schedule, leaseTerm); err != nil {
 		occurrence.Status = "failed"
 		occurrence.ReasonCode = "schedule_persist_failed"
 		occurrence.ConflictSummary = err.Error()
 		occurrence.UpdatedAt = now
-		if saveErr := tr.saveScenarioScheduleOccurrenceLocked(occurrence); saveErr != nil {
+		if saveErr := tr.saveScenarioScheduleOccurrenceForSweepLocked(occurrence, leaseTerm); saveErr != nil {
 			slog.Warn("failed to persist schedule persistence failure", "occurrence_id", occurrence.ID, "error", saveErr)
 		}
 		if failErr := tr.failScheduledTestBeforeLaunchLocked(test, now, "save updated schedule: "+err.Error()); failErr != nil {
@@ -1149,42 +1535,84 @@ func (tr *TestRunner) failScheduledTestBeforeLaunchLocked(test *ManagedTest, now
 	if test == nil {
 		return nil
 	}
-	previousStatus := test.Status
-	previousPendingSince := cloneTimePtr(test.PendingSince)
-	previousPendingReason := test.PendingReason
-	previousQueuePosition := test.QueuePosition
-	previousError := test.Error
-	previousEndedAt := cloneTimePtr(test.EndedAt)
-	test.Status = "FAILED"
-	test.PendingSince = nil
-	test.PendingReason = ""
-	test.QueuePosition = 0
-	test.Error = message
-	test.EndedAt = cloneTimePtr(&now)
-	if err := tr.saveManagedTestRecord(test); err != nil {
-		test.Status = previousStatus
-		test.PendingSince = previousPendingSince
-		test.PendingReason = previousPendingReason
-		test.QueuePosition = previousQueuePosition
-		test.Error = previousError
-		test.EndedAt = previousEndedAt
-		retryErr := fmt.Errorf("persist scheduled test failure: %w", err)
+	testID := test.ID
+	tr.mu.Unlock()
+	unlockLifecycle, err := tr.lockTestLifecycleControl(context.Background(), testID)
+	tr.mu.Lock()
+	if err != nil {
+		return err
+	}
+	current := tr.tests[testID]
+	if current == nil || current != test {
+		unlockLifecycle()
+		return nil
+	}
+	switch current.Status {
+	case "COMPLETE", "FAILED", "ABORTED":
+		unlockLifecycle()
+		return nil
+	}
+	if err := tr.claimTestExecutionFence(current); err != nil {
+		unlockLifecycle()
+		return err
+	}
+	executionFence := current.executionFence
+	failedSnapshot := cloneManagedTestForReadLocked(current)
+	failedSnapshot.Status = "FAILED"
+	failedSnapshot.PendingSince = nil
+	failedSnapshot.PendingReason = ""
+	failedSnapshot.QueuePosition = 0
+	failedSnapshot.Error = message
+	failedSnapshot.EndedAt = cloneTimePtr(&now)
+	slotID := ""
+	if current.TimeslotID != nil {
+		slotID = strings.TrimSpace(*current.TimeslotID)
+	}
+
+	tr.mu.Unlock()
+	var persistErr error
+	if _, supportsMissingRowFence := tr.testStore.(interface {
+		UpdateTestStatusIfActive(string, string, *time.Time, string) (storage.TestStatusTransitionResult, error)
+	}); supportsMissingRowFence || tr.durableExecutionFence {
+		persistErr = tr.persistStoredTestStatus(testID, executionFence, "FAILED", &now, message)
+	} else {
+		// Compatibility for focused legacy stores. Production SQLite/PostgreSQL
+		// use the missing-row-safe partial transition above.
+		persistErr = tr.saveManagedTestRecord(failedSnapshot)
+	}
+	var releaseErr error
+	if persistErr == nil && tr.reservationStore != nil && slotID != "" {
+		if clearErr := tr.releaseCapacityReservationBinding(testID, slotID); clearErr != nil {
+			slog.Warn("failed to release failed scheduled test timeslot", "test_id", testID, "timeslot_id", slotID, "error", clearErr)
+			releaseErr = fmt.Errorf("release failed scheduled test timeslot: %w", clearErr)
+			tr.enqueueCapacityReservationReleaseRetry(testID, slotID)
+		}
+	}
+	tr.mu.Lock()
+	unlockLifecycle()
+	if isStoredTestTransitionCancelled(persistErr) {
+		return nil
+	}
+	if persistErr != nil {
+		retryErr := fmt.Errorf("persist scheduled test failure: %w", persistErr)
 		slog.Error("failed to persist scheduled test failure; cleanup and notification deferred", "test_id", test.ID, "error", retryErr)
 		tr.enqueueScheduledTestFailureRetry(test.ID, now, message)
 		return retryErr
 	}
-	if test.cancel != nil {
-		test.cancel()
+	current = tr.tests[testID]
+	if current == nil || current != test {
+		return releaseErr
 	}
-	var releaseErr error
-	if tr.reservationStore != nil && test.TimeslotID != nil {
-		if _, err := tr.reservationStore.ClearCapacityReservationBinding(*test.TimeslotID, test.ID, now.UTC()); err != nil {
-			slog.Warn("failed to release failed scheduled test timeslot", "test_id", test.ID, "timeslot_id", *test.TimeslotID, "error", err)
-			releaseErr = fmt.Errorf("release failed scheduled test timeslot: %w", err)
-			tr.enqueueCapacityReservationReleaseRetry(test.ID, strings.TrimSpace(*test.TimeslotID))
-		}
+	current.Status = "FAILED"
+	current.PendingSince = nil
+	current.PendingReason = ""
+	current.QueuePosition = 0
+	current.Error = message
+	current.EndedAt = cloneTimePtr(&now)
+	if current.cancel != nil {
+		current.cancel()
 	}
-	tr.broadcastEvent("test_failed", test)
+	tr.broadcastEvent("test_failed", current)
 	return releaseErr
 }
 
@@ -1203,16 +1631,42 @@ func (tr *TestRunner) enqueueScheduledTestFailureRetry(testID string, now time.T
 	})
 }
 
-func (tr *TestRunner) reconcileScenarioScheduleOccurrenceLocked(schedule *storage.ScenarioSchedule, plannedAt time.Time, now time.Time) (bool, *storage.ScenarioScheduleOccurrence, *ManagedTest, error) {
+func (tr *TestRunner) reconcileScenarioScheduleOccurrenceLocked(schedule *storage.ScenarioSchedule, plannedAt time.Time, now time.Time, leaseTerm executionLeaseTerm) (bool, *storage.ScenarioScheduleOccurrence, *ManagedTest, error) {
 	if tr == nil || tr.scenarioStore == nil || schedule == nil {
 		return false, nil, nil, nil
 	}
+	tr.mu.Unlock()
 	existing, err := tr.scenarioStore.GetScenarioScheduleOccurrenceByScheduleAndPlannedAt(schedule.ID, plannedAt.UTC())
+	tr.mu.Lock()
 	if err != nil || existing == nil {
 		return false, nil, nil, err
 	}
 	var recoveredPrepared *ManagedTest
 	status := strings.ToLower(strings.TrimSpace(existing.Status))
+	if status == "materialized" && strings.TrimSpace(existing.TestID) != "" {
+		// A materialized occurrence with the parent schedule still pointing at the
+		// same planned_at is the crash window after test/occurrence persistence but
+		// before the schedule advance and launch. Startup recovery fail-closes the
+		// orphan INITIALIZING row; do not subsequently reinterpret that terminal
+		// test as a successful materialization.
+		if recovered := tr.tests[existing.TestID]; recovered != nil {
+			switch recovered.Status {
+			case "INITIALIZING":
+				cause := fmt.Errorf("correlated scheduled test %s was left initializing after occurrence materialization", recovered.ID)
+				return true, nil, nil, tr.failRecoveredScenarioSchedulePreparationLocked(schedule, existing, recovered, now, "recovery_interrupted", cause.Error(), cause, leaseTerm)
+			case "FAILED", "ABORTED":
+				existing.Status = "failed"
+				existing.ReasonCode = "recovery_interrupted"
+				existing.ConflictSummary = firstNonEmpty(recovered.Error, "correlated scheduled test failed before launch recovery committed")
+				existing.MaterializedAt = nil
+				existing.UpdatedAt = now
+				if err := tr.saveScenarioScheduleOccurrenceForSweepLocked(existing, leaseTerm); err != nil {
+					return true, nil, nil, err
+				}
+				status = "failed"
+			}
+		}
+	}
 	if status == "" || status == "materializing" {
 		// A correlated durable test means the prior controller crossed the test
 		// persistence boundary before crashing. Finalize this occurrence and
@@ -1222,7 +1676,7 @@ func (tr *TestRunner) reconcileScenarioScheduleOccurrenceLocked(schedule *storag
 		if strings.TrimSpace(existing.TestID) == "" {
 			existing.TestID = uuid.NewSHA1(uuid.NameSpaceURL, []byte("apexload:scenario-schedule-occurrence:"+existing.ID)).String()
 			existing.UpdatedAt = now
-			if err := tr.saveScenarioScheduleOccurrenceLocked(existing); err != nil {
+			if err := tr.saveScenarioScheduleOccurrenceForSweepLocked(existing, leaseTerm); err != nil {
 				return false, nil, nil, err
 			}
 		}
@@ -1232,13 +1686,13 @@ func (tr *TestRunner) reconcileScenarioScheduleOccurrenceLocked(schedule *storag
 			// The prior controller persisted the test but crashed before preparing
 			// its execution context. Resume that exact row and return it to the
 			// scheduler's normal post-lock launch path.
-			prepared, err := tr.prepareTestStartLocked(recovered.ID, StartTestOptions{SkipLaunchWindowPreflight: true})
+			prepared, err := tr.prepareTestStartForScheduleSweepLockedWithTerm(recovered.ID, StartTestOptions{SkipLaunchWindowPreflight: true}, leaseTerm)
 			if err != nil {
 				existing.Status = "failed"
 				existing.ReasonCode = "start_failed"
 				existing.ConflictSummary = err.Error()
 				existing.UpdatedAt = now
-				saveErr := tr.saveScenarioScheduleOccurrenceLocked(existing)
+				saveErr := tr.saveScenarioScheduleOccurrenceForSweepLocked(existing, leaseTerm)
 				failErr := tr.failScheduledTestBeforeLaunchLocked(recovered, now, "resume correlated scheduled test: "+err.Error())
 				return true, nil, nil, errors.Join(fmt.Errorf("resume correlated scheduled test %s: %w", recovered.ID, err), saveErr, failErr)
 			}
@@ -1250,7 +1704,7 @@ func (tr *TestRunner) reconcileScenarioScheduleOccurrenceLocked(schedule *storag
 			// Fail it closed instead of converting the occurrence to materialized
 			// and either stranding or launching an ambiguously prepared run.
 			cause := fmt.Errorf("correlated scheduled test %s was left initializing before schedule recovery committed", recovered.ID)
-			return true, nil, nil, tr.failRecoveredScenarioSchedulePreparationLocked(schedule, existing, recovered, now, "recovery_initializing_test", cause.Error(), cause)
+			return true, nil, nil, tr.failRecoveredScenarioSchedulePreparationLocked(schedule, existing, recovered, now, "recovery_initializing_test", cause.Error(), cause, leaseTerm)
 		} else if recovered.Status == "FAILED" || recovered.Status == "ABORTED" {
 			// A prior recovery attempt may have durably failed the test but lost the
 			// occurrence update. Repair that half-written state idempotently.
@@ -1258,7 +1712,7 @@ func (tr *TestRunner) reconcileScenarioScheduleOccurrenceLocked(schedule *storag
 			existing.ReasonCode = "recovered_test_failed"
 			existing.ConflictSummary = firstNonEmpty(recovered.Error, "correlated scheduled test is terminal")
 			existing.UpdatedAt = now
-			if err := tr.saveScenarioScheduleOccurrenceLocked(existing); err != nil {
+			if err := tr.saveScenarioScheduleOccurrenceForSweepLocked(existing, leaseTerm); err != nil {
 				return true, nil, nil, err
 			}
 			status = "failed"
@@ -1271,9 +1725,9 @@ func (tr *TestRunner) reconcileScenarioScheduleOccurrenceLocked(schedule *storag
 				existing.MaterializedAt = &materializedAt
 			}
 			existing.UpdatedAt = now
-			if err := tr.saveScenarioScheduleOccurrenceLocked(existing); err != nil {
+			if err := tr.saveScenarioScheduleOccurrenceForSweepLocked(existing, leaseTerm); err != nil {
 				if recoveredPrepared != nil {
-					return true, nil, nil, tr.failRecoveredScenarioSchedulePreparationLocked(schedule, existing, recoveredPrepared, now, "recovery_occurrence_persist_failed", "save recovered materialized schedule occurrence: "+err.Error(), err)
+					return true, nil, nil, tr.failRecoveredScenarioSchedulePreparationLocked(schedule, existing, recoveredPrepared, now, "recovery_occurrence_persist_failed", "save recovered materialized schedule occurrence: "+err.Error(), err, leaseTerm)
 				}
 				return true, nil, nil, err
 			}
@@ -1294,10 +1748,14 @@ func (tr *TestRunner) reconcileScenarioScheduleOccurrenceLocked(schedule *storag
 			materializedAt := *existing.MaterializedAt
 			schedule.LastRunAt = &materializedAt
 		}
-		next, err := nextScenarioScheduleRun(schedule, now)
+		advanceFrom := now
+		if normalizeScenarioScheduleMissedRunPolicy(schedule.MissedRunPolicy) == "catch_up_all" && existing.PlannedAt.Before(now) {
+			advanceFrom = existing.PlannedAt
+		}
+		next, err := nextScenarioScheduleRun(schedule, advanceFrom)
 		if err != nil {
 			if recoveredPrepared != nil {
-				return true, nil, nil, tr.failRecoveredScenarioSchedulePreparationLocked(schedule, existing, recoveredPrepared, now, "recovery_schedule_calculation_failed", "calculate next run for recovered schedule: "+err.Error(), err)
+				return true, nil, nil, tr.failRecoveredScenarioSchedulePreparationLocked(schedule, existing, recoveredPrepared, now, "recovery_schedule_calculation_failed", "calculate next run for recovered schedule: "+err.Error(), err, leaseTerm)
 			}
 			return true, nil, nil, err
 		}
@@ -1329,9 +1787,9 @@ func (tr *TestRunner) reconcileScenarioScheduleOccurrenceLocked(schedule *storag
 	default:
 		return false, nil, nil, nil
 	}
-	if err := tr.saveScenarioScheduleLocked(schedule); err != nil {
+	if err := tr.saveScenarioScheduleForSweepLocked(schedule, leaseTerm); err != nil {
 		if recoveredPrepared != nil {
-			return true, nil, nil, tr.failRecoveredScenarioSchedulePreparationLocked(schedule, existing, recoveredPrepared, now, "recovery_schedule_persist_failed", "save recovered schedule: "+err.Error(), err)
+			return true, nil, nil, tr.failRecoveredScenarioSchedulePreparationLocked(schedule, existing, recoveredPrepared, now, "recovery_schedule_persist_failed", "save recovered schedule: "+err.Error(), err, leaseTerm)
 		}
 		return true, nil, nil, err
 	}
@@ -1343,7 +1801,7 @@ func (tr *TestRunner) reconcileScenarioScheduleOccurrenceLocked(schedule *storag
 // and schedule operator-visible before failing the prepared test; each write is
 // independently retryable by a later sweep, so a partial failure converges on
 // the same terminal state without ever returning the test for launch.
-func (tr *TestRunner) failRecoveredScenarioSchedulePreparationLocked(schedule *storage.ScenarioSchedule, occurrence *storage.ScenarioScheduleOccurrence, test *ManagedTest, now time.Time, reasonCode, message string, cause error) error {
+func (tr *TestRunner) failRecoveredScenarioSchedulePreparationLocked(schedule *storage.ScenarioSchedule, occurrence *storage.ScenarioScheduleOccurrence, test *ManagedTest, now time.Time, reasonCode, message string, cause error, leaseTerm executionLeaseTerm) error {
 	if occurrence == nil {
 		return errors.Join(cause, tr.failScheduledTestBeforeLaunchLocked(test, now, message))
 	}
@@ -1351,7 +1809,7 @@ func (tr *TestRunner) failRecoveredScenarioSchedulePreparationLocked(schedule *s
 	occurrence.ReasonCode = reasonCode
 	occurrence.ConflictSummary = message
 	occurrence.UpdatedAt = now
-	occurrenceErr := tr.saveScenarioScheduleOccurrenceLocked(occurrence)
+	occurrenceErr := tr.saveScenarioScheduleOccurrenceForSweepLocked(occurrence, leaseTerm)
 
 	var scheduleErr error
 	if schedule != nil {
@@ -1359,7 +1817,7 @@ func (tr *TestRunner) failRecoveredScenarioSchedulePreparationLocked(schedule *s
 		schedule.LastError = message
 		schedule.NextRequiredAction = "operator_decision_required"
 		schedule.UpdatedAt = now
-		scheduleErr = tr.saveScenarioScheduleLocked(schedule)
+		scheduleErr = tr.saveScenarioScheduleForSweepLocked(schedule, leaseTerm)
 	}
 	testErr := tr.failScheduledTestBeforeLaunchLocked(test, now, message)
 	return errors.Join(cause, occurrenceErr, scheduleErr, testErr)
@@ -1370,12 +1828,30 @@ func (tr *TestRunner) failRecoveredScenarioSchedulePreparationLocked(schedule *s
 // UpdatedAt (and NextRequiredAction when non-empty). The optional mutate hook lets
 // callers set extra occurrence fields (e.g. ApprovalID) before persisting. It
 // returns the first persistence error encountered.
-func (tr *TestRunner) blockScheduleOccurrenceLocked(schedule *storage.ScenarioSchedule, plannedAt time.Time, reasonCode, summary, nextRequiredAction, lastError string, now time.Time, mutate func(*storage.ScenarioScheduleOccurrence)) error {
-	occurrence := tr.buildScenarioScheduleOccurrence(schedule, plannedAt, "blocked", reasonCode, summary, nil, now)
+func (tr *TestRunner) blockScheduleOccurrenceLocked(schedule *storage.ScenarioSchedule, plannedAt time.Time, reasonCode, summary, nextRequiredAction, lastError string, now time.Time, mutate func(*storage.ScenarioScheduleOccurrence), leaseTerm executionLeaseTerm) error {
+	// Launch/timeslot conflicts are discovered after the durable materializing
+	// claim has been inserted. Transition that exact duplicate fence with CAS;
+	// never try to create a second row for the same (schedule, planned_at).
+	tr.mu.Unlock()
+	occurrence, loadErr := tr.scenarioStore.GetScenarioScheduleOccurrenceByScheduleAndPlannedAt(schedule.ID, plannedAt.UTC())
+	tr.mu.Lock()
+	if loadErr != nil {
+		return loadErr
+	}
+	if occurrence == nil {
+		occurrence = tr.buildScenarioScheduleOccurrence(schedule, plannedAt, "blocked", reasonCode, summary, nil, now)
+	} else {
+		occurrence.Status = "blocked"
+		occurrence.ReasonCode = reasonCode
+		occurrence.ConflictSummary = summary
+		occurrence.TestID = ""
+		occurrence.MaterializedAt = nil
+		occurrence.UpdatedAt = now
+	}
 	if mutate != nil {
 		mutate(occurrence)
 	}
-	if err := tr.saveScenarioScheduleOccurrenceLocked(occurrence); err != nil {
+	if err := tr.saveScenarioScheduleOccurrenceForSweepLocked(occurrence, leaseTerm); err != nil {
 		return err
 	}
 	schedule.LastOccurrence = cloneScenarioScheduleOccurrence(occurrence)
@@ -1384,7 +1860,7 @@ func (tr *TestRunner) blockScheduleOccurrenceLocked(schedule *storage.ScenarioSc
 	}
 	schedule.LastError = lastError
 	schedule.UpdatedAt = now
-	return tr.saveScenarioScheduleLocked(schedule)
+	return tr.saveScenarioScheduleForSweepLocked(schedule, leaseTerm)
 }
 
 func (tr *TestRunner) buildScenarioScheduleOccurrence(schedule *storage.ScenarioSchedule, plannedAt time.Time, status string, reasonCode string, conflictSummary string, materializedAt *time.Time, now time.Time) *storage.ScenarioScheduleOccurrence {
@@ -1394,6 +1870,7 @@ func (tr *TestRunner) buildScenarioScheduleOccurrence(schedule *storage.Scenario
 		ScenarioID:       schedule.ScenarioID,
 		ProjectID:        normalizeProjectID(schedule.ProjectID),
 		ScheduleRevision: schedule.Revision,
+		TransitionToken:  uuid.NewString(),
 		PlannedAt:        plannedAt.UTC(),
 		MaterializedAt:   materializedAt,
 		Status:           status,
@@ -1463,6 +1940,7 @@ func cloneScenarioScheduleOccurrence(occurrence *storage.ScenarioScheduleOccurre
 }
 
 func (tr *TestRunner) CreateScenarioSchedule(scenarioID string, req CreateScenarioScheduleRequest) (*storage.ScenarioSchedule, error) {
+	tr.refreshScenariosForHARead(true)
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	return tr.upsertScenarioScheduleLocked(scenarioID, uuid.New().String(), nil, req)
@@ -1501,6 +1979,12 @@ func (tr *TestRunner) PreviewScenarioScheduleRuns(scenarioID string, req CreateS
 	if tz == "" {
 		tz = "UTC"
 	}
+	if err := validateScheduleTimezone(tz); err != nil {
+		return nil, err
+	}
+	if err := validateScenarioScheduleWindowSets(req.BlackoutWindows, req.MaintenanceWindows, req.AvailabilityWindows, tz); err != nil {
+		return nil, err
+	}
 	if count <= 0 {
 		count = 5
 	}
@@ -1526,13 +2010,17 @@ func (tr *TestRunner) PreviewScenarioScheduleRuns(scenarioID string, req CreateS
 	}
 	occurrences := make([]time.Time, 0, count)
 	cursor := time.Now().UTC()
-	for i := 0; i < count; i++ {
-		next, err := nextScenarioScheduleRun(schedule, cursor)
-		if err != nil || next == nil {
-			break
+	if !executionPlanSchedulePausedIndefinitely(disabledFrom, disabledUntil, cursor) {
+		for i := 0; i < count; i++ {
+			next, err := nextScenarioScheduleRun(schedule, cursor)
+			if err != nil || next == nil {
+				break
+			}
+			occurrences = append(occurrences, *next)
+			// nextCronRun is strictly-after. Reusing the returned instant avoids
+			// skipping every second occurrence for one-minute schedules.
+			cursor = *next
 		}
-		occurrences = append(occurrences, *next)
-		cursor = next.Add(time.Minute)
 	}
 	// Pre-save conflict check: surface the same quota/capacity/release conflict the
 	// materialization sweep would record, so it can be fixed before saving. Uses
@@ -1552,7 +2040,7 @@ func (tr *TestRunner) PreviewScenarioScheduleRuns(scenarioID string, req CreateS
 }
 
 func (tr *TestRunner) UpdateScenarioSchedule(scenarioID string, scheduleID string, req CreateScenarioScheduleRequest) (*storage.ScenarioSchedule, bool, error) {
-	tr.refreshScenariosForHARead()
+	tr.refreshScenariosForHARead(true)
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	scenario, ok := tr.scenarios[scenarioID]
@@ -1569,7 +2057,7 @@ func (tr *TestRunner) UpdateScenarioSchedule(scenarioID string, scheduleID strin
 }
 
 func (tr *TestRunner) ListScenarioSchedules(scenarioID string) ([]*storage.ScenarioSchedule, bool) {
-	tr.refreshScenariosForHARead()
+	tr.refreshScenariosForHARead(true)
 	tr.mu.RLock()
 	defer tr.mu.RUnlock()
 	scenario, ok := tr.scenarios[scenarioID]
@@ -1604,28 +2092,57 @@ func (tr *TestRunner) attachLatestScenarioScheduleOccurrenceLocked(schedule *sto
 }
 
 func (tr *TestRunner) DeleteScenarioSchedule(scenarioID string, scheduleID string) (bool, error) {
-	tr.refreshScenariosForHARead()
+	leaseTerm, err := tr.captureExecutionLeaseTerm()
+	if err != nil {
+		return false, err
+	}
+	tr.refreshScenariosForHARead(true)
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	scenario, ok := tr.scenarios[scenarioID]
 	if !ok {
 		return false, nil
 	}
-	filtered := scenario.Schedules[:0]
-	deleted := false
+	found := false
 	for _, schedule := range scenario.Schedules {
 		if schedule != nil && schedule.ID == scheduleID {
-			deleted = true
-			continue
+			found = true
+			break
 		}
-		filtered = append(filtered, schedule)
 	}
-	if !deleted {
+	if !found {
 		return false, nil
 	}
 	if tr.scenarioStore != nil {
-		if err := tr.scenarioStore.DeleteScenarioSchedule(scheduleID); err != nil {
-			return false, err
+		var result storage.ScheduleDeleteResult
+		if tr.durableExecutionFence {
+			store, ok := tr.scenarioStore.(leaseTermFencedScenarioScheduleDeletePersistence)
+			if !ok {
+				return true, fmt.Errorf("scenario schedule storage does not support lease-term-fenced guarded deletion")
+			}
+			result, err = store.DeleteScenarioScheduleGuardedIfLeaseTermHeld(scheduleID, executionLeaseName, leaseTerm.ownerID, leaseTerm.generation)
+		} else if store, ok := tr.scenarioStore.(guardedScenarioScheduleDeletePersistence); ok {
+			result, err = store.DeleteScenarioScheduleGuarded(scheduleID)
+		} else {
+			err = tr.scenarioStore.DeleteScenarioSchedule(scheduleID)
+			if err == nil {
+				result = storage.ScheduleDeleteDeleted
+			}
+		}
+		if err != nil {
+			return true, err
+		}
+		switch result {
+		case storage.ScheduleDeleteBlockedByActiveOccurrence:
+			return true, errScheduleHasActiveOccurrence
+		case storage.ScheduleDeleteMissing:
+			return false, nil
+		}
+	}
+	filtered := make([]*storage.ScenarioSchedule, 0, len(scenario.Schedules)-1)
+	for _, schedule := range scenario.Schedules {
+		if schedule == nil || schedule.ID != scheduleID {
+			filtered = append(filtered, schedule)
 		}
 	}
 	scenario.Schedules = append([]*storage.ScenarioSchedule(nil), filtered...)
@@ -1649,6 +2166,16 @@ func (tr *TestRunner) upsertScenarioScheduleLocked(scenarioID string, scheduleID
 	if err := validateCronExpr(cronExpr); err != nil {
 		return nil, err
 	}
+	timezone := strings.TrimSpace(req.Timezone)
+	if timezone == "" {
+		timezone = "UTC"
+	}
+	if err := validateScheduleTimezone(timezone); err != nil {
+		return nil, err
+	}
+	if err := validateScenarioScheduleWindowSets(req.BlackoutWindows, req.MaintenanceWindows, req.AvailabilityWindows, timezone); err != nil {
+		return nil, err
+	}
 	now := time.Now().UTC()
 	enabled := true
 	if existing != nil {
@@ -1664,7 +2191,7 @@ func (tr *TestRunner) upsertScenarioScheduleLocked(scenarioID string, scheduleID
 		Revision:        1,
 		Name:            name,
 		CronExpr:        cronExpr,
-		Timezone:        strings.TrimSpace(req.Timezone),
+		Timezone:        timezone,
 		ReleaseID:       strings.TrimSpace(req.ReleaseID),
 		TimeslotID:      strings.TrimSpace(req.TimeslotID),
 		RunNameTemplate: strings.TrimSpace(req.RunNameTemplate),
@@ -1699,9 +2226,6 @@ func (tr *TestRunner) upsertScenarioScheduleLocked(scenarioID string, scheduleID
 		schedule.OwnerDisplayName = strings.TrimSpace(req.OwnerDisplayName)
 	}
 	schedule.Governance = tr.scenarioScheduleGovernanceLocked(scenario, schedule, req, now)
-	if schedule.Timezone == "" {
-		schedule.Timezone = "UTC"
-	}
 	if schedule.RunNameTemplate == "" {
 		schedule.RunNameTemplate = scenario.Name
 	}
@@ -1731,7 +2255,7 @@ func (tr *TestRunner) upsertScenarioScheduleLocked(scenarioID string, scheduleID
 		// paused/unset, so it must NOT be preserved — otherwise clearing an
 		// open-ended pause (which doesn't touch the fields compared below) would
 		// leave the resumed schedule stuck at NextRunAt=nil and never fire.
-		if existing != nil && existing.NextRunAt != nil && existing.Enabled == schedule.Enabled && existing.CronExpr == schedule.CronExpr && existing.Timezone == schedule.Timezone && existing.ReleaseID == schedule.ReleaseID && existing.RunNameTemplate == schedule.RunNameTemplate && existing.Name == schedule.Name {
+		if existing != nil && existing.NextRunAt != nil && scenarioScheduleTimingEquivalent(existing, schedule) {
 			schedule.NextRunAt = existing.NextRunAt
 		}
 	}
@@ -1792,6 +2316,64 @@ func (tr *TestRunner) upsertScenarioScheduleLocked(scenarioID string, scheduleID
 	return cloneScenarioSchedule(schedule), nil
 }
 
+// scenarioScheduleTimingEquivalent reports whether every field consulted by
+// nextScenarioScheduleRun/scheduleAllowsCandidate is unchanged. Only then is it
+// safe to preserve the prior next_run_at during a PUT. Cosmetic, release, and
+// governance changes do not move the cron anchor; eligibility windows and pause
+// bounds do.
+func scenarioScheduleTimingEquivalent(left, right *storage.ScenarioSchedule) bool {
+	if left == nil || right == nil {
+		return left == right
+	}
+	return left.Enabled == right.Enabled &&
+		left.CronExpr == right.CronExpr &&
+		left.Timezone == right.Timezone &&
+		sameOptionalTime(left.DisabledFrom, right.DisabledFrom) &&
+		sameOptionalTime(left.DisabledUntil, right.DisabledUntil) &&
+		scenarioScheduleWindowsEqual(left.BlackoutWindows, right.BlackoutWindows, left.Timezone) &&
+		scenarioScheduleWindowsEqual(left.MaintenanceWindows, right.MaintenanceWindows, left.Timezone) &&
+		scenarioScheduleWindowsEqual(left.AvailabilityWindows, right.AvailabilityWindows, left.Timezone)
+}
+
+func scenarioScheduleWindowsEqual(left, right []storage.ScenarioScheduleWindow, fallbackTimezone string) bool {
+	canonical := func(windows []storage.ScenarioScheduleWindow) []string {
+		keys := make(map[string]struct{}, len(windows))
+		for _, window := range windows {
+			days := append([]int(nil), window.DaysOfWeek...)
+			sort.Ints(days)
+			uniqueDays := days[:0]
+			for _, day := range days {
+				if len(uniqueDays) == 0 || uniqueDays[len(uniqueDays)-1] != day {
+					uniqueDays = append(uniqueDays, day)
+				}
+			}
+			if len(uniqueDays) == 7 && uniqueDays[0] == 0 && uniqueDays[6] == 6 {
+				uniqueDays = nil
+			}
+			dayParts := make([]string, len(uniqueDays))
+			for index, day := range uniqueDays {
+				dayParts[index] = strconv.Itoa(day)
+			}
+			// Name is presentation-only. Window order, duplicate windows, and
+			// day order do not affect scheduleAllowsCandidate either.
+			key := strings.Join([]string{
+				strings.TrimSpace(window.StartTime),
+				strings.TrimSpace(window.EndTime),
+				firstNonEmpty(strings.TrimSpace(window.Timezone), strings.TrimSpace(fallbackTimezone), "UTC"),
+				strings.Join(dayParts, ","),
+			}, "\x00")
+			keys[key] = struct{}{}
+		}
+		out := make([]string, 0, len(keys))
+		for key := range keys {
+			out = append(out, key)
+		}
+		sort.Strings(out)
+		return out
+	}
+	return slices.Equal(canonical(left), canonical(right))
+}
+
 func (tr *TestRunner) buildScenarioScheduleApproval(schedule *storage.ScenarioSchedule, now time.Time, requestedBy string) *storage.ScenarioScheduleApproval {
 	return &storage.ScenarioScheduleApproval{
 		ID:               uuid.New().String(),
@@ -1820,6 +2402,7 @@ func (tr *TestRunner) saveScenarioScheduleApprovalLocked(approval *storage.Scena
 }
 
 func (tr *TestRunner) ResolveScenarioScheduleApproval(scenarioID string, scheduleID string, approvalID string, approved bool, resolvedBy string, reason string) (*storage.ScenarioScheduleApproval, *storage.ScenarioSchedule, bool, error) {
+	tr.refreshScenariosForHARead(true)
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	scenario, ok := tr.scenarios[scenarioID]
@@ -1922,6 +2505,275 @@ func (tr *TestRunner) scenarioScheduleConflictSummaryLocked(schedule *storage.Sc
 	findings = append(findings, tr.scenarioScheduleReleaseConflictFindingsLocked(schedule)...)
 	findings = append(findings, tr.scenarioScheduleCapacityConflictFindingsLocked(schedule, scenario)...)
 	return strings.Join(compactScheduleConflictFindings(findings), " ")
+}
+
+// schedulerSnapshotLocked captures the controller state needed by schedule
+// compilation and launch-window evaluation. Storage-backed work runs against
+// this private snapshot after the live runner lock is released, so a slow
+// database cannot block leadership-loss cleanup or unrelated API reads.
+func (tr *TestRunner) schedulerSnapshotLocked() (*TestRunner, uint64) {
+	snapshot := &TestRunner{
+		tests:            make(map[string]*ManagedTest, len(tr.tests)),
+		scripts:          make(map[string]*StoredScript, len(tr.scripts)),
+		scenarios:        make(map[string]*StoredScenario, len(tr.scenarios)),
+		archives:         make(map[string]*storage.RunArchiveRecord),
+		deletingProjects: make(map[string]struct{}, len(tr.deletingProjects)),
+		// Snapshot evaluation must never emit user-visible events or
+		// notifications; the live state publishes only after its durable
+		// transition succeeds and tr.mu is reacquired.
+		hub:                   nil,
+		maxTests:              tr.maxTests,
+		settings:              tr.settings,
+		scriptStore:           tr.scriptStore,
+		testStore:             tr.testStore,
+		scenarioStore:         tr.scenarioStore,
+		dataPoolStore:         tr.dataPoolStore,
+		projectStore:          tr.projectStore,
+		releaseStore:          tr.releaseStore,
+		historyStore:          tr.historyStore,
+		archiveStore:          tr.archiveStore,
+		testNotesStore:        tr.testNotesStore,
+		auditStore:            tr.auditStore,
+		settingsStore:         tr.settingsStore,
+		usageStore:            tr.usageStore,
+		objectRepoStore:       tr.objectRepoStore,
+		reservationStore:      tr.reservationStore,
+		execPlanRunStore:      tr.execPlanRunStore,
+		execPlanScheduleStore: tr.execPlanScheduleStore,
+		fleetStore:            tr.fleetStore,
+		leadership:            tr.leadership,
+		durableExecutionFence: tr.durableExecutionFence,
+		liveState:             tr.liveState,
+		execution:             tr.execution,
+		notifier:              nil,
+		routeCache:            make(map[string]latencyRouteCacheEntry),
+		envCode:               tr.envCode,
+		refScriptSeq:          tr.refScriptSeq,
+		refScenarioSeq:        tr.refScenarioSeq,
+		refRunSeqByDay:        make(map[string]int, len(tr.refRunSeqByDay)),
+		refKeyIndex:           make(map[string]string, len(tr.refKeyIndex)),
+		capacityAdvisoryCache: make(map[string]cachedCapacityAdvisory),
+		capacityAdvisoryGen:   tr.capacityAdvisoryGen,
+		remoteControlGates:    make(map[string]*distributedControlGate),
+		seqPlanRuns:           make(map[string]*seqPlanRunState),
+		seqPlanByTest:         make(map[string]string),
+		seqPlanRetrying:       make(map[string]struct{}),
+		terminalRetrying:      make(map[string]struct{}),
+		archiveCommitGates:    make(map[string]*archiveCommitGate),
+	}
+	for id, test := range tr.tests {
+		snapshot.tests[id] = cloneManagedTestForReadLocked(test)
+	}
+	for id, script := range tr.scripts {
+		snapshot.scripts[id] = cloneStoredScriptForReadLocked(script)
+	}
+	for id, scenario := range tr.scenarios {
+		snapshot.scenarios[id] = cloneStoredScenarioForReadLocked(scenario)
+	}
+	for id := range tr.deletingProjects {
+		snapshot.deletingProjects[id] = struct{}{}
+	}
+	for day, sequence := range tr.refRunSeqByDay {
+		snapshot.refRunSeqByDay[day] = sequence
+	}
+	for key, id := range tr.refKeyIndex {
+		snapshot.refKeyIndex[key] = id
+	}
+	tr.liveInventoryMu.RLock()
+	snapshot.liveInventory = append([]GeneratorInventoryEntry(nil), tr.liveInventory...)
+	snapshot.liveInventoryAt = tr.liveInventoryAt
+	tr.liveInventoryMu.RUnlock()
+	return snapshot, tr.contentRevision
+}
+
+func (tr *TestRunner) mergeSchedulerSnapshotSequenceLocked(snapshot *TestRunner) {
+	if snapshot == nil {
+		return
+	}
+	for day, sequence := range snapshot.refRunSeqByDay {
+		if sequence > tr.refRunSeqByDay[day] {
+			tr.refRunSeqByDay[day] = sequence
+		}
+	}
+}
+
+func (tr *TestRunner) buildManagedTestForScheduleSweepLocked(req CreateTestRequest, id, status string) (*ManagedTest, error) {
+	leaseTerm, err := tr.captureExecutionLeaseTerm()
+	if err != nil {
+		return nil, err
+	}
+	return tr.buildManagedTestForScheduleSweepLockedWithTerm(req, id, status, leaseTerm)
+}
+
+func (tr *TestRunner) buildManagedTestForScheduleSweepLockedWithTerm(req CreateTestRequest, id, status string, leaseTerm executionLeaseTerm) (*ManagedTest, error) {
+	if !tr.executionLeaseTermCurrent(leaseTerm) {
+		return nil, errNotExecutionLeader
+	}
+	snapshot, revision := tr.schedulerSnapshotLocked()
+	tr.mu.Unlock()
+	test, err := snapshot.buildManagedTestLocked(req, id, status)
+	tr.mu.Lock()
+	tr.mergeSchedulerSnapshotSequenceLocked(snapshot)
+	if err != nil {
+		return nil, err
+	}
+	if !tr.executionLeaseTermCurrent(leaseTerm) {
+		return nil, errNotExecutionLeader
+	}
+	if tr.contentRevision != revision {
+		return nil, fmt.Errorf("controller content changed while scheduled run was being compiled; retry next sweep")
+	}
+	return test, nil
+}
+
+func (tr *TestRunner) launchStartWindowErrorForScheduleSweepLocked(test *ManagedTest, start time.Time, excludeTestID, excludeScheduleID string) error {
+	leaseTerm, err := tr.captureExecutionLeaseTerm()
+	if err != nil {
+		return err
+	}
+	return tr.launchStartWindowErrorForScheduleSweepLockedWithTerm(test, start, excludeTestID, excludeScheduleID, leaseTerm)
+}
+
+func (tr *TestRunner) launchStartWindowErrorForScheduleSweepLockedWithTerm(test *ManagedTest, start time.Time, excludeTestID, excludeScheduleID string, leaseTerm executionLeaseTerm) error {
+	if !tr.executionLeaseTermCurrent(leaseTerm) {
+		return errNotExecutionLeader
+	}
+	snapshot, revision := tr.schedulerSnapshotLocked()
+	testSnapshot := cloneManagedTestForReadLocked(test)
+	tr.mu.Unlock()
+	err := snapshot.launchStartWindowErrorLocked(testSnapshot, start, excludeTestID, excludeScheduleID)
+	tr.mu.Lock()
+	if err == nil && !tr.executionLeaseTermCurrent(leaseTerm) {
+		return errNotExecutionLeader
+	}
+	if err == nil && tr.contentRevision != revision {
+		return fmt.Errorf("controller content changed while scheduled launch window was being evaluated; retry next sweep")
+	}
+	return err
+}
+
+// prepareTestStartForScheduleSweepLocked performs storage-backed start gates
+// and the durable INITIALIZING transition against an immutable snapshot while
+// the live runner lock is released. A per-test lifecycle gate prevents a
+// concurrent start/stop/control request from racing that persistence window.
+// The caller owns tr.mu on entry and again on return.
+func (tr *TestRunner) prepareTestStartForScheduleSweepLocked(id string, opts StartTestOptions) (*ManagedTest, error) {
+	leaseTerm, err := tr.captureExecutionLeaseTerm()
+	if err != nil {
+		return nil, err
+	}
+	return tr.prepareTestStartForScheduleSweepLockedWithTerm(id, opts, leaseTerm)
+}
+
+func (tr *TestRunner) prepareTestStartForScheduleSweepLockedWithTerm(id string, opts StartTestOptions, leaseTerm executionLeaseTerm) (*ManagedTest, error) {
+	if !tr.executionLeaseTermCurrent(leaseTerm) {
+		return nil, errNotExecutionLeader
+	}
+	tr.mu.Unlock()
+	unlockLifecycle, err := tr.lockTestLifecycleControl(context.Background(), id)
+	tr.mu.Lock()
+	if err != nil {
+		return nil, err
+	}
+
+	current := tr.tests[id]
+	if current == nil {
+		unlockLifecycle()
+		return nil, fmt.Errorf("test not found: %s", id)
+	}
+	originalStatus := current.Status
+	snapshot, _ := tr.schedulerSnapshotLocked()
+	snapshotTest := snapshot.tests[id]
+	if snapshotTest == nil {
+		unlockLifecycle()
+		return nil, fmt.Errorf("test not found in scheduler snapshot: %s", id)
+	}
+	if err := snapshot.claimTestExecutionFenceWithTerm(snapshotTest, leaseTerm); err != nil {
+		unlockLifecycle()
+		return nil, err
+	}
+
+	tr.mu.Unlock()
+	preparedSnapshot, prepareErr := snapshot.prepareTestStartLockedWithExpectedTerm(id, opts, &leaseTerm)
+	tr.mu.Lock()
+	unlockLifecycle()
+	if prepareErr != nil {
+		return nil, prepareErr
+	}
+	if !tr.executionLeaseTermCurrent(leaseTerm) {
+		if preparedSnapshot != nil && preparedSnapshot.cancel != nil {
+			preparedSnapshot.cancel()
+		}
+		return nil, errNotExecutionLeader
+	}
+	current = tr.tests[id]
+	if current == nil || current.Status != originalStatus {
+		if preparedSnapshot != nil && preparedSnapshot.cancel != nil {
+			preparedSnapshot.cancel()
+		}
+		return nil, fmt.Errorf("scheduled test %s changed while start persistence was in flight", id)
+	}
+	updated := snapshot.tests[id]
+	if updated == nil {
+		return nil, fmt.Errorf("scheduled test %s disappeared from start snapshot", id)
+	}
+	current.CapacityAdvisory = cloneCapacityAdvisory(updated.CapacityAdvisory)
+	current.Status = updated.Status
+	current.PendingSince = cloneTimePtr(updated.PendingSince)
+	current.PendingReason = updated.PendingReason
+	current.QueuePosition = updated.QueuePosition
+	current.Error = updated.Error
+	current.executionFence = updated.executionFence
+	current.executionCtx = updated.executionCtx
+	current.cancel = updated.cancel
+	current.executionBackend = updated.executionBackend
+	if preparedSnapshot == nil {
+		tr.broadcastEvent("test_pending", current)
+		return nil, nil
+	}
+	return current, nil
+}
+
+func (tr *TestRunner) scenarioScheduleConflictSummaryForSweepLocked(schedule *storage.ScenarioSchedule, scenario *StoredScenario, leaseTerm executionLeaseTerm) (string, error) {
+	if schedule == nil || schedule.Governance == nil {
+		return "", nil
+	}
+	findings := make([]string, 0)
+	if schedule.Governance.QuotaReview.Decision == "exceeds_project_vuser_limit" {
+		findings = append(findings, strings.Join(schedule.Governance.QuotaReview.Findings, " "))
+	}
+	if tr.releaseStore != nil && strings.TrimSpace(schedule.ReleaseID) != "" {
+		releaseID := strings.TrimSpace(schedule.ReleaseID)
+		store := tr.releaseStore
+		tr.mu.Unlock()
+		release, err := store.GetRelease(releaseID)
+		tr.mu.Lock()
+		if !tr.executionLeaseTermCurrent(leaseTerm) {
+			return "", errNotExecutionLeader
+		}
+		if err != nil || release == nil {
+			findings = append(findings, fmt.Sprintf("Release conflict: release %s could not be resolved.", releaseID))
+		} else if release.ArchivedAt != nil {
+			findings = append(findings, fmt.Sprintf("Release conflict: release %s is archived.", firstNonEmpty(release.Name, release.ID)))
+		}
+	}
+	preview, err := tr.buildManagedTestForScheduleSweepLockedWithTerm(CreateTestRequest{
+		Name:       schedule.Name,
+		ScenarioID: scenario.ID,
+		ReleaseID:  schedule.ReleaseID,
+	}, "schedule-conflict-preview", "DRAFT", leaseTerm)
+	if err != nil {
+		return "", err
+	}
+	if preview != nil {
+		if blocked, reason := tr.evaluateQuotaBlockLocked(preview, ""); blocked {
+			findings = append(findings, "Quota conflict: "+reason+".")
+		}
+		if preview.CapacityAdvisory != nil && preview.CapacityAdvisory.RequiresOverride {
+			findings = append(findings, fmt.Sprintf("Capacity pool conflict: recommended %d generator%s but only %d available.", preview.CapacityAdvisory.RecommendedGenerators, pluralSuffix(preview.CapacityAdvisory.RecommendedGenerators), preview.CapacityAdvisory.AvailableGenerators))
+		}
+	}
+	return strings.Join(compactScheduleConflictFindings(findings), " "), nil
 }
 
 // scenarioScheduleCapacityConflictFindingsLocked computes the standing

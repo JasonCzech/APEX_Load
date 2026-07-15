@@ -6,12 +6,218 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 )
 
 const storageSystemAdminRole = "system_admin"
+
+// ErrRoleScopeNotFound means a durable scoped grant references an ownership
+// anchor that does not exist (or was deleted while the mutation was in flight).
+// Callers may safely surface this as a validation/conflict error rather than an
+// opaque storage failure.
+var ErrRoleScopeNotFound = errors.New("role scope not found")
+
+// ErrUserNotFound means a role-binding write lost its owning user (or was
+// given an owner that never existed). PostgreSQL compatibility migrations do
+// not retain schema-level foreign keys, so this invariant is enforced under an
+// explicit row lock in the write transaction.
+var ErrUserNotFound = errors.New("user not found")
+
+func lockRoleScope(tx *storeTx, scopeType, scopeID string) error {
+	var table string
+	switch scopeType {
+	case "project":
+		table = "projects"
+	case "domain":
+		table = "domains"
+	case "application_repository":
+		table = "application_repositories"
+	default:
+		return fmt.Errorf("unsupported role scope type %q", scopeType)
+	}
+	result, err := tx.Exec(`UPDATE `+table+` SET updated_at = updated_at WHERE id = ?`, scopeID)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return fmt.Errorf("%w: %s %q", ErrRoleScopeNotFound, scopeType, scopeID)
+	}
+	return nil
+}
+
+func normalizeAndLockUserRoleBindingScope(tx *storeTx, binding *UserRoleBinding) error {
+	if binding == nil {
+		return fmt.Errorf("user role binding is required")
+	}
+	binding.ScopeType = strings.ToLower(strings.TrimSpace(binding.ScopeType))
+	switch binding.ScopeType {
+	case "global":
+		binding.ScopeID = ""
+		return nil
+	case "project":
+		if strings.TrimSpace(binding.ScopeID) == "" {
+			return fmt.Errorf("project role scope id is required")
+		}
+		binding.ScopeID = normalizeProjectID(binding.ScopeID)
+	case "domain":
+		if strings.TrimSpace(binding.ScopeID) == "" {
+			return fmt.Errorf("domain role scope id is required")
+		}
+		binding.ScopeID = normalizeDomainID(binding.ScopeID)
+	case "application_repository":
+		binding.ScopeID = strings.TrimSpace(binding.ScopeID)
+		if binding.ScopeID == "" {
+			return fmt.Errorf("application repository role scope id is required")
+		}
+	default:
+		return fmt.Errorf("unsupported role scope type %q", binding.ScopeType)
+	}
+	return lockRoleScope(tx, binding.ScopeType, binding.ScopeID)
+}
+
+func lockUserRoleBindingOwner(tx *storeTx, binding *UserRoleBinding) error {
+	if binding == nil {
+		return fmt.Errorf("user role binding is required")
+	}
+	binding.UserID = strings.TrimSpace(binding.UserID)
+	if binding.UserID == "" {
+		return fmt.Errorf("user role binding user id is required")
+	}
+	result, err := tx.Exec(`UPDATE users SET updated_at = updated_at WHERE id = ?`, binding.UserID)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return fmt.Errorf("%w: %q", ErrUserNotFound, binding.UserID)
+	}
+	return nil
+}
+
+func sortedGrantedScopeIDs(roles map[string][]string, normalize func(string) string) []string {
+	ids := make([]string, 0, len(roles))
+	for id, grantedRoles := range roles {
+		if len(grantedRoles) == 0 {
+			continue
+		}
+		id = normalize(id)
+		if id != "" {
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+// lockServiceAccountRoleScopes validates every embedded scoped grant and pairs
+// the write with project/domain deletion. Lock order is deterministic across
+// controllers so overlapping account edits cannot deadlock each other merely
+// because JSON map iteration order differs.
+func lockServiceAccountRoleScopes(tx *storeTx, accounts ...*ServiceAccount) error {
+	domainRoles := map[string][]string{}
+	repositoryRoles := map[string][]string{}
+	projectRoles := map[string][]string{}
+	for _, account := range accounts {
+		if account == nil {
+			continue
+		}
+		for id, roles := range account.DomainRoles {
+			if len(roles) > 0 {
+				domainRoles[id] = roles
+			}
+		}
+		for id, roles := range account.RepositoryRoles {
+			if len(roles) > 0 {
+				repositoryRoles[id] = roles
+			}
+		}
+		for id, roles := range account.ProjectRoles {
+			if len(roles) > 0 {
+				projectRoles[id] = roles
+			}
+		}
+	}
+	for _, id := range sortedGrantedScopeIDs(domainRoles, normalizeDomainID) {
+		if err := lockRoleScope(tx, "domain", id); err != nil {
+			return err
+		}
+	}
+	for _, id := range sortedGrantedScopeIDs(repositoryRoles, strings.TrimSpace) {
+		if err := lockRoleScope(tx, "application_repository", id); err != nil {
+			return err
+		}
+	}
+	for _, id := range sortedGrantedScopeIDs(projectRoles, normalizeProjectID) {
+		if err := lockRoleScope(tx, "project", id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func grantedScopeIDSet(roles map[string][]string, normalize func(string) string) map[string]struct{} {
+	set := make(map[string]struct{}, len(roles))
+	for id, grantedRoles := range roles {
+		if len(grantedRoles) == 0 {
+			continue
+		}
+		if id = normalize(id); id != "" {
+			set[id] = struct{}{}
+		}
+	}
+	return set
+}
+
+// lockServiceAccountRoleScopeTransition strictly validates every requested
+// scope while best-effort locking scopes that are only being removed. The
+// latter may already be absent in a legacy database; administrators must still
+// be able to clean a dormant dangling grant instead of being permanently
+// blocked by the invariant that the cleanup is trying to restore.
+func lockServiceAccountRoleScopeTransition(tx *storeTx, current, next *ServiceAccount) error {
+	type scopeTransition struct {
+		scopeType string
+		current   map[string]struct{}
+		next      map[string]struct{}
+	}
+	transitions := []scopeTransition{
+		{scopeType: "domain", current: grantedScopeIDSet(current.DomainRoles, normalizeDomainID), next: grantedScopeIDSet(next.DomainRoles, normalizeDomainID)},
+		{scopeType: "application_repository", current: grantedScopeIDSet(current.RepositoryRoles, strings.TrimSpace), next: grantedScopeIDSet(next.RepositoryRoles, strings.TrimSpace)},
+		{scopeType: "project", current: grantedScopeIDSet(current.ProjectRoles, normalizeProjectID), next: grantedScopeIDSet(next.ProjectRoles, normalizeProjectID)},
+	}
+	for _, transition := range transitions {
+		union := make(map[string]struct{}, len(transition.current)+len(transition.next))
+		for id := range transition.current {
+			union[id] = struct{}{}
+		}
+		for id := range transition.next {
+			union[id] = struct{}{}
+		}
+		ids := make([]string, 0, len(union))
+		for id := range union {
+			ids = append(ids, id)
+		}
+		sort.Strings(ids)
+		for _, id := range ids {
+			err := lockRoleScope(tx, transition.scopeType, id)
+			_, required := transition.next[id]
+			if err != nil && !(errors.Is(err, ErrRoleScopeNotFound) && !required) {
+				return err
+			}
+		}
+	}
+	return nil
+}
 
 func (s *SQLiteStore) SaveServiceAccount(account *ServiceAccount) error {
 	if account == nil {
@@ -37,7 +243,15 @@ func (s *SQLiteStore) SaveServiceAccount(account *ServiceAccount) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec(`INSERT INTO service_accounts (id, name, description, owner_id, contact_email, key_hash, active, global_roles_json, project_roles_json, domain_roles_json, repository_roles_json, scopes_json, created_at, updated_at, last_used_at, expires_at, key_rotated_at, rotation_interval_days)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := lockServiceAccountRoleScopes(tx, account); err != nil {
+		return err
+	}
+	_, err = tx.Exec(`INSERT INTO service_accounts (id, name, description, owner_id, contact_email, key_hash, active, global_roles_json, project_roles_json, domain_roles_json, repository_roles_json, scopes_json, created_at, updated_at, last_used_at, expires_at, key_rotated_at, rotation_interval_days)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		account.ID,
 		account.Name,
@@ -58,7 +272,10 @@ func (s *SQLiteStore) SaveServiceAccount(account *ServiceAccount) error {
 		account.KeyRotatedAt,
 		account.RotationIntervalDays,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // UpdateServiceAccountMetadata performs an optimistic metadata-only update.
@@ -89,7 +306,43 @@ func (s *SQLiteStore) UpdateServiceAccountMetadata(account *ServiceAccount, expe
 	if err != nil {
 		return false, err
 	}
-	result, err := s.db.Exec(`UPDATE service_accounts SET
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	var currentProjectRolesJSON, currentDomainRolesJSON, currentRepositoryRolesJSON string
+	if err := tx.QueryRow(`SELECT COALESCE(project_roles_json, ''), COALESCE(domain_roles_json, ''), COALESCE(repository_roles_json, '')
+		FROM service_accounts WHERE id = ?`, account.ID).Scan(&currentProjectRolesJSON, &currentDomainRolesJSON, &currentRepositoryRolesJSON); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	currentScopes := &ServiceAccount{}
+	for _, encoded := range []struct {
+		label string
+		raw   string
+		into  *map[string][]string
+	}{
+		{label: "project", raw: currentProjectRolesJSON, into: &currentScopes.ProjectRoles},
+		{label: "domain", raw: currentDomainRolesJSON, into: &currentScopes.DomainRoles},
+		{label: "application repository", raw: currentRepositoryRolesJSON, into: &currentScopes.RepositoryRoles},
+	} {
+		if strings.TrimSpace(encoded.raw) == "" || strings.TrimSpace(encoded.raw) == "null" {
+			continue
+		}
+		if err := json.Unmarshal([]byte(encoded.raw), encoded.into); err != nil {
+			return false, fmt.Errorf("decode current service account %s roles: %w", encoded.label, err)
+		}
+	}
+	// Lock both the persisted and requested scopes. A role-removal edit must
+	// serialize with deletion of the old owner just as a role-addition edit does;
+	// otherwise deletion cleanup could overwrite unrelated concurrent changes.
+	if err := lockServiceAccountRoleScopeTransition(tx, currentScopes, account); err != nil {
+		return false, err
+	}
+	result, err := tx.Exec(`UPDATE service_accounts SET
 		name = ?, description = ?, owner_id = ?, contact_email = ?, active = ?,
 		global_roles_json = ?, project_roles_json = ?, domain_roles_json = ?,
 		repository_roles_json = ?, scopes_json = ?, updated_at = ?, expires_at = ?,
@@ -115,7 +368,10 @@ func (s *SQLiteStore) UpdateServiceAccountMetadata(account *ServiceAccount, expe
 		return false, err
 	}
 	rows, err := result.RowsAffected()
-	return rows == 1, err
+	if err != nil || rows != 1 {
+		return false, err
+	}
+	return true, tx.Commit()
 }
 
 func (s *SQLiteStore) GetServiceAccount(id string) (*ServiceAccount, error) {
@@ -276,6 +532,20 @@ func (s *SQLiteStore) RotateServiceAccountKey(id string, keyHash string, updated
 	return err
 }
 
+// RotateServiceAccountKeyIfUnchanged guarantees that a key returned to the
+// caller is the credential that won the rotation race. A stale rotation cannot
+// silently succeed after a concurrent rotation, metadata update, use update, or
+// deletion.
+func (s *SQLiteStore) RotateServiceAccountKeyIfUnchanged(id, keyHash string, expectedUpdatedAt, updatedAt time.Time) (bool, error) {
+	result, err := s.db.Exec(`UPDATE service_accounts SET key_hash = ?, updated_at = ?, key_rotated_at = ? WHERE id = ? AND updated_at = ?`,
+		keyHash, updatedAt, updatedAt, id, expectedUpdatedAt)
+	if err != nil {
+		return false, err
+	}
+	rows, err := result.RowsAffected()
+	return rows == 1, err
+}
+
 func populateServiceAccountDerivedFields(account *ServiceAccount) {
 	if account == nil || account.RotationIntervalDays <= 0 {
 		return
@@ -289,7 +559,14 @@ func populateServiceAccountDerivedFields(account *ServiceAccount) {
 }
 
 func (s *SQLiteStore) UpdateServiceAccountLastUsed(id string, lastUsedAt time.Time) error {
-	_, err := s.db.Exec(`UPDATE service_accounts SET last_used_at = ?, updated_at = ? WHERE id = ?`, lastUsedAt, lastUsedAt, id)
+	// Authentication telemetry is not an administrative account mutation and
+	// must not invalidate metadata/key-rotation CAS snapshots. Throttle the
+	// durable timestamp to avoid turning every authenticated request into a
+	// control-plane write while still keeping last-used reporting current.
+	const writeInterval = time.Minute
+	_, err := s.db.Exec(`UPDATE service_accounts SET last_used_at = ?
+		WHERE id = ? AND (last_used_at IS NULL OR last_used_at < ?)`,
+		lastUsedAt, id, lastUsedAt.Add(-writeInterval))
 	return err
 }
 
@@ -303,6 +580,35 @@ func (s *SQLiteStore) DeleteServiceAccount(id string) error {
 	return err
 }
 
+func revokeGitHubIdentityKeysTx(tx interface {
+	Exec(string, ...any) (sql.Result, error)
+}, revokedAt time.Time, keys ...string) error {
+	seen := make(map[string]struct{}, len(keys))
+	for _, key := range keys {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		if err := revokeGitHubConnectionTx(tx, key, revokedAt); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type authConnExecer struct {
+	ctx  context.Context
+	conn *sql.Conn
+}
+
+func (e authConnExecer) Exec(query string, args ...any) (sql.Result, error) {
+	return e.conn.ExecContext(e.ctx, query, args...)
+}
+
 func (s *SQLiteStore) SaveUser(user *User) error {
 	if user == nil {
 		return fmt.Errorf("user is required")
@@ -311,7 +617,26 @@ func (s *SQLiteStore) SaveUser(user *User) error {
 	if user.Subject == "" {
 		return fmt.Errorf("user subject is required")
 	}
-	_, err := s.db.Exec(`INSERT INTO users (id, subject, email, display_name, active, created_at, updated_at, last_seen_at, disabled_at, session_epoch)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var currentSubject string
+	lookupErr := tx.QueryRow(`SELECT subject FROM users WHERE id = ?`, user.ID).Scan(&currentSubject)
+	if lookupErr != nil && !errors.Is(lookupErr, sql.ErrNoRows) {
+		return lookupErr
+	}
+	if errors.Is(lookupErr, sql.ErrNoRows) || strings.TrimSpace(currentSubject) != user.Subject {
+		// Identity-keyed OAuth credentials must never transfer to a newly-created
+		// principal or remain under a retired subject after rename. Fence all keys
+		// in the same transaction as the user claim/update so an older callback
+		// cannot repopulate them after this mutation returns.
+		if err := revokeGitHubIdentityKeysTx(tx, time.Now().UTC(), user.ID, currentSubject, user.Subject); err != nil {
+			return err
+		}
+	}
+	_, err = tx.Exec(`INSERT INTO users (id, subject, email, display_name, active, created_at, updated_at, last_seen_at, disabled_at, session_epoch)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			subject=excluded.subject,
@@ -321,7 +646,8 @@ func (s *SQLiteStore) SaveUser(user *User) error {
 			updated_at=excluded.updated_at,
 			last_seen_at=excluded.last_seen_at,
 			disabled_at=excluded.disabled_at,
-			session_epoch=excluded.session_epoch`,
+			session_epoch=CASE WHEN users.subject <> excluded.subject
+				THEN users.session_epoch + 1 ELSE excluded.session_epoch END`,
 		user.ID,
 		user.Subject,
 		user.Email,
@@ -333,7 +659,10 @@ func (s *SQLiteStore) SaveUser(user *User) error {
 		user.DisabledAt,
 		user.SessionEpoch,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *SQLiteStore) UpdateUserIdentitySeen(id string, displayName string, email string, lastSeenAt time.Time, updatedAt time.Time) error {
@@ -356,11 +685,51 @@ func (s *SQLiteStore) SaveUserWithRoleBindings(user *User, bindings []*UserRoleB
 	if user.Subject == "" {
 		return fmt.Errorf("user subject is required")
 	}
+	user.ID = strings.TrimSpace(user.ID)
+	if user.ID == "" {
+		return fmt.Errorf("user id is required")
+	}
+	for _, binding := range bindings {
+		if binding == nil {
+			return fmt.Errorf("user role binding is required")
+		}
+		binding.UserID = strings.TrimSpace(binding.UserID)
+		if binding.UserID != user.ID {
+			return fmt.Errorf("user role binding owner %q does not match user %q", binding.UserID, user.ID)
+		}
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+	orderedBindings := append([]*UserRoleBinding(nil), bindings...)
+	sort.Slice(orderedBindings, func(i, j int) bool {
+		if orderedBindings[i] == nil {
+			return orderedBindings[j] != nil
+		}
+		if orderedBindings[j] == nil {
+			return false
+		}
+		left := strings.TrimSpace(orderedBindings[i].ScopeType) + "\x00" + strings.TrimSpace(orderedBindings[i].ScopeID)
+		right := strings.TrimSpace(orderedBindings[j].ScopeType) + "\x00" + strings.TrimSpace(orderedBindings[j].ScopeID)
+		return left < right
+	})
+	for _, binding := range orderedBindings {
+		if err := normalizeAndLockUserRoleBindingScope(tx, binding); err != nil {
+			return err
+		}
+	}
+	var currentSubject string
+	lookupErr := tx.QueryRow(`SELECT subject FROM users WHERE id = ?`, user.ID).Scan(&currentSubject)
+	if lookupErr != nil && !errors.Is(lookupErr, sql.ErrNoRows) {
+		return lookupErr
+	}
+	if errors.Is(lookupErr, sql.ErrNoRows) || strings.TrimSpace(currentSubject) != user.Subject {
+		if err := revokeGitHubIdentityKeysTx(tx, time.Now().UTC(), user.ID, currentSubject, user.Subject); err != nil {
+			return err
+		}
+	}
 	if _, err := tx.Exec(`INSERT INTO users (id, subject, email, display_name, active, created_at, updated_at, last_seen_at, disabled_at, session_epoch)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
@@ -371,7 +740,8 @@ func (s *SQLiteStore) SaveUserWithRoleBindings(user *User, bindings []*UserRoleB
 			updated_at=excluded.updated_at,
 			last_seen_at=excluded.last_seen_at,
 			disabled_at=excluded.disabled_at,
-			session_epoch=excluded.session_epoch`,
+			session_epoch=CASE WHEN users.subject <> excluded.subject
+				THEN users.session_epoch + 1 ELSE excluded.session_epoch END`,
 		user.ID,
 		user.Subject,
 		user.Email,
@@ -458,6 +828,9 @@ func (s *SQLiteStore) BootstrapFirstAdmin(user *User, binding *UserRoleBinding, 
 		done = true
 		return false, nil
 	}
+	if err := revokeGitHubIdentityKeysTx(authConnExecer{ctx: ctx, conn: conn}, time.Now().UTC(), user.ID, user.Subject); err != nil {
+		return false, err
+	}
 	if _, err := conn.ExecContext(ctx, `INSERT INTO users (id, subject, email, display_name, active, created_at, updated_at, last_seen_at, disabled_at, session_epoch)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		user.ID,
@@ -526,6 +899,9 @@ func (s *SQLiteStore) bootstrapFirstAdminTx(user *User, binding *UserRoleBinding
 	}
 	if count != 0 {
 		return false, nil
+	}
+	if err := revokeGitHubIdentityKeysTx(tx, time.Now().UTC(), user.ID, user.Subject); err != nil {
+		return false, err
 	}
 	if _, err := tx.Exec(`INSERT INTO users (id, subject, email, display_name, active, created_at, updated_at, last_seen_at, disabled_at, session_epoch)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -748,7 +1124,11 @@ func (s *SQLiteStore) withAuthMutationLock(fn func(authMutationTx) (bool, error)
 	}
 	defer tx.Rollback()
 	if s.db.dialect == storeDialectPostgres {
-		if _, err := tx.Exec(`LOCK TABLE users, user_role_bindings, github_connections IN EXCLUSIVE MODE`); err != nil {
+		// OAuth completion takes the revocation lifecycle row before writing the
+		// connection. Take table locks in that same order so offboarding/rename
+		// cannot deadlock with an in-flight callback (revocation row -> connection
+		// versus connection table -> revocation row).
+		if _, err := tx.Exec(`LOCK TABLE github_connection_revocations, github_connections, users, user_role_bindings IN EXCLUSIVE MODE`); err != nil {
 			return false, err
 		}
 	}
@@ -812,6 +1192,25 @@ func (s *SQLiteStore) UpdateUserActiveGuardLastAdmin(id string, active bool, upd
 // leaves last_seen_at and session_epoch untouched so a stale profile request
 // cannot undo a concurrent login observation or session revocation.
 func (s *SQLiteStore) UpdateUserGuardLastAdmin(user *User) (bool, error) {
+	return s.updateUserGuardLastAdmin(user, nil)
+}
+
+// ErrUserConcurrentChange reports that administrator-owned user fields changed
+// since the caller loaded its snapshot. Session-epoch/last-seen-only maintenance
+// is deliberately excluded from this comparison.
+var ErrUserConcurrentChange = errors.New("user changed concurrently")
+
+// UpdateUserGuardLastAdminIfUnchanged adds optimistic concurrency to the guarded
+// administrator update without conflicting with concurrent last-seen/session
+// maintenance that leaves identity/profile fields unchanged.
+func (s *SQLiteStore) UpdateUserGuardLastAdminIfUnchanged(user *User, expected *User) (bool, error) {
+	if expected == nil || user == nil || strings.TrimSpace(expected.ID) == "" || expected.ID != user.ID {
+		return false, fmt.Errorf("matching current and expected users are required")
+	}
+	return s.updateUserGuardLastAdmin(user, expected)
+}
+
+func (s *SQLiteStore) updateUserGuardLastAdmin(user *User, expected *User) (bool, error) {
 	if user == nil {
 		return false, fmt.Errorf("user is required")
 	}
@@ -820,13 +1219,19 @@ func (s *SQLiteStore) UpdateUserGuardLastAdmin(user *User) (bool, error) {
 		return false, fmt.Errorf("user subject is required")
 	}
 	return s.withAuthMutationLock(func(tx authMutationTx) (bool, error) {
-		var currentSubject string
+		var currentSubject, currentEmail, currentDisplayName string
 		var currentActive any
-		if err := tx.QueryRow(`SELECT subject, active FROM users WHERE id = ?`, user.ID).Scan(&currentSubject, &currentActive); err != nil {
+		var currentDisabledAt sql.NullTime
+		if err := tx.QueryRow(`SELECT subject, COALESCE(email, ''), COALESCE(display_name, ''), active, disabled_at FROM users WHERE id = ?`, user.ID).Scan(&currentSubject, &currentEmail, &currentDisplayName, &currentActive, &currentDisabledAt); err != nil {
 			if err == sql.ErrNoRows {
 				return false, nil
 			}
 			return false, err
+		}
+		if expected != nil && (strings.TrimSpace(currentSubject) != strings.TrimSpace(expected.Subject) ||
+			currentEmail != expected.Email || currentDisplayName != expected.DisplayName ||
+			sqlBool(currentActive) != expected.Active || !nullableTimeMatches(currentDisabledAt, expected.DisabledAt)) {
+			return false, ErrUserConcurrentChange
 		}
 		isAdmin, err := s.authMutationTargetIsActiveGlobalAdmin(tx, user.ID)
 		if err != nil {
@@ -842,14 +1247,27 @@ func (s *SQLiteStore) UpdateUserGuardLastAdmin(user *User) (bool, error) {
 				return false, nil
 			}
 		}
-		result, err := tx.Exec(`UPDATE users SET subject = ?, email = ?, display_name = ?, active = ?, updated_at = ?, disabled_at = ? WHERE id = ?`,
-			user.Subject, user.Email, user.DisplayName, s.boolValue(user.Active), user.UpdatedAt, user.DisabledAt, user.ID)
+		if strings.TrimSpace(currentSubject) != user.Subject {
+			if err := revokeGitHubIdentityKeysTx(tx, time.Now().UTC(), user.ID, currentSubject, user.Subject); err != nil {
+				return false, err
+			}
+		}
+		result, err := tx.Exec(`UPDATE users SET subject = ?, email = ?, display_name = ?, active = ?, updated_at = ?, disabled_at = ?,
+			session_epoch = session_epoch + CASE WHEN subject <> ? THEN 1 ELSE 0 END WHERE id = ?`,
+			user.Subject, user.Email, user.DisplayName, s.boolValue(user.Active), user.UpdatedAt, user.DisabledAt, user.Subject, user.ID)
 		if err != nil {
 			return false, err
 		}
 		rows, err := result.RowsAffected()
 		return rows == 1, err
 	})
+}
+
+func nullableTimeMatches(current sql.NullTime, expected *time.Time) bool {
+	if !current.Valid || expected == nil {
+		return !current.Valid && expected == nil
+	}
+	return current.Time.Equal(*expected)
 }
 
 func (s *SQLiteStore) CountActiveGlobalRoleHolders(role string) (int, error) {
@@ -879,11 +1297,29 @@ func (s *SQLiteStore) BumpUserSessionEpoch(id string, updatedAt time.Time) (int,
 }
 
 func (s *SQLiteStore) DeleteUser(id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return fmt.Errorf("user id is required")
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+	// Pair with SaveUserRoleBinding's owner-row lock before deleting child
+	// bindings. Without this ordering PostgreSQL could take the child snapshot,
+	// miss an uncommitted concurrent insert, and then leave that grant orphaned
+	// after the user delete commits (its compatibility schema has no FK cascade).
+	if _, err := tx.Exec(`UPDATE users SET updated_at = updated_at WHERE id = ?`, id); err != nil {
+		return err
+	}
+	var subject string
+	if err := tx.QueryRow(`SELECT subject FROM users WHERE id = ?`, id).Scan(&subject); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if err := revokeGitHubIdentityKeysTx(tx, time.Now().UTC(), id, subject); err != nil {
+		return err
+	}
 	// Delete role bindings explicitly for backend parity. SQLite enforces the
 	// declared ON DELETE CASCADE, while the Postgres compatibility rewriter strips
 	// schema-level foreign keys; the explicit delete keeps both paths safe if a
@@ -916,11 +1352,12 @@ func (s *SQLiteStore) DeleteUserGuardLastAdmin(id string) (bool, error) {
 		if err := tx.QueryRow(`SELECT subject FROM users WHERE id = ?`, id).Scan(&subject); err != nil && err != sql.ErrNoRows {
 			return false, err
 		}
-		if _, err := tx.Exec(`DELETE FROM github_connections WHERE user_id = ?`, id); err != nil {
+		revokedAt := time.Now().UTC()
+		if err := revokeGitHubConnectionTx(tx, id, revokedAt); err != nil {
 			return false, err
 		}
 		if strings.TrimSpace(subject) != "" && strings.TrimSpace(subject) != id {
-			if _, err := tx.Exec(`DELETE FROM github_connections WHERE user_id = ?`, strings.TrimSpace(subject)); err != nil {
+			if err := revokeGitHubConnectionTx(tx, strings.TrimSpace(subject), revokedAt); err != nil {
 				return false, err
 			}
 		}
@@ -938,7 +1375,18 @@ func (s *SQLiteStore) SaveUserRoleBinding(binding *UserRoleBinding) error {
 	if binding == nil {
 		return fmt.Errorf("user role binding is required")
 	}
-	_, err := s.db.Exec(`INSERT INTO user_role_bindings (id, user_id, scope_type, scope_id, role, created_at, updated_at)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := normalizeAndLockUserRoleBindingScope(tx, binding); err != nil {
+		return err
+	}
+	if err := lockUserRoleBindingOwner(tx, binding); err != nil {
+		return err
+	}
+	_, err = tx.Exec(`INSERT INTO user_role_bindings (id, user_id, scope_type, scope_id, role, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(user_id, scope_type, scope_id, role) DO UPDATE SET
 			updated_at=excluded.updated_at`,
@@ -950,7 +1398,10 @@ func (s *SQLiteStore) SaveUserRoleBinding(binding *UserRoleBinding) error {
 		binding.CreatedAt,
 		binding.UpdatedAt,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *SQLiteStore) DeleteUserRoleBinding(id string) error {

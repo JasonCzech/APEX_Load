@@ -163,6 +163,10 @@ func (svc *githubSyncService) runPush(ctx context.Context, resolved *githubResol
 	scripts := svc.runner.ListScriptsFiltered(job.ProjectID, nil)
 	job.Total = len(scripts)
 	for _, stored := range scripts {
+		if stored == nil || stored.Script == nil || normalizeProjectID(stored.ProjectID) != normalizeProjectID(job.ProjectID) || normalizeProjectID(stored.Script.ProjectID) != normalizeProjectID(job.ProjectID) {
+			job.Conflicts++
+			continue
+		}
 		if len(selected) > 0 {
 			if _, ok := selected[stored.ID]; !ok {
 				continue

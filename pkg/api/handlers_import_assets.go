@@ -1,6 +1,7 @@
 package api
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -43,6 +44,18 @@ func (s *Server) handleUploadImportAsset(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "invalid multipart form: "+err.Error())
 		return
 	}
+	projectID, status, message := reconcileImportProjectID(r.URL.Query().Get("project_id"), r.FormValue("project_id"), "multipart body")
+	if status != 0 {
+		writeError(w, status, message)
+		return
+	}
+	if authorizedProjectID, scoped := authorizedProjectFromRequest(r); scoped {
+		if projectID != authorizedProjectID {
+			writeError(w, http.StatusForbidden, "forbidden")
+			return
+		}
+		projectID = authorizedProjectID
+	}
 	file, header, err := r.FormFile("file")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "file field is required")
@@ -71,28 +84,17 @@ func (s *Server) handleUploadImportAsset(w http.ResponseWriter, r *http.Request)
 	if contentType == "" {
 		contentType = http.DetectContentType(data)
 	}
-	if err := fileasset.RegisterRoot(s.importAssetDir); err != nil {
+	if err := fileasset.RegisterProjectRoot(s.importAssetDir); err != nil {
 		writeError(w, http.StatusInternalServerError, "invalid import asset store: "+err.Error())
 		return
 	}
 
 	sum := sha256.Sum256(data)
 	digest := hex.EncodeToString(sum[:])
-	dir := filepath.Join(s.importAssetDir, importID, digest[:2])
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to prepare asset store: "+err.Error())
+	path, err := storeImportAssetCapability(s.importAssetDir, projectID, importID, digest, data)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to store uploaded asset: "+err.Error())
 		return
-	}
-	path := filepath.Join(dir, digest)
-	if _, err := os.Stat(path); err != nil {
-		if !os.IsNotExist(err) {
-			writeError(w, http.StatusInternalServerError, "failed to inspect asset store: "+err.Error())
-			return
-		}
-		if err := os.WriteFile(path, data, 0o600); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to store uploaded asset: "+err.Error())
-			return
-		}
 	}
 
 	storageRef := (&url.URL{Scheme: "file", Path: path}).String()
@@ -115,6 +117,42 @@ func (s *Server) handleUploadImportAsset(w http.ResponseWriter, r *http.Request)
 		UploadedAt:  time.Now().UTC(),
 	}
 	writeJSON(w, http.StatusCreated, response)
+}
+
+func storeImportAssetCapability(root, projectID, importID, digest string, data []byte) (string, error) {
+	projectDir, err := fileasset.ProjectAssetDir(root, projectID)
+	if err != nil {
+		return "", err
+	}
+	capabilityBytes := make([]byte, 32)
+	if _, err := rand.Read(capabilityBytes); err != nil {
+		return "", fmt.Errorf("generate asset capability: %w", err)
+	}
+	capability := hex.EncodeToString(capabilityBytes)
+	dir := filepath.Join(projectDir, safeImportAssetSegment(importID), digest[:2], capability)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", fmt.Errorf("prepare asset store: %w", err)
+	}
+	path := filepath.Join(dir, digest)
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return "", fmt.Errorf("create asset: %w", err)
+	}
+	written := false
+	defer func() {
+		_ = file.Close()
+		if !written {
+			_ = os.Remove(path)
+		}
+	}()
+	if _, err := file.Write(data); err != nil {
+		return "", fmt.Errorf("write asset: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return "", fmt.Errorf("close asset: %w", err)
+	}
+	written = true
+	return path, nil
 }
 
 func safeImportAssetSegment(value string) string {

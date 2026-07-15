@@ -26,6 +26,13 @@ func newTimeslotServer(t *testing.T) (*Server, storage.Store) {
 	return server, store
 }
 
+// capacityApprovalFallbackStore intentionally exposes only storage.Store's
+// method set, forcing the handler's non-atomic compatibility path even when the
+// wrapped SQLite store supports atomic capacity approval.
+type capacityApprovalFallbackStore struct {
+	storage.Store
+}
+
 func timeslotRequest(t *testing.T, server *Server, method, path string, body any) *httptest.ResponseRecorder {
 	t.Helper()
 	var buf bytes.Buffer
@@ -67,6 +74,56 @@ func TestCapacityReservationApprovalIsAtomic(t *testing.T) {
 	// Reject can still revoke an approved slot.
 	if r := timeslotRequest(t, server, http.MethodPost, "/api/v1/capacity/timeslots/"+created.ID+"/reject", nil); r.Code != http.StatusOK {
 		t.Fatalf("reject after approve = %d body=%s, want 200", r.Code, r.Body.String())
+	}
+}
+
+func TestCapacityReservationRequiresPositiveRequestedCapacity(t *testing.T) {
+	server, store := newTimeslotServer(t)
+	start := time.Date(2026, 8, 2, 9, 0, 0, 0, time.UTC)
+	invalid := []map[string]any{
+		{"generators": 0},
+		{"generators": -1},
+		{"vusers": 0},
+		{"vusers": -1},
+	}
+	for _, capacity := range invalid {
+		body := map[string]any{
+			"project_id":         "proj-a",
+			"start_at":           start,
+			"end_at":             start.Add(time.Hour),
+			"timezone":           "UTC",
+			"requested_capacity": capacity,
+		}
+		if rec := timeslotRequest(t, server, http.MethodPost, "/api/v1/capacity/timeslots", body); rec.Code != http.StatusBadRequest {
+			t.Fatalf("create capacity %v = %d body=%s, want 400", capacity, rec.Code, rec.Body.String())
+		}
+	}
+
+	created := timeslotRequest(t, server, http.MethodPost, "/api/v1/capacity/timeslots", map[string]any{
+		"project_id": "proj-a", "start_at": start, "end_at": start.Add(time.Hour), "timezone": "UTC",
+		"requested_capacity": map[string]any{"generators": 1, "vusers": 1},
+	})
+	if created.Code != http.StatusCreated {
+		t.Fatalf("positive capacity create = %d body=%s", created.Code, created.Body.String())
+	}
+	var reservation storage.CapacityReservation
+	if err := json.Unmarshal(created.Body.Bytes(), &reservation); err != nil {
+		t.Fatalf("decode reservation: %v", err)
+	}
+	for _, capacity := range invalid {
+		update := timeslotRequest(t, server, http.MethodPut, "/api/v1/capacity/timeslots/"+reservation.ID, map[string]any{
+			"start_at": start, "end_at": start.Add(time.Hour), "timezone": "UTC", "requested_capacity": capacity,
+		})
+		if update.Code != http.StatusBadRequest {
+			t.Fatalf("update capacity %v = %d body=%s, want 400", capacity, update.Code, update.Body.String())
+		}
+	}
+	persisted, err := store.GetCapacityReservation(reservation.ID)
+	if err != nil {
+		t.Fatalf("GetCapacityReservation: %v", err)
+	}
+	if persisted.RequestedCapacity == nil || persisted.RequestedCapacity.Generators == nil || *persisted.RequestedCapacity.Generators != 1 || persisted.RequestedCapacity.VUsers == nil || *persisted.RequestedCapacity.VUsers != 1 {
+		t.Fatalf("invalid updates changed persisted capacity: %+v", persisted.RequestedCapacity)
 	}
 }
 
@@ -232,6 +289,155 @@ func TestCapacityReservationApprovalOverbookingGuard(t *testing.T) {
 	}
 }
 
+func TestCapacityReservationApprovalCountsSettingsReservations(t *testing.T) {
+	modes := []struct {
+		name     string
+		fallback bool
+	}{
+		{name: "atomic"},
+		{name: "fallback", fallback: true},
+	}
+
+	for _, mode := range modes {
+		mode := mode
+		t.Run(mode.name, func(t *testing.T) {
+			t.Run("global envelope", func(t *testing.T) {
+				server, store := newTimeslotServer(t)
+				if mode.fallback {
+					server.store = capacityApprovalFallbackStore{Store: store}
+				}
+				start := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
+				end := start.Add(2 * time.Hour)
+				settings := server.runner.GetSystemSettings()
+				settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators = 10
+				settings.CapacityPlanning.Reservations = []CapacityReservation{{
+					ProjectID: "static-global", ReservedGenerators: 8,
+					StartsAt: ptr(start.Add(-time.Hour)), EndsAt: ptr(end.Add(time.Hour)),
+				}}
+				if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
+					t.Fatalf("UpdateSystemSettings: %v", err)
+				}
+
+				id := createCapacityTimeslotForApproval(t, server, start, end, 3, "")
+				if rec := approveCapacityTimeslot(t, server, id); rec.Code != http.StatusConflict {
+					t.Fatalf("approve global slot = %d body=%s, want 409 (8 static + 3 timeslot > 10)", rec.Code, rec.Body.String())
+				}
+			})
+
+			t.Run("pool envelope", func(t *testing.T) {
+				server, store := newTimeslotServer(t)
+				seedFleetPool(t, store, "pool-static", 10)
+				if mode.fallback {
+					server.store = capacityApprovalFallbackStore{Store: store}
+				}
+				start := time.Date(2026, 10, 2, 9, 0, 0, 0, time.UTC)
+				end := start.Add(2 * time.Hour)
+				settings := server.runner.GetSystemSettings()
+				settings.CapacityPlanning.Reservations = []CapacityReservation{{
+					ProjectID: "static-pool", ReservedGenerators: 8, PoolID: "pool-static",
+					StartsAt: ptr(start.Add(-time.Hour)), EndsAt: ptr(end.Add(time.Hour)),
+				}}
+				if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
+					t.Fatalf("UpdateSystemSettings: %v", err)
+				}
+
+				id := createCapacityTimeslotForApproval(t, server, start, end, 3, "pool-static")
+				if rec := approveCapacityTimeslot(t, server, id); rec.Code != http.StatusConflict {
+					t.Fatalf("approve pool slot = %d body=%s, want 409 (8 static + 3 timeslot > 10)", rec.Code, rec.Body.String())
+				}
+			})
+
+			t.Run("unrelated pool is isolated", func(t *testing.T) {
+				server, store := newTimeslotServer(t)
+				seedFleetPool(t, store, "pool-target", 3)
+				seedFleetPool(t, store, "pool-other", 1)
+				if mode.fallback {
+					server.store = capacityApprovalFallbackStore{Store: store}
+				}
+				start := time.Date(2026, 10, 3, 9, 0, 0, 0, time.UTC)
+				end := start.Add(2 * time.Hour)
+				settings := server.runner.GetSystemSettings()
+				settings.CapacityPlanning.Reservations = []CapacityReservation{{
+					ProjectID: "other-pool", ReservedGenerators: 1, PoolID: "pool-other",
+					StartsAt: ptr(start.Add(-time.Hour)), EndsAt: ptr(end.Add(time.Hour)),
+				}}
+				if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
+					t.Fatalf("UpdateSystemSettings: %v", err)
+				}
+
+				id := createCapacityTimeslotForApproval(t, server, start, end, 3, "pool-target")
+				if rec := approveCapacityTimeslot(t, server, id); rec.Code != http.StatusOK {
+					t.Fatalf("approve target-pool slot = %d body=%s, want 200 (other pool must not count)", rec.Code, rec.Body.String())
+				}
+			})
+		})
+	}
+}
+
+func TestCapacityReservationApprovalRejectsKnownEmptyPool(t *testing.T) {
+	for _, mode := range []struct {
+		name     string
+		fallback bool
+	}{{name: "fenced"}, {name: "fallback", fallback: true}} {
+		t.Run(mode.name, func(t *testing.T) {
+			server, store := newTimeslotServer(t)
+			seedFleetPool(t, store, "empty-pool", 0)
+			if mode.fallback {
+				server.store = capacityApprovalFallbackStore{Store: store}
+			}
+			start := time.Date(2026, 10, 5, 9, 0, 0, 0, time.UTC)
+			id := createCapacityTimeslotForApproval(t, server, start, start.Add(time.Hour), 1, "empty-pool")
+			if rec := approveCapacityTimeslot(t, server, id); rec.Code != http.StatusConflict {
+				t.Fatalf("approve against empty pool = %d body=%s, want 409", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+func createCapacityTimeslotForApproval(t *testing.T, server *Server, start, end time.Time, generators int, poolID string) string {
+	t.Helper()
+	requested := map[string]any{"generators": generators}
+	if poolID != "" {
+		requested["pool_id"] = poolID
+	}
+	rec := timeslotRequest(t, server, http.MethodPost, "/api/v1/capacity/timeslots", map[string]any{
+		"project_id": "proj-a", "start_at": start, "end_at": end, "timezone": "UTC",
+		"requested_capacity": requested,
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create timeslot = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var reservation storage.CapacityReservation
+	if err := json.Unmarshal(rec.Body.Bytes(), &reservation); err != nil {
+		t.Fatalf("decode timeslot: %v", err)
+	}
+	return reservation.ID
+}
+
+func approveCapacityTimeslot(t *testing.T, server *Server, id string) *httptest.ResponseRecorder {
+	t.Helper()
+	return timeslotRequest(t, server, http.MethodPost, "/api/v1/capacity/timeslots/"+id+"/approve", nil)
+}
+
+func TestSettingsReservedGeneratorsOverlappingUsesHalfOpenWindows(t *testing.T) {
+	start := time.Date(2026, 10, 4, 9, 0, 0, 0, time.UTC)
+	end := start.Add(2 * time.Hour)
+	settings := SystemSettings{}
+	settings.CapacityPlanning.Reservations = []CapacityReservation{
+		{ProjectID: "overlap", ReservedGenerators: 2, StartsAt: ptr(start.Add(-time.Hour)), EndsAt: ptr(start.Add(time.Hour))},
+		{ProjectID: "ends-at-start", ReservedGenerators: 50, EndsAt: ptr(start)},
+		{ProjectID: "starts-at-end", ReservedGenerators: 50, StartsAt: ptr(end)},
+		{ProjectID: "open", ReservedGenerators: 3},
+		{ProjectID: "other-pool", ReservedGenerators: 50, PoolID: "pool-other"},
+	}
+	if got := settingsReservedGeneratorsOverlapping(settings, "", start, end); got != 5 {
+		t.Fatalf("overlapping global reservations = %d, want 5", got)
+	}
+	if got := settingsReservedGeneratorsOverlapping(settings, "pool-other", start, end); got != 50 {
+		t.Fatalf("overlapping pool reservations = %d, want 50", got)
+	}
+}
+
 func TestCapacityReservationListAndAvailability(t *testing.T) {
 	server, _ := newTimeslotServer(t)
 	start := time.Date(2026, 7, 1, 9, 0, 0, 0, time.UTC)
@@ -305,7 +511,7 @@ func TestCapacityReservationBindLifecycle(t *testing.T) {
 			t.Fatalf("save project %s: %v", project.ID, err)
 		}
 	}
-	start := time.Date(2026, 7, 1, 9, 0, 0, 0, time.UTC)
+	start := now.Add(time.Hour).Truncate(time.Second)
 	scheduled := start
 	// test-1's run window fits inside the reservation window below.
 	if err := store.SaveTest(&storage.TestRecord{ID: "test-1", Name: "run", Status: "PENDING", ProjectID: "proj-ts",
@@ -491,8 +697,19 @@ func TestTerminalStatusReleasesCapacityReservationBinding(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed reservation: %v", err)
 	}
+	if err := store.SaveTest(&storage.TestRecord{
+		ID:         testID,
+		Name:       "Terminal reservation run",
+		Status:     status,
+		ProjectID:  "proj-a",
+		StartTime:  start,
+		TimeslotID: reservedStr("ts-terminal"),
+		Groups:     []any{},
+	}); err != nil {
+		t.Fatalf("seed test: %v", err)
+	}
 	server.runner.mu.Lock()
-	server.runner.tests[testID] = &ManagedTest{ID: testID, TimeslotID: reservedStr("ts-terminal")}
+	server.runner.tests[testID] = &ManagedTest{ID: testID, Status: status, TimeslotID: reservedStr("ts-terminal")}
 	server.runner.mu.Unlock()
 	end := start.Add(30 * time.Minute)
 	server.runner.updateStoredTestStatus(testID, "COMPLETE", &end, "")

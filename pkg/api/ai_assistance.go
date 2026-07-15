@@ -232,6 +232,8 @@ type AIReviewQueueResponse struct {
 	ProjectID     string              `json:"project_id,omitempty"`
 	Items         []AIReviewQueueItem `json:"items"`
 	Count         int                 `json:"count"`
+	Limit         int                 `json:"limit"`
+	Offset        int                 `json:"offset"`
 	StatusCounts  map[string]int      `json:"status_counts"`
 	NextActions   []string            `json:"next_actions,omitempty"`
 }
@@ -413,7 +415,7 @@ func (s *Server) handleAIDraftGeneration(w http.ResponseWriter, r *http.Request)
 		Provider:        provider,
 		ProjectID:       draft.ProjectID,
 		SourceType:      sourceType,
-		Draft:           draft,
+		Draft:           maskScriptSecrets(draft),
 		Validation:      validation,
 		Guardrails:      validation.AIGuardrails,
 		AuthoringHealth: validation.AuthoringHealth,
@@ -461,7 +463,7 @@ func (s *Server) handleAIRepairSuggestions(w http.ResponseWriter, r *http.Reques
 		ProjectID:     projectID,
 		Target:        target,
 		Suggestions:   suggestions,
-		PreviewScript: preview,
+		PreviewScript: maskScriptSecrets(preview),
 		Validation:    validation,
 		Guardrails:    validation.AIGuardrails,
 		NextActions:   aiRepairNextActions(suggestions),
@@ -503,7 +505,11 @@ func (s *Server) handleAIExplain(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAIReviewQueue(w http.ResponseWriter, r *http.Request) {
 	projectID := normalizeProjectID(r.URL.Query().Get("project_id"))
-	sessions, err := s.listAuthoringSessions(projectID)
+	limit, offset := parseLimitOffsetQuery(r, defaultAuthoringSessionListLimit)
+	if limit > maxAuthoringSessionListLimit {
+		limit = maxAuthoringSessionListLimit
+	}
+	sessions, err := s.listAuthoringSessionsPage(projectID, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -537,6 +543,8 @@ func (s *Server) handleAIReviewQueue(w http.ResponseWriter, r *http.Request) {
 		ProjectID:     projectID,
 		Items:         items,
 		Count:         len(items),
+		Limit:         limit,
+		Offset:        offset,
 		StatusCounts:  counts,
 		NextActions:   aiReviewQueueNextActions(items),
 	})

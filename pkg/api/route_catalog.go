@@ -198,21 +198,22 @@ var routeCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodPost, "/api/v1/auth/service-accounts/{id}/rotate", systemAdminAccess()),
 	routeAuth(http.MethodDelete, "/api/v1/auth/service-accounts/{id}", systemAdminAccess()),
 
-	// GitHub integration read endpoints (any authenticated user).
+	// GitHub integration user endpoints. Operational GitHub App/webhook state is
+	// system-admin-only; sync/check histories are project-scoped below.
 	routeAuth(http.MethodGet, "/api/v1/integrations/github/repos", accessRequirement{AuthenticatedOnly: true}),
 	routeAuth(http.MethodGet, "/api/v1/integrations/github/branches", accessRequirement{AuthenticatedOnly: true}),
 	routeAuth(http.MethodGet, "/api/v1/integrations/github/contents", accessRequirement{AuthenticatedOnly: true}),
-	routeAuth(http.MethodGet, "/api/v1/integrations/github/diagnostics", accessRequirement{AuthenticatedOnly: true}),
-	routeAuth(http.MethodGet, "/api/v1/integrations/github/installations", accessRequirement{AuthenticatedOnly: true}),
-	routeAuth(http.MethodGet, "/api/v1/integrations/github/sync-jobs", accessRequirement{AuthenticatedOnly: true}),
-	routeAuth(http.MethodGet, "/api/v1/integrations/github/sync-jobs/{id}", accessRequirement{AuthenticatedOnly: true}),
-	routeAuth(http.MethodGet, "/api/v1/integrations/github/webhooks", accessRequirement{AuthenticatedOnly: true}),
-	routeAuth(http.MethodGet, "/api/v1/integrations/github/check-links", accessRequirement{AuthenticatedOnly: true}),
+	routeAuth(http.MethodGet, "/api/v1/integrations/github/diagnostics", systemAdminAccess()),
+	routeAuth(http.MethodGet, "/api/v1/integrations/github/installations", systemAdminAccess()),
+	routeAuth(http.MethodGet, "/api/v1/integrations/github/sync-jobs", viewerProjectAccess(resolveProjectIDFromQuery)),
+	routeAuth(http.MethodGet, "/api/v1/integrations/github/sync-jobs/{id}", viewerProjectAccess(resolveGitHubSyncJobProjectID)),
+	routeAuth(http.MethodGet, "/api/v1/integrations/github/webhooks", systemAdminAccess()),
+	routeAuth(http.MethodGet, "/api/v1/integrations/github/check-links", viewerProjectAccess(resolveGitHubCheckLinksProjectID)),
 	routeAuth(http.MethodPost, "/api/v1/integrations/github/sync-jobs", editorProjectAccess(resolveImportProjectIDFromJSON)),
 
 	// Library transfer + remotes (flat endpoints).
 	routeAuth(http.MethodPost, "/api/v1/library/export", viewerProjectAccess(resolveLibraryTransferProjectID)),
-	routeAuth(http.MethodPost, "/api/v1/library/import", editorProjectAccess(resolveLibraryImportProjectID)),
+	routeAuth(http.MethodPost, "/api/v1/library/import", editorImportAccess(resolveLibraryImportProjectID, libraryBundleImportMaxBodyBytes)),
 	routeAuth(http.MethodPost, "/api/v1/library/import/archive", editorImportAccess(resolveProjectIDFromQuery, libraryArchiveImportMaxBodyBytes)),
 	routeAuth(http.MethodGet, "/api/v1/library/results/{id}/archive", viewerProjectAccess(resolveLibraryResultArchiveProjectID)),
 	routeAuth(http.MethodGet, "/api/v1/library/remotes", viewerGlobalAccess()),
@@ -220,17 +221,17 @@ var routeCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodPut, "/api/v1/library/remotes/{id}", systemAdminAccess()),
 	routeAuth(http.MethodDelete, "/api/v1/library/remotes/{id}", systemAdminAccess()),
 	routeAuth(http.MethodPost, "/api/v1/library/remotes/{id}/probe", systemAdminAccess()),
-	routeAuth(http.MethodGet, "/api/v1/library/remotes/{id}/catalog", viewerGlobalAccess()),
+	routeAuth(http.MethodGet, "/api/v1/library/remotes/{id}/catalog", viewerProjectAccess(resolveProjectIDFromQuery)),
 	routeAuth(http.MethodPost, "/api/v1/library/remotes/{id}/diff", viewerProjectAccess(resolveLibraryTransferProjectID)),
 	routeAuth(http.MethodPost, "/api/v1/library/remotes/{id}/pull", editorProjectAccess(resolveLibraryTransferProjectID)),
 	routeAuth(http.MethodPost, "/api/v1/library/remotes/{id}/push", editorProjectAccess(resolveLibraryTransferProjectID)),
-	routeAuth(http.MethodPost, "/api/v1/remotes/{id}/runs", accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}),
-	routeAuth(http.MethodGet, "/api/v1/remotes/{id}/runs/{remote_test_id}", viewerGlobalAccess()),
-	routeAuth(http.MethodPost, "/api/v1/remotes/{id}/runs/{remote_test_id}/start", accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}),
-	routeAuth(http.MethodPost, "/api/v1/remotes/{id}/runs/{remote_test_id}/stop", accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}),
-	routeAuth(http.MethodPost, "/api/v1/remotes/{id}/runs/{remote_test_id}/abort", accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}),
-	routeAuth(http.MethodPost, "/api/v1/remotes/{id}/runs/{remote_test_id}/pause", accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}),
-	routeAuth(http.MethodPost, "/api/v1/remotes/{id}/runs/{remote_test_id}/resume", accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}),
+	routeAuth(http.MethodPost, "/api/v1/remotes/{id}/runs", editorProjectAccess(resolveRemoteRunCreateProjectID)),
+	routeAuth(http.MethodGet, "/api/v1/remotes/{id}/runs/{remote_test_id}", viewerProjectAccess(resolveRemoteRunLinkProjectID)),
+	routeAuth(http.MethodPost, "/api/v1/remotes/{id}/runs/{remote_test_id}/start", editorProjectAccess(resolveRemoteRunLinkProjectID)),
+	routeAuth(http.MethodPost, "/api/v1/remotes/{id}/runs/{remote_test_id}/stop", editorProjectAccess(resolveRemoteRunLinkProjectID)),
+	routeAuth(http.MethodPost, "/api/v1/remotes/{id}/runs/{remote_test_id}/abort", editorProjectAccess(resolveRemoteRunLinkProjectID)),
+	routeAuth(http.MethodPost, "/api/v1/remotes/{id}/runs/{remote_test_id}/pause", editorProjectAccess(resolveRemoteRunLinkProjectID)),
+	routeAuth(http.MethodPost, "/api/v1/remotes/{id}/runs/{remote_test_id}/resume", editorProjectAccess(resolveRemoteRunLinkProjectID)),
 
 	// Assisted-authoring drafts/repairs/explain + external result import.
 	routeAuth(http.MethodPost, "/api/v1/ai/drafts", editorProjectAccess(resolveAIAssistanceProjectID)),
@@ -317,7 +318,7 @@ var routeCatalogAuthRules = []apiRouteAuthRule{
 
 	// Per-resource GitHub links (project policy, script push/status, test check-run).
 	routeAuth(http.MethodGet, "/api/v1/projects/{id}/github/policy", viewerProjectAccess(resolveProjectIDFromPath)),
-	routeAuth(http.MethodPut, "/api/v1/projects/{id}/github/policy", projectAdminAccess(resolveProjectIDFromPath)),
+	routeAuth(http.MethodPut, "/api/v1/projects/{id}/github/policy", systemAdminAccess()),
 	routeAuth(http.MethodPost, "/api/v1/scripts/{id}/github/push", editorProjectAccess(resolveScriptProjectID)),
 	routeAuth(http.MethodGet, "/api/v1/scripts/{id}/github/status", viewerProjectAccess(resolveScriptProjectID)),
 	routeAuth(http.MethodGet, "/api/v1/scripts/{id}/recording/status", viewerProjectAccess(resolveScriptProjectID)),

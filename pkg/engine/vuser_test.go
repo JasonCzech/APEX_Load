@@ -196,6 +196,31 @@ func TestVUser_MergeExtractions(t *testing.T) {
 	}
 }
 
+func TestVUserMergeExtractionsBoundsPersistentVariableGrowth(t *testing.T) {
+	vu := &VUser{Variables: map[string]string{}}
+	for batch := 0; batch < maxVUserExtractedVariables/protocol.MaxExtractionEntries; batch++ {
+		result := &protocol.Result{Extractions: make(map[string]string, protocol.MaxExtractionEntries)}
+		for index := 0; index < protocol.MaxExtractionEntries; index++ {
+			result.Extractions[fmt.Sprintf("value-%d-%d", batch, index)] = "ok"
+		}
+		if err := vu.mergeExtractions(result); err != nil {
+			t.Fatalf("batch %d: %v", batch, err)
+		}
+	}
+	overflow := &protocol.Result{Extractions: map[string]string{"one-too-many": "x"}}
+	if err := vu.mergeExtractions(overflow); err == nil {
+		t.Fatal("persistent extraction cardinality overflow was accepted")
+	}
+	if _, retained := vu.Variables["one-too-many"]; retained {
+		t.Fatal("overflow extraction was partially retained")
+	}
+
+	oversized := &protocol.Result{Extractions: map[string]string{"payload": strings.Repeat("x", protocol.MaxExtractionValueBytes+1)}}
+	if err := vu.mergeExtractions(oversized); err == nil {
+		t.Fatal("oversized extraction value was accepted")
+	}
+}
+
 func TestVUser_ResolveAction(t *testing.T) {
 	t.Setenv("APEXLOAD_ACTION_ENV", "env-action")
 	t.Setenv(EnvScriptEnvAllowlist, "APEXLOAD_ACTION_ENV")
@@ -341,6 +366,45 @@ func TestSnapshotStore_NilSnapshot(t *testing.T) {
 	store.Add(nil) // should not panic or add
 	if len(store.Snapshots()) != 0 {
 		t.Error("nil snapshot should not be added")
+	}
+}
+
+func TestSnapshotStoreBoundsIndividualAndAggregateBytes(t *testing.T) {
+	store := newSnapshotStoreWithLimits(10, 1024, 1500)
+	large := strings.Repeat("x", 8<<10)
+
+	store.Add(&protocol.ErrorSnapshot{RequestURL: "http://one.example", ResponseBody: large})
+	store.Add(&protocol.ErrorSnapshot{RequestURL: "http://two.example", ResponseBody: large})
+	store.Add(&protocol.ErrorSnapshot{RequestURL: "http://three.example", ResponseBody: large})
+
+	if store.storedBytes > 1500 {
+		t.Fatalf("stored snapshot bytes = %d, limit 1500", store.storedBytes)
+	}
+	if len(store.Snapshots()) != 2 {
+		t.Fatalf("snapshot count = %d, want 2 retained within aggregate budget", len(store.Snapshots()))
+	}
+	if got := len(store.Snapshots()[0].ResponseBody); got >= len(large) {
+		t.Fatalf("first response body length = %d, want truncated below %d", got, len(large))
+	}
+	if !strings.Contains(store.Snapshots()[0].ResponseBody, snapshotTruncatedMarker) {
+		t.Fatalf("first response body does not mark truncation: %q", store.Snapshots()[0].ResponseBody)
+	}
+}
+
+func TestSnapshotStoreClonesRetainedSnapshot(t *testing.T) {
+	store := NewSnapshotStore(1)
+	snapshot := &protocol.ErrorSnapshot{
+		RequestURL:      "http://example.test",
+		ResponseHeaders: map[string]string{"X-Test": "before"},
+		ResponseBody:    "before",
+	}
+	store.Add(snapshot)
+	snapshot.ResponseBody = "after"
+	snapshot.ResponseHeaders["X-Test"] = "after"
+
+	retained := store.Snapshots()[0]
+	if retained.ResponseBody != "before" || retained.ResponseHeaders["X-Test"] != "before" {
+		t.Fatalf("retained snapshot aliases caller: %#v", retained)
 	}
 }
 
@@ -503,6 +567,17 @@ func TestVUser_Run_LogsExtendedOptions(t *testing.T) {
 		if !strings.Contains(logOutput, expected) {
 			t.Fatalf("log output missing %q: %s", expected, logOutput)
 		}
+	}
+}
+
+func TestResolveActionRequestsOnlyConfiguredSuccessfulResponseBodies(t *testing.T) {
+	vu := &VUser{Script: &dsl.Script{}}
+	if got := vu.resolveAction(dsl.Action{Name: "default"}); !got.DiscardResponseBodyOnSuccess {
+		t.Fatal("default logging retained successful response bodies")
+	}
+	vu.Script.Config.Log = dsl.LogConfig{Level: "extended", ExtendedOptions: []string{"data_returned"}}
+	if got := vu.resolveAction(dsl.Action{Name: "extended"}); got.DiscardResponseBodyOnSuccess {
+		t.Fatal("data_returned logging discarded successful response bodies")
 	}
 }
 

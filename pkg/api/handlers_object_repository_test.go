@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/selector"
@@ -80,6 +81,36 @@ func TestObjectRepositoryCRUDHandlers(t *testing.T) {
 	}
 }
 
+func TestObjectRepositoryDeleteRejectsQualifiedScriptReferences(t *testing.T) {
+	server := recordingTestServer(t)
+	if err := server.store.SaveProject(&storage.Project{ID: "p1", Name: "P1", CreatedAt: time.Now().UTC()}); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+	repo := &storage.ObjectRepository{
+		ID: "object-repo-delete-guard", ProjectID: "p1", Name: "Guarded",
+		Objects: []storage.RepositoryObject{{LogicalName: "go", CSS: "#go"}},
+	}
+	if err := server.store.SaveObjectRepository(repo); err != nil {
+		t.Fatalf("SaveObjectRepository: %v", err)
+	}
+	if err := server.store.SaveScript(&dsl.Script{
+		ID: "script-delete-guard", ProjectID: "p1", Name: "Guarded", Protocol: "browser", Version: "1",
+		Actions: []dsl.Action{{Name: "Go", Type: "browser_click", ObjectRef: repo.ID + ":go"}},
+	}); err != nil {
+		t.Fatalf("SaveScript: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/object-repositories/"+repo.ID, nil)
+	req.SetPathValue("id", repo.ID)
+	resp := httptest.NewRecorder()
+	server.handleDeleteObjectRepository(resp, req)
+	if resp.Code != http.StatusConflict {
+		t.Fatalf("delete status = %d, want %d body=%s", resp.Code, http.StatusConflict, resp.Body.String())
+	}
+	if _, err := server.store.GetObjectRepository(repo.ID); err != nil {
+		t.Fatalf("referenced repository disappeared: %v", err)
+	}
+}
+
 func TestUpdateObjectRepositoryPreservesOmittedFields(t *testing.T) {
 	server := recordingTestServer(t)
 
@@ -131,6 +162,21 @@ func TestUpdateObjectRepositoryPreservesOmittedFields(t *testing.T) {
 	}
 	if toggled.Source != "script:script-7" {
 		t.Fatalf("source dropped on explicit toggle: %q", toggled.Source)
+	}
+
+	// Provenance is immutable even when a caller explicitly tries to replace it.
+	provenanceReq := httptest.NewRequest(http.MethodPut, "/api/v1/object-repositories/"+seed.ID,
+		strings.NewReader(`{"name":"Checkout","source":"script:attacker","objects":[{"logical_name":"go","css":"#go2"}]}`))
+	provenanceReq.SetPathValue("id", seed.ID)
+	provenanceResp := httptest.NewRecorder()
+	server.handleUpdateObjectRepository(provenanceResp, provenanceReq)
+	if provenanceResp.Code != http.StatusOK {
+		t.Fatalf("provenance update status = %d body=%s", provenanceResp.Code, provenanceResp.Body.String())
+	}
+	var provenance storage.ObjectRepository
+	json.NewDecoder(provenanceResp.Body).Decode(&provenance)
+	if provenance.Source != "script:script-7" {
+		t.Fatalf("immutable provenance was replaced: %q", provenance.Source)
 	}
 }
 

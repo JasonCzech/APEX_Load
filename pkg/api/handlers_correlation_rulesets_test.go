@@ -14,7 +14,7 @@ import (
 func TestCorrelationRulesetCRUD(t *testing.T) {
 	server := recordingTestServer(t)
 
-	body := `{"project_id":"p1","name":"Checkout rules","rules":[{"name":"csrf","source":"response_body","extract_type":"boundary","expression":"x"}]}`
+	body := `{"project_id":"p1","name":"Checkout rules","source":"script:source","rules":[{"name":"csrf","source":"response_body","extract_type":"boundary","expression":"x"}]}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/correlation-rulesets", strings.NewReader(body))
 	resp := httptest.NewRecorder()
 	server.handleCreateCorrelationRuleset(resp, req)
@@ -44,6 +44,20 @@ func TestCorrelationRulesetCRUD(t *testing.T) {
 	json.NewDecoder(listResp.Body).Decode(&list)
 	if list.Count != 1 {
 		t.Fatalf("list count = %d, want 1", list.Count)
+	}
+
+	updateReq := httptest.NewRequest(http.MethodPut, "/api/v1/correlation-rulesets/"+created.ID,
+		strings.NewReader(`{"name":"Checkout rules v2","source":"script:attacker","rules":[]}`))
+	updateReq.SetPathValue("id", created.ID)
+	updateResp := httptest.NewRecorder()
+	server.handleUpdateCorrelationRuleset(updateResp, updateReq)
+	if updateResp.Code != http.StatusOK {
+		t.Fatalf("update = %d body=%s", updateResp.Code, updateResp.Body.String())
+	}
+	var updated storage.CorrelationRuleset
+	json.NewDecoder(updateResp.Body).Decode(&updated)
+	if updated.Name != "Checkout rules v2" || updated.Source != "script:source" {
+		t.Fatalf("update did not preserve immutable provenance: %#v", updated)
 	}
 
 	delReq := httptest.NewRequest(http.MethodDelete, "/api/v1/correlation-rulesets/"+created.ID, nil)

@@ -79,3 +79,65 @@ func TestBoundedArchiveCacheSingleflightsConcurrentLoad(t *testing.T) {
 		}
 	}
 }
+
+func TestBoundedArchiveCacheEvictsByWeightAndSkipsOversizedValues(t *testing.T) {
+	cache := newWeightedBoundedArchiveCache[int](10, 5, func(value *int) int64 {
+		return int64(*value)
+	})
+	load := func(value int) func() (*int, error) {
+		return func() (*int, error) {
+			copy := value
+			return &copy, nil
+		}
+	}
+	if _, err := cache.getOrLoad("three", load(3)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cache.getOrLoad("four", load(4)); err != nil {
+		t.Fatal(err)
+	}
+	if cache.len() != 1 {
+		t.Fatalf("cache len after weighted eviction = %d, want 1", cache.len())
+	}
+	if _, err := cache.getOrLoad("oversized", load(6)); err != nil {
+		t.Fatal(err)
+	}
+	if cache.len() != 1 {
+		t.Fatalf("oversized value changed cache len to %d, want 1", cache.len())
+	}
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+	if cache.bytes != 4 {
+		t.Fatalf("cached bytes = %d, want 4", cache.bytes)
+	}
+	if _, ok := cache.items["four"]; !ok {
+		t.Fatal("most recent weighted entry was evicted")
+	}
+}
+
+func TestBoundedArchiveCacheDeleteDuringWeightedLoadPreventsCaching(t *testing.T) {
+	cache := newWeightedBoundedArchiveCache[int](10, 100, func(value *int) int64 {
+		return int64(*value)
+	})
+	started := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		_, err := cache.getOrLoad("run-1|report", func() (*int, error) {
+			close(started)
+			<-release
+			value := 5
+			return &value, nil
+		})
+		done <- err
+	}()
+	<-started
+	cache.deleteTest("run-1")
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if cache.len() != 0 {
+		t.Fatalf("cache len = %d, want in-flight deleted value to remain uncached", cache.len())
+	}
+}

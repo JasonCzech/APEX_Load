@@ -1,6 +1,7 @@
 package browser
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -12,9 +13,54 @@ import (
 func (b *Browser) appendNetworkEntryForTest(body string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.networkEntries = append(b.networkEntries, protocol.NetworkEntry{RequestBody: body})
-	b.networkBodyBytes += len(body)
-	b.trimNetworkEntriesLocked()
+	b.appendNetworkEntryLocked(protocol.NetworkEntry{RequestBody: body})
+}
+
+func TestNetworkEntriesMetadataBudget(t *testing.T) {
+	b := &Browser{}
+	largeHeaders := map[string]string{"X-Large": strings.Repeat("h", browserNetworkHeaderValueLimit)}
+	total := browserNetworkEntryRingLimit
+	for index := 0; index < total; index++ {
+		entry := boundBrowserNetworkEntry(protocol.NetworkEntry{
+			URL:             "https://example.test/" + strings.Repeat("u", browserNetworkURLLimitBytes),
+			RequestHeaders:  largeHeaders,
+			ResponseHeaders: largeHeaders,
+		})
+		b.mu.Lock()
+		b.appendNetworkEntryLocked(entry)
+		b.mu.Unlock()
+	}
+	if b.networkMetadataBytes > browserNetworkMetadataBudgetBytes {
+		t.Fatalf("retained metadata bytes = %d, want <= %d", b.networkMetadataBytes, browserNetworkMetadataBudgetBytes)
+	}
+	wantBytes := 0
+	for _, entry := range b.networkEntries {
+		wantBytes += browserNetworkEntryMetadataBytes(entry)
+	}
+	if b.networkMetadataBytes != wantBytes {
+		t.Fatalf("metadata byte tally = %d, want %d", b.networkMetadataBytes, wantBytes)
+	}
+}
+
+func TestBoundBrowserNetworkHeadersLimitsEntriesAndBytes(t *testing.T) {
+	headers := make(map[string]string, browserNetworkHeaderEntriesLimit+10)
+	for index := 0; index < browserNetworkHeaderEntriesLimit+10; index++ {
+		headers[fmt.Sprintf("X-%03d-%s", index, strings.Repeat("k", browserNetworkHeaderNameLimit))] = strings.Repeat("v", browserNetworkHeaderValueLimit+100)
+	}
+	bounded := boundedBrowserNetworkHeaders(headers)
+	if len(bounded) > browserNetworkHeaderEntriesLimit {
+		t.Fatalf("bounded header entries = %d, want <= %d", len(bounded), browserNetworkHeaderEntriesLimit)
+	}
+	bytes := 0
+	for key, value := range bounded {
+		if len(key) > browserNetworkHeaderNameLimit || len(value) > browserNetworkHeaderValueLimit {
+			t.Fatalf("oversized bounded header %d/%d bytes", len(key), len(value))
+		}
+		bytes += 64 + len(key) + len(value)
+	}
+	if bytes > browserNetworkHeaderBytesLimit {
+		t.Fatalf("bounded header bytes = %d, want <= %d", bytes, browserNetworkHeaderBytesLimit)
+	}
 }
 
 // TestNetworkEntriesRingAndByteBudget guards B6: the per-session network buffer

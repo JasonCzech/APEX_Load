@@ -3,14 +3,23 @@ package storage
 // SQLite store — monitoring collectors. Same SQL serves PostgreSQL via rewriteSQL.
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
 func (s *SQLiteStore) SaveMonitoringCollector(collector *MonitoringCollector) error {
 	if collector == nil {
 		return fmt.Errorf("monitoring collector is required")
+	}
+	if strings.TrimSpace(collector.ID) == "" {
+		return errors.New("monitoring collector id is required")
+	}
+	if strings.TrimSpace(collector.Name) == "" {
+		return errors.New("monitoring collector name is required")
 	}
 	collector.ProjectID = normalizeProjectID(collector.ProjectID)
 	if collector.Health == "" {
@@ -29,16 +38,43 @@ func (s *SQLiteStore) SaveMonitoringCollector(collector *MonitoringCollector) er
 		}
 		packsJSON = string(encoded)
 	}
-	_, err := s.db.Exec(`INSERT INTO monitoring_collectors (
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if collector.ProjectID, err = lockProjectForOwnedMutation(tx, collector.ProjectID); err != nil {
+		return err
+	}
+	var currentProjectID string
+	err = tx.QueryRow(`SELECT project_id FROM monitoring_collectors WHERE id = ?`, collector.ID).Scan(&currentProjectID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if err == nil && normalizeProjectID(currentProjectID) != collector.ProjectID {
+		return fmt.Errorf("monitoring collector %q belongs to another project", collector.ID)
+	}
+	result, err := tx.Exec(`INSERT INTO monitoring_collectors (
 			id, project_id, name, description, token_hash, health, last_seen_at, allowed_metric_packs_json, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
-			project_id=excluded.project_id, name=excluded.name, description=excluded.description,
+			name=excluded.name, description=excluded.description,
 			token_hash=excluded.token_hash, health=excluded.health, last_seen_at=excluded.last_seen_at,
-			allowed_metric_packs_json=excluded.allowed_metric_packs_json, updated_at=excluded.updated_at`,
+			allowed_metric_packs_json=excluded.allowed_metric_packs_json, updated_at=excluded.updated_at
+		WHERE monitoring_collectors.project_id = excluded.project_id`,
 		collector.ID, collector.ProjectID, collector.Name, collector.Description, collector.TokenHash,
 		collector.Health, collector.LastSeenAt, packsJSON, collector.CreatedAt, collector.UpdatedAt)
-	return err
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return fmt.Errorf("monitoring collector %q belongs to another project", collector.ID)
+	}
+	return tx.Commit()
 }
 
 const monitoringCollectorSelect = `SELECT id, COALESCE(project_id, ''), name, COALESCE(description, ''),
@@ -122,4 +158,76 @@ func (s *SQLiteStore) UpdateMonitoringCollectorHealth(id string, health string, 
 		return fmt.Errorf("monitoring collector not found: %s", id)
 	}
 	return nil
+}
+
+// PatchMonitoringCollector updates only editor-supplied fields. In particular,
+// it never rewrites token_hash or last_seen_at from a stale read, which could
+// otherwise undo a concurrent token rotation or heartbeat.
+func (s *SQLiteStore) PatchMonitoringCollector(id, projectID string, name, description, health *string, allowedMetricPacks *[]string) (bool, error) {
+	sets := make([]string, 0, 5)
+	args := make([]any, 0, 7)
+	if name != nil {
+		sets = append(sets, "name = ?")
+		args = append(args, *name)
+	}
+	if description != nil {
+		sets = append(sets, "description = ?")
+		args = append(args, *description)
+	}
+	if health != nil {
+		sets = append(sets, "health = ?")
+		args = append(args, *health)
+	}
+	if allowedMetricPacks != nil {
+		packsJSON := ""
+		if len(*allowedMetricPacks) > 0 {
+			encoded, err := json.Marshal(*allowedMetricPacks)
+			if err != nil {
+				return false, fmt.Errorf("marshal allowed_metric_packs: %w", err)
+			}
+			packsJSON = string(encoded)
+		}
+		sets = append(sets, "allowed_metric_packs_json = ?")
+		args = append(args, packsJSON)
+	}
+	if len(sets) == 0 {
+		var exists int
+		err := s.db.QueryRow(`SELECT 1 FROM monitoring_collectors WHERE id = ? AND project_id = ?`, id, normalizeProjectID(projectID)).Scan(&exists)
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return err == nil, err
+	}
+	sets = append(sets, "updated_at = ?")
+	args = append(args, time.Now(), id, normalizeProjectID(projectID))
+	result, err := s.db.Exec(`UPDATE monitoring_collectors SET `+strings.Join(sets, ", ")+` WHERE id = ? AND project_id = ?`, args...)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	return affected > 0, err
+}
+
+// UpdateMonitoringCollectorTokenHashIfUnchanged rotates only the credential
+// column and is ownership-scoped. The old hash is the optimistic version: two
+// concurrent rotations that both read the same credential cannot both return a
+// plaintext token when only one new hash can remain active.
+func (s *SQLiteStore) UpdateMonitoringCollectorTokenHashIfUnchanged(id, projectID, tokenHash, expectedTokenHash string) (bool, error) {
+	result, err := s.db.Exec(`UPDATE monitoring_collectors SET token_hash = ?, updated_at = ?
+		WHERE id = ? AND project_id = ? AND COALESCE(token_hash, '') = ?`,
+		tokenHash, time.Now(), id, normalizeProjectID(projectID), expectedTokenHash)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	return affected > 0, err
+}
+
+func (s *SQLiteStore) DeleteMonitoringCollectorFromProject(id, projectID string) (bool, error) {
+	result, err := s.db.Exec(`DELETE FROM monitoring_collectors WHERE id = ? AND project_id = ?`, id, normalizeProjectID(projectID))
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	return affected > 0, err
 }

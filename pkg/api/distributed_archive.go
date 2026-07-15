@@ -193,9 +193,39 @@ func (b *distributedExecutionBackend) fetchRemoteArchiveBundlesContext(ctx conte
 	if err := validateArchiveRunID(test.ID); err != nil {
 		return nil, err
 	}
-	clients, err := b.resolveClientsLocked(tr, test)
-	if err != nil {
+	var (
+		clientsByTarget map[string]generatorClient
+		archivedClients map[string]generatorClient
+		singleClient    generatorClient
+		remoteTarget    string
+	)
+	if tr != nil {
+		tr.mu.RLock()
+		clientsByTarget = cloneClientMap(test.remoteClientsByTarget)
+		archivedClients = cloneClientMap(test.remoteArchiveClientsByTarget)
+		singleClient = test.remoteClient
+		remoteTarget = test.remoteTarget
+		tr.mu.RUnlock()
+	} else {
+		clientsByTarget = cloneClientMap(test.remoteClientsByTarget)
+		archivedClients = cloneClientMap(test.remoteArchiveClientsByTarget)
+		singleClient = test.remoteClient
+		remoteTarget = test.remoteTarget
+	}
+	// Snapshot active and retired-archive transports in one critical section.
+	// Otherwise a concurrent evacuation could move a source between the two maps
+	// between reads and make the final evidence merge omit it.
+	clients, err := b.clientsFromSnapshot(clientsByTarget, singleClient, remoteTarget)
+	if err != nil && len(archivedClients) == 0 {
 		return nil, err
+	}
+	if clients == nil {
+		clients = make(map[string]generatorClient, len(archivedClients))
+	}
+	for target, client := range archivedClients {
+		if clients[target] == nil {
+			clients[target] = client
+		}
 	}
 	if len(clients) > remoteArchiveMaxTargets {
 		return nil, fmt.Errorf("remote archive target count %d exceeds limit %d", len(clients), remoteArchiveMaxTargets)

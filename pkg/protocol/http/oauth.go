@@ -1,12 +1,16 @@
 package http
 
 import (
+	"container/list"
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -39,6 +43,15 @@ const (
 	maxOAuthTokenCacheEntries   = 10_000
 	maxOAuthTokenCacheBytes     = 64 << 20
 	maxOAuthTokenResponseBytes  = 1 << 20
+	maxOAuthAccessTokenBytes    = 64 << 10
+	maxOAuthTokenTypeBytes      = 256
+	maxOAuthInstanceURLBytes    = 8 << 10
+	maxOAuthRequestFieldBytes   = 64 << 10
+	maxOAuthPrivateKeyBytes     = 1 << 20
+	maxOAuthTokenTTL            = 24 * time.Hour
+	maxConcurrentOAuthFetches   = 64
+	defaultOAuthHTTPTimeout     = 30 * time.Second
+	maxOAuthResponseHeaderBytes = 64 << 10
 	oauthFormContentType        = "application/x-www-form-urlencoded"
 	oauthJSONAcceptMimeType     = "application/json"
 )
@@ -67,9 +80,82 @@ type OAuthToken struct {
 }
 
 var (
-	oauthTokenCache sync.Map
-	oauthTokenGroup singleflight.Group
+	oauthTokenCache        = newBoundedOAuthTokenCache()
+	oauthTokenGroup        singleflight.Group
+	oauthTokenFetchSlots   = make(chan struct{}, maxConcurrentOAuthFetches)
+	defaultOAuthHTTPClient = hardenedOAuthHTTPClient(&http.Client{
+		Transport: http.DefaultTransport,
+		Timeout:   defaultOAuthHTTPTimeout,
+	})
 )
+
+type oauthTokenCacheEntry struct {
+	key   string
+	token OAuthToken
+	bytes int
+}
+
+type boundedOAuthTokenCache struct {
+	mu         sync.Mutex
+	entries    map[string]*list.Element
+	order      *list.List
+	bytes      int
+	maxEntries int
+	maxBytes   int
+}
+
+func newBoundedOAuthTokenCache() *boundedOAuthTokenCache {
+	return newBoundedOAuthTokenCacheWithLimits(maxOAuthTokenCacheEntries, maxOAuthTokenCacheBytes)
+
+}
+
+func newBoundedOAuthTokenCacheWithLimits(maxEntries, maxBytes int) *boundedOAuthTokenCache {
+	return &boundedOAuthTokenCache{
+		entries:    make(map[string]*list.Element),
+		order:      list.New(),
+		maxEntries: max(1, maxEntries),
+		maxBytes:   max(1, maxBytes),
+	}
+}
+
+// hardenedOAuthHTTPClient preserves intentional network routing (source IP,
+// proxy, timeouts) while separating credential acquisition from ordinary load
+// traffic. Token requests must never inherit an insecure target TLS policy,
+// target cookies, or redirects that can replay a 307/308 form body to another
+// origin.
+func hardenedOAuthHTTPClient(base *http.Client) *http.Client {
+	if base == nil {
+		return nil
+	}
+	client := oauthRequestClient(base)
+	if transport, ok := base.Transport.(*http.Transport); ok && transport != nil {
+		secureTransport := transport.Clone()
+		if secureTransport.TLSClientConfig == nil {
+			secureTransport.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+		} else {
+			secureTransport.TLSClientConfig = secureTransport.TLSClientConfig.Clone()
+			secureTransport.TLSClientConfig.InsecureSkipVerify = false
+			if secureTransport.TLSClientConfig.MinVersion == 0 {
+				secureTransport.TLSClientConfig.MinVersion = tls.VersionTLS12
+			}
+		}
+		secureTransport.MaxResponseHeaderBytes = maxOAuthResponseHeaderBytes
+		client.Transport = secureTransport
+	}
+	return client
+}
+
+func oauthRequestClient(base *http.Client) *http.Client {
+	if base == nil {
+		return nil
+	}
+	client := *base
+	client.Jar = nil
+	client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	return &client
+}
 
 func FetchOAuth2Token(ctx context.Context, req OAuthTokenRequest) (OAuthToken, error) {
 	req.GrantType = normalizeOAuthGrant(req.GrantType)
@@ -77,26 +163,22 @@ func FetchOAuth2Token(ctx context.Context, req OAuthTokenRequest) (OAuthToken, e
 		return OAuthToken{}, err
 	}
 	key := oauthTokenCacheKey(req)
-	if cached, ok := oauthTokenCache.Load(key); ok {
-		token := cached.(OAuthToken)
-		if token.AccessToken != "" && time.Until(token.ExpiresAt) > tokenCacheExpirySlack {
-			return token, nil
-		}
+	if token, ok := loadOAuthToken(key); ok {
+		return token, nil
 	}
 	value, err, _ := oauthTokenGroup.Do(key, func() (any, error) {
-		if cached, ok := oauthTokenCache.Load(key); ok {
-			token := cached.(OAuthToken)
-			if token.AccessToken != "" && time.Until(token.ExpiresAt) > tokenCacheExpirySlack {
-				return token, nil
-			}
-			oauthTokenCache.Delete(key)
+		if token, ok := loadOAuthToken(key); ok {
+			return token, nil
 		}
+		if err := acquireOAuthTokenFetchSlot(ctx, oauthTokenFetchSlots); err != nil {
+			return OAuthToken{}, err
+		}
+		defer releaseOAuthTokenFetchSlot(oauthTokenFetchSlots)
 		token, fetchErr := fetchOAuth2TokenUncached(ctx, req)
 		if fetchErr != nil {
 			return OAuthToken{}, fetchErr
 		}
-		oauthTokenCache.Store(key, token)
-		boundOAuthTokenCache()
+		storeOAuthToken(key, token)
 		return token, nil
 	})
 	if err != nil {
@@ -105,23 +187,115 @@ func FetchOAuth2Token(ctx context.Context, req OAuthTokenRequest) (OAuthToken, e
 	return value.(OAuthToken), nil
 }
 
+func loadOAuthToken(key string) (OAuthToken, bool) {
+	if oauthTokenCache == nil {
+		return OAuthToken{}, false
+	}
+	return oauthTokenCache.load(key, time.Now())
+}
+
+func storeOAuthToken(key string, token OAuthToken) {
+	if oauthTokenCache != nil {
+		oauthTokenCache.store(key, token)
+	}
+}
+
 func boundOAuthTokenCache() {
-	count := 0
-	bytes := 0
-	now := time.Now()
-	oauthTokenCache.Range(func(key, value any) bool {
-		token, ok := value.(OAuthToken)
-		if !ok || token.ExpiresAt.Before(now) {
-			oauthTokenCache.Delete(key)
-			return true
+	if oauthTokenCache != nil {
+		oauthTokenCache.bound()
+	}
+}
+
+func (c *boundedOAuthTokenCache) load(key string, now time.Time) (OAuthToken, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	element := c.entries[key]
+	if element == nil {
+		return OAuthToken{}, false
+	}
+	entry := element.Value.(*oauthTokenCacheEntry)
+	if entry.token.AccessToken == "" || entry.token.ExpiresAt.Sub(now) <= tokenCacheExpirySlack {
+		c.remove(element)
+		return OAuthToken{}, false
+	}
+	c.order.MoveToBack(element)
+	return entry.token, true
+}
+
+func (c *boundedOAuthTokenCache) store(key string, token OAuthToken) {
+	if strings.TrimSpace(key) == "" {
+		return
+	}
+	size := oauthTokenApproxBytes(token) + len(key)
+	if size > c.maxBytes {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if existing := c.entries[key]; existing != nil {
+		c.remove(existing)
+	}
+	entry := &oauthTokenCacheEntry{key: key, token: token, bytes: size}
+	element := c.order.PushBack(entry)
+	c.entries[key] = element
+	c.bytes += size
+	c.boundLocked()
+}
+
+func (c *boundedOAuthTokenCache) bound() {
+	c.mu.Lock()
+	c.boundLocked()
+	c.mu.Unlock()
+}
+
+func (c *boundedOAuthTokenCache) boundLocked() {
+	for len(c.entries) > c.maxEntries || c.bytes > c.maxBytes {
+		oldest := c.order.Front()
+		if oldest == nil {
+			break
 		}
-		count++
-		bytes += oauthTokenApproxBytes(token)
-		if count > maxOAuthTokenCacheEntries || bytes > maxOAuthTokenCacheBytes {
-			oauthTokenCache.Delete(key)
+		c.remove(oldest)
+	}
+}
+
+func (c *boundedOAuthTokenCache) remove(element *list.Element) {
+	if element == nil {
+		return
+	}
+	entry, _ := element.Value.(*oauthTokenCacheEntry)
+	if entry != nil {
+		delete(c.entries, entry.key)
+		c.bytes -= entry.bytes
+		if c.bytes < 0 {
+			c.bytes = 0
 		}
-		return true
-	})
+	}
+	c.order.Remove(element)
+}
+
+func acquireOAuthTokenFetchSlot(ctx context.Context, slots chan struct{}) error {
+	if slots == nil {
+		return fmt.Errorf("OAuth2 token acquisition is unavailable")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	select {
+	case slots <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func releaseOAuthTokenFetchSlot(slots chan struct{}) {
+	if slots == nil {
+		return
+	}
+	select {
+	case <-slots:
+	default:
+	}
 }
 
 func oauthTokenApproxBytes(token OAuthToken) int {
@@ -144,9 +318,43 @@ func normalizeOAuthGrant(grant string) string {
 }
 
 func validateOAuthTokenRequest(req OAuthTokenRequest) error {
-	tokenURL, err := url.Parse(strings.TrimSpace(req.TokenURL))
+	rawTokenURL := strings.TrimSpace(req.TokenURL)
+	if len(rawTokenURL) > maxOAuthInstanceURLBytes {
+		return fmt.Errorf("token_url must not exceed %d bytes", maxOAuthInstanceURLBytes)
+	}
+	tokenURL, err := url.Parse(rawTokenURL)
 	if err != nil || tokenURL.Scheme == "" || tokenURL.Host == "" {
 		return fmt.Errorf("token_url must be an absolute URL")
+	}
+	switch strings.ToLower(tokenURL.Scheme) {
+	case "https":
+	case "http":
+		if !isOAuthLoopbackHost(tokenURL.Hostname()) {
+			return fmt.Errorf("token_url must use https (http is allowed only for loopback development endpoints)")
+		}
+	default:
+		return fmt.Errorf("token_url must use https")
+	}
+	for _, field := range []struct {
+		name  string
+		value string
+	}{
+		{name: "client_id", value: req.ClientID},
+		{name: "client_secret", value: req.ClientSecret},
+		{name: "scope", value: req.Scope},
+		{name: "audience", value: req.Audience},
+		{name: "issuer", value: req.Issuer},
+		{name: "subject", value: req.Subject},
+		{name: "refresh_token", value: req.RefreshToken},
+		{name: "username", value: req.Username},
+		{name: "password", value: req.Password},
+	} {
+		if len(field.value) > maxOAuthRequestFieldBytes {
+			return fmt.Errorf("%s must not exceed %d bytes", field.name, maxOAuthRequestFieldBytes)
+		}
+	}
+	if len(req.PrivateKey) > maxOAuthPrivateKeyBytes {
+		return fmt.Errorf("private_key must not exceed %d bytes", maxOAuthPrivateKeyBytes)
 	}
 	if strings.TrimSpace(req.ClientID) == "" {
 		return fmt.Errorf("client_id is required")
@@ -178,6 +386,15 @@ func validateOAuthTokenRequest(req OAuthTokenRequest) error {
 		return fmt.Errorf("unsupported OAuth2 grant_type %q", req.GrantType)
 	}
 	return nil
+}
+
+func isOAuthLoopbackHost(host string) bool {
+	host = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func fetchOAuth2TokenUncached(ctx context.Context, req OAuthTokenRequest) (OAuthToken, error) {
@@ -231,14 +448,22 @@ func fetchOAuth2TokenUncached(ctx context.Context, req OAuthTokenRequest) (OAuth
 
 	client := req.HTTPClient
 	if client == nil {
-		client = http.DefaultClient
+		client = defaultOAuthHTTPClient
 	}
+	client = oauthRequestClient(client)
 	resp, err := client.Do(httpReq)
 	if err != nil {
 		return OAuthToken{}, err
 	}
 	defer resp.Body.Close()
 
+	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, maxOAuthTokenResponseBytes+1))
+	if err != nil {
+		return OAuthToken{}, fmt.Errorf("read OAuth2 token response: %w", err)
+	}
+	if len(responseBody) > maxOAuthTokenResponseBytes {
+		return OAuthToken{}, fmt.Errorf("OAuth2 token response exceeds %d bytes", maxOAuthTokenResponseBytes)
+	}
 	var payload struct {
 		AccessToken      string `json:"access_token"`
 		TokenType        string `json:"token_type"`
@@ -247,9 +472,7 @@ func fetchOAuth2TokenUncached(ctx context.Context, req OAuthTokenRequest) (OAuth
 		ErrorCode        string `json:"error"`
 		ErrorDescription string `json:"error_description"`
 	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxOAuthTokenResponseBytes)).Decode(&payload); err != nil {
-		return OAuthToken{}, fmt.Errorf("decode OAuth2 token response: %w", err)
-	}
+	decodeErr := json.Unmarshal(responseBody, &payload)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		// error_code is the RFC 6749 §5.2 enum (safe). error_description is
 		// free-form text from the endpoint: bound its length and strip any of our
@@ -261,43 +484,79 @@ func fetchOAuth2TokenUncached(ctx context.Context, req OAuthTokenRequest) (OAuth
 		}
 		return OAuthToken{}, fmt.Errorf("OAuth2 token endpoint returned %d", resp.StatusCode)
 	}
-	if strings.TrimSpace(payload.AccessToken) == "" {
+	if decodeErr != nil {
+		return OAuthToken{}, fmt.Errorf("decode OAuth2 token response: %w", decodeErr)
+	}
+	accessToken := strings.TrimSpace(payload.AccessToken)
+	if accessToken == "" {
 		return OAuthToken{}, fmt.Errorf("OAuth2 token response did not include access_token")
+	}
+	if len(accessToken) > maxOAuthAccessTokenBytes {
+		return OAuthToken{}, fmt.Errorf("OAuth2 access_token exceeds %d bytes", maxOAuthAccessTokenBytes)
+	}
+	if strings.ContainsAny(accessToken, "\r\n\x00") {
+		return OAuthToken{}, fmt.Errorf("OAuth2 access_token contains prohibited control characters")
 	}
 	tokenType := strings.TrimSpace(payload.TokenType)
 	if tokenType == "" {
 		tokenType = defaultOAuthTokenType
 	}
+	if len(tokenType) > maxOAuthTokenTypeBytes || strings.ContainsAny(tokenType, "\r\n\x00") {
+		return OAuthToken{}, fmt.Errorf("OAuth2 token_type is invalid or exceeds %d bytes", maxOAuthTokenTypeBytes)
+	}
+	instanceURL := strings.TrimSpace(payload.InstanceURL)
+	if len(instanceURL) > maxOAuthInstanceURLBytes || strings.ContainsAny(instanceURL, "\r\n\x00") {
+		return OAuthToken{}, fmt.Errorf("OAuth2 instance_url is invalid or exceeds %d bytes", maxOAuthInstanceURLBytes)
+	}
 	ttl := defaultTokenCacheTTL
 	if expiresIn := oauthExpiresInSeconds(payload.ExpiresIn); expiresIn > 0 {
+		if expiresIn > int64(maxOAuthTokenTTL/time.Second) {
+			expiresIn = int64(maxOAuthTokenTTL / time.Second)
+		}
 		ttl = time.Duration(expiresIn) * time.Second
 	}
 	return OAuthToken{
-		AccessToken: strings.TrimSpace(payload.AccessToken),
+		AccessToken: accessToken,
 		TokenType:   tokenType,
-		InstanceURL: strings.TrimSpace(payload.InstanceURL),
+		InstanceURL: instanceURL,
 		ExpiresAt:   time.Now().Add(ttl),
 	}, nil
 }
 
 func oauthExpiresInSeconds(value any) int64 {
+	fromFloat := func(seconds float64) int64 {
+		if math.IsNaN(seconds) || math.IsInf(seconds, 0) || seconds <= 0 {
+			return 0
+		}
+		maxSeconds := float64(maxOAuthTokenTTL / time.Second)
+		if seconds > maxSeconds {
+			return int64(maxSeconds)
+		}
+		return int64(seconds)
+	}
 	switch typed := value.(type) {
 	case nil:
 		return 0
 	case float64:
-		return int64(typed)
+		return fromFloat(typed)
 	case float32:
-		return int64(typed)
+		return fromFloat(float64(typed))
 	case int:
-		return int64(typed)
+		if typed <= 0 {
+			return 0
+		}
+		return min(int64(typed), int64(maxOAuthTokenTTL/time.Second))
 	case int64:
-		return typed
+		if typed <= 0 {
+			return 0
+		}
+		return min(typed, int64(maxOAuthTokenTTL/time.Second))
 	case json.Number:
 		if parsed, err := typed.Int64(); err == nil {
-			return parsed
+			return oauthExpiresInSeconds(parsed)
 		}
 		if parsed, err := strconv.ParseFloat(typed.String(), 64); err == nil {
-			return int64(parsed)
+			return fromFloat(parsed)
 		}
 	case string:
 		trimmed := strings.TrimSpace(typed)
@@ -305,10 +564,10 @@ func oauthExpiresInSeconds(value any) int64 {
 			return 0
 		}
 		if parsed, err := strconv.ParseInt(trimmed, 10, 64); err == nil {
-			return parsed
+			return oauthExpiresInSeconds(parsed)
 		}
 		if parsed, err := strconv.ParseFloat(trimmed, 64); err == nil {
-			return int64(parsed)
+			return fromFloat(parsed)
 		}
 	}
 	return 0

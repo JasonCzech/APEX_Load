@@ -1,6 +1,18 @@
 package storage
 
-import "time"
+import (
+	"errors"
+	"time"
+)
+
+var (
+	// ErrFleetPoolHasActiveProvisioning prevents deleting the durable identity
+	// for a pool while an external scale attempt can still complete against it.
+	ErrFleetPoolHasActiveProvisioning = errors.New("fleet pool has an active provisioning request")
+	// ErrFleetPoolNotActive prevents a stale preflight read from launching a new
+	// provisioning attempt after an administrator suspended the pool.
+	ErrFleetPoolNotActive = errors.New("fleet pool is not active")
+)
 
 // FleetPool is a named, cloud-managed group of load generators with sizing
 // configuration — the managed-fleet analog of LoadRunner Enterprise host pools.
@@ -46,6 +58,20 @@ type GeneratorMetadata struct {
 	Tags           map[string]string `json:"tags,omitempty"`
 	CreatedAt      time.Time         `json:"created_at"`
 	UpdatedAt      time.Time         `json:"updated_at"`
+}
+
+// GeneratorMetadataPatch carries presence-aware partial edits. FleetPoolIDSet
+// distinguishes an omitted membership edit from an explicit nil (detach).
+type GeneratorMetadataPatch struct {
+	Target         *string
+	FleetPoolIDSet bool
+	FleetPoolID    *string
+	Region         *string
+	ProviderID     *string
+	ProviderStatus *string
+	Cordoned       *bool
+	Tags           map[string]string
+	TagsSet        bool
 }
 
 // ProvisioningRequest tracks a request to scale a fleet pool. Until a real cloud

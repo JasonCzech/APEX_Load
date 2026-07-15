@@ -48,6 +48,57 @@ func TestHeaders(t *testing.T) {
 	}
 }
 
+func TestSensitiveNameNormalizedVocabulary(t *testing.T) {
+	for _, name := range []string{
+		"private_key", "client-secret", "client%5Fsecret", "sessionId",
+		"csrf_token", "XSRF-TOKEN", "credentials[connection_string]",
+		"AWS_ACCESS_KEY_ID", "SharedAccessKey", "shared_access_signature",
+		"jms_settlement_token", "lock-token", "receipt_handle", "sid",
+	} {
+		if !SensitiveName(name) {
+			t.Errorf("SensitiveName(%q) = false, want true", name)
+		}
+	}
+	for _, name := range []string{"author", "authority", "client_id", "correlation_id", "soap_operation", "status"} {
+		if SensitiveName(name) {
+			t.Errorf("SensitiveName(%q) = true, want false", name)
+		}
+	}
+}
+
+func TestVocabularyAppliesAcrossStructuredEncodings(t *testing.T) {
+	secret := "short"
+	values := []string{
+		`{"client%5Fsecret":"short","safe":"ok"}`,
+		"client%255Fsecret=short&safe=ok",
+		`<root private_key="short"><csrf_token>short</csrf_token></root>`,
+		"--b\r\nContent-Disposition: form-data; name=\"session%5Fid\"\r\n\r\nshort\r\n--b--",
+	}
+	for _, input := range values {
+		if got := Value(input, Policy{}); strings.Contains(got, secret) || !strings.Contains(got, Redacted) {
+			t.Errorf("Value(%q) = %q, want short secret redacted", input, got)
+		}
+	}
+	if got := ValueURL("https://user:short@example.test/cb?client%5Fsecret=short", Policy{}); strings.Contains(got, "user:short") || strings.Contains(got, "=short") {
+		t.Fatalf("ValueURL leaked userinfo/query secret: %q", got)
+	}
+	mapValue := StringMap(map[string]string{"jms_settlement_token": "x", "soap_operation": "Create"}, Policy{})
+	if mapValue["jms_settlement_token"] != Redacted || mapValue["soap_operation"] != "Create" {
+		t.Fatalf("StringMap = %#v", mapValue)
+	}
+	structured, _ := Structured(map[string]any{
+		"credentials": map[string]any{"private_key": "tiny"},
+		"events":      []any{map[string]string{"xsrf": "x", "status": "ok"}},
+	}, Policy{}).(map[string]any)
+	encoded, err := json.Marshal(structured)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "tiny") || strings.Contains(string(encoded), `"xsrf":"x"`) {
+		t.Fatalf("Structured leaked named secret: %s", encoded)
+	}
+}
+
 func TestValue(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -128,6 +179,18 @@ func TestValue(t *testing.T) {
 				t.Errorf("Value(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestValueScrubsCredentialsInsideEmbeddedURLs(t *testing.T) {
+	secret := "short-password"
+	input := `request failed for https://user:` + secret + `@example.test/cb?api_key=` + secret + `; retrying`
+	got := Value(input, Policy{})
+	if strings.Contains(got, secret) || strings.Contains(got, "user:"+secret) {
+		t.Fatalf("Value leaked embedded URL credentials: %q", got)
+	}
+	if !strings.Contains(got, "request failed for") || !strings.Contains(got, "retrying") {
+		t.Fatalf("Value discarded surrounding diagnostic text: %q", got)
 	}
 }
 

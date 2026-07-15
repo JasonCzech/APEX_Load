@@ -176,24 +176,37 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 		if payload.TestID != testRun.ID {
 			t.Fatalf("manifest test_id = %q, want %q", payload.TestID, testRun.ID)
 		}
-		if payload.TransactionsParquetFile == "" || payload.ResourceSamplesParquetFile == "" || payload.IntervalSummariesParquetFile == "" {
-			t.Fatalf("expected manifest parquet file fields, got %#v", payload)
+		if payload.TransactionsParquetFile != "" {
+			t.Fatalf("transactions parquet file = %q, want omitted from disclosure-safe manifest", payload.TransactionsParquetFile)
+		}
+		if payload.ResourceSamplesParquetFile == "" || payload.IntervalSummariesParquetFile == "" {
+			t.Fatalf("expected non-sensitive parquet file fields, got %#v", payload)
 		}
 	})
 
-	t.Run("artifact download", func(t *testing.T) {
+	t.Run("unsafe transaction parquet is omitted", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/files/transactions.parquet", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusNotFound {
+			t.Fatalf("artifact status = %d, want %d body=%s", resp.Code, http.StatusNotFound, resp.Body.String())
+		}
+	})
+
+	t.Run("safe transaction jsonl download", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/files/transactions.jsonl", nil)
 		resp := httptest.NewRecorder()
 		server.mux.ServeHTTP(resp, req)
 
 		if resp.Code != http.StatusOK {
 			t.Fatalf("artifact status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
 		}
-		if contentDisposition := resp.Header().Get("Content-Disposition"); !strings.Contains(contentDisposition, "transactions.parquet") {
-			t.Fatalf("expected content disposition to include parquet filename, got %q", contentDisposition)
+		if contentDisposition := resp.Header().Get("Content-Disposition"); !strings.Contains(contentDisposition, "transactions.jsonl") {
+			t.Fatalf("expected content disposition to include JSONL filename, got %q", contentDisposition)
 		}
 		if resp.Body.Len() == 0 {
-			t.Fatal("expected parquet artifact download to return content")
+			t.Fatal("expected disclosure-safe JSONL artifact download to return content")
 		}
 	})
 
