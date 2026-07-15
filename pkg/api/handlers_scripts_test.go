@@ -685,7 +685,7 @@ func TestHandleImportSamplePreservedSourceReviewRedactsSecrets(t *testing.T) {
 	if len(result.Script.Actions) != 1 {
 		t.Fatalf("action count = %d, want 1", len(result.Script.Actions))
 	}
-	if got := result.Script.Actions[0].Headers["Authorization"]; got != "[REDACTED]" {
+	if got := result.Script.Actions[0].Headers["Authorization"]; got != "Basic [REDACTED]" {
 		t.Fatalf("authorization header = %q, want disclosure-safe redaction even when sanitize_sensitive=false", got)
 	}
 	if strings.Contains(result.Script.Actions[0].Body, passwordValue) || !strings.Contains(result.Script.Actions[0].Body, "[REDACTED]") {

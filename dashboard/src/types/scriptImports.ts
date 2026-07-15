@@ -122,6 +122,40 @@ export interface ApplyParameterizationResponse {
   warnings?: string[]
 }
 
+// A redacted credential location that must be replaced with a governed
+// {{secret.NAME}} reference before an imported script can be saved. The
+// original credential value is intentionally unavailable to the client.
+export interface SecretBindingRequirement {
+  id: string
+  path: string
+  occurrence?: number
+  label: string
+  context: string
+  suggested_name: string
+  replacement?: string
+  script_index?: number
+  script_id?: string
+  script_name?: string
+}
+
+// Multiple requirements may deliberately select the same logical name. That
+// is how an operator explicitly reuses one secret binding across locations.
+export interface SecretBindingSelection {
+  requirement_id: string
+  secret_name: string
+}
+
+export interface ApplySecretBindingsRequest {
+  script: ScriptDefinition
+  script_index?: number
+  bindings: SecretBindingSelection[]
+}
+
+export interface ApplySecretBindingsResponse {
+  script: ScriptDefinition
+  secret_binding_requirements: SecretBindingRequirement[]
+}
+
 export interface ScriptImportResult<
   TStats = Record<string, unknown>,
   TCorrelation = unknown,
@@ -146,6 +180,7 @@ export interface ScriptImportResult<
   source_review?: SourceReview
   trueclient2_compat_report?: TrueClient2CompatReport
   parameterization?: Parameterization
+  secret_binding_requirements?: SecretBindingRequirement[]
   preflight?: ReplayPreflight
 }
 

@@ -38,6 +38,7 @@ const apiMock = {
   getK6SupportMatrix: vi.fn().mockResolvedValue({ support_matrix: [], notes: [] }),
   getEventHubsCaptureSupportMatrix: vi.fn().mockResolvedValue({ support_matrix: [], notes: [] }),
   getBrokerConfigSupportMatrix: vi.fn().mockResolvedValue({ support_matrix: [], notes: [] }),
+  applySecretBindings: vi.fn(),
 }
 
 vi.mock('../hooks/useApi', () => ({
@@ -1245,6 +1246,110 @@ describe('ProtocolAssetImport', () => {
     expect(container.textContent).toContain('jms-solace · Orders JMS')
     expect(container.textContent).toContain('Kafka brokers · serde · replay')
     expect(container.textContent).toContain('SASL Secret')
+  })
+
+  it('scopes redacted AsyncAPI bindings by script_index before saving the selected script', async () => {
+    const kafkaScript = {
+      name: 'Orders Kafka',
+      version: '1.0.0',
+      protocol: 'kafka',
+      config: { base_url: '', kafka: { brokers: ['broker:9092'], mock: true } },
+      actions: [{ name: 'Publish Order', type: 'kafka_produce', target: 'orders.created' }],
+    }
+    const redactedJMSScript = {
+      name: 'Orders JMS',
+      version: '1.0.0',
+      protocol: 'jms-solace',
+      config: { base_url: '', jms: { provider: 'solace', password: '[REDACTED]', mock: true } },
+      actions: [{ name: 'Publish Shipment', type: 'jms_publish', target: 'shipments' }],
+    }
+    const resolvedJMSScript = {
+      ...redactedJMSScript,
+      config: { base_url: '', jms: { provider: 'solace', password: '{{secret.JMS_PASSWORD}}', mock: true } },
+    }
+    apiMock.importAsyncAPI.mockResolvedValueOnce({
+      scripts: [kafkaScript, redactedJMSScript],
+      script: kafkaScript,
+      warnings: [],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [],
+      repair_suggestions: [],
+      correlations: [],
+      stats: { format: 'asyncapi', converted_actions: 2 },
+      summary: { topics: ['orders.created', 'shipments'] },
+      secret_binding_requirements: [{
+        id: 'jms-password',
+        path: '/config/jms/password',
+        label: 'Orders JMS — Broker password',
+        context: 'JMS broker credential',
+        suggested_name: 'JMS_PASSWORD',
+        script_index: 1,
+        script_name: 'Orders JMS',
+      }],
+    })
+    apiMock.applySecretBindings.mockResolvedValueOnce({
+      script: resolvedJMSScript,
+      secret_binding_requirements: [],
+    })
+    apiMock.commitAsyncAPIImport.mockResolvedValueOnce({
+      stored_script: {
+        id: 'saved-jms',
+        name: 'Orders JMS',
+        protocol: 'jms-solace',
+        version: '1.0.0',
+        created_at: '2026-01-01T00:00:00Z',
+        script: resolvedJMSScript,
+      },
+    })
+
+    await act(async () => {
+      root.render(<ProtocolAssetImport kind="asyncapi" projectId="project-1" />)
+    })
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')
+    expect(fileInput).not.toBeNull()
+    const file = new File(['asyncapi: 3.0.0'], 'orders.asyncapi.yaml', { type: 'application/yaml' })
+    await act(async () => {
+      Object.defineProperty(fileInput!, 'files', { configurable: true, value: [file] })
+      fileInput!.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const convertButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Convert AsyncAPI'))
+    await act(async () => convertButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await flushPromises()
+
+    const jmsTab = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('jms-solace · Orders JMS'))
+    await act(async () => jmsTab?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+
+    const blockedSave = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save To Script Library'))
+    const blockedSaveAll = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save All Scripts'))
+    expect(blockedSave?.disabled).toBe(true)
+    expect(blockedSaveAll?.disabled).toBe(true)
+    blockedSave?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(apiMock.commitAsyncAPIImport).not.toHaveBeenCalled()
+
+    const applyButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Apply Bindings'))
+    await act(async () => applyButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await flushPromises()
+
+    expect(apiMock.applySecretBindings).toHaveBeenCalledWith({
+      script: redactedJMSScript,
+      script_index: 1,
+      bindings: [{ requirement_id: 'jms-password', secret_name: 'JMS_PASSWORD' }],
+    })
+    expect(container.textContent).toContain('{{secret.JMS_PASSWORD}}')
+
+    const enabledSave = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save To Script Library'))
+    expect(enabledSave?.disabled).toBe(false)
+    await act(async () => enabledSave?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await flushPromises()
+    expect(apiMock.commitAsyncAPIImport).toHaveBeenCalledWith(expect.objectContaining({
+      script: expect.objectContaining({
+        name: 'Orders JMS',
+        config: expect.objectContaining({
+          jms: expect.objectContaining({ password: '{{secret.JMS_PASSWORD}}' }),
+        }),
+      }),
+    }))
   })
 
   it('saves all generated AsyncAPI scripts through the commit route', async () => {

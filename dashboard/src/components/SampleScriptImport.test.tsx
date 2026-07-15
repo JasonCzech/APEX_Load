@@ -12,6 +12,7 @@ const apiMock = {
   importSample: vi.fn(),
   uploadImportAsset: vi.fn(),
   createScript: vi.fn(),
+  applySecretBindings: vi.fn(),
 }
 
 vi.mock('../hooks/useApi', () => ({
@@ -227,6 +228,130 @@ describe('SampleScriptImport', () => {
         }),
       })],
     }))
+  })
+
+  it('blocks saving a redacted sample until its secret binding is applied', async () => {
+    const redactedScript = {
+      name: 'Imported Login',
+      version: '1.0.0',
+      protocol: 'http',
+      config: { base_url: 'https://api.example.test' },
+      actions: [{
+        name: 'Login',
+        type: 'request',
+        method: 'POST',
+        target: '/login',
+        headers: { Authorization: 'Bearer [REDACTED]' },
+      }],
+    }
+    const resolvedScript = {
+      ...redactedScript,
+      actions: [{
+        ...redactedScript.actions[0],
+        headers: { Authorization: 'Bearer {{secret.LOGIN_TOKEN}}' },
+      }],
+    }
+    apiMock.importSample.mockResolvedValueOnce({
+      script: redactedScript,
+      warnings: [],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [],
+      repair_suggestions: [],
+      correlations: [],
+      stats: { format: 'rest_json', total_requests: 1, converted_actions: 1, assertions: 0, extractors: 0, correlations_detected: 0 },
+      secret_binding_requirements: [{
+        id: 'login-auth',
+        path: '/actions/0/headers/Authorization',
+        label: 'Login — Authorization header',
+        context: 'Bearer credential',
+        suggested_name: 'LOGIN_TOKEN',
+      }],
+    })
+    apiMock.applySecretBindings.mockResolvedValueOnce({
+      script: resolvedScript,
+      secret_binding_requirements: [],
+    })
+
+    await act(async () => {
+      root.render(<SampleScriptImport />)
+    })
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Sample'))
+    expect(convertButton).toBeDefined()
+    await act(async () => convertButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await flushPromises()
+
+    const blockedSave = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save To Script Library'))
+    expect(blockedSave?.disabled).toBe(true)
+    blockedSave?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(apiMock.createScript).not.toHaveBeenCalled()
+
+    const applyButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Apply Bindings'))
+    expect(applyButton).toBeDefined()
+    await act(async () => applyButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await flushPromises()
+
+    expect(apiMock.applySecretBindings).toHaveBeenCalledWith(expect.objectContaining({
+      bindings: [{ requirement_id: 'login-auth', secret_name: 'LOGIN_TOKEN' }],
+    }))
+    expect(container.textContent).toContain('{{secret.LOGIN_TOKEN}}')
+
+    const enabledSave = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save To Script Library'))
+    expect(enabledSave?.disabled).toBe(false)
+    await act(async () => enabledSave?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await flushPromises()
+    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
+      actions: [expect.objectContaining({
+        headers: { Authorization: 'Bearer {{secret.LOGIN_TOKEN}}' },
+      })],
+    }), undefined)
+  })
+
+  it('stores sample authentication options as governed secret references', async () => {
+    await act(async () => {
+      root.render(<SampleScriptImport />)
+    })
+    const authentication = Array.from(container.querySelectorAll('label'))
+      .find(label => label.querySelector('span')?.textContent === 'Authentication')
+      ?.querySelector('select')
+    expect(authentication).not.toBeNull()
+    await act(async () => setControlValue(authentication!, 'basic'))
+
+    const bindingInput = container.querySelector<HTMLInputElement>('input[placeholder="LOGIN_PASSWORD"]')
+    expect(bindingInput).not.toBeNull()
+    await act(async () => setControlValue(bindingInput!, 'SAMPLE_LOGIN_PASSWORD'))
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Sample'))
+    await act(async () => convertButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await flushPromises()
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save To Script Library'))
+    await act(async () => saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await flushPromises()
+
+    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
+      config: expect.objectContaining({
+        http: expect.objectContaining({
+          auth: expect.objectContaining({ password: '{{secret.SAMPLE_LOGIN_PASSWORD}}' }),
+        }),
+      }),
+    }), undefined)
+    expect(JSON.stringify(apiMock.createScript.mock.calls[0]?.[0])).not.toContain('"password":"SAMPLE_LOGIN_PASSWORD"')
+  })
+
+  it('rejects raw credentials in sensitive default headers', async () => {
+    await act(async () => {
+      root.render(<SampleScriptImport />)
+    })
+    const headersInput = container.querySelector<HTMLTextAreaElement>('textarea[placeholder*=x-tenant-id]')
+    expect(headersInput).not.toBeNull()
+    await act(async () => setControlValue(headersInput!, '{"Authorization":"Bearer pasted-token"}'))
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Sample'))
+    await act(async () => convertButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+
+    expect(apiMock.importSample).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Default header Authorization is sensitive')
+    expect(container.textContent).toContain('{{secret.NAME}}')
   })
 
   it('sends the HAR static asset option and surfaces filtered asset counts', async () => {
@@ -558,4 +683,15 @@ async function flushPromises() {
     await Promise.resolve()
     await Promise.resolve()
   })
+}
+
+function setControlValue(control: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement, value: string) {
+  const prototype = control instanceof HTMLSelectElement
+    ? window.HTMLSelectElement.prototype
+    : control instanceof HTMLTextAreaElement
+      ? window.HTMLTextAreaElement.prototype
+      : window.HTMLInputElement.prototype
+  const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set
+  setter?.call(control, value)
+  control.dispatchEvent(new Event(control instanceof HTMLSelectElement ? 'change' : 'input', { bubbles: true }))
 }

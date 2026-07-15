@@ -1,17 +1,19 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useApi } from '../hooks/useApi'
 import { summarizeImportExtractors, summarizeSupportMatrix, summarizeSupportMatrixEntries } from './jmeterImportUtils'
-import { type JMeterImportResult as ImportResult, type JMeterSupportMatrixEntry, type JMeterSupportMatrixResponse, type SupportMatrix } from '../types/scriptImports'
+import { type JMeterImportResult as ImportResult, type JMeterSupportMatrixEntry, type JMeterSupportMatrixResponse, type SecretBindingSelection, type SupportMatrix } from '../types/scriptImports'
 import { type ScriptDefinition, type SourceReview } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import { isDesktopSurface } from '../desktop/desktopBridge'
 import { canUseNativeDialogs, filesFromDroppedPaths, pickFilesViaBridge } from '../desktop/desktopFiles'
 import { useDesktopFileDrop } from '../desktop/useDesktopFileDrop'
 import ParameterizationReview from './ParameterizationReview'
+import SecretBindingReview from './SecretBindingReview'
 import ScriptImportReview from './ScriptImportReview'
 import SourceMappingReview from './SourceMappingReview'
 import { withFallbackPersistedScripts } from './importSaveUtils'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
+import { refreshedSecretBindingRequirements, replaceSecretBindingRequirementsForScript, secretBindingRequirementsForScript } from './secretBindingUtils'
 import './EnterpriseArchiveImport.css'
 
 interface Props {
@@ -202,6 +204,10 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
 
   const handleSaveConverted = async () => {
     if (!result?.scripts?.length) return
+    if ((result.secret_binding_requirements?.length ?? 0) > 0) {
+      setError('Resolve every redacted credential binding before saving the generated scripts.')
+      return
+    }
     setSaving(true)
     setError('')
     setNotice('')
@@ -224,6 +230,41 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
       setError(getErrorMessage(error, 'Failed to save converted scripts'))
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleSecretBindingsApply = (script: ScriptDefinition, scriptIndex: number) => async (bindings: SecretBindingSelection[]) => {
+    try {
+      const resolved = await api.applySecretBindings({ script, script_index: scriptIndex, bindings })
+      setResult(prev => {
+        if (!prev) return prev
+        const scripts = (prev.scripts || []).map((entry, index) => index === scriptIndex ? resolved.script : entry)
+        return {
+          ...prev,
+          scripts,
+          script: scriptIndex === 0 ? resolved.script : prev.script,
+          secret_binding_requirements: replaceSecretBindingRequirementsForScript(
+            prev.secret_binding_requirements,
+            scriptIndex,
+            script,
+            resolved.secret_binding_requirements,
+          ),
+        }
+      })
+    } catch (error: unknown) {
+      const refreshed = refreshedSecretBindingRequirements(error)
+      if (refreshed) {
+        setResult(prev => prev ? {
+          ...prev,
+          secret_binding_requirements: replaceSecretBindingRequirementsForScript(
+            prev.secret_binding_requirements,
+            scriptIndex,
+            script,
+            refreshed,
+          ),
+        } : prev)
+      }
+      throw error
     }
   }
 
@@ -399,6 +440,7 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
             unsupportedElements={result.unsupported_elements}
             reviewSections={result.review_sections}
             saving={saving}
+            saveDisabled={(result.secret_binding_requirements?.length ?? 0) > 0}
             saveLabel={`${reviewMode === 'validation' ? 'Save Reviewed' : 'Save'} ${result.scripts?.length || 0} Script${(result.scripts?.length || 0) === 1 ? '' : 's'}`}
             onSave={handleSaveConverted}
             onEdit={onEdit && primaryScript ? () => onEdit(primaryScript) : undefined}
@@ -425,7 +467,19 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
               </div>
             )}
 
-            {parameterization && parameterization.suggestions.length > 0 && (result.scripts || []).map(script => (
+            {(result.scripts || []).map((script, scriptIndex) => {
+              const requirements = secretBindingRequirementsForScript(result.secret_binding_requirements, scriptIndex, script)
+              if (requirements.length === 0) return null
+              return (
+                <SecretBindingReview
+                  key={`secret-bindings-${scriptIndex}-${script.name}`}
+                  requirements={requirements}
+                  onApply={handleSecretBindingsApply(script, scriptIndex)}
+                />
+              )
+            })}
+
+            {(result.secret_binding_requirements?.length ?? 0) === 0 && parameterization && parameterization.suggestions.length > 0 && (result.scripts || []).map(script => (
               <ParameterizationReview
                 key={`paramize-${script.name}`}
                 parameterization={parameterization}

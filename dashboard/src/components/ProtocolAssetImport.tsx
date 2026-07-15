@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { useAsyncTask } from '../hooks/useAsyncTask'
 import { useApi } from '../hooks/useApi'
 import { type BrowserReplayReport, type BrowserReplayStartResponse, type ReplayRepairSuggestion, type StoredScript } from '../types'
-import { type AgentforceReview, type AgentforceTransformChange, type AsyncAPIImportResult, type AsyncAPISupportMatrixEntry, type BrokerConfigImportResult, type BrokerConfigSupportMatrixEntry, type BrowserRecordingImportResult, type DevWebImportResult, type DevWebSupportMatrixEntry, type EventHubsCaptureImportResult, type EventHubsCaptureSupportMatrixEntry, type HARImportResult, type HARImportSummary, type K6ImportResult, type K6SupportMatrixEntry, type MulesoftReview, type OpenAPICorrelation, type OpenAPIImportResult, type OpenAPISupportMatrixEntry, type PostmanImportResult, type PostmanSupportMatrixEntry, type RAMLImportResult, type RAMLSupportMatrixEntry, type SalesforceImportResult, type SalesforceReview, type WSDLImportResult } from '../types/scriptImports'
+import { type AgentforceReview, type AgentforceTransformChange, type AsyncAPIImportResult, type AsyncAPISupportMatrixEntry, type BrokerConfigImportResult, type BrokerConfigSupportMatrixEntry, type BrowserRecordingImportResult, type DevWebImportResult, type DevWebSupportMatrixEntry, type EventHubsCaptureImportResult, type EventHubsCaptureSupportMatrixEntry, type HARImportResult, type HARImportSummary, type K6ImportResult, type K6SupportMatrixEntry, type MulesoftReview, type OpenAPICorrelation, type OpenAPIImportResult, type OpenAPISupportMatrixEntry, type PostmanImportResult, type PostmanSupportMatrixEntry, type RAMLImportResult, type RAMLSupportMatrixEntry, type SalesforceImportResult, type SalesforceReview, type SecretBindingSelection, type WSDLImportResult } from '../types/scriptImports'
 import { type ScriptDefinition, type SourceReview } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import ImportDropzone from './ImportDropzone'
@@ -16,6 +16,7 @@ import SourceMappingReview from './SourceMappingReview'
 import { withFallbackPersistedScript } from './importSaveUtils'
 import { salesforceApiSurfaceBreakdown, salesforceEndpointTotal } from './salesforceReviewSummary'
 import { buildReplayStartPayload } from './scriptEditorUtils'
+import { refreshedSecretBindingRequirements, replaceSecretBindingRequirementsForScript, secretBindingRequirementsForScript } from './secretBindingUtils'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
 import './SampleScriptImport.css'
 
@@ -829,6 +830,9 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   const importedScripts = result?.scripts?.length ? result.scripts : result?.script ? [result.script] : []
   const generatedScripts = kind === 'recorder-export' && editedRecorderScripts.length > 0 ? editedRecorderScripts : importedScripts
   const reviewedScript = generatedScripts[selectedScriptIndex] || generatedScripts[0] || null
+  const secretBindingRequirements = reviewedScript
+    ? secretBindingRequirementsForScript(result?.secret_binding_requirements, selectedScriptIndex, reviewedScript)
+    : []
   const sourceReview = sourceReviewForImport(result, reviewedScript)
   const harSummary: HARImportSummary | undefined = kind === 'har' ? (result as HARImportResult | null | undefined)?.summary : undefined
   const salesforceReview = kind === 'har' ? salesforceReviewForImport(result, reviewedScript) : null
@@ -913,6 +917,10 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   const handleSave = async () => {
     if (!reviewedScript) return
     setMessageError('')
+    if (secretBindingRequirements.length > 0) {
+      setMessageError('Resolve every redacted credential binding before saving this script.')
+      return
+    }
     try {
       let scriptToSave = reviewedScript
       if (kind === 'recorder-export') {
@@ -980,6 +988,10 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   const handleSaveAllAsyncAPIScripts = async () => {
     if (kind !== 'asyncapi' || generatedScripts.length === 0) return
     setMessageError('')
+    if ((result?.secret_binding_requirements?.length ?? 0) > 0) {
+      setMessageError('Resolve every redacted credential binding before saving all generated scripts.')
+      return
+    }
     try {
       const savedScripts: StoredScript[] = []
       await saveTask.run(async () => {
@@ -1002,6 +1014,45 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
     if (!result) return
     const nextScripts = generatedScripts.length ? generatedScripts.map((script, index) => index === selectedScriptIndex ? parameterizedScript : script) : [parameterizedScript]
     convertTask.setValue({ ...result, script: parameterizedScript, scripts: nextScripts } as ProtocolImportResult)
+  }
+
+  const handleSecretBindingsApply = async (bindings: SecretBindingSelection[]) => {
+    if (!result || !reviewedScript) return
+    try {
+      const resolved = await api.applySecretBindings({
+        script: reviewedScript,
+        script_index: selectedScriptIndex,
+        bindings,
+      })
+      const nextScripts = generatedScripts.length
+        ? generatedScripts.map((script, index) => index === selectedScriptIndex ? resolved.script : script)
+        : [resolved.script]
+      convertTask.setValue({
+        ...result,
+        script: nextScripts[0],
+        scripts: nextScripts,
+        secret_binding_requirements: replaceSecretBindingRequirementsForScript(
+          result.secret_binding_requirements,
+          selectedScriptIndex,
+          reviewedScript,
+          resolved.secret_binding_requirements,
+        ),
+      } as ProtocolImportResult)
+    } catch (error: unknown) {
+      const refreshed = refreshedSecretBindingRequirements(error)
+      if (refreshed) {
+        convertTask.setValue({
+          ...result,
+          secret_binding_requirements: replaceSecretBindingRequirementsForScript(
+            result.secret_binding_requirements,
+            selectedScriptIndex,
+            reviewedScript,
+            refreshed,
+          ),
+        } as ProtocolImportResult)
+      }
+      throw error
+    }
   }
 
   const handleRuntimeOptionsChanged = (updatedScript: ScriptDefinition) => {
@@ -1188,6 +1239,8 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
             reviewSections={result.review_sections}
             parameterization={result.parameterization}
             onParameterizationApplied={handleParameterizationApplied}
+            secretBindingRequirements={secretBindingRequirements}
+            onSecretBindingsApply={handleSecretBindingsApply}
             saving={saveTask.pending}
             saveDisabled={(kind === 'postman' && postmanSaveMode === 'replace' && !postmanReplaceScriptId) || (kind === 'openapi' && openAPISaveMode === 'replace' && !openAPIReplaceScriptId)}
             onSave={handleSave}
@@ -1216,7 +1269,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                     </button>
                   ))}
                 </div>
-                <button className="btn btn-secondary btn-sm" type="button" onClick={handleSaveAllAsyncAPIScripts} disabled={saveTask.pending}>
+                <button className="btn btn-secondary btn-sm" type="button" onClick={handleSaveAllAsyncAPIScripts} disabled={saveTask.pending || (result.secret_binding_requirements?.length ?? 0) > 0}>
                   {saveTask.pending ? 'Saving...' : 'Save All Scripts'}
                 </button>
               </div>
@@ -1377,7 +1430,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                 </div>
               </div>
             )}
-            <ImportRuntimeOptions script={reviewedScript} onChange={handleRuntimeOptionsChanged} disabled={saveTask.pending} />
+            <ImportRuntimeOptions script={reviewedScript} onChange={handleRuntimeOptionsChanged} disabled={saveTask.pending || secretBindingRequirements.length > 0} />
             {kind === 'har' && harSummary && (
               <div className="sample-import-review-block">
                 <h4>HAR Artifact Review</h4>

@@ -6714,6 +6714,20 @@ paths:
       x-roles: Requires Authentication (Role based on specific entity)
       tags:
         - Scripts
+  /api/v1/scripts/secret-bindings/apply:
+    post:
+      summary: Apply Script Secret Bindings
+      description: |-
+        **Handler:** `handleApplyScriptSecretBindings`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleApplyScriptSecretBindings
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+        - Scripts
   /api/v1/scripts/validate:
     post:
       summary: Validate Draft Script

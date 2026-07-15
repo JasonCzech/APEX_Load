@@ -137,3 +137,150 @@ describe('GitHubSyncModal (push)', () => {
     expect(container.querySelector('[role="alert"]')?.textContent).toBe('network unavailable')
   })
 })
+
+describe('GitHubSyncModal (import)', () => {
+  let container: HTMLDivElement
+  let root: Root
+  let fetchMock: MockInstance<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>
+  let applyBody: Record<string, unknown> | null
+  let createBody: Record<string, unknown> | null
+
+  const importedDraft = {
+    name: 'Redacted Login',
+    version: '1.0.0',
+    protocol: 'http',
+    project_id: 'team-a',
+    config: {},
+    actions: [{
+      name: 'Login',
+      type: 'http',
+      method: 'POST',
+      target: 'https://example.test/login',
+      headers: { Authorization: 'Bearer [REDACTED]' },
+    }],
+  }
+  const resolvedDraft = {
+    ...importedDraft,
+    actions: [{
+      ...importedDraft.actions[0],
+      headers: { Authorization: 'Bearer {{secret.LOGIN_TOKEN}}' },
+    }],
+  }
+
+  beforeEach(() => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    applyBody = null
+    createBody = null
+    fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input)
+      const method = init?.method || 'GET'
+      if (url.includes('/integrations/github/repos')) {
+        return jsonResponse({ repos: [{ name: 'scripts', full_name: 'org/scripts', owner: 'org', private: true, default_branch: 'main', html_url: '' }] })
+      }
+      if (url.includes('/integrations/github/branches')) {
+        return jsonResponse({ branches: [{ name: 'main', commit_sha: 'abc' }] })
+      }
+      if (url.includes('/integrations/github/contents')) {
+        return jsonResponse({
+          type: 'dir',
+          entries: [{ name: 'redacted.json', path: 'scripts/redacted.json', type: 'file', sha: 'file-1', size: 512 }],
+        })
+      }
+      if (url.includes('/scripts/import/github') && method === 'POST') {
+        return jsonResponse({
+          script: importedDraft,
+          secret_binding_requirements: [{
+            id: 'binding-1',
+            path: 'actions[0].headers.Authorization',
+            label: 'Login · Authorization header',
+            context: 'Bearer credential in the Login action',
+            suggested_name: 'LOGIN_TOKEN',
+            replacement: 'Bearer {{secret.LOGIN_TOKEN}}',
+          }],
+        })
+      }
+      if (url.includes('/scripts/secret-bindings/apply') && method === 'POST') {
+        applyBody = init?.body ? JSON.parse(String(init.body)) : null
+        return jsonResponse({ script: resolvedDraft, secret_binding_requirements: [] })
+      }
+      if (url.endsWith('/scripts') && method === 'POST') {
+        createBody = init?.body ? JSON.parse(String(init.body)) : null
+        return jsonResponse({
+          id: 'script-imported',
+          ref_key: 'S-2',
+          name: resolvedDraft.name,
+          protocol: resolvedDraft.protocol,
+          version: resolvedDraft.version,
+          project_id: 'team-a',
+          created_at: new Date().toISOString(),
+        })
+      }
+      return jsonResponse({})
+    })
+  })
+
+  afterEach(async () => {
+    await act(async () => { root.unmount() })
+    container.remove()
+    fetchMock.mockRestore()
+  })
+
+  it('requires redacted credentials to be bound before saving the imported script', async () => {
+    const onImported = vi.fn()
+    const onClose = vi.fn()
+    await act(async () => {
+      root.render(<GitHubSyncModal mode="import" config={config} projectId="team-a" onClose={onClose} onImported={onImported} />)
+    })
+    await flushPromises()
+    await flushPromises()
+    await act(async () => {
+      await new Promise(resolve => window.setTimeout(resolve, 0))
+    })
+
+    const file = container.querySelector<HTMLButtonElement>('[aria-label="Browse scripts/redacted.json"]')
+    expect(file).toBeTruthy()
+    await act(async () => { file?.click() })
+
+    const importButton = findButton('Import & Save')
+    expect(importButton?.disabled).toBe(false)
+    await act(async () => { importButton?.click() })
+    await flushPromises()
+    await flushPromises()
+
+    expect(container.textContent).toContain('Resolve Redacted Credentials (1)')
+    expect(container.textContent).toContain('never a credential value')
+    const bindingName = container.querySelector<HTMLInputElement>('.secret-binding-review input')
+    expect(bindingName?.value).toBe('LOGIN_TOKEN')
+
+    const saveBeforeBinding = findButton('Save Script')
+    expect(saveBeforeBinding?.disabled).toBe(true)
+    await act(async () => { saveBeforeBinding?.click() })
+    expect(createBody).toBeNull()
+
+    const apply = findButton('Apply Bindings (1)')
+    expect(apply?.disabled).toBe(false)
+    await act(async () => { apply?.click() })
+    await flushPromises()
+    await flushPromises()
+
+    expect(applyBody).toEqual({
+      script: importedDraft,
+      bindings: [{ requirement_id: 'binding-1', secret_name: 'LOGIN_TOKEN' }],
+    })
+    expect(container.textContent).toContain('All redacted values now use secret references.')
+
+    const save = findButton('Save Script')
+    expect(save?.disabled).toBe(false)
+    await act(async () => { save?.click() })
+    await flushPromises()
+    await flushPromises()
+
+    expect(createBody).toEqual({ script: resolvedDraft, project_id: 'team-a' })
+    expect(JSON.stringify(createBody)).not.toContain('[REDACTED]')
+    expect(JSON.stringify(createBody)).toContain('{{secret.LOGIN_TOKEN}}')
+    expect(onImported).toHaveBeenCalledWith(expect.objectContaining({ id: 'script-imported' }))
+    expect(onClose).toHaveBeenCalledOnce()
+  })
+})

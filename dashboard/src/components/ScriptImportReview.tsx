@@ -1,8 +1,15 @@
 import { type ReactNode } from 'react'
 
-import { type ImportReviewSection, type Parameterization, type ParameterizationDiff } from '../types/scriptImports'
+import {
+  type ImportReviewSection,
+  type Parameterization,
+  type ParameterizationDiff,
+  type SecretBindingRequirement,
+  type SecretBindingSelection,
+} from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
 import ParameterizationReview from './ParameterizationReview'
+import SecretBindingReview from './SecretBindingReview'
 import './ScriptImportReview.css'
 
 const severityRank: Record<string, number> = {
@@ -35,6 +42,8 @@ interface Props {
   reviewSections?: ImportReviewSection[]
   parameterization?: Parameterization
   onParameterizationApplied?: (script: ScriptDefinition, diffs: ParameterizationDiff[]) => void
+  secretBindingRequirements?: SecretBindingRequirement[]
+  onSecretBindingsApply?: (bindings: SecretBindingSelection[]) => void | Promise<void>
   saving?: boolean
   saveDisabled?: boolean
   saveLabel?: string
@@ -57,6 +66,8 @@ export default function ScriptImportReview({
   reviewSections = [],
   parameterization,
   onParameterizationApplied,
+  secretBindingRequirements = [],
+  onSecretBindingsApply,
   saving = false,
   saveDisabled = false,
   saveLabel = 'Save To Script Library',
@@ -67,6 +78,7 @@ export default function ScriptImportReview({
   onEdit,
   children,
 }: Props) {
+  const hasUnresolvedSecretBindings = secretBindingRequirements.length > 0
   const preview = previewJSON(previewData ?? { script })
   const previewPane = (
     <details className="script-import-review-preview" open>
@@ -96,14 +108,36 @@ export default function ScriptImportReview({
           {subtitle && <p>{subtitle}</p>}
         </div>
         <div className="script-import-review-actions">
-          {onEdit && <button className="btn btn-secondary" onClick={onEdit}>{editLabel}</button>}
-          {onSave && <button className="btn btn-primary" onClick={onSave} disabled={saving || saveDisabled}>{saving ? 'Saving...' : saveLabel}</button>}
+          {onEdit && (
+            <button
+              className="btn btn-secondary"
+              onClick={onEdit}
+              disabled={hasUnresolvedSecretBindings}
+              title={hasUnresolvedSecretBindings ? 'Resolve redacted credential bindings before editing this draft.' : undefined}
+            >
+              {editLabel}
+            </button>
+          )}
+          {onSave && <button className="btn btn-primary" onClick={onSave} disabled={saving || saveDisabled || hasUnresolvedSecretBindings}>{saving ? 'Saving...' : saveLabel}</button>}
         </div>
       </div>
 
       {children}
 
-      {parameterization && onParameterizationApplied && (parameterization.suggestions?.length ?? 0) > 0 && (
+      {hasUnresolvedSecretBindings && onSecretBindingsApply && (
+        <SecretBindingReview
+          requirements={secretBindingRequirements}
+          onApply={onSecretBindingsApply}
+        />
+      )}
+
+      {hasUnresolvedSecretBindings && !onSecretBindingsApply && (
+        <div className="secret-binding-review-unavailable" role="alert">
+          This import contains redacted credentials and cannot be saved until secret bindings are resolved.
+        </div>
+      )}
+
+      {!hasUnresolvedSecretBindings && parameterization && onParameterizationApplied && (parameterization.suggestions?.length ?? 0) > 0 && (
         <ParameterizationReview
           parameterization={parameterization}
           script={script}

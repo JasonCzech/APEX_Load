@@ -11,10 +11,16 @@ import {
   GitHubScriptStatus,
   StoredScript,
 } from '../types'
-import { type Parameterization } from '../types/scriptImports'
+import {
+  type Parameterization,
+  type SecretBindingRequirement,
+  type SecretBindingSelection,
+} from '../types/scriptImports'
 import { ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import ParameterizationReview from './ParameterizationReview'
+import SecretBindingReview from './SecretBindingReview'
+import { refreshedSecretBindingRequirements } from './secretBindingUtils'
 
 type GitHubSyncModalProps = {
   mode: 'push' | 'import'
@@ -58,9 +64,10 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
   // Import-only browse state.
   const [browsePath, setBrowsePath] = useState('')
   const [entries, setEntries] = useState<GitHubContentEntry[]>([])
-  // Import-only review state: a fetched draft pending parameterization review.
+  // Import-only review state: a fetched draft pending secret binding and/or parameterization review.
   const [importDraft, setImportDraft] = useState<ScriptDefinition | null>(null)
   const [importParameterization, setImportParameterization] = useState<Parameterization | null>(null)
+  const [importSecretBindingRequirements, setImportSecretBindingRequirements] = useState<SecretBindingRequirement[]>([])
 
   // Push-only status.
   const [status, setStatus] = useState<GitHubScriptStatus | null>(null)
@@ -193,10 +200,12 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
         return
       }
       const parameterization = result.parameterization
-      if (parameterization && parameterization.suggestions.length > 0) {
-        // Pause before saving so the user can review parameterization advice.
+      const secretBindingRequirements = result.secret_binding_requirements ?? []
+      if (secretBindingRequirements.length > 0 || (parameterization?.suggestions.length ?? 0) > 0) {
+        // Resolve redacted values before optional parameterization review and save.
         setImportDraft(draft)
-        setImportParameterization(parameterization)
+        setImportSecretBindingRequirements(secretBindingRequirements)
+        setImportParameterization(parameterization && parameterization.suggestions.length > 0 ? parameterization : null)
         return
       }
       await saveImportDraft(draft)
@@ -209,6 +218,10 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
 
   async function doSaveReviewedImport() {
     if (!importDraft) return
+    if (importSecretBindingRequirements.length > 0) {
+      setError('Resolve all redacted values before saving the script.')
+      return
+    }
     setLoading(true)
     setError('')
     try {
@@ -217,6 +230,20 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
       setError(getErrorMessage(err, 'Failed to save imported script'))
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function doApplySecretBindings(bindings: SecretBindingSelection[]) {
+    if (!importDraft) return
+    setError('')
+    try {
+      const result = await scriptApi.applySecretBindings({ script: importDraft, bindings })
+      setImportDraft(result.script)
+      setImportSecretBindingRequirements(result.secret_binding_requirements ?? [])
+    } catch (error: unknown) {
+      const refreshed = refreshedSecretBindingRequirements(error)
+      if (refreshed) setImportSecretBindingRequirements(refreshed)
+      throw error
     }
   }
 
@@ -287,12 +314,21 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
                 <label><input type="radio" name="gh-strategy" checked={strategy === 'pr'} onChange={() => setStrategy('pr')} /> Pull request</label>
               </div>
             </>
+          ) : importDraft && importSecretBindingRequirements.length > 0 ? (
+            <SecretBindingReview
+              requirements={importSecretBindingRequirements}
+              onApply={doApplySecretBindings}
+            />
           ) : importDraft && importParameterization ? (
             <ParameterizationReview
               parameterization={importParameterization}
               script={importDraft}
               onApplied={parameterizedScript => setImportDraft(parameterizedScript)}
             />
+          ) : importDraft ? (
+            <p className="setting-desc" role="status">
+              All redacted values now use secret references. The imported script is ready to save.
+            </p>
           ) : (
             <div className="settings-release-list" style={{ maxHeight: 240, overflow: 'auto' }}>
               {browsePath && (
@@ -328,7 +364,12 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
                 {loading ? 'Pushing…' : strategy === 'pr' ? 'Open Pull Request' : 'Commit'}
               </button>
             ) : importDraft ? (
-              <button className="btn btn-primary" type="button" onClick={() => void doSaveReviewedImport()} disabled={loading}>
+              <button
+                className="btn btn-primary"
+                type="button"
+                onClick={() => void doSaveReviewedImport()}
+                disabled={loading || importSecretBindingRequirements.length > 0}
+              >
                 {loading ? 'Saving…' : 'Save Script'}
               </button>
             ) : (

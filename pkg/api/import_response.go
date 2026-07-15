@@ -51,12 +51,17 @@ type scriptImportRepairSuggestion struct {
 
 func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
 	scripts := maskScriptResponseValue(opts.Scripts)
+	script := maskScriptResponseValue(opts.Script)
 	if isNilImportValue(scripts) {
 		if !isNilImportValue(opts.Script) {
-			scripts = []any{maskScriptResponseValue(opts.Script)}
+			scripts = []any{script}
 		} else {
 			scripts = []any{}
 		}
+	}
+	secretBindingRequirements := secretBindingRequirementsForImportScripts(scripts)
+	if !hasScriptJSONNode(scripts) && !isNilImportValue(script) {
+		secretBindingRequirements = secretBindingRequirementsForImportScripts([]any{script})
 	}
 
 	warnings := opts.Warnings
@@ -97,25 +102,26 @@ func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
 	}
 
 	response := map[string]any{
-		"scripts":                   scripts,
-		"script":                    maskScriptResponseValue(opts.Script),
-		"warnings":                  warnings,
-		"stats":                     stats,
-		"correlations":              correlations,
-		"assumptions":               assumptions,
-		"unsupported_elements":      unsupported,
-		"review_sections":           reviewSections,
-		"repair_suggestions":        repairSuggestions,
-		"scenario_draft":            opts.ScenarioDraft,
-		"summary":                   summary,
-		"detected_protocol":         opts.DetectedProtocol,
-		"fidelity_report":           opts.FidelityReport,
-		"review_artifact":           opts.ReviewArtifact,
-		"source_review":             opts.SourceReview,
-		"trueclient2_compat_report": opts.TrueClient2Compat,
-		"protocol_compat_report":    opts.ProtocolCompat,
-		"parameterization":          parameterization,
-		"preflight":                 opts.Preflight,
+		"scripts":                     scripts,
+		"script":                      script,
+		"secret_binding_requirements": secretBindingRequirements,
+		"warnings":                    warnings,
+		"stats":                       stats,
+		"correlations":                correlations,
+		"assumptions":                 assumptions,
+		"unsupported_elements":        unsupported,
+		"review_sections":             reviewSections,
+		"repair_suggestions":          repairSuggestions,
+		"scenario_draft":              opts.ScenarioDraft,
+		"summary":                     summary,
+		"detected_protocol":           opts.DetectedProtocol,
+		"fidelity_report":             opts.FidelityReport,
+		"review_artifact":             opts.ReviewArtifact,
+		"source_review":               opts.SourceReview,
+		"trueclient2_compat_report":   opts.TrueClient2Compat,
+		"protocol_compat_report":      opts.ProtocolCompat,
+		"parameterization":            parameterization,
+		"preflight":                   opts.Preflight,
 	}
 	if opts.Result != nil {
 		response["result"] = maskScriptResponseValue(opts.Result)

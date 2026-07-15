@@ -90,6 +90,21 @@ describe('useScriptApi import wrappers', () => {
     expect(request).toHaveBeenCalledWith('/scripts/authoring/capabilities')
   })
 
+  it('applies logical secret bindings through the dedicated endpoint', async () => {
+    const payload = {
+      script: { name: 'Imported', version: '1.0.0', protocol: 'http', config: { base_url: '' }, actions: [] },
+      script_index: 2,
+      bindings: [{ requirement_id: 'secret-binding-1', secret_name: 'LOGIN_TOKEN' }],
+    }
+
+    await api.applySecretBindings(payload)
+
+    expect(request).toHaveBeenCalledWith('/scripts/secret-bindings/apply', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  })
+
   it('uses canonical replay session routes for script debugger controls', async () => {
     await api.getScriptDebugSession('debug-1')
     await api.pauseScriptDebugSession('debug-1')

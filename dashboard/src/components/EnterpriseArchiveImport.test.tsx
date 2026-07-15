@@ -16,6 +16,7 @@ const apiMock = {
   createAuthoringSession: vi.fn(),
   startDraftBrowserReplaySession: vi.fn(),
   getBrowserReplaySession: vi.fn(),
+  applySecretBindings: vi.fn(),
 }
 
 vi.mock('../hooks/useApi', () => ({
@@ -696,6 +697,111 @@ describe('EnterpriseArchiveImport', () => {
         }),
       })],
     }))
+  })
+
+  it('stages a conversion with redacted credentials until its secret binding is applied', async () => {
+    const redactedScript = {
+      name: 'Redacted Enterprise Login',
+      version: '1.0.0',
+      protocol: 'http',
+      config: { base_url: 'https://api.example.test' },
+      actions: [{
+        name: 'Login',
+        type: 'request',
+        method: 'POST',
+        target: '/login',
+        body: 'password=[REDACTED]',
+      }],
+    }
+    const resolvedScript = {
+      ...redactedScript,
+      actions: [{
+        ...redactedScript.actions[0],
+        body: 'password={{secret.LOGIN_PASSWORD}}',
+      }],
+    }
+    apiMock.importEnterpriseArchive.mockResolvedValueOnce({
+      scripts: [redactedScript],
+      script: redactedScript,
+      warnings: [],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [],
+      repair_suggestions: [],
+      summary: {
+        project_file: 'Login.usr',
+        migration_readiness: {
+          score_pct: 100,
+          blocked: false,
+          summary: 'No migration blockers.',
+          policy: { block_statuses: ['blocked', 'partial', 'compatibility_only'] },
+        },
+      },
+      stats: {
+        total_functions: 1,
+        converted_actions: 1,
+        extractors: 0,
+        think_times: 0,
+        transactions: 0,
+        skipped: 0,
+      },
+      secret_binding_requirements: [{
+        id: 'login-password',
+        path: '/actions/0/body',
+        label: 'Login — Password',
+        context: 'Form credential',
+        suggested_name: 'LOGIN_PASSWORD',
+        script_index: 0,
+        script_name: 'Redacted Enterprise Login',
+      }],
+    })
+    apiMock.applySecretBindings.mockResolvedValueOnce({
+      script: resolvedScript,
+      secret_binding_requirements: [],
+    })
+
+    await act(async () => {
+      root.render(<EnterpriseArchiveImport projectId="project-1" />)
+    })
+    await flushPromises()
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')
+    expect(fileInput).not.toBeNull()
+    const file = new File(['zip-content'], 'login.zip', { type: 'application/zip' })
+    await act(async () => {
+      Object.defineProperty(fileInput!, 'files', { configurable: true, value: [file] })
+      fileInput!.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    await clickImportAction(container, 'Validate Only')
+    const convertButton = findButton(container, 'Convert Enterprise Script Archive')
+    expect(convertButton).toBeDefined()
+    await clickButton(convertButton!)
+
+    expect(container.textContent).toContain('Resolve the redacted credential bindings before saving')
+    expect(container.textContent).toContain('Resolve Redacted Credentials (1)')
+    expect(apiMock.createScript).not.toHaveBeenCalled()
+    const blockedSave = findButton(container, 'Save to Script Library')
+    expect(blockedSave?.disabled).toBe(true)
+    blockedSave?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(apiMock.createScript).not.toHaveBeenCalled()
+
+    const applyButton = findButton(container, 'Apply Bindings')
+    expect(applyButton).toBeDefined()
+    await clickButton(applyButton!)
+
+    expect(apiMock.applySecretBindings).toHaveBeenCalledWith({
+      script: redactedScript,
+      script_index: 0,
+      bindings: [{ requirement_id: 'login-password', secret_name: 'LOGIN_PASSWORD' }],
+    })
+    expect(container.textContent).toContain('{{secret.LOGIN_PASSWORD}}')
+
+    const enabledSave = findButton(container, 'Save to Script Library')
+    expect(enabledSave?.disabled).toBe(false)
+    await clickButton(enabledSave!)
+    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
+      actions: [expect.objectContaining({ body: 'password={{secret.LOGIN_PASSWORD}}' })],
+    }), 'project-1')
   })
 
   it('shows and switches generated scripts for multi-script enterprise archive results', async () => {

@@ -650,6 +650,18 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if unresolved := discoverSecretBindingRequirements(script, 0); len(unresolved) > 0 {
+		// Requirements and opaque IDs must describe the exact disclosure-safe
+		// script representation the binding endpoint will consume. Project first
+		// so a mixed raw/redacted scalar cannot be echoed back or produce stale IDs.
+		projected := maskScriptSecrets(script)
+		if projected == nil {
+			writeError(w, http.StatusBadRequest, "failed to project script for secret binding")
+			return
+		}
+		writeSecretBindingsRequired(w, discoverSecretBindingRequirements(projected, 0))
+		return
+	}
 	if err := reconcileMaskedScriptSecrets(script, nil); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

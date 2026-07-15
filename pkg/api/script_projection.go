@@ -7,7 +7,9 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -111,6 +113,8 @@ func projectScriptNode(value any, ctx scriptProjectionContext) any {
 			if credentialValue && strings.EqualFold(key, "value") {
 				if text, ok := child.(string); ok && isPortableTemplateBinding(text) {
 					out[key] = text
+				} else if text, ok := child.(string); ok {
+					out[key] = projectSensitiveScriptValue(text)
 				} else {
 					out[key] = maskedScriptSecret
 				}
@@ -187,7 +191,7 @@ func projectHeaderValue(name string, value any) any {
 		if isPortableTemplateBinding(text) {
 			return text
 		}
-		return maskedScriptSecret
+		return projectSensitiveScriptValue(text)
 	}
 	return scrubScriptText(text, false)
 }
@@ -200,7 +204,7 @@ func projectScriptString(value string, ctx scriptProjectionContext) string {
 		return value
 	}
 	if isSensitiveScriptKey(ctx.key) {
-		return maskedScriptSecret
+		return projectSensitiveScriptValue(value)
 	}
 	if isScriptURLKey(ctx.key) {
 		return maskScriptURL(value)
@@ -284,7 +288,7 @@ func isPortableSecretBinding(value string) bool {
 	}
 	remainder := strings.TrimSpace(scriptSecretTemplatePattern.ReplaceAllString(value, ""))
 	switch strings.ToLower(remainder) {
-	case "", "bearer", "basic":
+	case "", "bearer", "basic", "digest":
 		return true
 	default:
 		return false
@@ -305,11 +309,24 @@ func isPortableTemplateBinding(value string) bool {
 	}
 	remainder = strings.TrimSpace(remainder)
 	switch strings.ToLower(remainder) {
-	case "", "bearer", "basic":
+	case "", "bearer", "basic", "digest":
 		return true
 	default:
 		return false
 	}
+}
+
+// projectSensitiveScriptValue retains only a non-secret authentication scheme
+// wrapper. This lets guided binding turn `Bearer [REDACTED]` into
+// `Bearer {{secret.NAME}}` without restoring or disclosing the credential.
+func projectSensitiveScriptValue(value string) string {
+	trimmed := strings.TrimSpace(value)
+	for _, scheme := range []string{"Bearer", "Basic", "Digest"} {
+		if len(trimmed) > len(scheme) && strings.EqualFold(trimmed[:len(scheme)], scheme) && unicode.IsSpace(rune(trimmed[len(scheme)])) {
+			return trimmed[:len(scheme)] + " " + maskedScriptSecret
+		}
+	}
+	return maskedScriptSecret
 }
 
 func portableScriptTemplateReferences(value string) []string {
@@ -449,10 +466,11 @@ func isScriptHeaderList(key string) bool {
 	return normalizeScriptFieldName(key) == "headerlist"
 }
 
-// reconcileMaskedScriptSecrets restores only sentinels that exactly match the
-// projection of a prior value. A new/orphan sentinel is rejected, preventing a
-// downloaded or federated masked script from executing "[REDACTED]" as though
-// it were a credential.
+// reconcileMaskedScriptSecrets restores only executable sentinels that exactly
+// match the projection of a prior value. A new/orphan executable sentinel is
+// rejected, preventing a downloaded or federated masked script from executing
+// "[REDACTED]" as though it were a credential. Redacted import/source-review
+// evidence is retained as non-executable provenance and intentionally skipped.
 func reconcileMaskedScriptSecrets(incoming *dsl.Script, prior *dsl.Script) error {
 	if incoming == nil {
 		return fmt.Errorf("script is required")
@@ -461,7 +479,7 @@ func reconcileMaskedScriptSecrets(incoming *dsl.Script, prior *dsl.Script) error
 	if err != nil {
 		return err
 	}
-	if !jsonValueContainsMaskedSecret(incomingJSON) {
+	if !jsonValueContainsExecutableMaskedSecret(incomingJSON, "") {
 		return nil
 	}
 	if prior == nil {
@@ -509,15 +527,30 @@ func reconcileProjectedJSON(incoming any, projectedPrior any, rawPrior any, path
 		}
 		projected, projectedOK := projectedPrior.(string)
 		raw, rawOK := rawPrior.(string)
-		if projectedOK && rawOK && typed == projected {
+		if projectedOK && rawOK && typed == projected && !strings.Contains(raw, maskedScriptSecret) {
 			return raw, nil
 		}
 		return nil, fmt.Errorf("%s contains an orphan %s sentinel; bind a secret reference instead", path, maskedScriptSecret)
 	case map[string]any:
 		projectedMap, _ := projectedPrior.(map[string]any)
 		rawMap, _ := rawPrior.(map[string]any)
+		priorWasReviewOnly := isNonExecutableReviewAction(projectedMap) || isNonExecutableReviewAction(rawMap)
+		if priorWasReviewOnly && !isNonExecutableReviewAction(typed) && jsonValueContainsExecutableMaskedSecret(typed, path) {
+			return nil, fmt.Errorf("%s promotes redacted review evidence into executable fields; bind a secret reference instead", path)
+		}
+		if isNonExecutableReviewAction(typed) {
+			return incoming, nil
+		}
 		out := make(map[string]any, len(typed))
 		for key, child := range typed {
+			skipPath := path
+			if path == "script" {
+				skipPath = ""
+			}
+			if isNonExecutableRedactionSubtree(typed, key, skipPath) {
+				out[key] = child
+				continue
+			}
 			var projectedChild, rawChild any
 			if projectedMap != nil {
 				projectedChild = projectedMap[key]
@@ -533,8 +566,26 @@ func reconcileProjectedJSON(incoming any, projectedPrior any, rawPrior any, path
 		}
 		return out, nil
 	case []any:
-		projectedSlice, _ := projectedPrior.([]any)
+		projectedSlice, projectedOK := projectedPrior.([]any)
 		rawSlice, _ := rawPrior.([]any)
+		if jsonValueContainsExecutableMaskedSecret(typed, path) && (!projectedOK || !reflect.DeepEqual(typed, projectedSlice)) {
+			for i, child := range typed {
+				incomingMap, incomingOK := child.(map[string]any)
+				if !incomingOK || i >= len(projectedSlice) {
+					continue
+				}
+				projectedMap, _ := projectedSlice[i].(map[string]any)
+				var rawMap map[string]any
+				if i < len(rawSlice) {
+					rawMap, _ = rawSlice[i].(map[string]any)
+				}
+				priorWasReviewOnly := isNonExecutableReviewAction(projectedMap) || isNonExecutableReviewAction(rawMap)
+				if priorWasReviewOnly && !isNonExecutableReviewAction(incomingMap) && jsonValueContainsExecutableMaskedSecret(incomingMap, path) {
+					return nil, fmt.Errorf("%s[%d] promotes redacted review evidence into executable fields; bind a secret reference instead", path, i)
+				}
+			}
+			return nil, fmt.Errorf("%s changed while containing redacted credentials; bind secret references before modifying or reordering it", path)
+		}
 		out := make([]any, len(typed))
 		for i, child := range typed {
 			var projectedChild, rawChild any
@@ -556,19 +607,25 @@ func reconcileProjectedJSON(incoming any, projectedPrior any, rawPrior any, path
 	}
 }
 
-func jsonValueContainsMaskedSecret(value any) bool {
+func jsonValueContainsExecutableMaskedSecret(value any, path string) bool {
 	switch typed := value.(type) {
 	case string:
 		return strings.Contains(typed, maskedScriptSecret)
 	case map[string]any:
-		for _, child := range typed {
-			if jsonValueContainsMaskedSecret(child) {
+		if isNonExecutableReviewAction(typed) {
+			return false
+		}
+		for key, child := range typed {
+			if isNonExecutableRedactionSubtree(typed, key, path) {
+				continue
+			}
+			if jsonValueContainsExecutableMaskedSecret(child, appendJSONPointer(path, key)) {
 				return true
 			}
 		}
 	case []any:
-		for _, child := range typed {
-			if jsonValueContainsMaskedSecret(child) {
+		for index, child := range typed {
+			if jsonValueContainsExecutableMaskedSecret(child, appendJSONPointer(path, strconv.Itoa(index))) {
 				return true
 			}
 		}

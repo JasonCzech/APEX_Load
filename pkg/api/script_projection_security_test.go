@@ -157,6 +157,45 @@ func TestReconcileMaskedScriptSecretsRestoresOnlyExactPriorProjection(t *testing
 	}
 }
 
+func TestReconcileMaskedScriptSecretsFailsClosedWhenCredentialActionsReorder(t *testing.T) {
+	prior := &dsl.Script{
+		ID: "reordered-credentials", Name: "Credential actions", Version: "1", Protocol: "http",
+		Actions: []dsl.Action{
+			{Name: "first", Type: "request", Target: "/first", Headers: map[string]string{"Authorization": "Bearer first-token"}},
+			{Name: "second", Type: "request", Target: "/second", Headers: map[string]string{"Authorization": "Bearer second-token"}},
+		},
+	}
+
+	t.Run("unchanged array restores each prior credential", func(t *testing.T) {
+		incoming := maskScriptSecrets(prior)
+		if err := reconcileMaskedScriptSecrets(incoming, prior); err != nil {
+			t.Fatalf("reconcile unchanged array: %v", err)
+		}
+		if got := incoming.Actions[0].Headers["Authorization"]; got != "Bearer first-token" {
+			t.Fatalf("first Authorization = %q, want prior credential", got)
+		}
+		if got := incoming.Actions[1].Headers["Authorization"]; got != "Bearer second-token" {
+			t.Fatalf("second Authorization = %q, want prior credential", got)
+		}
+	})
+
+	t.Run("reordered array cannot positionally swap credentials", func(t *testing.T) {
+		incoming := maskScriptSecrets(prior)
+		incoming.Actions[0], incoming.Actions[1] = incoming.Actions[1], incoming.Actions[0]
+
+		err := reconcileMaskedScriptSecrets(incoming, prior)
+		if err == nil || !strings.Contains(err.Error(), "changed while containing redacted credentials") {
+			t.Fatalf("reordered credential action error = %v", err)
+		}
+		for index, action := range incoming.Actions {
+			got := action.Headers["Authorization"]
+			if !strings.Contains(got, maskedScriptSecret) {
+				t.Fatalf("action %d Authorization = %q, raw prior credential was restored", index, got)
+			}
+		}
+	})
+}
+
 func TestStoredScriptViewerDownloadAndPrivateExportUseProjection(t *testing.T) {
 	exportDir := t.TempDir()
 	t.Setenv("APEXLOAD_EXPORT_DIR", exportDir)

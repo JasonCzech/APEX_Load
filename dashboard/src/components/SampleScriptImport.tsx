@@ -12,7 +12,7 @@ import {
   type LoadedSample,
   type SampleFormat,
 } from './sampleImportUtils'
-import { type SampleImportResult } from '../types/scriptImports'
+import { type SampleImportResult, type SecretBindingSelection } from '../types/scriptImports'
 import { type StoredScript } from '../types'
 import { type ReplayPreflight, type ScriptDataSource, type ScriptDefinition, type SourceReview } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
@@ -26,6 +26,7 @@ import SourceMappingReview from './SourceMappingReview'
 import ReplayPreflightCard from './ReplayPreflightCard'
 import { buildLocalReplayPreflight } from './replayPreflightUtils'
 import { withFallbackPersistedScript } from './importSaveUtils'
+import { isValidSecretBindingName, refreshedSecretBindingRequirements, secretBindingReference } from './secretBindingUtils'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
 import './SampleScriptImport.css'
 
@@ -74,6 +75,36 @@ const formatHelp: Record<SampleFormat, string> = {
   curl: 'Paste a curl command. The importer derives method, URL, headers, and body automatically.',
   rest_json: 'Paste structured JSON with request/response objects or a requests array.',
   har: 'Paste a HAR file or a single HAR entry JSON object.',
+}
+
+const sensitiveDefaultHeaderNames = new Set([
+  'authorization',
+  'proxy-authorization',
+  'x-api-key',
+  'api-key',
+  'x-auth-token',
+  'x-access-token',
+  'x-csrf-token',
+  'x-xsrf-token',
+  'x-session-id',
+  'x-amz-security-token',
+  'cookie',
+  'set-cookie',
+])
+const portableSecretHeaderValuePattern = /^(?:(?:Bearer|Basic|Digest)\s+)?\{\{secret\.[A-Za-z0-9][A-Za-z0-9._-]{0,248}\}\}$/i
+
+function unsafeDefaultHeader(headers: Record<string, string>): string {
+  for (const [name, value] of Object.entries(headers)) {
+    const normalizedName = name.trim().toLowerCase()
+    const normalizedField = normalizedName.replace(/[^a-z0-9]/g, '')
+    const sensitive = sensitiveDefaultHeaderNames.has(normalizedName) ||
+      ['password', 'passwd', 'passphrase', 'secret', 'token', 'apikey', 'credential', 'cookie', 'sessionid', 'privatekey', 'accesskey']
+        .some(suffix => normalizedField.endsWith(suffix))
+    if (sensitive && !portableSecretHeaderValuePattern.test(value.trim())) {
+      return name
+    }
+  }
+  return ''
 }
 
 const sampleTemplates: Record<SampleFormat, { primary: string; secondary?: string }> = {
@@ -594,12 +625,12 @@ export default function SampleScriptImport({ initialFiles, projectId, onImported
       script.config.http.auth = {
         type: 'basic',
         username: options.auth_username.trim(),
-        password: options.auth_password,
+        password: options.auth_password.trim() ? secretBindingReference(options.auth_password) : '',
       }
     } else if (options.auth_type === 'bearer') {
       script.config.http.auth = {
         type: 'bearer',
-        token: options.auth_token.trim(),
+        token: options.auth_token.trim() ? secretBindingReference(options.auth_token) : '',
       }
     }
 
@@ -614,6 +645,22 @@ export default function SampleScriptImport({ initialFiles, projectId, onImported
     const headersValid = parseDefaultHeaders(options.default_headers, true)
     if (headersValid === false) {
       setMessageError('Default headers must be a valid JSON object.')
+      return
+    }
+    const parsedDefaultHeaders = parseDefaultHeaders(options.default_headers)
+    if (parsedDefaultHeaders && parsedDefaultHeaders !== true) {
+      const unsafeHeader = unsafeDefaultHeader(parsedDefaultHeaders)
+      if (unsafeHeader) {
+        setMessageError(`Default header ${unsafeHeader} is sensitive. Use a {{secret.NAME}} reference (optionally prefixed by Bearer, Basic, or Digest) instead of a credential value.`)
+        return
+      }
+    }
+    if (options.auth_type === 'basic' && options.auth_password.trim() && !isValidSecretBindingName(options.auth_password)) {
+      setMessageError('Password secret binding must be a 1–249 character logical name using uppercase letters, numbers, or underscores.')
+      return
+    }
+    if (options.auth_type === 'bearer' && options.auth_token.trim() && !isValidSecretBindingName(options.auth_token)) {
+      setMessageError('Bearer token secret binding must be a 1–249 character logical name using uppercase letters, numbers, or underscores.')
       return
     }
 
@@ -674,6 +721,22 @@ export default function SampleScriptImport({ initialFiles, projectId, onImported
     if (!result) return
     const preflight = buildLocalReplayPreflight(parameterizedScript)
     convertTask.setValue(replaceImportResultScript(result, attachReplayPreflight(parameterizedScript, preflight), preflight))
+  }
+
+  const handleSecretBindingsApply = async (bindings: SecretBindingSelection[]) => {
+    if (!result || !reviewedScript) return
+    try {
+      const resolved = await api.applySecretBindings({ script: reviewedScript, bindings })
+      const preflight = buildLocalReplayPreflight(resolved.script)
+      convertTask.setValue({
+        ...replaceImportResultScript(result, attachReplayPreflight(resolved.script, preflight), preflight),
+        secret_binding_requirements: resolved.secret_binding_requirements,
+      })
+    } catch (error: unknown) {
+      const refreshed = refreshedSecretBindingRequirements(error)
+      if (refreshed) convertTask.setValue({ ...result, secret_binding_requirements: refreshed })
+      throw error
+    }
   }
 
   const handleAssetUpload = async (source: ScriptDataSource, file: File) => {
@@ -897,16 +960,18 @@ export default function SampleScriptImport({ initialFiles, projectId, onImported
                 <input value={options.auth_username} onChange={e => updateOption('auth_username', e.target.value)} />
               </label>
               <label className="sample-import-field">
-                <span>Auth Password</span>
-                <input type="password" value={options.auth_password} onChange={e => updateOption('auth_password', e.target.value)} />
+                <span>Password Secret Binding</span>
+                <input type="text" value={options.auth_password} onChange={e => updateOption('auth_password', e.target.value)} autoComplete="off" spellCheck={false} placeholder="LOGIN_PASSWORD" />
+                <small>Enter a logical binding name, not the password value.</small>
               </label>
             </>
           )}
 
           {options.auth_type === 'bearer' && (
             <label className="sample-import-field sample-import-span-2">
-              <span>Bearer Token</span>
-              <input type="password" value={options.auth_token} onChange={e => updateOption('auth_token', e.target.value)} />
+              <span>Bearer Token Secret Binding</span>
+              <input type="text" value={options.auth_token} onChange={e => updateOption('auth_token', e.target.value)} autoComplete="off" spellCheck={false} placeholder="API_TOKEN" />
+              <small>Enter a logical binding name, not the token value.</small>
             </label>
           )}
 
@@ -945,6 +1010,8 @@ export default function SampleScriptImport({ initialFiles, projectId, onImported
             reviewSections={result.review_sections}
             parameterization={result.parameterization}
             onParameterizationApplied={handleParameterizationApplied}
+            secretBindingRequirements={result.secret_binding_requirements}
+            onSecretBindingsApply={handleSecretBindingsApply}
             saving={saving}
             saveDisabled={hasMissingFileAssets}
             onSave={handleSave}

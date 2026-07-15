@@ -13,6 +13,7 @@ const apiMock = {
   validateJMeterImport: vi.fn(),
   importJMeter: vi.fn(),
   saveJMeterImport: vi.fn(),
+  applySecretBindings: vi.fn(),
 }
 
 vi.mock('../hooks/useApi', () => ({
@@ -283,6 +284,115 @@ describe('JMeterImport', () => {
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
       name: 'Auth_Users',
       actions: expect.any(Array),
+    }))
+  })
+
+  it('resolves a redacted credential on the correct script before saving a multi-script import', async () => {
+    const firstScript = {
+      name: 'Orders HTTP',
+      version: '1.0.0',
+      protocol: 'http',
+      config: { base_url: 'https://api.example.test' },
+      actions: [{ name: 'List Orders', type: 'request', method: 'GET', target: '/orders' }],
+    }
+    const redactedSecondScript = {
+      name: 'Orders Database',
+      version: '1.0.0',
+      protocol: 'database',
+      config: { base_url: '', database: { dsn: '[REDACTED]' } },
+      actions: [{ name: 'Select Orders', type: 'db_query', target: 'SELECT * FROM orders' }],
+    }
+    const resolvedSecondScript = {
+      ...redactedSecondScript,
+      config: { base_url: '', database: { dsn: '{{secret.ORDERS_DSN}}' } },
+    }
+    apiMock.validateJMeterImport.mockResolvedValueOnce({
+      scripts: [firstScript, redactedSecondScript],
+      script: firstScript,
+      warnings: [],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [],
+      repair_suggestions: [],
+      stats: {
+        thread_groups: 2,
+        samplers: 2,
+        total_samplers: 2,
+        skipped_samplers: 0,
+        converted_actions: 2,
+        headers: 0,
+        variables: 0,
+        csv_sources: 0,
+        assertions: 0,
+        timers: 0,
+        unsupported: 0,
+      },
+      summary: { file_name: 'orders.jmx' },
+      secret_binding_requirements: [{
+        id: 'database-dsn',
+        path: '/config/database/dsn',
+        label: 'Orders Database — DSN',
+        context: 'Database connection credential',
+        suggested_name: 'ORDERS_DSN',
+        script_index: 1,
+        script_name: 'Orders Database',
+      }],
+    })
+    apiMock.applySecretBindings.mockResolvedValueOnce({
+      script: resolvedSecondScript,
+      secret_binding_requirements: [],
+    })
+    apiMock.saveJMeterImport.mockResolvedValueOnce({
+      count: 2,
+      scripts: [
+        { id: 'saved-http', name: 'Orders HTTP', protocol: 'http', version: '1.0.0', created_at: '2026-01-01T00:00:00Z' },
+        { id: 'saved-db', name: 'Orders Database', protocol: 'database', version: '1.0.0', created_at: '2026-01-01T00:00:00Z' },
+      ],
+    })
+
+    await act(async () => {
+      root.render(<JMeterImport projectId="project-1" />)
+    })
+    await flushPromises()
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')
+    expect(fileInput).not.toBeNull()
+    const file = new File(['<jmeterTestPlan />'], 'orders.jmx', { type: 'application/xml' })
+    await act(async () => {
+      Object.defineProperty(fileInput!, 'files', { configurable: true, value: [file] })
+      fileInput!.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const validateButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Validate Only'))
+    await act(async () => validateButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await flushPromises()
+
+    const blockedSave = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save Reviewed 2 Scripts'))
+    expect(blockedSave?.disabled).toBe(true)
+    blockedSave?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(apiMock.saveJMeterImport).not.toHaveBeenCalled()
+
+    const applyButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Apply Bindings'))
+    await act(async () => applyButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await flushPromises()
+
+    expect(apiMock.applySecretBindings).toHaveBeenCalledWith({
+      script: redactedSecondScript,
+      script_index: 1,
+      bindings: [{ requirement_id: 'database-dsn', secret_name: 'ORDERS_DSN' }],
+    })
+    expect(container.textContent).toContain('{{secret.ORDERS_DSN}}')
+
+    const enabledSave = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save Reviewed 2 Scripts'))
+    expect(enabledSave?.disabled).toBe(false)
+    await act(async () => enabledSave?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await flushPromises()
+    expect(apiMock.saveJMeterImport).toHaveBeenCalledWith(expect.objectContaining({
+      scripts: [
+        expect.objectContaining({ name: 'Orders HTTP' }),
+        expect.objectContaining({
+          name: 'Orders Database',
+          config: expect.objectContaining({ database: { dsn: '{{secret.ORDERS_DSN}}' } }),
+        }),
+      ],
     }))
   })
 

@@ -117,6 +117,60 @@ describe('ScriptImportReview', () => {
     expect(preview?.textContent?.length).toBeLessThan(121000)
   })
 
+  it('blocks saving until all redacted credentials are bound', () => {
+    const onSave = vi.fn()
+    const onEdit = vi.fn()
+    const onSecretBindingsApply = vi.fn()
+    act(() => {
+      root.render(
+        <ScriptImportReview
+          title="Review Generated Script"
+          script={script}
+          onSave={onSave}
+          onEdit={onEdit}
+          secretBindingRequirements={[
+            {
+              id: 'auth-header',
+              path: '/actions/0/headers/Authorization',
+              label: 'Create Order — Authorization header',
+              context: 'Bearer credential',
+              suggested_name: 'ORDER_API_TOKEN',
+              replacement: 'Bearer {{secret.ORDER_API_TOKEN}}',
+            },
+          ]}
+          onSecretBindingsApply={onSecretBindingsApply}
+        />,
+      )
+    })
+
+    const saveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent === 'Save To Script Library')
+    expect(saveButton?.disabled).toBe(true)
+    const editButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent === 'Open In Visual Editor')
+    expect(editButton?.disabled).toBe(true)
+    expect(container.textContent).toContain('Resolve Redacted Credentials (1)')
+    act(() => saveButton!.click())
+    act(() => editButton!.click())
+    expect(onSave).not.toHaveBeenCalled()
+    expect(onEdit).not.toHaveBeenCalled()
+
+    act(() => {
+      root.render(
+        <ScriptImportReview
+          title="Review Generated Script"
+          script={script}
+          onSave={onSave}
+          secretBindingRequirements={[]}
+          onSecretBindingsApply={onSecretBindingsApply}
+        />,
+      )
+    })
+    const enabledSaveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent === 'Save To Script Library')
+    expect(enabledSaveButton?.disabled).toBe(false)
+  })
+
   it('filters scoped parameterization suggestions to the active script', () => {
     const parameterization: Parameterization = {
       suggestions: [

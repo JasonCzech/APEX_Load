@@ -3,7 +3,7 @@ import { useApi } from '../hooks/useApi'
 import { isDesktopSurface } from '../desktop/desktopBridge'
 import { canUseNativeDialogs, filesFromDroppedPaths, pickFilesViaBridge } from '../desktop/desktopFiles'
 import { useDesktopFileDrop } from '../desktop/useDesktopFileDrop'
-import { type DetectedSourceProtocol, type ImportRepairSuggestion, type EnterpriseArchiveImportResult, type EnterpriseArchiveImportSummary, type EnterpriseArchiveJavaSupportEntry, type EnterpriseArchiveMigrationReadiness, type EnterpriseArchiveProtocolSupportEntry, type EnterpriseArchiveReviewArtifact, type EnterpriseArchiveSupportMatrixEntry, type EnterpriseArchiveSupportMatrixExample, type EnterpriseArchiveSupportMatrixResponse, type SalesforceReview, type TrueClient2CompatReport } from '../types/scriptImports'
+import { type DetectedSourceProtocol, type ImportRepairSuggestion, type EnterpriseArchiveImportResult, type EnterpriseArchiveImportSummary, type EnterpriseArchiveJavaSupportEntry, type EnterpriseArchiveMigrationReadiness, type EnterpriseArchiveProtocolSupportEntry, type EnterpriseArchiveReviewArtifact, type EnterpriseArchiveSupportMatrixEntry, type EnterpriseArchiveSupportMatrixExample, type EnterpriseArchiveSupportMatrixResponse, type SalesforceReview, type SecretBindingSelection, type TrueClient2CompatReport } from '../types/scriptImports'
 import { type BrowserReplayEvent, type BrowserReplaySession, type StoredScript } from '../types'
 import { type SourceArchiveReview, type ScriptActionDefinition, type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
@@ -13,6 +13,7 @@ import ScriptImportReview from './ScriptImportReview'
 import SourceMappingReview from './SourceMappingReview'
 import { withFallbackPersistedScript } from './importSaveUtils'
 import { salesforceApiSurfaceSummary } from './salesforceReviewSummary'
+import { refreshedSecretBindingRequirements, replaceSecretBindingRequirementsForScript, secretBindingRequirementsForScript } from './secretBindingUtils'
 import { type DraftEditorFocus, type ImportedSaveResult } from './useScriptsAuthoringState'
 import './EnterpriseArchiveImport.css'
 
@@ -636,6 +637,9 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
     ? Math.min(selectedResultScriptIndex, resultScripts.length - 1)
     : 0
   const importedScript = resultScripts[activeResultScriptIndex] ?? null
+  const secretBindingRequirements = importedScript
+    ? secretBindingRequirementsForScript(result?.secret_binding_requirements, activeResultScriptIndex, importedScript)
+    : []
   const detectedProtocol = result?.detected_protocol ?? result?.summary?.detected_protocol ?? null
   const reviewArtifact = result?.review_artifact ?? result?.summary?.review_artifact ?? null
   const executableImport = !detectedProtocol || detectedProtocol.import_mode === 'executable'
@@ -1298,6 +1302,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
         const conversionBlockedByProtocol = Boolean(conversionDetectedProtocol && conversionDetectedProtocol.import_mode !== 'executable')
         const conversionBlockedByMigration = Boolean(conversionResult.summary?.migration_readiness?.blocked)
         const conversionRequiresBrowserReplay = scriptsToSave.some(script => isBrowserImport(script))
+        const conversionRequiresSecretBindings = (conversionResult.secret_binding_requirements?.length ?? 0) > 0
         if (scriptsToSave.length === 0) {
           updateImportItem(item.id, {
             status: 'converted',
@@ -1309,7 +1314,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
           failureCount += 1
           continue
         }
-        if (conversionBlockedByProtocol || conversionBlockedByMigration || conversionRequiresBrowserReplay) {
+        if (conversionBlockedByProtocol || conversionBlockedByMigration || conversionRequiresBrowserReplay || conversionRequiresSecretBindings) {
           updateImportItem(item.id, {
             status: 'converted',
             result: conversionResult,
@@ -1319,7 +1324,9 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
               ? 'Conversion complete. Review the protocol gate before saving or promoting this archive.'
               : conversionBlockedByMigration
                 ? 'Conversion complete. Resolve migration readiness blockers before saving.'
-                : 'Conversion complete. Run draft browser replay before saving this browser script.',
+                : conversionRequiresBrowserReplay
+                  ? 'Conversion complete. Run draft browser replay before saving this browser script.'
+                  : 'Conversion complete. Resolve the redacted credential bindings before saving.',
           })
           successCount += 1
           continue
@@ -1407,6 +1414,10 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
 
   const handleSaveConverted = async () => {
     if (!importedScript) return
+    if (secretBindingRequirements.length > 0) {
+      setError('Resolve every redacted credential binding before saving this script.')
+      return
+    }
     if (saveBlockedByProtocolGate) {
       setNotice('This import is gated by protocol classification. Save the review artifact instead of promoting it as an executable script.')
       return
@@ -1440,6 +1451,49 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
       onImported?.({ scripts: [withFallbackPersistedScript(savedScript, scriptToSave)] })
     } catch (error: unknown) {
       setError(getErrorMessage(error, 'Failed to save script'))
+    }
+  }
+
+  const handleSecretBindingsApply = async (bindings: SecretBindingSelection[]) => {
+    if (!selectedItem || !result || !importedScript) return
+    try {
+      const resolved = await api.applySecretBindings({
+        script: importedScript,
+        script_index: activeResultScriptIndex,
+        bindings,
+      })
+      const nextScripts = resultScripts.map((script, index) => index === activeResultScriptIndex ? resolved.script : script)
+      updateImportItem(selectedItem.id, {
+        result: {
+          ...result,
+          script: nextScripts[0],
+          scripts: nextScripts,
+          secret_binding_requirements: replaceSecretBindingRequirementsForScript(
+            result.secret_binding_requirements,
+            activeResultScriptIndex,
+            importedScript,
+            resolved.secret_binding_requirements,
+          ),
+        },
+        error: '',
+        notice: 'Secret bindings applied. The script contains governed secret references only.',
+      })
+    } catch (error: unknown) {
+      const refreshed = refreshedSecretBindingRequirements(error)
+      if (refreshed) {
+        updateImportItem(selectedItem.id, {
+          result: {
+            ...result,
+            secret_binding_requirements: replaceSecretBindingRequirementsForScript(
+              result.secret_binding_requirements,
+              activeResultScriptIndex,
+              importedScript,
+              refreshed,
+            ),
+          },
+        })
+      }
+      throw error
     }
   }
 
@@ -1891,6 +1945,8 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
             script={importedScript}
             warnings={result.warnings}
             warningsTitle={`Conversion Warnings (${result.warnings.length})`}
+            secretBindingRequirements={reviewMode === 'conversion' ? secretBindingRequirements : []}
+            onSecretBindingsApply={handleSecretBindingsApply}
             saving={saveBlockedByProtocolGate ? reviewArtifactSaving : workingMode === 'convert'}
             saveDisabled={reviewMode === 'validation'
               ? (!selectedItemValidated || workingMode !== null || (saveBlockedByProtocolGate && (!reviewArtifact || reviewArtifactSaving)))
