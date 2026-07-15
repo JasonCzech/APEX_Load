@@ -523,6 +523,19 @@ func (s *SQLiteStore) TryAcquireSchedulerLease(name string, ownerID string, _ ti
 	return affected > 0, nil
 }
 
+// ReleaseSchedulerLease relinquishes only a lease still owned by ownerID. The
+// ownership predicate prevents a delayed shutdown from deleting a successor's
+// lease after failover.
+func (s *SQLiteStore) ReleaseSchedulerLease(name string, ownerID string) error {
+	name = strings.TrimSpace(name)
+	ownerID = strings.TrimSpace(ownerID)
+	if name == "" || ownerID == "" {
+		return errors.New("scheduler lease name and owner_id are required")
+	}
+	_, err := s.db.Exec(`DELETE FROM scheduler_leases WHERE name = ? AND owner_id = ?`, name, ownerID)
+	return err
+}
+
 func (s *SQLiteStore) GetSchedulerLease(name string) (*SchedulerLease, error) {
 	var lease SchedulerLease
 	err := s.db.QueryRow(`SELECT name, owner_id, acquired_at, expires_at, updated_at FROM scheduler_leases WHERE name = ?`, name).Scan(&lease.Name, &lease.OwnerID, &lease.AcquiredAt, &lease.ExpiresAt, &lease.UpdatedAt)

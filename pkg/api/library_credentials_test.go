@@ -3,12 +3,12 @@ package api
 import "testing"
 
 func TestEnvLibraryCredentialStoreResolvesServerSideRefs(t *testing.T) {
-	t.Setenv("APEXLOAD_REMOTE_TEST_KEY", "secret-from-env")
+	t.Setenv("APEXLOAD_LIBRARY_REMOTE_TEST_KEY", "secret-from-env")
 	store := NewEnvLibraryCredentialStore()
 
 	key, err := store.GetRemoteAPIKey(LibraryRemote{
 		ID:            "remote-1",
-		CredentialRef: "env:APEXLOAD_REMOTE_TEST_KEY",
+		CredentialRef: "env:APEXLOAD_LIBRARY_REMOTE_TEST_KEY",
 	})
 	if err != nil {
 		t.Fatalf("GetRemoteAPIKey returned error: %v", err)

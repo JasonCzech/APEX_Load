@@ -8,12 +8,16 @@ import (
 )
 
 func snapshotJSON(snapshot *protocol.ErrorSnapshot) string {
+	const maxMetricsSnapshotJSONBytes = 32 << 10
 	if snapshot == nil {
 		return ""
 	}
 	data, err := json.Marshal(snapshot)
 	if err != nil {
 		return ""
+	}
+	if len(data) > maxMetricsSnapshotJSONBytes {
+		return `{"truncated":true,"reason":"snapshot exceeded metrics transport limit"}`
 	}
 	return string(data)
 }

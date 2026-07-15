@@ -197,6 +197,44 @@ func (s *SQLiteStore) UpdateTestStatus(id string, status string, endTime *time.T
 	return err
 }
 
+func (s *SQLiteStore) UpdateTestStatusIfActive(id string, status string, endTime *time.Time, errStr string) (bool, error) {
+	result, err := s.db.Exec(`UPDATE tests SET status = ?, end_time = ?, error = ?
+		WHERE id = ? AND (status = ? OR status IN ('INITIALIZING', 'STARTING', 'RUNNING', 'PAUSED', 'STOPPING', 'RESERVED', 'PENDING', 'SCHEDULED', 'SHAKEOUT', 'SHAKEOUT_REVIEW', 'QUEUED'))`, status, endTime, errStr, id, status)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil || affected == 1 {
+		return affected == 1, err
+	}
+	var current string
+	if err := s.db.QueryRow(`SELECT status FROM tests WHERE id = ?`, id).Scan(&current); err != nil {
+		if err == sql.ErrNoRows {
+			return true, nil
+		}
+		return false, err
+	}
+	return current == status, nil
+}
+
+// UpdateTestBaselines atomically updates only baseline-owned columns. A nil
+// timestamp unpins the row; lifecycle/status fields are never rewritten from a
+// potentially stale in-memory test snapshot.
+func (s *SQLiteStore) UpdateTestBaselines(changes map[string]*time.Time) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for id, pinnedAt := range changes {
+		pinned := pinnedAt != nil
+		if _, err := tx.Exec(`UPDATE tests SET baseline_pinned = ?, baseline_pinned_at = ? WHERE id = ?`, pinned, pinnedAt, id); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 func (s *SQLiteStore) DeleteTest(id string) error {
 	tx, err := s.db.Begin()
 	if err != nil {

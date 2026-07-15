@@ -41,7 +41,7 @@ func hashLibraryScenario(scenario *StoredScenario) string {
 	if scenario == nil {
 		return hashCanonical(nil)
 	}
-	req := createScenarioRequestFromStored(scenario)
+	req := createScenarioRequestFromStored(maskStoredScenario(scenario))
 	return hashCanonical(req)
 }
 
@@ -61,11 +61,7 @@ func hashLibraryResultTestOnly(test *ManagedTest) string {
 	if test == nil {
 		return hashCanonical(nil)
 	}
-	return hashCanonical(libraryResultTestHashPayload(test))
-}
-
-func libraryResultTestHashPayload(test *ManagedTest) map[string]any {
-	return map[string]any{
+	return hashCanonical(map[string]any{
 		"name":         test.Name,
 		"status":       test.Status,
 		"project_id":   test.ProjectID,
@@ -76,7 +72,11 @@ func libraryResultTestHashPayload(test *ManagedTest) map[string]any {
 		"ended_at":     test.EndedAt,
 		"archive":      test.Archive,
 		"error":        test.Error,
-	}
+	})
+}
+
+func libraryResultTestHashPayload(test *ManagedTest) any {
+	return maskManagedTestWithOptions(test, managedTestMaskOptions{IncludeHistory: true, IncludeSparkline: true})
 }
 
 func libraryResultSummary(test *ManagedTest) map[string]any {

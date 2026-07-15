@@ -80,6 +80,12 @@ func (s *Server) handleLibraryImportArchive(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	for _, item := range req.Bundle.Items {
+		if normalizeLibraryKind(item.Kind) != "result" {
+			writeError(w, http.StatusBadRequest, "archive imports may contain result items only; import scripts and scenarios through /api/v1/library/import")
+			return
+		}
+	}
 	result, err := s.importLibraryBundleWithArchive(req, "", archiveImport)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -219,6 +225,10 @@ func (s *Server) handleLibraryUpdateRemote(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if err := validateLibraryRemoteTransport(updated); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	s.libraryMu.Lock()
 	s.libraryRemotes[id] = &updated
 	s.libraryMu.Unlock()
@@ -340,7 +350,7 @@ func (s *Server) handleLibraryProbeRemote(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) handleLibraryRemoteCatalog(w http.ResponseWriter, r *http.Request) {
-	remote, ok := s.libraryRemote(r.PathValue("id"))
+	remote, ok := s.freshLibraryRemote(r.PathValue("id"))
 	if !ok {
 		writeError(w, http.StatusNotFound, "remote library not found")
 		return
@@ -359,7 +369,7 @@ func (s *Server) handleLibraryRemoteCatalog(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) handleLibraryRemotePull(w http.ResponseWriter, r *http.Request) {
-	remote, ok := s.libraryRemote(r.PathValue("id"))
+	remote, ok := s.freshLibraryRemote(r.PathValue("id"))
 	if !ok {
 		writeError(w, http.StatusNotFound, "remote library not found")
 		return
@@ -409,7 +419,7 @@ func (s *Server) handleLibraryRemotePull(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) handleLibraryRemotePush(w http.ResponseWriter, r *http.Request) {
-	remote, ok := s.libraryRemote(r.PathValue("id"))
+	remote, ok := s.freshLibraryRemote(r.PathValue("id"))
 	if !ok {
 		writeError(w, http.StatusNotFound, "remote library not found")
 		return
@@ -453,7 +463,7 @@ func (s *Server) handleLibraryRemotePush(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) handleLibraryRemoteDiff(w http.ResponseWriter, r *http.Request) {
-	remote, ok := s.libraryRemote(r.PathValue("id"))
+	remote, ok := s.freshLibraryRemote(r.PathValue("id"))
 	if !ok {
 		writeError(w, http.StatusNotFound, "remote library not found")
 		return

@@ -151,10 +151,24 @@ func (s *Server) remoteLibraryImportArchive(ctx context.Context, remote LibraryR
 		return nil, fmt.Errorf("remote library returned %s", resp.Status)
 	}
 	var imported LibraryImportResponse
-	if err := json.NewDecoder(resp.Body).Decode(&imported); err != nil {
+	if err := decodeLibraryRemoteJSON(resp.Body, &imported); err != nil {
 		return nil, err
 	}
 	return &imported, nil
+}
+
+func decodeLibraryRemoteJSON(reader io.Reader, out any) error {
+	payload, err := io.ReadAll(io.LimitReader(reader, libraryRemoteJSONMaxBytes+1))
+	if err != nil {
+		return err
+	}
+	if int64(len(payload)) > libraryRemoteJSONMaxBytes {
+		return fmt.Errorf("remote library JSON response exceeds %d bytes", libraryRemoteJSONMaxBytes)
+	}
+	if len(bytes.TrimSpace(payload)) == 0 {
+		return nil
+	}
+	return json.Unmarshal(payload, out)
 }
 
 func (s *Server) remoteLibraryDownloadArchive(ctx context.Context, remote LibraryRemote, resultID string) (*libraryArchiveImport, func(), error) {
@@ -249,17 +263,7 @@ func (s *Server) remoteJSONAccepted(ctx context.Context, remote LibraryRemote, m
 	if out == nil {
 		return resp.StatusCode, nil
 	}
-	payload, err := io.ReadAll(io.LimitReader(resp.Body, libraryRemoteJSONMaxBytes+1))
-	if err != nil {
-		return resp.StatusCode, err
-	}
-	if int64(len(payload)) > libraryRemoteJSONMaxBytes {
-		return resp.StatusCode, fmt.Errorf("remote library JSON response exceeds %d bytes", libraryRemoteJSONMaxBytes)
-	}
-	if len(bytes.TrimSpace(payload)) == 0 {
-		return resp.StatusCode, nil
-	}
-	if err := json.Unmarshal(payload, out); err != nil {
+	if err := decodeLibraryRemoteJSON(resp.Body, out); err != nil {
 		return resp.StatusCode, err
 	}
 	return resp.StatusCode, nil
@@ -313,7 +317,7 @@ func buildLibraryRemote(req LibraryRemoteRequest) (*LibraryRemote, error) {
 		authMethod = "service_account"
 	}
 	now := time.Now().UTC()
-	return &LibraryRemote{
+	remote := &LibraryRemote{
 		ID:               uuid.New().String(),
 		Name:             name,
 		BaseURL:          baseURL,
@@ -324,7 +328,22 @@ func buildLibraryRemote(req LibraryRemoteRequest) (*LibraryRemote, error) {
 		APIKey:           strings.TrimSpace(req.APIKey),
 		CreatedAt:        now,
 		UpdatedAt:        now,
-	}, nil
+	}
+	if err := validateLibraryRemoteTransport(*remote); err != nil {
+		return nil, err
+	}
+	return remote, nil
+}
+
+func validateLibraryRemoteTransport(remote LibraryRemote) error {
+	parsed, err := url.Parse(remote.BaseURL)
+	if err != nil {
+		return fmt.Errorf("invalid remote base_url: %w", err)
+	}
+	if parsed.Scheme == "http" && !strings.EqualFold(strings.TrimSpace(remote.AuthMethod), "none") && !envBool("APEXLOAD_LIBRARY_ALLOW_INSECURE_HTTP") && !envBool(remoteOutboundAllowPrivateHostsEnv) {
+		return fmt.Errorf("authenticated remote libraries require https; set APEXLOAD_LIBRARY_ALLOW_INSECURE_HTTP only for isolated development")
+	}
+	return nil
 }
 
 func normalizeLibraryRemoteBaseURL(raw string) (string, error) {
@@ -351,6 +370,13 @@ func (s *Server) libraryRemote(id string) (LibraryRemote, bool) {
 	}
 	copied := *remote
 	return copied, true
+}
+
+func (s *Server) freshLibraryRemote(id string) (LibraryRemote, bool) {
+	s.libraryStateMutationMu.Lock()
+	defer s.libraryStateMutationMu.Unlock()
+	s.loadLibraryState()
+	return s.libraryRemote(id)
 }
 
 func (s *Server) storeRemoteCredential(remote *LibraryRemote, apiKey string, credentialRef string) error {

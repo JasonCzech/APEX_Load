@@ -89,19 +89,61 @@ func coerceStringMap(raw any) map[string]string {
 	return coerced
 }
 
-func applyDataFormattingChain(body []byte, autoDetect bool, chain []dataFormattingTransform) ([]byte, error) {
+func applyDataFormattingChain(body []byte, autoDetect bool, chain []dataFormattingTransform, maxBytes int64) ([]byte, error) {
 	formatted := append([]byte(nil), body...)
 	for _, transform := range chain {
 		var err error
-		formatted, err = applyDataFormattingTransform(formatted, transform)
+		formatted, err = applyDataFormattingTransformBounded(formatted, transform, maxBytes)
 		if err != nil {
 			return nil, fmt.Errorf("data formatting transform %q failed: %w", transform.Type, err)
 		}
+		if maxBytes > 0 && int64(len(formatted)) > maxBytes {
+			return nil, fmt.Errorf("data formatting transform %q produced %d bytes, limit is %d", transform.Type, len(formatted), maxBytes)
+		}
 	}
 	if autoDetect {
-		formatted = applyAutoDetectedDataFormatting(formatted, len(chain) == 0)
+		var err error
+		formatted, err = applyAutoDetectedDataFormattingBounded(formatted, len(chain) == 0, maxBytes)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return formatted, nil
+}
+
+func applyAutoDetectedDataFormattingBounded(body []byte, allowBase64 bool, maxBytes int64) ([]byte, error) {
+	formatted := append([]byte(nil), body...)
+	if bytes.HasPrefix(bytes.TrimSpace(formatted), []byte{0x1f, 0x8b}) {
+		decoded, err := decodeGzipBody(bytes.TrimSpace(formatted), maxBytes)
+		if err != nil {
+			return nil, fmt.Errorf("auto-detected gzip decode failed: %w", err)
+		}
+		formatted = decoded
+	}
+	if allowBase64 {
+		decoded, decodeErr := decodeBase64Body(formatted)
+		if decodeErr == nil && (isLikelyAutoDecodedPayload(decoded) || bytes.HasPrefix(bytes.TrimSpace(decoded), []byte{0x1f, 0x8b})) {
+			formatted = decoded
+		}
+		if bytes.HasPrefix(bytes.TrimSpace(formatted), []byte{0x1f, 0x8b}) {
+			decoded, err := decodeGzipBody(bytes.TrimSpace(formatted), maxBytes)
+			if err != nil {
+				return nil, fmt.Errorf("auto-detected gzip decode failed: %w", err)
+			}
+			formatted = decoded
+		}
+	}
+	if maxBytes > 0 && int64(len(formatted)) > maxBytes {
+		return nil, fmt.Errorf("auto-detected formatting produced %d bytes, limit is %d", len(formatted), maxBytes)
+	}
+	return formatted, nil
+}
+
+func applyDataFormattingTransformBounded(body []byte, transform dataFormattingTransform, maxBytes int64) ([]byte, error) {
+	if transform.Type == "gzip" && strings.ToLower(strings.TrimSpace(transform.Options["mode"])) != "encode" {
+		return decodeGzipBody(body, maxBytes)
+	}
+	return applyDataFormattingTransform(body, transform)
 }
 
 func applyAutoDetectedDataFormatting(body []byte, allowBase64 bool) []byte {

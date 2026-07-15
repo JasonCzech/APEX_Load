@@ -189,6 +189,26 @@ func canPinComparisonBaseline(test *ManagedTest) bool {
 	}
 }
 
+type baselinePersistence interface {
+	UpdateTestBaselines(changes map[string]*time.Time) error
+}
+
+func (tr *TestRunner) persistBaselineChanges(changes map[string]*time.Time) error {
+	if store, ok := tr.testStore.(baselinePersistence); ok {
+		return store.UpdateTestBaselines(changes)
+	}
+	// Compatibility for focused test doubles; production stores implement the
+	// column-specific transactional method above.
+	for id := range changes {
+		if test := tr.tests[id]; test != nil {
+			if err := tr.saveManagedTestRecord(test); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func (tr *TestRunner) PinComparisonBaseline(id string) (*ManagedTest, error) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
@@ -225,19 +245,16 @@ func (tr *TestRunner) PinComparisonBaseline(id string) (*ManagedTest, error) {
 			candidate.BaselinePinnedAt = nil
 		}
 	}
-	for index, snapshot := range snapshots {
-		if err := tr.saveManagedTestRecord(snapshot.test); err != nil {
-			for _, previous := range snapshots {
-				previous.test.BaselinePinned = previous.pinned
-				previous.test.BaselinePinnedAt = cloneTimePtr(previous.pinnedAt)
-			}
-			for rollbackIndex := 0; rollbackIndex < index; rollbackIndex++ {
-				if rollbackErr := tr.saveManagedTestRecord(snapshots[rollbackIndex].test); rollbackErr != nil {
-					slog.Error("failed to roll back comparison baseline persistence", "test_id", snapshots[rollbackIndex].test.ID, "error", rollbackErr)
-				}
-			}
-			return nil, fmt.Errorf("persist comparison baseline: %w", err)
+	changes := make(map[string]*time.Time, len(snapshots))
+	for _, snapshot := range snapshots {
+		changes[snapshot.test.ID] = cloneTimePtr(snapshot.test.BaselinePinnedAt)
+	}
+	if err := tr.persistBaselineChanges(changes); err != nil {
+		for _, previous := range snapshots {
+			previous.test.BaselinePinned = previous.pinned
+			previous.test.BaselinePinnedAt = cloneTimePtr(previous.pinnedAt)
 		}
+		return nil, fmt.Errorf("persist comparison baseline: %w", err)
 	}
 	cloned := cloneManagedTestForReadLocked(test)
 	cloned.ComparisonBaseline = tr.buildRunComparisonBaselineLocked(test)
@@ -257,7 +274,7 @@ func (tr *TestRunner) UnpinComparisonBaseline(id string) (*ManagedTest, error) {
 	previousPinnedAt := cloneTimePtr(test.BaselinePinnedAt)
 	test.BaselinePinned = false
 	test.BaselinePinnedAt = nil
-	if err := tr.saveManagedTestRecord(test); err != nil {
+	if err := tr.persistBaselineChanges(map[string]*time.Time{test.ID: nil}); err != nil {
 		test.BaselinePinned = previousPinned
 		test.BaselinePinnedAt = previousPinnedAt
 		return nil, fmt.Errorf("persist comparison baseline removal: %w", err)

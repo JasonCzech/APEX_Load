@@ -204,14 +204,14 @@ func (s *Server) libraryScenarioBundleItem(id string) (LibraryBundleItem, error)
 	if !ok || scenario == nil {
 		return LibraryBundleItem{}, fmt.Errorf("scenario not found")
 	}
-	req := createScenarioRequestFromStored(scenario)
+	req := createScenarioRequestFromStored(maskStoredScenario(scenario))
 	return LibraryBundleItem{
 		Kind:             "scenario",
 		SourceInstanceID: s.controllerID,
 		SourceItemID:     scenario.ID,
 		ProjectID:        scenario.ProjectID,
 		Name:             scenario.Name,
-		ContentHash:      hashLibraryScenario(scenario),
+		ContentHash:      hashCanonical(req),
 		CreatedAt:        scenario.CreatedAt,
 		UpdatedAt:        scenario.UpdatedAt,
 		Scenario:         &LibraryScenarioPayload{ID: scenario.ID, Request: req},
@@ -227,10 +227,11 @@ func (s *Server) libraryResultBundleItem(id string) (LibraryBundleItem, error) {
 	if test.Status == "QUEUED" || test.Status == "RESERVED" || test.Status == "RUNNING" || test.Status == "PENDING" {
 		return LibraryBundleItem{}, fmt.Errorf("only completed, failed, stopped, or aborted results can be exported")
 	}
+	portableTest := maskManagedTestWithOptions(test, managedTestMaskOptions{IncludeHistory: true, IncludeSparkline: true})
 	result := &LibraryResultPayload{
-		Test:    test,
-		Archive: test.Archive,
-		Summary: libraryResultSummary(test),
+		Test:    portableTest,
+		Archive: portableTest.Archive,
+		Summary: libraryResultSummary(portableTest),
 	}
 	if record, ok := s.runner.GetRunArchive(id); ok && record != nil {
 		result.Archive = record
@@ -247,7 +248,7 @@ func (s *Server) libraryResultBundleItem(id string) (LibraryBundleItem, error) {
 		SourceItemID:     test.ID,
 		ProjectID:        test.ProjectID,
 		Name:             test.Name,
-		ContentHash:      hashLibraryResult(test),
+		ContentHash:      hashLibraryResult(portableTest),
 		CreatedAt:        test.CreatedAt,
 		UpdatedAt:        managedTestCompletedAt(test),
 		Result:           result,
@@ -347,7 +348,7 @@ func (s *Server) importLibraryScript(item LibraryBundleItem, projectID string, r
 	script := cloneScriptForLibrary(item.Script)
 	script.ProjectID = projectID
 	if localID == "" {
-		script.ID = uuid.New().String()
+		script.ID = deterministicLibraryImportID(remoteID, item)
 	} else {
 		script.ID = localID
 	}
@@ -410,7 +411,7 @@ func (s *Server) importLibraryScenario(item LibraryBundleItem, projectID string,
 		}
 	}
 	if localID == "" {
-		stored, err := s.runner.StoreScenario(req)
+		stored, err := s.runner.StoreScenarioWithID(deterministicLibraryImportID(remoteID, item), req)
 		if err != nil {
 			return "", "", &LibraryConflict{Kind: "scenario", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: err.Error()}
 		}
@@ -425,7 +426,7 @@ func (s *Server) importLibraryScenario(item LibraryBundleItem, projectID string,
 		return "", "", &LibraryConflict{Kind: "scenario", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, LocalItemID: localID, Reason: err.Error()}
 	}
 	if !ok {
-		stored, err = s.runner.StoreScenario(req)
+		stored, err = s.runner.StoreScenarioWithID(deterministicLibraryImportID(remoteID, item), req)
 		if err != nil {
 			return "", "", &LibraryConflict{Kind: "scenario", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: err.Error()}
 		}
@@ -455,7 +456,7 @@ func (s *Server) importLibraryResult(item LibraryBundleItem, projectID string, r
 	if item.Result.Test != nil {
 		resultID = item.Result.Test.ID
 	}
-	importID := uuid.New().String()
+	importID := deterministicLibraryImportID(remoteID, item)
 	archiveDir := ""
 	keepArchiveDir := false
 	defer func() {
@@ -541,6 +542,16 @@ func (s *Server) importLibraryResult(item LibraryBundleItem, projectID string, r
 		return imported.ID, "created_link_pending", nil
 	}
 	return imported.ID, "created", nil
+}
+
+func deterministicLibraryImportID(remoteID string, item LibraryBundleItem) string {
+	source := strings.Join([]string{
+		firstNonEmpty(strings.TrimSpace(remoteID), "direct"),
+		normalizeLibraryKind(item.Kind),
+		strings.TrimSpace(item.SourceInstanceID),
+		strings.TrimSpace(item.SourceItemID),
+	}, "/")
+	return uuid.NewSHA1(uuid.NameSpaceURL, []byte("apexload-library-import/"+source)).String()
 }
 
 func validateLibraryArchiveMetadata(result *LibraryResultPayload, manifestHash string, sizeBytes int64) string {

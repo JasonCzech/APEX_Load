@@ -54,6 +54,8 @@ type franzClient struct {
 	replyAssignmentMu sync.RWMutex
 	replyAssigned     map[string]bool
 	replyTopicRefs    map[string]int
+	consumeTopicMu    sync.Mutex
+	consumeTopicRefs  map[string]int
 	pendingMu         sync.Mutex
 	pending           []pendingReply
 	pendingBytes      int64
@@ -77,6 +79,7 @@ type pendingReply struct {
 // fails; connection problems surface on first use / HealthCheck instead.
 func (c *franzClient) handle() (*kgo.Client, error) {
 	c.once.Do(func() {
+		c.consumeTopicRefs = make(map[string]int)
 		c.cl, c.err = c.newClient(c.cfg.ConsumerGroup)
 	})
 	return c.cl, c.err
@@ -91,20 +94,21 @@ func (c *franzClient) replyHandle() (*kgo.Client, error) {
 		c.replyAssigned = make(map[string]bool)
 		c.replyTopicRefs = make(map[string]int)
 		replyGroup := "apexload-reply-" + uuid.NewString()
-		c.replyCl, c.replyErr = c.newClient(replyGroup, kgo.OnPartitionsAssigned(func(_ context.Context, _ *kgo.Client, partitions map[string][]int32) {
-			c.replyAssignmentMu.Lock()
-			for topic := range partitions {
-				c.replyAssigned[topic] = true
-			}
-			c.replyAssignmentMu.Unlock()
-		}))
+		c.replyCl, c.replyErr = c.newClient(replyGroup,
+			kgo.ConsumeResetOffset(kgo.NewOffset().AtEnd()),
+			kgo.OnPartitionsAssigned(func(_ context.Context, _ *kgo.Client, partitions map[string][]int32) {
+				c.replyAssignmentMu.Lock()
+				for topic := range partitions {
+					c.replyAssigned[topic] = true
+				}
+				c.replyAssignmentMu.Unlock()
+			}))
 	})
 	return c.replyCl, c.replyErr
 }
 
 func (c *franzClient) newClient(consumerGroup string, extra ...kgo.Opt) (*kgo.Client, error) {
 	opts := []kgo.Opt{kgo.SeedBrokers(c.cfg.Brokers...)}
-	opts = append(opts, extra...)
 	if c.cfg.ClientID != "" {
 		opts = append(opts, kgo.ClientID(c.cfg.ClientID))
 	}
@@ -171,6 +175,10 @@ func (c *franzClient) newClient(consumerGroup string, extra ...kgo.Opt) (*kgo.Cl
 		}
 		opts = append(opts, kgo.DialTLSConfig(tlsCfg))
 	}
+	// Call-specific policy must win over configured defaults. Reply consumers,
+	// for example, always start at the end even when normal consumption starts
+	// at the beginning.
+	opts = append(opts, extra...)
 	return kgo.NewClient(opts...)
 }
 
@@ -215,7 +223,8 @@ func (c *franzClient) Consume(ctx context.Context, topic string, group string, t
 	if err != nil {
 		return kafkaRecord{}, 0, err
 	}
-	cl.AddConsumeTopics(topic)
+	c.addConsumeTopic(cl, topic)
+	defer c.releaseConsumeTopic(cl, topic)
 	c.pendingMu.Lock()
 	for i, pending := range c.pending {
 		if pending.record.Topic == topic {
@@ -261,6 +270,27 @@ func (c *franzClient) Consume(ctx context.Context, topic string, group string, t
 			return kafkaRecord{}, 0, fmt.Errorf("no kafka record received from %q within %s: %w", topic, timeout, cctx.Err())
 		}
 	}
+}
+
+func (c *franzClient) addConsumeTopic(cl *kgo.Client, topic string) {
+	c.consumeTopicMu.Lock()
+	defer c.consumeTopicMu.Unlock()
+	if c.consumeTopicRefs[topic] == 0 {
+		cl.AddConsumeTopics(topic)
+	}
+	c.consumeTopicRefs[topic]++
+}
+
+func (c *franzClient) releaseConsumeTopic(cl *kgo.Client, topic string) {
+	c.consumeTopicMu.Lock()
+	defer c.consumeTopicMu.Unlock()
+	refs := c.consumeTopicRefs[topic]
+	if refs <= 1 {
+		delete(c.consumeTopicRefs, topic)
+		cl.PurgeTopicsFromClient(topic)
+		return
+	}
+	c.consumeTopicRefs[topic] = refs - 1
 }
 
 func (c *franzClient) RequestReply(ctx context.Context, reqTopic, replyTopic string, req kafkaRecord, timeout time.Duration) (recordMeta, kafkaRecord, error) {

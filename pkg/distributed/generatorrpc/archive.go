@@ -153,6 +153,35 @@ type generatorArchiveByteBudget struct {
 	nextFreeCheck int64
 	knownFree     int64
 	freeKnown     bool
+	sharedFree    *generatorArchiveFreeBudget
+}
+
+type generatorArchiveFreeBudget struct {
+	mu        sync.Mutex
+	root      string
+	knownFree int64
+	known     bool
+}
+
+func (b *generatorArchiveFreeBudget) allow(length int64, minFreeBytes int64) error {
+	if b == nil {
+		return nil
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if !b.known {
+		free, err := generatorArchiveFreeBytes(b.root)
+		if err != nil {
+			return err
+		}
+		b.knownFree = free
+		b.known = true
+	}
+	if b.knownFree < minFreeBytes || length > b.knownFree-minFreeBytes {
+		return fmt.Errorf("generator archive free space would fall below reserve %d", minFreeBytes)
+	}
+	b.knownFree -= length
+	return nil
 }
 
 type generatorArchiveQuotaWriter struct {
@@ -176,6 +205,11 @@ func (b *generatorArchiveByteBudget) writeTo(destination io.Writer, content []by
 	length := int64(len(content))
 	if b.written > b.maxBytes || length > b.maxBytes-b.written {
 		return 0, fmt.Errorf("generator archive exceeds byte limit %d", b.maxBytes)
+	}
+	if b.sharedFree != nil {
+		if err := b.sharedFree.allow(length, b.minFreeBytes); err != nil {
+			return 0, err
+		}
 	}
 	if !b.freeKnown || b.written >= b.nextFreeCheck {
 		free, err := generatorArchiveFreeBytes(b.root)
@@ -378,6 +412,7 @@ func newArchiveRecorderInNamespace(namespace *generatorArchiveNamespace, testID 
 	budget := &generatorArchiveByteBudget{
 		root: archiveDir, maxBytes: configuredGeneratorArchiveMaxBytes(),
 		minFreeBytes: configuredGeneratorArchiveMinFreeBytes(),
+		sharedFree:   namespace.freeBudget,
 	}
 	artifactNames := []string{
 		"transactions.jsonl", "resources.jsonl", "interval_summaries.jsonl",

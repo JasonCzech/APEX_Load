@@ -28,6 +28,17 @@ func (tr *TestRunner) StoreScenario(req CreateScenarioRequest) (*StoredScenario,
 	return cloneStoredScenarioForReadLocked(stored), err
 }
 
+func (tr *TestRunner) StoreScenarioWithID(id string, req CreateScenarioRequest) (*StoredScenario, error) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil, fmt.Errorf("scenario id is required")
+	}
+	stored, err := tr.storeScenarioLocked(id, req)
+	return cloneStoredScenarioForReadLocked(stored), err
+}
+
 func (tr *TestRunner) UpdateScenario(id string, req CreateScenarioRequest) (*StoredScenario, bool, error) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()

@@ -424,17 +424,48 @@ func serviceAccountAllowsRequest(account *AuthenticatedServiceAccount, r *http.R
 	if account == nil {
 		return true
 	}
-	required := requiredServiceAccountScope(r)
-	if required == "" {
+	required := requiredServiceAccountScopes(r)
+	if len(required) == 0 {
 		return true
 	}
 	scopes := normalizeAuthenticatedServiceAccountScopes(account.Scopes)
-	for _, scope := range scopes {
-		if scope == "*" || scope == "automation:*" || scope == required {
-			return true
+	for _, want := range required {
+		allowed := false
+		for _, scope := range scopes {
+			if scope == "*" || scope == "automation:*" || scope == want {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return false
 		}
 	}
-	return false
+	return true
+}
+
+func requiredServiceAccountScopes(r *http.Request) []string {
+	if r != nil && r.Method == http.MethodPost && r.URL.Path == "/api/v1/library/import" {
+		var req LibraryImportRequest
+		if err := decodeRequestBody(r, &req); err == nil {
+			seen := map[string]struct{}{}
+			var scopes []string
+			for _, item := range req.Bundle.Items {
+				scope := serviceAccountScopeForLibraryKind(item.Kind)
+				if _, ok := seen[scope]; !ok {
+					seen[scope] = struct{}{}
+					scopes = append(scopes, scope)
+				}
+			}
+			if len(scopes) > 0 {
+				return scopes
+			}
+		}
+	}
+	if scope := requiredServiceAccountScope(r); scope != "" {
+		return []string{scope}
+	}
+	return nil
 }
 
 type serviceAccountScopeRule struct {

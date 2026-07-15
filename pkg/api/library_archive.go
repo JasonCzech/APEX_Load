@@ -237,11 +237,15 @@ func copyWithMaxBytes(dst io.Writer, src io.Reader, maxBytes int64) (int64, erro
 }
 
 func unzipArchiveFile(zipPath string, destination string, maxBytes int64) error {
+	const maxLibraryArchiveEntries = 10_000
 	reader, err := zip.OpenReader(zipPath)
 	if err != nil {
 		return fmt.Errorf("open archive zip: %w", err)
 	}
 	defer reader.Close()
+	if len(reader.File) > maxLibraryArchiveEntries {
+		return fmt.Errorf("archive contains %d entries, limit is %d", len(reader.File), maxLibraryArchiveEntries)
+	}
 	if err := os.MkdirAll(destination, 0o755); err != nil {
 		return err
 	}

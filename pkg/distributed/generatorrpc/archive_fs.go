@@ -15,8 +15,9 @@ import (
 // archive operations are relative to root; the path is metadata only and is
 // never reopened for security-sensitive I/O.
 type generatorArchiveNamespace struct {
-	path string
-	root *os.Root
+	path       string
+	root       *os.Root
+	freeBudget *generatorArchiveFreeBudget
 }
 
 func (n *generatorArchiveNamespace) close() error {
@@ -41,7 +42,7 @@ func prepareGeneratorArchiveNamespace(generatorID string, create bool) (*generat
 		return nil, err
 	}
 	if namespace == "" {
-		return &generatorArchiveNamespace{path: basePath, root: baseRoot}, nil
+		return &generatorArchiveNamespace{path: basePath, root: baseRoot, freeBudget: &generatorArchiveFreeBudget{root: basePath}}, nil
 	}
 	child, err := openArchiveChildDirectory(baseRoot, namespace, create, 0o755)
 	if err != nil {
@@ -49,7 +50,8 @@ func prepareGeneratorArchiveNamespace(generatorID string, create bool) (*generat
 		return nil, err
 	}
 	_ = baseRoot.Close()
-	return &generatorArchiveNamespace{path: filepath.Join(basePath, namespace), root: child}, nil
+	path := filepath.Join(basePath, namespace)
+	return &generatorArchiveNamespace{path: path, root: child, freeBudget: &generatorArchiveFreeBudget{root: path}}, nil
 }
 
 // openCanonicalArchiveDirectory resolves existing operator-owned ancestors

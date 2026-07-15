@@ -26,6 +26,10 @@ type executionLeaseStore interface {
 	TryAcquireSchedulerLease(name string, ownerID string, now time.Time, ttl time.Duration) (bool, error)
 }
 
+type executionLeaseReleaseStore interface {
+	ReleaseSchedulerLease(name string, ownerID string) error
+}
+
 type leadershipCallbackKind uint8
 
 const (
@@ -292,6 +296,11 @@ func (l *executionLeadership) relinquish() {
 	l.mu.Lock()
 	l.transitionToFollowerLocked()
 	l.mu.Unlock()
+	if store, ok := l.store.(executionLeaseReleaseStore); ok {
+		if err := store.ReleaseSchedulerLease(executionLeaseName, l.ownerID); err != nil {
+			slog.Warn("failed to release execution leadership lease", "owner", l.ownerID, "err", err)
+		}
+	}
 }
 
 // transitionToFollowerLocked records a leadership loss and enqueues its

@@ -42,8 +42,9 @@ type Options struct {
 	// Headless launches without a window. Interactive recording wants a headed
 	// browser; headless exists for automated tests of the capture pipeline.
 	Headless bool
-	// CaptureHAR records the context's network traffic to a side-car HAR
-	// (with content) flushed when the recording stops. Default on via New.
+	// CaptureHAR records the context's network traffic to a side-car HAR flushed
+	// when the recording stops. Response bodies are attached rather than embedded
+	// so Chromium does not retain unbounded base64-expanded content in memory.
 	CaptureHAR bool
 	// HARPath overrides where the side-car HAR is written. Empty uses a
 	// managed temporary file that is read into Session.HAR and removed on Stop.
@@ -321,7 +322,7 @@ func (r *Recorder) Start() error {
 		}
 		r.session.HARPath = harPath
 		contextOptions.RecordHarPath = playwright.String(harPath)
-		contextOptions.RecordHarContent = playwright.HarContentPolicyEmbed
+		contextOptions.RecordHarContent = playwright.HarContentPolicyAttach
 	}
 	if d := r.opts.Device; d != nil {
 		if d.Width > 0 && d.Height > 0 {

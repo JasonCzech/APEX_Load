@@ -171,7 +171,11 @@ func ServerOptionsFromEnv() ([]grpc.ServerOption, error) {
 		return nil, fmt.Errorf("production gRPC server requires mTLS or TLS plus %s; configured %s", grpcAuthTokenEnvVar, security.String())
 	}
 
-	var options []grpc.ServerOption
+	maxReceiveBytes := configuredGeneratorScriptCacheMaxBytes()
+	if maxReceiveBytes > int64(^uint(0)>>1) {
+		maxReceiveBytes = int64(^uint(0) >> 1)
+	}
+	var options = []grpc.ServerOption{grpc.MaxRecvMsgSize(int(maxReceiveBytes))}
 	if env.CertFile != "" {
 		loadConfig := func() (*tls.Config, error) {
 			cert, err := tls.LoadX509KeyPair(env.CertFile, env.KeyFile)
@@ -225,6 +229,7 @@ func DialOptionsFromEnv() ([]grpc.DialOption, error) {
 		return nil, fmt.Errorf("production gRPC client requires mTLS or verified TLS plus %s; configured %s", grpcAuthTokenEnvVar, security.String())
 	}
 	options := []grpc.DialOption{
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(64 << 20)),
 		grpc.WithConnectParams(grpc.ConnectParams{
 			Backoff: backoff.Config{
 				BaseDelay:  250 * time.Millisecond,

@@ -149,33 +149,40 @@ func (tr *TestRunner) reloadStoredScenarios() error {
 		return err
 	}
 	loaded := make(map[string]*StoredScenario, len(scenarios))
-	tr.mu.RLock()
+	type loadedScenarioParts struct {
+		full      *storage.Scenario
+		scripts   []storage.ScenarioScript
+		bindings  []storage.ScenarioDataPoolBinding
+		schedules []*storage.ScenarioSchedule
+	}
+	parts := make([]loadedScenarioParts, 0, len(scenarios))
 	for _, scenario := range scenarios {
 		if scenario == nil {
 			continue
 		}
 		full, scripts, loadErr := tr.scenarioStore.GetScenario(scenario.ID)
 		if loadErr != nil {
-			tr.mu.RUnlock()
 			return loadErr
 		}
 		bindings, loadErr := tr.scenarioStore.ListScenarioDataPoolBindings(scenario.ID)
 		if loadErr != nil {
-			tr.mu.RUnlock()
 			return fmt.Errorf("load scenario %s data pools: %w", scenario.ID, loadErr)
 		}
 		schedules, loadErr := tr.scenarioStore.ListScenarioSchedules(scenario.ID)
 		if loadErr != nil {
-			tr.mu.RUnlock()
 			return fmt.Errorf("load scenario %s schedules: %w", scenario.ID, loadErr)
 		}
-		stored := tr.buildStoredScenario(full, scripts)
-		stored.DataPools = append([]storage.ScenarioDataPoolBinding(nil), bindings...)
-		stored.Schedules = make([]*storage.ScenarioSchedule, 0, len(schedules))
-		for _, schedule := range schedules {
+		parts = append(parts, loadedScenarioParts{full: full, scripts: scripts, bindings: bindings, schedules: schedules})
+	}
+	tr.mu.RLock()
+	for _, part := range parts {
+		stored := tr.buildStoredScenario(part.full, part.scripts)
+		stored.DataPools = append([]storage.ScenarioDataPoolBinding(nil), part.bindings...)
+		stored.Schedules = make([]*storage.ScenarioSchedule, 0, len(part.schedules))
+		for _, schedule := range part.schedules {
 			stored.Schedules = append(stored.Schedules, cloneScenarioSchedule(schedule))
 		}
-		loaded[scenario.ID] = stored
+		loaded[part.full.ID] = stored
 	}
 	tr.mu.RUnlock()
 	tr.mu.Lock()
@@ -973,6 +980,18 @@ func (tr *TestRunner) persistStoredTestStatus(testID string, status string, endT
 		return nil
 	}
 	return retryDurableTransition(func() error {
+		if store, ok := tr.testStore.(interface {
+			UpdateTestStatusIfActive(string, string, *time.Time, string) (bool, error)
+		}); ok {
+			updated, err := store.UpdateTestStatusIfActive(testID, status, endTime, errStr)
+			if err != nil {
+				return err
+			}
+			if !updated {
+				return fmt.Errorf("durable lifecycle transition for test %s was fenced by a newer state", testID)
+			}
+			return nil
+		}
 		return tr.testStore.UpdateTestStatus(testID, status, endTime, errStr)
 	})
 }

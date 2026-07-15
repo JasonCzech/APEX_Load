@@ -95,7 +95,7 @@ func TestApplyDataFormattingChainAutoDetectsGzipPayloads(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := applyDataFormattingChain(tt.body, true, nil)
+			got, err := applyDataFormattingChain(tt.body, true, nil, 1<<20)
 			if err != nil {
 				t.Fatalf("applyDataFormattingChain returned error: %v", err)
 			}

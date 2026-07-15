@@ -147,12 +147,21 @@ func isJMeterZipUpload(fileName string, contentType string) bool {
 }
 
 func readJMeterZipImport(data []byte) ([]byte, string, map[string][]byte, error) {
+	const (
+		maxJMeterZipEntries    = 1_000
+		maxJMeterZipEntryBytes = 32 << 20
+		maxJMeterZipTotalBytes = 128 << 20
+	)
 	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
 		return nil, "", nil, err
 	}
+	if len(reader.File) > maxJMeterZipEntries {
+		return nil, "", nil, fmt.Errorf("JMeter archive contains %d entries, limit is %d", len(reader.File), maxJMeterZipEntries)
+	}
 	jmxFiles := map[string][]byte{}
 	sidecars := map[string][]byte{}
+	var totalBytes int64
 	for _, entry := range reader.File {
 		if entry.FileInfo().IsDir() {
 			continue
@@ -161,10 +170,17 @@ func readJMeterZipImport(data []byte) ([]byte, string, map[string][]byte, error)
 		if err != nil {
 			continue
 		}
-		content, err := io.ReadAll(file)
+		content, err := io.ReadAll(io.LimitReader(file, maxJMeterZipEntryBytes+1))
 		_ = file.Close()
 		if err != nil {
-			continue
+			return nil, "", nil, fmt.Errorf("reading JMeter archive entry %q: %w", entry.Name, err)
+		}
+		if len(content) > maxJMeterZipEntryBytes {
+			return nil, "", nil, fmt.Errorf("JMeter archive entry %q exceeds %d bytes", entry.Name, maxJMeterZipEntryBytes)
+		}
+		totalBytes += int64(len(content))
+		if totalBytes > maxJMeterZipTotalBytes {
+			return nil, "", nil, fmt.Errorf("JMeter archive expands beyond %d bytes", maxJMeterZipTotalBytes)
 		}
 		name := filepath.ToSlash(entry.Name)
 		switch strings.ToLower(filepath.Ext(name)) {

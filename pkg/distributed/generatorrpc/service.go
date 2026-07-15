@@ -425,6 +425,7 @@ type Service struct {
 	archiveIdentities   map[string]os.FileInfo
 	archiveLeases       map[string]int
 	archiveDeleting     map[string]struct{}
+	stoppingTests       map[string]struct{}
 	scriptCacheMax      int
 	scriptCacheBytes    int64
 	scriptCacheLimit    int64
@@ -498,6 +499,7 @@ func NewService(generatorID string, maxVUsers int, opts ...ServiceOption) *Servi
 		archiveIdentities:   make(map[string]os.FileInfo),
 		archiveLeases:       make(map[string]int),
 		archiveDeleting:     make(map[string]struct{}),
+		stoppingTests:       make(map[string]struct{}),
 		scriptCacheMax:      configuredGeneratorScriptCacheMax(),
 		scriptCacheLimit:    configuredGeneratorScriptCacheMaxBytes(),
 		archiveRecordMax:    configuredGeneratorArchiveMax(),
@@ -619,6 +621,9 @@ func (s *Service) AssignWork(_ context.Context, assignment *pb.WorkAssignment) (
 	}
 	if _, deleting := s.archiveDeleting[assignment.GetTestId()]; deleting {
 		return &pb.AssignmentAck{Accepted: false, ErrorMessage: "test id archive is being retired", AvailableCapacity: s.availableCapacityLocked()}, nil
+	}
+	if _, stopping := s.stoppingTests[assignment.GetTestId()]; stopping {
+		return &pb.AssignmentAck{Accepted: false, ErrorMessage: "test id is stopping", AvailableCapacity: s.availableCapacityLocked()}, nil
 	}
 	if _, active := s.assignments[assignment.GetTestId()]; !active && s.archiveRecords[assignment.GetTestId()] != nil {
 		return &pb.AssignmentAck{
@@ -800,6 +805,9 @@ func (s *Service) AdjustVUsers(ctx context.Context, request *pb.VUserAdjustment)
 
 	s.mu.Lock()
 	assignment, ok := s.assignments[request.GetTestId()]
+	if ok {
+		s.stoppingTests[request.GetTestId()] = struct{}{}
+	}
 	if !ok {
 		s.mu.Unlock()
 		return nil, status.Error(codes.NotFound, "test assignment not found")
@@ -1008,6 +1016,11 @@ func waitForGeneratorExecutions(ctx context.Context, executions []*groupExecutio
 }
 
 func (s *Service) finishStoppedTest(testID string, assignment assignedTest, writer *archiveRecorder) (string, string) {
+	defer func() {
+		s.mu.Lock()
+		delete(s.stoppingTests, testID)
+		s.mu.Unlock()
+	}()
 	finalState := "COMPLETE"
 	finalError := ""
 	if writer != nil {
@@ -1705,6 +1718,9 @@ func (s *Service) completeAssignment(testID string) {
 		}
 	}
 	s.broadcastMetrics(s.metricsBatchForState(testID, 0, false, assignment.groups, finalState, finalError))
+	s.mu.Lock()
+	delete(s.stoppingTests, testID)
+	s.mu.Unlock()
 }
 
 func (s *Service) startExecutionLocked(assignment *pb.WorkAssignment) (err error) {
