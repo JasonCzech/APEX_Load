@@ -1513,7 +1513,7 @@ func (tr *TestRunner) startManagedTestRun(test *ManagedTest, mge *engine.MultiGr
 	previousCancel := test.cancel
 	ctx := test.executionCtx
 	if ctx == nil || test.cancel == nil {
-		ctx, test.cancel = context.WithCancel(context.Background())
+		ctx, test.cancel = tr.executionOperationContext(context.Background())
 		test.executionCtx = ctx
 	}
 	if tr.shuttingDown || test.Status != "INITIALIZING" || ctx.Err() != nil || !tr.isExecutionLeader() {

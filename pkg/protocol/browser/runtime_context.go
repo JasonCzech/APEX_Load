@@ -247,6 +247,7 @@ func (b *Browser) enqueueNetworkRequest(request playwright.Request, finished boo
 		b.mu.Lock()
 		b.networkTasksDropped++
 		b.mu.Unlock()
+		b.failHARLimitConservatively()
 	}
 }
 
@@ -402,6 +403,8 @@ func (b *Browser) recordNetworkRequest(request playwright.Request, finished bool
 	var bytesReceived int64
 	if sizes, err := request.Sizes(); err == nil && sizes != nil {
 		bytesReceived = int64(sizes.ResponseHeadersSize + sizes.ResponseBodySize)
+		rawBytes := int64(sizes.RequestHeadersSize + sizes.RequestBodySize + sizes.ResponseHeadersSize + sizes.ResponseBodySize)
+		b.noteHARBytes(rawBytes * 2)
 	}
 	durationMs := requestDurationMs(request.Timing())
 	if !finished && durationMs < 0 {

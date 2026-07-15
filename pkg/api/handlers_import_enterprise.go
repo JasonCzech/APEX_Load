@@ -206,7 +206,7 @@ func readEnterpriseArchiveImportRequest(w http.ResponseWriter, r *http.Request) 
 		}
 		data = body
 	} else {
-		if err := r.ParseMultipartForm(enterpriseArchiveImportMaxBodyBytes); err != nil {
+		if err := r.ParseMultipartForm(importMultipartMemoryBytes); err != nil {
 			writeError(w, http.StatusBadRequest, "failed to parse multipart form (max 100MB): "+err.Error())
 			return nil, false
 		}

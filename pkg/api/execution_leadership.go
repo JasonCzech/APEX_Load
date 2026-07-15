@@ -171,6 +171,31 @@ func (l *executionLeadership) Run(ctx context.Context) {
 		return
 	}
 	defer l.relinquish()
+	watchdogStop := make(chan struct{})
+	defer close(watchdogStop)
+	watchdogInterval := l.ttl / 4
+	if watchdogInterval <= 0 || watchdogInterval > time.Second {
+		watchdogInterval = time.Second
+	}
+	go func() {
+		ticker := time.NewTicker(watchdogInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-watchdogStop:
+				return
+			case <-ticker.C:
+				now := l.now().UTC()
+				l.mu.Lock()
+				stale := l.leader.Load() && !l.lastConfirmed.IsZero() && now.Sub(l.lastConfirmed) >= l.ttl
+				steppedDown := stale && l.transitionToFollowerLocked()
+				l.mu.Unlock()
+				if steppedDown {
+					slog.Warn("execution leadership watchdog expired stale lease", "owner", l.ownerID)
+				}
+			}
+		}
+	}()
 	l.tick()
 	ticker := time.NewTicker(l.renew)
 	defer ticker.Stop()

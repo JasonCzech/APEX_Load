@@ -53,6 +53,7 @@ type franzClient struct {
 	replyErr          error
 	replyAssignmentMu sync.RWMutex
 	replyAssigned     map[string]bool
+	replyTopicRefs    map[string]int
 	pendingMu         sync.Mutex
 	pending           []pendingReply
 	pendingBytes      int64
@@ -87,6 +88,7 @@ func (c *franzClient) handle() (*kgo.Client, error) {
 func (c *franzClient) replyHandle() (*kgo.Client, error) {
 	c.replyOnce.Do(func() {
 		c.replyAssigned = make(map[string]bool)
+		c.replyTopicRefs = make(map[string]int)
 		c.replyCl, c.replyErr = c.newClient("", kgo.OnPartitionsAssigned(func(_ context.Context, _ *kgo.Client, partitions map[string][]int32) {
 			c.replyAssignmentMu.Lock()
 			for topic := range partitions {
@@ -264,8 +266,10 @@ func (c *franzClient) RequestReply(ctx context.Context, reqTopic, replyTopic str
 	if err != nil {
 		return recordMeta{}, kafkaRecord{}, err
 	}
-	cl.AddConsumeTopics(replyTopic)
-	if err := c.primeReplyConsumer(ctx, cl, replyTopic, timeout); err != nil {
+	c.addReplyTopic(cl, replyTopic)
+	defer c.releaseReplyTopic(cl, replyTopic)
+	deadline := time.Now().Add(timeout)
+	if err := c.primeReplyConsumer(ctx, cl, replyTopic, time.Until(deadline)); err != nil {
 		return recordMeta{}, kafkaRecord{}, err
 	}
 	meta, err := c.Produce(ctx, reqTopic, req)
@@ -273,7 +277,6 @@ func (c *franzClient) RequestReply(ctx context.Context, reqTopic, replyTopic str
 		return recordMeta{}, kafkaRecord{}, err
 	}
 
-	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		c.pendingMu.Lock()
 		now := time.Now()
@@ -314,6 +317,37 @@ func (c *franzClient) RequestReply(ctx context.Context, reqTopic, replyTopic str
 		}
 	}
 	return recordMeta{}, kafkaRecord{}, fmt.Errorf("no correlated kafka reply received from %q within %s", replyTopic, timeout)
+}
+
+func (c *franzClient) addReplyTopic(cl *kgo.Client, topic string) {
+	c.replyAssignmentMu.Lock()
+	c.replyTopicRefs[topic]++
+	if c.replyTopicRefs[topic] == 1 {
+		cl.AddConsumeTopics(topic)
+	}
+	c.replyAssignmentMu.Unlock()
+}
+
+func (c *franzClient) releaseReplyTopic(cl *kgo.Client, topic string) {
+	c.replyAssignmentMu.Lock()
+	if c.replyTopicRefs[topic] > 1 {
+		c.replyTopicRefs[topic]--
+		c.replyAssignmentMu.Unlock()
+		return
+	}
+	delete(c.replyTopicRefs, topic)
+	delete(c.replyAssigned, topic)
+	cl.PurgeTopicsFromConsuming(topic)
+	c.replyAssignmentMu.Unlock()
+	c.pendingMu.Lock()
+	for i := 0; i < len(c.replyPending); {
+		if c.replyPending[i].record.Topic == topic {
+			c.removeReplyPendingLocked(i)
+			continue
+		}
+		i++
+	}
+	c.pendingMu.Unlock()
 }
 
 func (c *franzClient) primeReplyConsumer(ctx context.Context, cl *kgo.Client, replyTopic string, timeout time.Duration) error {

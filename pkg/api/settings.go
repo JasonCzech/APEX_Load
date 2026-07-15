@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -1299,6 +1300,14 @@ func (tr *TestRunner) GetSystemSettings() SystemSettings {
 	return cloneSystemSettings(tr.settings)
 }
 
+func (tr *TestRunner) systemSettingsSnapshot() (SystemSettings, uint64) {
+	tr.settingsRefreshMu.Lock()
+	defer tr.settingsRefreshMu.Unlock()
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	return cloneSystemSettings(tr.settings), tr.settingsRevision
+}
+
 // refreshSystemSettingsFromStore keeps the complete settings snapshot
 // consistent across HA replicas. force bypasses the short read throttle and is
 // used before read-modify-write updates so stale replicas cannot overwrite a
@@ -1426,7 +1435,13 @@ func (tr *TestRunner) currentNotificationSettings() NotificationsSettings {
 	return cloneNotificationsSettings(settings)
 }
 
+var errSystemSettingsConflict = errors.New("system settings changed concurrently; refresh and retry")
+
 func (tr *TestRunner) UpdateSystemSettings(settings SystemSettings) (SystemSettings, error) {
+	return tr.updateSystemSettings(settings, 0, false)
+}
+
+func (tr *TestRunner) updateSystemSettings(settings SystemSettings, expectedRevision uint64, enforceRevision bool) (SystemSettings, error) {
 	normalized := cloneSystemSettings(settings)
 	normalized.Thresholds = normalizeThresholdSettings(normalized.Thresholds)
 	normalized.ArchiveRetention = normalizeArchiveRetentionSettings(normalized.ArchiveRetention)
@@ -1457,6 +1472,10 @@ func (tr *TestRunner) UpdateSystemSettings(settings SystemSettings) (SystemSetti
 	tr.settingsWriteMu.Lock()
 	defer tr.settingsWriteMu.Unlock()
 	tr.settingsRefreshMu.Lock()
+	if enforceRevision && tr.settingsRevision != expectedRevision {
+		tr.settingsRefreshMu.Unlock()
+		return SystemSettings{}, errSystemSettingsConflict
+	}
 	expectedRaw := tr.systemSettingsRaw
 	tr.settingsRefreshMu.Unlock()
 	if tr.settingsStore != nil {
@@ -1467,7 +1486,7 @@ func (tr *TestRunner) UpdateSystemSettings(settings SystemSettings) (SystemSetti
 				return SystemSettings{}, fmt.Errorf("persist settings: %w", err)
 			}
 			if !updated {
-				return SystemSettings{}, fmt.Errorf("system settings changed concurrently; refresh and retry")
+				return SystemSettings{}, errSystemSettingsConflict
 			}
 		} else if err := tr.settingsStore.SaveSetting(systemSettingsStoreKey, encodedString); err != nil {
 			return SystemSettings{}, fmt.Errorf("persist settings: %w", err)

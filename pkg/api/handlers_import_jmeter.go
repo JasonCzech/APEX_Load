@@ -89,7 +89,7 @@ func readJMeterImportRequest(w http.ResponseWriter, r *http.Request) (*jmeterImp
 		}
 		data = body
 	} else {
-		if err := r.ParseMultipartForm(jmeterImportMaxBodyBytes); err != nil {
+		if err := r.ParseMultipartForm(importMultipartMemoryBytes); err != nil {
 			writeError(w, http.StatusBadRequest, "failed to parse multipart form (max 50MB): "+err.Error())
 			return nil, false
 		}

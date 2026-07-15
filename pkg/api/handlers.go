@@ -1003,23 +1003,28 @@ func (s *Server) handleUpdateSystemSettings(w http.ResponseWriter, r *http.Reque
 	// and write-only secrets are preserved. Refresh without throttling first so a
 	// stale HA replica cannot overwrite a newer shared snapshot.
 	s.runner.refreshSystemSettingsFromStore(true)
+	currentSettings, expectedSettingsRevision := s.runner.systemSettingsSnapshot()
 	// A PUT that omits the prometheus section must not wipe it — inherit the
 	// currently-stored value. When the section IS present, settings.Prometheus
 	// carries the admin's explicit choice (including an explicit disable), which
 	// the faithful normalizer in UpdateSystemSettings now preserves.
 	if !rawJSONHasKey(string(body), "prometheus") {
-		settings.Prometheus = s.runner.GetSystemSettings().Prometheus
+		settings.Prometheus = currentSettings.Prometheus
 	}
 	if !rawJSONHasKey(string(body), "client_app") {
-		settings.ClientApp = s.runner.GetSystemSettings().ClientApp
+		settings.ClientApp = currentSettings.ClientApp
 	}
 	if !rawJSONHasKey(string(body), "client_downloads") {
-		settings.ClientDownloads = s.runner.GetSystemSettings().ClientDownloads
+		settings.ClientDownloads = currentSettings.ClientDownloads
 	}
 
-	settings = preserveWriteOnlySystemSettingsSecrets(settings, s.runner.GetSystemSettings())
-	updated, err := s.runner.UpdateSystemSettings(settings)
+	settings = preserveWriteOnlySystemSettingsSecrets(settings, currentSettings)
+	updated, err := s.runner.updateSystemSettings(settings, expectedSettingsRevision, true)
 	if err != nil {
+		if errors.Is(err, errSystemSettingsConflict) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}

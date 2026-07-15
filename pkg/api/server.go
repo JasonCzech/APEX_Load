@@ -1405,6 +1405,9 @@ func (s *Server) startUsageAccountingSnapshotCadence() {
 			case <-ctx.Done():
 				return
 			case now := <-ticker.C:
+				if !s.isExecutionLeader() {
+					continue
+				}
 				interval := s.runner.UsageAccountingSnapshotInterval()
 				if interval <= 0 {
 					enabledAt = time.Time{}

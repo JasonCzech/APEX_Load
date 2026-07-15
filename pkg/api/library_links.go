@@ -85,37 +85,36 @@ func (s *Server) libraryLink(remoteID string, kind string, sourceInstanceID stri
 }
 
 func (s *Server) rememberLibraryLink(remoteID string, kind string, sourceInstanceID string, sourceItemID string, localItemID string, remoteItemID string, localHash string, remoteHash string) error {
-	s.loadLibraryLinksState()
 	if remoteID == "" {
 		remoteID = "direct"
 	}
 	key := libraryLinkKey(remoteID, kind, sourceInstanceID, sourceItemID)
-	s.libraryMu.Lock()
-	previous, hadPrevious := s.libraryLinks[key]
-	s.libraryLinks[key] = &librarySyncLink{
-		RemoteID:          remoteID,
-		Kind:              normalizeLibraryKind(kind),
-		SourceInstanceID:  sourceInstanceID,
-		SourceItemID:      sourceItemID,
-		LocalItemID:       localItemID,
-		RemoteItemID:      remoteItemID,
-		LocalContentHash:  localHash,
-		RemoteContentHash: remoteHash,
-		LastSyncedAt:      time.Now().UTC(),
-	}
-	s.libraryMu.Unlock()
-	if err := s.persistLibraryLinks(); err != nil {
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		s.loadLibraryLinksState()
 		s.libraryMu.Lock()
-		if hadPrevious {
-			s.libraryLinks[key] = previous
-		} else {
-			delete(s.libraryLinks, key)
+		previous, hadPrevious := s.libraryLinks[key]
+		s.libraryLinks[key] = &librarySyncLink{
+			RemoteID: remoteID, Kind: normalizeLibraryKind(kind), SourceInstanceID: sourceInstanceID,
+			SourceItemID: sourceItemID, LocalItemID: localItemID, RemoteItemID: remoteItemID,
+			LocalContentHash: localHash, RemoteContentHash: remoteHash, LastSyncedAt: time.Now().UTC(),
 		}
 		s.libraryMu.Unlock()
-		s.loadLibraryLinksState()
-		return err
+		if err := s.persistLibraryLinks(); err == nil {
+			return nil
+		} else {
+			lastErr = err
+			s.libraryMu.Lock()
+			if hadPrevious {
+				s.libraryLinks[key] = previous
+			} else {
+				delete(s.libraryLinks, key)
+			}
+			s.libraryMu.Unlock()
+		}
 	}
-	return nil
+	s.loadLibraryLinksState()
+	return lastErr
 }
 
 func libraryLinkKey(remoteID string, kind string, sourceInstanceID string, sourceItemID string) string {

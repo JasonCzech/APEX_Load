@@ -162,6 +162,10 @@ func (s *Server) handleLibraryCreateRemote(w http.ResponseWriter, r *http.Reques
 	s.libraryRemotes[remote.ID] = remote
 	s.libraryMu.Unlock()
 	if err := s.persistLibraryRemotes(); err != nil {
+		if s.libraryCreds != nil {
+			_ = s.libraryCreds.DeleteRemoteAPIKey(remote.ID)
+		}
+		s.loadLibraryState()
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -203,6 +207,10 @@ func (s *Server) handleLibraryUpdateRemote(w http.ResponseWriter, r *http.Reques
 		updated.DefaultProjectID = normalizeProjectID(req.DefaultProjectID)
 	}
 	updated.UpdatedAt = time.Now().UTC()
+	previousCredential := ""
+	if s.libraryCreds != nil {
+		previousCredential, _ = s.libraryCreds.GetRemoteAPIKey(*remote)
+	}
 	if err := s.storeRemoteCredential(&updated, req.APIKey, req.CredentialRef); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -211,6 +219,14 @@ func (s *Server) handleLibraryUpdateRemote(w http.ResponseWriter, r *http.Reques
 	s.libraryRemotes[id] = &updated
 	s.libraryMu.Unlock()
 	if err := s.persistLibraryRemotes(); err != nil {
+		if s.libraryCreds != nil && strings.TrimSpace(req.APIKey) != "" {
+			if previousCredential != "" {
+				_, _ = s.libraryCreds.PutRemoteAPIKey(id, previousCredential)
+			} else {
+				_ = s.libraryCreds.DeleteRemoteAPIKey(id)
+			}
+		}
+		s.loadLibraryState()
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

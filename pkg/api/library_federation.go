@@ -125,6 +125,7 @@ type LibraryImportResponse struct {
 	ImportedAt    time.Time                 `json:"imported_at"`
 	Items         []LibraryImportResultItem `json:"items"`
 	Conflicts     []LibraryConflict         `json:"conflicts,omitempty"`
+	Warnings      []string                  `json:"warnings,omitempty"`
 }
 
 type LibraryImportResultItem struct {
@@ -388,38 +389,44 @@ func resolveLibraryTransferProjectID(r *http.Request, store storage.Store) (stri
 	if err := decodeRequestBody(r, &req); err != nil {
 		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
 	}
-	if strings.TrimSpace(req.ProjectID) != "" {
-		return normalizeProjectID(req.ProjectID), 0, ""
-	}
 	if strings.HasSuffix(r.URL.Path, "/pull") {
-		return "", 0, ""
+		return normalizeProjectID(req.ProjectID), 0, ""
 	}
 	if store == nil || strings.TrimSpace(req.ID) == "" {
 		return "", 0, ""
 	}
 	lookupID := firstNonEmpty(req.LocalID, req.ID)
+	var actualProjectID string
 	switch normalizeLibraryKind(req.Kind) {
 	case "script":
 		script, err := store.GetScript(lookupID)
 		if err != nil {
 			return "", http.StatusNotFound, "script not found"
 		}
-		return normalizeProjectID(script.ProjectID), 0, ""
+		actualProjectID = normalizeProjectID(script.ProjectID)
 	case "scenario":
 		_, scripts, err := store.GetScenario(lookupID)
 		if err != nil {
 			return "", http.StatusNotFound, "scenario not found"
 		}
-		return resolveProjectIDFromScenarioScripts(scripts, store)
+		resolved, status, message := resolveProjectIDFromScenarioScripts(scripts, store)
+		if status != 0 {
+			return "", status, message
+		}
+		actualProjectID = resolved
 	case "result":
 		test, err := store.GetTest(lookupID)
 		if err != nil {
 			return "", http.StatusNotFound, "result not found"
 		}
-		return normalizeProjectID(test.ProjectID), 0, ""
+		actualProjectID = normalizeProjectID(test.ProjectID)
 	default:
 		return "", http.StatusBadRequest, "kind must be one of script, scenario, or result"
 	}
+	if strings.HasSuffix(r.URL.Path, "/export") && strings.TrimSpace(req.ProjectID) != "" && normalizeProjectID(req.ProjectID) != actualProjectID {
+		return "", http.StatusBadRequest, "project_id does not match the requested object's project"
+	}
+	return actualProjectID, 0, ""
 }
 
 func resolveLibraryImportProjectID(r *http.Request, _ storage.Store) (string, int, string) {

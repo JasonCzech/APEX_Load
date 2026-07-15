@@ -249,7 +249,18 @@ func (s *Server) remoteJSONAccepted(ctx context.Context, remote LibraryRemote, m
 	if out == nil {
 		return resp.StatusCode, nil
 	}
-	if err := json.NewDecoder(resp.Body).Decode(out); err != nil && err != io.EOF {
+	const maxRemoteJSONBytes = 32 << 20
+	payload, err := io.ReadAll(io.LimitReader(resp.Body, maxRemoteJSONBytes+1))
+	if err != nil {
+		return resp.StatusCode, err
+	}
+	if len(payload) > maxRemoteJSONBytes {
+		return resp.StatusCode, fmt.Errorf("remote library JSON response exceeds %d bytes", maxRemoteJSONBytes)
+	}
+	if len(bytes.TrimSpace(payload)) == 0 {
+		return resp.StatusCode, nil
+	}
+	if err := json.Unmarshal(payload, out); err != nil {
 		return resp.StatusCode, err
 	}
 	return resp.StatusCode, nil

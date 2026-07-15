@@ -5,13 +5,15 @@ import (
 	"net/http"
 )
 
+const importMultipartMemoryBytes = 1 << 20
+
 // readImportMultipartFile parses a multipart/form-data import upload and returns
 // the bytes and original filename of the "file" field. On any failure it writes
 // the appropriate 400 response and returns ok=false. Callers remain responsible
 // for deriving a script name and reading format-specific form values (which are
 // available via r.FormValue after this call parses the form).
 func readImportMultipartFile(w http.ResponseWriter, r *http.Request, maxBytes int64) (data []byte, filename string, ok bool) {
-	if err := r.ParseMultipartForm(maxBytes); err != nil {
+	if err := r.ParseMultipartForm(importMultipartMemoryBytes); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid multipart form: "+err.Error())
 		return nil, "", false
 	}

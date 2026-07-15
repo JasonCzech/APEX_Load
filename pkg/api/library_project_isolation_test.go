@@ -4,9 +4,30 @@ import (
 	"bytes"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/jasonczech/apexload/pkg/storage"
 )
+
+func TestLibraryTransferResolverUsesObjectProject(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "library.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	server := NewServer(ServerConfig{Store: store})
+	script := libraryTestScript("owned", "Owned", storage.DefaultProjectID, "/")
+	if _, err := server.runner.StoreScriptDurable(script); err != nil {
+		t.Fatal(err)
+	}
+	body := marshalLibraryTestJSON(t, LibraryTransferRequest{Kind: "script", ID: script.ID, ProjectID: "project-a"})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/library/export", bytes.NewReader(body))
+	if projectID, status, _ := resolveLibraryTransferProjectID(req, store); projectID != "" || status != http.StatusBadRequest {
+		t.Fatalf("resolver = %q, %d; want project mismatch rejection", projectID, status)
+	}
+}
 
 func TestLibraryImportRequiresExplicitDestinationAndSingleSourceProject(t *testing.T) {
 	server := NewServer(ServerConfig{})
@@ -70,5 +91,40 @@ func TestLibrarySyncLinkCannotMoveAssetAcrossDestinationProjects(t *testing.T) {
 	stored, ok := server.runner.GetScript(localID)
 	if !ok || stored.ProjectID != "destination-a" {
 		t.Fatalf("sync link moved the local asset: %#v", stored)
+	}
+}
+
+func TestLibraryImportRejectsTamperedPayloadHash(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	script := libraryTestScript("source", "Source", "source-project", "/original")
+	item := LibraryBundleItem{Kind: "script", SourceInstanceID: "remote", SourceItemID: script.ID, ProjectID: script.ProjectID, Script: script, ContentHash: hashLibraryScript(script)}
+	item.Script.Actions[0].Target = "/tampered"
+	result, err := server.importLibraryBundle(LibraryImportRequest{ProjectID: "destination", Bundle: LibraryBundle{
+		SchemaVersion: libraryBundleSchemaVersion, Source: LibraryBundleSource{InstanceID: "remote", ProjectID: "source-project"}, Items: []LibraryBundleItem{item},
+	}}, "remote")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Conflicts) != 1 || !strings.Contains(result.Conflicts[0].Reason, "content hash") {
+		t.Fatalf("tampered import result = %#v", result)
+	}
+}
+
+func TestLibraryScenarioImportRejectsCrossProjectScript(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	foreign := libraryTestScript("foreign", "Foreign", "project-b", "/foreign")
+	if _, err := server.runner.StoreScriptDurable(foreign); err != nil {
+		t.Fatal(err)
+	}
+	req := CreateScenarioRequest{Name: "Cross project", Duration: "1m", Groups: []CreateGroupEntry{{Name: "g", ScriptID: foreign.ID, VUsers: 1}}}
+	item := LibraryBundleItem{Kind: "scenario", SourceInstanceID: "remote", SourceItemID: "scenario", ProjectID: "source-project", ContentHash: hashCanonical(req), Scenario: &LibraryScenarioPayload{ID: "scenario", Request: req}}
+	result, err := server.importLibraryBundle(LibraryImportRequest{ProjectID: "project-a", Bundle: LibraryBundle{
+		SchemaVersion: libraryBundleSchemaVersion, Source: LibraryBundleSource{InstanceID: "remote", ProjectID: "source-project"}, Items: []LibraryBundleItem{item},
+	}}, "remote")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Conflicts) != 1 || !strings.Contains(result.Conflicts[0].Reason, "different destination project") {
+		t.Fatalf("cross-project scenario result = %#v", result)
 	}
 }

@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"errors"
 	"mime/multipart"
 	"net/http/httptest"
 	"path/filepath"
@@ -88,6 +89,20 @@ func TestSystemSettingsCASRejectsStaleReplica(t *testing.T) {
 	staleSettings.General.MaxConcurrentTests = 4
 	if _, err := stale.UpdateSystemSettings(staleSettings); err == nil {
 		t.Fatal("stale replica update unexpectedly overwrote newer settings")
+	}
+}
+
+func TestSystemSettingsRevisionRejectsStaleLocalRequest(t *testing.T) {
+	runner := NewTestRunner(2, NewHub(), nil)
+	stale, revision := runner.systemSettingsSnapshot()
+	newer := cloneSystemSettings(stale)
+	newer.General.MaxConcurrentTests = 3
+	if _, err := runner.UpdateSystemSettings(newer); err != nil {
+		t.Fatal(err)
+	}
+	stale.General.MaxConcurrentTests = 4
+	if _, err := runner.updateSystemSettings(stale, revision, true); !errors.Is(err, errSystemSettingsConflict) {
+		t.Fatalf("stale local update error = %v, want conflict", err)
 	}
 }
 

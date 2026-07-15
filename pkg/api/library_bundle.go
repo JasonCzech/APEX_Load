@@ -283,6 +283,10 @@ func (s *Server) importLibraryBundleWithArchive(req LibraryImportRequest, remote
 			continue
 		}
 		idMap[item.SourceItemID] = localID
+		if strings.HasSuffix(action, "_link_pending") {
+			action = strings.TrimSuffix(action, "_link_pending")
+			response.Warnings = append(response.Warnings, "script "+localID+" imported but its synchronization link is pending")
+		}
 		response.Items = append(response.Items, LibraryImportResultItem{Kind: "script", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, LocalItemID: localID, ContentHash: item.ContentHash, Action: action})
 	}
 	for _, item := range bundle.Items {
@@ -295,6 +299,10 @@ func (s *Server) importLibraryBundleWithArchive(req LibraryImportRequest, remote
 				response.Conflicts = append(response.Conflicts, *conflict)
 				continue
 			}
+			if strings.HasSuffix(action, "_link_pending") {
+				action = strings.TrimSuffix(action, "_link_pending")
+				response.Warnings = append(response.Warnings, "scenario "+localID+" imported but its synchronization link is pending")
+			}
 			response.Items = append(response.Items, LibraryImportResultItem{Kind: "scenario", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, LocalItemID: localID, ContentHash: item.ContentHash, Action: action})
 		case "result":
 			var itemArchive *libraryArchiveImport
@@ -306,6 +314,10 @@ func (s *Server) importLibraryBundleWithArchive(req LibraryImportRequest, remote
 				response.Conflicts = append(response.Conflicts, *conflict)
 				continue
 			}
+			if strings.HasSuffix(action, "_link_pending") {
+				action = strings.TrimSuffix(action, "_link_pending")
+				response.Warnings = append(response.Warnings, "result "+localID+" imported but its synchronization link is pending")
+			}
 			response.Items = append(response.Items, LibraryImportResultItem{Kind: "result", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, LocalItemID: localID, ContentHash: item.ContentHash, Action: action})
 		}
 	}
@@ -313,6 +325,10 @@ func (s *Server) importLibraryBundleWithArchive(req LibraryImportRequest, remote
 }
 
 func (s *Server) importLibraryScript(item LibraryBundleItem, projectID string, remoteID string) (string, string, *LibraryConflict) {
+	computedHash := hashLibraryScript(item.Script)
+	if strings.TrimSpace(item.ContentHash) == "" || item.ContentHash != computedHash {
+		return "", "", &LibraryConflict{Kind: "script", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: "declared content hash does not match script payload"}
+	}
 	link := s.libraryLink(remoteID, item.Kind, item.SourceInstanceID, item.SourceItemID)
 	localID := ""
 	action := "created"
@@ -341,6 +357,7 @@ func (s *Server) importLibraryScript(item LibraryBundleItem, projectID string, r
 	}
 	if err := s.rememberLibraryLink(remoteID, item.Kind, item.SourceInstanceID, item.SourceItemID, stored.ID, item.SourceItemID, hashLibraryScript(stored.Script), item.ContentHash); err != nil {
 		slog.Warn("imported script but failed to persist library link", "script_id", stored.ID, "error", err)
+		action += "_link_pending"
 	}
 	return stored.ID, action, nil
 }
@@ -348,6 +365,9 @@ func (s *Server) importLibraryScript(item LibraryBundleItem, projectID string, r
 func (s *Server) importLibraryScenario(item LibraryBundleItem, projectID string, remoteID string, idMap map[string]string) (string, string, *LibraryConflict) {
 	if item.Scenario == nil {
 		return "", "", &LibraryConflict{Kind: "scenario", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: "scenario payload is missing"}
+	}
+	if strings.TrimSpace(item.ContentHash) == "" || item.ContentHash != hashCanonical(item.Scenario.Request) {
+		return "", "", &LibraryConflict{Kind: "scenario", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: "declared content hash does not match scenario payload"}
 	}
 	link := s.libraryLink(remoteID, item.Kind, item.SourceInstanceID, item.SourceItemID)
 	localID := ""
@@ -369,6 +389,13 @@ func (s *Server) importLibraryScenario(item LibraryBundleItem, projectID string,
 		if mapped := idMap[req.Groups[i].ScriptID]; mapped != "" {
 			req.Groups[i].ScriptID = mapped
 		}
+		stored, ok := s.runner.GetScript(req.Groups[i].ScriptID)
+		if !ok || stored == nil {
+			return "", "", &LibraryConflict{Kind: "scenario", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: "referenced script not found: " + req.Groups[i].ScriptID}
+		}
+		if normalizeProjectID(stored.ProjectID) != projectID {
+			return "", "", &LibraryConflict{Kind: "scenario", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: "referenced script belongs to a different destination project"}
+		}
 	}
 	if localID == "" {
 		stored, err := s.runner.StoreScenario(req)
@@ -377,6 +404,7 @@ func (s *Server) importLibraryScenario(item LibraryBundleItem, projectID string,
 		}
 		if err := s.rememberLibraryLink(remoteID, item.Kind, item.SourceInstanceID, item.SourceItemID, stored.ID, item.SourceItemID, hashLibraryScenario(stored), item.ContentHash); err != nil {
 			slog.Warn("imported scenario but failed to persist library link", "scenario_id", stored.ID, "error", err)
+			action += "_link_pending"
 		}
 		return stored.ID, action, nil
 	}
@@ -393,6 +421,7 @@ func (s *Server) importLibraryScenario(item LibraryBundleItem, projectID string,
 	}
 	if err := s.rememberLibraryLink(remoteID, item.Kind, item.SourceInstanceID, item.SourceItemID, stored.ID, item.SourceItemID, hashLibraryScenario(stored), item.ContentHash); err != nil {
 		slog.Warn("imported scenario but failed to persist library link", "scenario_id", stored.ID, "error", err)
+		action += "_link_pending"
 	}
 	return stored.ID, action, nil
 }
@@ -400,6 +429,9 @@ func (s *Server) importLibraryScenario(item LibraryBundleItem, projectID string,
 func (s *Server) importLibraryResult(item LibraryBundleItem, projectID string, remoteID string, archiveImport *libraryArchiveImport) (string, string, *LibraryConflict) {
 	if item.Result == nil {
 		return "", "", &LibraryConflict{Kind: "result", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: "result payload is missing"}
+	}
+	if item.Result.Test != nil && (strings.TrimSpace(item.ContentHash) == "" || item.ContentHash != hashLibraryResult(item.Result.Test)) {
+		return "", "", &LibraryConflict{Kind: "result", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: "declared content hash does not match result payload"}
 	}
 	resultID := uuid.New().String()
 	if item.Result.Test != nil {
@@ -484,6 +516,7 @@ func (s *Server) importLibraryResult(item LibraryBundleItem, projectID string, r
 	keepArchiveDir = true
 	if err := s.rememberLibraryLink(remoteID, item.Kind, item.SourceInstanceID, item.SourceItemID, imported.ID, resultID, item.ContentHash, item.ContentHash); err != nil {
 		slog.Warn("imported result but failed to persist library link", "import_id", imported.ID, "error", err)
+		return imported.ID, "created_link_pending", nil
 	}
 	return imported.ID, "created", nil
 }

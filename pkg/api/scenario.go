@@ -232,6 +232,10 @@ func (tr *TestRunner) refreshScenariosForHARead() {
 	if tr == nil || tr.leadership == nil {
 		return
 	}
+	if err := tr.reloadStoredScripts(); err != nil {
+		slog.Warn("failed to refresh scripts for HA scenario read", "error", err)
+		return
+	}
 	if err := tr.reloadStoredScenarios(); err != nil {
 		slog.Warn("failed to refresh scenarios for HA read", "error", err)
 	}

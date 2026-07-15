@@ -39,7 +39,7 @@ func resolveImportAssetDir(cfg ServerConfig) string {
 }
 
 func (s *Server) handleUploadImportAsset(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseMultipartForm(harImportMaxBodyBytes); err != nil {
+	if err := r.ParseMultipartForm(importMultipartMemoryBytes); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid multipart form: "+err.Error())
 		return
 	}
