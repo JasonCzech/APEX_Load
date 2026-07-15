@@ -18,7 +18,19 @@ func (s *SQLiteStore) CreateExternalResultImportIfAbsent(result *ExternalResultI
 	if err != nil {
 		return false, err
 	}
-	created, err := s.db.Exec(`INSERT INTO external_result_imports (id, provider, name, project_id, release_id, scenario_id, source, summary_json, raw_json, created_at)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	exists, err := validateExternalResultImportPlacement(tx, result, false)
+	if err != nil {
+		return false, err
+	}
+	if exists {
+		return false, nil
+	}
+	created, err := tx.Exec(`INSERT INTO external_result_imports (id, provider, name, project_id, release_id, scenario_id, source, summary_json, raw_json, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO NOTHING`,
 		result.ID, result.Provider, result.Name, result.ProjectID, result.ReleaseID, result.ScenarioID,
@@ -27,7 +39,13 @@ func (s *SQLiteStore) CreateExternalResultImportIfAbsent(result *ExternalResultI
 		return false, err
 	}
 	rows, err := created.RowsAffected()
-	return rows == 1, err
+	if err != nil || rows != 1 {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // GetExternalResultImport returns one immutable evidence row by identity.
@@ -183,6 +201,63 @@ func prepareExternalResultImportInsert(result *ExternalResultImport) (string, st
 		return "", "", fmt.Errorf("marshal external raw result: %w", err)
 	}
 	return string(summaryJSON), string(rawJSON), nil
+}
+
+// validateExternalResultImportPlacement locks every tenant-bearing parent and
+// prevents a legacy upsert from moving an existing evidence identity between
+// projects. Create-only callers preserve their collision semantics by returning
+// immediately when the durable identity already exists.
+func validateExternalResultImportPlacement(executor testSaveExecutor, result *ExternalResultImport, rejectRelocation bool) (bool, error) {
+	if result == nil {
+		return false, errors.New("external result import is required")
+	}
+	const owner = "external result import"
+	if err := lockRequiredPlacementParent(executor,
+		`UPDATE projects SET updated_at = updated_at WHERE id = ?`, result.ProjectID, owner, "project"); err != nil {
+		return false, err
+	}
+
+	locked, err := executor.Exec(`UPDATE external_result_imports SET project_id = project_id WHERE id = ?`, result.ID)
+	if err != nil {
+		return false, err
+	}
+	affected, err := locked.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	exists := affected == 1
+	if exists {
+		var existingProjectID string
+		if err := executor.QueryRow(`SELECT COALESCE(project_id, '') FROM external_result_imports WHERE id = ?`, result.ID).Scan(&existingProjectID); err != nil {
+			return false, err
+		}
+		if rejectRelocation && normalizeProjectID(existingProjectID) != result.ProjectID {
+			return false, fmt.Errorf("external result import %q belongs to project %q, not %q", result.ID, normalizeProjectID(existingProjectID), result.ProjectID)
+		}
+		if !rejectRelocation {
+			return true, nil
+		}
+	}
+
+	if result.ReleaseID != "" {
+		if err := lockRequiredPlacementParent(executor,
+			`UPDATE releases SET updated_at = updated_at WHERE id = ?`, result.ReleaseID, owner, "release"); err != nil {
+			return false, err
+		}
+		var releaseProjectID string
+		if err := executor.QueryRow(`SELECT COALESCE(project_id, '') FROM releases WHERE id = ?`, result.ReleaseID).Scan(&releaseProjectID); err != nil {
+			return false, err
+		}
+		if normalizeProjectID(releaseProjectID) != result.ProjectID {
+			return false, fmt.Errorf("external result import release %q belongs to project %q, not %q", result.ReleaseID, normalizeProjectID(releaseProjectID), result.ProjectID)
+		}
+	}
+	if result.ScenarioID != "" {
+		if err := validateScenarioProjectPlacement(executor, result.ScenarioID, result.ProjectID, owner); err != nil {
+			return false, err
+		}
+	}
+	return exists, nil
 }
 
 var _ interface {

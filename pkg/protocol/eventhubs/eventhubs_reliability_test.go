@@ -3,6 +3,7 @@ package eventhubs
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
@@ -65,5 +66,21 @@ func TestEventHubsEmptyProbeIsNoContentSuccess(t *testing.T) {
 	}
 	if res.Extractions["eventhubs_empty_probe"] != "1" {
 		t.Fatalf("empty probe extraction = %q, want \"1\"", res.Extractions["eventhubs_empty_probe"])
+	}
+}
+
+func TestEventHubsCallerDeadlineIsNotReportedAsEmptyProbe(t *testing.T) {
+	e := newMockEventHubs(t, map[string]any{"eventhubs_event_hub": "h", "eventhubs_timeout_ms": float64(200)})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
+	defer cancel()
+	res, err := e.Execute(ctx, &protocol.Action{Name: "c", Type: "eventhubs_consume"})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if res.Success || res.StatusCode != 502 {
+		t.Fatalf("caller deadline result = %#v, want transport failure", res)
+	}
+	if res.Extractions["eventhubs_empty_probe"] != "" {
+		t.Fatalf("caller deadline was mislabeled empty probe: %#v", res.Extractions)
 	}
 }

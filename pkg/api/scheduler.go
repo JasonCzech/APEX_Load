@@ -1071,9 +1071,6 @@ func scheduleWindowContains(window storage.ScenarioScheduleWindow, fallbackTimez
 		return false, fmt.Errorf("invalid schedule window timezone %q: %w", timezone, err)
 	}
 	local := candidate.In(location)
-	if len(window.DaysOfWeek) > 0 && !scheduleWindowDayMatches(window.DaysOfWeek, int(local.Weekday())) {
-		return false, nil
-	}
 	startMinute, err := parseScheduleWindowMinute(window.StartTime)
 	if err != nil {
 		return false, err
@@ -1083,6 +1080,17 @@ func scheduleWindowContains(window storage.ScenarioScheduleWindow, fallbackTimez
 		return false, err
 	}
 	minuteOfDay := local.Hour()*60 + local.Minute()
+	// DaysOfWeek identifies the local day on which the window starts. For an
+	// overnight Monday 22:00-02:00 window, the Tuesday 00:00-02:00 tail still
+	// belongs to Monday's window. Checking Tuesday directly would silently open
+	// a blackout/maintenance window at midnight and could admit an unsafe run.
+	windowStartDay := local.Weekday()
+	if startMinute > endMinute && minuteOfDay < endMinute {
+		windowStartDay = local.AddDate(0, 0, -1).Weekday()
+	}
+	if len(window.DaysOfWeek) > 0 && !scheduleWindowDayMatches(window.DaysOfWeek, int(windowStartDay)) {
+		return false, nil
+	}
 	if startMinute == endMinute {
 		return true, nil
 	}

@@ -94,16 +94,34 @@ func (c *realClient) Receive(ctx context.Context, hub, group string, timeout tim
 	if err != nil {
 		return event{}, 0, err
 	}
-	rctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	events, err := pc.ReceiveEvents(rctx, 1, nil)
-	if err != nil && !errors.Is(err, context.DeadlineExceeded) {
+	rd, lag, err := receiveEventHubsWithinBudget(ctx, timeout,
+		func(receiveCtx context.Context) ([]*azeventhubs.ReceivedEventData, error) {
+			return pc.ReceiveEvents(receiveCtx, 1, nil)
+		},
+		func(probeCtx context.Context, received *azeventhubs.ReceivedEventData) int64 {
+			// Offset backlog = tail sequence - received sequence. This is best
+			// effort: a failed properties probe yields zero lag, but it must share
+			// the receive budget rather than starting a second full action timeout.
+			cc, cerr := c.consumer(hub, group)
+			if cerr != nil {
+				return 0
+			}
+			props, perr := cc.GetPartitionProperties(probeCtx, partition, nil)
+			if perr != nil {
+				return 0
+			}
+			if delta := props.LastEnqueuedSequenceNumber - received.SequenceNumber; delta > 0 {
+				return delta
+			}
+			return 0
+		},
+	)
+	if err != nil {
+		if errors.Is(err, errNoEvent) {
+			return event{}, 0, fmt.Errorf("no event received from %q partition %q within %s: %w", hub, partition, timeout, errNoEvent)
+		}
 		return event{}, 0, err
 	}
-	if len(events) == 0 {
-		return event{}, 0, fmt.Errorf("no event received from %q partition %q within %s: %w", hub, partition, timeout, errNoEvent)
-	}
-	rd := events[0]
 	ev := event{
 		Body:        rd.Body,
 		Properties:  fromAnyMap(rd.Properties),
@@ -117,20 +135,28 @@ func (c *realClient) Receive(ctx context.Context, hub, group string, timeout tim
 	if rd.EnqueuedTime != nil {
 		ev.EnqueuedAt = *rd.EnqueuedTime
 	}
-	// Offset backlog = tail sequence - received sequence (best effort; a failed
-	// probe of partition properties just yields zero lag). Bound the probe by the
-	// receive timeout so a stalled management link can't blow the action budget.
-	lag := int64(0)
-	if cc, cerr := c.consumer(hub, group); cerr == nil {
-		lctx, lcancel := context.WithTimeout(ctx, timeout)
-		if props, perr := cc.GetPartitionProperties(lctx, partition, nil); perr == nil {
-			if d := props.LastEnqueuedSequenceNumber - rd.SequenceNumber; d > 0 {
-				lag = d
-			}
-		}
-		lcancel()
-	}
 	return ev, lag, nil
+}
+
+// receiveEventHubsWithinBudget applies one deadline to the broker receive and
+// its best-effort lag probe. Starting a fresh timeout for the probe would allow a
+// single consume action to run for almost twice its configured timeout.
+func receiveEventHubsWithinBudget(
+	ctx context.Context,
+	timeout time.Duration,
+	receive func(context.Context) ([]*azeventhubs.ReceivedEventData, error),
+	probeLag func(context.Context, *azeventhubs.ReceivedEventData) int64,
+) (*azeventhubs.ReceivedEventData, int64, error) {
+	budgetCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	events, err := receive(budgetCtx)
+	if err != nil && !errors.Is(err, context.DeadlineExceeded) {
+		return nil, 0, err
+	}
+	if len(events) == 0 {
+		return nil, 0, errNoEvent
+	}
+	return events[0], probeLag(budgetCtx, events[0]), nil
 }
 
 func (c *realClient) HealthCheck(ctx context.Context) error {

@@ -2,6 +2,8 @@ package storage
 
 import (
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -19,6 +21,11 @@ func TestAuthoringSessionProjectOwnershipAndPagination(t *testing.T) {
 		if err := store.SaveProject(&Project{ID: projectID, Name: projectID, CreatedAt: now}); err != nil {
 			t.Fatalf("SaveProject(%s): %v", projectID, err)
 		}
+	}
+	if err := store.SaveAuthoringSession(&AuthoringSession{
+		ID: "missing-project-session", ProjectID: "missing-project", Source: "manual", Name: "missing", Status: "draft",
+	}); err == nil {
+		t.Fatal("SaveAuthoringSession accepted a missing project")
 	}
 	for i, id := range []string{"authoring-session-1", "authoring-session-2", "authoring-session-3"} {
 		session := &AuthoringSession{
@@ -64,5 +71,58 @@ func TestAuthoringSessionProjectOwnershipAndPagination(t *testing.T) {
 	}
 	if got.ProjectID != "authoring-project-a" || got.Name != owned.Name {
 		t.Fatalf("rejected writes changed session: %#v", got)
+	}
+}
+
+func TestConcurrentAuthoringSessionCreateAndProjectDeleteCannotLeaveOrphan(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "authoring-project-race.db")
+	first, err := NewSQLiteStore(path)
+	if err != nil {
+		t.Fatalf("NewSQLiteStore(first): %v", err)
+	}
+	defer first.Close()
+	second, err := NewSQLiteStore(path)
+	if err != nil {
+		t.Fatalf("NewSQLiteStore(second): %v", err)
+	}
+	defer second.Close()
+	now := time.Now().UTC()
+	if err := first.SaveProject(&Project{ID: "authoring-race-project", Name: "Race", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+
+	start := make(chan struct{})
+	errs := make(chan error, 2)
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		<-start
+		errs <- first.SaveAuthoringSession(&AuthoringSession{
+			ID: "authoring-race-session", ProjectID: "authoring-race-project", Source: "manual", Name: "Race", Status: "draft",
+		})
+	}()
+	go func() {
+		defer wg.Done()
+		<-start
+		errs <- second.DeleteProject("authoring-race-project")
+	}()
+	close(start)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err == nil {
+			continue
+		}
+		message := strings.ToLower(err.Error())
+		if !strings.Contains(message, "not found") && !strings.Contains(message, "locked") && !strings.Contains(message, "busy") {
+			t.Fatalf("concurrent project/authoring-session mutation error: %v", err)
+		}
+	}
+
+	session, sessionErr := first.GetAuthoringSession("authoring-race-session")
+	project, projectErr := first.GetProject("authoring-race-project")
+	if sessionErr == nil && session != nil && (projectErr != nil || project == nil) {
+		t.Fatalf("orphan authoring session survived concurrent create/delete: session=%#v project=%#v projectErr=%v", session, project, projectErr)
 	}
 }

@@ -369,6 +369,9 @@ type ManagedTest struct {
 	scaleAdjustmentPrevious    map[string]int
 	cancel                     context.CancelFunc
 	groupSpecs                 []engine.GroupConfig
+	runtimeHydrationError      string
+	historyBytes               int64
+	historyWeights             []int64
 	goalControl                *goalControllerState
 	executionBackend           testExecutionBackend
 	lastNetworkLatency         *NetworkLatency
@@ -960,6 +963,7 @@ const (
 	generatorAssignmentModeLoadZoneWeighted = "load_zone_weighted"
 	generatorShardStrategyCapacityWeighted  = "capacity_weighted"
 	maxManagedTestHistory                   = 3600
+	maxManagedTestHistoryBytes              = 64 << 20
 	telemetryDiagnosticSampleInterval       = 5 * time.Second
 	telemetrySustainedBreachWindow          = 15 * time.Second
 	maxTelemetryDiagnosticSamples           = 3

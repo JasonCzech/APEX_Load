@@ -78,7 +78,11 @@ func (g *GRPC) Init(ctx context.Context, config map[string]any) error {
 	if g.maxRecvBytes > dsl.MaxGRPCStreamBytes {
 		return fmt.Errorf("grpc_max_recv_msg_size exceeds limit %d", dsl.MaxGRPCStreamBytes)
 	}
-	g.callTimeout = durationConfig(config, "grpc_timeout_ms", defaultCallTimeout)
+	var err error
+	g.callTimeout, err = protocol.BoundedMilliseconds(config["grpc_timeout_ms"], defaultCallTimeout, dsl.MaxConfiguredProtocolTimeout)
+	if err != nil {
+		return fmt.Errorf("grpc timeout_ms %w", err)
+	}
 	g.metadata = buildMetadata(config)
 	g.methods = make(map[string]protoreflect.MethodDescriptor)
 	g.methodOrder = nil
@@ -119,10 +123,19 @@ func (g *GRPC) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		result.ErrorMessage = "grpc action is required"
 		return result, nil
 	}
-	callCtx, cancel := context.WithTimeout(ctx, actionTimeout(action, g.callTimeout))
+	callTimeout, err := actionTimeout(action, g.callTimeout)
+	if err != nil {
+		result.Duration = time.Since(result.StartTime)
+		result.Success = false
+		result.StatusCode = int(codes.InvalidArgument)
+		result.ErrorMessage = err.Error()
+		result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
+		return result, nil
+	}
+	callCtx, cancel := context.WithTimeout(ctx, callTimeout)
 	defer cancel()
 
-	var err error
+	err = nil
 	switch action.Type {
 	case "grpc_unary":
 		err = g.invokeUnary(callCtx, action, result)
@@ -376,7 +389,10 @@ func (g *GRPC) applyResponseChecks(action *protocol.Action, result *protocol.Res
 	for _, extractor := range action.Extractors {
 		value, err := extract(extractor, responseBody)
 		if err == nil {
-			result.Extractions[extractor.Name] = value
+			if err := protocol.StoreExtraction(result, extractor.Name, value); err != nil {
+				result.Extractions = nil
+				return fmt.Errorf("grpc extractor %q output rejected: %w", extractor.Name, err)
+			}
 		}
 	}
 	for _, assertion := range action.Assertions {
@@ -893,19 +909,19 @@ func authHeader(config map[string]any) string {
 	}
 }
 
-func actionTimeout(action *protocol.Action, fallback time.Duration) time.Duration {
-	if value, ok := intParamOK(action.Params, "timeout_ms"); ok {
-		return time.Duration(value) * time.Millisecond
+func actionTimeout(action *protocol.Action, fallback time.Duration) (time.Duration, error) {
+	if action == nil || action.Params == nil {
+		return fallback, nil
 	}
-	return fallback
-}
-
-func durationConfig(config map[string]any, key string, fallback time.Duration) time.Duration {
-	value, ok := intConfig(config, key)
-	if !ok || value <= 0 {
-		return fallback
+	value, present := action.Params["timeout_ms"]
+	if !present {
+		return fallback, nil
 	}
-	return time.Duration(value) * time.Millisecond
+	timeout, err := protocol.BoundedMilliseconds(value, fallback, dsl.MaxConfiguredProtocolTimeout)
+	if err != nil {
+		return 0, fmt.Errorf("grpc action timeout_ms %w", err)
+	}
+	return timeout, nil
 }
 
 func intConfig(config map[string]any, key string) (int, bool) {

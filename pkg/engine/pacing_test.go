@@ -2,9 +2,11 @@ package engine
 
 import (
 	"context"
+	"math"
 	"testing"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
@@ -12,6 +14,57 @@ func TestComputeThinkTime_Fixed(t *testing.T) {
 	d := computeThinkTime(protocol.ThinkTimeConfig{Type: "fixed", MeanMs: 500})
 	if d != 500*time.Millisecond {
 		t.Errorf("got %v, want 500ms", d)
+	}
+}
+
+func TestTimingTypesMatchCaseInsensitiveValidation(t *testing.T) {
+	if got := computeThinkTime(protocol.ThinkTimeConfig{Type: " Fixed ", MeanMs: 7}); got != 7*time.Millisecond {
+		t.Fatalf("mixed-case fixed think time = %s, want 7ms", got)
+	}
+	var paced time.Duration
+	applyIterationPacingCtx(context.Background(), PacingRuntimeConfig{
+		Type:    " Fixed_Delay ",
+		DelayMs: 9,
+		activeSleep: func(_ context.Context, delay time.Duration) bool {
+			paced = delay
+			return true
+		},
+	}, time.Now())
+	if paced != 9*time.Millisecond {
+		t.Fatalf("mixed-case fixed delay = %s, want 9ms", paced)
+	}
+}
+
+func TestComputeThinkTimeBoundsNonFiniteAndOversizedValues(t *testing.T) {
+	if got := computeThinkTime(protocol.ThinkTimeConfig{Type: "fixed", MeanMs: math.Inf(1)}); got != 0 {
+		t.Fatalf("non-finite think time = %s, want zero", got)
+	}
+	got := computeThinkTime(protocol.ThinkTimeConfig{Type: "fixed", MeanMs: float64(dsl.MaxConfiguredProtocolTimeoutMS), Multiplier: 100})
+	if got != dsl.MaxConfiguredProtocolTimeout {
+		t.Fatalf("oversized multiplied think time = %s, want %s", got, dsl.MaxConfiguredProtocolTimeout)
+	}
+}
+
+func TestRandomPacingBoundsExtremeRangesWithoutPanic(t *testing.T) {
+	for _, pacingType := range []string{"random_delay", "random_interval"} {
+		t.Run(pacingType, func(t *testing.T) {
+			var observed time.Duration
+			cfg := PacingRuntimeConfig{Type: pacingType, activeSleep: func(_ context.Context, delay time.Duration) bool {
+				observed = delay
+				return true
+			}}
+			if pacingType == "random_delay" {
+				cfg.MinDelayMs = math.MinInt
+				cfg.MaxDelayMs = math.MaxInt
+			} else {
+				cfg.MinIntervalMs = math.MinInt
+				cfg.MaxIntervalMs = math.MaxInt
+			}
+			applyIterationPacingCtx(context.Background(), cfg, time.Now())
+			if observed < 0 || observed > dsl.MaxConfiguredProtocolTimeout {
+				t.Fatalf("extreme pacing delay = %s, want bounded non-negative delay", observed)
+			}
+		})
 	}
 }
 

@@ -68,10 +68,20 @@ func (s *Server) handleImportExternalResults(w http.ResponseWriter, r *http.Requ
 		summary = map[string]any{"status": "imported"}
 	}
 	summary["provider"] = provider
-	projectID := normalizeProjectID(req.ProjectID)
-	if projectID == storage.DefaultProjectID && strings.TrimSpace(req.ReleaseID) != "" && s.store != nil {
-		if resolvedProjectID, _, _, err := s.releaseContext(req.ReleaseID); err == nil {
+	explicitProject := strings.TrimSpace(req.ProjectID) != ""
+	projectID := authorizedProjectOr(r, normalizeProjectID(req.ProjectID))
+	if releaseID := strings.TrimSpace(req.ReleaseID); releaseID != "" && s.store != nil {
+		resolvedProjectID, _, _, err := s.releaseContext(releaseID)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "release not found")
+			return
+		}
+		if _, scoped := authorizedProjectFromRequest(r); !scoped && !explicitProject {
 			projectID = resolvedProjectID
+		}
+		if normalizeProjectID(resolvedProjectID) != normalizeProjectID(projectID) {
+			writeError(w, http.StatusBadRequest, "release does not belong to the authorized project")
+			return
 		}
 	}
 	result := &storage.ExternalResultImport{

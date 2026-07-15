@@ -83,11 +83,11 @@ func TestDataPoolSaveCannotRelocateExistingPool(t *testing.T) {
 	if err := store.SaveDataPool(pool); err != nil {
 		t.Fatalf("SaveDataPool initial: %v", err)
 	}
-	if err := store.SaveDataPool(&SharedDataPool{ID: pool.ID, ProjectID: "project-b", Name: "updated"}); err != nil {
-		t.Fatalf("SaveDataPool update: %v", err)
+	if err := store.SaveDataPool(&SharedDataPool{ID: pool.ID, ProjectID: "project-b", Name: "updated"}); err == nil {
+		t.Fatal("SaveDataPool allowed a cross-project update")
 	}
 	loaded, err := store.GetDataPool(pool.ID)
-	if err != nil || loaded.ProjectID != "project-a" {
+	if err != nil || loaded.ProjectID != "project-a" || loaded.Name != "owned" {
 		t.Fatalf("pool ownership after upsert = %#v, err=%v", loaded, err)
 	}
 }

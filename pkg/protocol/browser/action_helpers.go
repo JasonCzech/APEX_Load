@@ -286,6 +286,9 @@ func (b *Browser) waitTimeout(timeoutMs int) time.Duration {
 	if timeoutMs <= 0 {
 		return 10 * time.Second
 	}
+	if timeoutMs > int(MaxConfiguredBrowserDelay/time.Millisecond) {
+		return MaxConfiguredBrowserDelay
+	}
 	return time.Duration(timeoutMs) * time.Millisecond
 }
 
@@ -312,10 +315,55 @@ func parseWaitDelay(raw string) (time.Duration, error) {
 	if raw == "" {
 		return 0, fmt.Errorf("wait duration is required")
 	}
+	value := raw
 	if strings.IndexFunc(raw, func(r rune) bool { return r < '0' || r > '9' }) == -1 {
-		return time.ParseDuration(raw + "ms")
+		value = raw + "ms"
 	}
-	return time.ParseDuration(raw)
+	delay, err := time.ParseDuration(value)
+	if err != nil {
+		return 0, err
+	}
+	if delay < 0 || delay > MaxConfiguredBrowserDelay {
+		return 0, fmt.Errorf("wait duration must be between 0 and %s", MaxConfiguredBrowserDelay)
+	}
+	return delay, nil
+}
+
+func validateBrowserActionTiming(action *protocol.Action) error {
+	if action == nil {
+		return fmt.Errorf("browser action is required")
+	}
+	if action.WaitFor != nil {
+		if _, err := protocol.BoundedMilliseconds(action.WaitFor.TimeoutMs, 0, MaxConfiguredBrowserDelay); err != nil {
+			return fmt.Errorf("browser wait_for.timeout_ms %w", err)
+		}
+	}
+	if action.Sync != nil {
+		for _, field := range []struct {
+			name  string
+			value int
+		}{
+			{name: "sync.timeout_ms", value: action.Sync.TimeoutMs},
+			{name: "sync.stable_ms", value: action.Sync.StableMs},
+		} {
+			if _, err := protocol.BoundedMilliseconds(field.value, 0, MaxConfiguredBrowserDelay); err != nil {
+				return fmt.Errorf("browser %s %w", field.name, err)
+			}
+		}
+	}
+	for _, key := range []string{"timeout_ms", "duration_ms", "wait_ms"} {
+		if action.Params == nil {
+			continue
+		}
+		value, present := action.Params[key]
+		if !present {
+			continue
+		}
+		if _, err := protocol.BoundedMilliseconds(value, 0, MaxConfiguredBrowserDelay); err != nil {
+			return fmt.Errorf("browser params.%s %w", key, err)
+		}
+	}
+	return nil
 }
 
 func cloneConsoleEntries(entries []protocol.ConsoleEntry) []protocol.ConsoleEntry {

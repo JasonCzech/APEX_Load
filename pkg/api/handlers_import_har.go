@@ -190,7 +190,7 @@ func readHARImportRequest(w http.ResponseWriter, r *http.Request) (*harImportReq
 		req.Options.ScriptName = firstNonEmpty(req.Options.ScriptName, req.Name)
 		secondary := firstNonEmpty(req.SecondaryContent, req.ComparisonContent, req.ContentB)
 		req.Options.ArtifactMode = normalizeHARArtifactMode(req.Options.ArtifactMode, secondary != "")
-		return &harImportRequest{Data: []byte(req.Content), SecondaryData: []byte(secondary), ProjectID: firstNonEmpty(req.ProjectID, r.URL.Query().Get("project_id")), Opts: req.Options}, true
+		return &harImportRequest{Data: []byte(req.Content), SecondaryData: []byte(secondary), ProjectID: jsonImportProjectID(r, req.ProjectID), Opts: req.Options}, true
 	}
 	if strings.HasPrefix(contentType, "multipart/form-data") {
 		data, uploadName, ok := readImportMultipartFile(w, r, harImportMaxBodyBytes)

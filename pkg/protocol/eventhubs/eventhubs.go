@@ -35,7 +35,10 @@ const (
 // within its timeout — an expected empty tail in this producer-first protocol
 // (the probe can outrun the producer), NOT a transport/auth failure. Adapters
 // wrap it so consume() can keep an empty probe out of the error/SLA accounting.
-var errNoEvent = errors.New("eventhubs: no event within timeout")
+var (
+	errNoEvent                = errors.New("eventhubs: no event within timeout")
+	errEventHubsActionTimeout = errors.New("eventhubs: configured action timeout")
+)
 
 func init() {
 	protocol.Register(eventHubsProtocolName, func() protocol.Protocol {
@@ -140,6 +143,9 @@ func (e *EventHubs) Execute(ctx context.Context, action *protocol.Action) (*prot
 		result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
 		return result, nil
 	}
+	actionCtx, actionCancel := context.WithTimeoutCause(ctx, e.timeout(action), errEventHubsActionTimeout)
+	defer actionCancel()
+	ctx = actionCtx
 
 	var err error
 	var sent, received event
@@ -217,8 +223,12 @@ func (e *EventHubs) produce(ctx context.Context, action *protocol.Action, result
 		ev.PartitionID = meta.PartitionID
 	}
 	result.BytesSent = int64(len(ev.Body))
-	addEventExtractions(result, ev)
-	result.Extractions["eventhubs_operation"] = "produce"
+	if err := addEventExtractions(result, ev); err != nil {
+		return event{}, err
+	}
+	if err := protocol.StoreExtraction(result, "eventhubs_operation", "produce"); err != nil {
+		return event{}, err
+	}
 	return ev, evaluateAssertions(action.Assertions, result, ev)
 }
 
@@ -282,12 +292,18 @@ func (e *EventHubs) consume(ctx context.Context, action *protocol.Action, result
 	group := paramString(action.Params, "consumer_group", e.cfg.ConsumerGroup)
 	ev, lag, err := e.client.Receive(ctx, hub, group, e.timeout(action))
 	if err != nil {
-		if errors.Is(err, errNoEvent) {
+		configuredProbeTimeout := errors.Is(err, context.DeadlineExceeded) && errors.Is(context.Cause(ctx), errEventHubsActionTimeout)
+		if errors.Is(err, errNoEvent) || configuredProbeTimeout {
 			// Expected empty tail: report no-content success, not a failure.
 			result.StatusCode = 204
-			result.Extractions["eventhubs_operation"] = "consume"
-			result.Extractions["eventhubs_empty_probe"] = "1"
-			result.Extractions["eventhubs_consumer_lag"] = strconv.FormatInt(lag, 10)
+			for key, value := range map[string]string{
+				"eventhubs_operation": "consume", "eventhubs_empty_probe": "1",
+				"eventhubs_consumer_lag": strconv.FormatInt(lag, 10),
+			} {
+				if storeErr := protocol.StoreExtraction(result, key, value); storeErr != nil {
+					return event{}, storeErr
+				}
+			}
 			return event{}, errNoEvent
 		}
 		// A genuine transport/auth error from the adapter is a real failure.
@@ -295,9 +311,15 @@ func (e *EventHubs) consume(ctx context.Context, action *protocol.Action, result
 		return event{}, err
 	}
 	result.BytesReceived = int64(len(ev.Body))
-	addEventExtractions(result, ev)
-	result.Extractions["eventhubs_operation"] = "consume"
-	result.Extractions["eventhubs_consumer_lag"] = strconv.FormatInt(lag, 10)
+	if err := addEventExtractions(result, ev); err != nil {
+		return event{}, err
+	}
+	if err := protocol.StoreExtraction(result, "eventhubs_operation", "consume"); err != nil {
+		return event{}, err
+	}
+	if err := protocol.StoreExtraction(result, "eventhubs_consumer_lag", strconv.FormatInt(lag, 10)); err != nil {
+		return event{}, err
+	}
 	// Reliability detection by sequence number. Event Hubs sequence numbers are
 	// per-(hub,partition), so observe within that stream's own space — otherwise
 	// consuming from a second hub (whose numbers restart) or a future multi-
@@ -317,10 +339,14 @@ func (e *EventHubs) consume(ctx context.Context, action *protocol.Action, result
 	streamKey := hub + "\x00" + group + "\x00" + partitionID
 	if dup, ooo := e.observer.ObserveKeyed(streamKey, ev.SequenceNum); dup || ooo {
 		if dup {
-			result.Extractions["eventhubs_duplicate"] = "1"
+			if err := protocol.StoreExtraction(result, "eventhubs_duplicate", "1"); err != nil {
+				return event{}, err
+			}
 		}
 		if ooo {
-			result.Extractions["eventhubs_out_of_order"] = "1"
+			if err := protocol.StoreExtraction(result, "eventhubs_out_of_order", "1"); err != nil {
+				return event{}, err
+			}
 		}
 	}
 	if err := runExtractors(action.Extractors, result, ev); err != nil {

@@ -198,13 +198,18 @@ func sortTestList(tests []*ManagedTest, activeFirst bool) {
 
 func (s *Server) handleGetTest(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	test, ok := s.runner.GetTest(id)
-	if !ok {
-		writeError(w, http.StatusNotFound, "test not found")
-		return
-	}
 	opts, ok := managedTestMaskOptionsFromQuery(w, r.URL.Query())
 	if !ok {
+		return
+	}
+	var test *ManagedTest
+	if opts.IncludeHistory {
+		test, ok = s.runner.GetTest(id)
+	} else {
+		test, ok = s.runner.GetTestSummary(id)
+	}
+	if !ok {
+		writeError(w, http.StatusNotFound, "test not found")
 		return
 	}
 	writeJSON(w, http.StatusOK, maskManagedTestWithOptions(test, opts))

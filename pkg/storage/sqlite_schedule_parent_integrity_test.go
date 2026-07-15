@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -109,5 +110,80 @@ func TestScheduleChildrenUseDurableParentOwnership(t *testing.T) {
 	forgedPlanApproval.PlanID = "schedule-plan-b"
 	if err := store.SaveExecutionPlanApproval(&forgedPlanApproval); err == nil {
 		t.Fatal("SaveExecutionPlanApproval allowed approval ID relocation")
+	}
+}
+
+func TestScenarioScheduleReleaseUsesDurableProjectParent(t *testing.T) {
+	store := openTimeslotStore(t)
+	now := time.Now().UTC()
+	for _, projectID := range []string{"schedule-release-project-a", "schedule-release-project-b"} {
+		if err := store.SaveProject(&Project{ID: projectID, Name: projectID, CreatedAt: now}); err != nil {
+			t.Fatal(err)
+		}
+		applicationID := "application-" + projectID
+		if err := store.SaveApplication(&Application{ID: applicationID, ProjectID: projectID, Name: applicationID, CreatedAt: now}); err != nil {
+			t.Fatal(err)
+		}
+		for _, suffix := range []string{"active", "archived"} {
+			releaseID := "release-" + projectID + "-" + suffix
+			if err := store.SaveRelease(&Release{ID: releaseID, ApplicationID: applicationID, ProjectID: projectID, Name: releaseID, CreatedAt: now}); err != nil {
+				t.Fatal(err)
+			}
+			if suffix == "archived" {
+				if err := store.ArchiveRelease(releaseID); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+		script := &dsl.Script{ID: "script-" + projectID, ProjectID: projectID, Name: projectID, Protocol: "http"}
+		if err := store.SaveScript(script); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.SaveScenario(&Scenario{ID: "scenario-" + projectID, Name: projectID, Duration: "1m", CreatedAt: now}, []ScenarioScript{{ScriptID: script.ID, VUsers: 1}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	base := ScenarioSchedule{
+		ID: "schedule-release-parent", ScenarioID: "scenario-schedule-release-project-a",
+		ProjectID: "schedule-release-project-b", ReleaseID: "release-schedule-release-project-a-active",
+		Name: "Project A schedule", CronExpr: "* * * * *", Enabled: true, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := store.SaveScenarioSchedule(&base); err != nil {
+		t.Fatalf("SaveScenarioSchedule(valid release): %v", err)
+	}
+	if base.ProjectID != "schedule-release-project-a" {
+		t.Fatalf("schedule project = %q, want durable scenario/release project", base.ProjectID)
+	}
+
+	for _, tc := range []struct {
+		name      string
+		releaseID string
+		want      string
+	}{
+		{name: "missing", releaseID: "missing-release", want: "does not exist"},
+		{name: "foreign project", releaseID: "release-schedule-release-project-b-active", want: "does not belong"},
+		{name: "archived", releaseID: "release-schedule-release-project-a-archived", want: "is archived"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			candidate := base
+			candidate.ID = "schedule-release-" + strings.ReplaceAll(tc.name, " ", "-")
+			candidate.ReleaseID = tc.releaseID
+			if err := store.SaveScenarioSchedule(&candidate); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("SaveScenarioSchedule error = %v, want %q", err, tc.want)
+			}
+		})
+	}
+
+	approvalSchedule := base
+	approvalSchedule.ID = "schedule-release-approval"
+	approvalSchedule.ReleaseID = "release-schedule-release-project-b-active"
+	approvalSchedule.PendingApprovalID = "schedule-release-approval-request"
+	approval := &ScenarioScheduleApproval{
+		ID: approvalSchedule.PendingApprovalID, ScheduleID: approvalSchedule.ID,
+		Policy: "manual", Status: "pending", RequestedAt: now, CreatedAt: now, UpdatedAt: now,
+	}
+	if changed, err := store.SaveScenarioScheduleWithApproval(&approvalSchedule, approval, 0); err == nil || changed || !strings.Contains(err.Error(), "does not belong") {
+		t.Fatalf("SaveScenarioScheduleWithApproval = (%v, %v), want foreign-release rejection", changed, err)
 	}
 }

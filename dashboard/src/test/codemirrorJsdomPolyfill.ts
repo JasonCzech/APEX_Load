@@ -34,3 +34,54 @@ if (typeof globalThis !== 'undefined' && typeof (globalThis as { ResizeObserver?
   }
   ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver = ResizeObserverStub
 }
+
+function installStoragePolyfill(name: 'localStorage' | 'sessionStorage') {
+  const target = globalThis as unknown as Record<string, unknown>
+  const existing = target[name] as Partial<Storage> | undefined
+  if (
+    existing &&
+    typeof existing.getItem === 'function' &&
+    typeof existing.setItem === 'function' &&
+    typeof existing.removeItem === 'function' &&
+    typeof existing.clear === 'function'
+  ) {
+    return
+  }
+
+  const entries = new Map<string, string>()
+  const storage: Storage = {
+    get length() {
+      return entries.size
+    },
+    clear() {
+      entries.clear()
+    },
+    getItem(key: string) {
+      return entries.has(key) ? entries.get(key)! : null
+    },
+    key(index: number) {
+      return Array.from(entries.keys())[index] ?? null
+    },
+    removeItem(key: string) {
+      entries.delete(key)
+    },
+    setItem(key: string, value: string) {
+      entries.set(key, String(value))
+    },
+  }
+  Object.defineProperty(globalThis, name, {
+    configurable: true,
+    value: storage,
+    writable: true,
+  })
+  if (typeof window !== 'undefined') {
+    Object.defineProperty(window, name, {
+      configurable: true,
+      value: storage,
+      writable: true,
+    })
+  }
+}
+
+installStoragePolyfill('localStorage')
+installStoragePolyfill('sessionStorage')

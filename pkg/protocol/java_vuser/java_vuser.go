@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/config"
+	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/internal/subprocessguard"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
@@ -106,6 +107,14 @@ func (j *JavaVuser) Init(_ context.Context, cfg map[string]any) error {
 	// binary executes; the only script-controlled knobs are non-privileged
 	// per-action timeouts.
 	operator := config.LoadJavaVuserOperatorConfig()
+	startupTimeout, err := protocol.BoundedMilliseconds(cfg["java_vuser_startup_timeout_ms"], 0, dsl.MaxConfiguredProtocolTimeout)
+	if err != nil {
+		return fmt.Errorf("java_vuser startup_timeout_ms %w", err)
+	}
+	actionTimeout, err := protocol.BoundedMilliseconds(cfg["java_vuser_action_timeout_ms"], defaultActionTimeout, dsl.MaxConfiguredProtocolTimeout)
+	if err != nil {
+		return fmt.Errorf("java_vuser action_timeout_ms %w", err)
+	}
 	j.cfg = configuration{
 		Enabled:        operator.Enabled,
 		RunnerCommand:  protocol.FirstNonEmpty(operator.RunnerCommand, defaultRunnerCommand),
@@ -113,8 +122,8 @@ func (j *JavaVuser) Init(_ context.Context, cfg map[string]any) error {
 		Classpath:      operator.Classpath,
 		WorkDir:        operator.WorkDir,
 		MaxProcesses:   operator.MaxProcesses,
-		StartupTimeout: durationValue(cfg, "java_vuser_startup_timeout_ms", 0),
-		ActionTimeout:  durationValue(cfg, "java_vuser_action_timeout_ms", defaultActionTimeout),
+		StartupTimeout: startupTimeout,
+		ActionTimeout:  actionTimeout,
 	}
 	if j.cfg.MaxProcesses <= 0 {
 		j.cfg.MaxProcesses = defaultMaxProcesses
@@ -127,6 +136,9 @@ func (j *JavaVuser) Init(_ context.Context, cfg map[string]any) error {
 
 func (j *JavaVuser) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
 	start := time.Now()
+	if action == nil {
+		return &protocol.Result{StartTime: start, StatusCode: 500, ErrorMessage: "java_vuser action is required"}, nil
+	}
 	result := &protocol.Result{
 		ActionName:       action.Name,
 		StartTime:        start,
@@ -138,6 +150,11 @@ func (j *JavaVuser) Execute(ctx context.Context, action *protocol.Action) (*prot
 	}
 	if strings.TrimSpace(action.Type) != "java_vuser_run" {
 		err := fmt.Errorf("unsupported Java Vuser action type %q", action.Type)
+		finalizeResult(result, start, action, err, "", "", "")
+		return result, nil
+	}
+	timeout, err := actionTimeout(action, j.cfg.ActionTimeout)
+	if err != nil {
 		finalizeResult(result, start, action, err, "", "", "")
 		return result, nil
 	}
@@ -164,7 +181,6 @@ func (j *JavaVuser) Execute(ctx context.Context, action *protocol.Action) (*prot
 		result.Extractions["java_vuser_queue_wait_ms"] = strconv.FormatInt(queueWait.Milliseconds(), 10)
 	}
 
-	timeout := actionTimeout(action, j.cfg.ActionTimeout)
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -201,7 +217,7 @@ func (j *JavaVuser) Execute(ctx context.Context, action *protocol.Action) (*prot
 	stderr := &cappedBuffer{max: defaultRunnerMaxCaptureBytes}
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
-	err = startRunnerCommand(ctx, cmd, j.cfg.StartupTimeout)
+	err = startRunnerCommand(runCtx, cmd, j.cfg.StartupTimeout)
 	if err == nil {
 		err = cmd.Wait()
 	}
@@ -540,11 +556,19 @@ func actionMethod(action *protocol.Action) string {
 	return method
 }
 
-func actionTimeout(action *protocol.Action, fallback time.Duration) time.Duration {
-	if timeoutMs := intParam(action.Params, "timeout_ms", 0); timeoutMs > 0 {
-		return time.Duration(timeoutMs) * time.Millisecond
+func actionTimeout(action *protocol.Action, fallback time.Duration) (time.Duration, error) {
+	if action == nil || action.Params == nil {
+		return fallback, nil
 	}
-	return fallback
+	value, present := action.Params["timeout_ms"]
+	if !present {
+		return fallback, nil
+	}
+	timeout, err := protocol.BoundedMilliseconds(value, fallback, dsl.MaxConfiguredProtocolTimeout)
+	if err != nil {
+		return 0, fmt.Errorf("java_vuser action timeout_ms %w", err)
+	}
+	return timeout, nil
 }
 
 func stringValue(cfg map[string]any, key string) string {

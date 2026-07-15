@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -55,6 +56,16 @@ func TestInitCA(t *testing.T) {
 	}
 	if block.Type != "CERTIFICATE" {
 		t.Fatalf("expected CERTIFICATE PEM type, got %s", block.Type)
+	}
+}
+
+func TestReadRecorderCAFileRejectsOversizedMaterial(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "oversized.pem")
+	if err := os.WriteFile(path, []byte(strings.Repeat("x", int(maxRecorderCAFileBytes)+1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readRecorderCAFile(path); err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("oversized recorder CA error = %v", err)
 	}
 }
 

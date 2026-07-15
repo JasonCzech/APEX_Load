@@ -73,11 +73,11 @@ func TestDomainHierarchyOptimisticUpdatesRejectStaleAndRelocation(t *testing.T) 
 	if updated, err := store.UpdateApplicationRepositoryIfUnchanged(repositoryStale, repositoryStale.UpdatedAt); err != nil || updated {
 		t.Fatalf("stale repository update = (%v, %v), want conflict", updated, err)
 	}
-	if err := store.SaveApplicationRepository(&ApplicationRepository{ID: repository.ID, DomainID: DefaultDomainID, Name: "relocation attempt"}); err != nil {
-		t.Fatalf("SaveApplicationRepository relocation attempt: %v", err)
+	if err := store.SaveApplicationRepository(&ApplicationRepository{ID: repository.ID, DomainID: DefaultDomainID, Name: "relocation attempt"}); err == nil {
+		t.Fatal("SaveApplicationRepository accepted an id owned by another domain")
 	}
 	repositoryFresh, err := store.GetApplicationRepository(domain.ID)
-	if err != nil || repositoryFresh.ID != repository.ID {
+	if err != nil || repositoryFresh.ID != repository.ID || repositoryFresh.Name == "relocation attempt" {
 		t.Fatalf("repository moved from domain: %#v, err=%v", repositoryFresh, err)
 	}
 
@@ -91,11 +91,71 @@ func TestDomainHierarchyOptimisticUpdatesRejectStaleAndRelocation(t *testing.T) 
 	if updated, err := store.UpdateRepositoryCategoryIfUnchanged(categoryStale, categoryStale.UpdatedAt); err != nil || updated {
 		t.Fatalf("stale category update = (%v, %v), want conflict", updated, err)
 	}
-	if err := store.SaveRepositoryCategory(&RepositoryCategory{ID: category.ID, DomainID: DefaultDomainID, RepositoryID: DefaultApplicationRepositoryID, Name: "relocation attempt"}); err != nil {
-		t.Fatalf("SaveRepositoryCategory relocation attempt: %v", err)
+	if err := store.SaveRepositoryCategory(&RepositoryCategory{ID: category.ID, DomainID: DefaultDomainID, RepositoryID: DefaultApplicationRepositoryID, Name: "relocation attempt"}); err == nil {
+		t.Fatal("SaveRepositoryCategory accepted an id owned by another hierarchy")
 	}
 	categoryFresh, err := store.GetRepositoryCategory(category.ID)
-	if err != nil || categoryFresh.DomainID != domain.ID || categoryFresh.RepositoryID != repository.ID {
+	if err != nil || categoryFresh.DomainID != domain.ID || categoryFresh.RepositoryID != repository.ID || categoryFresh.Name == "relocation attempt" {
 		t.Fatalf("category placement changed: %#v, err=%v", categoryFresh, err)
+	}
+}
+
+func TestHierarchyWritesRejectCrossOwnedPlacement(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+	now := time.Now().UTC()
+	for _, suffix := range []string{"a", "b"} {
+		domain := &Domain{ID: "placement-domain-" + suffix, Name: "Domain " + suffix, CreatedAt: now}
+		repository := &ApplicationRepository{ID: "placement-repository-" + suffix, DomainID: domain.ID, Name: "Repository " + suffix, CreatedAt: now}
+		category := &RepositoryCategory{ID: "placement-category-" + suffix, DomainID: domain.ID, RepositoryID: repository.ID, Name: "Category " + suffix, CreatedAt: now}
+		if err := store.CreateDomainHierarchy(domain, repository, category); err != nil {
+			t.Fatalf("CreateDomainHierarchy(%s): %v", suffix, err)
+		}
+	}
+
+	if err := store.SaveRepositoryCategory(&RepositoryCategory{
+		ID: "cross-owned-category", DomainID: "placement-domain-a", RepositoryID: "placement-repository-b",
+		Name: "Invalid", CreatedAt: now,
+	}); err == nil {
+		t.Fatal("SaveRepositoryCategory accepted a repository owned by another domain")
+	}
+	if _, err := store.GetRepositoryCategory("cross-owned-category"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("invalid category was persisted: %v", err)
+	}
+
+	project := &Project{
+		ID: "placement-project", DomainID: "placement-domain-a", CategoryID: "placement-category-b",
+		Name: "Invalid", CreatedAt: now,
+	}
+	if err := store.SaveProject(project); err == nil {
+		t.Fatal("SaveProject accepted a category owned by another domain")
+	}
+	if _, err := store.GetProject(project.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("invalid project was persisted: %v", err)
+	}
+
+	project.DomainID = "placement-domain-a"
+	project.CategoryID = "placement-category-a"
+	if err := store.SaveProject(project); err != nil {
+		t.Fatalf("SaveProject(valid placement): %v", err)
+	}
+	stored, err := store.GetProject(project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	project.DomainID = "placement-domain-b"
+	project.CategoryID = "placement-category-a"
+	if updated, err := store.UpdateProjectIfUnchanged(project, stored.UpdatedAt); err == nil || updated {
+		t.Fatalf("UpdateProjectIfUnchanged accepted cross-owned placement: updated=%t err=%v", updated, err)
+	}
+	stored, err = store.GetProject(project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.DomainID != "placement-domain-a" || stored.CategoryID != "placement-category-a" {
+		t.Fatalf("rejected project move changed placement: %#v", stored)
 	}
 }

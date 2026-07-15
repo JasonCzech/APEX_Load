@@ -13,7 +13,12 @@ import (
 	"time"
 )
 
-const storageSystemAdminRole = "system_admin"
+const (
+	storageViewerRole       = "viewer"
+	storageEditorRole       = "editor"
+	storageProjectAdminRole = "project_admin"
+	storageSystemAdminRole  = "system_admin"
+)
 
 // ErrRoleScopeNotFound means a durable scoped grant references an ownership
 // anchor that does not exist (or was deleted while the mutation was in flight).
@@ -26,6 +31,105 @@ var ErrRoleScopeNotFound = errors.New("role scope not found")
 // not retain schema-level foreign keys, so this invariant is enforced under an
 // explicit row lock in the write transaction.
 var ErrUserNotFound = errors.New("user not found")
+
+func normalizeAuthorizationRole(role string) (string, error) {
+	role = strings.ToLower(strings.TrimSpace(role))
+	switch role {
+	case storageViewerRole, storageEditorRole, storageProjectAdminRole, storageSystemAdminRole:
+		return role, nil
+	case "":
+		return "", errors.New("authorization role is required")
+	default:
+		return "", fmt.Errorf("unsupported authorization role %q", role)
+	}
+}
+
+func normalizeAuthorizationRoles(roles []string) ([]string, error) {
+	if roles == nil {
+		return nil, nil
+	}
+	set := make(map[string]struct{}, len(roles))
+	for _, role := range roles {
+		normalized, err := normalizeAuthorizationRole(role)
+		if err != nil {
+			return nil, err
+		}
+		set[normalized] = struct{}{}
+	}
+	out := make([]string, 0, len(set))
+	for role := range set {
+		out = append(out, role)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+func normalizeUserRoleBindingValues(binding *UserRoleBinding) error {
+	if binding == nil {
+		return errors.New("user role binding is required")
+	}
+	binding.ID = strings.TrimSpace(binding.ID)
+	if binding.ID == "" {
+		return errors.New("user role binding id is required")
+	}
+	binding.UserID = strings.TrimSpace(binding.UserID)
+	if binding.UserID == "" {
+		return errors.New("user role binding user id is required")
+	}
+	role, err := normalizeAuthorizationRole(binding.Role)
+	if err != nil {
+		return err
+	}
+	binding.Role = role
+	binding.ScopeType = strings.ToLower(strings.TrimSpace(binding.ScopeType))
+	binding.ScopeID = strings.TrimSpace(binding.ScopeID)
+	switch binding.ScopeType {
+	case "global":
+		binding.ScopeID = ""
+	case "project":
+		if binding.ScopeID == "" {
+			return errors.New("project role scope id is required")
+		}
+		binding.ScopeID = normalizeProjectID(binding.ScopeID)
+	case "domain":
+		if binding.ScopeID == "" {
+			return errors.New("domain role scope id is required")
+		}
+		binding.ScopeID = normalizeDomainID(binding.ScopeID)
+	case "application_repository":
+		if binding.ScopeID == "" {
+			return errors.New("application repository role scope id is required")
+		}
+	default:
+		return fmt.Errorf("unsupported role scope type %q", binding.ScopeType)
+	}
+	return nil
+}
+
+func normalizeServiceAccountAuthorization(account *ServiceAccount) error {
+	if account == nil {
+		return errors.New("service account is required")
+	}
+	var err error
+	account.GlobalRoles, err = normalizeAuthorizationRoles(account.GlobalRoles)
+	if err != nil {
+		return err
+	}
+	for label, scopedRoles := range map[string]map[string][]string{
+		"project":                account.ProjectRoles,
+		"domain":                 account.DomainRoles,
+		"application repository": account.RepositoryRoles,
+	} {
+		for scopeID, roles := range scopedRoles {
+			normalized, err := normalizeAuthorizationRoles(roles)
+			if err != nil {
+				return fmt.Errorf("%s %q roles: %w", label, strings.TrimSpace(scopeID), err)
+			}
+			scopedRoles[scopeID] = normalized
+		}
+	}
+	return nil
+}
 
 func lockRoleScope(tx *storeTx, scopeType, scopeID string) error {
 	var table string
@@ -54,31 +158,15 @@ func lockRoleScope(tx *storeTx, scopeType, scopeID string) error {
 }
 
 func normalizeAndLockUserRoleBindingScope(tx *storeTx, binding *UserRoleBinding) error {
-	if binding == nil {
-		return fmt.Errorf("user role binding is required")
+	if err := normalizeUserRoleBindingValues(binding); err != nil {
+		return err
 	}
-	binding.ScopeType = strings.ToLower(strings.TrimSpace(binding.ScopeType))
 	switch binding.ScopeType {
 	case "global":
-		binding.ScopeID = ""
 		return nil
 	case "project":
-		if strings.TrimSpace(binding.ScopeID) == "" {
-			return fmt.Errorf("project role scope id is required")
-		}
-		binding.ScopeID = normalizeProjectID(binding.ScopeID)
 	case "domain":
-		if strings.TrimSpace(binding.ScopeID) == "" {
-			return fmt.Errorf("domain role scope id is required")
-		}
-		binding.ScopeID = normalizeDomainID(binding.ScopeID)
 	case "application_repository":
-		binding.ScopeID = strings.TrimSpace(binding.ScopeID)
-		if binding.ScopeID == "" {
-			return fmt.Errorf("application repository role scope id is required")
-		}
-	default:
-		return fmt.Errorf("unsupported role scope type %q", binding.ScopeType)
 	}
 	return lockRoleScope(tx, binding.ScopeType, binding.ScopeID)
 }
@@ -223,6 +311,9 @@ func (s *SQLiteStore) SaveServiceAccount(account *ServiceAccount) error {
 	if account == nil {
 		return fmt.Errorf("service account is required")
 	}
+	if err := normalizeServiceAccountAuthorization(account); err != nil {
+		return err
+	}
 	globalRolesJSON, err := json.Marshal(account.GlobalRoles)
 	if err != nil {
 		return err
@@ -285,6 +376,9 @@ func (s *SQLiteStore) SaveServiceAccount(account *ServiceAccount) error {
 func (s *SQLiteStore) UpdateServiceAccountMetadata(account *ServiceAccount, expectedUpdatedAt time.Time) (bool, error) {
 	if account == nil {
 		return false, fmt.Errorf("service account is required")
+	}
+	if err := normalizeServiceAccountAuthorization(account); err != nil {
+		return false, err
 	}
 	globalRolesJSON, err := json.Marshal(account.GlobalRoles)
 	if err != nil {
@@ -647,7 +741,10 @@ func (s *SQLiteStore) SaveUser(user *User) error {
 			last_seen_at=excluded.last_seen_at,
 			disabled_at=excluded.disabled_at,
 			session_epoch=CASE WHEN users.subject <> excluded.subject
-				THEN users.session_epoch + 1 ELSE excluded.session_epoch END`,
+				THEN users.session_epoch + 1
+				ELSE CASE WHEN users.session_epoch > excluded.session_epoch
+					THEN users.session_epoch ELSE excluded.session_epoch END
+			END`,
 		user.ID,
 		user.Subject,
 		user.Email,
@@ -690,10 +787,9 @@ func (s *SQLiteStore) SaveUserWithRoleBindings(user *User, bindings []*UserRoleB
 		return fmt.Errorf("user id is required")
 	}
 	for _, binding := range bindings {
-		if binding == nil {
-			return fmt.Errorf("user role binding is required")
+		if err := normalizeUserRoleBindingValues(binding); err != nil {
+			return err
 		}
-		binding.UserID = strings.TrimSpace(binding.UserID)
 		if binding.UserID != user.ID {
 			return fmt.Errorf("user role binding owner %q does not match user %q", binding.UserID, user.ID)
 		}
@@ -741,7 +837,10 @@ func (s *SQLiteStore) SaveUserWithRoleBindings(user *User, bindings []*UserRoleB
 			last_seen_at=excluded.last_seen_at,
 			disabled_at=excluded.disabled_at,
 			session_epoch=CASE WHEN users.subject <> excluded.subject
-				THEN users.session_epoch + 1 ELSE excluded.session_epoch END`,
+				THEN users.session_epoch + 1
+				ELSE CASE WHEN users.session_epoch > excluded.session_epoch
+					THEN users.session_epoch ELSE excluded.session_epoch END
+			END`,
 		user.ID,
 		user.Subject,
 		user.Email,
@@ -794,6 +893,19 @@ func (s *SQLiteStore) BootstrapFirstAdmin(user *User, binding *UserRoleBinding, 
 	user.Subject = strings.TrimSpace(user.Subject)
 	if user.Subject == "" {
 		return false, fmt.Errorf("user subject is required")
+	}
+	user.ID = strings.TrimSpace(user.ID)
+	if user.ID == "" {
+		return false, fmt.Errorf("user id is required")
+	}
+	if err := normalizeUserRoleBindingValues(binding); err != nil {
+		return false, err
+	}
+	if binding.UserID != user.ID {
+		return false, fmt.Errorf("bootstrap role binding owner %q does not match user %q", binding.UserID, user.ID)
+	}
+	if binding.ScopeType != "global" || binding.Role != storageSystemAdminRole {
+		return false, errors.New("bootstrap role binding must grant global system_admin")
 	}
 	detailsJSON, err := json.Marshal(event.Details)
 	if err != nil {
@@ -987,7 +1099,7 @@ func (s *SQLiteStore) ListUsers(filter UserFilter) ([]*User, error) {
 	if role := strings.ToLower(strings.TrimSpace(filter.Role)); role != "" {
 		query.WriteString(` AND EXISTS (
 			SELECT 1 FROM user_role_bindings b
-			WHERE b.user_id = users.id AND LOWER(b.role) = ?
+			WHERE b.user_id = users.id AND LOWER(TRIM(b.role)) = ?
 		)`)
 		args = append(args, role)
 	}
@@ -1043,7 +1155,7 @@ func (s *SQLiteStore) CountUsers(filter UserFilter) (int, error) {
 	if role := strings.ToLower(strings.TrimSpace(filter.Role)); role != "" {
 		query.WriteString(` AND EXISTS (
 			SELECT 1 FROM user_role_bindings b
-			WHERE b.user_id = users.id AND LOWER(b.role) = ?
+			WHERE b.user_id = users.id AND LOWER(TRIM(b.role)) = ?
 		)`)
 		args = append(args, role)
 	}
@@ -1146,7 +1258,9 @@ func (s *SQLiteStore) authMutationTargetIsActiveGlobalAdmin(tx authMutationTx, u
 	var count int
 	err := tx.QueryRow(`SELECT COUNT(*) FROM users u
 		JOIN user_role_bindings b ON b.user_id = u.id
-		WHERE u.id = ? AND u.active = ? AND b.scope_type = 'global' AND b.role = ?`,
+		WHERE u.id = ? AND u.active = ?
+		  AND LOWER(TRIM(b.scope_type)) = 'global'
+		  AND LOWER(TRIM(b.role)) = ?`,
 		userID, s.boolValue(true), storageSystemAdminRole).Scan(&count)
 	if err != nil {
 		return false, err
@@ -1158,7 +1272,9 @@ func (s *SQLiteStore) authMutationActiveGlobalAdminCount(tx authMutationTx) (int
 	var count int
 	err := tx.QueryRow(`SELECT COUNT(DISTINCT u.id) FROM users u
 		JOIN user_role_bindings b ON b.user_id = u.id
-		WHERE u.active = ? AND b.scope_type = 'global' AND b.role = ?`,
+		WHERE u.active = ?
+		  AND LOWER(TRIM(b.scope_type)) = 'global'
+		  AND LOWER(TRIM(b.role)) = ?`,
 		s.boolValue(true), storageSystemAdminRole).Scan(&count)
 	return count, err
 }
@@ -1278,7 +1394,9 @@ func (s *SQLiteStore) CountActiveGlobalRoleHolders(role string) (int, error) {
 	var count int
 	err := s.db.QueryRow(`SELECT COUNT(DISTINCT u.id) FROM users u
 		JOIN user_role_bindings b ON b.user_id = u.id
-		WHERE u.active = ? AND b.scope_type = 'global' AND b.role = ?`, s.boolValue(true), normalized).Scan(&count)
+		WHERE u.active = ?
+		  AND LOWER(TRIM(b.scope_type)) = 'global'
+		  AND LOWER(TRIM(b.role)) = ?`, s.boolValue(true), normalized).Scan(&count)
 	if err != nil {
 		return 0, err
 	}

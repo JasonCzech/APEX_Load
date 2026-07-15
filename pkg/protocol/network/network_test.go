@@ -149,6 +149,89 @@ func TestLDAPBindHonorsContextCancellation(t *testing.T) {
 	}
 }
 
+func TestNetworkActionTimeoutOverridesConfigForSocketRead(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	go func() {
+		conn, acceptErr := listener.Accept()
+		if acceptErr != nil {
+			return
+		}
+		defer conn.Close()
+		_, _ = io.Copy(io.Discard, conn)
+	}()
+
+	netProto := &Network{}
+	if err := netProto.Init(context.Background(), map[string]any{"network_timeout_ms": 10_000}); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	result, err := netProto.Execute(context.Background(), &protocol.Action{
+		Name: "bounded read", Type: "tcp_request", Target: listener.Addr().String(),
+		Params: map[string]any{"read": true, "timeout_ms": 50},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Success || time.Since(start) > time.Second {
+		t.Fatalf("per-action timeout was not enforced: success=%v elapsed=%s error=%q", result.Success, time.Since(start), result.ErrorMessage)
+	}
+}
+
+func TestNetworkTLSHandshakeHonorsContextCancellation(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	go func() {
+		conn, acceptErr := listener.Accept()
+		if acceptErr != nil {
+			return
+		}
+		defer conn.Close()
+		_, _ = io.Copy(io.Discard, conn)
+	}()
+
+	netProto := &Network{}
+	if err := netProto.Init(context.Background(), map[string]any{"network_timeout_ms": 10_000, "network_tls": true}); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	result, err := netProto.Execute(ctx, &protocol.Action{Name: "tls", Type: "tcp_request", Target: listener.Addr().String()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Success || time.Since(start) > time.Second {
+		t.Fatalf("TLS handshake ignored cancellation: success=%v elapsed=%s error=%q", result.Success, time.Since(start), result.ErrorMessage)
+	}
+}
+
+func TestNetworkRejectsUnboundedTimeouts(t *testing.T) {
+	netProto := &Network{}
+	if err := netProto.Init(context.Background(), map[string]any{"network_timeout_ms": MaxConfiguredTimeout.Milliseconds() + 1}); err == nil {
+		t.Fatal("Init accepted timeout above the runtime cap")
+	}
+	if err := netProto.Init(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	result, err := netProto.Execute(context.Background(), &protocol.Action{
+		Name: "bad timeout", Type: "tcp_request", Target: "127.0.0.1:1",
+		Params: map[string]any{"timeout_ms": MaxConfiguredTimeout.Milliseconds() + 1},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Success || !strings.Contains(result.ErrorMessage, "between 0") {
+		t.Fatalf("unbounded action timeout result = %#v", result)
+	}
+}
+
 func TestNetworkProtocolUDPRequest(t *testing.T) {
 	addr, err := net.ResolveUDPAddr("udp", "127.0.0.1:0")
 	if err != nil {

@@ -12,7 +12,15 @@ import (
 )
 
 func (s *SQLiteStore) SaveTest(test *TestRecord) error {
-	return s.saveTestWithExecutor(s.db, test)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := s.saveTestWithExecutor(tx, test); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // CreateTestIfAbsent persists a newly materialized test without allowing a
@@ -93,6 +101,15 @@ func (s *SQLiteStore) saveTestWithExecutor(executor testSaveExecutor, test *Test
 	if err != nil {
 		return err
 	}
+	exists, err := validateTestPlacement(executor, test, true)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		if err := lockActiveReleaseForNewTest(executor, test); err != nil {
+			return err
+		}
+	}
 
 	query := `INSERT INTO tests (id, ref_key, materialization_key, name, status, application_id, release_id, scenario_id, project_id, folder_id, scenario_mode, shakeout_enabled, resource_baseline_enabled, start_delay, assignment_json, total_vusers, duration_ns, start_time, scheduled_start_at, pending_since, paused_at, cumulative_pause_ns, capacity_window_start_at, capacity_window_end_at, baseline_pinned, baseline_pinned_at, end_time, error, created_by_subject, created_by_display_name, started_by_subject, started_by_display_name, stopped_by_subject, stopped_by_display_name, groups_json, runtime_settings_json, goal_config_json, execution_plan_approval_json, timeslot_id)
 			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -111,16 +128,38 @@ func (s *SQLiteStore) saveTestWithExecutor(executor testSaveExecutor, test *Test
 			  started_by_subject=excluded.started_by_subject, started_by_display_name=excluded.started_by_display_name,
 			  stopped_by_subject=excluded.stopped_by_subject, stopped_by_display_name=excluded.stopped_by_display_name, groups_json=excluded.groups_json,
 			  runtime_settings_json=excluded.runtime_settings_json, goal_config_json=excluded.goal_config_json, execution_plan_approval_json=excluded.execution_plan_approval_json,
-			  timeslot_id=excluded.timeslot_id`
+			  timeslot_id=excluded.timeslot_id
+			  WHERE tests.project_id=excluded.project_id`
 
-	_, err = executor.Exec(query, args...)
-	return err
+	result, err := executor.Exec(query, args...)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return fmt.Errorf("test %q project ownership changed concurrently", test.ID)
+	}
+	return nil
 }
 
 func (s *SQLiteStore) createTestIfAbsentWithExecutor(executor testSaveExecutor, test *TestRecord) (bool, error) {
 	args, err := prepareTestSaveArgs(test)
 	if err != nil {
 		return false, err
+	}
+	exists, err := validateTestPlacement(executor, test, false)
+	if err != nil {
+		return false, err
+	}
+	// Preserve create-only collision semantics: an existing deterministic ID is
+	// never rewritten, and callers receive (false, nil) regardless of the stale
+	// candidate's other fields. A concurrent first insert is still fenced by the
+	// INSERT ... ON CONFLICT DO NOTHING below.
+	if exists {
+		return false, nil
 	}
 	if err := lockActiveReleaseForNewTest(executor, test); err != nil {
 		return false, err
@@ -172,9 +211,24 @@ func prepareTestSaveArgs(test *TestRecord) ([]any, error) {
 	if test == nil {
 		return nil, fmt.Errorf("test is required")
 	}
-	test.ApplicationID = normalizeApplicationID(test.ApplicationID)
-	test.ReleaseID = normalizeReleaseID(test.ReleaseID)
-	test.ProjectID = normalizeProjectID(test.ProjectID)
+	test.ID = strings.TrimSpace(test.ID)
+	if test.ID == "" {
+		return nil, errors.New("test id is required")
+	}
+	test.ProjectID = normalizeProjectID(strings.TrimSpace(test.ProjectID))
+	test.ApplicationID = strings.TrimSpace(test.ApplicationID)
+	if test.ApplicationID == "" || (test.ApplicationID == LegacyApplicationID && test.ProjectID != DefaultProjectID) {
+		test.ApplicationID = legacyApplicationID(test.ProjectID)
+	}
+	test.ReleaseID = strings.TrimSpace(test.ReleaseID)
+	if test.ReleaseID == "" || (test.ReleaseID == LegacyReleaseID && test.ProjectID != DefaultProjectID) {
+		test.ReleaseID = legacyReleaseID(test.ProjectID)
+	}
+	test.ScenarioID = strings.TrimSpace(test.ScenarioID)
+	if test.FolderID != nil {
+		folderID := strings.TrimSpace(*test.FolderID)
+		test.FolderID = &folderID
+	}
 	groupsJSON, err := marshalTestField("groups_json", test.Groups)
 	if err != nil {
 		return nil, err
@@ -196,6 +250,166 @@ func prepareTestSaveArgs(test *TestRecord) ([]any, error) {
 		return nil, err
 	}
 	return []any{test.ID, test.RefKey, test.MaterializationKey, test.Name, test.Status, test.ApplicationID, test.ReleaseID, nullableString(test.ScenarioID), test.ProjectID, nullableStringPointer(test.FolderID), test.ScenarioMode, test.ScriptShakeout, test.ResourceBaseline, test.StartDelay, assignmentJSON, test.TotalVUsers, test.Duration, test.StartTime, test.ScheduledStartAt, test.PendingSince, test.PausedAt, test.CumulativePause, test.CapacityWindowStartAt, test.CapacityWindowEndAt, test.BaselinePinned, test.BaselinePinnedAt, test.EndTime, test.Error, test.CreatedBySubject, test.CreatedByDisplayName, test.StartedBySubject, test.StartedByDisplayName, test.StoppedBySubject, test.StoppedByDisplayName, groupsJSON, runtimeSettingsJSON, goalConfigJSON, executionPlanApprovalJSON, nullableStringPointer(test.TimeslotID)}, nil
+}
+
+// validateTestPlacement locks and verifies every durable tenant-bearing parent
+// before a test row is inserted or updated. The project lock matches project
+// deletion's lock order, while the conditional upsert in saveTestWithExecutor
+// remains the final fence for two concurrent first writers of the same test ID.
+// It returns whether the test already exists.
+func validateTestPlacement(executor testSaveExecutor, test *TestRecord, rejectRelocation bool) (bool, error) {
+	if test == nil {
+		return false, errors.New("test is required")
+	}
+	if err := lockRequiredTestParent(executor,
+		`UPDATE projects SET updated_at = updated_at WHERE id = ?`, test.ProjectID, "project"); err != nil {
+		return false, err
+	}
+	if err := ensureLegacyTestHierarchy(executor, test.ProjectID); err != nil {
+		return false, err
+	}
+
+	exists, existingProjectID, err := lockExistingTestPlacement(executor, test.ID)
+	if err != nil {
+		return false, err
+	}
+	if exists && rejectRelocation && normalizeProjectID(existingProjectID) != test.ProjectID {
+		return false, fmt.Errorf("test %q belongs to project %q, not %q", test.ID, normalizeProjectID(existingProjectID), test.ProjectID)
+	}
+	if exists && !rejectRelocation {
+		return true, nil
+	}
+
+	if err := lockRequiredTestParent(executor,
+		`UPDATE applications SET updated_at = updated_at WHERE id = ?`, test.ApplicationID, "application"); err != nil {
+		return false, err
+	}
+	var applicationProjectID string
+	if err := executor.QueryRow(`SELECT COALESCE(project_id, '') FROM applications WHERE id = ?`, test.ApplicationID).Scan(&applicationProjectID); err != nil {
+		return false, err
+	}
+	if normalizeProjectID(applicationProjectID) != test.ProjectID {
+		return false, fmt.Errorf("test application %q belongs to project %q, not %q", test.ApplicationID, normalizeProjectID(applicationProjectID), test.ProjectID)
+	}
+
+	if err := lockRequiredTestParent(executor,
+		`UPDATE releases SET updated_at = updated_at WHERE id = ?`, test.ReleaseID, "release"); err != nil {
+		return false, err
+	}
+	var releaseApplicationID, releaseProjectID string
+	if err := executor.QueryRow(`SELECT application_id, COALESCE(project_id, '') FROM releases WHERE id = ?`, test.ReleaseID).Scan(&releaseApplicationID, &releaseProjectID); err != nil {
+		return false, err
+	}
+	if releaseApplicationID != test.ApplicationID {
+		return false, fmt.Errorf("test release %q belongs to application %q, not %q", test.ReleaseID, releaseApplicationID, test.ApplicationID)
+	}
+	if normalizeProjectID(releaseProjectID) != test.ProjectID {
+		return false, fmt.Errorf("test release %q belongs to project %q, not %q", test.ReleaseID, normalizeProjectID(releaseProjectID), test.ProjectID)
+	}
+
+	if test.ScenarioID != "" {
+		if err := validateScenarioProjectPlacement(executor, test.ScenarioID, test.ProjectID, "test"); err != nil {
+			return false, err
+		}
+	}
+	if test.FolderID != nil && strings.TrimSpace(*test.FolderID) != "" {
+		folderID := strings.TrimSpace(*test.FolderID)
+		if err := lockRequiredTestParent(executor,
+			`UPDATE folders SET updated_at = updated_at WHERE id = ?`, folderID, "folder"); err != nil {
+			return false, err
+		}
+		var folderProjectID string
+		if err := executor.QueryRow(`SELECT project_id FROM folders WHERE id = ?`, folderID).Scan(&folderProjectID); err != nil {
+			return false, err
+		}
+		if normalizeProjectID(folderProjectID) != test.ProjectID {
+			return false, fmt.Errorf("test folder %q belongs to project %q, not %q", folderID, normalizeProjectID(folderProjectID), test.ProjectID)
+		}
+	}
+	return exists, nil
+}
+
+func lockRequiredTestParent(executor testSaveExecutor, query, id, kind string) error {
+	return lockRequiredPlacementParent(executor, query, id, "test", kind)
+}
+
+func lockRequiredPlacementParent(executor testSaveExecutor, query, id, owner, kind string) error {
+	result, err := executor.Exec(query, id)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return fmt.Errorf("%s %s not found: %s", owner, kind, id)
+	}
+	return nil
+}
+
+func lockExistingTestPlacement(executor testSaveExecutor, testID string) (bool, string, error) {
+	result, err := executor.Exec(`UPDATE tests SET project_id = project_id WHERE id = ?`, testID)
+	if err != nil {
+		return false, "", err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, "", err
+	}
+	if affected == 0 {
+		return false, "", nil
+	}
+	var projectID string
+	if err := executor.QueryRow(`SELECT COALESCE(project_id, '') FROM tests WHERE id = ?`, testID).Scan(&projectID); err != nil {
+		return false, "", err
+	}
+	return true, projectID, nil
+}
+
+func ensureLegacyTestHierarchy(executor testSaveExecutor, projectID string) error {
+	applicationID := legacyApplicationID(projectID)
+	releaseID := legacyReleaseID(projectID)
+	now := time.Now().UTC()
+	if _, err := executor.Exec(`INSERT OR IGNORE INTO applications (id, project_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+		applicationID, projectID, "Legacy", now, now); err != nil {
+		return fmt.Errorf("ensure legacy application for project %q: %w", projectID, err)
+	}
+	if _, err := executor.Exec(`INSERT OR IGNORE INTO releases (id, application_id, project_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		releaseID, applicationID, projectID, "Imported Legacy", now, now); err != nil {
+		return fmt.Errorf("ensure legacy release for project %q: %w", projectID, err)
+	}
+	return nil
+}
+
+func validateScenarioProjectPlacement(executor testSaveExecutor, scenarioID, projectID, owner string) error {
+	owner = strings.TrimSpace(owner)
+	if owner == "" {
+		owner = "resource"
+	}
+	if err := lockRequiredPlacementParent(executor,
+		`UPDATE scenarios SET updated_at = updated_at WHERE id = ?`, scenarioID, owner, "scenario"); err != nil {
+		return err
+	}
+	var scriptCount, projectCount int
+	var scenarioProjectID string
+	if err := executor.QueryRow(`SELECT COUNT(*), COUNT(DISTINCT COALESCE(NULLIF(s.project_id, ''), ?)), COALESCE(MIN(COALESCE(NULLIF(s.project_id, ''), ?)), ?)
+		FROM scenario_scripts ss
+		JOIN scripts s ON s.id = ss.script_id
+		WHERE ss.scenario_id = ?`, DefaultProjectID, DefaultProjectID, DefaultProjectID, scenarioID).
+		Scan(&scriptCount, &projectCount, &scenarioProjectID); err != nil {
+		return err
+	}
+	if projectCount > 1 {
+		return fmt.Errorf("%s scenario %q spans multiple projects", owner, scenarioID)
+	}
+	if scriptCount == 0 {
+		scenarioProjectID = DefaultProjectID
+	}
+	if normalizeProjectID(scenarioProjectID) != projectID {
+		return fmt.Errorf("%s scenario %q belongs to project %q, not %q", owner, scenarioID, normalizeProjectID(scenarioProjectID), projectID)
+	}
+	return nil
 }
 
 // SaveTestIfLeaseHeld performs the lease check and the test upsert in one
@@ -424,6 +638,105 @@ func (s *SQLiteStore) UpdateTestStatusIfActive(id string, status string, endTime
 		return "", err
 	}
 	if current == status {
+		return TestStatusTransitionUnchanged, nil
+	}
+	return TestStatusTransitionFenced, nil
+}
+
+// UpdateTestStatusIfActiveAndMaterializationKey terminalizes only the
+// deterministic execution-plan materialization that the caller owns. The key
+// predicate is part of the UPDATE, so an ID deleted/recreated between a prior
+// read and this write cannot be changed by stale recovery work.
+func (s *SQLiteStore) UpdateTestStatusIfActiveAndMaterializationKey(id, materializationKey, status string, endTime *time.Time, errStr string) (TestStatusTransitionResult, error) {
+	materializationKey = strings.TrimSpace(materializationKey)
+	if materializationKey == "" {
+		return TestStatusTransitionFenced, nil
+	}
+	result, err := s.db.Exec(`UPDATE tests SET status = ?, end_time = ?, error = ?
+		WHERE id = ? AND TRIM(COALESCE(materialization_key, '')) = ?
+		  AND (status = ? OR status IN ('INITIALIZING', 'STARTING', 'RUNNING', 'PAUSED', 'STOPPING', 'RESERVED', 'PENDING', 'SCHEDULED', 'SHAKEOUT', 'SHAKEOUT_REVIEW', 'QUEUED'))`,
+		status, endTime, errStr, id, materializationKey, status)
+	if err != nil {
+		return "", err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return "", err
+	}
+	if affected == 1 {
+		return TestStatusTransitionUpdated, nil
+	}
+	return s.classifyMaterializationStatusTransition(id, materializationKey, status)
+}
+
+// UpdateTestStatusIfActiveAndMaterializationKeyAndLeaseTermHeld combines the
+// materialization ownership predicate with the complete HA lease term in one
+// transaction. Neither an ID reuse nor a superseded controller epoch can land
+// a stale execution-plan cleanup on a successor's test row.
+func (s *SQLiteStore) UpdateTestStatusIfActiveAndMaterializationKeyAndLeaseTermHeld(id, materializationKey, status string, endTime *time.Time, errStr, leaseName, leaseOwnerID string, leaseGeneration uint64) (TestStatusTransitionResult, error) {
+	materializationKey = strings.TrimSpace(materializationKey)
+	leaseName = strings.TrimSpace(leaseName)
+	leaseOwnerID = strings.TrimSpace(leaseOwnerID)
+	if materializationKey == "" || leaseName == "" || leaseOwnerID == "" || leaseGeneration == 0 {
+		return TestStatusTransitionFenced, nil
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback()
+	held, err := schedulerLeaseTermHeldInTransaction(tx, s.db.dialect, leaseName, leaseOwnerID, leaseGeneration)
+	if err != nil {
+		return "", err
+	}
+	if !held {
+		return TestStatusTransitionFenced, nil
+	}
+	result, err := tx.Exec(`UPDATE tests SET status = ?, end_time = ?, error = ?
+		WHERE id = ? AND TRIM(COALESCE(materialization_key, '')) = ?
+		  AND (status = ? OR status IN ('INITIALIZING', 'STARTING', 'RUNNING', 'PAUSED', 'STOPPING', 'RESERVED', 'PENDING', 'SCHEDULED', 'SHAKEOUT', 'SHAKEOUT_REVIEW', 'QUEUED'))`,
+		status, endTime, errStr, id, materializationKey, status)
+	if err != nil {
+		return "", err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return "", err
+	}
+	if affected == 1 {
+		if err := tx.Commit(); err != nil {
+			return "", err
+		}
+		return TestStatusTransitionUpdated, nil
+	}
+	var currentStatus, currentKey string
+	if err := tx.QueryRow(`SELECT status, COALESCE(materialization_key, '') FROM tests WHERE id = ?`, id).Scan(&currentStatus, &currentKey); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return TestStatusTransitionMissing, nil
+		}
+		return "", err
+	}
+	if strings.TrimSpace(currentKey) != materializationKey {
+		return TestStatusTransitionFenced, nil
+	}
+	if currentStatus == status {
+		return TestStatusTransitionUnchanged, nil
+	}
+	return TestStatusTransitionFenced, nil
+}
+
+func (s *SQLiteStore) classifyMaterializationStatusTransition(id, materializationKey, status string) (TestStatusTransitionResult, error) {
+	var currentStatus, currentKey string
+	if err := s.db.QueryRow(`SELECT status, COALESCE(materialization_key, '') FROM tests WHERE id = ?`, id).Scan(&currentStatus, &currentKey); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return TestStatusTransitionMissing, nil
+		}
+		return "", err
+	}
+	if strings.TrimSpace(currentKey) != strings.TrimSpace(materializationKey) {
+		return TestStatusTransitionFenced, nil
+	}
+	if currentStatus == status {
 		return TestStatusTransitionUnchanged, nil
 	}
 	return TestStatusTransitionFenced, nil

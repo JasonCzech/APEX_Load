@@ -304,6 +304,50 @@ func TestUserSubjectRenameAdvancesSessionEpoch(t *testing.T) {
 	}
 }
 
+func TestUserUpsertsNeverRollBackSessionEpoch(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Now().UTC()
+	user := &User{
+		ID: "monotonic-session-user", Subject: "monotonic-session-user", Active: true,
+		SessionEpoch: 7, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := store.SaveUser(user); err != nil {
+		t.Fatal(err)
+	}
+
+	stale := *user
+	stale.SessionEpoch = 2
+	stale.DisplayName = "stale profile snapshot"
+	stale.UpdatedAt = now.Add(time.Minute)
+	if err := store.SaveUser(&stale); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := store.GetUser(user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.SessionEpoch != 7 {
+		t.Fatalf("SaveUser rolled session epoch back to %d, want 7", loaded.SessionEpoch)
+	}
+
+	stale.SessionEpoch = 1
+	stale.UpdatedAt = now.Add(2 * time.Minute)
+	if err := store.SaveUserWithRoleBindings(&stale, nil); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err = store.GetUser(user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.SessionEpoch != 7 {
+		t.Fatalf("SaveUserWithRoleBindings rolled session epoch back to %d, want 7", loaded.SessionEpoch)
+	}
+}
+
 func TestUpdateUserGuardLastAdminRejectsStaleAdministratorFields(t *testing.T) {
 	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {

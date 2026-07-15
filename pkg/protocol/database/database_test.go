@@ -9,8 +9,21 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
+
+func TestDatabaseInitRejectsUnboundedQueryTimeout(t *testing.T) {
+	db := &Database{}
+	err := db.Init(context.Background(), map[string]any{
+		"database_driver":           "sqlite",
+		"database_dsn":              ":memory:",
+		"database_query_timeout_ms": dsl.MaxConfiguredProtocolTimeout.Milliseconds() + 1,
+	})
+	if err == nil || !strings.Contains(err.Error(), "between 0") {
+		t.Fatalf("Init error = %v, want timeout cap rejection", err)
+	}
+}
 
 const readOnlyProbeDriverName = "apexload-readonly-probe"
 

@@ -682,6 +682,14 @@ func (r *Recorder) handleRecordBinding(source *playwright.BindingSource, args ..
 	if !ok || len(payload) > maxBrowserBindingBytes {
 		return nil
 	}
+	// ExposeBinding is reachable by every script in the recorded page. Only the
+	// init script's closure knows the per-session nonce; reject direct page calls
+	// before they can fabricate steps or consume the session byte budget. Direct
+	// nil-source calls are reserved for package-level tests/internal helpers—the
+	// Playwright binding always supplies a source.
+	if source != nil && !r.trustedCapturePayload(payload) {
+		return nil
+	}
 	// Control events from the in-page toolbar/sidebar round-trip through the
 	// server so the panel, recorder state, and every page stay in sync. They are
 	// handled before (and regardless of) the pause gate, matching the REST
@@ -713,7 +721,7 @@ func (r *Recorder) handleRecordBinding(source *playwright.BindingSource, args ..
 	r.bindingBytes += int64(len(payload))
 	section := r.currentSection
 	r.mu.Unlock()
-	step, err := stepFromEvent(payload)
+	steps, err := stepsFromEvent(payload)
 	if err != nil {
 		warning := fmt.Sprintf("dropped capture event: %v", err)
 		r.mu.Lock()
@@ -722,34 +730,52 @@ func (r *Recorder) handleRecordBinding(source *playwright.BindingSource, args ..
 		r.emit(Event{Type: EventWarning, Warning: warning})
 		return nil
 	}
-	if step.FrameSelector == "" && source != nil && source.Frame != nil && source.Page != nil {
-		if source.Frame != source.Page.MainFrame() {
-			step.FrameSelector = frameSelectorFromURL(source.Frame.URL())
+	for index := range steps {
+		if steps[index].FrameSelector == "" && source != nil && source.Frame != nil && source.Page != nil {
+			if source.Frame != source.Page.MainFrame() {
+				steps[index].FrameSelector = frameSelectorFromURL(source.Frame.URL())
+			}
 		}
+		steps[index].Section = section
 	}
-	step.Section = section
 	r.mu.Lock()
-	if r.paused || r.stopped || len(r.session.Steps) >= maxBrowserSteps {
+	if r.paused || r.stopped || len(steps) > maxBrowserSteps-len(r.session.Steps) {
 		r.mu.Unlock()
 		return nil
 	}
 	var switched *Step
-	if source != nil && source.Page != nil {
-		switched = r.recordPageSwitchIfNeededLocked(source.Page, step.Timestamp, section)
+	if source != nil && source.Page != nil && len(steps) > 0 {
+		switched = r.recordPageSwitchIfNeededLocked(source.Page, steps[0].Timestamp, section, len(steps))
 	}
-	recorded := r.session.appendStep(step)
+	recorded := make([]Step, 0, len(steps))
+	for _, step := range steps {
+		recorded = append(recorded, r.session.appendStep(step))
+	}
 	r.mu.Unlock()
 	if switched != nil {
 		r.emit(Event{Type: EventStep, Step: switched})
 	}
-	r.emit(Event{Type: EventStep, Step: &recorded})
-	if r.opts.CaptureScreenshots && source != nil && source.Page != nil {
-		r.captureThumbnailAsync(source.Page, recorded.Seq)
+	for index := range recorded {
+		r.emit(Event{Type: EventStep, Step: &recorded[index]})
+		if r.opts.CaptureScreenshots && source != nil && source.Page != nil {
+			r.captureThumbnailAsync(source.Page, recorded[index].Seq)
+		}
 	}
 	return nil
 }
 
-func (r *Recorder) recordPageSwitchIfNeededLocked(page playwright.Page, before time.Time, section string) *Step {
+func (r *Recorder) trustedCapturePayload(payload string) bool {
+	var envelope struct {
+		Kind  string `json:"kind"`
+		Nonce string `json:"nonce"`
+	}
+	if err := json.Unmarshal([]byte(payload), &envelope); err != nil || strings.TrimSpace(envelope.Kind) == "" {
+		return false
+	}
+	return r.trustedControlNonce(envelope.Nonce)
+}
+
+func (r *Recorder) recordPageSwitchIfNeededLocked(page playwright.Page, before time.Time, section string, incomingSteps int) *Step {
 	if page == nil || r.isControlPageLocked(page) {
 		return nil
 	}
@@ -761,8 +787,13 @@ func (r *Recorder) recordPageSwitchIfNeededLocked(page playwright.Page, before t
 		return nil
 	}
 	r.activePage = page
-	// Reserve one slot for the event that triggered this page switch.
-	if len(r.session.Steps) >= maxBrowserSteps-1 {
+	// Reserve every slot in the atomic event batch that triggered this page
+	// switch. Near the ceiling, keep the user events and omit the synthetic
+	// switch rather than allowing the batch to exceed maxBrowserSteps.
+	if incomingSteps < 1 {
+		incomingSteps = 1
+	}
+	if incomingSteps >= maxBrowserSteps || len(r.session.Steps) > maxBrowserSteps-incomingSteps-1 {
 		return nil
 	}
 	targetURL := r.retainNativeStringLocked(page.URL(), maxBrowserNativeURLBytes)

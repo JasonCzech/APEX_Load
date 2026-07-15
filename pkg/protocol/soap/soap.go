@@ -128,8 +128,18 @@ func (s *SOAP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		return result, err
 	}
 	result.DependencyType = "soap"
-	result.Extractions["soap_version"] = s.version
-	result.Extractions["soap_endpoint"] = targetURL
+	storeExtraction := func(key, value string) bool {
+		if storeErr := protocol.StoreExtraction(result, key, value); storeErr != nil {
+			result.Success = false
+			result.Extractions = nil
+			result.ErrorMessage = fmt.Sprintf("SOAP metadata extraction %q rejected: %v", key, storeErr)
+			return false
+		}
+		return true
+	}
+	if !storeExtraction("soap_version", s.version) || !storeExtraction("soap_endpoint", targetURL) {
+		return result, nil
+	}
 	if envelopeOverheadKB > 0 {
 		if result.ServerTelemetry == nil {
 			result.ServerTelemetry = &protocol.ServerTelemetry{}
@@ -141,11 +151,15 @@ func (s *SOAP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 			result.ServerTelemetry = &protocol.ServerTelemetry{}
 		}
 		result.ServerTelemetry.SOAPNamespaceConflict = namespaceConflict
-		result.Extractions["soap_namespace_conflict"] = namespaceConflict
+		if !storeExtraction("soap_namespace_conflict", namespaceConflict) {
+			return result, nil
+		}
 	}
 	if operation := resolveSOAPOperation(action, prepared.Body); operation != "" {
 		result.DependencyTarget = appendSOAPOperationTarget(result.DependencyTarget, operation)
-		result.Extractions["soap_operation"] = operation
+		if !storeExtraction("soap_operation", operation) {
+			return result, nil
+		}
 	}
 
 	if faultCode, faultCategory, fault, ok := detectSOAPFault(result.ResponseBody); ok {
@@ -154,8 +168,9 @@ func (s *SOAP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		}
 		result.ServerTelemetry.SOAPFaultCode = faultCode
 		result.ServerTelemetry.SOAPFaultCategory = faultCategory
-		result.Extractions["soap_fault_code"] = faultCode
-		result.Extractions["soap_fault_category"] = faultCategory
+		if !storeExtraction("soap_fault_code", faultCode) || !storeExtraction("soap_fault_category", faultCategory) {
+			return result, nil
+		}
 		if s.failOnFault {
 			result.Success = false
 			if result.ErrorMessage == "" {

@@ -18,6 +18,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -318,6 +319,10 @@ func (tr *TestRunner) loadStoredTests() {
 	}
 	for _, record := range tests {
 		managedTest := managedTestFromRecord(record)
+		if err := tr.restoreManagedTestRuntime(managedTest); err != nil {
+			managedTest.runtimeHydrationError = err.Error()
+			slog.Error("failed to restore stored test runtime", "test_id", managedTest.ID, "error", err)
+		}
 		// Marking an interrupted run FAILED is a leader-only mutation: a booting
 		// non-leader (HA standby) must not clobber the active leader's live runs
 		// in the shared database. The eventual leader reconciles on acquisition.
@@ -370,32 +375,50 @@ func (tr *TestRunner) reloadStoredTestsLocked() error {
 	}
 	seen := make(map[string]struct{}, len(records))
 	for _, record := range records {
+		if record == nil || strings.TrimSpace(record.ID) == "" {
+			continue
+		}
 		if !sameExecutionEpoch() {
 			return fmt.Errorf("execution leadership changed while reloading tests")
 		}
-		if fresh, freshErr := tr.testStore.GetTest(record.ID); freshErr == nil && fresh != nil {
-			record = fresh
-		} else if errors.Is(freshErr, sql.ErrNoRows) {
-			continue
-		} else if freshErr != nil {
-			return fmt.Errorf("refresh test %s: %w", record.ID, freshErr)
-		}
+		// ListTests is the durable snapshot for this refresh. Re-reading every row
+		// with GetTest turned each follower poll into an avoidable N+1 query burst;
+		// a concurrent change is picked up by the next bounded refresh.
 		seen[record.ID] = struct{}{}
 		tr.mu.RLock()
 		existing, ok := tr.tests[record.ID]
 		liveLocally := ok && liveTestRuntimeForExecutionEpoch(existing, tr.durableExecutionFence, executionFenceAtStart)
+		sameIdentity := ok && sameStoredTestIdentity(existing, record)
+		staleRuntimeHandle := sameIdentity && !liveLocally && (existing.cancel != nil || existing.executionCtx != nil)
+		reuseReplicaState := sameIdentity && !staleRuntimeHandle
+		retryHydration := reuseReplicaState && existing.runtimeHydrationError != ""
 		tr.mu.RUnlock()
 		if liveLocally {
 			continue
 		}
 		managedTest := managedTestFromRecord(record)
+		if !reuseReplicaState || retryHydration {
+			if err := tr.restoreManagedTestRuntime(managedTest); err != nil {
+				managedTest.runtimeHydrationError = err.Error()
+				slog.Error("failed to restore reloaded test runtime", "test_id", managedTest.ID, "error", err)
+			}
+		}
 		if leaderAtStart && sameExecutionEpoch() {
 			if err := tr.reconcileStoredActiveTest(managedTest); err != nil {
 				return fmt.Errorf("reconcile stored active test %s: %w", managedTest.ID, err)
 			}
 		}
-		tr.loadStoredTestHistory(managedTest)
-		tr.loadStoredTestArchive(managedTest)
+		// Rich history and archive materialization can be large and may touch
+		// object storage. Hydrate them only for a genuinely new/reused identity;
+		// unchanged replicas retain their already-loaded immutable snapshots.
+		if !reuseReplicaState {
+			tr.loadStoredTestHistory(managedTest)
+			if archive, found, loadErr := tr.loadRunArchiveFromStore(managedTest.ID); loadErr != nil {
+				slog.Warn("failed to load stored test archive", "test_id", managedTest.ID, "error", loadErr)
+			} else if found && runArchiveRecordAvailable(archive) {
+				managedTest.Archive = archive
+			}
+		}
 		tr.mu.Lock()
 		// Re-check liveness under the write lock: startManagedTestRun may have begun
 		// a run for this ID in the window since the RLock above. Overwriting it with
@@ -405,13 +428,39 @@ func (tr *TestRunner) reloadStoredTestsLocked() error {
 			tr.mu.Unlock()
 			return fmt.Errorf("execution leadership changed while reloading tests")
 		}
-		if current, ok := tr.tests[record.ID]; !ok || current == nil || (!liveTestRuntimeForExecutionEpoch(current, tr.durableExecutionFence, executionFenceAtStart) && !(isTerminalTestStatus(current.Status) && !isTerminalTestStatus(managedTest.Status))) {
-			if ok && current != nil && current.RefKey != managedTest.RefKey {
-				tr.removeRefKeyLocked(current.RefKey)
-			}
-			tr.tests[record.ID] = managedTest
-			tr.observeAndIndexRefKeyLocked(managedTest.RefKey, managedTest.ID)
+		current, currentOK := tr.tests[record.ID]
+		if currentOK && current != nil && (liveTestRuntimeForExecutionEpoch(current, tr.durableExecutionFence, executionFenceAtStart) || (isTerminalTestStatus(current.Status) && !isTerminalTestStatus(managedTest.Status))) {
+			tr.mu.Unlock()
+			continue
 		}
+		if currentOK && sameStoredTestIdentity(current, record) && current.cancel == nil && current.executionCtx == nil {
+			oldRefKey := current.RefKey
+			applyStoredManagedTestSnapshot(current, managedTest)
+			if current.runtimeHydrationError != "" && managedTest.runtimeHydrationError == "" && len(managedTest.groupSpecs) > 0 {
+				current.Groups = managedTest.Groups
+				current.groupSpecs = managedTest.groupSpecs
+				current.runtimeHydrationError = ""
+			}
+			if oldRefKey != current.RefKey {
+				tr.removeRefKeyLocked(oldRefKey)
+			}
+			tr.observeAndIndexRefKeyLocked(current.RefKey, current.ID)
+			tr.mu.Unlock()
+			continue
+		}
+		if currentOK && current != nil {
+			tr.removeRefKeyLocked(current.RefKey)
+			tr.forgetRunSnapshotWriteStateLocked(record.ID)
+			forgetRunArchiveCache(record.ID)
+			deleteGroupMetricsHistoryCache(record.ID)
+		}
+		tr.tests[record.ID] = managedTest
+		if managedTest.Archive != nil {
+			tr.archives[record.ID] = managedTest.Archive
+		} else {
+			delete(tr.archives, record.ID)
+		}
+		tr.observeAndIndexRefKeyLocked(managedTest.RefKey, managedTest.ID)
 		tr.mu.Unlock()
 	}
 	tr.mu.RLock()
@@ -453,6 +502,55 @@ func liveTestRuntimeForExecutionEpoch(test *ManagedTest, requireFence bool, exec
 		return false
 	}
 	return !requireFence || (executionFence != "" && test.executionFence == executionFence)
+}
+
+func sameStoredTestIdentity(test *ManagedTest, record *storage.TestRecord) bool {
+	if test == nil || record == nil || test.ID != record.ID {
+		return false
+	}
+	return normalizeProjectID(test.ProjectID) == normalizeProjectID(record.ProjectID) && test.CreatedAt.Equal(record.StartTime)
+}
+
+// applyStoredManagedTestSnapshot updates only fields whose source of truth is
+// the durable test row. Runtime engines, compiled scripts, live metrics,
+// history, archive state, and derived scheduling/capacity projections remain
+// attached to the existing identity and are not repeatedly rebuilt by follower
+// polling.
+func applyStoredManagedTestSnapshot(current, stored *ManagedTest) {
+	if current == nil || stored == nil {
+		return
+	}
+	current.RefKey = stored.RefKey
+	current.MaterializationKey = stored.MaterializationKey
+	current.Name = stored.Name
+	current.Status = stored.Status
+	current.ApplicationID = stored.ApplicationID
+	current.ReleaseID = stored.ReleaseID
+	current.ScenarioID = stored.ScenarioID
+	current.ProjectID = stored.ProjectID
+	current.FolderID = cloneStringPtr(stored.FolderID)
+	current.TotalVUsers = stored.TotalVUsers
+	current.Duration = stored.Duration
+	current.DurationStr = stored.DurationStr
+	current.CreatedAt = stored.CreatedAt
+	current.ScheduledStartAt = cloneTimePtr(stored.ScheduledStartAt)
+	current.TimeslotID = cloneStringPtr(stored.TimeslotID)
+	current.PendingSince = cloneTimePtr(stored.PendingSince)
+	current.PausedAt = cloneTimePtr(stored.PausedAt)
+	current.CumulativePause = stored.CumulativePause
+	current.CapacityWindowStartAt = cloneTimePtr(stored.CapacityWindowStartAt)
+	current.CapacityWindowEndAt = cloneTimePtr(stored.CapacityWindowEndAt)
+	current.BaselinePinned = stored.BaselinePinned
+	current.BaselinePinnedAt = cloneTimePtr(stored.BaselinePinnedAt)
+	current.EndedAt = cloneTimePtr(stored.EndedAt)
+	current.CreatedBySubject = stored.CreatedBySubject
+	current.CreatedByDisplayName = stored.CreatedByDisplayName
+	current.StartedBySubject = stored.StartedBySubject
+	current.StartedByDisplayName = stored.StartedByDisplayName
+	current.StoppedBySubject = stored.StoppedBySubject
+	current.StoppedByDisplayName = stored.StoppedByDisplayName
+	current.ExecutionPlanApproval = cloneRunArchiveExecutionPlanApprovalSnapshot(stored.ExecutionPlanApproval)
+	current.Error = stored.Error
 }
 
 func (tr *TestRunner) reconcileStoredActiveTest(test *ManagedTest) error {
@@ -553,6 +651,117 @@ func managedTestFromRecord(record *storage.TestRecord) *ManagedTest {
 	return managedTest
 }
 
+// restoreManagedTestRuntime rebuilds the process-private engine group specs that
+// are intentionally absent from API JSON. New rows carry the exact compiled
+// runtime script in groups_json; legacy rows are recompiled from their durable
+// scripts so queued work created before this snapshot format remains runnable.
+func (tr *TestRunner) restoreManagedTestRuntime(test *ManagedTest) error {
+	if tr == nil || test == nil {
+		return fmt.Errorf("test is required")
+	}
+	if len(test.Groups) == 0 {
+		return fmt.Errorf("stored test has no groups")
+	}
+	compiledSnapshots := true
+	for _, group := range test.Groups {
+		if group.script == nil {
+			compiledSnapshots = false
+			break
+		}
+	}
+	if compiledSnapshots {
+		specs, err := restoreStoredEngineGroupSpecs(test)
+		if err != nil {
+			return err
+		}
+		test.groupSpecs = specs
+		return nil
+	}
+
+	entries := make([]CreateGroupEntry, 0, len(test.Groups))
+	for _, group := range test.Groups {
+		entries = append(entries, CreateGroupEntry{
+			Name:            group.Name,
+			ScriptID:        group.ScriptID,
+			Role:            group.Role,
+			VUsers:          group.VUsers,
+			RampUp:          group.RampUp,
+			RampDown:        group.RampDown,
+			Stages:          cloneLoadStages(group.Stages),
+			Iterations:      cloneIntPtr(group.Iterations),
+			RuntimeSettings: cloneRuntimeSettings(group.RuntimeSettings),
+			Assignment:      cloneGeneratorAssignmentSettings(group.Assignment),
+			InitStrategy:    group.Initialization,
+		})
+	}
+	tr.mu.Lock()
+	groups, specs, totalVUsers, err := tr.compileManagedTestGroupsForModeWithDataSourcesLocked(entries, test.RuntimeSettings, nil, test.ScenarioMode)
+	tr.mu.Unlock()
+	if err != nil {
+		return fmt.Errorf("recompile legacy stored groups: %w", err)
+	}
+	if totalVUsers != test.TotalVUsers {
+		return fmt.Errorf("stored test workload changed while recompiling: persisted total %d, restored total %d", test.TotalVUsers, totalVUsers)
+	}
+	test.Groups = groups
+	test.groupSpecs = specs
+	return nil
+}
+
+func restoreStoredEngineGroupSpecs(test *ManagedTest) ([]engine.GroupConfig, error) {
+	specs := make([]engine.GroupConfig, 0, len(test.Groups))
+	for index := range test.Groups {
+		group := &test.Groups[index]
+		if group.script == nil {
+			return nil, fmt.Errorf("group[%d] has no compiled runtime script", index)
+		}
+		if group.ScriptID != "" && group.script.ID != "" && group.script.ID != group.ScriptID {
+			return nil, fmt.Errorf("group[%d] runtime script id %q does not match %q", index, group.script.ID, group.ScriptID)
+		}
+		if issues := dsl.ValidateScriptIssues(group.script); len(issues) > 0 {
+			return nil, fmt.Errorf("group[%d] compiled runtime script is invalid: %s", index, strings.Join(issues, "; "))
+		}
+		rampUp, err := parseOptionalGroupDuration(group.RampUp, index, "ramp_up")
+		if err != nil {
+			return nil, err
+		}
+		rampDown, err := parseOptionalGroupDuration(group.RampDown, index, "ramp_down")
+		if err != nil {
+			return nil, err
+		}
+		stageDriven := normalizeScenarioMode(test.ScenarioMode) == "vuser_driven" && len(group.Stages) > 0
+		initialVUsers := group.VUsers
+		engineRampUp := rampUp
+		engineRampDown := rampDown
+		allowZeroVUsers := false
+		if stageDriven {
+			initialVUsers = stagedInitialVUsers(group.Stages, group.VUsers)
+			engineRampUp = 0
+			engineRampDown = 0
+			allowZeroVUsers = initialVUsers == 0
+		}
+		redactionConfig, err := engine.NewRedactionConfig(group.redactionRules)
+		if err != nil {
+			return nil, fmt.Errorf("group[%d] restore redaction config: %w", index, err)
+		}
+		group.rampUpDur = rampUp
+		group.stageDriven = stageDriven
+		group.initialVUsers = initialVUsers
+		group.currentVUsers = initialVUsers
+		specs = append(specs, engine.GroupConfig{
+			Name:            group.Name,
+			Script:          group.script,
+			VUsers:          initialVUsers,
+			RampUp:          engineRampUp,
+			RampDown:        engineRampDown,
+			AllowZeroVUsers: allowZeroVUsers,
+			InitStrategy:    group.Initialization,
+			RedactionConfig: redactionConfig,
+		})
+	}
+	return specs, nil
+}
+
 func (tr *TestRunner) loadStoredTestHistory(test *ManagedTest) {
 	if tr.historyStore == nil {
 		return
@@ -574,19 +783,16 @@ func (tr *TestRunner) loadStoredTestHistory(test *ManagedTest) {
 	for _, entry := range history {
 		switch metrics := entry.(type) {
 		case storage.IntervalSummaryRecord:
-			test.History = append(test.History, intervalSummaryRecordToLiveMetrics(metrics))
+			appendManagedTestHistoryWithLimits(test, intervalSummaryRecordToLiveMetrics(metrics), maxManagedTestHistory, maxManagedTestHistoryBytes)
 		case *storage.IntervalSummaryRecord:
 			if metrics != nil {
-				test.History = append(test.History, intervalSummaryRecordToLiveMetrics(*metrics))
+				appendManagedTestHistoryWithLimits(test, intervalSummaryRecordToLiveMetrics(*metrics), maxManagedTestHistory, maxManagedTestHistoryBytes)
 			}
 		case map[string]any:
 			// This is a bit lossy due to any -> map conversion,
 			// but works for basic history display.
-			test.History = append(test.History, mapToLiveMetrics(metrics))
+			appendManagedTestHistoryWithLimits(test, mapToLiveMetrics(metrics), maxManagedTestHistory, maxManagedTestHistoryBytes)
 		}
-	}
-	if len(test.History) > maxManagedTestHistory {
-		test.History = append([]*LiveMetrics(nil), test.History[len(test.History)-maxManagedTestHistory:]...)
 	}
 	if len(test.History) > 0 {
 		test.LiveMetrics = test.History[len(test.History)-1]
@@ -945,7 +1151,7 @@ func buildManagedTestRecord(test *ManagedTest) *storage.TestRecord {
 		StoppedBySubject:      test.StoppedBySubject,
 		StoppedByDisplayName:  test.StoppedByDisplayName,
 		ExecutionPlanApproval: test.ExecutionPlanApproval,
-		Groups:                test.Groups,
+		Groups:                encodeStoredGroups(test.Groups),
 		GoalConfig:            test.GoalConfig,
 		RuntimeSettings:       test.RuntimeSettings,
 	}

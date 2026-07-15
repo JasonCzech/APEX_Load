@@ -34,6 +34,38 @@ func TestCloneManagedTestSummaryForReadLockedOmitsHistory(t *testing.T) {
 	}
 }
 
+func TestOperationalTestSnapshotsOmitRetainedHistory(t *testing.T) {
+	source := &ManagedTest{
+		ID:     "run-operational",
+		Status: "COMPLETE",
+		Groups: []TestGroup{{Name: "group", Protocol: "http", VUsers: 2}},
+		LiveMetrics: &LiveMetrics{
+			TPS:          12,
+			Transactions: map[string]*TxMetrics{"checkout": {Count: 3}},
+		},
+		History:   []*LiveMetrics{{Timestamp: time.Unix(1, 0), TPS: 5}},
+		Sparkline: []TestSparklinePoint{{Timestamp: time.Unix(1, 0), TPS: 5}},
+	}
+	runner := &TestRunner{tests: map[string]*ManagedTest{source.ID: source}}
+
+	snapshots := runner.listOperationalTestSnapshots()
+	if len(snapshots) != 1 {
+		t.Fatalf("snapshot count = %d, want 1", len(snapshots))
+	}
+	snapshot := snapshots[0]
+	if snapshot.History != nil || snapshot.Sparkline != nil {
+		t.Fatalf("operational snapshot retained history-derived data: history=%d sparkline=%d", len(snapshot.History), len(snapshot.Sparkline))
+	}
+	if snapshot.LiveMetrics == source.LiveMetrics || snapshot.LiveMetrics.Transactions["checkout"] == source.LiveMetrics.Transactions["checkout"] {
+		t.Fatal("operational snapshot aliases mutable live metrics")
+	}
+	snapshot.Groups[0].VUsers = 99
+	snapshot.LiveMetrics.Transactions["checkout"].Count = 99
+	if source.Groups[0].VUsers != 2 || source.LiveMetrics.Transactions["checkout"].Count != 3 {
+		t.Fatal("mutating operational snapshot changed the live runner state")
+	}
+}
+
 func TestParseTestListOptions(t *testing.T) {
 	request := httptest.NewRequest("GET", "/api/v1/tests?summary=true&active_only=true&limit=250&offset=10", nil)
 	recorder := httptest.NewRecorder()
@@ -192,5 +224,43 @@ func TestHandleListTestsReturnsBoundedSummaryMetadata(t *testing.T) {
 	}
 	if len(response.Tests) != 1 || response.Tests[0].ID != "run-2" || response.Tests[0].History != nil {
 		t.Fatalf("unexpected summary page: %#v", response.Tests)
+	}
+}
+
+func TestHandleScenarioResultsUsesBoundedSummaryPage(t *testing.T) {
+	runner := &TestRunner{tests: make(map[string]*ManagedTest, defaultTestListLimit+2)}
+	sharedHistory := []*LiveMetrics{{Timestamp: time.Unix(1, 0), TPS: 1}}
+	for index := 0; index <= defaultTestListLimit; index++ {
+		id := fmt.Sprintf("scenario-run-%03d", index)
+		runner.tests[id] = &ManagedTest{
+			ID: id, ScenarioID: "scenario-1", Status: "COMPLETE",
+			CreatedAt: time.Unix(int64(index+1), 0), History: sharedHistory,
+		}
+	}
+	runner.tests["other-scenario"] = &ManagedTest{ID: "other-scenario", ScenarioID: "scenario-2", Status: "COMPLETE"}
+	server := &Server{runner: runner}
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest("GET", "/api/v1/scenarios/scenario-1/results", nil)
+	request.SetPathValue("id", "scenario-1")
+
+	server.handleScenarioResults(recorder, request)
+
+	var response struct {
+		Tests  []*ManagedTest `json:"tests"`
+		Count  int            `json:"count"`
+		Total  int            `json:"total"`
+		Limit  int            `json:"limit"`
+		Offset int            `json:"offset"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if recorder.Code != 200 || response.Count != defaultTestListLimit || response.Total != defaultTestListLimit+1 || response.Limit != defaultTestListLimit || response.Offset != 0 {
+		t.Fatalf("unexpected scenario results metadata: status=%d response=%+v", recorder.Code, response)
+	}
+	for _, test := range response.Tests {
+		if test.ScenarioID != "scenario-1" || test.History != nil {
+			t.Fatalf("scenario result was unscoped or retained rich history: %#v", test)
+		}
 	}
 }

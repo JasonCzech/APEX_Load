@@ -13,12 +13,17 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode"
 )
 
 const (
-	githubAcceptHeader         = "application/vnd.github+json"
-	githubAllowInsecureHTTPEnv = "APEXLOAD_GITHUB_ALLOW_INSECURE_HTTP"
-	githubRemoteJSONMaxBytes   = 8 << 20
+	githubAcceptHeader          = "application/vnd.github+json"
+	githubAllowInsecureHTTPEnv  = "APEXLOAD_GITHUB_ALLOW_INSECURE_HTTP"
+	githubRemoteJSONMaxBytes    = 8 << 20
+	githubOAuthResponseMaxBytes = 64 << 10
+	githubOAuthTokenMaxBytes    = 16 << 10
+	githubOAuthMetadataMaxBytes = 4 << 10
+	githubOAuthMaxTokenTTL      = 7 * 24 * time.Hour
 )
 
 // githubTLSConfig builds the TLS config for the GitHub transport, honoring an
@@ -562,9 +567,82 @@ type githubTokenResponse struct {
 	TokenType        string `json:"token_type"`
 	Scope            string `json:"scope"`
 	RefreshToken     string `json:"refresh_token"`
-	ExpiresIn        int    `json:"expires_in"`
+	ExpiresIn        int64  `json:"expires_in"`
 	Error            string `json:"error"`
 	ErrorDescription string `json:"error_description"`
+}
+
+func decodeGitHubOAuthTokenResponse(resp *http.Response, operation string) (*githubTokenResponse, error) {
+	if resp == nil || resp.Body == nil {
+		return nil, fmt.Errorf("%s returned an empty response", operation)
+	}
+	payload, err := io.ReadAll(io.LimitReader(resp.Body, githubOAuthResponseMaxBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("%s returned an unreadable response", operation)
+	}
+	if int64(len(payload)) > githubOAuthResponseMaxBytes {
+		return nil, fmt.Errorf("%s response exceeded the %d-byte limit", operation, githubOAuthResponseMaxBytes)
+	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return nil, fmt.Errorf("%s returned HTTP status %d", operation, resp.StatusCode)
+	}
+	var tokenResp githubTokenResponse
+	if err := json.Unmarshal(payload, &tokenResp); err != nil {
+		return nil, fmt.Errorf("%s returned an unreadable response", operation)
+	}
+	for label, field := range map[string]struct {
+		value string
+		max   int
+	}{
+		"access token":      {value: tokenResp.AccessToken, max: githubOAuthTokenMaxBytes},
+		"refresh token":     {value: tokenResp.RefreshToken, max: githubOAuthTokenMaxBytes},
+		"token type":        {value: tokenResp.TokenType, max: githubOAuthMetadataMaxBytes},
+		"scope":             {value: tokenResp.Scope, max: githubOAuthMetadataMaxBytes},
+		"error":             {value: tokenResp.Error, max: githubOAuthMetadataMaxBytes},
+		"error description": {value: tokenResp.ErrorDescription, max: githubOAuthMetadataMaxBytes},
+	} {
+		if err := validateGitHubOAuthResponseField(label, field.value, field.max); err != nil {
+			return nil, err
+		}
+	}
+	if tokenResp.Error != "" {
+		return nil, fmt.Errorf("%s error: %s", operation, tokenResp.Error)
+	}
+	tokenResp.AccessToken = strings.TrimSpace(tokenResp.AccessToken)
+	tokenResp.RefreshToken = strings.TrimSpace(tokenResp.RefreshToken)
+	tokenResp.TokenType = strings.TrimSpace(tokenResp.TokenType)
+	tokenResp.Scope = strings.TrimSpace(tokenResp.Scope)
+	if tokenResp.AccessToken == "" {
+		return nil, fmt.Errorf("%s did not return an access token", operation)
+	}
+	if _, err := githubOAuthExpiresAt(time.Now().UTC(), tokenResp.ExpiresIn); err != nil {
+		return nil, fmt.Errorf("%s returned an invalid expiry: %w", operation, err)
+	}
+	return &tokenResp, nil
+}
+
+func validateGitHubOAuthResponseField(label, value string, maxBytes int) error {
+	if len([]byte(value)) > maxBytes {
+		return fmt.Errorf("github OAuth %s exceeded the %d-byte limit", label, maxBytes)
+	}
+	for _, char := range value {
+		if unicode.IsControl(char) {
+			return fmt.Errorf("github OAuth %s contains control characters", label)
+		}
+	}
+	return nil
+}
+
+func githubOAuthExpiresAt(now time.Time, expiresIn int64) (*time.Time, error) {
+	if expiresIn == 0 {
+		return nil, nil
+	}
+	maxSeconds := int64(githubOAuthMaxTokenTTL / time.Second)
+	if expiresIn < 0 || expiresIn > maxSeconds {
+		return nil, fmt.Errorf("expires_in must be between 0 and %d seconds", maxSeconds)
+	}
+	expiresAt := now.UTC().Add(time.Duration(expiresIn) * time.Second)
+	return &expiresAt, nil
 }
 
 // exchangeGitHubOAuthCode trades an authorization code for an access token at the
@@ -597,15 +675,5 @@ func exchangeGitHubOAuthCode(ctx context.Context, settings GitHubSettings, code,
 		return nil, fmt.Errorf("github token exchange failed: %w", err)
 	}
 	defer resp.Body.Close()
-	var tokenResp githubTokenResponse
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<16)).Decode(&tokenResp); err != nil {
-		return nil, fmt.Errorf("github token exchange returned an unreadable response")
-	}
-	if tokenResp.Error != "" {
-		return nil, fmt.Errorf("github token exchange error: %s", tokenResp.Error)
-	}
-	if strings.TrimSpace(tokenResp.AccessToken) == "" {
-		return nil, fmt.Errorf("github token exchange did not return an access token")
-	}
-	return &tokenResp, nil
+	return decodeGitHubOAuthTokenResponse(resp, "github token exchange")
 }

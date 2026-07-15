@@ -24,6 +24,28 @@ import (
 	"google.golang.org/protobuf/types/descriptorpb"
 )
 
+func TestGRPCRejectsUnboundedTimeouts(t *testing.T) {
+	g := &GRPC{}
+	if err := g.Init(context.Background(), map[string]any{
+		"grpc_target":     "127.0.0.1:1",
+		"grpc_plain_text": true,
+		"grpc_timeout_ms": dsl.MaxConfiguredProtocolTimeout.Milliseconds() + 1,
+	}); err == nil {
+		t.Fatal("Init accepted timeout above the runtime cap")
+	}
+	g.callTimeout = defaultCallTimeout
+	result, err := g.Execute(context.Background(), &protocol.Action{
+		Name: "bad timeout", Type: "grpc_unary", Target: "pkg.Service/Method",
+		Params: map[string]any{"timeout_ms": dsl.MaxConfiguredProtocolTimeout.Milliseconds() + 1},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Success || !strings.Contains(result.ErrorMessage, "between 0") {
+		t.Fatalf("unbounded timeout result = %#v", result)
+	}
+}
+
 func TestGRPCUnaryWithReflection(t *testing.T) {
 	addr, stop := startReflectionGenerator(t)
 	defer stop()

@@ -1,6 +1,7 @@
 package jms
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -12,14 +13,31 @@ import (
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
+const sidecarOverflowHelperMarker = "jms-sidecar-overflow-helper"
+
 func TestJMSSidecarCaptureBufferIsBounded(t *testing.T) {
+	overflow := make(chan struct{}, 1)
 	buffer := &sidecarCappedBuffer{max: 8}
+	buffer.onOverflow = func() { overflow <- struct{}{} }
 	content := []byte("0123456789abcdef")
 	if written, err := buffer.Write(content); err != nil || written != len(content) {
 		t.Fatalf("Write = (%d, %v), want (%d, nil)", written, err, len(content))
 	}
 	if got := buffer.buf.String(); got != "01234567" || !buffer.truncated {
 		t.Fatalf("buffer = %q truncated=%v", got, buffer.truncated)
+	}
+	select {
+	case <-overflow:
+	default:
+		t.Fatal("capture overflow did not notify the sidecar runner")
+	}
+	if _, err := buffer.Write([]byte("more")); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-overflow:
+		t.Fatal("capture overflow notified the sidecar runner more than once")
+	default:
 	}
 }
 
@@ -58,20 +76,97 @@ func TestJMSSidecarMaxProcessesComesFromOperatorEnv(t *testing.T) {
 }
 
 func TestJMSSidecarRejectsOversizedStdout(t *testing.T) {
-	dir := t.TempDir()
-	scriptPath := filepath.Join(dir, "oversized-sidecar.sh")
-	script := "#!/bin/sh\ncat >/dev/null\ndd if=/dev/zero bs=" + strconv.Itoa(maxSidecarCaptureBytes+1) + " count=1 2>/dev/null\n"
-	if err := os.WriteFile(scriptPath, []byte(script), 0o700); err != nil {
-		t.Fatal(err)
-	}
 	adapter := sidecarAdapter{
-		command: scriptPath,
-		cfg:     config{Timeout: time.Second},
+		command: sidecarOverflowHelperCommand(t, "stdout"),
+		cfg:     config{Timeout: 30 * time.Second},
 		limiter: newSidecarProcessLimiter(1),
 	}
-	_, err := adapter.run(context.Background(), sidecarRequest{Operation: "health"}, time.Second)
+	_, err := adapter.run(context.Background(), sidecarRequest{Operation: "health"}, 30*time.Second)
 	if err == nil || !strings.Contains(err.Error(), "stdout exceeded") {
 		t.Fatalf("oversized sidecar output error = %v", err)
+	}
+}
+
+func TestJMSSidecarRejectsOversizedStderr(t *testing.T) {
+	// Use the already-built Go test binary instead of a dd/cat pipeline. Under a
+	// heavily parallel repository test, process startup and the shell pipeline
+	// could lose a two-second race to the health deadline before producing the
+	// known overflow, making this resource-bound regression nondeterministic.
+	adapter := sidecarAdapter{
+		command: sidecarOverflowHelperCommand(t, "stderr"),
+		cfg:     config{Timeout: 30 * time.Second},
+		limiter: newSidecarProcessLimiter(1),
+	}
+	_, err := adapter.run(context.Background(), sidecarRequest{Operation: "health"}, 30*time.Second)
+	if err == nil || !strings.Contains(err.Error(), "stderr exceeded") {
+		t.Fatalf("oversized sidecar stderr error = %v", err)
+	}
+}
+
+func sidecarOverflowHelperCommand(t *testing.T, stream string) string {
+	t.Helper()
+	executable, err := filepath.Abs(os.Args[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	helperPath := filepath.Join(t.TempDir(), "jms-sidecar-overflow-helper")
+	if err := os.Symlink(executable, helperPath); err != nil {
+		t.Fatal(err)
+	}
+	return strings.Join([]string{
+		helperPath,
+		"-test.run=^TestJMSSidecarOverflowHelper$",
+		"--",
+		sidecarOverflowHelperMarker,
+		stream,
+		strconv.Itoa(maxSidecarCaptureBytes + 1),
+	}, " ")
+}
+
+func TestJMSSidecarOverflowHelper(t *testing.T) {
+	marker := -1
+	for index, arg := range os.Args {
+		if arg == sidecarOverflowHelperMarker {
+			marker = index
+			break
+		}
+	}
+	if marker < 0 {
+		return
+	}
+	if len(os.Args) != marker+3 {
+		os.Exit(2)
+	}
+	size, err := strconv.Atoi(os.Args[marker+2])
+	if err != nil || size <= 0 {
+		os.Exit(2)
+	}
+	var output *os.File
+	switch os.Args[marker+1] {
+	case "stdout":
+		output = os.Stdout
+	case "stderr":
+		output = os.Stderr
+	default:
+		os.Exit(2)
+	}
+	if _, err := output.Write(bytes.Repeat([]byte("x"), size)); err != nil {
+		os.Exit(3)
+	}
+	os.Exit(0)
+}
+
+func TestJMSMessageBodyExtractionIsBounded(t *testing.T) {
+	result := &protocol.Result{Extractions: map[string]string{}}
+	body := []byte(strings.Repeat("x", protocol.MaxExtractionValueBytes+1))
+	if err := addMessageExtractions(result, message{Body: body}); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(result.Extractions["jms_body"]); got != protocol.MaxExtractionValueBytes {
+		t.Fatalf("jms_body extraction length = %d, want %d", got, protocol.MaxExtractionValueBytes)
+	}
+	if result.Extractions["jms_body_truncated"] != "true" {
+		t.Fatalf("jms_body_truncated = %q, want true", result.Extractions["jms_body_truncated"])
 	}
 }
 

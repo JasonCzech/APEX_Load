@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	azeventhubs "github.com/Azure/azure-sdk-for-go/sdk/messaging/azeventhubs/v2"
 	"github.com/jasonczech/apexload/pkg/identitypolicy"
@@ -102,5 +103,37 @@ func TestRealClientAADAuthRequiresOperatorNamespaceBinding(t *testing.T) {
 	t.Setenv(identitypolicy.AzureMessagingAllowedNamespacesEnv, "audit.servicebus.windows.net")
 	if _, err := client.credentialLocked(); err == nil || !strings.Contains(err.Error(), "not allowed") {
 		t.Fatalf("cross-namespace AAD credential error = %v", err)
+	}
+}
+
+func TestReceiveEventHubsWithinBudgetDoesNotRestartTimeoutForLagProbe(t *testing.T) {
+	const timeout = 200 * time.Millisecond
+	start := time.Now()
+	received, _, err := receiveEventHubsWithinBudget(
+		context.Background(),
+		timeout,
+		func(ctx context.Context) ([]*azeventhubs.ReceivedEventData, error) {
+			timer := time.NewTimer(140 * time.Millisecond)
+			defer timer.Stop()
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-timer.C:
+				return []*azeventhubs.ReceivedEventData{{SequenceNumber: 1}}, nil
+			}
+		},
+		func(ctx context.Context, _ *azeventhubs.ReceivedEventData) int64 {
+			<-ctx.Done()
+			return 0
+		},
+	)
+	if err != nil {
+		t.Fatalf("receiveEventHubsWithinBudget returned error: %v", err)
+	}
+	if received == nil {
+		t.Fatal("receiveEventHubsWithinBudget returned no event")
+	}
+	if elapsed := time.Since(start); elapsed > 280*time.Millisecond {
+		t.Fatalf("receive plus lag probe took %s, want one %s operation budget", elapsed, timeout)
 	}
 }

@@ -148,6 +148,12 @@ func (c *Controller) AbortTest(id string) error {
 		c.testsMu.Unlock()
 		return fmt.Errorf("test not found: %s", id)
 	}
+	if t.Status == StatusAborted {
+		// Abort is idempotent. Preserve the original terminal timestamp so a
+		// duplicate API/control delivery cannot rewrite the run's audit duration.
+		c.testsMu.Unlock()
+		return nil
+	}
 	if !validStatusTransition(t.Status, StatusAborted) {
 		c.testsMu.Unlock()
 		return fmt.Errorf("invalid test status transition %s -> %s", t.Status, StatusAborted)

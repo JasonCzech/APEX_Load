@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -62,6 +63,7 @@ const (
 	// and one script-cache-sized allowance for WorkAssignment data files and
 	// metadata so an application-valid payload is not rejected by transport.
 	generatorRPCEnvelopeHeadroomBytes int64 = 1 << 20
+	maxTransportPEMBytes                    = 4 << 20
 )
 
 func generatorRPCMaxReceiveBytes() int64 {
@@ -187,7 +189,7 @@ func validateProductionTokenStrength(env string, security TransportSecurity, tok
 }
 
 func (e transportEnv) loadCertPool() (*x509.CertPool, error) {
-	pem, err := os.ReadFile(e.CAFile)
+	pem, err := readTransportPEMFile(e.CAFile)
 	if err != nil {
 		return nil, fmt.Errorf("reading %s: %w", grpcTLSCAEnvVar, err)
 	}
@@ -196,6 +198,44 @@ func (e transportEnv) loadCertPool() (*x509.CertPool, error) {
 		return nil, fmt.Errorf("%s contains no usable CA certificates", grpcTLSCAEnvVar)
 	}
 	return pool, nil
+}
+
+func readTransportPEMFile(path string) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("TLS material is not a regular file")
+	}
+	if info.Size() > maxTransportPEMBytes {
+		return nil, fmt.Errorf("TLS material exceeds %d bytes", maxTransportPEMBytes)
+	}
+	content, err := io.ReadAll(io.LimitReader(file, maxTransportPEMBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(content) > maxTransportPEMBytes {
+		return nil, fmt.Errorf("TLS material exceeds %d bytes", maxTransportPEMBytes)
+	}
+	return content, nil
+}
+
+func loadTransportKeyPair(certFile, keyFile string) (tls.Certificate, error) {
+	certPEM, err := readTransportPEMFile(certFile)
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("read certificate: %w", err)
+	}
+	keyPEM, err := readTransportPEMFile(keyFile)
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("read private key: %w", err)
+	}
+	return tls.X509KeyPair(certPEM, keyPEM)
 }
 
 // ServerOptionsFromEnv builds the generator-side gRPC server options:
@@ -219,7 +259,7 @@ func ServerOptionsFromEnv() ([]grpc.ServerOption, error) {
 	var options = []grpc.ServerOption{grpc.MaxRecvMsgSize(grpcMessageSize(generatorRPCMaxReceiveBytes()))}
 	if env.CertFile != "" {
 		loadConfig := func() (*tls.Config, error) {
-			cert, err := tls.LoadX509KeyPair(env.CertFile, env.KeyFile)
+			cert, err := loadTransportKeyPair(env.CertFile, env.KeyFile)
 			if err != nil {
 				return nil, fmt.Errorf("loading gRPC server certificate: %w", err)
 			}
@@ -302,7 +342,7 @@ func DialOptionsFromEnv() ([]grpc.DialOption, error) {
 			tlsConfig.RootCAs = pool
 		}
 		if env.CertFile != "" {
-			cert, err := tls.LoadX509KeyPair(env.CertFile, env.KeyFile)
+			cert, err := loadTransportKeyPair(env.CertFile, env.KeyFile)
 			if err != nil {
 				return nil, fmt.Errorf("loading gRPC client certificate: %w", err)
 			}

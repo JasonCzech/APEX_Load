@@ -12,10 +12,15 @@ import (
 )
 
 func (s *SQLiteStore) SaveDataPool(pool *SharedDataPool) error {
+	if pool == nil {
+		return errors.New("data pool is required")
+	}
+	pool.ID = strings.TrimSpace(pool.ID)
 	if pool.ID == "" {
 		return errors.New("data pool id is required")
 	}
-	if strings.TrimSpace(pool.Name) == "" {
+	pool.Name = strings.TrimSpace(pool.Name)
+	if pool.Name == "" {
 		return errors.New("data pool name is required")
 	}
 	if pool.CreatedAt.IsZero() {
@@ -27,21 +32,57 @@ func (s *SQLiteStore) SaveDataPool(pool *SharedDataPool) error {
 	if err != nil {
 		return fmt.Errorf("marshal data pool schema: %w", err)
 	}
-	_, err = s.db.Exec(`INSERT INTO shared_data_pools (id, name, description, schema_json, project_id, created_at, updated_at, archived_at)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := lockProjectForOwnedMutation(tx, pool.ProjectID); err != nil {
+		return err
+	}
+	ownerQuery := `SELECT COALESCE(project_id, '') FROM shared_data_pools WHERE id = ?`
+	if tx.dialect == storeDialectPostgres {
+		ownerQuery += ` FOR UPDATE`
+	}
+	var existingProjectID string
+	err = tx.QueryRow(ownerQuery, pool.ID).Scan(&existingProjectID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if err == nil && normalizeProjectID(existingProjectID) != pool.ProjectID {
+		return fmt.Errorf("data pool %q already belongs to project %q", pool.ID, normalizeProjectID(existingProjectID))
+	}
+	result, err := tx.Exec(`INSERT INTO shared_data_pools (id, name, description, schema_json, project_id, created_at, updated_at, archived_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET name=excluded.name, description=excluded.description, schema_json=excluded.schema_json, updated_at=excluded.updated_at, archived_at=excluded.archived_at`,
-		pool.ID, pool.Name, pool.Description, string(schemaJSON), pool.ProjectID, pool.CreatedAt, pool.UpdatedAt, pool.ArchivedAt)
-	return err
+		ON CONFLICT(id) DO UPDATE SET name=excluded.name, description=excluded.description, schema_json=excluded.schema_json, updated_at=excluded.updated_at, archived_at=excluded.archived_at
+		WHERE COALESCE(NULLIF(TRIM(shared_data_pools.project_id), ''), ?) = excluded.project_id`,
+		pool.ID, pool.Name, pool.Description, string(schemaJSON), pool.ProjectID, pool.CreatedAt, pool.UpdatedAt, pool.ArchivedAt, DefaultProjectID)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return fmt.Errorf("data pool %q belongs to another project", pool.ID)
+	}
+	return tx.Commit()
 }
 
 // UpdateDataPoolIfUnchanged updates editor-owned fields only when the durable
 // row still matches the snapshot loaded by the caller. Project ownership is an
 // immutable authorization boundary and is deliberately never rewritten.
 func (s *SQLiteStore) UpdateDataPoolIfUnchanged(pool *SharedDataPool, expectedUpdatedAt time.Time) (bool, error) {
-	if pool == nil || strings.TrimSpace(pool.ID) == "" {
+	if pool == nil {
+		return false, errors.New("data pool is required")
+	}
+	pool.ID = strings.TrimSpace(pool.ID)
+	if pool.ID == "" {
 		return false, errors.New("data pool id is required")
 	}
-	if strings.TrimSpace(pool.Name) == "" {
+	pool.Name = strings.TrimSpace(pool.Name)
+	if pool.Name == "" {
 		return false, errors.New("data pool name is required")
 	}
 	if expectedUpdatedAt.IsZero() {
@@ -56,10 +97,18 @@ func (s *SQLiteStore) UpdateDataPoolIfUnchanged(pool *SharedDataPool, expectedUp
 		return false, err
 	}
 	defer tx.Rollback()
+	pool.ProjectID = normalizeProjectID(pool.ProjectID)
+	if _, err := lockProjectForOwnedMutation(tx, pool.ProjectID); err != nil {
+		return false, err
+	}
 	var currentProjectID string
 	var currentUpdatedAt time.Time
 	var currentUpdatedRaw string
-	if err := tx.QueryRow(`SELECT COALESCE(project_id, ''), updated_at, CAST(updated_at AS TEXT) FROM shared_data_pools WHERE id = ?`, pool.ID).Scan(&currentProjectID, &currentUpdatedAt, &currentUpdatedRaw); err != nil {
+	currentQuery := `SELECT COALESCE(project_id, ''), updated_at, CAST(updated_at AS TEXT) FROM shared_data_pools WHERE id = ?`
+	if tx.dialect == storeDialectPostgres {
+		currentQuery += ` FOR UPDATE`
+	}
+	if err := tx.QueryRow(currentQuery, pool.ID).Scan(&currentProjectID, &currentUpdatedAt, &currentUpdatedRaw); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return false, nil
 		}
@@ -146,18 +195,28 @@ func (s *SQLiteStore) listDataPools(includeArchived bool, projectID string) ([]*
 }
 
 func (s *SQLiteStore) DeleteDataPool(id string) error {
-	var bindingCount int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM scenario_data_pool_bindings WHERE pool_id = ?`, id).Scan(&bindingCount); err != nil {
-		return err
-	}
-	if bindingCount > 0 {
-		return errors.New("data pool is bound to one or more scenarios")
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return errors.New("data pool id is required")
 	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+	if _, err := lockDataPoolParentForMutation(tx, id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+	var bindingCount int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM scenario_data_pool_bindings WHERE pool_id = ?`, id).Scan(&bindingCount); err != nil {
+		return err
+	}
+	if bindingCount > 0 {
+		return errors.New("data pool is bound to one or more scenarios")
+	}
 	if _, err := tx.Exec(`DELETE FROM shared_data_pool_rows WHERE pool_id = ?`, id); err != nil {
 		return err
 	}
@@ -168,9 +227,14 @@ func (s *SQLiteStore) DeleteDataPool(id string) error {
 }
 
 func (s *SQLiteStore) SaveDataPoolRow(row *SharedDataPoolRow) error {
+	if row == nil {
+		return errors.New("data pool row is required")
+	}
+	row.ID = strings.TrimSpace(row.ID)
 	if row.ID == "" {
 		return errors.New("data pool row id is required")
 	}
+	row.PoolID = strings.TrimSpace(row.PoolID)
 	if row.PoolID == "" {
 		return errors.New("data pool id is required")
 	}
@@ -196,8 +260,18 @@ func (s *SQLiteStore) SaveDataPoolRow(row *SharedDataPoolRow) error {
 		return err
 	}
 	defer tx.Rollback()
+	if _, err := lockDataPoolParentForMutation(tx, row.PoolID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("data pool not found: %s", row.PoolID)
+		}
+		return err
+	}
 	var existingPoolID string
-	err = tx.QueryRow(`SELECT pool_id FROM shared_data_pool_rows WHERE id = ?`, row.ID).Scan(&existingPoolID)
+	rowQuery := `SELECT pool_id FROM shared_data_pool_rows WHERE id = ?`
+	if tx.dialect == storeDialectPostgres {
+		rowQuery += ` FOR UPDATE`
+	}
+	err = tx.QueryRow(rowQuery, row.ID).Scan(&existingPoolID)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
@@ -224,10 +298,16 @@ func (s *SQLiteStore) SaveDataPoolRow(row *SharedDataPoolRow) error {
 // The row version is the public concurrency token; a stale editor cannot
 // silently overwrite a newer row or move it between pools.
 func (s *SQLiteStore) UpdateDataPoolRowIfVersion(poolID string, row *SharedDataPoolRow, expectedVersion int) (bool, error) {
-	if row == nil || strings.TrimSpace(row.ID) == "" {
+	if row == nil {
+		return false, errors.New("data pool row is required")
+	}
+	row.ID = strings.TrimSpace(row.ID)
+	poolID = strings.TrimSpace(poolID)
+	row.PoolID = strings.TrimSpace(row.PoolID)
+	if row.ID == "" {
 		return false, errors.New("data pool row id is required")
 	}
-	if strings.TrimSpace(poolID) == "" || strings.TrimSpace(row.PoolID) != strings.TrimSpace(poolID) {
+	if poolID == "" || row.PoolID != poolID {
 		return false, errors.New("data pool id is required")
 	}
 	if expectedVersion <= 0 {
@@ -244,7 +324,18 @@ func (s *SQLiteStore) UpdateDataPoolRowIfVersion(poolID string, row *SharedDataP
 		return false, fmt.Errorf("marshal data pool row: %w", err)
 	}
 	row.UpdatedAt = time.Now()
-	result, err := s.db.Exec(`UPDATE shared_data_pool_rows
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	if _, err := lockDataPoolParentForMutation(tx, poolID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	result, err := tx.Exec(`UPDATE shared_data_pool_rows
 		SET data_json = ?, status = ?, version = version + 1, updated_at = ?
 		WHERE id = ? AND pool_id = ? AND version = ?`, string(dataJSON), row.Status, row.UpdatedAt, row.ID, poolID, expectedVersion)
 	if err != nil {
@@ -255,7 +346,7 @@ func (s *SQLiteStore) UpdateDataPoolRowIfVersion(poolID string, row *SharedDataP
 		return false, err
 	}
 	row.Version = expectedVersion + 1
-	return true, nil
+	return true, tx.Commit()
 }
 
 func (s *SQLiteStore) ListDataPoolRows(poolID string) ([]*SharedDataPoolRow, error) {
@@ -330,17 +421,97 @@ func (s *SQLiteStore) GetDataPoolRowFromPool(poolID string, id string) (*SharedD
 }
 
 func (s *SQLiteStore) DeleteDataPoolRow(id string) error {
-	_, err := s.db.Exec(`DELETE FROM shared_data_pool_rows WHERE id = ?`, id)
-	return err
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return errors.New("data pool row id is required")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var poolID string
+	if err := tx.QueryRow(`SELECT pool_id FROM shared_data_pool_rows WHERE id = ?`, id).Scan(&poolID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+	if _, err := lockDataPoolParentForMutation(tx, poolID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM shared_data_pool_rows WHERE id = ? AND pool_id = ?`, id, poolID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // DeleteDataPoolRowFromPool atomically scopes deletion to the authorized pool.
 // The bool distinguishes a missing/mismatched row from a successful delete.
 func (s *SQLiteStore) DeleteDataPoolRowFromPool(poolID string, id string) (bool, error) {
-	result, err := s.db.Exec(`DELETE FROM shared_data_pool_rows WHERE id = ? AND pool_id = ?`, id, poolID)
+	poolID = strings.TrimSpace(poolID)
+	id = strings.TrimSpace(id)
+	if poolID == "" {
+		return false, errors.New("data pool id is required")
+	}
+	if id == "" {
+		return false, errors.New("data pool row id is required")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	if _, err := lockDataPoolParentForMutation(tx, poolID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	result, err := tx.Exec(`DELETE FROM shared_data_pool_rows WHERE id = ? AND pool_id = ?`, id, poolID)
 	if err != nil {
 		return false, err
 	}
 	count, err := result.RowsAffected()
-	return count > 0, err
+	if err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// lockDataPoolParentForMutation serializes a pool or row mutation with project
+// and pool deletion. The first lookup is deliberately unlocked: the project is
+// then locked before the pool, which matches the hierarchy deletion order.
+func lockDataPoolParentForMutation(tx *storeTx, poolID string) (string, error) {
+	poolID = strings.TrimSpace(poolID)
+	if poolID == "" {
+		return "", errors.New("data pool id is required")
+	}
+	var projectID string
+	if err := tx.QueryRow(`SELECT COALESCE(project_id, '') FROM shared_data_pools WHERE id = ?`, poolID).Scan(&projectID); err != nil {
+		return "", err
+	}
+	projectID = normalizeProjectID(projectID)
+	if _, err := lockProjectForOwnedMutation(tx, projectID); err != nil {
+		return "", err
+	}
+	result, err := tx.Exec(`UPDATE shared_data_pools SET updated_at = updated_at
+		WHERE id = ? AND COALESCE(NULLIF(TRIM(project_id), ''), ?) = ?`, poolID, DefaultProjectID, projectID)
+	if err != nil {
+		return "", err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return "", err
+	}
+	if affected != 1 {
+		return "", sql.ErrNoRows
+	}
+	return projectID, nil
 }

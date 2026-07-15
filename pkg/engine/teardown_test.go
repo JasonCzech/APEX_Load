@@ -25,8 +25,58 @@ func (p *blockingTeardownProtocol) Teardown(ctx context.Context) error {
 }
 func (p *blockingTeardownProtocol) HealthCheck(_ context.Context) error { return nil }
 
+type blockingShakeoutTeardownActionProtocol struct{}
+
+func (*blockingShakeoutTeardownActionProtocol) Name() string { return "blocking-shakeout-action-stub" }
+func (*blockingShakeoutTeardownActionProtocol) Init(context.Context, map[string]any) error {
+	return nil
+}
+func (*blockingShakeoutTeardownActionProtocol) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
+	if action.Name == "blocking-teardown-action" {
+		<-ctx.Done()
+		return &protocol.Result{ActionName: action.Name, Success: false, ErrorMessage: ctx.Err().Error()}, nil
+	}
+	return &protocol.Result{ActionName: action.Name, Success: true}, nil
+}
+func (*blockingShakeoutTeardownActionProtocol) Teardown(context.Context) error    { return nil }
+func (*blockingShakeoutTeardownActionProtocol) HealthCheck(context.Context) error { return nil }
+
 func init() {
 	protocol.Register("blocking-teardown-stub", func() protocol.Protocol { return &blockingTeardownProtocol{} })
+	protocol.Register("blocking-shakeout-action-stub", func() protocol.Protocol { return &blockingShakeoutTeardownActionProtocol{} })
+}
+
+func TestShakeoutProtocolTeardownIsBounded(t *testing.T) {
+	t.Setenv("APEXLOAD_TEARDOWN_TIMEOUT", "20ms")
+	script := &dsl.Script{
+		Name:     "blocking-shakeout-protocol-teardown",
+		Protocol: "blocking-teardown-stub",
+		Actions:  []dsl.Action{{Name: "ok", Type: "request", Target: "/"}},
+	}
+	start := time.Now()
+	if err := RunScriptShakeout(context.Background(), "shakeout", script); err != nil {
+		t.Fatalf("RunScriptShakeout returned error: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 250*time.Millisecond {
+		t.Fatalf("shakeout protocol teardown took %s, want configured bounded cleanup", elapsed)
+	}
+}
+
+func TestShakeoutTeardownActionsAreBounded(t *testing.T) {
+	t.Setenv("APEXLOAD_TEARDOWN_TIMEOUT", "20ms")
+	script := &dsl.Script{
+		Name:     "blocking-shakeout-action-teardown",
+		Protocol: "blocking-shakeout-action-stub",
+		Actions:  []dsl.Action{{Name: "ok", Type: "request", Target: "/"}},
+		Teardown: []dsl.Action{{Name: "blocking-teardown-action", Type: "request", Target: "/"}},
+	}
+	start := time.Now()
+	if err := RunScriptShakeout(context.Background(), "shakeout", script); err != nil {
+		t.Fatalf("RunScriptShakeout returned error: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 250*time.Millisecond {
+		t.Fatalf("shakeout teardown action took %s, want configured bounded cleanup", elapsed)
+	}
 }
 
 func TestTeardownTimeout_EnvOverride(t *testing.T) {

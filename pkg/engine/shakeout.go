@@ -24,7 +24,7 @@ func RunScriptShakeout(ctx context.Context, groupName string, script *dsl.Script
 	if err := proto.Init(ctx, buildProtoConfigForRunModeWithSecretResolver(script, "replay", secretResolver)); err != nil {
 		return fmt.Errorf("protocol init: %s", scrubSensitiveText(err.Error()))
 	}
-	defer proto.Teardown(context.Background())
+	defer runProtocolTeardown(proto)
 
 	dataProvider, err := NewDataProvider(script.DataSources)
 	if err != nil {
@@ -55,9 +55,11 @@ func RunScriptShakeout(ctx context.Context, groupName string, script *dsl.Script
 		}
 	}
 
+	teardownCtx, teardownCancel := teardownContext()
 	for _, action := range script.Teardown {
-		_ = runShakeoutAction(context.Background(), vu, action, "teardown")
+		_ = runShakeoutAction(teardownCtx, vu, action, "teardown")
 	}
+	teardownCancel()
 
 	return nil
 }
@@ -77,7 +79,9 @@ func runShakeoutAction(ctx context.Context, vu *VUser, action dsl.Action, phase 
 	if result == nil {
 		return fmt.Errorf("%s %q returned no result", phase, action.Name)
 	}
-	vu.mergeExtractions(result)
+	if err := vu.mergeExtractions(result); err != nil {
+		return fmt.Errorf("%s", scrubSensitiveTextWithConfig(fmt.Sprintf("%s %q extraction retention failed: %s", phase, action.Name, err), vu.RedactionConfig))
+	}
 	if !result.Success {
 		reason := result.ErrorMessage
 		if reason == "" {

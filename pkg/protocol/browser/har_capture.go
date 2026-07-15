@@ -246,6 +246,9 @@ func (b *Browser) finalizeHARCapture() string {
 		slog.Warn("browser HAR artifact write failed", "path", artifactPath, "error", err)
 		return ""
 	}
+	if err := enforceRuntimeHARRetention(filepath.Dir(artifactPath)); err != nil {
+		slog.Warn("browser HAR artifact retention cleanup failed", "path", artifactPath, "error", err)
+	}
 	slog.Info("browser HAR artifact captured",
 		"policy", b.harCapturePolicy,
 		"path", artifactPath,

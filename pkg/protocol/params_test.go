@@ -1,8 +1,10 @@
 package protocol
 
 import (
+	"encoding/json"
 	"math"
 	"testing"
+	"time"
 )
 
 func TestConfigStringTrims(t *testing.T) {
@@ -18,6 +20,32 @@ func TestConfigStringTrims(t *testing.T) {
 	}
 	if got := ConfigString(nil, "host"); got != "" {
 		t.Fatalf("ConfigString nil config: got %q, want \"\"", got)
+	}
+}
+
+func TestBoundedMilliseconds(t *testing.T) {
+	maximum := time.Hour
+	fallback := 30 * time.Second
+	valid := []struct {
+		value any
+		want  time.Duration
+	}{
+		{value: nil, want: fallback},
+		{value: 0, want: fallback},
+		{value: float64(1250), want: 1250 * time.Millisecond},
+		{value: json.Number("2500"), want: 2500 * time.Millisecond},
+		{value: "3000", want: 3 * time.Second},
+	}
+	for _, tc := range valid {
+		got, err := BoundedMilliseconds(tc.value, fallback, maximum)
+		if err != nil || got != tc.want {
+			t.Errorf("BoundedMilliseconds(%#v) = %s, %v; want %s", tc.value, got, err, tc.want)
+		}
+	}
+	for _, value := range []any{-1, maximum.Milliseconds() + 1, 1.5, math.Inf(1), json.Number("1.5"), "not-a-number", true} {
+		if _, err := BoundedMilliseconds(value, fallback, maximum); err == nil {
+			t.Errorf("BoundedMilliseconds(%#v) accepted invalid value", value)
+		}
 	}
 }
 

@@ -1049,7 +1049,7 @@ func readAsyncAPIImportRequest(w http.ResponseWriter, r *http.Request) (*asyncAP
 				Opts:      asyncAPIOptionsFromValues(r.URL.Query()),
 			}, true
 		}
-		return &asyncAPIImportRequest{Data: []byte(req.Content), ProjectID: req.ProjectID, Name: req.Name, Opts: req.Options}, true
+		return &asyncAPIImportRequest{Data: []byte(req.Content), ProjectID: jsonImportProjectID(r, req.ProjectID), Name: req.Name, Opts: req.Options}, true
 	}
 	if strings.HasPrefix(contentType, "multipart/form-data") {
 		data, filename, ok := readImportMultipartFile(w, r, webAPIImportMaxBodyBytes)
@@ -1172,7 +1172,7 @@ func readOpenAPIImportRequest(w http.ResponseWriter, r *http.Request) (*openAPII
 				},
 			}, true
 		}
-		return &openAPIImportRequest{Data: []byte(req.Content), ProjectID: req.ProjectID, Name: req.Name, Opts: req.Options}, true
+		return &openAPIImportRequest{Data: []byte(req.Content), ProjectID: jsonImportProjectID(r, req.ProjectID), Name: req.Name, Opts: req.Options}, true
 	}
 	if strings.HasPrefix(contentType, "multipart/form-data") {
 		data, filename, ok := readImportMultipartFile(w, r, webAPIImportMaxBodyBytes)
@@ -1229,7 +1229,7 @@ func readRAMLImportRequest(w http.ResponseWriter, r *http.Request) (*ramlImportR
 			return nil, false
 		}
 		data = []byte(req.Content)
-		projectID = req.ProjectID
+		projectID = jsonImportProjectID(r, req.ProjectID)
 		name = req.Name
 		origName = req.Name
 		opts = req.Options
@@ -1352,7 +1352,7 @@ func readWSDLImportRequest(w http.ResponseWriter, r *http.Request) (*wsdlImportR
 			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 			return nil, false
 		}
-		return &wsdlImportRequest{Data: []byte(req.Content), RootFile: req.RootFile, Files: req.Files, ProjectID: req.ProjectID, Name: req.Name, Opts: req.Options}, true
+		return &wsdlImportRequest{Data: []byte(req.Content), RootFile: req.RootFile, Files: req.Files, ProjectID: jsonImportProjectID(r, req.ProjectID), Name: req.Name, Opts: req.Options}, true
 	}
 	if strings.HasPrefix(contentType, "multipart/form-data") {
 		data, filename, ok := readImportMultipartFile(w, r, webAPIImportMaxBodyBytes)
@@ -1443,7 +1443,7 @@ func readPostmanImportRequest(w http.ResponseWriter, r *http.Request) (*postmanI
 				Opts:      postmanConvertOptionsFromValue(r.URL.Query().Get),
 			}, true
 		}
-		return &postmanImportRequest{Data: []byte(req.Content), EnvironmentData: []byte(req.EnvironmentContent), ProjectID: req.ProjectID, Name: req.Name, Opts: req.Options}, true
+		return &postmanImportRequest{Data: []byte(req.Content), EnvironmentData: []byte(req.EnvironmentContent), ProjectID: jsonImportProjectID(r, req.ProjectID), Name: req.Name, Opts: req.Options}, true
 	}
 	if strings.HasPrefix(contentType, "multipart/form-data") {
 		data, filename, ok := readImportMultipartFile(w, r, webAPIImportMaxBodyBytes)

@@ -1059,6 +1059,25 @@ func TestCanManageBindingAllowsRepositoryAdminForDescendantProject(t *testing.T)
 	}
 }
 
+func TestSpreadsheetSafeCSVCellNeutralizesFormulaPrefixes(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{input: "ordinary", want: "ordinary"},
+		{input: "=HYPERLINK(\"https://evil.test\")", want: "'=HYPERLINK(\"https://evil.test\")"},
+		{input: " +SUM(1,2)", want: "' +SUM(1,2)"},
+		{input: "-1+1", want: "'-1+1"},
+		{input: "@IMPORTDATA(\"https://evil.test\")", want: "'@IMPORTDATA(\"https://evil.test\")"},
+		{input: "\ufeff=CMD()", want: "'\ufeff=CMD()"},
+	}
+	for _, test := range tests {
+		if got := spreadsheetSafeCSVCell(test.input); got != test.want {
+			t.Errorf("spreadsheetSafeCSVCell(%q) = %q, want %q", test.input, got, test.want)
+		}
+	}
+}
+
 func trustedHeaderJSONRequest(method string, path string, body string, subject string) *http.Request {
 	var reader *strings.Reader
 	if body == "" {

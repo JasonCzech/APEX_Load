@@ -180,6 +180,55 @@ func TestSQLiteStoreFencesLifecycleAndFullSaveByLeaseEpoch(t *testing.T) {
 	}
 }
 
+func TestSQLiteStoreFencesExecutionPlanStatusByMaterializationAndLeaseTerm(t *testing.T) {
+	store := newHAFencingStore(t)
+	const (
+		leaseOwner = "controller-plan/epoch-1"
+		testID     = "plan-materialization-test"
+		ownerKey   = "plan-run/entry-owner"
+	)
+	acquired, lease, err := store.TryAcquireSchedulerLeaseTerm(testExecutionLeaseName, leaseOwner, time.Now(), time.Minute)
+	if err != nil || !acquired || lease == nil {
+		t.Fatalf("TryAcquireSchedulerLeaseTerm = (%v, %+v, %v)", acquired, lease, err)
+	}
+	if err := store.SaveTest(&TestRecord{
+		ID: testID, MaterializationKey: ownerKey, Name: testID, Status: "QUEUED",
+		ProjectID: DefaultProjectID, StartTime: time.Now().UTC(), Groups: []any{},
+	}); err != nil {
+		t.Fatalf("SaveTest: %v", err)
+	}
+	endedAt := time.Now().UTC()
+	result, err := store.UpdateTestStatusIfActiveAndMaterializationKeyAndLeaseTermHeld(
+		testID, "another-plan/entry", "FAILED", &endedAt, "stale cleanup",
+		testExecutionLeaseName, leaseOwner, lease.Generation,
+	)
+	if err != nil || result != TestStatusTransitionFenced {
+		t.Fatalf("wrong-materialization transition = (%q, %v), want fenced", result, err)
+	}
+	current, err := store.GetTest(testID)
+	if err != nil {
+		t.Fatalf("GetTest after wrong key: %v", err)
+	}
+	if current.Status != "QUEUED" || current.EndTime != nil || current.Error != "" {
+		t.Fatalf("wrong materialization changed row: %+v", current)
+	}
+
+	result, err = store.UpdateTestStatusIfActiveAndMaterializationKeyAndLeaseTermHeld(
+		testID, ownerKey, "FAILED", &endedAt, "owned cleanup",
+		testExecutionLeaseName, leaseOwner, lease.Generation,
+	)
+	if err != nil || result != TestStatusTransitionUpdated {
+		t.Fatalf("owned transition = (%q, %v), want updated", result, err)
+	}
+	current, err = store.GetTest(testID)
+	if err != nil {
+		t.Fatalf("GetTest after owned update: %v", err)
+	}
+	if current.Status != "FAILED" || current.EndTime == nil || current.Error != "owned cleanup" {
+		t.Fatalf("owned materialization was not terminalized: %+v", current)
+	}
+}
+
 func TestSQLiteStoreFencesScheduleAndOccurrenceWritesByLeaseEpoch(t *testing.T) {
 	store := newHAFencingStore(t)
 	now := time.Now().UTC()

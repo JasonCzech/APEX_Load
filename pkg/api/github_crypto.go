@@ -22,6 +22,9 @@ func githubTokenCipher() (cipher.AEAD, error) {
 	if raw == "" {
 		return nil, fmt.Errorf("github token encryption key (%s) is not configured", githubTokenKeyEnvVar)
 	}
+	if productionMode() && len([]byte(raw)) < productionSecretMinBytes {
+		return nil, fmt.Errorf("github token encryption key (%s) must contain at least %d bytes in production", githubTokenKeyEnvVar, productionSecretMinBytes)
+	}
 	key := sha256.Sum256([]byte(raw))
 	block, err := aes.NewCipher(key[:])
 	if err != nil {

@@ -221,6 +221,10 @@ func TestSQLiteStoreAuthoringSessionsRoundTrip(t *testing.T) {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
 	defer store.Close()
+	now := time.Now().UTC()
+	if err := store.SaveProject(&Project{ID: "project-1", Name: "Project 1", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
 
 	session := &AuthoringSession{
 		ID:        "session-1",
@@ -236,7 +240,7 @@ func TestSQLiteStoreAuthoringSessionsRoundTrip(t *testing.T) {
 			Actions:  []dsl.Action{{Name: "Home", Type: "request", Target: "/"}},
 		},
 		ReviewState: map[string]any{"active_tab": "runtime", "blockers": []any{"correlation"}},
-		CreatedAt:   time.Now().Add(-time.Hour),
+		CreatedAt:   now.Add(-time.Hour),
 	}
 	if err := store.SaveAuthoringSession(session); err != nil {
 		t.Fatalf("SaveAuthoringSession returned error: %v", err)
@@ -278,6 +282,9 @@ func TestSQLiteStoreAuthoringSessionCompareAndSwapFencesStaleMutations(t *testin
 	}
 	defer store.Close()
 	now := time.Now().UTC()
+	if err := store.SaveProject(&Project{ID: "project-1", Name: "Project 1", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
 	session := &AuthoringSession{
 		ID: "authoring-cas", ProjectID: "project-1", Source: "test", Name: "Draft", Status: "ready",
 		Draft:     &dsl.Script{Name: "Draft", Protocol: "http", ProjectID: "project-1"},

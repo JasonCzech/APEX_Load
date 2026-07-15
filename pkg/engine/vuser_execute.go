@@ -205,8 +205,14 @@ func (vu *VUser) waitAtRendezvous(ctx context.Context, action dsl.Action) error 
 		participants = count
 	}
 	timeout := time.Duration(0)
-	if timeoutMs, ok := actionParamInt(action.Params, "timeout_ms"); ok && timeoutMs > 0 {
-		timeout = time.Duration(timeoutMs) * time.Millisecond
+	if action.Params != nil {
+		if timeoutValue, present := action.Params["timeout_ms"]; present {
+			var err error
+			timeout, err = protocol.BoundedMilliseconds(timeoutValue, 0, dsl.MaxConfiguredProtocolTimeout)
+			if err != nil {
+				return fmt.Errorf("rendezvous timeout_ms %w", err)
+			}
+		}
 	}
 	key := action.Name
 	if configuredKey, ok := actionParamString(action.Params, "key"); ok {
@@ -245,28 +251,40 @@ func (vu *VUser) executeWithRetry(ctx context.Context, action *protocol.Action, 
 	if err := vu.checkResolvedSecrets(); err != nil {
 		return nil, err
 	}
-	maxAttempts := 1 + errCfg.MaxRetries
-	if maxAttempts < 1 {
-		maxAttempts = 1
+	if errCfg.MaxRetries < 0 || errCfg.MaxRetries > dsl.MaxErrorRetries {
+		return nil, fmt.Errorf("max_retries must be between 0 and %d", dsl.MaxErrorRetries)
 	}
+	if errCfg.RetryDelayMs < 0 || errCfg.RetryDelayMs > dsl.MaxConfiguredProtocolTimeoutMS {
+		return nil, fmt.Errorf("retry_delay_ms must be between 0 and %d", dsl.MaxConfiguredProtocolTimeoutMS)
+	}
+	retryBackoff := strings.ToLower(strings.TrimSpace(errCfg.RetryBackoff))
+	if retryBackoff != "" && retryBackoff != "fixed" && retryBackoff != "exponential" {
+		return nil, fmt.Errorf("retry_backoff must be fixed or exponential")
+	}
+	maxAttempts := 1 + errCfg.MaxRetries
 
-	retryDelay := time.Duration(errCfg.RetryDelayMs) * time.Millisecond
-	if retryDelay == 0 {
-		retryDelay = time.Second
+	baseRetryDelay := time.Duration(errCfg.RetryDelayMs) * time.Millisecond
+	if baseRetryDelay == 0 {
+		baseRetryDelay = time.Second
 	}
 
 	var lastResult *protocol.Result
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		if attempt > 0 {
 			// Apply backoff
-			delay := retryDelay
-			if errCfg.RetryBackoff == "exponential" {
-				delay = retryDelay * time.Duration(1<<uint(attempt-1))
+			delay := baseRetryDelay
+			if retryBackoff == "exponential" {
+				delay = boundedRetryBackoff(baseRetryDelay, attempt)
 			}
+			timer := time.NewTimer(delay)
 			select {
 			case <-ctx.Done():
+				// Since Go 1.23 timer channels are synchronous and a receive after
+				// Stop returns is guaranteed to block. The legacy Stop-then-drain
+				// pattern can therefore deadlock when cancellation wins at expiry.
+				timer.Stop()
 				return lastResult, ctx.Err()
-			case <-time.After(delay):
+			case <-timer.C:
 			}
 		}
 
@@ -288,6 +306,24 @@ func (vu *VUser) executeWithRetry(ctx context.Context, action *protocol.Action, 
 	}
 
 	return lastResult, nil
+}
+
+func boundedRetryBackoff(base time.Duration, attempt int) time.Duration {
+	maximum := dsl.MaxConfiguredProtocolTimeout
+	if base <= 0 {
+		base = time.Second
+	}
+	if base >= maximum {
+		return maximum
+	}
+	delay := base
+	for step := 1; step < attempt; step++ {
+		if delay >= maximum/2 {
+			return maximum
+		}
+		delay *= 2
+	}
+	return min(delay, maximum)
 }
 
 func (vu *VUser) executeHTTPSequenceAction(ctx context.Context, action dsl.Action, errCfg dsl.ErrorHandlingConfig) (*protocol.Result, error) {
@@ -331,7 +367,13 @@ func (vu *VUser) executeHTTPSequenceAction(ctx context.Context, action dsl.Actio
 		vu.recordResult(result, errCfg, dsl.LogConfig{})
 		copySequenceSourceResult(aggregate, result)
 		for key, value := range result.Extractions {
-			aggregate.Extractions[key] = value
+			if err := protocol.StoreExtraction(aggregate, key, value); err != nil {
+				aggregate.Success = false
+				aggregate.Extractions = nil
+				aggregate.ErrorMessage = fmt.Sprintf("http_sequence extraction retention failed: %v", err)
+				aggregate.Duration = time.Since(start)
+				return aggregate, nil
+			}
 		}
 		if !result.Success {
 			aggregate.Success = false

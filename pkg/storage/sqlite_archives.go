@@ -188,17 +188,65 @@ func (s *SQLiteStore) SaveReleaseSLAWaiver(waiver *ReleaseSLAWaiver) error {
 		waiver.CreatedAt = now
 	}
 	waiver.UpdatedAt = now
-	_, err := s.db.Exec(`INSERT INTO release_sla_waivers (id, release_id, project_id, scope, reason, approved_by, status, expires_at, created_at, updated_at)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Validate the complete ownership chain rather than relying on the nullable
+	// foreign keys alone. This also makes the check portable to legacy databases
+	// whose release row may predate project_id backfills.
+	releaseQuery := `SELECT COALESCE(r.project_id, ''), COALESCE(a.project_id, ''), r.archived_at
+		FROM releases r JOIN applications a ON a.id = r.application_id WHERE r.id = ?`
+	if s.db.dialect == storeDialectPostgres {
+		releaseQuery += ` FOR UPDATE`
+	}
+	var releaseProjectID, applicationProjectID string
+	var archivedAt sql.NullTime
+	if err := tx.QueryRow(releaseQuery, waiver.ReleaseID).Scan(&releaseProjectID, &applicationProjectID, &archivedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("release not found: %s", waiver.ReleaseID)
+		}
+		return fmt.Errorf("load release SLA waiver parent: %w", err)
+	}
+	releaseProjectID = normalizeProjectID(releaseProjectID)
+	applicationProjectID = normalizeProjectID(applicationProjectID)
+	if releaseProjectID != applicationProjectID {
+		return fmt.Errorf("release project does not match application project")
+	}
+	if waiver.ProjectID != releaseProjectID {
+		return fmt.Errorf("release SLA waiver project does not match release project")
+	}
+	if archivedAt.Valid {
+		return fmt.Errorf("cannot create or update an SLA waiver for an archived release")
+	}
+
+	ownerQuery := `SELECT release_id, COALESCE(project_id, '') FROM release_sla_waivers WHERE id = ?`
+	if s.db.dialect == storeDialectPostgres {
+		ownerQuery += ` FOR UPDATE`
+	}
+	var currentReleaseID, currentProjectID string
+	if err := tx.QueryRow(ownerQuery, waiver.ID).Scan(&currentReleaseID, &currentProjectID); err == nil {
+		if strings.TrimSpace(currentReleaseID) != waiver.ReleaseID || normalizeProjectID(currentProjectID) != waiver.ProjectID {
+			return fmt.Errorf("release SLA waiver id already belongs to another release or project")
+		}
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("load existing release SLA waiver: %w", err)
+	}
+
+	result, err := tx.Exec(`INSERT INTO release_sla_waivers (id, release_id, project_id, scope, reason, approved_by, status, expires_at, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
-			release_id=excluded.release_id,
-			project_id=excluded.project_id,
 			scope=excluded.scope,
 			reason=excluded.reason,
 			approved_by=excluded.approved_by,
 			status=excluded.status,
 			expires_at=excluded.expires_at,
-			updated_at=excluded.updated_at`,
+			updated_at=excluded.updated_at
+		WHERE release_sla_waivers.release_id = excluded.release_id
+		  AND CASE WHEN TRIM(COALESCE(release_sla_waivers.project_id, '')) = '' THEN ? ELSE release_sla_waivers.project_id END
+		      = CASE WHEN TRIM(COALESCE(excluded.project_id, '')) = '' THEN ? ELSE excluded.project_id END`,
 		waiver.ID,
 		waiver.ReleaseID,
 		waiver.ProjectID,
@@ -209,8 +257,20 @@ func (s *SQLiteStore) SaveReleaseSLAWaiver(waiver *ReleaseSLAWaiver) error {
 		waiver.ExpiresAt,
 		waiver.CreatedAt,
 		waiver.UpdatedAt,
+		DefaultProjectID,
+		DefaultProjectID,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return fmt.Errorf("release SLA waiver id already belongs to another release or project")
+	}
+	return tx.Commit()
 }
 
 func (s *SQLiteStore) ListReleaseSLAWaivers(releaseID string) ([]*ReleaseSLAWaiver, error) {
@@ -263,37 +323,19 @@ func scanReleaseSLAWaiver(row scanner) (*ReleaseSLAWaiver, error) {
 }
 
 func (s *SQLiteStore) SaveExternalResultImport(result *ExternalResultImport) error {
-	if result == nil {
-		return fmt.Errorf("external result import is required")
-	}
-	result.ID = strings.TrimSpace(result.ID)
-	result.Provider = strings.ToLower(strings.TrimSpace(result.Provider))
-	result.Name = strings.TrimSpace(result.Name)
-	result.ReleaseID = strings.TrimSpace(result.ReleaseID)
-	result.ScenarioID = strings.TrimSpace(result.ScenarioID)
-	result.Source = strings.TrimSpace(result.Source)
-	if result.ID == "" {
-		return fmt.Errorf("external result import id is required")
-	}
-	if result.Provider == "" {
-		return fmt.Errorf("external result import provider is required")
-	}
-	if result.Name == "" {
-		result.Name = result.Provider + " import"
-	}
-	result.ProjectID = normalizeProjectID(result.ProjectID)
-	if result.CreatedAt.IsZero() {
-		result.CreatedAt = time.Now().UTC()
-	}
-	summaryJSON, err := json.Marshal(result.Summary)
+	summaryJSON, rawJSON, err := prepareExternalResultImportInsert(result)
 	if err != nil {
-		return fmt.Errorf("marshal external result summary: %w", err)
+		return err
 	}
-	rawJSON, err := json.Marshal(result.RawResult)
+	tx, err := s.db.Begin()
 	if err != nil {
-		return fmt.Errorf("marshal external raw result: %w", err)
+		return err
 	}
-	_, err = s.db.Exec(`INSERT INTO external_result_imports (id, provider, name, project_id, release_id, scenario_id, source, summary_json, raw_json, created_at)
+	defer tx.Rollback()
+	if _, err := validateExternalResultImportPlacement(tx, result, true); err != nil {
+		return err
+	}
+	written, err := tx.Exec(`INSERT INTO external_result_imports (id, provider, name, project_id, release_id, scenario_id, source, summary_json, raw_json, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			provider=excluded.provider,
@@ -303,7 +345,8 @@ func (s *SQLiteStore) SaveExternalResultImport(result *ExternalResultImport) err
 			scenario_id=excluded.scenario_id,
 			source=excluded.source,
 			summary_json=excluded.summary_json,
-			raw_json=excluded.raw_json`,
+			raw_json=excluded.raw_json
+		WHERE external_result_imports.project_id=excluded.project_id`,
 		result.ID,
 		result.Provider,
 		result.Name,
@@ -311,11 +354,21 @@ func (s *SQLiteStore) SaveExternalResultImport(result *ExternalResultImport) err
 		result.ReleaseID,
 		result.ScenarioID,
 		result.Source,
-		string(summaryJSON),
-		string(rawJSON),
+		summaryJSON,
+		rawJSON,
 		result.CreatedAt,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	affected, err := written.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return fmt.Errorf("external result import %q project ownership changed concurrently", result.ID)
+	}
+	return tx.Commit()
 }
 
 func (s *SQLiteStore) ListExternalResultImports(filter ExternalResultImportFilter) ([]*ExternalResultImport, error) {

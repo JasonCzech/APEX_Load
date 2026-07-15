@@ -39,14 +39,13 @@ type solaceAMQPAdapter struct {
 }
 
 const (
-	maxSolaceCachedLinks      = 128
-	maxSolaceLinkKeyBytes     = 64 << 10
-	maxSolaceTransientLinks   = 32
-	solaceSettlementTimeout   = 5 * time.Second
-	solaceCloseTimeout        = 5 * time.Second
-	solaceReplyBackoff        = 50 * time.Millisecond
-	solaceForeignReleaseLimit = 1
-	maxSolaceForeignReplies   = 64
+	maxSolaceCachedLinks    = 128
+	maxSolaceLinkKeyBytes   = 64 << 10
+	maxSolaceTransientLinks = 32
+	solaceSettlementTimeout = 5 * time.Second
+	solaceCloseTimeout      = 5 * time.Second
+	solaceReplyBackoff      = 50 * time.Millisecond
+	maxSolaceForeignReplies = 64
 )
 
 type solaceReplyReceiver interface {
@@ -175,19 +174,20 @@ func solaceAwaitCorrelatedReply(ctx context.Context, receiver solaceReplyReceive
 		if _, exists := releaseCounts[key]; !exists && len(releaseCounts) >= maxSolaceForeignReplies {
 			return message{}, fmt.Errorf("uncorrelated JMS reply budget exceeded while waiting on %q", replyDestination)
 		}
-		if releaseCounts[key] < solaceForeignReleaseLimit {
-			settleCtx, settleCancel := context.WithTimeout(context.WithoutCancel(ctx), solaceSettlementTimeout)
-			err := receiver.ReleaseMessage(settleCtx, amqpMsg)
-			settleCancel()
-			if err != nil {
-				return message{}, fmt.Errorf("release uncorrelated JMS reply from %q: %w", replyDestination, err)
-			}
-			releaseCounts[key]++
+		fresh := releaseCounts[key] == 0
+		settleCtx, settleCancel := context.WithTimeout(context.WithoutCancel(ctx), solaceSettlementTimeout)
+		err = receiver.ReleaseMessage(settleCtx, amqpMsg)
+		settleCancel()
+		if err != nil {
+			return message{}, fmt.Errorf("release uncorrelated JMS reply from %q: %w", replyDestination, err)
+		}
+		releaseCounts[key]++
+		if fresh {
 			continue
 		}
-		// A broker may immediately redeliver the just-released queue head. Do not
-		// settle the same logical delivery repeatedly; leave the current lock alone
-		// and back off so the receiver can advance or its lock can expire.
+		// A broker may immediately redeliver the just-released queue head. Always
+		// release it so another requester's reply is never held until lock expiry,
+		// but back off repeated churn before receiving again.
 		sleep := solaceReplyBackoff
 		if remaining := time.Until(deadline); remaining < sleep {
 			sleep = remaining

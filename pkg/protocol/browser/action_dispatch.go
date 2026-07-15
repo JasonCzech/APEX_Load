@@ -304,10 +304,20 @@ func (b *Browser) dispatchEvaluateJS(ctx context.Context, action *protocol.Actio
 	var jsResult any
 	actionErr := b.evaluatePageExpression(ctx, script, &jsResult)
 	if actionErr == nil && jsResult != nil {
+		var value string
+		hasValue := false
 		if strResult, ok := jsResult.(string); ok {
-			result.Extractions["result"] = strResult
+			value = strResult
+			hasValue = true
 		} else if byteResult, err := json.Marshal(jsResult); err == nil {
-			result.Extractions["result"] = string(byteResult)
+			value = string(byteResult)
+			hasValue = true
+		}
+		if hasValue {
+			if err := protocol.StoreExtraction(result, "result", value); err != nil {
+				result.Extractions = nil
+				return fmt.Errorf("browser evaluate result rejected: %w", err), false
+			}
 		}
 	}
 	return actionErr, false

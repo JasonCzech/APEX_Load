@@ -30,7 +30,10 @@ func (n *Network) runLDAP(ctx context.Context, action *protocol.Action) (*operat
 	}
 	address := n.ldapURL(action)
 	start := time.Now()
-	timeout := n.actionTimeout(action)
+	timeout, err := n.actionTimeout(action)
+	if err != nil {
+		return nil, err
+	}
 	if deadline, ok := ctx.Deadline(); ok {
 		remaining := time.Until(deadline)
 		if timeout <= 0 || remaining < timeout {

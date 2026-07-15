@@ -130,7 +130,7 @@ func readK6ImportRequest(w http.ResponseWriter, r *http.Request) (*k6ImportReque
 			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 			return nil, false
 		}
-		return &k6ImportRequest{Data: []byte(req.Content), ProjectID: req.ProjectID, Name: req.Name, Opts: req.Options}, true
+		return &k6ImportRequest{Data: []byte(req.Content), ProjectID: jsonImportProjectID(r, req.ProjectID), Name: req.Name, Opts: req.Options}, true
 	}
 	if strings.HasPrefix(contentType, "multipart/form-data") {
 		data, filename, ok := readImportMultipartFile(w, r, k6ImportMaxBodyBytes)
@@ -174,7 +174,7 @@ func readDevWebImportRequest(w http.ResponseWriter, r *http.Request) (*devWebImp
 		}
 		return &devWebImportRequest{
 			Data:      []byte(req.Content),
-			ProjectID: req.ProjectID,
+			ProjectID: jsonImportProjectID(r, req.ProjectID),
 			Name:      req.Name,
 			Opts:      req.Options,
 		}, true

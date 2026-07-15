@@ -890,6 +890,9 @@ func (j *JMS) Execute(ctx context.Context, action *protocol.Action) (*protocol.R
 		result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
 		return result, nil
 	}
+	actionCtx, actionCancel := context.WithTimeout(ctx, j.timeout(action))
+	defer actionCancel()
+	ctx = actionCtx
 	if isDeadLetter {
 		result.Extractions["jms_dead_letter"] = "true"
 		result.Extractions["jms_dead_letter_destination"] = destination
@@ -1199,7 +1202,9 @@ func (j *JMS) publish(ctx context.Context, action *protocol.Action, result *prot
 		return message{}, err
 	}
 	result.BytesSent = int64(len(published.Body))
-	addMessageExtractions(result, published)
+	if err := addMessageExtractions(result, published); err != nil {
+		return message{}, err
+	}
 	result.Extractions["jms_operation"] = "publish"
 	if published.SequenceNumber != 0 {
 		// Scheduled (future-enqueue) send: surface the sequence so a later
@@ -1284,11 +1289,16 @@ func (j *JMS) consume(ctx context.Context, action *protocol.Action, result *prot
 	if msg.Destination == "" {
 		msg.Destination = destination
 	}
-	addMessageExtractions(result, msg)
+	if err := addMessageExtractions(result, msg); err != nil {
+		return message{}, err
+	}
 	result.Extractions["jms_operation"] = "consume"
 	if msg.SettlementToken != "" {
 		// Peek-locked: the script settles it later with jms_settle referencing this.
-		result.Extractions["jms_settlement_token"] = msg.SettlementToken
+		if err := protocol.StoreExtraction(result, "jms_settlement_token", msg.SettlementToken); err != nil {
+			result.Extractions = nil
+			return message{}, fmt.Errorf("JMS settlement token extraction rejected: %w", err)
+		}
 	}
 	if msg.SequenceNumber != 0 {
 		result.Extractions["jms_sequence_number"] = strconv.FormatInt(msg.SequenceNumber, 10)
@@ -1382,7 +1392,9 @@ func (j *JMS) browse(ctx context.Context, action *protocol.Action, result *proto
 		first.Destination = destination
 	}
 	result.BytesReceived = int64(len(first.Body))
-	addMessageExtractions(result, first)
+	if err := addMessageExtractions(result, first); err != nil {
+		return message{}, false, err
+	}
 	// Non-destructive: do NOT Track for settlement.
 	if err := runExtractors(action.Extractors, result, first); err != nil {
 		return message{}, false, err
@@ -1510,9 +1522,14 @@ func (j *JMS) sessionAdvanced(ctx context.Context, action *protocol.Action, resu
 		if err != nil {
 			return message{}, false, err
 		}
-		result.Extractions["jms_operation"] = "session_accept"
-		result.Extractions["jms_session_token"] = token
-		result.Extractions["jms_session_id"] = resolved
+		for key, value := range map[string]string{
+			"jms_operation": "session_accept", "jms_session_token": token, "jms_session_id": resolved,
+		} {
+			if err := protocol.StoreExtraction(result, key, value); err != nil {
+				result.Extractions = nil
+				return message{}, false, fmt.Errorf("JMS session extraction %q rejected: %w", key, err)
+			}
+		}
 		return message{}, false, nil
 	case "jms_session_state":
 		token := paramString(action.Params, "session_token", "")
@@ -1533,10 +1550,13 @@ func (j *JMS) sessionAdvanced(ctx context.Context, action *protocol.Action, resu
 		if set {
 			result.Extractions["jms_session_state_set"] = "true"
 		} else {
-			if len(got) > MaxJMSSessionStateBytes {
-				return message{}, false, fmt.Errorf("JMS session state response exceeds %d bytes", MaxJMSSessionStateBytes)
+			if len(got) > protocol.MaxExtractionValueBytes {
+				return message{}, false, fmt.Errorf("JMS session state extraction exceeds %d bytes", protocol.MaxExtractionValueBytes)
 			}
-			result.Extractions["jms_session_state"] = string(got)
+			if err := protocol.StoreExtraction(result, "jms_session_state", string(got)); err != nil {
+				result.Extractions = nil
+				return message{}, false, fmt.Errorf("JMS session state extraction rejected: %w", err)
+			}
 		}
 		return message{}, false, nil
 	case "jms_session_close":
@@ -1569,9 +1589,14 @@ func (j *JMS) sessionAdvanced(ctx context.Context, action *protocol.Action, resu
 		}
 		first := msgs[0]
 		result.BytesReceived = int64(len(first.Body))
-		addMessageExtractions(result, first)
+		if err := addMessageExtractions(result, first); err != nil {
+			return message{}, false, err
+		}
 		if first.SettlementToken != "" {
-			result.Extractions["jms_settlement_token"] = first.SettlementToken
+			if err := protocol.StoreExtraction(result, "jms_settlement_token", first.SettlementToken); err != nil {
+				result.Extractions = nil
+				return message{}, false, fmt.Errorf("JMS settlement token extraction rejected: %w", err)
+			}
 		}
 		return first, true, evaluateAssertions(action.Assertions, result, first)
 	case "jms_cancel_scheduled":
@@ -1729,8 +1754,13 @@ func (j *JMS) requestReply(ctx context.Context, action *protocol.Action, result 
 	}
 	result.BytesSent = int64(len(sent.Body))
 	result.BytesReceived = int64(len(response.Body))
-	addMessageExtractions(result, response)
-	result.Extractions["jms_request_message_id"] = sent.ID
+	if err := addMessageExtractions(result, response); err != nil {
+		return message{}, message{}, err
+	}
+	if err := protocol.StoreExtraction(result, "jms_request_message_id", sent.ID); err != nil {
+		result.Extractions = nil
+		return message{}, message{}, fmt.Errorf("JMS request ID extraction rejected: %w", err)
+	}
 	result.Extractions["jms_operation"] = "request_reply"
 	if err := runExtractors(action.Extractors, result, response); err != nil {
 		return message{}, message{}, err
@@ -2060,19 +2090,28 @@ func (a sidecarAdapter) run(ctx context.Context, req sidecarRequest, timeout tim
 	cmd.WaitDelay = 2 * time.Second
 	cmd.Env = subprocessguard.Environment(nil)
 	cmd.Stdin = bytes.NewReader(payload)
-	stdout := &sidecarCappedBuffer{max: maxSidecarCaptureBytes}
-	stderr := &sidecarCappedBuffer{max: maxSidecarCaptureBytes}
+	// Stop the child as soon as either stream crosses its retention cap. Waiting
+	// for the normal action deadline lets a runaway sidecar continue consuming
+	// CPU or blocking on output even though its response is already invalid.
+	stdout := &sidecarCappedBuffer{max: maxSidecarCaptureBytes, onOverflow: cancel}
+	stderr := &sidecarCappedBuffer{max: maxSidecarCaptureBytes, onOverflow: cancel}
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	err = cmd.Run()
+	// Prefer the bounded-stream violation even if the child subsequently blocks
+	// and is killed by its deadline. Once either stream crosses the cap, the
+	// response is invalid regardless of its eventual exit status.
+	if stdout.truncated {
+		return sidecarResponse{}, fmt.Errorf("jms sidecar %s stdout exceeded %d bytes", req.Operation, maxSidecarCaptureBytes)
+	}
+	if stderr.truncated {
+		return sidecarResponse{}, fmt.Errorf("jms sidecar %s stderr exceeded %d bytes", req.Operation, maxSidecarCaptureBytes)
+	}
 	if err != nil {
 		if runCtx.Err() != nil {
 			return sidecarResponse{}, fmt.Errorf("jms sidecar %s timed out: %w", req.Operation, runCtx.Err())
 		}
 		return sidecarResponse{}, fmt.Errorf("jms sidecar %s failed: %w", req.Operation, err)
-	}
-	if stdout.truncated {
-		return sidecarResponse{}, fmt.Errorf("jms sidecar %s stdout exceeded %d bytes", req.Operation, maxSidecarCaptureBytes)
 	}
 	out := stdout.buf.Bytes()
 	if len(bytes.TrimSpace(out)) == 0 {
@@ -2089,9 +2128,11 @@ func (a sidecarAdapter) run(ctx context.Context, req sidecarRequest, timeout tim
 }
 
 type sidecarCappedBuffer struct {
-	buf       bytes.Buffer
-	max       int
-	truncated bool
+	buf          bytes.Buffer
+	max          int
+	truncated    bool
+	onOverflow   func()
+	overflowOnce sync.Once
 }
 
 func (b *sidecarCappedBuffer) Write(content []byte) (int, error) {
@@ -2104,6 +2145,9 @@ func (b *sidecarCappedBuffer) Write(content []byte) (int, error) {
 		}
 	} else if len(content) > 0 {
 		b.truncated = true
+	}
+	if b.truncated && b.onOverflow != nil {
+		b.overflowOnce.Do(b.onOverflow)
 	}
 	return len(content), nil
 }
@@ -2366,21 +2410,53 @@ func (j *JMS) serviceBusConsumeDestination(action *protocol.Action, destination 
 	return serviceBusConsumeDestination(destination, destinationType, subscription)
 }
 
-func addMessageExtractions(result *protocol.Result, msg message) {
-	result.CorrelationID = msg.CorrelationID
-	result.Extractions["jms_message_id"] = msg.ID
-	result.Extractions["jms_correlation_id"] = msg.CorrelationID
-	result.Extractions["jms_destination"] = msg.Destination
-	result.Extractions["jms_body"] = string(msg.Body)
+func addMessageExtractions(result *protocol.Result, msg message) error {
+	store := func(key, value string) error {
+		if err := protocol.StoreExtraction(result, key, value); err != nil {
+			result.Extractions = nil
+			return fmt.Errorf("JMS metadata extraction %q rejected: %w", key, err)
+		}
+		return nil
+	}
+	for _, entry := range []struct{ key, value string }{
+		{"jms_message_id", msg.ID},
+		{"jms_correlation_id", msg.CorrelationID},
+		{"jms_destination", msg.Destination},
+	} {
+		if err := store(entry.key, entry.value); err != nil {
+			return err
+		}
+	}
+	body := msg.Body
+	truncated := len(body) > protocol.MaxExtractionValueBytes
+	if truncated {
+		body = body[:protocol.MaxExtractionValueBytes]
+	}
+	if err := store("jms_body", string(body)); err != nil {
+		return err
+	}
+	if truncated {
+		if err := store("jms_body_truncated", "true"); err != nil {
+			return err
+		}
+	}
 	if msg.Type != "" {
-		result.Extractions["jms_message_type"] = msg.Type
+		if err := store("jms_message_type", msg.Type); err != nil {
+			return err
+		}
 	}
 	if reason, ok := firstMatchingMapValue(msg.Properties, "dead_letter_reason", "dlq_reason", "x-dead-letter-reason"); ok {
-		result.Extractions["jms_dead_letter_reason"] = reason
+		if err := store("jms_dead_letter_reason", reason); err != nil {
+			return err
+		}
 	}
 	if deliveryCount, ok := firstMatchingMapValue(msg.Properties, "delivery_count", "x-delivery-count", "JMSXDeliveryCount"); ok {
-		result.Extractions["jms_delivery_count"] = deliveryCount
+		if err := store("jms_delivery_count", deliveryCount); err != nil {
+			return err
+		}
 	}
+	result.CorrelationID = msg.CorrelationID
+	return nil
 }
 
 // isRedeliveredMessage reports whether a consumed message is a redelivery — a
@@ -2509,7 +2585,10 @@ func runExtractors(extractors []protocol.Extractor, result *protocol.Result, msg
 				return err
 			}
 		}
-		result.Extractions[extractor.Name] = value
+		if err := protocol.StoreExtraction(result, extractor.Name, value); err != nil {
+			result.Extractions = nil
+			return fmt.Errorf("JMS extractor %q output rejected: %w", extractor.Name, err)
+		}
 	}
 	return nil
 }

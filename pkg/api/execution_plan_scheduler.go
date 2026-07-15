@@ -48,6 +48,15 @@ type leaseTermFencedExecutionPlanScheduleOccurrenceClaimPersistence interface {
 	ClaimExecutionPlanScheduleOccurrenceIfCurrentAndLeaseTermHeld(occurrence *storage.ExecutionPlanScheduleOccurrence, leaseName, leaseOwnerID string, leaseGeneration uint64) (bool, error)
 }
 
+var (
+	errExecutionPlanNotFound            = errors.New("execution plan not found")
+	errExecutionPlanSchedulePersistence = errors.New("execution-plan schedule persistence failed")
+)
+
+func executionPlanSchedulePersistenceError(action string, err error) error {
+	return fmt.Errorf("%w: %s: %w", errExecutionPlanSchedulePersistence, action, err)
+}
+
 func executionPlanScheduleAllows(disabledFrom, disabledUntil *time.Time) func(time.Time) (bool, error) {
 	return func(candidate time.Time) (bool, error) {
 		return !dateRangePauseActive(disabledFrom, disabledUntil, candidate), nil
@@ -112,7 +121,13 @@ func (tr *TestRunner) UpdateExecutionPlanSchedule(planID, scheduleID string, req
 		return nil, false, err
 	}
 	existing, err := tr.execPlanScheduleStore.GetExecutionPlanSchedule(scheduleID)
-	if err != nil || existing == nil || existing.PlanID != planID {
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, false, nil
+		}
+		return nil, false, executionPlanSchedulePersistenceError("load execution-plan schedule", err)
+	}
+	if existing == nil || existing.PlanID != planID {
 		return nil, false, nil
 	}
 	updated, err := tr.upsertExecutionPlanScheduleWithTerm(planID, scheduleID, existing, req, leaseTerm)
@@ -132,8 +147,14 @@ func (tr *TestRunner) upsertExecutionPlanScheduleWithTerm(planID, scheduleID str
 		return nil, fmt.Errorf("storage is not configured")
 	}
 	plan, err := tr.execPlanScheduleStore.GetExecutionPlan(planID)
-	if err != nil || plan == nil {
-		return nil, fmt.Errorf("execution plan not found: %s", planID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("%w: %s", errExecutionPlanNotFound, planID)
+		}
+		return nil, executionPlanSchedulePersistenceError("load execution plan", err)
+	}
+	if plan == nil {
+		return nil, fmt.Errorf("%w: %s", errExecutionPlanNotFound, planID)
 	}
 	cronExpr := strings.TrimSpace(req.CronExpr)
 	if err := validateCronExpr(cronExpr); err != nil {
@@ -308,7 +329,13 @@ func (tr *TestRunner) DeleteExecutionPlanScheduleForPlan(planID, scheduleID stri
 		return false, err
 	}
 	existing, err := tr.execPlanScheduleStore.GetExecutionPlanSchedule(scheduleID)
-	if err != nil || existing == nil || existing.PlanID != planID {
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, executionPlanSchedulePersistenceError("load execution-plan schedule before delete", err)
+	}
+	if existing == nil || existing.PlanID != planID {
 		return false, nil
 	}
 	if tr.durableExecutionFence {
@@ -340,7 +367,13 @@ func (tr *TestRunner) ListExecutionPlanScheduleOccurrencesForPlan(planID, schedu
 		return nil, false, nil
 	}
 	existing, err := tr.execPlanScheduleStore.GetExecutionPlanSchedule(scheduleID)
-	if err != nil || existing == nil || existing.PlanID != planID {
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, false, nil
+		}
+		return nil, false, executionPlanSchedulePersistenceError("load execution-plan schedule occurrences parent", err)
+	}
+	if existing == nil || existing.PlanID != planID {
 		return nil, false, nil
 	}
 	occ, err := tr.execPlanScheduleStore.ListExecutionPlanScheduleOccurrences(scheduleID)
@@ -352,8 +385,14 @@ func (tr *TestRunner) ListExecutionPlanScheduleOccurrencesPageForPlan(planID, sc
 		return nil, false, nil
 	}
 	existing, err := tr.execPlanScheduleStore.GetExecutionPlanSchedule(scheduleID)
-	if err != nil || existing == nil || existing.PlanID != planID {
-		return nil, false, err
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, false, nil
+		}
+		return nil, false, executionPlanSchedulePersistenceError("load execution-plan schedule occurrences parent", err)
+	}
+	if existing == nil || existing.PlanID != planID {
+		return nil, false, nil
 	}
 	if paged, ok := tr.execPlanScheduleStore.(interface {
 		ListExecutionPlanScheduleOccurrencesPage(string, int, int) ([]*storage.ExecutionPlanScheduleOccurrence, error)

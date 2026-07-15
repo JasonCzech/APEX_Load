@@ -19,14 +19,26 @@ import (
 )
 
 func (tr *TestRunner) GetTest(id string) (*ManagedTest, bool) {
+	return tr.getTestSnapshot(id, true)
+}
+
+func (tr *TestRunner) GetTestSummary(id string) (*ManagedTest, bool) {
+	return tr.getTestSnapshot(id, false)
+}
+
+func (tr *TestRunner) getTestSnapshot(id string, includeHistory bool) (*ManagedTest, bool) {
 	tr.refreshTestsForHARead()
 	tr.refreshReadMetadataForTest(id)
 	tr.mu.RLock()
 	resolvedID := tr.resolveRefKeyLocked(id)
 	t, ok := tr.tests[resolvedID]
-	if ok {
-		cloned := cloneManagedTestForReadLocked(t)
-		cloned.ComparisonBaseline = tr.buildRunComparisonBaselineLocked(t)
+	// A follower's full-map refresh is intentionally throttled. During that
+	// window another replica can delete and recreate the same ID in a different
+	// project, so a cached hit is not a sufficient authorization identity. HA
+	// single-object reads revalidate the one durable row below; list reads keep
+	// using the bounded snapshot refresh and do not regain the former N+1 scan.
+	if ok && (tr.leadership == nil || tr.testStore == nil) {
+		cloned := tr.cloneTestSnapshotLocked(t, includeHistory)
 		tr.mu.RUnlock()
 		return cloned, true
 	}
@@ -41,18 +53,69 @@ func (tr *TestRunner) GetTest(id string) (*ManagedTest, bool) {
 	if err != nil || record == nil {
 		return nil, false
 	}
+	if tr.leadership != nil {
+		tr.mu.RLock()
+		current := tr.tests[record.ID]
+		if sameStoredTestIdentity(current, record) {
+			cloned := tr.cloneTestSnapshotLocked(current, includeHistory)
+			tr.mu.RUnlock()
+			return cloned, true
+		}
+		tr.mu.RUnlock()
+	}
 	managed := managedTestFromRecord(record)
-	tr.loadStoredTestHistory(managed)
-	tr.loadStoredTestArchive(managed)
+	if err := tr.restoreManagedTestRuntime(managed); err != nil {
+		managed.runtimeHydrationError = err.Error()
+		slog.Error("failed to restore test runtime during durable read", "test_id", managed.ID, "error", err)
+	}
+	if includeHistory {
+		tr.loadStoredTestHistory(managed)
+	}
+	// Do not publish an archive pointer until the durable identity has won the
+	// final cache race below. loadStoredTestArchive writes tr.archives eagerly and
+	// could otherwise attach the recreated row's archive to a stale live handle.
+	if archive, found, loadErr := tr.loadRunArchiveFromStore(managed.ID); loadErr != nil {
+		slog.Warn("failed to load stored test archive during durable read", "test_id", managed.ID, "error", loadErr)
+	} else if found && runArchiveRecordAvailable(archive) {
+		managed.Archive = archive
+	}
 	tr.mu.Lock()
-	if current := tr.tests[managed.ID]; current == nil || current.cancel == nil {
+	current := tr.tests[managed.ID]
+	canonical := managed
+	if sameStoredTestIdentity(current, record) {
+		canonical = current
+	} else if current == nil || (current.cancel == nil && current.executionCtx == nil) {
+		if current != nil {
+			tr.removeRefKeyLocked(current.RefKey)
+			tr.forgetRunSnapshotWriteStateLocked(managed.ID)
+			forgetRunArchiveCache(managed.ID)
+			deleteGroupMetricsHistoryCache(managed.ID)
+		}
 		tr.tests[managed.ID] = managed
 		tr.observeAndIndexRefKeyLocked(managed.RefKey, managed.ID)
+		if managed.Archive != nil {
+			tr.archives[managed.ID] = managed.Archive
+		} else {
+			delete(tr.archives, managed.ID)
+		}
 	}
-	cloned := cloneManagedTestForReadLocked(tr.tests[managed.ID])
-	cloned.ComparisonBaseline = tr.buildRunComparisonBaselineLocked(tr.tests[managed.ID])
+	// A stale local execution handle is retained so leadership-loss teardown can
+	// still cancel it, but it is never the serialization source for this durable
+	// identity. Returning managed here is deliberately fail-closed across tenants.
+	cloned := tr.cloneTestSnapshotLocked(canonical, includeHistory)
 	tr.mu.Unlock()
 	return cloned, true
+}
+
+func (tr *TestRunner) cloneTestSnapshotLocked(test *ManagedTest, includeHistory bool) *ManagedTest {
+	var cloned *ManagedTest
+	if includeHistory {
+		cloned = cloneManagedTestForReadLocked(test)
+	} else {
+		cloned = cloneManagedTestSummaryForReadLocked(test)
+	}
+	cloned.ComparisonBaseline = tr.buildRunComparisonBaselineLocked(test)
+	return cloned
 }
 
 func (tr *TestRunner) refreshTestsForHARead() {
@@ -427,6 +490,30 @@ func (tr *TestRunner) ListTestSummaries() []*ManagedTest {
 	out := make([]*ManagedTest, 0, len(tr.tests))
 	for _, t := range tr.tests {
 		out = append(out, cloneManagedTestSummaryForReadLocked(t))
+	}
+	return out
+}
+
+// listOperationalTestSnapshots returns the complete current test metadata used
+// by controller-wide accounting, capacity, retention, and observability paths,
+// but deliberately omits retained interval history and its derived sparkline.
+// Those paths are polled frequently and never consume either field; cloning the
+// full history for every Prometheus scrape or accounting request lets retained
+// run history multiply the cost of otherwise lightweight control-plane reads.
+func (tr *TestRunner) listOperationalTestSnapshots() []*ManagedTest {
+	tr.refreshTestsForHARead()
+	tr.refreshReadMetadataForTestList()
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	out := make([]*ManagedTest, 0, len(tr.tests))
+	for _, test := range tr.tests {
+		if test == nil {
+			continue
+		}
+		cloned := cloneManagedTestFieldsLocked(test)
+		cloned.History = nil
+		cloned.Sparkline = nil
+		out = append(out, cloned)
 	}
 	return out
 }
@@ -912,14 +999,24 @@ func (tr *TestRunner) GetRunArchiveContext(ctx context.Context, id string) (*sto
 		return nil, false
 	}
 	if !runArchiveRecordAvailableContext(ctx, record) {
-		tr.mu.Lock()
-		delete(tr.archives, id)
-		if test, exists := tr.tests[id]; exists {
-			test.Archive = nil
-		}
-		tr.mu.Unlock()
-		forgetRunArchiveCache(id)
+		tr.forgetCachedRunArchive(id)
 		return nil, false
+	}
+	// The archive catalog is keyed only by test ID. On an HA follower, an ID may
+	// have been deleted/recreated by a peer while this replica still holds the old
+	// tenant's catalog pointer. Bind the manifest back to the current durable test
+	// identity before exposing any artifact through the general archive routes.
+	if tr.leadership != nil && tr.testStore != nil {
+		durable, loadErr := tr.testStore.GetTest(id)
+		if loadErr != nil || durable == nil {
+			tr.forgetCachedRunArchive(id)
+			return nil, false
+		}
+		manifest, manifestErr := cachedRunArchiveManifest(record)
+		if manifestErr != nil || !runArchiveManifestMatchesStoredTest(manifest, durable) {
+			tr.forgetCachedRunArchive(id)
+			return nil, false
+		}
 	}
 	tr.mu.Lock()
 	tr.archives[id] = record
@@ -928,6 +1025,29 @@ func (tr *TestRunner) GetRunArchiveContext(ctx context.Context, id string) (*sto
 	}
 	tr.mu.Unlock()
 	return cloneRunArchiveRecord(record), true
+}
+
+func (tr *TestRunner) forgetCachedRunArchive(id string) {
+	tr.mu.Lock()
+	delete(tr.archives, id)
+	if test, exists := tr.tests[id]; exists {
+		test.Archive = nil
+	}
+	tr.mu.Unlock()
+	forgetRunArchiveCache(id)
+}
+
+func runArchiveManifestMatchesStoredTest(manifest *RunArchiveManifest, test *storage.TestRecord) bool {
+	if manifest == nil || test == nil || strings.TrimSpace(manifest.TestID) != strings.TrimSpace(test.ID) {
+		return false
+	}
+	if normalizeProjectID(manifest.Provenance.ProjectID) != normalizeProjectID(test.ProjectID) {
+		return false
+	}
+	// v2 archives persist the test's CreatedAt as RequestedAt. Keep legacy
+	// archives (which omitted it) readable, but use it when present to reject a
+	// same-project ID reuse as well as the cross-project case.
+	return manifest.Provenance.RequestedAt.IsZero() || test.StartTime.IsZero() || manifest.Provenance.RequestedAt.Equal(test.StartTime)
 }
 
 func cloneRunArchiveRecord(record *storage.RunArchiveRecord) *storage.RunArchiveRecord {

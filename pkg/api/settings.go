@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"strings"
 	"time"
@@ -282,8 +283,27 @@ func (g GitHubSettings) webhookSecret() string {
 	return strings.TrimSpace(envValue(g.WebhookSecretEnvVar))
 }
 
+func (g GitHubSettings) validatedWebhookSecret() (string, error) {
+	envVar := strings.TrimSpace(g.WebhookSecretEnvVar)
+	if envVar == "" {
+		return "", errors.New("github webhook secret environment variable is not configured")
+	}
+	secret := g.webhookSecret()
+	if secret == "" {
+		return "", fmt.Errorf("github webhook secret environment variable %q is empty", envVar)
+	}
+	if productionMode() && len([]byte(secret)) < productionSecretMinBytes {
+		return "", fmt.Errorf("github webhook secret environment variable %q must contain at least %d bytes in production", envVar, productionSecretMinBytes)
+	}
+	return secret, nil
+}
+
 func (g GitHubSettings) webhookConfigured() bool {
-	return g.Enabled && strings.TrimSpace(g.WebhookSecretEnvVar) != "" && g.webhookSecret() != ""
+	if !g.Enabled {
+		return false
+	}
+	_, err := g.validatedWebhookSecret()
+	return err == nil
 }
 
 func (g GitHubSettings) patToken() string {
@@ -474,6 +494,8 @@ func normalizeAuthSettings(in AuthSettings) AuthSettings {
 	out.DomainRolesClaim = strings.TrimSpace(out.DomainRolesClaim)
 	out.RepositoryRolesClaim = strings.TrimSpace(out.RepositoryRolesClaim)
 	out.SessionSecretEnvVar = strings.TrimSpace(out.SessionSecretEnvVar)
+	out.TrustedProxyCIDRs = normalizeTrustedProxyCIDRs(out.TrustedProxyCIDRs)
+	out.TrustedProxySecretEnvVar = strings.TrimSpace(out.TrustedProxySecretEnvVar)
 	out.Scopes = normalizeAuthScopes(out.Scopes)
 	if isAuthBypassMode(out.Mode) {
 		out.Mode = defaults.Mode
@@ -1192,6 +1214,14 @@ func validateAuthSettings(settings AuthSettings) error {
 		if err := validateOptionalAuthURL("logout_url", settings.LogoutURL); err != nil {
 			return err
 		}
+		if err := validateTrustedProxyCIDRs(settings.TrustedProxyCIDRs); err != nil {
+			return err
+		}
+		if productionMode() && strings.TrimSpace(settings.TrustedProxySecretEnvVar) != "" {
+			if _, err := trustedProxySharedSecret(settings); err != nil {
+				return err
+			}
+		}
 		return nil
 	case authModeOIDC:
 		if settings.IssuerURL == "" {
@@ -1215,6 +1245,12 @@ func validateAuthSettings(settings AuthSettings) error {
 		if err := validateRequiredAuthURL("redirect_url", settings.RedirectURL); err != nil {
 			return err
 		}
+		if err := validateOIDCSecureURL("issuer URL", settings.IssuerURL); err != nil {
+			return err
+		}
+		if err := validateOIDCSecureURL("redirect URL", settings.RedirectURL); err != nil {
+			return err
+		}
 		if err := validateOptionalAuthURL("login_url", settings.LoginURL); err != nil {
 			return err
 		}
@@ -1228,6 +1264,39 @@ func validateAuthSettings(settings AuthSettings) error {
 	default:
 		return fmt.Errorf("auth.mode must be one of %q, %q, or %q", authModeDev, authModeTrustedHeaders, authModeOIDC)
 	}
+}
+
+func normalizeTrustedProxyCIDRs(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
+	for _, raw := range values {
+		value := strings.TrimSpace(raw)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
+}
+
+func validateTrustedProxyCIDRs(values []string) error {
+	for _, raw := range values {
+		value := strings.TrimSpace(raw)
+		if value == "" {
+			continue
+		}
+		if net.ParseIP(value) != nil {
+			continue
+		}
+		if _, _, err := net.ParseCIDR(value); err != nil {
+			return fmt.Errorf("auth.trusted_proxy_cidrs contains invalid IP address or CIDR %q", value)
+		}
+	}
+	return nil
 }
 
 func normalizeAuthScopes(scopes []string) []string {

@@ -24,6 +24,66 @@ func TestWebSocketInitRejectsOversizedMessageLimit(t *testing.T) {
 	}
 }
 
+func TestWebSocketRejectsUnboundedTimeouts(t *testing.T) {
+	ws := &WebSocket{}
+	err := ws.Init(context.Background(), map[string]any{
+		"websocket_read_timeout_ms": dsl.MaxConfiguredProtocolTimeout.Milliseconds() + 1,
+	})
+	if err == nil || !strings.Contains(err.Error(), "between 0") {
+		t.Fatalf("Init error = %v, want timeout cap rejection", err)
+	}
+}
+
+func TestWebSocketReceiveHonorsContextCancellation(t *testing.T) {
+	server := newEchoServer(t, "")
+	defer server.Close()
+	ws := &WebSocket{}
+	if err := ws.Init(context.Background(), map[string]any{
+		"base_url":                  server.URL,
+		"websocket_read_timeout_ms": dsl.MaxConfiguredProtocolTimeoutMS,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Teardown(context.Background())
+	if result, _ := ws.Execute(context.Background(), &protocol.Action{Name: "connect", Type: "ws_connect", Target: "/ws"}); !result.Success {
+		t.Fatalf("connect failed: %s", result.ErrorMessage)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(50*time.Millisecond, cancel)
+	start := time.Now()
+	result, err := ws.Execute(ctx, &protocol.Action{Name: "receive", Type: "ws_receive"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Success || time.Since(start) > time.Second {
+		t.Fatalf("receive ignored cancellation: success=%v elapsed=%s error=%q", result.Success, time.Since(start), result.ErrorMessage)
+	}
+}
+
+func TestWebSocketActionRejectsUnboundedTimeout(t *testing.T) {
+	server := newEchoServer(t, "")
+	defer server.Close()
+	ws := &WebSocket{}
+	if err := ws.Init(context.Background(), map[string]any{"base_url": server.URL}); err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Teardown(context.Background())
+	if result, _ := ws.Execute(context.Background(), &protocol.Action{Name: "connect", Type: "ws_connect", Target: "/ws"}); !result.Success {
+		t.Fatalf("connect failed: %s", result.ErrorMessage)
+	}
+	result, err := ws.Execute(context.Background(), &protocol.Action{
+		Name: "receive", Type: "ws_receive",
+		Params: map[string]any{"timeout_ms": dsl.MaxConfiguredProtocolTimeout.Milliseconds() + 1},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Success || !strings.Contains(result.ErrorMessage, "between 0") {
+		t.Fatalf("unbounded action timeout result = %#v", result)
+	}
+}
+
 func TestWebSocketWriteMessageRejectsOversizedRuntimePayload(t *testing.T) {
 	ws := &WebSocket{writeTimeout: time.Second}
 	err := ws.writeMessage(nil, gorillawebsocket.BinaryMessage, make([]byte, dsl.MaxWebSocketMessageBytes+1))

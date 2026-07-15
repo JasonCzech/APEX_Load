@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -32,6 +33,9 @@ const (
 	defaultOIDCReturnTo           = "/"
 	defaultOIDCDiscoveryTimeout   = 10 * time.Second
 	defaultOIDCLoginRatePerMinute = 30
+	oidcRemoteResponseMaxBytes    = 2 << 20
+	oidcResponseHeaderMaxBytes    = 64 << 10
+	productionSecretMinBytes      = 32
 )
 
 type oidcSessionToken struct {
@@ -201,7 +205,7 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "authorization code is required")
 		return
 	}
-	token, err := runtime.oauth2Config.Exchange(r.Context(), code)
+	token, err := runtime.exchange(r.Context(), code)
 	if err != nil {
 		s.recordOIDCCallbackFailure(r, "token_exchange_failed", nil)
 		writeError(w, http.StatusUnauthorized, "oidc token exchange failed")
@@ -316,6 +320,7 @@ type oidcRuntime struct {
 	oauth2Config  oauth2.Config
 	verifier      *oidc.IDTokenVerifier
 	sessionSecret string
+	httpClient    *http.Client
 }
 
 func newOIDCRuntime(ctx context.Context, settings AuthSettings) (*oidcRuntime, error) {
@@ -327,9 +332,29 @@ func newOIDCRuntime(ctx context.Context, settings AuthSettings) (*oidcRuntime, e
 	if err != nil {
 		return nil, err
 	}
-	provider, err := newOIDCProvider(ctx, settings.IssuerURL)
+	httpClient := newOIDCHTTPClient()
+	providerCtx := context.WithValue(ctx, oauth2.HTTPClient, httpClient)
+	provider, err := newOIDCProvider(providerCtx, settings.IssuerURL)
 	if err != nil {
 		return nil, fmt.Errorf("oidc discovery failed: %w", err)
+	}
+	endpoint := provider.Endpoint()
+	for label, raw := range map[string]string{
+		"authorization endpoint": endpoint.AuthURL,
+		"token endpoint":         endpoint.TokenURL,
+	} {
+		if err := validateOIDCSecureURL(label, raw); err != nil {
+			return nil, err
+		}
+	}
+	var metadata struct {
+		JWKSURL string `json:"jwks_uri"`
+	}
+	if err := provider.Claims(&metadata); err != nil {
+		return nil, fmt.Errorf("oidc discovery metadata is invalid: %w", err)
+	}
+	if err := validateOIDCSecureURL("jwks endpoint", metadata.JWKSURL); err != nil {
+		return nil, err
 	}
 	return &oidcRuntime{
 		oauth2Config: oauth2.Config{
@@ -341,7 +366,70 @@ func newOIDCRuntime(ctx context.Context, settings AuthSettings) (*oidcRuntime, e
 		},
 		verifier:      provider.Verifier(&oidc.Config{ClientID: settings.ClientID}),
 		sessionSecret: sessionSecret,
+		httpClient:    httpClient,
 	}, nil
+}
+
+func (runtime *oidcRuntime) exchange(ctx context.Context, code string) (*oauth2.Token, error) {
+	if runtime == nil || runtime.httpClient == nil {
+		return nil, fmt.Errorf("oidc runtime is not configured")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, runtime.httpClient)
+	return runtime.oauth2Config.Exchange(ctx, code)
+}
+
+type oidcBoundedRoundTripper struct {
+	base http.RoundTripper
+}
+
+func (transport oidcBoundedRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := transport.base.RoundTrip(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Body != nil {
+		resp.Body = http.MaxBytesReader(nil, resp.Body, oidcRemoteResponseMaxBytes)
+	}
+	return resp, nil
+}
+
+func newOIDCHTTPClient() *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.MaxResponseHeaderBytes = oidcResponseHeaderMaxBytes
+	return &http.Client{
+		Timeout:       defaultOIDCDiscoveryTimeout,
+		Transport:     oidcBoundedRoundTripper{base: transport},
+		CheckRedirect: sameOriginRedirectPolicy,
+	}
+}
+
+func validateOIDCSecureURL(label, raw string) error {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Hostname() == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return fmt.Errorf("oidc %s must be a valid http(s) URL", label)
+	}
+	if parsed.User != nil {
+		return fmt.Errorf("oidc %s must not contain userinfo credentials", label)
+	}
+	if parsed.Scheme == "https" || oidcURLIsLoopback(parsed) {
+		return nil
+	}
+	return fmt.Errorf("oidc %s must use https (http is allowed only for loopback development)", label)
+}
+
+func oidcURLIsLoopback(parsed *url.URL) bool {
+	if parsed == nil {
+		return false
+	}
+	host := strings.TrimSpace(parsed.Hostname())
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func (s *Server) cachedOIDCRuntime(ctx context.Context, settings AuthSettings) (*oidcRuntime, error) {
@@ -412,6 +500,12 @@ func (s *Server) allowOIDCLoginAttempt(w http.ResponseWriter, r *http.Request) b
 }
 
 func newOIDCProvider(ctx context.Context, issuerURL string) (*oidc.Provider, error) {
+	if err := validateOIDCSecureURL("issuer URL", issuerURL); err != nil {
+		return nil, err
+	}
+	if _, ok := ctx.Value(oauth2.HTTPClient).(*http.Client); !ok {
+		ctx = context.WithValue(ctx, oauth2.HTTPClient, newOIDCHTTPClient())
+	}
 	return oidc.NewProvider(ctx, issuerURL)
 }
 
@@ -459,6 +553,9 @@ func authSessionSecret(settings AuthSettings) (string, error) {
 	secret := strings.TrimSpace(os.Getenv(settings.SessionSecretEnvVar))
 	if secret == "" {
 		return "", fmt.Errorf("oidc session secret environment variable %q is not set", settings.SessionSecretEnvVar)
+	}
+	if productionMode() && len([]byte(secret)) < productionSecretMinBytes {
+		return "", fmt.Errorf("oidc session secret environment variable %q must contain at least %d bytes in production", settings.SessionSecretEnvVar, productionSecretMinBytes)
 	}
 	return secret, nil
 }

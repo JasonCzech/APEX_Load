@@ -1046,6 +1046,11 @@ func (s *Server) enforceAuthPosture() error {
 		if mode == authModeTrustedHeaders && productionMode() && !trustedProxyGateConfigured(settings) {
 			return fmt.Errorf("refusing to start: auth mode %q in production requires a trusted-proxy gate; set auth.trusted_proxy_cidrs or auth.trusted_proxy_secret_env_var", authModeTrustedHeaders)
 		}
+		if mode == authModeTrustedHeaders && productionMode() && strings.TrimSpace(settings.TrustedProxySecretEnvVar) != "" {
+			if _, err := trustedProxySharedSecret(settings); err != nil {
+				return fmt.Errorf("refusing to start: %w", err)
+			}
+		}
 		if mode == authModeTrustedHeaders && !trustedProxyGateConfigured(settings) {
 			slog.Warn("trusted-headers auth has no trusted-proxy gate; forwarded identity headers are trusted from any source — configure auth.trusted_proxy_cidrs or auth.trusted_proxy_secret_env_var before production")
 		}

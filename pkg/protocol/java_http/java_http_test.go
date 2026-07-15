@@ -22,6 +22,40 @@ func TestJavaHTTPProtocolRegistered(t *testing.T) {
 	}
 }
 
+func TestJavaHTTPResponseMappingBoundsFailClosed(t *testing.T) {
+	oversizedMapping := make(map[string]string, protocol.MaxExtractionEntries+1)
+	for i := 0; i <= protocol.MaxExtractionEntries; i++ {
+		oversizedMapping[strings.Repeat("x", i%8+1)+string(rune(i+1))] = "value"
+	}
+	if err := (&JavaHTTP{}).Init(context.Background(), map[string]any{
+		"java_http_response_mapping": oversizedMapping,
+	}); err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("oversized response mapping error = %v", err)
+	}
+
+	body := strings.Repeat("z", protocol.MaxExtractionValueBytes+1)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	defer ts.Close()
+	p := &JavaHTTP{}
+	if err := p.Init(context.Background(), map[string]any{
+		"base_url": ts.URL,
+		"java_http_response_mapping": map[string]string{
+			"payload": `(z+)`,
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := p.Execute(context.Background(), &protocol.Action{Name: "mapped", Method: "GET", Target: "/"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Success || !strings.Contains(result.ErrorMessage, "rejected") || len(result.Extractions) != 0 {
+		t.Fatalf("oversized mapped extraction success=%v error=%q extractions=%d", result.Success, result.ErrorMessage, len(result.Extractions))
+	}
+}
+
 func TestJavaHTTPExecuteDecodesRequestAndEncodesResponse(t *testing.T) {
 	requestPayload := []byte{0xac, 0xed, 0x00, 0x05, 'd', 'e', 'm', 'o'}
 	responsePayload := []byte{0xac, 0xed, 0x00, 0x05, 'o', 'k'}

@@ -151,7 +151,7 @@ func archiveRetentionPolicyMatches(policy ArchiveRetentionPolicy, test *ManagedT
 func (s *Server) handlePlanArchiveRetention(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC()
 	settings := s.runner.GetSystemSettings().ArchiveRetention
-	candidates := planArchiveRetentionPrune(now, settings, s.runner.ListTests())
+	candidates := planArchiveRetentionPrune(now, settings, s.runner.listOperationalTestSnapshots())
 	harCandidates := planHARArtifactRetention(now, settings)
 	writeJSON(w, http.StatusOK, ArchiveRetentionPlanResponse{
 		GeneratedAt:   now,
@@ -171,7 +171,7 @@ func (s *Server) handleApplyArchiveRetention(w http.ResponseWriter, r *http.Requ
 	}
 	now := time.Now().UTC()
 	settings := s.runner.GetSystemSettings().ArchiveRetention
-	candidates := planArchiveRetentionPrune(now, settings, s.runner.ListTests())
+	candidates := planArchiveRetentionPrune(now, settings, s.runner.listOperationalTestSnapshots())
 	results := make([]ArchiveRetentionResult, 0, len(candidates))
 	summary := ArchiveRetentionRunSummary{CandidateCount: len(candidates)}
 	for _, candidate := range candidates {

@@ -81,6 +81,16 @@ func testCertFiles(t *testing.T, dir string, dnsName string) (certFile, keyFile,
 	return certFile, keyFile, caFile
 }
 
+func TestReadTransportPEMFileRejectsOversizedMaterial(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "oversized.pem")
+	if err := os.WriteFile(path, []byte(strings.Repeat("x", maxTransportPEMBytes+1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readTransportPEMFile(path); err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("oversized TLS material error = %v", err)
+	}
+}
+
 func writePEM(t *testing.T, path, blockType string, der []byte) {
 	t.Helper()
 	if err := os.WriteFile(path, pem.EncodeToMemory(&pem.Block{Type: blockType, Bytes: der}), 0o600); err != nil {

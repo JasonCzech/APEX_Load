@@ -32,6 +32,10 @@ type authoringSessionCASPersistence interface {
 	DeleteAuthoringSessionUnlessApproving(id string) (bool, error)
 }
 
+type authoringSessionAccessPersistence interface {
+	TouchAuthoringSessionAccess(id string, accessedAt time.Time) (bool, error)
+}
+
 type authoringSessionRequest struct {
 	ProjectID   string         `json:"project_id,omitempty"`
 	Source      string         `json:"source"`
@@ -492,7 +496,24 @@ func (s *Server) getAuthoringSession(w http.ResponseWriter, id string) (*storage
 		writeError(w, http.StatusNotFound, "authoring session not found")
 		return nil, false
 	}
+	if accessStore, ok := s.store.(authoringSessionAccessPersistence); ok {
+		accessedAt := authoringSessionTimestampForAPI(time.Now())
+		touched, err := accessStore.TouchAuthoringSessionAccess(session.ID, accessedAt)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return nil, false
+		}
+		if !touched {
+			writeError(w, http.StatusNotFound, "authoring session not found")
+			return nil, false
+		}
+		session.LastAccessedAt = accessedAt
+	}
 	return session, true
+}
+
+func authoringSessionTimestampForAPI(value time.Time) time.Time {
+	return value.UTC().Truncate(time.Microsecond)
 }
 
 func (s *Server) loadAuthoringSession(id string) (*storage.AuthoringSession, error) {

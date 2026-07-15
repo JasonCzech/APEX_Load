@@ -37,7 +37,7 @@ func (s *Server) handleGetReleaseTrend(w http.ResponseWriter, r *http.Request) {
 // collectReleaseTrendRuns gathers archived runs for a release and builds their
 // reports — shared by the CSV export and the JSON trend analysis.
 func (s *Server) collectReleaseTrendRuns(releaseID string) ([]releaseTrendRun, error) {
-	tests := s.runner.ListTestsByContext("", releaseID, "")
+	tests := s.runner.ListTestSummariesByContext("", releaseID, "")
 	runs := make([]releaseTrendRun, 0, len(tests))
 	for _, test := range tests {
 		record, ok := s.runner.GetRunArchive(test.ID)

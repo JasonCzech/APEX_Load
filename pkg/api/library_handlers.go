@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 func (s *Server) handleLibraryCapabilities(w http.ResponseWriter, r *http.Request) {
@@ -145,15 +147,50 @@ func (s *Server) handleLibraryResultArchive(w http.ResponseWriter, r *http.Reque
 	prepCtx, cancelPrep := context.WithTimeout(r.Context(), configuredArchiveMaterializationTimeout())
 	defer cancelPrep()
 	id := strings.TrimSpace(r.PathValue("id"))
-	test, ok := s.runner.GetTest(id)
-	if !ok || test == nil {
-		writeError(w, http.StatusNotFound, "result not found")
-		return
-	}
-	record, ok := s.runner.GetRunArchiveContext(r.Context(), id)
-	if !ok || record == nil {
-		writeError(w, http.StatusNotFound, "archive not found")
-		return
+	var (
+		testName  string
+		projectID string
+		record    *storage.RunArchiveRecord
+	)
+	if s.store != nil {
+		// The route resolver authorizes against the durable test row. Read the
+		// archive from that same source of truth instead of trusting this replica's
+		// in-memory test/archive cache: another replica may have deleted and
+		// recreated the ID in a different project while this process still holds
+		// the prior project's archive pointer.
+		durableTest, err := s.store.GetTest(id)
+		if err != nil || durableTest == nil {
+			writeError(w, http.StatusNotFound, "result not found")
+			return
+		}
+		projectID = normalizeProjectID(durableTest.ProjectID)
+		if !requireAuthorizedProjectMatch(w, r, projectID) {
+			return
+		}
+		testName = durableTest.Name
+		durableArchive, err := s.store.GetRunArchive(id)
+		if err != nil || durableArchive == nil {
+			writeError(w, http.StatusNotFound, "archive not found")
+			return
+		}
+		record = cloneRunArchiveRecord(durableArchive)
+	} else {
+		test, ok := s.runner.GetTest(id)
+		if !ok || test == nil {
+			writeError(w, http.StatusNotFound, "result not found")
+			return
+		}
+		projectID = normalizeProjectID(test.ProjectID)
+		if !requireAuthorizedProjectMatch(w, r, projectID) {
+			return
+		}
+		testName = test.Name
+		var archiveOK bool
+		record, archiveOK = s.runner.GetRunArchiveContext(r.Context(), id)
+		if !archiveOK || record == nil {
+			writeError(w, http.StatusNotFound, "archive not found")
+			return
+		}
 	}
 	lease, err := acquireArchiveMaterialized(prepCtx, record)
 	if err != nil {
@@ -161,9 +198,17 @@ func (s *Server) handleLibraryResultArchive(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	defer lease.Release()
-	manifest, err := s.runner.GetRunArchiveManifest(id)
+	manifest, err := cachedRunArchiveManifest(record)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	if manifest.TestID != id {
+		writeError(w, http.StatusNotFound, "archive does not belong to result")
+		return
+	}
+	if manifestProjectID := strings.TrimSpace(manifest.Provenance.ProjectID); manifestProjectID != "" && normalizeProjectID(manifestProjectID) != projectID {
+		writeError(w, http.StatusNotFound, "archive does not belong to result project")
 		return
 	}
 	staged, err := stageArchiveDownload(prepCtx, func(destination io.Writer) error {
@@ -174,7 +219,7 @@ func (s *Server) handleLibraryResultArchive(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	defer removeStagedArchiveDownload(staged)
-	filename := sanitizeFilename(test.Name) + "-" + id + ".zip"
+	filename := sanitizeFilename(testName) + "-" + id + ".zip"
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
 	clearArchiveWriteDeadline(w)

@@ -83,10 +83,22 @@
   // accept.
   const CONTROL_NONCE = '__APEXLOAD_CONTROL_NONCE__';
 
+  // Capture these before application JavaScript runs. Looking the binding or
+  // JSON.stringify up dynamically would let the recorded page replace them,
+  // observe the closure nonce on a legitimate event, and then forge steps.
+  const RECORD_BINDING = typeof window.__apexloadRecord === 'function'
+    ? window.__apexloadRecord.bind(window) : null;
+  const SAFE_JSON_STRINGIFY = JSON.stringify.bind(JSON);
+  const CONTROL_NONCE_SUFFIX = ',"nonce":' + SAFE_JSON_STRINGIFY(CONTROL_NONCE) + '}';
+
   function send(payload) {
-    if (typeof window.__apexloadRecord !== 'function') return;
-    if (payload && typeof payload === 'object') payload.nonce = CONTROL_NONCE;
-    const serialized = JSON.stringify(payload);
+    if (!RECORD_BINDING || !payload || typeof payload !== 'object') return;
+    // Serialize the page-derived payload before appending the secret. This
+    // prevents a hostile Object.prototype setter/toJSON hook from observing
+    // CONTROL_NONCE while retaining ordinary JSON payload compatibility.
+    const body = SAFE_JSON_STRINGIFY(payload);
+    if (typeof body !== 'string' || body.length < 2 || body.charAt(0) !== '{' || body.charAt(body.length - 1) !== '}') return;
+    const serialized = body.substring(0, body.length - 1) + CONTROL_NONCE_SUFFIX;
     // Dispatch immediately (fire-and-forget) rather than chaining through a
     // single promise. Chaining deferred each binding call until the previous
     // event's full round-trip to the Go recorder resolved, so any events still
@@ -95,7 +107,7 @@
     // to preserve. Dispatching now puts every event in flight before teardown;
     // the Go handler serializes them under its own lock so ordering is kept.
     try {
-      const result = window.__apexloadRecord(serialized);
+      const result = RECORD_BINDING(serialized);
       if (result && typeof result.catch === 'function') result.catch(() => {});
     } catch (e) {
       /* binding torn down mid-navigation; nothing more we can do */
@@ -289,7 +301,7 @@
     return path;
   }
 
-  function record(kind, el, value, masked, extra) {
+  function capturePayload(kind, el, value, masked, extra) {
     const payload = {
       kind: kind,
       value: value || '',
@@ -302,6 +314,11 @@
       element: el ? safeMetaFor(el) : null
     };
     if (extra && typeof extra === 'object') Object.assign(payload, extra);
+    return payload;
+  }
+
+  function record(kind, el, value, masked, extra) {
+    const payload = capturePayload(kind, el, value, masked, extra);
     send(payload);
   }
 
@@ -402,10 +419,10 @@
       [meta.tag, meta.type, meta.aria_label, meta.placeholder].join('|');
   }
 
-  function recordFill(el, source) {
+  function fillPayload(el, source) {
     el = contentEditableHost(el) || el;
     const snapshot = fillSnapshot(el);
-    record('fill', el, snapshot.value, snapshot.masked);
+    const payload = capturePayload('fill', el, snapshot.value, snapshot.masked);
     lastRecordedFill = {
       key: elementFingerprint(el),
       value: snapshot.value,
@@ -413,6 +430,11 @@
       source: source || 'change',
       ts: Date.now()
     };
+    return payload;
+  }
+
+  function recordFill(el, source) {
+    send(fillPayload(el, source));
   }
 
   function shouldSkipDuplicateFill(el) {
@@ -440,13 +462,19 @@
     });
   }
 
-  function flushEditableFill(el, source) {
+  function takeEditableFill(el, source) {
     const host = contentEditableHost(el);
-    if (!host) return;
+    if (!host) return null;
     const existing = editableFillStates.get(host);
     if (existing && existing.timer) clearTimeout(existing.timer);
     editableFillStates.delete(host);
-    if (!shouldSkipDuplicateFill(host)) recordFill(host, source || (existing && existing.source) || 'focusout');
+    if (shouldSkipDuplicateFill(host)) return null;
+    return fillPayload(host, source || (existing && existing.source) || 'focusout');
+  }
+
+  function flushEditableFill(el, source) {
+    const payload = takeEditableFill(el, source);
+    if (payload) send(payload);
   }
 
   function shouldSuppressKeyboardClick(ev) {
@@ -585,6 +613,7 @@
   }
 
   window.addEventListener('click', (ev) => {
+    if (!ev.isTrusted) return;
     cancelPendingHover();
     const raw = targetOf(ev);
     if (!raw || isToolbar(raw)) return;
@@ -611,6 +640,7 @@
   }, true);
 
   window.addEventListener('dblclick', (ev) => {
+    if (!ev.isTrusted) return;
     cancelPendingHover();
     const raw = targetOf(ev);
     if (!raw || isToolbar(raw) || paused || assertMode) return;
@@ -620,6 +650,7 @@
   }, true);
 
   window.addEventListener('contextmenu', (ev) => {
+    if (!ev.isTrusted) return;
     cancelPendingHover();
     const raw = targetOf(ev);
     if (!raw || isToolbar(raw) || paused || assertMode) return;
@@ -628,6 +659,7 @@
   }, true);
 
   window.addEventListener('auxclick', (ev) => {
+    if (!ev.isTrusted) return;
     cancelPendingHover();
     if (ev.button !== 1) return;
     const raw = targetOf(ev);
@@ -637,6 +669,7 @@
   }, true);
 
   window.addEventListener('dragstart', (ev) => {
+    if (!ev.isTrusted) return;
     cancelPendingHover();
     if (paused || assertMode) return;
     const raw = targetOf(ev);
@@ -645,6 +678,7 @@
   }, true);
 
   window.addEventListener('drop', (ev) => {
+    if (!ev.isTrusted) return;
     if (paused || assertMode) return;
     const raw = targetOf(ev);
     if (!raw || isToolbar(raw) || !pendingDrag) return;
@@ -657,11 +691,13 @@
     pendingDrag = null;
   }, true);
 
-  window.addEventListener('dragend', () => {
+  window.addEventListener('dragend', (ev) => {
+    if (!ev.isTrusted) return;
     pendingDrag = null;
   }, true);
 
   window.addEventListener('mouseover', (ev) => {
+    if (!ev.isTrusted) return;
     if (paused || assertMode) return;
     const raw = targetOf(ev);
     if (!raw || isToolbar(raw)) return;
@@ -669,6 +705,7 @@
   }, true);
 
   window.addEventListener('mouseout', (ev) => {
+    if (!ev.isTrusted) return;
     if (!pendingHover) return;
     if (!ev.relatedTarget) {
       cancelPendingHover();
@@ -676,6 +713,7 @@
   }, true);
 
   window.addEventListener('scroll', (ev) => {
+    if (!ev.isTrusted) return;
     if (paused || assertMode) return;
     const el = scrollEventElement(ev);
     if (el && isToolbar(el)) return;
@@ -709,10 +747,11 @@
     scheduleScroll(el, state);
   }, true);
 
-  window.addEventListener('beforeunload', flushPendingClick, true);
-  window.addEventListener('pagehide', flushPendingClick, true);
+  window.addEventListener('beforeunload', (ev) => { if (ev.isTrusted) flushPendingClick(); }, true);
+  window.addEventListener('pagehide', (ev) => { if (ev.isTrusted) flushPendingClick(); }, true);
 
   window.addEventListener('change', (ev) => {
+    if (!ev.isTrusted) return;
     if (paused) return;
     const el = targetOf(ev);
     if (!el || isToolbar(el)) return;
@@ -739,6 +778,7 @@
   }, true);
 
   window.addEventListener('input', (ev) => {
+    if (!ev.isTrusted) return;
     if (paused) return;
     const el = targetOf(ev);
     if (!el || isToolbar(el)) return;
@@ -747,6 +787,7 @@
   }, true);
 
   window.addEventListener('focusout', (ev) => {
+    if (!ev.isTrusted) return;
     if (paused) return;
     const el = targetOf(ev);
     if (!el || isToolbar(el)) return;
@@ -755,23 +796,34 @@
   }, true);
 
   window.addEventListener('keydown', (ev) => {
+    if (!ev.isTrusted) return;
     if (paused) return;
     const el = targetOf(ev);
     if (!el || isToolbar(el)) return;
     if (ev.key !== 'Enter' && ev.key !== 'Escape' && ev.key !== 'Tab') return;
     const tag = el.tagName ? el.tagName.toLowerCase() : '';
     const entryEl = contentEditableHost(el) || el;
+    const events = [];
     if ((ev.key === 'Enter' || ev.key === 'Tab') && isTextEntryControl(entryEl)) {
       // The change event fires on blur, after navigation may have started —
       // capture the pending value now so Enter-submits and Tab moves keep it.
+      // Send the fill and keypress in one binding call: Playwright may dispatch
+      // separate fire-and-forget binding callbacks concurrently, which can
+      // otherwise append the keypress before the fill despite this JS order.
       if (contentEditableHost(entryEl)) {
-        flushEditableFill(entryEl, 'keydown');
+        const fill = takeEditableFill(entryEl, 'keydown');
+        if (fill) events.push(fill);
       } else {
-        recordFill(entryEl, 'keydown');
+        events.push(fillPayload(entryEl, 'keydown'));
       }
     }
     if (ev.key === 'Enter') lastEnterPressAt = Date.now();
-    record('press_key', entryEl, ev.key);
+    events.push(capturePayload('press_key', entryEl, ev.key));
+    if (events.length === 1) {
+      send(events[0]);
+    } else {
+      send({ kind: 'capture_batch', events: events });
+    }
   }, true);
 
   // --- Control panel (main frame only), isolated in a closed shadow root ---

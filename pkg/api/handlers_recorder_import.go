@@ -237,7 +237,7 @@ func readRecorderImportRequest(w http.ResponseWriter, r *http.Request) (*recorde
 			return nil, false
 		}
 		req.Options.ScriptName = firstNonEmpty(req.Options.ScriptName, req.Name)
-		return &recorderImportRequest{Data: []byte(req.Content), ProjectID: req.ProjectID, Opts: req.Options}, true
+		return &recorderImportRequest{Data: []byte(req.Content), ProjectID: jsonImportProjectID(r, req.ProjectID), Opts: req.Options}, true
 	}
 	if strings.HasPrefix(contentType, "multipart/form-data") {
 		data, uploadName, ok := readImportMultipartFile(w, r, recorderImportMaxBodyBytes)

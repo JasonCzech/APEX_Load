@@ -509,7 +509,7 @@ type executionPlanScheduleOccurrenceWindowStore interface {
 }
 
 func (tr *TestRunner) runCalendarSnapshot(projectID string, from time.Time, to time.Time) runCalendarSnapshot {
-	tests := tr.ListTests()
+	tests := tr.listOperationalTestSnapshots()
 	filteredTests := make([]*ManagedTest, 0, len(tests))
 	for _, test := range tests {
 		if test == nil {

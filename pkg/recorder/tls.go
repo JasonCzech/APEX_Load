@@ -23,6 +23,8 @@ import (
 	"github.com/jasonczech/apexload/pkg/internal/boundedcache"
 )
 
+const maxRecorderCAFileBytes int64 = 1 << 20
+
 // initCA generates a self-signed root CA certificate and key pair.
 // It is called lazily on the first CONNECT request or explicit initialization.
 func (r *Recorder) initCA() error {
@@ -90,11 +92,11 @@ func (r *Recorder) loadPersistentCA() error {
 		return os.ErrNotExist
 	}
 
-	certPEM, err := os.ReadFile(r.caCertPath)
+	certPEM, err := readRecorderCAFile(r.caCertPath)
 	if err != nil {
 		return err
 	}
-	keyPEM, err := os.ReadFile(r.caKeyPath)
+	keyPEM, err := readRecorderCAFile(r.caKeyPath)
 	if err != nil {
 		return err
 	}
@@ -142,6 +144,32 @@ func (r *Recorder) loadPersistentCA() error {
 	r.caCertPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw})
 	slog.Info("loaded recording proxy CA certificate", "path", r.caCertPath)
 	return nil
+}
+
+func readRecorderCAFile(path string) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("recording proxy CA material is not a regular file")
+	}
+	if info.Size() > maxRecorderCAFileBytes {
+		return nil, fmt.Errorf("recording proxy CA material exceeds %d bytes", maxRecorderCAFileBytes)
+	}
+	content, err := io.ReadAll(io.LimitReader(file, maxRecorderCAFileBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(content)) > maxRecorderCAFileBytes {
+		return nil, fmt.Errorf("recording proxy CA material exceeds %d bytes", maxRecorderCAFileBytes)
+	}
+	return content, nil
 }
 
 func (r *Recorder) savePersistentCA(certDER []byte, key *rsa.PrivateKey) error {

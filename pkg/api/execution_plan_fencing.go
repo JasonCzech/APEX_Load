@@ -111,6 +111,14 @@ type executionPlanMutationPersistence interface {
 	DeleteExecutionPlan(id string) error
 }
 
+type materializationFencedTestStatusPersistence interface {
+	UpdateTestStatusIfActiveAndMaterializationKey(id, materializationKey, status string, endTime *time.Time, errStr string) (storage.TestStatusTransitionResult, error)
+}
+
+type leaseTermMaterializationFencedTestStatusPersistence interface {
+	UpdateTestStatusIfActiveAndMaterializationKeyAndLeaseTermHeld(id, materializationKey, status string, endTime *time.Time, errStr, leaseName, leaseOwnerID string, leaseGeneration uint64) (storage.TestStatusTransitionResult, error)
+}
+
 type atomicExecutionPlanMutationPersistence interface {
 	CreateExecutionPlanIfAbsent(plan *storage.ExecutionPlan) (bool, error)
 	CompareAndSwapExecutionPlan(plan *storage.ExecutionPlan, expectedRevision int64) (bool, error)
@@ -334,53 +342,108 @@ func (tr *TestRunner) failExecutionPlanStagedTestWithTerm(testID, detail string,
 	if expectedKey == "" {
 		return fmt.Errorf("%w: missing ownership marker for test %s", errExecutionPlanTestOwnership, testID)
 	}
+	now := time.Now().UTC()
+	var durable *storage.TestRecord
 	if tr.testStore != nil {
-		stored, loadErr := tr.testStore.GetTest(testID)
-		if errors.Is(loadErr, sql.ErrNoRows) {
+		var result storage.TestStatusTransitionResult
+		var transitionErr error
+		if tr.durableExecutionFence {
+			store, ok := tr.testStore.(leaseTermMaterializationFencedTestStatusPersistence)
+			if !ok {
+				return fmt.Errorf("execution-plan test storage does not support lease-term materialization fencing")
+			}
+			transitionErr = retryDurableTransition(func() error {
+				var err error
+				result, err = store.UpdateTestStatusIfActiveAndMaterializationKeyAndLeaseTermHeld(
+					testID, expectedKey, "FAILED", &now, detail, executionLeaseName, term.ownerID, term.generation,
+				)
+				return err
+			})
+		} else {
+			store, ok := tr.testStore.(materializationFencedTestStatusPersistence)
+			if !ok {
+				return fmt.Errorf("execution-plan test storage does not support materialization fencing")
+			}
+			transitionErr = retryDurableTransition(func() error {
+				var err error
+				result, err = store.UpdateTestStatusIfActiveAndMaterializationKey(testID, expectedKey, "FAILED", &now, detail)
+				return err
+			})
+		}
+		if transitionErr != nil {
+			return transitionErr
+		}
+		switch result {
+		case storage.TestStatusTransitionUpdated, storage.TestStatusTransitionUnchanged:
+		case storage.TestStatusTransitionMissing:
+			return nil
+		default:
+			current, loadErr := tr.testStore.GetTest(testID)
+			if errors.Is(loadErr, sql.ErrNoRows) || (loadErr == nil && current == nil) {
+				return nil
+			}
+			if loadErr != nil {
+				return loadErr
+			}
+			if strings.TrimSpace(current.MaterializationKey) != expectedKey {
+				return fmt.Errorf("%w: test %s is not owned by this plan entry", errExecutionPlanTestOwnership, testID)
+			}
+			if isTerminalTestStatus(current.Status) {
+				return nil
+			}
+			if !tr.executionLeaseTermCurrent(term) {
+				return errNotExecutionLeader
+			}
+			return fmt.Errorf("%w: test %s has a newer state", errStoredTestTransitionFenced, testID)
+		}
+		var loadErr error
+		durable, loadErr = tr.testStore.GetTest(testID)
+		if errors.Is(loadErr, sql.ErrNoRows) || (loadErr == nil && durable == nil) {
 			return nil
 		}
 		if loadErr != nil {
 			return loadErr
 		}
-		if stored == nil || strings.TrimSpace(stored.MaterializationKey) != expectedKey {
-			return fmt.Errorf("%w: test %s is not owned by this plan entry", errExecutionPlanTestOwnership, testID)
+		if strings.TrimSpace(durable.MaterializationKey) != expectedKey {
+			return fmt.Errorf("%w: test %s changed ownership after terminalization", errExecutionPlanTestOwnership, testID)
 		}
 	}
-	now := time.Now().UTC()
-	err := tr.persistStoredTestStatus(testID, term.ownerID, "FAILED", &now, detail)
-	if err != nil && !errors.Is(err, errStoredTestMissing) {
-		if errors.Is(err, errNotExecutionLeader) && tr.executionLeaseTermCurrent(term) && tr.testStore != nil {
-			if current, loadErr := tr.testStore.GetTest(testID); loadErr == nil && current != nil && isTerminalTestStatus(current.Status) {
-				return nil
-			}
-		}
-		return err
+	if !tr.executionLeaseTermCurrent(term) {
+		return errNotExecutionLeader
 	}
 	tr.mu.Lock()
 	slotID := ""
 	if test := tr.tests[testID]; test != nil {
-		if test.executionFence != "" && test.executionFence != term.ownerID {
+		ownedCache := strings.TrimSpace(test.MaterializationKey) == expectedKey && (durable == nil || sameStoredTestIdentity(test, durable))
+		if durable == nil && !ownedCache {
+			tr.mu.Unlock()
+			return fmt.Errorf("%w: cached test %s is not owned by this plan entry", errExecutionPlanTestOwnership, testID)
+		}
+		if !ownedCache {
+			// A follower/previous epoch may still retain a stale object for this ID.
+			// The durable owned row is already terminal; never cancel or rewrite the
+			// unrelated local handle while it awaits cache reconciliation.
+		} else if test.executionFence != "" && test.executionFence != term.ownerID {
 			tr.mu.Unlock()
 			return errNotExecutionLeader
-		}
-		if test.cancel != nil {
-			test.cancel()
-		}
-		test.Status = "FAILED"
-		test.Error = detail
-		test.EndedAt = &now
-		test.PendingSince = nil
-		test.PendingReason = ""
-		test.QueuePosition = 0
-		if test.TimeslotID != nil {
-			slotID = strings.TrimSpace(*test.TimeslotID)
+		} else {
+			if test.cancel != nil {
+				test.cancel()
+			}
+			test.Status = "FAILED"
+			test.Error = detail
+			test.EndedAt = &now
+			test.PendingSince = nil
+			test.PendingReason = ""
+			test.QueuePosition = 0
+			if test.TimeslotID != nil {
+				slotID = strings.TrimSpace(*test.TimeslotID)
+			}
 		}
 	}
 	tr.mu.Unlock()
-	if slotID == "" && tr.testStore != nil {
-		if stored, loadErr := tr.testStore.GetTest(testID); loadErr == nil && stored != nil && stored.TimeslotID != nil {
-			slotID = strings.TrimSpace(*stored.TimeslotID)
-		}
+	if slotID == "" && durable != nil && durable.TimeslotID != nil {
+		slotID = strings.TrimSpace(*durable.TimeslotID)
 	}
 	if slotID == "" {
 		return nil

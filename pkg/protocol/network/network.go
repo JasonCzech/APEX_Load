@@ -17,6 +17,15 @@ import (
 	"github.com/jasonczech/apexload/pkg/protocol/jsonextract"
 )
 
+const (
+	defaultNetworkTimeout = 30 * time.Second
+	// MaxConfiguredTimeout bounds both config.network.timeout_ms and the
+	// per-action params.timeout_ms override before either is converted to a
+	// time.Duration. Besides bounding stalled sockets, this prevents integer
+	// overflow from silently disabling deadlines for direct protocol callers.
+	MaxConfiguredTimeout = time.Hour
+)
+
 func init() {
 	protocol.Register("network", func() protocol.Protocol {
 		return &Network{}
@@ -56,9 +65,10 @@ func (n *Network) Init(_ context.Context, config map[string]any) error {
 	n.host = strings.TrimSpace(protocol.ConfigString(config, "network_host"))
 	n.address = strings.TrimSpace(protocol.ConfigString(config, "network_address"))
 	n.port = protocol.ConfigInt(config, "network_port")
-	n.timeout = 30 * time.Second
-	if timeoutMS := protocol.ConfigInt(config, "network_timeout_ms"); timeoutMS > 0 {
-		n.timeout = time.Duration(timeoutMS) * time.Millisecond
+	var err error
+	n.timeout, err = boundedNetworkTimeout(config["network_timeout_ms"], defaultNetworkTimeout)
+	if err != nil {
+		return fmt.Errorf("network timeout_ms %w", err)
 	}
 	n.useTLS, _ = config["network_tls"].(bool)
 	n.username = protocol.ConfigString(config, "network_username")
@@ -87,7 +97,22 @@ func (n *Network) Execute(ctx context.Context, action *protocol.Action) (*protoc
 		return result, nil
 	}
 
-	op, err := n.execute(ctx, action)
+	timeout, err := n.actionTimeout(action)
+	if err != nil {
+		result.Duration = time.Since(start)
+		result.Success = false
+		result.StatusCode = 500
+		result.ErrorMessage = err.Error()
+		result.Snapshot = networkSnapshot(action, result)
+		result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
+		return result, nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	actionCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	op, err := n.execute(actionCtx, action)
 	result.Duration = time.Since(start)
 	if op != nil {
 		result.ResponseBody = op.payload
@@ -197,20 +222,43 @@ func (n *Network) runHealth(ctx context.Context, action *protocol.Action) (*oper
 
 func (n *Network) dial(ctx context.Context, networkName, target string) (net.Conn, time.Duration, error) {
 	timeout := n.timeout
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if deadline, ok := ctx.Deadline(); ok {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return nil, 0, context.DeadlineExceeded
+		}
+		if timeout <= 0 || remaining < timeout {
+			timeout = remaining
+		}
+	}
 	dialer := &net.Dialer{Timeout: timeout}
 	start := time.Now()
 	var conn net.Conn
 	var err error
 	if networkName == "tcp" && n.useTLS {
 		host, _, _ := net.SplitHostPort(target)
-		conn, err = tls.DialWithDialer(dialer, networkName, target, &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12})
+		raw, dialErr := dialer.DialContext(ctx, networkName, target)
+		if dialErr != nil {
+			return nil, 0, dialErr
+		}
+		tlsConn := tls.Client(raw, &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12})
+		if handshakeErr := tlsConn.HandshakeContext(ctx); handshakeErr != nil {
+			_ = raw.Close()
+			return nil, 0, handshakeErr
+		}
+		conn = tlsConn
 	} else {
 		conn, err = dialer.DialContext(ctx, networkName, target)
 	}
 	if err != nil {
 		return nil, 0, err
 	}
-	if timeout > 0 {
+	if deadline, ok := ctx.Deadline(); ok {
+		_ = conn.SetDeadline(deadline)
+	} else if timeout > 0 {
 		_ = conn.SetDeadline(time.Now().Add(timeout))
 	}
 	return conn, time.Since(start), nil
@@ -307,11 +355,23 @@ func (n *Network) ldapURL(action *protocol.Action) string {
 	return raw
 }
 
-func (n *Network) actionTimeout(action *protocol.Action) time.Duration {
-	if timeoutMS := actionParamInt(action.Params, "timeout_ms"); timeoutMS > 0 {
-		return time.Duration(timeoutMS) * time.Millisecond
+func (n *Network) actionTimeout(action *protocol.Action) (time.Duration, error) {
+	if action == nil || action.Params == nil {
+		return n.timeout, nil
 	}
-	return n.timeout
+	value, present := action.Params["timeout_ms"]
+	if !present {
+		return n.timeout, nil
+	}
+	timeout, err := boundedNetworkTimeout(value, n.timeout)
+	if err != nil {
+		return 0, fmt.Errorf("network action timeout_ms %w", err)
+	}
+	return timeout, nil
+}
+
+func boundedNetworkTimeout(value any, fallback time.Duration) (time.Duration, error) {
+	return protocol.BoundedMilliseconds(value, fallback, MaxConfiguredTimeout)
 }
 
 func (n *Network) commandResponse(tp *textproto.Conn, command string) string {
@@ -563,7 +623,10 @@ func runNetworkExtractors(extractors []protocol.Extractor, result *protocol.Resu
 			return err.Error()
 		}
 		if extractor.Name != "" {
-			result.Extractions[extractor.Name] = value
+			if err := protocol.StoreExtraction(result, extractor.Name, value); err != nil {
+				result.Extractions = nil
+				return fmt.Sprintf("network extractor %q output rejected: %v", extractor.Name, err)
+			}
 		}
 	}
 	return ""

@@ -181,6 +181,13 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 		StartTime:   time.Now(),
 		Extractions: map[string]string{},
 	}
+	if err := validateBrowserActionTiming(action); err != nil {
+		result.Duration = time.Since(result.StartTime)
+		result.StatusCode = 400
+		result.ErrorMessage = err.Error()
+		result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
+		return result, nil
+	}
 	if b.currentPage() == nil {
 		result.ErrorMessage = "browser protocol is not initialized"
 		return result, nil

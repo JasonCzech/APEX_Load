@@ -76,6 +76,68 @@ func TestCapacityReservationApprovalCASAndRetention(t *testing.T) {
 	}
 }
 
+func TestCapacityReservationRetentionPreservesNonterminalBindings(t *testing.T) {
+	store := openTimeslotStore(t)
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
+	cutoff := now.Add(-7 * 24 * time.Hour)
+	if err := store.SaveProject(&Project{ID: "retention-project", Name: "Retention Project", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+
+	for _, fixture := range []struct {
+		testID        string
+		reservationID string
+		status        string
+	}{
+		{testID: "retention-running", reservationID: "retention-ended-active", status: "RUNNING"},
+		{testID: "retention-queued", reservationID: "retention-rejected-queued", status: "QUEUED"},
+		{testID: "retention-complete", reservationID: "retention-ended-terminal", status: "COMPLETE"},
+	} {
+		reservation := &CapacityReservation{
+			ID: fixture.reservationID, ProjectID: "retention-project",
+			StartAt: now.Add(-30 * 24 * time.Hour), EndAt: now.Add(-29 * 24 * time.Hour),
+			ApprovalState: "approved", UpdatedAt: now.Add(-29 * 24 * time.Hour),
+		}
+		if err := store.SaveCapacityReservation(reservation); err != nil {
+			t.Fatalf("SaveCapacityReservation(%s): %v", fixture.reservationID, err)
+		}
+		if err := store.SaveTest(&TestRecord{
+			ID: fixture.testID, Name: fixture.testID, Status: "QUEUED", ProjectID: "retention-project",
+			StartTime: now.Add(-30 * 24 * time.Hour), Duration: int64(60 * time.Minute), Groups: []any{},
+		}); err != nil {
+			t.Fatalf("SaveTest(%s): %v", fixture.testID, err)
+		}
+		boundAt := now.Add(-30*24*time.Hour + 5*time.Minute)
+		if bound, err := store.UpdateCapacityReservationBinding(fixture.reservationID, &fixture.testID, nil, boundAt); err != nil || !bound {
+			t.Fatalf("UpdateCapacityReservationBinding(%s) = %v, %v", fixture.reservationID, bound, err)
+		}
+		if _, err := store.db.Exec(`UPDATE tests SET status = ? WHERE id = ?`, fixture.status, fixture.testID); err != nil {
+			t.Fatalf("seed test status %s: %v", fixture.status, err)
+		}
+		if fixture.testID == "retention-queued" {
+			if _, err := store.db.Exec(`UPDATE capacity_reservations SET approval_state = 'rejected', updated_at = ? WHERE id = ?`, now.Add(-30*24*time.Hour), fixture.reservationID); err != nil {
+				t.Fatalf("seed rejected binding: %v", err)
+			}
+		}
+	}
+
+	if pruned, err := store.DeleteCapacityReservationsEndedBefore(cutoff); err != nil || pruned != 1 {
+		t.Fatalf("DeleteCapacityReservationsEndedBefore = %d, %v, want one terminal binding", pruned, err)
+	}
+	if pruned, err := store.DeleteRejectedCapacityReservationsBefore(cutoff); err != nil || pruned != 0 {
+		t.Fatalf("DeleteRejectedCapacityReservationsBefore = %d, %v, want no nonterminal binding", pruned, err)
+	}
+	for _, id := range []string{"retention-ended-active", "retention-rejected-queued"} {
+		reservation, err := store.GetCapacityReservation(id)
+		if err != nil || reservation == nil || reservation.BoundTestID == nil {
+			t.Fatalf("nonterminal reservation %s was pruned or unbound: %+v, %v", id, reservation, err)
+		}
+	}
+	if reservation, _ := store.GetCapacityReservation("retention-ended-terminal"); reservation != nil {
+		t.Fatalf("terminal reservation survived retention: %+v", reservation)
+	}
+}
+
 func TestCapacityReservationRoundTrip(t *testing.T) {
 	store := openTimeslotStore(t)
 	gens, vus := 4, 500

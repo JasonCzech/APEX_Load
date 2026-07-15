@@ -179,8 +179,24 @@ func (s *Server) handleDeleteScenario(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleScenarioResults(w http.ResponseWriter, r *http.Request) {
 	scenarioID := r.PathValue("id")
-	tests := s.runner.ListTestsByContext(r.URL.Query().Get("application_id"), r.URL.Query().Get("release_id"), scenarioID)
-	writeJSON(w, http.StatusOK, map[string]any{"tests": maskManagedTests(tests), "count": len(tests)})
+	_, _, limit, offset, ok := parseTestListOptions(w, r)
+	if !ok {
+		return
+	}
+	tests, total := s.runner.listTestSummaryPage(testSummaryListQuery{
+		applicationID: r.URL.Query().Get("application_id"),
+		releaseID:     r.URL.Query().Get("release_id"),
+		scenarioID:    scenarioID,
+		limit:         limit,
+		offset:        offset,
+	})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"tests":  maskManagedTests(tests),
+		"count":  len(tests),
+		"total":  total,
+		"limit":  limit,
+		"offset": offset,
+	})
 }
 
 func (s *Server) handleScenarioSchedulePreview(w http.ResponseWriter, r *http.Request) {

@@ -107,13 +107,13 @@ type JavaVuserConfig struct {
 	Classpath        []string `json:"classpath,omitempty"`
 	WorkDir          string   `json:"work_dir,omitempty"`
 	MaxProcesses     int      `json:"max_processes,omitempty"`
-	StartupTimeoutMs int      `json:"startup_timeout_ms,omitempty"`
-	ActionTimeoutMs  int      `json:"action_timeout_ms,omitempty"`
+	StartupTimeoutMs int      `json:"startup_timeout_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`
+	ActionTimeoutMs  int      `json:"action_timeout_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`
 }
 
 type WebSocketConfig struct {
-	ReadTimeoutMs  int    `json:"read_timeout_ms,omitempty"`
-	WriteTimeoutMs int    `json:"write_timeout_ms,omitempty"`
+	ReadTimeoutMs  int    `json:"read_timeout_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`
+	WriteTimeoutMs int    `json:"write_timeout_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`
 	MaxMessageSize int64  `json:"max_message_size,omitempty" jsonschema:"minimum=0,maximum=16777216"`
 	Subprotocol    string `json:"subprotocol,omitempty"`
 	Origin         string `json:"origin,omitempty"`
@@ -126,15 +126,19 @@ type GRPCConfig struct {
 	UseReflection  bool              `json:"use_reflection,omitempty"`
 	PlainText      bool              `json:"plain_text,omitempty"`
 	MaxRecvMsgSize int               `json:"max_recv_msg_size,omitempty" jsonschema:"minimum=0,maximum=8388608"`
-	TimeoutMs      int               `json:"timeout_ms,omitempty"`
+	TimeoutMs      int               `json:"timeout_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`
 	Metadata       map[string]string `json:"metadata,omitempty"`
 	Authority      string            `json:"authority,omitempty"`
 }
 
 const (
-	MaxWebSocketMessageBytes = 16 << 20
-	MaxGRPCStreamMessages    = 10_000
-	MaxGRPCStreamBytes       = 8 << 20
+	MaxWebSocketMessageBytes       = 16 << 20
+	MaxGRPCStreamMessages          = 10_000
+	MaxGRPCStreamBytes             = 8 << 20
+	MaxConfiguredProtocolTimeout   = time.Hour
+	MaxConfiguredProtocolTimeoutMS = 3_600_000
+	MaxErrorRetries                = 10
+	MaxThinkTimeMultiplier         = 100
 )
 
 type SOAPConfig struct {
@@ -172,7 +176,7 @@ type DatabaseConfig struct {
 	MaxOpenConns       int    `json:"max_open_conns,omitempty"`
 	MaxIdleConns       int    `json:"max_idle_conns,omitempty"`
 	ConnMaxLifetimeMs  int    `json:"conn_max_lifetime_ms,omitempty"`
-	QueryTimeoutMs     int    `json:"query_timeout_ms,omitempty"`
+	QueryTimeoutMs     int    `json:"query_timeout_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`
 	MaxRows            int    `json:"max_rows,omitempty"`
 	ReadOnly           bool   `json:"read_only,omitempty"`
 	RollbackOnTeardown bool   `json:"rollback_on_teardown,omitempty"`
@@ -386,8 +390,8 @@ type NetworkSimulationConfig struct {
 	Preset        string  `json:"preset,omitempty"`
 	BandwidthKbps int     `json:"bandwidth_kbps,omitempty" jsonschema:"minimum=0,maximum=100000000"`
 	LatencyMs     int     `json:"latency_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`
-	JitterMs      int     `json:"jitter_ms,omitempty"`
-	PacketLossPct float64 `json:"packet_loss_pct,omitempty"`
+	JitterMs      int     `json:"jitter_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`
+	PacketLossPct float64 `json:"packet_loss_pct,omitempty" jsonschema:"minimum=0,maximum=100"`
 }
 
 type NetworkProfileWeight struct {
@@ -398,8 +402,8 @@ type NetworkProfileWeight struct {
 
 type StreamingConfig struct {
 	Mode                string `json:"mode,omitempty"`
-	BufferSizeSeconds   int    `json:"buffer_size_seconds,omitempty"`
-	FixedBitrateKbps    int    `json:"fixed_bitrate_kbps,omitempty"`
+	BufferSizeSeconds   int    `json:"buffer_size_seconds,omitempty" jsonschema:"minimum=0,maximum=3600"`
+	FixedBitrateKbps    int    `json:"fixed_bitrate_kbps,omitempty" jsonschema:"minimum=0,maximum=100000000"`
 	BandwidthEstimation string `json:"bandwidth_estimation,omitempty"`
 }
 
@@ -421,14 +425,14 @@ type BrowserViewport struct {
 type WaitCondition struct {
 	Type      string `json:"type,omitempty"`
 	Value     string `json:"value,omitempty"`
-	TimeoutMs int    `json:"timeout_ms,omitempty"`
+	TimeoutMs int    `json:"timeout_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`
 }
 
 type BrowserSyncPolicy struct {
 	Type      string `json:"type,omitempty"`
 	Value     string `json:"value,omitempty"`
-	TimeoutMs int    `json:"timeout_ms,omitempty"`
-	StableMs  int    `json:"stable_ms,omitempty"`
+	TimeoutMs int    `json:"timeout_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`
+	StableMs  int    `json:"stable_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`
 }
 
 type BrowserCaptureOptions struct {
@@ -528,32 +532,32 @@ type AuthConfig struct {
 // ErrorHandlingConfig controls how execution errors are handled.
 type ErrorHandlingConfig struct {
 	ContinueOnError bool   `json:"continue_on_error,omitempty"`
-	MaxRetries      int    `json:"max_retries,omitempty"`       // default: 0
-	RetryDelayMs    int    `json:"retry_delay_ms,omitempty"`    // default: 1000
-	RetryBackoff    string `json:"retry_backoff,omitempty"`     // "fixed", "exponential"
-	SnapshotOnError bool   `json:"snapshot_on_error,omitempty"` // capture req/resp on failure
+	MaxRetries      int    `json:"max_retries,omitempty" jsonschema:"minimum=0,maximum=10"`         // default: 0
+	RetryDelayMs    int    `json:"retry_delay_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"` // default: 1000
+	RetryBackoff    string `json:"retry_backoff,omitempty"`                                         // "fixed", "exponential"
+	SnapshotOnError bool   `json:"snapshot_on_error,omitempty"`                                     // capture req/resp on failure
 }
 
 type ThinkTimeConfig struct {
 	Type       string  `json:"type"`
-	MeanMs     float64 `json:"mean_ms"`
-	StdMs      float64 `json:"std_ms,omitempty"`
-	MinMs      float64 `json:"min_ms,omitempty"`
-	MaxMs      float64 `json:"max_ms,omitempty"`
-	Multiplier float64 `json:"multiplier,omitempty"` // 1.0 = as recorded, 0.5 = half, 2.0 = double
-	LimitMs    float64 `json:"limit_ms,omitempty"`   // max think time cap (0 = no limit)
-	Ignore     bool    `json:"ignore,omitempty"`     // skip all think times
+	MeanMs     float64 `json:"mean_ms" jsonschema:"minimum=0,maximum=3600000"`
+	StdMs      float64 `json:"std_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`
+	MinMs      float64 `json:"min_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`
+	MaxMs      float64 `json:"max_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`
+	Multiplier float64 `json:"multiplier,omitempty" jsonschema:"minimum=0,maximum=100"`   // 1.0 = as recorded, 0.5 = half, 2.0 = double
+	LimitMs    float64 `json:"limit_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"` // max think time cap (0 = no limit)
+	Ignore     bool    `json:"ignore,omitempty"`                                          // skip all think times
 }
 
 type PacingConfig struct {
-	Type          string  `json:"type"`                      // "none", "fixed_delay", "random_delay", "fixed_interval", "random_interval", "tps"
-	DelayMs       int     `json:"delay_ms,omitempty"`        // for fixed_delay
-	MinDelayMs    int     `json:"min_delay_ms,omitempty"`    // for random_delay
-	MaxDelayMs    int     `json:"max_delay_ms,omitempty"`    // for random_delay
-	IntervalMs    int     `json:"interval_ms,omitempty"`     // for fixed_interval
-	MinIntervalMs int     `json:"min_interval_ms,omitempty"` // for random_interval
-	MaxIntervalMs int     `json:"max_interval_ms,omitempty"` // for random_interval
-	TPS           float64 `json:"tps,omitempty"`             // for tps mode
+	Type          string  `json:"type"`                                                             // "none", "fixed_delay", "random_delay", "fixed_interval", "random_interval", "tps"
+	DelayMs       int     `json:"delay_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`        // for fixed_delay
+	MinDelayMs    int     `json:"min_delay_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`    // for random_delay
+	MaxDelayMs    int     `json:"max_delay_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`    // for random_delay
+	IntervalMs    int     `json:"interval_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`     // for fixed_interval
+	MinIntervalMs int     `json:"min_interval_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"` // for random_interval
+	MaxIntervalMs int     `json:"max_interval_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"` // for random_interval
+	TPS           float64 `json:"tps,omitempty"`                                                    // for tps mode
 }
 
 type DataSource struct {
@@ -669,9 +673,9 @@ type Action struct {
 	// Control flow (for action types "control_if" and "control_loop").
 	Control *ControlFlow `json:"control,omitempty"`
 	// Per-action overrides
-	Auth         *AuthConfig       `json:"auth,omitempty"`          // override global auth
-	TimeoutMs    int               `json:"timeout_ms,omitempty"`    // override global request timeout
-	MaxRedirects *int              `json:"max_redirects,omitempty"` // override global redirect policy
+	Auth         *AuthConfig       `json:"auth,omitempty"`                                              // override global auth
+	TimeoutMs    int               `json:"timeout_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"` // override global request timeout
+	MaxRedirects *int              `json:"max_redirects,omitempty" jsonschema:"minimum=-1,maximum=50"`  // override global redirect policy
 	SOAP         *SOAPActionConfig `json:"soap,omitempty"`
 }
 

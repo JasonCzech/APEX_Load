@@ -185,30 +185,28 @@ func (tr *TestRunner) processArchiveFinalizationJobUnderFence(ctx context.Contex
 	// The database is authoritative even if this replica still has a stale
 	// ManagedTest pointer. This check also lets a deletion transaction convert
 	// the job to cleanup without a retry worker resurrecting the catalog row.
+	var durableTest *storage.TestRecord
 	if tr.testStore != nil {
-		record, err := tr.testStore.GetTest(job.TestID)
-		if errors.Is(err, sql.ErrNoRows) || (err == nil && record == nil) {
+		var err error
+		durableTest, err = tr.testStore.GetTest(job.TestID)
+		if errors.Is(err, sql.ErrNoRows) || (err == nil && durableTest == nil) {
 			return tr.cancelArchiveFinalizationJob(job.TestID)
 		}
 		if err != nil {
 			return fmt.Errorf("load test for archive finalization: %w", err)
 		}
-		if normalizeProjectID(record.ProjectID) != normalizeProjectID(job.ProjectID) {
-			return fmt.Errorf("archive finalization project %q does not match test project %q", job.ProjectID, record.ProjectID)
+		if normalizeProjectID(durableTest.ProjectID) != normalizeProjectID(job.ProjectID) {
+			return fmt.Errorf("archive finalization project %q does not match test project %q", job.ProjectID, durableTest.ProjectID)
 		}
-		if !isTerminalTestStatus(record.Status) {
+		if !isTerminalTestStatus(durableTest.Status) {
 			return fmt.Errorf("test %s is not durably terminal yet", job.TestID)
 		}
 		// Use the durable row as a fallback, then prefer a deep in-memory snapshot
 		// captured under tr.mu. Producer finalization passes the live ManagedTest
 		// pointer; reading its maps/slices while pause/stop/metrics mutate it races.
-		test = managedTestFromRecord(record)
+		test = managedTestFromRecord(durableTest)
 	}
-	tr.mu.RLock()
-	if current := tr.tests[job.TestID]; current != nil {
-		test = cloneManagedTestForReadLocked(current)
-	}
-	tr.mu.RUnlock()
+	test = tr.preferredArchiveFinalizationTestSnapshot(job.TestID, durableTest, test)
 	if test == nil {
 		return fmt.Errorf("test %s is unavailable for archive finalization", job.TestID)
 	}
@@ -298,6 +296,26 @@ func (tr *TestRunner) processArchiveFinalizationJobUnderFence(ctx context.Contex
 	}
 	tr.attachFinalizedRunArchive(job.TestID, record)
 	return nil
+}
+
+func (tr *TestRunner) preferredArchiveFinalizationTestSnapshot(testID string, durable *storage.TestRecord, fallback *ManagedTest) *ManagedTest {
+	if tr == nil {
+		return fallback
+	}
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	current := tr.tests[testID]
+	if current == nil {
+		return fallback
+	}
+	// The durable row and outbox establish the tenant/identity boundary. A
+	// follower may still retain an object for a deleted/recreated ID; never let
+	// that stale object's groups, actors, or runtime provenance cross into the
+	// current tenant's archive.
+	if durable != nil && !sameStoredTestIdentity(current, durable) {
+		return fallback
+	}
+	return cloneManagedTestForReadLocked(current)
 }
 
 // processArchiveRefreshJob resolves a record-independent dirty intent under the

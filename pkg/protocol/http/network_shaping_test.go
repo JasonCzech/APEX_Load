@@ -31,28 +31,19 @@ func TestParseNetworkSimulationProfile_PresetWithJitterAndLoss(t *testing.T) {
 }
 
 func TestNetworkSimulationProfile_CustomDelayAccounting(t *testing.T) {
-	var sleeps []time.Duration
 	profile := networkSimulationProfile{
 		latency:          40 * time.Millisecond,
 		jitter:           10 * time.Millisecond,
 		bandwidthBytesPS: 1000,
 		packetLossPct:    100,
-		sleep: func(delay time.Duration) {
-			sleeps = append(sleeps, roundDurationToMillis(delay))
-		},
-		randFloat64: func() float64 { return 0.5 },
+		randFloat64:      func() float64 { return 0.5 },
 	}
 
-	profile.applyWriteDelay(500)
-
-	if len(sleeps) != 2 {
-		t.Fatalf("sleep calls = %d, want 2", len(sleeps))
+	if got := roundDurationToMillis(profile.jitterAndLossDelay()); got != 130*time.Millisecond {
+		t.Fatalf("jitter/loss delay = %v, want 130ms", got)
 	}
-	if sleeps[0] != 130*time.Millisecond {
-		t.Fatalf("first sleep = %v, want 130ms", sleeps[0])
-	}
-	if sleeps[1] != 500*time.Millisecond {
-		t.Fatalf("second sleep = %v, want 500ms", sleeps[1])
+	if got := roundDurationToMillis(profile.bandwidthDelay(500)); got != 500*time.Millisecond {
+		t.Fatalf("bandwidth delay = %v, want 500ms", got)
 	}
 }
 
@@ -200,5 +191,32 @@ func TestShapedConnectionReAppliesLatencyPerKeepAliveRequest(t *testing.T) {
 		if s != 30*time.Millisecond {
 			t.Fatalf("sleep[%d] = %v, want 30ms latency", i, s)
 		}
+	}
+}
+
+func TestShapedConnectionCloseInterruptsProductionDelay(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	defer serverConn.Close()
+	conn := &shapedConn{
+		Conn:   clientConn,
+		closed: make(chan struct{}),
+		profile: networkSimulationProfile{
+			latency: time.Hour,
+		},
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := conn.Write([]byte("request"))
+		done <- err
+	}()
+	time.Sleep(10 * time.Millisecond)
+	_ = conn.Close()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("shaped write succeeded after connection close")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("connection close did not interrupt simulated latency")
 	}
 }

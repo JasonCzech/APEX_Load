@@ -959,6 +959,36 @@ func TestDestructiveControlEventsRequireSessionNonce(t *testing.T) {
 	}
 }
 
+func TestRecordedPageCannotForgeCaptureEventsThroughBinding(t *testing.T) {
+	r := New(Options{StartURL: "https://app.example/"})
+	source := &playwright.BindingSource{}
+	click := `{"kind":"click","ts":1,"element":{"tag":"button","css_path":"#go"}}`
+	r.handleRecordBinding(source, click)
+	if got := len(r.Snapshot().Steps); got != 0 {
+		t.Fatalf("untrusted page binding recorded %d forged step(s)", got)
+	}
+
+	trusted := strings.TrimSuffix(click, "}") + `,"nonce":"` + r.controlNonce + `"}`
+	r.handleRecordBinding(source, trusted)
+	if got := len(r.Snapshot().Steps); got != 1 {
+		t.Fatalf("trusted capture recorded %d steps, want 1", got)
+	}
+}
+
+func TestAtomicCaptureBatchReservesPageSwitchCapacity(t *testing.T) {
+	r := New(Options{StartURL: "https://app.example/"})
+	first := &pageLimitPage{}
+	second := &pageLimitPage{}
+	r.activePage = first
+	r.session.Steps = make([]Step, maxBrowserSteps-2)
+	if switched := r.recordPageSwitchIfNeededLocked(second, time.Now(), SectionActions, 2); switched != nil {
+		t.Fatal("page switch consumed capacity reserved for an atomic two-step batch")
+	}
+	if got := len(r.session.Steps); got != maxBrowserSteps-2 {
+		t.Fatalf("steps = %d after omitted switch, want %d", got, maxBrowserSteps-2)
+	}
+}
+
 func TestNavigableURLRejectsNonHTTPSchemes(t *testing.T) {
 	cases := []struct {
 		url string
@@ -1088,6 +1118,25 @@ func TestCaptureScriptRecordsP3InputParityEvents(t *testing.T) {
 		if !strings.Contains(captureScript, fragment) {
 			t.Fatalf("capture script missing %s", fragment)
 		}
+	}
+}
+
+func TestCaptureScriptPinsTrustedBindingAndRejectsSyntheticInput(t *testing.T) {
+	for _, fragment := range []string{
+		"const RECORD_BINDING = typeof window.__apexloadRecord",
+		"const SAFE_JSON_STRINGIFY = JSON.stringify.bind(JSON)",
+		"const CONTROL_NONCE_SUFFIX =",
+		"const result = RECORD_BINDING(serialized)",
+	} {
+		if !strings.Contains(captureScript, fragment) {
+			t.Fatalf("capture script missing trusted-binding guard %q", fragment)
+		}
+	}
+	if strings.Contains(captureScript, "window.__apexloadRecord(serialized)") {
+		t.Fatal("capture script must not dynamically resolve the page-mutable binding")
+	}
+	if got := strings.Count(captureScript, "if (!ev.isTrusted) return;"); got < 13 {
+		t.Fatalf("capture script has %d synthetic-event guards, want at least 13", got)
 	}
 }
 

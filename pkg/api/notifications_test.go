@@ -442,3 +442,41 @@ func TestValidateNotificationsSettingsCapsWebhookCount(t *testing.T) {
 		t.Fatalf("webhook cardinality error = %v", err)
 	}
 }
+
+func TestValidateNotificationsSettingsCapsRetainedAndOutboundFields(t *testing.T) {
+	valid := func() NotificationWebhookSettings {
+		return NotificationWebhookSettings{URL: "https://hooks.example.test/events", Format: notificationFormatSlack}
+	}
+	tests := []struct {
+		name   string
+		mutate func(*NotificationWebhookSettings)
+		field  string
+	}{
+		{name: "name", mutate: func(webhook *NotificationWebhookSettings) {
+			webhook.Name = strings.Repeat("n", maxNotificationNameBytes+1)
+		}, field: "name"},
+		{name: "url", mutate: func(webhook *NotificationWebhookSettings) {
+			webhook.URL = "https://example.test/" + strings.Repeat("u", maxNotificationURLBytes)
+		}, field: "url"},
+		{name: "api token", mutate: func(webhook *NotificationWebhookSettings) {
+			webhook.APIToken = strings.Repeat("t", maxNotificationAPITokenBytes+1)
+		}, field: "api_token"},
+		{name: "entity selector", mutate: func(webhook *NotificationWebhookSettings) {
+			webhook.EntitySelector = strings.Repeat("e", maxNotificationEntitySelectorBytes+1)
+		}, field: "entity_selector"},
+		{name: "event count", mutate: func(webhook *NotificationWebhookSettings) { webhook.Events = make([]string, maxNotificationEvents+1) }, field: "events"},
+		{name: "event length", mutate: func(webhook *NotificationWebhookSettings) {
+			webhook.Events = []string{strings.Repeat("e", maxNotificationEventBytes+1)}
+		}, field: "events"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			webhook := valid()
+			test.mutate(&webhook)
+			err := validateNotificationsSettings(NotificationsSettings{Webhooks: []NotificationWebhookSettings{webhook}})
+			if err == nil || !strings.Contains(err.Error(), test.field) {
+				t.Fatalf("validation error = %v, want bounded %s error", err, test.field)
+			}
+		})
+	}
+}

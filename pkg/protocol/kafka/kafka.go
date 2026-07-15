@@ -49,7 +49,7 @@ func init() {
 }
 
 const defaultMockPartitions = 4
-const kafkaExtractionBodyLimit = 64 << 10
+const kafkaExtractionBodyLimit = protocol.MaxExtractionValueBytes
 const kafkaMaxTransactionRecords = 10_000
 const kafkaMaxTransactionBytes = 64 << 20
 const kafkaTransactionAbortTimeout = 5 * time.Second
@@ -338,6 +338,9 @@ func (k *Kafka) Execute(ctx context.Context, action *protocol.Action) (*protocol
 		result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
 		return result, nil
 	}
+	actionCtx, actionCancel := context.WithTimeout(ctx, k.timeout(action))
+	defer actionCancel()
+	ctx = actionCtx
 	if k.txPoisoned {
 		result.Success = false
 		result.StatusCode = 500
@@ -619,7 +622,9 @@ func (k *Kafka) produce(ctx context.Context, action *protocol.Action, result *pr
 		k.txBytes += recordBytes
 		result.BytesSent = int64(len(rec.Value))
 		result.CorrelationID = rec.CorrelationID
-		addRecordExtractions(result, rec)
+		if err := addRecordExtractions(result, rec); err != nil {
+			return kafkaRecord{}, err
+		}
 		result.Extractions["kafka_operation"] = "produce"
 		result.Extractions["kafka_transactional"] = "true"
 		return rec, evaluateAssertions(action.Assertions, result, rec)
@@ -633,7 +638,9 @@ func (k *Kafka) produce(ctx context.Context, action *protocol.Action, result *pr
 	rec.Timestamp = meta.Timestamp
 	result.BytesSent = int64(len(rec.Value))
 	result.CorrelationID = rec.CorrelationID
-	addRecordExtractions(result, rec)
+	if err := addRecordExtractions(result, rec); err != nil {
+		return kafkaRecord{}, err
+	}
 	result.Extractions["kafka_operation"] = "produce"
 	return rec, evaluateAssertions(action.Assertions, result, rec)
 }
@@ -752,7 +759,9 @@ func (k *Kafka) consume(ctx context.Context, action *protocol.Action, result *pr
 	}
 	rec.Value = payload
 	result.BytesReceived = int64(len(rec.Value))
-	addRecordExtractions(result, rec)
+	if err := addRecordExtractions(result, rec); err != nil {
+		return kafkaRecord{}, err
+	}
 	result.Extractions["kafka_operation"] = "consume"
 	result.Extractions["kafka_consumer_lag"] = strconv.FormatInt(lag, 10)
 	// Reliability detection: flag a duplicate / out-of-order delivery by broker
@@ -828,7 +837,9 @@ func (k *Kafka) requestReply(ctx context.Context, action *protocol.Action, resul
 	request.Offset = meta.Offset
 	result.BytesSent = int64(len(request.Value))
 	result.BytesReceived = int64(len(response.Value))
-	addRecordExtractions(result, response)
+	if err := addRecordExtractions(result, response); err != nil {
+		return kafkaRecord{}, kafkaRecord{}, err
+	}
 	result.CorrelationID = response.CorrelationID
 	result.Extractions["kafka_request_offset"] = strconv.FormatInt(meta.Offset, 10)
 	result.Extractions["kafka_operation"] = "request_reply"
@@ -918,26 +929,49 @@ func classifyKafkaDependencyType(action *protocol.Action, defaultGroup string) s
 	return "kafka_topic"
 }
 
-func addRecordExtractions(result *protocol.Result, rec kafkaRecord) {
+func addRecordExtractions(result *protocol.Result, rec kafkaRecord) error {
 	if rec.CorrelationID != "" {
 		result.CorrelationID = rec.CorrelationID
 	}
-	result.Extractions["kafka_key"] = rec.Key
-	result.Extractions["kafka_topic"] = rec.Topic
-	result.Extractions["kafka_partition"] = strconv.FormatInt(int64(rec.Partition), 10)
-	result.Extractions["kafka_offset"] = strconv.FormatInt(rec.Offset, 10)
+	store := func(key, value string) error {
+		if err := protocol.StoreExtraction(result, key, value); err != nil {
+			result.Extractions = nil
+			return fmt.Errorf("kafka metadata extraction %q rejected: %w", key, err)
+		}
+		return nil
+	}
+	for key, value := range map[string]string{
+		"kafka_key": rec.Key, "kafka_topic": rec.Topic,
+		"kafka_partition": strconv.FormatInt(int64(rec.Partition), 10),
+		"kafka_offset":    strconv.FormatInt(rec.Offset, 10),
+	} {
+		if err := store(key, value); err != nil {
+			return err
+		}
+	}
 	if len(rec.Value) > kafkaExtractionBodyLimit {
-		result.Extractions["kafka_body"] = string(rec.Value[:kafkaExtractionBodyLimit])
-		result.Extractions["kafka_body_truncated"] = "true"
+		if err := store("kafka_body", string(rec.Value[:kafkaExtractionBodyLimit])); err != nil {
+			return err
+		}
+		if err := store("kafka_body_truncated", "true"); err != nil {
+			return err
+		}
 	} else {
-		result.Extractions["kafka_body"] = string(rec.Value)
+		if err := store("kafka_body", string(rec.Value)); err != nil {
+			return err
+		}
 	}
 	if !rec.Timestamp.IsZero() {
-		result.Extractions["kafka_timestamp"] = rec.Timestamp.UTC().Format(time.RFC3339Nano)
+		if err := store("kafka_timestamp", rec.Timestamp.UTC().Format(time.RFC3339Nano)); err != nil {
+			return err
+		}
 	}
 	if rec.CorrelationID != "" {
-		result.Extractions["kafka_correlation_id"] = rec.CorrelationID
+		if err := store("kafka_correlation_id", rec.CorrelationID); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 func finalizeKafkaServerTelemetry(result *protocol.Result, request kafkaRecord, hasRequest bool, response kafkaRecord, hasResponse bool) *protocol.ServerTelemetry {
@@ -995,7 +1029,10 @@ func runExtractors(extractors []protocol.Extractor, result *protocol.Result, rec
 				return err
 			}
 		}
-		result.Extractions[extractor.Name] = value
+		if err := protocol.StoreExtraction(result, extractor.Name, value); err != nil {
+			result.Extractions = nil
+			return fmt.Errorf("kafka extractor %q output rejected: %w", extractor.Name, err)
+		}
 	}
 	return nil
 }

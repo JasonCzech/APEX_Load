@@ -80,6 +80,19 @@ func TestFreshClusterBasesDoNotIncludeOptionalCRDResources(t *testing.T) {
 	}
 }
 
+func TestMonitoringOverlaysUseKustomizeBase(t *testing.T) {
+	base := readTextFile(t, "monitoring/kustomization.yaml")
+	if !strings.Contains(base, "prometheusrule.yaml") {
+		t.Fatal("monitoring Kustomize base must include the shared PrometheusRule")
+	}
+	for _, path := range []string{"aks-prometheus/kustomization.yaml", "onprem-autoscaling/kustomization.yaml"} {
+		content := readTextFile(t, path)
+		if !strings.Contains(content, "../monitoring") || strings.Contains(content, "../monitoring/prometheusrule.yaml") {
+			t.Fatalf("%s must reference the monitoring directory base, not a sibling file", path)
+		}
+	}
+}
+
 func TestKEDAScaledObjectsProtectActiveDemand(t *testing.T) {
 	for _, path := range []string{
 		"aks/generator-keda-scaledobject.yaml",

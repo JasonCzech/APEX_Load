@@ -1880,6 +1880,33 @@ func TestHTTP_Execute_SaveAllExtractor(t *testing.T) {
 	}
 }
 
+func TestHTTP_Execute_ExtractorResourceLimitFailsClosed(t *testing.T) {
+	body := strings.Repeat("id=x;", maxAllExtractorMatches+1)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{"base_url": ts.URL})
+	result, err := h.Execute(context.Background(), &protocol.Action{
+		Name:   "bounded-save-all",
+		Method: "GET",
+		Target: "/page",
+		Extractors: []protocol.Extractor{
+			{Name: "ids", Source: "body", Type: "regex", Expression: `id=([^;]+);`, Mode: "all", OnMiss: "ignore"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if result.Success || !strings.Contains(result.ErrorMessage, "resource limit") {
+		t.Fatalf("resource-limited extraction success=%v error=%q", result.Success, result.ErrorMessage)
+	}
+	if len(result.Extractions) != 0 {
+		t.Fatalf("resource-limited extraction retained partial values: %d", len(result.Extractions))
+	}
+}
+
 func TestHTTP_Execute_SaveAllZeroMatchesLenient(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`nothing here`))

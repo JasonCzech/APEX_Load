@@ -2,10 +2,13 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -177,6 +180,32 @@ func TestGitHubOAuthCallbackCannotUndoNewerDisconnect(t *testing.T) {
 	}
 }
 
+func TestGitHubCallbackURLIgnoresInvalidForwardedProto(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	req := httptest.NewRequest(http.MethodGet, "http://apexload.example.test/api/v1/integrations/github/login", nil)
+	req.Header.Set("X-Forwarded-Proto", "javascript")
+
+	if got, want := server.githubCallbackURL(req), "http://apexload.example.test/api/v1/integrations/github/callback"; got != want {
+		t.Fatalf("callback URL = %q, want %q", got, want)
+	}
+}
+
+func TestGitHubCallbackURLUsesOnlyHTTPSForwardedProtoInProduction(t *testing.T) {
+	t.Setenv("APEXLOAD_ENV", "production")
+	server := NewServer(ServerConfig{})
+	req := httptest.NewRequest(http.MethodGet, "http://apexload.example.test/api/v1/integrations/github/login", nil)
+	req.Header.Set("X-Forwarded-Proto", "http")
+
+	if got, want := server.githubCallbackURL(req), "https://apexload.example.test/api/v1/integrations/github/callback"; got != want {
+		t.Fatalf("callback URL = %q, want %q", got, want)
+	}
+
+	req.Header.Set("X-Forwarded-Proto", "https, http")
+	if got, want := server.githubCallbackURL(req), "https://apexload.example.test/api/v1/integrations/github/callback"; got != want {
+		t.Fatalf("callback URL with forwarded chain = %q, want %q", got, want)
+	}
+}
+
 func TestGitHubLoginRequiresConfiguration(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
@@ -239,6 +268,47 @@ func TestGitHubOAuthCallbackRejectsChangedLocalIdentity(t *testing.T) {
 	connection, err := server.store.(storage.GitHubConnectionStore).GetGitHubConnection("victim")
 	if err != nil || connection != nil {
 		t.Fatalf("callback persisted victim connection = %#v, %v", connection, err)
+	}
+}
+
+func TestDecodeGitHubOAuthTokenResponseEnforcesBounds(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+		body       string
+	}{
+		{name: "http error with token-shaped body", statusCode: http.StatusBadGateway, body: `{"access_token":"must-not-be-accepted"}`},
+		{name: "oversized token", statusCode: http.StatusOK, body: `{"access_token":"` + strings.Repeat("x", githubOAuthTokenMaxBytes+1) + `"}`},
+		{name: "control character metadata", statusCode: http.StatusOK, body: `{"access_token":"token","scope":"repo\nadmin"}`},
+		{name: "negative expiry", statusCode: http.StatusOK, body: `{"access_token":"token","expires_in":-1}`},
+		{name: "excessive expiry", statusCode: http.StatusOK, body: `{"access_token":"token","expires_in":` + fmt.Sprint(int64(githubOAuthMaxTokenTTL/time.Second)+1) + `}`},
+		{name: "oversized response", statusCode: http.StatusOK, body: strings.Repeat("x", githubOAuthResponseMaxBytes+1)},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			resp := &http.Response{
+				StatusCode: test.statusCode,
+				Body:       io.NopCloser(strings.NewReader(test.body)),
+			}
+			if _, err := decodeGitHubOAuthTokenResponse(resp, "test exchange"); err == nil {
+				t.Fatal("unsafe OAuth token response was accepted")
+			}
+		})
+	}
+}
+
+func TestGitHubOAuthExpiryIsBoundedWithoutDurationOverflow(t *testing.T) {
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
+	want := now.Add(githubOAuthMaxTokenTTL)
+	got, err := githubOAuthExpiresAt(now, int64(githubOAuthMaxTokenTTL/time.Second))
+	if err != nil || got == nil || !got.Equal(want) {
+		t.Fatalf("maximum allowed expiry = (%v, %v), want %v", got, err, want)
+	}
+	if _, err := githubOAuthExpiresAt(now, int64(githubOAuthMaxTokenTTL/time.Second)+1); err == nil {
+		t.Fatal("excessive OAuth token expiry was accepted")
+	}
+	if got, err := githubOAuthExpiresAt(now, 0); err != nil || got != nil {
+		t.Fatalf("non-expiring token expiry = (%v, %v), want nil,nil", got, err)
 	}
 }
 

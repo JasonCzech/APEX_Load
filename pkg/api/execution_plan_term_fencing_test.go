@@ -136,6 +136,63 @@ func TestExecutionPlanOldGoroutineCannotAdoptSameProcessReacquiredTerm(t *testin
 	}
 }
 
+func TestExecutionPlanFailureDoesNotMutateStaleReusedIDCache(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "materialization-cache.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	leadership := newExecutionLeadership(store, "materialization-cache-plan")
+	leadership.tick()
+	if !leadership.IsAdmitted() {
+		t.Fatal("leadership acquisition was not admitted")
+	}
+	defer leadership.relinquish()
+
+	const (
+		testID   = "deterministic-reused-test-id"
+		ownedKey = "plan-run/entry-owned"
+	)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	if err := store.SaveTest(&storage.TestRecord{
+		ID: testID, MaterializationKey: ownedKey, Name: "Durable owned entry", Status: "QUEUED",
+		ProjectID: storage.DefaultProjectID, StartTime: now, Groups: []any{},
+	}); err != nil {
+		t.Fatalf("SaveTest: %v", err)
+	}
+	runner := NewTestRunner(2, NewHub(), store, WithExecutionLeadership(leadership))
+	term, err := runner.captureExecutionLeaseTerm()
+	if err != nil {
+		t.Fatalf("captureExecutionLeaseTerm: %v", err)
+	}
+	canceled := false
+	stale := &ManagedTest{
+		ID: testID, MaterializationKey: "another-plan/entry", Name: "Stale unrelated cache",
+		Status: "RUNNING", ProjectID: "another-project", CreatedAt: now.Add(-time.Hour),
+		cancel: func() { canceled = true },
+	}
+	runner.mu.Lock()
+	runner.tests[testID] = stale
+	runner.mu.Unlock()
+
+	if err := runner.failExecutionPlanStagedTestWithTerm(testID, "owned cleanup", term, ownedKey); err != nil {
+		t.Fatalf("failExecutionPlanStagedTestWithTerm: %v", err)
+	}
+	durable, err := store.GetTest(testID)
+	if err != nil {
+		t.Fatalf("GetTest: %v", err)
+	}
+	if durable.Status != "FAILED" || durable.Error != "owned cleanup" {
+		t.Fatalf("owned durable materialization was not terminalized: %+v", durable)
+	}
+	runner.mu.RLock()
+	retained := runner.tests[testID]
+	runner.mu.RUnlock()
+	if retained != stale || stale.Status != "RUNNING" || stale.Error != "" || canceled {
+		t.Fatalf("stale unrelated cache was mutated: retained=%p stale=%p status=%q error=%q canceled=%v", retained, stale, stale.Status, stale.Error, canceled)
+	}
+}
+
 func TestExecutionPlanExpectedTermStartRejectsReacquireBetweenPrecheckAndMutation(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "start-mutation-term.db"))
 	if err != nil {

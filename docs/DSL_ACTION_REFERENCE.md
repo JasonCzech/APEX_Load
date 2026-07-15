@@ -351,7 +351,7 @@ Handles the next native dialog (alert/confirm/prompt) by accepting or dismissing
 | `params.expected_message` | string |  | If set, the captured dialog message must contain this text. |
 | `params.match_mode` | enum: exact\|contains\|normalized |  | Message comparison mode; recorder-origin dialogs default to contains. |
 | `params.prompt_text` | string |  | Text entered into a prompt dialog when accepting. |
-| `params.wait_ms` | int |  | How long to wait for the dialog to appear (default 5000). |
+| `params.wait_ms` | int |  | How long to wait for the dialog to appear (default 5000; maximum 3600000). |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
 ### `browser_hover`
@@ -379,7 +379,7 @@ Requires one of: `target`, `selector`, `object_ref`
 | `target` | string |  | Element locator; target, selector, or object_ref is required. |
 | `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
 | `object_ref` | string |  | Object-repository binding: a logical object name ("name" or "repoID:name") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector. |
-| `params.duration_ms` | int |  | Press duration in milliseconds; must be greater than zero. |
+| `params.duration_ms` | int |  | Press duration in milliseconds; must be greater than zero and at most 3600000. |
 | `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
@@ -737,7 +737,7 @@ Bidirectional-streaming gRPC call.
 | `body` | string |  | Request message as JSON; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request message JSON. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `headers` | object |  | Per-call gRPC metadata merged over config.grpc.metadata. |
-| `params.timeout_ms` | int |  | Per-call deadline in milliseconds; zero or greater. |
+| `params.timeout_ms` | int |  | Per-call deadline in milliseconds; zero through 3600000. |
 | `params.max_messages` | int |  | Cap on streamed messages; zero through 10000. |
 
 ### `grpc_client_stream`
@@ -750,7 +750,7 @@ Client-streaming gRPC call.
 | `body` | string |  | Request message as JSON; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request message JSON. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `headers` | object |  | Per-call gRPC metadata merged over config.grpc.metadata. |
-| `params.timeout_ms` | int |  | Per-call deadline in milliseconds; zero or greater. |
+| `params.timeout_ms` | int |  | Per-call deadline in milliseconds; zero through 3600000. |
 | `params.max_messages` | int |  | Cap on streamed messages; zero through 10000. |
 
 ### `grpc_server_stream`
@@ -763,7 +763,7 @@ Server-streaming gRPC call; reads until the stream ends or max_messages.
 | `body` | string |  | Request message as JSON; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request message JSON. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `headers` | object |  | Per-call gRPC metadata merged over config.grpc.metadata. |
-| `params.timeout_ms` | int |  | Per-call deadline in milliseconds; zero or greater. |
+| `params.timeout_ms` | int |  | Per-call deadline in milliseconds; zero through 3600000. |
 | `params.max_messages` | int |  | Cap on streamed messages; zero through 10000. |
 
 ### `grpc_unary`
@@ -776,7 +776,7 @@ Unary gRPC call.
 | `body` | string |  | Request message as JSON; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request message JSON. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `headers` | object |  | Per-call gRPC metadata merged over config.grpc.metadata. |
-| `params.timeout_ms` | int |  | Per-call deadline in milliseconds; zero or greater. |
+| `params.timeout_ms` | int |  | Per-call deadline in milliseconds; zero through 3600000. |
 | `params.max_messages` | int |  | Cap on streamed messages; zero through 10000. |
 
 ## Protocol: http
@@ -1060,7 +1060,7 @@ Runs a LoadRunner Java Vuser lifecycle through the governed JVM sidecar runner.
 | `target` | string | yes | Java class name to load, usually Actions. |
 | `params.method` | enum: init\|action\|end\|full_lifecycle |  | Lifecycle method or full lifecycle sequence to invoke. |
 | `params.source_archive_ref` | string |  | Preserved source archive or authoring artifact reference. |
-| `params.timeout_ms` | int |  | Per-run timeout in milliseconds; falls back to config.java_vuser.action_timeout_ms. |
+| `params.timeout_ms` | int |  | Per-run timeout in milliseconds (maximum 3600000); falls back to config.java_vuser.action_timeout_ms. |
 | `params.runner_requirement` | string |  | Governance gate required before execution, usually java_vuser_jvm_runner. |
 | `params.event_contract` | string |  | Runner event stream contract expected from the sidecar shim. |
 | `params.shim_event_types` | array |  | Event type names emitted as JSON lines by the lrapi.lr sidecar shim under the declared event contract. |
@@ -1697,7 +1697,7 @@ Waits for the next inbound message.
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `params.timeout_ms` | int |  | Receive timeout in milliseconds; zero or greater. |
+| `params.timeout_ms` | int |  | Receive timeout in milliseconds; zero through 3600000. |
 
 ### `ws_send`
 

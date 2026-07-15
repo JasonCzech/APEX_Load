@@ -448,3 +448,35 @@ func TestArchiveFinalizationTreatsDeletedTestAsCancellation(t *testing.T) {
 		t.Fatalf("deleted test archive was resurrected: %v", err)
 	}
 }
+
+func TestArchiveFinalizationRejectsStaleCrossProjectReplicaSnapshot(t *testing.T) {
+	createdAt := time.Now().UTC()
+	const testID = "reused-archive-finalization-id"
+	durable := &storage.TestRecord{
+		ID: testID, Name: "Current project B run", ProjectID: "project-b",
+		Status: "COMPLETE", StartTime: createdAt, Duration: int64(time.Minute),
+	}
+	fallback := managedTestFromRecord(durable)
+	stale := &ManagedTest{
+		ID: testID, Name: "Prior project A run", ProjectID: "project-a",
+		Status: "COMPLETE", CreatedAt: createdAt.Add(-time.Hour),
+		Groups: []TestGroup{{Name: "project-a-private-group"}},
+	}
+	runner := &TestRunner{tests: map[string]*ManagedTest{testID: stale}}
+
+	selected := runner.preferredArchiveFinalizationTestSnapshot(testID, durable, fallback)
+	if selected == nil || selected.ProjectID != "project-b" || selected.Name != durable.Name {
+		t.Fatalf("selected archive provenance = %#v, want durable project-B fallback", selected)
+	}
+	if len(selected.Groups) != 0 {
+		t.Fatalf("stale project-A groups crossed archive identity boundary: %#v", selected.Groups)
+	}
+
+	matching := managedTestFromRecord(durable)
+	matching.Groups = []TestGroup{{Name: "current-project-group"}}
+	runner.tests[testID] = matching
+	selected = runner.preferredArchiveFinalizationTestSnapshot(testID, durable, fallback)
+	if selected == matching || len(selected.Groups) != 1 || selected.Groups[0].Name != "current-project-group" {
+		t.Fatalf("same-identity live snapshot was not safely cloned: %#v", selected)
+	}
+}

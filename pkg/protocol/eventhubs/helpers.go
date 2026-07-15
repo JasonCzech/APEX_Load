@@ -194,12 +194,23 @@ func perSec(count int, d time.Duration) float64 {
 
 // ---- extractions / assertions ----
 
-func addEventExtractions(result *protocol.Result, ev event) {
-	result.Extractions["eventhubs_offset"] = strconv.FormatInt(ev.Offset, 10)
-	result.Extractions["eventhubs_sequence_number"] = strconv.FormatInt(ev.SequenceNum, 10)
-	if ev.PartitionID != "" {
-		result.Extractions["eventhubs_partition"] = ev.PartitionID
+func addEventExtractions(result *protocol.Result, ev event) error {
+	for key, value := range map[string]string{
+		"eventhubs_offset":          strconv.FormatInt(ev.Offset, 10),
+		"eventhubs_sequence_number": strconv.FormatInt(ev.SequenceNum, 10),
+	} {
+		if err := protocol.StoreExtraction(result, key, value); err != nil {
+			result.Extractions = nil
+			return fmt.Errorf("eventhubs metadata extraction %q rejected: %w", key, err)
+		}
 	}
+	if ev.PartitionID != "" {
+		if err := protocol.StoreExtraction(result, "eventhubs_partition", ev.PartitionID); err != nil {
+			result.Extractions = nil
+			return fmt.Errorf("eventhubs metadata extraction %q rejected: %w", "eventhubs_partition", err)
+		}
+	}
+	return nil
 }
 
 // runExtractors supports body (regex) and property extractors for the observer
@@ -214,16 +225,22 @@ func runExtractors(extractors []protocol.Extractor, result *protocol.Result, ev 
 					return fmt.Errorf("eventhubs extractor %q: %w", ex.Name, err)
 				}
 				if m := re.FindStringSubmatch(string(ev.Body)); m != nil {
+					value := m[0]
 					if len(m) > 1 {
-						result.Extractions[ex.Name] = m[1]
-					} else {
-						result.Extractions[ex.Name] = m[0]
+						value = m[1]
+					}
+					if err := protocol.StoreExtraction(result, ex.Name, value); err != nil {
+						result.Extractions = nil
+						return fmt.Errorf("eventhubs extractor %q output rejected: %w", ex.Name, err)
 					}
 				}
 			}
 		case "property":
 			if v, ok := ev.Properties[ex.Expression]; ok {
-				result.Extractions[ex.Name] = v
+				if err := protocol.StoreExtraction(result, ex.Name, v); err != nil {
+					result.Extractions = nil
+					return fmt.Errorf("eventhubs extractor %q output rejected: %w", ex.Name, err)
+				}
 			}
 		}
 	}

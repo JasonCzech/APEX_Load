@@ -1,9 +1,11 @@
 package api
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -17,7 +19,87 @@ import (
 	"github.com/go-jose/go-jose/v3"
 	"github.com/go-jose/go-jose/v3/jwt"
 	"github.com/jasonczech/apexload/pkg/storage"
+	"golang.org/x/oauth2"
 )
+
+func TestOIDCSecureURLRejectsCleartextRemoteEndpoints(t *testing.T) {
+	tests := []struct {
+		name    string
+		raw     string
+		wantErr bool
+	}{
+		{name: "https remote", raw: "https://identity.example.test/tenant"},
+		{name: "http ipv4 loopback", raw: "http://127.0.0.1:8080/tenant"},
+		{name: "http ipv6 loopback", raw: "http://[::1]:8080/tenant"},
+		{name: "http localhost", raw: "http://localhost:8080/tenant"},
+		{name: "http remote", raw: "http://identity.example.test/tenant", wantErr: true},
+		{name: "userinfo", raw: "https://user:pass@identity.example.test/tenant", wantErr: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateOIDCSecureURL("test endpoint", test.raw)
+			if (err != nil) != test.wantErr {
+				t.Fatalf("validateOIDCSecureURL(%q) error = %v, wantErr=%v", test.raw, err, test.wantErr)
+			}
+		})
+	}
+}
+
+func TestOIDCTokenExchangeRefusesCrossOriginCredentialRedirect(t *testing.T) {
+	var leaked atomic.Bool
+	sink := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		leaked.Store(true)
+		_ = r.ParseForm()
+		writeJSON(w, http.StatusOK, map[string]any{"access_token": "stolen", "token_type": "Bearer"})
+	}))
+	defer sink.Close()
+	tokenEndpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, sink.URL+"/capture", http.StatusTemporaryRedirect)
+	}))
+	defer tokenEndpoint.Close()
+
+	runtime := &oidcRuntime{
+		httpClient: newOIDCHTTPClient(),
+		oauth2Config: oauth2.Config{
+			ClientID:     "client-id",
+			ClientSecret: "client-secret",
+			Endpoint:     oauth2.Endpoint{TokenURL: tokenEndpoint.URL},
+		},
+	}
+	if _, err := runtime.exchange(context.Background(), "authorization-code"); err == nil {
+		t.Fatal("OIDC token exchange followed a cross-origin credential redirect")
+	}
+	if leaked.Load() {
+		t.Fatal("cross-origin redirect received OIDC client credentials")
+	}
+}
+
+func TestOIDCHTTPClientBoundsRemoteResponses(t *testing.T) {
+	remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(strings.Repeat("x", oidcRemoteResponseMaxBytes+1)))
+	}))
+	defer remote.Close()
+	resp, err := newOIDCHTTPClient().Get(remote.URL)
+	if err != nil {
+		t.Fatalf("GET bounded response: %v", err)
+	}
+	defer resp.Body.Close()
+	if _, err := io.ReadAll(resp.Body); err == nil {
+		t.Fatalf("response larger than %d bytes was accepted", oidcRemoteResponseMaxBytes)
+	}
+}
+
+func TestAuthSessionSecretRequiresProductionStrength(t *testing.T) {
+	t.Setenv("APEXLOAD_ENV", "production")
+	t.Setenv("APEXLOAD_AUTH_SESSION_SECRET", "short")
+	if _, err := authSessionSecret(AuthSettings{SessionSecretEnvVar: "APEXLOAD_AUTH_SESSION_SECRET"}); err == nil {
+		t.Fatal("weak production OIDC session secret was accepted")
+	}
+	t.Setenv("APEXLOAD_AUTH_SESSION_SECRET", strings.Repeat("s", productionSecretMinBytes))
+	if _, err := authSessionSecret(AuthSettings{SessionSecretEnvVar: "APEXLOAD_AUTH_SESSION_SECRET"}); err != nil {
+		t.Fatalf("strong production OIDC session secret rejected: %v", err)
+	}
+}
 
 func TestSanitizeReturnToRejectsNetworkPathVariants(t *testing.T) {
 	tests := []struct {
@@ -547,7 +629,7 @@ func enableOIDCAuth(t *testing.T, server *Server, issuerURL string) {
 	settings.Auth.IssuerURL = issuerURL
 	settings.Auth.ClientID = "apexload-dashboard"
 	settings.Auth.ClientSecretEnvVar = "APEXLOAD_OIDC_CLIENT_SECRET"
-	settings.Auth.RedirectURL = "http://apexload.example.test/api/v1/auth/callback"
+	settings.Auth.RedirectURL = "http://127.0.0.1/api/v1/auth/callback"
 	settings.Auth.SessionSecretEnvVar = "APEXLOAD_AUTH_SESSION_SECRET"
 	settings.Auth.Scopes = []string{"openid", "profile", "email"}
 	settings.Auth.RolesClaim = "roles"

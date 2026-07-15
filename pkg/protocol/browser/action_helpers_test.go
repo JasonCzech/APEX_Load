@@ -209,6 +209,7 @@ func TestParseWaitDelay(t *testing.T) {
 		{name: "duration literal", raw: "2s", want: 2 * time.Second},
 		{name: "empty", raw: "", wantErr: true},
 		{name: "invalid", raw: "soon", wantErr: true},
+		{name: "above runtime cap", raw: (MaxConfiguredBrowserDelay + time.Millisecond).String(), wantErr: true},
 	}
 
 	for _, tt := range tests {
@@ -219,6 +220,21 @@ func TestParseWaitDelay(t *testing.T) {
 			}
 			if err == nil && got != tt.want {
 				t.Fatalf("duration = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidateBrowserActionTimingRejectsUnboundedValues(t *testing.T) {
+	tooLarge := MaxConfiguredBrowserDelay.Milliseconds() + 1
+	for name, action := range map[string]*protocol.Action{
+		"action timeout": {Params: map[string]any{"timeout_ms": tooLarge}},
+		"wait timeout":   {WaitFor: &protocol.WaitCondition{TimeoutMs: int(tooLarge)}},
+		"sync stable":    {Sync: &protocol.BrowserSyncPolicy{StableMs: int(tooLarge)}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := validateBrowserActionTiming(action); err == nil || !strings.Contains(err.Error(), "between 0") {
+				t.Fatalf("timing validation error = %v, want cap rejection", err)
 			}
 		})
 	}

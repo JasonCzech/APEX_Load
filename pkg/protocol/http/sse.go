@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 const defaultSSEStreamTimeout = 30 * time.Second
@@ -72,7 +74,10 @@ func readSSEResponse(ctx context.Context, body io.ReadCloser, params map[string]
 	maxEvents := sseParamInt(params, "max_events", 0)
 	stopOnEvent := strings.TrimSpace(sseParamString(params, "stop_on_event"))
 	maxBodyBytes := sseMaxBodyBytes(params)
-	timeout := time.Duration(sseParamInt(params, "stream_timeout_ms", int(defaultSSEStreamTimeout/time.Millisecond))) * time.Millisecond
+	timeout, timeoutErr := protocol.BoundedMilliseconds(params["stream_timeout_ms"], defaultSSEStreamTimeout, MaxConfiguredTimeout)
+	if timeoutErr != nil {
+		return sseReadResult{}, fmt.Errorf("stream_timeout_ms %w", timeoutErr)
+	}
 
 	var timedOut atomic.Bool
 	done := make(chan struct{})

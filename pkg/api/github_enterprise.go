@@ -405,10 +405,11 @@ func (s *Server) githubTokenForConnection(ctx context.Context, settings GitHubSe
 	}
 	conn.TokenType = firstNonEmpty(next.TokenType, conn.TokenType)
 	conn.Scopes = firstNonEmpty(next.Scope, conn.Scopes)
-	if next.ExpiresIn > 0 {
-		exp := time.Now().UTC().Add(time.Duration(next.ExpiresIn) * time.Second)
-		conn.ExpiresAt = &exp
+	expiresAt, err := githubOAuthExpiresAt(time.Now().UTC(), next.ExpiresIn)
+	if err != nil {
+		return token, true
 	}
+	conn.ExpiresAt = expiresAt
 	updater, supported := store.(interface {
 		UpdateGitHubConnectionIfUnchanged(conn *storage.GitHubConnection, expectedUpdatedAt time.Time) (bool, error)
 	})
@@ -463,14 +464,7 @@ func refreshGitHubOAuthToken(ctx context.Context, settings GitHubSettings, refre
 		return nil, err
 	}
 	defer resp.Body.Close()
-	var tokenResp githubTokenResponse
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<16)).Decode(&tokenResp); err != nil {
-		return nil, err
-	}
-	if tokenResp.Error != "" || strings.TrimSpace(tokenResp.AccessToken) == "" {
-		return nil, fmt.Errorf("github refresh token exchange failed")
-	}
-	return &tokenResp, nil
+	return decodeGitHubOAuthTokenResponse(resp, "github refresh token exchange")
 }
 
 func (s *Server) handleGitHubDiagnostics(w http.ResponseWriter, r *http.Request) {
@@ -722,7 +716,8 @@ func verifyGitHubWebhookSignature(secret string, payload []byte, header string) 
 
 func (s *Server) handleGitHubWebhook(w http.ResponseWriter, r *http.Request) {
 	settings := s.currentGitHubSettings()
-	if !settings.Enabled || !settings.webhookConfigured() {
+	secret, secretErr := settings.validatedWebhookSecret()
+	if !settings.Enabled || secretErr != nil {
 		writeError(w, http.StatusServiceUnavailable, "github webhook is not configured")
 		return
 	}
@@ -731,7 +726,7 @@ func (s *Server) handleGitHubWebhook(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid webhook body")
 		return
 	}
-	if !verifyGitHubWebhookSignature(settings.webhookSecret(), payload, r.Header.Get("X-Hub-Signature-256")) {
+	if !verifyGitHubWebhookSignature(secret, payload, r.Header.Get("X-Hub-Signature-256")) {
 		writeError(w, http.StatusUnauthorized, "github webhook signature mismatch")
 		return
 	}

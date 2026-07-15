@@ -11,6 +11,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/fileasset"
 	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
+	networkprotocol "github.com/jasonczech/apexload/pkg/protocol/network"
 )
 
 func TestValidateScriptIssues_RendezvousValidation(t *testing.T) {
@@ -1418,6 +1419,22 @@ func TestValidateScriptIssues_NetworkProtocolAllowsSupportedActions(t *testing.T
 	if issues := ValidateScriptIssues(script); len(issues) != 0 {
 		t.Fatalf("issues = %#v, want none", issues)
 	}
+}
+
+func TestValidateScriptIssues_NetworkProtocolBoundsTimeouts(t *testing.T) {
+	tooLarge := int(networkprotocol.MaxConfiguredTimeout/time.Millisecond) + 1
+	script := &Script{
+		Name:     "Network",
+		Protocol: "network",
+		Config:   ScriptConfig{Network: NetworkConfig{Subprotocol: "tcp", TimeoutMs: tooLarge}},
+		Actions: []Action{{
+			Name: "Socket", Type: "tcp_request", Target: "127.0.0.1:7",
+			Params: map[string]any{"timeout_ms": tooLarge},
+		}},
+	}
+	issues := ValidateScriptIssues(script)
+	assertIssue(t, issues, fmt.Sprintf("config.network.timeout_ms must not exceed %d", networkprotocol.MaxConfiguredTimeout/time.Millisecond))
+	assertIssue(t, issues, fmt.Sprintf(`actions[0] "Socket": timeout_ms must not exceed %d`, networkprotocol.MaxConfiguredTimeout/time.Millisecond))
 }
 
 func assertIssue(t *testing.T, issues []string, want string) {

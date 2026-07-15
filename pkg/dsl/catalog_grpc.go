@@ -13,7 +13,7 @@ func grpcActionSpecs() []ActionSpec {
 		{Name: "body", Kind: FieldKindString, Doc: "Request message as JSON; template variables are expanded."},
 		{Name: "body_file", Kind: FieldKindString, Doc: "Local file containing the request message JSON. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there."},
 		{Name: "headers", Kind: FieldKindObject, Doc: "Per-call gRPC metadata merged over config.grpc.metadata."},
-		{Name: "params.timeout_ms", Kind: FieldKindInt, Doc: "Per-call deadline in milliseconds; zero or greater."},
+		{Name: "params.timeout_ms", Kind: FieldKindInt, Maximum: MaxConfiguredProtocolTimeoutMS, Doc: "Per-call deadline in milliseconds; zero through 3600000."},
 		{Name: "params.max_messages", Kind: FieldKindInt, Maximum: MaxGRPCStreamMessages, Doc: fmt.Sprintf("Cap on streamed messages; zero through %d.", MaxGRPCStreamMessages)},
 	}
 	summaries := []struct {
@@ -48,8 +48,12 @@ func validateGRPCMethodAction(index int, action Action) []string {
 	} else if !strings.Contains(strings.Trim(action.Target, "/"), "/") {
 		issues = append(issues, fmt.Sprintf("%s: %s target must be service/method", label, action.Type))
 	}
-	if timeoutMs, ok := actionParamIntValue(action.Params, "timeout_ms"); ok && timeoutMs < 0 {
-		issues = append(issues, fmt.Sprintf("%s: %s timeout_ms must be zero or greater", label, action.Type))
+	if timeoutMs, ok := actionParamIntValue(action.Params, "timeout_ms"); ok {
+		if timeoutMs < 0 {
+			issues = append(issues, fmt.Sprintf("%s: %s timeout_ms must be zero or greater", label, action.Type))
+		} else if timeoutMs > MaxConfiguredProtocolTimeoutMS {
+			issues = append(issues, fmt.Sprintf("%s: %s timeout_ms must not exceed %d", label, action.Type, MaxConfiguredProtocolTimeoutMS))
+		}
 	}
 	if maxMessages, ok := actionParamIntValue(action.Params, "max_messages"); ok {
 		if maxMessages < 0 {

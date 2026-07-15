@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -13,6 +14,12 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+const (
+	maxHubClients             = 1024
+	maxHubFanoutPublishes     = 32
+	websocketClientSendBuffer = 64
+)
+
 type Hub struct {
 	clients           map[*Client]bool
 	clientsMu         sync.RWMutex
@@ -21,12 +28,21 @@ type Hub struct {
 	unregister        chan *Client
 	done              chan struct{}
 	stopOnce          sync.Once
+	clientSlots       chan struct{}
 	droppedBroadcasts atomic.Int64
 	droppedClientMsgs atomic.Int64
+	rejectedClients   atomic.Int64
 	fanoutMu          sync.RWMutex
 	fanout            FanoutBus
 	fanoutChannel     string
 	fanoutOrigin      string
+	fanoutCtx         context.Context
+	fanoutCancel      context.CancelFunc
+	fanoutLifecycleMu sync.Mutex
+	fanoutStopping    bool
+	fanoutWG          sync.WaitGroup
+	fanoutSlots       chan struct{}
+	droppedFanout     atomic.Int64
 	allowedOriginsMu  sync.RWMutex
 	allowedOrigins    []string
 }
@@ -57,9 +73,11 @@ func (h *Hub) upgrader() websocket.Upgrader {
 }
 
 type HubStats struct {
-	ConnectedClients      int   `json:"connected_clients"`
-	DroppedBroadcasts     int64 `json:"dropped_broadcasts,omitempty"`
-	DroppedClientMessages int64 `json:"dropped_client_messages,omitempty"`
+	ConnectedClients       int   `json:"connected_clients"`
+	DroppedBroadcasts      int64 `json:"dropped_broadcasts,omitempty"`
+	DroppedClientMessages  int64 `json:"dropped_client_messages,omitempty"`
+	RejectedClients        int64 `json:"rejected_clients,omitempty"`
+	DroppedFanoutPublishes int64 `json:"dropped_fanout_publishes,omitempty"`
 }
 
 type Client struct {
@@ -69,6 +87,8 @@ type Client struct {
 	testID     string // empty = all tests, set = specific test
 	projectID  string // empty = all projects, set = specific project
 	authorized func() bool
+	slotHeld   bool
+	slotOnce   sync.Once
 }
 
 type websocketFanoutEnvelope struct {
@@ -88,12 +108,27 @@ type hubBroadcast struct {
 }
 
 func NewHub() *Hub {
+	return newHubWithLimits(maxHubClients, maxHubFanoutPublishes)
+}
+
+func newHubWithLimits(maxClients int, maxFanoutPublishes int) *Hub {
+	if maxClients <= 0 {
+		maxClients = maxHubClients
+	}
+	if maxFanoutPublishes <= 0 {
+		maxFanoutPublishes = maxHubFanoutPublishes
+	}
+	fanoutCtx, fanoutCancel := context.WithCancel(context.Background())
 	return &Hub{
-		clients:    make(map[*Client]bool),
-		broadcast:  make(chan hubBroadcast, 256),
-		register:   make(chan *Client),
-		unregister: make(chan *Client),
-		done:       make(chan struct{}),
+		clients:      make(map[*Client]bool),
+		broadcast:    make(chan hubBroadcast, 256),
+		register:     make(chan *Client),
+		unregister:   make(chan *Client),
+		done:         make(chan struct{}),
+		clientSlots:  make(chan struct{}, maxClients),
+		fanoutCtx:    fanoutCtx,
+		fanoutCancel: fanoutCancel,
+		fanoutSlots:  make(chan struct{}, maxFanoutPublishes),
 	}
 }
 
@@ -116,6 +151,7 @@ func (h *Hub) Run() {
 			for c := range h.clients {
 				close(c.send)
 				delete(h.clients, c)
+				c.releaseSlot()
 			}
 			h.clientsMu.Unlock()
 			return
@@ -123,17 +159,20 @@ func (h *Hub) Run() {
 		case client := <-h.register:
 			h.clientsMu.Lock()
 			h.clients[client] = true
+			clientCount := len(h.clients)
 			h.clientsMu.Unlock()
-			slog.Info("websocket client connected", "test_filter", client.testID, "project_filter", client.projectID, "clients", len(h.clients))
+			slog.Info("websocket client connected", "test_filter", client.testID, "project_filter", client.projectID, "clients", clientCount)
 
 		case client := <-h.unregister:
 			h.clientsMu.Lock()
 			if _, ok := h.clients[client]; ok {
 				close(client.send)
 				delete(h.clients, client)
+				client.releaseSlot()
 			}
+			clientCount := len(h.clients)
 			h.clientsMu.Unlock()
-			slog.Info("websocket client disconnected", "clients", len(h.clients))
+			slog.Info("websocket client disconnected", "clients", clientCount)
 
 		case msg := <-h.broadcast:
 			h.clientsMu.RLock()
@@ -162,7 +201,16 @@ func (h *Hub) Stop() {
 	if h == nil {
 		return
 	}
-	h.stopOnce.Do(func() { close(h.done) })
+	h.stopOnce.Do(func() {
+		h.fanoutLifecycleMu.Lock()
+		h.fanoutStopping = true
+		if h.fanoutCancel != nil {
+			h.fanoutCancel()
+		}
+		h.fanoutLifecycleMu.Unlock()
+		close(h.done)
+		h.fanoutWG.Wait()
+	})
 }
 
 func (h *Hub) Broadcast(msg []byte) {
@@ -173,7 +221,15 @@ func (h *Hub) Broadcast(msg []byte) {
 
 func (h *Hub) broadcastLocal(msg hubBroadcast) {
 	select {
+	case <-h.done:
+		h.droppedBroadcasts.Add(1)
+		return
+	default:
+	}
+	select {
 	case h.broadcast <- msg:
+	case <-h.done:
+		h.droppedBroadcasts.Add(1)
 	default:
 		h.droppedBroadcasts.Add(1)
 	}
@@ -200,11 +256,31 @@ func (h *Hub) publishFanout(msg hubBroadcast) {
 		slog.Warn("failed to marshal websocket fanout envelope", "err", err)
 		return
 	}
+	h.fanoutLifecycleMu.Lock()
+	if h.fanoutStopping {
+		h.fanoutLifecycleMu.Unlock()
+		h.droppedFanout.Add(1)
+		return
+	}
+	select {
+	case h.fanoutSlots <- struct{}{}:
+	default:
+		h.fanoutLifecycleMu.Unlock()
+		h.droppedFanout.Add(1)
+		return
+	}
+	h.fanoutWG.Add(1)
+	parentCtx := h.fanoutCtx
+	h.fanoutLifecycleMu.Unlock()
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), defaultCacheWriteTimeout)
+		defer h.fanoutWG.Done()
+		defer func() { <-h.fanoutSlots }()
+		ctx, cancel := context.WithTimeout(parentCtx, defaultCacheWriteTimeout)
 		defer cancel()
 		if err := bus.Publish(ctx, channel, payload); err != nil {
-			slog.Warn("failed to publish websocket fanout envelope", "err", err)
+			if !errors.Is(err, context.Canceled) {
+				slog.Warn("failed to publish websocket fanout envelope", "err", err)
+			}
 		}
 	}()
 }
@@ -263,16 +339,32 @@ func (h *Hub) Stats() HubStats {
 		return HubStats{}
 	}
 	return HubStats{
-		ConnectedClients:      h.ClientCount(),
-		DroppedBroadcasts:     h.droppedBroadcasts.Load(),
-		DroppedClientMessages: h.droppedClientMsgs.Load(),
+		ConnectedClients:       h.ClientCount(),
+		DroppedBroadcasts:      h.droppedBroadcasts.Load(),
+		DroppedClientMessages:  h.droppedClientMsgs.Load(),
+		RejectedClients:        h.rejectedClients.Load(),
+		DroppedFanoutPublishes: h.droppedFanout.Load(),
 	}
 }
 
 func (h *Hub) serveWS(w http.ResponseWriter, r *http.Request, testID string, projectID string, authorized ...func() bool) {
+	select {
+	case <-h.done:
+		http.Error(w, "websocket hub is shutting down", http.StatusServiceUnavailable)
+		return
+	default:
+	}
+	select {
+	case h.clientSlots <- struct{}{}:
+	default:
+		h.rejectedClients.Add(1)
+		http.Error(w, "websocket client limit reached", http.StatusServiceUnavailable)
+		return
+	}
 	up := h.upgrader()
 	conn, err := up.Upgrade(w, r, nil)
 	if err != nil {
+		<-h.clientSlots
 		slog.Error("websocket upgrade failed", "err", err)
 		return
 	}
@@ -280,9 +372,10 @@ func (h *Hub) serveWS(w http.ResponseWriter, r *http.Request, testID string, pro
 	client := &Client{
 		hub:       h,
 		conn:      conn,
-		send:      make(chan []byte, 64),
+		send:      make(chan []byte, websocketClientSendBuffer),
 		testID:    testID,
 		projectID: projectID,
+		slotHeld:  true,
 	}
 	if len(authorized) > 0 {
 		client.authorized = authorized[0]
@@ -291,16 +384,27 @@ func (h *Hub) serveWS(w http.ResponseWriter, r *http.Request, testID string, pro
 	select {
 	case h.register <- client:
 	case <-h.done:
+		client.releaseSlot()
 		_ = conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseGoingAway, "server shutting down"), time.Now().Add(time.Second))
 		_ = conn.Close()
 		return
 	case <-r.Context().Done():
+		client.releaseSlot()
 		_ = conn.Close()
 		return
 	}
 
 	go client.writePump()
 	go client.readPump()
+}
+
+func (c *Client) releaseSlot() {
+	if c == nil || c.hub == nil || !c.slotHeld {
+		return
+	}
+	c.slotOnce.Do(func() {
+		<-c.hub.clientSlots
+	})
 }
 
 func (c *Client) readPump() {

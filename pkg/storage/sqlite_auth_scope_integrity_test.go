@@ -92,6 +92,90 @@ func TestScopedAuthGrantsRequireDurableOwners(t *testing.T) {
 	}
 }
 
+func TestAuthorizationRolesAreCanonicalAtTheDurableBoundary(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	now := time.Now().UTC()
+	user := &User{ID: "canonical-role-user", Subject: "canonical-role-user", Active: true, CreatedAt: now, UpdatedAt: now}
+	if err := store.SaveUser(user); err != nil {
+		t.Fatal(err)
+	}
+	binding := &UserRoleBinding{
+		ID: "canonical-role-binding", UserID: user.ID, ScopeType: " GLOBAL ", Role: " SYSTEM_ADMIN ", CreatedAt: now, UpdatedAt: now,
+	}
+	if err := store.SaveUserRoleBinding(binding); err != nil {
+		t.Fatalf("SaveUserRoleBinding: %v", err)
+	}
+	if binding.ScopeType != "global" || binding.ScopeID != "" || binding.Role != storageSystemAdminRole {
+		t.Fatalf("binding was not canonicalized: %#v", binding)
+	}
+	stored, err := store.ListUserRoleBindings(user.ID)
+	if err != nil || len(stored) != 1 || stored[0].Role != storageSystemAdminRole || stored[0].ScopeType != "global" {
+		t.Fatalf("stored canonical binding = %#v, err=%v", stored, err)
+	}
+	if err := store.SaveUserRoleBinding(&UserRoleBinding{
+		ID: "unsupported-role-binding", UserID: user.ID, ScopeType: "global", Role: "owner", CreatedAt: now, UpdatedAt: now,
+	}); err == nil {
+		t.Fatal("SaveUserRoleBinding accepted an unsupported authorization role")
+	}
+
+	account := &ServiceAccount{
+		ID: "canonical-role-service", Name: "canonical", KeyHash: "canonical-role-hash", Active: true,
+		GlobalRoles: []string{" VIEWER ", "viewer"}, Scopes: []string{"read"}, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := store.SaveServiceAccount(account); err != nil {
+		t.Fatalf("SaveServiceAccount: %v", err)
+	}
+	if len(account.GlobalRoles) != 1 || account.GlobalRoles[0] != storageViewerRole {
+		t.Fatalf("service-account roles were not canonicalized: %#v", account.GlobalRoles)
+	}
+	invalid := &ServiceAccount{
+		ID: "unsupported-role-service", Name: "unsupported", KeyHash: "unsupported-role-hash", Active: true,
+		GlobalRoles: []string{"owner"}, Scopes: []string{"read"}, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := store.SaveServiceAccount(invalid); err == nil {
+		t.Fatal("SaveServiceAccount accepted an unsupported authorization role")
+	}
+	if _, err := store.GetServiceAccount(invalid.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("unsupported service-account role was persisted: %v", err)
+	}
+}
+
+func TestLastAdminGuardRecognizesLegacyNonCanonicalRole(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Now().UTC()
+	user := &User{ID: "legacy-role-admin", Subject: "legacy-role-admin", Active: true, CreatedAt: now, UpdatedAt: now}
+	if err := store.SaveUser(user); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.db.Exec(`INSERT INTO user_role_bindings (id, user_id, scope_type, scope_id, role, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`, "legacy-role-binding", user.ID, " GLOBAL ", "", " SYSTEM_ADMIN ", now, now); err != nil {
+		t.Fatalf("insert legacy role binding: %v", err)
+	}
+	if count, err := store.CountActiveGlobalRoleHolders(storageSystemAdminRole); err != nil || count != 1 {
+		t.Fatalf("CountActiveGlobalRoleHolders = %d, %v; want 1, nil", count, err)
+	}
+	updated, err := store.UpdateUserActiveGuardLastAdmin(user.ID, false, now.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("UpdateUserActiveGuardLastAdmin: %v", err)
+	}
+	if updated {
+		t.Fatal("last-admin guard ignored a legacy non-canonical effective system_admin role")
+	}
+	loaded, err := store.GetUser(user.ID)
+	if err != nil || !loaded.Active {
+		t.Fatalf("last legacy admin was deactivated: user=%#v err=%v", loaded, err)
+	}
+}
+
 func TestDeleteDomainRevokesEmbeddedAndRowScopedGrants(t *testing.T) {
 	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {

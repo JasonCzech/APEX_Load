@@ -15,13 +15,16 @@ func javaVuserActionSpecs() []ActionSpec {
 				{Name: "target", Required: true, Kind: FieldKindString, Doc: "Java class name to load, usually Actions."},
 				{Name: "params.method", Kind: FieldKindEnum, Enum: []string{"init", "action", "end", "full_lifecycle"}, Doc: "Lifecycle method or full lifecycle sequence to invoke."},
 				{Name: "params.source_archive_ref", Kind: FieldKindString, Doc: "Preserved source archive or authoring artifact reference."},
-				{Name: "params.timeout_ms", Kind: FieldKindInt, Doc: "Per-run timeout in milliseconds; falls back to config.java_vuser.action_timeout_ms."},
+				{Name: "params.timeout_ms", Kind: FieldKindInt, Maximum: MaxConfiguredProtocolTimeoutMS, Doc: "Per-run timeout in milliseconds (maximum 3600000); falls back to config.java_vuser.action_timeout_ms."},
 				{Name: "params.runner_requirement", Kind: FieldKindString, Doc: "Governance gate required before execution, usually java_vuser_jvm_runner."},
 				{Name: "params.event_contract", Kind: FieldKindString, Doc: "Runner event stream contract expected from the sidecar shim."},
 				{Name: "params.shim_event_types", Kind: FieldKindArray, Doc: "Event type names emitted as JSON lines by the lrapi.lr sidecar shim under the declared event contract."},
 				{Name: "params.lr_parameters", Kind: FieldKindObject, Doc: "Initial LoadRunner parameter values exposed to lrapi.lr.eval_string as {Name}."},
 			},
 			Validate: func(index int, action Action) []string {
+				if timeoutMs, ok := actionParamIntValue(action.Params, "timeout_ms"); ok && (timeoutMs < 0 || timeoutMs > MaxConfiguredProtocolTimeoutMS) {
+					return []string{fmt.Sprintf("actions[%d] %q: java_vuser_run params.timeout_ms must be between 0 and %d", index, action.Name, MaxConfiguredProtocolTimeoutMS)}
+				}
 				if strings.TrimSpace(action.Target) == "" {
 					return []string{fmt.Sprintf("actions[%d] %q: java_vuser_run requires target class name", index, action.Name)}
 				}

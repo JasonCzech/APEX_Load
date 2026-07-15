@@ -499,10 +499,24 @@ func (s *SQLiteStore) DeleteCapacityReservationsEndedBefore(cutoff time.Time) (i
 	}
 	defer tx.Rollback()
 	if _, err := tx.Exec(`UPDATE tests SET timeslot_id = NULL, capacity_window_start_at = NULL, capacity_window_end_at = NULL
-		WHERE timeslot_id IN (SELECT id FROM capacity_reservations WHERE end_at < ?)`, cutoff.UTC()); err != nil {
+		WHERE timeslot_id IN (
+			SELECT reservation.id FROM capacity_reservations reservation
+			WHERE reservation.end_at < ?
+			  AND (TRIM(COALESCE(reservation.bound_test_id, '')) = '' OR NOT EXISTS (
+				SELECT 1 FROM tests bound_test
+				WHERE bound_test.id = reservation.bound_test_id
+				  AND UPPER(TRIM(COALESCE(bound_test.status, ''))) NOT IN ('COMPLETE', 'FAILED', 'ABORTED', 'STOPPED', 'CANCELLED')
+			  ))
+		)`, cutoff.UTC()); err != nil {
 		return 0, err
 	}
-	result, err := tx.Exec(`DELETE FROM capacity_reservations WHERE end_at < ?`, cutoff.UTC())
+	result, err := tx.Exec(`DELETE FROM capacity_reservations
+		WHERE end_at < ?
+		  AND (TRIM(COALESCE(bound_test_id, '')) = '' OR NOT EXISTS (
+			SELECT 1 FROM tests bound_test
+			WHERE bound_test.id = capacity_reservations.bound_test_id
+			  AND UPPER(TRIM(COALESCE(bound_test.status, ''))) NOT IN ('COMPLETE', 'FAILED', 'ABORTED', 'STOPPED', 'CANCELLED')
+		  ))`, cutoff.UTC())
 	if err != nil {
 		return 0, err
 	}
@@ -523,10 +537,24 @@ func (s *SQLiteStore) DeleteRejectedCapacityReservationsBefore(cutoff time.Time)
 	}
 	defer tx.Rollback()
 	if _, err := tx.Exec(`UPDATE tests SET timeslot_id = NULL, capacity_window_start_at = NULL, capacity_window_end_at = NULL
-		WHERE timeslot_id IN (SELECT id FROM capacity_reservations WHERE approval_state = 'rejected' AND updated_at < ?)`, cutoff.UTC()); err != nil {
+		WHERE timeslot_id IN (
+			SELECT reservation.id FROM capacity_reservations reservation
+			WHERE reservation.approval_state = 'rejected' AND reservation.updated_at < ?
+			  AND (TRIM(COALESCE(reservation.bound_test_id, '')) = '' OR NOT EXISTS (
+				SELECT 1 FROM tests bound_test
+				WHERE bound_test.id = reservation.bound_test_id
+				  AND UPPER(TRIM(COALESCE(bound_test.status, ''))) NOT IN ('COMPLETE', 'FAILED', 'ABORTED', 'STOPPED', 'CANCELLED')
+			  ))
+		)`, cutoff.UTC()); err != nil {
 		return 0, err
 	}
-	result, err := tx.Exec(`DELETE FROM capacity_reservations WHERE approval_state = 'rejected' AND updated_at < ?`, cutoff.UTC())
+	result, err := tx.Exec(`DELETE FROM capacity_reservations
+		WHERE approval_state = 'rejected' AND updated_at < ?
+		  AND (TRIM(COALESCE(bound_test_id, '')) = '' OR NOT EXISTS (
+			SELECT 1 FROM tests bound_test
+			WHERE bound_test.id = capacity_reservations.bound_test_id
+			  AND UPPER(TRIM(COALESCE(bound_test.status, ''))) NOT IN ('COMPLETE', 'FAILED', 'ABORTED', 'STOPPED', 'CANCELLED')
+		  ))`, cutoff.UTC())
 	if err != nil {
 		return 0, err
 	}

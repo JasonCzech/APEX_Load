@@ -159,6 +159,24 @@ func TestStepFromEvent(t *testing.T) {
 	}
 }
 
+func TestStepsFromEventPreservesAtomicBatchOrder(t *testing.T) {
+	payload := `{"kind":"capture_batch","events":[` +
+		`{"kind":"fill","value":"alice","ts":1700000000000,"element":{"tag":"input","id":"first","css_path":"#first"}},` +
+		`{"kind":"press_key","value":"Tab","ts":1700000000000,"element":{"tag":"input","id":"first","css_path":"#first"}}]}`
+	steps, err := stepsFromEvent(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(steps) != 2 || steps[0].Kind != StepFill || steps[0].Value != "alice" || steps[1].Kind != StepPressKey || steps[1].Value != "Tab" {
+		t.Fatalf("batch steps = %+v, want fill(alice) then press_key(Tab)", steps)
+	}
+
+	tooMany := strings.Repeat(`{"kind":"click","ts":1},`, maxCapturedEventBatch) + `{"kind":"click","ts":1}`
+	if _, err := stepsFromEvent(`{"kind":"capture_batch","events":[` + tooMany + `]}`); err == nil {
+		t.Fatal("oversized capture batch was accepted")
+	}
+}
+
 func TestStepFromEventZeroTimestampDefaultsToNow(t *testing.T) {
 	step, err := stepFromEvent(`{"kind":"click","element":{"tag":"a","id":"x"}}`)
 	if err != nil {

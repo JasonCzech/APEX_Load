@@ -212,13 +212,13 @@ func (s *Server) handleGetFleetCapacity(w http.ResponseWriter, r *http.Request) 
 	projectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
 	region := strings.TrimSpace(r.URL.Query().Get("region"))
 	protocolName := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("protocol")))
-	capacity := buildFleetCapacity(s.systemInventory(r.Context()), s.runner.GetSystemSettings(), s.runner.ListTests(), projectID, region, protocolName)
+	capacity := buildFleetCapacity(s.systemInventory(r.Context()), s.runner.GetSystemSettings(), s.runner.listOperationalTestSnapshots(), projectID, region, protocolName)
 	writeJSON(w, http.StatusOK, capacity)
 }
 
 func (s *Server) handleGetFleetLoadZones(w http.ResponseWriter, r *http.Request) {
 	protocolName := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("protocol")))
-	zones := buildFleetLoadZones(s.systemInventory(r.Context()), s.runner.ListTests(), protocolName)
+	zones := buildFleetLoadZones(s.systemInventory(r.Context()), s.runner.listOperationalTestSnapshots(), protocolName)
 	writeJSON(w, http.StatusOK, FleetLoadZonesResponse{LoadZones: zones, Count: len(zones)})
 }
 

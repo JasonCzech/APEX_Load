@@ -1,6 +1,9 @@
 package api
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestGitHubTokenEncryptionRoundTrip(t *testing.T) {
 	t.Setenv("APEXLOAD_GITHUB_TOKEN_KEY", "a-sufficiently-random-operator-key")
@@ -51,5 +54,21 @@ func TestGitHubTokenEncryptionUnavailableWithoutKey(t *testing.T) {
 	}
 	if _, err := encryptGitHubToken("token"); err == nil {
 		t.Fatal("encrypt without a key must fail (fail-closed)")
+	}
+}
+
+func TestGitHubTokenEncryptionRequiresProductionKeyStrength(t *testing.T) {
+	t.Setenv("APEXLOAD_ENV", "production")
+	t.Setenv(githubTokenKeyEnvVar, "short")
+	if githubTokenEncryptionAvailable() {
+		t.Fatal("weak production GitHub token key was accepted")
+	}
+	if _, err := encryptGitHubToken("token"); err == nil {
+		t.Fatal("encryption with a weak production key succeeded")
+	}
+
+	t.Setenv(githubTokenKeyEnvVar, strings.Repeat("k", productionSecretMinBytes))
+	if !githubTokenEncryptionAvailable() {
+		t.Fatal("strong production GitHub token key was rejected")
 	}
 }

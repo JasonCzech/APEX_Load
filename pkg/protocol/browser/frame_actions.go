@@ -565,11 +565,11 @@ func (b *Browser) waitLocatorVisible(ctx context.Context, locator playwright.Loc
 
 func (b *Browser) actionTimeout(action *protocol.Action) time.Duration {
 	if action != nil && action.WaitFor != nil && action.WaitFor.TimeoutMs > 0 {
-		return time.Duration(action.WaitFor.TimeoutMs) * time.Millisecond
+		return b.waitTimeout(action.WaitFor.TimeoutMs)
 	}
 	if action != nil && action.Params != nil {
 		if timeoutMs := actionParamInt(action.Params, "timeout_ms", 0); timeoutMs > 0 {
-			return time.Duration(timeoutMs) * time.Millisecond
+			return b.waitTimeout(timeoutMs)
 		}
 	}
 	return 10 * time.Second

@@ -1,6 +1,55 @@
 package api
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/engine"
+)
+
+// storedTestGroup extends the public group snapshot with the exact compiled
+// runtime inputs that are otherwise process-private. Persisting these fields in
+// the existing groups_json column makes a queued/scheduled run restart-safe:
+// object-ref resolution, data-pool snapshots, runtime overrides, and effective
+// redaction policy must not disappear when a different controller materializes
+// the run. Older rows decode with nil RuntimeScript and are rebuilt from their
+// current durable script as a compatibility fallback.
+type storedTestGroup struct {
+	TestGroup
+	RuntimeScript  *dsl.Script            `json:"runtime_script,omitempty"`
+	RedactionRules []engine.RedactionRule `json:"redaction_rules,omitempty"`
+}
+
+func encodeStoredGroups(groups []TestGroup) any {
+	if len(groups) == 0 {
+		return []storedTestGroup{}
+	}
+	stored := make([]storedTestGroup, 0, len(groups))
+	for _, group := range groups {
+		entry := storedTestGroup{
+			TestGroup:      group,
+			RuntimeScript:  cloneScriptForStoredGroup(group.script),
+			RedactionRules: cloneRedactionRules(group.redactionRules),
+		}
+		stored = append(stored, entry)
+	}
+	return stored
+}
+
+func cloneScriptForStoredGroup(script *dsl.Script) *dsl.Script {
+	if script == nil {
+		return nil
+	}
+	payload, err := json.Marshal(script)
+	if err != nil {
+		return nil
+	}
+	var cloned dsl.Script
+	if err := json.Unmarshal(payload, &cloned); err != nil {
+		return nil
+	}
+	return &cloned
+}
 
 func decodeStoredGroups(value any) []TestGroup {
 	if value == nil {
@@ -10,9 +59,16 @@ func decodeStoredGroups(value any) []TestGroup {
 	if err != nil {
 		return nil
 	}
-	var groups []TestGroup
-	if err := json.Unmarshal(data, &groups); err != nil {
+	var stored []storedTestGroup
+	if err := json.Unmarshal(data, &stored); err != nil {
 		return nil
+	}
+	groups := make([]TestGroup, 0, len(stored))
+	for _, entry := range stored {
+		group := entry.TestGroup
+		group.script = cloneScriptForStoredGroup(entry.RuntimeScript)
+		group.redactionRules = cloneRedactionRules(entry.RedactionRules)
+		groups = append(groups, group)
 	}
 	return groups
 }

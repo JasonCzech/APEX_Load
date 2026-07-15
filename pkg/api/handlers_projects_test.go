@@ -272,11 +272,19 @@ func TestDeleteProjectRetainsAndAttributesAuditHistory(t *testing.T) {
 
 	now := time.Now().UTC()
 	domainID := "deletion-audit-domain"
+	repositoryID := "deletion-audit-repository"
+	categoryID := "deletion-audit-category"
 	projectID := "deletion-audit-project"
 	if err := store.SaveDomain(&storage.Domain{ID: domainID, Name: "Deletion Audit", CreatedAt: now}); err != nil {
 		t.Fatalf("SaveDomain returned error: %v", err)
 	}
-	if err := store.SaveProject(&storage.Project{ID: projectID, DomainID: domainID, Name: "Delete Me", CreatedAt: now}); err != nil {
+	if err := store.SaveApplicationRepository(&storage.ApplicationRepository{ID: repositoryID, DomainID: domainID, Name: "Deletion Audit", CreatedAt: now}); err != nil {
+		t.Fatalf("SaveApplicationRepository returned error: %v", err)
+	}
+	if err := store.SaveRepositoryCategory(&storage.RepositoryCategory{ID: categoryID, DomainID: domainID, RepositoryID: repositoryID, Name: "Deletion Audit", CreatedAt: now}); err != nil {
+		t.Fatalf("SaveRepositoryCategory returned error: %v", err)
+	}
+	if err := store.SaveProject(&storage.Project{ID: projectID, DomainID: domainID, CategoryID: categoryID, Name: "Delete Me", CreatedAt: now}); err != nil {
 		t.Fatalf("SaveProject returned error: %v", err)
 	}
 	if err := store.SaveAuditEvent(&storage.AuditEvent{

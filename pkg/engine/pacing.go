@@ -4,9 +4,11 @@ import (
 	"context"
 	"math"
 	"math/rand"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
@@ -46,10 +48,15 @@ func computeThinkTime(cfg protocol.ThinkTimeConfig) time.Duration {
 	if cfg.Ignore {
 		return 0
 	}
+	for _, value := range []float64{cfg.MeanMs, cfg.StdMs, cfg.MinMs, cfg.MaxMs, cfg.Multiplier, cfg.LimitMs} {
+		if math.IsNaN(value) || math.IsInf(value, 0) {
+			return 0
+		}
+	}
 
 	var ms float64
 
-	switch cfg.Type {
+	switch strings.ToLower(strings.TrimSpace(cfg.Type)) {
 	case "fixed":
 		ms = cfg.MeanMs
 
@@ -86,8 +93,27 @@ func computeThinkTime(cfg protocol.ThinkTimeConfig) time.Duration {
 	if cfg.LimitMs > 0 && ms > cfg.LimitMs {
 		ms = cfg.LimitMs
 	}
+	ms = min(ms, float64(dsl.MaxConfiguredProtocolTimeoutMS))
 
 	return time.Duration(ms) * time.Millisecond
+}
+
+func boundedRuntimeDelayMilliseconds(value int) int {
+	if value <= 0 {
+		return 0
+	}
+	return min(value, dsl.MaxConfiguredProtocolTimeoutMS)
+}
+
+func randomRuntimeDelayMilliseconds(low, high int) int {
+	low = boundedRuntimeDelayMilliseconds(low)
+	high = boundedRuntimeDelayMilliseconds(high)
+	if high <= low {
+		return low
+	}
+	// Both endpoints are capped to a small positive range, so the inclusive
+	// width cannot overflow int or reach rand.Intn with a non-positive bound.
+	return low + rand.Intn(high-low+1)
 }
 
 // applyIterationPacing applies the configured pacing delay between iterations.
@@ -99,42 +125,32 @@ func applyIterationPacing(cfg PacingRuntimeConfig, iterStart time.Time) {
 // applyIterationPacingCtx is the context-aware variant of applyIterationPacing;
 // the pacing sleep is cut short if ctx is cancelled.
 func applyIterationPacingCtx(ctx context.Context, cfg PacingRuntimeConfig, iterStart time.Time) {
-	switch cfg.Type {
+	switch strings.ToLower(strings.TrimSpace(cfg.Type)) {
 	case "none", "":
 		// No pacing — start next iteration immediately
 		return
 
 	case "fixed_delay":
-		if cfg.DelayMs > 0 {
-			pacingSleep(ctx, cfg, time.Duration(cfg.DelayMs)*time.Millisecond)
+		if delay := boundedRuntimeDelayMilliseconds(cfg.DelayMs); delay > 0 {
+			pacingSleep(ctx, cfg, time.Duration(delay)*time.Millisecond)
 		}
 
 	case "random_delay":
-		lo := cfg.MinDelayMs
-		hi := cfg.MaxDelayMs
-		if hi <= lo {
-			pacingSleep(ctx, cfg, time.Duration(lo)*time.Millisecond)
-			return
+		if delay := randomRuntimeDelayMilliseconds(cfg.MinDelayMs, cfg.MaxDelayMs); delay > 0 {
+			pacingSleep(ctx, cfg, time.Duration(delay)*time.Millisecond)
 		}
-		d := lo + rand.Intn(hi-lo+1)
-		pacingSleep(ctx, cfg, time.Duration(d)*time.Millisecond)
 
 	case "fixed_interval":
-		if cfg.IntervalMs > 0 {
+		if interval := boundedRuntimeDelayMilliseconds(cfg.IntervalMs); interval > 0 {
 			elapsed := pacingElapsed(cfg, iterStart)
-			target := time.Duration(cfg.IntervalMs) * time.Millisecond
+			target := time.Duration(interval) * time.Millisecond
 			if elapsed < target {
 				pacingSleep(ctx, cfg, target-elapsed)
 			}
 		}
 
 	case "random_interval":
-		lo := cfg.MinIntervalMs
-		hi := cfg.MaxIntervalMs
-		if hi <= lo {
-			hi = lo + 1
-		}
-		target := time.Duration(lo+rand.Intn(hi-lo+1)) * time.Millisecond
+		target := time.Duration(randomRuntimeDelayMilliseconds(cfg.MinIntervalMs, cfg.MaxIntervalMs)) * time.Millisecond
 		elapsed := pacingElapsed(cfg, iterStart)
 		if elapsed < target {
 			pacingSleep(ctx, cfg, target-elapsed)

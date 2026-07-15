@@ -39,7 +39,7 @@ func (s *Server) handleGetEntitlements(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleGetEntitlementsUsage(w http.ResponseWriter, r *http.Request) {
 	settings := s.runner.GetSystemSettings()
 	activeTests := 0
-	for _, test := range s.runner.ListTests() {
+	for _, test := range s.runner.listOperationalTestSnapshots() {
 		if test == nil {
 			continue
 		}

@@ -58,7 +58,7 @@ func makeEntitlementLimitView(key, label, scope string, used, limit int) entitle
 func (s *Server) activeTestStats(projectID string) (tests int, vusers int) {
 	all := strings.TrimSpace(projectID) == ""
 	want := normalizeProjectID(projectID)
-	for _, test := range s.runner.ListTests() {
+	for _, test := range s.runner.listOperationalTestSnapshots() {
 		if test == nil {
 			continue
 		}

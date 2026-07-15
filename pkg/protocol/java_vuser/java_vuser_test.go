@@ -12,8 +12,29 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/config"
+	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
+
+func TestJavaVuserRejectsUnboundedTimeouts(t *testing.T) {
+	var runner JavaVuser
+	if err := runner.Init(context.Background(), map[string]any{
+		"java_vuser_action_timeout_ms": dsl.MaxConfiguredProtocolTimeout.Milliseconds() + 1,
+	}); err == nil {
+		t.Fatal("Init accepted timeout above the runtime cap")
+	}
+	runner.cfg.ActionTimeout = defaultActionTimeout
+	result, err := runner.Execute(context.Background(), &protocol.Action{
+		Name: "bad timeout", Type: "java_vuser_run", Target: "Actions",
+		Params: map[string]any{"timeout_ms": dsl.MaxConfiguredProtocolTimeout.Milliseconds() + 1},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Success || !strings.Contains(result.ErrorMessage, "between 0") {
+		t.Fatalf("unbounded timeout result = %#v", result)
+	}
+}
 
 // resetProcessSlots clears the lazily-initialized, generator-wide process
 // limiter so a test can observe its sizing from a fresh operator environment.

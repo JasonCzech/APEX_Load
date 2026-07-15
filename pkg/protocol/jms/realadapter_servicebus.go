@@ -288,9 +288,6 @@ func (a *serviceBusAdapter) RequestReply(ctx context.Context, requestDestination
 	if timeout <= 0 {
 		timeout = 5 * time.Second
 	}
-	if timeout <= 0 {
-		timeout = 5 * time.Second
-	}
 	// Use a dedicated peek-lock receiver so an uncorrelated reply (e.g. another
 	// VUser's reply on a shared reply queue) can be ABANDONED back to the queue
 	// rather than consumed-and-lost. Consume's auto-complete would silently delete
@@ -307,10 +304,9 @@ func (a *serviceBusAdapter) RequestReply(ctx context.Context, requestDestination
 }
 
 const (
-	serviceBusReplyBackoff             = 50 * time.Millisecond
-	serviceBusForeignReplyAbandonLimit = 1
-	serviceBusSettlementTimeout        = 5 * time.Second
-	serviceBusCloseTimeout             = 5 * time.Second
+	serviceBusReplyBackoff      = 50 * time.Millisecond
+	serviceBusSettlementTimeout = 5 * time.Second
+	serviceBusCloseTimeout      = 5 * time.Second
 )
 
 func serviceBusAwaitCorrelatedReply(ctx context.Context, receiver sbReplyReceiver, replyDestination string, request message, timeout time.Duration) (message, error) {
@@ -366,23 +362,14 @@ func serviceBusAwaitCorrelatedReply(ctx context.Context, receiver sbReplyReceive
 			return reply, nil
 		}
 
-		sawFreshForeign := false
-		sawForeignChurn := false
-		for _, sbMsg := range messages {
-			settleCtx, settleCancel := context.WithTimeout(context.WithoutCancel(ctx), serviceBusSettlementTimeout)
-			fresh, err := serviceBusAbandonForeignReply(settleCtx, receiver, replyDestination, sbMsg, abandonCounts)
-			settleCancel()
-			if err != nil {
-				return message{}, err
-			}
-			if fresh {
-				sawFreshForeign = true
-			} else {
-				sawForeignChurn = true
-			}
+		sawFreshForeign, sawForeignChurn, err := serviceBusAbandonForeignBatchWithin(
+			ctx, receiver, replyDestination, messages, abandonCounts, serviceBusSettlementTimeout,
+		)
+		if err != nil {
+			return message{}, err
 		}
 		// Back off only when this batch was pure redelivery churn (every foreign
-		// reply was one we have already abandoned repeatedly), to avoid a tight
+		// reply was one we have already abandoned), to avoid a tight
 		// receive→abandon loop. The replies are always released above regardless.
 		if !sawFreshForeign && sawForeignChurn {
 			sleep := serviceBusReplyBackoff
@@ -399,20 +386,43 @@ func serviceBusAwaitCorrelatedReply(ctx context.Context, receiver sbReplyReceive
 	return message{}, fmt.Errorf("no correlated JMS reply received from %q within %s", replyDestination, timeout)
 }
 
-// serviceBusAbandonForeignReply abandons each logical foreign reply at most the
-// configured number of times. Repeatedly settling the same redelivery can starve
-// later messages and hammer the broker; once the hard budget is exhausted the
-// caller backs off and lets the current lock expire naturally.
+func serviceBusAbandonForeignBatchWithin(
+	ctx context.Context,
+	receiver sbReplyReceiver,
+	replyDestination string,
+	messages []*azservicebus.ReceivedMessage,
+	abandonCounts map[string]int,
+	timeout time.Duration,
+) (sawFresh bool, sawChurn bool, err error) {
+	settleCtx, settleCancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
+	defer settleCancel()
+	for _, sbMsg := range messages {
+		fresh, abandonErr := serviceBusAbandonForeignReply(settleCtx, receiver, replyDestination, sbMsg, abandonCounts)
+		if abandonErr != nil {
+			return sawFresh, sawChurn, abandonErr
+		}
+		if fresh {
+			sawFresh = true
+		} else {
+			sawChurn = true
+		}
+	}
+	return sawFresh, sawChurn, nil
+}
+
+// serviceBusAbandonForeignReply always releases a foreign reply's peek lock so
+// the requester whose correlation ID matches can receive it immediately. The
+// boolean reports whether this is the first observation of the logical message;
+// callers use repeated observations to add a bounded backoff without ever holding
+// another requester's reply until the broker lock expires.
 func serviceBusAbandonForeignReply(ctx context.Context, receiver sbReplyReceiver, replyDestination string, sbMsg *azservicebus.ReceivedMessage, abandonCounts map[string]int) (fresh bool, err error) {
 	key := serviceBusReplyMessageKey(sbMsg)
-	if abandonCounts[key] >= serviceBusForeignReplyAbandonLimit {
-		return false, nil
-	}
+	fresh = abandonCounts[key] == 0
 	if err := receiver.AbandonMessage(ctx, sbMsg, nil); err != nil {
 		return false, fmt.Errorf("abandon uncorrelated Service Bus reply from %q: %w", replyDestination, err)
 	}
 	abandonCounts[key]++
-	return true, nil
+	return fresh, nil
 }
 
 func serviceBusReplyMessageKey(sbMsg *azservicebus.ReceivedMessage) string {

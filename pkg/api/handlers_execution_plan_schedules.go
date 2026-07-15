@@ -16,8 +16,10 @@ func (s *Server) handleCreateExecutionPlanSchedule(w http.ResponseWriter, r *htt
 		status := http.StatusBadRequest
 		if errors.Is(err, errNotExecutionLeader) {
 			status = http.StatusServiceUnavailable
-		} else if err.Error() == "execution plan not found: "+planID {
+		} else if errors.Is(err, errExecutionPlanNotFound) {
 			status = http.StatusNotFound
+		} else if errors.Is(err, errExecutionPlanSchedulePersistence) {
+			status = http.StatusInternalServerError
 		}
 		writeError(w, status, err.Error())
 		return
@@ -49,6 +51,8 @@ func (s *Server) handleUpdateExecutionPlanSchedule(w http.ResponseWriter, r *htt
 			status = http.StatusServiceUnavailable
 		} else if errors.Is(err, errScheduleHasActiveOccurrence) {
 			status = http.StatusConflict
+		} else if errors.Is(err, errExecutionPlanSchedulePersistence) {
+			status = http.StatusInternalServerError
 		}
 		writeError(w, status, err.Error())
 		return
@@ -69,6 +73,10 @@ func (s *Server) handleDeleteExecutionPlanSchedule(w http.ResponseWriter, r *htt
 		status := http.StatusBadRequest
 		if errors.Is(err, errNotExecutionLeader) {
 			status = http.StatusServiceUnavailable
+		} else if errors.Is(err, errScheduleHasActiveOccurrence) {
+			status = http.StatusConflict
+		} else if errors.Is(err, errExecutionPlanSchedulePersistence) {
+			status = http.StatusInternalServerError
 		}
 		writeError(w, status, err.Error())
 		return

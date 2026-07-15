@@ -19,6 +19,7 @@ import (
 	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 	jmsprotocol "github.com/jasonczech/apexload/pkg/protocol/jms"
 	kafkaprotocol "github.com/jasonczech/apexload/pkg/protocol/kafka"
+	networkprotocol "github.com/jasonczech/apexload/pkg/protocol/network"
 )
 
 // ValidateScriptIssues returns all validation issues for a script definition.
@@ -315,13 +316,78 @@ func validateRunLogicIssues(runLogic RunLogicConfig) []string {
 }
 
 func validatePacingResourceIssues(pacing PacingConfig) []string {
+	var issues []string
+	if pacing.Type != "" && !isAllowedValue(strings.ToLower(strings.TrimSpace(pacing.Type)), "none", "fixed_delay", "random_delay", "fixed_interval", "random_interval", "tps") {
+		issues = append(issues, "config.pacing.type must be none, fixed_delay, random_delay, fixed_interval, random_interval, or tps")
+	}
+	for _, field := range []struct {
+		name  string
+		value int
+	}{
+		{name: "delay_ms", value: pacing.DelayMs},
+		{name: "min_delay_ms", value: pacing.MinDelayMs},
+		{name: "max_delay_ms", value: pacing.MaxDelayMs},
+		{name: "interval_ms", value: pacing.IntervalMs},
+		{name: "min_interval_ms", value: pacing.MinIntervalMs},
+		{name: "max_interval_ms", value: pacing.MaxIntervalMs},
+	} {
+		if field.value < 0 || field.value > MaxConfiguredProtocolTimeoutMS {
+			issues = append(issues, fmt.Sprintf("config.pacing.%s must be between 0 and %d", field.name, MaxConfiguredProtocolTimeoutMS))
+		}
+	}
+	if pacing.MaxDelayMs > 0 && pacing.MinDelayMs > pacing.MaxDelayMs {
+		issues = append(issues, "config.pacing.min_delay_ms must not exceed max_delay_ms")
+	}
+	if pacing.MaxIntervalMs > 0 && pacing.MinIntervalMs > pacing.MaxIntervalMs {
+		issues = append(issues, "config.pacing.min_interval_ms must not exceed max_interval_ms")
+	}
 	if pacing.TPS < 0 {
-		return []string{"config.pacing.tps must be zero or greater"}
+		issues = append(issues, "config.pacing.tps must be zero or greater")
+	} else if math.IsNaN(pacing.TPS) || math.IsInf(pacing.TPS, 0) || pacing.TPS > MaxPacingTPS {
+		issues = append(issues, fmt.Sprintf("config.pacing.tps must be finite and must not exceed %d", MaxPacingTPS))
 	}
-	if math.IsNaN(pacing.TPS) || math.IsInf(pacing.TPS, 0) || pacing.TPS > MaxPacingTPS {
-		return []string{fmt.Sprintf("config.pacing.tps must be finite and must not exceed %d", MaxPacingTPS)}
+	return issues
+}
+
+func validateThinkTimeResourceIssues(label string, think ThinkTimeConfig) []string {
+	var issues []string
+	if think.Type != "" && !isAllowedValue(strings.ToLower(strings.TrimSpace(think.Type)), "none", "fixed", "gaussian", "normal", "uniform") {
+		issues = append(issues, fmt.Sprintf("%s.type must be none, fixed, gaussian, normal, or uniform", label))
 	}
-	return nil
+	for _, field := range []struct {
+		name  string
+		value float64
+		max   float64
+	}{
+		{name: "mean_ms", value: think.MeanMs, max: MaxConfiguredProtocolTimeoutMS},
+		{name: "std_ms", value: think.StdMs, max: MaxConfiguredProtocolTimeoutMS},
+		{name: "min_ms", value: think.MinMs, max: MaxConfiguredProtocolTimeoutMS},
+		{name: "max_ms", value: think.MaxMs, max: MaxConfiguredProtocolTimeoutMS},
+		{name: "limit_ms", value: think.LimitMs, max: MaxConfiguredProtocolTimeoutMS},
+		{name: "multiplier", value: think.Multiplier, max: MaxThinkTimeMultiplier},
+	} {
+		if math.IsNaN(field.value) || math.IsInf(field.value, 0) || field.value < 0 || field.value > field.max {
+			issues = append(issues, fmt.Sprintf("%s.%s must be finite and between 0 and %.0f", label, field.name, field.max))
+		}
+	}
+	if think.MaxMs > 0 && think.MinMs > think.MaxMs {
+		issues = append(issues, fmt.Sprintf("%s.min_ms must not exceed max_ms", label))
+	}
+	return issues
+}
+
+func validateErrorHandlingResourceIssues(config ErrorHandlingConfig) []string {
+	var issues []string
+	if config.MaxRetries < 0 || config.MaxRetries > MaxErrorRetries {
+		issues = append(issues, fmt.Sprintf("config.error_handling.max_retries must be between 0 and %d", MaxErrorRetries))
+	}
+	if config.RetryDelayMs < 0 || config.RetryDelayMs > MaxConfiguredProtocolTimeoutMS {
+		issues = append(issues, fmt.Sprintf("config.error_handling.retry_delay_ms must be between 0 and %d", MaxConfiguredProtocolTimeoutMS))
+	}
+	if config.RetryBackoff != "" && !isAllowedValue(strings.ToLower(strings.TrimSpace(config.RetryBackoff)), "fixed", "exponential") {
+		issues = append(issues, "config.error_handling.retry_backoff must be fixed or exponential")
+	}
+	return issues
 }
 
 func validateExecutionResourceIssues(script *Script) []string {
@@ -331,6 +397,8 @@ func validateExecutionResourceIssues(script *Script) []string {
 	issues := validateParameterIssues(script)
 	issues = append(issues, validateRunLogicIssues(script.Config.RunLogic)...)
 	issues = append(issues, validatePacingResourceIssues(script.Config.Pacing)...)
+	issues = append(issues, validateThinkTimeResourceIssues("config.think_time", script.Config.ThinkTime)...)
+	issues = append(issues, validateErrorHandlingResourceIssues(script.Config.ErrorHandling)...)
 	for i, action := range script.Init {
 		issues = append(issues, validateControlResourceIssues(fmt.Sprintf("init[%d]", i), action)...)
 	}
@@ -344,10 +412,10 @@ func validateExecutionResourceIssues(script *Script) []string {
 }
 
 func validateControlResourceIssues(path string, action Action) []string {
+	issues := validateThinkTimeResourceIssues(path+".think_time", action.ThinkTime)
 	if action.Control == nil {
-		return nil
+		return issues
 	}
-	var issues []string
 	if action.Control.Count > MaxControlLoopIterations {
 		issues = append(issues, fmt.Sprintf("%s: control count must not exceed %d", path, MaxControlLoopIterations))
 	}
@@ -376,6 +444,8 @@ func validateGRPCConfigIssues(script *Script) []string {
 	}
 	if cfg.TimeoutMs < 0 {
 		issues = append(issues, "config.grpc.timeout_ms must be zero or greater")
+	} else if cfg.TimeoutMs > MaxConfiguredProtocolTimeoutMS {
+		issues = append(issues, fmt.Sprintf("config.grpc.timeout_ms must not exceed %d", MaxConfiguredProtocolTimeoutMS))
 	}
 	for index, protoFile := range cfg.ProtoFiles {
 		if strings.TrimSpace(protoFile) == "" {
@@ -421,6 +491,9 @@ func validateActionForProtocolAtPath(protocol string, path string, index int, ac
 	issues = append(issues, validateBodyFileIssues(path, action)...)
 	issues = append(issues, validateBase64BodyEncodingIssues(path, action)...)
 	issues = append(issues, validateExtractorIssues(protocol, path, action)...)
+	if protocol == "http" || protocol == "soap" || protocol == "java_http" {
+		issues = append(issues, validateHTTPActionBoundsIssues(path, action)...)
+	}
 	if strings.TrimSpace(action.Type) == "" {
 		return append(issues, fmt.Sprintf("%s: missing type", actionLabel(path, action)))
 	}
@@ -463,6 +536,25 @@ func validateActionForProtocolAtPath(protocol string, path string, index int, ac
 	}
 	if action.Target == "" {
 		issues = append(issues, fmt.Sprintf("%s: missing target", actionLabel(path, action)))
+	}
+	return issues
+}
+
+func validateHTTPActionBoundsIssues(path string, action Action) []string {
+	label := actionLabel(path, action)
+	maxTimeoutMS := int(httpprotocol.MaxConfiguredTimeout / time.Millisecond)
+	var issues []string
+	if action.TimeoutMs < 0 || action.TimeoutMs > maxTimeoutMS {
+		issues = append(issues, fmt.Sprintf("%s: timeout_ms must be between 0 and %d", label, maxTimeoutMS))
+	}
+	if action.MaxRedirects != nil && (*action.MaxRedirects < -1 || *action.MaxRedirects > httpprotocol.MaxConfiguredRedirects) {
+		issues = append(issues, fmt.Sprintf("%s: max_redirects must be between -1 and %d", label, httpprotocol.MaxConfiguredRedirects))
+	}
+	if raw, present := action.Params["stream_timeout_ms"]; present {
+		value, ok := actionParamIntValue(action.Params, "stream_timeout_ms")
+		if !ok || value < 0 || value > maxTimeoutMS {
+			issues = append(issues, fmt.Sprintf("%s: params.stream_timeout_ms must be an integer between 0 and %d (got %v)", label, maxTimeoutMS, raw))
+		}
 	}
 	return issues
 }
@@ -921,9 +1013,13 @@ func validateWebSocketConfigIssues(script *Script) []string {
 	var issues []string
 	if cfg.ReadTimeoutMs < 0 {
 		issues = append(issues, "config.websocket.read_timeout_ms must be zero or greater")
+	} else if cfg.ReadTimeoutMs > MaxConfiguredProtocolTimeoutMS {
+		issues = append(issues, fmt.Sprintf("config.websocket.read_timeout_ms must not exceed %d", MaxConfiguredProtocolTimeoutMS))
 	}
 	if cfg.WriteTimeoutMs < 0 {
 		issues = append(issues, "config.websocket.write_timeout_ms must be zero or greater")
+	} else if cfg.WriteTimeoutMs > MaxConfiguredProtocolTimeoutMS {
+		issues = append(issues, fmt.Sprintf("config.websocket.write_timeout_ms must not exceed %d", MaxConfiguredProtocolTimeoutMS))
 	}
 	if cfg.MaxMessageSize < 0 {
 		issues = append(issues, "config.websocket.max_message_size must be zero or greater")
@@ -1167,10 +1263,28 @@ func validateBrowserActionIssues(index int, action Action) []string {
 	if !ok {
 		return []string{fmt.Sprintf("actions[%d] %q: unsupported browser action type %q", index, action.Name, action.Type)}
 	}
-	if spec.Validate == nil {
-		return nil
+	var issues []string
+	if spec.Validate != nil {
+		issues = append(issues, spec.Validate(index, action)...)
 	}
-	return spec.Validate(index, action)
+	return append(issues, validateBrowserActionTimingIssues(fmt.Sprintf("actions[%d] %q", index, action.Name), action)...)
+}
+
+func validateBrowserActionTimingIssues(label string, action Action) []string {
+	var issues []string
+	if action.WaitFor != nil {
+		if action.WaitFor.TimeoutMs < 0 {
+			issues = append(issues, fmt.Sprintf("%s: wait_for.timeout_ms must be zero or greater", label))
+		} else if action.WaitFor.TimeoutMs > MaxConfiguredProtocolTimeoutMS {
+			issues = append(issues, fmt.Sprintf("%s: wait_for.timeout_ms must not exceed %d", label, MaxConfiguredProtocolTimeoutMS))
+		}
+	}
+	for _, key := range []string{"timeout_ms", "duration_ms", "wait_ms"} {
+		if value, present := actionParamIntValue(action.Params, key); present && value > MaxConfiguredProtocolTimeoutMS {
+			issues = append(issues, fmt.Sprintf("%s: params.%s must not exceed %d", label, key, MaxConfiguredProtocolTimeoutMS))
+		}
+	}
+	return issues
 }
 
 func validateBrowserSyncPolicyIssues(label string, sync *BrowserSyncPolicy) []string {
@@ -1187,9 +1301,13 @@ func validateBrowserSyncPolicyIssues(label string, sync *BrowserSyncPolicy) []st
 	}
 	if sync.TimeoutMs < 0 {
 		issues = append(issues, fmt.Sprintf("%s: sync.timeout_ms must be zero or greater", label))
+	} else if sync.TimeoutMs > MaxConfiguredProtocolTimeoutMS {
+		issues = append(issues, fmt.Sprintf("%s: sync.timeout_ms must not exceed %d", label, MaxConfiguredProtocolTimeoutMS))
 	}
 	if sync.StableMs < 0 {
 		issues = append(issues, fmt.Sprintf("%s: sync.stable_ms must be zero or greater", label))
+	} else if sync.StableMs > MaxConfiguredProtocolTimeoutMS {
+		issues = append(issues, fmt.Sprintf("%s: sync.stable_ms must not exceed %d", label, MaxConfiguredProtocolTimeoutMS))
 	}
 	if (syncType == "element_visible" || syncType == "visible") && strings.TrimSpace(sync.Value) == "" {
 		issues = append(issues, fmt.Sprintf("%s: sync.value is required for element_visible", label))
@@ -1206,8 +1324,12 @@ func validateRendezvousActionIssues(index int, action Action) []string {
 	if count, ok := actionParamIntValue(action.Params, "count"); ok && count <= 0 {
 		issues = append(issues, fmt.Sprintf("%s: rendezvous count must be greater than zero", label))
 	}
-	if timeoutMs, ok := actionParamIntValue(action.Params, "timeout_ms"); ok && timeoutMs < 0 {
-		issues = append(issues, fmt.Sprintf("%s: rendezvous timeout_ms must be zero or greater", label))
+	if timeoutMs, ok := actionParamIntValue(action.Params, "timeout_ms"); ok {
+		if timeoutMs < 0 {
+			issues = append(issues, fmt.Sprintf("%s: rendezvous timeout_ms must be zero or greater", label))
+		} else if timeoutMs > MaxConfiguredProtocolTimeoutMS {
+			issues = append(issues, fmt.Sprintf("%s: rendezvous timeout_ms must not exceed %d", label, MaxConfiguredProtocolTimeoutMS))
+		}
 	}
 	return issues
 }
@@ -1224,15 +1346,29 @@ func actionParamIntValue(params map[string]any, key string) (int, bool) {
 	case int:
 		return typed, true
 	case int64:
+		if typed > int64(maxIntValue()) || typed < int64(minIntValue()) {
+			return 0, false
+		}
 		return int(typed), true
 	case float64:
+		if math.IsNaN(typed) || math.IsInf(typed, 0) || math.Trunc(typed) != typed || typed >= float64(maxIntValue()) || typed < float64(minIntValue()) {
+			return 0, false
+		}
 		return int(typed), true
 	case float32:
+		converted := float64(typed)
+		if math.IsNaN(converted) || math.IsInf(converted, 0) || math.Trunc(converted) != converted || converted >= float64(maxIntValue()) || converted < float64(minIntValue()) {
+			return 0, false
+		}
 		return int(typed), true
 	default:
 		return 0, false
 	}
 }
+
+func maxIntValue() int { return int(^uint(0) >> 1) }
+
+func minIntValue() int { return -maxIntValue() - 1 }
 
 func actionParamFloatValue(params map[string]any, key string) (float64, bool) {
 	if params == nil {
@@ -1947,9 +2083,13 @@ func validateJavaVuserScriptIssues(script *Script) []string {
 	}
 	if cfg.StartupTimeoutMs < 0 {
 		issues = append(issues, "config.java_vuser.startup_timeout_ms must be zero or greater")
+	} else if cfg.StartupTimeoutMs > MaxConfiguredProtocolTimeoutMS {
+		issues = append(issues, fmt.Sprintf("config.java_vuser.startup_timeout_ms must not exceed %d", MaxConfiguredProtocolTimeoutMS))
 	}
 	if cfg.ActionTimeoutMs < 0 {
 		issues = append(issues, "config.java_vuser.action_timeout_ms must be zero or greater")
+	} else if cfg.ActionTimeoutMs > MaxConfiguredProtocolTimeoutMS {
+		issues = append(issues, fmt.Sprintf("config.java_vuser.action_timeout_ms must not exceed %d", MaxConfiguredProtocolTimeoutMS))
 	}
 	return issues
 }
@@ -2235,6 +2375,8 @@ func validateWebRuntimeIssues(script *Script) []string {
 	}
 	if network.JitterMs < 0 {
 		issues = append(issues, "config.web_runtime.network_simulation.jitter_ms must be zero or greater")
+	} else if network.JitterMs > int(httpprotocol.MaxConfiguredTimeout/time.Millisecond) {
+		issues = append(issues, fmt.Sprintf("config.web_runtime.network_simulation.jitter_ms must not exceed %d", httpprotocol.MaxConfiguredTimeout/time.Millisecond))
 	}
 	if network.PacketLossPct < 0 || network.PacketLossPct > 100 {
 		issues = append(issues, "config.web_runtime.network_simulation.packet_loss_pct must be between 0 and 100")
@@ -2246,9 +2388,13 @@ func validateWebRuntimeIssues(script *Script) []string {
 	}
 	if streaming.BufferSizeSeconds < 0 {
 		issues = append(issues, "config.web_runtime.streaming.buffer_size_seconds must be zero or greater")
+	} else if streaming.BufferSizeSeconds > int(httpprotocol.MaxConfiguredStreamBuffer/time.Second) {
+		issues = append(issues, fmt.Sprintf("config.web_runtime.streaming.buffer_size_seconds must not exceed %d", httpprotocol.MaxConfiguredStreamBuffer/time.Second))
 	}
 	if streaming.Mode == "fixed" && streaming.FixedBitrateKbps <= 0 {
 		issues = append(issues, "config.web_runtime.streaming.fixed_bitrate_kbps must be greater than zero when mode is fixed")
+	} else if streaming.FixedBitrateKbps > httpprotocol.MaxConfiguredStreamKbps {
+		issues = append(issues, fmt.Sprintf("config.web_runtime.streaming.fixed_bitrate_kbps must not exceed %d", httpprotocol.MaxConfiguredStreamKbps))
 	}
 	if streaming.BandwidthEstimation != "" && !isAllowedValue(streaming.BandwidthEstimation, "rolling", "instant") {
 		issues = append(issues, "config.web_runtime.streaming.bandwidth_estimation must be rolling or instant")
@@ -2350,6 +2496,8 @@ func validateDatabaseScriptIssues(script *Script) []string {
 	}
 	if cfg.QueryTimeoutMs < 0 {
 		issues = append(issues, "config.database.query_timeout_ms must be zero or greater")
+	} else if cfg.QueryTimeoutMs > MaxConfiguredProtocolTimeoutMS {
+		issues = append(issues, fmt.Sprintf("config.database.query_timeout_ms must not exceed %d", MaxConfiguredProtocolTimeoutMS))
 	}
 	if cfg.MaxRows < 0 {
 		issues = append(issues, "config.database.max_rows must be zero or greater")
@@ -2384,6 +2532,8 @@ func validateNetworkScriptIssues(script *Script) []string {
 	}
 	if cfg.TimeoutMs < 0 {
 		issues = append(issues, "config.network.timeout_ms must be zero or greater")
+	} else if cfg.TimeoutMs > int(networkprotocol.MaxConfiguredTimeout/time.Millisecond) {
+		issues = append(issues, fmt.Sprintf("config.network.timeout_ms must not exceed %d", networkprotocol.MaxConfiguredTimeout/time.Millisecond))
 	}
 	for index, recipient := range cfg.To {
 		if strings.TrimSpace(recipient) == "" {
@@ -2403,8 +2553,12 @@ func validateNetworkActionIssues(index int, action Action) []string {
 	} else if spec.Validate != nil {
 		issues = append(issues, spec.Validate(index, action)...)
 	}
-	if timeoutMs, ok := actionParamIntValue(action.Params, "timeout_ms"); ok && timeoutMs < 0 {
-		issues = append(issues, fmt.Sprintf("%s: timeout_ms must be zero or greater", label))
+	if timeoutMs, ok := actionParamIntValue(action.Params, "timeout_ms"); ok {
+		if timeoutMs < 0 {
+			issues = append(issues, fmt.Sprintf("%s: timeout_ms must be zero or greater", label))
+		} else if timeoutMs > int(networkprotocol.MaxConfiguredTimeout/time.Millisecond) {
+			issues = append(issues, fmt.Sprintf("%s: timeout_ms must not exceed %d", label, networkprotocol.MaxConfiguredTimeout/time.Millisecond))
+		}
 	}
 	if readBytes, ok := actionParamIntValue(action.Params, "read_bytes"); ok && readBytes < 0 {
 		issues = append(issues, fmt.Sprintf("%s: read_bytes must be zero or greater", label))

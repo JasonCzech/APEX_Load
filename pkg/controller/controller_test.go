@@ -200,6 +200,32 @@ func TestAbortTest(t *testing.T) {
 	}
 }
 
+func TestAbortTestIsIdempotentAndPreservesTerminalTime(t *testing.T) {
+	c := New(1)
+	id, err := c.CreateTest(TestConfig{Name: "idempotent-abort", Script: testScript(), VUsers: 1, Duration: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.AbortTest(id); err != nil {
+		t.Fatal(err)
+	}
+	first, err := c.GetTest(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(time.Millisecond)
+	if err := c.AbortTest(id); err != nil {
+		t.Fatalf("duplicate AbortTest: %v", err)
+	}
+	second, err := c.GetTest(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !second.EndedAt.Equal(first.EndedAt) {
+		t.Fatalf("duplicate abort changed ended_at: first=%v second=%v", first.EndedAt, second.EndedAt)
+	}
+}
+
 func TestSetCancelCancelsLateAndDuplicateExecutions(t *testing.T) {
 	t.Run("abort before hook installation", func(t *testing.T) {
 		c := New(1)

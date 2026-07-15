@@ -98,6 +98,17 @@ func (s *Server) handleCreateReleaseSLAWaiver(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
+	if s.store != nil {
+		release, loadErr := s.store.GetRelease(releaseID)
+		if loadErr != nil || release == nil {
+			writeError(w, http.StatusNotFound, "release not found")
+			return
+		}
+		if release.ArchivedAt != nil {
+			writeError(w, http.StatusConflict, "cannot create an SLA waiver for an archived release")
+			return
+		}
+	}
 	// approved_by is always derived from the authenticated actor and never
 	// trusted from the request body, so the governance/audit record of who
 	// accepted the risk cannot be spoofed by the caller.
@@ -155,7 +166,7 @@ func (s *Server) buildReleaseSLAGovernance(releaseID string) (ReleaseSLAGovernan
 			activeWaivers++
 		}
 	}
-	tests := s.runner.ListTestsByContext("", releaseID, "")
+	tests := s.runner.ListTestSummariesByContext("", releaseID, "")
 	sort.SliceStable(tests, func(left, right int) bool {
 		return managedTestCompletedAt(tests[left]).After(managedTestCompletedAt(tests[right]))
 	})

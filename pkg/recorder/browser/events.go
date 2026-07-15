@@ -74,6 +74,13 @@ type capturedEvent struct {
 	TargetElement *selector.ElementMetadata `json:"target_element,omitempty"`
 }
 
+const maxCapturedEventBatch = 8
+
+type capturedEventBatch struct {
+	Kind   string          `json:"kind"`
+	Events []capturedEvent `json:"events"`
+}
+
 // Step is one recorded user interaction with everything replay needs: the
 // ranked selector candidates, frame context, page URL, and timing. Masked
 // marks fills whose value was withheld at capture (password inputs).
@@ -293,6 +300,46 @@ func stepFromEvent(payload string) (Step, error) {
 	if err := json.Unmarshal([]byte(payload), &event); err != nil {
 		return Step{}, fmt.Errorf("decode capture event: %w", err)
 	}
+	return stepFromCapturedEvent(event)
+}
+
+// stepsFromEvent accepts the ordinary one-event payload and the small atomic
+// batches used for semantically ordered interactions such as fill+Tab. The
+// batch size is intentionally tiny so an arbitrary recorded page cannot use
+// the exposed binding to bypass the recorder's per-event work bounds.
+func stepsFromEvent(payload string) ([]Step, error) {
+	var probe struct {
+		Kind string `json:"kind"`
+	}
+	if err := json.Unmarshal([]byte(payload), &probe); err != nil {
+		return nil, fmt.Errorf("decode capture event: %w", err)
+	}
+	if probe.Kind != "capture_batch" {
+		step, err := stepFromEvent(payload)
+		if err != nil {
+			return nil, err
+		}
+		return []Step{step}, nil
+	}
+	var batch capturedEventBatch
+	if err := json.Unmarshal([]byte(payload), &batch); err != nil {
+		return nil, fmt.Errorf("decode capture event batch: %w", err)
+	}
+	if len(batch.Events) == 0 || len(batch.Events) > maxCapturedEventBatch {
+		return nil, fmt.Errorf("capture event batch must contain between 1 and %d events", maxCapturedEventBatch)
+	}
+	steps := make([]Step, 0, len(batch.Events))
+	for _, event := range batch.Events {
+		step, err := stepFromCapturedEvent(event)
+		if err != nil {
+			return nil, err
+		}
+		steps = append(steps, step)
+	}
+	return steps, nil
+}
+
+func stepFromCapturedEvent(event capturedEvent) (Step, error) {
 	kind := strings.TrimSpace(event.Kind)
 	if !validStepKinds[kind] {
 		return Step{}, fmt.Errorf("unsupported capture event kind %q", event.Kind)

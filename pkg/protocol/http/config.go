@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"math"
 	"net"
@@ -41,11 +42,105 @@ const (
 	MaxConfiguredIdleConns    = 32
 	MaxConfiguredTimeout      = time.Hour
 	MaxConfiguredRedirects    = 50
+	MaxConfiguredNetworkKbps  = 100_000_000
+	MaxConfiguredStreamKbps   = 100_000_000
+	MaxConfiguredStreamBuffer = time.Hour
 	// Protocol instances are per VUser. Keep this deliberately small so the
 	// TLS session cache cannot multiply into hundreds of thousands of retained
 	// sessions at generator scale while still covering ordinary multi-host flows.
 	maxTLSClientSessionsPerVUser = 8
 )
+
+func validateHTTPRuntimeConfigBounds(config map[string]any) error {
+	for _, field := range []string{"web_network_simulation_latency_ms", "web_network_simulation_jitter_ms"} {
+		if _, err := protocol.BoundedMilliseconds(config[field], 0, MaxConfiguredTimeout); err != nil {
+			return fmt.Errorf("%s %w", field, err)
+		}
+	}
+	for _, field := range []struct {
+		name string
+		max  int64
+	}{
+		{name: "web_network_simulation_bandwidth_kbps", max: MaxConfiguredNetworkKbps},
+		{name: "web_streaming_buffer_size_seconds", max: int64(MaxConfiguredStreamBuffer / time.Second)},
+		{name: "web_streaming_fixed_bitrate_kbps", max: MaxConfiguredStreamKbps},
+	} {
+		if config[field.name] == nil {
+			continue
+		}
+		value, err := exactHTTPConfigInteger(config[field.name])
+		if err != nil || value < 0 || value > field.max {
+			return fmt.Errorf("%s must be an integer between 0 and %d", field.name, field.max)
+		}
+	}
+	if raw := config["web_network_simulation_packet_loss_pct"]; raw != nil {
+		value, err := exactHTTPConfigFloat(raw)
+		if err != nil || value < 0 || value > 100 {
+			return fmt.Errorf("web_network_simulation_packet_loss_pct must be between 0 and 100")
+		}
+	}
+	return nil
+}
+
+func exactHTTPConfigInteger(value any) (int64, error) {
+	switch typed := value.(type) {
+	case int:
+		return int64(typed), nil
+	case int64:
+		return typed, nil
+	case int32:
+		return int64(typed), nil
+	case float64:
+		if math.IsNaN(typed) || math.IsInf(typed, 0) || math.Trunc(typed) != typed || typed < math.MinInt64 || typed > math.MaxInt64 {
+			return 0, fmt.Errorf("not an integer")
+		}
+		return int64(typed), nil
+	case float32:
+		converted := float64(typed)
+		if math.IsNaN(converted) || math.IsInf(converted, 0) || math.Trunc(converted) != converted {
+			return 0, fmt.Errorf("not an integer")
+		}
+		return int64(typed), nil
+	case json.Number:
+		return typed.Int64()
+	case string:
+		return strconv.ParseInt(strings.TrimSpace(typed), 10, 64)
+	default:
+		return 0, fmt.Errorf("not an integer")
+	}
+}
+
+func exactHTTPConfigFloat(value any) (float64, error) {
+	var converted float64
+	switch typed := value.(type) {
+	case float64:
+		converted = typed
+	case float32:
+		converted = float64(typed)
+	case int:
+		converted = float64(typed)
+	case int64:
+		converted = float64(typed)
+	case json.Number:
+		parsed, err := typed.Float64()
+		if err != nil {
+			return 0, err
+		}
+		converted = parsed
+	case string:
+		parsed, err := strconv.ParseFloat(strings.TrimSpace(typed), 64)
+		if err != nil {
+			return 0, err
+		}
+		converted = parsed
+	default:
+		return 0, fmt.Errorf("not a number")
+	}
+	if math.IsNaN(converted) || math.IsInf(converted, 0) {
+		return 0, fmt.Errorf("not a finite number")
+	}
+	return converted, nil
+}
 
 func parseTransportConfig(config map[string]any) transportConfig {
 	settings := transportConfig{
@@ -212,7 +307,6 @@ func parseNetworkSimulationProfile(config map[string]any) networkSimulationProfi
 		jitter:           time.Duration(protocol.ConfigInt(config, "web_network_simulation_jitter_ms")) * time.Millisecond,
 		bandwidthBytesPS: bandwidthBytesPerSecond(bandwidthKbps),
 		packetLossPct:    protocol.ConfigFloat(config, "web_network_simulation_packet_loss_pct"),
-		sleep:            time.Sleep,
 		randFloat64:      defaultRandFloat64,
 	}
 }

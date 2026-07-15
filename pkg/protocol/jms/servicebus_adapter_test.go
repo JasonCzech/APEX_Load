@@ -191,7 +191,7 @@ func TestServiceBusAwaitCorrelatedReplySettlesBatchRemainder(t *testing.T) {
 	}
 }
 
-func TestServiceBusAwaitCorrelatedReplyDoesNotRepeatedlyAbandonForeignReply(t *testing.T) {
+func TestServiceBusAwaitCorrelatedReplyReleasesEveryForeignReplyDelivery(t *testing.T) {
 	foreignCorrelation := "corr-other"
 	receiver := &fakeServiceBusReplyReceiver{batches: [][]*azservicebus.ReceivedMessage{
 		{{MessageID: "foreign", CorrelationID: &foreignCorrelation, Body: []byte("other")}},
@@ -202,8 +202,27 @@ func TestServiceBusAwaitCorrelatedReplyDoesNotRepeatedlyAbandonForeignReply(t *t
 	if err == nil {
 		t.Fatal("serviceBusAwaitCorrelatedReply returned nil error without a correlated reply")
 	}
-	if got := receiver.abandonCount("foreign"); got != serviceBusForeignReplyAbandonLimit {
-		t.Fatalf("abandoned foreign count = %d, want budget %d", got, serviceBusForeignReplyAbandonLimit)
+	if got := receiver.abandonCount("foreign"); got != 2 {
+		t.Fatalf("abandoned foreign count = %d, want every one of the 2 deliveries released", got)
+	}
+}
+
+func TestServiceBusForeignBatchUsesOneSettlementBudget(t *testing.T) {
+	receiver := &slowServiceBusReplyReceiver{delay: 15 * time.Millisecond}
+	messages := []*azservicebus.ReceivedMessage{
+		{MessageID: "foreign-1"},
+		{MessageID: "foreign-2"},
+		{MessageID: "foreign-3"},
+	}
+	start := time.Now()
+	_, _, err := serviceBusAbandonForeignBatchWithin(
+		context.Background(), receiver, "orders.reply", messages, make(map[string]int), 20*time.Millisecond,
+	)
+	if err == nil {
+		t.Fatal("batch settlement returned nil error after its shared deadline")
+	}
+	if elapsed := time.Since(start); elapsed > 40*time.Millisecond {
+		t.Fatalf("batch settlement took %s, want one shared 20ms budget", elapsed)
 	}
 }
 
@@ -211,6 +230,29 @@ type fakeServiceBusReplyReceiver struct {
 	batches   [][]*azservicebus.ReceivedMessage
 	completed map[string]int
 	abandoned map[string]int
+}
+
+type slowServiceBusReplyReceiver struct {
+	delay time.Duration
+}
+
+func (*slowServiceBusReplyReceiver) ReceiveMessages(context.Context, int, *azservicebus.ReceiveMessagesOptions) ([]*azservicebus.ReceivedMessage, error) {
+	return nil, nil
+}
+
+func (*slowServiceBusReplyReceiver) CompleteMessage(context.Context, *azservicebus.ReceivedMessage, *azservicebus.CompleteMessageOptions) error {
+	return nil
+}
+
+func (r *slowServiceBusReplyReceiver) AbandonMessage(ctx context.Context, _ *azservicebus.ReceivedMessage, _ *azservicebus.AbandonMessageOptions) error {
+	timer := time.NewTimer(r.delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func (r *fakeServiceBusReplyReceiver) ReceiveMessages(ctx context.Context, _ int, _ *azservicebus.ReceiveMessagesOptions) ([]*azservicebus.ReceivedMessage, error) {

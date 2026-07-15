@@ -35,7 +35,9 @@ func TestKafkaProtocolIsRegistered(t *testing.T) {
 
 func TestAddRecordExtractionsCapsKafkaBody(t *testing.T) {
 	result := &protocol.Result{Extractions: map[string]string{}}
-	addRecordExtractions(result, kafkaRecord{Value: []byte(strings.Repeat("x", kafkaExtractionBodyLimit+10))})
+	if err := addRecordExtractions(result, kafkaRecord{Value: []byte(strings.Repeat("x", kafkaExtractionBodyLimit+10))}); err != nil {
+		t.Fatal(err)
+	}
 
 	if len(result.Extractions["kafka_body"]) != kafkaExtractionBodyLimit {
 		t.Fatalf("kafka_body length = %d, want %d", len(result.Extractions["kafka_body"]), kafkaExtractionBodyLimit)

@@ -183,6 +183,30 @@ func TestVerifyGitHubWebhookSignature(t *testing.T) {
 	}
 }
 
+func TestGitHubWebhookSecretRequiresProductionStrength(t *testing.T) {
+	const envVar = "APEXLOAD_TEST_GITHUB_WEBHOOK_SECRET"
+	settings := GitHubSettings{Enabled: true, WebhookSecretEnvVar: envVar}
+	t.Setenv("APEXLOAD_ENV", "production")
+	t.Setenv(envVar, "weak")
+
+	if _, err := settings.validatedWebhookSecret(); err == nil || !strings.Contains(err.Error(), "at least 32 bytes") {
+		t.Fatalf("validatedWebhookSecret weak production error = %v", err)
+	}
+	if settings.webhookConfigured() {
+		t.Fatal("weak production webhook secret was reported as configured")
+	}
+
+	strong := strings.Repeat("w", productionSecretMinBytes)
+	t.Setenv(envVar, strong)
+	secret, err := settings.validatedWebhookSecret()
+	if err != nil {
+		t.Fatalf("validatedWebhookSecret strong production: %v", err)
+	}
+	if secret != strong || !settings.webhookConfigured() {
+		t.Fatalf("strong production webhook secret = %q, configured=%t", secret, settings.webhookConfigured())
+	}
+}
+
 func TestEnforceGitHubProjectPolicy(t *testing.T) {
 	policy := normalizeGitHubProjectPolicy(storage.GitHubProjectPolicy{
 		Enabled:            true,

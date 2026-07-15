@@ -223,9 +223,21 @@ func buildRunArchiveProvenance(tr *TestRunner, test *ManagedTest) RunArchiveProv
 		backend = tr.getExecutionBackend()
 	}
 	if inventoryBackend, ok := backend.(inventoryExecutionBackend); ok {
-		provenance.GeneratorInventory = cloneGeneratorInventoryEntries(inventoryBackend.SystemInventory(context.Background()))
+		provenance.GeneratorInventory = generatorInventoryForProvenance(inventoryBackend, generatorInventoryRefreshTimeout)
 	}
 	return provenance
+}
+
+func generatorInventoryForProvenance(backend inventoryExecutionBackend, timeout time.Duration) []GeneratorInventoryEntry {
+	if backend == nil {
+		return nil
+	}
+	if timeout <= 0 {
+		timeout = generatorInventoryRefreshTimeout
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return cloneGeneratorInventoryEntries(backend.SystemInventory(ctx))
 }
 
 func buildRunArchiveGovernanceSnapshot(test *ManagedTest) *RunArchiveGovernanceSnapshot {

@@ -16,14 +16,20 @@ import (
 )
 
 const (
-	notificationFormatSlack           = "slack"
-	notificationFormatTeams           = "teams"
-	notificationFormatDynatrace       = "dynatrace"
-	notificationsAllowInsecureHTTPEnv = "APEXLOAD_NOTIFICATIONS_ALLOW_INSECURE_HTTP"
-	maxNotificationWebhooks           = 64
-	maxNotificationDeliveries         = 16
-	maxNotificationPerDestination     = 2
-	notificationDestinationStripes    = 64
+	notificationFormatSlack            = "slack"
+	notificationFormatTeams            = "teams"
+	notificationFormatDynatrace        = "dynatrace"
+	notificationsAllowInsecureHTTPEnv  = "APEXLOAD_NOTIFICATIONS_ALLOW_INSECURE_HTTP"
+	maxNotificationWebhooks            = 64
+	maxNotificationDeliveries          = 16
+	maxNotificationPerDestination      = 2
+	notificationDestinationStripes     = 64
+	maxNotificationNameBytes           = 256
+	maxNotificationURLBytes            = 4 << 10
+	maxNotificationAPITokenBytes       = 16 << 10
+	maxNotificationEntitySelectorBytes = 4 << 10
+	maxNotificationEvents              = 64
+	maxNotificationEventBytes          = 128
 )
 
 var supportedNotificationEvents = map[string]struct{}{
@@ -126,6 +132,21 @@ func validateNotificationsSettings(settings NotificationsSettings) error {
 	}
 	for index, webhook := range settings.Webhooks {
 		prefix := fmt.Sprintf("notifications.webhooks[%d]", index)
+		if len(webhook.Name) > maxNotificationNameBytes {
+			return fmt.Errorf("%s.name exceeds %d bytes", prefix, maxNotificationNameBytes)
+		}
+		if len(webhook.URL) > maxNotificationURLBytes {
+			return fmt.Errorf("%s.url exceeds %d bytes", prefix, maxNotificationURLBytes)
+		}
+		if len(webhook.APIToken) > maxNotificationAPITokenBytes {
+			return fmt.Errorf("%s.api_token exceeds %d bytes", prefix, maxNotificationAPITokenBytes)
+		}
+		if len(webhook.EntitySelector) > maxNotificationEntitySelectorBytes {
+			return fmt.Errorf("%s.entity_selector exceeds %d bytes", prefix, maxNotificationEntitySelectorBytes)
+		}
+		if len(webhook.Events) > maxNotificationEvents {
+			return fmt.Errorf("%s.events contains %d entries, limit is %d", prefix, len(webhook.Events), maxNotificationEvents)
+		}
 		parsedURL, err := url.ParseRequestURI(webhook.URL)
 		if err != nil || parsedURL == nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
 			return fmt.Errorf("%s.url must be a valid http or https URL", prefix)
@@ -150,6 +171,9 @@ func validateNotificationsSettings(settings NotificationsSettings) error {
 			}
 		}
 		for _, eventType := range webhook.Events {
+			if len(eventType) > maxNotificationEventBytes {
+				return fmt.Errorf("%s.events contains a value exceeding %d bytes", prefix, maxNotificationEventBytes)
+			}
 			if _, ok := supportedNotificationEvents[eventType]; !ok {
 				return fmt.Errorf("%s.events contains unsupported event %q", prefix, eventType)
 			}

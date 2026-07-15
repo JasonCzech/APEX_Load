@@ -106,6 +106,25 @@ func trustedProxyGateConfigured(settings AuthSettings) bool {
 	return false
 }
 
+// trustedProxySharedSecret resolves and validates the secret used to authenticate
+// forwarded identity headers. In production this secret protects an administrative
+// trust boundary, so accepting a short, guessable value would let a direct client
+// forge the complete upstream identity and role-header set.
+func trustedProxySharedSecret(settings AuthSettings) (string, error) {
+	env := strings.TrimSpace(settings.TrustedProxySecretEnvVar)
+	if env == "" {
+		return "", fmt.Errorf("trusted-proxy shared-secret environment variable is not configured")
+	}
+	secret := strings.TrimSpace(os.Getenv(env))
+	if secret == "" {
+		return "", fmt.Errorf("trusted-proxy shared-secret environment variable %q is empty", env)
+	}
+	if productionMode() && len([]byte(secret)) < productionSecretMinBytes {
+		return "", fmt.Errorf("trusted-proxy shared-secret environment variable %q must contain at least %d bytes in production", env, productionSecretMinBytes)
+	}
+	return secret, nil
+}
+
 // enforceTrustedProxyGate denies a trusted-headers request that did not arrive through
 // the trusted ingress. When no gate is configured it allows in non-production (legacy
 // behavior) but denies in production as a defense-in-depth backstop.
@@ -124,7 +143,7 @@ func enforceTrustedProxyGate(r *http.Request, settings AuthSettings) error {
 
 func trustedProxyRequestAllowed(r *http.Request, settings AuthSettings) bool {
 	if env := strings.TrimSpace(settings.TrustedProxySecretEnvVar); env != "" {
-		if expected := strings.TrimSpace(os.Getenv(env)); expected != "" {
+		if expected, err := trustedProxySharedSecret(settings); err == nil {
 			provided := strings.TrimSpace(r.Header.Get(trustedProxySecretHeader))
 			if provided != "" && subtle.ConstantTimeCompare([]byte(provided), []byte(expected)) == 1 {
 				return true

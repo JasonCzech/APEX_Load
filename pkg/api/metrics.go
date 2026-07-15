@@ -7,6 +7,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"sort"
 	"strings"
@@ -472,17 +473,13 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 	} else {
 		test.lastNetworkLatency = cloneNetworkLatency(live.Latency)
 	}
-	historyPoints := len(test.History) + 1
-	if historyPoints > maxManagedTestHistory {
-		historyPoints = maxManagedTestHistory
-	}
-	live.Telemetry.HistoryPoints = historyPoints
+	live.Telemetry.HistoryPoints = min(len(test.History)+1, maxManagedTestHistory)
 	installedLive := cloneLiveMetrics(live)
 	normalizePausedLiveVUsers(test, installedLive)
 	test.LiveMetrics = installedLive
-	test.History = append(test.History, installedLive)
-	if len(test.History) > maxManagedTestHistory {
-		test.History = append([]*LiveMetrics(nil), test.History[len(test.History)-maxManagedTestHistory:]...)
+	appendManagedTestHistoryWithLimits(test, installedLive, maxManagedTestHistory, maxManagedTestHistoryBytes)
+	if installedLive.Telemetry != nil {
+		installedLive.Telemetry.HistoryPoints = len(test.History)
 	}
 	if diagnostic != nil {
 		publishDiagnostic = shouldPublishTelemetryDiagnostic(&test.telemetryDiagnostic, diagnosticSignature, now)
@@ -532,6 +529,67 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 	if emitSheddingWarning {
 		tr.broadcastOpenWorkloadShedding(test, sheddedArrivals, now)
 	}
+}
+
+func appendManagedTestHistoryWithLimits(test *ManagedTest, point *LiveMetrics, maxPoints int, maxBytes int64) bool {
+	if test == nil || point == nil || maxPoints <= 0 || maxBytes <= 0 {
+		return false
+	}
+	ensureManagedTestHistoryAccounting(test, maxPoints, maxBytes)
+	weight := managedTestHistoryPointWeight(point, maxBytes)
+	if weight > maxBytes {
+		return false
+	}
+	test.History = append(test.History, point)
+	test.historyWeights = append(test.historyWeights, weight)
+	test.historyBytes += weight
+	trimManagedTestHistoryToLimits(test, maxPoints, maxBytes)
+	return len(test.History) > 0 && test.History[len(test.History)-1] == point
+}
+
+func ensureManagedTestHistoryAccounting(test *ManagedTest, maxPoints int, maxBytes int64) {
+	if test == nil {
+		return
+	}
+	if len(test.historyWeights) != len(test.History) {
+		test.historyWeights = make([]int64, len(test.History))
+		test.historyBytes = 0
+		for index, point := range test.History {
+			weight := managedTestHistoryPointWeight(point, maxBytes)
+			test.historyWeights[index] = weight
+			test.historyBytes += weight
+		}
+	}
+	trimManagedTestHistoryToLimits(test, maxPoints, maxBytes)
+}
+
+func trimManagedTestHistoryToLimits(test *ManagedTest, maxPoints int, maxBytes int64) {
+	if test == nil {
+		return
+	}
+	for len(test.History) > 0 && (len(test.History) > maxPoints || test.historyBytes > maxBytes) {
+		test.historyBytes -= test.historyWeights[0]
+		test.History[0] = nil
+		test.historyWeights[0] = 0
+		test.History = test.History[1:]
+		test.historyWeights = test.historyWeights[1:]
+	}
+	if len(test.History) == 0 {
+		test.History = nil
+		test.historyWeights = nil
+		test.historyBytes = 0
+	}
+}
+
+func managedTestHistoryPointWeight(point *LiveMetrics, maxBytes int64) int64 {
+	if point == nil {
+		return 4 // JSON "null"
+	}
+	payload, err := json.Marshal(point)
+	if err != nil || int64(len(payload)) > maxBytes {
+		return maxBytes + 1
+	}
+	return int64(len(payload))
 }
 
 // normalizePausedLiveVUsers keeps API/history/WebSocket snapshots aligned with
@@ -599,7 +657,16 @@ func replaceLiveMetricsLocked(test *ManagedTest, replacement *LiveMetrics) {
 	previous := test.LiveMetrics
 	test.LiveMetrics = replacement
 	if len(test.History) > 0 && test.History[len(test.History)-1] == previous {
-		test.History[len(test.History)-1] = replacement
+		ensureManagedTestHistoryAccounting(test, maxManagedTestHistory, maxManagedTestHistoryBytes)
+		if len(test.History) == 0 || test.History[len(test.History)-1] != previous {
+			return
+		}
+		last := len(test.History) - 1
+		test.historyBytes -= test.historyWeights[last]
+		test.History[last] = replacement
+		test.historyWeights[last] = managedTestHistoryPointWeight(replacement, maxManagedTestHistoryBytes)
+		test.historyBytes += test.historyWeights[last]
+		trimManagedTestHistoryToLimits(test, maxManagedTestHistory, maxManagedTestHistoryBytes)
 	}
 }
 

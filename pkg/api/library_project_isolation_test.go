@@ -172,6 +172,73 @@ func TestLibraryTransfersRejectStaleCrossProjectReplicaObjects(t *testing.T) {
 	}
 }
 
+func TestLibraryResultArchiveRejectsStaleCrossProjectReplicaCache(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stale-result-archive.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Now().UTC()
+	if err := store.SaveProject(&storage.Project{ID: "project-b", Name: "Project B", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+
+	server := NewServer(ServerConfig{Store: store})
+	const resultID = "reused-result-id"
+	stale := &ManagedTest{
+		ID:          resultID,
+		Name:        "Prior Project Result",
+		Status:      "COMPLETE",
+		ProjectID:   "project-a",
+		Duration:    time.Minute,
+		DurationStr: "1m",
+		CreatedAt:   now.Add(-time.Hour),
+	}
+	server.runner.mu.Lock()
+	server.runner.tests[resultID] = stale
+	server.runner.mu.Unlock()
+	attachLibraryArchiveFixture(t, server, stale)
+
+	// Simulate an HA peer deleting/recreating the durable identity while this
+	// replica still holds project A's test and archive in memory. The route's
+	// authorization resolver sees this current project-B row.
+	if err := store.SaveTest(&storage.TestRecord{
+		ID:          resultID,
+		Name:        "Current Project Result",
+		Status:      "COMPLETE",
+		ProjectID:   "project-b",
+		Duration:    int64(time.Minute),
+		StartTime:   now,
+		TotalVUsers: 1,
+		Groups:      []any{},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name       string
+		projectID  string
+		wantStatus int
+	}{
+		{name: "prior project denied", projectID: "project-a", wantStatus: http.StatusForbidden},
+		{name: "current project cannot receive stale archive", projectID: "project-b", wantStatus: http.StatusNotFound},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, "/api/v1/library/results/"+resultID+"/archive", nil)
+			request.SetPathValue("id", resultID)
+			bindAuthorizedProjectToRequest(request, tc.projectID)
+			response := httptest.NewRecorder()
+			server.handleLibraryResultArchive(response, request)
+			if response.Code != tc.wantStatus {
+				t.Fatalf("status = %d, want %d; body=%s", response.Code, tc.wantStatus, response.Body.String())
+			}
+			if strings.Contains(response.Body.String(), `"action_name":"archive"`) {
+				t.Fatal("stale project-A archive payload was disclosed")
+			}
+		})
+	}
+}
+
 func TestLibraryImportRequiresExplicitDestinationAndSingleSourceProject(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	scriptA := libraryTestScript("source-a", "Source A", "source-project-a", "/a")

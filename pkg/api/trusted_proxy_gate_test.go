@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -106,5 +107,51 @@ func TestTrustedProxyGateProductionFailsClosed(t *testing.T) {
 	req.RemoteAddr = "10.0.0.5:1234"
 	if err := enforceTrustedProxyGate(req, settings); err != nil {
 		t.Fatalf("configured gate with trusted source should pass, got %v", err)
+	}
+}
+
+func TestTrustedProxyGateProductionRejectsWeakSharedSecret(t *testing.T) {
+	t.Setenv("APEXLOAD_ENV", "production")
+	t.Setenv("APEXLOAD_TEST_PROXY_SECRET", "weak")
+	settings := AuthSettings{
+		Mode:                     authModeTrustedHeaders,
+		UserHeader:               "X-Auth-Request-User",
+		RolesHeader:              "X-APEXLoad-Roles",
+		TrustedProxySecretEnvVar: "APEXLOAD_TEST_PROXY_SECRET",
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/users", nil)
+	req.Header.Set(trustedProxySecretHeader, "weak")
+	if trustedProxyRequestAllowed(req, settings) {
+		t.Fatal("weak production trusted-proxy secret must not authorize forwarded identity headers")
+	}
+	if err := validateAuthSettings(settings); err == nil || !strings.Contains(err.Error(), "at least 32 bytes") {
+		t.Fatalf("validateAuthSettings error = %v, want production minimum-length failure", err)
+	}
+
+	strong := strings.Repeat("s", productionSecretMinBytes)
+	t.Setenv("APEXLOAD_TEST_PROXY_SECRET", strong)
+	req.Header.Set(trustedProxySecretHeader, strong)
+	if !trustedProxyRequestAllowed(req, settings) {
+		t.Fatal("strong production trusted-proxy secret should authorize the trusted request")
+	}
+	if err := validateAuthSettings(settings); err != nil {
+		t.Fatalf("validateAuthSettings rejected strong production secret: %v", err)
+	}
+}
+
+func TestTrustedProxyGateRejectsMalformedCIDRConfiguration(t *testing.T) {
+	settings := AuthSettings{
+		Mode:              authModeTrustedHeaders,
+		UserHeader:        "X-Auth-Request-User",
+		RolesHeader:       "X-APEXLoad-Roles",
+		TrustedProxyCIDRs: []string{"10.0.0.0/8", "not-a-network"},
+	}
+	if err := validateAuthSettings(settings); err == nil || !strings.Contains(err.Error(), "invalid IP address or CIDR") {
+		t.Fatalf("validateAuthSettings error = %v, want invalid trusted-proxy CIDR failure", err)
+	}
+
+	normalized := normalizeAuthSettings(AuthSettings{TrustedProxyCIDRs: []string{" 10.0.0.1 ", "10.0.0.1", "", "2001:db8::/32"}})
+	if got, want := strings.Join(normalized.TrustedProxyCIDRs, ","), "10.0.0.1,2001:db8::/32"; got != want {
+		t.Fatalf("normalized trusted proxy networks = %q, want %q", got, want)
 	}
 }

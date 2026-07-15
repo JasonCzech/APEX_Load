@@ -30,13 +30,15 @@ func newShapedDialContext(base func(context.Context, string, string) (net.Conn, 
 		if err != nil {
 			return nil, err
 		}
-		return &shapedConn{Conn: conn, profile: profile}, nil
+		return &shapedConn{Conn: conn, profile: profile, closed: make(chan struct{})}, nil
 	}
 }
 
 type shapedConn struct {
 	net.Conn
 	profile networkSimulationProfile
+	closed  chan struct{}
+	closeMu sync.Once
 
 	mu sync.Mutex
 	// latency is amortized once per request/response exchange, not per byte:
@@ -59,9 +61,13 @@ func (c *shapedConn) Read(p []byte) (int, error) {
 		c.lastWasRead = true
 		c.mu.Unlock()
 		if applyLatency {
-			c.profile.applyJitterAndLoss()
+			if !c.wait(c.profile.jitterAndLossDelay()) {
+				return n, net.ErrClosed
+			}
 		}
-		c.profile.applyBandwidth(n)
+		if !c.wait(c.profile.bandwidthDelay(n)) {
+			return n, net.ErrClosed
+		}
 	}
 	return n, err
 }
@@ -79,26 +85,44 @@ func (c *shapedConn) Write(p []byte) (int, error) {
 	c.writeLatched = true
 	c.mu.Unlock()
 	if applyLatency {
-		c.profile.applyJitterAndLoss()
+		if !c.wait(c.profile.jitterAndLossDelay()) {
+			return 0, net.ErrClosed
+		}
 	}
-	c.profile.applyBandwidth(len(p))
+	if !c.wait(c.profile.bandwidthDelay(len(p))) {
+		return 0, net.ErrClosed
+	}
 	return c.Conn.Write(p)
 }
 
-func (p networkSimulationProfile) applyReadDelay(bytes int) {
-	p.applyJitterAndLoss()
-	p.applyBandwidth(bytes)
+func (c *shapedConn) Close() error {
+	c.closeMu.Do(func() {
+		if c.closed != nil {
+			close(c.closed)
+		}
+	})
+	return c.Conn.Close()
 }
 
-func (p networkSimulationProfile) applyWriteDelay(bytes int) {
-	p.applyJitterAndLoss()
-	p.applyBandwidth(bytes)
-}
-
-func (p networkSimulationProfile) applyJitterAndLoss() {
-	if p.sleep == nil {
-		return
+func (c *shapedConn) wait(delay time.Duration) bool {
+	if delay <= 0 {
+		return true
 	}
+	if c.profile.sleep != nil {
+		c.profile.sleep(delay)
+		return true
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-c.closed:
+		return false
+	case <-timer.C:
+		return true
+	}
+}
+
+func (p networkSimulationProfile) jitterAndLossDelay() time.Duration {
 	delay := p.latency
 	if p.jitter > 0 {
 		delay += time.Duration(p.rand() * float64(p.jitter))
@@ -106,19 +130,18 @@ func (p networkSimulationProfile) applyJitterAndLoss() {
 	if p.packetLossPct > 0 && p.rand()*100 < p.packetLossPct {
 		delay += p.retransmissionPenalty()
 	}
-	if delay > 0 {
-		p.sleep(delay)
-	}
+	return min(delay, MaxConfiguredTimeout)
 }
 
-func (p networkSimulationProfile) applyBandwidth(bytes int) {
-	if p.sleep == nil || p.bandwidthBytesPS <= 0 || bytes <= 0 {
-		return
+func (p networkSimulationProfile) bandwidthDelay(bytes int) time.Duration {
+	if p.bandwidthBytesPS <= 0 || bytes <= 0 {
+		return 0
 	}
-	delay := time.Duration(float64(bytes) / float64(p.bandwidthBytesPS) * float64(time.Second))
-	if delay > 0 {
-		p.sleep(delay)
+	delaySeconds := float64(bytes) / float64(p.bandwidthBytesPS)
+	if delaySeconds >= MaxConfiguredTimeout.Seconds() {
+		return MaxConfiguredTimeout
 	}
+	return time.Duration(delaySeconds * float64(time.Second))
 }
 
 func (p networkSimulationProfile) retransmissionPenalty() time.Duration {

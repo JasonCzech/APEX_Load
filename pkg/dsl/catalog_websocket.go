@@ -50,11 +50,16 @@ func websocketActionSpecs() []ActionSpec {
 			Protocols: []string{"websocket"},
 			Summary:   "Waits for the next inbound message.",
 			Fields: []FieldSpec{
-				{Name: "params.timeout_ms", Kind: FieldKindInt, Doc: "Receive timeout in milliseconds; zero or greater."},
+				{Name: "params.timeout_ms", Kind: FieldKindInt, Maximum: MaxConfiguredProtocolTimeoutMS, Doc: "Receive timeout in milliseconds; zero through 3600000."},
 			},
 			Validate: func(index int, action Action) []string {
-				if timeoutMs, ok := actionParamIntValue(action.Params, "timeout_ms"); ok && timeoutMs < 0 {
-					return []string{fmt.Sprintf("actions[%d] %q: ws_receive timeout_ms must be zero or greater", index, action.Name)}
+				if timeoutMs, ok := actionParamIntValue(action.Params, "timeout_ms"); ok {
+					if timeoutMs < 0 {
+						return []string{fmt.Sprintf("actions[%d] %q: ws_receive timeout_ms must be zero or greater", index, action.Name)}
+					}
+					if timeoutMs > MaxConfiguredProtocolTimeoutMS {
+						return []string{fmt.Sprintf("actions[%d] %q: ws_receive timeout_ms must not exceed %d", index, action.Name, MaxConfiguredProtocolTimeoutMS)}
+					}
 				}
 				return nil
 			},

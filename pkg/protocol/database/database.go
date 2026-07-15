@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/protocol/jsonextract"
 	_ "modernc.org/sqlite"
@@ -71,6 +72,10 @@ func (d *Database) Init(ctx context.Context, config map[string]any) error {
 			return err
 		}
 	}
+	queryTimeout, err := protocol.BoundedMilliseconds(config["database_query_timeout_ms"], 30*time.Second, dsl.MaxConfiguredProtocolTimeout)
+	if err != nil {
+		return fmt.Errorf("database query_timeout_ms %w", err)
+	}
 	db, err := sql.Open(d.driver, d.dsn)
 	if err != nil {
 		return err
@@ -84,10 +89,7 @@ func (d *Database) Init(ctx context.Context, config map[string]any) error {
 	if lifetimeMS := protocol.ConfigInt(config, "database_conn_max_lifetime_ms"); lifetimeMS > 0 {
 		db.SetConnMaxLifetime(time.Duration(lifetimeMS) * time.Millisecond)
 	}
-	d.queryTimeout = 30 * time.Second
-	if timeoutMS := protocol.ConfigInt(config, "database_query_timeout_ms"); timeoutMS > 0 {
-		d.queryTimeout = time.Duration(timeoutMS) * time.Millisecond
-	}
+	d.queryTimeout = queryTimeout
 	d.maxRows = defaultDatabaseMaxRows
 	if maxRows := protocol.ConfigInt(config, "database_max_rows"); maxRows > 0 {
 		d.maxRows = min(maxRows, hardDatabaseMaxRows)
@@ -695,7 +697,10 @@ func runDatabaseExtractors(extractors []protocol.Extractor, result *protocol.Res
 			return err.Error()
 		}
 		if extractor.Name != "" {
-			result.Extractions[extractor.Name] = value
+			if err := protocol.StoreExtraction(result, extractor.Name, value); err != nil {
+				result.Extractions = nil
+				return fmt.Sprintf("database extractor %q output rejected: %v", extractor.Name, err)
+			}
 		}
 	}
 	return ""

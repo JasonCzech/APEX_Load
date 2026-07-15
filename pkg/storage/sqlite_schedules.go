@@ -172,7 +172,19 @@ func (s *SQLiteStore) SaveScenarioScheduleWithApproval(schedule *ScenarioSchedul
 // CreateScenarioScheduleIfAbsent creates a schedule without replacing an
 // existing row. This is the create half of the schedule CAS contract.
 func (s *SQLiteStore) CreateScenarioScheduleIfAbsent(schedule *ScenarioSchedule) (bool, error) {
-	return createScenarioScheduleIfAbsentWithExecutor(s.db, schedule)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	created, err := createScenarioScheduleIfAbsentWithExecutor(tx, schedule)
+	if err != nil || !created {
+		return created, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func createScenarioScheduleIfAbsentWithExecutor(executor testSaveExecutor, schedule *ScenarioSchedule) (bool, error) {
@@ -201,7 +213,26 @@ func createScenarioScheduleIfAbsentWithExecutor(executor testSaveExecutor, sched
 // UpdateScenarioScheduleIfRevision updates only an existing row whose revision
 // still matches the caller's snapshot. It cannot resurrect a deleted schedule.
 func (s *SQLiteStore) UpdateScenarioScheduleIfRevision(schedule *ScenarioSchedule, expectedRevision int) (bool, error) {
-	return updateScenarioScheduleIfRevisionWithExecutor(s.db, schedule, expectedRevision)
+	originalRevision := 0
+	if schedule != nil {
+		originalRevision = schedule.Revision
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	updated, err := updateScenarioScheduleIfRevisionWithExecutor(tx, schedule, expectedRevision)
+	if err != nil || !updated {
+		return updated, err
+	}
+	if err := tx.Commit(); err != nil {
+		if schedule != nil {
+			schedule.Revision = originalRevision
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 func updateScenarioScheduleIfRevisionWithExecutor(executor testSaveExecutor, schedule *ScenarioSchedule, expectedRevision int) (bool, error) {
@@ -356,10 +387,23 @@ func prepareScenarioSchedule(schedule *ScenarioSchedule) (string, string, string
 }
 
 // bindScenarioScheduleParent derives project ownership from the durable
-// scenario graph and rejects attempts to reuse an existing schedule ID under a
-// different scenario. Scenario rows do not carry project_id themselves, so the
-// script membership remains the source of truth.
+// scenario graph, validates an optional release against that tenant, and rejects
+// attempts to reuse an existing schedule ID under a different scenario. Parent
+// self-updates acquire row locks in the surrounding transaction on both SQLite
+// and PostgreSQL; deletion therefore cannot pass validation and orphan the child
+// before the schedule write commits.
 func bindScenarioScheduleParent(executor testSaveExecutor, schedule *ScenarioSchedule) error {
+	lockedScenario, err := executor.Exec(`UPDATE scenarios SET updated_at = updated_at WHERE id = ?`, schedule.ScenarioID)
+	if err != nil {
+		return err
+	}
+	affected, err := lockedScenario.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return fmt.Errorf("scenario %q does not exist", schedule.ScenarioID)
+	}
 	var scenarioCount, distinctProjects int
 	var minProjectID, maxProjectID string
 	if err := executor.QueryRow(`SELECT COUNT(DISTINCT sc.id),
@@ -380,6 +424,38 @@ func bindScenarioScheduleParent(executor testSaveExecutor, schedule *ScenarioSch
 		return fmt.Errorf("scenario %q scripts span multiple projects", schedule.ScenarioID)
 	}
 	schedule.ProjectID = normalizeProjectID(minProjectID)
+	schedule.ReleaseID = strings.TrimSpace(schedule.ReleaseID)
+	if schedule.ReleaseID != "" {
+		lockedRelease, err := executor.Exec(`UPDATE releases SET updated_at = updated_at WHERE id = ?`, schedule.ReleaseID)
+		if err != nil {
+			return err
+		}
+		affected, err := lockedRelease.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if affected != 1 {
+			return fmt.Errorf("release %q does not exist", schedule.ReleaseID)
+		}
+		var releaseProjectID, applicationProjectID string
+		var archivedAt sql.NullTime
+		if err := executor.QueryRow(`SELECT COALESCE(r.project_id, ''), COALESCE(a.project_id, ''), r.archived_at
+			FROM releases r JOIN applications a ON a.id = r.application_id WHERE r.id = ?`, schedule.ReleaseID).
+			Scan(&releaseProjectID, &applicationProjectID, &archivedAt); err != nil {
+			return err
+		}
+		releaseProjectID = normalizeProjectID(releaseProjectID)
+		applicationProjectID = normalizeProjectID(applicationProjectID)
+		if releaseProjectID != applicationProjectID {
+			return fmt.Errorf("release %q project does not match its application", schedule.ReleaseID)
+		}
+		if releaseProjectID != schedule.ProjectID {
+			return fmt.Errorf("release %q does not belong to scenario project %q", schedule.ReleaseID, schedule.ProjectID)
+		}
+		if archivedAt.Valid {
+			return fmt.Errorf("release %q is archived", schedule.ReleaseID)
+		}
+	}
 	var existingScenarioID string
 	if err := executor.QueryRow(`SELECT scenario_id FROM scenario_schedules WHERE id = ?`, schedule.ID).Scan(&existingScenarioID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

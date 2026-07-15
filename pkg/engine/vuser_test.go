@@ -3,6 +3,7 @@ package engine
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"log/slog"
 	"regexp"
 	"strings"
@@ -28,6 +29,22 @@ type sequenceProtocol struct {
 	failFirst bool
 	actions   []*protocol.Action
 }
+
+type perActionExtractionProtocol struct{}
+
+func (*perActionExtractionProtocol) Name() string { return "http" }
+func (*perActionExtractionProtocol) Init(context.Context, map[string]any) error {
+	return nil
+}
+func (*perActionExtractionProtocol) Execute(_ context.Context, action *protocol.Action) (*protocol.Result, error) {
+	return &protocol.Result{
+		ActionName:  action.Name,
+		Success:     true,
+		Extractions: map[string]string{action.Name: strings.Repeat("x", protocol.MaxExtractionValueBytes)},
+	}, nil
+}
+func (*perActionExtractionProtocol) Teardown(context.Context) error    { return nil }
+func (*perActionExtractionProtocol) HealthCheck(context.Context) error { return nil }
 
 type sequenceCaptureSink struct {
 	results      []*protocol.Result
@@ -218,6 +235,49 @@ func TestVUserMergeExtractionsBoundsPersistentVariableGrowth(t *testing.T) {
 	oversized := &protocol.Result{Extractions: map[string]string{"payload": strings.Repeat("x", protocol.MaxExtractionValueBytes+1)}}
 	if err := vu.mergeExtractions(oversized); err == nil {
 		t.Fatal("oversized extraction value was accepted")
+	}
+}
+
+func TestHTTPSequenceAggregateExtractionBudgetFailsClosed(t *testing.T) {
+	requests := make([]dsl.Action, 5)
+	for index := range requests {
+		requests[index] = dsl.Action{Name: fmt.Sprintf("child-%d", index), Type: "GET", Method: "GET", Target: "/"}
+	}
+	vu := &VUser{
+		Proto:     &perActionExtractionProtocol{},
+		Script:    &dsl.Script{},
+		Metrics:   NewMetricsCollector(16),
+		Variables: map[string]string{},
+	}
+	result, err := vu.executeHTTPSequenceAction(context.Background(), dsl.Action{
+		Name: "sequence", Type: "http_sequence", Params: map[string]any{"requests": requests},
+	}, dsl.ErrorHandlingConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Success || !strings.Contains(result.ErrorMessage, "extraction retention failed") {
+		t.Fatalf("sequence extraction result success=%v error=%q", result.Success, result.ErrorMessage)
+	}
+	if len(result.Extractions) != 0 {
+		t.Fatalf("sequence retained %d partial extractions", len(result.Extractions))
+	}
+}
+
+func TestRunShakeoutActionRejectsExtractionBudgetViolation(t *testing.T) {
+	vu := &VUser{
+		Proto: &loggingProtocol{result: &protocol.Result{
+			Success:     true,
+			Extractions: map[string]string{"payload": strings.Repeat("x", protocol.MaxExtractionValueBytes+1)},
+		}},
+		Script:    &dsl.Script{},
+		Variables: map[string]string{},
+	}
+	err := runShakeoutAction(context.Background(), vu, dsl.Action{Name: "extract", Type: "request"}, "action")
+	if err == nil || !strings.Contains(err.Error(), "extraction retention failed") {
+		t.Fatalf("shakeout extraction error = %v", err)
+	}
+	if _, retained := vu.Variables["payload"]; retained {
+		t.Fatal("shakeout retained an extraction that exceeded the runtime budget")
 	}
 }
 

@@ -54,12 +54,27 @@ func githubUserKey(r *http.Request) string {
 
 func (s *Server) githubCallbackURL(r *http.Request) string {
 	scheme := "https"
-	if forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")); forwarded != "" {
+	if forwarded := githubForwardedProto(r.Header.Get("X-Forwarded-Proto")); forwarded == "https" || (forwarded == "http" && !productionMode()) {
 		scheme = forwarded
 	} else if r.TLS == nil && !productionMode() {
 		scheme = "http"
 	}
 	return scheme + "://" + r.Host + "/api/v1/integrations/github/callback"
+}
+
+func githubForwardedProto(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	if idx := strings.IndexByte(raw, ','); idx >= 0 {
+		raw = raw[:idx]
+	}
+	switch proto := strings.ToLower(strings.TrimSpace(raw)); proto {
+	case "http", "https":
+		return proto
+	default:
+		return ""
+	}
 }
 
 // handleGitHubConfig returns the non-secret global integration config plus
@@ -215,10 +230,10 @@ func (s *Server) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "failed to secure github token")
 		return
 	}
-	var expiresAt *time.Time
-	if tokenResp.ExpiresIn > 0 {
-		exp := time.Now().UTC().Add(time.Duration(tokenResp.ExpiresIn) * time.Second)
-		expiresAt = &exp
+	expiresAt, err := githubOAuthExpiresAt(time.Now().UTC(), tokenResp.ExpiresIn)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "github token exchange returned an invalid expiry")
+		return
 	}
 
 	store, _ := s.githubConnectionStore()

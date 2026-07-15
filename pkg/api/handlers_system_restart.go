@@ -303,7 +303,7 @@ func (s *Server) restartGeneratorWorkload(r *http.Request, req SystemRestartRequ
 	inventory := s.systemInventory(r.Context())
 	result := baseRestartResult(req, s.k8sRestart.Namespace)
 	result.Workload = s.k8sRestart.GeneratorStatefulSet
-	activeRuns := activeRestartRuns(s.runner.ListTests())
+	activeRuns := activeRestartRuns(s.runner.listOperationalTestSnapshots())
 	result.ActiveRunCount = len(activeRuns)
 	for _, generator := range inventory.Generators {
 		result.ActiveVUsers += generator.ActiveVUsers
@@ -335,7 +335,7 @@ func (s *Server) restartGeneratorWorkload(r *http.Request, req SystemRestartRequ
 func (s *Server) restartControllerWorkload(r *http.Request, req SystemRestartRequest) (SystemRestartResult, error) {
 	result := baseRestartResult(req, s.k8sRestart.Namespace)
 	result.Workload = s.k8sRestart.ControllerDeployment
-	activeRuns := activeRestartRuns(s.runner.ListTests())
+	activeRuns := activeRestartRuns(s.runner.listOperationalTestSnapshots())
 	result.ActiveRunCount = len(activeRuns)
 	if !req.Force && len(activeRuns) > 0 {
 		result.Status = "blocked"

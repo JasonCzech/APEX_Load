@@ -212,7 +212,7 @@ func usageSnapshotQueryInt(r *http.Request, key string, fallback int, max int) i
 }
 
 func (s *Server) usageAccounting(projectID string) UsageAccountingResponse {
-	return usageAccountingFromTests(projectID, s.runner.ListTests())
+	return usageAccountingFromTests(projectID, s.runner.listOperationalTestSnapshots())
 }
 
 // scopedUsageAccounting returns usage limited to the caller's authorization scope.
@@ -223,7 +223,7 @@ func (s *Server) scopedUsageAccounting(projectID string, scope map[string]struct
 	if all || projectID != "" {
 		return s.usageAccounting(projectID)
 	}
-	return usageAccountingFromTestsScoped(scope, s.runner.ListTests())
+	return usageAccountingFromTestsScoped(scope, s.runner.listOperationalTestSnapshots())
 }
 
 func usageAccountingFromTests(projectID string, tests []*ManagedTest) UsageAccountingResponse {

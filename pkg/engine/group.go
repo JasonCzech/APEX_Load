@@ -1165,14 +1165,12 @@ func (mge *MultiGroupEngine) SleepActive(ctx context.Context, delay time.Duratio
 		timer := time.NewTimer(remaining)
 		select {
 		case <-ctx.Done():
-			if !timer.Stop() {
-				<-timer.C
-			}
+			// Go 1.23+ timer channels must not be drained after Stop; doing so
+			// can block forever when cancellation wins at the expiry boundary.
+			timer.Stop()
 			return false
 		case <-changed:
-			if !timer.Stop() {
-				<-timer.C
-			}
+			timer.Stop()
 			elapsed := mge.ActiveElapsed() - startedActive
 			if elapsed > 0 {
 				remaining -= elapsed

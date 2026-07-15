@@ -717,6 +717,7 @@
                   },
                   "timeout_ms": {
                     "description": "Maximum wait in milliseconds; defaults to the action timeout.",
+                    "maximum": 3600000,
                     "type": "integer"
                   },
                   "url_contains": {
@@ -1014,7 +1015,8 @@
                     "type": "string"
                   },
                   "wait_ms": {
-                    "description": "How long to wait for the dialog to appear (default 5000).",
+                    "description": "How long to wait for the dialog to appear (default 5000; maximum 3600000).",
+                    "maximum": 3600000,
                     "type": "integer"
                   }
                 },
@@ -1131,7 +1133,8 @@
               "params": {
                 "properties": {
                   "duration_ms": {
-                    "description": "Press duration in milliseconds; must be greater than zero.",
+                    "description": "Press duration in milliseconds; must be greater than zero and at most 3600000.",
+                    "maximum": 3600000,
                     "type": "integer"
                   }
                 },
@@ -2134,6 +2137,7 @@
                   },
                   "timeout_ms": {
                     "description": "Maximum wait in milliseconds; defaults to 10000.",
+                    "maximum": 3600000,
                     "type": "integer"
                   },
                   "url": {
@@ -2266,6 +2270,7 @@
                   },
                   "timeout_ms": {
                     "description": "Maximum wait in milliseconds.",
+                    "maximum": 3600000,
                     "type": "integer"
                   },
                   "url_contains": {
@@ -3101,7 +3106,8 @@
                     "type": "integer"
                   },
                   "timeout_ms": {
-                    "description": "Per-call deadline in milliseconds; zero or greater.",
+                    "description": "Per-call deadline in milliseconds; zero through 3600000.",
+                    "maximum": 3600000,
                     "type": "integer"
                   }
                 },
@@ -3153,7 +3159,8 @@
                     "type": "integer"
                   },
                   "timeout_ms": {
-                    "description": "Per-call deadline in milliseconds; zero or greater.",
+                    "description": "Per-call deadline in milliseconds; zero through 3600000.",
+                    "maximum": 3600000,
                     "type": "integer"
                   }
                 },
@@ -3205,7 +3212,8 @@
                     "type": "integer"
                   },
                   "timeout_ms": {
-                    "description": "Per-call deadline in milliseconds; zero or greater.",
+                    "description": "Per-call deadline in milliseconds; zero through 3600000.",
+                    "maximum": 3600000,
                     "type": "integer"
                   }
                 },
@@ -3257,7 +3265,8 @@
                     "type": "integer"
                   },
                   "timeout_ms": {
-                    "description": "Per-call deadline in milliseconds; zero or greater.",
+                    "description": "Per-call deadline in milliseconds; zero through 3600000.",
+                    "maximum": 3600000,
                     "type": "integer"
                   }
                 },
@@ -3492,7 +3501,8 @@
                     "type": "string"
                   },
                   "timeout_ms": {
-                    "description": "Per-run timeout in milliseconds; falls back to config.java_vuser.action_timeout_ms.",
+                    "description": "Per-run timeout in milliseconds (maximum 3600000); falls back to config.java_vuser.action_timeout_ms.",
+                    "maximum": 3600000,
                     "type": "integer"
                   }
                 },
@@ -5844,7 +5854,8 @@
               "params": {
                 "properties": {
                   "timeout_ms": {
-                    "description": "Receive timeout in milliseconds; zero or greater.",
+                    "description": "Receive timeout in milliseconds; zero through 3600000.",
+                    "maximum": 3600000,
                     "type": "integer"
                   }
                 },
@@ -5951,6 +5962,8 @@
           "type": "object"
         },
         "max_redirects": {
+          "maximum": 50,
+          "minimum": -1,
           "type": "integer"
         },
         "metadata": {
@@ -5987,6 +6000,8 @@
           "type": "boolean"
         },
         "timeout_ms": {
+          "maximum": 3600000,
+          "minimum": 0,
           "type": "integer"
         },
         "type": {
@@ -6407,9 +6422,13 @@
       "additionalProperties": false,
       "properties": {
         "stable_ms": {
+          "maximum": 3600000,
+          "minimum": 0,
           "type": "integer"
         },
         "timeout_ms": {
+          "maximum": 3600000,
+          "minimum": 0,
           "type": "integer"
         },
         "type": {
@@ -6609,6 +6628,8 @@
           "type": "integer"
         },
         "query_timeout_ms": {
+          "maximum": 3600000,
+          "minimum": 0,
           "type": "integer"
         },
         "read_only": {
@@ -6642,12 +6663,16 @@
           "type": "boolean"
         },
         "max_retries": {
+          "maximum": 10,
+          "minimum": 0,
           "type": "integer"
         },
         "retry_backoff": {
           "type": "string"
         },
         "retry_delay_ms": {
+          "maximum": 3600000,
+          "minimum": 0,
           "type": "integer"
         },
         "snapshot_on_error": {
@@ -6796,6 +6821,8 @@
           "type": "array"
         },
         "timeout_ms": {
+          "maximum": 3600000,
+          "minimum": 0,
           "type": "integer"
         },
         "use_reflection": {
@@ -7071,6 +7098,8 @@
       "additionalProperties": false,
       "properties": {
         "action_timeout_ms": {
+          "maximum": 3600000,
+          "minimum": 0,
           "type": "integer"
         },
         "classpath": {
@@ -7092,6 +7121,8 @@
           "type": "string"
         },
         "startup_timeout_ms": {
+          "maximum": 3600000,
+          "minimum": 0,
           "type": "integer"
         },
         "work_dir": {
@@ -7294,6 +7325,8 @@
           "type": "integer"
         },
         "jitter_ms": {
+          "maximum": 3600000,
+          "minimum": 0,
           "type": "integer"
         },
         "latency_ms": {
@@ -7308,6 +7341,8 @@
           "type": "string"
         },
         "packet_loss_pct": {
+          "maximum": 100,
+          "minimum": 0,
           "type": "number"
         },
         "preset": {
@@ -7328,6 +7363,8 @@
           "type": "integer"
         },
         "jitter_ms": {
+          "maximum": 3600000,
+          "minimum": 0,
           "type": "integer"
         },
         "latency_ms": {
@@ -7339,6 +7376,8 @@
           "type": "string"
         },
         "packet_loss_pct": {
+          "maximum": 100,
+          "minimum": 0,
           "type": "number"
         },
         "preset": {
@@ -7363,21 +7402,33 @@
       "additionalProperties": false,
       "properties": {
         "delay_ms": {
+          "maximum": 3600000,
+          "minimum": 0,
           "type": "integer"
         },
         "interval_ms": {
+          "maximum": 3600000,
+          "minimum": 0,
           "type": "integer"
         },
         "max_delay_ms": {
+          "maximum": 3600000,
+          "minimum": 0,
           "type": "integer"
         },
         "max_interval_ms": {
+          "maximum": 3600000,
+          "minimum": 0,
           "type": "integer"
         },
         "min_delay_ms": {
+          "maximum": 3600000,
+          "minimum": 0,
           "type": "integer"
         },
         "min_interval_ms": {
+          "maximum": 3600000,
+          "minimum": 0,
           "type": "integer"
         },
         "tps": {
@@ -7814,9 +7865,13 @@
           "type": "string"
         },
         "buffer_size_seconds": {
+          "maximum": 3600,
+          "minimum": 0,
           "type": "integer"
         },
         "fixed_bitrate_kbps": {
+          "maximum": 100000000,
+          "minimum": 0,
           "type": "integer"
         },
         "mode": {
@@ -7856,21 +7911,33 @@
           "type": "boolean"
         },
         "limit_ms": {
+          "maximum": 3600000,
+          "minimum": 0,
           "type": "number"
         },
         "max_ms": {
+          "maximum": 3600000,
+          "minimum": 0,
           "type": "number"
         },
         "mean_ms": {
+          "maximum": 3600000,
+          "minimum": 0,
           "type": "number"
         },
         "min_ms": {
+          "maximum": 3600000,
+          "minimum": 0,
           "type": "number"
         },
         "multiplier": {
+          "maximum": 100,
+          "minimum": 0,
           "type": "number"
         },
         "std_ms": {
+          "maximum": 3600000,
+          "minimum": 0,
           "type": "number"
         },
         "type": {
@@ -7883,6 +7950,8 @@
       "additionalProperties": false,
       "properties": {
         "timeout_ms": {
+          "maximum": 3600000,
+          "minimum": 0,
           "type": "integer"
         },
         "type": {
@@ -7951,6 +8020,8 @@
           "type": "string"
         },
         "read_timeout_ms": {
+          "maximum": 3600000,
+          "minimum": 0,
           "type": "integer"
         },
         "reconnect": {
@@ -7960,6 +8031,8 @@
           "type": "string"
         },
         "write_timeout_ms": {
+          "maximum": 3600000,
+          "minimum": 0,
           "type": "integer"
         }
       },

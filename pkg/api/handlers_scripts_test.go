@@ -4091,6 +4091,7 @@ func TestAuthoringSessionLifecyclePersistsDraftReviewState(t *testing.T) {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
 	defer store.Close()
+	seedAuthoringScriptProjects(t, store, "project-authoring")
 	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
 	body := []byte(`{
 		"project_id":"project-authoring",
@@ -4644,6 +4645,7 @@ func TestAuthoringSessionRejectsClientManagedApprovalStatuses(t *testing.T) {
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
 	defer store.Close()
+	seedAuthoringScriptProjects(t, store, "project-authoring")
 	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
 	validDraft := `"draft":{"name":"Draft","version":"1.0.0","protocol":"http","project_id":"project-authoring","config":{"base_url":"https://example.test"},"actions":[{"name":"Home","type":"request","target":"/"}]}`
 	for _, status := range []string{"approving", "approved"} {
@@ -4744,6 +4746,7 @@ func TestAuthoringMutationsAreFencedWhileApprovalIsInProgress(t *testing.T) {
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
 	defer store.Close()
+	seedAuthoringScriptProjects(t, store, "project-authoring")
 	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
 	session := &storage.AuthoringSession{
 		ID: "approval-in-progress", ProjectID: "project-authoring", Source: "test", Name: "Draft", Status: "approving",
@@ -4785,6 +4788,7 @@ func TestAuthoringCorrelationApplyCannotMutateApprovalStates(t *testing.T) {
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
 	defer store.Close()
+	seedAuthoringScriptProjects(t, store, "project-authoring")
 	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
 
 	applyBodies := map[string]string{
@@ -4901,6 +4905,7 @@ func TestApplyAuthoringCorrelationPersistsDraftAndReviewState(t *testing.T) {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
 	defer store.Close()
+	seedAuthoringScriptProjects(t, store, "project-authoring")
 	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
 	body := []byte(`{
 		"project_id":"project-authoring",
@@ -4972,6 +4977,7 @@ func TestBatchAuthoringCorrelationAppliesHighConfidenceAndBlocksMediumRisk(t *te
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
 	defer store.Close()
+	seedAuthoringScriptProjects(t, store, "project-authoring")
 	server := NewServer(ServerConfig{Store: store})
 	body := []byte(`{
 		"project_id":"project-authoring",

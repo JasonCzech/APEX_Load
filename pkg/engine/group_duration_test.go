@@ -12,7 +12,10 @@ import (
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
-var rejectScaleInit atomic.Bool
+var (
+	rejectScaleInit      atomic.Bool
+	successfulScaleInits atomic.Int64
+)
 
 type scaleInitFailureProtocol struct{}
 
@@ -21,6 +24,7 @@ func (*scaleInitFailureProtocol) Init(context.Context, map[string]any) error {
 	if rejectScaleInit.Load() {
 		return errors.New("injected init failure")
 	}
+	successfulScaleInits.Add(1)
 	return nil
 }
 func (*scaleInitFailureProtocol) Execute(_ context.Context, action *protocol.Action) (*protocol.Result, error) {
@@ -284,9 +288,41 @@ func TestSleepActiveFreezesWhilePaused(t *testing.T) {
 	}
 }
 
+func TestSleepActiveCanceledAtTimerBoundaryReturnsPromptly(t *testing.T) {
+	ready := make(chan struct{})
+	close(ready)
+	mge := &MultiGroupEngine{
+		baseCtx:            context.Background(),
+		controlsReady:      true,
+		pauseCh:            ready,
+		pauseChanged:       make(chan struct{}),
+		runStartedAt:       time.Now(),
+		baseTargetDuration: time.Second,
+		targetDuration:     time.Second,
+	}
+	// A pre-cancelled context and an effectively-expired timer make both select
+	// cases eligible. Repeating exercises the cancellation branch that used to
+	// Stop and then drain the synchronous Go 1.23+ timer channel indefinitely.
+	for i := 0; i < 256; i++ {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		done := make(chan struct{})
+		go func() {
+			mge.SleepActive(ctx, time.Nanosecond)
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(250 * time.Millisecond):
+			t.Fatalf("SleepActive deadlocked at timer/cancellation boundary on iteration %d", i)
+		}
+	}
+}
+
 func TestScaleVUsersRollsBackWhenProtocolInitFails(t *testing.T) {
 	rejectScaleInit.Store(false)
 	defer rejectScaleInit.Store(false)
+	successfulScaleInits.Store(0)
 	mge, err := NewMultiGroup(MultiGroupConfig{
 		Groups: []GroupConfig{{
 			Name: "group",
@@ -315,6 +351,13 @@ func TestScaleVUsersRollsBackWhenProtocolInitFails(t *testing.T) {
 		t.Fatal("engine did not become ready")
 	}
 	waitForActiveVUsers(t, mge, 1)
+	deadline := time.Now().Add(time.Second)
+	for successfulScaleInits.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if successfulScaleInits.Load() == 0 {
+		t.Fatal("initial vuser protocol did not finish initialization")
+	}
 
 	rejectScaleInit.Store(true)
 	if err := mge.ScaleVUsers("group", 2); err == nil || !strings.Contains(err.Error(), "injected init failure") {

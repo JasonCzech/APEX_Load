@@ -50,8 +50,15 @@ func (w *WebSocket) Name() string { return "websocket" }
 
 func (w *WebSocket) Init(_ context.Context, config map[string]any) error {
 	w.baseURL, _ = stringConfig(config, "base_url")
-	w.readTimeout = durationConfig(config, "websocket_read_timeout_ms", defaultReadTimeout)
-	w.writeTimeout = durationConfig(config, "websocket_write_timeout_ms", defaultWriteTimeout)
+	var err error
+	w.readTimeout, err = protocol.BoundedMilliseconds(config["websocket_read_timeout_ms"], defaultReadTimeout, dsl.MaxConfiguredProtocolTimeout)
+	if err != nil {
+		return fmt.Errorf("websocket read_timeout_ms %w", err)
+	}
+	w.writeTimeout, err = protocol.BoundedMilliseconds(config["websocket_write_timeout_ms"], defaultWriteTimeout, dsl.MaxConfiguredProtocolTimeout)
+	if err != nil {
+		return fmt.Errorf("websocket write_timeout_ms %w", err)
+	}
 	w.maxMessageSize = int64Config(config, "websocket_max_message_size", defaultMaxMessageSize)
 	if w.maxMessageSize > dsl.MaxWebSocketMessageBytes {
 		return fmt.Errorf("websocket_max_message_size exceeds %d byte limit", dsl.MaxWebSocketMessageBytes)
@@ -75,6 +82,9 @@ func (w *WebSocket) Init(_ context.Context, config map[string]any) error {
 }
 
 func (w *WebSocket) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
+	if action == nil {
+		return &protocol.Result{StartTime: time.Now(), ErrorMessage: "websocket action is required"}, nil
+	}
 	result := &protocol.Result{
 		ActionName:     action.Name,
 		StartTime:      time.Now(),
@@ -89,7 +99,7 @@ func (w *WebSocket) Execute(ctx context.Context, action *protocol.Action) (*prot
 	case "ws_send":
 		err = w.send(ctx, action, result)
 	case "ws_receive":
-		err = w.receive(action, result)
+		err = w.receive(ctx, action, result)
 	case "ws_ping":
 		err = w.ping(ctx, action, result)
 	case "ws_close":
@@ -216,17 +226,34 @@ func (w *WebSocket) send(ctx context.Context, action *protocol.Action, result *p
 	return nil
 }
 
-func (w *WebSocket) receive(action *protocol.Action, result *protocol.Result) error {
+func (w *WebSocket) receive(ctx context.Context, action *protocol.Action, result *protocol.Result) error {
 	conn, err := w.currentConn()
 	if err != nil {
 		return err
 	}
-	timeout := actionTimeout(action, w.readTimeout)
+	timeout, err := actionTimeout(action, w.readTimeout)
+	if err != nil {
+		return err
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	deadline := time.Now().Add(timeout)
+	if contextDeadline, ok := ctx.Deadline(); ok && contextDeadline.Before(deadline) {
+		deadline = contextDeadline
+	}
 	if timeout > 0 {
-		if err := conn.SetReadDeadline(time.Now().Add(timeout)); err != nil {
+		if err := conn.SetReadDeadline(deadline); err != nil {
 			return err
 		}
 	}
+	stopCancellationWakeup := context.AfterFunc(ctx, func() {
+		// gorilla/websocket permits concurrent Close/SetReadDeadline with a
+		// blocked reader. Advancing the deadline wakes ReadMessage promptly when
+		// a run is cancelled even when the action timeout is much longer.
+		_ = conn.SetReadDeadline(time.Now())
+	})
+	defer stopCancellationWakeup()
 	messageType, message, err := conn.ReadMessage()
 	if err != nil {
 		w.discardConn(conn)
@@ -242,7 +269,10 @@ func (w *WebSocket) receive(action *protocol.Action, result *protocol.Result) er
 	for _, extractor := range action.Extractors {
 		value, err := extract(extractor, []byte(result.ResponseBody))
 		if err == nil {
-			result.Extractions[extractor.Name] = value
+			if err := protocol.StoreExtraction(result, extractor.Name, value); err != nil {
+				result.Extractions = nil
+				return fmt.Errorf("websocket extractor %q output rejected: %w", extractor.Name, err)
+			}
 		}
 	}
 	for _, assertion := range action.Assertions {
@@ -722,19 +752,19 @@ func evaluate(assertion protocol.Assertion, result *protocol.Result, body []byte
 	return nil
 }
 
-func actionTimeout(action *protocol.Action, fallback time.Duration) time.Duration {
-	if value, ok := intParamOK(action.Params, "timeout_ms"); ok {
-		return time.Duration(value) * time.Millisecond
+func actionTimeout(action *protocol.Action, fallback time.Duration) (time.Duration, error) {
+	if action == nil || action.Params == nil {
+		return fallback, nil
 	}
-	return fallback
-}
-
-func durationConfig(config map[string]any, key string, fallback time.Duration) time.Duration {
-	value, ok := int64ConfigOK(config, key)
-	if !ok || value <= 0 {
-		return fallback
+	value, present := action.Params["timeout_ms"]
+	if !present {
+		return fallback, nil
 	}
-	return time.Duration(value) * time.Millisecond
+	timeout, err := protocol.BoundedMilliseconds(value, fallback, dsl.MaxConfiguredProtocolTimeout)
+	if err != nil {
+		return 0, fmt.Errorf("websocket action timeout_ms %w", err)
+	}
+	return timeout, nil
 }
 
 func int64Config(config map[string]any, key string, fallback int64) int64 {

@@ -217,9 +217,10 @@ func TestMetricsCollector_NonEmptyWindowUnaffected(t *testing.T) {
 	mc.RecordTransaction("checkout", 8*time.Millisecond, false, "buyers")
 
 	mc.Start(20 * time.Millisecond)
-	defer mc.Stop()
-
-	time.Sleep(90 * time.Millisecond)
+	// Stop synchronously drains the buffered results and publishes the final
+	// populated window. Sleeping for a fixed number of ticker intervals made
+	// this assertion depend on scheduler latency under a busy package run.
+	mc.Stop()
 
 	if got := mc.TotalTransactions(); got != 1 {
 		t.Errorf("total transactions = %d, want 1", got)

@@ -244,11 +244,30 @@ func (s *SQLiteStore) SaveApplicationRepository(repository *ApplicationRepositor
 		repository.CreatedAt = time.Now()
 	}
 	repository.UpdatedAt = time.Now()
-	_, err := s.db.Exec(`INSERT INTO application_repositories (id, domain_id, name, description, created_at, updated_at)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := lockNamedPlacementRow(tx, "domains", repository.DomainID, "application repository domain"); err != nil {
+		return err
+	}
+	result, err := tx.Exec(`INSERT INTO application_repositories (id, domain_id, name, description, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET name=excluded.name, description=excluded.description, updated_at=excluded.updated_at`,
+		ON CONFLICT(id) DO UPDATE SET name=excluded.name, description=excluded.description, updated_at=excluded.updated_at
+		WHERE application_repositories.domain_id = excluded.domain_id`,
 		repository.ID, repository.DomainID, strings.TrimSpace(repository.Name), strings.TrimSpace(repository.Description), repository.CreatedAt, repository.UpdatedAt)
-	return err
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return errors.New("application repository id belongs to another domain")
+	}
+	return tx.Commit()
 }
 
 // UpdateApplicationRepositoryIfUnchanged preserves immutable domain ownership
@@ -320,11 +339,95 @@ func (s *SQLiteStore) SaveRepositoryCategory(category *RepositoryCategory) error
 		category.CreatedAt = time.Now()
 	}
 	category.UpdatedAt = time.Now()
-	_, err := s.db.Exec(`INSERT INTO repository_categories (id, domain_id, repository_id, name, description, sort_order, created_at, updated_at)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := lockRepositoryPlacement(tx, category.DomainID, category.RepositoryID); err != nil {
+		return err
+	}
+	result, err := tx.Exec(`INSERT INTO repository_categories (id, domain_id, repository_id, name, description, sort_order, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET name=excluded.name, description=excluded.description, sort_order=excluded.sort_order, updated_at=excluded.updated_at`,
+		ON CONFLICT(id) DO UPDATE SET name=excluded.name, description=excluded.description, sort_order=excluded.sort_order, updated_at=excluded.updated_at
+		WHERE repository_categories.domain_id = excluded.domain_id
+			AND repository_categories.repository_id = excluded.repository_id`,
 		category.ID, category.DomainID, category.RepositoryID, strings.TrimSpace(category.Name), strings.TrimSpace(category.Description), category.SortOrder, category.CreatedAt, category.UpdatedAt)
-	return err
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return errors.New("repository category id belongs to another hierarchy")
+	}
+	return tx.Commit()
+}
+
+func lockNamedPlacementRow(tx *storeTx, table, id, label string) error {
+	result, err := tx.Exec(`UPDATE `+table+` SET updated_at = updated_at WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return fmt.Errorf("%s %q does not exist", label, id)
+	}
+	return nil
+}
+
+// lockRepositoryPlacement validates the composite domain/repository ownership
+// invariant under the same transaction as the dependent write. Individual
+// foreign keys cannot express that both identifiers belong to one hierarchy.
+func lockRepositoryPlacement(tx *storeTx, domainID, repositoryID string) error {
+	if err := lockNamedPlacementRow(tx, "domains", domainID, "domain"); err != nil {
+		return err
+	}
+	result, err := tx.Exec(`UPDATE application_repositories SET updated_at = updated_at WHERE id = ? AND domain_id = ?`, repositoryID, domainID)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return errors.New("application repository does not belong to domain")
+	}
+	return nil
+}
+
+func lockProjectPlacement(tx *storeTx, domainID, categoryID string) error {
+	if err := lockNamedPlacementRow(tx, "domains", domainID, "project domain"); err != nil {
+		return err
+	}
+	var repositoryID string
+	if err := tx.QueryRow(`SELECT repository_id FROM repository_categories WHERE id = ? AND domain_id = ?`, categoryID, domainID).Scan(&repositoryID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("project category does not belong to domain")
+		}
+		return err
+	}
+	if err := lockRepositoryPlacement(tx, domainID, repositoryID); err != nil {
+		return err
+	}
+	result, err := tx.Exec(`UPDATE repository_categories SET updated_at = updated_at WHERE id = ? AND domain_id = ? AND repository_id = ?`, categoryID, domainID, repositoryID)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return errors.New("project category placement changed concurrently")
+	}
+	return nil
 }
 
 // UpdateRepositoryCategoryIfUnchanged preserves the immutable domain/repository
@@ -358,6 +461,9 @@ func (s *SQLiteStore) UpdateRepositoryCategoryIfUnchanged(category *RepositoryCa
 	}
 	category.DomainID = normalizeDomainID(currentDomainID)
 	category.RepositoryID = normalizeRepositoryID(currentRepositoryID)
+	if err := lockRepositoryPlacement(tx, category.DomainID, category.RepositoryID); err != nil {
+		return false, err
+	}
 	category.UpdatedAt = time.Now()
 	result, err := tx.Exec(`UPDATE repository_categories SET name = ?, description = ?, sort_order = ?, updated_at = ?
 		WHERE id = ? AND domain_id = ? AND repository_id = ? AND CAST(updated_at AS TEXT) = ?`, strings.TrimSpace(category.Name), strings.TrimSpace(category.Description), category.SortOrder, category.UpdatedAt, category.ID, category.DomainID, category.RepositoryID, currentUpdatedRaw)
@@ -415,22 +521,64 @@ func (s *SQLiteStore) DeleteRepositoryCategory(id string) error {
 }
 
 func (s *SQLiteStore) SaveApplication(application *Application) error {
+	if application == nil {
+		return errors.New("application is required")
+	}
+	application.ID = strings.TrimSpace(application.ID)
 	if application.ID == "" {
 		return errors.New("application id is required")
 	}
-	application.ProjectID = normalizeProjectID(application.ProjectID)
-	if strings.TrimSpace(application.Name) == "" {
+	application.ProjectID = normalizeProjectID(strings.TrimSpace(application.ProjectID))
+	application.Name = strings.TrimSpace(application.Name)
+	if application.Name == "" {
 		return errors.New("application name is required")
 	}
 	if application.CreatedAt.IsZero() {
 		application.CreatedAt = time.Now()
 	}
 	application.UpdatedAt = time.Now()
-	_, err := s.db.Exec(`INSERT INTO applications (id, project_id, name, created_at, updated_at)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := lockRequiredPlacementParent(tx,
+		`UPDATE projects SET updated_at = updated_at WHERE id = ?`, application.ProjectID, "application", "project"); err != nil {
+		return err
+	}
+	locked, err := tx.Exec(`UPDATE applications SET updated_at = updated_at WHERE id = ?`, application.ID)
+	if err != nil {
+		return err
+	}
+	affected, err := locked.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 1 {
+		var currentProjectID string
+		if err := tx.QueryRow(`SELECT COALESCE(project_id, '') FROM applications WHERE id = ?`, application.ID).Scan(&currentProjectID); err != nil {
+			return err
+		}
+		if normalizeProjectID(currentProjectID) != application.ProjectID {
+			return fmt.Errorf("application %q already belongs to project %q, not %q", application.ID, normalizeProjectID(currentProjectID), application.ProjectID)
+		}
+	}
+	result, err := tx.Exec(`INSERT INTO applications (id, project_id, name, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET name=excluded.name, updated_at=excluded.updated_at`,
+		ON CONFLICT(id) DO UPDATE SET name=excluded.name, updated_at=excluded.updated_at
+		WHERE COALESCE(NULLIF(applications.project_id, ''), '`+DefaultProjectID+`')=excluded.project_id`,
 		application.ID, application.ProjectID, application.Name, application.CreatedAt, application.UpdatedAt)
-	return err
+	if err != nil {
+		return err
+	}
+	affected, err = result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return fmt.Errorf("application %q belongs to another project", application.ID)
+	}
+	return tx.Commit()
 }
 
 // UpdateApplicationIfUnchanged updates the application name only when the
@@ -506,21 +654,50 @@ func (s *SQLiteStore) ListApplications() ([]*Application, error) {
 }
 
 func (s *SQLiteStore) DeleteApplication(id string) error {
+	id = strings.TrimSpace(id)
 	if id == LegacyApplicationID {
 		return errors.New("legacy application cannot be deleted")
 	}
-	var count int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM tests WHERE application_id = ?`, id).Scan(&count); err != nil {
-		return err
-	}
-	if count > 0 {
-		return errors.New("application has test results")
+	if id == "" {
+		return errors.New("application id is required")
 	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+	var projectID string
+	if err := tx.QueryRow(`SELECT COALESCE(project_id, '') FROM applications WHERE id = ?`, id).Scan(&projectID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+	projectID = normalizeProjectID(projectID)
+	// Match the project -> application -> release lock order used by every
+	// hierarchy writer so a concurrent child insert cannot outlive this delete.
+	if _, err := tx.Exec(`UPDATE projects SET updated_at = updated_at WHERE id = ?`, projectID); err != nil {
+		return err
+	}
+	if err := lockRequiredPlacementParent(tx,
+		`UPDATE applications SET updated_at = updated_at WHERE id = ?`, id, "delete application", "application"); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE releases SET updated_at = updated_at WHERE application_id = ?`, id); err != nil {
+		return err
+	}
+	var dependentCount int
+	if err := tx.QueryRow(`SELECT
+		(SELECT COUNT(*) FROM tests WHERE application_id = ? OR release_id IN (SELECT id FROM releases WHERE application_id = ?)) +
+		(SELECT COUNT(*) FROM external_result_imports WHERE release_id IN (SELECT id FROM releases WHERE application_id = ?)) +
+		(SELECT COUNT(*) FROM scenario_schedules WHERE release_id IN (SELECT id FROM releases WHERE application_id = ?)) +
+		(SELECT COUNT(*) FROM release_sla_waivers WHERE release_id IN (SELECT id FROM releases WHERE application_id = ?))`,
+		id, id, id, id, id).Scan(&dependentCount); err != nil {
+		return err
+	}
+	if dependentCount > 0 {
+		return errors.New("application has associated results, schedules, or governance records")
+	}
 	if _, err := tx.Exec(`DELETE FROM releases WHERE application_id = ?`, id); err != nil {
 		return err
 	}
@@ -531,35 +708,89 @@ func (s *SQLiteStore) DeleteApplication(id string) error {
 }
 
 func (s *SQLiteStore) SaveRelease(release *Release) error {
+	if release == nil {
+		return errors.New("release is required")
+	}
+	release.ID = strings.TrimSpace(release.ID)
 	if release.ID == "" {
 		return errors.New("release id is required")
 	}
-	release.ApplicationID = normalizeApplicationID(release.ApplicationID)
-	if strings.TrimSpace(release.ProjectID) == "" {
-		if application, err := s.GetApplication(release.ApplicationID); err == nil && application != nil {
-			release.ProjectID = application.ProjectID
-		}
+	release.ApplicationID = normalizeApplicationID(strings.TrimSpace(release.ApplicationID))
+	if release.ApplicationID == "" {
+		return errors.New("release application id is required")
 	}
-	release.ProjectID = normalizeProjectID(release.ProjectID)
-	application, err := s.GetApplication(release.ApplicationID)
-	if err != nil {
+	var applicationProjectID string
+	if err := s.db.QueryRow(`SELECT COALESCE(project_id, '') FROM applications WHERE id = ?`, release.ApplicationID).Scan(&applicationProjectID); err != nil {
 		return fmt.Errorf("load release application: %w", err)
 	}
-	if normalizeProjectID(application.ProjectID) != release.ProjectID {
+	if strings.TrimSpace(release.ProjectID) == "" {
+		release.ProjectID = applicationProjectID
+	}
+	release.ProjectID = normalizeProjectID(strings.TrimSpace(release.ProjectID))
+	if normalizeProjectID(applicationProjectID) != release.ProjectID {
 		return errors.New("release project does not match application project")
 	}
-	if strings.TrimSpace(release.Name) == "" {
+	release.Name = strings.TrimSpace(release.Name)
+	if release.Name == "" {
 		return errors.New("release name is required")
 	}
 	if release.CreatedAt.IsZero() {
 		release.CreatedAt = time.Now()
 	}
 	release.UpdatedAt = time.Now()
-	_, err = s.db.Exec(`INSERT INTO releases (id, application_id, project_id, name, created_at, updated_at, archived_at)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := lockRequiredPlacementParent(tx,
+		`UPDATE projects SET updated_at = updated_at WHERE id = ?`, release.ProjectID, "release", "project"); err != nil {
+		return err
+	}
+	if err := lockRequiredPlacementParent(tx,
+		`UPDATE applications SET updated_at = updated_at WHERE id = ?`, release.ApplicationID, "release", "application"); err != nil {
+		return err
+	}
+	if err := tx.QueryRow(`SELECT COALESCE(project_id, '') FROM applications WHERE id = ?`, release.ApplicationID).Scan(&applicationProjectID); err != nil {
+		return err
+	}
+	if normalizeProjectID(applicationProjectID) != release.ProjectID {
+		return errors.New("release project does not match application project")
+	}
+	locked, err := tx.Exec(`UPDATE releases SET updated_at = updated_at WHERE id = ?`, release.ID)
+	if err != nil {
+		return err
+	}
+	affected, err := locked.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 1 {
+		var currentApplicationID, currentProjectID string
+		if err := tx.QueryRow(`SELECT application_id, COALESCE(project_id, '') FROM releases WHERE id = ?`, release.ID).Scan(&currentApplicationID, &currentProjectID); err != nil {
+			return err
+		}
+		if currentApplicationID != release.ApplicationID || normalizeProjectID(currentProjectID) != release.ProjectID {
+			return fmt.Errorf("release %q already belongs to application %q in project %q", release.ID, currentApplicationID, normalizeProjectID(currentProjectID))
+		}
+	}
+	result, err := tx.Exec(`INSERT INTO releases (id, application_id, project_id, name, created_at, updated_at, archived_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET name=excluded.name, updated_at=excluded.updated_at, archived_at=excluded.archived_at`,
+		ON CONFLICT(id) DO UPDATE SET name=excluded.name, updated_at=excluded.updated_at, archived_at=excluded.archived_at
+		WHERE releases.application_id=excluded.application_id
+		AND COALESCE(NULLIF(releases.project_id, ''), '`+DefaultProjectID+`')=excluded.project_id`,
 		release.ID, release.ApplicationID, release.ProjectID, release.Name, release.CreatedAt, release.UpdatedAt, release.ArchivedAt)
-	return err
+	if err != nil {
+		return err
+	}
+	affected, err = result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return fmt.Errorf("release %q belongs to another application or project", release.ID)
+	}
+	return tx.Commit()
 }
 
 // UpdateReleaseIfUnchanged updates editor-owned fields while preserving the
@@ -673,6 +904,7 @@ func (s *SQLiteStore) ListReleasesByProject(projectID string, includeArchived bo
 }
 
 func (s *SQLiteStore) ArchiveRelease(id string) error {
+	id = strings.TrimSpace(id)
 	if id == LegacyReleaseID {
 		return errors.New("legacy release cannot be archived")
 	}
@@ -693,11 +925,14 @@ func (s *SQLiteStore) ArchiveRelease(id string) error {
 		return sql.ErrNoRows
 	}
 	var count int
-	if err := tx.QueryRow(`SELECT COUNT(*) FROM tests WHERE release_id = ?`, id).Scan(&count); err != nil {
+	if err := tx.QueryRow(`SELECT
+		(SELECT COUNT(*) FROM tests WHERE release_id = ?) +
+		(SELECT COUNT(*) FROM external_result_imports WHERE release_id = ?) +
+		(SELECT COUNT(*) FROM scenario_schedules WHERE release_id = ?)`, id, id, id).Scan(&count); err != nil {
 		return err
 	}
 	if count > 0 {
-		return errors.New("release has associated results; archive or delete those results first")
+		return errors.New("release has associated results or schedules; remove those references first")
 	}
 	now := time.Now()
 	if _, err := tx.Exec(`UPDATE releases SET archived_at = ?, updated_at = ? WHERE id = ?`, now, now, id); err != nil {
@@ -707,18 +942,54 @@ func (s *SQLiteStore) ArchiveRelease(id string) error {
 }
 
 func (s *SQLiteStore) DeleteRelease(id string) error {
+	id = strings.TrimSpace(id)
 	if id == LegacyReleaseID {
 		return errors.New("legacy release cannot be deleted")
 	}
-	var count int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM tests WHERE release_id = ?`, id).Scan(&count); err != nil {
+	if id == "" {
+		return errors.New("release id is required")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
 		return err
 	}
-	if count > 0 {
-		return errors.New("release has associated results; archive or delete those results first")
+	defer tx.Rollback()
+	var applicationID, projectID string
+	if err := tx.QueryRow(`SELECT application_id, COALESCE(project_id, '') FROM releases WHERE id = ?`, id).Scan(&applicationID, &projectID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return err
 	}
-	_, err := s.db.Exec(`DELETE FROM releases WHERE id = ?`, id)
-	return err
+	projectID = normalizeProjectID(projectID)
+	// Use the same project -> application -> release order as SaveRelease and
+	// child writers. Once the release row is held, every reference check and the
+	// delete occur in this transaction.
+	if _, err := tx.Exec(`UPDATE projects SET updated_at = updated_at WHERE id = ?`, projectID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE applications SET updated_at = updated_at WHERE id = ?`, applicationID); err != nil {
+		return err
+	}
+	if err := lockRequiredPlacementParent(tx,
+		`UPDATE releases SET updated_at = updated_at WHERE id = ?`, id, "delete release", "release"); err != nil {
+		return err
+	}
+	var dependentCount int
+	if err := tx.QueryRow(`SELECT
+		(SELECT COUNT(*) FROM tests WHERE release_id = ?) +
+		(SELECT COUNT(*) FROM external_result_imports WHERE release_id = ?) +
+		(SELECT COUNT(*) FROM scenario_schedules WHERE release_id = ?) +
+		(SELECT COUNT(*) FROM release_sla_waivers WHERE release_id = ?)`, id, id, id, id).Scan(&dependentCount); err != nil {
+		return err
+	}
+	if dependentCount > 0 {
+		return errors.New("release has associated results, schedules, or governance records")
+	}
+	if _, err := tx.Exec(`DELETE FROM releases WHERE id = ?`, id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *SQLiteStore) SaveProject(project *Project) error {
@@ -738,11 +1009,22 @@ func (s *SQLiteStore) SaveProject(project *Project) error {
 	if err != nil {
 		return fmt.Errorf("marshal project settings: %w", err)
 	}
-	_, err = s.db.Exec(`INSERT INTO projects (id, domain_id, category_id, name, settings_json, created_at, updated_at)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := lockProjectPlacement(tx, project.DomainID, project.CategoryID); err != nil {
+		return err
+	}
+	_, err = tx.Exec(`INSERT INTO projects (id, domain_id, category_id, name, settings_json, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET domain_id=excluded.domain_id, category_id=excluded.category_id, name=excluded.name, settings_json=excluded.settings_json, updated_at=excluded.updated_at`,
 		project.ID, project.DomainID, project.CategoryID, project.Name, string(settingsJSON), project.CreatedAt, project.UpdatedAt)
-	return err
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // UpdateProjectIfUnchanged atomically applies an administrator edit only when
@@ -768,6 +1050,9 @@ func (s *SQLiteStore) UpdateProjectIfUnchanged(project *Project, expectedUpdated
 		return false, err
 	}
 	defer tx.Rollback()
+	if err := lockProjectPlacement(tx, project.DomainID, project.CategoryID); err != nil {
+		return false, err
+	}
 	var currentUpdatedAt time.Time
 	var currentUpdatedRaw string
 	if err := tx.QueryRow(`SELECT updated_at, CAST(updated_at AS TEXT) FROM projects WHERE id = ?`, project.ID).Scan(&currentUpdatedAt, &currentUpdatedRaw); err != nil {
@@ -1203,7 +1488,7 @@ func (s *SQLiteStore) SaveFolder(folder *Folder) error {
 	if err := validateFolderCategory(folder.Category); err != nil {
 		return err
 	}
-	folder.ProjectID = normalizeProjectID(folder.ProjectID)
+	folder.ProjectID = normalizeProjectID(strings.TrimSpace(folder.ProjectID))
 	if folder.ParentID != nil {
 		parentID := strings.TrimSpace(*folder.ParentID)
 		folder.ParentID = &parentID
@@ -1217,6 +1502,13 @@ func (s *SQLiteStore) SaveFolder(folder *Folder) error {
 		return err
 	}
 	defer tx.Rollback()
+	if err := lockRequiredPlacementParent(tx,
+		`UPDATE projects SET updated_at = updated_at WHERE id = ?`, folder.ProjectID, "folder", "project"); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE folders SET updated_at = updated_at WHERE id = ?`, folder.ID); err != nil {
+		return err
+	}
 
 	var existingProjectID string
 	err = tx.QueryRow(`SELECT project_id FROM folders WHERE id = ?`, folder.ID).Scan(&existingProjectID)
@@ -1270,6 +1562,22 @@ func (s *SQLiteStore) UpdateFolderIfUnchanged(folder *Folder, expectedUpdatedAt 
 		return false, err
 	}
 	defer tx.Rollback()
+	var placementProjectID string
+	if err := tx.QueryRow(`SELECT project_id FROM folders WHERE id = ?`, folder.ID).Scan(&placementProjectID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	placementProjectID = normalizeProjectID(strings.TrimSpace(placementProjectID))
+	if err := lockRequiredPlacementParent(tx,
+		`UPDATE projects SET updated_at = updated_at WHERE id = ?`, placementProjectID, "folder", "project"); err != nil {
+		return false, err
+	}
+	if err := lockRequiredPlacementParent(tx,
+		`UPDATE folders SET updated_at = updated_at WHERE id = ?`, folder.ID, "folder", "folder"); err != nil {
+		return false, err
+	}
 	var currentProjectID string
 	var currentUpdatedAt time.Time
 	var currentUpdatedRaw string
@@ -1279,7 +1587,7 @@ func (s *SQLiteStore) UpdateFolderIfUnchanged(folder *Folder, expectedUpdatedAt 
 		}
 		return false, err
 	}
-	if normalizeProjectID(currentProjectID) != normalizeProjectID(folder.ProjectID) || !currentUpdatedAt.Equal(expectedUpdatedAt) {
+	if normalizeProjectID(strings.TrimSpace(currentProjectID)) != normalizeProjectID(strings.TrimSpace(folder.ProjectID)) || !currentUpdatedAt.Equal(expectedUpdatedAt) {
 		return false, nil
 	}
 	folder.ProjectID = normalizeProjectID(currentProjectID)
@@ -1355,7 +1663,15 @@ func (s *SQLiteStore) MoveFolder(id string, newParentID *string) error {
 	if err := tx.QueryRow(`SELECT project_id FROM folders WHERE id = ?`, id).Scan(&projectID); err != nil {
 		return err
 	}
-	projectID = normalizeProjectID(projectID)
+	projectID = normalizeProjectID(strings.TrimSpace(projectID))
+	if err := lockRequiredPlacementParent(tx,
+		`UPDATE projects SET updated_at = updated_at WHERE id = ?`, projectID, "folder move", "project"); err != nil {
+		return err
+	}
+	if err := lockRequiredPlacementParent(tx,
+		`UPDATE folders SET updated_at = updated_at WHERE id = ?`, id, "folder move", "folder"); err != nil {
+		return err
+	}
 	if err := validateFolderParent(tx, id, projectID, newParentID); err != nil {
 		return err
 	}
@@ -1372,6 +1688,7 @@ func (s *SQLiteStore) MoveFolder(id string, newParentID *string) error {
 }
 
 type folderQueryer interface {
+	Exec(query string, args ...any) (sql.Result, error)
 	QueryRow(query string, args ...any) *sql.Row
 }
 
@@ -1385,6 +1702,10 @@ func validateFolderParent(queryer folderQueryer, folderID string, projectID stri
 	}
 	if parent == folderID {
 		return errors.New("folder cannot be moved into itself")
+	}
+	if err := lockRequiredPlacementParent(queryer,
+		`UPDATE folders SET updated_at = updated_at WHERE id = ?`, parent, "folder", "parent folder"); err != nil {
+		return err
 	}
 	var parentProjectID string
 	if err := queryer.QueryRow(`SELECT project_id FROM folders WHERE id = ?`, parent).Scan(&parentProjectID); err != nil {
@@ -1430,19 +1751,46 @@ func folderHasAncestor(queryer folderQueryer, folderID string, ancestorID string
 }
 
 func (s *SQLiteStore) DeleteFolder(id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return errors.New("folder id is required")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var projectID string
+	if err := tx.QueryRow(`SELECT project_id FROM folders WHERE id = ?`, id).Scan(&projectID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+	projectID = normalizeProjectID(strings.TrimSpace(projectID))
+	if err := lockRequiredPlacementParent(tx,
+		`UPDATE projects SET updated_at = updated_at WHERE id = ?`, projectID, "delete folder", "project"); err != nil {
+		return err
+	}
+	if err := lockRequiredPlacementParent(tx,
+		`UPDATE folders SET updated_at = updated_at WHERE id = ?`, id, "delete folder", "folder"); err != nil {
+		return err
+	}
 	var childCount, scriptCount, testCount int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM folders WHERE parent_id = ?`, id).Scan(&childCount); err != nil {
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM folders WHERE parent_id = ?`, id).Scan(&childCount); err != nil {
 		return err
 	}
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM scripts WHERE folder_id = ?`, id).Scan(&scriptCount); err != nil {
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM scripts WHERE folder_id = ?`, id).Scan(&scriptCount); err != nil {
 		return err
 	}
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM tests WHERE folder_id = ?`, id).Scan(&testCount); err != nil {
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM tests WHERE folder_id = ?`, id).Scan(&testCount); err != nil {
 		return err
 	}
 	if childCount+scriptCount+testCount > 0 {
 		return errors.New("folder is not empty")
 	}
-	_, err := s.db.Exec(`DELETE FROM folders WHERE id = ?`, id)
-	return err
+	if _, err := tx.Exec(`DELETE FROM folders WHERE id = ?`, id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }

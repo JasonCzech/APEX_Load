@@ -648,6 +648,15 @@ func resolveAuthoringSessionProjectID(r *http.Request, store storage.Store) (str
 	if store == nil {
 		return "", http.StatusServiceUnavailable, "authoring session storage is not configured"
 	}
+	if projectStore, ok := store.(interface {
+		GetAuthoringSessionProjectID(id string) (string, error)
+	}); ok {
+		projectID, err := projectStore.GetAuthoringSessionProjectID(r.PathValue("id"))
+		if err != nil {
+			return "", http.StatusNotFound, "authoring session not found"
+		}
+		return normalizeProjectID(projectID), 0, ""
+	}
 	sessionStore, ok := store.(interface {
 		GetAuthoringSession(id string) (*storage.AuthoringSession, error)
 	})
@@ -1059,6 +1068,13 @@ func authorizedImportProjectID(r *http.Request) string {
 	return firstNonEmpty(strings.TrimSpace(r.URL.Query().Get("project_id")), strings.TrimSpace(r.FormValue("project_id")))
 }
 
+// jsonImportProjectID preserves the project selected by the import access
+// resolver when a JSON wrapper omits its optional project_id field. The access
+// resolver has already rejected query/body disagreement before the handler runs.
+func jsonImportProjectID(r *http.Request, bodyProjectID string) string {
+	return strings.TrimSpace(firstNonEmpty(bodyProjectID, r.URL.Query().Get("project_id")))
+}
+
 func resolveImportProjectIDFromJSON(r *http.Request, _ storage.Store) (string, int, string) {
 	var req struct {
 		ProjectID string `json:"project_id,omitempty"`
@@ -1299,14 +1315,16 @@ func resolveAIAssistanceProjectID(r *http.Request, store storage.Store) (string,
 
 func resolveExternalResultImportProjectID(r *http.Request, store storage.Store) (string, int, string) {
 	var req struct {
-		ProjectID string `json:"project_id,omitempty"`
-		ReleaseID string `json:"release_id,omitempty"`
+		ProjectID  string `json:"project_id,omitempty"`
+		ReleaseID  string `json:"release_id,omitempty"`
+		ScenarioID string `json:"scenario_id,omitempty"`
 	}
 	if err := decodeRequestBody(r, &req); err != nil {
 		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
 	}
+	projectID := ""
 	if strings.TrimSpace(req.ProjectID) != "" {
-		return normalizeProjectID(req.ProjectID), 0, ""
+		projectID = normalizeProjectID(req.ProjectID)
 	}
 	if releaseID := strings.TrimSpace(req.ReleaseID); releaseID != "" {
 		if store == nil {
@@ -1314,9 +1332,31 @@ func resolveExternalResultImportProjectID(r *http.Request, store storage.Store) 
 		}
 		releaseReq := r.Clone(r.Context())
 		releaseReq.SetPathValue("id", releaseID)
-		return resolveReleaseProjectID(releaseReq, store)
+		releaseProjectID, status, message := resolveReleaseProjectID(releaseReq, store)
+		if status != 0 {
+			return "", status, message
+		}
+		if projectID != "" && projectID != releaseProjectID {
+			return "", http.StatusBadRequest, "project_id does not match release project"
+		}
+		projectID = releaseProjectID
 	}
-	return normalizeProjectID(""), 0, ""
+	if scenarioID := strings.TrimSpace(req.ScenarioID); scenarioID != "" {
+		if store == nil {
+			return "", http.StatusServiceUnavailable, "scenario storage is not configured"
+		}
+		scenarioReq := r.Clone(r.Context())
+		scenarioReq.SetPathValue("id", scenarioID)
+		scenarioProjectID, status, message := resolveScenarioProjectID(scenarioReq, store)
+		if status != 0 {
+			return "", status, message
+		}
+		if projectID != "" && projectID != scenarioProjectID {
+			return "", http.StatusBadRequest, "project_id and result parents do not belong to one project"
+		}
+		projectID = scenarioProjectID
+	}
+	return normalizeProjectID(projectID), 0, ""
 }
 
 func resolveScriptCreateProjectID(r *http.Request, store storage.Store) (string, int, string) {

@@ -9,6 +9,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -103,6 +104,9 @@ var (
 func (h *HTTP) Name() string { return "http" }
 
 func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
+	if err := validateHTTPRuntimeConfigBounds(config); err != nil {
+		return err
+	}
 	h.baseURL, _ = config["base_url"].(string)
 	h.networkProfile, _ = config["web_network_profile_label"].(string)
 	h.traceparentEnabled = parseTraceparentEnabled(config)
@@ -159,11 +163,23 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 
 func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
 	result := &protocol.Result{
-		ActionName:     action.Name,
+		ActionName:     protocol.ActionName(action),
 		StartTime:      time.Now(),
 		Extractions:    make(map[string]string),
 		DependencyType: "http",
 		NetworkProfile: h.networkProfile,
+	}
+	if action == nil {
+		result.StatusCode = http.StatusBadRequest
+		result.ErrorMessage = "http action is required"
+		return result, nil
+	}
+	if err := validateHTTPActionBounds(action); err != nil {
+		result.StatusCode = http.StatusBadRequest
+		result.ErrorMessage = err.Error()
+		result.Duration = time.Since(result.StartTime)
+		result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
+		return result, nil
 	}
 
 	targetURL := h.resolveURL(action.Target)
@@ -476,14 +492,25 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	if !result.Success && bodyReadErr == nil && result.ErrorMessage == "" && responseStatusExplicitlyAccepted(action.Assertions, result) {
 		result.Success = true
 	}
+extractors:
 	for _, ext := range action.Extractors {
 		if ext.Mode == "all" {
 			values, err := extractAll(ext, resp.Header, respBody)
+			if errors.Is(err, errExtractorResourceLimit) {
+				result.Success = false
+				result.Extractions = nil
+				result.ErrorMessage = fmt.Sprintf("extractor %q output rejected: %v", ext.Name, err)
+				break
+			}
 			if err == nil && len(values) > 0 {
 				for i, value := range values {
-					result.Extractions[fmt.Sprintf("%s_%d", ext.Name, i+1)] = value
+					if !storeHTTPExtraction(result, ext, fmt.Sprintf("%s_%d", ext.Name, i+1), value) {
+						break extractors
+					}
 				}
-				result.Extractions[ext.Name+"_count"] = fmt.Sprintf("%d", len(values))
+				if !storeHTTPExtraction(result, ext, ext.Name+"_count", fmt.Sprintf("%d", len(values))) {
+					break
+				}
 				continue
 			}
 			if ext.OnMiss == "fail" {
@@ -498,18 +525,30 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 			}
 			// A lenient miss still publishes the count so loops over
 			// {{var.name_count}} behave.
-			result.Extractions[ext.Name+"_count"] = "0"
+			if !storeHTTPExtraction(result, ext, ext.Name+"_count", "0") {
+				break
+			}
 			if ext.OnMiss == "empty" {
 				// Mirror single-value "empty" semantics: assign the base
 				// variable an empty string so {{var.name}} expands to "" rather
 				// than leaking the literal template into later requests.
-				result.Extractions[ext.Name] = ""
+				if !storeHTTPExtraction(result, ext, ext.Name, "") {
+					break
+				}
 			}
 			continue
 		}
 		val, err := extract(ext, resp.Header, respBody)
+		if errors.Is(err, errExtractorResourceLimit) {
+			result.Success = false
+			result.Extractions = nil
+			result.ErrorMessage = fmt.Sprintf("extractor %q output rejected: %v", ext.Name, err)
+			break
+		}
 		if err == nil {
-			result.Extractions[ext.Name] = val
+			if !storeHTTPExtraction(result, ext, ext.Name, val) {
+				break
+			}
 			continue
 		}
 		switch ext.OnMiss {
@@ -521,7 +560,9 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		case "empty":
 			// Source-tool NotFound=warning/empty semantics: the variable is
 			// assigned an empty string so later templates expand to "".
-			result.Extractions[ext.Name] = ""
+			if !storeHTTPExtraction(result, ext, ext.Name, "") {
+				break extractors
+			}
 		}
 	}
 
@@ -559,6 +600,37 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	}
 
 	return result, nil
+}
+
+func validateHTTPActionBounds(action *protocol.Action) error {
+	if action == nil {
+		return fmt.Errorf("http action is required")
+	}
+	maxTimeoutMS := int(MaxConfiguredTimeout / time.Millisecond)
+	if action.TimeoutMs < 0 || action.TimeoutMs > maxTimeoutMS {
+		return fmt.Errorf("http timeout_ms must be between 0 and %d", maxTimeoutMS)
+	}
+	if action.MaxRedirects != nil && (*action.MaxRedirects < -1 || *action.MaxRedirects > MaxConfiguredRedirects) {
+		return fmt.Errorf("http max_redirects must be between -1 and %d", MaxConfiguredRedirects)
+	}
+	if action.Params != nil {
+		if raw, present := action.Params["stream_timeout_ms"]; present {
+			if _, err := protocol.BoundedMilliseconds(raw, defaultSSEStreamTimeout, MaxConfiguredTimeout); err != nil {
+				return fmt.Errorf("http stream_timeout_ms %w", err)
+			}
+		}
+	}
+	return nil
+}
+
+func storeHTTPExtraction(result *protocol.Result, extractor protocol.Extractor, key, value string) bool {
+	if err := protocol.StoreExtraction(result, key, value); err != nil {
+		result.Success = false
+		result.Extractions = nil
+		result.ErrorMessage = fmt.Sprintf("extractor %q output rejected: %v", extractor.Name, err)
+		return false
+	}
+	return true
 }
 
 func actionHTTPMethod(action *protocol.Action) string {

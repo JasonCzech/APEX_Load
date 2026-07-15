@@ -21,7 +21,7 @@ func (s *SQLiteStore) SaveScript(script *dsl.Script) error {
 	if strings.TrimSpace(script.ID) == "" {
 		return errors.New("script id is required")
 	}
-	script.ProjectID = normalizeProjectID(script.ProjectID)
+	script.ProjectID = normalizeProjectID(strings.TrimSpace(script.ProjectID))
 	encoded, err := marshalScriptForStorage(script)
 	if err != nil {
 		return err
@@ -90,7 +90,7 @@ func (s *SQLiteStore) CreateScriptIfAbsent(script *dsl.Script) (bool, error) {
 	if strings.TrimSpace(script.ID) == "" {
 		return false, errors.New("script id is required")
 	}
-	script.ProjectID = normalizeProjectID(script.ProjectID)
+	script.ProjectID = normalizeProjectID(strings.TrimSpace(script.ProjectID))
 	encoded, err := marshalScriptForStorage(script)
 	if err != nil {
 		return false, err
@@ -140,7 +140,7 @@ func (s *SQLiteStore) UpdateScriptIfUnchanged(script *dsl.Script, expectedUpdate
 	if strings.TrimSpace(script.ID) == "" || expectedUpdatedAt.IsZero() {
 		return false, errors.New("script id and expected updated_at are required")
 	}
-	script.ProjectID = normalizeProjectID(script.ProjectID)
+	script.ProjectID = normalizeProjectID(strings.TrimSpace(script.ProjectID))
 	encoded, err := marshalScriptForStorage(script)
 	if err != nil {
 		return false, err
@@ -192,9 +192,12 @@ func (s *SQLiteStore) UpdateScriptIfUnchanged(script *dsl.Script, expectedUpdate
 	return true, nil
 }
 
-func validateScriptFolderProjectTx(queryer interface {
-	QueryRow(query string, args ...any) *sql.Row
-}, projectID string, folderID *string) error {
+func validateScriptFolderProjectTx(executor testSaveExecutor, projectID string, folderID *string) error {
+	projectID = normalizeProjectID(strings.TrimSpace(projectID))
+	if err := lockRequiredPlacementParent(executor,
+		`UPDATE projects SET updated_at = updated_at WHERE id = ?`, projectID, "script", "project"); err != nil {
+		return err
+	}
 	if folderID == nil {
 		return nil
 	}
@@ -202,8 +205,12 @@ func validateScriptFolderProjectTx(queryer interface {
 	if id == "" {
 		return errors.New("script folder id must be non-empty when set")
 	}
+	if err := lockRequiredPlacementParent(executor,
+		`UPDATE folders SET updated_at = updated_at WHERE id = ?`, id, "script", "folder"); err != nil {
+		return err
+	}
 	var folderProjectID string
-	if err := queryer.QueryRow(`SELECT project_id FROM folders WHERE id = ?`, id).Scan(&folderProjectID); err != nil {
+	if err := executor.QueryRow(`SELECT project_id FROM folders WHERE id = ?`, id).Scan(&folderProjectID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return fmt.Errorf("script folder %q not found", id)
 		}
@@ -226,12 +233,12 @@ func validateScriptObjectRepositoryProjectsTx(tx *storeTx, projectID string, scr
 	}
 	sort.Strings(orderedIDs)
 	for _, repositoryID := range orderedIDs {
-		query := `SELECT COALESCE(project_id, '') FROM object_repositories WHERE id = ?`
-		if tx.dialect == storeDialectPostgres {
-			query += ` FOR UPDATE`
+		if err := lockRequiredPlacementParent(tx,
+			`UPDATE object_repositories SET updated_at = updated_at WHERE id = ?`, repositoryID, "script", "object repository"); err != nil {
+			return err
 		}
 		var repositoryProjectID string
-		if err := tx.QueryRow(query, repositoryID).Scan(&repositoryProjectID); err != nil {
+		if err := tx.QueryRow(`SELECT COALESCE(project_id, '') FROM object_repositories WHERE id = ?`, repositoryID).Scan(&repositoryProjectID); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return fmt.Errorf("object repository %q referenced by script does not exist", repositoryID)
 			}
@@ -497,11 +504,15 @@ func (s *SQLiteStore) SaveAuthoringSession(session *AuthoringSession) error {
 	if session == nil {
 		return errors.New("authoring session is required")
 	}
-	session.ProjectID = normalizeProjectID(session.ProjectID)
+	session.ID = strings.TrimSpace(session.ID)
+	if session.ID == "" {
+		return errors.New("authoring session id is required")
+	}
+	session.ProjectID = normalizeProjectID(strings.TrimSpace(session.ProjectID))
 	if session.Draft != nil {
 		if strings.TrimSpace(session.Draft.ProjectID) == "" {
 			session.Draft.ProjectID = session.ProjectID
-		} else if normalizeProjectID(session.Draft.ProjectID) != session.ProjectID {
+		} else if normalizeProjectID(strings.TrimSpace(session.Draft.ProjectID)) != session.ProjectID {
 			return errors.New("authoring session draft belongs to another project")
 		}
 	}
@@ -525,7 +536,15 @@ func (s *SQLiteStore) SaveAuthoringSession(session *AuthoringSession) error {
 	if err != nil {
 		return fmt.Errorf("marshal authoring review state: %w", err)
 	}
-	result, err := s.db.Exec(`INSERT INTO authoring_sessions (id, project_id, source, name, status, draft_json, review_state_json, created_at, updated_at, last_accessed_at)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if session.ProjectID, err = lockProjectForOwnedMutation(tx, session.ProjectID); err != nil {
+		return err
+	}
+	result, err := tx.Exec(`INSERT INTO authoring_sessions (id, project_id, source, name, status, draft_json, review_state_json, created_at, updated_at, last_accessed_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			source=excluded.source,
@@ -547,7 +566,7 @@ func (s *SQLiteStore) SaveAuthoringSession(session *AuthoringSession) error {
 	if affected != 1 {
 		return fmt.Errorf("authoring session %q belongs to another project", session.ID)
 	}
-	return nil
+	return tx.Commit()
 }
 
 // CompareAndSwapAuthoringSession persists a session only while the durable row
@@ -558,11 +577,15 @@ func (s *SQLiteStore) CompareAndSwapAuthoringSession(session *AuthoringSession, 
 	if session == nil {
 		return false, errors.New("authoring session is required")
 	}
-	session.ProjectID = normalizeProjectID(session.ProjectID)
+	session.ID = strings.TrimSpace(session.ID)
+	if session.ID == "" {
+		return false, errors.New("authoring session id is required")
+	}
+	session.ProjectID = normalizeProjectID(strings.TrimSpace(session.ProjectID))
 	if session.Draft != nil {
 		if strings.TrimSpace(session.Draft.ProjectID) == "" {
 			session.Draft.ProjectID = session.ProjectID
-		} else if normalizeProjectID(session.Draft.ProjectID) != session.ProjectID {
+		} else if normalizeProjectID(strings.TrimSpace(session.Draft.ProjectID)) != session.ProjectID {
 			return false, errors.New("authoring session draft belongs to another project")
 		}
 	}
@@ -586,7 +609,15 @@ func (s *SQLiteStore) CompareAndSwapAuthoringSession(session *AuthoringSession, 
 	if err != nil {
 		return false, fmt.Errorf("marshal authoring review state: %w", err)
 	}
-	result, err := s.db.Exec(`UPDATE authoring_sessions SET
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	if session.ProjectID, err = lockProjectForOwnedMutation(tx, session.ProjectID); err != nil {
+		return false, err
+	}
+	result, err := tx.Exec(`UPDATE authoring_sessions SET
 		source = ?, name = ?, status = ?, draft_json = ?, review_state_json = ?,
 		updated_at = ?, last_accessed_at = ?
 		WHERE id = ? AND updated_at = ? AND status = ?
@@ -597,7 +628,13 @@ func (s *SQLiteStore) CompareAndSwapAuthoringSession(session *AuthoringSession, 
 		return false, err
 	}
 	rows, err := result.RowsAffected()
-	return rows == 1, err
+	if err != nil || rows != 1 {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func authoringSessionTimestamp(value time.Time) time.Time {
@@ -627,11 +664,35 @@ func (s *SQLiteStore) GetAuthoringSession(id string) (*AuthoringSession, error) 
 	if err := decodeAuthoringSessionJSON(&session, draftJSON, reviewStateJSON); err != nil {
 		return nil, fmt.Errorf("decode authoring session %s: %w", id, err)
 	}
-	now := authoringSessionTimestamp(time.Now())
-	if _, err := s.db.Exec(`UPDATE authoring_sessions SET last_accessed_at = ? WHERE id = ?`, now, id); err == nil {
-		session.LastAccessedAt = now
-	}
 	return &session, nil
+}
+
+// GetAuthoringSessionProjectID is a side-effect-free ownership lookup for
+// authorization middleware. In particular, it must not advance last_accessed_at
+// before the caller has been authorized for the session's project.
+func (s *SQLiteStore) GetAuthoringSessionProjectID(id string) (string, error) {
+	var projectID string
+	if err := s.db.QueryRow(`SELECT COALESCE(project_id, '') FROM authoring_sessions WHERE id = ?`, strings.TrimSpace(id)).Scan(&projectID); err != nil {
+		return "", err
+	}
+	return normalizeProjectID(projectID), nil
+}
+
+// TouchAuthoringSessionAccess records access only after the API handler has
+// passed project authorization. Ownership resolution uses the read-only method
+// above and therefore cannot create an unauthorized durable side effect.
+func (s *SQLiteStore) TouchAuthoringSessionAccess(id string, accessedAt time.Time) (bool, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return false, errors.New("authoring session id is required")
+	}
+	accessedAt = authoringSessionTimestamp(accessedAt)
+	result, err := s.db.Exec(`UPDATE authoring_sessions SET last_accessed_at = ? WHERE id = ?`, accessedAt, id)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	return affected == 1, err
 }
 
 func (s *SQLiteStore) ListAuthoringSessions(projectID string) ([]*AuthoringSession, error) {

@@ -47,8 +47,8 @@ func TestApplicationOptimisticUpdateAndImmutableProject(t *testing.T) {
 	if updated, err := store.UpdateApplicationIfUnchanged(stale, stale.UpdatedAt); err != nil || updated {
 		t.Fatalf("stale update = (%v, %v), want conflict", updated, err)
 	}
-	if err := store.SaveApplication(&Application{ID: application.ID, ProjectID: "project-b", Name: "legacy update"}); err != nil {
-		t.Fatalf("SaveApplication legacy update: %v", err)
+	if err := store.SaveApplication(&Application{ID: application.ID, ProjectID: "project-b", Name: "legacy update"}); err == nil {
+		t.Fatal("SaveApplication accepted an existing id from another project")
 	}
 	fresh, err := store.GetApplication(application.ID)
 	if err != nil || fresh.ProjectID != "project-a" {
@@ -86,8 +86,8 @@ func TestReleaseOptimisticUpdateAndImmutablePlacement(t *testing.T) {
 	if updated, err := store.UpdateReleaseIfUnchanged(stale, stale.UpdatedAt); err != nil || updated {
 		t.Fatalf("stale update = (%v, %v), want conflict", updated, err)
 	}
-	if err := store.SaveRelease(&Release{ID: release.ID, ApplicationID: "application-b", ProjectID: "project-b", Name: "legacy update"}); err != nil {
-		t.Fatalf("SaveRelease legacy update: %v", err)
+	if err := store.SaveRelease(&Release{ID: release.ID, ApplicationID: "application-b", ProjectID: "project-b", Name: "legacy update"}); err == nil {
+		t.Fatal("SaveRelease accepted an existing id from another application/project")
 	}
 	fresh, err := store.GetRelease(release.ID)
 	if err != nil || fresh.ApplicationID != "application-a" || fresh.ProjectID != "project-a" {

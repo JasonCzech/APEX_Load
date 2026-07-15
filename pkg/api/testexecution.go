@@ -231,6 +231,12 @@ func (tr *TestRunner) markTestInitializingLocked(test *ManagedTest) error {
 }
 
 func (tr *TestRunner) markTestInitializingLockedWithExpectedTerm(test *ManagedTest, expectedTerm *executionLeaseTerm) error {
+	if test == nil {
+		return fmt.Errorf("test is required")
+	}
+	if test.runtimeHydrationError != "" {
+		return fmt.Errorf("test runtime could not be restored: %s", test.runtimeHydrationError)
+	}
 	var err error
 	if expectedTerm == nil {
 		err = tr.claimTestExecutionFence(test)
@@ -300,6 +306,9 @@ func (tr *TestRunner) preflightStartBlocksLockedWithExpectedTerm(id string, opts
 	}
 	if !testexec.IsStartableTestStatus(test.Status) {
 		return false, testexec.StartableTestStatusError(test.Status)
+	}
+	if test.runtimeHydrationError != "" {
+		return false, fmt.Errorf("test runtime could not be restored: %s", test.runtimeHydrationError)
 	}
 	if err := tr.projectDeletionErrorLocked(test.ProjectID); err != nil {
 		return false, err

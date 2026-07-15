@@ -93,6 +93,9 @@ func (j *JavaHTTP) Init(ctx context.Context, config map[string]any) error {
 	}
 	j.requestMapping = coerceStringMap(config["java_http_request_mapping"])
 	j.responseMapping = coerceStringMap(config["java_http_response_mapping"])
+	if err := validateResponseMappingBounds(j.responseMapping); err != nil {
+		return err
+	}
 	if len(j.requestMapping) > 0 || j.objectSchema != "" {
 		return fmt.Errorf("java_http request_mapping/object_schema are not applied by embedded byte-preserving java_http; use java_vuser sidecar import or remove these fields")
 	}
@@ -174,13 +177,48 @@ func (j *JavaHTTP) Execute(ctx context.Context, action *protocol.Action) (*proto
 		if result.Extractions == nil {
 			result.Extractions = make(map[string]string)
 		}
-		result.Extractions["java_http_codec"] = j.codec
-		result.Extractions["java_http_helper_mode"] = j.helperMode
+		if storeErr := protocol.StoreExtraction(result, "java_http_codec", j.codec); storeErr != nil {
+			result.Success = false
+			result.Extractions = nil
+			result.ErrorMessage = "java_http extraction retention failed: " + storeErr.Error()
+			return result, err
+		}
+		if storeErr := protocol.StoreExtraction(result, "java_http_helper_mode", j.helperMode); storeErr != nil {
+			result.Success = false
+			result.Extractions = nil
+			result.ErrorMessage = "java_http extraction retention failed: " + storeErr.Error()
+			return result, err
+		}
 		for name, value := range mappedExtractions {
-			result.Extractions[name] = value
+			if storeErr := protocol.StoreExtraction(result, name, value); storeErr != nil {
+				result.Success = false
+				result.Extractions = nil
+				result.ErrorMessage = fmt.Sprintf("java_http response mapping %q rejected: %v", name, storeErr)
+				break
+			}
 		}
 	}
 	return result, err
+}
+
+func validateResponseMappingBounds(mapping map[string]string) error {
+	if len(mapping) > protocol.MaxExtractionEntries {
+		return fmt.Errorf("java_http response_mapping exceeds %d entries", protocol.MaxExtractionEntries)
+	}
+	total := 0
+	for name, expression := range mapping {
+		if name == "" || len(name) > protocol.MaxExtractionKeyBytes {
+			return fmt.Errorf("java_http response_mapping name must be 1..%d bytes", protocol.MaxExtractionKeyBytes)
+		}
+		if len(expression) > protocol.MaxExtractionKeyBytes {
+			return fmt.Errorf("java_http response_mapping expression %q exceeds %d bytes", name, protocol.MaxExtractionKeyBytes)
+		}
+		total += len(name) + len(expression)
+		if total > protocol.MaxExtractionBytes {
+			return fmt.Errorf("java_http response_mapping exceeds %d bytes", protocol.MaxExtractionBytes)
+		}
+	}
+	return nil
 }
 
 func (j *JavaHTTP) Teardown(ctx context.Context) error {

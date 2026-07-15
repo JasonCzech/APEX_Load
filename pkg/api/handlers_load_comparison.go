@@ -55,7 +55,7 @@ func loadComparisonTestIDSelected(testID string, selectedTestIDs map[string]stru
 }
 
 func (s *Server) collectApplicationLoadComparisonRuns(ctx context.Context, applicationID string, selectedTestIDs map[string]struct{}) ([]loadComparisonRun, error) {
-	tests := s.runner.ListTestsByContext(applicationID, "", "")
+	tests := s.runner.ListTestSummariesByContext(applicationID, "", "")
 	runs := make([]loadComparisonRun, 0, len(tests))
 	releases := make(map[string]*storage.Release)
 	for _, test := range tests {

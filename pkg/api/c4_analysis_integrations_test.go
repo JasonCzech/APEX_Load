@@ -225,6 +225,16 @@ func TestExternalResultImportPersistsK6Summary(t *testing.T) {
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
 	defer store.Close()
+	now := time.Now().UTC()
+	if err := store.SaveProject(&storage.Project{ID: "project-c4", Name: "C4", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+	if err := store.SaveApplication(&storage.Application{ID: "application-c4", ProjectID: "project-c4", Name: "C4", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveApplication: %v", err)
+	}
+	if err := store.SaveRelease(&storage.Release{ID: "release-c4", ApplicationID: "application-c4", ProjectID: "project-c4", Name: "C4", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveRelease: %v", err)
+	}
 	server := NewServer(ServerConfig{Store: store})
 
 	body := bytes.NewBufferString(`{

@@ -1,8 +1,12 @@
 package protocol
 
 import (
+	"encoding/json"
+	"fmt"
 	"math"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // This file holds the small action/config coercion helpers shared by the
@@ -120,6 +124,60 @@ func ConfigFloat(config map[string]any, key string) float64 {
 func maxIntValue() int { return int(^uint(0) >> 1) }
 
 func minIntValue() int { return -maxIntValue() - 1 }
+
+// BoundedMilliseconds parses an integer millisecond value without permitting
+// lossy numeric coercion or time.Duration overflow. A missing/nil value and an
+// explicit zero both select fallback; all positive values must fit maximum.
+func BoundedMilliseconds(value any, fallback, maximum time.Duration) (time.Duration, error) {
+	if maximum <= 0 {
+		return 0, fmt.Errorf("maximum duration must be positive")
+	}
+	if value == nil {
+		return fallback, nil
+	}
+	maximumMilliseconds := int64(maximum / time.Millisecond)
+	var milliseconds int64
+	switch typed := value.(type) {
+	case int:
+		milliseconds = int64(typed)
+	case int64:
+		milliseconds = typed
+	case int32:
+		milliseconds = int64(typed)
+	case float64:
+		if math.IsNaN(typed) || math.IsInf(typed, 0) || math.Trunc(typed) != typed || typed < 0 || typed > float64(maximumMilliseconds) {
+			return 0, fmt.Errorf("must be an integer between 0 and %d", maximumMilliseconds)
+		}
+		milliseconds = int64(typed)
+	case float32:
+		converted := float64(typed)
+		if math.IsNaN(converted) || math.IsInf(converted, 0) || math.Trunc(converted) != converted || converted < 0 || converted > float64(maximumMilliseconds) {
+			return 0, fmt.Errorf("must be an integer between 0 and %d", maximumMilliseconds)
+		}
+		milliseconds = int64(typed)
+	case json.Number:
+		parsed, err := typed.Int64()
+		if err != nil {
+			return 0, fmt.Errorf("must be an integer between 0 and %d", maximumMilliseconds)
+		}
+		milliseconds = parsed
+	case string:
+		parsed, err := strconv.ParseInt(strings.TrimSpace(typed), 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("must be an integer between 0 and %d", maximumMilliseconds)
+		}
+		milliseconds = parsed
+	default:
+		return 0, fmt.Errorf("must be an integer between 0 and %d", maximumMilliseconds)
+	}
+	if milliseconds < 0 || milliseconds > maximumMilliseconds {
+		return 0, fmt.Errorf("must be an integer between 0 and %d", maximumMilliseconds)
+	}
+	if milliseconds == 0 {
+		return fallback, nil
+	}
+	return time.Duration(milliseconds) * time.Millisecond, nil
+}
 
 // FirstNonEmpty returns the first value that is non-empty after trimming
 // surrounding whitespace, or "" when every value is blank. The returned value is

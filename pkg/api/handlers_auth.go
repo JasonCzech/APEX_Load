@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -1792,7 +1793,7 @@ func (s *Server) handleGetUserActivity(w http.ResponseWriter, r *http.Request) {
 	}
 	usage := s.scopedUsageAccounting(filter.ProjectID, scope, all)
 	if filter.ActorSubject != "" {
-		usage = usageAccountingForActor(filter.ActorSubject, usage, s.runner.ListTests())
+		usage = usageAccountingForActor(filter.ActorSubject, usage, s.runner.listOperationalTestSnapshots())
 	}
 	writeJSON(w, http.StatusOK, AuthUserActivityResponse{Events: events, Usage: usage, Count: len(events), Limit: filter.Limit, Offset: filter.Offset})
 }
@@ -1825,7 +1826,7 @@ func (s *Server) handleExportUserActivity(w http.ResponseWriter, r *http.Request
 		return
 	}
 	for _, event := range events {
-		if err := writer.Write([]string{event.ID, event.CreatedAt.UTC().Format(time.RFC3339), event.Action, event.Status, event.ActorType, event.ActorSubject, event.ActorDisplayName, event.DomainID, event.ProjectID, event.ResourceType, event.ResourceID}); err != nil {
+		if err := writer.Write(spreadsheetSafeCSVRow([]string{event.ID, event.CreatedAt.UTC().Format(time.RFC3339), event.Action, event.Status, event.ActorType, event.ActorSubject, event.ActorDisplayName, event.DomainID, event.ProjectID, event.ResourceType, event.ResourceID})); err != nil {
 			return
 		}
 	}
@@ -2168,11 +2169,38 @@ func (s *Server) handleExportAuditEvents(w http.ResponseWriter, r *http.Request)
 			event.ResourceID,
 			details,
 		}
-		if err := writer.Write(record); err != nil {
+		if err := writer.Write(spreadsheetSafeCSVRow(record)); err != nil {
 			return
 		}
 	}
 	writer.Flush()
+}
+
+// spreadsheetSafeCSVRow prevents values controlled by identities, resource
+// names, or audit metadata from becoming formulas when an administrator opens
+// an export in spreadsheet software. The leading apostrophe is the conventional
+// spreadsheet escape and leaves the original value visible.
+func spreadsheetSafeCSVRow(row []string) []string {
+	safe := make([]string, len(row))
+	for index, value := range row {
+		safe[index] = spreadsheetSafeCSVCell(value)
+	}
+	return safe
+}
+
+func spreadsheetSafeCSVCell(value string) string {
+	trimmed := strings.TrimLeftFunc(value, func(char rune) bool {
+		return unicode.IsSpace(char) || char == '\ufeff'
+	})
+	if trimmed == "" {
+		return value
+	}
+	switch trimmed[0] {
+	case '=', '+', '-', '@':
+		return "'" + value
+	default:
+		return value
+	}
 }
 
 func parseAuditEventFilter(w http.ResponseWriter, r *http.Request, defaultLimit int) (storage.AuditEventFilter, bool) {
@@ -2585,8 +2613,8 @@ func buildTrustedProxyGateCheck(settings AuthSettings) AuthDiagnosticsCheck {
 			details = append(details, "CIDRs: "+strings.Join(cidrs, ", "))
 		}
 		if env := strings.TrimSpace(settings.TrustedProxySecretEnvVar); env != "" {
-			if _, ok := os.LookupEnv(env); !ok {
-				return AuthDiagnosticsCheck{ID: id, Label: label, Status: "fail", Summary: "Shared-secret environment variable is not set on the controller.", Detail: env}
+			if _, err := trustedProxySharedSecret(settings); err != nil {
+				return AuthDiagnosticsCheck{ID: id, Label: label, Status: "fail", Summary: "Shared-secret configuration is invalid.", Detail: err.Error()}
 			}
 			details = append(details, "shared secret env "+env+" set")
 		}

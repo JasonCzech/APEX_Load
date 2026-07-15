@@ -12,7 +12,7 @@ import (
 	amqp "github.com/Azure/go-amqp"
 )
 
-func TestSolaceAwaitCorrelatedReplyDoesNotReleaseSameForeignHeadRepeatedly(t *testing.T) {
+func TestSolaceAwaitCorrelatedReplyReleasesEveryForeignReplyDelivery(t *testing.T) {
 	foreign := solaceTestReply("foreign", "other")
 	match := solaceTestReply("match", "mine")
 	receiver := &fakeSolaceReplyReceiver{messages: []*amqp.Message{foreign, foreign, match}}
@@ -23,8 +23,8 @@ func TestSolaceAwaitCorrelatedReplyDoesNotReleaseSameForeignHeadRepeatedly(t *te
 	if reply.ID != "match" || receiver.accepted != 1 {
 		t.Fatalf("reply/accept = %#v/%d", reply, receiver.accepted)
 	}
-	if receiver.released != solaceForeignReleaseLimit {
-		t.Fatalf("foreign release count = %d, want %d", receiver.released, solaceForeignReleaseLimit)
+	if receiver.released != 2 {
+		t.Fatalf("foreign release count = %d, want every one of the 2 deliveries released", receiver.released)
 	}
 }
 

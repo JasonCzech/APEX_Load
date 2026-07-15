@@ -410,18 +410,29 @@ func (s *SQLiteStore) listScenarioScripts(scenarioID string) ([]ScenarioScript, 
 }
 
 func (s *SQLiteStore) DeleteScenario(id string) error {
-	var count int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM tests WHERE scenario_id = ?`, id).Scan(&count); err != nil {
-		return err
-	}
-	if count > 0 {
-		return errors.New("scenario has test results")
-	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+	locked, err := tx.Exec(`UPDATE scenarios SET updated_at = updated_at WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	affected, err := locked.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return nil
+	}
+	var count int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM tests WHERE scenario_id = ?`, id).Scan(&count); err != nil {
+		return err
+	}
+	if count > 0 {
+		return errors.New("scenario has test results")
+	}
 	if _, err := tx.Exec(`DELETE FROM scenario_scripts WHERE scenario_id = ?`, id); err != nil {
 		return err
 	}
