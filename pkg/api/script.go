@@ -85,6 +85,7 @@ func (tr *TestRunner) StoreScriptDurable(script *dsl.Script) (*StoredScript, err
 	stored.FolderID = cloneStringPtr(stored.FolderID)
 	stored.Script = canonicalScript
 	tr.scripts[stored.ID] = stored
+	tr.contentRevision++
 	tr.observeAndIndexRefKeyLocked(stored.RefKey, stored.ID)
 	return cloneStoredScriptForReadLocked(stored), nil
 }
@@ -175,6 +176,7 @@ func (tr *TestRunner) CreateScriptDurable(script *dsl.Script) (*StoredScript, er
 		tr.removeRefKeyLocked(previous.RefKey)
 	}
 	tr.scripts[stored.ID] = stored
+	tr.contentRevision++
 	tr.observeAndIndexRefKeyLocked(stored.RefKey, stored.ID)
 	return cloneStoredScriptForReadLocked(stored), nil
 }
@@ -236,6 +238,7 @@ func (tr *TestRunner) GetScriptDurable(id string) (*StoredScript, bool, error) {
 			tr.removeRefKeyLocked(previous.RefKey)
 		}
 		tr.scripts[id] = stored
+		tr.contentRevision++
 		tr.observeAndIndexRefKeyLocked(stored.RefKey, stored.ID)
 		return cloneStoredScriptForReadLocked(stored), true, nil
 	}
@@ -328,6 +331,7 @@ func (tr *TestRunner) MoveScriptDurable(id string, folderID *string) (bool, erro
 	if script.Script != nil {
 		script.Script.FolderID = cloneStringPtr(folderID)
 	}
+	tr.contentRevision++
 	return true, nil
 }
 
@@ -388,6 +392,7 @@ func (tr *TestRunner) UpdateScriptDurable(id string, script *dsl.Script) (*Store
 	existing.Script = cloneScriptDefinition(script)
 	tr.removeRefKeyLocked(oldRefKey)
 	tr.indexRefKeyLocked(existing.RefKey, existing.ID)
+	tr.contentRevision++
 	return cloneStoredScriptForReadLocked(existing), true, nil
 }
 
@@ -412,6 +417,7 @@ func (tr *TestRunner) DeleteScriptDurable(id string) (bool, error) {
 	}
 	tr.removeRefKeyLocked(script.RefKey)
 	delete(tr.scripts, id)
+	tr.contentRevision++
 	return true, nil
 }
 

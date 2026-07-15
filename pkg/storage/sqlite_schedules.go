@@ -107,6 +107,15 @@ func (s *SQLiteStore) SaveScenarioScheduleWithApproval(schedule *ScenarioSchedul
 	if err != nil || affected != 1 {
 		return false, err
 	}
+	// A schedule can reference only one actionable approval. Close any older
+	// pending request in the same transaction so history remains truthful and an
+	// obsolete approval cannot remain permanently unresolvable.
+	if _, err = tx.Exec(`UPDATE scenario_schedule_approvals
+		SET status='superseded', resolved_at=?, decision_reason=?, updated_at=?
+		WHERE schedule_id=? AND status='pending' AND id<>?`,
+		approval.UpdatedAt, "superseded by a newer schedule revision", approval.UpdatedAt, schedule.ID, approval.ID); err != nil {
+		return false, err
+	}
 	_, err = tx.Exec(`INSERT INTO scenario_schedule_approvals (id, schedule_id, scenario_id, project_id, schedule_revision, policy, status, requested_by, requested_at, resolved_by, resolved_at, decision_reason, required_role, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET scenario_id=excluded.scenario_id, project_id=excluded.project_id,

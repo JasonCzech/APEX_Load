@@ -224,6 +224,8 @@ func validateGRPCConfigIssues(script *Script) []string {
 	var issues []string
 	if cfg.MaxRecvMsgSize < 0 {
 		issues = append(issues, "config.grpc.max_recv_msg_size must be zero or greater")
+	} else if cfg.MaxRecvMsgSize > MaxGRPCStreamBytes {
+		issues = append(issues, fmt.Sprintf("config.grpc.max_recv_msg_size must not exceed %d", MaxGRPCStreamBytes))
 	}
 	if cfg.TimeoutMs < 0 {
 		issues = append(issues, "config.grpc.timeout_ms must be zero or greater")

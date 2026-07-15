@@ -1,6 +1,7 @@
 package dsl
 
 import (
+	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -1062,6 +1063,20 @@ func TestValidateScriptIssues_GRPCValidation(t *testing.T) {
 	assertIssue(t, issues, `actions[2] "bad timeout": grpc_unary timeout_ms must be zero or greater`)
 	assertIssue(t, issues, `actions[3] "streaming": grpc_server_stream max_messages must be zero or greater`)
 	assertIssue(t, issues, `actions[4] "unsupported": unsupported grpc action type "grpc_batch"`)
+}
+
+func TestValidateScriptIssues_GRPCValidationRejectsRuntimeLimitOverflow(t *testing.T) {
+	script := &Script{
+		Name: "grpc-oversized", Protocol: "grpc",
+		Config: ScriptConfig{BaseURL: "grpc.example.test:443", GRPC: GRPCConfig{MaxRecvMsgSize: MaxGRPCStreamBytes + 1}},
+		Actions: []Action{{
+			Name: "stream", Type: "grpc_server_stream", Target: "apexload.v1.GeneratorControl/StreamMetrics",
+			Params: map[string]any{"max_messages": MaxGRPCStreamMessages + 1},
+		}},
+	}
+	issues := ValidateScriptIssues(script)
+	assertIssue(t, issues, fmt.Sprintf("config.grpc.max_recv_msg_size must not exceed %d", MaxGRPCStreamBytes))
+	assertIssue(t, issues, fmt.Sprintf(`actions[0] "stream": grpc_server_stream max_messages must not exceed %d`, MaxGRPCStreamMessages))
 }
 
 func TestValidateScriptIssues_GRPCValidationAllowsUnaryReflection(t *testing.T) {

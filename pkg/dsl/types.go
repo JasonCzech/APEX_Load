@@ -125,11 +125,16 @@ type GRPCConfig struct {
 	ProtoFiles     []string          `json:"proto_files,omitempty"`
 	UseReflection  bool              `json:"use_reflection,omitempty"`
 	PlainText      bool              `json:"plain_text,omitempty"`
-	MaxRecvMsgSize int               `json:"max_recv_msg_size,omitempty"`
+	MaxRecvMsgSize int               `json:"max_recv_msg_size,omitempty" jsonschema:"minimum=0,maximum=8388608"`
 	TimeoutMs      int               `json:"timeout_ms,omitempty"`
 	Metadata       map[string]string `json:"metadata,omitempty"`
 	Authority      string            `json:"authority,omitempty"`
 }
+
+const (
+	MaxGRPCStreamMessages = 10_000
+	MaxGRPCStreamBytes    = 8 << 20
+)
 
 type SOAPConfig struct {
 	Version       string                  `json:"version,omitempty"`

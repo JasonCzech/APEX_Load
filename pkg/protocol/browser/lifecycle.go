@@ -1,6 +1,6 @@
 package browser
 
-import "os"
+import "github.com/playwright-community/playwright-go"
 
 func (b *Browser) close() {
 	b.mu.Lock()
@@ -16,16 +16,20 @@ func (b *Browser) close() {
 	if page != nil {
 		_ = page.Close()
 	}
-	if b.pwContext != nil {
-		_ = b.pwContext.Close() // flushes the context HAR recording
-		b.pwContext = nil
+	if context := b.takeBrowserContext(); context != nil {
+		_ = context.Close() // flushes the context HAR recording
 	}
 	// Keep the limiter active through Playwright's final HAR flush.
-	if b.harMonitorStop != nil {
-		close(b.harMonitorStop)
-		b.harMonitorStop = nil
+	b.mu.Lock()
+	monitorStop := b.harMonitorStop
+	b.harMonitorStop = nil
+	b.mu.Unlock()
+	if monitorStop != nil {
+		close(monitorStop)
 		b.harMonitorWG.Wait()
+		b.mu.Lock()
 		b.harLimitExceeded = nil
+		b.mu.Unlock()
 	}
 	b.mu.Lock()
 	workerStop := b.networkWorkerStop
@@ -36,10 +40,12 @@ func (b *Browser) close() {
 		close(workerStop)
 		b.networkWorkerWG.Wait()
 	}
-	if b.lastHARArtifactPath != "" {
-		_ = os.Remove(b.lastHARArtifactPath)
+	if artifactPath := b.finalizeHARCapture(); artifactPath != "" {
+		// Retained artifacts are independently swept by the configured retention
+		// policy. In particular, do not delete an earlier failing iteration when
+		// new_user_per_iteration tears down a later browser session.
+		b.lastHARArtifactPath = artifactPath
 	}
-	b.lastHARArtifactPath = b.finalizeHARCapture()
 	b.currentURL = ""
 	b.slowMo = 0
 	b.userAgent = ""
@@ -51,4 +57,12 @@ func (b *Browser) close() {
 	b.networkBodyBytes = 0
 	b.pages = nil
 	b.resetWSEvents()
+}
+
+func (b *Browser) takeBrowserContext() playwright.BrowserContext {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	context := b.pwContext
+	b.pwContext = nil
+	return context
 }

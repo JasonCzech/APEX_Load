@@ -472,6 +472,7 @@ func (tr *TestRunner) recoverExecutionPlanScheduleOccurrence(schedule *storage.E
 		run.Status = "failed"
 		run.UpdatedAt = failedAt
 		run.CompletedAt = &failedAt
+		run.TransitionToken = ""
 		for i := range run.Entries {
 			if run.Entries[i].Status == "pending" || run.Entries[i].Status == "running" {
 				run.Entries[i].Status = "failed"

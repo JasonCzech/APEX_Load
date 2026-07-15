@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/fileasset"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jmespath/go-jmespath"
@@ -50,11 +51,6 @@ type GRPC struct {
 	mu           sync.Mutex
 }
 
-const (
-	maxGRPCStreamMessages = 10_000
-	maxGRPCStreamBytes    = 8 << 20
-)
-
 func (g *GRPC) Name() string { return "grpc" }
 
 func (g *GRPC) Init(ctx context.Context, config map[string]any) error {
@@ -69,10 +65,10 @@ func (g *GRPC) Init(ctx context.Context, config map[string]any) error {
 	g.plainText, _ = boolConfig(config, "grpc_plain_text")
 	g.maxRecvBytes, _ = intConfig(config, "grpc_max_recv_msg_size")
 	if g.maxRecvBytes <= 0 {
-		g.maxRecvBytes = maxGRPCStreamBytes
+		g.maxRecvBytes = dsl.MaxGRPCStreamBytes
 	}
-	if g.maxRecvBytes > maxGRPCStreamBytes {
-		return fmt.Errorf("grpc_max_recv_msg_size exceeds limit %d", maxGRPCStreamBytes)
+	if g.maxRecvBytes > dsl.MaxGRPCStreamBytes {
+		return fmt.Errorf("grpc_max_recv_msg_size exceeds limit %d", dsl.MaxGRPCStreamBytes)
 	}
 	g.callTimeout = durationConfig(config, "grpc_timeout_ms", defaultCallTimeout)
 	g.metadata = buildMetadata(config)
@@ -226,8 +222,8 @@ func (g *GRPC) invokeUnary(ctx context.Context, action *protocol.Action, result 
 	if err != nil {
 		return fmt.Errorf("encode grpc response body: %w", err)
 	}
-	if len(responseBody) > maxGRPCStreamBytes {
-		return fmt.Errorf("grpc response exceeds %d byte limit", maxGRPCStreamBytes)
+	if len(responseBody) > dsl.MaxGRPCStreamBytes {
+		return fmt.Errorf("grpc response exceeds %d byte limit", dsl.MaxGRPCStreamBytes)
 	}
 	result.ResponseBody = string(responseBody)
 	result.BytesReceived = int64(len(responseBody))
@@ -305,8 +301,8 @@ func (g *GRPC) invokeClientStream(ctx context.Context, action *protocol.Action, 
 	if err != nil {
 		return fmt.Errorf("encode grpc response body: %w", err)
 	}
-	if len(responseBody) > maxGRPCStreamBytes {
-		return fmt.Errorf("grpc response exceeds %d byte limit", maxGRPCStreamBytes)
+	if len(responseBody) > dsl.MaxGRPCStreamBytes {
+		return fmt.Errorf("grpc response exceeds %d byte limit", dsl.MaxGRPCStreamBytes)
 	}
 	result.BytesSent = int64(sentBytes)
 	result.ResponseBody = string(responseBody)
@@ -440,8 +436,8 @@ func receiveStreamMessages(stream googlegrpc.ClientStream, output protoreflect.M
 	if maxMessages <= 0 {
 		maxMessages = 1
 	}
-	if maxMessages > maxGRPCStreamMessages {
-		return nil, 0, fmt.Errorf("grpc max_messages exceeds limit %d", maxGRPCStreamMessages)
+	if maxMessages > dsl.MaxGRPCStreamMessages {
+		return nil, 0, fmt.Errorf("grpc max_messages exceeds limit %d", dsl.MaxGRPCStreamMessages)
 	}
 	messages := make([]json.RawMessage, 0, maxMessages)
 	var totalBytes int
@@ -459,8 +455,8 @@ func receiveStreamMessages(stream googlegrpc.ClientStream, output protoreflect.M
 			return nil, len(messages), fmt.Errorf("encode grpc response body: %w", err)
 		}
 		totalBytes += len(encoded)
-		if totalBytes > maxGRPCStreamBytes {
-			return nil, len(messages), fmt.Errorf("grpc streamed response exceeds %d byte limit", maxGRPCStreamBytes)
+		if totalBytes > dsl.MaxGRPCStreamBytes {
+			return nil, len(messages), fmt.Errorf("grpc streamed response exceeds %d byte limit", dsl.MaxGRPCStreamBytes)
 		}
 		messages = append(messages, json.RawMessage(encoded))
 	}

@@ -1289,6 +1289,15 @@ func (s *SQLiteStore) ensureLegacyScenariosTx(tx *storeTx) error {
 	legacyRefKeysTransferred := make(map[string]bool, len(candidates))
 	for _, candidate := range candidates {
 		scenarioID := legacyScenarioID(candidate.projectID, candidate.name)
+		if candidate.existingScenarioID != "" {
+			if _, loaded := legacyRefKeys[candidate.existingScenarioID]; !loaded {
+				var legacyRefKey string
+				if err := tx.QueryRow(`SELECT COALESCE(ref_key, '') FROM scenarios WHERE id = ?`, candidate.existingScenarioID).Scan(&legacyRefKey); err != nil {
+					return fmt.Errorf("read legacy scenario %s reference key: %w", candidate.existingScenarioID, err)
+				}
+				legacyRefKeys[candidate.existingScenarioID] = legacyRefKey
+			}
+		}
 		if _, migrated := migratedScenarios[scenarioID]; !migrated {
 			now := candidate.startTime
 			if now.IsZero() {
@@ -1299,13 +1308,6 @@ func (s *SQLiteStore) ensureLegacyScenariosTx(tx *storeTx) error {
 				duration = "1m"
 			}
 			if candidate.existingScenarioID != "" {
-				legacyRefKey, loaded := legacyRefKeys[candidate.existingScenarioID]
-				if !loaded {
-					if err := tx.QueryRow(`SELECT COALESCE(ref_key, '') FROM scenarios WHERE id = ?`, candidate.existingScenarioID).Scan(&legacyRefKey); err != nil {
-						return fmt.Errorf("read legacy scenario %s reference key: %w", candidate.existingScenarioID, err)
-					}
-					legacyRefKeys[candidate.existingScenarioID] = legacyRefKey
-				}
 				// Preserve edits made to the globally migrated scenario after its
 				// original import. The test snapshot remains the source for scripts,
 				// because the old global migration selected scripts from only one

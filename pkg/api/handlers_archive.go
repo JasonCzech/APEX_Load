@@ -207,8 +207,11 @@ func (s *Server) handleDownloadRunArchiveBrowserDiagnostics(w http.ResponseWrite
 
 // clearArchiveWriteDeadline allows archive transfers to outlive the server's
 // short default WriteTimeout while retaining a finite archive-specific bound.
+// The grace interval is intentional: preparation uses the materialization
+// timeout itself, so its timeout response must still have a writable socket.
 func clearArchiveWriteDeadline(w http.ResponseWriter) {
-	deadline := time.Now().Add(configuredArchiveMaterializationTimeout())
+	const archiveErrorWriteGrace = 5 * time.Second
+	deadline := time.Now().Add(configuredArchiveMaterializationTimeout() + archiveErrorWriteGrace)
 	_ = http.NewResponseController(w).SetWriteDeadline(deadline)
 }
 

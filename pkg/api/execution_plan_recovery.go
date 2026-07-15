@@ -67,6 +67,15 @@ func (tr *TestRunner) recoverSequentialExecutionPlanRuns() error {
 			continue
 		}
 		if !tr.isExecutionLeader() {
+			// Acquire-time recovery runs while the lease is held but public
+			// execution admission is still closed. Keep the rehydrated mapping in
+			// that window; the on-admit reconciliation pass will replace the
+			// provisional state from the durable row and resume it. Discard only
+			// after actual lease loss.
+			if tr.holdsExecutionLeadership() {
+				tr.finishSequentialRecoveryAction(action.runID)
+				continue
+			}
 			tr.finishSequentialRecoveryAction(action.runID)
 			tr.discardRehydratedSequentialPlanRun(action.runID)
 			recoveryErr = errors.Join(recoveryErr, errNotExecutionLeader)
@@ -260,6 +269,7 @@ func (tr *TestRunner) haltUnrecoverableSequentialExecutionPlanRun(run *storage.E
 	halted.Status = "halted"
 	halted.UpdatedAt = now
 	halted.CompletedAt = &now
+	halted.TransitionToken = ""
 	if err := tr.persistExecutionPlanRunDurable(&halted); err != nil {
 		return executionPlanPersistenceError("halt unrecoverable execution-plan run "+run.ID, err)
 	}

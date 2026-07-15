@@ -1314,7 +1314,8 @@ func (tr *TestRunner) refreshSystemSettingsFromStore(force bool) {
 		return
 	}
 	tr.settingsAuthRefreshAt = now
-	defer tr.settingsRefreshMu.Unlock()
+	revision := tr.settingsRevision
+	tr.settingsRefreshMu.Unlock()
 	raw, err := tr.settingsStore.GetSetting(systemSettingsStoreKey)
 	if err != nil || strings.TrimSpace(raw) == "" {
 		return
@@ -1336,12 +1337,18 @@ func (tr *TestRunner) refreshSystemSettingsFromStore(force bool) {
 	if err := validateSystemSettings(loaded); err != nil {
 		return
 	}
+	tr.settingsRefreshMu.Lock()
+	if tr.settingsRevision != revision {
+		tr.settingsRefreshMu.Unlock()
+		return
+	}
 	tr.mu.Lock()
 	tr.settings = cloneSystemSettings(loaded)
 	tr.maxTests = loaded.General.MaxConcurrentTests
 	tr.invalidateCapacityAdvisoryCacheLocked()
 	tr.mu.Unlock()
 	tr.systemSettingsRaw = raw
+	tr.settingsRefreshMu.Unlock()
 	tr.setNotificationSettings(loaded.Notifications)
 }
 
@@ -1443,14 +1450,19 @@ func (tr *TestRunner) UpdateSystemSettings(settings SystemSettings) (SystemSetti
 		return SystemSettings{}, fmt.Errorf("encode settings: %w", err)
 	}
 
-	// Serialize the durable write and in-memory install with refresh so a refresh
-	// that read the prior blob cannot overwrite this update afterward.
+	// Serialize writers, but do not hold the refresh mutex across storage I/O:
+	// authentication reads use that mutex to coordinate their periodic refresh.
+	// A generation check in refreshSystemSettingsFromStore prevents a stale read
+	// that overlaps this write from installing afterward.
+	tr.settingsWriteMu.Lock()
+	defer tr.settingsWriteMu.Unlock()
 	tr.settingsRefreshMu.Lock()
-	defer tr.settingsRefreshMu.Unlock()
+	expectedRaw := tr.systemSettingsRaw
+	tr.settingsRefreshMu.Unlock()
 	if tr.settingsStore != nil {
 		encodedString := string(encoded)
 		if cas, ok := tr.settingsStore.(settingsCompareAndSwapper); ok {
-			updated, err := cas.CompareAndSwapSetting(systemSettingsStoreKey, tr.systemSettingsRaw, encodedString)
+			updated, err := cas.CompareAndSwapSetting(systemSettingsStoreKey, expectedRaw, encodedString)
 			if err != nil {
 				return SystemSettings{}, fmt.Errorf("persist settings: %w", err)
 			}
@@ -1460,9 +1472,13 @@ func (tr *TestRunner) UpdateSystemSettings(settings SystemSettings) (SystemSetti
 		} else if err := tr.settingsStore.SaveSetting(systemSettingsStoreKey, encodedString); err != nil {
 			return SystemSettings{}, fmt.Errorf("persist settings: %w", err)
 		}
-		tr.systemSettingsRaw = encodedString
 	}
 
+	tr.settingsRefreshMu.Lock()
+	tr.settingsRevision++
+	if tr.settingsStore != nil {
+		tr.systemSettingsRaw = string(encoded)
+	}
 	tr.mu.Lock()
 	tr.settings = normalized
 	tr.maxTests = normalized.General.MaxConcurrentTests
@@ -1471,6 +1487,7 @@ func (tr *TestRunner) UpdateSystemSettings(settings SystemSettings) (SystemSetti
 	tr.invalidateCapacityAdvisoryCacheLocked()
 	tr.mu.Unlock()
 	tr.settingsAuthRefreshAt = time.Now()
+	tr.settingsRefreshMu.Unlock()
 	tr.setNotificationSettings(normalized.Notifications)
 
 	return normalized, nil

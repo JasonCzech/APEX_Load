@@ -120,6 +120,19 @@ func TestStartTestDoesNotLaunchWhenInitializingPersistenceFails(t *testing.T) {
 	}
 }
 
+func TestCompleteTestRunClearsLocalLivenessMarkers(t *testing.T) {
+	runner := NewTestRunner(1, NewHub(), nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	test := &ManagedTest{ID: "completed", Status: "RUNNING", ProjectID: storage.DefaultProjectID, executionCtx: ctx, cancel: cancel}
+	runner.tests[test.ID] = test
+	if err := runner.completeTestRun(test, "COMPLETE", time.Now(), "", nil); err != nil {
+		t.Fatal(err)
+	}
+	if test.cancel != nil || test.executionCtx != nil {
+		t.Fatalf("terminal test retained local liveness markers: context=%v cancel=%v", test.executionCtx, test.cancel)
+	}
+}
+
 func TestStopTestDoesNotCancelInitializingRunWhenAbortPersistenceFails(t *testing.T) {
 	runner := NewTestRunner(1, NewHub(), nil)
 	wantErr := errors.New("database unavailable")

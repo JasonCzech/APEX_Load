@@ -147,6 +147,7 @@ func (tr *TestRunner) ApplyScenarioRuntimeToGroups(id string, req ApplyRuntimeTo
 		}
 	}
 	tr.scenarios[id] = &updated
+	tr.contentRevision++
 
 	return &ApplyRuntimeToGroupsResponse{
 		Scenario: tr.enrichScenarioSummaryLocked(&updated),

@@ -253,10 +253,21 @@ func NewServer(cfg ServerConfig) *Server {
 	if leadership != nil {
 		leadership.setOnAcquire(func() {
 			for leadership.IsLeader() {
-				if err := runner.reloadAndReconcile(); err == nil {
-					return
-				} else {
+				if err := runner.reloadAndReconcile(); err != nil {
 					slog.Warn("execution leadership recovery failed; admission remains closed", "error", err)
+				} else {
+					ctx, cancel := leadership.operationContext(context.Background())
+					err := s.reconcileProvisioningRequests(ctx)
+					cancel()
+					if err == nil {
+						return
+					}
+					if leadership.IsLeader() {
+						slog.Warn("provisioning leadership recovery failed; admission remains closed", "error", err)
+					}
+				}
+				if !leadership.IsLeader() {
+					return
 				}
 				ctx, cancel := leadership.operationContext(context.Background())
 				timer := time.NewTimer(250 * time.Millisecond)
@@ -273,11 +284,6 @@ func NewServer(cfg ServerConfig) *Server {
 		leadership.setOnAdmit(func() {
 			go func() {
 				runner.ReconcilePendingTests()
-				ctx, cancel := leadership.operationContext(context.Background())
-				defer cancel()
-				if err := s.reconcileProvisioningRequests(ctx); err != nil && ctx.Err() == nil {
-					slog.Warn("failed to reconcile provisioning requests", "error", err)
-				}
 				s.wakeArchiveFinalizationRetry()
 			}()
 		})

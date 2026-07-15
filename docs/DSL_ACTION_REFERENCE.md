@@ -738,7 +738,7 @@ Bidirectional-streaming gRPC call.
 | `body_file` | string |  | Local file containing the request message JSON. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `headers` | object |  | Per-call gRPC metadata merged over config.grpc.metadata. |
 | `params.timeout_ms` | int |  | Per-call deadline in milliseconds; zero or greater. |
-| `params.max_messages` | int |  | Cap on streamed messages; zero or greater. |
+| `params.max_messages` | int |  | Cap on streamed messages; zero through 10000. |
 
 ### `grpc_client_stream`
 
@@ -751,7 +751,7 @@ Client-streaming gRPC call.
 | `body_file` | string |  | Local file containing the request message JSON. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `headers` | object |  | Per-call gRPC metadata merged over config.grpc.metadata. |
 | `params.timeout_ms` | int |  | Per-call deadline in milliseconds; zero or greater. |
-| `params.max_messages` | int |  | Cap on streamed messages; zero or greater. |
+| `params.max_messages` | int |  | Cap on streamed messages; zero through 10000. |
 
 ### `grpc_server_stream`
 
@@ -764,7 +764,7 @@ Server-streaming gRPC call; reads until the stream ends or max_messages.
 | `body_file` | string |  | Local file containing the request message JSON. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `headers` | object |  | Per-call gRPC metadata merged over config.grpc.metadata. |
 | `params.timeout_ms` | int |  | Per-call deadline in milliseconds; zero or greater. |
-| `params.max_messages` | int |  | Cap on streamed messages; zero or greater. |
+| `params.max_messages` | int |  | Cap on streamed messages; zero through 10000. |
 
 ### `grpc_unary`
 
@@ -777,7 +777,7 @@ Unary gRPC call.
 | `body_file` | string |  | Local file containing the request message JSON. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `headers` | object |  | Per-call gRPC metadata merged over config.grpc.metadata. |
 | `params.timeout_ms` | int |  | Per-call deadline in milliseconds; zero or greater. |
-| `params.max_messages` | int |  | Cap on streamed messages; zero or greater. |
+| `params.max_messages` | int |  | Cap on streamed messages; zero through 10000. |
 
 ## Protocol: http
 

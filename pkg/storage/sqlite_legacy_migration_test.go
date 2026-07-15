@@ -3,6 +3,7 @@ package storage
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -280,5 +281,50 @@ func TestLegacyGlobalScenarioMigrationRepairsProjectScopedReferences(t *testing.
 	}
 	if preservedRefKeys != 1 {
 		t.Fatalf("preserved legacy scenario ref key count = %d, want 1", preservedRefKeys)
+	}
+}
+
+func TestLegacyScenarioMigrationPreservesKeysWhenOldIDsConverge(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	now := time.Now().UTC().Truncate(time.Second)
+	projectID := "legacy-converged"
+	if err := store.SaveProject(&Project{ID: projectID, Name: projectID, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	for index := 1; index <= 2; index++ {
+		scriptID := fmt.Sprintf("script-%d", index)
+		oldScenarioID := fmt.Sprintf("legacy-old-%d", index)
+		refKey := fmt.Sprintf("legacy-ref-%d", index)
+		testID := fmt.Sprintf("test-%d", index)
+		if _, err := store.db.Exec(`INSERT INTO scripts (id, name, project_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, scriptID, scriptID, projectID, now, now); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.db.Exec(`INSERT INTO scenarios (id, ref_key, name, duration, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`, oldScenarioID, refKey, "Converged", "1m", now, now); err != nil {
+			t.Fatal(err)
+		}
+		groups, err := json.Marshal([]map[string]any{{"name": scriptID, "script_id": scriptID, "vusers": 1}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.db.Exec(`INSERT INTO tests (id, name, status, scenario_id, project_id, duration_ns, start_time, groups_json, runtime_settings_json, goal_config_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, testID, "Converged", "COMPLETE", oldScenarioID, projectID, int64(time.Minute), now.Add(time.Duration(index)*time.Second), string(groups), `{}`, `{}`); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.ensureLegacyApplication(); err != nil {
+		t.Fatal(err)
+	}
+	for index := 1; index <= 2; index++ {
+		refKey := fmt.Sprintf("legacy-ref-%d", index)
+		var count int
+		if err := store.db.QueryRow(`SELECT COUNT(*) FROM scenarios WHERE ref_key = ?`, refKey).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != 1 {
+			t.Fatalf("reference key %s owners = %d, want 1", refKey, count)
+		}
 	}
 }

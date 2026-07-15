@@ -6,10 +6,35 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/storage"
 )
+
+type blockingSettingsStore struct {
+	mu          sync.Mutex
+	raw         string
+	saveStarted chan struct{}
+	releaseSave chan struct{}
+	once        sync.Once
+}
+
+func (s *blockingSettingsStore) GetSetting(string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.raw, nil
+}
+
+func (s *blockingSettingsStore) SaveSetting(_ string, value string) error {
+	s.once.Do(func() { close(s.saveStarted) })
+	<-s.releaseSave
+	s.mu.Lock()
+	s.raw = value
+	s.mu.Unlock()
+	return nil
+}
 
 func TestPreserveWriteOnlyWebhookSecretsSurvivesReordering(t *testing.T) {
 	current := SystemSettings{Notifications: NotificationsSettings{Webhooks: []NotificationWebhookSettings{
@@ -63,6 +88,37 @@ func TestSystemSettingsCASRejectsStaleReplica(t *testing.T) {
 	staleSettings.General.MaxConcurrentTests = 4
 	if _, err := stale.UpdateSystemSettings(staleSettings); err == nil {
 		t.Fatal("stale replica update unexpectedly overwrote newer settings")
+	}
+}
+
+func TestSettingsRefreshDoesNotBlockBehindDurableWrite(t *testing.T) {
+	store := &blockingSettingsStore{saveStarted: make(chan struct{}), releaseSave: make(chan struct{})}
+	runner := NewTestRunner(2, NewHub(), nil)
+	runner.settingsStore = store
+	settings := runner.settings
+	updated := make(chan error, 1)
+	go func() {
+		_, err := runner.UpdateSystemSettings(settings)
+		updated <- err
+	}()
+	select {
+	case <-store.saveStarted:
+	case <-time.After(time.Second):
+		t.Fatal("settings write did not start")
+	}
+	readDone := make(chan struct{})
+	go func() {
+		_ = runner.GetSystemSettings()
+		close(readDone)
+	}()
+	select {
+	case <-readDone:
+	case <-time.After(250 * time.Millisecond):
+		t.Fatal("settings refresh blocked behind durable write")
+	}
+	close(store.releaseSave)
+	if err := <-updated; err != nil {
+		t.Fatal(err)
 	}
 }
 

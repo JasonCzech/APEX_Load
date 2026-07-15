@@ -162,6 +162,7 @@ func (tr *TestRunner) storeScenarioLocked(id string, req CreateScenarioRequest) 
 	stored := tr.buildStoredScenario(scenario, scripts)
 	stored.DataPools = dataPools
 	tr.scenarios[id] = stored
+	tr.contentRevision++
 	tr.indexRefKeyLocked(stored.RefKey, stored.ID)
 	return stored, nil
 }
@@ -245,6 +246,7 @@ func (tr *TestRunner) replaceScenarioDataPools(id string, bindings []storage.Sce
 		return false
 	}
 	scenario.DataPools = append([]storage.ScenarioDataPoolBinding(nil), bindings...)
+	tr.contentRevision++
 	return true
 }
 
@@ -300,6 +302,7 @@ func (tr *TestRunner) DeleteScenarioDurable(id string) (bool, error) {
 	}
 	tr.removeRefKeyLocked(scenario.RefKey)
 	delete(tr.scenarios, id)
+	tr.contentRevision++
 	return true, nil
 }
 
@@ -341,9 +344,11 @@ func (tr *TestRunner) saveScenarioScheduleLocked(schedule *storage.ScenarioSched
 	}
 	if existingIndex >= 0 {
 		scenario.Schedules[existingIndex] = cloneScenarioSchedule(schedule)
+		tr.contentRevision++
 		return nil
 	}
 	scenario.Schedules = append(scenario.Schedules, cloneScenarioSchedule(schedule))
+	tr.contentRevision++
 	return nil
 }
 

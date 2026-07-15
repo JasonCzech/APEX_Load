@@ -757,7 +757,7 @@ func (s *Server) executeProvisioningScale(ctx context.Context, req *storage.Prov
 // provisioning state when a controller lost execution leadership. The CAS
 // transition makes this safe when a takeover races with another worker.
 func (s *Server) reconcileProvisioningRequests(ctx context.Context) error {
-	if s.store == nil || s.fleetScaler == nil || !s.fleetScaler.CanProvision() || s.runner == nil || !s.runner.isExecutionLeader() {
+	if s.store == nil || s.fleetScaler == nil || !s.fleetScaler.CanProvision() || s.runner == nil || !s.runner.holdsExecutionLeadership() {
 		return nil
 	}
 	const pageSize = 250
@@ -770,7 +770,7 @@ func (s *Server) reconcileProvisioningRequests(ctx context.Context) error {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			if req == nil || strings.ToLower(strings.TrimSpace(req.Status)) != "provisioning" || !s.runner.isExecutionLeader() {
+			if req == nil || strings.ToLower(strings.TrimSpace(req.Status)) != "provisioning" || !s.runner.holdsExecutionLeadership() {
 				continue
 			}
 			pool, err := s.store.GetFleetPool(req.FleetPoolID)
@@ -787,7 +787,7 @@ func (s *Server) reconcileProvisioningRequests(ctx context.Context) error {
 			}
 			expectedRevision, expectedToken = req.Revision, req.AttemptToken
 			status, workload, scaledTo, message := s.executeProvisioningScale(ctx, req, pool)
-			if ctx.Err() != nil || !s.runner.isExecutionLeader() {
+			if ctx.Err() != nil || !s.runner.holdsExecutionLeadership() {
 				return firstNonNilError(ctx.Err(), errNotExecutionLeader)
 			}
 			now := time.Now()

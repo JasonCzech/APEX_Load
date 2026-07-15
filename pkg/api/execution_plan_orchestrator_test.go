@@ -26,6 +26,18 @@ type errorBeforeCommitExecutionPlanRunStore struct {
 	failOnCAS int
 }
 
+type casMissReloadErrorExecutionPlanRunStore struct {
+	*storage.SQLiteStore
+}
+
+func (s *casMissReloadErrorExecutionPlanRunStore) CompareAndSwapExecutionPlanRun(*storage.ExecutionPlanRun, int64) (bool, error) {
+	return false, nil
+}
+
+func (s *casMissReloadErrorExecutionPlanRunStore) GetExecutionPlanRun(string) (*storage.ExecutionPlanRun, error) {
+	return nil, errors.New("temporary reload failure")
+}
+
 func (s *errorBeforeCommitExecutionPlanRunStore) SaveExecutionPlanRun(run *storage.ExecutionPlanRun) error {
 	return s.base.SaveExecutionPlanRun(run)
 }
@@ -187,6 +199,24 @@ func TestParallelPlanReconcilesLostFinalCASResponse(t *testing.T) {
 	}
 	if _, ok := runner.GetTest(result.Results[0].TestID); !ok {
 		t.Fatalf("committed test %s was deleted after a lost response", result.Results[0].TestID)
+	}
+}
+
+func TestExecutionPlanCASMissWithReloadFailureRemainsRetryable(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	runner := NewTestRunner(1, NewHub(), store)
+	runner.execPlanRunStore = &casMissReloadErrorExecutionPlanRunStore{SQLiteStore: store}
+	run := &storage.ExecutionPlanRun{ID: "run-retry", PlanID: "plan", RunMode: "sequential", Status: "running", Revision: 1, UpdatedAt: time.Now()}
+	err = runner.persistExecutionPlanRunDurable(run)
+	if !errors.Is(err, errExecutionPlanRunCommitUnknown) || errors.Is(err, errExecutionPlanRunConflict) {
+		t.Fatalf("error = %v, want commit-unknown without conflict", err)
+	}
+	if !durableBackgroundRetryable(err) {
+		t.Fatalf("commit-unknown error was classified as terminal: %v", err)
 	}
 }
 

@@ -973,7 +973,7 @@ func (tr *TestRunner) persistExecutionPlanRunDurable(run *storage.ExecutionPlanR
 				return nil
 			}
 			if reloadErr != nil {
-				return errors.Join(fmt.Errorf("%w: run %s expected revision %d", errExecutionPlanRunConflict, run.ID, expectedRevision), reloadErr)
+				return fmt.Errorf("%w: reload run %s after CAS miss at revision %d: %v", errExecutionPlanRunCommitUnknown, run.ID, expectedRevision, reloadErr)
 			}
 			return fmt.Errorf("%w: run %s expected revision %d, durable revision is %d", errExecutionPlanRunConflict, run.ID, expectedRevision, current.Revision)
 		}

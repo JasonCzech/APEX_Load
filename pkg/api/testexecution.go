@@ -481,6 +481,8 @@ func (tr *TestRunner) stopTestWithContext(ctx context.Context, id string, requir
 		if test.cancel != nil {
 			test.cancel()
 		}
+		test.cancel = nil
+		test.executionCtx = nil
 		tr.mu.Unlock()
 		tr.broadcastEvent("test_aborted", test)
 		if err := tr.advanceExecutionPlanForTest(test, "ABORTED"); err != nil {
@@ -1596,6 +1598,8 @@ func (tr *TestRunner) failTestBeforeRun(test *ManagedTest, message string) error
 	test.QueuePosition = 0
 	test.Error = message
 	test.EndedAt = &now
+	test.cancel = nil
+	test.executionCtx = nil
 	tr.mu.Unlock()
 	releaseErr := tr.releaseCapacityReservationForTerminalStatus(test.ID, "FAILED")
 	if releaseErr != nil && test.TimeslotID != nil {
@@ -1660,6 +1664,8 @@ func (tr *TestRunner) completeTestRunUnderArchiveFence(test *ManagedTest, finalS
 	test.QueuePosition = 0
 	test.Error = finalError
 	test.EndedAt = &endTime
+	test.cancel = nil
+	test.executionCtx = nil
 	test.Archive = archiveRecord
 	if archiveRecord != nil {
 		tr.archives[test.ID] = archiveRecord

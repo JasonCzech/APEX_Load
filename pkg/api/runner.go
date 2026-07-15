@@ -127,6 +127,7 @@ type TestRunner struct {
 	deletingProjects      map[string]struct{}
 	shuttingDown          bool
 	mu                    sync.RWMutex
+	contentRevision       uint64
 	activeStopMu          sync.Mutex
 	remoteControlMu       sync.Mutex
 	remoteControlGates    map[string]*distributedControlGate
@@ -134,8 +135,10 @@ type TestRunner struct {
 	maxTests              int
 	settings              SystemSettings
 	settingsRefreshMu     sync.Mutex
+	settingsWriteMu       sync.Mutex
 	settingsAuthRefreshAt time.Time
 	systemSettingsRaw     string
+	settingsRevision      uint64
 	scriptStore           scriptPersistence
 	testStore             testPersistence
 	scenarioStore         scenarioPersistence

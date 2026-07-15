@@ -20,7 +20,35 @@ import (
 
 type archiveRedactionProtocol struct{}
 
+type archiveDeadlineRecorder struct {
+	header   http.Header
+	deadline time.Time
+}
+
+func (r *archiveDeadlineRecorder) Header() http.Header {
+	if r.header == nil {
+		r.header = make(http.Header)
+	}
+	return r.header
+}
+func (r *archiveDeadlineRecorder) Write(payload []byte) (int, error) { return len(payload), nil }
+func (r *archiveDeadlineRecorder) WriteHeader(int)                   {}
+func (r *archiveDeadlineRecorder) SetWriteDeadline(deadline time.Time) error {
+	r.deadline = deadline
+	return nil
+}
+
 type archiveQueryStubProtocol struct{ archiveStubProtocol }
+
+func TestArchiveWriteDeadlineLeavesErrorResponseGrace(t *testing.T) {
+	recorder := &archiveDeadlineRecorder{}
+	started := time.Now()
+	clearArchiveWriteDeadline(recorder)
+	minimum := started.Add(configuredArchiveMaterializationTimeout() + 4*time.Second)
+	if recorder.deadline.Before(minimum) {
+		t.Fatalf("archive deadline = %v, want at least %v", recorder.deadline, minimum)
+	}
+}
 
 func (p *archiveQueryStubProtocol) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
 	// Keep this archive API fixture below the production query byte budget on

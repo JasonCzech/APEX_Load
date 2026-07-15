@@ -21,6 +21,42 @@ type flakySequentialRecoveryStore struct {
 	err       error
 }
 
+func TestSequentialRecoveryKeepsMappingsWhileAdmissionIsClosed(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	now := time.Now().UTC()
+	plan := &storage.ExecutionPlan{ID: "plan-acquire", ProjectID: storage.DefaultProjectID, Name: "Acquire", RunMode: "sequential", Status: "active", CreatedAt: now, UpdatedAt: now}
+	if err := store.SaveExecutionPlan(plan); err != nil {
+		t.Fatal(err)
+	}
+	run := &storage.ExecutionPlanRun{
+		ID: "run-acquire", PlanID: plan.ID, ProjectID: storage.DefaultProjectID, RunMode: "sequential", Status: "running", Revision: 1, CreatedAt: now, UpdatedAt: now,
+		Entries: []storage.ExecutionPlanRunEntry{{Order: 0, ScenarioID: "scenario", TestID: "test-acquire", Status: "running", RunName: "Acquire"}},
+	}
+	if err := store.SaveExecutionPlanRun(run); err != nil {
+		t.Fatal(err)
+	}
+	leadership := newExecutionLeadership(&fakeLeaseStore{dfltOK: true}, "owner")
+	leadership.leader.Store(true)
+	leadership.reconciling.Store(true)
+	runner := NewTestRunner(1, NewHub(), store, WithExecutionLeadership(leadership))
+	runner.tests["test-acquire"] = &ManagedTest{ID: "test-acquire", Status: "PENDING"}
+
+	if err := runner.recoverSequentialExecutionPlanRuns(); err != nil {
+		t.Fatalf("acquire-time recovery: %v", err)
+	}
+	runner.seqMu.Lock()
+	mapped := runner.seqPlanByTest["test-acquire"]
+	state := runner.seqPlanRuns[run.ID]
+	runner.seqMu.Unlock()
+	if mapped != run.ID || state == nil || state.recovering {
+		t.Fatalf("mapping/state during closed admission = %q, %+v", mapped, state)
+	}
+}
+
 func (s *flakySequentialRecoveryStore) SaveExecutionPlanRun(run *storage.ExecutionPlanRun) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -379,7 +415,7 @@ func TestSequentialPlanRecoveryQuarantinesMalformedRunWithoutBlockingPendingProm
 	}
 	if err := store.SaveExecutionPlanRun(&storage.ExecutionPlanRun{
 		ID: "malformed-running-run", PlanID: "malformed-plan", ProjectID: storage.DefaultProjectID,
-		RunMode: "sequential", Status: "running", CreatedAt: now, UpdatedAt: now,
+		RunMode: "sequential", Status: "running", TransitionToken: "previous-transition", CreatedAt: now, UpdatedAt: now,
 		Entries: []storage.ExecutionPlanRunEntry{
 			{Order: 0, ScenarioID: "scenario-a", TestID: "test-a", Status: "running", RunName: "Malformed"},
 			{Order: 1, ScenarioID: "scenario-b", TestID: "test-b", Status: "running", RunName: "Malformed"},
@@ -400,6 +436,9 @@ func TestSequentialPlanRecoveryQuarantinesMalformedRunWithoutBlockingPendingProm
 	}
 	if run == nil || run.Status != "halted" || run.CompletedAt == nil {
 		t.Fatalf("malformed run = %+v, want durably halted", run)
+	}
+	if run.TransitionToken == "" || run.TransitionToken == "previous-transition" {
+		t.Fatalf("recovery transition token = %q, want a fresh token", run.TransitionToken)
 	}
 	if run.Entries[0].Status != "failed" || run.Entries[1].Status != "failed" || run.Entries[2].Status != "skipped" {
 		t.Fatalf("quarantined entries = %+v", run.Entries)

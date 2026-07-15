@@ -71,6 +71,9 @@ func (tr *TestRunner) reloadStoredScripts() error {
 	if tr == nil || tr.scriptStore == nil {
 		return nil
 	}
+	tr.mu.RLock()
+	revision := tr.contentRevision
+	tr.mu.RUnlock()
 	scripts, err := tr.scriptStore.ListScripts("", nil)
 	if err != nil {
 		return err
@@ -94,6 +97,10 @@ func (tr *TestRunner) reloadStoredScripts() error {
 		}
 	}
 	tr.mu.Lock()
+	if tr.contentRevision != revision {
+		tr.mu.Unlock()
+		return nil
+	}
 	for _, script := range tr.scripts {
 		if script != nil {
 			tr.removeRefKeyLocked(script.RefKey)
@@ -130,6 +137,9 @@ func (tr *TestRunner) reloadStoredScenarios() error {
 	if tr == nil || tr.scenarioStore == nil {
 		return nil
 	}
+	tr.mu.RLock()
+	revision := tr.contentRevision
+	tr.mu.RUnlock()
 	scenarios, err := tr.scenarioStore.ListScenarios()
 	if err != nil {
 		return err
@@ -165,6 +175,10 @@ func (tr *TestRunner) reloadStoredScenarios() error {
 	}
 	tr.mu.RUnlock()
 	tr.mu.Lock()
+	if tr.contentRevision != revision {
+		tr.mu.Unlock()
+		return nil
+	}
 	for _, scenario := range tr.scenarios {
 		if scenario != nil {
 			tr.removeRefKeyLocked(scenario.RefKey)
@@ -747,17 +761,23 @@ func (tr *TestRunner) forgetProject(projectID string) {
 	projectID = normalizeProjectID(projectID)
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
+	contentDeleted := false
 	for id, script := range tr.scripts {
 		if script != nil && normalizeProjectID(script.ProjectID) == projectID {
 			tr.removeRefKeyLocked(script.RefKey)
 			delete(tr.scripts, id)
+			contentDeleted = true
 		}
 	}
 	for id, scenario := range tr.scenarios {
 		if scenario != nil && normalizeProjectID(scenario.ProjectID) == projectID {
 			tr.removeRefKeyLocked(scenario.RefKey)
 			delete(tr.scenarios, id)
+			contentDeleted = true
 		}
+	}
+	if contentDeleted {
+		tr.contentRevision++
 	}
 	for id, test := range tr.tests {
 		if test != nil && normalizeProjectID(test.ProjectID) == projectID {

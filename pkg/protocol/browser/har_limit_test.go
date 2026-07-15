@@ -34,3 +34,15 @@ func TestHARMonitorStopsOnActualFileSize(t *testing.T) {
 		t.Fatal("oversized HAR did not mark the session as failed")
 	}
 }
+
+func TestClosePreservesPreviouslyRetainedHARArtifact(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "prior_scrubbed.har")
+	if err := os.WriteFile(path, []byte(`{"log":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	browser := &Browser{lastHARArtifactPath: path}
+	browser.close()
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("close removed retained HAR artifact: %v", err)
+	}
+}

@@ -34,6 +34,7 @@ type FieldSpec struct {
 	Required bool      `json:"required,omitempty"`
 	Kind     FieldKind `json:"kind"`
 	Enum     []string  `json:"enum,omitempty"`
+	Maximum  int64     `json:"maximum,omitempty"`
 	Doc      string    `json:"doc,omitempty"`
 }
 

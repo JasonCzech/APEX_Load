@@ -82,6 +82,38 @@ func TestProvisioningRequestWithKubernetesScaler(t *testing.T) {
 	}
 }
 
+func TestProvisioningRecoveryRunsWhileAdmissionIsClosed(t *testing.T) {
+	server, store := newTimeslotServer(t)
+	pool := &storage.FleetPool{ID: "pool-acquire", Name: "pool", CloudProvider: "kubernetes", Status: "active", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := store.SaveFleetPool(pool); err != nil {
+		t.Fatal(err)
+	}
+	req := &storage.ProvisioningRequest{ID: "request-acquire", FleetPoolID: pool.ID, Status: "provisioning", DesiredCount: 3, ProjectID: storage.DefaultProjectID}
+	if err := store.SaveProvisioningRequest(req); err != nil {
+		t.Fatal(err)
+	}
+	leadership := newExecutionLeadership(&fakeLeaseStore{dfltOK: true}, "owner")
+	leadership.leader.Store(true)
+	leadership.reconciling.Store(true)
+	server.runner.leadership = leadership
+	scaler := &fakeFleetScaler{can: true}
+	server.fleetScaler = scaler
+
+	if err := server.reconcileProvisioningRequests(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if scaler.calls != 1 {
+		t.Fatalf("scale calls = %d, want 1 during acquire-time recovery", scaler.calls)
+	}
+	stored, err := store.GetProvisioningRequest(req.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Status != "success" {
+		t.Fatalf("recovered status = %q, want success", stored.Status)
+	}
+}
+
 func TestProvisioningRequestScalerFailureRecordsFailed(t *testing.T) {
 	server, _ := newTimeslotServer(t)
 	server.fleetScaler = &fakeFleetScaler{can: true, err: errors.New("api server unreachable")}

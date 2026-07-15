@@ -3096,7 +3096,8 @@
               "params": {
                 "properties": {
                   "max_messages": {
-                    "description": "Cap on streamed messages; zero or greater.",
+                    "description": "Cap on streamed messages; zero through 10000.",
+                    "maximum": 10000,
                     "type": "integer"
                   },
                   "timeout_ms": {
@@ -3147,7 +3148,8 @@
               "params": {
                 "properties": {
                   "max_messages": {
-                    "description": "Cap on streamed messages; zero or greater.",
+                    "description": "Cap on streamed messages; zero through 10000.",
+                    "maximum": 10000,
                     "type": "integer"
                   },
                   "timeout_ms": {
@@ -3198,7 +3200,8 @@
               "params": {
                 "properties": {
                   "max_messages": {
-                    "description": "Cap on streamed messages; zero or greater.",
+                    "description": "Cap on streamed messages; zero through 10000.",
+                    "maximum": 10000,
                     "type": "integer"
                   },
                   "timeout_ms": {
@@ -3249,7 +3252,8 @@
               "params": {
                 "properties": {
                   "max_messages": {
-                    "description": "Cap on streamed messages; zero or greater.",
+                    "description": "Cap on streamed messages; zero through 10000.",
+                    "maximum": 10000,
                     "type": "integer"
                   },
                   "timeout_ms": {
@@ -6730,6 +6734,8 @@
           "type": "string"
         },
         "max_recv_msg_size": {
+          "maximum": 8388608,
+          "minimum": 0,
           "type": "integer"
         },
         "metadata": {

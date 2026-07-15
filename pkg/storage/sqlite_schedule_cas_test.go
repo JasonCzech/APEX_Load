@@ -130,6 +130,37 @@ func TestSQLiteScenarioScheduleApprovalResolutionIsAtomic(t *testing.T) {
 	}
 }
 
+func TestSQLiteScheduleUpdateSupersedesPreviousPendingApproval(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	now := time.Now().UTC()
+	if err := store.SaveScenario(&Scenario{ID: "scenario", Name: "Scenario", Duration: "1m", CreatedAt: now}, nil); err != nil {
+		t.Fatal(err)
+	}
+	firstSchedule := &ScenarioSchedule{ID: "schedule", ScenarioID: "scenario", ProjectID: DefaultProjectID, Revision: 1, Name: "Schedule", CronExpr: "0 * * * *", Enabled: true, PendingApprovalID: "approval-1", CreatedAt: now, UpdatedAt: now}
+	firstApproval := &ScenarioScheduleApproval{ID: "approval-1", ScheduleID: "schedule", ScenarioID: "scenario", ProjectID: DefaultProjectID, ScheduleRevision: 1, Policy: "manual", Status: "pending", RequestedAt: now, CreatedAt: now, UpdatedAt: now}
+	if changed, err := store.SaveScenarioScheduleWithApproval(firstSchedule, firstApproval, 0); err != nil || !changed {
+		t.Fatalf("first save = %v, %v", changed, err)
+	}
+	secondSchedule := *firstSchedule
+	secondSchedule.PendingApprovalID = "approval-2"
+	secondSchedule.UpdatedAt = now.Add(time.Minute)
+	secondApproval := &ScenarioScheduleApproval{ID: "approval-2", ScheduleID: "schedule", ScenarioID: "scenario", ProjectID: DefaultProjectID, Policy: "manual", Status: "pending", RequestedAt: secondSchedule.UpdatedAt, CreatedAt: secondSchedule.UpdatedAt, UpdatedAt: secondSchedule.UpdatedAt}
+	if changed, err := store.SaveScenarioScheduleWithApproval(&secondSchedule, secondApproval, 1); err != nil || !changed {
+		t.Fatalf("second save = %v, %v", changed, err)
+	}
+	old, err := store.GetScenarioScheduleApproval("approval-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if old.Status != "superseded" || old.ResolvedAt == nil {
+		t.Fatalf("old approval = %+v, want superseded and resolved", old)
+	}
+}
+
 func TestSQLiteExecutionPlanScheduleRevisionCASPreventsOverwriteAndResurrection(t *testing.T) {
 	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {

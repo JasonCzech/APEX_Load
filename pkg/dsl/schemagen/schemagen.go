@@ -187,6 +187,9 @@ func fieldSchema(field dsl.FieldSpec) map[string]any {
 	if field.Doc != "" {
 		schema["description"] = field.Doc
 	}
+	if field.Maximum > 0 {
+		schema["maximum"] = field.Maximum
+	}
 	return schema
 }
 

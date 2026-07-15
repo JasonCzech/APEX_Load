@@ -95,6 +95,7 @@ func (b *Browser) closeOversizedHARContext() {
 	b.mu.Lock()
 	b.harErrorSeen = true
 	context := b.pwContext
+	b.pwContext = nil
 	b.mu.Unlock()
 	if context != nil {
 		_ = context.Close()

@@ -1629,6 +1629,7 @@ func (tr *TestRunner) DeleteScenarioSchedule(scenarioID string, scheduleID strin
 		}
 	}
 	scenario.Schedules = append([]*storage.ScenarioSchedule(nil), filtered...)
+	tr.contentRevision++
 	return true, nil
 }
 
@@ -1757,6 +1758,7 @@ func (tr *TestRunner) upsertScenarioScheduleLocked(scenarioID string, scheduleID
 					}
 				}
 			}
+			tr.contentRevision++
 			return cloneScenarioSchedule(schedule), nil
 		}
 	}
@@ -1875,6 +1877,7 @@ func (tr *TestRunner) ResolveScenarioScheduleApproval(scenarioID string, schedul
 				break
 			}
 		}
+		tr.contentRevision++
 	} else {
 		if err := tr.scenarioStore.SaveScenarioScheduleApproval(approval); err != nil {
 			return nil, nil, false, err
