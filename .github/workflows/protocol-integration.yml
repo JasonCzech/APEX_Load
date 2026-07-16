@@ -1,0 +1,99 @@
+name: Protected Protocol Integration
+
+on:
+  schedule:
+    - cron: "0 5 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: protected-protocol-integration
+  cancel-in-progress: false
+
+env:
+  GOTOOLCHAIN: local
+  GOPROXY: ${{ vars.GO_MODULE_PROXY || 'https://proxy.golang.org,direct' }}
+
+jobs:
+  live-protocol:
+    name: Live ${{ matrix.profile }} integration
+    runs-on: ${{ fromJSON(vars.PROTOCOL_RUNNER_LABELS || '["ubuntu-24.04"]') }}
+    timeout-minutes: 30
+    environment: protocol-integration
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - profile: solace
+            tags: jms_solace_real,jms_solace_integration
+            package: ./pkg/protocol/jms
+          - profile: servicebus
+            tags: jms_servicebus_real,jms_servicebus_integration
+            package: ./pkg/protocol/jms
+          - profile: kafka
+            tags: kafka_real,kafka_integration
+            package: ./pkg/protocol/kafka
+          - profile: eventhubs
+            tags: eventhubs_real
+            package: ./pkg/protocol/eventhubs
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Go from go.mod
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Verify protected integration configuration
+        env:
+          PROFILE: ${{ matrix.profile }}
+          SOLACE_AMQP_URL: ${{ secrets.SOLACE_AMQP_URL }}
+          SOLACE_QUEUE: ${{ secrets.SOLACE_QUEUE }}
+          SERVICEBUS_CONNECTION_STRING: ${{ secrets.SERVICEBUS_CONNECTION_STRING }}
+          SERVICEBUS_QUEUE: ${{ secrets.SERVICEBUS_QUEUE }}
+          KAFKA_BROKERS: ${{ secrets.KAFKA_BROKERS }}
+          KAFKA_TOPIC: ${{ secrets.KAFKA_TOPIC }}
+          EVENTHUBS_CONNECTION_STRING: ${{ secrets.EVENTHUBS_CONNECTION_STRING }}
+          EVENTHUBS_EVENT_HUB: ${{ secrets.EVENTHUBS_EVENT_HUB }}
+        run: |
+          set -euo pipefail
+          case "${PROFILE}" in
+            solace) required=(SOLACE_AMQP_URL SOLACE_QUEUE) ;;
+            servicebus) required=(SERVICEBUS_CONNECTION_STRING SERVICEBUS_QUEUE) ;;
+            kafka) required=(KAFKA_BROKERS KAFKA_TOPIC) ;;
+            eventhubs) required=(EVENTHUBS_CONNECTION_STRING EVENTHUBS_EVENT_HUB) ;;
+            *) echo "unsupported integration profile: ${PROFILE}" >&2; exit 2 ;;
+          esac
+          for variable in "${required[@]}"; do
+            if [[ -z "${!variable:-}" ]]; then
+              echo "required protected environment secret is missing: ${variable}" >&2
+              exit 1
+            fi
+          done
+
+      - name: Run live protocol round trip
+        env:
+          BUILD_TAGS: ${{ matrix.tags }}
+          TEST_PACKAGE: ${{ matrix.package }}
+          SOLACE_AMQP_URL: ${{ secrets.SOLACE_AMQP_URL }}
+          SOLACE_USERNAME: ${{ secrets.SOLACE_USERNAME }}
+          SOLACE_PASSWORD: ${{ secrets.SOLACE_PASSWORD }}
+          SOLACE_VPN: ${{ secrets.SOLACE_VPN }}
+          SOLACE_QUEUE: ${{ secrets.SOLACE_QUEUE }}
+          SERVICEBUS_CONNECTION_STRING: ${{ secrets.SERVICEBUS_CONNECTION_STRING }}
+          SERVICEBUS_QUEUE: ${{ secrets.SERVICEBUS_QUEUE }}
+          SERVICEBUS_TOPIC: ${{ secrets.SERVICEBUS_TOPIC }}
+          SERVICEBUS_SUBSCRIPTION: ${{ secrets.SERVICEBUS_SUBSCRIPTION }}
+          SERVICEBUS_REPLY_QUEUE: ${{ secrets.SERVICEBUS_REPLY_QUEUE }}
+          KAFKA_BROKERS: ${{ secrets.KAFKA_BROKERS }}
+          KAFKA_TOPIC: ${{ secrets.KAFKA_TOPIC }}
+          EVENTHUBS_CONNECTION_STRING: ${{ secrets.EVENTHUBS_CONNECTION_STRING }}
+          EVENTHUBS_EVENT_HUB: ${{ secrets.EVENTHUBS_EVENT_HUB }}
+          EVENTHUBS_PARTITION_ID: ${{ secrets.EVENTHUBS_PARTITION_ID }}
+        run: go test -count=1 -timeout=20m -tags "${BUILD_TAGS}" "${TEST_PACKAGE}"

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	playwright "github.com/playwright-community/playwright-go"
 )
 
@@ -158,7 +159,8 @@ func (b *Browser) waitRouteNetworkLatency() bool {
 }
 
 func (b *Browser) requestPolicyEnabled() bool {
-	return !b.cacheEnabled ||
+	return len(b.allowedTargetHosts) > 0 ||
+		!b.cacheEnabled ||
 		b.cacheContentURLRevalidationEnabled() ||
 		b.checkNewerVersions ||
 		b.downloadResources != "all" ||
@@ -178,6 +180,9 @@ func (b *Browser) shouldBlockRequest(request playwright.Request) bool {
 }
 
 func (b *Browser) shouldBlockRequestInfo(rawURL, resourceType string, isNavigation bool) bool {
+	if len(b.allowedTargetHosts) > 0 && !protocol.TargetURLAllowed(rawURL, b.allowedTargetHosts) {
+		return true
+	}
 	if isNavigation || resourceType == "document" {
 		return false
 	}

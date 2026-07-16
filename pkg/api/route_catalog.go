@@ -40,6 +40,12 @@ var routeCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodGet, "/api/v1/schedules/health", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/run-calendar", viewerGlobalAccess()),
 
+	// Controller-native CI execution. ci_runner exists only on this bounded
+	// surface; API-key fallback must also carry the explicit run/read scope.
+	routeAuth(http.MethodPost, "/api/v1/ci/runs", accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleCIRunner, RoleEditor, RoleProjectAdmin}, ProjectLookup: resolveCIRunCreateProjectID, ServiceAccountScope: "tests:run", MaxBodyBytes: 4 << 20}),
+	routeAuth(http.MethodGet, "/api/v1/ci/runs/{id}", accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleCIRunner, RoleViewer, RoleEditor, RoleProjectAdmin}, ProjectLookup: resolveTestProjectID, ServiceAccountScope: "results:read"}),
+	routeAuth(http.MethodPost, "/api/v1/ci/runs/{id}/abort", accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleCIRunner, RoleEditor, RoleProjectAdmin}, ProjectLookup: resolveTestProjectID, ServiceAccountScope: "tests:run"}),
+
 	// Execution plans (ordered cross-run orchestration).
 	routeAuth(http.MethodPost, "/api/v1/execution-plans", editorImportAccess(resolveExecutionPlanCreateProjectID, 262144)),
 	routeAuth(http.MethodGet, "/api/v1/execution-plans", viewerProjectAccess(resolveProjectIDFromQuery)),

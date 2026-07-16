@@ -1,10 +1,39 @@
-name: APEX Load SLA Gate
-description: Build and run apexctl with optional SLA guardrails for CI/CD pipelines.
+name: APEX Load Performance Gate
+description: Run a controller-backed APEX Load CI gate with verified evidence and an optional local smoke-test fallback.
 
 inputs:
-  script:
-    description: Path to the APEX Load DSL script in the checked-out repository.
-    required: true
+  execution-mode:
+    description: controller (default) or local.
+    required: false
+    default: controller
+  controller-url:
+    description: HTTPS controller base URL; required in controller mode.
+    required: false
+    default: ""
+  project-id:
+    description: Controller project ID; required in controller mode.
+    required: false
+    default: ""
+  script-path:
+    description: Path to a JSON DSL script. Exactly one of script-path or script-id is required.
+    required: false
+    default: ""
+  script-id:
+    description: Existing controller script ID. Exactly one of script-path or script-id is required.
+    required: false
+    default: ""
+  release-id:
+    description: Optional release correlation ID.
+    required: false
+    default: ""
+  test-name:
+    description: Optional display name for the test.
+    required: false
+    default: ""
+  auth-mode:
+    description: oidc (default) or api-key. API-key mode reads APEXLOAD_API_KEY from the job environment.
+    required: false
+    default: oidc
   vusers:
     description: Number of virtual users.
     required: false
@@ -12,188 +41,185 @@ inputs:
   duration:
     description: Test duration.
     required: false
-    default: "1m"
+    default: 1m
   ramp-up:
     description: Ramp-up duration.
     required: false
-    default: "0s"
-  api-url:
-    description: Optional controller base URL for API-backed execution.
-    required: false
-    default: ""
+    default: 0s
   base-url:
-    description: Optional base URL override for the DSL script.
+    description: Policy-controlled base URL override.
     required: false
     default: ""
-  env:
-    description: Optional newline-delimited KEY=value runtime overrides.
+  variables-file:
+    description: Optional JSON object containing non-secret string overrides.
     required: false
     default: ""
   p95-latency-ms:
-    description: Optional P95 latency guardrail.
+    description: Maximum P95 latency in milliseconds.
     required: false
     default: ""
   max-error-pct:
-    description: Optional max error percentage guardrail.
+    description: Maximum error percentage.
     required: false
     default: ""
   max-avg-server-processing-ms:
-    description: Optional average server processing guardrail.
+    description: Maximum average server processing time in milliseconds.
     required: false
     default: ""
   max-avg-transfer-ms:
-    description: Optional average transfer guardrail.
+    description: Maximum average transfer time in milliseconds.
     required: false
     default: ""
   max-error-count:
-    description: Optional max error count guardrail.
+    description: Maximum total error count.
     required: false
     default: ""
+  require-sla:
+    description: Fail when no SLA thresholds are evaluated.
+    required: false
+    default: "true"
+  require-results:
+    description: Fail when the test produces no transactions.
+    required: false
+    default: "true"
+  timeout:
+    description: Maximum total time for the CI run.
+    required: false
+    default: 30m
+  abort-on-cancel:
+    description: Ask the controller to abort after timeout or workflow cancellation.
+    required: false
+    default: "true"
   publish-check:
-    description: Publish the APEX Load result as a GitHub Check Run through the controller GitHub App integration.
-    required: false
-    default: "false"
-  github-script-id:
-    description: Optional APEX Load script id to link the check run to a synced GitHub script.
+    description: Publish a controller-owned GitHub Check. Empty defaults to true in controller mode and false in local mode.
     required: false
     default: ""
-  github-owner:
-    description: Optional repository owner for check-run publishing; defaults to GITHUB_REPOSITORY owner.
+  evidence-directory:
+    description: Directory for JSON and JUnit evidence files.
+    required: false
+    default: .apexload
+  apexctl-version:
+    description: Exact released apexctl version. Empty uses the version pinned by this action revision.
     required: false
     default: ""
-  github-repo:
-    description: Optional repository name for check-run publishing; defaults to GITHUB_REPOSITORY name.
+  apexctl-path:
+    description: Explicit trusted apexctl executable; skips release download.
     required: false
     default: ""
-  github-commit-sha:
-    description: Optional commit SHA for check-run publishing; defaults to GITHUB_SHA.
+  release-base-url:
+    description: Optional release mirror root ending before /VERSION. Defaults to this action repository's Releases URL.
     required: false
     default: ""
-  check-details-url:
-    description: Optional check-run details URL; defaults to the controller run report endpoint when api-url is set.
+  release-public-key:
+    description: Optional PEM public key used to verify SHA256SUMS.sig. A key bundled with the action is preferred when present.
     required: false
     default: ""
-  evidence-artifact-name:
-    description: Name for the uploaded APEX Load CI evidence artifact. Leave blank to skip upload.
-    required: false
-    default: apexload-evidence
 
 outputs:
-  json:
-    description: JSON result returned by apexctl.
-    value: ${{ steps.apexload.outputs.json }}
+  outcome:
+    description: Stable gate outcome.
+    value: ${{ steps.run.outputs.outcome }}
   test-id:
-    description: Controller test id for API-backed runs.
-    value: ${{ steps.apexload.outputs.test-id }}
+    description: Controller test ID.
+    value: ${{ steps.run.outputs.test-id }}
+  status:
+    description: Controller or local execution status.
+    value: ${{ steps.run.outputs.status }}
+  sla-evaluated:
+    description: Whether SLA thresholds were evaluated.
+    value: ${{ steps.run.outputs.sla-evaluated }}
+  sla-breached:
+    description: Whether any SLA threshold was breached.
+    value: ${{ steps.run.outputs.sla-breached }}
+  transactions:
+    description: Total transactions.
+    value: ${{ steps.run.outputs.transactions }}
+  errors:
+    description: Total errors.
+    value: ${{ steps.run.outputs.errors }}
+  tps:
+    description: Final transactions per second.
+    value: ${{ steps.run.outputs.tps }}
+  duration-ms:
+    description: Run duration in milliseconds.
+    value: ${{ steps.run.outputs.duration-ms }}
+  report-url:
+    description: Human-readable APEX Load report URL.
+    value: ${{ steps.run.outputs.report-url }}
+  check-url:
+    description: Controller-owned GitHub Check URL.
+    value: ${{ steps.run.outputs.check-url }}
+  json-path:
+    description: Absolute JSON evidence path.
+    value: ${{ steps.run.outputs.json-path }}
+  junit-path:
+    description: Absolute JUnit evidence path.
+    value: ${{ steps.run.outputs.junit-path }}
+  apexctl-version:
+    description: Installed apexctl version.
+    value: ${{ steps.install.outputs.version }}
 
 runs:
   using: composite
   steps:
-    - name: Set up Go
-      uses: actions/setup-go@v5
+    - name: Provide the pinned manifest-validation runtime
+      if: ${{ inputs.apexctl-path == '' }}
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
       with:
-        go-version-file: go.mod
+        node-version: 22.22.0
+        cache: false
 
-    - name: Run apexctl
-      id: apexload
+    - name: Install verified apexctl
+      id: install
+      continue-on-error: true
       shell: bash
-      run: |
-        set -euo pipefail
+      env:
+        APEXLOAD_INPUT_APEXCTL_PATH: ${{ inputs.apexctl-path }}
+        APEXLOAD_INPUT_APEXCTL_VERSION: ${{ inputs.apexctl-version }}
+        APEXLOAD_INPUT_RELEASE_BASE_URL: ${{ inputs.release-base-url }}
+        APEXLOAD_INPUT_RELEASE_PUBLIC_KEY: ${{ inputs.release-public-key }}
+      run: '"$GITHUB_ACTION_PATH/install.sh"'
 
-        cmd=(go run ./cmd/apexctl run \
-          --script "${{ inputs.script }}" \
-          --vusers "${{ inputs.vusers }}" \
-          --duration "${{ inputs.duration }}" \
-          --ramp-up "${{ inputs.ramp-up }}" \
-          --format json)
-
-        if [[ -n "${{ inputs.api-url }}" ]]; then
-          cmd+=(--api "${{ inputs.api-url }}")
-        fi
-        if [[ -n "${{ inputs.base-url }}" ]]; then
-          cmd+=(--base-url "${{ inputs.base-url }}")
-        fi
-        if [[ -n "${{ inputs.p95-latency-ms }}" ]]; then
-          cmd+=(--p95-latency-ms "${{ inputs.p95-latency-ms }}")
-        fi
-        if [[ -n "${{ inputs.max-error-pct }}" ]]; then
-          cmd+=(--max-error-pct "${{ inputs.max-error-pct }}")
-        fi
-        if [[ -n "${{ inputs.max-avg-server-processing-ms }}" ]]; then
-          cmd+=(--max-avg-server-processing-ms "${{ inputs.max-avg-server-processing-ms }}")
-        fi
-        if [[ -n "${{ inputs.max-avg-transfer-ms }}" ]]; then
-          cmd+=(--max-avg-transfer-ms "${{ inputs.max-avg-transfer-ms }}")
-        fi
-        if [[ -n "${{ inputs.max-error-count }}" ]]; then
-          cmd+=(--max-error-count "${{ inputs.max-error-count }}")
-        fi
-
-        while IFS= read -r entry; do
-          [[ -z "$entry" ]] && continue
-          cmd+=(--env "$entry")
-        done <<< "${{ inputs.env }}"
-
-        set +e
-        result="$(${cmd[@]})"
-        status=$?
-        set -e
-        echo "$result"
-        printf '%s\n' "$result" > apexload-result.json
-
-        test_id="$(RESULT_JSON="$result" python3 - <<'PY'
-import json, os
-try:
-    print(json.loads(os.environ.get("RESULT_JSON", "{}")).get("test_id", ""))
-except Exception:
-    print("")
-PY
-)"
-
-        {
-          echo 'json<<EOF'
-          echo "$result"
-          echo 'EOF'
-          echo "test-id=$test_id"
-        } >> "$GITHUB_OUTPUT"
-        exit "$status"
-
-    - name: Upload APEX Load evidence
-      if: always() && inputs.evidence-artifact-name != ''
-      uses: actions/upload-artifact@v4
-      with:
-        name: ${{ inputs.evidence-artifact-name }}
-        path: apexload-result.json
-        if-no-files-found: ignore
-
-    - name: Publish GitHub check run
-      if: always() && inputs.publish-check == 'true' && inputs.api-url != '' && steps.apexload.outputs.test-id != ''
+    - name: Run APEX Load performance gate
+      id: run
+      if: ${{ always() }}
+      continue-on-error: true
       shell: bash
-      run: |
-        set -euo pipefail
-        owner="${{ inputs.github-owner }}"
-        repo="${{ inputs.github-repo }}"
-        commit_sha="${{ inputs.github-commit-sha }}"
-        details_url="${{ inputs.check-details-url }}"
-        if [[ -z "$owner" || -z "$repo" ]]; then
-          owner="${GITHUB_REPOSITORY%/*}"
-          repo="${GITHUB_REPOSITORY#*/}"
-        fi
-        if [[ -z "$commit_sha" ]]; then
-          commit_sha="$GITHUB_SHA"
-        fi
-        if [[ -z "$details_url" ]]; then
-          details_url="${{ inputs.api-url }}/api/v1/tests/${{ steps.apexload.outputs.test-id }}/report"
-        fi
-        cmd=(go run ./cmd/apexctl github check-run \
-          --api "${{ inputs.api-url }}" \
-          --test "${{ steps.apexload.outputs.test-id }}" \
-          --owner "$owner" \
-          --repo "$repo" \
-          --commit-sha "$commit_sha" \
-          --details-url "$details_url" \
-          --format json)
-        if [[ -n "${{ inputs.github-script-id }}" ]]; then
-          cmd+=(--script "${{ inputs.github-script-id }}")
-        fi
-        "${cmd[@]}"
+      env:
+        APEXLOAD_APEXCTL_BIN: ${{ steps.install.outputs.path }}
+        APEXLOAD_INSTALL_STEP_OUTCOME: ${{ steps.install.outcome }}
+        APEXLOAD_INSTALL_FAILURE_OUTCOME: ${{ steps.install.outputs.failure-outcome }}
+        APEXLOAD_INPUT_EXECUTION_MODE: ${{ inputs.execution-mode }}
+        APEXLOAD_INPUT_CONTROLLER_URL: ${{ inputs.controller-url }}
+        APEXLOAD_INPUT_PROJECT_ID: ${{ inputs.project-id }}
+        APEXLOAD_INPUT_SCRIPT_PATH: ${{ inputs.script-path }}
+        APEXLOAD_INPUT_SCRIPT_ID: ${{ inputs.script-id }}
+        APEXLOAD_INPUT_RELEASE_ID: ${{ inputs.release-id }}
+        APEXLOAD_INPUT_TEST_NAME: ${{ inputs.test-name }}
+        APEXLOAD_INPUT_AUTH_MODE: ${{ inputs.auth-mode }}
+        APEXLOAD_INPUT_VUSERS: ${{ inputs.vusers }}
+        APEXLOAD_INPUT_DURATION: ${{ inputs.duration }}
+        APEXLOAD_INPUT_RAMP_UP: ${{ inputs.ramp-up }}
+        APEXLOAD_INPUT_BASE_URL: ${{ inputs.base-url }}
+        APEXLOAD_INPUT_VARIABLES_FILE: ${{ inputs.variables-file }}
+        APEXLOAD_INPUT_P95_LATENCY_MS: ${{ inputs.p95-latency-ms }}
+        APEXLOAD_INPUT_MAX_ERROR_PCT: ${{ inputs.max-error-pct }}
+        APEXLOAD_INPUT_MAX_AVG_SERVER_PROCESSING_MS: ${{ inputs.max-avg-server-processing-ms }}
+        APEXLOAD_INPUT_MAX_AVG_TRANSFER_MS: ${{ inputs.max-avg-transfer-ms }}
+        APEXLOAD_INPUT_MAX_ERROR_COUNT: ${{ inputs.max-error-count }}
+        APEXLOAD_INPUT_REQUIRE_SLA: ${{ inputs.require-sla }}
+        APEXLOAD_INPUT_REQUIRE_RESULTS: ${{ inputs.require-results }}
+        APEXLOAD_INPUT_TIMEOUT: ${{ inputs.timeout }}
+        APEXLOAD_INPUT_ABORT_ON_CANCEL: ${{ inputs.abort-on-cancel }}
+        APEXLOAD_INPUT_PUBLISH_CHECK: ${{ inputs.publish-check }}
+        APEXLOAD_INPUT_EVIDENCE_DIRECTORY: ${{ inputs.evidence-directory }}
+      run: '"$GITHUB_ACTION_PATH/run.sh"'
+
+    - name: Conclude APEX Load performance gate
+      if: ${{ always() }}
+      shell: bash
+      env:
+        APEXLOAD_INSTALL_STEP_OUTCOME: ${{ steps.install.outcome }}
+        APEXLOAD_RUN_STEP_OUTCOME: ${{ steps.run.outcome }}
+        APEXLOAD_GATE_EXIT_CODE: ${{ steps.run.outputs.action-exit-code }}
+      run: '"$GITHUB_ACTION_PATH/conclude.sh"'

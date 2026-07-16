@@ -3387,6 +3387,8 @@ func TestHandleValidateJMeterImportMatchesImportEnvelope(t *testing.T) {
 	validateEnvelope := decodeImportEnvelope(t, validateResp.Body.Bytes())
 	assertSharedImportEnvelopeKeys(t, importEnvelope)
 	assertSharedImportEnvelopeKeys(t, validateEnvelope)
+	normalizeImportEnvelopeTimestamps(t, importEnvelope)
+	normalizeImportEnvelopeTimestamps(t, validateEnvelope)
 	if !reflect.DeepEqual(importEnvelope, validateEnvelope) {
 		t.Fatalf("expected identical jmeter import envelopes\nimport=%s\nvalidate=%s", importResp.Body.String(), validateResp.Body.String())
 	}
@@ -5459,6 +5461,31 @@ func assertSharedImportEnvelopeKeys(t *testing.T, envelope map[string]any) {
 	for _, key := range []string{"scripts", "script", "warnings", "stats", "correlations", "assumptions", "unsupported_elements", "review_sections", "repair_suggestions", "scenario_draft", "summary", "detected_protocol", "review_artifact", "protocol_compat_report", "result"} {
 		if _, ok := envelope[key]; !ok {
 			t.Fatalf("envelope missing key %q: %#v", key, envelope)
+		}
+	}
+}
+
+func normalizeImportEnvelopeTimestamps(t *testing.T, value any) {
+	t.Helper()
+	switch typed := value.(type) {
+	case map[string]any:
+		for key, child := range typed {
+			if key == "imported_at" {
+				importedAt, ok := child.(string)
+				if !ok {
+					t.Fatalf("imported_at = %#v, want RFC3339 string", child)
+				}
+				if _, err := time.Parse(time.RFC3339, importedAt); err != nil {
+					t.Fatalf("imported_at = %q, want RFC3339 timestamp: %v", importedAt, err)
+				}
+				typed[key] = "<imported-at>"
+				continue
+			}
+			normalizeImportEnvelopeTimestamps(t, child)
+		}
+	case []any:
+		for _, child := range typed {
+			normalizeImportEnvelopeTimestamps(t, child)
 		}
 	}
 }

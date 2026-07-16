@@ -1,0 +1,303 @@
+name: Deploy AKS Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: Exact signed semantic release tag.
+        required: true
+        type: string
+      environment:
+        description: Protected deployment environment.
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: deploy-aks-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy verified digests to AKS
+    runs-on: ${{ fromJSON(vars.AKS_RUNNER_LABELS || '["ubuntu-24.04"]') }}
+    timeout-minutes: 120
+    environment: aks-${{ inputs.environment }}
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+    steps:
+      - name: Checkout deployment tooling
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.release }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify dispatch ref and signed deployment tooling
+        env:
+          RELEASE_TAG: ${{ inputs.release }}
+          DISPATCH_REF: ${{ github.ref }}
+          RELEASE_COMMIT: ${{ github.sha }}
+          APEXLOAD_RELEASE_TAG_PUBLIC_KEYS: ${{ vars.APEXLOAD_RELEASE_TAG_PUBLIC_KEYS }}
+        run: |
+          set -euo pipefail
+          [[ "$DISPATCH_REF" == "refs/tags/${RELEASE_TAG}" ]] || {
+            echo 'run this deployment workflow at the exact release tag ref' >&2
+            exit 1
+          }
+          ./scripts/release/verify-tag.sh "$RELEASE_TAG" "$RELEASE_COMMIT"
+
+      - name: Setup kubectl
+        if: vars.APEXLOAD_USE_PREINSTALLED_TOOLS != 'true'
+        uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4.0.1
+        with:
+          version: v1.34.1
+
+      - name: Setup Helm
+        if: vars.APEXLOAD_USE_PREINSTALLED_TOOLS != 'true'
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+        with:
+          version: v3.19.0
+
+      - name: Install cosign
+        if: vars.APEXLOAD_USE_PREINSTALLED_TOOLS != 'true'
+        uses: sigstore/cosign-installer@d7543c93d881b35a8faa02e8e3605f69b7a1ce62 # v3.10.0
+        with:
+          cosign-release: v3.1.1
+
+      - name: Verify exact deployment toolchain
+        run: |
+          set -euo pipefail
+          [[ "$(kubectl version --client -o json | jq -r '.clientVersion.gitVersion')" == v1.34.1 ]]
+          [[ "$(helm version --template '{{.Version}}')" == v3.19.0 ]]
+          cosign version 2>&1 | grep -Eq 'GitVersion:[[:space:]]+v3\.1\.1([[:space:]]|$)'
+
+      - name: Authenticate to the release registry
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: ${{ vars.APEXLOAD_RELEASE_REGISTRY || 'ghcr.io' }}
+          username: ${{ vars.APEXLOAD_RELEASE_REGISTRY_USERNAME || github.actor }}
+          password: ${{ secrets.APEXLOAD_RELEASE_REGISTRY_PASSWORD || github.token }}
+
+      - name: Authenticate to Azure with environment identity
+        if: vars.AZURE_AUTH_MODE != 'managed-identity'
+        uses: azure/login@eec3c95657c1536435858eda1f3ff5437fee8474 # v2.3.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Authenticate with Azure managed identity for private GHES
+        if: vars.AZURE_AUTH_MODE == 'managed-identity'
+        uses: azure/login@eec3c95657c1536435858eda1f3ff5437fee8474 # v2.3.0
+        with:
+          auth-type: IDENTITY
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Validate release input
+        env:
+          RELEASE_TAG: ${{ inputs.release }}
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]
+
+      - name: Download published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release }}
+          REPOSITORY: ${{ github.repository }}
+        run: ./scripts/release/download-release.sh "$RELEASE_TAG" "$RUNNER_TEMP/release" "$REPOSITORY"
+
+      - name: Verify portable release and image signatures
+        id: release
+        env:
+          RELEASE_TAG: ${{ inputs.release }}
+          RELEASE_PUBLIC_KEY: ${{ vars.APEXLOAD_RELEASE_SIGNING_PUBLIC_KEY_PEM }}
+          COSIGN_PUBLIC_KEY: ${{ vars.COSIGN_PUBLIC_KEY }}
+        run: |
+          set -euo pipefail
+          release_public_key="$RUNNER_TEMP/release-signing.pub"
+          cosign_public_key="$RUNNER_TEMP/cosign.pub"
+          printf '%s' "$RELEASE_PUBLIC_KEY" > "$release_public_key"
+          printf '%s' "$COSIGN_PUBLIC_KEY" > "$cosign_public_key"
+          ./scripts/release/verify-release.sh "$RUNNER_TEMP/release" "$RELEASE_TAG" "$release_public_key"
+          manifest="$RUNNER_TEMP/release/release-manifest.json"
+          controller_image="$(jq -r '.images[] | select(.component == "controller" and .profile == "enterprise") | .repository + "@" + .digest' "$manifest")"
+          generator_image="$(jq -r '.images[] | select(.component == "generator" and .profile == "enterprise") | .repository + "@" + .digest' "$manifest")"
+          controller_platforms="$(jq -cer '[.images[] | select(.component == "controller" and .profile == "enterprise")][0].platforms | map({key: .architecture, value: .digest}) | from_entries' "$manifest")"
+          generator_platforms="$(jq -cer '[.images[] | select(.component == "generator" and .profile == "enterprise")][0].platforms | map({key: .architecture, value: .digest}) | from_entries' "$manifest")"
+          [[ "$controller_image" =~ @sha256:[0-9a-f]{64}$ && "$generator_image" =~ @sha256:[0-9a-f]{64}$ ]]
+          ./scripts/release/verify-image-evidence.sh "$manifest" controller enterprise "$cosign_public_key" >/dev/null
+          ./scripts/release/verify-image-evidence.sh "$manifest" generator enterprise "$cosign_public_key" >/dev/null
+          case "$(uname -m)" in
+            x86_64) runner_arch=amd64 ;;
+            aarch64|arm64) runner_arch=arm64 ;;
+            *) echo 'unsupported deployment runner architecture' >&2; exit 1 ;;
+          esac
+          apexctl_asset="$(jq -er --arg architecture "$runner_arch" '
+            [.binaries[] | select(.os == "linux" and .architecture == $architecture)]
+            | if length == 1 then .[0].asset else error("missing deployment apexctl") end
+          ' "$manifest")"
+          chmod 0755 "$RUNNER_TEMP/release/$apexctl_asset"
+          {
+            printf 'controller-image=%s\n' "$controller_image"
+            printf 'generator-image=%s\n' "$generator_image"
+            printf 'controller-platforms=%s\n' "$controller_platforms"
+            printf 'generator-platforms=%s\n' "$generator_platforms"
+            printf 'commit=%s\n' "$(jq -r '.commit' "$manifest")"
+            printf 'version=%s\n' "$(jq -r '.version' "$manifest")"
+            printf 'chart=%s\n' "$RUNNER_TEMP/release/$(jq -r '.helm.asset' "$manifest")"
+            printf 'public-key=%s\n' "$release_public_key"
+            printf 'apexctl-path=%s\n' "$RUNNER_TEMP/release/$apexctl_asset"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Connect to AKS
+        env:
+          AKS_RESOURCE_GROUP: ${{ vars.AKS_RESOURCE_GROUP }}
+          AKS_CLUSTER_NAME: ${{ vars.AKS_CLUSTER_NAME }}
+        run: |
+          set -euo pipefail
+          az aks get-credentials \
+            --resource-group "$AKS_RESOURCE_GROUP" \
+            --name "$AKS_CLUSTER_NAME" \
+            --overwrite-existing
+          az aks show \
+            --resource-group "$AKS_RESOURCE_GROUP" \
+            --name "$AKS_CLUSTER_NAME" \
+            --query '{oidc:oidcIssuerProfile.enabled,workloadIdentity:securityProfile.workloadIdentity.enabled}' \
+            -o json | jq -e '.oidc == true and .workloadIdentity == true' >/dev/null
+          kubectl cluster-info
+
+      - name: Materialize reviewed Helm values
+        env:
+          HELM_VALUES_YAML: ${{ secrets.APEXLOAD_HELM_VALUES_YAML }}
+        run: |
+          set -euo pipefail
+          [[ -n "$HELM_VALUES_YAML" ]]
+          umask 077
+          printf '%s\n' "$HELM_VALUES_YAML" > "$RUNNER_TEMP/apexload-values.yaml"
+
+      - name: Capture rollback revision
+        id: prior
+        env:
+          HELM_RELEASE: ${{ vars.APEXLOAD_HELM_RELEASE }}
+          KUBE_NAMESPACE: ${{ vars.APEXLOAD_NAMESPACE }}
+          CONTROLLER_URL: ${{ vars.APEXLOAD_CONTROLLER_URL }}
+        run: |
+          set -euo pipefail
+          revision="$(helm status "$HELM_RELEASE" --namespace "$KUBE_NAMESPACE" -o json 2>/dev/null | jq -r '.version // 0' || printf '0')"
+          [[ "$revision" =~ ^(0|[1-9][0-9]*)$ ]]
+          prior_commit=''
+          if [[ "$revision" != 0 ]]; then
+            prior_commit="$(curl --fail --silent --show-error --retry 3 \
+              "${CONTROLLER_URL%/}/api/v1/system/health" | jq -r '.commit // empty')"
+            [[ "$prior_commit" =~ ^[0-9a-f]{40}$ ]] || {
+              echo 'could not capture a verifiable controller commit for automatic rollback' >&2
+              exit 1
+            }
+          fi
+          {
+            printf 'revision=%s\n' "$revision"
+            printf 'commit=%s\n' "$prior_commit"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Validate cluster and active-run prerequisites
+        env:
+          KUBE_NAMESPACE: ${{ vars.APEXLOAD_NAMESPACE }}
+          APEXLOAD_CONTROLLER_URL: ${{ vars.APEXLOAD_CONTROLLER_URL }}
+          APEXLOAD_DEPLOY_API_KEY: ${{ secrets.APEXLOAD_DEPLOY_API_KEY }}
+          APEXLOAD_ACTIVE_RUN_OVERRIDE_APPROVAL: ${{ secrets.APEXLOAD_ACTIVE_RUN_OVERRIDE_APPROVAL }}
+          APEXLOAD_DEPLOY_RELEASE: ${{ inputs.release }}
+          APEXLOAD_DEPLOY_ENVIRONMENT: aks-${{ inputs.environment }}
+          APEXLOAD_DEPLOY_ACTOR: ${{ github.actor }}
+          APEXLOAD_DEPLOY_REPOSITORY: ${{ github.repository }}
+          APEXLOAD_DEPLOY_SERVER_URL: ${{ github.server_url }}
+          APEXLOAD_DEPLOY_RUN_ID: ${{ github.run_id }}
+          APEXLOAD_DEPLOY_RUN_ATTEMPT: ${{ github.run_attempt }}
+          APEXLOAD_REQUIRED_KUBERNETES_SECRETS: ${{ vars.APEXLOAD_REQUIRED_KUBERNETES_SECRETS }}
+          APEXLOAD_INGRESS_TLS_SECRET: ${{ vars.APEXLOAD_INGRESS_TLS_SECRET }}
+          APEXLOAD_GRPC_TLS_SECRETS: ${{ vars.APEXLOAD_GRPC_TLS_SECRETS }}
+        run: ./scripts/deploy/kubernetes-preflight.sh "$KUBE_NAMESPACE"
+
+      - name: Render, diff, deploy atomically, and verify
+        id: helm-deploy
+        env:
+          HELM_RELEASE: ${{ vars.APEXLOAD_HELM_RELEASE }}
+          KUBE_NAMESPACE: ${{ vars.APEXLOAD_NAMESPACE }}
+          CHART: ${{ steps.release.outputs.chart }}
+          CONTROLLER_IMAGE: ${{ steps.release.outputs.controller-image }}
+          GENERATOR_IMAGE: ${{ steps.release.outputs.generator-image }}
+          CONTROLLER_PLATFORMS: ${{ steps.release.outputs.controller-platforms }}
+          GENERATOR_PLATFORMS: ${{ steps.release.outputs.generator-platforms }}
+          RELEASE_COMMIT: ${{ steps.release.outputs.commit }}
+          CONTROLLER_URL: ${{ vars.APEXLOAD_CONTROLLER_URL }}
+        run: |
+          ./scripts/deploy/kubernetes-deploy.sh \
+            "$HELM_RELEASE" \
+            "$KUBE_NAMESPACE" \
+            "$CHART" \
+            "$RUNNER_TEMP/apexload-values.yaml" \
+            "$CONTROLLER_IMAGE" \
+            "$GENERATOR_IMAGE" \
+            "$RELEASE_COMMIT" \
+            "$CONTROLLER_URL" \
+            "$CONTROLLER_PLATFORMS" \
+            "$GENERATOR_PLATFORMS"
+
+      - name: Run authenticated distributed release smoke
+        id: distributed-smoke
+        uses: ./.github/actions/apexload-run
+        env:
+          APEXLOAD_API_KEY: ${{ vars.APEXLOAD_CI_AUTH_MODE == 'api-key' && secrets.APEXLOAD_CI_RUNNER_API_KEY || '' }}
+        with:
+          execution-mode: controller
+          controller-url: ${{ vars.APEXLOAD_CONTROLLER_URL }}
+          project-id: ${{ vars.APEXLOAD_SMOKE_PROJECT_ID }}
+          script-id: ${{ vars.APEXLOAD_SMOKE_SCRIPT_ID }}
+          test-name: AKS ${{ inputs.environment }} deployment smoke
+          release-id: ${{ inputs.release }}
+          auth-mode: ${{ vars.APEXLOAD_CI_AUTH_MODE || 'oidc' }}
+          vusers: "1"
+          duration: 30s
+          ramp-up: 0s
+          require-sla: "true"
+          require-results: "true"
+          publish-check: "true"
+          timeout: 10m
+          apexctl-path: ${{ steps.release.outputs.apexctl-path }}
+          evidence-directory: .apexload/deployment-smoke
+
+      - name: Upload deployment smoke evidence
+        if: always()
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: aks-${{ inputs.environment }}-${{ inputs.release }}-evidence
+          path: .apexload/deployment-smoke/
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Roll back after post-deploy gate failure
+        if: ${{ (failure() || cancelled()) && steps.helm-deploy.outcome != 'skipped' }}
+        timeout-minutes: 20
+        env:
+          HELM_RELEASE: ${{ vars.APEXLOAD_HELM_RELEASE }}
+          KUBE_NAMESPACE: ${{ vars.APEXLOAD_NAMESPACE }}
+          PREVIOUS_REVISION: ${{ steps.prior.outputs.revision }}
+          PREVIOUS_COMMIT: ${{ steps.prior.outputs.commit }}
+          CONTROLLER_URL: ${{ vars.APEXLOAD_CONTROLLER_URL }}
+        run: |
+          ./scripts/deploy/rollback-helm.sh \
+            "$HELM_RELEASE" \
+            "$KUBE_NAMESPACE" \
+            "$PREVIOUS_REVISION" \
+            "$CONTROLLER_URL" \
+            "$PREVIOUS_COMMIT"

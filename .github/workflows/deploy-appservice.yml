@@ -1,0 +1,239 @@
+name: Deploy App Service Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: Exact signed semantic release tag.
+        required: true
+        type: string
+      environment:
+        description: Protected deployment environment.
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-appservice-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy verified package through slot
+    runs-on: ${{ fromJSON(vars.APPSERVICE_RUNNER_LABELS || '["ubuntu-24.04"]') }}
+    timeout-minutes: 90
+    environment: appservice-${{ inputs.environment }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout deployment tooling
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.release }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify dispatch ref and signed deployment tooling
+        env:
+          RELEASE_TAG: ${{ inputs.release }}
+          DISPATCH_REF: ${{ github.ref }}
+          RELEASE_COMMIT: ${{ github.sha }}
+          APEXLOAD_RELEASE_TAG_PUBLIC_KEYS: ${{ vars.APEXLOAD_RELEASE_TAG_PUBLIC_KEYS }}
+        run: |
+          set -euo pipefail
+          [[ "$DISPATCH_REF" == "refs/tags/${RELEASE_TAG}" ]] || {
+            echo 'run this deployment workflow at the exact release tag ref' >&2
+            exit 1
+          }
+          ./scripts/release/verify-tag.sh "$RELEASE_TAG" "$RELEASE_COMMIT"
+
+      - name: Authenticate to Azure with environment identity
+        if: vars.AZURE_AUTH_MODE != 'managed-identity'
+        uses: azure/login@eec3c95657c1536435858eda1f3ff5437fee8474 # v2.3.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Authenticate with Azure managed identity for private GHES
+        if: vars.AZURE_AUTH_MODE == 'managed-identity'
+        uses: azure/login@eec3c95657c1536435858eda1f3ff5437fee8474 # v2.3.0
+        with:
+          auth-type: IDENTITY
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Validate release input
+        env:
+          RELEASE_TAG: ${{ inputs.release }}
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]
+
+      - name: Download published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release }}
+          REPOSITORY: ${{ github.repository }}
+        run: ./scripts/release/download-release.sh "$RELEASE_TAG" "$RUNNER_TEMP/release" "$REPOSITORY"
+
+      - name: Verify portable signature and exact App Service package
+        id: release
+        env:
+          RELEASE_TAG: ${{ inputs.release }}
+          RELEASE_PUBLIC_KEY: ${{ vars.APEXLOAD_RELEASE_SIGNING_PUBLIC_KEY_PEM }}
+        run: |
+          set -euo pipefail
+          public_key="$RUNNER_TEMP/release-signing.pub"
+          printf '%s' "$RELEASE_PUBLIC_KEY" > "$public_key"
+          ./scripts/release/verify-release.sh "$RUNNER_TEMP/release" "$RELEASE_TAG" "$public_key"
+          manifest="$RUNNER_TEMP/release/release-manifest.json"
+          package="$RUNNER_TEMP/release/$(jq -r '.app_service.asset' "$manifest")"
+          unzip -t "$package" >/dev/null
+          unzip -Z1 "$package" | grep -qx 'launcher.js'
+          unzip -Z1 "$package" | grep -qx 'package.json'
+          unzip -Z1 "$package" | grep -qx 'bin/controller'
+          case "$(uname -m)" in
+            x86_64) runner_arch=amd64 ;;
+            aarch64|arm64) runner_arch=arm64 ;;
+            *) echo 'unsupported deployment runner architecture' >&2; exit 1 ;;
+          esac
+          apexctl_asset="$(jq -er --arg architecture "$runner_arch" '
+            [.binaries[] | select(.os == "linux" and .architecture == $architecture)]
+            | if length == 1 then .[0].asset else error("missing deployment apexctl") end
+          ' "$manifest")"
+          chmod 0755 "$RUNNER_TEMP/release/$apexctl_asset"
+          {
+            printf 'package=%s\n' "$package"
+            printf 'commit=%s\n' "$(jq -r '.commit' "$manifest")"
+            printf 'public-key=%s\n' "$public_key"
+            printf 'apexctl-path=%s\n' "$RUNNER_TEMP/release/$apexctl_asset"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Require deployment-slot plan and capture current production
+        id: prior
+        env:
+          RESOURCE_GROUP: ${{ vars.APPSERVICE_RESOURCE_GROUP }}
+          APP_NAME: ${{ vars.APPSERVICE_NAME }}
+          SLOT_NAME: ${{ vars.APPSERVICE_STAGING_SLOT }}
+          PRODUCTION_URL: ${{ vars.APPSERVICE_PRODUCTION_URL }}
+        run: |
+          set -euo pipefail
+          [[ -n "$SLOT_NAME" && "$SLOT_NAME" != production ]]
+          az webapp deployment slot list \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$APP_NAME" \
+            --query "[?name=='${SLOT_NAME}'] | length(@)" -o tsv | grep -qx 1
+          prior_commit="$(curl --fail --silent --show-error --retry 3 \
+            "${PRODUCTION_URL%/}/api/v1/system/health" | jq -r '.commit // empty')"
+          [[ "$prior_commit" =~ ^[0-9a-f]{40}$ ]] || {
+            echo 'could not capture a verifiable production commit for automatic rollback' >&2
+            exit 1
+          }
+          printf 'commit=%s\n' "$prior_commit" >> "$GITHUB_OUTPUT"
+
+      - name: Refuse deployment while performance tests are active
+        env:
+          APEXLOAD_CONTROLLER_URL: ${{ vars.APPSERVICE_PRODUCTION_URL }}
+          APEXLOAD_DEPLOY_API_KEY: ${{ secrets.APEXLOAD_DEPLOY_API_KEY }}
+          APEXLOAD_ACTIVE_RUN_OVERRIDE_APPROVAL: ${{ secrets.APEXLOAD_ACTIVE_RUN_OVERRIDE_APPROVAL }}
+          APEXLOAD_DEPLOY_RELEASE: ${{ inputs.release }}
+          APEXLOAD_DEPLOY_ENVIRONMENT: appservice-${{ inputs.environment }}
+          APEXLOAD_DEPLOY_ACTOR: ${{ github.actor }}
+          APEXLOAD_DEPLOY_REPOSITORY: ${{ github.repository }}
+          APEXLOAD_DEPLOY_SERVER_URL: ${{ github.server_url }}
+          APEXLOAD_DEPLOY_RUN_ID: ${{ github.run_id }}
+          APEXLOAD_DEPLOY_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: ./scripts/deploy/active-runs-preflight.sh
+
+      - name: Deploy to staging, validate, swap, and revalidate
+        id: slot-deploy
+        env:
+          RESOURCE_GROUP: ${{ vars.APPSERVICE_RESOURCE_GROUP }}
+          APP_NAME: ${{ vars.APPSERVICE_NAME }}
+          SLOT_NAME: ${{ vars.APPSERVICE_STAGING_SLOT }}
+          PACKAGE: ${{ steps.release.outputs.package }}
+          RELEASE_COMMIT: ${{ steps.release.outputs.commit }}
+          STAGING_URL: ${{ vars.APPSERVICE_STAGING_URL }}
+          PRODUCTION_URL: ${{ vars.APPSERVICE_PRODUCTION_URL }}
+          APEXLOAD_DEPLOY_API_KEY: ${{ secrets.APEXLOAD_DEPLOY_API_KEY }}
+          APEXLOAD_ACTIVE_RUN_OVERRIDE_APPROVAL: ${{ secrets.APEXLOAD_ACTIVE_RUN_OVERRIDE_APPROVAL }}
+          APEXLOAD_DEPLOY_RELEASE: ${{ inputs.release }}
+          APEXLOAD_DEPLOY_ENVIRONMENT: appservice-${{ inputs.environment }}
+          APEXLOAD_DEPLOY_ACTOR: ${{ github.actor }}
+          APEXLOAD_DEPLOY_REPOSITORY: ${{ github.repository }}
+          APEXLOAD_DEPLOY_SERVER_URL: ${{ github.server_url }}
+          APEXLOAD_DEPLOY_RUN_ID: ${{ github.run_id }}
+          APEXLOAD_DEPLOY_RUN_ATTEMPT: ${{ github.run_attempt }}
+          SWAP_STATE_FILE: ${{ runner.temp }}/apexload-appservice-swap.state
+        run: |
+          ./scripts/deploy/appservice-deploy.sh \
+            "$RESOURCE_GROUP" \
+            "$APP_NAME" \
+            "$SLOT_NAME" \
+            "$PACKAGE" \
+            "$RELEASE_COMMIT" \
+            "$STAGING_URL" \
+            "$PRODUCTION_URL" \
+            "$SWAP_STATE_FILE"
+
+      - name: Run authenticated App Service execution smoke
+        id: execution-smoke
+        uses: ./.github/actions/apexload-run
+        env:
+          APEXLOAD_API_KEY: ${{ vars.APEXLOAD_CI_AUTH_MODE == 'api-key' && secrets.APEXLOAD_CI_RUNNER_API_KEY || '' }}
+        with:
+          execution-mode: controller
+          controller-url: ${{ vars.APPSERVICE_PRODUCTION_URL }}
+          project-id: ${{ vars.APEXLOAD_SMOKE_PROJECT_ID }}
+          script-id: ${{ vars.APEXLOAD_SMOKE_SCRIPT_ID }}
+          test-name: App Service ${{ inputs.environment }} deployment smoke
+          release-id: ${{ inputs.release }}
+          auth-mode: ${{ vars.APEXLOAD_CI_AUTH_MODE || 'oidc' }}
+          vusers: "1"
+          duration: 30s
+          ramp-up: 0s
+          require-sla: "true"
+          require-results: "true"
+          publish-check: "true"
+          timeout: 10m
+          apexctl-path: ${{ steps.release.outputs.apexctl-path }}
+          evidence-directory: .apexload/deployment-smoke
+
+      - name: Upload deployment smoke evidence
+        if: always()
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: appservice-${{ inputs.environment }}-${{ inputs.release }}-evidence
+          path: .apexload/deployment-smoke/
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Swap back after post-deploy gate failure
+        if: ${{ (failure() || cancelled()) && steps.slot-deploy.outcome != 'skipped' }}
+        timeout-minutes: 20
+        env:
+          RESOURCE_GROUP: ${{ vars.APPSERVICE_RESOURCE_GROUP }}
+          APP_NAME: ${{ vars.APPSERVICE_NAME }}
+          SLOT_NAME: ${{ vars.APPSERVICE_STAGING_SLOT }}
+          PRODUCTION_URL: ${{ vars.APPSERVICE_PRODUCTION_URL }}
+          STAGING_URL: ${{ vars.APPSERVICE_STAGING_URL }}
+          SWAP_STATE_FILE: ${{ runner.temp }}/apexload-appservice-swap.state
+          PRIOR_COMMIT: ${{ steps.prior.outputs.commit }}
+          RELEASE_COMMIT: ${{ steps.release.outputs.commit }}
+        run: |
+          ./scripts/deploy/rollback-appservice.sh \
+            "$RESOURCE_GROUP" \
+            "$APP_NAME" \
+            "$SLOT_NAME" \
+            "$PRODUCTION_URL" \
+            "$PRIOR_COMMIT" \
+            "$RELEASE_COMMIT" \
+            "$STAGING_URL" \
+            "$SWAP_STATE_FILE"

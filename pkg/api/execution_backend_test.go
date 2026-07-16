@@ -2653,11 +2653,11 @@ func TestDistributedExecutionBackendAdjustsDuration(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected managed test %q to exist", testRun.ID)
 		}
-		if started.Status == "RUNNING" {
+		if started.Status == "RUNNING" && started.remoteActivated && !started.remoteActivationPending {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("expected distributed backend to mark test running, got status %q", started.Status)
+			t.Fatalf("expected distributed backend activation, got status=%q activated=%t pending=%t", started.Status, started.remoteActivated, started.remoteActivationPending)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}

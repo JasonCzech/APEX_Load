@@ -395,22 +395,48 @@ type GitHubScriptLinkStore interface {
 }
 
 type GitHubProjectPolicy struct {
-	Enabled              bool     `json:"enabled,omitempty"`
-	AllowedRepos         []string `json:"allowed_repos,omitempty"`
-	AllowedBranches      []string `json:"allowed_branches,omitempty"`
-	PathTemplate         string   `json:"path_template,omitempty"`
-	RequirePullRequest   bool     `json:"require_pull_request,omitempty"`
-	AllowDirectCommit    bool     `json:"allow_direct_commit,omitempty"`
-	AllowImport          bool     `json:"allow_import,omitempty"`
-	AllowPush            bool     `json:"allow_push,omitempty"`
-	BulkSyncEnabled      bool     `json:"bulk_sync_enabled,omitempty"`
-	AutoSyncEnabled      bool     `json:"auto_sync_enabled,omitempty"`
-	ChecksEnabled        bool     `json:"checks_enabled,omitempty"`
-	AppInstallationID    int64    `json:"app_installation_id,omitempty"`
-	AutomationIdentity   string   `json:"automation_identity,omitempty"`
-	DefaultRepo          string   `json:"default_repo,omitempty"`
-	DefaultBranch        string   `json:"default_branch,omitempty"`
-	DefaultSyncDirectory string   `json:"default_sync_directory,omitempty"`
+	Enabled              bool                `json:"enabled,omitempty"`
+	AllowedRepos         []string            `json:"allowed_repos,omitempty"`
+	AllowedBranches      []string            `json:"allowed_branches,omitempty"`
+	PathTemplate         string              `json:"path_template,omitempty"`
+	RequirePullRequest   bool                `json:"require_pull_request,omitempty"`
+	AllowDirectCommit    bool                `json:"allow_direct_commit,omitempty"`
+	AllowImport          bool                `json:"allow_import,omitempty"`
+	AllowPush            bool                `json:"allow_push,omitempty"`
+	BulkSyncEnabled      bool                `json:"bulk_sync_enabled,omitempty"`
+	AutoSyncEnabled      bool                `json:"auto_sync_enabled,omitempty"`
+	ChecksEnabled        bool                `json:"checks_enabled,omitempty"`
+	AppInstallationID    int64               `json:"app_installation_id,omitempty"`
+	AutomationIdentity   string              `json:"automation_identity,omitempty"`
+	DefaultRepo          string              `json:"default_repo,omitempty"`
+	DefaultBranch        string              `json:"default_branch,omitempty"`
+	DefaultSyncDirectory string              `json:"default_sync_directory,omitempty"`
+	Actions              GitHubActionsPolicy `json:"actions,omitempty"`
+}
+
+// GitHubActionsPolicy is the project-scoped trust boundary for controller-backed
+// GitHub Actions runs. It is deliberately separate from the source-sync policy
+// above: enabling repository import or push must never implicitly authorize a
+// workflow to start load against project targets.
+type GitHubActionsPolicy struct {
+	Enabled                   bool      `json:"enabled,omitempty"`
+	Issuer                    string    `json:"issuer,omitempty"`
+	ServerURL                 string    `json:"server_url,omitempty"`
+	Audience                  string    `json:"audience,omitempty"`
+	AllowedRepositoryIDs      []string  `json:"allowed_repository_ids,omitempty"`
+	AllowedRepositories       []string  `json:"allowed_repositories,omitempty"`
+	AllowedRefs               []string  `json:"allowed_refs,omitempty"`
+	AllowedWorkflowRefs       []string  `json:"allowed_workflow_refs,omitempty"`
+	AllowedEnvironments       []string  `json:"allowed_environments,omitempty"`
+	RequiredRunnerEnvironment string    `json:"required_runner_environment,omitempty"`
+	MaxVUsers                 int       `json:"max_vusers,omitempty"`
+	MaxDurationMinutes        int       `json:"max_duration_minutes,omitempty"`
+	AllowedProtocols          []string  `json:"allowed_protocols,omitempty"`
+	AllowedTargetHosts        []string  `json:"allowed_target_hosts,omitempty"`
+	ChecksEnabled             bool      `json:"checks_enabled,omitempty"`
+	Revision                  int64     `json:"revision,omitempty"`
+	UpdatedAt                 time.Time `json:"updated_at,omitempty"`
+	UpdatedBy                 string    `json:"updated_by,omitempty"`
 }
 
 type GitHubAppInstallation struct {
@@ -463,18 +489,37 @@ type GitHubWebhookDelivery struct {
 }
 
 type GitHubCheckLink struct {
-	ID          string    `json:"id"`
-	TestID      string    `json:"test_id"`
-	ScriptID    string    `json:"script_id,omitempty"`
-	Owner       string    `json:"owner"`
-	Repo        string    `json:"repo"`
-	CommitSHA   string    `json:"commit_sha"`
-	CheckRunID  int64     `json:"check_run_id"`
-	CheckRunURL string    `json:"check_run_url,omitempty"`
-	Status      string    `json:"status"`
-	Conclusion  string    `json:"conclusion,omitempty"`
-	PublishedAt time.Time `json:"published_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID          string `json:"id"`
+	TestID      string `json:"test_id"`
+	ScriptID    string `json:"script_id,omitempty"`
+	Owner       string `json:"owner"`
+	Repo        string `json:"repo"`
+	CommitSHA   string `json:"commit_sha"`
+	CheckRunID  int64  `json:"check_run_id"`
+	CheckRunURL string `json:"check_run_url,omitempty"`
+	Status      string `json:"status"`
+	Conclusion  string `json:"conclusion,omitempty"`
+	// PendingConclusion is the durable, compare-and-set terminal conclusion
+	// claimed before the controller calls GitHub. It is intentionally not
+	// exposed through the API: callers should only observe GitHub's status and
+	// the final persisted conclusion.
+	PendingConclusion string    `json:"-"`
+	PublishedAt       time.Time `json:"published_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
+}
+
+// GitHubCheckIntent is the durable outbox record created before a controller-
+// backed CI test is materialized. It closes the crash window between accepting
+// a required Check and persisting the GitHub Check link.
+type GitHubCheckIntent struct {
+	TestID         string    `json:"test_id"`
+	ProjectID      string    `json:"project_id"`
+	InstallationID int64     `json:"installation_id"`
+	Owner          string    `json:"owner"`
+	Repo           string    `json:"repo"`
+	CommitSHA      string    `json:"commit_sha"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 type GitHubEnterpriseStore interface {
@@ -490,6 +535,12 @@ type GitHubEnterpriseStore interface {
 	SaveGitHubCheckLink(link *GitHubCheckLink) error
 	GetGitHubCheckLink(id string) (*GitHubCheckLink, error)
 	ListGitHubCheckLinks(testID string, scriptID string, limit int) ([]*GitHubCheckLink, error)
+	ListIncompleteGitHubCheckLinks(limit int) ([]*GitHubCheckLink, error)
+	ClaimGitHubCheckConclusion(id string, conclusion string) (*GitHubCheckLink, error)
+	SaveGitHubCheckIntent(intent *GitHubCheckIntent) error
+	GetGitHubCheckIntent(testID string) (*GitHubCheckIntent, error)
+	ListPendingGitHubCheckIntents(limit int) ([]*GitHubCheckIntent, error)
+	DeleteGitHubCheckIntent(testID string) error
 }
 
 type AuditEventFilter struct {

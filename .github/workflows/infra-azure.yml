@@ -1,0 +1,326 @@
+name: Azure Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Protected Terraform environment.
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      operation:
+        description: Generate a plan or apply the independently approved saved plan.
+        required: true
+        type: choice
+        options:
+          - plan
+          - apply
+      plan-run-id:
+        description: Successful plan-only workflow run ID to promote; required for apply.
+        required: false
+        type: string
+      plan-run-attempt:
+        description: Exact plan workflow run attempt to promote; required for apply.
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: azure-infra-${{ inputs.environment }}
+  cancel-in-progress: false
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform.d/plugin-cache
+
+jobs:
+  plan:
+    name: Plan ${{ inputs.environment }} infrastructure
+    if: inputs.operation == 'plan'
+    runs-on: ${{ fromJSON(vars.AZURE_INFRA_RUNNER_LABELS || '["ubuntu-24.04"]') }}
+    timeout-minutes: 60
+    environment: azure-infra-${{ inputs.environment }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Require the protected main branch
+        env:
+          DISPATCH_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          [[ "$DISPATCH_REF" == refs/heads/main ]] || {
+            echo 'Terraform plan and apply dispatches must run from protected main' >&2
+            exit 1
+          }
+
+      - name: Checkout reviewed infrastructure
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup pinned Terraform
+        if: vars.APEXLOAD_USE_PREINSTALLED_TOOLS != 'true'
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: 1.13.4
+          terraform_wrapper: false
+
+      - name: Verify exact Terraform version
+        run: terraform version -json | jq -e '.terraform_version == "1.13.4"' >/dev/null
+
+      - name: Authenticate with plan-only environment identity
+        if: vars.AZURE_AUTH_MODE != 'managed-identity'
+        uses: azure/login@eec3c95657c1536435858eda1f3ff5437fee8474 # v2.3.0
+        with:
+          client-id: ${{ vars.AZURE_TERRAFORM_PLAN_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Authenticate plan through Azure managed identity for private GHES
+        if: vars.AZURE_AUTH_MODE == 'managed-identity'
+        uses: azure/login@eec3c95657c1536435858eda1f3ff5437fee8474 # v2.3.0
+        with:
+          auth-type: IDENTITY
+          client-id: ${{ vars.AZURE_TERRAFORM_PLAN_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Materialize protected backend and variable configuration
+        env:
+          BACKEND_CONFIG: ${{ secrets.TF_BACKEND_CONFIG_HCL }}
+          TFVARS: ${{ secrets.TF_VARS_HCL }}
+        run: |
+          set -euo pipefail
+          [[ -n "$BACKEND_CONFIG" && -n "$TFVARS" ]]
+          mkdir -p "$TF_PLUGIN_CACHE_DIR"
+          umask 077
+          printf '%s\n' "$BACKEND_CONFIG" > "$RUNNER_TEMP/backend.hcl"
+          printf '%s\n' "$TFVARS" > "$RUNNER_TEMP/environment.tfvars"
+
+      - name: Initialize and validate
+        run: |
+          set -euo pipefail
+          terraform -chdir=deployments/azure/terraform fmt -check -diff
+          terraform -chdir=deployments/azure/terraform init \
+            -lockfile=readonly \
+            -backend-config="$RUNNER_TEMP/backend.hcl"
+          terraform -chdir=deployments/azure/terraform validate
+
+      - name: Create saved plan
+        id: plan
+        env:
+          TF_PLAN: ${{ runner.temp }}/apexload.tfplan
+        run: |
+          set -euo pipefail
+          set +e
+          terraform -chdir=deployments/azure/terraform plan \
+            -detailed-exitcode \
+            -lock-timeout=5m \
+            -var-file="$RUNNER_TEMP/environment.tfvars" \
+            -out="$TF_PLAN"
+          status=$?
+          set -e
+          case "$status" in
+            0) printf 'has-changes=false\n' >> "$GITHUB_OUTPUT" ;;
+            2) printf 'has-changes=true\n' >> "$GITHUB_OUTPUT" ;;
+            *) exit "$status" ;;
+          esac
+          terraform -chdir=deployments/azure/terraform show -json "$TF_PLAN" > "$RUNNER_TEMP/apexload-plan.json"
+          jq -e '.format_version and .terraform_version' "$RUNNER_TEMP/apexload-plan.json" >/dev/null
+
+      - name: Encrypt and authenticate the exact saved plan for a later apply run
+        env:
+          PLAN_ENCRYPTION_KEY: ${{ secrets.TF_PLAN_ENCRYPTION_KEY }}
+          TARGET_ENVIRONMENT: ${{ inputs.environment }}
+          REPOSITORY: ${{ github.repository }}
+          SOURCE_COMMIT: ${{ github.sha }}
+          PLAN_RUN_ID: ${{ github.run_id }}
+          PLAN_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          [[ ${#PLAN_ENCRYPTION_KEY} -ge 32 ]]
+          umask 077
+          openssl enc -aes-256-cbc -pbkdf2 -salt \
+            -in "$RUNNER_TEMP/apexload.tfplan" \
+            -out "$RUNNER_TEMP/apexload.tfplan.enc" \
+            -pass env:PLAN_ENCRYPTION_KEY
+          python3 scripts/deploy/terraform-plan-handoff.py create \
+            --environment "$TARGET_ENVIRONMENT" \
+            --repository "$REPOSITORY" \
+            --commit "$SOURCE_COMMIT" \
+            --run-id "$PLAN_RUN_ID" \
+            --run-attempt "$PLAN_RUN_ATTEMPT" \
+            --terraform-version 1.13.4 \
+            --plan "$RUNNER_TEMP/apexload.tfplan" \
+            --encrypted "$RUNNER_TEMP/apexload.tfplan.enc" \
+            --output "$RUNNER_TEMP/plan-handoff"
+          {
+            printf '### Terraform saved-plan handoff\n\n'
+            printf -- "- Environment: \`%s\`\n" "$TARGET_ENVIRONMENT"
+            printf -- "- Plan run: \`%s\` attempt \`%s\`\n" "$PLAN_RUN_ID" "$PLAN_RUN_ATTEMPT"
+            printf -- "- Apply with this workflow using \`operation=apply\` and those exact identifiers.\n"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload encrypted plan handoff
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: terraform-${{ inputs.environment }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/plan-handoff/
+          if-no-files-found: error
+          retention-days: 7
+
+  apply:
+    name: Apply independently approved saved plan
+    if: inputs.operation == 'apply'
+    runs-on: ${{ fromJSON(vars.AZURE_INFRA_RUNNER_LABELS || '["ubuntu-24.04"]') }}
+    timeout-minutes: 90
+    environment: azure-infra-${{ inputs.environment }}
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+    steps:
+      - name: Require protected main and exact plan coordinates
+        env:
+          DISPATCH_REF: ${{ github.ref }}
+          PLAN_RUN_ID: ${{ inputs.plan-run-id }}
+          PLAN_RUN_ATTEMPT: ${{ inputs.plan-run-attempt }}
+        run: |
+          set -euo pipefail
+          [[ "$DISPATCH_REF" == refs/heads/main ]] || {
+            echo 'Terraform plan and apply dispatches must run from protected main' >&2
+            exit 1
+          }
+          [[ "$PLAN_RUN_ID" =~ ^[1-9][0-9]*$ && "$PLAN_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]] || {
+            echo 'apply requires the exact successful plan run ID and attempt' >&2
+            exit 1
+          }
+
+      - name: Checkout trusted handoff verifier from protected main
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download and authenticate exact prior plan artifact
+        id: handoff
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_ENVIRONMENT: ${{ inputs.environment }}
+          PLAN_RUN_ID: ${{ inputs.plan-run-id }}
+          PLAN_RUN_ATTEMPT: ${{ inputs.plan-run-attempt }}
+          PLAN_ENCRYPTION_KEY: ${{ secrets.TF_PLAN_ENCRYPTION_KEY }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          server_url="${GITHUB_SERVER_URL:-https://github.com}"
+          export GH_HOST="${server_url#https://}"
+          if [[ "$GH_HOST" != github.com ]]; then
+            export GH_ENTERPRISE_TOKEN="$GH_TOKEN"
+          fi
+          workflow_run="$(gh api "repos/${REPOSITORY}/actions/runs/${PLAN_RUN_ID}")"
+          jq -e --arg commit "$(jq -r '.head_sha' <<< "$workflow_run")" '
+            .event == "workflow_dispatch" and
+            .status == "completed" and
+            .conclusion == "success" and
+            .head_branch == "main" and
+            .path == ".github/workflows/infra-azure.yml" and
+            (.head_sha == $commit and ($commit | test("^[0-9a-f]{40}$")))
+          ' <<< "$workflow_run" >/dev/null || {
+            echo 'selected plan run is not a successful protected-main infrastructure plan' >&2
+            exit 1
+          }
+          artifact="terraform-${TARGET_ENVIRONMENT}-${PLAN_RUN_ID}-${PLAN_RUN_ATTEMPT}"
+          mkdir -p "$RUNNER_TEMP/plan-handoff"
+          gh run download "$PLAN_RUN_ID" --repo "$REPOSITORY" \
+            --name "$artifact" --dir "$RUNNER_TEMP/plan-handoff"
+          source_commit="$(python3 scripts/deploy/terraform-plan-handoff.py verify \
+            --environment "$TARGET_ENVIRONMENT" \
+            --repository "$REPOSITORY" \
+            --run-id "$PLAN_RUN_ID" \
+            --run-attempt "$PLAN_RUN_ATTEMPT" \
+            --directory "$RUNNER_TEMP/plan-handoff")"
+          [[ "$source_commit" == "$(jq -r '.head_sha' <<< "$workflow_run")" ]] || {
+            echo 'authenticated plan commit does not match the selected workflow run' >&2
+            exit 1
+          }
+          printf 'source-commit=%s\n' "$source_commit" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout the exact planned infrastructure revision
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ steps.handoff.outputs.source-commit }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Require the planned commit to remain in protected main history
+        env:
+          CURRENT_MAIN_COMMIT: ${{ github.sha }}
+          PLANNED_COMMIT: ${{ steps.handoff.outputs.source-commit }}
+        run: |
+          set -euo pipefail
+          git cat-file -e "${CURRENT_MAIN_COMMIT}^{commit}"
+          [[ "$(git rev-parse HEAD)" == "$PLANNED_COMMIT" ]]
+          git merge-base --is-ancestor "$PLANNED_COMMIT" "$CURRENT_MAIN_COMMIT" || {
+            echo 'the planned commit is no longer in protected main history' >&2
+            exit 1
+          }
+
+      - name: Setup pinned Terraform
+        if: vars.APEXLOAD_USE_PREINSTALLED_TOOLS != 'true'
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: 1.13.4
+          terraform_wrapper: false
+
+      - name: Verify exact Terraform version
+        run: terraform version -json | jq -e '.terraform_version == "1.13.4"' >/dev/null
+
+      - name: Authenticate with apply-only environment identity
+        if: vars.AZURE_AUTH_MODE != 'managed-identity'
+        uses: azure/login@eec3c95657c1536435858eda1f3ff5437fee8474 # v2.3.0
+        with:
+          client-id: ${{ vars.AZURE_TERRAFORM_APPLY_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Authenticate apply through Azure managed identity for private GHES
+        if: vars.AZURE_AUTH_MODE == 'managed-identity'
+        uses: azure/login@eec3c95657c1536435858eda1f3ff5437fee8474 # v2.3.0
+        with:
+          auth-type: IDENTITY
+          client-id: ${{ vars.AZURE_TERRAFORM_APPLY_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Decrypt and verify saved plan
+        env:
+          PLAN_ENCRYPTION_KEY: ${{ secrets.TF_PLAN_ENCRYPTION_KEY }}
+          BACKEND_CONFIG: ${{ secrets.TF_BACKEND_CONFIG_HCL }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$TF_PLUGIN_CACHE_DIR"
+          umask 077
+          printf '%s\n' "$BACKEND_CONFIG" > "$RUNNER_TEMP/backend.hcl"
+          openssl enc -d -aes-256-cbc -pbkdf2 \
+            -in "$RUNNER_TEMP/plan-handoff/apexload.tfplan.enc" \
+            -out "$RUNNER_TEMP/apexload.tfplan" \
+            -pass env:PLAN_ENCRYPTION_KEY
+          expected="$(jq -er '.plan_sha256' "$RUNNER_TEMP/plan-handoff/plan-handoff.json")"
+          actual="$(sha256sum "$RUNNER_TEMP/apexload.tfplan" | awk '{print $1}')"
+          [[ "$actual" == "$expected" ]]
+          terraform -chdir=deployments/azure/terraform init \
+            -lockfile=readonly \
+            -backend-config="$RUNNER_TEMP/backend.hcl"
+
+      - name: Apply only the reviewed saved plan
+        run: terraform -chdir=deployments/azure/terraform apply -auto-approve -lock-timeout=5m "$RUNNER_TEMP/apexload.tfplan"

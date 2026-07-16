@@ -20,6 +20,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -31,6 +32,7 @@ import (
 const (
 	githubInstallationTokenSkew            = 5 * time.Minute
 	githubInstallationTokenCacheMaxEntries = 1024
+	defaultGitHubActionsOIDCIssuer         = "https://token.actions.githubusercontent.com"
 )
 
 type githubCachedToken struct {
@@ -221,6 +223,33 @@ func normalizeGitHubProjectPolicy(policy storage.GitHubProjectPolicy) storage.Gi
 	out.AutomationIdentity = strings.TrimSpace(out.AutomationIdentity)
 	out.AllowedRepos = normalizeStringSet(out.AllowedRepos, true)
 	out.AllowedBranches = normalizeStringSet(out.AllowedBranches, false)
+	out.Actions.Issuer = strings.TrimRight(strings.TrimSpace(out.Actions.Issuer), "/")
+	out.Actions.ServerURL = strings.TrimRight(strings.TrimSpace(out.Actions.ServerURL), "/")
+	out.Actions.Audience = strings.TrimSpace(out.Actions.Audience)
+	out.Actions.AllowedRepositoryIDs = normalizeStringSet(out.Actions.AllowedRepositoryIDs, false)
+	out.Actions.AllowedRepositories = normalizeStringSet(out.Actions.AllowedRepositories, true)
+	out.Actions.AllowedRefs = normalizeStringSet(out.Actions.AllowedRefs, false)
+	out.Actions.AllowedWorkflowRefs = normalizeStringSet(out.Actions.AllowedWorkflowRefs, false)
+	out.Actions.AllowedEnvironments = normalizeStringSet(out.Actions.AllowedEnvironments, false)
+	out.Actions.RequiredRunnerEnvironment = strings.ToLower(strings.TrimSpace(out.Actions.RequiredRunnerEnvironment))
+	out.Actions.AllowedProtocols = normalizeStringSet(out.Actions.AllowedProtocols, true)
+	out.Actions.AllowedTargetHosts = normalizeStringSet(out.Actions.AllowedTargetHosts, true)
+	out.Actions.UpdatedBy = strings.TrimSpace(out.Actions.UpdatedBy)
+	if out.Actions.Enabled {
+		if out.Actions.Issuer == "" {
+			out.Actions.Issuer = defaultGitHubActionsOIDCIssuer
+		}
+		if out.Actions.ServerURL == "" {
+			if out.Actions.Issuer == defaultGitHubActionsOIDCIssuer {
+				out.Actions.ServerURL = "https://github.com"
+			} else if parsed, err := url.Parse(out.Actions.Issuer); err == nil && parsed.Host != "" {
+				out.Actions.ServerURL = parsed.Scheme + "://" + parsed.Host
+			}
+		}
+		if out.Actions.Revision < 1 {
+			out.Actions.Revision = 1
+		}
+	}
 	if out.Enabled {
 		if !out.AllowDirectCommit && !out.RequirePullRequest {
 			out.RequirePullRequest = true
@@ -231,6 +260,34 @@ func normalizeGitHubProjectPolicy(policy storage.GitHubProjectPolicy) storage.Gi
 		}
 	}
 	return out
+}
+
+func githubActionsPoliciesEqual(left, right storage.GitHubActionsPolicy) bool {
+	left = normalizeGitHubProjectPolicy(storage.GitHubProjectPolicy{Actions: left}).Actions
+	right = normalizeGitHubProjectPolicy(storage.GitHubProjectPolicy{Actions: right}).Actions
+	left.Revision, right.Revision = 0, 0
+	left.UpdatedAt, right.UpdatedAt = time.Time{}, time.Time{}
+	left.UpdatedBy, right.UpdatedBy = "", ""
+	return reflect.DeepEqual(left, right)
+}
+
+func (s *Server) stampGitHubActionsPolicyUpdate(r *http.Request, prior, next storage.GitHubActionsPolicy) storage.GitHubActionsPolicy {
+	next = normalizeGitHubProjectPolicy(storage.GitHubProjectPolicy{Actions: next}).Actions
+	prior = normalizeGitHubProjectPolicy(storage.GitHubProjectPolicy{Actions: prior}).Actions
+	if githubActionsPoliciesEqual(prior, next) {
+		next.Revision = prior.Revision
+		next.UpdatedAt = prior.UpdatedAt
+		next.UpdatedBy = prior.UpdatedBy
+		return next
+	}
+	next.Revision = prior.Revision + 1
+	if next.Revision < 1 {
+		next.Revision = 1
+	}
+	next.UpdatedAt = time.Now().UTC()
+	_, subject, displayName := s.resolveAuditActor(r)
+	next.UpdatedBy = firstNonEmpty(displayName, subject)
+	return next
 }
 
 func normalizeStringSet(values []string, lower bool) []string {
@@ -345,7 +402,7 @@ func (s *Server) githubClientForProjectRequest(w http.ResponseWriter, r *http.Re
 	// turn a broad controller credential into arbitrary GitHub access. Per-user
 	// OAuth remains available without a project policy because its authority is
 	// already bounded by the caller's own GitHub identity.
-	controllerCredentialAllowed := policy.Enabled
+	controllerCredentialAllowed := policy.Enabled || policy.Actions.Enabled
 	tryApp := controllerCredentialAllowed && (mode == defaultGitHubAutoMode || mode == "app")
 	tryOAuth := mode == defaultGitHubAutoMode || mode == "oauth"
 	tryPAT := controllerCredentialAllowed && (mode == defaultGitHubAutoMode || mode == "pat")
@@ -569,7 +626,9 @@ func (s *Server) handleUpdateProjectGitHubPolicy(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
-	project.Settings.GitHub = normalizeGitHubProjectPolicy(policy)
+	policy = normalizeGitHubProjectPolicy(policy)
+	policy.Actions = s.stampGitHubActionsPolicyUpdate(r, project.Settings.GitHub.Actions, policy.Actions)
+	project.Settings.GitHub = policy
 	if err := validateProjectSettings(project.Settings); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -590,7 +649,7 @@ func (s *Server) handleUpdateProjectGitHubPolicy(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusConflict, "project changed while the policy update was in flight; reload and retry")
 		return
 	}
-	s.recordAuditEvent(r, "github.project_policy.update", "success", "project", project.ID, project.ID, map[string]any{"github_policy_enabled": project.Settings.GitHub.Enabled})
+	s.recordAuditEvent(r, "github.project_policy.update", "success", "project", project.ID, project.ID, map[string]any{"github_policy_enabled": project.Settings.GitHub.Enabled, "actions_enabled": project.Settings.GitHub.Actions.Enabled, "actions_policy_revision": project.Settings.GitHub.Actions.Revision})
 	writeJSON(w, http.StatusOK, project.Settings.GitHub)
 }
 
@@ -883,9 +942,14 @@ func (s *Server) handlePublishGitHubCheckRun(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	name := firstNonEmpty(req.Name, "APEX Load Performance Gate")
-	conclusion := firstNonEmpty(req.Conclusion, githubConclusionForTestStatus(test.Status))
+	checkStatus := "in_progress"
+	conclusion := ""
+	if ciRunTerminal(test.Status) {
+		checkStatus = "completed"
+		conclusion = githubConclusionForTest(test, s.runner)
+	}
 	summary := firstNonEmpty(req.Summary, "APEX Load run "+test.Name+" finished with status "+test.Status+".")
-	check, err := resolved.Client.CreateCheckRun(r.Context(), req.Owner, req.Repo, name, req.CommitSHA, "completed", conclusion, summary, req.DetailsURL)
+	check, err := resolved.Client.CreateCheckRun(r.Context(), req.Owner, req.Repo, name, req.CommitSHA, checkStatus, conclusion, summary, req.DetailsURL)
 	if err != nil {
 		writeGitHubUpstreamError(w, err)
 		return
@@ -914,13 +978,39 @@ func (s *Server) handlePublishGitHubCheckRun(w http.ResponseWriter, r *http.Requ
 
 func githubConclusionForTestStatus(status string) string {
 	switch strings.ToUpper(strings.TrimSpace(status)) {
-	case "COMPLETED":
+	case "COMPLETE":
 		return "success"
-	case "FAILED", "ABORTED":
+	case "FAILED":
 		return "failure"
+	case "ABORTED":
+		return "cancelled"
 	default:
-		return "neutral"
+		return ""
 	}
+}
+
+func githubConclusionForTest(test *ManagedTest, runner *TestRunner) string {
+	if test == nil {
+		return "failure"
+	}
+	conclusion := githubConclusionForTestStatus(test.Status)
+	if conclusion != "success" {
+		return conclusion
+	}
+	if breached, _ := ciLiveSLABreach(func() *GoalStatus {
+		if test.LiveMetrics == nil {
+			return nil
+		}
+		return test.LiveMetrics.GoalStatus
+	}()); breached {
+		return "failure"
+	}
+	if runner != nil {
+		if manifest, err := runner.GetRunArchiveManifest(test.ID); err == nil && manifest != nil && manifest.SLABreached {
+			return "failure"
+		}
+	}
+	return conclusion
 }
 
 func (s *Server) handleListGitHubCheckLinks(w http.ResponseWriter, r *http.Request) {

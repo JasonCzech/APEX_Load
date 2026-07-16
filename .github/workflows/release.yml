@@ -1,0 +1,1126 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-publication
+  cancel-in-progress: false
+
+env:
+  GOTOOLCHAIN: local
+  GOPROXY: ${{ vars.GO_MODULE_PROXY || 'https://proxy.golang.org,direct' }}
+  NPM_CONFIG_REGISTRY: ${{ vars.NPM_REGISTRY_URL || 'https://registry.npmjs.org' }}
+
+jobs:
+  ci:
+    name: Authoritative CI
+    permissions:
+      contents: read
+      security-events: write
+    uses: ./.github/workflows/ci.yml
+
+  verify-tag:
+    name: Verify protected signed release tag
+    runs-on: ${{ fromJSON(vars.RELEASE_LINUX_RUNNER_LABELS || '["ubuntu-24.04"]') }}
+    timeout-minutes: 15
+    steps:
+      - name: Checkout signed tag
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify annotated signature and main ancestry
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_COMMIT: ${{ github.sha }}
+          APEXLOAD_RELEASE_TAG_PUBLIC_KEYS: ${{ vars.APEXLOAD_RELEASE_TAG_PUBLIC_KEYS }}
+        run: ./scripts/release/verify-tag.sh "$RELEASE_TAG" "$RELEASE_COMMIT"
+
+      - name: Require the canonical action to pin this apexctl
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          pinned="$(tr -d '[:space:]' < .github/actions/apexload-run/apexctl-version)"
+          [[ "$pinned" == "$RELEASE_TAG" ]] || {
+            printf 'canonical action pins %s, but release tag is %s\n' "$pinned" "$RELEASE_TAG" >&2
+            exit 1
+          }
+
+  metadata:
+    name: Freeze release metadata
+    needs: [ci, verify-tag]
+    runs-on: ${{ fromJSON(vars.RELEASE_LINUX_RUNNER_LABELS || '["ubuntu-24.04"]') }}
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.metadata.outputs.version }}
+      commit: ${{ steps.metadata.outputs.commit }}
+      build-time: ${{ steps.metadata.outputs.build-time }}
+      source-epoch: ${{ steps.metadata.outputs.source-epoch }}
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Compute metadata once
+        id: metadata
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          source_epoch="$(git show -s --format=%ct "$RELEASE_COMMIT")"
+          build_time="$(date --utc --date="@${source_epoch}" +%Y-%m-%dT%H:%M:%SZ)"
+          {
+            printf 'version=%s\n' "${RELEASE_TAG#v}"
+            printf 'commit=%s\n' "$RELEASE_COMMIT"
+            printf 'source-epoch=%s\n' "$source_epoch"
+            printf 'build-time=%s\n' "$build_time"
+          } >> "$GITHUB_OUTPUT"
+
+  registry-credentials:
+    name: Validate registry and portable signing identities
+    needs: metadata
+    runs-on: ${{ fromJSON(vars.RELEASE_LINUX_RUNNER_LABELS || '["ubuntu-24.04"]') }}
+    timeout-minutes: 10
+    environment: registry-release
+    steps:
+      - name: Checkout the protected action release
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Fail closed on missing release identities
+        env:
+          CHECKSUM_PRIVATE_KEY: ${{ secrets.APEXLOAD_RELEASE_SIGNING_KEY_PEM }}
+          CHECKSUM_SIGNER_PATH: ${{ vars.APEXLOAD_RELEASE_SIGNER_PATH }}
+          CHECKSUM_PUBLIC_KEY: ${{ vars.APEXLOAD_RELEASE_SIGNING_PUBLIC_KEY_PEM }}
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+          COSIGN_KEY_REF: ${{ vars.COSIGN_KEY_REF }}
+          COSIGN_PUBLIC_KEY: ${{ vars.COSIGN_PUBLIC_KEY }}
+          MOVING_TAG_PRIVATE_KEY: ${{ secrets.APEXLOAD_RELEASE_TAG_PRIVATE_KEY }}
+          MOVING_TAG_SIGNING_KEY_ID: ${{ vars.APEXLOAD_RELEASE_TAG_SIGNING_KEY_ID }}
+          MOVING_TAG_SIGNER_MODE: ${{ vars.APEXLOAD_RELEASE_TAG_SIGNER_MODE }}
+          MOVING_TAG_GNUPGHOME: ${{ vars.APEXLOAD_RELEASE_TAG_GNUPGHOME }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          for variable in CHECKSUM_PUBLIC_KEY COSIGN_PUBLIC_KEY; do
+            [[ -n "${!variable}" ]] || {
+              printf '%s must be configured for a production release\n' "$variable" >&2
+              exit 1
+            }
+          done
+          if [[ -n "$CHECKSUM_SIGNER_PATH" ]]; then
+            [[ "$CHECKSUM_SIGNER_PATH" == /* && -x "$CHECKSUM_SIGNER_PATH" ]] || {
+              echo 'APEXLOAD_RELEASE_SIGNER_PATH must be an executable absolute path on the protected runner' >&2
+              exit 1
+            }
+          else
+            [[ -n "$CHECKSUM_PRIVATE_KEY" ]] || {
+              echo 'APEXLOAD_RELEASE_SIGNER_PATH or APEXLOAD_RELEASE_SIGNING_KEY_PEM is required' >&2
+              exit 1
+            }
+          fi
+          if [[ -z "$COSIGN_KEY_REF" ]]; then
+            [[ -n "$COSIGN_PRIVATE_KEY" && -n "$COSIGN_PASSWORD" ]] || {
+              echo 'COSIGN_KEY_REF or COSIGN_PRIVATE_KEY/COSIGN_PASSWORD is required' >&2
+              exit 1
+            }
+          fi
+          if [[ "$RELEASE_TAG" =~ ^v1\.[0-9]+\.[0-9]+$ ]]; then
+            [[ -n "$MOVING_TAG_SIGNING_KEY_ID" ]] || {
+              echo 'stable v1 releases require the moving-tag signing key ID' >&2
+              exit 1
+            }
+            if [[ "$MOVING_TAG_SIGNER_MODE" == preinstalled ]]; then
+              [[ -z "$MOVING_TAG_PRIVATE_KEY" ]] || {
+                echo 'do not expose a moving-tag private key in preinstalled signer mode' >&2
+                exit 1
+              }
+              [[ "$MOVING_TAG_GNUPGHOME" == /* && -d "$MOVING_TAG_GNUPGHOME" ]] || {
+                echo 'preinstalled signer mode requires an absolute APEXLOAD_RELEASE_TAG_GNUPGHOME' >&2
+                exit 1
+              }
+              export GNUPGHOME="$MOVING_TAG_GNUPGHOME"
+            else
+              [[ -n "$MOVING_TAG_PRIVATE_KEY" ]] || {
+                echo 'moving-tag private key is required unless signer mode is preinstalled' >&2
+                exit 1
+              }
+              gnupg_home="$(mktemp -d)"
+              trap 'rm -rf "$gnupg_home"' EXIT
+              chmod 0700 "$gnupg_home"
+              export GNUPGHOME="$gnupg_home"
+              printf '%s' "$MOVING_TAG_PRIVATE_KEY" | gpg --batch --import >/dev/null 2>&1
+            fi
+            gpg --batch --list-secret-keys "$MOVING_TAG_SIGNING_KEY_ID" >/dev/null 2>&1 || {
+              echo 'moving-tag signing key ID does not select the configured private key' >&2
+              exit 1
+            }
+          fi
+
+      - name: Verify the action-bundled release key
+        env:
+          CHECKSUM_PRIVATE_KEY: ${{ secrets.APEXLOAD_RELEASE_SIGNING_KEY_PEM }}
+          CHECKSUM_SIGNER_PATH: ${{ vars.APEXLOAD_RELEASE_SIGNER_PATH }}
+          CHECKSUM_PUBLIC_KEY: ${{ vars.APEXLOAD_RELEASE_SIGNING_PUBLIC_KEY_PEM }}
+        run: |
+          set -euo pipefail
+          bundled_key=.github/actions/apexload-run/release-signing-key.pem
+          [[ -s "$bundled_key" ]] || {
+            echo 'the protected action release must bundle release-signing-key.pem' >&2
+            exit 1
+          }
+          umask 077
+          trap 'rm -f "$RUNNER_TEMP/release-signing.key" "$RUNNER_TEMP/private-derived.der" "$RUNNER_TEMP/configured.der" "$RUNNER_TEMP/bundled.der" "$RUNNER_TEMP/configured-release-signing.pub"' EXIT
+          printf '%s' "$CHECKSUM_PUBLIC_KEY" > "$RUNNER_TEMP/configured-release-signing.pub"
+          openssl pkey -pubin -in "$RUNNER_TEMP/configured-release-signing.pub" -outform DER \
+            > "$RUNNER_TEMP/configured.der"
+          openssl pkey -pubin -in "$bundled_key" -outform DER \
+            > "$RUNNER_TEMP/bundled.der"
+          if [[ -z "$CHECKSUM_SIGNER_PATH" ]]; then
+            printf '%s' "$CHECKSUM_PRIVATE_KEY" > "$RUNNER_TEMP/release-signing.key"
+            openssl pkey -in "$RUNNER_TEMP/release-signing.key" -pubout -outform DER \
+              > "$RUNNER_TEMP/private-derived.der"
+            cmp "$RUNNER_TEMP/private-derived.der" "$RUNNER_TEMP/configured.der"
+          fi
+          cmp "$RUNNER_TEMP/configured.der" "$RUNNER_TEMP/bundled.der"
+
+  client-credentials:
+    name: Validate client signing identities
+    needs: metadata
+    runs-on: ${{ fromJSON(vars.RELEASE_LINUX_RUNNER_LABELS || '["ubuntu-24.04"]') }}
+    timeout-minutes: 10
+    environment: client-release
+    steps:
+      - name: Fail closed on missing macOS and Windows credentials
+        env:
+          MACOS_P12_PRESENT: ${{ secrets.APEXLOAD_MACOS_CERTIFICATE_P12_BASE64 != '' }}
+          MACOS_P12_PASSWORD_PRESENT: ${{ secrets.APEXLOAD_MACOS_CERTIFICATE_PASSWORD != '' }}
+          MACOS_IDENTITY_PRESENT: ${{ secrets.APEXLOAD_MACOS_CODESIGN_IDENTITY != '' }}
+          MACOS_NOTARY_APPLE_ID_PRESENT: ${{ secrets.APEXLOAD_MACOS_NOTARY_APPLE_ID != '' }}
+          MACOS_NOTARY_PASSWORD_PRESENT: ${{ secrets.APEXLOAD_MACOS_NOTARY_PASSWORD != '' }}
+          MACOS_NOTARY_TEAM_ID_PRESENT: ${{ secrets.APEXLOAD_MACOS_NOTARY_TEAM_ID != '' }}
+          WINDOWS_PFX_PRESENT: ${{ secrets.APEXLOAD_WINDOWS_CODESIGN_PFX_BASE64 != '' }}
+          WINDOWS_PFX_PASSWORD_PRESENT: ${{ secrets.APEXLOAD_WINDOWS_CODESIGN_PASSWORD != '' }}
+        run: |
+          set -euo pipefail
+          for variable in MACOS_P12_PRESENT MACOS_P12_PASSWORD_PRESENT MACOS_IDENTITY_PRESENT MACOS_NOTARY_APPLE_ID_PRESENT MACOS_NOTARY_PASSWORD_PRESENT MACOS_NOTARY_TEAM_ID_PRESENT WINDOWS_PFX_PRESENT WINDOWS_PFX_PASSWORD_PRESENT; do
+            [[ "${!variable}" == true ]] || {
+              printf '%s must be configured for a production release\n' "$variable" >&2
+              exit 1
+            }
+          done
+
+  draft:
+    name: Reserve immutable draft Release
+    needs: [metadata, registry-credentials, client-credentials]
+    runs-on: ${{ fromJSON(vars.RELEASE_LINUX_RUNNER_LABELS || '["ubuntu-24.04"]') }}
+    timeout-minutes: 10
+    environment: registry-release
+    permissions:
+      contents: write
+    steps:
+      - name: Create empty draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_COMMIT: ${{ needs.metadata.outputs.commit }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          server_url="${GITHUB_SERVER_URL:-https://github.com}"
+          export GH_HOST="${server_url#https://}"
+          if [[ "$GH_HOST" != github.com ]]; then
+            export GH_ENTERPRISE_TOKEN="$GH_TOKEN"
+          fi
+          marker="<!-- apexload-release:${REPOSITORY}:${RELEASE_TAG}:${RELEASE_COMMIT} -->"
+          if existing="$(gh release view "$RELEASE_TAG" --repo "$REPOSITORY" \
+            --json isDraft,tagName,body 2>/dev/null)"; then
+            jq -e --arg tag "$RELEASE_TAG" --arg marker "$marker" \
+              '.isDraft == true and .tagName == $tag and .body == $marker' \
+              <<< "$existing" >/dev/null || {
+                printf 'release %s already exists but is not this workflow\x27s reusable draft\n' "$RELEASE_TAG" >&2
+                exit 1
+              }
+            printf 'reusing authenticated draft Release %s; downstream publication will verify every existing asset\n' "$RELEASE_TAG"
+            exit 0
+          fi
+          args=(release create "$RELEASE_TAG" --repo "$REPOSITORY" --draft --verify-tag --notes "$marker" --title "APEX Load ${RELEASE_TAG}")
+          if [[ "$RELEASE_TAG" == *-* ]]; then
+            args+=(--prerelease)
+          fi
+          gh "${args[@]}"
+
+  core-assets:
+    name: Build portable binaries, server tools, App Service, and Helm
+    needs: [metadata, draft]
+    runs-on: ${{ fromJSON(vars.RELEASE_LINUX_RUNNER_LABELS || '["ubuntu-24.04"]') }}
+    timeout-minutes: 60
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Setup Node 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22.22.0
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Setup Helm
+        if: vars.APEXLOAD_USE_PREINSTALLED_TOOLS != 'true'
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+        with:
+          version: v3.19.0
+
+      - name: Verify exact Helm version
+        run: test "$(helm version --template '{{.Version}}')" = v3.19.0
+
+      - name: Build embedded dashboard
+        working-directory: dashboard
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts
+          npm run build
+
+      - name: Build release assets once
+        env:
+          RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
+          RELEASE_COMMIT: ${{ needs.metadata.outputs.commit }}
+          RELEASE_BUILD_TIME: ${{ needs.metadata.outputs.build-time }}
+          SOURCE_DATE_EPOCH: ${{ needs.metadata.outputs.source-epoch }}
+          APEXLOAD_BUILD_APEXCTL: "0"
+        run: ./scripts/release/build-artifacts.sh release/assets "$RELEASE_VERSION" "$RELEASE_COMMIT" "$RELEASE_BUILD_TIME"
+
+      - name: Verify App Service launcher
+        run: node --test deployments/azure/appservice/launcher.test.js
+
+      - name: Upload core release assets
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: release-core-assets
+          path: release/assets/
+          if-no-files-found: error
+          retention-days: 7
+
+  clients:
+    name: Signed desktop client (${{ matrix.name }})
+    needs: [metadata, draft, client-credentials]
+    runs-on: ${{ fromJSON(vars[matrix.runner_var] || matrix.default_runner) }}
+    timeout-minutes: 120
+    environment: client-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-amd64
+            os: ubuntu-24.04
+            platform: linux/amd64
+            runner_var: RELEASE_LINUX_AMD64_RUNNER_LABELS
+            default_runner: '["ubuntu-24.04"]'
+          - name: linux-arm64
+            os: ubuntu-24.04-arm
+            platform: linux/arm64
+            runner_var: RELEASE_LINUX_ARM64_RUNNER_LABELS
+            default_runner: '["ubuntu-24.04-arm"]'
+          - name: macos-amd64
+            os: macos-15-intel
+            platform: darwin/amd64
+            runner_var: RELEASE_MACOS_AMD64_RUNNER_LABELS
+            default_runner: '["macos-15-intel"]'
+          - name: macos-arm64
+            os: macos-15
+            platform: darwin/arm64
+            runner_var: RELEASE_MACOS_ARM64_RUNNER_LABELS
+            default_runner: '["macos-15"]'
+          - name: windows-amd64
+            os: windows-2025
+            platform: windows/amd64
+            runner_var: RELEASE_WINDOWS_AMD64_RUNNER_LABELS
+            default_runner: '["windows-2025"]'
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Setup Node 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22.22.0
+
+      - name: Install Wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
+
+      - name: Install Linux native dependencies
+        if: runner.os == 'Linux' && vars.RELEASE_PREBAKED_NATIVE_DEPS != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+
+      - name: Import macOS signing certificate
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          CERTIFICATE_P12: ${{ secrets.APEXLOAD_MACOS_CERTIFICATE_P12_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.APEXLOAD_MACOS_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.APEXLOAD_MACOS_KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          keychain_password="${KEYCHAIN_PASSWORD:-apexload-release-keychain}"
+          certificate="$RUNNER_TEMP/apexload-release.p12"
+          keychain="$RUNNER_TEMP/apexload-release.keychain-db"
+          printf '%s' "$CERTIFICATE_P12" | base64 --decode > "$certificate"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$certificate" -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
+          security list-keychains -d user -s "$keychain"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain"
+
+      - name: Prepare Windows Authenticode certificate
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          WINDOWS_PFX: ${{ secrets.APEXLOAD_WINDOWS_CODESIGN_PFX_BASE64 }}
+        run: |
+          $certPath = Join-Path $env:RUNNER_TEMP "apexload-release.pfx"
+          [IO.File]::WriteAllBytes($certPath, [Convert]::FromBase64String($env:WINDOWS_PFX))
+          "APEXLOAD_WINDOWS_CODESIGN_CERT_PATH=$certPath" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "APEXLOAD_WINDOWS_CODESIGN=1" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "APEXLOAD_WINDOWS_CODESIGN_TOOL=signtool" | Out-File -FilePath $env:GITHUB_ENV -Append
+          $kitRoot = Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\bin"
+          $signTool = Get-ChildItem $kitRoot -Filter signtool.exe -Recurse -ErrorAction Stop |
+            Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+          if (-not $signTool) { throw "signtool.exe was not found" }
+          $drive = $signTool.FullName.Substring(0, 1).ToLowerInvariant()
+          $rest = $signTool.FullName.Substring(2).Replace('\', '/')
+          "APEXLOAD_WINDOWS_SIGNTOOL=/$drive$rest" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Build native desktop client
+        shell: bash
+        env:
+          WAILS_PLATFORM: ${{ matrix.platform }}
+          RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
+          RELEASE_COMMIT: ${{ needs.metadata.outputs.commit }}
+          RELEASE_BUILD_TIME: ${{ needs.metadata.outputs.build-time }}
+        run: |
+          set -euo pipefail
+          bi=github.com/jasonczech/apexload/pkg/buildinfo
+          cd desktop
+          wails build -clean -platform "$WAILS_PLATFORM" \
+            -ldflags "-s -w -X ${bi}.Version=${RELEASE_VERSION} -X ${bi}.Commit=${RELEASE_COMMIT} -X ${bi}.BuildTime=${RELEASE_BUILD_TIME}"
+
+      - name: Build platform apexctl
+        shell: bash
+        env:
+          TARGET_PLATFORM: ${{ matrix.platform }}
+          RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
+          RELEASE_COMMIT: ${{ needs.metadata.outputs.commit }}
+          RELEASE_BUILD_TIME: ${{ needs.metadata.outputs.build-time }}
+        run: |
+          set -euo pipefail
+          goos="${TARGET_PLATFORM%/*}"
+          goarch="${TARGET_PLATFORM#*/}"
+          suffix=""
+          [[ "$goos" == windows ]] && suffix=.exe
+          mkdir -p release/assets
+          bi=github.com/jasonczech/apexload/pkg/buildinfo
+          CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -trimpath \
+            -ldflags "-s -w -X ${bi}.Version=${RELEASE_VERSION} -X ${bi}.Commit=${RELEASE_COMMIT} -X ${bi}.BuildTime=${RELEASE_BUILD_TIME}" \
+            -o "release/assets/apexctl_${RELEASE_VERSION}_${goos}_${goarch}${suffix}" \
+            ./cmd/apexctl
+
+      - name: Sign and notarize macOS apexctl
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
+          TARGET_PLATFORM: ${{ matrix.platform }}
+          MACOS_IDENTITY: ${{ secrets.APEXLOAD_MACOS_CODESIGN_IDENTITY }}
+          NOTARY_APPLE_ID: ${{ secrets.APEXLOAD_MACOS_NOTARY_APPLE_ID }}
+          NOTARY_PASSWORD: ${{ secrets.APEXLOAD_MACOS_NOTARY_PASSWORD }}
+          NOTARY_TEAM_ID: ${{ secrets.APEXLOAD_MACOS_NOTARY_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          goarch="${TARGET_PLATFORM#*/}"
+          binary="release/assets/apexctl_${RELEASE_VERSION}_darwin_${goarch}"
+          codesign --force --options runtime --timestamp --sign "$MACOS_IDENTITY" "$binary"
+          codesign --verify --strict --verbose=2 "$binary"
+          ditto -c -k --keepParent "$binary" "$RUNNER_TEMP/apexctl-notary.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/apexctl-notary.zip" \
+            --wait \
+            --apple-id "$NOTARY_APPLE_ID" \
+            --password "$NOTARY_PASSWORD" \
+            --team-id "$NOTARY_TEAM_ID"
+
+      - name: Sign Windows apexctl
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
+          WINDOWS_PFX_PASSWORD: ${{ secrets.APEXLOAD_WINDOWS_CODESIGN_PASSWORD }}
+        run: |
+          $binary = "release/assets/apexctl_$($env:RELEASE_VERSION)_windows_amd64.exe"
+          $kitRoot = Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\bin"
+          $signTool = Get-ChildItem $kitRoot -Filter signtool.exe -Recurse -ErrorAction Stop |
+            Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+          if (-not $signTool) { throw "signtool.exe was not found" }
+          & $signTool.FullName sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com `
+            /f $env:APEXLOAD_WINDOWS_CODESIGN_CERT_PATH /p $env:WINDOWS_PFX_PASSWORD $binary
+          if ($LASTEXITCODE -ne 0) { throw "Authenticode signing failed" }
+          & $signTool.FullName verify /pa /all $binary
+          if ($LASTEXITCODE -ne 0) { throw "Authenticode verification failed" }
+
+      - name: Package Linux desktop client
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          VERSION: ${{ needs.metadata.outputs.version }}
+          COMMIT: ${{ needs.metadata.outputs.commit }}
+          BUILD_TIME: ${{ needs.metadata.outputs.build-time }}
+          APEXLOAD_DESKTOP_PACKAGE_PLATFORM: ${{ matrix.platform }}
+        run: ./scripts/package-desktop.sh
+
+      - name: Sign, notarize, and package macOS desktop client
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          VERSION: ${{ needs.metadata.outputs.version }}
+          COMMIT: ${{ needs.metadata.outputs.commit }}
+          BUILD_TIME: ${{ needs.metadata.outputs.build-time }}
+          APEXLOAD_DESKTOP_PACKAGE_PLATFORM: ${{ matrix.platform }}
+          APEXLOAD_MACOS_CODESIGN_IDENTITY: ${{ secrets.APEXLOAD_MACOS_CODESIGN_IDENTITY }}
+          APEXLOAD_MACOS_NOTARIZE: "1"
+          APEXLOAD_MACOS_NOTARY_APPLE_ID: ${{ secrets.APEXLOAD_MACOS_NOTARY_APPLE_ID }}
+          APEXLOAD_MACOS_NOTARY_PASSWORD: ${{ secrets.APEXLOAD_MACOS_NOTARY_PASSWORD }}
+          APEXLOAD_MACOS_NOTARY_TEAM_ID: ${{ secrets.APEXLOAD_MACOS_NOTARY_TEAM_ID }}
+          APEXLOAD_REQUIRE_TRUSTED_PACKAGES: "1"
+        run: ./scripts/package-desktop.sh
+
+      - name: Sign and package Windows desktop client
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          VERSION: ${{ needs.metadata.outputs.version }}
+          COMMIT: ${{ needs.metadata.outputs.commit }}
+          BUILD_TIME: ${{ needs.metadata.outputs.build-time }}
+          APEXLOAD_DESKTOP_PACKAGE_PLATFORM: ${{ matrix.platform }}
+          APEXLOAD_WINDOWS_CODESIGN_PASSWORD: ${{ secrets.APEXLOAD_WINDOWS_CODESIGN_PASSWORD }}
+          APEXLOAD_REQUIRE_TRUSTED_PACKAGES: "1"
+        run: ./scripts/package-desktop.sh
+
+      - name: Remove macOS signing material
+        if: always() && runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          security delete-keychain "$RUNNER_TEMP/apexload-release.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/apexload-release.p12" "$RUNNER_TEMP/apexctl-notary.zip"
+
+      - name: Remove Windows signing material
+        if: always() && runner.os == 'Windows'
+        shell: pwsh
+        run: Remove-Item -Force -ErrorAction SilentlyContinue "$env:RUNNER_TEMP\apexload-release.pfx"
+
+      - name: Upload signed desktop client
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: release-client-${{ matrix.name }}
+          path: |
+            dist/desktop/apexload-desktop-*.tar.gz
+            release/assets/apexctl_*
+          if-no-files-found: error
+          retention-days: 7
+
+  images:
+    name: Image (${{ matrix.component }}, ${{ matrix.profile }})
+    needs: [metadata, draft, registry-credentials]
+    runs-on: ${{ fromJSON(vars.RELEASE_LINUX_RUNNER_LABELS || '["ubuntu-24.04"]') }}
+    timeout-minutes: 90
+    environment: registry-release
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [controller, generator]
+        profile: [standard, enterprise]
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Install pinned arm64 emulation
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+        with:
+          image: docker.io/tonistiigi/binfmt@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
+          platforms: arm64
+          cache-image: false
+
+      - name: Setup multi-platform builder
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+
+      - name: Authenticate to release container registry
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: ${{ vars.APEXLOAD_RELEASE_REGISTRY || 'ghcr.io' }}
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Install cosign
+        if: vars.APEXLOAD_USE_PREINSTALLED_TOOLS != 'true'
+        uses: sigstore/cosign-installer@d7543c93d881b35a8faa02e8e3605f69b7a1ce62 # v3.10.0
+        with:
+          cosign-release: v3.1.1
+
+      - name: Verify exact cosign version
+        run: cosign version 2>&1 | grep -Eq 'GitVersion:[[:space:]]+v3\.1\.1([[:space:]]|$)'
+
+      - name: Derive immutable image name
+        id: image
+        env:
+          OWNER: ${{ github.repository_owner }}
+          RELEASE_REGISTRY: ${{ vars.APEXLOAD_RELEASE_REGISTRY || 'ghcr.io' }}
+          RELEASE_REGISTRY_NAMESPACE: ${{ vars.APEXLOAD_RELEASE_REGISTRY_NAMESPACE }}
+          COMPONENT: ${{ matrix.component }}
+          PROFILE: ${{ matrix.profile }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          namespace="${RELEASE_REGISTRY_NAMESPACE:-$OWNER}"
+          namespace="$(printf '%s' "$namespace" | tr '[:upper:]' '[:lower:]')"
+          [[ "$RELEASE_REGISTRY" =~ ^[A-Za-z0-9.-]+(:[0-9]+)?$ ]]
+          [[ "$namespace" =~ ^[a-z0-9]+([._/-][a-z0-9]+)*$ ]]
+          repository="${RELEASE_REGISTRY}/${namespace}/apexload-${COMPONENT}"
+          tag="${repository}:${RELEASE_TAG}-${PROFILE}-candidate-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          if docker buildx imagetools inspect "$tag" >/dev/null 2>&1; then
+            printf 'candidate image tag already exists: %s\n' "$tag" >&2
+            exit 1
+          fi
+          {
+            printf 'repository=%s\n' "$repository"
+            printf 'tag=%s\n' "$tag"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build and push once
+        id: build
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: mode=max
+          sbom: false
+          tags: ${{ steps.image.outputs.tag }}
+          build-args: |
+            BINARY=${{ matrix.component }}
+            GO_BUILD_TAGS=${{ matrix.profile }}
+            VERSION=${{ needs.metadata.outputs.version }}
+            COMMIT=${{ needs.metadata.outputs.commit }}
+            BUILD_TIME=${{ needs.metadata.outputs.build-time }}
+
+      - name: Resolve exact platform digests
+        id: platforms
+        env:
+          IMAGE_REPOSITORY: ${{ steps.image.outputs.repository }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          index="$(docker buildx imagetools inspect "${IMAGE_REPOSITORY}@${IMAGE_DIGEST}" --raw)"
+          platform_digest() {
+            local architecture="$1"
+            jq -er --arg architecture "$architecture" '
+              [.manifests[]
+                | select(.platform.os == "linux" and .platform.architecture == $architecture)]
+              | if length == 1 then .[0].digest
+                else error("expected exactly one linux/" + $architecture + " manifest") end
+            ' <<< "$index"
+          }
+          amd64_digest="$(platform_digest amd64)"
+          arm64_digest="$(platform_digest arm64)"
+          [[ "$amd64_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "$arm64_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          {
+            printf 'amd64-digest=%s\n' "$amd64_digest"
+            printf 'arm64-digest=%s\n' "$arm64_digest"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Generate linux-amd64 SPDX SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          image: ${{ steps.image.outputs.repository }}@${{ steps.platforms.outputs.amd64-digest }}
+          format: spdx-json
+          output-file: release/assets/sbom-apexload-${{ matrix.component }}-${{ matrix.profile }}-linux-amd64.spdx.json
+          upload-artifact: false
+
+      - name: Generate linux-arm64 SPDX SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          image: ${{ steps.image.outputs.repository }}@${{ steps.platforms.outputs.arm64-digest }}
+          format: spdx-json
+          output-file: release/assets/sbom-apexload-${{ matrix.component }}-${{ matrix.profile }}-linux-arm64.spdx.json
+          upload-artifact: false
+
+      - name: Block linux-amd64 high and critical findings
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.image.outputs.repository }}@${{ steps.platforms.outputs.amd64-digest }}
+          format: table
+          exit-code: "1"
+          severity: HIGH,CRITICAL
+          ignore-unfixed: false
+          vuln-type: os,library
+
+      - name: Block linux-arm64 high and critical findings
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.image.outputs.repository }}@${{ steps.platforms.outputs.arm64-digest }}
+          format: table
+          exit-code: "1"
+          severity: HIGH,CRITICAL
+          ignore-unfixed: false
+          vuln-type: os,library
+
+      - name: Sign exact image digest with portable key
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+          COSIGN_KEY_REF: ${{ vars.COSIGN_KEY_REF }}
+          IMAGE_REPOSITORY: ${{ steps.image.outputs.repository }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          AMD64_DIGEST: ${{ steps.platforms.outputs.amd64-digest }}
+          ARM64_DIGEST: ${{ steps.platforms.outputs.arm64-digest }}
+          SBOM_AMD64: release/assets/sbom-apexload-${{ matrix.component }}-${{ matrix.profile }}-linux-amd64.spdx.json
+          SBOM_ARM64: release/assets/sbom-apexload-${{ matrix.component }}-${{ matrix.profile }}-linux-arm64.spdx.json
+        run: |
+          set -euo pipefail
+          key=env://COSIGN_PRIVATE_KEY
+          [[ -n "$COSIGN_KEY_REF" ]] && key="$COSIGN_KEY_REF"
+          cosign sign --yes --key "$key" "${IMAGE_REPOSITORY}@${IMAGE_DIGEST}"
+          for platform in amd64 arm64; do
+            digest_variable="${platform^^}_DIGEST"
+            sbom_variable="SBOM_${platform^^}"
+            digest="${!digest_variable}"
+            sbom="${!sbom_variable}"
+            cosign sign --yes --key "$key" "${IMAGE_REPOSITORY}@${digest}"
+            cosign attest --yes --key "$key" \
+              --type spdxjson \
+              --predicate "$sbom" \
+              "${IMAGE_REPOSITORY}@${digest}"
+          done
+
+      - name: Verify portable image signature
+        env:
+          COSIGN_PUBLIC_KEY: ${{ vars.COSIGN_PUBLIC_KEY }}
+          IMAGE_REPOSITORY: ${{ steps.image.outputs.repository }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          AMD64_DIGEST: ${{ steps.platforms.outputs.amd64-digest }}
+          ARM64_DIGEST: ${{ steps.platforms.outputs.arm64-digest }}
+          SBOM_AMD64: release/assets/sbom-apexload-${{ matrix.component }}-${{ matrix.profile }}-linux-amd64.spdx.json
+          SBOM_ARM64: release/assets/sbom-apexload-${{ matrix.component }}-${{ matrix.profile }}-linux-arm64.spdx.json
+        run: |
+          set -euo pipefail
+          public_key="$RUNNER_TEMP/cosign.pub"
+          printf '%s' "$COSIGN_PUBLIC_KEY" > "$public_key"
+          cosign verify --key "$public_key" "${IMAGE_REPOSITORY}@${IMAGE_DIGEST}" >/dev/null
+          for platform in amd64 arm64; do
+            digest_variable="${platform^^}_DIGEST"
+            sbom_variable="SBOM_${platform^^}"
+            digest="${!digest_variable}"
+            sbom="${!sbom_variable}"
+            cosign verify --key "$public_key" "${IMAGE_REPOSITORY}@${digest}" >/dev/null
+            ./scripts/release/verify-sbom-attestation.sh \
+              "${IMAGE_REPOSITORY}@${digest}" "$public_key" "$sbom"
+          done
+
+      - name: Create image manifest fragment
+        env:
+          COMPONENT: ${{ matrix.component }}
+          PROFILE: ${{ matrix.profile }}
+          IMAGE_REPOSITORY: ${{ steps.image.outputs.repository }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          AMD64_DIGEST: ${{ steps.platforms.outputs.amd64-digest }}
+          ARM64_DIGEST: ${{ steps.platforms.outputs.arm64-digest }}
+        run: |
+          set -euo pipefail
+          mkdir -p release/image-metadata
+          sbom_amd64="sbom-apexload-${COMPONENT}-${PROFILE}-linux-amd64.spdx.json"
+          sbom_arm64="sbom-apexload-${COMPONENT}-${PROFILE}-linux-arm64.spdx.json"
+          sbom_amd64_sha256="$(sha256sum "release/assets/$sbom_amd64" | awk '{print $1}')"
+          sbom_arm64_sha256="$(sha256sum "release/assets/$sbom_arm64" | awk '{print $1}')"
+          jq -n \
+            --arg component "$COMPONENT" \
+            --arg profile "$PROFILE" \
+            --arg repository "$IMAGE_REPOSITORY" \
+            --arg digest "$IMAGE_DIGEST" \
+            --arg amd64_digest "$AMD64_DIGEST" \
+            --arg arm64_digest "$ARM64_DIGEST" \
+            --arg sbom_amd64 "$sbom_amd64" \
+            --arg sbom_arm64 "$sbom_arm64" \
+            --arg sbom_amd64_sha256 "$sbom_amd64_sha256" \
+            --arg sbom_arm64_sha256 "$sbom_arm64_sha256" \
+            '{
+              component: $component,
+              profile: $profile,
+              repository: $repository,
+              digest: $digest,
+              platforms: [
+                {os: "linux", architecture: "amd64", digest: $amd64_digest, sbom_asset: $sbom_amd64, sbom_sha256: $sbom_amd64_sha256},
+                {os: "linux", architecture: "arm64", digest: $arm64_digest, sbom_asset: $sbom_arm64, sbom_sha256: $sbom_arm64_sha256}
+              ]
+            }' \
+            > "release/image-metadata/${COMPONENT}-${PROFILE}.json"
+
+      - name: Attest image provenance on GitHub.com
+        if: github.server_url == 'https://github.com'
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-name: ${{ steps.image.outputs.repository }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Upload image evidence
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: release-image-${{ matrix.component }}-${{ matrix.profile }}
+          path: release/
+          if-no-files-found: error
+          retention-days: 7
+
+  assemble:
+    name: Assemble and sign immutable release bundle
+    needs: [metadata, core-assets, clients, images]
+    runs-on: ${{ fromJSON(vars.RELEASE_LINUX_RUNNER_LABELS || '["ubuntu-24.04"]') }}
+    timeout-minutes: 30
+    environment: registry-release
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Checkout release tooling
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Download all release inputs
+        uses: ./.github/actions/download-release-inputs
+        with:
+          path: staging
+
+      - name: Normalize artifact layout
+        run: |
+          set -euo pipefail
+          mkdir -p staging/assets staging/image-metadata
+          find staging -mindepth 1 -maxdepth 1 -type f -exec mv -t staging/assets {} +
+          find staging -mindepth 2 -type f -path '*/assets/*' ! -path 'staging/assets/*' -exec mv -t staging/assets {} +
+          find staging -mindepth 2 -type f -path '*/dist/desktop/*.tar.gz' -exec mv -t staging/assets {} +
+          find staging -mindepth 2 -type f -path '*/image-metadata/*' ! -path 'staging/image-metadata/*' -exec mv -t staging/image-metadata {} +
+          find staging/assets -type f -empty -print -quit | grep -q . && {
+            echo 'empty release asset found' >&2
+            exit 1
+          } || true
+
+      - name: Generate schema-v1 release manifest
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_COMMIT: ${{ needs.metadata.outputs.commit }}
+          RELEASE_BUILD_TIME: ${{ needs.metadata.outputs.build-time }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          python3 scripts/release/create-manifest.py \
+            --tag "$RELEASE_TAG" \
+            --commit "$RELEASE_COMMIT" \
+            --build-time "$RELEASE_BUILD_TIME" \
+            --assets staging/assets \
+            --image-metadata staging/image-metadata \
+            --repository "$REPOSITORY" \
+            --output staging/assets/release-manifest.json
+
+      - name: Sign checksum manifest with portable key
+        env:
+          PRIVATE_KEY_PEM: ${{ secrets.APEXLOAD_RELEASE_SIGNING_KEY_PEM }}
+          PUBLIC_KEY_PEM: ${{ vars.APEXLOAD_RELEASE_SIGNING_PUBLIC_KEY_PEM }}
+          APEXLOAD_RELEASE_SIGNER_PATH: ${{ vars.APEXLOAD_RELEASE_SIGNER_PATH }}
+        run: |
+          set -euo pipefail
+          private_key="$RUNNER_TEMP/release-private.pem"
+          public_key="$RUNNER_TEMP/release-public.pem"
+          trap 'rm -f "$private_key" "$public_key"' EXIT
+          umask 077
+          if [[ -z "$APEXLOAD_RELEASE_SIGNER_PATH" ]]; then
+            printf '%s' "$PRIVATE_KEY_PEM" > "$private_key"
+          fi
+          printf '%s' "$PUBLIC_KEY_PEM" > "$public_key"
+          ./scripts/release/sign-release.sh staging/assets "$private_key" "$public_key"
+          ./scripts/release/verify-release.sh staging/assets "$GITHUB_REF_NAME" "$public_key"
+
+      - name: Attest downloadable artifacts on GitHub.com
+        if: github.server_url == 'https://github.com'
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-path: staging/assets/*
+
+      - name: Upload verified release bundle
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: release-bundle
+          path: staging/assets/
+          if-no-files-found: error
+          retention-days: 7
+
+  promote-images:
+    name: Expose verified semantic image tags
+    needs: [metadata, assemble]
+    runs-on: ${{ fromJSON(vars.RELEASE_LINUX_RUNNER_LABELS || '["ubuntu-24.04"]') }}
+    timeout-minutes: 30
+    environment: registry-release
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout release verification tooling
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Download the verified signed bundle
+        uses: ./.github/actions/download-artifact
+        with:
+          name: release-bundle
+          path: release
+
+      - name: Reverify signed bundle after artifact handoff
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_PUBLIC_KEY: ${{ vars.APEXLOAD_RELEASE_SIGNING_PUBLIC_KEY_PEM }}
+        run: |
+          set -euo pipefail
+          public_key="$RUNNER_TEMP/release-signing.pub"
+          printf '%s' "$RELEASE_PUBLIC_KEY" > "$public_key"
+          ./scripts/release/verify-release.sh release "$RELEASE_TAG" "$public_key"
+
+      - name: Setup registry manifest tooling
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+
+      - name: Authenticate to release container registry
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: ${{ vars.APEXLOAD_RELEASE_REGISTRY || 'ghcr.io' }}
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Install cosign
+        if: vars.APEXLOAD_USE_PREINSTALLED_TOOLS != 'true'
+        uses: sigstore/cosign-installer@d7543c93d881b35a8faa02e8e3605f69b7a1ce62 # v3.10.0
+        with:
+          cosign-release: v3.1.1
+
+      - name: Verify exact cosign version
+        run: cosign version 2>&1 | grep -Eq 'GitVersion:[[:space:]]+v3\.1\.1([[:space:]]|$)'
+
+      - name: Verify all candidate digests and reserve final tags
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          COSIGN_PUBLIC_KEY: ${{ vars.COSIGN_PUBLIC_KEY }}
+        run: |
+          set -euo pipefail
+          public_key="$RUNNER_TEMP/cosign.pub"
+          printf '%s' "$COSIGN_PUBLIC_KEY" > "$public_key"
+          for component in controller generator; do
+            for profile in standard enterprise; do
+              ./scripts/release/verify-image-evidence.sh \
+                release/release-manifest.json "$component" "$profile" "$public_key" >/dev/null
+              row="$(jq -cer --arg component "$component" --arg profile "$profile" '
+                [.images[] | select(.component == $component and .profile == $profile)]
+                | if length == 1 then .[0] else error("missing image") end
+              ' release/release-manifest.json)"
+              repository="$(jq -er '.repository' <<< "$row")"
+              expected_digest="$(jq -er '.digest' <<< "$row")"
+              final_tag="${repository}:${RELEASE_TAG}-${profile}"
+              if docker buildx imagetools inspect "$final_tag" >/dev/null 2>&1; then
+                existing_digest="sha256:$(docker buildx imagetools inspect "$final_tag" --raw | sha256sum | awk '{print $1}')"
+                [[ "$existing_digest" == "$expected_digest" ]] || {
+                  printf 'immutable semantic image tag %s already points at %s, expected %s\n' "$final_tag" "$existing_digest" "$expected_digest" >&2
+                  exit 1
+                }
+              fi
+            done
+          done
+
+      - name: Promote exact digests and verify tag resolution
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          for component in controller generator; do
+            for profile in standard enterprise; do
+              row="$(jq -cer --arg component "$component" --arg profile "$profile" '
+                [.images[] | select(.component == $component and .profile == $profile)]
+                | if length == 1 then .[0] else error("missing image") end
+              ' release/release-manifest.json)"
+              repository="$(jq -er '.repository' <<< "$row")"
+              digest="$(jq -er '.digest' <<< "$row")"
+              final_tag="${repository}:${RELEASE_TAG}-${profile}"
+              if ! docker buildx imagetools inspect "$final_tag" >/dev/null 2>&1; then
+                docker buildx imagetools create --tag "$final_tag" "${repository}@${digest}"
+              fi
+              resolved="sha256:$(docker buildx imagetools inspect "$final_tag" --raw | sha256sum | awk '{print $1}')"
+              [[ "$resolved" == "$digest" ]] || {
+                printf 'semantic tag %s resolved to %s, expected %s\n' "$final_tag" "$resolved" "$digest" >&2
+                exit 1
+              }
+            done
+          done
+
+  publish:
+    name: Publish verified Release
+    needs: [metadata, assemble, promote-images]
+    runs-on: ${{ fromJSON(vars.RELEASE_LINUX_RUNNER_LABELS || '["ubuntu-24.04"]') }}
+    timeout-minutes: 20
+    environment: registry-release
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout release publication tooling
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Download verified bundle
+        uses: ./.github/actions/download-artifact
+        with:
+          name: release-bundle
+          path: release
+
+      - name: Reverify signed bundle after artifact handoff
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_PUBLIC_KEY: ${{ vars.APEXLOAD_RELEASE_SIGNING_PUBLIC_KEY_PEM }}
+        run: |
+          set -euo pipefail
+          public_key="$RUNNER_TEMP/release-signing.pub"
+          printf '%s' "$RELEASE_PUBLIC_KEY" > "$public_key"
+          ./scripts/release/verify-release.sh release "$RELEASE_TAG" "$public_key"
+
+      - name: Upload idempotently, verify stored bytes, and publish draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_COMMIT: ${{ needs.metadata.outputs.commit }}
+          RELEASE_PUBLIC_KEY: ${{ vars.APEXLOAD_RELEASE_SIGNING_PUBLIC_KEY_PEM }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          public_key="$RUNNER_TEMP/release-signing.pub"
+          printf '%s' "$RELEASE_PUBLIC_KEY" > "$public_key"
+          ./scripts/release/publish-release.sh \
+            "$RELEASE_TAG" "$RELEASE_COMMIT" "$REPOSITORY" release "$public_key"
+
+  move-v1:
+    name: Move protected signed v1 action tag
+    if: ${{ !contains(github.ref_name, '-') && startsWith(github.ref_name, 'v1.') }}
+    needs: publish
+    runs-on: ${{ fromJSON(vars.RELEASE_LINUX_RUNNER_LABELS || '["ubuntu-24.04"]') }}
+    timeout-minutes: 15
+    environment: registry-release
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout stable release commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Import moving-tag signing identity and update v1
+        env:
+          TAG_PRIVATE_KEY: ${{ secrets.APEXLOAD_RELEASE_TAG_PRIVATE_KEY }}
+          TAG_SIGNING_KEY_ID: ${{ vars.APEXLOAD_RELEASE_TAG_SIGNING_KEY_ID }}
+          TAG_SIGNER_MODE: ${{ vars.APEXLOAD_RELEASE_TAG_SIGNER_MODE }}
+          TAG_GNUPGHOME: ${{ vars.APEXLOAD_RELEASE_TAG_GNUPGHOME }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ "$TAG_SIGNER_MODE" == preinstalled ]]; then
+            [[ -z "$TAG_PRIVATE_KEY" ]] || {
+              echo 'do not expose a moving-tag private key in preinstalled signer mode' >&2
+              exit 1
+            }
+            [[ "$TAG_GNUPGHOME" == /* && -d "$TAG_GNUPGHOME" ]] || {
+              echo 'preinstalled signer mode requires an absolute APEXLOAD_RELEASE_TAG_GNUPGHOME' >&2
+              exit 1
+            }
+            export GNUPGHOME="$TAG_GNUPGHOME"
+          else
+            gnupg_home="$(mktemp -d)"
+            trap 'rm -rf "$gnupg_home"' EXIT
+            chmod 0700 "$gnupg_home"
+            export GNUPGHOME="$gnupg_home"
+            printf '%s' "$TAG_PRIVATE_KEY" | gpg --batch --import
+          fi
+          [[ -n "$TAG_SIGNING_KEY_ID" ]] || {
+            echo 'APEXLOAD_RELEASE_TAG_SIGNING_KEY_ID is required' >&2
+            exit 1
+          }
+          gpg --batch --list-secret-keys "$TAG_SIGNING_KEY_ID" >/dev/null 2>&1 || {
+            echo 'moving-tag signing key is not available from the configured GPG agent/keyring' >&2
+            exit 1
+          }
+          git config user.name 'APEX Load Release Bot'
+          git config user.email 'apexload-release@users.noreply.github.com'
+          git config user.signingkey "$TAG_SIGNING_KEY_ID"
+          existing_oid="$(git ls-remote --tags origin refs/tags/v1 | awk 'NR == 1 {print $1}')"
+          if [[ -n "$existing_oid" ]]; then
+            git fetch --force --no-tags origin refs/tags/v1:refs/tags/v1
+            existing_commit="$(git rev-parse 'refs/tags/v1^{commit}')"
+            existing_release="$(git tag --points-at "$existing_commit" --list 'v1.*' \
+              | grep -E '^v1\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)"
+            [[ -n "$existing_release" ]] || {
+              echo 'existing v1 tag is not anchored to a stable semantic v1 release' >&2
+              exit 1
+            }
+            highest="$(printf '%s\n%s\n' "$existing_release" "$RELEASE_TAG" | sort -V | tail -n 1)"
+            [[ "$highest" == "$RELEASE_TAG" && "$existing_release" != "$RELEASE_TAG" ]] || {
+              printf 'refusing to move v1 backward or sideways from %s to %s\n' "$existing_release" "$RELEASE_TAG" >&2
+              exit 1
+            }
+          fi
+          git tag --sign --force v1 "$RELEASE_TAG" --message "APEX Load action ${RELEASE_TAG}"
+          git push --force-with-lease="refs/tags/v1:${existing_oid}" origin refs/tags/v1

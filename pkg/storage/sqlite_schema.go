@@ -509,8 +509,20 @@ func schemaCreateTableStatements() []string {
 			check_run_url TEXT,
 			status TEXT,
 			conclusion TEXT,
+			pending_conclusion TEXT,
 			published_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS github_check_intents (
+			test_id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL,
+			installation_id INTEGER NOT NULL,
+			owner TEXT NOT NULL,
+			repo TEXT NOT NULL,
+			commit_sha TEXT NOT NULL,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			FOREIGN KEY(project_id) REFERENCES projects(id)
 		)`,
 		`CREATE TABLE IF NOT EXISTS service_accounts (
 			id TEXT PRIMARY KEY,
@@ -938,6 +950,7 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "run_archives.ref_key", query: `ALTER TABLE run_archives ADD COLUMN ref_key TEXT`},
 		{name: "github_script_links.remote_blob_sha", query: `ALTER TABLE github_script_links ADD COLUMN remote_blob_sha TEXT`},
 		{name: "github_script_links.remote_commit_sha", query: `ALTER TABLE github_script_links ADD COLUMN remote_commit_sha TEXT`},
+		{name: "github_check_links.pending_conclusion", query: `ALTER TABLE github_check_links ADD COLUMN pending_conclusion TEXT`},
 		{name: "execution_plan_approvals.plan_content_hash", query: `ALTER TABLE execution_plan_approvals ADD COLUMN plan_content_hash TEXT`},
 		{name: "execution_plans.revision", query: `ALTER TABLE execution_plans ADD COLUMN revision INTEGER NOT NULL DEFAULT 1`},
 		{name: "execution_plan_runs.revision", query: `ALTER TABLE execution_plan_runs ADD COLUMN revision INTEGER NOT NULL DEFAULT 1`},
@@ -990,6 +1003,8 @@ var schemaIndexes = []schemaIndex{
 	{`CREATE INDEX IF NOT EXISTS idx_correlation_rulesets_project ON correlation_rulesets(project_id)`, "idx_correlation_rulesets_project"},
 	{`CREATE INDEX IF NOT EXISTS idx_monitoring_collectors_project ON monitoring_collectors(project_id)`, "idx_monitoring_collectors_project"},
 	{`CREATE INDEX IF NOT EXISTS idx_reusable_blocks_project ON reusable_blocks(project_id)`, "idx_reusable_blocks_project"},
+	{`CREATE INDEX IF NOT EXISTS idx_github_check_intents_updated ON github_check_intents(updated_at)`, "idx_github_check_intents_updated"},
+	{`CREATE INDEX IF NOT EXISTS idx_github_check_intents_project ON github_check_intents(project_id)`, "idx_github_check_intents_project"},
 	// audit_events and usage_accounting_snapshots grow unbounded on a long-lived
 	// controller; index the hot ListAuditEvents path (ORDER BY created_at DESC plus
 	// frequent project/actor filters) and the retention-prune scan.

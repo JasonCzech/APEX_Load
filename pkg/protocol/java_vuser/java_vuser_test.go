@@ -3,6 +3,7 @@ package java_vuser
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -33,6 +34,16 @@ func TestJavaVuserRejectsUnboundedTimeouts(t *testing.T) {
 	}
 	if result.Success || !strings.Contains(result.ErrorMessage, "between 0") {
 		t.Fatalf("unbounded timeout result = %#v", result)
+	}
+}
+
+func TestJavaVuserFailsClosedUnderCITargetPolicy(t *testing.T) {
+	var runner JavaVuser
+	err := runner.Init(context.Background(), map[string]any{
+		protocol.TargetPolicyConfigKey: []string{"java.example.test"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "cannot enforce the CI runtime target policy") {
+		t.Fatalf("Init policy error = %v, want fail-closed sidecar rejection", err)
 	}
 }
 
@@ -331,15 +342,17 @@ func TestJavaVuserRunnerWaitDelayBoundsInheritedPipes(t *testing.T) {
 	if err := runner.Init(context.Background(), map[string]any{"java_vuser_action_timeout_ms": float64(60000)}); err != nil {
 		t.Fatalf("Init returned error: %v", err)
 	}
-	start := time.Now()
 	result, err := runner.Execute(context.Background(), &protocol.Action{Name: "Run Actions", Type: "java_vuser_run", Target: "Actions"})
 	if err != nil {
 		t.Fatalf("Execute returned protocol error: %v", err)
 	}
-	if elapsed := time.Since(start); elapsed > time.Second {
-		t.Fatalf("Execute took %s; WaitDelay did not bound inherited pipe wait", elapsed)
-	}
-	if result.Success || !strings.Contains(result.ErrorMessage, "WaitDelay") {
+	// Do not use an end-to-end wall-clock ceiling here. WaitDelay begins only
+	// after the runner process exits; process launch and scheduling before that
+	// point can exceed an arbitrary deadline when the race-enabled repository
+	// suite is running many packages concurrently. ErrWaitDelay is emitted only
+	// when the process exited but inherited pipes stayed open past WaitDelay, so
+	// it directly proves that the configured pipe-drain bound fired.
+	if result.Success || !strings.Contains(result.ErrorMessage, exec.ErrWaitDelay.Error()) {
 		t.Fatalf("result = %#v, want WaitDelay failure", result)
 	}
 }

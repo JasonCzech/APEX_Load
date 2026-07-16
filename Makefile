@@ -115,8 +115,8 @@ docker-local-prometheus-check:
 
 # Build and push both images to any registry. Usage:
 #   make docker-push REGISTRY=registry.example.internal/apexload
-# For supply-chain controls (SBOM, scan, sign), use the CI pipeline in
-# deployments/ci/github-actions-onprem-registry.yml instead.
+# For production supply-chain controls (SBOM, scan, portable signatures), use
+# .github/workflows/release.yml and .github/workflows/publish-onprem.yml.
 docker-push: docker-controller docker-generator
 	test -n "$(REGISTRY)" || (echo "REGISTRY is required, e.g. make docker-push REGISTRY=registry.example.internal/apexload" && exit 1)
 	docker tag apexload-controller:$(VERSION) $(REGISTRY)/apexload-controller:$(VERSION)

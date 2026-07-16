@@ -108,7 +108,7 @@ func readSSEResponse(ctx context.Context, body io.ReadCloser, params map[string]
 	// Bound the reader before ReadString can allocate a complete unterminated
 	// SSE line. The normalized limit is always positive and is also the maximum
 	// retained stream body.
-	stream := io.Reader(io.LimitReader(body, maxBodyBytes+1))
+	stream := io.LimitReader(body, maxBodyBytes+1)
 	var captureLease *responseCaptureLease
 	if len(leases) > 0 {
 		captureLease = leases[0]

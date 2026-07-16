@@ -267,6 +267,17 @@ var authRoleCatalog = []AuthRoleDefinition{
 			"Access project-scoped live telemetry",
 		},
 	},
+	{
+		ID:          RoleCIRunner,
+		Name:        "CI Runner",
+		Scope:       "project",
+		Description: "Least-privilege identity for policy-controlled CI execution and result reads.",
+		Capabilities: []string{
+			"Create policy-controlled CI runs",
+			"Read CI run status and evidence",
+			"Abort its controller-backed CI runs",
+		},
+	},
 }
 
 var authAccessMatrix = []AuthAccessResource{
@@ -1364,7 +1375,7 @@ func queryInt(r *http.Request, key string, fallback int) int {
 
 func isCanonicalRole(role string) bool {
 	switch strings.ToLower(strings.TrimSpace(role)) {
-	case RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin:
+	case RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin, RoleCIRunner:
 		return true
 	default:
 		return false
@@ -2019,7 +2030,46 @@ func applyServiceAccountUpdate(w http.ResponseWriter, account *storage.ServiceAc
 		}
 		account.RotationIntervalDays = *req.RotationIntervalDays
 	}
+	if err := validateCIRunnerServiceAccount(account); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return false
+	}
 	return true
+}
+
+// validateCIRunnerServiceAccount makes the GHES API-key fallback a narrowly
+// scoped credential rather than another general automation key. The role is
+// project-only, is bound to one project, expires, and carries exactly the two
+// scopes exposed by the CI API.
+func validateCIRunnerServiceAccount(account *storage.ServiceAccount) error {
+	if account == nil {
+		return nil
+	}
+	ciProjects := make([]string, 0, 1)
+	for projectID, roles := range account.ProjectRoles {
+		for _, role := range roles {
+			if role == RoleCIRunner {
+				ciProjects = append(ciProjects, projectID)
+				break
+			}
+		}
+	}
+	if len(ciProjects) == 0 {
+		return nil
+	}
+	if len(ciProjects) != 1 || len(account.ProjectRoles) != 1 || len(account.ProjectRoles[ciProjects[0]]) != 1 {
+		return fmt.Errorf("ci_runner service accounts must be bound only to one project with no additional project roles")
+	}
+	if len(account.GlobalRoles) != 0 || len(account.DomainRoles) != 0 || len(account.RepositoryRoles) != 0 {
+		return fmt.Errorf("ci_runner service accounts cannot have global, domain, or application repository roles")
+	}
+	if account.ExpiresAt == nil || !account.ExpiresAt.After(time.Now().UTC()) {
+		return fmt.Errorf("ci_runner service accounts require a future expires_at")
+	}
+	if len(account.Scopes) != 2 || !stringSetContains(account.Scopes, "tests:run", false) || !stringSetContains(account.Scopes, "results:read", false) {
+		return fmt.Errorf("ci_runner service accounts require exactly tests:run and results:read scopes")
+	}
+	return nil
 }
 
 func serviceAccountAuditSummary(account *storage.ServiceAccount) map[string]any {
@@ -2329,6 +2379,9 @@ func buildServiceAccount(req AuthServiceAccountRequest) (*storage.ServiceAccount
 		KeyRotatedAt:         &now,
 		RotationIntervalDays: rotationIntervalDays,
 	}
+	if err := validateCIRunnerServiceAccount(account); err != nil {
+		return nil, "", err
+	}
 	due := now.AddDate(0, 0, rotationIntervalDays)
 	account.RotationDueAt = &due
 	return account, apiKey, nil
@@ -2383,6 +2436,7 @@ func normalizeServiceAccountRoles(globalRoles []string, projectRoles map[string]
 		RoleProjectAdmin: {},
 		RoleEditor:       {},
 		RoleViewer:       {},
+		RoleCIRunner:     {},
 	}
 	normalizeRoles := func(roles []string) ([]string, error) {
 		set := make(map[string]struct{})

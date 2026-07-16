@@ -1,13 +1,17 @@
 package generatorrpc
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/config"
 )
+
+var isolatedServiceSequence atomic.Uint64
 
 // TestMain pins APEXLOAD_ARCHIVE_DIR to a throwaway temp dir for the whole test
 // binary when the operator has not set it, so generator-side archive tests
@@ -29,4 +33,17 @@ func runArchiveSandboxedTests(m *testing.M) int {
 		os.Setenv(config.EnvArchiveDir, dir)
 	}
 	return m.Run()
+}
+
+// newIsolatedService gives ordinary unit tests their own durable generator
+// namespace. TestMain intentionally supplies one archive root for the package,
+// so reusing a production-like generator ID across shuffled tests would allow a
+// completed archive from one test to fence an unrelated test that happens to
+// reuse the same test ID. Tests that exercise restart/rehydration semantics call
+// NewService directly so they can deliberately share a namespace.
+func newIsolatedService(t testing.TB, maxVUsers int, opts ...ServiceOption) *Service {
+	t.Helper()
+	digest := sha256.Sum256([]byte(t.Name()))
+	sequence := isolatedServiceSequence.Add(1)
+	return NewService(fmt.Sprintf("generator-test-%x-%d", digest[:8], sequence), maxVUsers, opts...)
 }

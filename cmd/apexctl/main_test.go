@@ -71,6 +71,29 @@ func TestParseRunArgs_RuntimeOverrides(t *testing.T) {
 	}
 }
 
+func TestCommandArgsUseCredentialEnvironmentDefaults(t *testing.T) {
+	t.Setenv("APEXLOAD_API", "https://controller.example")
+	t.Setenv("APEXLOAD_API_KEY", "env-key")
+	t.Setenv("APEXLOAD_BEARER_TOKEN", "env-token")
+
+	run := parseRunArgs([]string{"--script", "example.json"})
+	if run.api != "https://controller.example" || run.apiKey != "env-key" || run.bearerToken != "env-token" {
+		t.Fatalf("run auth defaults = %#v", run)
+	}
+	ctl := parseCtlArgs([]string{"--test", "test-1"})
+	if ctl.api != "https://controller.example" || ctl.apiKey != "env-key" || ctl.bearerToken != "env-token" {
+		t.Fatalf("control auth defaults = %#v", ctl)
+	}
+	github := parseGithubArgs([]string{"diagnostics"})
+	if github.apiKey != "env-key" || github.bearerToken != "env-token" {
+		t.Fatalf("github auth defaults = %#v", github)
+	}
+	record := parseRecordArgs([]string{"--url", "https://example.com"})
+	if record.apiKey != "env-key" || record.bearerToken != "env-token" {
+		t.Fatalf("record auth defaults = %#v", record)
+	}
+}
+
 func TestParseScriptArgs(t *testing.T) {
 	args := parseScriptArgs([]string{"validate", "--script", "examples/web-api/ecommerce-http.json", "--format", "json"})
 	if args.command != "validate" || args.script != "examples/web-api/ecommerce-http.json" || args.format != "json" {

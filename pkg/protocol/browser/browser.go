@@ -32,6 +32,7 @@ type Browser struct {
 	recordedResources          map[string]struct{}
 	downloadFilterMode         string
 	downloadFilterHosts        []string
+	allowedTargetHosts         []string
 	networkMode                string
 	networkPreset              string
 	networkBandwidthKB         int

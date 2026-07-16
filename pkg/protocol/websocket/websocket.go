@@ -32,24 +32,26 @@ func init() {
 }
 
 type WebSocket struct {
-	baseURL        string
-	conn           *gorillawebsocket.Conn
-	dialer         *gorillawebsocket.Dialer
-	defaultHeaders http.Header
-	readTimeout    time.Duration
-	writeTimeout   time.Duration
-	maxMessageSize int64
-	origin         string
-	reconnect      bool
-	lastTarget     string
-	lastHeaders    http.Header
-	mu             sync.Mutex
+	baseURL            string
+	allowedTargetHosts []string
+	conn               *gorillawebsocket.Conn
+	dialer             *gorillawebsocket.Dialer
+	defaultHeaders     http.Header
+	readTimeout        time.Duration
+	writeTimeout       time.Duration
+	maxMessageSize     int64
+	origin             string
+	reconnect          bool
+	lastTarget         string
+	lastHeaders        http.Header
+	mu                 sync.Mutex
 }
 
 func (w *WebSocket) Name() string { return "websocket" }
 
 func (w *WebSocket) Init(_ context.Context, config map[string]any) error {
 	w.baseURL, _ = stringConfig(config, "base_url")
+	w.allowedTargetHosts = protocol.TargetPolicyHosts(config)
 	var err error
 	w.readTimeout, err = protocol.BoundedMilliseconds(config["websocket_read_timeout_ms"], defaultReadTimeout, dsl.MaxConfiguredProtocolTimeout)
 	if err != nil {
@@ -69,7 +71,7 @@ func (w *WebSocket) Init(_ context.Context, config map[string]any) error {
 	subprotocol, _ := stringConfig(config, "websocket_subprotocol")
 	compression, _ := boolConfig(config, "websocket_compression")
 	w.dialer = &gorillawebsocket.Dialer{
-		Proxy:             http.ProxyFromEnvironment,
+		Proxy:             protocol.NewTargetPolicyProxy(http.ProxyFromEnvironment, w.allowedTargetHosts),
 		HandshakeTimeout:  w.writeTimeout,
 		EnableCompression: compression,
 	}
@@ -437,7 +439,14 @@ func (w *WebSocket) resolveURL(target string) (string, error) {
 		return "", fmt.Errorf("websocket target or base_url is required")
 	}
 	if isAbsoluteURL(raw) {
-		return websocketScheme(raw)
+		resolved, err := websocketScheme(raw)
+		if err != nil {
+			return "", err
+		}
+		if err := protocol.ValidateTargetURL(resolved, w.allowedTargetHosts); err != nil {
+			return "", err
+		}
+		return resolved, nil
 	}
 	if strings.TrimSpace(w.baseURL) == "" {
 		return "", fmt.Errorf("websocket base_url is required for relative target %q", target)
@@ -454,7 +463,11 @@ func (w *WebSocket) resolveURL(target string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return parsedBase.ResolveReference(relative).String(), nil
+	resolved := parsedBase.ResolveReference(relative).String()
+	if err := protocol.ValidateTargetURL(resolved, w.allowedTargetHosts); err != nil {
+		return "", err
+	}
+	return resolved, nil
 }
 
 func websocketHeaderListNameSet(headers protocol.HeaderList) map[string]struct{} {

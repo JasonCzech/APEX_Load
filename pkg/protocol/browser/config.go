@@ -97,6 +97,7 @@ func (b *Browser) applyDefaultConfig() {
 }
 
 func (b *Browser) applyConfigOverrides(config map[string]any) {
+	b.allowedTargetHosts = protocol.TargetPolicyHosts(config)
 	if baseURL, ok := config["base_url"].(string); ok {
 		b.baseURL = strings.TrimSpace(baseURL)
 	}
@@ -266,6 +267,11 @@ func (b *Browser) validateConfig() error {
 	}
 	if err := validateBrowserProxy(b.proxy); err != nil {
 		return err
+	}
+	if b.proxy != nil {
+		if err := protocol.ValidateTargetAddress(b.proxy.Server, b.allowedTargetHosts); err != nil {
+			return err
+		}
 	}
 	if err := validateBrowserClientCertificates(b.clientCertificates); err != nil {
 		return err

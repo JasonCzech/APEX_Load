@@ -6,7 +6,17 @@ import (
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
+
+func TestBuildProtoConfigCarriesControllerRuntimeTargetPolicy(t *testing.T) {
+	script := &dsl.Script{Metadata: &dsl.ScriptMetadata{RuntimePolicy: &dsl.ScriptRuntimePolicy{AllowedTargetHosts: []string{"api.example.test", "*.assets.example.test"}}}}
+	cfg := buildProtoConfig(script)
+	hosts, ok := cfg[protocol.TargetPolicyConfigKey].([]string)
+	if !ok || len(hosts) != 2 || hosts[0] != "api.example.test" {
+		t.Fatalf("runtime target policy = %#v", cfg[protocol.TargetPolicyConfigKey])
+	}
+}
 
 func TestBuildProtoConfigForRunMode(t *testing.T) {
 	cfg := buildProtoConfigForRunMode(&dsl.Script{}, "load")

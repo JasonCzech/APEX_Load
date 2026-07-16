@@ -29,8 +29,10 @@ type recordArgs struct {
 
 func parseRecordArgs(args []string) recordArgs {
 	r := recordArgs{
-		out: "recording.json",
-		api: firstNonEmptyCLI(os.Getenv("APEXLOAD_API"), "http://localhost:8080"),
+		out:         "recording.json",
+		api:         firstNonEmptyCLI(os.Getenv("APEXLOAD_API"), "http://localhost:8080"),
+		apiKey:      strings.TrimSpace(os.Getenv("APEXLOAD_API_KEY")),
+		bearerToken: strings.TrimSpace(os.Getenv("APEXLOAD_BEARER_TOKEN")),
 	}
 	for i := 0; i < len(args); i++ {
 		next := func() string {

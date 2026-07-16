@@ -294,11 +294,11 @@ func generatorArchiveFreeBytes(path string) (int64, error) {
 	if err := unix.Statfs(path, &stat); err != nil {
 		return 0, err
 	}
-	if stat.Bavail > uint64(^uint64(0)/uint64(stat.Bsize)) {
+	if stat.Bavail > ^uint64(0)/uint64(stat.Bsize) {
 		return int64(^uint64(0) >> 1), nil
 	}
 	available := stat.Bavail * uint64(stat.Bsize)
-	if available > uint64(^uint64(0)>>1) {
+	if available > ^uint64(0)>>1 {
 		return int64(^uint64(0) >> 1), nil
 	}
 	return int64(available), nil

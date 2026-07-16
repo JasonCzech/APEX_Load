@@ -9,8 +9,9 @@ surface the result in its native test UI.
 
 ### Exit codes
 
-| Command | Exit 0 | Exit 1 | Exit 2 |
+| Command | Exit 0 | Exit 1 | Exit 2+ |
 | --- | --- | --- | --- |
+| `apexctl ci run` | passed | SLA breach | configuration, execution, timeout, or cancellation (see JSON `outcome`) |
 | `apexctl run` | test ran, no SLA breach | execution error **or** SLA breach | — |
 | `apexctl status` | not breached, not failed | SLA breached, or test FAILED/ABORTED | bad args / fetch error |
 | `apexctl wait` | terminal COMPLETE, not breached | breach, FAILED/ABORTED, or timeout | bad args |
@@ -26,8 +27,8 @@ step already has a working performance gate.
   `execution` testcase (errors on a transport/runtime failure) and an `sla`
   testcase (fails on breach, with each breached threshold in the failure body;
   skipped when no thresholds are configured). This is the de-facto
-  Ant/Surefire dialect consumed by GitHub Actions, Azure DevOps
-  `PublishTestResults`, and the Jenkins `junit` step.
+  Ant/Surefire dialect consumed by GitHub Actions test reporters and artifact
+  processors.
 
 ### SLA thresholds
 
@@ -56,42 +57,191 @@ enough to run on the CI agent, or when targeting an ephemeral PR environment via
 apexctl run --script order-flow.json --p95-latency-ms 800 --junit results.xml
 ```
 
-### Pattern B — start-then-wait (controller-managed)
+### Pattern B — controller-native CI gate (recommended)
 
-For larger, distributed runs, start the test against a controller and gate on
-the outcome with `wait`. Useful when the run should execute on the generator
-fleet rather than the CI agent.
+For larger, distributed runs, use the bounded CI API through `apexctl ci run`.
+This path binds the run to a project and GitHub identity, snapshots an inline
+script without adding library clutter, refreshes short-lived OIDC credentials,
+publishes the controller-owned Check, and aborts on cancellation.
 
 ```
-apexctl run  --api https://apexload.internal --script order-flow.json --format json   # starts + waits
-# or, to wait on an already-created test from another step:
-apexctl wait --api https://apexload.internal --test "$TEST_ID" --junit results.xml
+apexctl ci run \
+  --controller-url https://apexload.internal \
+  --project-id project-a \
+  --script-path order-flow.json \
+  --p95-latency-ms 800 \
+  --json .apexload/result.json \
+  --junit .apexload/result.xml
 ```
 
-`apexctl status` is the cheap point-in-time check if you only need a pass/fail
-snapshot without blocking.
+OIDC is the default. The workflow grants `id-token: write`; a scoped
+`APEXLOAD_API_KEY` is the fallback for GHES installations without Actions OIDC.
+The fallback still verifies the exact workflow run through the controller's
+GitHub App before accepting a load. Because that API cannot prove job-scoped
+environment or runner claims, a project policy that requires either claim must
+use OIDC rather than the API-key fallback.
 
-## Provided templates
+## Supported integration
 
 | System | File | Notes |
 | --- | --- | --- |
-| GitHub Actions | [`ci/github/action.yml`](../ci/github/action.yml) | Reusable composite action; gates + uploads the report. |
-| GitHub Actions | [`ci/github/perf-gate-workflow.yml`](../ci/github/perf-gate-workflow.yml) | Example PR workflow that publishes results to the Checks tab. |
-| Azure DevOps | [`ci/azure-devops/apexload-perf-gate.yml`](../ci/azure-devops/apexload-perf-gate.yml) | Step template; gates + `PublishTestResults`. |
-| Azure DevOps | [`../azure-pipelines-task.yml`](../azure-pipelines-task.yml) | Legacy variant that exports the JSON result as a pipeline variable. |
-| Jenkins | [`ci/jenkins/Jenkinsfile.example`](../ci/jenkins/Jenkinsfile.example) | Declarative pipeline; gates + `junit` publishing. |
+| GitHub Actions | [`.github/actions/apexload-run/action.yml`](../.github/actions/apexload-run/action.yml) | Canonical versioned composite action; emits JSON/JUnit paths for a caller-selected artifact action. |
+
+GitHub Actions is the supported CI/CD path. Older Azure Pipelines material is
+retained only as migration reference and is not part of the production release
+or deployment qualification matrix.
+
+## Copy-ready GitHub Actions gates
+
+### GitHub.com pull-request gate with OIDC
+
+This job is intentionally disabled for fork pull requests. Those pull requests
+should receive static DSL validation from the authoritative `CI` workflow only.
+That workflow always publishes `CI / Required`: GitHub.com uses an ephemeral
+hosted runner, while GHES requires the isolated `apexload-ci-unprivileged`
+runner label. Full CI remains enabled for same-repository and Dependabot pull
+requests, and no fork job may fall back to a trusted runner group.
+
+```yaml
+name: APEX Load gate
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  performance:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - id: apexload
+        uses: JasonCzech/Project_Stormrunner/.github/actions/apexload-run@v1
+        with:
+          controller-url: https://apexload.internal.example
+          project-id: checkout-service
+          script-path: performance/order-flow.json
+          p95-latency-ms: "800"
+          max-error-pct: "2"
+          timeout: 30m
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: apexload-evidence
+          path: |
+            ${{ steps.apexload.outputs.json-path }}
+            ${{ steps.apexload.outputs.junit-path }}
+          if-no-files-found: error
+```
+
+Pin regulated consumers to the immutable semantic action tag or full commit
+instead of the moving `v1` tag. A trusted-branch nightly or release gate uses
+the same job under `schedule`, `push` to a protected branch, or a protected
+environment; increase VUsers/duration only within the controller project policy.
+
+### GHES/private-controller gate with scoped API key
+
+Use this only when the GHES Actions OIDC issuer is not usable. The runner group
+must reject public/fork jobs and have network reachability to the private
+controller and the approved target allowlist. Mirror the exact action commits
+before using this example.
+
+```yaml
+name: APEX Load GHES gate
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  performance:
+    runs-on: [self-hosted, linux, x64, apexload-private]
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # mirrored v4.2.2
+        with:
+          persist-credentials: false
+      - id: apexload
+        uses: JasonCzech/Project_Stormrunner/.github/actions/apexload-run@v1.0.0
+        env:
+          APEXLOAD_API_KEY: ${{ secrets.APEXLOAD_CI_RUNNER_API_KEY }}
+        with:
+          auth-mode: api-key
+          controller-url: https://apexload.corp.example
+          project-id: checkout-service
+          script-id: trusted-nightly-script
+          apexctl-version: v1.0.0
+          release-base-url: https://artifacts.corp.example/apexload/releases/download
+          release-public-key: .github/apexload-release-signing-key.pem
+      - if: always()
+        uses: actions/upload-artifact@c6a3b2bd78b3985e4b2f15397fec357f0fd808de # mirrored v3.2.2-node20 for GHES
+        with:
+          name: apexload-evidence
+          path: |
+            ${{ steps.apexload.outputs.json-path }}
+            ${{ steps.apexload.outputs.junit-path }}
+          if-no-files-found: error
+```
+
+The canonical action provisions Node 22 for signed-manifest validation. An
+air-gapped GHES installation must mirror the pinned `actions/setup-node` action
+and Node toolcache, as well as the APEX release assets. The public key file in
+the example is reviewed source protected by CODEOWNERS; it is not a secret.
+
+### Explicit runner-local smoke
+
+Local mode is limited to a small deterministic smoke and never substitutes for
+the controller-backed distributed gate:
+
+```yaml
+- id: smoke
+  uses: JasonCzech/Project_Stormrunner/.github/actions/apexload-run@v1
+  with:
+    execution-mode: local
+    script-path: performance/smoke.json
+    vusers: "1"
+    duration: 15s
+    publish-check: "false"
+    require-sla: "true"
+```
+
+### API-key rotation and air-gapped mirroring
+
+Create one service account per project with only the `ci_runner` project role,
+exact scopes `tests:run` and `results:read`, and a future expiry. The one-time
+key is stored only in the protected environment secret. Rotate it through
+`POST /api/v1/auth/service-accounts/{id}/rotate`, update the environment secret
+immediately, run a trusted smoke, and confirm the old key is rejected. See
+[AUTH_RBAC_OPERATIONS_RUNBOOK.md](AUTH_RBAC_OPERATIONS_RUNBOOK.md#service-accounts)
+for lifecycle and audit checks.
+
+For an air-gapped consumer, mirror the semantic Release without changing any
+asset bytes or filenames, verify `SHA256SUMS.sig` at ingestion, mirror the APEX
+action and every nested pinned action commit, and configure `release-base-url`
+plus the matching public key as shown above. The consumer needs no APEX source
+or Go toolchain. See
+[GHES_GITHUB_ACTIONS_COMPATIBILITY.md](GHES_GITHUB_ACTIONS_COMPATIBILITY.md)
+for runner/tool mirrors and the qualification gate.
 
 ## Deployment pipelines
 
-These pipelines build and deploy the controller itself (not `apexctl` perf gates).
+These active workflows deploy released controller artifacts (not arbitrary
+consumer checkouts and not rebuilt application artifacts).
 
 | System | File | Target | Notes |
 | --- | --- | --- | --- |
-| GitHub Actions | [`deployments/ci/github-actions-aks.yml`](../deployments/ci/github-actions-aks.yml) | AKS | OIDC auth; `az acr build` + `kubectl apply -k`. Copy to `.github/workflows/` to activate. |
-| Azure Pipelines | [`deployments/ci/azure-pipelines-aks.yml`](../deployments/ci/azure-pipelines-aks.yml) | AKS | Mirrors the GitHub Actions AKS pipeline. |
-| GitHub Actions | [`deployments/ci/github-actions-appservice.yml`](../deployments/ci/github-actions-appservice.yml) | Azure App Service | Builds dashboard → linux/amd64 controller binary → runs launcher tests → zip-deploys the Node.js launcher package. Needs repo vars `APPSERVICE_NAME` + `APPSERVICE_RESOURCE_GROUP`. |
-| Azure Pipelines | [`deployments/ci/azure-pipelines-appservice.yml`](../deployments/ci/azure-pipelines-appservice.yml) | Azure App Service | Mirrors the GitHub Actions App Service pipeline. |
-| GitHub Actions | [`deployments/ci/github-actions-onprem-registry.yml`](../deployments/ci/github-actions-onprem-registry.yml) | On-prem registry | SBOM, scan, and sign flow for air-gapped registries. |
+| GitHub Actions | [`.github/workflows/release.yml`](../.github/workflows/release.yml) | Release assets and registries | Signed tags; build once; SBOM, scan, sign, draft-then-publish. |
+| GitHub Actions | [`.github/workflows/deploy-aks.yml`](../.github/workflows/deploy-aks.yml) | AKS | Signed manifest and image-digest Helm deployment with rollback. |
+| GitHub Actions | [`.github/workflows/deploy-appservice.yml`](../.github/workflows/deploy-appservice.yml) | Azure App Service | Verified release zip, staging validation, slot swap, and swap-back. |
+| GitHub Actions | [`.github/workflows/publish-onprem.yml`](../.github/workflows/publish-onprem.yml) | On-prem registry | Mirror, scan, sign, then expose immutable release tags. |
+| GitHub Actions | [`.github/workflows/infra-azure.yml`](../.github/workflows/infra-azure.yml) | Azure infrastructure | Encrypted saved-plan handoff with independent apply approval. |
 
 ### App Service deployment notes
 
@@ -113,16 +263,16 @@ Required app settings beyond the standard controller env vars:
 
 WebSockets must be enabled on the App Service plan (dashboard uses `WS /api/v1/ws` and per-test streams). Always On must be enabled so the 30-second schedule poller keeps running. Pin to one instance unless the Redis HA path (`APEXLOAD_REDIS_URL`) is wired up.
 
-All templates default to building `apexctl` from source (`go run ./cmd/apexctl`).
-For consumers outside this repo, install a released `apexctl` binary and point
-the template at it (the GitHub action accepts `apexctl-bin`).
+The GitHub action never builds from the consumer checkout. It uses an explicitly
+trusted `apexctl-path`, or downloads the exact action-pinned release, verifies
+the signed checksum manifest, and verifies the binary and release-manifest
+checksums. GHES and air-gapped installations can provide `release-base-url` and
+`release-public-key` for an internal mirror.
 
 ## Publishing the JUnit report
 
-Always publish the report on `always()` / `post { always }` so an SLA breach is
+Always publish the report under `if: always()` so an SLA breach is
 visible in the test UI rather than buried in the build log:
 
 - **GitHub Actions:** `dorny/test-reporter` (reporter `java-junit`) or upload as
   an artifact.
-- **Azure DevOps:** `PublishTestResults@2` with `testResultsFormat: JUnit`.
-- **Jenkins:** the `junit` post step.

@@ -2,6 +2,7 @@ package storage
 
 import (
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -189,6 +190,126 @@ func TestGitHubEnterpriseStoreCRUD(t *testing.T) {
 	checks, err := store.ListGitHubCheckLinks("test-1", "script-1", 10)
 	if err != nil || len(checks) != 1 || checks[0].CheckRunID != 99 {
 		t.Fatalf("ListGitHubCheckLinks = (%#v, %v)", checks, err)
+	}
+	if err := store.SaveGitHubCheckLink(&GitHubCheckLink{
+		ID: "check-2", TestID: "test-1", ScriptID: "script-1", Owner: "octo", Repo: "scripts", CommitSHA: "commit2",
+		CheckRunID: 100, CheckRunURL: "https://ghe/octo/scripts/runs/100", Status: "in_progress",
+	}); err != nil {
+		t.Fatalf("Save incomplete GitHubCheckLink: %v", err)
+	}
+	incomplete, err := store.ListIncompleteGitHubCheckLinks(10)
+	if err != nil || len(incomplete) != 1 || incomplete[0].ID != "check-2" {
+		t.Fatalf("ListIncompleteGitHubCheckLinks = (%#v, %v)", incomplete, err)
+	}
+}
+
+func TestGitHubCheckIntentAndTerminalClaimSurviveRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "github-check-outbox.db")
+	store, err := NewSQLiteStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireProjectFixtures(t, store, "project-checks")
+	intent := &GitHubCheckIntent{
+		TestID: "future-test", ProjectID: "project-checks", InstallationID: 42,
+		Owner: "octo", Repo: "apex", CommitSHA: "0123456789abcdef0123456789abcdef01234567",
+	}
+	if err := store.SaveGitHubCheckIntent(intent); err != nil {
+		t.Fatalf("SaveGitHubCheckIntent before test creation: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err = NewSQLiteStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	recovered, err := store.GetGitHubCheckIntent(intent.TestID)
+	if err != nil || recovered == nil || recovered.ProjectID != intent.ProjectID || recovered.InstallationID != 42 {
+		t.Fatalf("reopened GitHub Check intent = %#v, %v", recovered, err)
+	}
+	forged := *recovered
+	forged.CommitSHA = "ffffffffffffffffffffffffffffffffffffffff"
+	if err := store.SaveGitHubCheckIntent(&forged); err == nil {
+		t.Fatal("SaveGitHubCheckIntent changed immutable CI metadata")
+	}
+
+	now := time.Now().UTC()
+	if _, err := store.db.Exec(`INSERT INTO tests (id, name, status, project_id, start_time) VALUES (?, ?, ?, ?, ?)`, intent.TestID, "future-test", "RUNNING", intent.ProjectID, now); err != nil {
+		t.Fatal(err)
+	}
+	link := &GitHubCheckLink{
+		ID: "durable-check", TestID: intent.TestID, Owner: intent.Owner, Repo: intent.Repo, CommitSHA: intent.CommitSHA,
+		CheckRunID: 99, CheckRunURL: "https://github.example/octo/apex/runs/99", Status: "in_progress",
+	}
+	if err := store.SaveGitHubCheckLink(link); err != nil {
+		t.Fatal(err)
+	}
+
+	// Competing controller replicas may derive different outcomes. The first
+	// durable claim wins and every caller observes the same conclusion.
+	conclusions := []string{"success", "failure", "cancelled", "failure"}
+	claimed := make([]string, len(conclusions))
+	errs := make([]error, len(conclusions))
+	var wg sync.WaitGroup
+	for i, conclusion := range conclusions {
+		wg.Add(1)
+		go func(i int, conclusion string) {
+			defer wg.Done()
+			result, claimErr := store.ClaimGitHubCheckConclusion(link.ID, conclusion)
+			errs[i] = claimErr
+			if result != nil {
+				claimed[i] = result.PendingConclusion
+			}
+		}(i, conclusion)
+	}
+	wg.Wait()
+	winner := claimed[0]
+	if winner == "" {
+		t.Fatalf("first claim result = %q, err=%v", claimed[0], errs[0])
+	}
+	for i := range claimed {
+		if errs[i] != nil || claimed[i] != winner {
+			t.Fatalf("terminal claims = %#v, errors=%#v", claimed, errs)
+		}
+	}
+
+	claimedLink, err := store.GetGitHubCheckLink(link.ID)
+	if err != nil || claimedLink.PendingConclusion != winner {
+		t.Fatalf("durable terminal claim = %#v, %v", claimedLink, err)
+	}
+	claimedLink.Status = "completed"
+	claimedLink.Conclusion = winner
+	claimedLink.PendingConclusion = ""
+	if err := store.SaveGitHubCheckLink(claimedLink); err != nil {
+		t.Fatalf("complete claimed Check: %v", err)
+	}
+	conflict := *claimedLink
+	conflict.Status = "in_progress"
+	conflict.Conclusion = ""
+	if err := store.SaveGitHubCheckLink(&conflict); err == nil {
+		t.Fatal("SaveGitHubCheckLink reopened an immutable terminal Check")
+	}
+	conflict = *claimedLink
+	if winner == "success" {
+		conflict.Conclusion = "failure"
+	} else {
+		conflict.Conclusion = "success"
+	}
+	if err := store.SaveGitHubCheckLink(&conflict); err == nil {
+		t.Fatal("SaveGitHubCheckLink changed an immutable terminal conclusion")
+	}
+	final, err := store.GetGitHubCheckLink(link.ID)
+	if err != nil || final.Status != "completed" || final.Conclusion != winner {
+		t.Fatalf("final immutable Check = %#v, %v", final, err)
+	}
+	if err := store.DeleteTest(intent.TestID); err != nil {
+		t.Fatal(err)
+	}
+	if remaining, err := store.GetGitHubCheckIntent(intent.TestID); err != nil || remaining != nil {
+		t.Fatalf("test deletion left GitHub Check intent = %#v, %v", remaining, err)
 	}
 }
 

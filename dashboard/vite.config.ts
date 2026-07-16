@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config'
+import { configDefaults, defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import { createRequire } from 'node:module'
 
@@ -29,6 +29,7 @@ export default defineConfig({
     __APEXLOAD_VITE_BUILD_TIME__: JSON.stringify(resolveBuildTime(process.env.APEXLOAD_VITE_BUILD_TIME || sharedBuildTime)),
   },
   test: {
+    exclude: [...configDefaults.exclude, 'e2e/**'],
     setupFiles: ['./src/test/codemirrorJsdomPolyfill.ts'],
   },
   build: {

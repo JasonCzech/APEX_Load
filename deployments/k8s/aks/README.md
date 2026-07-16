@@ -45,7 +45,7 @@ disabled and tokenless by default; see
 1. **Provision** — `terraform apply` in `deployments/azure/terraform`, then
    `$(terraform output -raw kubeconfig_command)`.
 2. **Images** — `make docker-push-acr ACR_NAME=<registry>` (or let CI do it;
-   see `deployments/ci/azure-pipelines-aks.yml` / `github-actions-aks.yml`).
+   see [deploy-aks.yml](../../../.github/workflows/deploy-aks.yml)).
 3. **Configure** — prefer the render script below. If you edit manifests
    directly, replace the `CHANGE-ME` values in `configmap.yaml`,
    `kustomization.yaml` (ACR login server), and `controller-ingress.yaml`

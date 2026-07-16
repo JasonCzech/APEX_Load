@@ -7854,6 +7854,21 @@
       "properties": {
         "import": {
           "$ref": "#/$defs/ImportMetadata"
+        },
+        "runtime_policy": {
+          "$ref": "#/$defs/ScriptRuntimePolicy"
+        }
+      },
+      "type": "object"
+    },
+    "ScriptRuntimePolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "allowed_target_hosts": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "type": "object"

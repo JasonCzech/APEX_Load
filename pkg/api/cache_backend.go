@@ -78,6 +78,14 @@ type IdempotencyStore interface {
 	ReserveIdempotencyKey(ctx context.Context, key string, ttl time.Duration) (bool, error)
 }
 
+// AtomicValueStore provides a cross-controller load-or-store operation. The
+// first caller stores value for ttl; every concurrent or later caller receives
+// the exact stored value until it expires. Implementations must perform the
+// read and conditional write atomically.
+type AtomicValueStore interface {
+	LoadOrStoreValue(ctx context.Context, key string, value []byte, ttl time.Duration) (actual []byte, loaded bool, err error)
+}
+
 type RateLimitStore interface {
 	AllowRateLimit(ctx context.Context, key string, limit int, window time.Duration) (bool, int, error)
 }
@@ -95,6 +103,7 @@ type FanoutBus interface {
 type CacheBackend interface {
 	LiveStateStore
 	IdempotencyStore
+	AtomicValueStore
 	RateLimitStore
 	FanoutBus
 	Ping(ctx context.Context) error
@@ -348,6 +357,22 @@ func (m *memoryCacheBackend) ReserveIdempotencyKey(ctx context.Context, key stri
 	return true, nil
 }
 
+func (m *memoryCacheBackend) LoadOrStoreValue(ctx context.Context, key string, value []byte, ttl time.Duration) ([]byte, bool, error) {
+	if err := validateLoadOrStoreValueInput(ctx, key, ttl); err != nil {
+		return nil, false, err
+	}
+	cacheKey := m.key("atomic", key)
+	now := time.Now()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if entry, ok := m.entries[cacheKey]; ok && (entry.expiresAt.IsZero() || entry.expiresAt.After(now)) {
+		return append([]byte(nil), entry.payload...), true, nil
+	}
+	stored := append([]byte(nil), value...)
+	m.entries[cacheKey] = memoryCacheEntry{payload: stored, expiresAt: expiryForTTL(now, ttl)}
+	return append([]byte(nil), stored...), false, nil
+}
+
 func (m *memoryCacheBackend) AllowRateLimit(ctx context.Context, key string, limit int, window time.Duration) (bool, int, error) {
 	if err := ctx.Err(); err != nil {
 		return false, 0, err
@@ -579,6 +604,41 @@ func (r *redisCacheBackend) ReserveIdempotencyKey(ctx context.Context, key strin
 	return r.client.SetNX(ctx, r.key("idempotency", key), "reserved", ttl).Result()
 }
 
+var redisLoadOrStoreValueScript = redis.NewScript(`
+local existing = redis.call("GET", KEYS[1])
+if existing then
+  return {existing, 1}
+end
+redis.call("PSETEX", KEYS[1], ARGV[2], ARGV[1])
+return {ARGV[1], 0}
+`)
+
+func (r *redisCacheBackend) LoadOrStoreValue(ctx context.Context, key string, value []byte, ttl time.Duration) ([]byte, bool, error) {
+	if err := validateLoadOrStoreValueInput(ctx, key, ttl); err != nil {
+		return nil, false, err
+	}
+	ttlMillis := ttl / time.Millisecond
+	if ttl%time.Millisecond != 0 {
+		ttlMillis++
+	}
+	values, err := redisLoadOrStoreValueScript.Run(ctx, r.client, []string{r.key("atomic", key)}, value, int64(ttlMillis)).Slice()
+	if err != nil {
+		return nil, false, err
+	}
+	if len(values) != 2 {
+		return nil, false, fmt.Errorf("redis atomic load-or-store returned %d values, want 2", len(values))
+	}
+	actual, err := redisResultBytes(values[0])
+	if err != nil {
+		return nil, false, err
+	}
+	loaded, err := redisResultBool(values[1])
+	if err != nil {
+		return nil, false, err
+	}
+	return actual, loaded, nil
+}
+
 func (r *redisCacheBackend) AllowRateLimit(ctx context.Context, key string, limit int, window time.Duration) (bool, int, error) {
 	if limit <= 0 {
 		return true, 0, nil
@@ -708,6 +768,10 @@ func (u *unavailableCacheBackend) ReserveIdempotencyKey(context.Context, string,
 	return false, u.err
 }
 
+func (u *unavailableCacheBackend) LoadOrStoreValue(context.Context, string, []byte, time.Duration) ([]byte, bool, error) {
+	return nil, false, u.err
+}
+
 func (u *unavailableCacheBackend) AllowRateLimit(context.Context, string, int, time.Duration) (bool, int, error) {
 	return false, 0, u.err
 }
@@ -725,6 +789,47 @@ func expiryForTTL(now time.Time, ttl time.Duration) time.Time {
 		return time.Time{}
 	}
 	return now.Add(ttl)
+}
+
+func validateLoadOrStoreValueInput(ctx context.Context, key string, ttl time.Duration) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if strings.TrimSpace(key) == "" {
+		return fmt.Errorf("atomic load-or-store requires a key")
+	}
+	if ttl <= 0 {
+		return fmt.Errorf("atomic load-or-store requires a positive TTL")
+	}
+	return nil
+}
+
+func redisResultBytes(value any) ([]byte, error) {
+	switch typed := value.(type) {
+	case string:
+		return []byte(typed), nil
+	case []byte:
+		return append([]byte(nil), typed...), nil
+	default:
+		return nil, fmt.Errorf("redis atomic load-or-store returned an invalid value type %T", value)
+	}
+}
+
+func redisResultBool(value any) (bool, error) {
+	switch typed := value.(type) {
+	case int64:
+		return typed != 0, nil
+	case int:
+		return typed != 0, nil
+	case string:
+		parsed, err := strconv.ParseInt(typed, 10, 64)
+		if err != nil {
+			return false, fmt.Errorf("parse redis atomic load-or-store flag: %w", err)
+		}
+		return parsed != 0, nil
+	default:
+		return false, fmt.Errorf("redis atomic load-or-store returned an invalid flag type %T", value)
+	}
 }
 
 func joinCacheKey(prefix string, parts ...string) string {

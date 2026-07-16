@@ -35,6 +35,46 @@ func TestHTTP_Name(t *testing.T) {
 	}
 }
 
+func TestHTTPEnforcesFinalTargetAndSelectedProxyPolicy(t *testing.T) {
+	t.Run("absolute action target", func(t *testing.T) {
+		h := initHTTP(t, map[string]any{
+			"base_url":                     "https://api.example.test",
+			protocol.TargetPolicyConfigKey: []string{"api.example.test"},
+		})
+		defer h.Teardown(context.Background())
+
+		result, err := h.Execute(context.Background(), &protocol.Action{
+			Name: "blocked", Type: "GET", Method: http.MethodGet, Target: "https://attacker.example.test/health",
+		})
+		if err != nil {
+			t.Fatalf("Execute returned protocol error: %v", err)
+		}
+		if result.Success || !strings.Contains(result.ErrorMessage, "attacker.example.test") {
+			t.Fatalf("result = %#v, want final-target policy rejection", result)
+		}
+	})
+
+	t.Run("system proxy", func(t *testing.T) {
+		t.Setenv("HTTPS_PROXY", "http://proxy.attacker.example.test:8443")
+		h := initHTTP(t, map[string]any{
+			"base_url":                     "https://api.example.test",
+			"proxy_mode":                   "system",
+			protocol.TargetPolicyConfigKey: []string{"api.example.test"},
+		})
+		defer h.Teardown(context.Background())
+
+		result, err := h.Execute(context.Background(), &protocol.Action{
+			Name: "blocked proxy", Type: "GET", Method: http.MethodGet, Target: "/health",
+		})
+		if err != nil {
+			t.Fatalf("Execute returned protocol error: %v", err)
+		}
+		if result.Success || !strings.Contains(result.ErrorMessage, "proxy.attacker.example.test") {
+			t.Fatalf("result = %#v, want selected-proxy policy rejection", result)
+		}
+	})
+}
+
 func TestHTTP_Init_Defaults(t *testing.T) {
 	h := initHTTP(t, map[string]any{
 		"base_url": "https://example.com",
@@ -368,6 +408,35 @@ func TestHTTP_Init_SystemProxyMode(t *testing.T) {
 	}
 	if proxyURL == nil || proxyURL.String() != "http://system-proxy.internal:8443" {
 		t.Fatalf("proxy URL = %v, want system proxy from environment", proxyURL)
+	}
+}
+
+func TestHTTP_Init_SystemProxyModeSnapshotsEnvironmentPerInstance(t *testing.T) {
+	t.Setenv("HTTPS_PROXY", "http://first-proxy.internal:8443")
+	first := initHTTP(t, map[string]any{
+		"proxy_mode": "system",
+	})
+
+	t.Setenv("HTTPS_PROXY", "http://second-proxy.internal:8443")
+	second := initHTTP(t, map[string]any{
+		"proxy_mode": "system",
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "https://service.example.com", nil)
+	firstProxy, err := first.transport.Proxy(req)
+	if err != nil {
+		t.Fatalf("first Proxy() returned error: %v", err)
+	}
+	if firstProxy == nil || firstProxy.String() != "http://first-proxy.internal:8443" {
+		t.Fatalf("first proxy URL = %v, want initialization-time proxy", firstProxy)
+	}
+
+	secondProxy, err := second.transport.Proxy(req)
+	if err != nil {
+		t.Fatalf("second Proxy() returned error: %v", err)
+	}
+	if secondProxy == nil || secondProxy.String() != "http://second-proxy.internal:8443" {
+		t.Fatalf("second proxy URL = %v, want updated initialization-time proxy", secondProxy)
 	}
 }
 

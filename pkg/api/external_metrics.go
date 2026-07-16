@@ -13,6 +13,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 type externalMetricCollector struct {
@@ -20,10 +21,11 @@ type externalMetricCollector struct {
 }
 
 type externalMetricTarget struct {
-	Name       string
-	URL        string
-	MetricName string
-	Labels     map[string]string
+	Name               string
+	URL                string
+	MetricName         string
+	Labels             map[string]string
+	AllowedTargetHosts []string
 }
 
 func newExternalMetricCollector(client *http.Client) *externalMetricCollector {
@@ -54,11 +56,20 @@ func (c *externalMetricCollector) collectOne(ctx context.Context, target externa
 	if err := validateOutboundURL(target.URL); err != nil {
 		return 0, false
 	}
+	if err := protocol.ValidateTargetURL(target.URL, target.AllowedTargetHosts); err != nil {
+		return 0, false
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target.URL, nil)
 	if err != nil {
 		return 0, false
 	}
-	resp, err := c.client.Do(req)
+	client := c.client
+	if len(target.AllowedTargetHosts) > 0 {
+		copy := *c.client
+		copy.Transport = protocol.NewTargetPolicyRoundTripper(c.client.Transport, target.AllowedTargetHosts)
+		client = &copy
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return 0, false
 	}
@@ -87,6 +98,9 @@ func externalMetricTargetsForTest(test *ManagedTest) []externalMetricTarget {
 			target, ok := externalMetricTargetFromConfig(metric)
 			if !ok {
 				continue
+			}
+			if group.script.Metadata != nil && group.script.Metadata.RuntimePolicy != nil {
+				target.AllowedTargetHosts = append([]string(nil), group.script.Metadata.RuntimePolicy.AllowedTargetHosts...)
 			}
 			key := externalMetricTargetKey(target)
 			if _, exists := seen[key]; exists {

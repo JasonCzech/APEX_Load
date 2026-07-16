@@ -10,9 +10,9 @@ func TestCorrelationMatches(t *testing.T) {
 	}{
 		{"abc", "abc", true},
 		{"abc", "xyz", false},
-		{"", "abc", true},  // no expectation -> permissive
-		{"abc", "", true},  // reply omits correlation -> permissive
-		{"", "", true},     // both empty -> permissive
+		{"", "abc", true}, // no expectation -> permissive
+		{"abc", "", true}, // reply omits correlation -> permissive
+		{"", "", true},    // both empty -> permissive
 		{"abc", "abcd", false},
 	}
 	for _, c := range cases {

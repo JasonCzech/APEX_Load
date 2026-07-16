@@ -1,0 +1,34 @@
+name: Platform-compatible artifact upload
+description: Uses the GitHub.com artifact service or the supported GHES artifact client.
+inputs:
+  name:
+    description: Artifact name.
+    required: true
+  path:
+    description: Files or directories to upload.
+    required: true
+  if-no-files-found:
+    description: Behavior when no files match.
+    default: warn
+  retention-days:
+    description: Artifact retention in days.
+    default: "0"
+runs:
+  using: composite
+  steps:
+    - name: Upload on GitHub.com
+      if: github.server_url == 'https://github.com'
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      with:
+        name: ${{ inputs.name }}
+        path: ${{ inputs.path }}
+        if-no-files-found: ${{ inputs.if-no-files-found }}
+        retention-days: ${{ inputs.retention-days }}
+    - name: Upload on GHES
+      if: github.server_url != 'https://github.com'
+      uses: actions/upload-artifact@c6a3b2bd78b3985e4b2f15397fec357f0fd808de # v3.2.2-node20
+      with:
+        name: ${{ inputs.name }}
+        path: ${{ inputs.path }}
+        if-no-files-found: ${{ inputs.if-no-files-found }}
+        retention-days: ${{ inputs.retention-days }}

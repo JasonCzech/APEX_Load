@@ -1,20 +1,39 @@
-FROM golang:1.26.4-alpine AS builder
+FROM node:22.22.0-alpine3.23@sha256:e4bf2a82ad0a4037d28035ae71529873c069b13eb0455466ae0bc13363826e34 AS dashboard-builder
+
+WORKDIR /src
+COPY dashboard/package.json dashboard/package-lock.json ./dashboard/
+RUN npm --prefix dashboard ci --ignore-scripts
+COPY dashboard/ ./dashboard/
+# The dashboard build deliberately writes to /src/pkg/api/static, matching the
+# go:embed path used by the controller. Building it here makes image contents
+# independent from any locally generated or committed frontend bundle.
+RUN npm --prefix dashboard run build
+
+FROM golang:1.26.5-alpine3.24@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS builder
 
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
+COPY --from=dashboard-builder /src/pkg/api/static/ ./pkg/api/static/
 
 ARG BINARY=generator
+ARG GO_BUILD_TAGS=standard
 ARG VERSION=dev
 ARG COMMIT=
 ARG BUILD_TIME=
 ARG BI=github.com/jasonczech/apexload/pkg/buildinfo
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath \
-	-ldflags "-s -w -X ${BI}.Version=${VERSION} -X ${BI}.Commit=${COMMIT} -X ${BI}.BuildTime=${BUILD_TIME}" \
-	-o /app ./cmd/${BINARY}
+RUN case "${GO_BUILD_TAGS}" in \
+		standard) build_tags="" ;; \
+		enterprise) build_tags="jms_solace_real,jms_servicebus_real,kafka_real,eventhubs_real" ;; \
+		*) echo "unsupported GO_BUILD_TAGS profile: ${GO_BUILD_TAGS} (expected standard or enterprise)" >&2; exit 2 ;; \
+	esac \
+	&& if [ -n "${build_tags}" ]; then set -- -tags "${build_tags}"; else set --; fi \
+	&& CGO_ENABLED=0 GOOS=linux go build -trimpath "$@" \
+		-ldflags "-s -w -X ${BI}.Version=${VERSION} -X ${BI}.Commit=${COMMIT} -X ${BI}.BuildTime=${BUILD_TIME}" \
+		-o /app ./cmd/${BINARY}
 
-FROM alpine:3.20
+FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
 ARG BINARY=generator
 # PLAYWRIGHT_DRIVER_VERSION must match playwrightCliVersion in
 # playwright-community/playwright-go (see go.mod) — playwright.Run() refuses

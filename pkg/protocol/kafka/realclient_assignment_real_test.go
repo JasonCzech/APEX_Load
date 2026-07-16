@@ -5,11 +5,24 @@ package kafka
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
+
+func TestKafkaTargetPolicyDialerBlocksAdvertisedBroker(t *testing.T) {
+	client := &franzClient{cfg: config{AllowedTargetHosts: []string{"broker.example.test"}}}
+	conn, err := client.targetPolicyDialer(nil)(context.Background(), "tcp", "advertised.attacker.example:9092")
+	if conn != nil || err == nil || !strings.Contains(err.Error(), "advertised.attacker.example") {
+		t.Fatalf("policy dial = %v, %v; want advertised broker rejection", conn, err)
+	}
+	if err := protocol.ValidateTargetAddress("broker.example.test:9092", client.cfg.AllowedTargetHosts); err != nil {
+		t.Fatalf("configured broker policy rejected: %v", err)
+	}
+}
 
 func TestPrimeReplyConsumerReturnsForExistingAssignment(t *testing.T) {
 	client := &franzClient{replyAssigned: map[string]bool{"replies": true}}

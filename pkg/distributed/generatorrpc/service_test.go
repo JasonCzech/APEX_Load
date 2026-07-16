@@ -31,7 +31,7 @@ func commitTestWork(t *testing.T, service *Service, testID string, generation ui
 }
 
 func TestServiceAssignWorkRejectsMissingCachedScript(t *testing.T) {
-	service := NewService("generator-1", 50)
+	service := newIsolatedService(t, 50)
 
 	ack, err := service.AssignWork(context.Background(), &pb.WorkAssignment{
 		TestId:     "test-1",
@@ -66,7 +66,7 @@ func TestAssignmentProtoCarriesRedactionRules(t *testing.T) {
 }
 
 func TestBroadcastMetricsCountsSubscriberDrops(t *testing.T) {
-	service := NewService("generator-1", 50)
+	service := newIsolatedService(t, 50)
 	_, subscriber, _, err := service.registerSubscriber(0)
 	if err != nil {
 		t.Fatalf("register subscriber: %v", err)
@@ -83,7 +83,7 @@ func TestBroadcastMetricsCountsSubscriberDrops(t *testing.T) {
 }
 
 func TestServiceAssignWorkRejectsWhileDraining(t *testing.T) {
-	service := NewService("generator-1", 50)
+	service := newIsolatedService(t, 50)
 	if _, err := service.DistributeScript(context.Background(), &pb.ScriptPayload{ScriptId: "script-1", Content: []byte(`{"name":"demo"}`)}); err != nil {
 		t.Fatalf("DistributeScript returned error: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestClientRoundTripDistributeAssignAndHeartbeat(t *testing.T) {
 
 	listener := bufconn.Listen(bufSize)
 	server := grpc.NewServer()
-	service := NewService("generator-1", 50)
+	service := newIsolatedService(t, 50)
 	pb.RegisterGeneratorControlServer(server, service)
 
 	go func() {
@@ -293,15 +293,15 @@ func TestClientRoundTripDistributeAssignAndHeartbeat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenHeartbeat: %v", err)
 	}
-	if err := heartbeat.Send(Heartbeat{GeneratorID: "generator-1", TimestampUnixMs: 1234}); err != nil {
+	if err := heartbeat.Send(Heartbeat{GeneratorID: service.generatorID, TimestampUnixMs: 1234}); err != nil {
 		t.Fatalf("Heartbeat Send: %v", err)
 	}
 	pong, err := heartbeat.Receive()
 	if err != nil {
 		t.Fatalf("Heartbeat Receive: %v", err)
 	}
-	if pong.GeneratorID != "generator-1" {
-		t.Fatalf("heartbeat generator id = %q, want generator-1", pong.GeneratorID)
+	if pong.GeneratorID != service.generatorID {
+		t.Fatalf("heartbeat generator id = %q, want %q", pong.GeneratorID, service.generatorID)
 	}
 	if pong.TimestampUnixMs < 1234 {
 		t.Fatalf("heartbeat pong timestamp = %d, want >= 1234", pong.TimestampUnixMs)
@@ -356,7 +356,7 @@ func TestClientRoundTripDistributeAssignAndHeartbeat(t *testing.T) {
 	if batch.Stats.ActiveVUsers != 0 {
 		t.Fatalf("stopped active vusers = %d, want 0", batch.Stats.ActiveVUsers)
 	}
-	if err := heartbeat.Send(Heartbeat{GeneratorID: "generator-1", TimestampUnixMs: 1235}); err != nil {
+	if err := heartbeat.Send(Heartbeat{GeneratorID: service.generatorID, TimestampUnixMs: 1235}); err != nil {
 		t.Fatalf("Heartbeat Send after stop: %v", err)
 	}
 	pong, err = heartbeat.Receive()
@@ -385,7 +385,7 @@ func TestServiceFailTestBroadcastsFailedLifecycle(t *testing.T) {
 
 	listener := bufconn.Listen(bufSize)
 	server := grpc.NewServer()
-	service := NewService("generator-1", 50)
+	service := newIsolatedService(t, 50)
 	pb.RegisterGeneratorControlServer(server, service)
 
 	go func() {
@@ -455,7 +455,7 @@ func TestServiceFailTestBroadcastsFailedLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenHeartbeat: %v", err)
 	}
-	if err := heartbeat.Send(Heartbeat{GeneratorID: "generator-1", TimestampUnixMs: 1236}); err != nil {
+	if err := heartbeat.Send(Heartbeat{GeneratorID: service.generatorID, TimestampUnixMs: 1236}); err != nil {
 		t.Fatalf("Heartbeat Send after failure: %v", err)
 	}
 	pong, err := heartbeat.Receive()
@@ -478,7 +478,7 @@ func TestServicePublishMetricsBroadcastsTransactions(t *testing.T) {
 
 	listener := bufconn.Listen(bufSize)
 	server := grpc.NewServer()
-	service := NewService("generator-1", 50)
+	service := newIsolatedService(t, 50)
 	pb.RegisterGeneratorControlServer(server, service)
 
 	go func() {
@@ -612,7 +612,7 @@ func TestServiceWithExecutionRunsAssignedScript(t *testing.T) {
 
 	listener := bufconn.Listen(bufSize)
 	server := grpc.NewServer()
-	service := NewService("generator-1", 50, WithExecution())
+	service := newIsolatedService(t, 50, WithExecution())
 	pb.RegisterGeneratorControlServer(server, service)
 
 	go func() {
@@ -709,7 +709,7 @@ func TestServiceWithExecutionExposesArchiveArtifacts(t *testing.T) {
 
 	listener := bufconn.Listen(bufSize)
 	server := grpc.NewServer()
-	service := NewService("generator-1", 50, WithExecution())
+	service := newIsolatedService(t, 50, WithExecution())
 	pb.RegisterGeneratorControlServer(server, service)
 
 	go func() {

@@ -331,7 +331,7 @@ done
 
 (
   cd "$DIST_DIR"
-  write_sha256_manifest *.tar.gz > SHA256SUMS.txt
+  write_sha256_manifest ./*.tar.gz > SHA256SUMS.txt
   sign_checksum_manifest "$DIST_DIR/SHA256SUMS.txt"
 )
 

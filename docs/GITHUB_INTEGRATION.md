@@ -85,21 +85,53 @@ local scripts.
 
 ## CI Checks
 
-GitHub Checks are published through the GitHub App path. The local composite
-action supports repository script paths and controller evidence:
+GitHub Checks are controller-authoritative: a Check is created when the bounded
+CI run is accepted and completed from controller state even if the Actions job
+disconnects. The caller grants read access and OIDC only; the controller's
+GitHub App owns `Checks: write`.
 
 ```yaml
-- uses: ./.github/actions/apexload-run
-  with:
-    script: apexload/scripts/order-flow.json
-    api-url: https://apexload.example.com
-    publish-check: "true"
-    github-script-id: script-optional
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  performance:
+    # Never execute contributor-controlled load scripts from a fork.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.id == github.event.repository.id
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@<reviewed-commit-sha>
+      - id: apexload
+        uses: JasonCzech/Project_Stormrunner/.github/actions/apexload-run@v1
+        with:
+          controller-url: https://apexload.example.com
+          project-id: project-a
+          script-path: apexload/scripts/order-flow.json
+          p95-latency-ms: "800"
+          max-error-pct: "2"
+      - name: Retain evidence on GitHub.com
+        if: always()
+        uses: actions/upload-artifact@<reviewed-v4-commit-sha>
+        with:
+          name: apexload-evidence
+          path: |
+            ${{ steps.apexload.outputs.json-path }}
+            ${{ steps.apexload.outputs.junit-path }}
 ```
 
-The action uploads `apexload-result.json`, exposes `test-id`, and calls
-`apexctl github check-run` with the current repository and commit unless
-overridden.
+The action downloads a released `apexctl`; the consumer repository does not
+need the APEX source tree or a Go toolchain. An operator must commit the release
+public key with the action revision or supply `release-public-key`. Missing
+signature trust fails closed. GHES callers mirror the action dependencies and
+release assets, select the artifact action supported by their server release,
+and use a self-hosted runner when the controller is private.
+
+The controller trust policy binds issuer, audience, repository identity,
+workflow ref, ref/environment, project, target hosts, protocols, VUsers, and
+duration. Pull-request source repository identity is sent separately from the
+base repository and is rejected when it is not trusted. Do not use
+`pull_request_target` to check out or execute contributor-controlled content.
 
 ## CLI And MCP
 

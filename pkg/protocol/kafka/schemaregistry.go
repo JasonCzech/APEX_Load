@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 const (
@@ -32,12 +34,16 @@ type schemaRegistryClient struct {
 	cache map[string]int32 // subject -> id
 }
 
-func newSchemaRegistryClient(baseURL, schema, schemaType string) *schemaRegistryClient {
+func newSchemaRegistryClient(baseURL, schema, schemaType string, allowedTargetHosts ...[]string) *schemaRegistryClient {
+	client := &http.Client{Timeout: 10 * time.Second}
+	if len(allowedTargetHosts) > 0 && len(allowedTargetHosts[0]) > 0 {
+		client.Transport = protocol.NewTargetPolicyRoundTripper(nil, allowedTargetHosts[0])
+	}
 	return &schemaRegistryClient{
 		baseURL:    strings.TrimRight(strings.TrimSpace(baseURL), "/"),
 		schema:     schema,
 		schemaType: schemaType,
-		httpClient: &http.Client{Timeout: 10 * time.Second},
+		httpClient: client,
 		cache:      make(map[string]int32),
 	}
 }

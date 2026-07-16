@@ -1291,7 +1291,7 @@ func extractRAMLZip(data []byte) ([]byte, map[string][]byte, string, error) {
 	files := make(map[string][]byte)
 	// Guard against zip-bomb amplification: cap total decompressed bytes with a
 	// shared remaining budget across all entries, plus an entry-count cap.
-	remaining := int64(webAPIImportMaxBodyBytes)
+	remaining := webAPIImportMaxBodyBytes
 	for _, f := range reader.File {
 		if f.FileInfo().IsDir() {
 			continue

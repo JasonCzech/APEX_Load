@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -105,6 +106,46 @@ func TestExternalMetricTargetsDeduplicateOracleMetricPackEntries(t *testing.T) {
 	}
 	if targets[0].Name != "oracle.db.wait_time_ms" || targets[0].MetricName != "oracle_db_wait_time_ms" {
 		t.Fatalf("target = %#v, want canonical Oracle wait metric", targets[0])
+	}
+}
+
+func TestExternalMetricCollectorEnforcesRuntimeTargetPolicy(t *testing.T) {
+	// The SSRF guard permits the loopback fixture so this test isolates the
+	// controller-injected CI target boundary.
+	t.Setenv("APEXLOAD_ALLOW_PRIVATE_WEBHOOKS", "true")
+	var requested atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requested.Store(true)
+		_, _ = w.Write([]byte("target_cpu_pct 81.5\n"))
+	}))
+	defer server.Close()
+
+	testRun := &ManagedTest{
+		Groups: []TestGroup{{
+			script: &dsl.Script{
+				Metadata: &dsl.ScriptMetadata{RuntimePolicy: &dsl.ScriptRuntimePolicy{
+					AllowedTargetHosts: []string{"metrics.example.test"},
+				}},
+				Config: dsl.ScriptConfig{Observability: dsl.ObservabilityConfig{
+					ExternalMetrics: []dsl.ExternalMetricConfig{{
+						Name:       "target.cpu_pct",
+						URL:        server.URL,
+						MetricName: "target_cpu_pct",
+					}},
+				}},
+			},
+		}},
+	}
+
+	targets := externalMetricTargetsForTest(testRun)
+	if len(targets) != 1 || len(targets[0].AllowedTargetHosts) != 1 || targets[0].AllowedTargetHosts[0] != "metrics.example.test" {
+		t.Fatalf("targets = %#v, want propagated CI target policy", targets)
+	}
+	if values := newExternalMetricCollector(server.Client()).collect(context.Background(), targets); len(values) != 0 {
+		t.Fatalf("values = %#v, want disallowed external metric omitted", values)
+	}
+	if requested.Load() {
+		t.Fatal("external metric request reached a host outside the CI target policy")
 	}
 }
 

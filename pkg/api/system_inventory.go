@@ -207,6 +207,9 @@ func (s *Server) enrichGeneratorRestartability(ctx context.Context, entries []Ge
 }
 
 func controllerInstanceID() string {
+	if configured := strings.TrimSpace(os.Getenv("APEXLOAD_CONTROLLER_ID")); configured != "" {
+		return configured
+	}
 	instance := uuid.NewString()
 	if hostname, err := os.Hostname(); err == nil && hostname != "" {
 		return hostname + "/" + instance

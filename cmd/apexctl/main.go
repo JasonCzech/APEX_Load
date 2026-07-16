@@ -8,9 +8,11 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/buildinfo"
 	"github.com/jasonczech/apexload/pkg/engine"
 	_ "github.com/jasonczech/apexload/pkg/protocol/builtin"
 )
@@ -26,6 +28,8 @@ func main() {
 	switch os.Args[1] {
 	case "run":
 		runTest()
+	case "ci":
+		ciCmd()
 	case "script":
 		scriptCmd()
 	case "status":
@@ -41,7 +45,8 @@ func main() {
 	case "github":
 		githubCmd()
 	case "version":
-		fmt.Println("apexctl v0.1.0")
+		info := buildinfo.Get()
+		fmt.Printf("apexctl %s (%s, %s)\n", info.DisplayVersion, firstNonEmptyCLI(info.Commit, "unknown"), firstNonEmptyCLI(info.BuildTime, "unknown"))
 	case "help", "--help", "-h":
 		printUsage()
 	default:
@@ -233,10 +238,13 @@ type runArgs struct {
 
 func parseRunArgs(args []string) runArgs {
 	r := runArgs{
-		vusers:   10,
-		duration: 60 * time.Second,
-		format:   "text",
-		env:      make(map[string]string),
+		api:         strings.TrimSpace(os.Getenv("APEXLOAD_API")),
+		apiKey:      strings.TrimSpace(os.Getenv("APEXLOAD_API_KEY")),
+		bearerToken: strings.TrimSpace(os.Getenv("APEXLOAD_BEARER_TOKEN")),
+		vusers:      10,
+		duration:    60 * time.Second,
+		format:      "text",
+		env:         make(map[string]string),
 	}
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -345,14 +353,15 @@ Usage:
 
 Commands:
   run       Execute a performance test
+  ci        Run a CI performance gate locally or through a controller
   script    Validate or explain a JSON DSL script
   status    Print a test's current status + SLA verdict (exits 1 on breach/failure)
-	  wait      Block until a started test finishes, then report SLA verdict
-	  archive   Inspect an archived run (verify re-checks artifact SHA-256 integrity)
-	  record    Record a browser script with the embedded recorder (ranked selectors + side-car HAR)
-	  record-agent  Start the localhost browser recording bridge for a remote dashboard
-	  github    Inspect and run GitHub Enterprise sync/check workflows
-	  version   Print version information
+  wait      Block until a started test finishes, then report SLA verdict
+  archive   Inspect an archived run (verify re-checks artifact SHA-256 integrity)
+  record    Record a browser script with the embedded recorder (ranked selectors + side-car HAR)
+  record-agent  Start the localhost browser recording bridge for a remote dashboard
+  github    Inspect and run GitHub Enterprise sync/check workflows
+  version   Print version information
   help      Show this help
 
 Run Flags:
@@ -360,30 +369,30 @@ Run Flags:
   --vusers, -v    Number of virtual users             [default: 10]
   --duration, -d  Test duration (e.g. 5m, 1h)         [default: 1m]
   --ramp-up, -r   Ramp-up period (e.g. 30s, 2m)       [default: 0s]
-	--env, -env     Runtime variable override (k=v)     [repeatable]
-	--base-url      Override scenario base URL at run time
+  --env, -env     Runtime variable override (k=v)     [repeatable]
+  --base-url      Override scenario base URL at run time
   --api           Run via API instead of locally (e.g. http://localhost:8080)
   --api-key       API key for secured controller calls (or APEXLOAD_API_KEY)
   --bearer-token  Bearer token for secured controller calls (or APEXLOAD_BEARER_TOKEN)
   --format        Output format (text, json)          [default: text]
   --junit         Write a JUnit XML report to this path (for CI test reporting)
-	--p95-latency-ms Maximum allowed P95 latency in ms
-	--max-error-pct  Maximum allowed error rate percentage
-	--max-avg-server-processing-ms  Maximum allowed average server processing time in ms
-	--max-avg-transfer-ms           Maximum allowed average transfer time in ms
-	--max-error-count               Maximum allowed total error count
+  --p95-latency-ms Maximum allowed P95 latency in ms
+  --max-error-pct  Maximum allowed error rate percentage
+  --max-avg-server-processing-ms  Maximum allowed average server processing time in ms
+  --max-avg-transfer-ms           Maximum allowed average transfer time in ms
+  --max-error-count               Maximum allowed total error count
 
 Examples:
   apexctl run --script order-flow.json --vusers 100 --duration 5m
   apexctl script validate --script order-flow.json --format json
   apexctl script explain --script order-flow.json
-	apexctl run --script order-flow.json -env target_namespace=pr-123 --base-url https://preview.example.com
-	apexctl run --script order-flow.json --p95-latency-ms 800 --max-error-pct 2.5
+  apexctl run --script order-flow.json -env target_namespace=pr-123 --base-url https://preview.example.com
+  apexctl run --script order-flow.json --p95-latency-ms 800 --max-error-pct 2.5
   apexctl run --api http://localhost:8080 --script order-flow.json --format json
-	  apexctl run --script order-flow.json --p95-latency-ms 800 --junit results.xml
-	  apexctl wait --api http://localhost:8080 --test <id> --junit results.xml
-	  apexctl github diagnostics --api http://localhost:8080
-	  apexctl github sync --api http://localhost:8080 --project <id> --kind import`)
+  apexctl run --script order-flow.json --p95-latency-ms 800 --junit results.xml
+  apexctl wait --api http://localhost:8080 --test <id> --junit results.xml
+  apexctl github diagnostics --api http://localhost:8080
+  apexctl github sync --api http://localhost:8080 --project <id> --kind import`)
 	fmt.Println()
 	fmt.Println(ctlUsage())
 	fmt.Println()

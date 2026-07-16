@@ -46,6 +46,39 @@ func TestGRPCRejectsUnboundedTimeouts(t *testing.T) {
 	}
 }
 
+func TestGRPCInitEnforcesExplicitTargetPolicy(t *testing.T) {
+	client := &GRPC{}
+	err := client.Init(context.Background(), map[string]any{
+		"grpc_target":                  "dns:///grpc.attacker.example:443",
+		"grpc_plain_text":              true,
+		protocol.TargetPolicyConfigKey: []string{"grpc.example.test"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "grpc.attacker.example") {
+		t.Fatalf("Init policy error = %v, want explicit gRPC target rejection", err)
+	}
+
+	client = &GRPC{}
+	if err := client.Init(context.Background(), map[string]any{
+		"grpc_target":                  "127.0.0.1:1",
+		"grpc_plain_text":              true,
+		protocol.TargetPolicyConfigKey: []string{"127.0.0.1"},
+	}); err != nil {
+		t.Fatalf("allowed explicit gRPC target rejected: %v", err)
+	}
+	_ = client.Teardown(context.Background())
+}
+
+func TestGRPCInitChecksResolverEndpointNotAuthority(t *testing.T) {
+	g := &GRPC{}
+	err := g.Init(context.Background(), map[string]any{
+		"base_url":                     "dns://resolver.example.test/attacker.example.test:443",
+		protocol.TargetPolicyConfigKey: []string{"resolver.example.test"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "attacker.example.test") {
+		t.Fatalf("Init policy error = %v, want resolver endpoint rejection", err)
+	}
+}
+
 func TestGRPCUnaryWithReflection(t *testing.T) {
 	addr, stop := startReflectionGenerator(t)
 	defer stop()

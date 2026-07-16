@@ -1,0 +1,333 @@
+name: Publish On-Premises Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: Exact signed semantic release tag.
+        required: true
+        type: string
+      environment:
+        description: Protected registry environment.
+        required: true
+        type: choice
+        options:
+          - onprem-registry
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: publish-onprem-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  mirror-candidates:
+    name: Verify and stage ${{ matrix.component }} (${{ matrix.profile }})
+    runs-on: [self-hosted, onprem, trusted]
+    timeout-minutes: 90
+    environment: onprem-registry
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [controller, generator]
+        profile: [standard, enterprise]
+    steps:
+      - name: Checkout publishing tooling
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.release }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify dispatch ref and signed publishing tooling
+        env:
+          RELEASE_TAG: ${{ inputs.release }}
+          DISPATCH_REF: ${{ github.ref }}
+          RELEASE_COMMIT: ${{ github.sha }}
+          APEXLOAD_RELEASE_TAG_PUBLIC_KEYS: ${{ vars.APEXLOAD_RELEASE_TAG_PUBLIC_KEYS }}
+        run: |
+          set -euo pipefail
+          [[ "$DISPATCH_REF" == "refs/tags/${RELEASE_TAG}" ]] || {
+            echo 'run this publishing workflow at the exact release tag ref' >&2
+            exit 1
+          }
+          ./scripts/release/verify-tag.sh "$RELEASE_TAG" "$RELEASE_COMMIT"
+
+      - name: Require hardened internal runner tools
+        run: |
+          set -euo pipefail
+          command -v skopeo >/dev/null
+          command -v cosign >/dev/null
+          command -v jq >/dev/null
+          skopeo --version | grep -F '1.20.0'
+          cosign version 2>&1 | grep -Eq 'GitVersion:[[:space:]]+v3\.1\.1([[:space:]]|$)'
+
+      - name: Validate registry coordinates
+        env:
+          RELEASE_TAG: ${{ inputs.release }}
+          REGISTRY_HOST: ${{ vars.ONPREM_REGISTRY_HOST }}
+          REGISTRY_NAMESPACE: ${{ vars.ONPREM_REGISTRY_NAMESPACE }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]
+          [[ "$REGISTRY_HOST" =~ ^[A-Za-z0-9.-]+(:[0-9]+)?$ ]]
+          [[ "$REGISTRY_NAMESPACE" =~ ^[a-z0-9]+([._/-][a-z0-9]+)*$ ]]
+
+      - name: Authenticate to source and internal registries
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_ACTOR: ${{ github.actor }}
+          SOURCE_REGISTRY: ${{ vars.APEXLOAD_RELEASE_REGISTRY || 'ghcr.io' }}
+          REGISTRY_HOST: ${{ vars.ONPREM_REGISTRY_HOST }}
+          REGISTRY_USERNAME: ${{ secrets.ONPREM_REGISTRY_USERNAME }}
+          REGISTRY_PASSWORD: ${{ secrets.ONPREM_REGISTRY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$GH_TOKEN" | skopeo login --username "$GH_ACTOR" --password-stdin "$SOURCE_REGISTRY"
+          printf '%s' "$REGISTRY_PASSWORD" | skopeo login --username "$REGISTRY_USERNAME" --password-stdin "$REGISTRY_HOST"
+          printf '%s' "$GH_TOKEN" | cosign login --username "$GH_ACTOR" --password-stdin "$SOURCE_REGISTRY"
+          printf '%s' "$REGISTRY_PASSWORD" | cosign login --username "$REGISTRY_USERNAME" --password-stdin "$REGISTRY_HOST"
+
+      - name: Download and verify signed release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release }}
+          REPOSITORY: ${{ github.repository }}
+          RELEASE_PUBLIC_KEY: ${{ vars.APEXLOAD_RELEASE_SIGNING_PUBLIC_KEY_PEM }}
+          SOURCE_COSIGN_PUBLIC_KEY: ${{ vars.COSIGN_PUBLIC_KEY }}
+          COMPONENT: ${{ matrix.component }}
+          PROFILE: ${{ matrix.profile }}
+        run: |
+          set -euo pipefail
+          ./scripts/release/download-release.sh "$RELEASE_TAG" "$RUNNER_TEMP/release" "$REPOSITORY"
+          release_key="$RUNNER_TEMP/release-signing.pub"
+          source_cosign_key="$RUNNER_TEMP/source-cosign.pub"
+          printf '%s' "$RELEASE_PUBLIC_KEY" > "$release_key"
+          printf '%s' "$SOURCE_COSIGN_PUBLIC_KEY" > "$source_cosign_key"
+          ./scripts/release/verify-release.sh "$RUNNER_TEMP/release" "$RELEASE_TAG" "$release_key"
+          source_image="$(jq -r --arg component "$COMPONENT" --arg profile "$PROFILE" \
+            '.images[] | select(.component == $component and .profile == $profile) | .repository + "@" + .digest' \
+            "$RUNNER_TEMP/release/release-manifest.json")"
+          [[ "$source_image" =~ @sha256:[0-9a-f]{64}$ ]]
+          ./scripts/release/verify-image-evidence.sh \
+            "$RUNNER_TEMP/release/release-manifest.json" \
+            "$COMPONENT" \
+            "$PROFILE" \
+            "$source_cosign_key" >/dev/null
+          printf 'source-image=%s\n' "$source_image" >> "$GITHUB_OUTPUT"
+
+      - name: Copy to non-release candidate tag
+        id: candidate
+        env:
+          SOURCE_IMAGE: ${{ steps.release.outputs.source-image }}
+          REGISTRY_HOST: ${{ vars.ONPREM_REGISTRY_HOST }}
+          REGISTRY_NAMESPACE: ${{ vars.ONPREM_REGISTRY_NAMESPACE }}
+          COMPONENT: ${{ matrix.component }}
+          PROFILE: ${{ matrix.profile }}
+          RELEASE_TAG: ${{ inputs.release }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
+          WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
+          RELEASE_MANIFEST: ${{ runner.temp }}/release/release-manifest.json
+        run: |
+          set -euo pipefail
+          repository="${REGISTRY_HOST}/${REGISTRY_NAMESPACE}/apexload-${COMPONENT}"
+          candidate_tag="${RELEASE_TAG}-${PROFILE}-candidate-${WORKFLOW_RUN_ID}-${WORKFLOW_RUN_ATTEMPT}"
+          skopeo copy --all "docker://${SOURCE_IMAGE}" "docker://${repository}:${candidate_tag}"
+          digest="$(skopeo inspect --format '{{.Digest}}' "docker://${repository}:${candidate_tag}")"
+          source_digest="${SOURCE_IMAGE##*@}"
+          [[ "$digest" == "$source_digest" ]] || {
+            printf 'internal registry rewrote digest: %s != %s\n' "$digest" "$source_digest" >&2
+            exit 1
+          }
+          index="$(skopeo inspect --raw "docker://${repository}@${digest}")"
+          platform_digest() {
+            local architecture="$1"
+            jq -er --arg architecture "$architecture" '
+              [.manifests[]
+                | select(.platform.os == "linux" and .platform.architecture == $architecture)]
+              | if length == 1 then .[0].digest
+                else error("expected exactly one linux/" + $architecture + " manifest") end
+            ' <<< "$index"
+          }
+          amd64_digest="$(platform_digest amd64)"
+          arm64_digest="$(platform_digest arm64)"
+          source_amd64="$(jq -er --arg component "$COMPONENT" --arg profile "$PROFILE" '
+            .images[] | select(.component == $component and .profile == $profile)
+            | .platforms[] | select(.os == "linux" and .architecture == "amd64") | .digest
+          ' "$RELEASE_MANIFEST")"
+          source_arm64="$(jq -er --arg component "$COMPONENT" --arg profile "$PROFILE" '
+            .images[] | select(.component == $component and .profile == $profile)
+            | .platforms[] | select(.os == "linux" and .architecture == "arm64") | .digest
+          ' "$RELEASE_MANIFEST")"
+          [[ "$amd64_digest" == "$source_amd64" && "$arm64_digest" == "$source_arm64" ]] || {
+            echo 'internal registry rewrote a platform digest' >&2
+            exit 1
+          }
+          {
+            printf 'repository=%s\n' "$repository"
+            printf 'digest=%s\n' "$digest"
+            printf 'amd64-digest=%s\n' "$amd64_digest"
+            printf 'arm64-digest=%s\n' "$arm64_digest"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Scan exact internal linux-amd64 digest
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.candidate.outputs.repository }}@${{ steps.candidate.outputs.amd64-digest }}
+          format: table
+          exit-code: "1"
+          severity: HIGH,CRITICAL
+          ignore-unfixed: false
+          vuln-type: os,library
+
+      - name: Scan exact internal linux-arm64 digest
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.candidate.outputs.repository }}@${{ steps.candidate.outputs.arm64-digest }}
+          format: table
+          exit-code: "1"
+          severity: HIGH,CRITICAL
+          ignore-unfixed: false
+          vuln-type: os,library
+
+      - name: Sign and attest exact internal digest
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.ONPREM_COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.ONPREM_COSIGN_PASSWORD }}
+          COSIGN_KEY_REF: ${{ vars.ONPREM_COSIGN_KEY_REF }}
+          ONPREM_COSIGN_PUBLIC_KEY: ${{ vars.ONPREM_COSIGN_PUBLIC_KEY }}
+          IMAGE_REPOSITORY: ${{ steps.candidate.outputs.repository }}
+          IMAGE_DIGEST: ${{ steps.candidate.outputs.digest }}
+          AMD64_DIGEST: ${{ steps.candidate.outputs.amd64-digest }}
+          ARM64_DIGEST: ${{ steps.candidate.outputs.arm64-digest }}
+          COMPONENT: ${{ matrix.component }}
+          PROFILE: ${{ matrix.profile }}
+        run: |
+          set -euo pipefail
+          [[ -n "$ONPREM_COSIGN_PUBLIC_KEY" ]]
+          if [[ -z "$COSIGN_KEY_REF" ]]; then
+            [[ -n "$COSIGN_PRIVATE_KEY" && -n "$COSIGN_PASSWORD" ]]
+          fi
+          exact_image="${IMAGE_REPOSITORY}@${IMAGE_DIGEST}"
+          sbom_amd64="$RUNNER_TEMP/release/sbom-apexload-${COMPONENT}-${PROFILE}-linux-amd64.spdx.json"
+          sbom_arm64="$RUNNER_TEMP/release/sbom-apexload-${COMPONENT}-${PROFILE}-linux-arm64.spdx.json"
+          key=env://COSIGN_PRIVATE_KEY
+          [[ -n "$COSIGN_KEY_REF" ]] && key="$COSIGN_KEY_REF"
+          cosign sign --yes --key "$key" "$exact_image"
+          for platform in amd64 arm64; do
+            digest_variable="${platform^^}_DIGEST"
+            sbom_variable="sbom_${platform}"
+            digest="${!digest_variable}"
+            sbom="${!sbom_variable}"
+            cosign sign --yes --key "$key" "${IMAGE_REPOSITORY}@${digest}"
+            cosign attest --yes --key "$key" --type spdxjson --predicate "$sbom" \
+              "${IMAGE_REPOSITORY}@${digest}"
+          done
+          public_key="$RUNNER_TEMP/onprem-cosign.pub"
+          printf '%s' "$ONPREM_COSIGN_PUBLIC_KEY" > "$public_key"
+          ./scripts/release/verify-registry-image-evidence.sh \
+            "$exact_image" "$public_key" "$sbom_amd64" "$sbom_arm64"
+
+  promote:
+    name: Expose release tags only after all candidates pass
+    needs: mirror-candidates
+    runs-on: [self-hosted, onprem, trusted]
+    timeout-minutes: 30
+    environment: onprem-registry
+    steps:
+      - name: Checkout publishing tooling
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.release }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Require hardened internal runner tools
+        run: |
+          set -euo pipefail
+          command -v skopeo >/dev/null
+          command -v cosign >/dev/null
+          command -v jq >/dev/null
+          skopeo --version | grep -F '1.20.0'
+          cosign version 2>&1 | grep -Eq 'GitVersion:[[:space:]]+v3\.1\.1([[:space:]]|$)'
+
+      - name: Download and verify the promotion contract
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release }}
+          REPOSITORY: ${{ github.repository }}
+          RELEASE_PUBLIC_KEY: ${{ vars.APEXLOAD_RELEASE_SIGNING_PUBLIC_KEY_PEM }}
+        run: |
+          set -euo pipefail
+          ./scripts/release/download-release.sh "$RELEASE_TAG" "$RUNNER_TEMP/release" "$REPOSITORY"
+          release_key="$RUNNER_TEMP/release-signing.pub"
+          printf '%s' "$RELEASE_PUBLIC_KEY" > "$release_key"
+          ./scripts/release/verify-release.sh "$RUNNER_TEMP/release" "$RELEASE_TAG" "$release_key"
+
+      - name: Authenticate to internal registry
+        env:
+          REGISTRY_HOST: ${{ vars.ONPREM_REGISTRY_HOST }}
+          REGISTRY_USERNAME: ${{ secrets.ONPREM_REGISTRY_USERNAME }}
+          REGISTRY_PASSWORD: ${{ secrets.ONPREM_REGISTRY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$REGISTRY_PASSWORD" | skopeo login --username "$REGISTRY_USERNAME" --password-stdin "$REGISTRY_HOST"
+          printf '%s' "$REGISTRY_PASSWORD" | cosign login --username "$REGISTRY_USERNAME" --password-stdin "$REGISTRY_HOST"
+
+      - name: Promote verified candidate digests idempotently
+        env:
+          REGISTRY_HOST: ${{ vars.ONPREM_REGISTRY_HOST }}
+          REGISTRY_NAMESPACE: ${{ vars.ONPREM_REGISTRY_NAMESPACE }}
+          RELEASE_TAG: ${{ inputs.release }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
+          WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
+          ONPREM_COSIGN_PUBLIC_KEY: ${{ vars.ONPREM_COSIGN_PUBLIC_KEY }}
+          RELEASE_MANIFEST: ${{ runner.temp }}/release/release-manifest.json
+        run: |
+          set -euo pipefail
+          public_key="$RUNNER_TEMP/onprem-cosign.pub"
+          printf '%s' "$ONPREM_COSIGN_PUBLIC_KEY" > "$public_key"
+          for component in controller generator; do
+            for profile in standard enterprise; do
+              repository="${REGISTRY_HOST}/${REGISTRY_NAMESPACE}/apexload-${component}"
+              candidate_tag="${RELEASE_TAG}-${profile}-candidate-${WORKFLOW_RUN_ID}-${WORKFLOW_RUN_ATTEMPT}"
+              release_tag="${RELEASE_TAG}-${profile}"
+              digest="$(skopeo inspect --format '{{.Digest}}' "docker://${repository}:${candidate_tag}")"
+              expected_digest="$(jq -er --arg component "$component" --arg profile "$profile" '
+                [.images[] | select(.component == $component and .profile == $profile)]
+                | if length == 1 then .[0].digest else error("missing release image") end
+              ' "$RELEASE_MANIFEST")"
+              [[ "$digest" == "$expected_digest" ]] || {
+                printf 'candidate %s does not match signed release digest %s\n' "$digest" "$expected_digest" >&2
+                exit 1
+              }
+              sbom_amd64="$RUNNER_TEMP/release/sbom-apexload-${component}-${profile}-linux-amd64.spdx.json"
+              sbom_arm64="$RUNNER_TEMP/release/sbom-apexload-${component}-${profile}-linux-arm64.spdx.json"
+              ./scripts/release/verify-registry-image-evidence.sh \
+                "${repository}@${digest}" "$public_key" "$sbom_amd64" "$sbom_arm64"
+              if existing_digest="$(skopeo inspect --format '{{.Digest}}' "docker://${repository}:${release_tag}" 2>/dev/null)"; then
+                [[ "$existing_digest" == "$digest" ]] || {
+                  printf 'immutable release tag already points at a different digest: %s:%s\n' "$repository" "$release_tag" >&2
+                  exit 1
+                }
+              fi
+            done
+          done
+          for component in controller generator; do
+            for profile in standard enterprise; do
+              repository="${REGISTRY_HOST}/${REGISTRY_NAMESPACE}/apexload-${component}"
+              candidate_tag="${RELEASE_TAG}-${profile}-candidate-${WORKFLOW_RUN_ID}-${WORKFLOW_RUN_ATTEMPT}"
+              release_tag="${RELEASE_TAG}-${profile}"
+              digest="$(skopeo inspect --format '{{.Digest}}' "docker://${repository}:${candidate_tag}")"
+              existing_digest="$(skopeo inspect --format '{{.Digest}}' "docker://${repository}:${release_tag}" 2>/dev/null || true)"
+              if [[ -z "$existing_digest" ]]; then
+                skopeo copy --all "docker://${repository}@${digest}" "docker://${repository}:${release_tag}"
+              fi
+              promoted_digest="$(skopeo inspect --format '{{.Digest}}' "docker://${repository}:${release_tag}")"
+              [[ "$promoted_digest" == "$digest" ]]
+              printf '%s:%s -> %s@%s\n' "$repository" "$release_tag" "$repository" "$digest" >> "$GITHUB_STEP_SUMMARY"
+            done
+          done

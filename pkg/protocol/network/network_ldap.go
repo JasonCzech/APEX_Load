@@ -29,6 +29,9 @@ func (n *Network) runLDAP(ctx context.Context, action *protocol.Action) (*operat
 		return nil, err
 	}
 	address := n.ldapURL(action)
+	if err := protocol.ValidateTargetAddress(address, n.allowedTargetHosts); err != nil {
+		return nil, err
+	}
 	start := time.Now()
 	timeout, err := n.actionTimeout(action)
 	if err != nil {

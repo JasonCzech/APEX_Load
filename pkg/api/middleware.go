@@ -24,6 +24,7 @@ const (
 	RoleProjectAdmin = "project_admin"
 	RoleEditor       = "editor"
 	RoleViewer       = "viewer"
+	RoleCIRunner     = "ci_runner"
 )
 
 var apiKeyRateLimitUnsetWarningLogged atomic.Bool
@@ -296,6 +297,11 @@ func enforceServiceAccountRateLimit(w http.ResponseWriter, r *http.Request, stor
 
 func enforceIdempotencyKey(w http.ResponseWriter, r *http.Request, store IdempotencyStore, resolution authResolution) bool {
 	if store == nil || !isMutatingMethod(r.Method) {
+		return true
+	}
+	// CI run creation owns its idempotency contract: the same key must return the
+	// same run rather than the generic mutation layer's duplicate-key conflict.
+	if r.Method == http.MethodPost && r.URL.Path == "/api/v1/ci/runs" {
 		return true
 	}
 	rawKey := strings.TrimSpace(r.Header.Get("Idempotency-Key"))

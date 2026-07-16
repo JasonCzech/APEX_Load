@@ -211,13 +211,15 @@ type TestRunner struct {
 	// execPlanRunStore persists sequential execution-plan run progress; seqMu
 	// guards the in-memory orchestration state (kept off tr.mu since advancing
 	// a plan calls CreateTest/StartTest, which take tr.mu).
-	execPlanRunStore executionPlanRunPersistence
-	seqMu            sync.Mutex
-	seqPlanRuns      map[string]*seqPlanRunState
-	seqPlanByTest    map[string]string
-	seqPlanRetrying  map[string]struct{}
-	terminalRetryMu  sync.Mutex
-	terminalRetrying map[string]struct{}
+	execPlanRunStore   executionPlanRunPersistence
+	seqMu              sync.Mutex
+	seqPlanRuns        map[string]*seqPlanRunState
+	seqPlanByTest      map[string]string
+	seqPlanRetrying    map[string]struct{}
+	terminalRetryMu    sync.Mutex
+	terminalRetrying   map[string]struct{}
+	terminalObserverMu sync.RWMutex
+	terminalObserver   func(string)
 	// archiveCommitGates serialize archive publication with deletion per test.
 	// Entries are reference-counted and removed after their last waiter exits.
 	archiveCommitMu    sync.Mutex

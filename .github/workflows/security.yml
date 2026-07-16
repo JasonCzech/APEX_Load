@@ -1,0 +1,62 @@
+name: Scheduled Security
+
+on:
+  schedule:
+    - cron: "0 7 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scheduled-security
+  cancel-in-progress: false
+
+env:
+  GOTOOLCHAIN: local
+  GOPROXY: ${{ vars.GO_MODULE_PROXY || 'https://proxy.golang.org,direct' }}
+  NPM_CONFIG_REGISTRY: ${{ vars.NPM_REGISTRY_URL || 'https://registry.npmjs.org' }}
+
+jobs:
+  govulncheck:
+    name: Go vulnerability reachability
+    runs-on: ${{ fromJSON(vars.SECURITY_RUNNER_LABELS || '["ubuntu-24.04"]') }}
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Go from go.mod
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install pinned govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+
+      - name: Scan reachable Go code
+        run: govulncheck ./...
+
+  dashboard-audit:
+    name: Dashboard production dependency audit
+    runs-on: ${{ fromJSON(vars.SECURITY_RUNNER_LABELS || '["ubuntu-24.04"]') }}
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Node 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22.22.0
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Audit production dependency graph
+        working-directory: dashboard
+        run: npm audit --omit=dev --audit-level=high

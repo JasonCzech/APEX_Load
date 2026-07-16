@@ -33,17 +33,18 @@ func init() {
 }
 
 type Network struct {
-	subprotocol string
-	host        string
-	address     string
-	port        int
-	timeout     time.Duration
-	useTLS      bool
-	username    string
-	password    string
-	from        string
-	to          []string
-	baseDN      string
+	subprotocol        string
+	host               string
+	address            string
+	port               int
+	timeout            time.Duration
+	useTLS             bool
+	username           string
+	password           string
+	from               string
+	to                 []string
+	baseDN             string
+	allowedTargetHosts []string
 }
 
 type operationResult struct {
@@ -76,6 +77,7 @@ func (n *Network) Init(_ context.Context, config map[string]any) error {
 	n.from = protocol.ConfigString(config, "network_from")
 	n.to = protocol.ConfigStringSlice(config, "network_to")
 	n.baseDN = protocol.ConfigString(config, "network_base_dn")
+	n.allowedTargetHosts = protocol.TargetPolicyHosts(config)
 	return nil
 }
 
@@ -221,6 +223,9 @@ func (n *Network) runHealth(ctx context.Context, action *protocol.Action) (*oper
 }
 
 func (n *Network) dial(ctx context.Context, networkName, target string) (net.Conn, time.Duration, error) {
+	if err := protocol.ValidateTargetAddress(target, n.allowedTargetHosts); err != nil {
+		return nil, 0, err
+	}
 	timeout := n.timeout
 	if ctx == nil {
 		ctx = context.Background()

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -54,9 +55,23 @@ func (c *ApiClient) newRequest(method string, path string, body io.Reader, conte
 }
 
 func (c *ApiClient) do(method string, path string, body io.Reader, contentType string) (*http.Response, error) {
+	return c.doContext(context.Background(), method, path, body, contentType)
+}
+
+func (c *ApiClient) doContext(ctx context.Context, method string, path string, body io.Reader, contentType string) (*http.Response, error) {
+	return c.doContextWithHeaders(ctx, method, path, body, contentType, nil)
+}
+
+func (c *ApiClient) doContextWithHeaders(ctx context.Context, method string, path string, body io.Reader, contentType string, headers http.Header) (*http.Response, error) {
 	req, err := c.newRequest(method, path, body, contentType)
 	if err != nil {
 		return nil, err
+	}
+	req = req.WithContext(ctx)
+	for name, values := range headers {
+		for _, value := range values {
+			req.Header.Add(name, value)
+		}
 	}
 	client := c.Client
 	if client == nil {

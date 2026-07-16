@@ -12,12 +12,14 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"net"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/fileasset"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/sasl"
 	"github.com/twmb/franz-go/pkg/sasl/oauth"
@@ -236,18 +238,45 @@ func (c *franzClient) newClient(consumerGroup string, extra ...kgo.Opt) (*kgo.Cl
 	} else if mech := c.saslMechanism(); mech != nil {
 		opts = append(opts, kgo.SASL(mech))
 	}
+	var brokerTLS *tls.Config
 	if c.usesTLS() {
 		tlsCfg, terr := c.buildTLSConfig()
 		if terr != nil {
 			return nil, terr
 		}
-		opts = append(opts, kgo.DialTLSConfig(tlsCfg))
+		brokerTLS = tlsCfg
+	}
+	if len(c.cfg.AllowedTargetHosts) > 0 {
+		opts = append(opts, kgo.Dialer(c.targetPolicyDialer(brokerTLS)))
+	} else if brokerTLS != nil {
+		opts = append(opts, kgo.DialTLSConfig(brokerTLS))
 	}
 	// Call-specific policy must win over configured defaults. Reply consumers,
 	// for example, always start at the end even when normal consumption starts
 	// at the beginning.
 	opts = append(opts, extra...)
 	return kgo.NewClient(opts...)
+}
+
+func (c *franzClient) targetPolicyDialer(tlsConfig *tls.Config) func(context.Context, string, string) (net.Conn, error) {
+	dialer := &net.Dialer{Timeout: 10 * time.Second}
+	return func(ctx context.Context, network, address string) (net.Conn, error) {
+		if err := protocol.ValidateTargetAddress(address, c.cfg.AllowedTargetHosts); err != nil {
+			return nil, err
+		}
+		if tlsConfig == nil {
+			return dialer.DialContext(ctx, network, address)
+		}
+		config := tlsConfig.Clone()
+		if config.ServerName == "" {
+			host, _, err := net.SplitHostPort(address)
+			if err != nil {
+				return nil, fmt.Errorf("split Kafka broker address: %w", err)
+			}
+			config.ServerName = host
+		}
+		return (&tls.Dialer{NetDialer: dialer, Config: config}).DialContext(ctx, network, address)
+	}
 }
 
 func (c *franzClient) onPartitionsAssigned(partitions map[string][]int32) {
