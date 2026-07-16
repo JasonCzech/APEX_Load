@@ -46,7 +46,7 @@
     "eslint-plugin-jsx-a11y": "^6.10.2",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
-    "globals": "^15.15.0",
+    "globals": "^17.7.0",
     "jsdom": "^29.1.1",
     "playwright-core-go": "npm:playwright-core@1.57.0",
     "typescript": "^5.5.3",
